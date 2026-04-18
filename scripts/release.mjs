@@ -18,7 +18,7 @@
  */
 
 import { execSync } from "node:child_process";
-import { readFileSync, writeFileSync, readdirSync, existsSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const RELEASE_TARGET = process.argv[2];
@@ -34,7 +34,7 @@ function run(cmd, options = {}) {
 	console.log(`$ ${cmd}`);
 	try {
 		return execSync(cmd, { encoding: "utf-8", stdio: options.silent ? "pipe" : "inherit", ...options });
-	} catch (e) {
+	} catch (_e) {
 		if (!options.ignoreError) {
 			console.error(`Command failed: ${cmd}`);
 			process.exit(1);
@@ -64,7 +64,14 @@ function shellQuote(value) {
 
 function stageChangedFiles() {
 	const output = run("git ls-files -m -o -d --exclude-standard", { silent: true });
-	const paths = [...new Set((output || "").split("\n").map((line) => line.trim()).filter(Boolean))];
+	const paths = [
+		...new Set(
+			(output || "")
+				.split("\n")
+				.map((line) => line.trim())
+				.filter(Boolean),
+		),
+	];
 	if (paths.length === 0) return;
 	run(`git add -- ${paths.map(shellQuote).join(" ")}`);
 }
@@ -93,9 +100,7 @@ function bumpOrSetVersion(target) {
 function getChangelogs() {
 	const packagesDir = "packages";
 	const packages = readdirSync(packagesDir);
-	return packages
-		.map((pkg) => join(packagesDir, pkg, "CHANGELOG.md"))
-		.filter((path) => existsSync(path));
+	return packages.map((pkg) => join(packagesDir, pkg, "CHANGELOG.md")).filter((path) => existsSync(path));
 }
 
 function updateChangelogsForRelease(version) {
@@ -135,7 +140,7 @@ console.log("\n=== rpiv-mono Release ===\n");
 
 console.log("Checking for uncommitted changes...");
 const status = run("git status --porcelain", { silent: true });
-if (status && status.trim()) {
+if (status?.trim()) {
 	console.error("Error: Uncommitted changes detected. Commit or stash first.");
 	console.error(status);
 	process.exit(1);
