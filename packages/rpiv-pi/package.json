@@ -1,8 +1,14 @@
 {
   "name": "@juicesharp/rpiv-pi",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Skill-based development workflow for Pi Agent — discover, research, design, plan, implement, validate",
-  "keywords": ["pi-package", "pi-extension", "rpiv", "skills", "workflow"],
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "rpiv",
+    "skills",
+    "workflow"
+  ],
   "license": "MIT",
   "author": "juicesharp",
   "type": "module",
@@ -18,10 +24,21 @@
   "publishConfig": {
     "access": "public"
   },
-  "files": ["extensions/", "skills/", "agents/", "scripts/", "README.md", "LICENSE"],
+  "files": [
+    "extensions/",
+    "skills/",
+    "agents/",
+    "scripts/",
+    "README.md",
+    "LICENSE"
+  ],
   "pi": {
-    "extensions": ["./extensions"],
-    "skills": ["./skills"]
+    "extensions": [
+      "./extensions"
+    ],
+    "skills": [
+      "./skills"
+    ]
   },
   "peerDependencies": {
     "@mariozechner/pi-coding-agent": "*",

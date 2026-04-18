@@ -1,8 +1,15 @@
 {
   "name": "@juicesharp/rpiv-btw",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Pi extension: /btw side-question slash command — ask the same primary model a one-off side question without polluting the main conversation",
-  "keywords": ["pi-package", "pi-extension", "rpiv", "btw", "side-question", "overlay"],
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "rpiv",
+    "btw",
+    "side-question",
+    "overlay"
+  ],
   "type": "module",
   "license": "MIT",
   "author": "juicesharp",
@@ -27,7 +34,9 @@
     "LICENSE"
   ],
   "pi": {
-    "extensions": ["./index.ts"]
+    "extensions": [
+      "./index.ts"
+    ]
   },
   "peerDependencies": {
     "@mariozechner/pi-ai": "*",

@@ -1,8 +1,14 @@
 {
   "name": "@juicesharp/rpiv-web-tools",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Pi extension: web_search + web_fetch via the Brave Search API",
-  "keywords": ["pi-package", "pi-extension", "rpiv", "web-search", "brave"],
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "rpiv",
+    "web-search",
+    "brave"
+  ],
   "type": "module",
   "license": "MIT",
   "author": "juicesharp",
@@ -24,7 +30,9 @@
     "LICENSE"
   ],
   "pi": {
-    "extensions": ["./index.ts"]
+    "extensions": [
+      "./index.ts"
+    ]
   },
   "peerDependencies": {
     "@mariozechner/pi-coding-agent": "*",

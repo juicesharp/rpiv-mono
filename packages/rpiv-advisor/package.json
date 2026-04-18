@@ -1,8 +1,13 @@
 {
   "name": "@juicesharp/rpiv-advisor",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Pi extension: advisor-strategy pattern — escalate to a stronger reviewer model",
-  "keywords": ["pi-package", "pi-extension", "rpiv", "advisor"],
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "rpiv",
+    "advisor"
+  ],
   "type": "module",
   "license": "MIT",
   "author": "juicesharp",
@@ -27,7 +32,9 @@
     "LICENSE"
   ],
   "pi": {
-    "extensions": ["./index.ts"]
+    "extensions": [
+      "./index.ts"
+    ]
   },
   "peerDependencies": {
     "@mariozechner/pi-ai": "*",

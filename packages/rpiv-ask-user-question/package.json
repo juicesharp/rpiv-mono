@@ -1,8 +1,12 @@
 {
   "name": "@juicesharp/rpiv-ask-user-question",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Pi extension: lets the model ask you a clarifying question with structured options instead of guessing",
-  "keywords": ["pi-package", "pi-extension", "rpiv"],
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "rpiv"
+  ],
   "type": "module",
   "license": "MIT",
   "author": "juicesharp",
@@ -26,7 +30,9 @@
     "LICENSE"
   ],
   "pi": {
-    "extensions": ["./index.ts"]
+    "extensions": [
+      "./index.ts"
+    ]
   },
   "peerDependencies": {
     "@mariozechner/pi-coding-agent": "*",
