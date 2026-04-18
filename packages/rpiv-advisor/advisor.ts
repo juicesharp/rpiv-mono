@@ -192,6 +192,20 @@ function buildInventoryBlock(tools: ToolInfo[]): string {
 		.join("\n\n---\n\n");
 }
 
+// Strip the executor's in-flight advisor() toolCall from the tail assistant
+// message. That call is what invoked *us* — there is no matching toolResult
+// yet, and providers (Anthropic, GLM/zai, OpenAI) reject payloads with orphan
+// toolCalls. Name-targeted to leave any other trailing toolCalls visible.
+function stripInflightAdvisorCall(messages: Message[]): Message[] {
+	if (messages.length === 0) return messages;
+	const last = messages[messages.length - 1];
+	if (last.role !== "assistant") return messages;
+	const filtered = last.content.filter((c) => !(c.type === "toolCall" && c.name === ADVISOR_TOOL_NAME));
+	if (filtered.length === last.content.length) return messages;
+	if (filtered.length === 0) return messages.slice(0, -1);
+	return [...messages.slice(0, -1), { ...last, content: filtered }];
+}
+
 // Returns `undefined` when the registry is empty (no extensions loaded) so
 // callers can skip prepending an empty block that would still cost a cache unit.
 export function getInventoryMessage(tools: ToolInfo[]): Message | undefined {
@@ -323,7 +337,7 @@ async function executeAdvisor(
 	const agentMessages = branch
 		.filter((e): e is SessionEntry & { type: "message" } => e.type === "message")
 		.map((e) => e.message);
-	const branchMessages = convertToLlm(agentMessages);
+	const branchMessages = stripInflightAdvisorCall(convertToLlm(agentMessages));
 	const inventoryMessage = getInventoryMessage(pi.getAllTools());
 	const messages: Message[] = inventoryMessage ? [inventoryMessage, ...branchMessages] : branchMessages;
 
