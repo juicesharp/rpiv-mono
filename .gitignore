@@ -8,6 +8,11 @@ packages/*/node_modules/
 
 .pi/
 
+# Local-only (not version-controlled)
+thoughts/
+.rpiv/guidance/
+**/.rpiv/guidance/
+
 # Environment
 .env
 

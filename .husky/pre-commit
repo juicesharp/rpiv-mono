@@ -10,9 +10,9 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 
-# Restage any files biome --write modified
+# Restage any files biome --write modified (skip paths now covered by .gitignore)
 for file in $STAGED_FILES; do
-  if [ -f "$file" ]; then
+  if [ -f "$file" ] && ! git check-ignore -q "$file"; then
     git add "$file"
   fi
 done
