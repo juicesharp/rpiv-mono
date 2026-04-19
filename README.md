@@ -8,6 +8,7 @@ Monorepo for Pi CLI plugins in the `@juicesharp/rpiv-*` family. Lockstep version
 |---|---|
 | [`@juicesharp/rpiv-pi`](packages/rpiv-pi) | Skill-based development workflow for Pi Agent — discover, research, design, plan, implement, validate |
 | [`@juicesharp/rpiv-advisor`](packages/rpiv-advisor) | Advisor-strategy pattern — escalate to a stronger reviewer model |
+| [`@juicesharp/rpiv-args`](packages/rpiv-args) | Shell-style placeholder substitution (`$1`, `$ARGUMENTS`, `$@`, `${@:N}`) inside skill bodies |
 | [`@juicesharp/rpiv-ask-user-question`](packages/rpiv-ask-user-question) | Structured clarifying-question tool |
 | [`@juicesharp/rpiv-btw`](packages/rpiv-btw) | `/btw` side-question slash command |
 | [`@juicesharp/rpiv-todo`](packages/rpiv-todo) | Claude-Code-parity todo tool + persistent overlay |
@@ -35,7 +36,7 @@ Pre-commit hooks (husky) run `npm run check` before every commit.
 
 ## Releasing
 
-All 6 packages version in lockstep. One command cuts a release of all of them:
+All 7 packages version in lockstep. One command cuts a release of all of them:
 
 ```bash
 node scripts/release.mjs patch     # e.g. 0.6.0 → 0.6.1
