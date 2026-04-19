@@ -137,7 +137,7 @@ Spawn these agents in parallel using the Agent tool. Each receives the `## Disco
 
 **Dependencies lens:**
 - subagent_type: `codebase-analyzer`
-- Prompt (only when `ManifestChanged` is true; otherwise SKIP and set `dependency_issues: 0`, `passes: [quality, security]`):
+- Prompt (only when `ManifestChanged` is true; otherwise SKIP this lens and omit the `### Dependencies` H3 block from the artifact):
   ```
   Known Context:
   [paste Discovery Map verbatim]
@@ -200,11 +200,8 @@ Spawn these agents in parallel using the Agent tool. Each receives the `## Disco
 2. **Probe advisor availability** — attempt a probe by checking whether `advisor` is in the active tool set (main-thread visibility). If yes, proceed to advisor path; otherwise take the inline path.
 
 3. **Advisor path** (when advisor is active):
-   - Print a main-thread `## Pre-Adjudication Findings` block containing the compiled evidence and tentative severity map. This ensures the findings are persisted into `getBranch()` before the advisor call.
-   - Call `advisor()` (zero-param). Wait for the response.
-   - On success: paste the advisor's prose verbatim into the artifact's `## Advisor Adjudication` section (Step 6) and note `advisor_used: true` + `advisor_model: [model-id]` in frontmatter.
-   - On `"aborted"` or empty text: set `advisor_used: false`, skip the adjudication section, fall through to the inline path.
-   - On `"error"`: note the error inline in the adjudication section as `advisor error: <message>`; continue with inline reconciliation alongside.
+   - Print a main-thread `## Pre-Adjudication Findings` block first — the advisor reads `getBranch()`, so evidence must be flushed before the call.
+   - Call `advisor()` (zero-param). If it returns usable prose, paste it verbatim into `## Advisor Adjudication` and skip the inline path. Otherwise fall through.
 
 4. **Inline path** (advisor unavailable or errored):
    - Run a dimension-sweep modeled on `skills/design/SKILL.md:83-116`: Data model / API surface / Integration / Scope / Verification / Performance.
@@ -226,7 +223,7 @@ Quality: [C🔴/I🟡/S🔵/D💭]
 Security: [C/I/S/D]
 Dependencies: [C/I/S/D | not-applicable]
 Precedents: [N composite lessons, top: "[one-line]"]
-Advisor: [used (model) | unavailable]
+Advisor: [adjudicated | inline]
 ```
 
 Wait for the developer's response. Then ask **one question at a time**, waiting for each answer.
@@ -261,16 +258,9 @@ branch: [Branch]
 commit: [Short hash]
 review_type: [commit|pr|staged|working]
 scope: "[What was reviewed]"
-files_changed: [N]
 critical_issues: [Count across all lenses]
 important_issues: [Count]
 suggestions: [Count]
-quality_issues: [Count]
-security_issues: [Count]
-dependency_issues: [Count | 0 when not-applicable]
-passes: [quality, security, dependencies]   # omit dependencies when not-applicable
-advisor_used: [true|false]
-advisor_model: [provider:id]                 # only when advisor_used is true
 status: [approved|needs_changes|requesting_changes]
 tags: [code-review, relevant-components]
 last_updated: [YYYY-MM-DD]
@@ -311,7 +301,7 @@ last_updated_by: [User]
 - `file:line` — [architectural question]
 
 ### Dependencies
-(Omit this H3 block entirely when `passes` excludes `dependencies`.)
+(Omit this H3 block entirely when the Dependencies lens was skipped — i.e., `ManifestChanged` was false.)
 #### 🔴 Critical
 - `dep@ver` (`package.json:line`) — [CVE id + link + affected-range + fix version]
 #### 🟡 Important
@@ -337,8 +327,8 @@ last_updated_by: [User]
 [Links to thoughts/ docs referenced by precedent-locator; one line each, no summaries.]
 
 ## Advisor Adjudication
-(Omit when `advisor_used: false`.)
-[Advisor model prose pasted VERBATIM. Do not edit or paraphrase. If `advisor error:` prefix is present, leave it as-is.]
+(Omit this H2 entirely when the advisor did not run — its presence IS the signal that adjudication occurred.)
+[Advisor model prose pasted VERBATIM. Do not edit or paraphrase.]
 
 ## Reconciliation Notes
 (Include only when the inline path ran, OR when developer dispute in Step 5 moved a severity.)
@@ -355,7 +345,7 @@ Review written to:
 `thoughts/shared/reviews/[filename].md`
 
 [C] critical, [I] important, [S] suggestions across [Q] quality, [Se] security, [D] dependency issues.
-Advisor: [used (model) | unavailable]
+Advisor: [adjudicated | inline]
 Status: [verdict]
 
 Top items:
