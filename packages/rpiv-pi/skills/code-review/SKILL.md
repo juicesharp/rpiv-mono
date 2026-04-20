@@ -403,7 +403,7 @@ Top items:
 2. `file:line` — [headline]
 3. `file:line` — [headline]
 
-Ask follow-ups, or run `/skill:revise` to address the findings.
+Ask follow-ups.
 ```
 
 ## Step 9: Handle Follow-ups

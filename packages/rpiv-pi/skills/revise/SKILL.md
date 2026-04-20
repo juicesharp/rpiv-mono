@@ -2,7 +2,6 @@
 name: revise
 description: Update existing implementation plans based on feedback. Makes surgical edits while preserving structure and quality. Use when plans need adjustments after review or during implementation.
 argument-hint: "[plan-path] [feedback]"
-allowed-tools: Edit, Read, Bash(git *), Glob, Grep, Agent
 ---
 
 # Iterate Implementation Plan
@@ -15,15 +14,29 @@ When this command is invoked:
 
 1. **Parse the input to identify**:
    - Plan file path (e.g., `thoughts/shared/plans/2025-10-16_09-00-00_feature.md`)
+   - Whether the user accidentally provided a review artifact path instead (e.g., `thoughts/shared/reviews/2025-10-16_10-00-00_feature.md`)
    - Requested changes/feedback
 
 2. **Handle different input scenarios**:
+
+   **If a REVIEW artifact path is provided**:
+   ```
+   `revise` updates implementation plans, not review artifacts.
+
+   If you want to act on code-review findings, provide the target plan path plus the changes to make.
+
+   Example:
+   `/skill:revise thoughts/shared/plans/2025-10-16_09-00-00_feature.md "Address the findings from thoughts/shared/reviews/2025-10-16_10-00-00_feature.md by tightening validation in Phase 2 and expanding success criteria."`
+   ```
+   Wait for user input.
 
    **If NO plan file provided**:
    ```
    I'll help you iterate on an existing implementation plan.
 
    Which plan would you like to update? Please provide the path to the plan file (e.g., `thoughts/shared/plans/2025-10-16_09-00-00_feature.md`).
+
+   If you're coming from `/skill:code-review`, pass the relevant plan path and summarize which findings should change the plan.
 
    Tip: You can list recent plans with `ls -lt thoughts/shared/plans/ | head`
    ```
@@ -238,5 +251,13 @@ Assistant: Which plan would you like to update? Please provide the path...
 User: thoughts/shared/plans/2025-10-16_09-00-00_feature.md
 Assistant: I've found the plan. What changes would you like to make?
 User: Add more specific success criteria
+Assistant: [Proceeds with update]
+```
+
+**Scenario 4: User passes a review artifact instead of a plan**
+```
+User: /skill:revise thoughts/shared/reviews/2025-10-16_10-00-00_feature.md
+Assistant: `revise` updates implementation plans, not review artifacts. Please provide the target plan path plus the changes to make.
+User: /skill:revise thoughts/shared/plans/2025-10-16_09-00-00_feature.md "Address the review findings by splitting Phase 2 and adding validation coverage"
 Assistant: [Proceeds with update]
 ```
