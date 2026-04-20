@@ -5,7 +5,7 @@ All notable changes to `@juicesharp/rpiv-todo` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.10.0] - 2026-04-20
 
 ### Added
 - Testability exports: `__resetState()` resets module-level `tasks` + `nextId` to their initial state; `getNextId()` exposes the current id counter alongside existing `getTodos()`. Follows the sibling reset convention (`invalidateSkillIndex`, `clearInjectionState`) used elsewhere in the monorepo. Production behaviour unchanged.

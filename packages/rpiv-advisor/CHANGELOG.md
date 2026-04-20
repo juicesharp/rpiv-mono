@@ -5,7 +5,7 @@ All notable changes to `@juicesharp/rpiv-advisor` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.10.0] - 2026-04-20
 
 ### Added
 - `loadAdvisorConfig()` and `saveAdvisorConfig(key, effort)` are now exported from `advisor.ts` to unlock config-axis round-trip tests. Bodies and semantics unchanged — still best-effort writes to `~/.config/rpiv-advisor/advisor.json` with `chmod 0600`.
