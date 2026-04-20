@@ -1,0 +1,34 @@
+{
+  "name": "@juicesharp/rpiv-test-utils",
+  "version": "0.9.1",
+  "description": "Internal test fixtures for rpiv-mono (not published)",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "author": "juicesharp",
+  "publishConfig": {
+    "access": "restricted"
+  },
+  "files": [
+    "index.ts",
+    "pi.ts",
+    "session.ts",
+    "contract.ts",
+    "theme.ts",
+    "CHANGELOG.md"
+  ],
+  "exports": {
+    ".": "./index.js",
+    "./pi": "./pi.js",
+    "./session": "./session.js",
+    "./contract": "./contract.js",
+    "./theme": "./theme.js"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-ai": "*",
+    "@mariozechner/pi-coding-agent": "*",
+    "@mariozechner/pi-tui": "*",
+    "@sinclair/typebox": "*",
+    "vitest": "*"
+  }
+}
