@@ -89,3 +89,42 @@ describe("executeAdvisor — 4 StopReason branches", () => {
 		expect(r?.details).toMatchObject({ errorMessage: "boom" });
 	});
 });
+
+describe("executeAdvisor — auth envelopes", () => {
+	it("returns no-model envelope when advisor is not configured", async () => {
+		const { pi, captured } = createMockPi();
+		registerAdvisorTool(pi);
+		const ctx = createMockCtx();
+		const r = await captured.tools.get("advisor")?.execute?.("tc", {}, undefined as never, undefined as never, ctx);
+		expect(r?.details).toMatchObject({ errorMessage: "no advisor model selected" });
+	});
+
+	it("wraps misconfigured auth into details.errorMessage", async () => {
+		setAdvisorModel({ provider: "a", id: "m" } as never);
+		const { pi, captured } = createMockPi();
+		registerAdvisorTool(pi);
+		const ctx = createMockCtx();
+		(ctx.modelRegistry.getApiKeyAndHeaders as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+			ok: false,
+			error: "bad config",
+		});
+		const r = await captured.tools.get("advisor")?.execute?.("tc", {}, undefined as never, undefined as never, ctx);
+		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("bad config") });
+		expect(r?.details).toMatchObject({ errorMessage: "bad config", advisorModel: "a:m" });
+	});
+
+	it("returns no-api-key envelope when auth.ok but apiKey is missing", async () => {
+		setAdvisorModel({ provider: "a", id: "m" } as never);
+		const { pi, captured } = createMockPi();
+		registerAdvisorTool(pi);
+		const ctx = createMockCtx();
+		(ctx.modelRegistry.getApiKeyAndHeaders as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+			ok: true,
+			apiKey: undefined,
+			headers: {},
+		});
+		const r = await captured.tools.get("advisor")?.execute?.("tc", {}, undefined as never, undefined as never, ctx);
+		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("no API key") });
+		expect(r?.details).toMatchObject({ errorMessage: "no API key for a", advisorModel: "a:m" });
+	});
+});

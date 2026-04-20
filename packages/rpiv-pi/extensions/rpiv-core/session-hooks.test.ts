@@ -21,9 +21,22 @@ vi.mock("./agents.js", async (importOriginal) => {
 	};
 });
 
-import { clearGitContextCache, getGitContext, resetInjectedMarker } from "./git-context.js";
+import type { SyncResult } from "./agents.js";
+import { syncBundledAgents } from "./agents.js";
+import { clearGitContextCache, getGitContext, resetInjectedMarker, takeGitContextIfChanged } from "./git-context.js";
 import { clearInjectionState } from "./guidance.js";
+import { findMissingSiblings } from "./package-checks.js";
 import { registerSessionHooks } from "./session-hooks.js";
+
+const emptySync: SyncResult = {
+	added: [],
+	updated: [],
+	unchanged: [],
+	removed: [],
+	pendingUpdate: [],
+	pendingRemove: [],
+	errors: [],
+};
 
 let projectDir: string;
 
@@ -64,6 +77,82 @@ describe("session_start hook", () => {
 		]) {
 			expect(existsSync(join(projectDir, d))).toBe(true);
 		}
+	});
+});
+
+describe("session_start hook — notifications", () => {
+	it("emits 'Copied N agents' info when added > 0", async () => {
+		vi.mocked(syncBundledAgents).mockReturnValueOnce({ ...emptySync, added: ["a.md", "b.md"] });
+		vi.mocked(findMissingSiblings).mockReturnValueOnce([]);
+		const { pi, captured } = createMockPi({ exec: stubGitExec({}) as never });
+		registerSessionHooks(pi);
+		const ctx = createMockCtx({ cwd: projectDir, hasUI: true });
+		await captured.events.get("session_start")?.[0]({ reason: "startup" } as never, ctx as never);
+		expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringMatching(/Copied 2 rpiv-pi agent/), "info");
+	});
+
+	it("emits a single drift line combining pendingUpdate + pendingRemove", async () => {
+		vi.mocked(syncBundledAgents).mockReturnValueOnce({
+			...emptySync,
+			pendingUpdate: ["a.md"],
+			pendingRemove: ["b.md", "c.md"],
+		});
+		vi.mocked(findMissingSiblings).mockReturnValueOnce([]);
+		const { pi, captured } = createMockPi({ exec: stubGitExec({}) as never });
+		registerSessionHooks(pi);
+		const ctx = createMockCtx({ cwd: projectDir, hasUI: true });
+		await captured.events.get("session_start")?.[0]({ reason: "startup" } as never, ctx as never);
+		const driftCall = (ctx.ui.notify as ReturnType<typeof vi.fn>).mock.calls.find(
+			(c) => typeof c[0] === "string" && c[0].includes("outdated"),
+		);
+		expect(driftCall).toBeDefined();
+		expect(driftCall?.[0]).toContain("1 outdated");
+		expect(driftCall?.[0]).toContain("2 removed from bundle");
+		expect(driftCall?.[1]).toBe("info");
+	});
+
+	it("warns about missing siblings with npm: prefix stripped", async () => {
+		vi.mocked(syncBundledAgents).mockReturnValueOnce(emptySync);
+		vi.mocked(findMissingSiblings).mockReturnValueOnce([
+			{ pkg: "npm:@juicesharp/rpiv-advisor", matches: /./, provides: "x" },
+			{ pkg: "npm:@juicesharp/rpiv-args", matches: /./, provides: "y" },
+		] as never);
+		const { pi, captured } = createMockPi({ exec: stubGitExec({}) as never });
+		registerSessionHooks(pi);
+		const ctx = createMockCtx({ cwd: projectDir, hasUI: true });
+		await captured.events.get("session_start")?.[0]({ reason: "startup" } as never, ctx as never);
+		const warnCall = (ctx.ui.notify as ReturnType<typeof vi.fn>).mock.calls.find((c) => c[1] === "warning");
+		expect(warnCall).toBeDefined();
+		expect(warnCall?.[0]).toContain("rpiv-pi requires 2 sibling");
+		expect(warnCall?.[0]).toContain("@juicesharp/rpiv-advisor");
+		expect(warnCall?.[0]).toContain("@juicesharp/rpiv-args");
+		expect(warnCall?.[0]).not.toContain("npm:");
+	});
+
+	it("skips notifications when !hasUI", async () => {
+		vi.mocked(syncBundledAgents).mockReturnValueOnce({ ...emptySync, added: ["a.md"] });
+		vi.mocked(findMissingSiblings).mockReturnValueOnce([
+			{ pkg: "npm:@juicesharp/rpiv-todo", matches: /./, provides: "t" },
+		] as never);
+		const { pi, captured } = createMockPi({ exec: stubGitExec({}) as never });
+		registerSessionHooks(pi);
+		const ctx = createMockCtx({ cwd: projectDir, hasUI: false });
+		await captured.events.get("session_start")?.[0]({ reason: "startup" } as never, ctx as never);
+		expect(ctx.ui.notify).not.toHaveBeenCalled();
+	});
+});
+
+describe("session_shutdown hook", () => {
+	it("clears git-context cache and allows takeGitContextIfChanged to re-emit", async () => {
+		const exec = stubGitExec({ branch: "main", commit: "abc", user: "alice" });
+		const { pi, captured } = createMockPi({ exec: exec as never });
+		registerSessionHooks(pi);
+		await takeGitContextIfChanged(pi);
+		const callsBefore = exec.mock.calls.length;
+		await captured.events.get("session_shutdown")?.[0]({} as never, createMockCtx() as never);
+		const reemit = await takeGitContextIfChanged(pi);
+		expect(reemit).not.toBeNull();
+		expect(exec.mock.calls.length).toBeGreaterThan(callsBefore);
 	});
 });
 
