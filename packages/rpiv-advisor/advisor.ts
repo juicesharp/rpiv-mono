@@ -167,7 +167,7 @@ function getAdvisorRuntimeState(): AdvisorState {
 // guarantees stable key ordering across V8 insertion-order variation. Required
 // because nested TypeBox schemas may be authored in any order, and prompt
 // caching is byte-sensitive.
-function stableStringify(value: unknown): string {
+export function stableStringify(value: unknown): string {
 	if (value === null || typeof value !== "object") {
 		return JSON.stringify(value);
 	}
@@ -196,7 +196,7 @@ function buildInventoryBlock(tools: ToolInfo[]): string {
 // message. That call is what invoked *us* — there is no matching toolResult
 // yet, and providers (Anthropic, GLM/zai, OpenAI) reject payloads with orphan
 // toolCalls. Name-targeted to leave any other trailing toolCalls visible.
-function stripInflightAdvisorCall(messages: Message[]): Message[] {
+export function stripInflightAdvisorCall(messages: Message[]): Message[] {
 	if (messages.length === 0) return messages;
 	const last = messages[messages.length - 1];
 	if (last.role !== "assistant") return messages;

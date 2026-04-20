@@ -7,6 +7,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- `stripInflightAdvisorCall(messages)` and `stableStringify(value)` are now exported from `advisor.ts` so the 8 strip-path branches and the key-sorted JSON serializer can be unit-tested directly. Bodies and semantics unchanged.
+
 ## [0.10.0] - 2026-04-20
 
 ### Added
