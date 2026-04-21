@@ -7,6 +7,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- `code-review` skill replaced by the file-oriented three-wave variant (previously A/B-tested as `codereview-files`). File-centric framing: `-U30` diffs inline full-function context, Discovery Map uses semantic file summaries, lens prompts read files as coherent units. Adds a `templates/review.md` scaffold consumed at Step 7 artifact emission. Losing variants (`code-review` 0.11.1 hunk-centric, `codereview` hunk-centric A/B twin) removed.
+
 ## [0.11.1] - 2026-04-20
 
 ### Reverted
