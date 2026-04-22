@@ -135,7 +135,7 @@ Invoke via `/skill:<name>` from inside a Pi Agent session.
 
 | Skill | Description |
 |---|---|
-| `code-review` | Comprehensive code reviews analyzing changes in parallel |
+| `code-review` | Comprehensive code reviews using specialist row-only agents (`diff-auditor`, `peer-comparator`, `claim-verifier`) at narrativisation-prone dispatch sites |
 | `commit` | Structured git commits grouped by logical change |
 | `create-handoff` | Context-preserving handoff documents for session transitions |
 | `resume-handoff` | Resume work from a handoff document |
@@ -157,10 +157,13 @@ Agents are dispatched automatically by skills via the `Agent` tool — you don't
 
 | Agent | Purpose |
 |---|---|
+| `claim-verifier` | Grounds reconciled code-review findings at cited `file:line`; tags Verified / Weakened / Falsified |
 | `codebase-analyzer` | Analyzes implementation details for specific components |
 | `codebase-locator` | Locates files and components relevant to a task |
 | `codebase-pattern-finder` | Finds similar implementations and usage patterns |
+| `diff-auditor` | Row-only patch auditor; walks a patch against a caller-supplied surface-list and emits `file:line \| verbatim \| surface-id \| note` rows |
 | `integration-scanner` | Maps inbound references, outbound deps, and config wiring |
+| `peer-comparator` | Pairwise peer-invariant comparator; tags each peer invariant Mirrored / Missing / Diverged / Intentionally-absent |
 | `precedent-locator` | Finds similar past changes in git history |
 | `test-case-locator` | Finds existing test cases and reports coverage stats |
 | `thoughts-analyzer` | Deep-dive analysis on research topics |

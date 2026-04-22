@@ -1,6 +1,6 @@
 ---
 name: code-review
-description: "Three-wave parallel reviewer with file-oriented reasoning (quality, security, dependencies) and conditional advisor adjudication. File-centric framing: U30 diffs inline full-function context, Discovery Map uses semantic file summaries, and lens prompts read files as coherent units. Produces review documents in thoughts/shared/reviews/. Use when changes are ready for review."
+description: "Conduct comprehensive code reviews using specialist row-only agents (diff-auditor at Wave-2 Q+S, peer-comparator at Wave-1 PM, claim-verifier at Step 6) plus orchestrator-side Gap-Finder (set arithmetic, no agent). Row-only contracts structurally resist narrativisation. Produces review documents in thoughts/shared/reviews/."
 argument-hint: "[scope]"
 ---
 
@@ -72,7 +72,7 @@ Spawn ALL of the following in parallel at T=0 in a **single message with multipl
 
 **Agent — CVE / advisory** (only when `ManifestChanged`): use the `web-search-researcher` prompt defined in Step 3 below — dispatch here. Input it needs: parsed `name@version` list from the manifest diff (orchestrator extracts and hands over directly).
 
-**Agent — Peer-Mirror** (only when `len(PeerPairs) > 0`): `subagent_type: codebase-analyzer`. Input: the `PeerPairs` list verbatim, nothing else — no Discovery Map (it isn't built yet and the agent doesn't need it), no patch path (the work is peer-vs-new entity comparison, not diff analysis). Prompt:
+**Agent — Peer-Mirror** (only when `len(PeerPairs) > 0`): `subagent_type: peer-comparator`. Input: the `PeerPairs` list verbatim, nothing else — no Discovery Map (it isn't built yet and the agent doesn't need it), no patch path (the work is peer-vs-new entity comparison, not diff analysis). Prompt:
   ```
   Peer-mirror check.
 
@@ -160,7 +160,7 @@ Spawn Quality + Security in parallel using the Agent tool. Each receives the `##
 
 **Citation contract** (applies to every Wave-2+ agent, every step): every `file:line` citation MUST be accompanied by the literal line text in backticks — format `file:line — \`<verbatim line>\` — <note>`. Omit findings whose lines you cannot quote verbatim.
 
-**Quality lens** (`codebase-analyzer`) — **file-oriented**:
+**Quality lens** (`diff-auditor`) — **file-oriented**:
   ```
   Analyse changes file by file. For each file in ChangedFiles, read its diff region in `/tmp/code-review-patch.diff` (patch has `-U30` — full function context is already inline; rarely need an extra Read call), form a mental model of what the file does and what the diff changes about it, then apply the 13 surfaces below to the file as a whole. Cite `file:line` with verbatim line text (citation contract) for every finding. Omit findings not traceable to a diff-touched change. No severity.
 
@@ -187,7 +187,7 @@ Spawn Quality + Security in parallel using the Agent tool. Each receives the `##
   **Economising Reads**: issue a `Read` only when (a) you need a file NOT in ChangedFiles (hub, peer, test), or (b) the changed function is longer than the `-U30` window can show. Never re-Read a file just to re-orient — that's what the symbols-touched hint is for.
   ```
 
-**Security lens** (`codebase-analyzer`) — **file-oriented**:
+**Security lens** (`diff-auditor`) — **file-oriented**:
   ```
   Analyse each changed file as a whole, looking for sinks in the classes below. For each file, grep the file's diff region in `/tmp/code-review-patch.diff` (patch has `-U30` — sink context is inline) for the sink patterns, and for each hit provide the verbatim line (citation contract) plus 2 surrounding lines and `confidence: N/10` that user-controlled input can reach the sink under current deployment. Drop hits with confidence < 8. Cross-reference Discovery Map auth-boundary crossings and inbound refs — a sink in a file reached from an auth-boundary file is in scope even if the sink file itself doesn't cross the boundary.
 
@@ -244,17 +244,17 @@ Spawn Quality + Security in parallel using the Agent tool. Each receives the `##
 
 ## Step 4: Dispatch Wave-3 — Predicate-Trace + Interaction Sweep + Gap-Finder
 
-Once Wave-2 (Quality + Security) completes, dispatch all three gated agents below **in a single message with multiple Agent tool calls**. They do NOT consume each other's output:
+Once Wave-2 (Quality + Security) completes, dispatch 4a and 4b as parallel agents **in a single message**; compute 4c inline (orchestrator-side set arithmetic — no agent). They do NOT consume each other's output:
 
 - **Interaction Sweep (4b)** receives Quality's `Predicate-set coherence` table directly as its predicate-row source. Quality's table already flags mismatches — Predicate-Trace (4a) only *elaborates* them through consumers. Interaction Sweep's categories 1–6 don't need 4a at all; categories 7–9 (stranded-state, false-promise, co-tenant filter gap) operate on the same rows 4a would trace.
-- **Gap-Finder (4c)** is explicitly a coverage-check against lens findings. The skill's rule *"Do NOT re-analyse what lenses already found"* (Step 4c body below) means it deliberately ignores 4a/4b output — running it in parallel preserves intent.
+- **Gap-Finder (4c)** is coverage arithmetic: `{in-scope files} − {files with ≥1 Quality/Security finding} = {uncovered files}`. Orchestrator already holds both sets post-Wave-2 — an agent would discard context only to re-receive it via prompt. Inline is strictly cheaper and deterministic.
 - If Predicate-Trace (4a) surfaces a row that was not visible in Quality's table, append it via a Step 9 follow-up — cheaper than a serial gate.
 
 ### Step 4a: Predicate-Trace
 
 **Gate**: SKIP this sub-step (do not dispatch 4a) unless `HasGatingPredicate` is true AND the Quality lens returned ≥2 rows in its `Predicate-set coherence` table referencing the same enum/type. If skipped, 4b and 4c still dispatch.
 
-Otherwise spawn ONE `codebase-analyzer` in parallel with 4b and 4c:
+Otherwise spawn ONE `codebase-analyzer` in parallel with 4b:
   ```
   Coherence rows (Quality — Predicate-set coherence): [paste verbatim]
   Gating predicates in diff: [`file:line` list]
@@ -268,13 +268,13 @@ Otherwise spawn ONE `codebase-analyzer` in parallel with 4b and 4c:
   Evidence only. Citation contract applies.
   ```
 
-Do NOT wait — 4b (Interaction Sweep) and 4c (Gap-Finder) dispatch in the same message as 4a.
+Do NOT wait — 4b (Interaction Sweep) dispatches in the same message as 4a; 4c runs inline in the orchestrator.
 
 ### Step 4b: Interaction Sweep
 
 **Gate**: SKIP this sub-step (do not dispatch 4b) when EITHER `len(ChangedFiles) < 2` OR the Quality lens returned fewer than 4 total observations across all files. Emergent interactions need surface area; tiny diffs cannot structurally produce them.
 
-Otherwise spawn ONE `codebase-analyzer` in parallel with 4a and 4c:
+Otherwise spawn ONE `codebase-analyzer` in parallel with 4a:
   ```
   Quality Evidence: [verbatim]
   Security Evidence: [verbatim]
@@ -299,36 +299,21 @@ Otherwise spawn ONE `codebase-analyzer` in parallel with 4a and 4c:
   For findings involving ordering/races/concurrency across processes or handlers, name the ordering primitive that would prevent the race (distributed lock, exclusive-key wrapper, ordered partition, transaction, idempotency key, etc.) and explain why it does NOT apply here. Drop the finding if the primitive exists in the diff or nearby and your argument against it is speculative.
   ```
 
-Do NOT wait — 4c (Gap-Finder) dispatches in the same message.
+### Step 4c: Gap-Finder (orchestrator-side coverage arithmetic)
 
-### Step 4c: Gap-Finder
+**Gate**: SKIP when `len(ChangedFiles) < 2`. Tiny diffs cannot structurally have coverage gaps.
 
-**Gate**: SKIP this sub-step (do not dispatch 4c) when `len(ChangedFiles) < 2`. Tiny diffs cannot structurally have coverage gaps.
+No agent dispatch. Compute inline while 4a / 4b run:
 
-Otherwise spawn ONE `codebase-analyzer` in parallel with 4a and 4b. The prompt intentionally omits 4a/4b output (they are not awaited); Gap-Finder's job is to find FILES (or specific risk-bearing regions within them) no LENS covered, not to audit 4a/4b. Scope is deliberately limited to risk-bearing file roles with non-trivial deltas — the 5-finding cap makes a full walk wasteful:
-  ```
-  All lens findings so far:
-  Quality Evidence: [verbatim]
-  Security Evidence: [verbatim | "not applicable"]
+1. **Coverage map** — parse Quality + Security outputs; for each finding row extract its `file:line` citation and map `file → [finding-id]`. Files with ≥1 row are covered; files with none are uncovered.
+2. **In-scope filter** — keep files tagged `[boundary]`, `[persistence]`, `[code]`, or `[hub]` AND whose diff delta (sum of added + removed lines) is ≥ 5. Drop `[test]` and `[config]` entirely; drop files with tiny deltas.
+3. **Emit gap findings** — walk uncovered in-scope files in role-tag priority `[boundary]` → `[persistence]` → `[hub]` → `[code]`. For each, open its diff region in `/tmp/code-review-patch.diff` and pick ONE risk-bearing line (first non-comment `+` line, or the function-declaration header if a whole function was added). Emit:
 
-  Diff patch: Read `/tmp/code-review-patch.diff` (already assembled with `-U30`, so full function context is inline).
-  Discovery Map: [verbatim]
+   `G<ordinal> — file:line — \`<verbatim line>\` — [role-tag] — <risk class in 3-6 words>`
 
-  **In-scope files only**: restrict the walk to files tagged `[boundary]`, `[persistence]`, `[code]`, or `[hub]` AND whose diff delta is ≥ 5 lines (added + removed). SKIP all `[test]` and `[config]` files, and skip files with tiny deltas. These categories almost never produce gap findings under the 5-finding cap, and walking them consumes the bulk of Gap-Finder's runtime without improving recall.
+   Risk-bearing behavior class (diff introduces one of): state mutation | I/O (DB/network/file) | error path | conditional on mutable state | concurrent/shared-state access | public API surface change. Maximum **5** gap findings; stop once reached. Citation contract applies.
 
-  Task: Walk the in-scope files. For each file, check whether ANY existing finding above already covers its risk-bearing behaviors. A file's behavior is "risk-bearing" if the diff introduces: state mutations, I/O operations (DB/network/file), error paths, conditional logic on mutable state, concurrent/shared-state access, or a public API surface change.
-
-  Flag files whose risk-bearing behavior has NO corresponding finding. For each flagged file:
-  - Quote the specific `file:line` range and verbatim code per the citation contract
-  - State what risk-bearing behavior it contains (method name, behavior class)
-  - Explain why no existing finding covers it (1 sentence)
-
-  Do NOT re-analyse what lenses already found — only flag GAPS in coverage. Maximum 5 gap findings total across the changeset. Stop walking once 5 gaps are flagged. Citation contract applies.
-
-  File order: follow role-tag priority (`[boundary]` → `[persistence]` → `[hub]` → `[code]`).
-  ```
-
-**Wait for ALL of 4a / 4b / 4c AND the Precedents agent from Wave-1 to complete** before proceeding to Step 5 (Reconciliation). Precedents is a **hard gate** — severity weighting in Step 5 reads its follow-up-within-30-days counts. Dependencies / CVE (when dispatched) also merge in here but are not individually hard-gated; wait for them too unless they clearly exceed the review SLA, in which case omit `## Dependencies` and note it in the artifact.
+**Wait for ALL of 4a / 4b AND the Precedents agent from Wave-1 to complete** before proceeding to Step 5 (Reconciliation). Precedents is a **hard gate** — severity weighting in Step 5 reads its follow-up-within-30-days counts. Dependencies / CVE (when dispatched) also merge in here but are not individually hard-gated; wait for them too unless they clearly exceed the review SLA, in which case omit `## Dependencies` and note it in the artifact. 4c has no wait — it completes synchronously with the orchestrator.
 
 ## Step 5: Reconcile Findings
 
@@ -371,7 +356,7 @@ Otherwise spawn ONE `codebase-analyzer` in parallel with 4a and 4b. The prompt i
 
 ## Step 6: Verify Findings
 
-Before writing the artifact, spawn ONE `codebase-analyzer` whose sole job is to ground every reconciled finding in the actual code at its cited `file:line`. This catches two classes of error the lenses cannot self-detect: (a) *confident assertions* the agent never opened a file to confirm, and (b) *rationalisations* ("intentional-by-design", "pre-existing", "not a real deadlock") that contradict what the code does. Lens agents reason from the patch; the verifier reasons from the file.
+Before writing the artifact, spawn ONE `claim-verifier` whose sole job is to ground every reconciled finding in the actual code at its cited `file:line`. This catches two classes of error the lenses cannot self-detect: (a) *confident assertions* the agent never opened a file to confirm, and (b) *rationalisations* ("intentional-by-design", "pre-existing", "not a real deadlock") that contradict what the code does. Lens agents reason from the patch; the verifier reasons from the file.
 
 **Dispatch** after Step 5's reconciled severity map is final, before Step 7 writes anything:
 
@@ -401,7 +386,9 @@ Before writing the artifact, spawn ONE `codebase-analyzer` whose sole job is to 
   Citation contract applies to every justification. No recommendations. No new findings.
   ```
 
-**Apply the tags**:
+**Before applying tags** — re-read every Weakened and Falsified justification (the tag is a summary; the justification is the evidence). Per `agents/claim-verifier.md` tag semantics: Weakened = narrower, Falsified = wrong direction, Verified = correct or understated. If a justification contradicts its tag (e.g. "inverted" / "opposite" under Weakened, or "worse than stated" under Weakened), override before applying the rules below. Also verify identity on the ID set — exactly one row per input finding; re-dispatch `claim-verifier` on any missing IDs before proceeding.
+
+**Apply the tags** (on the corrected tag):
 - **Falsified** findings — remove from the artifact entirely. Their ID is retired (never reused); the retirement is counted in the frontmatter `verification` string (`F` dropped) and nowhere else.
 - **Weakened** findings — demote one severity tier (🔴→🟡, 🟡→🔵, 🔵→💭). Rewrite the finding's evidence line to reflect the narrower claim.
 - **Verified** findings — carry through unchanged to Step 7.
@@ -471,7 +458,7 @@ Ask follow-ups.
 - **Security-lens precision stance**: prefer false negatives. Evidence must carry `confidence ≥ 8`; 🔴 requires an explicit source→sink trace. Missing hardening without a traced sink is NOT a finding.
 - **Load-bearing ordering**:
   - Wave-1 fans out at T=0 — integration-scanner, Precedents, (when `ManifestChanged`) Dependencies + CVE, and (when `len(PeerPairs) > 0`) the peer-mirror agent dispatch in a single multi-Agent message. integration-scanner AND peer-mirror gate Wave-2 (both feed the Discovery Map Wave-2 consumes); **Precedents is a hard gate on Step 5** (its follow-up-within-30-days counts drive severity weighting; reconciling without them produces mis-weighted severities the verification pass cannot correct); Dependencies + CVE soft-gate Step 5.
-  - Step 4a (Predicate-Trace), 4b (Interaction Sweep), 4c (Gap-Finder) dispatch in parallel once Wave-2 completes. Interaction Sweep (4b) receives Quality's `Predicate-set coherence` table as its predicate-row source, not 4a's output.
+  - Step 4a (Predicate-Trace) and 4b (Interaction Sweep) dispatch in parallel once Wave-2 completes; 4c (Gap-Finder) is orchestrator-side coverage arithmetic — no agent. Interaction Sweep (4b) receives Quality's `Predicate-set coherence` table as its predicate-row source, not 4a's output.
   - When Quality's `Predicate-set coherence` surface returns ≥2 rows with mismatched values on the same enum/type, the 4b sweep MUST evaluate categories 7–9 against those rows.
   - **File orientation is load-bearing**: patches MUST use `-U30` (or `-U10` fallback for >1MB patches), never `-U0`. The Discovery Map's semantic file map (clusters + role tags + symbols-touched hint) is the orientation primitive, not per-hunk line ranges. Lens prompts organise findings per file (`### file/path.ext`), not per hunk. Agents SHOULD NOT issue extra `Read` calls for files already represented in the patch unless specifically needed for a cross-file trace.
   - **Wave-2 context isolation**: Quality and Security prompts MUST NOT include Wave-1 background-agent output (precedent-locator, Dependencies, CVE) even when those agents have finished before Wave-2 dispatches. Summary context from those agents causes the lens agents to narrativise instead of independently analyse the diff — the observed failure mode is a ~5× speedup coupled with hallucinated findings and mis-cited line numbers. Pass only Discovery Map + patch file path.
@@ -479,18 +466,18 @@ Ask follow-ups.
   - ALWAYS probe advisor availability before calling it (strip-when-unconfigured at `packages/rpiv-advisor/advisor.ts:463-472`).
   - NEVER call `advisor()` from a sub-agent (branch invisible to advisor).
   - NEVER parse advisor prose — paste verbatim as a blockquote at the top of `## Recommendation`.
-  - ALWAYS wait for 4a / 4b / 4c AND the Precedents agent to complete before Step 5 — Wave-3's hard barrier. Dependencies + CVE wait here too when running, but are not individually hard-gated.
+  - ALWAYS wait for 4a / 4b AND the Precedents agent to complete before Step 5 — Wave-3's hard barrier. 4c is synchronous (orchestrator). Dependencies + CVE wait here too when running, but are not individually hard-gated.
   - ALWAYS run Step 6 (verification pass) between reconciliation and artifact write. It is the only mechanism that catches lens agents asserting claims they never opened a file to confirm, and the only mechanism that validates `resolved-by` annotations against the actual branch via `git merge-base --is-ancestor`. Skipping Step 6 silently re-admits the failure mode this skill was designed to prevent.
   - PRESERVE severity emoji/naming and frontmatter keys verbatim — `thoughts-locator` / `thoughts-analyzer` grep these.
-  - NEVER add a new bundled agent — zero-new-agents contract (`packages/rpiv-pi/extensions/rpiv-core/agents.ts:148-268`).
+  - Bundled row-only specialists at narrativisation-prone sites: `diff-auditor` (Wave-2 Q+S), `peer-comparator` (Wave-1 PM), `claim-verifier` (Step 6). See `.rpiv/guidance/agents/architecture.md`.
 - **Agent roles**:
   - `integration-scanner` (Wave-1) — inbound/outbound refs, auth-boundary crossings.
   - `precedent-locator` (Wave-1) — git history + thoughts/.
   - `codebase-analyzer` ×1 (Wave-1, `ManifestChanged`) — dependencies parse.
   - `web-search-researcher` (Wave-1, `ManifestChanged`) — CVE/advisory lookups with LINKS.
-  - `codebase-analyzer` ×1 (Wave-1, gated on `len(PeerPairs) > 0`) — peer-mirror check; tabulates peer's public surface against the newly-added file, tags each row Mirrored/Missing/Diverged/Intentionally-absent.
-  - `codebase-analyzer` ×2 (Wave-2) — Quality, Security.
+  - `peer-comparator` ×1 (Wave-1, gated on `len(PeerPairs) > 0`) — peer-mirror check; tags Mirrored/Missing/Diverged/Intentionally-absent.
+  - `diff-auditor` ×2 (Wave-2) — Quality, Security.
   - `codebase-analyzer` ×1 (Step 4a, gated) — predicate-trace.
   - `codebase-analyzer` ×1 (Step 4b, gated) — interaction sweep.
-  - `codebase-analyzer` ×1 (Step 4c, gated) — gap-finder (coverage verification).
-  - `codebase-analyzer` ×1 (Step 6, always) — verification pass (grounds every reconciled finding at its cited file:line; tags Verified / Weakened / Falsified; Falsified dropped, Weakened demoted one tier).
+  - *(Step 4c, gated)* — gap-finder runs inline in the orchestrator (set arithmetic over coverage map; no agent).
+  - `claim-verifier` ×1 (Step 6, always) — verification pass (grounds every reconciled finding at its cited `file:line`; tags Verified / Weakened / Falsified; Falsified dropped, Weakened demoted one tier).
