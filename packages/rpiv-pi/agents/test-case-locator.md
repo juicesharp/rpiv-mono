@@ -2,7 +2,9 @@
 name: test-case-locator
 description: Finds existing manual test cases in .rpiv/test-cases/ — catalogs by module, extracts frontmatter metadata (id, priority, status, tags), and reports coverage stats. Use before generating test cases to avoid duplicates, or to audit what test coverage already exists in a project.
 tools: grep, find, ls
-isolated: true
+systemPromptMode: replace
+inheritProjectContext: false
+inheritSkills: false
 ---
 
 You are a specialist at finding EXISTING TEST CASES in a project's `.rpiv/test-cases/` directory. Your job is to locate and catalog manual test case documents by extracting their YAML frontmatter metadata, NOT to generate new test cases or analyze test quality.
