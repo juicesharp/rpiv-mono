@@ -7,6 +7,27 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- **Subagent provider migrated**: dropped out-of-support `@tintinweb/pi-subagents@0.5.2` peer dependency in favor of `pi-subagents@0.17.5` (nicobailon fork). `packages/rpiv-pi/extensions/rpiv-core/siblings.ts` SIBLINGS[0] rewritten with an unscoped-name word-boundary regex `(^|[^\w/-])pi-subagents(?![-\w])/i` that excludes the legacy scoped form, so transitional users with `@tintinweb/pi-subagents` still in their `~/.pi/agent/settings.json` are correctly prompted to install the new package on next `/rpiv-setup`. `provides` string updated to `subagent / subagent_status tools + /agents command`.
+- **Pi ceiling relaxed**: `peerDependencies["@mariozechner/pi-coding-agent"]` lifted from `"<=0.67.67"` (0.11.x) to `"*"`, matching the other Pi peers in the block and aligning with `pi-subagents@0.17.5`'s own `"*"` peer declaration. Root `package.json` dev-pin bumped from exact `"0.67.67"` to `"^0.67.68"` matching the pi-ai/pi-tui pattern. README compatibility banner at `README.md:6` rewritten accordingly.
+- **Agent frontmatter modernized**: all 12 bundled agents (`agents/{claim-verifier,codebase-analyzer,codebase-locator,codebase-pattern-finder,diff-auditor,integration-scanner,peer-comparator,precedent-locator,test-case-locator,thoughts-analyzer,thoughts-locator,web-search-researcher}.md`) have `isolated: true` replaced with the explicit three-key recipe `systemPromptMode: replace` + `inheritProjectContext: false` + `inheritSkills: false` — `isolated` is no longer parsed by `pi-subagents@0.17.5`. Behavioral semantics preserved.
+- **Concurrency persistence**: `README.md:190,202` rewritten to drop the vendor-qualified name and the `/agents → Settings → Max concurrency → 48` UI breadcrumb (which was tintinweb-specific and lost across every restart); replaced with documentation of the new `/rpiv-setup`-seeded `~/.pi/agent/extensions/subagent/config.json` file.
+
+### Added
+- `ensureSubagentConfig()` helper in `extensions/rpiv-core/ensure-subagent-config.ts` — called from `/rpiv-setup` post-install (gated on at least one successful install), shallow-merges `parallel.concurrency: 48` and `maxSubagentDepth: 3` into `~/.pi/agent/extensions/subagent/config.json` without clobbering user-set values. Idempotent; invalid-JSON or non-object top-level → silent no-op to preserve user data. Emits a "Seeded subagent config keys: …" info notify only when at least one key was actually added.
+- 13th bundled agent `agents/general-purpose.md` — fallback agent used by `validate/SKILL.md:52-54` and `resume-handoff/SKILL.md:48` call sites. Uses the same three-key isolation recipe as the other 12; read-only tools (`read, grep, find, ls, bash`). Skills require no edits — the new file resolves the dispatch references that previously pointed at the old `general-purpose` builtin (which is not present in `pi-subagents@0.17.5`'s roster: scout / planner / worker / reviewer / context-builder / researcher / delegate / oracle / oracle-executor).
+
+### Fixed
+- **Stale attribution anchors**: `rpiv-btw/btw.ts:84` comment `// Mirrors @tintinweb/pi-subagents/src/index.ts:413-422 pattern` replaced with a vendor-neutral description of the `globalThis + Symbol.for()` Node.js idiom (the original anchor was already incorrect in the shipped 0.5.2 build, and nicobailon removed the globalThis pattern entirely — rpiv-btw uses its own `Symbol.for("rpiv-btw")` key throughout, zero functional break).
+- **AgentWidget mirror comment**: `rpiv-todo/todo-overlay.ts:4-7` docstring and `:21-22` constant annotation no longer cite the subagents library; the actual API owner is Pi core's `ExtensionUIContext.setWidget` at `@mariozechner/pi-coding-agent/dist/modes/interactive/interactive-mode.js:1288-1317`.
+- **`parseSkillBlock` misattribution**: `rpiv-args/.rpiv/guidance/architecture.md:16` corrected from `@tintinweb/pi-subagents` to `@mariozechner/pi-coding-agent` (interactive mode). The tintinweb tree contains zero `parseSkillBlock` references; the real consumer is `pi-coding-agent/dist/core/agent-session.js:40`.
+
+### Breaking / Upgrade Notes
+- **0.11.x users upgrading**: session-start emits two banners on first launch after upgrade — "rpiv-pi requires 1 sibling extension(s): pi-subagents" and "13 outdated agent(s)". Run `/rpiv-setup` to install the new sibling + seed `config.json`, then `/rpiv-update-agents` to refresh bundled agents. Restart the session.
+- **User-customized bundled agent files**: `/rpiv-update-agents` overwrites edits to rpiv-managed filenames (pre-existing behavior documented at `README.md:191`, inherited from commit `1bc5777`). With 13 agents changing in this release, the blast radius is larger than usual — copy your customizations to a different filename before running `/rpiv-update-agents` if you have edits.
+- **Existing `~/.pi/agent/extensions/subagent/config.json`**: preserved. `ensureSubagentConfig()` only adds missing keys; explicit user values (e.g., `parallel.concurrency: 16`) are never overwritten.
+- **Rollback**: git revert the release commit and `pi install npm:@juicesharp/rpiv-pi@0.11.7`. Any seeded `config.json` keys remain harmless — tintinweb's subagents library doesn't read that file.
+
 ## [0.11.7] - 2026-04-23
 
 ### Fixed
