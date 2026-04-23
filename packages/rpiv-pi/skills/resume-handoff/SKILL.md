@@ -45,7 +45,7 @@ Then wait for the user's input.
      - Other notes
 
 2. **Spawn focused research agents**:
-   After reading all critical handoff/plan/research documents directly, spawn parallel general-purpose agents via the Agent tool to verify current codebase state and gather additional context:
+   After reading all critical handoff/plan/research documents directly, spawn parallel general-purpose agents via the subagent tool to verify current codebase state and gather additional context:
 
    ```
    Task 1 - Gather artifact context:

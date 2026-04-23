@@ -55,7 +55,7 @@ Before Step 1, create a todo list tracking every step below (Step 1 through Step
 
    This plan stays internal — do NOT present it to the developer unless asked.
 
-3. **Spawn parallel discovery agents** using the Agent tool:
+3. **Spawn parallel discovery agents** using the subagent tool:
 
    - Use **codebase-locator** for "Where do these files/symbols live?" slices — spawn one per focused code/discovery seam. Prefer 5-9 narrow discovery agents over 2-3 broad ones when the topic spans multiple subsystems.
    - Use **thoughts-locator** only for historical docs, decisions, plans, and prior artifacts about the topic

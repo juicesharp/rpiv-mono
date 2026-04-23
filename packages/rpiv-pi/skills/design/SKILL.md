@@ -52,7 +52,7 @@ When this command is invoked:
 
 This is NOT a discovery sweep. Focus on DEPTH (how things work, what patterns to follow) not BREADTH (where things are).
 
-1. **Spawn parallel research agents** using the Agent tool:
+1. **Spawn parallel research agents** using the subagent tool:
 
    - Use **codebase-pattern-finder** to find existing implementations to model after — the primary template for code shape
    - Use **codebase-analyzer** to understand HOW integration points work in detail
@@ -379,7 +379,7 @@ The artifact was created as a skeleton in Step 6 and filled progressively in Ste
 
 6. **Present Condensed, Persist Complete**: Micro-checkpoints show the developer summaries, signatures, and key code blocks. The artifact always contains full copy-pasteable code. If the developer asks to see full code, show it — but never default to walls of code in checkpoints.
 
-## Agent Usage
+## Subagent Usage
 
 | Context | Agents Spawned |
 |---|---|

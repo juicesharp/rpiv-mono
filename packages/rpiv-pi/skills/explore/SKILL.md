@@ -322,7 +322,7 @@ Wait for ALL agents to complete before proceeding.
 
 ## Important Notes
 
-- Always use parallel Agent tool calls to maximize efficiency and minimize context usage
+- Always use parallel subagent tool calls to maximize efficiency and minimize context usage
 - Always spawn fresh research to validate current state - never rely on old research docs as source of truth
 - Old research documents can provide historical context but must be validated against current code
 - Generate 2-4 named candidates in Step 2; confirm them with the developer at Step 3 before per-candidate fit dispatch

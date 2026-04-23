@@ -2,7 +2,7 @@
 name: annotate-inline
 description: Generate CLAUDE.md files across a project by analyzing architecture and patterns in parallel. Auto-detects architecture, proposes locations, and batch-writes compact documentation. Use for onboarding or improving AI assistant context.
 argument-hint: [target-directory]
-allowed-tools: Agent, Read, Write, Glob, Grep
+allowed-tools: subagent, Read, Write, Glob, Grep
 ---
 
 # Annotate Project
@@ -22,14 +22,14 @@ Use the current working directory as the target project by default. If the user 
    - This ensures you have full context before decomposing the work
 
 2. **Pass 1 — Map the project (parallel agents):**
-   - Spawn the following agents in parallel using the Agent tool:
+   - Spawn the following agents in parallel using the subagent tool:
 
    **Agent A — Project tree mapping:**
-   - subagent_type: `codebase-locator`
+   - agent: `codebase-locator`
    - Prompt: "Map the full project tree structure for [target directory]. List all directories and their contents, respecting .gitignore. Focus on source code directories, configuration files, and build artifacts. Return a complete tree view."
 
    **Agent B — Architecture and conventions:**
-   - subagent_type: `codebase-locator`
+   - agent: `codebase-locator`
    - Prompt: "Identify the architectural layout of [target directory] from path shape and manifest files — NO content analysis. Detect: (1) Architecture pattern inferred from folder shape — clean-arch via Domain/Application/Infrastructure dirs; MVC via Controllers/Models/Views; monorepo via packages/* + workspaces; microservices via services/* with individual manifests; hexagonal via ports/adapters. (2) Main layers/modules — top-level source directories + their names. (3) Frameworks and languages from manifest files (package.json dependencies, *.csproj TargetFramework, pyproject.toml, go.mod, Cargo.toml) and file extensions. (4) Build system from build-config filenames (vite/webpack/tsup/esbuild configs, Makefile, nx.json, turbo.json, dotnet .sln). For each main layer/module, check sub-directory composition. If sub-directories with distinct names/roles exist, flag each as a CLAUDE.md target candidate with: (a) path, (b) role inferred from folder name (controllers/, services/, entities/, components/, stores/, etc.), (c) file count via ls, (d) how its sub-directory composition differs from sibling layers. Use grep/find/ls only. Do not read file contents. Pass 2 runs codebase-analyzer + codebase-pattern-finder per target folder for deep analysis."
 
    - While agents run, read .gitignore yourself to understand exclusion rules
@@ -78,11 +78,11 @@ Use the current working directory as the target project by default. If the user 
    **For each target folder, spawn TWO agents:**
 
    **Analyzer agent:**
-   - subagent_type: `codebase-analyzer`
+   - agent: `codebase-analyzer`
    - Prompt: "Analyze [folder path] in detail. Determine: 1) What is this layer's responsibility? 2) What are its dependencies (what does it import/use)? 3) Who consumes it (what imports/uses it)? 4) What are the key architectural boundaries and constraints? 5) What is the module structure — list DIRECTORIES with their roles, base types, and naming conventions. Use architectural annotations (e.g., 'one repo per entity', 'one controller per resource') instead of listing individual filenames. The structure should remain valid when non-architectural files are added. 6) What naming conventions are used (prefixes, suffixes, base classes)?"
 
    **Pattern finder agent:**
-   - subagent_type: `codebase-pattern-finder`
+   - agent: `codebase-pattern-finder`
    - Prompt: "Find all distinct code patterns used in [folder path]. For each pattern found: 1) Name the pattern with a descriptive heading (e.g., 'Repository Boundary (CRITICAL: Plain Types, NOT Result<T>)'). 2) Provide an IDIOMATIC code example — a generalized, representative version that shows the pattern's essential shape (constructor, key method signatures, return types, error handling). Do NOT copy-paste a single file verbatim; instead synthesize the typical usage across the layer. 3) Add inline comments highlighting important conventions (e.g., '// DB int → boolean', '// throws on error — service wraps in Result'). 4) If the pattern involves a boundary between layers, show both sides. 5) Identify any repeatable workflows for adding new elements to this layer — backend entities (repositories, services, controllers) AND frontend elements (components, services, pages/routes, directives). For example: creating a new repository requires extending BaseRepository + registering in factory; adding a new Angular component requires extending BaseComponent + adding to routes + creating the template. Return these as step-by-step checklists. Return patterns with full code block examples."
 
    - Spawn 1 analyzer + 1 pattern finder per folder, all in parallel
@@ -282,7 +282,7 @@ See the following for well-formed subfolder CLAUDE.md examples:
 - Folder is a simple grouping without unique constraints
 
 ## Important notes:
-- Always use parallel Agent tool calls to maximize efficiency and minimize context usage
+- Always use parallel subagent tool calls to maximize efficiency and minimize context usage
 - **File reading**: Always read mentioned files FULLY (no limit/offset) before invoking skills
 - **Critical ordering**: Follow the numbered steps exactly
   - ALWAYS read mentioned files first before invoking skills (step 1)

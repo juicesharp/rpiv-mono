@@ -70,17 +70,17 @@ When no _meta.md, detect the project's technology stack before spawning agents: 
 
 ### Step 2: Discover Feature Code (parallel agents)
 
-Spawn the following agents in parallel using the Agent tool:
+Spawn the following agents in parallel using the subagent tool:
 
 **Agent A — Web Layer Discovery:**
-- subagent_type: `codebase-locator`
+- agent: `codebase-locator`
 - When _meta.md is available: "Validate these known Web Layer entry points for {feature name}: {routes and endpoints from _meta.md}. Check if they still exist and find any NEW entry points not in this list. Report: confirmed (still exists), removed (no longer found), new (not in the list)."
 - When no _meta.md: "Find all Web Layer entry points for the {feature name} feature{framework_hint}. Look for: controllers, route definitions, page components, form handlers, API endpoints. Search across all web layers (API, Admin, Customer Portal, Host, etc.). Also find frontend service files, HTTP clients, or API call sites that reference these endpoints — report which frontend pages call which backend URLs. For each entry point found, report: file path, HTTP method/route or page path, and a one-line description of what it does. Group by web layer."
 
 {framework_hint} is " in this {Framework} project" when a framework is detected (e.g., " in this Angular project"), or empty string if none detected. See Framework Detection Reference at end of document.
 
 **Agent B — Existing Test Cases:**
-- subagent_type: `test-case-locator`
+- agent: `test-case-locator`
 - Prompt: "Search for existing test cases related to {feature name} in .rpiv/test-cases/. Report any existing TCs with their IDs, titles, and priorities so we can avoid duplicates."
 
 Wait for both agents to complete before proceeding.
@@ -90,11 +90,11 @@ Wait for both agents to complete before proceeding.
 Using the entry points discovered in Step 2 (validated against _meta.md when available), spawn analysis agents in parallel. When _meta.md is available, enrich prompts: append scope exclusions from `## Scope Decisions` as {scope_context}, domain rules from `## Domain Context` as {domain_context}, and endpoint list as {endpoint_scope}. When no _meta.md, omit these.
 
 **Agent C — Code Analysis:**
-- subagent_type: `codebase-analyzer`
+- agent: `codebase-analyzer`
 - Prompt: "Analyze the {feature name} feature implementation in detail. Read the controllers/route handlers at {discovered paths}. For each endpoint/action, determine: 1) What user input is accepted (request body, query params, form fields)? 2) What validation rules exist — report specific limits (max lengths, regex patterns, required vs optional)? 3) What business logic is executed? 4) What are the success/error responses? 5) What authorization/permissions are required? Focus on understanding USER FLOWS — sequences of actions a user would perform to accomplish a goal. ALSO read the frontend page components and templates at {discovered frontend paths}. Extract what a QA tester would actually see: exact button labels, form field labels/placeholders, navigation items, table column headers, success/error messages, and conditional UI (role- or state-dependent elements). Resolve any i18n translation keys to displayed text. Report UI elements per page/route alongside the backend analysis.{scope_context}{domain_context}"
 
 **Agent D — Postcondition Discovery:**
-- subagent_type: `integration-scanner`
+- agent: `integration-scanner`
 - Prompt: "Find all side effects triggered by {feature name} actions{endpoint_scope}. Look for: domain events published, message handlers invoked, email/notification triggers, external API calls, database cascades, cache invalidations, audit log entries, webhook dispatches. For each side effect, report: what triggers it (which action/endpoint) and where the handler code lives (file:line). Do NOT describe what the handler does — only locate it. These locations become postconditions in test cases.{scope_context}"
 
 Wait for ALL agents to complete before proceeding.
