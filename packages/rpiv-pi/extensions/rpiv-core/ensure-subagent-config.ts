@@ -1,8 +1,8 @@
 /**
  * Seed ~/.pi/agent/extensions/subagent/config.json with rpiv-pi's recommended
- * defaults (parallel.concurrency: 48, maxSubagentDepth: 3) so the README's
- * 48-concurrency promise is actually persistent (replaces tintinweb's
- * in-memory-only /agents → Settings overlay).
+ * defaults (parallel.concurrency: 4, maxSubagentDepth: 3) so the concurrency
+ * value is actually persistent (replaces tintinweb's in-memory-only
+ * /agents → Settings overlay).
  *
  * Shallow-merge, user-values-win: existing keys at each leaf are preserved.
  * Fail-soft: invalid JSON / unwritable dir → silent no-op.
@@ -15,7 +15,7 @@ import { dirname, join } from "node:path";
 
 const PI_AGENT_SUBAGENT_CONFIG = join(homedir(), ".pi", "agent", "extensions", "subagent", "config.json");
 
-const DEFAULT_CONCURRENCY = 48;
+const DEFAULT_CONCURRENCY = 4;
 const DEFAULT_MAX_SUBAGENT_DEPTH = 3;
 
 export interface EnsureSubagentConfigResult {

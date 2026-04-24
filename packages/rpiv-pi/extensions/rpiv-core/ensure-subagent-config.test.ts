@@ -20,13 +20,13 @@ describe("ensureSubagentConfig", () => {
 		expect(result.created).toBe(true);
 		expect(result.merged).toEqual(["parallel.concurrency", "maxSubagentDepth"]);
 		expect(readConfig()).toEqual({
-			parallel: { concurrency: 48 },
+			parallel: { concurrency: 4 },
 			maxSubagentDepth: 3,
 		});
 	});
 
 	it("idempotent: re-run on complete config is a no-op", () => {
-		writeConfig({ parallel: { concurrency: 48 }, maxSubagentDepth: 3 });
+		writeConfig({ parallel: { concurrency: 4 }, maxSubagentDepth: 3 });
 		const result = ensureSubagentConfig();
 		expect(result.created).toBe(false);
 		expect(result.merged).toEqual([]);
@@ -49,7 +49,7 @@ describe("ensureSubagentConfig", () => {
 		expect(result.created).toBe(false);
 		expect(result.merged).toEqual(["parallel.concurrency", "maxSubagentDepth"]);
 		expect(readConfig()).toEqual({
-			parallel: { maxTasks: 10, concurrency: 48 },
+			parallel: { maxTasks: 10, concurrency: 4 },
 			maxSubagentDepth: 3,
 		});
 	});
@@ -82,7 +82,7 @@ describe("ensureSubagentConfig", () => {
 		expect(readConfig()).toEqual({
 			asyncByDefault: true,
 			worktreeSetupHook: "/path/to/hook.sh",
-			parallel: { maxTasks: 10, concurrency: 48 },
+			parallel: { maxTasks: 10, concurrency: 4 },
 			maxSubagentDepth: 3,
 		});
 	});

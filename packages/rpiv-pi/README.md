@@ -187,7 +187,7 @@ Pi Agent discovers extensions via `"extensions": ["./extensions"]` and skills vi
 - **Web search** — run `/web-search-config` to set the Brave Search API key, or set the `BRAVE_SEARCH_API_KEY` environment variable
 - **Advisor** — run `/advisor` to select a reviewer model and reasoning effort
 - **Side questions** — type `/btw <question>` anytime (even mid-stream) to ask the primary model a one-off question; answer appears in a borderless bottom overlay and never enters the main conversation
-- **Agent concurrency** — the subagents extension defaults to 4 concurrent agents. On first `/rpiv-setup`, rpiv-pi persistently seeds `~/.pi/agent/extensions/subagent/config.json` with `parallel.concurrency: 48` and `maxSubagentDepth: 3` so skills with wide fan-outs don't stall. Edit that file to customize; user values are preserved on subsequent `/rpiv-setup` runs.
+- **Agent concurrency** — on first `/rpiv-setup`, rpiv-pi persistently seeds `~/.pi/agent/extensions/subagent/config.json` with `parallel.concurrency: 4` and `maxSubagentDepth: 3`. The cap keeps rate-limit and cache pressure predictable; skills with wider fan-outs queue the remainder and drain as slots free. Edit that file to raise the limit (e.g. `parallel.concurrency: 48`); user values are preserved on subsequent `/rpiv-setup` runs.
 - **Agent profiles** — editable at `<cwd>/.pi/agents/`; sync from bundled defaults with `/rpiv-update-agents` (overwrites rpiv-managed files, preserves your custom agents)
 
 ## Troubleshooting
@@ -199,7 +199,7 @@ Pi Agent discovers extensions via `"extensions": ["./extensions"]` and skills vi
 | `/rpiv-setup` says "requires interactive mode" | Running in headless mode | Install manually: `pi install npm:<pkg>` for each sibling |
 | `web_search` or `web_fetch` errors | Brave API key not configured | Run `/web-search-config` or set `BRAVE_SEARCH_API_KEY` |
 | `advisor` tool not available after upgrade | Advisor model selection lost | Run `/advisor` to re-select a model |
-| Skills hang or serialize agent calls | Agent concurrency too low | Re-run `/rpiv-setup` (seeds `parallel.concurrency: 48`) or edit `~/.pi/agent/extensions/subagent/config.json` directly |
+| Skills hang or serialize agent calls | Agent concurrency too low | Edit `~/.pi/agent/extensions/subagent/config.json` and raise `parallel.concurrency` (default `4`; try `16`–`48` for wide fan-outs) |
 
 ## License
 
