@@ -49,15 +49,20 @@ export default async function (pi: ExtensionAPI) {
 		tracker.__resetState();
 	});
 
-	// User-turn boundary: advance linger ages on user input, NOT on "turn_start".
-	// Pi fires turn_start per agent-loop iteration (after each tool result,
-	// before the next assistant call), which would evict completed runs
-	// before the user sees them. "input" fires only on user-originated
-	// messages — the correct semantics for "persists until next user turn".
-	pi.on("input", async () => {
+	// Turn-boundary eviction: advance linger ages on BOTH user input and
+	// orchestrator agent-loop iterations. `input` fires on user-originated
+	// messages; `turn_start` fires per agent-loop iteration (after each tool
+	// result, before the next assistant call). Together with the bumped
+	// `COMPLETED_LINGER_TURNS=3` budget in constants.ts, completed rows stay
+	// visible long enough for the user to see, then auto-evict across
+	// ~3 orchestrator turns — no more "overlay sticks around forever" when
+	// the user doesn't immediately type back.
+	const advanceTurn = () => {
 		const evicted = tracker.onTurnStart();
 		if (evicted) widget?.update();
-	});
+	};
+	pi.on("input", async () => advanceTurn());
+	pi.on("turn_start", async () => advanceTurn());
 
 	// Background dispatches (args.async === true per pi-subagents@0.17.5 schema)
 	// return a job handle in ~100ms. Tracking them produces a misleading
@@ -70,6 +75,13 @@ export default async function (pi: ExtensionAPI) {
 	pi.on("tool_execution_start", async (event, ctx) => {
 		if (event.toolName !== SUBAGENT_TOOL) return;
 		if (isAsyncDispatch(event.args)) return;
+		// Wave-boundary purge: if no runs are currently active and we still
+		// have finished rows lingering from a prior wave, drop them before
+		// the new run appears. Prevents "new wave appends under yesterday's
+		// ✓ lines" when waves dispatch back-to-back without a user turn.
+		if (tracker.runningCount() === 0 && tracker.hasAnyVisible()) {
+			tracker.purgeFinished();
+		}
 		tracker.onStart(event.toolCallId, event.args);
 		if (ctx.hasUI) {
 			widget ??= new SubagentWidget();

@@ -78,15 +78,16 @@ describe("SubagentWidget render — empty", () => {
 });
 
 describe("SubagentWidget render — single", () => {
-	it("renders heading + 2-line running block", () => {
+	it("renders heading + 2-line running block + trailing blank separator", () => {
 		onStart("t1", { agent: "scout", task: "probe" });
 		onUpdate("t1", makeDetails("single", [makeResult()]));
 		const { ctx, captured } = makeUICtx();
 		const lines = renderOnce(new SubagentWidget(), ctx, captured);
-		expect(lines).toHaveLength(3);
+		expect(lines).toHaveLength(4);
 		expect(lines[0]).toContain("Subagents");
 		expect(lines[1]).toContain("scout");
 		expect(lines[2]).toContain("⎿");
+		expect(lines[3]).toBe("");
 	});
 
 	it("renders live tool-uses + tokens from details.progress during streaming", () => {
@@ -188,21 +189,45 @@ describe("SubagentWidget render — overflow", () => {
 		}
 		const { ctx, captured } = makeUICtx();
 		const lines = renderOnce(new SubagentWidget(), ctx, captured);
-		expect(lines.length).toBeLessThanOrEqual(12);
-		const footer = lines[lines.length - 1];
+		// MAX_WIDGET_LINES (12) + 1 trailing blank separator.
+		expect(lines.length).toBeLessThanOrEqual(13);
+		// Last real line is the footer; appended blank separator sits below.
+		expect(lines[lines.length - 1]).toBe("");
+		const footer = lines[lines.length - 2];
 		expect(footer).toMatch(/\+\d+ more/);
 		expect(footer).toContain("running");
 	});
 });
 
 describe("SubagentWidget render — tail connector", () => {
-	it("swaps ├─ to └─ on the final line when nothing else follows", () => {
+	it("swaps ├─ to └─ on the final tree line when nothing else follows (trailing blank ignored)", () => {
 		onStart("t1", { agent: "scout", task: "probe" });
 		onEnd("t1", { details: makeDetails("single", [makeResult()]) }, false);
 		const { ctx, captured } = makeUICtx();
 		const lines = renderOnce(new SubagentWidget(), ctx, captured);
-		expect(lines[lines.length - 1]).toContain("└─");
-		expect(lines[lines.length - 1]).not.toMatch(/^├─/);
+		// Last entry is the trailing blank separator; the tree line is the one above.
+		expect(lines[lines.length - 1]).toBe("");
+		expect(lines[lines.length - 2]).toContain("└─");
+		expect(lines[lines.length - 2]).not.toMatch(/^├─/);
+	});
+});
+
+describe("SubagentWidget render — separator", () => {
+	it("appends an empty trailing line so adjacent widgets don't hug the tree", () => {
+		onStart("t1", { agent: "scout", task: "probe" });
+		onUpdate("t1", makeDetails("single", [makeResult()]));
+		const { ctx, captured } = makeUICtx();
+		const lines = renderOnce(new SubagentWidget(), ctx, captured);
+		expect(lines[lines.length - 1]).toBe("");
+	});
+
+	it("returns [] (no trailing blank) when there are no tracked runs", () => {
+		const { ctx, captured } = makeUICtx();
+		const widget = new SubagentWidget();
+		widget.setUICtx(ctx);
+		widget.update();
+		const comp = captured[0].factory?.(makeTUI(), makeTheme());
+		expect(comp?.render(120)).toEqual([]);
 	});
 });
 
@@ -264,5 +289,43 @@ describe("SubagentWidget render — newline safety", () => {
 		for (const line of lines) {
 			expect(line).not.toMatch(/[\r\n]/);
 		}
+	});
+});
+
+describe("SubagentWidget render — descriptor character cap", () => {
+	it("truncates long task descriptions with ellipsis (running row)", () => {
+		onStart("t1", {
+			agent: "peer-comparator",
+			task: "Peer-mirror check. PeerPairs (orchestrator-computed): 1. (TruVisibility.TruEcommerce.Domain/Subscriptions/PhysicalProductSubscriptionProcessService.cs)",
+		});
+		onUpdate("t1", makeDetails("single", [makeResult()]));
+		const { ctx, captured } = makeUICtx();
+		const lines = renderOnce(new SubagentWidget(), ctx, captured);
+		// Stats tail ("⟳…tool uses…tokens…running") must still be visible.
+		expect(lines[1]).toMatch(/running/);
+		// Capped line includes the ellipsis marker.
+		expect(lines[1]).toContain("…");
+	});
+
+	it("truncates long task descriptions with ellipsis (finished row)", () => {
+		onStart("t1", {
+			agent: "peer-comparator",
+			task: "Peer-mirror check. PeerPairs (orchestrator-computed): 1. (TruVisibility.TruEcommerce.Domain/Subscriptions/PhysicalProductSubscriptionProcessService.cs)",
+		});
+		onEnd("t1", { details: makeDetails("single", [makeResult()]) }, false);
+		const { ctx, captured } = makeUICtx();
+		const lines = renderOnce(new SubagentWidget(), ctx, captured);
+		// Finished line includes stats (1 tool use / tokens / duration) — no `running`.
+		expect(lines[1]).not.toMatch(/running/);
+		expect(lines[1]).toContain("…");
+	});
+
+	it("preserves short task descriptions without ellipsis", () => {
+		onStart("t1", { agent: "scout", task: "probe auth module" });
+		onUpdate("t1", makeDetails("single", [makeResult()]));
+		const { ctx, captured } = makeUICtx();
+		const lines = renderOnce(new SubagentWidget(), ctx, captured);
+		expect(lines[1]).toContain("probe auth module");
+		expect(lines[1]).not.toContain("…");
 	});
 });

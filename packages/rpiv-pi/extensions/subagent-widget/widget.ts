@@ -14,17 +14,20 @@
 import type { ExtensionUIContext, Theme } from "@mariozechner/pi-coding-agent";
 import { type TUI, truncateToWidth } from "@mariozechner/pi-tui";
 import { describeActivity, formatDuration, formatTokens, formatToolUses, formatTurns } from "./activity.js";
-import { MAX_WIDGET_LINES, SPINNER, TICK_MS, WIDGET_KEY } from "./constants.js";
+import { MAX_DESCRIPTOR_CHARS, MAX_WIDGET_LINES, SPINNER, TICK_MS, WIDGET_KEY } from "./constants.js";
 import { listRuns, runningCount } from "./run-tracker.js";
 import type { AgentProgress, SingleResult, TrackedRun } from "./types.js";
 
-// Strip SGR ANSI escapes to measure visible width for layout math.
-const ANSI_RE = /\x1b\[[0-9;]*m/g;
-const visibleLen = (s: string): number => s.replace(ANSI_RE, "").length;
 // Defensive: any \n in a returned string[] element splits into physical rows pi-tui can't
 // track, leaving stale artifacts every frame. Run-tracker sanitizes at ingest; this guard
 // covers any future caller that mutates description/displayName directly on the tracked run.
 const oneLine = (s: string): string => s.replace(/\s*[\r\n]+\s*/g, " ");
+// Character cap on the descriptor column. Keeps stats visible on both running
+// and finished rows regardless of terminal width — prior width-aware budget
+// let long prompts push stats off the right edge where `truncateToWidth`
+// silently clipped them with "...".
+const capDescriptor = (s: string): string =>
+	s.length <= MAX_DESCRIPTOR_CHARS ? s : `${s.slice(0, MAX_DESCRIPTOR_CHARS - 1)}…`;
 
 export class SubagentWidget {
 	private uiCtx: ExtensionUIContext | undefined;
@@ -98,7 +101,10 @@ export class SubagentWidget {
 		const runs = listRuns();
 		if (runs.length === 0) return [];
 
-		const truncate = (line: string) => truncateToWidth(line, width);
+		// Single-char `…` marker matches our descriptor cap (capDescriptor) and the
+		// activity-line helper (activity.ts:truncateLine). pi-tui's default is "..."
+		// which would mix two ellipsis styles inside the same widget.
+		const truncate = (line: string) => truncateToWidth(line, width, "…");
 		const frame = SPINNER[this.widgetFrame % SPINNER.length];
 		const active = runningCount() > 0;
 
@@ -110,7 +116,7 @@ export class SubagentWidget {
 		const finishedLines: string[] = [];
 		for (const run of runs) {
 			if (run.status === "running") {
-				runningBlocks.push(this.renderRunningBlock(run, theme, frame, truncate, width));
+				runningBlocks.push(this.renderRunningBlock(run, theme, frame, truncate));
 			} else {
 				finishedLines.push(this.renderFinishedLine(run, theme, truncate));
 			}
@@ -124,6 +130,10 @@ export class SubagentWidget {
 			for (const pair of runningBlocks) lines.push(...pair);
 			lines.push(...finishedLines);
 			this.fixupLastConnector(lines, runningBlocks.length, finishedLines.length);
+			// Trailing blank separates our overlay from whatever sits below (Todos,
+			// editor, next widget). Without it our last tree row hugs the next
+			// overlay's heading row with no visual break.
+			lines.push("");
 			return lines;
 		}
 
@@ -153,6 +163,7 @@ export class SubagentWidget {
 		if (hiddenFinished > 0) parts.push(`${hiddenFinished} finished`);
 		const footer = parts.length > 0 ? `+${total} more (${parts.join(", ")})` : `+${total} more`;
 		lines.push(truncate(`${theme.fg("dim", "└─")} ${theme.fg("dim", footer)}`));
+		lines.push("");
 		return lines;
 	}
 
@@ -166,17 +177,10 @@ export class SubagentWidget {
 		}
 	}
 
-	private renderRunningBlock(
-		run: TrackedRun,
-		theme: Theme,
-		frame: string,
-		truncate: (s: string) => string,
-		width: number,
-	): string[] {
+	private renderRunningBlock(run: TrackedRun, theme: Theme, frame: string, truncate: (s: string) => string): string[] {
 		// Layout: `├─ {frame} {bold(name)}  {muted(descriptor)} · {dim(stats)}`.
-		// Mirrors tintinweb/pi-subagents agent-widget.ts but with width-aware
-		// descriptor truncation so stats stay visible on narrow terminals
-		// (naive truncateToWidth would cut the rightmost stats tail first).
+		// Descriptor capped by `MAX_DESCRIPTOR_CHARS` so the stats tail is never
+		// clipped off the right edge by `truncateToWidth`.
 		const last = run.results[run.results.length - 1];
 		const progress = run.progress?.[run.progress.length - 1];
 		const stats = this.buildStats(run);
@@ -196,9 +200,7 @@ export class SubagentWidget {
 
 		const prefix = `${theme.fg("dim", "├─")} ${theme.fg("accent", frame)} ${theme.bold(oneLine(run.displayName))}`;
 		const tail = `${theme.fg("dim", "·")} ${theme.fg("dim", stats)}`;
-		// Overhead: "  " between prefix+descriptor, " " between descriptor+tail.
-		const budget = Math.max(0, width - visibleLen(prefix) - 2 - 1 - visibleLen(tail));
-		const descriptorOut = visibleLen(descriptor) > budget ? descriptor.slice(0, budget).trimEnd() : descriptor;
+		const descriptorOut = capDescriptor(descriptor);
 		const middle = descriptorOut ? `  ${theme.fg("muted", descriptorOut)} ` : "  ";
 		const activity = describeActivity(last, progress);
 		return [
@@ -229,7 +231,7 @@ export class SubagentWidget {
 			trail = theme.fg("error", ` error${msg}`);
 		}
 		const body =
-			`${icon} ${theme.fg("dim", oneLine(run.displayName))}  ${theme.fg("dim", oneLine(run.description))} ` +
+			`${icon} ${theme.fg("dim", oneLine(run.displayName))}  ${theme.fg("dim", capDescriptor(oneLine(run.description)))} ` +
 			`${theme.fg("dim", "·")} ${theme.fg("dim", stats)}${trail}`;
 		return truncate(`${theme.fg("dim", "├─")} ${body}`);
 	}

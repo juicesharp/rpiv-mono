@@ -213,12 +213,13 @@ describe("subagent-widget extension factory", () => {
 		expect(listRuns()).toHaveLength(0);
 	});
 
-	it("input evicts lingering finished runs on the next user turn", async () => {
+	it("input + turn_start both advance linger ages; evicts after COMPLETED_LINGER_TURNS boundaries", async () => {
 		const pi = makePi();
 		await initExtension(pi);
 		const startHandler = pi.handlers.get("tool_execution_start")!;
 		const endHandler = pi.handlers.get("tool_execution_end")!;
 		const inputHandler = pi.handlers.get("input")!;
+		const turnStartHandler = pi.handlers.get("turn_start")!;
 		await startHandler(
 			{
 				type: "tool_execution_start",
@@ -239,7 +240,52 @@ describe("subagent-widget extension factory", () => {
 			makeCtx(true),
 		);
 		expect(listRuns()).toHaveLength(1);
-		await inputHandler({ type: "input", text: "next", source: "interactive" } as any, makeCtx(true));
+		// COMPLETED_LINGER_TURNS = 3 — takes 3 turn boundaries to evict.
+		await turnStartHandler({ type: "turn_start" } as any, makeCtx(true)); // age 1
+		await turnStartHandler({ type: "turn_start" } as any, makeCtx(true)); // age 2
+		expect(listRuns()).toHaveLength(1);
+		await inputHandler({ type: "input", text: "next", source: "interactive" } as any, makeCtx(true)); // age 3 → evicted
 		expect(listRuns()).toHaveLength(0);
+	});
+
+	it("purges finished runs when a new wave starts (tool_execution_start with no active runs)", async () => {
+		const pi = makePi();
+		await initExtension(pi);
+		const startHandler = pi.handlers.get("tool_execution_start")!;
+		const endHandler = pi.handlers.get("tool_execution_end")!;
+		// Wave 1: dispatch + complete.
+		await startHandler(
+			{
+				type: "tool_execution_start",
+				toolCallId: "t1",
+				toolName: "subagent",
+				args: { agent: "scout", task: "x" },
+			},
+			makeCtx(true),
+		);
+		await endHandler(
+			{
+				type: "tool_execution_end",
+				toolCallId: "t1",
+				toolName: "subagent",
+				result: { details: { mode: "single", agentScope: "user", projectAgentsDir: null, results: [] } },
+				isError: false,
+			},
+			makeCtx(true),
+		);
+		expect(listRuns()).toHaveLength(1);
+		// Wave 2: new dispatch while wave 1 is still lingering → wave 1 purged first.
+		await startHandler(
+			{
+				type: "tool_execution_start",
+				toolCallId: "t2",
+				toolName: "subagent",
+				args: { agent: "worker", task: "y" },
+			},
+			makeCtx(true),
+		);
+		const runs = listRuns();
+		expect(runs).toHaveLength(1);
+		expect(runs[0].toolCallId).toBe("t2");
 	});
 });

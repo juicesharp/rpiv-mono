@@ -112,7 +112,7 @@ export class TodoOverlay {
 		const all = getTodos().filter((t) => t.status !== "deleted");
 		if (all.length === 0) return [];
 
-		const truncate = (line: string): string => truncateToWidth(line, width);
+		const truncate = (line: string): string => truncateToWidth(line, width, "…");
 
 		const completedCount = all.filter((t) => t.status === "completed").length;
 		const totalVisible = all.length;

@@ -148,21 +148,28 @@ describe("run-tracker onEnd", () => {
 });
 
 describe("run-tracker onTurnStart (turn-based linger)", () => {
-	it("evicts completed runs on the first turn boundary", () => {
+	// COMPLETED_LINGER_TURNS = 3 → evict on the 3rd turn boundary.
+	it("evicts completed runs after COMPLETED_LINGER_TURNS boundaries", () => {
 		onStart("t1", { agent: "scout", task: "x" });
 		onEnd("t1", { details: makeDetails("single", [makeResult()]) }, false);
 		expect(listRuns()).toHaveLength(1);
-		const evicted = onTurnStart();
-		expect(evicted).toBe(true);
+		expect(onTurnStart()).toBe(false); // age 1
+		expect(onTurnStart()).toBe(false); // age 2
+		expect(listRuns()).toHaveLength(1);
+		expect(onTurnStart()).toBe(true); // age 3 → evicted
 		expect(listRuns()).toHaveLength(0);
 	});
 
-	it("keeps error runs through two turn boundaries", () => {
+	// ERROR_LINGER_TURNS = 5 → evict on the 5th turn boundary.
+	it("keeps error runs through ERROR_LINGER_TURNS boundaries", () => {
 		onStart("t1", { agent: "scout", task: "x" });
 		onEnd("t1", { details: makeDetails("single", [makeResult({ exitCode: 1 })]) }, true);
-		expect(onTurnStart()).toBe(false);
+		expect(onTurnStart()).toBe(false); // age 1
+		expect(onTurnStart()).toBe(false); // age 2
+		expect(onTurnStart()).toBe(false); // age 3
+		expect(onTurnStart()).toBe(false); // age 4
 		expect(listRuns()).toHaveLength(1);
-		expect(onTurnStart()).toBe(true);
+		expect(onTurnStart()).toBe(true); // age 5 → evicted
 		expect(listRuns()).toHaveLength(0);
 	});
 

@@ -144,6 +144,22 @@ export function onTurnStart(): boolean {
 	return evicted;
 }
 
+/** Evict all finished (non-running) runs immediately. Used at wave boundaries
+ * so a fresh subagent dispatch starts with a clean overlay instead of new rows
+ * appended under lingering ✓ lines from the prior wave. Returns true iff at
+ * least one run was evicted. */
+export function purgeFinished(): boolean {
+	let evicted = false;
+	for (const [id, run] of runs) {
+		if (run.status !== "running") {
+			runs.delete(id);
+			finishedAge.delete(id);
+			evicted = true;
+		}
+	}
+	return evicted;
+}
+
 /** Snapshot of currently-visible runs. Callers must not retain references. */
 export function listRuns(): readonly TrackedRun[] {
 	return [...runs.values()];

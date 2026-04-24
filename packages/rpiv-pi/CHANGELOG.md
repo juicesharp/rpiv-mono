@@ -7,6 +7,13 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- **Stats stay visible on long task descriptions**: the overlay's descriptor column is now capped to 40 characters (with an ellipsis), so `⟳N · N tool uses · Nk · Ns` never gets clipped off the right edge of the terminal.
+- **Overlay auto-clears across orchestrator turns**: finished subagent rows now age out across `turn_start` events (not just user input), and a new wave purges the prior wave's lingering rows on its `tool_execution_start`. No more stale rows persisting forever when the orchestrator keeps working.
+- **Inline subagent card has a pending state from the first frame**: `renderCall` now appends a layout-stable `○ pending` / `◐ running` trailer (coordinated with `renderResult` via shared render-context state) so the card is always 2 lines while non-terminal, eliminating the 1↔2-line oscillation.
+- **Consistent ellipsis marker**: the subagent + todo overlays now use a single-char `…` everywhere a line is truncated, matching the descriptor cap. Prior `...` (three dots) from pi-tui's default mixed two styles inside the same widget.
+- **Subagents overlay has a trailing blank separator**: one empty row below the tree so the overlay no longer hugs the Todos (or any other) widget sitting directly beneath it.
+
 ## [0.12.2] - 2026-04-24
 
 ### Fixed
