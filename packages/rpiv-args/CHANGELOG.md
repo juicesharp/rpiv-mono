@@ -5,7 +5,7 @@ All notable changes to `@juicesharp/rpiv-args` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.12.0] - 2026-04-24
 
 ### Fixed
 - **Pi 0.70.0 compatibility**: `buildSkillIndex` now passes the new required `skillPaths: []` + `includeDefaults: true` options to `loadSkills()`. Pi 0.70.0 removed the defaults for these options — the old `loadSkills({ cwd })` call threw `skillPaths is not iterable` at `pi-coding-agent/dist/core/skills.js:374`, crashing every input-hook invocation in rpiv-args (`/skill:<name>` command routing). Behavior is otherwise unchanged — `includeDefaults: true` restores the previous "load user + project skill dirs" default.

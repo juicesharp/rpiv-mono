@@ -1,6 +1,6 @@
 {
   "name": "@juicesharp/rpiv-web-tools",
-  "version": "0.11.7",
+  "version": "0.12.0",
   "description": "Pi extension: web_search + web_fetch via the Brave Search API",
   "keywords": [
     "pi-package",
