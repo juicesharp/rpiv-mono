@@ -190,6 +190,21 @@ Pi Agent discovers extensions via `"extensions": ["./extensions"]` and skills vi
 - **Agent concurrency** — on first `/rpiv-setup`, rpiv-pi persistently seeds `~/.pi/agent/extensions/subagent/config.json` with `parallel.concurrency: 4` and `maxSubagentDepth: 3`. The cap keeps rate-limit and cache pressure predictable; skills with wider fan-outs queue the remainder and drain as slots free. Edit that file to raise the limit (e.g. `parallel.concurrency: 48`); user values are preserved on subsequent `/rpiv-setup` runs.
 - **Agent profiles** — editable at `<cwd>/.pi/agents/`; sync from bundled defaults with `/rpiv-update-agents` (overwrites rpiv-managed files, preserves your custom agents)
 
+## Uninstall
+
+rpiv-pi owns nicobailon's pi-subagents registration (runs it through an in-process proxy so the inline tool card stays quiet and the Subagents overlay is the live view). `/rpiv-setup` strips `"npm:pi-subagents"` from your `~/.pi/agent/settings.json#packages[]` to prevent Pi from loading it twice. If you remove rpiv-pi, subagents will stop loading until you re-add that entry.
+
+To fully uninstall:
+
+1. Remove rpiv-pi from Pi: `pi uninstall npm:@juicesharp/rpiv-pi`
+2. Open `~/.pi/agent/settings.json` and add `"npm:pi-subagents"` back to the `packages` array so Pi loads nicobailon's subagents directly again.
+3. Optional — drop the rpiv-pi seeded keys if you no longer want them:
+   - `~/.pi/agent/extensions/subagent/config.json` (parallel.concurrency, maxSubagentDepth)
+   - `subagents.disableBuiltins` in `~/.pi/agent/settings.json` (set to `false` or delete to re-enable the 9 bundled nicobailon agents)
+4. Restart Pi.
+
+After step 2 you'll have nicobailon's original inline tool card and no Subagents overlay, same as a clean pi-subagents install.
+
 ## Troubleshooting
 
 | Symptom | Cause | Fix |
