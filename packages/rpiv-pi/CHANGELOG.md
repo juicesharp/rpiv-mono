@@ -7,6 +7,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- The `subagent` tool now only offers rpiv-pi's 13 specialist agents to the assistant — the disabled built-in agents from the upstream library are no longer presented as dispatch options, so the assistant always lands on a curated rpiv specialist. Each agent's purpose is shown inline when the tool is used, sourced directly from its `agents/<name>.md` file, so editing an agent's description immediately updates what the assistant sees.
+
 ## [0.12.3] - 2026-04-24
 
 ### Fixed
