@@ -5,7 +5,9 @@ vi.mock("./pi-installer.js", () => ({ spawnPiInstall: vi.fn() }));
 vi.mock("./package-checks.js", () => ({ findMissingSiblings: vi.fn() }));
 vi.mock("./ensure-subagent-config.js", () => ({ ensureSubagentConfig: vi.fn() }));
 vi.mock("./prune-legacy-siblings.js", () => ({ pruneLegacySiblings: vi.fn() }));
+vi.mock("./ensure-builtins-disabled.js", () => ({ ensureBuiltinsDisabled: vi.fn() }));
 
+import { ensureBuiltinsDisabled } from "./ensure-builtins-disabled.js";
 import { ensureSubagentConfig } from "./ensure-subagent-config.js";
 import { findMissingSiblings } from "./package-checks.js";
 import { spawnPiInstall } from "./pi-installer.js";
@@ -19,6 +21,8 @@ beforeEach(() => {
 	vi.mocked(ensureSubagentConfig).mockReturnValue({ created: false, merged: [] });
 	vi.mocked(pruneLegacySiblings).mockReset();
 	vi.mocked(pruneLegacySiblings).mockReturnValue({ pruned: [] });
+	vi.mocked(ensureBuiltinsDisabled).mockReset();
+	vi.mocked(ensureBuiltinsDisabled).mockReturnValue({ disabled: false });
 });
 
 describe("/rpiv-setup — command shape", () => {
@@ -219,5 +223,52 @@ describe("/rpiv-setup — legacy sibling pruning", () => {
 		const ctx = createMockCtx({ hasUI: false });
 		await captured.commands.get("rpiv-setup")?.handler("", ctx as never);
 		expect(pruneLegacySiblings).not.toHaveBeenCalled();
+	});
+});
+
+describe("/rpiv-setup — pi-subagents builtins disabling", () => {
+	it("emits builtins-disabled notify when helper writes the flag", async () => {
+		vi.mocked(ensureBuiltinsDisabled).mockReturnValue({ disabled: true });
+		vi.mocked(findMissingSiblings).mockReturnValue([]);
+		const { pi, captured } = createMockPi();
+		registerSetupCommand(pi);
+		const ctx = createMockCtx({ hasUI: true });
+		await captured.commands.get("rpiv-setup")?.handler("", ctx as never);
+		const call = (ctx.ui.notify as ReturnType<typeof vi.fn>).mock.calls.find(
+			(c) => typeof c[0] === "string" && c[0].startsWith("Disabled pi-subagents built-in agents"),
+		);
+		expect(call).toBeDefined();
+		expect(call?.[1]).toBe("info");
+	});
+
+	it("no notify when helper skips (already set or fail-soft no-op)", async () => {
+		vi.mocked(ensureBuiltinsDisabled).mockReturnValue({ disabled: false });
+		vi.mocked(findMissingSiblings).mockReturnValue([]);
+		const { pi, captured } = createMockPi();
+		registerSetupCommand(pi);
+		const ctx = createMockCtx({ hasUI: true });
+		await captured.commands.get("rpiv-setup")?.handler("", ctx as never);
+		const call = (ctx.ui.notify as ReturnType<typeof vi.fn>).mock.calls.find(
+			(c) => typeof c[0] === "string" && c[0].startsWith("Disabled pi-subagents built-in agents"),
+		);
+		expect(call).toBeUndefined();
+	});
+
+	it("runs in the all-installed path (before early-return)", async () => {
+		vi.mocked(ensureBuiltinsDisabled).mockReturnValue({ disabled: true });
+		vi.mocked(findMissingSiblings).mockReturnValue([]);
+		const { pi, captured } = createMockPi();
+		registerSetupCommand(pi);
+		const ctx = createMockCtx({ hasUI: true });
+		await captured.commands.get("rpiv-setup")?.handler("", ctx as never);
+		expect(ensureBuiltinsDisabled).toHaveBeenCalledTimes(1);
+	});
+
+	it("does NOT run on !hasUI guard", async () => {
+		const { pi, captured } = createMockPi();
+		registerSetupCommand(pi);
+		const ctx = createMockCtx({ hasUI: false });
+		await captured.commands.get("rpiv-setup")?.handler("", ctx as never);
+		expect(ensureBuiltinsDisabled).not.toHaveBeenCalled();
 	});
 });
