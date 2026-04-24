@@ -199,3 +199,53 @@ describe("run-tracker __resetState", () => {
 		expect(hasAnyVisible()).toBe(false);
 	});
 });
+
+describe("run-tracker newline sanitization", () => {
+	it("collapses embedded newlines in single-mode task descriptions", () => {
+		__resetState();
+		onStart("t1", {
+			agent: "peer-comparator",
+			task: "Peer-mirror check.\n\nPeerPairs (orchestrator-computed):\n[list of tuples]\n\nFor each pair, Read BOTH files.",
+		});
+		const [run] = listRuns();
+		expect(run.description).not.toMatch(/[\r\n]/);
+		expect(run.description.startsWith("Peer-mirror check.")).toBe(true);
+		expect(run.description).toContain("PeerPairs (orchestrator-computed):");
+	});
+
+	it("collapses newlines in displayName too (defensive)", () => {
+		__resetState();
+		onStart("t1", { agent: "weird\nname", task: "x" });
+		const [run] = listRuns();
+		expect(run.displayName).not.toMatch(/[\r\n]/);
+		expect(run.displayName).toBe("weird name");
+	});
+
+	it("sanitizes errorMessage on terminal state", () => {
+		__resetState();
+		onStart("t1", { agent: "x", task: "t" });
+		onEnd(
+			"t1",
+			{
+				details: makeDetails("single", [
+					makeResult({
+						exitCode: 1,
+						stopReason: "error",
+						errorMessage: "boom\nat foo\nat bar",
+					}),
+				]),
+			},
+			true,
+		);
+		const [run] = listRuns();
+		expect(run.errorMessage).not.toMatch(/[\r\n]/);
+		expect(run.errorMessage).toBe("boom at foo at bar");
+	});
+
+	it("preserves single-line descriptions unchanged", () => {
+		__resetState();
+		onStart("t1", { agent: "scout", task: "probe auth module" });
+		const [run] = listRuns();
+		expect(run.description).toBe("probe auth module");
+	});
+});

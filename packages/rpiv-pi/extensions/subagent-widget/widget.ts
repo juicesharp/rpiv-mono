@@ -21,6 +21,10 @@ import type { AgentProgress, SingleResult, TrackedRun } from "./types.js";
 // Strip SGR ANSI escapes to measure visible width for layout math.
 const ANSI_RE = /\x1b\[[0-9;]*m/g;
 const visibleLen = (s: string): number => s.replace(ANSI_RE, "").length;
+// Defensive: any \n in a returned string[] element splits into physical rows pi-tui can't
+// track, leaving stale artifacts every frame. Run-tracker sanitizes at ingest; this guard
+// covers any future caller that mutates description/displayName directly on the tracked run.
+const oneLine = (s: string): string => s.replace(/\s*[\r\n]+\s*/g, " ");
 
 export class SubagentWidget {
 	private uiCtx: ExtensionUIContext | undefined;
@@ -187,10 +191,10 @@ export class SubagentWidget {
 			const total = run.results.length;
 			descriptor = total > 0 ? `${done}/${total} done` : "starting";
 		} else {
-			descriptor = run.description;
+			descriptor = oneLine(run.description);
 		}
 
-		const prefix = `${theme.fg("dim", "├─")} ${theme.fg("accent", frame)} ${theme.bold(run.displayName)}`;
+		const prefix = `${theme.fg("dim", "├─")} ${theme.fg("accent", frame)} ${theme.bold(oneLine(run.displayName))}`;
 		const tail = `${theme.fg("dim", "·")} ${theme.fg("dim", stats)}`;
 		// Overhead: "  " between prefix+descriptor, " " between descriptor+tail.
 		const budget = Math.max(0, width - visibleLen(prefix) - 2 - 1 - visibleLen(tail));
@@ -221,11 +225,11 @@ export class SubagentWidget {
 			trail = theme.fg("warning", " aborted");
 		} else {
 			icon = theme.fg("error", "✗");
-			const msg = run.errorMessage ? `: ${run.errorMessage.slice(0, 60)}` : "";
+			const msg = run.errorMessage ? `: ${oneLine(run.errorMessage).slice(0, 60)}` : "";
 			trail = theme.fg("error", ` error${msg}`);
 		}
 		const body =
-			`${icon} ${theme.fg("dim", run.displayName)}  ${theme.fg("dim", run.description)} ` +
+			`${icon} ${theme.fg("dim", oneLine(run.displayName))}  ${theme.fg("dim", oneLine(run.description))} ` +
 			`${theme.fg("dim", "·")} ${theme.fg("dim", stats)}${trail}`;
 		return truncate(`${theme.fg("dim", "├─")} ${body}`);
 	}

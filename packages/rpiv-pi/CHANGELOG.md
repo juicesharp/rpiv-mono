@@ -7,6 +7,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- **Subagent overlay no longer leaves stale duplicate rows**: multi-line `task:` strings are now collapsed to a single line before rendering.
+
 ## [0.12.0] - 2026-04-24
 
 ### Added

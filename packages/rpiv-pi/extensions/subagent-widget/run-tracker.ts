@@ -21,6 +21,13 @@ interface SubagentArgs {
 	chain?: Array<{ agent: string; task: string }>;
 }
 
+// Multi-line skill prompts (e.g. peer-comparator with `PeerPairs (orchestrator-computed):` inlined)
+// must not ship embedded newlines into the widget's string[] output — pi-tui tracks logical lines
+// but the terminal splits on \n into physical rows it can't clear, leaving stale duplicate blocks.
+function oneLine(s: string): string {
+	return s.replace(/\s*[\r\n]+\s*/g, " ").trim();
+}
+
 function inferMode(args: SubagentArgs): RunMode {
 	if (args.chain && args.chain.length > 0) return "chain";
 	if (args.tasks && args.tasks.length > 0) return "parallel";
@@ -44,17 +51,17 @@ function deriveDisplay(args: SubagentArgs, mode: RunMode): { displayName: string
 		const steps = args.chain ?? [];
 		return {
 			displayName: `chain (${steps.length} steps)`,
-			description: steps.map((s) => s.agent).join(" → "),
+			description: oneLine(steps.map((s) => s.agent).join(" → ")),
 		};
 	}
 	if (mode === "parallel") {
 		const tasks = args.tasks ?? [];
 		return {
 			displayName: `parallel (${tasks.length} tasks)`,
-			description: tasks[0]?.agent ?? "",
+			description: oneLine(tasks[0]?.agent ?? ""),
 		};
 	}
-	return { displayName: args.agent ?? "subagent", description: args.task ?? "" };
+	return { displayName: oneLine(args.agent ?? "subagent"), description: oneLine(args.task ?? "") };
 }
 
 function deriveTerminalStatus(isError: boolean, results: readonly SingleResult[]): RunStatus {
@@ -107,7 +114,8 @@ export function onEnd(toolCallId: string, result: { details?: SubagentDetails } 
 	run.completedAt = Date.now();
 	run.status = deriveTerminalStatus(isError, run.results);
 	const last = run.results[run.results.length - 1];
-	run.errorMessage = last?.errorMessage || (isError ? last?.stderr : undefined) || undefined;
+	const rawErr = last?.errorMessage || (isError ? last?.stderr : undefined) || undefined;
+	run.errorMessage = rawErr ? oneLine(rawErr) : undefined;
 	finishedAge.set(toolCallId, 0);
 }
 

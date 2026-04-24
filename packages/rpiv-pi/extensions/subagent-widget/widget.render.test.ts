@@ -220,3 +220,49 @@ describe("SubagentWidget render — invalidate", () => {
 		expect(captured.length).toBe(2);
 	});
 });
+
+describe("SubagentWidget render — newline safety", () => {
+	it("never emits embedded newlines even with multi-line tasks (running)", () => {
+		onStart("t1", {
+			agent: "peer-comparator",
+			task: "Peer-mirror check.\n\nPeerPairs (orchestrator-computed):\n[list of (new_file, peer_file) tuples]\n\nFor each pair, Read BOTH files in full.",
+		});
+		onUpdate("t1", makeDetails("single", [makeResult()]));
+		const { ctx, captured } = makeUICtx();
+		const lines = renderOnce(new SubagentWidget(), ctx, captured);
+		for (const line of lines) {
+			expect(line).not.toMatch(/[\r\n]/);
+		}
+	});
+
+	it("never emits embedded newlines after the run completes (finished line)", () => {
+		onStart("t1", {
+			agent: "peer-comparator",
+			task: "Peer-mirror check.\n\nPeerPairs (orchestrator-computed):\n[list]",
+		});
+		onEnd("t1", { details: makeDetails("single", [makeResult()]) }, false);
+		const { ctx, captured } = makeUICtx();
+		const lines = renderOnce(new SubagentWidget(), ctx, captured);
+		for (const line of lines) {
+			expect(line).not.toMatch(/[\r\n]/);
+		}
+	});
+
+	it("never emits embedded newlines in error trail", () => {
+		onStart("t1", { agent: "scout", task: "x" });
+		onEnd(
+			"t1",
+			{
+				details: makeDetails("single", [
+					makeResult({ exitCode: 1, stopReason: "error", errorMessage: "boom\nstack\nmore" }),
+				]),
+			},
+			true,
+		);
+		const { ctx, captured } = makeUICtx();
+		const lines = renderOnce(new SubagentWidget(), ctx, captured);
+		for (const line of lines) {
+			expect(line).not.toMatch(/[\r\n]/);
+		}
+	});
+});
