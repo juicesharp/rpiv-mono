@@ -51,11 +51,6 @@ export function registerSetupCommand(pi: ExtensionAPI): void {
 	pi.registerCommand("rpiv-setup", {
 		description: "Install rpiv-pi's sibling extension plugins",
 		handler: async (_args, ctx) => {
-			if (!ctx.hasUI) {
-				ctx.ui.notify(MSG_INTERACTIVE_ONLY, "error");
-				return;
-			}
-
 			const prune = pruneLegacySiblings();
 			if (prune.pruned.length > 0) {
 				ctx.ui.notify(msgLegacyPruned(prune.pruned), "info");
@@ -64,6 +59,16 @@ export function registerSetupCommand(pi: ExtensionAPI): void {
 			const builtins = ensureBuiltinsDisabled();
 			if (builtins.disabled) {
 				ctx.ui.notify(MSG_BUILTINS_DISABLED, "info");
+			}
+
+			const seed = ensureSubagentConfig();
+			if (seed.merged.length > 0) {
+				ctx.ui.notify(msgSubagentSeeded(seed.merged), "info");
+			}
+
+			if (!ctx.hasUI) {
+				ctx.ui.notify(MSG_INTERACTIVE_ONLY, "error");
+				return;
 			}
 
 			const missing = findMissingSiblings();
@@ -79,10 +84,6 @@ export function registerSetupCommand(pi: ExtensionAPI): void {
 			}
 
 			const { succeeded, failed } = await installMissing(ctx.ui, missing);
-			if (succeeded.length > 0) {
-				const seed = ensureSubagentConfig();
-				if (seed.merged.length > 0) ctx.ui.notify(msgSubagentSeeded(seed.merged), "info");
-			}
 			ctx.ui.notify(buildReport(succeeded, failed), failed.length > 0 ? "warning" : "info");
 		},
 	});
