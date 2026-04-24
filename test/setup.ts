@@ -23,6 +23,9 @@ beforeEach(async () => {
 	const todo = await import("../packages/rpiv-todo/todo.js");
 	todo.__resetState();
 
+	const subagentWidget = await import("../packages/rpiv-pi/extensions/subagent-widget/run-tracker.js");
+	subagentWidget.__resetState();
+
 	const advisor = await import("../packages/rpiv-advisor/advisor.js");
 	advisor.setAdvisorModel(undefined);
 	advisor.setAdvisorEffort(undefined);
