@@ -1,18 +1,18 @@
 # rpiv-mono
 
-Monorepo for Pi CLI plugins in the `@juicesharp/rpiv-*` family. Lockstep versions, single install, single publish pipeline.
+Monorepo for Pi CLI extensions in the `@juicesharp/rpiv-*` family. Lockstep versions, single install, single publish pipeline.
 
 ## Packages
 
 | Package | Description |
 |---|---|
-| [`@juicesharp/rpiv-pi`](packages/rpiv-pi) | Skill-based development workflow for Pi Agent — discover, research, design, plan, implement, validate |
-| [`@juicesharp/rpiv-advisor`](packages/rpiv-advisor) | Advisor-strategy pattern — escalate to a stronger reviewer model |
-| [`@juicesharp/rpiv-args`](packages/rpiv-args) | Shell-style placeholder substitution (`$1`, `$ARGUMENTS`, `$@`, `${@:N}`) inside skill bodies |
-| [`@juicesharp/rpiv-ask-user-question`](packages/rpiv-ask-user-question) | Structured clarifying-question tool |
-| [`@juicesharp/rpiv-btw`](packages/rpiv-btw) | `/btw` side-question slash command |
-| [`@juicesharp/rpiv-todo`](packages/rpiv-todo) | Claude-Code-parity todo tool + persistent overlay |
-| [`@juicesharp/rpiv-web-tools`](packages/rpiv-web-tools) | `web_search` + `web_fetch` via the Brave Search API |
+| [`@juicesharp/rpiv-pi`](packages/rpiv-pi) | Umbrella extension — skill-based workflow: discover, research, design, plan, implement, validate |
+| [`@juicesharp/rpiv-advisor`](packages/rpiv-advisor) | `advisor` tool + `/advisor` — escalate to a stronger reviewer model |
+| [`@juicesharp/rpiv-args`](packages/rpiv-args) | `$1`/`$ARGUMENTS`/`$@`/`${@:N}` — shell-style placeholder substitution in skill bodies |
+| [`@juicesharp/rpiv-ask-user-question`](packages/rpiv-ask-user-question) | `ask_user_question` tool — structured clarifying-question selector |
+| [`@juicesharp/rpiv-btw`](packages/rpiv-btw) | `/btw` slash command — side-question without polluting main transcript |
+| [`@juicesharp/rpiv-todo`](packages/rpiv-todo) | `todo` tool + `/todos` overlay — Claude-Code-parity task tracking |
+| [`@juicesharp/rpiv-web-tools`](packages/rpiv-web-tools) | `web_search` + `web_fetch` tools — backed by Brave Search API |
 
 Each package is published independently to npm and installable by name:
 
