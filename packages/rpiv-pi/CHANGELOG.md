@@ -5,7 +5,7 @@ All notable changes to `@juicesharp/rpiv-pi` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.12.6] - 2026-04-26
 
 ### Changed
 - **`general-purpose` agent now inherits project context**: frontmatter switched to `systemPromptMode: append` + `inheritProjectContext: true` so the generalist sees Pi's base system prompt plus the project's `AGENTS.md`/`CLAUDE.md`, matching the delegate-style generalist pattern. Skills catalog (`inheritSkills: false`) stays excluded.
