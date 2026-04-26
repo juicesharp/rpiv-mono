@@ -1,3 +1,4 @@
+import { visibleWidth } from "@mariozechner/pi-tui";
 import { describe, expect, it } from "vitest";
 import { WrappingSelect, type WrappingSelectTheme } from "./wrapping-select.js";
 
@@ -93,6 +94,16 @@ describe("WrappingSelect.render — inline input when isOther + focused", () => 
 		const lines = s.render(40);
 		expect(lines[0]).toContain("pick");
 		expect(lines[0]).not.toContain("▌");
+	});
+
+	it("truncates inline input row to terminal width", () => {
+		const s = new WrappingSelect([{ label: "pick", isOther: true }], 1, identityTheme);
+		s.setSelectedIndex(0);
+		s.setFocused(true);
+		s.appendInput("this is a really long input that exceeds the width");
+		const narrowWidth = 20;
+		const lines = s.render(narrowWidth);
+		expect(visibleWidth(lines[0])).toBeLessThanOrEqual(narrowWidth);
 	});
 });
 

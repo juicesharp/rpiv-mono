@@ -1,5 +1,5 @@
 import type { Component } from "@mariozechner/pi-tui";
-import { visibleWidth, wrapTextWithAnsi } from "@mariozechner/pi-tui";
+import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@mariozechner/pi-tui";
 
 export interface WrappingSelectItem {
 	label: string;
@@ -127,7 +127,7 @@ export class WrappingSelect implements Component {
 		const contentWidth = Math.max(WrappingSelect.MIN_CONTENT_WIDTH, width - visibleWidth(rowPrefix));
 
 		if (this.shouldRenderAsInlineInput(item, isActive)) {
-			return [this.renderInlineInputRow(rowPrefix)];
+			return [this.renderInlineInputRow(rowPrefix, width)];
 		}
 
 		return [
@@ -147,8 +147,9 @@ export class WrappingSelect implements Component {
 		return !!item.isOther && isActive;
 	}
 
-	private renderInlineInputRow(rowPrefix: string): string {
-		return this.theme.selectedText(`${rowPrefix}${this.inputBuffer}${WrappingSelect.INPUT_CURSOR}`);
+	private renderInlineInputRow(rowPrefix: string, width: number): string {
+		const raw = `${rowPrefix}${this.inputBuffer}${WrappingSelect.INPUT_CURSOR}`;
+		return truncateToWidth(this.theme.selectedText(raw), width, "");
 	}
 
 	private renderLabelBlock(
