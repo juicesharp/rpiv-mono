@@ -105,6 +105,62 @@ describe("WrappingSelect.render — inline input when isOther + focused", () => 
 		const lines = s.render(narrowWidth);
 		expect(visibleWidth(lines[0])).toBeLessThanOrEqual(narrowWidth);
 	});
+
+	// rowPrefix "❯ 1. " = 5 cols, +16 chars input, +1 col cursor = 22 cols → 2 over.
+	// Reproduces the user-reported "overflows by a column or two" symptom that crashed pi.
+	it("clips when input pushes the row just past width (off-by-one boundary)", () => {
+		const s = new WrappingSelect([{ label: "pick", isOther: true }], 1, identityTheme);
+		s.setSelectedIndex(0);
+		s.setFocused(true);
+		s.appendInput("a".repeat(16));
+		const width = 20;
+		const lines = s.render(width);
+		expect(visibleWidth(lines[0])).toBeLessThanOrEqual(width);
+	});
+
+	it("clips inline input row when input is much longer than width", () => {
+		const s = new WrappingSelect([{ label: "pick", isOther: true }], 1, identityTheme);
+		s.setSelectedIndex(0);
+		s.setFocused(true);
+		s.appendInput("x".repeat(200));
+		const width = 10;
+		const lines = s.render(width);
+		expect(visibleWidth(lines[0])).toBeLessThanOrEqual(width);
+	});
+
+	// Each 😀 is 2 cols wide, so unclipped overflow scales with grapheme width.
+	it("clips inline input row containing wide (emoji) characters", () => {
+		const s = new WrappingSelect([{ label: "pick", isOther: true }], 1, identityTheme);
+		s.setSelectedIndex(0);
+		s.setFocused(true);
+		s.appendInput("😀".repeat(30));
+		const width = 20;
+		const lines = s.render(width);
+		expect(visibleWidth(lines[0])).toBeLessThanOrEqual(width);
+	});
+
+	// totalItemsForNumbering=1000 → numberWidth=4 → rowPrefix "❯    1. " = 8 cols.
+	// Pins down that truncation uses full `width`, not just post-prefix contentWidth.
+	it("clips inline input row when number column inflates the prefix", () => {
+		const s = new WrappingSelect([{ label: "pick", isOther: true }], 1, identityTheme, {
+			totalItemsForNumbering: 1000,
+		});
+		s.setSelectedIndex(0);
+		s.setFocused(true);
+		s.appendInput("hello world");
+		const width = 12;
+		const lines = s.render(width);
+		expect(visibleWidth(lines[0])).toBeLessThanOrEqual(width);
+	});
+
+	it("renders inline input row within width when input is empty", () => {
+		const s = new WrappingSelect([{ label: "pick", isOther: true }], 1, identityTheme);
+		s.setSelectedIndex(0);
+		s.setFocused(true);
+		const width = 12;
+		const lines = s.render(width);
+		expect(visibleWidth(lines[0])).toBeLessThanOrEqual(width);
+	});
 });
 
 describe("WrappingSelect.render — number column padding", () => {
