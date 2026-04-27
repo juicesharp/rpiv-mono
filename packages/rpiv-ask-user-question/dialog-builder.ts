@@ -20,9 +20,9 @@ export const HINT_SINGLE = "Enter to select · ↑/↓ to navigate · Esc to can
 export const HINT_MULTI = "Enter to select · ↑/↓ to navigate · Tab to switch questions · Esc to cancel";
 export const HINT_MULTISELECT_SUFFIX = " · Space to toggle";
 export const HINT_NOTES_SUFFIX = " · n to add notes";
-export const SUBMIT_READY = "Ready to submit";
-export const SUBMIT_HINT_READY = "Enter submit · Esc cancel";
-export const SUBMIT_HINT_INCOMPLETE_PREFIX = "Answer remaining questions before submitting:";
+export const REVIEW_HEADING = "Review your answers";
+export const READY_PROMPT = "Ready to submit your answers?";
+export const INCOMPLETE_WARNING_PREFIX = "⚠ Answer remaining questions before submitting:";
 
 export interface DialogState {
 	currentTab: number;
@@ -37,6 +37,12 @@ export interface DialogState {
 	 * Gates the "n to add notes" hint chip in `buildHintText()` (Decision 8).
 	 */
 	focusedOptionHasPreview: boolean;
+	/**
+	 * Focused row in the Submit-tab picker (0 = Submit answers, 1 = Cancel).
+	 * Mirrored from `QuestionnaireDispatchState.submitChoiceIndex`; consumed by
+	 * `SubmitPicker.setState` inside `buildSubmitContainer`. Default 0; reset on every tab switch.
+	 */
+	submitChoiceIndex: number;
 }
 
 export interface DialogConfig {
@@ -49,6 +55,13 @@ export interface DialogConfig {
 	chatList: WrappingSelect;
 	isMulti: boolean;
 	multiSelectOptionsByTab: ReadonlyArray<MultiSelectOptions | undefined>;
+	/**
+	 * Submit-tab Submit/Cancel picker. Optional so the type stays
+	 * compatible with single-question mode (no Submit Tab) and with tests that
+	 * exercise non-submit code paths. `buildSubmitContainer` falls back to
+	 * Spacer rows when undefined.
+	 */
+	submitPicker?: Component;
 	/**
 	 * Worst-case body height across all tabs and (for preview tabs) all options.
 	 * Determines the stable overall dialog footprint.
@@ -106,22 +119,26 @@ function renderDialog(config: DialogConfig, width: number): string[] {
  *
  * Question-tab structure in MULTI mode (the only mode where Submit Tab exists) without notes:
  *   border + tabBar + Spacer + question + Spacer +
- *     FixedHeightBox(body) + Spacer + border + Spacer + chat + Spacer + hint + Spacer
+ *     body + Spacer + border + Spacer + chat(1) + Spacer + hint(1) + BodyResidualSpacer
  *
- * (The inner header line is dropped in multi-question mode — the tab bar already shows it,
- * so rendering it again inside the dialog body created a 1–2 line height surplus that made
- * Submit Tab look "collapsed" relative to question tabs.)
+ * Submit Tab mirrors that exactly:
+ *   - "question text" line              → REVIEW_HEADING (bold accent, always shown)
+ *   - body                              → bullet+arrow summary container (omits unanswered)
+ *   - chat row + hint footer            → Spacer(1) + prompt-or-warning(1) + submitPicker(2)
+ *                                         (4 lines below the bottom border, matching the
+ *                                         question footer's 4 lines)
  *
- * Submit Tab mirrors that exactly, replacing:
- *   - question text                 → SUBMIT_READY badge (or warning text when missing answers)
- *   - body                          → FixedHeightBox(answer summary, getBodyHeight)
- *   - chat row + bottom hint + tail → 5 empty Spacers ("footer is hidden on Submit Tab")
+ * Height equality is preserved without modifying `getBodyHeight` or `submitBodyHeight`:
+ * `submitPicker.naturalHeight === 2` is treated as a fixed chrome contribution.
  */
 function buildSubmitContainer(config: DialogConfig): Container {
-	const { theme, questions, state, tabBar, isMulti } = config;
+	const { theme, questions, state, tabBar, isMulti, submitPicker } = config;
 	const container = new Container();
 	const border = () => new DynamicBorder((s) => theme.fg("accent", s));
 
+	// Walk questions once: collect missing labels for the warning, build the bullet+arrow
+	// summary for answered questions only (CC parity — unanswered rows are omitted; the
+	// warning header is the sole signal of incompleteness).
 	const missing: string[] = [];
 	const summary = new Container();
 	for (let i = 0; i < questions.length; i++) {
@@ -130,14 +147,13 @@ function buildSubmitContainer(config: DialogConfig): Container {
 		const a = state.answers.get(i);
 		if (!a) {
 			missing.push(label);
-			summary.addChild(new Text(theme.fg("warning", `✖ ${label}: — unanswered`), 1, 0));
 			continue;
 		}
 		const answerText = formatAnswerForSummary(a);
-		const line = `${theme.fg("muted", `${label}: `)}${theme.fg("text", answerText)}`;
-		summary.addChild(new Text(line, 1, 0));
+		summary.addChild(new Text(theme.fg("muted", ` ● ${label}`), 1, 0));
+		summary.addChild(new Text(`   ${theme.fg("muted", "→")} ${theme.fg("text", answerText)}`, 1, 0));
 		if (a.notes && a.notes.length > 0) {
-			summary.addChild(new Text(theme.fg("dim", `    notes: ${a.notes}`), 1, 0));
+			summary.addChild(new Text(theme.fg("dim", `     notes: ${a.notes}`), 1, 0));
 		}
 	}
 
@@ -146,30 +162,35 @@ function buildSubmitContainer(config: DialogConfig): Container {
 	if (isMulti && tabBar) container.addChild(tabBar);
 	container.addChild(new Spacer(1));
 
-	// "Question text"-equivalent line — SUBMIT_READY when complete, warning text when missing.
-	const headerText =
-		missing.length === 0
-			? theme.bold(theme.fg("accent", SUBMIT_READY))
-			: theme.fg("warning", `${SUBMIT_HINT_INCOMPLETE_PREFIX} ${missing.join(", ")}`);
-	container.addChild(new Text(headerText, 1, 0));
+	// Heading — always shown.
+	container.addChild(new Text(theme.bold(theme.fg("accent", REVIEW_HEADING)), 1, 0));
 	container.addChild(new Spacer(1));
 
-	// Body — natural height; residual is absorbed below the bottom border (mirrors
-	// buildQuestionContainer). The summary's row count IS its body height.
+	// Body — bullet+arrow summary at natural height; residual absorbed below the bottom
+	// border by BodyResidualSpacer (mirrors buildQuestionContainer).
 	container.addChild(summary);
 	container.addChild(new Spacer(1));
 
-	// Bottom border + suppressed footer. Question-tab tail (after the bottom border) is:
-	//   Spacer + chat + Spacer + hint + BodyResidualSpacer.
-	// Submit Tab mirrors that line-for-line, replacing chat + hint with empty Spacers and
-	// keeping its own BodyResidualSpacer at the very bottom (driven by summary height) so
-	// the dialog footprint stays equal across tabs.
+	// Bottom border + chrome-mirror layout. Below-border lines:
+	//   Spacer(1) + prompt-or-warning(1) + submitPicker(2) = 4 lines
+	// matching question-tab's Spacer + chat(1) + Spacer + hint(1) = 4 lines.
 	container.addChild(border());
+	container.addChild(new Spacer(1));
+	const promptText =
+		missing.length === 0
+			? theme.fg("muted", READY_PROMPT)
+			: theme.fg("warning", `${INCOMPLETE_WARNING_PREFIX} ${missing.join(", ")}`);
+	container.addChild(new Text(promptText, 1, 0));
+	if (submitPicker) {
+		container.addChild(submitPicker);
+	} else {
+		// Fallback when host hasn't wired the picker (defensive — Phase 4 always wires it
+		// in multi-question mode). Keeps the line count at 4 so height equality holds.
+		container.addChild(new Spacer(1));
+		container.addChild(new Spacer(1));
+	}
+
 	const submitBodyHeight = (w: number) => summary.render(w).length;
-	container.addChild(new Spacer(1)); // matches Spacer before chat row
-	container.addChild(new Spacer(1)); // matches chat row
-	container.addChild(new Spacer(1)); // matches Spacer between chat & hint
-	container.addChild(new Spacer(1)); // matches hint line
 	container.addChild(new BodyResidualSpacer(config.getBodyHeight, submitBodyHeight));
 	return container;
 }

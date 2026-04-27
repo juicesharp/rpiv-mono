@@ -58,6 +58,7 @@ function baseState(over: Partial<QuestionnaireDispatchState> = {}): Questionnair
 		inputBuffer: over.inputBuffer ?? "",
 		items: over.items ?? items,
 		focusedOptionHasPreview: over.focusedOptionHasPreview ?? false,
+		submitChoiceIndex: over.submitChoiceIndex ?? 0,
 	};
 }
 
@@ -264,9 +265,10 @@ describe("handleQuestionnaireInput — cancel + submit", () => {
 		});
 	});
 
-	it("Submit tab + Enter + allAnswered -> submit", () => {
+	it("Submit tab + Enter on Submit row + allAnswered -> submit", () => {
 		const s = baseState({
 			currentTab: 2,
+			submitChoiceIndex: 0,
 			answers: new Map([
 				[0, makeAnswer({ questionIndex: 0 })],
 				[1, makeAnswer({ questionIndex: 1 })],
@@ -275,12 +277,46 @@ describe("handleQuestionnaireInput — cancel + submit", () => {
 		expect(handleQuestionnaireInput(sentinel(KEY.CONFIRM), s)).toEqual({ kind: "submit" });
 	});
 
-	it("Submit tab + Enter when not allAnswered -> ignore", () => {
+	// D1 revised: partial submission allowed. Enter on Submit row always submits.
+	it("Submit tab + Enter on Submit row when not allAnswered -> submit (partial)", () => {
 		const s = baseState({
 			currentTab: 2,
+			submitChoiceIndex: 0,
 			answers: new Map([[0, makeAnswer({ questionIndex: 0 })]]),
 		});
-		expect(handleQuestionnaireInput(sentinel(KEY.CONFIRM), s)).toEqual({ kind: "ignore" });
+		expect(handleQuestionnaireInput(sentinel(KEY.CONFIRM), s)).toEqual({ kind: "submit" });
+	});
+
+	it("Submit tab + DOWN -> submit_nav nextIndex=1", () => {
+		const s = baseState({ currentTab: 2, submitChoiceIndex: 0 });
+		expect(handleQuestionnaireInput(sentinel(KEY.DOWN), s)).toEqual({ kind: "submit_nav", nextIndex: 1 });
+	});
+
+	it("Submit tab + UP wraps from 0 to 1", () => {
+		const s = baseState({ currentTab: 2, submitChoiceIndex: 0 });
+		expect(handleQuestionnaireInput(sentinel(KEY.UP), s)).toEqual({ kind: "submit_nav", nextIndex: 1 });
+	});
+
+	it("Submit tab + DOWN from index 1 wraps to 0", () => {
+		const s = baseState({ currentTab: 2, submitChoiceIndex: 1 });
+		expect(handleQuestionnaireInput(sentinel(KEY.DOWN), s)).toEqual({ kind: "submit_nav", nextIndex: 0 });
+	});
+
+	it("Submit tab + Enter on Cancel row (index 1) when complete -> cancel", () => {
+		const s = baseState({
+			currentTab: 2,
+			submitChoiceIndex: 1,
+			answers: new Map([
+				[0, makeAnswer({ questionIndex: 0 })],
+				[1, makeAnswer({ questionIndex: 1 })],
+			]),
+		});
+		expect(handleQuestionnaireInput(sentinel(KEY.CONFIRM), s)).toEqual({ kind: "cancel" });
+	});
+
+	it("Submit tab + Enter on Cancel row (index 1) when incomplete -> cancel", () => {
+		const s = baseState({ currentTab: 2, submitChoiceIndex: 1 });
+		expect(handleQuestionnaireInput(sentinel(KEY.CONFIRM), s)).toEqual({ kind: "cancel" });
 	});
 });
 

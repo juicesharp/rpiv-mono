@@ -4,6 +4,7 @@ import { buildDialog, type DialogState } from "./dialog-builder.js";
 import { handleQuestionnaireInput, type QuestionnaireDispatchState } from "./dispatch.js";
 import { MultiSelectOptions } from "./multi-select-options.js";
 import { PreviewPane } from "./preview-pane.js";
+import { SubmitPicker } from "./submit-picker.js";
 import { TabBar } from "./tab-bar.js";
 import {
 	MAX_OPTIONS,
@@ -170,10 +171,14 @@ Preview content is rendered as markdown in a monospace box. Multi-line text with
 					answers: new Map(),
 					multiSelectChecked: new Set(),
 					focusedOptionHasPreview: false,
+					submitChoiceIndex: 0,
 				};
 				const multiSelectOptionsByTab: ReadonlyArray<MultiSelectOptions | undefined> = questions.map((q) =>
 					q.multiSelect ? new MultiSelectOptions(theme, q, initialDialogState) : undefined,
 				);
+				// Submit-tab Submit/Cancel picker. Multi-question only — single-question dialogs
+				// have no Submit Tab so the picker is undefined.
+				const submitPicker = isMulti ? new SubmitPicker(theme, initialDialogState) : undefined;
 
 				const tabBar: TabBar | undefined = isMulti
 					? new TabBar(
@@ -192,6 +197,7 @@ Preview content is rendered as markdown in a monospace box. Multi-line text with
 				let inputMode = false;
 				let notesMode = false;
 				let chatFocused = false;
+				let submitChoiceIndex = 0;
 				const answers = new Map<number, QuestionAnswer>();
 				let multiSelectChecked = new Set<number>();
 				// notesByTab: transient pre-answer notes side-map. Decoupled from `answers` so adding notes
@@ -226,6 +232,7 @@ Preview content is rendered as markdown in a monospace box. Multi-line text with
 						answers: new Map(answers),
 						multiSelectChecked: new Set(multiSelectChecked),
 						focusedOptionHasPreview: computeFocusedOptionHasPreview(),
+						submitChoiceIndex,
 					};
 				}
 
@@ -264,6 +271,7 @@ Preview content is rendered as markdown in a monospace box. Multi-line text with
 					chatList,
 					isMulti,
 					multiSelectOptionsByTab,
+					submitPicker,
 					getBodyHeight: (w) => computeGlobalContentHeight(w),
 					getCurrentBodyHeight: (w) => computeCurrentContentHeight(w),
 				});
@@ -299,6 +307,10 @@ Preview content is rendered as markdown in a monospace box. Multi-line text with
 					// must hide its `N. ` prefix on those tabs to match the un-numbered visual rhythm.
 					const activeQuestion = questions[Math.min(currentTab, questions.length - 1)];
 					chatList.setShowNumbering(activeQuestion?.multiSelect !== true);
+					if (submitPicker) {
+						submitPicker.setState(snapshotState());
+						submitPicker.setFocused(currentTab === questions.length);
+					}
 					if (tabBar) {
 						tabBar.setConfig({
 							questions,
@@ -330,6 +342,7 @@ Preview content is rendered as markdown in a monospace box. Multi-line text with
 					inputMode = false;
 					notesMode = false;
 					chatFocused = false;
+					submitChoiceIndex = 0;
 					notesInput.focused = false;
 					notesInput.setValue(notesByTab.get(currentTab) ?? answers.get(currentTab)?.notes ?? "");
 					syncMultiSelectFromAnswers();
@@ -456,6 +469,10 @@ Preview content is rendered as markdown in a monospace box. Multi-line text with
 							chatFocused = false;
 							refreshDialog();
 							return;
+						case "submit_nav":
+							submitChoiceIndex = action.nextIndex;
+							refreshDialog();
+							return;
 						case "submit":
 							submitFinal();
 							return;
@@ -509,6 +526,7 @@ Preview content is rendered as markdown in a monospace box. Multi-line text with
 						inputBuffer: previewPanes[currentTab]?.getInputBuffer() ?? "",
 						items: items(),
 						focusedOptionHasPreview: computeFocusedOptionHasPreview(),
+						submitChoiceIndex,
 					};
 				}
 

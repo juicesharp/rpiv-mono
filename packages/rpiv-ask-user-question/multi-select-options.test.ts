@@ -17,6 +17,7 @@ function state(over: Partial<DialogState> = {}): DialogState {
 		answers: over.answers ?? new Map(),
 		multiSelectChecked: over.multiSelectChecked ?? new Set(),
 		focusedOptionHasPreview: over.focusedOptionHasPreview ?? false,
+		submitChoiceIndex: over.submitChoiceIndex ?? 0,
 	};
 }
 

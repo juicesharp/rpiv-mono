@@ -20,6 +20,7 @@ export type QuestionnaireAction =
 	| { kind: "notes_enter" }
 	| { kind: "notes_exit" }
 	| { kind: "submit" }
+	| { kind: "submit_nav"; nextIndex: 0 | 1 }
 	| { kind: "focus_chat" }
 	| { kind: "focus_options" }
 	| { kind: "ignore" };
@@ -49,6 +50,12 @@ export interface QuestionnaireDispatchState {
 	 * (Decision 8 + reference image showing affordance only on preview-bearing rows).
 	 */
 	focusedOptionHasPreview: boolean;
+	/**
+	 * Focused row in the Submit-tab picker (0 = Submit answers, 1 = Cancel).
+	 * Read by the Submit-tab dispatch branch to decide which action Enter emits;
+	 * mutated by the host on `submit_nav`. Default 0; reset on every tab switch.
+	 */
+	submitChoiceIndex: number;
 }
 
 export function wrapTab(index: number, total: number): number {
@@ -189,12 +196,20 @@ export function handleQuestionnaireInput(data: string, state: QuestionnaireDispa
 	}
 
 	if (state.isMulti && state.currentTab === state.questions.length) {
-		if (kb.matches(data, KEYBIND_CONFIRM)) {
-			return allAnswered(state) ? { kind: "submit" } : { kind: "ignore" };
-		}
 		if (kb.matches(data, KEYBIND_CANCEL)) return { kind: "cancel" };
 		const tab = tabSwitchAction(data, state);
 		if (tab) return tab;
+		if (kb.matches(data, KEYBIND_UP) || kb.matches(data, KEYBIND_DOWN)) {
+			const delta = kb.matches(data, KEYBIND_DOWN) ? 1 : -1;
+			const next = wrapTab(state.submitChoiceIndex + delta, 2);
+			return { kind: "submit_nav", nextIndex: (next === 1 ? 1 : 0) as 0 | 1 };
+		}
+		if (kb.matches(data, KEYBIND_CONFIRM)) {
+			// D1 (revised): Submit always submits; Cancel always cancels. The warning header
+			// is informational only — `allAnswered(state)` no longer gates submission. Partial
+			// answers flow through `orderedAnswers()` in the host.
+			return state.submitChoiceIndex === 1 ? { kind: "cancel" } : { kind: "submit" };
+		}
 		return { kind: "ignore" };
 	}
 

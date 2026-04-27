@@ -455,24 +455,40 @@ describe("ask_user_question — multi-question tab cycling flow", () => {
 		expect(r?.details.answers[0].answer).toBe("A");
 	});
 
-	it("Submit tab with Enter when NOT all answered → ignore, then answer and submit", async () => {
+	// D1 revised: Submit always submits (warning header is informational only).
+	// Enter on Submit row with submitChoiceIndex === 0 submits with whatever answers exist.
+	it("Submit tab with Enter on Submit row submits with partial answers (D1 revised)", async () => {
 		const tool = register();
 		const { custom } = driveCustom((c) => {
-			c.handleInput(KEY.TAB); // → Q2
-			c.handleInput(KEY.TAB); // → Submit
-			c.handleInput(KEY.ENTER); // ignored (not all answered)
-			c.handleInput(KEY.SHIFT_TAB); // → Q2
-			c.handleInput(KEY.SHIFT_TAB); // → Q1
-			c.handleInput(KEY.ENTER); // answer Q1 → Q2
-			c.handleInput(KEY.ENTER); // answer Q2 → Submit
-			c.handleInput(KEY.ENTER); // now Submit works
+			c.handleInput(KEY.ENTER); // Q1: select A → auto-advance to Q2
+			c.handleInput(KEY.TAB); // → Submit (Q2 unanswered)
+			c.handleInput(KEY.ENTER); // Submit row (default index 0) → partial submit
 		});
 		const ctx = { hasUI: true, ui: { custom } } as never;
 		const r = (await tool.execute?.("tc", twoParams as never, undefined as never, undefined as never, ctx)) as
 			| ToolResult
 			| undefined;
 		expect(r?.details.cancelled).toBe(false);
+		expect(r?.details.answers).toHaveLength(1);
+		expect(r?.details.answers[0].question).toBe("Q1?");
+	});
+
+	it("answer all → Submit tab → DOWN → Enter on Cancel returns cancelled=true with all answers preserved", async () => {
+		const tool = register();
+		const { custom } = driveCustom((c) => {
+			c.handleInput(KEY.ENTER); // Q1: select A → auto-advance to Q2
+			c.handleInput(KEY.ENTER); // Q2: select X → auto-advance to Submit
+			c.handleInput(KEY.DOWN); // submit_nav → submitChoiceIndex=1 (Cancel row)
+			c.handleInput(KEY.ENTER); // Enter on Cancel
+		});
+		const ctx = { hasUI: true, ui: { custom } } as never;
+		const r = (await tool.execute?.("tc", twoParams as never, undefined as never, undefined as never, ctx)) as
+			| ToolResult
+			| undefined;
+		expect(r?.details.cancelled).toBe(true);
 		expect(r?.details.answers).toHaveLength(2);
+		expect(r?.details.answers[0].answer).toBe("A");
+		expect(r?.details.answers[1].answer).toBe("X");
 	});
 });
 

@@ -11,12 +11,13 @@ import {
 	HINT_MULTISELECT_SUFFIX,
 	HINT_NOTES_SUFFIX,
 	HINT_SINGLE,
-	SUBMIT_HINT_INCOMPLETE_PREFIX,
-	SUBMIT_HINT_READY,
-	SUBMIT_READY,
+	INCOMPLETE_WARNING_PREFIX,
+	READY_PROMPT,
+	REVIEW_HEADING,
 } from "./dialog-builder.js";
 import { MultiSelectOptions } from "./multi-select-options.js";
 import type { PreviewPane } from "./preview-pane.js";
+import { CANCEL_LABEL, SUBMIT_LABEL, SubmitPicker } from "./submit-picker.js";
 import type { TabBar } from "./tab-bar.js";
 import type { QuestionAnswer, QuestionData } from "./types.js";
 import { WrappingSelect } from "./wrapping-select.js";
@@ -60,6 +61,7 @@ function makeConfig(over: Partial<DialogConfig> = {}): DialogConfig {
 		answers: new Map(),
 		multiSelectChecked: new Set(),
 		focusedOptionHasPreview: false,
+		submitChoiceIndex: 0,
 	};
 	const previewPane = over.previewPane ?? (stubComponent(["<PREVIEW>"]) as unknown as PreviewPane);
 	const multiSelectOptionsByTab =
@@ -74,6 +76,7 @@ function makeConfig(over: Partial<DialogConfig> = {}): DialogConfig {
 		chatList: over.chatList ?? (stubComponent(["<CHAT_ROW>"]) as unknown as WrappingSelect),
 		isMulti: over.isMulti ?? questions.length > 1,
 		multiSelectOptionsByTab,
+		submitPicker: over.submitPicker,
 		getBodyHeight: over.getBodyHeight ?? (() => 1),
 		getCurrentBodyHeight:
 			over.getCurrentBodyHeight ??
@@ -176,6 +179,7 @@ describe("buildDialog — multi-question (question tab)", () => {
 			answers: new Map(),
 			multiSelectChecked: new Set(),
 			focusedOptionHasPreview: false,
+			submitChoiceIndex: 0,
 		};
 		const mso = new MultiSelectOptions(theme, multiQ, initialState);
 		const dlg = buildDialog(
@@ -212,6 +216,7 @@ describe("buildDialog — multi-question (question tab)", () => {
 					answers: new Map([[0, answer]]),
 					multiSelectChecked: new Set(),
 					focusedOptionHasPreview: true,
+					submitChoiceIndex: 0,
 				},
 			}),
 		);
@@ -230,6 +235,7 @@ describe("buildDialog — multi-question (question tab)", () => {
 				answers: new Map(),
 				multiSelectChecked: new Set(),
 				focusedOptionHasPreview: false,
+				submitChoiceIndex: 0,
 			},
 		});
 		const visible = buildDialog(visibleCfg).render(80);
@@ -256,6 +262,7 @@ describe("buildDialog — multi-question (question tab)", () => {
 			answers: new Map(),
 			multiSelectChecked: new Set([0]),
 			focusedOptionHasPreview: false,
+			submitChoiceIndex: 0,
 		};
 		const mso = new MultiSelectOptions(theme, multiQ, state);
 		const dlg = buildDialog(
@@ -289,82 +296,120 @@ describe("buildDialog — Submit tab", () => {
 		[1, { questionIndex: 1, question: "Q2?", answer: null, selected: ["X", "Y"] }],
 	]);
 
-	// Submit Tab now wraps its answer summary in FixedHeightBox(getBodyHeight) and structurally
-	// mirrors the question-tab chrome line-for-line so the dialog does not collapse / jump when
-	// the user switches into Submit. Tests must therefore pass a getBodyHeight large enough to
-	// fit the rendered summary lines.
-	it("shows the Submit-ready badge + Q→A summary when all answered", () => {
-		const dlg = buildDialog(
-			makeConfig({
-				state: {
-					currentTab: 2,
-					optionIndex: 0,
-					notesVisible: false,
-					inputMode: false,
-					answers,
-					multiSelectChecked: new Set(),
-					focusedOptionHasPreview: false,
-				},
-				getBodyHeight: () => 6,
-			}),
-		);
+	function makePicker(state: DialogState, focused = true): SubmitPicker {
+		const picker = new SubmitPicker(theme, state);
+		picker.setFocused(focused);
+		return picker;
+	}
+
+	function submitState(over: Partial<DialogState> = {}): DialogState {
+		return {
+			currentTab: 2,
+			optionIndex: 0,
+			notesVisible: false,
+			inputMode: false,
+			answers,
+			multiSelectChecked: new Set(),
+			focusedOptionHasPreview: false,
+			submitChoiceIndex: 0,
+			...over,
+		};
+	}
+
+	it("renders REVIEW_HEADING always", () => {
+		const state = submitState();
+		const dlg = buildDialog(makeConfig({ state, submitPicker: makePicker(state), getBodyHeight: () => 6 }));
+		expect(dlg.render(80).join("\n")).toContain(REVIEW_HEADING);
+	});
+
+	it("renders bullet+arrow summary for answered questions", () => {
+		const state = submitState();
+		const dlg = buildDialog(makeConfig({ state, submitPicker: makePicker(state), getBodyHeight: () => 6 }));
 		const joined = dlg.render(80).join("\n");
-		expect(joined).toContain(SUBMIT_READY);
-		expect(joined).toContain("H1");
+		expect(joined).toContain("● H1");
+		expect(joined).toContain("→");
 		expect(joined).toContain("A");
+		expect(joined).toContain("● H2");
 		expect(joined).toContain("X, Y");
-		// Footer (chat row + controls hint) is suppressed on Submit Tab — SUBMIT_HINT_READY is
-		// no longer rendered anywhere.
-		expect(joined).not.toContain(SUBMIT_HINT_READY);
 	});
 
-	it("warns + names missing questions when not all answered", () => {
+	it("omits unanswered rows from summary (no ✖)", () => {
 		const partial = new Map<number, QuestionAnswer>([[0, { questionIndex: 0, question: "Q1?", answer: "A" }]]);
-		const dlg = buildDialog(
-			makeConfig({
-				state: {
-					currentTab: 2,
-					optionIndex: 0,
-					notesVisible: false,
-					inputMode: false,
-					answers: partial,
-					multiSelectChecked: new Set(),
-					focusedOptionHasPreview: false,
-				},
-				getBodyHeight: () => 6,
-			}),
-		);
+		const state = submitState({ answers: partial });
+		const dlg = buildDialog(makeConfig({ state, submitPicker: makePicker(state, false), getBodyHeight: () => 6 }));
 		const joined = dlg.render(80).join("\n");
-		expect(joined).toContain(SUBMIT_HINT_INCOMPLETE_PREFIX);
-		expect(joined).toContain("H2");
+		expect(joined).not.toContain("✖");
+		expect(joined).not.toContain("unanswered");
+		expect(joined).toContain("● H1");
+		expect(joined).not.toContain("● H2");
 	});
 
-	// New regression: per spec, the Submit Tab must not show the chat row or the controls hint.
-	it("does NOT render the chat row or the controls hint on Submit Tab (footer suppressed)", () => {
-		const dlg = buildDialog(
-			makeConfig({
-				state: {
-					currentTab: 2,
-					optionIndex: 0,
-					notesVisible: false,
-					inputMode: false,
-					answers,
-					multiSelectChecked: new Set(),
-					focusedOptionHasPreview: false,
-				},
-				getBodyHeight: () => 6,
-			}),
+	it("shows READY_PROMPT when complete", () => {
+		const state = submitState();
+		const dlg = buildDialog(makeConfig({ state, submitPicker: makePicker(state), getBodyHeight: () => 6 }));
+		expect(dlg.render(80).join("\n")).toContain(READY_PROMPT);
+	});
+
+	it("shows INCOMPLETE_WARNING_PREFIX + missing labels when incomplete", () => {
+		const partial = new Map<number, QuestionAnswer>([[0, { questionIndex: 0, question: "Q1?", answer: "A" }]]);
+		const state = submitState({ answers: partial });
+		const dlg = buildDialog(makeConfig({ state, submitPicker: makePicker(state, false), getBodyHeight: () => 6 }));
+		const joined = dlg.render(80).join("\n");
+		expect(joined).toContain(INCOMPLETE_WARNING_PREFIX);
+		expect(joined).toContain("H2");
+		expect(joined).not.toContain(READY_PROMPT);
+	});
+
+	it("renders SubmitPicker rows (1. Submit answers / 2. Cancel)", () => {
+		const state = submitState();
+		const dlg = buildDialog(makeConfig({ state, submitPicker: makePicker(state), getBodyHeight: () => 6 }));
+		const joined = dlg.render(80).join("\n");
+		expect(joined).toContain(SUBMIT_LABEL);
+		expect(joined).toContain(CANCEL_LABEL);
+	});
+
+	it("Submit row renders normal regardless of completeness (D1 revised)", () => {
+		const incomplete = submitState({
+			answers: new Map([[0, { questionIndex: 0, question: "Q1?", answer: "A" }]]),
+		});
+		const dlgIncomplete = buildDialog(
+			makeConfig({ state: incomplete, submitPicker: makePicker(incomplete), getBodyHeight: () => 6 }),
 		);
+		const joinedIncomplete = dlgIncomplete.render(80).join("\n");
+		const submitLine = joinedIncomplete.split("\n").find((l) => l.includes(SUBMIT_LABEL));
+		expect(submitLine).not.toMatch(/<dim>/i);
+	});
+
+	it("active pointer follows state.submitChoiceIndex", () => {
+		const stateRow0 = submitState({ submitChoiceIndex: 0 });
+		const dlg0 = buildDialog(
+			makeConfig({ state: stateRow0, submitPicker: makePicker(stateRow0), getBodyHeight: () => 6 }),
+		);
+		const joined0 = dlg0.render(80).join("\n");
+		const submitLine0 = joined0.split("\n").find((l) => l.includes(SUBMIT_LABEL));
+		const cancelLine0 = joined0.split("\n").find((l) => l.includes(CANCEL_LABEL));
+		expect(submitLine0).toContain("❯");
+		expect(cancelLine0).not.toContain("❯");
+
+		const stateRow1 = submitState({ submitChoiceIndex: 1 });
+		const dlg1 = buildDialog(
+			makeConfig({ state: stateRow1, submitPicker: makePicker(stateRow1), getBodyHeight: () => 6 }),
+		);
+		const joined1 = dlg1.render(80).join("\n");
+		const submitLine1 = joined1.split("\n").find((l) => l.includes(SUBMIT_LABEL));
+		const cancelLine1 = joined1.split("\n").find((l) => l.includes(CANCEL_LABEL));
+		expect(submitLine1).not.toContain("❯");
+		expect(cancelLine1).toContain("❯");
+	});
+
+	it("does NOT render the chat row or HINT_MULTI on Submit Tab (regression)", () => {
+		const state = submitState();
+		const dlg = buildDialog(makeConfig({ state, submitPicker: makePicker(state), getBodyHeight: () => 6 }));
 		const joined = dlg.render(80).join("\n");
 		expect(joined).not.toContain("<CHAT_ROW>");
-		// HINT_MULTI lives at the bottom of question tabs only.
 		expect(joined).not.toContain(HINT_MULTI);
 	});
 
-	// New regression: dialog total line count must MATCH a question tab across mixed shapes
-	// (with/without headers, single/multi-select, multiple questions). Before the multi-mode
-	// inner-header was suppressed, the question tab rendered 2 extra lines for the header
-	// badge while Submit Tab did not — hence "submit one line smaller, dialog jumps".
 	it.each<[string, ReturnType<typeof makeConfig>["questions"]]>([
 		["both with headers", undefined as never],
 		[
@@ -411,68 +456,32 @@ describe("buildDialog — Submit tab", () => {
 		],
 	])("submit + question tab heights stay equal across fixtures: %s", (_label, qs) => {
 		const questions = qs ?? undefined;
+		const submitS = submitState();
 		const submitDlg = buildDialog(
 			makeConfig({
 				questions,
-				state: {
-					currentTab: 2,
-					optionIndex: 0,
-					notesVisible: false,
-					inputMode: false,
-					answers,
-					multiSelectChecked: new Set(),
-					focusedOptionHasPreview: false,
-				},
+				state: submitS,
+				submitPicker: makePicker(submitS),
 				getBodyHeight: () => 6,
 			}),
 		).render(120);
 		const questionDlg = buildDialog(
 			makeConfig({
 				questions,
-				state: {
-					currentTab: 0,
-					optionIndex: 0,
-					notesVisible: false,
-					inputMode: false,
-					answers,
-					multiSelectChecked: new Set(),
-					focusedOptionHasPreview: false,
-				},
+				state: submitState({ currentTab: 0 }),
 				getBodyHeight: () => 6,
 			}),
 		).render(120);
 		expect(submitDlg.length).toBe(questionDlg.length);
 	});
 
-	// Original simple-equality test (kept for clarity — it covers the default "both with headers" fixture).
 	it("total dialog height equals a question tab's height (no collapse / no jump)", () => {
+		const submitS = submitState();
 		const submit = buildDialog(
-			makeConfig({
-				state: {
-					currentTab: 2,
-					optionIndex: 0,
-					notesVisible: false,
-					inputMode: false,
-					answers,
-					multiSelectChecked: new Set(),
-					focusedOptionHasPreview: false,
-				},
-				getBodyHeight: () => 6,
-			}),
+			makeConfig({ state: submitS, submitPicker: makePicker(submitS), getBodyHeight: () => 6 }),
 		).render(120);
 		const questionTab = buildDialog(
-			makeConfig({
-				state: {
-					currentTab: 0,
-					optionIndex: 0,
-					notesVisible: false,
-					inputMode: false,
-					answers,
-					multiSelectChecked: new Set(),
-					focusedOptionHasPreview: false,
-				},
-				getBodyHeight: () => 6,
-			}),
+			makeConfig({ state: submitState({ currentTab: 0 }), getBodyHeight: () => 6 }),
 		).render(120);
 		expect(submit.length).toBe(questionTab.length);
 	});
@@ -504,6 +513,7 @@ describe("buildDialog — width safety", () => {
 							answers: new Map([[0, { questionIndex: 0, question: "q", answer: "A" }]]),
 							multiSelectChecked: new Set(),
 							focusedOptionHasPreview: false,
+							submitChoiceIndex: 0,
 						},
 					}),
 				);
@@ -575,6 +585,7 @@ describe("buildDialog — body residual padding", () => {
 			answers: new Map(),
 			multiSelectChecked: new Set(),
 			focusedOptionHasPreview: false,
+			submitChoiceIndex: 0,
 		};
 		const stateTab1: DialogState = { ...stateTab0, currentTab: 1 };
 		const mso = new MultiSelectOptions(theme, multiQ, stateTab0);
