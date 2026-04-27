@@ -1,33 +1,46 @@
 ---
 name: research
-description: Answer structured research questions via targeted parallel analysis agents. Consumes question artifacts from discover. Produces research documents in thoughts/shared/research/. Second stage of the research pipeline — always requires a questions artifact.
-argument-hint: [path to discover artifact]
+description: Answer structured research questions via targeted parallel analysis agents. Accepts either a questions artifact from discover OR a free-text prompt/task (in which case it auto-runs discover via a subagent). Produces research documents in thoughts/shared/research/.
+argument-hint: [path to discover artifact | free-text research prompt]
 ---
 
 ## Questions Source
 
-If the user has not already provided a specific discover artifact path, ask them for it before proceeding. Their input will appear as a follow-up paragraph after this skill body.
+The user's argument is inlined below as `$ARGUMENTS` (resolved by rpiv-args). If `$ARGUMENTS` is empty, ask for input. If `$ARGUMENTS` is a path to a `.md` file under `thoughts/`, treat it as a discover artifact. Otherwise treat it as a free-text research prompt and auto-run discover via a subagent (Step 1, free-text branch).
 
 # Research
 
-You are tasked with answering structured research questions by spawning targeted analysis agents and synthesizing their findings into a comprehensive research document. This skill consumes questions artifacts produced by the `discover` skill.
+You are tasked with answering structured research questions by spawning targeted analysis agents and synthesizing their findings into a comprehensive research document. This skill consumes questions artifacts produced by the `discover` skill — either provided directly by the user, or produced on-demand via a subagent when the user passes free text.
+
+Argument (resolved by rpiv-args): `$ARGUMENTS`
 
 ## Step 1: Read Questions Artifact
 
-1. **Determine input:**
+1. **Determine input** by inspecting `$ARGUMENTS`:
 
-   **Questions artifact provided** (path to a `.md` file in `thoughts/`):
+   **Path to a `.md` file under `thoughts/`** (questions artifact):
    - Read the questions artifact FULLY using the Read tool WITHOUT limit/offset
    - Extract: Discovery Summary, Questions (dense paragraphs), frontmatter metadata (topic, tags)
    - The Discovery Summary provides the file landscape overview — no need to re-discover
 
-   **No arguments provided:**
-   ```
-   I'll answer research questions from a questions artifact. Please provide the path:
-   `/skill:research thoughts/shared/questions/YYYY-MM-DD_HH-MM-SS_topic.md`
+   **Free-text prompt / task description** (`$ARGUMENTS` is non-empty and is NOT a path to a `thoughts/**/*.md` file):
+   - Dispatch ONE subagent to run discover end-to-end in non-interactive mode:
+     ```
+     subagent({
+       agent: "general-purpose",
+       task: "Read packages/rpiv-pi/skills/discover/SKILL.md and execute it in subagent (non-interactive) mode.
+              Topic: $ARGUMENTS
+              Return ONLY the absolute path to the questions artifact you wrote.",
+       context: "fresh",
+       artifacts: false
+     })
+     ```
+   - Capture the returned absolute path, then fall through into the "Path to a `.md` file …" branch above.
+   - Report: `[Auto-discovered]: ran discover via subagent for "$ARGUMENTS". Questions artifact: [path].`
 
-   This skill requires a questions artifact from discover.
-   There is no standalone path — run /skill:discover first to produce a questions artifact.
+   **`$ARGUMENTS` is empty:**
+   ```
+   Please provide a discover questions artifact path or a free-text research prompt. Free text will auto-run discover via a subagent first.
    ```
    Then wait for input.
 
@@ -289,7 +302,7 @@ When ready:
 ## Important Notes
 
 - **Analysis only**: This skill answers questions. It does NOT discover what to ask — that's discover's job.
-- **Always chained**: This skill requires a questions artifact from discover. There is no standalone path.
+- **Two entry points**: A discover questions artifact path (chained) OR free text (auto-runs discover via a subagent in non-interactive mode, then proceeds with the produced artifact). Argument substitution is handled by `rpiv-args` (`$ARGUMENTS`).
 - **Grouped dispatch**: Related questions are batched per agent based on file overlap. Default agent: codebase-analyzer. This reduces token waste from redundant file reads and lets agents build cross-question context.
 - **Downstream compatible**: Research documents feed directly into design and plan — the same Code References / Integration Points / Architecture Insights sections they expect.
 - **File reading**: Always read the questions artifact FULLY (no limit/offset) before dispatching agents

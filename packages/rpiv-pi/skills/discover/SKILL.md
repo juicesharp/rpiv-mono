@@ -23,6 +23,8 @@ Before Step 1, create a todo list tracking every step below (Step 1 through Step
 
 ## Steps
 
+**Subagent mode (non-interactive)**: When this skill is invoked from another skill via a subagent (e.g., `research` auto-running discover from a free-text prompt), there is no developer to ask. Skip Step 5 (Developer Checkpoint) entirely, write the artifact (Step 6), and as your final output return ONLY the absolute path to the questions artifact. All other steps run unchanged.
+
 ### Step 1: Read Mentioned Files
 
 - If the user mentions specific files (tickets, docs, JSON), read them FULLY first
