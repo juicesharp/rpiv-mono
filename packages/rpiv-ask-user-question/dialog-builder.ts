@@ -31,6 +31,12 @@ export interface DialogState {
 	inputMode: boolean;
 	answers: ReadonlyMap<number, QuestionAnswer>;
 	multiSelectChecked: ReadonlySet<number>;
+	/**
+	 * True iff the currently-focused option carries a non-empty `preview` string.
+	 * Set by `ask-user-question.ts:snapshotState()` via `computeFocusedOptionHasPreview()`.
+	 * Gates the "n to add notes" hint chip in `buildHintText()` (Decision 8).
+	 */
+	focusedOptionHasPreview: boolean;
 }
 
 export interface DialogConfig {
@@ -216,7 +222,9 @@ function buildQuestionContainer(config: DialogConfig): Container {
 function buildHintText(question: QuestionData | undefined, isMulti: boolean, state: DialogState): string {
 	const parts: string[] = ["Enter to select", "↑/↓ to navigate"];
 	if (question?.multiSelect === true) parts.push("Space to toggle");
-	if (question && question.multiSelect !== true && state.answers.has(state.currentTab) && !state.notesVisible) {
+	// Notes hint visible whenever focused option has preview AND not currently editing notes.
+	// Pre-answer notes are now reachable (no `answers.has(currentTab)` gate) per Decision 8.
+	if (question && question.multiSelect !== true && state.focusedOptionHasPreview && !state.notesVisible) {
 		parts.push("n to add notes");
 	}
 	if (isMulti) parts.push("Tab to switch questions");

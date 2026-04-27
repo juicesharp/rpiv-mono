@@ -2,19 +2,27 @@ import { Value } from "@sinclair/typebox/value";
 import { describe, expect, it } from "vitest";
 import {
 	isQuestionnaireResult,
+	MAX_HEADER_LENGTH,
+	MAX_LABEL_LENGTH,
+	MAX_OPTIONS,
 	MAX_QUESTIONS,
+	MIN_OPTIONS,
 	type QuestionAnswer,
 	type QuestionData,
 	type QuestionnaireResult,
 	QuestionParamsSchema,
 	QuestionsSchema,
+	RESERVED_LABELS,
 } from "./types.js";
 
 function makeQuestion(override: Partial<QuestionData> = {}): QuestionData {
 	return {
 		question: override.question ?? "What's your name?",
-		header: override.header,
-		options: override.options ?? [{ label: "A" }, { label: "B" }],
+		header: override.header ?? "Hdr",
+		options: override.options ?? [
+			{ label: "A", description: "Choice A" },
+			{ label: "B", description: "Choice B" },
+		],
 		multiSelect: override.multiSelect,
 	};
 }
@@ -43,7 +51,10 @@ describe("QuestionsSchema — array constraints", () => {
 describe("QuestionSchema — option/preview/multiSelect/header shape", () => {
 	it("accepts options with optional preview field", () => {
 		const q = makeQuestion({
-			options: [{ label: "A", description: "alpha", preview: "## A\n\nbody" }, { label: "B" }],
+			options: [
+				{ label: "A", description: "alpha", preview: "## A\n\nbody" },
+				{ label: "B", description: "beta" },
+			],
 		});
 		expect(Value.Check(QuestionsSchema, [q])).toBe(true);
 	});
@@ -65,20 +76,75 @@ describe("QuestionSchema — option/preview/multiSelect/header shape", () => {
 		expect(Value.Check(QuestionsSchema, [makeQuestion({ multiSelect: true })])).toBe(true);
 	});
 
-	it("accepts header field", () => {
+	it("accepts a header up to MAX_HEADER_LENGTH chars", () => {
 		expect(Value.Check(QuestionsSchema, [makeQuestion({ header: "Architecture" })])).toBe(true);
 	});
 
-	it("accepts a single-option question", () => {
-		expect(Value.Check(QuestionsSchema, [makeQuestion({ options: [{ label: "OK" }] })])).toBe(true);
+	it("rejects a single-option question (minItems=2)", () => {
+		expect(
+			Value.Check(QuestionsSchema, [makeQuestion({ options: [{ label: "OK", description: "Only choice" }] })]),
+		).toBe(false);
 	});
 
-	it("rejects empty options array (minItems=1 on options)", () => {
+	it("rejects empty options array (minItems=2)", () => {
 		expect(Value.Check(QuestionsSchema, [makeQuestion({ options: [] })])).toBe(false);
 	});
 
+	it("rejects more than MAX_OPTIONS options (maxItems=4)", () => {
+		const five = [
+			{ label: "A", description: "alpha" },
+			{ label: "B", description: "beta" },
+			{ label: "C", description: "gamma" },
+			{ label: "D", description: "delta" },
+			{ label: "E", description: "epsilon" },
+		];
+		expect(Value.Check(QuestionsSchema, [makeQuestion({ options: five })])).toBe(false);
+		expect(MAX_OPTIONS).toBe(4);
+	});
+
+	it("rejects an option missing the required description", () => {
+		const broken = makeQuestion({
+			options: [{ label: "A" } as never, { label: "B", description: "ok" }],
+		});
+		expect(Value.Check(QuestionsSchema, [broken])).toBe(false);
+	});
+
+	it("rejects a question missing the required header", () => {
+		const noHeader = {
+			question: "Q?",
+			options: [
+				{ label: "A", description: "a" },
+				{ label: "B", description: "b" },
+			],
+		};
+		expect(Value.Check(QuestionsSchema, [noHeader])).toBe(false);
+	});
+
+	it("rejects a header longer than MAX_HEADER_LENGTH (12) chars", () => {
+		expect(Value.Check(QuestionsSchema, [makeQuestion({ header: "ThisIsTooLong13" })])).toBe(false);
+	});
+
+	it("rejects a label longer than MAX_LABEL_LENGTH (60) chars", () => {
+		const tooLong = "x".repeat(MAX_LABEL_LENGTH + 1);
+		expect(
+			Value.Check(QuestionsSchema, [
+				makeQuestion({
+					options: [
+						{ label: tooLong, description: "a" },
+						{ label: "B", description: "b" },
+					],
+				}),
+			]),
+		).toBe(false);
+	});
+
 	it("rejects question with missing 'question' text", () => {
-		const broken = { options: [{ label: "A" }] } as unknown;
+		const broken = {
+			options: [
+				{ label: "A", description: "a" },
+				{ label: "B", description: "b" },
+			],
+		} as unknown;
 		expect(Value.Check(QuestionsSchema, [broken])).toBe(false);
 	});
 });
@@ -95,7 +161,10 @@ describe("QuestionParamsSchema — top-level shape", () => {
 					question: "Choose",
 					header: "Pick",
 					multiSelect: true,
-					options: [{ label: "A", description: "First", preview: "# A" }, { label: "B" }],
+					options: [
+						{ label: "A", description: "First", preview: "# A" },
+						{ label: "B", description: "Second" },
+					],
 				},
 			],
 		};
@@ -111,7 +180,7 @@ describe("QuestionParamsSchema — top-level shape", () => {
 	});
 });
 
-describe("QuestionAnswer — notes field optionality", () => {
+describe("QuestionAnswer — notes + preview field optionality", () => {
 	it("accepts an answer with notes populated", () => {
 		const a: QuestionAnswer = {
 			questionIndex: 0,
@@ -133,6 +202,16 @@ describe("QuestionAnswer — notes field optionality", () => {
 		expect(a.selected).toEqual(["Frontend", "Backend"]);
 		expect(a.answer).toBeNull();
 	});
+
+	it("accepts an answer with preview populated (single-select with matched preview-bearing option)", () => {
+		const a: QuestionAnswer = {
+			questionIndex: 0,
+			question: "Q?",
+			answer: "A",
+			preview: "## Heading\n\nbody",
+		};
+		expect(a.preview).toContain("## Heading");
+	});
 });
 
 describe("isQuestionnaireResult — type guard", () => {
@@ -143,6 +222,12 @@ describe("isQuestionnaireResult — type guard", () => {
 
 	it("accepts a result with error field", () => {
 		expect(isQuestionnaireResult({ answers: [], cancelled: true, error: "no_ui" })).toBe(true);
+	});
+
+	it("accepts a result with the new error variants", () => {
+		expect(isQuestionnaireResult({ answers: [], cancelled: true, error: "duplicate_question" })).toBe(true);
+		expect(isQuestionnaireResult({ answers: [], cancelled: true, error: "duplicate_option_label" })).toBe(true);
+		expect(isQuestionnaireResult({ answers: [], cancelled: true, error: "reserved_label" })).toBe(true);
 	});
 
 	it("accepts a result with populated answers", () => {
@@ -171,5 +256,18 @@ describe("isQuestionnaireResult — type guard", () => {
 	it("rejects missing fields", () => {
 		expect(isQuestionnaireResult({ answers: [] })).toBe(false);
 		expect(isQuestionnaireResult({ cancelled: true })).toBe(false);
+	});
+});
+
+describe("schema constants + RESERVED_LABELS", () => {
+	it("exports the new schema constants with expected values", () => {
+		expect(MIN_OPTIONS).toBe(2);
+		expect(MAX_OPTIONS).toBe(4);
+		expect(MAX_HEADER_LENGTH).toBe(12);
+		expect(MAX_LABEL_LENGTH).toBe(60);
+	});
+
+	it("RESERVED_LABELS includes the three Pi sentinels + CC's 'Other'", () => {
+		expect(RESERVED_LABELS).toEqual(["Other", "Type something.", "Chat about this"]);
 	});
 });

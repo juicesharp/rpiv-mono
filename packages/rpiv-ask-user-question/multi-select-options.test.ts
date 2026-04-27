@@ -16,14 +16,21 @@ function state(over: Partial<DialogState> = {}): DialogState {
 		inputMode: over.inputMode ?? false,
 		answers: over.answers ?? new Map(),
 		multiSelectChecked: over.multiSelectChecked ?? new Set(),
+		focusedOptionHasPreview: over.focusedOptionHasPreview ?? false,
 	};
 }
 
 function question(over: Partial<QuestionData> = {}): QuestionData {
 	return {
 		question: over.question ?? "areas?",
-		header: over.header,
-		options: over.options ?? [{ label: "FE" }, { label: "BE" }, { label: "DB" }],
+		header: over.header ?? "H",
+		// Empty descriptions skip the continuation-line render path so default fixture
+		// produces exactly one line per option (matches the row-count expectations below).
+		options: over.options ?? [
+			{ label: "FE", description: "" },
+			{ label: "BE", description: "" },
+			{ label: "DB", description: "" },
+		],
 		multiSelect: over.multiSelect ?? true,
 	};
 }
@@ -73,7 +80,10 @@ describe("MultiSelectOptions.render", () => {
 
 	it("renders description on continuation line when present", () => {
 		const q = question({
-			options: [{ label: "FE", description: "front-end" }, { label: "BE" }],
+			options: [
+				{ label: "FE", description: "front-end" },
+				{ label: "BE", description: "" },
+			],
 		});
 		const m = new MultiSelectOptions(theme, q, state());
 		const lines = m.render(80);
@@ -115,7 +125,7 @@ describe("MultiSelectOptions.naturalHeight", () => {
 				options: [
 					{ label: "FE", description: "front-end" },
 					{ label: "BE", description: "back-end" },
-					{ label: "DB" },
+					{ label: "DB", description: "DB" },
 				],
 			}),
 		],
@@ -128,14 +138,17 @@ describe("MultiSelectOptions.naturalHeight", () => {
 						description:
 							"this is an extremely long description that should wrap across multiple lines when rendered at narrow widths to verify line counting",
 					},
-					{ label: "BE" },
+					{ label: "BE", description: "BE" },
 				],
 			}),
 		],
 		[
 			"long-label-truncates-not-wraps",
 			question({
-				options: [{ label: "x".repeat(200) }, { label: "BE" }],
+				options: [
+					{ label: "x".repeat(200), description: "long" },
+					{ label: "BE", description: "BE" },
+				],
 			}),
 		],
 	];
@@ -153,7 +166,7 @@ describe("MultiSelectOptions.naturalHeight", () => {
 		const q = question({
 			options: [
 				{ label: "FE", description: "front-end work" },
-				{ label: "BE" },
+				{ label: "BE", description: "back-end" },
 				{ label: "DB", description: "database tasks" },
 			],
 		});

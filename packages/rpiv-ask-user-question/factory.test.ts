@@ -193,13 +193,23 @@ describe("ask_user_question — single-question navigation", () => {
 
 describe("ask_user_question — 'Type something.' free-text flow", () => {
 	const freeTextParams = {
-		questions: [{ question: "Name?", header: "Name", options: [{ label: "Default" }] }],
+		questions: [
+			{
+				question: "Name?",
+				header: "Name",
+				options: [
+					{ label: "Default", description: "Default option" },
+					{ label: "Second", description: "Second option" },
+				],
+			},
+		],
 	};
 
 	it("navigate to Other sentinel, type text, Enter → wasCustom=true with typed text", async () => {
 		const tool = register();
 		const { custom } = driveCustom((c) => {
-			// Items: [Default, "Type something."] — DOWN to Type something
+			// Items: [Default, Second, "Type something."] — DOWN×2 to Type something
+			c.handleInput(KEY.DOWN); // → Second
 			c.handleInput(KEY.DOWN); // → Type something (inputMode=true)
 			c.handleInput("h");
 			c.handleInput("e");
@@ -220,6 +230,7 @@ describe("ask_user_question — 'Type something.' free-text flow", () => {
 	it("Type something with no input → wasCustom=true, answer=null", async () => {
 		const tool = register();
 		const { custom } = driveCustom((c) => {
+			c.handleInput(KEY.DOWN); // → Second
 			c.handleInput(KEY.DOWN); // → Type something
 			c.handleInput(KEY.ENTER); // confirm with empty buffer
 		});
@@ -235,6 +246,7 @@ describe("ask_user_question — 'Type something.' free-text flow", () => {
 	it("Type text, backspace removes last char, then Enter", async () => {
 		const tool = register();
 		const { custom } = driveCustom((c) => {
+			c.handleInput(KEY.DOWN); // → Second
 			c.handleInput(KEY.DOWN); // → Type something
 			c.handleInput("a");
 			c.handleInput("b");
@@ -467,10 +479,38 @@ describe("ask_user_question — multi-question tab cycling flow", () => {
 describe("ask_user_question — MAX_QUESTIONS (4 questions) complete flow", () => {
 	const fourParams = {
 		questions: [
-			{ question: "Q1?", header: "H1", options: [{ label: "A" }] },
-			{ question: "Q2?", header: "H2", options: [{ label: "B" }] },
-			{ question: "Q3?", header: "H3", options: [{ label: "C" }] },
-			{ question: "Q4?", header: "H4", options: [{ label: "D" }] },
+			{
+				question: "Q1?",
+				header: "H1",
+				options: [
+					{ label: "A", description: "A option" },
+					{ label: "A2", description: "A2 option" },
+				],
+			},
+			{
+				question: "Q2?",
+				header: "H2",
+				options: [
+					{ label: "B", description: "B option" },
+					{ label: "B2", description: "B2 option" },
+				],
+			},
+			{
+				question: "Q3?",
+				header: "H3",
+				options: [
+					{ label: "C", description: "C option" },
+					{ label: "C2", description: "C2 option" },
+				],
+			},
+			{
+				question: "Q4?",
+				header: "H4",
+				options: [
+					{ label: "D", description: "D option" },
+					{ label: "D2", description: "D2 option" },
+				],
+			},
 		],
 	};
 
@@ -491,10 +531,11 @@ describe("ask_user_question — MAX_QUESTIONS (4 questions) complete flow", () =
 		expect(r?.details.answers).toHaveLength(4);
 		const labels = r?.details.answers.map((a: QuestionAnswer) => a.answer);
 		expect(labels).toEqual(["A", "B", "C", "D"]);
-		const lines = r?.content[0].text.split("\n");
-		expect(lines?.length).toBe(4);
-		expect(lines?.[0]).toBe("H1: User selected: A");
-		expect(lines?.[3]).toBe("H4: User selected: D");
+		// Phase 3 envelope: single CC-style sentence chain.
+		expect(r?.content[0].text).toContain('"Q1?"="A".');
+		expect(r?.content[0].text).toContain('"Q4?"="D".');
+		expect(r?.content[0].text).toMatch(/^User has answered your questions:/);
+		expect(r?.content[0].text).toMatch(/You can now continue with the user's answers in mind\.$/);
 	});
 
 	it("cancel after answering 2 of 4 → partial answers preserved", async () => {
@@ -533,5 +574,68 @@ describe("ask_user_question — mixed single+multi question flow", () => {
 		expect(r?.details.answers).toHaveLength(2);
 		expect(r?.details.answers[0]).toMatchObject({ answer: "A", wasCustom: false });
 		expect(r?.details.answers[1]).toMatchObject({ answer: null, selected: ["FE", "DB"] });
+	});
+});
+
+const previewQuestionParams = {
+	questions: [
+		{
+			question: "Pick layout",
+			header: "Layout",
+			options: [
+				{ label: "Centered", description: "Centered logo", preview: "## Centered\n\nbody" },
+				{ label: "Left", description: "Left logo" },
+			],
+		},
+	],
+};
+
+describe("ask_user_question — notes pre-answer (Slice 5 notes UX)", () => {
+	it("user can press 'n' to add notes BEFORE pressing Enter on a preview-bearing option", async () => {
+		const tool = register();
+		const { custom } = driveCustom((c) => {
+			// Items: [Centered (preview), Left, "Type something."]
+			// On startup we're focused on Centered (option 0), which has preview.
+			// Slice 5 gate: focusedOptionHasPreview === true → 'n' triggers notes_enter.
+			c.handleInput("n"); // enter notes mode
+			c.handleInput("h");
+			c.handleInput("e");
+			c.handleInput("l");
+			c.handleInput("l");
+			c.handleInput("o");
+			c.handleInput(KEY.ESC); // exit notes (commits to notesByTab)
+			c.handleInput(KEY.ENTER); // confirm Centered → notesByTab merges into answer
+		});
+		const ctx = { hasUI: true, ui: { custom } } as never;
+		const r = (await tool.execute?.(
+			"tc",
+			previewQuestionParams as never,
+			undefined as never,
+			undefined as never,
+			ctx,
+		)) as ToolResult | undefined;
+		expect(r?.details.cancelled).toBe(false);
+		expect(r?.details.answers[0]).toMatchObject({ answer: "Centered", wasCustom: false });
+		expect(r?.details.answers[0].notes).toBe("hello");
+	});
+
+	it("'n' keypress is ignored when focused option has no preview (notes scoped to preview-bearing options)", async () => {
+		const tool = register();
+		const { custom } = driveCustom((c) => {
+			c.handleInput(KEY.DOWN); // → option Left (no preview)
+			c.handleInput("n"); // ignored — focusedOptionHasPreview === false
+			c.handleInput(KEY.ENTER); // confirms Left
+		});
+		const ctx = { hasUI: true, ui: { custom } } as never;
+		const r = (await tool.execute?.(
+			"tc",
+			previewQuestionParams as never,
+			undefined as never,
+			undefined as never,
+			ctx,
+		)) as ToolResult | undefined;
+		expect(r?.details.cancelled).toBe(false);
+		expect(r?.details.answers[0].answer).toBe("Left");
+		expect(r?.details.answers[0].notes).toBeUndefined();
 	});
 });

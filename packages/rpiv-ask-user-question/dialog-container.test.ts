@@ -35,8 +35,22 @@ function makeConfig(over: Partial<DialogConfig> = {}): DialogConfig {
 	const questions: QuestionData[] = over.questions
 		? [...over.questions]
 		: [
-				{ question: "Q1?", header: "H1", options: [{ label: "A" }, { label: "B" }] },
-				{ question: "Q2?", header: "H2", options: [{ label: "X" }, { label: "Y" }] },
+				{
+					question: "Q1?",
+					header: "H1",
+					options: [
+						{ label: "A", description: "a" },
+						{ label: "B", description: "b" },
+					],
+				},
+				{
+					question: "Q2?",
+					header: "H2",
+					options: [
+						{ label: "X", description: "x" },
+						{ label: "Y", description: "y" },
+					],
+				},
 			];
 	const state: DialogState = over.state ?? {
 		currentTab: 0,
@@ -45,6 +59,7 @@ function makeConfig(over: Partial<DialogConfig> = {}): DialogConfig {
 		inputMode: false,
 		answers: new Map(),
 		multiSelectChecked: new Set(),
+		focusedOptionHasPreview: false,
 	};
 	return {
 		theme: over.theme ?? theme,
@@ -66,7 +81,16 @@ describe("buildDialog — single-question mode", () => {
 		const tabBar = stubComponent(["<TABBAR>", ""]) as unknown as TabBar;
 		const dlg = buildDialog(
 			makeConfig({
-				questions: [{ question: "only?", options: [{ label: "yes" }] }],
+				questions: [
+					{
+						question: "only?",
+						header: "Only",
+						options: [
+							{ label: "yes", description: "y" },
+							{ label: "no", description: "n" },
+						],
+					},
+				],
 				isMulti: false,
 				tabBar,
 			}),
@@ -83,7 +107,16 @@ describe("buildDialog — single-question mode", () => {
 	it("renders the inner header badge in the dialog body (no tab bar to show it)", () => {
 		const dlg = buildDialog(
 			makeConfig({
-				questions: [{ question: "only?", header: "H-only", options: [{ label: "yes" }] }],
+				questions: [
+					{
+						question: "only?",
+						header: "H-only",
+						options: [
+							{ label: "yes", description: "y" },
+							{ label: "no", description: "n" },
+						],
+					},
+				],
 				isMulti: false,
 			}),
 		);
@@ -117,8 +150,12 @@ describe("buildDialog — multi-question (question tab)", () => {
 	it("appends 'Space toggle' suffix when current question is multiSelect", () => {
 		const multiQ: QuestionData = {
 			question: "areas?",
+			header: "Areas",
 			multiSelect: true,
-			options: [{ label: "FE" }, { label: "BE" }],
+			options: [
+				{ label: "FE", description: "FE" },
+				{ label: "BE", description: "BE" },
+			],
 		};
 		const initialState: DialogState = {
 			currentTab: 0,
@@ -127,11 +164,22 @@ describe("buildDialog — multi-question (question tab)", () => {
 			inputMode: false,
 			answers: new Map(),
 			multiSelectChecked: new Set(),
+			focusedOptionHasPreview: false,
 		};
 		const mso = new MultiSelectOptions(theme, multiQ, initialState);
 		const dlg = buildDialog(
 			makeConfig({
-				questions: [multiQ, { question: "second?", options: [{ label: "x" }] }],
+				questions: [
+					multiQ,
+					{
+						question: "second?",
+						header: "S",
+						options: [
+							{ label: "x", description: "x" },
+							{ label: "y", description: "y" },
+						],
+					},
+				],
 				state: initialState,
 				multiSelectOptionsByTab: [mso, undefined],
 				getBodyHeight: () => 4,
@@ -141,7 +189,7 @@ describe("buildDialog — multi-question (question tab)", () => {
 		expect(joined).toContain(HINT_MULTISELECT_SUFFIX.trim());
 	});
 
-	it("appends 'n for notes' when current single-select question is answered", () => {
+	it("appends 'n for notes' when focused option carries a preview", () => {
 		const answer: QuestionAnswer = { questionIndex: 0, question: "Q1?", answer: "A" };
 		const dlg = buildDialog(
 			makeConfig({
@@ -152,6 +200,7 @@ describe("buildDialog — multi-question (question tab)", () => {
 					inputMode: false,
 					answers: new Map([[0, answer]]),
 					multiSelectChecked: new Set(),
+					focusedOptionHasPreview: true,
 				},
 			}),
 		);
@@ -169,6 +218,7 @@ describe("buildDialog — multi-question (question tab)", () => {
 				inputMode: false,
 				answers: new Map(),
 				multiSelectChecked: new Set(),
+				focusedOptionHasPreview: false,
 			},
 		});
 		const visible = buildDialog(visibleCfg).render(80);
@@ -180,8 +230,12 @@ describe("buildDialog — multi-question (question tab)", () => {
 	it("renders multiSelect checkboxes inline (☑ / ☐) in place of PreviewPane", () => {
 		const multiQ: QuestionData = {
 			question: "areas?",
+			header: "Areas",
 			multiSelect: true,
-			options: [{ label: "FE" }, { label: "BE" }],
+			options: [
+				{ label: "FE", description: "FE" },
+				{ label: "BE", description: "BE" },
+			],
 		};
 		const state: DialogState = {
 			currentTab: 0,
@@ -190,11 +244,22 @@ describe("buildDialog — multi-question (question tab)", () => {
 			inputMode: false,
 			answers: new Map(),
 			multiSelectChecked: new Set([0]),
+			focusedOptionHasPreview: false,
 		};
 		const mso = new MultiSelectOptions(theme, multiQ, state);
 		const dlg = buildDialog(
 			makeConfig({
-				questions: [multiQ, { question: "q?", options: [{ label: "a" }] }],
+				questions: [
+					multiQ,
+					{
+						question: "q?",
+						header: "Q",
+						options: [
+							{ label: "a", description: "a" },
+							{ label: "b", description: "b" },
+						],
+					},
+				],
 				state,
 				multiSelectOptionsByTab: [mso, undefined],
 				getBodyHeight: () => 4,
@@ -227,6 +292,7 @@ describe("buildDialog — Submit tab", () => {
 					inputMode: false,
 					answers,
 					multiSelectChecked: new Set(),
+					focusedOptionHasPreview: false,
 				},
 				getBodyHeight: () => 6,
 			}),
@@ -252,6 +318,7 @@ describe("buildDialog — Submit tab", () => {
 					inputMode: false,
 					answers: partial,
 					multiSelectChecked: new Set(),
+					focusedOptionHasPreview: false,
 				},
 				getBodyHeight: () => 6,
 			}),
@@ -272,6 +339,7 @@ describe("buildDialog — Submit tab", () => {
 					inputMode: false,
 					answers,
 					multiSelectChecked: new Set(),
+					focusedOptionHasPreview: false,
 				},
 				getBodyHeight: () => 6,
 			}),
@@ -289,17 +357,45 @@ describe("buildDialog — Submit tab", () => {
 	it.each<[string, ReturnType<typeof makeConfig>["questions"]]>([
 		["both with headers", undefined as never],
 		[
-			"both without headers",
+			"both with short single-char headers",
 			[
-				{ question: "Q1?", options: [{ label: "A" }, { label: "B" }] },
-				{ question: "Q2?", options: [{ label: "X" }, { label: "Y" }] },
+				{
+					question: "Q1?",
+					header: "1",
+					options: [
+						{ label: "A", description: "a" },
+						{ label: "B", description: "b" },
+					],
+				},
+				{
+					question: "Q2?",
+					header: "2",
+					options: [
+						{ label: "X", description: "x" },
+						{ label: "Y", description: "y" },
+					],
+				},
 			],
 		],
 		[
-			"mixed: tab 0 headerless, tab 1 with header",
+			"mixed: tab 0 short header, tab 1 longer header",
 			[
-				{ question: "Q1?", options: [{ label: "A" }, { label: "B" }] },
-				{ question: "Q2?", header: "H2", options: [{ label: "X" }, { label: "Y" }] },
+				{
+					question: "Q1?",
+					header: "1",
+					options: [
+						{ label: "A", description: "a" },
+						{ label: "B", description: "b" },
+					],
+				},
+				{
+					question: "Q2?",
+					header: "H2",
+					options: [
+						{ label: "X", description: "x" },
+						{ label: "Y", description: "y" },
+					],
+				},
 			],
 		],
 	])("submit + question tab heights stay equal across fixtures: %s", (_label, qs) => {
@@ -314,6 +410,7 @@ describe("buildDialog — Submit tab", () => {
 					inputMode: false,
 					answers,
 					multiSelectChecked: new Set(),
+					focusedOptionHasPreview: false,
 				},
 				getBodyHeight: () => 6,
 			}),
@@ -328,6 +425,7 @@ describe("buildDialog — Submit tab", () => {
 					inputMode: false,
 					answers,
 					multiSelectChecked: new Set(),
+					focusedOptionHasPreview: false,
 				},
 				getBodyHeight: () => 6,
 			}),
@@ -346,6 +444,7 @@ describe("buildDialog — Submit tab", () => {
 					inputMode: false,
 					answers,
 					multiSelectChecked: new Set(),
+					focusedOptionHasPreview: false,
 				},
 				getBodyHeight: () => 6,
 			}),
@@ -359,6 +458,7 @@ describe("buildDialog — Submit tab", () => {
 					inputMode: false,
 					answers,
 					multiSelectChecked: new Set(),
+					focusedOptionHasPreview: false,
 				},
 				getBodyHeight: () => 6,
 			}),
@@ -392,6 +492,7 @@ describe("buildDialog — width safety", () => {
 							inputMode: false,
 							answers: new Map([[0, { questionIndex: 0, question: "q", answer: "A" }]]),
 							multiSelectChecked: new Set(),
+							focusedOptionHasPreview: false,
 						},
 					}),
 				);
@@ -415,9 +516,22 @@ describe("buildDialog — FixedHeightBox body wrapping", () => {
 			question: "areas?",
 			header: "H2",
 			multiSelect: true,
-			options: [{ label: "FE" }, { label: "BE" }, { label: "DB" }, { label: "QA" }, { label: "Ops" }],
+			options: [
+				{ label: "FE", description: "FE" },
+				{ label: "BE", description: "BE" },
+				{ label: "DB", description: "DB" },
+				{ label: "QA", description: "QA" },
+				{ label: "Ops", description: "Ops" },
+			],
 		};
-		const singleQ: QuestionData = { question: "Q1", header: "H1", options: [{ label: "A" }, { label: "B" }] };
+		const singleQ: QuestionData = {
+			question: "Q1",
+			header: "H1",
+			options: [
+				{ label: "A", description: "a" },
+				{ label: "B", description: "b" },
+			],
+		};
 		const questions: QuestionData[] = [singleQ, multiQ];
 		const stateTab0: DialogState = {
 			currentTab: 0,
@@ -426,6 +540,7 @@ describe("buildDialog — FixedHeightBox body wrapping", () => {
 			inputMode: false,
 			answers: new Map(),
 			multiSelectChecked: new Set(),
+			focusedOptionHasPreview: false,
 		};
 		const stateTab1: DialogState = { ...stateTab0, currentTab: 1 };
 		const mso = new MultiSelectOptions(theme, multiQ, stateTab0);

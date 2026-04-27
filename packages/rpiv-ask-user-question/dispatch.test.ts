@@ -21,8 +21,12 @@ const BYTE_SPACE = " ";
 function makeQuestion(over: Partial<QuestionData> = {}): QuestionData {
 	return {
 		question: over.question ?? "Pick one",
-		header: over.header,
-		options: over.options ?? [{ label: "A" }, { label: "B" }, { label: "C" }],
+		header: over.header ?? "H",
+		options: over.options ?? [
+			{ label: "A", description: "a" },
+			{ label: "B", description: "b" },
+			{ label: "C", description: "c" },
+		],
 		multiSelect: over.multiSelect,
 	};
 }
@@ -53,6 +57,7 @@ function baseState(over: Partial<QuestionnaireDispatchState> = {}): Questionnair
 		currentItem: over.currentItem ?? items[0],
 		inputBuffer: over.inputBuffer ?? "",
 		items: over.items ?? items,
+		focusedOptionHasPreview: over.focusedOptionHasPreview ?? false,
 	};
 }
 
@@ -165,7 +170,14 @@ describe("handleQuestionnaireInput — confirm (single-select)", () => {
 });
 
 describe("handleQuestionnaireInput — multiSelect", () => {
-	const multiQ = makeQuestion({ multiSelect: true, options: [{ label: "FE" }, { label: "BE" }, { label: "Tests" }] });
+	const multiQ = makeQuestion({
+		multiSelect: true,
+		options: [
+			{ label: "FE", description: "FE" },
+			{ label: "BE", description: "BE" },
+			{ label: "Tests", description: "T" },
+		],
+	});
 
 	it("Space emits toggle for the current optionIndex", () => {
 		const s = baseState({
@@ -273,20 +285,20 @@ describe("handleQuestionnaireInput — cancel + submit", () => {
 });
 
 describe("handleQuestionnaireInput — notes", () => {
-	it("'n' on an answered question emits notes_enter", () => {
-		const s = baseState({ answers: new Map([[0, makeAnswer({ questionIndex: 0 })]]) });
+	it("'n' when focused option has preview emits notes_enter", () => {
+		const s = baseState({ focusedOptionHasPreview: true });
 		expect(handleQuestionnaireInput("n", s)).toEqual({ kind: "notes_enter" });
 	});
 
-	it("'n' on an unanswered question is ignored", () => {
-		expect(handleQuestionnaireInput("n", baseState())).toEqual({ kind: "ignore" });
+	it("'n' when focused option has no preview is ignored", () => {
+		expect(handleQuestionnaireInput("n", baseState({ focusedOptionHasPreview: false }))).toEqual({ kind: "ignore" });
 	});
 
-	it("'n' is ignored on multiSelect questions", () => {
+	it("'n' is ignored on multiSelect questions even with preview", () => {
 		const multiQ = makeQuestion({ multiSelect: true });
 		const s = baseState({
 			questions: [multiQ, makeQuestion()],
-			answers: new Map([[0, makeAnswer({ questionIndex: 0 })]]),
+			focusedOptionHasPreview: true,
 		});
 		expect(handleQuestionnaireInput("n", s)).toEqual({ kind: "ignore" });
 	});
@@ -345,7 +357,11 @@ describe("handleQuestionnaireInput — chat focus", () => {
 	it("DOWN-on-last multi-select → focus_chat", () => {
 		const multiQ = makeQuestion({
 			multiSelect: true,
-			options: [{ label: "FE" }, { label: "BE" }, { label: "DB" }],
+			options: [
+				{ label: "FE", description: "FE" },
+				{ label: "BE", description: "BE" },
+				{ label: "DB", description: "DB" },
+			],
 		});
 		const items = multiQ.options.map((o) => ({ label: o.label }));
 		const s = baseState({
@@ -443,7 +459,7 @@ describe("handleQuestionnaireInput — chat focus", () => {
 		const s = baseState({
 			chatFocused: true,
 			currentItem: chatItem,
-			answers: new Map([[0, makeAnswer({ questionIndex: 0 })]]),
+			focusedOptionHasPreview: true,
 		});
 		expect(handleQuestionnaireInput("n", s)).toEqual({ kind: "ignore" });
 	});

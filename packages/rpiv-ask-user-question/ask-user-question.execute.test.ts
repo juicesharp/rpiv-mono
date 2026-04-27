@@ -46,7 +46,7 @@ describe("ask_user_question.execute — early returns", () => {
 			ctx as never,
 		);
 		expect(r?.details).toMatchObject({ cancelled: true, error: "empty_options" });
-		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("no options") });
+		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("at least 2 options") });
 	});
 
 	it("returns ERROR_NO_QUESTIONS text when questions array is empty", async () => {
@@ -91,14 +91,17 @@ describe("ask_user_question.execute — ctx.ui.custom dispatch", () => {
 		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("declined") });
 	});
 
-	it("Normal selection → 'Pick: User selected: A'", async () => {
+	it("Normal selection → CC envelope wrapper with quoted question and answer", async () => {
 		const tool = register();
 		const ctx = ctxWithCustom({
 			cancelled: false,
 			answers: [{ questionIndex: 0, question: "Which?", answer: "A", wasCustom: false }],
 		});
 		const r = await tool.execute?.("tc", BASE_PARAMS as never, undefined as never, undefined as never, ctx as never);
-		expect(r?.content[0]).toMatchObject({ text: "Pick: User selected: A" });
+		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining('"Which?"="A"') });
+		expect(r?.content[0]).toMatchObject({
+			text: expect.stringMatching(/^User has answered your questions:/),
+		});
 	});
 
 	it("Custom typed answer sets wasCustom", async () => {
@@ -108,7 +111,7 @@ describe("ask_user_question.execute — ctx.ui.custom dispatch", () => {
 			answers: [{ questionIndex: 0, question: "Which?", answer: "typed", wasCustom: true }],
 		});
 		const r = await tool.execute?.("tc", BASE_PARAMS as never, undefined as never, undefined as never, ctx as never);
-		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("User answered: typed") });
+		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining('"Which?"="typed"') });
 	});
 });
 
@@ -117,10 +120,88 @@ describe("ask_user_question.execute — undefined result from ctx.ui.custom", ()
 		const tool = register();
 		const custom = vi.fn(async () => undefined) as unknown as CustomFn;
 		const ctx = createMockCtx({ hasUI: true, ui: { custom } as never });
-		const params = { questions: [{ question: "Q?", options: [{ label: "A" }] }] };
+		const params = {
+			questions: [{ question: "Q?", header: "H", options: [{ label: "A" }, { label: "B" }] }],
+		};
 		const r = await tool.execute?.("tc", params as never, undefined as never, undefined as never, ctx as never);
 		expect(r?.details).toMatchObject({ cancelled: true });
 		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("declined") });
+	});
+});
+
+describe("ask_user_question.execute — new runtime guards (CC parity)", () => {
+	it("widens empty_options check to < MIN_OPTIONS (single-option rejected)", async () => {
+		const tool = register();
+		const ctx = ctxWithCustom(null);
+		const params = { questions: [{ question: "Q?", header: "H", options: [{ label: "A" }] }] };
+		const r = await tool.execute?.("tc", params as never, undefined as never, undefined as never, ctx as never);
+		expect(r?.details).toMatchObject({ cancelled: true, error: "empty_options" });
+		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("at least 2 options") });
+	});
+
+	it("returns error: duplicate_question when two questions share text", async () => {
+		const tool = register();
+		const ctx = ctxWithCustom(null);
+		const params = {
+			questions: [
+				{ question: "Same?", header: "H1", options: [{ label: "A" }, { label: "B" }] },
+				{ question: "Same?", header: "H2", options: [{ label: "C" }, { label: "D" }] },
+			],
+		};
+		const r = await tool.execute?.("tc", params as never, undefined as never, undefined as never, ctx as never);
+		expect(r?.details).toMatchObject({ cancelled: true, error: "duplicate_question" });
+		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("Question text must be unique") });
+	});
+
+	it("returns error: duplicate_option_label when two options in a question share label", async () => {
+		const tool = register();
+		const ctx = ctxWithCustom(null);
+		const params = {
+			questions: [
+				{
+					question: "Pick?",
+					header: "Pick",
+					options: [{ label: "A" }, { label: "A" }],
+				},
+			],
+		};
+		const r = await tool.execute?.("tc", params as never, undefined as never, undefined as never, ctx as never);
+		expect(r?.details).toMatchObject({ cancelled: true, error: "duplicate_option_label" });
+		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("Option labels must be unique") });
+	});
+
+	it("returns error: reserved_label when an option uses 'Other' / 'Type something.' / 'Chat about this'", async () => {
+		const tool = register();
+		const ctx = ctxWithCustom(null);
+		const params = {
+			questions: [
+				{
+					question: "Pick?",
+					header: "Pick",
+					options: [{ label: "Other" }, { label: "B" }],
+				},
+			],
+		};
+		const r = await tool.execute?.("tc", params as never, undefined as never, undefined as never, ctx as never);
+		expect(r?.details).toMatchObject({ cancelled: true, error: "reserved_label" });
+		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("reserved") });
+	});
+
+	it("rejects 'Type something.' as a reserved label even on multiSelect questions (Decision 9)", async () => {
+		const tool = register();
+		const ctx = ctxWithCustom(null);
+		const params = {
+			questions: [
+				{
+					question: "Pick?",
+					header: "Pick",
+					multiSelect: true,
+					options: [{ label: "Type something." }, { label: "B" }],
+				},
+			],
+		};
+		const r = await tool.execute?.("tc", params as never, undefined as never, undefined as never, ctx as never);
+		expect(r?.details).toMatchObject({ cancelled: true, error: "reserved_label" });
 	});
 });
 

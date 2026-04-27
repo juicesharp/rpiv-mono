@@ -42,6 +42,13 @@ export interface QuestionnaireDispatchState {
 	currentItem: WrappingSelectItem | undefined;
 	inputBuffer: string;
 	items: readonly WrappingSelectItem[];
+	/**
+	 * True iff the currently-focused option carries a non-empty `preview` string.
+	 * Set by `ask-user-question.ts:dispatchSnapshot()` via `computeFocusedOptionHasPreview()`.
+	 * Gates the `notes_enter` action — notes are scoped to preview-bearing options
+	 * (Decision 8 + reference image showing affordance only on preview-bearing rows).
+	 */
+	focusedOptionHasPreview: boolean;
 }
 
 export function wrapTab(index: number, total: number): number {
@@ -197,7 +204,7 @@ export function handleQuestionnaireInput(data: string, state: QuestionnaireDispa
 	const q = state.questions[state.currentTab];
 	if (!q) return { kind: "ignore" };
 
-	if (data === NOTES_ACTIVATE_KEY && !q.multiSelect && state.answers.has(state.currentTab)) {
+	if (data === NOTES_ACTIVATE_KEY && !q.multiSelect && state.focusedOptionHasPreview) {
 		return { kind: "notes_enter" };
 	}
 

@@ -5,18 +5,28 @@ import type { QuestionData } from "./types.js";
 import { WrappingSelect, type WrappingSelectItem, type WrappingSelectTheme } from "./wrapping-select.js";
 
 export const PREVIEW_MIN_WIDTH = 100;
-export const MAX_PREVIEW_HEIGHT = 15;
+/** CC parity in side-by-side layout. */
+export const MAX_PREVIEW_HEIGHT_SIDE_BY_SIDE = 20;
+/** Preserves narrow-terminal protection in stacked layout. */
+export const MAX_PREVIEW_HEIGHT_STACKED = 15;
 export const NO_PREVIEW_TEXT = "No preview available";
 export const MAX_VISIBLE_OPTIONS = 10;
 /** Max width of the options column when a side-by-side preview is shown. */
 export const PREVIEW_LEFT_COLUMN_MAX_WIDTH = 40;
 /** Visual gap between the options column and the preview column in side-by-side layout. */
 export const PREVIEW_COLUMN_GAP = 2;
-/** Padding inside the preview column — one blank line on top, one space on the left. */
-export const PREVIEW_PADDING_TOP = 1;
+/** 1 col padding inside the preview column (between gap and `│`). */
 export const PREVIEW_PADDING_LEFT = 1;
 /** Empty rows between the options block and the preview block in stacked (narrow) layout. */
 export const STACKED_GAP_ROWS = 1;
+/** Top + bottom border rows consumed by `renderBorderedBox`. */
+export const BORDER_VERTICAL_OVERHEAD = 2;
+/** Left + right vertical bar columns (`│ ... │`) consumed by `renderBorderedBox`. */
+export const BORDER_HORIZONTAL_OVERHEAD = 2;
+/** 1 blank separator + 1 affordance text row reserved constantly when `hasAnyPreview` (height stability). */
+export const NOTES_AFFORDANCE_OVERHEAD = 2;
+/** Affordance text shown below the bordered preview when focused on a preview-bearing option. */
+export const NOTES_AFFORDANCE_TEXT = "Notes: press n to add notes";
 
 export interface PreviewPaneConfig {
 	items: readonly WrappingSelectItem[];
@@ -26,8 +36,36 @@ export interface PreviewPaneConfig {
 	getTerminalWidth: () => number;
 }
 
-function oneLine(s: string): string {
-	return s.replace(/\s*[\r\n]+\s*/g, " ").trim();
+/**
+ * Wraps `lines` in a 4-sided ASCII border. Right-pads each content row to a fixed
+ * inner column using `truncateToWidth(line, inner, "", true)` so the right `│`
+ * lands at the same column regardless of ANSI codes in `line`. If `hidden > 0`,
+ * the bottom border becomes a truncation indicator inhabiting the bottom-row
+ * (regular `└─┘` corners; horizontal run replaced with ` ✂ ── N lines hidden ── `).
+ */
+export function renderBorderedBox(
+	lines: readonly string[],
+	width: number,
+	colorFn: (s: string) => string,
+	hidden = 0,
+): string[] {
+	const inner = Math.max(1, width - BORDER_HORIZONTAL_OVERHEAD);
+	const top = colorFn(`┌${"─".repeat(inner)}┐`);
+	const out: string[] = [top];
+	for (const line of lines) {
+		const padded = truncateToWidth(line, inner, "", true);
+		out.push(`${colorFn("│")}${padded}${colorFn("│")}`);
+	}
+	if (hidden > 0) {
+		const indicator = ` ✂ ── ${hidden} lines hidden ── `;
+		const space = inner - indicator.length;
+		const leftFill = "─".repeat(Math.max(0, Math.floor(space / 2)));
+		const rightFill = "─".repeat(Math.max(0, inner - leftFill.length - indicator.length));
+		out.push(colorFn(`└${leftFill}${indicator}${rightFill}┘`));
+	} else {
+		out.push(colorFn(`└${"─".repeat(inner)}┘`));
+	}
+	return out;
 }
 
 export class PreviewPane implements Component {
@@ -40,6 +78,8 @@ export class PreviewPane implements Component {
 	private readonly markdownCache: Map<number, Markdown>;
 	private cachedWidth: number | undefined;
 	private selectedIndex = 0;
+	private focused = false;
+	private notesVisible = false;
 
 	constructor(config: PreviewPaneConfig) {
 		this.question = config.question;
@@ -62,7 +102,7 @@ export class PreviewPane implements Component {
 		this.previewTexts = new Map();
 		for (let i = 0; i < config.question.options.length; i++) {
 			const raw = config.question.options[i]?.preview;
-			if (raw && raw.length > 0) this.previewTexts.set(i, oneLine(raw));
+			if (raw && raw.length > 0) this.previewTexts.set(i, raw);
 		}
 		this.markdownCache = new Map();
 	}
@@ -73,7 +113,12 @@ export class PreviewPane implements Component {
 	}
 
 	setFocused(focused: boolean): void {
+		this.focused = focused;
 		this.options.setFocused(focused);
+	}
+
+	setNotesVisible(visible: boolean): void {
+		this.notesVisible = visible;
 	}
 
 	invalidateCache(): void {
@@ -153,10 +198,11 @@ export class PreviewPane implements Component {
 			return optionsHeight;
 		}
 		const sideBySide = this.getTerminalWidth() >= PREVIEW_MIN_WIDTH && width >= PREVIEW_MIN_WIDTH;
+		const cap = sideBySide ? MAX_PREVIEW_HEIGHT_SIDE_BY_SIDE : MAX_PREVIEW_HEIGHT_STACKED;
 		if (sideBySide) {
-			return Math.max(optionsHeight, MAX_PREVIEW_HEIGHT);
+			return Math.max(optionsHeight, cap);
 		}
-		return optionsHeight + STACKED_GAP_ROWS + MAX_PREVIEW_HEIGHT;
+		return optionsHeight + STACKED_GAP_ROWS + cap;
 	}
 
 	/**
@@ -188,28 +234,32 @@ export class PreviewPane implements Component {
 			this.cachedWidth = width;
 		}
 
-		const raw: string[] = this.computePreviewBody(width);
-		const clamped = raw.map((line) => truncateToWidth(line, width, ""));
-		const trimmed = clamped.length > MAX_PREVIEW_HEIGHT ? clamped.slice(0, MAX_PREVIEW_HEIGHT) : clamped;
-		while (trimmed.length < MAX_PREVIEW_HEIGHT) trimmed.push("");
-		return trimmed;
+		const sideBySide = this.getTerminalWidth() >= PREVIEW_MIN_WIDTH && width >= PREVIEW_MIN_WIDTH;
+		const cap = sideBySide ? MAX_PREVIEW_HEIGHT_SIDE_BY_SIDE : MAX_PREVIEW_HEIGHT_STACKED;
+		const contentBudget = Math.max(1, cap - BORDER_VERTICAL_OVERHEAD - NOTES_AFFORDANCE_OVERHEAD);
+		const innerWidth = Math.max(1, width - BORDER_HORIZONTAL_OVERHEAD);
+
+		const raw = this.computePreviewBody(innerWidth);
+		const truncated = raw.length > contentBudget;
+		const hidden = truncated ? raw.length - contentBudget : 0;
+		const contentLines = truncated
+			? raw.slice(0, contentBudget)
+			: [...raw, ...Array<string>(contentBudget - raw.length).fill("")];
+
+		const colorFn = (s: string) => this.theme.fg("accent", s);
+		const boxedLines = renderBorderedBox(contentLines, width, colorFn, hidden);
+
+		// Notes affordance row — reserved CONSTANTLY when hasAnyPreview (height stability).
+		// Text appears only when focused on a preview-bearing option AND not in notes mode.
+		const showAffordance = this.focused && !this.notesVisible && this.previewTexts.has(this.selectedIndex);
+		const affordance = showAffordance ? this.theme.fg("muted", NOTES_AFFORDANCE_TEXT) : "";
+		return [...boxedLines, "", affordance];
 	}
 
-	/**
-	 * Side-by-side preview block with `padding-top` (PREVIEW_PADDING_TOP empty rows on top) and
-	 * `padding-left` (PREVIEW_PADDING_LEFT spaces in front of every non-empty content row).
-	 * The total height is still MAX_PREVIEW_HEIGHT so the dialog body stays a stable size.
-	 */
 	private renderPaddedPreviewLines(colWidth: number): string[] {
-		const innerWidth = Math.max(1, colWidth - PREVIEW_PADDING_LEFT);
-		const contentLines = this.renderPreviewLines(innerWidth);
+		const contentLines = this.renderPreviewLines(Math.max(1, colWidth - PREVIEW_PADDING_LEFT));
 		const pad = " ".repeat(PREVIEW_PADDING_LEFT);
-		const body = contentLines.map((l) => (l === "" ? "" : `${pad}${l}`));
-		const topPad: string[] = Array(PREVIEW_PADDING_TOP).fill("");
-		const combined = [...topPad, ...body];
-		const trimmed = combined.length > MAX_PREVIEW_HEIGHT ? combined.slice(0, MAX_PREVIEW_HEIGHT) : combined;
-		while (trimmed.length < MAX_PREVIEW_HEIGHT) trimmed.push("");
-		return trimmed;
+		return contentLines.map((l) => (l === "" ? "" : `${pad}${l}`));
 	}
 
 	private computePreviewBody(width: number): string[] {

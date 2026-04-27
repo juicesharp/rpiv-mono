@@ -4,11 +4,13 @@ import { visibleWidth } from "@mariozechner/pi-tui";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 let markdownConstructed = 0;
+let lastMarkdownText = "";
 vi.mock("@mariozechner/pi-tui", async (orig) => {
 	const actual = (await orig()) as Record<string, unknown>;
 	class FakeMarkdown {
 		constructor(public text: string) {
 			markdownConstructed++;
+			lastMarkdownText = text;
 		}
 		render(width: number): string[] {
 			return [`MD[${width}]:${this.text.slice(0, Math.max(0, width - 4))}`];
@@ -21,7 +23,15 @@ vi.mock("@mariozechner/pi-tui", async (orig) => {
 	return { ...actual, Markdown: FakeMarkdown };
 });
 
-import { MAX_PREVIEW_HEIGHT, NO_PREVIEW_TEXT, PREVIEW_MIN_WIDTH, PreviewPane } from "./preview-pane.js";
+import {
+	MAX_PREVIEW_HEIGHT_SIDE_BY_SIDE,
+	MAX_PREVIEW_HEIGHT_STACKED,
+	NO_PREVIEW_TEXT,
+	NOTES_AFFORDANCE_TEXT,
+	PREVIEW_MIN_WIDTH,
+	PreviewPane,
+	renderBorderedBox,
+} from "./preview-pane.js";
 import type { QuestionData } from "./types.js";
 
 const theme = makeTheme() as unknown as Theme;
@@ -55,15 +65,17 @@ function makePane(question: QuestionData, getWidth: () => number = () => 120) {
 
 beforeEach(() => {
 	markdownConstructed = 0;
+	lastMarkdownText = "";
 });
 
 describe("PreviewPane.render — layout switching", () => {
 	const question: QuestionData = {
 		question: "pick",
+		header: "pick",
 		options: [
-			{ label: "A", preview: "## A\n\nbody A content" },
-			{ label: "B", preview: "## B\n\nbody B content" },
-			{ label: "C" },
+			{ label: "A", description: "", preview: "## A\n\nbody A content" },
+			{ label: "B", description: "", preview: "## B\n\nbody B content" },
+			{ label: "C", description: "" },
 		],
 	};
 
@@ -81,7 +93,9 @@ describe("PreviewPane.render — layout switching", () => {
 		const lines = pane.render(80);
 		const mdLineIndex = lines.findIndex((l) => /MD\[\d+\]:/.test(l));
 		expect(mdLineIndex).toBeGreaterThan(0);
-		expect(lines.slice(mdLineIndex).length).toBe(MAX_PREVIEW_HEIGHT);
+		// From the first content row: remaining contentBudget rows + bottom border + blank + affordance.
+		// = (cap - 4 content rows) - 1 + 3 trailing rows = cap - 2; plus the MD row itself = cap - 1.
+		expect(lines.slice(mdLineIndex).length).toBe(MAX_PREVIEW_HEIGHT_STACKED - 1);
 	});
 
 	it("width 99 → stacked, width 100 → side-by-side (threshold boundary)", () => {
@@ -100,9 +114,10 @@ describe("PreviewPane.render — layout switching", () => {
 describe("PreviewPane — cache + invalidate", () => {
 	const question: QuestionData = {
 		question: "pick",
+		header: "pick",
 		options: [
-			{ label: "A", preview: "alpha preview" },
-			{ label: "B", preview: "beta preview" },
+			{ label: "A", description: "", preview: "alpha preview" },
+			{ label: "B", description: "", preview: "beta preview" },
 		],
 	};
 
@@ -134,7 +149,11 @@ describe("PreviewPane — empty preview placeholder (per-question hide-when-no-p
 	// Spec: when NO option in the question carries a `preview`, the preview pane is hidden
 	// entirely (no "No preview available" placeholder, no extra MAX_PREVIEW_HEIGHT padding).
 	it("hides the preview block entirely when no option provides a preview", () => {
-		const question: QuestionData = { question: "pick", options: [{ label: "only" }] };
+		const question: QuestionData = {
+			question: "pick",
+			header: "pick",
+			options: [{ label: "only", description: "" }],
+		};
 		const pane = makePane(question, () => 80);
 		pane.setSelectedIndex(0);
 		const lines = pane.render(80);
@@ -147,15 +166,19 @@ describe("PreviewPane — empty preview placeholder (per-question hide-when-no-p
 		// the placeholder, not hide the pane (the pane is per-question, not per-option).
 		const question: QuestionData = {
 			question: "pick",
-			options: [{ label: "with", preview: "alpha" }, { label: "without" }],
+			header: "pick",
+			options: [
+				{ label: "with", description: "", preview: "alpha" },
+				{ label: "without", description: "" },
+			],
 		};
 		const pane = makePane(question, () => 80);
 		pane.setSelectedIndex(1);
 		const lines = pane.render(80);
 		const mdIndex = lines.findIndex((l) => l.includes(NO_PREVIEW_TEXT));
 		expect(mdIndex).toBeGreaterThan(-1);
-		// Stacked layout: optionsHeight + 1 gap row + MAX_PREVIEW_HEIGHT preview lines.
-		expect(lines.slice(mdIndex).length).toBeLessThanOrEqual(MAX_PREVIEW_HEIGHT);
+		// Stacked layout: optionsHeight + 1 gap row + MAX_PREVIEW_HEIGHT_STACKED preview lines.
+		expect(lines.slice(mdIndex).length).toBeLessThanOrEqual(MAX_PREVIEW_HEIGHT_STACKED);
 	});
 });
 
@@ -163,8 +186,12 @@ describe("PreviewPane — multiSelect suppresses preview", () => {
 	it("renders ONLY the options list when question.multiSelect === true", () => {
 		const question: QuestionData = {
 			question: "areas",
+			header: "areas",
 			multiSelect: true,
-			options: [{ label: "FE", preview: "would not show" }, { label: "BE" }],
+			options: [
+				{ label: "FE", description: "", preview: "would not show" },
+				{ label: "BE", description: "" },
+			],
 		};
 		const pane = makePane(question, () => 120);
 		const lines = pane.render(120);
@@ -176,7 +203,11 @@ describe("PreviewPane — multiSelect suppresses preview", () => {
 describe("PreviewPane — width safety (Pi crash guard)", () => {
 	const question: QuestionData = {
 		question: "pick",
-		options: [{ label: "A", preview: "x".repeat(500) }, { label: "B" }],
+		header: "pick",
+		options: [
+			{ label: "A", description: "", preview: "x".repeat(500) },
+			{ label: "B", description: "" },
+		],
 	};
 
 	it("every emitted line satisfies visibleWidth(line) <= width", () => {
@@ -192,18 +223,27 @@ describe("PreviewPane — width safety (Pi crash guard)", () => {
 describe("PreviewPane.naturalHeight", () => {
 	const fewOptionsNoDesc: QuestionData = {
 		question: "q",
-		options: [{ label: "A" }, { label: "B" }],
+		header: "q",
+		options: [
+			{ label: "A", description: "" },
+			{ label: "B", description: "" },
+		],
 	};
 	const manyOptionsWithDesc: QuestionData = {
 		question: "q",
+		header: "q",
 		options: [
 			{ label: "A", description: "desc-a" },
 			{ label: "B", description: "desc-b" },
 			{ label: "C", description: "desc-c" },
-			{ label: "D" },
+			{ label: "D", description: "" },
 		],
 	};
-	const singleOption: QuestionData = { question: "q", options: [{ label: "only" }] };
+	const singleOption: QuestionData = {
+		question: "q",
+		header: "q",
+		options: [{ label: "only", description: "" }],
+	};
 
 	const fixtures: Array<[string, QuestionData]> = [
 		["few-options-no-desc", fewOptionsNoDesc],
@@ -236,7 +276,11 @@ describe("PreviewPane.naturalHeight", () => {
 describe("PreviewPane — left-aligned preview with top/left padding (side-by-side only)", () => {
 	const question: QuestionData = {
 		question: "pick",
-		options: [{ label: "A", preview: "short body" }, { label: "B" }],
+		header: "pick",
+		options: [
+			{ label: "A", description: "", preview: "short body" },
+			{ label: "B", description: "" },
+		],
 	};
 
 	function extractPreviewColumnLines(joined: string[]): string[] {
@@ -253,7 +297,11 @@ describe("PreviewPane — left-aligned preview with top/left padding (side-by-si
 
 		const longQ: QuestionData = {
 			question: "pick",
-			options: [{ label: "A", preview: "x".repeat(500) }, { label: "B" }],
+			header: "pick",
+			options: [
+				{ label: "A", description: "", preview: "x".repeat(500) },
+				{ label: "B", description: "" },
+			],
 		};
 		const longPane = makePane(longQ, () => 120);
 		longPane.setSelectedIndex(0);
@@ -265,38 +313,41 @@ describe("PreviewPane — left-aligned preview with top/left padding (side-by-si
 	it("side-by-side: options column is capped at PREVIEW_LEFT_COLUMN_MAX_WIDTH (40) regardless of total width", () => {
 		const longQ: QuestionData = {
 			question: "pick",
-			options: [{ label: "A", preview: "x".repeat(500) }, { label: "B" }],
+			header: "pick",
+			options: [
+				{ label: "A", description: "", preview: "x".repeat(500) },
+				{ label: "B", description: "" },
+			],
 		};
 		const pane = makePane(longQ, () => 200);
 		pane.setSelectedIndex(0);
 		const lines = pane.render(200);
 		const preview = extractPreviewColumnLines(lines);
 		expect(preview.length).toBeGreaterThan(0);
-		// MD column starts at leftWidth(40) + gap(2) + PREVIEW_PADDING_LEFT(1) = 43.
+		// MD column starts at leftWidth(40) + gap(2) + leftPad(1) + leftBorderBar(1) = 44.
 		const mdIdx = preview[0].indexOf("MD[");
-		expect(mdIdx).toBe(43);
+		expect(mdIdx).toBe(44);
 	});
 
-	it("side-by-side: preview block has a top-padding row (first MD row is preceded by an empty preview row)", () => {
+	it("side-by-side: first MD row is preceded by the top border row (no top padding)", () => {
 		const pane = makePane(question, () => 120);
 		pane.setSelectedIndex(0);
 		const lines = pane.render(120);
 		const firstMD = lines.findIndex((l) => /MD\[\d+\]:/.test(l));
 		expect(firstMD).toBeGreaterThan(0);
-		// The line immediately above the first MD line on the right column must have no MD marker
-		// AND its right-side region must be blank (top-padding row).
 		const above = lines[firstMD - 1] ?? "";
-		expect(/MD\[\d+\]:/.test(above)).toBe(false);
+		expect(above).toMatch(/┌─+┐/);
 	});
 
-	it("stacked mode: an empty gap row separates the options block from the preview block", () => {
+	it("stacked mode: an empty gap row separates the options block from the bordered preview block", () => {
 		const pane = makePane(question, () => 80);
 		pane.setSelectedIndex(0);
 		const lines = pane.render(80);
 		const firstMD = lines.findIndex((l) => /MD\[\d+\]:/.test(l));
-		expect(firstMD).toBeGreaterThan(0);
-		// The row directly above the first preview line must be empty (the spacer between options and preview).
-		expect(lines[firstMD - 1]).toBe("");
+		expect(firstMD).toBeGreaterThan(1);
+		// firstMD - 1 is the top border row; firstMD - 2 is the empty gap row between options and preview.
+		expect(lines[firstMD - 1]).toMatch(/┌─+┐/);
+		expect(lines[firstMD - 2]).toBe("");
 	});
 
 	it("multiSelect mode unchanged (options-only, no preview, no padding logic)", () => {
@@ -313,5 +364,101 @@ describe("PreviewPane — left-aligned preview with top/left padding (side-by-si
 			const lines = pane.render(w);
 			for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(w);
 		}
+	});
+});
+
+describe("renderBorderedBox helper", () => {
+	it("wraps lines in 4-sided border with `┌─┐│└┘` corners", () => {
+		const out = renderBorderedBox(["hello"], 20, (s) => s);
+		expect(out[0].startsWith("┌")).toBe(true);
+		expect(out[0].endsWith("┐")).toBe(true);
+		expect(out[1].startsWith("│")).toBe(true);
+		expect(out[1].endsWith("│")).toBe(true);
+		expect(out[out.length - 1].startsWith("└")).toBe(true);
+		expect(out[out.length - 1].endsWith("┘")).toBe(true);
+	});
+
+	it("right-pads content lines so the right `│` lands at fixed column", () => {
+		const out = renderBorderedBox(["hi"], 20, (s) => s);
+		expect(visibleWidth(out[1])).toBe(20);
+	});
+
+	it("emits truncation indicator on bottom row when hidden > 0", () => {
+		const out = renderBorderedBox(["a", "b"], 30, (s) => s, 5);
+		const bottom = out[out.length - 1];
+		expect(bottom).toContain("✂");
+		expect(bottom).toContain("5 lines hidden");
+		expect(bottom.startsWith("└")).toBe(true);
+		expect(bottom.endsWith("┘")).toBe(true);
+	});
+});
+
+describe("PreviewPane — oneLine() removal (multi-line markdown rendering)", () => {
+	it("passes raw multi-line markdown to Markdown (oneLine collapse removed)", () => {
+		const question: QuestionData = {
+			question: "q",
+			header: "q",
+			options: [
+				{ label: "A", description: "", preview: "## Heading\n\n- item 1\n- item 2" },
+				{ label: "B", description: "" },
+			],
+		};
+		const pane = makePane(question, () => 120);
+		pane.setSelectedIndex(0);
+		pane.render(120);
+		expect(lastMarkdownText).toBe("## Heading\n\n- item 1\n- item 2");
+		expect(lastMarkdownText).toContain("\n");
+	});
+});
+
+describe("PreviewPane — notes affordance row (Slice 4 height-stable affordance)", () => {
+	const question: QuestionData = {
+		question: "q",
+		header: "q",
+		options: [
+			{ label: "A", description: "", preview: "alpha body" },
+			{ label: "B", description: "" },
+		],
+	};
+
+	it("renders 'Notes: press n to add notes' below preview when focused on preview-bearing option", () => {
+		const pane = makePane(question, () => 120);
+		pane.setSelectedIndex(0);
+		pane.setFocused(true);
+		pane.setNotesVisible(false);
+		const lines = pane.render(120);
+		expect(lines.some((l) => l.includes(NOTES_AFFORDANCE_TEXT))).toBe(true);
+	});
+
+	it("hides notes affordance text when option lacks preview (height contract preserved)", () => {
+		const pane = makePane(question, () => 120);
+		pane.setFocused(true);
+		pane.setSelectedIndex(0);
+		const linesA = pane.render(120);
+		expect(linesA.some((l) => l.includes(NOTES_AFFORDANCE_TEXT))).toBe(true);
+		pane.setSelectedIndex(1);
+		const linesB = pane.render(120);
+		expect(linesB.some((l) => l.includes(NOTES_AFFORDANCE_TEXT))).toBe(false);
+		expect(linesA.length).toBe(linesB.length);
+	});
+
+	it("hides notes affordance when notesVisible (notes mode active)", () => {
+		const pane = makePane(question, () => 120);
+		pane.setSelectedIndex(0);
+		pane.setFocused(true);
+		pane.setNotesVisible(true);
+		const lines = pane.render(120);
+		expect(lines.some((l) => l.includes(NOTES_AFFORDANCE_TEXT))).toBe(false);
+	});
+
+	it("does not render the affordance text when MAX_PREVIEW_HEIGHT_SIDE_BY_SIDE is reached but option lacks preview", () => {
+		const pane = makePane(question, () => 120);
+		pane.setFocused(true);
+		pane.setSelectedIndex(1);
+		const lines = pane.render(120);
+		// Side-by-side path: preview pane still renders (option A has preview), but affordance hidden.
+		expect(lines.some((l) => l.includes(NOTES_AFFORDANCE_TEXT))).toBe(false);
+		// Sanity: cap value is referenced so the import isn't tree-shaken in CI.
+		expect(MAX_PREVIEW_HEIGHT_SIDE_BY_SIDE).toBe(20);
 	});
 });
