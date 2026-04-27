@@ -7,6 +7,9 @@ const ACTIVE_POINTER = "❯ ";
 const INACTIVE_POINTER = "  ";
 const CHECKED = "☑";
 const UNCHECKED = "☐";
+// Visible gap between the checkbox glyph and the label. Two spaces so the label feels visually
+// separated from the checkbox — single space made the label crowd the glyph at narrow widths.
+const CHECKBOX_LABEL_GAP = "  ";
 
 /**
  * Renders the multi-select option list (one row per option — pointer + checkbox + label —
@@ -20,6 +23,13 @@ const UNCHECKED = "☐";
  */
 export class MultiSelectOptions implements Component {
 	private state: DialogState;
+	/**
+	 * When false, the active-row pointer (`❯`) and the active-row accent/bold styling are
+	 * suppressed — every row renders as if it were inactive. Used by the host to avoid a
+	 * "double cursor" effect when focus moves to the chat row (or notes input) below.
+	 * Mirrors `WrappingSelect.setFocused()` semantics for visual parity.
+	 */
+	private focused = true;
 
 	constructor(
 		private readonly theme: Theme,
@@ -31,6 +41,10 @@ export class MultiSelectOptions implements Component {
 
 	setState(state: DialogState): void {
 		this.state = state;
+	}
+
+	setFocused(focused: boolean): void {
+		this.focused = focused;
 	}
 
 	handleInput(_data: string): void {}
@@ -45,12 +59,15 @@ export class MultiSelectOptions implements Component {
 			const opt = this.question.options[i];
 			if (!opt) continue;
 			const checked = this.state.multiSelectChecked.has(i);
-			const active = i === this.state.optionIndex;
+			// Match WrappingSelect: only the SELECTED row in a FOCUSED list shows the active pointer
+			// + accent label. Without this gate, the multi-select pane would render its `❯` even
+			// while the user is on the chat row — producing the doubled-cursor screenshot.
+			const active = this.focused && i === this.state.optionIndex;
 			const pointer = active ? ACTIVE_POINTER : INACTIVE_POINTER;
 			const box = checked ? this.theme.fg("success", CHECKED) : this.theme.fg("muted", UNCHECKED);
 			const label = truncateToWidth(opt.label, contentWidth, "…");
 			const styledLabel = active ? this.theme.fg("accent", this.theme.bold(label)) : label;
-			lines.push(truncateToWidth(`${pointer}${box} ${styledLabel}`, width, ""));
+			lines.push(truncateToWidth(`${pointer}${box}${CHECKBOX_LABEL_GAP}${styledLabel}`, width, ""));
 			if (opt.description) {
 				const continuationPrefix = " ".repeat(prefixWidth);
 				const wrapped = wrapTextWithAnsi(opt.description, contentWidth);
@@ -76,8 +93,9 @@ export class MultiSelectOptions implements Component {
 	}
 
 	private prefixVisibleWidth(): number {
-		// Canonical prefix uses INACTIVE_POINTER + UNCHECKED so the width is state-independent.
-		// ACTIVE_POINTER and INACTIVE_POINTER share visibleWidth; CHECKED and UNCHECKED share visibleWidth.
-		return visibleWidth(`${INACTIVE_POINTER}${UNCHECKED} `);
+		// Canonical prefix uses INACTIVE_POINTER + UNCHECKED + CHECKBOX_LABEL_GAP so the width is
+		// state-independent. ACTIVE_POINTER and INACTIVE_POINTER share visibleWidth; CHECKED and
+		// UNCHECKED share visibleWidth.
+		return visibleWidth(`${INACTIVE_POINTER}${UNCHECKED}${CHECKBOX_LABEL_GAP}`);
 	}
 }

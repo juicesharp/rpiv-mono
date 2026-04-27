@@ -77,6 +77,19 @@ describe("buildDialog — single-question mode", () => {
 		expect(joined).toContain("<CHAT_ROW>");
 		expect(joined).toContain(HINT_SINGLE);
 	});
+
+	// In single-question mode the tab bar is hidden, so the inner header badge IS rendered
+	// (otherwise the user would never see the question header).
+	it("renders the inner header badge in the dialog body (no tab bar to show it)", () => {
+		const dlg = buildDialog(
+			makeConfig({
+				questions: [{ question: "only?", header: "H-only", options: [{ label: "yes" }] }],
+				isMulti: false,
+			}),
+		);
+		const joined = dlg.render(80).join("\n");
+		expect(joined).toContain(" H-only ");
+	});
 });
 
 describe("buildDialog — multi-question (question tab)", () => {
@@ -87,6 +100,18 @@ describe("buildDialog — multi-question (question tab)", () => {
 		expect(joined).toContain("<PREVIEW>");
 		expect(joined).toContain("<CHAT_ROW>");
 		expect(joined).toContain(HINT_MULTI);
+	});
+
+	// Inner header (the `selectedBg` ` H1 ` badge) is intentionally suppressed in multi mode —
+	// the tab bar already shows the per-tab header, so rendering it again created a chrome-
+	// height surplus that made the Submit Tab look collapsed.
+	it("does NOT render the inner header badge inside the dialog body in multi-question mode", () => {
+		const dlg = buildDialog(makeConfig());
+		const lines = dlg.render(80);
+		// The inner header was rendered via theme.bg("selectedBg", ` H1 `). Headers are still
+		// available via the tab bar (which our stub joins as `<TABBAR>`).
+		const innerHeaderBadge = lines.some((l) => l.includes(" H1 ") && !l.includes("<TABBAR>"));
+		expect(innerHeaderBadge).toBe(false);
 	});
 
 	it("appends 'Space toggle' suffix when current question is multiSelect", () => {
@@ -188,7 +213,11 @@ describe("buildDialog — Submit tab", () => {
 		[1, { questionIndex: 1, question: "Q2?", answer: null, selected: ["X", "Y"] }],
 	]);
 
-	it("shows Q→A summary when all answered + ready hint", () => {
+	// Submit Tab now wraps its answer summary in FixedHeightBox(getBodyHeight) and structurally
+	// mirrors the question-tab chrome line-for-line so the dialog does not collapse / jump when
+	// the user switches into Submit. Tests must therefore pass a getBodyHeight large enough to
+	// fit the rendered summary lines.
+	it("shows the Submit-ready badge + Q→A summary when all answered", () => {
 		const dlg = buildDialog(
 			makeConfig({
 				state: {
@@ -199,6 +228,7 @@ describe("buildDialog — Submit tab", () => {
 					answers,
 					multiSelectChecked: new Set(),
 				},
+				getBodyHeight: () => 6,
 			}),
 		);
 		const joined = dlg.render(80).join("\n");
@@ -206,7 +236,9 @@ describe("buildDialog — Submit tab", () => {
 		expect(joined).toContain("H1");
 		expect(joined).toContain("A");
 		expect(joined).toContain("X, Y");
-		expect(joined).toContain(SUBMIT_HINT_READY);
+		// Footer (chat row + controls hint) is suppressed on Submit Tab — SUBMIT_HINT_READY is
+		// no longer rendered anywhere.
+		expect(joined).not.toContain(SUBMIT_HINT_READY);
 	});
 
 	it("warns + names missing questions when not all answered", () => {
@@ -221,11 +253,117 @@ describe("buildDialog — Submit tab", () => {
 					answers: partial,
 					multiSelectChecked: new Set(),
 				},
+				getBodyHeight: () => 6,
 			}),
 		);
 		const joined = dlg.render(80).join("\n");
 		expect(joined).toContain(SUBMIT_HINT_INCOMPLETE_PREFIX);
 		expect(joined).toContain("H2");
+	});
+
+	// New regression: per spec, the Submit Tab must not show the chat row or the controls hint.
+	it("does NOT render the chat row or the controls hint on Submit Tab (footer suppressed)", () => {
+		const dlg = buildDialog(
+			makeConfig({
+				state: {
+					currentTab: 2,
+					optionIndex: 0,
+					notesVisible: false,
+					inputMode: false,
+					answers,
+					multiSelectChecked: new Set(),
+				},
+				getBodyHeight: () => 6,
+			}),
+		);
+		const joined = dlg.render(80).join("\n");
+		expect(joined).not.toContain("<CHAT_ROW>");
+		// HINT_MULTI lives at the bottom of question tabs only.
+		expect(joined).not.toContain(HINT_MULTI);
+	});
+
+	// New regression: dialog total line count must MATCH a question tab across mixed shapes
+	// (with/without headers, single/multi-select, multiple questions). Before the multi-mode
+	// inner-header was suppressed, the question tab rendered 2 extra lines for the header
+	// badge while Submit Tab did not — hence "submit one line smaller, dialog jumps".
+	it.each<[string, ReturnType<typeof makeConfig>["questions"]]>([
+		["both with headers", undefined as never],
+		[
+			"both without headers",
+			[
+				{ question: "Q1?", options: [{ label: "A" }, { label: "B" }] },
+				{ question: "Q2?", options: [{ label: "X" }, { label: "Y" }] },
+			],
+		],
+		[
+			"mixed: tab 0 headerless, tab 1 with header",
+			[
+				{ question: "Q1?", options: [{ label: "A" }, { label: "B" }] },
+				{ question: "Q2?", header: "H2", options: [{ label: "X" }, { label: "Y" }] },
+			],
+		],
+	])("submit + question tab heights stay equal across fixtures: %s", (_label, qs) => {
+		const questions = qs ?? undefined;
+		const submitDlg = buildDialog(
+			makeConfig({
+				questions,
+				state: {
+					currentTab: 2,
+					optionIndex: 0,
+					notesVisible: false,
+					inputMode: false,
+					answers,
+					multiSelectChecked: new Set(),
+				},
+				getBodyHeight: () => 6,
+			}),
+		).render(120);
+		const questionDlg = buildDialog(
+			makeConfig({
+				questions,
+				state: {
+					currentTab: 0,
+					optionIndex: 0,
+					notesVisible: false,
+					inputMode: false,
+					answers,
+					multiSelectChecked: new Set(),
+				},
+				getBodyHeight: () => 6,
+			}),
+		).render(120);
+		expect(submitDlg.length).toBe(questionDlg.length);
+	});
+
+	// Original simple-equality test (kept for clarity — it covers the default "both with headers" fixture).
+	it("total dialog height equals a question tab's height (no collapse / no jump)", () => {
+		const submit = buildDialog(
+			makeConfig({
+				state: {
+					currentTab: 2,
+					optionIndex: 0,
+					notesVisible: false,
+					inputMode: false,
+					answers,
+					multiSelectChecked: new Set(),
+				},
+				getBodyHeight: () => 6,
+			}),
+		).render(120);
+		const questionTab = buildDialog(
+			makeConfig({
+				state: {
+					currentTab: 0,
+					optionIndex: 0,
+					notesVisible: false,
+					inputMode: false,
+					answers,
+					multiSelectChecked: new Set(),
+				},
+				getBodyHeight: () => 6,
+			}),
+		).render(120);
+		expect(submit.length).toBe(questionTab.length);
 	});
 });
 

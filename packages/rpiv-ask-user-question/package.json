@@ -35,6 +35,8 @@
     "preview-pane.ts",
     "dispatch.ts",
     "dialog-builder.ts",
+    "fixed-height-box.ts",
+    "multi-select-options.ts",
     "README.md",
     "LICENSE"
   ],

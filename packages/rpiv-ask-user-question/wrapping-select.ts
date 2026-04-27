@@ -16,6 +16,14 @@ export interface WrappingSelectTheme {
 	scrollInfo: (text: string) => string;
 }
 
+/**
+ * Numbering controls.
+ *
+ * Use `numberStartOffset` + `totalItemsForNumbering` when a list is logically a slice of a
+ * larger numbered sequence — e.g. the chat row lives in its own WrappingSelect but should
+ * render as `(N+1).` where N is the previous list's item count, with the column padded as
+ * if both lists were one continuous numbered sequence.
+ */
 export interface WrappingSelectOptions {
 	/** Start numbering at this offset + 1 (default 0 → rows labeled 1, 2, 3 …). */
 	numberStartOffset?: number;
@@ -33,12 +41,18 @@ export class WrappingSelect implements Component {
 	private readonly items: readonly WrappingSelectItem[];
 	private readonly maxVisible: number;
 	private readonly theme: WrappingSelectTheme;
-	private readonly numberStartOffset: number;
-	private readonly totalItemsForNumbering: number;
+	private numberStartOffset: number;
+	private totalItemsForNumbering: number;
 
 	private selectedIndex = 0;
 	private focused = true;
 	private inputBuffer = "";
+	/**
+	 * When false, render rows as `❯ label` / `  label` (no `N. ` prefix). Used by the host on
+	 * multi-select tabs so the chat row matches the un-numbered look of the multi-select option
+	 * rows above it (multi-select option rows render checkboxes, not numbers).
+	 */
+	private showNumbering = true;
 
 	constructor(
 		items: readonly WrappingSelectItem[],
@@ -51,6 +65,21 @@ export class WrappingSelect implements Component {
 		this.theme = theme;
 		this.numberStartOffset = options.numberStartOffset ?? 0;
 		this.totalItemsForNumbering = options.totalItemsForNumbering ?? items.length;
+	}
+
+	/**
+	 * Update the numbering offset + total padding width without rebuilding the component.
+	 * Used by the host to keep the chat-row WrappingSelect's number aligned with the active tab's
+	 * options list when the user switches tabs (each tab can have a different items count).
+	 */
+	setNumbering(numberStartOffset: number, totalItemsForNumbering: number): void {
+		this.numberStartOffset = numberStartOffset;
+		this.totalItemsForNumbering = Math.max(1, totalItemsForNumbering);
+	}
+
+	/** Show or hide the `N. ` prefix on every row. Default: true. */
+	setShowNumbering(show: boolean): void {
+		this.showNumbering = show;
 	}
 
 	setSelectedIndex(index: number): void {
@@ -88,7 +117,7 @@ export class WrappingSelect implements Component {
 		if (this.items.length === 0) return [];
 
 		const { startIndex, endIndex } = this.computeVisibleWindow();
-		const numberWidth = String(this.totalItemsForNumbering).length;
+		const numberWidth = String(Math.max(1, this.totalItemsForNumbering)).length;
 		const lines: string[] = [];
 
 		for (let i = startIndex; i < endIndex; i++) {
@@ -138,6 +167,7 @@ export class WrappingSelect implements Component {
 
 	private buildRowPrefix(index: number, isActive: boolean, numberWidth: number): string {
 		const pointer = isActive ? WrappingSelect.ACTIVE_POINTER : WrappingSelect.INACTIVE_POINTER;
+		if (!this.showNumbering) return pointer;
 		const displayNumber = this.numberStartOffset + index + 1;
 		const paddedNumber = String(displayNumber).padStart(numberWidth, " ");
 		return `${pointer}${paddedNumber}${WrappingSelect.NUMBER_SEPARATOR}`;

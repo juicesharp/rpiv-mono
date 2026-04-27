@@ -8,6 +8,8 @@ const identityTheme: WrappingSelectTheme = {
 	scrollInfo: (t) => t,
 };
 
+// Numbering is preserved — rows render as "❯ N. label". The chat row's number is kept
+// continuous with the active tab's options via setNumbering() (driven by ask-user-question.ts).
 describe("WrappingSelect.setSelectedIndex", () => {
 	it("clamps negative to 0", () => {
 		const s = new WrappingSelect([{ label: "a" }, { label: "b" }], 10, identityTheme);
@@ -171,13 +173,39 @@ describe("WrappingSelect.render — number column padding", () => {
 		expect(lines[0]).toContain(" 1. ");
 		expect(lines[9]).toContain("10. ");
 	});
-	it("uses numberStartOffset for numbering", () => {
+	it("uses numberStartOffset for numbering (so chat row reads as `(N+1). Chat about this`)", () => {
 		const s = new WrappingSelect([{ label: "chat" }], 1, identityTheme, {
 			numberStartOffset: 5,
 			totalItemsForNumbering: 10,
 		});
 		const lines = s.render(40);
 		expect(lines[0]).toContain(" 6. chat");
+	});
+	it("setNumbering(offset, total) updates numbering in place (driven by tab switches)", () => {
+		const s = new WrappingSelect([{ label: "chat" }], 1, identityTheme, {
+			numberStartOffset: 0,
+			totalItemsForNumbering: 1,
+		});
+		expect(s.render(40)[0]).toContain("❯ 1. chat");
+		s.setNumbering(3, 4);
+		expect(s.render(40)[0]).toContain("❯ 4. chat");
+	});
+
+	// Spec: on multi-select tabs, the option list shows checkboxes (no numbers), so the chat
+	// row WrappingSelect must hide its `N. ` prefix to match the un-numbered visual rhythm.
+	it("setShowNumbering(false) drops the `N. ` prefix from every row (multi-select tab case)", () => {
+		const s = new WrappingSelect([{ label: "chat" }], 1, identityTheme, {
+			numberStartOffset: 4,
+			totalItemsForNumbering: 5,
+		});
+		expect(s.render(40)[0]).toContain("❯ 5. chat");
+		s.setShowNumbering(false);
+		const noNum = s.render(40)[0];
+		expect(noNum).toContain("❯ chat");
+		expect(noNum).not.toMatch(/\d+\.\s/);
+		// Re-enabling restores the prefix.
+		s.setShowNumbering(true);
+		expect(s.render(40)[0]).toContain("❯ 5. chat");
 	});
 });
 

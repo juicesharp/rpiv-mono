@@ -38,6 +38,39 @@ describe("MultiSelectOptions.render", () => {
 		expect(lines[2]).toContain("DB");
 	});
 
+	// Spec: a 2-space gap between the checkbox glyph (☐ / ☑) and the option label so the label
+	// doesn't crowd the glyph at narrow widths.
+	it("separates the checkbox from the label by exactly TWO spaces", () => {
+		const m = new MultiSelectOptions(theme, question(), state());
+		const lines = m.render(80);
+		// Strip any ANSI escapes from line 0 to match raw glyph positioning.
+		const raw = lines[0].replace(/\x1b\[[0-9;]*m/g, "");
+		// Active row 0 = `❯ ☐  FE` (pointer 2 + box 1 + 2 gap + label).
+		expect(raw).toMatch(/[☐☑] {2}FE/);
+	});
+
+	// Spec: when the multi-select pane is unfocused (chat row / notes input has focus), the
+	// `❯` active-row pointer must NOT render — otherwise the dialog shows two cursors lit at
+	// the same time (`❯ ☑  HTMX` AND `❯ Chat about this`).
+	it("setFocused(false) suppresses the active-row pointer (no doubled cursor)", () => {
+		const m = new MultiSelectOptions(theme, question(), state({ optionIndex: 1 }));
+
+		const focused = m.render(80);
+		const rawFocused = focused.map((l) => l.replace(/\x1b\[[0-9;]*m/g, ""));
+		expect(rawFocused[1].startsWith("❯ ")).toBe(true); // active pointer on selected row
+
+		m.setFocused(false);
+		const blurred = m.render(80);
+		const rawBlurred = blurred.map((l) => l.replace(/\x1b\[[0-9;]*m/g, ""));
+		// No row may begin with `❯ ` when the pane is blurred.
+		for (const l of rawBlurred) expect(l.startsWith("❯ ")).toBe(false);
+
+		m.setFocused(true);
+		const refocused = m.render(80);
+		const rawRefocused = refocused.map((l) => l.replace(/\x1b\[[0-9;]*m/g, ""));
+		expect(rawRefocused[1].startsWith("❯ ")).toBe(true);
+	});
+
 	it("renders description on continuation line when present", () => {
 		const q = question({
 			options: [{ label: "FE", description: "front-end" }, { label: "BE" }],

@@ -79,6 +79,10 @@ export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
 					description: (t) => theme.fg("muted", t),
 					scrollInfo: (t) => theme.fg("dim", t),
 				};
+				// Chat row lives in its own one-item WrappingSelect. Its `numberStartOffset` /
+				// `totalItemsForNumbering` are updated on every tab switch (see `applySelection` below)
+				// so the chat row renders as `(N+1). Chat about this`, where N is the active tab's
+				// items.length — i.e. continuous numbering across the divider, never a stale `1.`.
 				const chatList = new WrappingSelect([{ label: CHAT_ABOUT_THIS_LABEL, isChat: true }], 1, selectTheme);
 				const notesInput = new Input();
 				const markdownTheme = getMarkdownTheme();
@@ -186,8 +190,21 @@ export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
 				function applySelection() {
 					const pane = previewPanes[Math.min(currentTab, questions.length - 1)] ?? previewPanes[0];
 					pane.setSelectedIndex(optionIndex);
-					pane.setFocused(!notesMode && !chatFocused);
+					const optionsFocused = !notesMode && !chatFocused;
+					pane.setFocused(optionsFocused);
+					// Mirror focus into the multi-select renderer too, otherwise its active-row pointer
+					// stays drawn while the user is on the chat row / notes input, producing a doubled
+					// cursor (`❯ ☑  HTMX` AND `❯ Chat about this` lit at the same time).
+					for (const mso of multiSelectOptionsByTab) mso?.setFocused(optionsFocused);
 					chatList.setFocused(chatFocused);
+					// Keep the chat row's number aligned with whichever tab is active. The chat row
+					// is always the (last + 1) entry in the logical numbering for that tab.
+					const activeTabItems = itemsByTab[Math.min(currentTab, questions.length - 1)] ?? [];
+					chatList.setNumbering(activeTabItems.length, activeTabItems.length + 1);
+					// Multi-select option rows show a checkbox instead of a number, so the chat row
+					// must hide its `N. ` prefix on those tabs to match the un-numbered visual rhythm.
+					const activeQuestion = questions[Math.min(currentTab, questions.length - 1)];
+					chatList.setShowNumbering(activeQuestion?.multiSelect !== true);
 					if (tabBar) {
 						tabBar.setConfig({
 							questions,
@@ -297,7 +314,14 @@ export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
 								selected: action.selected,
 							});
 							syncMultiSelectFromAnswers();
-							refreshDialog();
+							// Mirror the single-select `confirm` lifecycle: advance to the next tab in
+							// multi-question mode, OR submit the dialog in single-question mode
+							// (autoAdvanceTab === undefined when !isMulti).
+							if (action.autoAdvanceTab !== undefined) {
+								switchTab(action.autoAdvanceTab);
+							} else {
+								submitFinal();
+							}
 							return;
 						}
 						case "cancel":

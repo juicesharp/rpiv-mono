@@ -15,7 +15,7 @@ export type QuestionnaireAction =
 	| { kind: "tab_switch"; nextTab: number }
 	| { kind: "confirm"; answer: QuestionAnswer; autoAdvanceTab?: number }
 	| { kind: "toggle"; index: number }
-	| { kind: "multi_confirm"; selected: string[] }
+	| { kind: "multi_confirm"; selected: string[]; autoAdvanceTab?: number }
 	| { kind: "cancel" }
 	| { kind: "notes_enter" }
 	| { kind: "notes_exit" }
@@ -157,6 +157,9 @@ export function handleQuestionnaireInput(data: string, state: QuestionnaireDispa
 			return { kind: "confirm", answer, autoAdvanceTab: computeAutoAdvanceTab(state) };
 		}
 		if (kb.matches(data, KEYBIND_UP)) return { kind: "focus_options" };
+		// DOWN from the chat row returns focus to the options column. Without this, the chat
+		// row becomes a one-way trap on DOWN, which made it feel unselectable in some flows.
+		if (kb.matches(data, KEYBIND_DOWN)) return { kind: "focus_options" };
 		const tab = tabSwitchAction(data, state);
 		if (tab) return tab;
 		return { kind: "ignore" };
@@ -208,7 +211,15 @@ export function handleQuestionnaireInput(data: string, state: QuestionnaireDispa
 	if (q.multiSelect) {
 		if (data === SPACE_KEY) return { kind: "toggle", index: state.optionIndex };
 		if (kb.matches(data, KEYBIND_CONFIRM)) {
-			return { kind: "multi_confirm", selected: buildMultiSelected(state) };
+			// Mirror single-select `confirm`: carry autoAdvanceTab so the host can advance to the
+			// next tab in multi-question mode, OR submit the dialog in single-question mode
+			// (autoAdvanceTab === undefined when !isMulti). Without this, Enter on a single
+			// multi-select question saved the answer but never submitted — the user got stuck.
+			return {
+				kind: "multi_confirm",
+				selected: buildMultiSelected(state),
+				autoAdvanceTab: computeAutoAdvanceTab(state),
+			};
 		}
 		if (kb.matches(data, KEYBIND_CANCEL)) return { kind: "cancel" };
 		return { kind: "ignore" };

@@ -189,7 +189,53 @@ describe("handleQuestionnaireInput — multiSelect", () => {
 		expect(handleQuestionnaireInput(sentinel(KEY.CONFIRM), s)).toEqual({
 			kind: "multi_confirm",
 			selected: ["FE", "Tests"],
+			autoAdvanceTab: undefined,
 		});
+	});
+
+	// Spec: Enter on a SINGLE multi-select question must submit the dialog. Previously the host
+	// saved the answer but never submitted (autoAdvanceTab was missing), trapping the user.
+	it("single-question multi-select: multi_confirm carries autoAdvanceTab=undefined (host → submit)", () => {
+		const s = baseState({
+			questions: [multiQ],
+			isMulti: false,
+			items: [{ label: "FE" }, { label: "BE" }, { label: "Tests" }],
+			currentItem: { label: "FE" },
+			multiSelectIndices: new Set([0]),
+		});
+		const action = handleQuestionnaireInput(sentinel(KEY.CONFIRM), s);
+		expect(action.kind).toBe("multi_confirm");
+		if (action.kind === "multi_confirm") expect(action.autoAdvanceTab).toBeUndefined();
+	});
+
+	// Spec: Enter on a multi-select question in MULTI-question mode advances to the next tab.
+	it("multi-question multi-select on tab 0: multi_confirm carries autoAdvanceTab=1", () => {
+		const s = baseState({
+			questions: [multiQ, makeQuestion()],
+			isMulti: true,
+			currentTab: 0,
+			items: [{ label: "FE" }, { label: "BE" }, { label: "Tests" }],
+			currentItem: { label: "FE" },
+			multiSelectIndices: new Set([0]),
+		});
+		const action = handleQuestionnaireInput(sentinel(KEY.CONFIRM), s);
+		expect(action.kind).toBe("multi_confirm");
+		if (action.kind === "multi_confirm") expect(action.autoAdvanceTab).toBe(1);
+	});
+
+	// Spec: Enter on the LAST multi-select question advances to the Submit tab (questions.length).
+	it("multi-question multi-select on last tab: multi_confirm carries autoAdvanceTab=questions.length (Submit)", () => {
+		const s = baseState({
+			questions: [makeQuestion(), multiQ],
+			isMulti: true,
+			currentTab: 1,
+			items: [{ label: "FE" }, { label: "BE" }, { label: "Tests" }],
+			currentItem: { label: "FE" },
+			multiSelectIndices: new Set([0]),
+		});
+		const action = handleQuestionnaireInput(sentinel(KEY.CONFIRM), s);
+		expect(action.kind).toBe("multi_confirm");
+		if (action.kind === "multi_confirm") expect(action.autoAdvanceTab).toBe(2);
 	});
 
 	it("Space does NOT emit toggle on a single-select question", () => {
@@ -337,9 +383,9 @@ describe("handleQuestionnaireInput — chat focus", () => {
 		});
 	});
 
-	it("DOWN while chatFocused → ignore", () => {
+	it("DOWN while chatFocused → focus_options (chat row is no longer a one-way trap on DOWN)", () => {
 		const s = baseState({ chatFocused: true, currentItem: chatItem });
-		expect(handleQuestionnaireInput(sentinel(KEY.DOWN), s)).toEqual({ kind: "ignore" });
+		expect(handleQuestionnaireInput(sentinel(KEY.DOWN), s)).toEqual({ kind: "focus_options" });
 	});
 
 	it.each<[string, string, number]>([

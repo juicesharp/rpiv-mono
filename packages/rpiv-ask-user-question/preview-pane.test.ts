@@ -130,19 +130,32 @@ describe("PreviewPane — cache + invalidate", () => {
 	});
 });
 
-describe("PreviewPane — empty preview placeholder", () => {
-	const question: QuestionData = {
-		question: "pick",
-		options: [{ label: "only" }],
-	};
-
-	it("renders the 'No preview available' placeholder padded to MAX_PREVIEW_HEIGHT", () => {
+describe("PreviewPane — empty preview placeholder (per-question hide-when-no-previews)", () => {
+	// Spec: when NO option in the question carries a `preview`, the preview pane is hidden
+	// entirely (no "No preview available" placeholder, no extra MAX_PREVIEW_HEIGHT padding).
+	it("hides the preview block entirely when no option provides a preview", () => {
+		const question: QuestionData = { question: "pick", options: [{ label: "only" }] };
 		const pane = makePane(question, () => 80);
 		pane.setSelectedIndex(0);
 		const lines = pane.render(80);
+		expect(lines.some((l) => l.includes(NO_PREVIEW_TEXT))).toBe(false);
+		expect(lines.some((l) => /MD\[\d+\]:/.test(l))).toBe(false);
+	});
+
+	it("still shows 'No preview available' for an item lacking a preview when SOME option in the question has one", () => {
+		// Question has previews for option 0 but not for option 1; selecting option 1 must yield
+		// the placeholder, not hide the pane (the pane is per-question, not per-option).
+		const question: QuestionData = {
+			question: "pick",
+			options: [{ label: "with", preview: "alpha" }, { label: "without" }],
+		};
+		const pane = makePane(question, () => 80);
+		pane.setSelectedIndex(1);
+		const lines = pane.render(80);
 		const mdIndex = lines.findIndex((l) => l.includes(NO_PREVIEW_TEXT));
 		expect(mdIndex).toBeGreaterThan(-1);
-		expect(lines.slice(mdIndex).length).toBe(MAX_PREVIEW_HEIGHT);
+		// Stacked layout: optionsHeight + 1 gap row + MAX_PREVIEW_HEIGHT preview lines.
+		expect(lines.slice(mdIndex).length).toBeLessThanOrEqual(MAX_PREVIEW_HEIGHT);
 	});
 });
 
@@ -220,27 +233,23 @@ describe("PreviewPane.naturalHeight", () => {
 	});
 });
 
-describe("PreviewPane — centered preview (side-by-side only)", () => {
+describe("PreviewPane — left-aligned preview with top/left padding (side-by-side only)", () => {
 	const question: QuestionData = {
 		question: "pick",
 		options: [{ label: "A", preview: "short body" }, { label: "B" }],
 	};
 
 	function extractPreviewColumnLines(joined: string[]): string[] {
-		// Side-by-side rows are "<options>  <gap>  <preview>". The preview lives in the right portion.
-		// For these tests it's enough to find lines containing FakeMarkdown's MD[..]: marker and inspect their leading run.
 		return joined.filter((l) => /MD\[\d+\]:/.test(l));
 	}
 
-	it("side-by-side preview lines have a leading-space margin > 0 when content is shorter than colWidth", () => {
-		// Columns joins as `<col0_padded><gap><col1>` so the MD content is preceded by options col + gap.
-		// Compare short-content (centered, leftMargin > 0) against long-content (fills column, leftMargin = 0):
-		// the MD index in the joined row must be strictly greater for the centered case.
+	// Spec: preview content is NO LONGER horizontally centered. The MD marker should land at
+	// the same X-column whether the body is short or long — because both leftMargin slabs are
+	// fixed (options column max-width + gap + PREVIEW_PADDING_LEFT).
+	it("side-by-side preview lines have a fixed left-padding offset, NOT a content-dependent center margin", () => {
 		const shortPane = makePane(question, () => 120);
 		shortPane.setSelectedIndex(0);
-		const shortPreview = extractPreviewColumnLines(shortPane.render(120));
-		expect(shortPreview.length).toBeGreaterThan(0);
-		const shortMD = shortPreview[0].indexOf("MD[");
+		const shortMD = extractPreviewColumnLines(shortPane.render(120))[0].indexOf("MD[");
 
 		const longQ: QuestionData = {
 			question: "pick",
@@ -248,64 +257,56 @@ describe("PreviewPane — centered preview (side-by-side only)", () => {
 		};
 		const longPane = makePane(longQ, () => 120);
 		longPane.setSelectedIndex(0);
-		const longPreview = extractPreviewColumnLines(longPane.render(120));
-		expect(longPreview.length).toBeGreaterThan(0);
-		const longMD = longPreview[0].indexOf("MD[");
+		const longMD = extractPreviewColumnLines(longPane.render(120))[0].indexOf("MD[");
 
-		expect(shortMD).toBeGreaterThan(longMD);
+		expect(shortMD).toBe(longMD);
 	});
 
-	it("side-by-side leftMargin = 0 when contentWidth >= colWidth (long preview)", () => {
-		// At width 120 with FakeMarkdown returning ~(width-4) chars, a 500-char preview source produces
-		// MD[col1Width]:xxx... whose visibleWidth >= col1Width. centerHorizontally returns lines unchanged,
-		// so the MD substring appears at the boundary of (col0_width + gap) — i.e., immediately after the gap.
+	it("side-by-side: options column is capped at PREVIEW_LEFT_COLUMN_MAX_WIDTH (40) regardless of total width", () => {
 		const longQ: QuestionData = {
 			question: "pick",
 			options: [{ label: "A", preview: "x".repeat(500) }, { label: "B" }],
 		};
-		const pane = makePane(longQ, () => 120);
+		const pane = makePane(longQ, () => 200);
 		pane.setSelectedIndex(0);
-		const lines = pane.render(120);
+		const lines = pane.render(200);
 		const preview = extractPreviewColumnLines(lines);
 		expect(preview.length).toBeGreaterThan(0);
-
-		// Without centering, MD must appear at the same column it would appear without the centerHorizontally
-		// step. We assert idempotency: rendering again produces the same MD index (no drift), AND that index
-		// matches the short-preview centered MD index minus the centering offset (leftMargin > 0).
-		const longMD = preview[0].indexOf("MD[");
-		expect(longMD).toBeGreaterThan(0);
-
-		// Sanity: every char between (longMD-2) and longMD is the gap separator (2 spaces) — the MD content
-		// is NOT additionally pushed right by a leftMargin.
-		expect(preview[0].slice(longMD - 2, longMD)).toBe("  ");
+		// MD column starts at leftWidth(40) + gap(2) + PREVIEW_PADDING_LEFT(1) = 43.
+		const mdIdx = preview[0].indexOf("MD[");
+		expect(mdIdx).toBe(43);
 	});
 
-	it("stacked mode does NOT center (preview line begins with FakeMarkdown marker, no leading margin)", () => {
+	it("side-by-side: preview block has a top-padding row (first MD row is preceded by an empty preview row)", () => {
+		const pane = makePane(question, () => 120);
+		pane.setSelectedIndex(0);
+		const lines = pane.render(120);
+		const firstMD = lines.findIndex((l) => /MD\[\d+\]:/.test(l));
+		expect(firstMD).toBeGreaterThan(0);
+		// The line immediately above the first MD line on the right column must have no MD marker
+		// AND its right-side region must be blank (top-padding row).
+		const above = lines[firstMD - 1] ?? "";
+		expect(/MD\[\d+\]:/.test(above)).toBe(false);
+	});
+
+	it("stacked mode: an empty gap row separates the options block from the preview block", () => {
 		const pane = makePane(question, () => 80);
 		pane.setSelectedIndex(0);
 		const lines = pane.render(80);
-		const preview = extractPreviewColumnLines(lines);
-		expect(preview.length).toBeGreaterThan(0);
-		expect(preview[0].startsWith("MD")).toBe(true);
+		const firstMD = lines.findIndex((l) => /MD\[\d+\]:/.test(l));
+		expect(firstMD).toBeGreaterThan(0);
+		// The row directly above the first preview line must be empty (the spacer between options and preview).
+		expect(lines[firstMD - 1]).toBe("");
 	});
 
-	it("multiSelect mode unchanged (no preview, no centering)", () => {
+	it("multiSelect mode unchanged (options-only, no preview, no padding logic)", () => {
 		const multiQ: QuestionData = { ...question, multiSelect: true };
 		const pane = makePane(multiQ, () => 120);
 		const lines = pane.render(120);
 		expect(lines.some((l) => /MD\[\d+\]:/.test(l))).toBe(false);
 	});
 
-	it("empty padding lines remain empty (no margin prepended to '')", () => {
-		const pane = makePane(question, () => 120);
-		pane.setSelectedIndex(0);
-		const lines = pane.render(120);
-		// Some side-by-side rows are empty padding. Find at least one row that's all spaces or empty after the gap.
-		const hasEmptyRow = lines.some((l) => l.trim() === "");
-		expect(hasEmptyRow).toBe(true);
-	});
-
-	it("width safety after centering: visibleWidth(line) <= width at boundary widths", () => {
+	it("width safety: visibleWidth(line) <= width across boundary widths", () => {
 		for (const w of [100, 120, 160]) {
 			const pane = makePane(question, () => w);
 			pane.setSelectedIndex(0);
