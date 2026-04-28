@@ -421,6 +421,68 @@ describe("ask_user_question — multi-select flow (single question)", () => {
 	});
 });
 
+describe("ask_user_question — multi-select toggle persistence (regression)", () => {
+	const persistParams = {
+		questions: [
+			{
+				question: "Q1",
+				header: "H1",
+				multiSelect: true,
+				options: [{ label: "FE" }, { label: "BE" }, { label: "DB" }],
+			},
+			{ question: "Q2", header: "H2", options: [{ label: "A" }, { label: "B" }] },
+		],
+	};
+
+	// Bug: toggling boxes on a multi-select tab and tab-switching away (without pressing Enter
+	// on Next) lost the toggle state — answers never received the in-progress selection. The
+	// final result and the Submit-tab summary both showed the question as un-answered.
+	it("Tab away from a multi-select tab preserves toggles in the final answers", async () => {
+		const tool = register();
+		const { custom } = driveCustom((c) => {
+			c.handleInput(KEY.SPACE); // toggle FE ON
+			c.handleInput(KEY.DOWN); // → BE
+			c.handleInput(KEY.SPACE); // toggle BE ON
+			c.handleInput(KEY.TAB); // → Q2 WITHOUT pressing Enter on Next
+			c.handleInput(KEY.ENTER); // Q2: pick A → Submit tab
+			c.handleInput(KEY.ENTER); // Submit
+		});
+		const ctx = { hasUI: true, ui: { custom } } as never;
+		const r = (await tool.execute?.("tc", persistParams as never, undefined as never, undefined as never, ctx)) as
+			| ToolResult
+			| undefined;
+		expect(r?.details.cancelled).toBe(false);
+		const q1 = r?.details.answers.find((a) => a.questionIndex === 0);
+		expect(q1).toBeDefined();
+		expect(q1?.selected).toEqual(["FE", "BE"]);
+	});
+
+	// Bug: returning to a multi-select tab after toggling + tab-switching away showed empty
+	// checkboxes. After the fix, syncMultiSelectFromAnswers reads the persisted state.
+	it("Tab back to a multi-select tab restores the previous toggle state", async () => {
+		const tool = register();
+		const { custom } = driveCustom((c) => {
+			c.handleInput(KEY.SPACE); // toggle FE ON
+			c.handleInput(KEY.TAB); // → Q2
+			c.handleInput(KEY.SHIFT_TAB); // ← Q1 (toggles must still be lit)
+			c.handleInput(KEY.DOWN); // optionIndex 1 = BE
+			c.handleInput(KEY.SPACE); // toggle BE ON (should NOT erase FE)
+			c.handleInput(KEY.DOWN); // → DB
+			c.handleInput(KEY.DOWN); // → Next
+			c.handleInput(KEY.ENTER); // commit (auto-advance to Q2)
+			c.handleInput(KEY.ENTER); // Q2: A → Submit
+			c.handleInput(KEY.ENTER); // Submit
+		});
+		const ctx = { hasUI: true, ui: { custom } } as never;
+		const r = (await tool.execute?.("tc", persistParams as never, undefined as never, undefined as never, ctx)) as
+			| ToolResult
+			| undefined;
+		expect(r?.details.cancelled).toBe(false);
+		const q1 = r?.details.answers.find((a) => a.questionIndex === 0);
+		expect(q1?.selected).toEqual(["FE", "BE"]);
+	});
+});
+
 describe("ask_user_question — multi-question tab cycling flow", () => {
 	const twoParams = {
 		questions: [

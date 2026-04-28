@@ -324,6 +324,38 @@ Preview content is rendered as markdown in a monospace box. Multi-line text with
 					}
 				}
 
+				/**
+				 * Mirror the current multi-select toggle state into `answers` so it survives tab
+				 * switches and surfaces in the Submit-tab summary even before the user explicitly
+				 * commits via `Enter` on the Next sentinel. Called from the `toggle` handler.
+				 *
+				 * Conventions:
+				 * - Non-empty selection → write `{ selected: [labels in option order] }`. Pending
+				 *   notes from `notesByTab` are merged in so a tab-away doesn't drop them.
+				 * - Empty selection → delete the entry. Distinguishes "I haven't decided yet"
+				 *   (no answer) from "I want to commit empty" (Enter on Next, which always writes).
+				 */
+				function persistMultiSelectAnswer() {
+					const q = questions[currentTab];
+					if (!q?.multiSelect) return;
+					const selected: string[] = [];
+					for (let i = 0; i < q.options.length; i++) {
+						if (multiSelectChecked.has(i)) selected.push(q.options[i].label);
+					}
+					if (selected.length === 0) {
+						answers.delete(currentTab);
+						return;
+					}
+					const pendingNotes = notesByTab.get(currentTab);
+					answers.set(currentTab, {
+						questionIndex: currentTab,
+						question: q.question,
+						answer: null,
+						selected,
+						...(pendingNotes && pendingNotes.length > 0 ? { notes: pendingNotes } : {}),
+					});
+				}
+
 				function syncMultiSelectFromAnswers() {
 					const q = questions[currentTab];
 					if (!q?.multiSelect) {
@@ -425,6 +457,10 @@ Preview content is rendered as markdown in a monospace box. Multi-line text with
 						case "toggle":
 							if (multiSelectChecked.has(action.index)) multiSelectChecked.delete(action.index);
 							else multiSelectChecked.add(action.index);
+							// Persist on every toggle so tab-switching away (without Enter on Next) doesn't
+							// drop the in-progress selection. The Submit-tab summary + tab-back restore both
+							// read from `answers`, so this single write keeps both views consistent.
+							persistMultiSelectAnswer();
 							refreshDialog();
 							return;
 						case "multi_confirm": {
