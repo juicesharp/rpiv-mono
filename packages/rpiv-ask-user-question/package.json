@@ -26,6 +26,7 @@
     "test": "vitest run"
   },
   "files": [
+    "apply-action.ts",
     "ask-user-question.ts",
     "body-residual-spacer.ts",
     "dialog-builder.ts",
@@ -35,6 +36,8 @@
     "LICENSE",
     "markdown-content-cache.ts",
     "multi-select-options.ts",
+    "option-list-view.ts",
+    "preview-block-renderer.ts",
     "preview-box-renderer.ts",
     "preview-layout-decider.ts",
     "preview-pane.ts",
@@ -48,6 +51,7 @@
     "tab-strategy.ts",
     "types.ts",
     "validate-questionnaire.ts",
+    "view-adapter.ts",
     "wrapping-select.ts"
   ],
   "pi": {
