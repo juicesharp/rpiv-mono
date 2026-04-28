@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { allAnswered, handleQuestionnaireInput, type QuestionnaireDispatchState, wrapTab } from "./dispatch.js";
+import { allAnswered, handleQuestionnaireInput, wrapTab } from "./dispatch.js";
+import type { QuestionnaireDispatchSnapshot } from "./questionnaire-state.js";
 import type { QuestionAnswer, QuestionData } from "./types.js";
 import type { WrappingSelectItem } from "./wrapping-select.js";
 
@@ -40,7 +41,7 @@ function makeAnswer(over: Partial<QuestionAnswer> = {}): QuestionAnswer {
 	};
 }
 
-function baseState(over: Partial<QuestionnaireDispatchState> = {}): QuestionnaireDispatchState {
+function baseState(over: Partial<QuestionnaireDispatchSnapshot> = {}): QuestionnaireDispatchSnapshot {
 	const questions = over.questions ?? [makeQuestion(), makeQuestion()];
 	const items: WrappingSelectItem[] = questions[0]!.options.map((o) => ({ label: o.label }));
 	return {

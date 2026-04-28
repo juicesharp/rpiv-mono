@@ -35,14 +35,12 @@ export interface QuestionnaireKeybindings {
 	matches(data: string, name: string): boolean;
 }
 
-export type QuestionnaireDispatchState = QuestionnaireDispatchSnapshot;
-
 export function wrapTab(index: number, total: number): number {
 	if (total <= 0) return 0;
 	return ((index % total) + total) % total;
 }
 
-export function allAnswered(state: QuestionnaireDispatchState): boolean {
+export function allAnswered(state: QuestionnaireDispatchSnapshot): boolean {
 	if (state.questions.length === 0) return false;
 	for (let i = 0; i < state.questions.length; i++) {
 		if (!state.answers.has(i)) return false;
@@ -50,17 +48,17 @@ export function allAnswered(state: QuestionnaireDispatchState): boolean {
 	return true;
 }
 
-function totalTabs(state: QuestionnaireDispatchState): number {
+function totalTabs(state: QuestionnaireDispatchSnapshot): number {
 	return state.isMulti ? state.questions.length + 1 : 1;
 }
 
-function computeAutoAdvanceTab(state: QuestionnaireDispatchState): number | undefined {
+function computeAutoAdvanceTab(state: QuestionnaireDispatchSnapshot): number | undefined {
 	if (!state.isMulti) return undefined;
 	if (state.currentTab < state.questions.length - 1) return state.currentTab + 1;
 	return state.questions.length;
 }
 
-function buildSingleSelectAnswer(state: QuestionnaireDispatchState): QuestionAnswer | null {
+function buildSingleSelectAnswer(state: QuestionnaireDispatchSnapshot): QuestionAnswer | null {
 	const q = state.questions[state.currentTab];
 	if (!q) return null;
 
@@ -98,7 +96,7 @@ function buildSingleSelectAnswer(state: QuestionnaireDispatchState): QuestionAns
 	};
 }
 
-function buildMultiSelected(state: QuestionnaireDispatchState): string[] {
+function buildMultiSelected(state: QuestionnaireDispatchSnapshot): string[] {
 	const q = state.questions[state.currentTab];
 	if (!q) return [];
 	const out: string[] = [];
@@ -111,7 +109,7 @@ function buildMultiSelected(state: QuestionnaireDispatchState): string[] {
 	return out;
 }
 
-function tabSwitchAction(data: string, state: QuestionnaireDispatchState): QuestionnaireAction | null {
+function tabSwitchAction(data: string, state: QuestionnaireDispatchSnapshot): QuestionnaireAction | null {
 	if (!state.isMulti) return null;
 	const total = totalTabs(state);
 	if (matchesKey(data, Key.tab) || matchesKey(data, Key.right)) {
@@ -126,7 +124,7 @@ function tabSwitchAction(data: string, state: QuestionnaireDispatchState): Quest
 // DOWN navigation helper shared by inputMode and normal nav branches.
 // Emits focus_chat at the boundary (last item) so the host can transfer focus to the chat row
 // without mutating optionIndex — UP-from-chat then lands on items.length - 1 (continuous cycle).
-function nextNavOnDown(state: QuestionnaireDispatchState): QuestionnaireAction {
+function nextNavOnDown(state: QuestionnaireDispatchSnapshot): QuestionnaireAction {
 	if (state.items.length > 0 && state.optionIndex === state.items.length - 1) {
 		return { kind: "focus_chat" };
 	}
@@ -136,14 +134,14 @@ function nextNavOnDown(state: QuestionnaireDispatchState): QuestionnaireAction {
 // UP navigation helper, symmetric with nextNavOnDown. At the TOP boundary (optionIndex 0)
 // emits focus_chat so the cycle wraps `[chat, option0, …, optionLast]` — without this, UP at
 // option 0 would skip the chat row entirely (Defect 2). Above the boundary, decrement.
-function prevNavOnUp(state: QuestionnaireDispatchState): QuestionnaireAction {
+function prevNavOnUp(state: QuestionnaireDispatchSnapshot): QuestionnaireAction {
 	if (state.items.length > 0 && state.optionIndex === 0) {
 		return { kind: "focus_chat" };
 	}
 	return { kind: "nav", nextIndex: wrapTab(state.optionIndex - 1, Math.max(1, state.items.length)) };
 }
 
-export function handleQuestionnaireInput(data: string, state: QuestionnaireDispatchState): QuestionnaireAction {
+export function handleQuestionnaireInput(data: string, state: QuestionnaireDispatchSnapshot): QuestionnaireAction {
 	const kb = state.keybindings;
 
 	if (state.notesVisible) {
