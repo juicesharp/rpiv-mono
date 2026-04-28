@@ -1,3 +1,4 @@
+import { ROW_INTENT_META } from "./row-intent.js";
 import type { QuestionAnswer, QuestionData } from "./types.js";
 import type { WrappingSelectItem } from "./wrapping-select.js";
 
@@ -86,8 +87,9 @@ export function chatNumberingFor(items: readonly WrappingSelectItem[]): {
 } {
 	// Count only the visible-numbered rows. The Next sentinel renders without a number
 	// (see MultiSelectOptions), so it must NOT advance the chat row's number — otherwise
-	// chat reads as "6." next to options labeled 1-4.
-	const count = items.filter((i) => i.kind !== "next").length;
+	// chat reads as "6." next to options labeled 1-4. Sourced from `ROW_INTENT_META[kind].numbered`
+	// so adding a new non-numbered kind is a single META edit.
+	const count = items.filter((i) => ROW_INTENT_META[i.kind].numbered).length;
 	return { offset: count, total: count + 1 };
 }
 

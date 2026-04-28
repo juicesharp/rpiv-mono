@@ -1,5 +1,6 @@
 import type { QuestionnaireAction } from "./dispatch.js";
 import { computeFocusedOptionHasPreview, type QuestionnaireState } from "./questionnaire-state.js";
+import { ROW_INTENT_META } from "./row-intent.js";
 import type { QuestionAnswer, QuestionData, QuestionnaireResult } from "./types.js";
 import type { WrappingSelectItem } from "./wrapping-select.js";
 
@@ -144,7 +145,7 @@ export function applyAction(state: QuestionnaireState, action: QuestionnaireActi
 		case "nav": {
 			const items = ctx.itemsByTab[state.currentTab] ?? [];
 			const item = items[action.nextIndex];
-			const inputMode = item?.kind === "other";
+			const inputMode = item ? ROW_INTENT_META[item.kind].activatesInputMode : false;
 			const next = withFocusedOptionHasPreview(
 				{ ...state, optionIndex: action.nextIndex, inputMode },
 				ctx.questions,
@@ -260,7 +261,8 @@ export function applyAction(state: QuestionnaireState, action: QuestionnaireActi
 			if (action.optionIndex !== undefined) {
 				optionIndex = action.optionIndex;
 				const items = ctx.itemsByTab[state.currentTab] ?? [];
-				inputMode = items[optionIndex]?.kind === "other";
+				const focused = items[optionIndex];
+				inputMode = focused ? ROW_INTENT_META[focused.kind].activatesInputMode : false;
 				if (!inputMode) effects = [{ kind: "clear_input_buffer" }];
 			}
 			const next = withFocusedOptionHasPreview(

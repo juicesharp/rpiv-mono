@@ -45,6 +45,7 @@
     "questionnaire-state.ts",
     "README.md",
     "response-envelope.ts",
+    "row-intent.ts",
     "stateful-component.ts",
     "submit-picker.ts",
     "tab-bar.ts",

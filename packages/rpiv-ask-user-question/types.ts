@@ -1,4 +1,5 @@
 import { type Static, Type } from "typebox";
+import { LABELS_BY_KIND, ROW_INTENT_META } from "./row-intent.js";
 
 export const MAX_QUESTIONS = 4;
 export const MIN_OPTIONS = 2;
@@ -8,18 +9,12 @@ export const MAX_LABEL_LENGTH = 60;
 
 /**
  * User-facing labels for the three runtime sentinel rows, keyed by their
- * `WrappingSelectItem.kind` discriminator. Single source of truth — every
- * construction site (`ask-user-question.ts`, `questionnaire-session.ts`,
- * `multi-select-options.ts`) reads from here, and `RESERVED_LABELS` is
- * derived from it. Adding a new sentinel requires extending the
- * `WrappingSelectItem` union AND this map in lockstep — both reads are
- * compiler-enforced via the kind-keyed lookup at construction sites.
+ * `WrappingSelectItem.kind` discriminator. Sourced from
+ * `ROW_INTENT_META` via `LABELS_BY_KIND` (`row-intent.ts`) — single source of
+ * truth. Adding a new sentinel requires extending the `WrappingSelectItem`
+ * union AND adding an entry to `ROW_INTENT_META`; this map then auto-extends.
  */
-export const SENTINEL_LABELS = {
-	other: "Type something.",
-	chat: "Chat about this",
-	next: "Next",
-} as const;
+export const SENTINEL_LABELS = LABELS_BY_KIND;
 
 export type SentinelKind = keyof typeof SENTINEL_LABELS;
 export type SentinelLabel = (typeof SENTINEL_LABELS)[SentinelKind];
@@ -27,7 +22,7 @@ export type SentinelLabel = (typeof SENTINEL_LABELS)[SentinelKind];
 /**
  * Labels reserved for Pi-internal sentinels — authoring an option with any
  * of these labels triggers the `reserved_label` runtime guard. Three of the
- * four come from `SENTINEL_LABELS` (the runtime kinds); `"Other"` is
+ * four come from `ROW_INTENT_META` (the runtime kinds); `"Other"` is
  * reserved for CC parity only (the model is conditioned to reach for
  * "Other" in CC; we reject it so the runtime sentinel is the single source
  * of truth) and has no runtime kind.
@@ -39,7 +34,12 @@ export type SentinelLabel = (typeof SENTINEL_LABELS)[SentinelKind];
  * `["Other", other, chat, next]` literal so consumers using
  * `RESERVED_LABELS[i]` indexing or `Set` membership see no behavior change.
  */
-export const RESERVED_LABELS = ["Other", SENTINEL_LABELS.other, SENTINEL_LABELS.chat, SENTINEL_LABELS.next] as const;
+export const RESERVED_LABELS = [
+	"Other",
+	ROW_INTENT_META.other.label,
+	ROW_INTENT_META.chat.label,
+	ROW_INTENT_META.next.label,
+] as const;
 export type ReservedLabel = (typeof RESERVED_LABELS)[number];
 
 export const OptionSchema = Type.Object({
@@ -100,9 +100,10 @@ export type QuestionData = Static<typeof QuestionSchema>;
 export type QuestionParams = Static<typeof QuestionParamsSchema>;
 
 /**
- * Answer-intent discriminated union. `kind` replaces the legacy boolean-flag
- * discriminators (`wasCustom`/`wasChat`). Mirrors the row-side `WrappingSelectItem.kind`
- * vocabulary where possible; `multi` is the multi-select variant (no row-side analog).
+ * Answer-intent discriminated union. `kind` is the single discriminator —
+ * pre-1.0.3 boolean flags have been removed (see `banned-flags.test.ts`).
+ * Mirrors the row-side `WrappingSelectItem.kind` vocabulary where possible;
+ * `multi` is the multi-select variant (no row-side analog).
  *
  * Variant semantics:
  * - `option`: user picked one of the author-defined options. `answer` is the option's label.

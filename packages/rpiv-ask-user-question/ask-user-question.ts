@@ -1,6 +1,7 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { QuestionnaireSession } from "./questionnaire-session.js";
 import { buildQuestionnaireResponse, buildToolResult } from "./response-envelope.js";
+import { ROW_INTENT_META, sentinelsToAppend } from "./row-intent.js";
 import {
 	MAX_OPTIONS,
 	MAX_QUESTIONS,
@@ -9,7 +10,6 @@ import {
 	type QuestionnaireResult,
 	type QuestionParams,
 	QuestionParamsSchema,
-	SENTINEL_LABELS,
 } from "./types.js";
 import { validateQuestionnaire } from "./validate-questionnaire.js";
 import type { WrappingSelectItem } from "./wrapping-select.js";
@@ -24,16 +24,11 @@ export function buildItemsForQuestion(question: QuestionData): WrappingSelectIte
 		label: o.label,
 		description: o.description,
 	}));
-	// Multi-select gets a "Next" sentinel row at the bottom so `Enter` on regular option rows
-	// can be repurposed as a per-row toggle (matching `Space`); committing + advancing to the
-	// next tab requires moving focus onto the Next row first. Mirrors the `kind: "other"` pattern.
-	if (question.multiSelect) return [...items, { kind: "next", label: SENTINEL_LABELS.next }];
-	// Side-by-side preview layout pins the options column to PREVIEW_LEFT_COLUMN_MAX_WIDTH (~40
-	// cols), which truncates inline custom-text input. CC suppresses the row in this layout for
-	// the same reason — the "Chat about this" row remains as the free-form escape hatch.
 	const hasAnyPreview = question.options.some((o) => typeof o.preview === "string" && o.preview.length > 0);
-	if (hasAnyPreview) return items;
-	return [...items, { kind: "other", label: SENTINEL_LABELS.other }];
+	for (const kind of sentinelsToAppend(question, hasAnyPreview)) {
+		items.push({ kind, label: ROW_INTENT_META[kind].label });
+	}
+	return items;
 }
 
 export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
