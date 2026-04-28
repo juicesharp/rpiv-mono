@@ -37,6 +37,8 @@
     "dialog-builder.ts",
     "fixed-height-box.ts",
     "multi-select-options.ts",
+    "submit-picker.ts",
+    "body-residual-spacer.ts",
     "README.md",
     "LICENSE"
   ],
