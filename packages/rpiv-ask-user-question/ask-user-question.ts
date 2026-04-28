@@ -9,12 +9,11 @@ import {
 	type QuestionnaireResult,
 	type QuestionParams,
 	QuestionParamsSchema,
+	SENTINEL_LABELS,
 } from "./types.js";
 import { validateQuestionnaire } from "./validate-questionnaire.js";
 import type { WrappingSelectItem } from "./wrapping-select.js";
 
-const TYPE_SOMETHING_LABEL = "Type something.";
-const NEXT_LABEL = "Next";
 const ERROR_NO_UI = "Error: UI not available (running in non-interactive mode)";
 
 export { chatNumberingFor } from "./questionnaire-state.js";
@@ -28,13 +27,13 @@ export function buildItemsForQuestion(question: QuestionData): WrappingSelectIte
 	// Multi-select gets a "Next" sentinel row at the bottom so `Enter` on regular option rows
 	// can be repurposed as a per-row toggle (matching `Space`); committing + advancing to the
 	// next tab requires moving focus onto the Next row first. Mirrors the `kind: "other"` pattern.
-	if (question.multiSelect) return [...items, { kind: "next", label: NEXT_LABEL }];
+	if (question.multiSelect) return [...items, { kind: "next", label: SENTINEL_LABELS.next }];
 	// Side-by-side preview layout pins the options column to PREVIEW_LEFT_COLUMN_MAX_WIDTH (~40
 	// cols), which truncates inline custom-text input. CC suppresses the row in this layout for
 	// the same reason — the "Chat about this" row remains as the free-form escape hatch.
 	const hasAnyPreview = question.options.some((o) => typeof o.preview === "string" && o.preview.length > 0);
 	if (hasAnyPreview) return items;
-	return [...items, { kind: "other", label: TYPE_SOMETHING_LABEL }];
+	return [...items, { kind: "other", label: SENTINEL_LABELS.other }];
 }
 
 export function registerAskUserQuestionTool(pi: ExtensionAPI): void {

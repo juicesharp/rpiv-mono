@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { DialogComponent } from "./dialog-builder.js";
 import type { MultiSelectOptions } from "./multi-select-options.js";
+import type { OptionListView } from "./option-list-view.js";
 import type { PreviewPane } from "./preview-pane.js";
 import type { QuestionnaireState } from "./questionnaire-state.js";
 import type { SubmitPicker } from "./submit-picker.js";
@@ -42,11 +43,13 @@ function makeFixture(overQuestions?: QuestionData[]) {
 		{ kind: "option", label: "A" },
 		{ kind: "option", label: "B" },
 	]);
-	const previewPanes = questions.map(() => ({
+	const optionListViewsByTab = questions.map(() => ({
 		setSelectedIndex: vi.fn(),
 		setFocused: vi.fn(),
-		setNotesVisible: vi.fn(),
 		setConfirmedIndex: vi.fn(),
+	})) as unknown as OptionListView[];
+	const previewPanes = questions.map(() => ({
+		setNotesVisible: vi.fn(),
 	})) as unknown as PreviewPane[];
 	const chatList = {
 		setFocused: vi.fn(),
@@ -74,6 +77,7 @@ function makeFixture(overQuestions?: QuestionData[]) {
 		tui,
 		questions,
 		itemsByTab,
+		optionListViewsByTab,
 		previewPanes,
 		chatList,
 		multiSelectOptionsByTab,
@@ -81,7 +85,18 @@ function makeFixture(overQuestions?: QuestionData[]) {
 		tabBar,
 		dialog,
 	});
-	return { adapter, tui, dialog, previewPanes, chatList, multiSelectOptionsByTab, submitPicker, tabBar, questions };
+	return {
+		adapter,
+		tui,
+		dialog,
+		optionListViewsByTab,
+		previewPanes,
+		chatList,
+		multiSelectOptionsByTab,
+		submitPicker,
+		tabBar,
+		questions,
+	};
 }
 
 describe("QuestionnaireViewAdapter.apply", () => {
@@ -92,24 +107,24 @@ describe("QuestionnaireViewAdapter.apply", () => {
 		expect((dialog.setState as ReturnType<typeof vi.fn>).mock.calls).toEqual([[state]]);
 	});
 
-	it("drives the active pane with selectedIndex / focused / notesVisible / confirmedIndex", () => {
-		const { adapter, previewPanes } = makeFixture();
+	it("drives the active OptionListView with selectedIndex / focused / confirmedIndex and the active PreviewPane with notesVisible", () => {
+		const { adapter, optionListViewsByTab, previewPanes } = makeFixture();
 		const answers = new Map<number, QuestionAnswer>([
 			[0, { questionIndex: 0, question: "Pick one", kind: "option", answer: "B" }],
 		]);
 		adapter.apply(makeState({ optionIndex: 1, answers }));
-		expect(previewPanes[0]!.setSelectedIndex).toHaveBeenCalledWith(1);
-		expect(previewPanes[0]!.setFocused).toHaveBeenCalledWith(true);
+		expect(optionListViewsByTab[0]!.setSelectedIndex).toHaveBeenCalledWith(1);
+		expect(optionListViewsByTab[0]!.setFocused).toHaveBeenCalledWith(true);
+		expect(optionListViewsByTab[0]!.setConfirmedIndex).toHaveBeenCalledWith(1, undefined);
 		expect(previewPanes[0]!.setNotesVisible).toHaveBeenCalledWith(false);
-		expect(previewPanes[0]!.setConfirmedIndex).toHaveBeenCalledWith(1, undefined);
 	});
 
 	it("suppresses option focus when notes is visible or chat is focused", () => {
-		const { adapter, previewPanes } = makeFixture();
+		const { adapter, optionListViewsByTab } = makeFixture();
 		adapter.apply(makeState({ notesVisible: true }));
-		expect(previewPanes[0]!.setFocused).toHaveBeenLastCalledWith(false);
+		expect(optionListViewsByTab[0]!.setFocused).toHaveBeenLastCalledWith(false);
 		adapter.apply(makeState({ chatFocused: true }));
-		expect(previewPanes[0]!.setFocused).toHaveBeenLastCalledWith(false);
+		expect(optionListViewsByTab[0]!.setFocused).toHaveBeenLastCalledWith(false);
 	});
 
 	it("focuses the submitPicker only when on the Submit tab", () => {

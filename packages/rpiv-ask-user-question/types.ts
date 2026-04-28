@@ -7,17 +7,39 @@ export const MAX_HEADER_LENGTH = 12;
 export const MAX_LABEL_LENGTH = 60;
 
 /**
+ * User-facing labels for the three runtime sentinel rows, keyed by their
+ * `WrappingSelectItem.kind` discriminator. Single source of truth — every
+ * construction site (`ask-user-question.ts`, `questionnaire-session.ts`,
+ * `multi-select-options.ts`) reads from here, and `RESERVED_LABELS` is
+ * derived from it. Adding a new sentinel requires extending the
+ * `WrappingSelectItem` union AND this map in lockstep — both reads are
+ * compiler-enforced via the kind-keyed lookup at construction sites.
+ */
+export const SENTINEL_LABELS = {
+	other: "Type something.",
+	chat: "Chat about this",
+	next: "Next",
+} as const;
+
+export type SentinelKind = keyof typeof SENTINEL_LABELS;
+export type SentinelLabel = (typeof SENTINEL_LABELS)[SentinelKind];
+
+/**
  * Labels reserved for Pi-internal sentinels — authoring an option with any
- * of these labels triggers the `reserved_label` runtime guard. `Type
- * something.` is the per-question custom-text row appended automatically;
- * `Chat about this` is the abandon-questionnaire row; `Other` is reserved
- * for CC parity (the model is conditioned to reach for "Other" in CC; we
- * reject it so the runtime sentinel is the single source of truth).
+ * of these labels triggers the `reserved_label` runtime guard. Three of the
+ * four come from `SENTINEL_LABELS` (the runtime kinds); `"Other"` is
+ * reserved for CC parity only (the model is conditioned to reach for
+ * "Other" in CC; we reject it so the runtime sentinel is the single source
+ * of truth) and has no runtime kind.
  *
  * Reserved unconditionally — multiSelect questions also reject these labels
  * even though the runtime sentinel is suppressed there.
+ *
+ * Order is pinned by `types.test.ts:292` — keep the explicit
+ * `["Other", other, chat, next]` literal so consumers using
+ * `RESERVED_LABELS[i]` indexing or `Set` membership see no behavior change.
  */
-export const RESERVED_LABELS = ["Other", "Type something.", "Chat about this", "Next"] as const;
+export const RESERVED_LABELS = ["Other", SENTINEL_LABELS.other, SENTINEL_LABELS.chat, SENTINEL_LABELS.next] as const;
 export type ReservedLabel = (typeof RESERVED_LABELS)[number];
 
 export const OptionSchema = Type.Object({

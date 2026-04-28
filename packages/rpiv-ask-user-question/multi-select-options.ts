@@ -2,7 +2,7 @@ import type { Theme } from "@mariozechner/pi-coding-agent";
 import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@mariozechner/pi-tui";
 import type { DialogState } from "./dialog-builder.js";
 import type { StatefulComponent } from "./stateful-component.js";
-import type { QuestionData } from "./types.js";
+import { type QuestionData, SENTINEL_LABELS } from "./types.js";
 
 const ACTIVE_POINTER = "❯ ";
 const INACTIVE_POINTER = "  ";
@@ -13,7 +13,6 @@ const BOX_LABEL_GAP = " ";
 // CC parity: description continuation indents to col 2 (past the pointer slot), NOT to the
 // full prefix column. Wrap width still uses prefixVisibleWidth so naturalHeight matches render.
 const CONTINUATION_INDENT = "  ";
-const NEXT_LABEL = "Next";
 
 /**
  * Renders the multi-select option list (one row per option — pointer + checkbox + label —
@@ -90,7 +89,9 @@ export class MultiSelectOptions implements StatefulComponent<DialogState> {
 		const nextIndex = this.question.options.length;
 		const nextActive = this.focused && this.state.optionIndex === nextIndex;
 		const nextPointer = nextActive ? this.theme.fg("accent", ACTIVE_POINTER) : INACTIVE_POINTER;
-		const nextLabel = nextActive ? this.theme.fg("accent", this.theme.bold(NEXT_LABEL)) : NEXT_LABEL;
+		const nextLabel = nextActive
+			? this.theme.fg("accent", this.theme.bold(SENTINEL_LABELS.next))
+			: SENTINEL_LABELS.next;
 		lines.push(truncateToWidth(`${nextPointer}${nextLabel}`, width, ""));
 		return lines;
 	}

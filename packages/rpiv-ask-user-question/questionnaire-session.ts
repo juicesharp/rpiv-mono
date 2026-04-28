@@ -4,6 +4,8 @@ import { type ApplyContext, applyAction, type Effect } from "./apply-action.js";
 import { buildDialog, type DialogComponent } from "./dialog-builder.js";
 import { handleQuestionnaireInput, type QuestionnaireAction } from "./dispatch.js";
 import { MultiSelectOptions } from "./multi-select-options.js";
+import { OptionListView } from "./option-list-view.js";
+import { PreviewBlockRenderer } from "./preview-block-renderer.js";
 import { PreviewPane } from "./preview-pane.js";
 import {
 	computeFocusedOptionHasPreview,
@@ -12,11 +14,10 @@ import {
 } from "./questionnaire-state.js";
 import { SubmitPicker } from "./submit-picker.js";
 import { TabBar } from "./tab-bar.js";
-import type { QuestionData, QuestionnaireResult, QuestionParams } from "./types.js";
+import { type QuestionData, type QuestionnaireResult, type QuestionParams, SENTINEL_LABELS } from "./types.js";
 import { QuestionnaireViewAdapter } from "./view-adapter.js";
 import { WrappingSelect, type WrappingSelectItem, type WrappingSelectTheme } from "./wrapping-select.js";
 
-const CHAT_ABOUT_THIS_LABEL = "Chat about this";
 const BACKSPACE_CHARS = new Set(["\x7f", "\b"]);
 const ESC_SEQUENCE_PREFIX = "\x1b";
 
@@ -61,6 +62,7 @@ export class QuestionnaireSession {
 	private readonly questions: readonly QuestionData[];
 	private readonly isMulti: boolean;
 	private readonly itemsByTab: WrappingSelectItem[][];
+	private readonly optionListViewsByTab: OptionListView[];
 	private readonly previewPanes: PreviewPane[];
 	private readonly multiSelectOptionsByTab: ReadonlyArray<MultiSelectOptions | undefined>;
 	private readonly submitPicker: SubmitPicker | undefined;
@@ -90,22 +92,27 @@ export class QuestionnaireSession {
 			description: (t) => config.theme.fg("muted", t),
 			scrollInfo: (t) => config.theme.fg("dim", t),
 		};
-		this.chatList = new WrappingSelect([{ kind: "chat", label: CHAT_ABOUT_THIS_LABEL }], 1, selectTheme);
+		this.chatList = new WrappingSelect([{ kind: "chat", label: SENTINEL_LABELS.chat }], 1, selectTheme);
 		this.notesInput = new Input();
+
+		this.optionListViewsByTab = this.itemsByTab.map((items) => new OptionListView({ items, theme: selectTheme }));
 
 		const markdownTheme = getMarkdownTheme();
 		const getTerminalWidth = () => this.tui.terminal.columns;
 
-		this.previewPanes = this.questions.map(
-			(q, i) =>
-				new PreviewPane({
-					items: this.itemsByTab[i]!,
-					question: q,
-					theme: config.theme,
-					markdownTheme,
-					getTerminalWidth,
-				}),
-		);
+		this.previewPanes = this.questions.map((q, i) => {
+			const previewBlock = new PreviewBlockRenderer({
+				question: q,
+				theme: config.theme,
+				markdownTheme,
+			});
+			return new PreviewPane({
+				question: q,
+				getTerminalWidth,
+				optionListView: this.optionListViewsByTab[i]!,
+				previewBlock,
+			});
+		});
 
 		const initialSnap = this.snapshot();
 		this.multiSelectOptionsByTab = this.questions.map((q) =>
@@ -143,6 +150,7 @@ export class QuestionnaireSession {
 			tui: this.tui,
 			questions: this.questions,
 			itemsByTab: this.itemsByTab,
+			optionListViewsByTab: this.optionListViewsByTab,
 			previewPanes: this.previewPanes,
 			chatList: this.chatList,
 			multiSelectOptionsByTab: this.multiSelectOptionsByTab,
@@ -195,10 +203,10 @@ export class QuestionnaireSession {
 	private runEffect(effect: Effect): void {
 		switch (effect.kind) {
 			case "set_input_buffer":
-				this.previewPanes[this.state.currentTab]?.setInputBuffer(effect.value);
+				this.optionListViewsByTab[this.state.currentTab]?.setInputBuffer(effect.value);
 				return;
 			case "clear_input_buffer":
-				this.previewPanes[this.state.currentTab]?.clearInputBuffer();
+				this.optionListViewsByTab[this.state.currentTab]?.clearInputBuffer();
 				return;
 			case "set_notes_value":
 				this.notesInput.setValue(effect.value);
@@ -217,18 +225,19 @@ export class QuestionnaireSession {
 
 	/**
 	 * Inline `ignore` handler — preserves per-keystroke buffer mutation when in inputMode.
-	 * Bypasses the reducer because no canonical state changes; bypasses the view-adapter
-	 * because only the WrappingSelect's own buffer needs to update before the next render.
+	 * Routes directly to OptionListView (no PreviewPane proxy). Bypasses the reducer because no
+	 * canonical state changes; bypasses the view-adapter because only the OptionListView's own
+	 * buffer needs to update before the next render.
 	 */
 	private handleIgnoreInline(data: string): void {
 		if (!this.state.inputMode) return;
-		const pane = this.previewPanes[this.state.currentTab];
-		if (!pane) return;
+		const view = this.optionListViewsByTab[this.state.currentTab];
+		if (!view) return;
 		if (BACKSPACE_CHARS.has(data)) {
-			pane.backspaceInput();
+			view.backspaceInput();
 			this.tui.requestRender();
 		} else if (data && !data.startsWith(ESC_SEQUENCE_PREFIX)) {
-			pane.appendInput(data);
+			view.appendInput(data);
 			this.tui.requestRender();
 		}
 	}
@@ -237,7 +246,7 @@ export class QuestionnaireSession {
 		return {
 			...this.state,
 			keybindings: getKeybindings(),
-			inputBuffer: this.previewPanes[this.state.currentTab]?.getInputBuffer() ?? "",
+			inputBuffer: this.optionListViewsByTab[this.state.currentTab]?.getInputBuffer() ?? "",
 			questions: this.questions,
 			isMulti: this.isMulti,
 			currentItem: this.currentItem(),
@@ -254,10 +263,10 @@ export class QuestionnaireSession {
 	}
 
 	private currentItem(): WrappingSelectItem | undefined {
-		if (this.state.chatFocused) return { kind: "chat", label: CHAT_ABOUT_THIS_LABEL };
+		if (this.state.chatFocused) return { kind: "chat", label: SENTINEL_LABELS.chat };
 		const arr = this.itemsByTab[this.state.currentTab] ?? [];
 		if (this.state.optionIndex < arr.length) return arr[this.state.optionIndex];
-		return { kind: "chat", label: CHAT_ABOUT_THIS_LABEL };
+		return { kind: "chat", label: SENTINEL_LABELS.chat };
 	}
 
 	private computeGlobalContentHeight(width: number): number {
