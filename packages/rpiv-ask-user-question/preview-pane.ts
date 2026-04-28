@@ -208,8 +208,13 @@ export class PreviewPane implements Component {
 			return this.renderSideBySide(width);
 		}
 
-		// Stacked: options, then a blank gap row, then the preview block.
-		return [...this.options.render(width), ...Array(STACKED_GAP_ROWS).fill(""), ...this.renderPreviewLines(width)];
+		// Stacked: options, then a blank gap row, then the preview block. The stacked branch
+		// uses MAX_PREVIEW_HEIGHT_STACKED — communicated via `useFullCap = false`.
+		return [
+			...this.options.render(width),
+			...Array(STACKED_GAP_ROWS).fill(""),
+			...this.renderPreviewLines(width, false),
+		];
 	}
 
 	/**
@@ -229,7 +234,9 @@ export class PreviewPane implements Component {
 		const sideBySide = this.getTerminalWidth() >= PREVIEW_MIN_WIDTH && width >= PREVIEW_MIN_WIDTH;
 		const { optionsWidth, previewWidth } = this.layoutWidths(width, sideBySide);
 		const optionsHeight = this.options.render(optionsWidth).length;
-		const previewBlock = this.previewBlockHeight(previewWidth, this.selectedIndex);
+		// Cap tracks the LAYOUT decision (sideBySide vs stacked), not the column width.
+		// Pass `sideBySide` through as `useFullCap` so the helper picks the right cap.
+		const previewBlock = this.previewBlockHeight(previewWidth, this.selectedIndex, sideBySide);
 		if (sideBySide) return Math.max(optionsHeight, previewBlock);
 		return optionsHeight + STACKED_GAP_ROWS + previewBlock;
 	}
@@ -249,7 +256,7 @@ export class PreviewPane implements Component {
 		const optionsHeight = this.options.render(optionsWidth).length;
 		let maxPreviewBlock = 0;
 		for (let i = 0; i < this.question.options.length; i++) {
-			const h = this.previewBlockHeight(previewWidth, i);
+			const h = this.previewBlockHeight(previewWidth, i, sideBySide);
 			if (h > maxPreviewBlock) maxPreviewBlock = h;
 		}
 		if (sideBySide) return Math.max(optionsHeight, maxPreviewBlock);
@@ -273,11 +280,13 @@ export class PreviewPane implements Component {
 	 * border + content (capped) + notes-affordance footer. The MAX_PREVIEW_HEIGHT_*
 	 * cap remains the upper bound; below that we hug actual markdown rows so short
 	 * previews no longer pad the bordered box with `""` rows. `width` here is the
-	 * width passed to `renderPreviewLines` — see `layoutWidths()`.
+	 * width passed to `renderPreviewLines` — see `layoutWidths()`. `useFullCap`
+	 * is the LAYOUT decision threaded down from `render()` / `naturalHeight()` so
+	 * the cap matches the layout instead of being re-derived from column width
+	 * (which would always pick the stacked cap once side-by-side splits the pane).
 	 */
-	private previewBlockHeight(width: number, optionIndex: number): number {
-		const sideBySide = this.getTerminalWidth() >= PREVIEW_MIN_WIDTH && width >= PREVIEW_MIN_WIDTH;
-		const cap = sideBySide ? MAX_PREVIEW_HEIGHT_SIDE_BY_SIDE : MAX_PREVIEW_HEIGHT_STACKED;
+	private previewBlockHeight(width: number, optionIndex: number, useFullCap: boolean): number {
+		const cap = useFullCap ? MAX_PREVIEW_HEIGHT_SIDE_BY_SIDE : MAX_PREVIEW_HEIGHT_STACKED;
 		const contentBudget = Math.max(1, cap - BORDER_VERTICAL_OVERHEAD - NOTES_AFFORDANCE_OVERHEAD);
 		const innerWidth = Math.max(1, width - BORDER_HORIZONTAL_OVERHEAD - 2 * BORDER_INNER_PADDING_HORIZONTAL);
 		const rawRows = this.computePreviewBodyFor(optionIndex, innerWidth).length;
@@ -293,7 +302,8 @@ export class PreviewPane implements Component {
 	private renderSideBySide(width: number): string[] {
 		const { leftWidth, rightWidth, gap } = this.sideBySideWidths(width);
 		const leftLines = this.options.render(leftWidth);
-		const rightLines = this.renderPaddedPreviewLines(rightWidth);
+		// Side-by-side branch → the preview gets MAX_PREVIEW_HEIGHT_SIDE_BY_SIDE (full cap).
+		const rightLines = this.renderPaddedPreviewLines(rightWidth, true);
 		const rows = Math.max(leftLines.length, rightLines.length);
 		const gapStr = " ".repeat(gap);
 		const out: string[] = [];
@@ -308,14 +318,13 @@ export class PreviewPane implements Component {
 		return out;
 	}
 
-	private renderPreviewLines(width: number): string[] {
+	private renderPreviewLines(width: number, useFullCap: boolean): string[] {
 		if (this.cachedWidth !== width) {
 			for (const md of this.markdownCache.values()) md.invalidate();
 			this.cachedWidth = width;
 		}
 
-		const sideBySide = this.getTerminalWidth() >= PREVIEW_MIN_WIDTH && width >= PREVIEW_MIN_WIDTH;
-		const cap = sideBySide ? MAX_PREVIEW_HEIGHT_SIDE_BY_SIDE : MAX_PREVIEW_HEIGHT_STACKED;
+		const cap = useFullCap ? MAX_PREVIEW_HEIGHT_SIDE_BY_SIDE : MAX_PREVIEW_HEIGHT_STACKED;
 		const contentBudget = Math.max(1, cap - BORDER_VERTICAL_OVERHEAD - NOTES_AFFORDANCE_OVERHEAD);
 		const maxInnerWidth = Math.max(1, width - BORDER_HORIZONTAL_OVERHEAD - 2 * BORDER_INNER_PADDING_HORIZONTAL);
 
@@ -352,8 +361,8 @@ export class PreviewPane implements Component {
 		return [...boxedLines, "", affordance];
 	}
 
-	private renderPaddedPreviewLines(colWidth: number): string[] {
-		const contentLines = this.renderPreviewLines(Math.max(1, colWidth - PREVIEW_PADDING_LEFT));
+	private renderPaddedPreviewLines(colWidth: number, useFullCap: boolean): string[] {
+		const contentLines = this.renderPreviewLines(Math.max(1, colWidth - PREVIEW_PADDING_LEFT), useFullCap);
 		const pad = " ".repeat(PREVIEW_PADDING_LEFT);
 		return contentLines.map((l) => (l === "" ? "" : `${pad}${l}`));
 	}
