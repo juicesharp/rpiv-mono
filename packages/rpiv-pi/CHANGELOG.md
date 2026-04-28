@@ -5,7 +5,7 @@ All notable changes to `@juicesharp/rpiv-pi` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.0] - 2026-04-28
 
 ### Changed
 - **Subagent provider reverted to `@tintinweb/pi-subagents`**: tintinweb resumed active maintenance with `0.6.x` (latest `0.6.3`), tracks `@mariozechner/pi-coding-agent` `^0.70.5`, and ships a simpler `Agent` tool surface (single tool + 3-5 word `description`, no `parallel`/`chain` mode overload, native `general-purpose` / `Explore` / `Plan` defaults). `siblings.ts SIBLINGS[0]` rewritten back to `npm:@tintinweb/pi-subagents` with the scoped-name regex; `LEGACY_SIBLINGS` inverted so `/rpiv-setup` now prunes the unscoped `npm:pi-subagents` (nicobailon fork) entry on upgrade.
