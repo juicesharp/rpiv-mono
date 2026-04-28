@@ -191,9 +191,11 @@ describe("WrappingSelect.render — number column padding", () => {
 		expect(s.render(40)[0]).toContain("❯ 4. chat");
 	});
 
-	// Spec: on multi-select tabs, the option list shows checkboxes (no numbers), so the chat
-	// row WrappingSelect must hide its `N. ` prefix to match the un-numbered visual rhythm.
-	it("setShowNumbering(false) drops the `N. ` prefix from every row (multi-select tab case)", () => {
+	// Unit test for the numbering toggle. Multi-select rows now carry their own `N.` numbers
+	// and the chat row continues that contiguous numbering (CC parity), so no production code
+	// path currently calls setShowNumbering(false); this test still locks the helper's contract
+	// so the toggle remains usable for future hosts.
+	it("setShowNumbering(false) drops the `N. ` prefix from every row", () => {
 		const s = new WrappingSelect([{ label: "chat" }], 1, identityTheme, {
 			numberStartOffset: 4,
 			totalItemsForNumbering: 5,

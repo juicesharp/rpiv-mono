@@ -303,10 +303,9 @@ Preview content is rendered as markdown in a monospace box. Multi-line text with
 					// is always the (last + 1) entry in the logical numbering for that tab.
 					const activeTabItems = itemsByTab[Math.min(currentTab, questions.length - 1)] ?? [];
 					chatList.setNumbering(activeTabItems.length, activeTabItems.length + 1);
-					// Multi-select option rows show a checkbox instead of a number, so the chat row
-					// must hide its `N. ` prefix on those tabs to match the un-numbered visual rhythm.
-					const activeQuestion = questions[Math.min(currentTab, questions.length - 1)];
-					chatList.setShowNumbering(activeQuestion?.multiSelect !== true);
+					// Multi-select rows now carry their own `N.` numbers (CC parity), so the chat row
+					// continues that contiguous numbering on every tab — no special-case suppression.
+					chatList.setShowNumbering(true);
 					if (submitPicker) {
 						submitPicker.setState(snapshotState());
 						submitPicker.setFocused(currentTab === questions.length);

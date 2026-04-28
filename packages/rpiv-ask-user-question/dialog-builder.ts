@@ -124,12 +124,11 @@ function renderDialog(config: DialogConfig, width: number): string[] {
  * Submit Tab mirrors that exactly:
  *   - "question text" line              → REVIEW_HEADING (bold accent, always shown)
  *   - body                              → bullet+arrow summary container (omits unanswered)
- *   - chat row + hint footer            → Spacer(1) + prompt-or-warning(1) + submitPicker(2)
- *                                         (4 lines below the bottom border, matching the
- *                                         question footer's 4 lines)
- *
- * Height equality is preserved without modifying `getBodyHeight` or `submitBodyHeight`:
- * `submitPicker.naturalHeight === 2` is treated as a fixed chrome contribution.
+ *   - chat row + hint footer            → Spacer(1) + prompt-or-warning(1) + Spacer(1) +
+ *                                         submitPicker(2) — 5 lines below the bottom border
+ *                                         vs question footer's 4. The extra row is offset by
+ *                                         `submitBodyHeight = summary + 1` so total height
+ *                                         still matches a question tab's.
  */
 function buildSubmitContainer(config: DialogConfig): Container {
 	const { theme, questions, state, tabBar, isMulti, submitPicker } = config;
@@ -172,8 +171,10 @@ function buildSubmitContainer(config: DialogConfig): Container {
 	container.addChild(new Spacer(1));
 
 	// Bottom border + chrome-mirror layout. Below-border lines:
-	//   Spacer(1) + prompt-or-warning(1) + submitPicker(2) = 4 lines
-	// matching question-tab's Spacer + chat(1) + Spacer + hint(1) = 4 lines.
+	//   Spacer(1) + prompt-or-warning(1) + Spacer(1) + submitPicker(2) = 5 lines
+	// vs question-tab's Spacer + chat(1) + Spacer + hint(1) = 4 lines.
+	// The +1 below-border row is absorbed by `submitBodyHeight + 1` so total dialog
+	// height still matches a question tab's.
 	container.addChild(border());
 	container.addChild(new Spacer(1));
 	const promptText =
@@ -181,16 +182,19 @@ function buildSubmitContainer(config: DialogConfig): Container {
 			? theme.fg("muted", READY_PROMPT)
 			: theme.fg("warning", `${INCOMPLETE_WARNING_PREFIX} ${missing.join(", ")}`);
 	container.addChild(new Text(promptText, 1, 0));
+	container.addChild(new Spacer(1));
 	if (submitPicker) {
 		container.addChild(submitPicker);
 	} else {
 		// Fallback when host hasn't wired the picker (defensive — Phase 4 always wires it
-		// in multi-question mode). Keeps the line count at 4 so height equality holds.
+		// in multi-question mode). Keeps the line count at 5 so height equality holds.
 		container.addChild(new Spacer(1));
 		container.addChild(new Spacer(1));
 	}
 
-	const submitBodyHeight = (w: number) => summary.render(w).length;
+	// +1 absorbs the extra Spacer added between prompt and submitPicker so total
+	// submit-tab height equals a question tab's.
+	const submitBodyHeight = (w: number) => summary.render(w).length + 1;
 	container.addChild(new BodyResidualSpacer(config.getBodyHeight, submitBodyHeight));
 	return container;
 }

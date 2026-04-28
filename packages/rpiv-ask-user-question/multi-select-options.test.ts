@@ -46,20 +46,20 @@ describe("MultiSelectOptions.render", () => {
 		expect(lines[2]).toContain("DB");
 	});
 
-	// Spec: a 2-space gap between the checkbox glyph (☐ / ☑) and the option label so the label
-	// doesn't crowd the glyph at narrow widths.
-	it("separates the checkbox from the label by exactly TWO spaces", () => {
+	// Spec: a 1-space gap between the bracketed glyph (`[ ]` / `[✔]`) and the option label
+	// (CC parity — single space matches the CC sample `[✔] Logging`).
+	it("separates the checkbox from the label by exactly ONE space", () => {
 		const m = new MultiSelectOptions(theme, question(), state());
 		const lines = m.render(80);
 		// Strip any ANSI escapes from line 0 to match raw glyph positioning.
 		const raw = lines[0].replace(/\x1b\[[0-9;]*m/g, "");
-		// Active row 0 = `❯ ☐  FE` (pointer 2 + box 1 + 2 gap + label).
-		expect(raw).toMatch(/[☐☑] {2}FE/);
+		// Active row 0 = `❯ 1. [ ] FE` (pointer 2 + "1." 2 + space 1 + "[ ]" 3 + space 1 + label).
+		expect(raw).toMatch(/\[[ ✔]\] FE/);
 	});
 
 	// Spec: when the multi-select pane is unfocused (chat row / notes input has focus), the
 	// `❯` active-row pointer must NOT render — otherwise the dialog shows two cursors lit at
-	// the same time (`❯ ☑  HTMX` AND `❯ Chat about this`).
+	// the same time (`❯ 1. [✔] HTMX` AND `❯ Chat about this`).
 	it("setFocused(false) suppresses the active-row pointer (no doubled cursor)", () => {
 		const m = new MultiSelectOptions(theme, question(), state({ optionIndex: 1 }));
 
@@ -99,12 +99,47 @@ describe("MultiSelectOptions.render", () => {
 		expect(lines[0].startsWith("❯ ")).toBe(false); // inactive rows do not start with active pointer
 	});
 
-	it("checked options show ☑ glyph; unchecked show ☐", () => {
+	it("checked options render [✔]; unchecked render [ ]", () => {
 		const m = new MultiSelectOptions(theme, question(), state({ multiSelectChecked: new Set([0, 2]) }));
 		const lines = m.render(80);
-		expect(lines[0]).toContain("☑");
-		expect(lines[1]).toContain("☐");
-		expect(lines[2]).toContain("☑");
+		expect(lines[0]).toContain("[✔]");
+		expect(lines[1]).toContain("[ ]");
+		expect(lines[2]).toContain("[✔]");
+	});
+
+	it("row 1 inactive unchecked renders as '  1. [ ] LABEL'", () => {
+		// optionIndex = 1 → row 0 is inactive; checkbox 0 unchecked.
+		const m = new MultiSelectOptions(theme, question(), state({ optionIndex: 1 }));
+		const raw = m.render(80)[0].replace(/\x1b\[[0-9;]*m/g, "");
+		expect(raw).toMatch(/^ {2}1\. \[ \] FE/);
+	});
+
+	it("row 2 active checked renders as '❯ 2. [✔] LABEL'", () => {
+		const m = new MultiSelectOptions(theme, question(), state({ optionIndex: 1, multiSelectChecked: new Set([1]) }));
+		const raw = m.render(80)[1].replace(/\x1b\[[0-9;]*m/g, "");
+		expect(raw).toMatch(/^❯ 2\. \[✔\] BE/);
+	});
+
+	it("description continuation indents to col 2 (CC parity, not prefixVisibleWidth)", () => {
+		const q = question({
+			options: [
+				{
+					label: "FE",
+					description:
+						"this is an extremely long description that should wrap across multiple lines when rendered at narrow widths",
+				},
+				{ label: "BE", description: "" },
+			],
+		});
+		const m = new MultiSelectOptions(theme, q, state());
+		const lines = m.render(40);
+		// Line 0 = row, lines 1..N = wrapped description segments. Each continuation must start
+		// with EXACTLY 2 spaces (col 2 = past pointer slot), not 9 (full prefix column).
+		for (let i = 1; i < lines.length - 1; i++) {
+			const raw = lines[i].replace(/\x1b\[[0-9;]*m/g, "");
+			expect(raw.startsWith("  ")).toBe(true);
+			expect(raw.startsWith("   ")).toBe(false);
+		}
 	});
 
 	it("setState mutates state visible to next render (active row moves)", () => {
