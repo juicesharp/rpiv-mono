@@ -5,7 +5,7 @@ All notable changes to `@juicesharp/rpiv-ask-user-question` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.3] - 2026-04-28
 
 ### Fixed
 - Publish manifest: `package.json` `files` array now includes `apply-action.ts`, `option-list-view.ts`, `preview-block-renderer.ts`, and `view-adapter.ts`. The 1.0.2 tarball omitted these refactor-introduced production modules, so Pi failed to load the extension with `Cannot find module './apply-action.js'` from `questionnaire-session.ts`.

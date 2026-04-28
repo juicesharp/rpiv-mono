@@ -1,6 +1,6 @@
 {
   "name": "@juicesharp/rpiv-advisor",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Pi extension: advisor-strategy pattern — escalate to a stronger reviewer model",
   "keywords": [
     "pi-package",
