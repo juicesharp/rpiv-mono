@@ -51,7 +51,7 @@ Report detected mode:
 
 First, detect the project's technology stack by checking for framework indicators (see Framework Detection Reference below).
 
-Dispatch all agents below as parallel `Agent` tool calls in the same assistant message — multiple tool_use blocks in one response, not one call per turn. Each call matches this shape: `Agent({ subagent_type: "<agent-name>", description: "<3-5 word task label>", prompt: "<task>" })`. Wait for all to return before proceeding.
+Spawn the following agents in parallel using the Agent tool. Wait for ALL agents to complete before proceeding.
 - Use the **codebase-locator** agent to find all registered routes, navigation menus, and page entry points
 - Use the **codebase-locator** agent to find all frontend HTTP API call sites — report each call-site `file:line` and the literal URL template string found at the call site (e.g., ``${base}/users/${id}``). Frontend-to-backend URL correlation happens orchestrator-side in Step 3's Cross-Reference synthesis (`skills/outline-test-cases/SKILL.md:71-79`) using the backend-controller findings from the next agent.
 - Use the **codebase-locator** agent to find all backend API controllers and route handlers

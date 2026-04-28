@@ -52,7 +52,7 @@ When this command is invoked:
 
 This is NOT a discovery sweep. Focus on DEPTH (how things work, what patterns to follow) not BREADTH (where things are).
 
-1. **Dispatch all agents below as parallel `Agent` tool calls in the same assistant message** — multiple tool_use blocks in one response, not one call per turn. Each call matches this shape: `Agent({ subagent_type: "<agent-name>", description: "<3-5 word task label>", prompt: "<task>" })`. Wait for all to return before proceeding.
+1. **Spawn parallel research agents** using the Agent tool:
 
    - Use **codebase-pattern-finder** to find existing implementations to model after — the primary template for code shape
    - Use **codebase-analyzer** to understand HOW integration points work in detail
@@ -387,7 +387,7 @@ The artifact was created as a skeleton in Step 6 and filled progressively in Ste
 | Novel work (new library/pattern) | + web-search-researcher |
 | During code writing (if needed) | targeted codebase-analyzer for specific files |
 
-When agents are searching for different things, dispatch them as parallel `Agent(...)` tool calls in the same assistant message — multiple tool_use blocks in one response, not one call per turn. Call shape: `Agent({ subagent_type: "<agent-name>", description: "<3-5 word task label>", prompt: "<task>" })`. Each agent runs in isolation — provide complete context in the prompt, including specific directory paths when the feature targets a known module. Don't write detailed prompts about HOW to search — just tell it what you're looking for and where.
+Spawn multiple agents in parallel when they're searching for different things. Each agent runs in isolation — provide complete context in the prompt, including specific directory paths when the feature targets a known module. Don't write detailed prompts about HOW to search — just tell it what you're looking for and where.
 
 ## Important Notes
 

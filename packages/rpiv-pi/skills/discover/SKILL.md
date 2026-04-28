@@ -57,7 +57,7 @@ Before Step 1, create a todo list tracking every step below (Step 1 through Step
 
    This plan stays internal — do NOT present it to the developer unless asked.
 
-3. **Dispatch all discovery agents as parallel `Agent` tool calls in the same assistant message** — multiple tool_use blocks in one response, not one call per turn. Each call matches this shape: `Agent({ subagent_type: "<agent-name>", description: "<3-5 word task label>", prompt: "<task>" })`. Wait for all to return before proceeding.
+3. **Spawn parallel discovery agents** using the Agent tool:
 
    - Use **codebase-locator** for "Where do these files/symbols live?" slices — spawn one per focused code/discovery seam. Prefer 5-9 narrow discovery agents over 2-3 broad ones when the topic spans multiple subsystems.
    - Use **thoughts-locator** only for historical docs, decisions, plans, and prior artifacts about the topic

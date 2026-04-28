@@ -69,7 +69,7 @@ Every Wave-2 agent prompt contains EXACTLY: (a) `Known Context:` followed by the
 
 ## Step 2: Dispatch Wave-1 — Integration + Precedents + Deps/CVE + Peer-Mirror
 
-Dispatch ALL agents below at T=0 as parallel `Agent` tool calls in the same assistant message — multiple tool_use blocks in one response, not one call per turn. Each call matches this shape: `Agent({ subagent_type: "<agent-name>", description: "<3-5 word task label>", prompt: "<task>" })` (isolated conversation per agent). Do NOT wait for integration-scanner before dispatching precedents / dependencies / CVE — they do not consume Discovery-Map output, only `ChangedFiles` and the manifest diff (both orchestrator-produced in Step 1). Wait for all to return before proceeding.
+Spawn ALL of the following in parallel at T=0 in a **single message with multiple Agent tool calls**. Do NOT wait for integration-scanner before dispatching precedents / dependencies / CVE — they do not consume Discovery-Map output, only `ChangedFiles` and the manifest diff (both orchestrator-produced in Step 1).
 
 **Agent — Integration map:**
 - subagent_type: `integration-scanner`
@@ -152,7 +152,7 @@ Peer mirrors: [peer-mirror agent output verbatim — Missing/Diverged rows only;
 
 ## Step 3: Dispatch Wave-2 — Quality + Security Lenses
 
-Dispatch Quality + Security as parallel `Agent` tool calls in the same assistant message — multiple tool_use blocks in one response, not one call per turn. Each call matches this shape: `Agent({ subagent_type: "<agent-name>", description: "<3-5 word task label>", prompt: "<task>" })` (isolated conversation per agent). Each receives the `## Discovery Map` block inline as `Known Context` above its task, and a pointer to `.git/code-review-patch.diff` for the diff itself. Precedents / Dependencies / CVE are already running from Wave-1 — do NOT re-dispatch them here; the prompts below document what those Wave-1 agents received, they are not re-issued.
+Spawn Quality + Security in parallel using the Agent tool. Each receives the `## Discovery Map` block inline as `Known Context` above its task, and a pointer to `.git/code-review-patch.diff` for the diff itself. Precedents / Dependencies / CVE are already running from Wave-1 — do NOT re-dispatch them here; the prompts below document what those Wave-1 agents received, they are not re-issued.
 
 **Wave-2 context isolation (LOAD-BEARING — violations cause silent quality collapse)**: Each Wave-2 agent receives EXACTLY two things, nothing else: (1) the Discovery Map (digested form) and (2) the literal path string `.git/code-review-patch.diff`.
 

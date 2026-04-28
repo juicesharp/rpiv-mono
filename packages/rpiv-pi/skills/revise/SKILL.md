@@ -78,7 +78,7 @@ When this command is invoked:
 
 If the user's feedback requires understanding new code patterns or validating assumptions:
 
-1. **Dispatch all agents below as parallel `Agent` tool calls in the same assistant message** — multiple tool_use blocks in one response, not one call per turn. Each call matches this shape: `Agent({ subagent_type: "<agent-name>", description: "<3-5 word task label>", prompt: "<task>" })`. Wait for all to return before proceeding.
+1. **Spawn parallel agents for research** using the Agent tool:
    **For code investigation:**
    - Use the **codebase-locator** agent to find relevant files
    - Use the **codebase-analyzer** agent to understand implementation details

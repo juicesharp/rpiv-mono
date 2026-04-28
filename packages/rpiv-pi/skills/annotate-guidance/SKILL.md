@@ -22,7 +22,7 @@ Use the current working directory as the target project by default. If the user 
    - This ensures you have full context before decomposing the work
 
 2. **Pass 1 — Map the project (parallel agents):**
-   - Dispatch all agents below as parallel `Agent` tool calls in the same assistant message — multiple tool_use blocks in one response, not one call per turn. Each call matches this shape: `Agent({ subagent_type: "<agent-name>", description: "<3-5 word task label>", prompt: "<task>" })`. Wait for all to return before proceeding.
+   - Spawn the following agents in parallel using the Agent tool:
 
    **Agent A — Project tree mapping:**
    - subagent_type: `codebase-locator`
@@ -75,7 +75,7 @@ Use the current working directory as the target project by default. If the user 
    - Adjust the target list based on user feedback
 
 4. **Pass 2 — Analyze each layer (parallel analyzer agents):**
-   - For each confirmed target folder, dispatch all agents below as parallel `Agent` tool calls in the same assistant message — multiple tool_use blocks in one response, not one call per turn. Each call matches this shape: `Agent({ subagent_type: "<agent-name>", description: "<3-5 word task label>", prompt: "<task>" })`. Wait for all to return before proceeding.
+   - For each confirmed target folder, spawn agents in parallel using the Agent tool:
 
    **For each target folder, spawn TWO agents:**
 

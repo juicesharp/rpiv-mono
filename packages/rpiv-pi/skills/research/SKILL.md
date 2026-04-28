@@ -59,7 +59,7 @@ Argument (resolved by rpiv-args): `$ARGUMENTS`
 
 ## Step 2: Dispatch Analysis Agents
 
-Dispatch all agents below as parallel `Agent` tool calls in the same assistant message — multiple tool_use blocks in one response, not one call per turn. Each call matches this shape: `Agent({ subagent_type: "<agent-name>", description: "<3-5 word task label>", prompt: "<task>" })`. Wait for all to return before proceeding.
+Spawn analysis agents using the Agent tool. All agents run in parallel.
 
 **Default agent**: `codebase-analyzer` for all codebase questions. This agent has Read, Grep, Glob, LS — it can trace code paths, find patterns, and analyze integration points.
 

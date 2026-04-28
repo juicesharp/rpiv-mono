@@ -49,7 +49,7 @@ If starting fresh or need more context:
 
 3. **Spawn parallel research agents** to verify implementation:
 
-   Dispatch all agents below as parallel `Agent` tool calls in the same assistant message — multiple tool_use blocks in one response, not one call per turn. Each call matches this shape: `Agent({ subagent_type: "<agent-name>", description: "<3-5 word task label>", prompt: "<task>" })`. Wait for all to return before proceeding.
+   Spawn the agents below in parallel using the Agent tool. Wait for ALL agents to complete before proceeding.
    - **general-purpose** agent — Verify implementation details match plan specifications (analyzer role)
    - **general-purpose** agent — Verify implementation follows established codebase patterns (pattern-finder role)
 

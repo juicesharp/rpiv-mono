@@ -70,7 +70,7 @@ When no _meta.md, detect the project's technology stack before spawning agents: 
 
 ### Step 2: Discover Feature Code (parallel agents)
 
-Dispatch all agents below as parallel `Agent` tool calls in the same assistant message — multiple tool_use blocks in one response, not one call per turn. Each call matches this shape: `Agent({ subagent_type: "<agent-name>", description: "<3-5 word task label>", prompt: "<task>" })`. Wait for all to return before proceeding.
+Spawn the following agents in parallel using the Agent tool. Wait for ALL agents to complete before proceeding.
 
 **Agent A — Web Layer Discovery:**
 - subagent_type: `codebase-locator`
