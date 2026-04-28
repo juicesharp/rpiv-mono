@@ -7,6 +7,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- **Stale version labels**: README upgrade banner, `extensions/rpiv-core/siblings.ts` `LEGACY_SIBLINGS` comment + `reason` string, and `extensions/rpiv-core/prune-legacy-siblings.ts` background-comment all referenced "0.14.0" — the working label used while preparing the revert. The actual published major-bump from `0.13.3` was `1.0.0` (semver: 0.x → 1.0 on `npm version major`). All three sites now read `1.0.0`. Documentation-only; no behavior change.
+
 ## [1.0.0] - 2026-04-28
 
 ### Changed

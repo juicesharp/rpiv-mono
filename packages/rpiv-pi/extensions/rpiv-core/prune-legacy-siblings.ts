@@ -14,7 +14,7 @@
  * unwritable → empty result), idempotent, and have no plugin API
  * dependency.
  *
- * Background: 0.13.x → 0.14.0 upgraders may have both nicobailon's
+ * Background: 0.13.x → 1.0.0 upgraders may have both nicobailon's
  * pi-subagents and @tintinweb/pi-subagents in settings.json simultaneously,
  * which makes Pi reject boot with duplicate-tool registration when both
  * load. The prune is the upgrade's must-do mutation, but it must not run

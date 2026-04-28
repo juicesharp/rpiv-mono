@@ -76,10 +76,10 @@ export const LEGACY_SIBLINGS: readonly LegacyPackage[] = [
 	{
 		// nicobailon's pi-subagents fork was the SIBLINGS[0] package between
 		// rpiv-pi 0.12.0 and 0.13.x. Reverted to @tintinweb/pi-subagents in
-		// rpiv-pi 0.14.0 once tintinweb resumed active maintenance and shipped
+		// rpiv-pi 1.0.0 once tintinweb resumed active maintenance and shipped
 		// 0.6.x against pi-coding-agent ^0.70.5.
 		label: "pi-subagents",
 		matches: /(^|[^\w/-])pi-subagents(?![-\w])/i,
-		reason: "superseded by @tintinweb/pi-subagents (resumed maintenance) in rpiv-pi 0.14.0",
+		reason: "superseded by @tintinweb/pi-subagents (resumed maintenance) in rpiv-pi 1.0.0",
 	},
 ];
