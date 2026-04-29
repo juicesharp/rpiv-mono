@@ -7,6 +7,11 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- Internal refactor: notes-mode dispatch unified onto the reducer. New canonical `QuestionnaireState.notesDraft` field replaces `ApplyContext.pendingNotesValue`; `routeKey` emits `notes_forward` for any non-Esc/Enter key while `notesVisible`, the reducer returns it as a `forward_notes_keystroke` effect, and the runtime forwards to the Input. Eliminates the two-pass dispatch hack and the buried `requestRender` call in the session.
+- Internal refactor: `reduce` switch replaced with a typed dispatch table. 14 named per-kind handlers (`navHandler`, `confirmHandler`, …) registered in `HANDLERS: { [K in QuestionnaireAction["kind"]]: Handler<K> }`; mapped-type Record preserves compile-time exhaustiveness (mirrors `ROW_INTENT_META`). Each handler is pure, individually testable; `reduce` collapses to a two-line lookup.
+- Internal refactor: `buildQuestionnaire` factored into an intention-revealing `QuestionnaireBuilder` class. `build()` reads as a 9-line story (tabs → optional bars → heights → dialog → bindings → adapter → handle); each step is one private method. Local `isActiveTab` predicate now delegates to `selectActivePreviewPaneIndex` instead of re-deriving the clamp. Public surface unchanged.
+
 ## [1.0.8] - 2026-04-29
 
 ### Changed
