@@ -1,7 +1,12 @@
 import { getMarkdownTheme, type Theme } from "@mariozechner/pi-coding-agent";
 import { Input } from "@mariozechner/pi-tui";
 import { type QuestionData, SENTINEL_LABELS } from "../tool/types.js";
-import type { ComponentBinding, PerTabBinding } from "../view/component-binding.js";
+import {
+	type BoundGlobalBinding,
+	type BoundPerTabBinding,
+	globalBinding,
+	perTabBinding,
+} from "../view/component-binding.js";
 import { ChatRowView } from "../view/components/chat-row-view.js";
 import { MultiSelectView } from "../view/components/multi-select-view.js";
 import { OptionListView } from "../view/components/option-list-view.js";
@@ -135,29 +140,29 @@ export function buildQuestionnaire(config: QuestionnaireBuildConfig): Questionna
 		{ state: initialState, activePreviewPane: initialActivePreviewPane },
 	);
 
-	const globalBindings: ReadonlyArray<ComponentBinding<unknown>> = [
-		{
+	const globalBindings: ReadonlyArray<BoundGlobalBinding> = [
+		globalBinding({
 			component: dialog,
 			select: (s, ctx) => selectDialogProps(s, ctx.activePreviewPane),
-		} as ComponentBinding<unknown>,
-		{
+		}),
+		globalBinding({
 			component: chatRow,
 			select: (s, ctx) => selectChatRowProps(s, ctx.itemsByTab, ctx.totalQuestions, ctx.activeView),
-		} as ComponentBinding<unknown>,
+		}),
 		...(submitPicker
 			? [
-					{
+					globalBinding({
 						component: submitPicker,
 						select: (s, ctx) => selectSubmitPickerProps(s, ctx.totalQuestions, ctx.activeView),
-					} as ComponentBinding<unknown>,
+					}),
 				]
 			: []),
 		...(tabBar
 			? [
-					{
+					globalBinding({
 						component: tabBar,
 						select: (s, ctx) => selectTabBarProps(s, ctx.questions),
-					} as ComponentBinding<unknown>,
+					}),
 				]
 			: []),
 	];
@@ -167,26 +172,26 @@ export function buildQuestionnaire(config: QuestionnaireBuildConfig): Questionna
 		return ctx.i === paneIdx;
 	};
 
-	const perTabBindings: ReadonlyArray<PerTabBinding<unknown>> = [
-		{
+	const perTabBindings: ReadonlyArray<BoundPerTabBinding> = [
+		perTabBinding({
 			resolve: (tab) => tab.optionList,
 			predicate: (s, ctx) => isActiveTab(s, ctx),
 			select: (s, ctx) =>
 				selectOptionListProps(s, ctx.itemsByTab[ctx.i] ?? [], ctx.questions, ctx.activeView, ctx.inputBuffer),
-		} as PerTabBinding<unknown>,
-		{
+		}),
+		perTabBinding({
 			resolve: (tab) => tab.preview,
 			predicate: (s, ctx) => isActiveTab(s, ctx),
 			select: (s, ctx) => selectPreviewPaneProps(s, ctx.activeView),
-		} as PerTabBinding<unknown>,
-		{
+		}),
+		perTabBinding({
 			resolve: (tab) => tab.multiSelect,
 			select: (s, ctx) => {
 				const q = ctx.questions[ctx.i];
 				if (!q) return { rows: [], nextActive: false };
 				return selectMultiSelectProps(s, q, ctx.activeView);
 			},
-		} as PerTabBinding<unknown>,
+		}),
 	];
 
 	const adapter = new QuestionnairePropsAdapter({
@@ -197,12 +202,13 @@ export function buildQuestionnaire(config: QuestionnaireBuildConfig): Questionna
 		inputBuffer,
 		globalBindings,
 		perTabBindings,
+		extraInvalidatables: [notesInput],
 	});
 
 	return {
 		adapter,
 		notesInput,
 		render: (w) => dialog.render(w),
-		invalidate: () => dialog.invalidate(),
+		invalidate: () => adapter.invalidate(),
 	};
 }

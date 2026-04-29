@@ -3,9 +3,19 @@ import { selectActivePreviewPaneIndex } from "../state/selectors/derivations.js"
 import { selectActiveView } from "../state/selectors/focus.js";
 import type { QuestionnaireState } from "../state/state.js";
 import type { QuestionData } from "../tool/types.js";
-import type { BindingContext, ComponentBinding, PerTabBinding, PerTabBindingContext } from "./component-binding.js";
+import type {
+	BindingContext,
+	BoundGlobalBinding,
+	BoundPerTabBinding,
+	PerTabBindingContext,
+} from "./component-binding.js";
 import type { WrappingSelectItem } from "./components/wrapping-select.js";
 import type { TabComponents } from "./tab-components.js";
+
+/** Cache-invalidation contract used by the adapter. `pi-tui` `Component` already satisfies it. */
+interface Invalidatable {
+	invalidate(): void;
+}
 
 export interface QuestionnairePropsAdapterConfig {
 	tui: { requestRender(): void };
@@ -13,8 +23,14 @@ export interface QuestionnairePropsAdapterConfig {
 	itemsByTab: ReadonlyArray<readonly WrappingSelectItem[]>;
 	tabsByIndex: ReadonlyArray<TabComponents>;
 	inputBuffer: InputBuffer;
-	globalBindings: ReadonlyArray<ComponentBinding<unknown>>;
-	perTabBindings: ReadonlyArray<PerTabBinding<unknown>>;
+	globalBindings: ReadonlyArray<BoundGlobalBinding>;
+	perTabBindings: ReadonlyArray<BoundPerTabBinding>;
+	/**
+	 * Renderables not reached by the binding registries (e.g. the notes
+	 * `Input`, which is typed into directly and has no props). Walked by
+	 * `invalidate()` after the binding-driven components.
+	 */
+	extraInvalidatables?: ReadonlyArray<Invalidatable>;
 }
 
 /**
@@ -32,8 +48,9 @@ export class QuestionnairePropsAdapter {
 	private readonly itemsByTab: ReadonlyArray<readonly WrappingSelectItem[]>;
 	private readonly tabsByIndex: ReadonlyArray<TabComponents>;
 	private readonly inputBuffer: InputBuffer;
-	private readonly globalBindings: ReadonlyArray<ComponentBinding<unknown>>;
-	private readonly perTabBindings: ReadonlyArray<PerTabBinding<unknown>>;
+	private readonly globalBindings: ReadonlyArray<BoundGlobalBinding>;
+	private readonly perTabBindings: ReadonlyArray<BoundPerTabBinding>;
+	private readonly extraInvalidatables: ReadonlyArray<Invalidatable>;
 
 	constructor(config: QuestionnairePropsAdapterConfig) {
 		this.tui = config.tui;
@@ -43,6 +60,7 @@ export class QuestionnairePropsAdapter {
 		this.inputBuffer = config.inputBuffer;
 		this.globalBindings = config.globalBindings;
 		this.perTabBindings = config.perTabBindings;
+		this.extraInvalidatables = config.extraInvalidatables ?? [];
 	}
 
 	apply(state: QuestionnaireState): void {
@@ -61,19 +79,34 @@ export class QuestionnairePropsAdapter {
 		};
 
 		for (const binding of this.globalBindings) {
-			binding.component.setProps(binding.select(state, ctx));
+			binding.apply(state, ctx);
 		}
 
 		for (let i = 0; i < this.tabsByIndex.length; i++) {
 			const tab = this.tabsByIndex[i]!;
 			const tabCtx: PerTabBindingContext = { ...ctx, tab, i };
 			for (const binding of this.perTabBindings) {
-				if (binding.predicate && !binding.predicate(state, tabCtx)) continue;
-				const component = binding.resolve(tab);
-				component?.setProps(binding.select(state, tabCtx));
+				binding.apply(state, tabCtx);
 			}
 		}
 
 		this.tui.requestRender();
+	}
+
+	/**
+	 * Invalidates every owned renderable. Called by the session in place of
+	 * the old `dialog.invalidate()` forwarding chain — DialogView no longer
+	 * reaches into siblings (chatRow, tabBar, notesInput, activePreviewPane).
+	 * Iterates the same registries used by `apply()` plus
+	 * `extraInvalidatables` for components outside the binding system.
+	 */
+	invalidate(): void {
+		for (const b of this.globalBindings) b.invalidate();
+		for (const tab of this.tabsByIndex) {
+			tab.optionList.invalidate();
+			tab.preview.invalidate();
+			tab.multiSelect?.invalidate();
+		}
+		for (const x of this.extraInvalidatables) x.invalidate();
 	}
 }

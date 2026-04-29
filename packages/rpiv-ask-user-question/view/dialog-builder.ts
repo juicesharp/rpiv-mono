@@ -93,12 +93,10 @@ export class DialogView implements StatefulView<DialogProps> {
 
 	handleInput(_data: string): void {}
 
-	invalidate(): void {
-		this.liveProps.activePreviewPane.invalidate();
-		this.config.tabBar?.invalidate();
-		this.config.notesInput.invalidate();
-		this.config.chatRow.invalidate();
-	}
+	// Invalidation is driven by `QuestionnairePropsAdapter.invalidate()`, which
+	// owns the full set of renderables (binding registries + extras like
+	// `notesInput`). DialogView has no cached layout of its own.
+	invalidate(): void {}
 
 	render(width: number): string[] {
 		const onSubmit = this.config.isMulti && this.liveProps.state.currentTab === this.config.questions.length;
