@@ -3,7 +3,7 @@ import type { Theme } from "@mariozechner/pi-coding-agent";
 import { visibleWidth } from "@mariozechner/pi-tui";
 import { describe, expect, it } from "vitest";
 import type { QuestionData } from "../../tool/types.js";
-import { MultiSelectOptions, type MultiSelectOptionsProps } from "./multi-select-options.js";
+import { MultiSelectView, type MultiSelectViewProps } from "./multi-select-view.js";
 
 const theme = makeTheme() as unknown as Theme;
 
@@ -13,7 +13,7 @@ interface PropOverrides {
 	focused?: boolean;
 }
 
-function makeProps(question: QuestionData, over: PropOverrides = {}): MultiSelectOptionsProps {
+function makeProps(question: QuestionData, over: PropOverrides = {}): MultiSelectViewProps {
 	const optionIndex = over.optionIndex ?? 0;
 	const checkedIndices = over.checkedIndices ?? new Set<number>();
 	const focused = over.focused ?? true;
@@ -40,10 +40,10 @@ function question(over: Partial<QuestionData> = {}): QuestionData {
 	};
 }
 
-describe("MultiSelectOptions.render", () => {
+describe("MultiSelectView.render", () => {
 	it("renders one row per option + a trailing Next sentinel", () => {
 		const q = question();
-		const m = new MultiSelectOptions(theme, q, makeProps(q));
+		const m = new MultiSelectView(theme, q, makeProps(q));
 		const lines = m.render(80);
 		expect(lines.length).toBe(4); // 3 options + Next
 		expect(lines[0]).toContain("FE");
@@ -56,7 +56,7 @@ describe("MultiSelectOptions.render", () => {
 	// (CC parity — single space matches the CC sample `[✔] Logging`).
 	it("separates the checkbox from the label by exactly ONE space", () => {
 		const q = question();
-		const m = new MultiSelectOptions(theme, q, makeProps(q));
+		const m = new MultiSelectView(theme, q, makeProps(q));
 		const lines = m.render(80);
 		// Strip any ANSI escapes from line 0 to match raw glyph positioning.
 		const raw = lines[0].replace(/\x1b\[[0-9;]*m/g, "");
@@ -69,7 +69,7 @@ describe("MultiSelectOptions.render", () => {
 	// the same time (`❯ 1. [✔] HTMX` AND `❯ Chat about this`).
 	it("focused=false suppresses the active-row pointer (no doubled cursor)", () => {
 		const q = question();
-		const m = new MultiSelectOptions(theme, q, makeProps(q, { optionIndex: 1, focused: true }));
+		const m = new MultiSelectView(theme, q, makeProps(q, { optionIndex: 1, focused: true }));
 
 		const focused = m.render(80);
 		const rawFocused = focused.map((l) => l.replace(/\x1b\[[0-9;]*m/g, ""));
@@ -94,7 +94,7 @@ describe("MultiSelectOptions.render", () => {
 				{ label: "BE", description: "" },
 			],
 		});
-		const m = new MultiSelectOptions(theme, q, makeProps(q));
+		const m = new MultiSelectView(theme, q, makeProps(q));
 		const lines = m.render(80);
 		expect(lines.length).toBe(4); // FE row + 1 description + BE row + Next
 		expect(lines[1]).toContain("front-end");
@@ -103,7 +103,7 @@ describe("MultiSelectOptions.render", () => {
 
 	it("active option uses ACTIVE_POINTER and accent styling", () => {
 		const q = question();
-		const m = new MultiSelectOptions(theme, q, makeProps(q, { optionIndex: 1 }));
+		const m = new MultiSelectView(theme, q, makeProps(q, { optionIndex: 1 }));
 		const lines = m.render(80);
 		expect(lines[1]).toContain("❯ "); // ACTIVE_POINTER on the active row
 		expect(lines[0].startsWith("❯ ")).toBe(false); // inactive rows do not start with active pointer
@@ -111,7 +111,7 @@ describe("MultiSelectOptions.render", () => {
 
 	it("checked options render [✔]; unchecked render [ ]", () => {
 		const q = question();
-		const m = new MultiSelectOptions(theme, q, makeProps(q, { checkedIndices: new Set([0, 2]) }));
+		const m = new MultiSelectView(theme, q, makeProps(q, { checkedIndices: new Set([0, 2]) }));
 		const lines = m.render(80);
 		expect(lines[0]).toContain("[✔]");
 		expect(lines[1]).toContain("[ ]");
@@ -121,14 +121,14 @@ describe("MultiSelectOptions.render", () => {
 	it("row 1 inactive unchecked renders as '  1. [ ] LABEL'", () => {
 		// optionIndex = 1 → row 0 is inactive; checkbox 0 unchecked.
 		const q = question();
-		const m = new MultiSelectOptions(theme, q, makeProps(q, { optionIndex: 1 }));
+		const m = new MultiSelectView(theme, q, makeProps(q, { optionIndex: 1 }));
 		const raw = m.render(80)[0].replace(/\x1b\[[0-9;]*m/g, "");
 		expect(raw).toMatch(/^ {2}1\. \[ \] FE/);
 	});
 
 	it("row 2 active checked renders as '❯ 2. [✔] LABEL'", () => {
 		const q = question();
-		const m = new MultiSelectOptions(theme, q, makeProps(q, { optionIndex: 1, checkedIndices: new Set([1]) }));
+		const m = new MultiSelectView(theme, q, makeProps(q, { optionIndex: 1, checkedIndices: new Set([1]) }));
 		const raw = m.render(80)[1].replace(/\x1b\[[0-9;]*m/g, "");
 		expect(raw).toMatch(/^❯ 2\. \[✔\] BE/);
 	});
@@ -144,7 +144,7 @@ describe("MultiSelectOptions.render", () => {
 				{ label: "BE", description: "" },
 			],
 		});
-		const m = new MultiSelectOptions(theme, q, makeProps(q));
+		const m = new MultiSelectView(theme, q, makeProps(q));
 		const lines = m.render(40);
 		// Line 0 = row, lines 1..N = wrapped description segments. Each continuation must start
 		// with EXACTLY 2 spaces (col 2 = past pointer slot), not 9 (full prefix column).
@@ -157,7 +157,7 @@ describe("MultiSelectOptions.render", () => {
 
 	it("setProps mutates props visible to next render (active row moves)", () => {
 		const q = question();
-		const m = new MultiSelectOptions(theme, q, makeProps(q, { optionIndex: 0 }));
+		const m = new MultiSelectView(theme, q, makeProps(q, { optionIndex: 0 }));
 		expect(m.render(80)[0]).toContain("❯ ");
 		m.setProps(makeProps(q, { optionIndex: 2 }));
 		const lines = m.render(80);
@@ -166,7 +166,7 @@ describe("MultiSelectOptions.render", () => {
 	});
 });
 
-describe("MultiSelectOptions.naturalHeight", () => {
+describe("MultiSelectView.naturalHeight", () => {
 	const fixtures: Array<[string, QuestionData]> = [
 		["no-desc 3 options", question()],
 		[
@@ -205,7 +205,7 @@ describe("MultiSelectOptions.naturalHeight", () => {
 
 	it("naturalHeight(w) === render(w).length across widths and fixtures", () => {
 		for (const [_label, q] of fixtures) {
-			const m = new MultiSelectOptions(theme, q, makeProps(q));
+			const m = new MultiSelectView(theme, q, makeProps(q));
 			for (const w of [20, 40, 80, 120]) {
 				expect(m.naturalHeight(w)).toBe(m.render(w).length);
 			}
@@ -220,15 +220,15 @@ describe("MultiSelectOptions.naturalHeight", () => {
 				{ label: "DB", description: "database tasks" },
 			],
 		});
-		const a = new MultiSelectOptions(theme, q, makeProps(q, { optionIndex: 0 }));
-		const b = new MultiSelectOptions(theme, q, makeProps(q, { optionIndex: 2, checkedIndices: new Set([0, 1]) }));
+		const a = new MultiSelectView(theme, q, makeProps(q, { optionIndex: 0 }));
+		const b = new MultiSelectView(theme, q, makeProps(q, { optionIndex: 2, checkedIndices: new Set([0, 1]) }));
 		for (const w of [20, 40, 80, 120]) {
 			expect(a.naturalHeight(w)).toBe(b.naturalHeight(w));
 		}
 	});
 });
 
-describe("MultiSelectOptions width safety", () => {
+describe("MultiSelectView width safety", () => {
 	it("every emitted line satisfies visibleWidth(line) <= width", () => {
 		const q = question({
 			options: [
@@ -236,7 +236,7 @@ describe("MultiSelectOptions width safety", () => {
 				{ label: "BE", description: "back-end" },
 			],
 		});
-		const m = new MultiSelectOptions(theme, q, makeProps(q));
+		const m = new MultiSelectView(theme, q, makeProps(q));
 		for (const w of [20, 40, 80, 120]) {
 			const lines = m.render(w);
 			for (const line of lines) {

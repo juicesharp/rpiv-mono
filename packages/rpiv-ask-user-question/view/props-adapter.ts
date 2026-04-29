@@ -1,3 +1,4 @@
+import type { InputBuffer } from "../state/input-buffer.js";
 import {
 	type QuestionnaireState,
 	selectActivePreviewPaneIndex,
@@ -11,52 +12,50 @@ import {
 } from "../state/questionnaire-state.js";
 import type { QuestionData } from "../tool/types.js";
 import type { ChatRowView } from "./components/chat-row-view.js";
-import type { MultiSelectOptions } from "./components/multi-select-options.js";
+import type { MultiSelectView } from "./components/multi-select-view.js";
 import type { OptionListView } from "./components/option-list-view.js";
 import type { PreviewPane } from "./components/preview/preview-pane.js";
 import type { SubmitPicker } from "./components/submit-picker.js";
 import type { TabBar } from "./components/tab-bar.js";
 import type { WrappingSelectItem } from "./components/wrapping-select.js";
-import type { DialogComponent } from "./dialog-builder.js";
+import type { DialogProps } from "./dialog-builder.js";
+import type { StatefulView } from "./stateful-view.js";
 
-export interface QuestionnaireViewAdapterConfig {
+export interface QuestionnairePropsAdapterConfig {
 	tui: { requestRender(): void };
 	questions: readonly QuestionData[];
 	itemsByTab: ReadonlyArray<readonly WrappingSelectItem[]>;
 	optionListViewsByTab: ReadonlyArray<OptionListView>;
 	previewPanes: readonly PreviewPane[];
 	chatRow: ChatRowView;
-	multiSelectOptionsByTab: ReadonlyArray<MultiSelectOptions | undefined>;
+	multiSelectOptionsByTab: ReadonlyArray<MultiSelectView | undefined>;
 	submitPicker: SubmitPicker | undefined;
 	tabBar: TabBar | undefined;
-	dialog: DialogComponent;
+	dialog: StatefulView<DialogProps>;
+	inputBuffer: InputBuffer;
 }
 
 /**
  * View fan-out: drives every component setter from the canonical state via named selectors.
  *
- * `OptionListView` receives a typed `OptionListViewProps` projection via `setProps` per tick
- * (`selectedIndex`, `focused`, optional `confirmed`) — replacing the legacy three-setter
- * triplet. `PreviewPane` receives a typed `PreviewPaneProps` projection via `setProps`
- * (`notesVisible`, `selectedIndex`, `focused`) — the cross-component live read of
- * `OptionListView` is gone.
- *
- * The adapter owns the components but never owns mutable state — every projection is read fresh
- * from the input `state` argument, so there is no risk of stale view-side data.
+ * Holds a constructor-injected reference to the session-owned `InputBuffer` cell so
+ * `selectOptionListProps` receives the live buffer value per tick without coupling
+ * the adapter to mutable session state.
  */
-export class QuestionnaireViewAdapter {
-	private readonly tui: QuestionnaireViewAdapterConfig["tui"];
+export class QuestionnairePropsAdapter {
+	private readonly tui: QuestionnairePropsAdapterConfig["tui"];
 	private readonly questions: readonly QuestionData[];
 	private readonly itemsByTab: ReadonlyArray<readonly WrappingSelectItem[]>;
 	private readonly optionListViewsByTab: ReadonlyArray<OptionListView>;
 	private readonly previewPanes: readonly PreviewPane[];
 	private readonly chatRow: ChatRowView;
-	private readonly multiSelectOptionsByTab: ReadonlyArray<MultiSelectOptions | undefined>;
+	private readonly multiSelectOptionsByTab: ReadonlyArray<MultiSelectView | undefined>;
 	private readonly submitPicker: SubmitPicker | undefined;
 	private readonly tabBar: TabBar | undefined;
-	private readonly dialog: DialogComponent;
+	private readonly dialog: StatefulView<DialogProps>;
+	private readonly inputBuffer: InputBuffer;
 
-	constructor(config: QuestionnaireViewAdapterConfig) {
+	constructor(config: QuestionnairePropsAdapterConfig) {
 		this.tui = config.tui;
 		this.questions = config.questions;
 		this.itemsByTab = config.itemsByTab;
@@ -67,6 +66,7 @@ export class QuestionnaireViewAdapter {
 		this.submitPicker = config.submitPicker;
 		this.tabBar = config.tabBar;
 		this.dialog = config.dialog;
+		this.inputBuffer = config.inputBuffer;
 	}
 
 	/**
@@ -84,7 +84,15 @@ export class QuestionnaireViewAdapter {
 
 		const view = this.optionListViewsByTab[paneIndex] ?? this.optionListViewsByTab[0];
 		if (view) {
-			view.setProps(selectOptionListProps(state, this.itemsByTab[paneIndex] ?? [], this.questions, activeView));
+			view.setProps(
+				selectOptionListProps(
+					state,
+					this.itemsByTab[paneIndex] ?? [],
+					this.questions,
+					activeView,
+					this.inputBuffer.get(),
+				),
+			);
 		}
 
 		activePreviewPane.setProps(selectPreviewPaneProps(state, activeView));

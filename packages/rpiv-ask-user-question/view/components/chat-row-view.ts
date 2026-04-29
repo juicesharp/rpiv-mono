@@ -22,7 +22,7 @@ export interface ChatRowViewConfig {
 
 /**
  * Typed wrapper around the chat-row `WrappingSelect`. Replaces the prior
- * raw-primitive consumption at `view-adapter.ts:106, :120` and removes the
+ * raw-primitive consumption at `props-adapter.ts:106, :120` and removes the
  * accidental surface area (8 unused `WrappingSelect` setters) noted in
  * research Q4.
  *

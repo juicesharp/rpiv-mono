@@ -20,7 +20,7 @@ export const SENTINEL_KINDS: readonly SentinelKind[] = ["other", "chat", "next"]
 /**
  * Per-kind static metadata. Pure data — no closures, no per-kind handler
  * functions. Behavior-bearing branches (answer construction in
- * `dispatch.ts:69-99`, the Next-row render block in `multi-select-options.ts`,
+ * `key-router.ts:69-99`, the Next-row render block in `multi-select-view.ts`,
  * and the inline-Input render branch in `wrapping-select.ts`) keep their
  * exhaustive switches and READ flags from this table.
  *
@@ -45,7 +45,7 @@ export const SENTINEL_KINDS: readonly SentinelKind[] = ["other", "chat", "next"]
  *   numberable=false row that lives in the list; chat is numbered=true but
  *   `livesInMainList=false` so the flag is moot for chat.
  * - `activatesInputMode` — true iff focusing the row should toggle
- *   `state.inputMode = true`. Read by `apply-action.ts` `nav` /
+ *   `state.inputMode = true`. Read by `state-reducer.ts` `nav` /
  *   `focus_options` cases.
  * - `blocksMultiToggle` — in multiSelect mode, Space (and Enter-as-toggle)
  *   on this row is suppressed. The Next sentinel is the only true.

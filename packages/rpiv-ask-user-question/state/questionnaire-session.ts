@@ -1,29 +1,14 @@
-import { getMarkdownTheme, type Theme } from "@mariozechner/pi-coding-agent";
-import { getKeybindings, Input } from "@mariozechner/pi-tui";
+import type { Theme } from "@mariozechner/pi-coding-agent";
+import { getKeybindings, type Input } from "@mariozechner/pi-tui";
 import { type QuestionData, type QuestionnaireResult, type QuestionParams, SENTINEL_LABELS } from "../tool/types.js";
-import { ChatRowView } from "../view/components/chat-row-view.js";
-import { MultiSelectOptions } from "../view/components/multi-select-options.js";
-import { OptionListView } from "../view/components/option-list-view.js";
-import { PreviewBlockRenderer } from "../view/components/preview/preview-block-renderer.js";
-import { PreviewPane } from "../view/components/preview/preview-pane.js";
-import { SubmitPicker } from "../view/components/submit-picker.js";
-import { TabBar } from "../view/components/tab-bar.js";
-import type { WrappingSelectItem, WrappingSelectTheme } from "../view/components/wrapping-select.js";
-import { buildDialog, type DialogComponent } from "../view/dialog-builder.js";
-import { QuestionnaireViewAdapter } from "../view/view-adapter.js";
-import { type ApplyContext, applyAction, type Effect } from "./apply-action.js";
-import { handleQuestionnaireInput, type QuestionnaireAction } from "./dispatch.js";
-import {
-	chatNumberingFor,
-	computeFocusedOptionHasPreview,
-	type QuestionnaireDispatchSnapshot,
-	type QuestionnaireState,
-	selectActivePreviewPaneIndex,
-	selectActiveView,
-	selectMultiSelectProps,
-	selectSubmitPickerProps,
-	selectTabBarProps,
-} from "./questionnaire-state.js";
+import type { WrappingSelectItem } from "../view/components/wrapping-select.js";
+import type { QuestionnairePropsAdapter } from "../view/props-adapter.js";
+import { buildQuestionnaire } from "./build-questionnaire.js";
+import { InputBuffer } from "./input-buffer.js";
+import { type QuestionnaireAction, routeKey } from "./key-router.js";
+import { computeFocusedOptionHasPreview } from "./selectors/derivations.js";
+import type { QuestionnaireRuntime, QuestionnaireState } from "./state.js";
+import { type ApplyContext, type Effect, reduce } from "./state-reducer.js";
 
 const BACKSPACE_CHARS = new Set(["\x7f", "\b"]);
 const ESC_SEQUENCE_PREFIX = "\x1b";
@@ -57,27 +42,25 @@ function initialState(): QuestionnaireState {
 }
 
 /**
- * Slim runtime: owns the canonical state cell, the two-pass `notesVisible` dispatch loop,
- * and the effect runner. State transitions delegate to the pure `applyAction` reducer
- * (`apply-action.ts`); UI fan-out delegates to `QuestionnaireViewAdapter` (`view-adapter.ts`).
+ * Slim runtime: owns the canonical state cell + the input-buffer cell + the
+ * two-pass `notesVisible` dispatch loop + the effect runner. State transitions
+ * delegate to the pure `reduce` reducer; UI fan-out delegates to the
+ * `QuestionnairePropsAdapter` constructed by `buildQuestionnaire`.
  *
- * Mirrors the rpiv-todo "thin controller around a pure reducer" pattern.
+ * Construction is delegated entirely to `buildQuestionnaire(config)`. The
+ * session keeps four narrow handles the action loop needs: `notesInput`,
+ * `viewAdapter`, `inputBuffer`, `done`.
  */
 export class QuestionnaireSession {
 	private state: QuestionnaireState = initialState();
+	private readonly inputBuffer = new InputBuffer();
 
 	private readonly questions: readonly QuestionData[];
 	private readonly isMulti: boolean;
 	private readonly itemsByTab: WrappingSelectItem[][];
-	private readonly optionListViewsByTab: OptionListView[];
-	private readonly previewPanes: PreviewPane[];
-	private readonly multiSelectOptionsByTab: ReadonlyArray<MultiSelectOptions | undefined>;
-	private readonly submitPicker: SubmitPicker | undefined;
-	private readonly tabBar: TabBar | undefined;
-	private readonly chatRow: ChatRowView;
+
 	private readonly notesInput: Input;
-	private readonly dialog: DialogComponent;
-	private readonly viewAdapter: QuestionnaireViewAdapter;
+	private readonly viewAdapter: QuestionnairePropsAdapter;
 
 	private readonly tui: QuestionnaireSessionConfig["tui"];
 	private readonly done: QuestionnaireSessionConfig["done"];
@@ -94,91 +77,23 @@ export class QuestionnaireSession {
 		// this in sync via `withFocusedOptionHasPreview` on subsequent transitions.
 		this.state = { ...this.state, focusedOptionHasPreview: computeFocusedOptionHasPreview(this.questions, 0, 0) };
 
-		const selectTheme: WrappingSelectTheme = {
-			selectedText: (t) => config.theme.fg("accent", config.theme.bold(t)),
-			description: (t) => config.theme.fg("muted", t),
-			scrollInfo: (t) => config.theme.fg("dim", t),
-		};
-		this.chatRow = new ChatRowView({
-			item: { kind: "chat", label: SENTINEL_LABELS.chat },
-			theme: selectTheme,
-			initialProps: {
-				focused: false,
-				numbering: chatNumberingFor(this.itemsByTab[0] ?? []),
-			},
-		});
-		this.notesInput = new Input();
-
-		this.optionListViewsByTab = this.itemsByTab.map((items) => new OptionListView({ items, theme: selectTheme }));
-
-		const markdownTheme = getMarkdownTheme();
-		const getTerminalWidth = () => this.tui.terminal.columns;
-
-		this.previewPanes = this.questions.map((q, i) => {
-			const previewBlock = new PreviewBlockRenderer({
-				question: q,
-				theme: config.theme,
-				markdownTheme,
-			});
-			return new PreviewPane({
-				question: q,
-				getTerminalWidth,
-				optionListView: this.optionListViewsByTab[i]!,
-				previewBlock,
-				initialProps: { notesVisible: false, selectedIndex: 0, focused: false },
-			});
-		});
-
-		const initialSnap = this.snapshot();
-		const initialActiveView = selectActiveView(initialSnap, this.questions.length);
-		this.multiSelectOptionsByTab = this.questions.map((q) =>
-			q.multiSelect
-				? new MultiSelectOptions(config.theme, q, selectMultiSelectProps(initialSnap, q, initialActiveView))
-				: undefined,
-		);
-		this.submitPicker = this.isMulti
-			? new SubmitPicker(
-					config.theme,
-					selectSubmitPickerProps(initialSnap, this.questions.length, initialActiveView),
-				)
-			: undefined;
-		this.tabBar = this.isMulti ? new TabBar(selectTabBarProps(initialSnap, this.questions), config.theme) : undefined;
-
-		this.dialog = buildDialog({
+		const built = buildQuestionnaire({
+			tui: this.tui,
 			theme: config.theme,
 			questions: this.questions,
-			initialProps: {
-				state: initialSnap,
-				activePreviewPane:
-					this.previewPanes[selectActivePreviewPaneIndex(this.state.currentTab, this.questions.length)] ??
-					this.previewPanes[0]!,
-			},
-			tabBar: this.tabBar,
-			notesInput: this.notesInput,
-			chatRow: this.chatRow,
+			itemsByTab: this.itemsByTab,
 			isMulti: this.isMulti,
-			multiSelectOptionsByTab: this.multiSelectOptionsByTab,
-			submitPicker: this.submitPicker,
-			getBodyHeight: (w) => this.computeGlobalContentHeight(w),
-			getCurrentBodyHeight: (w) => this.computeCurrentContentHeight(w),
+			initialState: this.state,
+			inputBuffer: this.inputBuffer,
+			getCurrentTab: () => this.state.currentTab,
 		});
 
-		this.viewAdapter = new QuestionnaireViewAdapter({
-			tui: this.tui,
-			questions: this.questions,
-			itemsByTab: this.itemsByTab,
-			optionListViewsByTab: this.optionListViewsByTab,
-			previewPanes: this.previewPanes,
-			chatRow: this.chatRow,
-			multiSelectOptionsByTab: this.multiSelectOptionsByTab,
-			submitPicker: this.submitPicker,
-			tabBar: this.tabBar,
-			dialog: this.dialog,
-		});
+		this.notesInput = built.notesInput;
+		this.viewAdapter = built.adapter;
 
 		this.component = {
-			render: (w) => this.dialog.render(w),
-			invalidate: () => this.dialog.invalidate(),
+			render: built.render,
+			invalidate: built.invalidate,
 			handleInput: (data) => this.dispatch(data),
 		};
 
@@ -192,7 +107,7 @@ export class QuestionnaireSession {
 	 */
 	dispatch(data: string): void {
 		if (this.state.notesVisible) {
-			const preAction = handleQuestionnaireInput(data, this.snapshot());
+			const preAction = routeKey(data, this.state, this.runtime());
 			if (preAction.kind === "notes_exit") {
 				this.commit(preAction);
 				return;
@@ -202,7 +117,7 @@ export class QuestionnaireSession {
 			return;
 		}
 
-		const action = handleQuestionnaireInput(data, this.snapshot());
+		const action = routeKey(data, this.state, this.runtime());
 		if (action.kind === "ignore") {
 			this.handleIgnoreInline(data);
 			return;
@@ -211,7 +126,7 @@ export class QuestionnaireSession {
 	}
 
 	private commit(action: QuestionnaireAction): void {
-		const result = applyAction(this.state, action, this.applyContext());
+		const result = reduce(this.state, action, this.applyContext());
 		this.state = result.state;
 		for (const effect of result.effects) this.runEffect(effect);
 		this.viewAdapter.apply(this.state);
@@ -220,10 +135,10 @@ export class QuestionnaireSession {
 	private runEffect(effect: Effect): void {
 		switch (effect.kind) {
 			case "set_input_buffer":
-				this.optionListViewsByTab[this.state.currentTab]?.setInputBuffer(effect.value);
+				this.inputBuffer.set(effect.value);
 				return;
 			case "clear_input_buffer":
-				this.optionListViewsByTab[this.state.currentTab]?.clearInputBuffer();
+				this.inputBuffer.clear();
 				return;
 			case "set_notes_value":
 				this.notesInput.setValue(effect.value);
@@ -238,29 +153,26 @@ export class QuestionnaireSession {
 	}
 
 	/**
-	 * Inline `ignore` handler — preserves per-keystroke buffer mutation when in inputMode.
-	 * Routes directly to OptionListView (no PreviewPane proxy). Bypasses the reducer because no
-	 * canonical state changes; bypasses the view-adapter because only the OptionListView's own
-	 * buffer needs to update before the next render.
+	 * Inline `ignore` handler — preserves D3's per-keystroke perf invariant
+	 * (no reducer pass) by mutating the session-owned buffer cell directly.
+	 * Calls `viewAdapter.apply(state)` so the new buffer value flows out via
+	 * `selectOptionListProps` → `OptionListView.setProps({inputBuffer})`.
 	 */
 	private handleIgnoreInline(data: string): void {
 		if (!this.state.inputMode) return;
-		const view = this.optionListViewsByTab[this.state.currentTab];
-		if (!view) return;
 		if (BACKSPACE_CHARS.has(data)) {
-			view.backspaceInput();
-			this.tui.requestRender();
+			this.inputBuffer.backspace();
+			this.viewAdapter.apply(this.state);
 		} else if (data && !data.startsWith(ESC_SEQUENCE_PREFIX)) {
-			view.appendInput(data);
-			this.tui.requestRender();
+			this.inputBuffer.append(data);
+			this.viewAdapter.apply(this.state);
 		}
 	}
 
-	private snapshot(): QuestionnaireDispatchSnapshot {
+	private runtime(): QuestionnaireRuntime {
 		return {
-			...this.state,
 			keybindings: getKeybindings(),
-			inputBuffer: this.optionListViewsByTab[this.state.currentTab]?.getInputBuffer() ?? "",
+			inputBuffer: this.inputBuffer.get(),
 			questions: this.questions,
 			isMulti: this.isMulti,
 			currentItem: this.currentItem(),
@@ -281,27 +193,5 @@ export class QuestionnaireSession {
 		const arr = this.itemsByTab[this.state.currentTab] ?? [];
 		if (this.state.optionIndex < arr.length) return arr[this.state.optionIndex];
 		return { kind: "chat", label: SENTINEL_LABELS.chat };
-	}
-
-	private computeGlobalContentHeight(width: number): number {
-		let max = 0;
-		for (let i = 0; i < this.questions.length; i++) {
-			const q = this.questions[i];
-			const h = q?.multiSelect
-				? (this.multiSelectOptionsByTab[i]?.naturalHeight(width) ?? 0)
-				: (this.previewPanes[i]?.maxNaturalHeight(width) ?? 0);
-			if (h > max) max = h;
-		}
-		return Math.max(1, max);
-	}
-
-	private computeCurrentContentHeight(width: number): number {
-		const idx = Math.min(this.state.currentTab, this.questions.length - 1);
-		const q = this.questions[idx];
-		if (!q) return 0;
-		const h = q.multiSelect
-			? (this.multiSelectOptionsByTab[idx]?.naturalHeight(width) ?? 0)
-			: (this.previewPanes[idx]?.naturalHeight(width) ?? 0);
-		return Math.max(0, h);
 	}
 }

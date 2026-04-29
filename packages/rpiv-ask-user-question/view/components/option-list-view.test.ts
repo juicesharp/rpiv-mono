@@ -19,6 +19,7 @@ function props(over: Partial<OptionListViewProps> = {}): OptionListViewProps {
 	return {
 		selectedIndex: over.selectedIndex ?? 0,
 		focused: over.focused ?? true,
+		inputBuffer: over.inputBuffer ?? "",
 		...(over.confirmed ? { confirmed: over.confirmed } : {}),
 	};
 }
@@ -29,18 +30,7 @@ const sampleItems: WrappingSelectItem[] = [
 	{ kind: "option", label: "Gamma" },
 ];
 
-describe("OptionListView — selectedIndex SOT", () => {
-	it("getSelectedIndex defaults to 0", () => {
-		const v = makeView(sampleItems);
-		expect(v.getSelectedIndex()).toBe(0);
-	});
-
-	it("setProps({selectedIndex}) updates the value queryable via getSelectedIndex", () => {
-		const v = makeView(sampleItems);
-		v.setProps(props({ selectedIndex: 2 }));
-		expect(v.getSelectedIndex()).toBe(2);
-	});
-
+describe("OptionListView — selectedIndex projection", () => {
 	it("setProps({selectedIndex}) value is reflected in render() row activation (cursor on row 3)", () => {
 		const v = makeView(sampleItems);
 		v.setProps(props({ selectedIndex: 2, focused: true }));
@@ -51,21 +41,15 @@ describe("OptionListView — selectedIndex SOT", () => {
 	});
 });
 
-describe("OptionListView — focused SOT", () => {
-	it("isFocused defaults to true", () => {
-		const v = makeView(sampleItems);
-		expect(v.isFocused()).toBe(true);
-	});
-
-	it("setProps({focused: false}) makes isFocused() return false; render no longer shows the active pointer", () => {
+describe("OptionListView — focused projection", () => {
+	it("setProps({focused: false}) hides the active pointer", () => {
 		const v = makeView(sampleItems);
 		v.setProps(props({ selectedIndex: 0, focused: false }));
-		expect(v.isFocused()).toBe(false);
 		const lines = v.render(40);
 		expect(lines.every((l) => !l.startsWith("❯"))).toBe(true);
 	});
 
-	it("setProps({focused: true}) restores the active pointer at row 0", () => {
+	it("setProps({focused: true}) shows the active pointer at row 0", () => {
 		const v = makeView(sampleItems);
 		v.setProps(props({ selectedIndex: 0, focused: true }));
 		const lines = v.render(40);
@@ -73,39 +57,15 @@ describe("OptionListView — focused SOT", () => {
 	});
 });
 
-describe("OptionListView — input buffer proxies", () => {
+describe("OptionListView — inputBuffer prop", () => {
 	const otherItems: WrappingSelectItem[] = [
 		{ kind: "option", label: "Alpha" },
 		{ kind: "other", label: "Type something." },
 	];
 
-	it("getInputBuffer returns empty string by default", () => {
+	it("setProps({inputBuffer}) reflects buffer text in inline-input row render", () => {
 		const v = makeView(otherItems);
-		expect(v.getInputBuffer()).toBe("");
-	});
-
-	it("setInputBuffer + getInputBuffer round-trip", () => {
-		const v = makeView(otherItems);
-		v.setInputBuffer("Hello");
-		expect(v.getInputBuffer()).toBe("Hello");
-	});
-
-	it("appendInput grows the buffer; backspaceInput shrinks; clearInputBuffer empties", () => {
-		const v = makeView(otherItems);
-		v.appendInput("Hi");
-		expect(v.getInputBuffer()).toBe("Hi");
-		v.appendInput("!");
-		expect(v.getInputBuffer()).toBe("Hi!");
-		v.backspaceInput();
-		expect(v.getInputBuffer()).toBe("Hi");
-		v.clearInputBuffer();
-		expect(v.getInputBuffer()).toBe("");
-	});
-
-	it("inline input render reflects input buffer when row is active", () => {
-		const v = makeView(otherItems);
-		v.setProps(props({ selectedIndex: 1, focused: true }));
-		v.setInputBuffer("typed");
+		v.setProps(props({ selectedIndex: 1, focused: true, inputBuffer: "typed" }));
 		const lines = v.render(40);
 		expect(lines.some((l) => l.includes("typed"))).toBe(true);
 		expect(lines.some((l) => l.includes("▌"))).toBe(true);

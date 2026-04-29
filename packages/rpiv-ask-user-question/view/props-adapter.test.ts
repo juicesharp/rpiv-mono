@@ -1,15 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
+import { InputBuffer } from "../state/input-buffer.js";
 import type { QuestionnaireState } from "../state/questionnaire-state.js";
 import type { QuestionAnswer, QuestionData } from "../tool/types.js";
-import type { ChatRowView } from "./components/chat-row-view.js";
-import type { MultiSelectOptions } from "./components/multi-select-options.js";
-import type { OptionListView } from "./components/option-list-view.js";
-import type { PreviewPane } from "./components/preview/preview-pane.js";
-import type { SubmitPicker } from "./components/submit-picker.js";
-import type { TabBar } from "./components/tab-bar.js";
+import type { ChatRowView, ChatRowViewProps } from "./components/chat-row-view.js";
+import type { MultiSelectView, MultiSelectViewProps } from "./components/multi-select-view.js";
+import type { OptionListView, OptionListViewProps } from "./components/option-list-view.js";
+import type { PreviewPane, PreviewPaneProps } from "./components/preview/preview-pane.js";
+import type { SubmitPicker, SubmitPickerProps } from "./components/submit-picker.js";
+import type { TabBar, TabBarProps } from "./components/tab-bar.js";
 import type { WrappingSelectItem } from "./components/wrapping-select.js";
-import type { DialogComponent } from "./dialog-builder.js";
-import { QuestionnaireViewAdapter } from "./view-adapter.js";
+import type { DialogProps } from "./dialog-builder.js";
+import { QuestionnairePropsAdapter } from "./props-adapter.js";
+import type { StatefulView } from "./stateful-view.js";
 
 function makeQuestion(over: Partial<QuestionData> = {}): QuestionData {
 	return {
@@ -44,31 +46,36 @@ function makeFixture(overQuestions?: QuestionData[]) {
 		{ kind: "option", label: "A" },
 		{ kind: "option", label: "B" },
 	]);
-	const optionListViewsByTab = questions.map(() => ({
-		setProps: vi.fn(),
-	})) as unknown as OptionListView[];
-	const previewPanes = questions.map(() => ({
-		setProps: vi.fn(),
-	})) as unknown as PreviewPane[];
-	const chatRow = {
-		setProps: vi.fn(),
-	} as unknown as ChatRowView;
-	const multiSelectOptionsByTab: Array<MultiSelectOptions | undefined> = questions.map((q) =>
-		q.multiSelect
-			? ({
-					setProps: vi.fn(),
-				} as unknown as MultiSelectOptions)
-			: undefined,
+
+	const setPropsByName: Record<string, ReturnType<typeof vi.fn>> = {};
+	const stub = <P>(name: string): StatefulView<P> => {
+		const setProps = vi.fn();
+		setPropsByName[name] = setProps;
+		return {
+			setProps,
+			render: () => [],
+			invalidate: () => {},
+			handleInput: () => {},
+		};
+	};
+
+	const optionListViewsByTab: OptionListView[] = questions.map(
+		(_q, i) => stub<OptionListViewProps>(`optionList${i}`) as unknown as OptionListView,
 	);
-	const submitPicker = {
-		setProps: vi.fn(),
-	} as unknown as SubmitPicker;
-	const tabBar = { setProps: vi.fn() } as unknown as TabBar;
-	const dialog = {
-		setProps: vi.fn(),
-	} as unknown as DialogComponent;
+	const previewPanes: PreviewPane[] = questions.map(
+		(_q, i) => stub<PreviewPaneProps>(`previewPane${i}`) as unknown as PreviewPane,
+	);
+	const chatRow = stub<ChatRowViewProps>("chatRow") as unknown as ChatRowView;
+	const multiSelectOptionsByTab: Array<MultiSelectView | undefined> = questions.map((q, i) =>
+		q.multiSelect ? (stub<MultiSelectViewProps>(`mso${i}`) as unknown as MultiSelectView) : undefined,
+	);
+	const submitPicker = stub<SubmitPickerProps>("submitPicker") as unknown as SubmitPicker;
+	const tabBar = stub<TabBarProps>("tabBar") as unknown as TabBar;
+	const dialog = stub<DialogProps>("dialog");
+	const inputBuffer = new InputBuffer();
 	const tui = { requestRender: vi.fn() };
-	const adapter = new QuestionnaireViewAdapter({
+
+	const adapter = new QuestionnairePropsAdapter({
 		tui,
 		questions,
 		itemsByTab,
@@ -79,6 +86,7 @@ function makeFixture(overQuestions?: QuestionData[]) {
 		submitPicker,
 		tabBar,
 		dialog,
+		inputBuffer,
 	});
 	return {
 		adapter,
@@ -91,10 +99,12 @@ function makeFixture(overQuestions?: QuestionData[]) {
 		submitPicker,
 		tabBar,
 		questions,
+		inputBuffer,
+		setPropsByName,
 	};
 }
 
-describe("QuestionnaireViewAdapter.apply", () => {
+describe("QuestionnairePropsAdapter.apply", () => {
 	it("calls dialog.setProps exactly once with state + activePreviewPane", () => {
 		const { adapter, dialog, previewPanes } = makeFixture();
 		const state = makeState();
@@ -113,6 +123,7 @@ describe("QuestionnaireViewAdapter.apply", () => {
 		expect(optionListViewsByTab[0]!.setProps).toHaveBeenLastCalledWith({
 			selectedIndex: 1,
 			focused: true,
+			inputBuffer: "",
 			confirmed: { index: 1 },
 		});
 		expect(previewPanes[0]!.setProps).toHaveBeenLastCalledWith({
@@ -176,9 +187,18 @@ describe("QuestionnaireViewAdapter.apply", () => {
 		expect(arg).toMatchObject({ rows: expect.any(Array), nextActive: false });
 		expect(arg.rows[0]).toMatchObject({ active: true, checked: false });
 	});
+
+	it("threads inputBuffer cell value through to OptionListView.setProps", () => {
+		const { adapter, optionListViewsByTab, inputBuffer } = makeFixture();
+		inputBuffer.set("typed");
+		adapter.apply(makeState());
+		expect(optionListViewsByTab[0]!.setProps).toHaveBeenLastCalledWith(
+			expect.objectContaining({ inputBuffer: "typed" }),
+		);
+	});
 });
 
-describe("QuestionnaireViewAdapter.apply — preview pane resolution", () => {
+describe("QuestionnairePropsAdapter.apply — preview pane resolution", () => {
 	it("forwards the resolved pane to dialog.setProps via activePreviewPane", () => {
 		const { adapter, dialog, previewPanes } = makeFixture();
 		adapter.apply(makeState({ currentTab: 1 }));

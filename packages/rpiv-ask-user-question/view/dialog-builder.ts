@@ -1,12 +1,13 @@
 import { DynamicBorder, type Theme } from "@mariozechner/pi-coding-agent";
 import { type Component, Container, type Input, Spacer } from "@mariozechner/pi-tui";
-import type { QuestionnaireState } from "../state/questionnaire-state.js";
+import type { QuestionnaireState } from "../state/state.js";
 import type { QuestionData } from "../tool/types.js";
 import { BodyResidualSpacer } from "./body-residual-spacer.js";
 import type { ChatRowView } from "./components/chat-row-view.js";
-import type { MultiSelectOptions } from "./components/multi-select-options.js";
+import type { MultiSelectView } from "./components/multi-select-view.js";
 import type { PreviewPane } from "./components/preview/preview-pane.js";
 import type { TabBar } from "./components/tab-bar.js";
+import type { StatefulView } from "./stateful-view.js";
 import { QuestionTabStrategy, SubmitTabStrategy, type TabContentStrategy } from "./tab-content-strategy.js";
 
 // Hint phrases — single source of truth for both production (`buildHintText`) and the
@@ -51,7 +52,7 @@ export interface DialogConfig {
 	notesInput: Input;
 	chatRow: ChatRowView;
 	isMulti: boolean;
-	multiSelectOptionsByTab: ReadonlyArray<MultiSelectOptions | undefined>;
+	multiSelectOptionsByTab: ReadonlyArray<MultiSelectView | undefined>;
 	/**
 	 * Submit-tab Submit/Cancel picker. Optional so the type stays
 	 * compatible with single-question mode (no Submit Tab) and with tests that
@@ -72,11 +73,7 @@ export interface DialogConfig {
 	getCurrentBodyHeight: (width: number) => number;
 }
 
-export interface DialogComponent extends Component {
-	setProps(props: DialogProps): void;
-}
-
-export function buildDialog(config: DialogConfig): DialogComponent {
+export function buildDialog(config: DialogConfig): StatefulView<DialogProps> {
 	let liveProps: DialogProps = config.initialProps;
 
 	const questionStrategy: TabContentStrategy = new QuestionTabStrategy({
@@ -103,7 +100,7 @@ export function buildDialog(config: DialogConfig): DialogComponent {
 
 	const maxFooterRowCount = Math.max(questionStrategy.footerRowCount, submitStrategy?.footerRowCount ?? 0);
 
-	const component: DialogComponent = {
+	const component: StatefulView<DialogProps> = {
 		setProps(props: DialogProps) {
 			liveProps = props;
 		},

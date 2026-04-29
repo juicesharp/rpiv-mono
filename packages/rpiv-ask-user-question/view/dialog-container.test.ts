@@ -5,7 +5,7 @@ import { visibleWidth } from "@mariozechner/pi-tui";
 import { describe, expect, it } from "vitest";
 import type { QuestionAnswer, QuestionData } from "../tool/types.js";
 import { ChatRowView } from "./components/chat-row-view.js";
-import { MultiSelectOptions, type MultiSelectOptionsProps } from "./components/multi-select-options.js";
+import { MultiSelectView, type MultiSelectViewProps } from "./components/multi-select-view.js";
 import type { PreviewPane } from "./components/preview/preview-pane.js";
 import { CANCEL_LABEL, SUBMIT_LABEL, SubmitPicker, type SubmitPickerProps } from "./components/submit-picker.js";
 import type { TabBar } from "./components/tab-bar.js";
@@ -25,7 +25,7 @@ import {
 
 const theme = makeTheme() as unknown as Theme;
 
-function msoPropsFromState(question: QuestionData, state: DialogState, focused = true): MultiSelectOptionsProps {
+function msoPropsFromState(question: QuestionData, state: DialogState, focused = true): MultiSelectViewProps {
 	const rows = question.options.map((_, i) => ({
 		checked: state.multiSelectChecked.has(i),
 		active: focused && i === state.optionIndex,
@@ -92,7 +92,7 @@ function makeConfig(over: MakeConfigOverrides = {}): DialogConfig {
 	};
 	const previewPane = over.previewPane ?? (stubComponent(["<PREVIEW>"]) as unknown as PreviewPane);
 	const multiSelectOptionsByTab =
-		over.multiSelectOptionsByTab ?? questions.map(() => undefined as MultiSelectOptions | undefined);
+		over.multiSelectOptionsByTab ?? questions.map(() => undefined as MultiSelectView | undefined);
 	return {
 		theme: over.theme ?? theme,
 		questions,
@@ -208,7 +208,7 @@ describe("buildDialog — multi-question (question tab)", () => {
 			focusedOptionHasPreview: false,
 			submitChoiceIndex: 0,
 		};
-		const mso = new MultiSelectOptions(theme, multiQ, msoPropsFromState(multiQ, initialState));
+		const mso = new MultiSelectView(theme, multiQ, msoPropsFromState(multiQ, initialState));
 		const dlg = buildDialog(
 			makeConfig({
 				questions: [
@@ -294,7 +294,7 @@ describe("buildDialog — multi-question (question tab)", () => {
 			focusedOptionHasPreview: false,
 			submitChoiceIndex: 0,
 		};
-		const mso = new MultiSelectOptions(theme, multiQ, msoPropsFromState(multiQ, state));
+		const mso = new MultiSelectView(theme, multiQ, msoPropsFromState(multiQ, state));
 		const dlg = buildDialog(
 			makeConfig({
 				questions: [
@@ -627,8 +627,8 @@ describe("buildDialog — body residual padding", () => {
 			submitChoiceIndex: 0,
 		};
 		const stateTab1: DialogState = { ...stateTab0, currentTab: 1 };
-		const mso = new MultiSelectOptions(theme, multiQ, msoPropsFromState(multiQ, stateTab0));
-		const multiSelectOptionsByTab: ReadonlyArray<MultiSelectOptions | undefined> = [undefined, mso];
+		const mso = new MultiSelectView(theme, multiQ, msoPropsFromState(multiQ, stateTab0));
+		const multiSelectOptionsByTab: ReadonlyArray<MultiSelectView | undefined> = [undefined, mso];
 		// Drive getBodyHeight off the actual worst-case body height so the residual fully
 		// absorbs the difference on shorter tabs (mirrors `computeGlobalContentHeight` in
 		// ask-user-question.ts).

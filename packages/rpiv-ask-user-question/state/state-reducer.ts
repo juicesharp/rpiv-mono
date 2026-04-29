@@ -1,8 +1,9 @@
 import type { QuestionAnswer, QuestionData, QuestionnaireResult } from "../tool/types.js";
 import type { WrappingSelectItem } from "../view/components/wrapping-select.js";
-import type { QuestionnaireAction } from "./dispatch.js";
-import { computeFocusedOptionHasPreview, type QuestionnaireState } from "./questionnaire-state.js";
+import type { QuestionnaireAction } from "./key-router.js";
 import { ROW_INTENT_META } from "./row-intent.js";
+import { computeFocusedOptionHasPreview } from "./selectors/derivations.js";
+import type { QuestionnaireState } from "./state.js";
 
 /**
  * Per-dispatch context that doesn't live on canonical state. Captured by the runtime each
@@ -19,8 +20,8 @@ export interface ApplyContext {
 }
 
 /**
- * Declarative side-effects emitted by `applyAction`. The runtime executes them after
- * committing the new state, then asks the view-adapter to re-project. Closed set —
+ * Declarative side-effects emitted by `reduce`. The runtime executes them after
+ * committing the new state, then asks the props-adapter to re-project. Closed set —
  * adding an effect requires updating both the union AND the runtime's `runEffect` switch
  * (compiler-enforced exhaustive). No string-keyed escape hatch.
  */
@@ -133,11 +134,11 @@ function doneFor(state: QuestionnaireState, ctx: ApplyContext, cancelled: boolea
  *
  * Actions NOT routed through this reducer (handled by the runtime directly):
  * - `ignore` — per-keystroke input-buffer mutation; no canonical-state change. The runtime
- *   calls `pane.appendInput` / `pane.backspaceInput` directly via `handleIgnoreInline`.
+ *   mutates the session-owned `InputBuffer` cell directly via `handleIgnoreInline`.
  * - `notes_visible` two-pass forward — the runtime probes the dispatcher for `notes_exit`;
  *   every other key forwards to the pi-tui `Input` without reducer involvement.
  */
-export function applyAction(state: QuestionnaireState, action: QuestionnaireAction, ctx: ApplyContext): ApplyResult {
+export function reduce(state: QuestionnaireState, action: QuestionnaireAction, ctx: ApplyContext): ApplyResult {
 	switch (action.kind) {
 		case "nav": {
 			const items = ctx.itemsByTab[state.currentTab] ?? [];

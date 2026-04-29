@@ -96,7 +96,7 @@ describe("PreviewPane.render — layout switching", () => {
 
 	it("side-by-side at width 120 (>= PREVIEW_MIN_WIDTH)", () => {
 		const { pane, optionListView } = makePane(question, () => 120);
-		optionListView.setProps({ selectedIndex: 0, focused: true });
+		optionListView.setProps({ selectedIndex: 0, focused: true, inputBuffer: "" });
 		const lines = pane.render(120);
 		expect(lines.length).toBeGreaterThan(0);
 		expect(lines.some((l) => /MD\[\d+\]:/.test(l))).toBe(true);
@@ -104,7 +104,7 @@ describe("PreviewPane.render — layout switching", () => {
 
 	it("stacked at width 80 (< PREVIEW_MIN_WIDTH)", () => {
 		const { pane, optionListView } = makePane(question, () => 80);
-		optionListView.setProps({ selectedIndex: 0, focused: true });
+		optionListView.setProps({ selectedIndex: 0, focused: true, inputBuffer: "" });
 		const lines = pane.render(80);
 		const mdLineIndex = lines.findIndex((l) => /MD\[\d+\]:/.test(l));
 		expect(mdLineIndex).toBeGreaterThan(0);
@@ -119,12 +119,12 @@ describe("PreviewPane.render — layout switching", () => {
 
 	it("width 99 → stacked, width 100 → side-by-side (threshold boundary)", () => {
 		const narrow = makePane(question, () => 99);
-		narrow.optionListView.setProps({ selectedIndex: 0, focused: true });
+		narrow.optionListView.setProps({ selectedIndex: 0, focused: true, inputBuffer: "" });
 		const narrowLines = narrow.pane.render(99);
 		expect(narrowLines.findIndex((l) => /MD\[\d+\]:/.test(l))).toBeGreaterThan(0);
 
 		const wide = makePane(question, () => PREVIEW_MIN_WIDTH);
-		wide.optionListView.setProps({ selectedIndex: 0, focused: true });
+		wide.optionListView.setProps({ selectedIndex: 0, focused: true, inputBuffer: "" });
 		const wideLines = wide.pane.render(PREVIEW_MIN_WIDTH);
 		expect(wideLines.some((l) => /MD\[\d+\]:/.test(l))).toBe(true);
 	});
@@ -142,15 +142,15 @@ describe("PreviewPane — cache + invalidate", () => {
 
 	it("creates one Markdown per option lazily; revisit hits cache", () => {
 		const { pane, optionListView } = makePane(question, () => 120);
-		optionListView.setProps({ selectedIndex: 0, focused: true });
+		optionListView.setProps({ selectedIndex: 0, focused: true, inputBuffer: "" });
 		pane.setProps({ notesVisible: false, selectedIndex: 0, focused: false });
 		pane.render(120);
 		expect(markdownConstructed).toBe(1);
-		optionListView.setProps({ selectedIndex: 1, focused: true });
+		optionListView.setProps({ selectedIndex: 1, focused: true, inputBuffer: "" });
 		pane.setProps({ notesVisible: false, selectedIndex: 1, focused: false });
 		pane.render(120);
 		expect(markdownConstructed).toBe(2);
-		optionListView.setProps({ selectedIndex: 0, focused: true });
+		optionListView.setProps({ selectedIndex: 0, focused: true, inputBuffer: "" });
 		pane.setProps({ notesVisible: false, selectedIndex: 0, focused: false });
 		pane.render(120);
 		expect(markdownConstructed).toBe(2);
@@ -158,7 +158,7 @@ describe("PreviewPane — cache + invalidate", () => {
 
 	it("invalidate() does NOT delete instances; subsequent renders still re-use cache", () => {
 		const { pane, optionListView, previewBlock } = makePane(question, () => 120);
-		optionListView.setProps({ selectedIndex: 0, focused: true });
+		optionListView.setProps({ selectedIndex: 0, focused: true, inputBuffer: "" });
 		pane.render(120);
 		expect(markdownConstructed).toBe(1);
 		previewBlock.invalidate();
@@ -177,7 +177,7 @@ describe("PreviewPane — empty preview placeholder (per-question hide-when-no-p
 			options: [{ label: "only", description: "" }],
 		};
 		const { pane, optionListView } = makePane(question, () => 80);
-		optionListView.setProps({ selectedIndex: 0, focused: true });
+		optionListView.setProps({ selectedIndex: 0, focused: true, inputBuffer: "" });
 		const lines = pane.render(80);
 		expect(lines.some((l) => l.includes(NO_PREVIEW_TEXT))).toBe(false);
 		expect(lines.some((l) => /MD\[\d+\]:/.test(l))).toBe(false);
@@ -195,7 +195,7 @@ describe("PreviewPane — empty preview placeholder (per-question hide-when-no-p
 			],
 		};
 		const { pane, optionListView } = makePane(question, () => 80);
-		optionListView.setProps({ selectedIndex: 1, focused: true });
+		optionListView.setProps({ selectedIndex: 1, focused: true, inputBuffer: "" });
 		pane.setProps({ notesVisible: false, selectedIndex: 1, focused: false });
 		const lines = pane.render(80);
 		const mdIndex = lines.findIndex((l) => l.includes(NO_PREVIEW_TEXT));
@@ -236,7 +236,7 @@ describe("PreviewPane — width safety (Pi crash guard)", () => {
 	it("every emitted line satisfies visibleWidth(line) <= width", () => {
 		for (const w of [60, 80, 100, 120]) {
 			const { pane, optionListView } = makePane(question, () => w);
-			optionListView.setProps({ selectedIndex: 0, focused: true });
+			optionListView.setProps({ selectedIndex: 0, focused: true, inputBuffer: "" });
 			const lines = pane.render(w);
 			for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(w);
 		}
@@ -315,7 +315,7 @@ describe("PreviewPane — left-aligned preview with top/left padding (side-by-si
 	// fixed (options column max-width + gap + PREVIEW_PADDING_LEFT).
 	it("side-by-side preview lines have a fixed left-padding offset, NOT a content-dependent center margin", () => {
 		const short = makePane(question, () => 120);
-		short.optionListView.setProps({ selectedIndex: 0, focused: true });
+		short.optionListView.setProps({ selectedIndex: 0, focused: true, inputBuffer: "" });
 		const shortMD = extractPreviewColumnLines(short.pane.render(120))[0].indexOf("MD[");
 
 		const longQ: QuestionData = {
@@ -327,7 +327,7 @@ describe("PreviewPane — left-aligned preview with top/left padding (side-by-si
 			],
 		};
 		const long = makePane(longQ, () => 120);
-		long.optionListView.setProps({ selectedIndex: 0, focused: true });
+		long.optionListView.setProps({ selectedIndex: 0, focused: true, inputBuffer: "" });
 		const longMD = extractPreviewColumnLines(long.pane.render(120))[0].indexOf("MD[");
 
 		expect(shortMD).toBe(longMD);
@@ -343,7 +343,7 @@ describe("PreviewPane — left-aligned preview with top/left padding (side-by-si
 			],
 		};
 		const { pane, optionListView } = makePane(longQ, () => 200);
-		optionListView.setProps({ selectedIndex: 0, focused: true });
+		optionListView.setProps({ selectedIndex: 0, focused: true, inputBuffer: "" });
 		const lines = pane.render(200);
 		const preview = extractPreviewColumnLines(lines);
 		expect(preview.length).toBeGreaterThan(0);
@@ -354,7 +354,7 @@ describe("PreviewPane — left-aligned preview with top/left padding (side-by-si
 
 	it("side-by-side: first MD row is preceded by the top border row (no top padding)", () => {
 		const { pane, optionListView } = makePane(question, () => 120);
-		optionListView.setProps({ selectedIndex: 0, focused: true });
+		optionListView.setProps({ selectedIndex: 0, focused: true, inputBuffer: "" });
 		const lines = pane.render(120);
 		const firstMD = lines.findIndex((l) => /MD\[\d+\]:/.test(l));
 		expect(firstMD).toBeGreaterThan(0);
@@ -364,7 +364,7 @@ describe("PreviewPane — left-aligned preview with top/left padding (side-by-si
 
 	it("stacked mode: an empty gap row separates the options block from the bordered preview block", () => {
 		const { pane, optionListView } = makePane(question, () => 80);
-		optionListView.setProps({ selectedIndex: 0, focused: true });
+		optionListView.setProps({ selectedIndex: 0, focused: true, inputBuffer: "" });
 		const lines = pane.render(80);
 		const firstMD = lines.findIndex((l) => /MD\[\d+\]:/.test(l));
 		expect(firstMD).toBeGreaterThan(1);
@@ -383,7 +383,7 @@ describe("PreviewPane — left-aligned preview with top/left padding (side-by-si
 	it("width safety: visibleWidth(line) <= width across boundary widths", () => {
 		for (const w of [100, 120, 160]) {
 			const { pane, optionListView } = makePane(question, () => w);
-			optionListView.setProps({ selectedIndex: 0, focused: true });
+			optionListView.setProps({ selectedIndex: 0, focused: true, inputBuffer: "" });
 			const lines = pane.render(w);
 			for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(w);
 		}
@@ -427,7 +427,7 @@ describe("PreviewPane — oneLine() removal (multi-line markdown rendering)", ()
 			],
 		};
 		const { pane, optionListView } = makePane(question, () => 120);
-		optionListView.setProps({ selectedIndex: 0, focused: true });
+		optionListView.setProps({ selectedIndex: 0, focused: true, inputBuffer: "" });
 		pane.render(120);
 		expect(lastMarkdownText).toBe("## Heading\n\n- item 1\n- item 2");
 		expect(lastMarkdownText).toContain("\n");
@@ -446,7 +446,7 @@ describe("PreviewPane — notes affordance row (Slice 4 height-stable affordance
 
 	it("renders 'Notes: press n to add notes' below preview when focused on preview-bearing option", () => {
 		const { pane, optionListView } = makePane(question, () => 120);
-		optionListView.setProps({ selectedIndex: 0, focused: true });
+		optionListView.setProps({ selectedIndex: 0, focused: true, inputBuffer: "" });
 		pane.setProps({ notesVisible: false, selectedIndex: 0, focused: true });
 		const lines = pane.render(120);
 		expect(lines.some((l) => l.includes(NOTES_AFFORDANCE_TEXT))).toBe(true);
@@ -454,11 +454,11 @@ describe("PreviewPane — notes affordance row (Slice 4 height-stable affordance
 
 	it("hides notes affordance text when option lacks preview (height contract preserved)", () => {
 		const { pane, optionListView } = makePane(question, () => 120);
-		optionListView.setProps({ selectedIndex: 0, focused: true });
+		optionListView.setProps({ selectedIndex: 0, focused: true, inputBuffer: "" });
 		pane.setProps({ notesVisible: false, selectedIndex: 0, focused: true });
 		const linesA = pane.render(120);
 		expect(linesA.some((l) => l.includes(NOTES_AFFORDANCE_TEXT))).toBe(true);
-		optionListView.setProps({ selectedIndex: 1, focused: true });
+		optionListView.setProps({ selectedIndex: 1, focused: true, inputBuffer: "" });
 		pane.setProps({ notesVisible: false, selectedIndex: 1, focused: true });
 		const linesB = pane.render(120);
 		expect(linesB.some((l) => l.includes(NOTES_AFFORDANCE_TEXT))).toBe(false);
@@ -467,7 +467,7 @@ describe("PreviewPane — notes affordance row (Slice 4 height-stable affordance
 
 	it("hides notes affordance when notesVisible (notes mode active)", () => {
 		const { pane, optionListView } = makePane(question, () => 120);
-		optionListView.setProps({ selectedIndex: 0, focused: true });
+		optionListView.setProps({ selectedIndex: 0, focused: true, inputBuffer: "" });
 		pane.setProps({ notesVisible: true, selectedIndex: 0, focused: true });
 		const lines = pane.render(120);
 		expect(lines.some((l) => l.includes(NOTES_AFFORDANCE_TEXT))).toBe(false);
@@ -475,7 +475,7 @@ describe("PreviewPane — notes affordance row (Slice 4 height-stable affordance
 
 	it("does not render the affordance text when MAX_PREVIEW_HEIGHT_SIDE_BY_SIDE is reached but option lacks preview", () => {
 		const { pane, optionListView } = makePane(question, () => 120);
-		optionListView.setProps({ selectedIndex: 1, focused: true });
+		optionListView.setProps({ selectedIndex: 1, focused: true, inputBuffer: "" });
 		pane.setProps({ notesVisible: false, selectedIndex: 1, focused: true });
 		const lines = pane.render(120);
 		// Side-by-side path: preview pane still renders (option A has preview), but affordance hidden.
@@ -498,7 +498,7 @@ describe("PreviewPane composes OptionListView state into render output", () => {
 
 	it("setConfirmedIndex(1) renders ` ✔` on row 2 even when cursor is on row 0", () => {
 		const { pane, optionListView } = makePane(noPreviewQuestion, () => 120);
-		optionListView.setProps({ selectedIndex: 0, focused: true, confirmed: { index: 1 } });
+		optionListView.setProps({ selectedIndex: 0, focused: true, inputBuffer: "", confirmed: { index: 1 } });
 		const lines = pane.render(120);
 		expect(lines.some((l) => l.includes("Beta ✔"))).toBe(true);
 		expect(lines.some((l) => l.includes("Alpha ✔"))).toBe(false);
@@ -506,13 +506,13 @@ describe("PreviewPane composes OptionListView state into render output", () => {
 
 	it("setConfirmedIndex(undefined) clears the marker", () => {
 		const { pane, optionListView } = makePane(noPreviewQuestion, () => 120);
-		optionListView.setProps({ selectedIndex: 0, focused: true, confirmed: { index: 1 } });
-		optionListView.setProps({ selectedIndex: 0, focused: true });
+		optionListView.setProps({ selectedIndex: 0, focused: true, inputBuffer: "", confirmed: { index: 1 } });
+		optionListView.setProps({ selectedIndex: 0, focused: true, inputBuffer: "" });
 		const lines = pane.render(120);
 		expect(lines.join("\n")).not.toContain("✔");
 	});
 
-	it("setInputBuffer pre-fills the inline input buffer for a kind:'other' row", () => {
+	it("OptionListView.setProps({inputBuffer:'Hello'}) flows to the inline-input row render", () => {
 		const otherQuestion: QuestionData = {
 			question: "pick",
 			header: "pick",
@@ -538,8 +538,7 @@ describe("PreviewPane composes OptionListView state into render output", () => {
 			previewBlock,
 			initialProps: { notesVisible: false, selectedIndex: 2, focused: true },
 		});
-		optionListView.setProps({ selectedIndex: 2, focused: true });
-		optionListView.setInputBuffer("Hello");
+		optionListView.setProps({ selectedIndex: 2, focused: true, inputBuffer: "Hello" });
 		const lines = pane.render(120);
 		expect(lines.some((l) => l.includes("Hello"))).toBe(true);
 		expect(lines.some((l) => l.includes("▌"))).toBe(true);

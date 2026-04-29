@@ -1,7 +1,7 @@
 import { Key, matchesKey } from "@mariozechner/pi-tui";
 import type { QuestionAnswer } from "../tool/types.js";
-import type { QuestionnaireDispatchSnapshot } from "./questionnaire-state.js";
 import { ROW_INTENT_META } from "./row-intent.js";
+import type { QuestionnaireRuntime, QuestionnaireState } from "./state.js";
 
 const KEYBIND_UP = "tui.select.up";
 const KEYBIND_DOWN = "tui.select.down";
@@ -41,32 +41,32 @@ export function wrapTab(index: number, total: number): number {
 	return ((index % total) + total) % total;
 }
 
-export function allAnswered(state: QuestionnaireDispatchSnapshot): boolean {
-	if (state.questions.length === 0) return false;
-	for (let i = 0; i < state.questions.length; i++) {
+export function allAnswered(state: QuestionnaireState, runtime: QuestionnaireRuntime): boolean {
+	if (runtime.questions.length === 0) return false;
+	for (let i = 0; i < runtime.questions.length; i++) {
 		if (!state.answers.has(i)) return false;
 	}
 	return true;
 }
 
-function totalTabs(state: QuestionnaireDispatchSnapshot): number {
-	return state.isMulti ? state.questions.length + 1 : 1;
+function totalTabs(runtime: QuestionnaireRuntime): number {
+	return runtime.isMulti ? runtime.questions.length + 1 : 1;
 }
 
-function computeAutoAdvanceTab(state: QuestionnaireDispatchSnapshot): number | undefined {
-	if (!state.isMulti) return undefined;
-	if (state.currentTab < state.questions.length - 1) return state.currentTab + 1;
-	return state.questions.length;
+function computeAutoAdvanceTab(state: QuestionnaireState, runtime: QuestionnaireRuntime): number | undefined {
+	if (!runtime.isMulti) return undefined;
+	if (state.currentTab < runtime.questions.length - 1) return state.currentTab + 1;
+	return runtime.questions.length;
 }
 
-function buildSingleSelectAnswer(state: QuestionnaireDispatchSnapshot): QuestionAnswer | null {
-	const q = state.questions[state.currentTab];
+function buildSingleSelectAnswer(state: QuestionnaireState, runtime: QuestionnaireRuntime): QuestionAnswer | null {
+	const q = runtime.questions[state.currentTab];
 	if (!q) return null;
 
 	// Chat sentinel takes priority over inputMode: when chatFocused=true, the host overrides
 	// currentItem() to return the chat sentinel even if inputMode is still true (e.g. user
 	// navigated from "Type something." and DOWN focused the chat row).
-	const item = state.currentItem;
+	const item = runtime.currentItem;
 	if (item?.kind === "chat") {
 		return {
 			questionIndex: state.currentTab,
@@ -77,7 +77,7 @@ function buildSingleSelectAnswer(state: QuestionnaireDispatchSnapshot): Question
 	}
 
 	if (state.inputMode) {
-		const label = state.inputBuffer;
+		const label = runtime.inputBuffer;
 		return {
 			questionIndex: state.currentTab,
 			question: q.question,
@@ -100,8 +100,8 @@ function buildSingleSelectAnswer(state: QuestionnaireDispatchSnapshot): Question
 	};
 }
 
-function buildMultiSelected(state: QuestionnaireDispatchSnapshot): string[] {
-	const q = state.questions[state.currentTab];
+function buildMultiSelected(state: QuestionnaireState, runtime: QuestionnaireRuntime): string[] {
+	const q = runtime.questions[state.currentTab];
 	if (!q) return [];
 	const out: string[] = [];
 	for (let i = 0; i < q.options.length; i++) {
@@ -113,9 +113,13 @@ function buildMultiSelected(state: QuestionnaireDispatchSnapshot): string[] {
 	return out;
 }
 
-function tabSwitchAction(data: string, state: QuestionnaireDispatchSnapshot): QuestionnaireAction | null {
-	if (!state.isMulti) return null;
-	const total = totalTabs(state);
+function tabSwitchAction(
+	data: string,
+	state: QuestionnaireState,
+	runtime: QuestionnaireRuntime,
+): QuestionnaireAction | null {
+	if (!runtime.isMulti) return null;
+	const total = totalTabs(runtime);
 	if (matchesKey(data, Key.tab) || matchesKey(data, Key.right)) {
 		return { kind: "tab_switch", nextTab: wrapTab(state.currentTab + 1, total) };
 	}
@@ -128,25 +132,25 @@ function tabSwitchAction(data: string, state: QuestionnaireDispatchSnapshot): Qu
 // DOWN navigation helper shared by inputMode and normal nav branches.
 // Emits focus_chat at the boundary (last item) so the host can transfer focus to the chat row
 // without mutating optionIndex — UP-from-chat then lands on items.length - 1 (continuous cycle).
-function nextNavOnDown(state: QuestionnaireDispatchSnapshot): QuestionnaireAction {
-	if (state.items.length > 0 && state.optionIndex === state.items.length - 1) {
+function nextNavOnDown(state: QuestionnaireState, runtime: QuestionnaireRuntime): QuestionnaireAction {
+	if (runtime.items.length > 0 && state.optionIndex === runtime.items.length - 1) {
 		return { kind: "focus_chat" };
 	}
-	return { kind: "nav", nextIndex: wrapTab(state.optionIndex + 1, Math.max(1, state.items.length)) };
+	return { kind: "nav", nextIndex: wrapTab(state.optionIndex + 1, Math.max(1, runtime.items.length)) };
 }
 
 // UP navigation helper, symmetric with nextNavOnDown. At the TOP boundary (optionIndex 0)
 // emits focus_chat so the cycle wraps `[chat, option0, …, optionLast]` — without this, UP at
 // option 0 would skip the chat row entirely (Defect 2). Above the boundary, decrement.
-function prevNavOnUp(state: QuestionnaireDispatchSnapshot): QuestionnaireAction {
-	if (state.items.length > 0 && state.optionIndex === 0) {
+function prevNavOnUp(state: QuestionnaireState, runtime: QuestionnaireRuntime): QuestionnaireAction {
+	if (runtime.items.length > 0 && state.optionIndex === 0) {
 		return { kind: "focus_chat" };
 	}
-	return { kind: "nav", nextIndex: wrapTab(state.optionIndex - 1, Math.max(1, state.items.length)) };
+	return { kind: "nav", nextIndex: wrapTab(state.optionIndex - 1, Math.max(1, runtime.items.length)) };
 }
 
-export function handleQuestionnaireInput(data: string, state: QuestionnaireDispatchSnapshot): QuestionnaireAction {
-	const kb = state.keybindings;
+export function routeKey(data: string, state: QuestionnaireState, runtime: QuestionnaireRuntime): QuestionnaireAction {
+	const kb = runtime.keybindings;
 
 	if (state.notesVisible) {
 		if (kb.matches(data, KEYBIND_CANCEL)) return { kind: "notes_exit" };
@@ -157,45 +161,45 @@ export function handleQuestionnaireInput(data: string, state: QuestionnaireDispa
 	if (state.chatFocused) {
 		if (kb.matches(data, KEYBIND_CANCEL)) return { kind: "cancel" };
 		if (kb.matches(data, KEYBIND_CONFIRM)) {
-			const answer = buildSingleSelectAnswer(state);
+			const answer = buildSingleSelectAnswer(state, runtime);
 			if (!answer) return { kind: "ignore" };
-			return { kind: "confirm", answer, autoAdvanceTab: computeAutoAdvanceTab(state) };
+			return { kind: "confirm", answer, autoAdvanceTab: computeAutoAdvanceTab(state, runtime) };
 		}
 		// Continuous cycle: UP from chat → bottom of options (last navigable row), DOWN from
 		// chat → top of options (option 0). Symmetric with UP-at-top → focus_chat and
 		// DOWN-at-bottom → focus_chat below; together they form one wrapping cycle through
 		// `[chat, option0, …, optionLast]`.
 		if (kb.matches(data, KEYBIND_UP)) {
-			const last = Math.max(0, state.items.length - 1);
+			const last = Math.max(0, runtime.items.length - 1);
 			return { kind: "focus_options", optionIndex: last };
 		}
 		if (kb.matches(data, KEYBIND_DOWN)) {
 			return { kind: "focus_options", optionIndex: 0 };
 		}
-		const tab = tabSwitchAction(data, state);
+		const tab = tabSwitchAction(data, state, runtime);
 		if (tab) return tab;
 		return { kind: "ignore" };
 	}
 
 	if (state.inputMode) {
 		if (kb.matches(data, KEYBIND_CONFIRM)) {
-			const answer = buildSingleSelectAnswer(state);
+			const answer = buildSingleSelectAnswer(state, runtime);
 			if (!answer) return { kind: "ignore" };
-			return { kind: "confirm", answer, autoAdvanceTab: computeAutoAdvanceTab(state) };
+			return { kind: "confirm", answer, autoAdvanceTab: computeAutoAdvanceTab(state, runtime) };
 		}
 		if (kb.matches(data, KEYBIND_CANCEL)) return { kind: "cancel" };
 		if (kb.matches(data, KEYBIND_UP)) {
-			return prevNavOnUp(state);
+			return prevNavOnUp(state, runtime);
 		}
 		if (kb.matches(data, KEYBIND_DOWN)) {
-			return nextNavOnDown(state);
+			return nextNavOnDown(state, runtime);
 		}
 		return { kind: "ignore" };
 	}
 
-	if (state.isMulti && state.currentTab === state.questions.length) {
+	if (runtime.isMulti && state.currentTab === runtime.questions.length) {
 		if (kb.matches(data, KEYBIND_CANCEL)) return { kind: "cancel" };
-		const tab = tabSwitchAction(data, state);
+		const tab = tabSwitchAction(data, state, runtime);
 		if (tab) return tab;
 		if (kb.matches(data, KEYBIND_UP) || kb.matches(data, KEYBIND_DOWN)) {
 			const delta = kb.matches(data, KEYBIND_DOWN) ? 1 : -1;
@@ -211,10 +215,10 @@ export function handleQuestionnaireInput(data: string, state: QuestionnaireDispa
 		return { kind: "ignore" };
 	}
 
-	const tab = tabSwitchAction(data, state);
+	const tab = tabSwitchAction(data, state, runtime);
 	if (tab) return tab;
 
-	const q = state.questions[state.currentTab];
+	const q = runtime.questions[state.currentTab];
 	if (!q) return { kind: "ignore" };
 
 	if (data === NOTES_ACTIVATE_KEY && !q.multiSelect && state.focusedOptionHasPreview) {
@@ -222,14 +226,14 @@ export function handleQuestionnaireInput(data: string, state: QuestionnaireDispa
 	}
 
 	if (kb.matches(data, KEYBIND_UP)) {
-		return prevNavOnUp(state);
+		return prevNavOnUp(state, runtime);
 	}
 	if (kb.matches(data, KEYBIND_DOWN)) {
-		return nextNavOnDown(state);
+		return nextNavOnDown(state, runtime);
 	}
 
 	if (q.multiSelect) {
-		const focusedKind = state.currentItem?.kind;
+		const focusedKind = runtime.currentItem?.kind;
 		const focusedMeta = focusedKind ? ROW_INTENT_META[focusedKind] : undefined;
 		// Space toggles the focused row's checkbox. Suppressed on rows whose META declares
 		// `blocksMultiToggle` (the Next sentinel) — Next is not a real option and has no
@@ -250,8 +254,8 @@ export function handleQuestionnaireInput(data: string, state: QuestionnaireDispa
 			// question would have no way to commit at all.
 			return {
 				kind: "multi_confirm",
-				selected: buildMultiSelected(state),
-				autoAdvanceTab: computeAutoAdvanceTab(state),
+				selected: buildMultiSelected(state, runtime),
+				autoAdvanceTab: computeAutoAdvanceTab(state, runtime),
 			};
 		}
 		if (kb.matches(data, KEYBIND_CANCEL)) return { kind: "cancel" };
@@ -259,9 +263,9 @@ export function handleQuestionnaireInput(data: string, state: QuestionnaireDispa
 	}
 
 	if (kb.matches(data, KEYBIND_CONFIRM)) {
-		const answer = buildSingleSelectAnswer(state);
+		const answer = buildSingleSelectAnswer(state, runtime);
 		if (!answer) return { kind: "ignore" };
-		return { kind: "confirm", answer, autoAdvanceTab: computeAutoAdvanceTab(state) };
+		return { kind: "confirm", answer, autoAdvanceTab: computeAutoAdvanceTab(state, runtime) };
 	}
 	if (kb.matches(data, KEYBIND_CANCEL)) return { kind: "cancel" };
 	return { kind: "ignore" };

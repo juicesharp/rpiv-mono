@@ -3,7 +3,7 @@ import { type Component, Container, type Input, Spacer, Text } from "@mariozechn
 import { formatAnswerScalar } from "../tool/format-answer.js";
 import type { QuestionData } from "../tool/types.js";
 import type { ChatRowView } from "./components/chat-row-view.js";
-import type { MultiSelectOptions } from "./components/multi-select-options.js";
+import type { MultiSelectView } from "./components/multi-select-view.js";
 import type { PreviewPane } from "./components/preview/preview-pane.js";
 import {
 	type DialogState,
@@ -54,7 +54,7 @@ export interface QuestionTabStrategyConfig {
 	questions: readonly QuestionData[];
 	/** Live getter — `dialog.setPreviewPane()` updates the closure's reference. */
 	getPreviewPane: () => PreviewPane;
-	multiSelectOptionsByTab: ReadonlyArray<MultiSelectOptions | undefined>;
+	multiSelectOptionsByTab: ReadonlyArray<MultiSelectView | undefined>;
 	notesInput: Input;
 	chatRow: ChatRowView;
 	isMulti: boolean;

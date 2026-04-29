@@ -4,8 +4,8 @@ import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@mariozechner/p
 /**
  * Row-intent discriminated union. `kind` is the single discriminator —
  * pre-1.0.3 boolean flags have been removed (see `banned-flags.test.ts`).
- * Modeled after `QuestionnaireAction` (`dispatch.ts:13-32`) and `Effect`
- * (`apply-action.ts:26-32`) — pure literal-tagged variants, no shared base,
+ * Modeled after `QuestionnaireAction` (`key-router.ts:13-32`) and `Effect`
+ * (`state-reducer.ts:26-32`) — pure literal-tagged variants, no shared base,
  * exhaustive-`switch` enforcement via non-`void` returns.
  *
  * Variant semantics:

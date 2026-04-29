@@ -117,7 +117,7 @@ describe("buildItemsForQuestion", () => {
 
 describe("chatNumberingFor", () => {
 	// Single-select items already include the `Type something.` row, which IS a numbered
-	// (visible-numbered) row in MultiSelectOptions/WrappingSelect, so the chat row that
+	// (visible-numbered) row in MultiSelectView/WrappingSelect, so the chat row that
 	// follows simply continues the count: 2 options + Type-something = 3 → chat is 4.
 	it("single-select with Type-something: chat number continues past the Type-something row", () => {
 		const items = buildItemsForQuestion({

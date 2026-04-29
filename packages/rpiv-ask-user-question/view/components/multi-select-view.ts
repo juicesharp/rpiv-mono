@@ -14,12 +14,12 @@ const BOX_LABEL_GAP = " ";
 const CONTINUATION_INDENT = "  ";
 
 /**
- * Per-tick projection of MultiSelectOptions state. The selector
+ * Per-tick projection of MultiSelectView state. The selector
  * (`selectMultiSelectProps`) pre-computes per-row `checked` + `active` so
  * `render()` is pure styling — no `state.multiSelectChecked.has(i)` or
  * `focused && i === state.optionIndex` predicates inside the render body.
  */
-export interface MultiSelectOptionsProps {
+export interface MultiSelectViewProps {
 	/** Per-option row state. Length === question.options.length. Order matches question.options[]. */
 	rows: ReadonlyArray<{ checked: boolean; active: boolean }>;
 	/** True iff the Next sentinel row owns the active pointer. */
@@ -36,18 +36,18 @@ export interface MultiSelectOptionsProps {
  *
  * `setProps(props)` is a pure field reassignment — no render, no invalidate side effects.
  */
-export class MultiSelectOptions implements StatefulView<MultiSelectOptionsProps> {
-	private props: MultiSelectOptionsProps;
+export class MultiSelectView implements StatefulView<MultiSelectViewProps> {
+	private props: MultiSelectViewProps;
 
 	constructor(
 		private readonly theme: Theme,
 		private readonly question: QuestionData,
-		initialProps: MultiSelectOptionsProps,
+		initialProps: MultiSelectViewProps,
 	) {
 		this.props = initialProps;
 	}
 
-	setProps(props: MultiSelectOptionsProps): void {
+	setProps(props: MultiSelectViewProps): void {
 		this.props = props;
 	}
 
