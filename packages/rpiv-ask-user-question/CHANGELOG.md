@@ -7,6 +7,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- Internal refactor: unified all projection selectors under one shape — `GlobalSelector<P> = (state, ctx: BindingContext) => P` and `PerTabSelector<P> = (state, ctx: PerTabBindingContext) => P`. Selectors now pass to the binding registry by reference (`select: selectChatRowProps`) instead of through arg-shaping closures. Predicates share the type. New cross-position facts land on `BindingContext` once, so selector signatures stop growing as features accumulate. Selector contract extracted to `state/selectors/contract.ts`; `view/component-binding.ts` keeps only binding shapes and the existential wrappers. Net -162 lines, behavior byte-identical.
+
 ## [1.0.7] - 2026-04-29
 
 ### Added
