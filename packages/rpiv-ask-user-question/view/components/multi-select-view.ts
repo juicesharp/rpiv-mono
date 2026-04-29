@@ -42,9 +42,8 @@ export class MultiSelectView implements StatefulView<MultiSelectViewProps> {
 	constructor(
 		private readonly theme: Theme,
 		private readonly question: QuestionData,
-		initialProps: MultiSelectViewProps,
 	) {
-		this.props = initialProps;
+		this.props = { rows: [], nextActive: false };
 	}
 
 	setProps(props: MultiSelectViewProps): void {

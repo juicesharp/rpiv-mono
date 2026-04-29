@@ -6,7 +6,8 @@ import type { PreviewPaneProps } from "../../view/components/preview/preview-pan
 import type { SubmitPickerProps } from "../../view/components/submit-picker.js";
 import type { TabBarProps } from "../../view/components/tab-bar.js";
 import type { WrappingSelectItem } from "../../view/components/wrapping-select.js";
-import type { ActiveView } from "../../view/stateful-view.js";
+import type { DialogProps } from "../../view/dialog-builder.js";
+import type { ActiveView, StatefulView } from "../../view/stateful-view.js";
 import type { QuestionnaireState } from "../state.js";
 import { chatNumberingFor, selectActiveTabItems, selectConfirmedIndicator } from "./derivations.js";
 
@@ -140,4 +141,18 @@ export function selectChatRowProps(
 		focused: activeView === "chat",
 		numbering: chatNumberingFor(activeItems),
 	};
+}
+
+/**
+ * Per-tick projection for the dialog. Mirrors the inline literal previously
+ * at `props-adapter.ts:68`. The `activePreviewPane` is resolved per tick by
+ * the adapter (via `selectActivePreviewPaneIndex` over `tabsByIndex`) and
+ * passed in as a `StatefulView<PreviewPaneProps>` reference — not a derived
+ * state value — so the selector signature takes it as a separate arg.
+ */
+export function selectDialogProps(
+	state: QuestionnaireState,
+	activePreviewPane: StatefulView<PreviewPaneProps>,
+): DialogProps {
+	return { state, activePreviewPane };
 }

@@ -1,13 +1,23 @@
 import { describe, expect, it, vi } from "vitest";
 import { InputBuffer } from "../state/input-buffer.js";
+import {
+	selectChatRowProps,
+	selectDialogProps,
+	selectMultiSelectProps,
+	selectOptionListProps,
+	selectPreviewPaneProps,
+	selectSubmitPickerProps,
+	selectTabBarProps,
+} from "../state/selectors/projections.js";
 import type { QuestionnaireState } from "../state/state.js";
 import type { QuestionAnswer, QuestionData } from "../tool/types.js";
-import type { ChatRowView, ChatRowViewProps } from "./components/chat-row-view.js";
-import type { MultiSelectView, MultiSelectViewProps } from "./components/multi-select-view.js";
-import type { OptionListView, OptionListViewProps } from "./components/option-list-view.js";
-import type { PreviewPane, PreviewPaneProps } from "./components/preview/preview-pane.js";
-import type { SubmitPicker, SubmitPickerProps } from "./components/submit-picker.js";
-import type { TabBar, TabBarProps } from "./components/tab-bar.js";
+import type { ComponentBinding, PerTabBinding } from "./component-binding.js";
+import type { ChatRowViewProps } from "./components/chat-row-view.js";
+import type { MultiSelectViewProps } from "./components/multi-select-view.js";
+import type { OptionListViewProps } from "./components/option-list-view.js";
+import type { PreviewPaneProps } from "./components/preview/preview-pane.js";
+import type { SubmitPickerProps } from "./components/submit-picker.js";
+import type { TabBarProps } from "./components/tab-bar.js";
 import type { WrappingSelectItem } from "./components/wrapping-select.js";
 import type { DialogProps } from "./dialog-builder.js";
 import { QuestionnairePropsAdapter } from "./props-adapter.js";
@@ -56,28 +66,72 @@ function makeFixture(overQuestions?: QuestionData[]) {
 	});
 
 	const tabsByIndex: TabComponents[] = questions.map((q) => ({
-		optionList: stub<OptionListViewProps>() as unknown as OptionListView,
-		preview: stub<PreviewPaneProps>() as unknown as PreviewPane,
-		multiSelect: q.multiSelect ? (stub<MultiSelectViewProps>() as unknown as MultiSelectView) : undefined,
+		optionList: stub<OptionListViewProps>(),
+		preview: stub<PreviewPaneProps>(),
+		multiSelect: q.multiSelect ? stub<MultiSelectViewProps>() : undefined,
 	}));
 
-	const chatRow = stub<ChatRowViewProps>() as unknown as ChatRowView;
-	const submitPicker = stub<SubmitPickerProps>() as unknown as SubmitPicker;
-	const tabBar = stub<TabBarProps>() as unknown as TabBar;
+	const chatRow = stub<ChatRowViewProps>();
+	const submitPicker = stub<SubmitPickerProps>();
+	const tabBar = stub<TabBarProps>();
 	const dialog = stub<DialogProps>();
 	const inputBuffer = new InputBuffer();
 	const tui = { requestRender: vi.fn() };
+
+	const globalBindings: ReadonlyArray<ComponentBinding<unknown>> = [
+		{
+			component: dialog,
+			select: (s, ctx) => selectDialogProps(s, ctx.activePreviewPane),
+		} as ComponentBinding<unknown>,
+		{
+			component: chatRow,
+			select: (s, ctx) => selectChatRowProps(s, ctx.itemsByTab, ctx.totalQuestions, ctx.activeView),
+		} as ComponentBinding<unknown>,
+		{
+			component: submitPicker,
+			select: (s, ctx) => selectSubmitPickerProps(s, ctx.totalQuestions, ctx.activeView),
+		} as ComponentBinding<unknown>,
+		{
+			component: tabBar,
+			select: (s, ctx) => selectTabBarProps(s, ctx.questions),
+		} as ComponentBinding<unknown>,
+	];
+
+	const isActiveTab = (s: QuestionnaireState, ctx: { i: number; totalQuestions: number }): boolean => {
+		const paneIdx = ctx.totalQuestions <= 0 ? 0 : Math.min(s.currentTab, ctx.totalQuestions - 1);
+		return ctx.i === paneIdx;
+	};
+
+	const perTabBindings: ReadonlyArray<PerTabBinding<unknown>> = [
+		{
+			resolve: (tab) => tab.optionList,
+			predicate: (s, ctx) => isActiveTab(s, ctx),
+			select: (s, ctx) =>
+				selectOptionListProps(s, ctx.itemsByTab[ctx.i] ?? [], ctx.questions, ctx.activeView, ctx.inputBuffer),
+		} as PerTabBinding<unknown>,
+		{
+			resolve: (tab) => tab.preview,
+			predicate: (s, ctx) => isActiveTab(s, ctx),
+			select: (s, ctx) => selectPreviewPaneProps(s, ctx.activeView),
+		} as PerTabBinding<unknown>,
+		{
+			resolve: (tab) => tab.multiSelect,
+			select: (s, ctx) => {
+				const q = ctx.questions[ctx.i];
+				if (!q) return { rows: [], nextActive: false } as MultiSelectViewProps;
+				return selectMultiSelectProps(s, q, ctx.activeView);
+			},
+		} as PerTabBinding<unknown>,
+	];
 
 	const adapter = new QuestionnairePropsAdapter({
 		tui,
 		questions,
 		itemsByTab,
 		tabsByIndex,
-		chatRow,
-		submitPicker,
-		tabBar,
-		dialog,
 		inputBuffer,
+		globalBindings,
+		perTabBindings,
 	});
 	return {
 		adapter,

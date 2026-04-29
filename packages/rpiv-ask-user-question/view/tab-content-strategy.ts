@@ -3,7 +3,7 @@ import { type Component, Container, type Input, Spacer, Text } from "@mariozechn
 import { formatAnswerScalar } from "../tool/format-answer.js";
 import type { QuestionData } from "../tool/types.js";
 import type { ChatRowView } from "./components/chat-row-view.js";
-import type { PreviewPane } from "./components/preview/preview-pane.js";
+import type { PreviewPaneProps } from "./components/preview/preview-pane.js";
 import {
 	type DialogState,
 	HINT_PART_CANCEL,
@@ -16,6 +16,7 @@ import {
 	READY_PROMPT,
 	REVIEW_HEADING,
 } from "./dialog-builder.js";
+import type { StatefulView } from "./stateful-view.js";
 import type { TabComponents } from "./tab-components.js";
 
 /**
@@ -46,7 +47,7 @@ export interface TabContentStrategy {
 export interface QuestionTabStrategyConfig {
 	theme: Theme;
 	questions: readonly QuestionData[];
-	getPreviewPane: () => PreviewPane;
+	getPreviewPane: () => StatefulView<PreviewPaneProps>;
 	tabsByIndex: ReadonlyArray<TabComponents>;
 	notesInput: Input;
 	chatRow: ChatRowView;

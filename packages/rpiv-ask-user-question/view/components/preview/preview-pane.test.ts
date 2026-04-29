@@ -73,7 +73,6 @@ function makePane(question: QuestionData, getWidth: () => number = () => 120) {
 		getTerminalWidth: getWidth,
 		optionListView,
 		previewBlock,
-		initialProps: { notesVisible: false, selectedIndex: 0, focused: false },
 	});
 	return { pane, optionListView, previewBlock };
 }
@@ -536,8 +535,8 @@ describe("PreviewPane composes OptionListView state into render output", () => {
 			getTerminalWidth: () => 120,
 			optionListView,
 			previewBlock,
-			initialProps: { notesVisible: false, selectedIndex: 2, focused: true },
 		});
+		pane.setProps({ notesVisible: false, selectedIndex: 2, focused: true });
 		optionListView.setProps({ selectedIndex: 2, focused: true, inputBuffer: "Hello" });
 		const lines = pane.render(120);
 		expect(lines.some((l) => l.includes("Hello"))).toBe(true);

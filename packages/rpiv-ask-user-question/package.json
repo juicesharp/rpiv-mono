@@ -45,6 +45,7 @@
     "tool/types.ts",
     "tool/validate-questionnaire.ts",
     "view/body-residual-spacer.ts",
+    "view/component-binding.ts",
     "view/components/chat-row-view.ts",
     "view/components/multi-select-view.ts",
     "view/components/option-list-view.ts",

@@ -4,7 +4,7 @@ import type { QuestionnaireState } from "../state/state.js";
 import type { QuestionData } from "../tool/types.js";
 import { BodyResidualSpacer } from "./body-residual-spacer.js";
 import type { ChatRowView } from "./components/chat-row-view.js";
-import type { PreviewPane } from "./components/preview/preview-pane.js";
+import type { PreviewPaneProps } from "./components/preview/preview-pane.js";
 import type { TabBar } from "./components/tab-bar.js";
 import type { StatefulView } from "./stateful-view.js";
 import type { TabComponents } from "./tab-components.js";
@@ -29,14 +29,13 @@ export type DialogState = QuestionnaireState;
 /** Per-tick projection of dialog state. Written by the adapter; read by the strategy thunk. */
 export interface DialogProps {
 	state: DialogState;
-	activePreviewPane: PreviewPane;
+	activePreviewPane: StatefulView<PreviewPaneProps>;
 }
 
-/** Construction-time config for `buildDialog`. Frozen after construction. */
+/** Construction-time config for `DialogView`. Frozen after construction. */
 export interface DialogConfig {
 	theme: Theme;
 	questions: readonly QuestionData[];
-	initialProps: DialogProps;
 	tabBar: TabBar | undefined;
 	notesInput: Input;
 	chatRow: ChatRowView;
@@ -50,79 +49,88 @@ export interface DialogConfig {
 	getCurrentBodyHeight: (width: number) => number;
 }
 
-export function buildDialog(config: DialogConfig): StatefulView<DialogProps> {
-	let liveProps: DialogProps = config.initialProps;
+/**
+ * The 7th renderable, promoted from a structural literal to a named class so
+ * all view-layer components share one explicit `implements StatefulView<P>`
+ * contract. `setProps(DialogProps)` writes the live cell read by the
+ * strategy thunk during `render()`. `liveProps.activePreviewPane` is a
+ * resolved pane reference threaded by the adapter per tick — the dialog
+ * itself does not derive it.
+ */
+export class DialogView implements StatefulView<DialogProps> {
+	private liveProps: DialogProps;
+	private readonly config: DialogConfig;
+	private readonly questionStrategy: TabContentStrategy;
+	private readonly submitStrategy: TabContentStrategy | undefined;
+	private readonly maxFooterRowCount: number;
 
-	const questionStrategy: TabContentStrategy = new QuestionTabStrategy({
-		theme: config.theme,
-		questions: config.questions,
-		getPreviewPane: () => liveProps.activePreviewPane,
-		tabsByIndex: config.tabsByIndex,
-		notesInput: config.notesInput,
-		chatRow: config.chatRow,
-		isMulti: config.isMulti,
-		getCurrentBodyHeight: config.getCurrentBodyHeight,
-	});
+	constructor(config: DialogConfig, initialProps: DialogProps) {
+		this.config = config;
+		this.liveProps = initialProps;
+		this.questionStrategy = new QuestionTabStrategy({
+			theme: config.theme,
+			questions: config.questions,
+			getPreviewPane: () => this.liveProps.activePreviewPane,
+			tabsByIndex: config.tabsByIndex,
+			notesInput: config.notesInput,
+			chatRow: config.chatRow,
+			isMulti: config.isMulti,
+			getCurrentBodyHeight: config.getCurrentBodyHeight,
+		});
+		this.submitStrategy = config.isMulti
+			? new SubmitTabStrategy({
+					theme: config.theme,
+					questions: config.questions,
+					submitPicker: config.submitPicker,
+				})
+			: undefined;
+		this.maxFooterRowCount = Math.max(this.questionStrategy.footerRowCount, this.submitStrategy?.footerRowCount ?? 0);
+	}
 
-	const submitStrategy: TabContentStrategy | undefined = config.isMulti
-		? new SubmitTabStrategy({
-				theme: config.theme,
-				questions: config.questions,
-				submitPicker: config.submitPicker,
-			})
-		: undefined;
+	setProps(props: DialogProps): void {
+		this.liveProps = props;
+	}
 
-	const maxFooterRowCount = Math.max(questionStrategy.footerRowCount, submitStrategy?.footerRowCount ?? 0);
+	handleInput(_data: string): void {}
 
-	const component: StatefulView<DialogProps> = {
-		setProps(props: DialogProps) {
-			liveProps = props;
-		},
-		handleInput() {},
-		invalidate() {
-			liveProps.activePreviewPane.invalidate();
-			config.tabBar?.invalidate();
-			config.notesInput.invalidate();
-			config.chatRow.invalidate();
-		},
-		render(width: number): string[] {
-			const onSubmit = config.isMulti && liveProps.state.currentTab === config.questions.length;
-			const strategy = onSubmit && submitStrategy ? submitStrategy : questionStrategy;
-			return buildContainerFromStrategy(strategy, config, liveProps, maxFooterRowCount).render(width);
-		},
-	};
-	return component;
-}
+	invalidate(): void {
+		this.liveProps.activePreviewPane.invalidate();
+		this.config.tabBar?.invalidate();
+		this.config.notesInput.invalidate();
+		this.config.chatRow.invalidate();
+	}
 
-function buildContainerFromStrategy(
-	strategy: TabContentStrategy,
-	config: DialogConfig,
-	props: DialogProps,
-	maxFooterRowCount: number,
-): Container {
-	const { theme, isMulti, tabBar } = config;
-	const state = props.state;
-	const container = new Container();
-	const border = () => new DynamicBorder((s) => theme.fg("accent", s));
+	render(width: number): string[] {
+		const onSubmit = this.config.isMulti && this.liveProps.state.currentTab === this.config.questions.length;
+		const strategy = onSubmit && this.submitStrategy ? this.submitStrategy : this.questionStrategy;
+		return this.buildContainerFromStrategy(strategy).render(width);
+	}
 
-	container.addChild(border());
-	if (isMulti && tabBar) container.addChild(tabBar);
-	container.addChild(new Spacer(1));
+	private buildContainerFromStrategy(strategy: TabContentStrategy): Container {
+		const { theme, isMulti, tabBar } = this.config;
+		const state = this.liveProps.state;
+		const container = new Container();
+		const border = () => new DynamicBorder((s) => theme.fg("accent", s));
 
-	for (const c of strategy.headingRows(state)) container.addChild(c);
-	container.addChild(strategy.bodyComponent(state));
-	container.addChild(new Spacer(1));
-	for (const c of strategy.midRows(state)) container.addChild(c);
+		container.addChild(border());
+		if (isMulti && tabBar) container.addChild(tabBar);
+		container.addChild(new Spacer(1));
 
-	container.addChild(border());
-	for (const c of strategy.footerRows(state)) container.addChild(c);
+		for (const c of strategy.headingRows(state)) container.addChild(c);
+		container.addChild(strategy.bodyComponent(state));
+		container.addChild(new Spacer(1));
+		for (const c of strategy.midRows(state)) container.addChild(c);
 
-	// Residual spacer equalizes total height across strategies; rendered AFTER the bottom border.
-	container.addChild(
-		new BodyResidualSpacer(
-			(w) => config.getBodyHeight(w) + maxFooterRowCount,
-			(w) => strategy.bodyHeight(w, state) + strategy.footerRowCount,
-		),
-	);
-	return container;
+		container.addChild(border());
+		for (const c of strategy.footerRows(state)) container.addChild(c);
+
+		// Residual spacer equalizes total height across strategies; rendered AFTER the bottom border.
+		container.addChild(
+			new BodyResidualSpacer(
+				(w) => this.config.getBodyHeight(w) + this.maxFooterRowCount,
+				(w) => strategy.bodyHeight(w, state) + strategy.footerRowCount,
+			),
+		);
+		return container;
+	}
 }

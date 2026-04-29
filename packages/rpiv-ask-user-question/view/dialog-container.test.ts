@@ -12,9 +12,10 @@ import { CANCEL_LABEL, SUBMIT_LABEL, SubmitPicker, type SubmitPickerProps } from
 import type { TabBar } from "./components/tab-bar.js";
 import type { WrappingSelectTheme } from "./components/wrapping-select.js";
 import {
-	buildDialog,
 	type DialogConfig,
+	type DialogProps,
 	type DialogState,
+	DialogView,
 	HINT_MULTI,
 	HINT_MULTISELECT_SUFFIX,
 	HINT_NOTES_SUFFIX,
@@ -57,16 +58,21 @@ function stubOptionList(): OptionListView {
 	return stubComponent(["<OPTION_LIST>"]) as unknown as OptionListView;
 }
 
-type MakeConfigOverrides = Partial<Omit<DialogConfig, "initialProps" | "chatRow" | "tabsByIndex">> & {
+type MakeConfigOverrides = Partial<Omit<DialogConfig, "chatRow" | "tabsByIndex">> & {
 	state?: DialogState;
 	previewPane?: PreviewPane;
-	initialProps?: DialogConfig["initialProps"];
+	initialProps?: DialogProps;
 	chatList?: DialogConfig["chatRow"];
 	tabsByIndex?: ReadonlyArray<TabComponents>;
 	multiSelectByTab?: ReadonlyArray<MultiSelectView | undefined>;
 };
 
-function makeConfig(over: MakeConfigOverrides = {}): DialogConfig {
+interface DialogParts {
+	config: DialogConfig;
+	initialProps: DialogProps;
+}
+
+function makeConfig(over: MakeConfigOverrides = {}): DialogParts {
 	const questions: QuestionData[] = over.questions
 		? [...over.questions]
 		: [
@@ -107,10 +113,9 @@ function makeConfig(over: MakeConfigOverrides = {}): DialogConfig {
 			preview: previewPane,
 			multiSelect: over.multiSelectByTab?.[i],
 		}));
-	return {
+	const config: DialogConfig = {
 		theme: over.theme ?? theme,
 		questions,
-		initialProps: over.initialProps ?? { state, activePreviewPane: previewPane },
 		tabBar: over.tabBar ?? (stubComponent(["<TABBAR>", ""]) as unknown as TabBar),
 		notesInput: over.notesInput ?? (stubComponent(["<NOTES_INPUT>"]) as unknown as Input),
 		chatRow: over.chatList ?? (stubComponent(["<CHAT_ROW>"]) as unknown as DialogConfig["chatRow"]),
@@ -128,12 +133,18 @@ function makeConfig(over: MakeConfigOverrides = {}): DialogConfig {
 				return (previewPane as unknown as Component).render(w).length;
 			}),
 	};
+	const initialProps: DialogProps = over.initialProps ?? { state, activePreviewPane: previewPane };
+	return { config, initialProps };
 }
 
-describe("buildDialog — single-question mode", () => {
+function makeDialog(parts: DialogParts): DialogView {
+	return new DialogView(parts.config, parts.initialProps);
+}
+
+describe("makeDialog — single-question mode", () => {
 	it("omits the TabBar entirely", () => {
 		const tabBar = stubComponent(["<TABBAR>", ""]) as unknown as TabBar;
-		const dlg = buildDialog(
+		const dlg = makeDialog(
 			makeConfig({
 				questions: [
 					{
@@ -157,7 +168,7 @@ describe("buildDialog — single-question mode", () => {
 	});
 
 	it("renders the inner header badge in the dialog body (no tab bar to show it)", () => {
-		const dlg = buildDialog(
+		const dlg = makeDialog(
 			makeConfig({
 				questions: [
 					{
@@ -177,9 +188,9 @@ describe("buildDialog — single-question mode", () => {
 	});
 });
 
-describe("buildDialog — multi-question (question tab)", () => {
+describe("makeDialog — multi-question (question tab)", () => {
 	it("includes TabBar + PreviewPane + chat row + multi hint", () => {
-		const dlg = buildDialog(makeConfig());
+		const dlg = makeDialog(makeConfig());
 		const joined = dlg.render(80).join("\n");
 		expect(joined).toContain("<TABBAR>");
 		expect(joined).toContain("<PREVIEW>");
@@ -188,7 +199,7 @@ describe("buildDialog — multi-question (question tab)", () => {
 	});
 
 	it("does NOT render the inner header badge inside the dialog body in multi-question mode", () => {
-		const dlg = buildDialog(makeConfig());
+		const dlg = makeDialog(makeConfig());
 		const lines = dlg.render(80);
 		const innerHeaderBadge = lines.some((l) => l.includes(" H1 ") && !l.includes("<TABBAR>"));
 		expect(innerHeaderBadge).toBe(false);
@@ -216,8 +227,9 @@ describe("buildDialog — multi-question (question tab)", () => {
 			focusedOptionHasPreview: false,
 			submitChoiceIndex: 0,
 		};
-		const mso = new MultiSelectView(theme, multiQ, msoPropsFromState(multiQ, initialState));
-		const dlg = buildDialog(
+		const mso = new MultiSelectView(theme, multiQ);
+		mso.setProps(msoPropsFromState(multiQ, initialState));
+		const dlg = makeDialog(
 			makeConfig({
 				questions: [
 					multiQ,
@@ -241,7 +253,7 @@ describe("buildDialog — multi-question (question tab)", () => {
 
 	it("appends 'n for notes' when focused option carries a preview", () => {
 		const answer: QuestionAnswer = { questionIndex: 0, question: "Q1?", kind: "option", answer: "A" };
-		const dlg = buildDialog(
+		const dlg = makeDialog(
 			makeConfig({
 				state: {
 					currentTab: 0,
@@ -262,7 +274,7 @@ describe("buildDialog — multi-question (question tab)", () => {
 	});
 
 	it("notesVisible adds the notes Input below the preview (line count grows)", () => {
-		const hidden = buildDialog(makeConfig()).render(80);
+		const hidden = makeDialog(makeConfig()).render(80);
 		const visibleCfg = makeConfig({
 			state: {
 				currentTab: 0,
@@ -277,7 +289,7 @@ describe("buildDialog — multi-question (question tab)", () => {
 				submitChoiceIndex: 0,
 			},
 		});
-		const visible = buildDialog(visibleCfg).render(80);
+		const visible = makeDialog(visibleCfg).render(80);
 		expect(visible.length).toBeGreaterThan(hidden.length);
 		expect(visible.join("\n")).toContain("<NOTES_INPUT>");
 		expect(hidden.join("\n")).not.toContain("<NOTES_INPUT>");
@@ -305,8 +317,9 @@ describe("buildDialog — multi-question (question tab)", () => {
 			focusedOptionHasPreview: false,
 			submitChoiceIndex: 0,
 		};
-		const mso = new MultiSelectView(theme, multiQ, msoPropsFromState(multiQ, state));
-		const dlg = buildDialog(
+		const mso = new MultiSelectView(theme, multiQ);
+		mso.setProps(msoPropsFromState(multiQ, state));
+		const dlg = makeDialog(
 			makeConfig({
 				questions: [
 					multiQ,
@@ -331,14 +344,16 @@ describe("buildDialog — multi-question (question tab)", () => {
 	});
 });
 
-describe("buildDialog — Submit tab", () => {
+describe("makeDialog — Submit tab", () => {
 	const answers = new Map<number, QuestionAnswer>([
 		[0, { questionIndex: 0, question: "Q1?", kind: "option", answer: "A" }],
 		[1, { questionIndex: 1, question: "Q2?", kind: "multi", answer: null, selected: ["X", "Y"] }],
 	]);
 
 	function makePicker(state: DialogState, focused = true): SubmitPicker {
-		return new SubmitPicker(theme, submitPickerPropsFromState(state, focused));
+		const picker = new SubmitPicker(theme);
+		picker.setProps(submitPickerPropsFromState(state, focused));
+		return picker;
 	}
 
 	function submitState(over: Partial<DialogState> = {}): DialogState {
@@ -359,13 +374,13 @@ describe("buildDialog — Submit tab", () => {
 
 	it("renders REVIEW_HEADING always", () => {
 		const state = submitState();
-		const dlg = buildDialog(makeConfig({ state, submitPicker: makePicker(state), getBodyHeight: () => 6 }));
+		const dlg = makeDialog(makeConfig({ state, submitPicker: makePicker(state), getBodyHeight: () => 6 }));
 		expect(dlg.render(80).join("\n")).toContain(REVIEW_HEADING);
 	});
 
 	it("renders bullet+arrow summary for answered questions", () => {
 		const state = submitState();
-		const dlg = buildDialog(makeConfig({ state, submitPicker: makePicker(state), getBodyHeight: () => 6 }));
+		const dlg = makeDialog(makeConfig({ state, submitPicker: makePicker(state), getBodyHeight: () => 6 }));
 		const joined = dlg.render(80).join("\n");
 		expect(joined).toContain("● H1");
 		expect(joined).toContain("→");
@@ -379,7 +394,7 @@ describe("buildDialog — Submit tab", () => {
 			[0, { questionIndex: 0, question: "Q1?", kind: "option", answer: "A" }],
 		]);
 		const state = submitState({ answers: partial });
-		const dlg = buildDialog(makeConfig({ state, submitPicker: makePicker(state, false), getBodyHeight: () => 6 }));
+		const dlg = makeDialog(makeConfig({ state, submitPicker: makePicker(state, false), getBodyHeight: () => 6 }));
 		const joined = dlg.render(80).join("\n");
 		expect(joined).not.toContain("✖");
 		expect(joined).not.toContain("unanswered");
@@ -389,7 +404,7 @@ describe("buildDialog — Submit tab", () => {
 
 	it("shows READY_PROMPT when complete", () => {
 		const state = submitState();
-		const dlg = buildDialog(makeConfig({ state, submitPicker: makePicker(state), getBodyHeight: () => 6 }));
+		const dlg = makeDialog(makeConfig({ state, submitPicker: makePicker(state), getBodyHeight: () => 6 }));
 		expect(dlg.render(80).join("\n")).toContain(READY_PROMPT);
 	});
 
@@ -398,7 +413,7 @@ describe("buildDialog — Submit tab", () => {
 			[0, { questionIndex: 0, question: "Q1?", kind: "option", answer: "A" }],
 		]);
 		const state = submitState({ answers: partial });
-		const dlg = buildDialog(makeConfig({ state, submitPicker: makePicker(state, false), getBodyHeight: () => 6 }));
+		const dlg = makeDialog(makeConfig({ state, submitPicker: makePicker(state, false), getBodyHeight: () => 6 }));
 		const joined = dlg.render(80).join("\n");
 		expect(joined).toContain(INCOMPLETE_WARNING_PREFIX);
 		expect(joined).toContain("H2");
@@ -407,7 +422,7 @@ describe("buildDialog — Submit tab", () => {
 
 	it("renders SubmitPicker rows (1. Submit answers / 2. Cancel)", () => {
 		const state = submitState();
-		const dlg = buildDialog(makeConfig({ state, submitPicker: makePicker(state), getBodyHeight: () => 6 }));
+		const dlg = makeDialog(makeConfig({ state, submitPicker: makePicker(state), getBodyHeight: () => 6 }));
 		const joined = dlg.render(80).join("\n");
 		expect(joined).toContain(SUBMIT_LABEL);
 		expect(joined).toContain(CANCEL_LABEL);
@@ -417,7 +432,7 @@ describe("buildDialog — Submit tab", () => {
 		const incomplete = submitState({
 			answers: new Map([[0, { questionIndex: 0, question: "Q1?", kind: "option", answer: "A" }]]),
 		});
-		const dlgIncomplete = buildDialog(
+		const dlgIncomplete = makeDialog(
 			makeConfig({ state: incomplete, submitPicker: makePicker(incomplete), getBodyHeight: () => 6 }),
 		);
 		const joinedIncomplete = dlgIncomplete.render(80).join("\n");
@@ -427,7 +442,7 @@ describe("buildDialog — Submit tab", () => {
 
 	it("active pointer follows state.submitChoiceIndex", () => {
 		const stateRow0 = submitState({ submitChoiceIndex: 0 });
-		const dlg0 = buildDialog(
+		const dlg0 = makeDialog(
 			makeConfig({ state: stateRow0, submitPicker: makePicker(stateRow0), getBodyHeight: () => 6 }),
 		);
 		const joined0 = dlg0.render(80).join("\n");
@@ -437,7 +452,7 @@ describe("buildDialog — Submit tab", () => {
 		expect(cancelLine0).not.toContain("❯");
 
 		const stateRow1 = submitState({ submitChoiceIndex: 1 });
-		const dlg1 = buildDialog(
+		const dlg1 = makeDialog(
 			makeConfig({ state: stateRow1, submitPicker: makePicker(stateRow1), getBodyHeight: () => 6 }),
 		);
 		const joined1 = dlg1.render(80).join("\n");
@@ -449,13 +464,13 @@ describe("buildDialog — Submit tab", () => {
 
 	it("does NOT render the chat row or HINT_MULTI on Submit Tab (regression)", () => {
 		const state = submitState();
-		const dlg = buildDialog(makeConfig({ state, submitPicker: makePicker(state), getBodyHeight: () => 6 }));
+		const dlg = makeDialog(makeConfig({ state, submitPicker: makePicker(state), getBodyHeight: () => 6 }));
 		const joined = dlg.render(80).join("\n");
 		expect(joined).not.toContain("<CHAT_ROW>");
 		expect(joined).not.toContain(HINT_MULTI);
 	});
 
-	it.each<[string, ReturnType<typeof makeConfig>["questions"]]>([
+	it.each<[string, ReturnType<typeof makeConfig>["config"]["questions"]]>([
 		["both with headers", undefined as never],
 		[
 			"both with short single-char headers",
@@ -502,7 +517,7 @@ describe("buildDialog — Submit tab", () => {
 	])("submit + question tab heights stay equal across fixtures: %s", (_label, qs) => {
 		const questions = qs ?? undefined;
 		const submitS = submitState();
-		const submitDlg = buildDialog(
+		const submitDlg = makeDialog(
 			makeConfig({
 				questions,
 				state: submitS,
@@ -510,7 +525,7 @@ describe("buildDialog — Submit tab", () => {
 				getBodyHeight: () => 6,
 			}),
 		).render(120);
-		const questionDlg = buildDialog(
+		const questionDlg = makeDialog(
 			makeConfig({
 				questions,
 				state: submitState({ currentTab: 0 }),
@@ -522,22 +537,22 @@ describe("buildDialog — Submit tab", () => {
 
 	it("total dialog height equals a question tab's height (no collapse / no jump)", () => {
 		const submitS = submitState();
-		const submit = buildDialog(
+		const submit = makeDialog(
 			makeConfig({ state: submitS, submitPicker: makePicker(submitS), getBodyHeight: () => 6 }),
 		).render(120);
-		const questionTab = buildDialog(
+		const questionTab = makeDialog(
 			makeConfig({ state: submitState({ currentTab: 0 }), getBodyHeight: () => 6 }),
 		).render(120);
 		expect(submit.length).toBe(questionTab.length);
 	});
 });
 
-describe("buildDialog — setProps swap", () => {
+describe("makeDialog — setProps swap", () => {
 	it("setProps replaces the rendered pane on subsequent render() calls", () => {
 		const paneA = stubComponent(["<PANE_A>"]) as unknown as PreviewPane;
 		const paneB = stubComponent(["<PANE_B>"]) as unknown as PreviewPane;
 		const cfg = makeConfig({ previewPane: paneA });
-		const dlg = buildDialog(cfg);
+		const dlg = makeDialog(cfg);
 		expect(dlg.render(80).join("\n")).toContain("<PANE_A>");
 		dlg.setProps({ state: cfg.initialProps.state, activePreviewPane: paneB });
 		expect(dlg.render(80).join("\n")).toContain("<PANE_B>");
@@ -545,11 +560,11 @@ describe("buildDialog — setProps swap", () => {
 	});
 });
 
-describe("buildDialog — width safety", () => {
+describe("makeDialog — width safety", () => {
 	it("every emitted line satisfies visibleWidth(line) <= width across all modes", () => {
 		for (const w of [60, 80, 120]) {
 			for (const ct of [0, 1, 2]) {
-				const dlg = buildDialog(
+				const dlg = makeDialog(
 					makeConfig({
 						state: {
 							currentTab: ct,
@@ -571,17 +586,17 @@ describe("buildDialog — width safety", () => {
 	});
 });
 
-describe("buildDialog — body residual padding", () => {
+describe("makeDialog — body residual padding", () => {
 	it("dialog total grows by (getBodyHeight delta) when getCurrentBodyHeight stays constant", () => {
-		const a = buildDialog(makeConfig({ getBodyHeight: () => 5, getCurrentBodyHeight: () => 1 })).render(80);
-		const b = buildDialog(makeConfig({ getBodyHeight: () => 20, getCurrentBodyHeight: () => 1 })).render(80);
+		const a = makeDialog(makeConfig({ getBodyHeight: () => 5, getCurrentBodyHeight: () => 1 })).render(80);
+		const b = makeDialog(makeConfig({ getBodyHeight: () => 20, getCurrentBodyHeight: () => 1 })).render(80);
 		expect(b.length - a.length).toBe(15);
 	});
 
 	it("residual rows live AFTER the controls hint (very bottom of the dialog)", () => {
 		// Residual = (getBodyHeight + maxFooterRowCount) - (currentBodyHeight + footerRowCount)
 		//          = (6 + 5) - (1 + 4) = 6
-		const lines = buildDialog(makeConfig({ getBodyHeight: () => 6, getCurrentBodyHeight: () => 1 })).render(80);
+		const lines = makeDialog(makeConfig({ getBodyHeight: () => 6, getCurrentBodyHeight: () => 1 })).render(80);
 		const chatIdx = lines.findIndex((l) => l.includes("<CHAT_ROW>"));
 		const hintIdx = lines.findIndex((l) => l.includes(HINT_MULTI));
 		expect(chatIdx).toBeGreaterThan(0);
@@ -631,17 +646,18 @@ describe("buildDialog — body residual padding", () => {
 			submitChoiceIndex: 0,
 		};
 		const stateTab1: DialogState = { ...stateTab0, currentTab: 1 };
-		const mso = new MultiSelectView(theme, multiQ, msoPropsFromState(multiQ, stateTab0));
+		const mso = new MultiSelectView(theme, multiQ);
+		mso.setProps(msoPropsFromState(multiQ, stateTab0));
 		const multiSelectByTab: ReadonlyArray<MultiSelectView | undefined> = [undefined, mso];
 		const getBodyHeight = (w: number) => Math.max(1, (mso as unknown as Component).render(w).length);
 
-		const dlgTab0 = buildDialog(makeConfig({ questions, state: stateTab0, multiSelectByTab, getBodyHeight }));
-		const dlgTab1 = buildDialog(makeConfig({ questions, state: stateTab1, multiSelectByTab, getBodyHeight }));
+		const dlgTab0 = makeDialog(makeConfig({ questions, state: stateTab0, multiSelectByTab, getBodyHeight }));
+		const dlgTab1 = makeDialog(makeConfig({ questions, state: stateTab1, multiSelectByTab, getBodyHeight }));
 		expect(dlgTab0.render(120).length).toBe(dlgTab1.render(120).length);
 	});
 });
 
-describe("buildDialog — chatRow focus visual", () => {
+describe("makeDialog — chatRow focus visual", () => {
 	it("chatRow shows active ❯ pointer when focused: true; inactive when focused: false", () => {
 		const theme: WrappingSelectTheme = {
 			selectedText: (t) => t,
@@ -651,9 +667,9 @@ describe("buildDialog — chatRow focus visual", () => {
 		const focusedChat = new ChatRowView({
 			item: { kind: "chat", label: "Chat about this" },
 			theme,
-			initialProps: { focused: true, numbering: { offset: 0, total: 1 } },
 		});
-		const focused = buildDialog(makeConfig({ chatList: focusedChat })).render(80);
+		focusedChat.setProps({ focused: true, numbering: { offset: 0, total: 1 } });
+		const focused = makeDialog(makeConfig({ chatList: focusedChat })).render(80);
 		const focusedChatLine = focused.find((l) => l.includes("Chat about this"));
 		expect(focusedChatLine).toBeDefined();
 		expect(focusedChatLine?.includes("❯ ")).toBe(true);
@@ -661,9 +677,9 @@ describe("buildDialog — chatRow focus visual", () => {
 		const blurredChat = new ChatRowView({
 			item: { kind: "chat", label: "Chat about this" },
 			theme,
-			initialProps: { focused: false, numbering: { offset: 0, total: 1 } },
 		});
-		const blurred = buildDialog(makeConfig({ chatList: blurredChat })).render(80);
+		blurredChat.setProps({ focused: false, numbering: { offset: 0, total: 1 } });
+		const blurred = makeDialog(makeConfig({ chatList: blurredChat })).render(80);
 		const blurredChatLine = blurred.find((l) => l.includes("Chat about this"));
 		expect(blurredChatLine).toBeDefined();
 		expect(blurredChatLine?.includes("❯ ")).toBe(false);

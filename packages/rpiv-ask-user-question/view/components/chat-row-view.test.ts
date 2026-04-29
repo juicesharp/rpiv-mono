@@ -10,11 +10,12 @@ const PASSTHROUGH: WrappingSelectTheme = {
 };
 
 function makeChatRow(initial = { focused: false, numbering: { offset: 0, total: 1 } }) {
-	return new ChatRowView({
+	const row = new ChatRowView({
 		item: { kind: "chat", label: SENTINEL_LABELS.chat },
 		theme: PASSTHROUGH,
-		initialProps: initial,
 	});
+	row.setProps(initial);
+	return row;
 }
 
 describe("ChatRowView", () => {

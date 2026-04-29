@@ -56,7 +56,6 @@ export interface PreviewPaneConfig {
 	getTerminalWidth: () => number;
 	optionListView: OptionListView;
 	previewBlock: PreviewBlockRenderer;
-	initialProps: PreviewPaneProps;
 }
 
 /**
@@ -83,7 +82,7 @@ export class PreviewPane implements StatefulView<PreviewPaneProps>, Component {
 		this.getTerminalWidth = config.getTerminalWidth;
 		this.optionListView = config.optionListView;
 		this.previewBlock = config.previewBlock;
-		this.props = config.initialProps;
+		this.props = { notesVisible: false, selectedIndex: 0, focused: false };
 	}
 
 	setProps(props: PreviewPaneProps): void {

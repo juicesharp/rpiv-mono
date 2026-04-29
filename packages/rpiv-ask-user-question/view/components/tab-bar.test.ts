@@ -13,6 +13,12 @@ interface PropsOver {
 	totalTabs?: number;
 }
 
+function makeBar(initial: TabBarProps): TabBar {
+	const bar = new TabBar(theme);
+	bar.setProps(initial);
+	return bar;
+}
+
 function buildProps(over: PropsOver = {}): TabBarProps {
 	const questions = over.questions ?? [
 		{ header: "Scope", question: "Which scope?" },
@@ -39,14 +45,14 @@ function buildProps(over: PropsOver = {}): TabBarProps {
 
 describe("TabBar.render", () => {
 	it("emits exactly 2 lines (tab bar + blank spacer)", () => {
-		const tb = new TabBar(buildProps(), theme);
+		const tb = makeBar(buildProps());
 		const lines = tb.render(80);
 		expect(lines.length).toBe(2);
 		expect(lines[1]).toBe("");
 	});
 
 	it("renders one indicator per question + a Submit tab", () => {
-		const tb = new TabBar(buildProps(), theme);
+		const tb = makeBar(buildProps());
 		const line = tb.render(80)[0];
 		const empties = (line.match(/□/g) ?? []).length;
 		expect(empties).toBe(3);
@@ -56,7 +62,7 @@ describe("TabBar.render", () => {
 	});
 
 	it("flips □ → ■ for answered questions", () => {
-		const tb = new TabBar(buildProps({ answeredIndices: [1] }), theme);
+		const tb = makeBar(buildProps({ answeredIndices: [1] }));
 		const line = tb.render(80)[0];
 		expect(line.match(/■/g)?.length).toBe(1);
 		expect(line.match(/□/g)?.length).toBe(2);
@@ -64,7 +70,7 @@ describe("TabBar.render", () => {
 
 	it("applies selectedBg styling to the active tab via theme.bg", () => {
 		const spy = vi.spyOn(theme, "bg");
-		const tb = new TabBar(buildProps({ activeTabIndex: 1 }), theme);
+		const tb = makeBar(buildProps({ activeTabIndex: 1 }));
 		tb.render(80);
 		expect(spy).toHaveBeenCalledWith("selectedBg", expect.stringContaining("Priority"));
 		spy.mockRestore();
@@ -72,24 +78,23 @@ describe("TabBar.render", () => {
 
 	it("Submit shows success color when all answered, dim otherwise", () => {
 		const spy = vi.spyOn(theme, "fg");
-		const tbAll = new TabBar(buildProps({ answeredIndices: [0, 1, 2], activeTabIndex: 0 }), theme);
+		const tbAll = makeBar(buildProps({ answeredIndices: [0, 1, 2], activeTabIndex: 0 }));
 		tbAll.render(80);
 		expect(spy).toHaveBeenCalledWith("success", expect.stringContaining("Submit"));
 
 		spy.mockClear();
-		const tbPartial = new TabBar(buildProps({ answeredIndices: [], activeTabIndex: 0 }), theme);
+		const tbPartial = makeBar(buildProps({ answeredIndices: [], activeTabIndex: 0 }));
 		tbPartial.render(80);
 		expect(spy).toHaveBeenCalledWith("dim", expect.stringContaining("Submit"));
 		spy.mockRestore();
 	});
 
 	it("falls back to Q{n+1} when header is absent", () => {
-		const tb = new TabBar(
+		const tb = makeBar(
 			buildProps({
 				questions: [{ question: "first" }, { question: "second" }],
 				totalTabs: 3,
 			}),
-			theme,
 		);
 		const line = tb.render(80)[0];
 		expect(line).toContain("Q1");
@@ -97,7 +102,7 @@ describe("TabBar.render", () => {
 	});
 
 	it("truncates rather than overflowing when 4 long headers exceed width", () => {
-		const tb = new TabBar(
+		const tb = makeBar(
 			buildProps({
 				questions: [
 					{ header: "VeryLongHeaderOne", question: "" },
@@ -107,7 +112,6 @@ describe("TabBar.render", () => {
 				],
 				totalTabs: 5,
 			}),
-			theme,
 		);
 		for (const w of [40, 60, 80, 120]) {
 			const lines = tb.render(w);
@@ -116,7 +120,7 @@ describe("TabBar.render", () => {
 	});
 
 	it("setProps replaces props between renders", () => {
-		const tb = new TabBar(buildProps({ activeTabIndex: 0 }), theme);
+		const tb = makeBar(buildProps({ activeTabIndex: 0 }));
 		const before = tb.render(80)[0];
 		tb.setProps(buildProps({ activeTabIndex: 1, answeredIndices: [0] }));
 		const after = tb.render(80)[0];

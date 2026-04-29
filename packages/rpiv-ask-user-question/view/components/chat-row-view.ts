@@ -17,7 +17,6 @@ export interface ChatRowViewConfig {
 	/** The single chat sentinel row — `{kind: "chat", label: SENTINEL_LABELS.chat}`. */
 	item: WrappingSelectItem;
 	theme: WrappingSelectTheme;
-	initialProps: ChatRowViewProps;
 }
 
 /**
@@ -35,10 +34,9 @@ export class ChatRowView implements StatefulView<ChatRowViewProps>, Component {
 
 	constructor(config: ChatRowViewConfig) {
 		this.select = new WrappingSelect([config.item], 1, config.theme, {
-			numberStartOffset: config.initialProps.numbering.offset,
-			totalItemsForNumbering: config.initialProps.numbering.total,
+			numberStartOffset: 0,
+			totalItemsForNumbering: 1,
 		});
-		this.select.setFocused(config.initialProps.focused);
 	}
 
 	setProps(props: ChatRowViewProps): void {
