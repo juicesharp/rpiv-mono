@@ -35,6 +35,7 @@
     "state/key-router.ts",
     "state/questionnaire-session.ts",
     "state/row-intent.ts",
+    "state/selectors/contract.ts",
     "state/selectors/derivations.ts",
     "state/selectors/focus.ts",
     "state/selectors/projections.ts",

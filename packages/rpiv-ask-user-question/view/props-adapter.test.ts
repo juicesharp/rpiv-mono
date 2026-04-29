@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { InputBuffer } from "../state/input-buffer.js";
+import type { PerTabSelector } from "../state/selectors/contract.js";
 import {
 	selectChatRowProps,
 	selectDialogProps,
@@ -79,49 +80,21 @@ function makeFixture(overQuestions?: QuestionData[]) {
 	const tui = { requestRender: vi.fn() };
 
 	const globalBindings: ReadonlyArray<BoundGlobalBinding> = [
-		globalBinding({
-			component: dialog,
-			select: (s, ctx) => selectDialogProps(s, ctx.activePreviewPane),
-		}),
-		globalBinding({
-			component: chatRow,
-			select: (s, ctx) => selectChatRowProps(s, ctx.itemsByTab, ctx.totalQuestions, ctx.activeView),
-		}),
-		globalBinding({
-			component: submitPicker,
-			select: (s, ctx) => selectSubmitPickerProps(s, ctx.totalQuestions, ctx.activeView),
-		}),
-		globalBinding({
-			component: tabBar,
-			select: (s, ctx) => selectTabBarProps(s, ctx.questions),
-		}),
+		globalBinding({ component: dialog, select: selectDialogProps }),
+		globalBinding({ component: chatRow, select: selectChatRowProps }),
+		globalBinding({ component: submitPicker, select: selectSubmitPickerProps }),
+		globalBinding({ component: tabBar, select: selectTabBarProps }),
 	];
 
-	const isActiveTab = (s: QuestionnaireState, ctx: { i: number; totalQuestions: number }): boolean => {
+	const isActiveTab: PerTabSelector<boolean> = (s, ctx) => {
 		const paneIdx = ctx.totalQuestions <= 0 ? 0 : Math.min(s.currentTab, ctx.totalQuestions - 1);
 		return ctx.i === paneIdx;
 	};
 
 	const perTabBindings: ReadonlyArray<BoundPerTabBinding> = [
-		perTabBinding({
-			resolve: (tab) => tab.optionList,
-			predicate: (s, ctx) => isActiveTab(s, ctx),
-			select: (s, ctx) =>
-				selectOptionListProps(s, ctx.itemsByTab[ctx.i] ?? [], ctx.questions, ctx.activeView, ctx.inputBuffer),
-		}),
-		perTabBinding({
-			resolve: (tab) => tab.preview,
-			predicate: (s, ctx) => isActiveTab(s, ctx),
-			select: (s, ctx) => selectPreviewPaneProps(s, ctx.activeView),
-		}),
-		perTabBinding<MultiSelectViewProps>({
-			resolve: (tab) => tab.multiSelect,
-			select: (s, ctx) => {
-				const q = ctx.questions[ctx.i];
-				if (!q) return { rows: [], nextActive: false, nextLabel: "Next" };
-				return selectMultiSelectProps(s, q, ctx.activeView, ctx.i === ctx.questions.length - 1);
-			},
-		}),
+		perTabBinding({ resolve: (tab) => tab.optionList, predicate: isActiveTab, select: selectOptionListProps }),
+		perTabBinding({ resolve: (tab) => tab.preview, predicate: isActiveTab, select: selectPreviewPaneProps }),
+		perTabBinding({ resolve: (tab) => tab.multiSelect, select: selectMultiSelectProps }),
 	];
 
 	const adapter = new QuestionnairePropsAdapter({

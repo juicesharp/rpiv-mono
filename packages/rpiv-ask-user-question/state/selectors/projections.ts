@@ -1,4 +1,3 @@
-import type { QuestionData } from "../../tool/types.js";
 import { SENTINEL_LABELS } from "../../tool/types.js";
 import type { ChatRowViewProps } from "../../view/components/chat-row-view.js";
 import { MULTI_SUBMIT_LABEL, type MultiSelectViewProps } from "../../view/components/multi-select-view.js";
@@ -6,19 +5,14 @@ import type { OptionListViewProps } from "../../view/components/option-list-view
 import type { PreviewPaneProps } from "../../view/components/preview/preview-pane.js";
 import type { SubmitPickerProps } from "../../view/components/submit-picker.js";
 import type { TabBarProps } from "../../view/components/tab-bar.js";
-import type { WrappingSelectItem } from "../../view/components/wrapping-select.js";
 import type { DialogProps } from "../../view/dialog-builder.js";
-import type { ActiveView, StatefulView } from "../../view/stateful-view.js";
-import type { QuestionnaireState } from "../state.js";
+import type { GlobalSelector, PerTabSelector } from "./contract.js";
 import { chatNumberingFor, selectActiveTabItems, selectConfirmedIndicator } from "./derivations.js";
 
-export function selectMultiSelectProps(
-	state: QuestionnaireState,
-	question: QuestionData,
-	activeView: ActiveView,
-	isLastQuestion: boolean,
-): MultiSelectViewProps {
-	const focused = activeView === "options";
+export const selectMultiSelectProps: PerTabSelector<MultiSelectViewProps> = (state, ctx) => {
+	const question = ctx.questions[ctx.i];
+	if (!question) return { rows: [], nextActive: false, nextLabel: SENTINEL_LABELS.next };
+	const focused = ctx.activeView === "options";
 	const rows: { checked: boolean; active: boolean }[] = [];
 	for (let i = 0; i < question.options.length; i++) {
 		rows.push({
@@ -27,79 +21,41 @@ export function selectMultiSelectProps(
 		});
 	}
 	const nextActive = focused && state.optionIndex === question.options.length;
+	const isLastQuestion = ctx.i === ctx.questions.length - 1;
 	const nextLabel = isLastQuestion ? MULTI_SUBMIT_LABEL : SENTINEL_LABELS.next;
 	return { rows, nextActive, nextLabel };
-}
+};
 
-/**
- * Per-tick projection for the active tab's `OptionListView`. Threads the
- * runtime-owned `inputBuffer` through to the view so the rendering primitive
- * (`WrappingSelect`) sees the value without per-keystroke reducer involvement.
- */
-export function selectOptionListProps(
-	state: QuestionnaireState,
-	items: readonly WrappingSelectItem[],
-	questions: readonly QuestionData[],
-	activeView: ActiveView,
-	inputBuffer: string,
-): OptionListViewProps {
-	const focused = activeView === "options";
-	const confirmed = selectConfirmedIndicator(questions, state.currentTab, state.answers, items);
+export const selectOptionListProps: PerTabSelector<OptionListViewProps> = (state, ctx) => {
+	const items = ctx.itemsByTab[ctx.i] ?? [];
+	const focused = ctx.activeView === "options";
+	const confirmed = selectConfirmedIndicator(ctx.questions, state.currentTab, state.answers, items);
 	return {
 		selectedIndex: state.optionIndex,
 		focused,
-		inputBuffer,
+		inputBuffer: ctx.inputBuffer,
 		...(confirmed ? { confirmed } : {}),
 	};
-}
+};
 
-/**
- * Per-tick projection for the SubmitPicker. Two rows fixed (Submit /
- * Cancel); only `active` per row varies. Focus derives from the
- * `activeView === "submit"` discriminant.
- */
-export function selectSubmitPickerProps(
-	state: QuestionnaireState,
-	totalQuestions: number,
-	activeView: ActiveView,
-): SubmitPickerProps {
-	const focused = activeView === "submit";
-	void totalQuestions;
+export const selectSubmitPickerProps: GlobalSelector<SubmitPickerProps> = (state, ctx) => {
+	const focused = ctx.activeView === "submit";
 	return {
 		rows: [
 			{ active: focused && state.submitChoiceIndex === 0 },
 			{ active: focused && state.submitChoiceIndex === 1 },
 		],
 	};
-}
+};
 
-/**
- * Per-tick projection for `PreviewPane`. Eliminates the sibling-coupling
- * where `PreviewPane` formerly read `optionListView.getSelectedIndex()` /
- * `isFocused()` live during render. Both `OptionListView` and
- * `PreviewPane.setProps` derive `selectedIndex` and `focused` from the same
- * canonical state per tick.
- */
-export function selectPreviewPaneProps(state: QuestionnaireState, activeView: ActiveView): PreviewPaneProps {
-	return {
-		notesVisible: state.notesVisible,
-		selectedIndex: state.optionIndex,
-		focused: activeView === "options",
-	};
-}
+export const selectPreviewPaneProps: PerTabSelector<PreviewPaneProps> = (state, ctx) => ({
+	notesVisible: state.notesVisible,
+	selectedIndex: state.optionIndex,
+	focused: ctx.activeView === "options",
+});
 
-/**
- * Per-tick projection for the TabBar. Hoists all per-render derivations
- * (`allAnswered`, `answered`, `isActive`, `submitActive`) out of `tab-bar.ts`
- * into the selector. The Submit slot is an explicit `submit` field, not a
- * hidden `totalTabs` index. `Q{n}` fallback label is computed here once per
- * tab; `header` reads directly from question data.
- */
-export function selectTabBarProps(
-	state: QuestionnaireState,
-	questions: ReadonlyArray<{ header?: string; question: string }>,
-): TabBarProps {
-	const tabs = questions.map((q, i) => ({
+export const selectTabBarProps: GlobalSelector<TabBarProps> = (state, ctx) => {
+	const tabs = ctx.questions.map((q, i) => ({
 		label: q.header && q.header.length > 0 ? q.header : `Q${i + 1}`,
 		answered: state.answers.has(i),
 		active: i === state.currentTab,
@@ -107,43 +63,21 @@ export function selectTabBarProps(
 	return {
 		tabs,
 		submit: {
-			active: state.currentTab === questions.length,
-			allAnswered: state.answers.size === questions.length && questions.length > 0,
+			active: state.currentTab === ctx.questions.length,
+			allAnswered: state.answers.size === ctx.questions.length && ctx.questions.length > 0,
 		},
 	};
-}
+};
 
-/**
- * Per-tick projection for `ChatRowView`. Combines focus discriminant with
- * the numbering derivation (`chatNumberingFor` over the active tab's
- * items). `activeView === "chat"` is observably equivalent to
- * `state.chatFocused` because the dispatcher cascade and reducer's defensive
- * clears ensure `chatFocused` and `notesVisible`/Submit-tab cannot be true
- * simultaneously.
- */
-export function selectChatRowProps(
-	state: QuestionnaireState,
-	itemsByTab: ReadonlyArray<readonly WrappingSelectItem[]>,
-	totalQuestions: number,
-	activeView: ActiveView,
-): ChatRowViewProps {
-	const activeItems = selectActiveTabItems(itemsByTab, state.currentTab, totalQuestions);
+export const selectChatRowProps: GlobalSelector<ChatRowViewProps> = (state, ctx) => {
+	const activeItems = selectActiveTabItems(ctx.itemsByTab, state.currentTab, ctx.totalQuestions);
 	return {
-		focused: activeView === "chat",
+		focused: ctx.activeView === "chat",
 		numbering: chatNumberingFor(activeItems),
 	};
-}
+};
 
-/**
- * Per-tick projection for the dialog. Mirrors the inline literal previously
- * at `props-adapter.ts:68`. The `activePreviewPane` is resolved per tick by
- * the adapter (via `selectActivePreviewPaneIndex` over `tabsByIndex`) and
- * passed in as a `StatefulView<PreviewPaneProps>` reference — not a derived
- * state value — so the selector signature takes it as a separate arg.
- */
-export function selectDialogProps(
-	state: QuestionnaireState,
-	activePreviewPane: StatefulView<PreviewPaneProps>,
-): DialogProps {
-	return { state, activePreviewPane };
-}
+export const selectDialogProps: GlobalSelector<DialogProps> = (state, ctx) => ({
+	state,
+	activePreviewPane: ctx.activePreviewPane,
+});

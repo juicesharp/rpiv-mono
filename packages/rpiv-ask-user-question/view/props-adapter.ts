@@ -1,14 +1,10 @@
 import type { InputBuffer } from "../state/input-buffer.js";
+import type { BindingContext, PerTabBindingContext } from "../state/selectors/contract.js";
 import { selectActivePreviewPaneIndex } from "../state/selectors/derivations.js";
 import { selectActiveView } from "../state/selectors/focus.js";
 import type { QuestionnaireState } from "../state/state.js";
 import type { QuestionData } from "../tool/types.js";
-import type {
-	BindingContext,
-	BoundGlobalBinding,
-	BoundPerTabBinding,
-	PerTabBindingContext,
-} from "./component-binding.js";
+import type { BoundGlobalBinding, BoundPerTabBinding } from "./component-binding.js";
 import type { WrappingSelectItem } from "./components/wrapping-select.js";
 import type { TabComponents } from "./tab-components.js";
 
