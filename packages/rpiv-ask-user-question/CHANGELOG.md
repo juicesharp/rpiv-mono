@@ -7,6 +7,13 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Multi-select questions now show "Submit" instead of "Next" on the trailing sentinel row when the question is the last in the questionnaire. The action is unchanged — Enter still commits and finishes; the label just stops implying another question follows.
+- Picking "Chat about this" on any tab now closes the dialog immediately and returns whatever has been answered so far together with the chat directive. Previously, multi-question dialogs advanced to the next tab instead of escaping; single-question dialogs already behaved this way. The chat sentinel now consistently fulfills its documented role as the universal escape hatch.
+
+### Changed
+- Internal refactor: replaced the binding-registry's `as ComponentBinding<unknown>` / `as PerTabBinding<unknown>` casts with `globalBinding<P>(spec)` / `perTabBinding<P>(spec)` existential wrappers. TypeScript now verifies at construction that each selector's return shape matches its target component's `setProps` input — a typo in a selector return would fail to compile instead of silently mismatching.
+
 ## [1.0.6] - 2026-04-29
 
 ### Changed
