@@ -7,6 +7,14 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- Internal refactor: regrouped sources into `tool/`, `state/`, `view/`, `view/components/`, and `view/components/preview/` layers mirroring the runtime architecture; Pi entry stays at root. `package.json` `files` and ship-manifest tests rewritten to walk the tree recursively.
+- Internal refactor: unified all components under a single `StatefulView<P> + setProps` contract driven by named selectors (`selectMultiSelectProps`, `selectSubmitPickerProps`, `selectOptionListProps`, `selectPreviewPaneProps`, `selectTabBarProps`, `selectChatRowProps`). Eliminates the cross-component live read in `PreviewPane`; extracts `ChatRowView`; removes legacy `stateful-component.ts`.
+- Internal refactor: introduced `ROW_INTENT_META` metadata table — single source of truth for sentinel-row affordances (`other` / `chat` / `next`) replacing scattered branch logic.
+
+### Tests
+- Added ship-manifest + banned-legacy-flags verification tests asserting the published tarball ships every production module and that no legacy `isOther` / `isChat` / `wasCustom` / `wasChat` flags survive the `kind`-tagged union migration.
+
 ## [1.0.4] - 2026-04-28
 
 ## [1.0.3] - 2026-04-28
