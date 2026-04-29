@@ -3,12 +3,16 @@ import type { Theme } from "@mariozechner/pi-coding-agent";
 import type { Component, Input } from "@mariozechner/pi-tui";
 import { visibleWidth } from "@mariozechner/pi-tui";
 import { describe, expect, it } from "vitest";
+import {
+	makeMultiSelectPropsFromState as msoPropsFromState,
+	makeSubmitPickerPropsFromState as submitPickerPropsFromState,
+} from "../test-fixtures.js";
 import type { QuestionAnswer, QuestionData } from "../tool/types.js";
 import { ChatRowView } from "./components/chat-row-view.js";
-import { MultiSelectView, type MultiSelectViewProps } from "./components/multi-select-view.js";
+import { MultiSelectView } from "./components/multi-select-view.js";
 import type { OptionListView } from "./components/option-list-view.js";
 import type { PreviewPane } from "./components/preview/preview-pane.js";
-import { CANCEL_LABEL, SUBMIT_LABEL, SubmitPicker, type SubmitPickerProps } from "./components/submit-picker.js";
+import { CANCEL_LABEL, SUBMIT_LABEL, SubmitPicker } from "./components/submit-picker.js";
 import type { TabBar } from "./components/tab-bar.js";
 import type { WrappingSelectTheme } from "./components/wrapping-select.js";
 import {
@@ -27,24 +31,6 @@ import {
 import type { TabComponents } from "./tab-components.js";
 
 const theme = makeTheme() as unknown as Theme;
-
-function msoPropsFromState(question: QuestionData, state: DialogState, focused = true): MultiSelectViewProps {
-	const rows = question.options.map((_, i) => ({
-		checked: state.multiSelectChecked.has(i),
-		active: focused && i === state.optionIndex,
-	}));
-	const nextActive = focused && state.optionIndex === question.options.length;
-	return { rows, nextActive, nextLabel: "Next" };
-}
-
-function submitPickerPropsFromState(state: DialogState, focused = true): SubmitPickerProps {
-	return {
-		rows: [
-			{ active: focused && state.submitChoiceIndex === 0 },
-			{ active: focused && state.submitChoiceIndex === 1 },
-		],
-	};
-}
 
 function stubComponent(lines: string[]): Component {
 	return {

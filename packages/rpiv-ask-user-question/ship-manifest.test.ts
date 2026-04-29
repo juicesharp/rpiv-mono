@@ -14,7 +14,8 @@ function walkProductionTs(dir: string): string[] {
 			out.push(...walkProductionTs(abs));
 			continue;
 		}
-		if (!entry.isFile() || !entry.name.endsWith(".ts") || entry.name.endsWith(".test.ts")) continue;
+		if (!entry.isFile() || !entry.name.endsWith(".ts")) continue;
+		if (entry.name.endsWith(".test.ts") || entry.name === "test-fixtures.ts") continue;
 		out.push(relative(PACKAGE_DIR, abs));
 	}
 	return out;

@@ -2,30 +2,11 @@ import { makeTheme } from "@juicesharp/rpiv-test-utils";
 import type { Theme } from "@mariozechner/pi-coding-agent";
 import { visibleWidth } from "@mariozechner/pi-tui";
 import { describe, expect, it } from "vitest";
+import { makeMultiSelectViewProps as makeProps } from "../../test-fixtures.js";
 import type { QuestionData } from "../../tool/types.js";
 import { MultiSelectView, type MultiSelectViewProps } from "./multi-select-view.js";
 
 const theme = makeTheme() as unknown as Theme;
-
-interface PropOverrides {
-	optionIndex?: number;
-	checkedIndices?: ReadonlySet<number>;
-	focused?: boolean;
-	nextLabel?: string;
-}
-
-function makeProps(question: QuestionData, over: PropOverrides = {}): MultiSelectViewProps {
-	const optionIndex = over.optionIndex ?? 0;
-	const checkedIndices = over.checkedIndices ?? new Set<number>();
-	const focused = over.focused ?? true;
-	const rows = question.options.map((_, i) => ({
-		checked: checkedIndices.has(i),
-		active: focused && i === optionIndex,
-	}));
-	const nextActive = focused && optionIndex === question.options.length;
-	const nextLabel = over.nextLabel ?? "Next";
-	return { rows, nextActive, nextLabel };
-}
 
 function makeView(q: QuestionData, props: MultiSelectViewProps): MultiSelectView {
 	const view = new MultiSelectView(theme, q);

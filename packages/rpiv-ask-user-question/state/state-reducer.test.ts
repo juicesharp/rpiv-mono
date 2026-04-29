@@ -1,55 +1,14 @@
 import { describe, expect, it } from "vitest";
-import type { QuestionAnswer, QuestionData } from "../tool/types.js";
-import type { WrappingSelectItem } from "../view/components/wrapping-select.js";
+import {
+	itemsRegular,
+	itemsWithOther,
+	makeApplyContext as makeCtx,
+	makeQuestion,
+	makeQuestionnaireState as makeState,
+} from "../test-fixtures.js";
+import type { QuestionAnswer } from "../tool/types.js";
 import type { QuestionnaireAction } from "./key-router.js";
-import type { QuestionnaireState } from "./state.js";
-import { type ApplyContext, reduce } from "./state-reducer.js";
-
-function makeQuestion(over: Partial<QuestionData> = {}): QuestionData {
-	return {
-		question: over.question ?? "Pick one",
-		header: over.header ?? "H",
-		options: over.options ?? [
-			{ label: "A", description: "a" },
-			{ label: "B", description: "b" },
-		],
-		multiSelect: over.multiSelect,
-	};
-}
-
-const itemsRegular: WrappingSelectItem[] = [
-	{ kind: "option", label: "A" },
-	{ kind: "option", label: "B" },
-];
-const itemsWithOther: WrappingSelectItem[] = [
-	{ kind: "option", label: "A" },
-	{ kind: "option", label: "B" },
-	{ kind: "other", label: "Type something." },
-];
-
-function makeState(over: Partial<QuestionnaireState> = {}): QuestionnaireState {
-	return {
-		currentTab: over.currentTab ?? 0,
-		optionIndex: over.optionIndex ?? 0,
-		inputMode: over.inputMode ?? false,
-		notesVisible: over.notesVisible ?? false,
-		chatFocused: over.chatFocused ?? false,
-		answers: over.answers ?? new Map(),
-		multiSelectChecked: over.multiSelectChecked ?? new Set(),
-		notesByTab: over.notesByTab ?? new Map(),
-		focusedOptionHasPreview: over.focusedOptionHasPreview ?? false,
-		submitChoiceIndex: over.submitChoiceIndex ?? 0,
-	};
-}
-
-function makeCtx(over: Partial<ApplyContext> = {}): ApplyContext {
-	const questions = over.questions ?? [makeQuestion()];
-	return {
-		questions,
-		itemsByTab: over.itemsByTab ?? questions.map(() => itemsRegular),
-		pendingNotesValue: over.pendingNotesValue ?? "",
-	};
-}
+import { reduce } from "./state-reducer.js";
 
 describe("reduce — nav", () => {
 	it("regular nav emits clear_input_buffer", () => {

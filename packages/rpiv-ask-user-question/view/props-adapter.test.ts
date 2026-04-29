@@ -10,7 +10,12 @@ import {
 	selectSubmitPickerProps,
 	selectTabBarProps,
 } from "../state/selectors/projections.js";
-import type { QuestionnaireState } from "../state/state.js";
+import {
+	makeQuestion,
+	makeQuestionnaireState as makeState,
+	makeStatefulView,
+	makeTabComponents,
+} from "../test-fixtures.js";
 import type { QuestionAnswer, QuestionData } from "../tool/types.js";
 import { type BoundGlobalBinding, type BoundPerTabBinding, globalBinding, perTabBinding } from "./component-binding.js";
 import type { ChatRowViewProps } from "./components/chat-row-view.js";
@@ -22,35 +27,7 @@ import type { TabBarProps } from "./components/tab-bar.js";
 import type { WrappingSelectItem } from "./components/wrapping-select.js";
 import type { DialogProps } from "./dialog-builder.js";
 import { QuestionnairePropsAdapter } from "./props-adapter.js";
-import type { StatefulView } from "./stateful-view.js";
 import type { TabComponents } from "./tab-components.js";
-
-function makeQuestion(over: Partial<QuestionData> = {}): QuestionData {
-	return {
-		question: over.question ?? "Pick one",
-		header: over.header ?? "H",
-		options: over.options ?? [
-			{ label: "A", description: "a" },
-			{ label: "B", description: "b" },
-		],
-		multiSelect: over.multiSelect,
-	};
-}
-
-function makeState(over: Partial<QuestionnaireState> = {}): QuestionnaireState {
-	return {
-		currentTab: over.currentTab ?? 0,
-		optionIndex: over.optionIndex ?? 0,
-		inputMode: over.inputMode ?? false,
-		notesVisible: over.notesVisible ?? false,
-		chatFocused: over.chatFocused ?? false,
-		answers: over.answers ?? new Map(),
-		multiSelectChecked: over.multiSelectChecked ?? new Set(),
-		notesByTab: over.notesByTab ?? new Map(),
-		focusedOptionHasPreview: over.focusedOptionHasPreview ?? false,
-		submitChoiceIndex: over.submitChoiceIndex ?? 0,
-	};
-}
 
 function makeFixture(overQuestions?: QuestionData[]) {
 	const questions = overQuestions ?? [makeQuestion(), makeQuestion()];
@@ -59,24 +36,18 @@ function makeFixture(overQuestions?: QuestionData[]) {
 		{ kind: "option", label: "B" },
 	]);
 
-	const stub = <P>(): StatefulView<P> => ({
-		setProps: vi.fn(),
-		render: () => [],
-		invalidate: () => {},
-		handleInput: () => {},
-	});
+	const tabsByIndex: TabComponents[] = questions.map((q) =>
+		makeTabComponents({
+			optionList: makeStatefulView<OptionListViewProps>(),
+			preview: makeStatefulView<PreviewPaneProps>(),
+			multiSelect: q.multiSelect ? makeStatefulView<MultiSelectViewProps>() : undefined,
+		}),
+	);
 
-	const tabsByIndex: TabComponents[] = questions.map((q) => ({
-		optionList: stub<OptionListViewProps>(),
-		preview: stub<PreviewPaneProps>(),
-		multiSelect: q.multiSelect ? stub<MultiSelectViewProps>() : undefined,
-		bodyHeights: () => ({ current: 0, max: 0 }),
-	}));
-
-	const chatRow = stub<ChatRowViewProps>();
-	const submitPicker = stub<SubmitPickerProps>();
-	const tabBar = stub<TabBarProps>();
-	const dialog = stub<DialogProps>();
+	const chatRow = makeStatefulView<ChatRowViewProps>();
+	const submitPicker = makeStatefulView<SubmitPickerProps>();
+	const tabBar = makeStatefulView<TabBarProps>();
+	const dialog = makeStatefulView<DialogProps>();
 	const inputBuffer = new InputBuffer();
 	const tui = { requestRender: vi.fn() };
 
