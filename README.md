@@ -6,7 +6,7 @@ Monorepo for Pi CLI extensions in the `@juicesharp/rpiv-*` family. Lockstep vers
 
 | Package | Description |
 |---|---|
-| [`@juicesharp/rpiv-pi`](packages/rpiv-pi) | Umbrella extension — skill-based workflow.<br>Default: `discover` → `research` → `design` → `plan` → `implement` → `validate`<br>One-shot: `discover` → `research` → `blueprint` → `implement` → `validate`<br>Ship: `code-review` ↔ `commit` (interchangeable order); mid-flight: `revise` |
+| [`@juicesharp/rpiv-pi`](packages/rpiv-pi) | Umbrella extension — skill-based workflow.<br>Default: `discover` → `research` → `design` → `plan` → `implement` → `validate`<br>One-shot: `research` → `blueprint` → `implement` → `validate`<br>Ship: `code-review` ↔ `commit` (interchangeable order); mid-flight: `revise` |
 | [`@juicesharp/rpiv-advisor`](packages/rpiv-advisor) | `advisor` tool + `/advisor` — escalate to a stronger reviewer model |
 | [`@juicesharp/rpiv-args`](packages/rpiv-args) | `$1`/`$ARGUMENTS`/`$@`/`${@:N}` — shell-style placeholder substitution in skill bodies |
 | [`@juicesharp/rpiv-ask-user-question`](packages/rpiv-ask-user-question) | `ask_user_question` tool — structured clarifying-question selector |
