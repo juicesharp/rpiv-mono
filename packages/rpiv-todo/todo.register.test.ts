@@ -2,7 +2,7 @@ import { createMockPi, makeTheme } from "@juicesharp/rpiv-test-utils";
 import type { Theme } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { __resetState, deriveBlocks, registerTodoTool, type Task, type TaskDetails, TOOL_NAME } from "./todo.js";
+import { __resetState, registerTodoTool, type TaskDetails, TOOL_NAME } from "./todo.js";
 
 const theme = makeTheme() as unknown as Theme;
 
@@ -24,28 +24,6 @@ beforeEach(() => {
 });
 afterEach(() => {
 	__resetState();
-});
-
-describe("deriveBlocks", () => {
-	it("returns an empty map when no task has blockedBy", () => {
-		const tasks: Task[] = [
-			{ id: 1, subject: "a", status: "pending" },
-			{ id: 2, subject: "b", status: "pending" },
-		];
-		expect(deriveBlocks(tasks).size).toBe(0);
-	});
-
-	it("inverts blockedBy into a blocks map", () => {
-		const tasks: Task[] = [
-			{ id: 1, subject: "root", status: "pending" },
-			{ id: 2, subject: "dep", status: "pending", blockedBy: [1] },
-			{ id: 3, subject: "dep2", status: "pending", blockedBy: [1, 2] },
-		];
-		const blocks = deriveBlocks(tasks);
-		expect(blocks.get(1)).toEqual([2, 3]);
-		expect(blocks.get(2)).toEqual([3]);
-		expect(blocks.get(3)).toBeUndefined();
-	});
 });
 
 describe("registerTodoTool — registration shape", () => {

@@ -11,7 +11,9 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { reconstructTodoState, registerTodosCommand, registerTodoTool, TOOL_NAME } from "./todo.js";
+import { replayFromBranch } from "./state/replay.js";
+import { replaceState } from "./state/store.js";
+import { registerTodosCommand, registerTodoTool, TOOL_NAME } from "./todo.js";
 import { TodoOverlay } from "./todo-overlay.js";
 
 export default function (pi: ExtensionAPI) {
@@ -22,7 +24,7 @@ export default function (pi: ExtensionAPI) {
 	registerTodosCommand(pi);
 
 	pi.on("session_start", async (_event, ctx) => {
-		reconstructTodoState(ctx);
+		replaceState(replayFromBranch(ctx));
 		if (ctx.hasUI) {
 			todoOverlay ??= new TodoOverlay();
 			todoOverlay.setUICtx(ctx.ui);
@@ -31,12 +33,12 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("session_compact", async (_event, ctx) => {
-		reconstructTodoState(ctx);
+		replaceState(replayFromBranch(ctx));
 		todoOverlay?.update();
 	});
 
 	pi.on("session_tree", async (_event, ctx) => {
-		reconstructTodoState(ctx);
+		replaceState(replayFromBranch(ctx));
 		todoOverlay?.update();
 	});
 
@@ -45,7 +47,7 @@ export default function (pi: ExtensionAPI) {
 		todoOverlay = undefined;
 	});
 
-	// Reads getTodos() at render time; do NOT call reconstructTodoState here
+	// Reads getTodos() at render time; do NOT call replayFromBranch here
 	// (branch is stale — message_end runs after tool_execution_end).
 	pi.on("tool_execution_end", async (event) => {
 		if (event.toolName !== TOOL_NAME || event.isError) return;
