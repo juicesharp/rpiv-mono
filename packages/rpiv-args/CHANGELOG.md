@@ -5,7 +5,7 @@ All notable changes to `@juicesharp/rpiv-args` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.11] - 2026-04-30
 
 ### Changed
 - README rewritten with a concrete usage example (`/skill:deploy api production` → `$1=api`, `$2=production`) and a friendlier opener. `package.json` `description` shortened from the implementation pitch to a one-liner: "pass shell-style $1 / $ARGUMENTS placeholders to your Pi skills".

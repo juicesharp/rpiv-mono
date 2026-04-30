@@ -5,7 +5,7 @@ All notable changes to `@juicesharp/rpiv-advisor` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.11] - 2026-04-30
 
 ### Changed
 - README rewritten with a user-outcome opener ("Let the model ask a stronger model for a second opinion before it acts") and a new `## Features` section covering the reviewer-model picker, `~/.config/rpiv-advisor/advisor.json` persistence (chmod 0600), off-by-default exclusion, and zero-parameter handoff. `package.json` `description` synced.

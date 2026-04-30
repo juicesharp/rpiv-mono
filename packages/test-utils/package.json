@@ -1,6 +1,6 @@
 {
   "name": "@juicesharp/rpiv-test-utils",
-  "version": "1.0.10",
+  "version": "1.0.11",
   "description": "Internal test fixtures for rpiv-mono (not published)",
   "private": true,
   "type": "module",

@@ -5,7 +5,7 @@ All notable changes to `@juicesharp/rpiv-todo` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.11] - 2026-04-30
 
 ### Changed
 - Internal refactor: `todo.ts` split into layered modules under `state/`, `tool/`, and `view/`. The reducer, store, replay, task-graph, response envelope, schema, and view formatters each live in their own file; `todo.ts` is now a thin registration shell that re-exports the pre-refactor public surface so `index.ts`, the overlay, and existing tests keep importing from `./todo.js`. `package.json` `files` array updated to ship the new modules (16 production files in the tarball).

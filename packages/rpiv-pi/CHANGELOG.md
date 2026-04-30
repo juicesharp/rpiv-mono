@@ -5,7 +5,7 @@ All notable changes to `@juicesharp/rpiv-pi` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.11] - 2026-04-30
 
 ### Changed
 - README: added a `## What you get` section above Prerequisites — three-bullet outcome summary (chained AI skills pipeline, named subagents for parallel analysis, session lifecycle hooks) so the elevator pitch lands above the fold.
