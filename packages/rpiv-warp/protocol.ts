@@ -37,8 +37,13 @@ export interface WarpEnvironment {
 // Constants
 // ---------------------------------------------------------------------------
 
-/** Plugin's protocol version — Warp's negotiator picks min(plugin, warp). */
-export const PROTOCOL_VERSION = 1;
+/**
+ * Highest protocol version this plugin can speak. The plugin clamps
+ * client-side via `negotiateProtocolVersion()` and emits the agreed `v`
+ * in every payload, so an older Warp that only speaks v:1 keeps seeing v:1
+ * even after we bump this constant.
+ */
+export const PLUGIN_MAX_PROTOCOL_VERSION = 1;
 
 /**
  * Last broken Warp build per channel. Builds at-or-below the threshold
@@ -69,6 +74,24 @@ export function hasStructuredProtocol(): boolean {
 export function readClientVersion(): string | undefined {
 	const v = process.env.WARP_CLIENT_VERSION;
 	return typeof v === "string" && v.length > 0 ? v : undefined;
+}
+
+/**
+ * Client-side protocol-version clamp.
+ *
+ * Returns min(WARP_CLI_AGENT_PROTOCOL_VERSION, PLUGIN_MAX_PROTOCOL_VERSION).
+ * Falls back to PLUGIN_MAX_PROTOCOL_VERSION when the env var is missing,
+ * empty, or unparseable — matches reference (warpdotdev/opencode-warp
+ * src/payload.ts).
+ *
+ * Pure: env-var reads on every call, no caching, safe under env mutation
+ * in tests (research §Q5 contract).
+ */
+export function negotiateProtocolVersion(): number {
+	const raw = process.env.WARP_CLI_AGENT_PROTOCOL_VERSION;
+	const warpVersion = raw ? Number.parseInt(raw, 10) : Number.NaN;
+	if (Number.isNaN(warpVersion)) return PLUGIN_MAX_PROTOCOL_VERSION;
+	return Math.min(warpVersion, PLUGIN_MAX_PROTOCOL_VERSION);
 }
 
 // ---------------------------------------------------------------------------

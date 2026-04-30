@@ -9,7 +9,7 @@
 import { basename } from "node:path";
 import type { AssistantMessage, UserMessage } from "@mariozechner/pi-ai";
 import type { ExtensionContext, SessionEntry } from "@mariozechner/pi-coding-agent";
-import { PROTOCOL_VERSION, type WarpEvent } from "./protocol.js";
+import { negotiateProtocolVersion, type WarpEvent } from "./protocol.js";
 
 // ---------------------------------------------------------------------------
 // Constants — single definition site for tunables
@@ -124,7 +124,7 @@ export function lastAssistantText(branch: SessionEntry[]): string {
 export function baseEnvelope(event: WarpEvent, ctx: ExtensionContext): WarpPayloadBase {
 	const cwd = ctx.cwd;
 	return {
-		v: PROTOCOL_VERSION,
+		v: negotiateProtocolVersion(),
 		agent: AGENT_ID,
 		event,
 		session_id: ctx.sessionManager.getSessionId(),

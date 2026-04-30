@@ -1,5 +1,5 @@
 import { buildSessionEntries, createMockCtx, makeAssistantMessage, makeUserMessage } from "@juicesharp/rpiv-test-utils";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import {
 	AGENT_ID,
 	baseEnvelope,
@@ -15,7 +15,11 @@ import {
 	TRUNCATE_LIMIT,
 	truncate,
 } from "./payload.js";
-import { PROTOCOL_VERSION } from "./protocol.js";
+import { PLUGIN_MAX_PROTOCOL_VERSION } from "./protocol.js";
+
+beforeEach(() => {
+	process.env.WARP_CLI_AGENT_PROTOCOL_VERSION = "1";
+});
 
 describe("truncate", () => {
 	it("returns input unchanged when ≤ limit", () => {
@@ -95,13 +99,18 @@ describe("baseEnvelope", () => {
 		const ctx = createMockCtx({ cwd: "/tmp/projects/widget" });
 		const env = baseEnvelope("session_start", ctx);
 		expect(env).toEqual({
-			v: PROTOCOL_VERSION,
+			v: PLUGIN_MAX_PROTOCOL_VERSION,
 			agent: AGENT_ID,
 			event: "session_start",
 			session_id: "test-session",
 			cwd: "/tmp/projects/widget",
 			project: "widget",
 		});
+	});
+	it("clamps v to PLUGIN_MAX_PROTOCOL_VERSION when env advertises a higher protocol", () => {
+		process.env.WARP_CLI_AGENT_PROTOCOL_VERSION = "2";
+		const env = baseEnvelope("session_start", createMockCtx({ cwd: "/tmp/projects/widget" }));
+		expect(env.v).toBe(PLUGIN_MAX_PROTOCOL_VERSION);
 	});
 });
 

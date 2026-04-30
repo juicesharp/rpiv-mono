@@ -5,6 +5,8 @@ import {
 	hasStructuredProtocol,
 	isBrokenVersion,
 	isWarpTerminal,
+	negotiateProtocolVersion,
+	PLUGIN_MAX_PROTOCOL_VERSION,
 	parseWarpVersion,
 	readClientVersion,
 	supportsStructured,
@@ -48,6 +50,32 @@ describe("hasStructuredProtocol / readClientVersion", () => {
 		expect(readClientVersion()).toBeUndefined();
 		process.env.WARP_CLIENT_VERSION = "v0.2026.04.01.00.00.stable_01";
 		expect(readClientVersion()).toBe("v0.2026.04.01.00.00.stable_01");
+	});
+});
+
+describe("negotiateProtocolVersion", () => {
+	it("returns PLUGIN_MAX_PROTOCOL_VERSION when env unset", () => {
+		expect(negotiateProtocolVersion()).toBe(PLUGIN_MAX_PROTOCOL_VERSION);
+	});
+	it("returns 1 when env='1'", () => {
+		process.env.WARP_CLI_AGENT_PROTOCOL_VERSION = "1";
+		expect(negotiateProtocolVersion()).toBe(1);
+	});
+	it("clamps to plugin max when env='2'", () => {
+		process.env.WARP_CLI_AGENT_PROTOCOL_VERSION = "2";
+		expect(negotiateProtocolVersion()).toBe(PLUGIN_MAX_PROTOCOL_VERSION);
+	});
+	it("returns 0 when env='0' (Math.min picks the smaller)", () => {
+		process.env.WARP_CLI_AGENT_PROTOCOL_VERSION = "0";
+		expect(negotiateProtocolVersion()).toBe(0);
+	});
+	it("falls back to PLUGIN_MAX_PROTOCOL_VERSION on NaN env='abc'", () => {
+		process.env.WARP_CLI_AGENT_PROTOCOL_VERSION = "abc";
+		expect(negotiateProtocolVersion()).toBe(PLUGIN_MAX_PROTOCOL_VERSION);
+	});
+	it("falls back to PLUGIN_MAX_PROTOCOL_VERSION on empty string", () => {
+		process.env.WARP_CLI_AGENT_PROTOCOL_VERSION = "";
+		expect(negotiateProtocolVersion()).toBe(PLUGIN_MAX_PROTOCOL_VERSION);
 	});
 });
 
