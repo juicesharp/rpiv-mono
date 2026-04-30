@@ -254,9 +254,23 @@ Findings go into Precedents & Lessons. Otherwise skip and note "git history unav
    [Patterns, conventions, and design decisions discovered]
 
    ## Precedents & Lessons
-   [N] similar past changes analyzed. Key commits: `hash` (description).
+   [N] similar past changes analyzed.
 
-   - [Composite lesson 1 — with relevant `commit hash` inline]
+   ### Precedent: [what was added/changed]
+   **Commit(s)**: `hash` — "message" (YYYY-MM-DD)
+   **Blast radius**: N files across M layers
+     layer/ — what changed
+
+   **Follow-up fixes**:
+   - `hash` — "message" (date) — what went wrong
+
+   **Lessons from docs**:
+   - thoughts/path/to/doc.md — key lesson extracted
+
+   **Takeaway**: [one sentence — what to watch out for]
+
+   ### Composite Lessons
+   - [Composite lesson 1 — most recurring pattern first, with relevant `commit hash` inline]
    - [Composite lesson 2]
 
    ## Historical Context (from thoughts/)
@@ -311,4 +325,3 @@ When ready:
   - ALWAYS gather metadata before writing (Step 4)
   - NEVER write the document with placeholder values
 - **Frontmatter consistency**: Always include frontmatter, use snake_case fields, include `questions_source`
-- CC auto-loads CLAUDE.md files when agents read files in a directory — no need to scan for them explicitly
