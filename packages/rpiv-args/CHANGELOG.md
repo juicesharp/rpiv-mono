@@ -7,6 +7,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- README rewritten with a concrete usage example (`/skill:deploy api production` → `$1=api`, `$2=production`) and a friendlier opener. `package.json` `description` shortened from the implementation pitch to a one-liner: "pass shell-style $1 / $ARGUMENTS placeholders to your Pi skills".
+
 ## [1.0.10] - 2026-04-30
 
 ## [1.0.9] - 2026-04-30

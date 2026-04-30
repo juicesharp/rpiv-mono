@@ -7,6 +7,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- README: added a `## What you get` section above Prerequisites — three-bullet outcome summary (chained AI skills pipeline, named subagents for parallel analysis, session lifecycle hooks) so the elevator pitch lands above the fold.
+
 ## [1.0.10] - 2026-04-30
 
 ### Added

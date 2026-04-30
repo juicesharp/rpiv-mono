@@ -7,6 +7,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- README rewritten with a user-outcome opener ("Let the model search the web and read pages") and a new `## Features` section (Brave-backed search 1–10 results, raw/text fetch modes, large-page spillover to temp file, interactive `/web-search-config` setup writing chmod 0600 config). `package.json` `description` synced.
+
 ## [1.0.10] - 2026-04-30
 
 ## [1.0.9] - 2026-04-30

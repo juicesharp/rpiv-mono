@@ -7,6 +7,13 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- Internal refactor: `todo.ts` split into layered modules under `state/`, `tool/`, and `view/`. The reducer, store, replay, task-graph, response envelope, schema, and view formatters each live in their own file; `todo.ts` is now a thin registration shell that re-exports the pre-refactor public surface so `index.ts`, the overlay, and existing tests keep importing from `./todo.js`. `package.json` `files` array updated to ship the new modules (16 production files in the tarball).
+- README rewritten with a user-outcome opener and a new `## Features` section (live overlay, survives `/reload` and compaction, status states, dependency tracking with cycle detection, smart truncation). `package.json` `description` synced.
+
+### Added
+- `ship-manifest.test.ts` — verifies `package.json` `files` covers every production `.ts` module across the package tree, so future module additions can't silently fall out of the npm tarball.
+
 ## [1.0.10] - 2026-04-30
 
 ## [1.0.9] - 2026-04-30

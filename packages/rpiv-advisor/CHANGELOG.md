@@ -7,6 +7,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- README rewritten with a user-outcome opener ("Let the model ask a stronger model for a second opinion before it acts") and a new `## Features` section covering the reviewer-model picker, `~/.config/rpiv-advisor/advisor.json` persistence (chmod 0600), off-by-default exclusion, and zero-parameter handoff. `package.json` `description` synced.
+
 ## [1.0.10] - 2026-04-30
 
 ## [1.0.9] - 2026-04-30
