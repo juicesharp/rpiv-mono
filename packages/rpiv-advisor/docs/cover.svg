@@ -4,11 +4,10 @@
     <style>
       .mono { font-family: 'JetBrains Mono', 'Fira Code', 'SFMono-Regular', ui-monospace, Menlo, Consolas, monospace; }
       .ink { fill: #F4EFE6; }
-      .muted { fill: #7A7468; }
-      .dim { fill: #4A463F; }
+      .muted { fill: #8C8678; }
+      .dim { fill: #4F4A41; }
       .accent { fill: #FF7A3D; }
       .mint { fill: #6FD0B8; }
-      .gold { fill: #D9C25A; }
     </style>
     <filter id="grain" x="0" y="0" width="100%" height="100%">
       <feTurbulence type="fractalNoise" baseFrequency="1.4" numOctaves="2" seed="13"/>
@@ -18,9 +17,17 @@
       <stop offset="55%" stop-color="#070605" stop-opacity="0"/>
       <stop offset="100%" stop-color="#000" stop-opacity="0.7"/>
     </radialGradient>
+    <linearGradient id="titleGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1C1813"/>
+      <stop offset="100%" stop-color="#14110D"/>
+    </linearGradient>
     <filter id="winShadow" x="-10%" y="-10%" width="120%" height="130%">
       <feDropShadow dx="0" dy="14" stdDeviation="22" flood-color="#000" flood-opacity="0.6"/>
     </filter>
+    <radialGradient id="advisorGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#6FD0B8" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="#6FD0B8" stop-opacity="0"/>
+    </radialGradient>
     <clipPath id="wclip"><rect x="64" y="56" width="1152" height="688" rx="12"/></clipPath>
   </defs>
 
@@ -31,27 +38,53 @@
   <rect x="64" y="56" width="1152" height="688" rx="12" fill="#0E0D0B" filter="url(#winShadow)"/>
 
   <g clip-path="url(#wclip)">
-    <rect x="64" y="56" width="1152" height="44" fill="#16120E"/>
+    <rect x="64" y="56" width="1152" height="44" fill="url(#titleGrad)"/>
     <line x1="64" y1="100" x2="1216" y2="100" stroke="#2A2620"/>
+    <line x1="64" y1="57" x2="1216" y2="57" stroke="#3A352D" stroke-opacity="0.6"/>
     <circle cx="92"  cy="78" r="7" fill="#FF5F57"/>
     <circle cx="120" cy="78" r="7" fill="#FFBD2E"/>
     <circle cx="148" cy="78" r="7" fill="#28C840"/>
     <text class="mono muted" x="640" y="84" font-size="14" letter-spacing="1.4" text-anchor="middle">~/rpiv-mono &#8212; pi &#8212; rpiv-advisor</text>
 
-    <text class="mono mint" x="120" y="184" font-size="46" font-weight="700"># rpiv-advisor</text>
-    <text class="mono muted" x="120" y="222" font-size="20" letter-spacing="0.5">A stronger reviewer, on demand.</text>
+    <text class="mono mint" x="120" y="190" font-size="46" font-weight="700"># rpiv-advisor</text>
+    <text class="mono muted" x="120" y="226" font-size="20">A stronger reviewer, on demand.</text>
 
-    <text class="mono" x="120" y="298" font-size="22"><tspan class="mint" font-weight="700">&#10095;</tspan> <tspan class="ink">/advisor set</tspan> <tspan class="muted">--model claude-opus-4-7</tspan></text>
+    <g transform="translate(220 440)">
+      <circle r="38" fill="#0E0D0B" stroke="#FF7A3D" stroke-width="2.4"/>
+      <circle r="11" fill="#FF7A3D"/>
+      <text class="mono ink" x="0" y="76" font-size="18" letter-spacing="1.4" text-anchor="middle" font-weight="700">EXECUTOR</text>
+      <text class="mono muted" x="0" y="100" font-size="13" letter-spacing="1.2" text-anchor="middle">working model</text>
+    </g>
 
-    <text class="mono" x="120" y="370" font-size="22"><tspan class="accent" font-weight="700">[executor]</tspan>  <tspan class="gold">&#9680;</tspan>  <tspan class="ink">before I commit&#8230;</tspan></text>
-    <text class="mono" x="120" y="410" font-size="22"><tspan class="accent" font-weight="700">[executor]</tspan>  <tspan class="accent">&#8594;</tspan>  <tspan class="ink">advisor()</tspan>  <tspan class="dim">&#183; serialize branch</tspan></text>
-    <text class="mono" x="120" y="470" font-size="22"><tspan class="mint" font-weight="700">[advisor]</tspan>   <tspan class="mint">&#8592;</tspan>  <tspan class="muted">read branch + tool inventory</tspan></text>
-    <text class="mono" x="120" y="510" font-size="22"><tspan class="mint" font-weight="700">[advisor]</tspan>   <tspan class="mint">&#9210;</tspan>  <tspan class="muted">reasoning (high effort)</tspan></text>
-    <text class="mono" x="120" y="550" font-size="22"><tspan class="mint" font-weight="700">[advisor]</tspan>   <tspan class="mint">&#10003;</tspan>  <tspan class="ink">stop</tspan> <tspan class="dim">&#183;</tspan> <tspan class="ink">correct</tspan> <tspan class="dim">&#183;</tspan> <tspan class="ink">plan</tspan></text>
+    <line x1="270" y1="440" x2="690" y2="440" stroke="#FF7A3D" stroke-width="1.8" stroke-dasharray="6 6"/>
+    <path d="M682 432 L696 440 L682 448" fill="none" stroke="#FF7A3D" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+    <rect x="406" y="412" width="148" height="32" fill="#15120E" stroke="#FF7A3D" stroke-width="1.2"/>
+    <text class="mono accent" x="480" y="434" font-size="18" font-weight="700" text-anchor="middle">advisor()</text>
 
-    <text class="mono dim" x="120" y="618" font-size="14" letter-spacing="2.2">REGISTERED-BUT-INACTIVE UNTIL A MODEL IS SELECTED VIA /advisor</text>
+    <g transform="translate(770 440)">
+      <circle r="84" fill="url(#advisorGlow)"/>
+      <circle r="48" fill="#13110D" stroke="#6FD0B8" stroke-width="2.4"/>
+      <circle r="14" fill="#6FD0B8"/>
+      <text class="mono mint" x="0" y="86" font-size="18" letter-spacing="1.4" text-anchor="middle" font-weight="700">ADVISOR</text>
+      <text class="mono muted" x="0" y="110" font-size="13" letter-spacing="1.2" text-anchor="middle">stronger reviewer</text>
+    </g>
 
-    <rect x="64" y="708" width="1152" height="36" fill="#16120E"/>
+    <line x1="822" y1="412" x2="980" y2="376" stroke="#6FD0B8" stroke-width="1.4" stroke-dasharray="3 4"/>
+    <line x1="822" y1="440" x2="980" y2="440" stroke="#6FD0B8" stroke-width="1.4" stroke-dasharray="3 4"/>
+    <line x1="822" y1="468" x2="980" y2="504" stroke="#6FD0B8" stroke-width="1.4" stroke-dasharray="3 4"/>
+
+    <rect x="980" y="358" width="120" height="36" fill="#13110D" stroke="#2A4D45" stroke-width="1"/>
+    <text class="mono mint" x="1040" y="382" font-size="16" letter-spacing="1.4" text-anchor="middle" font-weight="700">PLAN</text>
+
+    <rect x="980" y="422" width="120" height="36" fill="#13110D" stroke="#2A4D45" stroke-width="1"/>
+    <text class="mono mint" x="1040" y="446" font-size="16" letter-spacing="1.4" text-anchor="middle" font-weight="700">CORRECT</text>
+
+    <rect x="980" y="486" width="120" height="36" fill="#13110D" stroke="#2A4D45" stroke-width="1"/>
+    <text class="mono mint" x="1040" y="510" font-size="16" letter-spacing="1.4" text-anchor="middle" font-weight="700">STOP</text>
+
+    <text class="mono dim" x="640" y="624" font-size="13" letter-spacing="2.4" text-anchor="middle">REGISTERED-BUT-INACTIVE UNTIL A MODEL IS SELECTED VIA /advisor</text>
+
+    <rect x="64" y="708" width="1152" height="36" fill="url(#titleGrad)"/>
     <line x1="64" y1="708" x2="1216" y2="708" stroke="#2A2620"/>
     <text class="mono" font-size="14" y="731" letter-spacing="1">
       <tspan x="92" class="accent" font-weight="700">&#9612; rpiv-advisor</tspan>

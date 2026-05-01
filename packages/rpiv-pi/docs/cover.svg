@@ -4,11 +4,10 @@
     <style>
       .mono { font-family: 'JetBrains Mono', 'Fira Code', 'SFMono-Regular', ui-monospace, Menlo, Consolas, monospace; }
       .ink { fill: #F4EFE6; }
-      .muted { fill: #7A7468; }
-      .dim { fill: #4A463F; }
+      .muted { fill: #8C8678; }
+      .dim { fill: #4F4A41; }
       .accent { fill: #FF7A3D; }
       .mint { fill: #6FD0B8; }
-      .gold { fill: #D9C25A; }
     </style>
     <filter id="grain" x="0" y="0" width="100%" height="100%">
       <feTurbulence type="fractalNoise" baseFrequency="1.4" numOctaves="2" seed="11"/>
@@ -18,6 +17,10 @@
       <stop offset="55%" stop-color="#070605" stop-opacity="0"/>
       <stop offset="100%" stop-color="#000" stop-opacity="0.7"/>
     </radialGradient>
+    <linearGradient id="titleGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1C1813"/>
+      <stop offset="100%" stop-color="#14110D"/>
+    </linearGradient>
     <filter id="winShadow" x="-10%" y="-10%" width="120%" height="130%">
       <feDropShadow dx="0" dy="14" stdDeviation="22" flood-color="#000" flood-opacity="0.6"/>
     </filter>
@@ -31,28 +34,60 @@
   <rect x="64" y="56" width="1152" height="688" rx="12" fill="#0E0D0B" filter="url(#winShadow)"/>
 
   <g clip-path="url(#wclip)">
-    <rect x="64" y="56" width="1152" height="44" fill="#16120E"/>
+    <rect x="64" y="56" width="1152" height="44" fill="url(#titleGrad)"/>
     <line x1="64" y1="100" x2="1216" y2="100" stroke="#2A2620"/>
+    <line x1="64" y1="57" x2="1216" y2="57" stroke="#3A352D" stroke-opacity="0.6"/>
     <circle cx="92"  cy="78" r="7" fill="#FF5F57"/>
     <circle cx="120" cy="78" r="7" fill="#FFBD2E"/>
     <circle cx="148" cy="78" r="7" fill="#28C840"/>
     <text class="mono muted" x="640" y="84" font-size="14" letter-spacing="1.4" text-anchor="middle">~/rpiv-mono &#8212; pi &#8212; rpiv-pi</text>
 
-    <text class="mono mint" x="120" y="184" font-size="46" font-weight="700"># rpiv-pi</text>
-    <text class="mono muted" x="120" y="222" font-size="20" letter-spacing="0.5">Skill-based development workflow for Pi Agent.</text>
+    <text class="mono mint" x="120" y="190" font-size="46" font-weight="700"># rpiv-pi</text>
+    <text class="mono muted" x="120" y="226" font-size="20">Skill-based development workflow for Pi Agent.</text>
 
-    <text class="mono" x="120" y="298" font-size="22"><tspan class="mint" font-weight="700">&#10095;</tspan> <tspan class="ink">pi run /skill:design  </tspan><tspan class="muted">"user-auth refactor"</tspan></text>
+    <line x1="200" y1="430" x2="1080" y2="430" stroke="#FF7A3D" stroke-width="2"/>
+    <path d="M1070 421 L1086 430 L1070 439" fill="none" stroke="#FF7A3D" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
 
-    <text class="mono" x="120" y="360" font-size="22"><tspan class="dim">[01]</tspan>  <tspan class="mint">&#10003;</tspan>  <tspan class="muted">discover</tspan>     <tspan class="dim">questions/</tspan></text>
-    <text class="mono" x="120" y="396" font-size="22"><tspan class="dim">[02]</tspan>  <tspan class="mint">&#10003;</tspan>  <tspan class="muted">research</tspan>     <tspan class="dim">research/</tspan></text>
-    <text class="mono" x="120" y="432" font-size="22"><tspan class="dim">[03]</tspan>  <tspan class="gold" font-weight="700">&#9680;</tspan>  <tspan class="ink" font-weight="700">design</tspan>       <tspan class="dim">designs/</tspan>    <tspan class="mint" font-weight="700">&#9646;</tspan></text>
-    <text class="mono" x="120" y="468" font-size="22"><tspan class="dim">[04]</tspan>  <tspan class="muted">&#9675;</tspan>  <tspan class="muted">plan</tspan>         <tspan class="dim">plans/</tspan></text>
-    <text class="mono" x="120" y="504" font-size="22"><tspan class="dim">[05]</tspan>  <tspan class="muted">&#9675;</tspan>  <tspan class="muted">implement</tspan>    <tspan class="dim">./src/**</tspan></text>
-    <text class="mono" x="120" y="540" font-size="22"><tspan class="dim">[06]</tspan>  <tspan class="muted">&#9675;</tspan>  <tspan class="muted">validate</tspan>     <tspan class="dim">reviews/</tspan></text>
+    <g transform="translate(200 430)">
+      <circle r="14" fill="#0E0D0B" stroke="#FF7A3D" stroke-width="2"/>
+      <circle r="5" fill="#FF7A3D"/>
+      <text class="mono dim" x="0" y="-32" font-size="12" letter-spacing="1.4" text-anchor="middle">01</text>
+      <text class="mono ink" x="0" y="52" font-size="16" letter-spacing="1.4" text-anchor="middle" font-weight="700">DISCOVER</text>
+    </g>
+    <g transform="translate(376 430)">
+      <circle r="14" fill="#0E0D0B" stroke="#FF7A3D" stroke-width="2"/>
+      <circle r="5" fill="#FF7A3D"/>
+      <text class="mono dim" x="0" y="-32" font-size="12" letter-spacing="1.4" text-anchor="middle">02</text>
+      <text class="mono ink" x="0" y="52" font-size="16" letter-spacing="1.4" text-anchor="middle" font-weight="700">RESEARCH</text>
+    </g>
+    <g transform="translate(552 430)">
+      <circle r="14" fill="#0E0D0B" stroke="#FF7A3D" stroke-width="2"/>
+      <circle r="5" fill="#FF7A3D"/>
+      <text class="mono dim" x="0" y="-32" font-size="12" letter-spacing="1.4" text-anchor="middle">03</text>
+      <text class="mono ink" x="0" y="52" font-size="16" letter-spacing="1.4" text-anchor="middle" font-weight="700">DESIGN</text>
+    </g>
+    <g transform="translate(728 430)">
+      <circle r="14" fill="#0E0D0B" stroke="#FF7A3D" stroke-width="2"/>
+      <circle r="5" fill="#FF7A3D"/>
+      <text class="mono dim" x="0" y="-32" font-size="12" letter-spacing="1.4" text-anchor="middle">04</text>
+      <text class="mono ink" x="0" y="52" font-size="16" letter-spacing="1.4" text-anchor="middle" font-weight="700">PLAN</text>
+    </g>
+    <g transform="translate(904 430)">
+      <circle r="14" fill="#0E0D0B" stroke="#FF7A3D" stroke-width="2"/>
+      <circle r="5" fill="#FF7A3D"/>
+      <text class="mono dim" x="0" y="-32" font-size="12" letter-spacing="1.4" text-anchor="middle">05</text>
+      <text class="mono ink" x="0" y="52" font-size="16" letter-spacing="1.4" text-anchor="middle" font-weight="700">IMPLEMENT</text>
+    </g>
+    <g transform="translate(1080 430)">
+      <circle r="16" fill="#13110D" stroke="#6FD0B8" stroke-width="2"/>
+      <circle r="6" fill="#6FD0B8"/>
+      <text class="mono dim" x="0" y="-32" font-size="12" letter-spacing="1.4" text-anchor="middle">06</text>
+      <text class="mono mint" x="0" y="52" font-size="16" letter-spacing="1.4" text-anchor="middle" font-weight="700">VALIDATE</text>
+    </g>
 
-    <text class="mono dim" x="120" y="612" font-size="14" letter-spacing="2.2">12 NAMED SUBAGENTS &#183; CHAINED SKILLS &#183; SESSION HOOKS</text>
+    <text class="mono dim" x="640" y="612" font-size="13" letter-spacing="2.4" text-anchor="middle">CHAINED AI SKILLS &#183; 12 NAMED SUBAGENTS &#183; thoughts/shared/</text>
 
-    <rect x="64" y="708" width="1152" height="36" fill="#16120E"/>
+    <rect x="64" y="708" width="1152" height="36" fill="url(#titleGrad)"/>
     <line x1="64" y1="708" x2="1216" y2="708" stroke="#2A2620"/>
     <text class="mono" font-size="14" y="731" letter-spacing="1">
       <tspan x="92" class="accent" font-weight="700">&#9612; rpiv-pi</tspan>
