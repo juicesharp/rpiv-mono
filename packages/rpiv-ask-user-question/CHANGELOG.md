@@ -9,9 +9,17 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 - `docs/cover.png` — package hero (rasterized from `docs/cover.svg` via `rsvg-convert`, 1280×640).
+- New paste/Kitty test fixtures in `factory.test.ts` covering bracketed paste (single + split chunks), embedded `\n`/`\r`/`\t` cleaning, Kitty CSI-u printables, paste+type+backspace merged edits, and raw multi-character chunks (Terminal.app / macOS Dictation parity).
 
 ### Changed
 - README hero: open with a `<picture>`-wrapped `cover.png` above the shield badges so pi.dev's package-card image extractor picks the friendly artwork instead of the npm version shield. Existing `docs/code-preview.jpg` screenshot retained below the description; the `## Screens` grid is unchanged.
+- Internal: inline-Other free-text row now owns a headless `pi-tui` `Input` instance (`inlineInput`), mirroring the existing `notesInput` ownership pattern. Replaces the session-level `InputBuffer` cell + ESC-prefix-filtered append fast path. `QuestionnaireState` shape and the closed `Effect` union are unchanged.
+
+### Fixed
+- Inline-Other free-text row now correctly accepts bracketed paste (`\x1b[200~…\x1b[201~`), Kitty CSI-u printables (`\x1b[97u`, etc.), split-chunk paste reassembly, and raw unframed multi-character chunks. Fixes dictation tools (Wispr Flow, FluidVoice, Aqua Voice, macOS Dictation) which previously had their text dropped by the legacy `stripControlChars` filter on Warp / Ghostty / kitty / WezTerm / Terminal.app.
+
+### Removed
+- `state/input-buffer.ts` and the legacy filter surface on `WrappingSelect` (`stripControlChars`, `appendInput`, `backspaceInput`, `getInputBuffer`, `clearInputBuffer`). `setInputBuffer` is now a plain assignment driven by `OptionListView.setProps`.
 
 ## [1.0.11] - 2026-04-30
 

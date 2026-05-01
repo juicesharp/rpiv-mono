@@ -12,6 +12,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 - README now opens with a `<picture>`-wrapped `cover.png` hero so pi.dev's package-card image extractor picks the friendly artwork instead of the npm version shield.
+- `research` skill now wires the blueprint skill as an explicit downstream path alongside `design`; matches the existing two-track `design` vs `blueprint` flow on the consumer side.
+
+### Fixed
+- `research` skill no longer leaks `rpiv-args` invocation tokens into prompts. Tightens the templating boundary so `${args}` substitutions never reach the rendered output.
 
 ## [1.0.11] - 2026-04-30
 

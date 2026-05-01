@@ -9,9 +9,14 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 - `docs/cover.png` — package hero (rasterized from `docs/cover.svg` via `rsvg-convert`, 1280×640).
+- `session_start` payload emission on `agent_start` so Warp learns the project context at agent boot, before any tool call.
+- Client-side protocol-version negotiation: parse `WARP_CLI_AGENT_PROTOCOL_VERSION` and gate emission on the negotiated version, replacing the prior hard-coded broken-build check.
+- Config-driven blocking-tool flow: subscribes to `question_asked` / `tool_complete`, drives the OSC 777 envelope from a per-tool config table instead of the inline `NOTIFY_TOOL_NAMES` allowlist. Adds `ask_user_question` as the initial blocking-tool entry.
 
 ### Changed
 - README now opens with a `<picture>`-wrapped `cover.png` hero so GitHub renders friendly artwork at the top of the package page.
+- `package.json` now carries `"private": true` to gate npm publish — the package joins lockstep + shared CI infrastructure but does not publish until explicitly opted in.
+- Agent-start emission switched from `session_start` to `prompt_submit` so Warp's UI cues fire on user-prompt cadence rather than session boot.
 
 ## [1.0.11] - 2026-04-30
 
