@@ -1,0 +1,135 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 540 1200" role="img" aria-label="rpiv-advisor — Second-opinion handoff to a stronger reviewer model" preserveAspectRatio="xMidYMid meet">
+  <title>rpiv-advisor — Second-opinion handoff to a stronger reviewer model</title>
+  <defs>
+    <style>
+      .mono   { font-family: 'JetBrains Mono', 'Fira Code', 'SFMono-Regular', ui-monospace, Menlo, Consolas, monospace; }
+      .ink    { fill: #F4EFE6; }
+      .paper  { fill: #0E0D0B; }
+      .muted  { fill: #7A7468; }
+      .dim    { fill: #4A463F; }
+      .accent { fill: #FF7A3D; }
+      .mint   { fill: #6FD0B8; }
+      .rule   { stroke: #2A2620; }
+      .rule-bright { stroke: #FF7A3D; }
+    </style>
+    <filter id="grain" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="1.4" numOctaves="2" seed="13"/>
+      <feColorMatrix values="0 0 0 0 0.96  0 0 0 0 0.94  0 0 0 0 0.88  0 0 0 0.06 0"/>
+    </filter>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0 H0 V32" fill="none" stroke="#161411" stroke-width="0.5"/>
+    </pattern>
+    <pattern id="dots" width="6" height="6" patternUnits="userSpaceOnUse">
+      <circle cx="3" cy="3" r="0.6" fill="#231F1A"/>
+    </pattern>
+    <radialGradient id="vignette" cx="50%" cy="50%" r="70%">
+      <stop offset="60%" stop-color="#0E0D0B" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#000" stop-opacity="0.55"/>
+    </radialGradient>
+    <radialGradient id="reviewerGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#6FD0B8" stop-opacity="0.45"/>
+      <stop offset="60%" stop-color="#6FD0B8" stop-opacity="0.05"/>
+      <stop offset="100%" stop-color="#6FD0B8" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="540" height="1200" class="paper"/>
+  <rect width="540" height="1200" fill="url(#grid)" opacity="0.55"/>
+  <rect width="540" height="1200" fill="url(#dots)" opacity="0.4"/>
+  <rect width="540" height="1200" filter="url(#grain)" opacity="0.5"/>
+  <rect width="540" height="1200" fill="url(#vignette)"/>
+
+  <g class="rule-bright" stroke-width="1" fill="none" opacity="0.95">
+    <path d="M24 56 L40 56 M40 40 L40 56"/>
+    <path d="M516 56 L500 56 M500 40 L500 56"/>
+    <path d="M24 1144 L40 1144 M40 1160 L40 1144"/>
+    <path d="M516 1144 L500 1144 M500 1160 L500 1144"/>
+  </g>
+
+  <line x1="40" y1="56" x2="500" y2="56" class="rule" stroke-width="1"/>
+  <text class="mono muted" x="40"  y="44" font-size="9" letter-spacing="2">@JUICESHARP &#183; PI EXTENSION &#183; NO. 003 &#8211; ADVISOR</text>
+  <text class="mono muted" x="500" y="44" font-size="9" letter-spacing="2" text-anchor="end">MIT &#183; v0.9 &#183; 540 &#215; 1200</text>
+
+  <!-- Logotype -->
+  <text class="mono ink" x="40" y="124" font-size="56" font-weight="700" letter-spacing="-2">rpiv<tspan class="accent">-</tspan>advisor</text>
+  <line x1="40" y1="138" x2="100" y2="138" class="rule-bright" stroke-width="2"/>
+  <text class="mono muted" x="40" y="160" font-size="12" letter-spacing="0.3">A second-opinion handoff to a stronger reviewer.</text>
+  <text class="mono dim"   x="40" y="178" font-size="9" letter-spacing="1.4">REVIEWER PICKER &#183; ZERO-PARAM &#183; OFF BY DEFAULT</text>
+
+  <text class="mono muted" x="40"  y="222" font-size="9" letter-spacing="2">FIG. 01 &#8212; SECOND-OPINION HANDOFF</text>
+  <text class="mono muted" x="500" y="222" font-size="9" letter-spacing="2" text-anchor="end">advisor()</text>
+  <line x1="40" y1="232" x2="500" y2="232" class="rule" stroke-width="0.75"/>
+
+  <!-- HERO: vertical handoff -->
+
+  <!-- 001 EXECUTOR -->
+  <text class="mono dim" x="40" y="278" font-size="9" letter-spacing="1.8">001 &#8212; EXECUTOR</text>
+  <g transform="translate(270 320)">
+    <circle r="22" fill="#0E0D0B" stroke="#FF7A3D" stroke-width="1.6"/>
+    <circle r="6"  fill="#FF7A3D"/>
+    <text class="mono ink"   x="0" y="50" font-size="12" letter-spacing="1.4" text-anchor="middle" font-weight="700">EXECUTOR</text>
+    <text class="mono muted" x="0" y="64" font-size="9" letter-spacing="1.2" text-anchor="middle">working model</text>
+  </g>
+
+  <!-- conversation branch tiles, centered under executor -->
+  <g transform="translate(110 410)">
+    <text class="mono dim" x="0" y="0" font-size="8.5" letter-spacing="1.8">CONVERSATION BRANCH &#8226; SERIALIZED</text>
+    <rect x="0"   y="8"  width="320" height="14" fill="#15120E" stroke="#221E18" stroke-width="0.5"/>
+    <rect x="0"   y="24" width="280" height="14" fill="#15120E" stroke="#221E18" stroke-width="0.5"/>
+    <rect x="0"   y="40" width="320" height="14" fill="#15120E" stroke="#221E18" stroke-width="0.5"/>
+    <rect x="0"   y="56" width="240" height="14" fill="#15120E" stroke="#221E18" stroke-width="0.5"/>
+    <text class="mono muted" x="6"  y="19" font-size="9">user &#8250; how should this be wired?</text>
+    <text class="mono muted" x="6"  y="35" font-size="9">assistant &#8250; let me try option A</text>
+    <text class="mono muted" x="6"  y="51" font-size="9">tool &#8250; edit src/foo.ts (-12 +24)</text>
+    <text class="mono muted" x="6"  y="67" font-size="9">assistant &#8250; before I commit&#8230;</text>
+  </g>
+
+  <!-- vertical handoff arrow -->
+  <line x1="270" y1="510" x2="270" y2="606" class="rule-bright" stroke-width="1.6" stroke-dasharray="4 4"/>
+  <path d="M262 596 L270 614 L278 596" fill="none" stroke="#FF7A3D" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+
+  <!-- function-call tile sitting on the arrow -->
+  <g transform="translate(270 558)">
+    <rect x="-92" y="-18" width="184" height="36" fill="#15120E" stroke="#FF7A3D" stroke-width="1"/>
+    <text class="mono accent" x="0" y="0"  font-size="13" font-weight="700" text-anchor="middle">advisor()</text>
+    <text class="mono muted"  x="0" y="13" font-size="8.5" letter-spacing="1.2" text-anchor="middle">SERIALIZE BRANCH &#183; SIDE-CALL</text>
+  </g>
+
+  <!-- 002 REVIEWER -->
+  <text class="mono dim" x="40" y="660" font-size="9" letter-spacing="1.8">002 &#8212; REVIEWER (e.g. Opus)</text>
+  <g transform="translate(270 720)">
+    <circle r="56" fill="url(#reviewerGlow)"/>
+    <circle r="32" fill="#13110D" stroke="#6FD0B8" stroke-width="1.6"/>
+    <circle r="9"  fill="#6FD0B8"/>
+    <text class="mono mint"  x="0" y="64" font-size="12" letter-spacing="1.4" text-anchor="middle" font-weight="700">ADVISOR</text>
+    <text class="mono muted" x="0" y="80" font-size="9" letter-spacing="1.2" text-anchor="middle">stronger reviewer</text>
+  </g>
+
+  <!-- branches splaying down -->
+  <g>
+    <line x1="248" y1="752" x2="120" y2="870" stroke="#6FD0B8" stroke-width="1" stroke-dasharray="2 3"/>
+    <line x1="270" y1="760" x2="270" y2="870" stroke="#6FD0B8" stroke-width="1" stroke-dasharray="2 3"/>
+    <line x1="292" y1="752" x2="420" y2="870" stroke="#6FD0B8" stroke-width="1" stroke-dasharray="2 3"/>
+
+    <rect x="76"  y="870" width="88" height="28" fill="#13110D" stroke="#2A4D45" stroke-width="0.75"/>
+    <text class="mono mint" x="120" y="889" font-size="12" letter-spacing="1.4" text-anchor="middle" font-weight="700">PLAN</text>
+
+    <rect x="226" y="870" width="88" height="28" fill="#13110D" stroke="#2A4D45" stroke-width="0.75"/>
+    <text class="mono mint" x="270" y="889" font-size="11" letter-spacing="1.2" text-anchor="middle" font-weight="700">CORRECT</text>
+
+    <rect x="376" y="870" width="88" height="28" fill="#13110D" stroke="#2A4D45" stroke-width="0.75"/>
+    <text class="mono mint" x="420" y="889" font-size="12" letter-spacing="1.4" text-anchor="middle" font-weight="700">STOP</text>
+  </g>
+
+  <text class="mono muted" x="40"  y="952" font-size="9" letter-spacing="1.4">REGISTERED-BUT-INACTIVE UNTIL A MODEL IS SELECTED</text>
+  <text class="mono muted" x="40"  y="968" font-size="9" letter-spacing="1.4">VIA /advisor &#8226; ~/.config/rpiv-advisor/advisor.json (0600)</text>
+
+  <line x1="40" y1="1100" x2="500" y2="1100" class="rule" stroke-width="0.5" stroke-dasharray="1 3"/>
+  <text class="mono muted" x="40"  y="1118" font-size="9" letter-spacing="1.8">EXECUTOR &#8594; ADVISOR &#8594; GUIDANCE</text>
+
+  <line x1="40" y1="1144" x2="500" y2="1144" class="rule" stroke-width="1"/>
+  <text class="mono muted" x="40"  y="1168" font-size="9.5" letter-spacing="1.8">
+    <tspan class="accent">&#9654;</tspan>  pi install npm:@juicesharp/rpiv-advisor
+  </text>
+  <text class="mono muted" x="500" y="1168" font-size="9" letter-spacing="2" text-anchor="end">SECOND OPINION</text>
+</svg>

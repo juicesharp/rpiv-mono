@@ -1,0 +1,181 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 540 1200" role="img" aria-label="rpiv-pi — Skill-based development workflow for Pi Agent" preserveAspectRatio="xMidYMid meet">
+  <title>rpiv-pi — Skill-based development workflow for Pi Agent</title>
+  <defs>
+    <style>
+      .mono   { font-family: 'JetBrains Mono', 'Fira Code', 'SFMono-Regular', ui-monospace, Menlo, Consolas, monospace; }
+      .ink    { fill: #F4EFE6; }
+      .paper  { fill: #0E0D0B; }
+      .muted  { fill: #7A7468; }
+      .dim    { fill: #4A463F; }
+      .accent { fill: #FF7A3D; }
+      .mint   { fill: #6FD0B8; }
+      .rule   { stroke: #2A2620; }
+      .rule-bright { stroke: #FF7A3D; }
+    </style>
+    <filter id="grain" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="1.4" numOctaves="2" seed="11"/>
+      <feColorMatrix values="0 0 0 0 0.96  0 0 0 0 0.94  0 0 0 0 0.88  0 0 0 0.06 0"/>
+    </filter>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0 H0 V32" fill="none" stroke="#161411" stroke-width="0.5"/>
+    </pattern>
+    <pattern id="dots" width="6" height="6" patternUnits="userSpaceOnUse">
+      <circle cx="3" cy="3" r="0.6" fill="#231F1A"/>
+    </pattern>
+    <radialGradient id="vignette" cx="50%" cy="50%" r="70%">
+      <stop offset="60%" stop-color="#0E0D0B" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#000" stop-opacity="0.55"/>
+    </radialGradient>
+    <radialGradient id="piGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#FF7A3D" stop-opacity="0.55"/>
+      <stop offset="60%" stop-color="#FF7A3D" stop-opacity="0.05"/>
+      <stop offset="100%" stop-color="#FF7A3D" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="540" height="1200" class="paper"/>
+  <rect width="540" height="1200" fill="url(#grid)" opacity="0.55"/>
+  <rect width="540" height="1200" fill="url(#dots)" opacity="0.4"/>
+  <rect width="540" height="1200" filter="url(#grain)" opacity="0.5"/>
+  <rect width="540" height="1200" fill="url(#vignette)"/>
+
+  <!-- Crop marks -->
+  <g class="rule-bright" stroke-width="1" fill="none" opacity="0.95">
+    <path d="M24 56 L40 56 M40 40 L40 56"/>
+    <path d="M516 56 L500 56 M500 40 L500 56"/>
+    <path d="M24 1144 L40 1144 M40 1160 L40 1144"/>
+    <path d="M516 1144 L500 1144 M500 1160 L500 1144"/>
+  </g>
+
+  <!-- Top spec strip -->
+  <line x1="40" y1="56" x2="500" y2="56" class="rule" stroke-width="1"/>
+  <text class="mono muted" x="40"  y="44" font-size="9" letter-spacing="2">@JUICESHARP &#183; PI EXTENSION &#183; NO. 001 &#8211; CORE</text>
+  <text class="mono muted" x="500" y="44" font-size="9" letter-spacing="2" text-anchor="end">MIT &#183; v0.9 &#183; 540 &#215; 1200</text>
+
+  <!-- Logotype + Pi stamp -->
+  <text class="mono ink" x="40" y="124" font-size="56" font-weight="700" letter-spacing="-2">rpiv<tspan class="accent">-</tspan>pi</text>
+  <line x1="40" y1="138" x2="100" y2="138" class="rule-bright" stroke-width="2"/>
+  <text class="mono muted" x="40" y="160" font-size="12" letter-spacing="0.3">Skill-based development workflow for Pi Agent.</text>
+  <text class="mono dim"   x="40" y="178" font-size="9" letter-spacing="1.8">CHAINED SKILLS &#183; 12 SUBAGENTS &#183; SESSION HOOKS</text>
+
+  <!-- Pi mark stamp (top-right) -->
+  <g transform="translate(450 110)">
+    <circle r="46" fill="url(#piGlow)"/>
+    <circle r="28" fill="none" stroke="#FF7A3D" stroke-width="0.6" opacity="0.55" stroke-dasharray="2 4"/>
+    <circle r="20" fill="#15120E" stroke="#FF7A3D" stroke-width="1"/>
+    <text class="mono accent" x="0" y="8" font-size="26" font-weight="700" text-anchor="middle">&#960;</text>
+    <g fill="#FF7A3D" opacity="0.85">
+      <circle cx="28"  cy="0"   r="1.6"/>
+      <circle cx="24"  cy="14"  r="1.4"/>
+      <circle cx="14"  cy="24"  r="1.6"/>
+      <circle cx="0"   cy="28"  r="1.4"/>
+      <circle cx="-14" cy="24"  r="1.6"/>
+      <circle cx="-24" cy="14"  r="1.4"/>
+      <circle cx="-28" cy="0"   r="1.6"/>
+      <circle cx="-24" cy="-14" r="1.4"/>
+      <circle cx="-14" cy="-24" r="1.6"/>
+      <circle cx="0"   cy="-28" r="1.4"/>
+      <circle cx="14"  cy="-24" r="1.6"/>
+      <circle cx="24"  cy="-14" r="1.4"/>
+    </g>
+  </g>
+
+  <!-- FIG header -->
+  <text class="mono muted" x="40"  y="222" font-size="9" letter-spacing="2">FIG. 01 &#8212; SKILL PIPELINE</text>
+  <text class="mono muted" x="500" y="222" font-size="9" letter-spacing="2" text-anchor="end">DISCOVER &#8594; VALIDATE</text>
+  <line x1="40" y1="232" x2="500" y2="232" class="rule" stroke-width="0.75"/>
+
+  <!-- HERO: vertical pipeline (6 stages stacked) -->
+  <!-- vertical rail -->
+  <line x1="120" y1="280" x2="120" y2="1020" class="rule-bright" stroke-width="1.4"/>
+  <path d="M112 1010 L120 1024 L128 1010" fill="none" stroke="#FF7A3D" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+
+  <!-- nodes (y: 280, 428, 576, 724, 872, 1020) -->
+  <g>
+    <!-- 01 DISCOVER -->
+    <g transform="translate(120 280)">
+      <circle r="11" fill="#0E0D0B" stroke="#FF7A3D" stroke-width="1.6"/>
+      <circle r="3"  fill="#FF7A3D"/>
+      <text class="mono dim"   x="-22" y="4" font-size="9" letter-spacing="1.4" text-anchor="end">01</text>
+      <text class="mono ink"   x="22"  y="-2" font-size="14" letter-spacing="1.4" font-weight="700">DISCOVER</text>
+      <text class="mono muted" x="22"  y="14" font-size="10" letter-spacing="1.2">questions/</text>
+    </g>
+    <!-- 02 RESEARCH -->
+    <g transform="translate(120 428)">
+      <circle r="11" fill="#0E0D0B" stroke="#FF7A3D" stroke-width="1.6"/>
+      <circle r="3"  fill="#FF7A3D"/>
+      <text class="mono dim"   x="-22" y="4" font-size="9" letter-spacing="1.4" text-anchor="end">02</text>
+      <text class="mono ink"   x="22"  y="-2" font-size="14" letter-spacing="1.4" font-weight="700">RESEARCH</text>
+      <text class="mono muted" x="22"  y="14" font-size="10" letter-spacing="1.2">research/  &#8226; parallel agents</text>
+    </g>
+    <!-- 03 DESIGN -->
+    <g transform="translate(120 576)">
+      <circle r="11" fill="#0E0D0B" stroke="#FF7A3D" stroke-width="1.6"/>
+      <circle r="3"  fill="#FF7A3D"/>
+      <text class="mono dim"   x="-22" y="4" font-size="9" letter-spacing="1.4" text-anchor="end">03</text>
+      <text class="mono ink"   x="22"  y="-2" font-size="14" letter-spacing="1.4" font-weight="700">DESIGN</text>
+      <text class="mono muted" x="22"  y="14" font-size="10" letter-spacing="1.2">designs/</text>
+    </g>
+    <!-- 04 PLAN -->
+    <g transform="translate(120 724)">
+      <circle r="11" fill="#0E0D0B" stroke="#FF7A3D" stroke-width="1.6"/>
+      <circle r="3"  fill="#FF7A3D"/>
+      <text class="mono dim"   x="-22" y="4" font-size="9" letter-spacing="1.4" text-anchor="end">04</text>
+      <text class="mono ink"   x="22"  y="-2" font-size="14" letter-spacing="1.4" font-weight="700">PLAN</text>
+      <text class="mono muted" x="22"  y="14" font-size="10" letter-spacing="1.2">plans/</text>
+    </g>
+    <!-- 05 IMPLEMENT -->
+    <g transform="translate(120 872)">
+      <circle r="11" fill="#0E0D0B" stroke="#FF7A3D" stroke-width="1.6"/>
+      <circle r="3"  fill="#FF7A3D"/>
+      <text class="mono dim"   x="-22" y="4" font-size="9" letter-spacing="1.4" text-anchor="end">05</text>
+      <text class="mono ink"   x="22"  y="-2" font-size="14" letter-spacing="1.4" font-weight="700">IMPLEMENT</text>
+      <text class="mono muted" x="22"  y="14" font-size="10" letter-spacing="1.2">/* code */</text>
+    </g>
+    <!-- 06 VALIDATE (mint terminal) -->
+    <g transform="translate(120 1020)">
+      <circle r="13" fill="#13110D" stroke="#6FD0B8" stroke-width="1.6"/>
+      <circle r="4"  fill="#6FD0B8"/>
+      <text class="mono dim"   x="-22" y="4" font-size="9" letter-spacing="1.4" text-anchor="end">06</text>
+      <text class="mono mint"  x="22"  y="-2" font-size="14" letter-spacing="1.4" font-weight="700">VALIDATE</text>
+      <text class="mono muted" x="22"  y="14" font-size="10" letter-spacing="1.2">reviews/</text>
+    </g>
+  </g>
+
+  <!-- ALT route: research → blueprint → implement (fused) -->
+  <g>
+    <!-- detour rail: orange dashed, rounded corners, runs east of the main rail -->
+    <path d="M 131 428 H 286 Q 300 428 300 442 V 858 Q 300 872 286 872 H 131"
+          fill="none" stroke="#FF7A3D" stroke-width="1.4" stroke-dasharray="4 4" opacity="0.85"/>
+
+    <!-- chevron arrowheads indicating direction -->
+    <path d="M276 422 L290 428 L276 434" fill="none" stroke="#FF7A3D" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/>
+    <path d="M141 866 L131 872 L141 878" fill="none" stroke="#FF7A3D" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/>
+
+    <!-- alt-route caption above BLUEPRINT -->
+    <text class="mono dim" x="300" y="608" font-size="8.5" letter-spacing="1.8" text-anchor="middle">FIG. 02 &#8212; FUSED ALT</text>
+    <text class="mono dim" x="300" y="622" font-size="8.5" letter-spacing="1.4" text-anchor="middle">skips DESIGN + PLAN</text>
+
+    <!-- BLUEPRINT node -->
+    <g transform="translate(300 650)">
+      <circle r="18" fill="none" stroke="#FF7A3D" stroke-width="0.8" stroke-dasharray="2 2" opacity="0.75"/>
+      <circle r="11" fill="#0E0D0B" stroke="#FF7A3D" stroke-width="1.6"/>
+      <circle r="3"  fill="#FF7A3D"/>
+      <text class="mono ink"   x="26" y="-2" font-size="13" letter-spacing="1.4" font-weight="700">BLUEPRINT</text>
+      <text class="mono muted" x="26" y="14" font-size="10" letter-spacing="1.2">/skill:blueprint</text>
+      <text class="mono dim"   x="26" y="30" font-size="9.5" letter-spacing="1.2">design + plan &#183; one pass</text>
+      <text class="mono dim"   x="26" y="44" font-size="9.5" letter-spacing="1.2">&#8594; plans/</text>
+    </g>
+  </g>
+
+  <!-- Bottom annotation -->
+  <line x1="40" y1="1100" x2="500" y2="1100" class="rule" stroke-width="0.5" stroke-dasharray="1 3"/>
+  <text class="mono muted" x="40"  y="1118" font-size="9" letter-spacing="1.8">ARTIFACTS &#8594; thoughts/shared/</text>
+
+  <!-- Footer -->
+  <line x1="40" y1="1144" x2="500" y2="1144" class="rule" stroke-width="1"/>
+  <text class="mono muted" x="40"  y="1168" font-size="9.5" letter-spacing="1.8">
+    <tspan class="accent">&#9654;</tspan>  pi install npm:@juicesharp/rpiv-pi
+  </text>
+  <text class="mono muted" x="500" y="1168" font-size="9" letter-spacing="2" text-anchor="end">PIPELINE</text>
+</svg>

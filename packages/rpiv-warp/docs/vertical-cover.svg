@@ -1,0 +1,165 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 540 1200" role="img" aria-label="rpiv-warp — Native Warp terminal toasts for Pi Agent lifecycle events" preserveAspectRatio="xMidYMid meet">
+  <title>rpiv-warp — Native Warp terminal toasts for Pi Agent lifecycle events</title>
+  <defs>
+    <style>
+      .mono   { font-family: 'JetBrains Mono', 'Fira Code', 'SFMono-Regular', ui-monospace, Menlo, Consolas, monospace; }
+      .ink    { fill: #F4EFE6; }
+      .paper  { fill: #0E0D0B; }
+      .muted  { fill: #7A7468; }
+      .dim    { fill: #4A463F; }
+      .accent { fill: #FF7A3D; }
+      .mint   { fill: #6FD0B8; }
+      .rule   { stroke: #2A2620; }
+      .rule-bright { stroke: #FF7A3D; }
+    </style>
+    <filter id="grain" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="1.4" numOctaves="2" seed="31"/>
+      <feColorMatrix values="0 0 0 0 0.96  0 0 0 0 0.94  0 0 0 0 0.88  0 0 0 0.06 0"/>
+    </filter>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0 H0 V32" fill="none" stroke="#161411" stroke-width="0.5"/>
+    </pattern>
+    <pattern id="dots" width="6" height="6" patternUnits="userSpaceOnUse">
+      <circle cx="3" cy="3" r="0.6" fill="#231F1A"/>
+    </pattern>
+    <radialGradient id="vignette" cx="50%" cy="50%" r="70%">
+      <stop offset="60%" stop-color="#0E0D0B" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#000" stop-opacity="0.55"/>
+    </radialGradient>
+    <radialGradient id="toastGlow" cx="50%" cy="50%" r="60%">
+      <stop offset="0%" stop-color="#FF7A3D" stop-opacity="0.32"/>
+      <stop offset="80%" stop-color="#FF7A3D" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="540" height="1200" class="paper"/>
+  <rect width="540" height="1200" fill="url(#grid)" opacity="0.55"/>
+  <rect width="540" height="1200" fill="url(#dots)" opacity="0.4"/>
+  <rect width="540" height="1200" filter="url(#grain)" opacity="0.5"/>
+  <rect width="540" height="1200" fill="url(#vignette)"/>
+
+  <g class="rule-bright" stroke-width="1" fill="none" opacity="0.95">
+    <path d="M24 56 L40 56 M40 40 L40 56"/>
+    <path d="M516 56 L500 56 M500 40 L500 56"/>
+    <path d="M24 1144 L40 1144 M40 1160 L40 1144"/>
+    <path d="M516 1144 L500 1144 M500 1160 L500 1144"/>
+  </g>
+
+  <line x1="40" y1="56" x2="500" y2="56" class="rule" stroke-width="1"/>
+  <text class="mono muted" x="40"  y="44" font-size="9" letter-spacing="2">@JUICESHARP &#183; PI EXTENSION &#183; NO. 008 &#8211; WARP</text>
+  <text class="mono muted" x="500" y="44" font-size="9" letter-spacing="2" text-anchor="end">MIT &#183; v0.9 &#183; 540 &#215; 1200</text>
+
+  <text class="mono ink" x="40" y="124" font-size="56" font-weight="700" letter-spacing="-2">rpiv<tspan class="accent">-</tspan>warp</text>
+  <line x1="40" y1="138" x2="100" y2="138" class="rule-bright" stroke-width="2"/>
+  <text class="mono muted" x="40" y="160" font-size="12" letter-spacing="0.3">Native Warp toasts for Pi lifecycle events.</text>
+  <text class="mono dim"   x="40" y="178" font-size="9" letter-spacing="1.4">OSC 777 &#183; OPT-IN &#183; SILENT NO-OP OUTSIDE WARP</text>
+
+  <text class="mono muted" x="40"  y="222" font-size="9" letter-spacing="2">FIG. 01 &#8212; LIFECYCLE &#8594; OS NOTIFICATION</text>
+  <text class="mono muted" x="500" y="222" font-size="9" letter-spacing="2" text-anchor="end">/dev/tty</text>
+  <line x1="40" y1="232" x2="500" y2="232" class="rule" stroke-width="0.75"/>
+
+  <!-- HERO: events stack &rarr; OSC 777 &rarr; toast -->
+
+  <!-- 001 PI EVENTS -->
+  <text class="mono dim" x="40" y="270" font-size="9" letter-spacing="1.8">001 &#8212; PI EVENTS</text>
+
+  <g transform="translate(40 282)">
+    <rect x="0" y="0" width="460" height="36" fill="#15120E" stroke="#221E18" stroke-width="0.6"/>
+    <circle cx="14" cy="18" r="3" fill="#FF7A3D"/>
+    <text class="mono ink"   x="28" y="16" font-size="11" font-weight="700">session_start</text>
+    <text class="mono muted" x="28" y="29" font-size="9.5">reason: "startup" &#8212; gated</text>
+    <text class="mono dim"   x="446" y="22" font-size="9" letter-spacing="1.2" text-anchor="end">[01]</text>
+
+    <rect x="0" y="44" width="460" height="36" fill="#15120E" stroke="#221E18" stroke-width="0.6"/>
+    <circle cx="14" cy="62" r="3" fill="#FF7A3D"/>
+    <text class="mono ink"   x="28" y="60" font-size="11" font-weight="700">agent_end</text>
+    <text class="mono muted" x="28" y="73" font-size="9.5">prompt &#8594; reply &#183; trunc 200</text>
+    <text class="mono dim"   x="446" y="66" font-size="9" letter-spacing="1.2" text-anchor="end">[02]</text>
+
+    <rect x="0" y="88" width="460" height="36" fill="#15120E" stroke="#221E18" stroke-width="0.6"/>
+    <circle cx="14" cy="106" r="3" fill="#FF7A3D"/>
+    <text class="mono ink"   x="28" y="104" font-size="11" font-weight="700">tool_call</text>
+    <text class="mono muted" x="28" y="117" font-size="9.5">ask_user_question &#8594; "Input needed"</text>
+    <text class="mono dim"   x="446" y="110" font-size="9" letter-spacing="1.2" text-anchor="end">[03]</text>
+
+    <rect x="0" y="132" width="460" height="36" fill="#15120E" stroke="#221E18" stroke-width="0.6"/>
+    <circle cx="14" cy="150" r="3" fill="#FF7A3D"/>
+    <text class="mono ink"   x="28" y="148" font-size="11" font-weight="700">turn_end</text>
+    <text class="mono muted" x="28" y="161" font-size="9.5">last tool name of the turn</text>
+    <text class="mono dim"   x="446" y="154" font-size="9" letter-spacing="1.2" text-anchor="end">[04]</text>
+  </g>
+
+  <!-- arrow down to OSC -->
+  <line x1="270" y1="466" x2="270" y2="510" class="rule-bright" stroke-width="1.6"/>
+  <path d="M262 500 L270 518 L278 500" fill="none" stroke="#FF7A3D" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+  <text class="mono muted" x="290" y="496" font-size="9" letter-spacing="1.6">EMIT</text>
+
+  <!-- 002 OSC 777 escape -->
+  <text class="mono dim" x="40" y="554" font-size="9" letter-spacing="1.8">002 &#8212; OSC 777 ESCAPE &#8594; /dev/tty</text>
+
+  <g transform="translate(40 566)">
+    <rect x="0" y="0" width="460" height="92" fill="#15120E" stroke="#FF7A3D" stroke-width="1"/>
+    <text class="mono accent" x="14" y="22" font-size="10" letter-spacing="1.6" font-weight="700">BYTES &#187;</text>
+    <text class="mono ink" x="14" y="46" font-size="14" letter-spacing="0.3">
+      <tspan class="accent" font-weight="700">ESC</tspan>
+      <tspan dx="6">]</tspan>
+      <tspan dx="6" class="accent" font-weight="700">777</tspan>
+      <tspan dx="6">;</tspan>
+      <tspan dx="6">notify</tspan>
+      <tspan dx="6">;</tspan>
+    </text>
+    <text class="mono ink" x="14" y="66" font-size="14" letter-spacing="0.3">
+      <tspan class="mint">{title}</tspan>
+      <tspan dx="6">;</tspan>
+      <tspan dx="6" class="mint">{body}</tspan>
+      <tspan dx="6" class="accent" font-weight="700">BEL</tspan>
+    </text>
+    <text class="mono muted" x="14" y="84" font-size="9" letter-spacing="1.4">
+      openSync('/dev/tty') &#183; writeSync &#183; close
+    </text>
+  </g>
+
+  <!-- detection band -->
+  <text class="mono dim" x="40" y="694" font-size="9" letter-spacing="1.8">DETECTION</text>
+  <text class="mono muted" x="40" y="712" font-size="10">TERM_PROGRAM == <tspan class="ink">"WarpTerminal"</tspan></text>
+  <text class="mono muted" x="40" y="728" font-size="10">WARP_CLI_AGENT_PROTOCOL_VERSION (required)</text>
+  <text class="mono muted" x="40" y="744" font-size="10">WARP_CLIENT_VERSION &#183; broken-build gate</text>
+
+  <!-- arrow down to toast -->
+  <line x1="270" y1="772" x2="270" y2="816" class="rule-bright" stroke-width="1.6"/>
+  <path d="M262 806 L270 824 L278 806" fill="none" stroke="#FF7A3D" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+
+  <!-- 003 NATIVE TOAST -->
+  <text class="mono dim" x="40" y="844" font-size="9" letter-spacing="1.8">003 &#8212; NATIVE OS TOAST</text>
+
+  <g transform="translate(110 856)">
+    <rect x="-12" y="-12" width="324" height="120" fill="url(#toastGlow)"/>
+
+    <rect x="0" y="0" width="300" height="92" fill="#13110D" stroke="#3A352D" stroke-width="1" rx="6"/>
+    <rect x="0" y="0" width="300" height="22" fill="#1B1813" rx="6"/>
+
+    <circle cx="14" cy="11" r="4" fill="#FF7A3D"/>
+    <text class="mono muted" x="24"  y="14" font-size="9" letter-spacing="1.6">PI AGENT &#183; via WARP</text>
+    <text class="mono dim"   x="288" y="14" font-size="9" letter-spacing="1.2" text-anchor="end">&#10005;</text>
+
+    <text class="mono ink"   x="14" y="44" font-size="13" font-weight="700">Input needed</text>
+    <text class="mono muted" x="14" y="62" font-size="10">migrate-component &#8226; awaiting your selection</text>
+    <text class="mono mint"  x="14" y="80" font-size="9.5" letter-spacing="1.2" font-weight="700">&#9210; ask_user_question</text>
+
+    <rect x="240" y="68" width="48" height="14" fill="#15120E" stroke="#2A2620" stroke-width="0.5" rx="2"/>
+    <text class="mono dim" x="264" y="78" font-size="8.5" letter-spacing="1.4" text-anchor="middle">now</text>
+  </g>
+
+  <!-- bottom annotation -->
+  <text class="mono muted" x="40"  y="1024" font-size="9" letter-spacing="1.4">OUTSIDE WARP &#183; WINDOWS &#183; NO-TTY: silent no-op</text>
+  <text class="mono muted" x="40"  y="1040" font-size="9" letter-spacing="1.4">NOT REGISTERED IN /rpiv-setup &#8226; opt-in only</text>
+
+  <line x1="40" y1="1100" x2="500" y2="1100" class="rule" stroke-width="0.5" stroke-dasharray="1 3"/>
+  <text class="mono muted" x="40"  y="1118" font-size="9" letter-spacing="1.8">EVENT &#8594; OSC 777 &#8594; TOAST</text>
+
+  <line x1="40" y1="1144" x2="500" y2="1144" class="rule" stroke-width="1"/>
+  <text class="mono muted" x="40"  y="1168" font-size="9.5" letter-spacing="1.8">
+    <tspan class="accent">&#9654;</tspan>  pi install npm:@juicesharp/rpiv-warp
+  </text>
+  <text class="mono muted" x="500" y="1168" font-size="9" letter-spacing="2" text-anchor="end">NOTIFY</text>
+</svg>

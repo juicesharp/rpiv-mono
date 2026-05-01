@@ -1,0 +1,143 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 540 1200" role="img" aria-label="rpiv-ask-user-question — Structured clarifying questions instead of guessing" preserveAspectRatio="xMidYMid meet">
+  <title>rpiv-ask-user-question — Structured clarifying questions instead of guessing</title>
+  <defs>
+    <style>
+      .mono   { font-family: 'JetBrains Mono', 'Fira Code', 'SFMono-Regular', ui-monospace, Menlo, Consolas, monospace; }
+      .ink    { fill: #F4EFE6; }
+      .paper  { fill: #0E0D0B; }
+      .muted  { fill: #7A7468; }
+      .dim    { fill: #4A463F; }
+      .accent { fill: #FF7A3D; }
+      .mint   { fill: #6FD0B8; }
+      .rule   { stroke: #2A2620; }
+      .rule-bright { stroke: #FF7A3D; }
+    </style>
+    <filter id="grain" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="1.4" numOctaves="2" seed="17"/>
+      <feColorMatrix values="0 0 0 0 0.96  0 0 0 0 0.94  0 0 0 0 0.88  0 0 0 0.06 0"/>
+    </filter>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0 H0 V32" fill="none" stroke="#161411" stroke-width="0.5"/>
+    </pattern>
+    <pattern id="dots" width="6" height="6" patternUnits="userSpaceOnUse">
+      <circle cx="3" cy="3" r="0.6" fill="#231F1A"/>
+    </pattern>
+    <radialGradient id="vignette" cx="50%" cy="50%" r="70%">
+      <stop offset="60%" stop-color="#0E0D0B" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#000" stop-opacity="0.55"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="540" height="1200" class="paper"/>
+  <rect width="540" height="1200" fill="url(#grid)" opacity="0.55"/>
+  <rect width="540" height="1200" fill="url(#dots)" opacity="0.4"/>
+  <rect width="540" height="1200" filter="url(#grain)" opacity="0.5"/>
+  <rect width="540" height="1200" fill="url(#vignette)"/>
+
+  <g class="rule-bright" stroke-width="1" fill="none" opacity="0.95">
+    <path d="M24 56 L40 56 M40 40 L40 56"/>
+    <path d="M516 56 L500 56 M500 40 L500 56"/>
+    <path d="M24 1144 L40 1144 M40 1160 L40 1144"/>
+    <path d="M516 1144 L500 1144 M500 1160 L500 1144"/>
+  </g>
+
+  <line x1="40" y1="56" x2="500" y2="56" class="rule" stroke-width="1"/>
+  <text class="mono muted" x="40"  y="44" font-size="9" letter-spacing="2">@JUICESHARP &#183; PI EXTENSION &#183; NO. 004 &#8211; ASK</text>
+  <text class="mono muted" x="500" y="44" font-size="9" letter-spacing="2" text-anchor="end">MIT &#183; v0.9 &#183; 540 &#215; 1200</text>
+
+  <!-- Logotype (two lines, same 56px) -->
+  <text class="mono ink" x="40" y="116" font-size="56" font-weight="700" letter-spacing="-2">rpiv<tspan class="accent">-</tspan>ask-</text>
+  <text class="mono ink" x="40" y="170" font-size="56" font-weight="700" letter-spacing="-2">user-question</text>
+  <line x1="40" y1="184" x2="100" y2="184" class="rule-bright" stroke-width="2"/>
+  <text class="mono muted" x="40" y="206" font-size="12" letter-spacing="0.3">Structured clarifying questions, not guesses.</text>
+  <text class="mono dim"   x="40" y="224" font-size="9" letter-spacing="1.4">TABS &#183; PREVIEW PANE &#183; MULTI-SELECT &#183; NOTES</text>
+
+  <text class="mono muted" x="40"  y="266" font-size="9" letter-spacing="2">FIG. 01 &#8212; STRUCTURED QUESTIONNAIRE</text>
+  <text class="mono muted" x="500" y="266" font-size="9" letter-spacing="2" text-anchor="end">ask_user_question()</text>
+  <line x1="40" y1="276" x2="500" y2="276" class="rule" stroke-width="0.75"/>
+
+  <!-- ===== HERO: vertical dialog mock ===== -->
+  <g transform="translate(40 300)">
+    <rect x="0" y="0" width="460" height="700" fill="#13110D" stroke="#2A2620" stroke-width="1"/>
+
+    <!-- Tab bar -->
+    <rect x="0"   y="0" width="460" height="26" fill="#0E0D0B" stroke="#2A2620" stroke-width="0.75"/>
+    <rect x="0"   y="26" width="160" height="2" fill="#FF7A3D"/>
+    <text class="mono ink"   x="14"  y="18" font-size="10" letter-spacing="1.4" font-weight="700">[ Q1 &#183; FRAMEWORK ]</text>
+    <text class="mono muted" x="178" y="18" font-size="10" letter-spacing="1.4">Q2 &#183; STORE</text>
+    <text class="mono muted" x="290" y="18" font-size="10" letter-spacing="1.4">Q3</text>
+    <text class="mono muted" x="446" y="18" font-size="10" letter-spacing="1.4" text-anchor="end">SUBMIT</text>
+
+    <!-- Question -->
+    <text class="mono accent" x="14" y="58" font-size="11" letter-spacing="1.4">?</text>
+    <text class="mono ink"    x="32" y="58" font-size="13">Which framework should the migrated</text>
+    <text class="mono ink"    x="32" y="76" font-size="13">component target?</text>
+
+    <!-- Options block -->
+    <g transform="translate(14 100)">
+      <text class="mono muted" x="0" y="14" font-size="13">  &#9675; React</text>
+      <rect x="-4" y="22" width="430" height="20" fill="#13110D" stroke="#2A4D45" stroke-width="0.75"/>
+      <text class="mono mint"  x="0" y="36" font-size="13" font-weight="700">&#9210; Vue</text>
+      <text class="mono mint"  x="412" y="36" font-size="9" letter-spacing="1.2" text-anchor="end" font-weight="700">SELECTED</text>
+      <text class="mono muted" x="0" y="58" font-size="13">  &#9675; Svelte</text>
+      <text class="mono dim"   x="0" y="80" font-size="13">  &#8230; Other (free text)</text>
+    </g>
+
+    <!-- Preview pane -->
+    <text class="mono dim" x="14" y="222" font-size="9" letter-spacing="1.8">PREVIEW &#8226; vue example</text>
+    <rect x="14" y="230" width="432" height="160" fill="#0E0D0B" stroke="#221E18" stroke-width="0.6"/>
+    <text class="mono mint"  x="24" y="252" font-size="11">&lt;script setup&gt;</text>
+    <text class="mono ink"   x="24" y="270" font-size="11">import { ref } from <tspan class="accent">"vue"</tspan></text>
+    <text class="mono ink"   x="24" y="288" font-size="11">const count = ref(0)</text>
+    <text class="mono ink"   x="24" y="306" font-size="11">function inc() {</text>
+    <text class="mono ink"   x="24" y="324" font-size="11">  count.value++</text>
+    <text class="mono ink"   x="24" y="342" font-size="11">}</text>
+    <text class="mono mint"  x="24" y="362" font-size="11">&lt;/script&gt;</text>
+    <text class="mono muted" x="24" y="378" font-size="10">&#8230;</text>
+
+    <!-- Inline note (per-option n) -->
+    <text class="mono dim"   x="14" y="424" font-size="9" letter-spacing="1.8">PER-OPTION NOTE &#8226; key: n</text>
+    <rect x="14" y="432" width="432" height="40" fill="#15120E" stroke="#221E18" stroke-width="0.6"/>
+    <text class="mono ink"   x="24" y="450" font-size="11">team is fluent in Vue, prefer SFC&#8230;</text>
+    <text class="mono muted" x="24" y="464" font-size="9.5">&#8226; travels back with the answer</text>
+
+    <!-- Submit row mock -->
+    <text class="mono dim"   x="14" y="510" font-size="9" letter-spacing="1.8">SUBMIT TAB &#8226; REVIEW BEFORE SEND</text>
+    <rect x="14" y="518" width="432" height="20" fill="#15120E" stroke="#221E18" stroke-width="0.6"/>
+    <text class="mono ink"   x="24" y="532" font-size="11">Q1 &#9210; Vue</text>
+    <text class="mono mint"  x="436" y="532" font-size="9" letter-spacing="1.2" text-anchor="end" font-weight="700">OK</text>
+    <rect x="14" y="540" width="432" height="20" fill="#15120E" stroke="#221E18" stroke-width="0.6"/>
+    <text class="mono muted" x="24" y="554" font-size="11">Q2 &#8230; pinia / vuex (unanswered)</text>
+    <text class="mono accent" x="436" y="554" font-size="9" letter-spacing="1.2" text-anchor="end" font-weight="700">!</text>
+
+    <!-- Key chips (footer) -->
+    <g transform="translate(14 590)">
+      <rect x="0"   y="0" width="44" height="16" fill="#15120E" stroke="#2A2620" stroke-width="0.5"/>
+      <rect x="52"  y="0" width="54" height="16" fill="#15120E" stroke="#2A2620" stroke-width="0.5"/>
+      <rect x="114" y="0" width="54" height="16" fill="#15120E" stroke="#2A2620" stroke-width="0.5"/>
+      <rect x="176" y="0" width="38" height="16" fill="#15120E" stroke="#2A2620" stroke-width="0.5"/>
+      <rect x="222" y="0" width="32" height="16" fill="#15120E" stroke="#2A2620" stroke-width="0.5"/>
+      <text class="mono muted" x="6"   y="11" font-size="9" letter-spacing="1.2">Tab</text>
+      <text class="mono muted" x="58"  y="11" font-size="9" letter-spacing="1.2">Space</text>
+      <text class="mono muted" x="120" y="11" font-size="9" letter-spacing="1.2">Enter</text>
+      <text class="mono muted" x="182" y="11" font-size="9" letter-spacing="1.2">Esc</text>
+      <text class="mono muted" x="228" y="11" font-size="9" letter-spacing="1.2">n</text>
+    </g>
+    <text class="mono dim" x="14" y="640" font-size="8.5" letter-spacing="1.5">SWITCH &#8226; TOGGLE &#8226; SUBMIT &#8226; CLOSE &#8226; NOTE</text>
+
+    <!-- Chat row -->
+    <line x1="14" y1="664" x2="446" y2="664" stroke="#2A2620" stroke-width="0.5" stroke-dasharray="1 3"/>
+    <text class="mono accent" x="14" y="684" font-size="11" font-weight="700">&#8250;</text>
+    <text class="mono muted"  x="30" y="684" font-size="11">chat &#8230;</text>
+    <text class="mono dim"    x="446" y="684" font-size="9" letter-spacing="1.4" text-anchor="end">redirect without leaving</text>
+  </g>
+
+  <line x1="40" y1="1100" x2="500" y2="1100" class="rule" stroke-width="0.5" stroke-dasharray="1 3"/>
+  <text class="mono muted" x="40" y="1118" font-size="9" letter-spacing="1.8">ASK &#8594; ANSWER &#8594; CONFIRM</text>
+
+  <line x1="40" y1="1144" x2="500" y2="1144" class="rule" stroke-width="1"/>
+  <text class="mono muted" x="40" y="1168" font-size="9" letter-spacing="1.6">
+    <tspan class="accent">&#9654;</tspan>  pi install npm:@juicesharp/rpiv-ask-user-question
+  </text>
+  <text class="mono muted" x="500" y="1168" font-size="9" letter-spacing="2" text-anchor="end">CLARIFY</text>
+</svg>

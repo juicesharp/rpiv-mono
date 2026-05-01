@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" role="img" aria-label="rpiv-warp — Native Warp terminal toasts for Pi Agent lifecycle events" preserveAspectRatio="xMidYMid meet">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 800" role="img" aria-label="rpiv-warp — Native Warp terminal toasts for Pi Agent lifecycle events" preserveAspectRatio="xMidYMid meet">
   <title>rpiv-warp — Native Warp terminal toasts for Pi Agent lifecycle events</title>
   <defs>
     <style>
@@ -37,24 +37,24 @@
   </defs>
 
   <!-- Canvas -->
-  <rect width="1280" height="640" class="paper"/>
-  <rect width="1280" height="640" fill="url(#grid)" opacity="0.55"/>
-  <rect width="1280" height="640" fill="url(#dots)" opacity="0.4"/>
-  <rect width="1280" height="640" filter="url(#grain)" opacity="0.5"/>
-  <rect width="1280" height="640" fill="url(#vignette)"/>
+  <rect width="1280" height="800" class="paper"/>
+  <rect width="1280" height="800" fill="url(#grid)" opacity="0.55"/>
+  <rect width="1280" height="800" fill="url(#dots)" opacity="0.4"/>
+  <rect width="1280" height="800" filter="url(#grain)" opacity="0.5"/>
+  <rect width="1280" height="800" fill="url(#vignette)"/>
 
   <!-- Crop marks -->
   <g class="rule-bright" stroke-width="1" fill="none" opacity="0.95">
     <path d="M40 56 L56 56 M56 40 L56 56"/>
     <path d="M1240 56 L1224 56 M1224 40 L1224 56"/>
-    <path d="M40 584 L56 584 M56 600 L56 584"/>
-    <path d="M1240 584 L1224 584 M1224 600 L1224 584"/>
+    <path d="M40 744 L56 744 M56 760 L56 744"/>
+    <path d="M1240 744 L1224 744 M1224 760 L1224 744"/>
   </g>
 
   <!-- Top spec strip -->
   <line x1="64" y1="56" x2="1216" y2="56" class="rule" stroke-width="1"/>
   <text class="mono muted" x="64"   y="44" font-size="10.5" letter-spacing="2.4">@JUICESHARP &#183; PI AGENT EXTENSION &#183; NO. 008 &#8211; WARP</text>
-  <text class="mono muted" x="1216" y="44" font-size="10.5" letter-spacing="2.4" text-anchor="end">MIT &#183; v0.9 &#183; 1280 &#215; 640</text>
+  <text class="mono muted" x="1216" y="44" font-size="10.5" letter-spacing="2.4" text-anchor="end">MIT &#183; v0.9 &#183; 1280 &#215; 800</text>
 
   <!-- Logotype -->
   <text class="mono ink" x="64" y="200" font-size="116" font-weight="700" letter-spacing="-4">rpiv<tspan class="accent">-</tspan>warp</text>
@@ -181,16 +181,16 @@
   </g>
 
   <!-- bottom annotation rule -->
-  <line x1="64" y1="544" x2="1216" y2="544" class="rule" stroke-width="0.5" stroke-dasharray="1 3"/>
-  <text class="mono muted" x="64"   y="558" font-size="10" letter-spacing="2.2">OUTSIDE WARP &#183; WINDOWS &#183; NO-TTY: SILENT NO-OP</text>
-  <text class="mono muted" x="1216" y="558" font-size="10" letter-spacing="2.2" text-anchor="end">NOT REGISTERED IN /rpiv-setup &#8226; OPT-IN ONLY</text>
+  <line x1="64" y1="704" x2="1216" y2="704" class="rule" stroke-width="0.5" stroke-dasharray="1 3"/>
+  <text class="mono muted" x="64"   y="718" font-size="10" letter-spacing="2.2">OUTSIDE WARP &#183; WINDOWS &#183; NO-TTY: SILENT NO-OP</text>
+  <text class="mono muted" x="1216" y="718" font-size="10" letter-spacing="2.2" text-anchor="end">NOT REGISTERED IN /rpiv-setup &#8226; OPT-IN ONLY</text>
 
   <!-- Footer -->
-  <line x1="64" y1="584" x2="1216" y2="584" class="rule" stroke-width="1"/>
-  <text class="mono muted" x="64" y="608" font-size="11" letter-spacing="2">
+  <line x1="64" y1="744" x2="1216" y2="744" class="rule" stroke-width="1"/>
+  <text class="mono muted" x="64" y="768" font-size="11" letter-spacing="2">
     <tspan class="accent">&#9654;</tspan>  pi install npm:@juicesharp/rpiv-warp
   </text>
-  <text class="mono muted" x="1216" y="608" font-size="11" letter-spacing="2.4" text-anchor="end">
+  <text class="mono muted" x="1216" y="768" font-size="11" letter-spacing="2.4" text-anchor="end">
     EVENT &#8594; OSC 777 &#8594; TOAST
   </text>
 </svg>

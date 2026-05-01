@@ -1,0 +1,135 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 540 1200" role="img" aria-label="rpiv-args — Shell-style arguments for Pi Agent skills" preserveAspectRatio="xMidYMid meet">
+  <title>rpiv-args — Shell-style arguments for Pi Agent skills</title>
+  <defs>
+    <style>
+      .mono   { font-family: 'JetBrains Mono', 'Fira Code', 'SFMono-Regular', ui-monospace, Menlo, Consolas, monospace; }
+      .ink    { fill: #F4EFE6; }
+      .paper  { fill: #0E0D0B; }
+      .muted  { fill: #7A7468; }
+      .dim    { fill: #4A463F; }
+      .accent { fill: #FF7A3D; }
+      .mint   { fill: #6FD0B8; }
+      .rule   { stroke: #2A2620; }
+      .rule-bright { stroke: #FF7A3D; }
+    </style>
+    <filter id="grain" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="1.4" numOctaves="2" seed="7"/>
+      <feColorMatrix values="0 0 0 0 0.96  0 0 0 0 0.94  0 0 0 0 0.88  0 0 0 0.06 0"/>
+    </filter>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0 H0 V32" fill="none" stroke="#161411" stroke-width="0.5"/>
+    </pattern>
+    <pattern id="dots" width="6" height="6" patternUnits="userSpaceOnUse">
+      <circle cx="3" cy="3" r="0.6" fill="#231F1A"/>
+    </pattern>
+    <radialGradient id="vignette" cx="50%" cy="50%" r="70%">
+      <stop offset="60%" stop-color="#0E0D0B" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#000" stop-opacity="0.55"/>
+    </radialGradient>
+    <marker id="chev" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10" fill="none" stroke="#FF7A3D" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+
+  <rect width="540" height="1200" class="paper"/>
+  <rect width="540" height="1200" fill="url(#grid)" opacity="0.55"/>
+  <rect width="540" height="1200" fill="url(#dots)" opacity="0.4"/>
+  <rect width="540" height="1200" filter="url(#grain)" opacity="0.5"/>
+  <rect width="540" height="1200" fill="url(#vignette)"/>
+
+  <g class="rule-bright" stroke-width="1" fill="none" opacity="0.95">
+    <path d="M24 56 L40 56 M40 40 L40 56"/>
+    <path d="M516 56 L500 56 M500 40 L500 56"/>
+    <path d="M24 1144 L40 1144 M40 1160 L40 1144"/>
+    <path d="M516 1144 L500 1144 M500 1160 L500 1144"/>
+  </g>
+
+  <line x1="40" y1="56" x2="500" y2="56" class="rule" stroke-width="1"/>
+  <text class="mono muted" x="40"  y="44" font-size="9" letter-spacing="2">@JUICESHARP &#183; PI EXTENSION &#183; NO. 002 &#8211; ARGS</text>
+  <text class="mono muted" x="500" y="44" font-size="9" letter-spacing="2" text-anchor="end">MIT &#183; v0.9 &#183; 540 &#215; 1200</text>
+
+  <!-- Logotype -->
+  <text class="mono ink" x="40" y="124" font-size="56" font-weight="700" letter-spacing="-2">rpiv<tspan class="accent">-</tspan>args</text>
+  <line x1="40" y1="138" x2="100" y2="138" class="rule-bright" stroke-width="2"/>
+  <text class="mono muted" x="40" y="160" font-size="12" letter-spacing="0.3">Shell-style arguments for Pi Agent skills.</text>
+  <text class="mono dim"   x="40" y="178" font-size="9" letter-spacing="1.4">$1 &#183; $2 &#183; $ARGUMENTS &#183; $@ &#183; ${@:N} &#183; ${@:N:L}</text>
+
+  <text class="mono muted" x="40"  y="222" font-size="9" letter-spacing="2">FIG. 01 &#8212; SUBSTITUTION</text>
+  <text class="mono muted" x="500" y="222" font-size="9" letter-spacing="2" text-anchor="end">SHELL &#8594; SKILL &#8594; LLM</text>
+  <line x1="40" y1="232" x2="500" y2="232" class="rule" stroke-width="0.75"/>
+
+  <!-- HERO: vertical 3-row substitution -->
+
+  <!-- 001 INVOCATION -->
+  <text class="mono dim" x="40" y="278" font-size="9" letter-spacing="1.8">001 &#8212; INVOCATION</text>
+  <g transform="translate(40 296)">
+    <rect x="0" y="0" width="460" height="56" fill="#15120E" stroke="#221E18" stroke-width="0.75"/>
+    <text class="mono accent" x="14" y="22" font-size="13" font-weight="700">$</text>
+    <text class="mono ink"    x="30" y="22" font-size="13">/skill:deploy api production</text>
+    <text class="mono muted"  x="14" y="44" font-size="9" letter-spacing="1.4">USER INPUT &#8226; SHELL-STYLE QUOTING</text>
+  </g>
+
+  <!-- arrow -->
+  <path d="M270 372 L270 432" class="rule-bright" stroke-width="1.6" fill="none" marker-end="url(#chev)"/>
+  <text class="mono muted" x="290" y="408" font-size="9" letter-spacing="1.8">PARSE</text>
+
+  <!-- 002 SKILL BODY -->
+  <text class="mono dim" x="40" y="476" font-size="9" letter-spacing="1.8">002 &#8212; SKILL BODY</text>
+  <g transform="translate(40 494)">
+    <rect x="0" y="0" width="460" height="80" fill="#15120E" stroke="#221E18" stroke-width="0.75"/>
+    <text class="mono ink" x="14" y="34" font-size="20" letter-spacing="-0.3">
+      Deploy service <tspan class="accent" font-weight="700">$1</tspan>
+    </text>
+    <text class="mono ink" x="14" y="60" font-size="20" letter-spacing="-0.3">
+      to <tspan class="accent" font-weight="700">$2</tspan>.
+    </text>
+    <text class="mono muted" x="446" y="72" font-size="9" letter-spacing="1.4" text-anchor="end">SKILL.MD</text>
+  </g>
+
+  <!-- arrow -->
+  <path d="M270 594 L270 654" class="rule-bright" stroke-width="1.6" fill="none" marker-end="url(#chev)"/>
+  <text class="mono muted" x="290" y="630" font-size="9" letter-spacing="1.8">SUBSTITUTE</text>
+  <text class="mono dim"   x="290" y="644" font-size="8.5" letter-spacing="1.4">$1=api  $2=production</text>
+
+  <!-- 003 RENDERED -->
+  <text class="mono dim" x="40" y="698" font-size="9" letter-spacing="1.8">003 &#8212; RENDERED PROMPT</text>
+  <g transform="translate(40 716)">
+    <rect x="0" y="0" width="460" height="80" fill="#13110D" stroke="#1F3A33" stroke-width="0.75"/>
+    <text class="mono ink" x="14" y="34" font-size="20" letter-spacing="-0.3">
+      Deploy service <tspan class="mint" font-weight="700">api</tspan>
+    </text>
+    <text class="mono ink" x="14" y="60" font-size="20" letter-spacing="-0.3">
+      to <tspan class="mint" font-weight="700">production</tspan>.
+    </text>
+    <text class="mono mint" x="446" y="72" font-size="9" letter-spacing="1.4" text-anchor="end">LLM</text>
+  </g>
+
+  <!-- placeholder type specimen as bottom motif -->
+  <line x1="40" y1="848" x2="500" y2="848" stroke="#2A4D45" stroke-width="0.75"/>
+  <text class="mono muted" x="40" y="880" font-size="9" letter-spacing="1.8">PLACEHOLDER FAMILY</text>
+  <g transform="translate(40 906)">
+    <rect x="0"   y="0" width="68" height="36" fill="#15120E" stroke="#221E18" stroke-width="0.6"/>
+    <text class="mono accent" x="34" y="23" font-size="14" text-anchor="middle" font-weight="700">$1</text>
+    <rect x="76"  y="0" width="68" height="36" fill="#15120E" stroke="#221E18" stroke-width="0.6"/>
+    <text class="mono accent" x="110" y="23" font-size="14" text-anchor="middle" font-weight="700">$2</text>
+    <rect x="152" y="0" width="120" height="36" fill="#15120E" stroke="#221E18" stroke-width="0.6"/>
+    <text class="mono accent" x="212" y="23" font-size="13" text-anchor="middle" font-weight="700">$ARGUMENTS</text>
+    <rect x="280" y="0" width="48" height="36" fill="#15120E" stroke="#221E18" stroke-width="0.6"/>
+    <text class="mono accent" x="304" y="23" font-size="14" text-anchor="middle" font-weight="700">$@</text>
+    <rect x="336" y="0" width="68" height="36" fill="#15120E" stroke="#221E18" stroke-width="0.6"/>
+    <text class="mono accent" x="370" y="22" font-size="12" text-anchor="middle" font-weight="700">${@:N}</text>
+    <rect x="412" y="0" width="48" height="36" fill="#15120E" stroke="#221E18" stroke-width="0.6"/>
+    <text class="mono accent" x="436" y="22" font-size="11" text-anchor="middle" font-weight="700">{@:N:L}</text>
+  </g>
+
+  <text class="mono muted" x="40" y="1004" font-size="9" letter-spacing="1.4">1-INDEXED &#183; OUT-OF-RANGE &#8594; "" &#183; SHELL-STYLE QUOTING</text>
+
+  <line x1="40" y1="1100" x2="500" y2="1100" class="rule" stroke-width="0.5" stroke-dasharray="1 3"/>
+  <text class="mono muted" x="40" y="1118" font-size="9" letter-spacing="1.8">BYTE-IDENTICAL TO PI&#8217;S NATIVE EXPANSION WHEN ABSENT.</text>
+
+  <line x1="40" y1="1144" x2="500" y2="1144" class="rule" stroke-width="1"/>
+  <text class="mono muted" x="40" y="1168" font-size="9.5" letter-spacing="1.8">
+    <tspan class="accent">&#9654;</tspan>  pi install npm:@juicesharp/rpiv-args
+  </text>
+  <text class="mono muted" x="500" y="1168" font-size="9" letter-spacing="2" text-anchor="end">SUBSTITUTE</text>
+</svg>
