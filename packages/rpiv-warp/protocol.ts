@@ -15,7 +15,7 @@
 // ---------------------------------------------------------------------------
 
 /** Structured event names emitted in the OSC 777 payload's `event` field. */
-export type WarpEvent = "session_start" | "stop" | "idle_prompt" | "tool_complete";
+export type WarpEvent = "session_start" | "prompt_submit" | "stop" | "idle_prompt" | "tool_complete";
 
 /** Warp release channel — present in every `WARP_CLIENT_VERSION` literal. */
 export type Channel = "stable" | "preview" | "dev";

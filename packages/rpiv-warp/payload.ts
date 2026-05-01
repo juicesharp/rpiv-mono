@@ -141,6 +141,10 @@ export function buildSessionStartPayload(ctx: ExtensionContext): WarpPayload {
 	return baseEnvelope("session_start", ctx);
 }
 
+export function buildPromptSubmitPayload(ctx: ExtensionContext): WarpPayload {
+	return baseEnvelope("prompt_submit", ctx);
+}
+
 export function buildStopPayload(ctx: ExtensionContext, branch: SessionEntry[]): WarpPayload {
 	return {
 		...baseEnvelope("stop", ctx),

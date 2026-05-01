@@ -101,7 +101,7 @@ describe("session_start handler", () => {
 });
 
 describe("agent_start handler", () => {
-	it("emits a 'session_start' payload on every turn", async () => {
+	it("emits a 'prompt_submit' payload on every turn", async () => {
 		setWorkingWarpEnv();
 		const { write } = primeFs();
 		const { pi, captured } = createMockPi();
@@ -112,7 +112,7 @@ describe("agent_start handler", () => {
 		const json = String(write.mock.calls[0][1])
 			.replace(/^\x1b\]777;notify;warp:\/\/cli-agent;/, "")
 			.replace(/\x07$/, "");
-		expect(JSON.parse(json).event).toBe("session_start");
+		expect(JSON.parse(json).event).toBe("prompt_submit");
 	});
 });
 

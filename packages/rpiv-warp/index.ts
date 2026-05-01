@@ -10,6 +10,7 @@
 import type { ExtensionAPI, ExtensionContext, SessionEntry } from "@mariozechner/pi-coding-agent";
 import {
 	buildIdlePromptPayload,
+	buildPromptSubmitPayload,
 	buildSessionStartPayload,
 	buildStopPayload,
 	buildToolCompletePayload,
@@ -67,7 +68,7 @@ export default function (pi: ExtensionAPI): void {
 	});
 
 	pi.on("agent_start", async (_event, ctx) => {
-		emit(buildSessionStartPayload(ctx));
+		emit(buildPromptSubmitPayload(ctx));
 	});
 
 	pi.on("agent_end", async (_event, ctx) => {
