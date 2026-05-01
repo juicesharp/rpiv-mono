@@ -3,7 +3,7 @@
 <div align="center">
   <a href="https://github.com/juicesharp/rpiv-mono/tree/main/packages/rpiv-pi">
     <picture>
-      <img src="https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-pi/docs/cover.png" alt="rpiv-pi cover" width="33%">
+      <img src="https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-pi/docs/cover.png" alt="rpiv-pi cover" width="50%">
     </picture>
   </a>
 </div>
