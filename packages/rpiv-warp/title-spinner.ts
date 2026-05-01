@@ -19,9 +19,9 @@
  * Pi mascot) is swapped for the rotating glyph; the suffix (` - <repo>`)
  * stays put.
  *
- *   on agent_start(suffix)      → CSI 22;0t       (push current title)
- *   while running, every ~80ms  → OSC 0           (write `<glyph><suffix>`)
- *   on agent_end                → CSI 23;0t       (pop — original restored)
+ *   on agent_start(suffix)        → CSI 22;0t     (push current title)
+ *   while running, every 160ms    → OSC 0         (write `<glyph><suffix>`)
+ *   on agent_end                  → CSI 23;0t     (pop — original restored)
  *
  * The suffix is supplied by callers in `index.ts` from `ctx.cwd`
  * (` - ${basename(cwd)}`); on a stop, push/pop restores whatever the

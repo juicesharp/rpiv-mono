@@ -10,8 +10,8 @@
  * Two OSC sequences and two CSI sequences are emitted from this module:
  *   - OSC 777 — Warp's structured cli-agent notification (badge state +
  *     toast). Single emission per lifecycle event; see `index.ts`.
- *   - OSC 0  — terminal title set. Driven from `title-spinner.ts` at
- *     ~80 Hz to animate Warp's per-tab activity dots; same mechanism
+ *   - OSC 0  — terminal title set. Driven from `title-spinner.ts` every
+ *     160ms to animate Warp's per-tab activity dots; same mechanism
  *     Claude Code uses (anthropics/claude-code#17887).
  *   - CSI 22;0t / CSI 23;0t — xterm window-title stack push/pop. Used
  *     by `title-spinner.ts` to snapshot Warp's existing tab title before
@@ -33,7 +33,7 @@
 import * as fs from "node:fs";
 
 // ---------------------------------------------------------------------------
-// OSC byte sequence — exported so tests assert against the same constants
+// Escape-sequence constants — exported so tests assert against the same bytes
 // ---------------------------------------------------------------------------
 
 export const OSC_INTRODUCER = "\x1b]";
@@ -48,6 +48,10 @@ export const CSI_PUSH_TITLE = "22;0t";
 export const CSI_POP_TITLE = "23;0t";
 
 const TTY_PATH = "/dev/tty";
+
+// ---------------------------------------------------------------------------
+// Pure formatters — one per shape; no I/O
+// ---------------------------------------------------------------------------
 
 export function formatOSC777(title: string, body: string): string {
 	return `${OSC_INTRODUCER}${OSC_777_PREFIX};${title};${body}${OSC_TERMINATOR}`;
@@ -98,7 +102,7 @@ function writeStdout(bytes: string): void {
 }
 
 // ---------------------------------------------------------------------------
-// Raw transport — single platform-fork; OSC-shape-agnostic, swallows errors
+// Raw transport — single platform-fork; shape-agnostic, swallows errors
 // ---------------------------------------------------------------------------
 
 function writeRaw(bytes: string): void {
@@ -122,7 +126,7 @@ function writeRaw(bytes: string): void {
 }
 
 // ---------------------------------------------------------------------------
-// Public emitters — one per OSC shape; both silent-skip on any failure
+// Public emitters — one per shape; all silent-skip on any failure
 // ---------------------------------------------------------------------------
 
 export function writeOSC777(title: string, body: string): void {
