@@ -5,7 +5,7 @@ All notable changes to `@juicesharp/rpiv-args` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.14] - 2026-05-01
 
 ### Changed
 - Cover redesigned as a macOS-style terminal-window screenshot demonstrating the extension's hero feature.
