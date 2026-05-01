@@ -1,10 +1,8 @@
 # rpiv-todo
 
-<a href="https://github.com/juicesharp/rpiv-mono/tree/main/packages/rpiv-todo">
-  <picture>
-    <img src="https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-todo/docs/cover.png" alt="rpiv-todo cover" width="100%">
-  </picture>
-</a>
+<picture>
+  <img src="https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-todo/docs/vertical-cover.png" alt="rpiv-todo vertical-cover" width="160">
+</picture>
 
 [![npm version](https://img.shields.io/npm/v/@juicesharp/rpiv-todo.svg)](https://www.npmjs.com/package/@juicesharp/rpiv-todo)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)

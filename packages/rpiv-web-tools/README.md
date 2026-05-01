@@ -1,10 +1,8 @@
 # rpiv-web-tools
 
-<a href="https://github.com/juicesharp/rpiv-mono/tree/main/packages/rpiv-web-tools">
-  <picture>
-    <img src="https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-web-tools/docs/cover.png" alt="rpiv-web-tools cover" width="100%">
-  </picture>
-</a>
+<picture>
+  <img src="https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-web-tools/docs/vertical-cover.png" alt="rpiv-web-tools vertical-cover" width="160">
+</picture>
 
 [![npm version](https://img.shields.io/npm/v/@juicesharp/rpiv-web-tools.svg)](https://www.npmjs.com/package/@juicesharp/rpiv-web-tools)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)

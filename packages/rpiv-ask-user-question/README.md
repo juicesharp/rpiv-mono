@@ -1,10 +1,8 @@
 # rpiv-ask-user-question
 
-<a href="https://github.com/juicesharp/rpiv-mono/tree/main/packages/rpiv-ask-user-question">
-  <picture>
-    <img src="https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-ask-user-question/docs/cover.png" alt="rpiv-ask-user-question cover" width="100%">
-  </picture>
-</a>
+<picture>
+  <img src="https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-ask-user-question/docs/vertical-cover.png" alt="rpiv-ask-user-question vertical-cover" width="160">
+</picture>
 
 [![npm version](https://img.shields.io/npm/v/@juicesharp/rpiv-ask-user-question.svg)](https://www.npmjs.com/package/@juicesharp/rpiv-ask-user-question)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
