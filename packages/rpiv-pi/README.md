@@ -1,10 +1,12 @@
 # rpiv-pi
 
-<a href="https://github.com/juicesharp/rpiv-mono/tree/main/packages/rpiv-pi">
-  <picture>
-    <img src="https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-pi/docs/cover.png" alt="rpiv-pi cover" width="25%">
-  </picture>
-</a>
+<div align="center">
+  <a href="https://github.com/juicesharp/rpiv-mono/tree/main/packages/rpiv-pi">
+    <picture>
+      <img src="https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-pi/docs/cover.png" alt="rpiv-pi cover" width="25%">
+    </picture>
+  </a>
+</div>
 
 [![npm version](https://img.shields.io/npm/v/@juicesharp/rpiv-pi.svg)](https://www.npmjs.com/package/@juicesharp/rpiv-pi)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
