@@ -19,6 +19,7 @@ vi.mock("node:fs", async () => {
 });
 
 import register from "./index.js";
+import { FRAME_INTERVAL_MS, __resetState as resetSpinner, SPINNER_FRAMES } from "./title-spinner.js";
 
 const WARP_ENV_VARS = ["TERM_PROGRAM", "WARP_CLI_AGENT_PROTOCOL_VERSION", "WARP_CLIENT_VERSION"] as const;
 
@@ -50,6 +51,7 @@ beforeEach(() => {
 	(fs.openSync as unknown as Mock).mockReset();
 	(fs.writeSync as unknown as Mock).mockReset();
 	(fs.closeSync as unknown as Mock).mockReset();
+	resetSpinner();
 });
 
 describe("registration", () => {
@@ -108,8 +110,9 @@ describe("agent_start handler", () => {
 		register(pi);
 		const handler = captured.events.get("agent_start")?.[0];
 		await handler?.({} as never, createMockCtx() as never);
-		expect(write).toHaveBeenCalledOnce();
-		const json = String(write.mock.calls[0][1])
+		const osc777Write = write.mock.calls.find((c) => String(c[1]).startsWith("\x1b]777;notify;"));
+		expect(osc777Write).toBeDefined();
+		const json = String(osc777Write?.[1])
 			.replace(/^\x1b\]777;notify;warp:\/\/cli-agent;/, "")
 			.replace(/\x07$/, "");
 		expect(JSON.parse(json).event).toBe("prompt_submit");
@@ -128,9 +131,11 @@ describe("agent_end handler", () => {
 		register(pi);
 		const handler = captured.events.get("agent_end")?.[0];
 		await handler?.({ messages: [] } as never, createMockCtx({ branch }) as never);
-		expect(write).toHaveBeenCalledOnce();
-		const bytes = String(write.mock.calls[0][1]);
-		const json = bytes.replace(/^\x1b\]777;notify;warp:\/\/cli-agent;/, "").replace(/\x07$/, "");
+		const osc777Write = write.mock.calls.find((c) => String(c[1]).startsWith("\x1b]777;notify;"));
+		expect(osc777Write).toBeDefined();
+		const json = String(osc777Write?.[1])
+			.replace(/^\x1b\]777;notify;warp:\/\/cli-agent;/, "")
+			.replace(/\x07$/, "");
 		const payload = JSON.parse(json);
 		expect(payload.event).toBe("stop");
 		expect(payload.query).toBe("how do I deploy?");
@@ -174,8 +179,9 @@ describe("tool_execution_end handler", () => {
 			{ toolCallId: "x", toolName: "ask_user_question", result: {}, isError: false } as never,
 			createMockCtx() as never,
 		);
-		expect(write).toHaveBeenCalledOnce();
-		const json = String(write.mock.calls[0][1])
+		const osc777Write = write.mock.calls.find((c) => String(c[1]).startsWith("\x1b]777;notify;"));
+		expect(osc777Write).toBeDefined();
+		const json = String(osc777Write?.[1])
 			.replace(/^\x1b\]777;notify;warp:\/\/cli-agent;/, "")
 			.replace(/\x07$/, "");
 		const payload = JSON.parse(json);
@@ -193,6 +199,137 @@ describe("tool_execution_end handler", () => {
 			createMockCtx() as never,
 		);
 		expect(open).not.toHaveBeenCalled();
+	});
+});
+
+describe("spinner lifecycle wiring", () => {
+	const PUSH = "\x1b[22;0t";
+	const POP = "\x1b[23;0t";
+	// createMockCtx() defaults cwd to "/tmp/test-cwd"; index.ts derives the
+	// title suffix as ` - ${basename(cwd)}` so the spinner writes preserve
+	// the rest of the original `π - <repo>` tab title.
+	const SUFFIX = " - test-cwd";
+
+	function classify(write: Mock): { osc777: number; titleSets: string[]; pushes: number; pops: number } {
+		let osc777 = 0;
+		let pushes = 0;
+		let pops = 0;
+		const titleSets: string[] = [];
+		for (const call of write.mock.calls) {
+			const bytes = String(call[1]);
+			if (bytes.startsWith("\x1b]777;notify;")) osc777++;
+			else if (bytes.startsWith("\x1b]0;")) titleSets.push(bytes.replace(/^\x1b\]0;/, "").replace(/\x07$/, ""));
+			else if (bytes === PUSH) pushes++;
+			else if (bytes === POP) pops++;
+		}
+		return { osc777, titleSets, pushes, pops };
+	}
+
+	it("agent_start pushes the title stack; agent_end pops it (original restored)", async () => {
+		setWorkingWarpEnv();
+		const { write } = primeFs();
+		vi.useFakeTimers();
+		try {
+			const { pi, captured } = createMockPi();
+			register(pi);
+
+			const start = captured.events.get("agent_start")?.[0];
+			await start?.({} as never, createMockCtx() as never);
+			const opened = classify(write);
+			expect(opened.osc777).toBe(1);
+			expect(opened.pushes).toBe(1);
+			expect(opened.pops).toBe(0);
+			expect(opened.titleSets).toEqual([]);
+
+			vi.advanceTimersByTime(FRAME_INTERVAL_MS * 3);
+			const mid = classify(write);
+			expect(mid.titleSets.length).toBe(3);
+			expect(mid.titleSets[0]).toBe(`${SPINNER_FRAMES[0]}${SUFFIX}`);
+			expect(mid.titleSets[1]).toBe(`${SPINNER_FRAMES[1]}${SUFFIX}`);
+			expect(mid.titleSets[2]).toBe(`${SPINNER_FRAMES[2]}${SUFFIX}`);
+
+			const end = captured.events.get("agent_end")?.[0];
+			await end?.({ messages: [] } as never, createMockCtx() as never);
+			const after = classify(write);
+			expect(after.osc777).toBe(2);
+			expect(after.pushes).toBe(1);
+			expect(after.pops).toBe(1);
+
+			vi.advanceTimersByTime(FRAME_INTERVAL_MS * 10);
+			const settled = classify(write);
+			expect(settled.titleSets.length).toBe(after.titleSets.length);
+			expect(settled.pops).toBe(1);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("blocking tool_call pops; tool_execution_end pushes again to resume", async () => {
+		setWorkingWarpEnv();
+		const { write } = primeFs();
+		vi.useFakeTimers();
+		try {
+			const { pi, captured } = createMockPi();
+			register(pi);
+
+			await captured.events.get("agent_start")?.[0]?.({} as never, createMockCtx() as never);
+			vi.advanceTimersByTime(FRAME_INTERVAL_MS * 2);
+			const beforeBlock = classify(write).titleSets.length;
+			expect(beforeBlock).toBe(2);
+
+			await captured.events.get("tool_call")?.[0]?.(
+				{ toolName: "ask_user_question", input: {} } as never,
+				createMockCtx() as never,
+			);
+			const blocked = classify(write);
+			expect(blocked.osc777).toBe(2);
+			expect(blocked.pushes).toBe(1);
+			expect(blocked.pops).toBe(1);
+
+			vi.advanceTimersByTime(FRAME_INTERVAL_MS * 5);
+			expect(classify(write).titleSets.length).toBe(blocked.titleSets.length);
+
+			await captured.events.get("tool_execution_end")?.[0]?.(
+				{ toolCallId: "x", toolName: "ask_user_question", result: {}, isError: false } as never,
+				createMockCtx() as never,
+			);
+			const resumed = classify(write);
+			expect(resumed.osc777).toBe(3);
+			expect(resumed.pushes).toBe(2);
+			expect(resumed.pops).toBe(1);
+
+			vi.advanceTimersByTime(FRAME_INTERVAL_MS * 2);
+			expect(classify(write).titleSets.length).toBe(resumed.titleSets.length + 2);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("non-blocking tool_call does NOT toggle the ticker", async () => {
+		setWorkingWarpEnv();
+		const { write } = primeFs();
+		vi.useFakeTimers();
+		try {
+			const { pi, captured } = createMockPi();
+			register(pi);
+
+			await captured.events.get("agent_start")?.[0]?.({} as never, createMockCtx() as never);
+			vi.advanceTimersByTime(FRAME_INTERVAL_MS);
+			const before = classify(write);
+
+			await captured.events.get("tool_call")?.[0]?.(
+				{ toolName: "bash", input: { command: "ls" } } as never,
+				createMockCtx() as never,
+			);
+
+			vi.advanceTimersByTime(FRAME_INTERVAL_MS);
+			const after = classify(write);
+			expect(after.titleSets.length).toBe(before.titleSets.length + 1);
+			expect(after.pushes).toBe(1);
+			expect(after.pops).toBe(0);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 });
 

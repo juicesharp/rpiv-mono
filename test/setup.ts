@@ -36,6 +36,9 @@ beforeEach(async () => {
 	gitContext.clearGitContextCache();
 	gitContext.resetInjectedMarker();
 
+	const titleSpinner = await import("../packages/rpiv-warp/title-spinner.js");
+	titleSpinner.__resetState();
+
 	delete (globalThis as Record<symbol, unknown>)[ADVISOR_SYMBOL];
 	delete (globalThis as Record<symbol, unknown>)[BTW_SYMBOL];
 

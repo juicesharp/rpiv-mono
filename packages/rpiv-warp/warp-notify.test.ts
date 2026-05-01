@@ -11,7 +11,16 @@ vi.mock("node:fs", async () => {
 	};
 });
 
-import { formatOSC777, writeOSC777 } from "./warp-notify.js";
+import {
+	formatOSC0,
+	formatOSC777,
+	formatPopTitleStack,
+	formatPushTitleStack,
+	popTitleStack,
+	pushTitleStack,
+	writeOSC0,
+	writeOSC777,
+} from "./warp-notify.js";
 
 const ORIGINAL_PLATFORM = process.platform;
 
@@ -48,6 +57,21 @@ describe("formatOSC777", () => {
 	});
 });
 
+describe("formatOSC0", () => {
+	it("wraps title in the OSC 0 envelope (terminal title set)", () => {
+		expect(formatOSC0("⣾ Pi")).toBe("\x1b]0;⣾ Pi\x07");
+	});
+});
+
+describe("formatPushTitleStack / formatPopTitleStack", () => {
+	it("emits the xterm CSI 22;0t push sequence", () => {
+		expect(formatPushTitleStack()).toBe("\x1b[22;0t");
+	});
+	it("emits the xterm CSI 23;0t pop sequence", () => {
+		expect(formatPopTitleStack()).toBe("\x1b[23;0t");
+	});
+});
+
 describe("writeOSC777 (Unix)", () => {
 	it("opens /dev/tty and writes the formatted sequence", () => {
 		setPlatform("darwin");
@@ -55,6 +79,33 @@ describe("writeOSC777 (Unix)", () => {
 		writeOSC777("warp://cli-agent", "body");
 		expect(open).toHaveBeenCalledWith("/dev/tty", "w");
 		expect(write).toHaveBeenCalledWith(7, "\x1b]777;notify;warp://cli-agent;body\x07");
+		expect(close).toHaveBeenCalledWith(7);
+	});
+
+	it("writeOSC0 shares the same transport (open /dev/tty, write, close)", () => {
+		setPlatform("darwin");
+		const { open, write, close } = primeFs();
+		writeOSC0("⣾ Pi");
+		expect(open).toHaveBeenCalledWith("/dev/tty", "w");
+		expect(write).toHaveBeenCalledWith(7, "\x1b]0;⣾ Pi\x07");
+		expect(close).toHaveBeenCalledWith(7);
+	});
+
+	it("pushTitleStack writes CSI 22;0t through the same transport", () => {
+		setPlatform("darwin");
+		const { open, write, close } = primeFs();
+		pushTitleStack();
+		expect(open).toHaveBeenCalledWith("/dev/tty", "w");
+		expect(write).toHaveBeenCalledWith(7, "\x1b[22;0t");
+		expect(close).toHaveBeenCalledWith(7);
+	});
+
+	it("popTitleStack writes CSI 23;0t through the same transport", () => {
+		setPlatform("darwin");
+		const { open, write, close } = primeFs();
+		popTitleStack();
+		expect(open).toHaveBeenCalledWith("/dev/tty", "w");
+		expect(write).toHaveBeenCalledWith(7, "\x1b[23;0t");
 		expect(close).toHaveBeenCalledWith(7);
 	});
 
