@@ -1,5 +1,11 @@
 # rpiv-btw
 
+<a href="https://github.com/juicesharp/rpiv-mono/tree/main/packages/rpiv-btw">
+  <picture>
+    <img src="https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-btw/docs/cover.png" alt="rpiv-btw cover" width="100%">
+  </picture>
+</a>
+
 [![npm version](https://img.shields.io/npm/v/@juicesharp/rpiv-btw.svg)](https://www.npmjs.com/package/@juicesharp/rpiv-btw)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 

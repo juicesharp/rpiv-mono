@@ -1,0 +1,155 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" role="img" aria-label="rpiv-todo — Persistent todo overlay that survives reload and compaction" preserveAspectRatio="xMidYMid meet">
+  <title>rpiv-todo — Persistent todo overlay that survives reload and compaction</title>
+  <defs>
+    <style>
+      .mono   { font-family: 'JetBrains Mono', 'Fira Code', 'SFMono-Regular', ui-monospace, Menlo, Consolas, monospace; }
+      .ink    { fill: #F4EFE6; }
+      .paper  { fill: #0E0D0B; }
+      .muted  { fill: #7A7468; }
+      .dim    { fill: #4A463F; }
+      .accent { fill: #FF7A3D; }
+      .mint   { fill: #6FD0B8; }
+      .rule   { stroke: #2A2620; }
+      .rule-bright { stroke: #FF7A3D; }
+    </style>
+    <filter id="grain" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="1.4" numOctaves="2" seed="23"/>
+      <feColorMatrix values="0 0 0 0 0.96
+                             0 0 0 0 0.94
+                             0 0 0 0 0.88
+                             0 0 0 0.06 0"/>
+    </filter>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0 H0 V32" fill="none" stroke="#161411" stroke-width="0.5"/>
+    </pattern>
+    <pattern id="dots" width="6" height="6" patternUnits="userSpaceOnUse">
+      <circle cx="3" cy="3" r="0.6" fill="#231F1A"/>
+    </pattern>
+    <radialGradient id="vignette" cx="50%" cy="50%" r="70%">
+      <stop offset="60%" stop-color="#0E0D0B" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#000" stop-opacity="0.55"/>
+    </radialGradient>
+    <radialGradient id="activeGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#6FD0B8" stop-opacity="0.35"/>
+      <stop offset="80%" stop-color="#6FD0B8" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Canvas -->
+  <rect width="1280" height="640" class="paper"/>
+  <rect width="1280" height="640" fill="url(#grid)" opacity="0.55"/>
+  <rect width="1280" height="640" fill="url(#dots)" opacity="0.4"/>
+  <rect width="1280" height="640" filter="url(#grain)" opacity="0.5"/>
+  <rect width="1280" height="640" fill="url(#vignette)"/>
+
+  <!-- Crop marks -->
+  <g class="rule-bright" stroke-width="1" fill="none" opacity="0.95">
+    <path d="M40 56 L56 56 M56 40 L56 56"/>
+    <path d="M1240 56 L1224 56 M1224 40 L1224 56"/>
+    <path d="M40 584 L56 584 M56 600 L56 584"/>
+    <path d="M1240 584 L1224 584 M1224 600 L1224 584"/>
+  </g>
+
+  <!-- Top spec strip -->
+  <line x1="64" y1="56" x2="1216" y2="56" class="rule" stroke-width="1"/>
+  <text class="mono muted" x="64"   y="44" font-size="10.5" letter-spacing="2.4">@JUICESHARP &#183; PI AGENT EXTENSION &#183; NO. 006 &#8211; TODO</text>
+  <text class="mono muted" x="1216" y="44" font-size="10.5" letter-spacing="2.4" text-anchor="end">MIT &#183; v0.9 &#183; 1280 &#215; 640</text>
+
+  <!-- Logotype -->
+  <text class="mono ink" x="64" y="200" font-size="116" font-weight="700" letter-spacing="-4">rpiv<tspan class="accent">-</tspan>todo</text>
+  <line x1="64" y1="216" x2="178" y2="216" class="rule-bright" stroke-width="2"/>
+  <text class="mono muted" x="64" y="246" font-size="16" letter-spacing="0.5">A todo list the model keeps across long sessions.</text>
+  <text class="mono dim"   x="64" y="270" font-size="11" letter-spacing="2.2">LIVE OVERLAY &#183; SURVIVES /reload + COMPACT &#183; DEPENDENCY GRAPH</text>
+
+  <!-- FIG header -->
+  <text class="mono muted" x="64"   y="328" font-size="10.5" letter-spacing="2.4">FIG. 01 &#8212; ABOVE-EDITOR WIDGET</text>
+  <text class="mono muted" x="1216" y="328" font-size="10.5" letter-spacing="2.4" text-anchor="end">tool: todo &#8226; cmd: /todos</text>
+  <line x1="64" y1="340" x2="1216" y2="340" class="rule" stroke-width="0.75"/>
+
+  <!-- ===== HERO: above-editor widget mock ===== -->
+
+  <!-- Status legend (left side) -->
+  <g transform="translate(64 364)">
+    <text class="mono dim" x="0" y="0" font-size="9.5" letter-spacing="2.2">STATUS</text>
+    <g transform="translate(0 14)">
+      <text x="0"   y="12" font-size="14" class="muted" font-family="'JetBrains Mono', monospace">&#9675;</text>
+      <text x="22"  y="12" font-size="10" class="mono muted" letter-spacing="1.5">PENDING</text>
+
+      <text x="0"   y="32" font-size="14" class="mint" font-family="'JetBrains Mono', monospace">&#9210;</text>
+      <text x="22"  y="32" font-size="10" class="mono mint" letter-spacing="1.5" font-weight="700">IN PROGRESS</text>
+
+      <text x="0"   y="52" font-size="14" class="muted" font-family="'JetBrains Mono', monospace">&#9679;</text>
+      <text x="22"  y="52" font-size="10" class="mono muted" letter-spacing="1.5">COMPLETED</text>
+
+      <text x="0"   y="72" font-size="14" class="dim"   font-family="'JetBrains Mono', monospace">&#10005;</text>
+      <text x="22"  y="72" font-size="10" class="mono dim" letter-spacing="1.5">DELETED &#8226; TOMBSTONE</text>
+    </g>
+    <text class="mono dim" x="0" y="116" font-size="9.5" letter-spacing="2.2">REPLAY</text>
+    <text class="mono muted" x="0" y="132" font-size="9.5" letter-spacing="1.4">branch &#8594; reducer</text>
+    <text class="mono muted" x="0" y="146" font-size="9.5" letter-spacing="1.4">last-writer-wins</text>
+  </g>
+
+  <!-- vertical separator -->
+  <line x1="240" y1="356" x2="240" y2="546" class="rule" stroke-width="0.75" stroke-dasharray="2 3"/>
+
+  <!-- Above-editor widget -->
+  <g transform="translate(264 360)">
+    <!-- widget shell -->
+    <rect x="0" y="0" width="952" height="148" fill="#13110D" stroke="#2A2620" stroke-width="1"/>
+
+    <!-- glow behind in_progress task -->
+    <rect x="6" y="62" width="940" height="20" fill="url(#activeGlow)"/>
+
+    <!-- heading bar -->
+    <rect x="0" y="0" width="952" height="20" fill="#1B0F08"/>
+    <text class="mono accent" x="12" y="14" font-size="11" letter-spacing="1.6" font-weight="700">&#9670; TODOS</text>
+    <text class="mono muted"  x="84" y="14" font-size="10.5" letter-spacing="1.4">5 tasks &#183; 1 in_progress &#183; 2 pending &#183; 1 completed &#183; 1 blocked</text>
+    <text class="mono dim"    x="940" y="14" font-size="9" letter-spacing="1.4" text-anchor="end">aboveEditor</text>
+
+    <!-- task lines -->
+    <g transform="translate(12 22)">
+      <!-- task 1: completed -->
+      <text x="0"   y="16" class="muted mono" font-size="14">&#9679;</text>
+      <text x="20"  y="16" class="muted mono" font-size="11.5" text-decoration="line-through">Set up CI for the pi extension monorepo</text>
+      <text x="940" y="16" class="dim mono" font-size="9.5" letter-spacing="1.4" text-anchor="end">#01</text>
+
+      <!-- task 2: in_progress (highlighted) -->
+      <text x="0"   y="40" class="mint mono" font-size="14" font-weight="700">&#9210;</text>
+      <text x="20"  y="40" class="ink  mono" font-size="11.5" font-weight="700">Wire advisor selector + reasoning-effort picker</text>
+      <text x="940" y="40" class="mint mono" font-size="9.5" letter-spacing="1.4" text-anchor="end" font-weight="700">#02 &#9210; ACTIVE</text>
+
+      <!-- task 3: pending -->
+      <text x="0"   y="64" class="muted mono" font-size="14">&#9675;</text>
+      <text x="20"  y="64" class="ink   mono" font-size="11.5">Mount overlay above editor &#183; lazy + idempotent</text>
+      <text x="940" y="64" class="dim mono" font-size="9.5" letter-spacing="1.4" text-anchor="end">#03</text>
+
+      <!-- task 4: pending blocked -->
+      <text x="0"   y="88" class="muted mono" font-size="14">&#9675;</text>
+      <text x="20"  y="88" class="ink   mono" font-size="11.5">Cut release v0.9.x &#183; lockstep bump every sibling</text>
+      <text x="940" y="88" class="accent mono" font-size="9.5" letter-spacing="1.4" text-anchor="end" font-weight="700">#04 &#8224; blockedBy: #02</text>
+
+      <!-- task 5: deleted (tombstone, dim) -->
+      <text x="0"   y="112" class="dim mono" font-size="14">&#10005;</text>
+      <text x="20"  y="112" class="dim mono" font-size="11.5" text-decoration="line-through">Patch the websocket reconnect dance</text>
+      <text x="940" y="112" class="dim mono" font-size="9.5" letter-spacing="1.4" text-anchor="end">#05 tombstone</text>
+    </g>
+  </g>
+
+  <!-- Editor row beneath widget -->
+  <g transform="translate(264 524)">
+    <line x1="0" y1="0" x2="952" y2="0" class="rule" stroke-width="0.5" stroke-dasharray="2 3"/>
+    <text class="mono dim" x="0"  y="-6" font-size="9.5" letter-spacing="2.2">EDITOR</text>
+    <text class="mono accent" x="0" y="20" font-size="13" font-weight="700">&#8250;</text>
+    <text class="mono muted"  x="20" y="20" font-size="12">_</text>
+    <text class="mono dim"    x="940" y="20" font-size="9.5" letter-spacing="1.4" text-anchor="end">widget auto-hides when list is empty</text>
+  </g>
+
+  <!-- Footer -->
+  <line x1="64" y1="584" x2="1216" y2="584" class="rule" stroke-width="1"/>
+  <text class="mono muted" x="64" y="608" font-size="11" letter-spacing="2">
+    <tspan class="accent">&#9654;</tspan>  pi install npm:@juicesharp/rpiv-todo
+  </text>
+  <text class="mono muted" x="1216" y="608" font-size="11" letter-spacing="2.4" text-anchor="end">
+    PLAN &#8594; DO &#8594; DONE
+  </text>
+</svg>

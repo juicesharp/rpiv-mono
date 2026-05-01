@@ -1,0 +1,156 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" role="img" aria-label="rpiv-web-tools — Brave-backed web search and fetch for Pi Agent" preserveAspectRatio="xMidYMid meet">
+  <title>rpiv-web-tools — Brave-backed web search and fetch for Pi Agent</title>
+  <defs>
+    <style>
+      .mono   { font-family: 'JetBrains Mono', 'Fira Code', 'SFMono-Regular', ui-monospace, Menlo, Consolas, monospace; }
+      .ink    { fill: #F4EFE6; }
+      .paper  { fill: #0E0D0B; }
+      .muted  { fill: #7A7468; }
+      .dim    { fill: #4A463F; }
+      .accent { fill: #FF7A3D; }
+      .mint   { fill: #6FD0B8; }
+      .rule   { stroke: #2A2620; }
+      .rule-bright { stroke: #FF7A3D; }
+    </style>
+    <filter id="grain" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="1.4" numOctaves="2" seed="29"/>
+      <feColorMatrix values="0 0 0 0 0.96
+                             0 0 0 0 0.94
+                             0 0 0 0 0.88
+                             0 0 0 0.06 0"/>
+    </filter>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0 H0 V32" fill="none" stroke="#161411" stroke-width="0.5"/>
+    </pattern>
+    <pattern id="dots" width="6" height="6" patternUnits="userSpaceOnUse">
+      <circle cx="3" cy="3" r="0.6" fill="#231F1A"/>
+    </pattern>
+    <radialGradient id="vignette" cx="50%" cy="50%" r="70%">
+      <stop offset="60%" stop-color="#0E0D0B" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#000" stop-opacity="0.55"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Canvas -->
+  <rect width="1280" height="640" class="paper"/>
+  <rect width="1280" height="640" fill="url(#grid)" opacity="0.55"/>
+  <rect width="1280" height="640" fill="url(#dots)" opacity="0.4"/>
+  <rect width="1280" height="640" filter="url(#grain)" opacity="0.5"/>
+  <rect width="1280" height="640" fill="url(#vignette)"/>
+
+  <!-- Crop marks -->
+  <g class="rule-bright" stroke-width="1" fill="none" opacity="0.95">
+    <path d="M40 56 L56 56 M56 40 L56 56"/>
+    <path d="M1240 56 L1224 56 M1224 40 L1224 56"/>
+    <path d="M40 584 L56 584 M56 600 L56 584"/>
+    <path d="M1240 584 L1224 584 M1224 600 L1224 584"/>
+  </g>
+
+  <!-- Top spec strip -->
+  <line x1="64" y1="56" x2="1216" y2="56" class="rule" stroke-width="1"/>
+  <text class="mono muted" x="64"   y="44" font-size="10.5" letter-spacing="2.4">@JUICESHARP &#183; PI AGENT EXTENSION &#183; NO. 007 &#8211; WEB</text>
+  <text class="mono muted" x="1216" y="44" font-size="10.5" letter-spacing="2.4" text-anchor="end">MIT &#183; v0.9 &#183; 1280 &#215; 640</text>
+
+  <!-- Logotype -->
+  <text class="mono ink" x="64" y="200" font-size="116" font-weight="700" letter-spacing="-4">rpiv<tspan class="accent">-</tspan>web-tools</text>
+  <line x1="64" y1="216" x2="178" y2="216" class="rule-bright" stroke-width="2"/>
+  <text class="mono muted" x="64" y="246" font-size="16" letter-spacing="0.5">Let the model search the web and read pages.</text>
+  <text class="mono dim"   x="64" y="270" font-size="11" letter-spacing="2.2">BRAVE-BACKED SEARCH &#183; HTTP(S) FETCH &#183; TRUNCATE-WITH-SPILL</text>
+
+  <!-- FIG header -->
+  <text class="mono muted" x="64"   y="328" font-size="10.5" letter-spacing="2.4">FIG. 01 &#8212; SEARCH &amp; FETCH</text>
+  <text class="mono muted" x="1216" y="328" font-size="10.5" letter-spacing="2.4" text-anchor="end">web_search() &#8226; web_fetch()</text>
+  <line x1="64" y1="340" x2="1216" y2="340" class="rule" stroke-width="0.75"/>
+
+  <!-- ===== HERO: query → results list + fetch with spill ===== -->
+
+  <!-- LEFT COLUMN: web_search -->
+  <g transform="translate(64 360)">
+    <text class="mono dim" x="0" y="0" font-size="9.5" letter-spacing="2.2">001 &#8212; web_search</text>
+
+    <!-- query input box -->
+    <g transform="translate(0 14)">
+      <rect x="0" y="0" width="608" height="32" fill="#15120E" stroke="#2A2620" stroke-width="1"/>
+      <text class="mono accent" x="12" y="20" font-size="13" font-weight="700">&#9906;</text>
+      <text class="mono muted"  x="32" y="20" font-size="12">{ query: <tspan class="ink">"server-sent events vs websockets"</tspan>, count: 3 }</text>
+      <rect x="568" y="6" width="32" height="20" fill="#1B0F08" stroke="#FF7A3D" stroke-width="0.75"/>
+      <text class="mono accent" x="584" y="20" font-size="10.5" text-anchor="middle" font-weight="700">GET</text>
+    </g>
+
+    <!-- result rows -->
+    <g transform="translate(0 60)">
+      <!-- result 1 -->
+      <text class="mono accent" x="0"  y="14" font-size="11" font-weight="700" letter-spacing="1.4">01</text>
+      <text class="mono ink"    x="22" y="14" font-size="11.5" font-weight="700">Server-Sent Events vs WebSockets</text>
+      <text class="mono mint"   x="22" y="28" font-size="10">https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events</text>
+      <text class="mono muted"  x="22" y="42" font-size="9.5">SSE is a one-way push channel from server to browser; WS is a full-duplex&#8230;</text>
+
+      <!-- divider -->
+      <line x1="0" y1="52" x2="608" y2="52" class="rule" stroke-width="0.5" stroke-dasharray="1 3"/>
+
+      <!-- result 2 -->
+      <text class="mono accent" x="0"  y="68" font-size="11" font-weight="700" letter-spacing="1.4">02</text>
+      <text class="mono ink"    x="22" y="68" font-size="11.5" font-weight="700">When to choose SSE over WebSockets</text>
+      <text class="mono mint"   x="22" y="82" font-size="10">https://ably.com/blog/sse-vs-websockets</text>
+      <text class="mono muted"  x="22" y="96" font-size="9.5">SSE is simpler to scale through proxies and survives network blips&#8230;</text>
+
+      <!-- divider -->
+      <line x1="0" y1="106" x2="608" y2="106" class="rule" stroke-width="0.5" stroke-dasharray="1 3"/>
+
+      <!-- result 3 -->
+      <text class="mono accent" x="0"  y="122" font-size="11" font-weight="700" letter-spacing="1.4">03</text>
+      <text class="mono ink"    x="22" y="122" font-size="11.5" font-weight="700">EventSource: a tour through the standard</text>
+      <text class="mono mint"   x="22" y="136" font-size="10">https://html.spec.whatwg.org/multipage/server-sent-events.html</text>
+      <text class="mono muted"  x="22" y="150" font-size="9.5">The browser auto-reconnects with Last-Event-ID, replaying missed&#8230;</text>
+    </g>
+
+    <!-- attribution -->
+    <text class="mono dim" x="0"   y="234" font-size="9" letter-spacing="1.6">api.search.brave.com &#183; X-Subscription-Token</text>
+  </g>
+
+  <!-- vertical column rule -->
+  <line x1="704" y1="356" x2="704" y2="556" class="rule" stroke-width="0.75" stroke-dasharray="2 3"/>
+
+  <!-- RIGHT COLUMN: web_fetch -->
+  <g transform="translate(736 360)">
+    <text class="mono dim" x="0" y="0" font-size="9.5" letter-spacing="2.2">002 &#8212; web_fetch</text>
+
+    <!-- request shell -->
+    <g transform="translate(0 14)">
+      <rect x="0" y="0" width="480" height="32" fill="#15120E" stroke="#2A2620" stroke-width="1"/>
+      <text class="mono accent" x="12" y="20" font-size="13" font-weight="700">&#8623;</text>
+      <text class="mono muted"  x="32" y="20" font-size="12">{ url: <tspan class="ink">"https://&#8230;ably.com/blog&#8230;"</tspan> }</text>
+      <rect x="424" y="6" width="48" height="20" fill="#1B0F08" stroke="#FF7A3D" stroke-width="0.75"/>
+      <text class="mono accent" x="448" y="20" font-size="10.5" text-anchor="middle" font-weight="700">200 OK</text>
+    </g>
+
+    <!-- HTML &rarr; text panel -->
+    <g transform="translate(0 60)">
+      <text class="mono dim" x="0" y="0" font-size="9.5" letter-spacing="2.2">HTML &#8594; TEXT</text>
+      <rect x="0" y="6" width="480" height="84" fill="#0E0D0B" stroke="#221E18" stroke-width="0.6"/>
+      <text class="mono ink"   x="10" y="22" font-size="10.5"># When to choose SSE over WebSockets</text>
+      <text class="mono muted" x="10" y="36" font-size="10.5">SSE is a one-way push from server to browser. It</text>
+      <text class="mono muted" x="10" y="50" font-size="10.5">survives most corporate proxies and traverses CDN</text>
+      <text class="mono muted" x="10" y="64" font-size="10.5">layers without renegotiation, which makes it&#8230;</text>
+      <text class="mono dim"   x="10" y="78" font-size="10.5">&#8230; (88 lines)</text>
+    </g>
+
+    <!-- spillover banner -->
+    <g transform="translate(0 158)">
+      <rect x="0" y="0" width="480" height="40" fill="#15120E" stroke="#FF7A3D" stroke-width="1"/>
+      <text class="mono accent" x="10" y="16" font-size="10" letter-spacing="1.6" font-weight="700">[ TRUNCATED &#8226; SHOWING 64 of 988 LINES ]</text>
+      <text class="mono muted"  x="10" y="32" font-size="10">full body &#8594; <tspan class="mint">/tmp/rpiv-fetch-Xa9k/content.txt</tspan></text>
+    </g>
+
+    <text class="mono dim" x="0" y="234" font-size="9" letter-spacing="1.6">env: BRAVE_SEARCH_API_KEY  &#8226;  cfg: ~/.config/rpiv-web-tools/config.json</text>
+  </g>
+
+  <!-- Footer -->
+  <line x1="64" y1="584" x2="1216" y2="584" class="rule" stroke-width="1"/>
+  <text class="mono muted" x="64" y="608" font-size="11" letter-spacing="2">
+    <tspan class="accent">&#9654;</tspan>  pi install npm:@juicesharp/rpiv-web-tools
+  </text>
+  <text class="mono muted" x="1216" y="608" font-size="11" letter-spacing="2.4" text-anchor="end">
+    SEARCH &#183; FETCH &#183; SPILL
+  </text>
+</svg>

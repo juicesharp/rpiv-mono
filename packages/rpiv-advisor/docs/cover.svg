@@ -1,0 +1,158 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" role="img" aria-label="rpiv-advisor — Second-opinion handoff to a stronger reviewer model" preserveAspectRatio="xMidYMid meet">
+  <title>rpiv-advisor — Second-opinion handoff to a stronger reviewer model</title>
+  <defs>
+    <style>
+      .mono   { font-family: 'JetBrains Mono', 'Fira Code', 'SFMono-Regular', ui-monospace, Menlo, Consolas, monospace; }
+      .ink    { fill: #F4EFE6; }
+      .paper  { fill: #0E0D0B; }
+      .muted  { fill: #7A7468; }
+      .dim    { fill: #4A463F; }
+      .accent { fill: #FF7A3D; }
+      .mint   { fill: #6FD0B8; }
+      .rule   { stroke: #2A2620; }
+      .rule-bright { stroke: #FF7A3D; }
+    </style>
+
+    <filter id="grain" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="1.4" numOctaves="2" seed="13"/>
+      <feColorMatrix values="0 0 0 0 0.96
+                             0 0 0 0 0.94
+                             0 0 0 0 0.88
+                             0 0 0 0.06 0"/>
+    </filter>
+
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0 H0 V32" fill="none" stroke="#161411" stroke-width="0.5"/>
+    </pattern>
+
+    <pattern id="dots" width="6" height="6" patternUnits="userSpaceOnUse">
+      <circle cx="3" cy="3" r="0.6" fill="#231F1A"/>
+    </pattern>
+
+    <marker id="chev" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10" fill="none" stroke="#FF7A3D" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+
+    <marker id="chevMint" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10" fill="none" stroke="#6FD0B8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+
+    <radialGradient id="vignette" cx="50%" cy="50%" r="70%">
+      <stop offset="60%" stop-color="#0E0D0B" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#000" stop-opacity="0.55"/>
+    </radialGradient>
+
+    <radialGradient id="reviewerGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#6FD0B8" stop-opacity="0.45"/>
+      <stop offset="60%" stop-color="#6FD0B8" stop-opacity="0.05"/>
+      <stop offset="100%" stop-color="#6FD0B8" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Canvas -->
+  <rect width="1280" height="640" class="paper"/>
+  <rect width="1280" height="640" fill="url(#grid)" opacity="0.55"/>
+  <rect width="1280" height="640" fill="url(#dots)" opacity="0.4"/>
+  <rect width="1280" height="640" filter="url(#grain)" opacity="0.5"/>
+  <rect width="1280" height="640" fill="url(#vignette)"/>
+
+  <!-- Crop marks -->
+  <g class="rule-bright" stroke-width="1" fill="none" opacity="0.95">
+    <path d="M40 56 L56 56 M56 40 L56 56"/>
+    <path d="M1240 56 L1224 56 M1224 40 L1224 56"/>
+    <path d="M40 584 L56 584 M56 600 L56 584"/>
+    <path d="M1240 584 L1224 584 M1224 600 L1224 584"/>
+  </g>
+
+  <!-- Top spec strip -->
+  <line x1="64" y1="56" x2="1216" y2="56" class="rule" stroke-width="1"/>
+  <text class="mono muted" x="64"   y="44" font-size="10.5" letter-spacing="2.4">@JUICESHARP &#183; PI AGENT EXTENSION &#183; NO. 003 &#8211; ADVISOR</text>
+  <text class="mono muted" x="1216" y="44" font-size="10.5" letter-spacing="2.4" text-anchor="end">MIT &#183; v0.9 &#183; 1280 &#215; 640</text>
+
+  <!-- Logotype -->
+  <text class="mono ink" x="64" y="200" font-size="116" font-weight="700" letter-spacing="-4">rpiv<tspan class="accent">-</tspan>advisor</text>
+  <line x1="64" y1="216" x2="178" y2="216" class="rule-bright" stroke-width="2"/>
+  <text class="mono muted" x="64" y="246" font-size="16" letter-spacing="0.5">A second-opinion handoff to a stronger reviewer model.</text>
+  <text class="mono dim"   x="64" y="270" font-size="11" letter-spacing="2.2">REVIEWER MODEL PICKER &#183; ZERO-PARAM HANDOFF &#183; OFF BY DEFAULT</text>
+
+  <!-- FIG header -->
+  <text class="mono muted" x="64"   y="328" font-size="10.5" letter-spacing="2.4">FIG. 01 &#8212; SECOND-OPINION HANDOFF</text>
+  <text class="mono muted" x="1216" y="328" font-size="10.5" letter-spacing="2.4" text-anchor="end">advisor() &#8226; zero parameters</text>
+  <line x1="64" y1="340" x2="1216" y2="340" class="rule" stroke-width="0.75"/>
+
+  <!-- HERO: executor → advisor handoff -->
+
+  <!-- Executor block (left) -->
+  <g transform="translate(120 388)">
+    <!-- exec node -->
+    <circle r="22" fill="#0E0D0B" stroke="#FF7A3D" stroke-width="1.6"/>
+    <circle r="6"  fill="#FF7A3D"/>
+    <text class="mono ink" x="0" y="56" font-size="13" letter-spacing="1.6" text-anchor="middle" font-weight="700">EXECUTOR</text>
+    <text class="mono muted" x="0" y="74" font-size="10" letter-spacing="1.4" text-anchor="middle">working model</text>
+
+    <!-- conversation branch — stacked message tiles -->
+    <g transform="translate(-90 -82)">
+      <text class="mono dim" x="0" y="-6" font-size="9.5" letter-spacing="2.2">CONVERSATION BRANCH</text>
+      <rect x="0"  y="0"  width="180" height="14" fill="#15120E" stroke="#221E18" stroke-width="0.6"/>
+      <rect x="0"  y="18" width="160" height="14" fill="#15120E" stroke="#221E18" stroke-width="0.6"/>
+      <rect x="0"  y="36" width="180" height="14" fill="#15120E" stroke="#221E18" stroke-width="0.6"/>
+      <rect x="0"  y="54" width="140" height="14" fill="#15120E" stroke="#221E18" stroke-width="0.6"/>
+      <text class="mono muted" x="6"  y="11" font-size="9">user &#8250; how should this be wired?</text>
+      <text class="mono muted" x="6"  y="29" font-size="9">assistant &#8250; let me try option A</text>
+      <text class="mono muted" x="6"  y="47" font-size="9">tool &#8250; edit src/foo.ts (-12 +24)</text>
+      <text class="mono muted" x="6"  y="65" font-size="9">assistant &#8250; before I commit&#8230;</text>
+    </g>
+  </g>
+
+  <!-- Handoff arrow (orange, long) -->
+  <line x1="240" y1="388" x2="900" y2="388" class="rule-bright" stroke-width="1.6" stroke-dasharray="4 4"/>
+  <path d="M896 380 L908 388 L896 396" fill="none" stroke="#FF7A3D" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+
+  <!-- Function call label tile in middle of arrow -->
+  <g transform="translate(570 388)">
+    <rect x="-110" y="-18" width="220" height="36" fill="#15120E" stroke="#FF7A3D" stroke-width="1"/>
+    <text class="mono accent" x="0" y="0"  font-size="14" font-weight="700" text-anchor="middle">advisor()</text>
+    <text class="mono muted"  x="0" y="14" font-size="9.5" letter-spacing="1.4" text-anchor="middle">SERIALIZE BRANCH &#8226; SIDE-CALL</text>
+  </g>
+
+  <!-- Reviewer block (right) — mint -->
+  <g transform="translate(960 388)">
+    <circle r="56" fill="url(#reviewerGlow)"/>
+    <circle r="32" fill="#13110D" stroke="#6FD0B8" stroke-width="1.6"/>
+    <circle r="9"  fill="#6FD0B8"/>
+    <text class="mono mint" x="0" y="68" font-size="13" letter-spacing="1.6" text-anchor="middle" font-weight="700">ADVISOR</text>
+    <text class="mono muted" x="0" y="86" font-size="10" letter-spacing="1.4" text-anchor="middle">stronger reviewer (e.g. Opus)</text>
+  </g>
+
+  <!-- Three reply branches splaying right from reviewer -->
+  <g>
+    <!-- branch 1: PLAN -->
+    <line x1="998" y1="368" x2="1136" y2="338" stroke="#6FD0B8" stroke-width="1" stroke-dasharray="2 3"/>
+    <rect x="1136" y="324" width="78" height="22" fill="#13110D" stroke="#2A4D45" stroke-width="0.75"/>
+    <text class="mono mint" x="1175" y="339" font-size="11" letter-spacing="1.5" text-anchor="middle" font-weight="700">PLAN</text>
+
+    <!-- branch 2: CORRECTION -->
+    <line x1="998" y1="388" x2="1136" y2="388" stroke="#6FD0B8" stroke-width="1" stroke-dasharray="2 3"/>
+    <rect x="1136" y="376" width="78" height="22" fill="#13110D" stroke="#2A4D45" stroke-width="0.75"/>
+    <text class="mono mint" x="1175" y="391" font-size="10.5" letter-spacing="1.2" text-anchor="middle" font-weight="700">CORRECT</text>
+
+    <!-- branch 3: STOP -->
+    <line x1="998" y1="408" x2="1136" y2="438" stroke="#6FD0B8" stroke-width="1" stroke-dasharray="2 3"/>
+    <rect x="1136" y="426" width="78" height="22" fill="#13110D" stroke="#2A4D45" stroke-width="0.75"/>
+    <text class="mono mint" x="1175" y="441" font-size="11" letter-spacing="1.5" text-anchor="middle" font-weight="700">STOP</text>
+  </g>
+
+  <!-- bottom annotation rule -->
+  <line x1="64" y1="544" x2="1216" y2="544" class="rule" stroke-width="0.5" stroke-dasharray="1 3"/>
+  <text class="mono muted" x="64"   y="528" font-size="10" letter-spacing="2.2">REGISTERED-BUT-INACTIVE UNTIL A MODEL IS SELECTED VIA /advisor</text>
+  <text class="mono muted" x="1216" y="528" font-size="10" letter-spacing="2.2" text-anchor="end">~/.config/rpiv-advisor/advisor.json &#183; chmod 0600</text>
+
+  <!-- Footer -->
+  <line x1="64" y1="584" x2="1216" y2="584" class="rule" stroke-width="1"/>
+  <text class="mono muted" x="64" y="608" font-size="11" letter-spacing="2">
+    <tspan class="accent">&#9654;</tspan>  pi install npm:@juicesharp/rpiv-advisor
+  </text>
+  <text class="mono muted" x="1216" y="608" font-size="11" letter-spacing="2.4" text-anchor="end">
+    EXECUTOR &#8594; ADVISOR &#8594; GUIDANCE
+  </text>
+</svg>

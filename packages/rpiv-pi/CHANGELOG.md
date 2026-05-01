@@ -7,6 +7,12 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- `docs/cover.png` — package hero (rasterized from `docs/cover.svg` via `rsvg-convert`, 1280×640).
+
+### Changed
+- README now opens with a `<picture>`-wrapped `cover.png` hero so pi.dev's package-card image extractor picks the friendly artwork instead of the npm version shield.
+
 ## [1.0.11] - 2026-04-30
 
 ### Changed

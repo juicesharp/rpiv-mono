@@ -1,0 +1,238 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" role="img" aria-label="rpiv-pi — Skill-based development workflow for Pi Agent" preserveAspectRatio="xMidYMid meet">
+  <title>rpiv-pi — Skill-based development workflow for Pi Agent</title>
+  <defs>
+    <style>
+      .mono   { font-family: 'JetBrains Mono', 'Fira Code', 'SFMono-Regular', ui-monospace, Menlo, Consolas, monospace; }
+      .ink    { fill: #F4EFE6; }
+      .paper  { fill: #0E0D0B; }
+      .muted  { fill: #7A7468; }
+      .dim    { fill: #4A463F; }
+      .accent { fill: #FF7A3D; }
+      .mint   { fill: #6FD0B8; }
+      .rule   { stroke: #2A2620; }
+      .rule-bright { stroke: #FF7A3D; }
+    </style>
+
+    <filter id="grain" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="1.4" numOctaves="2" seed="11"/>
+      <feColorMatrix values="0 0 0 0 0.96
+                             0 0 0 0 0.94
+                             0 0 0 0 0.88
+                             0 0 0 0.06 0"/>
+    </filter>
+
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0 H0 V32" fill="none" stroke="#161411" stroke-width="0.5"/>
+    </pattern>
+
+    <pattern id="dots" width="6" height="6" patternUnits="userSpaceOnUse">
+      <circle cx="3" cy="3" r="0.6" fill="#231F1A"/>
+    </pattern>
+
+    <marker id="chev" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10" fill="none" stroke="#FF7A3D" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+
+    <radialGradient id="vignette" cx="50%" cy="50%" r="70%">
+      <stop offset="60%" stop-color="#0E0D0B" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#000" stop-opacity="0.55"/>
+    </radialGradient>
+
+    <radialGradient id="piGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#FF7A3D" stop-opacity="0.55"/>
+      <stop offset="60%" stop-color="#FF7A3D" stop-opacity="0.05"/>
+      <stop offset="100%" stop-color="#FF7A3D" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- ============================================================ -->
+  <!-- Canvas                                                       -->
+  <!-- ============================================================ -->
+  <rect width="1280" height="640" class="paper"/>
+  <rect width="1280" height="640" fill="url(#grid)" opacity="0.55"/>
+  <rect width="1280" height="640" fill="url(#dots)" opacity="0.4"/>
+  <rect width="1280" height="640" filter="url(#grain)" opacity="0.5"/>
+  <rect width="1280" height="640" fill="url(#vignette)"/>
+
+  <!-- ============================================================ -->
+  <!-- Crop marks                                                   -->
+  <!-- ============================================================ -->
+  <g class="rule-bright" stroke-width="1" fill="none" opacity="0.95">
+    <path d="M40 56 L56 56 M56 40 L56 56"/>
+    <path d="M1240 56 L1224 56 M1224 40 L1224 56"/>
+    <path d="M40 584 L56 584 M56 600 L56 584"/>
+    <path d="M1240 584 L1224 584 M1224 600 L1224 584"/>
+  </g>
+
+  <!-- ============================================================ -->
+  <!-- Top spec strip                                               -->
+  <!-- ============================================================ -->
+  <line x1="64" y1="56" x2="1216" y2="56" class="rule" stroke-width="1"/>
+  <text class="mono muted" x="64"   y="44" font-size="10.5" letter-spacing="2.4">@JUICESHARP &#183; PI AGENT EXTENSION &#183; NO. 001 &#8211; CORE</text>
+  <text class="mono muted" x="1216" y="44" font-size="10.5" letter-spacing="2.4" text-anchor="end">MIT &#183; v0.9 &#183; 1280 &#215; 640</text>
+
+  <!-- ============================================================ -->
+  <!-- Logotype                                                     -->
+  <!-- ============================================================ -->
+  <g>
+    <text class="mono ink" x="64" y="200" font-size="116" font-weight="700" letter-spacing="-4">rpiv<tspan class="accent">-</tspan>pi</text>
+    <line x1="64" y1="216" x2="178" y2="216" class="rule-bright" stroke-width="2"/>
+    <text class="mono muted" x="64" y="246" font-size="16" letter-spacing="0.5">Skill-based development workflow for Pi Agent.</text>
+    <text class="mono dim"   x="64" y="270" font-size="11" letter-spacing="2.2">CHAINED AI SKILLS &#183; 12 NAMED SUBAGENTS &#183; SESSION HOOKS</text>
+  </g>
+
+  <!-- side stamp (right of logotype, vertically aligned with it) -->
+  <g transform="translate(1100 168)">
+    <!-- pi mark glow -->
+    <circle cx="0" cy="0" r="92" fill="url(#piGlow)"/>
+    <!-- thin orbit ring -->
+    <circle cx="0" cy="0" r="58" fill="none" stroke="#FF7A3D" stroke-width="0.75" opacity="0.55" stroke-dasharray="2 4"/>
+    <!-- inner disk -->
+    <circle cx="0" cy="0" r="42" fill="#15120E" stroke="#FF7A3D" stroke-width="1.25"/>
+    <!-- pi glyph -->
+    <text class="mono accent" x="0" y="14" font-size="48" font-weight="700" text-anchor="middle">&#960;</text>
+    <!-- orbital agent dots -->
+    <g fill="#FF7A3D" opacity="0.85">
+      <circle cx="58"   cy="0"    r="2.4"/>
+      <circle cx="50.2" cy="29"   r="2.0"/>
+      <circle cx="29"   cy="50.2" r="2.4"/>
+      <circle cx="0"    cy="58"   r="2.0"/>
+      <circle cx="-29"  cy="50.2" r="2.4"/>
+      <circle cx="-50.2" cy="29"  r="2.0"/>
+      <circle cx="-58"  cy="0"    r="2.4"/>
+      <circle cx="-50.2" cy="-29" r="2.0"/>
+      <circle cx="-29"  cy="-50.2" r="2.4"/>
+      <circle cx="0"    cy="-58"  r="2.0"/>
+      <circle cx="29"   cy="-50.2" r="2.4"/>
+      <circle cx="50.2" cy="-29"  r="2.0"/>
+    </g>
+    <text class="mono muted" x="0" y="116" font-size="10" letter-spacing="2.4" text-anchor="middle">12 SUBAGENTS</text>
+  </g>
+
+  <!-- ============================================================ -->
+  <!-- Hero: pipeline                                               -->
+  <!-- horizontal flow across the canvas                            -->
+  <!-- ============================================================ -->
+
+  <!-- column header above pipeline -->
+  <text class="mono muted" x="64"   y="328" font-size="10.5" letter-spacing="2.4">FIG. 01 &#8212; SKILL PIPELINE</text>
+  <text class="mono muted" x="1216" y="328" font-size="10.5" letter-spacing="2.4" text-anchor="end">DISCOVER &#8594; VALIDATE</text>
+  <line x1="64" y1="340" x2="1216" y2="340" class="rule" stroke-width="0.75"/>
+
+  <!-- baseline rule under stage labels -->
+  <line x1="120" y1="430" x2="1216" y2="430" class="rule" stroke-width="0.75" stroke-dasharray="2 4"/>
+
+  <!-- pipeline rail (orange) -->
+  <line x1="160" y1="430" x2="1180" y2="430" class="rule-bright" stroke-width="1.4"/>
+  <!-- arrow tip at end -->
+  <path d="M1170 422 L1184 430 L1170 438" fill="none" stroke="#FF7A3D" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+
+  <!-- six stage nodes -->
+  <!-- positions: x = 160, 364, 568, 772, 976, 1180 -->
+  <g>
+    <!-- node 01 -->
+    <g transform="translate(160 430)">
+      <circle r="11" fill="#0E0D0B" stroke="#FF7A3D" stroke-width="1.6"/>
+      <circle r="3"  fill="#FF7A3D"/>
+      <text class="mono dim"    x="0" y="-32" font-size="10" letter-spacing="1.6" text-anchor="middle">01</text>
+      <text class="mono ink"    x="0" y="48"  font-size="14" letter-spacing="1.5" text-anchor="middle" font-weight="700">DISCOVER</text>
+      <text class="mono muted"  x="0" y="68"  font-size="10" letter-spacing="1.4" text-anchor="middle">questions</text>
+    </g>
+
+    <!-- node 02 -->
+    <g transform="translate(364 430)">
+      <circle r="11" fill="#0E0D0B" stroke="#FF7A3D" stroke-width="1.6"/>
+      <circle r="3"  fill="#FF7A3D"/>
+      <text class="mono dim"    x="0" y="-32" font-size="10" letter-spacing="1.6" text-anchor="middle">02</text>
+      <text class="mono ink"    x="0" y="48"  font-size="14" letter-spacing="1.5" text-anchor="middle" font-weight="700">RESEARCH</text>
+      <text class="mono muted"  x="0" y="68"  font-size="10" letter-spacing="1.4" text-anchor="middle">research</text>
+    </g>
+
+    <!-- node 03 -->
+    <g transform="translate(568 430)">
+      <circle r="11" fill="#0E0D0B" stroke="#FF7A3D" stroke-width="1.6"/>
+      <circle r="3"  fill="#FF7A3D"/>
+      <text class="mono dim"    x="0" y="-32" font-size="10" letter-spacing="1.6" text-anchor="middle">03</text>
+      <text class="mono ink"    x="0" y="48"  font-size="14" letter-spacing="1.5" text-anchor="middle" font-weight="700">DESIGN</text>
+      <text class="mono muted"  x="0" y="68"  font-size="10" letter-spacing="1.4" text-anchor="middle">designs</text>
+    </g>
+
+    <!-- node 04 -->
+    <g transform="translate(772 430)">
+      <circle r="11" fill="#0E0D0B" stroke="#FF7A3D" stroke-width="1.6"/>
+      <circle r="3"  fill="#FF7A3D"/>
+      <text class="mono dim"    x="0" y="-32" font-size="10" letter-spacing="1.6" text-anchor="middle">04</text>
+      <text class="mono ink"    x="0" y="48"  font-size="14" letter-spacing="1.5" text-anchor="middle" font-weight="700">PLAN</text>
+      <text class="mono muted"  x="0" y="68"  font-size="10" letter-spacing="1.4" text-anchor="middle">plans</text>
+    </g>
+
+    <!-- node 05 -->
+    <g transform="translate(976 430)">
+      <circle r="11" fill="#0E0D0B" stroke="#FF7A3D" stroke-width="1.6"/>
+      <circle r="3"  fill="#FF7A3D"/>
+      <text class="mono dim"    x="0" y="-32" font-size="10" letter-spacing="1.6" text-anchor="middle">05</text>
+      <text class="mono ink"    x="0" y="48"  font-size="14" letter-spacing="1.5" text-anchor="middle" font-weight="700">IMPLEMENT</text>
+      <text class="mono muted"  x="0" y="68"  font-size="10" letter-spacing="1.4" text-anchor="middle">code</text>
+    </g>
+
+    <!-- node 06 (mint — terminal node) -->
+    <g transform="translate(1180 430)">
+      <circle r="13" fill="#13110D" stroke="#6FD0B8" stroke-width="1.6"/>
+      <circle r="4"  fill="#6FD0B8"/>
+      <text class="mono dim"    x="0" y="-32" font-size="10" letter-spacing="1.6" text-anchor="middle">06</text>
+      <text class="mono mint"   x="0" y="48"  font-size="14" letter-spacing="1.5" text-anchor="middle" font-weight="700">VALIDATE</text>
+      <text class="mono muted"  x="0" y="68"  font-size="10" letter-spacing="1.4" text-anchor="middle">report</text>
+    </g>
+  </g>
+
+  <!-- subagent fan-out: thin lines from "research" + "design" up to a cluster of dots above -->
+  <g opacity="0.85">
+    <!-- agent dot cluster (shows the 12 fleet) -->
+    <g fill="#7A7468">
+      <circle cx="384"  cy="372" r="1.6"/>
+      <circle cx="404"  cy="362" r="1.6"/>
+      <circle cx="424"  cy="370" r="1.6"/>
+      <circle cx="448"  cy="358" r="1.6"/>
+      <circle cx="472"  cy="368" r="1.6"/>
+      <circle cx="496"  cy="360" r="1.6"/>
+      <circle cx="520"  cy="370" r="1.6"/>
+      <circle cx="544"  cy="362" r="1.6"/>
+      <circle cx="568"  cy="356" r="1.6"/>
+      <circle cx="592"  cy="364" r="1.6"/>
+      <circle cx="616"  cy="372" r="1.6"/>
+      <circle cx="640"  cy="362" r="1.6"/>
+    </g>
+    <!-- bracket above the cluster -->
+    <path d="M384 350 L384 344 L640 344 L640 350" fill="none" stroke="#3A352D" stroke-width="0.75"/>
+    <text class="mono muted" x="512" y="338" font-size="9.5" letter-spacing="2.2" text-anchor="middle">PARALLEL DISPATCH &#183; NAMED SUBAGENTS</text>
+    <!-- thin lines from research(364,430) and design(568,430) up into the cluster -->
+    <line x1="364" y1="419" x2="424" y2="372" stroke="#3A352D" stroke-width="0.6"/>
+    <line x1="364" y1="419" x2="472" y2="368" stroke="#3A352D" stroke-width="0.6"/>
+    <line x1="568" y1="419" x2="544" y2="362" stroke="#3A352D" stroke-width="0.6"/>
+    <line x1="568" y1="419" x2="592" y2="364" stroke="#3A352D" stroke-width="0.6"/>
+  </g>
+
+  <!-- artifact track below stages -->
+  <text class="mono dim" x="64" y="528" font-size="10" letter-spacing="2.2">ARTIFACTS &#8214;</text>
+  <text class="mono muted" x="160" y="528" font-size="10" letter-spacing="1.6">thoughts/shared/questions/</text>
+  <text class="mono muted" x="364" y="528" font-size="10" letter-spacing="1.6" text-anchor="middle">research/</text>
+  <text class="mono muted" x="568" y="528" font-size="10" letter-spacing="1.6" text-anchor="middle">designs/</text>
+  <text class="mono muted" x="772" y="528" font-size="10" letter-spacing="1.6" text-anchor="middle">plans/</text>
+  <text class="mono muted" x="976" y="528" font-size="10" letter-spacing="1.6" text-anchor="middle">/* code */</text>
+  <text class="mono mint"  x="1180" y="528" font-size="10" letter-spacing="1.6" text-anchor="end">reviews/</text>
+
+  <!-- thin horizontal rule under artifacts -->
+  <line x1="64" y1="544" x2="1216" y2="544" class="rule" stroke-width="0.5" stroke-dasharray="1 3"/>
+
+  <!-- ============================================================ -->
+  <!-- Bottom footer strip                                          -->
+  <!-- ============================================================ -->
+  <line x1="64" y1="584" x2="1216" y2="584" class="rule" stroke-width="1"/>
+
+  <text class="mono muted" x="64" y="608" font-size="11" letter-spacing="2">
+    <tspan class="accent">&#9654;</tspan>  pi install npm:@juicesharp/rpiv-pi
+  </text>
+  <text class="mono muted" x="1216" y="608" font-size="11" letter-spacing="2.4" text-anchor="end">
+    DISCOVER &#8594; RESEARCH &#8594; DESIGN &#8594; PLAN &#8594; IMPLEMENT &#8594; VALIDATE
+  </text>
+</svg>

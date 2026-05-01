@@ -1,0 +1,126 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" role="img" aria-label="rpiv-btw — Side questions without polluting the main conversation" preserveAspectRatio="xMidYMid meet">
+  <title>rpiv-btw — Side questions without polluting the main conversation</title>
+  <defs>
+    <style>
+      .mono   { font-family: 'JetBrains Mono', 'Fira Code', 'SFMono-Regular', ui-monospace, Menlo, Consolas, monospace; }
+      .ink    { fill: #F4EFE6; }
+      .paper  { fill: #0E0D0B; }
+      .muted  { fill: #7A7468; }
+      .dim    { fill: #4A463F; }
+      .accent { fill: #FF7A3D; }
+      .mint   { fill: #6FD0B8; }
+      .rule   { stroke: #2A2620; }
+      .rule-bright { stroke: #FF7A3D; }
+    </style>
+    <filter id="grain" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="1.4" numOctaves="2" seed="19"/>
+      <feColorMatrix values="0 0 0 0 0.96
+                             0 0 0 0 0.94
+                             0 0 0 0 0.88
+                             0 0 0 0.06 0"/>
+    </filter>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0 H0 V32" fill="none" stroke="#161411" stroke-width="0.5"/>
+    </pattern>
+    <pattern id="dots" width="6" height="6" patternUnits="userSpaceOnUse">
+      <circle cx="3" cy="3" r="0.6" fill="#231F1A"/>
+    </pattern>
+    <radialGradient id="vignette" cx="50%" cy="50%" r="70%">
+      <stop offset="60%" stop-color="#0E0D0B" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#000" stop-opacity="0.55"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Canvas -->
+  <rect width="1280" height="640" class="paper"/>
+  <rect width="1280" height="640" fill="url(#grid)" opacity="0.55"/>
+  <rect width="1280" height="640" fill="url(#dots)" opacity="0.4"/>
+  <rect width="1280" height="640" filter="url(#grain)" opacity="0.5"/>
+  <rect width="1280" height="640" fill="url(#vignette)"/>
+
+  <!-- Crop marks -->
+  <g class="rule-bright" stroke-width="1" fill="none" opacity="0.95">
+    <path d="M40 56 L56 56 M56 40 L56 56"/>
+    <path d="M1240 56 L1224 56 M1224 40 L1224 56"/>
+    <path d="M40 584 L56 584 M56 600 L56 584"/>
+    <path d="M1240 584 L1224 584 M1224 600 L1224 584"/>
+  </g>
+
+  <!-- Top spec strip -->
+  <line x1="64" y1="56" x2="1216" y2="56" class="rule" stroke-width="1"/>
+  <text class="mono muted" x="64"   y="44" font-size="10.5" letter-spacing="2.4">@JUICESHARP &#183; PI AGENT EXTENSION &#183; NO. 005 &#8211; BTW</text>
+  <text class="mono muted" x="1216" y="44" font-size="10.5" letter-spacing="2.4" text-anchor="end">MIT &#183; v0.9 &#183; 1280 &#215; 640</text>
+
+  <!-- Logotype -->
+  <text class="mono ink" x="64" y="200" font-size="116" font-weight="700" letter-spacing="-4">rpiv<tspan class="accent">-</tspan>btw</text>
+  <line x1="64" y1="216" x2="178" y2="216" class="rule-bright" stroke-width="2"/>
+  <text class="mono muted" x="64" y="246" font-size="16" letter-spacing="0.5">Ask a side question without polluting the main conversation.</text>
+  <text class="mono dim"   x="64" y="270" font-size="11" letter-spacing="2.2">READ-ONLY CLONE &#183; EPHEMERAL OVERLAY &#183; NO DISK PERSISTENCE</text>
+
+  <!-- FIG header -->
+  <text class="mono muted" x="64"   y="328" font-size="10.5" letter-spacing="2.4">FIG. 01 &#8212; NO-POLLUTION SIDECHANNEL</text>
+  <text class="mono muted" x="1216" y="328" font-size="10.5" letter-spacing="2.4" text-anchor="end">/btw &#8226; lives in memory only</text>
+  <line x1="64" y1="340" x2="1216" y2="340" class="rule" stroke-width="0.75"/>
+
+  <!-- ===== HERO: split — main transcript above (dimmed), btw overlay below (highlighted) ===== -->
+
+  <!-- TOP HALF: main transcript (dim) -->
+  <g transform="translate(64 360)">
+    <text class="mono dim" x="0" y="0" font-size="9.5" letter-spacing="2.2">MAIN TRANSCRIPT &#8226; UNTOUCHED</text>
+
+    <g opacity="0.55">
+      <rect x="0"   y="10" width="640" height="14" fill="#15120E" stroke="#221E18" stroke-width="0.5"/>
+      <rect x="0"   y="28" width="540" height="14" fill="#15120E" stroke="#221E18" stroke-width="0.5"/>
+      <rect x="0"   y="46" width="600" height="14" fill="#15120E" stroke="#221E18" stroke-width="0.5"/>
+      <rect x="0"   y="64" width="500" height="14" fill="#15120E" stroke="#221E18" stroke-width="0.5"/>
+      <text class="mono muted" x="6"  y="21" font-size="9.5">user &#8250; let&#8217;s migrate the websocket layer to SSE</text>
+      <text class="mono muted" x="6"  y="39" font-size="9.5">assistant &#8250; on it &#8212; reading current transport&#8230;</text>
+      <text class="mono muted" x="6"  y="57" font-size="9.5">tool &#8250; read src/transport/socket.ts</text>
+      <text class="mono muted" x="6"  y="75" font-size="9.5">assistant &#8250; ready to draft the migration plan</text>
+    </g>
+
+    <!-- read-only clone arrow (orange, one-way) -->
+    <g transform="translate(680 38)">
+      <line x1="0" y1="0" x2="0" y2="56" class="rule-bright" stroke-width="1.4" stroke-dasharray="3 3"/>
+      <path d="M-7 50 L0 60 L7 50" fill="none" stroke="#FF7A3D" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/>
+      <text class="mono accent" x="14" y="6"  font-size="10" letter-spacing="1.6" font-weight="700">READ-ONLY</text>
+      <text class="mono muted"  x="14" y="22" font-size="9.5" letter-spacing="1.4">CLONE OF BRANCH</text>
+      <text class="mono muted"  x="14" y="36" font-size="9.5" letter-spacing="1.4">SIDE-CALL, NO TOOLS</text>
+      <text class="mono muted"  x="14" y="50" font-size="9.5" letter-spacing="1.4">tools: []</text>
+    </g>
+  </g>
+
+  <!-- horizontal seam between main and overlay -->
+  <line x1="64" y1="448" x2="1216" y2="448" class="rule" stroke-width="0.5" stroke-dasharray="1 4"/>
+  <text class="mono dim" x="64"  y="442" font-size="9.5" letter-spacing="2.2">EDITOR ROW</text>
+  <text class="mono dim" x="1216" y="442" font-size="9.5" letter-spacing="2.2" text-anchor="end">&#8595; OVERLAY ANCHORED HERE</text>
+
+  <!-- BOTTOM: btw overlay (the hero panel) -->
+  <g transform="translate(64 458)">
+    <rect x="0" y="0" width="1152" height="86" fill="#13110D" stroke="#FF7A3D" stroke-width="1"/>
+
+    <!-- Banner -->
+    <rect x="0" y="0" width="1152" height="22" fill="#1B0F08"/>
+    <text class="mono accent" x="14" y="15" font-size="11" letter-spacing="1.6" font-weight="700">/btw</text>
+    <text class="mono ink"    x="62" y="15" font-size="11">why did we switch from sockets to SSE last week?</text>
+    <text class="mono muted"  x="1138" y="15" font-size="9" letter-spacing="1.4" text-anchor="end">Esc &#8226; close</text>
+
+    <!-- Answer body -->
+    <text class="mono muted" x="14" y="40" font-size="11">&#8250; resilience: SSE survives proxies that buffer / drop ws, and the team</text>
+    <text class="mono muted" x="14" y="54" font-size="11">  was tired of the ping-pong reconnect dance. server-push only, so</text>
+    <text class="mono muted" x="14" y="68" font-size="11">  back-channel moved to standard fetch. see commit b3e21f &#8230;</text>
+
+    <!-- Footer of overlay -->
+    <text class="mono dim"  x="14"   y="80" font-size="9" letter-spacing="1.4">&#8595; scroll &#183; x clear &#183; Esc close</text>
+    <text class="mono mint" x="1138" y="80" font-size="9" letter-spacing="1.4" text-anchor="end" font-weight="700">EPHEMERAL &#183; NEVER WRITTEN</text>
+  </g>
+
+  <!-- Footer -->
+  <line x1="64" y1="584" x2="1216" y2="584" class="rule" stroke-width="1"/>
+  <text class="mono muted" x="64" y="608" font-size="11" letter-spacing="2">
+    <tspan class="accent">&#9654;</tspan>  pi install npm:@juicesharp/rpiv-btw
+  </text>
+  <text class="mono muted" x="1216" y="608" font-size="11" letter-spacing="2.4" text-anchor="end">
+    ASK &#8594; ANSWER &#8594; DISCARD
+  </text>
+</svg>

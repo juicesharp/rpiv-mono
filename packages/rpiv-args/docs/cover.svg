@@ -1,0 +1,153 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" role="img" aria-label="rpiv-args — Shell-style arguments for Pi Agent skills" preserveAspectRatio="xMidYMid meet">
+  <title>rpiv-args — Shell-style arguments for Pi Agent skills</title>
+  <defs>
+    <style>
+      .mono   { font-family: 'JetBrains Mono', 'Fira Code', 'SFMono-Regular', ui-monospace, Menlo, Consolas, monospace; }
+      .ink    { fill: #F4EFE6; }
+      .paper  { fill: #0E0D0B; }
+      .muted  { fill: #7A7468; }
+      .dim    { fill: #4A463F; }
+      .accent { fill: #FF7A3D; }
+      .mint   { fill: #6FD0B8; }
+      .rule   { stroke: #2A2620; }
+      .rule-bright { stroke: #FF7A3D; }
+    </style>
+
+    <filter id="grain" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="1.4" numOctaves="2" seed="7"/>
+      <feColorMatrix values="0 0 0 0 0.96
+                             0 0 0 0 0.94
+                             0 0 0 0 0.88
+                             0 0 0 0.06 0"/>
+    </filter>
+
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0 H0 V32" fill="none" stroke="#161411" stroke-width="0.5"/>
+    </pattern>
+
+    <pattern id="dots" width="6" height="6" patternUnits="userSpaceOnUse">
+      <circle cx="3" cy="3" r="0.6" fill="#231F1A"/>
+    </pattern>
+
+    <marker id="chev" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10" fill="none" stroke="#FF7A3D" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+
+  <!-- ============================================================ -->
+  <!-- Canvas                                                       -->
+  <!-- ============================================================ -->
+  <rect width="1280" height="640" class="paper"/>
+  <rect width="1280" height="640" fill="url(#grid)" opacity="0.55"/>
+  <rect width="1280" height="640" fill="url(#dots)" opacity="0.4"/>
+  <rect width="1280" height="640" filter="url(#grain)" opacity="0.5"/>
+
+  <!-- vignette to anchor the corners -->
+  <radialGradient id="vignette" cx="50%" cy="50%" r="70%">
+    <stop offset="60%" stop-color="#0E0D0B" stop-opacity="0"/>
+    <stop offset="100%" stop-color="#000" stop-opacity="0.55"/>
+  </radialGradient>
+  <rect width="1280" height="640" fill="url(#vignette)"/>
+
+  <!-- ============================================================ -->
+  <!-- Crop marks (corners)                                         -->
+  <!-- ============================================================ -->
+  <g class="rule-bright" stroke-width="1" fill="none" opacity="0.95">
+    <path d="M40 56 L56 56 M56 40 L56 56"/>
+    <path d="M1240 56 L1224 56 M1224 40 L1224 56"/>
+    <path d="M40 584 L56 584 M56 600 L56 584"/>
+    <path d="M1240 584 L1224 584 M1224 600 L1224 584"/>
+  </g>
+
+  <!-- ============================================================ -->
+  <!-- Top spec strip                                               -->
+  <!-- ============================================================ -->
+  <line x1="64" y1="56" x2="1216" y2="56" class="rule" stroke-width="1"/>
+  <text class="mono muted" x="64"   y="44" font-size="10.5" letter-spacing="2.4">@JUICESHARP &#183; PI AGENT EXTENSION &#183; NO. 002 &#8211; ARGS</text>
+  <text class="mono muted" x="1216" y="44" font-size="10.5" letter-spacing="2.4" text-anchor="end">MIT &#183; v0.9 &#183; 1280 &#215; 640</text>
+
+  <!-- ============================================================ -->
+  <!-- Logotype                                                     -->
+  <!-- ============================================================ -->
+  <g>
+    <text class="mono ink" x="64" y="200" font-size="116" font-weight="700" letter-spacing="-4">rpiv<tspan class="accent">-</tspan>args</text>
+    <!-- baseline tick -->
+    <line x1="64" y1="216" x2="178" y2="216" class="rule-bright" stroke-width="2"/>
+    <text class="mono muted" x="64" y="246" font-size="16" letter-spacing="0.5">Shell-style arguments for Pi Agent skills.</text>
+    <text class="mono dim" x="64" y="270" font-size="11" letter-spacing="2.2">$1 &#183; $2 &#183; $ARGUMENTS &#183; $@ &#183; ${@:N} &#183; ${@:N:L}</text>
+  </g>
+
+  <!-- ============================================================ -->
+  <!-- Hero: substitution diagram                                   -->
+  <!-- right column: x = 660 .. 1216 (width 556)                    -->
+  <!-- ============================================================ -->
+
+  <!-- vertical column rule -->
+  <line x1="620" y1="80" x2="620" y2="560" class="rule" stroke-width="1" stroke-dasharray="2 4"/>
+
+  <!-- column header -->
+  <text class="mono muted" x="660"  y="120" font-size="10.5" letter-spacing="2.4">FIG. 01 &#8212; SUBSTITUTION</text>
+  <line x1="660" y1="132" x2="1216" y2="132" class="rule" stroke-width="0.75"/>
+
+  <!-- step label: INPUT -->
+  <text class="mono dim" x="660" y="172" font-size="10.5" letter-spacing="2.2">001 &#8212; INVOCATION</text>
+
+  <!-- step 1: invocation -->
+  <g transform="translate(660 200)">
+    <rect x="-8" y="-22" width="556" height="44" fill="#15120E" stroke="#221E18" stroke-width="0.75" rx="2"/>
+    <text class="mono ink" x="6" y="6" font-size="20">
+      <tspan class="accent">/</tspan>skill:deploy <tspan class="ink">api</tspan> <tspan class="ink">production</tspan>
+    </text>
+    <text class="mono muted" x="540" y="6" font-size="11" letter-spacing="1.5" text-anchor="end">USER</text>
+  </g>
+
+  <!-- arrow 1 with side label -->
+  <path d="M696 232 L696 268" class="rule-bright" stroke-width="1.6" fill="none" marker-end="url(#chev)"/>
+  <text class="mono muted" x="712" y="256" font-size="10.5" letter-spacing="2.2">PARSE &#183; SHELL-STYLE QUOTING</text>
+
+  <!-- step label: TEMPLATE -->
+  <text class="mono dim" x="660" y="296" font-size="10.5" letter-spacing="2.2">002 &#8212; SKILL BODY</text>
+
+  <!-- step 2: template with placeholders highlighted -->
+  <g transform="translate(660 322)">
+    <rect x="-8" y="-22" width="556" height="44" fill="#15120E" stroke="#221E18" stroke-width="0.75" rx="2"/>
+    <text class="mono ink" x="6" y="6" font-size="22">
+      Deploy service <tspan class="accent" font-weight="700">$1</tspan> to <tspan class="accent" font-weight="700">$2</tspan>.
+    </text>
+    <text class="mono muted" x="540" y="6" font-size="11" letter-spacing="1.5" text-anchor="end">SKILL.MD</text>
+  </g>
+
+  <!-- arrow 2 with side label -->
+  <path d="M696 354 L696 390" class="rule-bright" stroke-width="1.6" fill="none" marker-end="url(#chev)"/>
+  <text class="mono muted" x="712" y="378" font-size="10.5" letter-spacing="2.2">SUBSTITUTE &#183; $1=api  $2=production</text>
+
+  <!-- step label: RESULT -->
+  <text class="mono dim" x="660" y="418" font-size="10.5" letter-spacing="2.2">003 &#8212; RENDERED PROMPT</text>
+
+  <!-- step 3: rendered output with substituted values highlighted -->
+  <g transform="translate(660 444)">
+    <rect x="-8" y="-22" width="556" height="44" fill="#13110D" stroke="#1F3A33" stroke-width="0.75" rx="2"/>
+    <text class="mono ink" x="6" y="6" font-size="22">
+      Deploy service <tspan class="mint" font-weight="700">api</tspan> to <tspan class="mint" font-weight="700">production</tspan>.
+    </text>
+    <text class="mono mint" x="540" y="6" font-size="11" letter-spacing="1.5" text-anchor="end">LLM</text>
+  </g>
+
+  <!-- mint accent rule under final row -->
+  <line x1="660" y1="478" x2="1216" y2="478" stroke="#2A4D45" stroke-width="0.75"/>
+  <text class="mono muted" x="660" y="506" font-size="10.5" letter-spacing="2.2">
+    BYTE-IDENTICAL TO PI&#8217;S NATIVE EXPANSION WHEN NO PLACEHOLDER IS PRESENT.
+  </text>
+
+  <!-- ============================================================ -->
+  <!-- Bottom footer strip                                          -->
+  <!-- ============================================================ -->
+  <line x1="64" y1="584" x2="1216" y2="584" class="rule" stroke-width="1"/>
+
+  <text class="mono muted" x="64" y="608" font-size="11" letter-spacing="2">
+    <tspan class="accent">&#9654;</tspan>  pi install npm:@juicesharp/rpiv-args
+  </text>
+  <text class="mono muted" x="1216" y="608" font-size="11" letter-spacing="2.4" text-anchor="end">
+    SHELL &#8594; SKILL &#8594; LLM
+  </text>
+</svg>
