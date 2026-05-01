@@ -28,6 +28,7 @@
   "files": [
     "ask-user-question.ts",
     "index.ts",
+    "i18n.ts",
     "LICENSE",
     "README.md",
     "state/build-questionnaire.ts",
