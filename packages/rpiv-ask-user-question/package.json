@@ -1,6 +1,6 @@
 {
   "name": "@juicesharp/rpiv-ask-user-question",
-  "version": "1.0.11",
+  "version": "1.0.12",
   "description": "Pi extension: lets the model ask you a clarifying question with structured options instead of guessing",
   "keywords": [
     "pi-package",
