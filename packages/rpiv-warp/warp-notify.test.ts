@@ -174,3 +174,50 @@ describe("writeOSC777 (Windows)", () => {
 		}
 	});
 });
+
+// Title-spinner emitters share writeOSC777's transport. The TTY-skip and
+// EPIPE-swallow paths are already covered above; here we verify only that
+// each emitter's bytes reach `process.stdout.write` on Windows so ConPTY
+// can forward them to Warp.
+describe("writeOSC0 / pushTitleStack / popTitleStack (Windows)", () => {
+	function withTtyStdout(fn: (stdoutWrite: Mock) => void): void {
+		setPlatform("win32");
+		const stdoutWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+		const isTtyDescriptor = Object.getOwnPropertyDescriptor(process.stdout, "isTTY");
+		Object.defineProperty(process.stdout, "isTTY", { value: true, configurable: true });
+		try {
+			fn(stdoutWrite as unknown as Mock);
+		} finally {
+			stdoutWrite.mockRestore();
+			if (isTtyDescriptor) Object.defineProperty(process.stdout, "isTTY", isTtyDescriptor);
+			else delete (process.stdout as { isTTY?: boolean }).isTTY;
+		}
+	}
+
+	it("writeOSC0 forwards the title-set sequence through process.stdout", () => {
+		const { open } = primeFs();
+		withTtyStdout((stdoutWrite) => {
+			writeOSC0("⠴ - rpiv-mono");
+			expect(stdoutWrite).toHaveBeenCalledWith("\x1b]0;⠴ - rpiv-mono\x07");
+			expect(open).not.toHaveBeenCalled();
+		});
+	});
+
+	it("pushTitleStack forwards CSI 22;0t through process.stdout (ConPTY relays it to Warp)", () => {
+		const { open } = primeFs();
+		withTtyStdout((stdoutWrite) => {
+			pushTitleStack();
+			expect(stdoutWrite).toHaveBeenCalledWith("\x1b[22;0t");
+			expect(open).not.toHaveBeenCalled();
+		});
+	});
+
+	it("popTitleStack forwards CSI 23;0t through process.stdout (title restore depends on terminal support)", () => {
+		const { open } = primeFs();
+		withTtyStdout((stdoutWrite) => {
+			popTitleStack();
+			expect(stdoutWrite).toHaveBeenCalledWith("\x1b[23;0t");
+			expect(open).not.toHaveBeenCalled();
+		});
+	});
+});
