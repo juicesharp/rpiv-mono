@@ -1,6 +1,6 @@
 {
 	"name": "@juicesharp/rpiv-warp",
-	"version": "1.0.14",
+	"version": "1.0.15",
 	"private": true,
 	"description": "Pi extension: native Warp terminal notifications via OSC 777 for Pi lifecycle events",
 	"keywords": [
