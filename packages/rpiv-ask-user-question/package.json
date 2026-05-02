@@ -27,6 +27,7 @@
   },
   "files": [
     "ask-user-question.ts",
+    "i18n.ts",
     "index.ts",
     "LICENSE",
     "README.md",

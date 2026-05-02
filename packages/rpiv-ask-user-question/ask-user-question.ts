@@ -13,6 +13,7 @@ import {
 } from "./tool/types.js";
 import { validateQuestionnaire } from "./tool/validate-questionnaire.js";
 import type { WrappingSelectItem } from "./view/components/wrapping-select.js";
+import { initI18n, t } from "./i18n.js";
 
 const ERROR_NO_UI = "Error: UI not available (running in non-interactive mode)";
 
@@ -30,6 +31,8 @@ export function buildItemsForQuestion(question: QuestionData): WrappingSelectIte
 }
 
 export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
+	initI18n(pi);
+
 	pi.registerTool({
 		name: "ask_user_question",
 		label: "Ask User Question",
@@ -63,7 +66,7 @@ Preview content is rendered as markdown in a monospace box. Multi-line text with
 
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			const typed = params as unknown as QuestionParams;
-			if (!ctx.hasUI) return buildToolResult(ERROR_NO_UI, { answers: [], cancelled: true, error: "no_ui" });
+			if (!ctx.hasUI) return buildToolResult(t("ask.error.noUi", ERROR_NO_UI), { answers: [], cancelled: true, error: "no_ui" });
 
 			const validation = validateQuestionnaire(typed);
 			if (!validation.ok) {
