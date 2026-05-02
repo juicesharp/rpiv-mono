@@ -7,6 +7,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- Rename `ensureUserTail` → `ensureUserTailForAdvisor` to match the file's domain-qualified verb-noun naming (`stripInflightAdvisorCall`, `getInventoryMessage`). Inline `ADVISOR_NUDGE_TEXT` consolidated into the `MSG_*` block as `MSG_ADVISOR_NUDGE`. Inverted the role early-return to `last.role !== "assistant"` to mirror `stripInflightAdvisorCall` and stay safe under future `Message` union additions. Behavior unchanged.
+
 ## [1.0.16] - 2026-05-02
 
 ### Fixed

@@ -61,11 +61,7 @@ const CHECKMARK = " ✓";
 // Messages (static)
 const MSG_ADVISOR_DISABLED = "Advisor disabled";
 const MSG_REQUIRES_INTERACTIVE = "/advisor requires interactive mode";
-
-// User-tail nudge — appended when stripping leaves an assistant tail (some
-// providers, e.g. recent Anthropic models, reject payloads not ending with
-// a user message: "This model does not support assistant message prefill.").
-const ADVISOR_NUDGE_TEXT = "Please advise on the executor's situation above.";
+const MSG_ADVISOR_NUDGE = "Please advise on the executor's situation above.";
 
 // Errors (static)
 const ERR_NO_MODEL = "No advisor model is configured. The user can enable one with the /advisor command.";
@@ -211,23 +207,21 @@ export function stripInflightAdvisorCall(messages: Message[]): Message[] {
 	return [...messages.slice(0, -1), { ...last, content: filtered }];
 }
 
-// Some providers (recent Anthropic Claude models) reject payloads that end on
-// an assistant turn — they treat a trailing assistant message as a prefill and
-// require user-tail. After stripInflightAdvisorCall, the tail can be assistant
-// (e.g. the executor wrote thinking text before calling advisor). Append a
-// minimal user-role nudge so the request is well-formed for those providers.
-export function ensureUserTail(messages: Message[]): Message[] {
+// Some providers (recent Anthropic Claude models) reject payloads ending on an
+// assistant turn ("This model does not support assistant message prefill. The
+// conversation must end with a user message."). After stripInflightAdvisorCall
+// the tail can be assistant (e.g. the executor wrote thinking text before
+// calling advisor). Append a minimal user-role nudge to guarantee user-tail.
+export function ensureUserTailForAdvisor(messages: Message[]): Message[] {
 	if (messages.length === 0) return messages;
 	const last = messages[messages.length - 1];
-	if (last.role === "user" || last.role === "toolResult") return messages;
-	return [
-		...messages,
-		{
-			role: "user",
-			content: [{ type: "text", text: ADVISOR_NUDGE_TEXT }],
-			timestamp: Date.now(),
-		},
-	];
+	if (last.role !== "assistant") return messages;
+	const nudge: Message = {
+		role: "user",
+		content: [{ type: "text", text: MSG_ADVISOR_NUDGE }],
+		timestamp: Date.now(),
+	};
+	return [...messages, nudge];
 }
 
 // Returns `undefined` when the registry is empty (no extensions loaded) so
@@ -361,7 +355,7 @@ async function executeAdvisor(
 	const agentMessages = branch
 		.filter((e): e is SessionEntry & { type: "message" } => e.type === "message")
 		.map((e) => e.message);
-	const branchMessages = ensureUserTail(stripInflightAdvisorCall(convertToLlm(agentMessages)));
+	const branchMessages = ensureUserTailForAdvisor(stripInflightAdvisorCall(convertToLlm(agentMessages)));
 	const inventoryMessage = getInventoryMessage(pi.getAllTools());
 	const messages: Message[] = inventoryMessage ? [inventoryMessage, ...branchMessages] : branchMessages;
 
