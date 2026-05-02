@@ -5,7 +5,7 @@ All notable changes to `@juicesharp/rpiv-advisor` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.17] - 2026-05-02
 
 ### Changed
 - Rename `ensureUserTail` → `ensureUserTailForAdvisor` to match the file's domain-qualified verb-noun naming (`stripInflightAdvisorCall`, `getInventoryMessage`). Inline `ADVISOR_NUDGE_TEXT` consolidated into the `MSG_*` block as `MSG_ADVISOR_NUDGE`. Inverted the role early-return to `last.role !== "assistant"` to mirror `stripInflightAdvisorCall` and stay safe under future `Message` union additions. Behavior unchanged.
