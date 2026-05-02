@@ -5,7 +5,7 @@ All notable changes to `@juicesharp/rpiv-ask-user-question` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.18] - 2026-05-02
 
 ### Changed
 - Lead the `header` field description with `MAX 12 CHARACTERS — hard limit, requests over the limit are rejected.` so mid-tier reasoning models (which were occasionally emitting 13–14 char chip labels despite the typebox `maxLength: 12` constraint already being on the wire) see the cap at the top of the description instead of buried in a parenthetical. The schema constraint and validator behavior are unchanged.
