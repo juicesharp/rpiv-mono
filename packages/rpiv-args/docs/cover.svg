@@ -42,15 +42,15 @@
 
     <text class="mono" x="120" y="298" font-size="22"><tspan class="mint" font-weight="700">&#10095;</tspan> <tspan class="ink">/skill:deploy api production</tspan></text>
 
-    <text class="mono dim" x="120" y="362" font-size="14" letter-spacing="2">SKILL BODY</text>
+    <text class="mono muted" x="120" y="362" font-size="14" letter-spacing="2">SKILL BODY</text>
     <text class="mono muted" xml:space="preserve" x="120" y="402" font-size="26">  Deploy service <tspan class="accent" font-weight="700">$1</tspan> to <tspan class="accent" font-weight="700">$2</tspan>.</text>
 
     <text class="mono mint" x="160" y="466" font-size="28" font-weight="700">&#8595;</text>
 
-    <text class="mono dim" x="120" y="526" font-size="14" letter-spacing="2">RENDERED</text>
+    <text class="mono muted" x="120" y="526" font-size="14" letter-spacing="2">RENDERED</text>
     <text class="mono ink" xml:space="preserve" x="120" y="566" font-size="26">  Deploy service <tspan class="mint" font-weight="700">api</tspan> to <tspan class="mint" font-weight="700">production</tspan>.</text>
 
-    <text class="mono" x="120" y="630" font-size="14" letter-spacing="2"><tspan class="mint">&#10003;</tspan> <tspan class="dim">BYTE-IDENTICAL TO PI&#8217;S NATIVE EXPANSION WHEN NO TOKEN PRESENT</tspan></text>
+    <text class="mono" x="120" y="630" font-size="14" letter-spacing="2"><tspan class="mint">&#10003;</tspan> <tspan class="muted">BYTE-IDENTICAL TO PI&#8217;S NATIVE EXPANSION WHEN NO TOKEN PRESENT</tspan></text>
 
     <rect x="64" y="708" width="1152" height="36" fill="#16120E"/>
     <line x1="64" y1="708" x2="1216" y2="708" stroke="#2A2620"/>

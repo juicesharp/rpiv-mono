@@ -51,41 +51,41 @@
     <g transform="translate(200 430)">
       <circle r="14" fill="#0E0D0B" stroke="#FF7A3D" stroke-width="2"/>
       <circle r="5" fill="#FF7A3D"/>
-      <text class="mono dim" x="0" y="-32" font-size="12" letter-spacing="1.4" text-anchor="middle">01</text>
+      <text class="mono muted" x="0" y="-32" font-size="12" letter-spacing="1.4" text-anchor="middle">01</text>
       <text class="mono ink" x="0" y="52" font-size="16" letter-spacing="1.4" text-anchor="middle" font-weight="700">DISCOVER</text>
     </g>
     <g transform="translate(376 430)">
       <circle r="14" fill="#0E0D0B" stroke="#FF7A3D" stroke-width="2"/>
       <circle r="5" fill="#FF7A3D"/>
-      <text class="mono dim" x="0" y="-32" font-size="12" letter-spacing="1.4" text-anchor="middle">02</text>
+      <text class="mono muted" x="0" y="-32" font-size="12" letter-spacing="1.4" text-anchor="middle">02</text>
       <text class="mono ink" x="0" y="52" font-size="16" letter-spacing="1.4" text-anchor="middle" font-weight="700">RESEARCH</text>
     </g>
     <g transform="translate(552 430)">
       <circle r="14" fill="#0E0D0B" stroke="#FF7A3D" stroke-width="2"/>
       <circle r="5" fill="#FF7A3D"/>
-      <text class="mono dim" x="0" y="-32" font-size="12" letter-spacing="1.4" text-anchor="middle">03</text>
+      <text class="mono muted" x="0" y="-32" font-size="12" letter-spacing="1.4" text-anchor="middle">03</text>
       <text class="mono ink" x="0" y="52" font-size="16" letter-spacing="1.4" text-anchor="middle" font-weight="700">DESIGN</text>
     </g>
     <g transform="translate(728 430)">
       <circle r="14" fill="#0E0D0B" stroke="#FF7A3D" stroke-width="2"/>
       <circle r="5" fill="#FF7A3D"/>
-      <text class="mono dim" x="0" y="-32" font-size="12" letter-spacing="1.4" text-anchor="middle">04</text>
+      <text class="mono muted" x="0" y="-32" font-size="12" letter-spacing="1.4" text-anchor="middle">04</text>
       <text class="mono ink" x="0" y="52" font-size="16" letter-spacing="1.4" text-anchor="middle" font-weight="700">PLAN</text>
     </g>
     <g transform="translate(904 430)">
       <circle r="14" fill="#0E0D0B" stroke="#FF7A3D" stroke-width="2"/>
       <circle r="5" fill="#FF7A3D"/>
-      <text class="mono dim" x="0" y="-32" font-size="12" letter-spacing="1.4" text-anchor="middle">05</text>
+      <text class="mono muted" x="0" y="-32" font-size="12" letter-spacing="1.4" text-anchor="middle">05</text>
       <text class="mono ink" x="0" y="52" font-size="16" letter-spacing="1.4" text-anchor="middle" font-weight="700">IMPLEMENT</text>
     </g>
     <g transform="translate(1080 430)">
       <circle r="16" fill="#13110D" stroke="#6FD0B8" stroke-width="2"/>
       <circle r="6" fill="#6FD0B8"/>
-      <text class="mono dim" x="0" y="-32" font-size="12" letter-spacing="1.4" text-anchor="middle">06</text>
+      <text class="mono muted" x="0" y="-32" font-size="12" letter-spacing="1.4" text-anchor="middle">06</text>
       <text class="mono mint" x="0" y="52" font-size="16" letter-spacing="1.4" text-anchor="middle" font-weight="700">VALIDATE</text>
     </g>
 
-    <text class="mono dim" x="640" y="612" font-size="13" letter-spacing="2.4" text-anchor="middle">CHAINED AI SKILLS &#183; 12 NAMED SUBAGENTS &#183; thoughts/shared/</text>
+    <text class="mono muted" x="640" y="612" font-size="13" letter-spacing="2.4" text-anchor="middle">CHAINED AI SKILLS &#183; 12 NAMED SUBAGENTS &#183; thoughts/shared/</text>
 
     <rect x="64" y="708" width="1152" height="36" fill="url(#titleGrad)"/>
     <line x1="64" y1="708" x2="1216" y2="708" stroke="#2A2620"/>

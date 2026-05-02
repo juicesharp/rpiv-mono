@@ -45,28 +45,28 @@
 
     <line x1="120" y1="142" x2="1160" y2="142" stroke="#3F8C7A"/>
 
-    <text class="mono fade" x="120" y="186" font-size="22">&#11013;</text>
+    <text class="mono muted" x="120" y="186" font-size="22">&#8592;</text>
     <rect x="158" y="166" width="266" height="32" fill="#1F1B14"/>
     <text class="mono" x="172" y="188" font-size="22"><tspan class="mint">&#9633;</tspan> <tspan class="mint" font-weight="700">Feature Type</tspan></text>
-    <text class="mono fade" x="448" y="188" font-size="22" xml:space="preserve">&#9633; Design Tab    &#9633; Testing    &#9633; Release    <tspan class="muted">&#10003; Submit</tspan></text>
-    <text class="mono fade" x="1144" y="186" font-size="22">&#10145;</text>
+    <text class="mono muted" x="448" y="188" font-size="22" xml:space="preserve">&#9633; Design Tab    &#9633; Testing    &#9633; Release    <tspan class="ink">&#10003; Submit</tspan></text>
+    <text class="mono muted" x="1144" y="186" font-size="22">&#8594;</text>
 
     <text class="mono ink" x="120" y="262" font-size="22" font-weight="700">Which real development task are we planning right now?</text>
 
     <text class="mono mint" x="120" y="318" font-size="22" font-weight="700" xml:space="preserve">&#10095;  1.  Bug fix (Recommended)</text>
-    <text class="mono fade" x="170" y="346" font-size="20">Patch a production issue with minimal risk and clear rollback path.</text>
+    <text class="mono muted" x="170" y="346" font-size="20">Patch a production issue with minimal risk and clear rollback path.</text>
 
     <text class="mono ink" x="120" y="392" font-size="22" font-weight="700" xml:space="preserve">   2.  New feature</text>
-    <text class="mono fade" x="170" y="420" font-size="20">Implement a user-facing capability across API, UI, and tests.</text>
+    <text class="mono muted" x="170" y="420" font-size="20">Implement a user-facing capability across API, UI, and tests.</text>
 
     <text class="mono ink" x="120" y="466" font-size="22" font-weight="700" xml:space="preserve">   3.  Refactor</text>
-    <text class="mono fade" x="170" y="494" font-size="20">Improve maintainability without changing external behavior.</text>
+    <text class="mono muted" x="170" y="494" font-size="20">Improve maintainability without changing external behavior.</text>
 
     <line x1="120" y1="538" x2="1160" y2="538" stroke="#2A2620"/>
 
     <text class="mono muted" x="120" y="572" font-size="22" xml:space="preserve">   6.  Chat about this</text>
 
-    <text class="mono fade" x="120" y="624" font-size="16">Enter to select  &#183;  &#8593;/&#8595; to navigate  &#183;  Tab to switch questions  &#183;  Esc to cancel</text>
+    <text class="mono muted" x="120" y="624" font-size="16">Enter to select  &#183;  &#8593;/&#8595; to navigate  &#183;  Tab to switch questions  &#183;  Esc to cancel</text>
 
     <line x1="120" y1="660" x2="1160" y2="660" stroke="#3F8C7A"/>
 

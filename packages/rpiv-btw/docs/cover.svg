@@ -40,9 +40,9 @@
     <text class="mono mint" x="120" y="184" font-size="46" font-weight="700"># rpiv-btw</text>
     <text class="mono muted" x="120" y="222" font-size="20" letter-spacing="0.5">Side question. Zero pollution.</text>
 
-    <g opacity="0.45">
-      <text class="mono" x="120" y="296" font-size="20"><tspan class="dim">user      &#8250;</tspan> <tspan class="muted">let&#8217;s migrate the websocket layer to SSE</tspan></text>
-      <text class="mono" x="120" y="328" font-size="20"><tspan class="dim">assistant &#8250;</tspan> <tspan class="muted">on it &#8212; reading current transport&#8230;</tspan></text>
+    <g opacity="0.6">
+      <text class="mono" x="120" y="296" font-size="20"><tspan class="muted">user      &#8250;</tspan> <tspan class="muted">let&#8217;s migrate the websocket layer to SSE</tspan></text>
+      <text class="mono" x="120" y="328" font-size="20"><tspan class="muted">assistant &#8250;</tspan> <tspan class="muted">on it &#8212; reading current transport&#8230;</tspan></text>
     </g>
     <line x1="120" y1="362" x2="1160" y2="362" stroke="#2A2620" stroke-dasharray="2 6"/>
 
@@ -51,7 +51,7 @@
     <text class="mono" x="120" y="494" font-size="20"><tspan class="muted">    and the team was tired of the ping-pong reconnect.</tspan></text>
     <text class="mono" x="120" y="540" font-size="20"><tspan class="dim">  &#8250;</tspan> <tspan class="mint" font-weight="700">EPHEMERAL &#183; NEVER WRITTEN</tspan></text>
 
-    <text class="mono dim" x="120" y="618" font-size="14" letter-spacing="2.2">READ-ONLY BRANCH CLONE &#183; OWN AbortController &#183; tools: []</text>
+    <text class="mono muted" x="120" y="618" font-size="14" letter-spacing="2.2">READ-ONLY BRANCH CLONE &#183; OWN AbortController &#183; tools: []</text>
 
     <rect x="64" y="708" width="1152" height="36" fill="#16120E"/>
     <line x1="64" y1="708" x2="1216" y2="708" stroke="#2A2620"/>

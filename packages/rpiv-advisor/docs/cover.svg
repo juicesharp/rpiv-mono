@@ -82,7 +82,7 @@
     <rect x="980" y="486" width="120" height="36" fill="#13110D" stroke="#2A4D45" stroke-width="1"/>
     <text class="mono mint" x="1040" y="510" font-size="16" letter-spacing="1.4" text-anchor="middle" font-weight="700">STOP</text>
 
-    <text class="mono dim" x="640" y="624" font-size="13" letter-spacing="2.4" text-anchor="middle">REGISTERED-BUT-INACTIVE UNTIL A MODEL IS SELECTED VIA /advisor</text>
+    <text class="mono muted" x="640" y="624" font-size="13" letter-spacing="2.4" text-anchor="middle">REGISTERED-BUT-INACTIVE UNTIL A MODEL IS SELECTED VIA /advisor</text>
 
     <rect x="64" y="708" width="1152" height="36" fill="url(#titleGrad)"/>
     <line x1="64" y1="708" x2="1216" y2="708" stroke="#2A2620"/>
