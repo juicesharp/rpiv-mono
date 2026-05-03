@@ -1,6 +1,7 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { displayLabel } from "./state/i18n-bridge.js";
 import { QuestionnaireSession } from "./state/questionnaire-session.js";
-import { ROW_INTENT_META, sentinelsToAppend } from "./state/row-intent.js";
+import { sentinelsToAppend } from "./state/row-intent.js";
 import { buildQuestionnaireResponse, buildToolResult } from "./tool/response-envelope.js";
 import {
 	MAX_OPTIONS,
@@ -24,7 +25,7 @@ export function buildItemsForQuestion(question: QuestionData): WrappingSelectIte
 	}));
 	const hasAnyPreview = question.options.some((o) => typeof o.preview === "string" && o.preview.length > 0);
 	for (const kind of sentinelsToAppend(question, hasAnyPreview)) {
-		items.push({ kind, label: ROW_INTENT_META[kind].label });
+		items.push({ kind, label: displayLabel(kind) });
 	}
 	return items;
 }

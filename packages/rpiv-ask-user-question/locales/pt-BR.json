@@ -1,0 +1,27 @@
+{
+  "_meta.notes": "Auto-translated draft. Native-speaker review welcome via PR. TUI symbols (↑/↓, ⚠) and key names (Enter, Esc, Tab, Space, n) are universal CLI conventions and stay untranslated.",
+
+  "sentinel.other": "Digite algo.",
+  "sentinel.chat": "Conversar sobre isso",
+  "sentinel.next": "Próximo",
+
+  "submit.label": "Enviar respostas",
+  "submit.cancel": "Cancelar",
+
+  "hint.enter": "Enter para selecionar",
+  "hint.navigate": "↑/↓ para navegar",
+  "hint.toggle": "Espaço para alternar",
+  "hint.notes": "n para adicionar notas",
+  "hint.tab": "Tab para trocar de pergunta",
+  "hint.cancel": "Esc para cancelar",
+
+  "review.heading": "Revise suas respostas",
+  "review.ready": "Pronto para enviar suas respostas?",
+  "review.incomplete": "⚠ Responda as perguntas restantes antes de enviar:",
+
+  "preview.no_preview": "Pré-visualização indisponível",
+  "preview.notes_affordance": "Notas: pressione n para adicionar notas",
+
+  "chat.summary": "O usuário quer conversar sobre isso",
+  "notes.header": "Notas:"
+}

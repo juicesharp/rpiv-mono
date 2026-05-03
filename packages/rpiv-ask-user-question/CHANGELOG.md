@@ -7,6 +7,15 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Localized TUI strings via `@juicesharp/rpiv-i18n`: sentinel rows ("Type something.", "Chat about this", "Next"), submit/cancel labels, dialog hints, review-tab heading and prompts, preview placeholder, notes affordance, and the chat-summary line all resolve at render time through the i18n bridge.
+- Ships Deutsch / English / Español / Français / Português (PT) / Português (BR) / Русский / Українська translation maps under `locales/`. Auto-translated drafts marked in each file's `_meta.notes` — native-speaker contributions welcome (see rpiv-i18n README → "Contributing translations").
+- Bridge module (`state/i18n-bridge.ts`) exposes `t(key, fallback)` and `displayLabel(kind)` so the rest of the package localizes through one import surface.
+
+### Changed
+- `RESERVED_LABEL_SET` and the LLM-facing tool description / TypeBox schemas / response envelope remain English-only by design — localizing those would let model-emitted equivalents bypass the duplicate-detection guard.
+- A missing or malformed `locales/<code>.json` no longer takes the extension offline at module init; `loadLocale` warns to console and the bridge falls back to canonical English literals at every call site.
+
 ## [1.0.19] - 2026-05-03
 
 ## [1.0.18] - 2026-05-02

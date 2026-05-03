@@ -29,8 +29,10 @@
     "ask-user-question.ts",
     "index.ts",
     "LICENSE",
+    "locales/",
     "README.md",
     "state/build-questionnaire.ts",
+    "state/i18n-bridge.ts",
     "state/key-router.ts",
     "state/questionnaire-session.ts",
     "state/row-intent.ts",
@@ -69,6 +71,7 @@
     ]
   },
   "peerDependencies": {
+    "@juicesharp/rpiv-i18n": "*",
     "@mariozechner/pi-coding-agent": "*",
     "@mariozechner/pi-tui": "*",
     "typebox": "*"

@@ -1,4 +1,3 @@
-import { SENTINEL_LABELS } from "../../tool/types.js";
 import type { ChatRowViewProps } from "../../view/components/chat-row-view.js";
 import { MULTI_SUBMIT_LABEL, type MultiSelectViewProps } from "../../view/components/multi-select-view.js";
 import type { OptionListViewProps } from "../../view/components/option-list-view.js";
@@ -6,12 +5,13 @@ import type { PreviewPaneProps } from "../../view/components/preview/preview-pan
 import type { SubmitPickerProps } from "../../view/components/submit-picker.js";
 import type { TabBarProps } from "../../view/components/tab-bar.js";
 import type { DialogProps } from "../../view/dialog-builder.js";
+import { displayLabel } from "../i18n-bridge.js";
 import type { GlobalSelector, PerTabSelector } from "./contract.js";
 import { chatNumberingFor, selectActiveTabItems, selectConfirmedIndicator } from "./derivations.js";
 
 export const selectMultiSelectProps: PerTabSelector<MultiSelectViewProps> = (state, ctx) => {
 	const question = ctx.questions[ctx.i];
-	if (!question) return { rows: [], nextActive: false, nextLabel: SENTINEL_LABELS.next };
+	if (!question) return { rows: [], nextActive: false, nextLabel: displayLabel("next") };
 	const focused = ctx.activeView === "options";
 	const rows: { checked: boolean; active: boolean }[] = [];
 	for (let i = 0; i < question.options.length; i++) {
@@ -22,7 +22,7 @@ export const selectMultiSelectProps: PerTabSelector<MultiSelectViewProps> = (sta
 	}
 	const nextActive = focused && state.optionIndex === question.options.length;
 	const isLastQuestion = ctx.i === ctx.questions.length - 1;
-	const nextLabel = isLastQuestion ? MULTI_SUBMIT_LABEL : SENTINEL_LABELS.next;
+	const nextLabel = isLastQuestion ? MULTI_SUBMIT_LABEL : displayLabel("next");
 	return { rows, nextActive, nextLabel };
 };
 

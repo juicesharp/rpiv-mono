@@ -1,0 +1,27 @@
+{
+  "_meta.notes": "Auto-translated draft. Native-speaker review welcome via PR. TUI symbols (↑/↓, ⚠) and key names (Enter, Esc, Tab, Space, n) are universal CLI conventions and stay untranslated.",
+
+  "sentinel.other": "Введите что-нибудь.",
+  "sentinel.chat": "Обсудить это",
+  "sentinel.next": "Далее",
+
+  "submit.label": "Отправить ответы",
+  "submit.cancel": "Отмена",
+
+  "hint.enter": "Enter — выбрать",
+  "hint.navigate": "↑/↓ — навигация",
+  "hint.toggle": "Space — переключить",
+  "hint.notes": "n — добавить заметки",
+  "hint.tab": "Tab — следующий вопрос",
+  "hint.cancel": "Esc — отменить",
+
+  "review.heading": "Проверьте свои ответы",
+  "review.ready": "Готовы отправить ответы?",
+  "review.incomplete": "⚠ Ответьте на оставшиеся вопросы перед отправкой:",
+
+  "preview.no_preview": "Предпросмотр недоступен",
+  "preview.notes_affordance": "Заметки: нажмите n, чтобы добавить заметки",
+
+  "chat.summary": "Пользователь хочет обсудить это",
+  "notes.header": "Заметки:"
+}

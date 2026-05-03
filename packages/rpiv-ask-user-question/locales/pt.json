@@ -1,0 +1,27 @@
+{
+  "_meta.notes": "European Portuguese (Portugal). Auto-translated draft. Native-speaker review welcome via PR. Distinct from pt-BR (Brasil): differs in lexicon (utilizador / você), conjugation, and some terms. TUI symbols (↑/↓, ⚠) and key names (Enter, Esc, Tab, Space, n) are universal CLI conventions and stay untranslated.",
+
+  "sentinel.other": "Escreva algo.",
+  "sentinel.chat": "Conversar sobre isto",
+  "sentinel.next": "Seguinte",
+
+  "submit.label": "Enviar respostas",
+  "submit.cancel": "Cancelar",
+
+  "hint.enter": "Enter para selecionar",
+  "hint.navigate": "↑/↓ para navegar",
+  "hint.toggle": "Espaço para alternar",
+  "hint.notes": "n para adicionar notas",
+  "hint.tab": "Tab para mudar de pergunta",
+  "hint.cancel": "Esc para cancelar",
+
+  "review.heading": "Reveja as suas respostas",
+  "review.ready": "Pronto para enviar as suas respostas?",
+  "review.incomplete": "⚠ Responda às perguntas restantes antes de enviar:",
+
+  "preview.no_preview": "Pré-visualização indisponível",
+  "preview.notes_affordance": "Notas: prima n para adicionar notas",
+
+  "chat.summary": "O utilizador quer conversar sobre isto",
+  "notes.header": "Notas:"
+}

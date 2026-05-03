@@ -1,3 +1,4 @@
+import { t } from "../state/i18n-bridge.js";
 import type { QuestionAnswer } from "./types.js";
 
 /**
@@ -35,7 +36,7 @@ export type FormatAnswerVariant = "summary" | "envelope";
 export function formatAnswerScalar(a: QuestionAnswer, variant: FormatAnswerVariant): string {
 	switch (a.kind) {
 		case "chat":
-			return variant === "envelope" ? CHAT_CONTINUATION_MESSAGE : CHAT_SUMMARY_MESSAGE;
+			return variant === "envelope" ? CHAT_CONTINUATION_MESSAGE : t("chat.summary", CHAT_SUMMARY_MESSAGE);
 		case "multi":
 			return a.selected && a.selected.length > 0 ? a.selected.join(", ") : NO_INPUT_PLACEHOLDER;
 		case "custom":

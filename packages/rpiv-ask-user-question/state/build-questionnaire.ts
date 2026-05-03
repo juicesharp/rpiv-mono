@@ -1,6 +1,6 @@
 import { getMarkdownTheme, type Theme } from "@mariozechner/pi-coding-agent";
 import { Input } from "@mariozechner/pi-tui";
-import { type QuestionData, SENTINEL_LABELS } from "../tool/types.js";
+import type { QuestionData } from "../tool/types.js";
 import {
 	type BoundGlobalBinding,
 	type BoundPerTabBinding,
@@ -20,6 +20,7 @@ import { DialogView } from "../view/dialog-builder.js";
 import { QuestionnairePropsAdapter } from "../view/props-adapter.js";
 import type { StatefulView } from "../view/stateful-view.js";
 import type { TabBodyHeights, TabComponents } from "../view/tab-components.js";
+import { displayLabel } from "./i18n-bridge.js";
 import type { PerTabSelector } from "./selectors/contract.js";
 import { selectActivePreviewPaneIndex } from "./selectors/derivations.js";
 import {
@@ -116,7 +117,7 @@ class QuestionnaireBuilder {
 
 		this.selectTheme = this.makeSelectTheme();
 		this.chatRow = new ChatRowView({
-			item: { kind: "chat", label: SENTINEL_LABELS.chat },
+			item: { kind: "chat", label: displayLabel("chat") },
 			theme: this.selectTheme,
 		});
 	}

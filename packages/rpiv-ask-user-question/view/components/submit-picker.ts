@@ -1,5 +1,6 @@
 import type { Theme } from "@mariozechner/pi-coding-agent";
 import { truncateToWidth } from "@mariozechner/pi-tui";
+import { t } from "../../state/i18n-bridge.js";
 import type { StatefulView } from "../stateful-view.js";
 
 const ACTIVE_POINTER = "❯ ";
@@ -52,7 +53,7 @@ export class SubmitPicker implements StatefulView<SubmitPickerProps> {
 	render(width: number): string[] {
 		const lines: string[] = [];
 		for (let i = 0; i < 2; i++) {
-			const text = i === 0 ? SUBMIT_LABEL : CANCEL_LABEL;
+			const text = i === 0 ? t("submit.label", SUBMIT_LABEL) : t("submit.cancel", CANCEL_LABEL);
 			const active = this.props.rows[i]?.active ?? false;
 			const pointer = active ? ACTIVE_POINTER : INACTIVE_POINTER;
 			const number = `${i + 1}${NUMBER_SEPARATOR}`;

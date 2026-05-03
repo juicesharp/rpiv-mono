@@ -1,5 +1,6 @@
 import type { Theme } from "@mariozechner/pi-coding-agent";
 import { type Component, Container, type Input, Spacer, Text } from "@mariozechner/pi-tui";
+import { t } from "../state/i18n-bridge.js";
 import { formatAnswerScalar } from "../tool/format-answer.js";
 import type { QuestionData } from "../tool/types.js";
 import type { ChatRowView } from "./components/chat-row-view.js";
@@ -18,6 +19,8 @@ import {
 } from "./dialog-builder.js";
 import type { StatefulView } from "./stateful-view.js";
 import type { TabComponents } from "./tab-components.js";
+
+const NOTES_HEADER = "Notes:";
 
 /**
  * Per-tab content provider. Pure functional — closes over construction-time
@@ -89,7 +92,11 @@ export class QuestionTabStrategy implements TabContentStrategy {
 
 	midRows(state: DialogState): Component[] {
 		if (!state.notesVisible) return [];
-		return [new Text(this.config.theme.fg("muted", "Notes:"), 1, 0), this.config.notesInput, new Spacer(1)];
+		return [
+			new Text(this.config.theme.fg("muted", t("notes.header", NOTES_HEADER)), 1, 0),
+			this.config.notesInput,
+			new Spacer(1),
+		];
 	}
 
 	footerRows(state: DialogState): Component[] {
@@ -116,7 +123,10 @@ export class SubmitTabStrategy implements TabContentStrategy {
 	constructor(private readonly config: SubmitTabStrategyConfig) {}
 
 	headingRows(_state: DialogState): Component[] {
-		return [new Text(this.config.theme.bold(this.config.theme.fg("accent", REVIEW_HEADING)), 1, 0), new Spacer(1)];
+		return [
+			new Text(this.config.theme.bold(this.config.theme.fg("accent", t("review.heading", REVIEW_HEADING))), 1, 0),
+			new Spacer(1),
+		];
 	}
 
 	bodyComponent(state: DialogState): Component {
@@ -156,8 +166,11 @@ export class SubmitTabStrategy implements TabContentStrategy {
 		}
 		const promptText =
 			missing.length === 0
-				? this.config.theme.fg("muted", READY_PROMPT)
-				: this.config.theme.fg("warning", `${INCOMPLETE_WARNING_PREFIX} ${missing.join(", ")}`);
+				? this.config.theme.fg("muted", t("review.ready", READY_PROMPT))
+				: this.config.theme.fg(
+						"warning",
+						`${t("review.incomplete", INCOMPLETE_WARNING_PREFIX)} ${missing.join(", ")}`,
+					);
 		const out: Component[] = [new Spacer(1), new Text(promptText, 1, 0), new Spacer(1)];
 		if (this.config.submitPicker) {
 			out.push(this.config.submitPicker);
@@ -176,12 +189,12 @@ export class SubmitTabStrategy implements TabContentStrategy {
  *   Enter · ↑/↓ [· Space toggle] [· n notes] [· Tab switch] · Esc
  */
 export function buildHintText(question: QuestionData | undefined, isMulti: boolean, state: DialogState): string {
-	const parts: string[] = [HINT_PART_ENTER, HINT_PART_NAV];
-	if (question?.multiSelect === true) parts.push(HINT_PART_TOGGLE);
+	const parts: string[] = [t("hint.enter", HINT_PART_ENTER), t("hint.navigate", HINT_PART_NAV)];
+	if (question?.multiSelect === true) parts.push(t("hint.toggle", HINT_PART_TOGGLE));
 	if (question && question.multiSelect !== true && state.focusedOptionHasPreview && !state.notesVisible) {
-		parts.push(HINT_PART_NOTES);
+		parts.push(t("hint.notes", HINT_PART_NOTES));
 	}
-	if (isMulti) parts.push(HINT_PART_TAB);
-	parts.push(HINT_PART_CANCEL);
+	if (isMulti) parts.push(t("hint.tab", HINT_PART_TAB));
+	parts.push(t("hint.cancel", HINT_PART_CANCEL));
 	return parts.join(" · ");
 }

@@ -1,9 +1,10 @@
 import type { Theme } from "@mariozechner/pi-coding-agent";
 import { getKeybindings, type Input } from "@mariozechner/pi-tui";
-import { type QuestionData, type QuestionnaireResult, type QuestionParams, SENTINEL_LABELS } from "../tool/types.js";
+import type { QuestionData, QuestionnaireResult, QuestionParams } from "../tool/types.js";
 import type { WrappingSelectItem } from "../view/components/wrapping-select.js";
 import type { QuestionnairePropsAdapter } from "../view/props-adapter.js";
 import { buildQuestionnaire } from "./build-questionnaire.js";
+import { displayLabel } from "./i18n-bridge.js";
 import { type QuestionnaireAction, routeKey } from "./key-router.js";
 import { computeFocusedOptionHasPreview } from "./selectors/derivations.js";
 import type { QuestionnaireRuntime, QuestionnaireState } from "./state.js";
@@ -181,9 +182,9 @@ export class QuestionnaireSession {
 	}
 
 	private currentItem(): WrappingSelectItem | undefined {
-		if (this.state.chatFocused) return { kind: "chat", label: SENTINEL_LABELS.chat };
+		if (this.state.chatFocused) return { kind: "chat", label: displayLabel("chat") };
 		const arr = this.itemsByTab[this.state.currentTab] ?? [];
 		if (this.state.optionIndex < arr.length) return arr[this.state.optionIndex];
-		return { kind: "chat", label: SENTINEL_LABELS.chat };
+		return { kind: "chat", label: displayLabel("chat") };
 	}
 }

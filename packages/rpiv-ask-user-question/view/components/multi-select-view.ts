@@ -1,6 +1,7 @@
 import type { Theme } from "@mariozechner/pi-coding-agent";
 import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@mariozechner/pi-tui";
-import { type QuestionData, SENTINEL_LABELS } from "../../tool/types.js";
+import { displayLabel } from "../../state/i18n-bridge.js";
+import type { QuestionData } from "../../tool/types.js";
 import type { StatefulView } from "../stateful-view.js";
 
 const ACTIVE_POINTER = "❯ ";
@@ -38,7 +39,7 @@ export class MultiSelectView implements StatefulView<MultiSelectViewProps> {
 		private readonly theme: Theme,
 		private readonly question: QuestionData,
 	) {
-		this.props = { rows: [], nextActive: false, nextLabel: SENTINEL_LABELS.next };
+		this.props = { rows: [], nextActive: false, nextLabel: displayLabel("next") };
 	}
 
 	setProps(props: MultiSelectViewProps): void {

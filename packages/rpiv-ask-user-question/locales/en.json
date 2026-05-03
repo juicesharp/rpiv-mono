@@ -1,0 +1,25 @@
+{
+  "sentinel.other": "Type something.",
+  "sentinel.chat": "Chat about this",
+  "sentinel.next": "Next",
+
+  "submit.label": "Submit answers",
+  "submit.cancel": "Cancel",
+
+  "hint.enter": "Enter to select",
+  "hint.navigate": "↑/↓ to navigate",
+  "hint.toggle": "Space to toggle",
+  "hint.notes": "n to add notes",
+  "hint.tab": "Tab to switch questions",
+  "hint.cancel": "Esc to cancel",
+
+  "review.heading": "Review your answers",
+  "review.ready": "Ready to submit your answers?",
+  "review.incomplete": "⚠ Answer remaining questions before submitting:",
+
+  "preview.no_preview": "No preview available",
+  "preview.notes_affordance": "Notes: press n to add notes",
+
+  "chat.summary": "User wants to chat about this",
+  "notes.header": "Notes:"
+}

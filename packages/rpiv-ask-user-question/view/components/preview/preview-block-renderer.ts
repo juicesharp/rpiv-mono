@@ -1,5 +1,6 @@
 import type { Theme } from "@mariozechner/pi-coding-agent";
 import type { MarkdownTheme } from "@mariozechner/pi-tui";
+import { t } from "../../../state/i18n-bridge.js";
 import type { QuestionData } from "../../../tool/types.js";
 import {
 	MAX_PREVIEW_HEIGHT_SIDE_BY_SIDE,
@@ -100,7 +101,9 @@ export class PreviewBlockRenderer {
 		const boxedLines = renderBorderedBox(contentLines, boxWidth, colorFn, hidden);
 
 		const showAffordance = focused && !notesVisible && this.cache.has(optionIndex);
-		const affordance = showAffordance ? this.theme.fg("muted", NOTES_AFFORDANCE_TEXT) : "";
+		const affordance = showAffordance
+			? this.theme.fg("muted", t("preview.notes_affordance", NOTES_AFFORDANCE_TEXT))
+			: "";
 		return [...boxedLines, "", affordance];
 	}
 }

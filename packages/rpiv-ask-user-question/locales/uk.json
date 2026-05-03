@@ -1,0 +1,27 @@
+{
+  "_meta.notes": "Auto-translated draft. Native-speaker review welcome via PR. TUI symbols (↑/↓, ⚠) and key names (Enter, Esc, Tab, Space, n) are universal CLI conventions and stay untranslated.",
+
+  "sentinel.other": "Введіть щось.",
+  "sentinel.chat": "Обговорити це",
+  "sentinel.next": "Далі",
+
+  "submit.label": "Надіслати відповіді",
+  "submit.cancel": "Скасувати",
+
+  "hint.enter": "Enter — обрати",
+  "hint.navigate": "↑/↓ — навігація",
+  "hint.toggle": "Space — перемкнути",
+  "hint.notes": "n — додати нотатки",
+  "hint.tab": "Tab — наступне питання",
+  "hint.cancel": "Esc — скасувати",
+
+  "review.heading": "Перегляньте свої відповіді",
+  "review.ready": "Готові надіслати відповіді?",
+  "review.incomplete": "⚠ Дайте відповіді на решту питань перед надсиланням:",
+
+  "preview.no_preview": "Попередній перегляд недоступний",
+  "preview.notes_affordance": "Нотатки: натисніть n, щоб додати нотатки",
+
+  "chat.summary": "Користувач хоче обговорити це",
+  "notes.header": "Нотатки:"
+}
