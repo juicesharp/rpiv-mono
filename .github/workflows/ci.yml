@@ -12,6 +12,9 @@ jobs:
   test:
     name: test (node ${{ matrix.node }})
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     strategy:
       fail-fast: false
       matrix:
@@ -49,7 +52,8 @@ jobs:
         uses: codecov/codecov-action@v6
         with:
           files: coverage/lcov.info
-          fail_ci_if_error: false
+          use_oidc: true
+          fail_ci_if_error: true
 
   badges:
     name: update test-count badge
