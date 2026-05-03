@@ -42,15 +42,15 @@ pi install npm:@juicesharp/rpiv-ask-user-question
 
 Then restart your Pi session.
 
-### Optional: language picker + `--locale` flag
+### Optional: localization
 
-The dialog auto-detects your UI locale from `LANG` / `LC_ALL` and falls back to English; with that alone, a user whose shell is set to e.g. `pt_BR.UTF-8` already sees Portuguese without any extra step. To **change locale interactively** (`/languages` slash command) or **pin one at startup** (`pi --locale uk`), also install the SDK that owns those surfaces:
+`rpiv-ask-user-question` works standalone — install only this package and you get the full English UI. Install `@juicesharp/rpiv-i18n` alongside it to flip sentinel labels, dialog hints, review-tab heading, and chat-summary lines to your active locale:
 
 ```bash
 pi install npm:@juicesharp/rpiv-i18n
 ```
 
-Without it, locale detection still works via `~/.config/rpiv-i18n/locale.json` (hand-edit `{"locale":"uk"}` and restart) and your shell environment — only the picker and flag are missing. Users who installed via `pi install npm:@juicesharp/rpiv-pi` + `/rpiv-setup` get the SDK automatically.
+With the SDK present, locale resolves from `--locale <code>` → `~/.config/rpiv-i18n/locale.json` → `LANG` / `LC_ALL` → English. The `/languages` interactive picker and `pi --locale <code>` startup flag are also enabled. Without the SDK, the dialog stays online and renders English at every call site — no warning, no crash. Users who installed via `pi install npm:@juicesharp/rpiv-pi` + `/rpiv-setup` get the SDK automatically.
 
 ## Tool
 

@@ -31,15 +31,15 @@ pi install npm:@juicesharp/rpiv-todo
 
 Then restart your Pi session.
 
-### Optional: language picker + `--locale` flag
+### Optional: localization
 
-The overlay and `/todos` command auto-detect your UI locale from `LANG` / `LC_ALL` and fall back to English; with that alone, a user whose shell is set to e.g. `pt_BR.UTF-8` already sees Portuguese without any extra step. To **change locale interactively** (`/languages` slash command) or **pin one at startup** (`pi --locale uk`), also install the SDK that owns those surfaces:
+`rpiv-todo` works standalone — install only this package and you get the full English UI. Install `@juicesharp/rpiv-i18n` alongside it to flip the overlay heading, `/todos` section headers, and status words to your active locale:
 
 ```bash
 pi install npm:@juicesharp/rpiv-i18n
 ```
 
-Without it, locale detection still works via `~/.config/rpiv-i18n/locale.json` (hand-edit `{"locale":"uk"}` and restart) and your shell environment — only the picker and flag are missing. Users who installed via `pi install npm:@juicesharp/rpiv-pi` + `/rpiv-setup` get the SDK automatically.
+With the SDK present, locale resolves from `--locale <code>` → `~/.config/rpiv-i18n/locale.json` → `LANG` / `LC_ALL` → English. The `/languages` interactive picker and `pi --locale <code>` startup flag are also enabled. Without the SDK, the extension stays online and renders English at every call site — no warning, no crash. Users who installed via `pi install npm:@juicesharp/rpiv-pi` + `/rpiv-setup` get the SDK automatically.
 
 ## Tool
 
@@ -60,9 +60,9 @@ tasks truncate last. Auto-hides when the list is empty.
 
 ## Localization
 
-`rpiv-todo` localizes its TUI chrome (overlay heading, `/todos` section headers, status words) through `@juicesharp/rpiv-i18n`. Bundled locales: `de`, `en`, `es`, `fr`, `pt`, `pt-BR`, `ru`, `uk`. LLM-facing output (tool response envelope, reducer errors, schema descriptions) stays English by design.
+`rpiv-todo` localizes its TUI chrome (overlay heading, `/todos` section headers, status words) through `@juicesharp/rpiv-i18n` when the SDK is installed. Bundled locales: `de`, `en`, `es`, `fr`, `pt`, `pt-BR`, `ru`, `uk`. LLM-facing output (tool response envelope, reducer errors, schema descriptions) stays English by design.
 
-Set the active locale via the `--locale` CLI flag, the `~/.config/rpiv-i18n/locale.json` config, or the `LANG`/`LC_ALL` environment variables. To contribute or override translations, see the `@juicesharp/rpiv-i18n` README "Contributing translations" section.
+The SDK is a soft optional peer — `rpiv-todo` loads it via dynamic import at module init. If the SDK isn't installed, every render call site returns its inline English fallback and the extension stays online with English UI; no warning, no crash. See the Install section for adding the SDK after the fact. To contribute or override translations, see the `@juicesharp/rpiv-i18n` README "Contributing translations" section.
 
 ## License
 

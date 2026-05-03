@@ -10,6 +10,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 - Localized TUI chrome (overlay heading, `/todos` section headers, status words) via `@juicesharp/rpiv-i18n`. 8 locales out of the box (de, en, es, fr, pt, pt-BR, ru, uk). LLM-facing strings (response envelope, reducer errors) stay English.
 
+### Changed
+- `@juicesharp/rpiv-i18n` is now a soft optional peer (`peerDependenciesMeta.optional: true`). The bridge and module-init `registerStrings` call use a dynamic `await import()` inside try/catch, so a standalone install of just `rpiv-todo` no longer fails with `Cannot find module '@juicesharp/rpiv-i18n'` — the extension stays online with English-only UI when the SDK isn't present, and lights up localization automatically when it is.
+
 ## [1.1.3] - 2026-05-03
 
 ## [1.1.2] - 2026-05-03

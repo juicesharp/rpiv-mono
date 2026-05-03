@@ -126,18 +126,23 @@ my-extension/
 └── package.json              ← peerDependencies + files[] + pi.extensions
 ```
 
-### 0. Declare the SDK as a peer dependency
+### 0. Declare the SDK as an OPTIONAL peer dependency
 
 ```json
 {
   "peerDependencies": {
     "@juicesharp/rpiv-i18n": "*",
     "@mariozechner/pi-coding-agent": "*"
+  },
+  "peerDependenciesMeta": {
+    "@juicesharp/rpiv-i18n": { "optional": true }
   }
 }
 ```
 
 Use `peerDependencies`, not `dependencies` — the user's Pi session loads one copy of the SDK; if you bundle your own, `/languages` toggles a different runtime instance and your strings never switch.
+
+Mark it `optional: true` in `peerDependenciesMeta` so npm doesn't warn when a user installs your extension standalone without rpiv-i18n. Pair this with the dynamic-import shim shown in step 3 — your extension stays online with English-only UI when the SDK isn't installed, and lights up localization automatically when it is.
 
 ### 1. Author a `locales/en.json` next to your source
 
@@ -155,26 +160,42 @@ Conventions: flat dotted lowercase keys, `snake_case` only for multi-word leaves
 
 ### 2. Add a one-file bridge inside your package
 
-`state/i18n-bridge.ts` (or wherever your package keeps cross-cutting helpers):
+`state/i18n-bridge.ts` (or wherever your package keeps cross-cutting helpers). Use a dynamic-import shim with top-level `await` so a missing peer degrades to English-only instead of failing module load:
 
 ```ts
-import { scope } from "@juicesharp/rpiv-i18n";
-
 export const I18N_NAMESPACE = "@my-org/cool-tool";
 
-export const t = scope(I18N_NAMESPACE);
+type ScopeFn = (key: string, fallback: string) => string;
+type I18nSDK = { scope: (namespace: string) => ScopeFn };
+
+let scopeImpl: ScopeFn;
+try {
+  const sdk = (await import("@juicesharp/rpiv-i18n")) as I18nSDK;
+  scopeImpl = sdk.scope(I18N_NAMESPACE);
+} catch {
+  // SDK not installed — every t(key, fallback) returns the fallback verbatim.
+  scopeImpl = (_key, fallback) => fallback;
+}
+
+export const t: ScopeFn = scopeImpl;
 ```
 
 Every render-time call site imports `t` from this one file. If you ever switch namespaces, change the SDK, or add a `displayLabel(kind)` convenience for sentinel-row enums, you touch one place.
 
+**Why dynamic import instead of static `import { scope } from "@juicesharp/rpiv-i18n"`?** A static ESM import is hoisted and evaluated at module load — if the SDK isn't on disk, your entire extension fails to load with `Cannot find module '@juicesharp/rpiv-i18n'`. The dynamic `await import()` inside a try/catch lets module load proceed, and the identity-fallback closure keeps your render call sites working with English. Top-level await is required because the `t` export is consumed synchronously by every render call site downstream.
+
 ### 3. Register strings at extension load
+
+Use the same dynamic-import shim pattern as the bridge — `registerStrings` is a runtime call, so it goes inside a try/catch that no-ops when the SDK is missing:
 
 ```ts
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { registerStrings, type TranslationMap } from "@juicesharp/rpiv-i18n";
 import { I18N_NAMESPACE } from "./state/i18n-bridge.js";
+
+type TranslationMap = Readonly<Record<string, string>>;
+type I18nSDK = { registerStrings: (ns: string, byLocale: Record<string, TranslationMap>) => void };
 
 function loadLocale(code: string): TranslationMap {
   // A missing/malformed locale file MUST NOT crash module init — the bridge's
@@ -189,11 +210,16 @@ function loadLocale(code: string): TranslationMap {
   }
 }
 
-registerStrings(I18N_NAMESPACE, {
-  en: loadLocale("en"),
-  // Add more as files arrive. Order doesn't matter; keys missing from a non-en
-  // map fall back to en automatically.
-});
+try {
+  const sdk = (await import("@juicesharp/rpiv-i18n")) as I18nSDK;
+  sdk.registerStrings(I18N_NAMESPACE, {
+    en: loadLocale("en"),
+    // Add more as files arrive. Order doesn't matter; keys missing from a
+    // non-en map fall back to en automatically.
+  });
+} catch {
+  // SDK absent — extension still loads with English-only UI.
+}
 
 export default function (pi: ExtensionAPI): void {
   // your tool/command/hook registrations here…
