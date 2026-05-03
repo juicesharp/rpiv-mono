@@ -5,7 +5,7 @@ All notable changes to `@juicesharp/rpiv-pi` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.1.0] - 2026-05-03
 
 ### Added
 - Sibling registry entry for `@juicesharp/rpiv-i18n` — `/rpiv-setup` now installs the i18n SDK alongside the rest of the rpiv-* family, surfacing `/languages` and the `--locale` flag. Word-boundary anchored regex (`/rpiv-i18n(?![-\w])/i`) so future `rpiv-i18n-*` packages don't collide.

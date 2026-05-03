@@ -5,7 +5,7 @@ All notable changes to `@juicesharp/rpiv-ask-user-question` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.1.0] - 2026-05-03
 
 ### Added
 - Localized TUI strings via `@juicesharp/rpiv-i18n`: sentinel rows ("Type something.", "Chat about this", "Next"), submit/cancel labels, dialog hints, review-tab heading and prompts, preview placeholder, notes affordance, and the chat-summary line all resolve at render time through the i18n bridge.

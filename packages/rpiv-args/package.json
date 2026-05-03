@@ -1,6 +1,6 @@
 {
   "name": "@juicesharp/rpiv-args",
-  "version": "1.0.19",
+  "version": "1.1.0",
   "description": "Pi extension: pass shell-style $1 / $ARGUMENTS placeholders to your Pi skills",
   "keywords": [
     "pi-package",
