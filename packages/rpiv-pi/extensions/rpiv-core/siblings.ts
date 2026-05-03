@@ -46,6 +46,11 @@ export const SIBLINGS: readonly SiblingPlugin[] = [
 		provides: "/btw side-question command",
 	},
 	{
+		pkg: "npm:@juicesharp/rpiv-i18n",
+		matches: /rpiv-i18n(?![-\w])/i,
+		provides: "i18n SDK for Pi extensions — /languages command + --locale flag + registerStrings/scope/tr API",
+	},
+	{
 		pkg: "npm:@juicesharp/rpiv-web-tools",
 		matches: /rpiv-web-tools/i,
 		provides: "web_search + web_fetch tools + /web-search-config",

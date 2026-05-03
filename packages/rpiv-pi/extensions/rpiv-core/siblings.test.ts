@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { LEGACY_SIBLINGS, SIBLINGS } from "./siblings.js";
 
 describe("SIBLINGS registry", () => {
-	it("contains 7 entries (pi-subagents at SIBLINGS[0] — tintinweb fork is the dispatch runtime)", () => {
-		expect(SIBLINGS).toHaveLength(7);
+	it("contains 8 entries (pi-subagents at SIBLINGS[0] — tintinweb fork is the dispatch runtime)", () => {
+		expect(SIBLINGS).toHaveLength(8);
 	});
 
 	it("lists @tintinweb/pi-subagents at SIBLINGS[0]", () => {
@@ -27,6 +27,13 @@ describe("SIBLINGS registry", () => {
 		const argsEntry = SIBLINGS.find((s) => s.pkg.endsWith("/rpiv-args"));
 		expect(argsEntry).toBeDefined();
 		expect(argsEntry?.matches.test("@juicesharp/rpiv-args-extended")).toBe(false);
+	});
+
+	it("rpiv-i18n does NOT match rpiv-i18n-utils (word boundary)", () => {
+		const i18nEntry = SIBLINGS.find((s) => s.pkg.endsWith("/rpiv-i18n"));
+		expect(i18nEntry).toBeDefined();
+		expect(i18nEntry?.matches.test("@juicesharp/rpiv-i18n-utils")).toBe(false);
+		expect(i18nEntry?.matches.test("@juicesharp/rpiv-i18n")).toBe(true);
 	});
 
 	it("every entry has non-empty pkg + provides", () => {

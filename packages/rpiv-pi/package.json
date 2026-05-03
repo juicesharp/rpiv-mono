@@ -50,6 +50,7 @@
     "@juicesharp/rpiv-todo": "*",
     "@juicesharp/rpiv-advisor": "*",
     "@juicesharp/rpiv-btw": "*",
+    "@juicesharp/rpiv-i18n": "*",
     "@juicesharp/rpiv-web-tools": "*",
     "@juicesharp/rpiv-args": "*",
     "yaml": "*"

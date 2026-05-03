@@ -7,6 +7,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Sibling registry entry for `@juicesharp/rpiv-i18n` — `/rpiv-setup` now installs the i18n SDK alongside the rest of the rpiv-* family, surfacing `/languages` and the `--locale` flag. Word-boundary anchored regex (`/rpiv-i18n(?![-\w])/i`) so future `rpiv-i18n-*` packages don't collide.
+
 ## [1.0.19] - 2026-05-03
 
 ## [1.0.18] - 2026-05-02
