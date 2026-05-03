@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- README integration guide now teaches the dynamic-import shim + `peerDependenciesMeta.optional: true` as the recommended posture for new integrators (steps 0/2/3). Replaces the prior static `import { scope }` example, which fails module load if a user installs the consumer extension standalone without rpiv-i18n. Adds a "why dynamic instead of static" explainer.
+- README integration guide lists `@juicesharp/rpiv-todo` alongside `@juicesharp/rpiv-ask-user-question` as a worked exemplar so prospective integrators have two reference implementations to study.
+
 ## [1.1.3] - 2026-05-03
 
 ### Changed
