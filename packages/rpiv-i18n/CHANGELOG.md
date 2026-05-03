@@ -5,7 +5,7 @@ All notable changes to `@juicesharp/rpiv-i18n` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.1.3] - 2026-05-03
 
 ### Changed
 - README integration guide expanded for third-party extension authors: peerDependencies snippet, file-tree layout, normalized `ExtensionAPI` typing, "Verify it works locally before publishing" section (npm pack → pi install → /languages smoke test), and rewritten `globalThis` escape-hatch example showing the per-call re-read pattern (snapshots are replaced, not mutated, on every locale change).

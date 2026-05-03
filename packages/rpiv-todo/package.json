@@ -1,6 +1,6 @@
 {
   "name": "@juicesharp/rpiv-todo",
-  "version": "1.1.2",
+  "version": "1.1.3",
   "description": "Pi extension: gives the model a todo list with a live overlay that survives /reload and compaction",
   "keywords": [
     "pi-package",

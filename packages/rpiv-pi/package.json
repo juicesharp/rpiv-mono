@@ -1,6 +1,6 @@
 {
   "name": "@juicesharp/rpiv-pi",
-  "version": "1.1.2",
+  "version": "1.1.3",
   "description": "Skill-based development workflow for Pi Agent — discover, research, design, plan, implement, validate",
   "keywords": [
     "pi-package",
