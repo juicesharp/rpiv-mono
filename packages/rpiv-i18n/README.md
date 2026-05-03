@@ -112,6 +112,33 @@ export default function (pi: ExtensionAPI) {
 
 The inline example above is fine for a one-key smoke test. For a real Pi extension, use the file-based pattern that scales to dozens of strings and ten contributors. Same shape proven in production.
 
+End state on disk:
+
+```
+my-extension/
+├── index.ts                  ← default export + registerStrings(...)
+├── state/
+│   └── i18n-bridge.ts        ← exports `t` + I18N_NAMESPACE
+├── locales/
+│   ├── en.json               ← canonical baseline (required)
+│   ├── uk.json               ← optional additional locales
+│   └── …
+└── package.json              ← peerDependencies + files[] + pi.extensions
+```
+
+### 0. Declare the SDK as a peer dependency
+
+```json
+{
+  "peerDependencies": {
+    "@juicesharp/rpiv-i18n": "*",
+    "@mariozechner/pi-coding-agent": "*"
+  }
+}
+```
+
+Use `peerDependencies`, not `dependencies` — the user's Pi session loads one copy of the SDK; if you bundle your own, `/languages` toggles a different runtime instance and your strings never switch.
+
 ### 1. Author a `locales/en.json` next to your source
 
 ```json
@@ -145,6 +172,7 @@ Every render-time call site imports `t` from this one file. If you ever switch n
 ```ts
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { registerStrings, type TranslationMap } from "@juicesharp/rpiv-i18n";
 import { I18N_NAMESPACE } from "./state/i18n-bridge.js";
 
@@ -167,7 +195,7 @@ registerStrings(I18N_NAMESPACE, {
   // map fall back to en automatically.
 });
 
-export default function (pi /* : ExtensionAPI */) {
+export default function (pi: ExtensionAPI): void {
   // your tool/command/hook registrations here…
 }
 ```
@@ -245,6 +273,24 @@ Add `locales/uk.json` mirroring the en key set:
 Wire it into `registerStrings({ en: …, uk: loadLocale("uk") })`. To make the locale show up in the `/languages` picker, add `{ code: "uk", label: "Українська" }` to `SUPPORTED_LOCALES` in this package's `i18n.ts` (open a PR, or file an issue if your extension lives outside this repo).
 
 Done. `/languages` now switches your extension's UI alongside every other extension that adopts the SDK.
+
+### Verify it works locally before publishing
+
+The SDK only flips strings when it's loaded by a real Pi session — `npm test` won't catch a missing `files[]` entry or a wrong namespace. Smoke-test against a live `pi` shell:
+
+```bash
+# from your extension's directory
+npm pack                                       # produces my-extension-x.y.z.tgz
+pi install file:./my-extension-x.y.z.tgz       # install into your Pi session
+pi install npm:@juicesharp/rpiv-i18n           # if not already installed
+pi                                             # launch the session
+> /languages                                   # pick a non-English locale
+> <invoke a command/tool from your extension>  # confirm the strings flip
+```
+
+Two failure modes this catches that unit tests do not:
+1. **Locale JSON not shipped** — `/languages` switches but your strings stay English. Fix: add `"locales/"` to `package.json` `files[]`.
+2. **Module-init `tr(...)` capture** — picker switches, other extensions flip, yours doesn't. Fix: move the `t(...)` call inside the render function.
 
 ## Contributing translations
 
@@ -326,11 +372,18 @@ For tools that prefer not to import this package, the active state is also publi
 
 ```ts
 const I18N = Symbol.for("rpiv-i18n");
-const state = (globalThis as any)[I18N] as
-  | { locale: string | undefined; namespaces: Record<string, Record<string, string>> }
-  | undefined;
 
-const value = state?.namespaces["@my-org/cool-tool"]?.["welcome"] ?? "Welcome!";
+function lookup(key: string, fallback: string): string {
+  // Re-read the symbol on every call — the SDK *replaces* the snapshot
+  // (frozen object) on every registerStrings/applyLocale, so a cached
+  // reference will silently serve stale strings after `/languages`.
+  const state = (globalThis as { [k: symbol]: unknown })[I18N] as
+    | { locale: string | undefined; namespaces: Record<string, Record<string, string>> }
+    | undefined;
+  return state?.namespaces["@my-org/cool-tool"]?.[key] ?? fallback;
+}
+
+lookup("welcome", "Welcome!");
 ```
 
-This is read-only; registration MUST go through `registerStrings(...)`.
+The published object is frozen *per snapshot*, so each new locale produces a new frozen object — read the symbol at call time, never hoist it into a module-scope `const`. Registration MUST still go through `registerStrings(...)`; writing into `globalThis[I18N]` directly is unsupported.
