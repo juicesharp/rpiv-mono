@@ -1,0 +1,689 @@
+---
+// Guidance — brownfield onboarding hero.
+// Sibling to SecondaryFlows.astro: same 3-block grammar, different gesture.
+// Blueprint folds (vertical compression). Guidance mirrors (lateral projection,
+// per-depth). The two hero figures sit adjacent on the page and intentionally
+// encode orthogonal motions so the eye reads them as a pair, not a repeat.
+---
+
+<section id="guidance">
+	<div class="container">
+		<p class="kicker">§ secondary flows · brownfield onboarding</p>
+		<h2>
+			<span class="gd-h2__line">Guidance:</span>
+			<span class="gd-h2__line gd-h2__line--accent">shadow docs the agent reads on its way in.</span>
+		</h2>
+		<p class="gd__lede">
+			Inline <code>CLAUDE.md</code> works on greenfield, but it doesn't scale to a
+			codebase nobody can fit in their head.
+			<strong><code>/skill:annotate-guidance</code> writes a parallel <code>.rpiv/guidance/</code> tree of compact <code>architecture.md</code> files</strong>
+			— one per folder you care about, resolved per-depth and injected at
+			<code>session_start</code> and on every <code>tool_call</code>, so context
+			narrows as the agent navigates deeper.
+		</p>
+
+		<figure class="gd-flow" aria-label="Annotate-guidance reads the existing codebase, writes a parallel shadow tree, and the Pi agent reads it per-depth at session_start and tool_call.">
+			{/* ── BLOCK 01 — input (existing brownfield codebase) ── */}
+			<article class="gd-block gd-block--input">
+				<header class="gd-block__head">
+					<p class="gd-kicker mono">01 · input</p>
+					<h3 class="mono gd-name">existing repo</h3>
+				</header>
+				<p class="gd-desc">
+					Two parallel passes map the tree, name the architecture, and pull
+					idiomatic patterns out of each layer.
+				</p>
+
+				{/* mini story-SVG: a brownfield staircase tree, sage strokes,
+				    one ochre CLAUDE.md leaf calling out the legacy fallback. */}
+				<svg class="gd-mini" viewBox="0 0 200 110" width="200" height="110" aria-hidden="true" preserveAspectRatio="xMidYMid meet">
+					<g fill="none" stroke="var(--sage-deep)" stroke-linecap="round">
+						{/* trunk */}
+						<path d="M14,16 L14,98" stroke-width="0.7" opacity="0.55" />
+						{/* depth-1 branches */}
+						<path d="M14,30 L28,30" stroke-width="0.7" opacity="0.55" />
+						<path d="M14,52 L28,52" stroke-width="0.7" opacity="0.55" />
+						<path d="M14,78 L28,78" stroke-width="0.7" opacity="0.55" />
+					</g>
+					{/* folder + file rows */}
+					<g font-family="var(--font-mono)" font-size="9" fill="var(--text-quiet)" letter-spacing="0.02em">
+						<text x="32" y="20">packages/</text>
+						<text x="44" y="34">pi/</text>
+						<text x="44" y="56">site/</text>
+						<text x="44" y="82">tools/</text>
+					</g>
+					{/* file ticks beside each folder */}
+					<g stroke="var(--washi-soft)" stroke-linecap="round" stroke-width="0.6" opacity="0.55">
+						<line x1="100" y1="34" x2="138" y2="34" />
+						<line x1="100" y1="56" x2="146" y2="56" />
+						<line x1="100" y1="82" x2="132" y2="82" />
+						<line x1="100" y1="92" x2="142" y2="92" />
+					</g>
+					{/* legacy CLAUDE.md leaf — ochre, the cascade respects it */}
+					<g>
+						<rect x="150" y="10" width="44" height="14" rx="1.5"
+							fill="var(--ink)" stroke="var(--ochre)" stroke-width="0.8" opacity="0.85" />
+						<text x="172" y="20" text-anchor="middle"
+							font-family="var(--font-mono)" font-size="7" fill="var(--ochre)"
+							letter-spacing="0.06em">CLAUDE.md</text>
+					</g>
+					<g fill="none" stroke="var(--ochre)" stroke-linecap="round" stroke-width="0.5" opacity="0.45" stroke-dasharray="2 2">
+						<path d="M138,18 L150,17" />
+					</g>
+					<text x="14" y="108" font-family="var(--font-mono)" font-size="7" fill="var(--text-distant)" letter-spacing="0.18em">BROWNFIELD</text>
+				</svg>
+
+				<p class="gd-meta mono">
+					<span class="gd-meta__arrow">→</span>
+					<span class="gd-meta__ref">scans current repo · respects <code>.gitignore</code></span>
+				</p>
+			</article>
+
+			{/* ── CONNECTOR 01 → 02 — calligraphy brushstroke labelled READS ── */}
+			<div class="gd-link" aria-hidden="true">
+				<svg class="gd-link__brush" viewBox="0 0 120 80" width="120" height="80" preserveAspectRatio="xMidYMid meet">
+					<g fill="none" stroke-linecap="round">
+						<path d="M8,32 Q42,26 100,30" stroke="var(--ochre)" stroke-width="0.5" opacity="0.32" />
+						<path d="M6,40 Q40,36 102,40" stroke="var(--washi-soft)" stroke-width="1.6" opacity="0.85" />
+						<path d="M8,48 Q42,44 100,46" stroke="var(--sage)" stroke-width="0.5" opacity="0.22" />
+						<path d="M96,32 L112,40 L96,48" stroke="var(--washi-soft)" stroke-width="1.4" opacity="0.85" />
+						<path d="M97,34 L109,40 L97,46" stroke="var(--ochre)" stroke-width="0.5" opacity="0.32" />
+					</g>
+					<text x="60" y="68" text-anchor="middle"
+						font-family="var(--font-mono)" font-size="9"
+						fill="var(--text-distant)" letter-spacing="0.18em">READS</text>
+				</svg>
+			</div>
+
+			{/* ── BLOCK 02 — HERO annotate-guidance with MIRROR diagram ── */}
+			<article class="gd-block gd-block--hero">
+				<div class="gd-hero__wash" aria-hidden="true"></div>
+
+				<header class="gd-block__head">
+					<p class="gd-kicker mono gd-kicker--hero">02 · shadow tree</p>
+					<h3 class="mono gd-name gd-name--hero">/skill:annotate-guidance</h3>
+				</header>
+
+				{/* THE MIRROR DIAGRAM — lateral projection.
+				    The motion of this figure is LEFT-TO-RIGHT, four times in parallel.
+				    Source tree on the left, .rpiv/guidance/ shadow tree on the right,
+				    a vertical seam between them. Four ochre arcs project each source
+				    folder onto its mirror architecture.md across the seam — one per
+				    depth. Counterpoint to Blueprint's single top-down fold. */}
+				<svg class="gd-mirror" viewBox="0 0 360 218" width="360" height="218" aria-label="Source tree on the left mirrors into a shadow guidance tree on the right; one architecture.md per depth, injected at session_start and tool_call." preserveAspectRatio="xMidYMid meet">
+
+					{/* — HEADER BAND — three column captions on a thin baseline — */}
+					<text x="14" y="12" font-family="var(--font-mono)" font-size="7"
+						fill="var(--text-distant)" letter-spacing="0.18em">SOURCE</text>
+					<text x="180" y="12" text-anchor="middle"
+						font-family="var(--font-mono)" font-size="7"
+						fill="var(--text-distant)" letter-spacing="0.18em">.rpiv/</text>
+					<text x="346" y="12" text-anchor="end"
+						font-family="var(--font-mono)" font-size="7"
+						fill="var(--text-distant)" letter-spacing="0.18em">SHADOW</text>
+
+					{/* — SEAM — the .rpiv/ boundary, a quiet vertical hairline — */}
+					<line x1="180" y1="22" x2="180" y2="170"
+						stroke="var(--rule-strong)" stroke-width="0.6"
+						stroke-dasharray="1 4" opacity="0.65" />
+
+					{/* — SOURCE TREE — folder glyphs as actual folder shapes
+					    (tab + body), name labels only — no underline ticks. */}
+					{[
+						{ y: 52,  indent: 16, name: "packages/" },
+						{ y: 88,  indent: 28, name: "pi/" },
+						{ y: 124, indent: 40, name: "skills/" },
+						{ y: 160, indent: 52, name: "annotate-…/" },
+					].map((row) => (
+						<g>
+							{/* folder shape: small tab on top-left of body */}
+							<path
+								d={`M${row.indent},${row.y - 1} L${row.indent + 5},${row.y - 1} L${row.indent + 7},${row.y - 3} L${row.indent + 14},${row.y - 3} L${row.indent + 14},${row.y + 6} L${row.indent},${row.y + 6} Z`}
+								fill="none" stroke="var(--sage-deep)"
+								stroke-width="0.7" opacity="0.7"
+								stroke-linejoin="round" />
+							<text x={row.indent + 18} y={row.y + 3}
+								font-family="var(--font-mono)" font-size="8.5"
+								fill="var(--text-quiet)" letter-spacing="0.02em">{row.name}</text>
+						</g>
+					))}
+
+					{/* — SHADOW TREE — portrait page glyphs (20×22) with a folded
+					    corner. Slimmer than before so the doc reads compact and
+					    the architecture.md label sits closer to the gesture's
+					    landing point. */}
+					{[
+						{ y: 52,  indent: 200 },
+						{ y: 88,  indent: 212 },
+						{ y: 124, indent: 224 },
+						{ y: 160, indent: 236 },
+					].map((row) => (
+						<g>
+							{/* page outline: 14-wide body + 6-wide corner notch = 20 total,
+							    22 tall (y-11 to y+11). */}
+							<path
+								d={`M${row.indent},${row.y - 11} L${row.indent + 14},${row.y - 11} L${row.indent + 20},${row.y - 5} L${row.indent + 20},${row.y + 11} L${row.indent},${row.y + 11} Z`}
+								fill="var(--ink)" stroke="var(--washi-soft)"
+								stroke-width="0.7" opacity="0.92"
+								stroke-linejoin="round" />
+							{/* folded-corner bracket — vertical drop + horizontal lip */}
+							<path
+								d={`M${row.indent + 14},${row.y - 11} L${row.indent + 14},${row.y - 5} L${row.indent + 20},${row.y - 5}`}
+								fill="none" stroke="var(--washi-soft)"
+								stroke-width="0.5" opacity="0.55"
+								stroke-linejoin="round" />
+							{/* internal text-lines: title (shorter, brighter) + two body lines.
+							    Constrained to the 14px body width so they don't poke into
+							    the corner notch. */}
+							<line x1={row.indent + 3} y1={row.y - 3} x2={row.indent + 9} y2={row.y - 3}
+								stroke="var(--washi-soft)" stroke-width="0.6" opacity="0.65" />
+							<line x1={row.indent + 3} y1={row.y + 2} x2={row.indent + 12} y2={row.y + 2}
+								stroke="var(--washi-soft)" stroke-width="0.5" opacity="0.45" />
+							<line x1={row.indent + 3} y1={row.y + 7} x2={row.indent + 11} y2={row.y + 7}
+								stroke="var(--washi-soft)" stroke-width="0.5" opacity="0.45" />
+							{/* label — 6px gap from doc edge, font matches source folder names */}
+							<text x={row.indent + 26} y={row.y + 3}
+								font-family="var(--font-mono)" font-size="8.5"
+								fill="var(--washi-soft)" letter-spacing="0.02em">architecture.md</text>
+						</g>
+					))}
+
+					{/* — MIRROR ARCS — triple-stroke calligraphy with hand-drawn
+					    chevron at the right endpoint (no SVG marker — keep the
+					    ink-brush feel consistent with bp-link__brush). */}
+					{[
+						{ y: 52,  lx: 88,  rx: 198 },
+						{ y: 88,  lx: 70,  rx: 210 },
+						{ y: 124, lx: 100, rx: 222 },
+						{ y: 160, lx: 132, rx: 234 },
+					].map((arc) => {
+						const mid = (arc.lx + arc.rx) / 2;
+						return (
+							<g fill="none" stroke-linecap="round">
+								{/* faint ochre echo above */}
+								<path d={`M${arc.lx},${arc.y - 3} Q${mid},${arc.y - 14} ${arc.rx - 2},${arc.y - 3}`}
+									stroke="var(--ochre)" stroke-width="0.5" opacity="0.32" />
+								{/* dominant washi-soft brushstroke */}
+								<path d={`M${arc.lx},${arc.y} Q${mid},${arc.y - 11} ${arc.rx - 2},${arc.y}`}
+									stroke="var(--washi-soft)" stroke-width="1.3" opacity="0.85" />
+								{/* faint sage echo below */}
+								<path d={`M${arc.lx},${arc.y + 3} Q${mid},${arc.y - 8} ${arc.rx - 2},${arc.y + 3}`}
+									stroke="var(--sage)" stroke-width="0.5" opacity="0.22" />
+								{/* hand-drawn chevron arrowhead — two stacked strokes */}
+								<path d={`M${arc.rx - 6},${arc.y - 3} L${arc.rx - 1},${arc.y} L${arc.rx - 6},${arc.y + 3}`}
+									stroke="var(--washi-soft)" stroke-width="1.2" opacity="0.85" />
+								<path d={`M${arc.rx - 5},${arc.y - 2} L${arc.rx - 2},${arc.y} L${arc.rx - 5},${arc.y + 2}`}
+									stroke="var(--ochre)" stroke-width="0.5" opacity="0.4" />
+							</g>
+						);
+					})}
+
+					{/* — DEPTH LADDER — tick on seam + tabular digit BELOW the
+					    row, shifted left of seam so it leans toward the
+					    source-side gesture instead of floating dead-center. */}
+					{[
+						{ y: 52,  d: 0 },
+						{ y: 88,  d: 1 },
+						{ y: 124, d: 2 },
+						{ y: 160, d: 3 },
+					].map((row) => (
+						<g>
+							<line x1="177" y1={row.y} x2="183" y2={row.y}
+								stroke="var(--ochre)" stroke-width="0.8" opacity="0.75" />
+							<text x="168" y={row.y + 16} text-anchor="middle"
+								font-family="var(--font-mono)" font-size="6.5"
+								fill="var(--ochre)" opacity="0.8"
+								letter-spacing="0.06em">d={row.d}</text>
+						</g>
+					))}
+
+					{/* — INJECTION POINTS BAND — runtime strip, distinct from the
+					    tree-mirror gesture above. Two chip glyphs in matching
+					    style: same rect+text grammar, different stroke colors
+					    to distinguish lifecycle (sage) from runtime (ochre). */}
+					<line x1="0" y1="184" x2="360" y2="184"
+						stroke="var(--rule-strong)" stroke-width="0.5" opacity="0.55" />
+					<text x="14" y="200"
+						font-family="var(--font-mono)" font-size="7"
+						fill="var(--text-distant)" letter-spacing="0.18em">INJECTION POINTS</text>
+
+					{/* session_start chip (left of seam) — sage outline,
+					    signifying lifecycle event */}
+					<g>
+						<rect x="132" y="192" width="86" height="14" rx="2"
+							fill="var(--ink-raised)" stroke="var(--sage)"
+							stroke-width="0.7" opacity="0.85" />
+						<text x="175" y="202" text-anchor="middle"
+							font-family="var(--font-mono)" font-size="8"
+							fill="var(--washi-soft)" letter-spacing="0.04em">session_start</text>
+					</g>
+
+					{/* small dotted connector between chips — implies "and" */}
+					<g fill="none" stroke="var(--washi-soft)" stroke-linecap="round" opacity="0.45">
+						<path d="M222,199 L236,199" stroke-width="0.6" stroke-dasharray="2 2" />
+					</g>
+
+					{/* tool_call chip (right of seam) — ochre outline,
+					    signifying recurring runtime call */}
+					<g>
+						<rect x="240" y="192" width="68" height="14" rx="2"
+							fill="var(--ink-raised)" stroke="var(--ochre)"
+							stroke-width="0.7" opacity="0.95" />
+						<text x="274" y="202" text-anchor="middle"
+							font-family="var(--font-mono)" font-size="8"
+							fill="var(--washi-soft)" letter-spacing="0.04em">tool_call</text>
+					</g>
+
+					{/* trailing dotted rail — implies "every tool_call, ongoing" */}
+					<g fill="none" stroke="var(--washi-soft)" stroke-linecap="round" opacity="0.3">
+						<path d="M312,199 L344,199" stroke-width="0.5" stroke-dasharray="2 3" />
+					</g>
+				</svg>
+
+				<p class="gd-desc gd-desc--hero">
+					A shadow tree mirrors the source. Each folder's <code>architecture.md</code>
+					is the smallest thing the agent needs to act correctly <em>here</em> —
+					not the whole repo.
+				</p>
+
+				{/* Trade ledger — gain / cost two-column comparison.
+				    Sage label = gains; ochre label = cost. Same idiom as Blueprint. */}
+				<div class="gd-trade">
+					<div class="gd-trade__col gd-trade__col--gain">
+						<p class="mono gd-trade__label">gain</p>
+						<ul class="gd-trade__list">
+							<li>context follows the agent into deep folders</li>
+							<li>zero source-code noise — docs live alongside, not inside</li>
+						</ul>
+					</div>
+					<div class="gd-trade__col gd-trade__col--cost">
+						<p class="mono gd-trade__label">cost</p>
+						<ul class="gd-trade__list">
+							<li>shadow tree drifts after structural changes — regenerate</li>
+						</ul>
+					</div>
+				</div>
+
+				{/* Meta keeps the path only — the injection points are visualised
+				   in the SVG band and named in the lede, so restating them
+				   here just produced a redundant wrapped second line. */}
+				<p class="gd-meta mono">
+					<span class="gd-meta__arrow">→</span>
+					<code>.rpiv/guidance/&lt;sub&gt;/architecture.md</code>
+				</p>
+
+				{/* corner sumi-ink ornament — mirrored vs Blueprint's bottom-right
+				    so two adjacent hero figures don't share the same corner. */}
+				<svg class="gd-hero__ornament" viewBox="0 0 160 110" width="160" height="110" aria-hidden="true">
+					<g fill="none" stroke="var(--ochre)" stroke-linecap="round" opacity="0.45">
+						<path d="M150,98 q-26,-58 -78,-78 q-40,-15 -66,32" stroke-width="1.1" />
+						<path d="M138,104 q-22,-44 -64,-58 q-34,-11 -60,18" stroke-width="0.6" opacity="0.55" />
+						<path d="M126,108 q-18,-30 -50,-44" stroke-width="0.4" opacity="0.4" />
+						<circle cx="14" cy="44" r="2" />
+						<circle cx="120" cy="84" r="1.4" opacity="0.7" />
+						<circle cx="60" cy="22" r="1.2" opacity="0.6" />
+					</g>
+				</svg>
+			</article>
+
+			{/* ── CONNECTOR 02 → 03 — calligraphy brushstroke labelled INJECTS ── */}
+			<div class="gd-link" aria-hidden="true">
+				<svg class="gd-link__brush" viewBox="0 0 120 80" width="120" height="80" preserveAspectRatio="xMidYMid meet">
+					<g fill="none" stroke-linecap="round">
+						<path d="M8,32 Q42,26 100,30" stroke="var(--ochre)" stroke-width="0.5" opacity="0.32" />
+						<path d="M6,40 Q40,36 102,40" stroke="var(--washi-soft)" stroke-width="1.6" opacity="0.85" />
+						<path d="M8,48 Q42,44 100,46" stroke="var(--sage)" stroke-width="0.5" opacity="0.22" />
+						<path d="M96,32 L112,40 L96,48" stroke="var(--washi-soft)" stroke-width="1.4" opacity="0.85" />
+						<path d="M97,34 L109,40 L97,46" stroke="var(--ochre)" stroke-width="0.5" opacity="0.32" />
+					</g>
+					<text x="60" y="68" text-anchor="middle"
+						font-family="var(--font-mono)" font-size="9"
+						fill="var(--text-distant)" letter-spacing="0.18em">INJECTS</text>
+				</svg>
+			</div>
+
+			{/* ── BLOCK 03 — output (pi agent · per-depth context) ── */}
+			<article class="gd-block gd-block--output">
+				<header class="gd-block__head">
+					<p class="gd-kicker mono">03 · output</p>
+					<h3 class="mono gd-name">pi · per-depth context</h3>
+				</header>
+				<p class="gd-desc">
+					On <code>session_start</code>, root guidance loads. On every
+					<code>read</code>/<code>edit</code>/<code>write</code>, the closest
+					ancestor <code>architecture.md</code> for the touched path injects too —
+					silently, as a hidden context message.
+				</p>
+
+				{/* mini story-SVG: 3 tool calls, each branching to its ancestor arch.md */}
+				<svg class="gd-mini" viewBox="0 0 200 110" width="200" height="110" aria-hidden="true" preserveAspectRatio="xMidYMid meet">
+					{/* call rail */}
+					<g fill="none" stroke="var(--sage-deep)" stroke-linecap="round">
+						<path d="M14,18 L14,94" stroke-width="0.7" opacity="0.55" />
+					</g>
+					{/* 3 tool-call chips */}
+					{[
+						{ y: 24,  name: "read",  op: 0.95 },
+						{ y: 56,  name: "edit",  op: 0.75 },
+						{ y: 88,  name: "write", op: 0.55 },
+					].map((c) => (
+						<g>
+							<rect x="20" y={c.y - 7} width="44" height="14" rx="1.5"
+								fill="var(--ink-raised)" stroke="var(--sage-deep)"
+								stroke-width="0.7" opacity={c.op} />
+							<text x="42" y={c.y + 3} text-anchor="middle"
+								font-family="var(--font-mono)" font-size="8"
+								fill="var(--text-quiet)" letter-spacing="0.02em">{c.name}</text>
+							{/* injection branch out to ancestor doc */}
+							<g fill="none" stroke="var(--ochre)" stroke-linecap="round"
+								stroke-width="0.7" opacity={0.35 + c.op * 0.4}>
+								<path d={`M64,${c.y} L120,${c.y}`} stroke-dasharray="3 2" />
+								<path d={`M116,${c.y - 3} L120,${c.y} L116,${c.y + 3}`} />
+							</g>
+							{/* tiny doc glyph at the tip */}
+							<g>
+								<rect x="124" y={c.y - 6} width="22" height="12" rx="1"
+									fill="var(--ink)" stroke="var(--washi-soft)"
+									stroke-width="0.5" opacity={0.55 + c.op * 0.3} />
+								<text x="135" y={c.y + 2} text-anchor="middle"
+									font-family="var(--font-mono)" font-size="6.5"
+									fill="var(--ochre)" letter-spacing="0.06em">▲ARCH</text>
+							</g>
+							<text x="152" y={c.y + 2}
+								font-family="var(--font-mono)" font-size="7"
+								fill="var(--text-distant)" letter-spacing="0.04em" opacity="0.85">d={3 - Math.floor((c.y - 24) / 32)}</text>
+						</g>
+					))}
+					<text x="14" y="108"
+						font-family="var(--font-mono)" font-size="7"
+						fill="var(--text-distant)" letter-spacing="0.18em">PER-DEPTH</text>
+				</svg>
+
+				<p class="gd-meta mono">
+					<span class="gd-meta__arrow">→</span>
+					<span class="gd-meta__ref">pi · agent runtime</span>
+				</p>
+			</article>
+		</figure>
+
+		{/* see-also: migrate-to-guidance is the natural neighbour.
+		   No own border — the figure's border-bottom is the divider. */}
+		<p class="gd__seealso mono">
+			<span class="gd__seealso-label">see also</span>
+			<span class="chip">/skill:migrate-to-guidance</span>
+			<span class="gd__seealso-text">— convert an existing <code>CLAUDE.md</code> project into the guidance system.</span>
+		</p>
+	</div>
+</section>
+
+<style>
+	#guidance h2 { margin-bottom: var(--space-5); }
+	.gd-h2__line { display: block; }
+	.gd-h2__line--accent { color: var(--ochre); }
+
+	.gd__lede {
+		color: var(--text-quiet);
+		margin-bottom: var(--space-7);
+		max-width: 64ch;
+	}
+	.gd__lede strong {
+		color: var(--washi);
+		font-weight: 400;
+	}
+	.gd__lede code {
+		color: var(--ochre);
+		background: transparent;
+	}
+
+	/* ─── 3-block hero — same grammar as .bp-flow ─── */
+	.gd-flow {
+		/* Tighter bottom margin than Blueprint's space-8 because a single
+		   see-also note follows directly (no §-kicker block between figure
+		   and footer like SecondaryFlows has). Keeps the figure's
+		   border-bottom reading as the section's true closing rule. */
+		margin: 0 0 var(--space-5);
+		padding: var(--space-7) 0;
+		border-top: 1px solid var(--rule);
+		border-bottom: 1px solid var(--rule);
+		display: grid;
+		grid-template-columns: 1fr;
+		gap: var(--space-4);
+		align-items: stretch;
+	}
+	@media (min-width: 920px) {
+		.gd-flow {
+			grid-template-columns: 0.95fr 80px 2fr 80px 0.95fr;
+			gap: var(--space-3);
+			align-items: stretch;
+		}
+	}
+
+	.gd-block {
+		position: relative;
+		padding: var(--space-5);
+		background: var(--ink-raised);
+		border-top: 1px solid var(--rule);
+		border-left: 1px solid var(--sage-deep);
+		border-right: 1px solid var(--rule);
+		border-bottom: 1px solid var(--rule-strong);
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-3);
+		min-width: 0;
+	}
+
+	/* Side blocks — strip card chrome (mirrors Blueprint convention). */
+	.gd-block--input,
+	.gd-block--output {
+		background: transparent;
+		border: none;
+		padding: 0;
+		align-self: stretch;
+		justify-content: center;
+	}
+	.gd-block--input  { padding-right: var(--space-2); }
+	.gd-block--output { padding-left:  var(--space-2); }
+
+	.gd-block--hero {
+		padding: var(--space-6);
+		border-left-width: 3px;
+		border-left-color: var(--ochre);
+		overflow: hidden;
+	}
+	.gd-hero__wash {
+		position: absolute;
+		inset: 0;
+		pointer-events: none;
+		background:
+			radial-gradient(420px 220px at 18% 0%,    rgba(168, 137, 108, 0.10), transparent 60%),
+			radial-gradient(360px 240px at 100% 100%, rgba(138, 149, 128, 0.06), transparent 60%);
+	}
+	.gd-block--hero > * { position: relative; z-index: 1; }
+
+	.gd-hero__ornament {
+		position: absolute;
+		bottom: -12px;
+		left: -10px;
+		opacity: 0.5;
+		pointer-events: none;
+		z-index: 0;
+	}
+
+	.gd-block__head {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-2);
+	}
+	.gd-kicker {
+		font-size: var(--type-tiny);
+		letter-spacing: 0.18em;
+		text-transform: uppercase;
+		color: var(--text-distant);
+		margin: 0;
+	}
+	.gd-kicker--hero { color: var(--ochre); }
+
+	.gd-name {
+		font-size: var(--type-h3);
+		margin: 0;
+		color: var(--washi);
+		overflow-wrap: normal;
+		word-break: keep-all;
+	}
+	.gd-name--hero {
+		/* Long skill identifiers (e.g. /skill:annotate-guidance is 24 chars)
+		   need a smaller hero size than Blueprint's 30px or they clip the
+		   overflow:hidden hero card. Clamp keeps it readable on narrow
+		   viewports too. */
+		font-size: clamp(22px, 2.4vw, 26px);
+		color: var(--washi);
+	}
+
+	.gd-desc {
+		font-family: var(--font-serif);
+		color: var(--text);
+		font-size: var(--type-small);
+		margin: 0;
+		max-width: none;
+	}
+	.gd-desc--hero { font-size: 17px; line-height: var(--leading-snug); max-width: 56ch; }
+	.gd-desc code,
+	.gd-meta code {
+		color: var(--ochre);
+		background: transparent;
+		font-family: var(--font-mono);
+		font-size: 0.92em;
+	}
+	.gd-desc em {
+		font-style: italic;
+		color: var(--washi);
+	}
+
+	.gd-mini {
+		display: block;
+		width: 100%;
+		max-width: 220px;
+		height: auto;
+		margin: var(--space-2) auto;
+		opacity: 0.95;
+	}
+
+	/* The mirror diagram — landscape (360×200), counterpoint to Blueprint's
+	   portrait fold (320×220). The eye reads left-to-right, four arcs in
+	   parallel; aspect ratio reinforces the lateral motion. */
+	.gd-mirror {
+		display: block;
+		width: 100%;
+		max-width: 360px;
+		height: auto;
+		margin: var(--space-3) auto var(--space-4);
+	}
+
+	.gd-trade {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: var(--space-5);
+		margin: var(--space-2) 0 0;
+	}
+	.gd-trade__col {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-3);
+		min-width: 0;
+	}
+	.gd-trade__label {
+		font-size: var(--type-tiny);
+		letter-spacing: 0.22em;
+		text-transform: uppercase;
+		margin: 0;
+		padding-bottom: var(--space-2);
+		border-bottom: 1px solid var(--rule);
+	}
+	.gd-trade__col--gain .gd-trade__label {
+		color: var(--sage);
+		border-bottom-color: var(--sage-deep);
+	}
+	.gd-trade__col--cost .gd-trade__label {
+		color: var(--ochre);
+		border-bottom-color: var(--kuro);
+	}
+	.gd-trade__list {
+		list-style: none;
+		padding: 0;
+		margin: 0;
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-2);
+		font-family: var(--font-serif);
+		font-size: var(--type-small);
+		color: var(--text-quiet);
+		line-height: var(--leading-snug);
+	}
+
+	.gd-meta {
+		font-size: var(--type-tiny);
+		color: var(--text-distant);
+		margin: 0;
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--space-2);
+		align-items: baseline;
+	}
+	.gd-block--hero .gd-meta {
+		margin-top: auto;
+		padding-top: var(--space-3);
+		border-top: 1px solid var(--rule);
+	}
+	.gd-meta__arrow { color: var(--sage); }
+	.gd-meta__sep   { color: var(--text-distant); }
+	.gd-meta__ref   { color: var(--text-quiet); }
+
+	.gd-link {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		min-width: 0;
+		min-height: 80px;
+	}
+	.gd-link__brush {
+		width: 100%;
+		max-width: 120px;
+		height: auto;
+		display: block;
+	}
+	@media (max-width: 919px) {
+		.gd-link { min-height: 60px; }
+		.gd-link__brush { transform: rotate(90deg); max-width: 80px; }
+	}
+
+	/* see-also row — single inline note, no own divider. The figure's
+	   border-bottom already serves as the section's closing rule; adding a
+	   top rule here would double the divider. Sits in the figure's natural
+	   bottom-margin space, no negative margin needed. */
+	.gd__seealso {
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--space-2);
+		align-items: baseline;
+		font-size: var(--type-tiny);
+		color: var(--text-distant);
+		margin: 0;
+	}
+	.gd__seealso-label {
+		letter-spacing: 0.18em;
+		text-transform: uppercase;
+	}
+	.gd__seealso-text {
+		font-family: var(--font-serif);
+		font-size: var(--type-small);
+		color: var(--text-quiet);
+		text-transform: none;
+		letter-spacing: 0;
+	}
+	.gd__seealso-text code {
+		color: var(--ochre);
+		background: transparent;
+		font-family: var(--font-mono);
+		font-size: 0.92em;
+	}
+</style>

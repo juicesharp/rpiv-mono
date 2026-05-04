@@ -11,12 +11,13 @@
 		</div>
 		<nav class="nav__links mono" aria-label="primary">
 			<a href="#pipeline" data-nav-link="pipeline">pipeline</a>
+			<a href="#guidance" data-nav-link="guidance">guidance</a>
 			<a href="#flows"    data-nav-link="flows">blueprint</a>
 			<a href="#review"   data-nav-link="review">review</a>
 			<a href="#agents"   data-nav-link="agents">agents</a>
 			<a href="#siblings" data-nav-link="siblings">siblings</a>
-			<a href="#install"  data-nav-link="install">install</a>
 		</nav>
+		<a href="#install" class="nav__cta mono">install</a>
 	</div>
 </header>
 
@@ -98,6 +99,29 @@
 	}
 	.nav__links a:hover { color: var(--washi); }
 
+	/* CTA chip — install is an action, not a wayfinding tab. The chip
+	   gives it visual hierarchy distinct from the lowercase tracked-out
+	   wayfinding links. Echoes the .chip--ochre idiom from flows.css. */
+	.nav__cta {
+		font-size: var(--type-tiny);
+		letter-spacing: 0.16em;
+		text-transform: uppercase;
+		color: var(--washi);
+		border: 1px solid var(--ochre);
+		border-radius: var(--radius-sm);
+		padding: 4px 10px;
+		text-decoration: none;
+		transition:
+			color var(--dur-ink) var(--ease-ink),
+			background var(--dur-ink) var(--ease-ink),
+			border-color var(--dur-ink) var(--ease-ink);
+	}
+	.nav__cta:hover {
+		color: var(--ink);
+		background: var(--ochre);
+		border-color: var(--ochre);
+	}
+
 	/* Active-section state — agrees with the side ScrollIndicator's hanko seal.
 	   Active link gets washi text + a 1px ochre underline tick that grows from
 	   left, matching the indicator's `.indicator__line` widening behavior. */
@@ -130,21 +154,39 @@
 	   any viewport, eliminating the overflow that the previous
 	   shrink-the-gap approach hit on narrow phones. */
 	@media (max-width: 720px) {
+		/* Grid: top row = brand+counter (left) | CTA (right);
+		   bottom row = full-width 6-col links grid. */
 		.nav__inner {
-			flex-direction: column;
-			align-items: stretch;
-			gap: var(--space-3);
+			display: grid;
+			grid-template-columns: 1fr auto;
+			grid-template-areas:
+				"head cta"
+				"links links";
+			align-items: center;
+			column-gap: var(--space-3);
+			row-gap: var(--space-3);
 			padding-top: var(--space-3);
 			padding-bottom: 0;
 		}
 		.nav__head {
+			grid-area: head;
 			display: flex;
-			justify-content: space-between;
+			justify-content: flex-start;
 			align-items: baseline;
+			gap: var(--space-3);
 		}
 		.nav__counter { display: inline-flex; }
 
+		.nav__cta {
+			grid-area: cta;
+			align-self: center;
+			padding: 3px 8px;
+			font-size: 10px;
+			letter-spacing: 0.14em;
+		}
+
 		.nav__links {
+			grid-area: links;
 			display: grid;
 			grid-template-columns: repeat(6, 1fr);
 			gap: 0;

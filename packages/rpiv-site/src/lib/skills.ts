@@ -10,7 +10,7 @@ export type SkillEntry = {
 };
 
 const PIPELINE = ["discover", "research", "design", "plan", "implement", "validate"] as const;
-const SECONDARY = ["blueprint", "explore", "annotate-guidance", "migrate-to-guidance"] as const;
+const SECONDARY = ["blueprint", "explore", "migrate-to-guidance"] as const;
 const CODE_REVIEW_FLOW = ["commit", "code-review"] as const;
 
 export async function getPipelineSkills(): Promise<SkillEntry[]> {
