@@ -131,11 +131,15 @@ const skills = await getCodeReviewSkills();
 						<path d="M60,92 Q98,116 138,128" stroke-width="0.8" stroke-dasharray="3 2" />
 					</g>
 
-					{/* three lens lanes */}
+					{/* three lens lanes — labels sit ABOVE each circle on a clear
+					    horizontal band. Side-positioned labels (the previous
+					    layout) were bisected by the arcs sweeping from each
+					    lens toward verify, since those arcs occupy exactly the
+					    y-band where right-side labels would sit. */}
 					{[
-						{ y: 40,  letter: "Q", label: "quality",      tint: "var(--sage)" },
-						{ y: 84,  letter: "S", label: "security",     tint: "var(--ochre)" },
-						{ y: 128, letter: "D", label: "dependencies", tint: "var(--sage)" },
+						{ y: 40,  letter: "Q", label: "quality",      labelY: 20,  tint: "var(--sage)" },
+						{ y: 84,  letter: "S", label: "security",     labelY: 64,  tint: "var(--ochre)" },
+						{ y: 128, letter: "D", label: "dependencies", labelY: 108, tint: "var(--sage)" },
 					].map((lane) => (
 						<g>
 							{/* lane node — labeled circle */}
@@ -145,32 +149,39 @@ const skills = await getCodeReviewSkills();
 							<text x={150} y={lane.y + 3.5} text-anchor="middle"
 								font-family="var(--font-mono)" font-size="11"
 								fill="var(--washi)" letter-spacing="0.04em">{lane.letter}</text>
-							{/* lane label to the right */}
-							<text x={170} y={lane.y + 3.5}
+							{/* lane label — centered above the circle, never collides
+							    with the arc sweeping from this lens toward verify */}
+							<text x={150} y={lane.labelY} text-anchor="middle"
 								font-family="var(--font-mono)" font-size="9"
 								fill="var(--text-quiet)" letter-spacing="0.06em">{lane.label}</text>
-							{/* outbound arrow toward verify */}
-							<path d={`M165,${lane.y} Q210,${lane.y} 240,84`}
+							{/* outbound arrow toward verify — terminates 2px outside the
+							    hex's new left tip (235), matching the larger gate. */}
+							<path d={`M165,${lane.y} Q207,${lane.y} 233,84`}
 								fill="none" stroke="var(--washi-soft)" stroke-width="0.9" opacity="0.65" stroke-linecap="round" />
 						</g>
 					))}
 
-					{/* verification gate — ochre hexagon (the structural-resistance gate) */}
+					{/* verification gate — ochre hexagon (the structural-resistance
+					    gate). Sized 50×30 (up from 40×24) so the "verify" label
+					    sits with comfortable padding on all sides instead of
+					    grazing the angled edges. */}
 					<g>
-						<polygon points="248,72 268,72 278,84 268,96 248,96 238,84"
+						<polygon points="247,69 273,69 285,84 273,99 247,99 235,84"
 							fill="var(--ink-raised)" stroke="var(--ochre)" stroke-width="1.3" />
-						<polygon points="248,72 268,72 278,84 268,96 248,96 238,84"
+						<polygon points="247,69 273,69 285,84 273,99 247,99 235,84"
 							fill="var(--ochre)" opacity="0.20" />
-						<text x="258" y="87" text-anchor="middle"
+						<text x="260" y="87" text-anchor="middle"
 							font-family="var(--font-mono)" font-size="8.5"
 							fill="var(--washi)" letter-spacing="0.04em">verify</text>
-						<text x="258" y="112" text-anchor="middle"
+						{/* caption pushed below the D-lane arc's sweep zone so the
+						    arc no longer cuts through "re-read file:line" */}
+						<text x="260" y="124" text-anchor="middle"
 							font-family="var(--font-mono)" font-size="7.5"
 							fill="var(--text-distant)" letter-spacing="0.16em">re-read file:line</text>
 					</g>
 
 					{/* arrow from verify → report */}
-					<path d="M278,84 L320,84"
+					<path d="M285,84 L320,84"
 						fill="none" stroke="var(--washi-soft)" stroke-width="1" opacity="0.85"
 						stroke-linecap="round" marker-end="url(#cr-arrow)" />
 

@@ -165,9 +165,15 @@ const skills = await getSecondaryFlowSkills();
 						<path d="M196,64 L182,138" stroke-width="0.5" opacity="0.32" />
 					</g>
 
-					{/* hairline indicating the 'fold-into' band */}
-					<line x1="44" y1="108" x2="276" y2="108" stroke="var(--rule)" stroke-width="0.5" stroke-dasharray="1 4" opacity="0.5" />
-					<text x="276" y="103" text-anchor="end" font-size="7" fill="var(--text-distant)" letter-spacing="0.18em">FOLD</text>
+					{/* hairline indicating the 'fold-into' band — broken in the
+					    middle so the FOLD label clearly captions the line.
+					    Centered position also clears the expedited-path arcs
+					    that pass through y=108 at x≈55 and x≈265. */}
+					<line x1="44" y1="108" x2="146" y2="108" stroke="var(--rule)" stroke-width="0.5" stroke-dasharray="1 4" opacity="0.55" />
+					<line x1="174" y1="108" x2="276" y2="108" stroke="var(--rule)" stroke-width="0.5" stroke-dasharray="1 4" opacity="0.55" />
+					<text x="160" y="111" text-anchor="middle"
+						font-size="7" fill="var(--text-distant)"
+						letter-spacing="0.18em">FOLD</text>
 
 					{/* — bottom band: dominant blueprint node — */}
 					{/* Soft ochre glow halo so the BP node feels heavier than the top-row nodes */}
