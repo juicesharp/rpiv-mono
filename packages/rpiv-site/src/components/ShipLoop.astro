@@ -298,7 +298,7 @@ const skills = await getCodeReviewSkills();
 						<text x="14" y="78" fill="var(--text-distant)" letter-spacing="0.14em">SEVERITY</text>
 						<g transform="translate(14,90)">
 							{/* critical — red dot */}
-							<circle cx="6" cy="6" r="4.5" fill="#b04a3a" opacity="0.9" />
+							<circle cx="6" cy="6" r="4.5" fill="var(--alert)" opacity="0.9" />
 							<text x="16" y="9" fill="var(--text-quiet)">2</text>
 							{/* important — ochre dot */}
 							<circle cx="42" cy="6" r="4.5" fill="var(--ochre)" opacity="0.95" />
@@ -318,13 +318,13 @@ const skills = await getCodeReviewSkills();
 						<g transform="translate(14,128)">
 							<text x="0"  y="9" fill="var(--sage)"  >✓</text><text x="10" y="9" fill="var(--text-quiet)">17</text>
 							<text x="40" y="9" fill="var(--ochre)" >−</text><text x="50" y="9" fill="var(--text-quiet)">3</text>
-							<text x="80" y="9" fill="#b04a3a"      >✗</text><text x="90" y="9" fill="var(--text-quiet)">1</text>
+							<text x="80" y="9" fill="var(--alert)"      >✗</text><text x="90" y="9" fill="var(--text-quiet)">1</text>
 						</g>
 					</g>
 
 					{/* finding rows — three short bars to suggest the body */}
 					<g>
-						<line x1="14" y1="156" x2="22" y2="156" stroke="#b04a3a"      stroke-width="2" stroke-linecap="round" />
+						<line x1="14" y1="156" x2="22" y2="156" stroke="var(--alert)"      stroke-width="2" stroke-linecap="round" />
 						<line x1="26" y1="156" x2="190" y2="156" stroke="var(--washi-soft)" stroke-width="0.7" opacity="0.6" />
 						<line x1="14" y1="166" x2="22" y2="166" stroke="var(--ochre)" stroke-width="2" stroke-linecap="round" />
 						<line x1="26" y1="166" x2="170" y2="166" stroke="var(--washi-soft)" stroke-width="0.7" opacity="0.55" />

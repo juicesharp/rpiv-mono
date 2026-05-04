@@ -95,75 +95,99 @@ const skills = await getSecondaryFlowSkills();
 					<h3 class="mono bp-name bp-name--hero">/skill:blueprint</h3>
 				</header>
 
-				{/* THE COMPRESSION DIAGRAM — the visual hero of this section.
-				    Top: ghosted canonical chain showing design+plan struck through.
-				    Bottom: solid blueprint node absorbing them with two converging arcs.
-				    ViewBox padded inward (research at x=60, implement at x=300) so labels never clip
-				    even when the hero is rendered at a narrow viewport. */}
-				<svg class="bp-compress" viewBox="0 0 360 130" width="360" height="130" aria-label="design and plan steps compressed into blueprint" preserveAspectRatio="xMidYMid meet">
+				{/* THE COMPRESSION DIAGRAM — vertical-fold rendering.
+				    The motion of this figure is DOWNWARD: the canonical chain at the top
+				    folds two of its nodes (design + plan) into a single dominant blueprint
+				    node below. Differentiates intentionally from the §6 lens diagram, which
+				    reads horizontally (fan-out → converge → emit). Aspect ratio is taller
+				    here so the eye traces top→bottom rather than left→right. */}
+				<svg class="bp-compress" viewBox="0 0 320 220" width="320" height="220" aria-label="design and plan steps fold into a single blueprint artifact" preserveAspectRatio="xMidYMid meet">
 					<defs>
 						<marker id="bp-cmp-arrow" viewBox="0 0 10 10" refX="9" refY="5"
 							markerWidth="6" markerHeight="6" orient="auto">
 							<path d="M0,0 L10,5 L0,10 z" fill="var(--washi-soft)" opacity="0.85" />
 						</marker>
+						<marker id="bp-fold-arrow" viewBox="0 0 10 10" refX="8" refY="5"
+							markerWidth="5" markerHeight="5" orient="auto">
+							<path d="M0,0 L10,5 L0,10 z" fill="var(--ochre)" opacity="0.85" />
+						</marker>
+						<radialGradient id="bp-node-glow" cx="50%" cy="50%" r="50%">
+							<stop offset="0%"  stop-color="var(--ochre)" stop-opacity="0.28" />
+							<stop offset="60%" stop-color="var(--ochre)" stop-opacity="0.06" />
+							<stop offset="100%" stop-color="var(--ochre)" stop-opacity="0" />
+						</radialGradient>
 					</defs>
 
-					{/* canonical chain path (faded, dashed) */}
+					{/* — top band: canonical chain ribbon — */}
+					<text x="14" y="20" font-size="8" fill="var(--text-distant)" letter-spacing="0.18em">CANONICAL · 4 STEPS</text>
 					<g fill="none" stroke="var(--text-distant)" stroke-linecap="round">
-						<path d="M60,38 L300,38" stroke-width="0.7" opacity="0.5" stroke-dasharray="3 3" />
+						<path d="M44,46 L276,46" stroke-width="0.7" opacity="0.5" stroke-dasharray="3 3" />
 					</g>
 
-					{/* canonical 4 nodes — research (solid), design (ghost), plan (ghost), implement (solid) */}
+					{/* canonical 4 nodes packed onto the top band */}
 					{[
-						{ x: 60,  y: 38, label: "research",   ghost: false, color: "var(--sage)" },
-						{ x: 140, y: 38, label: "design",     ghost: true,  color: "var(--ochre)" },
-						{ x: 220, y: 38, label: "plan",       ghost: true,  color: "var(--ochre)" },
-						{ x: 300, y: 38, label: "implement",  ghost: false, color: "var(--sage)" },
+						{ x: 44,  label: "research",  ghost: false, color: "var(--sage)" },
+						{ x: 121, label: "design",    ghost: true,  color: "var(--ochre)" },
+						{ x: 199, label: "plan",      ghost: true,  color: "var(--ochre)" },
+						{ x: 276, label: "implement", ghost: false, color: "var(--sage)" },
 					].map((n) => (
 						<g>
 							{n.ghost ? (
 								<g>
-									{/* ghost ring with strike-through */}
-									<circle cx={n.x} cy={n.y} r="9" fill="none" stroke={n.color} stroke-width="0.8" opacity="0.45" stroke-dasharray="2 2" />
-									<circle cx={n.x} cy={n.y} r="6" fill="none" stroke={n.color} stroke-width="0.7" opacity="0.4" />
-									<line x1={n.x - 11} y1={n.y - 11} x2={n.x + 11} y2={n.y + 11}
+									<circle cx={n.x} cy="46" r="9" fill="none" stroke={n.color} stroke-width="0.8" opacity="0.45" stroke-dasharray="2 2" />
+									<circle cx={n.x} cy="46" r="6" fill="none" stroke={n.color} stroke-width="0.7" opacity="0.4" />
+									<line x1={n.x - 11} y1="35" x2={n.x + 11} y2="57"
 										stroke={n.color} stroke-width="1.2" opacity="0.7" stroke-linecap="round" />
-									<text x={n.x} y={n.y + 22} text-anchor="middle"
-										font-family="var(--font-mono)" font-size="8.5"
-										fill="var(--text-distant)" letter-spacing="0.04em" text-decoration="line-through">{n.label}</text>
+									<text x={n.x} y="70" text-anchor="middle"
+										font-size="8.5" fill="var(--text-distant)" letter-spacing="0.04em" text-decoration="line-through">{n.label}</text>
 								</g>
 							) : (
 								<g>
-									<circle cx={n.x} cy={n.y} r="11" fill="none" stroke={n.color} stroke-width="0.6" opacity="0.4" />
-									<circle cx={n.x} cy={n.y} r="8"  fill="var(--ink-raised)" stroke={n.color} stroke-width="1" />
-									<circle cx={n.x} cy={n.y} r="8"  fill={n.color} opacity="0.18" />
-									<text x={n.x} y={n.y + 22} text-anchor="middle"
-										font-family="var(--font-mono)" font-size="8.5"
-										fill="var(--text-quiet)" letter-spacing="0.04em">{n.label}</text>
+									<circle cx={n.x} cy="46" r="11" fill="none" stroke={n.color} stroke-width="0.6" opacity="0.4" />
+									<circle cx={n.x} cy="46" r="8"  fill="var(--ink-raised)" stroke={n.color} stroke-width="1" />
+									<circle cx={n.x} cy="46" r="8"  fill={n.color} opacity="0.18" />
+									<text x={n.x} y="70" text-anchor="middle"
+										font-size="8.5" fill="var(--text-quiet)" letter-spacing="0.04em">{n.label}</text>
 								</g>
 							)}
 						</g>
 					))}
 
-					{/* "absorption" arcs from ghost design + ghost plan DOWN into blueprint */}
-					<g fill="none" stroke="var(--ochre)" stroke-linecap="round" opacity="0.55">
-						<path d="M140,52 Q156,86 178,98" stroke-width="0.9" stroke-dasharray="4 2" />
-						<path d="M220,52 Q204,86 182,98" stroke-width="0.9" stroke-dasharray="4 2" />
+					{/* — funnel: two diagonal fold lines converging straight DOWN into BP.
+					    These are the figure's primary gesture — they visually 'collapse'
+					    the two ghost steps into a single point. Heavier ochre stroke +
+					    arrowheads make the motion explicit. */}
+					<g fill="none" stroke="var(--ochre)" stroke-linecap="round">
+						<path d="M121,62 L156,140" stroke-width="1.4" opacity="0.85" marker-end="url(#bp-fold-arrow)" />
+						<path d="M199,62 L184,140" stroke-width="1.4" opacity="0.85" marker-end="url(#bp-fold-arrow)" />
+						{/* faint echo strokes — second-pass calligraphy weight */}
+						<path d="M124,64 L158,138" stroke-width="0.5" opacity="0.32" />
+						<path d="M196,64 L182,138" stroke-width="0.5" opacity="0.32" />
 					</g>
 
-					{/* blueprint node — solid ochre, larger, sits below the canonical chain */}
+					{/* hairline indicating the 'fold-into' band */}
+					<line x1="44" y1="108" x2="276" y2="108" stroke="var(--rule)" stroke-width="0.5" stroke-dasharray="1 4" opacity="0.5" />
+					<text x="276" y="103" text-anchor="end" font-size="7" fill="var(--text-distant)" letter-spacing="0.18em">FOLD</text>
+
+					{/* — bottom band: dominant blueprint node — */}
+					{/* Soft ochre glow halo so the BP node feels heavier than the top-row nodes */}
+					<circle cx="170" cy="170" r="56" fill="url(#bp-node-glow)" />
 					<g>
-						<circle cx="180" cy="100" r="16" fill="none" stroke="var(--ochre)" stroke-width="0.7" opacity="0.45" />
-						<circle cx="180" cy="100" r="12" fill="var(--ink-raised)" stroke="var(--ochre)" stroke-width="1.3" />
-						<circle cx="180" cy="100" r="12" fill="var(--ochre)" opacity="0.25" />
-						<text x="180" y="103" text-anchor="middle"
-							font-family="var(--font-mono)" font-size="9" fill="var(--washi)" letter-spacing="0.04em">BP</text>
+						<circle cx="170" cy="170" r="28" fill="none" stroke="var(--ochre)" stroke-width="0.6" opacity="0.4" />
+						<circle cx="170" cy="170" r="22" fill="none" stroke="var(--ochre)" stroke-width="0.8" opacity="0.55" />
+						<circle cx="170" cy="170" r="18" fill="var(--ink-raised)" stroke="var(--ochre)" stroke-width="1.4" />
+						<circle cx="170" cy="170" r="18" fill="var(--ochre)" opacity="0.28" />
+						<text x="170" y="174" text-anchor="middle"
+							font-size="11" fill="var(--washi)" letter-spacing="0.04em">BP</text>
 					</g>
+					<text x="170" y="208" text-anchor="middle" font-size="9" fill="var(--washi-soft)" letter-spacing="0.06em">blueprint · 1 artifact</text>
 
-					{/* solid expedited path — research → blueprint → implement (washi-soft, marked) */}
+					{/* — expedited path: thin ribbon arcing UNDER the figure from research
+					    to implement, dipping through the BP node. Reads as the alternate
+					    route ('one pass'), kept secondary so the fold gesture dominates. */}
 					<g fill="none" stroke="var(--washi-soft)" stroke-linecap="round">
-						<path d="M68,42 Q100,72 162,98" stroke-width="1" opacity="0.85" marker-end="url(#bp-cmp-arrow)" />
-						<path d="M198,98 Q260,72 292,42" stroke-width="1" opacity="0.85" marker-end="url(#bp-cmp-arrow)" />
+						<path d="M44,54 Q40,140 152,170" stroke-width="0.9" opacity="0.6" stroke-dasharray="4 3" marker-end="url(#bp-cmp-arrow)" />
+						<path d="M188,170 Q280,140 276,54" stroke-width="0.9" opacity="0.6" stroke-dasharray="4 3" marker-end="url(#bp-cmp-arrow)" />
 					</g>
 				</svg>
 
@@ -456,13 +480,16 @@ const skills = await getSecondaryFlowSkills();
 		opacity: 0.95;
 	}
 
-	/* ── The big compression diagram inside the hero ── */
+	/* ── The fold-down compression diagram inside the hero ──
+	   Portrait aspect (320×220) intentionally contrasts with §6 lens (380×168),
+	   so the two adjacent hero figures encode orthogonal motions:
+	   here = vertical compression, there = horizontal fan-out. */
 	.bp-compress {
 		display: block;
 		width: 100%;
-		max-width: 380px;
+		max-width: 320px;
 		height: auto;
-		margin: var(--space-3) 0 var(--space-4);
+		margin: var(--space-3) auto var(--space-4);
 	}
 
 	/* ── Trade ledger: gain / cost two-column comparison ── */
