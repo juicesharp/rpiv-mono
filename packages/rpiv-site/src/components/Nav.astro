@@ -1,6 +1,14 @@
 <header class="nav" data-nav>
 	<div class="container nav__inner">
-		<a href="#top" class="nav__brand mono">rpiv-pi</a>
+		<div class="nav__head">
+			<a href="#top" class="nav__brand mono">rpiv-pi</a>
+			<span class="nav__counter mono" aria-hidden="true">
+				<span class="nav__counter-rule"></span>
+				<span class="nav__counter-num" data-nav-counter>—</span>
+				<span class="nav__counter-sep">/</span>
+				<span class="nav__counter-total">06</span>
+			</span>
+		</div>
 		<nav class="nav__links mono" aria-label="primary">
 			<a href="#pipeline" data-nav-link="pipeline">pipeline</a>
 			<a href="#flows"    data-nav-link="flows">blueprint</a>
@@ -30,6 +38,9 @@
 		padding-top: var(--space-3);
 		padding-bottom: var(--space-3);
 	}
+	.nav__head {
+		display: contents;
+	}
 	.nav__brand {
 		font-size: var(--type-small);
 		color: var(--washi);
@@ -37,6 +48,41 @@
 		border-bottom: none;
 	}
 	.nav__brand:hover { color: var(--sage); }
+
+	/* Section counter — mobile-only flourish that echoes
+	   ScrollIndicator's `.indicator__foot` (tabular numerals + 0.14em
+	   tracking + faint hairline). Restores the orientation cue the side
+	   rail provides on desktop, where the rail is hidden below 960px. */
+	.nav__counter {
+		display: none;
+		align-items: baseline;
+		gap: 2px;
+		font-size: var(--type-tiny);
+		letter-spacing: 0.14em;
+		color: var(--text-distant);
+		font-variant-numeric: tabular-nums;
+	}
+	.nav__counter-rule {
+		display: block;
+		width: var(--space-6);
+		height: 1px;
+		margin-right: var(--space-3);
+		align-self: center;
+		background: linear-gradient(
+			90deg,
+			transparent,
+			var(--rule-strong) 60%,
+			var(--rule-strong)
+		);
+	}
+	.nav__counter-num {
+		color: var(--washi-soft);
+		min-width: 1.3em;
+		text-align: right;
+	}
+	.nav__counter-sep { opacity: 0.5; }
+	.nav__counter-total { opacity: 0.7; }
+
 	.nav__links {
 		display: flex;
 		gap: var(--space-4);
@@ -77,8 +123,62 @@
 		.nav__links a.is-active::after { animation: none; }
 	}
 
+	/* Mobile (≤720px) — the side ScrollIndicator is hidden below 960px,
+	   so the top nav has to carry both wayfinding and section-progress.
+	   Stack into two rows: brand + tabular counter on top, a full-width
+	   6-column grid of links below. The grid distributes evenly across
+	   any viewport, eliminating the overflow that the previous
+	   shrink-the-gap approach hit on narrow phones. */
 	@media (max-width: 720px) {
-		.nav__links { gap: var(--space-3); font-size: 10px; }
+		.nav__inner {
+			flex-direction: column;
+			align-items: stretch;
+			gap: var(--space-3);
+			padding-top: var(--space-3);
+			padding-bottom: 0;
+		}
+		.nav__head {
+			display: flex;
+			justify-content: space-between;
+			align-items: baseline;
+		}
+		.nav__counter { display: inline-flex; }
+
+		.nav__links {
+			display: grid;
+			grid-template-columns: repeat(6, 1fr);
+			gap: 0;
+			font-size: 10px;
+			letter-spacing: 0.12em;
+			border-top: 1px solid var(--rule);
+			padding-top: var(--space-3);
+		}
+		.nav__links a {
+			text-align: center;
+			padding: 2px 4px var(--space-3);
+		}
+		.nav__links a.is-active::after {
+			left: 18%;
+			right: 18%;
+			bottom: 4px;
+		}
+	}
+
+	/* Sub-480px — six tracked-out words can't share a single row gracefully
+	   below ~440px. Reflow to a 3-column / 2-row plate, still equal-width,
+	   still anchored to the same active-tick rhythm. */
+	@media (max-width: 480px) {
+		.nav__links {
+			grid-template-columns: repeat(3, 1fr);
+			row-gap: var(--space-3);
+			padding-bottom: var(--space-3);
+		}
+		.nav__links a { padding-bottom: 2px; }
+		.nav__links a.is-active::after {
+			left: 22%;
+			right: 22%;
+			bottom: -3px;
+		}
 	}
 </style>
 
@@ -89,6 +189,7 @@
 		const links = Array.from(
 			nav.querySelectorAll<HTMLAnchorElement>("[data-nav-link]"),
 		);
+		const counter = nav.querySelector<HTMLElement>("[data-nav-counter]");
 		const targets = links
 			.map((link) => {
 				const id = link.dataset.navLink;
@@ -113,6 +214,10 @@
 				if (i === activeIndex) t.link.setAttribute("aria-current", "true");
 				else t.link.removeAttribute("aria-current");
 			});
+			if (counter) {
+				counter.textContent =
+					activeIndex < 0 ? "—" : String(activeIndex + 1).padStart(2, "0");
+			}
 		};
 
 		const onScroll = () => {
