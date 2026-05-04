@@ -1,57 +1,103 @@
 ---
-import { Image, type ImageMetadata } from "astro:assets";
 import type { Sibling } from "../lib/siblings";
+import SiblingInfographic from "./SiblingInfographic.astro";
 
 interface Props {
 	sibling: Sibling;
+	index: number;
 }
 
-const { sibling } = Astro.props;
-
-const covers = import.meta.glob<{ default: ImageMetadata }>(
-	"../../../rpiv-*/docs/cover.png",
-	{ eager: true },
-);
-
-const coverKey = `../../../${sibling.name}/docs/cover.png`;
-const cover = covers[coverKey]?.default;
-if (!cover) {
-	throw new Error(`SiblingCard: cover not found at ${coverKey} — add packages/${sibling.name}/docs/cover.png and rebuild`);
-}
+const { sibling, index } = Astro.props;
+const idx = String(index).padStart(2, "0");
 ---
 
 <article class="card sibling">
+	<!-- §-index chip lives at the article level so its absolute positioning
+	     resolves against .card (which has position: relative globally),
+	     not against the cover-link wrapper. Robust against scoped-CSS quirks. -->
+	<span class="sibling__cover-tag mono" aria-hidden="true">§ {idx}</span>
+
 	<a href={sibling.npmUrl} class="sibling__cover-link" aria-label={`${sibling.name} on npm`}>
-		<Image
-			src={cover}
-			alt={`${sibling.name} cover`}
-			widths={[480, 720, 1080]}
-			sizes="(max-width: 720px) 100vw, (max-width: 1080px) 50vw, 33vw"
-			format="webp"
-			class="sibling__cover"
-			loading="lazy"
-		/>
+		<SiblingInfographic name={sibling.name} />
 	</a>
 
-	<header class="sibling__head">
-		<h4 class="mono sibling__name">{sibling.name}</h4>
-	</header>
+	<div class="sibling__body">
+		<header class="sibling__head">
+			<h4 class="mono sibling__name">{sibling.name}</h4>
+			<div class="sibling__meta">
+				<span class="chip chip--sage sibling__role" aria-label={`role: ${sibling.role}`}>
+					{sibling.role}
+				</span>
+				<span class="mono sibling__ver" aria-label={`version ${sibling.version}`}>
+					v{sibling.version}
+				</span>
+			</div>
+		</header>
 
-	<p class="sibling__desc">{sibling.description}</p>
+		<p class="sibling__desc">{sibling.description}</p>
 
-	<footer class="sibling__foot mono">
-		<a href={sibling.npmUrl}>npm</a>
-		<span class="sibling__sep" aria-hidden="true">·</span>
-		<a href={sibling.homepage}>readme</a>
-	</footer>
+		<div class="sibling__install-block">
+			<p class="mono sibling__install-label" aria-hidden="true">install</p>
+			<pre class="sibling__install" aria-label={`install command: ${sibling.installCmd}`}><code><span class="sibling__prompt" aria-hidden="true">$</span>{" "}{sibling.installCmd}</code></pre>
+		</div>
+
+		{sibling.peers.length > 0 && (
+			<p class="sibling__peers mono" aria-label={`peer dependencies: ${sibling.peers.join(", ")}`}>
+				<span class="sibling__peers-label" aria-hidden="true">peers</span>
+				<span class="sibling__peers-arrow" aria-hidden="true">→</span>
+				<span class="sibling__peers-list">{sibling.peers.join(" · ")}</span>
+			</p>
+		)}
+
+		<footer class="sibling__foot mono">
+			<a class="sibling__cta" href={sibling.npmUrl}>
+				<span>npm</span>
+				<span class="sibling__cta-arrow" aria-hidden="true">→</span>
+			</a>
+			<a class="sibling__cta" href={sibling.homepage}>
+				<span>readme</span>
+				<span class="sibling__cta-arrow" aria-hidden="true">→</span>
+			</a>
+		</footer>
+	</div>
 </article>
 
 <style>
-	.sibling { padding: 0; overflow: hidden; }
+	.sibling {
+		padding: 0;
+		overflow: hidden;
+		display: flex;
+		flex-direction: column;
+		height: 100%;
+	}
 	.sibling::before { display: none; }
+
+	/* ── §-index chip — overlays cover top-left, positioned against .card ── */
+	.sibling__cover-tag {
+		position: absolute;
+		top: var(--space-3);
+		right: var(--space-3);
+		z-index: 3;
+		font-size: var(--type-tiny);
+		letter-spacing: 0.18em;
+		text-transform: uppercase;
+		color: var(--washi);
+		background:
+			linear-gradient(225deg, rgba(168, 137, 108, 0.18), rgba(28, 26, 23, 0.85) 40%);
+		padding: var(--space-1) var(--space-2);
+		border: 1px solid var(--rule-strong);
+		border-radius: var(--radius-sm);
+		backdrop-filter: blur(6px) saturate(110%);
+		-webkit-backdrop-filter: blur(6px) saturate(110%);
+		pointer-events: none;
+		line-height: 1.2;
+	}
+
+	/* ── Cover ── */
 	.sibling__cover-link {
 		display: block;
-		border-bottom: 1px solid var(--rule);
+		position: relative;
+		border-bottom: 1px solid var(--rule-strong);
 		background: var(--ink-muted);
 	}
 	.sibling__cover {
@@ -63,32 +109,147 @@ if (!cover) {
 		transition: opacity var(--dur-ink) var(--ease-ink);
 	}
 	.sibling__cover-link:hover .sibling__cover { opacity: 0.92; }
+
+	/* ── Body ── */
+	.sibling__body {
+		padding: var(--space-4) var(--space-5) var(--space-5);
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-3);
+		flex: 1;
+		position: relative;
+		z-index: 1;
+	}
+
 	.sibling__head {
-		padding: var(--space-4) var(--space-5) 0;
-		position: relative; z-index: 1;
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-2);
+		padding-bottom: var(--space-3);
+		border-bottom: 1px solid var(--rule);
 	}
 	.sibling__name {
 		font-size: var(--type-h3);
 		margin: 0;
 		color: var(--washi);
+		word-break: break-word;
+		line-height: var(--leading-snug);
 	}
+	.sibling__meta {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: var(--space-2) var(--space-3);
+	}
+	.sibling__role {
+		text-transform: lowercase;
+		letter-spacing: 0.04em;
+	}
+	.sibling__ver {
+		font-size: var(--type-tiny);
+		color: var(--text-distant);
+		letter-spacing: 0.06em;
+	}
+
 	.sibling__desc {
 		font-family: var(--font-serif);
 		font-size: var(--type-small);
-		padding: var(--space-3) var(--space-5) 0;
 		color: var(--text);
 		max-width: none;
 		margin: 0;
-		position: relative; z-index: 1;
 	}
+
+	/* ── Install command — terminal pre with explicit "INSTALL" kicker ── */
+	.sibling__install-block {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-1);
+		min-width: 0;
+	}
+	.sibling__install-label {
+		font-size: var(--type-tiny);
+		text-transform: uppercase;
+		letter-spacing: 0.2em;
+		color: var(--text-distant);
+		margin: 0;
+	}
+	.sibling__install {
+		font-family: var(--font-mono);
+		font-size: var(--type-tiny);
+		padding: var(--space-3);
+		margin: 0;
+		background: var(--ink);
+		border-left: 1px solid var(--ochre);
+		border-radius: var(--radius-sm);
+		color: var(--washi-soft);
+		overflow-x: auto;
+		white-space: nowrap;
+		line-height: 1.5;
+		min-width: 0;
+		max-width: 100%;
+		scrollbar-width: thin;
+		scrollbar-color: var(--rule-strong) transparent;
+	}
+	.sibling__install code {
+		font-family: inherit;
+		color: inherit;
+	}
+	.sibling__prompt {
+		color: var(--text-distant);
+		user-select: none;
+	}
+
+	/* ── Peer dependencies signature ── */
+	.sibling__peers {
+		font-size: var(--type-tiny);
+		color: var(--text-distant);
+		margin: 0;
+		line-height: 1.55;
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--space-2);
+		align-items: baseline;
+	}
+	.sibling__peers-label {
+		color: var(--text-distant);
+		text-transform: uppercase;
+		letter-spacing: 0.16em;
+	}
+	.sibling__peers-arrow { color: var(--sage); }
+	.sibling__peers-list { color: var(--text-quiet); }
+
+	/* ── Footer CTAs — quiet but unambiguous link tokens ── */
 	.sibling__foot {
 		font-size: var(--type-small);
-		padding: var(--space-4) var(--space-5);
 		display: flex;
 		align-items: center;
-		gap: var(--space-3);
-		color: var(--text-distant);
-		position: relative; z-index: 1;
+		gap: var(--space-5);
+		margin-top: auto;
+		padding-top: var(--space-3);
+		border-top: 1px solid var(--rule);
 	}
-	.sibling__sep { color: var(--rule-strong); }
+	.sibling__cta {
+		color: var(--sage);
+		border-bottom: none;
+		text-transform: uppercase;
+		letter-spacing: 0.16em;
+		font-size: var(--type-tiny);
+		display: inline-flex;
+		align-items: baseline;
+		gap: var(--space-2);
+		transition: color var(--dur-ink) var(--ease-ink);
+	}
+	.sibling__cta:hover { color: var(--washi); }
+	.sibling__cta-arrow {
+		color: var(--ochre);
+		font-family: var(--font-mono);
+		transition: transform var(--dur-ink) var(--ease-ink);
+		display: inline-block;
+	}
+	.sibling__cta:hover .sibling__cta-arrow { transform: translateX(4px); }
+
+	@media (max-width: 720px) {
+		.sibling__body { padding: var(--space-4); gap: var(--space-3); }
+		.sibling__install { font-size: 10px; }
+	}
 </style>

@@ -1,0 +1,250 @@
+---
+import type { SiblingName } from "../lib/siblings";
+
+interface Props {
+	name: SiblingName;
+}
+
+const { name } = Astro.props;
+
+/* All infographics share viewBox 320 × 180 (16:9) so they slot into the
+   existing cover aspect ratio without any layout change in SiblingCard. */
+---
+
+<div class="sib-info" aria-hidden="true">
+	{name === "rpiv-advisor" && (
+		<svg viewBox="0 0 320 180" class="sib-info__svg" preserveAspectRatio="xMidYMid meet">
+			<defs>
+				<radialGradient id="adv-glow" cx="50%" cy="50%" r="50%">
+					<stop offset="0%"  stop-color="var(--ochre)" stop-opacity="0.25" />
+					<stop offset="60%" stop-color="var(--ochre)" stop-opacity="0.06" />
+					<stop offset="100%" stop-color="var(--ochre)" stop-opacity="0" />
+				</radialGradient>
+				<marker id="adv-arrow" viewBox="0 0 10 10" refX="9" refY="5"
+					markerWidth="6" markerHeight="6" orient="auto">
+					<path d="M0,0 L10,5 L0,10 z" fill="var(--sage)" opacity="0.8" />
+				</marker>
+			</defs>
+			<!-- executor (small) -->
+			<g>
+				<circle cx="80" cy="100" r="22" fill="none" stroke="var(--sage)" stroke-width="0.6" opacity="0.4" />
+				<circle cx="80" cy="100" r="16" fill="var(--ink-raised)" stroke="var(--sage)" stroke-width="1.1" />
+				<circle cx="80" cy="100" r="16" fill="var(--sage)" opacity="0.14" />
+				<text x="80" y="142" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="var(--text-distant)" letter-spacing="0.06em">model</text>
+			</g>
+			<!-- arrow -->
+			<g fill="none" stroke="var(--sage-deep)" stroke-linecap="round">
+				<path d="M104,100 L208,100" stroke-width="0.9" opacity="0.85" marker-end="url(#adv-arrow)" />
+				<path d="M108,106 L200,106" stroke-width="0.5" opacity="0.3" />
+			</g>
+			<text x="156" y="92" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="var(--sage)" letter-spacing="0.04em">advisor()</text>
+			<!-- advisor (larger, glowing) -->
+			<circle cx="240" cy="100" r="60" fill="url(#adv-glow)" />
+			<g>
+				<circle cx="240" cy="100" r="32" fill="none" stroke="var(--ochre)" stroke-width="0.6" opacity="0.45" />
+				<circle cx="240" cy="100" r="24" fill="var(--ink-raised)" stroke="var(--ochre)" stroke-width="1.1" />
+				<circle cx="240" cy="100" r="24" fill="var(--ochre)" opacity="0.18" />
+				<text x="240" y="142" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="var(--text-distant)" letter-spacing="0.06em">stronger</text>
+			</g>
+		</svg>
+	)}
+
+	{name === "rpiv-args" && (
+		<svg viewBox="0 0 320 180" class="sib-info__svg" preserveAspectRatio="xMidYMid meet">
+			<g font-family="var(--font-mono)" font-size="11">
+				<!-- skill template line -->
+				<text x="40" y="58" fill="var(--text-distant)">/skill:deploy</text>
+				<text x="125" y="58" fill="var(--washi-soft)">api production</text>
+
+				<text x="40" y="92" fill="var(--washi-soft)">Deploy service </text>
+				<text x="148" y="92" fill="var(--ochre)">$1</text>
+				<text x="170" y="92" fill="var(--washi-soft)">to </text>
+				<text x="194" y="92" fill="var(--ochre)">$2</text>
+				<text x="208" y="92" fill="var(--washi-soft)">.</text>
+
+				<!-- arrow down -->
+				<g fill="none" stroke="var(--ochre)" stroke-linecap="round" opacity="0.55">
+					<path d="M156,108 L156,124" stroke-width="0.9" />
+					<path d="M152,120 L156,124 L160,120" stroke-width="0.9" />
+				</g>
+
+				<text x="40" y="146" fill="var(--washi-soft)">Deploy service </text>
+				<text x="148" y="146" fill="var(--sage)">api</text>
+				<text x="170" y="146" fill="var(--washi-soft)">to </text>
+				<text x="194" y="146" fill="var(--sage)">production</text>
+				<text x="252" y="146" fill="var(--washi-soft)">.</text>
+			</g>
+			<!-- small kicker top-right -->
+			<text x="280" y="32" text-anchor="end" font-family="var(--font-mono)" font-size="9" fill="var(--text-distant)" letter-spacing="0.16em">$ARGS · expand</text>
+		</svg>
+	)}
+
+	{name === "rpiv-ask-user-question" && (
+		<svg viewBox="0 0 320 180" class="sib-info__svg" preserveAspectRatio="xMidYMid meet">
+			<!-- question prompt header -->
+			<text x="40" y="44" font-family="var(--font-mono)" font-size="11" fill="var(--washi-soft)">which task are we</text>
+			<text x="40" y="60" font-family="var(--font-mono)" font-size="11" fill="var(--washi-soft)">planning right now?</text>
+			<line x1="40" y1="74" x2="270" y2="74" stroke="var(--rule-strong)" stroke-width="0.8" />
+
+			<!-- 3 options, middle one selected (ochre fill) -->
+			<g font-family="var(--font-mono)" font-size="10">
+				<g transform="translate(40, 96)">
+					<rect x="0" y="-9" width="11" height="11" fill="none" stroke="var(--rule-strong)" stroke-width="1" />
+					<text x="22" y="0" fill="var(--text-quiet)">bug fix</text>
+				</g>
+				<g transform="translate(40, 122)">
+					<rect x="0" y="-9" width="11" height="11" fill="var(--ochre)" stroke="var(--ochre)" stroke-width="1" opacity="0.85" />
+					<path d="M2,-3 L4.5,-1 L9,-7" fill="none" stroke="var(--ink)" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+					<text x="22" y="0" fill="var(--washi)">new feature  ← selected</text>
+				</g>
+				<g transform="translate(40, 148)">
+					<rect x="0" y="-9" width="11" height="11" fill="none" stroke="var(--rule-strong)" stroke-width="1" />
+					<text x="22" y="0" fill="var(--text-quiet)">refactor</text>
+				</g>
+			</g>
+		</svg>
+	)}
+
+	{name === "rpiv-btw" && (
+		<svg viewBox="0 0 320 180" class="sib-info__svg" preserveAspectRatio="xMidYMid meet">
+			<!-- main timeline (horizontal sage line with 5 dots) -->
+			<g fill="none" stroke="var(--sage-deep)" stroke-linecap="round">
+				<path d="M40,118 L280,118" stroke-width="0.9" opacity="0.8" />
+				<path d="M48,124 L272,124" stroke-width="0.5" opacity="0.25" />
+			</g>
+			{[60, 110, 160, 210, 260].map((cx) => (
+				<g>
+					<circle cx={cx} cy={118} r="6" fill="var(--ink-raised)" stroke="var(--sage)" stroke-width="0.9" />
+					<circle cx={cx} cy={118} r="6" fill="var(--sage)" opacity="0.18" />
+				</g>
+			))}
+			<text x="40" y="156" font-family="var(--font-mono)" font-size="9" fill="var(--text-distant)" letter-spacing="0.06em">main thread</text>
+
+			<!-- side branch up + back down (the /btw tangent) -->
+			<g fill="none" stroke="var(--ochre)" stroke-linecap="round">
+				<path d="M160,112 Q150,60 180,42 Q205,28 215,56 Q220,82 168,114" stroke-width="0.9" opacity="0.9" />
+				<path d="M164,108 Q156,66 184,48 Q205,36 213,60" stroke-width="0.5" opacity="0.3" />
+			</g>
+			<!-- side question dot at top -->
+			<circle cx="195" cy="40" r="6" fill="var(--ink-raised)" stroke="var(--ochre)" stroke-width="1" />
+			<circle cx="195" cy="40" r="6" fill="var(--ochre)" opacity="0.2" />
+			<text x="225" y="44" font-family="var(--font-mono)" font-size="9" fill="var(--ochre)" letter-spacing="0.04em">/btw</text>
+			<text x="225" y="58" font-family="var(--font-mono)" font-size="9" fill="var(--text-distant)" letter-spacing="0.04em">side · ephemeral</text>
+		</svg>
+	)}
+
+	{name === "rpiv-i18n" && (
+		<svg viewBox="0 0 320 180" class="sib-info__svg" preserveAspectRatio="xMidYMid meet">
+			<!-- center node (the t() function) -->
+			<g>
+				<circle cx="160" cy="92" r="32" fill="none" stroke="var(--sage)" stroke-width="0.6" opacity="0.4" />
+				<circle cx="160" cy="92" r="24" fill="var(--ink-raised)" stroke="var(--sage)" stroke-width="1.1" />
+				<circle cx="160" cy="92" r="24" fill="var(--sage)" opacity="0.14" />
+				<text x="160" y="89" text-anchor="middle" font-family="var(--font-mono)" font-size="11" fill="var(--washi)">t()</text>
+				<text x="160" y="104" text-anchor="middle" font-family="var(--font-mono)" font-size="8" fill="var(--text-distant)" letter-spacing="0.08em">scope</text>
+			</g>
+			<!-- 3 locale tags around the t() with thin lines -->
+			<g fill="none" stroke="var(--sage-deep)" stroke-linecap="round" opacity="0.5">
+				<path d="M160,60 L160,38" stroke-width="0.7" />
+				<path d="M132,108 L84,140" stroke-width="0.7" />
+				<path d="M188,108 L236,140" stroke-width="0.7" />
+			</g>
+			{[
+				{ x: 160, y: 28, label: "EN" },
+				{ x: 80,  y: 152, label: "DE" },
+				{ x: 240, y: 152, label: "JA" },
+			].map((l) => (
+				<g>
+					<rect x={l.x - 18} y={l.y - 12} width="36" height="18" fill="var(--ink-raised)" stroke="var(--ochre)" stroke-width="0.8" rx="2" opacity="0.85" />
+					<text x={l.x} y={l.y + 1} text-anchor="middle" font-family="var(--font-mono)" font-size="10" fill="var(--ochre)" letter-spacing="0.12em">{l.label}</text>
+				</g>
+			))}
+		</svg>
+	)}
+
+	{name === "rpiv-todo" && (
+		<svg viewBox="0 0 320 180" class="sib-info__svg" preserveAspectRatio="xMidYMid meet">
+			<!-- header -->
+			<text x="40" y="38" font-family="var(--font-mono)" font-size="11" fill="var(--sage)">●</text>
+			<text x="56" y="38" font-family="var(--font-mono)" font-size="11" fill="var(--washi-soft)">Todos</text>
+			<text x="105" y="38" font-family="var(--font-mono)" font-size="11" fill="var(--text-distant)">(2 / 4)</text>
+			<line x1="40" y1="48" x2="280" y2="48" stroke="var(--rule)" stroke-width="0.6" />
+
+			<!-- todo rows -->
+			<g font-family="var(--font-mono)" font-size="10">
+				<g transform="translate(50, 72)">
+					<text x="0" y="0" fill="var(--text-distant)">└ ✓ migrate the websocket</text>
+					<line x1="14" y1="-3" x2="160" y2="-3" stroke="var(--text-distant)" stroke-width="0.6" opacity="0.6" />
+				</g>
+				<g transform="translate(50, 94)">
+					<text x="0" y="0" fill="var(--text-distant)">└ ✓ verify reconnect path</text>
+					<line x1="14" y1="-3" x2="155" y2="-3" stroke="var(--text-distant)" stroke-width="0.6" opacity="0.6" />
+				</g>
+				<g transform="translate(50, 116)">
+					<text x="0" y="0" fill="var(--ochre)">└ ● ship behind feature flag</text>
+					<text x="170" y="0" fill="var(--text-distant)">(in progress…)</text>
+				</g>
+				<g transform="translate(50, 138)">
+					<text x="0" y="0" fill="var(--text-quiet)">└ ○ write integration tests</text>
+				</g>
+			</g>
+			<text x="280" y="166" text-anchor="end" font-family="var(--font-mono)" font-size="8" fill="var(--text-distant)" letter-spacing="0.16em">survives /reload</text>
+		</svg>
+	)}
+
+	{name === "rpiv-web-tools" && (
+		<svg viewBox="0 0 320 180" class="sib-info__svg" preserveAspectRatio="xMidYMid meet">
+			<!-- globe -->
+			<g fill="none" stroke="var(--sage)" stroke-linecap="round">
+				<circle cx="120" cy="92" r="48" stroke-width="1" opacity="0.8" />
+				<circle cx="120" cy="92" r="48" stroke-width="0.5" opacity="0.3" transform="translate(2,2)" />
+				<!-- meridians -->
+				<ellipse cx="120" cy="92" rx="20" ry="48" stroke-width="0.7" opacity="0.45" />
+				<ellipse cx="120" cy="92" rx="40" ry="48" stroke-width="0.5" opacity="0.3" />
+				<!-- equator + tropics -->
+				<path d="M72,92 L168,92" stroke-width="0.7" opacity="0.45" />
+				<path d="M76,72 L164,72" stroke-width="0.4" opacity="0.25" />
+				<path d="M76,112 L164,112" stroke-width="0.4" opacity="0.25" />
+			</g>
+			<!-- magnifier (ochre) -->
+			<g fill="none" stroke="var(--ochre)" stroke-linecap="round">
+				<circle cx="200" cy="64" r="22" stroke-width="1.2" opacity="0.85" />
+				<circle cx="200" cy="64" r="22" stroke-width="0.6" opacity="0.3" transform="translate(1.5,1.5)" />
+				<path d="M218,82 L244,108" stroke-width="2" opacity="0.85" />
+			</g>
+			<!-- result snippet under -->
+			<g font-family="var(--font-mono)" font-size="9">
+				<text x="180" y="138" fill="var(--text-distant)">brave</text>
+				<text x="210" y="138" fill="var(--sage)">→</text>
+				<text x="222" y="138" fill="var(--washi-soft)">json result</text>
+			</g>
+			<text x="170" y="158" font-family="var(--font-mono)" font-size="8" fill="var(--text-distant)" letter-spacing="0.16em">web_search · web_fetch</text>
+		</svg>
+	)}
+</div>
+
+<style>
+	.sib-info {
+		display: block;
+		width: 100%;
+		aspect-ratio: 16 / 9;
+		background: var(--ink-muted);
+		position: relative;
+		overflow: hidden;
+	}
+	.sib-info__svg {
+		display: block;
+		width: 100%;
+		height: 100%;
+	}
+	/* subtle radial wash matching the wabi-sabi vocabulary used elsewhere */
+	.sib-info::after {
+		content: "";
+		position: absolute;
+		inset: 0;
+		pointer-events: none;
+		background:
+			radial-gradient(600px 200px at 30% 0%,   rgba(168, 137, 108, 0.05), transparent 60%),
+			radial-gradient(400px 200px at 80% 100%, rgba(138, 149, 128, 0.04), transparent 60%);
+	}
+</style>
