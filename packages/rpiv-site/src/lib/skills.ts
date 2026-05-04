@@ -4,7 +4,7 @@ export type SkillEntry = CollectionEntry<"skills">;
 
 const PIPELINE = ["discover", "research", "design", "plan", "implement", "validate"] as const;
 const SECONDARY = ["blueprint", "explore", "annotate-guidance", "migrate-to-guidance"] as const;
-const SHIP_LOOP = ["code-review", "commit", "revise"] as const;
+const CODE_REVIEW_FLOW = ["commit", "code-review"] as const;
 
 export async function getPipelineSkills(): Promise<SkillEntry[]> {
 	return resolve(PIPELINE);
@@ -14,8 +14,15 @@ export async function getSecondaryFlowSkills(): Promise<SkillEntry[]> {
 	return resolve(SECONDARY);
 }
 
-export async function getShipLoopSkills(): Promise<SkillEntry[]> {
-	return resolve(SHIP_LOOP);
+export async function getCodeReviewSkills(): Promise<SkillEntry[]> {
+	return resolve(CODE_REVIEW_FLOW);
+}
+
+export async function getSkill(name: string): Promise<SkillEntry> {
+	const all = await getCollection("skills");
+	const hit = all.find((s) => s.data.name === name);
+	if (!hit) throw new Error(`skill not found: ${name}`);
+	return hit;
 }
 
 async function resolve(names: readonly string[]): Promise<SkillEntry[]> {

@@ -1,6 +1,7 @@
 ---
-import { ARTIFACT_WRITE_SITES, getPipelineSkills } from "../lib/skills";
+import { ARTIFACT_WRITE_SITES, getPipelineSkills, getSkill } from "../lib/skills";
 const pipeline = await getPipelineSkills();
+const revise = await getSkill("revise");
 ---
 
 <section id="pipeline">
@@ -73,6 +74,27 @@ const pipeline = await getPipelineSkills();
 										</li>
 									)}
 								</ul>
+							)}
+
+							{/* Auxiliary skill annotation — revise hangs off the plan step
+							    as the utility you reach for after review or during implement. */}
+							{skill.data.name === "plan" && (
+								<aside class="timeline__aux" aria-label="auxiliary skill">
+									<span class="timeline__auxRule" aria-hidden="true"></span>
+									<div class="timeline__auxBody">
+										<header class="timeline__auxHead">
+											<span class="timeline__auxKicker mono">aux</span>
+											<span class="chip chip--ochre">/skill:{revise.data.name}</span>
+										</header>
+										<p class="timeline__auxDesc">{revise.data.description}</p>
+										{revise.data["argument-hint"] && (
+											<p class="mono timeline__auxMeta">
+												<span class="timeline__metaLabel">arg</span>
+												<span>{revise.data["argument-hint"]}</span>
+											</p>
+										)}
+									</div>
+								</aside>
 							)}
 						</div>
 					</li>
@@ -199,6 +221,57 @@ const pipeline = await getPipelineSkills();
 	}
 	.timeline__bullet {
 		color: var(--text-distant);
+	}
+
+	/* ── Auxiliary skill annotation (e.g. /skill:revise on the plan step) ──
+	   Indented + ochre rule to read as a sidebar utility, not a chain step. */
+	.timeline__aux {
+		margin-top: var(--space-4);
+		padding-left: var(--space-4);
+		display: grid;
+		grid-template-columns: 2px 1fr;
+		gap: var(--space-3);
+		max-width: 64ch;
+		position: relative;
+	}
+	.timeline__auxRule {
+		display: block;
+		background: var(--ochre);
+		opacity: 0.55;
+		border-radius: 1px;
+	}
+	.timeline__auxBody {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-2);
+	}
+	.timeline__auxHead {
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--space-2);
+		align-items: baseline;
+	}
+	.timeline__auxKicker {
+		font-size: var(--type-tiny);
+		letter-spacing: 0.22em;
+		text-transform: uppercase;
+		color: var(--ochre);
+	}
+	.timeline__auxDesc {
+		font-family: var(--font-serif);
+		color: var(--text-quiet);
+		font-size: var(--type-small);
+		margin: 0;
+		line-height: var(--leading-snug);
+	}
+	.timeline__auxMeta {
+		font-size: var(--type-tiny);
+		color: var(--text-distant);
+		margin: 0;
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--space-2);
+		align-items: baseline;
 	}
 
 	@media (max-width: 600px) {

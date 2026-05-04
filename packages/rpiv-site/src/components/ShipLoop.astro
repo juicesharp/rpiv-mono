@@ -1,167 +1,662 @@
 ---
-import { ARTIFACT_WRITE_SITES, getShipLoopSkills } from "../lib/skills";
-const skills = await getShipLoopSkills();
+import { ARTIFACT_WRITE_SITES, getCodeReviewSkills } from "../lib/skills";
+const skills = await getCodeReviewSkills();
 ---
 
-<section id="ship">
+<section id="review">
 	<div class="container">
-		<p class="kicker">§ ship loop · cycle</p>
-		<h2>review &nbsp;↔&nbsp; commit &nbsp;↔&nbsp; revise</h2>
-		<p class="ship__lede">
-			Order is your call: review staged/working before committing to catch issues at
-			the smallest blast radius, or commit first and review the resulting branch.
-			Code-review produces a Quality / Security / Dependencies artifact with
-			claim-verifier-grounded findings and a <code>status: approved | needs_changes</code>.
+		<p class="kicker">§ code review · verified findings</p>
+		<h2>
+			<span class="cr-h2__line">Code review:</span>
+			<span class="cr-h2__line cr-h2__line--accent">commit → review → report.</span>
+		</h2>
+		<p class="cr__lede">
+			Point it at staged work, a single hash, or a whole branch.
+			<strong>Quality</strong>, <strong>Security</strong>, and
+			<strong>Dependencies</strong> are read in parallel, every cited
+			<code>file:line</code> is opened a second time, and you get back one
+			markdown artifact: a clear <code>status</code> at the top, every finding
+			tied to a verification mark.
 		</p>
 
-		<div class="ship">
-			<figure class="ship__cycle" aria-hidden="true">
-				{/*
-					Single ring metaphor: one continuous ink loop, three "stations" placed on it.
-					Reads instantly as a cycle. No edge-counting, no arrow soup.
-					Cycle direction is implied by two faint chevron ticks on the ring (≡ "you can travel either way").
-				*/}
-				<svg viewBox="0 0 320 320" class="ship__svg">
-					{/* Hand-drawn loop: two slightly-offset circles for sumi ink feel,
-						 plus a faint outer wash ring. Cx 160, Cy 160, R 110. */}
-					<g fill="none" stroke="var(--sage-deep)" stroke-linecap="round">
-						<circle cx="160" cy="160" r="118" stroke="var(--sage)" stroke-width="0.6" opacity="0.25" />
-						<circle cx="160" cy="160" r="110" stroke-width="1.1" opacity="0.85" />
-						<circle cx="161" cy="161" r="106" stroke-width="0.5" opacity="0.30" />
+		<figure class="cr-flow" aria-label="Code review pipeline: commit produces a diff that the code-review skill processes into a verified report">
+			{/* ── BLOCK 01 — input (commit / staged work) ── */}
+			<article class="cr-block cr-block--input">
+				<header class="cr-block__head">
+					<p class="cr-kicker mono">01 · input</p>
+					<h3 class="mono cr-name">/skill:commit</h3>
+				</header>
+				<p class="cr-desc">
+					A staged diff or your working tree. Whatever you want a fresh pair of
+					eyes on.
+				</p>
+
+				{/* mini story-SVG: git-diff-stat style with +/− bars */}
+				<svg class="cr-mini" viewBox="0 0 200 116" width="200" height="116" aria-hidden="true" preserveAspectRatio="xMidYMid meet">
+					<g font-family="var(--font-mono)" font-size="9" fill="var(--text-distant)" letter-spacing="0.02em">
+						<text x="6" y="14">src/auth.ts</text>
+						<text x="6" y="40">src/api.ts</text>
+						<text x="6" y="66">src/util.ts</text>
+						<text x="6" y="92">README.md</text>
+					</g>
+					{/* +/− stat bars: sage = additions, ochre = deletions */}
+					<g stroke-linecap="round" stroke-width="3">
+						{/* row 1 */}
+						<line x1="98"  y1="11" x2="138" y2="11" stroke="var(--sage)"  opacity="0.8" />
+						<line x1="140" y1="11" x2="160" y2="11" stroke="var(--ochre)" opacity="0.7" />
+						{/* row 2 */}
+						<line x1="98"  y1="37" x2="118" y2="37" stroke="var(--sage)"  opacity="0.8" />
+						<line x1="120" y1="37" x2="128" y2="37" stroke="var(--ochre)" opacity="0.7" />
+						{/* row 3 */}
+						<line x1="98"  y1="63" x2="166" y2="63" stroke="var(--sage)"  opacity="0.8" />
+						{/* row 4 */}
+						<line x1="98"  y1="89" x2="110" y2="89" stroke="var(--sage)"  opacity="0.8" />
+					</g>
+					{/* tally */}
+					<g font-family="var(--font-mono)" font-size="9" letter-spacing="0.04em">
+						<text x="170" y="14"  fill="var(--sage)"  text-anchor="end">+24</text>
+						<text x="170" y="40"  fill="var(--sage)"  text-anchor="end">+12</text>
+						<text x="170" y="66"  fill="var(--sage)"  text-anchor="end">+34</text>
+						<text x="170" y="92"  fill="var(--sage)"  text-anchor="end">+6</text>
+					</g>
+					{/* footer summary */}
+					<line x1="6" y1="100" x2="194" y2="100" stroke="var(--rule)" stroke-width="0.6" />
+					<text x="6"   y="112" font-family="var(--font-mono)" font-size="8" fill="var(--text-distant)" letter-spacing="0.16em">4 FILES</text>
+					<text x="194" y="112" font-family="var(--font-mono)" font-size="8" fill="var(--sage)"        letter-spacing="0.16em" text-anchor="end">+76 / −28</text>
+				</svg>
+
+				<p class="cr-meta mono">
+					<span class="cr-meta__arrow">→</span>
+					<code>commit</code>
+					<span class="cr-meta__sep">·</span>
+					<code>staged</code>
+					<span class="cr-meta__sep">·</span>
+					<code>working</code>
+				</p>
+			</article>
+
+			{/* ── CONNECTOR 01 → 02 ── */}
+			<div class="cr-link" aria-hidden="true">
+				<svg class="cr-link__brush" viewBox="0 0 120 80" width="120" height="80" preserveAspectRatio="xMidYMid meet">
+					<g fill="none" stroke-linecap="round">
+						<path d="M8,32 Q42,26 100,30" stroke="var(--ochre)" stroke-width="0.5" opacity="0.32" />
+						<path d="M6,40 Q40,36 102,40" stroke="var(--washi-soft)" stroke-width="1.6" opacity="0.85" />
+						<path d="M8,48 Q42,44 100,46" stroke="var(--sage)" stroke-width="0.5" opacity="0.22" />
+						<path d="M96,32 L112,40 L96,48" stroke="var(--washi-soft)" stroke-width="1.4" opacity="0.85" />
+						<path d="M97,34 L109,40 L97,46" stroke="var(--ochre)" stroke-width="0.5" opacity="0.32" />
+					</g>
+					<text x="60" y="68" text-anchor="middle"
+						font-family="var(--font-mono)" font-size="9"
+						fill="var(--text-distant)" letter-spacing="0.18em">SCOPE</text>
+				</svg>
+			</div>
+
+			{/* ── BLOCK 02 — HERO code-review with lens architecture ── */}
+			<article class="cr-block cr-block--hero">
+				<div class="cr-hero__wash" aria-hidden="true"></div>
+
+				<header class="cr-block__head">
+					<p class="cr-kicker mono cr-kicker--hero">02 · review</p>
+					<h3 class="mono cr-name cr-name--hero">/skill:code-review</h3>
+				</header>
+
+				{/* THE LENS DIAGRAM — three lanes (Quality, Security, Dependencies) running
+				    in parallel through specialist row-only agents, converging on a
+				    verification gate before emitting a single artifact. */}
+				<svg class="cr-lens" viewBox="0 0 380 168" width="380" height="168" aria-label="three lenses run in parallel and converge through verification" preserveAspectRatio="xMidYMid meet">
+					<defs>
+						<marker id="cr-arrow" viewBox="0 0 10 10" refX="9" refY="5"
+							markerWidth="6" markerHeight="6" orient="auto">
+							<path d="M0,0 L10,5 L0,10 z" fill="var(--washi-soft)" opacity="0.85" />
+						</marker>
+					</defs>
+
+					{/* diff source on the far left */}
+					<g>
+						<rect x="14" y="64" width="46" height="40" rx="2"
+							fill="var(--ink)" stroke="var(--sage)" stroke-width="0.8" opacity="0.9" />
+						<line x1="20" y1="74" x2="54" y2="74" stroke="var(--sage)" stroke-width="0.6" opacity="0.7" />
+						<line x1="20" y1="80" x2="48" y2="80" stroke="var(--sage)" stroke-width="0.6" opacity="0.5" />
+						<line x1="20" y1="86" x2="52" y2="86" stroke="var(--sage)" stroke-width="0.6" opacity="0.5" />
+						<line x1="20" y1="92" x2="42" y2="92" stroke="var(--sage)" stroke-width="0.6" opacity="0.5" />
+						<text x="37" y="118" text-anchor="middle"
+							font-family="var(--font-mono)" font-size="8"
+							fill="var(--text-distant)" letter-spacing="0.14em">DIFF</text>
 					</g>
 
-					{/* Two faint chevron ticks on the ring — bidirectional hint without arrowhead noise.
-						 Top-left chevron points clockwise; bottom-right chevron points counter-clockwise. */}
-					<g fill="none" stroke="var(--sage)" stroke-linecap="round" stroke-width="0.9" opacity="0.55">
-						<path d="M93,86 l8,-3 l-3,8" />
-						<path d="M227,234 l-8,3 l3,-8" />
+					{/* fan-out brushstrokes from diff to three lens nodes */}
+					<g fill="none" stroke="var(--washi-soft)" stroke-linecap="round" opacity="0.7">
+						<path d="M60,76 Q98,52 138,40"  stroke-width="0.8" stroke-dasharray="3 2" />
+						<path d="M60,84 L138,84"        stroke-width="0.8" stroke-dasharray="3 2" />
+						<path d="M60,92 Q98,116 138,128" stroke-width="0.8" stroke-dasharray="3 2" />
 					</g>
 
-					{/* Three ink-blob stations placed on the ring at 12 / 4 / 8 o'clock.
-						 Coords: 12 o'clock = (160, 50); 4 o'clock = (255, 215); 8 o'clock = (65, 215). */}
+					{/* three lens lanes */}
 					{[
-						{ cx: 160, cy: 50,  name: "review" },
-						{ cx: 255, cy: 215, name: "commit" },
-						{ cx:  65, cy: 215, name: "revise" },
-					].map((n) => (
+						{ y: 40,  letter: "Q", label: "quality",      tint: "var(--sage)" },
+						{ y: 84,  letter: "S", label: "security",     tint: "var(--ochre)" },
+						{ y: 128, letter: "D", label: "dependencies", tint: "var(--sage)" },
+					].map((lane) => (
 						<g>
-							<circle cx={n.cx} cy={n.cy} r="32" fill="var(--ink)" stroke="none" />
-							<circle cx={n.cx} cy={n.cy} r="26" fill="none" stroke="var(--sage)" stroke-width="0.6" opacity="0.4" />
-							<circle cx={n.cx} cy={n.cy} r="22" fill="var(--ink-raised)" stroke="var(--sage)" stroke-width="1.1" />
-							<circle cx={n.cx} cy={n.cy} r="22" fill="var(--sage)" opacity="0.14" />
-							<text x={n.cx} y={n.cy + 4} text-anchor="middle"
-								font-family="var(--font-mono)" font-size="12"
-								fill="var(--washi)">{n.name}</text>
+							{/* lane node — labeled circle */}
+							<circle cx={150} cy={lane.y} r="14" fill="none" stroke={lane.tint} stroke-width="0.6" opacity="0.4" />
+							<circle cx={150} cy={lane.y} r="11" fill="var(--ink-raised)" stroke={lane.tint} stroke-width="1.1" />
+							<circle cx={150} cy={lane.y} r="11" fill={lane.tint} opacity="0.18" />
+							<text x={150} y={lane.y + 3.5} text-anchor="middle"
+								font-family="var(--font-mono)" font-size="11"
+								fill="var(--washi)" letter-spacing="0.04em">{lane.letter}</text>
+							{/* lane label to the right */}
+							<text x={170} y={lane.y + 3.5}
+								font-family="var(--font-mono)" font-size="9"
+								fill="var(--text-quiet)" letter-spacing="0.06em">{lane.label}</text>
+							{/* outbound arrow toward verify */}
+							<path d={`M165,${lane.y} Q210,${lane.y} 240,84`}
+								fill="none" stroke="var(--washi-soft)" stroke-width="0.9" opacity="0.65" stroke-linecap="round" />
 						</g>
 					))}
 
-					{/* Center stays empty (ma). Tiny mono caption sits centered, low-key. */}
-					<text x="160" y="158" text-anchor="middle"
-						font-family="var(--font-mono)" font-size="9"
-						fill="var(--text-distant)" letter-spacing="0.16em">SHIP</text>
-					<text x="160" y="172" text-anchor="middle"
-						font-family="var(--font-mono)" font-size="8"
-						fill="var(--text-distant)" letter-spacing="0.08em">any entry · any direction</text>
-				</svg>
-			</figure>
+					{/* verification gate — ochre hexagon (the structural-resistance gate) */}
+					<g>
+						<polygon points="248,72 268,72 278,84 268,96 248,96 238,84"
+							fill="var(--ink-raised)" stroke="var(--ochre)" stroke-width="1.3" />
+						<polygon points="248,72 268,72 278,84 268,96 248,96 238,84"
+							fill="var(--ochre)" opacity="0.20" />
+						<text x="258" y="87" text-anchor="middle"
+							font-family="var(--font-mono)" font-size="8.5"
+							fill="var(--washi)" letter-spacing="0.04em">verify</text>
+						<text x="258" y="112" text-anchor="middle"
+							font-family="var(--font-mono)" font-size="7.5"
+							fill="var(--text-distant)" letter-spacing="0.16em">re-read file:line</text>
+					</g>
 
-			<ol class="ship__rows">
-				{skills.map((skill, i) => {
-					const artifact = ARTIFACT_WRITE_SITES[skill.data.name];
-					return (
-						<li class="ship__row">
-							<span class="ship__num mono">{String(i + 1).padStart(2, "0")}</span>
-							<div>
-								<header class="ship__rowHead">
-									<span class="chip chip--sage">/skill:{skill.data.name}</span>
-									{skill.data["disable-model-invocation"] && <span class="chip chip--ochre">manual only</span>}
-								</header>
-								<p class="ship__rowDesc">{skill.data.description}</p>
-								{(skill.data["argument-hint"] || artifact) && (
-									<p class="mono ship__rowMeta">
-										{skill.data["argument-hint"] && <><span class="ship__metaLabel">arg</span>{skill.data["argument-hint"]}</>}
-										{skill.data["argument-hint"] && artifact && <span class="ship__sep">·</span>}
-										{artifact && <><span class="ship__metaLabel">→</span><code>{artifact}</code></>}
-									</p>
-								)}
-							</div>
-						</li>
-					);
-				})}
-			</ol>
+					{/* arrow from verify → report */}
+					<path d="M278,84 L320,84"
+						fill="none" stroke="var(--washi-soft)" stroke-width="1" opacity="0.85"
+						stroke-linecap="round" marker-end="url(#cr-arrow)" />
+
+					{/* report node on the right edge */}
+					<g>
+						<rect x="324" y="64" width="44" height="40" rx="2"
+							fill="var(--ink-raised)" stroke="var(--ochre)" stroke-width="1.1" />
+						<rect x="324" y="64" width="44" height="40" rx="2"
+							fill="var(--ochre)" opacity="0.14" />
+						<line x1="330" y1="74" x2="362" y2="74" stroke="var(--washi-soft)" stroke-width="0.6" opacity="0.85" />
+						<line x1="330" y1="80" x2="356" y2="80" stroke="var(--washi-soft)" stroke-width="0.6" opacity="0.55" />
+						<line x1="330" y1="86" x2="358" y2="86" stroke="var(--washi-soft)" stroke-width="0.6" opacity="0.55" />
+						<line x1="330" y1="92" x2="350" y2="92" stroke="var(--washi-soft)" stroke-width="0.6" opacity="0.55" />
+						<text x="346" y="118" text-anchor="middle"
+							font-family="var(--font-mono)" font-size="8"
+							fill="var(--text-distant)" letter-spacing="0.14em">REPORT</text>
+					</g>
+
+					{/* legend strip across the bottom — hand-drawn lens key */}
+					<g font-family="var(--font-mono)" font-size="7.5"
+						fill="var(--text-distant)" letter-spacing="0.14em">
+						<text x="14" y="158">3 LENSES · PARALLEL · ROW-ONLY</text>
+					</g>
+				</svg>
+
+				<p class="cr-desc cr-desc--hero">
+					Three subagents run on your diff in parallel: one checks
+					<strong>quality</strong>, one checks <strong>security</strong>, one
+					checks <strong>dependencies</strong>, each along its own dimensions.
+					They return flat findings, not prose. A final pass filters out
+					false positives.
+				</p>
+
+				{/* Coverage / scope ledger — what review covers / what it deliberately won't */}
+				<div class="cr-trade">
+					<div class="cr-trade__col cr-trade__col--gain">
+						<p class="mono cr-trade__label">covers</p>
+						<ul class="cr-trade__list">
+							<li>quality, security, and dependency drift</li>
+							<li>peer comparison against precedents</li>
+							<li>findings pinned to verified <code>file:line</code></li>
+						</ul>
+					</div>
+					<div class="cr-trade__col cr-trade__col--cost">
+						<p class="mono cr-trade__label">won&rsquo;t</p>
+						<ul class="cr-trade__list">
+							<li>edit your code; it surfaces, you decide</li>
+							<li>guess at intent without an advisor pass</li>
+						</ul>
+					</div>
+
+				</div>
+
+				<p class="cr-meta mono">
+					<span class="cr-meta__arrow">→</span>
+					<code>thoughts/shared/reviews/</code>
+					<span class="cr-meta__sep">·</span>
+					feeds <code>revise</code> or <code>commit</code>
+				</p>
+
+				{/* large corner ornament — sumi-ink calligraphy curl */}
+				<svg class="cr-hero__ornament" viewBox="0 0 160 110" width="160" height="110" aria-hidden="true">
+					<g fill="none" stroke="var(--ochre)" stroke-linecap="round" opacity="0.45">
+						<path d="M14,100 q22,-50 70,-72 q44,-20 70,28" stroke-width="1.1" />
+						<path d="M26,104 q20,-40 62,-58 q34,-14 60,16" stroke-width="0.6" opacity="0.55" />
+						<path d="M40,108 q16,-26 48,-40" stroke-width="0.4" opacity="0.4" />
+						<circle cx="148" cy="50" r="2" />
+						<circle cx="46"  cy="86" r="1.4" opacity="0.7" />
+						<circle cx="106" cy="26" r="1.2" opacity="0.6" />
+					</g>
+				</svg>
+			</article>
+
+			{/* ── CONNECTOR 02 → 03 ── */}
+			<div class="cr-link" aria-hidden="true">
+				<svg class="cr-link__brush" viewBox="0 0 120 80" width="120" height="80" preserveAspectRatio="xMidYMid meet">
+					<g fill="none" stroke-linecap="round">
+						<path d="M8,32 Q42,26 100,30" stroke="var(--ochre)" stroke-width="0.5" opacity="0.32" />
+						<path d="M6,40 Q40,36 102,40" stroke="var(--washi-soft)" stroke-width="1.6" opacity="0.85" />
+						<path d="M8,48 Q42,44 100,46" stroke="var(--sage)" stroke-width="0.5" opacity="0.22" />
+						<path d="M96,32 L112,40 L96,48" stroke="var(--washi-soft)" stroke-width="1.4" opacity="0.85" />
+						<path d="M97,34 L109,40 L97,46" stroke="var(--ochre)" stroke-width="0.5" opacity="0.32" />
+					</g>
+					<text x="60" y="68" text-anchor="middle"
+						font-family="var(--font-mono)" font-size="9"
+						fill="var(--text-distant)" letter-spacing="0.18em">REPORT</text>
+				</svg>
+			</div>
+
+			{/* ── BLOCK 03 — output (review report artifact) ── */}
+			<article class="cr-block cr-block--output">
+				<header class="cr-block__head">
+					<p class="cr-kicker mono">03 · output</p>
+					<h3 class="mono cr-name">review&nbsp;report</h3>
+				</header>
+				<p class="cr-desc">
+					One markdown file. Status at the top, then every finding with the
+					evidence behind it.
+				</p>
+
+				{/* mini report mock — actual structure from review.md template */}
+				<svg class="cr-mini cr-mini--report" viewBox="0 0 220 188" width="220" height="188" aria-hidden="true" preserveAspectRatio="xMidYMid meet">
+					{/* page card */}
+					<rect x="6" y="6" width="208" height="176" rx="2"
+						fill="var(--ink)" stroke="var(--rule-strong)" stroke-width="0.8" />
+
+					{/* title bar */}
+					<text x="14" y="22" font-family="var(--font-mono)" font-size="8"
+						fill="var(--text-distant)" letter-spacing="0.16em">REVIEW · feature/auth</text>
+
+					{/* status badge — ochre "needs_changes" pill */}
+					<rect x="14" y="32" width="92" height="18" rx="9"
+						fill="var(--ink-raised)" stroke="var(--ochre)" stroke-width="1" />
+					<rect x="14" y="32" width="92" height="18" rx="9"
+						fill="var(--ochre)" opacity="0.18" />
+					<text x="60" y="44.5" text-anchor="middle"
+						font-family="var(--font-mono)" font-size="9"
+						fill="var(--washi)" letter-spacing="0.04em">needs_changes</text>
+
+					{/* hairline separator */}
+					<line x1="14" y1="62" x2="206" y2="62" stroke="var(--rule)" stroke-width="0.6" />
+
+					{/* severity row — three dots with counts */}
+					<g font-family="var(--font-mono)" font-size="9" letter-spacing="0.02em">
+						<text x="14" y="78" fill="var(--text-distant)" letter-spacing="0.14em">SEVERITY</text>
+						<g transform="translate(14,90)">
+							{/* critical — red dot */}
+							<circle cx="6" cy="6" r="4.5" fill="#b04a3a" opacity="0.9" />
+							<text x="16" y="9" fill="var(--text-quiet)">2</text>
+							{/* important — ochre dot */}
+							<circle cx="42" cy="6" r="4.5" fill="var(--ochre)" opacity="0.95" />
+							<text x="52" y="9" fill="var(--text-quiet)">5</text>
+							{/* suggestion — sage dot */}
+							<circle cx="78" cy="6" r="4.5" fill="var(--sage)" opacity="0.95" />
+							<text x="88" y="9" fill="var(--text-quiet)">11</text>
+							{/* discussion — washi dim */}
+							<circle cx="114" cy="6" r="4.5" fill="var(--washi-soft)" opacity="0.5" />
+							<text x="124" y="9" fill="var(--text-quiet)">3</text>
+						</g>
+					</g>
+
+					{/* verification row — ✓ − ✗ */}
+					<g font-family="var(--font-mono)" font-size="9">
+						<text x="14" y="118" fill="var(--text-distant)" letter-spacing="0.14em">VERIFY</text>
+						<g transform="translate(14,128)">
+							<text x="0"  y="9" fill="var(--sage)"  >✓</text><text x="10" y="9" fill="var(--text-quiet)">17</text>
+							<text x="40" y="9" fill="var(--ochre)" >−</text><text x="50" y="9" fill="var(--text-quiet)">3</text>
+							<text x="80" y="9" fill="#b04a3a"      >✗</text><text x="90" y="9" fill="var(--text-quiet)">1</text>
+						</g>
+					</g>
+
+					{/* finding rows — three short bars to suggest the body */}
+					<g>
+						<line x1="14" y1="156" x2="22" y2="156" stroke="#b04a3a"      stroke-width="2" stroke-linecap="round" />
+						<line x1="26" y1="156" x2="190" y2="156" stroke="var(--washi-soft)" stroke-width="0.7" opacity="0.6" />
+						<line x1="14" y1="166" x2="22" y2="166" stroke="var(--ochre)" stroke-width="2" stroke-linecap="round" />
+						<line x1="26" y1="166" x2="170" y2="166" stroke="var(--washi-soft)" stroke-width="0.7" opacity="0.55" />
+						<line x1="14" y1="176" x2="22" y2="176" stroke="var(--sage)"  stroke-width="2" stroke-linecap="round" />
+						<line x1="26" y1="176" x2="180" y2="176" stroke="var(--washi-soft)" stroke-width="0.7" opacity="0.55" />
+					</g>
+				</svg>
+
+				<p class="cr-meta mono">
+					<span class="cr-meta__arrow">→</span>
+					<code>thoughts/shared/reviews/</code>
+				</p>
+			</article>
+		</figure>
+
+		{/* secondary skills detail rows (commit + code-review) */}
+		<div class="cr__rows-head">
+			<p class="kicker">§ skills · {skills.length}</p>
 		</div>
+		<ol class="cr__rows">
+			{skills.map((skill) => {
+				const artifact = ARTIFACT_WRITE_SITES[skill.data.name];
+				const isReview = skill.data.name === "code-review";
+				return (
+					<li class:list={["cr__row", isReview && "cr__row--featured"]}>
+						<header class="cr__rowHead">
+							<span class={isReview ? "chip chip--ochre" : "chip"}>
+								/skill:{skill.data.name}
+							</span>
+							{isReview && <span class="chip chip--sage">centerpiece</span>}
+							{skill.data["disable-model-invocation"] && <span class="chip">manual only</span>}
+						</header>
+						<p class="cr__rowDesc">{skill.data.description}</p>
+						{(skill.data["argument-hint"] || artifact) && (
+							<p class="mono cr__rowMeta">
+								{skill.data["argument-hint"] && <><span class="cr__metaLabel">arg</span>{skill.data["argument-hint"]}</>}
+								{skill.data["argument-hint"] && artifact && <span class="cr__sep">·</span>}
+								{artifact && <><span class="cr__metaLabel">→</span><code>{artifact}</code></>}
+							</p>
+						)}
+					</li>
+				);
+			})}
+		</ol>
 	</div>
 </section>
 
 <style>
-	#ship h2 { margin-bottom: var(--space-5); }
-	.ship__lede {
+	#review h2 { margin-bottom: var(--space-5); }
+	.cr-h2__line { display: block; }
+	.cr-h2__line--accent { color: var(--ochre); }
+
+	.cr__lede {
 		color: var(--text-quiet);
 		margin-bottom: var(--space-7);
 		max-width: 64ch;
 	}
+	.cr__lede strong { color: var(--washi); font-weight: 400; }
+	.cr__lede code { color: var(--ochre); background: transparent; }
 
-	.ship {
+	/* ─── 3-block hero ─── */
+	.cr-flow {
+		margin: 0 0 var(--space-8);
+		padding: var(--space-7) 0;
+		border-top: 1px solid var(--rule);
+		border-bottom: 1px solid var(--rule);
 		display: grid;
 		grid-template-columns: 1fr;
-		gap: var(--space-7);
-		align-items: start;
+		gap: var(--space-4);
+		align-items: stretch;
 	}
-	@media (min-width: 880px) {
-		.ship {
-			grid-template-columns: 320px 1fr;
-			gap: var(--space-8);
+	@media (min-width: 920px) {
+		.cr-flow {
+			grid-template-columns: 0.95fr 80px 2fr 80px 0.95fr;
+			gap: var(--space-3);
+			align-items: stretch;
 		}
 	}
 
-	.ship__cycle {
-		margin: 0;
+	.cr-block {
+		position: relative;
+		padding: var(--space-5);
+		background: var(--ink-raised);
+		border-top: 1px solid var(--rule);
+		border-left: 1px solid var(--sage-deep);
+		border-right: 1px solid var(--rule);
+		border-bottom: 1px solid var(--rule-strong);
 		display: flex;
-		justify-content: center;
-	}
-	.ship__svg {
-		width: 100%;
-		max-width: 320px;
-		height: auto;
-		display: block;
+		flex-direction: column;
+		gap: var(--space-3);
+		min-width: 0;
 	}
 
-	.ship__rows {
+	/* Side blocks unframed, centered against hero */
+	.cr-block--input,
+	.cr-block--output {
+		background: transparent;
+		border: none;
+		padding: 0;
+		align-self: center;
+	}
+	.cr-block--input  { padding-right: var(--space-2); }
+	.cr-block--output { padding-left:  var(--space-2); }
+
+	/* hero block */
+	.cr-block--hero {
+		padding: var(--space-6);
+		border-left-width: 3px;
+		border-left-color: var(--ochre);
+		overflow: hidden;
+	}
+	.cr-hero__wash {
+		position: absolute;
+		inset: 0;
+		pointer-events: none;
+		background:
+			radial-gradient(420px 220px at 18% 0%,    rgba(168, 137, 108, 0.10), transparent 60%),
+			radial-gradient(360px 240px at 100% 100%, rgba(138, 149, 128, 0.06), transparent 60%);
+	}
+	.cr-block--hero > * { position: relative; z-index: 1; }
+
+	.cr-hero__ornament {
+		position: absolute;
+		bottom: -12px;
+		right: -10px;
+		opacity: 0.55;
+		pointer-events: none;
+		z-index: 0;
+	}
+
+	.cr-block__head {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-2);
+	}
+	.cr-kicker {
+		font-size: var(--type-tiny);
+		letter-spacing: 0.18em;
+		text-transform: uppercase;
+		color: var(--text-distant);
+		margin: 0;
+	}
+	.cr-kicker--hero { color: var(--ochre); }
+
+	.cr-name {
+		font-size: var(--type-h3);
+		margin: 0;
+		color: var(--washi);
+		overflow-wrap: normal;
+		word-break: keep-all;
+	}
+	.cr-name--hero {
+		font-size: 30px;
+		color: var(--washi);
+		letter-spacing: -0.01em;
+	}
+
+	.cr-desc {
+		font-family: var(--font-serif);
+		color: var(--text);
+		font-size: var(--type-small);
+		margin: 0;
+		max-width: none;
+	}
+	/* Hero copy gets a comfortable reading rhythm — slightly taller leading,
+	   measure capped well under the card width so lines don't feel taut,
+	   and orphan-control via text-wrap: pretty where supported. */
+	.cr-desc--hero {
+		font-size: 17px;
+		line-height: 1.55;
+		max-width: 52ch;
+		margin-top: var(--space-2);
+		color: var(--washi-soft);
+		text-wrap: pretty;
+		hyphens: none;
+	}
+	.cr-desc code,
+	.cr-meta code {
+		color: var(--ochre);
+		background: transparent;
+		font-family: var(--font-mono);
+		font-size: 0.92em;
+	}
+
+	/* ── Mini story-SVGs in side blocks ── */
+	.cr-mini {
+		display: block;
+		width: 100%;
+		max-width: 240px;
+		height: auto;
+		margin: var(--space-2) auto;
+		opacity: 0.95;
+	}
+	.cr-mini--report { max-width: 260px; }
+
+	/* ── The lens diagram inside the hero ── */
+	.cr-lens {
+		display: block;
+		width: 100%;
+		max-width: 420px;
+		height: auto;
+		margin: var(--space-3) 0 var(--space-4);
+	}
+
+	/* ── Coverage ledger ── */
+	.cr-trade {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: var(--space-5);
+		margin: var(--space-2) 0 0;
+	}
+	.cr-trade__col {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-3);
+		min-width: 0;
+	}
+	.cr-trade__label {
+		font-size: var(--type-tiny);
+		letter-spacing: 0.22em;
+		text-transform: uppercase;
+		margin: 0;
+		padding-bottom: var(--space-2);
+		border-bottom: 1px solid var(--rule);
+	}
+	.cr-trade__col--gain .cr-trade__label {
+		color: var(--sage);
+		border-bottom-color: var(--sage-deep);
+	}
+	.cr-trade__col--cost .cr-trade__label {
+		color: var(--ochre);
+		border-bottom-color: var(--kuro);
+	}
+	.cr-trade__list {
 		list-style: none;
 		padding: 0;
 		margin: 0;
 		display: flex;
 		flex-direction: column;
-		gap: var(--space-5);
+		gap: var(--space-3);
+		font-family: var(--font-serif);
+		font-size: var(--type-small);
+		color: var(--text-quiet);
+		line-height: 1.5;
+		text-wrap: pretty;
+		hyphens: none;
 	}
-	.ship__row {
-		display: grid;
-		grid-template-columns: 28px 1fr;
-		gap: var(--space-4);
-		padding-bottom: var(--space-5);
+	.cr-trade__list code {
+		color: var(--ochre);
+		background: transparent;
+		font-family: var(--font-mono);
+		font-size: 0.9em;
+	}
+
+	.cr-meta {
+		font-size: var(--type-tiny);
+		color: var(--text-distant);
+		margin: 0;
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--space-2);
+		align-items: baseline;
+	}
+	.cr-block--hero .cr-meta {
+		margin-top: auto;
+		padding-top: var(--space-3);
+		border-top: 1px solid var(--rule);
+	}
+	.cr-meta__arrow { color: var(--sage); }
+	.cr-meta__sep   { color: var(--text-distant); }
+
+	/* ── Calligraphy connectors ── */
+	.cr-link {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		min-width: 0;
+		min-height: 80px;
+	}
+	.cr-link__brush {
+		width: 100%;
+		max-width: 120px;
+		height: auto;
+		display: block;
+	}
+	@media (max-width: 919px) {
+		.cr-link { min-height: 60px; }
+		.cr-link__brush { transform: rotate(90deg); max-width: 80px; }
+	}
+
+	/* ─── Detail rows below the hero ─── */
+	.cr__rows-head {
+		margin: var(--space-7) 0 var(--space-4);
+		padding-bottom: var(--space-3);
 		border-bottom: 1px solid var(--rule);
 	}
-	.ship__row:last-child { border-bottom: none; padding-bottom: 0; }
-	.ship__num {
-		color: var(--text-distant);
-		font-size: var(--type-tiny);
-		letter-spacing: 0.18em;
-		padding-top: 4px;
+	.cr__rows-head .kicker { margin: 0; }
+
+	.cr__rows {
+		list-style: none;
+		padding: 0;
+		margin: 0;
+		display: grid;
+		grid-template-columns: 1fr;
+		gap: var(--space-5);
 	}
-	.ship__rowHead {
+	@media (min-width: 720px) {
+		.cr__rows { grid-template-columns: repeat(2, 1fr); gap: var(--space-6) var(--space-7); }
+	}
+
+	.cr__row {
+		padding-left: var(--space-4);
+		border-left: 1px solid var(--rule-strong);
+	}
+	.cr__row--featured {
+		border-left-color: var(--ochre);
+		border-left-width: 2px;
+	}
+	.cr__rowHead {
 		display: flex;
 		flex-wrap: wrap;
 		gap: var(--space-2);
 		margin-bottom: var(--space-3);
 	}
-	.ship__rowDesc {
+	.cr__rowDesc {
 		font-family: var(--font-serif);
 		color: var(--text);
 		font-size: var(--type-small);
 		margin: 0 0 var(--space-2);
-		max-width: 64ch;
+		max-width: 56ch;
 	}
-	.ship__rowMeta {
+	.cr__rowMeta {
 		font-size: var(--type-tiny);
 		color: var(--text-quiet);
 		margin: 0;
@@ -170,10 +665,7 @@ const skills = await getShipLoopSkills();
 		gap: var(--space-2);
 		align-items: center;
 	}
-	.ship__rowMeta code { color: var(--ochre); background: transparent; }
-	.ship__metaLabel {
-		color: var(--text-distant);
-		margin-right: var(--space-1);
-	}
-	.ship__sep { color: var(--text-distant); }
+	.cr__rowMeta code { color: var(--ochre); background: transparent; }
+	.cr__metaLabel { color: var(--text-distant); margin-right: var(--space-1); }
+	.cr__sep { color: var(--text-distant); }
 </style>

@@ -1,132 +1,297 @@
 ---
 import { ARTIFACT_WRITE_SITES, getSecondaryFlowSkills } from "../lib/skills";
 const skills = await getSecondaryFlowSkills();
-
-/* Layout knobs for the branch diagram. Spine runs left→right at y=140.
-   Six pipeline nodes evenly spaced. Branches arc out of specific spine nodes. */
-const SPINE = [
-	{ x: 80,  label: "discover" },
-	{ x: 200, label: "research" },
-	{ x: 320, label: "design" },
-	{ x: 440, label: "plan" },
-	{ x: 560, label: "implement" },
-	{ x: 680, label: "validate" },
-];
-/* Branch metadata.
-   `from` = spine index the branch arcs out of.
-   `to`   = optional second spine index the branch arcs into (for skills that bridge two spine nodes).
-   `tone` = "branch" (ochre, off-pipeline) or "extend" (sage, continues the chain). */
-const BRANCHES = [
-	{ name: "annotate-guidance",   from: 0,           side: "above", x: 60,  y: 60,  caption: "brownfield · before pipeline",          tone: "branch", labelPos: "right" },
-	{ name: "migrate-to-guidance", from: 0,           side: "below", x: 60,  y: 220, caption: "brownfield · before pipeline",          tone: "branch", labelPos: "right" },
-	{ name: "explore",             from: 2,           side: "above", x: 320, y: 60,  caption: "alt input → solutions/",                tone: "branch", labelPos: "right" },
-	{ name: "blueprint",           from: 1, to: 4,    side: "below", x: 380, y: 220, caption: "combines design + plan · feeds implement", tone: "branch", labelPos: "below" },
-	{ name: "code-review",         from: 5,           side: "above", x: 920, y: 60,  caption: "ship loop · §6",                        tone: "extend", labelPos: "left" },
-	{ name: "commit",              from: 5,           side: "below", x: 920, y: 220, caption: "ship loop · §6",                        tone: "extend", labelPos: "left" },
-];
-const SPINE_Y = 140;
 ---
 
 <section id="flows">
 	<div class="container">
-		<p class="kicker">§ secondary flows · branches</p>
-		<h2>Off the default pipeline.</h2>
+		<p class="kicker">§ secondary flows · expedited path</p>
+		<h2>
+			<span class="bp-h2__line">Blueprint:</span>
+			<span class="bp-h2__line bp-h2__line--accent">research → implement, in one pass.</span>
+		</h2>
 		<p class="flows__lede">
-			The default chain is six steps. These are the entry points beside it: a
-			single-pass plan from research, an alternate input that compares approaches,
-			and the brownfield pair that maps an existing repo before any other skill runs.
+			The canonical six-step pipeline (discover → research → design → plan → implement → validate)
+			is right when the feature is non-trivial. <strong>Blueprint collapses design + plan into one
+			single-pass artifact</strong> when the work is small or mid-sized — the model trades two
+			deliberation rounds for momentum. Output still feeds the same implement → review loop.
 		</p>
 
-		<figure class="flows__diagram" aria-hidden="true">
-			<svg viewBox="0 0 1100 280" class="flows__svg" preserveAspectRatio="xMidYMid meet">
-				<!-- spine line -->
-				<g fill="none" stroke="var(--sage-deep)" stroke-linecap="round">
-					<path d={`M${SPINE[0].x},${SPINE_Y} L${SPINE[5].x},${SPINE_Y}`} stroke-width="1" opacity="0.7" />
-					<path d={`M${SPINE[0].x + 6},${SPINE_Y + 4} L${SPINE[5].x - 6},${SPINE_Y + 4}`} stroke-width="0.5" opacity="0.25" />
-				</g>
+		<figure class="bp-flow" aria-label="Blueprint expedited path: research feeds blueprint, blueprint feeds implement and ship">
+			{/* ── BLOCK 01 — input (research) ── */}
+			<article class="bp-block bp-block--input">
+				<header class="bp-block__head">
+					<p class="bp-kicker mono">01 · input</p>
+					<h3 class="mono bp-name">/skill:research</h3>
+				</header>
+				<p class="bp-desc">
+					Trace-quality research questions answered into a single dense artifact.
+				</p>
 
-				<!-- branch arcs (drawn first, behind nodes) -->
-				{BRANCHES.map((b) => {
-					const above = b.side === "above";
-					const stroke = b.tone === "extend" ? "var(--sage)" : "var(--ochre)";
-					const arc = (sx: number, ex: number) => {
-						const ctrlY = above ? (b.y + 30) : (b.y - 30);
-						return (
-							<g fill="none" stroke={stroke} stroke-linecap="round">
-								<path d={`M${sx},${SPINE_Y} Q${(sx + ex) / 2},${ctrlY} ${ex},${b.y}`}
-									stroke-width="0.9" opacity="0.7" />
-								<path d={`M${sx + 3},${SPINE_Y - (above ? 4 : -4)} Q${(sx + ex) / 2 + 3},${ctrlY - (above ? 4 : -4)} ${ex + 1},${b.y - (above ? 4 : -4)}`}
-									stroke-width="0.5" opacity="0.28" />
-							</g>
-						);
-					};
-					return (
-						<g>
-							{arc(SPINE[b.from].x, b.x)}
-							{b.to !== undefined && arc(SPINE[b.to].x, b.x)}
-						</g>
-					);
-				})}
-
-				<!-- spine nodes -->
-				{SPINE.map((n, i) => (
-					<g>
-						<circle cx={n.x} cy={SPINE_Y} r="11" fill="var(--ink-raised)" stroke="var(--sage)" stroke-width="1" />
-						<circle cx={n.x} cy={SPINE_Y} r="11" fill="var(--sage)" opacity="0.14" />
-						<text x={n.x} y={SPINE_Y + 3.2} text-anchor="middle"
-							font-family="var(--font-mono)" font-size="9" fill="var(--washi)">{String(i + 1).padStart(2, "0")}</text>
-						<text x={n.x} y={SPINE_Y + 30} text-anchor="middle"
-							font-family="var(--font-mono)" font-size="10"
-							fill="var(--text-distant)" letter-spacing="0.04em">{n.label}</text>
+				{/* mini story-SVG: 3 question lines converging into 1 artifact */}
+				<svg class="bp-mini" viewBox="0 0 200 88" width="200" height="88" aria-hidden="true" preserveAspectRatio="xMidYMid meet">
+					<g font-family="var(--font-mono)" font-size="10" fill="var(--text-distant)">
+						<text x="6" y="20">?</text>
+						<text x="6" y="46">?</text>
+						<text x="6" y="72">?</text>
 					</g>
-				))}
+					<g fill="none" stroke="var(--sage-deep)" stroke-linecap="round">
+						<path d="M22,17 q40,4 60,27"  stroke-width="0.7" opacity="0.6" stroke-dasharray="3 2" />
+						<path d="M22,43 L84,44"        stroke-width="0.7" opacity="0.6" stroke-dasharray="3 2" />
+						<path d="M22,69 q40,-6 60,-25" stroke-width="0.7" opacity="0.6" stroke-dasharray="3 2" />
+					</g>
+					{/* convergence node */}
+					<g>
+						<circle cx="92"  cy="44" r="8" fill="var(--ink)"        stroke="var(--ochre)" stroke-width="1" />
+						<circle cx="92"  cy="44" r="8" fill="var(--ochre)"      opacity="0.18" />
+					</g>
+					{/* arrow into artifact */}
+					<g fill="none" stroke="var(--washi-soft)" stroke-linecap="round">
+						<path d="M104,44 L138,44" stroke-width="1" opacity="0.7" />
+						<path d="M134,40 L138,44 L134,48" stroke-width="1" opacity="0.7" />
+					</g>
+					{/* artifact "page" — 3 short washi-soft lines */}
+					<g stroke="var(--washi-soft)" stroke-linecap="round">
+						<line x1="146" y1="34" x2="190" y2="34" stroke-width="0.7" opacity="0.85" />
+						<line x1="146" y1="44" x2="190" y2="44" stroke-width="0.7" opacity="0.55" />
+						<line x1="146" y1="54" x2="180" y2="54" stroke-width="0.7" opacity="0.55" />
+					</g>
+					<text x="146" y="76" font-family="var(--font-mono)" font-size="8" fill="var(--text-distant)" letter-spacing="0.16em">ARTIFACT</text>
+				</svg>
 
-				<!-- branch nodes -->
-				{BRANCHES.map((b) => {
-					const stroke = b.tone === "extend" ? "var(--sage)" : "var(--ochre)";
-					const wash = b.tone === "extend" ? "var(--sage)" : "var(--ochre)";
-					let labelX: number;
-					let nameY: number;
-					let captionY: number;
-					let anchor: "start" | "end" | "middle";
-					if (b.labelPos === "below") {
-						labelX = b.x;
-						nameY = b.y + 28;
-						captionY = b.y + 40;
-						anchor = "middle";
-					} else if (b.labelPos === "left") {
-						labelX = b.x - 18;
-						nameY = b.y - 2;
-						captionY = b.y + 12;
-						anchor = "end";
-					} else {
-						labelX = b.x + 18;
-						nameY = b.y - 2;
-						captionY = b.y + 12;
-						anchor = "start";
-					}
-					return (
+				<p class="bp-meta mono">
+					<span class="bp-meta__arrow">→</span>
+					<code>thoughts/shared/research/</code>
+				</p>
+			</article>
+
+			{/* ── CONNECTOR 01 → 02 — calligraphy brushstroke ── */}
+			<div class="bp-link" aria-hidden="true">
+				<svg class="bp-link__brush" viewBox="0 0 120 80" width="120" height="80" preserveAspectRatio="xMidYMid meet">
+					<g fill="none" stroke-linecap="round">
+						{/* faint ochre offset (above) */}
+						<path d="M8,32 Q42,26 100,30" stroke="var(--ochre)" stroke-width="0.5" opacity="0.32" />
+						{/* dominant washi-soft brushstroke */}
+						<path d="M6,40 Q40,36 102,40" stroke="var(--washi-soft)" stroke-width="1.6" opacity="0.85" />
+						{/* faint sage offset (below) */}
+						<path d="M8,48 Q42,44 100,46" stroke="var(--sage)" stroke-width="0.5" opacity="0.22" />
+						{/* hand-drawn chevron arrowhead */}
+						<path d="M96,32 L112,40 L96,48" stroke="var(--washi-soft)" stroke-width="1.4" opacity="0.85" />
+						<path d="M97,34 L109,40 L97,46" stroke="var(--ochre)" stroke-width="0.5" opacity="0.32" />
+					</g>
+					{/* tiny mono label below the stroke */}
+					<text x="60" y="68" text-anchor="middle"
+						font-family="var(--font-mono)" font-size="9"
+						fill="var(--text-distant)" letter-spacing="0.18em">FEEDS</text>
+				</svg>
+			</div>
+
+			{/* ── BLOCK 02 — HERO blueprint with COMPRESSION diagram ── */}
+			<article class="bp-block bp-block--hero">
+				<div class="bp-hero__wash" aria-hidden="true"></div>
+
+				<header class="bp-block__head">
+					<p class="bp-kicker mono bp-kicker--hero">02 · expedited path</p>
+					<h3 class="mono bp-name bp-name--hero">/skill:blueprint</h3>
+				</header>
+
+				{/* THE COMPRESSION DIAGRAM — the visual hero of this section.
+				    Top: ghosted canonical chain showing design+plan struck through.
+				    Bottom: solid blueprint node absorbing them with two converging arcs.
+				    ViewBox padded inward (research at x=60, implement at x=300) so labels never clip
+				    even when the hero is rendered at a narrow viewport. */}
+				<svg class="bp-compress" viewBox="0 0 360 130" width="360" height="130" aria-label="design and plan steps compressed into blueprint" preserveAspectRatio="xMidYMid meet">
+					<defs>
+						<marker id="bp-cmp-arrow" viewBox="0 0 10 10" refX="9" refY="5"
+							markerWidth="6" markerHeight="6" orient="auto">
+							<path d="M0,0 L10,5 L0,10 z" fill="var(--washi-soft)" opacity="0.85" />
+						</marker>
+					</defs>
+
+					{/* canonical chain path (faded, dashed) */}
+					<g fill="none" stroke="var(--text-distant)" stroke-linecap="round">
+						<path d="M60,38 L300,38" stroke-width="0.7" opacity="0.5" stroke-dasharray="3 3" />
+					</g>
+
+					{/* canonical 4 nodes — research (solid), design (ghost), plan (ghost), implement (solid) */}
+					{[
+						{ x: 60,  y: 38, label: "research",   ghost: false, color: "var(--sage)" },
+						{ x: 140, y: 38, label: "design",     ghost: true,  color: "var(--ochre)" },
+						{ x: 220, y: 38, label: "plan",       ghost: true,  color: "var(--ochre)" },
+						{ x: 300, y: 38, label: "implement",  ghost: false, color: "var(--sage)" },
+					].map((n) => (
 						<g>
-							<circle cx={b.x} cy={b.y} r="13" fill="none" stroke={stroke} stroke-width="0.7" opacity="0.4" />
-							<circle cx={b.x} cy={b.y} r="9" fill="var(--ink-raised)" stroke={stroke} stroke-width="1" />
-							<circle cx={b.x} cy={b.y} r="9" fill={wash} opacity="0.14" />
-							<text x={labelX} y={nameY} text-anchor={anchor}
-								font-family="var(--font-mono)" font-size="11" fill="var(--washi)">/skill:{b.name}</text>
-							<text x={labelX} y={captionY} text-anchor={anchor}
-								font-family="var(--font-mono)" font-size="9" fill="var(--text-distant)">{b.caption}</text>
+							{n.ghost ? (
+								<g>
+									{/* ghost ring with strike-through */}
+									<circle cx={n.x} cy={n.y} r="9" fill="none" stroke={n.color} stroke-width="0.8" opacity="0.45" stroke-dasharray="2 2" />
+									<circle cx={n.x} cy={n.y} r="6" fill="none" stroke={n.color} stroke-width="0.7" opacity="0.4" />
+									<line x1={n.x - 11} y1={n.y - 11} x2={n.x + 11} y2={n.y + 11}
+										stroke={n.color} stroke-width="1.2" opacity="0.7" stroke-linecap="round" />
+									<text x={n.x} y={n.y + 22} text-anchor="middle"
+										font-family="var(--font-mono)" font-size="8.5"
+										fill="var(--text-distant)" letter-spacing="0.04em" text-decoration="line-through">{n.label}</text>
+								</g>
+							) : (
+								<g>
+									<circle cx={n.x} cy={n.y} r="11" fill="none" stroke={n.color} stroke-width="0.6" opacity="0.4" />
+									<circle cx={n.x} cy={n.y} r="8"  fill="var(--ink-raised)" stroke={n.color} stroke-width="1" />
+									<circle cx={n.x} cy={n.y} r="8"  fill={n.color} opacity="0.18" />
+									<text x={n.x} y={n.y + 22} text-anchor="middle"
+										font-family="var(--font-mono)" font-size="8.5"
+										fill="var(--text-quiet)" letter-spacing="0.04em">{n.label}</text>
+								</g>
+							)}
 						</g>
-					);
-				})}
-			</svg>
+					))}
+
+					{/* "absorption" arcs from ghost design + ghost plan DOWN into blueprint */}
+					<g fill="none" stroke="var(--ochre)" stroke-linecap="round" opacity="0.55">
+						<path d="M140,52 Q156,86 178,98" stroke-width="0.9" stroke-dasharray="4 2" />
+						<path d="M220,52 Q204,86 182,98" stroke-width="0.9" stroke-dasharray="4 2" />
+					</g>
+
+					{/* blueprint node — solid ochre, larger, sits below the canonical chain */}
+					<g>
+						<circle cx="180" cy="100" r="16" fill="none" stroke="var(--ochre)" stroke-width="0.7" opacity="0.45" />
+						<circle cx="180" cy="100" r="12" fill="var(--ink-raised)" stroke="var(--ochre)" stroke-width="1.3" />
+						<circle cx="180" cy="100" r="12" fill="var(--ochre)" opacity="0.25" />
+						<text x="180" y="103" text-anchor="middle"
+							font-family="var(--font-mono)" font-size="9" fill="var(--washi)" letter-spacing="0.04em">BP</text>
+					</g>
+
+					{/* solid expedited path — research → blueprint → implement (washi-soft, marked) */}
+					<g fill="none" stroke="var(--washi-soft)" stroke-linecap="round">
+						<path d="M68,42 Q100,72 162,98" stroke-width="1" opacity="0.85" marker-end="url(#bp-cmp-arrow)" />
+						<path d="M198,98 Q260,72 292,42" stroke-width="1" opacity="0.85" marker-end="url(#bp-cmp-arrow)" />
+					</g>
+				</svg>
+
+				<p class="bp-desc bp-desc--hero">
+					One pass from a research artifact straight to an implementation plan —
+					skips the separate <code>design</code> and <code>plan</code> steps when the
+					feature is small or mid-sized.
+				</p>
+
+				{/* Trade ledger — two-column gain/cost comparison.
+				    Sage label = gains; ochre label = cost. Typography carries the meaning. */}
+				<div class="bp-trade">
+					<div class="bp-trade__col bp-trade__col--gain">
+						<p class="mono bp-trade__label">gain</p>
+						<ul class="bp-trade__list">
+							<li>fewer round-trips, faster to first commit</li>
+							<li>single artifact to review</li>
+						</ul>
+					</div>
+					<div class="bp-trade__col bp-trade__col--cost">
+						<p class="mono bp-trade__label">cost</p>
+						<ul class="bp-trade__list">
+							<li>less deliberation depth than the full chain</li>
+						</ul>
+					</div>
+				</div>
+
+				<p class="bp-meta mono">
+					<span class="bp-meta__arrow">→</span>
+					<code>thoughts/shared/plans/</code>
+					<span class="bp-meta__sep">·</span>
+					feeds <code>implement</code>
+				</p>
+
+				{/* large corner sumi-ink ornament — significantly bigger than before */}
+				<svg class="bp-hero__ornament" viewBox="0 0 160 110" width="160" height="110" aria-hidden="true">
+					<g fill="none" stroke="var(--ochre)" stroke-linecap="round" opacity="0.45">
+						<path d="M10,98 q26,-58 78,-78 q40,-15 66,32" stroke-width="1.1" />
+						<path d="M22,104 q22,-44 64,-58 q34,-11 60,18" stroke-width="0.6" opacity="0.55" />
+						<path d="M34,108 q18,-30 50,-44" stroke-width="0.4" opacity="0.4" />
+						<circle cx="146" cy="44" r="2" />
+						<circle cx="40"  cy="84" r="1.4" opacity="0.7" />
+						<circle cx="100" cy="22" r="1.2" opacity="0.6" />
+					</g>
+				</svg>
+			</article>
+
+			{/* ── CONNECTOR 02 → 03 — calligraphy brushstroke ── */}
+			<div class="bp-link" aria-hidden="true">
+				<svg class="bp-link__brush" viewBox="0 0 120 80" width="120" height="80" preserveAspectRatio="xMidYMid meet">
+					<g fill="none" stroke-linecap="round">
+						<path d="M8,32 Q42,26 100,30" stroke="var(--ochre)" stroke-width="0.5" opacity="0.32" />
+						<path d="M6,40 Q40,36 102,40" stroke="var(--washi-soft)" stroke-width="1.6" opacity="0.85" />
+						<path d="M8,48 Q42,44 100,46" stroke="var(--sage)" stroke-width="0.5" opacity="0.22" />
+						<path d="M96,32 L112,40 L96,48" stroke="var(--washi-soft)" stroke-width="1.4" opacity="0.85" />
+						<path d="M97,34 L109,40 L97,46" stroke="var(--ochre)" stroke-width="0.5" opacity="0.32" />
+					</g>
+					<text x="60" y="68" text-anchor="middle"
+						font-family="var(--font-mono)" font-size="9"
+						fill="var(--text-distant)" letter-spacing="0.18em">SHIP</text>
+				</svg>
+			</div>
+
+			{/* ── BLOCK 03 — output (implement → ship) ── */}
+			<article class="bp-block bp-block--output">
+				<header class="bp-block__head">
+					<p class="bp-kicker mono">03 · output</p>
+					<h3 class="mono bp-name">implement → review</h3>
+				</header>
+				<p class="bp-desc">
+					Phased implementation, then a verified <code>code-review</code> on the
+					committed changes.
+				</p>
+
+				{/* mini implement → commit → review pipeline — echoes §6 review section */}
+				<svg class="bp-mini" viewBox="0 0 200 110" width="200" height="110" aria-hidden="true" preserveAspectRatio="xMidYMid meet">
+					{/* connecting ink rail */}
+					<g fill="none" stroke="var(--sage-deep)" stroke-linecap="round">
+						<path d="M30,56 L170,56" stroke-width="0.9" opacity="0.7" />
+						<path d="M32,60 L168,60" stroke-width="0.4" opacity="0.25" />
+					</g>
+					{/* 3 stations: implement → commit → review */}
+					{[
+						{ cx: 30,  name: "impl",   tint: "var(--sage)" },
+						{ cx: 100, name: "commit", tint: "var(--sage)" },
+						{ cx: 170, name: "review", tint: "var(--ochre)" },
+					].map((n) => (
+						<g>
+							<circle cx={n.cx} cy="56" r="13" fill="var(--ink)"        stroke="none" />
+							<circle cx={n.cx} cy="56" r="11" fill="none"              stroke={n.tint} stroke-width="0.6" opacity="0.45" />
+							<circle cx={n.cx} cy="56" r="9"  fill="var(--ink-raised)" stroke={n.tint} stroke-width="1.1" />
+							<circle cx={n.cx} cy="56" r="9"  fill={n.tint}            opacity="0.16" />
+							<text x={n.cx} y="79" text-anchor="middle"
+								font-family="var(--font-mono)" font-size="8" fill="var(--text-quiet)" letter-spacing="0.02em">{n.name}</text>
+						</g>
+					))}
+					{/* tiny chevron tickmarks on the rail */}
+					<g fill="none" stroke="var(--washi-soft)" stroke-linecap="round" stroke-width="0.9" opacity="0.7">
+						<path d="M62,52 l4,4 l-4,4" />
+						<path d="M134,52 l4,4 l-4,4" />
+					</g>
+					<text x="100" y="22" text-anchor="middle"
+						font-family="var(--font-mono)" font-size="8"
+						fill="var(--text-distant)" letter-spacing="0.16em">SHIP</text>
+				</svg>
+
+				<p class="bp-meta mono">
+					<span class="bp-meta__arrow">→</span>
+					<span class="bp-meta__ref">§6 · code review</span>
+				</p>
+			</article>
 		</figure>
 
+		{/* secondary skills detail rows (all 4 off-pipeline skills) */}
+		<div class="flows__rows-head">
+			<p class="kicker">§ all secondary skills · {skills.length}</p>
+		</div>
 		<ol class="flows__rows">
 			{skills.map((skill) => {
 				const artifact = ARTIFACT_WRITE_SITES[skill.data.name];
+				const isBlueprint = skill.data.name === "blueprint";
 				return (
-					<li class="flows__row">
+					<li class:list={["flows__row", isBlueprint && "flows__row--featured"]}>
 						<header class="flows__rowHead">
-							<span class="chip chip--ochre">/skill:{skill.data.name}</span>
+							<span class={isBlueprint ? "chip chip--ochre" : "chip"}>
+								/skill:{skill.data.name}
+							</span>
+							{isBlueprint && <span class="chip chip--sage">expedited</span>}
 							{skill.data["disable-model-invocation"] && <span class="chip">manual only</span>}
 						</header>
 						<p class="flows__rowDesc">{skill.data.description}</p>
@@ -146,25 +311,249 @@ const SPINE_Y = 140;
 
 <style>
 	#flows h2 { margin-bottom: var(--space-5); }
+	.bp-h2__line { display: block; }
+	.bp-h2__line--accent { color: var(--ochre); }
+
 	.flows__lede {
 		color: var(--text-quiet);
 		margin-bottom: var(--space-7);
 		max-width: 64ch;
 	}
+	.flows__lede strong {
+		color: var(--washi);
+		font-weight: 400;
+	}
+	.flows__lede code {
+		color: var(--ochre);
+		background: transparent;
+	}
 
-	.flows__diagram {
+	/* ─── 3-block expedited-path hero ─── */
+	.bp-flow {
 		margin: 0 0 var(--space-8);
-		padding: var(--space-5) 0;
+		padding: var(--space-7) 0;
 		border-top: 1px solid var(--rule);
 		border-bottom: 1px solid var(--rule);
-		overflow-x: auto;
+		display: grid;
+		grid-template-columns: 1fr;
+		gap: var(--space-4);
+		align-items: stretch;
 	}
-	.flows__svg {
+	@media (min-width: 920px) {
+		.bp-flow {
+			/* Hero (2fr) clearly dominant. Side blocks (0.95fr) wide enough
+			   that mono identifiers like /skill:research never need to break. */
+			grid-template-columns: 0.95fr 80px 2fr 80px 0.95fr;
+			gap: var(--space-3);
+			align-items: stretch;
+		}
+	}
+
+	.bp-block {
+		position: relative;
+		padding: var(--space-5);
+		background: var(--ink-raised);
+		border-top: 1px solid var(--rule);
+		border-left: 1px solid var(--sage-deep);
+		border-right: 1px solid var(--rule);
+		border-bottom: 1px solid var(--rule-strong);
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-3);
+		min-width: 0;
+	}
+
+	/* Side blocks — strip the card chrome so the hero is the only framed element.
+	   Unframed text content vertically centered against the hero's vertical span. */
+	.bp-block--input,
+	.bp-block--output {
+		background: transparent;
+		border: none;
+		padding: 0;
+		align-self: center;
+	}
+	.bp-block--input  { padding-right: var(--space-2); }
+	.bp-block--output { padding-left:  var(--space-2); }
+
+	/* hero block — ochre 3px rule, larger padding, sumi wash, big ornament.
+	   Now visually dominant by being the SOLE card on this row. */
+	.bp-block--hero {
+		padding: var(--space-6);
+		border-left-width: 3px;
+		border-left-color: var(--ochre);
+		overflow: hidden;
+	}
+	.bp-hero__wash {
+		position: absolute;
+		inset: 0;
+		pointer-events: none;
+		background:
+			radial-gradient(420px 220px at 18% 0%,   rgba(168, 137, 108, 0.10), transparent 60%),
+			radial-gradient(360px 240px at 100% 100%, rgba(138, 149, 128, 0.06), transparent 60%);
+	}
+	.bp-block--hero > * { position: relative; z-index: 1; }
+
+	.bp-hero__ornament {
+		position: absolute;
+		bottom: -12px;
+		right: -10px;
+		opacity: 0.55;
+		pointer-events: none;
+		z-index: 0;
+	}
+
+	.bp-block__head {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-2);
+	}
+	.bp-kicker {
+		font-size: var(--type-tiny);
+		letter-spacing: 0.18em;
+		text-transform: uppercase;
+		color: var(--text-distant);
+		margin: 0;
+	}
+	.bp-kicker--hero { color: var(--ochre); }
+
+	.bp-name {
+		font-size: var(--type-h3);
+		margin: 0;
+		color: var(--washi);
+		/* keep mono identifiers intact — never break mid-word */
+		overflow-wrap: normal;
+		word-break: keep-all;
+	}
+	.bp-name--hero {
+		font-size: 30px;
+		color: var(--washi);
+		letter-spacing: -0.01em;
+	}
+
+	.bp-desc {
+		font-family: var(--font-serif);
+		color: var(--text);
+		font-size: var(--type-small);
+		margin: 0;
+		max-width: none;
+	}
+	.bp-desc--hero { font-size: 17px; line-height: var(--leading-snug); max-width: 56ch; }
+	.bp-desc code,
+	.bp-meta code {
+		color: var(--ochre);
+		background: transparent;
+		font-family: var(--font-mono);
+		font-size: 0.92em;
+	}
+
+	/* ── Mini story-SVGs in the side blocks ── */
+	.bp-mini {
+		display: block;
 		width: 100%;
-		min-width: 980px;
+		max-width: 220px;
+		height: auto;
+		margin: var(--space-2) auto;
+		opacity: 0.95;
+	}
+
+	/* ── The big compression diagram inside the hero ── */
+	.bp-compress {
+		display: block;
+		width: 100%;
+		max-width: 380px;
+		height: auto;
+		margin: var(--space-3) 0 var(--space-4);
+	}
+
+	/* ── Trade ledger: gain / cost two-column comparison ── */
+	.bp-trade {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: var(--space-5);
+		margin: var(--space-2) 0 0;
+	}
+	.bp-trade__col {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-3);
+		min-width: 0;
+	}
+	.bp-trade__label {
+		font-size: var(--type-tiny);
+		letter-spacing: 0.22em;
+		text-transform: uppercase;
+		margin: 0;
+		padding-bottom: var(--space-2);
+		border-bottom: 1px solid var(--rule);
+	}
+	.bp-trade__col--gain .bp-trade__label {
+		color: var(--sage);
+		border-bottom-color: var(--sage-deep);
+	}
+	.bp-trade__col--cost .bp-trade__label {
+		color: var(--ochre);
+		border-bottom-color: var(--kuro);
+	}
+	.bp-trade__list {
+		list-style: none;
+		padding: 0;
+		margin: 0;
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-2);
+		font-family: var(--font-serif);
+		font-size: var(--type-small);
+		color: var(--text-quiet);
+		line-height: var(--leading-snug);
+	}
+
+	.bp-meta {
+		font-size: var(--type-tiny);
+		color: var(--text-distant);
+		margin: 0;
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--space-2);
+		align-items: baseline;
+	}
+	/* Hero-only: pin meta to the bottom and add a separator hairline above it,
+	   since the hero IS framed and the meta needs to terminate the card cleanly. */
+	.bp-block--hero .bp-meta {
+		margin-top: auto;
+		padding-top: var(--space-3);
+		border-top: 1px solid var(--rule);
+	}
+	.bp-meta__arrow { color: var(--sage); }
+	.bp-meta__sep   { color: var(--text-distant); }
+	.bp-meta__ref   { color: var(--text-quiet); }
+
+	/* ── Calligraphy connector arrows ── */
+	.bp-link {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		min-width: 0;
+		min-height: 80px;
+	}
+	.bp-link__svg,
+	.bp-link__brush {
+		width: 100%;
+		max-width: 120px;
 		height: auto;
 		display: block;
 	}
+	@media (max-width: 919px) {
+		.bp-link { min-height: 60px; }
+		.bp-link__brush { transform: rotate(90deg); max-width: 80px; }
+	}
+
+	/* ─── Description rows below the hero diagram ─── */
+	.flows__rows-head {
+		margin: var(--space-7) 0 var(--space-4);
+		padding-bottom: var(--space-3);
+		border-bottom: 1px solid var(--rule);
+	}
+	.flows__rows-head .kicker { margin: 0; }
 
 	.flows__rows {
 		list-style: none;
@@ -181,6 +570,10 @@ const SPINE_Y = 140;
 	.flows__row {
 		padding-left: var(--space-4);
 		border-left: 1px solid var(--rule-strong);
+	}
+	.flows__row--featured {
+		border-left-color: var(--ochre);
+		border-left-width: 2px;
 	}
 	.flows__rowHead {
 		display: flex;
