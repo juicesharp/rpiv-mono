@@ -12,8 +12,7 @@ const {
 	description = "A pipeline of skills, subagents, and extensions for the Pi coding agent.",
 } = Astro.props;
 const canonical = new URL(Astro.url.pathname, Astro.site).toString();
-const ogImage =
-	"https://cdn.jsdelivr.net/gh/juicesharp/rpiv-mono@main/packages/rpiv-site/public/og-v2.jpg";
+const ogImage = new URL("/og-v2.jpg", Astro.site).toString();
 
 const jsonLd = {
 	"@context": "https://schema.org",
