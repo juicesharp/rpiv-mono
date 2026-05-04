@@ -6,9 +6,9 @@ import SumiInk from "./SumiInk.astro";
 const groups = await getAgentsByTier();
 
 const TIER_META: Record<CapabilityTier, { label: string; note: string; cap: string }> = {
-	locator:    { label: "Locator",                 note: "where — no file content access",                                       cap: "find" },
-	analyzer:   { label: "Analyzer",                note: "how — reads file content (incl. git history via precedent-locator)",   cap: "read" },
-	external:   { label: "External",                note: "+ web search and fetch",                                               cap: "web"  },
+	locator:    { label: "Locators",                note: "where — no file content access",                                       cap: "find" },
+	analyzer:   { label: "Analyzers",               note: "how — reads file content (incl. git history via precedent-locator)",   cap: "read" },
+	external:   { label: "External agents",         note: "+ web search and fetch",                                               cap: "web"  },
 	specialist: { label: "Code-review specialists", note: "row-only contract — pipe-delimited findings, never narrative",         cap: "rows" },
 };
 ---
