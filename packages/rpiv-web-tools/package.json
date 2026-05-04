@@ -1,7 +1,7 @@
 {
   "name": "@juicesharp/rpiv-web-tools",
   "version": "1.1.4",
-  "description": "Pi extension: lets the model search and read the web via the Brave Search API",
+  "description": "Pi extension. Web search and fetch for the model, backed by the Brave Search API.",
   "keywords": [
     "pi-package",
     "pi-extension",

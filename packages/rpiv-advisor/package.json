@@ -1,7 +1,7 @@
 {
   "name": "@juicesharp/rpiv-advisor",
   "version": "1.1.4",
-  "description": "Pi extension: lets the model ask a stronger reviewer model for a second opinion before it acts",
+  "description": "Pi extension. A second opinion the model can request from a stronger reviewer model before it acts.",
   "keywords": [
     "pi-package",
     "pi-extension",

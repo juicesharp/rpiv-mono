@@ -1,7 +1,7 @@
 {
   "name": "@juicesharp/rpiv-btw",
   "version": "1.1.4",
-  "description": "Pi extension: /btw side-question slash command — ask the same primary model a one-off side question without polluting the main conversation",
+  "description": "Pi extension. The /btw slash command, for putting a one-off side question to the same primary model without polluting the main conversation.",
   "keywords": [
     "pi-package",
     "pi-extension",

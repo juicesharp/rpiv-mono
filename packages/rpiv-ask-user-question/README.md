@@ -11,20 +11,20 @@
 [![npm version](https://img.shields.io/npm/v/@juicesharp/rpiv-ask-user-question.svg)](https://www.npmjs.com/package/@juicesharp/rpiv-ask-user-question)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Let the model ask you structured clarifying questions instead of guessing. `rpiv-ask-user-question` adds the `ask_user_question` tool to [Pi Agent](https://github.com/badlogic/pi-mono) — a tabbed dialog with single- and multi-select questions, side-by-side previews, per-option notes, and a Submit tab that reviews answers before they go back to the model.
+Let the model ask you structured clarifying questions instead of guessing. `rpiv-ask-user-question` adds the `ask_user_question` tool to [Pi Agent](https://github.com/badlogic/pi-mono) - a tabbed dialog with single- and multi-select questions, side-by-side previews, per-option notes, and a Submit tab that reviews answers before they go back to the model.
 
 ![Side-by-side code preview](https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-ask-user-question/docs/code-preview.jpg)
 
 ## Features
 
-- **Multi-question dialogs** — ask several questions in one turn with a tab bar (`Tab` to switch).
-- **Preview pane** — render an ASCII diagram, code snippet, or markdown next to each option, side-by-side or stacked depending on terminal width.
-- **Per-option notes** — press `n` on a previewed option to attach a free-text note that travels back with the answer.
-- **Multi-select questions** — checkboxes with `Space` to toggle, Enter-as-toggle on rows, a `Next` sentinel to advance, and toggles persisted across tab switches.
-- **Submit tab** — review every answer before submitting; warns about unanswered questions and offers a Submit picker.
-- **Chat row on every tab** — redirect the conversation without leaving the dialog.
-- **"Other" free-text fallback** — type a custom answer when no option fits.
-- **Localized UI** — sentinel rows, hints, submit/cancel labels, review pane, and notes affordance display in the user's chosen language via `@juicesharp/rpiv-i18n`. Ships Deutsch / English / Español / Français / Português (PT) / Português (BR) / Русский / Українська; switch with `/languages` or `pi --locale <code>`. LLM-facing copy (tool description, schemas, errors) stays English by design.
+- **Multi-question dialogs** - ask several questions in one turn with a tab bar (`Tab` to switch).
+- **Preview pane** - render an ASCII diagram, code snippet, or markdown next to each option, side-by-side or stacked depending on terminal width.
+- **Per-option notes** - press `n` on a previewed option to attach a free-text note that travels back with the answer.
+- **Multi-select questions** - checkboxes with `Space` to toggle, Enter-as-toggle on rows, a `Next` sentinel to advance, and toggles persisted across tab switches.
+- **Submit tab** - review every answer before submitting; warns about unanswered questions and offers a Submit picker.
+- **Chat row on every tab** - redirect the conversation without leaving the dialog.
+- **"Other" free-text fallback** - type a custom answer when no option fits.
+- **Localized UI** - sentinel rows, hints, submit/cancel labels, review pane, and notes affordance display in the user's chosen language via `@juicesharp/rpiv-i18n`. Ships Deutsch / English / Español / Français / Português (PT) / Português (BR) / Русский / Українська; switch with `/languages` or `pi --locale <code>`. LLM-facing copy (tool description, schemas, errors) stays English by design.
 
 ## Screens
 
@@ -32,7 +32,7 @@ Let the model ask you structured clarifying questions instead of guessing. `rpiv
 |---|---|
 | ![Single-question dialog](https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-ask-user-question/docs/single-question.jpg) | ![Multi-tab + ASCII preview](https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-ask-user-question/docs/multi-tab-preview.jpg) |
 | ![Multi-select with checkboxes](https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-ask-user-question/docs/multi-select.jpg) | ![Submit tab review](https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-ask-user-question/docs/submit-tab.jpg) |
-| ![Localized UI — German](https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-ask-user-question/docs/localized-german-ui.jpg) | |
+| ![Localized UI - German](https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-ask-user-question/docs/localized-german-ui.jpg) | |
 
 ## Install
 
@@ -44,17 +44,17 @@ Then restart your Pi session.
 
 ### Optional: localization
 
-`rpiv-ask-user-question` works standalone — install only this package and you get the full English UI. Install `@juicesharp/rpiv-i18n` alongside it to flip sentinel labels, dialog hints, review-tab heading, and chat-summary lines to your active locale:
+`rpiv-ask-user-question` works standalone - install only this package and you get the full English UI. Install `@juicesharp/rpiv-i18n` alongside it to flip sentinel labels, dialog hints, review-tab heading, and chat-summary lines to your active locale:
 
 ```bash
 pi install npm:@juicesharp/rpiv-i18n
 ```
 
-With the SDK present, locale resolves from `--locale <code>` → `~/.config/rpiv-i18n/locale.json` → `LANG` / `LC_ALL` → English. The `/languages` interactive picker and `pi --locale <code>` startup flag are also enabled. Without the SDK, the dialog stays online and renders English at every call site — no warning, no crash. Users who installed via `pi install npm:@juicesharp/rpiv-pi` + `/rpiv-setup` get the SDK automatically.
+With the SDK present, locale resolves from `--locale <code>` → `~/.config/rpiv-i18n/locale.json` → `LANG` / `LC_ALL` → English. The `/languages` interactive picker and `pi --locale <code>` startup flag are also enabled. Without the SDK, the dialog stays online and renders English at every call site - no warning, no crash. Users who installed via `pi install npm:@juicesharp/rpiv-pi` + `/rpiv-setup` get the SDK automatically.
 
 ## Tool
 
-- **`ask_user_question`** — present one or more structured questions, each with 2+ options, optional `multiSelect`, optional per-option `preview`, and an optional free-text "Other" fallback. Returns the user's selection(s) plus any notes. See the tool's `promptGuidelines` for usage policy.
+- **`ask_user_question`** - present one or more structured questions, each with 2+ options, optional `multiSelect`, optional per-option `preview`, and an optional free-text "Other" fallback. Returns the user's selection(s) plus any notes. See the tool's `promptGuidelines` for usage policy.
 
 ### Schema
 

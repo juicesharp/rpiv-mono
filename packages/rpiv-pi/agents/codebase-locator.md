@@ -1,6 +1,6 @@
 ---
 name: codebase-locator
-description: Locates files, directories, and components relevant to a feature or task. Call `codebase-locator` with human language prompt describing what you're looking for. Basically a "Super grep/find/ls tool" — Use it if you find yourself desiring to use one of these tools more than once.
+description: Locates files, directories, and components relevant to a feature or task. Call `codebase-locator` with a human-language prompt describing what you're looking for. A "super grep/find/ls" tool. Reach for it when you would otherwise reach for grep, find, or ls more than once.
 tools: grep, find, ls
 isolated: true
 ---

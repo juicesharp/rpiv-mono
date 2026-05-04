@@ -17,10 +17,10 @@ Let the model search the web and read pages. `rpiv-web-tools` adds `web_search` 
 
 ## Features
 
-- **Brave-backed search** — 1–10 ranked results per query with title and snippet.
-- **Read any URL** — fetch http/https pages, strip HTML to text, or get the raw HTML with `raw: true`.
-- **Large-page spillover** — oversized responses truncate inline and spill the full body to a temp file the model can read on demand.
-- **Interactive setup** — `/web-search-config` writes the key to `~/.config/rpiv-web-tools/config.json` (chmod 0600); env var `BRAVE_SEARCH_API_KEY` also works.
+- **Brave-backed search** - 1–10 ranked results per query with title and snippet.
+- **Read any URL** - fetch http/https pages, strip HTML to text, or get the raw HTML with `raw: true`.
+- **Large-page spillover** - oversized responses truncate inline and spill the full body to a temp file the model can read on demand.
+- **Interactive setup** - `/web-search-config` writes the key to `~/.config/rpiv-web-tools/config.json` (chmod 0600); env var `BRAVE_SEARCH_API_KEY` also works.
 
 ## Install
 
@@ -32,13 +32,13 @@ Then restart your Pi session.
 
 ## Tools
 
-- **`web_search`** — query the Brave Search API and return titled snippets.
+- **`web_search`** - query the Brave Search API and return titled snippets.
   1–10 results per call.
-- **`web_fetch`** — fetch an http/https URL, strip HTML to text (or return raw
+- **`web_fetch`** - fetch an http/https URL, strip HTML to text (or return raw
   HTML with `raw: true`), truncate large responses with a temp-file spill for
   the full content.
 
-### Schema — `web_search`
+### Schema - `web_search`
 
 ```ts
 web_search({
@@ -63,7 +63,7 @@ Returns:
 
 Throws when `BRAVE_SEARCH_API_KEY` is unset or the Brave API returns a non-2xx response.
 
-### Schema — `web_fetch`
+### Schema - `web_fetch`
 
 ```ts
 web_fetch({
@@ -92,7 +92,7 @@ Throws on invalid URL, non-http(s) protocol, non-2xx response, or `image/` / `vi
 
 ## Commands
 
-- **`/web-search-config`** — set the Brave API key interactively. Writes to
+- **`/web-search-config`** - set the Brave API key interactively. Writes to
   `~/.config/rpiv-web-tools/config.json` (chmod 0600). Pass `--show` to see
   the current (masked) key and env var status.
 

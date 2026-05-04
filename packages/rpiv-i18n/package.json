@@ -1,7 +1,7 @@
 {
   "name": "@juicesharp/rpiv-i18n",
   "version": "1.1.4",
-  "description": "Pi extension: i18n/localization foundation — locale detection, /languages command, --locale flag, cross-package locale registry",
+  "description": "Pi extension. The localization foundation for rpiv-* skills: locale detection, the /languages command, the --locale flag, and a cross-package locale registry.",
   "keywords": [
     "pi-package",
     "pi-extension",
