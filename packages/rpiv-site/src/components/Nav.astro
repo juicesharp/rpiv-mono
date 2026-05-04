@@ -1,13 +1,13 @@
-<header class="nav">
+<header class="nav" data-nav>
 	<div class="container nav__inner">
 		<a href="#top" class="nav__brand mono">rpiv-pi</a>
 		<nav class="nav__links mono" aria-label="primary">
-			<a href="#pipeline">pipeline</a>
-			<a href="#flows">blueprint</a>
-			<a href="#review">review</a>
-			<a href="#agents">agents</a>
-			<a href="#siblings">siblings</a>
-			<a href="#install">install</a>
+			<a href="#pipeline" data-nav-link="pipeline">pipeline</a>
+			<a href="#flows"    data-nav-link="flows">blueprint</a>
+			<a href="#review"   data-nav-link="review">review</a>
+			<a href="#agents"   data-nav-link="agents">agents</a>
+			<a href="#siblings" data-nav-link="siblings">siblings</a>
+			<a href="#install"  data-nav-link="install">install</a>
 		</nav>
 	</div>
 </header>
@@ -45,12 +45,82 @@
 		text-transform: uppercase;
 	}
 	.nav__links a {
+		position: relative;
 		color: var(--text-distant);
 		border-bottom: none;
 		transition: color var(--dur-ink) var(--ease-ink);
 	}
 	.nav__links a:hover { color: var(--washi); }
+
+	/* Active-section state — agrees with the side ScrollIndicator's hanko seal.
+	   Active link gets washi text + a 1px ochre underline tick that grows from
+	   left, matching the indicator's `.indicator__line` widening behavior. */
+	.nav__links a.is-active {
+		color: var(--washi);
+	}
+	.nav__links a.is-active::after {
+		content: "";
+		position: absolute;
+		left: 0;
+		right: 0;
+		bottom: -4px;
+		height: 1px;
+		background: var(--ochre);
+		transform-origin: left center;
+		animation: nav-tick-in 360ms var(--ease-ink) forwards;
+	}
+	@keyframes nav-tick-in {
+		from { transform: scaleX(0); }
+		to   { transform: scaleX(1); }
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.nav__links a.is-active::after { animation: none; }
+	}
+
 	@media (max-width: 720px) {
 		.nav__links { gap: var(--space-3); font-size: 10px; }
 	}
 </style>
+
+<script>
+	(() => {
+		const nav = document.querySelector<HTMLElement>("[data-nav]");
+		if (!nav) return;
+		const links = Array.from(
+			nav.querySelectorAll<HTMLAnchorElement>("[data-nav-link]"),
+		);
+		const targets = links
+			.map((link) => {
+				const id = link.dataset.navLink;
+				if (!id) return null;
+				const el = document.getElementById(id);
+				return el ? { link, el } : null;
+			})
+			.filter((x): x is { link: HTMLAnchorElement; el: HTMLElement } => !!x);
+		if (!targets.length) return;
+
+		let rafId = 0;
+		const setActive = () => {
+			rafId = 0;
+			const anchorY = window.innerHeight * 0.34;
+			let activeIndex = -1;
+			for (let i = 0; i < targets.length; i++) {
+				const top = targets[i].el.getBoundingClientRect().top;
+				if (top - anchorY <= 0) activeIndex = i;
+			}
+			targets.forEach((t, i) => {
+				t.link.classList.toggle("is-active", i === activeIndex);
+				if (i === activeIndex) t.link.setAttribute("aria-current", "true");
+				else t.link.removeAttribute("aria-current");
+			});
+		};
+
+		const onScroll = () => {
+			if (rafId) return;
+			rafId = requestAnimationFrame(setActive);
+		};
+		window.addEventListener("scroll", onScroll, { passive: true });
+		window.addEventListener("resize", onScroll, { passive: true });
+		setActive();
+	})();
+</script>

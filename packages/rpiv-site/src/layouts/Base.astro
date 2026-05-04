@@ -53,6 +53,21 @@ const jsonLd = {
 		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 		<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 
+		{/* Webfont — JetBrains Mono via Fontsource CDN. Ensures the site's mono
+		    voice renders consistently for visitors without Berkeley Mono / SF Mono
+		    installed. Single weight (regular 400) keeps the budget tight (~30KB).
+		    Cascade fallback in tokens.css still applies if the CDN is blocked. */}
+		<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+		<link
+			rel="preload"
+			as="style"
+			href="https://cdn.jsdelivr.net/npm/@fontsource/jetbrains-mono/400.css"
+		/>
+		<link
+			rel="stylesheet"
+			href="https://cdn.jsdelivr.net/npm/@fontsource/jetbrains-mono/400.css"
+		/>
+
 		<meta property="og:site_name" content="rpiv-pi" />
 		<meta property="og:locale" content="en_US" />
 		<meta property="og:type" content="website" />

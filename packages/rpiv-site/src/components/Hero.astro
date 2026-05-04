@@ -7,12 +7,12 @@ const pipeline = await getPipelineSkills();
 <section id="top" class="hero">
 	<SumiInk variant="backdrop" />
 	<div class="container hero__inner">
-		<p class="kicker">rpiv-pi · pi extension</p>
+		<p class="kicker hero__kicker">§ rpiv-pi · pi extension</p>
 
 		<h1 class="hero__title">
-			research<br />
-			design<br />
-			ship
+			<span class="hero__line hero__line--1">research</span>
+			<span class="hero__line hero__line--2">design</span>
+			<span class="hero__line hero__line--3">ship</span>
 		</h1>
 
 		<p class="hero__lede">
@@ -22,7 +22,7 @@ const pipeline = await getPipelineSkills();
 
 		<ol class="hero__rail" aria-label="default pipeline">
 			{pipeline.map((skill, i) => (
-				<li class="hero__node">
+				<li class="hero__node" style={`--rail-i: ${i}`}>
 					<span class="chip chip--sage">/skill:{skill.data.name}</span>
 					{i < pipeline.length - 1 && <span class="hero__arrow" aria-hidden="true">→</span>}
 				</li>
@@ -49,6 +49,44 @@ const pipeline = await getPipelineSkills();
 		font-size: var(--type-h1);
 		line-height: 0.95;
 		margin-bottom: var(--space-6);
+	}
+	.hero__line {
+		display: block;
+	}
+
+	/* ── Page-load stagger ──
+	   Single orchestrated reveal: kicker, then three title lines (offset 80ms each),
+	   then lede, then pipeline rail chips (each 60ms apart), then CTA.
+	   Uses the system tokens (--ease-ink, --dur-ink) so motion stays on-vocabulary. */
+	@keyframes hero-rise {
+		from { opacity: 0; transform: translateY(8px); }
+		to   { opacity: 1; transform: translateY(0);   }
+	}
+	.hero__kicker,
+	.hero__line,
+	.hero__lede,
+	.hero__node,
+	.hero__cta {
+		opacity: 0;
+		animation: hero-rise var(--dur-ink) var(--ease-ink) forwards;
+	}
+	.hero__kicker  { animation-delay:   0ms; }
+	.hero__line--1 { animation-delay: 120ms; }
+	.hero__line--2 { animation-delay: 200ms; }
+	.hero__line--3 { animation-delay: 280ms; }
+	.hero__lede    { animation-delay: 460ms; }
+	.hero__node    { animation-delay: calc(620ms + var(--rail-i, 0) * 60ms); }
+	.hero__cta     { animation-delay: 1080ms; }
+
+	@media (prefers-reduced-motion: reduce) {
+		.hero__kicker,
+		.hero__line,
+		.hero__lede,
+		.hero__node,
+		.hero__cta {
+			opacity: 1;
+			animation: none;
+		}
 	}
 	.hero__lede {
 		font-family: var(--font-serif);
