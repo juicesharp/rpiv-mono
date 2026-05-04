@@ -18,9 +18,18 @@
 	--moss: #4a5544;
 	--kuro: #3d2f24;
 
+	/* Alert — desaturated terracotta, the only "stop-and-look" tone in the
+	   system. Reserved for severity:critical and failed verification marks
+	   inside review-report mocks. Never used as a UI accent. */
+	--alert: #b04a3a;
+
 	/* Hairlines */
 	--rule: #2e2b27;
 	--rule-strong: #3a3631;
+	/* Link underline — sage tinted, kept distinct from structural rules so
+	   `--rule-strong` stays reserved for card edges + emphasis dividers. */
+	--underline: color-mix(in oklab, var(--sage) 35%, transparent);
+	--underline-hover: color-mix(in oklab, var(--sage) 60%, transparent);
 
 	/* Spacing — "ma" rhythm based on 8px unit */
 	--space-1: 4px;
@@ -35,7 +44,13 @@
 	--space-10: 128px;
 	--space-11: 192px;
 
-	/* Type — mono for structure, serif for prose */
+	/* Type — mono for structure, serif for prose.
+	   Mono cascade: Berkeley Mono is the design intent (commercial, not shipped);
+	   JetBrains Mono is loaded as webfont in Base.astro so visitors without
+	   Berkeley still get a coherent mono voice; ui-monospace / SF Mono / Cascadia
+	   cover the no-CDN fallback path.
+	   Serif cascade: Iowan Old Style ships with macOS, Charter ships with iOS+
+	   modern macOS, Source Serif Pro covers Linux/Windows fallbacks. */
 	--font-mono: "Berkeley Mono", "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Code", monospace;
 	--font-serif: "Iowan Old Style", "Hoefler Text", "Charter", "Source Serif Pro", Georgia, serif;
 

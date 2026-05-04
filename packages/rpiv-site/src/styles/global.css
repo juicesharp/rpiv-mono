@@ -57,19 +57,28 @@ p {
 a {
 	color: var(--sage);
 	text-decoration: none;
-	border-bottom: 1px solid var(--rule-strong);
+	border-bottom: 1px solid var(--underline);
 	transition:
 		color var(--dur-ink) var(--ease-ink),
 		border-color var(--dur-ink) var(--ease-ink);
 }
 a:hover {
 	color: var(--washi);
-	border-bottom-color: var(--sage);
+	border-bottom-color: var(--underline-hover);
 }
 
 code,
 pre,
 .chip {
+	font-family: var(--font-mono);
+}
+
+/* SVG <text>/<tspan> presentation attributes don't resolve CSS variables —
+   inline `font-family="var(--font-mono)"` silently falls back to the UA
+   default. CSS rules beat presentation attributes (zero specificity), so
+   this single rule fixes all diagram labels at once. */
+svg text,
+svg tspan {
 	font-family: var(--font-mono);
 }
 

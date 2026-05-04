@@ -18,14 +18,16 @@ const { variant, className } = Astro.props;
 )}
 
 {variant === "divider" && (
-	<svg class:list={["sumi", "sumi--divider", className]} viewBox="0 0 800 32" aria-hidden="true" preserveAspectRatio="none">
+	<svg class:list={["sumi", "sumi--divider", className]} viewBox="0 0 800 32" aria-hidden="true" preserveAspectRatio="xMidYMid meet">
 		<path
-			d="M4 18 q120 -16 280 -8 t340 6 q90 4 172 -2"
-			fill="none" stroke="currentColor" stroke-width="0.8" stroke-linecap="round" opacity="0.4"
+			d="M4 16 q120 -12 280 -4 t340 2 q90 4 172 -6"
+			fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"
+			vector-effect="non-scaling-stroke" opacity="0.7"
 		/>
 		<path
-			d="M40 22 q160 -10 360 -2"
-			fill="none" stroke="currentColor" stroke-width="0.5" stroke-linecap="round" opacity="0.22"
+			d="M40 22 q160 -14 360 -4"
+			fill="none" stroke="currentColor" stroke-width="0.9" stroke-linecap="round"
+			vector-effect="non-scaling-stroke" opacity="0.42"
 		/>
 	</svg>
 )}
@@ -62,9 +64,10 @@ const { variant, className } = Astro.props;
 	.sumi--divider {
 		display: block;
 		width: 100%;
-		height: 32px;
-		color: var(--text-distant);
-		margin: var(--space-5) 0;
+		max-width: 800px;
+		height: 28px;
+		margin: var(--space-6) auto var(--space-7);
+		color: var(--kuro);
 	}
 	.sumi--backdrop {
 		position: absolute;

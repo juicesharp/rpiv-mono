@@ -99,6 +99,10 @@ const TIER_META: Record<CapabilityTier, { label: string; note: string; cap: stri
 		padding: var(--space-6) 0;
 		border-top: 1px solid var(--rule);
 	}
+	/* First rung sits directly under the SumiInk brushstroke — a hairline
+	   here would duplicate the divider read. Brushstroke handles the intro;
+	   hairlines resume between subsequent rungs. */
+	.ladder__rung:first-child { border-top: 0; padding-top: var(--space-4); }
 	.ladder__rung:last-child { padding-bottom: 0; }
 
 	@media (min-width: 880px) {

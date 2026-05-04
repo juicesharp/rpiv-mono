@@ -1,5 +1,6 @@
 ---
 import { loadCompat } from "../lib/compat";
+import SumiInk from "./SumiInk.astro";
 const compat = loadCompat();
 ---
 
@@ -8,22 +9,24 @@ const compat = loadCompat();
 		<p class="kicker">§ install</p>
 		<h2>Three steps. One restart.</h2>
 
+		<SumiInk variant="divider" />
+
 		<ol class="install__steps">
-			<li>
+			<li class="install__step">
 				<span class="install__num mono">01</span>
-				<pre><code>pi install npm:@juicesharp/rpiv-pi</code></pre>
+				<pre class="install__pre"><code>pi install npm:@juicesharp/rpiv-pi</code></pre>
 			</li>
-			<li>
+			<li class="install__step">
 				<span class="install__num mono">02</span>
-				<div>
-					<pre><code>/rpiv-setup</code></pre>
+				<div class="install__step-body">
+					<pre class="install__pre"><code>/rpiv-setup</code></pre>
 					<p class="install__hint">
 						Reads <code>~/.pi/agent/settings.json</code>; previews missing siblings + any
 						legacy entries to prune; one confirm to apply.
 					</p>
 				</div>
 			</li>
-			<li>
+			<li class="install__step">
 				<span class="install__num mono">03</span>
 				<p class="install__step-text">Restart your Pi Agent session.</p>
 			</li>
@@ -40,10 +43,36 @@ const compat = loadCompat();
 				see README → Prerequisites
 			</a>.
 		</p>
+
+		{/* Hanko stamp — same ochre square + 8° rotation as the ScrollIndicator
+		    seal, scaled up. Marks Install as the conversion moment in the
+		    editorial vocabulary. Floats top-right on wide screens. */}
+		<aside class="install__hanko" aria-hidden="true">
+			<svg viewBox="0 0 56 56" width="56" height="56">
+				<g transform="rotate(8 28 28)">
+					<rect x="6" y="6" width="44" height="44" rx="2"
+						fill="var(--ochre)" opacity="0.92"
+						stroke="var(--kuro)" stroke-width="0.8" />
+					<rect x="6" y="6" width="44" height="44" rx="2"
+						fill="none" stroke="var(--kuro)" stroke-width="0.5" opacity="0.5" />
+					{/* tiny "印" (seal) glyph rendered as two strokes — abstract enough
+					    to read as a stamp mark without requiring CJK fallback fonts */}
+					<g stroke="var(--ink)" stroke-linecap="round" fill="none" opacity="0.85">
+						<path d="M16,18 L40,18" stroke-width="1.6" />
+						<path d="M28,18 L28,42" stroke-width="1.6" />
+						<path d="M18,30 L38,30" stroke-width="1.2" />
+						<path d="M18,40 L38,40" stroke-width="1.2" />
+					</g>
+				</g>
+			</svg>
+		</aside>
 	</div>
 </section>
 
 <style>
+	.install {
+		position: relative;
+	}
 	.install h2 { margin-bottom: var(--space-6); }
 	.install__steps {
 		list-style: none;
@@ -52,11 +81,45 @@ const compat = loadCompat();
 		display: grid;
 		gap: var(--space-5);
 	}
-	.install__steps > li {
+	.install__step {
 		display: grid;
 		grid-template-columns: 32px 1fr;
 		gap: var(--space-4);
 		align-items: start;
+	}
+
+	/* Override the global pre style for install-specific commands: ochre rule
+	   matches the SiblingCard install convention. */
+	.install__pre {
+		border-left-color: var(--ochre);
+	}
+
+	/* ── Hanko stamp ── */
+	.install__hanko {
+		position: absolute;
+		top: var(--space-7);
+		right: var(--space-5);
+		pointer-events: none;
+		opacity: 0;
+		transform: translateY(-4px) rotate(0deg) scale(0.85);
+		animation: install-hanko-stamp 700ms var(--ease-ink) 200ms forwards;
+		filter: drop-shadow(0 4px 14px color-mix(in oklab, var(--ochre) 25%, transparent));
+	}
+	@keyframes install-hanko-stamp {
+		0%   { opacity: 0; transform: translateY(-4px) scale(0.85); }
+		60%  { opacity: 1; transform: translateY(0) scale(1.04); }
+		100% { opacity: 1; transform: translateY(0) scale(1); }
+	}
+	@media (max-width: 720px) {
+		.install__hanko { top: var(--space-5); right: var(--space-4); }
+		.install__hanko svg { width: 44px; height: 44px; }
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.install__hanko {
+			opacity: 1;
+			transform: none;
+			animation: none;
+		}
 	}
 	.install__num {
 		color: var(--text-distant);
