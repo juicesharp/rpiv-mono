@@ -1,6 +1,6 @@
 ---
 name: code-review
-description: "Conduct comprehensive code reviews using specialist row-only agents (diff-auditor at Wave-2 Q+S, peer-comparator at Wave-1 PM, claim-verifier at Step 6) plus orchestrator-side Gap-Finder (set arithmetic, no agent). Row-only contracts structurally resist narrativisation. Produces review documents in thoughts/shared/reviews/."
+description: "Conduct comprehensive code reviews of pending changes, a branch, or a PR using parallel specialist agents that audit the diff, compare against peer code, and verify claims. Use when the user asks to 'review this', wants pending changes, a PR, a branch, or a diff reviewed, or asks for a code review. Produces review documents in thoughts/shared/reviews/. Internal mechanics like row-only agent contracts and Gap-Finder set arithmetic are documented in the skill body."
 argument-hint: "[scope]"
 ---
 

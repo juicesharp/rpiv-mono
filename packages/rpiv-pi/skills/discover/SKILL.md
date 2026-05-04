@@ -1,6 +1,6 @@
 ---
 name: discover
-description: Generate trace-quality research questions from codebase discovery. Spawns discovery agents and reads key files for depth, then synthesizes into dense question paragraphs for the research skill. Produces question artifacts in thoughts/shared/questions/. First stage of the research pipeline.
+description: Generate structured research questions for a feature or change area by exploring the codebase in parallel and reading key files for depth, then synthesizing dense question paragraphs for the research skill to consume. First stage of the two-phase research pipeline. Use when the user wants to deeply understand a codebase area before changes, asks to "discover" or "explore questions", or needs research questions formulated for a ticket or task. Produces question artifacts in thoughts/shared/questions/.
 argument-hint: [research question or task/ticket description]
 ---
 

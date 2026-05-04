@@ -1,6 +1,6 @@
 ---
 name: implement
-description: Execute approved implementation plans phase by phase. Implements changes with verification against success criteria. Use when a plan is ready for implementation.
+description: Execute an approved implementation plan from thoughts/shared/plans/ phase by phase, applying changes and verifying each phase against its success criteria before moving on. Use when the user invokes /implement, asks to "implement this plan", or wants an existing phased plan executed. Pair with revise to update plans mid-flight and validate to confirm completion.
 argument-hint: "[plan-path] [Phase N]"
 allowed-tools: Read, Edit, Write, Bash(*), Glob, Grep
 disable-model-invocation: true

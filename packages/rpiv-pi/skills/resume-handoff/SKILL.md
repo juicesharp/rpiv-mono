@@ -1,6 +1,6 @@
 ---
 name: resume-handoff
-description: Resume work from a handoff document. Reads handoff, verifies current state, and continues implementation. Use at the start of a new session to pick up where you left off.
+description: Resume work from a handoff document produced by create-handoff. Reads the handoff, verifies current repo, branch, and state, and continues from where the previous session left off. Use at the start of a new session when the user references a handoff file, says "resume from handoff", "continue from where we left off", or invokes /resume-handoff.
 argument-hint: [handoff-path]
 ---
 

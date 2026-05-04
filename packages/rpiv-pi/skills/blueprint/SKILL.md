@@ -1,6 +1,6 @@
 ---
 name: blueprint
-description: Plan features through iterative vertical-slice decomposition and progressive code generation with developer micro-checkpoints. One slice = one phase. For complex multi-component features touching 6+ files across multiple layers. Produces implement-ready phased plans in thoughts/shared/plans/. Always requires a research artifact from discover → research, or a solutions artifact from explore.
+description: Plan complex features by decomposing them into vertical slices (one slice equals one phase) with developer micro-checkpoints between phases, producing an implement-ready phased plan in thoughts/shared/plans/. Use for complex multi-component features touching 6+ files across multiple layers when iterative review between slices is valuable. Requires a research artifact (from discover then research) or a solutions artifact (from explore). Prefer blueprint over plan when mid-flight micro-checkpoints matter, and prefer plan when a straightforward phased breakdown is enough.
 argument-hint: [research artifact path]
 ---
 

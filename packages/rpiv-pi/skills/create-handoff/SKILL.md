@@ -1,6 +1,6 @@
 ---
 name: create-handoff
-description: Create context-preserving handoff documents for session transitions. Compacts essential context into concise documents. Use when context is getting large or before starting a fresh session.
+description: Create a context-preserving handoff document for session transitions, compacting the current task, decisions made, in-flight changes, and open questions into a single concise file so a fresh session can pick up where this one left off. Use when the user invokes /create-handoff, says context is getting large, asks to wrap up the session, or wants to hand off work to another session.
 argument-hint: [description]
 allowed-tools: Read, Write, Bash(git *), Glob, Grep
 disable-model-invocation: true

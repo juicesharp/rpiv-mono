@@ -1,6 +1,6 @@
 ---
 name: outline-test-cases
-description: Discover testable features via Frontend-First Discovery and create a folder outline under .rpiv/test-cases/ with per-feature metadata. Incremental runs use existing outlines as context for smarter discovery and diff-based checkpoints. Use before write-test-cases to map project scope.
+description: Discover testable features in a project (frontend-first) and create a folder outline under .rpiv/test-cases/ with per-feature metadata. Incremental runs reuse the existing outline for smarter discovery and diff-based checkpoints. Use before write-test-cases to map project scope, when the user wants to plan or inventory test coverage, asks to "outline test cases", or wants a test-case scaffold generated for a project.
 argument-hint: [target-directory]
 allowed-tools: Agent, Read, Write, Edit, Glob, Grep
 ---

@@ -1,6 +1,6 @@
 ---
 name: revise
-description: Update existing implementation plans based on feedback. Makes surgical edits while preserving structure and quality. Use when plans need adjustments after review or during implementation.
+description: Surgically update an existing implementation plan in thoughts/shared/plans/ based on review feedback, mid-implementation discoveries, or new constraints, preserving structure and quality rather than rewriting. Use when the user wants a plan adjusted after code-review feedback, has hit a blocker mid-implement, scope changed, or asks to "revise the plan".
 argument-hint: "[plan-path] [feedback]"
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: research
-description: Answer structured research questions via targeted parallel analysis agents. Accepts either a questions artifact from discover OR a free-text prompt/task (in which case it auto-runs discover via an Agent). Produces research documents in thoughts/shared/research/.
+description: Answer structured research questions about a codebase using targeted parallel analysis agents, then synthesize findings into a research document in thoughts/shared/research/. Accepts either a questions artifact from discover OR a free-text prompt (auto-runs discover first). Use when the user wants in-depth research on a codebase area, asks to "research X", needs answers to architecture or behavior questions before designing changes, or has a discover artifact ready to consume.
 argument-hint: [path to discover artifact | free-text research prompt]
 ---
 

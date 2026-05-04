@@ -1,6 +1,6 @@
 ---
 name: design
-description: Design features through iterative vertical-slice decomposition and progressive code generation with developer micro-checkpoints. For complex multi-component features touching 6+ files across multiple layers. Produces design artifacts in thoughts/shared/designs/. Always requires a research artifact from discover → research, or a solutions artifact from explore.
+description: Design complex features by decomposing them into vertical slices and producing a design artifact (architecture decisions, slice breakdown, file map) in thoughts/shared/designs/. The design feeds the plan or blueprint skill. Use for complex multi-component features touching 6+ files across multiple layers, when the user wants a feature designed before implementation. Requires a research artifact (from discover then research) or a solutions artifact (from explore). Prefer design over plan or blueprint when the focus is architecture and decomposition rather than phased execution steps.
 argument-hint: [research artifact path]
 ---
 

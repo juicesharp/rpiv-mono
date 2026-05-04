@@ -1,6 +1,6 @@
 ---
 name: validate
-description: Verify that an implementation plan was correctly executed. Runs success criteria checks and generates validation reports. Use after implementation is complete.
+description: Verify that an implementation plan was correctly executed by running each phase's success criteria against the working tree and producing a validation report. Use after the implement skill completes, when the user asks to "validate the plan", wants a post-implementation audit, or needs to confirm a feature is fully shipped per its plan.
 argument-hint: [plan-path]
 allowed-tools: Read, Bash(git *), Bash(make *), Glob, Grep, Agent
 ---
