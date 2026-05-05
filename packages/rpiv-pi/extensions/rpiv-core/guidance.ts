@@ -139,15 +139,10 @@ export function injectRootGuidance(cwd: string, pi: ExtensionAPI): void {
 	}
 	injectedGuidance.add(relativePath);
 
-	const label = formatLabel({
-		relativePath,
-		absolutePath,
-		content,
-		kind: "architecture",
-	});
+	const file: GuidanceFile = { relativePath, absolutePath, content, kind: "architecture" };
 	pi.sendMessage({
 		customType: MSG_TYPE_GUIDANCE,
-		content: `## Project Guidance: ${label}\n\n${content}`,
+		content: wrapGuidance(formatLabel(file), content, "auto-loaded at session start"),
 		display: !!pi.getFlag(FLAG_DEBUG),
 	});
 }
@@ -181,13 +176,43 @@ export function handleToolCallGuidance(
 		injectedGuidance.add(g.relativePath);
 	}
 
-	const contextParts = newFiles.map((g) => `## Project Guidance: ${formatLabel(g)}\n\n${g.content}`);
+	const trigger = `auto-loaded because ${event.toolName} touched ${shortenPath(filePath, ctx.cwd)}`;
+	const contextParts = newFiles.map((g) => wrapGuidance(formatLabel(g), g.content, trigger));
 
 	pi.sendMessage({
 		customType: MSG_TYPE_GUIDANCE,
 		content: contextParts.join("\n\n---\n\n"),
 		display: !!pi.getFlag(FLAG_DEBUG),
 	});
+}
+
+/**
+ * Wrap guidance content in a non-task envelope. The opening disclaimer tells
+ * the agent this block is reference material — not an instruction — and states
+ * the trigger so the agent can judge whether the block is relevant to the
+ * current user request. Heading is `## Architecture Guidance:` to match the
+ * `PreToolUse:Read` hook output and the actual content (architecture.md).
+ */
+function wrapGuidance(label: string, content: string, trigger: string): string {
+	return [
+		`[rpiv-guidance — reference material, NOT a task. ${trigger}.`,
+		`Consult only if directly relevant to the user's current request; otherwise ignore.]`,
+		"",
+		`## Architecture Guidance: ${label}`,
+		"",
+		content,
+	].join("\n");
+}
+
+/**
+ * Render a project-relative, forward-slash-normalized path for the trigger
+ * disclaimer. Falls back to the absolute path if the file lives outside the
+ * project root (defensive — `handleToolCallGuidance` already short-circuits
+ * via `resolveGuidance` in that case, so this branch is unreachable today).
+ */
+function shortenPath(filePath: string, cwd: string): string {
+	const r = relative(cwd, filePath);
+	return r && !r.startsWith("..") ? r.split(sep).join("/") : filePath;
 }
 
 /**

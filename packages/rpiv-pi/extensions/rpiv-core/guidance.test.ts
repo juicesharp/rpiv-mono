@@ -63,7 +63,10 @@ describe("injectRootGuidance", () => {
 		const { pi } = createMockPi();
 		injectRootGuidance(projectDir, pi);
 		expect(pi.sendMessage).toHaveBeenCalledTimes(1);
-		expect((pi.sendMessage as ReturnType<typeof vi.fn>).mock.calls[0][0].content).toContain("body");
+		const content = (pi.sendMessage as ReturnType<typeof vi.fn>).mock.calls[0][0].content;
+		expect(content).toContain("body");
+		expect(content).toContain("reference material, NOT a task");
+		expect(content).toContain("auto-loaded at session start");
 	});
 
 	it("is idempotent across calls within a session", () => {
@@ -132,5 +135,6 @@ describe("handleToolCallGuidance", () => {
 		const content = (pi.sendMessage as ReturnType<typeof vi.fn>).mock.calls[0][0].content;
 		expect(content).toContain("root");
 		expect(content).toContain("src");
+		expect(content).toContain("auto-loaded because write touched src/x.ts");
 	});
 });
