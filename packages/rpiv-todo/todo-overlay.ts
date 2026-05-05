@@ -5,7 +5,7 @@
  * registration in widgetContainerAbove, register-once + requestRender()
  * refresh, 12-line collapse-not-scroll, auto-hide when empty.
  *
- * Reads live state via `getTodos()` at render time — NEVER `replayFromBranch`
+ * Reads live state via `getState()` at render time — NEVER `replayFromBranch`
  * from `tool_execution_end` (branch is stale; `message_end` runs after).
  */
 
@@ -139,7 +139,7 @@ export class TodoOverlay {
 			lines.push(truncate(`${theme.fg("dim", "├─")} ${formatOverlayTaskLine(task, theme, showIds)}`));
 		}
 
-		const newlyDisplayedCompletedTaskIds = layout.visible
+		const newlyDisplayedCompletedTaskIds = overlayTasks
 			.filter(
 				(task) =>
 					task.status === "completed" &&
