@@ -81,17 +81,20 @@ export default function (pi: ExtensionAPI) {
 		if (ctx.hasUI) {
 			todoOverlay ??= new TodoOverlay();
 			todoOverlay.setUICtx(ctx.ui);
+			todoOverlay.resetCompletedDisplayState();
 			todoOverlay.update();
 		}
 	});
 
 	pi.on("session_compact", async (_event, ctx) => {
 		replaceState(replayFromBranch(ctx));
+		todoOverlay?.resetCompletedDisplayState();
 		todoOverlay?.update();
 	});
 
 	pi.on("session_tree", async (_event, ctx) => {
 		replaceState(replayFromBranch(ctx));
+		todoOverlay?.resetCompletedDisplayState();
 		todoOverlay?.update();
 	});
 
@@ -105,5 +108,9 @@ export default function (pi: ExtensionAPI) {
 	pi.on("tool_execution_end", async (event) => {
 		if (event.toolName !== TOOL_NAME || event.isError) return;
 		todoOverlay?.update();
+	});
+
+	pi.on("agent_start", async () => {
+		todoOverlay?.hideCompletedTasksFromPreviousTurn();
 	});
 }

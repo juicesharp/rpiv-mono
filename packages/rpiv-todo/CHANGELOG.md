@@ -7,6 +7,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- Overlay UX: completed todo items now stay visible until the next agent response starts, then disappear from later overlay renders. Replay-driven lifecycle events (`session_start`, `session_compact`, `session_tree`) reset that per-overlay display memory so replayed completed items can be shown once again.
+
 ## [1.1.4] - 2026-05-03
 
 ### Added

@@ -29,7 +29,7 @@ async function setup(actions: Array<{ action: TaskAction; [k: string]: unknown }
 		theme: typeof identityTheme,
 	) => { render: (w: number) => string[]; invalidate: () => void };
 	const widget = factory({ requestRender: vi.fn() }, identityTheme);
-	return { widget, tool, ui };
+	return { widget, tool, ui, overlay };
 }
 
 beforeEach(() => {
@@ -109,14 +109,17 @@ describe("TodoOverlay — per-task formatting", () => {
 		expect(line).toContain("(Doing it)");
 	});
 
-	it("completed task uses '✓' glyph", async () => {
-		const { widget } = await setup([
+	it("completed task stays visible until the next agent turn starts", async () => {
+		const { widget, overlay } = await setup([
 			{ action: "create", subject: "done" },
 			{ action: "update", id: 1, status: "completed" },
 		]);
-		const line = widget.render(200)[1];
-		expect(line).toContain("✓");
-		expect(line).toContain("done");
+		const firstRender = widget.render(200);
+		expect(firstRender[1]).toContain("✓");
+		expect(firstRender[1]).toContain("done");
+		expect(widget.render(200)[1]).toContain("done");
+		overlay.hideCompletedTasksFromPreviousTurn();
+		expect(widget.render(200)).toEqual([]);
 	});
 });
 
@@ -193,6 +196,26 @@ describe("TodoOverlay — overflow collapse", () => {
 		expect(summary).toContain("2 pending");
 	});
 
+	it("hides overflowed completed tasks on the next agent turn too", async () => {
+		const actions: Array<{ action: TaskAction; [k: string]: unknown }> = [];
+		for (let i = 1; i <= 11; i++) actions.push({ action: "create", subject: `p${i}` });
+		for (let i = 12; i <= 16; i++) {
+			actions.push({ action: "create", subject: `c${i}` });
+			actions.push({ action: "update", id: i, status: "completed" });
+		}
+		const { widget, overlay } = await setup(actions);
+		const beforeNextTurn = widget.render(200).join("\n");
+		expect(beforeNextTurn).toContain("Todos (5/16)");
+		expect(beforeNextTurn).toContain("+6 more");
+		expect(beforeNextTurn).toContain("5 completed");
+		overlay.hideCompletedTasksFromPreviousTurn();
+		const afterNextTurn = widget.render(200).join("\n");
+		expect(afterNextTurn).toContain("Todos (0/11)");
+		expect(afterNextTurn).toContain("p11");
+		expect(afterNextTurn).not.toContain("+1 more");
+		expect(afterNextTurn).not.toContain("completed");
+	});
+
 	it("does not engage overflow at exactly 11 visible tasks", async () => {
 		// 11 tasks → all fit in 12 lines (heading + 11). No summary row.
 		const actions: Array<{ action: TaskAction; [k: string]: unknown }> = [];
@@ -212,6 +235,24 @@ describe("TodoOverlay — width truncation", () => {
 			{ action: "create", subject: "a very long subject that would overflow a narrow column" },
 		]);
 		expect(() => widget.render(20)).not.toThrow();
+	});
+
+	it("drops completed tasks from counts after the next agent turn starts", async () => {
+		const { widget, overlay } = await setup([
+			{ action: "create", subject: "done" },
+			{ action: "update", id: 1, status: "completed" },
+			{ action: "create", subject: "next" },
+		]);
+		expect(widget.render(200).join("\n")).toContain("Todos (1/2)");
+		const secondRender = widget.render(200).join("\n");
+		expect(secondRender).toContain("Todos (1/2)");
+		expect(secondRender).toContain("next");
+		expect(secondRender).toContain("done");
+		overlay.hideCompletedTasksFromPreviousTurn();
+		const hiddenRender = widget.render(200).join("\n");
+		expect(hiddenRender).toContain("Todos (0/1)");
+		expect(hiddenRender).toContain("next");
+		expect(hiddenRender).not.toContain("done");
 	});
 
 	it("re-renders reflect live state changes without re-registering", async () => {
