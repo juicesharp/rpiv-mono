@@ -32,7 +32,7 @@ describe("registerTodoTool — registration shape", () => {
 		const tool = captured.tools.get("todo")!;
 		expect(tool.name).toBe("todo");
 		expect(tool.label).toBe("Todo");
-		expect(tool.promptSnippet).toContain("Claude-Code-style");
+		expect(tool.promptSnippet).toContain("task list");
 		expect(Array.isArray(tool.promptGuidelines)).toBe(true);
 		expect((tool.promptGuidelines as string[]).length).toBeGreaterThan(0);
 	});

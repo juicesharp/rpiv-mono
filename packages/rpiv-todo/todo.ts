@@ -67,7 +67,7 @@ export function registerTodoTool(pi: ExtensionAPI): void {
 		label: TOOL_LABEL,
 		description:
 			"Manage a task list for tracking multi-step progress. Actions: create (new task), update (change status/fields/dependencies), list (all tasks, optionally filtered by status), get (single task details), delete (tombstone), clear (reset all). Status: pending → in_progress → completed, plus deleted tombstone. Use this to plan and track multi-step work like research, design, and implementation.",
-		promptSnippet: "Manage a Claude-Code-style task list to track multi-step progress",
+		promptSnippet: "Manage a task list to track multi-step progress",
 		promptGuidelines: [
 			"Use `todo` for complex work with 3+ steps, when the user gives you a list of tasks, or immediately after receiving new instructions to capture requirements. Skip it for single trivial tasks and purely conversational requests.",
 			"When starting any task, mark it in_progress BEFORE beginning work. Mark it completed IMMEDIATELY when done — never batch completions. Exactly one task should be in_progress at a time.",
