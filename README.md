@@ -30,6 +30,17 @@ pi install npm:@juicesharp/rpiv-advisor
 
 `@juicesharp/rpiv-pi` registers the core siblings (see [`siblings.ts`](packages/rpiv-pi/extensions/rpiv-core/siblings.ts)); `/rpiv-setup` installs any that are missing. Other packages (e.g. `rpiv-warp`) are opt-in — install them explicitly with `pi install`.
 
+## Roadmap
+
+1. **Discovery becomes a subagent.** The current `discover` skill's responsibilities move into a specialized subagent invoked automatically inside the main flow, so it stops being a step the user has to think about.
+2. **Repurpose `discover` for decision-tree interviews.** With the name freed, `discover` is rebuilt as a rigorous up-front interview skill: one question at a time, each paired with a recommended answer, the agent self-resolving anything answerable from the codebase rather than asking the user.
+3. **Task-slug-based `thoughts/` layout.** Move `thoughts/` from artifact-grouped folders (`questions/`, `research/`, `designs/`, …) to task-slug-grouped folders, so every artifact for a given task lives under one slug and any pipeline stage can resolve the full bundle by name.
+4. **Pipeline tuning.** Latency, token efficiency, and precision — rolling work across all stages.
+
+### Not planned
+
+- **Backward compatibility of skill bodies and `thoughts/` artifact shapes.** Both are treated as live; expect breaking changes between versions.
+
 ## Development
 
 ```bash
