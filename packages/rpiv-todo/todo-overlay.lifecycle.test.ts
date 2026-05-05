@@ -190,6 +190,34 @@ describe("TodoOverlay — lifecycle", () => {
 		expect(typeof setWidget.mock.calls[1][1]).toBe("function");
 	});
 
+	it("resetCompletedDisplayState() lets replayed completed tasks be shown once again", async () => {
+		const { captured } = registerTool();
+		await seed(captured, [
+			{ action: "create", subject: "done" },
+			{ action: "update", id: 1, status: "completed" },
+		]);
+		const overlay = new TodoOverlay();
+		const ui = makeCtx();
+		overlay.setUICtx(ui);
+		overlay.update();
+		const setWidget = ui.setWidget as ReturnType<typeof vi.fn>;
+		const factory = setWidget.mock.calls[0][1] as (
+			tui: { requestRender: () => void },
+			theme: typeof identityTheme,
+		) => { render: (w: number) => string[]; invalidate: () => void };
+		const widget = factory({ requestRender: vi.fn() }, identityTheme);
+		expect(widget.render(200).join("\n")).toContain("done");
+		overlay.hideCompletedTasksFromPreviousTurn();
+		expect(widget.render(200)).toEqual([]);
+		overlay.resetCompletedDisplayState();
+		expect(widget.render(200).join("\n")).toContain("done");
+	});
+
+	it("hideCompletedTasksFromPreviousTurn() is a no-op when nothing is pending hide", () => {
+		const overlay = new TodoOverlay();
+		expect(() => overlay.hideCompletedTasksFromPreviousTurn()).not.toThrow();
+	});
+
 	it("all-deleted todos count as empty (no widget)", async () => {
 		const { captured } = registerTool();
 		const tool = await seed(captured, [{ action: "create", subject: "a" }]);

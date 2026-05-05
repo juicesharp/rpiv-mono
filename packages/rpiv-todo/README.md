@@ -17,7 +17,7 @@ Give the model a todo list it can keep across long sessions. `rpiv-todo` adds th
 
 ## Features
 
-- **Live overlay above the editor** - see the model's plan at all times; auto-hides when empty.
+- **Live overlay above the editor** - see the model's plan at all times; completed items stay visible until the next agent response starts, then fall away; auto-hides when empty.
 - **Survives `/reload` and compaction** - tasks replay from the conversation branch, not disk.
 - **Status states** - pending, in_progress, completed, plus a deleted tombstone for audit.
 - **Dependency tracking** - `blockedBy` with cycle detection, so the model can sequence work.
@@ -111,9 +111,11 @@ Returns:
 
 ## Overlay
 
-The aboveEditor widget auto-renders whenever any non-deleted tasks exist.
-12-line collapse threshold; completed tasks drop first on overflow, pending
-tasks truncate last. Auto-hides when the list is empty.
+The aboveEditor widget auto-renders whenever any overlay-visible tasks exist.
+Completed tasks stay visible after completion until the next agent response
+starts, then disappear from later overlay renders. 12-line collapse
+threshold; completed tasks still drop first on overflow, pending tasks
+truncate last. Auto-hides when the list is empty.
 
 ## Localization
 
