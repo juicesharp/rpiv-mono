@@ -7,6 +7,25 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Removed
+- **`discover` skill**: the `/skill:discover` slash command and the `thoughts/shared/questions/` artifact write site are gone. Question formulation is now handled inline by the new `scope-tracer` named subagent dispatched directly from `research/SKILL.md`. The `THOUGHTS_DIRS` scaffold loses the `thoughts/shared/questions` entry; existing scaffolded directories on developer machines are left in place (harmless if they persist). The `rpiv-site` `PIPELINE` tuple and `Pipeline.astro` counters drop from 6 to 5 nodes.
+
+### Added
+- **`scope-tracer` agent** (`packages/rpiv-pi/agents/scope-tracer.md`): Analyzer-tier specialist (`tools: read, grep, find, ls`, `isolated: true`) that absorbs discover's procedure (read mentioned files, sweep anchor terms, read 5-10 key files for depth, synthesize 6-12 dense numbered questions) and emits the artifact body inline in its final assistant message. `research` parses the response in-memory; nothing is written to disk. Auto-syncs to `<cwd>/.pi/agents/` at next session_start.
+
+### Changed
+- **`research` skill** (`packages/rpiv-pi/skills/research/SKILL.md`): single entry point — free-text research prompt only. The path-vs-free-text fork at the old Step 1 collapses to one unconditional `Agent({ subagent_type: "scope-tracer", … })` dispatch + an in-memory parse. Frontmatter `description` and `argument-hint` updated; `questions_source:` field removed from the research-doc frontmatter template; Important Notes audit-cleared every `$ARGUMENTS` substitution leak per precedent `e8867f2`.
+- **`design` and `blueprint` skills**: drop the optional `[discover]` argument token from the no-args usage signatures and the `(from discover then research)` phrasing from frontmatter `description`. Both now accept only `[research artifact] [task description]`.
+- **`thoughts-locator` and `thoughts-analyzer` agents**: kept their `questions_source:` frontmatter recognition verbatim for backward-compat with legacy on-disk research artifacts. New research docs simply omit the field.
+
+### Breaking / Upgrade Notes
+- **Upgrading**: no manual step required. On first `pi` session after upgrade, session-hooks emits "Copied 1 rpiv-pi agent(s)" (the new `scope-tracer.md`); the existing 12 agents are untouched. The `/skill:discover` slash command goes away cleanly — `research` now accepts free text directly so the user-facing capability is preserved through a different door.
+- **Existing `thoughts/shared/questions/`** directories on developer machines: harmless leftover. Pre-existing on-disk question artifacts are still readable by Pi but no longer auto-created.
+- **Existing on-disk research artifacts with `questions_source:` frontmatter**: continue to be surfaced by `thoughts-locator` / `thoughts-analyzer` (frontmatter recognition retained). Future research artifacts simply omit the field.
+- **`THOUGHTS_DIRS` removal precedent**: this is the first removal from `THOUGHTS_DIRS` (every prior change has only added entries — `6d8a431` added `reviews`). No migration; orphaned `thoughts/shared/questions/` dirs are harmless if they persist.
+- **Custom skills that referenced `/skill:discover` or the `thoughts/shared/questions/` path**: must be migrated to use `/skill:research "<topic>"` or dispatch `scope-tracer` directly.
+- **Rollback**: git revert the release commit and `pi install npm:@juicesharp/rpiv-pi@<previous-version>`.
+
 ## [1.1.5] - 2026-05-05
 
 ### Changed

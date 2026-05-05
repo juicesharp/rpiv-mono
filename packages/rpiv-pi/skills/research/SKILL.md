@@ -1,54 +1,47 @@
 ---
 name: research
-description: Answer structured research questions about a codebase using targeted parallel analysis agents, then synthesize findings into a research document in thoughts/shared/research/. Accepts either a questions artifact from discover OR a free-text prompt (auto-runs discover first). Use when the user wants in-depth research on a codebase area, asks to "research X", needs answers to architecture or behavior questions before designing changes, or has a discover artifact ready to consume.
-argument-hint: [path to discover artifact | free-text research prompt]
+description: Answer structured research questions about a codebase using targeted parallel analysis agents, then synthesize findings into a research document in thoughts/shared/research/. Internally dispatches the scope-tracer agent to formulate trace-quality research questions, then answers them. Use when the user wants in-depth research on a codebase area, asks to "research X", or needs answers to architecture or behavior questions before designing changes.
+argument-hint: [free-text research prompt]
 ---
 
 # Research
 
-You are tasked with answering structured research questions by spawning targeted analysis agents and synthesizing their findings into a comprehensive research document. This skill consumes questions artifacts produced by the `discover` skill — either provided directly by the user, or produced on-demand via an Agent when the user passes free text.
+You are tasked with answering structured research questions by spawning targeted analysis agents and synthesizing their findings into a comprehensive research document. This skill internally dispatches the `scope-tracer` agent to formulate trace-quality research questions, then answers them.
 
 Input: `$ARGUMENTS`
 
-## Step 1: Read Questions Artifact
+## Step 1: Trace the Investigation Scope
 
-1. **Determine input** by inspecting the inlined argument below:
-
-   **Path to a `.md` file under `thoughts/`** (questions artifact):
-   - Read the questions artifact FULLY using the Read tool WITHOUT limit/offset
-   - Extract: Discovery Summary, Questions (dense paragraphs), frontmatter metadata (topic, tags)
-   - The Discovery Summary provides the file landscape overview — no need to re-discover
-
-   **Free-text prompt / task description** (argument is non-empty and is NOT a path to a `thoughts/**/*.md` file):
-   - Dispatch ONE `Agent` tool call to run discover end-to-end:
-     ```
-     Agent({
-       subagent_type: "general-purpose",
-       description: "auto-run discover",
-       prompt: "Read packages/rpiv-pi/skills/discover/SKILL.md, execute it for topic '$ARGUMENTS', return ONLY the absolute path to the questions artifact."
-     })
-     ```
-   - Capture the returned absolute path, then fall through into the "Path to a `.md` file …" branch above.
-   - Report: `[Auto-discovered]: ran discover via Agent for "$ARGUMENTS". Questions artifact: [path].`
-
-   **Argument is empty:**
+1. **Argument is empty:**
    ```
-   Please provide a discover questions artifact path or a free-text research prompt. Free text will auto-run discover via an Agent first.
+   Please provide a free-text research prompt.
    ```
    Then wait for input.
 
-2. **Read key shared files** referenced across multiple questions into main context — especially shared utilities, type definitions, and integration points that multiple questions mention.
+2. **Dispatch the scope-tracer agent** to formulate trace-quality research questions for the user's topic:
+   ```
+   Agent({
+     subagent_type: "scope-tracer",
+     description: "trace scope",
+     prompt: "$ARGUMENTS"
+   })
+   ```
+   The agent reads any mentioned files, sweeps anchor terms via grep/find/ls, reads 5-10 key files for depth, then emits a Discovery Summary + 6-12 dense numbered questions inline in its final message. Nothing is written to disk.
 
-3. **Analyze question overlap for grouping:**
+3. **Parse the agent's final message** as the questions artifact body. Extract: Discovery Summary (3-5 sentence file-landscape overview), Questions (numbered dense 3-6 sentence paragraphs).
+
+4. **Read key shared files** referenced across multiple questions into main context — especially shared utilities, type definitions, and integration points that multiple questions mention.
+
+5. **Analyze question overlap for grouping:**
    - Parse all question paragraphs and extract file references from each
    - Identify questions that share 2+ file references — these are candidates for grouping
    - Group related questions together (2-3 questions per group max)
    - Questions with no significant file overlap remain standalone
    - Target: 3-6 agent dispatches total (grouped + standalone)
 
-4. **Report chained status:**
+6. **Report scoped status:**
    ```
-   [Chained]: Found research questions for "[topic]". [N] questions in [G] groups, [M] shared files.
+   [Scoped]: ran scope-tracer. [N] questions in [G] groups, [M] shared files.
    ```
 
 ## Step 2: Dispatch Analysis Agents
@@ -207,7 +200,6 @@ Findings go into Precedents & Lessons. Otherwise skip and note "git history unav
    topic: "[User's Research Topic]"
    tags: [research, codebase, relevant-component-names]
    status: complete
-   questions_source: "[path to questions artifact]"
    last_updated: [Current date in YYYY-MM-DD format]
    last_updated_by: [User from injected git context]
    ---
@@ -277,7 +269,6 @@ Findings go into Precedents & Lessons. Otherwise skip and note "git history unav
    A: [Developer's answer]
 
    ## Related Research
-   - Questions source: `[path to questions artifact]`
    - [Links to other research documents]
 
    ## Open Questions
@@ -309,16 +300,16 @@ When ready, choose your next step:
 
 ## Important Notes
 
-- **Analysis only**: This skill answers questions. It does NOT discover what to ask — that's discover's job.
-- **Two entry points**: A discover questions artifact path (chained) OR free text (auto-runs discover via an Agent, then proceeds with the produced artifact). Argument substitution is handled by `rpiv-args` (`$ARGUMENTS`).
+- **Analysis only**: This skill answers questions. Question formulation is delegated to the scope-tracer subagent at Step 1.
+- **Single entry point**: Free-text research prompt. Argument substitution is handled by `rpiv-args`; scope-tracer runs in-band before analysis dispatch.
 - **Grouped dispatch**: Related questions are batched per agent based on file overlap. Default agent: codebase-analyzer. This reduces token waste from redundant file reads and lets agents build cross-question context.
 - **Downstream compatible**: Research documents feed directly into design and plan — the same Code References / Integration Points / Architecture Insights sections they expect.
-- **File reading**: Always read the questions artifact FULLY (no limit/offset) before dispatching agents
+- **Agent-message parsing**: scope-tracer emits Discovery Summary + numbered Questions inline in its final assistant message; parse the agent's final-message text (no file write).
 - **Critical ordering**: Follow the numbered steps exactly
-  - ALWAYS read the questions artifact first (Step 1)
+  - ALWAYS dispatch scope-tracer first (Step 1)
   - ALWAYS analyze question overlap for grouping (Step 1)
   - ALWAYS wait for all agents to complete (Step 2)
   - ALWAYS run developer checkpoint before writing (Step 3)
   - ALWAYS gather metadata before writing (Step 4)
   - NEVER write the document with placeholder values
-- **Frontmatter consistency**: Always include frontmatter, use snake_case fields, include `questions_source`
+- **Frontmatter consistency**: Always include frontmatter, use snake_case fields

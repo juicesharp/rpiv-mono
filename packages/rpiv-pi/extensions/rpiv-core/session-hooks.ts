@@ -21,7 +21,6 @@ import { findMissingSiblings } from "./package-checks.js";
 
 const THOUGHTS_DIRS = [
 	"thoughts/shared/research",
-	"thoughts/shared/questions",
 	"thoughts/shared/designs",
 	"thoughts/shared/plans",
 	"thoughts/shared/handoffs",

@@ -9,7 +9,7 @@ export type SkillEntry = {
 	data: SpecEntry["data"];
 };
 
-const PIPELINE = ["discover", "research", "design", "plan", "implement", "validate"] as const;
+const PIPELINE = ["research", "design", "plan", "implement", "validate"] as const;
 const SECONDARY = ["blueprint", "explore", "migrate-to-guidance"] as const;
 const CODE_REVIEW_FLOW = ["commit", "code-review"] as const;
 
@@ -53,7 +53,6 @@ function merge(spec: SpecEntry, copies: CollectionEntry<"skills">[]): SkillEntry
 
 /** Artifact write site for §1 / §2 / §3 detail rows. `null` = no thoughts/ artifact. */
 export const ARTIFACT_WRITE_SITES: Record<string, string | null> = {
-	discover: "thoughts/shared/questions/",
 	research: "thoughts/shared/research/",
 	design: "thoughts/shared/designs/",
 	plan: "thoughts/shared/plans/",

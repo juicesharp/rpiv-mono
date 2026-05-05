@@ -15,11 +15,11 @@
 
 > **⚠️ Upgrading from `0.13.x`** - `1.0.0` swaps the subagent provider from `npm:pi-subagents` (nicobailon fork) back to `npm:@tintinweb/pi-subagents` (resumed maintenance). On first launch after upgrade you'll see *"rpiv-pi requires 1 sibling extension(s): @tintinweb/pi-subagents"* - **run `/rpiv-setup` once and restart Pi**. The setup dialog previews both changes (install `@tintinweb/pi-subagents`, remove `npm:pi-subagents` from `~/.pi/agent/settings.json`) and applies them only after you confirm. After restart, run `/rpiv-update-agents` to refresh the 12 bundled specialist frontmatters. Customised `<cwd>/.pi/agents/*.md` files are not touched. The tool name reverts from `subagent` → `Agent` (param `subagent_type`/`description`/`prompt`) - only your own custom skills/agents need editing; the bundled rpiv-pi specialists are migrated in this release.
 
-Skill-based development workflow for [Pi Agent](https://github.com/badlogic/pi-mono) - discover, research, design, plan, implement, and validate. rpiv-pi extends Pi Agent with a pipeline of chained AI skills, named subagents for parallel analysis, and session lifecycle hooks for automatic context injection.
+Skill-based development workflow for [Pi Agent](https://github.com/badlogic/pi-mono) - research, design, plan, implement, and validate. rpiv-pi extends Pi Agent with a pipeline of chained AI skills, named subagents for parallel analysis, and session lifecycle hooks for automatic context injection.
 
 ## What you get
 
-- **A pipeline of chained AI skills** - discover → research → design → plan → implement → validate, each producing a reviewable artifact under `thoughts/shared/`.
+- **A pipeline of chained AI skills** - research → design → plan → implement → validate, each producing a reviewable artifact under `thoughts/shared/`.
 - **Named subagents for parallel analysis** - `codebase-analyzer`, `codebase-locator`, `codebase-pattern-finder`, `claim-verifier`, and 8 more, dispatched automatically by skills.
 - **Session lifecycle hooks** - agent profiles, guidance files, and pipeline directories scaffold themselves on first launch.
 
@@ -101,8 +101,7 @@ On first Pi Agent session start, rpiv-pi automatically:
 ### Typical Workflow
 
 ```
-/skill:discover "how does X work"
-/skill:research thoughts/shared/questions/<latest>.md
+/skill:research "how does X work"
 /skill:design thoughts/shared/research/<latest>.md
 /skill:plan thoughts/shared/designs/<latest>.md
 /skill:implement thoughts/shared/plans/<latest>.md Phase <N>
@@ -114,11 +113,11 @@ Each skill produces an artifact consumed by the next. Run them in order, or jump
 
 Skills compose. Pick the entry point that matches your intent:
 
-- **Form context before a task** - `/skill:discover "[topic]"` → `/skill:research <questions artifact>`. Produces a high-signal subspace of the codebase relevant to your topic, ready to feed directly into the next prompt.
+- **Form context before a task** - `/skill:research "[topic]"`. Produces a high-signal subspace of the codebase relevant to your topic, ready to feed directly into the next prompt. The `scope-tracer` subagent runs in-band to formulate trace-quality questions before analysis dispatch.
 - **Compare approaches before designing** - `/skill:explore "[problem]"` → `/skill:design <solutions artifact>`. Use when multiple valid solutions exist; the solutions artifact is a first-class input to `design` alongside a `research` artifact.
 - **One-shot plan from research** - `/skill:research <questions>` → `/skill:blueprint <research artifact>` → `/skill:implement`. Fuses `design` + `plan` into a single pass with the same slice-by-slice rigor, but spawns only `codebase-pattern-finder` upfront (vs `design`'s 4-agent fan-out) by trusting the research artifact's integration/precedent sections. Use for solo work or when no one else needs to review the design before implementation; pick `design` → `plan` when the design is itself a deliverable or when research is thin and you want the fuller verification sweep.
-- **Full feature build** - `/skill:discover` → `research` → `design` → `plan` → `implement` → `validate` → (`code-review` ↔ `commit`). The default pipeline; jump in at any stage if you already have the input artifact. Review and commit are interchangeable in order - review `staged`/`working` before committing, or commit first and review the resulting branch (empty scope, first-parent vs default).
-- **Investigate a bug** - `/skill:discover "why does X fail"` → `/skill:research <questions artifact>`. Fix from the research output without writing a plan when the change is small.
+- **Full feature build** - `/skill:research "[topic]"` → `design` → `plan` → `implement` → `validate` → (`code-review` ↔ `commit`). The default pipeline; jump in at any stage if you already have the input artifact. Review and commit are interchangeable in order - review `staged`/`working` before committing, or commit first and review the resulting branch (empty scope, first-parent vs default).
+- **Investigate a bug** - `/skill:research "why does X fail"`. Fix from the research output without writing a plan when the change is small.
 - **Adjust mid-implementation** - `/skill:revise <plan artifact>` → resume `/skill:implement`. Use when new constraints land after the plan is drafted.
 - **Review before shipping** - `/skill:code-review` ↔ `/skill:commit`. Order is your call: review `staged`/`working` before committing to catch issues at the smallest blast radius, or commit first and review the resulting branch (empty scope defaults to feature-branch-vs-default-branch, first-parent). Produces a Quality/Security/Dependencies artifact under `thoughts/shared/reviews/` with claim-verifier-grounded findings and `status: approved | needs_changes`.
 - **Audit a specific scope** - `/skill:code-review <commit|staged|working|hash|A..B|branch>`. Targeted lenses over a commit, range, staged/working tree, or PR branch; advisor adjudication applies when configured (`/advisor`).
@@ -135,8 +134,7 @@ Invoke via `/skill:<name>` from inside a Pi Agent session.
 
 | Skill | Input | Output | Description |
 |---|---|---|---|
-| `discover` | - | `thoughts/shared/questions/` | Generate research questions from codebase discovery |
-| `research` | Questions artifact | `thoughts/shared/research/` | Answer questions via parallel analysis agents |
+| `research` | Free-text prompt | `thoughts/shared/research/` | Frame scope via the `scope-tracer` subagent, then answer via parallel analysis agents |
 | `explore` | - | `thoughts/shared/solutions/` | Compare solution approaches with pros/cons |
 | `design` | Research or solutions artifact | `thoughts/shared/designs/` | Design features via vertical-slice decomposition |
 

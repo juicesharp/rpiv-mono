@@ -6,20 +6,20 @@ const revise = await getSkill("revise");
 
 <section id="pipeline">
 	<div class="container">
-		<p class="kicker">§ default pipeline · 6 nodes</p>
-		<h2>A six-step chain. One artifact between each.</h2>
+		<p class="kicker">§ default pipeline · 5 nodes</p>
+		<h2>A five-step chain. One artifact between each.</h2>
 		<p class="pipeline__lede">
 			Each node is a skill. The artifact one writes is the next one&rsquo;s input.
 		</p>
 
-		<figure class="pipeline__strip" aria-label="discover, research, design, plan, implement, validate">
+		<figure class="pipeline__strip" aria-label="research, design, plan, implement, validate">
 			<svg viewBox="0 0 720 80" class="pipeline__stripSvg" preserveAspectRatio="xMidYMid meet">
 				<g fill="none" stroke="var(--sage-deep)" stroke-linecap="round">
 					<path d="M68,28 L652,28" stroke-width="1" opacity="0.7" />
 					<path d="M76,32 L644,32" stroke-width="0.5" opacity="0.25" />
 				</g>
 				{pipeline.map((skill, i) => {
-					const x = 68 + i * (584 / 5);
+					const x = 68 + i * (584 / 4);
 					return (
 						<g>
 							<circle cx={x} cy={28} r="13" fill="none" stroke="var(--sage)" stroke-width="0.7" opacity="0.4" />

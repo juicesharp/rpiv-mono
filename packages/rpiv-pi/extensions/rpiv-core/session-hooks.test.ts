@@ -69,7 +69,6 @@ describe("session_start hook", () => {
 		await handler?.({ reason: "startup" } as never, ctx as never);
 		for (const d of [
 			"thoughts/shared/research",
-			"thoughts/shared/questions",
 			"thoughts/shared/designs",
 			"thoughts/shared/plans",
 			"thoughts/shared/handoffs",

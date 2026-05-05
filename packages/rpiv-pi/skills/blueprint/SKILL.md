@@ -1,6 +1,6 @@
 ---
 name: blueprint
-description: Plan complex features by decomposing them into vertical slices (one slice equals one phase) with developer micro-checkpoints between phases, producing an implement-ready phased plan in thoughts/shared/plans/. Use for complex multi-component features touching 6+ files across multiple layers when iterative review between slices is valuable. Requires a research artifact (from discover then research) or a solutions artifact (from explore). Prefer blueprint over plan when mid-flight micro-checkpoints matter, and prefer plan when a straightforward phased breakdown is enough.
+description: Plan complex features by decomposing them into vertical slices (one slice equals one phase) with developer micro-checkpoints between phases, producing an implement-ready phased plan in thoughts/shared/plans/. Use for complex multi-component features touching 6+ files across multiple layers when iterative review between slices is valuable. Requires a research artifact or a solutions artifact (from explore). Prefer blueprint over plan when mid-flight micro-checkpoints matter, and prefer plan when a straightforward phased breakdown is enough.
 argument-hint: [research artifact path]
 ---
 
@@ -34,15 +34,14 @@ When this command is invoked:
    - **Read the key source files from Code References** into the main context — especially hooks, shared utilities, and integration points the design will depend on. Read them FULLY. This ensures you have complete understanding before proceeding.
    - These become starting context — no need to re-discover what exists
    - Research Developer Context Q/As = inherited decisions (record in Decisions, never re-ask); Open Questions = starting ambiguity queue, filtered by dimension in Step 3
-   - If a discover artifact is also provided, read it for additional discovery context
 
    **No arguments provided**:
    ```
    I'll plan a feature iteratively from a research artifact. Please provide:
 
-   `/skill:blueprint [research artifact] [discover] [task description]`
+   `/skill:blueprint [research artifact] [task description]`
 
-   Research artifact is required. Discover and task description are optional, in any order.
+   Research artifact is required. Task description is optional.
    ```
    Then wait for input.
 
