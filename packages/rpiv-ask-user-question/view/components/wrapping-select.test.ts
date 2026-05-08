@@ -74,6 +74,13 @@ describe("WrappingSelect.render — visible window", () => {
 });
 
 describe("WrappingSelect.render — inline input when kind:'other' + focused", () => {
+	// `lineCountForInputRow` collapses the rendered output into just the inline-input
+	// row(s). Useful when asserting wrap behavior — the cursor row may now span
+	// multiple lines, but we want to ignore unrelated rows (e.g. scrollInfo) when
+	// computing how many wrapped lines the input produced.
+	const inlineInputLines = (lines: readonly string[]): string[] =>
+		lines.filter((l) => l.includes("▌") || /[a-z0-9]/.test(l));
+
 	it("renders inline input row with cursor when kind:'other' item focused", () => {
 		const s = new WrappingSelect([{ kind: "other", label: "pick" }], 1, identityTheme);
 		s.setSelectedIndex(0);
@@ -92,52 +99,68 @@ describe("WrappingSelect.render — inline input when kind:'other' + focused", (
 		expect(lines[0]).not.toContain("▌");
 	});
 
-	it("truncates inline input row to terminal width", () => {
+	// Regression: pre-fix the inline-input row was hard-truncated to `width`, so long
+	// custom answers visually disappeared off the right edge instead of wrapping.
+	// Post-fix every emitted line — first line + all continuation lines — must stay
+	// within `width`, matching the contract that `renderLabelBlock` already honors.
+	it("wraps inline input row across multiple lines when input exceeds width", () => {
 		const s = new WrappingSelect([{ kind: "other", label: "pick" }], 1, identityTheme);
 		s.setSelectedIndex(0);
 		s.setFocused(true);
 		s.setInputBuffer("this is a really long input that exceeds the width");
 		const narrowWidth = 20;
 		const lines = s.render(narrowWidth);
-		expect(visibleWidth(lines[0])).toBeLessThanOrEqual(narrowWidth);
+		for (const l of lines) {
+			expect(visibleWidth(l)).toBeLessThanOrEqual(narrowWidth);
+		}
+		expect(inlineInputLines(lines).length).toBeGreaterThan(1);
 	});
 
 	// rowPrefix "❯ 1. " = 5 cols, +16 chars input, +1 col cursor = 22 cols → 2 over.
-	// Reproduces the user-reported "overflows by a column or two" symptom that crashed pi.
-	it("clips when input pushes the row just past width (off-by-one boundary)", () => {
+	// Reproduces the original "overflows by a column or two" symptom that crashed pi.
+	// Width invariant must hold across every emitted line, including continuation lines.
+	it("keeps every line ≤ width when input pushes the row just past width (off-by-one boundary)", () => {
 		const s = new WrappingSelect([{ kind: "other", label: "pick" }], 1, identityTheme);
 		s.setSelectedIndex(0);
 		s.setFocused(true);
 		s.setInputBuffer("a".repeat(16));
 		const width = 20;
 		const lines = s.render(width);
-		expect(visibleWidth(lines[0])).toBeLessThanOrEqual(width);
+		for (const l of lines) {
+			expect(visibleWidth(l)).toBeLessThanOrEqual(width);
+		}
 	});
 
-	it("clips inline input row when input is much longer than width", () => {
+	it("keeps every line ≤ width when input is much longer than width", () => {
 		const s = new WrappingSelect([{ kind: "other", label: "pick" }], 1, identityTheme);
 		s.setSelectedIndex(0);
 		s.setFocused(true);
 		s.setInputBuffer("x".repeat(200));
 		const width = 10;
 		const lines = s.render(width);
-		expect(visibleWidth(lines[0])).toBeLessThanOrEqual(width);
+		for (const l of lines) {
+			expect(visibleWidth(l)).toBeLessThanOrEqual(width);
+		}
+		// 200 chars at width=10 minus rowPrefix overhead → at least several wrapped lines.
+		expect(inlineInputLines(lines).length).toBeGreaterThan(2);
 	});
 
 	// Each 😀 is 2 cols wide, so unclipped overflow scales with grapheme width.
-	it("clips inline input row containing wide (emoji) characters", () => {
+	it("keeps every line ≤ width when input contains wide (emoji) characters", () => {
 		const s = new WrappingSelect([{ kind: "other", label: "pick" }], 1, identityTheme);
 		s.setSelectedIndex(0);
 		s.setFocused(true);
 		s.setInputBuffer("😀".repeat(30));
 		const width = 20;
 		const lines = s.render(width);
-		expect(visibleWidth(lines[0])).toBeLessThanOrEqual(width);
+		for (const l of lines) {
+			expect(visibleWidth(l)).toBeLessThanOrEqual(width);
+		}
 	});
 
 	// totalItemsForNumbering=1000 → numberWidth=4 → rowPrefix "❯    1. " = 8 cols.
-	// Pins down that truncation uses full `width`, not just post-prefix contentWidth.
-	it("clips inline input row when number column inflates the prefix", () => {
+	// Pins that wrapping uses post-prefix contentWidth, not full terminal width.
+	it("keeps every line ≤ width when number column inflates the prefix", () => {
 		const s = new WrappingSelect([{ kind: "other", label: "pick" }], 1, identityTheme, {
 			totalItemsForNumbering: 1000,
 		});
@@ -146,7 +169,9 @@ describe("WrappingSelect.render — inline input when kind:'other' + focused", (
 		s.setInputBuffer("hello world");
 		const width = 12;
 		const lines = s.render(width);
-		expect(visibleWidth(lines[0])).toBeLessThanOrEqual(width);
+		for (const l of lines) {
+			expect(visibleWidth(l)).toBeLessThanOrEqual(width);
+		}
 	});
 
 	it("renders inline input row within width when input is empty", () => {
@@ -156,6 +181,58 @@ describe("WrappingSelect.render — inline input when kind:'other' + focused", (
 		const width = 12;
 		const lines = s.render(width);
 		expect(visibleWidth(lines[0])).toBeLessThanOrEqual(width);
+	});
+
+	// Cursor always rides at the visual end of the inputBuffer (Input.getCursorOffset
+	// is not exposed today; cursor-mid-string is intentionally out of scope and
+	// requires either Input API exposure or delegating to Input.render).
+	it("renders the cursor glyph on the LAST wrapped line, never an intermediate one", () => {
+		const s = new WrappingSelect([{ kind: "other", label: "pick" }], 1, identityTheme);
+		s.setSelectedIndex(0);
+		s.setFocused(true);
+		s.setInputBuffer("this input is long enough that it definitely wraps across multiple lines");
+		const lines = s.render(20);
+		const cursorLines = lines.filter((l) => l.includes("▌"));
+		expect(cursorLines).toHaveLength(1);
+		expect(lines[lines.length - 1]).toContain("▌");
+	});
+
+	// First line carries the row prefix ("❯ N. "); continuation lines are blank-padded
+	// to the same column so wrapped input visually hangs under the start of the buffer.
+	it("renders rowPrefix on first line and aligned continuation whitespace on wrapped lines", () => {
+		const s = new WrappingSelect([{ kind: "other", label: "pick" }], 1, identityTheme);
+		s.setSelectedIndex(0);
+		s.setFocused(true);
+		s.setInputBuffer("a".repeat(60));
+		const lines = s.render(20);
+		expect(lines[0]?.startsWith("❯ 1. ")).toBe(true);
+		// Continuation lines must NOT carry a numbered prefix and must start with the
+		// same column-count of leading whitespace as the rowPrefix.
+		for (let i = 1; i < lines.length; i++) {
+			const line = lines[i] ?? "";
+			expect(line).not.toContain("❯");
+			expect(line.startsWith("     ")).toBe(true); // "❯ 1. " = 5 cols
+		}
+	});
+
+	// Every wrapped line of the inline input passes through theme.selectedText,
+	// matching the per-line styling contract that renderLabelBlock honors.
+	it("applies selectedText theme to every wrapped line of the inline input", () => {
+		const marked: WrappingSelectTheme = {
+			selectedText: (t) => `<S>${t}</S>`,
+			description: (t) => t,
+			scrollInfo: (t) => t,
+		};
+		const s = new WrappingSelect([{ kind: "other", label: "pick" }], 1, marked);
+		s.setSelectedIndex(0);
+		s.setFocused(true);
+		s.setInputBuffer("a".repeat(60));
+		const lines = s.render(20);
+		expect(lines.length).toBeGreaterThan(1);
+		for (const l of lines) {
+			expect(l.startsWith("<S>")).toBe(true);
+			expect(l.endsWith("</S>")).toBe(true);
+		}
 	});
 });
 

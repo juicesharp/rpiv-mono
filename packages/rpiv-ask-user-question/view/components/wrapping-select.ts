@@ -1,5 +1,5 @@
 import type { Component } from "@mariozechner/pi-tui";
-import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@mariozechner/pi-tui";
+import { visibleWidth, wrapTextWithAnsi } from "@mariozechner/pi-tui";
 
 /**
  * Row-intent discriminated union. `kind` is the single discriminator —
@@ -173,7 +173,7 @@ export class WrappingSelect implements Component {
 		const contentWidth = Math.max(WrappingSelect.MIN_CONTENT_WIDTH, width - visibleWidth(rowPrefix));
 
 		if (this.shouldRenderAsInlineInput(item, isActive)) {
-			return [this.renderInlineInputRow(rowPrefix, width)];
+			return this.renderInlineInputRow(rowPrefix, continuationPrefix, contentWidth);
 		}
 
 		// Confirmed row gets a trailing ` ✔` and accent+bold styling; pointer is independent
@@ -205,9 +205,24 @@ export class WrappingSelect implements Component {
 		return item.kind === "other" && isActive;
 	}
 
-	private renderInlineInputRow(rowPrefix: string, width: number): string {
-		const raw = `${rowPrefix}${this.inputBuffer}${WrappingSelect.INPUT_CURSOR}`;
-		return truncateToWidth(this.theme.selectedText(raw), width, "");
+	/**
+	 * Render the inline input row across one or more lines, wrapping at `contentWidth`
+	 * so long input doesn't run off the right edge or trip the parent renderer's
+	 * width invariant. Mirrors `renderLabelBlock`'s contract: first line carries
+	 * `rowPrefix`, continuation lines carry `continuationPrefix` (spaces), and every
+	 * emitted line passes through `theme.selectedText`. The trailing cursor glyph
+	 * `▌` is appended to the buffer pre-wrap so it lands at the visual end of the
+	 * input — `Input` only exposes `getValue()` (cursor offset is private), so
+	 * cursor-mid-string is intentionally not rendered here; that would require
+	 * either an `Input.getCursorOffset()` API or delegating to `Input.render`.
+	 */
+	private renderInlineInputRow(rowPrefix: string, continuationPrefix: string, contentWidth: number): string[] {
+		const raw = `${this.inputBuffer}${WrappingSelect.INPUT_CURSOR}`;
+		const wrapped = wrapTextWithAnsi(raw, contentWidth);
+		return wrapped.map((segment, index) => {
+			const prefix = index === 0 ? rowPrefix : continuationPrefix;
+			return this.theme.selectedText(`${prefix}${segment}`);
+		});
 	}
 
 	private renderLabelBlock(
