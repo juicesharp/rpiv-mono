@@ -1,5 +1,5 @@
 /* biome-ignore-all lint/suspicious/noTemplateCurlyInString: tests contain literal "${...}" substitution tokens */
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { InputEvent } from "@earendil-works/pi-coding-agent";
@@ -16,6 +16,7 @@ vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
 
 import { type BeforeAgentStartEvent, loadSkills } from "@earendil-works/pi-coding-agent";
 import {
+	collectDefaultSkillPaths,
 	handleBeforeAgentStart,
 	handleInput,
 	invalidateSkillIndex,
@@ -132,6 +133,29 @@ describe("substituteArgs", () => {
 	});
 });
 
+describe("collectDefaultSkillPaths", () => {
+	it("includes Pi and cross-harness .agents skill dirs in precedence order", () => {
+		const repoDir = join(tmpDir, "repo");
+		const nestedDir = join(repoDir, "packages", "app");
+		const agentDir = join(tmpDir, "agent");
+		const nestedAgentsSkills = join(nestedDir, ".agents", "skills");
+		const repoAgentsSkills = join(repoDir, ".agents", "skills");
+		const userPiSkills = join(agentDir, "skills");
+		mkdirSync(join(repoDir, ".git"), { recursive: true });
+		mkdirSync(nestedAgentsSkills, { recursive: true });
+		mkdirSync(repoAgentsSkills, { recursive: true });
+		mkdirSync(userPiSkills, { recursive: true });
+
+		const paths = collectDefaultSkillPaths(nestedDir, agentDir);
+
+		expect(paths).toContain(nestedAgentsSkills);
+		expect(paths).toContain(repoAgentsSkills);
+		expect(paths).toContain(userPiSkills);
+		expect(paths.indexOf(nestedAgentsSkills)).toBeLessThan(paths.indexOf(repoAgentsSkills));
+		expect(paths.indexOf(repoAgentsSkills)).toBeLessThan(paths.indexOf(userPiSkills));
+	});
+});
+
 describe("invalidateSkillIndex — lazy memoisation", () => {
 	it("builds index once across multiple handleInput calls", () => {
 		const entries = writeSkillsDir(tmpDir, [{ name: "foo", body: "hello" }]);
@@ -148,8 +172,8 @@ describe("invalidateSkillIndex — lazy memoisation", () => {
 			expect.objectContaining({
 				cwd: expect.any(String),
 				agentDir: expect.any(String),
-				skillPaths: [],
-				includeDefaults: true,
+				skillPaths: expect.any(Array),
+				includeDefaults: false,
 			}),
 		);
 		const opts = vi.mocked(loadSkills).mock.calls[0]![0];

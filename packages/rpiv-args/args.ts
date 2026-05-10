@@ -24,7 +24,9 @@
  * template literal below.
  */
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import {
 	type BeforeAgentStartEvent,
 	type BeforeAgentStartEventResult,
@@ -124,13 +126,62 @@ export function invalidateSkillIndex(): void {
 	skillIndex = null;
 }
 
-/** Build the name→path index by asking Pi for its currently-loaded skills. */
+function findGitRepoRoot(startDir: string): string | null {
+	let dir = resolve(startDir);
+	while (true) {
+		if (existsSync(join(dir, ".git"))) return dir;
+		const parent = dirname(dir);
+		if (parent === dir) return null;
+		dir = parent;
+	}
+}
+
+function collectAncestorAgentsSkillDirs(startDir: string): string[] {
+	const skillDirs: string[] = [];
+	const gitRepoRoot = findGitRepoRoot(startDir);
+	let dir = resolve(startDir);
+	while (true) {
+		skillDirs.push(join(dir, ".agents", "skills"));
+		if (gitRepoRoot && dir === gitRepoRoot) break;
+		const parent = dirname(dir);
+		if (parent === dir) break;
+		dir = parent;
+	}
+	return skillDirs;
+}
+
+function addExistingPath(paths: string[], seen: Set<string>, path: string): void {
+	const resolved = resolve(path);
+	if (!existsSync(resolved) || seen.has(resolved)) return;
+	seen.add(resolved);
+	paths.push(resolved);
+}
+
+/** Collect Pi's default skill locations in collision-precedence order. */
+export function collectDefaultSkillPaths(cwd: string, agentDir: string): string[] {
+	const paths: string[] = [];
+	const seen = new Set<string>();
+	const userAgentsSkillsDir = join(homedir(), ".agents", "skills");
+
+	addExistingPath(paths, seen, join(resolve(cwd), ".pi", "skills"));
+	for (const dir of collectAncestorAgentsSkillDirs(cwd)) {
+		if (resolve(dir) !== resolve(userAgentsSkillsDir)) addExistingPath(paths, seen, dir);
+	}
+	addExistingPath(paths, seen, join(agentDir, "skills"));
+	addExistingPath(paths, seen, userAgentsSkillsDir);
+
+	return paths;
+}
+
+/** Build the name→path index by asking Pi for its default skill locations. */
 function buildSkillIndex(): Map<string, SkillIndexEntry> {
+	const cwd = process.cwd();
+	const agentDir = getAgentDir();
 	const { skills } = loadSkills({
-		cwd: process.cwd(),
-		agentDir: getAgentDir(),
-		skillPaths: [],
-		includeDefaults: true,
+		cwd,
+		agentDir,
+		skillPaths: collectDefaultSkillPaths(cwd, agentDir),
+		includeDefaults: false,
 	});
 	const index = new Map<string, SkillIndexEntry>();
 	for (const s of skills as Skill[]) {
