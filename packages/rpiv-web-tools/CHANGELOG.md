@@ -5,7 +5,7 @@ All notable changes to `@juicesharp/rpiv-web-tools` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.5.2] - 2026-05-13
 
 ### Added
 - Per-tool guidance overrides for `web_search` and `web_fetch` via `~/.config/rpiv-web-tools/config.json`.
