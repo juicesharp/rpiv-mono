@@ -43,6 +43,10 @@ The `discover` skill interviews you one question at a time to capture intent **b
 
 ## Next steps
 
-- [Walk the chain](/docs/guides/first-skill-chain): discover → research → blueprint → implement → validate on a real feature
+- [Pick your path](/docs/guides/pick-a-path): three workflows mapped to feature scope (small / mid / large)
+- [Walk the chain](/docs/guides/first-skill-chain): the mid-size path demonstrated on a real example
+- [Reset between skills](/docs/guides/reset-between-skills): the fresh-context rule between every transition
+- [Handoffs](/docs/guides/handoffs): pause the pipeline and resume from a fresh session
+- [Onboard a project](/docs/guides/onboard-a-project): annotate a brownfield codebase before the first run
 - [Skills reference](/docs/reference/skills): every skill at a glance
 - [Agents reference](/docs/reference/agents): every specialist subagent at a glance

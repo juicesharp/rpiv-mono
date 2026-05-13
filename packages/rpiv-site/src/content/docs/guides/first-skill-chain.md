@@ -1,15 +1,17 @@
 ---
 title: "Walk the chain"
-description: "Walk discover → research → blueprint → implement → validate on a real feature, one artifact at a time."
+description: "Walk discover → research → blueprint → implement → validate → code-review → commit on a real feature, one artifact at a time."
 section: "guides"
-order: 0
+order: 1
 ---
 
 The skill chain is rpiv-pi in motion. One skill produces an artifact, the next reads it, the next reads that. By the time you reach `/skill:implement` the agent already knows what to build and why. The decisions live in markdown files, not the chat window.
 
-This guide walks the full chain on a single example feature, **adding a password-reset flow to a web app**, so you can see what each artifact looks like before you run the chain on your own work. You answer one question at a time. The skills do the rest.
+This guide walks **the mid-size feature path** on a single example: **adding a password-reset flow to a web app**. You answer one question at a time. The skills do the rest. For other scopes (small fixes, large architecture work), see [Pick your path](/docs/guides/pick-a-path).
 
-## 01 · Discover
+> **Reset between every step.** Run `/new` (or your harness's equivalent) before each `/skill:*` invocation below. The chain hands off through markdown files in `thoughts/shared/`, not the chat transcript. See [Reset between skills](/docs/guides/reset-between-skills) for why.
+
+## 01 · Discover *(optional)*
 
 Start with a vague intent. No code is read yet.
 
@@ -21,9 +23,11 @@ Start with a vague intent. No code is read yet.
 
 **Output**: a Feature Requirements Document at `thoughts/shared/discover/password-reset.md` with Goals, Non-Goals, Functional Requirements, Acceptance Criteria, and a **Decisions** block. The Decisions block is what every downstream skill inherits.
 
+**Skip this step** if you already have a spec or ticket; pass it as free-text directly to step 02.
+
 ## 02 · Research
 
-Hand the FRD to research.
+Hand the FRD (or your spec) to research.
 
 ```
 /skill:research thoughts/shared/discover/password-reset.md
@@ -61,7 +65,7 @@ Then you review. This is the micro-checkpoint blueprint embedded between phases.
 /skill:implement thoughts/shared/plans/password-reset.md Phase 2
 ```
 
-Loop until every phase ships. No new markdown artifact gets written; the output is your code edits plus phase-verification logs in the session transcript, paused at every checkpoint for your review.
+Loop until every phase ships. No new markdown artifact gets written; the output is your code edits plus phase-verification logs in the plan (`- [ ]` flipped to `- [x]` as each success criterion lands), paused at every checkpoint for your review.
 
 ## 05 · Validate
 
@@ -73,6 +77,36 @@ An independent re-check.
 
 `/skill:validate` re-reads the plan and re-runs the success criteria against the working tree as it stands now. It produces a pass/fail row per criterion with drift notes for anything `/skill:implement` finished but didn't quite finish. The second pair of eyes the chain needed but never got.
 
+## 06 · Code-review
+
+A multi-lens review over the whole diff.
+
+```
+/skill:code-review
+```
+
+`/skill:code-review` runs parallel specialist agents (quality, security, dependencies, peer-comparison) and writes a review document. It's the most token-hungry skill in the pipeline, but it does A+ work for the cost. You can also drop it in anywhere ad-hoc, not just here.
+
+**Output**: a review document at `thoughts/shared/reviews/<slug>.md`.
+
+## 07 · Commit
+
+Group the changes into logical commits.
+
+```
+/skill:commit
+```
+
+`/skill:commit` analyzes the staged and unstaged diff, groups related changes by purpose, drafts commit messages in the repo's style, and asks for one confirm before writing the commits.
+
+**Output**: one or more git commits.
+
+The order of 06 and 07 is your call. Review-then-commit folds findings into the message and groups fix-ups with the change. Commit-then-review locks the diff first and addresses findings in a follow-up.
+
+## When the plan needs to bend
+
+Reviews surface real flaws. Phases hit obstacles the design didn't anticipate. The chain doesn't reset; you `/skill:revise` the plan to surgically update it in place, then resume `/skill:implement` from the affected phase. `revise` preserves structure rather than rewriting from scratch.
+
 ## The shape of a chain
 
 Each command takes the previous step's artifact path. State lives in `thoughts/shared/…`, not in the conversation. That's the whole point. Your next session can pick up the chain mid-flow without losing context, and the agent never has to re-derive earlier decisions.
@@ -81,5 +115,7 @@ If you skip a step, the next skill notices and offers to run the missing one. If
 
 ## Next steps
 
+- [Pick your path](/docs/guides/pick-a-path): small / mid / large workflow selection
+- [Reset between skills](/docs/guides/reset-between-skills): the fresh-context rule between every transition
 - [Skills reference](/docs/reference/skills): every skill and what it writes
 - [Agents reference](/docs/reference/agents): the specialists skills dispatch internally
