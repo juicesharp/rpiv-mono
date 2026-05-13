@@ -27,6 +27,7 @@
     "test": "vitest run"
   },
   "files": [
+    "config.ts",
     "index.ts",
     "locales/",
     "todo.ts",

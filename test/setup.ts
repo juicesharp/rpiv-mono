@@ -81,9 +81,15 @@ beforeEach(async () => {
 	const i18nConfig = join(process.env.HOME!, ".config", "rpiv-i18n", "locale.json");
 	const voiceConfig = join(process.env.HOME!, ".config", "rpiv-voice", "voice.json");
 	const voiceErrorsLog = join(process.env.HOME!, ".config", "rpiv-voice", "errors.log");
+	const todoConfig = join(process.env.HOME!, ".config", "rpiv-todo", "config.json");
+	const askUserQuestionConfig = join(process.env.HOME!, ".config", "rpiv-ask-user-question", "config.json");
+	const webToolsConfig = join(process.env.HOME!, ".config", "rpiv-web-tools", "config.json");
 	rmSync(piAgentSettings, { force: true });
 	rmSync(advisorConfig, { force: true });
 	rmSync(i18nConfig, { force: true });
 	rmSync(voiceConfig, { force: true });
 	rmSync(voiceErrorsLog, { force: true });
+	rmSync(todoConfig, { force: true });
+	rmSync(askUserQuestionConfig, { force: true });
+	rmSync(webToolsConfig, { force: true });
 });

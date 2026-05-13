@@ -91,9 +91,15 @@ const msgConsulting = (label: string, effort: ThinkingLevel | undefined) =>
 // Config file persistence (cross-session)
 // ---------------------------------------------------------------------------
 
+interface GuidanceFields {
+	promptSnippet?: string;
+	promptGuidelines?: string[];
+}
+
 interface AdvisorConfig {
 	modelKey?: string;
 	effort?: ThinkingLevel;
+	guidance?: GuidanceFields;
 }
 
 export function loadAdvisorConfig(): AdvisorConfig {
@@ -105,10 +111,33 @@ export function loadAdvisorConfig(): AdvisorConfig {
 	}
 }
 
+function validateGuidanceFields(fields: unknown): GuidanceFields {
+	if (!fields || typeof fields !== "object") return {};
+	const g = fields as Record<string, unknown>;
+	const result: GuidanceFields = {};
+	if (typeof g.promptSnippet === "string" && g.promptSnippet.length > 0) {
+		result.promptSnippet = g.promptSnippet;
+	}
+	if (
+		Array.isArray(g.promptGuidelines) &&
+		g.promptGuidelines.length > 0 &&
+		g.promptGuidelines.every((s) => typeof s === "string" && s.length > 0)
+	) {
+		result.promptGuidelines = g.promptGuidelines;
+	}
+	return result;
+}
+
 export function saveAdvisorConfig(key: string | undefined, effort: ThinkingLevel | undefined): void {
-	const config: AdvisorConfig = {};
+	const existing = loadAdvisorConfig();
+	const config: AdvisorConfig = { ...existing };
+	// Delete (rather than omit) to clear fields that may exist in the spread
+	// from a prior read. JSON.parse always produces configurable properties,
+	// so delete is safe in strict mode.
 	if (key) config.modelKey = key;
+	else delete config.modelKey;
 	if (effort) config.effort = effort;
+	else delete config.effort;
 	try {
 		mkdirSync(dirname(ADVISOR_CONFIG_PATH), { recursive: true });
 		writeFileSync(ADVISOR_CONFIG_PATH, `${JSON.stringify(config, null, 2)}\n`, "utf-8");
@@ -447,10 +476,10 @@ const ADVISOR_DESCRIPTION =
 	"your entire conversation history is automatically forwarded. The advisor " +
 	"sees the task, every tool call you've made, every result you've seen.";
 
-const ADVISOR_PROMPT_SNIPPET =
+export const DEFAULT_PROMPT_SNIPPET =
 	"Escalate to a stronger reviewer model for guidance when stuck, before substantive work, or before declaring done";
 
-const ADVISOR_PROMPT_GUIDELINES: string[] = [
+export const DEFAULT_PROMPT_GUIDELINES: string[] = [
 	"Call `advisor` BEFORE substantive work — before writing, before committing to an interpretation, before building on an assumption. Orientation (finding files, fetching a source, seeing what's there) is not substantive work; writing, editing, and declaring an answer are.",
 	"Also call `advisor` when you believe the task is complete. BEFORE this call, make your deliverable durable: write the file, save the result, commit the change. The advisor call takes time; if the session ends during it, a durable result persists and an unwritten one doesn't.",
 	"Also call `advisor` when stuck — errors recurring, approach not converging, results that don't fit — or when considering a change of approach.",
@@ -460,12 +489,13 @@ const ADVISOR_PROMPT_GUIDELINES: string[] = [
 ];
 
 export function registerAdvisorTool(pi: ExtensionAPI): void {
+	const guidance = validateGuidanceFields(loadAdvisorConfig().guidance);
 	pi.registerTool({
 		name: ADVISOR_TOOL_NAME,
 		label: TOOL_LABEL,
 		description: ADVISOR_DESCRIPTION,
-		promptSnippet: ADVISOR_PROMPT_SNIPPET,
-		promptGuidelines: ADVISOR_PROMPT_GUIDELINES,
+		promptSnippet: guidance.promptSnippet ?? DEFAULT_PROMPT_SNIPPET,
+		promptGuidelines: guidance.promptGuidelines ?? DEFAULT_PROMPT_GUIDELINES,
 		parameters: AdvisorParams,
 
 		async execute(_toolCallId, _params, signal, onUpdate, ctx) {

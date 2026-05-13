@@ -27,6 +27,7 @@
   },
   "files": [
     "ask-user-question.ts",
+    "config.ts",
     "index.ts",
     "LICENSE",
     "locales/",
