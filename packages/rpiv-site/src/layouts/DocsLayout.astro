@@ -4,6 +4,7 @@ import Nav from "../components/Nav.astro";
 import DocsSidebar from "../components/DocsSidebar.astro";
 import DocsToc from "../components/DocsToc.astro";
 import Search from "../components/Search.astro";
+import SumiInk from "../components/SumiInk.astro";
 import { getDocsBySection, type DocSection } from "../lib/docs";
 import "../styles/prose.css";
 
@@ -32,6 +33,10 @@ const currentPath = Astro.url.pathname;
 			<DocsSidebar {sections} {currentPath} />
 		</aside>
 		<main class="docs-content">
+			{/* Faint sumi seal carries the brand atmosphere past the docs
+			   landing into the reading surface. Pointer-events:none + low
+			   opacity in CSS keeps it ambient, not interactive. */}
+			<SumiInk variant="corner" className="docs-content__sumi" />
 			<slot />
 		</main>
 		{headings.length > 0 && (
@@ -72,9 +77,30 @@ const currentPath = Astro.url.pathname;
 	}
 
 	.docs-content {
+		position: relative;
 		min-width: 0;
 		padding-top: var(--space-7);
 		padding-bottom: var(--space-9);
+	}
+
+	/* Ambient brand seal — sits inside the content column so it never
+	   bleeds under the TOC. Positioned top-right at low opacity; ignored
+	   by pointer events and reduced-motion alike. */
+	.docs-content__sumi {
+		position: absolute;
+		top: var(--space-5);
+		right: 0;
+		width: 96px;
+		opacity: 0.12;
+		pointer-events: none;
+		z-index: 0;
+	}
+	.docs-content > :not(.docs-content__sumi) {
+		position: relative;
+		z-index: 1;
+	}
+	@media (max-width: 720px) {
+		.docs-content__sumi { display: none; }
 	}
 
 	/* Ensure TOC anchor targets scroll below the sticky nav */

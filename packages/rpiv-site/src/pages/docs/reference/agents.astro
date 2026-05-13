@@ -15,7 +15,7 @@ const TIER_LABELS: Record<CapabilityTier, string> = {
 <DocsLayout title="Agents Reference · rpiv-pi docs" description="Reference index of all rpiv-pi subagents." docArticle={{ section: "reference" }}>
 	<article data-pagefind-body>
 		<h1 data-pagefind-meta="title">Agents Reference</h1>
-		<p class="docs-description">All subagents available in rpiv-pi, grouped by capability tier.</p>
+		<p class="docs-lede">All subagents available in rpiv-pi, grouped by capability tier.</p>
 		{tiers.map(({ tier: t, agents }) => {
 			if (agents.length === 0) return null;
 			return (
@@ -47,9 +47,9 @@ const TIER_LABELS: Record<CapabilityTier, string> = {
 		margin-bottom: var(--space-4);
 	}
 
-	.docs-description {
-		color: var(--text-quiet);
-		font-size: var(--type-lead);
+	/* .docs-lede lives in prose.css; this page only needs its index-specific
+	   extras (a touch more breathing room below the lede before the tiers). */
+	.docs-lede {
 		margin-bottom: var(--space-7);
 	}
 

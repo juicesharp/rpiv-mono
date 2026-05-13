@@ -24,6 +24,9 @@ thoughts/
 *.swo
 *~
 
+# Agent metadata (Claude Code local session state)
+.claude/
+
 # Package specific
 .npm/
 coverage/

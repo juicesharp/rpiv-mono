@@ -30,7 +30,7 @@ const { Content, headings } = await render(specEntry);
 >
 	<article class="prose prose--docs" data-pagefind-body>
 		<h1 data-pagefind-meta="title" class="mono">{agent.slug}</h1>
-		<p class="docs-description">{agent.tagline}</p>
+		<p class="docs-lede">{agent.tagline}</p>
 		<div class="ref-meta">
 			<span class="chip chip--sage">{tier(agent)}</span>
 			{agent.data.tools && (
@@ -42,9 +42,9 @@ const { Content, headings } = await render(specEntry);
 </DocsLayout>
 
 <style>
-	.docs-description {
-		color: var(--text-quiet);
-		font-size: var(--type-lead);
+	/* .docs-lede lives in prose.css; this detail page tightens the gap to the
+	   meta chip strip immediately below (--space-5 instead of the default 6). */
+	.docs-lede {
 		margin-bottom: var(--space-5);
 	}
 

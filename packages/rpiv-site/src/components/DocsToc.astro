@@ -9,7 +9,7 @@ const visible = headings.filter((h) => h.depth >= 2 && h.depth <= 3);
 
 {visible.length > 0 && (
 	<nav class="docs-toc__nav" aria-label="Table of contents">
-		<p class="kicker">On this page</p>
+		<p class="kicker kicker--accent">On this page</p>
 		<ul class="docs-toc__list">
 			{visible.map((heading) => (
 				<li
@@ -34,12 +34,9 @@ const visible = headings.filter((h) => h.depth >= 2 && h.depth <= 3);
 		gap: var(--space-3);
 	}
 
-	/* Local override: the global .kicker is text-distant by default; here we
-	   lift it to sage so it reads as a distinct label above the link list
-	   (the list itself sits at text-quiet — making the kicker the dimmest
-	   thing collapses the hierarchy, which is what the original TOC did). */
+	/* The .kicker--accent (sage) variant lifts the label above the link list
+	   (which sits at text-quiet) so it reads as a distinct group header. */
 	.docs-toc__nav .kicker {
-		color: var(--sage);
 		margin-bottom: var(--space-2);
 	}
 

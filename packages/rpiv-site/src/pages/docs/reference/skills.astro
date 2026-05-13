@@ -8,7 +8,7 @@ const skills = await getAllSkills();
 <DocsLayout title="Skills Reference · rpiv-pi docs" description="Reference index of all rpiv-pi skills." docArticle={{ section: "reference" }}>
 	<article data-pagefind-body>
 		<h1 data-pagefind-meta="title">Skills Reference</h1>
-		<p class="docs-description">All skills available in rpiv-pi, sorted alphabetically.</p>
+		<p class="docs-lede">All skills available in rpiv-pi, sorted alphabetically.</p>
 		<div class="ref-list">
 			{skills.map((skill) => (
 				<article class="ref-item">
@@ -29,9 +29,9 @@ const skills = await getAllSkills();
 		margin-bottom: var(--space-4);
 	}
 
-	.docs-description {
-		color: var(--text-quiet);
-		font-size: var(--type-lead);
+	/* .docs-lede lives in prose.css; this page only needs its index-specific
+	   extras (a touch more breathing room below the lede before the list). */
+	.docs-lede {
 		margin-bottom: var(--space-7);
 	}
 

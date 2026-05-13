@@ -533,9 +533,9 @@
 	.gd-name--hero {
 		/* Long skill identifiers (e.g. /skill:annotate-guidance is 24 chars)
 		   need a smaller hero size than Blueprint's 30px or they clip the
-		   overflow:hidden hero card. Clamp keeps it readable on narrow
-		   viewports too. */
-		font-size: clamp(22px, 2.4vw, 26px);
+		   overflow:hidden hero card. --type-h-section clamps 22–26px on a
+		   2.4vw curve so this stays readable on narrow viewports too. */
+		font-size: var(--type-h-section);
 		color: var(--washi);
 	}
 

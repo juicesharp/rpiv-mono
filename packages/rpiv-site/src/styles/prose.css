@@ -128,7 +128,12 @@
 	color: var(--washi-soft);
 }
 
-/* Tables — minimal, rule borders */
+/* Tables — minimal, rule borders.
+   Tables read as flow-content blocks (like <p>, <ul>) — they open with a
+   header underline + use row separators, but the LAST tbody row drops its
+   border-bottom. Otherwise the closing rule duplicates the next section's
+   border-top and produces parallel hairlines bracketing dead space. The
+   section's transition rule owns the boundary; tables just flow into it. */
 .prose table {
 	width: 100%;
 	border-collapse: collapse;
@@ -140,6 +145,9 @@
 	border-bottom: 1px solid var(--rule);
 	padding: var(--space-3) var(--space-4);
 	text-align: left;
+}
+.prose tbody tr:last-child td {
+	border-bottom: none;
 }
 .prose th {
 	font-family: var(--font-mono);
@@ -168,12 +176,12 @@
 	max-width: 28ch;
 }
 .prose--docs h2 {
-	font-size: 24px;
+	font-size: var(--type-h-docs-h2);
 	margin-top: var(--space-6);
 	margin-bottom: var(--space-3);
 }
 .prose--docs h3 {
-	font-size: 18px;
+	font-size: var(--type-h-docs-h3);
 	margin-top: var(--space-5);
 	margin-bottom: var(--space-2);
 }
@@ -181,4 +189,26 @@
 	font-size: var(--type-base);
 	margin-top: var(--space-4);
 	margin-bottom: var(--space-2);
+}
+
+/* Kicker labels the h2 that follows it — they're one typographic unit, not
+   two stanzas. Without this, `.prose p` margin-bottom (24px) collapses with
+   h2 margin-top (32px) to 32px, the same gap as between paragraphs. Tighten
+   to 8px so the kicker reads as the h2's eyebrow. */
+.prose--docs .kicker + h2 {
+	margin-top: var(--space-2);
+}
+
+/* Page-level lede paragraph (sits under the docs h1, above any meta strip).
+   Single source of truth so the four detail/index pages stop drifting on
+   line-height (snug vs relaxed vs default) and margin-bottom (5 vs 6 vs 7).
+   --leading-snug fits short taglines AND short intro sentences; pages can
+   still override locally if a future lede needs --leading-relaxed. */
+.docs-lede {
+	color: var(--text-quiet);
+	font-family: var(--font-serif);
+	font-size: var(--type-lead);
+	line-height: var(--leading-snug);
+	max-width: 56ch;
+	margin-bottom: var(--space-6);
 }

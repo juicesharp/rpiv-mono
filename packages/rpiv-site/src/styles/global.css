@@ -96,12 +96,17 @@ pre {
 section[id] {
 	scroll-margin-top: var(--space-8);
 }
-section {
+/* `main > section` (NOT bare `section`) so the 96px "ma" rhythm only applies
+   to top-level page composers (Hero, Pipeline, docs-hero, blog listing, etc.
+   — all direct <main> children). Nested <section> elements inside prose
+   bodies (e.g. `.ref-section` on skill detail pages) own their own rhythm
+   via local rules and should not inherit the page-level padding. */
+main > section {
 	padding: var(--space-9) 0;
 	position: relative;
 }
 @media (max-width: 720px) {
-	section {
+	main > section {
 		padding: var(--space-7) 0;
 	}
 }
@@ -124,6 +129,20 @@ section {
 	text-transform: uppercase;
 	color: var(--text-distant);
 	margin-bottom: var(--space-4);
+}
+/* Kicker color variants — default is --text-distant (a quiet section label).
+   --accent (sage) marks a label of interest (TOC headers, grid section labels,
+   anything where the kicker is the way you find the group on the page).
+   --action (ochre) marks an actionable / primary label (quick-start, install,
+   the one section the visitor should hit first). Use sparingly: one --action
+   per surface, accent for grouping, default for everything else. The bespoke
+   `.bp-kicker--hero` / `.gd-kicker--hero` / `.cr-kicker--hero` variants on the
+   landing's numbered-step kickers follow the same ochre convention. */
+.kicker--accent {
+	color: var(--sage);
+}
+.kicker--action {
+	color: var(--ochre);
 }
 
 .chip {
@@ -172,7 +191,7 @@ section {
 	mix-blend-mode: lighten;
 }
 
-section:target h2 {
+main > section:target h2 {
 	color: var(--ochre);
 }
 

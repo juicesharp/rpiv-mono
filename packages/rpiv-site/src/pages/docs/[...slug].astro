@@ -25,21 +25,11 @@ const { Content, headings } = await render(entry);
 	<article class="prose prose--docs" data-pagefind-body>
 		<h1 data-pagefind-meta="title">{entry.data.title}</h1>
 		{entry.data.description && (
-			<p class="docs-description">{entry.data.description}</p>
+			<p class="docs-lede">{entry.data.description}</p>
 		)}
 		<Content />
 	</article>
 </DocsLayout>
 
-<style>
-	/* Page-template-local styling. The docs-specific type scale for headings
-	   inside .prose--docs lives in src/styles/prose.css so it's shared with
-	   the reference skill/agent detail pages. */
-	.docs-description {
-		color: var(--text-quiet);
-		font-size: var(--type-lead);
-		line-height: var(--leading-relaxed);
-		margin-bottom: var(--space-6);
-		max-width: 56ch;
-	}
-</style>
+<!-- .docs-lede lives in src/styles/prose.css alongside the rest of the
+     shared docs typography. No page-local overrides here. -->

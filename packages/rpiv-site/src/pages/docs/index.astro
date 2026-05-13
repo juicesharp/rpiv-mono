@@ -39,7 +39,7 @@ const sectionsWithEntries = sections.filter(({ entries }) => entries.length > 0)
 		{/* ── QUICK START ─────────────────────────────────────── */}
 		<section class="docs-quickstart">
 			<div class="container">
-				<p class="kicker docs-quickstart__kicker">quick start</p>
+				<p class="kicker kicker--action">quick start</p>
 				<div class="card docs-quickstart__card">
 					<ol class="docs-quickstart__steps">
 						<li class="docs-quickstart__step">
@@ -89,7 +89,7 @@ const sectionsWithEntries = sections.filter(({ entries }) => entries.length > 0)
 							{section === "getting-started" && (
 								<SumiInk variant="corner" className="docs-grid__sumi" />
 							)}
-							<p class="kicker docs-grid__kicker">{SECTION_LABELS[section]}</p>
+							<p class="kicker kicker--accent">{SECTION_LABELS[section]}</p>
 							<h2 class="docs-grid__title">
 								<a href={`/docs/${entries[0].id}`}>{entries[0].data.title}</a>
 							</h2>
@@ -111,8 +111,10 @@ const sectionsWithEntries = sections.filter(({ entries }) => entries.length > 0)
 						class="docs-grid__card docs-grid__card--reference"
 						style={`--card-i: ${sectionsWithEntries.length}`}
 					>
-						<p class="kicker docs-grid__kicker">Reference</p>
-						<h2 class="docs-grid__title">Skills &amp; Agents</h2>
+						<p class="kicker kicker--accent">Reference</p>
+						<h2 class="docs-grid__title">
+							<a href="/docs/reference/skills">Skills &amp; Agents</a>
+						</h2>
 						<p class="docs-grid__blurb">{SECTION_BLURBS.reference}</p>
 						<ul class="docs-grid__list docs-grid__list--inline">
 							<li>
@@ -177,9 +179,6 @@ const sectionsWithEntries = sections.filter(({ entries }) => entries.length > 0)
 	.docs-quickstart {
 		padding: var(--space-6) 0 var(--space-7);
 	}
-	.docs-quickstart__kicker {
-		color: var(--ochre);
-	}
 	.docs-quickstart__card {
 		max-width: 720px;
 	}
@@ -216,10 +215,13 @@ const sectionsWithEntries = sections.filter(({ entries }) => entries.length > 0)
 		margin: 0;
 	}
 	.docs-quickstart__code {
+		/* Matches the global `pre` surface (--ink-raised + sage-deep edge) so
+		   the quickstart command reads as the same code-block idiom you see
+		   inside .prose body blocks one click later. */
 		font-family: var(--font-mono);
 		font-size: var(--type-small);
 		color: var(--washi);
-		background: var(--ink-muted);
+		background: var(--ink-raised);
 		padding: var(--space-2) var(--space-3);
 		border-radius: var(--radius-sm);
 		border-left: 1px solid var(--sage-deep);
@@ -265,13 +267,11 @@ const sectionsWithEntries = sections.filter(({ entries }) => entries.length > 0)
 		border-right: 1px solid var(--rule);
 		border-bottom: 1px solid var(--rule-strong);
 		padding: var(--space-6) var(--space-5);
-		transition:
-			border-bottom-color var(--dur-ink) var(--ease-ink),
-			transform var(--dur-ink) var(--ease-ink);
+		transition: transform var(--dur-ink) var(--ease-ink);
 	}
-	.docs-grid__card:hover {
-		border-bottom-color: var(--ochre);
-	}
+	/* Single hover accent: the card title's sage migration is the one chromatic
+	   event. The earlier ochre edge tint competed with the title color on the
+	   same gesture — dropped to keep one accent per interaction. */
 	/* Asymmetric editorial grid: Getting Started takes the lede width,
 	   Guides + Reference share the secondary rail. */
 	.docs-grid__card--getting-started {
@@ -290,12 +290,16 @@ const sectionsWithEntries = sections.filter(({ entries }) => entries.length > 0)
 		opacity: 0.4;
 		width: 160px;
 	}
-	.docs-grid__kicker {
-		color: var(--sage);
+	/* The grid card kicker is `.kicker kicker--accent` in markup; only the
+	   spacing tweak (default --space-4 → --space-3) stays local. */
+	.docs-grid__card .kicker {
 		margin-bottom: var(--space-3);
 	}
 	.docs-grid__title {
-		font-size: var(--type-h-hero);
+		/* --type-h2 (clamp 28–40) matches `.prose--docs h1` on the destination
+		   page exactly — the listing's card heading no longer outsizes the
+		   page it navigates to on narrow viewports. */
+		font-size: var(--type-h2);
 		line-height: var(--leading-snug);
 		margin-bottom: var(--space-3);
 	}

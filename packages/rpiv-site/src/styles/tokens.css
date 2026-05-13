@@ -65,6 +65,15 @@
 	--type-h2: clamp(28px, 4vw, 40px);
 	--type-h1: clamp(48px, 8vw, 96px);
 
+	/* Sectional / docs scale — scanning rhythm, not editorial weight.
+	   --type-h-section: in-section h3 used by landing composers (Guidance et al.),
+	   slightly larger than --type-h3 with fluid step.
+	   --type-h-docs-h2 / -h3: tighter ramp inside `.prose--docs` so reference
+	   pages scan rather than read. h1 inside `.prose--docs` already uses --type-h2. */
+	--type-h-section: clamp(22px, 2.4vw, 26px);
+	--type-h-docs-h2: 24px;
+	--type-h-docs-h3: 18px;
+
 	--leading-tight: 1.1;
 	--leading-snug: 1.35;
 	--leading-relaxed: 1.55;

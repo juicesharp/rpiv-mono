@@ -50,6 +50,29 @@ If a value doesn't exist as a token, **extend `tokens.css` first**, then referen
 
 Headings always use `--font-mono`. Body always uses `--font-serif`. Kickers (`.kicker`) are mono uppercase at `--type-tiny` with `letter-spacing: 0.18em`. Don't mix voices within a single element — switch at the element boundary.
 
+| Token | Use |
+|---|---|
+| `--type-h1` | Hero — landing only (clamp 48–96px) |
+| `--type-h2` | Page-level `<h1>` on listings + `.prose--docs h1` + capped `.docs-grid__title` (clamp 28–40px) |
+| `--type-h-hero` | Section composer `<h2>` on the landing (30px fixed) |
+| `--type-h-section` | In-section `<h3>` on landing composers (clamp 22–26px) |
+| `--type-h3` | Listing-row titles, tier headers, atom card titles (20px) |
+| `--type-h-docs-h2` / `-h3` | Headings inside `.prose--docs` reference body (24px / 18px) |
+| `--type-lead` | Lede paragraphs (hero, docs hero, `.docs-lede`) — 17px |
+| `--type-base` / `--type-small` / `--type-tiny` / `--type-micro` / `--type-kicker` | Body → chrome → fine-print stack |
+
+### Kicker variants
+
+Kickers default to `--text-distant` — a quiet section label. Two modifiers extend the role:
+
+| Class | Color | Use |
+|---|---|---|
+| `.kicker` | `--text-distant` | Default — most section labels, chrome, metadata strips |
+| `.kicker .kicker--accent` | `--sage` | A label of interest — TOC headers, grid section labels, anywhere the kicker is the wayfinding cue |
+| `.kicker .kicker--action` | `--ochre` | An actionable label — quick-start, install, the one thing the visitor should hit first |
+
+Use sparingly: one `--action` per surface, `--accent` for grouping, default for everything else. The bespoke numbered-step kickers on landing composers (`.bp-kicker--hero`, `.gd-kicker--hero`, `.cr-kicker--hero`) follow the same ochre = primary convention on their local base class.
+
 ### Motion tokens — the budget
 
 Use the named durations, not arbitrary milliseconds:
