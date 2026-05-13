@@ -12,8 +12,12 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Reference pages at `/docs/reference/skills` and `/docs/reference/agents` auto-render every rpiv-pi skill and subagent from upstream specs.
 - Guides covering install and setup, an end-to-end pipeline walkthrough, workflow selection by feature scope, fresh-context discipline, session handoffs, and brownfield codebase onboarding.
 
+### Changed
+- Right-rail table of contents on `/docs` has clearer section-label/item contrast and an active-link anchor on the rail.
+
 ### Fixed
 - Square OG image renders full-bleed; X/Twitter no longer exposes white corners through its circular crop mask.
+- Pagefind search panel on `/docs` matches the site's color, type, and motion system and keeps the section nav visible when results are open.
 
 ## [1.5.1] - 2026-05-13
 
