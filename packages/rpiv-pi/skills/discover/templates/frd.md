@@ -68,6 +68,11 @@ last_updated_by: {User from injected git context}
 
 - {Deferred item 1 — what's deferred, why}
 
+## Suggested Follow-ups
+{Related-but-out-of-scope items surfaced during the probe or interview that the developer did NOT add to scope. One line per item: what was observed and where. Omit the entire section if empty — do not leave placeholder text.}
+
+- {Observed item — `file:line`}
+
 ## References
 - {Input file or ticket}
 - {Related artifact, e.g., `thoughts/shared/research/<YYYY-MM-DD_HH-MM-SS>_<topic>.md`}

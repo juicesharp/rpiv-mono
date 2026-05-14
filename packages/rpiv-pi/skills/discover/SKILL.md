@@ -104,7 +104,9 @@ Walk the lazy tree depth-first, parent before child. Expand the next layer (buil
 1. **Classify the question by tier**:
    - **`intent`** — already done in Step 2. Do not re-ask intent in this loop.
    - **`scope`** (goals · non-goals · functional reqs · non-functional reqs · constraints) — recommendation grounded in stated intent. `file:line` citations only when an option references existing code; otherwise state "no codebase precedent" in the option description.
-   - **`shape`** (architectural choice — which seam, which pattern, which integration point) — recommendation with `file:line` citations required on every option that references existing code. Mirrors the `packages/rpiv-pi/skills/research/SKILL.md:103-142` checkpoint pattern. If no precedent exists, switch to ungrounded mode and label options as "convention A / convention B" with explicit "no codebase precedent".
+   - **`shape`** (architectural choice — which seam, which pattern, which integration point) — frame **dialectically**: name the tradeoff axis, not a winner. Each option's `description` MUST state what it optimizes for AND what it sacrifices, in the form "optimizes <X>, loses <Y>" (or "optimizes <X>, costs <Y>"). The lead option still carries `(Recommended)` with a one-line rationale, but the framing forces the developer to pick a side of an explicit tension rather than rubber-stamp a winner. Generate at least 2 candidate options before scoring — never present a single option masquerading as a choice. `file:line` citations required on every option that references existing code. Mirrors the `packages/rpiv-pi/skills/research/SKILL.md:103-142` checkpoint pattern. If no precedent exists, switch to ungrounded mode and label options as "convention A / convention B" with explicit "no codebase precedent" — the dialectic framing (X vs Y tradeoff) still applies.
+
+     **Anti-rescoping**: if the probe finds something that could substitute for the requested build (e.g., feature already exists but isn't wired up), surface as an `intent` question with `file:line` — never silently redirect. Offer both "use what's there" and "build as asked".
    - **`detail`** (acceptance criteria · routine sub-decisions inside any branch) — batchable when 2-4 sibling leaves are independent.
 
 2. **Recommended answer** (`scope` / `shape` / `detail`): derive from intent + Step 3 evidence + project conventions. Every non-intent question carries a recommendation labeled `(Recommended)`.
@@ -118,7 +120,7 @@ Walk the lazy tree depth-first, parent before child. Expand the next layer (buil
 5. **Classify each response**:
    - **Decision** ("yes, that recommendation is right" / "use option B"): Record in Decisions. Resolve the node. Expand its children if any. Continue.
    - **Correction** ("no, the real intent is X" / "you missed Y"): Re-run targeted Step 3 grep on the new area; spawn at most **1 additional narrow agent per correction event** if the correction reveals a seam not yet probed. Adjust the affected subtree. Re-ask any descendants that depend on the corrected node.
-   - **Scope adjustment** ("skip the UI part" / "include retries"): Update the tree — prune pruned branches, add new branches if needed. Record in Decisions.
+   - **Scope adjustment** ("skip the UI part" / "include retries"): Update the tree — prune pruned branches, add new branches if needed. Record in Decisions. **Scope-creep**: every Decision must trace to a branch under the Step 2 request. Related-but-unrequested observations ("X is also broken") go to **Suggested Follow-ups** or trigger a one-shot expand-scope? question — never silently into Decisions.
    - **Cross-cutting answer** ("we also need audit / rate limiting / X" — affects multiple branches): Mark the new node as cross-cutting and **re-queue** it. When the walk reaches each affected parent (functional / non-functional / constraints), the cross-cutter fires under that parent's context. Same node, multiple parents resolved sequentially.
    - **Defer** ("not sure, leave for later"): Add to Open Questions. Resolve the node by deferral. Continue.
 
@@ -145,10 +147,11 @@ Compile interview output into the FRD. The interview's logical order (problem �
 - **Functional Requirements** — numbered, each independently testable.
 - **Non-Functional Requirements** — perf, security, UX, accessibility, reliability constraints.
 - **Constraints & Assumptions** — environmental, technical, schedule, organizational.
-- **Acceptance Criteria** — observable pass conditions a reviewer can check.
+- **Acceptance Criteria** — observable pass conditions a reviewer can check. Each MUST name a concrete command, output, or visible behavior (e.g., "running `npm test` exits 0", "`/skill:X` writes `path/to/Y`"). Reject vague phrasing like "feature works correctly" or "UX is acceptable".
 - **Recommended Approach** — 1-2 sentences naming the architectural shape implied by the decisions (e.g., "new command in `packages/rpiv-pi/extensions/`, output to stdout, no persistence"). This text is what `research` passes to `scope-tracer` as the topic for breadth grounding.
 - **Decisions** — full Q/A log per decision: `### [title]` + `**Question**:` (text as asked, or "Pre-resolved from codebase evidence — confirmed in Step 4") + `**Recommended**:` (or "n/a — `intent` question") + `**Chosen**:` (developer's pick or evidence-derived answer) + `**Rationale**:` (1 line — why, or `evidence: path/to/file.ext:line + confirmed` for codebase-derived). This block is the inheritance hook into research's Developer Context.
 - **Open Questions** — only items the developer explicitly deferred.
+- **Suggested Follow-ups** — related-but-out-of-scope items surfaced during the probe or interview that the developer did NOT add to scope (per the Step 5 scope-creep guardrail). One line per item: what was observed and where (`file:line` when applicable). Omit the section entirely if empty.
 - **References** — input files, mentioned tickets, related artifacts.
 
 ## Step 7: Write Artifact, Present, Chain
