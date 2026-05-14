@@ -5,7 +5,7 @@ All notable changes to `@juicesharp/rpiv-advisor` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.6.1] - 2026-05-14
 
 ### Fixed
 - `advisor` now uses Pi's resolved session context after a `session_compact`, so escalations no longer replay stale pre-compaction history.
