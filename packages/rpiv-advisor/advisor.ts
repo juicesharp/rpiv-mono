@@ -25,7 +25,6 @@ import {
 	convertToLlm,
 	type ExtensionAPI,
 	type ExtensionContext,
-	type SessionEntry,
 	type ToolInfo,
 } from "@earendil-works/pi-coding-agent";
 import type { SelectItem } from "@earendil-works/pi-tui";
@@ -377,14 +376,15 @@ async function executeAdvisor(
 	}
 
 	// Live-read every call — advisor runs mid-turn so any message_end snapshot
-	// is always one turn stale. convertToLlm is pass-through for user/assistant/
-	// toolResult (messages.js:111-114), so element refs are stable across calls
-	// via the session store — content-stable output without a snapshot layer.
-	const branch = ctx.sessionManager.getBranch();
-	const agentMessages = branch
-		.filter((e): e is SessionEntry & { type: "message" } => e.type === "message")
-		.map((e) => e.message);
-	const branchMessages = ensureUserTailForAdvisor(stripInflightAdvisorCall(convertToLlm(agentMessages)));
+	// is always one turn stale. buildSessionContext() preserves Pi's resolved
+	// LLM context, including compaction summaries and branch summaries, instead
+	// of replaying raw pre-compaction branch messages. convertToLlm is
+	// pass-through for user/assistant/toolResult (messages.js:111-114), so
+	// element refs are stable across calls via the session store.
+	const sessionContext = (
+		ctx.sessionManager as unknown as { buildSessionContext(): { messages: Parameters<typeof convertToLlm>[0] } }
+	).buildSessionContext();
+	const branchMessages = ensureUserTailForAdvisor(stripInflightAdvisorCall(convertToLlm(sessionContext.messages)));
 	const inventoryMessage = getInventoryMessage(pi.getAllTools());
 	const messages: Message[] = inventoryMessage ? [inventoryMessage, ...branchMessages] : branchMessages;
 

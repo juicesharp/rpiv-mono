@@ -47,6 +47,46 @@ describe("executeAdvisor — 4 StopReason branches", () => {
 		expect(r?.details).toMatchObject({ advisorModel: "a:m" });
 	});
 
+	it("uses compacted session context instead of raw branch messages", async () => {
+		setAdvisorModel({ provider: "a", id: "m" } as never);
+		vi.mocked(completeSimple).mockResolvedValueOnce(resp({ text: "advice" }) as never);
+		const { pi, captured } = createMockPi();
+		registerAdvisorTool(pi);
+		const ctx = createMockCtx({
+			branch: buildSessionEntries([
+				makeUserMessage("OLD RAW PRE-COMPACTION DETAIL"),
+				makeAssistantMessage({ text: "old raw assistant detail" }),
+			]),
+		});
+		(
+			ctx.sessionManager as unknown as { buildSessionContext: ReturnType<typeof vi.fn> }
+		).buildSessionContext.mockReturnValueOnce({
+			messages: [
+				{
+					role: "compactionSummary",
+					summary: "COMPACTED SUMMARY OF EARLIER WORK",
+					tokensBefore: 12345,
+					timestamp: Date.now(),
+				},
+				makeUserMessage("kept user message"),
+				makeAssistantMessage({ text: "post-compaction assistant" }),
+			],
+			thinkingLevel: "off",
+			model: null,
+		});
+
+		await captured.tools.get("advisor")?.execute?.("tc", {}, undefined as never, undefined as never, ctx);
+
+		expect(ctx.sessionManager.getBranch).not.toHaveBeenCalled();
+		const payload = vi.mocked(completeSimple).mock.calls[0]?.[1] as { messages?: unknown[] };
+		const serialized = JSON.stringify(payload.messages);
+		expect(serialized).toContain("COMPACTED SUMMARY OF EARLIER WORK");
+		expect(serialized).toContain("kept user message");
+		expect(serialized).toContain("post-compaction assistant");
+		expect(serialized).not.toContain("OLD RAW PRE-COMPACTION DETAIL");
+		expect(serialized).not.toContain("old raw assistant detail");
+	});
+
 	it("aborted stopReason returns cancel envelope", async () => {
 		setAdvisorModel({ provider: "a", id: "m" } as never);
 		vi.mocked(completeSimple).mockResolvedValueOnce(resp({ stopReason: "aborted" }) as never);
