@@ -16,7 +16,16 @@ vi.mock("@earendil-works/pi-ai", async (importOriginal) => {
 	};
 });
 
+vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("@earendil-works/pi-coding-agent")>();
+	return {
+		...actual,
+		buildSessionContext: vi.fn(),
+	};
+});
+
 import { completeSimple } from "@earendil-works/pi-ai";
+import { buildSessionContext } from "@earendil-works/pi-coding-agent";
 import { registerAdvisorTool, setAdvisorModel } from "./advisor.js";
 
 function resp(input: { text?: string; stopReason?: "done" | "aborted" | "error" | "toolUse"; errorMessage?: string }) {
@@ -31,6 +40,16 @@ function resp(input: { text?: string; stopReason?: "done" | "aborted" | "error" 
 
 beforeEach(() => {
 	vi.mocked(completeSimple).mockReset();
+	vi.mocked(buildSessionContext).mockImplementation(
+		(entries) =>
+			({
+				messages: ((entries ?? []) as { type?: string; message?: unknown }[])
+					.filter((e) => e?.type === "message")
+					.map((e) => (e as { message: unknown }).message),
+				thinkingLevel: "off",
+				model: null,
+			}) as ReturnType<typeof buildSessionContext>,
+	);
 });
 
 describe("executeAdvisor — 4 StopReason branches", () => {
@@ -45,6 +64,43 @@ describe("executeAdvisor — 4 StopReason branches", () => {
 		const r = await captured.tools.get("advisor")?.execute?.("tc", {}, undefined as never, undefined as never, ctx);
 		expect(r?.content[0]).toMatchObject({ type: "text", text: "advice" });
 		expect(r?.details).toMatchObject({ advisorModel: "a:m" });
+	});
+
+	it("uses compacted session context instead of raw branch messages", async () => {
+		setAdvisorModel({ provider: "a", id: "m" } as never);
+		vi.mocked(completeSimple).mockResolvedValueOnce(resp({ text: "advice" }) as never);
+		vi.mocked(buildSessionContext).mockReturnValueOnce({
+			messages: [
+				{
+					role: "compactionSummary",
+					summary: "COMPACTED SUMMARY OF EARLIER WORK",
+					tokensBefore: 12345,
+					timestamp: Date.now(),
+				},
+				makeUserMessage("kept user message"),
+				makeAssistantMessage({ text: "post-compaction assistant" }),
+			],
+			thinkingLevel: "off",
+			model: null,
+		} as ReturnType<typeof buildSessionContext>);
+		const { pi, captured } = createMockPi();
+		registerAdvisorTool(pi);
+		const ctx = createMockCtx({
+			branch: buildSessionEntries([
+				makeUserMessage("OLD RAW PRE-COMPACTION DETAIL"),
+				makeAssistantMessage({ text: "old raw assistant detail" }),
+			]),
+		});
+
+		await captured.tools.get("advisor")?.execute?.("tc", {}, undefined as never, undefined as never, ctx);
+
+		const payload = vi.mocked(completeSimple).mock.calls[0]?.[1] as { messages?: unknown[] };
+		const serialized = JSON.stringify(payload.messages);
+		expect(serialized).toContain("COMPACTED SUMMARY OF EARLIER WORK");
+		expect(serialized).toContain("kept user message");
+		expect(serialized).toContain("post-compaction assistant");
+		expect(serialized).not.toContain("OLD RAW PRE-COMPACTION DETAIL");
+		expect(serialized).not.toContain("old raw assistant detail");
 	});
 
 	it("aborted stopReason returns cancel envelope", async () => {

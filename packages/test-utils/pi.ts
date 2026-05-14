@@ -96,6 +96,8 @@ export function createMockUI(overrides: Partial<ExtensionUIContext> = {}): MockU
 export function createMockSessionManager(branch: SessionEntry[] = []) {
 	return {
 		getBranch: vi.fn(() => branch),
+		getEntries: vi.fn(() => branch),
+		getLeafId: vi.fn(() => (branch.length ? branch[branch.length - 1].id : null)),
 		getSessionFile: vi.fn(() => "/tmp/test-session.jsonl"),
 		getSessionId: vi.fn(() => "test-session"),
 	};
