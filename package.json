@@ -36,7 +36,8 @@
 		"vitest": "^4.0.0"
 	},
 	"engines": {
-		"node": ">=20.0.0"
+		"node": ">=20.0.0",
+		"npm": ">=11.0.0"
 	},
 	"overrides": {
 		"@mariozechner/pi-coding-agent": "npm:@earendil-works/pi-coding-agent@^0.74.0",
