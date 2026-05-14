@@ -44,7 +44,7 @@ function errorResult(state: TaskState, message: string): ApplyResult {
 export function applyTaskMutation(state: TaskState, action: TaskAction, params: TaskMutationParams): ApplyResult {
 	switch (action) {
 		case "create": {
-			if (!params.subject || !params.subject.trim()) {
+			if (!params.subject?.trim()) {
 				return errorResult(state, "subject required for create");
 			}
 			if (params.blockedBy?.length) {
