@@ -5,7 +5,7 @@ All notable changes to `@juicesharp/rpiv-pi` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.7.0] - 2026-05-15
 
 ### Changed
 - Bundled agents sync to `~/.pi/agent/agents/` globally instead of per-working-directory, with automatic migration of existing per-cwd installs and crash-safe manifest writes.
