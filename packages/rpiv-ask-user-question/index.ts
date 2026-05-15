@@ -56,6 +56,7 @@ try {
 		pt: loadLocale("pt"),
 		"pt-BR": loadLocale("pt-BR"),
 		ru: loadLocale("ru"),
+		zh: loadLocale("zh"),
 		uk: loadLocale("uk"),
 	});
 } catch {
