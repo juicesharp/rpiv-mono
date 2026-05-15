@@ -1,6 +1,6 @@
 ---
 interface Props {
-	variant: "corner" | "divider" | "backdrop";
+	variant: "corner" | "divider" | "backdrop" | "rss";
 	className?: string;
 }
 const { variant, className } = Astro.props;
@@ -29,6 +29,16 @@ const { variant, className } = Astro.props;
 			fill="none" stroke="currentColor" stroke-width="0.9" stroke-linecap="round"
 			vector-effect="non-scaling-stroke" opacity="0.42"
 		/>
+	</svg>
+)}
+
+{variant === "rss" && (
+	<svg class:list={["sumi", "sumi--rss", className]} viewBox="0 0 16 16" aria-hidden="true">
+		<g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.4" vector-effect="non-scaling-stroke">
+			<path d="M3.5 8 A 4.5 4.5 0 0 1 8 12.5" />
+			<path d="M3.5 4 A 9 9 0 0 1 12.5 12.5" />
+		</g>
+		<circle cx="3.7" cy="12.3" r="1.4" fill="currentColor" />
 	</svg>
 )}
 
@@ -77,6 +87,13 @@ const { variant, className } = Astro.props;
 		color: var(--ochre);
 		pointer-events: none;
 		z-index: -1;
+	}
+	.sumi--rss {
+		display: inline-block;
+		width: 0.95em;
+		height: 0.95em;
+		color: inherit;
+		vertical-align: -0.12em;
 	}
 	@media (max-width: 720px) {
 		.sumi--corner { width: 140px; top: var(--space-4); right: var(--space-4); }

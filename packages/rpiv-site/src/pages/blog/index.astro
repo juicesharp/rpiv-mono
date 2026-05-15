@@ -1,6 +1,7 @@
 ---
 import Base from "../../layouts/Base.astro";
 import Nav from "../../components/Nav.astro";
+import SumiInk from "../../components/SumiInk.astro";
 import { getAllPosts } from "../../lib/posts";
 
 const posts = await getAllPosts();
@@ -16,7 +17,18 @@ const count = String(posts.length).padStart(2, "0");
 		<section>
 			<div class="container">
 				<p class="kicker">blog</p>
-				<p class="post-count mono">{count} posts</p>
+				<div class="post-count-row">
+					<p class="post-count mono">{count} posts</p>
+					<a
+						href="/blog/rss.xml"
+						type="application/rss+xml"
+						class="post-count__feed mono"
+						aria-label="RSS feed"
+					>
+						<SumiInk variant="rss" />
+						<span>rss</span>
+					</a>
+				</div>
 				<div class="post-list">
 					{posts.map((post) => (
 						<article class="post-item">
@@ -46,12 +58,36 @@ const count = String(posts.length).padStart(2, "0");
 </Base>
 
 <style>
+	.post-count-row {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: var(--space-4);
+		margin: 0 0 var(--space-7);
+	}
+
 	.post-count {
 		font-size: var(--type-tiny);
 		color: var(--text-distant);
 		letter-spacing: 0.14em;
 		font-variant-numeric: tabular-nums;
-		margin: 0 0 var(--space-7);
+		margin: 0;
+	}
+
+	.post-count__feed {
+		display: inline-flex;
+		align-items: center;
+		gap: var(--space-2);
+		font-size: var(--type-tiny);
+		letter-spacing: 0.14em;
+		color: var(--text-distant);
+		border-bottom: none;
+		text-decoration: none;
+		transition: color var(--dur-quick) var(--ease-ink);
+	}
+	.post-count__feed:hover,
+	.post-count__feed:focus-visible {
+		color: var(--sage);
 	}
 
 	.post-list {
