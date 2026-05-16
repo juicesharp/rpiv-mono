@@ -97,6 +97,22 @@ describe("applyTaskMutation — update", () => {
 		const result = applyTaskMutation(state, "update", { id: 1, metadata: { a: null } });
 		expect(result.state.tasks[0].metadata).toEqual({ b: 2 });
 	});
+
+	it("sets and overwrites metadata keys when value is non-null", () => {
+		// Covers the merged[k] = v branch (non-null partial merge): a is overwritten,
+		// b is preserved, c is added.
+		const state = stateWith(task({ id: 1, subject: "x", metadata: { a: 1, b: 2 } }));
+		const result = applyTaskMutation(state, "update", { id: 1, metadata: { a: 99, c: 3 } });
+		expect(result.state.tasks[0].metadata).toEqual({ a: 99, b: 2, c: 3 });
+	});
+
+	it("collapses metadata to undefined when every key is deleted", () => {
+		// Covers the Object.keys(merged).length ? merged : undefined branch where
+		// every existing key gets nulled out.
+		const state = stateWith(task({ id: 1, subject: "x", metadata: { a: 1 } }));
+		const result = applyTaskMutation(state, "update", { id: 1, metadata: { a: null } });
+		expect("metadata" in result.state.tasks[0]).toBe(false);
+	});
 });
 
 describe("applyTaskMutation — list/get/delete/clear", () => {
