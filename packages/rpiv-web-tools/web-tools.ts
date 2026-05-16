@@ -1,12 +1,14 @@
 /**
  * rpiv-web-tools — body
  *
- * Provides `web_search` and `web_fetch` tools backed by the Brave Search API,
- * plus the `/web-search-config` slash command for API key entry.
+ * Provides `web_search` and `web_fetch` tools backed by configurable search
+ * providers (Brave, Tavily, Serper, Exa), plus the `/web-search-config`
+ * slash command for provider and API key configuration.
  *
- * API key resolution precedence (first wins):
- *   1. BRAVE_SEARCH_API_KEY environment variable
- *   2. apiKey field in ~/.config/rpiv-web-tools/config.json
+ * API key resolution precedence per provider (first wins):
+ *   1. Per-provider environment variable (e.g. BRAVE_SEARCH_API_KEY, TAVILY_API_KEY)
+ *   2. apiKeys[provider] field in ~/.config/rpiv-web-tools/config.json
+ *   3. (Brave only, legacy) apiKey field in config.json
  */
 
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -23,13 +25,13 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
+import { createSearchProvider } from "./providers/factory.js";
+import { PROVIDERS } from "./providers/index.js";
+import type { SearchResult } from "./providers/types.js";
 
 // ---------------------------------------------------------------------------
 // Tunables and external surface
 // ---------------------------------------------------------------------------
-
-const BRAVE_SEARCH_API_URL = "https://api.search.brave.com/res/v1/web/search";
-const BRAVE_API_KEY_ENV_VAR = "BRAVE_SEARCH_API_KEY";
 
 const MIN_SEARCH_RESULTS = 1;
 const MAX_SEARCH_RESULTS = 10;
@@ -39,9 +41,6 @@ const SEARCH_RESULT_PREVIEW_LIMIT = 5;
 const FETCH_PREVIEW_LINE_LIMIT = 15;
 const API_KEY_MASK_VISIBLE_CHARS = 4;
 
-const USER_AGENT = "Mozilla/5.0 (compatible; rpiv-pi/1.0)";
-const FETCH_ACCEPT_HEADER = "text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.5";
-
 const FETCH_TEMP_DIR_PREFIX = "rpiv-fetch-";
 const FETCH_TEMP_FILE_NAME = "content.txt";
 
@@ -50,13 +49,12 @@ const CONFIG_PATH = join(CONFIG_DIR, "config.json");
 const CONFIG_FILE_MODE = 0o600;
 
 const SUPPORTED_HTTP_PROTOCOLS = new Set(["http:", "https:"]);
-const BINARY_CONTENT_TYPE_PREFIXES = ["image/", "video/", "audio/"];
-const HTML_CONTENT_TYPE_TOKEN = "text/html";
 
-const SEARCH_BACKEND_NAME = "brave";
 const WEB_SEARCH_CONFIG_COMMAND_NAME = "web-search-config";
 const SHOW_FLAG = "--show";
 const UNSET_LABEL = "(not set)";
+
+const DEFAULT_PROVIDER_NAME = "brave";
 
 // ---------------------------------------------------------------------------
 // Config file persistence
@@ -73,7 +71,9 @@ interface WebToolsGuidance {
 }
 
 interface WebToolsConfig {
-	apiKey?: string;
+	provider?: string;
+	apiKeys?: Record<string, string>;
+	apiKey?: string; // legacy — kept for backward compat
 	guidance?: WebToolsGuidance;
 }
 
@@ -117,13 +117,13 @@ function validateGuidanceFields(fields: unknown): GuidanceFields {
 	return result;
 }
 
-export const DEFAULT_WEB_SEARCH_SNIPPET = "Search the web for up-to-date information via Brave";
+export const DEFAULT_WEB_SEARCH_SNIPPET = "Search the web for up-to-date information";
 export const DEFAULT_WEB_SEARCH_GUIDELINES: string[] = [
 	"Use web_search for information beyond your training data — recent events, current library versions, live API documentation.",
 	'Use the current year from "Current date:" in your context when searching for recent information or documentation.',
 	'After answering using search results, include a "Sources:" section listing relevant URLs as markdown hyperlinks: [Title](URL). Never skip this.',
 	"Domain filtering is supported to include or block specific websites.",
-	"If BRAVE_SEARCH_API_KEY is not set, ask the user to run /web-search-config before proceeding.",
+	"If no API key is configured, ask the user to run /web-search-config before proceeding.",
 ];
 
 export const DEFAULT_WEB_FETCH_SNIPPET = "Fetch and read content from a specific URL";
@@ -138,17 +138,21 @@ export const DEFAULT_WEB_FETCH_GUIDELINES: string[] = [
 // API key resolution + masking
 // ---------------------------------------------------------------------------
 
-function readApiKeyFromEnv(): string | undefined {
-	const key = process.env[BRAVE_API_KEY_ENV_VAR];
-	return key?.trim() || undefined;
-}
+function resolveProviderApiKey(providerName: string, config: WebToolsConfig): string | undefined {
+	const meta = PROVIDERS.find((p) => p.name === providerName);
+	if (!meta) return undefined;
 
-function readApiKeyFromConfig(): string | undefined {
-	return loadConfig().apiKey?.trim() || undefined;
-}
+	const envKey = process.env[meta.envVar]?.trim();
+	if (envKey) return envKey;
 
-function resolveApiKey(): string | undefined {
-	return readApiKeyFromEnv() ?? readApiKeyFromConfig();
+	const configKey = config.apiKeys?.[providerName]?.trim();
+	if (configKey) return configKey;
+
+	if (providerName === "brave") {
+		return config.apiKey?.trim() || undefined;
+	}
+
+	return undefined;
 }
 
 function maskApiKey(key: string | undefined): string {
@@ -158,136 +162,13 @@ function maskApiKey(key: string | undefined): string {
 	return `${head}...${tail}`;
 }
 
-// ---------------------------------------------------------------------------
-// Brave Search API client
-// ---------------------------------------------------------------------------
-
-interface SearchResult {
-	title: string;
-	url: string;
-	snippet: string;
-}
-
-interface SearchResponse {
-	query: string;
-	results: SearchResult[];
-}
-
-function buildBraveSearchUrl(query: string, count: number): string {
-	const url = new URL(BRAVE_SEARCH_API_URL);
-	url.searchParams.set("q", query);
-	url.searchParams.set("count", String(count));
-	return url.toString();
-}
-
-function buildBraveRequestHeaders(apiKey: string): Record<string, string> {
-	return {
-		Accept: "application/json",
-		"Accept-Encoding": "gzip",
-		"X-Subscription-Token": apiKey,
-	};
-}
-
-interface BraveRawResponse {
-	web?: { results?: Array<{ title?: string; url?: string; description?: string }> };
-}
-
-function normalizeBraveResults(raw: BraveRawResponse): SearchResult[] {
-	return (raw.web?.results ?? []).map((r) => ({
-		title: r.title ?? "",
-		url: r.url ?? "",
-		snippet: r.description ?? "",
-	}));
-}
-
-async function searchBrave(query: string, maxResults: number, signal?: AbortSignal): Promise<SearchResponse> {
-	const apiKey = resolveApiKey();
-	if (!apiKey) {
-		throw new Error(
-			`${BRAVE_API_KEY_ENV_VAR} is not set. Run /${WEB_SEARCH_CONFIG_COMMAND_NAME} to configure, or export the env var.`,
-		);
-	}
-
-	const res = await fetch(buildBraveSearchUrl(query, maxResults), {
-		method: "GET",
-		headers: buildBraveRequestHeaders(apiKey),
-		signal,
-	});
-
-	if (!res.ok) {
-		const text = await res.text();
-		throw new Error(`Brave Search API error (${res.status}): ${text}`);
-	}
-
-	const raw = (await res.json()) as BraveRawResponse;
-	return { query, results: normalizeBraveResults(raw) };
-}
-
 function clampSearchResultCount(requested: number | undefined): number {
 	const value = requested ?? DEFAULT_SEARCH_RESULTS;
 	return Math.min(Math.max(value, MIN_SEARCH_RESULTS), MAX_SEARCH_RESULTS);
 }
 
 // ---------------------------------------------------------------------------
-// HTML-to-text extraction
-// ---------------------------------------------------------------------------
-
-const SCRIPT_BLOCK_REGEX = /<script[\s\S]*?<\/script>/gi;
-const STYLE_BLOCK_REGEX = /<style[\s\S]*?<\/style>/gi;
-const NOSCRIPT_BLOCK_REGEX = /<noscript[\s\S]*?<\/noscript>/gi;
-const BLOCK_CLOSER_REGEX =
-	/<\/(p|div|h[1-6]|li|tr|br|blockquote|pre|section|article|header|footer|nav|details|summary)>/gi;
-const SELF_CLOSING_BR_REGEX = /<br\s*\/?>/gi;
-const ANY_REMAINING_TAG_REGEX = /<[^>]+>/g;
-const TITLE_TAG_REGEX = /<title[^>]*>([\s\S]*?)<\/title>/i;
-const NUMERIC_HTML_ENTITY_REGEX = /&#(\d+);/g;
-const HORIZONTAL_WHITESPACE_RUN = /[ \t]+/g;
-const BLANK_LINE_RUN = /\n{3,}/g;
-
-function stripNonContentBlocks(html: string): string {
-	return html.replace(SCRIPT_BLOCK_REGEX, "").replace(STYLE_BLOCK_REGEX, "").replace(NOSCRIPT_BLOCK_REGEX, "");
-}
-
-function convertBlockTagsToNewlines(text: string): string {
-	return text.replace(BLOCK_CLOSER_REGEX, "\n").replace(SELF_CLOSING_BR_REGEX, "\n");
-}
-
-function stripRemainingTags(text: string): string {
-	return text.replace(ANY_REMAINING_TAG_REGEX, " ");
-}
-
-function decodeHtmlEntities(text: string): string {
-	return text
-		.replace(/&amp;/g, "&")
-		.replace(/&lt;/g, "<")
-		.replace(/&gt;/g, ">")
-		.replace(/&quot;/g, '"')
-		.replace(/&#39;/g, "'")
-		.replace(/&nbsp;/g, " ")
-		.replace(NUMERIC_HTML_ENTITY_REGEX, (_, code) => String.fromCharCode(Number(code)));
-}
-
-function collapseWhitespace(text: string): string {
-	return text.replace(HORIZONTAL_WHITESPACE_RUN, " ").replace(BLANK_LINE_RUN, "\n\n");
-}
-
-function htmlToText(html: string): string {
-	let text = stripNonContentBlocks(html);
-	text = convertBlockTagsToNewlines(text);
-	text = stripRemainingTags(text);
-	text = decodeHtmlEntities(text);
-	text = collapseWhitespace(text);
-	return text.trim();
-}
-
-function extractTitle(html: string): string | undefined {
-	const match = html.match(TITLE_TAG_REGEX);
-	if (!match) return undefined;
-	return match[1].replace(ANY_REMAINING_TAG_REGEX, "").trim() || undefined;
-}
-
-// ---------------------------------------------------------------------------
-// URL + content-type guards
+// URL guard
 // ---------------------------------------------------------------------------
 
 function parseAndAssertHttpUrl(raw: string): URL {
@@ -303,20 +184,6 @@ function parseAndAssertHttpUrl(raw: string): URL {
 	return parsed;
 }
 
-function isBinaryContentType(contentType: string): boolean {
-	return BINARY_CONTENT_TYPE_PREFIXES.some((prefix) => contentType.includes(prefix));
-}
-
-function isHtmlContentType(contentType: string): boolean {
-	return contentType.includes(HTML_CONTENT_TYPE_TOKEN);
-}
-
-function assertTextContentType(contentType: string): void {
-	if (isBinaryContentType(contentType)) {
-		throw new Error(`Unsupported content type: ${contentType}. web_fetch supports text pages only.`);
-	}
-}
-
 // ---------------------------------------------------------------------------
 // web_fetch helpers
 // ---------------------------------------------------------------------------
@@ -328,39 +195,6 @@ interface FetchDetails {
 	contentLength?: number;
 	truncation?: TruncationResult;
 	fullOutputPath?: string;
-}
-
-function buildFetchRequestInit(signal: AbortSignal | undefined): RequestInit {
-	return {
-		signal,
-		redirect: "follow",
-		headers: { "User-Agent": USER_AGENT, Accept: FETCH_ACCEPT_HEADER },
-	};
-}
-
-async function fetchUrlOrThrow(url: string, signal: AbortSignal | undefined): Promise<Response> {
-	const res = await fetch(url, buildFetchRequestInit(signal));
-	if (!res.ok) {
-		throw new Error(`HTTP ${res.status} ${res.statusText} for ${url}`);
-	}
-	return res;
-}
-
-function parseContentLength(value: string | null): number | undefined {
-	return value ? Number(value) : undefined;
-}
-
-interface ExtractedBody {
-	text: string;
-	title?: string;
-}
-
-async function extractBodyAsText(res: Response, contentType: string, raw: boolean): Promise<ExtractedBody> {
-	const body = await res.text();
-	if (!raw && isHtmlContentType(contentType)) {
-		return { text: htmlToText(body), title: extractTitle(body) };
-	}
-	return { text: body };
 }
 
 async function spillFullContentToTempFile(content: string): Promise<string> {
@@ -392,7 +226,7 @@ function formatFetchHeader(url: string, title: string | undefined, contentType: 
 // web_search result rendering
 // ---------------------------------------------------------------------------
 
-function formatSearchResultsBody(response: SearchResponse): string {
+function formatSearchResultsBody(response: { query: string; results: SearchResult[] }): string {
 	let text = `**Search results for "${response.query}":**\n\n`;
 	response.results.forEach((r, i) => {
 		text += `${i + 1}. **${r.title}**\n   ${r.url}\n   ${r.snippet}\n\n`;
@@ -400,10 +234,10 @@ function formatSearchResultsBody(response: SearchResponse): string {
 	return text.trimEnd();
 }
 
-function buildEmptyResultsEnvelope(query: string) {
+function buildEmptyResultsEnvelope(query: string, providerName: string) {
 	return {
 		content: [{ type: "text" as const, text: `No results found for "${query}".` }],
-		details: { query, backend: SEARCH_BACKEND_NAME, resultCount: 0 },
+		details: { query, backend: providerName, resultCount: 0 },
 	};
 }
 
@@ -418,7 +252,7 @@ export function registerWebSearchTool(pi: ExtensionAPI): void {
 		name: "web_search",
 		label: "Web Search",
 		description:
-			"Search the web for information via the Brave Search API. Returns a list of results with titles, URLs, and snippets. Use when you need current information not in your training data.",
+			"Search the web for information. Returns a list of results with titles, URLs, and snippets. Use when you need current information not in your training data.",
 		promptSnippet: guidance.promptSnippet ?? DEFAULT_WEB_SEARCH_SNIPPET,
 		promptGuidelines: guidance.promptGuidelines ?? DEFAULT_WEB_SEARCH_GUIDELINES,
 		parameters: Type.Object({
@@ -437,23 +271,27 @@ export function registerWebSearchTool(pi: ExtensionAPI): void {
 
 		async execute(_toolCallId, params, signal, onUpdate, _ctx) {
 			const maxResults = clampSearchResultCount(params.max_results);
+			const config = loadConfig();
+			const providerName = config.provider ?? DEFAULT_PROVIDER_NAME;
+			const apiKey = resolveProviderApiKey(providerName, config);
+			const provider = createSearchProvider(providerName, apiKey ?? "");
 
 			onUpdate?.({
-				content: [{ type: "text", text: `Searching Brave for: "${params.query}"...` }],
-				details: { query: params.query, backend: SEARCH_BACKEND_NAME, resultCount: 0 },
+				content: [{ type: "text", text: `Searching ${provider.label} for: "${params.query}"...` }],
+				details: { query: params.query, backend: providerName, resultCount: 0 },
 			});
 
-			const response = await searchBrave(params.query, maxResults, signal);
+			const response = await provider.search(params.query, maxResults, signal);
 
 			if (response.results.length === 0) {
-				return buildEmptyResultsEnvelope(params.query);
+				return buildEmptyResultsEnvelope(params.query, providerName);
 			}
 
 			return {
 				content: [{ type: "text", text: formatSearchResultsBody(response) }],
 				details: {
 					query: params.query,
-					backend: SEARCH_BACKEND_NAME,
+					backend: providerName,
 					resultCount: response.results.length,
 					results: response.results,
 				},
@@ -523,11 +361,12 @@ export function registerWebFetchTool(pi: ExtensionAPI): void {
 				details: { url } as FetchDetails,
 			});
 
-			const res = await fetchUrlOrThrow(url, signal);
-			const contentType = res.headers.get("content-type") ?? "";
-			assertTextContentType(contentType);
+			const config = loadConfig();
+			const providerName = config.provider ?? DEFAULT_PROVIDER_NAME;
+			const apiKey = resolveProviderApiKey(providerName, config);
+			const provider = createSearchProvider(providerName, apiKey ?? "");
 
-			const { text: bodyText, title } = await extractBodyAsText(res, contentType, raw);
+			const { text: bodyText, title, contentType, contentLength } = await provider.fetch(url, raw, signal);
 
 			const truncation = truncateHead(bodyText, {
 				maxLines: DEFAULT_MAX_LINES,
@@ -538,7 +377,7 @@ export function registerWebFetchTool(pi: ExtensionAPI): void {
 				url,
 				title,
 				contentType,
-				contentLength: parseContentLength(res.headers.get("content-length")),
+				contentLength,
 			};
 
 			let output = truncation.content;
@@ -550,7 +389,7 @@ export function registerWebFetchTool(pi: ExtensionAPI): void {
 			}
 
 			return {
-				content: [{ type: "text", text: formatFetchHeader(url, title, contentType) + output }],
+				content: [{ type: "text", text: formatFetchHeader(url, title, contentType ?? "") + output }],
 				details,
 			};
 		},
@@ -598,17 +437,27 @@ function renderFetchedContentPreview(content: string, theme: Theme): string {
 // ---------------------------------------------------------------------------
 
 function formatShowConfigMessage(current: WebToolsConfig): string {
-	return (
-		`Web search config:\n` +
-		`  config file: ${CONFIG_PATH}\n` +
-		`  apiKey: ${maskApiKey(current.apiKey)}\n` +
-		`  ${BRAVE_API_KEY_ENV_VAR} env: ${maskApiKey(process.env[BRAVE_API_KEY_ENV_VAR])}`
-	);
+	const lines = ["Web search config:", `  config file: ${CONFIG_PATH}`];
+
+	const providerName = current.provider ?? DEFAULT_PROVIDER_NAME;
+	lines.push(`  active provider: ${providerName}`);
+
+	for (const meta of PROVIDERS) {
+		const envKey = process.env[meta.envVar]?.trim();
+		const configKey = current.apiKeys?.[meta.name]?.trim();
+		const legacyKey = meta.name === "brave" ? current.apiKey?.trim() : undefined;
+		const resolved = envKey ?? configKey ?? legacyKey;
+		lines.push(
+			`  ${meta.name}: ${maskApiKey(resolved)} (env: ${maskApiKey(envKey)}, config: ${maskApiKey(configKey ?? legacyKey)})`,
+		);
+	}
+
+	return lines.join("\n");
 }
 
 export function registerWebSearchConfigCommand(pi: ExtensionAPI): void {
 	pi.registerCommand(WEB_SEARCH_CONFIG_COMMAND_NAME, {
-		description: "Configure the Brave Search API key used by web_search/web_fetch",
+		description: "Configure the search provider and API key used by web_search",
 		handler: async (args, ctx) => {
 			if (!ctx.hasUI) {
 				ctx.ui?.notify?.(`/${WEB_SEARCH_CONFIG_COMMAND_NAME} requires interactive mode`, "error");
@@ -622,9 +471,28 @@ export function registerWebSearchConfigCommand(pi: ExtensionAPI): void {
 				return;
 			}
 
+			const selectedLabel = await ctx.ui.select(
+				"Search provider",
+				PROVIDERS.map((p) => p.label),
+				{},
+			);
+			if (selectedLabel === undefined || selectedLabel === null) {
+				ctx.ui.notify("Web search config unchanged", "info");
+				return;
+			}
+
+			const selectedMeta = PROVIDERS.find((p) => p.label === selectedLabel);
+			if (!selectedMeta) {
+				ctx.ui.notify("Web search config unchanged", "info");
+				return;
+			}
+			const selectedProvider = selectedMeta.name;
+
+			const existingKey =
+				current.apiKeys?.[selectedProvider] ?? (selectedProvider === "brave" ? current.apiKey : undefined);
 			const input = await ctx.ui.input(
-				"Brave Search API key",
-				current.apiKey ? "(leave empty to keep existing)" : "sk-...",
+				`${selectedLabel} API key`,
+				existingKey ? "(leave empty to keep existing)" : "...",
 			);
 
 			if (input === undefined || input === null) {
@@ -638,8 +506,14 @@ export function registerWebSearchConfigCommand(pi: ExtensionAPI): void {
 				return;
 			}
 
-			saveConfig({ ...current, apiKey: trimmed });
-			ctx.ui.notify(`Saved Brave API key to ${CONFIG_PATH}`, "info");
+			const toSave: WebToolsConfig = {
+				...current,
+				provider: selectedProvider,
+				apiKeys: { ...current.apiKeys, [selectedProvider]: trimmed },
+			};
+			delete (toSave as { apiKey?: string }).apiKey;
+			saveConfig(toSave);
+			ctx.ui.notify(`Saved ${selectedLabel} API key to ${CONFIG_PATH}`, "info");
 		},
 	});
 }

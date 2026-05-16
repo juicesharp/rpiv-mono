@@ -19,6 +19,11 @@ function writeConfig(contents: unknown) {
 
 beforeEach(() => {
 	delete process.env.BRAVE_SEARCH_API_KEY;
+	delete process.env.TAVILY_API_KEY;
+	delete process.env.SERPER_API_KEY;
+	delete process.env.EXA_API_KEY;
+	delete process.env.JINA_API_KEY;
+	delete process.env.FIRECRAWL_API_KEY;
 	rmSync(CONFIG_PATH, { force: true });
 });
 
@@ -43,20 +48,86 @@ describe("registerWebTools — registration", () => {
 	});
 });
 
-describe("web_search.execute — env-key precedence + happy path", () => {
-	it("uses env key over config key", async () => {
-		process.env.BRAVE_SEARCH_API_KEY = "env-key";
-		writeConfig({ apiKey: "config-key" });
+const PROVIDER_MATRIX = [
+	{
+		provider: "brave",
+		envVar: "BRAVE_SEARCH_API_KEY",
+		urlMatcher: (u: string) => u.includes("api.search.brave.com"),
+		buildResponse: () =>
+			JSON.stringify({
+				web: { results: [{ title: "T", url: "https://x", description: "snip" }] },
+			}),
+		emptyResponse: () => JSON.stringify({ web: { results: [] } }),
+		authHeader: "X-Subscription-Token" as string | null,
+	},
+	{
+		provider: "tavily",
+		envVar: "TAVILY_API_KEY",
+		urlMatcher: (u: string) => u.includes("api.tavily.com"),
+		buildResponse: () => JSON.stringify({ results: [{ title: "T", url: "https://x", content: "snip" }] }),
+		emptyResponse: () => JSON.stringify({ results: [] }),
+		authHeader: null,
+	},
+	{
+		provider: "serper",
+		envVar: "SERPER_API_KEY",
+		urlMatcher: (u: string) => u.includes("google.serper.dev"),
+		buildResponse: () => JSON.stringify({ organic: [{ title: "T", link: "https://x", snippet: "snip" }] }),
+		emptyResponse: () => JSON.stringify({ organic: [] }),
+		authHeader: "X-API-KEY" as string | null,
+	},
+	{
+		provider: "exa",
+		envVar: "EXA_API_KEY",
+		urlMatcher: (u: string) => u.includes("api.exa.ai"),
+		buildResponse: () => JSON.stringify({ results: [{ title: "T", url: "https://x", text: "snip" }] }),
+		emptyResponse: () => JSON.stringify({ results: [] }),
+		authHeader: "x-api-key" as string | null,
+	},
+	{
+		provider: "jina",
+		envVar: "JINA_API_KEY",
+		urlMatcher: (u: string) => u.includes("s.jina.ai"),
+		buildResponse: () =>
+			JSON.stringify({
+				code: 200,
+				status: 20000,
+				data: {
+					results: [{ title: "T", url: "https://x", description: "snip" }],
+				},
+			}),
+		emptyResponse: () => JSON.stringify({ code: 200, status: 20000, data: { results: [] } }),
+		authHeader: "Authorization" as string | null,
+	},
+	{
+		provider: "firecrawl",
+		envVar: "FIRECRAWL_API_KEY",
+		urlMatcher: (u: string) => u.includes("api.firecrawl.dev"),
+		buildResponse: () =>
+			JSON.stringify({
+				success: true,
+				data: [{ title: "T", url: "https://x", description: "snip" }],
+			}),
+		emptyResponse: () => JSON.stringify({ success: true, data: [] }),
+		authHeader: "Authorization" as string | null,
+	},
+] as const;
+
+describe.each(PROVIDER_MATRIX)("web_search.execute — $provider", ({
+	provider,
+	envVar,
+	urlMatcher,
+	buildResponse,
+	emptyResponse,
+	authHeader,
+}) => {
+	it(`uses env key for ${provider}`, async () => {
+		process.env[envVar] = "env-key";
+		writeConfig({ provider });
 		const stub = stubFetch([
 			{
-				match: (u) => u.includes("api.search.brave.com"),
-				response: () =>
-					new Response(
-						JSON.stringify({
-							web: { results: [{ title: "T", url: "https://x", description: "snip" }] },
-						}),
-						{ status: 200 },
-					),
+				match: urlMatcher,
+				response: () => new Response(buildResponse(), { status: 200 }),
 			},
 		]);
 		const { captured } = registerAndCapture();
@@ -64,35 +135,92 @@ describe("web_search.execute — env-key precedence + happy path", () => {
 			.get("web_search")
 			?.execute?.("tc", { query: "hello", max_results: 3 }, undefined as never, undefined as never, createMockCtx());
 		expect(r?.content[0]).toMatchObject({ type: "text" });
-		const headers = stub.calls[0].init?.headers as Record<string, string>;
-		expect(headers["X-Subscription-Token"]).toBe("env-key");
+		if (authHeader) {
+			const headers = stub.calls[0].init?.headers as Record<string, string>;
+			const headerVal = headers[authHeader];
+			if (provider === "jina" || provider === "firecrawl") {
+				expect(headerVal).toBe("Bearer env-key");
+			} else {
+				expect(headerVal).toBe("env-key");
+			}
+		} else {
+			const body = JSON.parse(stub.calls[0].init?.body as string);
+			expect(body.api_key).toBe("env-key");
+		}
 	});
 
-	it("falls back to config key when env unset", async () => {
-		writeConfig({ apiKey: "config-key" });
+	it(`falls back to config key for ${provider}`, async () => {
+		writeConfig({ provider, apiKeys: { [provider]: "config-key" } });
 		const stub = stubFetch([
 			{
-				match: (u) => u.includes("api.search.brave.com"),
-				response: () => new Response(JSON.stringify({ web: { results: [] } }), { status: 200 }),
+				match: urlMatcher,
+				response: () => new Response(buildResponse(), { status: 200 }),
 			},
 		]);
 		const { captured } = registerAndCapture();
 		await captured.tools
 			.get("web_search")
 			?.execute?.("tc", { query: "x" }, undefined as never, undefined as never, createMockCtx());
-		const headers = stub.calls[0].init?.headers as Record<string, string>;
-		expect(headers["X-Subscription-Token"]).toBe("config-key");
+		if (authHeader) {
+			const headers = stub.calls[0].init?.headers as Record<string, string>;
+			const headerVal = headers[authHeader];
+			if (provider === "jina" || provider === "firecrawl") {
+				expect(headerVal).toBe("Bearer config-key");
+			} else {
+				expect(headerVal).toBe("config-key");
+			}
+		} else {
+			const body = JSON.parse(stub.calls[0].init?.body as string);
+			expect(body.api_key).toBe("config-key");
+		}
 	});
 
-	it("throws when neither env nor config set", async () => {
+	it(`throws when no key configured for ${provider}`, async () => {
+		writeConfig({ provider });
 		const { captured } = registerAndCapture();
 		await expect(
 			captured.tools
 				.get("web_search")
 				?.execute?.("tc", { query: "x" }, undefined as never, undefined as never, createMockCtx()),
-		).rejects.toThrow(/BRAVE_SEARCH_API_KEY is not set/);
+		).rejects.toThrow(new RegExp(`${envVar} is not set`));
 	});
 
+	it(`returns no-results envelope for ${provider}`, async () => {
+		process.env[envVar] = "k";
+		writeConfig({ provider });
+		stubFetch([
+			{
+				match: urlMatcher,
+				response: () => new Response(emptyResponse(), { status: 200 }),
+			},
+		]);
+		const { captured } = registerAndCapture();
+		const r = await captured.tools
+			.get("web_search")
+			?.execute?.("tc", { query: "x" }, undefined as never, undefined as never, createMockCtx());
+		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("No results found") });
+	});
+
+	it(`wraps non-2xx as '${provider} Search API error (status)'`, async () => {
+		const label = provider.charAt(0).toUpperCase() + provider.slice(1);
+		process.env[envVar] = "k";
+		writeConfig({ provider });
+		stubFetch([
+			{
+				match: urlMatcher,
+				response: () => new Response("rate limit", { status: 429 }),
+			},
+		]);
+		const { captured } = registerAndCapture();
+		await expect(
+			captured.tools
+				.get("web_search")
+				?.execute?.("tc", { query: "x" }, undefined as never, undefined as never, createMockCtx()),
+		).rejects.toThrow(new RegExp(`${label} Search API error \\(429\\)`));
+	});
+});
+
+describe("web_search.execute — provider-independent behavior", () => {
 	it("clamps max_results to [1,10]", async () => {
 		process.env.BRAVE_SEARCH_API_KEY = "k";
 		const stub = stubFetch([
@@ -109,35 +237,48 @@ describe("web_search.execute — env-key precedence + happy path", () => {
 		expect(new URL(url).searchParams.get("count")).toBe("10");
 	});
 
-	it("wraps non-2xx as 'Brave Search API error (status): body'", async () => {
+	it("defaults to brave when no provider configured", async () => {
 		process.env.BRAVE_SEARCH_API_KEY = "k";
-		stubFetch([
+		const stub = stubFetch([
 			{
 				match: (u) => u.includes("api.search.brave.com"),
-				response: () => new Response("rate limit", { status: 429 }),
-			},
-		]);
-		const { captured } = registerAndCapture();
-		await expect(
-			captured.tools
-				.get("web_search")
-				?.execute?.("tc", { query: "x" }, undefined as never, undefined as never, createMockCtx()),
-		).rejects.toThrow(/Brave Search API error \(429\)/);
-	});
-
-	it("returns no-results envelope when Brave yields []", async () => {
-		process.env.BRAVE_SEARCH_API_KEY = "k";
-		stubFetch([
-			{
-				match: (u) => u.includes("api.search.brave.com"),
-				response: () => new Response(JSON.stringify({ web: { results: [] } }), { status: 200 }),
+				response: () =>
+					new Response(
+						JSON.stringify({
+							web: { results: [{ title: "T", url: "https://x", description: "snip" }] },
+						}),
+						{ status: 200 },
+					),
 			},
 		]);
 		const { captured } = registerAndCapture();
 		const r = await captured.tools
 			.get("web_search")
 			?.execute?.("tc", { query: "x" }, undefined as never, undefined as never, createMockCtx());
-		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("No results found") });
+		expect((r?.details as { backend: string }).backend).toBe("brave");
+		expect(stub.calls[0].url).toContain("api.search.brave.com");
+	});
+
+	it("uses legacy apiKey fallback for brave", async () => {
+		writeConfig({ apiKey: "legacy-key" });
+		const stub = stubFetch([
+			{
+				match: (u) => u.includes("api.search.brave.com"),
+				response: () =>
+					new Response(
+						JSON.stringify({
+							web: { results: [{ title: "T", url: "https://x", description: "snip" }] },
+						}),
+						{ status: 200 },
+					),
+			},
+		]);
+		const { captured } = registerAndCapture();
+		await captured.tools
+			.get("web_search")
+			?.execute?.("tc", { query: "x" }, undefined as never, undefined as never, createMockCtx());
+		const headers = stub.calls[0].init?.headers as Record<string, string>;
+		expect(headers["X-Subscription-Token"]).toBe("legacy-key");
 	});
 });
 
@@ -276,9 +417,6 @@ describe("web_fetch.execute — happy path", () => {
 			},
 		]);
 		const { captured } = registerAndCapture();
-		// If loadConfig threw, registration would have crashed. Surviving registration
-		// + executing without "BRAVE_SEARCH_API_KEY is not set" trip means we hit the
-		// catch and returned {}.
 		const r = await captured.tools
 			.get("web_fetch")
 			?.execute?.("tc", { url: "https://x.com" }, undefined as never, undefined as never, createMockCtx());
@@ -329,6 +467,243 @@ describe("web_fetch.execute — happy path", () => {
 	});
 });
 
+describe("web_fetch.execute — provider fetch", () => {
+	it("brave fetch strips HTML and extracts title", async () => {
+		process.env.BRAVE_SEARCH_API_KEY = "k";
+		writeConfig({ provider: "brave" });
+		stubFetch([
+			{
+				match: (u) => u.includes("example.com"),
+				response: () =>
+					new Response("<html><head><title>My Page</title></head><body><p>Hello</p></body></html>", {
+						status: 200,
+						headers: { "content-type": "text/html" },
+					}),
+			},
+		]);
+		const { captured } = registerAndCapture();
+		const r = await captured.tools
+			.get("web_fetch")
+			?.execute?.("tc", { url: "https://example.com" }, undefined as never, undefined as never, createMockCtx());
+		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("My Page") });
+		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("Hello") });
+	});
+
+	it("brave fetch returns raw HTML when raw=true", async () => {
+		process.env.BRAVE_SEARCH_API_KEY = "k";
+		writeConfig({ provider: "brave" });
+		stubFetch([
+			{
+				match: () => true,
+				response: () => new Response("<p>raw</p>", { status: 200, headers: { "content-type": "text/html" } }),
+			},
+		]);
+		const { captured } = registerAndCapture();
+		const r = await captured.tools
+			.get("web_fetch")
+			?.execute?.(
+				"tc",
+				{ url: "https://x.com", raw: true },
+				undefined as never,
+				undefined as never,
+				createMockCtx(),
+			);
+		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("<p>raw</p>") });
+	});
+
+	it("tavily fetch uses /extract endpoint", async () => {
+		process.env.TAVILY_API_KEY = "k";
+		writeConfig({ provider: "tavily" });
+		stubFetch([
+			{
+				match: (u) => u.includes("api.tavily.com/extract"),
+				response: () =>
+					new Response(JSON.stringify({ results: [{ url: "https://x.com", raw_content: "extracted text" }] }), {
+						status: 200,
+					}),
+			},
+		]);
+		const { captured } = registerAndCapture();
+		const r = await captured.tools
+			.get("web_fetch")
+			?.execute?.("tc", { url: "https://x.com" }, undefined as never, undefined as never, createMockCtx());
+		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("extracted text") });
+	});
+
+	it("tavily fetch handles failed_results", async () => {
+		process.env.TAVILY_API_KEY = "k";
+		writeConfig({ provider: "tavily" });
+		stubFetch([
+			{
+				match: (u) => u.includes("api.tavily.com/extract"),
+				response: () =>
+					new Response(
+						JSON.stringify({
+							results: [],
+							failed_results: [{ url: "https://x.com", error: "timeout" }],
+						}),
+						{ status: 200 },
+					),
+			},
+		]);
+		const { captured } = registerAndCapture();
+		await expect(
+			captured.tools
+				.get("web_fetch")
+				?.execute?.("tc", { url: "https://x.com" }, undefined as never, undefined as never, createMockCtx()),
+		).rejects.toThrow(/extraction failed/);
+	});
+
+	it("exa fetch uses /contents endpoint", async () => {
+		process.env.EXA_API_KEY = "k";
+		writeConfig({ provider: "exa" });
+		stubFetch([
+			{
+				match: (u) => u.includes("api.exa.ai/contents"),
+				response: () =>
+					new Response(
+						JSON.stringify({
+							results: [{ title: "Page", url: "https://x.com", text: "extracted content" }],
+						}),
+						{ status: 200 },
+					),
+			},
+		]);
+		const { captured } = registerAndCapture();
+		const r = await captured.tools
+			.get("web_fetch")
+			?.execute?.("tc", { url: "https://x.com" }, undefined as never, undefined as never, createMockCtx());
+		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("extracted content") });
+		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("Page") });
+	});
+
+	it("exa fetch throws when no content returned", async () => {
+		process.env.EXA_API_KEY = "k";
+		writeConfig({ provider: "exa" });
+		stubFetch([
+			{
+				match: (u) => u.includes("api.exa.ai/contents"),
+				response: () => new Response(JSON.stringify({ results: [{ url: "https://x.com" }] }), { status: 200 }),
+			},
+		]);
+		const { captured } = registerAndCapture();
+		await expect(
+			captured.tools
+				.get("web_fetch")
+				?.execute?.("tc", { url: "https://x.com" }, undefined as never, undefined as never, createMockCtx()),
+		).rejects.toThrow(/no content returned/);
+	});
+
+	it("jina fetch uses r.jina.ai reader", async () => {
+		process.env.JINA_API_KEY = "k";
+		writeConfig({ provider: "jina" });
+		stubFetch([
+			{
+				match: (u) => u.includes("r.jina.ai"),
+				response: () => new Response("extracted markdown content", { status: 200 }),
+			},
+		]);
+		const { captured } = registerAndCapture();
+		const r = await captured.tools
+			.get("web_fetch")
+			?.execute?.("tc", { url: "https://x.com" }, undefined as never, undefined as never, createMockCtx());
+		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("extracted markdown content") });
+	});
+
+	it("firecrawl fetch uses /v1/scrape endpoint", async () => {
+		process.env.FIRECRAWL_API_KEY = "k";
+		writeConfig({ provider: "firecrawl" });
+		stubFetch([
+			{
+				match: (u) => u.includes("api.firecrawl.dev/v1/scrape"),
+				response: () =>
+					new Response(
+						JSON.stringify({
+							success: true,
+							data: { markdown: "# Title\nPage content", metadata: { title: "Scraped Page" } },
+						}),
+						{ status: 200 },
+					),
+			},
+		]);
+		const { captured } = registerAndCapture();
+		const r = await captured.tools
+			.get("web_fetch")
+			?.execute?.("tc", { url: "https://x.com" }, undefined as never, undefined as never, createMockCtx());
+		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("Page content") });
+		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("Scraped Page") });
+	});
+
+	it("firecrawl fetch handles success=false", async () => {
+		process.env.FIRECRAWL_API_KEY = "k";
+		writeConfig({ provider: "firecrawl" });
+		stubFetch([
+			{
+				match: (u) => u.includes("api.firecrawl.dev/v1/scrape"),
+				response: () => new Response(JSON.stringify({ success: false }), { status: 200 }),
+			},
+		]);
+		const { captured } = registerAndCapture();
+		await expect(
+			captured.tools
+				.get("web_fetch")
+				?.execute?.("tc", { url: "https://x.com" }, undefined as never, undefined as never, createMockCtx()),
+		).rejects.toThrow(/scrape failed/);
+	});
+
+	it("extraction providers (jina) ignore raw and never strip vendor body", async () => {
+		// Contract: Jina/Firecrawl/Tavily/Exa always return what their extraction
+		// API gave us. raw=true must NOT trigger the htmlToText pipeline that
+		// Brave/Serper run. Stub a body containing literal HTML tags and assert
+		// they survive in the output (i.e. no stripping happened).
+		process.env.JINA_API_KEY = "k";
+		writeConfig({ provider: "jina" });
+		stubFetch([
+			{
+				match: (u) => u.includes("r.jina.ai"),
+				response: () => new Response("# heading\n<p>vendor markdown</p>", { status: 200 }),
+			},
+		]);
+		const { captured } = registerAndCapture();
+		const r = await captured.tools
+			.get("web_fetch")
+			?.execute?.(
+				"tc",
+				{ url: "https://x.com", raw: true },
+				undefined as never,
+				undefined as never,
+				createMockCtx(),
+			);
+		// If raw=true had triggered htmlToText, the <p> tag would be gone.
+		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("<p>vendor markdown</p>") });
+	});
+});
+
+describe("config round-trip with all providers", () => {
+	it("preserves keys for all providers when switching", async () => {
+		writeConfig({
+			provider: "brave",
+			apiKeys: {
+				brave: "brave-key",
+				tavily: "tavily-key",
+				jina: "jina-key",
+				firecrawl: "firecrawl-key",
+			},
+		});
+		const { captured } = registerAndCapture();
+		const ctx = createMockCtx({ hasUI: true });
+		(ctx.ui.select as ReturnType<typeof vi.fn>).mockResolvedValueOnce("Firecrawl");
+		(ctx.ui.input as ReturnType<typeof vi.fn>).mockResolvedValueOnce("new-firecrawl-key");
+		await captured.commands.get("web-search-config")?.handler("", ctx as never);
+		const saved = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
+		expect(saved.provider).toBe("firecrawl");
+		expect(saved.apiKeys.brave).toBe("brave-key");
+		expect(saved.apiKeys.tavily).toBe("tavily-key");
+		expect(saved.apiKeys.jina).toBe("jina-key");
+		expect(saved.apiKeys.firecrawl).toBe("new-firecrawl-key");
+	});
+});
+
 describe("/web-search-config command", () => {
 	it("!hasUI notifies error", async () => {
 		const { captured } = registerAndCapture();
@@ -337,15 +712,16 @@ describe("/web-search-config command", () => {
 		expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("interactive"), "error");
 	});
 
-	it("--show masks both env + config keys", async () => {
+	it("--show displays all providers with masked keys", async () => {
 		process.env.BRAVE_SEARCH_API_KEY = "sk-live-abcdefghijklmnop";
-		writeConfig({ apiKey: "sk-cfg-abcdefghijklmnop" });
+		writeConfig({ provider: "brave", apiKeys: { brave: "sk-cfg-abcdefghijklmnop" } });
 		const { captured } = registerAndCapture();
 		const ctx = createMockCtx({ hasUI: true });
 		await captured.commands.get("web-search-config")?.handler("--show", ctx as never);
 		const msg = (ctx.ui.notify as ReturnType<typeof vi.fn>).mock.calls[0][0];
 		expect(msg).toContain("sk-l...mnop");
 		expect(msg).toContain("sk-c...mnop");
+		expect(msg).toContain("active provider: brave");
 	});
 
 	it("--show shows '(not set)' when nothing configured", async () => {
@@ -356,33 +732,65 @@ describe("/web-search-config command", () => {
 		expect(msg).toContain("(not set)");
 	});
 
-	it("interactive save writes JSON and preserves extra fields", async () => {
+	it("two-step: select provider then enter key", async () => {
 		writeConfig({ apiKey: "old", otherField: "keep" });
 		const { captured } = registerAndCapture();
 		const ctx = createMockCtx({ hasUI: true });
-		(ctx.ui.input as ReturnType<typeof vi.fn>).mockResolvedValueOnce("  new-key  ");
+		(ctx.ui.select as ReturnType<typeof vi.fn>).mockResolvedValueOnce("Tavily");
+		(ctx.ui.input as ReturnType<typeof vi.fn>).mockResolvedValueOnce("  tavily-key  ");
 		await captured.commands.get("web-search-config")?.handler("", ctx as never);
 		const saved = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
-		expect(saved).toEqual({ apiKey: "new-key", otherField: "keep" });
+		expect(saved).toEqual({
+			provider: "tavily",
+			apiKeys: { tavily: "tavily-key" },
+			otherField: "keep",
+		});
+		expect(saved.apiKey).toBeUndefined();
 	});
 
-	it("interactive empty/whitespace input preserves existing config", async () => {
+	it("select cancelled leaves config untouched", async () => {
 		writeConfig({ apiKey: "existing" });
 		const { captured } = registerAndCapture();
 		const ctx = createMockCtx({ hasUI: true });
+		(ctx.ui.select as ReturnType<typeof vi.fn>).mockResolvedValueOnce(undefined);
+		await captured.commands.get("web-search-config")?.handler("", ctx as never);
+		const saved = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
+		expect(saved.apiKey).toBe("existing");
+	});
+
+	it("input cancelled after select leaves config untouched", async () => {
+		writeConfig({ apiKey: "existing" });
+		const { captured } = registerAndCapture();
+		const ctx = createMockCtx({ hasUI: true });
+		(ctx.ui.select as ReturnType<typeof vi.fn>).mockResolvedValueOnce("Serper");
+		(ctx.ui.input as ReturnType<typeof vi.fn>).mockResolvedValueOnce(undefined);
+		await captured.commands.get("web-search-config")?.handler("", ctx as never);
+		const saved = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
+		expect(saved.apiKey).toBe("existing");
+	});
+
+	it("empty input after select leaves config untouched", async () => {
+		writeConfig({ apiKey: "existing" });
+		const { captured } = registerAndCapture();
+		const ctx = createMockCtx({ hasUI: true });
+		(ctx.ui.select as ReturnType<typeof vi.fn>).mockResolvedValueOnce("Exa");
 		(ctx.ui.input as ReturnType<typeof vi.fn>).mockResolvedValueOnce("   ");
 		await captured.commands.get("web-search-config")?.handler("", ctx as never);
 		const saved = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
 		expect(saved.apiKey).toBe("existing");
 	});
 
-	it("undefined input (Esc) leaves config untouched", async () => {
-		writeConfig({ apiKey: "existing" });
+	it("migrates legacy apiKey to apiKeys on save", async () => {
+		writeConfig({ apiKey: "legacy-key", otherField: "keep" });
 		const { captured } = registerAndCapture();
 		const ctx = createMockCtx({ hasUI: true });
-		(ctx.ui.input as ReturnType<typeof vi.fn>).mockResolvedValueOnce(undefined);
+		(ctx.ui.select as ReturnType<typeof vi.fn>).mockResolvedValueOnce("Brave");
+		(ctx.ui.input as ReturnType<typeof vi.fn>).mockResolvedValueOnce("new-key");
 		await captured.commands.get("web-search-config")?.handler("", ctx as never);
 		const saved = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
-		expect(saved.apiKey).toBe("existing");
+		expect(saved.provider).toBe("brave");
+		expect(saved.apiKeys).toEqual({ brave: "new-key" });
+		expect(saved.apiKey).toBeUndefined();
+		expect(saved.otherField).toBe("keep");
 	});
 });

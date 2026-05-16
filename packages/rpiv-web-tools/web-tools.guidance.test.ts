@@ -96,10 +96,13 @@ describe("web-tools guidance overrides", () => {
 		writeConfig({ guidance: { web_search: { promptSnippet: "Custom" } } });
 		const { captured } = registerAndCapture();
 		const ctx = createMockCtx({ hasUI: true });
+		(ctx.ui.select as ReturnType<typeof vi.fn>).mockResolvedValueOnce("Brave");
 		(ctx.ui.input as ReturnType<typeof vi.fn>).mockResolvedValueOnce("new-api-key");
 		await captured.commands.get("web-search-config")?.handler("", ctx as never);
 		const saved = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
-		expect(saved.apiKey).toBe("new-api-key");
+		expect(saved.provider).toBe("brave");
+		expect(saved.apiKeys).toEqual({ brave: "new-api-key" });
 		expect(saved.guidance).toEqual({ web_search: { promptSnippet: "Custom" } });
+		expect(saved.apiKey).toBeUndefined();
 	});
 });

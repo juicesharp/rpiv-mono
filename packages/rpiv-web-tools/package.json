@@ -1,13 +1,16 @@
 {
   "name": "@juicesharp/rpiv-web-tools",
   "version": "1.7.0",
-  "description": "Pi extension. Web search and fetch for the model, backed by the Brave Search API.",
+  "description": "Pi extension. Web search and fetch for the model, backed by configurable search providers.",
   "keywords": [
     "pi-package",
     "pi-extension",
     "rpiv",
     "web-search",
-    "brave"
+    "brave",
+    "tavily",
+    "serper",
+    "exa"
   ],
   "type": "module",
   "license": "MIT",
@@ -30,6 +33,7 @@
   "files": [
     "index.ts",
     "web-tools.ts",
+    "providers/",
     "README.md",
     "LICENSE"
   ],
