@@ -1,6 +1,6 @@
 {
   "name": "@juicesharp/rpiv-pi",
-  "version": "1.8.1",
+  "version": "1.8.2",
   "description": "A skill-based development workflow for Pi Agent. Five skills (research, design, plan, implement, validate) and the shared subagents that compose its ship-loop.",
   "keywords": [
     "pi-package",

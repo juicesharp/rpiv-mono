@@ -5,7 +5,7 @@ All notable changes to `@juicesharp/rpiv-site` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.8.2] - 2026-05-17
 
 ### Changed
 - Site content updated to reflect the artifact path migration to `.rpiv/artifacts/`.
