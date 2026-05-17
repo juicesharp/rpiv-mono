@@ -10,7 +10,7 @@ when_to_use:
 inputs:
   - name: handoff path
     required: true
-    source: Path to `thoughts/shared/handoffs/*.md`
+    source: Path to `.rpiv/artifacts/handoffs/*.md`
     notes: Plans, research, and solutions linked from the handoff are read directly.
 outputs:
   - artifact: Validated session context + next-action proposal

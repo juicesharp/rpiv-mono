@@ -7,7 +7,7 @@ order: 2
 
 The pipeline's design rests on one operational rule: **every skill boots with a clean context window**. Between any two skill invocations, run `/new` (or whatever your harness calls "clear context") before kicking off the next one.
 
-The artifact-on-disk handoff exists precisely for this reason. Each skill writes its output to `thoughts/shared/<stage>/`, and the next skill reads it back. The chain is durable, not stateful: your next session can pick up a half-finished run without losing context, because state lives in markdown files, not the chat window.
+The artifact-on-disk handoff exists precisely for this reason. Each skill writes its output to `.rpiv/artifacts/<stage>/`, and the next skill reads it back. The chain is durable, not stateful: your next session can pick up a half-finished run without losing context, because state lives in markdown files, not the chat window.
 
 Skipping the reset is the single most common cause of muddled output.
 
@@ -32,7 +32,7 @@ Every other transition resets. That includes phase-by-phase `/skill:implement` (
 If your plan has a single phase or is small enough to land in one shot, run:
 
 ```
-/skill:implement thoughts/shared/plans/<plan>.md
+/skill:implement .rpiv/artifacts/plans/<plan>.md
 ```
 
 This executes every phase in a single invocation. One session, one pass, done.
@@ -40,13 +40,13 @@ This executes every phase in a single invocation. One session, one pass, done.
 For larger plans with multiple phases, run **one phase per session** with a reset between every phase:
 
 ```
-/skill:implement thoughts/shared/plans/<plan>.md Phase 1
+/skill:implement .rpiv/artifacts/plans/<plan>.md Phase 1
 ```
 
 Then `/new` to reset the context, review the diff, and run the next phase in a fresh session:
 
 ```
-/skill:implement thoughts/shared/plans/<plan>.md Phase 2
+/skill:implement .rpiv/artifacts/plans/<plan>.md Phase 2
 ```
 
 The plan artifact carries state between phases. It tracks `- [x]` completion markers as each success criterion lands, so a fresh context per phase keeps the agent focused on the slice in front of it instead of dragging accumulated chat noise from earlier phases.

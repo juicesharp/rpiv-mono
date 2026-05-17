@@ -170,7 +170,7 @@
 
   <!-- Bottom annotation -->
   <line x1="40" y1="1100" x2="500" y2="1100" class="rule" stroke-width="0.5" stroke-dasharray="1 3"/>
-  <text class="mono muted" x="40"  y="1118" font-size="9" letter-spacing="1.8">ARTIFACTS &#8594; thoughts/shared/</text>
+  <text class="mono muted" x="40"  y="1118" font-size="9" letter-spacing="1.8">ARTIFACTS &#8594; .rpiv/artifacts/</text>
 
   <!-- Footer -->
   <line x1="40" y1="1144" x2="500" y2="1144" class="rule" stroke-width="1"/>

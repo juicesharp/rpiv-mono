@@ -13,7 +13,7 @@ inputs:
     source: Short free-text description of the work to capture
 outputs:
   - artifact: Handoff document
-    path: thoughts/shared/handoffs/YYYY-MM-DD_HH-MM-SS_description.md
+    path: .rpiv/artifacts/handoffs/YYYY-MM-DD_HH-MM-SS_description.md
     format: markdown with structured frontmatter (date, author, commit, branch, topic, tags, status)
 key_steps:
   - title: Collect filepath + git/author metadata

@@ -1,6 +1,6 @@
 ---
 name: implement
-description: Execute an approved implementation plan from thoughts/shared/plans/ phase by phase, applying changes and verifying each phase against its success criteria before moving on. Use when the user invokes /implement, asks to "implement this plan", or wants an existing phased plan executed. Pair with revise to update plans mid-flight and validate to confirm completion.
+description: Execute an approved implementation plan from .rpiv/artifacts/plans/ phase by phase, applying changes and verifying each phase against its success criteria before moving on. Use when the user invokes /implement, asks to "implement this plan", or wants an existing phased plan executed. Pair with revise to update plans mid-flight and validate to confirm completion.
 argument-hint: "[plan-path] [Phase N]"
 allowed-tools: Read, Edit, Write, Bash(*), Glob, Grep
 disable-model-invocation: true
@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 # Implement
 
-You are tasked with implementing an approved technical plan from `thoughts/shared/plans/`. These plans contain phases with specific changes and success criteria.
+You are tasked with implementing an approved technical plan from `.rpiv/artifacts/plans/`. These plans contain phases with specific changes and success criteria.
 
 ## Input
 
@@ -81,7 +81,7 @@ When the last in-scope phase is complete, print the **completion** closing block
 
 ```
 Implementation complete:
-`thoughts/shared/plans/{filename}.md`
+`.rpiv/artifacts/plans/{filename}.md`
 
 {P} phases completed, {M} files changed, {T} tests passing.
 Outstanding: none.
@@ -92,7 +92,7 @@ Please review the diff and let me know if anything should reopen a phase.
 
 💬 Follow-up: surface code/plan mismatches inline via the `ask_user_question` flow ("Follow the plan / Skip this change / Update the plan") — that is implement's only in-skill follow-up surface. For plan-level changes run `/skill:revise <plan-path>`; for session pauses run `/skill:create-handoff`.
 
-**Next step:** `/skill:validate thoughts/shared/plans/{filename}.md` — verify the implementation against the plan's success criteria before committing.
+**Next step:** `/skill:validate .rpiv/artifacts/plans/{filename}.md` — verify the implementation against the plan's success criteria before committing.
 
 > 🆕 Tip: start a fresh session with `/new` first — chained skills work best with a clean context window.
 ```
@@ -101,7 +101,7 @@ If the run was paused mid-plan rather than completed, print the **paused** varia
 
 ```
 Implementation paused at Phase {N}:
-`thoughts/shared/plans/{filename}.md`
+`.rpiv/artifacts/plans/{filename}.md`
 
 {P} phases completed, {M} files changed, {T} tests passing.
 Outstanding: {list of unchecked items, blockers}.

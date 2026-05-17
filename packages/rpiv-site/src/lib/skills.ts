@@ -67,22 +67,22 @@ function merge(spec: SpecEntry, copies: CollectionEntry<"skills">[]): SkillEntry
 	};
 }
 
-/** Artifact write site for §1 / §2 / §3 detail rows. `null` = no thoughts/ artifact.
+/** Artifact write site for §1 / §2 / §3 detail rows. `null` = no artifact.
  * `satisfies Record<KnownSkill, …>` enforces that every skill the site can name
  * has an entry — adding a skill without one will fail tsc instead of falling
  * through `undefined` at the call site. */
 export const ARTIFACT_WRITE_SITES = {
-	discover: "thoughts/shared/discover/",
-	research: "thoughts/shared/research/",
-	design: "thoughts/shared/designs/",
-	plan: "thoughts/shared/plans/",
+	discover: ".rpiv/artifacts/discover/",
+	research: ".rpiv/artifacts/research/",
+	design: ".rpiv/artifacts/designs/",
+	plan: ".rpiv/artifacts/plans/",
 	implement: null,
 	validate: null,
-	blueprint: "thoughts/shared/plans/",
-	explore: "thoughts/shared/solutions/",
+	blueprint: ".rpiv/artifacts/plans/",
+	explore: ".rpiv/artifacts/solutions/",
 	"annotate-guidance": ".rpiv/guidance/<sub>/architecture.md",
 	"migrate-to-guidance": ".rpiv/guidance/ shadow tree",
-	"code-review": "thoughts/shared/reviews/",
+	"code-review": ".rpiv/artifacts/reviews/",
 	commit: null,
 	changelog: null,
 	revise: null,

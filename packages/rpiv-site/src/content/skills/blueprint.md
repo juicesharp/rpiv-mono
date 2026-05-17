@@ -11,14 +11,14 @@ when_to_use:
 inputs:
   - name: research artifact
     required: true
-    source: Path to `thoughts/shared/research/*.md` or `thoughts/shared/solutions/*.md`
+    source: Path to `.rpiv/artifacts/research/*.md` or `.rpiv/artifacts/solutions/*.md`
     notes: Open Questions seed the ambiguity queue; Developer Context Q/As are inherited decisions.
   - name: task description
     required: false
     source: Free-text alongside the artifact path
 outputs:
   - artifact: Implementation plan
-    path: thoughts/shared/plans/
+    path: .rpiv/artifacts/plans/
     format: markdown with `- [ ]` success-criteria checkboxes
 key_steps:
   - title: Read research + key files into context
@@ -29,7 +29,7 @@ key_steps:
     rationale: Same six dimensions as `design` (data model · API · integration · scope · verification · performance) so a `blueprint` plan covers the same surface a `design`/`plan` pair would.
   - title: Decompose into vertical slices, then generate slice-by-slice
     rationale: Whole-feature decomposition first; per-slice code generation with developer micro-checkpoints between slices. Review interrupts the loop before it gets expensive to redirect.
-  - title: Finalize directly into `thoughts/shared/plans/`
+  - title: Finalize directly into `.rpiv/artifacts/plans/`
     rationale: Output is plan-shaped, not design-shaped — `implement` consumes it directly, no second pass needed.
 related:
   upstream: [research, explore]

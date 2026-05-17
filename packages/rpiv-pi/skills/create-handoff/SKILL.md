@@ -17,7 +17,7 @@ You are tasked with writing a handoff document to hand off your work to another 
 ## Process
 ### 1. Filepath & Metadata
 Use the following information to understand how to create your document:
-    - create your file under `thoughts/shared/handoffs/YYYY-MM-DD_HH-MM-SS_description.md`, where:
+    - create your file under `.rpiv/artifacts/handoffs/YYYY-MM-DD_HH-MM-SS_description.md`, where:
         - YYYY-MM-DD / HH-MM-SS come from the `date` command (see below)
         - description is a brief kebab-case description
      - Repository name: from git root basename, or current directory basename if not a git repo
@@ -26,7 +26,7 @@ Use the following information to understand how to create your document:
      - Author: use the User from the git context injected at the start of the session (fallback: "unknown")
      - If metadata unavailable: use "unknown" for commit/branch
     - Examples:
-        - `thoughts/shared/handoffs/2025-01-08_13-55-22_create-context-compaction.md`
+        - `.rpiv/artifacts/handoffs/2025-01-08_13-55-22_create-context-compaction.md`
 
 ### 2. Handoff writing.
 using the above conventions, write your document. use the defined filepath, and the following YAML frontmatter pattern. Use the metadata gathered in step 1, Structure the document with YAML frontmatter followed by content:
@@ -35,7 +35,7 @@ Use the following template structure:
 ```markdown
 ---
 date: {Current date and time with timezone in ISO format}
-author: {Author name from thoughts status}
+author: {Author name from artifact status}
 commit: {Current commit hash}
 branch: {Current branch name}
 repository: {Repository name}
@@ -79,7 +79,7 @@ Once this is completed, you should respond to the user with the template between
 
 <template_response>
 Handoff written to:
-`thoughts/shared/handoffs/YYYY-MM-DD_HH-MM-SS_description.md`
+`.rpiv/artifacts/handoffs/YYYY-MM-DD_HH-MM-SS_description.md`
 
 Replace the path below with your actual handoff file path before running.
 
@@ -87,7 +87,7 @@ Replace the path below with your actual handoff file path before running.
 
 💬 Follow-up: describe extra context in chat to append to this handoff before chaining; re-run `/skill:create-handoff` for a fresh handoff document.
 
-**Next step:** `/skill:resume-handoff thoughts/shared/handoffs/YYYY-MM-DD_HH-MM-SS_description.md` — pick up where this session left off in a fresh context.
+**Next step:** `/skill:resume-handoff .rpiv/artifacts/handoffs/YYYY-MM-DD_HH-MM-SS_description.md` — pick up where this session left off in a fresh context.
 
 > 🆕 Tip: start a fresh session with `/new` first — chained skills work best with a clean context window.
 </template_response>

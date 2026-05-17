@@ -21,12 +21,12 @@ export type CapabilityTier = "locator" | "analyzer" | "external" | "specialist";
  *  keeping `artifact-reviewer` / `slice-verifier` invisible per FRD Non-Goals. */
 export const TIER_BY_NAME: Record<string, CapabilityTier> = {
 	"codebase-locator": "locator",
-	"thoughts-locator": "locator",
+	"artifacts-locator": "locator",
 	"test-case-locator": "locator",
 	"integration-scanner": "locator",
 	"codebase-analyzer": "analyzer",
 	"codebase-pattern-finder": "analyzer",
-	"thoughts-analyzer": "analyzer",
+	"artifacts-analyzer": "analyzer",
 	"precedent-locator": "analyzer",
 	"scope-tracer": "analyzer",
 	"web-search-researcher": "external",
@@ -46,13 +46,10 @@ const FULL_DESCRIPTION_AGENTS = new Set([
 	"test-case-locator",
 ]);
 
-/** Fallback derivation when no visitor tagline is authored yet. Trim jokey multi-sentence to first sentence and silently fix two known typos. */
+/** Fallback derivation when no visitor tagline is authored yet. Trim jokey multi-sentence to first sentence. */
 function fallbackTagline(spec: SpecEntry): string {
 	const { name } = spec.data;
-	let desc = spec.data.description;
-	if (name === "thoughts-locator") {
-		desc = desc.replace(/reseaching/g, "researching").replace(/equivilent/g, "equivalent");
-	}
+	const desc = spec.data.description;
 	if (FULL_DESCRIPTION_AGENTS.has(name)) return desc;
 	return desc.split(/(?<=[.!?])\s+/, 2)[0]!;
 }

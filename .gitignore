@@ -9,9 +9,11 @@ packages/*/node_modules/
 .pi/
 
 # Local-only (not version-controlled)
-thoughts/
 .rpiv/guidance/
 **/.rpiv/guidance/
+.rpiv/artifacts/
+**/.rpiv/artifacts/
+thoughts/
 
 # Environment
 .env

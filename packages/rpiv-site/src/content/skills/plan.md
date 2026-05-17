@@ -1,6 +1,6 @@
 ---
 slug: plan
-tagline: Sequences a design artifact into parallelized atomic phases with explicit success criteria, written to `thoughts/shared/plans/`.
+tagline: Sequences a design artifact into parallelized atomic phases with explicit success criteria, written to `.rpiv/artifacts/plans/`.
 purpose: |
   Turns a finished design into phases sized for one verification loop each, with the success criteria that prove a phase is done. The plan is the contract `implement` executes against — no rediscovery, no re-deciding architecture mid-build.
 when_to_use:
@@ -11,11 +11,11 @@ when_to_use:
 inputs:
   - name: design artifact
     required: true
-    source: Path to `thoughts/shared/designs/*.md`
+    source: Path to `.rpiv/artifacts/designs/*.md`
     notes: All architectural decisions must be settled; if Open Questions remain, `plan` stops and returns to `design`.
 outputs:
   - artifact: Implementation plan
-    path: thoughts/shared/plans/
+    path: .rpiv/artifacts/plans/
     format: markdown with `- [ ]` success-criteria checkboxes
 key_steps:
   - title: Read the design artifact fully

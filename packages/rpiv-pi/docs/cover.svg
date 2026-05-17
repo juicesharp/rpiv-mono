@@ -85,7 +85,7 @@
       <text class="mono mint" x="0" y="52" font-size="16" letter-spacing="1.4" text-anchor="middle" font-weight="700">VALIDATE</text>
     </g>
 
-    <text class="mono muted" x="640" y="612" font-size="13" letter-spacing="2.4" text-anchor="middle">CHAINED AI SKILLS &#183; 12 NAMED SUBAGENTS &#183; thoughts/shared/</text>
+    <text class="mono muted" x="640" y="612" font-size="13" letter-spacing="2.4" text-anchor="middle">CHAINED AI SKILLS &#183; 12 NAMED SUBAGENTS &#183; .rpiv/artifacts/</text>
 
     <rect x="64" y="708" width="1152" height="36" fill="url(#titleGrad)"/>
     <line x1="64" y1="708" x2="1216" y2="708" stroke="#2A2620"/>

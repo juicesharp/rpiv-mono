@@ -11,14 +11,14 @@ when_to_use:
 inputs:
   - name: research artifact
     required: true
-    source: Path to `thoughts/shared/research/*.md` or `thoughts/shared/solutions/*.md`
+    source: Path to `.rpiv/artifacts/research/*.md` or `.rpiv/artifacts/solutions/*.md`
     notes: Read FULLY; its Open Questions seed the ambiguity queue, its Q/As are inherited decisions.
   - name: task description
     required: false
     source: Free-text alongside the artifact path
 outputs:
   - artifact: Design document
-    path: thoughts/shared/designs/
+    path: .rpiv/artifacts/designs/
     format: markdown (plan-compatible)
 key_steps:
   - title: Read research + key source files into context

@@ -11,7 +11,7 @@ You are tasked with validating that an implementation plan was correctly execute
 
 ## Input
 
-`$ARGUMENTS` — optional path to a plan in `thoughts/shared/plans/`. If omitted, the skill searches recent commits for plan references or asks for the path.
+`$ARGUMENTS` — optional path to a plan in `.rpiv/artifacts/plans/`. If omitted, the skill searches recent commits for plan references or asks for the path.
 
 ## Steps
 

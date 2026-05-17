@@ -85,7 +85,7 @@ Using combined knowledge from Steps 1-4, write 5-10 dense paragraphs:
 - **Trace-quality** — names a complete path, not a generic theme
 - **>=3 code artifacts** per paragraph (file references, function names, type names)
 
-thoughts/ docs are NOT questions — surface them in the Discovery Summary, not as numbered items.
+.rpiv/artifacts/ docs are NOT questions — surface them in the Discovery Summary, not as numbered items.
 
 Coverage check: every key file read in Step 4 appears in at least one question. Files read but absent from all questions indicate either an unnecessary read or a missing question.
 
@@ -101,7 +101,7 @@ CRITICAL: Use EXACTLY this format. The `research` skill parses this block — fr
 # Research Questions: how does the plugin system load and initialize extensions
 
 ## Discovery Summary
-Swept the plugin loader and lifecycle anchors across `src/plugins/`. Key files for depth: `src/plugins/types.ts:8-30` (definition — PluginManifest interface), `src/plugins/registry.ts:23` (entry — scan + manifest validation), `src/plugins/loader.ts:45` (factory — instantiation), `src/plugins/lifecycle.ts:12-44` (contract — hook ordering), `tests/plugins/registry.test.ts` (coverage). Two thoughts/ docs surfaced: `thoughts/shared/research/2026-03-12_plugin-architecture.md` (prior architectural decisions) and `thoughts/shared/plans/2026-04-01_plugin-lifecycle-extension.md` (recent lifecycle hook addition). The shape is a synchronous scan + lazy instantiate + lifecycle-hook chain pattern; no async loaders or hot-reload paths found.
+Swept the plugin loader and lifecycle anchors across `src/plugins/`. Key files for depth: `src/plugins/types.ts:8-30` (definition — PluginManifest interface), `src/plugins/registry.ts:23` (entry — scan + manifest validation), `src/plugins/loader.ts:45` (factory — instantiation), `src/plugins/lifecycle.ts:12-44` (contract — hook ordering), `tests/plugins/registry.test.ts` (coverage). Two .rpiv/artifacts/ docs surfaced: `.rpiv/artifacts/research/2026-03-12_plugin-architecture.md` (prior architectural decisions) and `.rpiv/artifacts/plans/2026-04-01_plugin-lifecycle-extension.md` (recent lifecycle hook addition). The shape is a synchronous scan + lazy instantiate + lifecycle-hook chain pattern; no async loaders or hot-reload paths found.
 
 ## Questions
 
@@ -118,7 +118,7 @@ Swept the plugin loader and lifecycle anchors across `src/plugins/`. Key files f
 - **Don't make recommendations** — no "we should…", no architectural advice; that's `design` / `blueprint` territory
 - **Don't read more than 10 files in Step 4** — context budget is real; rank ruthlessly
 - **Don't synthesize generic titles** — every question must cite >=3 specific files / functions / types; vague themes are too thin
-- **Don't include thoughts/ docs as numbered questions** — surface them in the Discovery Summary; numbered questions are about live code paths
+- **Don't include .rpiv/artifacts/ docs as numbered questions** — surface them in the Discovery Summary; numbered questions are about live code paths
 - **Don't write any file** — the artifact body lives in your final assistant message; the calling skill parses it in-memory
 - **Don't dispatch other agents** — `Agent` is not in the allowlist by design; the anchor sweep is sequential within this agent's own toolkit
 

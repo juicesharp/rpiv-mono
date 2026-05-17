@@ -1,16 +1,16 @@
 ---
 name: blueprint
-description: Plan complex features by decomposing them into vertical slices (one slice equals one phase) with developer micro-checkpoints between phases, producing an implement-ready phased plan in thoughts/shared/plans/. Use for complex multi-component features touching 6+ files across multiple layers when iterative review between slices is valuable. Requires a research artifact or a solutions artifact (from explore). Prefer blueprint over plan when mid-flight micro-checkpoints matter, and prefer plan when a straightforward phased breakdown is enough.
+description: Plan complex features by decomposing them into vertical slices (one slice equals one phase) with developer micro-checkpoints between phases, producing an implement-ready phased plan in .rpiv/artifacts/plans/. Use for complex multi-component features touching 6+ files across multiple layers when iterative review between slices is valuable. Requires a research artifact or a solutions artifact (from explore). Prefer blueprint over plan when mid-flight micro-checkpoints matter, and prefer plan when a straightforward phased breakdown is enough.
 argument-hint: "[research artifact path]"
 ---
 
 # Blueprint
 
-You are tasked with planning how code will be shaped for a feature or change AND emitting an implement-ready phased plan. Decompose the feature into vertical slices (one slice = one phase), generate code slice-by-slice with developer micro-checkpoints between slices, and write the final artifact directly into `thoughts/shared/plans/` for `/skill:implement` to consume.
+You are tasked with planning how code will be shaped for a feature or change AND emitting an implement-ready phased plan. Decompose the feature into vertical slices (one slice = one phase), generate code slice-by-slice with developer micro-checkpoints between slices, and write the final artifact directly into `.rpiv/artifacts/plans/` for `/skill:implement` to consume.
 
 ## Input
 
-`$ARGUMENTS` — path to a research artifact (`thoughts/shared/research/*.md`) or a solutions artifact (`thoughts/shared/solutions/*.md`).
+`$ARGUMENTS` — path to a research artifact (`.rpiv/artifacts/research/*.md`) or a solutions artifact (`.rpiv/artifacts/solutions/*.md`).
 
 ## Flow
 
@@ -26,7 +26,7 @@ When this command is invoked:
 
 1. **Read research artifact**:
 
-   **Research artifact provided** (argument contains a path to a `.md` file in `thoughts/`):
+   **Research artifact provided** (argument contains a path to a `.md` file in `.rpiv/artifacts/`):
    - Read the research artifact FULLY using the Read tool WITHOUT limit/offset
    - Extract: Summary, Code References, Integration Points, Architecture Insights, Precedents & Lessons, Developer Context, Open Questions
    - **Read the key source files from Code References** into the main context — especially hooks, shared utilities, and integration points the design will depend on. Read them FULLY. This ensures you have complete understanding before proceeding.
@@ -200,7 +200,7 @@ After the design summary is confirmed, decompose the feature into vertical slice
 3. **Confirm decomposition** using the `ask_user_question` tool. Question: "{N} slices for {feature}. Slice 1: {name} (foundation). Slices 2-N: {brief}. Approve decomposition?". Header: "Slices". Options: "Approve (Recommended)" (Proceed to slice-by-slice code generation); "Adjust slices" (Reorder, merge, or split slices before generating); "Change scope" (Add or remove files from the decomposition).
 
 4. **Create skeleton artifact** — immediately after decomposition is approved:
-   - Determine metadata: filename `thoughts/shared/plans/YYYY-MM-DD_HH-MM-SS_topic.md`, repository name from git root, branch and commit from the git context injected at the start of the session (fallbacks: "no-branch" / "no-commit"), author from the injected User (fallback: "unknown")
+   - Determine metadata: filename `.rpiv/artifacts/plans/YYYY-MM-DD_HH-MM-SS_topic.md`, repository name from git root, branch and commit from the git context injected at the start of the session (fallbacks: "no-branch" / "no-commit"), author from the injected User (fallback: "unknown")
    - Timestamp: run `date +"%Y-%m-%dT%H:%M:%S%z"` — raw for `date:` and `last_updated:`, first 19 chars (`T`→`_`, `:`→`-`) for filename slug.
    - Write skeleton using the Write tool with `status: in-progress` in frontmatter
    - **Include all prose sections filled** from Steps 1-5: Overview, Requirements, Current State Analysis, Desired End State, What We're NOT Doing, Decisions, Ordering Constraints, Verification Notes, Performance Considerations, Migration Notes, Pattern References, Developer Context, References
@@ -438,7 +438,7 @@ The developer review path at Step 11 absorbs the cost — that is how planning w
 3. **Present the plan artifact location** (after triage is complete):
    ```
    Implementation plan written to:
-   `thoughts/shared/plans/{filename}.md`
+   `.rpiv/artifacts/plans/{filename}.md`
 
    {N} architectural decisions fixed, {P} phases generated, {M} new files, {K} existing files modified.
    {R} revisions during generation. {B+C+S} reviewer findings triaged at Step 11 ({A} applied, {D} deferred, {DD} dismissed).
@@ -452,7 +452,7 @@ The developer review path at Step 11 absorbs the cost — that is how planning w
 
    💬 Follow-up: describe the change in chat to append a timestamped Follow-up section to this artifact. Re-run `/skill:blueprint` for a fresh artifact.
 
-   **Next step:** `/skill:implement thoughts/shared/plans/{filename}.md Phase 1` — start execution at Phase 1 (omit `Phase 1` to run all phases sequentially).
+   **Next step:** `/skill:implement .rpiv/artifacts/plans/{filename}.md Phase 1` — start execution at Phase 1 (omit `Phase 1` to run all phases sequentially).
 
    > 🆕 Tip: start a fresh session with `/new` first — chained skills work best with a clean context window.
    ```

@@ -75,4 +75,4 @@ last_updated_by: {User from injected git context}
 
 ## References
 - {Input file or ticket}
-- {Related artifact, e.g., `thoughts/shared/research/<YYYY-MM-DD_HH-MM-SS>_<topic>.md`}
+- {Related artifact, e.g., `.rpiv/artifacts/research/<YYYY-MM-DD_HH-MM-SS>_<topic>.md`}

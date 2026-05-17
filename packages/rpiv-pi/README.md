@@ -19,7 +19,7 @@ Skill-based development workflow for [Pi Agent](https://github.com/badlogic/pi-m
 
 ## What you get
 
-- **A pipeline of chained AI skills** - discover → research → design → plan → implement → validate, each producing a reviewable artifact under `thoughts/shared/`.
+- **A pipeline of chained AI skills** - discover → research → design → plan → implement → validate, each producing a reviewable artifact under `.rpiv/artifacts/`.
 - **Named subagents for parallel analysis** - `codebase-analyzer`, `codebase-locator`, `codebase-pattern-finder`, `claim-verifier`, and 8 more, dispatched automatically by skills.
 - **Session lifecycle hooks** - agent profiles, guidance files, and pipeline directories scaffold themselves on first launch.
 
@@ -93,7 +93,7 @@ pi install npm:@juicesharp/rpiv-pi
 On first Pi Agent session start, rpiv-pi automatically:
 - Copies agent profiles to `~/.pi/agent/agents/` (user-global, shared across all projects)
 - Detects outdated or removed agents on subsequent starts
-- Scaffolds `thoughts/shared/` directories for pipeline artifacts
+- Migrates legacy pipeline-artifact content into `.rpiv/artifacts/` (one-way) and scaffolds the artifact directories
 - Shows a warning if any sibling plugins are missing
 
 ## Usage
@@ -102,10 +102,10 @@ On first Pi Agent session start, rpiv-pi automatically:
 
 ```
 /skill:discover "add a /skill:fast that runs research+design+plan in one shot"
-/skill:research thoughts/shared/discover/<latest>.md
-/skill:design thoughts/shared/research/<latest>.md
-/skill:plan thoughts/shared/designs/<latest>.md
-/skill:implement thoughts/shared/plans/<latest>.md Phase <N>
+/skill:research .rpiv/artifacts/discover/<latest>.md
+/skill:design .rpiv/artifacts/research/<latest>.md
+/skill:plan .rpiv/artifacts/designs/<latest>.md
+/skill:implement .rpiv/artifacts/plans/<latest>.md Phase <N>
 ```
 
 Each skill produces an artifact consumed by the next. Run them in order, or jump in at any stage if you already have the input artifact.
@@ -114,14 +114,14 @@ Each skill produces an artifact consumed by the next. Run them in order, or jump
 
 Skills compose. Pick the entry point that matches your intent:
 
-- **Capture intent before research** - `/skill:discover "[feature description]"`. Walks you through a one-question-at-a-time interview to settle Goals/Non-Goals, Functional/Non-Functional Requirements, Acceptance Criteria, and a Decisions log into a Feature Requirements Document under `thoughts/shared/discover/`. Use as the canonical entry point of the pipeline before research, or to stress-test a feature idea before any codebase work. The FRD's Decisions are inherited by `design` through `research`'s Developer Context.
-- **Form context before a task** - `/skill:research "[topic]"` (or `/skill:research thoughts/shared/discover/<latest>.md` if you ran discover first). Produces a high-signal subspace of the codebase relevant to your topic, ready to feed directly into the next prompt. The `scope-tracer` subagent runs in-band to formulate trace-quality questions before analysis dispatch; when chained from discover, FRD Decisions translate into Developer Context Q/A entries verbatim.
+- **Capture intent before research** - `/skill:discover "[feature description]"`. Walks you through a one-question-at-a-time interview to settle Goals/Non-Goals, Functional/Non-Functional Requirements, Acceptance Criteria, and a Decisions log into a Feature Requirements Document under `.rpiv/artifacts/discover/`. Use as the canonical entry point of the pipeline before research, or to stress-test a feature idea before any codebase work. The FRD's Decisions are inherited by `design` through `research`'s Developer Context.
+- **Form context before a task** - `/skill:research "[topic]"` (or `/skill:research .rpiv/artifacts/discover/<latest>.md` if you ran discover first). Produces a high-signal subspace of the codebase relevant to your topic, ready to feed directly into the next prompt. The `scope-tracer` subagent runs in-band to formulate trace-quality questions before analysis dispatch; when chained from discover, FRD Decisions translate into Developer Context Q/A entries verbatim.
 - **Compare approaches before designing** - `/skill:explore "[problem]"` → `/skill:design <solutions artifact>`. Use when multiple valid solutions exist; the solutions artifact is a first-class input to `design` alongside a `research` artifact.
 - **One-shot plan from research** - `/skill:research <questions>` → `/skill:blueprint <research artifact>` → `/skill:implement`. Fuses `design` + `plan` into a single pass with the same slice-by-slice rigor, but spawns only `codebase-pattern-finder` upfront (vs `design`'s 4-agent fan-out) by trusting the research artifact's integration/precedent sections. Use for solo work or when no one else needs to review the design before implementation; pick `design` → `plan` when the design is itself a deliverable or when research is thin and you want the fuller verification sweep.
 - **Full feature build** - `/skill:discover` → `research` → `design` → `plan` → `implement` → `validate` → (`code-review` ↔ `commit`). The default pipeline; jump in at any stage if you already have the input artifact.
-- **Investigate a bug** - `/skill:discover "why does X fail"` → `/skill:research thoughts/shared/discover/<latest>.md`. The discover interview surfaces what you actually want to know before research grounds it; fix from research output without writing a plan when the change is small.
+- **Investigate a bug** - `/skill:discover "why does X fail"` → `/skill:research .rpiv/artifacts/discover/<latest>.md`. The discover interview surfaces what you actually want to know before research grounds it; fix from research output without writing a plan when the change is small.
 - **Adjust mid-implementation** - `/skill:revise <plan artifact>` → resume `/skill:implement`. Use when new constraints land after the plan is drafted.
-- **Review before shipping** - `/skill:code-review` ↔ `/skill:commit`. Order is your call: review `staged`/`working` before committing to catch issues at the smallest blast radius, or commit first and review the resulting branch (empty scope defaults to feature-branch-vs-default-branch, first-parent). Produces a Quality/Security/Dependencies artifact under `thoughts/shared/reviews/` with claim-verifier-grounded findings and `status: approved | needs_changes`.
+- **Review before shipping** - `/skill:code-review` ↔ `/skill:commit`. Order is your call: review `staged`/`working` before committing to catch issues at the smallest blast radius, or commit first and review the resulting branch (empty scope defaults to feature-branch-vs-default-branch, first-parent). Produces a Quality/Security/Dependencies artifact under `.rpiv/artifacts/reviews/` with claim-verifier-grounded findings and `status: approved | needs_changes`.
 - **Audit a specific scope** - `/skill:code-review <commit|staged|working|hash|A..B|branch>`. Targeted lenses over a commit, range, staged/working tree, or PR branch; advisor adjudication applies when configured (`/advisor`).
 - **Review-driven plan revision** - `/skill:code-review` → `/skill:revise <plan artifact>` → resume `/skill:implement`. When a mid-stream review surfaces structural findings that the existing plan can't absorb as spot fixes.
 - **Scaffold manual UI test specs** - `/skill:outline-test-cases` → `/skill:write-test-cases <feature>`. Outline first via Frontend-First Discovery to map project scope and avoid duplicate coverage, then generate flow-based manual test cases (with a regression suite) under `.rpiv/test-cases/<feature>/`.
@@ -136,17 +136,17 @@ Invoke via `/skill:<name>` from inside a Pi Agent session.
 
 | Skill | Input | Output | Description |
 |---|---|---|---|
-| `discover` | Free-text feature description or existing artifact path | `thoughts/shared/discover/` | Interview-driven Feature Requirements Document producer; one question at a time with a recommended answer at every step. FRD Decisions inherited by `design` via `research`'s Developer Context |
-| `research` | Free-text prompt or `discover` artifact path | `thoughts/shared/research/` | Frame scope via the `scope-tracer` subagent, then answer via parallel analysis agents |
-| `explore` | - | `thoughts/shared/solutions/` | Compare solution approaches with pros/cons |
-| `design` | Research or solutions artifact | `thoughts/shared/designs/` | Design features via vertical-slice decomposition |
+| `discover` | Free-text feature description or existing artifact path | `.rpiv/artifacts/discover/` | Interview-driven Feature Requirements Document producer; one question at a time with a recommended answer at every step. FRD Decisions inherited by `design` via `research`'s Developer Context |
+| `research` | Free-text prompt or `discover` artifact path | `.rpiv/artifacts/research/` | Frame scope via the `scope-tracer` subagent, then answer via parallel analysis agents |
+| `explore` | - | `.rpiv/artifacts/solutions/` | Compare solution approaches with pros/cons |
+| `design` | Research or solutions artifact | `.rpiv/artifacts/designs/` | Design features via vertical-slice decomposition |
 
 #### Implementation
 
 | Skill | Input | Output | Description |
 |---|---|---|---|
-| `plan` | Design artifact | `thoughts/shared/plans/` | Create phased implementation plans |
-| `blueprint` | Research or solutions artifact | `thoughts/shared/plans/` | Fused `design` + `plan`: vertical-slice decomposition with micro-checkpoints, emits implement-ready phased plan in one pass. Lighter on subagent fan-out than `design` - trusts the research artifact's integration/precedent sections instead of re-dispatching. Use when a separate design artifact isn't needed for review or handoff |
+| `plan` | Design artifact | `.rpiv/artifacts/plans/` | Create phased implementation plans |
+| `blueprint` | Research or solutions artifact | `.rpiv/artifacts/plans/` | Fused `design` + `plan`: vertical-slice decomposition with micro-checkpoints, emits implement-ready phased plan in one pass. Lighter on subagent fan-out than `design` - trusts the research artifact's integration/precedent sections instead of re-dispatching. Use when a separate design artifact isn't needed for review or handoff |
 | `implement` | Plan artifact | Code changes | Execute plans phase by phase |
 | `revise` | Plan artifact | Updated plan | Revise plans based on feedback |
 | `validate` | Plan artifact | Validation report | Verify plan execution |
@@ -202,8 +202,8 @@ Agents are dispatched automatically by skills via the `Agent` tool - you don't i
 | `peer-comparator` | Compares a new file against a peer sibling and tags each invariant Mirrored / Missing / Diverged / Intentionally-absent |
 | `precedent-locator` | Finds similar past changes in git history - commits, blast radius, and follow-up fixes |
 | `test-case-locator` | Catalogs existing manual test cases under `.rpiv/test-cases/` and reports coverage stats |
-| `thoughts-analyzer` | Performs deep-dive analysis on a research topic in `thoughts/` |
-| `thoughts-locator` | Discovers relevant documents in the `thoughts/` directory |
+| `artifacts-analyzer` | Performs deep-dive analysis on a research topic in `.rpiv/artifacts/` |
+| `artifacts-locator` | Discovers relevant documents in the `.rpiv/artifacts/` directory |
 | `web-search-researcher` | Researches modern web-only information via deep search and fetch |
 
 ## Architecture
@@ -213,7 +213,7 @@ rpiv-pi/
 ├── extensions/rpiv-core/   - runtime extension: hooks, commands, guidance injection
 ├── skills/                 - AI workflow skills (research → design → plan → implement)
 ├── agents/                 - named subagent profiles dispatched by skills
-└── thoughts/shared/        - pipeline artifact store
+└── .rpiv/artifacts/        - pipeline artifact store
 ```
 
 Pi Agent discovers extensions via `"extensions": ["./extensions"]` and skills via `"skills": ["./skills"]` in `package.json`.

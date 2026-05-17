@@ -5,7 +5,7 @@
  * Ordering and invariants preserved verbatim from the pre-refactor index.ts.
  */
 
-import { mkdirSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import {
 	type ExtensionAPI,
@@ -27,16 +27,18 @@ import {
 	resetInjectedMarker,
 	takeGitContextIfChanged,
 } from "./git-context.js";
-import { clearInjectionState, handleToolCallGuidance, injectRootGuidance } from "./guidance.js";
+import { ARTIFACTS_SUBDIR, clearInjectionState, handleToolCallGuidance, injectRootGuidance } from "./guidance.js";
 import { findMissingSiblings } from "./package-checks.js";
 
-const THOUGHTS_DIRS = [
-	"thoughts/shared/discover",
-	"thoughts/shared/research",
-	"thoughts/shared/designs",
-	"thoughts/shared/plans",
-	"thoughts/shared/handoffs",
-	"thoughts/shared/reviews",
+const ARTIFACTS_ROOT = `.rpiv/${ARTIFACTS_SUBDIR}`;
+const ARTIFACTS_DIRS = [
+	`${ARTIFACTS_ROOT}/discover`,
+	`${ARTIFACTS_ROOT}/research`,
+	`${ARTIFACTS_ROOT}/designs`,
+	`${ARTIFACTS_ROOT}/plans`,
+	`${ARTIFACTS_ROOT}/handoffs`,
+	`${ARTIFACTS_ROOT}/reviews`,
+	`${ARTIFACTS_ROOT}/solutions`,
 ] as const;
 
 const msgAgentsAdded = (n: number) => `Copied ${n} rpiv-pi agent(s) to ~/.pi/agent/agents/`;
@@ -83,7 +85,7 @@ async function onSessionStart(
 ): Promise<void> {
 	resetInjectionState();
 	injectRootGuidance(ctx.cwd, pi);
-	scaffoldThoughtsDirs(ctx.cwd);
+	migrateThoughtsToArtifacts(ctx.cwd);
 	await injectGitContext(pi, (msg) => sendGitContextMessage(pi, msg));
 	const cleanup = cleanupPerCwdAgents(ctx.cwd);
 	const agents = syncBundledAgents(false);
@@ -131,8 +133,47 @@ function resetInjectionState(): void {
 	clearInjectionState();
 }
 
-function scaffoldThoughtsDirs(cwd: string): void {
-	for (const dir of THOUGHTS_DIRS) {
+function migrateThoughtsToArtifacts(cwd: string): void {
+	const oldShared = join(cwd, "thoughts", "shared");
+	const newArtifacts = join(cwd, ".rpiv", ARTIFACTS_SUBDIR);
+
+	// Phase 1: Migrate existing thoughts/shared/ → .rpiv/artifacts/
+	if (existsSync(oldShared)) {
+		try {
+			mkdirSync(newArtifacts, { recursive: true });
+
+			const entries = readdirSync(oldShared, { withFileTypes: true }).filter((d) => d.isDirectory());
+
+			for (const entry of entries) {
+				const src = join(oldShared, entry.name);
+				const dest = join(newArtifacts, entry.name);
+				cpSync(src, dest, { recursive: true, errorOnExist: false, force: true });
+				if (!existsSync(dest)) {
+					console.warn(`[rpiv-pi] migration: failed to copy ${src} → ${dest}`);
+					return; // abort — don't delete source if copy failed
+				}
+			}
+
+			// All copies verified — safe to remove source
+			rmSync(oldShared, { recursive: true, force: true });
+
+			// Remove thoughts/ root only if empty (preserves thoughts/me/ etc.)
+			const thoughtsRoot = join(cwd, "thoughts");
+			try {
+				if (readdirSync(thoughtsRoot).length === 0) {
+					rmSync(thoughtsRoot, { recursive: true, force: true });
+				}
+			} catch {
+				// thoughts/ already gone or unreadable — not an error
+			}
+		} catch (e) {
+			console.warn(`[rpiv-pi] migration: ${e instanceof Error ? e.message : String(e)}`);
+			// Never crash session_start — migration is best-effort
+		}
+	}
+
+	// Phase 2: Ensure artifact directories exist (mirrors old scaffolding)
+	for (const dir of ARTIFACTS_DIRS) {
 		mkdirSync(join(cwd, dir), { recursive: true });
 	}
 }

@@ -1,6 +1,6 @@
 ---
 name: plan
-description: Convert a design artifact into a phased implementation plan with parallelized atomic phases and explicit success criteria, written to thoughts/shared/plans/. Use after the design skill when the user wants a design turned into an actionable, phase-by-phase plan to hand to the implement skill. Prefer plan when a straightforward phased breakdown is sufficient, and prefer blueprint when iterative vertical-slice micro-checkpoints between phases are needed.
+description: Convert a design artifact into a phased implementation plan with parallelized atomic phases and explicit success criteria, written to .rpiv/artifacts/plans/. Use after the design skill when the user wants a design turned into an actionable, phase-by-phase plan to hand to the implement skill. Prefer plan when a straightforward phased breakdown is sufficient, and prefer blueprint when iterative vertical-slice micro-checkpoints between phases are needed.
 argument-hint: "[design artifact path]"
 ---
 
@@ -10,7 +10,7 @@ You are tasked with creating phased implementation plans from design artifacts. 
 
 ## Input
 
-`$ARGUMENTS` — path to a design artifact (`thoughts/shared/designs/*.md`).
+`$ARGUMENTS` — path to a design artifact (`.rpiv/artifacts/designs/*.md`).
 
 ## Flow
 
@@ -26,7 +26,7 @@ When this command is invoked:
 
 1. **Determine input mode**:
 
-   **Design artifact provided** (path to a `.md` file in `thoughts/shared/designs/`):
+   **Design artifact provided** (path to a `.md` file in `.rpiv/artifacts/designs/`):
    - Read the design artifact FULLY using the Read tool WITHOUT limit/offset
    - Extract: Architecture (the code changes), File Map, Ordering Constraints, Verification Notes, Performance Considerations, Scope
    - These are the inputs for phasing
@@ -37,7 +37,7 @@ When this command is invoked:
    ```
    I'll create an implementation plan from a design artifact. Please provide the path:
 
-   `/skill:plan thoughts/shared/designs/2025-01-20_09-30-00_feature.md`
+   `/skill:plan .rpiv/artifacts/designs/2025-01-20_09-30-00_feature.md`
 
    Run `/skill:design` first to produce the design artifact. There is no standalone path.
    ```
@@ -81,7 +81,7 @@ Get feedback on structure before writing details.
 
 After structure approval, write the plan **incrementally** — skeleton first, then fill each phase:
 
-1. **Write the plan skeleton** to `thoughts/shared/plans/YYYY-MM-DD_HH-MM-SS_description.md`
+1. **Write the plan skeleton** to `.rpiv/artifacts/plans/YYYY-MM-DD_HH-MM-SS_description.md`
    - Timestamp: run `date +"%Y-%m-%dT%H:%M:%S%z"` — raw for `date:` and `last_updated:`, first 19 chars (`T`→`_`, `:`→`-`) for filename slug.
    - Format: `YYYY-MM-DD_HH-MM-SS_description.md` where:
      - YYYY-MM-DD / HH-MM-SS come from the `date` output above
@@ -178,8 +178,8 @@ last_updated_by: {User from injected git context}
 
 ## References
 
-- Design: `thoughts/shared/designs/{file}.md`
-- Research: `thoughts/shared/research/{file}.md`
+- Design: `.rpiv/artifacts/designs/{file}.md`
+- Research: `.rpiv/artifacts/research/{file}.md`
 - Original ticket: `thoughts/me/tickets/{file}.md`
 ```
 
@@ -188,7 +188,7 @@ last_updated_by: {User from injected git context}
 1. **Present the plan location**:
    ```
    Implementation plan written to:
-   `thoughts/shared/plans/{filename}.md`
+   `.rpiv/artifacts/plans/{filename}.md`
 
    {N} phases, {M} total file changes.
 
@@ -201,7 +201,7 @@ last_updated_by: {User from injected git context}
 
    💬 Follow-up: describe the change in chat to append a timestamped Follow-up section to this artifact, or use `/skill:revise <plan-path>` for surgical phase edits. Re-run `/skill:plan` for a fresh artifact.
 
-   **Next step:** `/skill:implement thoughts/shared/plans/{filename}.md Phase 1` — start execution at Phase 1 (omit `Phase 1` to run all phases sequentially).
+   **Next step:** `/skill:implement .rpiv/artifacts/plans/{filename}.md Phase 1` — start execution at Phase 1 (omit `Phase 1` to run all phases sequentially).
 
    > 🆕 Tip: start a fresh session with `/new` first — chained skills work best with a clean context window.
    ```

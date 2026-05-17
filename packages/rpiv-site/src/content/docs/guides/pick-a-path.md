@@ -7,7 +7,7 @@ order: 0
 
 Four recipes. The smallest that still keeps the driver in the loop where it matters is the one to run.
 
-The pipeline is a menu, not a script. Each skill writes a markdown artifact under `thoughts/shared/<stage>/` that the next skill reads, so you can stop, review, and resume between any two steps. Two inputs decide your chain: scope, and what's already in hand.
+The pipeline is a menu, not a script. Each skill writes a markdown artifact under `.rpiv/artifacts/<stage>/` that the next skill reads, so you can stop, review, and resume between any two steps. Two inputs decide your chain: scope, and what's already in hand.
 
 Path choice isn't a one-way door. Pick too big and you pay extra latency on artifacts you didn't need. Pick too small and you'll usually feel it mid-implement; back up a phase, switch to the next path up, keep going. The penalty is time, not damage.
 
@@ -46,7 +46,7 @@ Good fits:
 [discover?] → research → fix in chat → commit
 ```
 
-No planning step, no `/skill:implement` invocation. Open a fresh session, point the LLM at the research artifact (`thoughts/shared/research/<bug>.md`), and ask it to apply the fix. The research artifact IS the brief. When the diff looks right, hand it to `/skill:commit`.
+No planning step, no `/skill:implement` invocation. Open a fresh session, point the LLM at the research artifact (`.rpiv/artifacts/research/<bug>.md`), and ask it to apply the fix. The research artifact IS the brief. When the diff looks right, hand it to `/skill:commit`.
 
 Three flavors in practice:
 
@@ -118,7 +118,7 @@ Good fits:
 
 The recipe is enough on day one. The rest is what compounds.
 
-**Your work survives the session.** Chat scrollback dies on `/reload` or compaction; an artifact under `thoughts/shared/<stage>/` doesn't. You pick up a fresh session, point it at the artifact, and continue from where you stopped. The same artifact is reviewable by a teammate, hand-editable by you, and consumable by a stronger model for plan-review.
+**Your work survives the session.** Chat scrollback dies on `/reload` or compaction; an artifact under `.rpiv/artifacts/<stage>/` doesn't. You pick up a fresh session, point it at the artifact, and continue from where you stopped. The same artifact is reviewable by a teammate, hand-editable by you, and consumable by a stronger model for plan-review.
 
 **Each phase gets an unbiased pass.** A chat session that's been thinking about a problem for an hour anchors on its own framings. A skill reading the artifact reasons from scratch, which is the whole point, and it's why the rhythm produces output that fits the codebase rather than the model's training-set average. The same property is what makes automation tractable over time: a stable artifact format is something a downstream skill, a stronger model, or a scheduled job can read without rebuilding context.
 **Your expertise stays in the building.** Reviewing AI output to the same bar you'd hold a teammate to needs the same context writing the code would have built. The pipeline pulls the driver back in at every artifact boundary by surfacing the things that need a human call: ambiguities at discover, design questions at design, architectural triage at plan, reviewer findings at code-review, the diff itself before commit. Staying current is a byproduct of resolving those moments, not of re-reading earlier artifacts. Skip that engagement and comprehension erodes cycle by cycle, with nothing in the codebase showing it.

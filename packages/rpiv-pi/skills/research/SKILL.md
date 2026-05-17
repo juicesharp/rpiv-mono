@@ -1,6 +1,6 @@
 ---
 name: research
-description: Answer structured research questions about a codebase using targeted parallel analysis agents, then synthesize findings into a research document in thoughts/shared/research/. Internally dispatches the scope-tracer agent to formulate trace-quality research questions, then answers them. Use when the user wants in-depth research on a codebase area, asks to "research X", or needs answers to architecture or behavior questions before designing changes.
+description: Answer structured research questions about a codebase using targeted parallel analysis agents, then synthesize findings into a research document in .rpiv/artifacts/research/. Internally dispatches the scope-tracer agent to formulate trace-quality research questions, then answers them. Use when the user wants in-depth research on a codebase area, asks to "research X", or needs answers to architecture or behavior questions before designing changes.
 argument-hint: "[free-text research prompt]"
 ---
 
@@ -10,7 +10,7 @@ You are tasked with answering structured research questions by spawning targeted
 
 ## Input
 
-`$ARGUMENTS` — free-text research prompt, or a `thoughts/shared/discover/*.md` path to chain from discover.
+`$ARGUMENTS` — free-text research prompt, or a `.rpiv/artifacts/discover/*.md` path to chain from discover.
 
 ## Flow
 
@@ -28,7 +28,7 @@ The final artifact feeds design or blueprint.
    ```
    Then wait for input.
 
-2. **Detect chained discover artifact:** If the input includes a path matching `thoughts/shared/discover/.*\.md`, read it FULLY using the Read tool (no limit/offset) before scope-tracer dispatch:
+2. **Detect chained discover artifact:** If the input includes a path matching `.rpiv/artifacts/discover/.*\.md`, read it FULLY using the Read tool (no limit/offset) before scope-tracer dispatch:
    - Translate each `### [Decision title]` block in the FRD's `## Decisions` section into a Developer Context entry: `**Q (discover: <Decision title>): <Question text>**` followed by `A: <Chosen text>`. Hold these entries in main context — they're recorded in the research artifact's Developer Context section in Step 4 (write document).
    - Use the FRD's `## Recommended Approach` text (1-2 sentences naming the architectural shape) as the topic body for the next sub-step's scope-tracer prompt. The full discover artifact path stays in the input so scope-tracer's "read mentioned files first" rule picks up the file naturally for additional context.
    - Carry the FRD's Open Questions forward verbatim into the research artifact's Open Questions section in Step 4.
@@ -110,7 +110,7 @@ Findings go into Precedents & Lessons. Otherwise skip and note "git history unav
    - Match each agent's response to the question(s) it answered
    - Cross-reference findings across questions — look for patterns, conflicts, and connections
    - Prioritize live codebase findings as primary source of truth
-   - Use thoughts/ findings as supplementary historical context
+   - Use `.rpiv/artifacts/` findings as supplementary historical context
    - Include specific file paths and line numbers
    - Build Code References as jump-table entries for the planner, not narrative (file:startLine-endLine format)
    - No multi-line code blocks (>3 lines) — use file:line refs + prose. No implementation recipes — facts only.
@@ -196,7 +196,7 @@ Findings go into Precedents & Lessons. Otherwise skip and note "git history unav
 ### Step 4: Write Research Document
 
 1. **Determine metadata:**
-   - Filename: `thoughts/shared/research/YYYY-MM-DD_HH-MM-SS_{topic}.md`
+   - Filename: `.rpiv/artifacts/research/YYYY-MM-DD_HH-MM-SS_{topic}.md`
      - YYYY-MM-DD_HH-MM-SS: Current date and time
      - topic: Brief kebab-case description
    - Repository name: from git root basename, or current directory basename if not a git repo
@@ -270,7 +270,7 @@ Findings go into Precedents & Lessons. Otherwise skip and note "git history unav
    - `hash` — "message" (date) — what went wrong
 
    **Lessons from docs**:
-   - thoughts/path/to/doc.md — key lesson extracted
+   - .rpiv/artifacts/path/to/doc.md — key lesson extracted
 
    **Takeaway**: {one sentence — what to watch out for}
 
@@ -278,9 +278,9 @@ Findings go into Precedents & Lessons. Otherwise skip and note "git history unav
    - {Composite lesson 1 — most recurring pattern first, with relevant `commit hash` inline}
    - {Composite lesson 2}
 
-   ## Historical Context (from thoughts/)
+   ## Historical Context (from `.rpiv/artifacts/`)
    {Links only — one line per doc, no summaries of their contents}
-   - `thoughts/shared/something.md` — {one-line description of what this doc covers}
+   - `.rpiv/artifacts/something.md` — {one-line description of what this doc covers}
    ## Developer Context
    **Q (`file.ext:line`): {Question grounded in specific code reference}**
    A: {Developer's answer}
@@ -296,7 +296,7 @@ Findings go into Precedents & Lessons. Otherwise skip and note "git history unav
 
 ```
 Research document written to:
-`thoughts/shared/research/{filename}.md`
+`.rpiv/artifacts/research/{filename}.md`
 
 {N} questions answered, {M} findings across {K} files.
 
@@ -307,8 +307,8 @@ Please review and let me know if you have follow-up questions.
 💬 Follow-up: describe the change in chat to append a timestamped Follow-up section to this artifact. Re-run `/skill:research` for a fresh artifact.
 
 **Next step (choose one):**
-- `/skill:design thoughts/shared/research/{filename}.md` — iterative design with vertical-slice decomposition (produces design artifact for plan)
-- `/skill:blueprint thoughts/shared/research/{filename}.md` — lightweight fast path for smaller tasks; combined design + phased plan in one pass (produces implement-ready plan directly)
+- `/skill:design .rpiv/artifacts/research/{filename}.md` — iterative design with vertical-slice decomposition (produces design artifact for plan)
+- `/skill:blueprint .rpiv/artifacts/research/{filename}.md` — lightweight fast path for smaller tasks; combined design + phased plan in one pass (produces implement-ready plan directly)
 
 > 🆕 Tip: start a fresh session with `/new` first — chained skills work best with a clean context window.
 ```
@@ -324,7 +324,7 @@ Please review and let me know if you have follow-up questions.
 
 - **Analysis only**: This skill answers questions. Question formulation is delegated to the scope-tracer subagent at Step 1.
 - **Single entry point**: Free-text research prompt. Argument substitution is handled by `rpiv-args`; scope-tracer runs in-band before analysis dispatch.
-- **Chained from discover**: when the input includes a path to a `thoughts/shared/discover/*.md` artifact, read it FULLY in Step 1 and translate each Decision into a `Q (discover: <title>) / A: <Chosen>` Developer Context entry. Pass the FRD's `Recommended Approach` text as the scope-tracer topic. Open Questions carry forward verbatim. The `argument-hint` stays free-text-only — discover artifact recognition is by path-mention, not by argument-hint widening.
+- **Chained from discover**: when the input includes a path to a `.rpiv/artifacts/discover/*.md` artifact, read it FULLY in Step 1 and translate each Decision into a `Q (discover: <title>) / A: <Chosen>` Developer Context entry. Pass the FRD's `Recommended Approach` text as the scope-tracer topic. Open Questions carry forward verbatim. The `argument-hint` stays free-text-only — discover artifact recognition is by path-mention, not by argument-hint widening.
 - **Grouped dispatch**: Related questions are batched per agent based on file overlap. Default agent: codebase-analyzer. This reduces token waste from redundant file reads and lets agents build cross-question context.
 - **Downstream compatible**: Research documents feed directly into design and plan — the same Code References / Integration Points / Architecture Insights sections they expect.
 - **Agent-message parsing**: scope-tracer emits Discovery Summary + numbered Questions inline in its final assistant message; parse the agent's final-message text (no file write).

@@ -28,7 +28,6 @@ export default defineConfig({
 				"**/node_modules/**",
 				"**/.pi/**",
 				"**/.rpiv/**",
-				"**/thoughts/**",
 				"**/docs/**",
 				"**/*.test.ts",
 				"**/*.d.ts",

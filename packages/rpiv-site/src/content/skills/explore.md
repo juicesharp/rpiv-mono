@@ -16,7 +16,7 @@ inputs:
     source: Paths mentioned inline — read FULLY for constraints
 outputs:
   - artifact: Solutions document
-    path: thoughts/shared/solutions/
+    path: .rpiv/artifacts/solutions/
     format: markdown (design-compatible)
 key_steps:
   - title: Generate 2–4 named candidates from three sources

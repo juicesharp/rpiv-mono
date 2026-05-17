@@ -10,7 +10,7 @@ when_to_use:
 inputs:
   - name: plan path
     required: false
-    source: Path to `thoughts/shared/plans/*.md` — when omitted, recent commits are searched for a plan reference
+    source: Path to `.rpiv/artifacts/plans/*.md` — when omitted, recent commits are searched for a plan reference
 outputs:
   - artifact: Validation report
     path: stdout / session message

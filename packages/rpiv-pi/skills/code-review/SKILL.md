@@ -1,6 +1,6 @@
 ---
 name: code-review
-description: "Conduct comprehensive code reviews of pending changes, a branch, or a PR using parallel specialist agents that audit the diff, compare against peer code, and verify claims. Use when the user asks to 'review this', wants pending changes, a PR, a branch, or a diff reviewed, or asks for a code review. Produces review documents in thoughts/shared/reviews/. Internal mechanics like row-only agent contracts and Gap-Finder set arithmetic are documented in the skill body."
+description: "Conduct comprehensive code reviews of pending changes, a branch, or a PR using parallel specialist agents that audit the diff, compare against peer code, and verify claims. Use when the user asks to 'review this', wants pending changes, a PR, a branch, or a diff reviewed, or asks for a code review. Produces review documents in .rpiv/artifacts/reviews/. Internal mechanics like row-only agent contracts and Gap-Finder set arithmetic are documented in the skill body."
 argument-hint: "[scope]"
 ---
 
@@ -359,7 +359,7 @@ No agent dispatch. Compute inline while 4a / 4b run:
        • *{entity reaches state X} + {no event on that transition} + {consumer filter excludes X}* = **silent stranded state**
        • *{check-then-act on shared resource} + {no ordering primitive} + {retry/replay path}* = **duplicate-processing cascade**
        • *{spec A accepts Y} + {spec B rejects Y} + {workflow depends on both}* = **contradictory-predicate deadlock**
-     Also check `thoughts/shared/reviews/*.md` and Precedents: if a prior review names a cascade whose constituents appear in current findings, cite it and assert reproduction. Missed cascades are the biggest historical quality regression; prefer false positives here.
+     Also check `.rpiv/artifacts/reviews/*.md` and Precedents: if a prior review names a cascade whose constituents appear in current findings, cite it and assert reproduction. Missed cascades are the biggest historical quality regression; prefer false positives here.
 
 ### Step 6: Verify Findings
 
@@ -408,7 +408,7 @@ Before writing the artifact, spawn ONE `claim-verifier` whose sole job is to gro
 ### Step 7: Write the Review Document
 
 1. **Determine metadata**:
-   - Filename: `thoughts/shared/reviews/YYYY-MM-DD_HH-MM-SS_{scope-kebab}.md`
+   - Filename: `.rpiv/artifacts/reviews/YYYY-MM-DD_HH-MM-SS_{scope-kebab}.md`
    - Repository: git root basename (fallback: cwd basename).
    - Branch + commit: from git-context injected at session start, or `git branch --show-current` / `git rev-parse --short HEAD` (fallback: `no-branch` / `no-commit`).
    - Timestamp: run `date +"%Y-%m-%dT%H:%M:%S%z"` — raw for `date:`, first 19 chars (`T`→`_`, `:`→`-`) for filename slug.
@@ -439,7 +439,7 @@ Before writing the artifact, spawn ONE `claim-verifier` whose sole job is to gro
 
 ```
 Review written to:
-`thoughts/shared/reviews/{filename}.md`
+`.rpiv/artifacts/reviews/{filename}.md`
 
 Severity:     {C} critical · {I} important · {S} suggestions
 Lenses:       {Q} quality · {Se} security · {D} dependencies
@@ -458,7 +458,7 @@ Ask follow-ups, or chain forward.
 
 💬 Follow-up: describe the question in chat to append a timestamped Follow-up section. Retired IDs stay retired; re-run `/skill:code-review` for a fresh review.
 
-**Next step:** `/skill:design "Address findings from thoughts/shared/reviews/{filename}.md"` — run the design phase over the review document to produce a fix plan (only when status is `needs_changes` or `requesting_changes`).
+**Next step:** `/skill:design "Address findings from .rpiv/artifacts/reviews/{filename}.md"` — run the design phase over the review document to produce a fix plan (only when status is `needs_changes` or `requesting_changes`).
 
 > 🆕 Tip: start a fresh session with `/new` first — chained skills work best with a clean context window.
 ```
@@ -486,12 +486,12 @@ Ask follow-ups, or chain forward.
   - NEVER parse advisor prose — paste verbatim as a blockquote at the top of `## Recommendation`.
   - ALWAYS wait for 4a / 4b AND the Precedents agent to complete before Step 5 — Wave-3's hard barrier. 4c is synchronous (orchestrator). Dependencies + CVE wait here too when running, but are not individually hard-gated.
   - ALWAYS run Step 6 (verification pass) between reconciliation and artifact write. It is the only mechanism that catches lens agents asserting claims they never opened a file to confirm, and the only mechanism that validates `resolved-by` annotations against the actual branch via `git merge-base --is-ancestor`. Skipping Step 6 silently re-admits the failure mode this skill was designed to prevent.
-  - PRESERVE severity emoji/naming and frontmatter keys verbatim — `thoughts-locator` / `thoughts-analyzer` grep these.
+  - PRESERVE severity emoji/naming and frontmatter keys verbatim — `artifacts-locator` / `artifacts-analyzer` grep these.
   - Bundled row-only specialists at narrativisation-prone sites: `diff-auditor` (Wave-2 Q+S), `peer-comparator` (Wave-1 PM), `claim-verifier` (Step 6). See `.rpiv/guidance/agents/architecture.md`.
   - **Scope strategy is load-bearing at both ends**: Step 1 sets `strategy` and `FP_FLAG`; Step 6 pre-filters the reconciled severity map against `InScopeFiles` before `claim-verifier` dispatch. `--first-parent` is orthogonal to `--no-merges` / `-U30` — additive, not a replacement. Agent contracts (`claim-verifier.md:11-30` in particular) stay scope-blind by design; orchestrator owns scope.
 - **Agent roles**:
   - `integration-scanner` (Wave-1) — inbound/outbound refs, auth-boundary crossings.
-  - `precedent-locator` (Wave-1) — git history + thoughts/.
+  - `precedent-locator` (Wave-1) — git history + `.rpiv/artifacts/`.
   - `codebase-analyzer` ×1 (Wave-1, `ManifestChanged`) — dependencies parse.
   - `web-search-researcher` (Wave-1, `ManifestChanged`) — CVE/advisory lookups with LINKS.
   - `peer-comparator` ×1 (Wave-1, gated on `len(PeerPairs) > 0`) — peer-mirror check; tags Mirrored/Missing/Diverged/Intentionally-absent.

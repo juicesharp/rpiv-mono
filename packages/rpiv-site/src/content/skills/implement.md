@@ -4,13 +4,13 @@ tagline: Executes an approved phased plan one phase at a time, applies changes, 
 purpose: |
   The execution arm of the pipeline. `implement` reads a plan, applies the edits for one phase, runs the success-criteria checks, ticks the `- [x]` boxes, and refuses to advance until verification is green. Plans approved via design/blueprint/plan land in the codebase here.
 when_to_use:
-  - You have a phased plan under `thoughts/shared/plans/` ready to execute.
+  - You have a phased plan under `.rpiv/artifacts/plans/` ready to execute.
   - You want to run a single phase only (`/skill:implement <plan> Phase 2`).
   - Skip for tiny bug fixes — apply the change inline off the research artifact instead of building a plan.
 inputs:
   - name: $1 (plan path)
     required: true
-    source: Path to `thoughts/shared/plans/*.md`
+    source: Path to `.rpiv/artifacts/plans/*.md`
   - name: ${@:2} (phase scope)
     required: false
     source: e.g. `Phase 2` — empty runs all phases sequentially

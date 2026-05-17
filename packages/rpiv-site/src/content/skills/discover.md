@@ -14,7 +14,7 @@ inputs:
     notes: A path triggers refinement mode — file is read FULLY as baseline context.
 outputs:
   - artifact: Feature Requirements Document
-    path: thoughts/shared/discover/
+    path: .rpiv/artifacts/discover/
     format: markdown (research-compatible)
 key_steps:
   - title: Foundational intent question first — no agents, no `file:line`

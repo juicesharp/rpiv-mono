@@ -1,6 +1,6 @@
 ---
 slug: research
-tagline: Answers structured research questions about a codebase by formulating trace-quality questions, dispatching parallel analysis agents, and synthesizing a cited research document under `thoughts/shared/research/`.
+tagline: Answers structured research questions about a codebase by formulating trace-quality questions, dispatching parallel analysis agents, and synthesizing a cited research document under `.rpiv/artifacts/research/`.
 purpose: |
   Resolves ambiguities about how the existing implementation works *before* deciding how to change it. Subsequent design and planning skills read this artifact instead of re-reading the codebase, so downstream phases are grounded in evidence and start cheap.
 when_to_use:
@@ -11,11 +11,11 @@ when_to_use:
 inputs:
   - name: $ARGUMENTS
     required: true
-    source: Free-text research prompt OR path to a `thoughts/shared/discover/*.md` artifact
+    source: Free-text research prompt OR path to a `.rpiv/artifacts/discover/*.md` artifact
     notes: A `discover` artifact triggers FRD parsing — its Decisions become Developer Context.
 outputs:
   - artifact: Research document
-    path: thoughts/shared/research/
+    path: .rpiv/artifacts/research/
     format: markdown
 key_steps:
   - title: Trace the investigation scope

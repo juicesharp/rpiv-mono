@@ -11,14 +11,14 @@ when_to_use:
 inputs:
   - name: plan path
     required: true
-    source: Path to `thoughts/shared/plans/*.md`
+    source: Path to `.rpiv/artifacts/plans/*.md`
     notes: A review-artifact path is rejected with a hint pointing back to the plan.
   - name: feedback
     required: true
     source: Free-text describing the specific changes
 outputs:
   - artifact: Same plan file, in-place edit
-    path: same `thoughts/shared/plans/*.md`
+    path: same `.rpiv/artifacts/plans/*.md`
     format: structure preserved, surgical changes applied
 key_steps:
   - title: Validate inputs — plan path vs. review path

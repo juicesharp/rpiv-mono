@@ -5,7 +5,7 @@ section: "guides"
 order: 3
 ---
 
-The pipeline itself is durable: state lives in `thoughts/shared/` markdown artifacts, not in the chat transcript. But **mid-skill state** (the active todo list, recent decisions, in-flight file changes you've half-applied, open questions) doesn't make it into the artifacts. For that, use handoffs.
+The pipeline itself is durable: state lives in `.rpiv/artifacts/` markdown artifacts, not in the chat transcript. But **mid-skill state** (the active todo list, recent decisions, in-flight file changes you've half-applied, open questions) doesn't make it into the artifacts. For that, use handoffs.
 
 A handoff is a compact snapshot of where you are: the current task, decisions made so far, in-flight changes, and open questions. You write it before closing the session; the next session reads it back and picks up exactly where you left off.
 
@@ -28,7 +28,7 @@ Inside your current session, when you're ready to pause:
 
 `/skill:create-handoff` compacts the active task, recent decisions, in-flight file changes, and open questions into a single markdown file. It's intentionally concise: enough for a fresh session to pick up, not a full transcript.
 
-**Output**: a handoff document under `thoughts/handoffs/<slug>.md`.
+**Output**: a handoff document under `.rpiv/artifacts/handoffs/<slug>.md`.
 
 `create-handoff` has `disable-model-invocation: true`, meaning it only fires on the explicit `/skill:create-handoff` slash command. The pipeline skills won't trigger it on your behalf. Pausing is always a deliberate decision.
 
@@ -37,14 +37,14 @@ Inside your current session, when you're ready to pause:
 In a new session (fresh context, possibly a different machine), point `resume-handoff` at the handoff file:
 
 ```
-/skill:resume-handoff thoughts/handoffs/<slug>.md
+/skill:resume-handoff .rpiv/artifacts/handoffs/<slug>.md
 ```
 
 `/skill:resume-handoff` reads the handoff, verifies the current repo and branch state (warns if things have drifted since the handoff was written), and continues from the next step the handoff identifies. It's interactive: it asks before assuming.
 
 ## Where handoffs live
 
-Handoffs are gitignored by design, under `thoughts/`. They live locally on the machine that wrote them. To hand off to a teammate, share the handoff file directly: commit it to a working branch, paste the contents in chat, copy it across machines. The pipeline never depends on handoffs for chain integrity; they're a convenience layer over the durable artifact chain underneath.
+Handoffs are gitignored by design, under `.rpiv/artifacts/`. They live locally on the machine that wrote them. To hand off to a teammate, share the handoff file directly: commit it to a working branch, paste the contents in chat, copy it across machines. The pipeline never depends on handoffs for chain integrity; they're a convenience layer over the durable artifact chain underneath.
 
 ## Next steps
 

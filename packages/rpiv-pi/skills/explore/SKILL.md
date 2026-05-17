@@ -1,6 +1,6 @@
 ---
 name: explore
-description: Analyze solution options for a feature or change, comparing approaches with pros, cons, trade-offs, and a recommended path. Use when the user is weighing approaches, asks "what are the options" or "how should we approach X", wants approaches compared, says "explore solutions", or faces a decision with multiple valid implementations. Produces solutions documents in thoughts/shared/solutions/, which can feed the design skill.
+description: Analyze solution options for a feature or change, comparing approaches with pros, cons, trade-offs, and a recommended path. Use when the user is weighing approaches, asks "what are the options" or "how should we approach X", wants approaches compared, says "explore solutions", or faces a decision with multiple valid implementations. Produces solutions documents in .rpiv/artifacts/solutions/, which can feed the design skill.
 argument-hint: "[feature/change description]"
 ---
 
@@ -127,7 +127,7 @@ Wait for ALL agents to complete before proceeding.
 
 ### Step 6: Determine Metadata and Filename
 
-- Filename format: `thoughts/shared/solutions/YYYY-MM-DD_HH-MM-SS_{topic}.md`
+- Filename format: `.rpiv/artifacts/solutions/YYYY-MM-DD_HH-MM-SS_{topic}.md`
   - YYYY-MM-DD_HH-MM-SS: Current date and time (e.g., 2025-10-11_14-30-22)
   - {topic}: Brief kebab-case description
 - Repository name: from git root basename, or current directory basename if not a git repo
@@ -310,9 +310,9 @@ Wait for ALL agents to complete before proceeding.
 
   ## References
 
-  - `thoughts/shared/research/{file}.md` - {Context}
+  - `.rpiv/artifacts/research/{file}.md` - {Context}
   - `src/file.ext:line` - {Similar implementation}
-  - `thoughts/shared/{file}.md` - {Historical decision}
+  - `.rpiv/artifacts/{file}.md` - {Historical decision}
   ```
 
 ### Step 8: Present Findings
@@ -321,7 +321,7 @@ Print a concise summary, highlight key integration points, then close with the s
 
 ```
 Solutions document written to:
-`thoughts/shared/solutions/{filename}.md`
+`.rpiv/artifacts/solutions/{filename}.md`
 
 {N} candidates evaluated, {M} dimensions scored, recommendation: {chosen}.
 
@@ -329,7 +329,7 @@ Solutions document written to:
 
 💬 Follow-up: describe the change in chat to append a timestamped Follow-up section to this artifact. Re-run `/skill:explore` for a fresh artifact.
 
-**Next step:** `/skill:design thoughts/shared/solutions/{filename}.md` — turn the chosen option into a design artifact (or `/skill:blueprint thoughts/shared/solutions/{filename}.md` for the fast path on smaller tasks).
+**Next step:** `/skill:design .rpiv/artifacts/solutions/{filename}.md` — turn the chosen option into a design artifact (or `/skill:blueprint .rpiv/artifacts/solutions/{filename}.md` for the fast path on smaller tasks).
 
 > 🆕 Tip: start a fresh session with `/new` first — chained skills work best with a clean context window.
 ```

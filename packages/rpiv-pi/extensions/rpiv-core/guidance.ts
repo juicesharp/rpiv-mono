@@ -32,6 +32,7 @@ const AGENTS_MD = "AGENTS.md";
 const CLAUDE_MD = "CLAUDE.md";
 const RPIV_DIR = ".rpiv";
 const GUIDANCE_SUBDIR = "guidance";
+export const ARTIFACTS_SUBDIR = "artifacts";
 const ARCHITECTURE_MD = "architecture.md";
 /** Forward-slash dedup key for root guidance — must NOT use join() for cross-platform compat. */
 const ROOT_GUIDANCE_KEY = `${RPIV_DIR}/${GUIDANCE_SUBDIR}/${ARCHITECTURE_MD}`;

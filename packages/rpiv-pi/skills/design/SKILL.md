@@ -1,6 +1,6 @@
 ---
 name: design
-description: Design complex features by decomposing them into vertical slices and producing a design artifact (architecture decisions, slice breakdown, file map) in thoughts/shared/designs/. The design feeds the plan or blueprint skill. Use for complex multi-component features touching 6+ files across multiple layers, when the user wants a feature designed before implementation. Requires a research artifact or a solutions artifact (from explore). Prefer design over plan or blueprint when the focus is architecture and decomposition rather than phased execution steps.
+description: Design complex features by decomposing them into vertical slices and producing a design artifact (architecture decisions, slice breakdown, file map) in .rpiv/artifacts/designs/. The design feeds the plan or blueprint skill. Use for complex multi-component features touching 6+ files across multiple layers, when the user wants a feature designed before implementation. Requires a research artifact or a solutions artifact (from explore). Prefer design over plan or blueprint when the focus is architecture and decomposition rather than phased execution steps.
 argument-hint: "[research artifact path]"
 ---
 
@@ -10,7 +10,7 @@ You are tasked with designing how code will be shaped for a feature or change. T
 
 ## Input
 
-`$ARGUMENTS` — path to a research artifact (`thoughts/shared/research/*.md`) or a solutions artifact (`thoughts/shared/solutions/*.md`).
+`$ARGUMENTS` — path to a research artifact (`.rpiv/artifacts/research/*.md`) or a solutions artifact (`.rpiv/artifacts/solutions/*.md`).
 
 ## Flow
 
@@ -26,7 +26,7 @@ When this command is invoked:
 
 1. **Read research artifact**:
 
-   **Research artifact provided** (argument contains a path to a `.md` file in `thoughts/`):
+   **Research artifact provided** (argument contains a path to a `.md` file in `.rpiv/artifacts/`):
    - Read the research artifact FULLY using the Read tool WITHOUT limit/offset
    - Extract: Summary, Code References, Integration Points, Architecture Insights, Developer Context, Open Questions
    - **Read the key source files from Code References** into the main context — especially hooks, shared utilities, and integration points the design will depend on. Read them FULLY. This ensures you have complete understanding before proceeding.
@@ -203,7 +203,7 @@ After the design summary is confirmed, decompose the feature into vertical slice
 3. **Confirm decomposition** using the `ask_user_question` tool. Question: "{N} slices for {feature}. Slice 1: {name} (foundation). Slices 2-N: {brief}. Approve decomposition?". Header: "Slices". Options: "Approve (Recommended)" (Proceed to slice-by-slice code generation); "Adjust slices" (Reorder, merge, or split slices before generating); "Change scope" (Add or remove files from the decomposition).
 
 4. **Create skeleton artifact** — immediately after decomposition is approved:
-   - Determine metadata: filename `thoughts/shared/designs/YYYY-MM-DD_HH-MM-SS_topic.md`, repository name from git root, branch and commit from the git context injected at the start of the session (fallbacks: "no-branch" / "no-commit"), author from the injected User (fallback: "unknown")
+   - Determine metadata: filename `.rpiv/artifacts/designs/YYYY-MM-DD_HH-MM-SS_topic.md`, repository name from git root, branch and commit from the git context injected at the start of the session (fallbacks: "no-branch" / "no-commit"), author from the injected User (fallback: "unknown")
    - Timestamp: run `date +"%Y-%m-%dT%H:%M:%S%z"` — raw for `date:` and `last_updated:`, first 19 chars (`T`→`_`, `:`→`-`) for filename slug.
    - Write skeleton using the Write tool with `status: in-progress` in frontmatter
    - **Include all prose sections filled** from Steps 1-5: Summary, Requirements, Current State Analysis, Scope, Decisions, Desired End State, File Map, Ordering Constraints, Verification Notes, Performance Considerations, Migration Notes, Pattern References, Developer Context, References
@@ -340,7 +340,7 @@ The artifact was created as a skeleton in Step 6 and filled progressively in Ste
 1. **Present the design artifact location**:
    ```
    Design artifact written to:
-   `thoughts/shared/designs/{filename}.md`
+   `.rpiv/artifacts/designs/{filename}.md`
 
    {N} architectural decisions fixed, {M} new files designed, {K} existing files modified.
    {S} slices generated, {R} revisions during generation.
@@ -354,7 +354,7 @@ The artifact was created as a skeleton in Step 6 and filled progressively in Ste
 
    💬 Follow-up: describe the change in chat to append a timestamped Follow-up section to this artifact. Re-run `/skill:design` for a fresh artifact.
 
-   **Next step:** `/skill:plan thoughts/shared/designs/{filename}.md` — sequence the design into implementation phases.
+   **Next step:** `/skill:plan .rpiv/artifacts/designs/{filename}.md` — sequence the design into implementation phases.
 
    > 🆕 Tip: start a fresh session with `/new` first — chained skills work best with a clean context window.
    ```

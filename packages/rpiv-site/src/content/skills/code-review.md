@@ -1,6 +1,6 @@
 ---
 slug: code-review
-tagline: Reads a diff, branch, or PR through Quality · Security · Dependencies lenses with parallel specialist agents and returns one cited report under `thoughts/shared/reviews/`.
+tagline: Reads a diff, branch, or PR through Quality · Security · Dependencies lenses with parallel specialist agents and returns one cited report under `.rpiv/artifacts/reviews/`.
 purpose: |
   Multi-lens review using parallel specialist agents (integration-scanner, precedent-locator, peer-comparator, codebase-analyzer, web-search-researcher). The most token-hungry skill in the pipeline; drop it into any workflow at any point, not just before commit. Order is interchangeable with `commit`.
 when_to_use:
@@ -14,7 +14,7 @@ inputs:
     notes: Empty defaults to feature-branch-vs-default-branch first-parent review.
 outputs:
   - artifact: Review document
-    path: thoughts/shared/reviews/
+    path: .rpiv/artifacts/reviews/
     format: markdown with file:line citations
 key_steps:
   - title: Resolve scope and assemble a `-U30` union diff

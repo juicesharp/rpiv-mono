@@ -10,7 +10,7 @@ You are tasked with resuming work from a handoff document through an interactive
 
 ## Input
 
-`$ARGUMENTS` — path to a handoff document under `thoughts/shared/handoffs/`. If omitted, the skill lists available handoffs and asks which to resume from.
+`$ARGUMENTS` — path to a handoff document under `.rpiv/artifacts/handoffs/`. If omitted, the skill lists available handoffs and asks which to resume from.
 
 ## Flow
 
@@ -25,7 +25,7 @@ When this command is invoked:
 1. **If the path to a handoff document was provided**:
    - If a handoff document path was provided as a parameter, skip the default message
    - Immediately read the handoff document FULLY using the Read tool
-   - Immediately read any research or plan documents that it links to under `thoughts/shared/plans` or `thoughts/shared/research` or `thoughts/shared/solutions`. Read these critical files DIRECTLY using the Read tool - do NOT invoke skills for this initial reading phase.
+   - Immediately read any research or plan documents that it links to under `.rpiv/artifacts/plans` or `.rpiv/artifacts/research` or `.rpiv/artifacts/solutions`. Read these critical files DIRECTLY using the Read tool - do NOT invoke skills for this initial reading phase.
    - Begin the analysis process by ingesting relevant context from the handoff document, reading additional files it mentions
    - Then propose a course of action to the user and confirm, or ask for clarification on direction.
 
@@ -35,7 +35,7 @@ I'll help you resume work from a handoff document. Let me find the available han
 
 Which handoff would you like to resume from?
 
-Tip: You can invoke this command directly with a handoff path: `/skill:resume-handoff thoughts/shared/handoffs/YYYY-MM-DD_HH-MM-SS_description.md`
+Tip: You can invoke this command directly with a handoff path: `/skill:resume-handoff .rpiv/artifacts/handoffs/YYYY-MM-DD_HH-MM-SS_description.md`
 ```
 
 Then wait for the user's input.
@@ -196,7 +196,7 @@ Then wait for the user's input.
 ## Example Interaction Flow
 
 ```
-User: /skill:resume-handoff thoughts/shared/handoffs/2025-01-08_14-30-15_webhook-validation.md
+User: /skill:resume-handoff .rpiv/artifacts/handoffs/2025-01-08_14-30-15_webhook-validation.md
 Assistant: Let me read and analyze that handoff document...
 
 {Reads handoff completely}

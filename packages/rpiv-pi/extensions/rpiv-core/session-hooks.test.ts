@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMockCtx, createMockPi, stubGitExec } from "@juicesharp/rpiv-test-utils";
@@ -65,22 +65,102 @@ describe("registerSessionHooks — event wiring", () => {
 	});
 });
 
-describe("session_start hook", () => {
-	it("scaffolds thoughts dirs under ctx.cwd", async () => {
+describe("session_start hook — migration", () => {
+	it("scaffolds .rpiv/artifacts/ dirs on fresh project", async () => {
 		const { pi, captured } = createMockPi({ exec: stubGitExec({}) as never });
 		registerSessionHooks(pi);
 		const handler = captured.events.get("session_start")?.[0];
 		const ctx = createMockCtx({ cwd: projectDir, hasUI: true });
 		await handler?.({ reason: "startup" } as never, ctx as never);
 		for (const d of [
-			"thoughts/shared/discover",
-			"thoughts/shared/research",
-			"thoughts/shared/designs",
-			"thoughts/shared/plans",
-			"thoughts/shared/handoffs",
-			"thoughts/shared/reviews",
+			".rpiv/artifacts/discover",
+			".rpiv/artifacts/research",
+			".rpiv/artifacts/designs",
+			".rpiv/artifacts/plans",
+			".rpiv/artifacts/handoffs",
+			".rpiv/artifacts/reviews",
+			".rpiv/artifacts/solutions",
 		]) {
 			expect(existsSync(join(projectDir, d))).toBe(true);
+		}
+	});
+
+	it("migrates thoughts/shared/ to .rpiv/artifacts/ with content preservation", async () => {
+		const oldResearch = join(projectDir, "thoughts", "shared", "research");
+		mkdirSync(oldResearch, { recursive: true });
+		writeFileSync(join(oldResearch, "test.md"), "# Test Research");
+
+		const { pi, captured } = createMockPi({ exec: stubGitExec({}) as never });
+		registerSessionHooks(pi);
+		const handler = captured.events.get("session_start")?.[0];
+		const ctx = createMockCtx({ cwd: projectDir, hasUI: true });
+		await handler?.({ reason: "startup" } as never, ctx as never);
+
+		// Content preserved
+		expect(existsSync(join(projectDir, ".rpiv", "artifacts", "research", "test.md"))).toBe(true);
+		// Old dir removed
+		expect(existsSync(join(projectDir, "thoughts", "shared"))).toBe(false);
+		// thoughts/ root removed (was empty after shared/ deleted)
+		expect(existsSync(join(projectDir, "thoughts"))).toBe(false);
+	});
+
+	it("preserves thoughts/ root when non-shared content exists", async () => {
+		const oldResearch = join(projectDir, "thoughts", "shared", "research");
+		mkdirSync(oldResearch, { recursive: true });
+		writeFileSync(join(oldResearch, "test.md"), "content");
+		const meDir = join(projectDir, "thoughts", "me");
+		mkdirSync(meDir, { recursive: true });
+		writeFileSync(join(meDir, "notes.md"), "personal");
+
+		const { pi, captured } = createMockPi({ exec: stubGitExec({}) as never });
+		registerSessionHooks(pi);
+		const handler = captured.events.get("session_start")?.[0];
+		const ctx = createMockCtx({ cwd: projectDir, hasUI: true });
+		await handler?.({ reason: "startup" } as never, ctx as never);
+
+		expect(existsSync(join(projectDir, ".rpiv", "artifacts", "research", "test.md"))).toBe(true);
+		expect(existsSync(join(projectDir, "thoughts", "shared"))).toBe(false);
+		expect(existsSync(join(projectDir, "thoughts", "me", "notes.md"))).toBe(true);
+		expect(existsSync(join(projectDir, "thoughts"))).toBe(true);
+	});
+
+	it("no-ops when thoughts/shared/ does not exist (fresh project)", async () => {
+		const { pi, captured } = createMockPi({ exec: stubGitExec({}) as never });
+		registerSessionHooks(pi);
+		const handler = captured.events.get("session_start")?.[0];
+		const ctx = createMockCtx({ cwd: projectDir, hasUI: true });
+		await handler?.({ reason: "startup" } as never, ctx as never);
+
+		// Artifact dirs created but no thoughts/ tree exists
+		expect(existsSync(join(projectDir, ".rpiv", "artifacts"))).toBe(true);
+		expect(existsSync(join(projectDir, "thoughts"))).toBe(false);
+	});
+
+	it.skipIf(process.platform === "win32")("never crashes session_start even when migration step fails", async () => {
+		// ESM module namespaces are not configurable under this Vitest config
+		// (see agents.test.ts Q7), so induce the failure at the filesystem layer:
+		// chmod 0o000 on thoughts/shared makes the inner readdirSync throw EACCES,
+		// hitting the migration's catch block.
+		const sharedDir = join(projectDir, "thoughts", "shared");
+		const oldResearch = join(sharedDir, "research");
+		mkdirSync(oldResearch, { recursive: true });
+		writeFileSync(join(oldResearch, "test.md"), "content");
+
+		const originalMode = statSync(sharedDir).mode & 0o777;
+		chmodSync(sharedDir, 0o000);
+		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+		try {
+			const { pi, captured } = createMockPi({ exec: stubGitExec({}) as never });
+			registerSessionHooks(pi);
+			const handler = captured.events.get("session_start")?.[0];
+			const ctx = createMockCtx({ cwd: projectDir, hasUI: true });
+			// Must not throw — migration is best-effort
+			await expect(handler?.({ reason: "startup" } as never, ctx as never)).resolves.toBeUndefined();
+			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("migration"));
+		} finally {
+			chmodSync(sharedDir, originalMode);
+			warnSpy.mockRestore();
 		}
 	});
 });
