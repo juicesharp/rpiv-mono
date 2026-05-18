@@ -150,6 +150,53 @@ export class WrappingSelect implements Component {
 		return lines;
 	}
 
+	/**
+	 * Returns the [startRow, endRow) range of the focused (selected) item within
+	 * the output of `render(width)`. Computed by iterating the visible window and
+	 * summing per-item row counts — O(maxVisible) per call.
+	 */
+	focusedItemRowRange(width: number): [number, number] {
+		if (this.items.length === 0) return [0, 0];
+		const { startIndex, endIndex } = this.computeVisibleWindow();
+		const numberWidth = String(Math.max(1, this.totalItemsForNumbering)).length;
+		let row = 0;
+		for (let i = startIndex; i < endIndex; i++) {
+			const item = this.items[i];
+			if (!item) continue;
+			const isActive = i === this.selectedIndex && this.focused;
+			const itemRowCount = this.computeItemRowCount(item, i, isActive, width, numberWidth);
+			if (i === this.selectedIndex) {
+				return [row, row + itemRowCount];
+			}
+			row += itemRowCount;
+		}
+		return [0, 1];
+	}
+
+	private computeItemRowCount(
+		item: WrappingSelectItem,
+		index: number,
+		isActive: boolean,
+		width: number,
+		numberWidth: number,
+	): number {
+		const rowPrefix = this.buildRowPrefix(index, isActive, numberWidth);
+		const contentWidth = Math.max(WrappingSelect.MIN_CONTENT_WIDTH, width - visibleWidth(rowPrefix));
+
+		if (this.shouldRenderAsInlineInput(item, isActive)) {
+			const raw = `${this.inputBuffer}${WrappingSelect.INPUT_CURSOR}`;
+			return wrapTextWithAnsi(raw, contentWidth).length;
+		}
+
+		const isConfirmed = index === this.confirmedIndex;
+		const label = isConfirmed
+			? `${this.confirmedLabelOverride ?? item.label}${WrappingSelect.CONFIRMED_MARK}`
+			: item.label;
+		const labelLines = wrapTextWithAnsi(label, contentWidth).length;
+		const descLines = item.description ? wrapTextWithAnsi(item.description, contentWidth).length : 0;
+		return labelLines + descLines;
+	}
+
 	private computeVisibleWindow(): { startIndex: number; endIndex: number } {
 		const half = Math.floor(this.maxVisible / 2);
 		const startIndex = Math.max(0, Math.min(this.selectedIndex - half, this.items.length - this.maxVisible));

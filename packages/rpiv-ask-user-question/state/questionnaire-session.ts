@@ -15,7 +15,7 @@ import { type ApplyContext, type Effect, reduce } from "./state-reducer.js";
 const CURSOR_END = "\x05";
 
 export interface QuestionnaireSessionConfig {
-	tui: { terminal: { columns: number }; requestRender(): void };
+	tui: { terminal: { columns: number; rows: number }; requestRender(): void };
 	theme: Theme;
 	params: QuestionParams;
 	itemsByTab: WrappingSelectItem[][];

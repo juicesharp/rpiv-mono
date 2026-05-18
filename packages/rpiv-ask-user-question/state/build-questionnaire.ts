@@ -36,7 +36,7 @@ import {
 import type { QuestionnaireState } from "./state.js";
 
 export interface QuestionnaireBuildConfig {
-	tui: { terminal: { columns: number }; requestRender(): void };
+	tui: { terminal: { columns: number; rows: number }; requestRender(): void };
 	theme: Theme;
 	questions: readonly QuestionData[];
 	itemsByTab: ReadonlyArray<readonly WrappingSelectItem[]>;
@@ -106,6 +106,7 @@ class QuestionnaireBuilder {
 	private readonly notesInput = new Input();
 	private readonly inlineInput = new Input();
 	private readonly getTerminalWidth = () => this.tui.terminal.columns;
+	private readonly getTerminalRows = () => this.tui.terminal.rows;
 
 	constructor(config: QuestionnaireBuildConfig) {
 		this.tui = config.tui;
@@ -242,6 +243,7 @@ class QuestionnaireBuilder {
 				submitPicker,
 				getBodyHeight: heights.global,
 				getCurrentBodyHeight: heights.current,
+				getTerminalRows: this.getTerminalRows,
 			},
 			{ state: this.initialState, activePreviewPane: this.pickInitialActivePreview(tabs) },
 		);

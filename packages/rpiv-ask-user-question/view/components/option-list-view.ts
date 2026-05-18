@@ -62,4 +62,8 @@ export class OptionListView implements StatefulView<OptionListViewProps> {
 	render(width: number): string[] {
 		return this.select.render(width);
 	}
+
+	focusedItemRowRange(width: number): [number, number] {
+		return this.select.focusedItemRowRange(width);
+	}
 }

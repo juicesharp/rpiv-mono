@@ -33,12 +33,17 @@ function driveCustom(script: (c: RenderableComponent, done: (v: unknown) => void
 	const custom = vi.fn((factory: unknown) => {
 		return new Promise((resolve) => {
 			const f = factory as (
-				tui: { requestRender: () => void; terminal: { columns: number } },
+				tui: { requestRender: () => void; terminal: { columns: number; rows: number } },
 				theme: typeof identityTheme,
 				kb: undefined,
 				done: (v: unknown) => void,
 			) => RenderableComponent;
-			const component = f({ requestRender, terminal: { columns: 120 } }, identityTheme, undefined, resolve);
+			const component = f(
+				{ requestRender, terminal: { columns: 120, rows: 24 } },
+				identityTheme,
+				undefined,
+				resolve,
+			);
 			script(component, resolve);
 		});
 	});

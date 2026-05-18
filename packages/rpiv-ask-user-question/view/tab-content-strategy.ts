@@ -4,7 +4,8 @@ import { t } from "../state/i18n-bridge.js";
 import { formatAnswerScalar } from "../tool/format-answer.js";
 import type { QuestionData } from "../tool/types.js";
 import type { ChatRowView } from "./components/chat-row-view.js";
-import type { PreviewPaneProps } from "./components/preview/preview-pane.js";
+import type { MultiSelectView } from "./components/multi-select-view.js";
+import type { PreviewPane, PreviewPaneProps } from "./components/preview/preview-pane.js";
 import {
 	type DialogState,
 	HINT_PART_CANCEL,
@@ -45,6 +46,9 @@ export interface TabContentStrategy {
 
 	/** Footer rows below the bottom border. Rendered row count MUST equal `footerRowCount`. */
 	footerRows(state: DialogState): Component[];
+
+	/** Row range of the focused item within the body's rendered output, or undefined if no interactive focus. */
+	focusedItemRowRange(width: number, state: DialogState): [number, number] | undefined;
 }
 
 export interface QuestionTabStrategyConfig {
@@ -107,6 +111,13 @@ export class QuestionTabStrategy implements TabContentStrategy {
 			new Spacer(1),
 			new Text(this.config.theme.fg("dim", buildHintText(question, this.config.isMulti, state)), 1, 0),
 		];
+	}
+
+	focusedItemRowRange(width: number, state: DialogState): [number, number] | undefined {
+		const question = this.config.questions[state.currentTab];
+		const mso = this.config.tabsByIndex[state.currentTab]?.multiSelect;
+		if (question?.multiSelect === true && mso) return (mso as unknown as MultiSelectView).focusedItemRowRange(width);
+		return (this.config.getPreviewPane() as unknown as PreviewPane).focusedItemRowRange(width);
 	}
 }
 
@@ -180,6 +191,10 @@ export class SubmitTabStrategy implements TabContentStrategy {
 			out.push(new Spacer(1));
 		}
 		return out;
+	}
+
+	focusedItemRowRange(_width: number, _state: DialogState): [number, number] | undefined {
+		return undefined;
 	}
 }
 

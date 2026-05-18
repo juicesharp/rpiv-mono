@@ -413,6 +413,87 @@ describe("WrappingSelect.setConfirmedIndex", () => {
 	});
 });
 
+describe("WrappingSelect.focusedItemRowRange", () => {
+	it("returns [0, 0] for empty items", () => {
+		const s = new WrappingSelect([], 10, identityTheme);
+		const [start, end] = s.focusedItemRowRange(40);
+		expect(start).toBe(0);
+		expect(end).toBe(0);
+	});
+
+	it("returns [0, 1] for single item focused at index 0", () => {
+		const s = new WrappingSelect([{ kind: "option", label: "A" }], 10, identityTheme);
+		const [start, end] = s.focusedItemRowRange(40);
+		expect(start).toBe(0);
+		expect(end).toBe(1);
+	});
+
+	it("returns correct range for focused item at index 1", () => {
+		const items: WrappingSelectItem[] = [
+			{ kind: "option", label: "A" },
+			{ kind: "option", label: "B" },
+		];
+		const s = new WrappingSelect(items, 10, identityTheme);
+		s.setSelectedIndex(1);
+		const [start, end] = s.focusedItemRowRange(40);
+		expect(start).toBe(1);
+		expect(end).toBe(2);
+	});
+
+	it("accounts for description rows in item before focused", () => {
+		const items: WrappingSelectItem[] = [
+			{ kind: "option", label: "A", description: "multi-word description text that is moderately long" },
+			{ kind: "option", label: "B" },
+		];
+		const s = new WrappingSelect(items, 10, identityTheme);
+		s.setSelectedIndex(1);
+		const [start, end] = s.focusedItemRowRange(40);
+		// Item A = 1 label + N description rows → start > 1
+		expect(start).toBeGreaterThan(1);
+		expect(end).toBe(start + 1);
+	});
+
+	it("accounts for focused item's own description rows", () => {
+		const items: WrappingSelectItem[] = [
+			{ kind: "option", label: "A" },
+			{ kind: "option", label: "B", description: "desc text" },
+			{ kind: "option", label: "C" },
+		];
+		const s = new WrappingSelect(items, 10, identityTheme);
+		s.setSelectedIndex(1);
+		const [start, end] = s.focusedItemRowRange(40);
+		expect(start).toBe(1);
+		expect(end).toBeGreaterThan(start + 1);
+	});
+
+	it("handles items in visible window (windowed)", () => {
+		const items: WrappingSelectItem[] = Array.from({ length: 20 }, (_, i) => ({
+			kind: "option" as const,
+			label: `row-${i + 1}`,
+		}));
+		const s = new WrappingSelect(items, 5, identityTheme);
+		s.setSelectedIndex(10);
+		const [start, end] = s.focusedItemRowRange(40);
+		// Window centered on index 10: indices 8..12. Items 8,9 before focused = 2 rows.
+		expect(start).toBe(2);
+		expect(end).toBe(3);
+	});
+
+	it("range matches actual rendered output position", () => {
+		const items: WrappingSelectItem[] = [
+			{ kind: "option", label: "A", description: "a longer description that may wrap around" },
+			{ kind: "option", label: "B" },
+			{ kind: "option", label: "C" },
+		];
+		const s = new WrappingSelect(items, 10, identityTheme);
+		s.setSelectedIndex(1);
+		const [start, end] = s.focusedItemRowRange(30);
+		const rendered = s.render(30);
+		expect(rendered[start]).toContain("B");
+		expect(rendered[end - 1]).not.toContain("C");
+	});
+});
+
 describe("WrappingSelectItem.kind contract — exhaustive", () => {
 	const allKinds: WrappingSelectItem[] = [
 		{ kind: "option", label: "opt" },

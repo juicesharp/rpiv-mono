@@ -84,6 +84,30 @@ export class MultiSelectView implements StatefulView<MultiSelectViewProps> {
 		return lines;
 	}
 
+	/**
+	 * Returns the [startRow, endRow) range of the active (focused) row within
+	 * `render(width)`. Labels are always 1 row (truncated); descriptions wrap.
+	 */
+	focusedItemRowRange(width: number): [number, number] {
+		const prefixWidth = this.prefixVisibleWidth();
+		const contentWidth = Math.max(1, width - prefixWidth);
+		let row = 0;
+		for (let i = 0; i < this.question.options.length; i++) {
+			const opt = this.question.options[i];
+			const r = this.props.rows[i];
+			if (!opt || !r) continue;
+			const itemHeight = 1 + (opt.description ? wrapTextWithAnsi(opt.description, contentWidth).length : 0);
+			if (r.active) {
+				return [row, row + itemHeight];
+			}
+			row += itemHeight;
+		}
+		if (this.props.nextActive) {
+			return [row, row + 1];
+		}
+		return [0, 0];
+	}
+
 	naturalHeight(width: number): number {
 		const contentWidth = Math.max(1, width - this.prefixVisibleWidth());
 		let total = 0;

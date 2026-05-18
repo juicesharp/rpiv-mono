@@ -225,6 +225,116 @@ describe("MultiSelectView.naturalHeight", () => {
 	});
 });
 
+describe("MultiSelectView.focusedItemRowRange", () => {
+	it("returns correct range for active option with description", () => {
+		const q: QuestionData = {
+			question: "pick?",
+			header: "H",
+			options: [
+				{ label: "A", description: "" },
+				{ label: "B", description: "a longer description that might wrap" },
+				{ label: "C", description: "" },
+			],
+			multiSelect: true,
+		};
+		const view = makeView(q, {
+			rows: [
+				{ checked: false, active: false },
+				{ checked: false, active: true },
+				{ checked: false, active: false },
+			],
+			nextActive: false,
+			nextLabel: "Next",
+		});
+		const [start, end] = view.focusedItemRowRange(80);
+		expect(start).toBe(1);
+		expect(end).toBeGreaterThan(start);
+	});
+
+	it("returns [0, 1] for first item active with no description", () => {
+		const q: QuestionData = {
+			question: "pick?",
+			header: "H",
+			options: [
+				{ label: "A", description: "" },
+				{ label: "B", description: "" },
+			],
+			multiSelect: true,
+		};
+		const view = makeView(q, {
+			rows: [
+				{ checked: false, active: true },
+				{ checked: false, active: false },
+			],
+			nextActive: false,
+			nextLabel: "Next",
+		});
+		const [start, end] = view.focusedItemRowRange(80);
+		expect(start).toBe(0);
+		expect(end).toBe(1);
+	});
+
+	it("returns range for Next sentinel when nextActive", () => {
+		const q: QuestionData = {
+			question: "pick?",
+			header: "H",
+			options: [{ label: "A", description: "" }],
+			multiSelect: true,
+		};
+		const view = makeView(q, {
+			rows: [{ checked: false, active: false }],
+			nextActive: true,
+			nextLabel: "Next",
+		});
+		const [start, end] = view.focusedItemRowRange(80);
+		expect(start).toBe(1);
+		expect(end).toBe(2);
+	});
+
+	it("returns [0, 0] when no row is active", () => {
+		const q: QuestionData = {
+			question: "pick?",
+			header: "H",
+			options: [{ label: "A", description: "" }],
+			multiSelect: true,
+		};
+		const view = makeView(q, {
+			rows: [{ checked: false, active: false }],
+			nextActive: false,
+			nextLabel: "Next",
+		});
+		const [start, end] = view.focusedItemRowRange(80);
+		expect(start).toBe(0);
+		expect(end).toBe(0);
+	});
+
+	it("range matches actual rendered output position", () => {
+		const q: QuestionData = {
+			question: "pick?",
+			header: "H",
+			options: [
+				{ label: "A", description: "" },
+				{ label: "B", description: "a description" },
+			],
+			multiSelect: true,
+		};
+		const view = makeView(q, {
+			rows: [
+				{ checked: false, active: false },
+				{ checked: false, active: true },
+			],
+			nextActive: false,
+			nextLabel: "Next",
+		});
+		const [start, end] = view.focusedItemRowRange(80);
+		const rendered = view.render(80);
+		// Row at start should contain B
+		expect(rendered[start]).toContain("B");
+		// end is exclusive; last row of B's range is end-1
+		expect(end).toBeLessThanOrEqual(rendered.length);
+	});
+});
+
 describe("MultiSelectView width safety", () => {
 	it("every emitted line satisfies visibleWidth(line) <= width", () => {
 		const q = question({

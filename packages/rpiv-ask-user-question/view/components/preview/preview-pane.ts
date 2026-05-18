@@ -133,6 +133,16 @@ export class PreviewPane implements StatefulView<PreviewPaneProps>, Component {
 		];
 	}
 
+	focusedItemRowRange(width: number): [number, number] {
+		if (this.question.multiSelect === true) return this.optionListView.focusedItemRowRange(width);
+		if (!this.previewBlock.hasAnyPreview()) return this.optionListView.focusedItemRowRange(width);
+		const mode = decideLayout(this.getTerminalWidth(), width);
+		if (mode === "stacked") return this.optionListView.focusedItemRowRange(width);
+		const adaptiveLeft = this.getAdaptiveLeft(width);
+		const { leftWidth } = columnWidths(width, adaptiveLeft);
+		return this.optionListView.focusedItemRowRange(leftWidth);
+	}
+
 	naturalHeight(width: number): number {
 		if (this.question.multiSelect === true) return this.optionListView.render(width).length;
 		if (!this.previewBlock.hasAnyPreview()) return this.optionListView.render(width).length;

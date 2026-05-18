@@ -40,6 +40,13 @@ function stubComponent(lines: string[]): Component {
 	};
 }
 
+function stubPreviewPane(lines: string[]): PreviewPane {
+	return {
+		...stubComponent(lines),
+		focusedItemRowRange: (_w: number) => [0, 1] as [number, number],
+	} as unknown as PreviewPane;
+}
+
 function stubOptionList(): OptionListView {
 	return stubComponent(["<OPTION_LIST>"]) as unknown as OptionListView;
 }
@@ -92,7 +99,7 @@ function makeConfig(over: MakeConfigOverrides = {}): DialogParts {
 		submitChoiceIndex: 0,
 		notesDraft: "",
 	};
-	const previewPane = over.previewPane ?? (stubComponent(["<PREVIEW>"]) as unknown as PreviewPane);
+	const previewPane = over.previewPane ?? stubPreviewPane(["<PREVIEW>"]);
 	const tabsByIndex: ReadonlyArray<TabComponents> =
 		over.tabsByIndex ??
 		questions.map((_, i) => ({
@@ -120,6 +127,7 @@ function makeConfig(over: MakeConfigOverrides = {}): DialogParts {
 				if (q?.multiSelect === true && mso) return (mso as unknown as Component).render(w).length;
 				return (previewPane as unknown as Component).render(w).length;
 			}),
+		getTerminalRows: over.getTerminalRows ?? (() => 24),
 	};
 	const initialProps: DialogProps = over.initialProps ?? { state, activePreviewPane: previewPane };
 	return { config, initialProps };
@@ -542,8 +550,8 @@ describe("makeDialog — Submit tab", () => {
 
 describe("makeDialog — setProps swap", () => {
 	it("setProps replaces the rendered pane on subsequent render() calls", () => {
-		const paneA = stubComponent(["<PANE_A>"]) as unknown as PreviewPane;
-		const paneB = stubComponent(["<PANE_B>"]) as unknown as PreviewPane;
+		const paneA = stubPreviewPane(["<PANE_A>"]);
+		const paneB = stubPreviewPane(["<PANE_B>"]);
 		const cfg = makeConfig({ previewPane: paneA });
 		const dlg = makeDialog(cfg);
 		expect(dlg.render(80).join("\n")).toContain("<PANE_A>");
@@ -582,8 +590,10 @@ describe("makeDialog — width safety", () => {
 
 describe("makeDialog — body residual padding", () => {
 	it("dialog total grows by (getBodyHeight delta) when getCurrentBodyHeight stays constant", () => {
-		const a = makeDialog(makeConfig({ getBodyHeight: () => 5, getCurrentBodyHeight: () => 1 })).render(80);
-		const b = makeDialog(makeConfig({ getBodyHeight: () => 20, getCurrentBodyHeight: () => 1 })).render(80);
+		// Use a tall terminal so the no-overflow path is exercised (where residual padding applies).
+		const tall = { getTerminalRows: () => 200 } as const;
+		const a = makeDialog(makeConfig({ ...tall, getBodyHeight: () => 5, getCurrentBodyHeight: () => 1 })).render(80);
+		const b = makeDialog(makeConfig({ ...tall, getBodyHeight: () => 20, getCurrentBodyHeight: () => 1 })).render(80);
 		expect(b.length - a.length).toBe(15);
 	});
 
