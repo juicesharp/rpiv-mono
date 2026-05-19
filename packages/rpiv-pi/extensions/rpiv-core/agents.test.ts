@@ -14,7 +14,6 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-	BUNDLED_AGENTS_DIR,
 	CLEANUP_SKIP_REASON,
 	cleanupPerCwdAgents,
 	isSafeDestructiveOp,
@@ -22,6 +21,7 @@ import {
 	summarizeCleanupSkips,
 	syncBundledAgents,
 } from "./agents.js";
+import { BUNDLED_AGENTS_DIR } from "./paths.js";
 
 const sha256 = (s: string | Buffer) => createHash("sha256").update(s).digest("hex");
 

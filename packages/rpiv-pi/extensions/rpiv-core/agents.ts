@@ -26,26 +26,10 @@ import {
 	unlinkSync,
 	writeFileSync,
 } from "node:fs";
-import { dirname, isAbsolute, join, resolve, sep } from "node:path";
-import { fileURLToPath } from "node:url";
+import { isAbsolute, join, resolve, sep } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { BUNDLED_AGENTS_DIR } from "./paths.js";
 import { isPlainObject, toErrorMessage } from "./utils.js";
-
-// ---------------------------------------------------------------------------
-// Package-root resolution
-// ---------------------------------------------------------------------------
-
-/**
- * Resolves the rpiv-pi package root from this module's file URL.
- * Walks up from `extensions/rpiv-core/agents.ts` to the repo root.
- */
-export const PACKAGE_ROOT = (() => {
-	const thisFile = fileURLToPath(import.meta.url);
-	// extensions/rpiv-core/agents.ts -> rpiv-pi/
-	return dirname(dirname(dirname(thisFile)));
-})();
-
-export const BUNDLED_AGENTS_DIR = join(PACKAGE_ROOT, "agents");
 
 // ---------------------------------------------------------------------------
 // Types
