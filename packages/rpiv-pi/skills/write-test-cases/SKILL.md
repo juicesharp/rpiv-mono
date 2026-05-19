@@ -2,6 +2,7 @@
 name: write-test-cases
 description: Generate manual test-case specifications for a single feature by analyzing the implementing code in parallel, producing flow-based test cases plus a regression suite and project-wide coverage map under .rpiv/test-cases/{feature}/. Consumes an outline-test-cases _meta.md when available for warm-start. Use when the user wants test cases written for a specific feature, asks for QA specs, or has run outline-test-cases and is ready to flesh out a feature.
 argument-hint: "[feature name, component path, feature slug, or _meta.md path] [additional instructions]"
+shell-timeout: 10
 ---
 
 # Write Test Cases
@@ -11,6 +12,17 @@ You are tasked with generating manual test case specifications for a single feat
 ## Input
 
 `$ARGUMENTS` — `[feature name, component path, feature slug, or _meta.md path] [additional instructions]`.
+
+## Metadata
+
+```!
+node "${SKILL_DIR}/../_shared/now.mjs"
+echo
+node "${SKILL_DIR}/../_shared/git-context.mjs"
+```
+
+- `now.mjs` (line 1) — `<iso>\t<slug>` tab-separated. Use `<iso>` for any "current date" field.
+- `git-context.mjs` (lines below) — use `commit:` for any "current commit hash" frontmatter field.
 
 ## Flow
 
@@ -231,7 +243,7 @@ What makes these examples good:
 - Postconditions describe system-level side effects (from integration-scanner findings)
 - Edge cases list variant scenarios worth separate testing
 - Include preconditions: user role, required test data, system state
-- Include `commit` in frontmatter with current git commit hash
+- Include `commit` in frontmatter with `commit:` from the Metadata block
 
 **After all TCs**, generate the regression suite document:
 - Follow the regression-suite.md template
@@ -256,7 +268,7 @@ What makes these examples good:
 3. **Update _meta.md** (when it exists):
    - Set `tc_count` to the number of TCs written
    - Set `status` to `generated`
-   - Update `date` to current date
+   - Update `date` to `<iso>` from the Metadata block (first tab-separated field on `now.mjs` line 1)
    - Append new checkpoint Q&A pairs to `## Checkpoint History` under a new date header — only if new Q&A occurred during Step 5
 
 4. **Rebuild root coverage map** at `.rpiv/test-cases/_coverage-map.md`:
