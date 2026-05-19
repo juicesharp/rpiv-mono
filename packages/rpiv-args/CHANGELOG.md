@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- Refresh npm cover: combined two-panel layout demos both `$ARGUMENTS` and `` !`cmd` `` shell substitution.
+- Update package `description` and `keywords` to mention shell substitution alongside argument placeholders.
+
 ## [1.10.0] - 2026-05-19
 
 ### Added
