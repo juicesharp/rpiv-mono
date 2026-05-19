@@ -15,8 +15,7 @@ You are tasked with writing a handoff document to hand off your work to another 
 
 `$ARGUMENTS` — optional description (used in the handoff filename slug).
 
-## Process
-### 1. Filepath & Metadata
+## Metadata
 
 ```!
 node "${SKILL_DIR}/../_shared/now.mjs"
@@ -24,7 +23,15 @@ echo
 node "${SKILL_DIR}/../_shared/git-context.mjs"
 ```
 
-Line 1 is `<iso>\t<slug>` (tab-separated). Copy values verbatim — do not reformat the timezone offset or any other field:
+- `now.mjs` (line 1) — `<iso>\t<slug>` tab-separated.
+- `git-context.mjs` (lines below) — `branch:` / `commit:` / `repo:` / `root:` / `in_repo:`.
+
+Copy values verbatim — do not reformat the timezone offset or any other field.
+
+## Process
+### 1. Filepath & frontmatter mapping
+
+From the Metadata block above:
 - `<slug>` → filename prefix: `.rpiv/artifacts/handoffs/<slug>_<description>.md` (`<description>` is a kebab-case slug from `$ARGUMENTS`).
 - `<iso>` → frontmatter `date:` and `last_updated:`.
 - `repo:` → frontmatter `repository:`.
