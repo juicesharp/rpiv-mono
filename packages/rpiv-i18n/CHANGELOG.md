@@ -5,7 +5,7 @@ All notable changes to `@juicesharp/rpiv-i18n` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.9.2] - 2026-05-19
 
 ### Added
 - `@juicesharp/rpiv-i18n/loader` subpath export with `registerLocalesFromDir(namespace, packageUrl, options?)` — one-call locale registration for sibling extensions, replacing the per-package locale-load boilerplate.

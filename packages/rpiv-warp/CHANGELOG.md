@@ -5,7 +5,7 @@ All notable changes to `@juicesharp/rpiv-warp` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.9.2] - 2026-05-19
 
 ### Fixed
 - "Waiting for your answer" toast renders skill invocations as `/skill:<name> <args>` instead of the raw skill-block markup. Applies to both prompt-submit and stop-query toasts.
