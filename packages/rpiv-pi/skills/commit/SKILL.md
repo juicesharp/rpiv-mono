@@ -3,6 +3,7 @@ name: commit
 description: Create structured git commits by analyzing staged and unstaged changes and grouping them logically into one or more commits with clear, descriptive messages. Use when the user asks to commit, says "commit this" or "commit my changes", wants help writing a commit message, or has finished a chunk of work that needs committing.
 argument-hint: [message]
 allowed-tools: Bash(git *), Read, Glob, Grep
+shell-timeout: 10
 ---
 
 # Commit Changes
@@ -13,6 +14,14 @@ You are tasked with creating git commits for repository changes.
 
 `$ARGUMENTS` — optional commit message hint. Empty/literal → infer from history and `git diff`.
 
+## Metadata
+
+```!
+node "${SKILL_DIR}/../_shared/git-changes.mjs"
+```
+
+`git-changes.mjs` output — `in_repo:` line, then `---status---` (capped `git status --short`), then `---diffstat---` (`git diff HEAD --stat` of staged + unstaged changes; full per-file diff is intentionally NOT included to stay under the output budget).
+
 ## Context:
 - **In-session**: If there's conversation history, use it to understand what was built/changed
 - **Standalone**: If no context available, rely entirely on git state and file inspection
@@ -20,15 +29,13 @@ You are tasked with creating git commits for repository changes.
 ## Process:
 
 0. **Check git availability:**
-   - Run `git status --short` to determine whether the current directory is a git repository
-   - If not a git repo, tell the user: "This directory is not a git repository. Run `git init` to initialize one."
-   - Stop — do not proceed with commit.
+   - If `in_repo:` in the Metadata block is `no`, tell the user: "This directory is not a git repository. Run `git init` to initialize one." Stop — do not proceed.
 
 1. **Think about what changed:**
-   - **If in-session**: Review the conversation history to understand what was accomplished
-   - **Always**: Run `git diff` to understand the modifications in detail
-   - If needed, inspect file contents to understand purpose and scope
-   - Consider whether changes should be one commit or multiple logical commits
+   - **If in-session**: Review the conversation history to understand what was accomplished.
+   - The Metadata block already gives you the status snapshot and per-file diffstat — use it as the starting picture. Run `git diff <path>` via Bash only when you need per-file detail to write a precise message.
+   - If needed, inspect file contents to understand purpose and scope.
+   - Consider whether changes should be one commit or multiple logical commits.
 
 2. **Plan your commit(s):**
    - Identify which files belong together
