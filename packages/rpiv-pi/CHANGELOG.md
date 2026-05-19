@@ -7,12 +7,18 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- `code-review` skill gains a `modified` scope that includes uncommitted edits on top of the branch diff.
+
 ### Changed
 - Fourteen skills (`discover`, `research`, `explore`, `design`, `plan`, `blueprint`, `revise`, `validate`, `changelog`, `commit`, `create-handoff`, `resume-handoff`, `outline-test-cases`, `write-test-cases`) pre-bake runtime metadata via shell execution, eliminating per-invocation `date` and `git` shell commands.
-- `commit` skill reads a pre-baked working-tree snapshot instead of issuing `git status` and `git diff` as opening turns.
+- `commit` skill reads a pre-baked working-tree snapshot instead of issuing `git status` and `git diff` as opening turns, and now infers commit-message style from recent subjects.
+- `code-review` is now an LLM-invoked helper script, restoring cross-platform support.
 
 ### Fixed
 - `resume-handoff` correctly handles 0, 1, or 2+ available handoff files when invoked without arguments.
+- `code-review` `working` scope semantics corrected (uncommitted-only).
+- Skill template metadata placeholders now reference the Metadata block instead of bare shell expansions.
 
 ## [1.9.2] - 2026-05-19
 
