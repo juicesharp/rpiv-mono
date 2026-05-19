@@ -18,9 +18,13 @@ You are tasked with creating git commits for repository changes.
 
 ```!
 node "${SKILL_DIR}/../_shared/git-changes.mjs"
+echo "---recent-subjects---"
+git log --pretty=%s -n 20 2>/dev/null || true
 ```
 
 `git-changes.mjs` output — `in_repo:` line, then `---status---` (capped `git status --short`), then `---diffstat---` (`git diff HEAD --stat` of staged + unstaged changes; full per-file diff is intentionally NOT included to stay under the output budget).
+
+`---recent-subjects---` — up to 20 most recent commit subject lines, used in Step 2 to match the repository's existing commit-message style. Empty on a no-HEAD initial repo.
 
 ## Context:
 - **In-session**: If there's conversation history, use it to understand what was built/changed
@@ -41,6 +45,7 @@ node "${SKILL_DIR}/../_shared/git-changes.mjs"
    - Identify which files belong together
    - Draft clear, descriptive commit messages
    - Use imperative mood in commit messages
+   - **Match the subject style observed in `---recent-subjects---`** — same prefix convention (e.g. `feat:` / `fix(scope):` / `docs:` for Conventional Commits, gitmoji, bare sentence-case, ticket-prefixed, etc.), same length budget, same casing. If the sample is empty (initial repo) or mixed, default to imperative sentence-case with no prefix.
    - Focus on why the changes were made, not just what
    - Check for sensitive information (API keys, credentials) before committing
 
