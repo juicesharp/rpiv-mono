@@ -11,14 +11,14 @@
 [![npm version](https://img.shields.io/npm/v/@juicesharp/rpiv-web-tools.svg)](https://www.npmjs.com/package/@juicesharp/rpiv-web-tools)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Let the model search the web and read pages. `rpiv-web-tools` adds `web_search` and `web_fetch` tools to [Pi Agent](https://github.com/badlogic/pi-mono) with pluggable providers (Brave, Tavily, Serper, Exa, Jina, Firecrawl), plus `/web-search-config` for interactive provider selection and API-key setup.
+Let the model search the web and read pages. `rpiv-web-tools` adds `web_search` and `web_fetch` tools to [Pi Agent](https://github.com/badlogic/pi-mono) with pluggable providers (Brave, Tavily, Serper, Exa, Jina, Firecrawl, [SearXNG](https://docs.searxng.org/)), plus `/web-search-config` for interactive provider selection and API-key setup.
 
 ![Provider selection prompt](https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-web-tools/docs/config.jpg)
 
 ## Features
 
-- **Six pluggable providers** - Brave, Tavily, Serper, Exa, Jina, Firecrawl. Pick one as the active backend; switch any time without losing the others' keys.
-- **Per-provider fetch strategy** - Brave and Serper read the URL directly and strip HTML to text; Tavily/Exa/Jina/Firecrawl use their native extraction endpoints (markdown for Jina/Firecrawl, plain text for Tavily/Exa).
+- **Seven pluggable providers** - Brave, Tavily, Serper, Exa, Jina, Firecrawl, and self-hosted SearXNG. Pick one as the active backend; switch any time without losing the others' keys.
+- **Per-provider fetch strategy** - Brave, Serper, and SearXNG read the URL directly and strip HTML to text; Tavily/Exa/Jina/Firecrawl use their native extraction endpoints (markdown for Jina/Firecrawl, plain text for Tavily/Exa).
 - **Read any URL** - fetch http/https pages with HTML-to-text extraction, or get the raw response with `raw: true` (honoured by Brave/Serper; extraction providers always return their parsed text).
 - **Large-page spillover** - oversized responses truncate inline and spill the full body to a temp file the model can read on demand.
 - **SSRF guard** - refuses loopback, RFC 1918, link-local, and cloud-metadata addresses (`localhost`, `127.0.0.0/8`, `10.0.0.0/8`, `169.254.0.0/16`, `172.16.0.0/12`, `192.168.0.0/16`, `::1`, `fc00::/7`, `fe80::/10`).
@@ -56,7 +56,7 @@ Returns:
   content: [{ type: "text", text: string }], // markdown list of "**title**\n url\n snippet"
   details: {
     query: string,
-    backend: "brave" | "tavily" | "serper" | "exa" | "jina" | "firecrawl",
+    backend: "brave" | "tavily" | "serper" | "exa" | "jina" | "firecrawl" | "searxng",
     resultCount: number,
     results?: Array<{ title: string, url: string, snippet: string }>,
   }
@@ -103,11 +103,25 @@ Throws on invalid URL, non-http(s) protocol, private/loopback hostnames (SSRF gu
 
 First match wins:
 
-1. The active provider's environment variable: `BRAVE_SEARCH_API_KEY`, `TAVILY_API_KEY`, `SERPER_API_KEY`, `EXA_API_KEY`, `JINA_API_KEY`, or `FIRECRAWL_API_KEY`
+1. The active provider's environment variable: `BRAVE_SEARCH_API_KEY`, `TAVILY_API_KEY`, `SERPER_API_KEY`, `EXA_API_KEY`, `JINA_API_KEY`, `FIRECRAWL_API_KEY`, or `SEARXNG_API_KEY`
 2. `apiKeys.<provider>` field in `~/.config/rpiv-web-tools/config.json`
 3. Legacy `apiKey` field (Brave only — auto-migrated to the new shape on next save)
 
 The active provider is `config.provider` (set by `/web-search-config`); falls back to `brave` if absent.
+
+## SearXNG (self-hosted)
+
+SearXNG is the only provider that talks to an instance you control, so it needs a base URL instead of (or in addition to) an API key.
+
+```bash
+export SEARXNG_URL=http://localhost:8080
+# Optional: only if your instance sits behind a Bearer-auth reverse proxy
+export SEARXNG_API_KEY=…
+```
+
+Resolution order for the URL: `SEARXNG_URL` env var → `searxngUrl` field in `~/.config/rpiv-web-tools/config.json` → default `http://localhost:8080`. `/web-search-config` prompts for the URL first and the (optional) API key second.
+
+Your instance must have `json` enabled in `settings.yml` under `search.formats` — default SearXNG installs ship with JSON disabled and will return `403 Forbidden` otherwise (per the [SearXNG search API docs](https://docs.searxng.org/dev/search_api.html)). The provider surfaces that case with an actionable hint. SearXNG's `web_fetch` reuses the same raw-HTTP + HTML-to-text pipeline as Brave/Serper, so URLs returned by `web_search` can be fetched without any extra setup.
 
 ## Executor guidance overrides
 

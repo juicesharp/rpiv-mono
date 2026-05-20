@@ -24,6 +24,8 @@ beforeEach(() => {
 	delete process.env.EXA_API_KEY;
 	delete process.env.JINA_API_KEY;
 	delete process.env.FIRECRAWL_API_KEY;
+	delete process.env.SEARXNG_API_KEY;
+	delete process.env.SEARXNG_URL;
 	rmSync(CONFIG_PATH, { force: true });
 });
 
@@ -532,7 +534,15 @@ const FETCH_ERROR_MATRIX: ReadonlyArray<{
 		fetchUrlMatcher: (u) => u.includes("api.firecrawl.dev/v1/scrape"),
 		label: "Firecrawl",
 	},
+	{
+		provider: "searxng",
+		envVar: "SEARXNG_API_KEY",
+		fetchUrlMatcher: (u) => u.includes("example.com"),
+		label: "SearXNG",
+	},
 ];
+
+const SHARED_FETCH_HELPERS_PROVIDERS = new Set(["brave", "serper", "searxng"]);
 
 describe.each(FETCH_ERROR_MATRIX)("web_fetch.execute — $provider error paths", ({
 	provider,
@@ -540,10 +550,11 @@ describe.each(FETCH_ERROR_MATRIX)("web_fetch.execute — $provider error paths",
 	fetchUrlMatcher,
 	label,
 }) => {
-	// Brave/Serper share fetch-helpers and read keys via resolveProviderApiKey;
-	// their fetch() doesn't gate on apiKey (raw HTTP doesn't authenticate to the
-	// target URL). Extraction providers (Tavily/Exa/Jina/Firecrawl) DO gate.
-	const guardsKey = provider !== "brave" && provider !== "serper";
+	// Brave/Serper/SearXNG share fetch-helpers and read keys via
+	// resolveProviderApiKey; their fetch() doesn't gate on apiKey (raw HTTP
+	// doesn't authenticate to the target URL). Extraction providers
+	// (Tavily/Exa/Jina/Firecrawl) DO gate.
+	const guardsKey = !SHARED_FETCH_HELPERS_PROVIDERS.has(provider);
 
 	if (guardsKey) {
 		it(`fetch throws when no key configured for ${provider}`, async () => {
@@ -573,9 +584,10 @@ describe.each(FETCH_ERROR_MATRIX)("web_fetch.execute — $provider error paths",
 			},
 		]);
 		const { captured } = registerAndCapture();
-		// Brave/Serper raise generic HTTP error (shared pipeline), extraction providers raise labeled "Fetch API error".
-		const expectedPattern =
-			provider === "brave" || provider === "serper" ? /HTTP 429/ : new RegExp(`${label} Fetch API error \\(429\\)`);
+		// Brave/Serper/SearXNG raise generic HTTP error (shared pipeline), extraction providers raise labeled "Fetch API error".
+		const expectedPattern = SHARED_FETCH_HELPERS_PROVIDERS.has(provider)
+			? /HTTP 429/
+			: new RegExp(`${label} Fetch API error \\(429\\)`);
 		await expect(
 			captured.tools
 				.get("web_fetch")
@@ -1075,7 +1087,7 @@ describe("/web-search-config command", () => {
 		const selectCall = (ctx.ui.select as ReturnType<typeof vi.fn>).mock.calls[0];
 		const labels = selectCall[1] as string[];
 		expect(labels[0]).toBe("Exa ✓ (configured)");
-		expect(labels.slice(1)).toEqual(["Brave", "Tavily", "Serper", "Jina", "Firecrawl"]);
+		expect(labels.slice(1)).toEqual(["Brave", "Tavily", "Serper", "Jina", "Firecrawl", "SearXNG"]);
 		expect(labels.filter((l) => l.includes("✓"))).toHaveLength(1);
 
 		const saved = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
@@ -1140,5 +1152,285 @@ describe("/web-search-config command", () => {
 		} finally {
 			rmSync(CONFIG_PATH, { recursive: true, force: true });
 		}
+	});
+});
+
+// SearXNG is structurally unlike the six hosted providers: it is self-hosted
+// (needs a base URL), API key is optional (only for proxy-fronted instances),
+// and the JSON API exposes no `count` parameter. Kept out of PROVIDER_MATRIX
+// because the "throws when no key" assumption doesn't hold.
+describe("web_search.execute — searxng", () => {
+	const SEARXNG_OK_BODY = JSON.stringify({
+		results: [
+			{ title: "T1", url: "https://result.example/1", content: "snippet 1" },
+			{ title: "T2", url: "https://result.example/2", content: "snippet 2" },
+		],
+	});
+
+	it("uses env URL (wins over config and default)", async () => {
+		process.env.SEARXNG_URL = "http://env-host:9000";
+		writeConfig({ provider: "searxng", searxngUrl: "http://config-host:7000" });
+		const stub = stubFetch([
+			{
+				match: (u) => u.startsWith("http://env-host:9000/"),
+				response: () => new Response(SEARXNG_OK_BODY, { status: 200 }),
+			},
+		]);
+		const { captured } = registerAndCapture();
+		await captured.tools
+			.get("web_search")
+			?.execute?.("tc", { query: "hello" }, undefined as never, undefined as never, createMockCtx());
+		const url = new URL(stub.calls[0].url);
+		expect(`${url.protocol}//${url.host}`).toBe("http://env-host:9000");
+		expect(url.pathname).toBe("/search");
+		expect(url.searchParams.get("q")).toBe("hello");
+		expect(url.searchParams.get("format")).toBe("json");
+		expect(url.searchParams.get("safesearch")).toBe("0");
+		expect(url.searchParams.has("count")).toBe(false);
+	});
+
+	it("falls back to config URL when env is unset", async () => {
+		writeConfig({ provider: "searxng", searxngUrl: "http://config-host:7000" });
+		const stub = stubFetch([
+			{
+				match: (u) => u.startsWith("http://config-host:7000/"),
+				response: () => new Response(SEARXNG_OK_BODY, { status: 200 }),
+			},
+		]);
+		const { captured } = registerAndCapture();
+		await captured.tools
+			.get("web_search")
+			?.execute?.("tc", { query: "x" }, undefined as never, undefined as never, createMockCtx());
+		expect(new URL(stub.calls[0].url).host).toBe("config-host:7000");
+	});
+
+	it("falls back to default URL (http://localhost:8080) when neither env nor config is set", async () => {
+		writeConfig({ provider: "searxng" });
+		const stub = stubFetch([
+			{
+				match: (u) => u.startsWith("http://localhost:8080/"),
+				response: () => new Response(SEARXNG_OK_BODY, { status: 200 }),
+			},
+		]);
+		const { captured } = registerAndCapture();
+		await captured.tools
+			.get("web_search")
+			?.execute?.("tc", { query: "x" }, undefined as never, undefined as never, createMockCtx());
+		expect(new URL(stub.calls[0].url).host).toBe("localhost:8080");
+	});
+
+	it("trailing slash on baseUrl does not produce a double-slash", async () => {
+		process.env.SEARXNG_URL = "http://host:8080/";
+		writeConfig({ provider: "searxng" });
+		const stub = stubFetch([
+			{ match: (u) => u.includes("host:8080"), response: () => new Response(SEARXNG_OK_BODY, { status: 200 }) },
+		]);
+		const { captured } = registerAndCapture();
+		await captured.tools
+			.get("web_search")
+			?.execute?.("tc", { query: "x" }, undefined as never, undefined as never, createMockCtx());
+		expect(stub.calls[0].url).not.toMatch(/\/\/search/);
+		expect(new URL(stub.calls[0].url).pathname).toBe("/search");
+	});
+
+	it("sends Bearer Authorization only when an API key is configured", async () => {
+		process.env.SEARXNG_API_KEY = "env-bearer";
+		writeConfig({ provider: "searxng" });
+		const stub = stubFetch([{ match: () => true, response: () => new Response(SEARXNG_OK_BODY, { status: 200 }) }]);
+		const { captured } = registerAndCapture();
+		await captured.tools
+			.get("web_search")
+			?.execute?.("tc", { query: "x" }, undefined as never, undefined as never, createMockCtx());
+		const headers = stub.calls[0].init?.headers as Record<string, string>;
+		expect(headers.Authorization).toBe("Bearer env-bearer");
+	});
+
+	it("omits Authorization when no API key is configured", async () => {
+		writeConfig({ provider: "searxng" });
+		const stub = stubFetch([{ match: () => true, response: () => new Response(SEARXNG_OK_BODY, { status: 200 }) }]);
+		const { captured } = registerAndCapture();
+		await captured.tools
+			.get("web_search")
+			?.execute?.("tc", { query: "x" }, undefined as never, undefined as never, createMockCtx());
+		const headers = stub.calls[0].init?.headers as Record<string, string>;
+		expect(headers.Authorization).toBeUndefined();
+	});
+
+	it("falls back to config apiKeys.searxng when env is unset", async () => {
+		writeConfig({ provider: "searxng", apiKeys: { searxng: "config-bearer" } });
+		const stub = stubFetch([{ match: () => true, response: () => new Response(SEARXNG_OK_BODY, { status: 200 }) }]);
+		const { captured } = registerAndCapture();
+		await captured.tools
+			.get("web_search")
+			?.execute?.("tc", { query: "x" }, undefined as never, undefined as never, createMockCtx());
+		const headers = stub.calls[0].init?.headers as Record<string, string>;
+		expect(headers.Authorization).toBe("Bearer config-bearer");
+	});
+
+	it("slices results to max_results", async () => {
+		writeConfig({ provider: "searxng" });
+		stubFetch([
+			{
+				match: () => true,
+				response: () =>
+					new Response(
+						JSON.stringify({
+							results: Array.from({ length: 8 }, (_, i) => ({
+								title: `T${i}`,
+								url: `https://r/${i}`,
+								content: `snip ${i}`,
+							})),
+						}),
+						{ status: 200 },
+					),
+			},
+		]);
+		const { captured } = registerAndCapture();
+		const r = await captured.tools
+			.get("web_search")
+			?.execute?.("tc", { query: "x", max_results: 3 }, undefined as never, undefined as never, createMockCtx());
+		expect((r?.details as { results: Array<{ title: string; url: string; snippet: string }> }).results).toHaveLength(
+			3,
+		);
+	});
+
+	it("returns no-results envelope on empty results array", async () => {
+		writeConfig({ provider: "searxng" });
+		stubFetch([
+			{ match: () => true, response: () => new Response(JSON.stringify({ results: [] }), { status: 200 }) },
+		]);
+		const { captured } = registerAndCapture();
+		const r = await captured.tools
+			.get("web_search")
+			?.execute?.("tc", { query: "x" }, undefined as never, undefined as never, createMockCtx());
+		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("No results found") });
+	});
+
+	it("wraps non-2xx as 'SearXNG Search API error (status)'", async () => {
+		writeConfig({ provider: "searxng" });
+		stubFetch([{ match: () => true, response: () => new Response("oops", { status: 500 }) }]);
+		const { captured } = registerAndCapture();
+		await expect(
+			captured.tools
+				.get("web_search")
+				?.execute?.("tc", { query: "x" }, undefined as never, undefined as never, createMockCtx()),
+		).rejects.toThrow(/SearXNG Search API error \(500\)/);
+	});
+
+	it("403 attaches the 'JSON output may be disabled' hint", async () => {
+		writeConfig({ provider: "searxng" });
+		stubFetch([{ match: () => true, response: () => new Response("forbidden", { status: 403 }) }]);
+		const { captured } = registerAndCapture();
+		await expect(
+			captured.tools
+				.get("web_search")
+				?.execute?.("tc", { query: "x" }, undefined as never, undefined as never, createMockCtx()),
+		).rejects.toThrow(/JSON output disabled/);
+	});
+
+	it("normalizes missing fields on result rows to empty strings", async () => {
+		writeConfig({ provider: "searxng" });
+		stubFetch([
+			{ match: () => true, response: () => new Response(JSON.stringify({ results: [{}] }), { status: 200 }) },
+		]);
+		const { captured } = registerAndCapture();
+		const r = await captured.tools
+			.get("web_search")
+			?.execute?.("tc", { query: "x" }, undefined as never, undefined as never, createMockCtx());
+		expect(r?.details).toMatchObject({ results: [{ title: "", url: "", snippet: "" }] });
+	});
+});
+
+describe("/web-search-config command — searxng", () => {
+	it("prompts URL first, then optional key, and persists both", async () => {
+		const { captured } = registerAndCapture();
+		const ctx = createMockCtx({ hasUI: true });
+		(ctx.ui.select as ReturnType<typeof vi.fn>).mockResolvedValueOnce("SearXNG");
+		const inputMock = ctx.ui.input as ReturnType<typeof vi.fn>;
+		inputMock.mockResolvedValueOnce("http://my-searx:8080").mockResolvedValueOnce("my-bearer");
+		await captured.commands.get("web-search-config")?.handler("", ctx as never);
+		const saved = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
+		expect(saved).toMatchObject({
+			provider: "searxng",
+			searxngUrl: "http://my-searx:8080",
+			apiKeys: { searxng: "my-bearer" },
+		});
+		// Two input prompts: URL first, then API key
+		expect(inputMock.mock.calls).toHaveLength(2);
+		expect(String(inputMock.mock.calls[0][0])).toMatch(/URL/i);
+		expect(String(inputMock.mock.calls[1][0])).toMatch(/key/i);
+	});
+
+	it("empty URL input falls back to the default URL and leaves key unset", async () => {
+		const { captured } = registerAndCapture();
+		const ctx = createMockCtx({ hasUI: true });
+		(ctx.ui.select as ReturnType<typeof vi.fn>).mockResolvedValueOnce("SearXNG");
+		(ctx.ui.input as ReturnType<typeof vi.fn>).mockResolvedValueOnce("").mockResolvedValueOnce("");
+		await captured.commands.get("web-search-config")?.handler("", ctx as never);
+		const saved = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
+		expect(saved.provider).toBe("searxng");
+		expect(saved.searxngUrl).toBe("http://localhost:8080");
+		expect(saved.apiKeys?.searxng).toBeUndefined();
+	});
+
+	it("URL cancel (undefined) leaves config untouched", async () => {
+		writeConfig({ provider: "brave", apiKey: "existing" });
+		const { captured } = registerAndCapture();
+		const ctx = createMockCtx({ hasUI: true });
+		(ctx.ui.select as ReturnType<typeof vi.fn>).mockResolvedValueOnce("SearXNG");
+		(ctx.ui.input as ReturnType<typeof vi.fn>).mockResolvedValueOnce(undefined);
+		await captured.commands.get("web-search-config")?.handler("", ctx as never);
+		const saved = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
+		expect(saved.provider).toBe("brave");
+		expect(saved.apiKey).toBe("existing");
+	});
+
+	it("keeps existing URL and key when both inputs are empty", async () => {
+		writeConfig({
+			provider: "searxng",
+			searxngUrl: "http://existing:8080",
+			apiKeys: { searxng: "existing-key" },
+		});
+		const { captured } = registerAndCapture();
+		const ctx = createMockCtx({ hasUI: true });
+		(ctx.ui.select as ReturnType<typeof vi.fn>).mockResolvedValueOnce("SearXNG ✓ (configured)");
+		(ctx.ui.input as ReturnType<typeof vi.fn>).mockResolvedValueOnce("").mockResolvedValueOnce("");
+		await captured.commands.get("web-search-config")?.handler("", ctx as never);
+		const saved = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
+		expect(saved.searxngUrl).toBe("http://existing:8080");
+		expect(saved.apiKeys.searxng).toBe("existing-key");
+	});
+
+	it("marks searxng (configured) when SEARXNG_URL env is set, but not when only the default applies", async () => {
+		// Default URL alone is not "configured" — keep the (configured) marker
+		// meaningful so it tells the user they've intentionally set something.
+		{
+			const { captured } = registerAndCapture();
+			const ctx = createMockCtx({ hasUI: true });
+			(ctx.ui.select as ReturnType<typeof vi.fn>).mockResolvedValueOnce(undefined);
+			await captured.commands.get("web-search-config")?.handler("", ctx as never);
+			const labels = (ctx.ui.select as ReturnType<typeof vi.fn>).mock.calls[0][1] as string[];
+			expect(labels).toContain("SearXNG");
+			expect(labels).not.toContain("SearXNG (configured)");
+		}
+		process.env.SEARXNG_URL = "http://my-searx:8080";
+		{
+			const { captured } = registerAndCapture();
+			const ctx = createMockCtx({ hasUI: true });
+			(ctx.ui.select as ReturnType<typeof vi.fn>).mockResolvedValueOnce(undefined);
+			await captured.commands.get("web-search-config")?.handler("", ctx as never);
+			const labels = (ctx.ui.select as ReturnType<typeof vi.fn>).mock.calls[0][1] as string[];
+			expect(labels).toContain("SearXNG (configured)");
+		}
+	});
+
+	it("--show surfaces the resolved searxng URL and its source", async () => {
+		process.env.SEARXNG_URL = "http://my-searx:8080";
+		const { captured } = registerAndCapture();
+		const ctx = createMockCtx({ hasUI: true });
+		await captured.commands.get("web-search-config")?.handler("--show", ctx as never);
+		const msg = (ctx.ui.notify as ReturnType<typeof vi.fn>).mock.calls[0][0];
+		expect(msg).toContain("searxng url: http://my-searx:8080");
+		expect(msg).toContain("source: env");
 	});
 });
