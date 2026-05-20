@@ -5,7 +5,7 @@ All notable changes to `@juicesharp/rpiv-ask-user-question` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.10.2] - 2026-05-20
 
 ### Changed
 - Refresh npm cover (`docs/cover.{svg,png}`): tighter card rhythm so all options, the divider, the trailing `4. Chat about this` row, and the keyboard hints sit inside the card; `4.` now aligns with the rest of the option numerals.

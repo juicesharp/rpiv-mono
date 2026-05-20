@@ -5,7 +5,7 @@ All notable changes to `@juicesharp/rpiv-voice` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.10.2] - 2026-05-20
 
 ### Changed
 - Refresh npm cover (`docs/cover.{svg,png}`): align with the unified card layout used across the `@juicesharp/rpiv-*` family and push the status row below the equalizer so the recording dot, timer, and hotkey hints no longer overlap the audio bars.
