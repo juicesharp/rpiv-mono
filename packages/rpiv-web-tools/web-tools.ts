@@ -27,7 +27,7 @@ import type { GuidanceFields } from "@juicesharp/rpiv-config";
 import { configPath, loadJsonConfig, saveJsonConfig, validateGuidanceFields } from "@juicesharp/rpiv-config";
 import { Type } from "typebox";
 import { createSearchProvider } from "./providers/factory.js";
-import { PROVIDERS } from "./providers/index.js";
+import { configureSearxng, PROVIDERS, SEARXNG_DEFAULT_URL, SEARXNG_URL_ENV_VAR } from "./providers/index.js";
 import type { SearchResult } from "./providers/types.js";
 
 // ---------------------------------------------------------------------------
@@ -69,6 +69,7 @@ interface WebToolsGuidance {
 interface WebToolsConfig {
 	provider?: string;
 	apiKeys?: Record<string, string>;
+	baseUrls?: Record<string, string>;
 	apiKey?: string; // legacy — kept for backward compat
 	guidance?: WebToolsGuidance;
 }
@@ -123,6 +124,14 @@ function resolveProviderApiKey(providerName: string, config: WebToolsConfig): st
 	}
 
 	return undefined;
+}
+
+function resolveSearxngBaseUrl(config: WebToolsConfig): string {
+	const envUrl = process.env[SEARXNG_URL_ENV_VAR]?.trim();
+	if (envUrl) return envUrl;
+	const configUrl = config.baseUrls?.searxng?.trim();
+	if (configUrl) return configUrl;
+	return SEARXNG_DEFAULT_URL;
 }
 
 function maskApiKey(key: string | undefined): string {
@@ -263,7 +272,8 @@ export function registerWebSearchTool(pi: ExtensionAPI): void {
 			const config = loadConfig();
 			const providerName = config.provider ?? DEFAULT_PROVIDER_NAME;
 			const apiKey = resolveProviderApiKey(providerName, config);
-			const provider = createSearchProvider(providerName, apiKey ?? "");
+			const baseUrl = providerName === "searxng" ? resolveSearxngBaseUrl(config) : undefined;
+			const provider = createSearchProvider(providerName, { apiKey: apiKey ?? "", baseUrl });
 
 			onUpdate?.({
 				content: [{ type: "text", text: `Searching ${provider.label} for: "${params.query}"...` }],
@@ -353,7 +363,8 @@ export function registerWebFetchTool(pi: ExtensionAPI): void {
 			const config = loadConfig();
 			const providerName = config.provider ?? DEFAULT_PROVIDER_NAME;
 			const apiKey = resolveProviderApiKey(providerName, config);
-			const provider = createSearchProvider(providerName, apiKey ?? "");
+			const baseUrl = providerName === "searxng" ? resolveSearxngBaseUrl(config) : undefined;
+			const provider = createSearchProvider(providerName, { apiKey: apiKey ?? "", baseUrl });
 
 			const { text: bodyText, title, contentType, contentLength } = await provider.fetch(url, raw, signal);
 
@@ -441,6 +452,12 @@ function formatShowConfigMessage(current: WebToolsConfig): string {
 		);
 	}
 
+	const envUrl = process.env[SEARXNG_URL_ENV_VAR]?.trim();
+	const configUrl = current.baseUrls?.searxng?.trim();
+	const resolvedUrl = envUrl || configUrl || SEARXNG_DEFAULT_URL;
+	const urlSource = envUrl ? "env" : configUrl ? "config" : "default";
+	lines.push(`  searxng url: ${resolvedUrl} (source: ${urlSource})`);
+
 	return lines.join("\n");
 }
 
@@ -465,7 +482,15 @@ export function registerWebSearchConfigCommand(pi: ExtensionAPI): void {
 				...PROVIDERS.filter((p) => p.name === activeProvider),
 				...PROVIDERS.filter((p) => p.name !== activeProvider),
 			];
-			const hasKey = (p: (typeof PROVIDERS)[number]) => resolveProviderApiKey(p.name, current) !== undefined;
+			const hasKey = (p: (typeof PROVIDERS)[number]) => {
+				// SearXNG is "configured" once it has a base URL (env or config).
+				// The bare default URL doesn't count — it's just a hint that the
+				// user hasn't touched the setting yet.
+				if (p.name === "searxng") {
+					return Boolean(process.env[SEARXNG_URL_ENV_VAR]?.trim() || current.baseUrls?.searxng?.trim());
+				}
+				return resolveProviderApiKey(p.name, current) !== undefined;
+			};
 			const labelOf = (p: (typeof PROVIDERS)[number]) => {
 				const markers: string[] = [];
 				if (p.name === activeProvider) markers.push("✓");
@@ -489,6 +514,32 @@ export function registerWebSearchConfigCommand(pi: ExtensionAPI): void {
 				return;
 			}
 			const selectedProvider = selectedMeta.name;
+
+			// SearXNG branches off the API-key flow: prompt logic lives in
+			// providers/searxng.ts; this caller owns persistence + notifications.
+			if (selectedProvider === "searxng") {
+				const result = await configureSearxng(ctx.ui, {
+					baseUrl: current.baseUrls?.searxng,
+					apiKey: current.apiKeys?.searxng,
+				});
+				if (!result) {
+					ctx.ui.notify("Web search config unchanged", "info");
+					return;
+				}
+				const toSave: WebToolsConfig = {
+					...current,
+					provider: "searxng",
+					baseUrls: { ...current.baseUrls, searxng: result.baseUrl },
+					apiKeys: result.apiKey ? { ...current.apiKeys, searxng: result.apiKey } : current.apiKeys,
+				};
+				delete (toSave as { apiKey?: string }).apiKey;
+				if (!saveConfig(toSave)) {
+					ctx.ui.notify(`Failed to save SearXNG config to ${CONFIG_PATH} — disk write failed`, "error");
+					return;
+				}
+				ctx.ui.notify(`Saved SearXNG config (url: ${result.baseUrl}) to ${CONFIG_PATH}`, "info");
+				return;
+			}
 
 			const existingKey =
 				current.apiKeys?.[selectedProvider] ?? (selectedProvider === "brave" ? current.apiKey : undefined);
