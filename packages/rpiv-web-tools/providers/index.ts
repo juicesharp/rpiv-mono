@@ -12,10 +12,14 @@ export { createSearchProvider, type ProviderCredentials } from "./factory.js";
 export { FIRECRAWL_API_KEY_ENV_VAR, FIRECRAWL_PROVIDER_META, FirecrawlProvider } from "./firecrawl.js";
 export { JINA_API_KEY_ENV_VAR, JINA_PROVIDER_META, JinaProvider } from "./jina.js";
 export {
+	configureSearxng,
 	SEARXNG_API_KEY_ENV_VAR,
 	SEARXNG_DEFAULT_URL,
 	SEARXNG_PROVIDER_META,
 	SEARXNG_URL_ENV_VAR,
+	type SearxngConfigChange,
+	type SearxngConfigCurrent,
+	type SearxngConfigUi,
 	SearxngProvider,
 } from "./searxng.js";
 export { SERPER_API_KEY_ENV_VAR, SERPER_PROVIDER_META, SerperProvider } from "./serper.js";

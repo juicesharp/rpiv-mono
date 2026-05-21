@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { createMockCtx, createMockPi, stubFetch } from "@juicesharp/rpiv-test-utils";
 import { beforeEach, describe, expect, it, type vi } from "vitest";
 import registerWebTools from "./index.js";
+import { configureSearxng, SEARXNG_DEFAULT_URL, SEARXNG_PROVIDER_META } from "./providers/index.js";
 
 const CONFIG_PATH = join(process.env.HOME!, ".config", "rpiv-web-tools", "config.json");
 
@@ -1169,7 +1170,7 @@ describe("web_search.execute — searxng", () => {
 
 	it("uses env URL (wins over config and default)", async () => {
 		process.env.SEARXNG_URL = "http://env-host:9000";
-		writeConfig({ provider: "searxng", searxngUrl: "http://config-host:7000" });
+		writeConfig({ provider: "searxng", baseUrls: { searxng: "http://config-host:7000" } });
 		const stub = stubFetch([
 			{
 				match: (u) => u.startsWith("http://env-host:9000/"),
@@ -1190,7 +1191,7 @@ describe("web_search.execute — searxng", () => {
 	});
 
 	it("falls back to config URL when env is unset", async () => {
-		writeConfig({ provider: "searxng", searxngUrl: "http://config-host:7000" });
+		writeConfig({ provider: "searxng", baseUrls: { searxng: "http://config-host:7000" } });
 		const stub = stubFetch([
 			{
 				match: (u) => u.startsWith("http://config-host:7000/"),
@@ -1352,7 +1353,7 @@ describe("/web-search-config command — searxng", () => {
 		const saved = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
 		expect(saved).toMatchObject({
 			provider: "searxng",
-			searxngUrl: "http://my-searx:8080",
+			baseUrls: { searxng: "http://my-searx:8080" },
 			apiKeys: { searxng: "my-bearer" },
 		});
 		// Two input prompts: URL first, then API key
@@ -1369,7 +1370,7 @@ describe("/web-search-config command — searxng", () => {
 		await captured.commands.get("web-search-config")?.handler("", ctx as never);
 		const saved = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
 		expect(saved.provider).toBe("searxng");
-		expect(saved.searxngUrl).toBe("http://localhost:8080");
+		expect(saved.baseUrls.searxng).toBe("http://localhost:8080");
 		expect(saved.apiKeys?.searxng).toBeUndefined();
 	});
 
@@ -1388,7 +1389,7 @@ describe("/web-search-config command — searxng", () => {
 	it("keeps existing URL and key when both inputs are empty", async () => {
 		writeConfig({
 			provider: "searxng",
-			searxngUrl: "http://existing:8080",
+			baseUrls: { searxng: "http://existing:8080" },
 			apiKeys: { searxng: "existing-key" },
 		});
 		const { captured } = registerAndCapture();
@@ -1397,7 +1398,7 @@ describe("/web-search-config command — searxng", () => {
 		(ctx.ui.input as ReturnType<typeof vi.fn>).mockResolvedValueOnce("").mockResolvedValueOnce("");
 		await captured.commands.get("web-search-config")?.handler("", ctx as never);
 		const saved = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
-		expect(saved.searxngUrl).toBe("http://existing:8080");
+		expect(saved.baseUrls.searxng).toBe("http://existing:8080");
 		expect(saved.apiKeys.searxng).toBe("existing-key");
 	});
 
@@ -1432,5 +1433,77 @@ describe("/web-search-config command — searxng", () => {
 		const msg = (ctx.ui.notify as ReturnType<typeof vi.fn>).mock.calls[0][0];
 		expect(msg).toContain("searxng url: http://my-searx:8080");
 		expect(msg).toContain("source: env");
+	});
+});
+
+describe("SEARXNG_PROVIDER_META", () => {
+	// The meta drives downstream introspection (which env var activates a
+	// provider, which surfaces in `--show`, etc.). `envVar` and `baseUrlEnvVar`
+	// are distinct concepts and the fix that introduced `baseUrlEnvVar` is
+	// only meaningful if both fields are set correctly.
+	it("declares envVar as SEARXNG_API_KEY (optional Bearer key)", () => {
+		expect(SEARXNG_PROVIDER_META.envVar).toBe("SEARXNG_API_KEY");
+	});
+
+	it("declares baseUrlEnvVar as SEARXNG_URL (the URL that actually activates it)", () => {
+		expect(SEARXNG_PROVIDER_META.baseUrlEnvVar).toBe("SEARXNG_URL");
+	});
+});
+
+// Direct unit tests for the extracted helper — covers the prompt/keep/default
+// logic that the /web-search-config integration tests above also exercise via
+// the caller, but at finer resolution and without needing the full registration.
+describe("configureSearxng", () => {
+	function makeUi(inputs: Array<string | null | undefined>) {
+		const calls: Array<{ label: string; placeholder: string }> = [];
+		const ui = {
+			async input(label: string, placeholder: string) {
+				calls.push({ label, placeholder });
+				return inputs.shift();
+			},
+		};
+		return { ui, calls };
+	}
+
+	it("returns null when the user cancels at the URL prompt", async () => {
+		const { ui } = makeUi([undefined]);
+		expect(await configureSearxng(ui, {})).toBeNull();
+	});
+
+	it("returns null when the user cancels at the API-key prompt", async () => {
+		const { ui } = makeUi(["http://h:8080", undefined]);
+		expect(await configureSearxng(ui, {})).toBeNull();
+	});
+
+	it("uses SEARXNG_DEFAULT_URL and null apiKey when both inputs are empty and no current values exist", async () => {
+		const { ui } = makeUi(["", ""]);
+		expect(await configureSearxng(ui, {})).toEqual({ baseUrl: SEARXNG_DEFAULT_URL, apiKey: null });
+	});
+
+	it("keeps current values when both inputs are empty", async () => {
+		const { ui } = makeUi(["", ""]);
+		expect(await configureSearxng(ui, { baseUrl: "http://kept:8080", apiKey: "kept-key" })).toEqual({
+			baseUrl: "http://kept:8080",
+			apiKey: "kept-key",
+		});
+	});
+
+	it("uses fresh values when both inputs are non-empty", async () => {
+		const { ui } = makeUi(["  http://new:8080  ", "  new-key  "]);
+		expect(await configureSearxng(ui, { baseUrl: "http://kept:8080", apiKey: "kept-key" })).toEqual({
+			baseUrl: "http://new:8080",
+			apiKey: "new-key",
+		});
+	});
+
+	it("prompts URL first, then key, with placeholders that reflect current values", async () => {
+		const { ui, calls } = makeUi(["", ""]);
+		await configureSearxng(ui, { baseUrl: "http://existing:8080", apiKey: "existing-key" });
+		expect(calls).toHaveLength(2);
+		expect(calls[0].label).toMatch(/URL/i);
+		expect(calls[0].placeholder).toContain("http://existing:8080");
+		expect(calls[1].label).toMatch(/key/i);
+		// Mask hides the middle but reveals the first/last 4 chars
+		expect(calls[1].placeholder).toContain("exis...-key");
 	});
 });

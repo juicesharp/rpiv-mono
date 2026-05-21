@@ -9,6 +9,7 @@ export const SEARXNG_PROVIDER_META = {
 	name: "searxng",
 	label: "SearXNG",
 	envVar: SEARXNG_API_KEY_ENV_VAR,
+	baseUrlEnvVar: SEARXNG_URL_ENV_VAR,
 } as const;
 
 interface SearxngRawResult {
@@ -107,4 +108,72 @@ export class SearxngProvider implements SearchProvider {
 			contentLength: contentLengthHeader ? Number(contentLengthHeader) : undefined,
 		};
 	}
+}
+
+// ---------------------------------------------------------------------------
+// /web-search-config helper — SearXNG branch
+// ---------------------------------------------------------------------------
+
+export interface SearxngConfigUi {
+	input(label: string, placeholder: string): Promise<string | null | undefined>;
+}
+
+export interface SearxngConfigCurrent {
+	baseUrl?: string;
+	apiKey?: string;
+}
+
+export interface SearxngConfigChange {
+	baseUrl: string;
+	apiKey: string | null;
+}
+
+// Mirrors web-tools.ts:maskApiKey. Duplicated here (3 lines) to keep
+// providers/* free of web-tools internals; consolidate if this ever grows.
+function maskKey(key: string): string {
+	const head = key.slice(0, 4);
+	const tail = key.slice(-4);
+	return `${head}...${tail}`;
+}
+
+/**
+ * Prompts the user for the SearXNG base URL and optional Bearer API key.
+ *
+ * - URL prompt is required: empty input keeps the current URL or falls back
+ *   to SEARXNG_DEFAULT_URL.
+ * - API key prompt is optional: empty input keeps the current key or leaves
+ *   it unset (null).
+ * - Returns null if the user cancels at either prompt
+ *   (`ui.input` resolves to `undefined`/`null`).
+ *
+ * The caller owns persistence (loading/merging/saving WebToolsConfig) and
+ * user-visible notifications. This helper only handles the prompt flow.
+ */
+export async function configureSearxng(
+	ui: SearxngConfigUi,
+	current: SearxngConfigCurrent,
+): Promise<SearxngConfigChange | null> {
+	const existingUrl = current.baseUrl?.trim();
+	const urlInput = await ui.input(
+		"SearXNG base URL",
+		existingUrl
+			? `Press Enter to keep current (${existingUrl}), or type new URL`
+			: `Press Enter for default (${SEARXNG_DEFAULT_URL}), or type instance URL`,
+	);
+	if (urlInput === undefined || urlInput === null) return null;
+	const trimmedUrl = urlInput.trim();
+	const baseUrl = trimmedUrl || existingUrl || SEARXNG_DEFAULT_URL;
+
+	const existingKey = current.apiKey?.trim() || undefined;
+	const keyInput = await ui.input(
+		"SearXNG API key (optional — for instances behind a Bearer-auth proxy)",
+		existingKey
+			? `Press Enter to keep current (${maskKey(existingKey)}), or type new key`
+			: "Press Enter to leave unset, or type a key",
+	);
+	if (keyInput === undefined || keyInput === null) return null;
+	const trimmedKey = keyInput.trim();
+	const apiKey = trimmedKey || existingKey || null;
+
+	return { baseUrl, apiKey };
 }
