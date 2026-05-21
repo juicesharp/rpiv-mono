@@ -122,6 +122,47 @@ Your instance must have `json` enabled in `settings.yml` under `search.formats` 
 
 The SSRF guard (which refuses loopback and RFC-1918 addresses) applies to URLs `web_fetch` retrieves on the model's behalf, not to the SearXNG search endpoint itself: a `SEARXNG_URL` pointing at `http://localhost:8080` or another private host is intentionally reachable, since SearXNG is self-hosted by design.
 
+### Running SearXNG locally with Docker
+
+The official `searxng/searxng` image's entrypoint **overwrites** `/etc/searxng/settings.yml` on first start with the bundled default — pre-populating the mounted file before `docker run` will not stick. The reliable flow:
+
+```bash
+mkdir -p /tmp/searxng
+docker run -d --name searxng \
+  -p 8080:8080 \
+  -v /tmp/searxng:/etc/searxng \
+  -e BASE_URL=http://localhost:8080/ \
+  searxng/searxng:latest
+# Wait ~5s for the entrypoint to populate /tmp/searxng/settings.yml,
+# then enable JSON output (default ships with only `formats: [html]`):
+sed -i.bak '/^  formats:$/,/^[^ ]/ { /- html/a\
+    - json
+}' /tmp/searxng/settings.yml
+docker restart searxng
+
+# Sanity check
+curl -sf 'http://localhost:8080/search?q=hello&format=json' | head -c 200
+```
+
+You should see a JSON document with a `results` array. A `403 Forbidden` here means JSON is still disabled — re-check `/tmp/searxng/settings.yml` and restart.
+
+To wire the local instance into Pi:
+
+```bash
+export SEARXNG_URL=http://localhost:8080
+pi install /path/to/local/rpiv-web-tools   # or: pi install npm:@juicesharp/rpiv-web-tools
+# Inside Pi:
+# /web-search-config  → pick SearXNG → Enter for default URL → Enter for no key
+```
+
+Cleanup when you're done:
+
+```bash
+docker stop searxng && docker rm searxng
+rm -rf /tmp/searxng
+unset SEARXNG_URL SEARXNG_API_KEY
+```
+
 ## Executor guidance overrides
 
 Override the `promptSnippet` / `promptGuidelines` the model sees for each tool by editing `~/.config/rpiv-web-tools/config.json`. Note the per-tool nesting under `guidance.web_search` / `guidance.web_fetch` — this differs from the flat `guidance` shape used by single-tool siblings (`rpiv-advisor`, `rpiv-todo`, `rpiv-ask-user-question`):
