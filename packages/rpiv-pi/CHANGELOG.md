@@ -7,6 +7,20 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-05-20
+
+### Added
+- New bundled agents `artifact-code-reviewer` and `artifact-coverage-reviewer` replace the monolithic `artifact-reviewer`, dispatched in parallel by `blueprint`, `design`, and `plan` skills with an aggregator triage step.
+
+### Changed
+- `blueprint` skill verification flow tightened and renumbered: clearer slice-verifier handoff and sequential workflow steps.
+- `design` and `plan` skills now mirror the `blueprint` review topology — parallel code + coverage reviewers fanned out per artifact, then triaged.
+- Skill metadata blocks cleaned across `blueprint`, `code-review`, `create-handoff`, `design`, `discover`, `explore`, `plan`, `research`, `resume-handoff`, `revise`, `validate`, and `write-test-cases` — stray contamination removed for cleaner pre-baked metadata.
+- Relocate npm + MIT badges from the cover area to the License section in README.
+
+### Removed
+- Legacy `artifact-reviewer` agent (superseded by the code + coverage reviewer pair).
+
 ## [1.10.2] - 2026-05-20
 
 ### Changed

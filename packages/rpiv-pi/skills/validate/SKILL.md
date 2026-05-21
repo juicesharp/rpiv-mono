@@ -19,11 +19,10 @@ You are tasked with validating that an implementation plan was correctly execute
 ```!
 node "${SKILL_DIR}/../_shared/git-context.mjs"
 echo
+echo "### recent (read only in case of empty user input)"
+echo "recent plans:"
 node "${SKILL_DIR}/../_shared/list-recent.mjs" .rpiv/artifacts/plans 10
 ```
-
-- `git-context.mjs` — `branch:` / `commit:` / `repo:` / `root:` / `in_repo:` / `author:`. Used by Step 1.5 to gate git-history gathering.
-- `list-recent.mjs` (lines after the blank line) — recent plan filenames, used by Step 1.2 when no plan path is given.
 
 ## Steps
 
@@ -37,7 +36,7 @@ When invoked:
 
 2. **Locate the plan**:
    - If plan path provided, use it.
-   - Otherwise, branch on the `list-recent.mjs` output in the Metadata block:
+   - Otherwise, branch on the `recent plans:` listing in the Metadata block:
      - **Empty** — no plans under `.rpiv/artifacts/plans/`; ask the user for a path in prose.
      - **Exactly one entry** — confirm with `ask_user_question`: "Validate this plan?" with options "Validate `<filename>` (Recommended)" and "Pick a different path".
      - **Two or more entries** — present the top 4 filenames as `ask_user_question` options (a free-text "Other" row is appended automatically).

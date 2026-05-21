@@ -1,6 +1,6 @@
 {
 	"name": "@juicesharp/rpiv-config",
-	"version": "1.10.2",
+	"version": "1.11.0",
 	"description": "Shared config I/O utilities for rpiv-mono sibling packages",
 	"keywords": [
 		"rpiv",

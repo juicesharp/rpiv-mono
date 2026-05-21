@@ -8,9 +8,6 @@
   </a>
 </div>
 
-[![npm version](https://img.shields.io/npm/v/@juicesharp/rpiv-warp.svg)](https://www.npmjs.com/package/@juicesharp/rpiv-warp)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-
 Native [Warp terminal](https://www.warp.dev/) toasts for [Pi Agent](https://github.com/badlogic/pi-mono) lifecycle events. When Pi finishes a long task, asks for your input, or completes a turn, `rpiv-warp` emits Warp's `OSC 777` escape sequence and Warp surfaces a native OS notification. Outside Warp it does nothing - install it everywhere, it only fires where it's useful.
 
 ## Features
@@ -83,5 +80,8 @@ Missing or malformed file falls back to defaults - no config required.
 `rpiv-warp` is intentionally NOT registered in `rpiv-pi`'s sibling list. Not every Pi user uses Warp - auto-installing it everywhere would impose Warp-specific code on every install. If you don't use Warp, don't install it. If you do, install it explicitly. The package still joins the rpiv-mono lockstep version + shared release pipeline.
 
 ## License
+
+[![npm version](https://img.shields.io/npm/v/@juicesharp/rpiv-warp.svg)](https://www.npmjs.com/package/@juicesharp/rpiv-warp)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 MIT - see [LICENSE](./LICENSE).

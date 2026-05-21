@@ -8,9 +8,6 @@
   </a>
 </div>
 
-[![npm version](https://img.shields.io/npm/v/@juicesharp/rpiv-btw.svg)](https://www.npmjs.com/package/@juicesharp/rpiv-btw)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-
 Ask a side question without polluting the main conversation. `rpiv-btw` adds `/btw <question>` to [Pi Agent](https://github.com/badlogic/pi-mono) - a lightweight side agent picks up a **read-only clone** of your current conversation and answers in a panel at the bottom of the terminal. The side agent remembers its own `/btw` thread for follow-ups, while your main chat keeps going - its transcript is never polluted.
 
 ![The /btw side-question panel at the bottom of the Pi terminal](https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-btw/docs/overlay.jpg)
@@ -90,5 +87,8 @@ Pi Agent discovers the extension via `"pi": { "extensions": ["./index.ts"] }` in
 | History missing after restart | Expected - no disk persistence | `/btw` history is per-Pi-process by design |
 
 ## License
+
+[![npm version](https://img.shields.io/npm/v/@juicesharp/rpiv-btw.svg)](https://www.npmjs.com/package/@juicesharp/rpiv-btw)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 MIT

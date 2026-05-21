@@ -8,9 +8,6 @@
   </a>
 </div>
 
-[![npm version](https://img.shields.io/npm/v/@juicesharp/rpiv-pi.svg)](https://www.npmjs.com/package/@juicesharp/rpiv-pi)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-
 > **Pi compatibility** - `rpiv-pi` `0.14.x` tracks `@earendil-works/pi-coding-agent` `0.70.x` and `@tintinweb/pi-subagents` `0.6.x`. If you see peer-dep resolution issues after a Pi upgrade, open an issue.
 
 > **⚠️ Upgrading from `0.13.x`** - `1.0.0` swaps the subagent provider from `npm:pi-subagents` (nicobailon fork) back to `npm:@tintinweb/pi-subagents` (resumed maintenance). On first launch after upgrade you'll see *"rpiv-pi requires 1 sibling extension(s): @tintinweb/pi-subagents"* - **run `/rpiv-setup` once and restart Pi**. The setup dialog previews both changes (install `@tintinweb/pi-subagents`, remove `npm:pi-subagents` from `~/.pi/agent/settings.json`) and applies them only after you confirm. After restart, run `/rpiv-update-agents` to refresh the 12 bundled specialist frontmatters. Customised `<cwd>/.pi/agents/*.md` files are not touched. The tool name reverts from `subagent` → `Agent` (param `subagent_type`/`description`/`prompt`) - only your own custom skills/agents need editing; the bundled rpiv-pi specialists are migrated in this release.
@@ -245,5 +242,8 @@ Pi Agent discovers extensions via `"extensions": ["./extensions"]` and skills vi
 | Skills hang or serialize agent calls | Agent concurrency too low | Open `/agents`, raise `Settings → Max concurrency` |
 
 ## License
+
+[![npm version](https://img.shields.io/npm/v/@juicesharp/rpiv-pi.svg)](https://www.npmjs.com/package/@juicesharp/rpiv-pi)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 MIT

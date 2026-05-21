@@ -8,9 +8,6 @@
   </a>
 </div>
 
-[![npm version](https://img.shields.io/npm/v/@juicesharp/rpiv-advisor.svg)](https://www.npmjs.com/package/@juicesharp/rpiv-advisor)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-
 Let the model ask a stronger model for a second opinion before it acts. `rpiv-advisor` adds the `advisor` tool and `/advisor` slash command to [Pi Agent](https://github.com/badlogic/pi-mono) - the working model can hand the full conversation to a reviewer (e.g. Opus) and resume with its plan, correction, or stop signal.
 
 ![Advisor model selector](https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-advisor/docs/advisor.jpg)
@@ -74,5 +71,8 @@ Returns:
 ```
 
 ## License
+
+[![npm version](https://img.shields.io/npm/v/@juicesharp/rpiv-advisor.svg)](https://www.npmjs.com/package/@juicesharp/rpiv-advisor)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 MIT

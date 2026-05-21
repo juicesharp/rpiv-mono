@@ -16,10 +16,10 @@ You are tasked with resuming work from a handoff document through an interactive
 ## Metadata
 
 ```!
+echo "### recent (read only in case of empty user input)"
+echo "recent handoffs:"
 node "${SKILL_DIR}/../_shared/list-recent.mjs" .rpiv/artifacts/handoffs 10
 ```
-
-`list-recent.mjs` output — recent handoff filenames (most recent first), used by Step 1 when no path argument is provided.
 
 ## Flow
 
@@ -38,7 +38,7 @@ When this command is invoked:
    - Begin the analysis process by ingesting relevant context from the handoff document, reading additional files it mentions
    - Then propose a course of action to the user and confirm, or ask for clarification on direction.
 
-2. **If no parameters provided**, branch on the `list-recent.mjs` output in the Metadata block:
+2. **If no parameters provided**, branch on the `recent handoffs:` listing in the Metadata block:
    - **Empty** — no handoffs exist; tell the user and ask for a path in prose.
    - **Exactly one entry** — confirm with `ask_user_question`: "Resume this handoff?" with options "Resume `<filename>` (Recommended)" and "Pick a different path". Do NOT call `ask_user_question` with a single option (the tool requires ≥2).
    - **Two or more entries** — present the top 4 filenames as `ask_user_question` options (a free-text "Other" row is appended automatically by the tool; do not list it manually).

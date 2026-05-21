@@ -4,6 +4,8 @@ All notable changes to this package will be documented in this file.
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-05-20
+
 ## [1.10.2] - 2026-05-20
 
 ## [1.10.1] - 2026-05-19

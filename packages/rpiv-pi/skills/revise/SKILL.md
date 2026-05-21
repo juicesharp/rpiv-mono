@@ -18,11 +18,12 @@ You are tasked with updating existing implementation plans based on user feedbac
 ```!
 node "${SKILL_DIR}/../_shared/now.mjs"
 echo
+echo "### recent (read only in case of empty user input)"
+echo "recent plans:"
 node "${SKILL_DIR}/../_shared/list-recent.mjs" .rpiv/artifacts/plans 10
 ```
 
-- `now.mjs` (line 1) — `<iso>\t<slug>` tab-separated. `<iso>` is the canonical `last_updated` value for Step 4.
-- `list-recent.mjs` (lines below) — recent plan filenames, used by Step 1 when no plan path is given.
+- `now.mjs` (line 1) — `<iso>\t<slug>` tab-separated.
 
 ## Flow
 
@@ -54,7 +55,7 @@ When this command is invoked:
    ```
    Wait for user input.
 
-   **If NO plan file provided**, branch on the `list-recent.mjs` output in the Metadata block:
+   **If NO plan file provided**, branch on the `recent plans:` listing in the Metadata block:
    - **Empty** — no plans under `.rpiv/artifacts/plans/`; tell the user and suggest running `/skill:plan` first.
    - **Exactly one entry** — confirm with `ask_user_question`: "Revise this plan?" with options "Revise `<filename>` (Recommended)" and "Pick a different path".
    - **Two or more entries** — present the top 4 filenames as `ask_user_question` options.

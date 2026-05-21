@@ -21,8 +21,7 @@ echo
 node "${SKILL_DIR}/../_shared/git-context.mjs"
 ```
 
-- `now.mjs` (line 1) — `<iso>\t<slug>` tab-separated. Used by Step 7.1 only.
-- `git-context.mjs` (lines below) — `branch:` / `commit:` / `repo:` / `root:` / `in_repo:` / `author:`. Used by Step 7.1 only.
+- `now.mjs` (line 1) — `<iso>\t<slug>` tab-separated.
 
 Scope resolution (default branch, range, ChangedFiles) is LLM-invoked at Step 1.1 via the bundled `_helpers/review-range.mjs` — it depends on `$ARGUMENTS` and on conversational clarification, which render-time substitution cannot capture.
 

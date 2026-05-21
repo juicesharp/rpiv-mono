@@ -18,7 +18,7 @@ export type CapabilityTier = "locator" | "analyzer" | "external" | "specialist";
 
 /** The 13 named agents that ship as built docs pages. Exported so
  *  `getStaticPaths` (agents/[slug].astro) can filter `agentSpecs` against it,
- *  keeping `artifact-reviewer` / `slice-verifier` invisible per FRD Non-Goals. */
+ *  keeping `artifact-code-reviewer` / `artifact-coverage-reviewer` / `slice-verifier` invisible per FRD Non-Goals. */
 export const TIER_BY_NAME: Record<string, CapabilityTier> = {
 	"codebase-locator": "locator",
 	"artifacts-locator": "locator",

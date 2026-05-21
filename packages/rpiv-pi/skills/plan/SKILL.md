@@ -22,13 +22,12 @@ node "${SKILL_DIR}/../_shared/git-context.mjs"
 ```
 
 - `now.mjs` (line 1) — `<iso>\t<slug>` tab-separated.
-- `git-context.mjs` (lines below) — `branch:` / `commit:` / `repo:` / `root:` / `in_repo:` / `author:`.
 
 Copy values verbatim — do not reformat the timezone offset.
 
 ## Flow
 
-1. Input → 2. Decompose into phases → 3. Write plan → 4. Review → 5. Follow-ups
+1. Input → 2. Inherit phase boundaries from design's `## Slices` (1:1) → 3. Write plan (code from Architecture, Success Criteria pass through from `## Slices`) → 4. Independent Plan Review (code-reviewer + coverage-reviewer in parallel) → 5. Triage merged findings → 6. Follow-ups
 
 The final artifact is implement-ready.
 
@@ -42,10 +41,10 @@ When this command is invoked:
 
    **Design artifact provided** (path to a `.md` file in `.rpiv/artifacts/designs/`):
    - Read the design artifact FULLY using the Read tool WITHOUT limit/offset
-   - Extract: Architecture (the code changes), File Map, Ordering Constraints, Verification Notes, Performance Considerations, Scope
-   - These are the inputs for phasing
+   - Extract: Architecture (the code changes), **`## Slices` (slice boundaries + per-slice Success Criteria — authored by `/skill:design` Step 6.1, verified by slice-verifier at 6.2)**, File Map, Ordering Constraints, Verification Notes, Performance Considerations, Scope
+   - These are the inputs for phasing. `## Slices` is the phase contract: each `### Slice N: {name}` becomes `## Phase N: {name}` with the same `**Files**:` list and the same Success Criteria. No reauthoring.
    - Design decisions are settled — do not re-evaluate them
-   - If the design has unresolved questions, STOP — tell the developer to return to design
+   - If the design has unresolved questions OR the `## Slices` section is missing/empty, STOP — tell the developer to return to design
 
    **No arguments provided**:
    ```
@@ -59,41 +58,33 @@ When this command is invoked:
 
 2. **Read any additional files mentioned** in the design's References — research documents, tickets. Read them FULLY for context.
 
-### Step 2: Decompose into Phases
+### Step 2: Inherit Phase Boundaries from `## Slices`
 
-Read the Ordering Constraints and File Map from the design artifact. Apply phasing rules:
+**Slice ≡ phase, 1:1.** Each `### Slice N: {name}` in the design's `## Slices` section becomes `## Phase N: {name}` in the plan. No recomposition: do not merge two slices into one phase, do not split a slice into multiple phases, do not reorder. The slice-verifier (design Step 6.2) already verified each slice's atomicity and cross-slice consistency with code + Success Criteria; recomposing here would discard that guarantee.
 
-1. **Independently implementable**: Each phase must compile and pass tests on its own — no cross-phase runtime state
-2. **Parallelizable**: Phases that don't depend on each other are explicitly marked (e.g., "Phases 2 and 3 can run in parallel")
-3. **Worktree-sized**: Each phase should be appropriate for a single implement session in a worktree (~3-8 files changed, 1-3 components touched)
-4. **Dependency-ordered**: Phase ordering follows the design artifact's Ordering Constraints
-5. **Grouped coherently**: Related file changes go in the same phase (e.g., import change + hook setup + JSX modification for one component)
+The design's Ordering Constraints and File Map are reference material — the slice ordering in `## Slices` already encodes them. Parallelism annotations (e.g., "Phases 2 and 3 can run in parallel after Phase 1") carry forward from the design's Ordering Constraints when slices have no inter-dependency.
 
-**If the design's Ordering Constraints say "all files independent"**, consider whether a single phase is appropriate. Don't split into phases just for the sake of it — if all changes can be done in one worktree session, one phase is correct.
-
-Present phase outline and get developer feedback BEFORE writing details:
+Present the inherited phase structure as confirmation only (no recomposition options):
 
 ```
-Here's my proposed plan structure based on the design at {path}:
+Inheriting {N} slices from `{design path}` as {N} phases (1:1):
 
 ## Implementation Phases:
-1. {Phase name} - {what it accomplishes} ({N} files)
-2. {Phase name} - {what it accomplishes} ({N} files)
-3. {Phase name} - {what it accomplishes} ({N} files)
+1. {Slice 1 name} - {what it delivers} ({N} files)
+2. {Slice 2 name} - {what it delivers} ({N} files)
+3. {Slice 3 name} - {what it delivers} ({N} files)
 
-Phases {2} and {3} can run in parallel after Phase 1.
-Total: {N} files across {M} phases.
+Parallelism per design's Ordering Constraints: {e.g., "Phases 2 and 3 independent after Phase 1"}.
+Total: {N} files across {M} phases. Success Criteria pass through from design's `## Slices` unchanged.
 
-Does this phasing make sense? Should I adjust the order or granularity?
+Proceeding to write the plan artifact.
 ```
 
-Use the `ask_user_question` tool to confirm the phase structure. Question: "{N} phases, {M} total files. Does this structure work?". Header: "Phases". Options: "Proceed (Recommended)" (Write the detailed plan with code blocks and success criteria); "Adjust phases" (Split, merge, or reorder phases before writing); "Change scope" (Add or remove files from the plan).
-
-Get feedback on structure before writing details.
+No developer question — boundary changes are out of scope for plan. If the developer wants different boundaries, they revisit `/skill:design` and re-decompose. (This guarantees blueprint-equivalent slice-verified atomicity throughout.)
 
 ### Step 3: Write Plan
 
-After structure approval, write the plan **incrementally** — skeleton first, then fill each phase:
+Write the plan **incrementally** — skeleton first, then fill each phase. Code comes from the design's `## Architecture` (file-grouped); Success Criteria come from the design's `## Slices` section **unchanged** — no reauthoring, no re-derivation from Verification Notes.
 
 1. **Write the plan skeleton** to `.rpiv/artifacts/plans/<slug>_<description>.md` (use `<slug>` from the Metadata block's `now.mjs` line 1; copy `<iso>` verbatim into frontmatter `date:` and `last_updated:`).
    - Format: `<slug>_<description>.md` where:
@@ -102,10 +93,11 @@ After structure approval, write the plan **incrementally** — skeleton first, t
    - Examples:
      - With ticket: `2025-01-08_14-30-00_ENG-1478-parent-child-tracking.md`
      - Without ticket: `2025-01-08_14-30-00_improve-error-handling.md`
-   - The skeleton includes everything EXCEPT large code blocks: frontmatter, Overview, Desired End State, What We're NOT Doing, full phase structure (Overview, Changes Required with file paths and change summaries, Success Criteria, parallelism annotations), Testing Strategy, Performance Considerations, References. All phasing and structural decisions happen in this pass.
+   - The skeleton includes everything EXCEPT large code blocks: frontmatter, Overview, Desired End State, What We're NOT Doing, full phase structure (Overview, Changes Required with file paths and change summaries, **Success Criteria copied verbatim from design's `## Slices`**, parallelism annotations), Testing Strategy, Performance Considerations, References. Phase boundaries are inherited 1:1 from `## Slices` — no recomposition.
 
 2. **Fill code blocks using Edit** — one phase at a time:
-   - For each phase, Edit to insert the before/after code blocks from the design's Architecture section into the Changes Required subsections
+   - For each phase, Edit to insert the code blocks from the design's `## Architecture` section into the Changes Required subsections. Use the slice's `**Files**:` list (from the design's `## Slices`) to know which Architecture entries belong to which phase.
+   - Success Criteria for each phase are **already populated in the skeleton** from the design's matching `### Slice N` subsection — do not re-author. If the design's criteria look wrong, that's a design defect; do not patch here.
 
 3. **Use this template structure**:
 
@@ -118,7 +110,7 @@ branch: {Current branch name}
 repository: {Repository name}
 topic: "{Feature/Task Name}"
 tags: [plan, relevant-component-names]
-status: ready
+status: in-progress
 parent: "{path to design artifact}"
 last_updated: {Same ISO timestamp as `date:` above}
 last_updated_by: {`author:` from Metadata block}
@@ -155,14 +147,13 @@ last_updated_by: {`author:` from Metadata block}
 
 ### Success Criteria:
 
+{Copied verbatim from design's `### Slice N` subsection — same `- [ ]` bullets that slice-verifier (design 6.2) already validated against the slice's code. Do NOT re-author here.}
+
 #### Automated Verification:
-- [ ] Type checking passes: `pnpm typecheck`
-- [ ] Linting passes: `pnpm lint`
-- [ ] Tests pass: `pnpm test`
+- [ ] {From design's `## Slices` → `### Slice N` → `#### Automated Verification:`}
 
 #### Manual Verification:
-- [ ] {From design's Verification Notes — specific visual/behavioral check}
-- [ ] {Component-specific verification}
+- [ ] {From design's `## Slices` → `### Slice N` → `#### Manual Verification:`}
 
 ---
 
@@ -178,8 +169,8 @@ last_updated_by: {`author:` from Metadata block}
 - {Standard project checks from success criteria}
 
 ### Manual Testing Steps:
-1. {From design's Verification Notes — converted to step-by-step}
-2. {Another verification step}
+1. {From design's Verification Notes — listed as manual testing steps for reference; not load-bearing for verification since design's `## Slices` Success Criteria already encode the per-phase manual checks}
+2. {Another reference step}
 
 ## Performance Considerations
 
@@ -189,6 +180,10 @@ last_updated_by: {`author:` from Metadata block}
 
 {From design artifact — copied directly. If applicable: schema changes, data migration, rollback strategy, backwards compatibility. Empty if not applicable.}
 
+## Developer Context
+
+{Empty at skeleton write; Step 4.4 fallback notes and any post-write developer interactions land here.}
+
 ## References
 
 - Design: `.rpiv/artifacts/designs/{file}.md`
@@ -196,14 +191,110 @@ last_updated_by: {`author:` from Metadata block}
 - Original ticket: `thoughts/me/tickets/{file}.md`
 ```
 
-### Step 4: Review
+### Step 4: Independent Plan Review
 
-1. **Present the plan location**:
+After Step 3 finalizes the artifact, dispatch two independent review subagents in parallel — one to walk every Phase code fence, one to walk every verification intent — both against the live codebase at HEAD. This is the single post-finalization quality gate for the entire `design → plan` pipeline: code review was deliberately deferred from design to here, where code + Success Criteria + phasing are all visible in one artifact for joint review (blueprint-equivalent topology).
+
+#### 4.0. Flip status to in-review
+
+Before dispatching the reviewers, Edit frontmatter `status: in-progress` → `status: in-review` (Step 5 flips to `ready` after triage — keeps consumers off an artifact still being edited).
+
+#### 4.1. Dispatch artifact-code-reviewer and artifact-coverage-reviewer in parallel
+
+Reuse the exact `file_path` string passed to `Write` at Step 3 — the runtime already resolved it for this platform; do not rebuild it from `pwd`. `ls` to verify it still exists; abort dispatch on miss.
+
+Send both Agent calls in a single assistant message so they run in parallel:
+
+```
+Agent({
+  subagent_type: "artifact-code-reviewer",
+  description: "post-finalization plan code review",
+  prompt: `Plan artifact: {Step-3 Write file_path, ls-verified}
+
+Review the finalized plan against the live codebase at HEAD. Walk every Phase code fence, audit against code-quality / codebase-fit / actionability, emit one severity-tagged row per finding.`
+})
+
+Agent({
+  subagent_type: "artifact-coverage-reviewer",
+  description: "post-finalization plan coverage review",
+  prompt: `Plan artifact: {Step-3 Write file_path, ls-verified}
+
+Review the finalized plan's verification-intent coverage. Walk every ## Verification Notes and ## Precedents & Lessons entry; for each, verify it lands in either a phase's ### Success Criteria: bullet or as a visible code mirror. Emit one severity-tagged row per uncovered entry.`
+})
+```
+
+#### 4.2. Persist the merged review table to the artifact
+
+Each agent returns a markdown table with columns `plan-loc | codebase-loc | severity | dimension | finding | recommendation`. Merge both tables into one section, prepending a `source` column (`code` for artifact-code-reviewer rows, `coverage` for artifact-coverage-reviewer rows) and appending a `resolution` column (initially blank, filled progressively at Step 5):
+
+```markdown
+## Plan Review (Step 4)
+
+_Independent post-finalization review by artifact-code-reviewer and artifact-coverage-reviewer subagents. Findings triaged at Step 5._
+
+| source   | plan-loc          | codebase-loc                | severity   | dimension             | finding   | recommendation   | resolution         |
+| -------- | ----------------- | --------------------------- | ---------- | --------------------- | --------- | ---------------- | ------------------ |
+| code     | {plan-loc}        | {codebase-loc}              | {severity} | {dimension}           | {finding} | {recommendation} | (filled at Step 5) |
+| coverage | {plan-loc}        | <n/a>                       | {severity} | verification-coverage | {finding} | {recommendation} | (filled at Step 5) |
+| ...      |                   |                             |            |                       |           |                  |                    |
+```
+
+Sort merged rows by severity first (blocker → concern → suggestion), then by source (`code` before `coverage` for stable ordering within a severity). Within a `(severity, source)` bucket, preserve each agent's own emitted order — do not re-sort across source spaces (the two agents key on different artifact loci: `Phase N §M` for code, `## Verification Notes §K` for coverage).
+
+If both agents emit zero rows, still emit the section with a single line: `_No findings — both reviewers cleared the artifact._`. Persistence is mandatory regardless of finding count — the section is the durable audit trail.
+
+#### 4.3. Tally findings for Step 5's prompt
+
+Count merged rows by severity. Store the counts in main context for Step 5's developer prompt:
+
+```
+{B} blockers, {C} concerns, {S} suggestions
+```
+
+Do NOT auto-apply any finding. The orchestrator never makes the apply / defer / dismiss judgment alone — that lives with the developer at Step 5. The reviewers' role is to surface; the developer's role is to triage.
+
+#### 4.4. Failure handling
+
+Per-agent: if one reviewer errors out (subprocess crash, malformed output, timeout) and the other succeeds, persist the successful agent's rows and append a one-line failure note for the missing source. If both fail, append the failure note alone.
+
+- Successful side: persist its rows as in 4.2.
+- Failed side: append `_Step 4 {code|coverage} review failed: {one-line cause}._` under the `## Plan Review (Step 4)` heading.
+- Record any failure in `## Developer Context`: `Step 4 {code|coverage} review unavailable; proceeded to developer review without {agent-name} findings.`
+- Proceed to Step 5 regardless.
+
+The 8-column header is retained when only one source returns; only rows from the failing agent are absent. Step 5 triage iterates whatever rows are present.
+
+### Step 5: Review & Iterate
+
+1. **Triage Step 4 reviewer findings first** (skip if Step 4 returned no findings):
+
+   Present the Plan Review table from Step 4 to the developer with severity-grouped framing:
+
+   ```
+   Plan-reviewer findings: {B} blockers, {C} concerns, {S} suggestions
+
+   Triage each row before the freeform review below:
+   - applied — change made; I'll Edit per the recommendation target (Phase code fence for code findings, `### Success Criteria:` block for coverage findings) and fill the row's resolution as `applied: {one-line summary}`
+   - deferred — noted but not fixing now; resolution cites why (e.g., "out of scope for this plan", "follow-up commit")
+   - dismissed — not a real issue; resolution explains why the reviewer was wrong (e.g., "X is intentional because Y")
+   ```
+
+   Use `ask_user_question` with options "applied / deferred / dismissed":
+   - **applied**: Edit per the recommendation target — if the recommendation names a `## Phase N` code fence, Edit that fence; if it names a `### Success Criteria:` bullet, Edit that block; if it names both, Edit both. Routing follows the recommendation text, not the `source` column. Fill `resolution`.
+   - **deferred** / **dismissed**: fill `resolution` with the reason.
+
+   **Code finding caveat**: when a code finding's root cause is in the design's Architecture (not just plan transcription), the patch belongs upstream. Either (a) Edit the design artifact and re-run `/skill:plan`, or (b) apply the fix to the plan's Phase code fence and annotate the resolution with `applied (plan-local; design follow-up: <design path>)`. Option (a) is cleaner; option (b) is acceptable for tactical fixes.
+
+   **Order and batching**: blockers sequentially (resolution may invalidate later rows). Concerns and suggestions: batch up to 4 independent rows per `ask_user_question` call. Independent = different files / different intents AND neither recommendation references the other's location; otherwise sequential.
+
+2. **Flip status to ready**: once every row has a `resolution` (or the table is empty per Step 4's no-findings / failure-fallback path), Edit frontmatter `status: in-review` → `status: ready`. Artifact is now implement-ready.
+
+3. **Present the plan location** (after triage is complete):
    ```
    Implementation plan written to:
    `.rpiv/artifacts/plans/{filename}.md`
 
-   {N} phases, {M} total file changes.
+   {N} phases, {M} total file changes. {T} reviewer findings triaged at Step 5 ({A} applied, {D} deferred, {DD} dismissed). If either reviewer hit Step 4.4's per-agent failure-fallback, render this line as `Step 4 {code|coverage|both} review unavailable — proceeded with available findings.`
 
    Please review:
    - Are the phases properly scoped for worktree execution?
@@ -219,7 +310,7 @@ last_updated_by: {`author:` from Metadata block}
    > 🆕 Tip: start a fresh session with `/new` first — chained skills work best with a clean context window.
    ```
 
-### Step 5: Handle Follow-ups
+### Step 6: Handle Follow-ups
 
 - **Edit in-place.** Use the Edit tool to update the plan artifact directly. Phase numbering stays stable when possible — renumber only when a phase is split or merged.
 - **Bump frontmatter.** Update `last_updated` + `last_updated_by`; set `last_updated_note: "<one-line summary>"`.
@@ -230,15 +321,16 @@ last_updated_by: {`author:` from Metadata block}
 
 1. **Trust the Design**:
    - Design decisions are fixed — do not re-evaluate architectural choices
-   - If something in the design seems wrong, flag it to the developer
-   - Don't silently change the approach or add scope
+   - Success Criteria are also fixed — pass them through verbatim from design's `## Slices`; do not re-author, re-derive, or "improve" them. Slice-verifier already validated them against the slice's code at design 6.2
+   - Phase boundaries are fixed — inherit 1:1 from design's `## Slices`; do not recompose
+   - If something in the design seems wrong, flag it to the developer; do not silently patch in plan
    - The design is the source of truth for what to build
 
-2. **Be Interactive**:
-   - Don't write the full plan in one shot
-   - Get buy-in on phase structure first
-   - Allow course corrections on granularity
-   - Work collaboratively
+2. **Pass-Through, Not Author**:
+   - Plan transforms a design artifact into phased shape; it does not invent content
+   - Code blocks in `## Phase N` come from the design's `## Architecture` entries
+   - Success Criteria come from the design's `## Slices` `### Slice N` subsections, unchanged
+   - The only place plan exercises judgment is Step 5 triage of reviewer findings — and even there, design-root-cause findings should route back to `/skill:design`
 
 3. **Be Practical**:
    - Focus on incremental, testable changes
@@ -249,8 +341,8 @@ last_updated_by: {`author:` from Metadata block}
 4. **Phase for Worktrees**:
    - Each phase should be implementable in an isolated worktree
    - No phase should depend on another phase's uncommitted changes
-   - If the design says "all independent," one phase may be correct
-   - Don't split for the sake of splitting
+   - The design already encoded worktree-sized slices via its decomposition + slice-verifier; trust it
+   - Do not split or merge phase boundaries inside plan
 
 5. **Track Progress**:
    - Use a todo list to track planning tasks
@@ -258,25 +350,18 @@ last_updated_by: {`author:` from Metadata block}
 
 6. **No Open Questions in Final Plan**:
    - If you encounter open questions during planning, STOP
-   - If the design artifact has unresolved questions, send the developer back to design
+   - If the design artifact has unresolved questions OR a missing `## Slices` section, send the developer back to design
    - Do NOT write the plan with unresolved questions
    - The implementation plan must be complete and actionable
 
-## Success Criteria Guidelines
+## Success Criteria — Format Reference
 
-**Always separate success criteria into two categories:**
+Success Criteria are **authored upstream in `/skill:design` Step 6.1** and verified by slice-verifier at design 6.2. Plan copies them through from the design's `## Slices` section into each phase's `### Success Criteria:` block **unchanged**. The reference below is for understanding the expected shape, not for authoring inside plan.
 
-1. **Automated Verification** (can be run by execution agents):
-   - Commands that can be run: `make test`, `npm run lint`, etc.
-   - Specific files that should exist
-   - Code compilation/type checking
-   - Automated test suites
+**Two categories, same shape design produces:**
 
-2. **Manual Verification** (requires human testing):
-   - UI/UX functionality
-   - Performance under real conditions
-   - Edge cases that are hard to automate
-   - User acceptance criteria
+1. **Automated Verification** (run by execution agents): commands like `make test` / `npm run lint`; file-existence checks; type checking; test suites.
+2. **Manual Verification** (requires human): UI/UX, real-conditions performance, hard-to-automate edge cases, UAT.
 
 **Format example:**
 ```markdown
@@ -295,17 +380,26 @@ last_updated_by: {`author:` from Metadata block}
 - [ ] Feature works correctly on mobile devices
 ```
 
-**Convert design's Verification Notes to success criteria:**
-- Prose warnings → specific automated commands or manual steps
-- "Test production builds" → `pnpm build && verify in built app`
-- "Verify scrollbar appearance" → `[ ] Open {component}, scroll, observe slim scrollbar`
-- "Do NOT use X" → `grep -r "X" src/ should return 0 matches`
+If the design's criteria don't match this shape, the defect lives upstream — return to `/skill:design` to fix, do not patch in plan.
+
+## Subagent Usage
+
+| Context | Agents Spawned |
+|---|---|
+| Step 4 post-finalization code review (mandatory) | artifact-code-reviewer |
+| Step 4 post-finalization coverage review (mandatory) | artifact-coverage-reviewer |
+
+Both reviewers dispatch in parallel against the final artifact (code + Success Criteria + phasing all visible). This is the single quality gate for the entire `design → plan` pipeline — design owns no post-finalization review.
 
 ## Important Notes
 
 - NEVER edit source files — this skill produces a plan document, not implementation
-- Always read the design artifact FULLY before decomposing into phases
+- Always read the design artifact FULLY before inheriting phase boundaries
 - The plan template must be compatible with implement — preserve the phase/success criteria structure
-- If the design artifact has unresolved questions, STOP — send the developer back to design
+- If the design artifact has unresolved questions OR is missing its `## Slices` section, STOP — send the developer back to design
+- **Slice ≡ phase, 1:1**: NEVER recompose slice boundaries into different phase boundaries; NEVER reauthor Success Criteria (they pass through from design's `## Slices`); slice-verifier in design Step 6.2 already guaranteed per-slice atomicity and criteria/code alignment, and recomposing here would discard that guarantee
+- ALWAYS dispatch artifact-code-reviewer AND artifact-coverage-reviewer in parallel at Step 4 after Step 3 finalize, BEFORE the developer review at Step 5
+- NEVER auto-apply a Step 4 reviewer finding; triage is the developer's call at Step 5
+- ALWAYS hold `status: in-review` from Step 4.0 through Step 5; flip to `ready` only after every row has a `resolution` (or the table is empty)
 - Code in the plan comes from the design artifact's Architecture section — do not invent new code
-- **Frontmatter consistency**: Use snake_case for multi-word field names in plan frontmatter
+- **Frontmatter consistency**: Always include frontmatter, use snake_case for multi-word fields, keep tags relevant

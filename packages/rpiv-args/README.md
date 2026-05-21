@@ -8,9 +8,6 @@
   </a>
 </div>
 
-[![npm version](https://img.shields.io/npm/v/@juicesharp/rpiv-args.svg)](https://www.npmjs.com/package/@juicesharp/rpiv-args)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-
 Pass arguments to your skills like a shell command. `rpiv-args` adds `$1`, `$ARGUMENTS`, `$@`, `${@:N}`, and `${@:N:L}` placeholders to [Pi Agent](https://github.com/badlogic/pi-mono) skills - write `/skill:deploy api production` and your skill body sees `$1` = `api`, `$2` = `production`. Skills without placeholders are untouched, so installing `rpiv-args` is safe for any existing skill collection.
 
 ## Install
@@ -243,5 +240,8 @@ On Windows, rpiv-args runs each command via `powershell.exe -Command` (PowerShel
 | **No recursive substitution** | A `$ARGUMENTS` value containing `$1` is not re-expanded |
 
 ## License
+
+[![npm version](https://img.shields.io/npm/v/@juicesharp/rpiv-args.svg)](https://www.npmjs.com/package/@juicesharp/rpiv-args)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 MIT

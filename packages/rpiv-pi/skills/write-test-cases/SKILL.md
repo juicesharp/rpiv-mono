@@ -22,7 +22,6 @@ node "${SKILL_DIR}/../_shared/git-context.mjs"
 ```
 
 - `now.mjs` (line 1) — `<iso>\t<slug>` tab-separated. Use `<iso>` for any "current date" field.
-- `git-context.mjs` (lines below) — use `commit:` for any "current commit hash" frontmatter field.
 
 ## Flow
 

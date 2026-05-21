@@ -8,9 +8,6 @@
   </a>
 </div>
 
-[![npm version](https://img.shields.io/npm/v/@juicesharp/rpiv-web-tools.svg)](https://www.npmjs.com/package/@juicesharp/rpiv-web-tools)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-
 Let the model search the web and read pages. `rpiv-web-tools` adds `web_search` and `web_fetch` tools to [Pi Agent](https://github.com/badlogic/pi-mono) with pluggable providers (Brave, Tavily, Serper, Exa, Jina, Firecrawl, [SearXNG](https://docs.searxng.org/)), plus `/web-search-config` for interactive provider selection and API-key setup.
 
 ![Provider selection prompt](https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-web-tools/docs/config.jpg)
@@ -119,7 +116,7 @@ export SEARXNG_URL=http://localhost:8080
 export SEARXNG_API_KEY=…
 ```
 
-Resolution order for the URL: `SEARXNG_URL` env var → `searxngUrl` field in `~/.config/rpiv-web-tools/config.json` → default `http://localhost:8080`. `/web-search-config` prompts for the URL first and the (optional) API key second.
+Resolution order for the URL: `SEARXNG_URL` env var → `baseUrls.searxng` in `~/.config/rpiv-web-tools/config.json` → default `http://localhost:8080`. `/web-search-config` prompts for the URL first and the (optional) API key second.
 
 Your instance must have `json` enabled in `settings.yml` under `search.formats` — default SearXNG installs ship with JSON disabled and will return `403 Forbidden` otherwise (per the [SearXNG search API docs](https://docs.searxng.org/dev/search_api.html)). The provider surfaces that case with an actionable hint. SearXNG's `web_fetch` reuses the same raw-HTTP + HTML-to-text pipeline as Brave/Serper, so URLs returned by `web_search` can be fetched without any extra setup.
 
@@ -158,5 +155,8 @@ Each field is independent: omit one and the built-in default is kept. Invalid va
 The guard is host-literal only; it does NOT resolve DNS or validate redirects. A public hostname that resolves to a private IP, or a public URL that 302-redirects to one, will still reach the target. For untrusted automation environments, layer an egress proxy or firewall on top.
 
 ## License
+
+[![npm version](https://img.shields.io/npm/v/@juicesharp/rpiv-web-tools.svg)](https://www.npmjs.com/package/@juicesharp/rpiv-web-tools)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 MIT

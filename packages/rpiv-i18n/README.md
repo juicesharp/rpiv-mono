@@ -8,9 +8,6 @@
   </a>
 </div>
 
-[![npm version](https://img.shields.io/npm/v/@juicesharp/rpiv-i18n.svg)](https://www.npmjs.com/package/@juicesharp/rpiv-i18n)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-
 i18n/localization SDK for Pi extensions. Pick a UI language interactively or via flag; localize your own Pi extension with a few lines of code.
 
 ## Features
@@ -413,3 +410,10 @@ lookup("welcome", "Welcome!");
 ```
 
 The published object is frozen *per snapshot*, so each new locale produces a new frozen object - read the symbol at call time, never hoist it into a module-scope `const`. Registration MUST still go through `registerStrings(...)`; writing into `globalThis[I18N]` directly is unsupported.
+
+## License
+
+[![npm version](https://img.shields.io/npm/v/@juicesharp/rpiv-i18n.svg)](https://www.npmjs.com/package/@juicesharp/rpiv-i18n)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+MIT

@@ -1,6 +1,6 @@
 ---
 name: design
-description: Design complex features by decomposing them into vertical slices and producing a design artifact (architecture decisions, slice breakdown, file map) in .rpiv/artifacts/designs/. The design feeds the plan or blueprint skill. Use for complex multi-component features touching 6+ files across multiple layers, when the user wants a feature designed before implementation. Requires a research artifact or a solutions artifact (from explore). Prefer design over plan or blueprint when the focus is architecture and decomposition rather than phased execution steps.
+description: Design complex features by decomposing them into vertical slices, generating code slice-by-slice with per-slice verifier dispatch and post-finalization independent code review, and producing a design artifact (architecture decisions, slice breakdown, file map) in .rpiv/artifacts/designs/. The design feeds the plan or blueprint skill. Use for complex multi-component features touching 6+ files across multiple layers, when the user wants a feature designed before implementation. Requires a research artifact or a solutions artifact (from explore). Prefer design over plan or blueprint when the focus is architecture and decomposition rather than phased execution steps.
 argument-hint: "[research artifact path]"
 shell-timeout: 10
 ---
@@ -19,18 +19,24 @@ You are tasked with designing how code will be shaped for a feature or change. T
 node "${SKILL_DIR}/../_shared/now.mjs"
 echo
 node "${SKILL_DIR}/../_shared/git-context.mjs"
+echo
+echo "### recent (read only in case of empty user input)"
+echo "recent research:"
+node "${SKILL_DIR}/../_shared/list-recent.mjs" .rpiv/artifacts/research 4
+echo
+echo "recent solutions:"
+node "${SKILL_DIR}/../_shared/list-recent.mjs" .rpiv/artifacts/solutions 4
 ```
 
 - `now.mjs` (line 1) — `<iso>\t<slug>` tab-separated.
-- `git-context.mjs` (lines below) — `branch:` / `commit:` / `repo:` / `root:` / `in_repo:` / `author:`.
 
 Copy values verbatim — do not reformat the timezone offset.
 
 ## Flow
 
-1. Input → 2. Research → 3. Dimension sweep → 4. Self-critique → 5. Checkpoint → 6. Decompose → 7. Generate slices → 8. Integration verify → 9. Finalize → 10. Review → 11. Follow-ups
+1. Input → 2. Research → 3. Dimension sweep → 4. Checkpoint → 5. Decompose → 6. Generate slices (code + Success Criteria) → 7. Finalize → 8. Present artifact → 9. Handle follow-ups
 
-The final artifact is plan-compatible.
+The final artifact is plan-compatible: `## Slices` boundaries become phase boundaries 1:1, and Success Criteria pass through unchanged. Post-finalization code + coverage review runs inside `/skill:plan` Step 4.
 
 ## Steps
 
@@ -42,20 +48,15 @@ When this command is invoked:
 
    **Research artifact provided** (argument contains a path to a `.md` file in `.rpiv/artifacts/`):
    - Read the research artifact FULLY using the Read tool WITHOUT limit/offset
-   - Extract: Summary, Code References, Integration Points, Architecture Insights, Developer Context, Open Questions
+   - Extract: Summary, Code References, Integration Points, Architecture Insights, Precedents & Lessons, Developer Context, Open Questions
    - **Read the key source files from Code References** into the main context — especially hooks, shared utilities, and integration points the design will depend on. Read them FULLY. This ensures you have complete understanding before proceeding.
    - These become starting context — no need to re-discover what exists
    - Research Developer Context Q/As = inherited decisions (record in Decisions, never re-ask); Open Questions = starting ambiguity queue, filtered by dimension in Step 3
 
-   **No arguments provided**:
-   ```
-   I'll design a feature iteratively from a research artifact. Please provide:
-
-   `/skill:design [research artifact] [task description]`
-
-   Research artifact is required. Task description is optional.
-   ```
-   Then wait for input.
+   **No arguments provided**, branch on the `recent research:` and `recent solutions:` listings in the Metadata block:
+   - **Both empty** — no upstream artifacts available; tell the user and suggest running `/skill:research` (or `/skill:explore` for option comparison) first.
+   - **Exactly one entry total** — confirm with `ask_user_question`: "Design from this artifact?" with options "Design from `[<source>] <filename>` (Recommended)" and "Pick a different path".
+   - **Two or more entries total** — present up to 4 most-recent across both listings as `ask_user_question` options, each prefixed `[research]` or `[solutions]` to flag source class.
 
 2. **Read any additional files mentioned** — tickets, related designs, existing implementations. Read them FULLY before proceeding.
 
@@ -93,7 +94,7 @@ This is NOT a discovery sweep. Focus on DEPTH (how things work, what patterns to
 
 ### Step 3: Identify Ambiguities — Dimension Sweep
 
-Walk Step 2 findings, inherited research Q/As, and carried Open Questions through six architectural dimensions that map 1:1 to `plan` extract sections — the sweep guarantees downstream completeness. Add **migration** as a seventh dimension only if the feature changes persisted schema.
+Walk Step 2 findings, inherited research Q/As, and carried Open Questions through six architectural dimensions that map 1:1 to the downstream phased plan's section coverage — the sweep guarantees downstream completeness. Add **migration** as a seventh dimension only if the feature changes persisted schema.
 
 - **Data model** — types, schemas, entities
 - **API surface** — signatures, exports, routes
@@ -102,31 +103,11 @@ Walk Step 2 findings, inherited research Q/As, and carried Open Questions throug
 - **Verification** — tests, assertions, risk-bearing behaviors
 - **Performance** — load paths, caching, N+1 risks
 
-For each dimension, classify findings as **simple decisions** (one valid option, obvious from codebase — record in Decisions with `file:line` evidence, do not ask) or **genuine ambiguities** (multiple valid options, conflicting patterns, scope questions, novel choices — queue for Step 5). Inherited research Q/As land as simple; Open Questions filter by dimension — architectural survives, implementation-detail defers.
+For each dimension, classify findings as **simple decisions** (one valid option, obvious from codebase — record in Decisions with `file:line` evidence, do not ask) or **genuine ambiguities** (multiple valid options, conflicting patterns, scope questions, novel choices — queue for Step 4). Inherited research Q/As land as simple; Open Questions filter by dimension — architectural survives, implementation-detail defers.
 
 **Pre-validate every option** before queuing it against research constraints and runtime code behavior. Eliminate or caveat options that contradict Steps 1-2 evidence. **Coverage check**: every Step 2 file read appears in at least one decision or ambiguity; every dimension is addressed (silently-resolved valid, skipped-unchecked not).
 
-### Step 4: Holistic Self-Critique
-
-Before presenting ambiguities to the developer, review the combined design picture holistically. Step 3 triages findings individually — this step checks whether they fit together as a coherent whole.
-
-**Prompt yourself:**
-- What's inconsistent, missing, or contradictory across the research findings, resolved decisions, and identified ambiguities?
-- What edge cases or failure modes aren't covered by any ambiguity or decision?
-- Do any patterns from different agents conflict when combined?
-
-**Areas to consider** (suggestive, not a checklist):
-- Requirement coverage — is every requirement from Step 1 addressed by at least one decision or ambiguity?
-- Cross-cutting concerns — do error handling, state management, or performance span multiple ambiguities without being owned by any?
-- Pattern coherence — do the simple decisions from Step 3 still hold when viewed together, or does a combination reveal a conflict?
-- Ambiguity completeness — did Step 3 miss a genuine ambiguity by treating a multi-faceted issue as simple?
-
-**Remediation:**
-- Issues you can resolve with evidence: fix in-place — reclassify simple decisions as genuine ambiguities, or resolve a genuine ambiguity as simple if holistic review provides clarity. Note what changed.
-- Issues that need developer input: add as new genuine ambiguities to the Step 5 checkpoint queue.
-- If no issues found: proceed to Step 5 with the existing ambiguity set.
-
-### Step 5: Developer Checkpoint
+### Step 4: Developer Checkpoint
 
 Use the grounded-questions-one-at-a-time pattern. Use a **❓ Question:** prefix so the developer knows their input is needed. Each question must:
 - Reference real findings with `file:line` evidence
@@ -186,7 +167,7 @@ Files: {N} new, {M} modified
 
 Use the `ask_user_question` tool to confirm before proceeding. Question: "{Summary from design brief above}. Ready to proceed to decomposition?". Header: "Design". Options: "Proceed (Recommended)" (Decompose into vertical slices, then generate code slice-by-slice); "Adjust decisions" (Revisit one or more architectural decisions above); "Change scope" (Add or remove items from the building/not-building lists).
 
-### Step 6: Feature Decomposition
+### Step 5: Feature Decomposition
 
 After the design summary is confirmed, decompose the feature into vertical slices. Each slice is a self-contained unit: types + implementation + wiring for one concern.
 
@@ -234,7 +215,8 @@ After the design summary is confirmed, decompose the feature into vertical slice
    - **## Current State Analysis**: What exists now, what's missing, key constraints. Include `### Key Discoveries` with `file:line` references, patterns to follow, constraints to work within.
    - **## Scope**: `### Building` — concrete deliverables. `### Not Building` — developer-stated exclusions AND likely scope-creep vectors (alternative architectures not chosen, nearby code that looks related but shouldn't be touched).
    - **## Decisions**: `###` per decision. Complex: Ambiguity → Explored (Option A/B with `file:line` + pro/con) → Decision. Simple: just state decision with evidence.
-   - **## Architecture**: `###` per file with NEW/MODIFY label. Empty code fences in skeleton (filled in Step 7d). NEW files get full implementation. MODIFY files get only modified/added code — no "Current" block.
+   - **## Architecture**: `###` per file with NEW/MODIFY label. Empty code fences in skeleton (filled in Step 6.4). NEW files get full implementation. MODIFY files get only modified/added code — no "Current" block.
+   - **## Slices**: `### Slice N: {name}` per slice from the decomposition. In skeleton, each subsection contains a `**Files**:` line listing the slice's file paths AND empty `#### Automated Verification:` / `#### Manual Verification:` subsections (filled in Step 6.4 from 6.1's Success Criteria). This section is the contract handed to `/skill:plan`: slice ≡ phase 1:1, criteria pass through unchanged.
    - **## Desired End State**: Usage examples showing the feature in use from a consumer's perspective — concrete code, not prose.
    - **## File Map**: `path/to/file.ext  # NEW/MODIFY — purpose` per line.
    - **## Ordering Constraints**: What must come before what. What can run in parallel.
@@ -242,49 +224,52 @@ After the design summary is confirmed, decompose the feature into vertical slice
    - **## Performance Considerations**: Any performance implications or optimizations.
    - **## Migration Notes**: If applicable — existing data, schema changes, rollback strategy, backwards compatibility. Empty if not applicable.
    - **## Pattern References**: `path/to/similar.ext:line-range` — what pattern to follow and why.
-   - **## Developer Context**: Record questions exactly as asked during checkpoint, including `file:line` evidence. For iterative variant: also record micro-checkpoint interactions from Step 7c.
+   - **## Developer Context**: Record questions exactly as asked during checkpoint, including `file:line` evidence. For iterative variant: also record micro-checkpoint interactions from Step 6.3.
    - **## Design History**: Slice approval/revision log. `- Slice N: {name} — pending/approved as generated/revised: {what changed}`. plan ignores this section.
    - **## References**: Research artifacts, tickets, similar implementations.
 
    **Architecture format in skeleton**:
-   - **NEW files**: heading + empty code fence (filled with full implementation in Step 7d)
-   - **MODIFY files**: heading with `file:line-range` + empty code fence (filled with only the modified code in Step 7d — no "Current" block, the original is on disk)
+   - **NEW files**: heading + empty code fence (filled with full implementation in Step 6.4)
+   - **MODIFY files**: heading with `file:line-range` + empty code fence (filled with only the modified code in Step 6.4 — no "Current" block, the original is on disk)
 
-### Step 7: Generate Slices (Iterative)
+### Step 6: Generate Slices (Iterative)
 
 Generate code one slice at a time. Each slice sees the fixed code from all previous slices.
 
 **For each slice in the decomposition (sequential order):**
 
-#### 7a. Generate slice code (internal)
+#### 6.1. Generate slice code and Success Criteria (internal)
 
-Generate complete, copy-pasteable code for every file in this slice — but **hold it for the artifact, do NOT present full code to the developer**. The developer sees a condensed review in 7c; the full code goes into the artifact in 7d.
+Generate complete, copy-pasteable code AND the slice's `### Success Criteria:` for every file in this slice — but **hold both for the artifact, do NOT present full code to the developer**. The developer sees a condensed review in 6.3; the full code and criteria go into the artifact in 6.4.
 
 - **New files**: complete code — imports, types, implementation, exports. Follow the pattern template from Step 2.
 - **Modified files**: read current file FULLY, generate only the modified/added code scoped to changed sections (no full "Current" block — the original is on disk)
 - **Test files**: complete test suites following project patterns
 - **Wiring**: show where new code hooks into existing code
+- **Success Criteria**: derive `### Success Criteria:` from this slice's file changes plus `## Verification Notes` entries that map to this slice's scope. Use the same `- [ ]` format as 6.4 (see template below). Project-baseline checks (`npm run check`, `npm test`) go on the terminal slice only. Commands in backticks. Criteria authored here flow through to plan as the phase's Success Criteria — slice ≡ phase, 1:1.
 
 If additional context is needed, spawn a targeted **codebase-analyzer** agent.
 
-No pseudocode, no TODOs, no placeholders — the code must be copy-pasteable by implement.
+No pseudocode, no TODOs, no placeholders — the code must be copy-pasteable by implement. Success Criteria must be atomic for this slice: no bullets that depend on symbols/files a later slice introduces.
 
-**Context grounding** (after slice 2): Before generating, re-read the artifact's Architecture section for files this slice touches. The artifact is the source of truth — generate code that extends what's already there, not what you remember from conversation.
+**Context grounding** (after slice 2): Before generating, re-read the artifact's Architecture section for files this slice touches AND the `## Slices` section for slices already locked. The artifact is the source of truth — generate code and criteria that extend what's already there, not what you remember from conversation.
 
-#### 7b. Self-verify slice
+#### 6.2. Verify slice
 
-Before presenting to the developer, cross-check this slice and produce a structured summary:
+Mandatory for every slice — no skipping, no shortcuts. Dispatch the `slice-verifier` agent with:
+- `artifact_path`: the Step-5 Write `file_path` (contains the skeleton plus locked prior slices)
+- `slice_id`: `Slice N`
+- `current_slice_code`: inline the just-generated slice verbatim — every `### path/...` block under Architecture with its full code fence AND the slice's `### Success Criteria:` block (Automated + Manual subsections from 6.1).
+- `target_files`: files this slice modifies, plus key files prior slices introduced
 
-```
-Self-verify Slice N:
-- Decisions: {OK / VIOLATION: decision X — fix applied}
-- Cross-slice: {OK / CONFLICT: file X has inconsistent types — fix applied}
-- Research: {OK / WARNING: constraint Y not satisfied — fix applied}
-```
+The agent emits a 3-row summary (`Decisions / Cross-slice / Research`). On any VIOLATION, take one of:
 
-If violations found: fix in-place before presenting. Include the self-verify summary in the 7c checkpoint presentation.
+- **Fix-and-re-dispatch**: when the finding is a real gap, fix the slice in-place per the citation and re-dispatch until OK.
+- **Surface-and-proceed**: when the finding is plausibly by-design (e.g. foundation-slice atomicity tension, deferred resolution covered by ordering constraints), include the verbatim VIOLATION row in the 6.3 slice presentation with a one-line by-design rationale. The existing 6.3 approve question is the ratification — no separate prompt.
 
-#### 7c. Developer micro-checkpoint
+Never proceed to 6.3 with a VIOLATION absent from the presentation.
+
+#### 6.3. Developer micro-checkpoint
 
 Present a **condensed review** of the slice — NOT the full generated code. The developer reviews the design shape, not every line. For each file in the slice, show:
 
@@ -297,67 +282,74 @@ Present a **condensed review** of the slice — NOT the full generated code. The
 
 **If the developer asks to see full code**, show it inline — exception, not default.
 
-Use the `ask_user_question` tool to confirm. Question: "Slice {N/M}: {slice name} — {files affected}. {1-line summary}. Approve?". Header: "Slice {N}". Options: "Approve (Recommended)" (Lock this slice, write to artifact, proceed to slice {N+1}); "Revise this slice" (Adjust code before proceeding — describe what to change); "Rethink remaining slices" (This slice reveals a design issue — revisit decomposition).
+Use the `ask_user_question` tool to confirm. Question: "Slice {N/M}: {slice name} — {files affected}. {1-line summary}. Approve?". Header: "Slice {N}". Options: "Approve (Recommended)" (Lock this slice, write to artifact, proceed to slice {N+1}); "Revise this slice" (Adjust code before proceeding — describe what to change); "Rethink remaining slices" (This slice reveals a design issue — revisit decomposition); "Revisit a decision" (A Step-4 decision is wrong — return to Step 4 for that decision before continuing).
 
-**Checkpoint cadence**: Slices 1-2: always individual. Slices 3+: individual if (a) mid-generation agent spawn was needed, (b) MODIFY touches an undiscussed file, or (c) self-verify fixed a violation.
-Otherwise batch 2-3 slices (max 3).
+**Checkpoint cadence**: One slice per checkpoint. Present each slice individually, regardless of slice count.
 
-#### 7d. Incorporate feedback
+#### 6.4. Incorporate feedback
 
-**Approve**: Lock this slice's code and **Edit the artifact immediately**:
-1. For each file in this slice, Edit the skeleton artifact to replace the empty code fence under that file's Architecture heading with the full generated code from 7a
+**Approve**: Lock this slice's code AND Success Criteria and **Edit the artifact immediately**:
+1. For each file in this slice, Edit the skeleton artifact to replace the empty code fence under that file's Architecture heading with the full generated code from 6.1
 2. If a later slice contributes to a file already filled by an earlier slice: **rewrite the entire code fence** with the merged result (do not append alongside existing code)
-3. After merge, verify: no duplicate function definitions, imports deduplicated, exports list complete
-4. Update the Design History section: `- Slice N: {name} — approved as generated`
+3. After merge, verify within Architecture: no duplicate function definitions, imports deduplicated, exports list complete
+4. **Write the slice's `## Slices` entry**: Edit the artifact to add a new `### Slice N: {name}` subsection under the top-level `## Slices` heading, containing:
+
+   ```markdown
+   ### Slice N: {slice name}
+
+   **Files**: `path/to/file1.ext`, `path/to/file2.ext`
+
+   #### Automated Verification:
+   - [ ] Type checking passes: `npm run check`
+   - [ ] Tests pass: `npm test`
+   - [ ] Grep pattern from Verification Note: `grep -r "newApi" packages/ | wc -l` returns >= 3
+
+   #### Manual Verification:
+   - [ ] New widget renders correctly above the editor
+   - [ ] Performance acceptable with 1000+ todo items
+   ```
+
+   This section is the contract handed to `/skill:plan` — slice boundaries become phase boundaries 1:1, and Success Criteria pass through unchanged. The bullets are the same `- [ ]` shape `implement` flips to `- [x]` and `validate` extracts commands from.
+5. Update the Design History section: `- Slice N: {name} — approved as generated`
 - Proceed to next slice
 
-**Revise**: Update code per developer feedback. Re-run self-verify (7b). Re-present the same slice (7c). The artifact is NOT touched — only "Approve" writes to the artifact.
+**Revise**: Update code per developer feedback. Re-run verify (6.2). Re-present the same slice (6.3). The artifact is NOT touched — only "Approve" writes to the artifact.
 
 **Rethink**: Developer spotted a design issue. If a previously approved slice is affected, flag the conflict and offer cascade revision — developer decides whether to reopen (if yes, Edit artifact entry).
 Update decomposition (add/remove/reorder remaining slices) and confirm before continuing.
 
-### Step 8: Integration Verification
+**Revisit a decision**: Re-run Step 4 for the flagged ambiguity (one question). If decomposition is unaffected, update `## Decisions` and resume 6.1. If affected, cascade like Rethink — for each invalidated approved slice, ask reopen vs. annotate Design History, then update remaining slices. Re-run 6.2 before re-presenting 6.3; artifact untouched until approval.
 
-After all slices are complete, review cross-slice consistency:
+### Step 7: Finalize Design Artifact
 
-1. **Present integration summary** (under 15 lines):
-   ```
-   Integration: {feature name} — {N} slices complete
+The artifact was created as a skeleton in Step 5 and filled progressively in Step 6.4. This step verifies completeness and flips status.
 
-   Slices: {brief list of slice names and file counts}
-   Cross-slice: {types consistent / imports valid / wiring complete}
-   Research constraints: {all satisfied / N violations noted}
-   ```
+1. **Verify all Architecture entries are filled**: Every file heading from the decomposition must have a non-empty code block. If any are still empty, **return to Step 6** — never fill at finalize time (bypasses 6.2/6.3). Empty here = workflow off-rail.
 
-2. **Verify research constraints**: Check each Precedent & Lesson and Verification Note from the research artifact against the generated code. List satisfaction status.
+2. **Verify all `## Slices` entries are filled**: Every `### Slice N: {name}` subsection must have a `**Files**:` line AND non-empty `#### Automated Verification:` + `#### Manual Verification:` subsections. If any are still empty, **return to Step 6** — Success Criteria authored in 6.1 must be written in 6.4 alongside code. Empty here = workflow off-rail (same invariant as empty code fences).
 
-3. **Confirm using the `ask_user_question` tool**. Question: "{N} slices complete, {M} files total. Cross-slice consistency verified. Proceed to design artifact?". Header: "Verify". Options: "Proceed (Recommended)" (Finalize the design artifact (verify completeness, update status)); "Revisit slice" (Reopen a specific slice for revision — Edit the artifact after); "Add missing" (A file or integration point is missing — add to artifact).
+3. **Verify cross-slice file merges**: For files touched by multiple slices, confirm the Architecture entry contains the final merged code, not just the last slice's contribution.
 
-### Step 9: Finalize Design Artifact
+4. **Update frontmatter** via Edit: `status: in-progress` → `status: ready`. Design owns no post-finalization review — `/skill:plan` runs the artifact-code-reviewer + artifact-coverage-reviewer pair against the phased plan that inherits this design's `## Slices` boundaries 1:1. Leave `last_updated` / `last_updated_by` as-is.
 
-The artifact was created as a skeleton in Step 6 and filled progressively in Step 7d. This step verifies completeness and finalizes.
+5. **Verify template completeness**: Ensure all sections from the template reference in Step 5 are present and filled. Edit to fix any gaps.
 
-1. **Verify all Architecture entries are filled**: Every file heading from the decomposition must have a non-empty code block. If any are still empty (e.g., a slice was skipped), generate and fill them now.
-
-2. **Verify cross-slice file merges**: For files touched by multiple slices, confirm the Architecture entry contains the final merged code, not just the last slice's contribution.
-
-3. **Update frontmatter** via Edit: set `status: complete`. `last_updated` and `last_updated_by` were set at skeleton creation — leave as-is.
-
-4. **Verify template completeness**: Ensure all 17 sections from the template reference in Step 6 are present and filled. Edit to fix any gaps.
-
-5. **Architecture format reminder**:
+6. **Architecture format reminder**:
    - **NEW files**: `### path/to/file.ext — NEW` + one-line purpose + full implementation code block
    - **MODIFY files**: `### path/to/file.ext:line-range — MODIFY` + code block with only the modified/added code (no "Current" block — the original is on disk, implement reads it)
 
-### Step 10: Review & Iterate
+### Step 8: Present Design Artifact
 
-1. **Present the design artifact location**:
+Design owns no post-finalization review. Both `artifact-code-reviewer` and `artifact-coverage-reviewer` run inside `/skill:plan` Step 4 against the phased plan that inherits this design's `## Slices` boundaries 1:1 — that's where code + Success Criteria + phasing are all visible in one artifact for joint review.
+
+Present the design artifact location to the developer:
+
    ```
    Design artifact written to:
    `.rpiv/artifacts/designs/{filename}.md`
 
    {N} architectural decisions fixed, {M} new files designed, {K} existing files modified.
-   {S} slices generated, {R} revisions during generation.
+   {Sl} slices generated, {R} revisions during generation. Success Criteria authored alongside each slice in 6.1 and verified by slice-verifier in 6.2.
 
    Please review and let me know:
    - Are the architectural decisions correct?
@@ -368,17 +360,17 @@ The artifact was created as a skeleton in Step 6 and filled progressively in Ste
 
    💬 Follow-up: describe the change in chat to append a timestamped Follow-up section to this artifact. Re-run `/skill:design` for a fresh artifact.
 
-   **Next step:** `/skill:plan .rpiv/artifacts/designs/{filename}.md` — sequence the design into implementation phases.
+   **Next step:** `/skill:plan .rpiv/artifacts/designs/{filename}.md` — sequence the design into implementation phases (slice ≡ phase, 1:1) and run the artifact reviewer pair.
 
    > 🆕 Tip: start a fresh session with `/new` first — chained skills work best with a clean context window.
    ```
 
-### Step 11: Handle Follow-ups
+### Step 9: Handle Follow-ups
 
 - **Edit in-place.** Use the Edit tool to update the design artifact directly — sliced design code stays one source of truth.
 - **Bump frontmatter.** Update `last_updated` + `last_updated_by`; set `last_updated_note: "Updated <brief description>"`.
-- **Sync decisions ↔ code.** If the change affects decisions, update both the Decisions section AND the Architecture code. Code is source of truth — if they conflict, the code wins, update the prose.
-- **Return to checkpoint on new ambiguities.** If new ambiguities surface, return to Step 5 (developer checkpoint) before re-generating slices.
+- **Sync decisions ↔ code ↔ criteria.** If the change affects decisions, update the Decisions section, the Architecture code, AND the relevant `## Slices` Success Criteria. Code is source of truth — if they conflict, the code wins, update the prose and criteria.
+- **Return to checkpoint on new ambiguities.** If new ambiguities surface, return to Step 4 (developer checkpoint) before re-generating slices.
 - **When to re-invoke instead.** If the underlying research is now stale or the feature scope changed materially, re-run `/skill:research` then `/skill:design` for a fresh artifact. The previous block's `Next step:` stays valid for the existing design.
 
 ## Guidelines
@@ -401,7 +393,8 @@ The artifact was created as a skeleton in Step 6 and filled progressively in Ste
 |---|---|
 | Default (research artifact provided) | codebase-pattern-finder, codebase-analyzer, integration-scanner, precedent-locator |
 | Novel work (new library/pattern) | + web-search-researcher |
-| During code writing (if needed) | targeted codebase-analyzer for specific files |
+| Step 6.1 mid-generation gap (specific anchor unclear) | targeted codebase-analyzer (max 1) |
+| Step 6.2 per-slice verify (mandatory; sees code + Success Criteria) | slice-verifier |
 
 Spawn multiple agents in parallel when they're searching for different things. Each agent runs in isolation — provide complete context in the prompt, including specific directory paths when the feature targets a known module. Don't write detailed prompts about HOW to search — just tell it what you're looking for and where.
 
@@ -412,14 +405,19 @@ Spawn multiple agents in parallel when they're searching for different things. E
 - **Critical ordering**: Follow the numbered steps exactly
   - ALWAYS read input files first (Step 1) before spawning agents (Step 2)
   - ALWAYS wait for all agents to complete before identifying ambiguities (Step 3)
-  - ALWAYS resolve all ambiguities (Step 5) before decomposing into slices (Step 6)
-  - ALWAYS complete holistic decomposition before generating any slice code (Step 7)
-  - ALWAYS create the skeleton artifact immediately after decomposition approval (Step 6)
-  - NEVER leave Architecture code fences empty after their slice is approved — fill via Edit in Step 7d
+  - ALWAYS resolve all ambiguities (Step 4) before decomposing into slices (Step 5)
+  - ALWAYS complete holistic decomposition before generating any slice code (Step 6)
+  - ALWAYS create the skeleton artifact immediately after decomposition approval (Step 5)
+  - ALWAYS generate Success Criteria in Step 6.1 alongside code; NEVER leave Architecture code fences OR `## Slices` Success Criteria empty after their slice is approved — both are written via Edit in Step 6.4 from what 6.1 produced
+  - NEVER fill empty Architecture content OR empty `## Slices` Success Criteria at Step 7 — empty at finalize time = return to Step 6 (preserves the 6.3 micro-checkpoint)
+  - ALWAYS dispatch slice-verifier at Step 6.2 for every slice before presenting at 6.3; never skip, never batch across slices; slice-verifier sees code AND Success Criteria together
+  - NEVER silently dismiss a slice-verifier VIOLATION — either fix and re-dispatch, or surface the verbatim finding to the developer at 6.3 for ratification
+  - Post-finalization code + coverage review runs in `/skill:plan` Step 4 (not here); design's quality gate is per-slice via slice-verifier at 6.2
+  - Design flips `status: in-progress` → `status: ready` directly at Step 7; no `in-review` intermediate (no Step 8 reviewer to wait for)
 - NEVER skip the developer checkpoint — developer input on architectural decisions is the highest-value signal in the design process
 - NEVER edit source files — all code goes into the design document, not the codebase. This skill produces a document, not implementation. Source file editing is implement's job.
-- **Code is source of truth** — if the Architecture code section conflicts with the Decisions prose, the code wins. Update the prose.
-- **Checkpoint recordings**: Record micro-checkpoint interactions in Developer Context with `file:line` references, same as Step 5 questions.
+- **Code is source of truth** — if the Architecture code section conflicts with the Decisions prose or the `## Slices` Success Criteria, the code wins. Update the prose and criteria.
+- **Checkpoint recordings**: Record micro-checkpoint interactions in Developer Context with `file:line` references, same as Step 4 questions.
 - **Frontmatter consistency**: Always include frontmatter, use snake_case for multi-word fields, keep tags relevant
 
 ## Common Design Patterns
