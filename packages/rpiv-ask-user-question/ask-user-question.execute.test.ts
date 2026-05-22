@@ -247,16 +247,19 @@ describe("ask_user_question.execute — event emission", () => {
 
 		await tool.execute?.("tc", validParams() as never, undefined as never, undefined as never, ctx as never);
 
-		expect(mockEmit).toHaveBeenCalledWith(
-			"rpiv:ask-user:prompt",
-			expect.objectContaining({
-				question: "Which library?",
-				context: "React, Vue",
-				optionCount: 2,
-				allowMultiple: false,
-				allowFreeform: true,
-			}),
-		);
+		expect(mockEmit).toHaveBeenCalledWith("rpiv:ask-user:prompt", {
+			questions: [
+				{
+					question: "Which library?",
+					header: "Lib",
+					multiSelect: false,
+					options: [
+						{ label: "React", description: "UI library", hasPreview: false },
+						{ label: "Vue", description: "Another UI library", hasPreview: false },
+					],
+				},
+			],
+		});
 
 		// Verify event is emitted BEFORE the dialog is shown
 		expect(mockEmit.mock.invocationCallOrder[0]).toBeLessThan(custom.mock.invocationCallOrder[0]);
@@ -285,7 +288,7 @@ describe("ask_user_question.execute — event emission", () => {
 		expect(captured.eventsEmitted.has("rpiv:ask-user:prompt")).toBe(false);
 	});
 
-	it("emits event with multi-question summary when multiple questions", async () => {
+	it("emits payload with all questions in order when multiple questions", async () => {
 		const { pi, captured } = createMockPi();
 		registerAskUserQuestionTool(pi);
 		const tool = captured.tools.get("ask_user_question")!;
@@ -316,25 +319,27 @@ describe("ask_user_question.execute — event emission", () => {
 
 		expect(captured.eventsEmitted.has("rpiv:ask-user:prompt")).toBe(true);
 		const payload = captured.eventsEmitted.get("rpiv:ask-user:prompt")![0] as Record<string, unknown>;
-		expect(payload.question).toBe("Which framework? (+1 more)");
-		expect(payload.optionCount).toBe(4);
-	});
-
-	it("continues to show dialog when event emission throws", async () => {
-		const { pi, captured } = createMockPi({
-			events: {
-				emit: vi.fn(() => {
-					throw new Error("boom");
-				}),
-				on: vi.fn(() => () => {}),
-			},
+		expect(payload).toEqual({
+			questions: [
+				{
+					question: "Which framework?",
+					header: "FW",
+					multiSelect: false,
+					options: [
+						{ label: "React", description: "UI lib", hasPreview: false },
+						{ label: "Vue", description: "Another UI lib", hasPreview: false },
+					],
+				},
+				{
+					question: "Which language?",
+					header: "Lang",
+					multiSelect: false,
+					options: [
+						{ label: "TS", description: "TypeScript", hasPreview: false },
+						{ label: "JS", description: "JavaScript", hasPreview: false },
+					],
+				},
+			],
 		});
-		registerAskUserQuestionTool(pi);
-		const tool = captured.tools.get("ask_user_question")!;
-		const { custom, ctx } = ctxWithCustomFn();
-
-		await tool.execute?.("tc", validParams() as never, undefined as never, undefined as never, ctx as never);
-
-		expect(custom).toHaveBeenCalled();
 	});
 });

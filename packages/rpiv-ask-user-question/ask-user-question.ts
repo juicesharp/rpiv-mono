@@ -1,5 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { loadConfig, validateGuidanceFields } from "./config.js";
+import { ASK_USER_PROMPT_EVENT, type AskUserPromptEventPayload } from "./events.js";
 import { displayLabel } from "./state/i18n-bridge.js";
 import { QuestionnaireSession } from "./state/questionnaire-session.js";
 import { sentinelsToAppend } from "./state/row-intent.js";
@@ -16,45 +17,20 @@ import {
 import { validateQuestionnaire } from "./tool/validate-questionnaire.js";
 import type { WrappingSelectItem } from "./view/components/wrapping-select.js";
 
-/**
- * Event name emitted before the questionnaire is shown to the user.
- * Listeners (e.g., notification plugins) can use this to alert the
- * user that a question awaits their input.
- */
-const ASK_USER_PROMPT_EVENT = "rpiv:ask-user:prompt" as const;
-
-/** Payload for the `rpiv:ask-user:prompt` event emitted before showing the questionnaire. */
-export interface AskUserPromptEventPayload {
-	/** First question text. Appends "(+N more)" when multiple questions. */
-	question: string;
-	/** Comma-separated option labels from the first question. */
-	context: string;
-	/** Total options across all questions. */
-	optionCount: number;
-	/** Whether any question is multi-select. */
-	allowMultiple: boolean;
-	/** Always true — "Type something." is always available. */
-	allowFreeform: boolean;
-}
-
 function emitAskUserPromptEvent(pi: ExtensionAPI, params: QuestionParams): void {
-	const firstQ = params.questions[0];
-	const questionText =
-		params.questions.length > 1 ? `${firstQ.question} (+${params.questions.length - 1} more)` : firstQ.question;
-
 	const payload: AskUserPromptEventPayload = {
-		question: questionText,
-		context: firstQ.options.map((o) => o.label).join(", "),
-		optionCount: params.questions.reduce((sum, q) => sum + q.options.length, 0),
-		allowMultiple: params.questions.some((q) => q.multiSelect),
-		allowFreeform: true,
+		questions: params.questions.map((q) => ({
+			question: q.question,
+			header: q.header,
+			multiSelect: q.multiSelect ?? false,
+			options: q.options.map((o) => ({
+				label: o.label,
+				description: o.description,
+				hasPreview: typeof o.preview === "string" && o.preview.length > 0,
+			})),
+		})),
 	};
-
-	try {
-		pi.events.emit(ASK_USER_PROMPT_EVENT, payload);
-	} catch {
-		// Non-blocking: no listeners or event bus error is harmless.
-	}
+	pi.events.emit(ASK_USER_PROMPT_EVENT, payload);
 }
 
 const ERROR_NO_UI = "Error: UI not available (running in non-interactive mode)";
