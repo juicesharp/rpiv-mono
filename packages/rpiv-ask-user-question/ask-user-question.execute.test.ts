@@ -213,3 +213,128 @@ describe("ask_user_question — registration", () => {
 		expect(props).toHaveProperty("questions");
 	});
 });
+
+describe("ask_user_question.execute — event emission", () => {
+	function validParams() {
+		return {
+			questions: [
+				{
+					question: "Which library?",
+					header: "Lib",
+					options: [
+						{ label: "React", description: "UI library" },
+						{ label: "Vue", description: "Another UI library" },
+					],
+				},
+			],
+		};
+	}
+
+	function ctxWithCustomFn() {
+		const custom = vi.fn(async () => ({ answers: [], cancelled: false }));
+		const ctx = createMockCtx({ hasUI: true, ui: { custom } as never });
+		return { custom, ctx };
+	}
+
+	it("emits ASK_USER_PROMPT event via pi.events.emit before showing dialog", async () => {
+		const mockEmit = vi.fn();
+		const { pi, captured } = createMockPi({
+			events: { emit: mockEmit, on: vi.fn(() => () => {}) },
+		});
+		registerAskUserQuestionTool(pi);
+		const tool = captured.tools.get("ask_user_question")!;
+		const { custom, ctx } = ctxWithCustomFn();
+
+		await tool.execute?.("tc", validParams() as never, undefined as never, undefined as never, ctx as never);
+
+		expect(mockEmit).toHaveBeenCalledWith(
+			"rpiv:ask-user:prompt",
+			expect.objectContaining({
+				question: "Which library?",
+				context: "React, Vue",
+				optionCount: 2,
+				allowMultiple: false,
+				allowFreeform: true,
+			}),
+		);
+
+		// Verify event is emitted BEFORE the dialog is shown
+		expect(mockEmit.mock.invocationCallOrder[0]).toBeLessThan(custom.mock.invocationCallOrder[0]);
+	});
+
+	it("does NOT emit event when UI is unavailable", async () => {
+		const { pi, captured } = createMockPi();
+		registerAskUserQuestionTool(pi);
+		const tool = captured.tools.get("ask_user_question")!;
+
+		// Use valid params so only !hasUI causes the early return
+		const ctx = createMockCtx({ hasUI: false });
+		await tool.execute?.("tc", validParams() as never, undefined as never, undefined as never, ctx as never);
+
+		expect(captured.eventsEmitted.has("rpiv:ask-user:prompt")).toBe(false);
+	});
+
+	it("does NOT emit event when validation fails", async () => {
+		const { pi, captured } = createMockPi();
+		registerAskUserQuestionTool(pi);
+		const tool = captured.tools.get("ask_user_question")!;
+
+		const ctx = createMockCtx({ hasUI: true, ui: { custom: vi.fn() } as never });
+		await tool.execute?.("tc", { questions: [] } as never, undefined as never, undefined as never, ctx as never);
+
+		expect(captured.eventsEmitted.has("rpiv:ask-user:prompt")).toBe(false);
+	});
+
+	it("emits event with multi-question summary when multiple questions", async () => {
+		const { pi, captured } = createMockPi();
+		registerAskUserQuestionTool(pi);
+		const tool = captured.tools.get("ask_user_question")!;
+		const { ctx } = ctxWithCustomFn();
+
+		const params = {
+			questions: [
+				{
+					question: "Which framework?",
+					header: "FW",
+					options: [
+						{ label: "React", description: "UI lib" },
+						{ label: "Vue", description: "Another UI lib" },
+					],
+				},
+				{
+					question: "Which language?",
+					header: "Lang",
+					options: [
+						{ label: "TS", description: "TypeScript" },
+						{ label: "JS", description: "JavaScript" },
+					],
+				},
+			],
+		};
+
+		await tool.execute?.("tc", params as never, undefined as never, undefined as never, ctx as never);
+
+		expect(captured.eventsEmitted.has("rpiv:ask-user:prompt")).toBe(true);
+		const payload = captured.eventsEmitted.get("rpiv:ask-user:prompt")![0] as Record<string, unknown>;
+		expect(payload.question).toBe("Which framework? (+1 more)");
+		expect(payload.optionCount).toBe(4);
+	});
+
+	it("continues to show dialog when event emission throws", async () => {
+		const { pi, captured } = createMockPi({
+			events: {
+				emit: vi.fn(() => {
+					throw new Error("boom");
+				}),
+				on: vi.fn(() => () => {}),
+			},
+		});
+		registerAskUserQuestionTool(pi);
+		const tool = captured.tools.get("ask_user_question")!;
+		const { custom, ctx } = ctxWithCustomFn();
+
+		await tool.execute?.("tc", validParams() as never, undefined as never, undefined as never, ctx as never);
+
+		expect(custom).toHaveBeenCalled();
+	});
+});

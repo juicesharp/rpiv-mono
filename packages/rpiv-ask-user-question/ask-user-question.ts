@@ -16,6 +16,47 @@ import {
 import { validateQuestionnaire } from "./tool/validate-questionnaire.js";
 import type { WrappingSelectItem } from "./view/components/wrapping-select.js";
 
+/**
+ * Event name emitted before the questionnaire is shown to the user.
+ * Listeners (e.g., notification plugins) can use this to alert the
+ * user that a question awaits their input.
+ */
+const ASK_USER_PROMPT_EVENT = "rpiv:ask-user:prompt" as const;
+
+/** Payload for the `rpiv:ask-user:prompt` event emitted before showing the questionnaire. */
+export interface AskUserPromptEventPayload {
+	/** First question text. Appends "(+N more)" when multiple questions. */
+	question: string;
+	/** Comma-separated option labels from the first question. */
+	context: string;
+	/** Total options across all questions. */
+	optionCount: number;
+	/** Whether any question is multi-select. */
+	allowMultiple: boolean;
+	/** Always true — "Type something." is always available. */
+	allowFreeform: boolean;
+}
+
+function emitAskUserPromptEvent(pi: ExtensionAPI, params: QuestionParams): void {
+	const firstQ = params.questions[0];
+	const questionText =
+		params.questions.length > 1 ? `${firstQ.question} (+${params.questions.length - 1} more)` : firstQ.question;
+
+	const payload: AskUserPromptEventPayload = {
+		question: questionText,
+		context: firstQ.options.map((o) => o.label).join(", "),
+		optionCount: params.questions.reduce((sum, q) => sum + q.options.length, 0),
+		allowMultiple: params.questions.some((q) => q.multiSelect),
+		allowFreeform: true,
+	};
+
+	try {
+		pi.events.emit(ASK_USER_PROMPT_EVENT, payload);
+	} catch {
+		// Non-blocking: no listeners or event bus error is harmless.
+	}
+}
+
 const ERROR_NO_UI = "Error: UI not available (running in non-interactive mode)";
 
 export function buildItemsForQuestion(question: QuestionData): WrappingSelectItem[] {
@@ -79,6 +120,9 @@ Preview content is rendered as markdown in a monospace box. Multi-line text with
 					error: validation.error,
 				});
 			}
+
+			// Emit event for external listeners (e.g., notification plugins)
+			emitAskUserPromptEvent(pi, typed);
 
 			const itemsByTab: WrappingSelectItem[][] = typed.questions.map((q) => buildItemsForQuestion(q));
 
