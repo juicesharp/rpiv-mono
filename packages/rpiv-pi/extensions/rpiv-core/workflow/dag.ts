@@ -12,10 +12,13 @@
  * Static-config style — sibling pattern to siblings.ts/agents.ts (const adjacency
  * array + lazy validation set), not the dynamic Map-based task-graph.ts.
  *
- * Phase 1 status: only `kind: "skill"` and `sessionPolicy: "fresh"` are
- * supported at runtime. The type system declares space for future kinds
- * (chat / script) and policies (continue) so the schema doesn't churn when
- * those land; validation rejects unsupported runtime values up-front.
+ * Supported node kinds: `kind: "skill"`. The type system declares space for
+ * future kinds (chat / script) so the schema doesn't churn when those land;
+ * validation rejects unknown kinds at config-load time.
+ *
+ * Supported session policies: `"fresh"` (new session per stage) and `"continue"`
+ * (reuse the prior stage's session). Both pass validation; the runner branches
+ * on the policy at dispatch time.
  */
 
 import { BUNDLED_SKILL_NAMES } from "../paths.js";
@@ -65,13 +68,11 @@ export type StopStrategy = "artifact-emit" | "agent-end";
  *
  * - `"fresh"` — wrap the node in `ctx.newSession({ withSession })`. Every node
  *   gets an isolated session, clean context window, fresh transcript inspection.
- *   This is the only value supported at runtime in Phase 1.
  *
  * - `"continue"` — reuse the prior session (no `newSession`), send the prompt
- *   directly. Typed for forward-compatibility but rejected by `validateDag`
- *   until the runner supports it (Pi's command-ctx surface does not expose
- *   `sendUserMessage` today, so the implementation needs either an upstream
- *   API change or a grouped-session restructure of the runner).
+ *   directly via `pi.sendUserMessage()` and await `ctx.waitForIdle()`. The
+ *   runner slices the branch with `branchOffset` to inspect only entries
+ *   produced by this stage.
  */
 export type SessionPolicy = "fresh" | "continue";
 
@@ -132,16 +133,22 @@ export interface WorkflowDag {
  */
 /**
  * Factory for skill-kind nodes — defaults `kind` to "skill" and
- * `sessionPolicy` to "fresh", which are the only supported runtime values
- * in Phase 1. The node id used as the dictionary key equals the skill name
- * for all built-in nodes; passing the skill name once removes the duplication
+ * `sessionPolicy` to "fresh". Override `sessionPolicy` via the optional
+ * third parameter for nodes that should reuse the prior stage's session.
+ *
+ * The node id used as the dictionary key equals the skill name for all
+ * built-in nodes; passing the skill name once removes the duplication
  * that would otherwise repeat for every entry.
  */
-export const skillNode = (skill: string, stopStrategy: StopStrategy): SkillNode => ({
+export const skillNode = (
+	skill: string,
+	stopStrategy: StopStrategy,
+	overrides?: { sessionPolicy?: SessionPolicy },
+): SkillNode => ({
 	kind: "skill",
 	skill,
 	stopStrategy,
-	sessionPolicy: "fresh",
+	sessionPolicy: overrides?.sessionPolicy ?? "fresh",
 });
 
 export const WORKFLOW_DAG: WorkflowDag = {
@@ -204,9 +211,8 @@ const VALID_SESSION_POLICIES: ReadonlySet<SessionPolicy> = new Set(["fresh", "co
  * Validate a DAG:
  * 1. Every id in `edges` (from + to) and `presets` resolves to a `nodes` entry.
  * 2. Every node body has a recognized `kind`, valid `stopStrategy`, and valid
- *    `sessionPolicy`. Phase 1 rejects `sessionPolicy: "continue"` at validate
- *    time — the type accepts it for forward-compat but the runner doesn't yet
- *    support it.
+ *    `sessionPolicy`. Both `sessionPolicy` values ("fresh", "continue") pass
+ *    validation; the runner branches at dispatch time.
  * 3. Every skill-kind node's `skill` exists in the bundled skills directory.
  *
  * Returns an array of error strings (empty = valid). Pure function — takes the
@@ -235,8 +241,6 @@ export function validateDag(dag: WorkflowDag): string[] {
 		}
 		if (!VALID_SESSION_POLICIES.has(node.sessionPolicy)) {
 			errors.push(`Node "${id}" has invalid sessionPolicy: "${node.sessionPolicy}"`);
-		} else if (node.sessionPolicy === "continue") {
-			errors.push(`Node "${id}" uses sessionPolicy "continue" which is not yet supported at runtime`);
 		}
 
 		switch (node.kind) {

@@ -55,6 +55,10 @@ export function createMockPi(overrides: Partial<ExtensionAPI> = {}): MockPi {
 			captured.events.set(event, list);
 		}),
 		sendMessage: vi.fn(async () => {}),
+		sendUserMessage: vi.fn((_content: unknown, _options?: unknown) => {
+			// Sync fire-and-forget in production; mock captures nothing extra.
+			// Tests assert on sentMessages via the chain or directly on this spy.
+		}),
 		exec: vi.fn(async () => ({ stdout: "", stderr: "", code: 0, killed: false })),
 		getActiveTools: vi.fn(() => [...captured.activeTools]),
 		setActiveTools: vi.fn((names: string[]) => {
@@ -140,6 +144,7 @@ export function createMockCtx(opts: MockCtxOptions = {}): ExtensionContext {
 		ui: createMockUI(opts.ui),
 		sessionManager: createMockSessionManager(opts.branch ?? []),
 		modelRegistry: createMockModelRegistry(opts.models ?? []),
+		isIdle: vi.fn(() => true),
 	} as unknown as ExtensionContext;
 }
 
@@ -188,12 +193,20 @@ export interface MockSessionStep {
 export interface MockSessionChainOptions extends MockCtxOptions {
 	/** Scripted responses, in the order newSession will consume them. */
 	steps: MockSessionStep[];
+	/** Optional mock pi — if provided, the chain exposes it for "continue" path assertions. */
+	pi?: ExtensionAPI;
+	/**
+	 * Pre-populated branch entries for the outer ctx. Used in "continue" path
+	 * tests where the outer ctx's branch must reflect entries from prior stages
+	 * AND the current stage (the runner slices with branchOffset to separate them).
+	 */
+	outerBranch?: unknown[];
 }
 
 export interface MockSessionChain {
 	/** The outer ExtensionCommandContext passed into runWorkflow(). */
 	ctx: ExtensionCommandContext;
-	/** Every `sendUserMessage(...)` call across all freshCtxs, in order. */
+	/** Every `sendUserMessage(...)` call across all freshCtxs AND pi, in order. */
 	sentMessages: string[];
 	/** Every `ui.notify(msg, level)` call across outer + freshCtxs, in order. */
 	notifications: Array<{ msg: string; level: string }>;
@@ -202,6 +215,8 @@ export interface MockSessionChain {
 	 * `value === undefined` represents a clear; anything else is a set.
 	 */
 	statusUpdates: Array<{ key: string; value: string | undefined }>;
+	/** The mock pi instance (if provided via options). */
+	pi?: ExtensionAPI;
 	/** How many scripted steps remain unconsumed. */
 	remaining: () => number;
 	/** Shared vi.fn() backing every `ui.notify` — for direct `.mock.calls` assertions. */
@@ -244,9 +259,18 @@ export function createMockSessionChain(opts: MockSessionChainOptions): MockSessi
 		sentMessages.push(typeof content === "string" ? content : JSON.stringify(content));
 	});
 
+	// Create or reuse mock pi — wire sendUserMessage to capture to sentMessages.
+	const mockPi = opts.pi ?? createMockPi().pi;
+	(mockPi.sendUserMessage as ReturnType<typeof vi.fn>).mockImplementation((content: unknown) => {
+		sentMessages.push(typeof content === "string" ? content : JSON.stringify(content));
+	});
+
 	const buildCtx = (kind: "outer" | "replaced", branch: unknown[]): ExtensionCommandContext => {
 		const base = createMockCtx({
 			...opts,
+			// Override branch with the provided parameter — for "outer" kind this is
+			// outerBranch (not opts.branch from MockCtxOptions).
+			branch: branch as SessionEntry[],
 			ui: {
 				...(opts.ui ?? {}),
 				notify: notifyFn as unknown as ExtensionUIContext["notify"],
@@ -288,10 +312,11 @@ export function createMockSessionChain(opts: MockSessionChainOptions): MockSessi
 	};
 
 	return {
-		ctx: buildCtx("outer", []),
+		ctx: buildCtx("outer", opts.outerBranch ?? []),
 		sentMessages,
 		notifications,
 		statusUpdates,
+		pi: mockPi,
 		remaining: () => queue.length,
 		notifyFn,
 		setStatusFn,

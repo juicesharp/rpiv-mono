@@ -4,6 +4,7 @@ import {
 	getEdge,
 	isValidNode,
 	resolvePreset,
+	skillNode,
 	validateDag,
 	WORKFLOW_DAG,
 	type WorkflowDag,
@@ -165,16 +166,24 @@ describe("validateDag", () => {
 		]);
 	});
 
-	it("rejects sessionPolicy: 'continue' as not-yet-supported at runtime", () => {
-		const badDag: WorkflowDag = {
+	it("accepts sessionPolicy: 'continue' as a valid runtime value", () => {
+		const dag: WorkflowDag = {
 			edges: [],
 			presets: { tiny: ["research"] },
 			nodes: { research: nodeOf("research", { sessionPolicy: "continue" }) },
 		};
-		const errors = validateDag(badDag);
-		expect(errors).toEqual([
-			expect.stringContaining(`Node "research" uses sessionPolicy "continue" which is not yet supported at runtime`),
-		]);
+		const errors = validateDag(dag);
+		expect(errors).toEqual([]);
+	});
+
+	it("skillNode() override produces correct sessionPolicy", () => {
+		const fresh = skillNode("research", "artifact-emit");
+		expect(fresh.sessionPolicy).toBe("fresh");
+
+		const cont = skillNode("research", "artifact-emit", { sessionPolicy: "continue" });
+		expect(cont.sessionPolicy).toBe("continue");
+		expect(cont.kind).toBe("skill");
+		expect(cont.stopStrategy).toBe("artifact-emit");
 	});
 
 	it("rejects invalid stopStrategy value", () => {

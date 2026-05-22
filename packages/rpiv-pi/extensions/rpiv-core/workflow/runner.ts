@@ -1,12 +1,19 @@
 /**
  * Iterative session runner for the /rpiv workflow command.
  *
- * One `ctx.newSession()` per DAG node (one "stage" in the preset sequence).
- * Inside `withSession`, sends a single `freshCtx.sendUserMessage()` which
- * awaits the full agent loop. Extracts the artifact path from the session
- * branch after completion. The next stage's `newSession()` is then invoked
- * **on freshCtx** — never on the outer ctx, which is invalidated by Pi the
- * moment a session is replaced.
+ * Each DAG node (one "stage" in the preset sequence) runs in its own session.
+ * The session policy controls how that session is created:
+ *
+ *   - `sessionPolicy: "fresh"` — wraps the node in `ctx.newSession({ withSession })`.
+ *     Inside withSession, `freshCtx.sendUserMessage()` awaits the full agent loop.
+ *     The next stage's `newSession()` is invoked **on freshCtx** — never on the
+ *     outer ctx, which is invalidated by Pi the moment a session is replaced.
+ *
+ *   - `sessionPolicy: "continue"` — reuses the prior stage's session (no newSession).
+ *     Sends the prompt via `pi.sendUserMessage()` (sync, fire-and-forget) then
+ *     awaits `ctx.waitForIdle()` with a bounded macrotask poll. Branch entries
+ *     accumulate from the prior stage; the runner slices with `branchOffset` to
+ *     inspect only entries produced by this stage.
  *
  * Each level of the chain only ever touches the ctx it was handed:
  *   - On `cancelled === true` no replacement happened — the level's curCtx
@@ -14,6 +21,7 @@
  *   - On `cancelled === false` curCtx is stale after newSession returns; all
  *     further work was already performed inside the withSession callback on
  *     freshCtx, and the function simply unwinds.
+ *   - On "continue" there is no newSession — curCtx remains valid throughout.
  *
  * The session-spawn body itself lives in `executeSession` — runStage and
  * runImplementPhases are thin shells that build the prompt + labels for it.
@@ -24,7 +32,7 @@
  *     artifact* — only meaningful for the `implement` stage.
  */
 
-import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { clearChildSession, markChildSession } from "./child-session.js";
 import type { DagNode, WorkflowDag } from "./dag.js";
 import { WORKFLOW_DAG } from "./dag.js";
@@ -51,6 +59,8 @@ export interface RunWorkflowOptions {
 	input: string;
 	/** The DAG to traverse. Defaults to WORKFLOW_DAG. */
 	dag?: WorkflowDag;
+	/** ExtensionAPI — needed for "continue" stages that call pi.sendUserMessage(). */
+	pi?: ExtensionAPI;
 }
 
 /** Result of a completed workflow run. */
@@ -152,7 +162,7 @@ export async function runWorkflow(
 	// finally so a thrown stage doesn't strand the flag.
 	markChildSession();
 	try {
-		await runStage(ctx, 0, { cwd, runId, dag, stageIds, totalStages, state });
+		await runStage(ctx, 0, { cwd, runId, dag, stageIds, totalStages, state, pi: options.pi });
 	} finally {
 		clearChildSession();
 	}
@@ -203,8 +213,9 @@ function notifyPartialArtifacts(ctx: ChainCtx, cwd: string, runId: string): void
  * collapsing them here keeps the bookkeeping consistent and makes it harder
  * to forget a step when adding a new failure mode.
  *
- * Always called inside `withSession` on the fresh ctx — never on the outer
- * ctx, which would be invalid by the time newSession resolves.
+ * Called on the valid ctx for this path — freshCtx for "fresh" stages,
+ * curCtx for "continue" stages. The three failure modes (aborted / failed /
+ * no-artifact) share this bookkeeping helper.
  */
 function recordTerminalFailure(
 	freshCtx: ChainCtx,
@@ -225,86 +236,156 @@ function recordTerminalFailure(
 }
 
 /**
- * Spawn one fresh session, send `prompt`, inspect the resulting branch, and
- * fan into either `onSuccess(freshCtx, artifact)` (when the agent responded)
- * or `onFailure?.(freshCtx)` after recording a failed row.
+ * Spawn one session for a stage and drive the agent loop. Branches on
+ * `sessionPolicy`: "fresh" wraps in `newSession({ withSession })`, "continue"
+ * reuses the current session via `pi.sendUserMessage()` + idle polling.
  *
- * All chain recursion happens inside the success path on `freshCtx` — the
- * outer `curCtx` is invalid as soon as newSession resolves.
+ * All chain recursion happens inside the success path — on `freshCtx` for
+ * "fresh" stages, on `curCtx` for "continue" stages.
  */
 async function executeSession(curCtx: ChainCtx, p: ExecuteSessionParams): Promise<void> {
-	const { cancelled } = await curCtx.newSession({
-		withSession: async (freshCtx) => {
-			await freshCtx.sendUserMessage(p.prompt);
+	if (p.sessionPolicy === "continue") {
+		// "Continue" path — reuse the current session, no newSession.
+		// pi.sendUserMessage is sync (fire-and-forget); we then poll for idle.
+		p.pi!.sendUserMessage(p.prompt);
 
-			const branch = freshCtx.sessionManager.getBranch() as unknown as BranchEntry[];
-			const artifact = extractArtifactPath(branch);
-			const stopReason = lastAssistantStopReason(branch);
-
-			// User aborted the agent loop mid-stage (typically ESC). Halt the
-			// chain explicitly — do NOT call `p.onSuccess`, since the partial
-			// assistant response would otherwise satisfy hasAssistantMessage and
-			// we'd silently advance to the next stage. Matches the canonical
-			// Pi subagent pattern (examples/extensions/subagent/index.ts:537-547).
-			if (stopReason === "aborted") {
-				recordTerminalFailure(freshCtx, p, {
-					status: "aborted",
-					notifyMsg: MSG_STAGE_ABORTED(p.skill),
-					notifyLevel: "warning",
-					errMsg: `${p.skill} aborted by user (ESC)`,
-					callOnFailure: false,
-				});
-				return;
+		// Bounded macrotask poll — setTimeout(r, 0) yields to SDK's internal
+		// awaits. Promise.resolve() (microtask) would starve them.
+		const MAX_POLLS = 100;
+		let polls = 0;
+		while (!(curCtx as unknown as { isIdle(): boolean }).isIdle()) {
+			if (++polls > MAX_POLLS) {
+				throw new Error(`executeSession: waitForIdle timed out after ${MAX_POLLS} polls for stage ${p.skill}`);
 			}
+			await new Promise<void>((r) => setTimeout(r, 0));
+		}
 
-			// No assistant response at all, or the agent ended in an LLM error.
-			if (!hasAssistantMessage(branch) || stopReason === "error") {
-				recordTerminalFailure(freshCtx, p, {
-					status: "failed",
-					notifyMsg: MSG_STAGE_FAILED(p.skill),
-					notifyLevel: "error",
-					errMsg: p.errorMessage,
-					callOnFailure: true,
-				});
-				return;
-			}
+		// Slice the branch to only this stage's entries.
+		const fullBranch = curCtx.sessionManager.getBranch() as unknown as BranchEntry[];
+		const branch = fullBranch.slice(p.branchOffset ?? 0);
+		const artifact = extractArtifactPath(branch);
+		const stopReason = lastAssistantStopReason(branch);
 
-			// Agent stopped cleanly but the stage's protocol contract wasn't met —
-			// no artifact path in the transcript. Halt the chain explicitly rather
-			// than silently advancing with stale `state.artifactPath`; see the
-			// requireArtifact field doc for the failure mode this guards against.
-			if (p.requireArtifact && !artifact) {
-				recordTerminalFailure(freshCtx, p, {
-					status: "failed",
-					notifyMsg: MSG_STAGE_NO_ARTIFACT(p.skill),
-					notifyLevel: "error",
-					errMsg: ERR_STAGE_NO_ARTIFACT(p.skill),
-					callOnFailure: true,
-				});
-				return;
-			}
+		if (stopReason === "aborted") {
+			recordTerminalFailure(curCtx, p, {
+				status: "aborted",
+				notifyMsg: MSG_STAGE_ABORTED(p.skill),
+				notifyLevel: "warning",
+				errMsg: `${p.skill} aborted by user (ESC)`,
+				// Surface artifacts produced by prior stages so an ESC at stage
+				// 3/5 is as transparent as an error at stage 3/5.
+				callOnFailure: true,
+			});
+			return;
+		}
 
-			if (artifact) p.state.artifactPath = artifact;
-			recordStage(
-				p.cwd,
-				p.runId,
-				{ skill: p.successSkill ?? p.skill, artifact, status: "completed", ts: nowIso() },
-				p.state,
-			);
-			if (p.emitCompleteOnSuccess) {
-				freshCtx.ui.notify(MSG_STAGE_COMPLETE(p.skill), "info");
-			}
-			p.state.stagesCompleted++;
+		if (!hasAssistantMessage(branch) || stopReason === "error") {
+			recordTerminalFailure(curCtx, p, {
+				status: "failed",
+				notifyMsg: MSG_STAGE_FAILED(p.skill),
+				notifyLevel: "error",
+				errMsg: p.errorMessage,
+				callOnFailure: true,
+			});
+			return;
+		}
 
-			// Chain on freshCtx — outer curCtx is about to be invalidated.
-			await p.onSuccess(freshCtx, artifact);
-		},
-	});
+		if (p.requireArtifact && !artifact) {
+			recordTerminalFailure(curCtx, p, {
+				status: "failed",
+				notifyMsg: MSG_STAGE_NO_ARTIFACT(p.skill),
+				notifyLevel: "error",
+				errMsg: ERR_STAGE_NO_ARTIFACT(p.skill),
+				callOnFailure: true,
+			});
+			return;
+		}
 
-	if (cancelled) {
-		recordStage(p.cwd, p.runId, { skill: p.skill, status: "skipped", ts: nowIso() }, p.state);
-		curCtx.ui.setStatus(STATUS_KEY, undefined);
-		curCtx.ui.notify(MSG_WORKFLOW_CANCELLED, "info");
+		if (artifact) p.state.artifactPath = artifact;
+		recordStage(
+			p.cwd,
+			p.runId,
+			{ skill: p.successSkill ?? p.skill, artifact, status: "completed", ts: nowIso() },
+			p.state,
+		);
+		if (p.emitCompleteOnSuccess) {
+			curCtx.ui.notify(MSG_STAGE_COMPLETE(p.skill), "info");
+		}
+		p.state.stagesCompleted++;
+
+		// Chain on curCtx — still valid because no newSession was called.
+		await p.onSuccess(curCtx, artifact);
+	} else {
+		// "Fresh" path — existing newSession logic.
+		const { cancelled } = await curCtx.newSession({
+			withSession: async (freshCtx) => {
+				await freshCtx.sendUserMessage(p.prompt);
+
+				const branch = freshCtx.sessionManager.getBranch() as unknown as BranchEntry[];
+				const artifact = extractArtifactPath(branch);
+				const stopReason = lastAssistantStopReason(branch);
+
+				if (stopReason === "aborted") {
+					recordTerminalFailure(freshCtx, p, {
+						status: "aborted",
+						notifyMsg: MSG_STAGE_ABORTED(p.skill),
+						notifyLevel: "warning",
+						errMsg: `${p.skill} aborted by user (ESC)`,
+						// Surface artifacts produced by prior stages so an ESC at
+						// stage 3/5 is as transparent as an error at stage 3/5.
+						callOnFailure: true,
+					});
+					return;
+				}
+
+				if (!hasAssistantMessage(branch) || stopReason === "error") {
+					recordTerminalFailure(freshCtx, p, {
+						status: "failed",
+						notifyMsg: MSG_STAGE_FAILED(p.skill),
+						notifyLevel: "error",
+						errMsg: p.errorMessage,
+						callOnFailure: true,
+					});
+					return;
+				}
+
+				if (p.requireArtifact && !artifact) {
+					recordTerminalFailure(freshCtx, p, {
+						status: "failed",
+						notifyMsg: MSG_STAGE_NO_ARTIFACT(p.skill),
+						notifyLevel: "error",
+						errMsg: ERR_STAGE_NO_ARTIFACT(p.skill),
+						callOnFailure: true,
+					});
+					return;
+				}
+
+				if (artifact) p.state.artifactPath = artifact;
+				recordStage(
+					p.cwd,
+					p.runId,
+					{ skill: p.successSkill ?? p.skill, artifact, status: "completed", ts: nowIso() },
+					p.state,
+				);
+				if (p.emitCompleteOnSuccess) {
+					freshCtx.ui.notify(MSG_STAGE_COMPLETE(p.skill), "info");
+				}
+				p.state.stagesCompleted++;
+
+				// Chain on freshCtx — outer curCtx is about to be invalidated.
+				await p.onSuccess(freshCtx, artifact);
+			},
+		});
+
+		if (cancelled) {
+			recordStage(p.cwd, p.runId, { skill: p.skill, status: "skipped", ts: nowIso() }, p.state);
+			curCtx.ui.setStatus(STATUS_KEY, undefined);
+			curCtx.ui.notify(MSG_WORKFLOW_CANCELLED, "info");
+			// Distinguish "user cancelled" from "workflow never started" — both
+			// land in the caller as `success: false`; the error string is the
+			// only signal that disambiguates the two cases.
+			p.state.error = `${p.skill} cancelled by user`;
+		}
 	}
 }
 
@@ -386,6 +467,27 @@ async function runStage(curCtx: ChainCtx, idx: number, run: RunContext): Promise
 	// in a way `ui.notify` does not.
 	curCtx.ui.setStatus(STATUS_KEY, STATUS_STAGE(stageNumber, totalStages, skillLabel));
 
+	// Block implement + continue — phase fanout assumes per-phase session isolation.
+	if (node.kind === "skill" && node.skill === "implement" && node.sessionPolicy === "continue") {
+		throw new Error(
+			`runStage: implement node "${id}" cannot use sessionPolicy "continue" — ` +
+				"phase fanout requires per-phase session isolation",
+		);
+	}
+
+	// Validate pi is available for continue stages.
+	if (node.sessionPolicy === "continue" && !run.pi) {
+		throw new Error(
+			`runStage: node "${id}" uses sessionPolicy "continue" but no pi (ExtensionAPI) was provided to runWorkflow`,
+		);
+	}
+
+	// Compute branch offset — entries before this index belong to prior stages.
+	const branchOffset =
+		node.sessionPolicy === "continue"
+			? (curCtx.sessionManager.getBranch() as unknown as BranchEntry[]).length
+			: undefined;
+
 	await executeSession(curCtx, {
 		cwd,
 		runId,
@@ -398,6 +500,9 @@ async function runStage(curCtx: ChainCtx, idx: number, run: RunContext): Promise
 		// must produce a `.rpiv/artifacts/...` path; agent-end nodes complete
 		// on any clean stop reason. See `StopStrategy` doc in dag.ts.
 		requireArtifact: node.stopStrategy === "artifact-emit",
+		sessionPolicy: node.sessionPolicy,
+		pi: run.pi,
+		branchOffset,
 		onFailure: (freshCtx) => notifyPartialArtifacts(freshCtx, cwd, runId),
 		onSuccess: (freshCtx) => runStage(freshCtx, idx + 1, run),
 	});

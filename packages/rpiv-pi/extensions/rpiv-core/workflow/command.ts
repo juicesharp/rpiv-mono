@@ -72,7 +72,7 @@ export function formatPresetList(config: LoadedConfigWithSource): string {
 export function registerWorkflowCommand(pi: ExtensionAPI): void {
 	pi.registerCommand("rpiv", {
 		description: "Run the rpiv skill pipeline: /rpiv [preset] [description]",
-		handler: handleWorkflowCommand,
+		handler: (args: string, ctx: ExtensionCommandContext) => handleWorkflowCommand(pi, args, ctx),
 	});
 }
 
@@ -80,7 +80,7 @@ export function registerWorkflowCommand(pi: ExtensionAPI): void {
 // Handler
 // ---------------------------------------------------------------------------
 
-async function handleWorkflowCommand(args: string, ctx: ExtensionCommandContext): Promise<void> {
+async function handleWorkflowCommand(pi: ExtensionAPI, args: string, ctx: ExtensionCommandContext): Promise<void> {
 	if (!ctx.hasUI) {
 		ctx.ui.notify(MSG_INTERACTIVE_ONLY, "error");
 		return;
@@ -102,5 +102,5 @@ async function handleWorkflowCommand(args: string, ctx: ExtensionCommandContext)
 		return;
 	}
 
-	await runWorkflow(ctx, { preset, input, dag: config.dag });
+	await runWorkflow(ctx, { preset, input, dag: config.dag, pi });
 }

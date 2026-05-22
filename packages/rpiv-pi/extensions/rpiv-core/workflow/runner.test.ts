@@ -1,11 +1,12 @@
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createMockSessionChain, mockAssistantMessage } from "@juicesharp/rpiv-test-utils";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createMockPi, createMockSessionChain, mockAssistantMessage } from "@juicesharp/rpiv-test-utils";
+import { afterEach, beforeEach, describe, expect, it, type vi } from "vitest";
 import { clearChildSession, isChildSession } from "./child-session.js";
 import type { DagNode, StopStrategy, WorkflowDag } from "./dag.js";
 import { countPhases, extractArtifactPath, runWorkflow } from "./runner.js";
+import { hasAssistantMessage, lastAssistantStopReason } from "./transcript.js";
 
 // ---------------------------------------------------------------------------
 // extractArtifactPath — pure scan over a synthetic branch (no I/O)
@@ -400,7 +401,9 @@ describe("runWorkflow", () => {
 		});
 
 		expect(result.success).toBe(false);
-		expect(result.error).toBeUndefined();
+		// User-cancelled returns a populated error string — distinguishes from
+		// "workflow never started" (which also has success: false).
+		expect(result.error).toMatch(/cancelled by user/i);
 		expect(result.stagesCompleted).toBe(0);
 		expect(chain.notifications.some((n) => /cancelled/i.test(n.msg))).toBe(true);
 
@@ -504,6 +507,36 @@ describe("runWorkflow", () => {
 			{ key: "rpiv-workflow", value: "rpiv: stage 1/2 — research" },
 			{ key: "rpiv-workflow", value: undefined },
 		]);
+	});
+
+	it("abort mid-chain surfaces partial artifacts produced by earlier stages", async () => {
+		// User ESCs at stage 2 of a 3-stage chain. Stage 1 already wrote an
+		// artifact — the user should see it listed instead of having to grep
+		// the JSONL. This mirrors the error-path symmetry: an error at stage 2
+		// already calls notifyPartialArtifacts; an abort at stage 2 must too.
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [
+				{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/research/r.md")] },
+				{ branch: [mockAssistantMessage("partial interrupted by user", "aborted")] },
+				{ branch: [mockAssistantMessage("never reached")] },
+			],
+		});
+
+		const result = await runWorkflow(chain.ctx, {
+			preset: "three",
+			input: "x",
+			dag: dagWith({ three: ["research", "design", "plan"] }),
+		});
+
+		expect(result.success).toBe(false);
+		expect(result.error).toMatch(/aborted/i);
+		expect(result.stagesCompleted).toBe(1); // stage 1 did complete
+
+		// The partial-artifacts recap must include the research artifact.
+		const partial = chain.notifications.find((n) => /Artifacts produced before failure/i.test(n.msg));
+		expect(partial).toBeDefined();
+		expect(partial?.msg).toMatch(/research:.*\.rpiv\/artifacts\/research\/r\.md/);
 	});
 
 	it("halts the chain when the agent ends with stopReason: error (records failed)", async () => {
@@ -671,5 +704,295 @@ describe("runWorkflow", () => {
 			expect(result.success).toBe(true);
 			expect(result.stagesCompleted).toBe(1);
 		});
+	});
+
+	describe("sessionPolicy: continue", () => {
+		it("completes a single continue stage via pi.sendUserMessage", async () => {
+			const chain = createMockSessionChain({
+				cwd: tmpDir,
+				steps: [],
+				pi: createMockPi().pi,
+				outerBranch: [],
+			});
+
+			// Simulate branch growth: getBranch returns a reference to the
+			// internal array, so pushing makes new entries visible to the runner.
+			const branch = chain.ctx.sessionManager.getBranch() as unknown[];
+			(chain.pi!.sendUserMessage as ReturnType<typeof vi.fn>).mockImplementation((content: unknown) => {
+				chain.sentMessages.push(typeof content === "string" ? content : JSON.stringify(content));
+				branch.push(mockAssistantMessage("Wrote .rpiv/artifacts/research/r.md"));
+			});
+
+			const result = await runWorkflow(chain.ctx, {
+				preset: "cont",
+				input: "x",
+				dag: dagWith({ cont: ["research"] }, { research: { sessionPolicy: "continue" } }),
+				pi: chain.pi,
+			});
+
+			expect(result.success).toBe(true);
+			expect(result.stagesCompleted).toBe(1);
+			expect(result.lastArtifact).toBe(".rpiv/artifacts/research/r.md");
+			// No newSession called — the continue path reuses the outer session
+			expect(chain.ctx.newSession).not.toHaveBeenCalled();
+			// Message sent via pi.sendUserMessage (sync)
+			expect(chain.pi!.sendUserMessage).toHaveBeenCalledWith("/skill:research x");
+		});
+
+		it("chains fresh → continue with correct branch offset", async () => {
+			const priorArtifact = ".rpiv/artifacts/research/r.md";
+			const designArtifact = ".rpiv/artifacts/designs/d.md";
+
+			// Shared mutable branch — the fresh stage reads it as-is; the
+			// continue stage's sendUserMessage appends its entries.
+			const sharedBranch: unknown[] = [mockAssistantMessage(`Wrote ${priorArtifact}`)];
+
+			const chain = createMockSessionChain({
+				cwd: tmpDir,
+				steps: [{ branch: sharedBranch }],
+				pi: createMockPi().pi,
+			});
+
+			(chain.pi!.sendUserMessage as ReturnType<typeof vi.fn>).mockImplementation((content: unknown) => {
+				chain.sentMessages.push(typeof content === "string" ? content : JSON.stringify(content));
+				sharedBranch.push(mockAssistantMessage(`Designed ${designArtifact}`));
+			});
+
+			const result = await runWorkflow(chain.ctx, {
+				preset: "fc",
+				input: "x",
+				dag: dagWith({ fc: ["research", "design"] }, { design: { sessionPolicy: "continue" } }),
+				pi: chain.pi,
+			});
+
+			expect(result.success).toBe(true);
+			expect(result.stagesCompleted).toBe(2);
+			expect(result.lastArtifact).toBe(designArtifact);
+			// Stage 1 used newSession; stage 2 used pi.sendUserMessage
+			expect(chain.ctx.newSession).toHaveBeenCalledTimes(1);
+			expect(chain.sentMessages).toEqual(["/skill:research x", `/skill:design ${priorArtifact}`]);
+		});
+
+		it("continue stage abort halts the chain", async () => {
+			const chain = createMockSessionChain({
+				cwd: tmpDir,
+				steps: [],
+				pi: createMockPi().pi,
+				outerBranch: [],
+			});
+
+			const branch = chain.ctx.sessionManager.getBranch() as unknown[];
+			(chain.pi!.sendUserMessage as ReturnType<typeof vi.fn>).mockImplementation((content: unknown) => {
+				chain.sentMessages.push(typeof content === "string" ? content : JSON.stringify(content));
+				branch.push(mockAssistantMessage("interrupted", "aborted"));
+			});
+
+			const result = await runWorkflow(chain.ctx, {
+				preset: "cont",
+				input: "x",
+				dag: dagWith({ cont: ["research"] }, { research: { sessionPolicy: "continue" } }),
+				pi: chain.pi,
+			});
+
+			expect(result.success).toBe(false);
+			expect(result.error).toMatch(/aborted/i);
+			expect(result.stagesCompleted).toBe(0);
+
+			const { stages } = readState(tmpDir);
+			expect(stages[0]).toMatchObject({ skill: "research", status: "aborted" });
+		});
+
+		it("continue stage with no assistant message fails", async () => {
+			const chain = createMockSessionChain({
+				cwd: tmpDir,
+				steps: [],
+				pi: createMockPi().pi,
+				outerBranch: [],
+			});
+
+			// Don't override sendUserMessage — branch stays empty after the call.
+			// The runner sees branchOffset=0, slice gives [], no assistant message.
+
+			const result = await runWorkflow(chain.ctx, {
+				preset: "cont",
+				input: "x",
+				dag: dagWith({ cont: ["research"] }, { research: { sessionPolicy: "continue" } }),
+				pi: chain.pi,
+			});
+
+			expect(result.success).toBe(false);
+			expect(result.error).toBe("research failed");
+			expect(result.stagesCompleted).toBe(0);
+		});
+
+		it("continue stage with no artifact (requireArtifact) fails", async () => {
+			const chain = createMockSessionChain({
+				cwd: tmpDir,
+				steps: [],
+				pi: createMockPi().pi,
+				outerBranch: [],
+			});
+
+			const branch = chain.ctx.sessionManager.getBranch() as unknown[];
+			(chain.pi!.sendUserMessage as ReturnType<typeof vi.fn>).mockImplementation((content: unknown) => {
+				chain.sentMessages.push(typeof content === "string" ? content : JSON.stringify(content));
+				branch.push(mockAssistantMessage("I asked a clarifying question"));
+			});
+
+			const result = await runWorkflow(chain.ctx, {
+				preset: "cont",
+				input: "x",
+				dag: dagWith({ cont: ["research"] }, { research: { sessionPolicy: "continue" } }),
+				pi: chain.pi,
+			});
+
+			expect(result.success).toBe(false);
+			expect(result.error).toMatch(/without producing/i);
+			expect(result.stagesCompleted).toBe(0);
+		});
+
+		it("continue stage with agent-end stop strategy completes without artifact", async () => {
+			const chain = createMockSessionChain({
+				cwd: tmpDir,
+				steps: [],
+				pi: createMockPi().pi,
+				outerBranch: [],
+			});
+
+			const branch = chain.ctx.sessionManager.getBranch() as unknown[];
+			(chain.pi!.sendUserMessage as ReturnType<typeof vi.fn>).mockImplementation((content: unknown) => {
+				chain.sentMessages.push(typeof content === "string" ? content : JSON.stringify(content));
+				branch.push(mockAssistantMessage("Committed 3 files."));
+			});
+
+			const result = await runWorkflow(chain.ctx, {
+				preset: "cont",
+				input: "x",
+				dag: dagWith({ cont: ["commit"] }, { commit: { sessionPolicy: "continue" } }),
+				pi: chain.pi,
+			});
+
+			expect(result.success).toBe(true);
+			expect(result.stagesCompleted).toBe(1);
+			expect(result.lastArtifact).toBeUndefined();
+		});
+
+		it("throws when implement node has sessionPolicy continue", async () => {
+			const chain = createMockSessionChain({
+				cwd: tmpDir,
+				steps: [],
+				pi: createMockPi().pi,
+			});
+
+			await expect(
+				runWorkflow(chain.ctx, {
+					preset: "ic",
+					input: "x",
+					dag: dagWith({ ic: ["implement"] }, { implement: { sessionPolicy: "continue" } }),
+					pi: chain.pi,
+				}),
+			).rejects.toThrow(/cannot use sessionPolicy.*continue/);
+		});
+
+		it("throws when continue node runs without pi", async () => {
+			const chain = createMockSessionChain({
+				cwd: tmpDir,
+				steps: [],
+			});
+
+			await expect(
+				runWorkflow(chain.ctx, {
+					preset: "cont",
+					input: "x",
+					dag: dagWith({ cont: ["research"] }, { research: { sessionPolicy: "continue" } }),
+					// No pi provided
+				}),
+			).rejects.toThrow(/no pi.*ExtensionAPI/);
+		});
+
+		it("branch offset prevents false positive from prior stage artifact", async () => {
+			// Fresh stage produces artifact, continue stage fails to produce its own.
+			// Without offset, extractArtifactPath would return the prior artifact.
+			const priorArtifact = ".rpiv/artifacts/research/r.md";
+
+			// Shared mutable branch: pre-populated with the fresh stage's entry.
+			const sharedBranch: unknown[] = [mockAssistantMessage(`Wrote ${priorArtifact}`)];
+
+			const chain = createMockSessionChain({
+				cwd: tmpDir,
+				steps: [{ branch: sharedBranch }],
+				pi: createMockPi().pi,
+			});
+
+			// Continue stage produces a message but no artifact
+			(chain.pi!.sendUserMessage as ReturnType<typeof vi.fn>).mockImplementation((content: unknown) => {
+				chain.sentMessages.push(typeof content === "string" ? content : JSON.stringify(content));
+				sharedBranch.push(mockAssistantMessage("I analyzed the design but didn't write a plan"));
+			});
+
+			const result = await runWorkflow(chain.ctx, {
+				preset: "fc",
+				input: "x",
+				dag: dagWith({ fc: ["research", "design"] }, { design: { sessionPolicy: "continue" } }),
+				pi: chain.pi,
+			});
+
+			// Stage 2 failed — no artifact produced by the continue stage
+			expect(result.success).toBe(false);
+			expect(result.error).toMatch(/without producing/i);
+			expect(result.stagesCompleted).toBe(1); // Only stage 1 completed
+			expect(chain.remaining()).toBe(0);
+
+			const { stages } = readState(tmpDir);
+			expect(stages[0]).toMatchObject({ skill: "research", status: "completed" });
+			expect(stages[1]).toMatchObject({ skill: "design", status: "failed" });
+		});
+	});
+});
+
+describe("transcript offset helpers", () => {
+	it("extractArtifactPath with offsetStart skips prior entries", () => {
+		const branch = [asst("First: .rpiv/artifacts/research/old.md"), asst("Second: .rpiv/artifacts/designs/new.md")];
+		// Without offset, returns the last artifact
+		expect(extractArtifactPath(branch)).toBe(".rpiv/artifacts/designs/new.md");
+		// With offset=1, skips the first entry
+		expect(extractArtifactPath(branch, 1)).toBe(".rpiv/artifacts/designs/new.md");
+		// With offset=2, no entries to scan
+		expect(extractArtifactPath(branch, 2)).toBeUndefined();
+	});
+
+	it("hasAssistantMessage with offsetStart skips prior entries", () => {
+		const branch = [asst("prior stage"), { type: "user_message" }];
+		// Full branch has assistant
+		expect(hasAssistantMessage(branch)).toBe(true);
+		// From offset 2, no assistant
+		expect(hasAssistantMessage(branch, 2)).toBe(false);
+	});
+
+	it("lastAssistantStopReason with offsetStart skips prior entries", () => {
+		const branch = [
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "text", text: "ok" }],
+					stopReason: "stop" as const,
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "text", text: "err" }],
+					stopReason: "error" as const,
+				},
+			},
+		];
+		// Full branch returns last stop reason
+		expect(lastAssistantStopReason(branch)).toBe("error");
+		// From offset 1, returns only the second entry's stop reason
+		expect(lastAssistantStopReason(branch, 1)).toBe("error");
+		// From offset 2, no entries
+		expect(lastAssistantStopReason(branch, 2)).toBeUndefined();
 	});
 });

@@ -32,9 +32,13 @@ const ARTIFACT_PATH_REGEX = /\.rpiv\/artifacts\/[\w-]+\/[\w.-]+\.md/g;
  *
  * Only text content blocks are scanned (thinking / tool_call blocks are ignored)
  * because artifact paths the user should consume only appear in spoken text.
+ *
+ * When `offsetStart` is provided, only entries at or after that index are
+ * scanned — used by "continue" stages to ignore entries from prior stages.
  */
-export function extractArtifactPath(branch: BranchEntry[]): string | undefined {
-	for (let i = branch.length - 1; i >= 0; i--) {
+export function extractArtifactPath(branch: BranchEntry[], offsetStart?: number): string | undefined {
+	const start = Math.max(offsetStart ?? 0, 0);
+	for (let i = branch.length - 1; i >= start; i--) {
 		const entry = branch[i]!;
 		if (entry.type !== "message") continue;
 		if (!entry.message || entry.message.role !== "assistant") continue;
@@ -59,9 +63,17 @@ export function extractArtifactPath(branch: BranchEntry[]): string | undefined {
  * Whether the branch contains at least one assistant message. The runner uses
  * this as the "did the agent actually respond" predicate — an empty or
  * user-only branch means the session was killed before the model spoke.
+ *
+ * When `offsetStart` is provided, only entries at or after that index are
+ * considered — used by "continue" stages to ignore entries from prior stages.
  */
-export function hasAssistantMessage(branch: BranchEntry[]): boolean {
-	return branch.some((e) => e.type === "message" && e.message?.role === "assistant");
+export function hasAssistantMessage(branch: BranchEntry[], offsetStart?: number): boolean {
+	const start = Math.max(offsetStart ?? 0, 0);
+	for (let i = start; i < branch.length; i++) {
+		const e = branch[i]!;
+		if (e.type === "message" && e.message?.role === "assistant") return true;
+	}
+	return false;
 }
 
 /**
@@ -71,12 +83,16 @@ export function hasAssistantMessage(branch: BranchEntry[]): boolean {
  * `"aborted"` (user pressed ESC) or `"error"` (LLM error); the runner uses
  * it the same way in `executeSession`.
  *
+ * When `offsetStart` is provided, only entries at or after that index are
+ * scanned — used by "continue" stages to ignore entries from prior stages.
+ *
  * Returns undefined if the branch has no assistant message at all (caller
  * should treat that as a separate "no response" failure) or if the message
  * predates Pi's stopReason support.
  */
-export function lastAssistantStopReason(branch: BranchEntry[]): StopReason | undefined {
-	for (let i = branch.length - 1; i >= 0; i--) {
+export function lastAssistantStopReason(branch: BranchEntry[], offsetStart?: number): StopReason | undefined {
+	const start = Math.max(offsetStart ?? 0, 0);
+	for (let i = branch.length - 1; i >= start; i--) {
 		const entry = branch[i]!;
 		if (entry.type !== "message") continue;
 		if (entry.message?.role !== "assistant") continue;

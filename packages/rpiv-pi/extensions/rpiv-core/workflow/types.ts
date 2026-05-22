@@ -7,8 +7,8 @@
  * runner.ts; type-only references back via this module are cycle-free).
  */
 
-import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import type { WorkflowDag } from "./dag.js";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import type { SessionPolicy, WorkflowDag } from "./dag.js";
 
 /**
  * A ctx that can spawn the next session. Either the original handler ctx or
@@ -45,6 +45,8 @@ export interface RunContext {
 	stageIds: string[];
 	totalStages: number;
 	state: RunState;
+	/** ExtensionAPI instance — needed for "continue" stages that call pi.sendUserMessage(). */
+	pi?: ExtensionAPI;
 }
 
 /**
@@ -82,4 +84,10 @@ export interface ExecuteSessionParams {
 	onFailure?: (freshCtx: ChainCtx) => void;
 	/** Invoked inside withSession after success bookkeeping. `freshCtx` is the valid ctx for further chaining. */
 	onSuccess: (freshCtx: ChainCtx, artifact: string | undefined) => Promise<void>;
+	/** Session policy for this stage. "fresh" creates a new session; "continue" reuses the prior session. */
+	sessionPolicy?: SessionPolicy;
+	/** ExtensionAPI — required when sessionPolicy is "continue". */
+	pi?: ExtensionAPI;
+	/** Branch offset — entries before this index belong to prior stages. Only set for "continue" stages. */
+	branchOffset?: number;
 }
