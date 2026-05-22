@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { getEdge, isValidNode, resolvePreset, validateDag, WORKFLOW_DAG, type WorkflowDag } from "./dag.js";
+import {
+	type DagNode,
+	getEdge,
+	isValidNode,
+	resolvePreset,
+	validateDag,
+	WORKFLOW_DAG,
+	type WorkflowDag,
+} from "./dag.js";
 
 describe("DAG types and constants", () => {
 	it("WORKFLOW_DAG has 12 edges (9 auto + 3 choice)", () => {
@@ -19,14 +27,14 @@ describe("DAG types and constants", () => {
 
 	it("every preset includes validate as its final verification stage", () => {
 		// small/mid end at validate; large continues into code-review after validate.
-		for (const [name, nodes] of Object.entries(WORKFLOW_DAG.presets)) {
-			expect(nodes, `preset ${name} should include validate`).toContain("validate");
+		for (const [name, stageIds] of Object.entries(WORKFLOW_DAG.presets)) {
+			expect(stageIds, `preset ${name} should include validate`).toContain("validate");
 		}
 	});
 
 	it("every preset reaches implement before validate (so there is code to validate)", () => {
-		for (const [name, nodes] of Object.entries(WORKFLOW_DAG.presets)) {
-			expect(nodes, `preset ${name} should include implement`).toContain("implement");
+		for (const [name, stageIds] of Object.entries(WORKFLOW_DAG.presets)) {
+			expect(stageIds, `preset ${name} should include implement`).toContain("implement");
 		}
 	});
 
@@ -99,41 +107,93 @@ describe("resolvePreset", () => {
 });
 
 describe("validateDag", () => {
+	const nodeOf = (skill: string, overrides: Partial<DagNode> = {}): DagNode => ({
+		kind: "skill",
+		skill,
+		stopStrategy: "agent-end",
+		sessionPolicy: "fresh",
+		...overrides,
+	});
+
 	it("returns no errors for the default WORKFLOW_DAG", () => {
 		expect(validateDag(WORKFLOW_DAG)).toEqual([]);
 	});
 
-	it("reports invalid edge source", () => {
+	it("reports edge source that's not in nodes map", () => {
 		const badDag: WorkflowDag = {
 			edges: [{ from: "nonexistent", to: ["commit"], condition: "auto" }],
-			presets: {} as WorkflowDag["presets"],
+			presets: {},
+			nodes: { commit: nodeOf("commit") },
 		};
 		const errors = validateDag(badDag);
-		expect(errors).toEqual([expect.stringContaining("Invalid edge source")]);
+		expect(errors).toEqual([expect.stringContaining(`Edge source "nonexistent" has no entry in nodes`)]);
 	});
 
-	it("reports invalid edge target", () => {
+	it("reports edge target that's not in nodes map", () => {
 		const badDag: WorkflowDag = {
 			edges: [{ from: "discover", to: ["nonexistent"], condition: "auto" }],
-			presets: {} as WorkflowDag["presets"],
+			presets: {},
+			nodes: { discover: nodeOf("discover") },
 		};
 		const errors = validateDag(badDag);
-		expect(errors).toEqual([expect.stringContaining("Invalid edge target")]);
+		expect(errors).toEqual([
+			expect.stringContaining(`Edge target "nonexistent" (from "discover") has no entry in nodes`),
+		]);
 	});
 
-	it("reports invalid preset node", () => {
+	it("reports preset entry that's not in nodes map", () => {
 		const badDag: WorkflowDag = {
 			edges: [],
-			presets: { small: ["nonexistent", "implement"] } as WorkflowDag["presets"],
+			presets: { small: ["nonexistent", "implement"] },
+			nodes: { implement: nodeOf("implement") },
 		};
 		const errors = validateDag(badDag);
-		expect(errors).toEqual([expect.stringContaining("Invalid preset")]);
+		expect(errors).toEqual([
+			expect.stringContaining(`Preset "small" references "nonexistent" which has no entry in nodes`),
+		]);
 	});
 
-	it("reports multiple errors", () => {
+	it("reports skill-kind node referencing a non-bundled skill", () => {
+		const badDag: WorkflowDag = {
+			edges: [],
+			presets: { tiny: ["custom"] },
+			nodes: { custom: nodeOf("not-a-real-skill") },
+		};
+		const errors = validateDag(badDag);
+		expect(errors).toEqual([
+			expect.stringContaining(`Node "custom" (kind=skill) references unknown bundled skill: "not-a-real-skill"`),
+		]);
+	});
+
+	it("rejects sessionPolicy: 'continue' as not-yet-supported at runtime", () => {
+		const badDag: WorkflowDag = {
+			edges: [],
+			presets: { tiny: ["research"] },
+			nodes: { research: nodeOf("research", { sessionPolicy: "continue" }) },
+		};
+		const errors = validateDag(badDag);
+		expect(errors).toEqual([
+			expect.stringContaining(`Node "research" uses sessionPolicy "continue" which is not yet supported at runtime`),
+		]);
+	});
+
+	it("rejects invalid stopStrategy value", () => {
+		const badDag: WorkflowDag = {
+			edges: [],
+			presets: { tiny: ["research"] },
+			nodes: {
+				research: { ...nodeOf("research"), stopStrategy: "garbage" as never },
+			},
+		};
+		const errors = validateDag(badDag);
+		expect(errors).toEqual([expect.stringContaining(`Node "research" has invalid stopStrategy: "garbage"`)]);
+	});
+
+	it("reports multiple errors at once", () => {
 		const badDag: WorkflowDag = {
 			edges: [{ from: "nonexistent", to: ["also-bad"], condition: "auto" }],
-			presets: {} as WorkflowDag["presets"],
+			presets: {},
+			nodes: {},
 		};
 		expect(validateDag(badDag).length).toBeGreaterThanOrEqual(2);
 	});

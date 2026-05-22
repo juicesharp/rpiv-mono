@@ -24,16 +24,19 @@
  *     artifact* — only meaningful for the `implement` stage.
  */
 
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import type { WorkflowDag } from "./dag.js";
+import { clearChildSession, markChildSession } from "./child-session.js";
+import type { DagNode, WorkflowDag } from "./dag.js";
 import { WORKFLOW_DAG } from "./dag.js";
+import { countPhases, runImplementPhases } from "./implement-phases.js";
 import { appendStage, generateRunId, readAllStages, type WorkflowStage, writeHeader } from "./state.js";
-import { type BranchEntry, extractArtifactPath, hasAssistantMessage } from "./transcript.js";
+import { type BranchEntry, extractArtifactPath, hasAssistantMessage, lastAssistantStopReason } from "./transcript.js";
+import type { ChainCtx, ExecuteSessionParams, RunContext } from "./types.js";
 
-// Re-export so existing imports of `extractArtifactPath` from "./runner.js"
-// keep working — production callers and tests both rely on this surface.
+// Re-export so existing imports of `extractArtifactPath` and `countPhases`
+// from "./runner.js" keep working — production callers and tests both rely
+// on this surface.
+export { countPhases } from "./implement-phases.js";
 export { extractArtifactPath } from "./transcript.js";
 
 // ---------------------------------------------------------------------------
@@ -66,8 +69,17 @@ export interface RunWorkflowResult {
 // Message constants
 // ---------------------------------------------------------------------------
 
-const MSG_STAGE_PROGRESS = (stage: number, total: number, skill: string) => `rpiv: stage ${stage}/${total} — ${skill}`;
+// Persistent status-line state — written via ctx.ui.setStatus, cleared at the
+// end of every workflow regardless of outcome. Pi's `notify` is a one-shot
+// channel that the `newSession` transition repaints away (see
+// session-hooks.ts:120/127 for the canonical setStatus pattern in rpiv-core).
+const STATUS_KEY = "rpiv-workflow";
 
+const STATUS_STAGE = (stage: number, total: number, skill: string) => `rpiv: stage ${stage}/${total} — ${skill}`;
+
+// One-shot announcements via `ui.notify` — best-effort visibility; some may be
+// repainted by Pi's session transition, but the persistent status line above
+// guarantees the user always knows where the workflow currently is.
 const MSG_STAGE_COMPLETE = (skill: string) => `✓ ${skill} completed`;
 
 const MSG_STAGE_FAILED = (skill: string) => `✗ ${skill} failed — stopping workflow`;
@@ -76,19 +88,17 @@ const MSG_WORKFLOW_COMPLETE = (stages: number) => `rpiv: workflow complete (${st
 
 const MSG_WORKFLOW_CANCELLED = "rpiv: workflow cancelled";
 
-const MSG_PHASE_PROGRESS = (phase: number, total: number) => `rpiv: implement phase ${phase}/${total}`;
+const MSG_STAGE_ABORTED = (skill: string) => `⏸ ${skill} aborted (ESC) — stopping workflow`;
+
+const MSG_STAGE_NO_ARTIFACT = (skill: string) => `✗ ${skill} produced no artifact — stopping workflow`;
+
+const ERR_STAGE_NO_ARTIFACT = (skill: string) =>
+	`${skill} finished without producing a .rpiv/artifacts/... path — workflow stages must write an artifact for the chain to continue. ` +
+	`Most likely the agent asked a plain-text clarifying question (use the ask_user_question tool instead) or stopped before reaching the artifact-write step.`;
 
 // ---------------------------------------------------------------------------
 // Runner
 // ---------------------------------------------------------------------------
-
-/**
- * A ctx that can spawn the next session. Either the original handler ctx or a
- * freshCtx from `withSession` — both extend `ExtensionCommandContext`, which is
- * all we need (`ui.notify` + `newSession`). `ReplacedSessionContext` is not
- * publicly exported from `pi-coding-agent`, so we lean on the base type.
- */
-type ChainCtx = ExtensionCommandContext;
 
 const nowIso = () => new Date().toISOString();
 
@@ -105,14 +115,14 @@ export async function runWorkflow(
 	options: RunWorkflowOptions,
 ): Promise<RunWorkflowResult> {
 	const dag = options.dag ?? WORKFLOW_DAG;
-	const nodes = dag.presets[options.preset];
-	if (!nodes || nodes.length === 0) {
+	const stageIds = dag.presets[options.preset];
+	if (!stageIds || stageIds.length === 0) {
 		return { stagesCompleted: 0, success: false, error: `Unknown preset: ${options.preset}` };
 	}
 
 	const cwd = ctx.cwd;
 	const runId = generateRunId();
-	const totalStages = nodes.length;
+	const totalStages = stageIds.length;
 
 	writeHeader(cwd, {
 		runId,
@@ -136,27 +146,21 @@ export async function runWorkflow(
 		error: undefined as string | undefined,
 	};
 
-	await runStage(ctx, 0, { cwd, runId, nodes, totalStages, state });
+	// Mark every session_start fired by an inner stage as a "child" of this
+	// workflow so handlers in rpiv-core and rpiv-advisor can suppress the
+	// cosmetic banner that the parent session already printed. Cleared in a
+	// finally so a thrown stage doesn't strand the flag.
+	markChildSession();
+	try {
+		await runStage(ctx, 0, { cwd, runId, dag, stageIds, totalStages, state });
+	} finally {
+		clearChildSession();
+	}
 	return {
 		stagesCompleted: state.stagesCompleted,
 		success: state.success,
 		lastArtifact: state.artifactPath,
 		error: state.error,
-	};
-}
-
-interface RunContext {
-	cwd: string;
-	runId: string;
-	nodes: string[];
-	totalStages: number;
-	state: {
-		originalInput: string;
-		artifactPath: string | undefined;
-		stagesCompleted: number;
-		jsonlStage: number;
-		success: boolean;
-		error: string | undefined;
 	};
 }
 
@@ -168,12 +172,12 @@ interface RunContext {
 function recordStage(
 	cwd: string,
 	runId: string,
-	stage: Omit<WorkflowStage, "stage">,
+	stage: Omit<WorkflowStage, "stageNumber">,
 	state: RunContext["state"],
 ): void {
-	const nextStage = state.jsonlStage + 1;
-	if (appendStage(cwd, runId, { stage: nextStage, ...stage })) {
-		state.jsonlStage = nextStage;
+	const nextStageNumber = state.jsonlStage + 1;
+	if (appendStage(cwd, runId, { stageNumber: nextStageNumber, ...stage })) {
+		state.jsonlStage = nextStageNumber;
 	}
 }
 
@@ -192,27 +196,32 @@ function notifyPartialArtifacts(ctx: ChainCtx, cwd: string, runId: string): void
 }
 
 /**
- * Parameters for one session spawn — fully captures the asymmetries between
- * runStage and runImplementPhases so the spawn body itself can live in one place.
+ * Record a stage as terminally failed (status, audit row, status-line clear,
+ * user-visible notify, and `state.error`), then optionally invoke `onFailure`
+ * for the partial-artifacts recap. The three early-exit branches in
+ * `executeSession` (aborted / failed / no-artifact) all share this shape;
+ * collapsing them here keeps the bookkeeping consistent and makes it harder
+ * to forget a step when adding a new failure mode.
+ *
+ * Always called inside `withSession` on the fresh ctx — never on the outer
+ * ctx, which would be invalid by the time newSession resolves.
  */
-interface ExecuteSessionParams {
-	cwd: string;
-	runId: string;
-	state: RunContext["state"];
-	/** The `/skill:<name> <args>` line to send into the fresh session. */
-	prompt: string;
-	/** Base skill name — used for the JSONL "skill" field on failed and skipped rows. */
-	skill: string;
-	/** Optional override applied only to the *successful* JSONL row's "skill" field. */
-	successSkill?: string;
-	/** Message stored in state.error when the session yields no assistant message. */
-	errorMessage: string;
-	/** Whether to emit `MSG_STAGE_COMPLETE(skill)` on success (stages yes; phases hold until all phases done). */
-	emitCompleteOnSuccess: boolean;
-	/** Optional hook invoked inside withSession after the failed row is recorded — used for the partial-artifacts recap. */
-	onFailure?: (freshCtx: ChainCtx) => void;
-	/** Invoked inside withSession after success bookkeeping. `freshCtx` is the valid ctx for further chaining. */
-	onSuccess: (freshCtx: ChainCtx, artifact: string | undefined) => Promise<void>;
+function recordTerminalFailure(
+	freshCtx: ChainCtx,
+	p: ExecuteSessionParams,
+	args: {
+		status: "failed" | "aborted";
+		notifyMsg: string;
+		notifyLevel: "warning" | "error";
+		errMsg: string;
+		callOnFailure: boolean;
+	},
+): void {
+	recordStage(p.cwd, p.runId, { skill: p.skill, status: args.status, ts: nowIso() }, p.state);
+	freshCtx.ui.setStatus(STATUS_KEY, undefined);
+	freshCtx.ui.notify(args.notifyMsg, args.notifyLevel);
+	if (args.callOnFailure) p.onFailure?.(freshCtx);
+	p.state.error = args.errMsg;
 }
 
 /**
@@ -230,12 +239,48 @@ async function executeSession(curCtx: ChainCtx, p: ExecuteSessionParams): Promis
 
 			const branch = freshCtx.sessionManager.getBranch() as unknown as BranchEntry[];
 			const artifact = extractArtifactPath(branch);
+			const stopReason = lastAssistantStopReason(branch);
 
-			if (!hasAssistantMessage(branch)) {
-				recordStage(p.cwd, p.runId, { skill: p.skill, status: "failed", ts: nowIso() }, p.state);
-				freshCtx.ui.notify(MSG_STAGE_FAILED(p.skill), "error");
-				p.onFailure?.(freshCtx);
-				p.state.error = p.errorMessage;
+			// User aborted the agent loop mid-stage (typically ESC). Halt the
+			// chain explicitly — do NOT call `p.onSuccess`, since the partial
+			// assistant response would otherwise satisfy hasAssistantMessage and
+			// we'd silently advance to the next stage. Matches the canonical
+			// Pi subagent pattern (examples/extensions/subagent/index.ts:537-547).
+			if (stopReason === "aborted") {
+				recordTerminalFailure(freshCtx, p, {
+					status: "aborted",
+					notifyMsg: MSG_STAGE_ABORTED(p.skill),
+					notifyLevel: "warning",
+					errMsg: `${p.skill} aborted by user (ESC)`,
+					callOnFailure: false,
+				});
+				return;
+			}
+
+			// No assistant response at all, or the agent ended in an LLM error.
+			if (!hasAssistantMessage(branch) || stopReason === "error") {
+				recordTerminalFailure(freshCtx, p, {
+					status: "failed",
+					notifyMsg: MSG_STAGE_FAILED(p.skill),
+					notifyLevel: "error",
+					errMsg: p.errorMessage,
+					callOnFailure: true,
+				});
+				return;
+			}
+
+			// Agent stopped cleanly but the stage's protocol contract wasn't met —
+			// no artifact path in the transcript. Halt the chain explicitly rather
+			// than silently advancing with stale `state.artifactPath`; see the
+			// requireArtifact field doc for the failure mode this guards against.
+			if (p.requireArtifact && !artifact) {
+				recordTerminalFailure(freshCtx, p, {
+					status: "failed",
+					notifyMsg: MSG_STAGE_NO_ARTIFACT(p.skill),
+					notifyLevel: "error",
+					errMsg: ERR_STAGE_NO_ARTIFACT(p.skill),
+					callOnFailure: true,
+				});
 				return;
 			}
 
@@ -258,7 +303,37 @@ async function executeSession(curCtx: ChainCtx, p: ExecuteSessionParams): Promis
 
 	if (cancelled) {
 		recordStage(p.cwd, p.runId, { skill: p.skill, status: "skipped", ts: nowIso() }, p.state);
+		curCtx.ui.setStatus(STATUS_KEY, undefined);
 		curCtx.ui.notify(MSG_WORKFLOW_CANCELLED, "info");
+	}
+}
+
+/**
+ * Build the prompt + status label + audit label for a node based on its kind.
+ * Phase 1 only implements `kind: "skill"`; future variants slot in here.
+ *
+ * The returned `skillLabel` is what gets surfaced in the status line and the
+ * JSONL audit row — for skill-kind nodes that's the underlying skill name
+ * (matches pre-refactor labels), for future kinds it'll be a kind-specific
+ * label derived from the node body.
+ */
+function dispatchNode(node: DagNode, inputForStage: string): { prompt: string; skillLabel: string } {
+	switch (node.kind) {
+		case "skill":
+			return {
+				prompt: `/skill:${node.skill} ${inputForStage}`,
+				skillLabel: node.skill,
+			};
+		default: {
+			// Last-resort guard — validateDag should have rejected unknown
+			// kinds at config-load time. With only one variant in `DagNode`
+			// today the TypeScript exhaustiveness check via `const x: never =
+			// node` can't be expressed without an error; once chat/script
+			// kinds land, add their cases and switch this default to
+			// `assertNever(node)` to get type-level narrowing.
+			const unknownKind = (node as { kind?: unknown }).kind;
+			throw new Error(`runStage: unsupported node kind: ${String(unknownKind)}`);
+		}
 	}
 }
 
@@ -267,105 +342,63 @@ async function executeSession(curCtx: ChainCtx, p: ExecuteSessionParams): Promis
  * (or finalize) using whichever ctx is valid inside withSession.
  */
 async function runStage(curCtx: ChainCtx, idx: number, run: RunContext): Promise<void> {
-	const { cwd, runId, nodes, totalStages, state } = run;
+	const { cwd, runId, dag, stageIds, totalStages, state } = run;
 
-	if (idx >= nodes.length) {
+	if (idx >= stageIds.length) {
+		curCtx.ui.setStatus(STATUS_KEY, undefined);
 		curCtx.ui.notify(MSG_WORKFLOW_COMPLETE(state.stagesCompleted), "info");
 		state.success = true;
 		return;
 	}
 
-	const skill = nodes[idx]!;
+	const id = stageIds[idx]!;
+	const node = dag.nodes[id];
+	if (!node) {
+		// validateDag should have caught this — defensive throw for runtime
+		// guarantee. Bypassing validation (e.g. via test fixture) lands here.
+		throw new Error(`runStage: node id "${id}" referenced by preset but missing from dag.nodes`);
+	}
 	const stageNumber = idx + 1;
 
-	// Multi-phase expand: when implement runs against a plan artifact with
-	// `## Phase N:` headings, fan out one session per phase.
-	if (skill === "implement" && state.artifactPath) {
+	// Multi-phase expand: when an implement *skill* runs against a plan artifact
+	// with `## Phase N:` headings, fan out one session per phase. Keyed on the
+	// underlying skill name (not the node id) so any skill-node pointing at
+	// "implement" gets the same behavior. Phase-iteration logic lives in
+	// implement-phases.ts; we inject the runner's primitives as deps so that
+	// module never imports back from runner.ts (cycle-free).
+	if (node.kind === "skill" && node.skill === "implement" && state.artifactPath) {
 		const phaseCount = countPhases(state.artifactPath, cwd);
 		if (phaseCount > 0) {
-			await runImplementPhases(curCtx, idx, 1, phaseCount, run);
+			await runImplementPhases(curCtx, idx, 1, phaseCount, run, {
+				executeSession,
+				runNextStage: runStage,
+			});
 			return;
 		}
 	}
 
-	curCtx.ui.notify(MSG_STAGE_PROGRESS(stageNumber, totalStages, skill), "info");
 	// First stage has no prior artifact yet — fall back to the original brief
 	// so /skill:<name> gets a meaningful argument.
 	const inputForStage = state.artifactPath ?? state.originalInput;
+	const { prompt, skillLabel } = dispatchNode(node, inputForStage);
+
+	// Update the persistent status line — survives the `newSession` transition
+	// in a way `ui.notify` does not.
+	curCtx.ui.setStatus(STATUS_KEY, STATUS_STAGE(stageNumber, totalStages, skillLabel));
 
 	await executeSession(curCtx, {
 		cwd,
 		runId,
 		state,
-		prompt: `/skill:${skill} ${inputForStage}`,
-		skill,
-		errorMessage: `${skill} failed`,
+		prompt,
+		skill: skillLabel,
+		errorMessage: `${skillLabel} failed`,
 		emitCompleteOnSuccess: true,
+		// Derived from the node's declared stop strategy: artifact-emit nodes
+		// must produce a `.rpiv/artifacts/...` path; agent-end nodes complete
+		// on any clean stop reason. See `StopStrategy` doc in dag.ts.
+		requireArtifact: node.stopStrategy === "artifact-emit",
 		onFailure: (freshCtx) => notifyPartialArtifacts(freshCtx, cwd, runId),
 		onSuccess: (freshCtx) => runStage(freshCtx, idx + 1, run),
 	});
-}
-
-/**
- * Run the multi-phase expansion of an `implement` stage for phase `p` of
- * `phaseCount`, then chain into the next phase or back into the main stage
- * loop. Specific to the `implement` skill — generic-stage logic lives in
- * `runStage`.
- */
-async function runImplementPhases(
-	curCtx: ChainCtx,
-	stageIdx: number,
-	p: number,
-	phaseCount: number,
-	run: RunContext,
-): Promise<void> {
-	const { cwd, runId, nodes, state } = run;
-	const skill = nodes[stageIdx]!;
-
-	if (p > phaseCount) {
-		curCtx.ui.notify(MSG_STAGE_COMPLETE(skill), "info");
-		await runStage(curCtx, stageIdx + 1, run);
-		return;
-	}
-
-	curCtx.ui.notify(MSG_PHASE_PROGRESS(p, phaseCount), "info");
-
-	await executeSession(curCtx, {
-		cwd,
-		runId,
-		state,
-		prompt: `/skill:implement ${state.artifactPath} Phase ${p}`,
-		skill,
-		// Successful phase rows are labelled with their position; failed/skipped
-		// rows are stored under the base skill name (preserved invariant).
-		successSkill: `implement (phase ${p}/${phaseCount})`,
-		errorMessage: `${skill} phase ${p} failed`,
-		emitCompleteOnSuccess: false,
-		onSuccess: (freshCtx) => runImplementPhases(freshCtx, stageIdx, p + 1, phaseCount, run),
-	});
-}
-
-// ---------------------------------------------------------------------------
-// Multi-phase detection (implement skill)
-// ---------------------------------------------------------------------------
-
-/** Regex for phase headings in plan artifacts: ## Phase N: {name} */
-const PHASE_HEADING_REGEX = /^## Phase (\d+):/gm;
-
-/**
- * Count the number of phases in a plan artifact.
- * Reads the file synchronously and counts `## Phase N:` headings.
- * Returns 0 if the file doesn't exist or has no phase headings.
- * Fail-soft: never throws.
- */
-export function countPhases(planPath: string, cwd?: string): number {
-	const base = cwd ?? process.cwd();
-	const absolutePath = planPath.startsWith("/") ? planPath : join(base, planPath);
-	try {
-		const content = readFileSync(absolutePath, "utf-8");
-		const matches = content.match(PHASE_HEADING_REGEX);
-		return matches ? matches.length : 0;
-	} catch {
-		return 0;
-	}
 }

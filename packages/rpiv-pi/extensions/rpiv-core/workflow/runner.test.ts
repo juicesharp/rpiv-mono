@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMockSessionChain, mockAssistantMessage } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { WorkflowDag } from "./dag.js";
+import { clearChildSession, isChildSession } from "./child-session.js";
+import type { DagNode, StopStrategy, WorkflowDag } from "./dag.js";
 import { countPhases, extractArtifactPath, runWorkflow } from "./runner.js";
 
 // ---------------------------------------------------------------------------
@@ -99,7 +100,8 @@ describe("countPhases", () => {
 	it("counts ## Phase N: headings in an absolute-path plan file", () => {
 		const planPath = join(tmpDir, "plan.md");
 		writeFileSync(planPath, "## Phase 1: a\n## Phase 2: b\n## Phase 3: c\n");
-		expect(countPhases(planPath)).toBe(3);
+		// cwd is irrelevant for absolute paths but the signature requires it.
+		expect(countPhases(planPath, tmpDir)).toBe(3);
 	});
 
 	it("resolves a relative path against the provided cwd", () => {
@@ -109,19 +111,19 @@ describe("countPhases", () => {
 	});
 
 	it("returns 0 for a missing file", () => {
-		expect(countPhases(join(tmpDir, "nope.md"))).toBe(0);
+		expect(countPhases(join(tmpDir, "nope.md"), tmpDir)).toBe(0);
 	});
 
 	it("returns 0 for a file with no ## Phase N: headings", () => {
 		const p = join(tmpDir, "empty.md");
 		writeFileSync(p, "# Title\n## Summary\n## Not a Phase\n### Phase 1: sub-heading not matched\n");
-		expect(countPhases(p)).toBe(0);
+		expect(countPhases(p, tmpDir)).toBe(0);
 	});
 
 	it("ignores headings without a numeric phase index", () => {
 		const p = join(tmpDir, "weird.md");
 		writeFileSync(p, "## Phase A: not a number\n## Phase 1: real\n");
-		expect(countPhases(p)).toBe(1);
+		expect(countPhases(p, tmpDir)).toBe(1);
 	});
 });
 
@@ -134,14 +136,48 @@ describe("runWorkflow", () => {
 
 	beforeEach(() => {
 		tmpDir = mkdtempSync(join(tmpdir(), "rpiv-run-workflow-"));
+		clearChildSession();
 	});
 
 	afterEach(() => {
 		rmSync(tmpDir, { recursive: true, force: true });
+		clearChildSession();
 	});
 
-	/** Minimal DAG factory — runWorkflow only consults `dag.presets[preset]`. */
-	const dagWith = (presets: Record<string, string[]>): WorkflowDag => ({ edges: [], presets });
+	/**
+	 * DAG factory for tests.
+	 *
+	 * Auto-populates `nodes` from the union of all preset entries — every
+	 * referenced id gets a skill-kind node with `stopStrategy: "artifact-emit"`
+	 * (the dominant case for protocol skills) and `sessionPolicy: "fresh"`.
+	 *
+	 * Two skill names get special defaults that align with their built-in
+	 * `WORKFLOW_DAG.nodes` settings, so tests don't have to spell these out
+	 * every time:
+	 *   - `implement` → `"agent-end"` (action skill; phases drive iteration)
+	 *   - `commit`    → `"agent-end"` (action skill; no chained artifact)
+	 *
+	 * Override per-id via `nodeOverrides`. Example:
+	 *   dagWith({ tiny: ["research"] }, { research: { stopStrategy: "agent-end" } })
+	 */
+	const dagWith = (
+		presets: Record<string, string[]>,
+		nodeOverrides: Record<string, Partial<DagNode>> = {},
+	): WorkflowDag => {
+		const allIds = new Set(Object.values(presets).flat());
+		const nodes: Record<string, DagNode> = {};
+		for (const id of allIds) {
+			const defaultStop: StopStrategy = id === "implement" || id === "commit" ? "agent-end" : "artifact-emit";
+			const base: DagNode = {
+				kind: "skill",
+				skill: id,
+				stopStrategy: defaultStop,
+				sessionPolicy: "fresh",
+			};
+			nodes[id] = { ...base, ...(nodeOverrides[id] ?? {}) } as DagNode;
+		}
+		return { edges: [], presets, nodes };
+	};
 
 	/** Read the single JSONL state file produced for a run, as parsed objects. */
 	const readState = (cwd: string): { header: Record<string, unknown>; stages: Array<Record<string, unknown>> } => {
@@ -186,6 +222,68 @@ describe("runWorkflow", () => {
 		expect(chain.ctx.newSession).not.toHaveBeenCalled();
 	});
 
+	describe("child-session marker lifecycle", () => {
+		it("clears the marker after a successful run", async () => {
+			const chain = createMockSessionChain({
+				cwd: tmpDir,
+				steps: [{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/research/r.md")] }],
+			});
+			expect(isChildSession()).toBe(false);
+
+			await runWorkflow(chain.ctx, {
+				preset: "tiny",
+				input: "x",
+				dag: dagWith({ tiny: ["research"] }),
+			});
+
+			expect(isChildSession()).toBe(false);
+		});
+
+		it("clears the marker after a failed stage (no assistant message)", async () => {
+			const chain = createMockSessionChain({
+				cwd: tmpDir,
+				steps: [{ branch: [] }],
+			});
+
+			const result = await runWorkflow(chain.ctx, {
+				preset: "tiny",
+				input: "x",
+				dag: dagWith({ tiny: ["research"] }),
+			});
+
+			expect(result.success).toBe(false);
+			expect(isChildSession()).toBe(false);
+		});
+
+		it("clears the marker when the chain throws mid-run (finally guarantee)", async () => {
+			const chain = createMockSessionChain({ cwd: tmpDir, steps: [] });
+			// Empty step queue → second newSession will throw inside the chain.
+			// We expect runWorkflow to propagate, but still clear the marker.
+			const dag = dagWith({ tiny: ["research", "plan"] });
+
+			let threw = false;
+			try {
+				await runWorkflow(chain.ctx, { preset: "tiny", input: "x", dag });
+			} catch {
+				threw = true;
+			}
+
+			// The first newSession has no scripted step either — chain throws on first call.
+			expect(threw).toBe(true);
+			expect(isChildSession()).toBe(false);
+		});
+
+		it("does NOT set the marker when preset is unknown (early return before mark)", async () => {
+			const chain = createMockSessionChain({ cwd: tmpDir, steps: [] });
+			await runWorkflow(chain.ctx, {
+				preset: "missing",
+				input: "x",
+				dag: dagWith({ tiny: ["research"] }),
+			});
+			expect(isChildSession()).toBe(false);
+		});
+	});
+
 	it("completes a single-step workflow on success and records header + completed step", async () => {
 		const chain = createMockSessionChain({
 			cwd: tmpDir,
@@ -212,7 +310,7 @@ describe("runWorkflow", () => {
 		expect(header.input).toBe("add dark mode");
 		expect(stages).toHaveLength(1);
 		expect(stages[0]).toMatchObject({
-			stage: 1,
+			stageNumber: 1,
 			skill: "research",
 			artifact: ".rpiv/artifacts/research/r.md",
 			status: "completed",
@@ -250,6 +348,16 @@ describe("runWorkflow", () => {
 		const { stages } = readState(tmpDir);
 		expect(stages.map((s) => s.status)).toEqual(["completed", "completed"]);
 		expect(stages[1]?.artifact).toBe(".rpiv/artifacts/designs/d.md");
+
+		// The persistent status line updates exactly once per stage (in order),
+		// then clears on workflow completion. Pi's `notify` channel gets
+		// repainted by `newSession` transitions; the status line survives them,
+		// which is why we use `setStatus` for "currently running X."
+		expect(chain.statusUpdates).toEqual([
+			{ key: "rpiv-workflow", value: "rpiv: stage 1/2 — research" },
+			{ key: "rpiv-workflow", value: "rpiv: stage 2/2 — design" },
+			{ key: "rpiv-workflow", value: undefined },
+		]);
 	});
 
 	it("stops on step failure, records a failed entry, and never consumes later steps", async () => {
@@ -299,6 +407,10 @@ describe("runWorkflow", () => {
 		const { stages } = readState(tmpDir);
 		expect(stages).toHaveLength(1);
 		expect(stages[0]).toMatchObject({ skill: "research", status: "skipped" });
+
+		// Status was set on entry and cleared once the user dismissed the
+		// newSession confirm dialog — same teardown contract as abort/failure.
+		expect(chain.statusUpdates.at(-1)).toEqual({ key: "rpiv-workflow", value: undefined });
 	});
 
 	it("expands an implement step into N phases when its plan artifact has ## Phase headings", async () => {
@@ -353,14 +465,87 @@ describe("runWorkflow", () => {
 		expect(stages.slice(1).every((s) => s.status === "completed")).toBe(true);
 	});
 
-	it("falls back to the original input on the first step when no prior artifact exists", async () => {
-		// Step 1's assistant message does NOT contain a .rpiv/artifacts/... path.
-		// Step 2 must therefore receive the original input, not a missing artifact.
+	it("halts the chain when the agent ends with stopReason: aborted (user pressed ESC)", async () => {
+		// The bug this guards against: a partial assistant response from an
+		// ESC-interrupted agent satisfies hasAssistantMessage, so without the
+		// stopReason check the runner would silently advance to the next stage.
+		// Matches the canonical Pi subagent halt-on-aborted pattern.
 		const chain = createMockSessionChain({
 			cwd: tmpDir,
 			steps: [
-				{ branch: [mockAssistantMessage("ok, no artifact emitted")] },
-				{ branch: [mockAssistantMessage("step 2 done .rpiv/artifacts/designs/d.md")] },
+				{ branch: [mockAssistantMessage("partial response interrupted by user", "aborted")] },
+				{ branch: [mockAssistantMessage("never reached")] },
+			],
+		});
+
+		const result = await runWorkflow(chain.ctx, {
+			preset: "two",
+			input: "x",
+			dag: dagWith({ two: ["research", "design"] }),
+		});
+
+		expect(result.success).toBe(false);
+		expect(result.error).toMatch(/aborted/i);
+		expect(result.stagesCompleted).toBe(0);
+		// Second scripted step must remain in the queue — chain halted.
+		expect(chain.remaining()).toBe(1);
+
+		const { stages } = readState(tmpDir);
+		expect(stages).toHaveLength(1);
+		expect(stages[0]).toMatchObject({ skill: "research", status: "aborted" });
+
+		// A warning-level notification surfaces the abort.
+		const abortNotice = chain.notifications.find((n) => /aborted/i.test(n.msg));
+		expect(abortNotice?.level).toBe("warning");
+
+		// The status line was set when stage 1 began and cleared when the abort
+		// halted the chain — no stale "stage 1/2 — research" left behind.
+		expect(chain.statusUpdates).toEqual([
+			{ key: "rpiv-workflow", value: "rpiv: stage 1/2 — research" },
+			{ key: "rpiv-workflow", value: undefined },
+		]);
+	});
+
+	it("halts the chain when the agent ends with stopReason: error (records failed)", async () => {
+		// LLM/provider error is treated like a failure (not an abort) — same
+		// failure-path bookkeeping, same partial-artifacts recap, but logged
+		// under status "failed" not "aborted" so the audit trail distinguishes
+		// "user stopped this" from "the model errored out."
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [
+				{ branch: [mockAssistantMessage("internal error from provider", "error")] },
+				{ branch: [mockAssistantMessage("never reached")] },
+			],
+		});
+
+		const result = await runWorkflow(chain.ctx, {
+			preset: "two",
+			input: "x",
+			dag: dagWith({ two: ["research", "design"] }),
+		});
+
+		expect(result.success).toBe(false);
+		expect(result.error).toBe("research failed");
+		expect(result.stagesCompleted).toBe(0);
+		expect(chain.remaining()).toBe(1);
+
+		const { stages } = readState(tmpDir);
+		expect(stages).toHaveLength(1);
+		expect(stages[0]).toMatchObject({ skill: "research", status: "failed" });
+	});
+
+	it("halts the chain when a stage finishes cleanly but writes no artifact (plain-text question guard)", async () => {
+		// Failure mode this guards: agent stops with stopReason "stop" but no
+		// `.rpiv/artifacts/...` path in the transcript (e.g. it asked a plain-
+		// text clarifying question instead of using ask_user_question). Without
+		// the requireArtifact guard the runner would record completed, advance
+		// to stage 2, and silently re-send the *previous* (or original) input.
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [
+				{ branch: [mockAssistantMessage("What framework should I use?")] },
+				{ branch: [mockAssistantMessage("never reached .rpiv/artifacts/designs/d.md")] },
 			],
 		});
 
@@ -370,7 +555,121 @@ describe("runWorkflow", () => {
 			dag: dagWith({ two: ["research", "design"] }),
 		});
 
+		expect(result.success).toBe(false);
+		expect(result.stagesCompleted).toBe(0);
+		expect(result.error).toMatch(/without producing|no artifact/i);
+		// Stage 2 must NOT have been spawned — second scripted step still queued.
+		expect(chain.remaining()).toBe(1);
+		// Only the first prompt went out (no silent re-send of original input).
+		expect(chain.sentMessages).toEqual(["/skill:research describe the thing"]);
+
+		const { stages } = readState(tmpDir);
+		expect(stages).toHaveLength(1);
+		expect(stages[0]).toMatchObject({ skill: "research", status: "failed" });
+		expect(stages[0]?.artifact).toBeUndefined();
+
+		// User-visible error notification surfaces the no-artifact verdict
+		// (distinct from the generic "stage failed" wording).
+		const noArtifactNotice = chain.notifications.find((n) => /produced no artifact/i.test(n.msg));
+		expect(noArtifactNotice?.level).toBe("error");
+	});
+
+	it("implement phases still complete without per-phase artifacts (artifact handoff already happened at plan stage)", async () => {
+		// requireArtifact=true is for regular stages only. Implement phases
+		// iterate over `## Phase N:` headings, not over per-phase outputs —
+		// asserting the negative here so a future refactor doesn't unify the
+		// two paths and accidentally break phase progression.
+		const planRelPath = ".rpiv/artifacts/plans/p.md";
+		mkdirSync(join(tmpDir, ".rpiv", "artifacts", "plans"), { recursive: true });
+		writeFileSync(join(tmpDir, planRelPath), "# Plan\n\n## Phase 1: a\nx\n## Phase 2: b\ny\n");
+
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [
+				{ branch: [mockAssistantMessage(`Plan ready: ${planRelPath}`)] },
+				{ branch: [mockAssistantMessage("phase 1 done — no artifact path here")] },
+				{ branch: [mockAssistantMessage("phase 2 done — also no artifact")] },
+			],
+		});
+
+		const result = await runWorkflow(chain.ctx, {
+			preset: "rip",
+			input: "x",
+			dag: dagWith({ rip: ["research", "implement"] }),
+		});
+
 		expect(result.success).toBe(true);
-		expect(chain.sentMessages).toEqual(["/skill:research describe the thing", "/skill:design describe the thing"]);
+		expect(result.stagesCompleted).toBe(3); // research + 2 phases
+	});
+
+	describe("per-node stopStrategy dispatch", () => {
+		it("agent-end nodes complete cleanly without producing an artifact (e.g. commit at end of preset)", async () => {
+			// `commit` defaults to stopStrategy "agent-end" via the dagWith factory.
+			// The branch contains no .rpiv/artifacts/... path; the runner must
+			// still treat the stage as completed and finish the workflow.
+			const chain = createMockSessionChain({
+				cwd: tmpDir,
+				steps: [{ branch: [mockAssistantMessage("Committed 3 files.")] }],
+			});
+
+			const result = await runWorkflow(chain.ctx, {
+				preset: "tail",
+				input: "x",
+				dag: dagWith({ tail: ["commit"] }),
+			});
+
+			expect(result.success).toBe(true);
+			expect(result.stagesCompleted).toBe(1);
+			expect(result.lastArtifact).toBeUndefined();
+		});
+
+		it("agent-end node mid-chain inherits the prior stage's artifact for downstream stages", async () => {
+			// research (artifact-emit) → commit (agent-end, no artifact) → design (artifact-emit).
+			// Design must see research's artifact path as its input — commit
+			// doesn't reset state.artifactPath when it produces nothing.
+			const chain = createMockSessionChain({
+				cwd: tmpDir,
+				steps: [
+					{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/research/r.md")] },
+					{ branch: [mockAssistantMessage("Committed.")] },
+					{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/designs/d.md")] },
+				],
+			});
+
+			const result = await runWorkflow(chain.ctx, {
+				preset: "rcd",
+				input: "x",
+				dag: dagWith({ rcd: ["research", "commit", "design"] }),
+			});
+
+			expect(result.success).toBe(true);
+			expect(result.stagesCompleted).toBe(3);
+			expect(result.lastArtifact).toBe(".rpiv/artifacts/designs/d.md");
+			// Design received research's artifact as input — commit didn't blank it.
+			expect(chain.sentMessages).toEqual([
+				"/skill:research x",
+				"/skill:commit .rpiv/artifacts/research/r.md",
+				"/skill:design .rpiv/artifacts/research/r.md",
+			]);
+		});
+
+		it("override: forcing stopStrategy to agent-end via dagWith node overrides skips artifact check", async () => {
+			// Same skill that would normally require an artifact (research),
+			// but the DAG declares stopStrategy "agent-end" — the runner must
+			// honor the DAG, not the skill identity.
+			const chain = createMockSessionChain({
+				cwd: tmpDir,
+				steps: [{ branch: [mockAssistantMessage("Question asked, no artifact.")] }],
+			});
+
+			const result = await runWorkflow(chain.ctx, {
+				preset: "tiny",
+				input: "x",
+				dag: dagWith({ tiny: ["research"] }, { research: { stopStrategy: "agent-end" } }),
+			});
+
+			expect(result.success).toBe(true);
+			expect(result.stagesCompleted).toBe(1);
+		});
 	});
 });

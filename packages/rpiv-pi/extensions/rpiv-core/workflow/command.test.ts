@@ -18,6 +18,7 @@ vi.mock("./loadConfig.js", () => ({
 				large: ["discover", "research", "design", "plan", "implement", "validate", "code-review", "commit"],
 				review: ["code-review", "commit"],
 			},
+			nodes: {},
 		},
 		presetNames: new Set(["trivial", "small", "mid", "large", "review"]),
 		defaultPreset: "mid",
@@ -92,7 +93,7 @@ describe("parseArgs", () => {
 describe("formatPresetList", () => {
 	it("lists built-in presets with source indicator", () => {
 		const config: LoadedConfigWithSource = {
-			dag: { edges: [], presets: { mid: ["discover", "commit"], review: ["code-review", "commit"] } },
+			dag: { edges: [], presets: { mid: ["discover", "commit"], review: ["code-review", "commit"] }, nodes: {} },
 			presetNames: new Set(["mid", "review"]),
 			defaultPreset: "mid",
 			source: "built-in",
@@ -105,7 +106,7 @@ describe("formatPresetList", () => {
 
 	it("lists project presets with source indicator", () => {
 		const config: LoadedConfigWithSource = {
-			dag: { edges: [], presets: { quick: ["research", "commit"] } },
+			dag: { edges: [], presets: { quick: ["research", "commit"] }, nodes: {} },
 			presetNames: new Set(["quick"]),
 			defaultPreset: "quick",
 			source: "project",
@@ -182,7 +183,7 @@ describe("/rpiv — valid invocation", () => {
 describe("/rpiv — config warnings", () => {
 	it("surfaces config warnings to the user", async () => {
 		vi.mocked(loadConfig).mockReturnValueOnce({
-			dag: { edges: [], presets: { mid: ["discover", "commit"] } },
+			dag: { edges: [], presets: { mid: ["discover", "commit"] }, nodes: {} },
 			presetNames: new Set(["mid"]),
 			defaultPreset: "mid",
 			source: "built-in",

@@ -25,12 +25,21 @@ import { join } from "node:path";
 // ---------------------------------------------------------------------------
 
 /** Status of a single workflow stage. */
-export type StageStatus = "completed" | "failed" | "skipped";
+export type StageStatus = "completed" | "failed" | "skipped" | "aborted";
 
-/** A single entry in the JSONL audit trail. */
+/**
+ * A single entry in the JSONL audit trail.
+ *
+ * The serialized JSON key for the position field is `stageNumber` — renamed
+ * from the legacy `stage` to disambiguate from the broader concept of "stage"
+ * (which is a node execution, not an integer index). JSONL files written by
+ * older versions of this code used `stage`; readers below filter on
+ * `stageNumber` only, so legacy files are silently skipped. Audit files are
+ * debugging artifacts; no migration is provided.
+ */
 export interface WorkflowStage {
 	/** 1-based stage index within the workflow. */
-	stage: number;
+	stageNumber: number;
 	/** Skill name (must match a DAG node). */
 	skill: string;
 	/** Path to the artifact produced by this stage (if any). */
@@ -150,7 +159,7 @@ export function readLastStage(cwd: string, runId: string): WorkflowStage | undef
 		const lines = content.split("\n");
 		for (let i = lines.length - 1; i >= 1; i--) {
 			const parsed = JSON.parse(lines[i]!);
-			if (parsed && typeof parsed.stage === "number") {
+			if (parsed && typeof parsed.stageNumber === "number") {
 				return parsed as WorkflowStage;
 			}
 		}
@@ -176,7 +185,7 @@ export function readAllStages(cwd: string, runId: string): WorkflowStage[] {
 		const stages: WorkflowStage[] = [];
 		for (let i = 1; i < lines.length; i++) {
 			const parsed = JSON.parse(lines[i]!);
-			if (parsed && typeof parsed.stage === "number") {
+			if (parsed && typeof parsed.stageNumber === "number") {
 				stages.push(parsed as WorkflowStage);
 			}
 		}

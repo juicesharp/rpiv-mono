@@ -197,10 +197,17 @@ export interface MockSessionChain {
 	sentMessages: string[];
 	/** Every `ui.notify(msg, level)` call across outer + freshCtxs, in order. */
 	notifications: Array<{ msg: string; level: string }>;
+	/**
+	 * Every `ui.setStatus(key, value)` call across outer + freshCtxs, in order.
+	 * `value === undefined` represents a clear; anything else is a set.
+	 */
+	statusUpdates: Array<{ key: string; value: string | undefined }>;
 	/** How many scripted steps remain unconsumed. */
 	remaining: () => number;
 	/** Shared vi.fn() backing every `ui.notify` — for direct `.mock.calls` assertions. */
 	notifyFn: ReturnType<typeof vi.fn>;
+	/** Shared vi.fn() backing every `ui.setStatus` — for direct `.mock.calls` assertions. */
+	setStatusFn: ReturnType<typeof vi.fn>;
 }
 
 /**
@@ -220,9 +227,17 @@ export function createMockSessionChain(opts: MockSessionChainOptions): MockSessi
 	const queue: MockSessionStep[] = [...opts.steps];
 	const sentMessages: string[] = [];
 	const notifications: Array<{ msg: string; level: string }> = [];
+	const statusUpdates: Array<{ key: string; value: string | undefined }> = [];
 
 	const notifyFn = vi.fn((msg: unknown, level?: unknown) => {
 		notifications.push({ msg: String(msg), level: String(level ?? "info") });
+	});
+
+	const setStatusFn = vi.fn((key: unknown, value: unknown) => {
+		statusUpdates.push({
+			key: String(key),
+			value: value === undefined ? undefined : String(value),
+		});
 	});
 
 	const sendUserMessageFn = vi.fn(async (content: unknown) => {
@@ -232,7 +247,11 @@ export function createMockSessionChain(opts: MockSessionChainOptions): MockSessi
 	const buildCtx = (kind: "outer" | "replaced", branch: unknown[]): ExtensionCommandContext => {
 		const base = createMockCtx({
 			...opts,
-			ui: { ...(opts.ui ?? {}), notify: notifyFn as unknown as ExtensionUIContext["notify"] },
+			ui: {
+				...(opts.ui ?? {}),
+				notify: notifyFn as unknown as ExtensionUIContext["notify"],
+				setStatus: setStatusFn as unknown as ExtensionUIContext["setStatus"],
+			},
 		});
 
 		const newSessionSpy = vi.fn(async (options?: { withSession?: (ctx: unknown) => Promise<void> }) => {
@@ -272,19 +291,30 @@ export function createMockSessionChain(opts: MockSessionChainOptions): MockSessi
 		ctx: buildCtx("outer", []),
 		sentMessages,
 		notifications,
+		statusUpdates,
 		remaining: () => queue.length,
 		notifyFn,
+		setStatusFn,
 	};
 }
 
 /**
  * Convenience: build a branch entry that looks like an assistant message
  * containing a single text block. Cast to `unknown` to avoid leaking pi-ai's
- * internal discriminators into test files.
+ * internal discriminators into test files. The optional `stopReason` lets
+ * tests simulate ESC-aborts (`"aborted"`) and LLM errors (`"error"`); when
+ * omitted, the message represents a normal completion.
  */
-export function mockAssistantMessage(text: string): unknown {
+export function mockAssistantMessage(
+	text: string,
+	stopReason?: "stop" | "length" | "toolUse" | "error" | "aborted",
+): unknown {
 	return {
 		type: "message",
-		message: { role: "assistant", content: [{ type: "text", text }] },
+		message: {
+			role: "assistant",
+			content: [{ type: "text", text }],
+			...(stopReason !== undefined ? { stopReason } : {}),
+		},
 	};
 }

@@ -9,10 +9,17 @@
  * Pure functions, no I/O — safe to import from anywhere.
  */
 
+/** Mirror of pi-ai's StopReason union — the values Pi attaches to AssistantMessage. */
+export type StopReason = "stop" | "length" | "toolUse" | "error" | "aborted";
+
 /** The shape of a branch entry we care to read. */
 export type BranchEntry = {
 	type: string;
-	message?: { role?: string; content?: Array<{ type: string; text?: string }> };
+	message?: {
+		role?: string;
+		content?: Array<{ type: string; text?: string }>;
+		stopReason?: StopReason;
+	};
 };
 
 /** Regex matching artifact paths inside assistant text content. */
@@ -55,4 +62,25 @@ export function extractArtifactPath(branch: BranchEntry[]): string | undefined {
  */
 export function hasAssistantMessage(branch: BranchEntry[]): boolean {
 	return branch.some((e) => e.type === "message" && e.message?.role === "assistant");
+}
+
+/**
+ * Stop reason on the LAST assistant message in the branch — the canonical
+ * signal Pi gives us about how the agent loop ended. Pi's own bundled
+ * `examples/extensions/subagent/index.ts` halts a chain when this value is
+ * `"aborted"` (user pressed ESC) or `"error"` (LLM error); the runner uses
+ * it the same way in `executeSession`.
+ *
+ * Returns undefined if the branch has no assistant message at all (caller
+ * should treat that as a separate "no response" failure) or if the message
+ * predates Pi's stopReason support.
+ */
+export function lastAssistantStopReason(branch: BranchEntry[]): StopReason | undefined {
+	for (let i = branch.length - 1; i >= 0; i--) {
+		const entry = branch[i]!;
+		if (entry.type !== "message") continue;
+		if (entry.message?.role !== "assistant") continue;
+		return entry.message.stopReason;
+	}
+	return undefined;
 }

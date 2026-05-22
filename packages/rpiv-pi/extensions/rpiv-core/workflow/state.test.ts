@@ -83,14 +83,14 @@ describe("writeHeader + readAllStages + readLastStage", () => {
 		});
 
 		const stage1: WorkflowStage = {
-			stage: 1,
+			stageNumber: 1,
 			skill: "discover",
 			artifact: ".rpiv/artifacts/discover/frd.md",
 			status: "completed",
 			ts: "2026-05-20T15:31:00-0400",
 		};
 		const stage2: WorkflowStage = {
-			stage: 2,
+			stageNumber: 2,
 			skill: "research",
 			artifact: ".rpiv/artifacts/research/res.md",
 			status: "completed",
@@ -118,7 +118,7 @@ describe("writeHeader + readAllStages + readLastStage", () => {
 		});
 
 		const failed: WorkflowStage = {
-			stage: 3,
+			stageNumber: 3,
 			skill: "design",
 			status: "failed",
 			ts: "2026-05-20T15:40:00-0400",
@@ -154,7 +154,7 @@ describe("fail-soft I/O", () => {
 	it("appendStage does not throw on impossible path", () => {
 		expect(() =>
 			appendStage("/dev/null/impossible", "test", {
-				stage: 1,
+				stageNumber: 1,
 				skill: "discover",
 				status: "completed",
 				ts: "2026",
@@ -167,7 +167,7 @@ describe("fail-soft I/O", () => {
 		try {
 			expect(
 				appendStage("/dev/null/impossible", "test", {
-					stage: 1,
+					stageNumber: 1,
 					skill: "discover",
 					status: "completed",
 					ts: "2026",
@@ -175,7 +175,7 @@ describe("fail-soft I/O", () => {
 			).toBe(false);
 			expect(
 				appendStage(tmpDir, "ok-run", {
-					stage: 1,
+					stageNumber: 1,
 					skill: "discover",
 					status: "completed",
 					ts: "2026",

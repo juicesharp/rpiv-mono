@@ -170,18 +170,25 @@ export function loadConfig(cwd: string): LoadedConfigWithSource {
 	// 4. Runtime shape check — every preset value must be a string[]. Without
 	// this, `validateDag` iterates a stray string character-by-character and
 	// emits noisy per-character warnings.
+	// Variable is named `stageIds` (not `nodes`) to disambiguate from the
+	// DAG's `nodes` table — these strings index INTO that table.
 	const shapeErrors: string[] = [];
-	for (const [name, nodes] of Object.entries(configFile.presets)) {
-		if (!Array.isArray(nodes) || !nodes.every((n) => typeof n === "string")) {
+	for (const [name, stageIds] of Object.entries(configFile.presets)) {
+		if (!Array.isArray(stageIds) || !stageIds.every((n) => typeof n === "string")) {
 			shapeErrors.push(`Config validation: preset "${name}" must be an array of strings`);
 		}
 	}
 	if (shapeErrors.length > 0) return builtInFallback(shapeErrors);
 
-	// 5. Validate node names against bundled skills.
+	// 5. Validate node names against bundled skills. Inherit `nodes` and
+	// `edges` from the built-in DAG — Phase 1 only allows users to override
+	// `presets`. Custom presets must reference ids already declared in
+	// `WORKFLOW_DAG.nodes`; validateDag will flag any preset entry that
+	// doesn't (with a "no entry in nodes" error) and we fall back below.
 	const configDag: WorkflowDag = {
 		edges: WORKFLOW_DAG.edges,
 		presets: configFile.presets as Record<string, string[]>,
+		nodes: WORKFLOW_DAG.nodes,
 	};
 	try {
 		const errors = validateDag(configDag);
