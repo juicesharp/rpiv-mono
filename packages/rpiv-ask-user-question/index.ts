@@ -37,6 +37,13 @@ try {
 	// SDK absent — extension still loads with English-only UI.
 }
 
+export {
+	ASK_USER_PROMPT_EVENT,
+	type AskUserPromptEventPayload,
+	type AskUserPromptOption,
+	type AskUserPromptQuestion,
+} from "./events.js";
+
 export default function (pi: ExtensionAPI) {
 	registerAskUserQuestionTool(pi);
 }
