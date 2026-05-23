@@ -264,48 +264,57 @@ async function runStage(curCtx: ChainCtx, idx: number, run: RunContext): Promise
 		pi: run.pi,
 		branchOffset,
 		onFailure: (freshCtx) => notifyPartialArtifacts(freshCtx, cwd, runId),
-		onSuccess: async (freshCtx) => {
-			try {
-				const nextId = resolveNextStageId(dag, id, stageIds, idx, state);
-				if (!nextId) {
-					freshCtx.ui.setStatus(STATUS_KEY, undefined);
-					freshCtx.ui.notify(MSG_WORKFLOW_COMPLETE(state.stagesCompleted), "info");
-					state.success = true;
-					return;
-				}
-				const nextIdx = stageIds.indexOf(nextId);
-				if (nextIdx < 0) throw new Error(`resolveNextStageId returned "${nextId}" not in preset`);
-
-				// Audit only non-linear routing decisions.
-				const linearNext = stageIds[idx + 1];
-				if (nextId !== linearNext) {
-					appendRoutingDecision(cwd, runId, {
-						type: "routing",
-						fromStage: idx + 1,
-						fromNode: id,
-						decision: nextId,
-						ts: nowIso(),
-					});
-				}
-
-				// Backward-jump guard: stage itself already recorded "completed";
-				// halting at the routing layer relies on state.error + absence of
-				// subsequent rows — no second audit row.
-				if (nextIdx <= idx) {
-					state.backwardJumps++;
-					if (state.backwardJumps > run.maxBackwardJumps) {
-						freshCtx.ui.setStatus(STATUS_KEY, undefined);
-						freshCtx.ui.notify(MSG_BACKWARD_JUMP_EXHAUSTED(state.backwardJumps, run.maxBackwardJumps), "error");
-						state.error = ERR_BACKWARD_JUMP_EXHAUSTED(state.backwardJumps, run.maxBackwardJumps);
-						return;
-					}
-				}
-
-				await runStage(freshCtx, nextIdx, run);
-			} catch (e) {
-				freshCtx.ui.setStatus(STATUS_KEY, undefined);
-				state.error = e instanceof Error ? e.message : String(e);
-			}
-		},
+		onSuccess: (freshCtx) => advanceChain(freshCtx, idx, id, run),
 	});
+}
+
+/**
+ * Routing layer after a successful stage: pick the next stage id, audit
+ * non-linear decisions, enforce the backward-jump guard, then recurse.
+ * Wraps the body in try/catch so an invariant violation (e.g.
+ * resolveNextStageId throwing on a predicate misroute) lands in
+ * `state.error` rather than bubbling out of withSession.
+ */
+async function advanceChain(curCtx: ChainCtx, idx: number, id: string, run: RunContext): Promise<void> {
+	const { cwd, runId, dag, stageIds, state } = run;
+	try {
+		const nextId = resolveNextStageId(dag, id, stageIds, idx, state);
+		if (!nextId) {
+			curCtx.ui.setStatus(STATUS_KEY, undefined);
+			curCtx.ui.notify(MSG_WORKFLOW_COMPLETE(state.stagesCompleted), "info");
+			state.success = true;
+			return;
+		}
+		const nextIdx = stageIds.indexOf(nextId);
+		if (nextIdx < 0) throw new Error(`resolveNextStageId returned "${nextId}" not in preset`);
+
+		// Audit only non-linear routing decisions.
+		const linearNext = stageIds[idx + 1];
+		if (nextId !== linearNext) {
+			appendRoutingDecision(cwd, runId, {
+				type: "routing",
+				fromStage: idx + 1,
+				fromNode: id,
+				decision: nextId,
+				ts: nowIso(),
+			});
+		}
+
+		// Backward-jump guard: stage already recorded "completed"; halt at the
+		// routing layer via state.error + absence of subsequent rows.
+		if (nextIdx <= idx) {
+			state.backwardJumps++;
+			if (state.backwardJumps > run.maxBackwardJumps) {
+				curCtx.ui.setStatus(STATUS_KEY, undefined);
+				curCtx.ui.notify(MSG_BACKWARD_JUMP_EXHAUSTED(state.backwardJumps, run.maxBackwardJumps), "error");
+				state.error = ERR_BACKWARD_JUMP_EXHAUSTED(state.backwardJumps, run.maxBackwardJumps);
+				return;
+			}
+		}
+
+		await runStage(curCtx, nextIdx, run);
+	} catch (e) {
+		curCtx.ui.setStatus(STATUS_KEY, undefined);
+		state.error = e instanceof Error ? e.message : String(e);
+	}
 }
