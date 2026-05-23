@@ -16,6 +16,7 @@
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { MSG_STAGE_COMPLETE, STATUS_KEY, STATUS_PHASE } from "./messages.js";
 import type { ChainCtx, PhaseSession, RunContext } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -63,14 +64,6 @@ export function countPhases(planPath: string, cwd: string): number {
 // ---------------------------------------------------------------------------
 // Phase iteration
 // ---------------------------------------------------------------------------
-
-/** Status-line text for the in-flight phase — distinct from the stage line. */
-const STATUS_PHASE = (stage: number, total: number, phase: number, phaseCount: number) =>
-	`rpiv: stage ${stage}/${total} — implement (phase ${phase}/${phaseCount})`;
-
-const STATUS_KEY = "rpiv-workflow";
-
-const MSG_STAGE_COMPLETE = (skill: string) => `✓ ${skill} completed`;
 
 /**
  * Run the multi-phase expansion of an `implement` stage. Iterates phases
