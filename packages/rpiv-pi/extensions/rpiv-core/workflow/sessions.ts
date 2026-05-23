@@ -25,6 +25,7 @@ import {
 	recordStage,
 	recordStopFailure,
 	recordTerminalFailure,
+	type StopOutcome,
 } from "./audit.js";
 import type { DagNode, SessionPolicy } from "./dag.js";
 import { artifactMdExtractor, sideEffectExtractor } from "./extractors/index.js";
@@ -205,8 +206,6 @@ function recordPhaseSuccess(s: PhaseSession, artifact: string | undefined): void
 // ===========================================================================
 // BRANCH INSPECTION — classify how the agent stopped
 // ===========================================================================
-
-type StopOutcome = "ok" | "aborted" | "failed";
 
 /** Snapshot of the agent's output for the just-finished session. */
 interface SessionOutcome {
