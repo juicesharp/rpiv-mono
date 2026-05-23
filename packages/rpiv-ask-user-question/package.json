@@ -8,6 +8,10 @@
 		"rpiv"
 	],
 	"type": "module",
+"exports": {
+	".": "./index.ts",
+	"./events": "./events.ts"
+},
 	"license": "MIT",
 	"author": "juicesharp",
 	"repository": {
@@ -28,6 +32,7 @@
 	"files": [
 		"ask-user-question.ts",
 		"config.ts",
+		"events.ts",
 		"index.ts",
 		"LICENSE",
 		"locales/",

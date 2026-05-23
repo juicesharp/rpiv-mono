@@ -15,6 +15,7 @@ export interface CapturedPi {
 	commands: Map<string, Omit<RegisteredCommand, "name" | "sourceInfo">>;
 	flags: Map<string, unknown>;
 	events: Map<string, Array<(...args: unknown[]) => unknown>>;
+	eventsEmitted: Map<string, unknown[]>;
 	activeTools: string[];
 	allTools: ToolInfo[];
 }
@@ -30,6 +31,7 @@ export function createMockPi(overrides: Partial<ExtensionAPI> = {}): MockPi {
 		commands: new Map(),
 		flags: new Map(),
 		events: new Map(),
+		eventsEmitted: new Map(),
 		activeTools: [],
 		allTools: [],
 	};
@@ -59,6 +61,14 @@ export function createMockPi(overrides: Partial<ExtensionAPI> = {}): MockPi {
 		}),
 		getAllTools: vi.fn(() => [...captured.allTools]),
 		getThinkingLevel: vi.fn(() => "medium" as unknown as string),
+		events: {
+			emit: vi.fn((channel: string, data: unknown) => {
+				const list = captured.eventsEmitted.get(channel) ?? [];
+				list.push(data);
+				captured.eventsEmitted.set(channel, list);
+			}),
+			on: vi.fn(() => () => {}),
+		},
 		...overrides,
 	} as unknown as ExtensionAPI;
 

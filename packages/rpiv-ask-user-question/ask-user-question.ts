@@ -1,5 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { loadConfig, validateGuidanceFields } from "./config.js";
+import { ASK_USER_PROMPT_EVENT, type AskUserPromptEventPayload } from "./events.js";
 import { displayLabel } from "./state/i18n-bridge.js";
 import { QuestionnaireSession } from "./state/questionnaire-session.js";
 import { sentinelsToAppend } from "./state/row-intent.js";
@@ -15,6 +16,22 @@ import {
 } from "./tool/types.js";
 import { validateQuestionnaire } from "./tool/validate-questionnaire.js";
 import type { WrappingSelectItem } from "./view/components/wrapping-select.js";
+
+function emitAskUserPromptEvent(pi: ExtensionAPI, params: QuestionParams): void {
+	const payload: AskUserPromptEventPayload = {
+		questions: params.questions.map((q) => ({
+			question: q.question,
+			header: q.header,
+			multiSelect: q.multiSelect ?? false,
+			options: q.options.map((o) => ({
+				label: o.label,
+				description: o.description,
+				hasPreview: typeof o.preview === "string" && o.preview.length > 0,
+			})),
+		})),
+	};
+	pi.events.emit(ASK_USER_PROMPT_EVENT, payload);
+}
 
 const ERROR_NO_UI = "Error: UI not available (running in non-interactive mode)";
 
@@ -79,6 +96,9 @@ Preview content is rendered as markdown in a monospace box. Multi-line text with
 					error: validation.error,
 				});
 			}
+
+			// Emit event for external listeners (e.g., notification plugins)
+			emitAskUserPromptEvent(pi, typed);
 
 			const itemsByTab: WrappingSelectItem[][] = typed.questions.map((q) => buildItemsForQuestion(q));
 
