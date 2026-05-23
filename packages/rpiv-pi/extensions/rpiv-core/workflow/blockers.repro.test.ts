@@ -11,6 +11,9 @@
  * - I7 — `StopReason ∈ {"length","toolUse"}` collapses to `"ok"`.
  *
  * Important:
+ * - I3 — recordStage swallows append failures and reuses stageNumbers on
+ *        the next successful write; stagesCompleted drifts above the
+ *        actual on-disk row count.
  * - I9 — Phase fanout labels JSONL rows by node id (wrong for aliased
  *        implement nodes); should label by node.skill instead.
  */
@@ -19,7 +22,7 @@ import { appendFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMockSessionChain, mockAssistantMessage } from "@juicesharp/rpiv-test-utils";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DagNode, WorkflowDag } from "./dag.js";
 import { validateDag, WORKFLOW_DAG } from "./dag.js";
 import { resolveNextStageId } from "./routing.js";
@@ -276,6 +279,75 @@ describe("[I7] truncated reply (stopReason=length) must not record as completed"
 		const stages = readStages(tmpDir);
 		const recorded = stages.find((s) => s.skill === "implement");
 		expect(recorded?.status).not.toBe("completed");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// I3 — recordStage must signal write success/failure so stagesCompleted
+//      stays aligned with on-disk rows, and stageNumbers never repeat
+//      even when an append fails (advance the counter regardless).
+// ---------------------------------------------------------------------------
+
+describe("[I3] recordStage signals success and advances stageNumber monotonically", () => {
+	let tmpDir: string;
+	let warnSpy: ReturnType<typeof vi.spyOn>;
+
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "rpiv-i3-repro-"));
+		warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+	});
+
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true, force: true });
+		warnSpy.mockRestore();
+	});
+
+	const freshState = (): RunState => ({
+		originalInput: "",
+		artifactPath: undefined,
+		manifest: undefined,
+		stagesCompleted: 0,
+		jsonlStage: 0,
+		success: false,
+		error: undefined,
+		backwardJumps: 0,
+	});
+
+	it("returns the assigned stageNumber on a successful write", async () => {
+		const { recordStage } = await import("./audit.js");
+		const state = freshState();
+		const assigned = recordStage(
+			tmpDir,
+			"run-1",
+			{ skill: "research", status: "completed", ts: "2026-05-23T00:00:00Z" },
+			state,
+		);
+		expect(assigned).toBe(1);
+		expect(state.jsonlStage).toBe(1);
+	});
+
+	it("returns undefined on a write failure but still advances jsonlStage (no number reuse)", async () => {
+		const { recordStage } = await import("./audit.js");
+		const state = freshState();
+		// First write — to an impossible path so appendStage fails.
+		const failedAssignment = recordStage(
+			"/dev/null/impossible",
+			"run-1",
+			{ skill: "research", status: "completed", ts: "2026-05-23T00:00:00Z" },
+			state,
+		);
+		expect(failedAssignment).toBeUndefined();
+		// Counter advances anyway — next stage must NOT reuse #1.
+		expect(state.jsonlStage).toBe(1);
+
+		const nextAssignment = recordStage(
+			tmpDir,
+			"run-1",
+			{ skill: "design", status: "completed", ts: "2026-05-23T00:00:01Z" },
+			state,
+		);
+		expect(nextAssignment).toBe(2);
+		expect(state.jsonlStage).toBe(2);
 	});
 });
 

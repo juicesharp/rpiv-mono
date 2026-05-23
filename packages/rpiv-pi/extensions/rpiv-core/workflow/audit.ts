@@ -52,20 +52,30 @@ export interface Audit {
 // ---------------------------------------------------------------------------
 
 /**
- * Record a stage on disk and bump the in-memory counter only on a successful
- * write — keeps stage numbers in the JSONL file contiguous even if a write
- * silently fails (see `appendStage`'s boolean return).
+ * Allocate the next `stageNumber`, attempt to append the row, and return
+ * the assigned number on a successful write (or `undefined` on failure).
+ *
+ * `jsonlStage` advances monotonically — once per call, regardless of
+ * whether the write landed. This costs nothing on the happy path and on
+ * a transient I/O failure keeps the next stage from reusing the lost
+ * row's number. Callers that only want to bump higher-level counters on
+ * successful persistence (e.g. `stagesCompleted`) gate on the returned
+ * value being a number rather than `undefined`.
+ *
+ * `wrapManifest`'s `state.jsonlStage + 1` peek still aligns with the
+ * `stageNumber` recordStage will assign for the current stage — the
+ * manifest is built BEFORE recordStage is called, so `jsonlStage + 1`
+ * computes the value recordStage is about to allocate.
  */
 export function recordStage(
 	cwd: string,
 	runId: string,
 	stage: Omit<WorkflowStage, "stageNumber">,
 	state: RunState,
-): void {
-	const nextStageNumber = state.jsonlStage + 1;
-	if (appendStage(cwd, runId, { stageNumber: nextStageNumber, ...stage })) {
-		state.jsonlStage = nextStageNumber;
-	}
+): number | undefined {
+	state.jsonlStage += 1;
+	const stageNumber = state.jsonlStage;
+	return appendStage(cwd, runId, { stageNumber, ...stage }) ? stageNumber : undefined;
 }
 
 /**

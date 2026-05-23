@@ -176,7 +176,12 @@ function haltPhase(ctx: ChainCtx, s: PhaseSession, stop: Exclude<StopSignal, "st
 // SUCCESS-PERSISTENCE HELPERS
 // ===========================================================================
 
-/** Stage success: dual-write artifact path, set state.manifest, write JSONL row, notify + bump counter. */
+/**
+ * Stage success: dual-write artifact path, set state.manifest, write JSONL row,
+ * notify, and bump `stagesCompleted` only when the row actually landed on disk.
+ * The agent's work is already done either way; gating the counter keeps
+ * `RunWorkflowResult.stagesCompleted` aligned with the on-disk row count.
+ */
 function recordStageSuccess(
 	ctx: ChainCtx,
 	s: StageSession,
@@ -187,19 +192,30 @@ function recordStageSuccess(
 	else if (artifact) s.state.artifactPath = artifact;
 	if (manifest) s.state.manifest = manifest;
 
-	recordStage(s.cwd, s.runId, { skill: s.skill, artifact, status: "completed", ts: nowIso(), manifest }, s.state);
+	const assigned = recordStage(
+		s.cwd,
+		s.runId,
+		{ skill: s.skill, artifact, status: "completed", ts: nowIso(), manifest },
+		s.state,
+	);
 	ctx.ui.notify(MSG_STAGE_COMPLETE(s.skill), "info");
-	s.state.stagesCompleted++;
+	if (assigned !== undefined) s.state.stagesCompleted++;
 }
 
 /**
- * Phase success: inherit artifact, write JSONL row, bump counter. The MSG_STAGE_COMPLETE
- * notify is suppressed — phases hold it until the parent stage finishes.
+ * Phase success: inherit artifact, write JSONL row, bump counter on
+ * successful persistence. The MSG_STAGE_COMPLETE notify is suppressed —
+ * phases hold it until the parent stage finishes.
  */
 function recordPhaseSuccess(s: PhaseSession, artifact: string | undefined): void {
 	if (artifact) s.state.artifactPath = artifact;
-	recordStage(s.cwd, s.runId, { skill: phaseRowLabel(s), artifact, status: "completed", ts: nowIso() }, s.state);
-	s.state.stagesCompleted++;
+	const assigned = recordStage(
+		s.cwd,
+		s.runId,
+		{ skill: phaseRowLabel(s), artifact, status: "completed", ts: nowIso() },
+		s.state,
+	);
+	if (assigned !== undefined) s.state.stagesCompleted++;
 }
 
 // ===========================================================================
