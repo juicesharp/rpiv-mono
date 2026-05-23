@@ -78,6 +78,13 @@ export interface RoutingAuditRow {
 // Run-id generation (mirrors skills/_shared/now.mjs slug pattern)
 // ---------------------------------------------------------------------------
 
+/** 2 bytes → 4 hex chars; collision suffix for sub-second `/rpiv` invocations. */
+const RUN_ID_SUFFIX_BYTES = 2;
+/** Width of date/time components in the run-id slug: "01", "23", … */
+const SLUG_FIELD_WIDTH = 2;
+/** Length of "YYYY-MM-DDTHH:MM:SS" — strips the fractional + timezone tail of `toISOString()`. */
+const ISO_DATETIME_LENGTH = 19;
+
 /**
  * Generate a run-id slug from the given Date's local time components.
  * Format: YYYY-MM-DD_HH-MM-SS-<4hex> (local timezone + random suffix).
@@ -88,10 +95,13 @@ export interface RoutingAuditRow {
  *
  * Tests can pin `suffix` for deterministic output.
  */
-export function generateRunId(now: Date = new Date(), suffix: string = randomBytes(2).toString("hex")): string {
-	const pad = (n: number) => String(n).padStart(2, "0");
+export function generateRunId(
+	now: Date = new Date(),
+	suffix: string = randomBytes(RUN_ID_SUFFIX_BYTES).toString("hex"),
+): string {
+	const pad = (n: number) => String(n).padStart(SLUG_FIELD_WIDTH, "0");
 	const iso = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
-	const slug = iso.slice(0, 19).replaceAll(":", "-").replace("T", "_");
+	const slug = iso.slice(0, ISO_DATETIME_LENGTH).replaceAll(":", "-").replace("T", "_");
 	return `${slug}-${suffix}`;
 }
 

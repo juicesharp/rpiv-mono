@@ -14,33 +14,19 @@ export interface GitHeadSnapshot {
 	baselineSha: string;
 }
 
+/** Per git command. 5 s is generous for `rev-parse` / `log -1` / `diff --shortstat` on local repos. */
+const GIT_EXEC_TIMEOUT_MS = 5_000;
+
 const GIT_EXEC_OPTS = {
 	encoding: "utf-8" as const,
 	stdio: ["ignore", "pipe", "ignore"] as ["ignore", "pipe", "ignore"],
-	timeout: 5000,
+	timeout: GIT_EXEC_TIMEOUT_MS,
 };
 
 /** Run a git command from `cwd`, returning trimmed stdout. */
 function git(cwd: string, ...args: string[]): string {
 	return execFileSync("git", args, { ...GIT_EXEC_OPTS, cwd }).trim();
 }
-
-/** Build a git-commit payload with the supplied `data`, inheriting `artifact_path`. */
-function gitCommitPayload(ctx: ExtractorCtx, data: GitCommitData): ExtractorPayload<"git-commit", GitCommitData> {
-	return {
-		kind: "git-commit",
-		artifact_path: ctx.state.artifactPath,
-		data,
-	};
-}
-
-const noOpData = (prevSha: string, sha = ""): GitCommitData => ({
-	sha,
-	prevSha,
-	subject: "",
-	filesChanged: 0,
-	noOp: true,
-});
 
 /**
  * Pre-stage snapshot: capture the current HEAD SHA.
@@ -65,38 +51,65 @@ export function gitHeadSnapshot(ctx: SnapshotCtx): GitHeadSnapshot | undefined {
 
 /**
  * Post-stage extractor: compare HEAD to baseline and extract commit metadata.
- *
- * Uses execFileSync (sync) for post-stage reads. Fail-soft on git errors:
- * returns a payload with `noOp: true` if git commands fail (defensive).
+ * Always succeeds — git errors surface as a `noOp: true` payload (defensive).
  */
 export function gitCommitExtractor(ctx: ExtractorCtx): ExtractorResult {
 	const snapshot = ctx.snapshot as GitHeadSnapshot | undefined;
+	if (!snapshot?.baselineSha) return { payload: wrap(ctx, noOpData("")) };
 
-	if (!snapshot?.baselineSha) {
-		return { payload: gitCommitPayload(ctx, noOpData("")) };
-	}
+	const data = collectCommitData(ctx.cwd, snapshot.baselineSha) ?? noOpData(snapshot.baselineSha);
+	return { payload: wrap(ctx, data) };
+}
 
+// ---------------------------------------------------------------------------
+// Commit-data collection
+// ---------------------------------------------------------------------------
+
+/**
+ * Read HEAD and produce `GitCommitData` for the commit (or no-op if HEAD
+ * didn't move). Returns `null` if any git call throws — caller substitutes a
+ * baseline-aware no-op payload so the workflow keeps moving.
+ */
+function collectCommitData(cwd: string, baselineSha: string): GitCommitData | null {
 	try {
-		const headSha = git(ctx.cwd, "rev-parse", "HEAD");
-
-		if (headSha === snapshot.baselineSha) {
-			return { payload: gitCommitPayload(ctx, noOpData(snapshot.baselineSha, headSha)) };
-		}
-
-		const subject = git(ctx.cwd, "log", "-1", "--format=%s", headSha);
-		const diffStat = git(ctx.cwd, "diff", "--shortstat", snapshot.baselineSha, headSha);
-		const filesChangedMatch = diffStat.match(/^(\d+) files? changed/);
-		const filesChanged = filesChangedMatch ? parseInt(filesChangedMatch[1]!, 10) : 0;
+		const headSha = git(cwd, "rev-parse", "HEAD");
+		if (headSha === baselineSha) return noOpData(baselineSha, headSha);
 
 		return {
-			payload: gitCommitPayload(ctx, {
-				sha: headSha,
-				prevSha: snapshot.baselineSha,
-				subject,
-				filesChanged,
-			}),
+			sha: headSha,
+			prevSha: baselineSha,
+			subject: git(cwd, "log", "-1", "--format=%s", headSha),
+			filesChanged: countFilesChanged(cwd, baselineSha, headSha),
 		};
 	} catch {
-		return { payload: gitCommitPayload(ctx, noOpData(snapshot.baselineSha)) };
+		return null;
 	}
 }
+
+/** Parse `git diff --shortstat` output for the "N files changed" count. */
+function countFilesChanged(cwd: string, baselineSha: string, headSha: string): number {
+	const diffStat = git(cwd, "diff", "--shortstat", baselineSha, headSha);
+	const match = diffStat.match(/^(\d+) files? changed/);
+	return match ? parseInt(match[1]!, 10) : 0;
+}
+
+// ---------------------------------------------------------------------------
+// Payload shaping
+// ---------------------------------------------------------------------------
+
+/** Wrap GitCommitData in a payload, inheriting the chain's current artifact_path. */
+function wrap(ctx: ExtractorCtx, data: GitCommitData): ExtractorPayload<"git-commit", GitCommitData> {
+	return {
+		kind: "git-commit",
+		artifact_path: ctx.state.artifactPath,
+		data,
+	};
+}
+
+const noOpData = (prevSha: string, sha = ""): GitCommitData => ({
+	sha,
+	prevSha,
+	subject: "",
+	filesChanged: 0,
+	noOp: true,
+});

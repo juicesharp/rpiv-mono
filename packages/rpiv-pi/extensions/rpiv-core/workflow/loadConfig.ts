@@ -34,6 +34,13 @@ export interface WorkflowConfigFile {
 	readonly defaultPreset?: string;
 }
 
+/**
+ * Built-in preset name preferred as the default when a config doesn't pick one.
+ * Matches a preset that ships in `WORKFLOW_DAG.presets`; the resolver also
+ * falls back gracefully if a custom DAG doesn't include it.
+ */
+export const DEFAULT_PRESET_NAME = "mid";
+
 /** Result of loading and resolving workflow config. */
 export interface LoadedConfig {
 	/** The resolved DAG (config presets + built-in edges, or built-in fallback). */
@@ -44,7 +51,7 @@ export interface LoadedConfig {
 	 * `dag.presets` to compute it — the config is the single source of truth.
 	 */
 	presetNames: ReadonlySet<string>;
-	/** Default preset name from config, or "mid" if none specified. */
+	/** Default preset name from config, or `DEFAULT_PRESET_NAME` if none specified. */
 	defaultPreset: string;
 	/** Non-fatal issues encountered during loading (malformed JSON, validation errors). */
 	warnings?: string[];
@@ -216,13 +223,13 @@ export function loadConfig(cwd: string): LoadedConfigWithSource {
  *
  * Order:
  *   1. Explicit `requested` value — if it exists in `presets`, use it.
- *   2. The hard-coded "mid" — if it exists (it does for WORKFLOW_DAG fallback).
+ *   2. `DEFAULT_PRESET_NAME` — if it exists (it does for WORKFLOW_DAG fallback).
  *   3. The first key in `presets` (insertion order).
- *   4. The literal "mid" string as a last resort (caller will surface
+ *   4. `DEFAULT_PRESET_NAME` as a last resort (caller will surface
  *      `Unknown preset` on use, but at least the field is non-empty).
  *
  * Pushes a warning when the explicit `requested` value is dropped, or when
- * "mid" is silently substituted but absent from the effective presets.
+ * `DEFAULT_PRESET_NAME` is silently substituted but absent from the effective presets.
  */
 function resolveDefaultPreset(
 	presets: Record<string, unknown>,
@@ -233,13 +240,13 @@ function resolveDefaultPreset(
 	if (requested) {
 		warnings.push(`defaultPreset "${requested}" not found in presets — falling back to first preset`);
 	}
-	if ("mid" in presets) return "mid";
+	if (DEFAULT_PRESET_NAME in presets) return DEFAULT_PRESET_NAME;
 	const first = Object.keys(presets)[0];
 	if (first) {
 		if (!requested) {
-			warnings.push(`No defaultPreset specified and "mid" not in presets — using "${first}"`);
+			warnings.push(`No defaultPreset specified and "${DEFAULT_PRESET_NAME}" not in presets — using "${first}"`);
 		}
 		return first;
 	}
-	return "mid";
+	return DEFAULT_PRESET_NAME;
 }

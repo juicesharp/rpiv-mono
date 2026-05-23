@@ -1,27 +1,22 @@
 /**
- * Stage routing for the /rpiv workflow runner (Phase 6).
+ * Stage routing for the /rpiv workflow runner.
  *
  * Replaces the runner's inline `idx + 1` next-stage computation with
  * edge-aware routing. Strict-preset mode only: predicate targets must
  * be in the preset sequence at or after the linear successor.
  */
 
-import type { WorkflowDag } from "./dag.js";
+import type { DagEdge, WorkflowDag } from "./dag.js";
 import type { EdgePredicate, PredicateContext } from "./predicates.js";
 import type { RunState } from "./types.js";
 
 /**
  * Resolve the next stage id after the current node.
  *
- * Resolution order:
- * 1. No outgoing edges → return preset[idx + 1] (linear advance).
- * 2. Single auto edge → return edge.to[0].
- * 3. Predicate edge → evaluate predicate, return target.
- * 4. Choice edge → return preset[idx + 1] (choice requires user prompt,
- *    not yet wired in the runner; falls back to linear).
- *
- * Strict-preset enforcement: predicate targets must be in preset at
- * idx + 1 or later. Off-preset targets trigger a diagnostic error.
+ * - No outgoing edge → linear advance.
+ * - `auto` edge      → first target.
+ * - `predicate` edge → evaluate predicate, validate target is forward in preset.
+ * - `choice` edge    → linear advance (user-prompt routing not yet wired).
  */
 export function resolveNextStageId(
 	dag: WorkflowDag,
@@ -30,45 +25,62 @@ export function resolveNextStageId(
 	idx: number,
 	state: Readonly<RunState>,
 ): string | undefined {
-	// Linear default: next in preset, or undefined if at end
-	const linearNext = preset[idx + 1];
-	if (idx + 1 >= preset.length) return undefined;
+	if (atEndOfPreset(preset, idx)) return undefined;
 
-	// Find outgoing edge for this node
-	const edge = dag.edges.find((e) => e.from === currentNodeId);
-	if (!edge) return linearNext;
+	const edge = findOutgoingEdge(dag, currentNodeId);
+	if (!edge) return linearNextOf(preset, idx);
 
-	if (edge.condition === "auto") {
-		return edge.to[0];
+	switch (edge.condition) {
+		case "auto":
+			return edge.to[0];
+		case "predicate":
+			return evaluatePredicateEdge(edge, preset, idx, state);
+		default:
+			// "choice" — user-prompt routing not yet wired; fall back to linear.
+			return linearNextOf(preset, idx);
 	}
+}
 
-	if (edge.condition === "predicate") {
-		const predicate = (edge as { predicate: EdgePredicate }).predicate;
-		const ctx: PredicateContext = {
-			manifest: state.manifest,
-			state,
-		};
+// ---------------------------------------------------------------------------
+// Preset navigation
+// ---------------------------------------------------------------------------
 
-		let target: string;
-		try {
-			target = predicate(ctx);
-		} catch {
-			// Predicate threw — treat as halt
-			throw new Error(
-				`resolveNextStageId: predicate on edge "${edge.from} → [${edge.to.join(", ")}]" threw an error`,
-			);
-		}
+const atEndOfPreset = (preset: string[], idx: number): boolean => idx + 1 >= preset.length;
 
-		// Strict-preset enforcement: target must be in preset at or after idx + 1
-		const targetIdx = preset.indexOf(target);
-		if (targetIdx < 0 || targetIdx < idx + 1) {
-			throw new Error(
-				`resolveNextStageId: predicate returned "${target}" which is not a valid forward target in preset (must be one of: ${preset.slice(idx + 1).join(", ")})`,
-			);
-		}
-		return target;
+const linearNextOf = (preset: string[], idx: number): string | undefined => preset[idx + 1];
+
+const findOutgoingEdge = (dag: WorkflowDag, from: string): DagEdge | undefined =>
+	dag.edges.find((e) => e.from === from);
+
+// ---------------------------------------------------------------------------
+// Predicate evaluation
+// ---------------------------------------------------------------------------
+
+/** Run the edge's predicate and verify the chosen target is a valid forward step. */
+function evaluatePredicateEdge(edge: DagEdge, preset: string[], idx: number, state: Readonly<RunState>): string {
+	const target = invokePredicate(edge, state);
+	assertForwardTarget(target, preset, idx);
+	return target;
+}
+
+/** Call the edge's predicate with a typed context; surface any throw as a halt-shaped error. */
+function invokePredicate(edge: DagEdge, state: Readonly<RunState>): string {
+	const predicate = (edge as { predicate: EdgePredicate }).predicate;
+	const ctx: PredicateContext = { manifest: state.manifest, state };
+	try {
+		return predicate(ctx);
+	} catch {
+		throw new Error(`resolveNextStageId: predicate on edge "${edge.from} → [${edge.to.join(", ")}]" threw an error`);
 	}
+}
 
-	// choice edges fall through to linear advance (user-prompt not yet wired)
-	return linearNext;
+/** Strict-preset enforcement: predicate target must be at or after preset[idx + 1]. */
+function assertForwardTarget(target: string, preset: string[], idx: number): void {
+	const targetIdx = preset.indexOf(target);
+	if (targetIdx < 0 || targetIdx < idx + 1) {
+		throw new Error(
+			`resolveNextStageId: predicate returned "${target}" which is not a valid forward target in preset ` +
+				`(must be one of: ${preset.slice(idx + 1).join(", ")})`,
+		);
+	}
 }

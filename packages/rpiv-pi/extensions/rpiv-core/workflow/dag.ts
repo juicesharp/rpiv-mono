@@ -26,6 +26,7 @@ import { BUNDLED_SKILL_NAMES } from "../paths.js";
 import { gitCommitExtractor, gitHeadSnapshot } from "./extractors/index.js";
 import type { ExtractorFn, SnapshotFn } from "./manifest.js";
 import { predicateThreshold } from "./predicates.js";
+import { MAX_VALIDATION_RETRIES, MIN_VALIDATION_RETRIES } from "./validation.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -252,22 +253,26 @@ export interface DagValidation {
 }
 
 /**
- * Validate a DAG:
- * 1. Every id in `edges` (from + to) and `presets` resolves to a `nodes` entry.
- * 2. Every node body has a recognized `kind`, valid `stopStrategy`, and valid
- *    `sessionPolicy`. Both `sessionPolicy` values ("fresh", "continue") pass
- *    validation; the runner branches at dispatch time.
- * 3. Every skill-kind node's `skill` exists in the bundled skills directory.
- *
- * Returns `{errors, warnings}` — errors gate startup, warnings are advisory
- * diagnostics (e.g. predicate edges with no outputSchema on the source).
+ * Validate a DAG, returning `{errors, warnings}`. Errors gate startup;
+ * warnings are advisory (e.g. predicate edges without an outputSchema).
  * Pure function — takes the DAG explicitly so tests can pass alternatives.
+ *
+ * Each check is its own helper so this top level reads as the validation
+ * checklist itself.
  */
 export function validateDag(dag: WorkflowDag): DagValidation {
 	const errors: string[] = [];
 	const warnings: string[] = [];
 
-	// 1. Every edge endpoint and preset entry must resolve to a node id.
+	collectReferenceErrors(dag, errors);
+	collectEdgeIssues(dag, errors, warnings);
+	collectNodeErrors(dag, errors);
+
+	return { errors, warnings };
+}
+
+/** Every id used in `edges` and `presets` must resolve to an entry in `nodes`. */
+function collectReferenceErrors(dag: WorkflowDag, errors: string[]): void {
 	for (const edge of dag.edges) {
 		if (!(edge.from in dag.nodes)) errors.push(`Edge source "${edge.from}" has no entry in nodes`);
 		for (const target of edge.to) {
@@ -279,69 +284,88 @@ export function validateDag(dag: WorkflowDag): DagValidation {
 			if (!(id in dag.nodes)) errors.push(`Preset "${presetName}" references "${id}" which has no entry in nodes`);
 		}
 	}
+}
 
-	// 1b. Edge-specific validation.
+/** Edge-specific validation: predicate edges need a function + schema on source. */
+function collectEdgeIssues(dag: WorkflowDag, errors: string[], warnings: string[]): void {
 	for (const edge of dag.edges) {
-		if (edge.condition === "predicate") {
-			if (typeof edge.predicate !== "function") {
-				errors.push(
-					`Edge "${edge.from} → [${edge.to.join(", ")}]" has condition "predicate" but no predicate function`,
-				);
-			}
-			// Predicate edges reading manifest.data without a schema on the
-			// source node will fire on un-validated frontmatter. Advisory so
-			// schemas can land separately.
-			const sourceNode = dag.nodes[edge.from];
-			if (sourceNode && !sourceNode.outputSchema) {
-				warnings.push(
-					`Predicate edge "${edge.from} → [${edge.to.join(", ")}]" reads from manifest.data but source node "${edge.from}" has no outputSchema — predicate decisions will fire on un-validated frontmatter`,
-				);
-			}
+		if (edge.condition !== "predicate") continue;
+
+		if (typeof edge.predicate !== "function") {
+			errors.push(
+				`Edge "${edge.from} → [${edge.to.join(", ")}]" has condition "predicate" but no predicate function`,
+			);
+		}
+		// Predicate edges reading manifest.data without a schema on the source
+		// fire on un-validated frontmatter. Advisory — schemas can land later.
+		const sourceNode = dag.nodes[edge.from];
+		if (sourceNode && !sourceNode.outputSchema) {
+			warnings.push(
+				`Predicate edge "${edge.from} → [${edge.to.join(", ")}]" reads from manifest.data but source node "${edge.from}" has no outputSchema — predicate decisions will fire on un-validated frontmatter`,
+			);
 		}
 	}
+}
 
-	// 2 + 3. Per-node shape validation.
+/** Per-node shape validation: kinds, strategies, schemas, retry bounds, skill membership. */
+function collectNodeErrors(dag: WorkflowDag, errors: string[]): void {
 	for (const [id, node] of Object.entries(dag.nodes)) {
-		if (!VALID_STOP_STRATEGIES.has(node.stopStrategy)) {
-			errors.push(`Node "${id}" has invalid stopStrategy: "${node.stopStrategy}"`);
-		}
-		if (!VALID_SESSION_POLICIES.has(node.sessionPolicy)) {
-			errors.push(`Node "${id}" has invalid sessionPolicy: "${node.sessionPolicy}"`);
-		}
+		checkStopStrategy(id, node, errors);
+		checkSessionPolicy(id, node, errors);
+		checkValidationConfig(id, node, errors);
+		checkNodeKind(id, node, errors);
+	}
+}
 
-		if (
-			node.onValidationFailure !== undefined &&
-			node.onValidationFailure !== "retry" &&
-			node.onValidationFailure !== "halt"
-		) {
-			errors.push(`Node "${id}" has invalid onValidationFailure: "${node.onValidationFailure}"`);
-		}
+function checkStopStrategy(id: string, node: DagNode, errors: string[]): void {
+	if (!VALID_STOP_STRATEGIES.has(node.stopStrategy)) {
+		errors.push(`Node "${id}" has invalid stopStrategy: "${node.stopStrategy}"`);
+	}
+}
 
-		if (node.maxValidationRetries !== undefined && (node.maxValidationRetries < 1 || node.maxValidationRetries > 3)) {
-			errors.push(`Node "${id}" has maxValidationRetries: ${node.maxValidationRetries} — must be 1..3`);
-		}
+function checkSessionPolicy(id: string, node: DagNode, errors: string[]): void {
+	if (!VALID_SESSION_POLICIES.has(node.sessionPolicy)) {
+		errors.push(`Node "${id}" has invalid sessionPolicy: "${node.sessionPolicy}"`);
+	}
+}
 
-		switch (node.kind) {
-			case "skill":
-				if (!BUNDLED_SKILL_NAMES.has(node.skill)) {
-					errors.push(`Node "${id}" (kind=skill) references unknown bundled skill: "${node.skill}"`);
-				}
-				break;
-			default: {
-				// Defensive: surfaces any unknown `kind` value as a validation
-				// error rather than letting the runner crash on dispatch. With
-				// only one variant in `DagNode` today, TypeScript's
-				// exhaustiveness narrowing can't be expressed without
-				// triggering a "not assignable to never" error — when chat/
-				// script kinds land, add their case branches and an
-				// `assertNever(node)` here will start narrowing correctly.
-				const unknownKind = (node as { kind?: unknown }).kind;
-				errors.push(`Node "${id}" has unknown kind: ${String(unknownKind)}`);
-			}
-		}
+function checkValidationConfig(id: string, node: DagNode, errors: string[]): void {
+	if (
+		node.onValidationFailure !== undefined &&
+		node.onValidationFailure !== "retry" &&
+		node.onValidationFailure !== "halt"
+	) {
+		errors.push(`Node "${id}" has invalid onValidationFailure: "${node.onValidationFailure}"`);
 	}
 
-	return { errors, warnings };
+	if (
+		node.maxValidationRetries !== undefined &&
+		(node.maxValidationRetries < MIN_VALIDATION_RETRIES || node.maxValidationRetries > MAX_VALIDATION_RETRIES)
+	) {
+		errors.push(
+			`Node "${id}" has maxValidationRetries: ${node.maxValidationRetries} — must be ${MIN_VALIDATION_RETRIES}..${MAX_VALIDATION_RETRIES}`,
+		);
+	}
+}
+
+function checkNodeKind(id: string, node: DagNode, errors: string[]): void {
+	switch (node.kind) {
+		case "skill":
+			if (!BUNDLED_SKILL_NAMES.has(node.skill)) {
+				errors.push(`Node "${id}" (kind=skill) references unknown bundled skill: "${node.skill}"`);
+			}
+			return;
+		default: {
+			// Defensive: surfaces any unknown `kind` value as a validation error
+			// rather than letting the runner crash on dispatch. With only one
+			// variant in `DagNode` today, the TypeScript exhaustiveness check
+			// (`const _: never = node`) can't be expressed without an error;
+			// once chat / script kinds land, add their case branches and
+			// `assertNever(node)` will start narrowing correctly.
+			const unknownKind = (node as { kind?: unknown }).kind;
+			errors.push(`Node "${id}" has unknown kind: ${String(unknownKind)}`);
+		}
+	}
 }
 
 // ---------------------------------------------------------------------------

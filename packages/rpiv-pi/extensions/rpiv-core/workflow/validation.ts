@@ -41,6 +41,9 @@ export interface ValidationResult {
 // Constants
 // ---------------------------------------------------------------------------
 
+/** Lower bound on retries — a node opting in must allow at least one attempt. */
+export const MIN_VALIDATION_RETRIES = 1;
+
 /** Hard cap on retries regardless of node config. */
 export const MAX_VALIDATION_RETRIES = 3;
 
