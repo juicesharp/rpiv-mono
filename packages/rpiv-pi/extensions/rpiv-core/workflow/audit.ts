@@ -13,11 +13,14 @@
 import {
 	MSG_STAGE_ABORTED,
 	MSG_STAGE_FAILED,
+	MSG_STAGE_NO_RESPONSE,
+	MSG_STAGE_TOOL_STALLED,
 	MSG_STAGE_TRUNCATED,
 	MSG_WORKFLOW_CANCELLED,
 	STATUS_KEY,
 } from "./messages.js";
 import { appendStage, readAllStages, type WorkflowStage } from "./state.js";
+import { assertNever, type StopSignal } from "./transcript.js";
 import type { ChainCtx, RunState } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -43,18 +46,6 @@ export interface Audit {
 	/** Label written to the JSONL "skill" field for failed / skipped rows. */
 	skill: string;
 }
-
-/**
- * What kind of terminal outcome (if any) the branch shows after the agent stops.
- *
- * - `"ok"`        — model settled with `stopReason: "stop"` (or no reason set).
- * - `"aborted"`   — user pressed ESC mid-session.
- * - `"failed"`    — empty branch, LLM error, or other unrecoverable stop.
- * - `"truncated"` — model hit its output-length cap; the reply is partial. The
- *   chain MUST halt because downstream stages would otherwise run against a
- *   half-applied side effect (e.g. a partially-written implement edit).
- */
-export type StopOutcome = "ok" | "aborted" | "failed" | "truncated";
 
 // ---------------------------------------------------------------------------
 // Write helpers (fail-soft via state.appendStage)
@@ -115,60 +106,74 @@ export function recordTerminalFailure(
 }
 
 /**
- * Halt the chain because the agent stopped abnormally (ESC abort or empty /
- * errored response). `errorMessage` is the caller-formatted text stored in
- * `state.error` for the "failed" case (stages and phases format differently).
+ * Halt the chain after the agent stopped on a non-OK signal.
+ *
+ * One arm per `StopSignal` variant (minus `"stop"`, which is the success path
+ * and never reaches this function). The JSONL status stays a two-value
+ * `"aborted" | "failed"` for downstream-reader compatibility — the per-signal
+ * distinction surfaces via `MSG_STAGE_*` and `state.error`. `errorMessage` is
+ * the caller-formatted text used for stages-and-phases-differ wording in the
+ * generic `"error"` bucket; signal-specific arms build their own text.
  */
 export function recordStopFailure(
 	ctx: ChainCtx,
 	audit: Audit,
-	stop: Exclude<StopOutcome, "ok">,
+	stop: Exclude<StopSignal, "stop">,
 	errorMessage: string,
 	onFailure?: (ctx: ChainCtx) => void,
 ): void {
+	recordTerminalFailure(ctx, audit, stopFailureArgs(audit.skill, stop, errorMessage), onFailure);
+}
+
+/** Per-signal user-visible wording + JSONL status for a non-OK stop. */
+function stopFailureArgs(
+	skill: string,
+	stop: Exclude<StopSignal, "stop">,
+	errorMessage: string,
+): {
+	status: "failed" | "aborted";
+	notifyMsg: string;
+	notifyLevel: "warning" | "error";
+	errMsg: string;
+} {
 	switch (stop) {
 		case "aborted":
-			recordTerminalFailure(
-				ctx,
-				audit,
-				{
-					status: "aborted",
-					notifyMsg: MSG_STAGE_ABORTED(audit.skill),
-					notifyLevel: "warning",
-					errMsg: `${audit.skill} aborted by user (ESC)`,
-				},
-				onFailure,
-			);
-			return;
-		case "truncated":
-			// JSONL status stays "failed" — preserves the established two-value
-			// status invariant for downstream consumers (`readLastStage`, recap UI).
-			// The user-visible distinction lives in the notify message + state.error.
-			recordTerminalFailure(
-				ctx,
-				audit,
-				{
-					status: "failed",
-					notifyMsg: MSG_STAGE_TRUNCATED(audit.skill),
-					notifyLevel: "error",
-					errMsg: `${audit.skill} truncated — model hit output-length cap mid-reply`,
-				},
-				onFailure,
-			);
-			return;
-		case "failed":
-			recordTerminalFailure(
-				ctx,
-				audit,
-				{
-					status: "failed",
-					notifyMsg: MSG_STAGE_FAILED(audit.skill),
-					notifyLevel: "error",
-					errMsg: errorMessage,
-				},
-				onFailure,
-			);
-			return;
+			return {
+				status: "aborted",
+				notifyMsg: MSG_STAGE_ABORTED(skill),
+				notifyLevel: "warning",
+				errMsg: `${skill} aborted by user (ESC)`,
+			};
+		case "length":
+			return {
+				status: "failed",
+				notifyMsg: MSG_STAGE_TRUNCATED(skill),
+				notifyLevel: "error",
+				errMsg: `${skill} truncated — model hit output-length cap mid-reply`,
+			};
+		case "toolUse":
+			return {
+				status: "failed",
+				notifyMsg: MSG_STAGE_TOOL_STALLED(skill),
+				notifyLevel: "error",
+				errMsg: `${skill} tool loop did not settle before the orchestrator inspected the branch`,
+			};
+		case "noResponse":
+			return {
+				status: "failed",
+				notifyMsg: MSG_STAGE_NO_RESPONSE(skill),
+				notifyLevel: "error",
+				errMsg: `${skill} produced no assistant message`,
+			};
+		case "error":
+			return {
+				status: "failed",
+				notifyMsg: MSG_STAGE_FAILED(skill),
+				notifyLevel: "error",
+				errMsg: errorMessage,
+			};
+		default:
+			return assertNever(stop);
 	}
 }
 

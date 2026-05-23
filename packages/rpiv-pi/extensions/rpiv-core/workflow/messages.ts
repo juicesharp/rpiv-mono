@@ -24,6 +24,8 @@ export const MSG_STAGE_FAILED = (skill: string) => `✗ ${skill} failed — stop
 export const MSG_STAGE_ABORTED = (skill: string) => `⏸ ${skill} aborted (ESC) — stopping workflow`;
 export const MSG_STAGE_TRUNCATED = (skill: string) =>
 	`✗ ${skill} truncated — model hit output cap mid-reply, stopping workflow`;
+export const MSG_STAGE_TOOL_STALLED = (skill: string) => `✗ ${skill} tool loop did not settle — stopping workflow`;
+export const MSG_STAGE_NO_RESPONSE = (skill: string) => `✗ ${skill} produced no response — stopping workflow`;
 
 export const MSG_WORKFLOW_COMPLETE = (stages: number) => `rpiv: workflow complete (${stages} stages)`;
 export const MSG_WORKFLOW_CANCELLED = "rpiv: workflow cancelled";

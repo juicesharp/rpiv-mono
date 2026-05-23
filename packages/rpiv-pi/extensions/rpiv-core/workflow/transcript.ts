@@ -13,6 +13,31 @@
 export type StopReason = "stop" | "length" | "toolUse" | "error" | "aborted";
 
 /**
+ * How the agent loop ended, normalised so consumers can switch exhaustively.
+ *
+ * Adds `"noResponse"` on top of pi-ai's `StopReason` to cover the case where
+ * the branch has no assistant message at all — pi-ai never set a `stopReason`
+ * because the model never spoke (e.g. session killed before the first turn).
+ * That case shows up at the transport layer as `undefined`, but the
+ * orchestrator needs a value it can switch on.
+ *
+ * Pre-stopReason assistant messages (legacy/empty field) collapse to `"stop"`,
+ * matching the historical default before pi-ai attached the reason.
+ */
+export type StopSignal = StopReason | "noResponse";
+
+/**
+ * Inspect a branch and return the single signal the orchestrator should
+ * branch on. Combines `hasAssistantMessage` + `lastAssistantStopReason` so
+ * callers do not relitigate the "did the model speak / what reason did pi
+ * attach" question at every site.
+ */
+export function classifyStop(branch: BranchEntry[], offsetStart?: number): StopSignal {
+	if (!hasAssistantMessage(branch, offsetStart)) return "noResponse";
+	return lastAssistantStopReason(branch, offsetStart) ?? "stop";
+}
+
+/**
  * Exhaustiveness helper for discriminated-union switches. Place at the
  * `default` arm of a switch over a closed union; the call is well-typed iff
  * every variant is handled. If a future union widening leaves a gap, the

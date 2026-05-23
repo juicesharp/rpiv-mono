@@ -25,7 +25,6 @@ import {
 	recordStage,
 	recordStopFailure,
 	recordTerminalFailure,
-	type StopOutcome,
 } from "./audit.js";
 import type { DagNode, SessionPolicy } from "./dag.js";
 import { artifactMdExtractor, sideEffectExtractor } from "./extractors/index.js";
@@ -43,13 +42,7 @@ import {
 	MSG_VALIDATION_EXHAUSTED,
 	MSG_VALIDATION_RETRY,
 } from "./messages.js";
-import {
-	assertNever,
-	type BranchEntry,
-	extractArtifactPath,
-	hasAssistantMessage,
-	lastAssistantStopReason,
-} from "./transcript.js";
+import { type BranchEntry, classifyStop, extractArtifactPath, type StopSignal } from "./transcript.js";
 import type { ChainCtx, PhaseSession, StageSession } from "./types.js";
 import {
 	DEFAULT_VALIDATION_RETRIES,
@@ -92,7 +85,7 @@ export async function runPhaseSession(ctx: ChainCtx, s: PhaseSession): Promise<v
 /** Stage post-processing: classify outcome → extract & validate → persist → chain. */
 async function postStage(ctx: ChainCtx, s: StageSession): Promise<void> {
 	const outcome = readStageOutcome(ctx, s);
-	if (outcome.stop !== "ok") return haltStage(ctx, s, outcome.stop);
+	if (outcome.stop !== "stop") return haltStage(ctx, s, outcome.stop);
 
 	const result = await extractAndValidateManifest(ctx, s, outcome.branch, freshBranchOf(ctx));
 	if (result.kind === "fatal") return haltStageWithExtractionError(ctx, s, result.message);
@@ -105,7 +98,7 @@ async function postStage(ctx: ChainCtx, s: StageSession): Promise<void> {
 /** Phase post-processing: classify outcome → persist bare row → chain. */
 async function postPhase(ctx: ChainCtx, s: PhaseSession): Promise<void> {
 	const outcome = readPhaseOutcome(ctx);
-	if (outcome.stop !== "ok") return haltPhase(ctx, s, outcome.stop);
+	if (outcome.stop !== "stop") return haltPhase(ctx, s, outcome.stop);
 
 	recordPhaseSuccess(s, outcome.artifact);
 	await s.onSuccess(ctx);
@@ -148,7 +141,7 @@ async function extractAndValidateManifest(
 // HALT HELPERS — turn a halt reason into the right audit-layer call
 // ===========================================================================
 
-function haltStage(ctx: ChainCtx, s: StageSession, stop: Exclude<StopOutcome, "ok">): void {
+function haltStage(ctx: ChainCtx, s: StageSession, stop: Exclude<StopSignal, "stop">): void {
 	recordStopFailure(ctx, auditFor(s), stop, `${s.skill} failed`, s.onFailure);
 }
 
@@ -175,7 +168,7 @@ function haltStageWithValidationFailure(ctx: ChainCtx, s: StageSession, failureS
 	);
 }
 
-function haltPhase(ctx: ChainCtx, s: PhaseSession, stop: Exclude<StopOutcome, "ok">): void {
+function haltPhase(ctx: ChainCtx, s: PhaseSession, stop: Exclude<StopSignal, "stop">): void {
 	recordStopFailure(ctx, auditFor(s), stop, `${s.skill} phase ${s.phaseIndex} failed`);
 }
 
@@ -210,14 +203,14 @@ function recordPhaseSuccess(s: PhaseSession, artifact: string | undefined): void
 }
 
 // ===========================================================================
-// BRANCH INSPECTION — classify how the agent stopped
+// BRANCH INSPECTION — read how the agent stopped
 // ===========================================================================
 
 /** Snapshot of the agent's output for the just-finished session. */
 interface SessionOutcome {
 	branch: BranchEntry[];
 	artifact: string | undefined;
-	stop: StopOutcome;
+	stop: StopSignal;
 }
 
 function readStageOutcome(ctx: ChainCtx, s: StageSession): SessionOutcome {
@@ -241,40 +234,8 @@ function readSessionOutcome(
 	return {
 		branch,
 		artifact: extractArtifactPath(branch),
-		stop: classifyStopOutcome(branch),
+		stop: classifyStop(branch),
 	};
-}
-
-function classifyStopOutcome(branch: BranchEntry[]): StopOutcome {
-	// "no assistant message at all" is the only outcome that doesn't follow from
-	// stopReason — Pi never set one because the model never spoke. Check first.
-	if (!hasAssistantMessage(branch)) return "failed";
-
-	const stopReason = lastAssistantStopReason(branch);
-	// `undefined` covers branches whose last assistant message predates Pi's
-	// stopReason support — treat as a clean stop, matching the historical
-	// default before stopReason landed.
-	if (stopReason === undefined) return "ok";
-
-	switch (stopReason) {
-		case "stop":
-			return "ok";
-		case "aborted":
-			return "aborted";
-		case "error":
-			return "failed";
-		case "length":
-			// Output-length cap mid-reply: the side effect is partial; halting is
-			// the only safe move. See `recordStopFailure` for the user-visible path.
-			return "truncated";
-		case "toolUse":
-			// `waitForIdle` normally settles a tool roundtrip back to "stop" before
-			// the orchestrator inspects the branch. A surfaced "toolUse" therefore
-			// signals an unsettled session — fail defensively rather than treat as ok.
-			return "failed";
-		default:
-			return assertNever(stopReason);
-	}
 }
 
 // ===========================================================================

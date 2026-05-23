@@ -392,7 +392,8 @@ describe("runWorkflow", () => {
 		});
 
 		expect(result.success).toBe(false);
-		expect(result.error).toBe("research failed");
+		// Empty branch → StopSignal "noResponse" → distinct from generic "failed".
+		expect(result.error).toBe("research produced no assistant message");
 		expect(result.stagesCompleted).toBe(0);
 		// Second scripted step must still be in the queue
 		expect(chain.remaining()).toBe(1);
@@ -843,7 +844,7 @@ describe("runWorkflow", () => {
 			});
 
 			expect(result.success).toBe(false);
-			expect(result.error).toBe("research failed");
+			expect(result.error).toBe("research produced no assistant message");
 			expect(result.stagesCompleted).toBe(0);
 		});
 
