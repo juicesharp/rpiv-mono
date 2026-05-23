@@ -31,7 +31,14 @@ import {
 	MSG_VALIDATION_EXHAUSTED,
 	MSG_VALIDATION_RETRY,
 } from "./messages.js";
-import { assertNever, type BranchEntry, classifyStop, extractArtifactPath, type StopSignal } from "./transcript.js";
+import {
+	assertNever,
+	type BranchEntry,
+	classifyStop,
+	extractArtifactPath,
+	readBranch,
+	type StopSignal,
+} from "./transcript.js";
 import type { ChainCtx, PhaseSession, StageSession } from "./types.js";
 import {
 	DEFAULT_VALIDATION_RETRIES,
@@ -218,7 +225,7 @@ function readSessionOutcome(
 	ctx: ChainCtx,
 	opts: { sessionPolicy?: SessionPolicy; branchOffset?: number },
 ): SessionOutcome {
-	const fullBranch = ctx.sessionManager.getBranch() as unknown as BranchEntry[];
+	const fullBranch = readBranch(ctx);
 	const branch = opts.sessionPolicy === "continue" ? fullBranch.slice(opts.branchOffset ?? 0) : fullBranch;
 	return {
 		branch,
@@ -433,7 +440,7 @@ const auditFor = (s: StageSession | PhaseSession): AuditCtx => ({
 });
 
 /** Thunk that re-reads the current branch — used by the retry loop after each agent reply. */
-const freshBranchOf = (ctx: ChainCtx) => () => ctx.sessionManager.getBranch() as unknown as BranchEntry[];
+const freshBranchOf = (ctx: ChainCtx) => () => readBranch(ctx);
 
 /** Per-phase JSONL row label, e.g. "implement (phase 2/4)". */
 const phaseRowLabel = (s: PhaseSession) => `${s.skill} (phase ${s.phaseIndex}/${s.phaseCount})`;

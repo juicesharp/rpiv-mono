@@ -37,14 +37,9 @@ import {
 import { resolveNextStageId } from "./routing.js";
 import { runPhaseSession, runStageSession } from "./sessions.js";
 import { appendRoutingDecision, generateRunId, writeHeader } from "./state.js";
-import type { BranchEntry } from "./transcript.js";
+import { readBranch } from "./transcript.js";
 import type { ChainCtx, RunContext } from "./types.js";
 import { validateManifestData } from "./validation.js";
-
-// Re-exports keep the runner.ts public surface stable for older callers.
-export { countPhases } from "./implement-phases.js";
-export { runPhaseSession, runStageSession } from "./sessions.js";
-export { extractArtifactPath } from "./transcript.js";
 
 // ---------------------------------------------------------------------------
 // Public surface
@@ -279,7 +274,7 @@ function enforceSessionInvariants(stage: ResolvedStage, run: RunContext): void {
 /** Entries before this index belong to prior stages; only meaningful for continue. */
 function computeBranchOffset(curCtx: ChainCtx, node: DagNode): number | undefined {
 	if (node.sessionPolicy !== "continue") return undefined;
-	return (curCtx.sessionManager.getBranch() as unknown as BranchEntry[]).length;
+	return readBranch(curCtx).length;
 }
 
 function runStageInputValidation(curCtx: ChainCtx, stage: ResolvedStage, run: RunContext): boolean {

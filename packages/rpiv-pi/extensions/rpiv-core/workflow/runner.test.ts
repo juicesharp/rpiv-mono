@@ -6,10 +6,11 @@ import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it, type vi } from "vitest";
 import { clearChildSession, isChildSession } from "./child-session.js";
 import type { CompletionStrategy, DagNode, WorkflowDag } from "./dag.js";
+import { countPhases } from "./implement-phases.js";
 import type { PredicateContext } from "./predicates.js";
-import { countPhases, extractArtifactPath, runWorkflow } from "./runner.js";
+import { runWorkflow } from "./runner.js";
 import { readRoutingDecisions } from "./state.js";
-import { hasAssistantMessage, lastAssistantStopReason } from "./transcript.js";
+import { extractArtifactPath, hasAssistantMessage, lastAssistantStopReason } from "./transcript.js";
 
 // ---------------------------------------------------------------------------
 // extractArtifactPath — pure scan over a synthetic branch (no I/O)

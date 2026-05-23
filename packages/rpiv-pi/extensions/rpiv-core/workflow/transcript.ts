@@ -1,8 +1,9 @@
 /**
  * Branch-entry shape + predicates. `sessionManager.getBranch()` returns a
  * discriminated union from pi-coding-agent whose internal variants aren't
- * all re-exported; we model the slice we read here and apply the
- * `as unknown as` cast at this single boundary.
+ * all re-exported; `readBranch(ctx)` is the single boundary that applies
+ * the `as unknown as` cast — every consumer in the workflow module goes
+ * through it.
  */
 
 /** Mirror of pi-ai's StopReason union — values pi attaches to AssistantMessage. */
@@ -34,6 +35,16 @@ export type BranchEntry = {
 		stopReason?: StopReason;
 	};
 };
+
+/**
+ * Read the current branch from `ctx.sessionManager`. SDK returns a discriminated
+ * union with private discriminators; the cast is unavoidable but must live in
+ * one place — calling `getBranch()` directly elsewhere bypasses the module's
+ * type discipline.
+ */
+export function readBranch(ctx: { sessionManager: { getBranch(): unknown } }): BranchEntry[] {
+	return ctx.sessionManager.getBranch() as unknown as BranchEntry[];
+}
 
 const ARTIFACT_PATH_REGEX = /\.rpiv\/artifacts\/[\w-]+\/[\w.-]+\.md/g;
 
