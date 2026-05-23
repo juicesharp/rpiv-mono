@@ -21,14 +21,18 @@
  * on the policy at dispatch time.
  */
 
+import type { TSchema } from "typebox";
 import { BUNDLED_SKILL_NAMES } from "../paths.js";
+import { gitCommitExtractor, gitHeadSnapshot } from "./extractors/index.js";
+import type { ExtractorFn, SnapshotFn } from "./manifest.js";
+import { predicateThreshold } from "./predicates.js";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-/** Edge condition: "auto" (single successor) or "choice" (user picks). */
-export type EdgeCondition = "auto" | "choice";
+/** Edge condition: "auto" (single successor), "choice" (user picks), or "predicate" (runtime function decides). */
+export type EdgeCondition = "auto" | "choice" | "predicate";
 
 /** A single directed edge in the DAG. */
 export interface DagEdge {
@@ -38,6 +42,8 @@ export interface DagEdge {
 	to: string[];
 	/** How the target is selected. */
 	condition: EdgeCondition;
+	/** Predicate function for conditional routing. Required when condition is "predicate". */
+	predicate?: import("./predicates.js").EdgePredicate;
 }
 
 /** Preset name — widened to string to support custom config-driven presets. */
@@ -82,6 +88,19 @@ interface NodeCommon {
 	stopStrategy: StopStrategy;
 	/** Whether the node runs in a new session or continues the prior one. */
 	sessionPolicy: SessionPolicy;
+	/** Optional pre-stage snapshot function. */
+	snapshot?: SnapshotFn;
+	/** Optional post-stage extractor override. When absent, the runner uses
+	 *  the default based on stopStrategy. */
+	extractor?: ExtractorFn;
+	/** TypeBox schema for validating manifest.data post-extraction. */
+	outputSchema?: TSchema;
+	/** What to do when output validation fails. Default: "retry". */
+	onValidationFailure?: "retry" | "halt";
+	/** Max validation retries. Default: 1, hard cap: 3. */
+	maxValidationRetries?: number;
+	/** TypeBox schema for validating incoming manifest.data pre-execution. */
+	inputSchema?: TSchema;
 }
 
 /**
@@ -143,12 +162,26 @@ export interface WorkflowDag {
 export const skillNode = (
 	skill: string,
 	stopStrategy: StopStrategy,
-	overrides?: { sessionPolicy?: SessionPolicy },
+	overrides?: {
+		sessionPolicy?: SessionPolicy;
+		snapshot?: SnapshotFn;
+		extractor?: ExtractorFn;
+		outputSchema?: TSchema;
+		onValidationFailure?: "retry" | "halt";
+		maxValidationRetries?: number;
+		inputSchema?: TSchema;
+	},
 ): SkillNode => ({
 	kind: "skill",
 	skill,
 	stopStrategy,
 	sessionPolicy: overrides?.sessionPolicy ?? "fresh",
+	snapshot: overrides?.snapshot,
+	extractor: overrides?.extractor,
+	outputSchema: overrides?.outputSchema,
+	onValidationFailure: overrides?.onValidationFailure,
+	maxValidationRetries: overrides?.maxValidationRetries,
+	inputSchema: overrides?.inputSchema,
 });
 
 export const WORKFLOW_DAG: WorkflowDag = {
@@ -165,7 +198,12 @@ export const WORKFLOW_DAG: WorkflowDag = {
 
 		{ from: "research", to: ["design", "blueprint"], condition: "choice" },
 		{ from: "explore", to: ["design", "blueprint"], condition: "choice" },
-		{ from: "code-review", to: ["commit", "design"], condition: "choice" },
+		{
+			from: "code-review",
+			to: ["revise", "commit"],
+			condition: "predicate",
+			predicate: predicateThreshold("severeIssueCount", 0, "revise", "commit"),
+		},
 	],
 
 	// Linear research → build → verify chains. `commit` and `revise` are
@@ -175,7 +213,7 @@ export const WORKFLOW_DAG: WorkflowDag = {
 	presets: {
 		small: ["research", "blueprint", "implement", "validate"],
 		mid: ["discover", "research", "blueprint", "implement", "validate"],
-		large: ["discover", "research", "design", "plan", "implement", "validate", "code-review"],
+		large: ["discover", "research", "design", "plan", "implement", "validate", "code-review", "revise", "commit"],
 	},
 
 	nodes: {
@@ -194,7 +232,7 @@ export const WORKFLOW_DAG: WorkflowDag = {
 		// Action skills (side-effect is the work; no chained artifact).
 		"write-test-cases": skillNode("write-test-cases", "agent-end"),
 		implement: skillNode("implement", "agent-end"),
-		commit: skillNode("commit", "agent-end"),
+		commit: skillNode("commit", "agent-end", { snapshot: gitHeadSnapshot, extractor: gitCommitExtractor }),
 		"annotate-guidance": skillNode("annotate-guidance", "agent-end"),
 		"migrate-to-guidance": skillNode("migrate-to-guidance", "agent-end"),
 	},
@@ -207,6 +245,12 @@ export const WORKFLOW_DAG: WorkflowDag = {
 const VALID_STOP_STRATEGIES: ReadonlySet<StopStrategy> = new Set(["artifact-emit", "agent-end"] as const);
 const VALID_SESSION_POLICIES: ReadonlySet<SessionPolicy> = new Set(["fresh", "continue"] as const);
 
+/** Outcome of validating a DAG: errors block startup; warnings are advisory. */
+export interface DagValidation {
+	errors: string[];
+	warnings: string[];
+}
+
 /**
  * Validate a DAG:
  * 1. Every id in `edges` (from + to) and `presets` resolves to a `nodes` entry.
@@ -215,11 +259,13 @@ const VALID_SESSION_POLICIES: ReadonlySet<SessionPolicy> = new Set(["fresh", "co
  *    validation; the runner branches at dispatch time.
  * 3. Every skill-kind node's `skill` exists in the bundled skills directory.
  *
- * Returns an array of error strings (empty = valid). Pure function — takes the
- * DAG explicitly so tests can pass alternatives.
+ * Returns `{errors, warnings}` — errors gate startup, warnings are advisory
+ * diagnostics (e.g. predicate edges with no outputSchema on the source).
+ * Pure function — takes the DAG explicitly so tests can pass alternatives.
  */
-export function validateDag(dag: WorkflowDag): string[] {
+export function validateDag(dag: WorkflowDag): DagValidation {
 	const errors: string[] = [];
+	const warnings: string[] = [];
 
 	// 1. Every edge endpoint and preset entry must resolve to a node id.
 	for (const edge of dag.edges) {
@@ -234,6 +280,26 @@ export function validateDag(dag: WorkflowDag): string[] {
 		}
 	}
 
+	// 1b. Edge-specific validation.
+	for (const edge of dag.edges) {
+		if (edge.condition === "predicate") {
+			if (typeof edge.predicate !== "function") {
+				errors.push(
+					`Edge "${edge.from} → [${edge.to.join(", ")}]" has condition "predicate" but no predicate function`,
+				);
+			}
+			// Predicate edges reading manifest.data without a schema on the
+			// source node will fire on un-validated frontmatter. Advisory so
+			// schemas can land separately.
+			const sourceNode = dag.nodes[edge.from];
+			if (sourceNode && !sourceNode.outputSchema) {
+				warnings.push(
+					`Predicate edge "${edge.from} → [${edge.to.join(", ")}]" reads from manifest.data but source node "${edge.from}" has no outputSchema — predicate decisions will fire on un-validated frontmatter`,
+				);
+			}
+		}
+	}
+
 	// 2 + 3. Per-node shape validation.
 	for (const [id, node] of Object.entries(dag.nodes)) {
 		if (!VALID_STOP_STRATEGIES.has(node.stopStrategy)) {
@@ -241,6 +307,18 @@ export function validateDag(dag: WorkflowDag): string[] {
 		}
 		if (!VALID_SESSION_POLICIES.has(node.sessionPolicy)) {
 			errors.push(`Node "${id}" has invalid sessionPolicy: "${node.sessionPolicy}"`);
+		}
+
+		if (
+			node.onValidationFailure !== undefined &&
+			node.onValidationFailure !== "retry" &&
+			node.onValidationFailure !== "halt"
+		) {
+			errors.push(`Node "${id}" has invalid onValidationFailure: "${node.onValidationFailure}"`);
+		}
+
+		if (node.maxValidationRetries !== undefined && (node.maxValidationRetries < 1 || node.maxValidationRetries > 3)) {
+			errors.push(`Node "${id}" has maxValidationRetries: ${node.maxValidationRetries} — must be 1..3`);
 		}
 
 		switch (node.kind) {
@@ -263,7 +341,7 @@ export function validateDag(dag: WorkflowDag): string[] {
 		}
 	}
 
-	return errors;
+	return { errors, warnings };
 }
 
 // ---------------------------------------------------------------------------

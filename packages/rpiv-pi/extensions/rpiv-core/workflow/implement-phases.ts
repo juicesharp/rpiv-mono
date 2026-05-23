@@ -119,7 +119,9 @@ export async function runImplementPhases(
 		// Phases iterate over the plan's `## Phase N:` headings, not over
 		// per-phase artifacts — the chain's artifact handoff already happened
 		// at the plan stage.
-		requireArtifact: false,
+		node: undefined,
+		snapshot: undefined,
+		stageIndex: stageIdx,
 		onSuccess: (freshCtx) => runImplementPhases(freshCtx, stageIdx, p + 1, phaseCount, run, deps),
 	});
 }

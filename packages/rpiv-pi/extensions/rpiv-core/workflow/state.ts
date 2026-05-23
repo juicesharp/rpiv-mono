@@ -19,6 +19,7 @@
 import { randomBytes } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import type { Manifest } from "./manifest.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -48,6 +49,8 @@ export interface WorkflowStage {
 	status: StageStatus;
 	/** ISO 8601 timestamp. */
 	ts: string;
+	/** Structured manifest produced by the stage extractor. */
+	manifest?: Manifest;
 }
 
 /** Header entry — first line of the JSONL file. */
@@ -59,6 +62,15 @@ export interface WorkflowHeader {
 	/** User's original input text (feature description). */
 	input: string;
 	/** ISO 8601 timestamp of run start. */
+	ts: string;
+}
+
+/** Routing decision audit row written to JSONL alongside stage rows. */
+export interface RoutingAuditRow {
+	type: "routing";
+	fromStage: number;
+	fromNode: string;
+	decision: string;
 	ts: string;
 }
 
@@ -145,53 +157,77 @@ export function appendStage(cwd: string, runId: string, stage: WorkflowStage): b
 // ---------------------------------------------------------------------------
 
 /**
- * Read the last stage from the workflow state file.
- * Returns undefined if the file doesn't exist or has no stage entries.
- * The header line is skipped — only WorkflowStage entries are considered.
- * Fail-soft: errors logged via console.warn, never thrown.
+ * Read all data lines (skipping the header at line 0) from the JSONL file,
+ * filtering with the supplied type-narrowing predicate. Fail-soft: missing
+ * file → empty array, parse/IO errors logged + empty array.
  */
-export function readLastStage(cwd: string, runId: string): WorkflowStage | undefined {
-	try {
-		const filePath = resolveStateFile(cwd, runId);
-		if (!existsSync(filePath)) return undefined;
-		const content = readFileSync(filePath, "utf-8").trim();
-		if (!content) return undefined;
-		const lines = content.split("\n");
-		for (let i = lines.length - 1; i >= 1; i--) {
-			const parsed = JSON.parse(lines[i]!);
-			if (parsed && typeof parsed.stageNumber === "number") {
-				return parsed as WorkflowStage;
-			}
-		}
-		return undefined;
-	} catch (e) {
-		console.warn(`[rpiv-pi] workflow state: ${e instanceof Error ? e.message : String(e)}`);
-		return undefined;
-	}
-}
-
-/**
- * Read all stages from the workflow state file (excluding header).
- * Returns empty array if file doesn't exist or has no stages.
- * Fail-soft: errors logged via console.warn, never thrown.
- */
-export function readAllStages(cwd: string, runId: string): WorkflowStage[] {
+function readJsonlRows<T>(cwd: string, runId: string, match: (row: unknown) => row is T): T[] {
 	try {
 		const filePath = resolveStateFile(cwd, runId);
 		if (!existsSync(filePath)) return [];
 		const content = readFileSync(filePath, "utf-8").trim();
 		if (!content) return [];
 		const lines = content.split("\n");
-		const stages: WorkflowStage[] = [];
+		const rows: T[] = [];
 		for (let i = 1; i < lines.length; i++) {
 			const parsed = JSON.parse(lines[i]!);
-			if (parsed && typeof parsed.stageNumber === "number") {
-				stages.push(parsed as WorkflowStage);
-			}
+			if (match(parsed)) rows.push(parsed);
 		}
-		return stages;
+		return rows;
 	} catch (e) {
 		console.warn(`[rpiv-pi] workflow state: ${e instanceof Error ? e.message : String(e)}`);
 		return [];
 	}
+}
+
+const isWorkflowStage = (row: unknown): row is WorkflowStage =>
+	!!row && typeof (row as { stageNumber?: unknown }).stageNumber === "number";
+
+/**
+ * Read the last stage from the workflow state file.
+ * Returns undefined if the file doesn't exist or has no stage entries.
+ * The header line is skipped — only WorkflowStage entries are considered.
+ */
+export function readLastStage(cwd: string, runId: string): WorkflowStage | undefined {
+	const stages = readJsonlRows(cwd, runId, isWorkflowStage);
+	return stages.length ? stages[stages.length - 1] : undefined;
+}
+
+/**
+ * Read all stages from the workflow state file (excluding header).
+ * Returns empty array if file doesn't exist or has no stages.
+ */
+export function readAllStages(cwd: string, runId: string): WorkflowStage[] {
+	return readJsonlRows(cwd, runId, isWorkflowStage);
+}
+
+// ---------------------------------------------------------------------------
+// Routing audit rows
+// ---------------------------------------------------------------------------
+
+/**
+ * Append a routing decision to the workflow JSONL.
+ * Uses same file but with a non-stageNumber shape so readAllStages ignores it
+ * (readAllStages filters on `typeof parsed.stageNumber === "number"` — routing
+ * rows lack stageNumber and pass through harmlessly).
+ */
+export function appendRoutingDecision(cwd: string, runId: string, row: RoutingAuditRow): void {
+	try {
+		const dir = resolveWorkflowsDir(cwd);
+		mkdirSync(dir, { recursive: true });
+		const filePath = resolveStateFile(cwd, runId);
+		appendFileSync(filePath, `${JSON.stringify(row)}\n`, "utf-8");
+	} catch (e) {
+		console.warn(`[rpiv-pi] workflow state: ${e instanceof Error ? e.message : String(e)}`);
+	}
+}
+
+const isRoutingRow = (row: unknown): row is RoutingAuditRow => !!row && (row as { type?: unknown }).type === "routing";
+
+/**
+ * Read all routing decision rows from the workflow JSONL.
+ * Filters for rows with type: "routing". Fail-soft per the file's conventions.
+ */
+export function readRoutingDecisions(cwd: string, runId: string): RoutingAuditRow[] {
+	return readJsonlRows(cwd, runId, isRoutingRow);
 }

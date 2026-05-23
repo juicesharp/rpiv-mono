@@ -191,7 +191,7 @@ export function loadConfig(cwd: string): LoadedConfigWithSource {
 		nodes: WORKFLOW_DAG.nodes,
 	};
 	try {
-		const errors = validateDag(configDag);
+		const { errors } = validateDag(configDag);
 		if (errors.length > 0) {
 			return builtInFallback(errors.map((e) => `Config validation: ${e}`));
 		}

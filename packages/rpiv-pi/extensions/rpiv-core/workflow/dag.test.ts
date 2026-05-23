@@ -11,10 +11,11 @@ import {
 } from "./dag.js";
 
 describe("DAG types and constants", () => {
-	it("WORKFLOW_DAG has 12 edges (9 auto + 3 choice)", () => {
+	it("WORKFLOW_DAG has 12 edges (9 auto + 2 choice + 1 predicate)", () => {
 		expect(WORKFLOW_DAG.edges).toHaveLength(12);
 		expect(WORKFLOW_DAG.edges.filter((e) => e.condition === "auto")).toHaveLength(9);
-		expect(WORKFLOW_DAG.edges.filter((e) => e.condition === "choice")).toHaveLength(3);
+		expect(WORKFLOW_DAG.edges.filter((e) => e.condition === "choice")).toHaveLength(2);
+		expect(WORKFLOW_DAG.edges.filter((e) => e.condition === "predicate")).toHaveLength(1);
 	});
 
 	it("WORKFLOW_DAG has 3 presets", () => {
@@ -22,8 +23,8 @@ describe("DAG types and constants", () => {
 		expect(presetNames).toEqual(["small", "mid", "large"]);
 	});
 
-	it("large preset has 7 nodes (longest chain — includes code-review)", () => {
-		expect(WORKFLOW_DAG.presets.large).toHaveLength(7);
+	it("large preset has 9 nodes (includes code-review, revise, commit)", () => {
+		expect(WORKFLOW_DAG.presets.large).toHaveLength(9);
 	});
 
 	it("every preset includes validate as its final verification stage", () => {
@@ -99,6 +100,8 @@ describe("resolvePreset", () => {
 			"implement",
 			"validate",
 			"code-review",
+			"revise",
+			"commit",
 		]);
 	});
 
@@ -116,8 +119,12 @@ describe("validateDag", () => {
 		...overrides,
 	});
 
-	it("returns no errors for the default WORKFLOW_DAG", () => {
-		expect(validateDag(WORKFLOW_DAG)).toEqual([]);
+	it("returns no errors for the default WORKFLOW_DAG (warnings are allowed)", () => {
+		const { errors, warnings } = validateDag(WORKFLOW_DAG);
+		// Predicate edge on code-review warns about missing outputSchema.
+		expect(errors).toEqual([]);
+		expect(warnings.length).toBeGreaterThan(0);
+		expect(warnings[0]).toContain("predicate");
 	});
 
 	it("reports edge source that's not in nodes map", () => {
@@ -126,7 +133,7 @@ describe("validateDag", () => {
 			presets: {},
 			nodes: { commit: nodeOf("commit") },
 		};
-		const errors = validateDag(badDag);
+		const { errors } = validateDag(badDag);
 		expect(errors).toEqual([expect.stringContaining(`Edge source "nonexistent" has no entry in nodes`)]);
 	});
 
@@ -136,7 +143,7 @@ describe("validateDag", () => {
 			presets: {},
 			nodes: { discover: nodeOf("discover") },
 		};
-		const errors = validateDag(badDag);
+		const { errors } = validateDag(badDag);
 		expect(errors).toEqual([
 			expect.stringContaining(`Edge target "nonexistent" (from "discover") has no entry in nodes`),
 		]);
@@ -148,7 +155,7 @@ describe("validateDag", () => {
 			presets: { small: ["nonexistent", "implement"] },
 			nodes: { implement: nodeOf("implement") },
 		};
-		const errors = validateDag(badDag);
+		const { errors } = validateDag(badDag);
 		expect(errors).toEqual([
 			expect.stringContaining(`Preset "small" references "nonexistent" which has no entry in nodes`),
 		]);
@@ -160,7 +167,7 @@ describe("validateDag", () => {
 			presets: { tiny: ["custom"] },
 			nodes: { custom: nodeOf("not-a-real-skill") },
 		};
-		const errors = validateDag(badDag);
+		const { errors } = validateDag(badDag);
 		expect(errors).toEqual([
 			expect.stringContaining(`Node "custom" (kind=skill) references unknown bundled skill: "not-a-real-skill"`),
 		]);
@@ -172,7 +179,7 @@ describe("validateDag", () => {
 			presets: { tiny: ["research"] },
 			nodes: { research: nodeOf("research", { sessionPolicy: "continue" }) },
 		};
-		const errors = validateDag(dag);
+		const { errors } = validateDag(dag);
 		expect(errors).toEqual([]);
 	});
 
@@ -186,6 +193,17 @@ describe("validateDag", () => {
 		expect(cont.stopStrategy).toBe("artifact-emit");
 	});
 
+	it("skillNode() propagates inputSchema from overrides", () => {
+		const schema = { type: "object" as const, properties: { topic: { type: "string" as const } } };
+		const node = skillNode("design", "artifact-emit", { inputSchema: schema });
+		expect(node.inputSchema).toBe(schema);
+	});
+
+	it("skillNode() defaults inputSchema to undefined", () => {
+		const node = skillNode("research", "artifact-emit");
+		expect(node.inputSchema).toBeUndefined();
+	});
+
 	it("rejects invalid stopStrategy value", () => {
 		const badDag: WorkflowDag = {
 			edges: [],
@@ -194,7 +212,7 @@ describe("validateDag", () => {
 				research: { ...nodeOf("research"), stopStrategy: "garbage" as never },
 			},
 		};
-		const errors = validateDag(badDag);
+		const { errors } = validateDag(badDag);
 		expect(errors).toEqual([expect.stringContaining(`Node "research" has invalid stopStrategy: "garbage"`)]);
 	});
 
@@ -204,7 +222,71 @@ describe("validateDag", () => {
 			presets: {},
 			nodes: {},
 		};
-		expect(validateDag(badDag).length).toBeGreaterThanOrEqual(2);
+		expect(validateDag(badDag).errors.length).toBeGreaterThanOrEqual(2);
+	});
+
+	it("rejects predicate edge without predicate function", () => {
+		const dag: WorkflowDag = {
+			edges: [{ from: "research", to: ["design", "blueprint"], condition: "predicate" }],
+			presets: { tiny: ["research"] },
+			nodes: { research: nodeOf("research"), design: nodeOf("design"), blueprint: nodeOf("blueprint") },
+		};
+		const { errors, warnings } = validateDag(dag);
+		expect(errors).toEqual([expect.stringContaining('has condition "predicate" but no predicate function')]);
+		expect(warnings.length).toBeGreaterThan(0);
+	});
+
+	it("warns on predicate edge whose source node lacks outputSchema", () => {
+		const predicate = () => "design";
+		const dag: WorkflowDag = {
+			edges: [{ from: "research", to: ["design", "blueprint"], condition: "predicate", predicate }],
+			presets: { tiny: ["research"] },
+			nodes: { research: nodeOf("research"), design: nodeOf("design"), blueprint: nodeOf("blueprint") },
+		};
+		const { warnings } = validateDag(dag);
+		expect(warnings).toEqual([expect.stringContaining("no outputSchema")]);
+	});
+
+	it("does NOT warn on predicate edge whose source node has outputSchema", () => {
+		const predicate = () => "design";
+		const schema = { type: "object" as const, properties: {} };
+		const dag: WorkflowDag = {
+			edges: [{ from: "research", to: ["design", "blueprint"], condition: "predicate", predicate }],
+			presets: { tiny: ["research"] },
+			nodes: {
+				research: nodeOf("research", { outputSchema: schema }),
+				design: nodeOf("design"),
+				blueprint: nodeOf("blueprint"),
+			},
+		};
+		const { warnings } = validateDag(dag);
+		expect(warnings).toEqual([]);
+	});
+
+	it("rejects invalid onValidationFailure values", () => {
+		const dag: WorkflowDag = {
+			edges: [],
+			presets: { tiny: ["research"] },
+			nodes: { research: { ...nodeOf("research"), onValidationFailure: "bad" as never } },
+		};
+		const { errors } = validateDag(dag);
+		expect(errors).toEqual([expect.stringContaining('invalid onValidationFailure: "bad"')]);
+	});
+
+	it("rejects maxValidationRetries outside 1..3", () => {
+		const dag0: WorkflowDag = {
+			edges: [],
+			presets: { tiny: ["research"] },
+			nodes: { research: { ...nodeOf("research"), maxValidationRetries: 0 } },
+		};
+		expect(validateDag(dag0).errors).toEqual([expect.stringContaining("maxValidationRetries: 0 — must be 1..3")]);
+
+		const dag5: WorkflowDag = {
+			edges: [],
+			presets: { tiny: ["research"] },
+			nodes: { research: { ...nodeOf("research"), maxValidationRetries: 5 } },
+		};
+		expect(validateDag(dag5).errors).toEqual([expect.stringContaining("maxValidationRetries: 5 — must be 1..3")]);
 	});
 });
 

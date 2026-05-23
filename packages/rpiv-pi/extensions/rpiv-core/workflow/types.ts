@@ -8,7 +8,8 @@
  */
 
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import type { SessionPolicy, WorkflowDag } from "./dag.js";
+import type { DagNode, SessionPolicy, WorkflowDag } from "./dag.js";
+import type { Manifest } from "./manifest.js";
 
 /**
  * A ctx that can spawn the next session. Either the original handler ctx or
@@ -23,8 +24,12 @@ export type ChainCtx = ExtensionCommandContext;
 export interface RunState {
 	/** Frozen — the user's `/rpiv` argument. */
 	originalInput: string;
-	/** Last `.rpiv/artifacts/...` path emitted by any stage so far. */
+	/** Last `.rpiv/artifacts/...` path emitted by any stage so far.
+	 * @deprecated Mirror of `manifest.artifact_path` retained for legacy callers
+	 *   (prompt construction, countPhases). Prefer `state.manifest?.artifact_path`. */
 	artifactPath: string | undefined;
+	/** Last successfully validated manifest. Mirrors the JSONL manifest field. */
+	manifest: Manifest | undefined;
 	/** Successful-stage counter (success only — not failed/skipped). */
 	stagesCompleted: number;
 	/** Last successfully-written JSONL stage number (for contiguous numbering). */
@@ -68,18 +73,6 @@ export interface ExecuteSessionParams {
 	errorMessage: string;
 	/** Whether to emit `MSG_STAGE_COMPLETE(skill)` on success (stages yes; phases hold until all phases done). */
 	emitCompleteOnSuccess: boolean;
-	/**
-	 * Whether a stage must produce a `.rpiv/artifacts/...` path to count as
-	 * completed. Derived from `node.stopStrategy === "artifact-emit"` for
-	 * regular stages; always false for implement phases — those iterate
-	 * over the plan's `## Phase N:` headings, not over per-phase artifacts.
-	 *
-	 * The guard catches a silent-failure path where the agent stops with a
-	 * plain-text clarifying question (stopReason "stop", no tool call) — Pi's
-	 * loop sees that as a clean end, but no artifact means the skill didn't
-	 * finish its protocol and the next stage would receive stale input.
-	 */
-	requireArtifact: boolean;
 	/** Optional hook invoked inside withSession after the failed row is recorded — used for the partial-artifacts recap. */
 	onFailure?: (freshCtx: ChainCtx) => void;
 	/** Invoked inside withSession after success bookkeeping. `freshCtx` is the valid ctx for further chaining. */
@@ -90,4 +83,10 @@ export interface ExecuteSessionParams {
 	pi?: ExtensionAPI;
 	/** Branch offset — entries before this index belong to prior stages. Only set for "continue" stages. */
 	branchOffset?: number;
+	/** Pre-stage snapshot result (if node declared a snapshot). Passed to the extractor. */
+	snapshot?: unknown;
+	/** DAG node for this stage — used by manifest extractor resolution. */
+	node?: DagNode;
+	/** 0-based stage index — propagated into ExtractorCtx.stageIndex. */
+	stageIndex: number;
 }

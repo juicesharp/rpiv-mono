@@ -2,10 +2,13 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMockPi, createMockSessionChain, mockAssistantMessage } from "@juicesharp/rpiv-test-utils";
+import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it, type vi } from "vitest";
 import { clearChildSession, isChildSession } from "./child-session.js";
 import type { DagNode, StopStrategy, WorkflowDag } from "./dag.js";
+import type { PredicateContext } from "./predicates.js";
 import { countPhases, extractArtifactPath, runWorkflow } from "./runner.js";
+import { readRoutingDecisions } from "./state.js";
 import { hasAssistantMessage, lastAssistantStopReason } from "./transcript.js";
 
 // ---------------------------------------------------------------------------
@@ -192,6 +195,14 @@ describe("runWorkflow", () => {
 		};
 	};
 
+	/** Write an artifact file at the given relative path under cwd. */
+	const writeArtifact = (cwd: string, relPath: string, content = "") => {
+		const parts = relPath.split("/");
+		const dir = join(cwd, ...parts.slice(0, -1));
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(join(cwd, relPath), content);
+	};
+
 	it("returns an error result for an unknown preset and writes nothing to disk", async () => {
 		const chain = createMockSessionChain({ cwd: tmpDir, steps: [] });
 		const result = await runWorkflow(chain.ctx, {
@@ -225,6 +236,7 @@ describe("runWorkflow", () => {
 
 	describe("child-session marker lifecycle", () => {
 		it("clears the marker after a successful run", async () => {
+			writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md");
 			const chain = createMockSessionChain({
 				cwd: tmpDir,
 				steps: [{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/research/r.md")] }],
@@ -286,6 +298,7 @@ describe("runWorkflow", () => {
 	});
 
 	it("completes a single-step workflow on success and records header + completed step", async () => {
+		writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md");
 		const chain = createMockSessionChain({
 			cwd: tmpDir,
 			steps: [{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/research/r.md")] }],
@@ -323,6 +336,8 @@ describe("runWorkflow", () => {
 		// on the freshCtx handed to the previous withSession callback. If the
 		// runner ever regressed to capturing the outer ctx, this assertion
 		// would fire (outer.newSession.calls would be 2).
+		writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md");
+		writeArtifact(tmpDir, ".rpiv/artifacts/designs/d.md");
 		const chain = createMockSessionChain({
 			cwd: tmpDir,
 			steps: [
@@ -510,6 +525,7 @@ describe("runWorkflow", () => {
 	});
 
 	it("abort mid-chain surfaces partial artifacts produced by earlier stages", async () => {
+		writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md");
 		// User ESCs at stage 2 of a 3-stage chain. Stage 1 already wrote an
 		// artifact — the user should see it listed instead of having to grep
 		// the JSONL. This mirrors the error-path symmetry: an error at stage 2
@@ -601,10 +617,11 @@ describe("runWorkflow", () => {
 		expect(stages[0]).toMatchObject({ skill: "research", status: "failed" });
 		expect(stages[0]?.artifact).toBeUndefined();
 
-		// User-visible error notification surfaces the no-artifact verdict
-		// (distinct from the generic "stage failed" wording).
-		const noArtifactNotice = chain.notifications.find((n) => /produced no artifact/i.test(n.msg));
-		expect(noArtifactNotice?.level).toBe("error");
+		// User-visible error notification surfaces the stage-failed verdict.
+		// The extractor's fatal message flows through recordTerminalFailure's
+		// notifyMsg (MSG_STAGE_FAILED), not the pre-Phase-3 MSG_STAGE_NO_ARTIFACT.
+		const failureNotice = chain.notifications.find((n) => /failed.*stopping workflow/i.test(n.msg));
+		expect(failureNotice?.level).toBe("error");
 	});
 
 	it("implement phases still complete without per-phase artifacts (artifact handoff already happened at plan stage)", async () => {
@@ -657,6 +674,8 @@ describe("runWorkflow", () => {
 		});
 
 		it("agent-end node mid-chain inherits the prior stage's artifact for downstream stages", async () => {
+			writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md");
+			writeArtifact(tmpDir, ".rpiv/artifacts/designs/d.md");
 			// research (artifact-emit) → commit (agent-end, no artifact) → design (artifact-emit).
 			// Design must see research's artifact path as its input — commit
 			// doesn't reset state.artifactPath when it produces nothing.
@@ -708,6 +727,7 @@ describe("runWorkflow", () => {
 
 	describe("sessionPolicy: continue", () => {
 		it("completes a single continue stage via pi.sendUserMessage", async () => {
+			writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md");
 			const chain = createMockSessionChain({
 				cwd: tmpDir,
 				steps: [],
@@ -740,6 +760,8 @@ describe("runWorkflow", () => {
 		});
 
 		it("chains fresh → continue with correct branch offset", async () => {
+			writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md");
+			writeArtifact(tmpDir, ".rpiv/artifacts/designs/d.md");
 			const priorArtifact = ".rpiv/artifacts/research/r.md";
 			const designArtifact = ".rpiv/artifacts/designs/d.md";
 
@@ -911,6 +933,7 @@ describe("runWorkflow", () => {
 		});
 
 		it("branch offset prevents false positive from prior stage artifact", async () => {
+			writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md");
 			// Fresh stage produces artifact, continue stage fails to produce its own.
 			// Without offset, extractArtifactPath would return the prior artifact.
 			const priorArtifact = ".rpiv/artifacts/research/r.md";
@@ -946,6 +969,429 @@ describe("runWorkflow", () => {
 			const { stages } = readState(tmpDir);
 			expect(stages[0]).toMatchObject({ skill: "research", status: "completed" });
 			expect(stages[1]).toMatchObject({ skill: "design", status: "failed" });
+		});
+	});
+
+	describe("input validation (Phase 5)", () => {
+		it("halts chain when prior manifest fails consumer's inputSchema", async () => {
+			writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md");
+			// Stage 1 (research) produces an artifact. Stage 2 (design) has an
+			// inputSchema that rejects the manifest data from stage 1.
+			const chain = createMockSessionChain({
+				cwd: tmpDir,
+				steps: [
+					{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/research/r.md")] },
+					// Stage 2 is never reached — input validation halts before executeSession
+				],
+			});
+
+			const schema = Type.Object({ requiredField: Type.String() });
+			const result = await runWorkflow(chain.ctx, {
+				preset: "two",
+				input: "x",
+				dag: dagWith({ two: ["research", "design"] }, { design: { inputSchema: schema } }),
+			});
+
+			expect(result.success).toBe(false);
+			expect(result.stagesCompleted).toBe(1); // research completed
+			expect(result.error).toMatch(/input validation failed/i);
+			expect(result.error).toMatch(/research/); // names the producer
+			expect(result.error).toMatch(/design/); // names the consumer
+			// Stage 2 never reached executeSession — no step consumed for it.
+			// Only stage 1's step was queued and consumed.
+
+			const { stages } = readState(tmpDir);
+			expect(stages[0]).toMatchObject({ skill: "research", status: "completed" });
+			expect(stages[1]).toMatchObject({ skill: "design", status: "failed" });
+		});
+
+		it("error notification names both producing and consuming skill", async () => {
+			writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md");
+			const chain = createMockSessionChain({
+				cwd: tmpDir,
+				steps: [{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/research/r.md")] }],
+			});
+
+			const schema = Type.Object({ version: Type.Integer() });
+			await runWorkflow(chain.ctx, {
+				preset: "two",
+				input: "x",
+				dag: dagWith({ two: ["research", "design"] }, { design: { inputSchema: schema } }),
+			});
+
+			const inputFailNotice = chain.notifications.find((n) => /input validation failed/i.test(n.msg));
+			expect(inputFailNotice).toBeDefined();
+			expect(inputFailNotice?.level).toBe("error");
+			expect(inputFailNotice?.msg).toMatch(/design/); // consumer
+			expect(inputFailNotice?.msg).toMatch(/research/); // producer
+		});
+
+		it("stages without inputSchema are unaffected", async () => {
+			writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md");
+			writeArtifact(tmpDir, ".rpiv/artifacts/designs/d.md");
+			const chain = createMockSessionChain({
+				cwd: tmpDir,
+				steps: [
+					{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/research/r.md")] },
+					{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/designs/d.md")] },
+				],
+			});
+
+			// Neither node has inputSchema — both should pass through.
+			const result = await runWorkflow(chain.ctx, {
+				preset: "two",
+				input: "x",
+				dag: dagWith({ two: ["research", "design"] }),
+			});
+
+			expect(result.success).toBe(true);
+			expect(result.stagesCompleted).toBe(2);
+		});
+
+		it("passes when manifest data satisfies the consumer's inputSchema", async () => {
+			writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md", "---\nrequiredField: hello\n---\n\nContent");
+			writeArtifact(tmpDir, ".rpiv/artifacts/designs/d.md");
+			const chain = createMockSessionChain({
+				cwd: tmpDir,
+				steps: [
+					{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/research/r.md")] },
+					{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/designs/d.md")] },
+				],
+			});
+
+			const schema = Type.Object({ requiredField: Type.String() });
+			const result = await runWorkflow(chain.ctx, {
+				preset: "two",
+				input: "x",
+				dag: dagWith({ two: ["research", "design"] }, { design: { inputSchema: schema } }),
+			});
+
+			expect(result.success).toBe(true);
+			expect(result.stagesCompleted).toBe(2);
+		});
+
+		it("halt path does not require ExecuteSessionParams (inline halt confirmed)", async () => {
+			writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md");
+			const chain = createMockSessionChain({
+				cwd: tmpDir,
+				steps: [{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/research/r.md")] }],
+			});
+
+			const schema = Type.Object({ mustExist: Type.String() });
+			await runWorkflow(chain.ctx, {
+				preset: "two",
+				input: "x",
+				dag: dagWith({ two: ["research", "design"] }, { design: { inputSchema: schema } }),
+			});
+
+			// The failed row is still recorded in JSONL (inline halt writes it)
+			const { stages } = readState(tmpDir);
+			expect(stages).toHaveLength(2);
+			expect(stages[0]).toMatchObject({ skill: "research", status: "completed" });
+			expect(stages[1]).toMatchObject({ skill: "design", status: "failed" });
+
+			// Status line cleared
+			expect(chain.statusUpdates.at(-1)).toEqual({ key: "rpiv-workflow", value: undefined });
+		});
+	});
+
+	describe("predicate routing (Phase 6)", () => {
+		it("routes to commit when severeIssueCount is 0 (no severe issues)", async () => {
+			writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md");
+			writeArtifact(tmpDir, ".rpiv/artifacts/code-review/cr.md", "---\nsevereIssueCount: 0\n---\n\nContent");
+			const chain = createMockSessionChain({
+				cwd: tmpDir,
+				steps: [
+					{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/research/r.md")] },
+					{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/code-review/cr.md")] },
+					// commit (agent-end)
+					{ branch: [mockAssistantMessage("Committed.")] },
+				],
+			});
+
+			const predicate = (ctx: PredicateContext) => {
+				const count = Number((ctx.manifest?.data as Record<string, unknown>)?.severeIssueCount ?? 0);
+				return count > 0 ? "revise" : "commit";
+			};
+
+			const dag: WorkflowDag = {
+				edges: [{ from: "code-review", to: ["revise", "commit"], condition: "predicate", predicate }],
+				presets: { flow: ["research", "code-review", "revise", "commit"] },
+				nodes: {
+					research: { kind: "skill", skill: "research", stopStrategy: "artifact-emit", sessionPolicy: "fresh" },
+					"code-review": {
+						kind: "skill",
+						skill: "code-review",
+						stopStrategy: "artifact-emit",
+						sessionPolicy: "fresh",
+					},
+					revise: { kind: "skill", skill: "revise", stopStrategy: "artifact-emit", sessionPolicy: "fresh" },
+					commit: { kind: "skill", skill: "commit", stopStrategy: "agent-end", sessionPolicy: "fresh" },
+				},
+			};
+
+			const result = await runWorkflow(chain.ctx, { preset: "flow", input: "x", dag });
+
+			expect(result.success).toBe(true);
+			expect(result.stagesCompleted).toBe(3); // research + code-review + commit (revise skipped)
+			expect(chain.sentMessages).toEqual([
+				"/skill:research x",
+				"/skill:code-review .rpiv/artifacts/research/r.md",
+				"/skill:commit .rpiv/artifacts/code-review/cr.md",
+			]);
+		});
+
+		it("routes to revise when severeIssueCount > 0", async () => {
+			writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md");
+			writeArtifact(tmpDir, ".rpiv/artifacts/code-review/cr.md", "---\nsevereIssueCount: 3\n---\n\nContent");
+			writeArtifact(tmpDir, ".rpiv/artifacts/revise/rev.md");
+			const chain = createMockSessionChain({
+				cwd: tmpDir,
+				steps: [
+					{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/research/r.md")] },
+					{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/code-review/cr.md")] },
+					// revise (linear next after code-review)
+					{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/revise/rev.md")] },
+					// commit — after revise, the runner continues linear to commit
+					{ branch: [mockAssistantMessage("Committed.")] },
+				],
+			});
+
+			const predicate = (ctx: PredicateContext) => {
+				const count = Number((ctx.manifest?.data as Record<string, unknown>)?.severeIssueCount ?? 0);
+				return count > 0 ? "revise" : "commit";
+			};
+
+			const dag: WorkflowDag = {
+				edges: [{ from: "code-review", to: ["revise", "commit"], condition: "predicate", predicate }],
+				presets: { flow: ["research", "code-review", "revise", "commit"] },
+				nodes: {
+					research: { kind: "skill", skill: "research", stopStrategy: "artifact-emit", sessionPolicy: "fresh" },
+					"code-review": {
+						kind: "skill",
+						skill: "code-review",
+						stopStrategy: "artifact-emit",
+						sessionPolicy: "fresh",
+					},
+					revise: { kind: "skill", skill: "revise", stopStrategy: "artifact-emit", sessionPolicy: "fresh" },
+					commit: { kind: "skill", skill: "commit", stopStrategy: "agent-end", sessionPolicy: "fresh" },
+				},
+			};
+
+			const result = await runWorkflow(chain.ctx, { preset: "flow", input: "x", dag });
+
+			expect(result.success).toBe(true);
+			expect(result.stagesCompleted).toBe(4); // research + code-review + revise + commit
+			expect(chain.sentMessages).toEqual([
+				"/skill:research x",
+				"/skill:code-review .rpiv/artifacts/research/r.md",
+				"/skill:revise .rpiv/artifacts/code-review/cr.md",
+				"/skill:commit .rpiv/artifacts/revise/rev.md",
+			]);
+		});
+
+		it("routing decision appears in JSONL as type: routing row", async () => {
+			writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md");
+			writeArtifact(tmpDir, ".rpiv/artifacts/code-review/cr.md", "---\nsevereIssueCount: 0\n---\n\nContent");
+			const chain = createMockSessionChain({
+				cwd: tmpDir,
+				steps: [
+					{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/research/r.md")] },
+					{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/code-review/cr.md")] },
+					// Predicate routes to commit (skipping revise) — non-linear routing
+					{ branch: [mockAssistantMessage("Committed.")] },
+				],
+			});
+
+			const predicate = (ctx: PredicateContext) => {
+				const count = Number((ctx.manifest?.data as Record<string, unknown>)?.severeIssueCount ?? 0);
+				return count > 0 ? "revise" : "commit";
+			};
+
+			const dag: WorkflowDag = {
+				edges: [{ from: "code-review", to: ["revise", "commit"], condition: "predicate", predicate }],
+				presets: { flow: ["research", "code-review", "revise", "commit"] },
+				nodes: {
+					research: { kind: "skill", skill: "research", stopStrategy: "artifact-emit", sessionPolicy: "fresh" },
+					"code-review": {
+						kind: "skill",
+						skill: "code-review",
+						stopStrategy: "artifact-emit",
+						sessionPolicy: "fresh",
+					},
+					revise: { kind: "skill", skill: "revise", stopStrategy: "artifact-emit", sessionPolicy: "fresh" },
+					commit: { kind: "skill", skill: "commit", stopStrategy: "agent-end", sessionPolicy: "fresh" },
+				},
+			};
+
+			await runWorkflow(chain.ctx, { preset: "flow", input: "x", dag });
+
+			const dir = join(tmpDir, ".rpiv", "workflows");
+			const files = readdirSync(dir);
+			const content = readFileSync(join(dir, files[0]!), "utf-8").trim();
+			const lines = content.split("\n");
+
+			// Find routing rows
+			const routingRows = lines
+				.slice(1)
+				.map((l) => JSON.parse(l))
+				.filter((r) => r.type === "routing");
+
+			expect(routingRows).toHaveLength(1);
+			expect(routingRows[0]).toMatchObject({
+				type: "routing",
+				fromStage: 2, // code-review is stage 2
+				fromNode: "code-review",
+				decision: "commit",
+			});
+		});
+
+		it("routing row emitted when predicate skips a node (non-linear advance)", async () => {
+			writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md");
+			writeArtifact(tmpDir, ".rpiv/artifacts/code-review/cr.md", "---\nsevereIssueCount: 0\n---\n\nContent");
+			const chain = createMockSessionChain({
+				cwd: tmpDir,
+				steps: [
+					{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/research/r.md")] },
+					{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/code-review/cr.md")] },
+					{ branch: [mockAssistantMessage("Committed.")] },
+				],
+			});
+
+			const predicate = (ctx: PredicateContext) => {
+				const count = Number((ctx.manifest?.data as Record<string, unknown>)?.severeIssueCount ?? 0);
+				return count > 0 ? "revise" : "commit";
+			};
+
+			const dag: WorkflowDag = {
+				edges: [{ from: "code-review", to: ["revise", "commit"], condition: "predicate", predicate }],
+				// Note: linear next after code-review (idx 1) is "revise" (idx 2)
+				// But predicate routes to "commit" (idx 3) — that IS off-linear
+				presets: { flow: ["research", "code-review", "revise", "commit"] },
+				nodes: {
+					research: { kind: "skill", skill: "research", stopStrategy: "artifact-emit", sessionPolicy: "fresh" },
+					"code-review": {
+						kind: "skill",
+						skill: "code-review",
+						stopStrategy: "artifact-emit",
+						sessionPolicy: "fresh",
+					},
+					revise: { kind: "skill", skill: "revise", stopStrategy: "artifact-emit", sessionPolicy: "fresh" },
+					commit: { kind: "skill", skill: "commit", stopStrategy: "agent-end", sessionPolicy: "fresh" },
+				},
+			};
+
+			await runWorkflow(chain.ctx, { preset: "flow", input: "x", dag });
+
+			const dir = join(tmpDir, ".rpiv", "workflows");
+			const files = readdirSync(dir);
+			const content = readFileSync(join(dir, files[0]!), "utf-8").trim();
+			const lines = content.split("\n");
+
+			const routingRows = lines
+				.slice(1)
+				.map((l) => JSON.parse(l))
+				.filter((r) => r.type === "routing");
+
+			// Predicate routes to commit (idx 3), linear would be revise (idx 2)
+			// So a routing row IS emitted
+			expect(routingRows).toHaveLength(1);
+			expect(routingRows[0]?.decision).toBe("commit");
+		});
+
+		it("readAllStages ignores routing rows (filters on stageNumber)", async () => {
+			writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md");
+			writeArtifact(tmpDir, ".rpiv/artifacts/code-review/cr.md", "---\nsevereIssueCount: 0\n---\n\nContent");
+			const chain = createMockSessionChain({
+				cwd: tmpDir,
+				steps: [
+					{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/research/r.md")] },
+					{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/code-review/cr.md")] },
+					{ branch: [mockAssistantMessage("Committed.")] },
+				],
+			});
+
+			const predicate = (ctx: PredicateContext) => {
+				const count = Number((ctx.manifest?.data as Record<string, unknown>)?.severeIssueCount ?? 0);
+				return count > 0 ? "revise" : "commit";
+			};
+
+			const dag: WorkflowDag = {
+				edges: [{ from: "code-review", to: ["revise", "commit"], condition: "predicate", predicate }],
+				presets: { flow: ["research", "code-review", "revise", "commit"] },
+				nodes: {
+					research: { kind: "skill", skill: "research", stopStrategy: "artifact-emit", sessionPolicy: "fresh" },
+					"code-review": {
+						kind: "skill",
+						skill: "code-review",
+						stopStrategy: "artifact-emit",
+						sessionPolicy: "fresh",
+					},
+					revise: { kind: "skill", skill: "revise", stopStrategy: "artifact-emit", sessionPolicy: "fresh" },
+					commit: { kind: "skill", skill: "commit", stopStrategy: "agent-end", sessionPolicy: "fresh" },
+				},
+			};
+
+			const result = await runWorkflow(chain.ctx, { preset: "flow", input: "x", dag });
+			expect(result.success).toBe(true);
+
+			const { stages } = readState(tmpDir);
+			// 4 rows total: 3 stage rows + 1 routing row
+			// The routing row is mixed in but lacks stageNumber
+			expect(stages).toHaveLength(4);
+			const stageRows = stages.filter((s) => typeof s.stageNumber === "number");
+			expect(stageRows).toHaveLength(3); // research + code-review + commit
+			expect(stageRows.every((s) => typeof s.stageNumber === "number")).toBe(true);
+		});
+
+		it("readRoutingDecisions returns only routing rows", async () => {
+			writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md");
+			writeArtifact(tmpDir, ".rpiv/artifacts/code-review/cr.md", "---\nsevereIssueCount: 0\n---\n\nContent");
+			const chain = createMockSessionChain({
+				cwd: tmpDir,
+				steps: [
+					{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/research/r.md")] },
+					{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/code-review/cr.md")] },
+					{ branch: [mockAssistantMessage("Committed.")] },
+				],
+			});
+
+			const predicate = (ctx: PredicateContext) => {
+				const count = Number((ctx.manifest?.data as Record<string, unknown>)?.severeIssueCount ?? 0);
+				return count > 0 ? "revise" : "commit";
+			};
+
+			const dag: WorkflowDag = {
+				edges: [{ from: "code-review", to: ["revise", "commit"], condition: "predicate", predicate }],
+				presets: { flow: ["research", "code-review", "revise", "commit"] },
+				nodes: {
+					research: { kind: "skill", skill: "research", stopStrategy: "artifact-emit", sessionPolicy: "fresh" },
+					"code-review": {
+						kind: "skill",
+						skill: "code-review",
+						stopStrategy: "artifact-emit",
+						sessionPolicy: "fresh",
+					},
+					revise: { kind: "skill", skill: "revise", stopStrategy: "artifact-emit", sessionPolicy: "fresh" },
+					commit: { kind: "skill", skill: "commit", stopStrategy: "agent-end", sessionPolicy: "fresh" },
+				},
+			};
+
+			const result = await runWorkflow(chain.ctx, { preset: "flow", input: "x", dag });
+			expect(result.success).toBe(true);
+
+			// Find the runId from the JSONL file
+			const dir = join(tmpDir, ".rpiv", "workflows");
+			const files = readdirSync(dir);
+			const runId = files[0]!.replace(".jsonl", "");
+
+			const routingDecisions = readRoutingDecisions(tmpDir, runId);
+			expect(routingDecisions).toHaveLength(1);
+			expect(routingDecisions[0]).toMatchObject({
+				type: "routing",
+				fromNode: "code-review",
+				decision: "commit",
+			});
 		});
 	});
 });
