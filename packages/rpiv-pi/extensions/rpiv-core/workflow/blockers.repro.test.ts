@@ -40,7 +40,7 @@ const makeState = (manifestData?: Record<string, unknown>): RunState => ({
 		? { kind: "artifact-md", data: manifestData, meta: { skill: "code-review", stageNumber: 1, ts: "", runId: "" } }
 		: undefined,
 	stagesCompleted: 0,
-	jsonlStage: 0,
+	lastStageNumber: 0,
 	success: false,
 	error: undefined,
 	backwardJumps: 0,
@@ -310,7 +310,7 @@ describe("[I3] recordStage signals success and advances stageNumber monotonicall
 		artifactPath: undefined,
 		manifest: undefined,
 		stagesCompleted: 0,
-		jsonlStage: 0,
+		lastStageNumber: 0,
 		success: false,
 		error: undefined,
 		backwardJumps: 0,
@@ -326,10 +326,10 @@ describe("[I3] recordStage signals success and advances stageNumber monotonicall
 			state,
 		);
 		expect(assigned).toBe(1);
-		expect(state.jsonlStage).toBe(1);
+		expect(state.lastStageNumber).toBe(1);
 	});
 
-	it("returns undefined on a write failure but still advances jsonlStage (no number reuse)", async () => {
+	it("returns undefined on a write failure but still advances lastStageNumber (no number reuse)", async () => {
 		const { recordStage } = await import("./audit.js");
 		const state = freshState();
 		// First write — to an impossible path so appendStage fails.
@@ -341,7 +341,7 @@ describe("[I3] recordStage signals success and advances stageNumber monotonicall
 		);
 		expect(failedAssignment).toBeUndefined();
 		// Counter advances anyway — next stage must NOT reuse #1.
-		expect(state.jsonlStage).toBe(1);
+		expect(state.lastStageNumber).toBe(1);
 
 		const nextAssignment = recordStage(
 			tmpDir,
@@ -350,7 +350,7 @@ describe("[I3] recordStage signals success and advances stageNumber monotonicall
 			state,
 		);
 		expect(nextAssignment).toBe(2);
-		expect(state.jsonlStage).toBe(2);
+		expect(state.lastStageNumber).toBe(2);
 	});
 });
 

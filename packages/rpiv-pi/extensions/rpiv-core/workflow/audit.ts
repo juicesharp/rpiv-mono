@@ -30,12 +30,12 @@ export interface AuditCtx {
 
 /**
  * Allocates the next `stageNumber`, attempts the append, and returns the
- * assigned number on success (or undefined on I/O failure). `jsonlStage`
+ * assigned number on success (or undefined on I/O failure). `lastStageNumber`
  * advances monotonically — once per call — so a transient failure doesn't
  * cause the next stage to reuse the lost row's number. Higher-level counters
  * (e.g. `stagesCompleted`) gate on the returned value being defined.
  *
- * `wrapManifest`'s `state.jsonlStage + 1` peek aligns with this allocation
+ * `wrapManifest`'s `state.lastStageNumber + 1` peek aligns with this allocation
  * because the manifest is built BEFORE recordStage is called.
  */
 export function recordStage(
@@ -44,8 +44,8 @@ export function recordStage(
 	stage: Omit<WorkflowStage, "stageNumber">,
 	state: RunState,
 ): number | undefined {
-	state.jsonlStage += 1;
-	const stageNumber = state.jsonlStage;
+	state.lastStageNumber += 1;
+	const stageNumber = state.lastStageNumber;
 	return appendStage(cwd, runId, { stageNumber, ...stage }) ? stageNumber : undefined;
 }
 

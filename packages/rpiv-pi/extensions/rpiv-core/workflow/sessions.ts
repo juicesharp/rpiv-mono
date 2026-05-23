@@ -262,7 +262,7 @@ function buildExtractorCtx(s: StageSession, branch: BranchEntry[]): ExtractorCtx
 function wrapManifest(s: StageSession, payload: ExtractorPayload): Manifest {
 	return finalizeManifest(payload, {
 		skill: s.skill,
-		stageNumber: s.state.jsonlStage + 1,
+		stageNumber: s.state.lastStageNumber + 1,
 		ts: nowIso(),
 		runId: s.runId,
 	});

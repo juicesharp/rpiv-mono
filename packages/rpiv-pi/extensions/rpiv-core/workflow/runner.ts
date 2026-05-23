@@ -106,7 +106,7 @@ export async function runWorkflow(
 		artifactPath: undefined as string | undefined,
 		manifest: undefined as Manifest | undefined,
 		stagesCompleted: 0,
-		jsonlStage: 0,
+		lastStageNumber: 0,
 		success: false,
 		error: undefined as string | undefined,
 		backwardJumps: 0,
@@ -136,17 +136,18 @@ export async function runWorkflow(
 // ---------------------------------------------------------------------------
 
 /**
+ * Builds the `/skill:<name> <args>` line sent into the session. The audit
+ * label (which used to round-trip through here) is read off `stage.skill`
+ * by the caller — single source.
+ *
  * Default arm runtime-throws instead of `assertNever(node)` because DagNode
  * is currently a union of one — TS won't narrow to never. Drop the cast +
  * use assertNever once a second variant lands.
  */
-function dispatchNode(node: DagNode, inputForStage: string): { prompt: string; skillLabel: string } {
+function buildPrompt(node: DagNode, inputForStage: string): string {
 	switch (node.kind) {
 		case "skill":
-			return {
-				prompt: `/skill:${node.skill} ${inputForStage}`,
-				skillLabel: node.skill,
-			};
+			return `/skill:${node.skill} ${inputForStage}`;
 		default: {
 			const unknownKind = (node as { kind?: unknown }).kind;
 			throw new Error(`runStage: unsupported node kind: ${String(unknownKind)}`);
@@ -168,8 +169,8 @@ async function runStage(curCtx: ChainCtx, idx: number, run: RunContext): Promise
 	if (!ensureUpstreamArtifact(curCtx, stage, idx, run)) return;
 
 	const inputForStage = idx === 0 ? run.state.originalInput : run.state.artifactPath!;
-	const { prompt, skillLabel } = dispatchNode(stage.node, inputForStage);
-	curCtx.ui.setStatus(STATUS_KEY, STATUS_STAGE(stage.stageNumber, run.totalStages, skillLabel));
+	const prompt = buildPrompt(stage.node, inputForStage);
+	curCtx.ui.setStatus(STATUS_KEY, STATUS_STAGE(stage.stageNumber, run.totalStages, stage.skill));
 
 	enforceSessionInvariants(stage, run);
 	const branchOffset = computeBranchOffset(curCtx, stage.node);
@@ -183,7 +184,7 @@ async function runStage(curCtx: ChainCtx, idx: number, run: RunContext): Promise
 		runId: run.runId,
 		state: run.state,
 		prompt,
-		skill: skillLabel,
+		skill: stage.skill,
 		node: stage.node,
 		stageIndex: idx,
 		snapshot,
@@ -201,10 +202,14 @@ async function runStage(curCtx: ChainCtx, idx: number, run: RunContext): Promise
 interface ResolvedStage {
 	node: DagNode;
 	id: string;
-	/** 1-based; for status line + audit. */
+	/** 1-based; for status line + audit row. */
 	stageNumber: number;
-	/** node.skill for skill nodes; node id otherwise. */
-	nodeLabel: string;
+	/**
+	 * Value written to the JSONL "skill" field and the status line —
+	 * `node.skill` for skill nodes, the node id for kinds that don't carry
+	 * a skill. Matches `StageSession.skill` / `PhaseSession.skill`.
+	 */
+	skill: string;
 }
 
 function finalizeWorkflow(curCtx: ChainCtx, run: RunContext): void {
@@ -220,8 +225,8 @@ function resolveStageNode(idx: number, run: RunContext): ResolvedStage {
 		// validateDag should catch this; defensive for tests that bypass validation.
 		throw new Error(`runStage: node id "${id}" referenced by preset but missing from dag.nodes`);
 	}
-	const nodeLabel = node.kind === "skill" ? node.skill : id;
-	return { node, id, stageNumber: idx + 1, nodeLabel };
+	const skill = node.kind === "skill" ? node.skill : id;
+	return { node, id, stageNumber: idx + 1, skill };
 }
 
 /**
@@ -248,11 +253,11 @@ async function tryPhaseFanout(curCtx: ChainCtx, node: DagNode, idx: number, run:
  */
 function ensureUpstreamArtifact(curCtx: ChainCtx, stage: ResolvedStage, idx: number, run: RunContext): boolean {
 	if (idx === 0 || run.state.artifactPath) return true;
-	recordStage(run.cwd, run.runId, { skill: stage.nodeLabel, status: "failed", ts: nowIso() }, run.state);
+	recordStage(run.cwd, run.runId, { skill: stage.skill, status: "failed", ts: nowIso() }, run.state);
 	curCtx.ui.setStatus(STATUS_KEY, undefined);
-	curCtx.ui.notify(MSG_MISSING_ARTIFACT(stage.nodeLabel), "error");
+	curCtx.ui.notify(MSG_MISSING_ARTIFACT(stage.skill), "error");
 	notifyPartialArtifacts(curCtx, run.cwd, run.runId);
-	run.state.error = ERR_MISSING_ARTIFACT(stage.nodeLabel, stage.stageNumber);
+	run.state.error = ERR_MISSING_ARTIFACT(stage.skill, stage.stageNumber);
 	return false;
 }
 
@@ -284,11 +289,11 @@ function runStageInputValidation(curCtx: ChainCtx, stage: ResolvedStage, run: Ru
 
 	const failureSummary = result.failures.map((f) => `${f.path}: ${f.message}`).join("; ");
 	const prevSkill = run.state.manifest.meta.skill || "unknown";
-	recordStage(run.cwd, run.runId, { skill: stage.nodeLabel, status: "failed", ts: nowIso() }, run.state);
+	recordStage(run.cwd, run.runId, { skill: stage.skill, status: "failed", ts: nowIso() }, run.state);
 	curCtx.ui.setStatus(STATUS_KEY, undefined);
-	curCtx.ui.notify(MSG_INPUT_VALIDATION_FAILED(stage.nodeLabel, prevSkill), "error");
+	curCtx.ui.notify(MSG_INPUT_VALIDATION_FAILED(stage.skill, prevSkill), "error");
 	notifyPartialArtifacts(curCtx, run.cwd, run.runId);
-	run.state.error = ERR_INPUT_VALIDATION_FAILED(stage.nodeLabel, prevSkill, failureSummary);
+	run.state.error = ERR_INPUT_VALIDATION_FAILED(stage.skill, prevSkill, failureSummary);
 	return false;
 }
 

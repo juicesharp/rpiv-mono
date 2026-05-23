@@ -22,13 +22,19 @@ export type ChainCtx = ExtensionCommandContext & {
 export interface RunState {
 	/** Frozen — the user's `/rpiv` argument. */
 	originalInput: string;
-	/** @deprecated Mirror of `manifest.artifact_path`; prefer `state.manifest?.artifact_path`. */
+	/**
+	 * Denormalised mirror of `manifest.artifact_path` — load-bearing for the
+	 * prompt builder and `countPhases`, which need the path at idx 0 before
+	 * any manifest exists. Always equal to the most recently set
+	 * `manifest.artifact_path` (or the bare path extracted from the transcript
+	 * when the manifest is absent).
+	 */
 	artifactPath: string | undefined;
 	manifest: Manifest | undefined;
 	/** Stages whose JSONL row landed on disk. */
 	stagesCompleted: number;
-	/** Monotonic stageNumber allocator — advances on every recordStage call. */
-	jsonlStage: number;
+	/** Most recently allocated stageNumber. Advances on every recordStage call. */
+	lastStageNumber: number;
 	success: boolean;
 	error: string | undefined;
 	backwardJumps: number;
