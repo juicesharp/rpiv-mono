@@ -42,7 +42,7 @@ import {
 	MSG_VALIDATION_EXHAUSTED,
 	MSG_VALIDATION_RETRY,
 } from "./messages.js";
-import { type BranchEntry, classifyStop, extractArtifactPath, type StopSignal } from "./transcript.js";
+import { assertNever, type BranchEntry, classifyStop, extractArtifactPath, type StopSignal } from "./transcript.js";
 import type { ChainCtx, PhaseSession, StageSession } from "./types.js";
 import {
 	DEFAULT_VALIDATION_RETRIES,
@@ -242,10 +242,23 @@ function readSessionOutcome(
 // EXTRACTION INTERNALS
 // ===========================================================================
 
-/** Resolve the extractor for a node — explicit > artifact-emit default > agent-end default. */
+/**
+ * Resolve the extractor for a node — explicit override wins, otherwise the
+ * default keyed off `stopStrategy`. Switch is exhaustive: a new variant on
+ * `StopStrategy` lights up `assertNever` rather than silently falling into
+ * `sideEffectExtractor` (whose contract never returns `fatal`, so the
+ * wrong default would record a phantom-success row for an unhandled mode).
+ */
 function resolveExtractor(node: DagNode): ExtractorFn {
 	if (node.extractor) return node.extractor;
-	return node.stopStrategy === "artifact-emit" ? artifactMdExtractor : sideEffectExtractor;
+	switch (node.stopStrategy) {
+		case "artifact-emit":
+			return artifactMdExtractor;
+		case "agent-end":
+			return sideEffectExtractor;
+		default:
+			return assertNever(node.stopStrategy);
+	}
 }
 
 /** Build the per-stage ExtractorCtx — slicing semantics differ for continue policies. */

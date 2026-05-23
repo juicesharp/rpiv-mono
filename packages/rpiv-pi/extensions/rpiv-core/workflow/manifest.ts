@@ -160,6 +160,21 @@ export interface ExtractorResult {
  * agent has stopped) to produce a manifest payload from the stage's observable
  * outputs. The extractor reads the transcript, the filesystem, and/or the
  * snapshot to build the payload; the runner wraps it in a `Manifest` envelope.
+ *
+ * Contract — when must `fatal` be set?
+ * - If the stage's protocol REQUIRES a structural output (e.g. an
+ *   `.rpiv/artifacts/...` path for `artifact-emit` nodes) and that output is
+ *   absent or invalid, the extractor MUST set `fatal` so the runner halts the
+ *   chain with a structured error.
+ * - If the stage's protocol treats the side effect AS the work (e.g.
+ *   `agent-end` nodes like commit/implement) the extractor returns a payload
+ *   inheriting the prior artifact_path and never sets `fatal` — success
+ *   follows from the agent stopping cleanly, classified upstream by
+ *   `classifyStop`.
+ *
+ * Missing `fatal` means the stage records as success regardless of payload
+ * shape, so this distinction is load-bearing — every concrete extractor must
+ * declare which side of the contract it sits on.
  */
 export type ExtractorFn = (ctx: ExtractorCtx) => Promise<ExtractorResult> | ExtractorResult;
 
