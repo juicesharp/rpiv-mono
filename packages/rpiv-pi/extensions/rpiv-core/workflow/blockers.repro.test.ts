@@ -1,15 +1,18 @@
 /**
- * Reproducer tests for the 4 critical blockers identified in the
- * 2026-05-23 code review of feat/rpiv-workflow-command.
+ * Reproducer tests for blockers identified in the 2026-05-23 code review
+ * of feat/rpiv-workflow-command. Each describe block asserts the
+ * EXPECTED (post-fix) behavior, so a test fails on the current source
+ * until that blocker is resolved.
  *
- * Each `describe` block asserts the EXPECTED (post-fix) behavior, so
- * the test fails on the current source. Use these as fix targets:
- * when all four describe blocks pass, the blockers are resolved.
- *
+ * Critical:
  * - I1 — `validate → commit` auto edge skips the code-review fix loop.
  * - I2 — `writeHeader` silent failure drops the first stage row.
  * - I6 — Missing `severeIssueCount` silently routes to `commit`.
  * - I7 — `StopReason ∈ {"length","toolUse"}` collapses to `"ok"`.
+ *
+ * Important:
+ * - I9 — Phase fanout labels JSONL rows by node id (wrong for aliased
+ *        implement nodes); should label by node.skill instead.
  */
 
 import { appendFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -276,6 +279,81 @@ describe("[I7] truncated reply (stopReason=length) must not record as completed"
 	});
 });
 
-// Silence the unused-import linter — `writeFileSync` kept on hand for future
-// I2/I7 variants that exercise artifact-emit paths.
-void writeFileSync;
+// ---------------------------------------------------------------------------
+// I9 — Phase fanout must label JSONL rows by node.skill, not by the node id.
+//      Aliased implement nodes (e.g. implement-after-revise) currently show
+//      up as `skill: "implement-after-revise (phase N/M)"`, while every
+//      other audit row for the same skill body is labeled `implement`.
+// ---------------------------------------------------------------------------
+
+describe("[I9] phase fanout labels by skill name, not by aliased node id", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "rpiv-i9-repro-"));
+	});
+
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	const readRows = (cwd: string): Array<Record<string, unknown>> => {
+		const dir = join(cwd, ".rpiv", "workflows");
+		const files = readdirSync(dir);
+		expect(files).toHaveLength(1);
+		const lines = readFileSync(join(dir, files[0]!), "utf-8").trim().split("\n");
+		return lines.map((l) => JSON.parse(l));
+	};
+
+	it("phase rows for an aliased implement node carry skill=implement, not the node id", async () => {
+		// Pre-write a 2-phase plan at the path research will emit.
+		const planRelPath = ".rpiv/artifacts/plans/p.md";
+		mkdirSync(join(tmpDir, ".rpiv", "artifacts", "plans"), { recursive: true });
+		writeFileSync(join(tmpDir, planRelPath), "# Plan\n\n## Phase 1: a\nbody\n## Phase 2: b\nbody\n");
+
+		const dag: WorkflowDag = {
+			edges: [],
+			presets: { tiny: ["research", "implement-after-revise"] },
+			nodes: {
+				research: { kind: "skill", skill: "research", stopStrategy: "artifact-emit", sessionPolicy: "fresh" },
+				"implement-after-revise": {
+					kind: "skill",
+					skill: "implement",
+					stopStrategy: "agent-end",
+					sessionPolicy: "fresh",
+				},
+			},
+		};
+
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [
+				{ branch: [mockAssistantMessage(`Plan ready: ${planRelPath}`)] },
+				{ branch: [mockAssistantMessage("phase 1 done")] },
+				{ branch: [mockAssistantMessage("phase 2 done")] },
+			],
+		});
+
+		const result = await runWorkflow(chain.ctx, { preset: "tiny", input: "x", dag });
+		expect(result.success).toBe(true);
+
+		// The phase prompts substitute node.skill rather than hardcoding the
+		// literal "implement". Today's code happens to be correct here because
+		// the alias's skill IS "implement"; the assertion locks in the contract
+		// so a future alias with a different skill body breaks loudly.
+		expect(chain.sentMessages).toEqual([
+			"/skill:research x",
+			`/skill:implement ${planRelPath} Phase 1`,
+			`/skill:implement ${planRelPath} Phase 2`,
+		]);
+
+		const phaseRows = readRows(tmpDir).filter(
+			(r) => typeof r.skill === "string" && (r.skill as string).includes("phase"),
+		);
+		expect(phaseRows).toHaveLength(2);
+		for (const row of phaseRows) {
+			expect(row.skill).toMatch(/^implement \(phase \d+\/\d+\)$/);
+			expect(row.skill).not.toMatch(/implement-after-revise/);
+		}
+	});
+});

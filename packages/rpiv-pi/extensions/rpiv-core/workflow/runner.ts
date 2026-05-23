@@ -222,7 +222,7 @@ async function runStage(curCtx: ChainCtx, idx: number, run: RunContext): Promise
 	if (node.kind === "skill" && node.skill === "implement" && state.artifactPath) {
 		const phaseCount = countPhases(state.artifactPath, cwd);
 		if (phaseCount > 0) {
-			await runImplementPhases(curCtx, idx, 1, phaseCount, run, {
+			await runImplementPhases(curCtx, idx, node.skill, 1, phaseCount, run, {
 				runPhaseSession,
 				runNextStage: runStage,
 			});

@@ -70,6 +70,12 @@ export function countPhases(planPath: string, cwd: string): number {
  * 1..phaseCount, spawning one session per phase via `deps.runPhaseSession`,
  * then hands back to `deps.runNextStage` once every phase has completed.
  *
+ * `skill` is the bundled skill name (e.g. `"implement"`) — the runner reads
+ * it off the node and threads it through so phase rows and prompts carry
+ * the skill body even when the source node id is an alias (e.g.
+ * `implement-after-revise`). Using the node id here would tag audit rows
+ * with a routing identity that other consumers don't share.
+ *
  * Specific to the `implement` skill — generic-stage logic lives in
  * `runStage`. Caller is responsible for verifying the node is implement-
  * shaped and that the plan artifact has matching `## Phase N:` headings
@@ -78,15 +84,13 @@ export function countPhases(planPath: string, cwd: string): number {
 export async function runImplementPhases(
 	curCtx: ChainCtx,
 	stageIdx: number,
+	skill: string,
 	p: number,
 	phaseCount: number,
 	run: RunContext,
 	deps: PhaseFanoutDeps,
 ): Promise<void> {
-	const { cwd, runId, stageIds, totalStages, state } = run;
-	// The audit label for phases is the bare skill name "implement" — that's
-	// what runStage's guard checked when fanning out.
-	const skill = stageIds[stageIdx]!;
+	const { cwd, runId, totalStages, state } = run;
 
 	if (p > phaseCount) {
 		curCtx.ui.notify(MSG_STAGE_COMPLETE(skill), "info");
@@ -100,11 +104,11 @@ export async function runImplementPhases(
 		cwd,
 		runId,
 		state,
-		prompt: `/skill:implement ${state.artifactPath} Phase ${p}`,
+		prompt: `/skill:${skill} ${state.artifactPath} Phase ${p}`,
 		skill,
 		phaseIndex: p,
 		phaseCount,
 		stageIndex: stageIdx,
-		onSuccess: (freshCtx) => runImplementPhases(freshCtx, stageIdx, p + 1, phaseCount, run, deps),
+		onSuccess: (freshCtx) => runImplementPhases(freshCtx, stageIdx, skill, p + 1, phaseCount, run, deps),
 	});
 }
