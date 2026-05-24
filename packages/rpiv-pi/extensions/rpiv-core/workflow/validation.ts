@@ -1,11 +1,11 @@
 /**
- * Manifest validation against a `StandardSchemaV1` schema, plus a walltime-cap
- * helper for the agent-roundtrip retry loop. The schema-library boundary is
- * `~standard.validate`; users may bring Zod / Valibot / ArkType / TypeBox
- * (wrapped via `standard-schema.ts:typeboxSchema`).
+ * Manifest validation against a `NodeSchema` (Standard Schema v1 under the
+ * hood). Plus a walltime-cap helper for the agent-roundtrip retry loop. The
+ * schema-library boundary is `~standard.validate`; users may bring Zod /
+ * Valibot / ArkType / TypeBox (wrapped via `standard-schema.ts:typeboxSchema`).
  */
 
-import type { StandardSchemaV1 } from "@standard-schema/spec";
+import type { NodeSchema } from "./api.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -59,7 +59,7 @@ export async function withTimeout<T>(promise: Promise<T>, ms: number, message: s
 // Validation
 // ---------------------------------------------------------------------------
 
-export function validateManifestData(schema: StandardSchemaV1, data: unknown): ValidationResult {
+export function validateManifestData(schema: NodeSchema, data: unknown): ValidationResult {
 	const result = schema["~standard"].validate(data);
 	if (result instanceof Promise) {
 		// Standard Schema permits async `validate`. Our retry-loop is synchronous

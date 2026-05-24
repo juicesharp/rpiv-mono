@@ -15,16 +15,17 @@
  * Standard Schema's `issues` only carries `message` + `path`.
  */
 
-import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type { TSchema } from "typebox";
 import { Value } from "typebox/value";
+import type { NodeSchema } from "./api.js";
 
 /**
- * Wrap a TypeBox schema to satisfy `StandardSchemaV1`. The returned object
- * is structurally a Standard Schema; downstream code (`validateManifestData`)
- * consults `~standard.validate` and never sees the underlying TypeBox value.
+ * Wrap a TypeBox schema to satisfy `NodeSchema` (Standard Schema v1). The
+ * returned object is structurally a Standard Schema; downstream code
+ * (`validateManifestData`) consults `~standard.validate` and never sees
+ * the underlying TypeBox value.
  */
-export function typeboxSchema(schema: TSchema): StandardSchemaV1<unknown, unknown> {
+export function typeboxSchema(schema: TSchema): NodeSchema<unknown, unknown> {
 	return {
 		"~standard": {
 			version: 1,

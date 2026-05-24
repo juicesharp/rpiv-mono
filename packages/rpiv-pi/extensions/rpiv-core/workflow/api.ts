@@ -23,6 +23,15 @@ import type { RunState } from "./types.js";
 
 export type { Extractor } from "./manifest.js";
 
+/**
+ * Schema attached to a node's `outputSchema` / `inputSchema`. Structurally
+ * a Standard Schema v1 (the converged interface implemented by Zod, Valibot,
+ * ArkType, TypeBox, et al.) — re-exported under a name that doesn't leak the
+ * spec version into our public surface. When the spec versions, this alias
+ * picks the right one in a single line.
+ */
+export type NodeSchema<Input = unknown, Output = Input> = StandardSchemaV1<Input, Output>;
+
 // ===========================================================================
 // Node-shape primitives
 // ===========================================================================
@@ -79,8 +88,8 @@ export interface NodeDef {
 	completionStrategy: CompletionStrategy;
 	sessionPolicy: SessionPolicy;
 	extractor?: Extractor;
-	outputSchema?: StandardSchemaV1;
-	inputSchema?: StandardSchemaV1;
+	outputSchema?: NodeSchema;
+	inputSchema?: NodeSchema;
 	onValidationFailure?: "retry" | "halt";
 	maxValidationRetries?: number;
 	validationRetryTimeoutMs?: number;
