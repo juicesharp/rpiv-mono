@@ -8,7 +8,17 @@
 
 import { Type } from "typebox";
 import { describe, expect, it } from "vitest";
-import { action, custom, defineWorkflow, type EdgeFn, type Extractor, skill, threshold, type Workflow } from "./api.js";
+import {
+	action,
+	custom,
+	definePredicate,
+	defineWorkflow,
+	type EdgeFn,
+	type Extractor,
+	skill,
+	threshold,
+	type Workflow,
+} from "./api.js";
 
 // ---------------------------------------------------------------------------
 // defineWorkflow
@@ -174,6 +184,37 @@ describe("threshold", () => {
 
 	it("picks ifBelow when manifest is undefined (treats as 0)", () => {
 		expect(pick({ manifest: undefined, state: {} as never })).toBe("commit");
+	});
+
+	it("threshold attaches .targets so validation can enumerate branches", () => {
+		expect(pick.targets).toEqual(["revise", "commit"]);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// definePredicate — structural enforcement of the .targets contract
+// ---------------------------------------------------------------------------
+
+describe("definePredicate", () => {
+	it("attaches the declared targets to the returned function", () => {
+		const fn = definePredicate(["good", "bad"], () => "good");
+		expect(fn.targets).toEqual(["good", "bad"]);
+	});
+
+	it("preserves the underlying function's runtime behavior", () => {
+		const fn = definePredicate(["good", "bad"], (ctx) =>
+			(ctx.manifest?.data as { ok?: boolean })?.ok ? "good" : "bad",
+		);
+		expect(
+			fn({
+				manifest: { kind: "test", data: { ok: true }, meta: { skill: "x", stageNumber: 1, ts: "", runId: "" } },
+				state: {} as never,
+			}),
+		).toBe("good");
+	});
+
+	it("throws when the targets array is empty", () => {
+		expect(() => definePredicate([], () => "x")).toThrow(/at least one possible return value/);
 	});
 });
 

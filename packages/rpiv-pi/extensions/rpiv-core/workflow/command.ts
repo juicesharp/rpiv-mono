@@ -109,6 +109,8 @@ function formatIssue(issue: Issue): string {
 		const where = issue.path ? ` (${issue.path})` : "";
 		return `[${issue.layer} config${where}] ${issue.message}`;
 	}
-	const where = issue.node ? ` — node "${issue.node}"` : "";
-	return `[workflow "${issue.workflow}"${where}] ${issue.message}`;
+	const layerTag = issue.layer ? `${issue.layer} config` : "workflow";
+	const pathTag = issue.path ? ` (${issue.path})` : "";
+	const nodeTag = issue.node ? ` — node "${issue.node}"` : "";
+	return `[${layerTag}${pathTag}] workflow "${issue.workflow}"${nodeTag}: ${issue.message}`;
 }

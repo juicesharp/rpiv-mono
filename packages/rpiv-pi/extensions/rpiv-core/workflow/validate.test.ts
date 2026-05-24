@@ -120,32 +120,19 @@ describe("validateWorkflow — edge targets", () => {
 		expect(e.some((i) => /resolves to "bad"/.test(i.message))).toBe(true);
 	});
 
-	it("falls back to probing an EdgeFn without .targets metadata", () => {
-		// A user-authored EdgeFn (no .targets attached) is invoked once with a
-		// synthetic context. The probe sees the return and verifies it.
+	it("errors on an EdgeFn without .targets metadata (no probe fallback)", () => {
+		// A hand-rolled EdgeFn that skips `definePredicate` / `threshold` carries
+		// no `.targets` annotation. validate.ts refuses to probe — the missing
+		// metadata makes reachability + status-line totals structurally unsound.
 		const handCrafted: EdgeFn = () => "ghost";
 		const w: Workflow = {
-			name: "probe",
+			name: "naked",
 			start: "a",
 			nodes: { a: skill("a") },
 			edges: { a: handCrafted },
 		};
 		const e = errors(w);
-		expect(e.some((i) => /resolves to "ghost"/.test(i.message))).toBe(true);
-	});
-
-	it("warns when an EdgeFn throws during probe", () => {
-		const throwing: EdgeFn = () => {
-			throw new Error("boom");
-		};
-		const w: Workflow = {
-			name: "thrower",
-			start: "a",
-			nodes: { a: skill("a") },
-			edges: { a: throwing },
-		};
-		const issues = validateWorkflow(w);
-		expect(issues.some((i) => i.severity === "warning" && /threw during probe/.test(i.message))).toBe(true);
+		expect(e.some((i) => /EdgeFn without `\.targets`/.test(i.message))).toBe(true);
 	});
 });
 
@@ -224,6 +211,105 @@ describe("validateWorkflow — reachability", () => {
 		const issues = validateWorkflow(w);
 		expect(issues.filter((i) => i.severity === "error")).toEqual([]);
 		expect(issues.filter((i) => i.severity === "warning" && /unreachable/.test(i.message))).toEqual([]);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Semantic checks — restored from the old validateDag (SB2)
+// ---------------------------------------------------------------------------
+
+describe("validateWorkflow — semantic node constraints", () => {
+	const baseWithNode = (overrides: Partial<import("./api.js").NodeDef>): Workflow => ({
+		name: "semantic",
+		start: "a",
+		nodes: { a: { ...skill("a"), ...overrides } },
+		edges: { a: "stop" },
+	});
+
+	it("errors on maxValidationRetries below the floor", () => {
+		const issues = validateWorkflow(baseWithNode({ maxValidationRetries: 0 }));
+		expect(issues.some((i) => i.severity === "error" && /maxValidationRetries: 0/.test(i.message))).toBe(true);
+	});
+
+	it("errors on maxValidationRetries above the ceiling", () => {
+		const issues = validateWorkflow(baseWithNode({ maxValidationRetries: 100 }));
+		expect(issues.some((i) => i.severity === "error" && /maxValidationRetries: 100/.test(i.message))).toBe(true);
+	});
+
+	it("errors on validationRetryTimeoutMs out of range", () => {
+		const issues = validateWorkflow(baseWithNode({ validationRetryTimeoutMs: 0 }));
+		expect(issues.some((i) => i.severity === "error" && /validationRetryTimeoutMs: 0/.test(i.message))).toBe(true);
+	});
+
+	it("errors on unknown onValidationFailure value", () => {
+		const issues = validateWorkflow(
+			baseWithNode({ onValidationFailure: "burn-it-down" as unknown as "retry" | "halt" }),
+		);
+		expect(issues.some((i) => i.severity === "error" && /onValidationFailure: "burn-it-down"/.test(i.message))).toBe(
+			true,
+		);
+	});
+
+	it("accepts the documented onValidationFailure values", () => {
+		expect(
+			validateWorkflow(baseWithNode({ onValidationFailure: "retry" })).filter((i) => i.severity === "error"),
+		).toEqual([]);
+		expect(
+			validateWorkflow(baseWithNode({ onValidationFailure: "halt" })).filter((i) => i.severity === "error"),
+		).toEqual([]);
+	});
+});
+
+describe("validateWorkflow — predicate-edge schema check", () => {
+	it("warns when a predicate edge reads from a node without outputSchema", () => {
+		const w: Workflow = {
+			name: "naked",
+			start: "code-review",
+			nodes: { "code-review": skill("code-review"), revise: skill("revise"), commit: action("commit") },
+			edges: {
+				"code-review": threshold("severeIssueCount", 0, "revise", "commit"),
+				revise: "commit",
+				commit: "stop",
+			},
+		};
+		const issues = validateWorkflow(w);
+		expect(
+			issues.some((i) => i.severity === "warning" && i.node === "code-review" && /outputSchema/.test(i.message)),
+		).toBe(true);
+	});
+
+	it("does not warn when the predicate source carries an outputSchema", () => {
+		const w: Workflow = {
+			name: "clothed",
+			start: "code-review",
+			nodes: {
+				"code-review": skill("code-review", { outputSchema: { type: "object" } as never }),
+				revise: skill("revise"),
+				commit: action("commit"),
+			},
+			edges: {
+				"code-review": threshold("severeIssueCount", 0, "revise", "commit"),
+				revise: "commit",
+				commit: "stop",
+			},
+		};
+		const issues = validateWorkflow(w);
+		expect(issues.filter((i) => i.severity === "warning" && /outputSchema/.test(i.message))).toEqual([]);
+	});
+});
+
+describe("validateWorkflow — workflow name", () => {
+	it("errors when name is the empty string", () => {
+		const w: Workflow = {
+			name: "",
+			start: "a",
+			nodes: { a: skill("a") },
+			edges: { a: "stop" },
+		};
+		const issues = validateWorkflow(w);
+		expect(
+			issues.some((i) => i.severity === "error" && /workflow name must be a non-empty string/.test(i.message)),
+		).toBe(true);
 	});
 });
 

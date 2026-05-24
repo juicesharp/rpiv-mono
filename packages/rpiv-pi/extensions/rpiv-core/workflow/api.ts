@@ -145,13 +145,28 @@ export function custom(spec: NodeDef): NodeDef {
 // ===========================================================================
 
 /**
+ * Promote a hand-rolled `EdgePredicate` to an `EdgeFn` by structurally
+ * attaching the set of possible returns. `validate.ts` requires every
+ * EdgeFn to carry `.targets` so reachability and load-time edge-target
+ * checks see every branch; this factory is the only blessed way to author
+ * a multi-branch predicate.
+ *
+ * Throws if `targets` is empty — a predicate that can't return anything
+ * declared is by definition a bug.
+ */
+export function definePredicate(targets: readonly string[], fn: EdgePredicate): EdgeFn {
+	if (targets.length === 0) {
+		throw new Error("definePredicate: targets must declare at least one possible return value");
+	}
+	const wrapped = fn as EdgeFn;
+	wrapped.targets = [...targets];
+	return wrapped;
+}
+
+/**
  * `ifAbove` when `Number(manifest.data[field] ?? 0) > threshold`, else `ifBelow`.
- * Attaches `.targets = [ifAbove, ifBelow]` to the returned function so the
- * compile-to-legacy-DAG translator (and any future graph introspector) can
- * enumerate the predicate's possible returns without probing.
+ * Built on `definePredicate` so the contract is enforced structurally.
  */
 export function threshold(field: string, n: number, ifAbove: string, ifBelow: string): EdgeFn {
-	const fn = predicateThreshold(field, n, ifAbove, ifBelow) as EdgeFn;
-	fn.targets = [ifAbove, ifBelow];
-	return fn;
+	return definePredicate([ifAbove, ifBelow], predicateThreshold(field, n, ifAbove, ifBelow));
 }

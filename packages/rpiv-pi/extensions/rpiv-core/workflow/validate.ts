@@ -14,7 +14,13 @@
  * No I/O, no throws — purely a graph walk + predicate probe.
  */
 
-import type { EdgeContext, EdgeFn, EdgeTarget, Workflow } from "./api.js";
+import type { EdgeTarget, Workflow } from "./api.js";
+import {
+	MAX_VALIDATION_RETRIES,
+	MAX_VALIDATION_RETRY_TIMEOUT_MS,
+	MIN_VALIDATION_RETRIES,
+	MIN_VALIDATION_RETRY_TIMEOUT_MS,
+} from "./validation.js";
 
 // ===========================================================================
 // Issue shape
@@ -25,6 +31,14 @@ export interface ValidationIssue {
 	node?: string;
 	severity: "error" | "warning";
 	message: string;
+	/**
+	 * Populated by `load.ts` after aggregation — the layer the workflow came
+	 * from. `validateWorkflow` itself doesn't know about layers; the loader
+	 * is the seam that has both `workflowSources` and the issue list in scope.
+	 */
+	layer?: "built-in" | "user" | "project";
+	/** Source path (rpiv.config.ts) when the layer is user or project. */
+	path?: string;
 }
 
 const STOP = "stop";
@@ -40,6 +54,8 @@ const STOP = "stop";
 export function validateWorkflow(workflow: Workflow): ValidationIssue[] {
 	const issues: ValidationIssue[] = [];
 
+	checkWorkflowName(workflow, issues);
+
 	if (!workflow.nodes[workflow.start]) {
 		issues.push(error(workflow.name, undefined, `start node "${workflow.start}" is not declared in nodes`));
 	}
@@ -48,6 +64,8 @@ export function validateWorkflow(workflow: Workflow): ValidationIssue[] {
 	checkEdgeTargets(workflow, issues);
 	checkMissingEdges(workflow, issues);
 	checkReachability(workflow, issues);
+	checkNodeSemantics(workflow, issues);
+	checkPredicateSchemas(workflow, issues);
 
 	return issues;
 }
@@ -55,6 +73,13 @@ export function validateWorkflow(workflow: Workflow): ValidationIssue[] {
 // ===========================================================================
 // Individual checks
 // ===========================================================================
+
+/** `name` is what users type as `/rpiv <name>` — empty string makes the workflow unreachable. */
+function checkWorkflowName(w: Workflow, issues: ValidationIssue[]): void {
+	if (typeof w.name !== "string" || w.name.length === 0) {
+		issues.push(error("(anonymous)", undefined, "workflow name must be a non-empty string"));
+	}
+}
 
 /** Every key in `edges` must be a declared node. */
 function checkEdgeKeys(w: Workflow, issues: ValidationIssue[]): void {
@@ -128,6 +153,75 @@ function checkReachability(w: Workflow, issues: ValidationIssue[]): void {
 	}
 }
 
+/**
+ * Per-node semantic checks — bounds and enums that the TS type system narrows
+ * at edit time but jiti erases at runtime. A user-authored config can ship any
+ * numeric `maxValidationRetries` or any string for `onValidationFailure`; this
+ * pass catches them at load time.
+ */
+function checkNodeSemantics(w: Workflow, issues: ValidationIssue[]): void {
+	for (const [name, node] of Object.entries(w.nodes)) {
+		if (
+			node.maxValidationRetries !== undefined &&
+			(node.maxValidationRetries < MIN_VALIDATION_RETRIES || node.maxValidationRetries > MAX_VALIDATION_RETRIES)
+		) {
+			issues.push(
+				error(
+					w.name,
+					name,
+					`maxValidationRetries: ${node.maxValidationRetries} — must be in [${MIN_VALIDATION_RETRIES}, ${MAX_VALIDATION_RETRIES}]`,
+				),
+			);
+		}
+		if (
+			node.validationRetryTimeoutMs !== undefined &&
+			(node.validationRetryTimeoutMs < MIN_VALIDATION_RETRY_TIMEOUT_MS ||
+				node.validationRetryTimeoutMs > MAX_VALIDATION_RETRY_TIMEOUT_MS)
+		) {
+			issues.push(
+				error(
+					w.name,
+					name,
+					`validationRetryTimeoutMs: ${node.validationRetryTimeoutMs} — must be in [${MIN_VALIDATION_RETRY_TIMEOUT_MS}, ${MAX_VALIDATION_RETRY_TIMEOUT_MS}]`,
+				),
+			);
+		}
+		if (
+			node.onValidationFailure !== undefined &&
+			node.onValidationFailure !== "retry" &&
+			node.onValidationFailure !== "halt"
+		) {
+			issues.push(
+				error(w.name, name, `onValidationFailure: "${node.onValidationFailure}" — must be "retry" or "halt"`),
+			);
+		}
+	}
+}
+
+/**
+ * Predicate edges read `manifest.data[field]` — that data should have been
+ * validated against the source node's `outputSchema` before the predicate
+ * fires. A predicate on a node WITHOUT an `outputSchema` is reading
+ * unvalidated frontmatter; routing decisions made on absent fields silently
+ * default. Warn so the author can declare the schema and let the validation
+ * retry loop guard the boundary.
+ */
+function checkPredicateSchemas(w: Workflow, issues: ValidationIssue[]): void {
+	for (const [from, target] of Object.entries(w.edges)) {
+		if (typeof target === "string") continue;
+		const node = w.nodes[from];
+		if (node && !node.outputSchema) {
+			issues.push(
+				warning(
+					w.name,
+					from,
+					`predicate edge from "${from}" reads manifest data but the node has no outputSchema — routing may fire on un-validated frontmatter`,
+				),
+			);
+		}
+	}
+}
+
 // ===========================================================================
 // Edge-target enumeration
 // ===========================================================================
@@ -136,10 +230,10 @@ function checkReachability(w: Workflow, issues: ValidationIssue[]): void {
  * Returns the set of possible string targets an `EdgeTarget` could resolve to.
  *
  * - String → singleton.
- * - `EdgeFn` with `.targets` metadata → declared targets (e.g. `threshold()`).
- * - `EdgeFn` without metadata → probe with a synthetic `EdgeContext`; if the
- *   probe throws or returns a non-string, record an issue and fall back to
- *   nothing (we can't see the full target set).
+ * - `EdgeFn` with `.targets` metadata → declared targets.
+ * - `EdgeFn` without `.targets` → error; the missing metadata makes reachability
+ *   analysis and the runtime status-line denominator structurally unsound.
+ *   Users authoring predicates by hand MUST go through `definePredicate(targets, fn)`.
  *
  * Issues collected via the `issues` array — pass an empty array when you're
  * only interested in enumeration (reachability traversal).
@@ -147,50 +241,14 @@ function checkReachability(w: Workflow, issues: ValidationIssue[]): void {
 function enumerateTargets(target: EdgeTarget, workflow: string, from: string, issues: ValidationIssue[]): string[] {
 	if (typeof target === "string") return [target];
 	if (Array.isArray(target.targets) && target.targets.length > 0) return [...target.targets];
-	return probeEdgeFn(target, workflow, from, issues);
-}
-
-/** Best-effort: invoke the edge function once with a minimal context. */
-function probeEdgeFn(fn: EdgeFn, workflow: string, from: string, issues: ValidationIssue[]): string[] {
-	const ctx = syntheticEdgeContext();
-	try {
-		const result = fn(ctx);
-		if (typeof result === "string") return [result];
-		issues.push(
-			warning(
-				workflow,
-				from,
-				`edge function for "${from}" returned a non-string value (${typeof result}); cannot verify target set`,
-			),
-		);
-		return [];
-	} catch (e) {
-		issues.push(
-			warning(
-				workflow,
-				from,
-				`edge function for "${from}" threw during probe (${(e as Error).message}); cannot verify target set — add a \`targets\` field or use threshold()`,
-			),
-		);
-		return [];
-	}
-}
-
-function syntheticEdgeContext(): EdgeContext {
-	return {
-		manifest: undefined,
-		// State shape is structurally typed; we hand the EdgeFn a frozen empty.
-		state: Object.freeze({
-			originalInput: "",
-			artifactPath: undefined,
-			manifest: undefined,
-			stagesCompleted: 0,
-			lastStageNumber: 0,
-			success: false,
-			error: undefined,
-			backwardJumps: 0,
-		}) as EdgeContext["state"],
-	};
+	issues.push(
+		error(
+			workflow,
+			from,
+			`edges["${from}"] is an EdgeFn without \`.targets\` metadata — use definePredicate([...], fn) or threshold() so reachability can enumerate branches`,
+		),
+	);
+	return [];
 }
 
 // ===========================================================================

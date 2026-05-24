@@ -112,8 +112,14 @@ export async function loadWorkflows(cwd: string): Promise<LoadedWorkflows> {
 
 	// Validate every merged workflow once. Validation runs even on built-in so
 	// that a future built-in regression surfaces in the same channel as user errors.
+	// Each issue is enriched with its source layer + file path so command.ts can
+	// render Astro-style `(rpiv.config.ts) workflow "ship": ...` errors.
+	const layerPath = (l: ConfigLayer): string | undefined =>
+		l === "project" ? projectPath : l === "user" ? userPath : undefined;
 	for (const w of workflowMap.values()) {
-		for (const v of validateWorkflow(w)) issues.push({ ...v, kind: "validation" });
+		const layer = sources.get(w.name) ?? "built-in";
+		const path = layerPath(layer);
+		for (const v of validateWorkflow(w)) issues.push({ ...v, kind: "validation", layer, path });
 	}
 
 	const defaultName = resolveDefault(projectParsed, userParsed, workflowMap, issues);
@@ -170,8 +176,21 @@ interface NormalizeErr {
 function normalizeDefaultExport(raw: unknown): NormalizeOk | NormalizeErr {
 	if (isWorkflow(raw)) return { value: { workflows: [raw] } };
 	if (Array.isArray(raw)) {
-		if (raw.every(isWorkflow)) return { value: { workflows: raw as Workflow[] } };
-		return { error: "default export array must contain only Workflow objects" };
+		if (!raw.every(isWorkflow)) {
+			return { error: "default export array must contain only Workflow objects" };
+		}
+		// A bare Workflow[] omits the `default` slot; with more than one entry
+		// there's no unambiguous pick. Require the envelope form so the choice
+		// is explicit. (Single-entry arrays are accepted — only one workflow
+		// to default to.)
+		if (raw.length > 1) {
+			return {
+				error:
+					"default-export `Workflow[]` with more than one entry must be wrapped as " +
+					'`{ workflows: [...], default: "<name>" }` so the default workflow is explicit',
+			};
+		}
+		return { value: { workflows: raw as Workflow[] } };
 	}
 	if (isEnvelope(raw)) {
 		if (!raw.workflows.every(isWorkflow)) {

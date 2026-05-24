@@ -130,7 +130,16 @@ export async function runWorkflow(
 	};
 }
 
-/** Upper bound for the status-line denominator — BFS reach from `workflow.start`. */
+/**
+ * Upper bound for the status-line denominator — BFS reach from `workflow.start`.
+ *
+ * Relies on every `EdgeFn` carrying `.targets`. `validate.ts` enforces this at
+ * load time, so by the time the runner sees a workflow the contract holds; if
+ * a workflow with a `.targets`-less EdgeFn somehow reaches the runner anyway
+ * (e.g. a test bypassed validation), we fall back to counting all declared
+ * nodes — a strict upper bound that keeps the status line monotonic instead
+ * of producing "5/3" garbage.
+ */
 function countReachableNodes(workflow: Workflow): number {
 	const seen = new Set<string>();
 	const frontier: string[] = [workflow.start];
@@ -146,6 +155,11 @@ function countReachableNodes(workflow: Workflow): number {
 			for (const t of edge.targets) {
 				if (t !== "stop" && workflow.nodes[t] && !seen.has(t)) frontier.push(t);
 			}
+		} else {
+			// `.targets`-less EdgeFn slipped past validation — fall back to the
+			// declared-nodes total so the status-line denominator stays a valid
+			// upper bound (never undercounts).
+			return Object.keys(workflow.nodes).length;
 		}
 	}
 	return seen.size;
@@ -331,6 +345,10 @@ async function captureStageSnapshot(node: NodeDef, idx: number, run: RunContext)
  */
 async function advanceChain(curCtx: ChainCtx, currentName: string, idx: number, run: RunContext): Promise<void> {
 	const { cwd, runId, workflow, state } = run;
+	// Mark the just-completed node as visited BEFORE consulting the next edge.
+	// A thrown EdgeFn would otherwise leave currentName un-marked, opening a
+	// (narrow) window where a recovery path could under-count revisits.
+	run.visited.add(currentName);
 	try {
 		const wasDecision = edgeIsDecision(workflow, currentName);
 		const nextName = nextNode(workflow, currentName, { manifest: state.manifest, state });
@@ -364,7 +382,6 @@ async function advanceChain(curCtx: ChainCtx, currentName: string, idx: number, 
 				return;
 			}
 		}
-		run.visited.add(currentName);
 
 		await runStage(curCtx, nextName, idx + 1, run);
 	} catch (e) {

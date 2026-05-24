@@ -250,6 +250,60 @@ export default defineWorkflow({
 		expect(validationErrors.some((e) => /"ghost"/.test(e.message))).toBe(true);
 	});
 
+	it("attaches layer + path to validation issues so callers can render provenance", async () => {
+		writeProjectConfig(
+			TEST_TMP,
+			`${importApi}
+export default defineWorkflow({
+  name: "bad",
+  start: "a",
+  nodes: { a: skill("a") },
+  edges: { a: "ghost" },
+});
+`,
+		);
+		const loaded = await loadWorkflows(TEST_TMP);
+		const issue = loaded.issues.find((i) => i.kind === "validation" && i.workflow === "bad");
+		expect(issue).toBeDefined();
+		expect(issue?.layer).toBe("project");
+		expect(issue?.path).toBe(projectConfigPath(TEST_TMP));
+	});
+
+	it("refuses a bare Workflow[] with >1 entry — must wrap in envelope with explicit default", async () => {
+		writeProjectConfig(
+			TEST_TMP,
+			`${importApi}
+export default [
+  defineWorkflow({ name: "a", start: "x", nodes: { x: skill("x") }, edges: { x: "stop" } }),
+  defineWorkflow({ name: "b", start: "y", nodes: { y: skill("y") }, edges: { y: "stop" } }),
+];
+`,
+		);
+
+		const loaded = await loadWorkflows(TEST_TMP);
+		expect(
+			loaded.issues.some((i) => i.kind === "load" && i.severity === "error" && /must be wrapped/.test(i.message)),
+		).toBe(true);
+		// Built-in remains usable because the project layer was rejected.
+		expect(loaded.workflows.find((w) => w.name === "a")).toBeUndefined();
+		expect(loaded.workflows.find((w) => w.name === "mid")).toBeDefined();
+	});
+
+	it("accepts a single-entry Workflow[] without an envelope", async () => {
+		writeProjectConfig(
+			TEST_TMP,
+			`${importApi}
+export default [
+  defineWorkflow({ name: "solo", start: "x", nodes: { x: skill("x") }, edges: { x: "stop" } }),
+];
+`,
+		);
+
+		const loaded = await loadWorkflows(TEST_TMP);
+		expect(loaded.workflows.find((w) => w.name === "solo")).toBeDefined();
+		expect(loaded.issues.filter((i) => i.severity === "error")).toEqual([]);
+	});
+
 	it("records an error when an explicit `default` references a missing workflow", async () => {
 		writeProjectConfig(
 			TEST_TMP,
