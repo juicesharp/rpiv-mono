@@ -182,8 +182,9 @@ describe("runWorkflow", () => {
 			const next = stages[i + 1];
 			const defaultStrategy: CompletionStrategy =
 				id === "implement" || id === "commit" ? "agent-end" : "artifact-emit";
+			// `skill` omitted — runner defaults it from the record key, matching
+			// the same convention real authors use via `artifact()` / `action()`.
 			nodes[id] = {
-				skill: id,
 				completionStrategy: defaultStrategy,
 				sessionPolicy: "fresh",
 				...(nodeOverrides[id] ?? {}),
@@ -1578,9 +1579,9 @@ describe("totalStages denominator (countReachableNodes)", () => {
 				name: "linear",
 				start: "a",
 				nodes: {
-					a: { skill: "a", completionStrategy: "agent-end", sessionPolicy: "fresh" },
-					b: { skill: "b", completionStrategy: "agent-end", sessionPolicy: "fresh" },
-					c: { skill: "c", completionStrategy: "agent-end", sessionPolicy: "fresh" },
+					a: { completionStrategy: "agent-end", sessionPolicy: "fresh" },
+					b: { completionStrategy: "agent-end", sessionPolicy: "fresh" },
+					c: { completionStrategy: "agent-end", sessionPolicy: "fresh" },
 				},
 				edges: { a: "b", b: "c", c: "stop" },
 			},
@@ -1599,9 +1600,9 @@ describe("totalStages denominator (countReachableNodes)", () => {
 				name: "branching",
 				start: "a",
 				nodes: {
-					a: { skill: "a", completionStrategy: "agent-end", sessionPolicy: "fresh" },
-					b: { skill: "b", completionStrategy: "agent-end", sessionPolicy: "fresh" },
-					c: { skill: "c", completionStrategy: "agent-end", sessionPolicy: "fresh" },
+					a: { completionStrategy: "agent-end", sessionPolicy: "fresh" },
+					b: { completionStrategy: "agent-end", sessionPolicy: "fresh" },
+					c: { completionStrategy: "agent-end", sessionPolicy: "fresh" },
 				},
 				// Threshold attaches .targets = ["b", "c"]; BFS reaches both.
 				edges: { a: threshold("count", 0, "b", "c"), b: "stop", c: "stop" },
@@ -1622,8 +1623,8 @@ describe("totalStages denominator (countReachableNodes)", () => {
 				name: "with-orphan",
 				start: "a",
 				nodes: {
-					a: { skill: "a", completionStrategy: "agent-end", sessionPolicy: "fresh" },
-					b: { skill: "b", completionStrategy: "agent-end", sessionPolicy: "fresh" },
+					a: { completionStrategy: "agent-end", sessionPolicy: "fresh" },
+					b: { completionStrategy: "agent-end", sessionPolicy: "fresh" },
 					orphan: { skill: "orphan", completionStrategy: "agent-end", sessionPolicy: "fresh" },
 				},
 				edges: { a: "b", b: "stop", orphan: "stop" },
@@ -1650,8 +1651,8 @@ describe("totalStages denominator (countReachableNodes)", () => {
 				name: "naked",
 				start: "a",
 				nodes: {
-					a: { skill: "a", completionStrategy: "agent-end", sessionPolicy: "fresh" },
-					b: { skill: "b", completionStrategy: "agent-end", sessionPolicy: "fresh" },
+					a: { completionStrategy: "agent-end", sessionPolicy: "fresh" },
+					b: { completionStrategy: "agent-end", sessionPolicy: "fresh" },
 				},
 				edges: { a: bareEdge, b: "stop" },
 			},

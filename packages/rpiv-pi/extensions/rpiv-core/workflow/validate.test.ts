@@ -7,7 +7,7 @@
 
 import { Type } from "typebox";
 import { describe, expect, it } from "vitest";
-import { action, definePredicate, defineWorkflow, type EdgeFn, skill, threshold, type Workflow } from "./api.js";
+import { action, artifact, definePredicate, defineWorkflow, type EdgeFn, threshold, type Workflow } from "./api.js";
 import { builtInWorkflows } from "./built-in.js";
 import { typeboxSchema } from "./standard-schema.js";
 import { validateWorkflow } from "./validate.js";
@@ -28,7 +28,7 @@ describe("validateWorkflow — happy path", () => {
 		const w = defineWorkflow({
 			name: "tiny",
 			start: "a",
-			nodes: { a: skill("a"), b: action("b") },
+			nodes: { a: artifact(), b: action() },
 			edges: { a: "b", b: "stop" },
 		});
 		expect(errors(w)).toEqual([]);
@@ -58,7 +58,7 @@ describe("validateWorkflow — start", () => {
 		const w: Workflow = {
 			name: "bad-start",
 			start: "ghost",
-			nodes: { a: skill("a") },
+			nodes: { a: artifact() },
 			edges: { a: "stop" },
 		};
 		const e = errors(w);
@@ -76,7 +76,7 @@ describe("validateWorkflow — edge keys", () => {
 		const w: Workflow = {
 			name: "stray-edge",
 			start: "a",
-			nodes: { a: skill("a") },
+			nodes: { a: artifact() },
 			edges: { a: "stop", phantom: "a" },
 		};
 		const e = errors(w);
@@ -93,7 +93,7 @@ describe("validateWorkflow — edge targets", () => {
 		const w: Workflow = {
 			name: "bad-target",
 			start: "a",
-			nodes: { a: skill("a"), b: skill("b") },
+			nodes: { a: artifact(), b: artifact() },
 			edges: { a: "missing", b: "stop" },
 		};
 		const e = errors(w);
@@ -104,7 +104,7 @@ describe("validateWorkflow — edge targets", () => {
 		const w: Workflow = {
 			name: "leaf",
 			start: "a",
-			nodes: { a: skill("a") },
+			nodes: { a: artifact() },
 			edges: { a: "stop" },
 		};
 		expect(errors(w)).toEqual([]);
@@ -114,7 +114,7 @@ describe("validateWorkflow — edge targets", () => {
 		const w: Workflow = {
 			name: "predicate",
 			start: "a",
-			nodes: { a: skill("a"), good: skill("good") },
+			nodes: { a: artifact(), good: artifact() },
 			// threshold writes .targets = ["good", "bad"] — "bad" isn't a declared node.
 			edges: { a: threshold("count", 0, "good", "bad"), good: "stop" },
 		};
@@ -130,7 +130,7 @@ describe("validateWorkflow — edge targets", () => {
 		const w: Workflow = {
 			name: "naked",
 			start: "a",
-			nodes: { a: skill("a") },
+			nodes: { a: artifact() },
 			edges: { a: handCrafted },
 		};
 		const e = errors(w);
@@ -147,7 +147,7 @@ describe("validateWorkflow — implicit terminals", () => {
 		const w: Workflow = {
 			name: "implicit",
 			start: "a",
-			nodes: { a: skill("a"), b: skill("b") },
+			nodes: { a: artifact(), b: artifact() },
 			edges: { a: "b" }, // b has no edge — implicit terminal
 		};
 		const w2 = warnings(w);
@@ -158,7 +158,7 @@ describe("validateWorkflow — implicit terminals", () => {
 		const w: Workflow = {
 			name: "explicit",
 			start: "a",
-			nodes: { a: skill("a"), b: skill("b") },
+			nodes: { a: artifact(), b: artifact() },
 			edges: { a: "b", b: "stop" },
 		};
 		expect(warnings(w)).toEqual([]);
@@ -174,7 +174,7 @@ describe("validateWorkflow — reachability", () => {
 		const w: Workflow = {
 			name: "orphan",
 			start: "a",
-			nodes: { a: skill("a"), b: skill("b"), orphan: skill("orphan") },
+			nodes: { a: artifact(), b: artifact(), orphan: artifact() },
 			edges: { a: "b", b: "stop", orphan: "stop" },
 		};
 		const w2 = warnings(w);
@@ -185,7 +185,7 @@ describe("validateWorkflow — reachability", () => {
 		const w: Workflow = {
 			name: "branching",
 			start: "a",
-			nodes: { a: skill("a"), x: skill("x"), y: skill("y") },
+			nodes: { a: artifact(), x: artifact(), y: artifact() },
 			// Both x and y are reachable through the threshold.
 			edges: { a: threshold("count", 0, "x", "y"), x: "stop", y: "stop" },
 		};
@@ -198,10 +198,10 @@ describe("validateWorkflow — reachability", () => {
 			name: "loop",
 			start: "implement",
 			nodes: {
-				implement: action("implement"),
-				validate: skill("validate"),
-				revise: skill("revise"),
-				commit: action("commit"),
+				implement: action(),
+				validate: artifact(),
+				revise: artifact(),
+				commit: action(),
 			},
 			edges: {
 				implement: "validate",
@@ -224,7 +224,7 @@ describe("validateWorkflow — semantic node constraints", () => {
 	const baseWithNode = (overrides: Partial<import("./api.js").NodeDef>): Workflow => ({
 		name: "semantic",
 		start: "a",
-		nodes: { a: { ...skill("a"), ...overrides } },
+		nodes: { a: { ...artifact(), ...overrides } },
 		edges: { a: "stop" },
 	});
 
@@ -277,7 +277,7 @@ describe("validateWorkflow — predicate-edge schema check", () => {
 		const w: Workflow = {
 			name: "naked",
 			start: "code-review",
-			nodes: { "code-review": skill("code-review"), revise: skill("revise"), commit: action("commit") },
+			nodes: { "code-review": artifact(), revise: artifact(), commit: action() },
 			edges: {
 				"code-review": threshold("severeIssueCount", 0, "revise", "commit"),
 				revise: "commit",
@@ -297,7 +297,7 @@ describe("validateWorkflow — predicate-edge schema check", () => {
 		const w: Workflow = {
 			name: "state-derived",
 			start: "code-review",
-			nodes: { "code-review": skill("code-review"), a: skill("a"), b: skill("b") },
+			nodes: { "code-review": artifact(), a: artifact(), b: artifact() },
 			edges: {
 				"code-review": definePredicate(["a", "b"], ({ state }) => (state.backwardJumps > 0 ? "a" : "b")),
 				a: "stop",
@@ -313,11 +313,11 @@ describe("validateWorkflow — predicate-edge schema check", () => {
 			name: "clothed",
 			start: "code-review",
 			nodes: {
-				"code-review": skill("code-review", {
+				"code-review": artifact({
 					outputSchema: typeboxSchema(Type.Object({ severeIssueCount: Type.Integer({ minimum: 0 }) })),
 				}),
-				revise: skill("revise"),
-				commit: action("commit"),
+				revise: artifact(),
+				commit: action(),
 			},
 			edges: {
 				"code-review": threshold("severeIssueCount", 0, "revise", "commit"),
@@ -335,7 +335,7 @@ describe("validateWorkflow — workflow name", () => {
 		const w: Workflow = {
 			name: "",
 			start: "a",
-			nodes: { a: skill("a") },
+			nodes: { a: artifact() },
 			edges: { a: "stop" },
 		};
 		const issues = validateWorkflow(w);
@@ -354,7 +354,7 @@ describe("validateWorkflow — issue shape", () => {
 		const w: Workflow = {
 			name: "bad",
 			start: "ghost",
-			nodes: { a: skill("a") },
+			nodes: { a: artifact() },
 			edges: { a: "missing" },
 		};
 		const issues = validateWorkflow(w);

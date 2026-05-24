@@ -29,7 +29,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMockSessionChain, mockAssistantMessage } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { action, defineWorkflow, skill, type Workflow } from "./api.js";
+import { action, artifact, defineWorkflow, type Workflow } from "./api.js";
 import { builtInWorkflows } from "./built-in.js";
 import { nextNode } from "./routing.js";
 import { runWorkflow } from "./runner.js";
@@ -183,7 +183,7 @@ describe("[I7] truncated reply (stopReason=length) must not record as completed"
 		defineWorkflow({
 			name: "tiny",
 			start: "implement",
-			nodes: { implement: action("implement") },
+			nodes: { implement: action() },
 			edges: { implement: "stop" },
 		});
 
@@ -311,8 +311,8 @@ describe("[Q7] non-first stage with no artifactPath halts instead of reusing ori
 			name: "tiny",
 			start: "commit",
 			nodes: {
-				commit: action("commit"),
-				"annotate-guidance": action("annotate-guidance"),
+				commit: action(),
+				"annotate-guidance": action(),
 			},
 			edges: { commit: "annotate-guidance", "annotate-guidance": "stop" },
 		});
@@ -365,8 +365,8 @@ describe("[I9] phase fanout labels by skill name, not by aliased node name", () 
 			name: "tiny",
 			start: "research",
 			nodes: {
-				research: skill("research"),
-				"implement-after-revise": action("implement-after-revise", { skill: "implement" }),
+				research: artifact(),
+				"implement-after-revise": action({ skill: "implement" }),
 			},
 			edges: { research: "implement-after-revise", "implement-after-revise": "stop" },
 		});

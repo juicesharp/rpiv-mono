@@ -9,7 +9,7 @@
  */
 
 import { Type } from "typebox";
-import { action, defineWorkflow, skill, threshold, type Workflow } from "./api.js";
+import { action, artifact, defineWorkflow, threshold, type Workflow } from "./api.js";
 import { gitCommitExtractor } from "./extractors/index.js";
 import { typeboxSchema } from "./standard-schema.js";
 
@@ -25,9 +25,9 @@ const smallWorkflow = defineWorkflow({
 	name: "small",
 	start: "blueprint",
 	nodes: {
-		blueprint: skill("blueprint"),
-		implement: action("implement"),
-		validate: skill("validate"),
+		blueprint: artifact(),
+		implement: action(),
+		validate: artifact(),
 	},
 	edges: {
 		blueprint: "implement",
@@ -45,14 +45,14 @@ const midWorkflow = defineWorkflow({
 	name: "mid",
 	start: "research",
 	nodes: {
-		research: skill("research"),
-		blueprint: skill("blueprint"),
-		implement: action("implement"),
-		validate: skill("validate"),
-		"code-review": skill("code-review", { outputSchema: CODE_REVIEW_SCHEMA }),
-		revise: skill("revise"),
-		"implement-after-revise": action("implement-after-revise", { skill: "implement" }),
-		commit: action("commit", { extractor: gitCommitExtractor }),
+		research: artifact(),
+		blueprint: artifact(),
+		implement: action(),
+		validate: artifact(),
+		"code-review": artifact({ outputSchema: CODE_REVIEW_SCHEMA }),
+		revise: artifact(),
+		"implement-after-revise": action({ skill: "implement" }),
+		commit: action({ extractor: gitCommitExtractor }),
 	},
 	edges: {
 		research: "blueprint",
@@ -75,16 +75,16 @@ const largeWorkflow = defineWorkflow({
 	name: "large",
 	start: "research",
 	nodes: {
-		research: skill("research"),
-		design: skill("design"),
-		plan: skill("plan"),
-		implement: action("implement"),
-		validate: skill("validate"),
-		"code-review-large": skill("code-review-large", { skill: "code-review", outputSchema: CODE_REVIEW_SCHEMA }),
-		"design-after-review": skill("design-after-review", { skill: "design" }),
-		"plan-after-review": skill("plan-after-review", { skill: "plan" }),
-		"implement-after-review": action("implement-after-review", { skill: "implement" }),
-		commit: action("commit", { extractor: gitCommitExtractor }),
+		research: artifact(),
+		design: artifact(),
+		plan: artifact(),
+		implement: action(),
+		validate: artifact(),
+		"code-review-large": artifact({ skill: "code-review", outputSchema: CODE_REVIEW_SCHEMA }),
+		"design-after-review": artifact({ skill: "design" }),
+		"plan-after-review": artifact({ skill: "plan" }),
+		"implement-after-review": action({ skill: "implement" }),
+		commit: action({ extractor: gitCommitExtractor }),
 	},
 	edges: {
 		research: "design",

@@ -78,13 +78,19 @@ export type EdgeFn = EdgePredicate & { targets?: readonly string[] };
 export type EdgeTarget = string | EdgeFn;
 
 /**
- * A node in the workflow graph. `skill` is resolved by Pi at run-time —
- * no allowlist gate. If Pi can't load the skill, the runner halts with a
- * clear error pointing at this node. The node's identity is the
- * surrounding `Workflow.nodes` record key, not a duplicated `name` field.
+ * A node in the workflow graph. The node's identity is the surrounding
+ * `Workflow.nodes` record key. `skill` is the Pi skill body to invoke —
+ * defaulted to the record key by the runner when omitted, so the
+ * authoring-time call site usually doesn't restate the name. Set `skill`
+ * explicitly only when the node id and the Pi skill differ (aliased
+ * nodes like `implement-after-revise` invoking the `implement` skill).
+ *
+ * Pi resolves the skill at run time; there's no allowlist gate. If Pi
+ * can't load the skill, the runner halts with a clear error pointing
+ * at this node.
  */
 export interface NodeDef {
-	skill: string;
+	skill?: string;
 	completionStrategy: CompletionStrategy;
 	sessionPolicy: SessionPolicy;
 	extractor?: Extractor;
@@ -119,24 +125,27 @@ export function defineWorkflow(spec: Workflow): Workflow {
 }
 
 /**
- * Protocol skill: writes `.rpiv/artifacts/<bucket>/<file>.md`. Defaults to
- * fresh-session. `name` doubles as the default `skill` body — override via
- * the second argument when the node name differs from the skill being invoked
- * (e.g. `skill("code-review-large", { skill: "code-review" })`).
+ * Artifact-emitting node: invokes a Pi skill that writes
+ * `.rpiv/artifacts/<bucket>/<file>.md`. Defaults to fresh-session. The
+ * skill body defaults to the surrounding `nodes` record key — override
+ * via `{ skill: "<other>" }` only when the node id and the Pi skill
+ * differ (e.g. `code-review-large` aliasing the `code-review` skill).
  */
-export function skill(name: string, overrides: Partial<NodeDef> = {}): NodeDef {
+export function artifact(overrides: Partial<NodeDef> = {}): NodeDef {
 	return {
-		skill: name,
 		completionStrategy: "artifact-emit",
 		sessionPolicy: "fresh",
 		...overrides,
 	};
 }
 
-/** Action skill: side effect IS the work (commit, implement). Defaults to fresh-session. */
-export function action(name: string, overrides: Partial<NodeDef> = {}): NodeDef {
+/**
+ * Action node: invokes a Pi skill whose side effect IS the work
+ * (commit, implement). No artifact-emission check. Defaults to fresh-session.
+ * Like `artifact`, the skill body defaults to the record key.
+ */
+export function action(overrides: Partial<NodeDef> = {}): NodeDef {
 	return {
-		skill: name,
 		completionStrategy: "agent-end",
 		sessionPolicy: "fresh",
 		...overrides,

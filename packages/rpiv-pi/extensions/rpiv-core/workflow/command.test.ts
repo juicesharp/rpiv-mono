@@ -1,6 +1,6 @@
 import { createMockCommandCtx, createMockPi } from "@juicesharp/rpiv-test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { action, defineWorkflow, skill } from "./api.js";
+import { action, artifact, defineWorkflow } from "./api.js";
 
 // Mock runner to avoid needing the full Pi session runtime.
 vi.mock("./runner.js", () => ({
@@ -12,23 +12,23 @@ vi.mock("./runner.js", () => ({
 const tinyWorkflow = defineWorkflow({
 	name: "tiny",
 	start: "research",
-	nodes: { research: skill("research"), commit: action("commit") },
+	nodes: { research: artifact(), commit: action() },
 	edges: { research: "commit", commit: "stop" },
 });
 const midWorkflow = defineWorkflow({
 	name: "mid",
 	start: "research",
 	nodes: {
-		research: skill("research"),
-		implement: action("implement"),
-		commit: action("commit"),
+		research: artifact(),
+		implement: action(),
+		commit: action(),
 	},
 	edges: { research: "implement", implement: "commit", commit: "stop" },
 });
 const reviewWorkflow = defineWorkflow({
 	name: "review",
 	start: "code-review",
-	nodes: { "code-review": skill("code-review"), commit: action("commit") },
+	nodes: { "code-review": artifact(), commit: action() },
 	edges: { "code-review": "commit", commit: "stop" },
 });
 

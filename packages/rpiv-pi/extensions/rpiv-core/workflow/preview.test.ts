@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { action, defineWorkflow, type NodeDef, skill, threshold, type Workflow } from "./api.js";
+import { action, artifact, defineWorkflow, type NodeDef, threshold, type Workflow } from "./api.js";
 import { gitCommitExtractor } from "./extractors/index.js";
 import type { LoadedWorkflows } from "./load.js";
 import { formatWorkflowDetails, formatWorkflowList } from "./preview.js";
@@ -34,8 +34,8 @@ const tinyWorkflow = defineWorkflow({
 	name: "tiny",
 	start: "research",
 	nodes: {
-		research: skill("research"),
-		commit: action("commit"),
+		research: artifact(),
+		commit: action(),
 	},
 	edges: { research: "commit", commit: "stop" },
 });
@@ -152,9 +152,9 @@ describe("formatWorkflowDetails", () => {
 			name: "branching",
 			start: "code-review",
 			nodes: {
-				"code-review": skill("code-review"),
-				revise: skill("revise"),
-				commit: action("commit"),
+				"code-review": artifact(),
+				revise: artifact(),
+				commit: action(),
 			},
 			edges: {
 				"code-review": threshold("severeIssueCount", 0, "revise", "commit"),

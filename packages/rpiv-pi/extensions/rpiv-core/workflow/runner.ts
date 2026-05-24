@@ -174,8 +174,8 @@ function countReachableNodes(workflow: Workflow): number {
  * label (which used to round-trip through here) is read off `stage.skill`
  * by the caller — single source.
  */
-function buildPrompt(node: NodeDef, inputForStage: string): string {
-	return `/skill:${node.skill} ${inputForStage}`;
+function buildPrompt(skill: string, inputForStage: string): string {
+	return `/skill:${skill} ${inputForStage}`;
 }
 
 /**
@@ -186,12 +186,12 @@ function buildPrompt(node: NodeDef, inputForStage: string): string {
 async function runStage(curCtx: ChainCtx, currentName: string, idx: number, run: RunContext): Promise<void> {
 	const stage = resolveStageNode(currentName, idx, run);
 
-	if (await tryPhaseFanout(curCtx, currentName, stage.node, idx, run)) return;
+	if (await tryPhaseFanout(curCtx, stage, idx, run)) return;
 	if (!ensureUpstreamArtifact(curCtx, stage, currentName, run)) return;
 
 	const isStart = currentName === run.workflow.start;
 	const inputForStage = isStart ? run.state.originalInput : run.state.artifactPath!;
-	const prompt = buildPrompt(stage.node, inputForStage);
+	const prompt = buildPrompt(stage.skill, inputForStage);
 	curCtx.ui.setStatus(STATUS_KEY, STATUS_STAGE(stage.stageNumber, run.totalStages, stage.skill));
 
 	enforceSessionInvariants(stage, currentName, run);
@@ -242,26 +242,24 @@ function resolveStageNode(currentName: string, idx: number, run: RunContext): Re
 		// validateWorkflow should catch this; defensive for tests bypassing validation.
 		throw new Error(`runStage: node "${currentName}" referenced by edges but missing from workflow.nodes`);
 	}
-	return { node, name: currentName, stageNumber: idx + 1, skill: node.skill };
+	// `skill` defaults to the record key — the common case where node id and
+	// Pi skill match doesn't restate the name at the call site.
+	return { node, name: currentName, stageNumber: idx + 1, skill: node.skill ?? currentName };
 }
 
 /**
  * An implement skill against a plan with `## Phase N:` headings expands
- * into one session per phase. Keyed on `node.skill` so aliased implement
- * nodes (implement-after-revise, etc.) fan out too. Returns true iff
- * fanout fired — caller then returns without running the single-stage path.
+ * into one session per phase. Keyed on the *resolved* skill body so aliased
+ * implement nodes (implement-after-revise, etc.) fan out too — the alias
+ * sets `node.skill = "implement"` while keeping a distinct node name for
+ * routing. Returns true iff fanout fired — caller then returns without
+ * running the single-stage path.
  */
-async function tryPhaseFanout(
-	curCtx: ChainCtx,
-	currentName: string,
-	node: NodeDef,
-	idx: number,
-	run: RunContext,
-): Promise<boolean> {
-	if (!(node.skill === "implement" && run.state.artifactPath)) return false;
+async function tryPhaseFanout(curCtx: ChainCtx, stage: ResolvedStage, idx: number, run: RunContext): Promise<boolean> {
+	if (!(stage.skill === "implement" && run.state.artifactPath)) return false;
 	const phaseCount = countPhases(run.state.artifactPath, run.cwd);
 	if (phaseCount === 0) return false;
-	await runImplementPhases(curCtx, idx, currentName, node.skill, 1, phaseCount, run, {
+	await runImplementPhases(curCtx, idx, stage.name, stage.skill, 1, phaseCount, run, {
 		runPhaseSession,
 		advanceAfter: (freshCtx, name, completedIdx, ctx) => advanceChain(freshCtx, name, completedIdx, ctx),
 	});
@@ -284,14 +282,13 @@ function ensureUpstreamArtifact(curCtx: ChainCtx, stage: ResolvedStage, currentN
 }
 
 function enforceSessionInvariants(stage: ResolvedStage, currentName: string, run: RunContext): void {
-	const { node } = stage;
-	if (node.skill === "implement" && node.sessionPolicy === "continue") {
+	if (stage.skill === "implement" && stage.node.sessionPolicy === "continue") {
 		throw new Error(
 			`runStage: implement node "${currentName}" cannot use sessionPolicy "continue" — ` +
 				"phase fanout requires per-phase session isolation",
 		);
 	}
-	if (node.sessionPolicy === "continue" && !run.pi) {
+	if (stage.node.sessionPolicy === "continue" && !run.pi) {
 		throw new Error(
 			`runStage: node "${currentName}" uses sessionPolicy "continue" but no pi (ExtensionAPI) was provided to runWorkflow`,
 		);

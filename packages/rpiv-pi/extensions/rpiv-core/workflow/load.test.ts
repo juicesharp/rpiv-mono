@@ -40,7 +40,7 @@ const writeUserConfig = (body: string): void => {
 	writeFileSync(USER_CONFIG_PATH, body, "utf-8");
 };
 
-const importApi = `import { defineWorkflow, skill, action, threshold } from "${join(__dirname, "api.ts")}";`;
+const importApi = `import { defineWorkflow, artifact, action, threshold } from "${join(__dirname, "api.ts")}";`;
 
 // ---------------------------------------------------------------------------
 // Baseline — no overlays
@@ -68,7 +68,7 @@ describe("loadWorkflows — project overlay", () => {
 export default defineWorkflow({
   name: "ship",
   start: "implement",
-  nodes: { implement: action("implement"), commit: action("commit") },
+  nodes: { implement: action(), commit: action() },
   edges: { implement: "commit", commit: "stop" },
 });
 `,
@@ -92,13 +92,13 @@ export default {
     defineWorkflow({
       name: "a",
       start: "x",
-      nodes: { x: skill("x") },
+      nodes: { x: artifact() },
       edges: { x: "stop" },
     }),
     defineWorkflow({
       name: "b",
       start: "y",
-      nodes: { y: skill("y") },
+      nodes: { y: artifact() },
       edges: { y: "stop" },
     }),
   ],
@@ -119,7 +119,7 @@ export default {
 export default defineWorkflow({
   name: "mid",
   start: "implement",
-  nodes: { implement: action("implement") },
+  nodes: { implement: action() },
   edges: { implement: "stop" },
 });
 `,
@@ -144,7 +144,7 @@ describe("loadWorkflows — layered merge", () => {
 export default defineWorkflow({
   name: "same",
   start: "a",
-  nodes: { a: skill("a") },
+  nodes: { a: artifact() },
   edges: { a: "stop" },
 });
 `,
@@ -155,7 +155,7 @@ export default defineWorkflow({
 export default defineWorkflow({
   name: "same",
   start: "z",
-  nodes: { z: action("z") },
+  nodes: { z: action() },
   edges: { z: "stop" },
 });
 `,
@@ -173,8 +173,8 @@ export default defineWorkflow({
 			`${importApi}
 export default {
   workflows: [
-    defineWorkflow({ name: "u1", start: "a", nodes: { a: skill("a") }, edges: { a: "stop" } }),
-    defineWorkflow({ name: "u2", start: "b", nodes: { b: skill("b") }, edges: { b: "stop" } }),
+    defineWorkflow({ name: "u1", start: "a", nodes: { a: artifact() }, edges: { a: "stop" } }),
+    defineWorkflow({ name: "u2", start: "b", nodes: { b: artifact() }, edges: { b: "stop" } }),
   ],
   default: "u2",
 };
@@ -189,7 +189,7 @@ export default {
 		writeUserConfig(
 			`${importApi}
 export default {
-  workflows: [defineWorkflow({ name: "u1", start: "a", nodes: { a: skill("a") }, edges: { a: "stop" } })],
+  workflows: [defineWorkflow({ name: "u1", start: "a", nodes: { a: artifact() }, edges: { a: "stop" } })],
   default: "u1",
 };
 `,
@@ -198,7 +198,7 @@ export default {
 			TEST_TMP,
 			`${importApi}
 export default {
-  workflows: [defineWorkflow({ name: "p1", start: "b", nodes: { b: skill("b") }, edges: { b: "stop" } })],
+  workflows: [defineWorkflow({ name: "p1", start: "b", nodes: { b: artifact() }, edges: { b: "stop" } })],
   default: "p1",
 };
 `,
@@ -240,7 +240,7 @@ describe("loadWorkflows — issues", () => {
 export default defineWorkflow({
   name: "bad",
   start: "a",
-  nodes: { a: skill("a") },
+  nodes: { a: artifact() },
   edges: { a: "ghost" },
 });
 `,
@@ -257,7 +257,7 @@ export default defineWorkflow({
 export default defineWorkflow({
   name: "bad",
   start: "a",
-  nodes: { a: skill("a") },
+  nodes: { a: artifact() },
   edges: { a: "ghost" },
 });
 `,
@@ -274,8 +274,8 @@ export default defineWorkflow({
 			TEST_TMP,
 			`${importApi}
 export default [
-  defineWorkflow({ name: "a", start: "x", nodes: { x: skill("x") }, edges: { x: "stop" } }),
-  defineWorkflow({ name: "b", start: "y", nodes: { y: skill("y") }, edges: { y: "stop" } }),
+  defineWorkflow({ name: "a", start: "x", nodes: { x: artifact() }, edges: { x: "stop" } }),
+  defineWorkflow({ name: "b", start: "y", nodes: { y: artifact() }, edges: { y: "stop" } }),
 ];
 `,
 		);
@@ -305,7 +305,7 @@ export default [
 			TEST_TMP,
 			`${importApi}
 export default [
-  defineWorkflow({ name: "solo", start: "x", nodes: { x: skill("x") }, edges: { x: "stop" } }),
+  defineWorkflow({ name: "solo", start: "x", nodes: { x: artifact() }, edges: { x: "stop" } }),
 ];
 `,
 		);
@@ -320,7 +320,7 @@ export default [
 			TEST_TMP,
 			`${importApi}
 export default {
-  workflows: [defineWorkflow({ name: "real", start: "a", nodes: { a: skill("a") }, edges: { a: "stop" } })],
+  workflows: [defineWorkflow({ name: "real", start: "a", nodes: { a: artifact() }, edges: { a: "stop" } })],
   default: "missing",
 };
 `,
@@ -339,7 +339,7 @@ export default {
 export default defineWorkflow({
   name: "good",
   start: "a",
-  nodes: { a: skill("a") },
+  nodes: { a: artifact() },
   edges: { a: "stop" },
 });
 `,
