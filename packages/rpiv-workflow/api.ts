@@ -17,10 +17,10 @@
  */
 
 import type { StandardSchemaV1 } from "@standard-schema/spec";
-import type { Outcome } from "./manifest.js";
+import type { OutputSpec } from "./manifest.js";
 import type { RunState } from "./types.js";
 
-export type { Outcome } from "./manifest.js";
+export type { OutputSpec } from "./manifest.js";
 
 /**
  * Schema attached to a stage's `outputSchema` / `inputSchema`. Structurally
@@ -184,10 +184,10 @@ export interface StageDef<TIn = unknown, TOut = unknown> {
 	skill?: string;
 	kind: StageKind;
 	sessionPolicy: SessionPolicy;
-	outcome?: Outcome;
+	outcome?: OutputSpec;
 	/**
 	 * Standard Schema v1 validator run against `manifest.data` after the
-	 * stage's `Outcome` produces it (the typed record parsed out of the
+	 * stage's `OutputSpec` produces it (the typed record parsed out of the
 	 * agent's emitted artifact). On rejection the runner honours
 	 * `onInvalid` ("retry" by default, up to `maxRetries`; "halt" to fail
 	 * fast).

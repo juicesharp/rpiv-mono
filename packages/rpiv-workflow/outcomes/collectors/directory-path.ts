@@ -1,5 +1,5 @@
 /**
- * Directory-path resolver — `transcriptPathResolver` wrapped with the
+ * Directory-path collector — `transcriptPathCollector` wrapped with the
  * common `<dir>/<filename>.<ext>` regex idiom so authors don't write
  * the regex themselves.
  *
@@ -9,13 +9,13 @@
  *
  * For more exotic shapes (per-run nesting, multiple acceptable
  * directories, custom filename rules) drop down to
- * `transcriptPathResolver({ pattern })` and supply the regex directly.
+ * `transcriptPathCollector({ pattern })` and supply the regex directly.
  */
 
-import type { ArtifactResolver } from "../../outcome-types.js";
-import { transcriptPathResolver } from "./transcript-path.js";
+import type { ArtifactCollector } from "../../outcome-types.js";
+import { transcriptPathCollector } from "./transcript-path.js";
 
-export interface DirectoryPathResolverOpts {
+export interface DirectoryPathCollectorOpts {
 	/** cwd-relative directory the agent's announced path must sit under (e.g. `"docs/adr"`). */
 	dir: string;
 	/**
@@ -25,14 +25,14 @@ export interface DirectoryPathResolverOpts {
 	ext?: string;
 }
 
-export function directoryPathResolver(opts: DirectoryPathResolverOpts): ArtifactResolver {
+export function directoryPathCollector(opts: DirectoryPathCollectorOpts): ArtifactCollector {
 	if (typeof opts.dir !== "string" || opts.dir.length === 0) {
-		throw new Error("directoryPathResolver: `dir` is required and must be a non-empty string");
+		throw new Error("directoryPathCollector: `dir` is required and must be a non-empty string");
 	}
 	const escapedDir = escapeRegex(opts.dir);
 	const extPart = opts.ext ? escapeRegex(opts.ext) : "[a-zA-Z0-9]+";
 	const pattern = new RegExp(`${escapedDir}/[\\w.-]+\\.${extPart}`, "g");
-	return transcriptPathResolver({ pattern });
+	return transcriptPathCollector({ pattern });
 }
 
 function escapeRegex(s: string): string {

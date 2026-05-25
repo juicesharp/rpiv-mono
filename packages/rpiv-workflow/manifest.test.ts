@@ -1,7 +1,7 @@
 /**
  * Tests for `finalizeManifest` — the single source of manifest metadata
- * authorship in the workflow runtime. Every outcome (resolver +
- * optional reader) flows through this function on its way to disk + the
+ * authorship in the workflow runtime. Every outcome (collector +
+ * optional parser) flows through this function on its way to disk + the
  * next stage; the invariants this file pins are: ctx wins over payload
  * for meta fields, the `artifacts` list passes through unchanged
  * (including the empty-list case), and every meta field is stamped
@@ -52,8 +52,8 @@ describe("finalizeManifest", () => {
 	});
 
 	it("ctx.skill wins even if data carries an unexpected `skill`-ish field", () => {
-		// Resolvers/readers must NOT be able to spoof meta.skill — the runner sets it
-		// from the resolved node. Smuggling a `skill` key inside `data` must
+		// Collectors/parsers must NOT be able to spoof meta.skill — the runner sets it
+		// from the resolved stage. Smuggling a `skill` key inside `data` must
 		// not affect meta.
 		const m = finalizeManifest(
 			{ kind: "artifact-md", artifacts: [], data: { skill: "evil-skill", foo: 1 } },

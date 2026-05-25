@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { fs } from "../../handle.js";
 import type { BranchEntry } from "../../transcript.js";
-import { toolCallResolver } from "./tool-call.js";
+import { toolCallCollector } from "./tool-call.js";
 
 const asstWithTools = (parts: Array<{ name: string; input: Record<string, unknown> }>): BranchEntry => ({
 	type: "message",
@@ -18,20 +18,20 @@ const ctxOf = (branch: BranchEntry[]) => ({
 	state: {} as never,
 	branch,
 	branchOffset: undefined,
-	baseline: undefined,
+	snapshot: undefined,
 	skill: "test",
 });
 
-describe("toolCallResolver", () => {
-	it("throws when match or toHandle are missing", () => {
+describe("toolCallCollector", () => {
+	it("throws when match or toArtifact are missing", () => {
 		// @ts-expect-error — intentional misuse
-		expect(() => toolCallResolver({})).toThrow(/required functions/);
+		expect(() => toolCallCollector({})).toThrow(/required functions/);
 	});
 
 	it("emits one artifact per matching tool call in branch order", async () => {
-		const resolver = toolCallResolver({
+		const collector = toolCallCollector({
 			match: (tc) => tc.name === "write_file",
-			toHandle: (tc) => ({ handle: fs(String(tc.input.path)), role: "written" }),
+			toArtifact: (tc) => ({ handle: fs(String(tc.input.path)), role: "written" }),
 		});
 		const ctx = ctxOf([
 			asstWithTools([
@@ -40,7 +40,7 @@ describe("toolCallResolver", () => {
 				{ name: "write_file", input: { path: "b.ts" } },
 			]),
 		]);
-		const result = await resolver.resolve(ctx);
+		const result = await collector.collect(ctx);
 		expect(result.kind).toBe("ok");
 		if (result.kind !== "ok") return;
 		expect(result.artifacts).toEqual([
@@ -50,21 +50,21 @@ describe("toolCallResolver", () => {
 	});
 
 	it("returns ok+empty when nothing matches (runner decides whether to fatal)", async () => {
-		const resolver = toolCallResolver({
+		const collector = toolCallCollector({
 			match: (tc) => tc.name === "write_file",
-			toHandle: (tc) => ({ handle: fs(String(tc.input.path)) }),
+			toArtifact: (tc) => ({ handle: fs(String(tc.input.path)) }),
 		});
 		const ctx = ctxOf([asstWithTools([{ name: "read_file", input: { path: "x.ts" } }])]);
-		const result = await resolver.resolve(ctx);
+		const result = await collector.collect(ctx);
 		expect(result.kind).toBe("ok");
 		if (result.kind !== "ok") return;
 		expect(result.artifacts).toEqual([]);
 	});
 
-	it("toHandle returning undefined skips the call", async () => {
-		const resolver = toolCallResolver({
+	it("toArtifact returning undefined skips the call", async () => {
+		const collector = toolCallCollector({
 			match: () => true,
-			toHandle: (tc) => (tc.input.path ? { handle: fs(String(tc.input.path)) } : undefined),
+			toArtifact: (tc) => (tc.input.path ? { handle: fs(String(tc.input.path)) } : undefined),
 		});
 		const ctx = ctxOf([
 			asstWithTools([
@@ -72,28 +72,28 @@ describe("toolCallResolver", () => {
 				{ name: "write_file", input: { path: "a.ts" } },
 			]),
 		]);
-		const result = await resolver.resolve(ctx);
+		const result = await collector.collect(ctx);
 		expect(result.kind === "ok" && result.artifacts).toEqual([{ handle: { kind: "fs", path: "a.ts" } }]);
 	});
 
 	it("respects branchOffset", async () => {
-		const resolver = toolCallResolver({
+		const collector = toolCallCollector({
 			match: (tc) => tc.name === "write_file",
-			toHandle: (tc) => ({ handle: fs(String(tc.input.path)) }),
+			toArtifact: (tc) => ({ handle: fs(String(tc.input.path)) }),
 		});
 		const branch = [
 			asstWithTools([{ name: "write_file", input: { path: "prior.ts" } }]),
 			asstWithTools([{ name: "write_file", input: { path: "current.ts" } }]),
 		];
 		const ctx = { ...ctxOf(branch), branchOffset: 1 };
-		const result = await resolver.resolve(ctx);
+		const result = await collector.collect(ctx);
 		expect(result.kind === "ok" && result.artifacts).toEqual([{ handle: { kind: "fs", path: "current.ts" } }]);
 	});
 
-	it("multi-tool match — one resolver covers write_file + edit", async () => {
-		const resolver = toolCallResolver({
+	it("multi-tool match — one collector covers write_file + edit", async () => {
+		const collector = toolCallCollector({
 			match: (tc) => tc.name === "write_file" || tc.name === "edit",
-			toHandle: (tc) => ({ handle: fs(String(tc.input.path ?? tc.input.target_file)) }),
+			toArtifact: (tc) => ({ handle: fs(String(tc.input.path ?? tc.input.target_file)) }),
 		});
 		const ctx = ctxOf([
 			asstWithTools([
@@ -101,7 +101,7 @@ describe("toolCallResolver", () => {
 				{ name: "edit", input: { target_file: "old.ts" } },
 			]),
 		]);
-		const result = await resolver.resolve(ctx);
+		const result = await collector.collect(ctx);
 		expect(result.kind === "ok" && result.artifacts.map((a) => a.handle)).toEqual([
 			{ kind: "fs", path: "new.ts" },
 			{ kind: "fs", path: "old.ts" },

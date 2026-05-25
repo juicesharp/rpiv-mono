@@ -10,7 +10,7 @@
  *
  * Companion modules:
  *   - extraction.ts — produceAndValidateManifest + retry loop +
- *                     outcome helpers (resolver → reader pipeline).
+ *                     outcome helpers (collector → parser pipeline).
  *   - spawn.ts      — SessionPolicyHandler + FRESH/CONTINUE handlers +
  *                     handlerFor.
  */
@@ -148,7 +148,7 @@ function tryRecordStage(s: SessionContext, label: string, manifest: Manifest | u
 
 /**
  * Update the rolling chain-input slot. Only `produces` stages whose
- * resolver returned at least one artifact advance the primary —
+ * collector returned at least one artifact advance the primary —
  * `side-effect` stages (commit, implement) leave it in place so a stage
  * after them inherits the upstream chain input. The first artifact in
  * the manifest is the primary; `role` is user-facing metadata, not a
@@ -200,7 +200,7 @@ interface SessionOutcome {
  * `produceAndValidateManifest` (L6-05: initial == retry).
  *
  * No longer scans the transcript for an artifact path — discovery is
- * the resolver's job, not the runner's.
+ * the collector's job, not the runner's.
  */
 function readSessionOutcome(ctx: RunnerCtx, branchOffset: number | undefined): SessionOutcome {
 	const branch = readBranch(ctx);

@@ -128,11 +128,11 @@ describe("formatWorkflowDetails", () => {
 		expect(lines.find((l) => /research/.test(l))).toContain("fresh");
 	});
 
-	it("tags custom-outcome stages that declare a baseline + reader with a single 'custom+baseline+reader' decoration", () => {
+	it("tags custom-outcome stages that declare a snapshot + parser with a single 'custom+snapshot+parser' decoration", () => {
 		const out = formatWorkflowDetails(baseLoaded(), "mid");
 		const commitLine = out.split("\n").find((l) => /^\s+\d+\.\s+commit\b/.test(l)) ?? "";
-		// gitCommitOutcome carries both baseline (via resolver) and reader.
-		expect(commitLine).toContain("custom+baseline+reader");
+		// gitCommitOutcome carries both snapshot (via collector) and parser.
+		expect(commitLine).toContain("custom+snapshot+parser");
 		expect(commitLine).not.toContain("· custom ·"); // not double-tagged
 	});
 

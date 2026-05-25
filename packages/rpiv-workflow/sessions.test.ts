@@ -3,7 +3,7 @@
  *
  * Drives the two public entries (`runStageSession`, `runFanoutSession`) against
  * synthetic StageSession / FanoutSession objects so internals (retryUntilValid,
- * resolveExtractor, readSessionOutcome, spawnSession, recordStageSuccess, halt
+ * runOutcome, readSessionOutcome, spawnSession, recordStageSuccess, halt
  * helpers) are exercised at a finer grain than runner.test.ts can reach via
  * runWorkflow.
  *
@@ -24,7 +24,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { StageDef, StageSchema } from "./api.js";
 import { fs as fsHandle } from "./handle.js";
 import { currentPrimaryArtifact } from "./internal-utils.js";
-import type { Outcome, ResolveCtx } from "./manifest.js";
+import type { CollectCtx, OutputSpec } from "./manifest.js";
 import {
 	ERR_VALIDATION_FAILED,
 	MSG_STAGE_ABORTED,
@@ -79,7 +79,7 @@ const stageSession = (overrides: Partial<StageSession> & Pick<StageSession, "cwd
 	skill: "test",
 	stage: stage(),
 	stageIndex: 0,
-	baseline: undefined,
+	snapshot: undefined,
 	onSuccess: async () => {},
 	...overrides,
 });
@@ -87,15 +87,15 @@ const stageSession = (overrides: Partial<StageSession> & Pick<StageSession, "cwd
 /**
  * Scripted outcome — produces a sequence of {ok+data | fatal} results
  * across successive `runOutcome` invocations (the retry loop drives
- * this). Resolver + reader advance in lockstep on the same index.
+ * this). Collector + parser advance in lockstep on the same index.
  */
 type ScriptedResult = { kind: "ok"; data: Record<string, unknown> } | { kind: "fatal"; message: string };
 
-type ScriptedOutcome = Outcome & { resolveSpy: ReturnType<typeof vi.fn> };
+type ScriptedOutcome = OutputSpec & { collectSpy: ReturnType<typeof vi.fn> };
 
 const scriptedOutcome = (results: ScriptedResult[]): ScriptedOutcome => {
 	let i = 0;
-	const resolveSpy = vi.fn(() => {
+	const collectSpy = vi.fn(() => {
 		const r = results[i] ?? results[results.length - 1]!;
 		i++;
 		if (r.kind === "fatal") return { kind: "fatal" as const, message: r.message };
@@ -104,17 +104,17 @@ const scriptedOutcome = (results: ScriptedResult[]): ScriptedOutcome => {
 			artifacts: [{ handle: fsHandle(`scripted-${i}.md`), role: "primary" }],
 		};
 	});
-	const outcome: Outcome = {
-		resolver: { resolve: resolveSpy as ScriptedOutcome["resolver"]["resolve"] },
-		reader: {
-			read: () => {
+	const outcome: OutputSpec = {
+		collector: { collect: collectSpy as ScriptedOutcome["collector"]["collect"] },
+		parser: {
+			parse: () => {
 				const r = results[i - 1] ?? results[0]!;
 				if (r.kind === "fatal") return { kind: "fatal", message: r.message };
 				return { kind: "ok", payload: { kind: "test", data: r.data } };
 			},
 		},
 	};
-	return Object.assign(outcome, { resolveSpy });
+	return Object.assign(outcome, { collectSpy });
 };
 
 const okPayload = (data: Record<string, unknown>): ScriptedResult => ({ kind: "ok", data });
@@ -252,8 +252,8 @@ describe("sessions — validation retry loop", () => {
 			}),
 		);
 
-		// Initial resolve + MAX retries → MAX+1 calls total.
-		expect(outcome.resolveSpy).toHaveBeenCalledTimes(MAX_VALIDATION_RETRIES + 1);
+		// Initial collect + MAX retries → MAX+1 calls total.
+		expect(outcome.collectSpy).toHaveBeenCalledTimes(MAX_VALIDATION_RETRIES + 1);
 		// One MSG_VALIDATION_RETRY per retry attempt.
 		const retries = chain.notifications.filter((n) => /asking agent to fix/i.test(n.msg));
 		expect(retries).toHaveLength(MAX_VALIDATION_RETRIES);
@@ -282,7 +282,7 @@ describe("sessions — validation retry loop", () => {
 			}),
 		);
 
-		expect(outcome.resolveSpy).toHaveBeenCalledTimes(1);
+		expect(outcome.collectSpy).toHaveBeenCalledTimes(1);
 		expect(chain.notifications.find((n) => /asking agent to fix/i.test(n.msg))).toBeUndefined();
 		expect(onFailure).toHaveBeenCalledTimes(1);
 	});
@@ -374,8 +374,8 @@ describe("sessions — validation retry loop", () => {
 	});
 
 	// Removed: "outcome returning undefined payload on retry" — the new
-	// resolver/reader split has no `ok-no-payload` state. An empty
-	// resolver result on an produces node fatals at the contract
+	// collector/parser split has no `ok-no-payload` state. An empty
+	// collector result on an produces stage fatals at the contract
 	// check (enforceCompletionContract); the equivalent behaviour for
 	// side-effect nodes is "inherit prior" which is the success path, not
 	// a halt.
@@ -542,7 +542,7 @@ describe("sessions — validation retry loop", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Group 2 — outcome resolution (resolveExtractor)
+// Group 2 — outcome resolution (resolveOutcome)
 // ---------------------------------------------------------------------------
 
 describe("sessions — outcome resolution", () => {
@@ -571,7 +571,7 @@ describe("sessions — outcome resolution", () => {
 			}),
 		);
 
-		expect(explicit.resolveSpy).toHaveBeenCalledTimes(1);
+		expect(explicit.collectSpy).toHaveBeenCalledTimes(1);
 		expect(chain.notifications.some((n) => n.msg === MSG_STAGE_COMPLETE("test"))).toBe(true);
 	});
 
@@ -615,7 +615,7 @@ describe("sessions — outcome resolution", () => {
 		);
 
 		expect(onSuccess).toHaveBeenCalledTimes(1);
-		// Agent-end with no resolver output → empty artifacts list on the
+		// Side-effect with no collector output → empty artifacts list on the
 		// stage's manifest, but the chain's primaryArtifact rolling slot
 		// stays put so the next stage inherits the upstream input.
 		expect(state.manifest?.artifacts).toEqual([]);
@@ -625,17 +625,17 @@ describe("sessions — outcome resolution", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Group 3 — ResolveCtx contract (readSessionOutcome + buildResolveCtx)
+// Group 3 — CollectCtx contract (readSessionOutcome + buildCollectCtx)
 //
-// Post-L6-05: ResolveCtx.branch is ALWAYS the full unsliced branch;
+// Post-L6-05: CollectCtx.branch is ALWAYS the full unsliced branch;
 // branchOffset is ALWAYS the policy-derived offset (continue → captured
-// stage offset; fresh → undefined). Resolvers slice on demand via the
+// stage offset; fresh → undefined). Collectors slice on demand via the
 // `branchOffset` field. The initial production and the retry path emit
 // the same offset value — the closed-I4 defect cannot re-introduce by
 // construction.
 // ---------------------------------------------------------------------------
 
-describe("sessions — resolver ctx (always-unsliced branch + policy-derived offset)", () => {
+describe("sessions — collector ctx (always-unsliced branch + policy-derived offset)", () => {
 	let tmpDir: string;
 
 	beforeEach(() => {
@@ -645,11 +645,11 @@ describe("sessions — resolver ctx (always-unsliced branch + policy-derived off
 		rmSync(tmpDir, { recursive: true, force: true });
 	});
 
-	const recordingOutcomeOf = (results: ScriptedResult[], captured: ResolveCtx[]): Outcome => {
+	const recordingOutcomeOf = (results: ScriptedResult[], captured: CollectCtx[]): OutputSpec => {
 		let i = 0;
 		return {
-			resolver: {
-				resolve: (ctx) => {
+			collector: {
+				collect: (ctx) => {
 					captured.push(ctx);
 					const r = results[i] ?? results[results.length - 1]!;
 					i++;
@@ -657,8 +657,8 @@ describe("sessions — resolver ctx (always-unsliced branch + policy-derived off
 					return { kind: "ok", artifacts: [{ handle: fsHandle(`s-${i}.md`), role: "primary" }] };
 				},
 			},
-			reader: {
-				read: () => {
+			parser: {
+				parse: () => {
 					const r = results[i - 1] ?? results[0]!;
 					if (r.kind === "fatal") return { kind: "fatal", message: r.message };
 					return { kind: "ok", payload: { kind: "test", data: r.data } };
@@ -668,7 +668,7 @@ describe("sessions — resolver ctx (always-unsliced branch + policy-derived off
 	};
 
 	it("continue policy: full unsliced branch + branchOffset = captured stage offset", async () => {
-		const captured: ResolveCtx[] = [];
+		const captured: CollectCtx[] = [];
 		const recordingOutcome = recordingOutcomeOf([okPayload({})], captured);
 
 		// Outer ctx (continue path) — branch contains prior-stage prefix + current-stage tail.
@@ -709,7 +709,7 @@ describe("sessions — resolver ctx (always-unsliced branch + policy-derived off
 		// asymmetric pair that could re-introduce the I4 defect if a future
 		// refactor changed one path without the other.
 		// Post-L6-05: both extractions emit identical `(full branch, captured offset)`.
-		const captured: ResolveCtx[] = [];
+		const captured: CollectCtx[] = [];
 		// First call: schema-invalid → triggers retry. Subsequent: schema-valid.
 		const failThenPassOutcome = recordingOutcomeOf([okPayload({ foo: 0 }), okPayload({ foo: 2 })], captured);
 
@@ -751,7 +751,7 @@ describe("sessions — resolver ctx (always-unsliced branch + policy-derived off
 	});
 
 	it("fresh policy: full branch + branchOffset undefined (handler forces undefined regardless of stage carry)", async () => {
-		const captured: ResolveCtx[] = [];
+		const captured: CollectCtx[] = [];
 		const recordingOutcome = recordingOutcomeOf([okPayload({})], captured);
 		const branch = [mockAssistantMessage("done")];
 		const chain = createMockSessionChain({ cwd: tmpDir, steps: [{ branch }] });
@@ -885,18 +885,18 @@ describe("sessions — success persistence", () => {
 		rmSync(tmpDir, { recursive: true, force: true });
 	});
 
-	it("side-effect with a resolver emitting one artifact records the manifest but does NOT advance the chain primary", async () => {
+	it("side-effect with a collector emitting one artifact records the manifest but does NOT advance the chain primary", async () => {
 		const chain = createMockSessionChain({
 			cwd: tmpDir,
 			steps: [{ branch: [mockAssistantMessage("done")] }],
 		});
 		const state = freshRunState();
 
-		// Agent-end outcome that produces an artifact (e.g. a commit-style
+		// Side-effect outcome that produces an artifact (e.g. a commit-style
 		// stage). manifest.artifacts records it; primaryArtifact stays
 		// undefined because only produces stages advance the chain
 		// input.
-		const recorded = ".rpiv/artifacts/research/from-resolver.md";
+		const recorded = ".rpiv/artifacts/research/from-collector.md";
 		await runStageSession(
 			chain.ctx as RunnerCtx,
 			stageSession({
@@ -905,8 +905,8 @@ describe("sessions — success persistence", () => {
 				stage: stage({
 					kind: "side-effect",
 					outcome: {
-						resolver: {
-							resolve: () => ({
+						collector: {
+							collect: () => ({
 								kind: "ok",
 								artifacts: [{ handle: fsHandle(recorded), role: "primary" }],
 							}),
@@ -921,7 +921,7 @@ describe("sessions — success persistence", () => {
 		expect(state.primaryArtifact).toBeUndefined();
 	});
 
-	it("produces advances state.primaryArtifact to the resolver's first artifact", async () => {
+	it("produces advances state.primaryArtifact to the collector's first artifact", async () => {
 		const chain = createMockSessionChain({
 			cwd: tmpDir,
 			steps: [{ branch: [mockAssistantMessage("done")] }],
@@ -937,8 +937,8 @@ describe("sessions — success persistence", () => {
 				stage: stage({
 					kind: "produces",
 					outcome: {
-						resolver: {
-							resolve: () => ({
+						collector: {
+							collect: () => ({
 								kind: "ok",
 								artifacts: [{ handle: fsHandle(path), role: "primary" }],
 							}),
@@ -1103,7 +1103,7 @@ describe("sessions — halt routing", () => {
 				state,
 				stage: stage({
 					kind: "side-effect",
-					outcome: { resolver: { resolve: () => ({ kind: "fatal", message: "outcome said no" }) } },
+					outcome: { collector: { collect: () => ({ kind: "fatal", message: "outcome said no" }) } },
 				}),
 				onFailure,
 			}),

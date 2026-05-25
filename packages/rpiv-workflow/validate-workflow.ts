@@ -234,7 +234,7 @@ function checkStageEnums(w: Workflow, name: string, stage: StageDef, issues: Wor
 				name,
 				`stage "${name}" has kind "produces" but no \`outcome\` — ` +
 					"there is no framework default for produces stages. Wire `outcome: rpivArtifactMdOutcome` " +
-					"(from @juicesharp/rpiv-pi) or supply your own `{ resolver, reader? }`.",
+					"(from @juicesharp/rpiv-pi) or supply your own `{ collector, parser? }`.",
 			),
 		);
 	}

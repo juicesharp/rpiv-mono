@@ -77,9 +77,10 @@ function formatStageRow(idx: number, stageName: string, stage: StageDef, workflo
 }
 
 /**
+/**
  * Single tag per stage encoding the outcome shape. Custom outcomes
- * report `custom` (+`baseline` when the resolver declares a baseline
- * hook, +`reader` when a reader is wired). Stages without an outcome
+ * report `custom` (+`snapshot` when the collector declares a snapshot
+ * hook, +`parser` when a parser is wired). Stages without an outcome
  * fall through to the framework default: `side-effect` for
  * side-effect stages (the only kind that has a default); `???` for
  * `produces` (load-time validation rejects this — the tag is for
@@ -88,8 +89,8 @@ function formatStageRow(idx: number, stageName: string, stage: StageDef, workflo
 function outcomeTag(stage: StageDef): string {
 	if (stage.outcome) {
 		const tags = ["custom"];
-		if (stage.outcome.resolver.baseline) tags.push("baseline");
-		if (stage.outcome.reader) tags.push("reader");
+		if (stage.outcome.collector.snapshot) tags.push("snapshot");
+		if (stage.outcome.parser) tags.push("parser");
 		return tags.join("+");
 	}
 	return stage.kind === "produces" ? "???" : "side-effect";

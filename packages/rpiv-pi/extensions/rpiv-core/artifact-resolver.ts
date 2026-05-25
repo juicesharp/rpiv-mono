@@ -1,25 +1,25 @@
 /**
- * rpiv-flavoured artifact resolution — the `.rpiv/artifacts/<bucket>/<file>.md`
+ * rpiv-flavoured artifact collection — the `.rpiv/artifacts/<bucket>/<file>.md`
  * convention all rpiv-pi skills emit into. This module owns the
  * convention; the framework (`@juicesharp/rpiv-workflow`) ships only
- * the primitives (`ArtifactResolver`, `ArtifactReader`, handle
- * constructors, `defineResolver`, etc.) and stays layout-agnostic.
+ * the primitives (`ArtifactCollector`, `ArtifactParser`, handle
+ * constructors, `defineCollector`, etc.) and stays layout-agnostic.
  *
- * Two resolvers:
- *   - `rpivArtifactResolver` — accepts any `.rpiv/artifacts/<bucket>/...md`
+ * Two collectors:
+ *   - `rpivArtifactCollector` — accepts any `.rpiv/artifacts/<bucket>/...md`
  *     path the agent announces in text (bucket-agnostic). Use when a
  *     stage may emit to several sibling subfolders.
- *   - `rpivBucketResolver(bucket)` — accepts only that one bucket's
+ *   - `rpivBucketCollector(bucket)` — accepts only that one bucket's
  *     paths. Use when the stage MUST land in a specific subfolder
- *     (`research`, `plans`, etc.) — the resolver halts the chain if the
+ *     (`research`, `plans`, etc.) — the collector halts the chain if the
  *     agent strayed.
  *
- * One reader: `frontmatterReader` parses YAML frontmatter from the
+ * One parser: `frontmatterParser` parses YAML frontmatter from the
  * primary fs artifact into `Record<string, unknown>` — what
  * `outputSchema` validates against for typed downstream narrowing.
  *
  * Pre-bundled outcome: `rpivArtifactMdOutcome` =
- * `{ resolver: rpivArtifactResolver, reader: frontmatterReader }` —
+ * `{ collector: rpivArtifactCollector, parser: frontmatterParser }` —
  * the drop-in default rpiv-pi's built-in workflows wire into every
  * `produces()` stage.
  */
@@ -28,32 +28,32 @@ import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
 import {
-	type ArtifactReader,
-	type ArtifactResolver,
-	defineReader,
-	type Outcome,
-	type ReadCtx,
-	transcriptPathResolver,
+	type ArtifactCollector,
+	type ArtifactParser,
+	defineParser,
+	type OutputSpec,
+	type ParseCtx,
+	transcriptPathCollector,
 } from "@juicesharp/rpiv-workflow";
 
 // ---------------------------------------------------------------------------
-// Resolvers — text-scan over assistant transcript
+// Collectors — text-scan over assistant transcript
 // ---------------------------------------------------------------------------
 
 const RPIV_ARTIFACT_PATTERN = /\.rpiv\/artifacts\/[\w.-]+\/[\w.-]+\.md/g;
 
 /** Bucket-agnostic — accepts any `.rpiv/artifacts/<bucket>/...md`. */
-export const rpivArtifactResolver: ArtifactResolver = transcriptPathResolver({ pattern: RPIV_ARTIFACT_PATTERN });
+export const rpivArtifactCollector: ArtifactCollector = transcriptPathCollector({ pattern: RPIV_ARTIFACT_PATTERN });
 
 /** Bucket-narrowed — accepts only `.rpiv/artifacts/<bucket>/...md`. */
-export function rpivBucketResolver(bucket: string): ArtifactResolver {
+export function rpivBucketCollector(bucket: string): ArtifactCollector {
 	const escaped = bucket.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 	const pattern = new RegExp(`\\.rpiv/artifacts/${escaped}/[\\w.-]+\\.md`, "g");
-	return transcriptPathResolver({ pattern });
+	return transcriptPathCollector({ pattern });
 }
 
 // ---------------------------------------------------------------------------
-// Reader — markdown frontmatter
+// Parser — markdown frontmatter
 // ---------------------------------------------------------------------------
 
 /**
@@ -61,13 +61,13 @@ export function rpivBucketResolver(bucket: string): ArtifactResolver {
  * frontmatter produce `data: {}`. Fatals when the announced path
  * doesn't exist on disk (the agent claimed to write but didn't).
  */
-export const frontmatterReader: ArtifactReader<undefined, "artifact-md", Record<string, unknown>> = defineReader({
-	read(ctx: ReadCtx<undefined>) {
+export const frontmatterParser: ArtifactParser<undefined, "artifact-md", Record<string, unknown>> = defineParser({
+	parse(ctx: ParseCtx<undefined>) {
 		const primary = ctx.artifacts[0];
 		if (!primary || primary.handle.kind !== "fs") {
 			return {
 				kind: "fatal",
-				message: `${ctx.skill}: frontmatterReader requires an fs artifact (got ${primary?.handle.kind ?? "none"})`,
+				message: `${ctx.skill}: frontmatterParser requires an fs artifact (got ${primary?.handle.kind ?? "none"})`,
 			};
 		}
 		const abs = isAbsolute(primary.handle.path) ? primary.handle.path : join(ctx.cwd, primary.handle.path);
@@ -90,16 +90,16 @@ export const frontmatterReader: ArtifactReader<undefined, "artifact-md", Record<
 });
 
 // ---------------------------------------------------------------------------
-// Outcome — pre-bundled wiring rpiv-pi workflows plug in
+// OutputSpec — pre-bundled wiring rpiv-pi workflows plug in
 // ---------------------------------------------------------------------------
 
 /** Default rpiv-pi produces outcome — bucket-agnostic text scan + frontmatter parse. */
-export const rpivArtifactMdOutcome: Outcome<unknown, "artifact-md", Record<string, unknown>> = {
-	resolver: rpivArtifactResolver,
-	reader: frontmatterReader,
+export const rpivArtifactMdOutcome: OutputSpec<unknown, "artifact-md", Record<string, unknown>> = {
+	collector: rpivArtifactCollector,
+	parser: frontmatterParser,
 };
 
 /** Per-bucket variant — narrows accepted paths to the supplied subfolder. */
-export function rpivBucketOutcome(bucket: string): Outcome<unknown, "artifact-md", Record<string, unknown>> {
-	return { resolver: rpivBucketResolver(bucket), reader: frontmatterReader };
+export function rpivBucketOutcome(bucket: string): OutputSpec<unknown, "artifact-md", Record<string, unknown>> {
+	return { collector: rpivBucketCollector(bucket), parser: frontmatterParser };
 }

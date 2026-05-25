@@ -1,11 +1,11 @@
 /**
  * Git commit outcome + pre-stage git HEAD snapshot.
  *
- * Split into a resolver (detects the commit and emits an `opaque(sha)`
- * handle) and a reader (parses commit metadata into `GitCommitData`).
- * `gitCommitOutcome` is the wired-up pair authors plug into a node;
- * `gitCommitResolver` and `gitCommitReader` are individually exposed
- * so authors can compose them with other readers / resolvers.
+ * Split into a collector (detects the commit and emits an `opaque(sha)`
+ * handle) and a parser (parses commit metadata into `GitCommitData`).
+ * `gitCommitOutcome` is the wired-up pair authors plug into a stage;
+ * `gitCommitCollector` and `gitCommitParser` are individually exposed
+ * so authors can compose them with other parsers / collectors.
  *
  * Shells out asynchronously via `execFile` so a slow `git` invocation
  * (network-backed working tree, hung FS, large `--shortstat`) can't
@@ -15,14 +15,21 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { type Artifact, opaque } from "../handle.js";
-import type { ArtifactReader, ArtifactResolver, BaselineCtx, Outcome, ReadCtx, ResolveCtx } from "../outcome-types.js";
+import type {
+	ArtifactCollector,
+	ArtifactParser,
+	CollectCtx,
+	OutputSpec,
+	ParseCtx,
+	SnapshotCtx,
+} from "../outcome-types.js";
 
 const execFileAsync = promisify(execFile);
 
 /**
- * Manifest data shape produced by `gitCommitReader` — co-located with
+ * Manifest data shape produced by `gitCommitParser` — co-located with
  * the outcome that emits it. The `GitCommitManifest` alias in
- * `manifest.ts` re-imports this type so downstream nodes can narrow on
+ * `manifest.ts` re-imports this type so downstream stages can narrow on
  * `manifest.kind === "git-commit"` without reaching into per-outcome
  * paths.
  */
@@ -34,7 +41,7 @@ export interface GitCommitData {
 	noOp?: boolean;
 }
 
-/** Baseline snapshot captured before the stage runs. */
+/** Snapshot captured before the stage runs. */
 export interface GitHeadSnapshot {
 	baselineSha: string;
 }
@@ -58,10 +65,10 @@ async function git(cwd: string, ...args: string[]): Promise<string> {
  * Async — keeps the event loop responsive even if `git` is slow (network
  * FS, hung mount, contended index). Fail-soft: returns undefined on any
  * failure (not a git repo, git missing, non-zero exit, timeout).
- * `gitCommitResolver` handles `undefined` snapshot gracefully by
+ * `gitCommitCollector` handles `undefined` snapshot gracefully by
  * emitting an artifact carrying a `noOp: true` payload.
  */
-export async function gitHeadSnapshot(ctx: BaselineCtx): Promise<GitHeadSnapshot | undefined> {
+export async function gitHeadSnapshot(ctx: SnapshotCtx): Promise<GitHeadSnapshot | undefined> {
 	try {
 		const sha = await git(ctx.cwd, "rev-parse", "HEAD");
 		return sha ? { baselineSha: sha } : undefined;
@@ -71,26 +78,26 @@ export async function gitHeadSnapshot(ctx: BaselineCtx): Promise<GitHeadSnapshot
 }
 
 // ---------------------------------------------------------------------------
-// Resolver — detect "did HEAD move during this stage?"
+// Collector — detect "did HEAD move during this stage?"
 // ---------------------------------------------------------------------------
 
 /**
- * Resolver always emits exactly one artifact — even on no-op (HEAD
+ * Collector always emits exactly one artifact — even on no-op (HEAD
  * unchanged) or git-unavailable, with the handle's `id` carrying the
- * post-stage SHA (or empty string). The reader interprets the
+ * post-stage SHA (or empty string). The parser interprets the
  * `noOp` flag from the artifact's `meta`. This shape keeps the
- * resolver's contract uniform (always one fact) while letting the
- * reader produce the rich `GitCommitData` downstream consumers expect.
+ * collector's contract uniform (always one fact) while letting the
+ * parser produce the rich `GitCommitData` downstream consumers expect.
  */
-export const gitCommitResolver: ArtifactResolver<GitHeadSnapshot | undefined> = {
-	baseline: gitHeadSnapshot,
-	async resolve(ctx: ResolveCtx<GitHeadSnapshot | undefined>) {
-		const baselineSha = ctx.baseline?.baselineSha ?? "";
+export const gitCommitCollector: ArtifactCollector<GitHeadSnapshot | undefined> = {
+	snapshot: gitHeadSnapshot,
+	async collect(ctx: CollectCtx<GitHeadSnapshot | undefined>) {
+		const baselineSha = ctx.snapshot?.baselineSha ?? "";
 		const headSha = await safeHead(ctx.cwd);
 		const artifact: Artifact = {
 			handle: opaque(headSha || baselineSha),
 			role: "commit",
-			meta: { baselineSha, headSha, baselineMissing: !ctx.baseline },
+			meta: { baselineSha, headSha, baselineMissing: !ctx.snapshot },
 		};
 		return { kind: "ok", artifacts: [artifact] };
 	},
@@ -105,16 +112,16 @@ async function safeHead(cwd: string): Promise<string> {
 }
 
 // ---------------------------------------------------------------------------
-// Reader — turn the resolved commit handle into typed GitCommitData
+// Parser — turn the collected commit handle into typed GitCommitData
 // ---------------------------------------------------------------------------
 
-export const gitCommitReader: ArtifactReader<GitHeadSnapshot | undefined, "git-commit", GitCommitData> = {
-	async read(ctx: ReadCtx<GitHeadSnapshot | undefined>) {
+export const gitCommitParser: ArtifactParser<GitHeadSnapshot | undefined, "git-commit", GitCommitData> = {
+	async parse(ctx: ParseCtx<GitHeadSnapshot | undefined>) {
 		const artifact = ctx.artifacts[0];
 		if (!artifact) {
-			// Defensive — gitCommitResolver always emits one, but a composed
-			// resolver may not. Treat as no-op against the baseline.
-			return { kind: "ok", payload: { kind: "git-commit", data: noOpData(ctx.baseline?.baselineSha ?? "") } };
+			// Defensive — gitCommitCollector always emits one, but a composed
+			// collector may not. Treat as no-op against the baseline.
+			return { kind: "ok", payload: { kind: "git-commit", data: noOpData(ctx.snapshot?.baselineSha ?? "") } };
 		}
 		const meta = artifact.meta as { baselineSha: string; headSha: string; baselineMissing: boolean } | undefined;
 		const baselineSha = meta?.baselineSha ?? "";
@@ -130,20 +137,20 @@ export const gitCommitReader: ArtifactReader<GitHeadSnapshot | undefined, "git-c
 };
 
 // ---------------------------------------------------------------------------
-// Outcome — the wired-up pair
+// OutputSpec — the wired-up pair
 // ---------------------------------------------------------------------------
 
 /**
- * Git commit outcome — composes `gitCommitResolver` (which carries the
- * `gitHeadSnapshot` baseline internally) with `gitCommitReader`.
+ * Git commit outcome — composes `gitCommitCollector` (which carries the
+ * `gitHeadSnapshot` snapshot internally) with `gitCommitParser`.
  *
- * Concrete generics: baseline is `GitHeadSnapshot | undefined`
+ * Concrete generics: snapshot is `GitHeadSnapshot | undefined`
  * (undefined when not in a git repo), manifest kind is `"git-commit"`,
  * data is `GitCommitData`.
  */
-export const gitCommitOutcome: Outcome<GitHeadSnapshot | undefined, "git-commit", GitCommitData> = {
-	resolver: gitCommitResolver,
-	reader: gitCommitReader,
+export const gitCommitOutcome: OutputSpec<GitHeadSnapshot | undefined, "git-commit", GitCommitData> = {
+	collector: gitCommitCollector,
+	parser: gitCommitParser,
 };
 
 // ---------------------------------------------------------------------------
@@ -152,7 +159,7 @@ export const gitCommitOutcome: Outcome<GitHeadSnapshot | undefined, "git-commit"
 
 /**
  * Build `GitCommitData` given pre/post SHAs already gathered by the
- * resolver. Returns `null` if any follow-up git call throws — caller
+ * collector. Returns `null` if any follow-up git call throws — caller
  * substitutes a baseline-aware no-op payload so the workflow keeps
  * moving.
  */

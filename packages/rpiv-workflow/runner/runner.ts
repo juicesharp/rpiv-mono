@@ -8,7 +8,7 @@
  *  - runner.ts          — runWorkflow + countReachableStages +
  *                         runStageOrRecordFailure + finalizeWorkflow.
  *  - stage-lifecycle.ts — runStage + StagePreflightError + preflight
- *                         pipeline + outcome.resolver.baseline hook.
+ *                         pipeline + outcome.collector.snapshot hook.
  *  - chain-advance.ts   — advanceChain + routing audit + backward-jump
  *                         guard + halt-on-error.
  *

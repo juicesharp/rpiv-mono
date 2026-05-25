@@ -18,7 +18,7 @@
  *      What a `workflows.config.ts` author imports to declare a workflow:
  *      `defineWorkflow`, `produces`, `acts`, `threshold`, `Workflow`,
  *      `StageDef`, `EdgeFn`, `EdgeTarget`, `EdgeContext`, `StageSchema`,
- *      `StageKind`, `SessionPolicy`, `definePredicate`,
+ *      `StageKind`, `SessionPolicy`, `OutputSpec`, `definePredicate`,
  *      `defineStatePredicate`, `READS_FRONTMATTER`, the runtime-mirror
  *      `*_VALUES` arrays, and `typeboxSchema` (the TypeBox adapter).
  *
@@ -47,25 +47,25 @@
  *      `opaque`/`inline`/`handleToString`) + bundled outcomes
  *      (`sideEffectOutcome`, `gitCommitOutcome`, `GitCommitData`,
  *      `gitHeadSnapshot`, `GitHeadSnapshot`) + the bundled
- *      resolver/reader catalog wireable into any custom `Outcome`:
- *        - resolvers: `transcriptPathResolver` (regex over assistant
- *          text), `toolCallResolver` (universal tool_use observer),
- *          `workspaceDiffResolver` (git status diff pre/post),
- *          `gitCommitResolver` (commit detection), the wrappers
- *          `directoryPathResolver` / `urlResolver`, plus composition
- *          `unionResolvers` and the empty-list primitive `noopResolver`.
- *        - readers: `jsonBodyReader` (parses primary fs body),
- *          `gitCommitReader`.
+ *      collector/parser catalog wireable into any custom `OutputSpec`:
+ *        - collectors: `transcriptPathCollector` (regex over assistant
+ *          text), `toolCallCollector` (universal tool_use observer),
+ *          `workspaceDiffCollector` (git status diff pre/post),
+ *          `gitCommitCollector` (commit detection), the wrappers
+ *          `directoryPathCollector` / `urlCollector`, plus composition
+ *          `unionCollectors` and the empty-list primitive `noopCollector`.
+ *        - parsers: `jsonBodyParser` (parses primary fs body),
+ *          `gitCommitParser`.
  *      The `.rpiv/artifacts/<bucket>/<file>.md` outcome + the
- *      markdown-frontmatter reader live in `@juicesharp/rpiv-pi`
- *      (`rpivArtifactMdOutcome` / `frontmatterReader`) — those are
+ *      markdown-frontmatter parser live in `@juicesharp/rpiv-pi`
+ *      (`rpivArtifactMdOutcome` / `frontmatterParser`) — those are
  *      rpiv conventions, not framework defaults.
  *
  *   6. Custom-outcome authoring surface — `./manifest.js`
- *      `Outcome<Baseline, Kind, Data>` (resolver + optional reader),
- *      `ArtifactResolver`, `ArtifactReader`, `ResolveCtx`,
- *      `ResolveResult`, `ReadCtx`, `ReadResult`, `BaselineCtx`,
- *      `BaselineFn`. Sugar: `defineResolver` / `defineReader`.
+ *      `OutputSpec<Snapshot, Kind, Data>` (collector + optional parser),
+ *      `ArtifactCollector`, `ArtifactParser`, `CollectCtx`,
+ *      `CollectResult`, `ParseCtx`, `ParseResult`, `SnapshotCtx`,
+ *      `SnapshotFn`. Sugar: `defineCollector` / `defineParser`.
  *
  *   7. Validation surfaces — `./validate-workflow.js`,
  *      `./validate-manifest.js`
@@ -153,42 +153,42 @@ export type { WorkflowCommandHost, WorkflowHost, WorkflowSessionHost } from "./h
 export type { ConfigLayer, Issue, LoadedWorkflows, LoadIssue, OverlayPaths } from "./load/index.js";
 export { loadWorkflows, projectOverlayPaths, userOverlayPaths } from "./load/index.js";
 export type {
-	ArtifactReader,
-	ArtifactResolver,
-	BaselineCtx,
-	BaselineFn,
+	ArtifactCollector,
+	ArtifactParser,
+	CollectCtx,
+	CollectResult,
 	Manifest,
 	ManifestMeta,
-	Outcome,
-	ReadCtx,
-	ReadResult,
-	ResolveCtx,
-	ResolveResult,
+	OutputSpec,
+	ParseCtx,
+	ParseResult,
+	SnapshotCtx,
+	SnapshotFn,
 } from "./manifest.js";
-export { defineReader, defineResolver } from "./outcome-types.js";
+export { defineCollector, defineParser } from "./outcome-types.js";
 export {
-	type DirectoryPathResolverOpts,
-	directoryPathResolver,
+	type DirectoryPathCollectorOpts,
+	directoryPathCollector,
 	type GitCommitData,
 	type GitHeadSnapshot,
+	gitCommitCollector,
 	gitCommitOutcome,
-	gitCommitReader,
-	gitCommitResolver,
+	gitCommitParser,
 	gitHeadSnapshot,
-	jsonBodyReader,
-	noopResolver,
+	jsonBodyParser,
+	noopCollector,
 	sideEffectOutcome,
 	type ToolCall,
-	type ToolCallResolverOpts,
-	type TranscriptPathResolverOpts,
-	toolCallResolver,
-	transcriptPathResolver,
-	type UrlResolverOpts,
-	unionResolvers,
-	urlResolver,
-	type WorkspaceDiffBaseline,
-	type WorkspaceDiffResolverOpts,
-	workspaceDiffResolver,
+	type ToolCallCollectorOpts,
+	type TranscriptPathCollectorOpts,
+	toolCallCollector,
+	transcriptPathCollector,
+	type UrlCollectorOpts,
+	unionCollectors,
+	urlCollector,
+	type WorkspaceDiffCollectorOpts,
+	type WorkspaceDiffSnapshot,
+	workspaceDiffCollector,
 } from "./outcomes/index.js";
 export { type RunWorkflowOptions, type RunWorkflowResult, runWorkflow } from "./runner/index.js";
 export {

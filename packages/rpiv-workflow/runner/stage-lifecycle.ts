@@ -1,7 +1,7 @@
 /**
  * Per-stage lifecycle: resolve the stage def, run the preflight pipeline,
  * prepare the prompt + status + branchOffset, capture the outcome's
- * baseline, and hand off to `runStageSession`.
+ * snapshot, and hand off to `runStageSession`.
  *
  * Owns the typed-throw preflight machinery (`StagePreflightError`,
  * `PreflightCheck`, `PRE_PROMPT_CHECKS`, `POST_PROMPT_CHECKS`) and the
@@ -111,7 +111,7 @@ function buildPrompt(skill: string, inputForStage: string): string {
  *   3. prompt + status + branchOffset prep.
  *   4. POST_PROMPT_CHECKS        — preflights gated on prompt-prep state.
  *      a. ensureInputValid       — halt: upstream manifest fails inputSchema.
- *   5. captureStageBaseline      — outcome.resolver.baseline hook (must run
+ *   5. captureStageSnapshot      — outcome.collector.snapshot hook (must run
  *                                  before the Pi session so post-stage diffs work).
  *
  * Each `PreflightCheck` throws `StagePreflightError` on failure;
@@ -131,7 +131,7 @@ export async function runStage(curCtx: RunnerCtx, currentName: string, idx: numb
 
 	for (const check of POST_PROMPT_CHECKS) await check.run(stage, run);
 
-	const baseline = await captureStageBaseline(stage.def, idx, run);
+	const snapshot = await captureStageSnapshot(stage.def, idx, run);
 
 	await runStageSession(curCtx, {
 		cwd: run.cwd,
@@ -141,7 +141,7 @@ export async function runStage(curCtx: RunnerCtx, currentName: string, idx: numb
 		skill: stage.skill,
 		stage: stage.def,
 		stageIndex: idx,
-		baseline,
+		snapshot,
 		host: run.host,
 		branchOffset,
 		onFailure: (freshCtx) => notifyPartialArtifacts(freshCtx, run.cwd, run.runId),
@@ -311,18 +311,18 @@ function clampValidateTimeoutMs(raw: number | undefined): number {
 	);
 }
 
-async function captureStageBaseline(def: StageDef, idx: number, run: RunContext): Promise<unknown> {
-	const baseline = def.outcome?.resolver.baseline;
-	if (!baseline) return undefined;
+async function captureStageSnapshot(def: StageDef, idx: number, run: RunContext): Promise<unknown> {
+	const snapshot = def.outcome?.collector.snapshot;
+	if (!snapshot) return undefined;
 	try {
-		return await baseline({
+		return await snapshot({
 			cwd: run.cwd,
 			runId: run.runId,
 			stageIndex: idx,
 			state: run.state,
 		});
 	} catch {
-		// Baseline capture failure doesn't prevent stage execution.
+		// Snapshot capture failure doesn't prevent stage execution.
 		return undefined;
 	}
 }

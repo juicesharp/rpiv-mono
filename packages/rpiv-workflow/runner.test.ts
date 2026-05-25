@@ -7,15 +7,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { EdgeTarget, FanoutFn, StageDef, StageKind, StageSchema, Workflow } from "./api.js";
 import { definePredicate, defineStatePredicate, defineWorkflow, threshold } from "./api.js";
 import { fs as fsHandle } from "./handle.js";
-import type { Outcome } from "./manifest.js";
+import type { OutputSpec } from "./manifest.js";
 import { runWorkflow } from "./runner/index.js";
 import { appendRoutingDecision, readRoutingDecisions } from "./state/index.js";
 import { hasAssistantMessage, lastAssistantStopReason } from "./transcript.js";
 import { typeboxSchema } from "./typebox-adapter.js";
 
-// Note: transcript-path scanning moved to rpiv-pi (`rpivArtifactResolver`)
+// Note: transcript-path scanning moved to rpiv-pi (`rpivArtifactCollector`)
 // since the `.rpiv/artifacts/<bucket>/<file>.md` layout is an rpiv
-// convention, not a framework concern. Tests for that resolver live
+// convention, not a framework concern. Tests for that collector live
 // alongside it in `packages/rpiv-pi/extensions/rpiv-core/`.
 
 /** Helper: build an assistant message branch entry with array content. */
@@ -68,9 +68,9 @@ const parseFmTestOnly = (content: string): Record<string, unknown> => {
 	return fm;
 };
 
-const transcriptArtifactMdOutcome: Outcome<unknown, "artifact-md", Record<string, unknown>> = {
-	resolver: {
-		resolve: (ctx) => {
+const transcriptArtifactMdOutcome: OutputSpec<unknown, "artifact-md", Record<string, unknown>> = {
+	collector: {
+		collect: (ctx) => {
 			let lastMatch: string | undefined;
 			const start = Math.max(ctx.branchOffset ?? 0, 0);
 			for (let i = ctx.branch.length - 1; i >= start && !lastMatch; i--) {
@@ -98,8 +98,8 @@ const transcriptArtifactMdOutcome: Outcome<unknown, "artifact-md", Record<string
 			return { kind: "ok", artifacts: [{ handle: fsHandle(lastMatch), role: "primary" }] };
 		},
 	},
-	reader: {
-		read: (ctx) => {
+	parser: {
+		parse: (ctx) => {
 			const primary = ctx.artifacts[0];
 			if (!primary || primary.handle.kind !== "fs") {
 				return { kind: "ok", payload: { kind: "artifact-md", data: {} } };

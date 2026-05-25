@@ -1,73 +1,73 @@
 /**
- * Workspace-diff resolver — emits one Artifact per file the stage
+ * Workspace-diff collector — emits one Artifact per file the stage
  * touched in the working tree.
  *
  * Discovery model: capture `git status --porcelain` pre-stage as
- * baseline, then take the diff post-stage. Newly-untracked files and
+ * snapshot, then take the diff post-stage. Newly-untracked files and
  * files whose status changed both count. Pure git — no transcript
  * scanning, no tool-use observation, no agent narration involved.
  *
- * Fail-soft: cwd is not a git repo OR git isn't on PATH → baseline is
- * `undefined`, resolver returns `ok` with an empty list (the runner's
+ * Fail-soft: cwd is not a git repo OR git isn't on PATH → snapshot is
+ * `undefined`, collector returns `ok` with an empty list (the runner's
  * completion-strategy check then decides whether that's a halt). Same
- * posture as `gitCommitResolver`.
+ * posture as `gitCommitCollector`.
  *
  * Optional `filter(path)` narrows the set — useful for "only `.ts`
  * files," "only files under `src/`," etc. Authors who want more
  * structural narrowing (per-file role tags, per-file metadata) write
- * a custom resolver — `workspaceDiffResolver` deliberately stays the
+ * a custom collector — `workspaceDiffCollector` deliberately stays the
  * thin diff primitive.
  */
 
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { type Artifact, fs as fsHandle } from "../../handle.js";
-import type { ArtifactResolver, BaselineCtx, ResolveCtx } from "../../outcome-types.js";
-import { defineResolver } from "../../outcome-types.js";
+import type { ArtifactCollector, CollectCtx, SnapshotCtx } from "../../outcome-types.js";
+import { defineCollector } from "../../outcome-types.js";
 
 const execFileAsync = promisify(execFile);
 
-/** Same budget as gitCommitResolver — generous for local repos, short enough that a hung mount can't pin the stage. */
+/** Same budget as gitCommitCollector — generous for local repos, short enough that a hung mount can't pin the stage. */
 const GIT_EXEC_TIMEOUT_MS = 5_000;
 
-export interface WorkspaceDiffBaseline {
+export interface WorkspaceDiffSnapshot {
 	/** Post-stage diff compares against this set of (path, statusCode) pairs captured pre-stage. */
 	statusByPath: ReadonlyMap<string, string>;
 }
 
-export interface WorkspaceDiffResolverOpts {
+export interface WorkspaceDiffCollectorOpts {
 	/**
 	 * Optional path predicate. Return true to include the file in the
-	 * resolved artifacts, false to drop it. Receives the cwd-relative
+	 * collected artifacts, false to drop it. Receives the cwd-relative
 	 * path that `git status --porcelain` emitted.
 	 */
 	filter?: (path: string) => boolean;
 }
 
-export const workspaceDiffResolver = (
-	opts: WorkspaceDiffResolverOpts = {},
-): ArtifactResolver<WorkspaceDiffBaseline | undefined> =>
-	defineResolver<WorkspaceDiffBaseline | undefined>({
-		baseline: capturePorcelainBaseline,
-		resolve: (ctx) => collectDiffArtifacts(ctx, opts.filter),
+export const workspaceDiffCollector = (
+	opts: WorkspaceDiffCollectorOpts = {},
+): ArtifactCollector<WorkspaceDiffSnapshot | undefined> =>
+	defineCollector<WorkspaceDiffSnapshot | undefined>({
+		snapshot: capturePorcelainSnapshot,
+		collect: (ctx) => collectDiffArtifacts(ctx, opts.filter),
 	});
 
 // ---------------------------------------------------------------------------
-// Baseline + diff implementation
+// Snapshot + diff implementation
 // ---------------------------------------------------------------------------
 
-async function capturePorcelainBaseline(ctx: BaselineCtx): Promise<WorkspaceDiffBaseline | undefined> {
+async function capturePorcelainSnapshot(ctx: SnapshotCtx): Promise<WorkspaceDiffSnapshot | undefined> {
 	const status = await runGitStatus(ctx.cwd);
 	if (status === undefined) return undefined;
 	return { statusByPath: parsePorcelain(status) };
 }
 
 async function collectDiffArtifacts(
-	ctx: ResolveCtx<WorkspaceDiffBaseline | undefined>,
+	ctx: CollectCtx<WorkspaceDiffSnapshot | undefined>,
 	filter: ((path: string) => boolean) | undefined,
 ): Promise<{ kind: "ok"; artifacts: readonly Artifact[] }> {
-	const baseline = ctx.baseline;
-	if (!baseline) return { kind: "ok", artifacts: [] };
+	const snapshot = ctx.snapshot;
+	if (!snapshot) return { kind: "ok", artifacts: [] };
 
 	const status = await runGitStatus(ctx.cwd);
 	if (status === undefined) return { kind: "ok", artifacts: [] };
@@ -75,9 +75,9 @@ async function collectDiffArtifacts(
 
 	const artifacts: Artifact[] = [];
 	for (const [path, code] of post) {
-		// Skip files whose status is unchanged from the baseline — they
+		// Skip files whose status is unchanged from the snapshot — they
 		// weren't touched DURING this stage.
-		if (baseline.statusByPath.get(path) === code) continue;
+		if (snapshot.statusByPath.get(path) === code) continue;
 		if (filter && !filter(path)) continue;
 		artifacts.push({ handle: fsHandle(path), role: "changed", meta: { gitStatus: code } });
 	}
@@ -103,7 +103,7 @@ async function runGitStatus(cwd: string): Promise<string | undefined> {
  * full XY so post-stage diff sees status transitions (e.g. ` M` → `MM`).
  *
  * Renames (`R  old -> new`) are normalised to just the new path —
- * downstream resolvers / readers don't usually care about the prior
+ * downstream collectors / parsers don't usually care about the prior
  * name and including both halves doubles the artifact count.
  */
 function parsePorcelain(out: string): Map<string, string> {

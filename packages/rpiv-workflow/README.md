@@ -138,109 +138,109 @@ const result = await runWorkflow({
 
 Returns `{ runId, stagesCompleted, success }`. Past-run inspection uses `listRuns(cwd)` / `readHeader` / `readLastStage` / `listArtifacts`.
 
-## Outcomes — resolvers and readers
+## Outcomes — collectors and parsers
 
-Each `produces` stage wires an `Outcome` that tells the runtime two things:
+Each `produces` stage wires an `OutputSpec` that tells the runtime two things:
 
 ```ts
-interface Outcome<Baseline, Kind, Data> {
-  resolver: ArtifactResolver<Baseline>;     // ENUMERATE — what did the stage produce?
-  reader?:  ArtifactReader<Baseline, Kind, Data>; // INTERPRET — what's the typed data channel?
+interface OutputSpec<Snapshot, Kind, Data> {
+  collector: ArtifactCollector<Snapshot>;          // ENUMERATE — what did the stage produce?
+  parser?:   ArtifactParser<Snapshot, Kind, Data>; // INTERPRET — what's the typed data channel?
 }
 ```
 
-`resolver.resolve(ctx)` returns the artifacts the stage emitted. `reader.read(ctx)` (optional) turns them into the typed `manifest.data` downstream stages narrow on. With no reader, `manifest.data` is the artifact list itself (`kind = "artifacts"`).
+`collector.collect(ctx)` returns the artifacts the stage emitted. `parser.parse(ctx)` (optional) turns them into the typed `manifest.data` downstream stages narrow on. With no parser, `manifest.data` is the artifact list itself (`kind = "artifacts"`).
 
 There is no framework default for `produces` — load-time validation rejects a stage without an outcome. The `.rpiv/artifacts/<bucket>/<file>.md` layout is an rpiv convention, not a framework truth; pair with [`@juicesharp/rpiv-pi`](../rpiv-pi) for `rpivArtifactMdOutcome`, or wire your own.
 
-### Authoring a resolver
+### Authoring a collector
 
-The resolver is the user-supplyable primitive — one method, one return type:
+The collector is the user-supplyable primitive — one method, one return type:
 
 ```ts
-import { defineResolver, opaque, type Artifact } from "@juicesharp/rpiv-workflow";
+import { defineCollector, opaque, type Artifact } from "@juicesharp/rpiv-workflow";
 
-export const linearTicketResolver = defineResolver((ctx) => {
+export const linearTicketCollector = defineCollector((ctx) => {
   const id = parseLinearIdFromBranch(ctx.branch);
   if (!id) return { kind: "fatal", message: "stage did not emit a Linear ticket id" };
   return { kind: "ok", artifacts: [{ handle: opaque(id), role: "ticket" }] };
 });
 ```
 
-Resolvers that need a pre-stage snapshot declare a `baseline` hook — its return value lands on `ctx.baseline` for the matching `resolve` call. Compose the bundled `gitHeadSnapshot` into any baseline:
+Collectors that need a pre-stage snapshot declare a `snapshot` hook — its return value lands on `ctx.snapshot` for the matching `collect` call. Compose the bundled `gitHeadSnapshot` into any snapshot:
 
 ```ts
-import { defineResolver, fs, gitHeadSnapshot, type GitHeadSnapshot } from "@juicesharp/rpiv-workflow";
+import { defineCollector, fs, gitHeadSnapshot, type GitHeadSnapshot } from "@juicesharp/rpiv-workflow";
 
-const codegenResolver = defineResolver<GitHeadSnapshot | undefined>({
-  baseline: gitHeadSnapshot,
-  resolve: async (ctx) => {
-    if (!ctx.baseline) return { kind: "ok", artifacts: [] };
-    const files = await diffWorkspace(ctx.cwd, ctx.baseline.baselineSha);
+const codegenCollector = defineCollector<GitHeadSnapshot | undefined>({
+  snapshot: gitHeadSnapshot,
+  collect: async (ctx) => {
+    if (!ctx.snapshot) return { kind: "ok", artifacts: [] };
+    const files = await diffWorkspace(ctx.cwd, ctx.snapshot.baselineSha);
     return { kind: "ok", artifacts: files.map((p) => ({ handle: fs(p), role: "generated" })) };
   },
 });
 ```
 
-### Bundled resolver catalog
+### Bundled collector catalog
 
-The framework ships only host-agnostic primitives — no Pi tool-name defaults, no `.rpiv/artifacts/` defaults, no domain helpers. Wrap them or compose with `unionResolvers` to build your own conventions. Grouped by discovery model:
+The framework ships only host-agnostic primitives — no Pi tool-name defaults, no `.rpiv/artifacts/` defaults, no domain helpers. Wrap them or compose with `unionCollectors` to build your own conventions. Grouped by discovery model:
 
 **Scan the agent's text**
 
-| Resolver | Signature | What it does |
+| Collector | Signature | What it does |
 | --- | --- | --- |
-| `transcriptPathResolver` | `({ pattern: RegExp })` | Scans assistant text for the last regex match; emits one `fs` artifact. Pattern is required — no framework default. |
-| `directoryPathResolver` | `({ dir, ext? })` | Ergonomic wrapper over `transcriptPathResolver` for the `<dir>/<file>.<ext>` shape. |
-| `urlResolver` | `({ pattern? })` | Scans for `https?://…`; emits a `url` handle. Default pattern is RFC-3986-flavoured; override for narrower hosts. |
+| `transcriptPathCollector` | `({ pattern: RegExp })` | Scans assistant text for the last regex match; emits one `fs` artifact. Pattern is required — no framework default. |
+| `directoryPathCollector` | `({ dir, ext? })` | Ergonomic wrapper over `transcriptPathCollector` for the `<dir>/<file>.<ext>` shape. |
+| `urlCollector` | `({ pattern? })` | Scans for `https?://…`; emits a `url` handle. Default pattern is RFC-3986-flavoured; override for narrower hosts. |
 
 **Observe tool use**
 
-| Resolver | Signature | What it does |
+| Collector | Signature | What it does |
 | --- | --- | --- |
-| `toolCallResolver` | `({ match, toHandle })` | Walks every `tool_use` part; emits N artifacts via the author's mappers. Universal across any Pi tool name. |
+| `toolCallCollector` | `({ match, toArtifact })` | Walks every `tool_use` part; emits N artifacts via the author's mappers. Universal across any Pi tool name. |
 
 **Diff the filesystem**
 
-| Resolver | Signature | What it does |
+| Collector | Signature | What it does |
 | --- | --- | --- |
-| `workspaceDiffResolver` | `({ filter? })` | Captures `git status --porcelain` pre-stage, diffs post-stage. One `fs` artifact per file the stage touched. Fail-soft when not a git repo. |
+| `workspaceDiffCollector` | `({ filter? })` | Captures `git status --porcelain` pre-stage, diffs post-stage. One `fs` artifact per file the stage touched. Fail-soft when not a git repo. |
 
 **Git**
 
-| Resolver | Signature | What it does |
+| Collector | Signature | What it does |
 | --- | --- | --- |
-| `gitCommitResolver` | — | Detects a new HEAD commit vs. the pre-stage snapshot; emits an `opaque(sha)` artifact tagged `role: "commit"`. |
+| `gitCommitCollector` | — | Detects a new HEAD commit vs. the pre-stage snapshot; emits an `opaque(sha)` artifact tagged `role: "commit"`. |
 
 **Composition + empty**
 
-| Resolver | Signature | What it does |
+| Collector | Signature | What it does |
 | --- | --- | --- |
-| `unionResolvers(...rs)` | — | Run N resolvers, concatenate artifacts. Fatal only when every sub-resolver fataled. |
-| `noopResolver` | — | Always returns `{ kind: "ok", artifacts: [] }`. The primitive `sideEffectOutcome` is built directly from it: `sideEffectOutcome = { resolver: noopResolver }`. |
+| `unionCollectors(...cs)` | — | Run N collectors, concatenate artifacts. Fatal only when every sub-collector fataled. |
+| `noopCollector` | — | Always returns `{ kind: "ok", artifacts: [] }`. The primitive `sideEffectOutcome` is built directly from it: `sideEffectOutcome = { collector: noopCollector }`. |
 
 Handle constructors: `fs(path)`, `url(href)`, `opaque(id)`, `inline(bytes, mime?)` — replace the verbose `{ kind: …, … }` literal at call sites. Serialise any handle to its canonical string with `handleToString`.
 
-### Bundled reader catalog
+### Bundled parser catalog
 
-| Reader | Output `kind` | Output `data` |
+| Parser | Output `kind` | Output `data` |
 | --- | --- | --- |
-| `jsonBodyReader` | `"json"` | `JSON.parse` of the primary `fs` artifact's body (`unknown` — narrow via `outputSchema`). |
-| `gitCommitReader` | `"git-commit"` | `GitCommitData` (sha, prevSha, subject, filesChanged) parsed from `git`. |
+| `jsonBodyParser` | `"json"` | `JSON.parse` of the primary `fs` artifact's body (`unknown` — narrow via `outputSchema`). |
+| `gitCommitParser` | `"git-commit"` | `GitCommitData` (sha, prevSha, subject, filesChanged) parsed from `git`. |
 
-Format-specific readers (markdown frontmatter, YAML, TOML, …) live in the convention layer that owns them — rpiv-pi ships its own `frontmatterReader`.
+Format-specific parsers (markdown frontmatter, YAML, TOML, …) live in the convention layer that owns them — rpiv-pi ships its own `frontmatterParser`.
 
 ### Wiring an outcome onto a stage
 
 ```ts
 import {
   produces, defineWorkflow,
-  toolCallResolver, jsonBodyReader, fs,
+  toolCallCollector, jsonBodyParser, fs,
 } from "@juicesharp/rpiv-workflow";
 
-const writeFileResolver = toolCallResolver({
+const writeFileCollector = toolCallCollector({
   match: (tc) => tc.name === "write_file" || tc.name === "edit",
-  toHandle: (tc) => ({ handle: fs(String(tc.input.path ?? tc.input.target_file)) }),
+  toArtifact: (tc) => ({ handle: fs(String(tc.input.path ?? tc.input.target_file)) }),
 });
 
 export default defineWorkflow({
@@ -248,7 +248,7 @@ export default defineWorkflow({
   start: "generate",
   stages: {
     generate: produces({
-      outcome: { resolver: writeFileResolver, reader: jsonBodyReader },
+      outcome: { collector: writeFileCollector, parser: jsonBodyParser },
     }),
   },
   edges: { generate: "stop" },
@@ -268,7 +268,7 @@ export default defineWorkflow({
 
 The contract is identical — author an async `~standard.validate` and the runner awaits it. A schema whose Promise never settles is bounded by the stage's `validateTimeoutMs` (default 5 min); a rejected Promise surfaces as a clean stage halt, attributed to the stage, with the same error class as a shape-failure halt. No opt-in flag, no parallel code path.
 
-> Keep validation separate from the resolver + reader. The resolver's job is "what did the agent produce?" (enumerate); the reader's job is "parse it into typed data" (shape). The validator's job is "is the result correct?" (check + verify). With async validators available you don't have to push I/O verification into a custom resolver/reader — keep them pure and put correctness checks on `outputSchema`.
+> Keep validation separate from the collector + parser. The collector's job is "what did the agent produce?" (enumerate); the parser's job is "parse it into typed data" (shape). The validator's job is "is the result correct?" (check + verify). With async validators available you don't have to push I/O verification into a custom collector/parser — keep them pure and put correctness checks on `outputSchema`.
 
 ## Architecture
 

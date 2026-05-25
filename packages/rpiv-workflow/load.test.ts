@@ -14,13 +14,13 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { acts, defineWorkflow, produces as producesRaw, type StageDef, type Workflow } from "./api.js";
 import { __resetBuiltIns, registerBuiltIns } from "./built-ins.js";
 import { loadWorkflows, projectOverlayPaths, userOverlayPaths } from "./load/index.js";
-import { noopResolver } from "./outcomes/index.js";
+import { noopCollector } from "./outcomes/index.js";
 
 // `produces` stages require an outcome (validated at load time). Load
-// tests assert merge / source-layer shape, so we wire a noop resolver
+// tests assert merge / source-layer shape, so we wire a noop collector
 // into every produces() — same shape rule the real loader enforces,
 // minimal scaffolding per fixture.
-const STUB_ARTIFACT_OUTCOME = { resolver: noopResolver };
+const STUB_ARTIFACT_OUTCOME = { collector: noopCollector };
 const produces = (overrides: Partial<StageDef> = {}): StageDef =>
 	producesRaw({ outcome: STUB_ARTIFACT_OUTCOME, ...overrides });
 
@@ -83,11 +83,11 @@ const writeUserDropIn = (filename: string, body: string): void => {
 // calls inside the fixture strings go through the real validator.
 // Each fixture imports `produces` (aliased) and re-binds it to a helper
 // that wires a noop stub outcome so produces stages pass validation
-// without each fixture restating the resolver.
+// without each fixture restating the collector.
 const importApi = [
 	`import { defineWorkflow, produces as producesRaw, acts, threshold } from "${join(__dirname, "api.ts")}";`,
-	`import { noopResolver } from "${join(__dirname, "outcomes", "index.ts")}";`,
-	`const produces = (o = {}) => producesRaw({ outcome: { resolver: noopResolver }, ...o });`,
+	`import { noopCollector } from "${join(__dirname, "outcomes", "index.ts")}";`,
+	`const produces = (o = {}) => producesRaw({ outcome: { collector: noopCollector }, ...o });`,
 ].join("\n");
 
 // ---------------------------------------------------------------------------

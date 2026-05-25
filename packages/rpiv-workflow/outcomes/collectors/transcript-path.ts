@@ -1,29 +1,29 @@
 /**
- * Transcript-path resolver — the lowest-level text-scan primitive.
+ * Transcript-path collector — the lowest-level text-scan primitive.
  *
  * Scans the assistant's spoken text (in reverse) for `pattern`, emits
  * the LAST match as a single `fs` artifact. Caller supplies the regex
  * verbatim — the framework knows zero about any project's layout
- * conventions. Build domain-specific resolvers (rpiv-pi's
- * `rpivArtifactResolver`, an `adrResolver` for `docs/adr/...`, etc.) by
+ * conventions. Build domain-specific collectors (rpiv-pi's
+ * `rpivArtifactCollector`, an `adrCollector` for `docs/adr/...`, etc.) by
  * wrapping this and supplying the appropriate pattern.
  *
  * The pattern's `g` flag is honoured: with `g`, every occurrence in
  * each text block is considered (helper takes the last one); without
  * `g`, only the first per block. Authors who want N matches → N
- * artifacts compose with `unionResolvers` or write a bespoke resolver.
+ * artifacts compose with `unionCollectors` or write a bespoke collector.
  *
- * Fatal when no match is found — produces nodes that wire this
+ * Fatal when no match is found — produces stages that wire this
  * promise an output, and silently returning zero artifacts hides the
  * agent's failure mode behind a stale primary-artifact.
  */
 
 import { fs } from "../../handle.js";
-import type { ArtifactResolver } from "../../outcome-types.js";
-import { defineResolver } from "../../outcome-types.js";
+import type { ArtifactCollector } from "../../outcome-types.js";
+import { defineCollector } from "../../outcome-types.js";
 import { lastMatchInBranch } from "../../transcript.js";
 
-export interface TranscriptPathResolverOpts {
+export interface TranscriptPathCollectorOpts {
 	/**
 	 * Pattern to match against assistant text. REQUIRED — the framework
 	 * has no default (path layouts are project-specific). Use `g` to scan
@@ -33,13 +33,13 @@ export interface TranscriptPathResolverOpts {
 	pattern: RegExp;
 }
 
-export function transcriptPathResolver(opts: TranscriptPathResolverOpts): ArtifactResolver {
+export function transcriptPathCollector(opts: TranscriptPathCollectorOpts): ArtifactCollector {
 	if (!(opts.pattern instanceof RegExp)) {
-		throw new Error("transcriptPathResolver: `pattern` is required and must be a RegExp");
+		throw new Error("transcriptPathCollector: `pattern` is required and must be a RegExp");
 	}
 	const pattern = opts.pattern;
-	return defineResolver({
-		resolve: (ctx) => {
+	return defineCollector({
+		collect: (ctx) => {
 			const path = lastMatchInBranch(ctx.branch, pattern, ctx.branchOffset);
 			if (!path) {
 				return {

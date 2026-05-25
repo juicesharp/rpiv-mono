@@ -1,5 +1,5 @@
 /**
- * URL resolver — scans assistant text for a URL and emits it as a
+ * URL collector — scans assistant text for a URL and emits it as a
  * `url` handle (not `fs`). Use when the stage produces a remote
  * reference: a Linear ticket URL, a deployed-preview link, a posted
  * PR/comment, etc.
@@ -11,8 +11,8 @@
  */
 
 import { url } from "../../handle.js";
-import type { ArtifactResolver } from "../../outcome-types.js";
-import { defineResolver } from "../../outcome-types.js";
+import type { ArtifactCollector } from "../../outcome-types.js";
+import { defineCollector } from "../../outcome-types.js";
 import { lastMatchInBranch } from "../../transcript.js";
 
 /**
@@ -23,15 +23,15 @@ import { lastMatchInBranch } from "../../transcript.js";
  */
 const DEFAULT_URL_PATTERN = /\bhttps?:\/\/[^\s<>"'`]+[^\s<>"'`.,;:!?)\]}]/g;
 
-export interface UrlResolverOpts {
+export interface UrlCollectorOpts {
 	/** Override the default URL pattern (e.g. narrow to one host). */
 	pattern?: RegExp;
 }
 
-export function urlResolver(opts: UrlResolverOpts = {}): ArtifactResolver {
+export function urlCollector(opts: UrlCollectorOpts = {}): ArtifactCollector {
 	const pattern = opts.pattern ?? DEFAULT_URL_PATTERN;
-	return defineResolver({
-		resolve: (ctx) => {
+	return defineCollector({
+		collect: (ctx) => {
 			const href = lastMatchInBranch(ctx.branch, pattern, ctx.branchOffset);
 			if (!href) {
 				return {

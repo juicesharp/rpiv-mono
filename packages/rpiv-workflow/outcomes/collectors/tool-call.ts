@@ -1,10 +1,10 @@
 /**
- * Tool-call resolver — observes assistant tool_use parts in the branch
+ * Tool-call collector — observes assistant tool_use parts in the branch
  * and turns each into an Artifact via the author-supplied mappers.
  *
  * Universal: knows nothing about specific tool names. Authors wire
  * `match(tc)` to pick which calls are interesting (often
- * `tc.name === "write_file"`) and `toHandle(tc)` to extract the
+ * `tc.name === "write_file"`) and `toArtifact(tc)` to extract the
  * Artifact (most commonly an `fs` handle pulled from the tool input).
  * Multiple matching calls produce multiple artifacts in branch order.
  *
@@ -14,13 +14,13 @@
  * Returns `ok` with an empty list when no matching calls fire — the
  * runner's `enforceCompletionContract` then halts for produces
  * (the stage promised an output and didn't deliver) or passes through
- * for side-effect (chain inherits prior). The resolver itself doesn't
+ * for side-effect (chain inherits prior). The collector itself doesn't
  * second-guess that policy.
  */
 
 import type { Artifact } from "../../handle.js";
-import type { ArtifactResolver } from "../../outcome-types.js";
-import { defineResolver } from "../../outcome-types.js";
+import type { ArtifactCollector } from "../../outcome-types.js";
+import { defineCollector } from "../../outcome-types.js";
 import { iterToolUses } from "../../transcript.js";
 
 export interface ToolCall {
@@ -28,7 +28,7 @@ export interface ToolCall {
 	input: Record<string, unknown>;
 }
 
-export interface ToolCallResolverOpts {
+export interface ToolCallCollectorOpts {
 	/**
 	 * Predicate over the tool call. Return true to consider this call,
 	 * false to skip. No default — match semantics are entirely
@@ -41,20 +41,20 @@ export interface ToolCallResolverOpts {
 	 * fails a sanity check). The returned Artifact's handle is what
 	 * downstream stages see on `manifest.artifacts`.
 	 */
-	toHandle(tc: ToolCall): Artifact | undefined;
+	toArtifact(tc: ToolCall): Artifact | undefined;
 }
 
-export function toolCallResolver(opts: ToolCallResolverOpts): ArtifactResolver {
-	if (typeof opts.match !== "function" || typeof opts.toHandle !== "function") {
-		throw new Error("toolCallResolver: `match` and `toHandle` are required functions");
+export function toolCallCollector(opts: ToolCallCollectorOpts): ArtifactCollector {
+	if (typeof opts.match !== "function" || typeof opts.toArtifact !== "function") {
+		throw new Error("toolCallCollector: `match` and `toArtifact` are required functions");
 	}
-	const { match, toHandle } = opts;
-	return defineResolver({
-		resolve: (ctx) => {
+	const { match, toArtifact } = opts;
+	return defineCollector({
+		collect: (ctx) => {
 			const artifacts: Artifact[] = [];
 			for (const tc of iterToolUses(ctx.branch, ctx.branchOffset)) {
 				if (!match(tc)) continue;
-				const artifact = toHandle(tc);
+				const artifact = toArtifact(tc);
 				if (artifact) artifacts.push(artifact);
 			}
 			return { kind: "ok", artifacts };

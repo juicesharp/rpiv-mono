@@ -1,12 +1,12 @@
 /**
- * Manifest envelope — the inter-stage data channel a stage's resolver +
- * reader produce on settlement. Flows through `RunState`, persists to
- * the JSONL audit log, and is read by downstream predicates / nodes.
+ * Manifest envelope — the inter-stage data channel a stage's collector +
+ * parser produce on settlement. Flows through `RunState`, persists to
+ * the JSONL audit log, and is read by downstream predicates / stages.
  *
- * Audience: predicate authors and downstream-node authors reading
+ * Audience: predicate authors and downstream-stage authors reading
  * `manifest.artifacts` (the storage references) and `manifest.data`
- * (the typed channel a reader shaped). The producer-side surface
- * (`ArtifactResolver` / `ArtifactReader` / `Outcome`) lives in
+ * (the typed channel a parser shaped). The producer-side surface
+ * (`ArtifactCollector` / `ArtifactParser` / `OutputSpec`) lives in
  * `outcome-types.ts`.
  */
 
@@ -29,12 +29,12 @@ export interface ManifestMeta {
 
 /**
  * One stage's contribution to the chain. `artifacts` is always present
- * (possibly empty for side-effect stages); `data` is whatever the reader
- * shaped (or the artifact list itself when no reader is wired).
+ * (possibly empty for side-effect stages); `data` is whatever the parser
+ * shaped (or the artifact list itself when no parser is wired).
  *
  * `kind` discriminates the data shape so downstream consumers narrow
  * via `manifest.kind === "git-commit"` etc. The literal `"artifacts"`
- * is the default reader-less shape.
+ * is the default parser-less shape.
  */
 export interface Manifest<K extends string = string, D = unknown> {
 	kind: K;
@@ -56,21 +56,21 @@ export type SideEffectManifest = Manifest<"side-effect", Record<string, never>>;
 export type GitCommitManifest = Manifest<"git-commit", GitCommitData>;
 
 // ---------------------------------------------------------------------------
-// Outcome types — re-exported so consumers can `import { Outcome,
-// ResolveCtx, ... } from "../manifest.js"` without rewriting every
+// OutputSpec types — re-exported so consumers can `import { OutputSpec,
+// CollectCtx, ... } from "../manifest.js"` without rewriting every
 // site. Canonical definitions live in `outcome-types.ts`.
 // ---------------------------------------------------------------------------
 
 export type {
-	ArtifactReader,
-	ArtifactResolver,
-	BaselineCtx,
-	BaselineFn,
-	Outcome,
-	ReadCtx,
-	ReadResult,
-	ResolveCtx,
-	ResolveResult,
+	ArtifactCollector,
+	ArtifactParser,
+	CollectCtx,
+	CollectResult,
+	OutputSpec,
+	ParseCtx,
+	ParseResult,
+	SnapshotCtx,
+	SnapshotFn,
 } from "./outcome-types.js";
 
 // ---------------------------------------------------------------------------
@@ -79,8 +79,8 @@ export type {
 
 /**
  * Single source of manifest metadata authorship. The runner calls this
- * after a stage's resolver returned `artifacts` and the reader (or
- * reader-less default) returned `{ kind, data }`.
+ * after a stage's collector returned `artifacts` and the parser (or
+ * parser-less default) returned `{ kind, data }`.
  */
 export function finalizeManifest<K extends string, D>(
 	args: { kind: K; artifacts: readonly Artifact[]; data: D },

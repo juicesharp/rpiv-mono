@@ -1,22 +1,22 @@
 /**
- * Outcome authoring surface — the contract a stage's data-channel
+ * OutputSpec authoring surface — the contract a stage's data-channel
  * implementation satisfies. Decomposed into two orthogonal halves so
  * authors can mix-and-match:
  *
- *   - `ArtifactResolver<B>`        — ENUMERATE: which artifacts did the
+ *   - `ArtifactCollector<B>`      — ENUMERATE: which artifacts did the
  *                                    stage produce? (text scan, tool-call
  *                                    observation, fs diff, git, custom.)
- *   - `ArtifactReader<B, K, D>`    — INTERPRET: given the artifacts, what
+ *   - `ArtifactParser<B, K, D>`   — INTERPRET: given the artifacts, what
  *                                    typed data does downstream see?
  *
- * `Outcome` is the wired-up pair — `{ resolver, reader? }` — that stages
- * declare via `StageDef.outcome`. When `reader` is omitted the manifest
- * data IS the artifact list (kind = `"artifacts"`).
+ * `OutputSpec` is the wired-up pair — `{ collector, parser? }` — that
+ * stages declare via `StageDef.outcome`. When `parser` is omitted the
+ * manifest data IS the artifact list (kind = `"artifacts"`).
  *
  * Companion to `manifest.ts` (the envelope `Manifest<K, D>` that flows
  * to downstream stages, predicates, and the JSONL audit log). The split:
- * outcome authors implement the producer side here; manifest consumers
- * read the envelope shape there.
+ * output-spec authors implement the producer side here; manifest
+ * consumers read the envelope shape there.
  */
 
 import type { Artifact } from "./handle.js";
@@ -24,10 +24,10 @@ import type { BranchEntry } from "./transcript.js";
 import type { RunState } from "./types.js";
 
 // ---------------------------------------------------------------------------
-// Baseline — pre-stage reference capture (shared by resolver + reader)
+// Snapshot — pre-stage reference capture (shared by collector + parser)
 // ---------------------------------------------------------------------------
 
-export interface BaselineCtx {
+export interface SnapshotCtx {
 	cwd: string;
 	runId: string;
 	stageIndex: number;
@@ -35,108 +35,108 @@ export interface BaselineCtx {
 }
 
 /** Fail-soft: implementations catch and return undefined rather than throwing. */
-export type BaselineFn<Baseline = unknown> = (ctx: BaselineCtx) => Promise<Baseline> | Baseline;
+export type SnapshotFn<Snapshot = unknown> = (ctx: SnapshotCtx) => Promise<Snapshot> | Snapshot;
 
 // ---------------------------------------------------------------------------
-// Resolver — discover what the stage produced
+// Collector — discover what the stage produced
 // ---------------------------------------------------------------------------
 
 /**
- * Context handed to a resolver's `resolve`. Includes the full unsliced
+ * Context handed to a collector's `collect`. Includes the full unsliced
  * branch (`branch`) plus a policy-derived `branchOffset` — for
- * continue-policy stages the offset lets the resolver ignore prior-stage
- * prefix without re-materialising a slice. `baseline` is whatever the
- * resolver's optional `baseline` hook returned.
+ * continue-policy stages the offset lets the collector ignore prior-stage
+ * prefix without re-materialising a slice. `snapshot` is whatever the
+ * collector's optional `snapshot` hook returned.
  */
-export interface ResolveCtx<Baseline = unknown> extends BaselineCtx {
+export interface CollectCtx<Snapshot = unknown> extends SnapshotCtx {
 	branch: BranchEntry[];
 	branchOffset?: number;
-	baseline: Baseline;
-	/** Filled by the runner; resolvers MUST NOT set this themselves. */
+	snapshot: Snapshot;
+	/** Filled by the runner; collectors MUST NOT set this themselves. */
 	skill: string;
 }
 
 /**
- * Three-way return from `resolve`:
+ * Three-way return from `collect`:
  *
  *   `kind: "ok"` + `artifacts: []`               — stage produced nothing.
- *                                                   For produces nodes the runner halts;
- *                                                   for side-effect nodes the chain inherits
+ *                                                   For produces stages the runner halts;
+ *                                                   for side-effect stages the chain inherits
  *                                                   the upstream artifact list forward.
- *   `kind: "ok"` + `artifacts: [...]`            — N>=1 artifacts; reader (or default) shapes the data.
- *   `kind: "fatal"`                              — resolver cannot satisfy its contract;
+ *   `kind: "ok"` + `artifacts: [...]`            — N>=1 artifacts; parser (or default) shapes the data.
+ *   `kind: "fatal"`                              — collector cannot satisfy its contract;
  *                                                   runner halts with the carried message.
  */
-export type ResolveResult = { kind: "ok"; artifacts: readonly Artifact[] } | { kind: "fatal"; message: string };
+export type CollectResult = { kind: "ok"; artifacts: readonly Artifact[] } | { kind: "fatal"; message: string };
 
 /**
- * The user-supplyable primitive. A resolver enumerates artifacts; that's
- * its single job. Authors compose `baseline?` (pre-stage snapshot) +
- * `resolve` (post-stage enumeration). Side-effect-only stages use a
- * resolver that always returns `{ kind: "ok", artifacts: [] }` — see
+ * The user-supplyable primitive. A collector enumerates artifacts; that's
+ * its single job. Authors compose `snapshot?` (pre-stage capture) +
+ * `collect` (post-stage enumeration). Side-effect-only stages use a
+ * collector that always returns `{ kind: "ok", artifacts: [] }` — see
  * `outcomes/side-effect.ts`.
  *
  * Method shorthand (vs. function-property) so specialised
- * `ArtifactResolver<MyBaseline>` is assignable to the runner's
- * `ArtifactResolver` (default `Baseline = unknown`) without explicit
+ * `ArtifactCollector<MySnapshot>` is assignable to the runner's
+ * `ArtifactCollector` (default `Snapshot = unknown`) without explicit
  * widening at every call site.
  */
-export interface ArtifactResolver<Baseline = unknown> {
-	baseline?(ctx: BaselineCtx): Promise<Baseline> | Baseline;
-	resolve(ctx: ResolveCtx<Baseline>): Promise<ResolveResult> | ResolveResult;
+export interface ArtifactCollector<Snapshot = unknown> {
+	snapshot?(ctx: SnapshotCtx): Promise<Snapshot> | Snapshot;
+	collect(ctx: CollectCtx<Snapshot>): Promise<CollectResult> | CollectResult;
 }
 
 // ---------------------------------------------------------------------------
-// Reader — interpret resolved artifacts into a typed data channel
+// Parser — interpret collected artifacts into a typed data channel
 // ---------------------------------------------------------------------------
 
 /**
- * Context handed to a reader's `read`. Extends `ResolveCtx` with the
- * `artifacts` the matching resolver just returned, so readers can
+ * Context handed to a parser's `parse`. Extends `CollectCtx` with the
+ * `artifacts` the matching collector just returned, so parsers can
  * narrow on `artifacts[0].handle.kind` and inspect any `meta` the
- * resolver attached. `baseline` flows through unchanged.
+ * collector attached. `snapshot` flows through unchanged.
  */
-export interface ReadCtx<Baseline = unknown> extends ResolveCtx<Baseline> {
+export interface ParseCtx<Snapshot = unknown> extends CollectCtx<Snapshot> {
 	artifacts: readonly Artifact[];
 }
 
 /**
- * Two-way return from `read`. `ok` produces the typed data channel
+ * Two-way return from `parse`. `ok` produces the typed data channel
  * downstream stages see on `manifest.data`; `fatal` halts the stage
- * with the carried message — same posture as `ResolveResult`.
+ * with the carried message — same posture as `CollectResult`.
  */
-export type ReadResult<Kind extends string = string, Data = unknown> =
+export type ParseResult<Kind extends string = string, Data = unknown> =
 	| { kind: "ok"; payload: { kind: Kind; data: Data } }
 	| { kind: "fatal"; message: string };
 
 /**
- * Optional companion to a resolver. When omitted, the manifest's
+ * Optional companion to a collector. When omitted, the manifest's
  * `data` is the artifact list itself and `kind` is the literal
- * `"artifacts"` — a node that only needs to enumerate files doesn't
- * have to write a reader.
+ * `"artifacts"` — a stage that only needs to enumerate files doesn't
+ * have to write a parser.
  *
- * Method shorthand for the same bivariance reason as `ArtifactResolver`.
+ * Method shorthand for the same bivariance reason as `ArtifactCollector`.
  */
-export interface ArtifactReader<Baseline = unknown, Kind extends string = string, Data = unknown> {
-	read(ctx: ReadCtx<Baseline>): Promise<ReadResult<Kind, Data>> | ReadResult<Kind, Data>;
+export interface ArtifactParser<Snapshot = unknown, Kind extends string = string, Data = unknown> {
+	parse(ctx: ParseCtx<Snapshot>): Promise<ParseResult<Kind, Data>> | ParseResult<Kind, Data>;
 }
 
 // ---------------------------------------------------------------------------
-// Outcome — wired-up pair on `StageDef.outcome`
+// OutputSpec — wired-up pair on `StageDef.outcome`
 // ---------------------------------------------------------------------------
 
 /**
- * A stage's resolver+reader bundle. `reader` is optional; when omitted
+ * A stage's collector+parser bundle. `parser` is optional; when omitted
  * the manifest emits `kind: "artifacts"` with `data = artifacts`.
  *
- * Generic over `<Baseline, Kind, Data>` so specialised outcomes
- * (`Outcome<GitHeadSnapshot, "git-commit", GitCommitData>`) flow types
- * end-to-end from baseline through resolve into the downstream
+ * Generic over `<Snapshot, Kind, Data>` so specialised output specs
+ * (`OutputSpec<GitHeadSnapshot, "git-commit", GitCommitData>`) flow types
+ * end-to-end from snapshot through collect into the downstream
  * `manifest.data`.
  */
-export interface Outcome<Baseline = unknown, Kind extends string = string, Data = unknown> {
-	resolver: ArtifactResolver<Baseline>;
-	reader?: ArtifactReader<Baseline, Kind, Data>;
+export interface OutputSpec<Snapshot = unknown, Kind extends string = string, Data = unknown> {
+	collector: ArtifactCollector<Snapshot>;
+	parser?: ArtifactParser<Snapshot, Kind, Data>;
 }
 
 // ---------------------------------------------------------------------------
@@ -145,14 +145,14 @@ export interface Outcome<Baseline = unknown, Kind extends string = string, Data 
 // they exist for type inference + uniform shape at the call site.
 // ---------------------------------------------------------------------------
 
-/** Identity passthrough; lets authors annotate baseline-generic resolvers without re-stating `<Baseline>`. */
-export function defineResolver<Baseline = unknown>(spec: ArtifactResolver<Baseline>): ArtifactResolver<Baseline> {
+/** Identity passthrough; lets authors annotate snapshot-generic collectors without re-stating `<Snapshot>`. */
+export function defineCollector<Snapshot = unknown>(spec: ArtifactCollector<Snapshot>): ArtifactCollector<Snapshot> {
 	return spec;
 }
 
-/** Identity passthrough; same idiom as `defineResolver`. */
-export function defineReader<Baseline = unknown, Kind extends string = string, Data = unknown>(
-	spec: ArtifactReader<Baseline, Kind, Data>,
-): ArtifactReader<Baseline, Kind, Data> {
+/** Identity passthrough; same idiom as `defineCollector`. */
+export function defineParser<Snapshot = unknown, Kind extends string = string, Data = unknown>(
+	spec: ArtifactParser<Snapshot, Kind, Data>,
+): ArtifactParser<Snapshot, Kind, Data> {
 	return spec;
 }

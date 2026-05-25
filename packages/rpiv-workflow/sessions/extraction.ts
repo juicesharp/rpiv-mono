@@ -9,8 +9,8 @@
  * retry budget tripped without a passing schema).
  *
  * The two-step contract:
- *   1. `outcome.resolver.resolve(ctx)` — enumerate artifacts.
- *   2. `outcome.reader?.read(ctx)`     — shape the typed data channel
+ *   1. `outcome.collector.collect(ctx)` — enumerate artifacts.
+ *   2. `outcome.parser?.parse(ctx)`     — shape the typed data channel
  *                                        (default: data = artifacts,
  *                                        kind = "artifacts").
  */
@@ -21,7 +21,7 @@ import type { Artifact } from "../handle.js";
 import { assertNever, withTimeout } from "../internal-utils.js";
 import { finalizeManifest, type Manifest } from "../manifest.js";
 import { ERR_SCHEMA_TIMEOUT, MSG_VALIDATION_RETRY, MSG_VALIDATION_RETRY_PROMPT } from "../messages.js";
-import type { Outcome, ResolveCtx } from "../outcome-types.js";
+import type { CollectCtx, OutputSpec } from "../outcome-types.js";
 import { sideEffectOutcome } from "../outcomes/index.js";
 import { type BranchEntry, readBranch } from "../transcript.js";
 import type { RunnerCtx, StageSession } from "../types.js";
@@ -51,17 +51,17 @@ export async function produceAndValidateManifest(
 	branchOffset: number | undefined,
 ): Promise<ManifestProduction> {
 	const outcome = resolveOutcome(s.stage, s.skill);
-	const resolveCtx = buildResolveCtx(s, branch, branchOffset);
+	const collectCtx = buildCollectCtx(s, branch, branchOffset);
 	const finalize = (parts: { kind: string; artifacts: readonly Artifact[]; data: unknown }) => wrapManifest(s, parts);
 
-	const first = await runOutcome(outcome, resolveCtx, finalize);
+	const first = await runOutcome(outcome, collectCtx, finalize);
 	if (first.kind === "fatal") return first;
 	const initialManifest = enforceCompletionContract(s.stage, s.skill, first.manifest);
 	if (initialManifest.kind === "fatal") return initialManifest;
 
 	if (!shouldValidateOutput(s.stage, initialManifest.manifest)) return initialManifest;
 
-	return retryUntilValid(ctx, s, { outcome, resolveCtx, finalize }, initialManifest.manifest);
+	return retryUntilValid(ctx, s, { outcome, collectCtx, finalize }, initialManifest.manifest);
 }
 
 /**
@@ -73,7 +73,7 @@ export async function produceAndValidateManifest(
  *    load time; the runtime throw is defense-in-depth for programmatic
  *    embedders that bypassed validation.
  */
-function resolveOutcome(stage: StageDef, skill: string): Outcome {
+function resolveOutcome(stage: StageDef, skill: string): OutputSpec {
 	if (stage.outcome) return stage.outcome;
 	switch (stage.kind) {
 		case "side-effect":
@@ -83,7 +83,7 @@ function resolveOutcome(stage: StageDef, skill: string): Outcome {
 				`runStage: stage "${skill}" has kind "produces" but no \`outcome\` — ` +
 					"there is no framework default for produces stages (the `.rpiv/artifacts/` layout is " +
 					"an rpiv-pi convention). Either wire `outcome: rpivArtifactMdOutcome` (from @juicesharp/rpiv-pi) " +
-					"or supply your own `{ resolver, reader? }`.",
+					"or supply your own `{ collector, parser? }`.",
 			);
 		default:
 			return assertNever(stage.kind);
@@ -93,11 +93,11 @@ function resolveOutcome(stage: StageDef, skill: string): Outcome {
 /**
  * L6-05 contract: `branch` is always the FULL unsliced branch and
  * `branchOffset` is always the policy-derived offset (continue → the
- * stage's captured offset; fresh → undefined). Resolvers slice on
+ * stage's captured offset; fresh → undefined). Collectors slice on
  * demand via the `branchOffset` field. Initial production and retry
  * production use the same offset value.
  */
-function buildResolveCtx(s: StageSession, branch: BranchEntry[], branchOffset: number | undefined): ResolveCtx {
+function buildCollectCtx(s: StageSession, branch: BranchEntry[], branchOffset: number | undefined): CollectCtx {
 	return {
 		cwd: s.cwd,
 		runId: s.runId,
@@ -105,7 +105,7 @@ function buildResolveCtx(s: StageSession, branch: BranchEntry[], branchOffset: n
 		state: s.state,
 		branch,
 		branchOffset,
-		baseline: s.baseline,
+		snapshot: s.snapshot,
 		skill: s.skill,
 	};
 }
@@ -125,40 +125,40 @@ function wrapManifest(
 type RunOutcomeResult = { kind: "ok"; manifest: Manifest } | { kind: "fatal"; message: string };
 
 /**
- * The resolver → reader pipeline. When `reader` is omitted, the
+ * The collector → parser pipeline. When `parser` is omitted, the
  * manifest emits `kind: "artifacts"` with `data = artifacts` — a stage
- * that only needs to enumerate doesn't have to write a reader.
+ * that only needs to enumerate doesn't have to write a parser.
  */
 async function runOutcome(
-	outcome: Outcome,
-	ctx: ResolveCtx,
+	outcome: OutputSpec,
+	ctx: CollectCtx,
 	finalize: (parts: { kind: string; artifacts: readonly Artifact[]; data: unknown }) => Manifest,
 ): Promise<RunOutcomeResult> {
-	const resolved = await outcome.resolver.resolve(ctx);
-	if (resolved.kind === "fatal") return resolved;
+	const collected = await outcome.collector.collect(ctx);
+	if (collected.kind === "fatal") return collected;
 
-	if (!outcome.reader) {
+	if (!outcome.parser) {
 		return {
 			kind: "ok",
-			manifest: finalize({ kind: "artifacts", artifacts: resolved.artifacts, data: resolved.artifacts }),
+			manifest: finalize({ kind: "artifacts", artifacts: collected.artifacts, data: collected.artifacts }),
 		};
 	}
 
-	const read = await outcome.reader.read({ ...ctx, artifacts: resolved.artifacts });
-	if (read.kind === "fatal") return read;
+	const parsed = await outcome.parser.parse({ ...ctx, artifacts: collected.artifacts });
+	if (parsed.kind === "fatal") return parsed;
 	return {
 		kind: "ok",
 		manifest: finalize({
-			kind: read.payload.kind,
-			artifacts: resolved.artifacts,
-			data: read.payload.data,
+			kind: parsed.payload.kind,
+			artifacts: collected.artifacts,
+			data: parsed.payload.data,
 		}),
 	};
 }
 
 /**
  * Contract check: `produces` stages MUST emit at least one
- * artifact. The resolver/reader pair can succeed structurally
+ * artifact. The collector/parser pair can succeed structurally
  * (kind: "ok") with zero artifacts — that's a chain halt for
  * `produces` (the stage promised an output and didn't deliver)
  * but a normal pass-through for `side-effect`.
@@ -171,7 +171,7 @@ function enforceCompletionContract(
 	if (stage.kind === "produces" && manifest.artifacts.length === 0) {
 		return {
 			kind: "fatal",
-			message: `${skill} finished without producing any artifact (resolver returned an empty list)`,
+			message: `${skill} finished without producing any artifact (collector returned an empty list)`,
 		};
 	}
 	return { kind: "ok", manifest };
@@ -182,8 +182,8 @@ function shouldValidateOutput(stage: StageDef, manifest: Manifest): boolean {
 }
 
 interface RetryDeps {
-	outcome: Outcome;
-	resolveCtx: ResolveCtx;
+	outcome: OutputSpec;
+	collectCtx: CollectCtx;
 	finalize: (parts: { kind: string; artifacts: readonly Artifact[]; data: unknown }) => Manifest;
 }
 
@@ -219,7 +219,7 @@ async function retryUntilValid(
 		}
 
 		const retryBranch = readBranch(ctx);
-		const retryCtx: ResolveCtx = { ...deps.resolveCtx, branch: retryBranch };
+		const retryCtx: CollectCtx = { ...deps.collectCtx, branch: retryBranch };
 		const reRun = await runOutcome(deps.outcome, retryCtx, deps.finalize);
 		if (reRun.kind === "fatal") return reRun;
 		const contract = enforceCompletionContract(s.stage, s.skill, reRun.manifest);

@@ -5,9 +5,9 @@
  * the `as unknown as` cast — every consumer in the workflow module goes
  * through it.
  *
- * No artifact-path scanning lives here — discovery is the resolver's
- * job (see `outcome-types.ts:ArtifactResolver`). Resolvers that scan the
- * transcript (`transcriptPathResolver`, `urlResolver`, `toolCallResolver`,
+ * No artifact-path scanning lives here — discovery is the collector's
+ * job (see `outcome-types.ts:ArtifactCollector`). Collectors that scan the
+ * transcript (`transcriptPathCollector`, `urlCollector`, `toolCallCollector`,
  * …) walk this shape themselves; `lastMatchInBranch` is the shared
  * "find the last regex match in assistant text" helper they reuse.
  */
@@ -30,7 +30,7 @@ export function classifyStop(branch: BranchEntry[], offsetStart?: number): StopS
 
 /**
  * One content part inside an assistant message. Pi's internal union
- * carries more variants than these two; we model the ones resolvers
+ * carries more variants than these two; we model the ones collectors
  * walk over and let unknown parts pass through structurally (every
  * field besides `type` is optional).
  *
@@ -91,13 +91,13 @@ export function lastAssistantStopReason(branch: BranchEntry[], offsetStart?: num
 }
 
 // ---------------------------------------------------------------------------
-// Shared resolver building blocks
+// Shared collector building blocks
 // ---------------------------------------------------------------------------
 
 /**
  * Scan assistant text blocks in reverse for `pattern`; return the last
- * match. Pure — no I/O. Used by `transcriptPathResolver`, `urlResolver`,
- * and any author building a transcript-scan resolver.
+ * match. Pure — no I/O. Used by `transcriptPathCollector`, `urlCollector`,
+ * and any author building a transcript-scan collector.
  *
  * Reverse scan because the agent's final message is usually where the
  * actionable path/URL lands; iterating from the tail short-circuits on
@@ -132,8 +132,8 @@ export function lastMatchInBranch(branch: BranchEntry[], pattern: RegExp, offset
 /**
  * Yield every tool_use part the assistant emitted in branch order
  * (forward — the typical "what did the agent do during this stage?"
- * scan direction). Pure — no I/O. `toolCallResolver` walks this to
- * apply the author's match/toHandle pair.
+ * scan direction). Pure — no I/O. `toolCallCollector` walks this to
+ * apply the author's match/toArtifact pair.
  *
  * `offsetStart` — continue-policy stages pass the prior branch length.
  */

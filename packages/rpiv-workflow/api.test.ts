@@ -14,7 +14,7 @@ import {
 	defineStatePredicate,
 	defineWorkflow,
 	type EdgeFn,
-	type Outcome,
+	type OutputSpec,
 	produces,
 	threshold,
 	type Workflow,
@@ -102,11 +102,11 @@ describe("acts", () => {
 		expect(n.skill).toBeUndefined();
 	});
 
-	it("attaches an Outcome when supplied (commit-style stages)", () => {
-		const outcome: Outcome = {
-			resolver: {
-				baseline: () => "pre-state",
-				resolve: () => ({ kind: "ok", artifacts: [] }),
+	it("attaches an OutputSpec when supplied (commit-style stages)", () => {
+		const outcome: OutputSpec = {
+			collector: {
+				snapshot: () => "pre-state",
+				collect: () => ({ kind: "ok", artifacts: [] }),
 			},
 		};
 		const n = acts({ outcome });

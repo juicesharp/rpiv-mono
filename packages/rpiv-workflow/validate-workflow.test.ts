@@ -18,15 +18,15 @@ import {
 	threshold,
 	type Workflow,
 } from "./api.js";
-import { noopResolver } from "./outcomes/index.js";
+import { noopCollector } from "./outcomes/index.js";
 import { typeboxSchema } from "./typebox-adapter.js";
 import { validateWorkflow } from "./validate-workflow.js";
 
 // `produces` stages require an outcome (validated at load time). These
-// tests focus on graph-shape validation, so we wire a noop resolver into
+// tests focus on graph-shape validation, so we wire a noop collector into
 // every `produces()` so the outcome-presence check passes and the test
 // fixture exercises the rule it actually cares about.
-const STUB_ARTIFACT_OUTCOME = { resolver: noopResolver };
+const STUB_ARTIFACT_OUTCOME = { collector: noopCollector };
 const produces = (overrides: Partial<StageDef> = {}): StageDef =>
 	producesRaw({ outcome: STUB_ARTIFACT_OUTCOME, ...overrides });
 

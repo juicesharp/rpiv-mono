@@ -43,11 +43,11 @@ export interface RunState {
 	/**
 	 * Chain-input artifact — the rolling slot the next stage's prompt
 	 * inherits as input. Updated ONLY by produces stages whose
-	 * resolver returned at least one artifact (the first becomes the new
-	 * primary). Agent-end stages (commit, side-effect) record their own
+	 * collector returned at least one artifact (the first becomes the new
+	 * primary). Side-effect stages (commit, side-effect) record their own
 	 * manifest but do not touch this slot — preserves the "commit
 	 * inherits the prior chain's artifact" semantic without forcing
-	 * side-effect resolvers to re-emit the prior list.
+	 * side-effect collectors to re-emit the prior list.
 	 *
 	 * Reads must go through `currentPrimaryArtifact(state)`
 	 * (internal-utils.ts); a direct read here is a hint of a missed
@@ -126,8 +126,8 @@ export interface StageSession extends SessionContext {
 	stage: StageDef;
 	/** 0-based stage index within this run — for status display + JSONL stage number. */
 	stageIndex: number;
-	/** Pre-stage baseline value (undefined if the stage's `outcome` has no `baseline`). */
-	baseline: unknown;
+	/** Pre-stage snapshot value (undefined if the stage's `outcome` has no `snapshot`). */
+	snapshot: unknown;
 	/** Required iff `stage.sessionPolicy === "continue"`. */
 	host?: WorkflowHost;
 	/** Only set for continue stages — branch slice offset. */

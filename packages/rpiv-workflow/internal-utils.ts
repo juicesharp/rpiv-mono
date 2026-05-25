@@ -20,7 +20,7 @@ export function assertNever(value: never): never {
  * carrying." Reads the rolling slot maintained by the runner —
  * produces stages update it on success; side-effect stages leave it
  * alone. Replaces the load-bearing single-string artifact_path mirror
- * from the pre-resolver shape.
+ * from the pre-collector shape.
  */
 export function currentPrimaryArtifact(state: RunState): Artifact | undefined {
 	return state.primaryArtifact;
