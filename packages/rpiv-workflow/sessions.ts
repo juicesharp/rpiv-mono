@@ -11,6 +11,7 @@ import type { NodeDef, NodeSchema, SessionPolicy } from "./api.js";
 import {
 	type AuditCtx,
 	nowIso,
+	phaseRowLabel,
 	recordCancellation,
 	recordStage,
 	recordStopFailure,
@@ -518,6 +519,3 @@ const auditFor = (s: StageSession | PhaseSession): AuditCtx => ({
 
 /** Thunk that re-reads the current branch — used by the retry loop after each agent reply. */
 const freshBranchOf = (ctx: RunnerCtx) => () => readBranch(ctx);
-
-/** Per-phase JSONL row label, e.g. "implement (phase 2/4)". */
-const phaseRowLabel = (s: PhaseSession) => `${s.skill} (phase ${s.phaseIndex}/${s.phaseCount})`;

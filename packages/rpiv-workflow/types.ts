@@ -85,7 +85,13 @@ export interface RunContext {
 	maxBackwardJumps: number;
 }
 
-interface SessionContext {
+/**
+ * Per-stage / per-phase common base. Extended by `StageSession` and
+ * `PhaseSession`; consumed in pick form by `AuditCtx` (audit.ts) so the audit
+ * layer pins its dependency on the four-field shape structurally instead of
+ * duplicating the field list.
+ */
+export interface SessionContext {
 	cwd: string;
 	runId: string;
 	state: RunState;

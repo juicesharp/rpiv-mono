@@ -21,18 +21,25 @@ import {
 } from "./messages.js";
 import { appendStage, readAllStages, type WorkflowStage } from "./state.js";
 import type { StopSignal } from "./transcript.js";
-import type { RunnerCtx, RunState } from "./types.js";
+import type { PhaseSession, RunnerCtx, RunState, SessionContext } from "./types.js";
 
 /** Single source of ISO-8601 timestamps for audit rows + manifest meta. */
 export const nowIso = (): string => new Date().toISOString();
 
-/** Minimal bookkeeping ctx; both StageSession and PhaseSession collapse to this. */
-export interface AuditCtx {
-	cwd: string;
-	runId: string;
-	state: RunState;
-	skill: string;
-}
+/**
+ * Minimal bookkeeping ctx. Structurally derived from `SessionContext` so any
+ * future field added to the four-field base lands here too — no duplicate
+ * maintenance. Both `StageSession` and `PhaseSession` collapse to this.
+ */
+export type AuditCtx = Pick<SessionContext, "cwd" | "runId" | "state" | "skill">;
+
+/**
+ * JSONL row label for phase rows — stage rows use `s.skill` verbatim; phase
+ * rows include the per-phase index (`implement (phase 2/4)`) so post-hoc
+ * readers can distinguish loop iterations. Owned by the audit layer because
+ * the JSONL row shape is its concern.
+ */
+export const phaseRowLabel = (s: PhaseSession): string => `${s.skill} (phase ${s.phaseIndex}/${s.phaseCount})`;
 
 /**
  * Allocates the next `stageNumber`, attempts the append, and returns the
