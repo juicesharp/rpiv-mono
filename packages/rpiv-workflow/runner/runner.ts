@@ -29,7 +29,7 @@ import type { Workflow } from "../api.js";
 import { notifyPartialArtifacts, nowIso, recordTerminalFailure } from "../audit.js";
 import { currentArtifactPath } from "../internal-utils.js";
 import { MSG_STAGE_THREW, MSG_WORKFLOW_COMPLETE, STATUS_KEY } from "../messages.js";
-import { generateRunId, writeHeader } from "../state.js";
+import { generateRunId, writeHeader } from "../state/index.js";
 import type { RunContext, RunnerCtx, RunState } from "../types.js";
 import { runStage, StagePreflightError } from "./stage-lifecycle.js";
 

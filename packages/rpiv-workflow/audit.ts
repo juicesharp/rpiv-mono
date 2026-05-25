@@ -19,7 +19,7 @@ import {
 	MSG_WORKFLOW_CANCELLED,
 	STATUS_KEY,
 } from "./messages.js";
-import { appendStage, listArtifacts, type WorkflowStage } from "./state.js";
+import { appendStage, listArtifacts, type WorkflowStage } from "./state/index.js";
 import type { StopSignal } from "./transcript.js";
 import type { PhaseSession, RunnerCtx, RunState, SessionContext } from "./types.js";
 

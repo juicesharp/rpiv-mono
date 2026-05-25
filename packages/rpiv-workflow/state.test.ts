@@ -15,7 +15,7 @@ import {
 	type WorkflowHeader,
 	type WorkflowStage,
 	writeHeader,
-} from "./state.js";
+} from "./state/index.js";
 
 let tmpDir: string;
 

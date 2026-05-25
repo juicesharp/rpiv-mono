@@ -16,7 +16,7 @@ import {
 	MSG_ROUTING_AUDIT_DROPPED,
 } from "../messages.js";
 import { edgeIsDecision, nextNode } from "../routing.js";
-import { appendRoutingDecision } from "../state.js";
+import { appendRoutingDecision } from "../state/index.js";
 import type { RunContext, RunnerCtx } from "../types.js";
 import { finalizeWorkflow, runStageOrRecordFailure } from "./runner.js";
 

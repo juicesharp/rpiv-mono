@@ -75,7 +75,7 @@ export {
 	resolveWorkflowsDir,
 	type WorkflowHeader,
 	type WorkflowStage,
-} from "./state.js";
+} from "./state/index.js";
 export { typeboxSchema } from "./typebox-adapter.js";
 export type { RunContext, RunState } from "./types.js";
 export { type SchemaValidationFailure, validateManifestData } from "./validate-manifest.js";
