@@ -846,7 +846,7 @@ describe("runWorkflow", () => {
 			expect(failedRows[0]?.skill).toBe("implement");
 		});
 
-		it("records a failure row when continue node runs without pi (no throw escapes)", async () => {
+		it("rejects at preflight when continue node runs without pi (no stages execute)", async () => {
 			const chain = createMockSessionChain({
 				cwd: tmpDir,
 				steps: [],
@@ -855,16 +855,16 @@ describe("runWorkflow", () => {
 			const result = await runWorkflow(chain.ctx, {
 				workflow: wf("cont", ["research"], { research: { sessionPolicy: "continue" } }),
 				input: "x",
-				// No pi provided
+				// No pi provided — caught by the preflight before any stage runs.
 			});
 
 			expect(result.success).toBe(false);
-			expect(result.error).toMatch(/no pi.*ExtensionAPI/);
+			expect(result.error).toBe("workflow contains continue-policy nodes which require pi (ExtensionAPI)");
+			expect(result.stagesCompleted).toBe(0);
 
-			const { stages } = readState(tmpDir);
-			const failedRows = stages.filter((s) => s.status === "failed");
-			expect(failedRows).toHaveLength(1);
-			expect(failedRows[0]?.skill).toBe("research");
+			// Preflight short-circuits before writeHeader / any recordStage call —
+			// no JSONL workflow file is produced at all.
+			expect(existsSync(join(tmpDir, ".rpiv", "workflows"))).toBe(false);
 		});
 
 		// -------------------------------------------------------------------
@@ -878,23 +878,28 @@ describe("runWorkflow", () => {
 		// -------------------------------------------------------------------
 		it("attributes a mid-chain runStage throw to the failing stage, not to the prior one", async () => {
 			writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md");
+			const mockPi = createMockPi({ skills: ["research", "implement"] });
 			const chain = createMockSessionChain({
 				cwd: tmpDir,
 				steps: [{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/research/r.md")] }],
+				pi: mockPi.pi,
 			});
 
-			// research succeeds (fresh policy, no pi needed). design has
-			// sessionPolicy: continue but the workflow runs without pi, so
-			// enforceSessionInvariants throws inside runStage when design is
-			// invoked.
+			// research succeeds (fresh policy). implement has sessionPolicy:
+			// continue — a separate invariant (implement can't combine with
+			// continue) that throws inside enforceSessionInvariants when stage 2
+			// is invoked. pi is provided so the preflight (which gates only on
+			// missing pi) lets the run reach the mid-chain throw.
 			const result = await runWorkflow(chain.ctx, {
-				workflow: wf("midthrow", ["research", "design"], { design: { sessionPolicy: "continue" } }),
+				workflow: wf("midthrow", ["research", "implement"], {
+					implement: { sessionPolicy: "continue" },
+				}),
 				input: "x",
-				// No pi provided — triggers throw at the second stage
+				pi: mockPi.pi,
 			});
 
 			expect(result.success).toBe(false);
-			expect(result.error).toMatch(/no pi.*ExtensionAPI/);
+			expect(result.error).toMatch(/cannot use sessionPolicy.*continue/);
 
 			const { stages } = readState(tmpDir);
 			const completedRows = stages.filter((s) => s.status === "completed");
@@ -905,7 +910,7 @@ describe("runWorkflow", () => {
 			expect(completedRows).toHaveLength(1);
 			expect(completedRows[0]?.skill).toBe("research");
 			expect(failedRows).toHaveLength(1);
-			expect(failedRows[0]?.skill).toBe("design");
+			expect(failedRows[0]?.skill).toBe("implement");
 		});
 
 		it("branch offset prevents false positive from prior stage artifact", async () => {

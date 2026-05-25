@@ -110,6 +110,17 @@ export async function runWorkflow(
 		};
 	}
 
+	// Continue-policy stages thread the prior session via Pi's ExtensionAPI; if no
+	// pi was passed, enforceSessionInvariants would throw at the first such stage.
+	// Reject at workflow entry so embedders get a clean envelope instead of a throw.
+	if (options.pi === undefined && Object.values(workflow.nodes).some((n) => n.sessionPolicy === "continue")) {
+		return {
+			stagesCompleted: 0,
+			success: false,
+			error: "workflow contains continue-policy nodes which require pi (ExtensionAPI)",
+		};
+	}
+
 	const cwd = ctx.cwd;
 	const runId = generateRunId();
 	const totalStages = countReachableNodes(workflow);
