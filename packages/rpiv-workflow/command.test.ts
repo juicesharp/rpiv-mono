@@ -182,7 +182,14 @@ describe("/wf — issue surfacing", () => {
 			workflowSources: new Map([["tiny", "built-in"]]),
 			layers: ["built-in"],
 			issues: [
-				{ kind: "validation", workflow: "tiny", node: "research", severity: "warning", message: "orphan check" },
+				{
+					kind: "validation",
+					workflow: "tiny",
+					node: "research",
+					severity: "warning",
+					message: "orphan check",
+					layer: "built-in",
+				},
 			],
 		});
 		const { pi, captured } = createMockPi();

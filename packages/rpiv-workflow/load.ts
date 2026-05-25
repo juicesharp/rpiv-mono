@@ -63,7 +63,7 @@ export interface LoadIssue {
 	message: string;
 }
 
-export type Issue = LoadIssue | (WorkflowValidationIssue & { kind: "validation" });
+export type Issue = LoadIssue | (WorkflowValidationIssue & { kind: "validation"; layer: ConfigLayer; path?: string });
 
 export interface LoadedWorkflows {
 	workflows: readonly Workflow[];
