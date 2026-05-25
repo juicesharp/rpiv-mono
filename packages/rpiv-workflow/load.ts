@@ -260,7 +260,7 @@ async function loadOverlayFile(
 	}
 
 	const parsed = normalizeDefaultExport(raw, kind);
-	if ("error" in parsed) {
+	if (parsed.kind === "err") {
 		issues.push({ kind: "load", layer, path, severity: "error", message: parsed.error });
 		return undefined;
 	}
@@ -277,12 +277,7 @@ async function loadOverlayFile(
 	return parsed.value;
 }
 
-interface NormalizeOk {
-	value: ParsedConfig;
-}
-interface NormalizeErr {
-	error: string;
-}
+type NormalizeResult = { kind: "ok"; value: ParsedConfig } | { kind: "err"; error: string };
 
 /**
  * Canonical files accept three default-export shapes; drop-ins accept only
@@ -291,14 +286,14 @@ interface NormalizeErr {
  * else" gotcha — the warning at `loadOverlayFile` covers any leaked
  * `default` from a Workflow that someone hand-shaped as `{ workflows, default }`.
  */
-function normalizeDefaultExport(raw: unknown, kind: FileKind): NormalizeOk | NormalizeErr {
-	if (isWorkflow(raw)) return { value: { workflows: [raw] } };
+function normalizeDefaultExport(raw: unknown, kind: FileKind): NormalizeResult {
+	if (isWorkflow(raw)) return { kind: "ok", value: { workflows: [raw] } };
 	if (Array.isArray(raw)) {
 		if (raw.length === 0) {
-			return { error: "default-export `Workflow[]` must contain at least one Workflow" };
+			return { kind: "err", error: "default-export `Workflow[]` must contain at least one Workflow" };
 		}
 		if (!raw.every(isWorkflow)) {
-			return { error: "default export array must contain only Workflow objects" };
+			return { kind: "err", error: "default export array must contain only Workflow objects" };
 		}
 		// A bare Workflow[] omits the `default` slot; with more than one entry
 		// there's no unambiguous pick. Require the envelope form so the choice
@@ -308,27 +303,30 @@ function normalizeDefaultExport(raw: unknown, kind: FileKind): NormalizeOk | Nor
 		// fine; the author should split into one file per workflow.
 		if (raw.length > 1) {
 			return {
+				kind: "err",
 				error:
 					"default-export `Workflow[]` with more than one entry must be wrapped as " +
 					'`{ workflows: [...], default: "<name>" }` so the default workflow is explicit',
 			};
 		}
-		return { value: { workflows: raw as Workflow[] } };
+		return { kind: "ok", value: { workflows: raw as Workflow[] } };
 	}
 	if (isEnvelope(raw)) {
 		if (kind === "drop-in") {
 			return {
+				kind: "err",
 				error:
 					"drop-in workflow files must export a `Workflow` or `Workflow[]` — the " +
 					"`{ workflows, default? }` envelope is only accepted in the canonical workflows.config.ts.",
 			};
 		}
 		if (!raw.workflows.every(isWorkflow)) {
-			return { error: "default-export `workflows` must contain only Workflow objects" };
+			return { kind: "err", error: "default-export `workflows` must contain only Workflow objects" };
 		}
-		return { value: { workflows: raw.workflows, default: raw.default } };
+		return { kind: "ok", value: { workflows: raw.workflows, default: raw.default } };
 	}
 	return {
+		kind: "err",
 		error:
 			"default export must be a Workflow, Workflow[], or { workflows: Workflow[]; default?: string } — " +
 			`got ${describe(raw)}`,
