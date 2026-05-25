@@ -237,14 +237,26 @@ function buildPrompt(skill: string, inputForStage: string): string {
  * and `advanceChain`'s own catch mis-attributes the failure to the prior
  * stage (`currentName` is still bound to the iteration that just succeeded).
  *
- * `runStage` only throws for invariant/machinery failures (e.g.
- * `enforceSessionInvariants`); expected failures are recorded inside via
- * `recordStage` + `state.termination.error` and return normally.
+ * Two flavours of throw are caught here:
+ *
+ * - `StagePreflightError` — a known preflight failure carrying its own
+ *   attribution + messages. Recorded with the carried payload exactly.
+ * - Any other `Error` — unexpected machinery failure; recorded with the
+ *   generic `MSG_STAGE_THREW` shape attributed to the node id.
  */
 async function runStageOrRecordFailure(curCtx: RunnerCtx, name: string, idx: number, run: RunContext): Promise<void> {
 	try {
 		await runStage(curCtx, name, idx, run);
 	} catch (e) {
+		if (e instanceof StagePreflightError) {
+			recordTerminalFailure(
+				curCtx,
+				{ cwd: run.cwd, runId: run.runId, state: run.state, skill: e.skill },
+				{ status: "failed", notifyMsg: e.notifyMsg, notifyLevel: "error", errMsg: e.errMsg },
+				e.notifyPartial ? (ctx) => notifyPartialArtifacts(ctx, run.cwd, run.runId) : undefined,
+			);
+			return;
+		}
 		const reason = e instanceof Error ? e.message : String(e);
 		recordTerminalFailure(
 			curCtx,
@@ -254,18 +266,31 @@ async function runStageOrRecordFailure(curCtx: RunnerCtx, name: string, idx: num
 	}
 }
 
+/**
+ * Slot ordering (load-bearing):
+ *
+ *   1. tryPhaseFanout            — shortcut: implement-skill expansion handled
+ *                                  the stage; subsequent slots skipped.
+ *   2. PRE_PROMPT_CHECKS         — preflights that don't need prompt prep.
+ *      a. ensureUpstreamArtifact — halt: missing inherited artifact.
+ *      b. enforceSessionInvariants — invariant: authoring-time-knowable
+ *         throws (precede the registry check so the structural violation
+ *         surfaces regardless of the runtime registry).
+ *      c. ensureSkillRegistered  — halt: skill not registered in Pi.
+ *   3. prompt + status + branchOffset prep.
+ *   4. POST_PROMPT_CHECKS        — preflights gated on prompt-prep state.
+ *      a. ensureInputValid       — halt: upstream manifest fails inputSchema.
+ *   5. captureStageSnapshot      — extractor.before hook (must run before
+ *                                  the Pi session so post-stage diffs work).
+ *
+ * Each `PreflightCheck` throws `StagePreflightError` on failure;
+ * `runStageOrRecordFailure` catches and records the JSONL row.
+ */
 async function runStage(curCtx: RunnerCtx, currentName: string, idx: number, run: RunContext): Promise<void> {
 	const stage = resolveStageNode(currentName, idx, run);
 
 	if (await tryPhaseFanout(curCtx, stage, idx, run)) return;
-	if (!ensureUpstreamArtifact(curCtx, stage, currentName, run)) return;
-	// Invariants (authoring-time-knowable, throw) fire before the registry
-	// check (runtime-state, fail-soft halt). Ordering matters: an
-	// implement+continue node should surface its structural violation
-	// regardless of whether the runtime skill registry happens to recognise
-	// the name.
-	enforceSessionInvariants(stage, currentName, run);
-	if (!ensureSkillRegistered(curCtx, stage, run)) return;
+	for (const check of PRE_PROMPT_CHECKS) check.run(stage, run);
 
 	const isStart = currentName === run.workflow.start;
 	const inputForStage = isStart ? run.state.originalInput : currentArtifactPath(run.state)!;
@@ -273,7 +298,7 @@ async function runStage(curCtx: RunnerCtx, currentName: string, idx: number, run
 	curCtx.ui.setStatus(STATUS_KEY, STATUS_STAGE(stage.stageNumber, run.totalStages, stage.skill));
 	const branchOffset = computeBranchOffset(curCtx, stage.node);
 
-	if (!ensureInputValid(curCtx, stage, run)) return;
+	for (const check of POST_PROMPT_CHECKS) check.run(stage, run);
 
 	const snapshot = await captureStageSnapshot(stage.node, idx, run);
 
@@ -292,6 +317,49 @@ async function runStage(curCtx: RunnerCtx, currentName: string, idx: number, run
 		onSuccess: (freshCtx) => advanceChain(freshCtx, currentName, idx, run),
 	});
 }
+
+/**
+ * Thrown by a `PreflightCheck` on failure; carries the recorded-row
+ * attribution + notify/err messages so `runStageOrRecordFailure` can land
+ * a uniform JSONL row regardless of which slot tripped.
+ *
+ * `kind` annotates the violation class for diagnostics only — control
+ * flow at the catch site is uniform:
+ *   - `"halt"`     — runtime-state failure (skill not registered, missing
+ *                    upstream artifact, schema mismatch).
+ *   - `"invariant"` — authoring-time-knowable violation that
+ *                    `validateWorkflow` should reject at load. A throw
+ *                    here means validation was bypassed or the rule lives
+ *                    only in the runner (continue-without-pi).
+ */
+class StagePreflightError extends Error {
+	constructor(
+		public readonly kind: "halt" | "invariant",
+		public readonly skill: string,
+		public readonly notifyMsg: string,
+		public readonly errMsg: string,
+		public readonly notifyPartial: boolean,
+	) {
+		super(errMsg);
+		this.name = "StagePreflightError";
+	}
+}
+
+interface PreflightCheck {
+	name: string;
+	kind: "halt" | "invariant";
+	run(stage: ResolvedStage, run: RunContext): void;
+}
+
+const PRE_PROMPT_CHECKS: readonly PreflightCheck[] = [
+	{ name: "ensureUpstreamArtifact", kind: "halt", run: ensureUpstreamArtifact },
+	{ name: "enforceSessionInvariants", kind: "invariant", run: enforceSessionInvariants },
+	{ name: "ensureSkillRegistered", kind: "halt", run: ensureSkillRegistered },
+];
+
+const POST_PROMPT_CHECKS: readonly PreflightCheck[] = [
+	{ name: "ensureInputValid", kind: "halt", run: ensureInputValid },
+];
 
 // ---------------------------------------------------------------------------
 // runStage prerequisites
@@ -360,8 +428,8 @@ async function tryPhaseFanout(curCtx: RunnerCtx, stage: ResolvedStage, idx: numb
  * out of pi opt out of this defense too — same fail-soft posture the rest
  * of the pi-optional surface uses.
  */
-function ensureSkillRegistered(curCtx: RunnerCtx, stage: ResolvedStage, run: RunContext): boolean {
-	if (!run.pi) return true;
+function ensureSkillRegistered(stage: ResolvedStage, run: RunContext): void {
+	if (!run.pi) return;
 
 	const registered = new Set<string>();
 	for (const cmd of run.pi.getCommands()) {
@@ -371,20 +439,15 @@ function ensureSkillRegistered(curCtx: RunnerCtx, stage: ResolvedStage, run: Run
 		const name = cmd.name.startsWith("skill:") ? cmd.name.slice("skill:".length) : cmd.name;
 		registered.add(name);
 	}
-	if (registered.has(stage.skill)) return true;
+	if (registered.has(stage.skill)) return;
 
-	recordTerminalFailure(
-		curCtx,
-		{ cwd: run.cwd, runId: run.runId, state: run.state, skill: stage.skill },
-		{
-			status: "failed",
-			notifyMsg: MSG_SKILL_NOT_REGISTERED(stage.skill),
-			notifyLevel: "error",
-			errMsg: ERR_SKILL_NOT_REGISTERED(stage.skill, stage.stageNumber),
-		},
-		(ctx) => notifyPartialArtifacts(ctx, run.cwd, run.runId),
+	throw new StagePreflightError(
+		"halt",
+		stage.skill,
+		MSG_SKILL_NOT_REGISTERED(stage.skill),
+		ERR_SKILL_NOT_REGISTERED(stage.skill, stage.stageNumber),
+		true,
 	);
-	return false;
 }
 
 /**
@@ -392,38 +455,27 @@ function ensureSkillRegistered(curCtx: RunnerCtx, stage: ResolvedStage, run: Run
  * an upstream artifactPath. Falling back to originalInput past the start
  * would silently hand a downstream skill the raw feature description.
  */
-function ensureUpstreamArtifact(
-	curCtx: RunnerCtx,
-	stage: ResolvedStage,
-	currentName: string,
-	run: RunContext,
-): boolean {
-	if (currentName === run.workflow.start || currentArtifactPath(run.state)) return true;
-	recordTerminalFailure(
-		curCtx,
-		{ cwd: run.cwd, runId: run.runId, state: run.state, skill: stage.skill },
-		{
-			status: "failed",
-			notifyMsg: MSG_MISSING_ARTIFACT(stage.skill),
-			notifyLevel: "error",
-			errMsg: ERR_MISSING_ARTIFACT(stage.skill, stage.stageNumber),
-		},
-		(ctx) => notifyPartialArtifacts(ctx, run.cwd, run.runId),
+function ensureUpstreamArtifact(stage: ResolvedStage, run: RunContext): void {
+	if (stage.name === run.workflow.start || currentArtifactPath(run.state)) return;
+	throw new StagePreflightError(
+		"halt",
+		stage.skill,
+		MSG_MISSING_ARTIFACT(stage.skill),
+		ERR_MISSING_ARTIFACT(stage.skill, stage.stageNumber),
+		true,
 	);
-	return false;
 }
 
-function enforceSessionInvariants(stage: ResolvedStage, currentName: string, run: RunContext): void {
+function enforceSessionInvariants(stage: ResolvedStage, run: RunContext): void {
 	if (stage.skill === "implement" && stage.node.sessionPolicy === "continue") {
-		throw new Error(
-			`runStage: implement node "${currentName}" cannot use sessionPolicy "continue" — ` +
-				"phase fanout requires per-phase session isolation",
-		);
+		const reason =
+			`runStage: implement node "${stage.name}" cannot use sessionPolicy "continue" — ` +
+			"phase fanout requires per-phase session isolation";
+		throw new StagePreflightError("invariant", stage.name, MSG_STAGE_THREW(stage.name, reason), reason, false);
 	}
 	if (stage.node.sessionPolicy === "continue" && !run.pi) {
-		throw new Error(
-			`runStage: node "${currentName}" uses sessionPolicy "continue" but no pi (ExtensionAPI) was provided to runWorkflow`,
-		);
+		const reason = `runStage: node "${stage.name}" uses sessionPolicy "continue" but no pi (ExtensionAPI) was provided to runWorkflow`;
+		throw new StagePreflightError("invariant", stage.name, MSG_STAGE_THREW(stage.name, reason), reason, false);
 	}
 }
 
@@ -433,25 +485,20 @@ function computeBranchOffset(curCtx: RunnerCtx, node: NodeDef): number | undefin
 	return readBranch(curCtx).length;
 }
 
-function ensureInputValid(curCtx: RunnerCtx, stage: ResolvedStage, run: RunContext): boolean {
-	if (!stage.node.inputSchema || run.state.manifest?.data === undefined) return true;
+function ensureInputValid(stage: ResolvedStage, run: RunContext): void {
+	if (!stage.node.inputSchema || run.state.manifest?.data === undefined) return;
 	const result = validateManifestData(stage.node.inputSchema, run.state.manifest.data);
-	if (result.valid) return true;
+	if (result.valid) return;
 
 	const failureSummary = result.failures.map((f) => `${f.path}: ${f.message}`).join("; ");
 	const prevSkill = run.state.manifest.meta.skill || "unknown";
-	recordTerminalFailure(
-		curCtx,
-		{ cwd: run.cwd, runId: run.runId, state: run.state, skill: stage.skill },
-		{
-			status: "failed",
-			notifyMsg: MSG_INPUT_VALIDATION_FAILED(stage.skill, prevSkill),
-			notifyLevel: "error",
-			errMsg: ERR_INPUT_VALIDATION_FAILED(stage.skill, prevSkill, failureSummary),
-		},
-		(ctx) => notifyPartialArtifacts(ctx, run.cwd, run.runId),
+	throw new StagePreflightError(
+		"halt",
+		stage.skill,
+		MSG_INPUT_VALIDATION_FAILED(stage.skill, prevSkill),
+		ERR_INPUT_VALIDATION_FAILED(stage.skill, prevSkill, failureSummary),
+		true,
 	);
-	return false;
 }
 
 async function captureStageSnapshot(node: NodeDef, idx: number, run: RunContext): Promise<unknown> {
