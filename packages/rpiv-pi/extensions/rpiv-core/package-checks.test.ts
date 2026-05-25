@@ -3,12 +3,12 @@ import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { findMissingSiblings } from "./package-checks.js";
 import { SIBLINGS } from "./siblings.js";
-
-const SETTINGS_PATH = join(process.env.HOME!, ".pi", "agent", "settings.json");
+import { getPiAgentSettingsPath } from "./utils.js";
 
 function writeSettings(contents: unknown) {
-	mkdirSync(dirname(SETTINGS_PATH), { recursive: true });
-	writeFileSync(SETTINGS_PATH, JSON.stringify(contents), "utf-8");
+	const settingsPath = getPiAgentSettingsPath();
+	mkdirSync(dirname(settingsPath), { recursive: true });
+	writeFileSync(settingsPath, JSON.stringify(contents), "utf-8");
 }
 
 describe("findMissingSiblings", () => {
@@ -17,8 +17,9 @@ describe("findMissingSiblings", () => {
 	});
 
 	it("returns all 7 siblings when JSON is invalid", () => {
-		mkdirSync(dirname(SETTINGS_PATH), { recursive: true });
-		writeFileSync(SETTINGS_PATH, "{not json", "utf-8");
+		const settingsPath = getPiAgentSettingsPath();
+		mkdirSync(dirname(settingsPath), { recursive: true });
+		writeFileSync(settingsPath, "{not json", "utf-8");
 		expect(findMissingSiblings()).toHaveLength(SIBLINGS.length);
 	});
 
@@ -51,6 +52,14 @@ describe("findMissingSiblings", () => {
 	});
 
 	it("returns [] when all 7 siblings are installed", () => {
+		writeSettings({
+			packages: SIBLINGS.map((s) => s.pkg.replace(/^npm:/, "")),
+		});
+		expect(findMissingSiblings()).toEqual([]);
+	});
+
+	it("reads settings from PI_CODING_AGENT_DIR when configured", () => {
+		process.env.PI_CODING_AGENT_DIR = join(process.env.HOME!, ".config", "pi", "agent");
 		writeSettings({
 			packages: SIBLINGS.map((s) => s.pkg.replace(/^npm:/, "")),
 		});

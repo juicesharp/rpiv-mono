@@ -1,15 +1,21 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { isPlainObject, PI_AGENT_SETTINGS, readPiAgentSettings, toErrorMessage } from "./utils.js";
+import {
+	getPiAgentSettingsPath,
+	isPlainObject,
+	PI_AGENT_SETTINGS,
+	readPiAgentSettings,
+	toErrorMessage,
+} from "./utils.js";
 
-function writeSettingsRaw(raw: string): void {
-	mkdirSync(dirname(PI_AGENT_SETTINGS), { recursive: true });
-	writeFileSync(PI_AGENT_SETTINGS, raw, "utf-8");
+function writeSettingsRaw(raw: string, path = getPiAgentSettingsPath()): void {
+	mkdirSync(dirname(path), { recursive: true });
+	writeFileSync(path, raw, "utf-8");
 }
 
-function writeSettings(contents: unknown): void {
-	writeSettingsRaw(JSON.stringify(contents));
+function writeSettings(contents: unknown, path = getPiAgentSettingsPath()): void {
+	writeSettingsRaw(JSON.stringify(contents), path);
 }
 
 describe("isPlainObject", () => {
@@ -65,6 +71,17 @@ describe("toErrorMessage", () => {
 	});
 });
 
+describe("getPiAgentSettingsPath", () => {
+	it("uses ~/.pi/agent/settings.json when PI_CODING_AGENT_DIR is unset", () => {
+		expect(getPiAgentSettingsPath()).toBe(PI_AGENT_SETTINGS);
+	});
+
+	it("uses PI_CODING_AGENT_DIR/settings.json when configured", () => {
+		process.env.PI_CODING_AGENT_DIR = join(process.env.HOME!, ".config", "pi", "agent");
+		expect(getPiAgentSettingsPath()).toBe(join(process.env.HOME!, ".config", "pi", "agent", "settings.json"));
+	});
+});
+
 describe("readPiAgentSettings", () => {
 	it("returns undefined when the settings file is missing", () => {
 		rmSync(PI_AGENT_SETTINGS, { force: true });
@@ -103,6 +120,12 @@ describe("readPiAgentSettings", () => {
 			defaultProvider: "zai",
 			packages: ["npm:pi-perplexity", "npm:@juicesharp/rpiv-todo"],
 		});
+	});
+
+	it("reads from PI_CODING_AGENT_DIR/settings.json when configured", () => {
+		process.env.PI_CODING_AGENT_DIR = join(process.env.HOME!, ".config", "pi", "agent");
+		writeSettings({ packages: ["npm:@juicesharp/rpiv-todo"] });
+		expect(readPiAgentSettings()?.packages).toEqual(["npm:@juicesharp/rpiv-todo"]);
 	});
 
 	it("preserves non-string entries inside packages (caller responsibility to filter)", () => {
