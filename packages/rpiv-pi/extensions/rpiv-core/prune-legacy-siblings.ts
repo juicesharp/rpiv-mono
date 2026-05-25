@@ -1,6 +1,6 @@
 /**
  * Detect + remove deprecated sibling package entries from
- * ~/.pi/agent/settings.json.
+ * the active Pi agent settings file.
  *
  * Split into two phases so /rpiv-setup can preview pending changes in the
  * confirmation dialog and apply the mutation only after the user agrees:
@@ -23,7 +23,7 @@
 
 import { writeFileSync } from "node:fs";
 import { LEGACY_SIBLINGS } from "./siblings.js";
-import { PI_AGENT_SETTINGS, readPiAgentSettings } from "./utils.js";
+import { getPiAgentSettingsPath, readPiAgentSettings } from "./utils.js";
 
 export interface PruneLegacySiblingsResult {
 	/** settings.json `packages[]` entries that were removed (empty = no-op). */
@@ -65,7 +65,7 @@ export function pruneLegacySiblings(): PruneLegacySiblingsResult {
 
 	parsed.settings.packages = kept;
 	try {
-		writeFileSync(PI_AGENT_SETTINGS, `${JSON.stringify(parsed.settings, null, 2)}\n`, "utf-8");
+		writeFileSync(getPiAgentSettingsPath(), `${JSON.stringify(parsed.settings, null, 2)}\n`, "utf-8");
 	} catch {
 		return { pruned: [] };
 	}

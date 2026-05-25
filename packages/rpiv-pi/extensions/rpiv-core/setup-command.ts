@@ -1,5 +1,5 @@
 /**
- * /rpiv-setup — installs any SIBLINGS not present in ~/.pi/agent/settings.json
+ * /rpiv-setup — installs any SIBLINGS not present in the active Pi settings file
  * and prunes deprecated entries (e.g. the unscoped `npm:pi-subagents` from
  * the rpiv-pi 0.12.x → 0.14.0 line). Both mutations are previewed in the
  * confirmation dialog and only executed after the user agrees.
@@ -13,7 +13,7 @@ import { findMissingSiblings } from "./package-checks.js";
 import { spawnPiInstall } from "./pi-installer.js";
 import { findLegacySiblings, pruneLegacySiblings } from "./prune-legacy-siblings.js";
 import type { SiblingPlugin } from "./siblings.js";
-import { toErrorMessage } from "./utils.js";
+import { getPiAgentSettingsPath, toErrorMessage } from "./utils.js";
 
 const INSTALL_TIMEOUT_MS = 120_000;
 const STDERR_SNIPPET_CHARS = 300;
@@ -43,12 +43,13 @@ function buildConfirmBody(missing: SiblingPlugin[], legacyEntries: string[]): st
 		for (const m of missing) lines.push(`  • ${m.pkg}  (required — provides ${m.provides})`);
 		lines.push("");
 	}
+	const settingsPath = getPiAgentSettingsPath();
 	if (legacyEntries.length > 0) {
-		lines.push("Remove from `~/.pi/agent/settings.json` (deprecated):");
+		lines.push(`Remove from \`${settingsPath}\` (deprecated):`);
 		for (const entry of legacyEntries) lines.push(`  • ${entry}`);
 		lines.push("");
 	}
-	lines.push("Your `~/.pi/agent/settings.json` will be updated. Proceed?");
+	lines.push(`Your \`${settingsPath}\` will be updated. Proceed?`);
 	return lines.join("\n");
 }
 

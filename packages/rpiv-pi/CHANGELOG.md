@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- Sibling package detection and `/rpiv-setup` legacy pruning now honor
+  `PI_CODING_AGENT_DIR` instead of always reading `~/.pi/agent/settings.json`.
+
 ## [1.12.0] - 2026-05-21
 
 ## [1.11.0] - 2026-05-20

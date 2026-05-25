@@ -6,6 +6,7 @@ import { beforeEach, vi } from "vitest";
 const TEST_HOME = mkdtempSync(join(tmpdir(), "rpiv-test-home-"));
 process.env.HOME = TEST_HOME;
 process.env.USERPROFILE = TEST_HOME;
+delete process.env.PI_CODING_AGENT_DIR;
 
 vi.mock("@earendil-works/pi-ai", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("@earendil-works/pi-ai")>();
@@ -43,6 +44,8 @@ const VOICE_SYMBOL = Symbol.for("rpiv-voice");
 // hookTimeout is therefore raised in vitest.config.ts. The cost is paid once
 // per worker; subsequent tests reuse the module cache and beforeEach is fast.
 beforeEach(async () => {
+	delete process.env.PI_CODING_AGENT_DIR;
+
 	const todo = await import("../packages/rpiv-todo/todo.js");
 	todo.__resetState();
 
@@ -78,6 +81,7 @@ beforeEach(async () => {
 	delete (globalThis as Record<symbol, unknown>)[VOICE_SYMBOL];
 
 	const piAgentSettings = join(process.env.HOME!, ".pi", "agent", "settings.json");
+	const xdgPiAgentDir = join(process.env.HOME!, ".config", "pi", "agent");
 	const advisorConfig = join(process.env.HOME!, ".config", "rpiv-advisor", "advisor.json");
 	const i18nConfig = join(process.env.HOME!, ".config", "rpiv-i18n", "locale.json");
 	const voiceConfig = join(process.env.HOME!, ".config", "rpiv-voice", "voice.json");
@@ -86,6 +90,7 @@ beforeEach(async () => {
 	const askUserQuestionConfig = join(process.env.HOME!, ".config", "rpiv-ask-user-question", "config.json");
 	const webToolsConfig = join(process.env.HOME!, ".config", "rpiv-web-tools", "config.json");
 	rmSync(piAgentSettings, { force: true });
+	rmSync(xdgPiAgentDir, { recursive: true, force: true });
 	rmSync(advisorConfig, { force: true });
 	rmSync(i18nConfig, { force: true });
 	rmSync(voiceConfig, { force: true });

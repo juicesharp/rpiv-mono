@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { createMockCtx, createMockPi } from "@juicesharp/rpiv-test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -83,6 +84,18 @@ describe("/rpiv-setup — pre-confirm read-only contract", () => {
 		const confirmCall = (ctx.ui.confirm as ReturnType<typeof vi.fn>).mock.calls[0]!;
 		expect(confirmCall[1]).toContain("Remove from");
 		expect(confirmCall[1]).toContain("npm:pi-subagents");
+	});
+
+	it("shows the PI_CODING_AGENT_DIR settings path in the confirmation body", async () => {
+		process.env.PI_CODING_AGENT_DIR = join(process.env.HOME!, ".config", "pi", "agent");
+		vi.mocked(findMissingSiblings).mockReturnValue([]);
+		vi.mocked(findLegacySiblings).mockReturnValue(["npm:pi-subagents"]);
+		const { pi, captured } = createMockPi();
+		registerSetupCommand(pi);
+		const ctx = createMockCtx({ hasUI: true });
+		await captured.commands.get("rpiv-setup")?.handler("", ctx as never);
+		const confirmCall = (ctx.ui.confirm as ReturnType<typeof vi.fn>).mock.calls[0]!;
+		expect(confirmCall[1]).toContain(join(process.env.HOME!, ".config", "pi", "agent", "settings.json"));
 	});
 
 	it("includes pending installs in the confirmation body", async () => {

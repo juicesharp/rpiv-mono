@@ -6,14 +6,14 @@
  * /rpiv-setup installer (setup-command.ts). Add a sibling here and every
  * consumer picks it up automatically.
  *
- * Detection is filesystem-based via a regex over ~/.pi/agent/settings.json
+ * Detection is filesystem-based via a regex over the active Pi settings file
  * — no runtime import of sibling packages (keeps rpiv-core pure-orchestrator).
  */
 
 export interface SiblingPlugin {
 	/** Install spec passed to `pi install`. Prefixed with `npm:` for Pi's installer. */
 	readonly pkg: string;
-	/** Case-insensitive regex that matches the package in ~/.pi/agent/settings.json. */
+	/** Case-insensitive regex that matches the package in settings.json. */
 	readonly matches: RegExp;
 	/** What the sibling provides — shown in /rpiv-setup confirmation and reports. */
 	readonly provides: string;
@@ -59,7 +59,7 @@ export const SIBLINGS: readonly SiblingPlugin[] = [
 
 /**
  * Deprecated sibling packages that `/rpiv-setup` actively prunes from
- * ~/.pi/agent/settings.json (so upgraders don't end up with superseded
+ * the active Pi settings file (so upgraders don't end up with superseded
  * libraries loaded alongside their replacements). Single source of truth
  * for `prune-legacy-siblings.ts`.
  */

@@ -12,8 +12,14 @@ import { join } from "node:path";
 // PI Agent Settings path
 // ---------------------------------------------------------------------------
 
-/** Path to the Pi agent settings file. Shared by package-checks and prune-legacy-siblings. */
+/** Default Pi agent settings path when PI_CODING_AGENT_DIR is not configured. */
 export const PI_AGENT_SETTINGS = join(homedir(), ".pi", "agent", "settings.json");
+
+/** Resolve the active Pi agent settings file, honoring Pi's configurable agent dir. */
+export function getPiAgentSettingsPath(): string {
+	const configuredAgentDir = process.env.PI_CODING_AGENT_DIR;
+	return join(configuredAgentDir || join(homedir(), ".pi", "agent"), "settings.json");
+}
 
 // ---------------------------------------------------------------------------
 // Type guards
@@ -48,15 +54,16 @@ interface PiAgentSettingsResult {
 }
 
 /**
- * Read and parse ~/.pi/agent/settings.json.
+ * Read and parse the active Pi agent settings file.
  * Returns undefined if the file is missing, has invalid JSON, or is not a plain object
  * with a packages array. Fail-soft — never throws.
  */
 export function readPiAgentSettings(): PiAgentSettingsResult | undefined {
-	if (!existsSync(PI_AGENT_SETTINGS)) return undefined;
+	const settingsPath = getPiAgentSettingsPath();
+	if (!existsSync(settingsPath)) return undefined;
 	let parsed: unknown;
 	try {
-		parsed = JSON.parse(readFileSync(PI_AGENT_SETTINGS, "utf-8"));
+		parsed = JSON.parse(readFileSync(settingsPath, "utf-8"));
 	} catch {
 		return undefined;
 	}
