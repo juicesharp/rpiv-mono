@@ -1,9 +1,8 @@
 /** /wf slash command: parse → loadWorkflows → runWorkflow. */
 
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import type { Workflow } from "./api.js";
 import { renderConfigLayer } from "./layers.js";
-import { type Issue, type LoadedWorkflows, loadWorkflows } from "./load.js";
+import { findWorkflow, type Issue, loadWorkflows } from "./load/index.js";
 import {
 	CMD_DESCRIPTION,
 	MSG_INTERACTIVE_ONLY,
@@ -57,7 +56,7 @@ async function handleWorkflowCommand(pi: ExtensionAPI, args: string, ctx: Extens
 		return;
 	}
 
-	const workflow = pickWorkflow(loaded, workflowName);
+	const workflow = findWorkflow(loaded, workflowName);
 	if (!workflow) {
 		ctx.ui.notify(MSG_WORKFLOW_NOT_FOUND(workflowName), "error");
 		return;
@@ -119,8 +118,4 @@ function formatIssue(issue: Issue): string {
 	const nodeTag = issue.node ? ` — node "${issue.node}"` : "";
 	const pathTag = issue.path ? ` (${issue.path})` : "";
 	return `[${renderConfigLayer(issue.layer)} config${pathTag}] workflow "${issue.workflow}"${nodeTag}: ${issue.message}`;
-}
-
-function pickWorkflow(loaded: LoadedWorkflows, name: string): Workflow | undefined {
-	return loaded.workflows.find((w) => w.name === name);
 }

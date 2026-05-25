@@ -39,7 +39,7 @@
     "extractors",
     "implement-phases.ts",
     "layers.ts",
-    "load.ts",
+    "load",
     "manifest.ts",
     "messages.ts",
     "preview.ts",

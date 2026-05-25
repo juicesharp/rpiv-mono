@@ -7,7 +7,7 @@
 
 import type { NodeDef, Workflow } from "./api.js";
 import { type ConfigLayer, renderConfigLayer } from "./layers.js";
-import type { LoadedWorkflows } from "./load.js";
+import type { LoadedWorkflows } from "./load/index.js";
 import { CMD_USAGE_LIST, CMD_USAGE_PREVIEW, CMD_USAGE_RUN } from "./messages.js";
 
 // ===========================================================================

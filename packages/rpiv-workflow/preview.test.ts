@@ -6,7 +6,7 @@
 import { describe, expect, it } from "vitest";
 import { action, artifact, defineWorkflow, type NodeDef, threshold, type Workflow } from "./api.js";
 import { gitCommitExtractor } from "./extractors/index.js";
-import type { LoadedWorkflows } from "./load.js";
+import type { LoadedWorkflows } from "./load/index.js";
 import { formatWorkflowDetails, formatWorkflowList } from "./preview.js";
 
 // ---------------------------------------------------------------------------

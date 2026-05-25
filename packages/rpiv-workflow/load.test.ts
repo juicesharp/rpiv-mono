@@ -13,7 +13,7 @@ import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { action, artifact, defineWorkflow, type Workflow } from "./api.js";
 import { __resetBuiltIns, registerBuiltIns } from "./built-ins.js";
-import { loadWorkflows, projectOverlayPaths, userOverlayPaths } from "./load.js";
+import { loadWorkflows, projectOverlayPaths, userOverlayPaths } from "./load/index.js";
 
 // ---------------------------------------------------------------------------
 // Test fixtures
@@ -515,5 +515,79 @@ export default defineWorkflow({ name: "bad", start: "a", nodes: { a: artifact() 
 	it("does not append a layer when only a non-existent drop-in dir is checked", async () => {
 		const loaded = await loadWorkflows(TEST_TMP);
 		expect(loaded.layers).toEqual(["built-in"]);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Default-export shape rejection — `describe(raw)` paths
+// ---------------------------------------------------------------------------
+
+describe("loadWorkflows — default-export shape rejection", () => {
+	it("describes a primitive (number) in the error message", async () => {
+		writeProjectConfig(TEST_TMP, "export default 42;\n");
+		const loaded = await loadWorkflows(TEST_TMP);
+		expect(loaded.issues.some((i) => i.kind === "load" && /got number/.test(i.message))).toBe(true);
+	});
+
+	it("describes a primitive (string) in the error message", async () => {
+		writeProjectConfig(TEST_TMP, 'export default "not a workflow";\n');
+		const loaded = await loadWorkflows(TEST_TMP);
+		expect(loaded.issues.some((i) => i.kind === "load" && /got string/.test(i.message))).toBe(true);
+	});
+
+	it("describes a non-Workflow, non-Envelope object in the error message", async () => {
+		writeProjectConfig(TEST_TMP, "export default { hello: 1 };\n");
+		const loaded = await loadWorkflows(TEST_TMP);
+		expect(loaded.issues.some((i) => i.kind === "load" && /got object/.test(i.message))).toBe(true);
+	});
+
+	it("rejects a `Workflow[]` containing a non-Workflow element", async () => {
+		writeProjectConfig(
+			TEST_TMP,
+			`${importApi}
+export default [
+  defineWorkflow({ name: "a", start: "x", nodes: { x: artifact() }, edges: { x: "stop" } }),
+  { not: "a workflow" },
+];
+`,
+		);
+		const loaded = await loadWorkflows(TEST_TMP);
+		expect(loaded.issues.some((i) => i.kind === "load" && /must contain only Workflow objects/.test(i.message))).toBe(
+			true,
+		);
+	});
+
+	it("rejects an envelope whose `workflows` contains a non-Workflow entry", async () => {
+		writeProjectConfig(
+			TEST_TMP,
+			`${importApi}
+export default {
+  workflows: [
+    defineWorkflow({ name: "a", start: "x", nodes: { x: artifact() }, edges: { x: "stop" } }),
+    { not: "a workflow" },
+  ],
+  default: "a",
+};
+`,
+		);
+		const loaded = await loadWorkflows(TEST_TMP);
+		expect(
+			loaded.issues.some(
+				(i) => i.kind === "load" && /default-export `workflows` must contain only Workflow objects/.test(i.message),
+			),
+		).toBe(true);
+	});
+
+	it("returns the first workflow by insertion order when no overlay sets a default and `mid` is absent", async () => {
+		// Wipe built-ins so the fallback path (workflowMap.keys().next().value)
+		// is the only candidate; otherwise the FALLBACK_DEFAULT_WORKFLOW = "mid"
+		// branch fires first.
+		__resetBuiltIns();
+		registerBuiltIns([
+			defineWorkflow({ name: "alpha", start: "x", nodes: { x: artifact() }, edges: { x: "stop" } }),
+			defineWorkflow({ name: "beta", start: "x", nodes: { x: artifact() }, edges: { x: "stop" } }),
+		]);
+		const loaded = await loadWorkflows(TEST_TMP);
+		expect(loaded.default).toBe("alpha");
 	});
 });

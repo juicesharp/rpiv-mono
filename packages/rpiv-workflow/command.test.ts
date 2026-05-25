@@ -32,7 +32,7 @@ const reviewWorkflow = defineWorkflow({
 	edges: { "code-review": "commit", commit: "stop" },
 });
 
-vi.mock("./load.js", () => ({
+vi.mock("./load/index.js", () => ({
 	loadWorkflows: vi.fn(async () => ({
 		workflows: [tinyWorkflow, midWorkflow, reviewWorkflow],
 		default: "mid",
@@ -44,11 +44,13 @@ vi.mock("./load.js", () => ({
 		layers: ["built-in"],
 		issues: [],
 	})),
-	__resetLoadCache: vi.fn(),
+	findWorkflow: vi.fn((loaded: { workflows: { name: string }[] }, name: string) =>
+		loaded.workflows.find((w) => w.name === name),
+	),
 }));
 
 import { parseArgs, registerWorkflowCommand } from "./command.js";
-import { loadWorkflows } from "./load.js";
+import { loadWorkflows } from "./load/index.js";
 import { runWorkflow } from "./runner.js";
 
 beforeEach(() => {

@@ -44,8 +44,8 @@ export { __resetBuiltIns, getBuiltIns, registerBuiltIns } from "./built-ins.js";
 // Bundled extractors — re-exported so sibling workflows can build commit /
 // artifact-md nodes without reaching into per-module paths.
 export { artifactMdExtractor, gitCommitExtractor, sideEffectExtractor } from "./extractors/index.js";
-export type { ConfigLayer, Issue, LoadedWorkflows, LoadIssue, OverlayPaths } from "./load.js";
-export { loadWorkflows, projectOverlayPaths, userOverlayPaths } from "./load.js";
+export type { ConfigLayer, Issue, LoadedWorkflows, LoadIssue, OverlayPaths } from "./load/index.js";
+export { loadWorkflows, projectOverlayPaths, userOverlayPaths } from "./load/index.js";
 export type {
 	Extractor,
 	ExtractorCtx,
