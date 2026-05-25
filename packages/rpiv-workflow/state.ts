@@ -1,7 +1,8 @@
 /**
  * JSONL state at `.rpiv/workflows/<run-id>.jsonl`. Append-only audit
  * trail; every line is a self-contained JSON object. All I/O is
- * fail-soft (logs via console.warn with `[rpiv-pi]` prefix, never throws).
+ * fail-soft (logs via console.warn with `[rpiv-workflow]` prefix, never
+ * throws).
  */
 
 import { randomBytes } from "node:crypto";
@@ -17,8 +18,8 @@ export type StageStatus = "completed" | "failed" | "skipped" | "aborted";
 
 /**
  * Audit files are debug artifacts — no migration provided. Readers
- * shape-filter on `stageNumber`, so any rows that don't satisfy the current
- * shape are silently skipped.
+ * shape-filter on `stageNumber`, so any rows that don't satisfy the
+ * current shape are silently skipped.
  */
 export interface WorkflowStage {
 	stageNumber: number;
@@ -82,31 +83,33 @@ export function resolveStateFile(cwd: string, runId: string): string {
 // Write operations (fail-soft)
 // ---------------------------------------------------------------------------
 
-export function writeHeader(cwd: string, header: WorkflowHeader): void {
-	try {
-		const dir = resolveWorkflowsDir(cwd);
-		mkdirSync(dir, { recursive: true });
-		const filePath = resolveStateFile(cwd, header.runId);
-		const line = `${JSON.stringify(header)}\n`;
-		appendFileSync(filePath, line, "utf-8");
-	} catch (e) {
-		console.warn(`[rpiv-pi] workflow state: ${e instanceof Error ? e.message : String(e)}`);
-	}
-}
-
-/** Returns true on successful write — callers gate counters on this. */
-export function appendStage(cwd: string, runId: string, stage: WorkflowStage): boolean {
+/**
+ * Shared append primitive: ensure the workflows directory exists, then
+ * append one JSON-serialised row + newline. Returns true on success;
+ * on any throw, warns to stderr and returns false. The three public
+ * append helpers below are thin wrappers — `writeHeader` discards the
+ * return (best-effort), the others gate counters / telemetry on it.
+ */
+function tryAppendJsonl(cwd: string, runId: string, row: unknown): boolean {
 	try {
 		const dir = resolveWorkflowsDir(cwd);
 		mkdirSync(dir, { recursive: true });
 		const filePath = resolveStateFile(cwd, runId);
-		const line = `${JSON.stringify(stage)}\n`;
-		appendFileSync(filePath, line, "utf-8");
+		appendFileSync(filePath, `${JSON.stringify(row)}\n`, "utf-8");
 		return true;
 	} catch (e) {
-		console.warn(`[rpiv-pi] workflow state: ${e instanceof Error ? e.message : String(e)}`);
+		console.warn(`[rpiv-workflow] workflow state: ${e instanceof Error ? e.message : String(e)}`);
 		return false;
 	}
+}
+
+export function writeHeader(cwd: string, header: WorkflowHeader): void {
+	tryAppendJsonl(cwd, header.runId, header);
+}
+
+/** Returns true on successful write — callers gate counters on this. */
+export function appendStage(cwd: string, runId: string, stage: WorkflowStage): boolean {
+	return tryAppendJsonl(cwd, runId, stage);
 }
 
 // ---------------------------------------------------------------------------
@@ -134,7 +137,7 @@ function readJsonlRows<T>(cwd: string, runId: string, match: (row: unknown) => r
 		if (!content) return [];
 		lines = content.split("\n");
 	} catch (e) {
-		console.warn(`[rpiv-pi] workflow state: ${e instanceof Error ? e.message : String(e)}`);
+		console.warn(`[rpiv-workflow] workflow state: ${e instanceof Error ? e.message : String(e)}`);
 		return [];
 	}
 
@@ -145,7 +148,7 @@ function readJsonlRows<T>(cwd: string, runId: string, match: (row: unknown) => r
 			parsed = JSON.parse(line);
 		} catch (e) {
 			console.warn(
-				`[rpiv-pi] workflow state: skipping malformed JSONL row — ${e instanceof Error ? e.message : String(e)}`,
+				`[rpiv-workflow] workflow state: skipping malformed JSONL row — ${e instanceof Error ? e.message : String(e)}`,
 			);
 			continue;
 		}
@@ -181,16 +184,7 @@ export function readAllStages(cwd: string, runId: string): WorkflowStage[] {
  * for transient disk weather without preserving any invariant.
  */
 export function appendRoutingDecision(cwd: string, runId: string, row: RoutingDecision): boolean {
-	try {
-		const dir = resolveWorkflowsDir(cwd);
-		mkdirSync(dir, { recursive: true });
-		const filePath = resolveStateFile(cwd, runId);
-		appendFileSync(filePath, `${JSON.stringify(row)}\n`, "utf-8");
-		return true;
-	} catch (e) {
-		console.warn(`[rpiv-pi] workflow state: ${e instanceof Error ? e.message : String(e)}`);
-		return false;
-	}
+	return tryAppendJsonl(cwd, runId, row);
 }
 
 const isRoutingDecision = (row: unknown): row is RoutingDecision =>

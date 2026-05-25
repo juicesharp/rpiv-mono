@@ -194,7 +194,7 @@ describe("fail-soft I/O", () => {
 		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 		try {
 			expect(readLastStage(tmpDir, runId)).toBeUndefined();
-			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("[rpiv-pi] workflow state:"));
+			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("[rpiv-workflow] workflow state:"));
 		} finally {
 			warnSpy.mockRestore();
 		}
