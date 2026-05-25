@@ -33,7 +33,7 @@ import {
 	MSG_VALIDATION_RETRY,
 } from "./messages.js";
 import { runPhaseSession, runStageSession } from "./sessions.js";
-import { typeboxSchema } from "./standard-schema.js";
+import { typeboxSchema } from "./typebox-adapter.js";
 import type { PhaseSession, RunnerCtx, RunState, StageSession } from "./types.js";
 import { MAX_VALIDATION_RETRIES, MAX_VALIDATION_RETRY_TIMEOUT_MS } from "./validation.js";
 

@@ -54,8 +54,8 @@ export type {
 } from "./manifest.js";
 export { nextNode } from "./routing.js";
 export { type RunWorkflowOptions, type RunWorkflowResult, runWorkflow } from "./runner.js";
-export { typeboxSchema } from "./standard-schema.js";
 export { readLastStage, resolveStateFile, resolveWorkflowsDir } from "./state.js";
+export { typeboxSchema } from "./typebox-adapter.js";
 export type { RunContext, RunState } from "./types.js";
 export { type ValidationIssue, validateWorkflow } from "./validate.js";
 export { type ValidationFailure, validateManifestData } from "./validation.js";

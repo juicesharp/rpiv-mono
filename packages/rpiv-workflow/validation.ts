@@ -1,7 +1,7 @@
 /**
  * Manifest validation against a `NodeSchema` (Standard Schema v1 under the
  * hood). The schema-library boundary is `~standard.validate`; users may bring
- * Zod / Valibot / ArkType / TypeBox (wrapped via `standard-schema.ts:typeboxSchema`).
+ * Zod / Valibot / ArkType / TypeBox (wrapped via `typebox-adapter.ts:typeboxSchema`).
  */
 
 import type { NodeSchema } from "./api.js";

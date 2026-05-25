@@ -19,7 +19,7 @@ import {
 	threshold,
 	type Workflow,
 } from "./api.js";
-import { typeboxSchema } from "./standard-schema.js";
+import { typeboxSchema } from "./typebox-adapter.js";
 
 // ---------------------------------------------------------------------------
 // defineWorkflow
