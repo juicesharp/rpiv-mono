@@ -92,25 +92,100 @@ drifts below the port shape. A future non-Pi host implements the three
 port interfaces and drives the runtime without any pi-coding-agent
 dependency.
 
-## Custom extractors
+## Outcomes — resolvers and readers
 
-A stage's manifest is produced by an `Extractor` — `before` runs once before the agent session (its return value lands in `ctx.snapshot`), `extract` runs after the session settles. Compose the bundled `gitHeadSnapshot` into your own `before` to read a git baseline from any extractor:
+Each `artifact-emit` node wires an `Outcome` that tells the runtime two things:
 
 ```ts
-import type { Extractor, GitHeadSnapshot } from "@juicesharp/rpiv-workflow";
-import { gitHeadSnapshot } from "@juicesharp/rpiv-workflow";
-
-const touchedFilesExtractor: Extractor<GitHeadSnapshot | undefined, "touched-files", { files: number }> = {
-  before: gitHeadSnapshot,
-  async extract(ctx) {
-    if (!ctx.snapshot) return { kind: "ok", payload: { kind: "touched-files", data: { files: 0 } } };
-    const files = await countChangedFiles(ctx.cwd, ctx.snapshot.baselineSha);
-    return { kind: "ok", payload: { kind: "touched-files", data: { files } } };
-  },
-};
+interface Outcome<Baseline, Kind, Data> {
+  resolver: ArtifactResolver<Baseline>;     // ENUMERATE — what did the stage produce?
+  reader?:  ArtifactReader<Baseline, Kind, Data>; // INTERPRET — what's the typed data channel?
+}
 ```
 
-`Extractor<Snap, Kind, Data>` is generic over the snapshot type and the payload's `kind` + `data` — so downstream predicates can narrow on `manifest.kind === "touched-files"` and read `manifest.data.files` with full type inference.
+`resolver.resolve(ctx)` returns the artifacts the stage emitted. `reader.read(ctx)` (optional) turns them into the typed `manifest.data` downstream stages narrow on. With no reader, `manifest.data` is the artifact list itself (`kind = "artifacts"`).
+
+There is no framework default for `artifact-emit` — load-time validation rejects a node without an outcome. The `.rpiv/artifacts/<bucket>/<file>.md` layout is an rpiv convention, not a framework truth; pair with [`@juicesharp/rpiv-pi`](../rpiv-pi) for `rpivArtifactMdOutcome`, or wire your own.
+
+### Authoring a resolver
+
+The resolver is the user-supplyable primitive — one method, one return type:
+
+```ts
+import { defineResolver, opaque, type Artifact } from "@juicesharp/rpiv-workflow";
+
+export const linearTicketResolver = defineResolver((ctx) => {
+  const id = parseLinearIdFromBranch(ctx.branch);
+  if (!id) return { kind: "fatal", message: "stage did not emit a Linear ticket id" };
+  return { kind: "ok", artifacts: [{ handle: opaque(id), role: "ticket" }] };
+});
+```
+
+Resolvers that need a pre-stage snapshot declare a `baseline` hook — its return value lands on `ctx.baseline` for the matching `resolve` call. Compose the bundled `gitHeadSnapshot` into any baseline:
+
+```ts
+import { defineResolver, fs, gitHeadSnapshot, type GitHeadSnapshot } from "@juicesharp/rpiv-workflow";
+
+const codegenResolver = defineResolver<GitHeadSnapshot | undefined>({
+  baseline: gitHeadSnapshot,
+  resolve: async (ctx) => {
+    if (!ctx.baseline) return { kind: "ok", artifacts: [] };
+    const files = await diffWorkspace(ctx.cwd, ctx.baseline.baselineSha);
+    return { kind: "ok", artifacts: files.map((p) => ({ handle: fs(p), role: "generated" })) };
+  },
+});
+```
+
+### Bundled resolver catalog
+
+The framework ships only host-agnostic primitives — no Pi tool-name defaults, no `.rpiv/artifacts/` defaults, no domain helpers. Wrap them or compose with `unionResolvers` to build your own conventions.
+
+| Resolver | Signature | What it does |
+| --- | --- | --- |
+| `transcriptPathResolver` | `({ pattern: RegExp })` | Scans assistant text for the last regex match; emits one `fs` artifact. Pattern is required — no framework default. |
+| `toolCallResolver` | `({ match, toHandle })` | Walks every `tool_use` part; emits N artifacts via the author's mappers. Universal across any Pi tool name. |
+| `workspaceDiffResolver` | `({ filter? })` | Captures `git status --porcelain` pre-stage, diffs post-stage. One `fs` artifact per file the stage touched. Fail-soft when not a git repo. |
+| `gitCommitResolver` | — | Detects a new HEAD commit vs. the pre-stage snapshot; emits an `opaque(sha)` artifact tagged `role: "commit"`. |
+| `directoryPathResolver` | `({ dir, ext? })` | Ergonomic wrapper over `transcriptPathResolver` for the `<dir>/<file>.<ext>` shape. |
+| `urlResolver` | `({ pattern? })` | Scans for `https?://…`; emits a `url` handle. Default pattern is RFC-3986-flavoured; override for narrower hosts. |
+| `unionResolvers(...rs)` | — | Composition: run N resolvers, concatenate artifacts. Fatal only when every sub-resolver fataled. |
+| `noopResolver` | — | Always returns `{ kind: "ok", artifacts: [] }`. The primitive `sideEffectOutcome` is built from it. |
+
+Handle constructors:`fs(path)`, `url(href)`, `opaque(id)`, `inline(bytes, mime?)` — replace the verbose `{ kind: …, … }` literal at call sites. Serialise any handle to its canonical string with `handleToString`.
+
+### Bundled reader catalog
+
+| Reader | Output `kind` | Output `data` |
+| --- | --- | --- |
+| `jsonBodyReader` | `"json"` | `JSON.parse` of the primary `fs` artifact's body (`unknown` — narrow via `outputSchema`). |
+| `gitCommitReader` | `"git-commit"` | `GitCommitData` (sha, prevSha, subject, filesChanged) parsed from `git`. |
+
+Format-specific readers (markdown frontmatter, YAML, TOML, …) live in the convention layer that owns them — rpiv-pi ships its own `frontmatterReader`.
+
+### Wiring an outcome onto a node
+
+```ts
+import {
+  artifact, defineWorkflow,
+  toolCallResolver, jsonBodyReader, fs,
+} from "@juicesharp/rpiv-workflow";
+
+const writeFileResolver = toolCallResolver({
+  match: (tc) => tc.name === "write_file" || tc.name === "edit",
+  toHandle: (tc) => ({ handle: fs(String(tc.input.path ?? tc.input.target_file)) }),
+});
+
+export default defineWorkflow({
+  name: "scaffold",
+  start: "generate",
+  nodes: {
+    generate: artifact({
+      outcome: { resolver: writeFileResolver, reader: jsonBodyReader },
+    }),
+  },
+  edges: { generate: "stop" },
+});
+```
 
 ## Validators: sync vs async
 
@@ -125,7 +200,7 @@ const touchedFilesExtractor: Extractor<GitHeadSnapshot | undefined, "touched-fil
 
 The contract is identical — author an async `~standard.validate` and the runner awaits it. A schema whose Promise never settles is bounded by the node's `validationRetryTimeoutMs` (default 5 min); a rejected Promise surfaces as a clean stage halt, attributed to the node, with the same error class as a shape-failure halt. No opt-in flag, no parallel code path.
 
-> Keep validation separate from extraction. The extractor's job is "what did the agent produce?" (read + parse). The validator's job is "is it correct?" (check + verify). With async validators available you no longer have to push I/O verification into a custom extractor — keep extraction pure and put correctness checks on `outputSchema`.
+> Keep validation separate from the resolver + reader. The resolver's job is "what did the agent produce?" (enumerate); the reader's job is "parse it into typed data" (shape). The validator's job is "is the result correct?" (check + verify). With async validators available you don't have to push I/O verification into a custom resolver/reader — keep them pure and put correctness checks on `outputSchema`.
 
 ## Architecture
 
