@@ -250,7 +250,7 @@ describe("[I3] recordStage signals success and advances stageNumber monotonicall
 	});
 
 	it("returns the assigned stageNumber on a successful write", async () => {
-		const { recordStage } = await import("@juicesharp/rpiv-workflow");
+		const { recordStage } = await import("@juicesharp/rpiv-workflow/internal");
 		const state = freshState();
 		const assigned = recordStage(
 			tmpDir,
@@ -263,7 +263,7 @@ describe("[I3] recordStage signals success and advances stageNumber monotonicall
 	});
 
 	it("returns undefined on a write failure but still advances lastAllocatedStageNumber (no number reuse)", async () => {
-		const { recordStage } = await import("@juicesharp/rpiv-workflow");
+		const { recordStage } = await import("@juicesharp/rpiv-workflow/internal");
 		const state = freshState();
 		const failedAssignment = recordStage(
 			"/dev/null/impossible",

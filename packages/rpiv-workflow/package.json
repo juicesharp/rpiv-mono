@@ -32,6 +32,7 @@
   },
   "files": [
     "index.ts",
+    "internal.ts",
     "api.ts",
     "artifacts-layout.ts",
     "audit.ts",
@@ -60,7 +61,8 @@
     "LICENSE"
   ],
   "exports": {
-    ".": "./index.ts"
+    ".": "./index.ts",
+    "./internal": "./internal.ts"
   },
   "pi": {
     "extensions": [

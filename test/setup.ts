@@ -58,10 +58,9 @@ beforeEach(async () => {
 	const args = await import("../packages/rpiv-args/args.js");
 	args.invalidateSkillIndex();
 
-	const workflowBuiltIns = await import("../packages/rpiv-workflow/built-ins.js");
-	workflowBuiltIns.__resetBuiltIns();
-	const workflowLoad = await import("../packages/rpiv-workflow/load/cache.js");
-	workflowLoad.__resetLoadCache();
+	const workflowInternal = await import("@juicesharp/rpiv-workflow/internal");
+	workflowInternal.__resetBuiltIns();
+	workflowInternal.__resetLoadCache();
 
 	const guidance = await import("../packages/rpiv-pi/extensions/rpiv-core/guidance.js");
 	guidance.clearInjectionState();

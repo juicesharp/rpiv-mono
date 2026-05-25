@@ -37,7 +37,8 @@
  *
  *   4. Built-in registry (sibling packages) — `./built-ins.js`
  *      Contribute workflows to the lowest config layer:
- *      `registerBuiltIns`, `getBuiltIns`.
+ *      `registerBuiltIns`. (`getBuiltIns` is test-only and lives on
+ *      `@juicesharp/rpiv-workflow/internal`.)
  *
  *   5. Manifest envelope + bundled outcomes — `./manifest.js`,
  *      `./outcomes/index.js`, `./handle.js`
@@ -75,9 +76,10 @@
  *      Read past runs at `<cwd>/.rpiv/workflows/<run-id>.jsonl`:
  *      `listRuns`, `readHeader`, `readLastStage`, `listArtifacts`,
  *      `resolveStateFile`, `resolveWorkflowsDir`, `RunSummary`,
- *      `WorkflowHeader`, `WorkflowStage`. `recordStage` (from
- *      `./audit.js`) is exposed only for rpiv-pi's `[I3]` regression
- *      test; runner owns row writes — embedders never need it.
+ *      `WorkflowHeader`, `WorkflowStage`. `recordStage` lives on
+ *      `@juicesharp/rpiv-workflow/internal` (test-only — rpiv-pi's
+ *      `[I3]` regression test pokes it directly; runner owns row
+ *      writes, embedders never need it).
  *
  *   9. Runtime types — `./types.js`
  *      `RunState`.
@@ -137,8 +139,7 @@ export {
 	threshold,
 	type Workflow,
 } from "./api.js";
-export { recordStage } from "./audit.js";
-export { getBuiltIns, registerBuiltIns } from "./built-ins.js";
+export { registerBuiltIns } from "./built-ins.js";
 export {
 	type Artifact,
 	type ArtifactHandle,
