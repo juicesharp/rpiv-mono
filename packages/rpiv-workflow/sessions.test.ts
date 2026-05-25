@@ -563,10 +563,17 @@ describe("sessions — extractor resolution", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Group 3 — outcome slicing (readSessionOutcome + buildExtractorCtx)
+// Group 3 — ExtractorCtx contract (readSessionOutcome + buildExtractorCtx)
+//
+// Post-L6-05: ExtractorCtx.branch is ALWAYS the full unsliced branch;
+// branchOffset is ALWAYS the policy-derived offset (continue → captured
+// stage offset; fresh → undefined). Extractors slice on demand via the
+// `offsetStart` parameter on `extractArtifactPath` / `classifyStop`. The
+// initial extraction and the retry path emit the same offset value —
+// the closed-I4 defect cannot re-introduce by construction.
 // ---------------------------------------------------------------------------
 
-describe("sessions — outcome slicing", () => {
+describe("sessions — extractor ctx (always-unsliced branch + policy-derived offset)", () => {
 	let tmpDir: string;
 
 	beforeEach(() => {
@@ -576,7 +583,7 @@ describe("sessions — outcome slicing", () => {
 		rmSync(tmpDir, { recursive: true, force: true });
 	});
 
-	it("continue policy slices branch by branchOffset; extractorCtx.branchOffset stays undefined (no double-slice)", async () => {
+	it("continue policy: full unsliced branch + branchOffset = captured stage offset", async () => {
 		const captured: ExtractorCtx[] = [];
 		const recordingExtractor: Extractor = {
 			extract: (ctx) => {
@@ -610,18 +617,19 @@ describe("sessions — outcome slicing", () => {
 		);
 
 		expect(captured).toHaveLength(1);
-		// Branch passed to extractor is sliced — only the current-stage tail.
-		expect(captured[0]?.branch).toHaveLength(currentTail.length);
-		// branchOffset undefined → extractor MUST NOT re-slice.
-		expect(captured[0]?.branchOffset).toBeUndefined();
+		// Branch is the FULL unsliced outer branch.
+		expect(captured[0]?.branch).toHaveLength(outerBranch.length);
+		// branchOffset carries the captured stage offset so extractArtifactPath
+		// skips the prior-stage prefix on demand.
+		expect(captured[0]?.branchOffset).toBe(priorPrefix.length);
 	});
 
-	it("continue policy + validation retry: retry passes branchOffset so prior-stage prefix is skipped (I4)", async () => {
-		// Pre-I4 fix: the retry call site spread `extractorCtx` (branchOffset
-		// undefined for continue) over freshBranch() (UNSLICED full branch),
-		// so extractArtifactPath scanned from index 0 and could silently
-		// inherit the prior stage's path. Now the retry preserves
-		// s.branchOffset for continue policy.
+	it("continue policy + validation retry: initial + retry emit the same branchOffset (closed-I4 by construction)", async () => {
+		// Pre-L6-05: initial extraction received a pre-sliced branch + undefined
+		// offset, retry received the unsliced branch + captured offset — an
+		// asymmetric pair that could re-introduce the I4 defect if a future
+		// refactor changed one path without the other.
+		// Post-L6-05: both extractions emit identical `(full branch, captured offset)`.
 		const captured: ExtractorCtx[] = [];
 		let firstCall = true;
 		const failThenPassExtractor: Extractor = {
@@ -664,17 +672,15 @@ describe("sessions — outcome slicing", () => {
 
 		// At least one retry should have fired.
 		expect(captured.length).toBeGreaterThanOrEqual(2);
-		// First extraction: pre-sliced branch + branchOffset undefined (no double-slice).
-		expect(captured[0]?.branch).toHaveLength(currentTail.length);
-		expect(captured[0]?.branchOffset).toBeUndefined();
-		// Retry: full unsliced branch + branchOffset = priorPrefix.length so
-		// extractArtifactPath skips the prior content.
+		// Initial + retry both see the FULL unsliced branch + captured offset.
+		expect(captured[0]?.branch.length).toBeGreaterThanOrEqual(outerBranch.length);
+		expect(captured[0]?.branchOffset).toBe(priorPrefix.length);
 		const retryCtx = captured[captured.length - 1]!;
 		expect(retryCtx.branch.length).toBeGreaterThanOrEqual(outerBranch.length);
 		expect(retryCtx.branchOffset).toBe(priorPrefix.length);
 	});
 
-	it("fresh policy: branch is full, extractorCtx.branchOffset preserved (sliced downstream)", async () => {
+	it("fresh policy: full branch + branchOffset undefined (handler forces undefined regardless of stage carry)", async () => {
 		const captured: ExtractorCtx[] = [];
 		const recordingExtractor: Extractor = {
 			extract: (ctx) => {
@@ -691,13 +697,16 @@ describe("sessions — outcome slicing", () => {
 				cwd: tmpDir,
 				state: freshRunState(),
 				node: node({ sessionPolicy: "fresh", extractor: recordingExtractor }),
+				// Stage's captured offset is set artificially here; in production
+				// `computeBranchOffset` returns undefined for fresh stages anyway.
+				// The handler short-circuits — fresh ALWAYS emits `undefined`.
 				branchOffset: 5,
 			}),
 		);
 
 		expect(captured).toHaveLength(1);
 		expect(captured[0]?.branch).toHaveLength(branch.length);
-		expect(captured[0]?.branchOffset).toBe(5);
+		expect(captured[0]?.branchOffset).toBeUndefined();
 	});
 });
 

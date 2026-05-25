@@ -1,9 +1,12 @@
 /**
  * Session execution — one Pi session per workflow stage / phase.
  * `runStageSession` and `runPhaseSession` are the two public entries.
- * The fresh-vs-continue branch lives only in spawnSession; everything
- * downstream (stop classification, extraction, validation, JSONL,
- * chain advance) is policy-agnostic.
+ *
+ * The fresh-vs-continue policy split is owned by `SessionPolicyHandler`:
+ * `FRESH_HANDLER` and `CONTINUE_HANDLER` implement the three
+ * policy-specific decisions (branch offset for extraction, spawn shape,
+ * send-into-existing-session). Everything else — stop classification,
+ * extraction, validation, JSONL, chain advance — is policy-agnostic.
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -56,24 +59,15 @@ import {
 
 /** Execute one DAG stage in its own session. */
 export async function runStageSession(ctx: RunnerCtx, s: StageSession): Promise<void> {
-	await spawnSession(
-		ctx,
-		s.prompt,
-		spawnPolicyFor(s),
-		(sessionCtx) => postStage(sessionCtx, s),
-		() => recordCancellation(ctx, auditFor(s)),
-	);
+	const handler = handlerFor(s.node.sessionPolicy);
+	const { cancelled } = await handler.spawn(ctx, s.prompt, (sessionCtx) => postStage(sessionCtx, s), s.pi);
+	if (cancelled) recordCancellation(ctx, auditFor(s));
 }
 
 /** Execute one phase iteration of an implement stage. Always fresh. */
 export async function runPhaseSession(ctx: RunnerCtx, s: PhaseSession): Promise<void> {
-	await spawnSession(
-		ctx,
-		s.prompt,
-		{ kind: "fresh" },
-		(sessionCtx) => postPhase(sessionCtx, s),
-		() => recordCancellation(ctx, auditFor(s)),
-	);
+	const { cancelled } = await FRESH_HANDLER.spawn(ctx, s.prompt, (sessionCtx) => postPhase(sessionCtx, s));
+	if (cancelled) recordCancellation(ctx, auditFor(s));
 }
 
 // ===========================================================================
@@ -82,10 +76,12 @@ export async function runPhaseSession(ctx: RunnerCtx, s: PhaseSession): Promise<
 
 /** Stage post-processing: classify outcome → extract & validate → persist → chain. */
 async function postStage(ctx: RunnerCtx, s: StageSession): Promise<void> {
-	const outcome = readStageOutcome(ctx, s);
+	const handler = handlerFor(s.node.sessionPolicy);
+	const offset = handler.branchOffset(s.branchOffset);
+	const outcome = readSessionOutcome(ctx, offset);
 	if (outcome.stop !== "stop") return haltStage(ctx, s, outcome.stop);
 
-	const result = await extractAndValidateManifest(ctx, s, outcome.branch);
+	const result = await extractAndValidateManifest(ctx, s, outcome.branch, offset);
 	if (result.kind === "fatal") return haltStageWithExtractionError(ctx, s, result.message);
 	if (result.kind === "validation-exhausted") return haltStageWithValidationFailure(ctx, s, result.failureSummary);
 
@@ -95,7 +91,7 @@ async function postStage(ctx: RunnerCtx, s: StageSession): Promise<void> {
 
 /** Phase post-processing: classify outcome → persist bare row → chain. */
 async function postPhase(ctx: RunnerCtx, s: PhaseSession): Promise<void> {
-	const outcome = readPhaseOutcome(ctx);
+	const outcome = readSessionOutcome(ctx, undefined);
 	if (outcome.stop !== "stop") return haltPhase(ctx, s, outcome.stop);
 
 	if (!recordPhaseSuccess(s, outcome.artifact)) return;
@@ -116,9 +112,10 @@ async function extractAndValidateManifest(
 	ctx: RunnerCtx,
 	s: StageSession,
 	branch: BranchEntry[],
+	branchOffset: number | undefined,
 ): Promise<ExtractionOutcome> {
 	const extractor = resolveExtractor(s.node);
-	const extractorCtx = buildExtractorCtx(s, branch);
+	const extractorCtx = buildExtractorCtx(s, branch, branchOffset);
 	const finalize = (payload: ExtractorPayload) => wrapManifest(s, payload);
 
 	const first = await runExtractor(extractor, extractorCtx, finalize);
@@ -241,25 +238,19 @@ interface SessionOutcome {
 	stop: StopSignal;
 }
 
-function readStageOutcome(ctx: RunnerCtx, s: StageSession): SessionOutcome {
-	return readSessionOutcome(ctx, { sessionPolicy: s.node.sessionPolicy, branchOffset: s.branchOffset });
-}
-
-function readPhaseOutcome(ctx: RunnerCtx): SessionOutcome {
-	return readSessionOutcome(ctx, { sessionPolicy: "fresh" });
-}
-
-/** Continue policies must slice the prior-stage prefix via `branchOffset`. */
-function readSessionOutcome(
-	ctx: RunnerCtx,
-	opts: { sessionPolicy?: SessionPolicy; branchOffset?: number },
-): SessionOutcome {
-	const fullBranch = readBranch(ctx);
-	const branch = opts.sessionPolicy === "continue" ? fullBranch.slice(opts.branchOffset ?? 0) : fullBranch;
+/**
+ * Always reads the full unsliced branch + applies the policy-derived
+ * `branchOffset` to the helpers that need it. The slice is no longer
+ * materialised — `classifyStop` and `extractArtifactPath` both accept an
+ * `offsetStart` so they skip the prior-stage prefix in place. Same offset
+ * value flows through to the extractor (L6-05: initial == retry).
+ */
+function readSessionOutcome(ctx: RunnerCtx, branchOffset: number | undefined): SessionOutcome {
+	const branch = readBranch(ctx);
 	return {
 		branch,
-		artifact: extractArtifactPath(branch),
-		stop: classifyStop(branch),
+		artifact: extractArtifactPath(branch, branchOffset),
+		stop: classifyStop(branch, branchOffset),
 	};
 }
 
@@ -280,16 +271,22 @@ function resolveExtractor(node: NodeDef): Extractor {
 	}
 }
 
-function buildExtractorCtx(s: StageSession, branch: BranchEntry[]): ExtractorCtx {
+/**
+ * L6-05 contract: `branch` is always the FULL unsliced branch and
+ * `branchOffset` is always the policy-derived offset (continue → the
+ * stage's captured offset; fresh → undefined). Extractors slice on
+ * demand via the `offsetStart` parameter on `extractArtifactPath`. The
+ * initial extraction and the retry path use the same offset value — the
+ * closed-I4 defect can't re-introduce.
+ */
+function buildExtractorCtx(s: StageSession, branch: BranchEntry[], branchOffset: number | undefined): ExtractorCtx {
 	return {
 		cwd: s.cwd,
 		runId: s.runId,
 		stageIndex: s.stageIndex,
 		state: s.state,
 		branch,
-		// Continue branch is already sliced upstream — undefined here so
-		// extractArtifactPath doesn't double-slice.
-		branchOffset: s.node.sessionPolicy === "continue" ? undefined : s.branchOffset,
+		branchOffset,
 		snapshot: s.snapshot,
 		skill: s.skill,
 	};
@@ -365,19 +362,13 @@ async function retryUntilValid(
 			return { kind: "fatal", message: msg };
 		}
 
-		// Re-extract against the latest branch. `readBranch(ctx)` returns the
-		// UNSLICED branch over the shared ctx; for continue policy, the FIRST
-		// extraction received a pre-sliced branch (so its extractorCtx.branchOffset
-		// is undefined). Pass the originally-captured s.branchOffset here so
-		// extractArtifactPath skips the prior-stage prefix instead of re-finding
-		// the upstream artifact and silently passing the validation retry while
-		// routing on stale state. (Closes I4 from the 2026-05-24 review —
-		// artifact-emit + continue retry inherited prior path.)
+		// Re-extract against the latest branch with the SAME offset the initial
+		// extraction used (L6-05). `deps.extractorCtx.branchOffset` was set
+		// once at stage entry via the handler-derived offset, so spreading it
+		// over a fresh `readBranch(ctx)` preserves the prior-stage prefix
+		// skip and the closed-I4 defect can't re-introduce.
 		const retryBranch = readBranch(ctx);
-		const retryCtx =
-			s.node.sessionPolicy === "continue"
-				? { ...deps.extractorCtx, branch: retryBranch, branchOffset: s.branchOffset }
-				: { ...deps.extractorCtx, branch: retryBranch };
+		const retryCtx: ExtractorCtx = { ...deps.extractorCtx, branch: retryBranch };
 		const reExtracted = await runExtractor(deps.extractor, retryCtx, deps.finalize);
 		if (reExtracted.kind === "fatal") return reExtracted;
 		if (!reExtracted.manifest) {
@@ -436,10 +427,7 @@ async function askAgentToFix(
 	ctx.ui.notify(MSG_VALIDATION_RETRY(s.skill, attempt), "warning");
 	const errorLines = failures.map((f) => ` • ${f.path} — ${f.message}`).join("\n");
 	await withTimeout(
-		sendAndAwaitIdle(ctx, MSG_VALIDATION_RETRY_PROMPT(s.skill, errorLines), {
-			sessionPolicy: s.node.sessionPolicy,
-			pi: s.pi,
-		}),
+		handlerFor(s.node.sessionPolicy).send(ctx, MSG_VALIDATION_RETRY_PROMPT(s.skill, errorLines), s.pi),
 		timeoutMs,
 		`${s.skill}: validation retry attempt ${attempt} exceeded ${timeoutMs}ms — agent did not settle`,
 	);
@@ -451,54 +439,61 @@ function validationExhausted(failures: SchemaValidationFailure[]): ExtractionOut
 }
 
 // ===========================================================================
-// SESSION SPAWN PRIMITIVE
+// SESSION POLICY HANDLER — owns every fresh-vs-continue decision
 // ===========================================================================
 
-type SessionSpawn = { kind: "fresh" } | { kind: "continue"; pi: ExtensionAPI };
-
-function spawnPolicyFor(s: StageSession): SessionSpawn {
-	return s.node.sessionPolicy === "continue" ? { kind: "continue", pi: s.pi! } : { kind: "fresh" };
+/**
+ * Three policy-specific decisions that used to live as five ternaries
+ * scattered across this file:
+ *
+ *   - `branchOffset(captured)` — the offset extractors apply to skip
+ *     the prior-stage prefix in continue sessions. Fresh ignores the
+ *     stage-side captured value (it's `undefined` from
+ *     `computeBranchOffset` for fresh stages anyway); continue returns
+ *     it as-is.
+ *   - `spawn(ctx, prompt, body, pi?)` — open the session and run `body`
+ *     on whichever ctx is valid for that policy (fresh → freshCtx
+ *     inside `withSession`; continue → the supplied ctx, after a
+ *     send+waitForIdle settles the existing session). `cancelled: true`
+ *     means a fresh session was cancelled before `withSession` ran.
+ *   - `send(ctx, msg, pi?)` — send into an already-established session
+ *     and wait for it to settle (used by the validation-retry path).
+ *
+ * `pi` is required for continue (caller passes `s.pi`; the start-of-run
+ * preflight has already rejected any workflow that needs continue
+ * without pi). Fresh ignores the `pi` parameter.
+ */
+interface SessionPolicyHandler {
+	branchOffset(capturedOffset: number | undefined): number | undefined;
+	spawn(
+		ctx: RunnerCtx,
+		prompt: string,
+		body: (sessionCtx: RunnerCtx) => Promise<void>,
+		pi?: ExtensionAPI,
+	): Promise<{ cancelled: boolean }>;
+	send(ctx: RunnerCtx, msg: string, pi?: ExtensionAPI): Promise<void>;
 }
 
-/**
- * `body` runs on the ctx that's valid for the spawned session — `freshCtx`
- * inside `withSession` for fresh, the supplied `ctx` for continue.
- * `onCancelled` fires only when a fresh session is cancelled pre-withSession.
- */
-async function spawnSession(
-	ctx: RunnerCtx,
-	prompt: string,
-	spawn: SessionSpawn,
-	body: (sessionCtx: RunnerCtx) => Promise<void>,
-	onCancelled?: () => void,
-): Promise<void> {
-	if (spawn.kind === "continue") {
-		await sendAndAwaitIdle(ctx, prompt, { sessionPolicy: "continue", pi: spawn.pi });
-		await body(ctx);
-		return;
-	}
+const FRESH_HANDLER: SessionPolicyHandler = {
+	branchOffset: () => undefined,
+	async spawn(ctx, prompt, body) {
+		const { cancelled } = await ctx.newSession({
+			withSession: async (freshCtx) => {
+				await freshCtx.sendUserMessage(prompt);
+				await body(freshCtx);
+			},
+		});
+		return { cancelled };
+	},
+	async send(ctx, msg) {
+		await (ctx as unknown as { sendUserMessage(m: string): Promise<void> }).sendUserMessage(msg);
+	},
+};
 
-	const { cancelled } = await ctx.newSession({
-		withSession: async (freshCtx) => {
-			await freshCtx.sendUserMessage(prompt);
-			await body(freshCtx);
-		},
-	});
-
-	if (cancelled && onCancelled) onCancelled();
-}
-
-/**
- * Fresh ctx is ReplacedSessionContext (sendUserMessage awaits the agent loop);
- * continue path uses pi.sendUserMessage + ctx.waitForIdle().
- */
-async function sendAndAwaitIdle(
-	ctx: RunnerCtx,
-	msg: string,
-	opts: { sessionPolicy?: SessionPolicy; pi?: ExtensionAPI },
-): Promise<void> {
-	if (opts.sessionPolicy === "continue") {
-		if (!opts.pi) throw new Error("sendAndAwaitIdle: continue requires pi");
+const CONTINUE_HANDLER: SessionPolicyHandler = {
+	branchOffset: (captured) => captured,
+	async spawn(ctx, prompt, body, pi) {
+		if (!pi) throw new Error("CONTINUE_HANDLER.spawn: continue policy requires pi (ExtensionAPI)");
 		// `pi.sendUserMessage` returns a Promise — pre-I5b we discarded it,
 		// so a rejected send (e.g. transport closed, agent SDK fault)
 		// surfaced as unhandledRejection past the stage boundary and the
@@ -507,11 +502,20 @@ async function sendAndAwaitIdle(
 		// because Pi's SDK doesn't expose an abort signal yet — abandoned
 		// waitForIdle from a prior retry can still settle on the next
 		// continue stage's ctx (tracked, not fixed here).
-		await opts.pi.sendUserMessage(msg);
+		await pi.sendUserMessage(prompt);
 		await ctx.waitForIdle();
-	} else {
-		await (ctx as unknown as { sendUserMessage(msg: string): Promise<void> }).sendUserMessage(msg);
-	}
+		await body(ctx);
+		return { cancelled: false };
+	},
+	async send(ctx, msg, pi) {
+		if (!pi) throw new Error("CONTINUE_HANDLER.send: continue policy requires pi (ExtensionAPI)");
+		await pi.sendUserMessage(msg);
+		await ctx.waitForIdle();
+	},
+};
+
+function handlerFor(policy: SessionPolicy | undefined): SessionPolicyHandler {
+	return policy === "continue" ? CONTINUE_HANDLER : FRESH_HANDLER;
 }
 
 // ===========================================================================
