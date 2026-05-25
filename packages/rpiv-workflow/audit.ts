@@ -19,7 +19,7 @@ import {
 	MSG_WORKFLOW_CANCELLED,
 	STATUS_KEY,
 } from "./messages.js";
-import { appendStage, readAllStages, type WorkflowStage } from "./state.js";
+import { appendStage, listArtifacts, type WorkflowStage } from "./state.js";
 import type { StopSignal } from "./transcript.js";
 import type { PhaseSession, RunnerCtx, RunState, SessionContext } from "./types.js";
 
@@ -64,13 +64,10 @@ export function recordStage(
 
 /** Surface every artifact recorded so far — recap on stage failure. */
 export function notifyPartialArtifacts(ctx: RunnerCtx, cwd: string, runId: string): void {
-	const artifactList = readAllStages(cwd, runId)
-		.filter((s) => s.artifact)
-		.map((s) => `  • ${s.skill}: ${s.artifact}`)
-		.join("\n");
-	if (artifactList) {
-		ctx.ui.notify(MSG_PARTIAL_ARTIFACTS(artifactList), "info");
-	}
+	const items = listArtifacts(cwd, runId);
+	if (items.length === 0) return;
+	const artifactList = items.map((i) => `  • ${i.skill}: ${i.artifact}`).join("\n");
+	ctx.ui.notify(MSG_PARTIAL_ARTIFACTS(artifactList), "info");
 }
 
 export function recordTerminalFailure(

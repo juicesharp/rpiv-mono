@@ -169,6 +169,21 @@ export function readAllStages(cwd: string, runId: string): WorkflowStage[] {
 	return readJsonlRows(cwd, runId, isWorkflowStage);
 }
 
+/**
+ * Project a run's stage rows to the (skill, artifact) pairs that actually
+ * carried an artifact. Used by `notifyPartialArtifacts` for the failure
+ * recap and by past-runs UIs (the `listRuns` API) for run summaries —
+ * extracting it keeps the "filter + project" data step reusable without
+ * the notify side effect.
+ */
+export function listArtifacts(cwd: string, runId: string): Array<{ skill: string; artifact: string }> {
+	const out: Array<{ skill: string; artifact: string }> = [];
+	for (const s of readAllStages(cwd, runId)) {
+		if (s.artifact) out.push({ skill: s.skill, artifact: s.artifact });
+	}
+	return out;
+}
+
 // ---------------------------------------------------------------------------
 // Routing audit rows
 // ---------------------------------------------------------------------------
