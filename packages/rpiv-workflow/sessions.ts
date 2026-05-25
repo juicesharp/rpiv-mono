@@ -172,7 +172,7 @@ function haltPhase(ctx: RunnerCtx, s: PhaseSession, stop: Exclude<StopSignal, "s
  * chain advances only when the audit row landed. On failure, leaves
  * `state.manifest` / `state.fallbackArtifactPath` at their prior values (the
  * disk has no row for what just completed, so the in-memory pointers must not
- * advance past it) and sets `state.error` to halt the run.
+ * advance past it) and sets `state.termination.error` to halt the run.
  */
 function recordStageSuccess(
 	ctx: RunnerCtx,
@@ -188,7 +188,7 @@ function recordStageSuccess(
 	);
 	if (assigned === undefined) {
 		ctx.ui.notify(MSG_AUDIT_WRITE_FAILED(s.skill), "error");
-		s.state.error = ERR_AUDIT_WRITE_FAILED(s.skill);
+		s.state.termination.error = ERR_AUDIT_WRITE_FAILED(s.skill);
 		return false;
 	}
 	// Manifest is set whenever present; fallback only carries the bare
@@ -211,7 +211,7 @@ function recordPhaseSuccess(s: PhaseSession, artifact: string | undefined): bool
 		s.state,
 	);
 	if (assigned === undefined) {
-		s.state.error = ERR_AUDIT_WRITE_FAILED(phaseRowLabel(s));
+		s.state.termination.error = ERR_AUDIT_WRITE_FAILED(phaseRowLabel(s));
 		return false;
 	}
 	// Phases never carry manifests — write goes through the fallback slot,

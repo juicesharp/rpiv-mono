@@ -139,10 +139,14 @@ export async function runWorkflow(
 		manifest: undefined,
 		stagesCompleted: 0,
 		lastAllocatedStageNumber: 0,
-		success: false,
-		error: undefined,
-		backwardJumps: 0,
-		droppedRoutingRows: [],
+		telemetry: {
+			backwardJumps: 0,
+			droppedRoutingRows: [],
+		},
+		termination: {
+			success: false,
+			error: undefined,
+		},
 	};
 
 	const maxBackwardJumps = options.maxBackwardJumps ?? MAX_BACKWARD_JUMPS;
@@ -164,10 +168,12 @@ export async function runWorkflow(
 	});
 	return {
 		stagesCompleted: state.stagesCompleted,
-		success: state.success,
+		success: state.termination.success,
 		lastArtifact: currentArtifactPath(state),
-		error: state.error,
-		...(state.droppedRoutingRows.length > 0 ? { droppedRoutingRows: state.droppedRoutingRows } : {}),
+		error: state.termination.error,
+		...(state.telemetry.droppedRoutingRows.length > 0
+			? { droppedRoutingRows: state.telemetry.droppedRoutingRows }
+			: {}),
 	};
 }
 
@@ -228,14 +234,14 @@ function buildPrompt(skill: string, inputForStage: string): string {
  * Wraps `runStage` so a thrown stage records a JSONL failure row attributed
  * to the stage that actually threw — not to the prior stage in the chain.
  * Used by both `runWorkflow` (start node) and `advanceChain` (next node) so
- * there's exactly one place that translates "stage threw" → state.error +
+ * there's exactly one place that translates "stage threw" → state.termination.error +
  * JSONL row. Without this, the start-stage call leaves a header-only file
  * and `advanceChain`'s own catch mis-attributes the failure to the prior
  * stage (`currentName` is still bound to the iteration that just succeeded).
  *
  * `runStage` only throws for invariant/machinery failures (e.g.
  * `enforceSessionInvariants`); expected failures are recorded inside via
- * `recordStage` + `state.error` and return normally.
+ * `recordStage` + `state.termination.error` and return normally.
  */
 async function runStageOrRecordFailure(curCtx: RunnerCtx, name: string, idx: number, run: RunContext): Promise<void> {
 	try {
@@ -246,7 +252,7 @@ async function runStageOrRecordFailure(curCtx: RunnerCtx, name: string, idx: num
 		const reason = e instanceof Error ? e.message : String(e);
 		recordStage(cwd, runId, { skill: name, status: "failed", ts: nowIso() }, state);
 		curCtx.ui.notify(MSG_STAGE_THREW(name, reason), "error");
-		state.error = reason;
+		state.termination.error = reason;
 	}
 }
 
@@ -305,7 +311,7 @@ interface ResolvedStage {
 function finalizeWorkflow(curCtx: RunnerCtx, run: RunContext): void {
 	curCtx.ui.setStatus(STATUS_KEY, undefined);
 	curCtx.ui.notify(MSG_WORKFLOW_COMPLETE(run.state.stagesCompleted), "info");
-	run.state.success = true;
+	run.state.termination.success = true;
 }
 
 function resolveStageNode(currentName: string, idx: number, run: RunContext): ResolvedStage {
@@ -373,7 +379,7 @@ function ensureSkillRegistered(curCtx: RunnerCtx, stage: ResolvedStage, run: Run
 	curCtx.ui.setStatus(STATUS_KEY, undefined);
 	curCtx.ui.notify(MSG_SKILL_NOT_REGISTERED(stage.skill), "error");
 	notifyPartialArtifacts(curCtx, run.cwd, run.runId);
-	run.state.error = ERR_SKILL_NOT_REGISTERED(stage.skill, stage.stageNumber);
+	run.state.termination.error = ERR_SKILL_NOT_REGISTERED(stage.skill, stage.stageNumber);
 	return false;
 }
 
@@ -393,7 +399,7 @@ function ensureUpstreamArtifact(
 	curCtx.ui.setStatus(STATUS_KEY, undefined);
 	curCtx.ui.notify(MSG_MISSING_ARTIFACT(stage.skill), "error");
 	notifyPartialArtifacts(curCtx, run.cwd, run.runId);
-	run.state.error = ERR_MISSING_ARTIFACT(stage.skill, stage.stageNumber);
+	run.state.termination.error = ERR_MISSING_ARTIFACT(stage.skill, stage.stageNumber);
 	return false;
 }
 
@@ -428,7 +434,7 @@ function ensureInputValid(curCtx: RunnerCtx, stage: ResolvedStage, run: RunConte
 	curCtx.ui.setStatus(STATUS_KEY, undefined);
 	curCtx.ui.notify(MSG_INPUT_VALIDATION_FAILED(stage.skill, prevSkill), "error");
 	notifyPartialArtifacts(curCtx, run.cwd, run.runId);
-	run.state.error = ERR_INPUT_VALIDATION_FAILED(stage.skill, prevSkill, failureSummary);
+	run.state.termination.error = ERR_INPUT_VALIDATION_FAILED(stage.skill, prevSkill, failureSummary);
 	return false;
 }
 
@@ -453,7 +459,7 @@ async function captureStageSnapshot(node: NodeDef, idx: number, run: RunContext)
  * Routing layer after a successful stage: ask the workflow's edge for the
  * next node, audit non-trivial decisions (EdgeFn branches), enforce the
  * backward-jump guard, then recurse. Wraps the body in try/catch so an
- * EdgeFn throwing lands in `state.error` rather than bubbling out of
+ * EdgeFn throwing lands in `state.termination.error` rather than bubbling out of
  * withSession.
  *
  * Backward-jump semantics: a "backward jump" is a *decision-edge* resolving
@@ -506,7 +512,7 @@ async function advanceChain(curCtx: RunnerCtx, currentName: string, idx: number,
 				ts: nowIso(),
 			});
 			if (!wrote) {
-				state.droppedRoutingRows.push({ fromStage, fromNode: currentName, decision: nextName });
+				state.telemetry.droppedRoutingRows.push({ fromStage, fromNode: currentName, decision: nextName });
 				curCtx.ui.notify(MSG_ROUTING_AUDIT_DROPPED(currentName, nextName), "warning");
 			}
 		}
@@ -518,18 +524,24 @@ async function advanceChain(curCtx: RunnerCtx, currentName: string, idx: number,
 		// gets its own budget.
 		if (wasDecision) {
 			if (run.visited.has(nextName)) {
-				state.backwardJumps++;
-				if (state.backwardJumps > run.maxBackwardJumps) {
+				state.telemetry.backwardJumps++;
+				if (state.telemetry.backwardJumps > run.maxBackwardJumps) {
 					curCtx.ui.setStatus(STATUS_KEY, undefined);
-					curCtx.ui.notify(MSG_BACKWARD_JUMP_EXHAUSTED(state.backwardJumps, run.maxBackwardJumps), "error");
+					curCtx.ui.notify(
+						MSG_BACKWARD_JUMP_EXHAUSTED(state.telemetry.backwardJumps, run.maxBackwardJumps),
+						"error",
+					);
 					// Attribute to nextName — the stage the guard refused to
 					// re-enter. currentName already completed successfully.
 					recordStage(cwd, runId, { skill: nextName, status: "failed", ts: nowIso() }, state);
-					state.error = ERR_BACKWARD_JUMP_EXHAUSTED(state.backwardJumps, run.maxBackwardJumps);
+					state.termination.error = ERR_BACKWARD_JUMP_EXHAUSTED(
+						state.telemetry.backwardJumps,
+						run.maxBackwardJumps,
+					);
 					return;
 				}
 			} else {
-				state.backwardJumps = 0;
+				state.telemetry.backwardJumps = 0;
 			}
 		}
 
@@ -548,6 +560,6 @@ async function advanceChain(curCtx: RunnerCtx, currentName: string, idx: number,
 		const reason = e instanceof Error ? e.message : String(e);
 		recordStage(cwd, runId, { skill: currentName, status: "failed", ts: nowIso() }, state);
 		curCtx.ui.notify(MSG_CHAIN_ADVANCE_FAILED(currentName, reason), "error");
-		state.error = reason;
+		state.termination.error = reason;
 	}
 }

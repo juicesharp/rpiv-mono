@@ -296,7 +296,9 @@ describe("validateWorkflow — predicate-edge schema check", () => {
 			start: "code-review",
 			nodes: { "code-review": artifact(), a: artifact(), b: artifact() },
 			edges: {
-				"code-review": defineStatePredicate(["a", "b"], ({ state }) => (state.backwardJumps > 0 ? "a" : "b")),
+				"code-review": defineStatePredicate(["a", "b"], ({ state }) =>
+					state.telemetry.backwardJumps > 0 ? "a" : "b",
+				),
 				a: "stop",
 				b: "stop",
 			},

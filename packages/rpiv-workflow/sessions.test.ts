@@ -49,10 +49,14 @@ const freshRunState = (overrides: Partial<RunState> = {}): RunState => ({
 	manifest: undefined,
 	stagesCompleted: 0,
 	lastAllocatedStageNumber: 0,
-	success: true,
-	error: undefined,
-	backwardJumps: 0,
-	droppedRoutingRows: [],
+	telemetry: {
+		backwardJumps: 0,
+		droppedRoutingRows: [],
+	},
+	termination: {
+		success: true,
+		error: undefined,
+	},
 	...overrides,
 });
 
@@ -203,8 +207,8 @@ describe("sessions — validation retry loop", () => {
 		expect(onSuccess).not.toHaveBeenCalled();
 		expect(onFailure).toHaveBeenCalledTimes(1);
 		expect(chain.notifications.some((n) => n.msg === MSG_VALIDATION_EXHAUSTED("test"))).toBe(true);
-		expect(state.error).toMatch(new RegExp(ERR_VALIDATION_FAILED("test", "foo").split(":")[0] ?? ""));
-		expect(state.error).toContain("/foo");
+		expect(state.termination.error).toMatch(new RegExp(ERR_VALIDATION_FAILED("test", "foo").split(":")[0] ?? ""));
+		expect(state.termination.error).toContain("/foo");
 	});
 
 	it("clamps maxValidationRetries above the ceiling (MAX_VALIDATION_RETRIES)", async () => {
@@ -320,7 +324,7 @@ describe("sessions — validation retry loop", () => {
 		);
 
 		expect(onFailure).toHaveBeenCalledTimes(1);
-		expect(state.error).toMatch(/validation retry attempt 1 exceeded 1000ms/);
+		expect(state.termination.error).toMatch(/validation retry attempt 1 exceeded 1000ms/);
 		// Halt path: MSG_STAGE_FAILED (extraction-error variant), not MSG_VALIDATION_EXHAUSTED.
 		expect(chain.notifications.some((n) => n.msg === MSG_STAGE_FAILED("test"))).toBe(true);
 	}, 5_000);
@@ -351,7 +355,7 @@ describe("sessions — validation retry loop", () => {
 		);
 
 		expect(onFailure).toHaveBeenCalledTimes(1);
-		expect(state.error).toContain("extractor blew up mid-retry");
+		expect(state.termination.error).toContain("extractor blew up mid-retry");
 	});
 
 	it("extractor returning undefined payload on retry → fatal with explicit message", async () => {
@@ -380,7 +384,7 @@ describe("sessions — validation retry loop", () => {
 		);
 
 		expect(onFailure).toHaveBeenCalledTimes(1);
-		expect(state.error).toMatch(/extractor returned no manifest on retry 1/);
+		expect(state.termination.error).toMatch(/extractor returned no manifest on retry 1/);
 	});
 
 	it("clamps validationRetryTimeoutMs above ceiling", async () => {
@@ -461,9 +465,9 @@ describe("sessions — validation retry loop", () => {
 		expect(chain.notifications.some((n) => n.msg === MSG_STAGE_FAILED("test"))).toBe(true);
 		expect(chain.notifications.some((n) => /failed to start/.test(n.msg))).toBe(false);
 
-		// state.error carries the schema-shape diagnostic prefixed by skill,
+		// state.termination.error carries the schema-shape diagnostic prefixed by skill,
 		// so the user can find the offending node.
-		expect(state.error).toMatch(/test:.*async schema validation is not supported/);
+		expect(state.termination.error).toMatch(/test:.*async schema validation is not supported/);
 
 		// JSONL row was written (not orphan) and attributed to `test`.
 		const rows = readStageRows(tmpDir);
@@ -529,7 +533,7 @@ describe("sessions — extractor resolution", () => {
 		);
 
 		expect(onFailure).toHaveBeenCalledTimes(1);
-		expect(state.error).toMatch(/finished without producing a \.rpiv\/artifacts/);
+		expect(state.termination.error).toMatch(/finished without producing a \.rpiv\/artifacts/);
 	});
 
 	it("agent-end default routes to sideEffectExtractor (inherits prior artifact path)", async () => {
@@ -755,8 +759,8 @@ describe("sessions — spawn primitive", () => {
 
 		expect(chain.ctx.newSession).toHaveBeenCalledTimes(1);
 		expect(onSuccess).not.toHaveBeenCalled();
-		// recordCancellation writes a "skipped" row + sets state.error.
-		expect(state.error).toMatch(/cancelled by user/);
+		// recordCancellation writes a "skipped" row + sets state.termination.error.
+		expect(state.termination.error).toMatch(/cancelled by user/);
 		const rows = readStageRows(tmpDir);
 		expect(rows[0]?.status).toBe("skipped");
 	});
@@ -947,7 +951,7 @@ describe("sessions — halt routing", () => {
 		rmSync(tmpDir, { recursive: true, force: true });
 	});
 
-	it("noResponse → MSG_STAGE_NO_RESPONSE notify + failed row + state.error", async () => {
+	it("noResponse → MSG_STAGE_NO_RESPONSE notify + failed row + state.termination.error", async () => {
 		const chain = createMockSessionChain({ cwd: tmpDir, steps: [{ branch: [] }] });
 		const state = freshRunState();
 		const onFailure = vi.fn();
@@ -963,7 +967,7 @@ describe("sessions — halt routing", () => {
 
 		expect(onFailure).toHaveBeenCalledTimes(1);
 		expect(chain.notifications.some((n) => n.msg === MSG_STAGE_NO_RESPONSE("test"))).toBe(true);
-		expect(state.error).toMatch(/no assistant message/);
+		expect(state.termination.error).toMatch(/no assistant message/);
 	});
 
 	it("aborted → MSG_STAGE_ABORTED notify + aborted row + ESC error string", async () => {
@@ -985,7 +989,7 @@ describe("sessions — halt routing", () => {
 
 		expect(onFailure).toHaveBeenCalledTimes(1);
 		expect(chain.notifications.some((n) => n.msg === MSG_STAGE_ABORTED("test"))).toBe(true);
-		expect(state.error).toMatch(/aborted by user/);
+		expect(state.termination.error).toMatch(/aborted by user/);
 		const rows = readStageRows(tmpDir);
 		expect(rows[0]?.status).toBe("aborted");
 	});
@@ -1013,6 +1017,6 @@ describe("sessions — halt routing", () => {
 
 		expect(onFailure).toHaveBeenCalledTimes(1);
 		expect(chain.notifications.some((n) => n.msg === MSG_STAGE_FAILED("test"))).toBe(true);
-		expect(state.error).toBe("extractor said no");
+		expect(state.termination.error).toBe("extractor said no");
 	});
 });

@@ -43,10 +43,14 @@ const snapshotCtx = (cwd: string): SnapshotCtx => ({
 		manifest: undefined,
 		stagesCompleted: 0,
 		lastAllocatedStageNumber: 0,
-		success: false,
-		error: undefined,
-		backwardJumps: 0,
-		droppedRoutingRows: [],
+		telemetry: {
+			backwardJumps: 0,
+			droppedRoutingRows: [],
+		},
+		termination: {
+			success: false,
+			error: undefined,
+		},
 	},
 });
 

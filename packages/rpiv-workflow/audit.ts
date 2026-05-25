@@ -1,6 +1,6 @@
 /**
  * Audit / bookkeeping — JSONL writes, status-line clears, notify, and
- * `state.error` for terminal outcomes. Shared by runner.ts + sessions.ts;
+ * `state.termination.error` for terminal outcomes. Shared by runner.ts + sessions.ts;
  * neither imports back. Depends only on state + messages.
  */
 
@@ -81,14 +81,14 @@ export function recordTerminalFailure(
 	ctx.ui.setStatus(STATUS_KEY, undefined);
 	ctx.ui.notify(args.notifyMsg, args.notifyLevel);
 	onFailure?.(ctx);
-	audit.state.error = args.errMsg;
+	audit.state.termination.error = args.errMsg;
 }
 
 /**
  * One arm per StopSignal variant (minus `"stop"`, the success path).
  * JSONL `status` stays `"aborted" | "failed"` for downstream-reader
  * compatibility; the per-signal distinction surfaces via MSG_STAGE_*
- * and state.error.
+ * and state.termination.error.
  */
 export function recordStopFailure(
 	ctx: RunnerCtx,
@@ -157,5 +157,5 @@ export function recordCancellation(ctx: RunnerCtx, audit: AuditCtx): void {
 	ctx.ui.notify(MSG_WORKFLOW_CANCELLED, "info");
 	// `success: false` alone can't distinguish "cancelled" from "never started";
 	// the error string is the signal.
-	audit.state.error = `${audit.skill} cancelled by user`;
+	audit.state.termination.error = `${audit.skill} cancelled by user`;
 }

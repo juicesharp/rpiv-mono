@@ -34,10 +34,14 @@ const ctxOf = (cwd: string, branch: unknown): ExtractorCtx => ({
 		manifest: undefined,
 		stagesCompleted: 0,
 		lastAllocatedStageNumber: 0,
-		success: false,
-		error: undefined,
-		backwardJumps: 0,
-		droppedRoutingRows: [],
+		telemetry: {
+			backwardJumps: 0,
+			droppedRoutingRows: [],
+		},
+		termination: {
+			success: false,
+			error: undefined,
+		},
 	},
 	branch: branch as ExtractorCtx["branch"],
 	branchOffset: undefined,

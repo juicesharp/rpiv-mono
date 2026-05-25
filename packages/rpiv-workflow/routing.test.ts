@@ -18,10 +18,14 @@ const makeState = (manifestData?: Record<string, unknown>): RunState => ({
 		: undefined,
 	stagesCompleted: 0,
 	lastAllocatedStageNumber: 0,
-	success: false,
-	error: undefined,
-	backwardJumps: 0,
-	droppedRoutingRows: [],
+	telemetry: {
+		backwardJumps: 0,
+		droppedRoutingRows: [],
+	},
+	termination: {
+		success: false,
+		error: undefined,
+	},
 });
 
 const ctxOf = (manifestData?: Record<string, unknown>): EdgeContext => {

@@ -1523,7 +1523,7 @@ describe("runWorkflow", () => {
 			expect(chain.statusUpdates.at(-1)).toEqual({ key: "rpiv-workflow", value: undefined });
 		});
 
-		it("records a failure row on backward-jump exhaustion (co-extensive with state.error)", async () => {
+		it("records a failure row on backward-jump exhaustion (co-extensive with state.termination.error)", async () => {
 			writeArtifact(tmpDir, ".rpiv/artifacts/a/a1.md");
 			writeArtifact(tmpDir, ".rpiv/artifacts/b/b1.md");
 

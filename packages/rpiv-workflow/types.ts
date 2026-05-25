@@ -20,8 +20,11 @@ export type RunnerCtx = ExtensionCommandContext & {
 
 /** Mutable per-run bookkeeping threaded through the chain by reference. */
 export interface RunState {
+	// ── Identity ────────────────────────────────────────────────────────
 	/** Frozen — the user's `/wf` argument. */
 	originalInput: string;
+
+	// ── Progress (hot paths — runner reads on every stage) ─────────────
 	/**
 	 * Bare-path mirror written only when (a) an `agent-end` stage extracted
 	 * a path without a manifest, or (b) a phase row committed an artifact.
@@ -35,17 +38,26 @@ export interface RunState {
 	stagesCompleted: number;
 	/** Most recently allocated stageNumber. Advances on every recordStage call. */
 	lastAllocatedStageNumber: number;
-	success: boolean;
-	error: string | undefined;
-	backwardJumps: number;
-	/**
-	 * Routing rows whose JSONL append failed mid-run. The chain advanced past
-	 * them (routing rows are write-only telemetry, not reconstruction inputs),
-	 * but the final result envelope surfaces this so post-hoc readers can
-	 * distinguish "deterministic edge — no row written by design" from
-	 * "decision made — write was dropped." Empty in the common case.
-	 */
-	droppedRoutingRows: Array<{ fromStage: number; fromNode: string; decision: string }>;
+
+	// ── Telemetry (post-hoc only; not consulted by chain advancement) ──
+	telemetry: {
+		backwardJumps: number;
+		/**
+		 * Routing rows whose JSONL append failed mid-run. The chain advanced
+		 * past them (routing rows are write-only telemetry, not
+		 * reconstruction inputs), but the final result envelope surfaces this
+		 * so post-hoc readers can distinguish "deterministic edge — no row
+		 * written by design" from "decision made — write was dropped." Empty
+		 * in the common case.
+		 */
+		droppedRoutingRows: Array<{ fromStage: number; fromNode: string; decision: string }>;
+	};
+
+	// ── Termination (set once at end-of-run) ───────────────────────────
+	termination: {
+		success: boolean;
+		error: string | undefined;
+	};
 }
 
 /** Per-run context the chain carries from stage to stage. */
@@ -63,8 +75,9 @@ export interface RunContext {
 	state: RunState;
 	/**
 	 * Node names already executed in this run. The backward-jump guard
-	 * increments `state.backwardJumps` on every re-entry; revise → implement
-	 * loops legitimately revisit nodes, but unbounded loops trip the cap.
+	 * increments `state.telemetry.backwardJumps` on every re-entry; revise →
+	 * implement loops legitimately revisit nodes, but unbounded loops trip
+	 * the cap.
 	 */
 	visited: Set<string>;
 	/** Required for "continue"-policy stages. */
