@@ -7,6 +7,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
 
 // ---------------------------------------------------------------------------
 // PI Agent Settings path
@@ -15,10 +16,13 @@ import { join } from "node:path";
 /** Default Pi agent settings path when PI_CODING_AGENT_DIR is not configured. */
 export const PI_AGENT_SETTINGS = join(homedir(), ".pi", "agent", "settings.json");
 
-/** Resolve the active Pi agent settings file, honoring Pi's configurable agent dir. */
+/**
+ * Resolve the active Pi agent settings file. Delegates the agent-dir lookup to
+ * Pi's `getAgentDir()` so PI_CODING_AGENT_DIR handling (including tilde
+ * expansion) stays in one place across rpiv-pi and Pi itself.
+ */
 export function getPiAgentSettingsPath(): string {
-	const configuredAgentDir = process.env.PI_CODING_AGENT_DIR;
-	return join(configuredAgentDir || join(homedir(), ".pi", "agent"), "settings.json");
+	return join(getAgentDir(), "settings.json");
 }
 
 // ---------------------------------------------------------------------------

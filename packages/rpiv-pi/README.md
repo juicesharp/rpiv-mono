@@ -223,6 +223,7 @@ Pi Agent discovers extensions via `"extensions": ["./extensions"]` and skills vi
 - **UI language** - run `/languages` to pick the locale for rpiv-* TUI strings, or pass `pi --locale <code>` at startup. Detection priority: flag → `~/.config/rpiv-i18n/locale.json` → `LANG` / `LC_ALL` → English. LLM-facing copy stays English by design
 - **Agent concurrency** - open the `/agents` overlay and tune `Settings → Max concurrency` to match your provider's rate limits. `@tintinweb/pi-subagents` owns this setting; rpiv-pi does not seed it.
 - **Agent profiles** - synced to `~/.pi/agent/agents/` from bundled defaults; refresh with `/rpiv-update-agents` (overwrites rpiv-managed files, preserves your custom agents).
+- **Non-default agent directory** - if you set `PI_CODING_AGENT_DIR` (e.g. `~/.config/pi/agent` for an XDG-style layout), rpiv-pi reads and writes the same `settings.json` Pi does — sibling detection, `/rpiv-setup`, and `/rpiv-update-agents` all follow the env var. Leading `~` is expanded.
 
 ## Uninstall
 

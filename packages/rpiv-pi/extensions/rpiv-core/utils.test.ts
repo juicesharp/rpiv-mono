@@ -80,6 +80,11 @@ describe("getPiAgentSettingsPath", () => {
 		process.env.PI_CODING_AGENT_DIR = join(process.env.HOME!, ".config", "pi", "agent");
 		expect(getPiAgentSettingsPath()).toBe(join(process.env.HOME!, ".config", "pi", "agent", "settings.json"));
 	});
+
+	it("expands a leading ~ in PI_CODING_AGENT_DIR", () => {
+		process.env.PI_CODING_AGENT_DIR = "~/.config/pi/agent";
+		expect(getPiAgentSettingsPath()).toBe(join(process.env.HOME!, ".config", "pi", "agent", "settings.json"));
+	});
 });
 
 describe("readPiAgentSettings", () => {

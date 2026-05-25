@@ -7,6 +7,12 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- `getPiAgentSettingsPath()` now delegates the agent-dir lookup to Pi's
+  `getAgentDir()` (`@earendil-works/pi-coding-agent`). Closes a tilde-expansion
+  gap when `PI_CODING_AGENT_DIR=~/...` and keeps the resolution logic in one
+  place across rpiv-pi and Pi.
+
 ### Fixed
 - Sibling package detection and `/rpiv-setup` legacy pruning now honor
   `PI_CODING_AGENT_DIR` instead of always reading `~/.pi/agent/settings.json`.
