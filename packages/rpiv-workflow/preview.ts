@@ -65,7 +65,7 @@ function formatWorkflowHeading(name: string, layer: ConfigLayer, isDefault: bool
 /** Numbered row showing the node + its outgoing edge target(s). */
 function formatStageRow(idx: number, nodeName: string, node: NodeDef, workflow: Workflow): string {
 	const num = `${idx}.`.padEnd(3);
-	const decorations = [node.completionStrategy.padEnd(13), node.sessionPolicy, extractorTag(node)];
+	const decorations = [node.completionStrategy.padEnd(13), node.sessionPolicy, outcomeTag(node)];
 	if (node.inputSchema) decorations.push("in-schema");
 	if (node.outputSchema) decorations.push("out-schema");
 
@@ -77,14 +77,14 @@ function formatStageRow(idx: number, nodeName: string, node: NodeDef, workflow: 
 }
 
 /**
- * Single tag per node encoding both the extractor kind and the snapshot flag.
- * Default extractors (resolved by `sessions.ts:resolveExtractor` from
- * `completionStrategy`) get their bundled name; overrides get `custom` plus
- * `+snapshot` when a `before` callback is declared.
+ * Single tag per node encoding both the outcome kind and the baseline flag.
+ * Default outcomes (resolved by `sessions.ts:resolveOutcome` from
+ * `completionStrategy`) get their bundled name; overrides get `custom`
+ * plus `+baseline` when a `baseline` hook is declared.
  */
-function extractorTag(node: NodeDef): string {
-	if (node.extractor) {
-		return node.extractor.before ? "custom+snapshot" : "custom";
+function outcomeTag(node: NodeDef): string {
+	if (node.outcome) {
+		return node.outcome.baseline ? "custom+baseline" : "custom";
 	}
 	return node.completionStrategy === "artifact-emit" ? "artifact-md" : "side-effect";
 }

@@ -35,16 +35,16 @@
  *      Contribute workflows to the lowest config layer:
  *      `registerBuiltIns`, `getBuiltIns`.
  *
- *   5. Manifest envelope + extractors — `./manifest.js`,
- *      `./extractors/index.js`
+ *   5. Manifest envelope + bundled outcomes — `./manifest.js`,
+ *      `./outcomes/index.js`
  *      Inter-stage data channel (`Manifest<K, D>`, `ManifestMeta`) +
- *      bundled extractors (`artifactMdExtractor`, `sideEffectExtractor`,
- *      `gitCommitExtractor`, `GitCommitData`, `gitHeadSnapshot`,
+ *      bundled outcomes (`artifactMdOutcome`, `sideEffectOutcome`,
+ *      `gitCommitOutcome`, `GitCommitData`, `gitHeadSnapshot`,
  *      `GitHeadSnapshot`).
  *
- *   6. Custom-extractor authoring surface — `./manifest.js`
- *      `Extractor<Snap, Kind, Data>`, `ExtractorCtx`,
- *      `ExtractorPayload`, `ExtractorResult`, `SnapshotCtx`.
+ *   6. Custom-outcome authoring surface — `./manifest.js`
+ *      `Outcome<Baseline, Kind, Data>`, `ExtractCtx`, `ExtractPayload`,
+ *      `ExtractResult`, `ExtractFn`, `BaselineCtx`, `BaselineFn`.
  *
  *   7. Validation surfaces — `./validate-workflow.js`,
  *      `./validate-manifest.js`
@@ -95,25 +95,27 @@ export {
 } from "./api.js";
 export { recordStage } from "./audit.js";
 export { getBuiltIns, registerBuiltIns } from "./built-ins.js";
-export {
-	artifactMdExtractor,
-	type GitCommitData,
-	type GitHeadSnapshot,
-	gitCommitExtractor,
-	gitHeadSnapshot,
-	sideEffectExtractor,
-} from "./extractors/index.js";
 export type { ConfigLayer, Issue, LoadedWorkflows, LoadIssue, OverlayPaths } from "./load/index.js";
 export { loadWorkflows, projectOverlayPaths, userOverlayPaths } from "./load/index.js";
 export type {
-	Extractor,
-	ExtractorCtx,
-	ExtractorPayload,
-	ExtractorResult,
+	BaselineCtx,
+	BaselineFn,
+	ExtractCtx,
+	ExtractFn,
+	ExtractPayload,
+	ExtractResult,
 	Manifest,
 	ManifestMeta,
-	SnapshotCtx,
+	Outcome,
 } from "./manifest.js";
+export {
+	artifactMdOutcome,
+	type GitCommitData,
+	type GitHeadSnapshot,
+	gitCommitOutcome,
+	gitHeadSnapshot,
+	sideEffectOutcome,
+} from "./outcomes/index.js";
 export { type RunWorkflowOptions, type RunWorkflowResult, runWorkflow } from "./runner/index.js";
 export {
 	listArtifacts,

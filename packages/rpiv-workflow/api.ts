@@ -17,10 +17,10 @@
  */
 
 import type { StandardSchemaV1 } from "@standard-schema/spec";
-import type { Extractor } from "./manifest.js";
+import type { Outcome } from "./manifest.js";
 import type { RunState } from "./types.js";
 
-export type { Extractor } from "./manifest.js";
+export type { Outcome } from "./manifest.js";
 
 /**
  * Schema attached to a node's `outputSchema` / `inputSchema`. Structurally
@@ -173,7 +173,7 @@ export interface NodeDef<TIn = unknown, TOut = unknown> {
 	skill?: string;
 	completionStrategy: CompletionStrategy;
 	sessionPolicy: SessionPolicy;
-	extractor?: Extractor;
+	outcome?: Outcome;
 	outputSchema?: NodeSchema<unknown, TOut>;
 	inputSchema?: NodeSchema<unknown, TIn>;
 	onValidationFailure?: OnValidationFailure;

@@ -1,6 +1,6 @@
 /**
  * Tests for `finalizeManifest` — the single source of manifest metadata
- * authorship in the workflow runtime. Every extractor result flows through
+ * authorship in the workflow runtime. Every outcome result flows through
  * this function on its way to disk + the next stage; the invariants this
  * file pins are: ctx wins over payload for meta fields, missing
  * artifact_path passes through as `undefined`, and every meta field is
@@ -10,7 +10,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { type ExtractorPayload, finalizeManifest } from "./manifest.js";
+import { type ExtractPayload, finalizeManifest } from "./manifest.js";
 
 const baseCtx = {
 	skill: "research",
@@ -21,7 +21,7 @@ const baseCtx = {
 
 describe("finalizeManifest", () => {
 	it("stamps every meta field from ctx (skill, stageNumber, ts, runId)", () => {
-		const payload: ExtractorPayload = {
+		const payload: ExtractPayload = {
 			kind: "artifact-md",
 			artifact_path: ".rpiv/artifacts/research/r.md",
 			data: { foo: 1 },
@@ -36,7 +36,7 @@ describe("finalizeManifest", () => {
 	});
 
 	it("forwards `kind`, `data`, and `artifact_path` from the payload unchanged", () => {
-		const payload: ExtractorPayload<"git-commit", { sha: string }> = {
+		const payload: ExtractPayload<"git-commit", { sha: string }> = {
 			kind: "git-commit",
 			artifact_path: ".rpiv/artifacts/prior/x.md",
 			data: { sha: "deadbeef" },
@@ -48,7 +48,7 @@ describe("finalizeManifest", () => {
 	});
 
 	it("passes `artifact_path: undefined` through (does not promote payload absence to a default)", () => {
-		const payload: ExtractorPayload = { kind: "side-effect", data: {} };
+		const payload: ExtractPayload = { kind: "side-effect", data: {} };
 		const m = finalizeManifest(payload, baseCtx);
 		// `undefined` rather than absent — downstream consumers check
 		// `manifest.artifact_path === undefined` to detect a missing path.
@@ -60,7 +60,7 @@ describe("finalizeManifest", () => {
 		// Extractors must NOT be able to spoof meta.skill — the runner sets it
 		// from the resolved node. Smuggling a `skill` key inside `data` must
 		// not affect meta.
-		const payload: ExtractorPayload = {
+		const payload: ExtractPayload = {
 			kind: "artifact-md",
 			data: { skill: "evil-skill", foo: 1 },
 		};
@@ -73,7 +73,7 @@ describe("finalizeManifest", () => {
 
 	it("preserves payload data structurally — no defensive clone, no field stripping", () => {
 		const data = { nested: { deep: [1, 2, 3] } };
-		const payload: ExtractorPayload = { kind: "artifact-md", data };
+		const payload: ExtractPayload = { kind: "artifact-md", data };
 		const m = finalizeManifest(payload, baseCtx);
 		// Same object reference — finalizeManifest does NOT clone.
 		// Downstream callers that need immutability MUST clone themselves;

@@ -5,8 +5,8 @@
 
 import { describe, expect, it } from "vitest";
 import { action, artifact, defineWorkflow, type NodeDef, threshold, type Workflow } from "./api.js";
-import { gitCommitExtractor } from "./extractors/index.js";
 import type { LoadedWorkflows } from "./load/index.js";
+import { gitCommitOutcome } from "./outcomes/index.js";
 import { formatWorkflowDetails, formatWorkflowList } from "./preview.js";
 
 // ---------------------------------------------------------------------------
@@ -25,7 +25,7 @@ const midWorkflow = defineWorkflow({
 	nodes: {
 		research: node({ skill: "research", completionStrategy: "artifact-emit" }),
 		implement: node({ skill: "implement" }),
-		commit: node({ skill: "commit", extractor: gitCommitExtractor }),
+		commit: node({ skill: "commit", outcome: gitCommitOutcome }),
 	},
 	edges: { research: "implement", implement: "commit", commit: "stop" },
 });
@@ -128,20 +128,20 @@ describe("formatWorkflowDetails", () => {
 		expect(lines.find((l) => /research/.test(l))).toContain("fresh");
 	});
 
-	it("tags custom-extractor + snapshot nodes with a single 'custom+snapshot' decoration", () => {
+	it("tags custom-outcome + baseline nodes with a single 'custom+baseline' decoration", () => {
 		const out = formatWorkflowDetails(baseLoaded(), "mid");
 		const commitLine = out.split("\n").find((l) => /^\s+\d+\.\s+commit\b/.test(l)) ?? "";
-		expect(commitLine).toContain("custom+snapshot");
+		expect(commitLine).toContain("custom+baseline");
 		expect(commitLine).not.toContain("· custom ·"); // not double-tagged
 	});
 
-	it("tags artifact-emit nodes with the default 'artifact-md' extractor", () => {
+	it("tags artifact-emit nodes with the default 'artifact-md' outcome", () => {
 		const out = formatWorkflowDetails(baseLoaded(), "mid");
 		const researchLine = out.split("\n").find((l) => /^\s+\d+\.\s+research\b/.test(l)) ?? "";
 		expect(researchLine).toContain("artifact-md");
 	});
 
-	it("tags agent-end nodes (no override) with the default 'side-effect' extractor", () => {
+	it("tags agent-end nodes (no override) with the default 'side-effect' outcome", () => {
 		const out = formatWorkflowDetails(baseLoaded(), "mid");
 		const implementLine = out.split("\n").find((l) => /^\s+\d+\.\s+implement\b/.test(l)) ?? "";
 		expect(implementLine).toContain("side-effect");

@@ -518,7 +518,7 @@ describe("runWorkflow", () => {
 		expect(stages[0]?.artifact).toBeUndefined();
 
 		// User-visible error notification surfaces the stage-failed verdict.
-		// The extractor's fatal message flows through recordTerminalFailure's
+		// The outcome's fatal message flows through recordTerminalFailure's
 		// notifyMsg (MSG_STAGE_FAILED), not the pre-Phase-3 MSG_STAGE_NO_ARTIFACT.
 		const failureNotice = chain.notifications.find((n) => /failed.*stopping workflow/i.test(n.msg));
 		expect(failureNotice?.level).toBe("error");

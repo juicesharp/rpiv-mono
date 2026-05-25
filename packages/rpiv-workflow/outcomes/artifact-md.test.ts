@@ -1,8 +1,8 @@
 /**
- * Tests for the artifact-md extractor — covers the I/O surface
+ * Tests for the artifact-md outcome — covers the I/O surface
  * (`readFileSync` on agent-announced path) including the existsSync gate,
  * the announced-but-missing-path case, and frontmatter parsing edge
- * cases. The extractor sits on the artifact-emit success path — its
+ * cases. The outcome sits on the artifact-emit success path — its
  * fatal contract drives whether the runner halts or proceeds.
  */
 
@@ -10,8 +10,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { ExtractorCtx } from "../manifest.js";
-import { artifactMdExtractor } from "./artifact-md.js";
+import type { ExtractCtx } from "../manifest.js";
+import { artifactMdOutcome } from "./artifact-md.js";
 
 const branchWithText = (text: string) => [
 	{
@@ -24,7 +24,7 @@ const branchWithText = (text: string) => [
 	},
 ];
 
-const ctxOf = (cwd: string, branch: unknown): ExtractorCtx<undefined> => ({
+const ctxOf = (cwd: string, branch: unknown): ExtractCtx<undefined> => ({
 	cwd,
 	runId: "test-run",
 	stageIndex: 0,
@@ -43,13 +43,13 @@ const ctxOf = (cwd: string, branch: unknown): ExtractorCtx<undefined> => ({
 			error: undefined,
 		},
 	},
-	branch: branch as ExtractorCtx["branch"],
+	branch: branch as ExtractCtx["branch"],
 	branchOffset: undefined,
-	snapshot: undefined,
+	baseline: undefined,
 	skill: "research",
 });
 
-describe("artifactMdExtractor", () => {
+describe("artifactMdOutcome", () => {
 	let tmpDir: string;
 
 	beforeEach(() => {
@@ -63,7 +63,7 @@ describe("artifactMdExtractor", () => {
 
 	it("returns fatal when no artifact path appears in the transcript", async () => {
 		const ctx = ctxOf(tmpDir, branchWithText("I did not announce a path"));
-		const result = await artifactMdExtractor.extract(ctx);
+		const result = await artifactMdOutcome.extract(ctx);
 		expect(result.kind).toBe("fatal");
 		if (result.kind === "fatal") expect(result.message).toMatch(/finished without producing a \.rpiv\/artifacts/);
 	});
@@ -71,7 +71,7 @@ describe("artifactMdExtractor", () => {
 	it("returns fatal when the announced path does not exist on disk", async () => {
 		const text = "Done: .rpiv/artifacts/research/missing.md";
 		const ctx = ctxOf(tmpDir, branchWithText(text));
-		const result = await artifactMdExtractor.extract(ctx);
+		const result = await artifactMdOutcome.extract(ctx);
 		expect(result.kind).toBe("fatal");
 		if (result.kind === "fatal") expect(result.message).toMatch(/file does not exist on disk/);
 	});
@@ -80,7 +80,7 @@ describe("artifactMdExtractor", () => {
 		const rel = ".rpiv/artifacts/research/r.md";
 		writeFileSync(join(tmpDir, rel), "---\nstatus: ok\nblockers_count: 0\n---\n\n# body\n");
 		const ctx = ctxOf(tmpDir, branchWithText(`Wrote ${rel}`));
-		const result = await artifactMdExtractor.extract(ctx);
+		const result = await artifactMdOutcome.extract(ctx);
 		expect(result.kind).toBe("ok");
 		if (result.kind === "ok") {
 			expect(result.payload?.kind).toBe("artifact-md");
@@ -93,7 +93,7 @@ describe("artifactMdExtractor", () => {
 		const rel = ".rpiv/artifacts/research/no-fm.md";
 		writeFileSync(join(tmpDir, rel), "# no frontmatter here\n\nbody only\n");
 		const ctx = ctxOf(tmpDir, branchWithText(`Wrote ${rel}`));
-		const result = await artifactMdExtractor.extract(ctx);
+		const result = await artifactMdOutcome.extract(ctx);
 		expect(result.kind).toBe("ok");
 		if (result.kind === "ok") expect(result.payload?.data).toEqual({});
 	});
@@ -101,13 +101,13 @@ describe("artifactMdExtractor", () => {
 	it("returns the relative .rpiv/artifacts path even when the announcement embeds an absolute prefix", async () => {
 		// ARTIFACT_PATH_REGEX matches only the `.rpiv/artifacts/...` substring,
 		// so an announcement like `/abs/path/.rpiv/artifacts/.../x.md` yields
-		// the relative tail. The extractor then joins it against `ctx.cwd`,
+		// the relative tail. The outcome then joins it against `ctx.cwd`,
 		// which is what every downstream consumer expects.
 		const rel = ".rpiv/artifacts/research/abs.md";
 		writeFileSync(join(tmpDir, rel), "---\nfoo: 1\n---\n");
 		const abs = join(tmpDir, rel);
 		const ctx = ctxOf(tmpDir, branchWithText(`Wrote ${abs}`));
-		const result = await artifactMdExtractor.extract(ctx);
+		const result = await artifactMdOutcome.extract(ctx);
 		expect(result.kind).toBe("ok");
 		if (result.kind === "ok") {
 			expect(result.payload?.artifact_path).toBe(rel);

@@ -15,7 +15,7 @@ import {
 	defineStatePredicate,
 	defineWorkflow,
 	type EdgeFn,
-	type Extractor,
+	type Outcome,
 	threshold,
 	type Workflow,
 } from "./api.js";
@@ -102,17 +102,17 @@ describe("action", () => {
 		expect(n.skill).toBeUndefined();
 	});
 
-	it("attaches an Extractor when supplied (commit-style nodes)", () => {
+	it("attaches an Outcome when supplied (commit-style nodes)", () => {
 		const captured: unknown[] = [];
-		const extractor: Extractor = {
-			before: () => "pre-state",
+		const outcome: Outcome = {
+			baseline: () => "pre-state",
 			extract: (ctx) => {
-				captured.push(ctx.snapshot);
+				captured.push(ctx.baseline);
 				return { kind: "ok", payload: { kind: "test", data: {} } };
 			},
 		};
-		const n = action({ extractor });
-		expect(n.extractor).toBe(extractor);
+		const n = action({ outcome });
+		expect(n.outcome).toBe(outcome);
 	});
 });
 

@@ -1,25 +1,25 @@
 /**
- * Git commit extractor + pre-stage git HEAD snapshot.
+ * Git commit outcome + pre-stage git HEAD snapshot.
  *
  * Compares pre/post stage HEAD SHAs to detect commits made by the agent
  * during the stage. Shells out asynchronously via `execFile` so a slow
  * `git` invocation (network-backed working tree, hung FS, large
- * `--shortstat`) can't pin the event loop — `ExtractorFn`'s contract
- * already supports `Promise<ExtractorResult>`.
+ * `--shortstat`) can't pin the event loop — `ExtractFn`'s contract
+ * already supports `Promise<ExtractResult>`.
  */
 
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { currentArtifactPath } from "../internal-utils.js";
-import type { Extractor, ExtractorCtx, ExtractorPayload, ExtractorResult, SnapshotCtx } from "../manifest.js";
+import type { BaselineCtx, ExtractCtx, ExtractPayload, ExtractResult, Outcome } from "../manifest.js";
 
 const execFileAsync = promisify(execFile);
 
 /**
- * Manifest data shape produced by `gitCommitExtractor` — co-located with
- * the extractor that emits it. The `GitCommitManifest` alias in
+ * Manifest data shape produced by `gitCommitOutcome` — co-located with
+ * the outcome that emits it. The `GitCommitManifest` alias in
  * `manifest.ts` re-imports this type so downstream nodes can narrow on
- * `manifest.kind === "git-commit"` without reaching into per-extractor
+ * `manifest.kind === "git-commit"` without reaching into per-outcome
  * paths.
  */
 export interface GitCommitData {
@@ -54,14 +54,14 @@ async function git(cwd: string, ...args: string[]): Promise<string> {
  * Async — keeps the event loop responsive even if `git` is slow (network
  * FS, hung mount, contended index). `ExtensionAPI` does not expose a
  * public `exec` surface, so we shell out directly here and via the
- * post-stage extractor; the `SnapshotFn` contract already supports
+ * extract method; the `BaselineFn` contract already supports
  * `Promise<unknown>` so the runner awaits without ceremony.
  *
  * Fail-soft: returns undefined on any failure (not a git repo, git
- * missing, non-zero exit, timeout). `gitCommitExtractor` handles
+ * missing, non-zero exit, timeout). `gitCommitOutcome` handles
  * `undefined` snapshot gracefully by emitting a `noOp: true` manifest.
  */
-export async function gitHeadSnapshot(ctx: SnapshotCtx): Promise<GitHeadSnapshot | undefined> {
+export async function gitHeadSnapshot(ctx: BaselineCtx): Promise<GitHeadSnapshot | undefined> {
 	try {
 		const sha = await git(ctx.cwd, "rev-parse", "HEAD");
 		return sha ? { baselineSha: sha } : undefined;
@@ -75,30 +75,30 @@ export async function gitHeadSnapshot(ctx: SnapshotCtx): Promise<GitHeadSnapshot
  * Always succeeds — git errors surface as a `noOp: true` payload (defensive).
  */
 async function extractGitCommit(
-	ctx: ExtractorCtx<GitHeadSnapshot | undefined>,
-): Promise<ExtractorResult<"git-commit", GitCommitData>> {
-	const snapshot = ctx.snapshot;
-	if (!snapshot?.baselineSha) return { kind: "ok", payload: wrap(ctx, noOpData("")) };
+	ctx: ExtractCtx<GitHeadSnapshot | undefined>,
+): Promise<ExtractResult<"git-commit", GitCommitData>> {
+	const baseline = ctx.baseline;
+	if (!baseline?.baselineSha) return { kind: "ok", payload: wrap(ctx, noOpData("")) };
 
-	const data = (await collectCommitData(ctx.cwd, snapshot.baselineSha)) ?? noOpData(snapshot.baselineSha);
+	const data = (await collectCommitData(ctx.cwd, baseline.baselineSha)) ?? noOpData(baseline.baselineSha);
 	return { kind: "ok", payload: wrap(ctx, data) };
 }
 
 /**
- * Git commit extractor — bundles `gitHeadSnapshot` (before) with
+ * Git commit outcome — bundles `gitHeadSnapshot` (baseline) with
  * `extractGitCommit` (extract). Co-located so the pre-state capture is
- * structurally part of the extractor that consumes it. `gitHeadSnapshot`
- * is exposed via the main package barrel (`@juicesharp/rpiv-workflow`) as
- * a composition building block: wrap it in any custom extractor whose
+ * structurally part of the outcome that consumes it. `gitHeadSnapshot`
+ * is exposed via the main package barrel (`@juicesharp/rpiv-workflow`)
+ * as a composition building block: wrap it in any custom outcome whose
  * `extract` reads a git baseline (not just commit detection — also "did
  * this stage touch files?", "what changed since the last save?", etc.).
  *
- * Concrete generics: snapshot is `GitHeadSnapshot | undefined`
+ * Concrete generics: baseline is `GitHeadSnapshot | undefined`
  * (undefined when not in a git repo), manifest kind is `"git-commit"`,
  * data is `GitCommitData`.
  */
-export const gitCommitExtractor: Extractor<GitHeadSnapshot | undefined, "git-commit", GitCommitData> = {
-	before: gitHeadSnapshot,
+export const gitCommitOutcome: Outcome<GitHeadSnapshot | undefined, "git-commit", GitCommitData> = {
+	baseline: gitHeadSnapshot,
 	extract: extractGitCommit,
 };
 
@@ -139,9 +139,9 @@ async function countFilesChanged(cwd: string, baselineSha: string, headSha: stri
 
 /** Wrap GitCommitData in a payload, inheriting the chain's current artifact_path. */
 function wrap(
-	ctx: ExtractorCtx<GitHeadSnapshot | undefined>,
+	ctx: ExtractCtx<GitHeadSnapshot | undefined>,
 	data: GitCommitData,
-): ExtractorPayload<"git-commit", GitCommitData> {
+): ExtractPayload<"git-commit", GitCommitData> {
 	return {
 		kind: "git-commit",
 		artifact_path: currentArtifactPath(ctx.state),

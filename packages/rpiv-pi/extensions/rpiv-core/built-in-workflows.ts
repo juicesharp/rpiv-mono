@@ -20,7 +20,7 @@ import {
 	artifact,
 	defineWorkflow,
 	type FanoutFn,
-	gitCommitExtractor,
+	gitCommitOutcome,
 	threshold,
 	typeboxSchema,
 	type Workflow,
@@ -94,7 +94,7 @@ const midWorkflow = defineWorkflow({
 		"code-review": artifact({ outputSchema: CODE_REVIEW_SCHEMA }),
 		revise: artifact(),
 		"implement-after-revise": action({ skill: "implement", fanout: PHASE_FANOUT }),
-		commit: action({ extractor: gitCommitExtractor }),
+		commit: action({ outcome: gitCommitOutcome }),
 	},
 	edges: {
 		research: "blueprint",
@@ -126,7 +126,7 @@ const largeWorkflow = defineWorkflow({
 		"design-after-review": artifact({ skill: "design" }),
 		"plan-after-review": artifact({ skill: "plan" }),
 		"implement-after-review": action({ skill: "implement", fanout: PHASE_FANOUT }),
-		commit: action({ extractor: gitCommitExtractor }),
+		commit: action({ outcome: gitCommitOutcome }),
 	},
 	edges: {
 		research: "design",

@@ -4,23 +4,17 @@
  * the persistence helpers ("record this stage").
  *
  * Public entry: `extractAndValidateManifest`. Returns a tagged outcome
- * — `ok` with the manifest, `fatal` (halt with a wording the extractor
+ * — `ok` with the manifest, `fatal` (halt with a wording the outcome
  * supplied), or `validation-exhausted` (halt after the retry budget
  * tripped without a passing schema).
  */
 
 import type { NodeDef, NodeSchema } from "../api.js";
 import { nowIso } from "../audit.js";
-import { artifactMdExtractor, sideEffectExtractor } from "../extractors/index.js";
 import { assertNever, withTimeout } from "../internal-utils.js";
-import {
-	type Extractor,
-	type ExtractorCtx,
-	type ExtractorPayload,
-	finalizeManifest,
-	type Manifest,
-} from "../manifest.js";
+import { type ExtractCtx, type ExtractPayload, finalizeManifest, type Manifest, type Outcome } from "../manifest.js";
 import { MSG_VALIDATION_RETRY, MSG_VALIDATION_RETRY_PROMPT } from "../messages.js";
+import { artifactMdOutcome, sideEffectOutcome } from "../outcomes/index.js";
 import { type BranchEntry, readBranch } from "../transcript.js";
 import type { RunnerCtx, StageSession } from "../types.js";
 import {
@@ -48,25 +42,25 @@ export async function extractAndValidateManifest(
 	branch: BranchEntry[],
 	branchOffset: number | undefined,
 ): Promise<ExtractionOutcome> {
-	const extractor = resolveExtractor(s.node);
-	const extractorCtx = buildExtractorCtx(s, branch, branchOffset);
-	const finalize = (payload: ExtractorPayload) => wrapManifest(s, payload);
+	const outcome = resolveOutcome(s.node);
+	const extractCtx = buildExtractCtx(s, branch, branchOffset);
+	const finalize = (payload: ExtractPayload) => wrapManifest(s, payload);
 
-	const first = await runExtractor(extractor, extractorCtx, finalize);
+	const first = await runExtract(outcome, extractCtx, finalize);
 	if (first.kind === "fatal") return first;
 	if (!shouldValidateOutput(s.node, first.manifest)) return first;
 
-	return retryUntilValid(ctx, s, { extractor, extractorCtx, finalize }, first.manifest);
+	return retryUntilValid(ctx, s, { outcome, extractCtx, finalize }, first.manifest);
 }
 
 /** Explicit override > default-by-completionStrategy. Exhaustive — assertNever lights future variants. */
-function resolveExtractor(node: NodeDef): Extractor {
-	if (node.extractor) return node.extractor;
+function resolveOutcome(node: NodeDef): Outcome {
+	if (node.outcome) return node.outcome;
 	switch (node.completionStrategy) {
 		case "artifact-emit":
-			return artifactMdExtractor;
+			return artifactMdOutcome;
 		case "agent-end":
-			return sideEffectExtractor;
+			return sideEffectOutcome;
 		default:
 			return assertNever(node.completionStrategy);
 	}
@@ -80,7 +74,7 @@ function resolveExtractor(node: NodeDef): Extractor {
  * initial extraction and the retry path use the same offset value — the
  * closed-I4 defect can't re-introduce.
  */
-function buildExtractorCtx(s: StageSession, branch: BranchEntry[], branchOffset: number | undefined): ExtractorCtx {
+function buildExtractCtx(s: StageSession, branch: BranchEntry[], branchOffset: number | undefined): ExtractCtx {
 	return {
 		cwd: s.cwd,
 		runId: s.runId,
@@ -88,12 +82,12 @@ function buildExtractorCtx(s: StageSession, branch: BranchEntry[], branchOffset:
 		state: s.state,
 		branch,
 		branchOffset,
-		snapshot: s.snapshot,
+		baseline: s.baseline,
 		skill: s.skill,
 	};
 }
 
-function wrapManifest(s: StageSession, payload: ExtractorPayload): Manifest {
+function wrapManifest(s: StageSession, payload: ExtractPayload): Manifest {
 	return finalizeManifest(payload, {
 		skill: s.skill,
 		stageNumber: s.state.lastAllocatedStageNumber + 1,
@@ -102,12 +96,12 @@ function wrapManifest(s: StageSession, payload: ExtractorPayload): Manifest {
 	});
 }
 
-async function runExtractor(
-	extractor: Extractor,
-	extractorCtx: ExtractorCtx,
-	finalize: (p: ExtractorPayload) => Manifest,
+async function runExtract(
+	outcome: Outcome,
+	extractCtx: ExtractCtx,
+	finalize: (p: ExtractPayload) => Manifest,
 ): Promise<{ kind: "ok"; manifest: Manifest | undefined } | { kind: "fatal"; message: string }> {
-	const result = await extractor.extract(extractorCtx);
+	const result = await outcome.extract(extractCtx);
 	if (result.kind === "fatal") return result;
 	return { kind: "ok", manifest: result.payload ? finalize(result.payload) : undefined };
 }
@@ -117,9 +111,9 @@ function shouldValidateOutput(node: NodeDef, manifest: Manifest | undefined): ma
 }
 
 interface RetryDeps {
-	extractor: Extractor;
-	extractorCtx: ExtractorCtx;
-	finalize: (p: ExtractorPayload) => Manifest;
+	outcome: Outcome;
+	extractCtx: ExtractCtx;
+	finalize: (p: ExtractPayload) => Manifest;
 }
 
 async function retryUntilValid(
@@ -164,16 +158,16 @@ async function retryUntilValid(
 		}
 
 		// Re-extract against the latest branch with the SAME offset the initial
-		// extraction used (L6-05). `deps.extractorCtx.branchOffset` was set
+		// extraction used (L6-05). `deps.extractCtx.branchOffset` was set
 		// once at stage entry via the handler-derived offset, so spreading it
 		// over a fresh `readBranch(ctx)` preserves the prior-stage prefix
 		// skip and the closed-I4 defect can't re-introduce.
 		const retryBranch = readBranch(ctx);
-		const retryCtx: ExtractorCtx = { ...deps.extractorCtx, branch: retryBranch };
-		const reExtracted = await runExtractor(deps.extractor, retryCtx, deps.finalize);
+		const retryCtx: ExtractCtx = { ...deps.extractCtx, branch: retryBranch };
+		const reExtracted = await runExtract(deps.outcome, retryCtx, deps.finalize);
 		if (reExtracted.kind === "fatal") return reExtracted;
 		if (!reExtracted.manifest) {
-			return { kind: "fatal", message: `${s.skill}: extractor returned no manifest on retry ${attempts}` };
+			return { kind: "fatal", message: `${s.skill}: outcome returned no manifest on retry ${attempts}` };
 		}
 
 		manifest = reExtracted.manifest;

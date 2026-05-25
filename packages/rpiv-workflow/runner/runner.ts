@@ -8,7 +8,7 @@
  *  - runner.ts          — runWorkflow + countReachableNodes +
  *                         runStageOrRecordFailure + finalizeWorkflow.
  *  - stage-lifecycle.ts — runStage + StagePreflightError + preflight
- *                         pipeline + extractor.before hook.
+ *                         pipeline + outcome.baseline hook.
  *  - chain-advance.ts   — advanceChain + routing audit + backward-jump
  *                         guard + halt-on-error.
  *

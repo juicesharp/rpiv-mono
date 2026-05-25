@@ -1,9 +1,9 @@
 /**
- * Tests for the git-commit extractor — covers the new I/O surface
+ * Tests for the git-commit outcome — covers the new I/O surface
  * (shelling out to `git` via `execFile`) on the success path, when git
  * isn't on PATH, and when the working tree isn't a git repo.
  *
- * The extractor is fail-soft by contract: every git error path collapses
+ * The outcome is fail-soft by contract: every git error path collapses
  * to a `noOp: true` payload so the workflow keeps moving. These tests
  * pin that contract — a regression that converts a failure into a throw
  * would surface here as an unhandled rejection.
@@ -14,8 +14,8 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { ExtractorCtx, SnapshotCtx } from "../manifest.js";
-import { type GitHeadSnapshot, gitCommitExtractor, gitHeadSnapshot } from "./git-commit.js";
+import type { BaselineCtx, ExtractCtx } from "../manifest.js";
+import { type GitHeadSnapshot, gitCommitOutcome, gitHeadSnapshot } from "./git-commit.js";
 
 const hasGit = (() => {
 	try {
@@ -33,7 +33,7 @@ const initRepo = (cwd: string): void => {
 	execSync("git commit --allow-empty -q -m initial", { cwd });
 };
 
-const snapshotCtx = (cwd: string): SnapshotCtx => ({
+const baselineCtx = (cwd: string): BaselineCtx => ({
 	cwd,
 	runId: "test-run",
 	stageIndex: 0,
@@ -54,14 +54,11 @@ const snapshotCtx = (cwd: string): SnapshotCtx => ({
 	},
 });
 
-const extractorCtx = (
-	cwd: string,
-	snapshot: GitHeadSnapshot | undefined,
-): ExtractorCtx<GitHeadSnapshot | undefined> => ({
-	...snapshotCtx(cwd),
+const extractCtx = (cwd: string, baseline: GitHeadSnapshot | undefined): ExtractCtx<GitHeadSnapshot | undefined> => ({
+	...baselineCtx(cwd),
 	branch: [],
 	branchOffset: undefined,
-	snapshot,
+	baseline,
 	skill: "commit",
 });
 
@@ -78,22 +75,22 @@ describe.runIf(hasGit)("gitHeadSnapshot", () => {
 
 	it("returns the current HEAD SHA in a real repo", async () => {
 		initRepo(tmpDir);
-		const snap = await gitHeadSnapshot(snapshotCtx(tmpDir));
+		const snap = await gitHeadSnapshot(baselineCtx(tmpDir));
 		expect(snap?.baselineSha).toMatch(/^[0-9a-f]{40}$/);
 	});
 
 	it("returns undefined when cwd is not a git repo (no throw)", async () => {
-		const snap = await gitHeadSnapshot(snapshotCtx(tmpDir));
+		const snap = await gitHeadSnapshot(baselineCtx(tmpDir));
 		expect(snap).toBeUndefined();
 	});
 
 	it("returns undefined when cwd does not exist (no throw)", async () => {
-		const snap = await gitHeadSnapshot(snapshotCtx(join(tmpDir, "does-not-exist")));
+		const snap = await gitHeadSnapshot(baselineCtx(join(tmpDir, "does-not-exist")));
 		expect(snap).toBeUndefined();
 	});
 });
 
-describe.runIf(hasGit)("gitCommitExtractor.extract", () => {
+describe.runIf(hasGit)("gitCommitOutcome.extract", () => {
 	let tmpDir: string;
 
 	beforeEach(() => {
@@ -106,14 +103,14 @@ describe.runIf(hasGit)("gitCommitExtractor.extract", () => {
 
 	it("emits a real commit payload when HEAD moved between snapshot and extract", async () => {
 		initRepo(tmpDir);
-		const snap = await gitHeadSnapshot(snapshotCtx(tmpDir));
+		const snap = await gitHeadSnapshot(baselineCtx(tmpDir));
 		expect(snap?.baselineSha).toMatch(/^[0-9a-f]{40}$/);
 
 		writeFileSync(join(tmpDir, "a.txt"), "hello\n");
 		execSync("git add a.txt", { cwd: tmpDir });
 		execSync('git commit -q -m "add a"', { cwd: tmpDir });
 
-		const result = await gitCommitExtractor.extract(extractorCtx(tmpDir, snap));
+		const result = await gitCommitOutcome.extract(extractCtx(tmpDir, snap));
 		expect(result.kind).toBe("ok");
 		if (result.kind !== "ok") return;
 		expect(result.payload?.kind).toBe("git-commit");
@@ -133,8 +130,8 @@ describe.runIf(hasGit)("gitCommitExtractor.extract", () => {
 
 	it("emits noOp payload when HEAD did not move", async () => {
 		initRepo(tmpDir);
-		const snap = await gitHeadSnapshot(snapshotCtx(tmpDir));
-		const result = await gitCommitExtractor.extract(extractorCtx(tmpDir, snap));
+		const snap = await gitHeadSnapshot(baselineCtx(tmpDir));
+		const result = await gitCommitOutcome.extract(extractCtx(tmpDir, snap));
 		expect(result.kind).toBe("ok");
 		if (result.kind !== "ok") return;
 		const data = result.payload?.data as { noOp?: boolean; prevSha: string };
@@ -143,7 +140,7 @@ describe.runIf(hasGit)("gitCommitExtractor.extract", () => {
 	});
 
 	it("emits noOp payload when snapshot is undefined (snapshot failure upstream)", async () => {
-		const result = await gitCommitExtractor.extract(extractorCtx(tmpDir, undefined));
+		const result = await gitCommitOutcome.extract(extractCtx(tmpDir, undefined));
 		expect(result.kind).toBe("ok");
 		if (result.kind !== "ok") return;
 		const data = result.payload?.data as { noOp?: boolean };
@@ -152,7 +149,7 @@ describe.runIf(hasGit)("gitCommitExtractor.extract", () => {
 
 	it("emits noOp payload when cwd is not a git repo (collectCommitData returns null)", async () => {
 		// Synthesize a snapshot with a fake baseline; extract runs in a non-repo cwd.
-		const result = await gitCommitExtractor.extract(extractorCtx(tmpDir, { baselineSha: "deadbeef" }));
+		const result = await gitCommitOutcome.extract(extractCtx(tmpDir, { baselineSha: "deadbeef" }));
 		expect(result.kind).toBe("ok");
 		if (result.kind !== "ok") return;
 		const data = result.payload?.data as { noOp?: boolean };
@@ -172,14 +169,14 @@ describe("artifact_path inheritance", () => {
 	});
 
 	it("inherits currentArtifactPath(state) into the payload (chain continuity)", async () => {
-		const ctx: ExtractorCtx<GitHeadSnapshot | undefined> = {
-			...extractorCtx(tmpDir, { baselineSha: "abc" }),
+		const ctx: ExtractCtx<GitHeadSnapshot | undefined> = {
+			...extractCtx(tmpDir, { baselineSha: "abc" }),
 			state: {
-				...snapshotCtx(tmpDir).state,
+				...baselineCtx(tmpDir).state,
 				fallbackArtifactPath: ".rpiv/artifacts/x.md",
 			},
 		};
-		const result = await gitCommitExtractor.extract(ctx);
+		const result = await gitCommitOutcome.extract(ctx);
 		expect(result.kind).toBe("ok");
 		if (result.kind === "ok") expect(result.payload?.artifact_path).toBe(".rpiv/artifacts/x.md");
 	});

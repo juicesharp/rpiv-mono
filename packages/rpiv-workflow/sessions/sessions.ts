@@ -11,7 +11,7 @@
  *
  * Companion modules:
  *   - extraction.ts — extractAndValidateManifest + retry loop +
- *                     extractor helpers.
+ *                     outcome helpers.
  *   - spawn.ts      — SessionPolicyHandler + FRESH/CONTINUE handlers +
  *                     handlerFor.
  */
@@ -197,7 +197,7 @@ interface SessionOutcome {
  * `branchOffset` to the helpers that need it. The slice is no longer
  * materialised — `classifyStop` and `extractArtifactPath` both accept an
  * `offsetStart` so they skip the prior-stage prefix in place. Same offset
- * value flows through to the extractor (L6-05: initial == retry).
+ * value flows through to extract (L6-05: initial == retry).
  */
 function readSessionOutcome(ctx: RunnerCtx, branchOffset: number | undefined): SessionOutcome {
 	const branch = readBranch(ctx);

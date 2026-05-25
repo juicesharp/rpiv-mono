@@ -121,8 +121,8 @@ export interface StageSession extends SessionContext {
 	node: NodeDef;
 	/** 0-based stage index within this run — for status display + JSONL stage number. */
 	stageIndex: number;
-	/** Pre-stage snapshot result (undefined if the node's extractor has no `before`). */
-	snapshot: unknown;
+	/** Pre-stage baseline value (undefined if the node's `outcome` has no `baseline`). */
+	baseline: unknown;
 	/** Required iff `node.sessionPolicy === "continue"`. */
 	pi?: ExtensionAPI;
 	/** Only set for continue stages — branch slice offset. */
@@ -134,8 +134,8 @@ export interface StageSession extends SessionContext {
 /**
  * One unit of a fanout iteration. `label` is the user-supplied
  * disambiguating tag from `FanoutUnit.label`; it's woven into both the
- * status line (`STATUS_PHASE`) and the JSONL row (`phaseRowLabel`) so the
- * runner adds no implicit wording.
+ * status line (`STATUS_FANOUT_UNIT`) and the JSONL row (`fanoutRowLabel`)
+ * so the runner adds no implicit wording.
  */
 export interface FanoutSession extends SessionContext {
 	/** 1-based position within the run's fanout array — for halt diagnostics. */

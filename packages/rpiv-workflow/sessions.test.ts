@@ -10,7 +10,7 @@
  * Wiring strategy: every test allocates a temp cwd (audit writes JSONL there)
  * and feeds runStageSession either a `createMockSessionChain` ctx (fresh path,
  * scripted branch) or a hand-rolled RunnerCtx (continue path, outer branch).
- * Stage nodes carry custom `extractor` functions that close over an attempt
+ * Stage nodes carry custom `outcome` functions that close over an attempt
  * counter — this is how we drive retry-loop scenarios without mutating the
  * mock branch between attempts.
  */
@@ -23,7 +23,7 @@ import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { NodeDef, NodeSchema } from "./api.js";
 import { currentArtifactPath } from "./internal-utils.js";
-import type { Extractor, ExtractorCtx, ExtractorFn, ExtractorResult } from "./manifest.js";
+import type { ExtractCtx, ExtractFn, ExtractResult, Outcome } from "./manifest.js";
 import {
 	ERR_VALIDATION_FAILED,
 	MSG_STAGE_ABORTED,
@@ -78,13 +78,13 @@ const stageSession = (overrides: Partial<StageSession> & Pick<StageSession, "cwd
 	skill: "test",
 	node: node(),
 	stageIndex: 0,
-	snapshot: undefined,
+	baseline: undefined,
 	onSuccess: async () => {},
 	...overrides,
 });
 
 /** Stateful extract function: returns scripted payloads in sequence; ignores branch. */
-const scriptedExtract = (results: ExtractorResult[]): ExtractorFn => {
+const scriptedExtract = (results: ExtractResult[]): ExtractFn => {
 	let i = 0;
 	return () => {
 		const r = results[i] ?? results[results.length - 1]!;
@@ -93,10 +93,10 @@ const scriptedExtract = (results: ExtractorResult[]): ExtractorFn => {
 	};
 };
 
-/** Convenience: wrap a scripted extract fn as an Extractor (no `before`). */
-const scriptedExtractor = (results: ExtractorResult[]): Extractor => ({ extract: scriptedExtract(results) });
+/** Convenience: wrap a scripted extract fn as an Outcome (no `before`). */
+const scriptedOutcome = (results: ExtractResult[]): Outcome => ({ extract: scriptedExtract(results) });
 
-const okPayload = (data: unknown): ExtractorResult => ({
+const okPayload = (data: unknown): ExtractResult => ({
 	kind: "ok",
 	payload: { kind: "test", data: data as Record<string, unknown> },
 });
@@ -138,7 +138,7 @@ describe("sessions — validation retry loop", () => {
 			stageSession({
 				cwd: tmpDir,
 				state,
-				node: node({ outputSchema: FOO_EQ_2_SCHEMA, extractor: scriptedExtractor([okPayload({ foo: 2 })]) }),
+				node: node({ outputSchema: FOO_EQ_2_SCHEMA, outcome: scriptedOutcome([okPayload({ foo: 2 })]) }),
 				onSuccess,
 			}),
 		);
@@ -165,7 +165,7 @@ describe("sessions — validation retry loop", () => {
 				node: node({
 					outputSchema: FOO_EQ_2_SCHEMA,
 					maxValidationRetries: 2,
-					extractor: scriptedExtractor([okPayload({ foo: 1 }), okPayload({ foo: 2 })]),
+					outcome: scriptedOutcome([okPayload({ foo: 1 }), okPayload({ foo: 2 })]),
 				}),
 				onSuccess,
 			}),
@@ -198,7 +198,7 @@ describe("sessions — validation retry loop", () => {
 					outputSchema: FOO_EQ_2_SCHEMA,
 					maxValidationRetries: 1,
 					// Always invalid → 1 retry attempt then exhaustion.
-					extractor: scriptedExtractor([okPayload({ foo: 1 })]),
+					outcome: scriptedOutcome([okPayload({ foo: 1 })]),
 				}),
 				onSuccess,
 				onFailure,
@@ -218,7 +218,7 @@ describe("sessions — validation retry loop", () => {
 			steps: [{ branch: [mockAssistantMessage("done")] }],
 		});
 		const extract = vi.fn(scriptedExtract([okPayload({ foo: 1 })]));
-		const extractor: Extractor = { extract };
+		const outcome: Outcome = { extract };
 
 		await runStageSession(
 			chain.ctx as RunnerCtx,
@@ -229,7 +229,7 @@ describe("sessions — validation retry loop", () => {
 					outputSchema: FOO_EQ_2_SCHEMA,
 					// Far above ceiling — must clamp to MAX_VALIDATION_RETRIES.
 					maxValidationRetries: MAX_VALIDATION_RETRIES + 50,
-					extractor,
+					outcome,
 				}),
 			}),
 		);
@@ -241,13 +241,13 @@ describe("sessions — validation retry loop", () => {
 		expect(retries).toHaveLength(MAX_VALIDATION_RETRIES);
 	});
 
-	it("onValidationFailure='halt' skips retries — extractor called once, exhausted immediately", async () => {
+	it("onValidationFailure='halt' skips retries — outcome called once, exhausted immediately", async () => {
 		const chain = createMockSessionChain({
 			cwd: tmpDir,
 			steps: [{ branch: [mockAssistantMessage("done")] }],
 		});
 		const extract = vi.fn(scriptedExtract([okPayload({ foo: 1 })]));
-		const extractor: Extractor = { extract };
+		const outcome: Outcome = { extract };
 		const onFailure = vi.fn();
 
 		await runStageSession(
@@ -259,7 +259,7 @@ describe("sessions — validation retry loop", () => {
 					outputSchema: FOO_EQ_2_SCHEMA,
 					onValidationFailure: "halt",
 					maxValidationRetries: 3,
-					extractor,
+					outcome,
 				}),
 				onFailure,
 			}),
@@ -318,7 +318,7 @@ describe("sessions — validation retry loop", () => {
 					outputSchema: FOO_EQ_2_SCHEMA,
 					maxValidationRetries: 1,
 					validationRetryTimeoutMs: 1_000,
-					extractor: scriptedExtractor([okPayload({ foo: 1 })]),
+					outcome: scriptedOutcome([okPayload({ foo: 1 })]),
 				}),
 				onFailure,
 			}),
@@ -330,7 +330,7 @@ describe("sessions — validation retry loop", () => {
 		expect(chain.notifications.some((n) => n.msg === MSG_STAGE_FAILED("test"))).toBe(true);
 	}, 5_000);
 
-	it("extractor returning {fatal} on retry → halts with that message", async () => {
+	it("outcome returning {fatal} on retry → halts with that message", async () => {
 		const chain = createMockSessionChain({
 			cwd: tmpDir,
 			steps: [{ branch: [mockAssistantMessage("done")] }],
@@ -346,9 +346,9 @@ describe("sessions — validation retry loop", () => {
 				node: node({
 					outputSchema: FOO_EQ_2_SCHEMA,
 					maxValidationRetries: 2,
-					extractor: scriptedExtractor([
+					outcome: scriptedOutcome([
 						okPayload({ foo: 1 }),
-						{ kind: "fatal", message: "extractor blew up mid-retry" },
+						{ kind: "fatal", message: "outcome blew up mid-retry" },
 					]),
 				}),
 				onFailure,
@@ -356,10 +356,10 @@ describe("sessions — validation retry loop", () => {
 		);
 
 		expect(onFailure).toHaveBeenCalledTimes(1);
-		expect(state.termination.error).toContain("extractor blew up mid-retry");
+		expect(state.termination.error).toContain("outcome blew up mid-retry");
 	});
 
-	it("extractor returning undefined payload on retry → fatal with explicit message", async () => {
+	it("outcome returning undefined payload on retry → fatal with explicit message", async () => {
 		const chain = createMockSessionChain({
 			cwd: tmpDir,
 			steps: [{ branch: [mockAssistantMessage("done")] }],
@@ -375,7 +375,7 @@ describe("sessions — validation retry loop", () => {
 				node: node({
 					outputSchema: FOO_EQ_2_SCHEMA,
 					maxValidationRetries: 2,
-					extractor: scriptedExtractor([
+					outcome: scriptedOutcome([
 						okPayload({ foo: 1 }),
 						{ kind: "ok", payload: undefined }, // ok-no-payload on retry — sessions.ts must synthesize fatal
 					]),
@@ -385,7 +385,7 @@ describe("sessions — validation retry loop", () => {
 		);
 
 		expect(onFailure).toHaveBeenCalledTimes(1);
-		expect(state.termination.error).toMatch(/extractor returned no manifest on retry 1/);
+		expect(state.termination.error).toMatch(/outcome returned no manifest on retry 1/);
 	});
 
 	it("clamps validationRetryTimeoutMs above ceiling", async () => {
@@ -405,7 +405,7 @@ describe("sessions — validation retry loop", () => {
 					outputSchema: FOO_EQ_2_SCHEMA,
 					maxValidationRetries: 1,
 					validationRetryTimeoutMs: MAX_VALIDATION_RETRY_TIMEOUT_MS * 100,
-					extractor: scriptedExtractor([okPayload({ foo: 1 }), okPayload({ foo: 2 })]),
+					outcome: scriptedOutcome([okPayload({ foo: 1 }), okPayload({ foo: 2 })]),
 				}),
 			}),
 		);
@@ -451,7 +451,7 @@ describe("sessions — validation retry loop", () => {
 			stageSession({
 				cwd: tmpDir,
 				state,
-				node: node({ outputSchema: asyncSchema, extractor: scriptedExtractor([okPayload({ foo: 2 })]) }),
+				node: node({ outputSchema: asyncSchema, outcome: scriptedOutcome([okPayload({ foo: 2 })]) }),
 				onSuccess,
 				onFailure,
 			}),
@@ -479,35 +479,35 @@ describe("sessions — validation retry loop", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Group 2 — extractor resolution (resolveExtractor)
+// Group 2 — outcome resolution (resolveExtractor)
 // ---------------------------------------------------------------------------
 
-describe("sessions — extractor resolution", () => {
+describe("sessions — outcome resolution", () => {
 	let tmpDir: string;
 
 	beforeEach(() => {
-		tmpDir = mkdtempSync(join(tmpdir(), "rpiv-sessions-extractor-"));
+		tmpDir = mkdtempSync(join(tmpdir(), "rpiv-sessions-outcome-"));
 	});
 	afterEach(() => {
 		rmSync(tmpDir, { recursive: true, force: true });
 	});
 
-	it("explicit node.extractor wins over completionStrategy default", async () => {
+	it("explicit node.outcome wins over completionStrategy default", async () => {
 		const chain = createMockSessionChain({
 			cwd: tmpDir,
 			steps: [{ branch: [mockAssistantMessage("done")] }],
 		});
 		const explicitExtract = vi.fn(scriptedExtract([okPayload({ tag: "explicit" })]));
-		const explicit: Extractor = { extract: explicitExtract };
+		const explicit: Outcome = { extract: explicitExtract };
 
 		await runStageSession(
 			chain.ctx as RunnerCtx,
 			stageSession({
 				cwd: tmpDir,
 				state: freshRunState(),
-				// artifact-emit would default to artifactMdExtractor (which would fatal — no
-				// .rpiv/artifacts/... in the branch). The explicit extractor MUST win.
-				node: node({ completionStrategy: "artifact-emit", extractor: explicit }),
+				// artifact-emit would default to artifactMdOutcome (which would fatal — no
+				// .rpiv/artifacts/... in the branch). The explicit outcome MUST win.
+				node: node({ completionStrategy: "artifact-emit", outcome: explicit }),
 			}),
 		);
 
@@ -515,7 +515,7 @@ describe("sessions — extractor resolution", () => {
 		expect(chain.notifications.some((n) => n.msg === MSG_STAGE_COMPLETE("test"))).toBe(true);
 	});
 
-	it("artifact-emit default routes to artifactMdExtractor (fatal when no artifact in branch)", async () => {
+	it("artifact-emit default routes to artifactMdOutcome (fatal when no artifact in branch)", async () => {
 		const chain = createMockSessionChain({
 			cwd: tmpDir,
 			steps: [{ branch: [mockAssistantMessage("no artifact mentioned here")] }],
@@ -537,7 +537,7 @@ describe("sessions — extractor resolution", () => {
 		expect(state.termination.error).toMatch(/finished without producing a \.rpiv\/artifacts/);
 	});
 
-	it("agent-end default routes to sideEffectExtractor (inherits prior artifact path)", async () => {
+	it("agent-end default routes to sideEffectOutcome (inherits prior artifact path)", async () => {
 		const chain = createMockSessionChain({
 			cwd: tmpDir,
 			steps: [{ branch: [mockAssistantMessage("done")] }],
@@ -556,16 +556,16 @@ describe("sessions — extractor resolution", () => {
 		);
 
 		expect(onSuccess).toHaveBeenCalledTimes(1);
-		// sideEffectExtractor pulls currentArtifactPath(state) into
+		// sideEffectOutcome pulls currentArtifactPath(state) into
 		// manifest.artifact_path; recordStageSuccess then sets state.manifest.
 		expect(state.manifest?.artifact_path).toBe(".rpiv/artifacts/research/r.md");
 	});
 });
 
 // ---------------------------------------------------------------------------
-// Group 3 — ExtractorCtx contract (readSessionOutcome + buildExtractorCtx)
+// Group 3 — ExtractCtx contract (readSessionOutcome + buildExtractCtx)
 //
-// Post-L6-05: ExtractorCtx.branch is ALWAYS the full unsliced branch;
+// Post-L6-05: ExtractCtx.branch is ALWAYS the full unsliced branch;
 // branchOffset is ALWAYS the policy-derived offset (continue → captured
 // stage offset; fresh → undefined). Extractors slice on demand via the
 // `offsetStart` parameter on `extractArtifactPath` / `classifyStop`. The
@@ -573,7 +573,7 @@ describe("sessions — extractor resolution", () => {
 // the closed-I4 defect cannot re-introduce by construction.
 // ---------------------------------------------------------------------------
 
-describe("sessions — extractor ctx (always-unsliced branch + policy-derived offset)", () => {
+describe("sessions — outcome ctx (always-unsliced branch + policy-derived offset)", () => {
 	let tmpDir: string;
 
 	beforeEach(() => {
@@ -584,8 +584,8 @@ describe("sessions — extractor ctx (always-unsliced branch + policy-derived of
 	});
 
 	it("continue policy: full unsliced branch + branchOffset = captured stage offset", async () => {
-		const captured: ExtractorCtx[] = [];
-		const recordingExtractor: Extractor = {
+		const captured: ExtractCtx[] = [];
+		const recordingOutcome: Outcome = {
 			extract: (ctx) => {
 				captured.push(ctx);
 				return okPayload({});
@@ -610,7 +610,7 @@ describe("sessions — extractor ctx (always-unsliced branch + policy-derived of
 			stageSession({
 				cwd: tmpDir,
 				state: freshRunState(),
-				node: node({ sessionPolicy: "continue", extractor: recordingExtractor }),
+				node: node({ sessionPolicy: "continue", outcome: recordingOutcome }),
 				branchOffset: priorPrefix.length,
 				pi: mockPi,
 			}),
@@ -630,9 +630,9 @@ describe("sessions — extractor ctx (always-unsliced branch + policy-derived of
 		// asymmetric pair that could re-introduce the I4 defect if a future
 		// refactor changed one path without the other.
 		// Post-L6-05: both extractions emit identical `(full branch, captured offset)`.
-		const captured: ExtractorCtx[] = [];
+		const captured: ExtractCtx[] = [];
 		let firstCall = true;
-		const failThenPassExtractor: Extractor = {
+		const failThenPassOutcome: Outcome = {
 			extract: (ctx) => {
 				captured.push(ctx);
 				// First call: schema-invalid → triggers retry.
@@ -663,7 +663,7 @@ describe("sessions — extractor ctx (always-unsliced branch + policy-derived of
 				node: node({
 					sessionPolicy: "continue",
 					outputSchema: FOO_EQ_2_SCHEMA,
-					extractor: failThenPassExtractor,
+					outcome: failThenPassOutcome,
 				}),
 				branchOffset: priorPrefix.length,
 				pi: mockPi,
@@ -681,8 +681,8 @@ describe("sessions — extractor ctx (always-unsliced branch + policy-derived of
 	});
 
 	it("fresh policy: full branch + branchOffset undefined (handler forces undefined regardless of stage carry)", async () => {
-		const captured: ExtractorCtx[] = [];
-		const recordingExtractor: Extractor = {
+		const captured: ExtractCtx[] = [];
+		const recordingOutcome: Outcome = {
 			extract: (ctx) => {
 				captured.push(ctx);
 				return okPayload({});
@@ -696,7 +696,7 @@ describe("sessions — extractor ctx (always-unsliced branch + policy-derived of
 			stageSession({
 				cwd: tmpDir,
 				state: freshRunState(),
-				node: node({ sessionPolicy: "fresh", extractor: recordingExtractor }),
+				node: node({ sessionPolicy: "fresh", outcome: recordingOutcome }),
 				// Stage's captured offset is set artificially here; in production
 				// `computeBranchOffset` returns undefined for fresh stages anyway.
 				// The handler short-circuits — fresh ALWAYS emits `undefined`.
@@ -827,7 +827,7 @@ describe("sessions — success persistence", () => {
 		});
 		const state = freshRunState();
 
-		// Extractor declares a DIFFERENT artifact_path than what the transcript holds —
+		// Outcome declares a DIFFERENT artifact_path than what the transcript holds —
 		// manifest's path is the authoritative source.
 		const manifestPath = ".rpiv/artifacts/research/from-manifest.md";
 		await runStageSession(
@@ -837,7 +837,7 @@ describe("sessions — success persistence", () => {
 				state,
 				node: node({
 					completionStrategy: "agent-end",
-					extractor: {
+					outcome: {
 						extract: () => ({ kind: "ok", payload: { kind: "test", artifact_path: manifestPath, data: {} } }),
 					},
 				}),
@@ -860,7 +860,7 @@ describe("sessions — success persistence", () => {
 			stageSession({
 				cwd: tmpDir,
 				state,
-				// agent-end + sideEffectExtractor leaves artifact_path = currentArtifactPath(state) (undefined),
+				// agent-end + sideEffectOutcome leaves artifact_path = currentArtifactPath(state) (undefined),
 				// so no manifest is set; the transcript-extracted path lands in fallbackArtifactPath.
 				node: node({ completionStrategy: "agent-end" }),
 			}),
@@ -1006,7 +1006,7 @@ describe("sessions — halt routing", () => {
 		expect(rows[0]?.status).toBe("aborted");
 	});
 
-	it("extractor fatal (no validation) → MSG_STAGE_FAILED notify + raw extractor message", async () => {
+	it("outcome fatal (no validation) → MSG_STAGE_FAILED notify + raw outcome message", async () => {
 		const chain = createMockSessionChain({
 			cwd: tmpDir,
 			steps: [{ branch: [mockAssistantMessage("done")] }],
@@ -1021,7 +1021,7 @@ describe("sessions — halt routing", () => {
 				state,
 				node: node({
 					completionStrategy: "agent-end",
-					extractor: { extract: () => ({ kind: "fatal", message: "extractor said no" }) },
+					outcome: { extract: () => ({ kind: "fatal", message: "outcome said no" }) },
 				}),
 				onFailure,
 			}),
@@ -1029,6 +1029,6 @@ describe("sessions — halt routing", () => {
 
 		expect(onFailure).toHaveBeenCalledTimes(1);
 		expect(chain.notifications.some((n) => n.msg === MSG_STAGE_FAILED("test"))).toBe(true);
-		expect(state.termination.error).toBe("extractor said no");
+		expect(state.termination.error).toBe("outcome said no");
 	});
 });

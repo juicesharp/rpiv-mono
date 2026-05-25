@@ -1,15 +1,15 @@
 /**
- * Manifest types — the inter-stage data channel. A manifest is extracted
- * by the runner (not authored by the agent), flows through RunState, and
- * is persisted to the JSONL audit log.
+ * Manifest types — the inter-stage data channel. A manifest is produced
+ * by an outcome's `extract` (not authored by the agent), flows through
+ * RunState, and is persisted to the JSONL audit log.
  *
  * Audience: predicate authors and downstream-node authors reading
- * `manifest.data`. The extractor authoring surface (the API a custom
- * `Extractor` implements) lives in `extractor-types.ts`.
+ * `manifest.data`. The outcome authoring surface (the API a custom
+ * `Outcome` implements) lives in `outcome-types.ts`.
  */
 
-import type { ExtractorPayload } from "./extractor-types.js";
-import type { GitCommitData } from "./extractors/git-commit.js";
+import type { ExtractPayload } from "./outcome-types.js";
+import type { GitCommitData } from "./outcomes/git-commit.js";
 
 // ---------------------------------------------------------------------------
 // Manifest envelope
@@ -38,8 +38,8 @@ export interface Manifest<K extends string = string, D = unknown> {
 //
 // Aliases enable consumer-side tagged-union narrowing on `manifest.kind` —
 // the value of the abstraction is the narrowing pattern, not the count of
-// current importers. Data shapes live with their producing extractors;
-// `GitCommitData` is sourced from `extractors/git-commit.ts` (type-only
+// current importers. Data shapes live with their producing outcomes;
+// `GitCommitData` is sourced from `outcomes/git-commit.ts` (type-only
 // import — no runtime cycle).
 // ---------------------------------------------------------------------------
 
@@ -48,28 +48,28 @@ export type SideEffectManifest = Manifest<"side-effect", Record<string, never>>;
 export type GitCommitManifest = Manifest<"git-commit", GitCommitData>;
 
 // ---------------------------------------------------------------------------
-// Extractor types — re-exported here so consumers can `import { Extractor,
-// ExtractorCtx, ... } from "../manifest.js"` without rewriting every site.
-// The canonical definitions live in `extractor-types.ts`; new code can
+// Outcome types — re-exported here so consumers can `import { Outcome,
+// ExtractCtx, ... } from "../manifest.js"` without rewriting every site.
+// The canonical definitions live in `outcome-types.ts`; new code can
 // import from there directly.
 // ---------------------------------------------------------------------------
 
 export type {
-	Extractor,
-	ExtractorCtx,
-	ExtractorFn,
-	ExtractorPayload,
-	ExtractorResult,
-	SnapshotCtx,
-	SnapshotFn,
-} from "./extractor-types.js";
+	BaselineCtx,
+	BaselineFn,
+	ExtractCtx,
+	ExtractFn,
+	ExtractPayload,
+	ExtractResult,
+	Outcome,
+} from "./outcome-types.js";
 
 // ---------------------------------------------------------------------------
 // Manifest construction
 // ---------------------------------------------------------------------------
 
 /** Single source of manifest metadata authorship. */
-export function finalizeManifest(payload: ExtractorPayload, meta: ManifestMeta): Manifest {
+export function finalizeManifest(payload: ExtractPayload, meta: ManifestMeta): Manifest {
 	return {
 		kind: payload.kind,
 		artifact_path: payload.artifact_path,

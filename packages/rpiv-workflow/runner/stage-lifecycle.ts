@@ -1,7 +1,7 @@
 /**
  * Per-stage lifecycle: resolve the stage node, run the preflight pipeline,
- * prepare the prompt + status + branchOffset, capture the extractor's
- * before-snapshot, and hand off to `runStageSession`.
+ * prepare the prompt + status + branchOffset, capture the outcome's
+ * baseline, and hand off to `runStageSession`.
  *
  * Owns the typed-throw preflight machinery (`StagePreflightError`,
  * `PreflightCheck`, `PRE_PROMPT_CHECKS`, `POST_PROMPT_CHECKS`) and the
@@ -96,7 +96,7 @@ function buildPrompt(skill: string, inputForStage: string): string {
  *   3. prompt + status + branchOffset prep.
  *   4. POST_PROMPT_CHECKS        — preflights gated on prompt-prep state.
  *      a. ensureInputValid       — halt: upstream manifest fails inputSchema.
- *   5. captureStageSnapshot      — extractor.before hook (must run before
+ *   5. captureStageBaseline      — outcome.baseline hook (must run before
  *                                  the Pi session so post-stage diffs work).
  *
  * Each `PreflightCheck` throws `StagePreflightError` on failure;
@@ -116,7 +116,7 @@ export async function runStage(curCtx: RunnerCtx, currentName: string, idx: numb
 
 	for (const check of POST_PROMPT_CHECKS) check.run(stage, run);
 
-	const snapshot = await captureStageSnapshot(stage.node, idx, run);
+	const baseline = await captureStageBaseline(stage.node, idx, run);
 
 	await runStageSession(curCtx, {
 		cwd: run.cwd,
@@ -126,7 +126,7 @@ export async function runStage(curCtx: RunnerCtx, currentName: string, idx: numb
 		skill: stage.skill,
 		node: stage.node,
 		stageIndex: idx,
-		snapshot,
+		baseline,
 		pi: run.pi,
 		branchOffset,
 		onFailure: (freshCtx) => notifyPartialArtifacts(freshCtx, run.cwd, run.runId),
@@ -258,11 +258,11 @@ function ensureInputValid(stage: ResolvedStage, run: RunContext): void {
 	);
 }
 
-async function captureStageSnapshot(node: NodeDef, idx: number, run: RunContext): Promise<unknown> {
-	const before = node.extractor?.before;
-	if (!before) return undefined;
+async function captureStageBaseline(node: NodeDef, idx: number, run: RunContext): Promise<unknown> {
+	const baseline = node.outcome?.baseline;
+	if (!baseline) return undefined;
 	try {
-		return await before({
+		return await baseline({
 			cwd: run.cwd,
 			runId: run.runId,
 			stageIndex: idx,
@@ -270,7 +270,7 @@ async function captureStageSnapshot(node: NodeDef, idx: number, run: RunContext)
 			pi: run.pi,
 		});
 	} catch {
-		// Snapshot failure doesn't prevent stage execution.
+		// Baseline capture failure doesn't prevent stage execution.
 		return undefined;
 	}
 }

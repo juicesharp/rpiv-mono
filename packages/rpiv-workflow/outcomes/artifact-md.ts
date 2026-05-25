@@ -1,5 +1,5 @@
 /**
- * Default extractor for artifact-emit nodes.
+ * Default outcome for artifact-emit nodes.
  *
  * Uses the existing extractArtifactPath regex to find the artifact path in
  * the transcript, then parses frontmatter from the file on disk via
@@ -11,7 +11,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
 import { ARTIFACT_PATH_DESCRIPTION } from "../artifacts-layout.js";
 import { resolveUnderCwd } from "../internal-utils.js";
-import type { Extractor } from "../manifest.js";
+import type { Outcome } from "../manifest.js";
 import { extractArtifactPath } from "../transcript.js";
 
 /** Error when the stage produced no artifact path in the transcript. */
@@ -30,12 +30,12 @@ const ERR_FILE_MISSING = (path: string) => `agent announced ${path} but file doe
  * 3. If path found but file doesn't exist → fatal (agent announced but never wrote).
  * 4. If file exists → parse frontmatter, return artifact-md manifest.
  *
- * No `before` — artifact-emit nodes have no pre-stage state to capture.
+ * No `baseline` — artifact-emit nodes have no pre-stage state to capture.
  * Frontmatter is `Record<string, unknown>` because parseFrontmatter
  * narrows from arbitrary YAML; downstream nodes that read it should
  * declare an `inputSchema` for typed narrowing.
  */
-export const artifactMdExtractor: Extractor<undefined, "artifact-md", Record<string, unknown>> = {
+export const artifactMdOutcome: Outcome<undefined, "artifact-md", Record<string, unknown>> = {
 	extract(ctx) {
 		const artifactPath = extractArtifactPath(ctx.branch, ctx.branchOffset);
 

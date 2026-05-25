@@ -1,7 +1,7 @@
 /**
  * Session policy dispatch. Owns the three policy-specific decisions the
  * stage / phase machinery has to make per session: which branch offset
- * the extractor sees, how the session is opened, and how an
+ * the outcome sees, how the session is opened, and how an
  * already-established session is sent to.
  *
  * Two handlers — `FRESH_HANDLER` and `CONTINUE_HANDLER` — implement the
@@ -17,7 +17,7 @@ import type { RunnerCtx } from "../types.js";
  * Three policy-specific decisions that used to live as five ternaries
  * scattered across sessions.ts:
  *
- *   - `branchOffset(captured)` — the offset extractors apply to skip
+ *   - `branchOffset(captured)` — the offset outcomes apply to skip
  *     the prior-stage prefix in continue sessions. Fresh ignores the
  *     stage-side captured value (it's `undefined` from
  *     `computeBranchOffset` for fresh stages anyway); continue returns
