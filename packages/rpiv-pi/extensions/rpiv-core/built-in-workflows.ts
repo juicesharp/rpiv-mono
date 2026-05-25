@@ -37,7 +37,7 @@ const smallWorkflow = defineWorkflow({
 	start: "blueprint",
 	nodes: {
 		blueprint: artifact(),
-		implement: action(),
+		implement: action({ fanout: { kind: "plan-phases" } }),
 		validate: artifact(),
 	},
 	edges: {
@@ -58,11 +58,11 @@ const midWorkflow = defineWorkflow({
 	nodes: {
 		research: artifact(),
 		blueprint: artifact(),
-		implement: action(),
+		implement: action({ fanout: { kind: "plan-phases" } }),
 		validate: artifact(),
 		"code-review": artifact({ outputSchema: CODE_REVIEW_SCHEMA }),
 		revise: artifact(),
-		"implement-after-revise": action({ skill: "implement" }),
+		"implement-after-revise": action({ skill: "implement", fanout: { kind: "plan-phases" } }),
 		commit: action({ extractor: gitCommitExtractor }),
 	},
 	edges: {
@@ -89,12 +89,12 @@ const largeWorkflow = defineWorkflow({
 		research: artifact(),
 		design: artifact(),
 		plan: artifact(),
-		implement: action(),
+		implement: action({ fanout: { kind: "plan-phases" } }),
 		validate: artifact(),
 		"code-review-large": artifact({ skill: "code-review", outputSchema: CODE_REVIEW_SCHEMA }),
 		"design-after-review": artifact({ skill: "design" }),
 		"plan-after-review": artifact({ skill: "plan" }),
-		"implement-after-review": action({ skill: "implement" }),
+		"implement-after-review": action({ skill: "implement", fanout: { kind: "plan-phases" } }),
 		commit: action({ extractor: gitCommitExtractor }),
 	},
 	edges: {

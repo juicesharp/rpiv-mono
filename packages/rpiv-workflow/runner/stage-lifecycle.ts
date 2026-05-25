@@ -145,16 +145,18 @@ function resolveStageNode(currentName: string, idx: number, run: RunContext): Re
 }
 
 /**
- * An implement skill against a plan with `## Phase N:` headings expands
- * into one session per phase. Keyed on the *resolved* skill body so aliased
- * implement nodes (implement-after-revise, etc.) fan out too — the alias
- * sets `node.skill = "implement"` while keeping a distinct node name for
- * routing. Returns true iff fanout fired — caller then returns without
- * running the single-stage path.
+ * A node that opts into `fanout: { kind: "plan-phases" }` expands into one
+ * session per `## Phase N:` heading found in the inherited artifact. The
+ * decision is keyed on the node's authoring surface — NOT on the skill
+ * name — so the package stays skill-agnostic: any node a workflow author
+ * declares with `fanout: { kind: "plan-phases" }` fans out, regardless of
+ * whether the underlying skill is `implement`, `apply`, or anything else.
+ * Returns true iff fanout fired — caller then returns without running the
+ * single-stage path.
  */
 async function tryPhaseFanout(curCtx: RunnerCtx, stage: ResolvedStage, idx: number, run: RunContext): Promise<boolean> {
 	const current = currentArtifactPath(run.state);
-	if (!(stage.skill === "implement" && current)) return false;
+	if (!(stage.node.fanout?.kind === "plan-phases" && current)) return false;
 	const phaseCount = countPhases(current, run.cwd);
 	if (phaseCount === 0) return false;
 	await runImplementPhases(curCtx, idx, stage.name, stage.skill, 1, phaseCount, run, {
@@ -220,10 +222,10 @@ function ensureUpstreamArtifact(stage: ResolvedStage, run: RunContext): void {
 }
 
 function enforceSessionInvariants(stage: ResolvedStage, run: RunContext): void {
-	if (stage.skill === "implement" && stage.node.sessionPolicy === "continue") {
+	if (stage.node.fanout && stage.node.sessionPolicy === "continue") {
 		const reason =
-			`runStage: implement node "${stage.name}" cannot use sessionPolicy "continue" — ` +
-			"phase fanout requires per-phase session isolation";
+			`runStage: node "${stage.name}" cannot combine fanout with sessionPolicy "continue" — ` +
+			"fanout requires per-unit session isolation";
 		throw new StagePreflightError("invariant", stage.name, MSG_STAGE_THREW(stage.name, reason), reason, false);
 	}
 	if (stage.node.sessionPolicy === "continue" && !run.pi) {

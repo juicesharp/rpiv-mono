@@ -388,7 +388,9 @@ describe("runWorkflow", () => {
 		});
 
 		const result = await runWorkflow(chain.ctx, {
-			workflow: wf("rip", ["research", "implement"]),
+			workflow: wf("rip", ["research", "implement"], {
+				implement: { fanout: { kind: "plan-phases" } },
+			}),
 			input: "x",
 		});
 
@@ -572,7 +574,9 @@ describe("runWorkflow", () => {
 		});
 
 		const result = await runWorkflow(chain.ctx, {
-			workflow: wf("rip", ["research", "implement"]),
+			workflow: wf("rip", ["research", "implement"], {
+				implement: { fanout: { kind: "plan-phases" } },
+			}),
 			input: "x",
 		});
 
@@ -823,7 +827,7 @@ describe("runWorkflow", () => {
 		// runStageOrRecordFailure now translates them into a recorded failure row
 		// + a populated error envelope, so the result describes the failure
 		// rather than the caller having to catch a stack trace.
-		it("records a failure row when implement node has sessionPolicy continue (no throw escapes)", async () => {
+		it("records a failure row when fanout node has sessionPolicy continue (no throw escapes)", async () => {
 			const chain = createMockSessionChain({
 				cwd: tmpDir,
 				steps: [],
@@ -831,13 +835,15 @@ describe("runWorkflow", () => {
 			});
 
 			const result = await runWorkflow(chain.ctx, {
-				workflow: wf("ic", ["implement"], { implement: { sessionPolicy: "continue" } }),
+				workflow: wf("ic", ["implement"], {
+					implement: { sessionPolicy: "continue", fanout: { kind: "plan-phases" } },
+				}),
 				input: "x",
 				pi: chain.pi,
 			});
 
 			expect(result.success).toBe(false);
-			expect(result.error).toMatch(/cannot use sessionPolicy.*continue/);
+			expect(result.error).toMatch(/cannot combine fanout with sessionPolicy.*continue/);
 
 			// JSONL now carries a row attributed to the failing stage —
 			// no orphan header-only file.
@@ -886,21 +892,21 @@ describe("runWorkflow", () => {
 				pi: mockPi.pi,
 			});
 
-			// research succeeds (fresh policy). implement has sessionPolicy:
-			// continue — a separate invariant (implement can't combine with
-			// continue) that throws inside enforceSessionInvariants when stage 2
-			// is invoked. pi is provided so the preflight (which gates only on
-			// missing pi) lets the run reach the mid-chain throw.
+			// research succeeds (fresh policy). implement opts into fanout and
+			// uses sessionPolicy: continue — a separate invariant (fanout can't
+			// combine with continue) that throws inside enforceSessionInvariants
+			// when stage 2 is invoked. pi is provided so the preflight (which
+			// gates only on missing pi) lets the run reach the mid-chain throw.
 			const result = await runWorkflow(chain.ctx, {
 				workflow: wf("midthrow", ["research", "implement"], {
-					implement: { sessionPolicy: "continue" },
+					implement: { sessionPolicy: "continue", fanout: { kind: "plan-phases" } },
 				}),
 				input: "x",
 				pi: mockPi.pi,
 			});
 
 			expect(result.success).toBe(false);
-			expect(result.error).toMatch(/cannot use sessionPolicy.*continue/);
+			expect(result.error).toMatch(/cannot combine fanout with sessionPolicy.*continue/);
 
 			const { stages } = readState(tmpDir);
 			const completedRows = stages.filter((s) => s.status === "completed");

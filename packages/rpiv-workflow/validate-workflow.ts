@@ -180,7 +180,7 @@ function checkNodeSemantics(w: Workflow, issues: WorkflowValidationIssue[]): voi
 		checkRetryBounds(w, name, node, issues);
 		checkTimeoutBounds(w, name, node, issues);
 		checkNodeEnums(w, name, node, issues);
-		checkImplementContinueInvariant(w, name, node, issues);
+		checkFanoutContinueInvariant(w, name, node, issues);
 		checkSchemasNotAsync(w, name, node, issues);
 	}
 }
@@ -244,24 +244,29 @@ function checkNodeEnums(w: Workflow, name: string, node: NodeDef, issues: Workfl
 }
 
 /**
- * Phase fanout for implement nodes requires per-phase session isolation —
- * `continue` would replay the prior phase's branch into the next phase's
- * session. The runner enforces this at dispatch (`enforceSessionInvariants`);
- * surfacing it at load time gives user-authored configs a targeted error
- * instead of a generic chain-advance failure on first invocation.
+ * Fanout requires per-unit session isolation — `continue` would replay the
+ * prior unit's branch into the next unit's session. The runner enforces
+ * this at dispatch (`enforceSessionInvariants`); surfacing it at load
+ * time gives user-authored configs a targeted error instead of a generic
+ * chain-advance failure on first invocation.
+ *
+ * The invariant is keyed on the node's `fanout` field — not on a skill
+ * name — keeping the package skill-agnostic: any node opting into
+ * fanout must use `sessionPolicy: "fresh"` regardless of what skill it
+ * dispatches.
  */
-function checkImplementContinueInvariant(
+function checkFanoutContinueInvariant(
 	w: Workflow,
 	name: string,
 	node: NodeDef,
 	issues: WorkflowValidationIssue[],
 ): void {
-	if ((node.skill === "implement" || name === "implement") && node.sessionPolicy === "continue") {
+	if (node.fanout && node.sessionPolicy === "continue") {
 		issues.push(
 			error(
 				w.name,
 				name,
-				`implement node "${name}" cannot use sessionPolicy "continue" — phase fanout requires per-phase session isolation`,
+				`node "${name}" cannot combine fanout with sessionPolicy "continue" — fanout requires per-unit session isolation`,
 			),
 		);
 	}

@@ -358,7 +358,7 @@ describe("[I9] phase fanout labels by skill name, not by aliased node name", () 
 			start: "research",
 			nodes: {
 				research: artifact(),
-				"implement-after-revise": action({ skill: "implement" }),
+				"implement-after-revise": action({ skill: "implement", fanout: { kind: "plan-phases" } }),
 			},
 			edges: { research: "implement-after-revise", "implement-after-revise": "stop" },
 		});

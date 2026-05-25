@@ -66,6 +66,23 @@ export type SessionPolicy = (typeof SESSION_POLICIES)[number];
 export const ON_VALIDATION_FAILURE_VALUES = ["retry", "halt"] as const;
 export type OnValidationFailure = (typeof ON_VALIDATION_FAILURE_VALUES)[number];
 
+/**
+ * Opt-in fanout descriptor attached to a node. When present, the runner
+ * detects iterable units in the upstream artifact and runs one session per
+ * unit. The skill-agnostic promise lives here: any node — not just one
+ * named `implement` — can fan out by declaring its strategy.
+ *
+ * - `"plan-phases"` — count `## Phase N:` headings in the inherited
+ *   artifact and run one session per heading. The bundled rpiv-pi
+ *   `implement` skill emits per-phase outputs against this contract.
+ *
+ * Future kinds can encode `"plan-tasks"`, `"json-array"`, etc.; the union
+ * stays closed so the runner dispatches with no fallback.
+ */
+export interface PhaseFanoutSpec {
+	kind: "plan-phases";
+}
+
 // ===========================================================================
 // Types
 // ===========================================================================
@@ -129,6 +146,13 @@ export interface NodeDef<TIn = unknown, TOut = unknown> {
 	onValidationFailure?: OnValidationFailure;
 	maxValidationRetries?: number;
 	validationRetryTimeoutMs?: number;
+	/**
+	 * Opt-in fanout. When set, the runner expands this stage into one
+	 * session per iterable unit in the inherited artifact (see
+	 * `PhaseFanoutSpec`). Incompatible with `sessionPolicy: "continue"`
+	 * — fanout requires per-unit session isolation.
+	 */
+	fanout?: PhaseFanoutSpec;
 }
 
 /**

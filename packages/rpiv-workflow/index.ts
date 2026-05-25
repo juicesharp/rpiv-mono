@@ -84,6 +84,7 @@ export {
 	type NodeSchema,
 	ON_VALIDATION_FAILURE_VALUES,
 	type OnValidationFailure,
+	type PhaseFanoutSpec,
 	READS_FRONTMATTER,
 	SESSION_POLICIES,
 	type SessionPolicy,
