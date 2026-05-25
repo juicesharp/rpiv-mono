@@ -7,6 +7,7 @@ import {
 	CMD_DESCRIPTION,
 	MSG_INTERACTIVE_ONLY,
 	MSG_LOAD_ABORTED,
+	MSG_NO_WORKFLOWS_REGISTERED,
 	MSG_WORKFLOW_NOT_FOUND,
 	MSG_WORKFLOW_THREW,
 } from "./messages.js";
@@ -56,6 +57,16 @@ async function handleWorkflowCommand(pi: ExtensionAPI, args: string, ctx: Extens
 		return;
 	}
 
+	// Standalone install: rpiv-workflow ships zero workflows; if nothing else
+	// registered one, there's nothing to run. parseArgs returns "" for the
+	// workflow name in this case (no default + first token didn't match) —
+	// surface the empty-registry verdict instead of falling through to a
+	// generic not-found notify.
+	if (!workflowName) {
+		ctx.ui.notify(MSG_NO_WORKFLOWS_REGISTERED, "error");
+		return;
+	}
+
 	const workflow = findWorkflow(loaded, workflowName);
 	if (!workflow) {
 		ctx.ui.notify(MSG_WORKFLOW_NOT_FOUND(workflowName), "error");
@@ -77,14 +88,19 @@ async function handleWorkflowCommand(pi: ExtensionAPI, args: string, ctx: Extens
 // Arg parsing (exported for tests)
 // ---------------------------------------------------------------------------
 
-/** First token is a workflow name iff recognised; otherwise the whole arg is input + default. */
+/**
+ * First token is a workflow name iff recognised; otherwise the whole arg is
+ * input bound to the resolved default. When no default is registered (the
+ * empty-registry case), the returned `workflow` is `""` and the orchestrator
+ * surfaces `MSG_NO_WORKFLOWS_REGISTERED`.
+ */
 export function parseArgs(
 	args: string,
-	loaded: { workflowNames: ReadonlySet<string>; default: string },
+	loaded: { workflowNames: ReadonlySet<string>; default: string | undefined },
 ): { workflow: string; input: string } {
 	const trimmed = args.trim();
 	if (!trimmed) {
-		return { workflow: loaded.default, input: "" };
+		return { workflow: loaded.default ?? "", input: "" };
 	}
 
 	const firstSpace = trimmed.indexOf(" ");
@@ -95,7 +111,7 @@ export function parseArgs(
 		return { workflow: firstToken, input: remaining };
 	}
 
-	return { workflow: loaded.default, input: trimmed };
+	return { workflow: loaded.default ?? "", input: trimmed };
 }
 
 // ---------------------------------------------------------------------------

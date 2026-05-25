@@ -218,3 +218,53 @@ describe("/wf — issue surfacing", () => {
 		expect(runWorkflow).not.toHaveBeenCalled();
 	});
 });
+
+// ---------------------------------------------------------------------------
+// Empty registry — standalone rpiv-workflow install (no rpiv-pi, no overlays).
+// Pre-Phase 11 the loader returned `default: "mid"` even with zero workflows;
+// the dispatch then either silently went into a not-found notify or, worse,
+// looked up "mid" in an empty map. Now: `default: undefined` and the command
+// emits an explicit "no workflows registered" notify.
+// ---------------------------------------------------------------------------
+
+describe("/wf — empty registry", () => {
+	it("emits MSG_NO_WORKFLOWS_REGISTERED when user provides input but no workflows are loaded", async () => {
+		vi.mocked(loadWorkflows).mockResolvedValueOnce({
+			workflows: [],
+			default: undefined,
+			workflowSources: new Map(),
+			layers: [],
+			issues: [],
+		});
+		const { pi, captured } = createMockPi();
+		registerWorkflowCommand(pi);
+		const ctx = createMockCommandCtx({ hasUI: true });
+		await captured.commands.get("wf")?.handler("Add dark mode", ctx);
+		expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("no workflows registered"), "error");
+		expect(runWorkflow).not.toHaveBeenCalled();
+	});
+
+	it("no-args still shows the (empty) workflow listing instead of erroring", async () => {
+		vi.mocked(loadWorkflows).mockResolvedValueOnce({
+			workflows: [],
+			default: undefined,
+			workflowSources: new Map(),
+			layers: [],
+			issues: [],
+		});
+		const { pi, captured } = createMockPi();
+		registerWorkflowCommand(pi);
+		const ctx = createMockCommandCtx({ hasUI: true });
+		await captured.commands.get("wf")?.handler("", ctx);
+		expect(ctx.ui.notify).toHaveBeenCalledWith(expect.any(String), "info");
+		expect(runWorkflow).not.toHaveBeenCalled();
+	});
+});
+
+describe("parseArgs — empty registry", () => {
+	it('returns workflow="" when no default is set and the first token doesn\'t match a workflow', () => {
+		const empty = { workflowNames: new Set<string>(), default: undefined };
+		expect(parseArgs("Add feature", empty)).toEqual({ workflow: "", input: "Add feature" });
+		expect(parseArgs("", empty)).toEqual({ workflow: "", input: "" });
+	});
+});

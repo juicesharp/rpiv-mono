@@ -119,6 +119,16 @@ export const MSG_LOAD_ABORTED = (count: number) =>
 
 export const MSG_WORKFLOW_NOT_FOUND = (name: string) => `/wf: workflow "${name}" not found`;
 
+/**
+ * No layer (built-in / user / project) contributed a workflow. Surfaced
+ * instead of trying to run with an undefined default — without rpiv-pi
+ * installed and no user overlay, the merged registry is genuinely empty
+ * and the user needs to install a sibling that bundles workflows or
+ * author one in `.rpiv-workflow/workflows.config.ts`.
+ */
+export const MSG_NO_WORKFLOWS_REGISTERED =
+	"/wf: no workflows registered — install a sibling that bundles workflows or author one in `.rpiv-workflow/workflows.config.ts`";
+
 /** Pi command registry — displayed by Pi's `/?` / command list. */
 export const CMD_DESCRIPTION = "Run a skill workflow: /wf [workflow] [description]";
 

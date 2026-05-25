@@ -22,7 +22,10 @@
  * truth per layer).
  *
  * `default` cascades layer-by-layer (project canonical > user canonical >
- * built-in `mid`); within a layer only the canonical file can set it.
+ * first registered workflow in insertion order). When no workflows are
+ * registered at all, `default` is `undefined` and `command.ts` surfaces
+ * a "no workflows registered" notify instead of running anything. Within
+ * a layer only the canonical file can set `default`.
  *
  * jiti loads `.ts` directly — no build step required of users. Loader
  * failures (file throws on import, exports the wrong shape) are captured as
@@ -43,7 +46,7 @@
  *   ./shape-guards.ts     — isWorkflow, isEnvelope, describe, formatError
  *   ./normalize.ts        — normalizeDefaultExport + NormalizeResult
  *   ./merge.ts            — LoadAccumulator, LayerOutcome, loadLayer, mergeOverlay, loadError
- *   ./resolve-default.ts  — resolveDefault + FALLBACK_DEFAULT_WORKFLOW
+ *   ./resolve-default.ts  — resolveDefault (first-workflow fallback)
  *   ./cache.ts            — mtime-keyed jiti import cache + __resetLoadCache
  */
 
@@ -76,7 +79,12 @@ export type Issue = LoadIssue | (WorkflowValidationIssue & { kind: "validation";
 
 export interface LoadedWorkflows {
 	workflows: readonly Workflow[];
-	default: string;
+	/**
+	 * Resolved default workflow name. `undefined` when no layer registered any
+	 * workflows — consumers must handle this (see `command.ts`'s
+	 * "no workflows registered" path).
+	 */
+	default: string | undefined;
 	/** Which layer each merged workflow name came from. */
 	workflowSources: ReadonlyMap<string, ConfigLayer>;
 	/** Every layer that registered at least one workflow, low-to-high. */

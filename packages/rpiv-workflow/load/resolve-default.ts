@@ -1,31 +1,30 @@
 /**
- * Default workflow resolution. Project default wins over user default
- * wins over the historic `FALLBACK_DEFAULT_WORKFLOW = "mid"` sentinel;
- * if no candidate matches, the first workflow in insertion order is
- * returned.
+ * Default workflow resolution. Project canonical default wins over user
+ * canonical default; if neither layer set one, the first workflow in
+ * insertion order (low-to-high layer: built-in → user → project) is
+ * returned. When no workflows are registered at all, returns `undefined`
+ * — `command.ts` surfaces this as a "no workflows registered" notify
+ * rather than running anything.
  *
  * Only the canonical file in each layer can set `default` — drop-in
  * `default` fields are hard-rejected at normalisation. An explicit
- * `default` that doesn't name an existing workflow records an error
- * and falls through to the next layer.
+ * `default` that doesn't name an existing workflow records an error and
+ * falls through to the next layer.
  *
- * The `FALLBACK_DEFAULT_WORKFLOW = "mid"` constant encodes a historic
- * rpiv-pi-specific bias; removal rides with Phase 11 (L3-03) — a matched
- * rpiv-pi PR will register its preferred default via the envelope at
- * extension load time.
+ * Historic note: this used to fall back to a hard-coded `"mid"` sentinel,
+ * which encoded an rpiv-pi-specific bias inside a skill-agnostic package.
+ * Removed in Phase 11 (L3-03); siblings that want to ship a preferred
+ * default set it via the canonical-file envelope at their own load time.
  */
 
 import type { ConfigLayer } from "../layers.js";
 import { type LoadAccumulator, loadError } from "./merge.js";
 
-/** Default workflow name when no overlay specifies one — matches the historic "mid". */
-export const FALLBACK_DEFAULT_WORKFLOW = "mid";
-
 export function resolveDefault(
 	projectDefault: string | undefined,
 	userDefault: string | undefined,
 	acc: LoadAccumulator,
-): string {
+): string | undefined {
 	const candidates: Array<{ name: string | undefined; layer: ConfigLayer }> = [
 		{ name: projectDefault, layer: "project" },
 		{ name: userDefault, layer: "user" },
@@ -37,10 +36,8 @@ export function resolveDefault(
 		loadError(acc, layer, undefined, `default workflow "${name}" (from ${layer} config) is not declared`);
 	}
 
-	if (acc.workflowMap.has(FALLBACK_DEFAULT_WORKFLOW)) return FALLBACK_DEFAULT_WORKFLOW;
-
-	// Last resort: first workflow we have. workflowMap is non-empty when at
-	// least one layer (built-in or overlay) contributed.
-	const first = acc.workflowMap.keys().next().value;
-	return first ?? FALLBACK_DEFAULT_WORKFLOW;
+	// Last resort: first workflow in insertion order. `Map.keys().next().value`
+	// is `undefined` for an empty map — callers must handle the "no workflows
+	// registered" case explicitly.
+	return acc.workflowMap.keys().next().value;
 }

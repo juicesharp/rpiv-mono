@@ -578,10 +578,10 @@ export default {
 		).toBe(true);
 	});
 
-	it("returns the first workflow by insertion order when no overlay sets a default and `mid` is absent", async () => {
-		// Wipe built-ins so the fallback path (workflowMap.keys().next().value)
-		// is the only candidate; otherwise the FALLBACK_DEFAULT_WORKFLOW = "mid"
-		// branch fires first.
+	it("returns the first workflow by insertion order when no overlay sets a default", async () => {
+		// Insertion order is the sole fallback after Phase 11 (L3-03) — no
+		// hard-coded "mid" sentinel sits between the explicit defaults and the
+		// insertion-order fallback.
 		__resetBuiltIns();
 		registerBuiltIns([
 			defineWorkflow({ name: "alpha", start: "x", nodes: { x: artifact() }, edges: { x: "stop" } }),
@@ -589,5 +589,17 @@ export default {
 		]);
 		const loaded = await loadWorkflows(TEST_TMP);
 		expect(loaded.default).toBe("alpha");
+	});
+
+	it("returns default=undefined when no layer registered any workflows", async () => {
+		// Standalone rpiv-workflow install (no rpiv-pi, no overlays). Pre-Phase
+		// 11 the loader returned `default: "mid"` even though no `mid` existed —
+		// command.ts now keys on `default === undefined` to surface
+		// MSG_NO_WORKFLOWS_REGISTERED instead.
+		__resetBuiltIns();
+		const loaded = await loadWorkflows(TEST_TMP);
+		expect(loaded.workflows).toHaveLength(0);
+		expect(loaded.default).toBeUndefined();
+		expect(loaded.layers).toEqual([]);
 	});
 });
