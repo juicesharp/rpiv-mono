@@ -21,6 +21,7 @@ import { registerWorkflowCommand } from "./command.js";
 export {
 	action,
 	artifact,
+	COMPLETION_STRATEGIES,
 	type CompletionStrategy,
 	definePredicate,
 	defineStatePredicate,
@@ -30,7 +31,10 @@ export {
 	type EdgeTarget,
 	type NodeDef,
 	type NodeSchema,
+	ON_VALIDATION_FAILURE_VALUES,
+	type OnValidationFailure,
 	READS_FRONTMATTER,
+	SESSION_POLICIES,
 	type SessionPolicy,
 	threshold,
 	type Workflow,

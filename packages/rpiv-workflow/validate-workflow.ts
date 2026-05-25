@@ -14,7 +14,15 @@
  * No I/O, no throws — purely a graph walk + predicate probe.
  */
 
-import { type EdgeTarget, marksFrontmatter, STOP, type Workflow } from "./api.js";
+import {
+	COMPLETION_STRATEGIES,
+	type EdgeTarget,
+	marksFrontmatter,
+	ON_VALIDATION_FAILURE_VALUES,
+	SESSION_POLICIES,
+	STOP,
+	type Workflow,
+} from "./api.js";
 import type { ConfigLayer } from "./layers.js";
 import {
 	MAX_VALIDATION_RETRIES,
@@ -191,24 +199,33 @@ function checkNodeSemantics(w: Workflow, issues: WorkflowValidationIssue[]): voi
 		}
 		if (
 			node.onValidationFailure !== undefined &&
-			node.onValidationFailure !== "retry" &&
-			node.onValidationFailure !== "halt"
+			!(ON_VALIDATION_FAILURE_VALUES as readonly string[]).includes(node.onValidationFailure)
 		) {
-			issues.push(
-				error(w.name, name, `onValidationFailure: "${node.onValidationFailure}" — must be "retry" or "halt"`),
-			);
-		}
-		if (node.completionStrategy !== "artifact-emit" && node.completionStrategy !== "agent-end") {
 			issues.push(
 				error(
 					w.name,
 					name,
-					`completionStrategy: "${node.completionStrategy}" — must be "artifact-emit" or "agent-end"`,
+					`onValidationFailure: "${node.onValidationFailure}" — must be one of ${ON_VALIDATION_FAILURE_VALUES.join(", ")}`,
 				),
 			);
 		}
-		if (node.sessionPolicy !== "fresh" && node.sessionPolicy !== "continue") {
-			issues.push(error(w.name, name, `sessionPolicy: "${node.sessionPolicy}" — must be "fresh" or "continue"`));
+		if (!(COMPLETION_STRATEGIES as readonly string[]).includes(node.completionStrategy)) {
+			issues.push(
+				error(
+					w.name,
+					name,
+					`completionStrategy: "${node.completionStrategy}" — must be one of ${COMPLETION_STRATEGIES.join(", ")}`,
+				),
+			);
+		}
+		if (!(SESSION_POLICIES as readonly string[]).includes(node.sessionPolicy)) {
+			issues.push(
+				error(
+					w.name,
+					name,
+					`sessionPolicy: "${node.sessionPolicy}" — must be one of ${SESSION_POLICIES.join(", ")}`,
+				),
+			);
 		}
 		// Phase fanout for implement nodes requires per-phase session isolation —
 		// `continue` would replay the prior phase's branch into the next phase's

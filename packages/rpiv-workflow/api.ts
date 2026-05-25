@@ -40,15 +40,31 @@ export type NodeSchema<Input = unknown, Output = Input> = StandardSchemaV1<Input
  *   The runner halts the chain if the path doesn't appear in the transcript.
  * - `"agent-end"` — action skills (commit, implement) where the side effect IS
  *   the work; the chain inherits the prior `currentArtifactPath(state)`.
+ *
+ * The `as const` array is the single source of truth: the literal-union type
+ * is derived via `(typeof ARRAY)[number]`, and `validate-workflow.ts` consumes
+ * the same array for the runtime enum check. Adding a variant updates both
+ * type-level and runtime arms in one edit.
  */
-export type CompletionStrategy = "artifact-emit" | "agent-end";
+export const COMPLETION_STRATEGIES = ["artifact-emit", "agent-end"] as const;
+export type CompletionStrategy = (typeof COMPLETION_STRATEGIES)[number];
 
 /**
  * - `"fresh"` — wraps the stage in `ctx.newSession({ withSession })`.
  * - `"continue"` — reuses the prior session via `pi.sendUserMessage()` +
  *   `ctx.waitForIdle()`; branch sliced by `branchOffset`.
  */
-export type SessionPolicy = "fresh" | "continue";
+export const SESSION_POLICIES = ["fresh", "continue"] as const;
+export type SessionPolicy = (typeof SESSION_POLICIES)[number];
+
+/**
+ * What happens when a node's `outputSchema` rejects the extracted manifest:
+ * - `"retry"` — re-invoke the stage up to `maxValidationRetries`, threading
+ *   the schema's issues back to the agent via a retry prompt.
+ * - `"halt"` — record a terminal failure on the first rejection.
+ */
+export const ON_VALIDATION_FAILURE_VALUES = ["retry", "halt"] as const;
+export type OnValidationFailure = (typeof ON_VALIDATION_FAILURE_VALUES)[number];
 
 // ===========================================================================
 // Types
@@ -110,7 +126,7 @@ export interface NodeDef {
 	extractor?: Extractor;
 	outputSchema?: NodeSchema;
 	inputSchema?: NodeSchema;
-	onValidationFailure?: "retry" | "halt";
+	onValidationFailure?: OnValidationFailure;
 	maxValidationRetries?: number;
 	validationRetryTimeoutMs?: number;
 }
