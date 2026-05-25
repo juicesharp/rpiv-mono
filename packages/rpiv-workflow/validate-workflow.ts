@@ -18,6 +18,7 @@ import {
 	COMPLETION_STRATEGIES,
 	type EdgeTarget,
 	marksFrontmatter,
+	type NodeDef,
 	ON_VALIDATION_FAILURE_VALUES,
 	SESSION_POLICIES,
 	STOP,
@@ -170,100 +171,121 @@ function checkReachability(w: Workflow, issues: WorkflowValidationIssue[]): void
  * Per-node semantic checks — bounds and enums that the TS type system narrows
  * at edit time but jiti erases at runtime. A user-authored config can ship any
  * numeric `maxValidationRetries` or any string for `onValidationFailure`; this
- * pass catches them at load time.
+ * pass catches them at load time. Each check is a focused helper so the
+ * orchestrator reads top-down and individual rules can be exercised in
+ * isolation.
  */
 function checkNodeSemantics(w: Workflow, issues: WorkflowValidationIssue[]): void {
 	for (const [name, node] of Object.entries(w.nodes)) {
-		if (
-			node.maxValidationRetries !== undefined &&
-			(node.maxValidationRetries < MIN_VALIDATION_RETRIES || node.maxValidationRetries > MAX_VALIDATION_RETRIES)
-		) {
+		checkRetryBounds(w, name, node, issues);
+		checkTimeoutBounds(w, name, node, issues);
+		checkNodeEnums(w, name, node, issues);
+		checkImplementContinueInvariant(w, name, node, issues);
+		checkSchemasNotAsync(w, name, node, issues);
+	}
+}
+
+function checkRetryBounds(w: Workflow, name: string, node: NodeDef, issues: WorkflowValidationIssue[]): void {
+	if (node.maxValidationRetries === undefined) return;
+	if (node.maxValidationRetries < MIN_VALIDATION_RETRIES || node.maxValidationRetries > MAX_VALIDATION_RETRIES) {
+		issues.push(
+			error(
+				w.name,
+				name,
+				`maxValidationRetries: ${node.maxValidationRetries} — must be in [${MIN_VALIDATION_RETRIES}, ${MAX_VALIDATION_RETRIES}]`,
+			),
+		);
+	}
+}
+
+function checkTimeoutBounds(w: Workflow, name: string, node: NodeDef, issues: WorkflowValidationIssue[]): void {
+	if (node.validationRetryTimeoutMs === undefined) return;
+	if (
+		node.validationRetryTimeoutMs < MIN_VALIDATION_RETRY_TIMEOUT_MS ||
+		node.validationRetryTimeoutMs > MAX_VALIDATION_RETRY_TIMEOUT_MS
+	) {
+		issues.push(
+			error(
+				w.name,
+				name,
+				`validationRetryTimeoutMs: ${node.validationRetryTimeoutMs} — must be in [${MIN_VALIDATION_RETRY_TIMEOUT_MS}, ${MAX_VALIDATION_RETRY_TIMEOUT_MS}]`,
+			),
+		);
+	}
+}
+
+function checkNodeEnums(w: Workflow, name: string, node: NodeDef, issues: WorkflowValidationIssue[]): void {
+	if (
+		node.onValidationFailure !== undefined &&
+		!(ON_VALIDATION_FAILURE_VALUES as readonly string[]).includes(node.onValidationFailure)
+	) {
+		issues.push(
+			error(
+				w.name,
+				name,
+				`onValidationFailure: "${node.onValidationFailure}" — must be one of ${ON_VALIDATION_FAILURE_VALUES.join(", ")}`,
+			),
+		);
+	}
+	if (!(COMPLETION_STRATEGIES as readonly string[]).includes(node.completionStrategy)) {
+		issues.push(
+			error(
+				w.name,
+				name,
+				`completionStrategy: "${node.completionStrategy}" — must be one of ${COMPLETION_STRATEGIES.join(", ")}`,
+			),
+		);
+	}
+	if (!(SESSION_POLICIES as readonly string[]).includes(node.sessionPolicy)) {
+		issues.push(
+			error(w.name, name, `sessionPolicy: "${node.sessionPolicy}" — must be one of ${SESSION_POLICIES.join(", ")}`),
+		);
+	}
+}
+
+/**
+ * Phase fanout for implement nodes requires per-phase session isolation —
+ * `continue` would replay the prior phase's branch into the next phase's
+ * session. The runner enforces this at dispatch (`enforceSessionInvariants`);
+ * surfacing it at load time gives user-authored configs a targeted error
+ * instead of a generic chain-advance failure on first invocation.
+ */
+function checkImplementContinueInvariant(
+	w: Workflow,
+	name: string,
+	node: NodeDef,
+	issues: WorkflowValidationIssue[],
+): void {
+	if ((node.skill === "implement" || name === "implement") && node.sessionPolicy === "continue") {
+		issues.push(
+			error(
+				w.name,
+				name,
+				`implement node "${name}" cannot use sessionPolicy "continue" — phase fanout requires per-phase session isolation`,
+			),
+		);
+	}
+}
+
+/**
+ * Async schemas can't drive the runner's synchronous retry loop. Probe each
+ * schema with an empty object at load time and reject ones whose
+ * `~standard.validate` returns a Promise. Without this, `extractAndValidateManifest`
+ * throws mid-stage and the audit trail surfaces an opaque chain-advance error
+ * instead of a workflow-load error pointing at the offending node.
+ *
+ * Looping over the slot names keeps the contract symmetric and adds the next
+ * schema slot in one place.
+ */
+function checkSchemasNotAsync(w: Workflow, name: string, node: NodeDef, issues: WorkflowValidationIssue[]): void {
+	for (const slot of ["outputSchema", "inputSchema"] as const) {
+		const schema = node[slot];
+		if (schema && isAsyncSchema(schema)) {
 			issues.push(
 				error(
 					w.name,
 					name,
-					`maxValidationRetries: ${node.maxValidationRetries} — must be in [${MIN_VALIDATION_RETRIES}, ${MAX_VALIDATION_RETRIES}]`,
-				),
-			);
-		}
-		if (
-			node.validationRetryTimeoutMs !== undefined &&
-			(node.validationRetryTimeoutMs < MIN_VALIDATION_RETRY_TIMEOUT_MS ||
-				node.validationRetryTimeoutMs > MAX_VALIDATION_RETRY_TIMEOUT_MS)
-		) {
-			issues.push(
-				error(
-					w.name,
-					name,
-					`validationRetryTimeoutMs: ${node.validationRetryTimeoutMs} — must be in [${MIN_VALIDATION_RETRY_TIMEOUT_MS}, ${MAX_VALIDATION_RETRY_TIMEOUT_MS}]`,
-				),
-			);
-		}
-		if (
-			node.onValidationFailure !== undefined &&
-			!(ON_VALIDATION_FAILURE_VALUES as readonly string[]).includes(node.onValidationFailure)
-		) {
-			issues.push(
-				error(
-					w.name,
-					name,
-					`onValidationFailure: "${node.onValidationFailure}" — must be one of ${ON_VALIDATION_FAILURE_VALUES.join(", ")}`,
-				),
-			);
-		}
-		if (!(COMPLETION_STRATEGIES as readonly string[]).includes(node.completionStrategy)) {
-			issues.push(
-				error(
-					w.name,
-					name,
-					`completionStrategy: "${node.completionStrategy}" — must be one of ${COMPLETION_STRATEGIES.join(", ")}`,
-				),
-			);
-		}
-		if (!(SESSION_POLICIES as readonly string[]).includes(node.sessionPolicy)) {
-			issues.push(
-				error(
-					w.name,
-					name,
-					`sessionPolicy: "${node.sessionPolicy}" — must be one of ${SESSION_POLICIES.join(", ")}`,
-				),
-			);
-		}
-		// Phase fanout for implement nodes requires per-phase session isolation —
-		// `continue` would replay the prior phase's branch into the next phase's
-		// session. The runner enforces this at dispatch (`enforceSessionInvariants`);
-		// surface it at load time so user-authored configs get a targeted error
-		// instead of a generic chain-advance failure on first invocation.
-		if ((node.skill === "implement" || name === "implement") && node.sessionPolicy === "continue") {
-			issues.push(
-				error(
-					w.name,
-					name,
-					`implement node "${name}" cannot use sessionPolicy "continue" — phase fanout requires per-phase session isolation`,
-				),
-			);
-		}
-		// Async schemas can't drive the runner's synchronous retry loop. Probe
-		// each schema with an empty object at load time and reject ones whose
-		// `~standard.validate` returns a Promise. Without this, the runner's
-		// extractAndValidateManifest throws mid-stage and the audit trail
-		// surfaces an opaque chain-advance error instead of a workflow-load
-		// error pointing at the offending node.
-		if (node.outputSchema && isAsyncSchema(node.outputSchema)) {
-			issues.push(
-				error(
-					w.name,
-					name,
-					"outputSchema declares an async `~standard.validate` — workflow runner is synchronous at the validation seam; refactor the schema to be synchronous or drop the schema entirely",
-				),
-			);
-		}
-		if (node.inputSchema && isAsyncSchema(node.inputSchema)) {
-			issues.push(
-				error(
-					w.name,
-					name,
-					"inputSchema declares an async `~standard.validate` — workflow runner is synchronous at the validation seam; refactor the schema to be synchronous or drop the schema entirely",
+					`${slot} declares an async \`~standard.validate\` — workflow runner is synchronous at the validation seam; refactor the schema to be synchronous or drop the schema entirely`,
 				),
 			);
 		}
