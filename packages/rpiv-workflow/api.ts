@@ -16,7 +16,7 @@
  */
 
 import type { StandardSchemaV1 } from "@standard-schema/spec";
-import type { OutputSpec } from "./output.js";
+import type { Output, OutputSpec } from "./output.js";
 import type { Predicate } from "./predicates.js";
 import type { RunState } from "./types.js";
 
@@ -136,6 +136,46 @@ export interface FanoutUnit {
 }
 
 // ===========================================================================
+// Script-stage primitives — skillless TS functions in place of `/skill:<x>`
+// ===========================================================================
+
+/**
+ * Context handed to a script stage's `run` function. Shape mirrors
+ * `EdgeContext` / `FanoutContext`: frozen identity (`cwd`) + the chain
+ * data the function needs (`input` — upstream Output envelope) + a
+ * read-only state snapshot.
+ *
+ * Script stages cannot fanout, cannot use `sessionPolicy: "continue"`,
+ * and do not receive a Pi `RunnerCtx` — they're pure TS calls.
+ */
+export interface ScriptContext {
+	cwd: string;
+	/**
+	 * Inherited upstream `Output` envelope. `undefined` when the script
+	 * stage is the entry point, or when the upstream stage cleared the
+	 * rolling primary slot (a `terminal()` ahead of it).
+	 */
+	input: Output | undefined;
+	state: Readonly<RunState>;
+}
+
+/**
+ * Script `produces` stage body — returns the `Output` envelope directly
+ * (no `OutputSpec` extraction step). The runner records the returned
+ * envelope as the stage's outcome and feeds it to downstream stages.
+ */
+export type ProducesScriptFn<K extends string = string, D = unknown> = (
+	ctx: ScriptContext,
+) => Output<K, D> | Promise<Output<K, D>>;
+
+/**
+ * Script `acts` / `terminal` stage body — returns nothing. The runner
+ * builds a `SideEffectOutput`-shaped envelope (kind `"side-effect"`,
+ * empty `data`) so audit + downstream chain wiring still uniform.
+ */
+export type ActsScriptFn = (ctx: ScriptContext) => void | Promise<void>;
+
+// ===========================================================================
 // Types
 // ===========================================================================
 
@@ -233,6 +273,19 @@ export interface StageDef<TIn = unknown, TOut = unknown> {
 	 * own outcome) — `validateWorkflow` warns when set there.
 	 */
 	inheritsArtifacts?: boolean;
+	/**
+	 * Skillless script stage: when present, the runner calls this
+	 * function instead of dispatching `/skill:<skill>`. Presence of
+	 * `run` is the skill-vs-script discriminator. Authored via
+	 * `produces.script(...)`, `acts.script(...)`, or
+	 * `terminal.script(...)` (Phase B.2).
+	 *
+	 * Stages with `run` set CANNOT also set `skill`, `outcome`,
+	 * `fanout`, or `sessionPolicy: "continue"` — rejected at load time
+	 * by `validateWorkflow` (Phase B.3). Phase B.4 wires the runtime
+	 * branch; until then this field is type-only.
+	 */
+	run?: ProducesScriptFn<string, TOut> | ActsScriptFn;
 }
 
 /**

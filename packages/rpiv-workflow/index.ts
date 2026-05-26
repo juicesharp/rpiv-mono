@@ -120,6 +120,7 @@ import { registerWorkflowCommand } from "./command.js";
 import type { WorkflowHost } from "./host.js";
 
 export {
+	type ActsScriptFn,
 	acts,
 	type DefineRouteOptions,
 	defineRoute,
@@ -134,8 +135,10 @@ export {
 	marksReadsData,
 	ON_INVALID_VALUES,
 	type OnInvalid,
+	type ProducesScriptFn,
 	produces,
 	READS_DATA,
+	type ScriptContext,
 	SESSION_POLICIES,
 	type SessionPolicy,
 	STAGE_KINDS,
