@@ -29,8 +29,10 @@ import { notifyPartialArtifacts, nowIso, recordTerminalFailure } from "../audit.
 import { handleToString } from "../handle.js";
 import type { WorkflowContext, WorkflowHost } from "../host.js";
 import { currentPrimaryArtifact } from "../internal-utils.js";
+import { buildLifecycleContext, LifecycleDispatcher, type LifecycleListeners } from "../lifecycle.js";
 import { MSG_STAGE_THREW, MSG_WORKFLOW_COMPLETE, STATUS_KEY } from "../messages.js";
 import { generateRunId, writeHeader } from "../state/index.js";
+import { DEFAULT_TRIGGER, type RunTrigger } from "../triggers.js";
 import type { RunContext, RunnerCtx, RunState } from "../types.js";
 import { runStage, StagePreflightError } from "./stage-lifecycle.js";
 
@@ -62,6 +64,20 @@ export interface RunWorkflowOptions {
 	host?: WorkflowHost;
 	/** Defaults to MAX_BACKWARD_JUMPS. */
 	maxBackwardJumps?: number;
+	/**
+	 * What triggered this run. `/wf` sets `{ kind: "command", name: "wf" }`;
+	 * programmatic embedders default to `DEFAULT_TRIGGER`. Recorded in the
+	 * JSONL header and surfaced on every lifecycle callback via
+	 * `LifecycleContext.trigger`.
+	 */
+	trigger?: RunTrigger;
+	/**
+	 * Per-call lifecycle listener bundle. Fires AFTER every globally
+	 * registered bundle (Phase A.4 — `registerLifecycle`). Listener throws
+	 * are caught + logged via `ctx.ui.notify(..., "warning")`; never halt
+	 * the run.
+	 */
+	lifecycle?: LifecycleListeners;
 }
 
 export interface RunWorkflowResult {
@@ -131,12 +147,14 @@ export async function runWorkflow(ctx: WorkflowContext, options: RunWorkflowOpti
 	const cwd = ctx.cwd;
 	const runId = generateRunId();
 	const totalStages = countReachableStages(workflow);
+	const trigger = options.trigger ?? DEFAULT_TRIGGER;
 
 	writeHeader(cwd, {
 		runId,
 		workflow: workflow.name,
 		input: options.input,
 		ts: nowIso(),
+		trigger,
 	});
 
 	const state: RunState = {
@@ -156,13 +174,9 @@ export async function runWorkflow(ctx: WorkflowContext, options: RunWorkflowOpti
 	};
 
 	const maxBackwardJumps = options.maxBackwardJumps ?? MAX_BACKWARD_JUMPS;
+	const lifecycle = new LifecycleDispatcher(options.lifecycle);
 
-	// runStageOrRecordFailure (not bare runStage) so a throw out of the start stage —
-	// notably enforceSessionInvariants violations — records a JSONL failure
-	// row keyed on the failing stage rather than leaving a header-only file
-	// that every shape-filtered reader skips. Same wrapper used by
-	// advanceChain for downstream stages.
-	await runStageOrRecordFailure(ctx, workflow.start, 0, {
+	const run: RunContext = {
 		cwd,
 		runId,
 		workflow,
@@ -171,8 +185,20 @@ export async function runWorkflow(ctx: WorkflowContext, options: RunWorkflowOpti
 		visited: new Set(),
 		host: options.host,
 		maxBackwardJumps,
-	});
-	return {
+		trigger,
+		lifecycle,
+	};
+
+	await lifecycle.fire(ctx, "onWorkflowStart", lifecycleCtxFor(run));
+
+	// runStageOrRecordFailure (not bare runStage) so a throw out of the start stage —
+	// notably enforceSessionInvariants violations — records a JSONL failure
+	// row keyed on the failing stage rather than leaving a header-only file
+	// that every shape-filtered reader skips. Same wrapper used by
+	// advanceChain for downstream stages.
+	await runStageOrRecordFailure(ctx, workflow.start, 0, run);
+
+	const result: RunWorkflowResult = {
 		runId,
 		stagesCompleted: state.stagesCompleted,
 		success: state.termination.success,
@@ -185,6 +211,21 @@ export async function runWorkflow(ctx: WorkflowContext, options: RunWorkflowOpti
 			? { droppedRoutingRows: state.telemetry.droppedRoutingRows }
 			: {}),
 	};
+
+	await lifecycle.fire(ctx, "onWorkflowEnd", result, lifecycleCtxFor(run));
+	return result;
+}
+
+/** Build a `LifecycleContext` from the current `RunContext`. Captured per fire so listeners always see the latest `state` snapshot. */
+export function lifecycleCtxFor(run: RunContext) {
+	return buildLifecycleContext({
+		cwd: run.cwd,
+		runId: run.runId,
+		workflow: run.workflow.name,
+		totalStages: run.totalStages,
+		trigger: run.trigger,
+		state: run.state,
+	});
 }
 
 /**
@@ -247,21 +288,35 @@ export async function runStageOrRecordFailure(
 		await runStage(curCtx, name, idx, run);
 	} catch (e) {
 		if (e instanceof StagePreflightError) {
-			recordTerminalFailure(
+			await recordTerminalFailure(
 				curCtx,
-				{ cwd: run.cwd, runId: run.runId, state: run.state, stageName: name, skill: e.skill },
+				auditCtxFor(run, name, e.skill),
 				{ status: "failed", notifyMsg: e.notifyMsg, notifyLevel: "error", errMsg: e.errMsg },
 				e.notifyPartial ? (ctx) => notifyPartialArtifacts(ctx, run.cwd, run.runId) : undefined,
 			);
 			return;
 		}
 		const reason = e instanceof Error ? e.message : String(e);
-		recordTerminalFailure(
-			curCtx,
-			{ cwd: run.cwd, runId: run.runId, state: run.state, stageName: name, skill: name },
-			{ status: "failed", notifyMsg: MSG_STAGE_THREW(name, reason), notifyLevel: "error", errMsg: reason },
-		);
+		await recordTerminalFailure(curCtx, auditCtxFor(run, name, name), {
+			status: "failed",
+			notifyMsg: MSG_STAGE_THREW(name, reason),
+			notifyLevel: "error",
+			errMsg: reason,
+		});
 	}
+}
+
+/** Build an AuditCtx for a stage failure that escaped a session (preflight halts, downstream throws). */
+function auditCtxFor(run: RunContext, stageName: string, skill: string) {
+	return {
+		cwd: run.cwd,
+		runId: run.runId,
+		state: run.state,
+		stageName,
+		skill,
+		lifecycle: run.lifecycle,
+		runIdentity: { workflow: run.workflow.name, totalStages: run.totalStages, trigger: run.trigger },
+	};
 }
 
 export function finalizeWorkflow(curCtx: RunnerCtx, run: RunContext): void {

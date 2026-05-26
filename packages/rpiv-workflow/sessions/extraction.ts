@@ -19,6 +19,7 @@ import type { StageDef, StageSchema } from "../api.js";
 import { nowIso } from "../audit.js";
 import type { Artifact } from "../handle.js";
 import { assertNever, withTimeout } from "../internal-utils.js";
+import { buildLifecycleContext, skillStageRef } from "../lifecycle.js";
 import { ERR_SCHEMA_TIMEOUT, MSG_VALIDATION_RETRY, MSG_VALIDATION_RETRY_PROMPT } from "../messages.js";
 import { sideEffectOutcome } from "../outcomes/index.js";
 import { finalizeOutput, type Output } from "../output.js";
@@ -209,6 +210,21 @@ async function retryUntilValid(
 
 	while (!result.valid && attempts < maxRetries && s.stage.onInvalid !== "halt") {
 		attempts++;
+		// onStageRetry fires before the agent is re-prompted; `attempt` is 1-based.
+		await s.lifecycle.fire(
+			ctx,
+			"onStageRetry",
+			skillStageRef(s.stageName, s.stageIndex + 1, s.skill),
+			attempts,
+			buildLifecycleContext({
+				cwd: s.cwd,
+				runId: s.runId,
+				workflow: s.runIdentity.workflow,
+				totalStages: s.runIdentity.totalStages,
+				trigger: s.runIdentity.trigger,
+				state: s.state,
+			}),
+		);
 		try {
 			await askAgentToFix(ctx, s, attempts, result.failures, timeoutMs);
 		} catch (e) {

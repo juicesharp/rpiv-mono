@@ -24,6 +24,7 @@ import {
 	recordStopFailure,
 	recordTerminalFailure,
 } from "../audit.js";
+import { buildLifecycleContext, skillStageRef } from "../lifecycle.js";
 import {
 	ERR_AUDIT_WRITE_FAILED,
 	ERR_VALIDATION_FAILED,
@@ -46,13 +47,13 @@ import { FRESH_HANDLER, handlerFor } from "./spawn.js";
 export async function runStageSession(ctx: RunnerCtx, s: StageSession): Promise<void> {
 	const handler = handlerFor(s.stage.sessionPolicy);
 	const { cancelled } = await handler.spawn(ctx, s.prompt, (sessionCtx) => postStage(sessionCtx, s), s.host);
-	if (cancelled) recordCancellation(ctx, auditFor(s));
+	if (cancelled) await recordCancellation(ctx, auditFor(s));
 }
 
 /** Execute one fanout-unit iteration. Always fresh. */
 export async function runFanoutSession(ctx: RunnerCtx, s: FanoutSession): Promise<void> {
 	const { cancelled } = await FRESH_HANDLER.spawn(ctx, s.prompt, (sessionCtx) => postFanout(sessionCtx, s));
-	if (cancelled) recordCancellation(ctx, auditFor(s));
+	if (cancelled) await recordCancellation(ctx, auditFor(s));
 }
 
 // ===========================================================================
@@ -70,7 +71,7 @@ async function postStage(ctx: RunnerCtx, s: StageSession): Promise<void> {
 	if (result.kind === "fatal") return haltStageWithExtractionError(ctx, s, result.message);
 	if (result.kind === "validation-exhausted") return haltStageWithValidationFailure(ctx, s, result.failureSummary);
 
-	if (!recordStageSuccess(ctx, s, result.output)) return;
+	if (!(await recordStageSuccess(ctx, s, result.output))) return;
 	await s.onSuccess(ctx, result.output.artifacts[0]);
 }
 
@@ -79,7 +80,7 @@ async function postFanout(ctx: RunnerCtx, s: FanoutSession): Promise<void> {
 	const outcome = readSessionOutcome(ctx, undefined);
 	if (outcome.stop !== "stop") return haltFanout(ctx, s, outcome.stop);
 
-	if (!recordFanoutSuccess(s)) return;
+	if (!(await recordFanoutSuccess(ctx, s))) return;
 	await s.onSuccess(ctx);
 }
 
@@ -87,12 +88,12 @@ async function postFanout(ctx: RunnerCtx, s: FanoutSession): Promise<void> {
 // HALT HELPERS — turn a halt reason into the right audit-layer call
 // ===========================================================================
 
-function haltStage(ctx: RunnerCtx, s: StageSession, stop: Exclude<StopSignal, "stop">): void {
-	recordStopFailure(ctx, auditFor(s), stop, `${s.skill} failed`, s.onFailure);
+async function haltStage(ctx: RunnerCtx, s: StageSession, stop: Exclude<StopSignal, "stop">): Promise<void> {
+	await recordStopFailure(ctx, auditFor(s), stop, `${s.skill} failed`, s.onFailure);
 }
 
-function haltStageWithExtractionError(ctx: RunnerCtx, s: StageSession, message: string): void {
-	recordTerminalFailure(
+async function haltStageWithExtractionError(ctx: RunnerCtx, s: StageSession, message: string): Promise<void> {
+	await recordTerminalFailure(
 		ctx,
 		auditFor(s),
 		{ status: "failed", notifyMsg: MSG_STAGE_FAILED(s.skill), notifyLevel: "error", errMsg: message },
@@ -100,8 +101,8 @@ function haltStageWithExtractionError(ctx: RunnerCtx, s: StageSession, message: 
 	);
 }
 
-function haltStageWithValidationFailure(ctx: RunnerCtx, s: StageSession, failureSummary: string): void {
-	recordTerminalFailure(
+async function haltStageWithValidationFailure(ctx: RunnerCtx, s: StageSession, failureSummary: string): Promise<void> {
+	await recordTerminalFailure(
 		ctx,
 		auditFor(s),
 		{
@@ -114,8 +115,8 @@ function haltStageWithValidationFailure(ctx: RunnerCtx, s: StageSession, failure
 	);
 }
 
-function haltFanout(ctx: RunnerCtx, s: FanoutSession, stop: Exclude<StopSignal, "stop">): void {
-	recordStopFailure(ctx, auditFor(s), stop, `${s.skill} unit ${s.unitIndex} (${s.label}) failed`);
+async function haltFanout(ctx: RunnerCtx, s: FanoutSession, stop: Exclude<StopSignal, "stop">): Promise<void> {
+	await recordStopFailure(ctx, auditFor(s), stop, `${s.skill} unit ${s.unitIndex} (${s.label}) failed`);
 }
 
 // ===========================================================================
@@ -175,10 +176,17 @@ function maybeAdvancePrimary(s: StageSession, output: Output): void {
  * `state.output` / `state.primaryArtifact` at their prior values and sets
  * `state.termination.error` to halt the run.
  */
-function recordStageSuccess(ctx: RunnerCtx, s: StageSession, output: Output): boolean {
+async function recordStageSuccess(ctx: RunnerCtx, s: StageSession, output: Output): Promise<boolean> {
 	if (tryRecordStage(s, { stage: s.stageName, skill: s.skill, output })) {
 		maybeAdvancePrimary(s, output);
 		ctx.ui.notify(MSG_STAGE_COMPLETE(s.skill), "info");
+		await s.lifecycle.fire(
+			ctx,
+			"onStageEnd",
+			skillStageRef(s.stageName, s.state.lastAllocatedStageNumber, s.skill),
+			output,
+			lifecycleCtxFromSession(s),
+		);
 		return true;
 	}
 	ctx.ui.notify(MSG_AUDIT_WRITE_FAILED(s.skill), "error");
@@ -186,11 +194,33 @@ function recordStageSuccess(ctx: RunnerCtx, s: StageSession, output: Output): bo
 	return false;
 }
 
-function recordFanoutSuccess(s: FanoutSession): boolean {
+async function recordFanoutSuccess(ctx: RunnerCtx, s: FanoutSession): Promise<boolean> {
 	const stageLabel = fanoutRowStage(s);
-	if (tryRecordStage(s, { stage: stageLabel, skill: s.skill })) return true;
+	if (tryRecordStage(s, { stage: stageLabel, skill: s.skill })) {
+		await s.lifecycle.fire(
+			ctx,
+			"onFanoutUnitEnd",
+			skillStageRef(s.stageName, s.stageIndex + 1, s.skill),
+			{ prompt: s.prompt, label: s.label, ...(s.id !== undefined && { id: s.id }) },
+			s.unitIndex,
+			lifecycleCtxFromSession(s),
+		);
+		return true;
+	}
 	s.state.termination.error = ERR_AUDIT_WRITE_FAILED(stageLabel);
 	return false;
+}
+
+/** Build a `LifecycleContext` from any SessionContext-shaped object. */
+function lifecycleCtxFromSession(s: SessionContext) {
+	return buildLifecycleContext({
+		cwd: s.cwd,
+		runId: s.runId,
+		workflow: s.runIdentity.workflow,
+		totalStages: s.runIdentity.totalStages,
+		trigger: s.runIdentity.trigger,
+		state: s.state,
+	});
 }
 
 // ===========================================================================
@@ -229,4 +259,6 @@ const auditFor = (s: StageSession | FanoutSession): AuditCtx => ({
 	state: s.state,
 	stageName: "unitIndex" in s ? fanoutRowStage(s) : s.stageName,
 	skill: s.skill,
+	lifecycle: s.lifecycle,
+	runIdentity: s.runIdentity,
 });

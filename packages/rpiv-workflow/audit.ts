@@ -6,6 +6,7 @@
 
 import { handleToString } from "./handle.js";
 import { assertNever } from "./internal-utils.js";
+import { buildLifecycleContext, skillStageRef } from "./lifecycle.js";
 import {
 	ERR_STAGE_ABORTED,
 	ERR_STAGE_NO_RESPONSE,
@@ -32,7 +33,10 @@ export const nowIso = (): string => new Date().toISOString();
  * future field added to the base lands here too — no duplicate
  * maintenance. Both `StageSession` and `FanoutSession` collapse to this.
  */
-export type AuditCtx = Pick<SessionContext, "cwd" | "runId" | "state" | "stageName" | "skill">;
+export type AuditCtx = Pick<
+	SessionContext,
+	"cwd" | "runId" | "state" | "stageName" | "skill" | "lifecycle" | "runIdentity"
+>;
 
 /**
  * JSONL `WorkflowStage.stage` value for fanout-unit rows — built from
@@ -74,7 +78,7 @@ export function notifyPartialArtifacts(ctx: RunnerCtx, cwd: string, runId: strin
 	ctx.ui.notify(MSG_PARTIAL_ARTIFACTS(artifactList), "info");
 }
 
-export function recordTerminalFailure(
+export async function recordTerminalFailure(
 	ctx: RunnerCtx,
 	audit: AuditCtx,
 	args: {
@@ -84,7 +88,7 @@ export function recordTerminalFailure(
 		errMsg: string;
 	},
 	onFailure?: (ctx: RunnerCtx) => void,
-): void {
+): Promise<void> {
 	recordStage(
 		audit.cwd,
 		audit.runId,
@@ -95,6 +99,20 @@ export function recordTerminalFailure(
 	ctx.ui.notify(args.notifyMsg, args.notifyLevel);
 	onFailure?.(ctx);
 	audit.state.termination.error = args.errMsg;
+	await audit.lifecycle.fire(
+		ctx,
+		"onStageError",
+		skillStageRef(audit.stageName, audit.state.lastAllocatedStageNumber, audit.skill),
+		args.errMsg,
+		buildLifecycleContext({
+			cwd: audit.cwd,
+			runId: audit.runId,
+			workflow: audit.runIdentity.workflow,
+			totalStages: audit.runIdentity.totalStages,
+			trigger: audit.runIdentity.trigger,
+			state: audit.state,
+		}),
+	);
 }
 
 /**
@@ -103,14 +121,14 @@ export function recordTerminalFailure(
  * compatibility; the per-signal distinction surfaces via MSG_STAGE_*
  * and state.termination.error.
  */
-export function recordStopFailure(
+export async function recordStopFailure(
 	ctx: RunnerCtx,
 	audit: AuditCtx,
 	stop: Exclude<StopSignal, "stop">,
 	errorMessage: string,
 	onFailure?: (ctx: RunnerCtx) => void,
-): void {
-	recordTerminalFailure(ctx, audit, stopFailureArgs(audit.skill, stop, errorMessage), onFailure);
+): Promise<void> {
+	await recordTerminalFailure(ctx, audit, stopFailureArgs(audit.skill, stop, errorMessage), onFailure);
 }
 
 function stopFailureArgs(

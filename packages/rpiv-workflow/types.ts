@@ -23,7 +23,9 @@
 import type { StageDef, Workflow } from "./api.js";
 import type { Artifact } from "./handle.js";
 import type { WorkflowContext, WorkflowHost } from "./host.js";
+import type { LifecycleDispatcher } from "./lifecycle.js";
 import type { Output } from "./output.js";
+import type { RunTrigger } from "./triggers.js";
 
 /**
  * Per-stage runtime ctx. Alias for `WorkflowContext` (the port) —
@@ -104,6 +106,10 @@ export interface RunContext {
 	/** Required for "continue"-policy stages. */
 	host?: WorkflowHost;
 	maxBackwardJumps: number;
+	/** What triggered the run; defaulted at `runWorkflow` entry. */
+	trigger: RunTrigger;
+	/** Lifecycle event dispatcher — see `lifecycle.ts`. Threaded by reference. */
+	lifecycle: LifecycleDispatcher;
 }
 
 /**
@@ -129,6 +135,18 @@ export interface SessionContext {
 	stageName: string;
 	/** Pi skill body — `/skill:<skill>` dispatch + status-line label + JSONL `WorkflowStage.skill`. */
 	skill: string;
+	/** Shared lifecycle dispatcher (Phase A.3). Threaded from `RunContext` so the audit layer can fire `onStageEnd` / `onStageError` / `onFanoutUnitEnd` without re-importing it. */
+	lifecycle: LifecycleDispatcher;
+	/**
+	 * Read-only run identity passed to lifecycle callbacks. Captured at
+	 * session construction (cwd + runId + workflow name + totalStages +
+	 * trigger). Built once per run, reused.
+	 */
+	runIdentity: {
+		workflow: string;
+		totalStages: number;
+		trigger: RunTrigger;
+	};
 }
 
 export interface StageSession extends SessionContext {

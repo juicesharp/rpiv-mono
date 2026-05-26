@@ -14,6 +14,7 @@ import { notifyPartialArtifacts } from "../audit.js";
 import { runFanout } from "../fanout.js";
 import { handleToString } from "../handle.js";
 import { currentPrimaryArtifact, withTimeout } from "../internal-utils.js";
+import { skillStageRef } from "../lifecycle.js";
 import {
 	ERR_INPUT_VALIDATION_FAILED,
 	ERR_MISSING_ARTIFACT,
@@ -37,6 +38,7 @@ import {
 	validateOutputData,
 } from "../validate-output.js";
 import { advanceChain } from "./chain-advance.js";
+import { lifecycleCtxFor } from "./runner.js";
 
 export interface ResolvedStage {
 	def: StageDef;
@@ -149,6 +151,14 @@ export async function runStage(curCtx: RunnerCtx, currentName: string, idx: numb
 
 	const snapshot = await captureStageSnapshot(stage.def, idx, run);
 
+	// onStageStart fires after preflight, before the Pi session opens.
+	await run.lifecycle.fire(
+		curCtx,
+		"onStageStart",
+		skillStageRef(stage.name, stage.stageNumber, stage.skill),
+		lifecycleCtxFor(run),
+	);
+
 	await runStageSession(curCtx, {
 		cwd: run.cwd,
 		runId: run.runId,
@@ -156,6 +166,8 @@ export async function runStage(curCtx: RunnerCtx, currentName: string, idx: numb
 		prompt,
 		stageName: stage.name,
 		skill: stage.skill,
+		lifecycle: run.lifecycle,
+		runIdentity: { workflow: run.workflow.name, totalStages: run.totalStages, trigger: run.trigger },
 		stage: stage.def,
 		stageIndex: idx,
 		snapshot,
@@ -194,6 +206,13 @@ async function tryFanout(curCtx: RunnerCtx, stage: ResolvedStage, idx: number, r
 		state: run.state,
 	});
 	if (units.length === 0) return false;
+	// Fire both onStageStart (the parent fanout stage IS starting) and
+	// onFanoutStart so listeners receive a coherent stream: every stage gets
+	// onStageStart, fanout stages additionally get onFanoutStart with the
+	// unit list.
+	const ref = skillStageRef(stage.name, stage.stageNumber, stage.skill);
+	await run.lifecycle.fire(curCtx, "onStageStart", ref, lifecycleCtxFor(run));
+	await run.lifecycle.fire(curCtx, "onFanoutStart", ref, units, lifecycleCtxFor(run));
 	await runFanout(curCtx, idx, stage.name, stage.skill, 1, units, run, {
 		runFanoutSession,
 		advanceAfter: (freshCtx, name, completedIdx, ctx) => advanceChain(freshCtx, name, completedIdx, ctx),

@@ -77,7 +77,7 @@ async function handleWorkflowCommand(host: WorkflowHost, args: string, ctx: Work
 	// thrown predicate or invariant could still bubble. Catch so Pi's
 	// dispatcher doesn't print a raw stack.
 	try {
-		await runWorkflow(ctx, { workflow, input, host });
+		await runWorkflow(ctx, { workflow, input, host, trigger: { kind: "command", name: "wf" } });
 	} catch (e) {
 		const reason = e instanceof Error ? e.message : String(e);
 		ctx.ui.notify(MSG_WORKFLOW_THREW(reason), "error");

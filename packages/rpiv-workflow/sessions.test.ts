@@ -24,6 +24,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { StageDef, StageSchema } from "./api.js";
 import { fs as fsHandle } from "./handle.js";
 import { currentPrimaryArtifact } from "./internal-utils.js";
+import { LifecycleDispatcher } from "./lifecycle.js";
 import {
 	ERR_VALIDATION_FAILED,
 	MSG_STAGE_ABORTED,
@@ -35,8 +36,19 @@ import {
 } from "./messages.js";
 import type { CollectCtx, OutputSpec } from "./output.js";
 import { runFanoutSession, runStageSession } from "./sessions/index.js";
+import { DEFAULT_TRIGGER } from "./triggers.js";
 import { typeboxSchema } from "./typebox-adapter.js";
 import type { FanoutSession, RunnerCtx, RunState, StageSession } from "./types.js";
+
+/** Default test wiring for SessionContext's lifecycle + runIdentity fields. */
+const testLifecycle = () => new LifecycleDispatcher(undefined);
+const testRunIdentity = (overrides: Partial<{ workflow: string; totalStages: number }> = {}) => ({
+	workflow: "test-wf",
+	totalStages: 1,
+	trigger: DEFAULT_TRIGGER,
+	...overrides,
+});
+
 import { MAX_VALIDATION_RETRIES, MAX_VALIDATION_RETRY_TIMEOUT_MS } from "./validate-output.js";
 
 // ---------------------------------------------------------------------------
@@ -78,6 +90,8 @@ const stageSession = (overrides: Partial<StageSession> & Pick<StageSession, "cwd
 	prompt: "/skill:test arg",
 	stageName: "test",
 	skill: "test",
+	lifecycle: testLifecycle(),
+	runIdentity: testRunIdentity(),
 	stage: stage(),
 	stageIndex: 0,
 	snapshot: undefined,
@@ -1015,6 +1029,8 @@ describe("sessions — success persistence", () => {
 			prompt: "/skill:implement phase",
 			stageName: "implement",
 			skill: "implement",
+			lifecycle: testLifecycle(),
+			runIdentity: testRunIdentity(),
 			unitIndex: 2,
 			label: "phase 2/4",
 			stageIndex: 1,
@@ -1046,6 +1062,8 @@ describe("sessions — success persistence", () => {
 			prompt: "/skill:implement phase",
 			stageName: "implement",
 			skill: "implement",
+			lifecycle: testLifecycle(),
+			runIdentity: testRunIdentity(),
 			unitIndex: 1,
 			label: "phase 1/2",
 			stageIndex: 0,

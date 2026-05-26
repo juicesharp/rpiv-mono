@@ -9,6 +9,7 @@
  */
 
 import { nowIso, recordTerminalFailure } from "../audit.js";
+import { skillStageRef } from "../lifecycle.js";
 import {
 	ERR_BACKWARD_JUMP_EXHAUSTED,
 	MSG_BACKWARD_JUMP_EXHAUSTED,
@@ -18,7 +19,7 @@ import {
 import { edgeIsDecision, nextStage } from "../routing.js";
 import { appendRoutingDecision } from "../state/index.js";
 import type { RunContext, RunnerCtx } from "../types.js";
-import { finalizeWorkflow, runStageOrRecordFailure } from "./runner.js";
+import { finalizeWorkflow, lifecycleCtxFor, runStageOrRecordFailure } from "./runner.js";
 
 /**
  * Decomposed into three helpers (L5-05): `auditRoutingDecision`,
@@ -40,10 +41,14 @@ export async function advanceChain(
 	const result = nextStage(run.workflow, currentName, { output: run.state.output, state: run.state });
 
 	if (result.kind === "err") {
-		haltOnRoutingError(curCtx, run, currentName, result.reason);
+		await haltOnRoutingError(curCtx, run, currentName, result.reason);
 		return;
 	}
+
+	const fromRef = skillStageRef(currentName, idx + 1, run.workflow.stages[currentName]?.skill ?? currentName);
+
 	if (result.kind === "stop") {
+		await run.lifecycle.fire(curCtx, "onRoute", fromRef, "stop", lifecycleCtxFor(run));
 		finalizeWorkflow(curCtx, run);
 		return;
 	}
@@ -51,8 +56,13 @@ export async function advanceChain(
 	const nextName = result.stage;
 	if (wasDecision) {
 		auditRoutingDecision(curCtx, run, idx, currentName, nextName);
-		if (!checkBackwardJumpGuard(curCtx, run, nextName)) return;
+		if (!(await checkBackwardJumpGuard(curCtx, run, nextName))) return;
 	}
+
+	// Fire onRoute after the routing decision has been audited (when applicable),
+	// before the next stage runs. Deterministic auto-edges still fire so
+	// listeners see every transition.
+	await run.lifecycle.fire(curCtx, "onRoute", fromRef, nextName, lifecycleCtxFor(run));
 
 	// runStageOrRecordFailure owns the catch for throws out of the *next* stage,
 	// so the JSONL row records `nextName` (the stage that actually threw)
@@ -114,7 +124,7 @@ function auditRoutingDecision(
  * Trip attribution targets `nextName` (the stage the guard refused to
  * re-enter), not the just-completed stage. Same lesson as Q12+IB.
  */
-function checkBackwardJumpGuard(curCtx: RunnerCtx, run: RunContext, nextName: string): boolean {
+async function checkBackwardJumpGuard(curCtx: RunnerCtx, run: RunContext, nextName: string): Promise<boolean> {
 	const { state } = run;
 	if (!run.visited.has(nextName)) {
 		state.telemetry.backwardJumps = 0;
@@ -122,9 +132,17 @@ function checkBackwardJumpGuard(curCtx: RunnerCtx, run: RunContext, nextName: st
 	}
 	state.telemetry.backwardJumps++;
 	if (state.telemetry.backwardJumps <= run.maxBackwardJumps) return true;
-	recordTerminalFailure(
+	await recordTerminalFailure(
 		curCtx,
-		{ cwd: run.cwd, runId: run.runId, state, stageName: nextName, skill: nextName },
+		{
+			cwd: run.cwd,
+			runId: run.runId,
+			state,
+			stageName: nextName,
+			skill: nextName,
+			lifecycle: run.lifecycle,
+			runIdentity: { workflow: run.workflow.name, totalStages: run.totalStages, trigger: run.trigger },
+		},
 		{
 			status: "failed",
 			notifyMsg: MSG_BACKWARD_JUMP_EXHAUSTED(state.telemetry.backwardJumps, run.maxBackwardJumps),
@@ -140,10 +158,23 @@ function checkBackwardJumpGuard(curCtx: RunnerCtx, run: RunContext, nextName: st
  * an undeclared target, or threw and was wrapped). Attribution targets
  * `currentName` (the edge belongs to the just-completed stage).
  */
-function haltOnRoutingError(curCtx: RunnerCtx, run: RunContext, currentName: string, reason: string): void {
-	recordTerminalFailure(
+async function haltOnRoutingError(
+	curCtx: RunnerCtx,
+	run: RunContext,
+	currentName: string,
+	reason: string,
+): Promise<void> {
+	await recordTerminalFailure(
 		curCtx,
-		{ cwd: run.cwd, runId: run.runId, state: run.state, stageName: currentName, skill: currentName },
+		{
+			cwd: run.cwd,
+			runId: run.runId,
+			state: run.state,
+			stageName: currentName,
+			skill: currentName,
+			lifecycle: run.lifecycle,
+			runIdentity: { workflow: run.workflow.name, totalStages: run.totalStages, trigger: run.trigger },
+		},
 		{
 			status: "failed",
 			notifyMsg: MSG_CHAIN_ADVANCE_FAILED(currentName, reason),

@@ -27,6 +27,7 @@
  */
 
 import type { FanoutUnit } from "./api.js";
+import { MSG_LIFECYCLE_THREW } from "./messages.js";
 import type { Output } from "./output.js";
 import type { RunWorkflowResult } from "./runner/runner.js";
 import type { RunTrigger } from "./triggers.js";
@@ -108,4 +109,70 @@ export interface LifecycleListeners {
 
 	/** Last call — `result` is the same envelope `runWorkflow` returns. */
 	onWorkflowEnd?(result: RunWorkflowResult, ctx: LifecycleContext): void | Promise<void>;
+}
+
+// ---------------------------------------------------------------------------
+// Internal — dispatcher (consumed by the runner; not exported publicly)
+// ---------------------------------------------------------------------------
+
+/** Subset of `WorkflowContext` the dispatcher needs for throw-safe logging. */
+export interface DispatchHost {
+	ui: { notify(message: string, level?: "info" | "warning" | "error"): void };
+}
+
+/**
+ * Fan-out + throw-safe invoker for one event across every registered
+ * listener bundle. Constructed once per `runWorkflow` call and threaded
+ * through `RunContext` so every firing site uses the same instance.
+ *
+ * Snapshot semantics: `collectBundles` is called per `fire(...)`, so a
+ * registration made mid-event (Phase A.4 — `registerLifecycle` from
+ * inside a callback) applies to subsequent events but not the in-flight
+ * one.
+ *
+ * Sequential await: bundles run in registration order; the per-call
+ * bundle (when present) fires after every globally-registered bundle.
+ * `await` between them gives listeners back-pressure for free.
+ */
+export class LifecycleDispatcher {
+	constructor(private readonly perCall: LifecycleListeners | undefined) {}
+
+	async fire<E extends keyof LifecycleListeners>(
+		host: DispatchHost,
+		event: E,
+		...args: Parameters<NonNullable<LifecycleListeners[E]>>
+	): Promise<void> {
+		for (const bundle of collectBundles(this.perCall)) {
+			const fn = bundle[event];
+			if (!fn) continue;
+			try {
+				await (fn as (...a: unknown[]) => unknown)(...(args as unknown[]));
+			} catch (e) {
+				const reason = e instanceof Error ? e.message : String(e);
+				host.ui.notify(MSG_LIFECYCLE_THREW(event, reason), "warning");
+			}
+		}
+	}
+}
+
+/** Phase A.4 extends this to prepend the global registry. */
+function collectBundles(perCall: LifecycleListeners | undefined): readonly LifecycleListeners[] {
+	return perCall ? [perCall] : [];
+}
+
+/** Build a `LifecycleContext` from the runner's per-run identity. */
+export function buildLifecycleContext(args: {
+	cwd: string;
+	runId: string;
+	workflow: string;
+	totalStages: number;
+	trigger: RunTrigger;
+	state: Readonly<RunState>;
+}): LifecycleContext {
+	return args;
+}
+
+/** Build the `"skill"` arm of `StageRef`. Phase B.4 adds a `script` builder. */
+export function skillStageRef(name: string, stageNumber: number, skill: string): StageRef {
+	return { kind: "skill", name, stageNumber, skill };
 }

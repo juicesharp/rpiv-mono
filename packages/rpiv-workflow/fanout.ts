@@ -11,6 +11,7 @@
  */
 
 import type { FanoutUnit } from "./api.js";
+import { buildLifecycleContext, skillStageRef } from "./lifecycle.js";
 import { MSG_STAGE_COMPLETE, STATUS_FANOUT_UNIT, STATUS_KEY } from "./messages.js";
 import type { FanoutSession, RunContext, RunnerCtx } from "./types.js";
 
@@ -60,6 +61,23 @@ export async function runFanout(
 	const unit = units[p - 1]!;
 	curCtx.ui.setStatus(STATUS_KEY, STATUS_FANOUT_UNIT(stageIdx + 1, totalStages, skill, unit.label));
 
+	const lifecycleCtx = buildLifecycleContext({
+		cwd,
+		runId,
+		workflow: run.workflow.name,
+		totalStages: run.totalStages,
+		trigger: run.trigger,
+		state,
+	});
+	await run.lifecycle.fire(
+		curCtx,
+		"onFanoutUnitStart",
+		skillStageRef(currentName, stageIdx + 1, skill),
+		unit,
+		p,
+		lifecycleCtx,
+	);
+
 	await deps.runFanoutSession(curCtx, {
 		cwd,
 		runId,
@@ -67,6 +85,8 @@ export async function runFanout(
 		prompt: `/skill:${skill} ${unit.prompt}`,
 		stageName: currentName,
 		skill,
+		lifecycle: run.lifecycle,
+		runIdentity: { workflow: run.workflow.name, totalStages: run.totalStages, trigger: run.trigger },
 		unitIndex: p,
 		label: unit.label,
 		id: unit.id,

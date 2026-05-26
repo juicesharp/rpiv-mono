@@ -122,6 +122,10 @@ export const MSG_ROUTING_AUDIT_DROPPED = (fromStage: string, decision: string) =
 /** Recap surfaced on stage failure — pre-joined bullet list of artifact paths. */
 export const MSG_PARTIAL_ARTIFACTS = (artifactList: string) => `Artifacts produced before failure:\n${artifactList}`;
 
+/** Lifecycle listener threw — warning so the user sees it but the run never halts. */
+export const MSG_LIFECYCLE_THREW = (event: string, reason: string) =>
+	`⚠ rpiv: lifecycle listener (${event}) threw: ${reason}`;
+
 // ---------------------------------------------------------------------------
 // /wf command shell — notify-only (never lands in state.error; ERR_ reserved)
 // ---------------------------------------------------------------------------

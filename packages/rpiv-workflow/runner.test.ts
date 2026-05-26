@@ -1898,6 +1898,246 @@ describe("runWorkflow", () => {
 			expect(result.success).toBe(true);
 		});
 	});
+
+	// =======================================================================
+	// Phase A.3 — lifecycle callbacks (per-call options.lifecycle)
+	// =======================================================================
+
+	describe("lifecycle callbacks", () => {
+		/** Capture every fired event in order. Each entry: [eventName, ...payload]. */
+		const recorder = () => {
+			const calls: Array<[string, unknown[]]> = [];
+			const lifecycle = {
+				onWorkflowStart: (ctx: unknown) => void calls.push(["onWorkflowStart", [ctx]]),
+				onStageStart: (stage: unknown, ctx: unknown) => void calls.push(["onStageStart", [stage, ctx]]),
+				onStageEnd: (stage: unknown, output: unknown, ctx: unknown) =>
+					void calls.push(["onStageEnd", [stage, output, ctx]]),
+				onStageRetry: (stage: unknown, attempt: unknown, ctx: unknown) =>
+					void calls.push(["onStageRetry", [stage, attempt, ctx]]),
+				onStageError: (stage: unknown, error: unknown, ctx: unknown) =>
+					void calls.push(["onStageError", [stage, error, ctx]]),
+				onRoute: (from: unknown, to: unknown, ctx: unknown) => void calls.push(["onRoute", [from, to, ctx]]),
+				onFanoutStart: (stage: unknown, units: unknown, ctx: unknown) =>
+					void calls.push(["onFanoutStart", [stage, units, ctx]]),
+				onFanoutUnitStart: (stage: unknown, unit: unknown, i: unknown, ctx: unknown) =>
+					void calls.push(["onFanoutUnitStart", [stage, unit, i, ctx]]),
+				onFanoutUnitEnd: (stage: unknown, unit: unknown, i: unknown, ctx: unknown) =>
+					void calls.push(["onFanoutUnitEnd", [stage, unit, i, ctx]]),
+				onWorkflowEnd: (result: unknown, ctx: unknown) => void calls.push(["onWorkflowEnd", [result, ctx]]),
+			};
+			return { calls, lifecycle };
+		};
+		const names = (calls: Array<[string, unknown[]]>) => calls.map(([n]) => n);
+
+		it("onWorkflowStart fires once before first stage; ctx carries correct identity", async () => {
+			writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md", "");
+			const chain = createMockSessionChain({
+				cwd: tmpDir,
+				steps: [{ branch: [mockAssistantMessage("Plan: .rpiv/artifacts/research/r.md")] }],
+			});
+			const { calls, lifecycle } = recorder();
+			const result = await runWorkflow(chain.ctx, { workflow: wf("tiny", ["research"]), input: "x", lifecycle });
+			expect(result.success).toBe(true);
+			const starts = calls.filter(([n]) => n === "onWorkflowStart");
+			expect(starts).toHaveLength(1);
+			const ctx = starts[0]![1][0] as { cwd: string; runId: string; workflow: string; totalStages: number };
+			expect(ctx.cwd).toBe(tmpDir);
+			expect(ctx.runId).toBe(result.runId);
+			expect(ctx.workflow).toBe("tiny");
+			expect(ctx.totalStages).toBe(1);
+			// onWorkflowStart must precede onStageStart.
+			expect(names(calls).indexOf("onWorkflowStart")).toBeLessThan(names(calls).indexOf("onStageStart"));
+		});
+
+		it("onStageStart fires once per stage with a StageRef matching name + number + skill", async () => {
+			const chain = createMockSessionChain({
+				cwd: tmpDir,
+				steps: [
+					{ branch: [mockAssistantMessage(`Plan: ${".rpiv/artifacts/research/r.md"}`)] },
+					{ branch: [mockAssistantMessage("done")] },
+				],
+			});
+			writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md", "");
+			const { calls, lifecycle } = recorder();
+			await runWorkflow(chain.ctx, {
+				workflow: wf("two", ["research", "design"]),
+				input: "x",
+				lifecycle,
+			});
+			const starts = calls.filter(([n]) => n === "onStageStart");
+			expect(starts).toHaveLength(2);
+			expect(starts[0]![1][0]).toMatchObject({ kind: "skill", name: "research", stageNumber: 1, skill: "research" });
+			expect(starts[1]![1][0]).toMatchObject({ kind: "skill", name: "design", stageNumber: 2, skill: "design" });
+		});
+
+		it("onStageEnd fires only on success and carries the validated Output", async () => {
+			const planRel = ".rpiv/artifacts/research/r.md";
+			writeArtifact(tmpDir, planRel, "");
+			const chain = createMockSessionChain({
+				cwd: tmpDir,
+				steps: [{ branch: [mockAssistantMessage(`Plan: ${planRel}`)] }],
+			});
+			const { calls, lifecycle } = recorder();
+			await runWorkflow(chain.ctx, { workflow: wf("tiny", ["research"]), input: "x", lifecycle });
+			const ends = calls.filter(([n]) => n === "onStageEnd");
+			expect(ends).toHaveLength(1);
+			const [stage, output] = ends[0]![1] as [{ name: string }, { artifacts: unknown[] }];
+			expect(stage.name).toBe("research");
+			expect(output.artifacts.length).toBe(1);
+		});
+
+		it("onStageError fires on terminal failure (aborted stop); onStageEnd does NOT fire", async () => {
+			const chain = createMockSessionChain({
+				cwd: tmpDir,
+				steps: [{ branch: [mockAssistantMessage("partial", "aborted")] }],
+			});
+			const { calls, lifecycle } = recorder();
+			const result = await runWorkflow(chain.ctx, { workflow: wf("tiny", ["research"]), input: "x", lifecycle });
+			expect(result.success).toBe(false);
+			expect(calls.filter(([n]) => n === "onStageError")).toHaveLength(1);
+			expect(calls.filter(([n]) => n === "onStageEnd")).toHaveLength(0);
+			const [stage, error] = calls.find(([n]) => n === "onStageError")![1] as [{ name: string }, string];
+			expect(stage.name).toBe("research");
+			expect(error).toMatch(/aborted/i);
+		});
+
+		it("onRoute fires after the routing decision; `to` is the next stage name (or 'stop')", async () => {
+			writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md", "");
+			const chain = createMockSessionChain({
+				cwd: tmpDir,
+				steps: [{ branch: [mockAssistantMessage("Plan: .rpiv/artifacts/research/r.md")] }],
+			});
+			const { calls, lifecycle } = recorder();
+			await runWorkflow(chain.ctx, { workflow: wf("tiny", ["research"]), input: "x", lifecycle });
+			const routes = calls.filter(([n]) => n === "onRoute");
+			expect(routes).toHaveLength(1);
+			const [from, to] = routes[0]![1] as [{ name: string }, string];
+			expect(from.name).toBe("research");
+			expect(to).toBe("stop");
+		});
+
+		it("onFanoutStart + onFanoutUnitStart/End fire in correct order for a 3-unit fanout", async () => {
+			const planRel = ".rpiv/artifacts/plans/p.md";
+			writeArtifact(tmpDir, planRel, "# Plan\n## Phase 1:\n## Phase 2:\n## Phase 3:\n");
+			const chain = createMockSessionChain({
+				cwd: tmpDir,
+				steps: [
+					{ branch: [mockAssistantMessage(`Plan: ${planRel}`)] },
+					{ branch: [mockAssistantMessage("phase 1")] },
+					{ branch: [mockAssistantMessage("phase 2")] },
+					{ branch: [mockAssistantMessage("phase 3")] },
+				],
+			});
+			const phaseFanout: FanoutFn = ({ artifact, cwd }) => {
+				if (!artifact || artifact.handle.kind !== "fs") return [];
+				const abs = artifact.handle.path.startsWith("/") ? artifact.handle.path : join(cwd, artifact.handle.path);
+				const matches = [...readFileSync(abs, "utf-8").matchAll(/^## Phase (\d+):/gm)];
+				return matches.map((m, i) => ({
+					prompt: `Phase ${m[1]}`,
+					label: `phase ${i + 1}/${matches.length}`,
+				}));
+			};
+			const { calls, lifecycle } = recorder();
+			await runWorkflow(chain.ctx, {
+				workflow: wf("rip", ["research", "implement"], { implement: { fanout: phaseFanout } }),
+				input: "x",
+				lifecycle,
+			});
+			const fanoutNames = names(calls).filter((n) => n.startsWith("onFanout") || n === "onStageStart");
+			// Expected fanout sequence within the implement stage:
+			//   onStageStart(implement) → onFanoutStart → onFanoutUnitStart x onFanoutUnitEnd interleaved.
+			const impl = fanoutNames.slice(fanoutNames.indexOf("onFanoutStart") - 1);
+			expect(impl[0]).toBe("onStageStart");
+			expect(impl[1]).toBe("onFanoutStart");
+			// Three unit-start + unit-end pairs after fanout start.
+			expect(impl.filter((n) => n === "onFanoutUnitStart")).toHaveLength(3);
+			expect(impl.filter((n) => n === "onFanoutUnitEnd")).toHaveLength(3);
+		});
+
+		it("onWorkflowEnd fires exactly once as the last event with the result envelope", async () => {
+			writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md", "");
+			const chain = createMockSessionChain({
+				cwd: tmpDir,
+				steps: [{ branch: [mockAssistantMessage("Plan: .rpiv/artifacts/research/r.md")] }],
+			});
+			const { calls, lifecycle } = recorder();
+			const result = await runWorkflow(chain.ctx, { workflow: wf("tiny", ["research"]), input: "x", lifecycle });
+			const ends = calls.filter(([n]) => n === "onWorkflowEnd");
+			expect(ends).toHaveLength(1);
+			expect(names(calls).at(-1)).toBe("onWorkflowEnd");
+			const passedResult = ends[0]![1][0];
+			expect(passedResult).toEqual(result);
+		});
+
+		it("listener throws are caught and logged, run still completes, other events still fire", async () => {
+			writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md", "");
+			const chain = createMockSessionChain({
+				cwd: tmpDir,
+				steps: [{ branch: [mockAssistantMessage("Plan: .rpiv/artifacts/research/r.md")] }],
+			});
+			const seen: string[] = [];
+			const result = await runWorkflow(chain.ctx, {
+				workflow: wf("tiny", ["research"]),
+				input: "x",
+				lifecycle: {
+					onStageStart: () => {
+						throw new Error("listener boom");
+					},
+					onStageEnd: () => void seen.push("end"),
+					onWorkflowEnd: () => void seen.push("workflowEnd"),
+				},
+			});
+			expect(result.success).toBe(true);
+			expect(seen).toEqual(["end", "workflowEnd"]);
+			expect(chain.notifications.some((n) => /lifecycle listener/.test(n.msg))).toBe(true);
+		});
+
+		it("pre-flight rejection (workflow.start undeclared) fires ZERO lifecycle events", async () => {
+			const chain = createMockSessionChain({ cwd: tmpDir, steps: [] });
+			const { calls, lifecycle } = recorder();
+			const result = await runWorkflow(chain.ctx, {
+				workflow: { name: "bad", start: "missing", stages: {}, edges: {} },
+				input: "x",
+				lifecycle,
+			});
+			expect(result.success).toBe(false);
+			expect(calls).toEqual([]);
+		});
+
+		it("LifecycleContext.trigger defaults to programmatic; ctx round-trips to JSONL header", async () => {
+			writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md", "");
+			const chain = createMockSessionChain({
+				cwd: tmpDir,
+				steps: [{ branch: [mockAssistantMessage("Plan: .rpiv/artifacts/research/r.md")] }],
+			});
+			const { calls, lifecycle } = recorder();
+			await runWorkflow(chain.ctx, { workflow: wf("tiny", ["research"]), input: "x", lifecycle });
+			const startCtx = calls.find(([n]) => n === "onWorkflowStart")![1][0] as { trigger: { kind: string } };
+			expect(startCtx.trigger).toEqual({ kind: "programmatic" });
+			const { header } = readState(tmpDir);
+			expect(header.trigger).toEqual({ kind: "programmatic" });
+		});
+
+		it("explicit trigger flows through every event and the JSONL header", async () => {
+			writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md", "");
+			const chain = createMockSessionChain({
+				cwd: tmpDir,
+				steps: [{ branch: [mockAssistantMessage("Plan: .rpiv/artifacts/research/r.md")] }],
+			});
+			const { calls, lifecycle } = recorder();
+			const trigger = { kind: "external" as const, source: "github-webhook", ref: "deadbeef" };
+			await runWorkflow(chain.ctx, { workflow: wf("tiny", ["research"]), input: "x", lifecycle, trigger });
+			for (const [, payload] of calls) {
+				// Every event's LifecycleContext (last positional arg for stage events, also workflow events) carries trigger.
+				const lastArg = payload[payload.length - 1];
+				if (lastArg && typeof lastArg === "object" && "trigger" in lastArg) {
+					expect((lastArg as { trigger: unknown }).trigger).toEqual(trigger);
+				}
+			}
+			const { header } = readState(tmpDir);
+			expect(header.trigger).toEqual(trigger);
+		});
+	});
 });
 
 describe("transcript offset helpers", () => {
