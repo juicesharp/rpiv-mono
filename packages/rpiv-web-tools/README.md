@@ -8,13 +8,13 @@
   </a>
 </div>
 
-Let the model search the web and read pages. `rpiv-web-tools` adds `web_search` and `web_fetch` tools to [Pi Agent](https://github.com/badlogic/pi-mono) with pluggable providers (Brave, Tavily, Serper, Exa, Jina, Firecrawl, [SearXNG](https://docs.searxng.org/)), plus `/web-search-config` for interactive provider selection and API-key setup.
+Let the model search the web and read pages. `rpiv-web-tools` adds `web_search` and `web_fetch` tools to [Pi Agent](https://github.com/badlogic/pi-mono) with pluggable providers (Brave, Tavily, Serper, Exa, Jina, Firecrawl, [SearXNG](https://docs.searxng.org/), [Ollama](https://ollama.com)), plus `/web-search-config` for interactive provider selection and API-key setup.
 
 ![Provider selection prompt](https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-web-tools/docs/config.jpg)
 
 ## Features
 
-- **Seven pluggable providers** - Brave, Tavily, Serper, Exa, Jina, Firecrawl, and self-hosted SearXNG. Pick one as the active backend; switch any time without losing the others' keys.
+- **Eight pluggable providers** - Brave, Tavily, Serper, Exa, Jina, Firecrawl, self-hosted SearXNG, and Ollama (local or cloud). Pick one as the active backend; switch any time without losing the others' keys.
 - **Per-provider fetch strategy** - Brave, Serper, and SearXNG read the URL directly and strip HTML to text; Tavily/Exa/Jina/Firecrawl use their native extraction endpoints (markdown for Jina/Firecrawl, plain text for Tavily/Exa).
 - **Read any URL** - fetch http/https pages with HTML-to-text extraction, or get the raw response with `raw: true` (honoured by Brave/Serper; extraction providers always return their parsed text).
 - **Large-page spillover** - oversized responses truncate inline and spill the full body to a temp file the model can read on demand.
@@ -53,7 +53,7 @@ Returns:
   content: [{ type: "text", text: string }], // markdown list of "**title**\n url\n snippet"
   details: {
     query: string,
-    backend: "brave" | "tavily" | "serper" | "exa" | "jina" | "firecrawl" | "searxng",
+    backend: "brave" | "tavily" | "serper" | "exa" | "jina" | "firecrawl" | "searxng" | "ollama",
     resultCount: number,
     results?: Array<{ title: string, url: string, snippet: string }>,
   }
@@ -100,7 +100,7 @@ Throws on invalid URL, non-http(s) protocol, private/loopback hostnames (SSRF gu
 
 First match wins:
 
-1. The active provider's environment variable: `BRAVE_SEARCH_API_KEY`, `TAVILY_API_KEY`, `SERPER_API_KEY`, `EXA_API_KEY`, `JINA_API_KEY`, `FIRECRAWL_API_KEY`, or `SEARXNG_API_KEY`
+1. The active provider's environment variable: `BRAVE_SEARCH_API_KEY`, `TAVILY_API_KEY`, `SERPER_API_KEY`, `EXA_API_KEY`, `JINA_API_KEY`, `FIRECRAWL_API_KEY`, `SEARXNG_API_KEY`, or `OLLAMA_API_KEY`
 2. `apiKeys.<provider>` field in `~/.config/rpiv-web-tools/config.json`
 3. Legacy `apiKey` field (Brave only — auto-migrated to the new shape on next save)
 
@@ -142,6 +142,39 @@ curl -sf 'http://localhost:8080/search?q=hello&format=json' | jq '.results | len
 ```
 
 `403` means JSON is still disabled — re-check `~/.searxng/settings.yml`. Works identically on Docker Desktop or OrbStack. For a throwaway test instance, swap `~/.searxng` for `/tmp/searxng` and drop `--restart unless-stopped`.
+
+## Ollama (local or cloud)
+
+Ollama provides web search and fetch as built-in capabilities — no third-party API key needed for local usage. For cloud access, an API key is required.
+
+### Local Ollama
+
+Just run Ollama locally and it works out of the box:
+
+```bash
+ollama serve
+```
+
+No API key needed. The provider talks to `http://localhost:11434` by default.
+
+### Ollama Cloud
+
+For cloud access via [Ollama Cloud](https://ollama.com), set the base URL and API key:
+
+```bash
+export OLLAMA_HOST=https://ollama.com
+export OLLAMA_API_KEY=your_api_key   # generate at https://ollama.com/settings/keys
+```
+
+Or configure interactively via `/web-search-config` — select "Ollama" and enter the URL and key.
+
+Resolution order:
+- **Base URL**: `OLLAMA_HOST` env var → `baseUrls.ollama` in config → default `http://localhost:11434`
+- **API key**: `OLLAMA_API_KEY` env var → `apiKeys.ollama` in config (optional for local, required for cloud)
+
+The provider automatically uses the correct API paths:
+- **Local** (`localhost`, `127.0.0.1`, `0.0.0.0`): `/api/experimental/web_search` and `/api/experimental/web_fetch`
+- **Cloud** (any other host): `/api/web_search` and `/api/web_fetch`
 
 ## Executor guidance overrides
 

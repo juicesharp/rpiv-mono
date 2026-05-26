@@ -1648,7 +1648,7 @@ describe("web_search.execute — ollama", () => {
 			?.execute?.("tc", { query: "hello" }, undefined as never, undefined as never, createMockCtx());
 		const callUrl = new URL(stub.calls[0].url);
 		expect(`${callUrl.protocol}//${callUrl.host}`).toBe("http://env-host:9000");
-		expect(callUrl.pathname).toBe("/api/experimental/web_search");
+		expect(callUrl.pathname).toBe("/api/web_search");
 		const body = JSON.parse(stub.calls[0].init?.body as string);
 		expect(body.query).toBe("hello");
 		expect(body.max_results).toBeDefined();

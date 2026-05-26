@@ -14,9 +14,21 @@ export const OLLAMA_API_KEY_ENV_VAR = "OLLAMA_API_KEY";
 export const OLLAMA_HOST_ENV_VAR = "OLLAMA_HOST";
 export const OLLAMA_DEFAULT_URL = "http://localhost:11434";
 
-// Ollama API paths (experimental as of 2025-09)
-const OLLAMA_SEARCH_PATH = "/api/experimental/web_search";
-const OLLAMA_FETCH_PATH = "/api/experimental/web_fetch";
+// Ollama API paths — cloud (ollama.com) uses stable /api/... paths,
+// local instances use /api/experimental/... (at least through v0.24).
+const CLOUD_SEARCH_PATH = "/api/web_search";
+const CLOUD_FETCH_PATH = "/api/web_fetch";
+const LOCAL_SEARCH_PATH = "/api/experimental/web_search";
+const LOCAL_FETCH_PATH = "/api/experimental/web_fetch";
+
+function isLocalHost(baseUrl: string): boolean {
+	try {
+		const hostname = new URL(baseUrl).hostname;
+		return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "0.0.0.0" || hostname === "[::1]";
+	} catch {
+		return true; // default to local paths if URL is somehow invalid
+	}
+}
 
 // Number of leading + trailing characters preserved when masking an API key
 // in the config prompt. Mirrors API_KEY_MASK_VISIBLE_CHARS in web-tools.ts.
@@ -119,24 +131,27 @@ export class OllamaProvider implements SearchProvider {
 
 	private readonly apiKey?: string;
 	private readonly baseUrl: string;
+	private readonly local: boolean;
 
 	constructor(options: OllamaProviderOptions) {
 		this.apiKey = options.apiKey?.trim() || undefined;
 		const trimmed = stripTrailingSlashes(options.baseUrl?.trim() ?? "");
 		if (trimmed) assertHttpUrl(trimmed);
 		this.baseUrl = trimmed;
+		this.local = isLocalHost(trimmed);
 	}
 
 	async search(query: string, maxResults: number, signal?: AbortSignal): Promise<SearchResponse> {
 		this.requireBaseUrl();
+		const path = this.local ? LOCAL_SEARCH_PATH : CLOUD_SEARCH_PATH;
 		try {
-			const res = await fetch(`${this.baseUrl}${OLLAMA_SEARCH_PATH}`, {
+			const res = await fetch(`${this.baseUrl}${path}`, {
 				method: "POST",
 				headers: this.buildHeaders(),
 				body: JSON.stringify({ query, max_results: maxResults }),
 				signal,
 			});
-			if (!res.ok) throw await this.searchApiError(res);
+			if (!res.ok) throw await this.formatError("Search", res);
 			const raw = (await res.json()) as OllamaSearchResponse;
 			return { query, results: normalizeOllamaResults(raw) };
 		} catch (error) {
@@ -147,14 +162,15 @@ export class OllamaProvider implements SearchProvider {
 
 	async fetch(url: string, _raw: boolean, signal?: AbortSignal): Promise<FetchResponse> {
 		this.requireBaseUrl();
+		const path = this.local ? LOCAL_FETCH_PATH : CLOUD_FETCH_PATH;
 		try {
-			const res = await fetch(`${this.baseUrl}${OLLAMA_FETCH_PATH}`, {
+			const res = await fetch(`${this.baseUrl}${path}`, {
 				method: "POST",
 				headers: this.buildHeaders(),
 				body: JSON.stringify({ url }),
 				signal,
 			});
-			if (!res.ok) throw await this.fetchApiError(res);
+			if (!res.ok) throw await this.formatError("Fetch", res);
 			const data = (await res.json()) as OllamaFetchResponse;
 			if (!data.content) {
 				throw new Error(`${this.label} Fetch API error: no content returned for ${url}`);
@@ -184,16 +200,10 @@ export class OllamaProvider implements SearchProvider {
 		return headers;
 	}
 
-	private async searchApiError(res: Response): Promise<Error> {
+	private async formatError(label: string, res: Response): Promise<Error> {
 		const body = await res.text();
 		const hint = hintForStatus(res.status);
-		return new Error(`${this.label} Search API error (${res.status})${hint}: ${body}`);
-	}
-
-	private async fetchApiError(res: Response): Promise<Error> {
-		const body = await res.text();
-		const hint = hintForStatus(res.status);
-		return new Error(`${this.label} Fetch API error (${res.status})${hint}: ${body}`);
+		return new Error(`${this.label} ${label} API error (${res.status})${hint}: ${body}`);
 	}
 }
 
