@@ -11,7 +11,16 @@ You are tasked with implementing an approved technical plan from `.rpiv/artifact
 
 ## Input
 
-`$1` is the plan path (empty/literal → ask user); `${@:2}` is the phase scope (empty → all phases sequentially; else scope to that phase only).
+$ARGUMENTS
+
+The input above is `<plan-path> [phase]`:
+- First token is the plan path under `.rpiv/artifacts/plans/`.
+- Anything after it (e.g. "Phase 2") names a single phase to scope to.
+
+Rules:
+- If a phase is named, implement ONLY that phase. Stop and print the closing block as soon as its success criteria pass. Do not read, edit, or check off other phases' sections.
+- If no phase is named, implement every phase in the plan sequentially.
+- If the input is empty or the plan path is missing/literal, ask the user for the plan path before proceeding.
 
 ## Getting Started
 
@@ -27,7 +36,7 @@ With a plan path in hand:
 
 Plans are carefully designed, but reality can be messy. Your job is to:
 - Follow the plan's intent while adapting to what you find
-- Implement each phase fully before moving to the next
+- Implement each in-scope phase fully before starting the next
 - Verify your work makes sense in the broader codebase context
 - Update checkboxes in the plan as you complete sections
 
@@ -53,6 +62,7 @@ After implementing a phase:
 - Fix any issues before proceeding
 - Update your progress in both the plan and your todos
 - Check off completed items in the plan file itself using Edit
+- If the input scopes you to a single phase, stop immediately after that phase's checks pass — do not advance to other phases
 
 Don't let verification interrupt your flow - batch it at natural stopping points.
 
