@@ -71,8 +71,44 @@ export type StageRef =
  * fan-out is a userland wrapper. Every callback may return a Promise;
  * the runner awaits it before advancing (back-pressure for free).
  *
- * Listener throws are caught + surfaced via `ctx.ui.notify` but never
- * halt the run.
+ * Every event fires AFTER its corresponding JSONL row lands on disk
+ * (onStageEnd / onStageError / onRoute / onFanoutUnitEnd), so a
+ * listener that calls `readLastStage(cwd, ctx.runId)` from inside the
+ * callback is guaranteed to observe the just-recorded row.
+ *
+ * Listener throws are caught + surfaced via `ctx.ui.notify(..., "warning")`
+ * and never halt the run — listeners are observers, not gates.
+ *
+ * @example Per-call observation from an embedder
+ * ```ts
+ * import { runWorkflow, type LifecycleListeners } from "@juicesharp/rpiv-workflow";
+ *
+ * const listeners: LifecycleListeners = {
+ *   onWorkflowStart: (ctx) =>
+ *     console.log(`▶ ${ctx.workflow} (${ctx.totalStages} stages) [${ctx.trigger.kind}]`),
+ *   onStageStart:    (stage)               => console.log(`  → ${stage.stageNumber}. ${stage.name}`),
+ *   onStageEnd:      (stage, output)       => console.log(`  ✓ ${stage.name}: ${output.kind}`),
+ *   onStageRetry:    (stage, attempt)      => console.warn(`  ⟲ ${stage.name} retry #${attempt}`),
+ *   onStageError:    (stage, error)        => console.error(`  ✗ ${stage.name}: ${error}`),
+ *   onRoute:         (from, to)            => console.log(`  ↪ ${from.name} → ${to}`),
+ *   onFanoutStart:   (stage, units)        => console.log(`  ⇉ ${stage.name} × ${units.length}`),
+ *   onFanoutUnitEnd: (stage, _u, i)        => console.log(`     · ${stage.name} #${i}`),
+ *   onWorkflowEnd:   (result)              =>
+ *     console.log(result.success ? "✓ done" : `✗ ${result.error ?? "halted"}`),
+ * };
+ *
+ * await runWorkflow({ workflow, input, host, lifecycle: listeners });
+ * ```
+ *
+ * @example Cross-package fan-out via `registerLifecycle`
+ * ```ts
+ * import { registerLifecycle } from "@juicesharp/rpiv-workflow";
+ *
+ * const dispose = registerLifecycle({
+ *   onWorkflowStart: (ctx) => widget.open(ctx.runId, ctx.workflow),
+ *   onStageEnd:      (stage, _o, ctx) => widget.markDone(ctx.runId, stage.name),
+ * });
+ * ```
  */
 export interface LifecycleListeners {
 	/** After JSONL header lands; before the start stage's preflight. */

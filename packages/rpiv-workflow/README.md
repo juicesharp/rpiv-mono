@@ -105,6 +105,31 @@ works; the published types name only the workflow-owned port.
 
 These workflows are merged into the lowest layer (`built-in`); user/project overlays still override by name.
 
+### Cross-package lifecycle (`registerLifecycle`)
+
+When another extension needs to observe every workflow run in the process — typically an overlay widget that visualises in-flight stages, a metrics emitter, or a side-effect bridge — register a listener bundle at extension load:
+
+```ts
+import { registerLifecycle, type WorkflowHost } from "@juicesharp/rpiv-workflow";
+
+export default function (host: WorkflowHost): void {
+  const dispose = registerLifecycle({
+    onWorkflowStart: (ctx)            => widget.open(ctx.runId, ctx.workflow, ctx.totalStages),
+    onStageStart:    (stage, ctx)     => widget.markActive(ctx.runId, stage.name),
+    onStageEnd:      (stage, _o, ctx) => widget.markDone(ctx.runId, stage.name),
+    onStageError:    (stage, err, ctx)=> widget.markFailed(ctx.runId, stage.name, err),
+    onWorkflowEnd:   (result, ctx)    => widget.close(ctx.runId, result.success),
+  });
+  // dispose() removes the bundle if the extension ever unloads.
+}
+```
+
+Every fired event walks the registry in registration order, then the per-call bundle (if any) the embedder passed to `runWorkflow({ lifecycle })`. Multiple bundles coexist; one bundle throwing does not affect siblings or halt the run (throws are caught and logged via `ctx.ui.notify(..., "warning")`).
+
+The registry is anchored on `Symbol.for("@juicesharp/rpiv-workflow:lifecycle")`, mirroring the `registerBuiltIns` pattern, so cross-package module resolution still shares one slot. Snapshot semantics: each event observes the registry as it stands at that instant — a registration made mid-event applies to subsequent events, not the in-flight one.
+
+`@juicesharp/rpiv-pi` is the reference consumer (overlay widget that visualises in-flight runs).
+
 ## Host boundary
 
 `rpiv-workflow`'s public type surface names **zero** `@earendil-works/pi-coding-agent`
@@ -142,6 +167,43 @@ const result = await runWorkflow({
 ```
 
 Returns `{ runId, stagesCompleted, success }`. Past-run inspection uses `listRuns(cwd)` / `readHeader` / `readLastStage` / `listArtifacts`.
+
+### Lifecycle
+
+Pass `lifecycle` to observe stage progress in-process without re-reading the JSONL:
+
+```ts
+import { runWorkflow } from "@juicesharp/rpiv-workflow";
+
+const result = await runWorkflow({
+  workflow: myFlow,
+  input: "task description",
+  host: piHost,
+  trigger: { kind: "external", source: "webhook", ref: "evt_42" },
+  lifecycle: {
+    onStageStart:  (stage, ctx)         => console.log("→", stage.name, ctx.runId),
+    onStageEnd:    (stage, output)      => console.log("✓", stage.name, output.kind),
+    onWorkflowEnd: (result)             => console.log("done:", result.success),
+  },
+});
+```
+
+Every callback receives a `LifecycleContext` with `runId`, `workflow`, `totalStages`, the `trigger` metadata, and a `Readonly<RunState>` snapshot. Events fire AFTER their JSONL row lands on disk, so a listener that calls `readLastStage(cwd, ctx.runId)` is guaranteed to see the just-recorded row. Callbacks may be async — the runner awaits them before advancing, giving back-pressure for free. Throws are caught + surfaced through `ctx.ui.notify(..., "warning")`; they never halt the run.
+
+Available callbacks: `onWorkflowStart`, `onStageStart`, `onStageEnd`, `onStageRetry`, `onStageError`, `onRoute`, `onFanoutStart`, `onFanoutUnitStart`, `onFanoutUnitEnd`, `onWorkflowEnd`. See the `LifecycleListeners` JSDoc for the per-event payload.
+
+### Trigger
+
+`trigger` defaults to `{ kind: "programmatic" }`. Set it explicitly when spawning a run from a cron job, webhook handler, or sibling extension — the value lands in the JSONL header (`WorkflowHeader.trigger`), surfaces on `RunSummary.trigger` for past-run readers, and is threaded into every `LifecycleContext`:
+
+```ts
+type RunTrigger =
+  | { kind: "command";      name: string;      meta?: Record<string, unknown> }
+  | { kind: "programmatic"; source?: string;   meta?: Record<string, unknown> }
+  | { kind: "external";     source: string; ref?: string; meta?: Record<string, unknown> };
+```
+
+`/wf` sets `{ kind: "command", name: "wf" }` itself — embedders only set this field for non-`/wf` entry points. Pi is single-active-session: external trigger sources MUST gate their own spawning if a run is already in flight; the runtime does not enforce a process-wide mutex.
 
 ## Outcomes — collectors and parsers
 
