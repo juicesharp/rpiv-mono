@@ -312,13 +312,36 @@ export function defineWorkflow(spec: Workflow): Workflow {
 }
 
 /**
- * Artifact-producing stage: invokes a Pi skill that writes
- * `.rpiv/artifacts/<bucket>/<file>.md`. Defaults to fresh-session. The
- * skill body defaults to the surrounding `stages` record key — override
- * via `{ skill: "<other>" }` only when the stage id and the Pi skill
- * differ (e.g. `code-review-large` aliasing the `code-review` skill).
+ * Options accepted by `produces.script({ run, ... })`. Subset of the
+ * skill-stage `StageDef` knobs that semantically apply to a pure TS
+ * function: validation (`inputSchema` / `outputSchema` + retry knobs)
+ * and artifact-inheritance opt-out. `kind` and `sessionPolicy` are not
+ * configurable — script stages are always `"produces"` + `"fresh"`.
+ * `skill`, `outcome`, and `fanout` are unauthorisable here.
  */
-export function produces(overrides: Partial<StageDef> = {}): StageDef {
+interface ProducesScriptOptions<TIn = unknown, TOut = unknown> {
+	run: ProducesScriptFn<string, TOut>;
+	outputSchema?: StageSchema<unknown, TOut>;
+	inputSchema?: StageSchema<unknown, TIn>;
+	onInvalid?: OnInvalid;
+	maxRetries?: number;
+	validateTimeoutMs?: number;
+	inheritsArtifacts?: boolean;
+}
+
+/**
+ * Options accepted by `acts.script({ run, ... })` and
+ * `terminal.script({ run, ... })`. Validation surface is narrower than
+ * the produces variant: side-effect stages have no `outputSchema`
+ * (they emit no data envelope), so the retry knobs don't apply.
+ */
+interface ActsScriptOptions<TIn = unknown> {
+	run: ActsScriptFn;
+	inputSchema?: StageSchema<unknown, TIn>;
+	inheritsArtifacts?: boolean;
+}
+
+function producesFn(overrides: Partial<StageDef> = {}): StageDef {
 	return {
 		kind: "produces",
 		sessionPolicy: "fresh",
@@ -326,18 +349,69 @@ export function produces(overrides: Partial<StageDef> = {}): StageDef {
 	};
 }
 
-/**
- * Side-effect stage: invokes a Pi skill whose side effect IS the work
- * (commit, implement). No artifact-emission check. Defaults to fresh-session.
- * Like `produces`, the skill body defaults to the record key.
- */
-export function acts(overrides: Partial<StageDef> = {}): StageDef {
+function producesScript<TIn = unknown, TOut = unknown>(opts: ProducesScriptOptions<TIn, TOut>): StageDef<TIn, TOut> {
+	return {
+		kind: "produces",
+		sessionPolicy: "fresh",
+		run: opts.run as ProducesScriptFn<string, TOut>,
+		outputSchema: opts.outputSchema,
+		inputSchema: opts.inputSchema,
+		onInvalid: opts.onInvalid,
+		maxRetries: opts.maxRetries,
+		validateTimeoutMs: opts.validateTimeoutMs,
+		inheritsArtifacts: opts.inheritsArtifacts,
+	};
+}
+
+function actsFn(overrides: Partial<StageDef> = {}): StageDef {
 	return {
 		kind: "side-effect",
 		sessionPolicy: "fresh",
 		...overrides,
 	};
 }
+
+function actsScript<TIn = unknown>(opts: ActsScriptOptions<TIn>): StageDef<TIn, void> {
+	return {
+		kind: "side-effect",
+		sessionPolicy: "fresh",
+		run: opts.run,
+		inputSchema: opts.inputSchema,
+		inheritsArtifacts: opts.inheritsArtifacts,
+	};
+}
+
+function terminalFn(overrides: Partial<StageDef> = {}): StageDef {
+	return actsFn({ ...overrides, inheritsArtifacts: false });
+}
+
+function terminalScript<TIn = unknown>(opts: ActsScriptOptions<TIn>): StageDef<TIn, void> {
+	return actsScript({ ...opts, inheritsArtifacts: false });
+}
+
+/**
+ * Artifact-producing stage: invokes a Pi skill that writes
+ * `.rpiv/artifacts/<bucket>/<file>.md`. Defaults to fresh-session. The
+ * skill body defaults to the surrounding `stages` record key — override
+ * via `{ skill: "<other>" }` only when the stage id and the Pi skill
+ * differ (e.g. `code-review-large` aliasing the `code-review` skill).
+ *
+ * Skillless variant: `produces.script({ run, outputSchema?, ... })`
+ * (Phase B.2) runs a pure TS function in place of a Pi skill body. The
+ * function returns the `Output<K, D>` envelope directly.
+ */
+export const produces = Object.assign(producesFn, { script: producesScript });
+
+/**
+ * Side-effect stage: invokes a Pi skill whose side effect IS the work
+ * (commit, implement). No artifact-emission check. Defaults to fresh-session.
+ * Like `produces`, the skill body defaults to the record key.
+ *
+ * Skillless variant: `acts.script({ run, ... })` runs a pure TS
+ * function in place of a Pi skill body; the runner synthesises a
+ * `SideEffectOutput` envelope so the chain stays uniform.
+ */
+export const acts = Object.assign(actsFn, { script: actsScript });
 
 /**
  * Terminal side-effect stage: an `acts`-shaped stage that does NOT inherit
@@ -351,11 +425,11 @@ export function acts(overrides: Partial<StageDef> = {}): StageDef {
  * (cleanup, summary, post-run notification) shouldn't be coupled to the
  * upstream chain's artifact.
  *
- * Desugars to `acts({ ...overrides, inheritsArtifacts: false })`.
+ * Desugars to `acts({ ...overrides, inheritsArtifacts: false })`. The
+ * skillless variant `terminal.script({ run, ... })` desugars to
+ * `acts.script({ ...opts, inheritsArtifacts: false })`.
  */
-export function terminal(overrides: Partial<StageDef> = {}): StageDef {
-	return acts({ ...overrides, inheritsArtifacts: false });
-}
+export const terminal = Object.assign(terminalFn, { script: terminalScript });
 
 // ===========================================================================
 // Route builders — common patterns

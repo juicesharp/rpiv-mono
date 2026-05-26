@@ -9,13 +9,16 @@
 import { Type } from "typebox";
 import { describe, expect, it } from "vitest";
 import {
+	type ActsScriptFn,
 	acts,
 	defineRoute,
 	defineWorkflow,
 	type EdgeFn,
 	gate,
 	type OutputSpec,
+	type ProducesScriptFn,
 	produces,
+	type ScriptContext,
 	terminal,
 	type Workflow,
 } from "./api.js";
@@ -141,6 +144,91 @@ describe("terminal", () => {
 		// is applied after the spread so a caller-supplied `true` is
 		// overwritten. Authors wanting inheritance should call `acts()`.
 		const n = terminal({ inheritsArtifacts: true as unknown as false });
+		expect(n.inheritsArtifacts).toBe(false);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// produces.script / acts.script / terminal.script — skillless TS stages (Phase B.2)
+// ---------------------------------------------------------------------------
+
+describe("produces.script", () => {
+	const noopProducesScript: ProducesScriptFn = (_ctx: ScriptContext) => ({
+		kind: "noop",
+		artifacts: [],
+		data: {},
+		meta: { stage: "s", stageNumber: 1, ts: "", runId: "" },
+	});
+
+	it('returns { kind: "produces", sessionPolicy: "fresh", run }', () => {
+		const n = produces.script({ run: noopProducesScript });
+		expect(n).toMatchObject({
+			kind: "produces",
+			sessionPolicy: "fresh",
+		});
+		expect(n.run).toBe(noopProducesScript);
+		// No skill / outcome / fanout on script stages.
+		expect(n.skill).toBeUndefined();
+		expect(n.outcome).toBeUndefined();
+		expect(n.fanout).toBeUndefined();
+	});
+
+	it("threads validation knobs through to the StageDef", () => {
+		const schema = typeboxSchema(Type.Object({ count: Type.Integer({ minimum: 0 }) }));
+		const n = produces.script({
+			run: noopProducesScript,
+			outputSchema: schema,
+			onInvalid: "halt",
+			maxRetries: 5,
+			validateTimeoutMs: 2000,
+			inheritsArtifacts: false,
+		});
+		expect(n.outputSchema).toBe(schema);
+		expect(n.onInvalid).toBe("halt");
+		expect(n.maxRetries).toBe(5);
+		expect(n.validateTimeoutMs).toBe(2000);
+		expect(n.inheritsArtifacts).toBe(false);
+	});
+});
+
+describe("acts.script", () => {
+	const noopActsScript: ActsScriptFn = (_ctx: ScriptContext) => {};
+
+	it('returns { kind: "side-effect", sessionPolicy: "fresh", run }', () => {
+		const n = acts.script({ run: noopActsScript });
+		expect(n).toMatchObject({
+			kind: "side-effect",
+			sessionPolicy: "fresh",
+		});
+		expect(n.run).toBe(noopActsScript);
+		expect(n.skill).toBeUndefined();
+		expect(n.outcome).toBeUndefined();
+		expect(n.fanout).toBeUndefined();
+	});
+
+	it("preserves inputSchema + inheritsArtifacts overrides", () => {
+		const schema = typeboxSchema(Type.Object({ ok: Type.Boolean() }));
+		const n = acts.script({ run: noopActsScript, inputSchema: schema, inheritsArtifacts: false });
+		expect(n.inputSchema).toBe(schema);
+		expect(n.inheritsArtifacts).toBe(false);
+	});
+});
+
+describe("terminal.script", () => {
+	const noopActsScript: ActsScriptFn = (_ctx: ScriptContext) => {};
+
+	it('returns { kind: "side-effect", inheritsArtifacts: false, run } — opt-out is structural', () => {
+		const n = terminal.script({ run: noopActsScript });
+		expect(n).toMatchObject({
+			kind: "side-effect",
+			sessionPolicy: "fresh",
+			inheritsArtifacts: false,
+		});
+		expect(n.run).toBe(noopActsScript);
+	});
+
+	it("a caller-supplied inheritsArtifacts: true cannot reverse the opt-out", () => {
+		const n = terminal.script({ run: noopActsScript, inheritsArtifacts: true as unknown as false });
 		expect(n.inheritsArtifacts).toBe(false);
 	});
 });
