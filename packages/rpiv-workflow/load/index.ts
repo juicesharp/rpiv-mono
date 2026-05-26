@@ -2,30 +2,30 @@
  * jiti-based loader for user-authored workflows.
  *
  * Layered merge: `built-in` ← `user` ← `project`. Within each non-built-in
- * layer, drop-in files merge first (alpha-sorted filename), then the
- * canonical file — so the file the user wrote by hand wins over any packs
- * they installed via drop-in.
+ * layer, pack files merge first (alpha-sorted filename), then the
+ * config file — so the file the user wrote by hand wins over any packs
+ * they installed.
  *
  * Paths (per layer):
- *   user    — canonical  `~/.config/rpiv-workflow/workflows.config.ts`
- *             drop-ins   `~/.config/rpiv-workflow/workflows/*.ts`
- *   project — canonical  `<cwd>/.rpiv-workflow/workflows.config.ts`
- *             drop-ins   `<cwd>/.rpiv-workflow/workflows/*.ts`
+ *   user    — config  `~/.config/rpiv-workflow/workflows.config.ts`
+ *             packs   `~/.config/rpiv-workflow/workflows/*.ts`
+ *   project — config  `<cwd>/.rpiv-workflow/workflows.config.ts`
+ *             packs   `<cwd>/.rpiv-workflow/workflows/*.ts`
  *
- * Canonical file — accepts three default-export shapes:
+ * Config file — accepts three default-export shapes:
  *   1. A single `Workflow`               — single-entry namespace
  *   2. `Workflow[]`                      — multi-entry, default required if > 1
  *   3. `{ workflows, default? }`         — full envelope, explicit default
  *
- * Drop-in file — accepts only `Workflow | Workflow[]`. The envelope form
- * is rejected because `default` lives in the canonical file (one source of
+ * Pack file — accepts only `Workflow | Workflow[]`. The envelope form
+ * is rejected because `default` lives in the config file (one source of
  * truth per layer).
  *
- * `default` cascades layer-by-layer (project canonical > user canonical >
+ * `default` cascades layer-by-layer (project config > user config >
  * first registered workflow in insertion order). When no workflows are
  * registered at all, `default` is `undefined` and `command.ts` surfaces
  * a "no workflows registered" notify instead of running anything. Within
- * a layer only the canonical file can set `default`.
+ * a layer only the config file can set `default`.
  *
  * jiti loads `.ts` directly — no build step required of users. Loader
  * failures (file throws on import, exports the wrong shape) are captured as
@@ -39,7 +39,7 @@
  * context that implicitly trusts the current working directory. Users
  * running Pi in a freshly-cloned untrusted repo should diff
  * `.rpiv-workflow/workflows.config.ts` and `.rpiv-workflow/workflows/*.ts`
- * before running `/wf`.
+ * (the config file + pack files) before running `/wf`.
  *
  * Module map:
  *   ./paths.ts            — OverlayPaths + per-layer path helpers
@@ -139,7 +139,7 @@ export async function loadWorkflows(cwd: string): Promise<LoadedWorkflows> {
 	// Validate every merged workflow once. Validation runs even on built-in so
 	// that a future built-in regression surfaces in the same channel as user
 	// errors. Each issue is attributed to the exact file the surviving workflow
-	// came from (drop-in or canonical) so `/wf` previews can render
+	// came from (pack or config) so `/wf` previews can render
 	// `[<layer> config (<path>)] workflow "X": ...` errors.
 	for (const w of acc.workflowMap.values()) {
 		const layer = acc.sources.get(w.name) ?? "built-in";
@@ -147,7 +147,7 @@ export async function loadWorkflows(cwd: string): Promise<LoadedWorkflows> {
 		for (const v of validateWorkflow(w)) acc.issues.push({ ...v, kind: "validation", layer, path });
 	}
 
-	const defaultName = resolveDefault(projectOutcome.canonicalDefault, userOutcome.canonicalDefault, acc);
+	const defaultName = resolveDefault(projectOutcome.configDefault, userOutcome.configDefault, acc);
 
 	return {
 		workflows: [...acc.workflowMap.values()],

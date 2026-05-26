@@ -20,7 +20,7 @@
  *
  * Pre-bundled outcome: `rpivArtifactMdOutcome` =
  * `{ collector: rpivArtifactCollector, parser: frontmatterParser }` —
- * the drop-in default rpiv-pi's built-in workflows wire into every
+ * the default rpiv-pi's built-in workflows wire into every
  * `produces()` stage.
  */
 

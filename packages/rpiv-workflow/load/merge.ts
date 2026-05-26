@@ -3,11 +3,11 @@
  * struct (mutable bag of state threaded through the layer/file/merge
  * helpers) and the `LayerOutcome` return shape.
  *
- * `loadLayer` walks the drop-in directory then the canonical file,
+ * `loadLayer` walks the packs directory then the config file,
  * calling `mergeOverlay` for each successful parse. `mergeOverlay`
- * writes into the accumulator's maps in place — the canonical file's
- * workflows win over drop-ins of the same name because the canonical
- * pass runs second.
+ * writes into the accumulator's maps in place — the config file's
+ * workflows win over packs of the same name because the config pass
+ * runs second.
  *
  * Load-error issues construct via `loadError` so the `Issue` shape is
  * centralised.
@@ -42,13 +42,13 @@ export interface LoadAccumulator {
 
 /**
  * What a per-layer load returns to the orchestrator. `contributed`
- * controls the `LoadedWorkflows.layers` banner; `canonicalDefault`
- * feeds `resolveDefault` (drop-in files don't set defaults — see
- * `normalizeDefaultExport`'s drop-in hard-reject).
+ * controls the `LoadedWorkflows.layers` banner; `configDefault`
+ * feeds `resolveDefault` (pack files don't set defaults — see
+ * `normalizeDefaultExport`'s pack hard-reject).
  */
 export interface LayerOutcome {
 	contributed: boolean;
-	canonicalDefault: string | undefined;
+	configDefault: string | undefined;
 }
 
 export function loadError(acc: LoadAccumulator, layer: ConfigLayer, path: string | undefined, message: string): void {
@@ -56,42 +56,42 @@ export function loadError(acc: LoadAccumulator, layer: ConfigLayer, path: string
 }
 
 /**
- * Load one layer's drop-ins (alpha-sorted) then its canonical file, merging
- * into the accumulator in that order so the canonical file's workflows win
- * over drop-ins of the same name. The returned `LayerOutcome.canonicalDefault`
- * carries the canonical file's `default` field (or `undefined`) — drop-in
+ * Load one layer's packs (alpha-sorted) then its config file, merging
+ * into the accumulator in that order so the config file's workflows win
+ * over packs of the same name. The returned `LayerOutcome.configDefault`
+ * carries the config file's `default` field (or `undefined`) — pack
  * `default` fields are rejected at normalisation, so they never participate
  * in default resolution.
  *
- * `LayerOutcome.contributed` is `false` only when neither the canonical
- * file nor any drop-in existed; that signals to `loadWorkflows` not to
+ * `LayerOutcome.contributed` is `false` only when neither the config
+ * file nor any pack existed; that signals to `loadWorkflows` not to
  * append the layer to the `layers` banner.
  */
 export async function loadLayer(paths: OverlayPaths, layer: ConfigLayer, acc: LoadAccumulator): Promise<LayerOutcome> {
 	let contributed = false;
-	let canonicalDefault: string | undefined;
+	let configDefault: string | undefined;
 
-	for (const dropInPath of enumerateDropIns(paths.dropInDir)) {
-		const parsed = await loadOverlayFile(dropInPath, layer, acc, "drop-in");
+	for (const packPath of enumeratePacks(paths.packsDir)) {
+		const parsed = await loadOverlayFile(packPath, layer, acc, "pack");
 		if (!parsed) continue;
-		mergeOverlay(parsed, layer, dropInPath, acc);
+		mergeOverlay(parsed, layer, packPath, acc);
 		contributed = true;
 	}
 
-	if (existsSync(paths.canonical)) {
-		const canonicalParsed = await loadOverlayFile(paths.canonical, layer, acc, "canonical");
-		if (canonicalParsed) {
-			mergeOverlay(canonicalParsed, layer, paths.canonical, acc);
-			canonicalDefault = canonicalParsed.default;
+	if (existsSync(paths.configFile)) {
+		const configParsed = await loadOverlayFile(paths.configFile, layer, acc, "config");
+		if (configParsed) {
+			mergeOverlay(configParsed, layer, paths.configFile, acc);
+			configDefault = configParsed.default;
 			contributed = true;
 		}
 	}
 
-	return { contributed, canonicalDefault };
+	return { contributed, configDefault };
 }
 
 /** Alpha-sorted `*.ts` files directly under `dir`. Empty array if `dir` doesn't exist. */
-function enumerateDropIns(dir: string): string[] {
+function enumeratePacks(dir: string): string[] {
 	if (!existsSync(dir)) return [];
 	let entries: string[];
 	try {

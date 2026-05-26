@@ -1,10 +1,10 @@
 /**
  * Tests for `loadWorkflows` — jiti-based workflow loader.
  *
- * Each test writes a canonical / drop-in fixture under a temp cwd, loads
+ * Each test writes a config / pack fixture under a temp cwd, loads
  * it, and asserts the merged `LoadedWorkflows` shape. The user-level
  * overlays (`~/.config/rpiv/workflows.config.ts` and the `workflows/`
- * drop-in dir) are exercised via the same temp-tree pattern — cleaned
+ * packs dir) are exercised via the same temp-tree pattern — cleaned
  * between tests so one test's overlay doesn't leak into the next.
  */
 
@@ -30,7 +30,7 @@ const produces = (overrides: Partial<StageDef> = {}): StageDef =>
 
 const TEST_TMP = join(process.env.HOME!, "test-workflow-load");
 const USER_PATHS = userOverlayPaths();
-const USER_CONFIG_DIR = dirname(USER_PATHS.canonical);
+const USER_CONFIG_DIR = dirname(USER_PATHS.configFile);
 const PROJECT_PATHS = projectOverlayPaths(TEST_TMP);
 
 // Synthetic built-ins so load tests don't depend on which sibling package
@@ -59,24 +59,24 @@ afterEach(() => {
 
 const writeProjectConfig = (cwd: string, body: string): void => {
 	const paths = projectOverlayPaths(cwd);
-	mkdirSync(dirname(paths.canonical), { recursive: true });
-	writeFileSync(paths.canonical, body, "utf-8");
+	mkdirSync(dirname(paths.configFile), { recursive: true });
+	writeFileSync(paths.configFile, body, "utf-8");
 };
 
-const writeProjectDropIn = (cwd: string, filename: string, body: string): void => {
+const writeProjectPack = (cwd: string, filename: string, body: string): void => {
 	const paths = projectOverlayPaths(cwd);
-	mkdirSync(paths.dropInDir, { recursive: true });
-	writeFileSync(join(paths.dropInDir, filename), body, "utf-8");
+	mkdirSync(paths.packsDir, { recursive: true });
+	writeFileSync(join(paths.packsDir, filename), body, "utf-8");
 };
 
 const writeUserConfig = (body: string): void => {
-	mkdirSync(dirname(USER_PATHS.canonical), { recursive: true });
-	writeFileSync(USER_PATHS.canonical, body, "utf-8");
+	mkdirSync(dirname(USER_PATHS.configFile), { recursive: true });
+	writeFileSync(USER_PATHS.configFile, body, "utf-8");
 };
 
-const writeUserDropIn = (filename: string, body: string): void => {
-	mkdirSync(USER_PATHS.dropInDir, { recursive: true });
-	writeFileSync(join(USER_PATHS.dropInDir, filename), body, "utf-8");
+const writeUserPack = (filename: string, body: string): void => {
+	mkdirSync(USER_PATHS.packsDir, { recursive: true });
+	writeFileSync(join(USER_PATHS.packsDir, filename), body, "utf-8");
 };
 
 // Fixture preamble: jiti loads these as real TS — so the produces()
@@ -314,7 +314,7 @@ export default defineWorkflow({
 		const issue = loaded.issues.find((i) => i.kind === "validation" && i.workflow === "bad");
 		expect(issue).toBeDefined();
 		expect(issue?.layer).toBe("project");
-		expect(issue?.path).toBe(PROJECT_PATHS.canonical);
+		expect(issue?.path).toBe(PROJECT_PATHS.configFile);
 	});
 
 	it("refuses a bare Workflow[] with >1 entry — must wrap in envelope with explicit default", async () => {
@@ -400,12 +400,12 @@ export default defineWorkflow({
 });
 
 // ---------------------------------------------------------------------------
-// Drop-in directories — alpha-sorted, canonical wins, no `default` allowed
+// Packs directories — alpha-sorted, config file wins, no `default` allowed
 // ---------------------------------------------------------------------------
 
-describe("loadWorkflows — drop-in directories", () => {
-	it("loads project drop-in workflows without a canonical file", async () => {
-		writeProjectDropIn(
+describe("loadWorkflows — packs directories", () => {
+	it("loads project packs without a config file", async () => {
+		writeProjectPack(
 			TEST_TMP,
 			"a-pack.ts",
 			`${importApi}
@@ -417,8 +417,8 @@ export default defineWorkflow({ name: "from-pack", start: "x", stages: { x: prod
 		expect(loaded.workflowSources.get("from-pack")).toBe("project");
 	});
 
-	it("loads user drop-in workflows without a canonical file", async () => {
-		writeUserDropIn(
+	it("loads user packs without a config file", async () => {
+		writeUserPack(
 			"my-pack.ts",
 			`${importApi}
 export default defineWorkflow({ name: "user-pack", start: "x", stages: { x: produces() }, edges: { x: "stop" } });
@@ -429,15 +429,15 @@ export default defineWorkflow({ name: "user-pack", start: "x", stages: { x: prod
 		expect(loaded.workflowSources.get("user-pack")).toBe("user");
 	});
 
-	it("merges drop-ins in alpha order — later files override earlier ones within the same layer", async () => {
-		writeProjectDropIn(
+	it("merges packs in alpha order — later files override earlier ones within the same layer", async () => {
+		writeProjectPack(
 			TEST_TMP,
 			"a-first.ts",
 			`${importApi}
 export default defineWorkflow({ name: "x", start: "from-a", stages: { "from-a": produces() }, edges: { "from-a": "stop" } });
 `,
 		);
-		writeProjectDropIn(
+		writeProjectPack(
 			TEST_TMP,
 			"z-last.ts",
 			`${importApi}
@@ -450,8 +450,8 @@ export default defineWorkflow({ name: "x", start: "from-z", stages: { "from-z": 
 		expect(x.start).toBe("from-z");
 	});
 
-	it("canonical file wins over drop-ins within the same layer", async () => {
-		writeProjectDropIn(
+	it("config file wins over packs within the same layer", async () => {
+		writeProjectPack(
 			TEST_TMP,
 			"pack.ts",
 			`${importApi}
@@ -461,16 +461,16 @@ export default defineWorkflow({ name: "x", start: "from-pack", stages: { "from-p
 		writeProjectConfig(
 			TEST_TMP,
 			`${importApi}
-export default defineWorkflow({ name: "x", start: "from-canonical", stages: { "from-canonical": produces() }, edges: { "from-canonical": "stop" } });
+export default defineWorkflow({ name: "x", start: "from-config", stages: { "from-config": produces() }, edges: { "from-config": "stop" } });
 `,
 		);
 		const loaded = await loadWorkflows(TEST_TMP);
 		const x = loaded.workflows.find((w) => w.name === "x")!;
-		expect(x.start).toBe("from-canonical");
+		expect(x.start).toBe("from-config");
 	});
 
-	it("accepts a Workflow[] in a drop-in", async () => {
-		writeProjectDropIn(
+	it("accepts a Workflow[] in a pack", async () => {
+		writeProjectPack(
 			TEST_TMP,
 			"solo-array.ts",
 			`${importApi}
@@ -483,8 +483,8 @@ export default [
 		expect(loaded.workflows.find((w) => w.name === "solo")).toBeDefined();
 	});
 
-	it("rejects the envelope form in a drop-in (default lives in canonical only)", async () => {
-		writeProjectDropIn(
+	it("rejects the envelope form in a pack (default lives in the config file only)", async () => {
+		writeProjectPack(
 			TEST_TMP,
 			"with-envelope.ts",
 			`${importApi}
@@ -500,15 +500,15 @@ export default {
 				(i) =>
 					i.kind === "load" &&
 					i.severity === "error" &&
-					/drop-in workflow files must export a `Workflow` or `Workflow\[\]`/.test(i.message),
+					/pack workflow files must export a `Workflow` or `Workflow\[\]`/.test(i.message),
 			),
 		).toBe(true);
 		// File is rejected → workflow never made it in.
 		expect(loaded.workflows.find((w) => w.name === "x")).toBeUndefined();
 	});
 
-	it("attributes validation issues to the exact drop-in file the workflow came from", async () => {
-		writeProjectDropIn(
+	it("attributes validation issues to the exact pack file the workflow came from", async () => {
+		writeProjectPack(
 			TEST_TMP,
 			"bad-pack.ts",
 			`${importApi}
@@ -518,19 +518,19 @@ export default defineWorkflow({ name: "bad", start: "a", stages: { a: produces()
 		const loaded = await loadWorkflows(TEST_TMP);
 		const issue = loaded.issues.find((i) => i.kind === "validation" && i.workflow === "bad");
 		expect(issue?.layer).toBe("project");
-		expect(issue?.path).toBe(join(PROJECT_PATHS.dropInDir, "bad-pack.ts"));
+		expect(issue?.path).toBe(join(PROJECT_PATHS.packsDir, "bad-pack.ts"));
 	});
 
-	it("ignores non-.ts files in the drop-in directory", async () => {
-		writeProjectDropIn(TEST_TMP, "notes.md", "# not a workflow");
-		writeProjectDropIn(TEST_TMP, "config.json", "{}");
+	it("ignores non-.ts files in the packs directory", async () => {
+		writeProjectPack(TEST_TMP, "notes.md", "# not a workflow");
+		writeProjectPack(TEST_TMP, "config.json", "{}");
 		const loaded = await loadWorkflows(TEST_TMP);
 		// No errors raised, no extra workflows registered.
 		expect(loaded.issues.filter((i) => i.severity === "error")).toEqual([]);
 		expect(loaded.layers).toEqual(["built-in"]);
 	});
 
-	it("does not append a layer when only a non-existent drop-in dir is checked", async () => {
+	it("does not append a layer when only a non-existent packs dir is checked", async () => {
 		const loaded = await loadWorkflows(TEST_TMP);
 		expect(loaded.layers).toEqual(["built-in"]);
 	});

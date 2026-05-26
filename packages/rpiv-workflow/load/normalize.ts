@@ -1,7 +1,7 @@
 /**
- * Default-export normalisation. Canonical files accept three default-export
- * shapes; drop-ins accept only the first two (`Workflow | Workflow[]`).
- * The envelope form is rejected for drop-ins so authors don't trip the
+ * Default-export normalisation. Config files accept three default-export
+ * shapes; packs accept only the first two (`Workflow | Workflow[]`).
+ * The envelope form is rejected for packs so authors don't trip the
  * silent "default lives somewhere else" gotcha.
  *
  *   1. A single `Workflow`               — single-entry namespace
@@ -16,7 +16,7 @@
 import type { Workflow } from "../api.js";
 import { describe, isEnvelope, isWorkflow } from "./shape-guards.js";
 
-export type FileKind = "canonical" | "drop-in";
+export type FileKind = "config" | "pack";
 
 export interface ParsedConfig {
 	workflows: Workflow[];
@@ -37,8 +37,8 @@ export function normalizeDefaultExport(raw: unknown, kind: FileKind): NormalizeR
 		// A bare Workflow[] omits the `default` slot; with more than one entry
 		// there's no unambiguous pick. Require the envelope form so the choice
 		// is explicit. (Single-entry arrays are accepted — only one workflow
-		// to default to.) Drop-ins reject the envelope anyway, so a multi-entry
-		// drop-in array gets the same hard error as a canonical one — that's
+		// to default to.) Packs reject the envelope anyway, so a multi-entry
+		// pack array gets the same hard error as a config-file one — that's
 		// fine; the author should split into one file per workflow.
 		if (raw.length > 1) {
 			return {
@@ -51,12 +51,12 @@ export function normalizeDefaultExport(raw: unknown, kind: FileKind): NormalizeR
 		return { kind: "ok", value: { workflows: raw as Workflow[] } };
 	}
 	if (isEnvelope(raw)) {
-		if (kind === "drop-in") {
+		if (kind === "pack") {
 			return {
 				kind: "err",
 				error:
-					"drop-in workflow files must export a `Workflow` or `Workflow[]` — the " +
-					"`{ workflows, default? }` envelope is only accepted in the canonical workflows.config.ts.",
+					"pack workflow files must export a `Workflow` or `Workflow[]` — the " +
+					"`{ workflows, default? }` envelope is only accepted in the config file workflows.config.ts.",
 			};
 		}
 		if (!raw.workflows.every(isWorkflow)) {
