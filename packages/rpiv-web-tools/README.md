@@ -15,8 +15,8 @@ Let the model search the web and read pages. `rpiv-web-tools` adds `web_search` 
 ## Features
 
 - **Eight pluggable providers** - Brave, Tavily, Serper, Exa, Jina, Firecrawl, self-hosted SearXNG, and Ollama (local or cloud). Pick one as the active backend; switch any time without losing the others' keys.
-- **Per-provider fetch strategy** - Brave, Serper, and SearXNG read the URL directly and strip HTML to text; Tavily/Exa/Jina/Firecrawl use their native extraction endpoints (markdown for Jina/Firecrawl, plain text for Tavily/Exa).
-- **Read any URL** - fetch http/https pages with HTML-to-text extraction, or get the raw response with `raw: true` (honoured by Brave/Serper; extraction providers always return their parsed text).
+- **Per-provider fetch strategy** - Brave, Serper, and SearXNG read the URL directly and strip HTML to text by default (pass `raw: true` to get the unprocessed body); Tavily/Exa/Jina/Firecrawl/Ollama use their native extraction endpoints and ignore `raw` (markdown for Jina/Firecrawl, plain text for Tavily/Exa/Ollama).
+- **Read any URL** - fetch http/https pages with HTML-to-text extraction, or get the raw response with `raw: true` (honoured by Brave/Serper/SearXNG; extraction providers — Tavily/Exa/Jina/Firecrawl/Ollama — always return their parsed text).
 - **Large-page spillover** - oversized responses truncate inline and spill the full body to a temp file the model can read on demand.
 - **SSRF guard** - refuses loopback, RFC 1918, link-local, and cloud-metadata addresses (`localhost`, `127.0.0.0/8`, `10.0.0.0/8`, `169.254.0.0/16`, `172.16.0.0/12`, `192.168.0.0/16`, `::1`, `fc00::/7`, `fe80::/10`).
 - **Interactive setup** - `/web-search-config` lists providers (active one first, configured ones marked) and writes to `~/.config/rpiv-web-tools/config.json` (chmod 0600); per-provider env vars also work and take precedence over persisted keys.
@@ -34,7 +34,7 @@ Then restart your Pi session.
 - **`web_search`** - query the active provider's search API and return titled snippets.
   1–10 results per call.
 - **`web_fetch`** - fetch an http/https URL through the active provider's content path
-  (raw HTTP+htmlToText for Brave/Serper; native extraction for Tavily/Exa/Jina/Firecrawl),
+  (raw HTTP+htmlToText for Brave/Serper/SearXNG; native extraction for Tavily/Exa/Jina/Firecrawl/Ollama),
   truncate large responses with a temp-file spill for the full content.
 
 ### Schema - `web_search`
