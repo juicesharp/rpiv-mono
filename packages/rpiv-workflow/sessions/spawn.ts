@@ -30,9 +30,14 @@ import type { RunnerCtx } from "../types.js";
  *   - `send(ctx, msg, host?)` — send into an already-established session
  *     and wait for it to settle (used by the validation-retry path).
  *
- * `host` is required for continue (caller passes `s.continueHost`; the
- * start-of-run preflight has already rejected any workflow that needs
- * continue without a host). Fresh ignores the `host` parameter.
+ * `host` is the registry-level fallback for continue stages — used only
+ * when `ctx.sendUserMessage` is absent (the outer command ctx at the
+ * very start of a workflow whose first stage is continue-policy).
+ * Everywhere else (continue stages following any other stage),
+ * `ctx.sendUserMessage` is present and preferred because Pi marks the
+ * captured host stale after `ctx.newSession()`. `enforceSessionInvariants`
+ * still requires a host whenever any stage is continue-policy so the
+ * start-stage path has a working fallback. Fresh ignores `host` entirely.
  */
 export interface SessionPolicyHandler {
 	branchOffset(capturedOffset: number | undefined): number | undefined;
@@ -73,26 +78,57 @@ export const FRESH_HANDLER: SessionPolicyHandler = {
 export const CONTINUE_HANDLER: SessionPolicyHandler = {
 	branchOffset: (captured) => captured,
 	async spawn(ctx, prompt, body, host) {
-		if (!host) throw new Error("CONTINUE_HANDLER.spawn: continue policy requires a workflow host");
-		// `host.sendUserMessage` returns a Promise — pre-I5b we discarded it,
-		// so a rejected send (e.g. transport closed, agent SDK fault)
-		// surfaced as unhandledRejection past the stage boundary and the
-		// runner kept walking the chain blind. Await so the rejection lands
-		// on this stage's halt path. We don't `await ctx.waitForIdle({ signal })`
-		// because Pi's SDK doesn't expose an abort signal yet — abandoned
-		// waitForIdle from a prior retry can still settle on the next
-		// continue stage's ctx (tracked, not fixed here).
-		await host.sendUserMessage(prompt);
+		// Prefer the live `ctx.sendUserMessage` over the captured `host`.
+		// Pi marks the registry-level host handle stale after the first
+		// `ctx.newSession()`, so a continue stage that follows a fresh
+		// stage would throw "extension ctx is stale" if we called
+		// `host.sendUserMessage` here. The inner replacement ctx delivered
+		// to `withSession` always exposes `sendUserMessage` (the port
+		// marks it optional because only the outer command ctx lacks it).
+		// `host` remains the fallback for the workflow-start-with-continue
+		// case where there is no inner ctx yet — `enforceSessionInvariants`
+		// requires a host whenever any stage is continue-policy, so the
+		// fallback can be taken safely.
+		//
+		// Awaiting the send (vs fire-and-forget) lands transport errors on
+		// this stage's halt path; pre-I5b we discarded the promise and the
+		// runner walked the chain blind on rejection.
+		await sendIntoExistingSession(ctx, host, prompt);
 		await ctx.waitForIdle();
 		await body(ctx);
 		return { cancelled: false };
 	},
 	async send(ctx, msg, host) {
-		if (!host) throw new Error("CONTINUE_HANDLER.send: continue policy requires a workflow host");
-		await host.sendUserMessage(msg);
+		// Same precedence as spawn: live ctx first, captured host as
+		// fallback. Validation-retry sends always run inside a stage's
+		// session, so `ctx.sendUserMessage` is present in practice; the
+		// host branch is there for symmetry with spawn.
+		await sendIntoExistingSession(ctx, host, msg);
 		await ctx.waitForIdle();
 	},
 };
+
+/**
+ * Send a message into the already-active session. Prefers the live
+ * `ctx.sendUserMessage`; falls back to the captured registry-level
+ * `host.sendUserMessage` only when ctx doesn't expose one (workflow start
+ * with a continue-first-stage). Throws if neither path is available —
+ * `enforceSessionInvariants` should have rejected the workflow before
+ * we land here.
+ */
+async function sendIntoExistingSession(ctx: RunnerCtx, host: WorkflowHost | undefined, msg: string): Promise<void> {
+	if (ctx.sendUserMessage) {
+		await ctx.sendUserMessage(msg);
+		return;
+	}
+	if (host) {
+		await host.sendUserMessage(msg);
+		return;
+	}
+	throw new Error(
+		"CONTINUE_HANDLER: neither ctx.sendUserMessage nor a workflow host available — continue policy requires one of them",
+	);
+}
 
 export function handlerFor(policy: SessionPolicy | undefined): SessionPolicyHandler {
 	return policy === "continue" ? CONTINUE_HANDLER : FRESH_HANDLER;

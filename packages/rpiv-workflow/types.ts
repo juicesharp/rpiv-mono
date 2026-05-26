@@ -118,14 +118,19 @@ export interface RunContext {
 	 */
 	registeredSkills?: ReadonlySet<string>;
 	/**
-	 * Pi `ExtensionAPI` handle, retained ONLY so the continue-policy
-	 * session handler can call `host.sendUserMessage(...)`. The runtime
-	 * MUST NOT touch this field for anything else — Pi marks the handle
-	 * stale after the first `ctx.newSession()`, so any post-replacement
-	 * read (registry lookup, command enumeration) will throw with a
-	 * "stale extension ctx" error. Read-only registry needs go through
-	 * `registeredSkills` (snapshotted at workflow start); presence checks
-	 * go through `enforceSessionInvariants`.
+	 * Pi `ExtensionAPI` handle, retained as the FALLBACK send-path for
+	 * continue-policy stages — used only when the live inner ctx lacks
+	 * `sendUserMessage` (i.e. the workflow's first stage is continue and
+	 * the runtime is still on the outer command ctx). Everywhere else,
+	 * `CONTINUE_HANDLER` prefers `ctx.sendUserMessage` because Pi marks
+	 * this handle stale after the first `ctx.newSession()`. Touching it
+	 * for anything other than the fallback path will throw "extension
+	 * ctx is stale" on every workflow whose first stage is fresh.
+	 *
+	 * Read-only registry needs go through `registeredSkills` (snapshotted
+	 * at workflow start). Continue-policy presence checks
+	 * (`enforceSessionInvariants`) still gate on this field so the
+	 * fallback path has a working host when the start-stage path needs it.
 	 *
 	 * Naming: deliberately NOT called `host`. Future code-readers see the
 	 * field name and know the constraint without reading the JSDoc.

@@ -840,9 +840,17 @@ describe("runWorkflow", () => {
 				pi: createMockPi({ skills: ["research", "design"] }).pi,
 			});
 
-			(chain.pi!.sendUserMessage as ReturnType<typeof vi.fn>).mockImplementation((content: unknown) => {
-				chain.sentMessages.push(typeof content === "string" ? content : JSON.stringify(content));
-				sharedBranch.push(mockAssistantMessage(`Designed ${designArtifact}`));
+			// Continue stage send goes through the inner ctx (not the captured
+			// host — see `CONTINUE_HANDLER.spawn` precedence), so override the
+			// inner-ctx mock fn to grow the branch. The same vi.fn() backs
+			// both the FRESH and CONTINUE send paths now; gate branch growth
+			// on the design prompt so research's send doesn't double-fire it.
+			chain.sendUserMessageFn.mockImplementation((content: unknown) => {
+				const text = typeof content === "string" ? content : JSON.stringify(content);
+				chain.sentMessages.push(text);
+				if (text.startsWith("/skill:design")) {
+					sharedBranch.push(mockAssistantMessage(`Designed ${designArtifact}`));
+				}
 			});
 
 			const result = await runWorkflow(chain.ctx, {
@@ -854,8 +862,69 @@ describe("runWorkflow", () => {
 			expect(result.success).toBe(true);
 			expect(result.stagesCompleted).toBe(2);
 			expect(result.lastArtifact).toBe(designArtifact);
-			// Stage 1 used newSession; stage 2 used pi.sendUserMessage
+			// Stage 1 used newSession; stage 2 reused the inner session ctx
+			// via ctx.sendUserMessage (NOT host.sendUserMessage — the host is
+			// the fallback for workflow-start-with-continue only).
 			expect(chain.ctx.newSession).toHaveBeenCalledTimes(1);
+			expect(chain.pi!.sendUserMessage).not.toHaveBeenCalled();
+			expect(chain.sentMessages).toEqual(["/skill:research x", `/skill:design ${priorArtifact}`]);
+		});
+
+		it("continue after fresh routes through live ctx, not the stale host (regression)", async () => {
+			// Regression: pre-fix, CONTINUE_HANDLER unconditionally called
+			// `host.sendUserMessage`. Pi marks the captured host stale after
+			// the first ctx.newSession() — so a continue stage following a
+			// fresh stage would throw "extension ctx is stale". Post-fix,
+			// CONTINUE_HANDLER prefers `ctx.sendUserMessage` (the live inner
+			// ctx delivered to withSession, always valid); the host is only
+			// the fallback for workflow-start-with-continue-first-stage.
+			writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md");
+			writeArtifact(tmpDir, ".rpiv/artifacts/designs/d.md");
+			const priorArtifact = ".rpiv/artifacts/research/r.md";
+			const designArtifact = ".rpiv/artifacts/designs/d.md";
+
+			const sharedBranch: unknown[] = [mockAssistantMessage(`Wrote ${priorArtifact}`)];
+			const chain = createMockSessionChain({
+				cwd: tmpDir,
+				steps: [{ branch: sharedBranch }],
+				pi: createMockPi({ skills: ["research", "design"] }).pi,
+			});
+
+			// Simulate Pi's stale-host behavior: any call to host.sendUserMessage
+			// after the first newSession throws. If the runner regresses to
+			// using the host for continue sends, the workflow will fail with
+			// this error in result.error.
+			(chain.pi!.sendUserMessage as ReturnType<typeof vi.fn>).mockImplementation(() => {
+				throw new Error(
+					"This extension ctx is stale after session replacement or reload. " +
+						"Do not use a captured pi or command ctx after ctx.newSession().",
+				);
+			});
+
+			chain.sendUserMessageFn.mockImplementation((content: unknown) => {
+				const text = typeof content === "string" ? content : JSON.stringify(content);
+				chain.sentMessages.push(text);
+				if (text.startsWith("/skill:design")) {
+					sharedBranch.push(mockAssistantMessage(`Designed ${designArtifact}`));
+				}
+			});
+
+			const result = await runWorkflow(chain.ctx, {
+				workflow: wf("fc", ["research", "design"], { design: { sessionPolicy: "continue" } }),
+				input: "x",
+				host: chain.pi,
+			});
+
+			// Both stages completed — the stale-host throw never fired because
+			// CONTINUE_HANDLER took the ctx path.
+			expect(result.success).toBe(true);
+			expect(result.stagesCompleted).toBe(2);
+			expect(result.lastArtifact).toBe(designArtifact);
+			// Load-bearing assertion: host.sendUserMessage was NEVER called.
+			// Pre-fix this would be called once for the design stage and would
+			// throw the stale-ctx error.
+			expect(chain.pi!.sendUserMessage).not.toHaveBeenCalled();
+			// Both prompts landed via the inner ctx.
 			expect(chain.sentMessages).toEqual(["/skill:research x", `/skill:design ${priorArtifact}`]);
 		});
 
@@ -1072,10 +1141,17 @@ describe("runWorkflow", () => {
 				pi: createMockPi({ skills: ["research", "design"] }).pi,
 			});
 
-			// Continue stage produces a message but no artifact
-			(chain.pi!.sendUserMessage as ReturnType<typeof vi.fn>).mockImplementation((content: unknown) => {
-				chain.sentMessages.push(typeof content === "string" ? content : JSON.stringify(content));
-				sharedBranch.push(mockAssistantMessage("I analyzed the design but didn't write a plan"));
+			// Continue stage produces a message but no artifact. Continue
+			// sends go through the inner ctx (preferred over the captured
+			// host in CONTINUE_HANDLER.spawn) — override the inner-ctx fn.
+			// Gate branch growth on the design prompt so research's send
+			// doesn't double-fire it.
+			chain.sendUserMessageFn.mockImplementation((content: unknown) => {
+				const text = typeof content === "string" ? content : JSON.stringify(content);
+				chain.sentMessages.push(text);
+				if (text.startsWith("/skill:design")) {
+					sharedBranch.push(mockAssistantMessage("I analyzed the design but didn't write a plan"));
+				}
 			});
 
 			const result = await runWorkflow(chain.ctx, {

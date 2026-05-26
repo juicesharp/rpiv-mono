@@ -253,6 +253,15 @@ export interface MockSessionChain {
 	notifyFn: ReturnType<typeof vi.fn>;
 	/** Shared vi.fn() backing every `ui.setStatus` — for direct `.mock.calls` assertions. */
 	setStatusFn: ReturnType<typeof vi.fn>;
+	/**
+	 * Shared `vi.fn()` backing every replacement (inner) ctx's
+	 * `sendUserMessage`. Tests that need a continue-policy stage to
+	 * influence the shared branch (e.g. push an assistant entry on send)
+	 * override this rather than `pi.sendUserMessage`, because
+	 * `CONTINUE_HANDLER` now prefers the live ctx over the captured host —
+	 * mocking only the host leaves the inner ctx path uninstrumented.
+	 */
+	sendUserMessageFn: ReturnType<typeof vi.fn>;
 }
 
 /**
@@ -350,6 +359,7 @@ export function createMockSessionChain(opts: MockSessionChainOptions): MockSessi
 		remaining: () => queue.length,
 		notifyFn,
 		setStatusFn,
+		sendUserMessageFn,
 	};
 }
 
