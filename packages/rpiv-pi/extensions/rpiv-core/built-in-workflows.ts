@@ -29,7 +29,7 @@ import {
 	type Workflow,
 } from "@juicesharp/rpiv-workflow";
 import { Type } from "typebox";
-import { rpivArtifactMdOutcome } from "./artifact-resolver.js";
+import { rpivArtifactMdOutcome } from "./artifact-collector.js";
 
 const CODE_REVIEW_SCHEMA = typeboxSchema(
 	Type.Object({ blockers_count: Type.Integer({ minimum: 0 }) }, { additionalProperties: true }),

@@ -6,7 +6,7 @@
  * through it.
  *
  * No artifact-path scanning lives here — discovery is the collector's
- * job (see `outcome-types.ts:ArtifactCollector`). Collectors that scan the
+ * job (see `output-spec.ts:ArtifactCollector`). Collectors that scan the
  * transcript (`transcriptPathCollector`, `urlCollector`, `toolCallCollector`,
  * …) walk this shape themselves; `lastMatchInBranch` is the shared
  * "find the last regex match in assistant text" helper they reuse.

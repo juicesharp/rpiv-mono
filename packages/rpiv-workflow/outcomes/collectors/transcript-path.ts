@@ -19,8 +19,8 @@
  */
 
 import { fs } from "../../handle.js";
-import type { ArtifactCollector } from "../../outcome-types.js";
-import { defineCollector } from "../../outcome-types.js";
+import type { ArtifactCollector } from "../../output-spec.js";
+import { defineCollector } from "../../output-spec.js";
 import { lastMatchInBranch } from "../../transcript.js";
 
 export interface TranscriptPathCollectorOpts {

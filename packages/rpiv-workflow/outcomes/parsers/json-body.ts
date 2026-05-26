@@ -20,8 +20,8 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
-import type { ArtifactParser } from "../../outcome-types.js";
-import { defineParser } from "../../outcome-types.js";
+import type { ArtifactParser } from "../../output-spec.js";
+import { defineParser } from "../../output-spec.js";
 
 export const jsonBodyParser: ArtifactParser<unknown, "json", unknown> = defineParser({
 	parse: (ctx) => {

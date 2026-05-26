@@ -158,7 +158,6 @@ export {
 export type { WorkflowContext, WorkflowHost } from "./host.js";
 export type { ConfigLayer, Issue, LoadedWorkflows, LoadIssue, OverlayPaths } from "./load/index.js";
 export { loadWorkflows, projectOverlayPaths, userOverlayPaths } from "./load/index.js";
-export { defineCollector, defineParser } from "./outcome-types.js";
 export {
 	type DirectoryPathCollectorOpts,
 	directoryPathCollector,
@@ -196,6 +195,7 @@ export type {
 	SnapshotCtx,
 	SnapshotFn,
 } from "./output.js";
+export { defineCollector, defineParser } from "./output-spec.js";
 export { eq, gt, gte, lt, lte, type Predicate } from "./predicates.js";
 export { type RunWorkflowOptions, type RunWorkflowResult, runWorkflow } from "./runner/index.js";
 export {

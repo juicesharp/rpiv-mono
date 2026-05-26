@@ -22,7 +22,7 @@ import type {
 	OutputSpec,
 	ParseCtx,
 	SnapshotCtx,
-} from "../outcome-types.js";
+} from "../output-spec.js";
 
 const execFileAsync = promisify(execFile);
 

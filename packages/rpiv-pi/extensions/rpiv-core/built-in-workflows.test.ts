@@ -41,7 +41,7 @@ import {
 	workflowsDir,
 } from "@juicesharp/rpiv-workflow";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { rpivArtifactMdOutcome } from "./artifact-resolver.js";
+import { rpivArtifactMdOutcome } from "./artifact-collector.js";
 import { builtInWorkflows } from "./built-in-workflows.js";
 
 const findWorkflow = (name: string): Workflow => {

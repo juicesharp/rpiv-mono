@@ -14,7 +14,7 @@
  * No snapshot — side-effect stages have no pre-stage state to capture.
  */
 
-import type { ArtifactCollector, OutputSpec } from "../outcome-types.js";
+import type { ArtifactCollector, OutputSpec } from "../output-spec.js";
 
 /** Collector primitive: always returns zero artifacts, never fatal. */
 export const noopCollector: ArtifactCollector = {

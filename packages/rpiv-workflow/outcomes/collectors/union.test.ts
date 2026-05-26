@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { fs } from "../../handle.js";
-import type { ArtifactCollector } from "../../outcome-types.js";
+import type { ArtifactCollector } from "../../output-spec.js";
 import { unionCollectors } from "./union.js";
 
 const ctxOf = () => ({

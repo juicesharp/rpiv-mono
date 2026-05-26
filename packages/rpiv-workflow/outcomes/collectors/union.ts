@@ -22,8 +22,8 @@
  */
 
 import type { Artifact } from "../../handle.js";
-import type { ArtifactCollector, CollectResult } from "../../outcome-types.js";
-import { defineCollector } from "../../outcome-types.js";
+import type { ArtifactCollector, CollectResult } from "../../output-spec.js";
+import { defineCollector } from "../../output-spec.js";
 
 export function unionCollectors(...collectors: ArtifactCollector[]): ArtifactCollector {
 	if (collectors.length === 0) {

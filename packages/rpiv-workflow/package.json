@@ -45,7 +45,7 @@
     "load",
     "output.ts",
     "messages.ts",
-    "outcome-types.ts",
+    "output-spec.ts",
     "outcomes",
     "preview.ts",
     "routing.ts",

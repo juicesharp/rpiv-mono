@@ -20,9 +20,9 @@ import { nowIso } from "../audit.js";
 import type { Artifact } from "../handle.js";
 import { assertNever, withTimeout } from "../internal-utils.js";
 import { ERR_SCHEMA_TIMEOUT, MSG_VALIDATION_RETRY, MSG_VALIDATION_RETRY_PROMPT } from "../messages.js";
-import type { CollectCtx, OutputSpec } from "../outcome-types.js";
 import { sideEffectOutcome } from "../outcomes/index.js";
 import { finalizeOutput, type Output } from "../output.js";
+import type { CollectCtx, OutputSpec } from "../output-spec.js";
 import { type BranchEntry, readBranch } from "../transcript.js";
 import type { RunnerCtx, StageSession } from "../types.js";
 import {

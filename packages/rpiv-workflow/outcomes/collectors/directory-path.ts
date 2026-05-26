@@ -12,7 +12,7 @@
  * `transcriptPathCollector({ pattern })` and supply the regex directly.
  */
 
-import type { ArtifactCollector } from "../../outcome-types.js";
+import type { ArtifactCollector } from "../../output-spec.js";
 import { transcriptPathCollector } from "./transcript-path.js";
 
 export interface DirectoryPathCollectorOpts {

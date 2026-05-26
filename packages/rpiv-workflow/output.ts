@@ -7,7 +7,7 @@
  * `output.artifacts` (the storage references) and `output.data`
  * (the typed channel a parser shaped). The producer-side surface
  * (`ArtifactCollector` / `ArtifactParser` / `OutputSpec`) lives in
- * `outcome-types.ts`.
+ * `output-spec.ts`.
  */
 
 import type { Artifact } from "./handle.js";
@@ -58,7 +58,7 @@ export type GitCommitOutput = Output<"git-commit", GitCommitData>;
 // ---------------------------------------------------------------------------
 // OutputSpec types — re-exported so consumers can `import { OutputSpec,
 // CollectCtx, ... } from "../output.js"` without rewriting every
-// site. Canonical definitions live in `outcome-types.ts`.
+// site. Canonical definitions live in `output-spec.ts`.
 // ---------------------------------------------------------------------------
 
 export type {
@@ -71,7 +71,7 @@ export type {
 	ParseResult,
 	SnapshotCtx,
 	SnapshotFn,
-} from "./outcome-types.js";
+} from "./output-spec.js";
 
 // ---------------------------------------------------------------------------
 // Output construction
