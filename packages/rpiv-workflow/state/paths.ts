@@ -37,10 +37,10 @@ export function generateRunId(
 // Directory resolution
 // ---------------------------------------------------------------------------
 
-export function resolveWorkflowsDir(cwd: string): string {
+export function workflowsDir(cwd: string): string {
 	return join(cwd, ".rpiv", "workflows");
 }
 
-export function resolveStateFile(cwd: string, runId: string): string {
-	return join(resolveWorkflowsDir(cwd), `${runId}.jsonl`);
+export function stateFilePath(cwd: string, runId: string): string {
+	return join(workflowsDir(cwd), `${runId}.jsonl`);
 }

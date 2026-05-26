@@ -76,7 +76,7 @@
  *   8. Persistence (low-level — JSONL inspect) — `./state/index.js`
  *      Read past runs at `<cwd>/.rpiv/workflows/<run-id>.jsonl`:
  *      `listRuns`, `readHeader`, `readLastStage`, `listArtifacts`,
- *      `resolveStateFile`, `resolveWorkflowsDir`, `RunSummary`,
+ *      `stateFilePath`, `workflowsDir`, `RunSummary`,
  *      `WorkflowHeader`, `WorkflowStage`. `recordStage` lives on
  *      `@juicesharp/rpiv-workflow/internal` (test-only — rpiv-pi's
  *      `[I3]` regression test pokes it directly; runner owns row
@@ -204,10 +204,10 @@ export {
 	type RunSummary,
 	readHeader,
 	readLastStage,
-	resolveStateFile,
-	resolveWorkflowsDir,
+	stateFilePath,
 	type WorkflowHeader,
 	type WorkflowStage,
+	workflowsDir,
 } from "./state/index.js";
 export { typeboxSchema } from "./typebox-adapter.js";
 export type { RunState } from "./types.js";

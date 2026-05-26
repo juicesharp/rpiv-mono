@@ -11,7 +11,7 @@
  */
 
 import { appendFileSync, mkdirSync } from "node:fs";
-import { resolveStateFile, resolveWorkflowsDir } from "./paths.js";
+import { stateFilePath, workflowsDir } from "./paths.js";
 import type { RoutingDecision, WorkflowHeader, WorkflowStage } from "./state.js";
 
 /**
@@ -23,9 +23,9 @@ import type { RoutingDecision, WorkflowHeader, WorkflowStage } from "./state.js"
  */
 function tryAppendJsonl(cwd: string, runId: string, row: unknown): boolean {
 	try {
-		const dir = resolveWorkflowsDir(cwd);
+		const dir = workflowsDir(cwd);
 		mkdirSync(dir, { recursive: true });
-		const filePath = resolveStateFile(cwd, runId);
+		const filePath = stateFilePath(cwd, runId);
 		appendFileSync(filePath, `${JSON.stringify(row)}\n`, "utf-8");
 		return true;
 	} catch (e) {

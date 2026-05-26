@@ -10,10 +10,10 @@ import {
 	readAllStages,
 	readHeader,
 	readLastStage,
-	resolveStateFile,
-	resolveWorkflowsDir,
+	stateFilePath,
 	type WorkflowHeader,
 	type WorkflowStage,
+	workflowsDir,
 	writeHeader,
 } from "./state/index.js";
 
@@ -51,13 +51,13 @@ describe("generateRunId", () => {
 	});
 });
 
-describe("resolveWorkflowsDir / resolveStateFile", () => {
+describe("workflowsDir / stateFilePath", () => {
 	it("resolves to .rpiv/workflows under cwd", () => {
-		expect(resolveWorkflowsDir("/project")).toBe("/project/.rpiv/workflows");
+		expect(workflowsDir("/project")).toBe("/project/.rpiv/workflows");
 	});
 
 	it("resolves state file with .jsonl extension", () => {
-		expect(resolveStateFile("/project", "2026-05-20_15-30-45")).toBe(
+		expect(stateFilePath("/project", "2026-05-20_15-30-45")).toBe(
 			"/project/.rpiv/workflows/2026-05-20_15-30-45.jsonl",
 		);
 	});
@@ -190,7 +190,7 @@ describe("fail-soft I/O", () => {
 	it("readLastStage logs warning on corrupted file", () => {
 		const runId = "corrupt-test";
 		writeHeader(tmpDir, { runId, workflow: "mid", input: "test", ts: "2026" });
-		appendFileSync(resolveStateFile(tmpDir, runId), "NOT-JSON\n", "utf-8");
+		appendFileSync(stateFilePath(tmpDir, runId), "NOT-JSON\n", "utf-8");
 
 		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 		try {
@@ -212,7 +212,7 @@ describe("fail-soft I/O", () => {
 		appendStage(tmpDir, runId, { stageNumber: 1, skill: "research", status: "completed", ts: "2026" });
 		appendStage(tmpDir, runId, { stageNumber: 2, skill: "design", status: "completed", ts: "2026" });
 		// Simulate a truncated trailing line (e.g. process killed mid-append).
-		appendFileSync(resolveStateFile(tmpDir, runId), '{"stageNumber":3,"skill":"impl', "utf-8");
+		appendFileSync(stateFilePath(tmpDir, runId), '{"stageNumber":3,"skill":"impl', "utf-8");
 
 		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 		try {
@@ -250,8 +250,8 @@ describe("readHeader", () => {
 
 	it("returns undefined when the first line is malformed JSON (fail-soft)", () => {
 		const runId = "garbled";
-		mkdirSync(resolveWorkflowsDir(tmpDir), { recursive: true });
-		appendFileSync(resolveStateFile(tmpDir, runId), "NOT-JSON\n", "utf-8");
+		mkdirSync(workflowsDir(tmpDir), { recursive: true });
+		appendFileSync(stateFilePath(tmpDir, runId), "NOT-JSON\n", "utf-8");
 		expect(readHeader(tmpDir, runId)).toBeUndefined();
 	});
 });
@@ -282,14 +282,14 @@ describe("listRuns", () => {
 	it("silently skips files whose first line is not a valid header", () => {
 		writeHeader(tmpDir, { runId: "good", workflow: "mid", input: "ok", ts: "2026" });
 		// Manually write a malformed run file alongside the good one.
-		appendFileSync(resolveStateFile(tmpDir, "bad"), "NOT-JSON\n", "utf-8");
+		appendFileSync(stateFilePath(tmpDir, "bad"), "NOT-JSON\n", "utf-8");
 		const runs = listRuns(tmpDir);
 		expect(runs.map((r) => r.runId)).toEqual(["good"]);
 	});
 
 	it("ignores non-.jsonl entries in the workflows directory", () => {
 		writeHeader(tmpDir, { runId: "good", workflow: "mid", input: "ok", ts: "2026" });
-		appendFileSync(join(resolveWorkflowsDir(tmpDir), "stray.txt"), "ignore me\n", "utf-8");
+		appendFileSync(join(workflowsDir(tmpDir), "stray.txt"), "ignore me\n", "utf-8");
 		const runs = listRuns(tmpDir);
 		expect(runs.map((r) => r.runId)).toEqual(["good"]);
 	});

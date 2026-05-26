@@ -5,7 +5,7 @@
  * throws).
  *
  * Internally split into three modules:
- *   - paths.ts  — resolveWorkflowsDir + resolveStateFile + generateRunId
+ *   - paths.ts  — workflowsDir + stateFilePath + generateRunId
  *   - writes.ts — tryAppendJsonl + writeHeader + appendStage +
  *                 appendRoutingDecision
  *   - reads.ts  — readLastStage + readAllStages + readRoutingDecisions +
@@ -76,7 +76,7 @@ export interface RoutingDecision {
 // Public barrel — paths + writes + reads
 // ---------------------------------------------------------------------------
 
-export { generateRunId, resolveStateFile, resolveWorkflowsDir } from "./paths.js";
+export { generateRunId, stateFilePath, workflowsDir } from "./paths.js";
 export {
 	listArtifacts,
 	listRuns,

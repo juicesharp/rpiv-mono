@@ -18,7 +18,7 @@
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import type { Artifact } from "../handle.js";
-import { resolveStateFile, resolveWorkflowsDir } from "./paths.js";
+import { stateFilePath, workflowsDir } from "./paths.js";
 import type { RoutingDecision, RunSummary, WorkflowHeader, WorkflowStage } from "./state.js";
 
 /**
@@ -36,7 +36,7 @@ import type { RoutingDecision, RunSummary, WorkflowHeader, WorkflowStage } from 
 function readJsonlRows<T>(cwd: string, runId: string, match: (row: unknown) => row is T): T[] {
 	let lines: string[];
 	try {
-		const filePath = resolveStateFile(cwd, runId);
+		const filePath = stateFilePath(cwd, runId);
 		if (!existsSync(filePath)) return [];
 		const content = readFileSync(filePath, "utf-8").trim();
 		if (!content) return [];
@@ -127,7 +127,7 @@ export function listArtifacts(cwd: string, runId: string): Array<{ skill: string
  */
 export function readHeader(cwd: string, runId: string): WorkflowHeader | undefined {
 	try {
-		const filePath = resolveStateFile(cwd, runId);
+		const filePath = stateFilePath(cwd, runId);
 		if (!existsSync(filePath)) return undefined;
 		const content = readFileSync(filePath, "utf-8");
 		const firstLine = content.split("\n", 1)[0] ?? "";
@@ -155,7 +155,7 @@ export function readHeader(cwd: string, runId: string): WorkflowHeader | undefin
  * `runId` is monotonic for runs created on the same host).
  */
 export function listRuns(cwd: string): RunSummary[] {
-	const dir = resolveWorkflowsDir(cwd);
+	const dir = workflowsDir(cwd);
 	let entries: string[];
 	try {
 		entries = readdirSync(dir);

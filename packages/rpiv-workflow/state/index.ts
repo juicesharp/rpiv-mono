@@ -21,7 +21,7 @@ export {
 	readHeader,
 	readLastStage,
 	readRoutingDecisions,
-	resolveStateFile,
-	resolveWorkflowsDir,
+	stateFilePath,
+	workflowsDir,
 	writeHeader,
 } from "./state.js";

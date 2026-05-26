@@ -34,11 +34,11 @@ import {
 	type FanoutFn,
 	produces,
 	type RunState,
-	resolveStateFile,
-	resolveWorkflowsDir,
 	runWorkflow,
+	stateFilePath,
 	validateWorkflow,
 	type Workflow,
+	workflowsDir,
 } from "@juicesharp/rpiv-workflow";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { rpivArtifactMdOutcome } from "./artifact-resolver.js";
@@ -100,8 +100,8 @@ describe("[I2] readers must not silently drop the first row when no header is on
 	it("readLastStage returns the row even when the header line is missing", async () => {
 		const { readLastStage } = await import("@juicesharp/rpiv-workflow");
 		const runId = "2026-05-23_13-05-38-abcd";
-		mkdirSync(resolveWorkflowsDir(tmpDir), { recursive: true });
-		const filePath = resolveStateFile(tmpDir, runId);
+		mkdirSync(workflowsDir(tmpDir), { recursive: true });
+		const filePath = stateFilePath(tmpDir, runId);
 		const stageRow = {
 			stageNumber: 1,
 			skill: "research",
