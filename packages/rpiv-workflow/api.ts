@@ -211,6 +211,20 @@ export interface StageDef<TIn = unknown, TOut = unknown> {
 	 * isolation.
 	 */
 	fanout?: FanoutFn;
+	/**
+	 * Whether the stage inherits the chain's primary artifact from
+	 * upstream `produces` stages. Default `true`. Set to `false` on a
+	 * terminal side-effect — the stage's prompt receives `originalInput`
+	 * instead of the upstream artifact handle, the `ensureUpstreamArtifact`
+	 * preflight is bypassed, and the rolling primary slot is cleared on
+	 * success so any stage following also starts without an inherited
+	 * artifact.
+	 *
+	 * Authored via the `terminal()` factory; the flag is the underlying
+	 * mechanism. Meaningless on `kind: "produces"` stages (they emit their
+	 * own outcome) — `validateWorkflow` warns when set there.
+	 */
+	inheritsArtifacts?: boolean;
 }
 
 /**
@@ -262,6 +276,24 @@ export function acts(overrides: Partial<StageDef> = {}): StageDef {
 		sessionPolicy: "fresh",
 		...overrides,
 	};
+}
+
+/**
+ * Terminal side-effect stage: an `acts`-shaped stage that does NOT inherit
+ * the upstream primary artifact. The stage's prompt receives the run's
+ * `originalInput` instead of an upstream artifact handle; the
+ * `ensureUpstreamArtifact` preflight is bypassed; and the rolling primary
+ * slot is cleared on success so anything downstream also starts without an
+ * inherited handle.
+ *
+ * Sibling to `produces()` / `acts()`. The right answer when a final stage
+ * (cleanup, summary, post-run notification) shouldn't be coupled to the
+ * upstream chain's artifact.
+ *
+ * Desugars to `acts({ ...overrides, inheritsArtifacts: false })`.
+ */
+export function terminal(overrides: Partial<StageDef> = {}): StageDef {
+	return acts({ ...overrides, inheritsArtifacts: false });
 }
 
 // ===========================================================================

@@ -147,17 +147,25 @@ function tryRecordStage(s: SessionContext, label: string, output: Output | undef
 }
 
 /**
- * Update the rolling chain-input slot. Only `produces` stages whose
- * collector returned at least one artifact advance the primary —
- * `side-effect` stages (commit, implement) leave it in place so a stage
- * after them inherits the upstream chain input. The first artifact in
- * the output is the primary; `role` is user-facing metadata, not a
- * framework gate.
+ * Update the rolling chain-input slot. Three cases:
+ *   1. `produces` stages whose collector returned at least one artifact
+ *      advance the primary (first artifact wins; `role` is user-facing
+ *      metadata, not a framework gate).
+ *   2. `side-effect` stages with `inheritsArtifacts: false` (authored via
+ *      `terminal()`) CLEAR the slot — they explicitly break the chain
+ *      so anything after also starts without an inherited artifact.
+ *   3. Other `side-effect` stages (commit, implement) leave it in place
+ *      so a stage after them inherits the upstream chain input.
  */
 function maybeAdvancePrimary(s: StageSession, output: Output): void {
-	if (s.stage.kind !== "produces") return;
-	const next = output.artifacts[0];
-	if (next) s.state.primaryArtifact = next;
+	if (s.stage.kind === "produces") {
+		const next = output.artifacts[0];
+		if (next) s.state.primaryArtifact = next;
+		return;
+	}
+	if (s.stage.inheritsArtifacts === false) {
+		s.state.primaryArtifact = undefined;
+	}
 }
 
 /**

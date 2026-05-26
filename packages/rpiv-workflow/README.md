@@ -69,12 +69,11 @@ Two file roles per layer:
 
 A workflow is a typed graph: named entry point, a `stages` record, and an `edges` table that maps each stage to another stage name, the sentinel `"stop"`, or a predicate function that chooses at runtime.
 
-Two factories for the two stage kinds:
+Three factories for the two stage kinds:
 
 - `produces(overrides?)` — `kind: "produces"`. The skill writes a file the next stage reads. Halts the chain if the path doesn't appear in the transcript.
-- `acts(overrides?)` — `kind: "side-effect"`. The skill's side effect IS the work (commit, implement). The next stage inherits the prior artifact list forward (see the inheritance note below).
-
-> **Inheritance note (until Phase 10).** `acts()` stages currently inherit the upstream artifact list with no opt-out. A future `terminal()` factory will close this gap — a side-effect stage that does NOT pass upstream artifacts forward. Track in the polish plan.
+- `acts(overrides?)` — `kind: "side-effect"`. The skill's side effect IS the work (commit, implement). The next stage inherits the prior artifact list forward — the stage's prompt receives the upstream primary artifact's handle.
+- `terminal(overrides?)` — `kind: "side-effect"` with `inheritsArtifacts: false`. A side-effect stage that does NOT inherit the upstream artifact: its prompt receives `originalInput` (the run's brief), the upstream-artifact preflight is bypassed, and the rolling primary slot is cleared on success so anything downstream also starts without an inherited handle. The right answer for a final cleanup / summary / post-run notification stage that shouldn't be coupled to the upstream chain.
 
 Conditional routing uses `gate(field, branches)` with the bundled predicate helpers (`gt` / `gte` / `lt` / `lte` / `eq`):
 

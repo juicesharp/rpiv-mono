@@ -622,6 +622,33 @@ describe("sessions — outcome resolution", () => {
 		expect(state.primaryArtifact).toBe(prior);
 		expect(currentPrimaryArtifact(state)).toBe(prior);
 	});
+
+	it("terminal side-effect (inheritsArtifacts: false) clears the rolling primary so downstream stages don't inherit", async () => {
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [{ branch: [mockAssistantMessage("done")] }],
+		});
+		const prior = { handle: fsHandle(".rpiv/artifacts/research/r.md"), role: "primary" };
+		const state = freshRunState({ primaryArtifact: prior });
+		const onSuccess = vi.fn(async () => {});
+
+		await runStageSession(
+			chain.ctx as RunnerCtx,
+			stageSession({
+				cwd: tmpDir,
+				state,
+				stage: stage({ kind: "side-effect", inheritsArtifacts: false }),
+				onSuccess,
+			}),
+		);
+
+		expect(onSuccess).toHaveBeenCalledTimes(1);
+		expect(state.output?.artifacts).toEqual([]);
+		// Terminal explicitly breaks the chain — anything downstream starts
+		// without an inherited artifact.
+		expect(state.primaryArtifact).toBeUndefined();
+		expect(currentPrimaryArtifact(state)).toBeUndefined();
+	});
 });
 
 // ---------------------------------------------------------------------------

@@ -181,6 +181,7 @@ function checkStageSemantics(w: Workflow, issues: WorkflowValidationIssue[]): vo
 		checkTimeoutBounds(w, name, stage, issues);
 		checkStageEnums(w, name, stage, issues);
 		checkFanoutContinueInvariant(w, name, stage, issues);
+		checkInheritsArtifactsKind(w, name, stage, issues);
 	}
 }
 
@@ -264,6 +265,33 @@ function checkFanoutContinueInvariant(
 				w.name,
 				name,
 				`stage "${name}" cannot combine fanout with sessionPolicy "continue" — fanout requires per-unit session isolation`,
+			),
+		);
+	}
+}
+
+/**
+ * `inheritsArtifacts: false` is the `terminal()` factory's mechanism — it
+ * tells the runner to bypass upstream-artifact inheritance for a
+ * side-effect stage. Setting it on a `produces` stage is meaningless: a
+ * `produces` stage emits its own outcome and never consumes the upstream
+ * primary artifact in `inputForStage` (the first stage always uses
+ * originalInput, and inheritance only affects the prompt arg). Surface
+ * the redundancy as a warning so users don't author "off" flags they
+ * think are doing something.
+ */
+function checkInheritsArtifactsKind(
+	w: Workflow,
+	name: string,
+	stage: StageDef,
+	issues: WorkflowValidationIssue[],
+): void {
+	if (stage.inheritsArtifacts === false && stage.kind === "produces") {
+		issues.push(
+			warning(
+				w.name,
+				name,
+				`stage "${name}" sets \`inheritsArtifacts: false\` on a \`produces\` stage — the flag is the \`terminal()\` factory's mechanism and is only meaningful on side-effect stages`,
 			),
 		);
 	}

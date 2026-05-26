@@ -271,6 +271,23 @@ describe("validateWorkflow — semantic stage constraints", () => {
 		const issues = validateWorkflow(baseWithStage({ sessionPolicy: "lingering" as unknown as "fresh" }));
 		expect(issues.some((i) => i.severity === "error" && /sessionPolicy: "lingering"/.test(i.message))).toBe(true);
 	});
+
+	it("warns when inheritsArtifacts: false is set on a produces stage", () => {
+		// The flag is the `terminal()` factory's mechanism — meaningful only
+		// for side-effect stages. Setting it on `produces` does nothing.
+		const issues = validateWorkflow(baseWithStage({ inheritsArtifacts: false }));
+		expect(issues.some((i) => i.severity === "warning" && /inheritsArtifacts: false/.test(i.message))).toBe(true);
+	});
+
+	it("does NOT warn when inheritsArtifacts: false is set on a side-effect stage", () => {
+		const w: Workflow = {
+			name: "term",
+			start: "a",
+			stages: { a: acts({ inheritsArtifacts: false }) },
+			edges: { a: "stop" },
+		};
+		expect(warnings(w).filter((i) => /inheritsArtifacts/.test(i.message))).toEqual([]);
+	});
 });
 
 describe("validateWorkflow — route-edge schema check", () => {

@@ -16,7 +16,7 @@
  *
  *   1. Authoring DSL — `./api.js`, `./predicates.js`, `./typebox-adapter.js`
  *      What a `workflows.config.ts` author imports to declare a workflow:
- *      `defineWorkflow`, `produces`, `acts`, `defineRoute`, `gate`,
+ *      `defineWorkflow`, `produces`, `acts`, `terminal`, `defineRoute`, `gate`,
  *      `Workflow`, `StageDef`, `EdgeFn`, `EdgeTarget`, `EdgeContext`,
  *      `StageSchema`, `StageKind`, `SessionPolicy`, `OutputSpec`,
  *      `READS_DATA`, the runtime-mirror `*_VALUES` arrays, the
@@ -139,6 +139,7 @@ export {
 	type StageDef,
 	type StageKind,
 	type StageSchema,
+	terminal,
 	type Workflow,
 } from "./api.js";
 export { registerBuiltIns } from "./built-ins.js";

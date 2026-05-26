@@ -16,6 +16,7 @@ import {
 	gate,
 	type OutputSpec,
 	produces,
+	terminal,
 	type Workflow,
 } from "./api.js";
 import { eq, gt } from "./predicates.js";
@@ -111,6 +112,36 @@ describe("acts", () => {
 		};
 		const n = acts({ outcome });
 		expect(n.outcome).toBe(outcome);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// terminal — opt-out-of-inheritance side-effect stages
+// ---------------------------------------------------------------------------
+
+describe("terminal", () => {
+	it("desugars to acts() with inheritsArtifacts: false", () => {
+		const n = terminal();
+		expect(n).toMatchObject({
+			kind: "side-effect",
+			sessionPolicy: "fresh",
+			inheritsArtifacts: false,
+		});
+	});
+
+	it("preserves overrides while keeping inheritsArtifacts: false", () => {
+		const n = terminal({ skill: "cleanup", sessionPolicy: "continue" });
+		expect(n.skill).toBe("cleanup");
+		expect(n.sessionPolicy).toBe("continue");
+		expect(n.inheritsArtifacts).toBe(false);
+	});
+
+	it("a caller passing inheritsArtifacts: true via overrides cannot reverse the opt-out", () => {
+		// The factory's identity IS the opt-out — `inheritsArtifacts: false`
+		// is applied after the spread so a caller-supplied `true` is
+		// overwritten. Authors wanting inheritance should call `acts()`.
+		const n = terminal({ inheritsArtifacts: true as unknown as false });
+		expect(n.inheritsArtifacts).toBe(false);
 	});
 });
 

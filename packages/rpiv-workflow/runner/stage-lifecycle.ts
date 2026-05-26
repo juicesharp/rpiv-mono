@@ -97,6 +97,24 @@ function buildPrompt(skill: string, inputForStage: string): string {
 }
 
 /**
+ * The arg string the stage's `/skill:<name> <args>` prompt carries. Three
+ * cases:
+ *   1. The start stage always receives `originalInput` (the user's brief).
+ *   2. A stage opting out of inheritance (`inheritsArtifacts: false`, i.e.
+ *      authored via `terminal()`) also receives `originalInput` — the
+ *      `ensureUpstreamArtifact` preflight is bypassed for the same opt-out.
+ *   3. Otherwise: the upstream primary artifact's handle string. The
+ *      `ensureUpstreamArtifact` preflight guarantees the slot is set; the
+ *      `!` is safe.
+ */
+function inputForStage(stage: ResolvedStage, run: RunContext): string {
+	const isStart = stage.name === run.workflow.start;
+	if (isStart) return run.state.originalInput;
+	if (stage.def.inheritsArtifacts === false) return run.state.originalInput;
+	return handleToString(currentPrimaryArtifact(run.state)!.handle);
+}
+
+/**
  * Slot ordering (load-bearing):
  *
  *   1. tryFanout                 — shortcut: the stage's FanoutFn returned
@@ -123,9 +141,7 @@ export async function runStage(curCtx: RunnerCtx, currentName: string, idx: numb
 	if (await tryFanout(curCtx, stage, idx, run)) return;
 	for (const check of PRE_PROMPT_CHECKS) await check.run(stage, run);
 
-	const isStart = currentName === run.workflow.start;
-	const inputForStage = isStart ? run.state.originalInput : handleToString(currentPrimaryArtifact(run.state)!.handle);
-	const prompt = buildPrompt(stage.skill, inputForStage);
+	const prompt = buildPrompt(stage.skill, inputForStage(stage, run));
 	curCtx.ui.setStatus(STATUS_KEY, STATUS_STAGE(stage.stageNumber, run.totalStages, stage.skill));
 	const branchOffset = computeBranchOffset(curCtx, stage.def);
 
@@ -227,9 +243,15 @@ function ensureSkillRegistered(stage: ResolvedStage, run: RunContext): void {
  * The start node consumes the user's brief; subsequent stages MUST inherit
  * an upstream artifactPath. Falling back to originalInput past the start
  * would silently hand a downstream skill the raw feature description.
+ *
+ * Stages authored via `terminal()` (`inheritsArtifacts: false`) opt out of
+ * the upstream-artifact contract entirely — they consume `originalInput`
+ * by design, so the check is skipped.
  */
 function ensureUpstreamArtifact(stage: ResolvedStage, run: RunContext): void {
-	if (stage.name === run.workflow.start || currentPrimaryArtifact(run.state)) return;
+	if (stage.name === run.workflow.start) return;
+	if (stage.def.inheritsArtifacts === false) return;
+	if (currentPrimaryArtifact(run.state)) return;
 	throw new StagePreflightError(
 		"halt",
 		stage.skill,
