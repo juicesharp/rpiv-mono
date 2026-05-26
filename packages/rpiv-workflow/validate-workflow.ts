@@ -299,11 +299,10 @@ function checkInheritsArtifactsKind(
 }
 
 /**
- * Skillless script stages (Phase B): presence of `stage.run` declares
- * "the runner calls this TS function instead of dispatching a Pi skill."
- * Four fields are categorically incompatible with that contract — fail
- * loudly at load time so the runner branch (B.4) can assume the
- * invariant.
+ * Skillless script stages: presence of `stage.run` declares "the runner
+ * calls this TS function instead of dispatching a Pi skill." Four fields
+ * are categorically incompatible with that contract — fail loudly at
+ * load time so the runner branch can assume the invariant.
  *
  * Mutual-exclusion rules:
  *

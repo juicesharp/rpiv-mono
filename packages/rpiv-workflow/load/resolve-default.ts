@@ -13,8 +13,8 @@
  *
  * Historic note: this used to fall back to a hard-coded `"mid"` sentinel,
  * which encoded an rpiv-pi-specific bias inside a skill-agnostic package.
- * Removed in Phase 11 (L3-03); siblings that want to ship a preferred
- * default set it via the config-file envelope at their own load time.
+ * Siblings that want to ship a preferred default set it via the
+ * config-file envelope at their own load time.
  */
 
 import type { ConfigLayer } from "../layers.js";

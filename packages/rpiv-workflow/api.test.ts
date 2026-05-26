@@ -2,8 +2,8 @@
  * Tests for the TS-native workflow authoring surface — factories from api.ts.
  *
  * Pure-function tests: each factory applies defaults, respects overrides,
- * and returns the canonical shape. No consumer of `api.ts` exists yet
- * (Phase 1 is additive); these tests are the contract.
+ * and returns the canonical shape. The factories define the contract for
+ * any future consumer.
  */
 
 import { Type } from "typebox";
@@ -149,7 +149,7 @@ describe("terminal", () => {
 });
 
 // ---------------------------------------------------------------------------
-// produces.script / acts.script / terminal.script — skillless TS stages (Phase B.2)
+// produces.script / acts.script / terminal.script — skillless TS stages
 // ---------------------------------------------------------------------------
 
 describe("produces.script", () => {

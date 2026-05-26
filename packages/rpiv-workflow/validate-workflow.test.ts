@@ -392,7 +392,7 @@ describe("validateWorkflow — workflow name", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Phase B.3 — script-stage invariants (presence of `stage.run`)
+// Script-stage invariants (presence of `stage.run`)
 // ---------------------------------------------------------------------------
 
 describe("validateWorkflow — script stage invariants", () => {

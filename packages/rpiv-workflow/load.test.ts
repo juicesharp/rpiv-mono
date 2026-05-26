@@ -597,9 +597,8 @@ export default {
 	});
 
 	it("returns the first workflow by insertion order when no overlay sets a default", async () => {
-		// Insertion order is the sole fallback after Phase 11 (L3-03) — no
-		// hard-coded "mid" sentinel sits between the explicit defaults and the
-		// insertion-order fallback.
+		// Insertion order is the sole fallback — no hard-coded "mid" sentinel
+		// sits between the explicit defaults and the insertion-order fallback.
 		__resetBuiltIns();
 		registerBuiltIns([
 			defineWorkflow({ name: "alpha", start: "x", stages: { x: produces() }, edges: { x: "stop" } }),
@@ -610,9 +609,9 @@ export default {
 	});
 
 	it("returns default=undefined when no layer registered any workflows", async () => {
-		// Standalone rpiv-workflow install (no rpiv-pi, no overlays). Pre-Phase
-		// 11 the loader returned `default: "mid"` even though no `mid` existed —
-		// command.ts now keys on `default === undefined` to surface
+		// Standalone rpiv-workflow install (no rpiv-pi, no overlays). The
+		// loader used to return `default: "mid"` even though no `mid` existed
+		// — command.ts now keys on `default === undefined` to surface
 		// MSG_NO_WORKFLOWS_REGISTERED instead.
 		__resetBuiltIns();
 		const loaded = await loadWorkflows(TEST_TMP);

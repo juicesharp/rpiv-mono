@@ -221,8 +221,8 @@ describe("/wf — issue surfacing", () => {
 
 // ---------------------------------------------------------------------------
 // Empty registry — standalone rpiv-workflow install (no rpiv-pi, no overlays).
-// Pre-Phase 11 the loader returned `default: "mid"` even with zero workflows;
-// the dispatch then either silently went into a not-found notify or, worse,
+// The loader used to return `default: "mid"` even with zero workflows; the
+// dispatch then either silently went into a not-found notify or, worse,
 // looked up "mid" in an empty map. Now: `default: undefined` and the command
 // emits an explicit "no workflows registered" notify.
 // ---------------------------------------------------------------------------

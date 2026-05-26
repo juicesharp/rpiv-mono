@@ -238,7 +238,7 @@ describe("fail-soft I/O", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Past-runs API — readHeader + listRuns + listArtifacts (Phase 10.C)
+// Past-runs API — readHeader + listRuns + listArtifacts
 // ---------------------------------------------------------------------------
 
 describe("readHeader", () => {
@@ -285,7 +285,7 @@ describe("readHeader", () => {
 	});
 
 	it("treats trigger as optional — legacy headers without trigger still parse", () => {
-		// Simulate a header written before Phase A.1 (no trigger field).
+		// Simulate a header written before the trigger field was added.
 		const runId = "legacy-no-trigger";
 		mkdirSync(workflowsDir(tmpDir), { recursive: true });
 		appendFileSync(

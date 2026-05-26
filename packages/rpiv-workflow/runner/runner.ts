@@ -73,9 +73,9 @@ export interface RunWorkflowOptions {
 	trigger?: RunTrigger;
 	/**
 	 * Per-call lifecycle listener bundle. Fires AFTER every globally
-	 * registered bundle (Phase A.4 — `registerLifecycle`). Listener throws
-	 * are caught + logged via `ctx.ui.notify(..., "warning")`; never halt
-	 * the run.
+	 * registered bundle (see `registerLifecycle`). Listener throws are
+	 * caught + logged via `ctx.ui.notify(..., "warning")`; never halt the
+	 * run.
 	 */
 	lifecycle?: LifecycleListeners;
 }

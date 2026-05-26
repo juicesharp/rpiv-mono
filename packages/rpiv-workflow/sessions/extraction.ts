@@ -92,7 +92,7 @@ function resolveOutcome(stage: StageDef, skill: string): OutputSpec {
 }
 
 /**
- * L6-05 contract: `branch` is always the FULL unsliced branch and
+ * Contract: `branch` is always the FULL unsliced branch and
  * `branchOffset` is always the policy-derived offset (continue → the
  * stage's captured offset; fresh → undefined). Collectors slice on
  * demand via the `branchOffset` field. Initial production and retry

@@ -1,8 +1,8 @@
 /**
  * Identifies what triggered a workflow run. Recorded in the JSONL
  * header (`WorkflowHeader.trigger`), threaded into every lifecycle
- * event (`LifecycleContext.trigger`, Phase A.2), and surfaced on
- * past-run enumeration (`RunSummary.trigger`).
+ * event (`LifecycleContext.trigger`), and surfaced on past-run
+ * enumeration (`RunSummary.trigger`).
  *
  * `/wf` sets `{ kind: "command", name: "wf" }`. Programmatic embedders
  * default to `{ kind: "programmatic" }`. External trigger sources
@@ -23,5 +23,5 @@ export type RunTrigger =
 	| { kind: "programmatic"; source?: string; meta?: Record<string, unknown> }
 	| { kind: "external"; source: string; ref?: string; meta?: Record<string, unknown> };
 
-/** Default when `RunWorkflowOptions.trigger` is omitted (Phase A.3). */
+/** Default when `RunWorkflowOptions.trigger` is omitted. */
 export const DEFAULT_TRIGGER: RunTrigger = { kind: "programmatic" };

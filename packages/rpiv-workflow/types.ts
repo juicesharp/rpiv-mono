@@ -166,7 +166,7 @@ export interface SessionContext {
 	stageName: string;
 	/** Pi skill body — `/skill:<skill>` dispatch + status-line label + JSONL `WorkflowStage.skill`. */
 	skill: string;
-	/** Shared lifecycle dispatcher (Phase A.3). Threaded from `RunContext` so the audit layer can fire `onStageEnd` / `onStageError` / `onFanoutUnitEnd` without re-importing it. */
+	/** Shared lifecycle dispatcher. Threaded from `RunContext` so the audit layer can fire `onStageEnd` / `onStageError` / `onFanoutUnitEnd` without re-importing it. */
 	lifecycle: LifecycleDispatcher;
 	/**
 	 * Read-only run identity passed to lifecycle callbacks. Captured at

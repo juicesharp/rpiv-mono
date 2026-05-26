@@ -450,13 +450,12 @@ describe("runWorkflow", () => {
 	});
 
 	it("aliased skill stage: .stage carries the record key, .skill carries the overridden skill body", async () => {
-		// Regression for Phase A.0 split: pre-rename, the JSONL row carried a
-		// single `.skill` field that conflated workflow-graph identity (record
-		// key) with the Pi skill body. An aliased stage like:
+		// Regression for the stage/skill field split: previously the JSONL
+		// row carried a single `.skill` field that conflated workflow-graph
+		// identity (record key) with the Pi skill body. An aliased stage like:
 		//   stages: { "implement-after-revise": acts({ skill: "implement" }) }
 		// recorded `.skill === "implement"` and silently lost the record key.
-		// After the split, the row pins both — record key on `.stage`, skill
-		// body on `.skill`.
+		// The row now pins both — record key on `.stage`, skill body on `.skill`.
 		const chain = createMockSessionChain({
 			cwd: tmpDir,
 			steps: [
@@ -625,7 +624,7 @@ describe("runWorkflow", () => {
 
 		// User-visible error notification surfaces the stage-failed verdict.
 		// The outcome's fatal message flows through recordTerminalFailure's
-		// notifyMsg (MSG_STAGE_FAILED), not the pre-Phase-3 MSG_STAGE_NO_ARTIFACT.
+		// notifyMsg (MSG_STAGE_FAILED), not the legacy MSG_STAGE_NO_ARTIFACT.
 		const failureNotice = chain.notifications.find((n) => /failed.*stopping workflow/i.test(n.msg));
 		expect(failureNotice?.level).toBe("error");
 	});
@@ -729,9 +728,9 @@ describe("runWorkflow", () => {
 		});
 	});
 
-	// Phase B.5 — focused regression for `terminal.script` clearing the
-	// rolling primary artifact slot in a [produces, terminal.script, produces]
-	// chain. B.4 test 6 covers the same surface with `acts.script` downstream;
+	// Focused regression for `terminal.script` clearing the rolling primary
+	// artifact slot in a [produces, terminal.script, produces] chain. The
+	// adjacent `acts.script` test covers the same surface downstream;
 	// this pin uses `produces.script` downstream so a future runner refactor
 	// that re-introduces inheritance through terminal stages on the produces
 	// path trips the test rather than silently feeding stage 3 the wrong
@@ -1172,7 +1171,7 @@ describe("runWorkflow", () => {
 		});
 	});
 
-	describe("input validation (Phase 5)", () => {
+	describe("input validation", () => {
 		it("halts chain when prior output fails consumer's inputSchema", async () => {
 			writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md");
 			// Stage 1 (research) produces an artifact. Stage 2 (design) has an
@@ -1321,7 +1320,7 @@ describe("runWorkflow", () => {
 		}, 5_000);
 	});
 
-	describe("predicate routing (Phase 6)", () => {
+	describe("predicate routing", () => {
 		it("routes to commit when severeIssueCount is 0 (no severe issues)", async () => {
 			writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md");
 			writeArtifact(tmpDir, ".rpiv/artifacts/code-review/cr.md", "---\nsevereIssueCount: 0\n---\n\nContent");
@@ -2100,7 +2099,7 @@ describe("runWorkflow", () => {
 	});
 
 	// =======================================================================
-	// Phase A.3 — lifecycle callbacks (per-call options.lifecycle)
+	// Lifecycle callbacks — per-call `options.lifecycle`
 	// =======================================================================
 
 	describe("lifecycle callbacks", () => {
@@ -2339,7 +2338,7 @@ describe("runWorkflow", () => {
 		});
 
 		// =======================================================================
-		// Phase A.4 — global registry (registerLifecycle)
+		// Global registry (registerLifecycle)
 		// =======================================================================
 
 		describe("registerLifecycle (global registry)", () => {

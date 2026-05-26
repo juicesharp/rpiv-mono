@@ -98,8 +98,8 @@ export interface LoadedWorkflows {
 // ===========================================================================
 
 /**
- * Lookup a workflow by name in a merged `LoadedWorkflows`. Anticipates the
- * Phase 11 "rerun by name" / `listRuns` past-runs API that will share the
+ * Lookup a workflow by name in a merged `LoadedWorkflows`. Anticipates
+ * the "rerun by name" / `listRuns` past-runs API that will share the
  * lookup; consolidated here so future callers don't reach back into
  * `loaded.workflows.find(...)` ad-hoc.
  */

@@ -3,9 +3,9 @@
  * audit predicate-mediated decisions, enforce the backward-jump guard,
  * then recurse via `runStageOrRecordFailure`.
  *
- * `nextStage` returns a tagged union (post-Phase 5.B); `advanceChain`
- * switches on `kind` instead of catching. `runStageOrRecordFailure` owns
- * the catch for downstream-stage throws.
+ * `nextStage` returns a tagged union; `advanceChain` switches on `kind`
+ * instead of catching. `runStageOrRecordFailure` owns the catch for
+ * downstream-stage throws.
  */
 
 import { nowIso, recordTerminalFailure } from "../audit.js";
@@ -22,8 +22,8 @@ import type { RunContext, RunnerCtx } from "../types.js";
 import { finalizeWorkflow, lifecycleCtxFor, runStageOrRecordFailure } from "./runner.js";
 
 /**
- * Decomposed into three helpers (L5-05): `auditRoutingDecision`,
- * `checkBackwardJumpGuard`, `haltOnRoutingError`. Each owns one
+ * Decomposed into three helpers — `auditRoutingDecision`,
+ * `checkBackwardJumpGuard`, `haltOnRoutingError` — each owning one
  * structural concern.
  */
 export async function advanceChain(

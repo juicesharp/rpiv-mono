@@ -236,7 +236,7 @@ interface SessionOutcome {
  * Always reads the full unsliced branch + applies the policy-derived
  * `branchOffset` to `classifyStop` so the prior-stage prefix is
  * skipped in place. The same offset value flows through to
- * `produceAndValidateOutput` (L6-05: initial == retry).
+ * `produceAndValidateOutput` (initial == retry).
  *
  * No longer scans the transcript for an artifact path — discovery is
  * the collector's job, not the runner's.

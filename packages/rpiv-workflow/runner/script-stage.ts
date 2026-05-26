@@ -1,5 +1,5 @@
 /**
- * Skillless script stages (Phase B.4) — the runtime counterpart to
+ * Skillless script stages — the runtime counterpart to
  * `produces.script(...)`, `acts.script(...)`, `terminal.script(...)`.
  *
  * Where the skill path opens a Pi session and lets the agent emit work
@@ -170,8 +170,7 @@ function recordScriptSuccess(
 		cwd,
 		runId,
 		// `skill` is intentionally absent on script-stage rows — JSON.stringify
-		// drops `undefined` so the JSONL row carries no skill field at all,
-		// matching the audit-format split landed in Phase A.0.
+		// drops `undefined` so the JSONL row carries no skill field at all.
 		{ stage: stage.name, status: "completed", ts: nowIso(), output },
 		state,
 	);

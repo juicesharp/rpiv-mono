@@ -4,11 +4,11 @@
  * Two subscription paths converge through the same `LifecycleListeners`
  * shape:
  *
- *   - **Per-call** — embedders set `RunWorkflowOptions.lifecycle?` (Phase A.3)
- *     when driving `runWorkflow` directly.
+ *   - **Per-call** — embedders set `RunWorkflowOptions.lifecycle?` when
+ *     driving `runWorkflow` directly.
  *   - **Global** — sibling extensions (rpiv-pi widget, future metrics)
- *     call `registerLifecycle(listeners)` (Phase A.4) at extension load.
- *     Returns a disposer; multiple registrations fan out per event.
+ *     call `registerLifecycle(listeners)` at extension load. Returns a
+ *     disposer; multiple registrations fan out per event.
  *
  * Every event fires AFTER the corresponding JSONL row lands on disk
  * (onStageEnd / onStageError / onRoute / onFanoutUnitEnd). Listeners
@@ -57,10 +57,7 @@ export interface LifecycleContext {
  *
  * Discriminated on `kind`:
  *   - `"skill"`  — stage dispatches a Pi skill body (`/skill:<skill>`).
- *   - `"script"` — stage runs a TS function (Phase B); no skill body.
- *
- * Phase A.3 only ever constructs the `"skill"` branch; Phase B.4
- * activates the `"script"` branch.
+ *   - `"script"` — stage runs a TS function; no skill body.
  */
 export type StageRef =
 	| { kind: "skill"; name: string; stageNumber: number; skill: string }
@@ -162,9 +159,8 @@ export interface DispatchHost {
  * through `RunContext` so every firing site uses the same instance.
  *
  * Snapshot semantics: `collectBundles` is called per `fire(...)`, so a
- * registration made mid-event (Phase A.4 — `registerLifecycle` from
- * inside a callback) applies to subsequent events but not the in-flight
- * one.
+ * registration made mid-event (`registerLifecycle` from inside a
+ * callback) applies to subsequent events but not the in-flight one.
  *
  * Sequential await: bundles run in registration order; the per-call
  * bundle (when present) fires after every globally-registered bundle.
@@ -192,7 +188,7 @@ export class LifecycleDispatcher {
 }
 
 // ---------------------------------------------------------------------------
-// Global registry — cross-package fan-out (Phase A.4)
+// Global registry — cross-package fan-out
 // ---------------------------------------------------------------------------
 
 /**
@@ -267,12 +263,12 @@ export function buildLifecycleContext(args: {
 	return args;
 }
 
-/** Build the `"skill"` arm of `StageRef`. Phase B.4 adds a `script` builder. */
+/** Build the `"skill"` arm of `StageRef`. */
 export function skillStageRef(name: string, stageNumber: number, skill: string): StageRef {
 	return { kind: "skill", name, stageNumber, skill };
 }
 
-/** Build the `"script"` arm of `StageRef` — skillless TS stages (Phase B.4). */
+/** Build the `"script"` arm of `StageRef` — skillless TS stages. */
 export function scriptStageRef(name: string, stageNumber: number): StageRef {
 	return { kind: "script", name, stageNumber };
 }

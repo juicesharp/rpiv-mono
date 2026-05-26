@@ -1,5 +1,5 @@
 /**
- * Tests for Phase B.4 — `runScript` runtime branch.
+ * Tests for the `runScript` runtime branch.
  *
  * Script stages skip the skill pipeline entirely (no `/skill:<name>`
  * prompt, no `newSession`, no collector). These tests drive
@@ -60,7 +60,7 @@ function recordingListeners() {
 	return { events, listeners };
 }
 
-describe("runScript — Phase B.4", () => {
+describe("runScript", () => {
 	let tmpDir: string;
 
 	beforeEach(() => {

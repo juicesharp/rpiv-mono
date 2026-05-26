@@ -66,9 +66,9 @@ export interface WorkflowHeader {
 	input: string;
 	ts: string;
 	/**
-	 * What triggered the run. Optional so JSONL files written before
-	 * Phase A.1 still parse — readers treat `undefined` as "trigger
-	 * unknown."
+	 * What triggered the run. Optional so older JSONL files (written
+	 * before the trigger field was added) still parse — readers treat
+	 * `undefined` as "trigger unknown."
 	 */
 	trigger?: RunTrigger;
 }

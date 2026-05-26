@@ -146,7 +146,7 @@ const readStageRows = (cwd: string): Array<Record<string, unknown>> => {
 };
 
 // ---------------------------------------------------------------------------
-// Group 1 — retry-loop coverage (retryUntilValid + extractAndValidateOutput)
+// Retry-loop coverage (retryUntilValid + extractAndValidateOutput)
 // ---------------------------------------------------------------------------
 
 describe("sessions — validation retry loop", () => {
@@ -557,7 +557,7 @@ describe("sessions — validation retry loop", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Group 2 — outcome resolution (resolveOutcome)
+// Outcome resolution (resolveOutcome)
 // ---------------------------------------------------------------------------
 
 describe("sessions — outcome resolution", () => {
@@ -667,13 +667,13 @@ describe("sessions — outcome resolution", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Group 3 — CollectCtx contract (readSessionOutcome + buildCollectCtx)
+// CollectCtx contract (readSessionOutcome + buildCollectCtx)
 //
-// Post-L6-05: CollectCtx.branch is ALWAYS the full unsliced branch;
-// branchOffset is ALWAYS the policy-derived offset (continue → captured
-// stage offset; fresh → undefined). Collectors slice on demand via the
-// `branchOffset` field. The initial production and the retry path emit
-// the same offset value — the closed-I4 defect cannot re-introduce by
+// CollectCtx.branch is ALWAYS the full unsliced branch; branchOffset is
+// ALWAYS the policy-derived offset (continue → captured stage offset;
+// fresh → undefined). Collectors slice on demand via the `branchOffset`
+// field. The initial production and the retry path emit the same offset
+// value — the prior pre-slicing defect cannot re-introduce by
 // construction.
 // ---------------------------------------------------------------------------
 
@@ -745,12 +745,12 @@ describe("sessions — collector ctx (always-unsliced branch + policy-derived of
 		expect(captured[0]?.branchOffset).toBe(priorPrefix.length);
 	});
 
-	it("continue policy + validation retry: initial + retry emit the same branchOffset (closed-I4 by construction)", async () => {
-		// Pre-L6-05: initial extraction received a pre-sliced branch + undefined
-		// offset, retry received the unsliced branch + captured offset — an
-		// asymmetric pair that could re-introduce the I4 defect if a future
-		// refactor changed one path without the other.
-		// Post-L6-05: both extractions emit identical `(full branch, captured offset)`.
+	it("continue policy + validation retry: initial + retry emit the same branchOffset", async () => {
+		// Previously the initial extraction received a pre-sliced branch +
+		// undefined offset while retry received the unsliced branch +
+		// captured offset — an asymmetric pair a future refactor could
+		// regress by touching one path and not the other. Both extractions
+		// now emit identical `(full branch, captured offset)`.
 		const captured: CollectCtx[] = [];
 		// First call: schema-invalid → triggers retry. Subsequent: schema-valid.
 		const failThenPassOutcome = recordingOutcomeOf([okPayload({ foo: 0 }), okPayload({ foo: 2 })], captured);
@@ -818,7 +818,7 @@ describe("sessions — collector ctx (always-unsliced branch + policy-derived of
 });
 
 // ---------------------------------------------------------------------------
-// Group 4 — spawn primitive (spawnSession + sendAndAwaitIdle)
+// Spawn primitive (spawnSession + sendAndAwaitIdle)
 // ---------------------------------------------------------------------------
 
 describe("sessions — spawn primitive", () => {
@@ -914,7 +914,7 @@ describe("sessions — spawn primitive", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Group 5 + 6 — success persistence (recordStageSuccess + recordPhaseSuccess)
+// Success persistence (recordStageSuccess + recordPhaseSuccess)
 // ---------------------------------------------------------------------------
 
 describe("sessions — success persistence", () => {
@@ -1082,7 +1082,7 @@ describe("sessions — success persistence", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Group 7 — halt routing matrix
+// Halt routing matrix
 // ---------------------------------------------------------------------------
 
 describe("sessions — halt routing", () => {

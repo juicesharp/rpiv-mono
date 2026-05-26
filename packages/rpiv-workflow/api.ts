@@ -280,12 +280,11 @@ export interface StageDef<TIn = unknown, TOut = unknown> {
 	 * function instead of dispatching `/skill:<skill>`. Presence of
 	 * `run` is the skill-vs-script discriminator. Authored via
 	 * `produces.script(...)`, `acts.script(...)`, or
-	 * `terminal.script(...)` (Phase B.2).
+	 * `terminal.script(...)`.
 	 *
 	 * Stages with `run` set CANNOT also set `skill`, `outcome`,
 	 * `fanout`, or `sessionPolicy: "continue"` — rejected at load time
-	 * by `validateWorkflow` (Phase B.3). Phase B.4 wires the runtime
-	 * branch; until then this field is type-only.
+	 * by `validateWorkflow`.
 	 */
 	run?: ProducesScriptFn<string, TOut> | ActsScriptFn;
 }
@@ -398,9 +397,9 @@ function terminalScript<TIn = unknown>(opts: ActsScriptOptions<TIn>): StageDef<T
  * via `{ skill: "<other>" }` only when the stage id and the Pi skill
  * differ (e.g. `code-review-large` aliasing the `code-review` skill).
  *
- * Skillless variant: `produces.script({ run, outputSchema?, ... })`
- * (Phase B.2) runs a pure TS function in place of a Pi skill body. The
- * function returns the `Output<K, D>` envelope directly.
+ * Skillless variant: `produces.script({ run, outputSchema?, ... })` runs
+ * a pure TS function in place of a Pi skill body. The function returns
+ * the `Output<K, D>` envelope directly.
  */
 export const produces = Object.assign(producesFn, { script: producesScript });
 
