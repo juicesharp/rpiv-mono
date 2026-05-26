@@ -176,6 +176,13 @@ export async function runWorkflow(ctx: WorkflowContext, options: RunWorkflowOpti
 	const maxBackwardJumps = options.maxBackwardJumps ?? MAX_BACKWARD_JUMPS;
 	const lifecycle = new LifecycleDispatcher(options.lifecycle);
 
+	// Snapshot the skill registry BEFORE any stage opens a fresh session.
+	// Pi invalidates the `WorkflowHost` handle on the first `ctx.newSession()`,
+	// so this is the only safe moment to enumerate. After this point, the
+	// runner reads `run.registeredSkills`; `options.host` survives only on
+	// `run.continueHost` for the continue-policy session handler.
+	const registeredSkills = options.host ? snapshotRegisteredSkills(options.host) : undefined;
+
 	const run: RunContext = {
 		cwd,
 		runId,
@@ -183,7 +190,8 @@ export async function runWorkflow(ctx: WorkflowContext, options: RunWorkflowOpti
 		totalStages,
 		state,
 		visited: new Set(),
-		host: options.host,
+		registeredSkills,
+		continueHost: options.host,
 		maxBackwardJumps,
 		trigger,
 		lifecycle,
@@ -323,4 +331,25 @@ export function finalizeWorkflow(curCtx: RunnerCtx, run: RunContext): void {
 	curCtx.ui.setStatus(STATUS_KEY, undefined);
 	curCtx.ui.notify(MSG_WORKFLOW_COMPLETE(run.state.stagesCompleted), "info");
 	run.state.termination.success = true;
+}
+
+/**
+ * Build the `registeredSkills` snapshot consumed by `ensureSkillRegistered`.
+ *
+ * Pi prefixes skill-source commands with `"skill:"` (agent-session.js); we
+ * strip the prefix so the set keys match `stage.skill` directly. Called
+ * exactly once per run, before any `ctx.newSession()` opens (which is when
+ * Pi marks the `WorkflowHost` handle stale).
+ *
+ * Non-skill commands (slash commands registered by extensions) are filtered
+ * out — the preflight only cares about skills.
+ */
+function snapshotRegisteredSkills(host: WorkflowHost): ReadonlySet<string> {
+	const skills = new Set<string>();
+	for (const cmd of host.getCommands()) {
+		if (cmd.source !== "skill") continue;
+		const name = cmd.name.startsWith("skill:") ? cmd.name.slice("skill:".length) : cmd.name;
+		skills.add(name);
+	}
+	return skills;
 }

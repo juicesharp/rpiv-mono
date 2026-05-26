@@ -1,8 +1,9 @@
 /**
  * Runtime types. Three nouns flow through the workflow runtime:
  *
- *  - `RunContext` — per-run carry (cwd, runId, workflow, state, visited, host,
- *    maxBackwardJumps). Read by every layer; mutated only by the runner.
+ *  - `RunContext` — per-run carry (cwd, runId, workflow, state, visited,
+ *    continueHost, registeredSkills, maxBackwardJumps). Read by every
+ *    layer; mutated only by the runner.
  *  - `RunState` — mutable bookkeeping (output, counters, telemetry,
  *    termination). Read by every layer; mutated by the runner + the audit
  *    layer. Always read the chain's primary artifact via
@@ -103,8 +104,33 @@ export interface RunContext {
 	 * the cap.
 	 */
 	visited: Set<string>;
-	/** Required for "continue"-policy stages. */
-	host?: WorkflowHost;
+	/**
+	 * Set of bare skill names registered with Pi at workflow start (e.g.
+	 * "research", "blueprint" — the `skill:` prefix is stripped). Snapshot
+	 * is taken ONCE in `runWorkflow` before any `ctx.newSession()` runs,
+	 * because Pi invalidates `WorkflowHost` handles after a session
+	 * replacement. `ensureSkillRegistered` consults this set instead of
+	 * calling `host.getCommands()` mid-run.
+	 *
+	 * Undefined when no host was passed to `runWorkflow` (programmatic
+	 * embedders that opt out of the skill-registration preflight — same
+	 * fail-soft posture as the rest of the host-optional surface).
+	 */
+	registeredSkills?: ReadonlySet<string>;
+	/**
+	 * Pi `ExtensionAPI` handle, retained ONLY so the continue-policy
+	 * session handler can call `host.sendUserMessage(...)`. The runtime
+	 * MUST NOT touch this field for anything else — Pi marks the handle
+	 * stale after the first `ctx.newSession()`, so any post-replacement
+	 * read (registry lookup, command enumeration) will throw with a
+	 * "stale extension ctx" error. Read-only registry needs go through
+	 * `registeredSkills` (snapshotted at workflow start); presence checks
+	 * go through `enforceSessionInvariants`.
+	 *
+	 * Naming: deliberately NOT called `host`. Future code-readers see the
+	 * field name and know the constraint without reading the JSDoc.
+	 */
+	continueHost?: WorkflowHost;
 	maxBackwardJumps: number;
 	/** What triggered the run; defaulted at `runWorkflow` entry. */
 	trigger: RunTrigger;
@@ -155,8 +181,14 @@ export interface StageSession extends SessionContext {
 	stageIndex: number;
 	/** Pre-stage snapshot value (undefined if the stage's `outcome` has no `snapshot`). */
 	snapshot: unknown;
-	/** Required iff `stage.sessionPolicy === "continue"`. */
-	host?: WorkflowHost;
+	/**
+	 * Pi `ExtensionAPI` handle reserved for the continue-policy handler
+	 * (`spawn.ts`). Required iff `stage.sessionPolicy === "continue"`.
+	 * Same constraint as `RunContext.continueHost`: stale after any prior
+	 * `ctx.newSession()`, so the runner MUST NOT read it for registry
+	 * inspection. See `RunContext.continueHost` JSDoc.
+	 */
+	continueHost?: WorkflowHost;
 	/** Only set for continue stages — branch slice offset. */
 	branchOffset?: number;
 	onFailure?: (ctx: RunnerCtx) => void;

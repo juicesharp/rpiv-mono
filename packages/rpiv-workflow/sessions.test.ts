@@ -733,7 +733,7 @@ describe("sessions — collector ctx (always-unsliced branch + policy-derived of
 				state: freshRunState(),
 				stage: stage({ sessionPolicy: "continue", outcome: recordingOutcome }),
 				branchOffset: priorPrefix.length,
-				host: mockPi,
+				continueHost: mockPi,
 			}),
 		);
 
@@ -778,7 +778,7 @@ describe("sessions — collector ctx (always-unsliced branch + policy-derived of
 					outcome: failThenPassOutcome,
 				}),
 				branchOffset: priorPrefix.length,
-				host: mockPi,
+				continueHost: mockPi,
 			}),
 		);
 
@@ -847,7 +847,7 @@ describe("sessions — spawn primitive", () => {
 				state: freshRunState(),
 				stage: stage({ sessionPolicy: "continue" }),
 				branchOffset: 0,
-				host: mockPi,
+				continueHost: mockPi,
 				prompt: "/skill:test continue-prompt",
 			}),
 		);
@@ -901,7 +901,7 @@ describe("sessions — spawn primitive", () => {
 				state: freshRunState(),
 				stage: stage({ sessionPolicy: "continue" }),
 				branchOffset: 0,
-				host: mockPi,
+				continueHost: mockPi,
 				onFailure,
 			}),
 		);

@@ -30,7 +30,7 @@ import type { RunnerCtx } from "../types.js";
  *   - `send(ctx, msg, host?)` — send into an already-established session
  *     and wait for it to settle (used by the validation-retry path).
  *
- * `host` is required for continue (caller passes `s.host`; the
+ * `host` is required for continue (caller passes `s.continueHost`; the
  * start-of-run preflight has already rejected any workflow that needs
  * continue without a host). Fresh ignores the `host` parameter.
  */

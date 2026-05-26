@@ -1939,6 +1939,68 @@ describe("runWorkflow", () => {
 			expect(result.success).toBe(true);
 		});
 
+		it("snapshots the skill registry once at workflow start (host.getCommands not called per-stage)", async () => {
+			// Regression: pre-fix, ensureSkillRegistered called host.getCommands()
+			// for every downstream stage's preflight. Pi marks the host handle
+			// stale after the first ctx.newSession(), so the second call threw
+			// "extension ctx is stale" — a research → blueprint chain halted on
+			// stage 2 with no toast (the throw was caught by
+			// runStageOrRecordFailure and the user-visible error never surfaced).
+			//
+			// Post-fix, runWorkflow snapshots the registry ONCE before any
+			// session opens and ensureSkillRegistered consults the snapshot.
+			// This test simulates Pi's stale-ctx behavior by making getCommands
+			// throw on every call after the first, then asserts the workflow
+			// completes both stages and getCommands was invoked exactly once.
+			writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md");
+			writeArtifact(tmpDir, ".rpiv/artifacts/designs/d.md");
+
+			const mockPi = createMockPi({ skills: ["research", "design"] });
+			const getCommandsSpy = mockPi.pi.getCommands as unknown as ReturnType<typeof vi.fn> &
+				(() => ReturnType<typeof mockPi.pi.getCommands>);
+			// Capture the default-mocked return value before installing the
+			// throwing implementation — calling the spy first counts as a
+			// non-runner invocation, so we reset its call history afterwards.
+			const firstResult = getCommandsSpy();
+			getCommandsSpy.mockReset();
+			let callCount = 0;
+			getCommandsSpy.mockImplementation(() => {
+				callCount++;
+				if (callCount === 1) return firstResult;
+				throw new Error(
+					"This extension ctx is stale after session replacement or reload. " +
+						"Do not use a captured pi or command ctx after ctx.newSession().",
+				);
+			});
+
+			const chain = createMockSessionChain({
+				cwd: tmpDir,
+				steps: [
+					{ branch: [mockAssistantMessage("step 1 → .rpiv/artifacts/research/r.md")] },
+					{ branch: [mockAssistantMessage("step 2 → .rpiv/artifacts/designs/d.md")] },
+				],
+				pi: mockPi.pi,
+			});
+
+			const result = await runWorkflow(chain.ctx, {
+				workflow: wf("two", ["research", "design"]),
+				input: "x",
+				host: chain.pi,
+			});
+
+			// Both stages completed — the stale-host throw never fired because
+			// getCommands was called exactly once, at workflow start.
+			expect(result.success).toBe(true);
+			expect(result.stagesCompleted).toBe(2);
+			expect(getCommandsSpy).toHaveBeenCalledTimes(1);
+
+			// Both stages landed completed rows; neither carries the stale-ctx
+			// errMsg (which would be present if the snapshot regressed).
+			const { stages } = readState(tmpDir);
+			expect(stages.map((s) => s.status)).toEqual(["completed", "completed"]);
+			expect(stages.some((s) => /stale/.test(String(s.errMsg ?? "")))).toBe(false);
+		});
+
 		it("skips the check when pi is not provided (no registry to consult)", async () => {
 			// Pi-less programmatic invocation opts out of this defense layer —
 			// same fail-soft posture the rest of the pi-optional surface uses.

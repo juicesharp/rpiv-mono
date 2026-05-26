@@ -285,7 +285,7 @@ async function askAgentToFix(
 	ctx.ui.notify(MSG_VALIDATION_RETRY(s.skill, attempt), "warning");
 	const errorLines = failures.map((f) => ` • ${f.path} — ${f.message}`).join("\n");
 	await withTimeout(
-		handlerFor(s.stage.sessionPolicy).send(ctx, MSG_VALIDATION_RETRY_PROMPT(s.skill, errorLines), s.host),
+		handlerFor(s.stage.sessionPolicy).send(ctx, MSG_VALIDATION_RETRY_PROMPT(s.skill, errorLines), s.continueHost),
 		timeoutMs,
 		`${s.skill}: validation retry attempt ${attempt} exceeded ${timeoutMs}ms — agent did not settle`,
 	);

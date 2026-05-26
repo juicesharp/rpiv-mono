@@ -185,7 +185,7 @@ export async function runStage(curCtx: RunnerCtx, currentName: string, idx: numb
 		stage: stage.def,
 		stageIndex: idx,
 		snapshot,
-		host: run.host,
+		continueHost: run.continueHost,
 		branchOffset,
 		onFailure: (freshCtx) => notifyPartialArtifacts(freshCtx, run.cwd, run.runId),
 		onSuccess: (freshCtx) => advanceChain(freshCtx, currentName, idx, run),
@@ -246,23 +246,19 @@ async function tryFanout(curCtx: RunnerCtx, stage: ResolvedStage, idx: number, r
  * corruption with no diagnostic. Catching it here turns that silent failure
  * into a properly-attributed stage halt.
  *
- * `pi` is optional on `RunWorkflowOptions`; when absent we skip the check
- * (we have no command registry to consult). Programmatic callers that opt
- * out of passing a host opt out of this defense too — same fail-soft
- * posture the rest of the host-optional surface uses.
+ * Reads the snapshot in `run.registeredSkills` rather than calling
+ * `host.getCommands()` mid-run, because Pi marks the `WorkflowHost` handle
+ * stale on the first `ctx.newSession()` — a registry call after research's
+ * fresh session opens throws "extension ctx is stale". The snapshot is
+ * built once in `runWorkflow` before any session replaces the outer ctx.
+ *
+ * `registeredSkills` is undefined when the embedder didn't pass a host —
+ * skip the check (same fail-soft posture as the rest of the host-optional
+ * surface).
  */
 function ensureSkillRegistered(stage: ResolvedStage, run: RunContext): void {
-	if (!run.host) return;
-
-	const registered = new Set<string>();
-	for (const cmd of run.host.getCommands()) {
-		if (cmd.source !== "skill") continue;
-		// Pi prefixes skill-source commands with "skill:" (agent-session.js:1699);
-		// match args.ts:333's slice so the comparison key is the bare skill name.
-		const name = cmd.name.startsWith("skill:") ? cmd.name.slice("skill:".length) : cmd.name;
-		registered.add(name);
-	}
-	if (registered.has(stage.skill)) return;
+	if (!run.registeredSkills) return;
+	if (run.registeredSkills.has(stage.skill)) return;
 
 	throw new StagePreflightError(
 		"halt",
@@ -302,7 +298,7 @@ function enforceSessionInvariants(stage: ResolvedStage, run: RunContext): void {
 			"fanout requires per-unit session isolation";
 		throw new StagePreflightError("invariant", stage.name, MSG_STAGE_THREW(stage.name, reason), reason, false);
 	}
-	if (stage.def.sessionPolicy === "continue" && !run.host) {
+	if (stage.def.sessionPolicy === "continue" && !run.continueHost) {
 		const reason = `runStage: stage "${stage.name}" uses sessionPolicy "continue" but no workflow host was provided to runWorkflow`;
 		throw new StagePreflightError("invariant", stage.name, MSG_STAGE_THREW(stage.name, reason), reason, false);
 	}
