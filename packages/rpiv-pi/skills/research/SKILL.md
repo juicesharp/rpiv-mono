@@ -77,7 +77,7 @@ Spawn analysis agents using the Agent tool. All agents run in parallel.
 
 **Default agent**: `codebase-analyzer` for all codebase questions. This agent has Read, Grep, Glob, LS — it can trace code paths, find patterns, and analyze integration points.
 
-**Exception**: Questions that explicitly reference external documentation, web APIs, or third-party libraries → `web-search-researcher`.
+**Exception**: External surfaces — third-party APIs, SDKs, libraries, services, protocols, or wire formats — that the codebase doesn't already use → `web-search-researcher`. Trigger on the surface itself, not on whether the question text literally names "docs" or "API".
 
 **Agent prompt — question-as-prompt:**
 
