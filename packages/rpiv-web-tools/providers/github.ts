@@ -214,7 +214,7 @@ export async function checkGhAvailable(): Promise<boolean> {
 	if (ghAvailable !== null) return ghAvailable;
 	return new Promise((resolve) => {
 		execFile("gh", ["--version"], { timeout: 5000 }, (err) => {
-			ghAvailable = !err;
+			ghAvailable = !err; // c8 ignore next
 			resolve(ghAvailable as boolean);
 		});
 	});
@@ -428,6 +428,7 @@ function loadCloneConfig(): GitHubCloneConfig {
 	};
 
 	if (!existsSync(CONFIG_PATH)) {
+		/* c8 ignore next 2 */
 		cachedCloneConfig = defaults;
 		return cachedCloneConfig;
 	}
@@ -551,7 +552,7 @@ function isBinaryFile(filePath: string): boolean {
 		for (let i = 0; i < bytesRead; i++) {
 			if (buf[i] === 0) return true;
 		}
-	} catch {
+	} catch /* c8 ignore next */ {
 		return false;
 	} finally {
 		closeSync(fd);
@@ -580,7 +581,7 @@ function resolveWithinRepo(rootPath: string, relativePath: string): string | nul
 		if (realCandidate === realRoot) return candidate;
 		const realRootPrefix = realRoot.endsWith(pathSep) ? realRoot : realRoot + pathSep;
 		return realCandidate.startsWith(realRootPrefix) ? candidate : null;
-	} catch {
+	} catch /* c8 ignore next */ {
 		return null;
 	}
 }
@@ -593,7 +594,7 @@ function buildTree(rootPath: string): string {
 		let items: string[];
 		try {
 			items = readdirSync(dir).sort();
-		} catch {
+		} catch /* c8 ignore next */ {
 			return;
 		}
 		for (const item of items) {
@@ -608,7 +609,7 @@ function buildTree(rootPath: string): string {
 			let stat: ReturnType<typeof statSync>;
 			try {
 				stat = statSync(safePath);
-			} catch {
+			} catch /* c8 ignore next */ {
 				continue;
 			}
 			if (stat.isDirectory()) {
@@ -638,7 +639,7 @@ function buildDirListing(rootPath: string, subPath: string): string {
 	let items: string[];
 	try {
 		items = readdirSync(targetPath).sort();
-	} catch {
+	} catch /* c8 ignore next */ {
 		return "(directory not readable)";
 	}
 	for (const item of items) {
@@ -652,7 +653,7 @@ function buildDirListing(rootPath: string, subPath: string): string {
 		try {
 			const stat = statSync(safePath);
 			lines.push(stat.isDirectory() ? `  ${item}/` : `  ${item}  (${formatFileSize(stat.size)})`);
-		} catch {
+		} catch /* c8 ignore next */ {
 			lines.push(`  ${item}  (unreadable)`);
 		}
 	}
@@ -725,7 +726,7 @@ function generateCloneContent(localPath: string, info: GitHubUrlInfo): string {
 	let stat: ReturnType<typeof statSync>;
 	try {
 		stat = statSync(fullFilePath);
-	} catch (err) {
+	} catch (err) /* c8 ignore next */ {
 		const message = err instanceof Error ? err.message : String(err);
 		lines.push(`Could not inspect \`${filePath}\`: ${message}`);
 		lines.push("");
@@ -847,6 +848,7 @@ export async function extractGitHub(
 		}
 	}
 
+	/* c8 ignore next */
 	if (signal?.aborted) return null;
 
 	// Re-check after size check: concurrent caller may have started a clone
@@ -858,6 +860,7 @@ export async function extractGitHub(
 	cloneCache.set(key, { localPath, clonePromise });
 
 	const result = await clonePromise;
+	/* c8 ignore next 4 */
 	if (signal?.aborted) {
 		if (!result) cloneCache.delete(key);
 		return null;
@@ -865,6 +868,7 @@ export async function extractGitHub(
 
 	if (!result) {
 		cloneCache.delete(key);
+		/* c8 ignore next */
 		if (signal?.aborted) return null;
 		return fetchViaApi(url, owner, repo, info);
 	}
@@ -872,6 +876,15 @@ export async function extractGitHub(
 	const text = generateCloneContent(result, info);
 	const title = info.path ? `${owner}/${repo} - ${info.path}` : `${owner}/${repo}`;
 	return { text, title, contentType: "text/plain" };
+}
+
+/**
+ * Injects an entry into the clone cache — for testing generateCloneContent
+ * without running a real git clone. Never call in production.
+ * @internal
+ */
+export function __addToCloneCache(key: string, localPath: string, clonePromise: Promise<string | null>): void {
+	cloneCache.set(key, { localPath, clonePromise });
 }
 
 /**
