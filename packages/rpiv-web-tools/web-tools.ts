@@ -27,8 +27,8 @@ import type { GuidanceFields } from "@juicesharp/rpiv-config";
 import { configPath, loadJsonConfig, saveJsonConfig, validateGuidanceFields } from "@juicesharp/rpiv-config";
 import { Type } from "typebox";
 import { createSearchProvider } from "./providers/factory.js";
-import { PROVIDERS } from "./providers/index.js";
-import type { ProviderMeta, SearchProvider, SearchResult } from "./providers/types.js";
+import { extractGitHub, PROVIDERS } from "./providers/index.js";
+import type { FetchResponse, ProviderMeta, SearchProvider, SearchResult } from "./providers/types.js";
 
 // ---------------------------------------------------------------------------
 // Tunables and external surface
@@ -373,7 +373,7 @@ export function registerWebFetchTool(pi: ExtensionAPI): void {
 
 		async execute(_toolCallId, params, signal, onUpdate, _ctx) {
 			const { url, raw = false } = params;
-			parseAndAssertHttpUrl(url);
+			const parsed = parseAndAssertHttpUrl(url);
 
 			onUpdate?.({
 				content: [{ type: "text", text: `Fetching: ${url}...` }],
@@ -383,7 +383,22 @@ export function registerWebFetchTool(pi: ExtensionAPI): void {
 			const config = loadConfig();
 			const { provider } = instantiateActiveProvider(config);
 
-			const { text: bodyText, title, contentType, contentLength } = await provider.fetch(url, raw, signal);
+			// Always-on GitHub URL interception: github.com URLs are handled by the
+			// GitHub provider regardless of which search provider is active. The SSRF
+			// guard (parseAndAssertHttpUrl above) still runs first — no ordering change.
+			// extractGitHub() returns null for non-code GitHub URLs (e.g. /issues, /pull)
+			// and falls through to the active provider's fetch in that case.
+			let fetchResponse: FetchResponse | undefined;
+			if (parsed.hostname === "github.com") {
+				const githubResult = await extractGitHub(url, signal);
+				if (githubResult) {
+					fetchResponse = githubResult;
+				}
+			}
+			if (!fetchResponse) {
+				fetchResponse = await provider.fetch(url, raw, signal);
+			}
+			const { text: bodyText, title, contentType, contentLength } = fetchResponse;
 
 			const truncation = truncateHead(bodyText, {
 				maxLines: DEFAULT_MAX_LINES,
