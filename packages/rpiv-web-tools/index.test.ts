@@ -29,6 +29,7 @@ beforeEach(() => {
 	delete process.env.SEARXNG_URL;
 	delete process.env.OLLAMA_API_KEY;
 	delete process.env.OLLAMA_HOST;
+	delete process.env.GITHUB_TOKEN;
 	rmSync(CONFIG_PATH, { force: true });
 });
 
@@ -565,9 +566,15 @@ const FETCH_ERROR_MATRIX: ReadonlyArray<{
 		fetchUrlMatcher: (u) => u.includes("example.com"),
 		label: "SearXNG",
 	},
+	{
+		provider: "github",
+		envVar: "GITHUB_TOKEN",
+		fetchUrlMatcher: (u) => u.includes("example.com"),
+		label: "GitHub",
+	},
 ];
 
-const SHARED_FETCH_HELPERS_PROVIDERS = new Set(["brave", "serper", "searxng"]);
+const SHARED_FETCH_HELPERS_PROVIDERS = new Set(["brave", "serper", "searxng", "github"]);
 
 describe.each(FETCH_ERROR_MATRIX)("web_fetch.execute — $provider error paths", ({
 	provider,
@@ -1113,6 +1120,8 @@ describe("/web-tools command", () => {
 		const labels = selectCall[1] as string[];
 		expect(labels[0]).toBe("Exa ✓ (configured)");
 		expect(labels.slice(1)).toEqual(["Brave", "Tavily", "Serper", "Jina", "Firecrawl", "SearXNG", "Ollama"]);
+		expect(labels.slice(1)).toEqual(["Brave", "Tavily", "Serper", "Jina", "Firecrawl", "SearXNG"]);
+		expect(labels.slice(1)).toEqual(["Brave", "Tavily", "Serper", "Jina", "Firecrawl", "SearXNG", "GitHub"]);
 		expect(labels.filter((l) => l.includes("✓"))).toHaveLength(1);
 
 		const saved = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
@@ -1136,6 +1145,7 @@ describe("/web-tools command", () => {
 		expect(labels).toContain("Serper");
 		expect(labels).toContain("Jina");
 		expect(labels).toContain("Firecrawl");
+		expect(labels).not.toContain("GitHub (configured)"); // no github key saved in this test
 	});
 
 	it("marks provider as (configured) when key is in env var", async () => {
@@ -1916,5 +1926,156 @@ describe("/web-tools command — ollama", () => {
 		const saved = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
 		expect(saved.baseUrls.ollama).toBe("http://existing:11434");
 		expect(saved.apiKeys.ollama).toBe("existing-key");
+	});
+});
+
+describe("web_fetch.execute — github intercept", () => {
+	it("falls back to provider.fetch when parseGitHubUrl returns null (non-code github URL)", async () => {
+		// github.com/owner/repo/issues — "issues" is in NON_CODE_SEGMENTS,
+		// parseGitHubUrl returns null → extractGitHub returns null immediately
+		// → falls back to active provider's fetch()
+		process.env.BRAVE_SEARCH_API_KEY = "k";
+		writeConfig({ provider: "brave" });
+		stubFetch([
+			{
+				match: () => true,
+				response: () =>
+					new Response("<html><body>GitHub Issues page</body></html>", {
+						status: 200,
+						headers: { "content-type": "text/html" },
+					}),
+			},
+		]);
+		const { captured } = registerAndCapture();
+		const r = await captured.tools
+			.get("web_fetch")
+			?.execute?.(
+				"tc",
+				{ url: "https://github.com/owner/repo/issues" },
+				undefined as never,
+				undefined as never,
+				createMockCtx(),
+			);
+		expect(r?.content[0]).toMatchObject({ type: "text" });
+		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("GitHub Issues page") });
+	});
+
+	it("does not intercept non-GitHub URLs — active provider handles them", async () => {
+		process.env.BRAVE_SEARCH_API_KEY = "k";
+		writeConfig({ provider: "brave" });
+		stubFetch([
+			{
+				match: (u) => u.includes("example.com"),
+				response: () =>
+					new Response("<html><body>Not GitHub</body></html>", {
+						status: 200,
+						headers: { "content-type": "text/html" },
+					}),
+			},
+		]);
+		const { captured } = registerAndCapture();
+		const r = await captured.tools
+			.get("web_fetch")
+			?.execute?.("tc", { url: "https://example.com" }, undefined as never, undefined as never, createMockCtx());
+		expect(r?.content[0]).toMatchObject({ type: "text" });
+		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("Not GitHub") });
+	});
+
+	it("SSRF guard fires before github.com hostname check — refuses private/loopback addresses", async () => {
+		// Confirms parseAndAssertHttpUrl() runs first; private IPs cannot sneak
+		// through by having a github.com-shaped path segment.
+		const { captured } = registerAndCapture();
+		await expect(
+			captured.tools
+				.get("web_fetch")
+				?.execute?.(
+					"tc",
+					{ url: "http://192.168.1.1/owner/repo/blob/main/file.ts" },
+					undefined as never,
+					undefined as never,
+					createMockCtx(),
+				),
+		).rejects.toThrow(/private|loopback/i);
+	});
+});
+
+describe("web_search.execute — github provider", () => {
+	it("throws GITHUB_TOKEN is not set when no key configured", async () => {
+		writeConfig({ provider: "github" });
+		const { captured } = registerAndCapture();
+		await expect(
+			captured.tools
+				.get("web_search")
+				?.execute?.("tc", { query: "x" }, undefined as never, undefined as never, createMockCtx()),
+		).rejects.toThrow(/GITHUB_TOKEN is not set/);
+	});
+
+	it("throws 'does not support web search' when GITHUB_TOKEN is set", async () => {
+		process.env.GITHUB_TOKEN = "ghp_test";
+		writeConfig({ provider: "github" });
+		const { captured } = registerAndCapture();
+		await expect(
+			captured.tools
+				.get("web_search")
+				?.execute?.("tc", { query: "x" }, undefined as never, undefined as never, createMockCtx()),
+		).rejects.toThrow(/does not support web search/);
+	});
+});
+
+describe("formatShowConfigMessage — github token display", () => {
+	it("--show shows github key masked (env source)", async () => {
+		process.env.GITHUB_TOKEN = "ghp_abcdefgh1234";
+		const { captured } = registerAndCapture();
+		const ctx = createMockCtx({ hasUI: true });
+		await captured.commands.get("web-search-config")?.handler("--show", ctx as never);
+		const msg = (ctx.ui.notify as ReturnType<typeof vi.fn>).mock.calls[0][0];
+		expect(msg).toContain("github:");
+		expect(msg).toContain("ghp_");
+	});
+
+	it("--show shows github key masked (config source)", async () => {
+		writeConfig({ apiKeys: { github: "ghp_config1234" } });
+		const { captured } = registerAndCapture();
+		const ctx = createMockCtx({ hasUI: true });
+		await captured.commands.get("web-search-config")?.handler("--show", ctx as never);
+		const msg = (ctx.ui.notify as ReturnType<typeof vi.fn>).mock.calls[0][0];
+		expect(msg).toContain("github:");
+		expect(msg).toContain("ghp_");
+	});
+
+	it("--show shows github: (not set) when no key configured", async () => {
+		const { captured } = registerAndCapture();
+		const ctx = createMockCtx({ hasUI: true });
+		await captured.commands.get("web-search-config")?.handler("--show", ctx as never);
+		const msg = (ctx.ui.notify as ReturnType<typeof vi.fn>).mock.calls[0][0];
+		expect(msg).toContain("github:");
+		expect(msg).toContain("(not set)");
+	});
+});
+
+describe("GitHubProvider — direct unit tests", () => {
+	it("search() throws GITHUB_TOKEN is not set when apiKey empty", async () => {
+		const { GitHubProvider } = await import("./providers/github.js");
+		const p = new GitHubProvider("");
+		await expect(p.search("q", 5)).rejects.toThrow(/GITHUB_TOKEN is not set/);
+	});
+
+	it("search() throws does not support web search when apiKey set", async () => {
+		const { GitHubProvider } = await import("./providers/github.js");
+		const p = new GitHubProvider("ghp_test");
+		await expect(p.search("q", 5)).rejects.toThrow(/does not support web search/);
+	});
+
+	it("fetch() passes through to shared HTTP pipeline — no key guard", async () => {
+		const { GitHubProvider } = await import("./providers/github.js");
+		const p = new GitHubProvider("");
+		stubFetch([
+			{
+				match: (u) => u.includes("example.com"),
+				response: () => new Response("<p>hello</p>", { status: 200, headers: { "content-type": "text/html" } }),
+			},
+		]);
+		const r = await p.fetch("https://example.com", false);
+		expect(r.text).toContain("hello");
 	});
 });
