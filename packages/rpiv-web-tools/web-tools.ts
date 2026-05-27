@@ -373,7 +373,7 @@ export function registerWebFetchTool(pi: ExtensionAPI): void {
 
 		async execute(_toolCallId, params, signal, onUpdate, _ctx) {
 			const { url, raw = false } = params;
-			const parsed = parseAndAssertHttpUrl(url);
+			parseAndAssertHttpUrl(url);
 
 			onUpdate?.({
 				content: [{ type: "text", text: `Fetching: ${url}...` }],
@@ -383,17 +383,15 @@ export function registerWebFetchTool(pi: ExtensionAPI): void {
 			const config = loadConfig();
 			const { provider } = instantiateActiveProvider(config);
 
-			// Always-on GitHub URL interception: github.com URLs are handled by the
+			// Always-on GitHub URL interception: github.com and www.github.com URLs are handled by the
 			// GitHub provider regardless of which search provider is active. The SSRF
 			// guard (parseAndAssertHttpUrl above) still runs first — no ordering change.
 			// extractGitHub() returns null for non-code GitHub URLs (e.g. /issues, /pull)
 			// and falls through to the active provider's fetch in that case.
 			let fetchResponse: FetchResponse | undefined;
-			if (parsed.hostname === "github.com") {
-				const githubResult = await extractGitHub(url, signal);
-				if (githubResult) {
-					fetchResponse = githubResult;
-				}
+			const githubResult = await extractGitHub(url, signal);
+			if (githubResult) {
+				fetchResponse = githubResult;
 			}
 			if (!fetchResponse) {
 				fetchResponse = await provider.fetch(url, raw, signal);

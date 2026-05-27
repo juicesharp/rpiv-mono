@@ -456,6 +456,9 @@ function loadCloneConfig(): GitHubCloneConfig {
 		cloneTimeoutSeconds: normalizePositiveNumber(gc.cloneTimeoutSeconds, defaults.cloneTimeoutSeconds),
 		clonePath: normalizeClonePath(gc.clonePath, defaults.clonePath),
 	};
+	// TODO: sweep clonePath for orphaned owner/repo@ref dirs from prior process instances
+	// (crashed or previous sessions) — two-level readdirSync over clonePath → owner → repo@ref,
+	// removing entries older than a configurable mtime threshold to prevent /tmp accumulation.
 	return cachedCloneConfig;
 }
 
