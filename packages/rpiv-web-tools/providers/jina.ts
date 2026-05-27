@@ -42,7 +42,7 @@ export class JinaProvider implements SearchProvider {
 
 	async search(query: string, maxResults: number, signal?: AbortSignal): Promise<SearchResponse> {
 		if (!this.apiKey) {
-			throw new Error(`${this.envVar} is not set. Run /web-search-config to configure, or export the env var.`);
+			throw new Error(`${this.envVar} is not set. Run /web-tools to configure, or export the env var.`);
 		}
 
 		// Jina s.jina.ai uses the URL path for the query. The `num` query param
@@ -73,7 +73,7 @@ export class JinaProvider implements SearchProvider {
 
 	async fetch(url: string, _raw: boolean, signal?: AbortSignal): Promise<FetchResponse> {
 		if (!this.apiKey) {
-			throw new Error(`${this.envVar} is not set. Run /web-search-config to configure, or export the env var.`);
+			throw new Error(`${this.envVar} is not set. Run /web-tools to configure, or export the env var.`);
 		}
 
 		// No Accept header = Reader returns markdown by default. Setting

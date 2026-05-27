@@ -21,8 +21,6 @@ echo
 node "${SKILL_DIR}/../_shared/git-context.mjs"
 ```
 
-- `now.mjs` (line 1) — `<iso>\t<slug>` tab-separated.
-
 Copy values verbatim — do not reformat the timezone offset.
 
 ## Flow
@@ -169,9 +167,9 @@ Compile interview output into the FRD. The interview's logical order (problem �
 ### Step 7: Write Artifact, Present, Chain
 
 1. **Determine metadata** (from the Metadata block above):
-   - Filename: `.rpiv/artifacts/discover/<slug>_<topic>.md` — `<slug>` is the second tab-separated field on `now.mjs` line 1; `<topic>` is a kebab-case slug from the settled feature concept.
+   - Filename: `.rpiv/artifacts/discover/<slug>_<topic>.md` — `<slug>` is the second tab-separated field on line 1 of the Metadata block above; `<topic>` is a kebab-case slug from the settled feature concept.
    - `repository:` ← `repo:` label; `branch:` / `commit:` ← matching labels.
-   - `date:` / `last_updated:` ← `<iso>` (first tab-separated field on `now.mjs` line 1, offset verbatim).
+   - `date:` / `last_updated:` ← `<iso>` (first tab-separated field on line 1 of the Metadata block above, offset verbatim).
    - Interviewer: `author:` from the Metadata block (fallback: `unknown`).
 
 2. **Write the FRD** using the Write tool. Frontmatter `status: complete`. All template sections present and filled. The Write tool creates parent directories automatically — no `mkdir -p` needed in the skill.

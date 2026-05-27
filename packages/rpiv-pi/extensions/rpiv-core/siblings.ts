@@ -55,6 +55,11 @@ export const SIBLINGS: readonly SiblingPlugin[] = [
 		matches: /rpiv-args(?![-\w])/i,
 		provides: "skill-argument resolver — substitutes $N/$ARGUMENTS in skill bodies",
 	},
+	{
+		pkg: "npm:@juicesharp/rpiv-workflow",
+		matches: /rpiv-workflow(?![-\w])/i,
+		provides: "/wf command + workflow runner — chain skills into typed multi-stage pipelines",
+	},
 ];
 
 /**

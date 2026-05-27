@@ -21,8 +21,6 @@ echo
 node "${SKILL_DIR}/../_shared/git-context.mjs"
 ```
 
-- `now.mjs` (line 1) — `<iso>\t<slug>` tab-separated.
-
 Copy values verbatim — do not reformat the timezone offset.
 
 ## Flow
@@ -79,7 +77,7 @@ Spawn analysis agents using the Agent tool. All agents run in parallel.
 
 **Default agent**: `codebase-analyzer` for all codebase questions. This agent has Read, Grep, Glob, LS — it can trace code paths, find patterns, and analyze integration points.
 
-**Exception**: Questions that explicitly reference external documentation, web APIs, or third-party libraries → `web-search-researcher`.
+**Exception**: External surfaces — third-party APIs, SDKs, libraries, services, protocols, or wire formats — that the codebase doesn't already use → `web-search-researcher`. Trigger on the surface itself, not on whether the question text literally names "docs" or "API".
 
 **Agent prompt — question-as-prompt:**
 
@@ -209,9 +207,9 @@ Findings go into Precedents & Lessons. Otherwise skip and note "git history unav
 ### Step 4: Write Research Document
 
 1. **Determine metadata** (from the Metadata block above):
-   - Filename: `.rpiv/artifacts/research/<slug>_<topic>.md` — `<slug>` is the second tab-separated field on `now.mjs` line 1; `<topic>` is a brief kebab-case description.
+   - Filename: `.rpiv/artifacts/research/<slug>_<topic>.md` — `<slug>` is the second tab-separated field on line 1 of the Metadata block above; `<topic>` is a brief kebab-case description.
    - `repository:` ← `repo:` label; `branch:` / `commit:` ← matching labels (already include `no-branch` / `no-commit` fallbacks).
-   - `date:` / `last_updated:` ← `<iso>` (first tab-separated field on `now.mjs` line 1, offset verbatim).
+   - `date:` / `last_updated:` ← `<iso>` (first tab-separated field on line 1 of the Metadata block above, offset verbatim).
    - Author: `author:` from the Metadata block (fallback: `unknown`).
 
 2. **Write the research document** — this document is compressed context for a new session. Include everything the planner needs to make architectural decisions without re-researching:

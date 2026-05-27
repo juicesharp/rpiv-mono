@@ -52,7 +52,7 @@ export class FirecrawlProvider implements SearchProvider {
 
 	async search(query: string, maxResults: number, signal?: AbortSignal): Promise<SearchResponse> {
 		if (!this.apiKey) {
-			throw new Error(`${this.envVar} is not set. Run /web-search-config to configure, or export the env var.`);
+			throw new Error(`${this.envVar} is not set. Run /web-tools to configure, or export the env var.`);
 		}
 
 		const res = await fetch(`${FIRECRAWL_API_URL}/search`, {
@@ -79,7 +79,7 @@ export class FirecrawlProvider implements SearchProvider {
 
 	async fetch(url: string, _raw: boolean, signal?: AbortSignal): Promise<FetchResponse> {
 		if (!this.apiKey) {
-			throw new Error(`${this.envVar} is not set. Run /web-search-config to configure, or export the env var.`);
+			throw new Error(`${this.envVar} is not set. Run /web-tools to configure, or export the env var.`);
 		}
 
 		const res = await fetch(`${FIRECRAWL_API_URL}/scrape`, {

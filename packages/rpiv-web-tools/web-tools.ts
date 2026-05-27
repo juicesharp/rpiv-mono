@@ -2,7 +2,7 @@
  * rpiv-web-tools — body
  *
  * Provides `web_search` and `web_fetch` tools backed by configurable search
- * providers (Brave, Tavily, Serper, Exa), plus the `/web-search-config`
+ * providers (Brave, Tavily, Serper, Exa), plus the `/web-tools`
  * slash command for provider and API key configuration.
  *
  * API key resolution precedence per provider (first wins):
@@ -49,7 +49,7 @@ const CONFIG_PATH = configPath("rpiv-web-tools");
 
 const SUPPORTED_HTTP_PROTOCOLS = new Set(["http:", "https:"]);
 
-const WEB_SEARCH_CONFIG_COMMAND_NAME = "web-search-config";
+const WEB_TOOLS_COMMAND_NAME = "web-tools";
 const SHOW_FLAG = "--show";
 const UNSET_LABEL = "(not set)";
 
@@ -58,7 +58,7 @@ const DEFAULT_PROVIDER_NAME = "brave";
 // Brave is the only provider whose key was historically stored at the top
 // level (config.apiKey) before the per-provider apiKeys map. The legacy
 // field is auto-migrated to apiKeys.brave on the next save by
-// /web-search-config (the dispatch deletes apiKey from the saved object).
+// /web-tools (the dispatch deletes apiKey from the saved object).
 const LEGACY_TOP_LEVEL_KEY_PROVIDER = "brave";
 
 // ---------------------------------------------------------------------------
@@ -100,7 +100,7 @@ export const DEFAULT_WEB_SEARCH_GUIDELINES: string[] = [
 	'Use the current year from "Current date:" in your context when searching for recent information or documentation.',
 	'After answering using search results, include a "Sources:" section listing relevant URLs as markdown hyperlinks: [Title](URL). Never skip this.',
 	"Domain filtering is supported to include or block specific websites.",
-	"If no API key is configured, ask the user to run /web-search-config before proceeding.",
+	"If no API key is configured, ask the user to run /web-tools before proceeding.",
 ];
 
 export const DEFAULT_WEB_FETCH_SNIPPET = "Fetch and read content from a specific URL";
@@ -450,7 +450,7 @@ function renderFetchedContentPreview(content: string, theme: Theme): string {
 }
 
 // ---------------------------------------------------------------------------
-// /web-search-config command
+// /web-tools command
 // ---------------------------------------------------------------------------
 
 function formatShowConfigMessage(current: WebToolsConfig): string {
@@ -485,11 +485,11 @@ function formatShowConfigMessage(current: WebToolsConfig): string {
 }
 
 export function registerWebSearchConfigCommand(pi: ExtensionAPI): void {
-	pi.registerCommand(WEB_SEARCH_CONFIG_COMMAND_NAME, {
+	pi.registerCommand(WEB_TOOLS_COMMAND_NAME, {
 		description: "Configure the search provider and API key used by web_search",
 		handler: async (args, ctx) => {
 			if (!ctx.hasUI) {
-				ctx.ui?.notify?.(`/${WEB_SEARCH_CONFIG_COMMAND_NAME} requires interactive mode`, "error");
+				ctx.ui?.notify?.(`/${WEB_TOOLS_COMMAND_NAME} requires interactive mode`, "error");
 				return;
 			}
 

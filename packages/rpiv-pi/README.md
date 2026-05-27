@@ -121,7 +121,6 @@ Skills compose. Pick the entry point that matches your intent:
 - **Review before shipping** - `/skill:code-review` ↔ `/skill:commit`. Order is your call: review `staged`/`working` before committing to catch issues at the smallest blast radius, or commit first and review the resulting branch (empty scope defaults to feature-branch-vs-default-branch, first-parent). Produces a Quality/Security/Dependencies artifact under `.rpiv/artifacts/reviews/` with claim-verifier-grounded findings and `status: approved | needs_changes`.
 - **Audit a specific scope** - `/skill:code-review <commit|staged|working|hash|A..B|branch>`. Targeted lenses over a commit, range, staged/working tree, or PR branch; advisor adjudication applies when configured (`/advisor`).
 - **Review-driven plan revision** - `/skill:code-review` → `/skill:revise <plan artifact>` → resume `/skill:implement`. When a mid-stream review surfaces structural findings that the existing plan can't absorb as spot fixes.
-- **Scaffold manual UI test specs** - `/skill:outline-test-cases` → `/skill:write-test-cases <feature>`. Outline first via Frontend-First Discovery to map project scope and avoid duplicate coverage, then generate flow-based manual test cases (with a regression suite) under `.rpiv/test-cases/<feature>/`.
 - **Hand off across sessions** - `/skill:create-handoff` → (new session) `/skill:resume-handoff <doc>`. Preserves context when stopping mid-task.
 - **Onboard a fresh repo** - `/skill:annotate-guidance` once, then use the rest of the pipeline normally. Use `annotate-inline` instead if the project follows the `CLAUDE.md` convention.
 
@@ -147,13 +146,6 @@ Invoke via `/skill:<name>` from inside a Pi Agent session.
 | `implement` | Plan artifact | Code changes | Execute plans phase by phase |
 | `revise` | Plan artifact | Updated plan | Revise plans based on feedback |
 | `validate` | Plan artifact | Validation report | Verify plan execution |
-
-#### Testing
-
-| Skill | Input | Output | Description |
-|---|---|---|---|
-| `outline-test-cases` | - | `.rpiv/test-cases/` | Discover testable features with per-feature metadata |
-| `write-test-cases` | Outline metadata | Test case specs | Generate manual test specifications |
 
 #### Annotation
 
@@ -198,7 +190,6 @@ Agents are dispatched automatically by skills via the `Agent` tool - you don't i
 | `integration-scanner` | Maps inbound references, outbound dependencies, config registrations, and event subscriptions for a component |
 | `peer-comparator` | Compares a new file against a peer sibling and tags each invariant Mirrored / Missing / Diverged / Intentionally-absent |
 | `precedent-locator` | Finds similar past changes in git history - commits, blast radius, and follow-up fixes |
-| `test-case-locator` | Catalogs existing manual test cases under `.rpiv/test-cases/` and reports coverage stats |
 | `artifacts-analyzer` | Performs deep-dive analysis on a research topic in `.rpiv/artifacts/` |
 | `artifacts-locator` | Discovers relevant documents in the `.rpiv/artifacts/` directory |
 | `web-search-researcher` | Researches modern web-only information via deep search and fetch |

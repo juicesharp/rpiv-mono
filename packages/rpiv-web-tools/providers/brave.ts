@@ -30,7 +30,7 @@ export class BraveProvider implements SearchProvider {
 
 	async search(query: string, maxResults: number, signal?: AbortSignal): Promise<SearchResponse> {
 		if (!this.apiKey) {
-			throw new Error(`${this.envVar} is not set. Run /web-search-config to configure, or export the env var.`);
+			throw new Error(`${this.envVar} is not set. Run /web-tools to configure, or export the env var.`);
 		}
 
 		const url = new URL(BRAVE_SEARCH_API_URL);

@@ -2,6 +2,7 @@ import { BRAVE_PROVIDER_META } from "./brave.js";
 import { EXA_PROVIDER_META } from "./exa.js";
 import { FIRECRAWL_PROVIDER_META } from "./firecrawl.js";
 import { JINA_PROVIDER_META } from "./jina.js";
+import { OLLAMA_PROVIDER_META } from "./ollama.js";
 import { SEARXNG_PROVIDER_META } from "./searxng.js";
 import { SERPER_PROVIDER_META } from "./serper.js";
 import { TAVILY_PROVIDER_META } from "./tavily.js";
@@ -12,6 +13,14 @@ export { EXA_API_KEY_ENV_VAR, EXA_PROVIDER_META, ExaProvider } from "./exa.js";
 export { createSearchProvider, type ProviderCredentials } from "./factory.js";
 export { FIRECRAWL_API_KEY_ENV_VAR, FIRECRAWL_PROVIDER_META, FirecrawlProvider } from "./firecrawl.js";
 export { JINA_API_KEY_ENV_VAR, JINA_PROVIDER_META, JinaProvider } from "./jina.js";
+export {
+	configureOllama,
+	OLLAMA_API_KEY_ENV_VAR,
+	OLLAMA_DEFAULT_URL,
+	OLLAMA_HOST_ENV_VAR,
+	OLLAMA_PROVIDER_META,
+	OllamaProvider,
+} from "./ollama.js";
 export {
 	configureSearxng,
 	SEARXNG_API_KEY_ENV_VAR,
@@ -48,4 +57,5 @@ export const PROVIDERS: readonly ProviderMeta[] = [
 	JINA_PROVIDER_META,
 	FIRECRAWL_PROVIDER_META,
 	SEARXNG_PROVIDER_META,
+	OLLAMA_PROVIDER_META,
 ];

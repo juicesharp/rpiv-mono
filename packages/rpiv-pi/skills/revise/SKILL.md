@@ -1,7 +1,7 @@
 ---
 name: revise
 description: Surgically update an existing implementation plan in .rpiv/artifacts/plans/ based on review feedback, mid-implementation discoveries, or new constraints, preserving structure and quality rather than rewriting. Use when the user wants a plan adjusted after code-review feedback, has hit a blocker mid-implement, scope changed, or asks to "revise the plan".
-argument-hint: "[plan-path] [feedback]"
+argument-hint: "[plan-path | --plans <path> --reviews <path>] [feedback]"
 shell-timeout: 10
 ---
 
@@ -11,7 +11,12 @@ You are tasked with updating existing implementation plans based on user feedbac
 
 ## Input
 
-`$ARGUMENTS` — plan path plus feedback, e.g. `.rpiv/artifacts/plans/2025-10-16_09-00-00_feature.md "Split Phase 2 into two phases"`.
+`$ARGUMENTS` accepts two shapes:
+
+1. **Workflow form** — `--plans <plan-path> --reviews <review-path>`. The orchestrator wires both upstream artifacts in. The plan path is the file to update; the review path carries the findings that drive the edits. Treat the review's content as the feedback.
+2. **Manual form** — `<plan-path> "<feedback>"`, e.g. `.rpiv/artifacts/plans/2025-10-16_09-00-00_feature.md "Split Phase 2 into two phases"`.
+
+Recognize the workflow form by the `--plans` / `--reviews` flag tokens; recognize the manual form by the absence of those flags. When both `--plans` and `--reviews` are present, read the review FULLY and synthesize its findings as the feedback set.
 
 ## Metadata
 
@@ -22,8 +27,6 @@ echo "### recent (read only in case of empty user input)"
 echo "recent plans:"
 node "${SKILL_DIR}/../_shared/list-recent.mjs" .rpiv/artifacts/plans 10
 ```
-
-- `now.mjs` (line 1) — `<iso>\t<slug>` tab-separated.
 
 ## Flow
 
@@ -38,11 +41,16 @@ The revised artifact stays in `.rpiv/artifacts/plans/` for `/skill:implement` to
 When this command is invoked:
 
 1. **Parse the input to identify**:
-   - Plan file path (e.g., `.rpiv/artifacts/plans/2025-10-16_09-00-00_feature.md`)
-   - Whether the user accidentally provided a review artifact path instead (e.g., `.rpiv/artifacts/reviews/2025-10-16_10-00-00_feature.md`)
-   - Requested changes/feedback
+   - Workflow flags: `--plans <path>` (the plan to update) and `--reviews <path>` (review carrying the findings to apply). Both flags may repeat for multi-artifact upstreams.
+   - Manual form: positional plan path + free-text feedback.
+   - Whether the user accidentally provided a review artifact path as the positional plan in the manual form.
 
 2. **Handle different input scenarios**:
+
+   **If `--plans` AND `--reviews` flags are present (workflow form)**:
+   - Take the `--plans` value as the plan file path.
+   - Read the `--reviews` artifact FULLY (the review findings are the feedback set).
+   - Skip directly to substep 3 — no preliminary questions needed.
 
    **If a REVIEW artifact path is provided**:
    ```
@@ -148,6 +156,7 @@ Use the `ask_user_question` tool to confirm before editing. Question: "{Summary 
    - If modifying scope, update "What We're NOT Doing" section
    - If changing approach, update "Implementation Approach" section
    - Maintain the distinction between automated vs manual success criteria
+   - **Uncheck modified work.** When editing the body of a phase that already carries `- [x]` checkmarks, change `- [x]` back to `- [ ]` for every item whose acceptance is no longer guaranteed by the prior implementation (changed steps, changed success criteria, new sub-steps). Leave checkmarks intact only on items whose existing implementation still satisfies the revised criteria. This is load-bearing: `/skill:implement` trusts checkmarks when resuming a plan, so a stale `- [x]` on a rewritten phase silently skips the new work whenever the next-step `Phase {N}` arg is dropped.
    - If the plan has YAML frontmatter, set `last_updated` to `<iso>` from the Metadata block; set `last_updated_by` to your name. Copy the offset verbatim — do not reformat.
 
 3. **Preserve quality standards**:

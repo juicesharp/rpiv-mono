@@ -2,21 +2,16 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ExtensionAPI, ExtensionContext, InputEvent } from "@earendil-works/pi-coding-agent";
+import type {
+	BeforeAgentStartEvent,
+	ExtensionAPI,
+	ExtensionContext,
+	InputEvent,
+	SlashCommandInfo,
+} from "@earendil-works/pi-coding-agent";
 import { createMockCtx, createMockPi } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
-vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
-	const actual = await importOriginal<typeof import("@earendil-works/pi-coding-agent")>();
-	return {
-		...actual,
-		loadSkills: vi.fn(() => ({ skills: [] })),
-	};
-});
-
-import { type BeforeAgentStartEvent, loadSkills } from "@earendil-works/pi-coding-agent";
 import {
-	collectDefaultSkillPaths,
 	executeShellInBody,
 	handleBeforeAgentStart,
 	handleInput,
@@ -52,14 +47,37 @@ function writeSkillsDir(dir: string, skills: SkillSpec[]): Array<{ name: string;
 let tmpDir: string;
 let ctx: ExtensionContext;
 let pi: ExtensionAPI;
+let skillCommands: SlashCommandInfo[];
+let getCommandsFn: ReturnType<typeof vi.fn>;
+
+/**
+ * Wire a list of skill entries into `pi.getCommands()` — the new skill index
+ * source after rpiv-args switched away from filesystem-walking `loadSkills`
+ * to Pi's canonical command registry. Replaces the previous
+ * `vi.mocked(loadSkills).mockReturnValue(...)` per-test setup.
+ */
+function setSkills(entries: Array<{ name: string; filePath: string; baseDir: string }>): void {
+	skillCommands = entries.map((e) => ({
+		name: `skill:${e.name}`,
+		description: "",
+		source: "skill" as const,
+		sourceInfo: {
+			path: e.filePath,
+			source: "test",
+			scope: "user" as const,
+			origin: "package" as const,
+			baseDir: e.baseDir,
+		},
+	}));
+}
 
 beforeEach(() => {
 	tmpDir = mkdtempSync(join(tmpdir(), "rpiv-args-"));
-	vi.mocked(loadSkills).mockClear();
-	vi.mocked(loadSkills).mockReturnValue({ skills: [] } as unknown as ReturnType<typeof loadSkills>);
+	skillCommands = [];
+	getCommandsFn = vi.fn(() => skillCommands);
 	invalidateSkillIndex();
 	ctx = createMockCtx();
-	pi = createMockPi().pi;
+	pi = createMockPi({ getCommands: getCommandsFn as never }).pi;
 });
 afterEach(() => {
 	rmSync(tmpDir, { recursive: true, force: true });
@@ -218,63 +236,35 @@ describe("resolveShellTimeoutMs", () => {
 	});
 });
 
-describe("collectDefaultSkillPaths", () => {
-	it("includes Pi and cross-harness .agents skill dirs in precedence order", () => {
-		const repoDir = join(tmpDir, "repo");
-		const nestedDir = join(repoDir, "packages", "app");
-		const agentDir = join(tmpDir, "agent");
-		const nestedAgentsSkills = join(nestedDir, ".agents", "skills");
-		const repoAgentsSkills = join(repoDir, ".agents", "skills");
-		const userPiSkills = join(agentDir, "skills");
-		mkdirSync(join(repoDir, ".git"), { recursive: true });
-		mkdirSync(nestedAgentsSkills, { recursive: true });
-		mkdirSync(repoAgentsSkills, { recursive: true });
-		mkdirSync(userPiSkills, { recursive: true });
-
-		const paths = collectDefaultSkillPaths(nestedDir, agentDir);
-
-		expect(paths).toContain(nestedAgentsSkills);
-		expect(paths).toContain(repoAgentsSkills);
-		expect(paths).toContain(userPiSkills);
-		expect(paths.indexOf(nestedAgentsSkills)).toBeLessThan(paths.indexOf(repoAgentsSkills));
-		expect(paths.indexOf(repoAgentsSkills)).toBeLessThan(paths.indexOf(userPiSkills));
-	});
-});
-
 describe("invalidateSkillIndex — lazy memoisation", () => {
 	it("builds index once across multiple handleInput calls", async () => {
 		const entries = writeSkillsDir(tmpDir, [{ name: "foo", body: "hello" }]);
-		vi.mocked(loadSkills).mockReturnValue({ skills: entries } as unknown as ReturnType<typeof loadSkills>);
+		setSkills(entries);
 		await handleInput({ text: "/skill:foo" } as InputEvent, ctx, pi);
 		await handleInput({ text: "/skill:foo" } as InputEvent, ctx, pi);
-		expect(loadSkills).toHaveBeenCalledTimes(1);
+		expect(getCommandsFn).toHaveBeenCalledTimes(1);
 	});
-	it("passes Pi 0.70 required loadSkills options (cwd + agentDir + skillPaths + includeDefaults)", async () => {
-		const entries = writeSkillsDir(tmpDir, [{ name: "foo", body: "hello" }]);
-		vi.mocked(loadSkills).mockReturnValue({ skills: entries } as unknown as ReturnType<typeof loadSkills>);
-		await handleInput({ text: "/skill:foo" } as InputEvent, ctx, pi);
-		expect(loadSkills).toHaveBeenCalledWith(
-			expect.objectContaining({
-				cwd: expect.any(String),
-				agentDir: expect.any(String),
-				skillPaths: expect.any(Array),
-				includeDefaults: false,
-			}),
-		);
-		const opts = vi.mocked(loadSkills).mock.calls[0]![0];
-		expect(opts.agentDir.length).toBeGreaterThan(0);
+	it("discovers extension-bundled skills via pi.getCommands() (the fix for sendUserMessage-based chaining)", async () => {
+		// pi.getCommands() returns every slash command Pi recognizes, including
+		// skills sourced from extension package manifests (`pi.skills: [...]`).
+		// Filesystem walking can't see those — this is the regression fixture
+		// for the `/rpiv` workflow's literal-`/skill:` bug.
+		const entries = writeSkillsDir(tmpDir, [{ name: "extension-bundled", body: "from a sibling extension" }]);
+		setSkills(entries);
+		const r = await handleInput({ text: "/skill:extension-bundled" } as InputEvent, ctx, pi);
+		expect(r).toEqual({ action: "transform", text: expect.stringContaining("from a sibling extension") });
 	});
 	it("rebuilds after invalidateSkillIndex()", async () => {
 		const entries = writeSkillsDir(tmpDir, [{ name: "foo", body: "hello" }]);
-		vi.mocked(loadSkills).mockReturnValue({ skills: entries } as unknown as ReturnType<typeof loadSkills>);
+		setSkills(entries);
 		await handleInput({ text: "/skill:foo" } as InputEvent, ctx, pi);
 		invalidateSkillIndex();
 		await handleInput({ text: "/skill:foo" } as InputEvent, ctx, pi);
-		expect(loadSkills).toHaveBeenCalledTimes(2);
+		expect(getCommandsFn).toHaveBeenCalledTimes(2);
 	});
-	it("lazy: no loadSkills call until first handleInput", () => {
+	it("lazy: no getCommands call until first handleInput", () => {
 		invalidateSkillIndex();
-		expect(loadSkills).not.toHaveBeenCalled();
+		expect(getCommandsFn).not.toHaveBeenCalled();
 	});
 });
 
@@ -288,13 +278,13 @@ describe("handleInput — gates", () => {
 		expect(r).toEqual({ action: "continue" });
 	});
 	it("passes through unknown skill name", async () => {
-		vi.mocked(loadSkills).mockReturnValue({ skills: [] } as unknown as ReturnType<typeof loadSkills>);
+		setSkills([]);
 		const r = await handleInput({ text: "/skill:nope" } as InputEvent, ctx, pi);
 		expect(r).toEqual({ action: "continue" });
 	});
 	it("passes through when filePath read fails", async () => {
 		const entries = [{ name: "ghost", filePath: join(tmpDir, "missing.md"), baseDir: tmpDir }];
-		vi.mocked(loadSkills).mockReturnValue({ skills: entries } as unknown as ReturnType<typeof loadSkills>);
+		setSkills(entries);
 		const r = await handleInput({ text: "/skill:ghost" } as InputEvent, ctx, pi);
 		expect(r).toEqual({ action: "continue" });
 	});
@@ -303,7 +293,7 @@ describe("handleInput — gates", () => {
 describe("handleInput — emit paths (byte-exact wrapper)", () => {
 	it("emits no-substitution wrapper when body has no tokens", async () => {
 		const entries = writeSkillsDir(tmpDir, [{ name: "foo", body: "hello world" }]);
-		vi.mocked(loadSkills).mockReturnValue({ skills: entries } as unknown as ReturnType<typeof loadSkills>);
+		setSkills(entries);
 		const r = await handleInput({ text: "/skill:foo extra" } as InputEvent, ctx, pi);
 		const expected =
 			`<skill name="foo" location="${entries[0].filePath}">\n` +
@@ -315,7 +305,7 @@ describe("handleInput — emit paths (byte-exact wrapper)", () => {
 	});
 	it("emits substituted wrapper without trailing args (args consumed by substitution)", async () => {
 		const entries = writeSkillsDir(tmpDir, [{ name: "bar", body: "do $1 then $2" }]);
-		vi.mocked(loadSkills).mockReturnValue({ skills: entries } as unknown as ReturnType<typeof loadSkills>);
+		setSkills(entries);
 		const r = await handleInput({ text: "/skill:bar a b" } as InputEvent, ctx, pi);
 		const expected =
 			`<skill name="bar" location="${entries[0].filePath}">\n` +
@@ -326,7 +316,7 @@ describe("handleInput — emit paths (byte-exact wrapper)", () => {
 	});
 	it("does NOT duplicate args after </skill> when body has tokens (LLM attention fix)", async () => {
 		const entries = writeSkillsDir(tmpDir, [{ name: "discover", body: "Input: $ARGUMENTS" }]);
-		vi.mocked(loadSkills).mockReturnValue({ skills: entries } as unknown as ReturnType<typeof loadSkills>);
+		setSkills(entries);
 		const r = await handleInput({ text: "/skill:discover write a file" } as InputEvent, ctx, pi);
 		const text = (r as { text: string }).text;
 		expect(text).toContain("Input: write a file");
@@ -337,14 +327,14 @@ describe("handleInput — emit paths (byte-exact wrapper)", () => {
 		const entries = writeSkillsDir(tmpDir, [
 			{ name: "baz", body: "body $1", frontmatter: { "argument-hint": "thing" } },
 		]);
-		vi.mocked(loadSkills).mockReturnValue({ skills: entries } as unknown as ReturnType<typeof loadSkills>);
+		setSkills(entries);
 		const r = await handleInput({ text: "/skill:baz X" } as InputEvent, ctx, pi);
 		expect((r as { text: string }).text).toContain("body X");
 		expect((r as { text: string }).text).not.toContain("argument-hint");
 	});
 	it("empty args → no trailing block", async () => {
 		const entries = writeSkillsDir(tmpDir, [{ name: "foo", body: "x" }]);
-		vi.mocked(loadSkills).mockReturnValue({ skills: entries } as unknown as ReturnType<typeof loadSkills>);
+		setSkills(entries);
 		const r = await handleInput({ text: "/skill:foo" } as InputEvent, ctx, pi);
 		expect((r as { text: string }).text.endsWith("</skill>")).toBe(true);
 	});
@@ -353,29 +343,113 @@ describe("handleInput — emit paths (byte-exact wrapper)", () => {
 describe("handleInput — variable substitution", () => {
 	it("substitutes ${SKILL_DIR} on the no-token emit path (FR10 always-on)", async () => {
 		const entries = writeSkillsDir(tmpDir, [{ name: "v1", body: "at ${SKILL_DIR}" }]);
-		vi.mocked(loadSkills).mockReturnValue({ skills: entries } as unknown as ReturnType<typeof loadSkills>);
+		setSkills(entries);
 		const r = await handleInput({ text: "/skill:v1" } as InputEvent, ctx, pi);
 		expect((r as { text: string }).text).toContain(`at ${tmpDir}`);
 	});
 	it("substitutes ${SESSION_ID} using ctx.sessionManager.getSessionId()", async () => {
 		const entries = writeSkillsDir(tmpDir, [{ name: "v2", body: "sid=${SESSION_ID}" }]);
-		vi.mocked(loadSkills).mockReturnValue({ skills: entries } as unknown as ReturnType<typeof loadSkills>);
+		setSkills(entries);
 		const r = await handleInput({ text: "/skill:v2" } as InputEvent, ctx, pi);
 		// createMockCtx() default session id is "test-session"
 		expect((r as { text: string }).text).toContain("sid=test-session");
 	});
 	it("substitutes variables on the token emit path too (FR10 always-on)", async () => {
 		const entries = writeSkillsDir(tmpDir, [{ name: "v3", body: "$1 in ${SKILL_DIR}" }]);
-		vi.mocked(loadSkills).mockReturnValue({ skills: entries } as unknown as ReturnType<typeof loadSkills>);
+		setSkills(entries);
 		const r = await handleInput({ text: "/skill:v3 foo" } as InputEvent, ctx, pi);
 		expect((r as { text: string }).text).toContain(`foo in ${tmpDir}`);
+	});
+});
+
+describe("handleInput — manifest-loaded skill baseDir (regression)", () => {
+	// When a skill is sourced from an extension's `pi.skills: [...]` manifest,
+	// Pi sets `cmd.sourceInfo.baseDir` to the *extension package's* root
+	// (resource-loader.js:358-362 overrides skill.sourceInfo with the extension
+	// source info), NOT the skill's own folder. The skill's `${SKILL_DIR}`
+	// substitution and the wrapper's "References are relative to" footer must
+	// resolve to `dirname(filePath)`, never to `sourceInfo.baseDir`, or
+	// `${SKILL_DIR}/../_shared/now.mjs`-style paths break.
+	it("resolves ${SKILL_DIR} to dirname(filePath) even when sourceInfo.baseDir is the extension root", async () => {
+		const skillDir = join(tmpDir, "skills", "discover");
+		mkdirSync(skillDir, { recursive: true });
+		const filePath = join(skillDir, "SKILL.md");
+		writeFileSync(filePath, "use ${SKILL_DIR}/../_shared/now.mjs", "utf-8");
+		// Pretend rpiv-pi (the extension) declared this skill via pi.skills.
+		// Pi sets sourceInfo.baseDir to the extension package root (`tmpDir`),
+		// NOT the skill folder (`skillDir`). The fix must ignore sourceInfo.baseDir.
+		setSkills([{ name: "discover", filePath, baseDir: tmpDir }]);
+
+		const r = await handleInput({ text: "/skill:discover" } as InputEvent, ctx, pi);
+		const text = (r as { text: string }).text;
+
+		expect(text).toContain(`use ${skillDir}/../_shared/now.mjs`);
+		expect(text).toContain(`References are relative to ${skillDir}.`);
+		expect(text).not.toContain(`References are relative to ${tmpDir}.`);
+	});
+
+	// Parameterized coverage across every Pi skill-loading path. In all of them
+	// `sourceInfo.baseDir` is the *enclosing scope* (project root, .agents dir,
+	// agent dir), NOT the skill folder. Pi's own internal expander uses
+	// `skill.baseDir = dirname(filePath)` (agent-session.js:855, skills.js:214);
+	// rpiv-args must match exactly, or `${SKILL_DIR}` and the
+	// "References are relative to" footer diverge from Pi.
+	it.each([
+		{
+			label: "project .pi/skills/<name>/SKILL.md (sourceInfo.baseDir = project root)",
+			skillRel: [".pi", "skills", "foo", "SKILL.md"],
+			scopeBaseDirRel: [] as string[],
+		},
+		{
+			label: "project .pi/skills/<name>.md flat (sourceInfo.baseDir = project root)",
+			skillRel: [".pi", "skills", "flat.md"],
+			scopeBaseDirRel: [],
+		},
+		{
+			label: "project .agents/skills/<name>/SKILL.md (sourceInfo.baseDir = .agents dir)",
+			skillRel: [".agents", "skills", "bar", "SKILL.md"],
+			scopeBaseDirRel: [".agents"],
+		},
+		{
+			label: "user ~/.pi/agent/skills/<name>/SKILL.md (sourceInfo.baseDir = agent dir)",
+			skillRel: ["pi", "agent", "skills", "baz", "SKILL.md"],
+			scopeBaseDirRel: ["pi", "agent"],
+		},
+		{
+			label: "user ~/.agents/skills/<name>/SKILL.md (sourceInfo.baseDir = ~/.agents)",
+			skillRel: ["agents", "skills", "qux", "SKILL.md"],
+			scopeBaseDirRel: ["agents"],
+		},
+	])("$label → ${SKILL_DIR} = dirname(filePath)", async ({ skillRel, scopeBaseDirRel }) => {
+		const filePath = join(tmpDir, ...skillRel);
+		const skillFolder = join(tmpDir, ...skillRel.slice(0, -1));
+		const scopeBaseDir = join(tmpDir, ...scopeBaseDirRel);
+		mkdirSync(skillFolder, { recursive: true });
+		writeFileSync(filePath, "marker ${SKILL_DIR}", "utf-8");
+		// The folder name (or basename of the .md file for the flat case) is the skill name.
+		const name =
+			skillRel[skillRel.length - 1] === "SKILL.md"
+				? skillRel[skillRel.length - 2]!
+				: skillRel[skillRel.length - 1]!.replace(/\.md$/, "");
+
+		setSkills([{ name, filePath, baseDir: scopeBaseDir }]);
+
+		const r = await handleInput({ text: `/skill:${name}` } as InputEvent, ctx, pi);
+		const text = (r as { text: string }).text;
+
+		expect(text).toContain(`marker ${skillFolder}`);
+		expect(text).toContain(`References are relative to ${skillFolder}.`);
+		// Sanity: the misleading scope baseDir is NOT used as the substitution root.
+		if (scopeBaseDir !== skillFolder) {
+			expect(text).not.toContain(`References are relative to ${scopeBaseDir}.`);
+		}
 	});
 });
 
 describe("handleInput — backward compatibility (byte-identical regression fixture)", () => {
 	it("a skill with NO shell syntax, NO variables, NO tokens emits byte-identically to pre-shell-execution behavior", async () => {
 		const entries = writeSkillsDir(tmpDir, [{ name: "regress", body: "plain body line 1\nplain body line 2" }]);
-		vi.mocked(loadSkills).mockReturnValue({ skills: entries } as unknown as ReturnType<typeof loadSkills>);
+		setSkills(entries);
 		const r = await handleInput({ text: "/skill:regress some trailing args" } as InputEvent, ctx, pi);
 		// Pin the EXACT bytes — this is the regression fixture per Verification Notes.
 		const expected =
@@ -391,7 +465,7 @@ describe("handleInput — backward compatibility (byte-identical regression fixt
 describe("handleInput — shell-timeout frontmatter", () => {
 	it("accepts shell-timeout as a numeric frontmatter value (no error)", async () => {
 		const entries = writeSkillsDir(tmpDir, [{ name: "t1", body: "ok", frontmatter: { "shell-timeout": "5" } }]);
-		vi.mocked(loadSkills).mockReturnValue({ skills: entries } as unknown as ReturnType<typeof loadSkills>);
+		setSkills(entries);
 		const r = await handleInput({ text: "/skill:t1" } as InputEvent, ctx, pi);
 		expect((r as { text: string }).text).toContain("ok");
 	});
@@ -400,7 +474,7 @@ describe("handleInput — shell-timeout frontmatter", () => {
 describe("executeShellInBody", () => {
 	it("returns body unchanged when no shell syntax is present (pass-through)", async () => {
 		const execFn = vi.fn(async () => ({ stdout: "", stderr: "", code: 0, killed: false }));
-		const { pi: testPi } = createMockPi({ exec: execFn as never });
+		const { pi: testPi } = createMockPi({ exec: execFn as never, getCommands: getCommandsFn as never });
 		const out = await executeShellInBody("plain body", testPi, "/tmp", 1000);
 		expect(out).toBe("plain body");
 		expect(execFn).not.toHaveBeenCalled();
@@ -408,14 +482,14 @@ describe("executeShellInBody", () => {
 
 	it("replaces inline !`cmd` with stdout on success", async () => {
 		const execFn = vi.fn(async () => ({ stdout: "hello\n", stderr: "", code: 0, killed: false }));
-		const { pi: testPi } = createMockPi({ exec: execFn as never });
+		const { pi: testPi } = createMockPi({ exec: execFn as never, getCommands: getCommandsFn as never });
 		const out = await executeShellInBody("before !`echo hello` after", testPi, "/tmp", 1000);
 		expect(out).toBe("before hello\n after");
 	});
 
 	it("replaces block ```! ... ``` with stdout on success", async () => {
 		const execFn = vi.fn(async () => ({ stdout: "line1\nline2\n", stderr: "", code: 0, killed: false }));
-		const { pi: testPi } = createMockPi({ exec: execFn as never });
+		const { pi: testPi } = createMockPi({ exec: execFn as never, getCommands: getCommandsFn as never });
 		const out = await executeShellInBody("before\n```!\ngit status\n```\nafter", testPi, "/tmp", 1000);
 		expect(out).toContain("line1\nline2");
 		expect(out).not.toContain("```!");
@@ -430,28 +504,28 @@ describe("executeShellInBody", () => {
 			order.push(`end:${cmd}`);
 			return { stdout: cmd, stderr: "", code: 0, killed: false };
 		});
-		const { pi: testPi } = createMockPi({ exec: execFn as never });
+		const { pi: testPi } = createMockPi({ exec: execFn as never, getCommands: getCommandsFn as never });
 		await executeShellInBody("!`a` !`b` !`c`", testPi, "/tmp", 1000);
 		expect(order).toEqual(["start:a", "end:a", "start:b", "end:b", "start:c", "end:c"]);
 	});
 
 	it("FR5: killed=true → [Shell error: timed out after Ns]", async () => {
 		const execFn = vi.fn(async () => ({ stdout: "partial\n", stderr: "", code: 1, killed: true }));
-		const { pi: testPi } = createMockPi({ exec: execFn as never });
+		const { pi: testPi } = createMockPi({ exec: execFn as never, getCommands: getCommandsFn as never });
 		const out = await executeShellInBody("!`sleep 60`", testPi, "/tmp", 5000);
 		expect(out).toBe("[Shell error: timed out after 5s]");
 	});
 
 	it("R4: sub-second shell-timeout displays 1s (floor), not 0s", async () => {
 		const execFn = vi.fn(async () => ({ stdout: "", stderr: "", code: 0, killed: true }));
-		const { pi: testPi } = createMockPi({ exec: execFn as never });
+		const { pi: testPi } = createMockPi({ exec: execFn as never, getCommands: getCommandsFn as never });
 		const out = await executeShellInBody("!`x`", testPi, "/tmp", 500);
 		expect(out).toBe("[Shell error: timed out after 1s]");
 	});
 
 	it("FR5: non-zero exit → [Shell error: exit code N]\\n<stderr>", async () => {
 		const execFn = vi.fn(async () => ({ stdout: "", stderr: "oh no\n", code: 2, killed: false }));
-		const { pi: testPi } = createMockPi({ exec: execFn as never });
+		const { pi: testPi } = createMockPi({ exec: execFn as never, getCommands: getCommandsFn as never });
 		const out = await executeShellInBody("!`false`", testPi, "/tmp", 1000);
 		expect(out).toBe("[Shell error: exit code 2]\noh no\n");
 	});
@@ -459,7 +533,7 @@ describe("executeShellInBody", () => {
 	it("R1: non-zero exit truncates large stderr through the same 50KB / 2000-line budget as success", async () => {
 		const bigStderr = `${"ERR\n".repeat(20_000)}`; // ~80KB / 20,000 lines
 		const execFn = vi.fn(async () => ({ stdout: "", stderr: bigStderr, code: 2, killed: false }));
-		const { pi: testPi } = createMockPi({ exec: execFn as never });
+		const { pi: testPi } = createMockPi({ exec: execFn as never, getCommands: getCommandsFn as never });
 		const out = await executeShellInBody("!`failingcmd`", testPi, "/tmp", 1000);
 		expect(out.startsWith("[Shell error: exit code 2]\n")).toBe(true);
 		expect(out.length).toBeLessThan(bigStderr.length); // truncated
@@ -468,7 +542,7 @@ describe("executeShellInBody", () => {
 
 	it("FR5: timeout wins over non-zero code (killed checked first)", async () => {
 		const execFn = vi.fn(async () => ({ stdout: "", stderr: "", code: 1, killed: true }));
-		const { pi: testPi } = createMockPi({ exec: execFn as never });
+		const { pi: testPi } = createMockPi({ exec: execFn as never, getCommands: getCommandsFn as never });
 		const out = await executeShellInBody("!`sleep 60`", testPi, "/tmp", 3000);
 		expect(out).toBe("[Shell error: timed out after 3s]");
 		expect(out).not.toContain("exit code");
@@ -476,21 +550,21 @@ describe("executeShellInBody", () => {
 
 	it("appends [stderr] block when both stdout and stderr produced content", async () => {
 		const execFn = vi.fn(async () => ({ stdout: "ok\n", stderr: "warn\n", code: 0, killed: false }));
-		const { pi: testPi } = createMockPi({ exec: execFn as never });
+		const { pi: testPi } = createMockPi({ exec: execFn as never, getCommands: getCommandsFn as never });
 		const out = await executeShellInBody("!`x`", testPi, "/tmp", 1000);
 		expect(out).toBe("ok\n[stderr]\nwarn\n");
 	});
 
 	it("stderr-only success: stderr promoted under [stderr] header", async () => {
 		const execFn = vi.fn(async () => ({ stdout: "", stderr: "diagnostic\n", code: 0, killed: false }));
-		const { pi: testPi } = createMockPi({ exec: execFn as never });
+		const { pi: testPi } = createMockPi({ exec: execFn as never, getCommands: getCommandsFn as never });
 		const out = await executeShellInBody("!`x`", testPi, "/tmp", 1000);
 		expect(out).toBe("[stderr]\ndiagnostic\n");
 	});
 
 	it("both-empty success returns empty string", async () => {
 		const execFn = vi.fn(async () => ({ stdout: "", stderr: "", code: 0, killed: false }));
-		const { pi: testPi } = createMockPi({ exec: execFn as never });
+		const { pi: testPi } = createMockPi({ exec: execFn as never, getCommands: getCommandsFn as never });
 		const out = await executeShellInBody("!`x`", testPi, "/tmp", 1000);
 		expect(out).toBe("");
 	});
@@ -498,7 +572,7 @@ describe("executeShellInBody", () => {
 	it("truncates >50KB output and appends [truncated: hit ...] footer", async () => {
 		const big = `${"x".repeat(60_000)}\n`;
 		const execFn = vi.fn(async () => ({ stdout: big, stderr: "", code: 0, killed: false }));
-		const { pi: testPi } = createMockPi({ exec: execFn as never });
+		const { pi: testPi } = createMockPi({ exec: execFn as never, getCommands: getCommandsFn as never });
 		const out = await executeShellInBody("!`big`", testPi, "/tmp", 1000);
 		expect(out.length).toBeLessThan(big.length);
 		expect(out).toMatch(/\[truncated: hit .+\]$/);
@@ -507,7 +581,7 @@ describe("executeShellInBody", () => {
 	it("truncates >2000-line output (lines-first wins)", async () => {
 		const tall = `${"line\n".repeat(2500)}`;
 		const execFn = vi.fn(async () => ({ stdout: tall, stderr: "", code: 0, killed: false }));
-		const { pi: testPi } = createMockPi({ exec: execFn as never });
+		const { pi: testPi } = createMockPi({ exec: execFn as never, getCommands: getCommandsFn as never });
 		const out = await executeShellInBody("!`tall`", testPi, "/tmp", 1000);
 		expect(out).toMatch(/\[truncated: hit 2000 lines\]$/);
 	});
@@ -519,7 +593,7 @@ describe("executeShellInBody", () => {
 			code: 0,
 			killed: false,
 		}));
-		const { pi: testPi } = createMockPi({ exec: execFn as never });
+		const { pi: testPi } = createMockPi({ exec: execFn as never, getCommands: getCommandsFn as never });
 		const body = 'X\n```!\necho hi && echo "with !`inline` text"\n```\nY';
 		const out = await executeShellInBody(body, testPi, "/tmp", 1000);
 		expect(execFn).toHaveBeenCalledTimes(1);
@@ -533,7 +607,7 @@ describe("executeShellInBody", () => {
 		Object.defineProperty(process, "platform", { value: "darwin", configurable: true });
 		try {
 			const execFn = vi.fn(async () => ({ stdout: "", stderr: "", code: 0, killed: false }));
-			const { pi: testPi } = createMockPi({ exec: execFn as never });
+			const { pi: testPi } = createMockPi({ exec: execFn as never, getCommands: getCommandsFn as never });
 			await executeShellInBody("!`pwd`", testPi, "/tmp", 1000);
 			expect(execFn).toHaveBeenCalledWith("sh", ["-c", "pwd"], { cwd: "/tmp", timeout: 1000 });
 		} finally {
@@ -546,7 +620,7 @@ describe("executeShellInBody", () => {
 		Object.defineProperty(process, "platform", { value: "win32", configurable: true });
 		try {
 			const execFn = vi.fn(async () => ({ stdout: "", stderr: "", code: 0, killed: false }));
-			const { pi: testPi } = createMockPi({ exec: execFn as never });
+			const { pi: testPi } = createMockPi({ exec: execFn as never, getCommands: getCommandsFn as never });
 			await executeShellInBody("!`Get-Location`", testPi, "C:\\tmp", 1000);
 			expect(execFn).toHaveBeenCalledWith("powershell.exe", ["-Command", "Get-Location"], {
 				cwd: "C:\\tmp",
@@ -559,7 +633,7 @@ describe("executeShellInBody", () => {
 
 	it("passes cwd and timeout through to pi.exec options", async () => {
 		const execFn = vi.fn(async () => ({ stdout: "", stderr: "", code: 0, killed: false }));
-		const { pi: testPi } = createMockPi({ exec: execFn as never });
+		const { pi: testPi } = createMockPi({ exec: execFn as never, getCommands: getCommandsFn as never });
 		await executeShellInBody("!`x`", testPi, "/some/cwd", 7777);
 		expect(execFn).toHaveBeenCalledWith(expect.any(String), expect.any(Array), {
 			cwd: "/some/cwd",
@@ -569,7 +643,7 @@ describe("executeShellInBody", () => {
 
 	it("inline pattern does not match across newlines", async () => {
 		const execFn = vi.fn(async () => ({ stdout: "x", stderr: "", code: 0, killed: false }));
-		const { pi: testPi } = createMockPi({ exec: execFn as never });
+		const { pi: testPi } = createMockPi({ exec: execFn as never, getCommands: getCommandsFn as never });
 		const out = await executeShellInBody("!`echo a\necho b`", testPi, "/tmp", 1000);
 		expect(execFn).not.toHaveBeenCalled();
 		expect(out).toBe("!`echo a\necho b`");
@@ -577,7 +651,7 @@ describe("executeShellInBody", () => {
 
 	it("R3: literal `` !`` `` (empty backticks) is left verbatim — pi.exec is never called with an empty -c", async () => {
 		const execFn = vi.fn(async () => ({ stdout: "", stderr: "", code: 0, killed: false }));
-		const { pi: testPi } = createMockPi({ exec: execFn as never });
+		const { pi: testPi } = createMockPi({ exec: execFn as never, getCommands: getCommandsFn as never });
 		const out = await executeShellInBody("prose with !`` empty backticks", testPi, "/tmp", 1000);
 		expect(execFn).not.toHaveBeenCalled();
 		expect(out).toBe("prose with !`` empty backticks");
@@ -594,7 +668,7 @@ describe("executeShellInBody", () => {
 			code: 0,
 			killed: false,
 		}));
-		const { pi: testPi } = createMockPi({ exec: execFn as never });
+		const { pi: testPi } = createMockPi({ exec: execFn as never, getCommands: getCommandsFn as never });
 		const out = await executeShellInBody("X\n```!\ngenerate-something\n```\nY", testPi, "/tmp", 1000);
 		expect(execFn).toHaveBeenCalledTimes(1);
 		expect(out).toContain("!`evil cmd`"); // inline syntax preserved literally
@@ -606,27 +680,27 @@ describe("executeShellInBody", () => {
 describe("handleInput — shell execution (integration)", () => {
 	it("executes !`cmd` on the no-token emit path (FR10 always-on)", async () => {
 		const entries = writeSkillsDir(tmpDir, [{ name: "sh1", body: "branch !`git rev-parse HEAD`" }]);
-		vi.mocked(loadSkills).mockReturnValue({ skills: entries } as unknown as ReturnType<typeof loadSkills>);
+		setSkills(entries);
 		const execFn = vi.fn(async () => ({ stdout: "abc1234", stderr: "", code: 0, killed: false }));
-		const { pi: testPi } = createMockPi({ exec: execFn as never });
+		const { pi: testPi } = createMockPi({ exec: execFn as never, getCommands: getCommandsFn as never });
 		const r = await handleInput({ text: "/skill:sh1" } as InputEvent, ctx, testPi);
 		expect((r as { text: string }).text).toContain("branch abc1234");
 	});
 
 	it("executes !`cmd` on the token emit path too (FR10 always-on)", async () => {
 		const entries = writeSkillsDir(tmpDir, [{ name: "sh2", body: "$1 at !`pwd`" }]);
-		vi.mocked(loadSkills).mockReturnValue({ skills: entries } as unknown as ReturnType<typeof loadSkills>);
+		setSkills(entries);
 		const execFn = vi.fn(async () => ({ stdout: "/home/me", stderr: "", code: 0, killed: false }));
-		const { pi: testPi } = createMockPi({ exec: execFn as never });
+		const { pi: testPi } = createMockPi({ exec: execFn as never, getCommands: getCommandsFn as never });
 		const r = await handleInput({ text: "/skill:sh2 hello" } as InputEvent, ctx, testPi);
 		expect((r as { text: string }).text).toContain("hello at /home/me");
 	});
 
 	it("forwards process.cwd() and resolved timeout to pi.exec", async () => {
 		const entries = writeSkillsDir(tmpDir, [{ name: "sh3", body: "!`x`", frontmatter: { "shell-timeout": "5" } }]);
-		vi.mocked(loadSkills).mockReturnValue({ skills: entries } as unknown as ReturnType<typeof loadSkills>);
+		setSkills(entries);
 		const execFn = vi.fn(async () => ({ stdout: "", stderr: "", code: 0, killed: false }));
-		const { pi: testPi } = createMockPi({ exec: execFn as never });
+		const { pi: testPi } = createMockPi({ exec: execFn as never, getCommands: getCommandsFn as never });
 		await handleInput({ text: "/skill:sh3" } as InputEvent, ctx, testPi);
 		expect(execFn).toHaveBeenCalledWith(expect.any(String), expect.any(Array), {
 			cwd: process.cwd(),
@@ -636,9 +710,9 @@ describe("handleInput — shell execution (integration)", () => {
 
 	it("uses DEFAULT_SHELL_TIMEOUT_MS (120s) when frontmatter omits shell-timeout", async () => {
 		const entries = writeSkillsDir(tmpDir, [{ name: "sh4", body: "!`x`" }]);
-		vi.mocked(loadSkills).mockReturnValue({ skills: entries } as unknown as ReturnType<typeof loadSkills>);
+		setSkills(entries);
 		const execFn = vi.fn(async () => ({ stdout: "", stderr: "", code: 0, killed: false }));
-		const { pi: testPi } = createMockPi({ exec: execFn as never });
+		const { pi: testPi } = createMockPi({ exec: execFn as never, getCommands: getCommandsFn as never });
 		await handleInput({ text: "/skill:sh4" } as InputEvent, ctx, testPi);
 		expect(execFn).toHaveBeenCalledWith(expect.any(String), expect.any(Array), {
 			cwd: process.cwd(),
@@ -650,9 +724,9 @@ describe("handleInput — shell execution (integration)", () => {
 describe("handleInput — $ARGUMENTS+shell injection (documented FRD trust model)", () => {
 	it("pipeline order (tokens → variables → shell) means $ARGUMENTS-injected !`...` reaches shell execution — local = trusted, NOT a vuln", async () => {
 		const entries = writeSkillsDir(tmpDir, [{ name: "inj", body: "user said: $ARGUMENTS" }]);
-		vi.mocked(loadSkills).mockReturnValue({ skills: entries } as unknown as ReturnType<typeof loadSkills>);
+		setSkills(entries);
 		const execFn = vi.fn(async () => ({ stdout: "PWNED", stderr: "", code: 0, killed: false }));
-		const { pi: testPi } = createMockPi({ exec: execFn as never });
+		const { pi: testPi } = createMockPi({ exec: execFn as never, getCommands: getCommandsFn as never });
 		const r = await handleInput({ text: "/skill:inj !`echo PWNED`" } as InputEvent, ctx, testPi);
 		expect(execFn).toHaveBeenCalledTimes(1);
 		expect((r as { text: string }).text).toContain("user said: PWNED");
@@ -661,38 +735,38 @@ describe("handleInput — $ARGUMENTS+shell injection (documented FRD trust model
 
 describe("registerArgsHandler", () => {
 	it("invalidates on session_start reason=startup", async () => {
-		const { pi: testPi, captured } = createMockPi();
+		const { pi: testPi, captured } = createMockPi({ getCommands: getCommandsFn as never });
 		const entries = writeSkillsDir(tmpDir, [{ name: "foo", body: "body" }]);
-		vi.mocked(loadSkills).mockReturnValue({ skills: entries } as unknown as ReturnType<typeof loadSkills>);
+		setSkills(entries);
 		registerArgsHandler(testPi);
 		await handleInput({ text: "/skill:foo" } as InputEvent, ctx, testPi);
-		expect(loadSkills).toHaveBeenCalledTimes(1);
+		expect(getCommandsFn).toHaveBeenCalledTimes(1);
 		const handler = captured.events.get("session_start")?.[0];
 		handler?.({ reason: "startup" } as never);
 		await handleInput({ text: "/skill:foo" } as InputEvent, ctx, testPi);
-		expect(loadSkills).toHaveBeenCalledTimes(2);
+		expect(getCommandsFn).toHaveBeenCalledTimes(2);
 	});
 	it("invalidates on session_start reason=reload", async () => {
-		const { pi: testPi, captured } = createMockPi();
+		const { pi: testPi, captured } = createMockPi({ getCommands: getCommandsFn as never });
 		const entries = writeSkillsDir(tmpDir, [{ name: "foo", body: "body" }]);
-		vi.mocked(loadSkills).mockReturnValue({ skills: entries } as unknown as ReturnType<typeof loadSkills>);
+		setSkills(entries);
 		registerArgsHandler(testPi);
 		await handleInput({ text: "/skill:foo" } as InputEvent, ctx, testPi);
 		const handler = captured.events.get("session_start")?.[0];
 		handler?.({ reason: "reload" } as never);
 		await handleInput({ text: "/skill:foo" } as InputEvent, ctx, testPi);
-		expect(loadSkills).toHaveBeenCalledTimes(2);
+		expect(getCommandsFn).toHaveBeenCalledTimes(2);
 	});
 	it("does NOT invalidate on other session_start reasons", async () => {
-		const { pi: testPi, captured } = createMockPi();
+		const { pi: testPi, captured } = createMockPi({ getCommands: getCommandsFn as never });
 		const entries = writeSkillsDir(tmpDir, [{ name: "foo", body: "body" }]);
-		vi.mocked(loadSkills).mockReturnValue({ skills: entries } as unknown as ReturnType<typeof loadSkills>);
+		setSkills(entries);
 		registerArgsHandler(testPi);
 		await handleInput({ text: "/skill:foo" } as InputEvent, ctx, testPi);
 		const handler = captured.events.get("session_start")?.[0];
 		handler?.({ reason: "resume" } as never);
 		await handleInput({ text: "/skill:foo" } as InputEvent, ctx, testPi);
-		expect(loadSkills).toHaveBeenCalledTimes(1);
+		expect(getCommandsFn).toHaveBeenCalledTimes(1);
 	});
 	it("wires input handler", () => {
 		const { pi: testPi, captured } = createMockPi();
@@ -702,9 +776,9 @@ describe("registerArgsHandler", () => {
 		expect(captured.events.has("before_agent_start")).toBe(true);
 	});
 	it("input arrow forwards ctx + closes over pi (registered arrow signature)", async () => {
-		const { pi: testPi, captured } = createMockPi();
+		const { pi: testPi, captured } = createMockPi({ getCommands: getCommandsFn as never });
 		const entries = writeSkillsDir(tmpDir, [{ name: "wired", body: "at ${SKILL_DIR}" }]);
-		vi.mocked(loadSkills).mockReturnValue({ skills: entries } as unknown as ReturnType<typeof loadSkills>);
+		setSkills(entries);
 		registerArgsHandler(testPi);
 		const inputHandler = captured.events.get("input")?.[0];
 		expect(inputHandler).toBeDefined();

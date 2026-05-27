@@ -53,15 +53,23 @@ beforeEach(async () => {
 	advisor.setAdvisorModel(undefined);
 	advisor.setAdvisorEffort(undefined);
 	advisor.setDisabledForModels([]);
+	advisor.__resetAdvisorAnnounced();
 
 	const args = await import("../packages/rpiv-args/args.js");
 	args.invalidateSkillIndex();
+
+	const workflowInternal = await import("@juicesharp/rpiv-workflow/internal");
+	workflowInternal.__resetBuiltIns();
+	workflowInternal.__resetLoadCache();
+	workflowInternal.__resetLifecycleRegistry();
 
 	const guidance = await import("../packages/rpiv-pi/extensions/rpiv-core/guidance.js");
 	guidance.clearInjectionState();
 	const gitContext = await import("../packages/rpiv-pi/extensions/rpiv-core/git-context.js");
 	gitContext.clearGitContextCache();
 	gitContext.resetInjectedMarker();
+	const sessionHooks = await import("../packages/rpiv-pi/extensions/rpiv-core/session-hooks.js");
+	sessionHooks.__resetSessionHooksAnnounced();
 
 	const titleSpinner = await import("../packages/rpiv-warp/title-spinner.js");
 	titleSpinner.__resetState();
@@ -98,6 +106,15 @@ beforeEach(async () => {
 	rmSync(todoConfig, { force: true });
 	rmSync(askUserQuestionConfig, { force: true });
 	rmSync(webToolsConfig, { force: true });
+
+	// User overlay for `/wf` workflows: canonical file at
+	// `~/.config/rpiv-workflow/workflows.config.ts` plus a drop-in directory
+	// at `~/.config/rpiv-workflow/workflows/`. Tests that exercise the
+	// project overlay by writing under `<cwd>/.rpiv-workflow/` MUST clean it
+	// themselves in their own afterEach — the project root is per-cwd and
+	// not knowable here.
+	const workflowUserRoot = join(process.env.HOME!, ".config", "rpiv-workflow");
+	rmSync(workflowUserRoot, { recursive: true, force: true });
 
 	// Clean global agent dir parent (`~/.pi/agent/`) — not just `~/.pi/agent/agents/` —
 	// so Q18-style tests that place a regular file at `~/.pi/agent` can write into a

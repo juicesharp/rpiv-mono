@@ -144,9 +144,7 @@ export class SearxngProvider implements SearchProvider {
 
 	private requireBaseUrl(): void {
 		if (!this.baseUrl) {
-			throw new Error(
-				`${SEARXNG_URL_ENV_VAR} is not set. Run /web-search-config to configure, or export the env var.`,
-			);
+			throw new Error(`${SEARXNG_URL_ENV_VAR} is not set. Run /web-tools to configure, or export the env var.`);
 		}
 	}
 
@@ -176,7 +174,7 @@ export class SearxngProvider implements SearchProvider {
 }
 
 // ---------------------------------------------------------------------------
-// /web-search-config helper — SearXNG branch
+// /web-tools helper — SearXNG branch
 // ---------------------------------------------------------------------------
 // SEARXNG_PROVIDER_META.configure wires configureSearxng() in; the orchestrator
 // dispatches generically through ProviderMeta.configure without naming

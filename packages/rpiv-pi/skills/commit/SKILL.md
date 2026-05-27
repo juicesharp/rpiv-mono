@@ -22,8 +22,6 @@ echo "---recent-subjects---"
 git log --pretty=%s -n 20 2>/dev/null || true
 ```
 
-`git-changes.mjs` output — `in_repo:` line, then `---status---` (capped `git status --short`), then `---diffstat---` (`git diff HEAD --stat` of staged + unstaged changes; full per-file diff is intentionally NOT included to stay under the output budget).
-
 `---recent-subjects---` — up to 20 most recent commit subject lines, used in Step 2 to match the repository's existing commit-message style. Empty on a no-HEAD initial repo.
 
 ## Context:

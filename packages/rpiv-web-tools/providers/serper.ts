@@ -37,7 +37,7 @@ export class SerperProvider implements SearchProvider {
 
 	async search(query: string, maxResults: number, signal?: AbortSignal): Promise<SearchResponse> {
 		if (!this.apiKey) {
-			throw new Error(`${this.envVar} is not set. Run /web-search-config to configure, or export the env var.`);
+			throw new Error(`${this.envVar} is not set. Run /web-tools to configure, or export the env var.`);
 		}
 
 		const res = await fetch(SERPER_API_URL, {

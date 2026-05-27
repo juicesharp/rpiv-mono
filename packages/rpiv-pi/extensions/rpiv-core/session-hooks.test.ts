@@ -31,7 +31,7 @@ import { cleanupPerCwdAgents, SYNC_OP, syncBundledAgents } from "./agents.js";
 import { clearGitContextCache, getGitContext, resetInjectedMarker, takeGitContextIfChanged } from "./git-context.js";
 import { clearInjectionState } from "./guidance.js";
 import { findMissingSiblings } from "./package-checks.js";
-import { registerSessionHooks } from "./session-hooks.js";
+import { __resetSessionHooksAnnounced, registerSessionHooks } from "./session-hooks.js";
 
 const emptySync: SyncResult = {
 	added: [],
@@ -50,6 +50,7 @@ beforeEach(() => {
 	clearInjectionState();
 	clearGitContextCache();
 	resetInjectedMarker();
+	__resetSessionHooksAnnounced();
 });
 afterEach(() => {
 	rmSync(projectDir, { recursive: true, force: true });
@@ -350,6 +351,74 @@ describe("session_start hook — notifications", () => {
 		const errCall = (ctx.ui.notify as ReturnType<typeof vi.fn>).mock.calls.find((c) => c[1] === "warning");
 		expect(errCall).toBeDefined();
 		expect(errCall?.[0]).toContain("1 error");
+	});
+});
+
+describe("session_start hook — banner notify-once latch", () => {
+	// Pi fires session_start for every session including programmatic spawns
+	// (workflow stages, batch ops). Filesystem work (agent sync, cleanup)
+	// runs every fire; the banner notifications latch on the first
+	// announcement and stay quiet for the rest of the module lifetime.
+	// Replaces the older cross-package coupling to rpiv-workflow's
+	// child-session Symbol.
+
+	it("first session_start fires the cleanup/agent-sync/missing-siblings notifies", async () => {
+		vi.mocked(syncBundledAgents).mockReturnValueOnce({
+			...emptySync,
+			added: ["a.md"],
+		});
+		vi.mocked(cleanupPerCwdAgents).mockReturnValueOnce({ cleanedUp: ["/tmp/old"], skipped: [], errors: [] });
+		vi.mocked(findMissingSiblings).mockReturnValueOnce([]);
+
+		const { pi, captured } = createMockPi({ exec: stubGitExec({}) as never });
+		registerSessionHooks(pi);
+		const ctx = createMockCtx({ cwd: projectDir, hasUI: true });
+
+		await captured.events.get("session_start")?.[0]({ reason: "startup" } as never, ctx as never);
+
+		expect(ctx.ui.notify).toHaveBeenCalled();
+	});
+
+	it("subsequent session_starts (workflow stage spawns) re-run filesystem work but do NOT re-notify", async () => {
+		vi.mocked(syncBundledAgents).mockReturnValue({ ...emptySync, added: ["a.md"] });
+		vi.mocked(cleanupPerCwdAgents).mockReturnValue({ cleanedUp: ["/tmp/old"], skipped: [], errors: [] });
+		vi.mocked(findMissingSiblings).mockReturnValue([]);
+
+		const { pi, captured } = createMockPi({ exec: stubGitExec({}) as never });
+		registerSessionHooks(pi);
+		const ctx = createMockCtx({ cwd: projectDir, hasUI: true });
+		const notify = ctx.ui.notify as ReturnType<typeof vi.fn>;
+
+		const handler = captured.events.get("session_start")?.[0];
+		await handler?.({ reason: "startup" } as never, ctx as never);
+		const firstPassNotifyCount = notify.mock.calls.length;
+		await handler?.({ reason: "startup" } as never, ctx as never);
+		await handler?.({ reason: "startup" } as never, ctx as never);
+
+		// Filesystem work runs every fire (3 session_starts → 3 calls each).
+		expect(vi.mocked(syncBundledAgents)).toHaveBeenCalledTimes(3);
+		expect(vi.mocked(cleanupPerCwdAgents)).toHaveBeenCalledTimes(3);
+		// First pass emits its notifies; passes 2-3 add ZERO new notifies.
+		expect(firstPassNotifyCount).toBeGreaterThan(0);
+		expect(notify.mock.calls.length).toBe(firstPassNotifyCount);
+	});
+
+	it("`__resetSessionHooksAnnounced()` re-arms the latch (covers /reload)", async () => {
+		vi.mocked(syncBundledAgents).mockReturnValue({ ...emptySync, added: ["a.md"] });
+		vi.mocked(cleanupPerCwdAgents).mockReturnValue({ cleanedUp: [], skipped: [], errors: [] });
+		vi.mocked(findMissingSiblings).mockReturnValue([]);
+
+		const { pi, captured } = createMockPi({ exec: stubGitExec({}) as never });
+		registerSessionHooks(pi);
+		const ctx = createMockCtx({ cwd: projectDir, hasUI: true });
+
+		const handler = captured.events.get("session_start")?.[0];
+		await handler?.({ reason: "startup" } as never, ctx as never);
+		await handler?.({ reason: "startup" } as never, ctx as never);
+		__resetSessionHooksAnnounced();
+		await handler?.({ reason: "startup" } as never, ctx as never);
+
+		expect((ctx.ui.notify as ReturnType<typeof vi.fn>).mock.calls.length).toBe(2);
 	});
 });
 

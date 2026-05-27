@@ -17,6 +17,8 @@ You are tasked with validating that an implementation plan was correctly execute
 ## Metadata
 
 ```!
+node "${SKILL_DIR}/../_shared/now.mjs"
+echo
 node "${SKILL_DIR}/../_shared/git-context.mjs"
 echo
 echo "### recent (read only in case of empty user input)"
@@ -63,12 +65,14 @@ When invoked:
 6. **Spawn parallel research agents** to verify implementation:
 
    Spawn the agents below in parallel using the Agent tool. Wait for ALL agents to complete before proceeding.
-   - **general-purpose** agent — Verify implementation details match plan specifications (analyzer role)
-   - **general-purpose** agent — Verify implementation follows established codebase patterns (pattern-finder role)
 
-   Example agent prompts:
-   - "Analyze {component} and verify it implements {plan requirement} correctly"
-   - "Find patterns similar to {new code} and check if conventions are followed"
+   **Analyzer agent:**
+   - subagent_type: `codebase-analyzer`
+   - Prompt: "Analyze {component} and verify it implements {plan requirement} correctly."
+
+   **Pattern finder agent:**
+   - subagent_type: `codebase-pattern-finder`
+   - Prompt: "Find patterns similar to {new code} and check if conventions are followed."
 
 ### Step 2: Systematic Validation
 
@@ -92,51 +96,35 @@ For each phase in the plan:
    - Are there missing validations?
    - Could the implementation break existing functionality?
 
-### Step 3: Generate Validation Report
+### Step 3: Write the Validation Report
 
-Create comprehensive validation summary:
+1. **Determine metadata** (from the Metadata block at the top of this skill):
+   - Filename: `.rpiv/artifacts/validation/<slug>_<plan-topic-kebab>.md` — `<slug>` is the second tab-separated field on line 1 of the Metadata block above; `<plan-topic-kebab>` is the plan's `topic:` frontmatter value lowercased and hyphen-joined.
+   - `repository:` ← `repo:` label; `branch:` / `commit:` ← matching labels.
+   - `date:` ← `<iso>` (first tab-separated field on line 1 of the Metadata block above, offset verbatim).
+   - `author:` ← matching label (fallback: `unknown`).
+   - `parent:` ← the plan path resolved in Step 1.
+   - `tags:` ← `[validation, ...]` plus any tags carried from the plan's frontmatter.
+   - `topic:` ← `"Validation of <plan topic>"`.
 
-```markdown
-## Validation Report: {Plan Name}
+2. **Determine status**:
+   - `complete` — every phase marked `- [x]` in the plan is verified against the code, every automated command passes, no Deviations from Plan and no Potential Issues require action.
+   - `needs_changes` — any phase fails verification, any automated command fails, or Deviations / Potential Issues list items that require action.
 
-### Implementation Status
-✓ Phase 1: {Name} - Fully implemented
-✓ Phase 2: {Name} - Fully implemented
-⚠️ Phase 3: {Name} - Partially implemented (see issues)
+3. **Write the artifact** using the Write tool (no Edit — this skill writes once per run). Read `templates/validation.md`, fill every `{placeholder}` with the values determined above and the observations gathered in Step 2, apply the section-omission rules in the template (omit `#### Pattern Conformance:` and `#### Potential Issues:` entirely when empty; keep all other sections and emit `None — …` literals when empty), and Write the result to the target path.
 
-### Automated Verification Results
-✓ Build passes: `make build`
-✓ Tests pass: `make test`
-✗ Linting issues: `make lint` (3 warnings)
+**What is NOT emitted to the artifact**: per-agent dispatch logs, raw `git log` output, intermediate reasoning. The Findings subsections capture verified outcomes only — the agent trace stays in the skill run, not the artifact.
 
-### Code Review Findings
+### Step 4: Present Summary
 
-#### Matches Plan:
-- Database migration correctly adds {table}
-- API endpoints implement specified methods
-- Error handling follows plan
+```
+Validation written to:
+`.rpiv/artifacts/validation/{filename}.md`
 
-#### Deviations from Plan:
-- Used different variable names in {file:line}
-- Added extra validation in {file:line} (improvement)
+Status: {complete | needs_changes}
+```
 
-#### Potential Issues:
-- Missing index on foreign key could impact performance
-- No rollback handling in migration
-
-### Manual Testing Required:
-1. UI functionality:
-   - [ ] Verify {feature} appears correctly
-   - [ ] Test error states with invalid input
-
-2. Integration:
-   - [ ] Confirm works with existing {component}
-   - [ ] Check performance with large datasets
-
-### Recommendations:
-- Address linting warnings before merge
-- Consider adding integration test for {scenario}
-- Document new API endpoints
+Follow-up footer:
 
 ---
 
@@ -145,7 +133,6 @@ Create comprehensive validation summary:
 **Next step:** `/skill:commit` — group the validated changes into atomic commits (skip if status is `needs_changes` — fix the gaps first, then re-run `/skill:validate`).
 
 > 🆕 Tip: start a fresh session with `/new` first — chained skills work best with a clean context window.
-```
 
 ## Handle Follow-ups
 

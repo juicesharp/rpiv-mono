@@ -27,9 +27,8 @@
  * template literal below.
  */
 
-import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { readFileSync } from "node:fs";
+import { dirname } from "node:path";
 import {
 	type BeforeAgentStartEvent,
 	type BeforeAgentStartEventResult,
@@ -39,12 +38,9 @@ import {
 	type ExtensionAPI,
 	type ExtensionContext,
 	formatSize,
-	getAgentDir,
 	type InputEvent,
 	type InputEventResult,
-	loadSkills,
 	parseFrontmatter,
-	type Skill,
 	stripFrontmatter,
 	type TruncationResult,
 	truncateTail,
@@ -315,72 +311,41 @@ export function invalidateSkillIndex(): void {
 	skillIndex = null;
 }
 
-function findGitRepoRoot(startDir: string): string | null {
-	let dir = resolve(startDir);
-	while (true) {
-		if (existsSync(join(dir, ".git"))) return dir;
-		const parent = dirname(dir);
-		if (parent === dir) return null;
-		dir = parent;
-	}
-}
-
-function collectAncestorAgentsSkillDirs(startDir: string): string[] {
-	const skillDirs: string[] = [];
-	const gitRepoRoot = findGitRepoRoot(startDir);
-	let dir = resolve(startDir);
-	while (true) {
-		skillDirs.push(join(dir, ".agents", "skills"));
-		if (gitRepoRoot && dir === gitRepoRoot) break;
-		const parent = dirname(dir);
-		if (parent === dir) break;
-		dir = parent;
-	}
-	return skillDirs;
-}
-
-function addExistingPath(paths: string[], seen: Set<string>, path: string): void {
-	const resolved = resolve(path);
-	if (!existsSync(resolved) || seen.has(resolved)) return;
-	seen.add(resolved);
-	paths.push(resolved);
-}
-
-/** Collect Pi's default skill locations in collision-precedence order. */
-export function collectDefaultSkillPaths(cwd: string, agentDir: string): string[] {
-	const paths: string[] = [];
-	const seen = new Set<string>();
-	const userAgentsSkillsDir = join(homedir(), ".agents", "skills");
-
-	addExistingPath(paths, seen, join(resolve(cwd), ".pi", "skills"));
-	for (const dir of collectAncestorAgentsSkillDirs(cwd)) {
-		if (resolve(dir) !== resolve(userAgentsSkillsDir)) addExistingPath(paths, seen, dir);
-	}
-	addExistingPath(paths, seen, join(agentDir, "skills"));
-	addExistingPath(paths, seen, userAgentsSkillsDir);
-
-	return paths;
-}
-
-/** Build the name→path index by asking Pi for its default skill locations. */
-function buildSkillIndex(): Map<string, SkillIndexEntry> {
-	const cwd = process.cwd();
-	const agentDir = getAgentDir();
-	const { skills } = loadSkills({
-		cwd,
-		agentDir,
-		skillPaths: collectDefaultSkillPaths(cwd, agentDir),
-		includeDefaults: false,
-	});
+/**
+ * Build the name→path index from Pi's command registry. `pi.getCommands()`
+ * returns every slash command the agent can see — including skills sourced
+ * from extension package manifests (`pi.skills: [...]`), not just the
+ * filesystem-walked defaults. This is the authoritative source: whatever Pi
+ * knows about as `/skill:<name>`, this index recognizes.
+ *
+ * Critically, this fixes programmatic `sendUserMessage("/skill:<name> …")`
+ * from other extensions (e.g. the `/rpiv` workflow runner). Those calls go
+ * through `prompt({expandPromptTemplates: false})`, so Pi's built-in
+ * `_expandSkillCommand` is skipped — `rpiv-args` is the only expander on that
+ * path. If the index doesn't recognize the skill, the raw `/skill:<name> …`
+ * reaches the LLM unwrapped.
+ */
+function buildSkillIndex(pi: ExtensionAPI): Map<string, SkillIndexEntry> {
 	const index = new Map<string, SkillIndexEntry>();
-	for (const s of skills as Skill[]) {
-		index.set(s.name, { name: s.name, filePath: s.filePath, baseDir: s.baseDir });
+	for (const cmd of pi.getCommands()) {
+		if (cmd.source !== "skill") continue;
+		// Pi prefixes skill-source commands with "skill:" (agent-session.js:1699).
+		const name = cmd.name.startsWith("skill:") ? cmd.name.slice("skill:".length) : cmd.name;
+		const filePath = cmd.sourceInfo.path;
+		// `cmd.sourceInfo.baseDir` cannot be used here: for skills sourced from
+		// an extension manifest (`pi.skills: [...]`), resource-loader.js:358-362
+		// overrides `skill.sourceInfo` with the *extension package's* baseDir
+		// (e.g. `packages/rpiv-pi`), not the skill folder. Pi's own internal
+		// `Skill.baseDir` is set to `dirname(filePath)` at skills.js:214,237 —
+		// which is what `${SKILL_DIR}` substitutions in skill bodies expect.
+		const baseDir = dirname(filePath);
+		index.set(name, { name, filePath, baseDir });
 	}
 	return index;
 }
 
-function getSkillIndex(): Map<string, SkillIndexEntry> {
-	if (!skillIndex) skillIndex = buildSkillIndex();
+function getSkillIndex(pi: ExtensionAPI): Map<string, SkillIndexEntry> {
+	if (!skillIndex) skillIndex = buildSkillIndex(pi);
 	return skillIndex;
 }
 
@@ -424,7 +389,7 @@ export async function handleInput(
 	const skillName = spaceIndex === -1 ? text.slice(SKILL_PREFIX.length) : text.slice(SKILL_PREFIX.length, spaceIndex);
 	const argsString = spaceIndex === -1 ? "" : text.slice(spaceIndex + 1).trim();
 
-	const entry = getSkillIndex().get(skillName);
+	const entry = getSkillIndex(pi).get(skillName);
 	if (!entry) return { action: "continue" }; // unknown skill — let Pi handle it
 
 	let content: string;
@@ -484,6 +449,11 @@ export function registerArgsHandler(pi: ExtensionAPI): void {
 	pi.on("input", async (event, ctx) => handleInput(event, ctx, pi));
 	pi.on("before_agent_start", (event) => handleBeforeAgentStart(event));
 	pi.on("session_start", (event) => {
+		// Pi fires session_start for every session including programmatic
+		// spawns. Re-enumerating the skill set per spawn is cheap (one
+		// readdir per declared skillPath); the prior workflow-aware gate
+		// shaved that work but coupled this package to rpiv-workflow's
+		// internal Symbol. Drop the gate — correctness > microseconds.
 		if (event.reason === "reload" || event.reason === "startup") {
 			invalidateSkillIndex();
 		}

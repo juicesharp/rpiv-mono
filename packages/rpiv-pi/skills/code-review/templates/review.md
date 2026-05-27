@@ -1,4 +1,3 @@
-<!-- Emitted by code-review SKILL.md Step 7. Placeholders in {braces} are filled at emission; section-omission rules live inline in SKILL.md. -->
 ---
 template_version: 2
 date: {Current date and time with timezone in ISO format}

@@ -21,8 +21,6 @@ echo
 node "${SKILL_DIR}/../_shared/git-context.mjs"
 ```
 
-- `now.mjs` (line 1) — `<iso>\t<slug>` tab-separated.
-
 Copy values verbatim — do not reformat the timezone offset.
 
 ## Flow
@@ -142,9 +140,9 @@ Wait for ALL agents to complete before proceeding.
 
 Use the substituted values from the Metadata block at the top of this skill:
 
-- Filename: `.rpiv/artifacts/solutions/<slug>_<topic>.md` — `<slug>` is the second tab-separated field on `now.mjs` line 1; `<topic>` is a brief kebab-case description.
+- Filename: `.rpiv/artifacts/solutions/<slug>_<topic>.md` — `<slug>` is the second tab-separated field on line 1 of the Metadata block above; `<topic>` is a brief kebab-case description.
 - `repository:` ← `repo:` label; `branch:` / `commit:` ← matching labels (already include `no-branch` / `no-commit` fallbacks).
-- `date:` / `last_updated:` ← `<iso>` (first tab-separated field on `now.mjs` line 1, offset verbatim).
+- `date:` / `last_updated:` ← `<iso>` (first tab-separated field on line 1 of the Metadata block above, offset verbatim).
 - Author: `author:` from the Metadata block (fallback: `unknown`).
 
 ### Step 7: Generate Solutions Document

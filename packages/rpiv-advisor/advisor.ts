@@ -289,6 +289,30 @@ export function setDisabledForModels(models: Array<string | { model: string; min
 // Session restoration — called from index.ts session_start handler
 // ---------------------------------------------------------------------------
 
+/**
+ * Module-local "already announced" latch. Pi fires `session_start` for every
+ * session including programmatic spawns (workflow stages, batch ops, any
+ * extension's `newSession` call). State mutation belongs on every fire;
+ * the user-facing announcement does NOT — repeating it per stage in a
+ * `/wf` run just spams the status line. The latch flips on the first
+ * notify and stays set until the module is reloaded (`/reload`) or the
+ * process restarts. Test-resettable via `__resetAdvisorAnnounced()`.
+ *
+ * This is the same shape as `restoredAdvisorState`'s own decision to
+ * mutate state every call but notify once. We used to read a workflow-
+ * branded `Symbol.for("@juicesharp/rpiv-workflow:child-session")` to
+ * achieve the same effect — that coupled this package to rpiv-workflow's
+ * internals for no real reason: every extension that wants "notify the
+ * user once per process" has the same shape, and none of them need to
+ * know who spawned the session.
+ */
+let restoreAnnounced = false;
+
+/** Test reset — wired into test/setup.ts `beforeEach`. */
+export function __resetAdvisorAnnounced(): void {
+	restoreAnnounced = false;
+}
+
 export function restoreAdvisorState(ctx: ExtensionContext, pi: ExtensionAPI): void {
 	const config = loadAdvisorConfig();
 
@@ -299,11 +323,15 @@ export function restoreAdvisorState(ctx: ExtensionContext, pi: ExtensionAPI): vo
 	const parsed = parseModelKey(config.modelKey);
 	if (!parsed) return;
 
+	const notifyOnce = (msg: string, level: "info" | "warning" | "error"): void => {
+		if (!ctx.hasUI || restoreAnnounced) return;
+		ctx.ui.notify(msg, level);
+		restoreAnnounced = true;
+	};
+
 	const model = ctx.modelRegistry.find(parsed.provider, parsed.modelId);
 	if (!model) {
-		if (ctx.hasUI) {
-			ctx.ui.notify(errModelUnavailable(config.modelKey), "warning");
-		}
+		notifyOnce(errModelUnavailable(config.modelKey), "warning");
 		return;
 	}
 
@@ -313,10 +341,8 @@ export function restoreAdvisorState(ctx: ExtensionContext, pi: ExtensionAPI): vo
 	}
 
 	if (isExecutorBlocked(ctx, pi.getThinkingLevel())) {
-		if (ctx.hasUI) {
-			const advisorLabel = `${model.provider}:${model.id}`;
-			ctx.ui.notify(msgAdvisorRestoredInactive(advisorLabel, config.effort), "info");
-		}
+		const advisorLabel = `${model.provider}:${model.id}`;
+		notifyOnce(msgAdvisorRestoredInactive(advisorLabel, config.effort), "info");
 		return;
 	}
 
@@ -325,9 +351,7 @@ export function restoreAdvisorState(ctx: ExtensionContext, pi: ExtensionAPI): vo
 		pi.setActiveTools([...active, ADVISOR_TOOL_NAME]);
 	}
 
-	if (ctx.hasUI) {
-		ctx.ui.notify(msgAdvisorRestored(`${model.provider}:${model.id}`, config.effort), "info");
-	}
+	notifyOnce(msgAdvisorRestored(`${model.provider}:${model.id}`, config.effort), "info");
 }
 
 // ---------------------------------------------------------------------------

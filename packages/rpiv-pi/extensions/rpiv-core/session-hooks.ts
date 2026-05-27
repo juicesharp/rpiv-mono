@@ -32,7 +32,31 @@ import {
 } from "./git-context.js";
 import { ARTIFACTS_SUBDIR, clearInjectionState, handleToolCallGuidance, injectRootGuidance } from "./guidance.js";
 import { findMissingSiblings } from "./package-checks.js";
-import { BUNDLED_SKILLS_DIR } from "./paths.js";
+import { BUNDLED_SKILL_NAMES } from "./paths.js";
+
+/**
+ * Module-local "already announced" latch for the startup banner block
+ * (cleanup / agent-sync drift / missing-siblings warning). Pi fires
+ * `session_start` for every session including programmatic spawns
+ * (workflow stages, batch ops, any extension's `newSession` call).
+ * Filesystem work runs every fire — the banner notifications should NOT,
+ * or `/wf <large>` re-emits the entire startup splash 10 times.
+ *
+ * Latches on the first banner emission. Reset on `/reload` (module
+ * reload) and on process restart. Test-resettable via
+ * `__resetSessionHooksAnnounced()`.
+ *
+ * Replaces an earlier coupling to rpiv-workflow's child-session Symbol —
+ * "have I announced yet" is a per-extension concern, not a per-spawner
+ * one. No other package needs to know whether session_start came from
+ * the user or from a programmatic spawner.
+ */
+let bannerAnnounced = false;
+
+/** Test reset — wired into test/setup.ts `beforeEach`. */
+export function __resetSessionHooksAnnounced(): void {
+	bannerAnnounced = false;
+}
 
 const msgAgentsAdded = (n: number) => `Copied ${n} rpiv-pi agent(s) to ~/.pi/agent/agents/`;
 const msgAgentsHealed = (parts: string[]) => `Synced bundled agent(s): ${parts.join(", ")}.`;
@@ -83,10 +107,14 @@ async function onSessionStart(
 	await injectGitContext(pi, (msg) => sendGitContextMessage(pi, msg));
 	const cleanup = cleanupPerCwdAgents(ctx.cwd);
 	const agents = syncBundledAgents(false);
-	if (ctx.hasUI) {
+	// Banner emits once per module load (process start or /reload). Programmatic
+	// session spawns (workflow stages, any other extension's newSession) inherit
+	// the latched state and stay silent. Filesystem work above always runs.
+	if (ctx.hasUI && !bannerAnnounced) {
 		notifyCleanup(ctx.ui, cleanup);
 		notifyAgentSyncDrift(ctx.ui, agents);
 		warnMissingSiblings(ctx.ui);
+		bannerAnnounced = true;
 	}
 }
 
@@ -104,6 +132,11 @@ async function onSessionShutdown(): Promise<void> {
 	resetInjectedMarker();
 }
 
+// Runs unconditionally — per-tool-call guidance injection and git-context
+// cache invalidation are per-event concerns, not user-facing announcements.
+// The guidance injector runs once per tool call so each stage sees the
+// right surface; a bash command mid-stage must dirty the git cache for
+// the next stage's `before_agent_start` git-context read.
 async function onToolCall(event: ToolCallEvent, ctx: ExtensionContext, pi: ExtensionAPI): Promise<void> {
 	handleToolCallGuidance(event, ctx, pi);
 	if (isToolCallEventType("bash", event) && isGitMutatingCommand(event.input.command)) {
@@ -111,6 +144,9 @@ async function onToolCall(event: ToolCallEvent, ctx: ExtensionContext, pi: Exten
 	}
 }
 
+// Runs every fire — `rpiv: <skill>` is a per-stage display string (each
+// stage owns the status line during its run), and the git-context injection
+// is keyed off `takeGitContextIfChanged` which is its own dedup layer.
 async function onBeforeAgentStart(
 	event: BeforeAgentStartEvent,
 	ctx: ExtensionContext,
@@ -131,24 +167,12 @@ async function onAgentEnd(_event: AgentEndEvent, ctx: ExtensionContext): Promise
 // Helpers
 // ---------------------------------------------------------------------------
 
-// Allowlist of rpiv-pi's own skill names, generated at module load by reading
-// the package's bundled skills/ directory (see paths.ts — matches the
-// `pi.skills` manifest in package.json). Prevents the status bar from
-// claiming `rpiv:` ownership of user-supplied or third-party skills.
-const OWNED_SKILL_NAMES: ReadonlySet<string> = (() => {
-	try {
-		return new Set(
-			readdirSync(BUNDLED_SKILLS_DIR, { withFileTypes: true })
-				.filter((e) => e.isDirectory())
-				.map((e) => e.name),
-		);
-	} catch {
-		return new Set<string>();
-	}
-})();
-
+// Allowlist of rpiv-pi's own skill names, sourced from the shared
+// `BUNDLED_SKILL_NAMES` constant. Prevents the status bar from claiming
+// `rpiv:` ownership of user-supplied or third-party skills. The set is
+// computed once at module load in paths.ts.
 function isOwnedSkill(name: string): boolean {
-	return OWNED_SKILL_NAMES.has(name);
+	return BUNDLED_SKILL_NAMES.has(name);
 }
 
 function resetInjectionState(): void {

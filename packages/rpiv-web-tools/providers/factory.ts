@@ -2,6 +2,7 @@ import { BraveProvider } from "./brave.js";
 import { ExaProvider } from "./exa.js";
 import { FirecrawlProvider } from "./firecrawl.js";
 import { JinaProvider } from "./jina.js";
+import { OllamaProvider } from "./ollama.js";
 import { SearxngProvider } from "./searxng.js";
 import { SerperProvider } from "./serper.js";
 import { TavilyProvider } from "./tavily.js";
@@ -29,6 +30,8 @@ export function createSearchProvider(name: string, creds: ProviderCredentials): 
 			return new FirecrawlProvider(apiKey);
 		case "searxng":
 			return new SearxngProvider({ apiKey: creds.apiKey, baseUrl: creds.baseUrl ?? "" });
+		case "ollama":
+			return new OllamaProvider({ apiKey: creds.apiKey, baseUrl: creds.baseUrl ?? "" });
 		default:
 			throw new Error(`Unknown search provider: "${name}"`);
 	}

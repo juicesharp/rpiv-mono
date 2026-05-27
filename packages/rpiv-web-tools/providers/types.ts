@@ -67,7 +67,7 @@ export interface ProviderConfigChange {
 //   envVar          — the API-key env var (omit if the provider has no key)
 //   baseUrlEnvVar   — the URL env var (set for self-hosted providers)
 //   defaultBaseUrl  — fallback URL when neither env nor config supplies one
-//   configure       — interactive setup; if present, /web-search-config
+//   configure       — interactive setup; if present, /web-tools
 //                     dispatches here instead of the default single-key prompt
 export interface ProviderMeta {
 	name: string;

@@ -2,7 +2,7 @@
  * rpiv-web-tools — Pi extension
  *
  * Registers the `web_search` and `web_fetch` tools, plus the
- * `/web-search-config` slash command. Body lives in `web-tools.ts`.
+ * `/web-tools` slash command. Body lives in `web-tools.ts`.
  *
  * Config persists at ~/.config/rpiv-web-tools/config.json. Per-provider env
  * vars (e.g. BRAVE_SEARCH_API_KEY, TAVILY_API_KEY) win over the config file.

@@ -21,8 +21,6 @@ echo
 node "${SKILL_DIR}/../_shared/git-context.mjs"
 ```
 
-- `now.mjs` (line 1) — `<iso>\t<slug>` tab-separated.
-
 Scope resolution (default branch, range, ChangedFiles) is LLM-invoked at Step 1.1 via the bundled `_helpers/review-range.mjs` — it depends on `$ARGUMENTS` and on conversational clarification, which render-time substitution cannot capture.
 
 ## Flow
@@ -434,9 +432,9 @@ Before writing the artifact, spawn ONE `claim-verifier` whose sole job is to gro
 ### Step 7: Write the Review Document
 
 1. **Determine metadata** (from the Metadata block at the top of this skill):
-   - Filename: `.rpiv/artifacts/reviews/<slug>_<scope-kebab>.md` — `<slug>` is the second tab-separated field on `now.mjs` line 1.
+   - Filename: `.rpiv/artifacts/reviews/<slug>_<scope-kebab>.md` — `<slug>` is the second tab-separated field on line 1 of the Metadata block above.
    - `repository:` ← `repo:` label; `branch:` / `commit:` ← matching labels (fallbacks `no-branch` / `no-commit` already substituted).
-   - `date:` ← `<iso>` (first tab-separated field on `now.mjs` line 1, offset verbatim).
+   - `date:` ← `<iso>` (first tab-separated field on line 1 of the Metadata block above, offset verbatim).
    - Reviewer: `author:` from the Metadata block (fallback: `unknown`).
 
 2. **Write the artifact** using the Write tool (no Edit — this skill writes once per run).

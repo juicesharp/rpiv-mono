@@ -21,8 +21,6 @@ echo
 node "${SKILL_DIR}/../_shared/git-context.mjs"
 ```
 
-- `now.mjs` (line 1) — `<iso>\t<slug>` tab-separated.
-
 Copy values verbatim — do not reformat the timezone offset.
 
 ## Flow
@@ -86,9 +84,9 @@ No developer question — boundary changes are out of scope for plan. If the dev
 
 Write the plan **incrementally** — skeleton first, then fill each phase. Code comes from the design's `## Architecture` (file-grouped); Success Criteria come from the design's `## Slices` section **unchanged** — no reauthoring, no re-derivation from Verification Notes.
 
-1. **Write the plan skeleton** to `.rpiv/artifacts/plans/<slug>_<description>.md` (use `<slug>` from the Metadata block's `now.mjs` line 1; copy `<iso>` verbatim into frontmatter `date:` and `last_updated:`).
+1. **Write the plan skeleton** to `.rpiv/artifacts/plans/<slug>_<description>.md` (use `<slug>` from line 1 of the Metadata block above; copy `<iso>` verbatim into frontmatter `date:` and `last_updated:`).
    - Format: `<slug>_<description>.md` where:
-     - `<slug>` comes from `now.mjs` (second tab-separated field on line 1)
+     - `<slug>` is the second tab-separated field on line 1 of the Metadata block above
      - description is a brief kebab-case description (may include ticket number)
    - Examples:
      - With ticket: `2025-01-08_14-30-00_ENG-1478-parent-child-tracking.md`

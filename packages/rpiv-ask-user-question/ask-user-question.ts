@@ -102,16 +102,27 @@ Preview content is rendered as markdown in a monospace box. Multi-line text with
 
 			const itemsByTab: WrappingSelectItem[][] = typed.questions.map((q) => buildItemsForQuestion(q));
 
-			const result = await ctx.ui.custom<QuestionnaireResult>((tui, theme, _kb, done) => {
-				const session = new QuestionnaireSession({
-					tui,
-					theme,
-					params: typed,
-					itemsByTab,
-					done,
-				});
-				return session.component;
-			});
+			const result = await ctx.ui.custom<QuestionnaireResult>(
+				(tui, theme, _kb, done) => {
+					const session = new QuestionnaireSession({
+						tui,
+						theme,
+						params: typed,
+						itemsByTab,
+						done,
+					});
+					return session.component;
+				},
+				{
+					overlay: true,
+					overlayOptions: {
+						anchor: "bottom-center",
+						width: "100%",
+						maxHeight: "100%",
+						margin: { left: 0, right: 0, bottom: 0 },
+					},
+				},
+			);
 
 			return buildQuestionnaireResponse(result, typed);
 		},

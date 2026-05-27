@@ -52,6 +52,11 @@
     "@juicesharp/rpiv-i18n": "*",
     "@juicesharp/rpiv-web-tools": "*",
     "@juicesharp/rpiv-args": "*",
-    "yaml": "*"
+    "@juicesharp/rpiv-workflow": "*",
+    "@juicesharp/rpiv-config": "*",
+    "yaml": "*",
+    "typebox": "*",
+    "jiti": "*",
+    "@standard-schema/spec": "*"
   }
 }
