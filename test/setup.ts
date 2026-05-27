@@ -77,6 +77,9 @@ beforeEach(async () => {
 	const warpIndex = await import("../packages/rpiv-warp/index.js");
 	warpIndex.__resetState();
 
+	const telemetry = await import("../packages/rpiv-telemetry/instrumentation.js");
+	telemetry.teardownTelemetry();
+
 	const i18n = await import("../packages/rpiv-i18n/i18n.js");
 	i18n.__resetState();
 
@@ -106,6 +109,9 @@ beforeEach(async () => {
 	rmSync(todoConfig, { force: true });
 	rmSync(askUserQuestionConfig, { force: true });
 	rmSync(webToolsConfig, { force: true });
+
+	const telemetryConfig = join(process.env.HOME!, ".config", "rpiv-telemetry", "config.json");
+	rmSync(telemetryConfig, { force: true });
 
 	// User overlay for `/wf` workflows: canonical file at
 	// `~/.config/rpiv-workflow/workflows.config.ts` plus a drop-in directory

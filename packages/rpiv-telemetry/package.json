@@ -1,0 +1,71 @@
+{
+	"name": "@juicesharp/rpiv-telemetry",
+	"version": "1.13.0",
+	"private": false,
+	"description": "Pi extension. MLflow observability for Pi Agent — auto-instruments lifecycle events and sub-agent activity.",
+	"keywords": [
+		"pi-package",
+		"pi-extension",
+		"rpiv",
+		"telemetry",
+		"mlflow",
+		"observability",
+		"tracing"
+	],
+	"type": "module",
+	"license": "MIT",
+	"author": "juicesharp",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/juicesharp/rpiv-mono.git",
+		"directory": "packages/rpiv-telemetry"
+	},
+	"homepage": "https://github.com/juicesharp/rpiv-mono/tree/main/packages/rpiv-telemetry#readme",
+	"bugs": {
+		"url": "https://github.com/juicesharp/rpiv-mono/issues"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"scripts": {
+		"test": "vitest run"
+	},
+	"files": [
+		"index.ts",
+		"types/events.ts",
+		"types/provider.ts",
+		"config.ts",
+		"dispatcher.ts",
+		"instrumentation.ts",
+		"instrumentation/schemas.ts",
+		"providers/index.ts",
+		"providers/console.ts",
+		"providers/mlflow/index.ts",
+		"providers/mlflow/keys.ts",
+		"providers/mlflow/llm-spans.ts",
+		"providers/mlflow/session-shutdown.ts",
+		"providers/mlflow/subagent-spans.ts",
+		"providers/mlflow/tool-spans.ts",
+		"providers/mlflow/trace-session-shim.ts",
+		"providers/mlflow/turn-spans.ts",
+		"README.md",
+		"CHANGELOG.md",
+		"LICENSE"
+	],
+	"pi": {
+		"extensions": [
+			"./index.ts"
+		]
+	},
+	"peerDependencies": {
+		"@earendil-works/pi-coding-agent": "*",
+		"typebox": "*"
+	},
+	"dependencies": {
+		"@juicesharp/rpiv-config": "^1.13.0",
+		"@mlflow/core": "~0.2.0"
+	},
+	"engines": {
+		"node": ">=20"
+	}
+}
