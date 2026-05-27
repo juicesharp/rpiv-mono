@@ -14,6 +14,12 @@ import { CMD_USAGE_LIST, CMD_USAGE_PREVIEW, CMD_USAGE_RUN } from "./messages.js"
 // Public formatters
 // ===========================================================================
 
+/** Truncate a description to `maxLen` characters, appending "..." if truncated. */
+function truncateDescription(desc: string, maxLen = 50): string {
+	if (desc.length <= maxLen) return desc;
+	return `${desc.slice(0, maxLen - 3)}...`;
+}
+
 /** No-args listing: every loaded workflow, its stage count, and its source. */
 export function formatWorkflowList(loaded: LoadedWorkflows): string {
 	const rows = loaded.workflows.map((w) => {
@@ -21,7 +27,8 @@ export function formatWorkflowList(loaded: LoadedWorkflows): string {
 		const stages = Object.keys(w.stages).length;
 		const tags = [`[${renderConfigLayer(layer)}]`];
 		if (w.name === loaded.default) tags.push("(default)");
-		return `  ${w.name.padEnd(28)} ${String(stages).padStart(2)} stages  ${tags.join(" ")}`;
+		const desc = w.description ? ` ${truncateDescription(w.description)}` : "";
+		return ` ${w.name} ${stages} stages ${tags.join(" ")}${desc}`;
 	});
 
 	return [

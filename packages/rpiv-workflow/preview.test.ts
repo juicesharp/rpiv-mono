@@ -100,6 +100,54 @@ describe("formatWorkflowList", () => {
 		);
 		expect(out).toContain("Sources: built-in");
 	});
+
+	it("appends the workflow description after the tags", () => {
+		const described: Workflow = {
+			name: "described",
+			description: "Short summary for the list view.",
+			start: "research",
+			stages: { research: produces(), commit: acts() },
+			edges: { research: "commit", commit: "stop" },
+		};
+		const loaded: LoadedWorkflows = {
+			workflows: [described],
+			default: "described",
+			workflowSources: new Map([["described", "built-in"]]),
+			layers: ["built-in"],
+			issues: [],
+		};
+		const out = formatWorkflowList(loaded);
+		const descLine = out.split("\n").find((l) => l.includes("described")) ?? "";
+		expect(descLine).toContain("Short summary for the list view.");
+	});
+
+	it("truncates long descriptions at 50 characters with ellipsis", () => {
+		const longDesc = "This is a very long description that definitely exceeds the fifty character limit for sure.";
+		const described: Workflow = {
+			name: "long",
+			description: longDesc,
+			start: "research",
+			stages: { research: produces(), commit: acts() },
+			edges: { research: "commit", commit: "stop" },
+		};
+		const loaded: LoadedWorkflows = {
+			workflows: [described],
+			default: "long",
+			workflowSources: new Map([["long", "built-in"]]),
+			layers: ["built-in"],
+			issues: [],
+		};
+		const out = formatWorkflowList(loaded);
+		const descLine = out.split("\n").find((l) => l.includes("long")) ?? "";
+		expect(descLine).toContain("This is a very long description that definitely...");
+		expect(descLine).not.toContain("for sure");
+	});
+
+	it("omits the description field when workflow has no description", () => {
+		const out = formatWorkflowList(baseLoaded());
+		const midLine = out.split("\n").find((l) => l.trimStart().startsWith("mid")) ?? "";
+		expect(midLine.trim()).toMatch(/^mid \d stages \[built-in\] \(default\)$/);
+	});
 });
 
 // ---------------------------------------------------------------------------
