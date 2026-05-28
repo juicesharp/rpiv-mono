@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- Include `handle.ts` and `predicates.ts` in the published tarball. They were omitted from `package.json#files` in 1.14.0, breaking installs with `Cannot find module './handle.js'` when loaded as a Pi extension.
+
 ## [1.14.0] - 2026-05-28
 
 ### Added
