@@ -7,6 +7,11 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- Add "Run a workflow" guide covering the `/wf` command, bundled workflows, and the runtime's feature set.
+- Add per-stage session policy subsection to the workflow guide.
+- Expand "Pick a path" guide with workflow routing and the blueprint-direct chain.
+
 ## [1.14.4] - 2026-05-28
 
 ## [1.14.3] - 2026-05-28

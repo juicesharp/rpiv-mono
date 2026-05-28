@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Changed
+- Clarify bundled workflow names in README to match actual `ship`, `build`, `arch`, and `vet` workflows.
+
+### Fixed
+- Align `/wf list` output into properly padded columns so names, stage counts, and layer tags line up correctly.
+
 ## [1.14.4] - 2026-05-28
 
 ## [1.14.3] - 2026-05-28
