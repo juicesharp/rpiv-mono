@@ -7,6 +7,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- Missing sibling extensions are now reported at session start as a yellow boxed banner (multi-line `notify("warning")`) listing each absent package and pointing at `/rpiv-setup`, instead of a single-line warning that scrolled away with conversation.
+
 ## [1.14.2] - 2026-05-28
 
 ## [1.14.1] - 2026-05-28
