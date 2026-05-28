@@ -30,6 +30,7 @@ Pick one as the active backend; switch any time without losing the others' keys.
 ## Features
 
 - **Read any URL** - fetch http/https pages with HTML-to-text extraction, or get the raw response with `raw: true` (honoured by Brave/Serper/SearXNG; extraction providers — Tavily/Exa/Jina/Firecrawl/Ollama — always return their parsed text).
+- **GitHub URL interceptor (opt-in)** - github.com URLs route through `gh`/`git` for full repository content (file tree, README, individual file contents) instead of the rendered HTML page. Off by default; enable per-user via config or per-consumer at registration time. See [§GitHub URL interceptor](#github-url-interceptor).
 - **Large-page spillover** - oversized responses truncate inline and spill the full body to a temp file the model can read on demand.
 - **SSRF guard** - refuses loopback, RFC 1918, link-local, and cloud-metadata addresses (`localhost`, `127.0.0.0/8`, `10.0.0.0/8`, `169.254.0.0/16`, `172.16.0.0/12`, `192.168.0.0/16`, `::1`, `fc00::/7`, `fe80::/10`).
 - **Interactive setup** - `/web-tools` lists providers (active one first, configured ones marked) and writes to `~/.config/rpiv-web-tools/config.json` (chmod 0600); per-provider env vars also work and take precedence over persisted keys.
@@ -46,9 +47,11 @@ Then restart your Pi session.
 
 - **`web_search`** - query the active provider's search API and return titled snippets.
   1–10 results per call.
-- **`web_fetch`** - fetch an http/https URL through the active provider's content path
-  (raw HTTP+htmlToText for Brave/Serper/SearXNG; native extraction for Tavily/Exa/Jina/Firecrawl/Ollama),
-  truncate large responses with a temp-file spill for the full content.
+- **`web_fetch`** - read an http/https URL. Lookup order: opt-in URL interceptors
+  (see [§GitHub URL interceptor](#github-url-interceptor)), then the active provider's native
+  fetch endpoint when it has one (Tavily/Exa/Jina/Firecrawl/Ollama → vendor extraction;
+  Brave/Serper/SearXNG → shared raw HTTP + HTML-to-text fallback). Large responses truncate
+  inline and spill the full body to a temp file the model can read on demand.
 
 ### Schema - `web_search`
 
@@ -107,7 +110,8 @@ Throws on invalid URL, non-http(s) protocol, private/loopback hostnames (SSRF gu
 - **`/web-tools`** - pick the active provider and set its API key interactively.
   Providers already configured show `(configured)`; the active one is listed first with a `✓`.
   Pressing Enter on an empty input keeps the existing key for the chosen provider while
-  persisting the provider switch. Pass `--show` to see all per-provider keys (masked) and env var status.
+  persisting the provider switch. Pass `--show` to see all per-provider keys (masked), env var status,
+  and current URL interceptor states (see [§GitHub URL interceptor](#github-url-interceptor)).
 
 ## API key resolution (per active provider)
 
@@ -189,6 +193,45 @@ The provider automatically uses the correct API paths:
 - **Local** (`localhost`, `127.0.0.1`, `0.0.0.0`): `/api/experimental/web_search` and `/api/experimental/web_fetch`
 - **Cloud** (any other host): `/api/web_search` and `/api/web_fetch`
 
+## GitHub URL interceptor
+
+Routes github.com URLs through `gh` / `git` to return repository content (file tree, README, file content) instead of the rendered HTML. **Off by default.** Opt in two ways:
+
+```json
+// ~/.config/rpiv-web-tools/config.json — end-user opt-in
+{ "interceptors": { "github": true } }
+```
+
+```ts
+// or per-consumer at registration time (user config still wins)
+registerWebTools(pi, { interceptors: { github: true } });
+```
+
+When enabled, github.com URLs are parsed into `owner/repo/ref/path`; non-code paths (`/issues`, `/pulls`, `/discussions`, `/releases`, …) fall through to the active provider. The interceptor probes for `gh`, falls back to plain `git clone` (with a stderr hint to install `gh`), and uses the `gh api` JSON view for SHA-pinned URLs and repos above `maxRepoSizeMB`. Shallow clones (`--depth 1 --single-branch`) land in `clonePath`; successful clones cache by `owner/repo@ref` for the session. Auth flows through `gh`'s normal `GH_TOKEN`/`GITHUB_TOKEN` precedence — export `GITHUB_TOKEN` to reach private repos.
+
+Replace the boolean shorthand with an object to tune the defaults; object form implies opt-in.
+
+```json
+{
+  "interceptors": {
+    "github": {
+      "maxRepoSizeMB": 1000,
+      "cloneTimeoutSeconds": 90,
+      "clonePath": "/Users/me/.cache/pi-github-repos"
+    }
+  }
+}
+```
+
+| Field | Default | Purpose |
+|---|---|---|
+| `enabled` | `false` (top-level) / `true` (inside object form) | Master switch |
+| `maxRepoSizeMB` | `350` | Repos above this threshold skip the clone and use the API view |
+| `cloneTimeoutSeconds` | `30` | Kill the clone process after this many seconds |
+| `clonePath` | `$TMPDIR/pi-github-repos` | Where shallow clones land; one subdir per `owner/repo@ref` |
+
+`/web-tools --show` reports the current state at the bottom of its output (resolved token masked, `clonePath`, `maxRepoSizeMB`). The SSRF guard still runs first — a URL with a private/loopback host can't bypass it via a github.com path shape.
+
 ## Executor guidance overrides
 
 Override the `promptSnippet` / `promptGuidelines` the model sees for each tool by editing `~/.config/rpiv-web-tools/config.json`. Note the per-tool nesting under `guidance.web_search` / `guidance.web_fetch` — this differs from the flat `guidance` shape used by single-tool siblings (`rpiv-advisor`, `rpiv-todo`, `rpiv-ask-user-question`):
@@ -199,6 +242,9 @@ Override the `promptSnippet` / `promptGuidelines` the model sees for each tool b
   "apiKeys": {
     "exa": "sk-...",
     "brave": "sk-..."
+  },
+  "interceptors": {
+    "github": true
   },
   "guidance": {
     "web_search": {
@@ -216,6 +262,8 @@ Override the `promptSnippet` / `promptGuidelines` the model sees for each tool b
 ```
 
 Each field is independent: omit one and the built-in default is kept. Invalid values (empty string, wrong type, empty array) silently fall back to defaults. Changes take effect on the next Pi session start.
+
+The `interceptors` key is the GitHub URL interceptor opt-in — see [§GitHub URL interceptor](#github-url-interceptor) for the full schema (boolean shorthand or per-field overrides).
 
 ## Security note: `web_fetch` host guard
 
