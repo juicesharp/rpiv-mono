@@ -1,14 +1,11 @@
 ---
 import { loadSiblings } from "../lib/siblings";
-import SiblingCard from "./SiblingCard.astro";
-import SumiInk from "./SumiInk.astro";
 
 const siblings = loadSiblings();
 ---
 
 <section id="siblings">
 	<div class="container">
-		<p class="kicker">§ siblings · {siblings.length} packages · npm:@juicesharp/rpiv-*</p>
 		<h2>Tools, not infrastructure.</h2>
 		<p class="siblings__lede">
 			rpiv-pi registers zero tools. Every tool surface lives in a sibling extension,
@@ -16,44 +13,95 @@ const siblings = loadSiblings();
 			<code>/rpiv-setup</code> installs the missing ones in a single confirm.
 		</p>
 
-		<SumiInk variant="divider" />
-
-		<div class="siblings__list" role="list">
+		<ul class="siblings__list">
 			{siblings.map((s, i) => (
-				<div role="listitem" class="siblings__cell">
-					<SiblingCard sibling={s} index={i + 1} />
-				</div>
+				<li class="sibling__item">
+					<h3>
+						{s.name} <span class="mono badge">v{s.version}</span>
+					</h3>
+					<div class="sibling__meta">
+						<strong>Role:</strong> {s.role} &nbsp;|&nbsp; 
+						<strong>Peers:</strong> {s.peers.length > 0 ? s.peers.join(", ") : "none"}
+					</div>
+					<p>{s.description}</p>
+					
+					<div class="sibling__install mono">
+						<code>$ {s.installCmd}</code>
+					</div>
+					
+					<div class="sibling__links mono">
+						<a href={s.npmUrl}>[npm]</a>
+						<a href={s.homepage}>[readme]</a>
+					</div>
+				</li>
 			))}
-		</div>
+		</ul>
 	</div>
 </section>
 
 <style>
 	.siblings__lede {
+		margin-bottom: var(--space-6);
 		color: var(--text-quiet);
-		max-width: 64ch;
-		margin-bottom: var(--space-5);
 	}
+
 	.siblings__list {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr);
-		gap: var(--space-4);
-		align-items: stretch;
-		justify-items: stretch;
+		list-style: none;
+		padding: 0;
+		margin: var(--space-6) 0;
 	}
-	/* min-width: 0 prevents cell content (e.g. install pre with white-space:nowrap)
-	   from forcing the grid track wider than its 1fr share — guarantees uniform columns.
-	   width: 100% keeps single-column rows from collapsing to content width. */
-	.siblings__cell {
+
+	.sibling__item {
+		margin-bottom: var(--space-8);
+		padding-bottom: var(--space-6);
+		border-bottom: 1px solid var(--rule);
+	}
+
+	.sibling__item h3 {
+		margin-bottom: var(--space-2);
+		color: var(--sage);
 		display: flex;
-		min-width: 0;
-		width: 100%;
+		align-items: baseline;
+		gap: var(--space-3);
 	}
-	.siblings__cell > .sibling {
-		flex: 1 1 0;
-		min-width: 0;
-		width: 100%;
+
+	.badge {
+		font-size: var(--type-small);
+		color: var(--text-distant);
+		font-weight: normal;
 	}
-	@media (min-width: 720px)  { .siblings__list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-	@media (min-width: 1080px) { .siblings__list { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
+	.sibling__meta {
+		font-size: var(--type-small);
+		margin-bottom: var(--space-4);
+		color: var(--text-quiet);
+	}
+	
+	.sibling__meta strong {
+		color: var(--washi);
+	}
+
+	.sibling__install {
+		margin: var(--space-4) 0;
+		padding: var(--space-3) var(--space-4);
+		background: var(--ink-raised);
+		border-left: 4px solid var(--rule-strong);
+		font-size: var(--type-small);
+	}
+
+	.sibling__links {
+		display: flex;
+		gap: var(--space-4);
+		margin-top: var(--space-4);
+	}
+	
+	.sibling__links a {
+		text-decoration: none;
+		color: var(--sage);
+	}
+	
+	.sibling__links a:hover {
+		color: var(--washi);
+		text-decoration: underline;
+	}
 </style>
