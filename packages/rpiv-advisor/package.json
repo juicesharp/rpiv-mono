@@ -1,6 +1,6 @@
 {
 	"name": "@juicesharp/rpiv-advisor",
-	"version": "1.14.4",
+	"version": "1.14.5",
 	"description": "Pi extension. A second opinion the model can request from a stronger reviewer model before it acts.",
 	"keywords": [
 		"pi-package",
@@ -40,7 +40,7 @@
 		]
 	},
 	"dependencies": {
-		"@juicesharp/rpiv-config": "^1.14.4"
+		"@juicesharp/rpiv-config": "^1.14.5"
 	},
 	"peerDependencies": {
 		"@earendil-works/pi-ai": "*",

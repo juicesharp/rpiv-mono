@@ -1,6 +1,6 @@
 # @juicesharp/rpiv-workflow
 
-## [Unreleased]
+## [1.14.5] - 2026-05-28
 
 ### Changed
 - Clarify bundled workflow names in README to match actual `ship`, `build`, `arch`, and `vet` workflows.

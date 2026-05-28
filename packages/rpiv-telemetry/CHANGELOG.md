@@ -5,7 +5,7 @@ All notable changes to `@juicesharp/rpiv-telemetry` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.14.5] - 2026-05-28
 
 ### Changed
 - MLflow provider: extracted `MlflowSpanRegistry` to own per-session span maps with O(1) session lookup; replaced flat `${sessionId}\0${innerKey}` composite-string keys with nested maps.
