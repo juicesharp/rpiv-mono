@@ -13,20 +13,19 @@ vi.mock("./config.js", async (importOriginal) => {
 import { loadTelemetryConfig } from "./config.js";
 import {
 	dispatchTelemetryEvent,
-	getTelemetryDispatcher,
 	registerTelemetryProvider,
 	resetTelemetryDispatcher,
 	shutdownTelemetryDispatcher,
 } from "./dispatcher.js";
 
-function makeProvider(overrides: Partial<TelemetryProvider> = {}): TelemetryProvider {
+function makeProvider(overrides: Partial<TelemetryProvider> & { name?: string } = {}): TelemetryProvider {
+	const { name = "test", ...rest } = overrides;
 	return {
-		name: "test",
-		meta: { name: "test", label: "Test" },
+		meta: { name, label: name === "test" ? "Test" : name },
 		trackEvent: vi.fn(async () => {}),
 		flush: vi.fn(async () => {}),
 		shutdown: vi.fn(async () => {}),
-		...overrides,
+		...rest,
 	};
 }
 
@@ -242,11 +241,6 @@ describe("dispatcher", () => {
 			timestamp: 1,
 		});
 		expect(result).toBeUndefined();
-	});
-
-	it("getTelemetryDispatcher returns a handle with dispatch method", () => {
-		const handle = getTelemetryDispatcher();
-		expect(typeof handle.dispatch).toBe("function");
 	});
 
 	// Q4 fix: shutdown guard

@@ -11,7 +11,6 @@ export interface TelemetryProviderMeta {
 }
 
 export interface TelemetryProvider {
-	readonly name: string;
 	readonly meta: TelemetryProviderMeta;
 	trackEvent(event: TelemetryEvent): Promise<void>;
 	flush(): Promise<void>;

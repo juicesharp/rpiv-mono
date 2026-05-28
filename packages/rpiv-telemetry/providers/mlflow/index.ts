@@ -23,7 +23,6 @@ export const MLFLOW_PROVIDER_META: TelemetryProviderMeta = {
 // ---------------------------------------------------------------------------
 
 export class MlflowProvider implements TelemetryProvider {
-	readonly name = MLFLOW_PROVIDER_META.name;
 	readonly meta = MLFLOW_PROVIDER_META;
 
 	private initialized = false;

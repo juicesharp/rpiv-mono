@@ -131,6 +131,13 @@ export function resolveMlflowConfig(providerConfig: Record<string, string>): Mlf
 // Event allowlist helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Filter a config-provided event list against the known kind set, warning on
+ * unknown entries. Exported only for direct unit-test reach-in — not part of
+ * the package barrel and not the supported public API.
+ *
+ * @internal
+ */
 export function validateEventAllowlist(events: "*" | string[] | undefined): "*" | TelemetryEventKind[] {
 	if (events === undefined || events === "*") return "*";
 	if (events.length === 0) return [];

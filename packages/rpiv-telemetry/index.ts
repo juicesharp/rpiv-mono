@@ -13,6 +13,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { initInstrumentation } from "./instrumentation.js";
 
 export {
+	type DispatcherConfig,
 	isEventEnabled,
 	type LlmPayloadMode,
 	loadTelemetryConfig,
@@ -22,13 +23,13 @@ export {
 	type TelemetryConfig,
 } from "./config.js";
 export {
-	Dispatcher,
 	dispatchTelemetryEvent,
 	getProviders,
-	getTelemetryDispatcher,
 	registerTelemetryProvider,
+	resetTelemetryDispatcher,
 	shutdownTelemetryDispatcher,
 } from "./dispatcher.js";
+export { teardownTelemetry } from "./instrumentation.js";
 export {
 	BUILT_IN_PROVIDERS,
 	CONSOLE_PROVIDER_META,

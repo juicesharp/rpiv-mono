@@ -6,9 +6,12 @@ import type { TelemetryProvider } from "./types/provider.js";
  * Bounded async telemetry dispatcher.
  *
  * Owns the provider registry plus the queue / in-flight / shutdown state.
- * Exported as a class so test isolation can be "discard the instance" rather
- * than "remember to call N clear functions." A module-level singleton + thin
- * function delegates preserve the historical functional API.
+ * One instance per Pi process via the module-level singleton below; the
+ * public API is the function delegates (`dispatchTelemetryEvent`, etc.) —
+ * the class itself is exported only for direct test reach-in and is NOT
+ * re-exported through the package barrel.
+ *
+ * @internal
  */
 export class Dispatcher {
 	private readonly providers: TelemetryProvider[] = [];
@@ -123,7 +126,7 @@ export class Dispatcher {
 		results.forEach((result, idx) => {
 			const provider = providers[idx];
 			if (!provider) return;
-			const name = provider.name;
+			const name = provider.meta.name;
 			if (result.status === "rejected") {
 				if (!this.failedProviders.has(name)) {
 					this.failedProviders.add(name);
@@ -151,11 +154,6 @@ const singleton = new Dispatcher();
 /** Dispatch a telemetry event to all registered providers (non-blocking). */
 export function dispatchTelemetryEvent(event: TelemetryEvent): void {
 	singleton.dispatch(event);
-}
-
-/** Return the singleton dispatcher instance. */
-export function getTelemetryDispatcher(): Dispatcher {
-	return singleton;
 }
 
 /** Graceful shutdown: drain queue, flush + shutdown all providers. */

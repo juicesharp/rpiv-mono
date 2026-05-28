@@ -7,7 +7,6 @@ export const CONSOLE_PROVIDER_META: TelemetryProviderMeta = {
 };
 
 export class ConsoleProvider implements TelemetryProvider {
-	readonly name = CONSOLE_PROVIDER_META.name;
 	readonly meta = CONSOLE_PROVIDER_META;
 
 	async trackEvent(event: TelemetryEvent): Promise<void> {
