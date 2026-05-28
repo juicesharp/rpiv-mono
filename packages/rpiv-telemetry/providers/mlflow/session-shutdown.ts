@@ -1,7 +1,6 @@
 import type { LiveSpan } from "@mlflow/core";
 import type { SessionShutdownEvent } from "../../types/events.js";
-import { sessionPrefix } from "./keys.js";
-import { msToNs } from "./trace-session-shim.js";
+import { msToNs, sessionPrefix } from "./keys.js";
 
 /** End every span in `spans` whose key begins with `prefix`. */
 export function endSpansForSession(spans: Map<string, LiveSpan>, prefix: string, endTimeNs: number): void {

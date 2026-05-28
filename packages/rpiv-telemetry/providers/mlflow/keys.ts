@@ -1,3 +1,8 @@
+/** `Date.now()` (ms) → MLflow's expected nanosecond integer. */
+export function msToNs(ms: number): number {
+	return ms * 1_000_000;
+}
+
 /** Composite key for tool spans: pairs sessionId + toolCallId so cleanup can scope by session. */
 export function toolSpanKey(sessionId: string, toolCallId: string): string {
 	return `${sessionId}\0${toolCallId}`;

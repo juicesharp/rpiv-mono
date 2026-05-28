@@ -38,8 +38,8 @@ const ProvidersConfigSchema = Type.Object(
 	{ additionalProperties: false },
 );
 
-/** Built-in provider keys — kept in sync with `ProvidersConfigSchema` keys above. */
-const BUILT_IN_PROVIDER_KEYS = ["mlflow", "console"] as const;
+/** Built-in provider keys — derived from `ProvidersConfigSchema` so the two stay in lockstep without manual sync. */
+const BUILT_IN_PROVIDER_KEYS = Object.keys(ProvidersConfigSchema.properties);
 
 const DispatcherConfigSchema = Type.Object(
 	{

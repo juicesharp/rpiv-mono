@@ -7,7 +7,8 @@ import type {
 	SubAgentStartedEvent,
 	SubAgentSteeredEvent,
 } from "../../types/events.js";
-import { msToNs, setTraceSession } from "./trace-session-shim.js";
+import { msToNs } from "./keys.js";
+import { setTraceSession } from "./trace-session-shim.js";
 
 type SubAgentEvent =
 	| SubAgentCreatedEvent

@@ -68,8 +68,8 @@ export interface BeforeAgentStartEvent extends TelemetryEventBase {
 
 export interface AgentStartEvent extends TelemetryEventBase {
 	kind: "agent_start";
-	/** Detected sub-agent type (e.g. "web-search-researcher") when this Pi process is running as a sub-agent; undefined for user-facing parent sessions. Sourced from `<active_agent name="...">` in the system prompt — a convention pi-subagents maintains for downstream extensions to resolve per-agent policy. */
-	subAgentType?: string;
+	/** Sub-agent class this Pi process is running as (e.g. "web-search-researcher") when invoked as a sub-agent; undefined for user-facing parent sessions. Detected from `<active_agent name="...">` in the system prompt — a convention pi-subagents maintains for downstream extensions to resolve per-agent policy. Named `selfAgentType` (not `subAgentType`) to disambiguate from `SubAgent*Event.agentType`, which describes a child agent the parent spawned. */
+	selfAgentType?: string;
 	/** Parent (orchestrator) session ID — read from Pi's `SessionHeader.parentSession` lineage for spawned sub-agent sessions. Undefined for user-facing root sessions. */
 	parentSessionId?: string;
 }

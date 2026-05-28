@@ -6,8 +6,8 @@ import { MLFLOW_PROVIDER_META, MlflowProvider } from "./mlflow/index.js";
 export { CONSOLE_PROVIDER_META, ConsoleProvider } from "./console.js";
 export { MLFLOW_PROVIDER_META, MlflowProvider } from "./mlflow/index.js";
 
-/** Metadata for all built-in providers. */
-export const PROVIDERS: readonly TelemetryProviderMeta[] = [MLFLOW_PROVIDER_META, CONSOLE_PROVIDER_META];
+/** Metadata catalog for the providers shipped with this package. */
+export const BUILT_IN_PROVIDERS: readonly TelemetryProviderMeta[] = [MLFLOW_PROVIDER_META, CONSOLE_PROVIDER_META];
 
 /**
  * Single source of truth for built-in provider factories. Adding a provider is

@@ -1,7 +1,6 @@
 import { type LiveSpan, SpanStatusCode, SpanType, startSpan } from "@mlflow/core";
 import type { LlmRequestEndEvent, LlmRequestStartEvent, MessageEndEvent } from "../../types/events.js";
-import { llmSpanKey } from "./keys.js";
-import { msToNs } from "./trace-session-shim.js";
+import { llmSpanKey, msToNs } from "./keys.js";
 
 export function onLlmRequestStart(
 	activeTurnSpans: Map<string, LiveSpan>,

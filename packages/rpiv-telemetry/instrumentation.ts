@@ -2,7 +2,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import type { TSchema } from "typebox";
 import { Value } from "typebox/value";
 import { type LlmPayloadMode, loadTelemetryConfig } from "./config.js";
-import { clearDispatcherState, dispatchTelemetryEvent, shutdownTelemetryDispatcher } from "./dispatcher.js";
+import { dispatchTelemetryEvent, resetTelemetryDispatcher, shutdownTelemetryDispatcher } from "./dispatcher.js";
 import {
 	type SubAgentCompactedPayload,
 	SubAgentCompactedPayloadSchema,
@@ -36,7 +36,6 @@ import type {
 	SubAgentStartedEvent,
 	SubAgentSteeredEvent,
 	TelemetryEvent,
-	TelemetryEventKind,
 	ToolExecutionEndEvent,
 	ToolExecutionStartEvent,
 	TurnEndEvent,
@@ -117,7 +116,7 @@ export function teardownTelemetry(): void {
 		}
 	}
 	eventBusUnsubscribers.length = 0;
-	clearDispatcherState();
+	resetTelemetryDispatcher();
 }
 
 /**
@@ -164,41 +163,14 @@ function summarizeLlmPayload(payload: unknown): Record<string, unknown> {
 // ---------------------------------------------------------------------------
 // Handler tables
 //
-// The plan calls for a single declarative table per source (Pi lifecycle +
-// sub-agent EventBus). Each row holds the source identifier (`piEvent` /
-// `channel`), the TelemetryEventKind it emits, and a `build` function that
-// maps the raw payload into the canonical TelemetryEvent. The cross-cutting
-// glue (sessionId injection, timestamp, dispatch) lives in the loop, not in
-// each handler.
-//
-// `TELEMETRY_HANDLER_KINDS` is the snapshot manifest for tests — it must stay
-// in sync with the rows below; the coverage test asserts it equals
-// TELEMETRY_EVENT_KINDS.
+// Each row in PI_HANDLERS / SUBAGENT_HANDLERS holds the source identifier
+// (`piEvent` / `channel`) and a `build`/`map` function that maps the raw
+// payload into the canonical TelemetryEvent. The cross-cutting glue
+// (sessionId injection, timestamp, dispatch) lives in the loop, not in each
+// handler. Per-event subscription coverage is enforced by instrumentation.test.ts
+// (the "subscribes to N Pi lifecycle events" and "subscribes to 6 sub-agent
+// EventBus channels" tests).
 // ---------------------------------------------------------------------------
-
-/** Kinds emitted by initInstrumentation across both tables. Snapshot-tested against TELEMETRY_EVENT_KINDS. */
-export const TELEMETRY_HANDLER_KINDS = [
-	"session_start",
-	"session_compact",
-	"session_shutdown",
-	"before_agent_start",
-	"agent_start",
-	"agent_end",
-	"turn_start",
-	"turn_end",
-	"tool_execution_start",
-	"tool_execution_end",
-	"model_select",
-	"llm_request_start",
-	"llm_request_end",
-	"message_end",
-	"subagent_created",
-	"subagent_started",
-	"subagent_completed",
-	"subagent_failed",
-	"subagent_compacted",
-	"subagent_steered",
-] as const satisfies readonly TelemetryEventKind[];
 
 // ---------------------------------------------------------------------------
 // Extension entry point
@@ -208,10 +180,10 @@ export function initInstrumentation(pi: ExtensionAPI): void {
 	const config = loadTelemetryConfig();
 	llmPayloadMode = config.llmPayload;
 
-	// D3 fix: removed early return for empty providers. Always register all
-	// handlers so late-registered providers (via registerTelemetryProvider)
-	// receive events from the moment they register. The "no providers" check
-	// is now in dispatchTelemetryEvent.
+	// Always register handlers, even when no providers are configured: a
+	// provider registered later via registerTelemetryProvider must receive
+	// events from the moment it joins. The "no providers" short-circuit lives
+	// in dispatchTelemetryEvent, not here.
 
 	registerConfiguredProviders(config);
 
@@ -276,7 +248,8 @@ export function initInstrumentation(pi: ExtensionAPI): void {
 				flushOrphanSubAgents();
 				// NOTE: Pi's ExtensionRunner awaits each handler, so this await is safe.
 				await shutdownTelemetryDispatcher();
-				// I2 fix: unsubscribe EventBus handlers during production shutdown
+				// Unsubscribe sub-agent EventBus handlers; without this they keep firing
+				// against a shut-down dispatcher (production-shutdown path, not just tests).
 				teardownTelemetry();
 			},
 		},
@@ -301,7 +274,7 @@ export function initInstrumentation(pi: ExtensionAPI): void {
 				({
 					kind: "agent_start",
 					sessionId: sid(ctx),
-					subAgentType: currentSubAgentType,
+					selfAgentType: currentSubAgentType,
 					// Pi-native lineage from SessionHeader.parentSession — set by
 					// pi-subagents on the spawned session. Deterministic, no
 					// heuristic pairing needed.

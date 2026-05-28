@@ -30,11 +30,11 @@ export {
 	shutdownTelemetryDispatcher,
 } from "./dispatcher.js";
 export {
+	BUILT_IN_PROVIDERS,
 	CONSOLE_PROVIDER_META,
 	ConsoleProvider,
 	MLFLOW_PROVIDER_META,
 	MlflowProvider,
-	PROVIDERS,
 } from "./providers/index.js";
 export type {
 	AgentEndEvent,

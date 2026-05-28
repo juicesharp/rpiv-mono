@@ -1,7 +1,6 @@
 import { type LiveSpan, SpanStatusCode, SpanType, startSpan } from "@mlflow/core";
 import type { ToolExecutionEndEvent, ToolExecutionStartEvent } from "../../types/events.js";
-import { toolSpanKey } from "./keys.js";
-import { msToNs } from "./trace-session-shim.js";
+import { msToNs, toolSpanKey } from "./keys.js";
 
 export function onToolExecutionStart(
 	activeTurnSpans: Map<string, LiveSpan>,

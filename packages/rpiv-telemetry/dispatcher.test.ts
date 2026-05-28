@@ -12,10 +12,10 @@ vi.mock("./config.js", async (importOriginal) => {
 
 import { loadTelemetryConfig } from "./config.js";
 import {
-	clearDispatcherState,
 	dispatchTelemetryEvent,
 	getTelemetryDispatcher,
 	registerTelemetryProvider,
+	resetTelemetryDispatcher,
 	shutdownTelemetryDispatcher,
 } from "./dispatcher.js";
 
@@ -39,7 +39,7 @@ describe("dispatcher", () => {
 			llmPayload: "off",
 			dispatcher: { maxQueueSize: 100 },
 		});
-		clearDispatcherState();
+		resetTelemetryDispatcher();
 	});
 
 	it("dispatches events to all registered providers", async () => {
@@ -129,7 +129,7 @@ describe("dispatcher", () => {
 			dispatcher: { maxQueueSize: 100 },
 		});
 		// Refresh cached config
-		clearDispatcherState();
+		resetTelemetryDispatcher();
 
 		const events: TelemetryEvent[] = [];
 		registerTelemetryProvider(
@@ -273,8 +273,8 @@ describe("dispatcher", () => {
 		expect(events).toHaveLength(0);
 	});
 
-	// Q4 fix: clearDispatcherState resets shuttingDown
-	it("clearDispatcherState resets shuttingDown so dispatch works again", async () => {
+	// Q4 fix: resetTelemetryDispatcher resets shuttingDown
+	it("resetTelemetryDispatcher resets shuttingDown so dispatch works again", async () => {
 		const events: TelemetryEvent[] = [];
 		const provider = makeProvider({
 			trackEvent: vi.fn(async (e) => {
@@ -284,7 +284,7 @@ describe("dispatcher", () => {
 		registerTelemetryProvider(provider);
 
 		await shutdownTelemetryDispatcher();
-		clearDispatcherState();
+		resetTelemetryDispatcher();
 		// reset() also clears providers, so re-register for the post-reset dispatch.
 		registerTelemetryProvider(provider);
 
@@ -400,7 +400,7 @@ describe("dispatcher", () => {
 			llmPayload: "off",
 			dispatcher: { maxQueueSize: 5 },
 		});
-		clearDispatcherState();
+		resetTelemetryDispatcher();
 
 		const events: TelemetryEvent[] = [];
 		registerTelemetryProvider(

@@ -1,9 +1,10 @@
 import { type LiveSpan, SpanType, startSpan } from "@mlflow/core";
 import type { AgentEndEvent, AgentStartEvent, TelemetryEvent } from "../../types/events.js";
-import { msToNs, setTraceSession } from "./trace-session-shim.js";
+import { msToNs } from "./keys.js";
+import { setTraceSession } from "./trace-session-shim.js";
 
 export function onAgentStart(activeTurnSpans: Map<string, LiveSpan>, event: AgentStartEvent): void {
-	const name = event.subAgentType ? `subagent-turn[${event.subAgentType}]` : "agent-turn";
+	const name = event.selfAgentType ? `subagent-turn[${event.selfAgentType}]` : "agent-turn";
 	const span = startSpan({
 		name,
 		spanType: SpanType.AGENT,
@@ -11,7 +12,7 @@ export function onAgentStart(activeTurnSpans: Map<string, LiveSpan>, event: Agen
 		startTimeNs: msToNs(event.timestamp),
 	});
 	span.setAttribute("session.id", event.sessionId);
-	if (event.subAgentType) span.setAttribute("subagent.type", event.subAgentType);
+	if (event.selfAgentType) span.setAttribute("subagent.type", event.selfAgentType);
 	if (event.parentSessionId) span.setAttribute("parent.session.id", event.parentSessionId);
 	// Group sub-agent traces under the parent session in MLflow's Session column
 	// when Pi gave us a parent lineage; otherwise tag with own session.

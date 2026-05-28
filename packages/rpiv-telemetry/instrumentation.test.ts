@@ -20,13 +20,13 @@ vi.mock("./dispatcher.js", async (importOriginal) => {
 		...actual,
 		dispatchTelemetryEvent: vi.fn(),
 		shutdownTelemetryDispatcher: vi.fn(async () => {}),
-		// Keep clearDispatcherState real — teardownTelemetry() depends on it
-		clearDispatcherState: actual.clearDispatcherState,
+		// Keep resetTelemetryDispatcher real — teardownTelemetry() depends on it
+		resetTelemetryDispatcher: actual.resetTelemetryDispatcher,
 	};
 });
 
 // Set a safe default BEFORE any beforeEach (including test/setup.ts global
-// beforeEach) can invoke teardownTelemetry() → clearDispatcherState() → loadTelemetryConfig().
+// beforeEach) can invoke teardownTelemetry() → resetTelemetryDispatcher() → loadTelemetryConfig().
 // Without this, the global beforeEach would hit the real config and fail.
 vi.mocked(config.loadTelemetryConfig).mockReturnValue({
 	providers: {},
@@ -36,8 +36,7 @@ vi.mocked(config.loadTelemetryConfig).mockReturnValue({
 });
 
 import { dispatchTelemetryEvent } from "./dispatcher.js";
-import { initInstrumentation, TELEMETRY_HANDLER_KINDS, teardownTelemetry } from "./instrumentation.js";
-import { TELEMETRY_EVENT_KINDS } from "./types/events.js";
+import { initInstrumentation, teardownTelemetry } from "./instrumentation.js";
 
 describe("instrumentation", () => {
 	beforeEach(() => {
@@ -50,7 +49,7 @@ describe("instrumentation", () => {
 		teardownTelemetry();
 	});
 
-	it("registers handlers even when no providers configured (D3)", () => {
+	it("registers handlers even when no providers configured", () => {
 		vi.mocked(config.loadTelemetryConfig).mockReturnValue({
 			providers: {},
 			events: "*",
@@ -59,8 +58,9 @@ describe("instrumentation", () => {
 		});
 		const { pi } = createMockPi();
 		initInstrumentation(pi);
-		// D3 fix: always register handlers for late-binding support;
-		// dispatchTelemetryEvent gates on empty provider list instead
+		// Late-bound providers (via registerTelemetryProvider) must receive
+		// events from the moment they join; the no-providers gate lives in the
+		// dispatcher.
 		expect(pi.on).toHaveBeenCalled();
 	});
 
@@ -166,7 +166,7 @@ describe("instrumentation", () => {
 		expect(shutdownTelemetryDispatcher).toHaveBeenCalled();
 	});
 
-	it("session_shutdown unsubscribes EventBus handlers via teardownTelemetry (I2)", async () => {
+	it("session_shutdown unsubscribes EventBus handlers via teardownTelemetry", async () => {
 		const { pi, captured } = createMockPi();
 		const unsubs: ReturnType<typeof vi.fn>[] = [];
 		vi.mocked(pi.events.on).mockImplementation(() => {
@@ -215,12 +215,6 @@ describe("instrumentation", () => {
 	// -------------------------------------------------------------------------
 	// HANDLERS table coverage
 	// -------------------------------------------------------------------------
-
-	it("HANDLERS table covers every TELEMETRY_EVENT_KIND", () => {
-		// Missing a row silently drops that Pi event. This snapshot keeps the
-		// two tables in lockstep with the canonical kind list in types/events.ts.
-		expect([...TELEMETRY_HANDLER_KINDS].sort()).toEqual([...TELEMETRY_EVENT_KINDS].sort());
-	});
 
 	it("subscribes to all 14 Pi lifecycle events", () => {
 		const { pi, captured } = createMockPi();

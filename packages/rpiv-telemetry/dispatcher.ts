@@ -164,7 +164,7 @@ export function shutdownTelemetryDispatcher(): Promise<void> {
 }
 
 /** Reset dispatcher state (providers + queue + config cache). Used by teardownTelemetry(). */
-export function clearDispatcherState(): void {
+export function resetTelemetryDispatcher(): void {
 	singleton.reset();
 }
 
