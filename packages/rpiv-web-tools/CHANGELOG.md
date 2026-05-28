@@ -7,6 +7,13 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Ollama search provider supporting both local instances and cloud (ollama.com), with configurable base URL and optional API key.
+
+### Changed
+- `/web-search-config` command renamed to `/web-tools`.
+- Cover artwork redesigned with all eight provider logos.
+
 ## [1.13.0] - 2026-05-25
 
 ## [1.12.0] - 2026-05-21

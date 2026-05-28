@@ -7,6 +7,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- `${SKILL_DIR}` now resolves to the skill's own directory instead of the extension package root, fixing relative shell command paths.
+
 ## [1.13.0] - 2026-05-25
 
 ## [1.12.0] - 2026-05-21

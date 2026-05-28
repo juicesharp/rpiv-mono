@@ -7,6 +7,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Questionnaire renders as a bottom-anchored overlay.
+
 ## [1.13.0] - 2026-05-25
 
 ### Added

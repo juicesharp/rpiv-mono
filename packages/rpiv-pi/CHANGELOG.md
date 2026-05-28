@@ -7,6 +7,25 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- `architecture-review` skill for top-down, layer-by-layer architecture reviews (experimental — under test).
+- `ship` workflow — fast path with no research or review (blueprint → implement → validate → commit).
+- `build` workflow — research-backed feature work with a review loop (research → blueprint → implement → validate → code-review → revise loop → commit).
+- `arch` workflow — design-led pipeline for complex changes (research → design → plan → implement → validate → code-review → design loop → commit).
+- `vet` workflow — examine existing changes for approval with optional repair (code-review → blueprint → implement → validate → loop → commit).
+- Workflow runtime lives in `@juicesharp/rpiv-workflow` sibling package; rpiv-pi contributes these four built-in workflows via the sibling's `registerBuiltIns` API.
+
+### Changed
+- `blueprint` skill can now run standalone without a research artifact — accepts a free-text feature description as input.
+- `research` and `blueprint` skills trigger `web-search-researcher` on any third-party API, SDK, or library surface, regardless of how the question is phrased.
+
+### Removed
+- `outline-test-cases` and `write-test-cases` skills.
+
+### Fixed
+- `implement` skill correctly honors phase scoping when dispatched via fanout.
+- `validate` skill emits artifacts to the correct path and dispatches named subagents.
+
 ## [1.13.0] - 2026-05-25
 
 ### Changed
