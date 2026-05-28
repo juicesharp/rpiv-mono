@@ -1,5 +1,15 @@
 ---
 import { VERSION } from "../lib/version";
+
+const currentPath = Astro.url.pathname;
+
+function isActive(path: string) {
+	if (path === "/") {
+		return currentPath === "/";
+	}
+	// For paths like /pipeline or /docs, check if current path starts with it
+	return currentPath.startsWith(path);
+}
 ---
 
 <header class="nav">
@@ -15,11 +25,11 @@ import { VERSION } from "../lib/version";
 		</div>
 
 		<nav class="nav__links mono" aria-label="primary">
-			<a href="/">home</a>
-			<a href="/pipeline">pipeline</a>
-			<a href="/agents">agents</a>
-			<a href="/tools">tools</a>
-			<a href="/docs">docs</a>
+			<a href="/" class={isActive("/") ? "is-active" : ""}>home</a>
+			<a href="/pipeline" class={isActive("/pipeline") ? "is-active" : ""}>pipeline</a>
+			<a href="/agents" class={isActive("/agents") ? "is-active" : ""}>agents</a>
+			<a href="/tools" class={isActive("/tools") ? "is-active" : ""}>tools</a>
+			<a href="/docs" class={isActive("/docs") ? "is-active" : ""}>docs</a>
 			<a href="https://github.com/juicesharp/rpiv-mono">github</a>
 		</nav>
 	</div>
@@ -74,5 +84,14 @@ import { VERSION } from "../lib/version";
 	.nav__links a:hover {
 		color: var(--washi);
 		text-decoration: underline;
+	}
+
+	.nav__links a.is-active {
+		color: var(--washi);
+		font-weight: bold;
+		text-decoration: underline;
+		text-decoration-color: var(--ochre);
+		text-decoration-thickness: 2px;
+		text-underline-offset: 4px;
 	}
 </style>
