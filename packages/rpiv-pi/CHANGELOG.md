@@ -5,7 +5,7 @@ All notable changes to `@juicesharp/rpiv-pi` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.14.4] - 2026-05-28
 
 ### Fixed
 - Missing-siblings banner alignment: prepend a newline before the box so Pi's `"Warning: "` severity prefix sits on its own line; every box row then gets Pi's uniform 1-space continuation indent and the border stays aligned. Before, the top border was pushed right by 9 columns relative to the body.
