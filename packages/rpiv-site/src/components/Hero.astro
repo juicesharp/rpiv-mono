@@ -1,5 +1,6 @@
 ---
-import { getPipelineSkills } from "../lib/skills";
+import { getPipelineSkills, PIPELINE_META } from "../lib/skills";
+import type { PipelineStep } from "../lib/skills";
 import SumiInk from "./SumiInk.astro";
 const pipeline = await getPipelineSkills();
 ---
@@ -18,8 +19,7 @@ const pipeline = await getPipelineSkills();
 		</h1>
 
 		<p class="hero__lede">
-			A pipeline of skills and subagents for the Pi coding agent. Turns a vague
-			task into research questions, into a design, into a plan, into shipped code.
+			Run the full pipeline end-to-end for complex features, or use individual <code>/skill:xxx</code> commands whenever you need a specific job done.
 		</p>
 
 		<div class="hero__actions">
@@ -27,14 +27,27 @@ const pipeline = await getPipelineSkills();
 			<a href="/docs" class="hero__btn hero__btn--secondary">read docs</a>
 		</div>
 
-		<ol class="hero__rail" aria-label="default pipeline">
-			{pipeline.map((skill, i) => (
-				<li class="hero__node" style={`--rail-i: ${i}`}>
-					<span class="chip chip--sage">/skill:{skill.data.name}</span>
-					{i < pipeline.length - 1 && <span class="hero__arrow" aria-hidden="true">→</span>}
-				</li>
-			))}
-		</ol>
+		<div class="hero__rail" aria-label="default pipeline">
+			{pipeline.map((skill, i) => {
+				const meta = PIPELINE_META[skill.slug as PipelineStep];
+				return (
+					<div class={`hero__node hero__node--${i}`} style={`--rail-i: ${i}`}>
+						<div class="hero__node-header mono">
+							<span class="hero__step">0{i + 1}</span>
+							<span class="hero__skill-name">/skill:{skill.slug}</span>
+						</div>
+						<p class="hero__skill-desc">{meta.why}</p>
+						
+						{i < pipeline.length - 1 && (
+							<svg class="hero__arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+								<line x1="4" y1="12" x2="20" y2="12"></line>
+								<polyline points="14 6 20 12 14 18"></polyline>
+							</svg>
+						)}
+					</div>
+				);
+			})}
+		</div>
 	</div>
 </section>
 
@@ -55,13 +68,11 @@ const pipeline = await getPipelineSkills();
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		max-width: 800px;
+		max-width: 1000px;
 		margin: 0 auto;
 	}
 
-	.hero__badge {
-		margin-bottom: var(--space-6);
-	}
+	.hero__badge { margin-bottom: var(--space-6); }
 	.hero__badge-pill {
 		font-family: var(--font-mono);
 		font-size: var(--type-tiny);
@@ -92,28 +103,20 @@ const pipeline = await getPipelineSkills();
 		from { opacity: 0; transform: translateY(12px); }
 		to   { opacity: 1; transform: translateY(0);   }
 	}
-	.hero__badge,
-	.hero__line,
-	.hero__lede,
-	.hero__actions,
-	.hero__node {
+	.hero__badge, .hero__line, .hero__lede, .hero__actions, .hero__node {
 		opacity: 0;
 		animation: hero-rise var(--dur-ink) var(--ease-ink) forwards;
 	}
-	.hero__badge   { animation-delay:   0ms; }
+	.hero__badge   { animation-delay: 0ms; }
 	.hero__line--1 { animation-delay: 120ms; }
 	.hero__line--2 { animation-delay: 200ms; }
 	.hero__line--3 { animation-delay: 280ms; }
 	.hero__lede    { animation-delay: 460ms; }
 	.hero__actions { animation-delay: 620ms; }
-	.hero__node    { animation-delay: calc(780ms + var(--rail-i, 0) * 60ms); }
+	.hero__node    { animation-delay: calc(800ms + var(--rail-i, 0) * 100ms); }
 
 	@media (prefers-reduced-motion: reduce) {
-		.hero__badge,
-		.hero__line,
-		.hero__lede,
-		.hero__actions,
-		.hero__node {
+		.hero__badge, .hero__line, .hero__lede, .hero__actions, .hero__node {
 			opacity: 1;
 			animation: none;
 		}
@@ -126,7 +129,6 @@ const pipeline = await getPipelineSkills();
 		line-height: var(--leading-body);
 		margin-bottom: var(--space-7);
 	}
-
 	.hero__actions {
 		display: flex;
 		gap: var(--space-4);
@@ -166,23 +168,99 @@ const pipeline = await getPipelineSkills();
 		transform: translateY(-2px);
 	}
 
+	/* Snake Pipeline Layout */
 	.hero__rail {
-		list-style: none;
-		display: flex;
-		flex-wrap: wrap;
-		justify-content: center;
-		gap: var(--space-3);
-		padding: 0;
-		margin: 0;
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		grid-template-areas:
+			"n0 n1 n2"
+			"n5 n4 n3";
+		gap: var(--space-4);
+		width: 100%;
+		margin: var(--space-6) 0 0 0;
 	}
 	.hero__node {
-		display: inline-flex;
-		align-items: center;
-		gap: var(--space-3);
+		position: relative;
+		display: flex;
+		flex-direction: column;
+		background: var(--ink-raised);
+		border: 1px solid var(--rule-strong);
+		padding: var(--space-4);
+		text-align: left;
 	}
+	.hero__node--0 { grid-area: n0; }
+	.hero__node--1 { grid-area: n1; }
+	.hero__node--2 { grid-area: n2; }
+	.hero__node--3 { grid-area: n3; }
+	.hero__node--4 { grid-area: n4; }
+	.hero__node--5 { grid-area: n5; }
+
+	/* Snake Arrows */
 	.hero__arrow {
+		position: absolute;
+		color: var(--ochre);
+		width: 16px;
+		height: 16px;
+	}
+	/* Top row: point Right -> */
+	.hero__node--0 .hero__arrow, 
+	.hero__node--1 .hero__arrow {
+		top: 50%;
+		right: calc(var(--space-4) * -0.5 - 8px);
+		transform: translateY(-50%);
+	}
+	/* End of top row: point Down v */
+	.hero__node--2 .hero__arrow {
+		bottom: calc(var(--space-4) * -0.5 - 8px);
+		left: 50%;
+		transform: translateX(-50%) rotate(90deg);
+	}
+	/* Bottom row: point Left <- */
+	.hero__node--3 .hero__arrow, 
+	.hero__node--4 .hero__arrow {
+		top: 50%;
+		left: calc(var(--space-4) * -0.5 - 8px);
+		transform: translateY(-50%) rotate(180deg);
+	}
+
+	.hero__node-header {
+		display: flex;
+		align-items: baseline;
+		gap: var(--space-3);
+		margin-bottom: var(--space-3);
+		border-bottom: 1px dashed var(--rule);
+		padding-bottom: var(--space-2);
+	}
+	.hero__step {
 		color: var(--text-distant);
-		font-family: var(--font-mono);
+		font-size: var(--type-tiny);
+	}
+	.hero__skill-name {
+		color: var(--sage);
+		font-weight: bold;
+		font-size: var(--type-small);
+	}
+	.hero__skill-desc {
+		color: var(--text-quiet);
+		font-size: var(--type-tiny);
+		line-height: var(--leading-snug);
+		margin: 0;
+		font-family: var(--font-serif);
+	}
+
+	@media (max-width: 900px) {
+		/* Fallback to vertical stack on smaller screens */
+		.hero__rail {
+			grid-template-columns: 1fr;
+			grid-template-areas: "n0" "n1" "n2" "n3" "n4" "n5";
+		}
+		.hero__arrow {
+			bottom: calc(var(--space-4) * -0.5 - 8px) !important;
+			left: 50% !important;
+			top: auto !important;
+			right: auto !important;
+			transform: translateX(-50%) rotate(90deg) !important;
+		}
 	}
 	@media (max-width: 720px) {
 		.hero { min-height: auto; padding: var(--space-8) 0 var(--space-7); }
