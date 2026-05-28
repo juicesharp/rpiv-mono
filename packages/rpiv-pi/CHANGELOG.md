@@ -5,7 +5,7 @@ All notable changes to `@juicesharp/rpiv-pi` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.14.3] - 2026-05-28
 
 ### Changed
 - Missing sibling extensions are now reported at session start as a yellow boxed banner (multi-line `notify("warning")`) listing each absent package and pointing at `/rpiv-setup`, instead of a single-line warning that scrolled away with conversation.
