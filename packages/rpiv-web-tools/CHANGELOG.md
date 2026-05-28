@@ -7,6 +7,26 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **GitHub URL interceptor** — `web_fetch` can route github.com URLs through `gh` / `git` for full repository content (file tree, README, file contents) instead of the rendered HTML page. **Off by default** to preserve existing behavior. Opt in via `"interceptors": { "github": true }` in `~/.config/rpiv-web-tools/config.json` (end-user) or `registerWebTools(pi, { interceptors: { github: true } })` (consumer extensions). Power-user object form available for tuning `maxRepoSizeMB` (default 350), `cloneTimeoutSeconds` (default 30), and `clonePath` (default `$TMPDIR/pi-github-repos`). See README §GitHub URL interceptor.
+- `/web-tools --show` now reports URL interceptor state at the bottom of its output (enabled/disabled, masked `GITHUB_TOKEN`, `clonePath`, threshold).
+- Programmatic `RegisterOptions` parameter: `registerWebTools(pi, { interceptors?: { github?: boolean } })`.
+- New exports: `GitHubInterceptor`, `parseGitHubUrl`, `GitHubUrlInfo`, `GITHUB_TOKEN_ENV_VAR`, `resolveGitHubOptions`, `UrlInterceptor`, `FetchProvider`, `FullProvider`, `ProviderRole`.
+
+### Changed
+- **Provider role split.** `SearchProvider` is now search-only (no `fetch()` method). Providers with native fetch endpoints — Tavily, Exa, Jina, Firecrawl, Ollama — implement the new `FullProvider = SearchProvider & FetchProvider`; search-only providers — Brave, Serper, SearXNG — implement `SearchProvider`. `ProviderMeta.roles: ReadonlyArray<"search" | "fetch">` makes capability explicit.
+- `web_fetch` dispatch is now three-way: URL interceptor chain → provider's native `fetch()` when present → shared `fetchViaGenericHtml` fallback. Brave/Serper/SearXNG previously each carried their own `fetch()` method that wrapped the shared pipeline; same observable behavior, single helper now.
+- `createSearchProvider(name, creds)` return type widened from `SearchProvider` to `SearchProvider | FullProvider`. Narrow with `"fetch" in provider`.
+- Config schema gained a top-level `interceptors` key. Existing config files keep working unchanged.
+
+### Removed
+- Per-provider `fetch()` methods on `BraveProvider`, `SerperProvider`, and `SearxngProvider`. The shared `fetchViaGenericHtml` helper in `providers/fetch-helpers.ts` is invoked by the orchestrator's fallback branch.
+
+### Breaking / Upgrade Notes
+- Consumers that imported `SearchProvider` and called `.fetch()` on it will get a TypeScript error. Migrate the type to `FullProvider` (Tavily/Exa/Jina/Firecrawl/Ollama users) or narrow generic code with `"fetch" in provider`.
+- Consumers that called `new BraveProvider(key).fetch(...)`, `new SerperProvider(key).fetch(...)`, or `new SearxngProvider(...).fetch(...)` directly should use `fetchViaGenericHtml(url, raw, signal)` from `providers/fetch-helpers.ts` instead.
+- No config migration required for existing users — released `provider` / `apiKeys` / `baseUrls` / `apiKey` (legacy) / `guidance` keys all behave unchanged.
+
 ## [1.14.7] - 2026-05-28
 
 ## [1.14.6] - 2026-05-28

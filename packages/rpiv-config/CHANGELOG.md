@@ -1,5 +1,8 @@
 ## [Unreleased]
 
+### Added
+- `GuidanceFieldsSchema` — TypeBox form of the existing `GuidanceFields` interface. For consumers composing larger TypeBox-validated config objects that need to declare a guidance subtree without redeclaring the leaf shape. Used internally by `rpiv-web-tools` Phase 4 config consolidation.
+
 ## [1.14.7] - 2026-05-28
 
 ## [1.14.6] - 2026-05-28
