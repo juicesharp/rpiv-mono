@@ -1119,9 +1119,16 @@ describe("/web-tools command", () => {
 		const selectCall = (ctx.ui.select as ReturnType<typeof vi.fn>).mock.calls[0];
 		const labels = selectCall[1] as string[];
 		expect(labels[0]).toBe("Exa ✓ (configured)");
-		expect(labels.slice(1)).toEqual(["Brave", "Tavily", "Serper", "Jina", "Firecrawl", "SearXNG", "Ollama"]);
-		expect(labels.slice(1)).toEqual(["Brave", "Tavily", "Serper", "Jina", "Firecrawl", "SearXNG"]);
-		expect(labels.slice(1)).toEqual(["Brave", "Tavily", "Serper", "Jina", "Firecrawl", "SearXNG", "GitHub"]);
+		expect(labels.slice(1)).toEqual([
+			"Brave",
+			"Tavily",
+			"Serper",
+			"Jina",
+			"Firecrawl",
+			"SearXNG",
+			"Ollama",
+			"GitHub",
+		]);
 		expect(labels.filter((l) => l.includes("✓"))).toHaveLength(1);
 
 		const saved = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
@@ -2027,7 +2034,7 @@ describe("formatShowConfigMessage — github token display", () => {
 		process.env.GITHUB_TOKEN = "ghp_abcdefgh1234";
 		const { captured } = registerAndCapture();
 		const ctx = createMockCtx({ hasUI: true });
-		await captured.commands.get("web-search-config")?.handler("--show", ctx as never);
+		await captured.commands.get("web-tools")?.handler("--show", ctx as never);
 		const msg = (ctx.ui.notify as ReturnType<typeof vi.fn>).mock.calls[0][0];
 		expect(msg).toContain("github:");
 		expect(msg).toContain("ghp_");
@@ -2037,7 +2044,7 @@ describe("formatShowConfigMessage — github token display", () => {
 		writeConfig({ apiKeys: { github: "ghp_config1234" } });
 		const { captured } = registerAndCapture();
 		const ctx = createMockCtx({ hasUI: true });
-		await captured.commands.get("web-search-config")?.handler("--show", ctx as never);
+		await captured.commands.get("web-tools")?.handler("--show", ctx as never);
 		const msg = (ctx.ui.notify as ReturnType<typeof vi.fn>).mock.calls[0][0];
 		expect(msg).toContain("github:");
 		expect(msg).toContain("ghp_");
@@ -2046,7 +2053,7 @@ describe("formatShowConfigMessage — github token display", () => {
 	it("--show shows github: (not set) when no key configured", async () => {
 		const { captured } = registerAndCapture();
 		const ctx = createMockCtx({ hasUI: true });
-		await captured.commands.get("web-search-config")?.handler("--show", ctx as never);
+		await captured.commands.get("web-tools")?.handler("--show", ctx as never);
 		const msg = (ctx.ui.notify as ReturnType<typeof vi.fn>).mock.calls[0][0];
 		expect(msg).toContain("github:");
 		expect(msg).toContain("(not set)");
