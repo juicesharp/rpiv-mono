@@ -1,0 +1,19 @@
+---
+import Base from "../layouts/Base.astro";
+import Nav from "../components/Nav.astro";
+import PipelineComponent from "../components/Pipeline.astro";
+import Guidance from "../components/Guidance.astro";
+import SecondaryFlows from "../components/SecondaryFlows.astro";
+---
+
+<Base
+	title="Pipeline · rpiv-pi"
+	description="The skill pipeline orchestration for rpiv-pi."
+>
+	<Nav />
+	<main>
+		<PipelineComponent />
+		<Guidance />
+		<SecondaryFlows />
+	</main>
+</Base>

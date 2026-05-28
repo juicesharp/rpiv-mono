@@ -1,32 +1,18 @@
 ---
 import Base from "../layouts/Base.astro";
 import Nav from "../components/Nav.astro";
-import ScrollIndicator from "../components/ScrollIndicator.astro";
 import Hero from "../components/Hero.astro";
-import Pipeline from "../components/Pipeline.astro";
-import Guidance from "../components/Guidance.astro";
-import SecondaryFlows from "../components/SecondaryFlows.astro";
-import ShipLoop from "../components/ShipLoop.astro";
-import AgentGrid from "../components/AgentGrid.astro";
-import SiblingGrid from "../components/SiblingGrid.astro";
 import Install from "../components/Install.astro";
 import SetupTrace from "../components/SetupTrace.astro";
 ---
 
 <Base
 	title="rpiv-pi · research → design → ship"
-	description="A pipeline of skills and agents for the Pi coding agent. 19 skills, 13 specialist subagents, 6 sibling extensions."
+	description="A pipeline of skills and agents for the Pi coding agent."
 >
 	<Nav />
-	<ScrollIndicator />
 	<main>
 		<Hero />
-		<Pipeline />
-		<Guidance />
-		<SecondaryFlows />
-		<ShipLoop />
-		<AgentGrid />
-		<SiblingGrid />
 		<Install />
 		<SetupTrace />
 	</main>

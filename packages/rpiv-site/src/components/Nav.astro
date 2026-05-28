@@ -1,413 +1,77 @@
 ---
 import { VERSION } from "../lib/version";
-
-const isHome = Astro.url.pathname === "/";
 ---
 
-<header class="nav" data-nav>
+<header class="nav">
 	<div class="container nav__inner">
 		<div class="nav__brand-group">
-			<a href={isHome ? "#top" : "/"} class="nav__brand mono">rpiv-pi</a>
+			<a href="/" class="nav__brand mono">rpiv-pi</a>
 			<a
 				class="nav__version mono"
 				href={`https://www.npmjs.com/package/@juicesharp/rpiv-pi/v/${VERSION}`}
-				aria-label={`released version v${VERSION} on npm`}
 				target="_blank"
 				rel="noopener"
 			>v{VERSION}</a>
 		</div>
 
-		<div class="nav__utility">
-			<a
-				class="nav__github mono"
-				href="https://github.com/juicesharp/rpiv-mono"
-				target="_blank"
-				rel="noopener"
-				aria-label="rpiv-mono on GitHub"
-			>github</a>
-			<span class="nav__dot" aria-hidden="true">·</span>
-			<a class="nav__docs mono" href="/docs">docs</a>
-			<span class="nav__dot" aria-hidden="true">·</span>
-			<a class="nav__blog mono" href="/blog">blog</a>
-		</div>
-
-		<a href={isHome ? "#install" : "/#install"} class="nav__cta mono">install</a>
-
 		<nav class="nav__links mono" aria-label="primary">
-			<a href={isHome ? "#pipeline" : "/#pipeline"} data-nav-link="pipeline">pipeline</a>
-			<a href={isHome ? "#guidance" : "/#guidance"} data-nav-link="guidance">guidance</a>
-			<a href={isHome ? "#flows"    : "/#flows"}    data-nav-link="flows">blueprint</a>
-			<a href={isHome ? "#review"   : "/#review"}   data-nav-link="review">review</a>
-			<a href={isHome ? "#agents"   : "/#agents"}   data-nav-link="agents">agents</a>
-			<a href={isHome ? "#siblings" : "/#siblings"} data-nav-link="siblings">siblings</a>
+			<a href="/">home</a>
+			<a href="/pipeline">pipeline</a>
+			<a href="/agents">agents</a>
+			<a href="/docs">docs</a>
+			<a href="https://github.com/juicesharp/rpiv-mono">github</a>
 		</nav>
-
-		{isHome && (
-		<span class="nav__counter mono" aria-hidden="true">
-			<span class="nav__counter-rule"></span>
-			<span class="nav__counter-num" data-nav-counter>—</span>
-			<span class="nav__counter-sep">/</span>
-			<span class="nav__counter-total">06</span>
-		</span>
-		)}
 	</div>
 </header>
 
 <style>
 	.nav {
-		position: sticky;
-		top: 0;
-		z-index: 10;
-		background: color-mix(in oklab, var(--ink) 88%, transparent);
-		backdrop-filter: blur(8px);
-		-webkit-backdrop-filter: blur(8px);
+		padding: var(--space-4) 0;
 		border-bottom: 1px solid var(--rule);
+		background: var(--ink);
 	}
 
-	/* Two-tier grid: masthead row (brand | utility | cta) + nav row (links, full-width). */
 	.nav__inner {
-		display: grid;
-		grid-template-columns: auto 1fr auto;
-		grid-template-areas:
-			"brand utility cta"
-			"links links   links";
-		align-items: baseline;
-		column-gap: var(--space-5);
-		row-gap: 0;
-		padding-top: var(--space-3);
-		padding-bottom: var(--space-3);
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--space-4);
+		justify-content: space-between;
+		align-items: center;
 	}
-
-	/* ── Tier 1: Masthead ── */
 
 	.nav__brand-group {
-		grid-area: brand;
 		display: flex;
-		align-items: center;
-		gap: var(--space-2);
+		align-items: baseline;
+		gap: var(--space-3);
 	}
 
 	.nav__brand {
-		font-size: var(--type-small);
+		font-size: var(--type-base);
 		color: var(--washi);
-		letter-spacing: 0.04em;
-		border-bottom: none;
+		font-weight: bold;
+		text-decoration: none;
 	}
-	.nav__brand:hover { color: var(--sage); }
 
-	/* Version imprint — masthead-style edition mark. Tabular numerics so
-	   1.1.5 → 1.1.10 stays aligned across builds. Hairline divider + ochre
-	   tick echo the .nav__cta border and the ScrollIndicator hanko seal. */
 	.nav__version {
-		display: inline-flex;
-		align-items: center;
-		gap: var(--space-2);
-		font-size: var(--type-tiny);
-		letter-spacing: 0.14em;
-		font-variant-numeric: tabular-nums;
+		font-size: var(--type-small);
 		color: var(--text-distant);
-		border-bottom: none;
 		text-decoration: none;
-		padding: 0 var(--space-2);
-		border-left: 1px solid var(--rule);
-		line-height: 1;
-		transition: color var(--dur-ink) var(--ease-ink);
 	}
-	.nav__version::before {
-		content: "";
-		display: block;
-		width: 1px;
-		height: 0.7em;
-		background: var(--ochre);
-		opacity: 0.7;
-	}
-	.nav__version:hover { color: var(--washi); }
-
-	/* Utility cluster — github · blog, grouped right-of-center. The middot
-	   is a typographic separator (not a pipe or slash) that echoes the
-	   editorial/ink aesthetic. Sage hover matches sibling card CTAs. */
-	.nav__utility {
-		grid-area: utility;
-		display: flex;
-		align-items: center;
-		gap: var(--space-2);
-		justify-self: end;
-	}
-	.nav__dot {
-		color: var(--ochre);
-		opacity: 0.6;
-		font-size: var(--type-tiny);
-		line-height: 1;
-	}
-	.nav__github,
-	.nav__docs,
-	.nav__blog {
-		font-size: var(--type-tiny);
-		letter-spacing: 0.14em;
-		color: var(--text-distant);
-		border-bottom: none;
-		text-decoration: none;
-		line-height: 1;
-		transition: color var(--dur-ink) var(--ease-ink);
-	}
-	.nav__github:hover,
-	.nav__docs:hover,
-	.nav__blog:hover { color: var(--sage); }
-
-	/* CTA chip — install is an action, not a wayfinding tab. Echoes the
-	   .chip--ochre idiom. Ochre border is the single chromatic event. */
-	.nav__cta {
-		grid-area: cta;
-		align-self: center;
-		font-size: var(--type-tiny);
-		letter-spacing: 0.16em;
-		text-transform: uppercase;
-		color: var(--washi);
-		border: 1px solid var(--ochre);
-		border-radius: var(--radius-sm);
-		padding: 4px 10px;
-		text-decoration: none;
-		transition:
-			color var(--dur-ink) var(--ease-ink),
-			background var(--dur-ink) var(--ease-ink),
-			border-color var(--dur-ink) var(--ease-ink);
-	}
-	.nav__cta:hover {
-		color: var(--ink);
-		background: var(--ochre);
-		border-color: var(--ochre);
-	}
-
-	/* ── Tier 2: Section navigation ── */
 
 	.nav__links {
-		grid-area: links;
 		display: flex;
+		flex-wrap: wrap;
 		gap: var(--space-4);
-		font-size: var(--type-tiny);
-		letter-spacing: 0.16em;
-		text-transform: uppercase;
-		border-top: 1px solid var(--rule);
-		padding-top: var(--space-3);
-		margin-top: var(--space-3);
+		font-size: var(--type-small);
 	}
+
 	.nav__links a {
-		position: relative;
-		color: var(--text-distant);
-		border-bottom: none;
-		transition: color var(--dur-ink) var(--ease-ink);
+		color: var(--sage);
+		text-decoration: none;
 	}
-	.nav__links a:hover { color: var(--washi); }
 
-	/* Active-section state — agrees with the side ScrollIndicator's hanko seal.
-	   Active link gets washi text + a 1px ochre underline tick that grows from
-	   left, matching the indicator's `.indicator__line` widening behavior. */
-	.nav__links a.is-active {
+	.nav__links a:hover {
 		color: var(--washi);
-	}
-	.nav__links a.is-active::after {
-		content: "";
-		position: absolute;
-		left: 0;
-		right: 0;
-		bottom: -4px;
-		height: 1px;
-		background: var(--ochre);
-		transform-origin: left center;
-		animation: nav-tick-in var(--dur-tick) var(--ease-ink) forwards;
-	}
-	@keyframes nav-tick-in {
-		from { transform: scaleX(0); }
-		to   { transform: scaleX(1); }
-	}
-	@media (prefers-reduced-motion: reduce) {
-		.nav__links a.is-active::after { animation: none; }
-	}
-
-	/* Section counter — hidden on desktop (ScrollIndicator handles it).
-	   Shown on mobile where the side rail is hidden. */
-	.nav__counter {
-		display: none;
-		align-items: baseline;
-		gap: 2px;
-		font-size: var(--type-tiny);
-		letter-spacing: 0.14em;
-		color: var(--text-distant);
-		font-variant-numeric: tabular-nums;
-	}
-	.nav__counter-rule {
-		display: block;
-		width: var(--space-6);
-		height: 1px;
-		margin-right: var(--space-3);
-		align-self: center;
-		background: linear-gradient(
-			90deg,
-			transparent,
-			var(--rule-strong) 60%,
-			var(--rule-strong)
-		);
-	}
-	.nav__counter-num {
-		color: var(--washi-soft);
-		min-width: 1.3em;
-		text-align: right;
-	}
-	.nav__counter-sep { color: var(--rule-strong); }
-	.nav__counter-total { color: var(--text-distant); }
-
-	/* ── Mobile (≤720px) ── */
-	@media (max-width: 720px) {
-		/* Three-row stack: masthead → utility → section links. Utility gets
-		   its own full-width row because merging it into the brand-group via
-		   display:contents collided with the inner grid's auto-flow (links
-		   landed in implicit rows with stray middots and hairlines), and
-		   hiding it entirely orphaned /docs from the home page (footer only
-		   carries blog · npm · github). */
-		.nav__inner {
-			grid-template-columns: 1fr auto;
-			grid-template-areas:
-				"brand   cta"
-				"utility counter"
-				"links   links";
-			column-gap: var(--space-3);
-			row-gap: 0;
-			padding-bottom: 0;
-		}
-
-		.nav__brand-group {
-			display: flex;
-			align-items: baseline;
-			gap: var(--space-3);
-		}
-
-		.nav__utility {
-			justify-self: start;
-			gap: var(--space-3);
-			padding-top: var(--space-3);
-		}
-
-		.nav__version { display: none; }
-
-		.nav__counter {
-			display: inline-flex;
-			grid-area: counter;
-			justify-self: end;
-			align-self: center;
-			padding-top: var(--space-3);
-		}
-
-		.nav__cta {
-			align-self: center;
-			padding: 3px 8px;
-			font-size: var(--type-micro);
-			letter-spacing: 0.14em;
-		}
-
-		.nav__links {
-			display: grid;
-			grid-template-columns: repeat(6, 1fr);
-			gap: 0;
-			font-size: var(--type-micro);
-			letter-spacing: 0.12em;
-			padding-top: var(--space-3);
-			padding-bottom: var(--space-3);
-		}
-		.nav__links a {
-			text-align: center;
-			padding: 2px 4px;
-		}
-		.nav__links a.is-active::after {
-			left: 18%;
-			right: 18%;
-			bottom: 4px;
-		}
-	}
-
-	/* ── Sub-480px ── */
-	@media (max-width: 480px) {
-		.nav__links {
-			grid-template-columns: repeat(3, 1fr);
-			row-gap: var(--space-3);
-		}
-		.nav__links a { padding-bottom: 2px; }
-		.nav__links a.is-active::after {
-			left: 22%;
-			right: 22%;
-			bottom: -3px;
-		}
+		text-decoration: underline;
 	}
 </style>
-
-<script>
-	(() => {
-		const nav = document.querySelector<HTMLElement>("[data-nav]");
-		if (!nav) return;
-		const links = Array.from(
-			nav.querySelectorAll<HTMLAnchorElement>("[data-nav-link]"),
-		);
-		const counter = nav.querySelector<HTMLElement>("[data-nav-counter]");
-		const targets = links
-			.map((link) => {
-				const id = link.dataset.navLink;
-				if (!id) return null;
-				const el = document.getElementById(id);
-				return el ? { link, el } : null;
-			})
-			.filter((x): x is { link: HTMLAnchorElement; el: HTMLElement } => !!x);
-		if (!targets.length) return;
-
-		// Cache document-relative tops once per layout. The per-scroll path then
-		// only reads window.scrollY (no layout query), which avoids 2.8s of
-		// cumulative forced reflow during long sessions.
-		const offsets = new Array<number>(targets.length);
-		const measure = () => {
-			const baseY = window.scrollY;
-			for (let i = 0; i < targets.length; i++) {
-				offsets[i] = targets[i].el.getBoundingClientRect().top + baseY;
-			}
-		};
-
-		let rafId = 0;
-		const setActive = () => {
-			rafId = 0;
-			const anchor = window.scrollY + window.innerHeight * 0.34;
-			let activeIndex = -1;
-			for (let i = 0; i < targets.length; i++) {
-				if (offsets[i] <= anchor) activeIndex = i;
-			}
-			targets.forEach((t, i) => {
-				t.link.classList.toggle("is-active", i === activeIndex);
-				if (i === activeIndex) t.link.setAttribute("aria-current", "true");
-				else t.link.removeAttribute("aria-current");
-			});
-			if (counter) {
-				counter.textContent =
-					activeIndex < 0 ? "—" : String(activeIndex + 1).padStart(2, "0");
-			}
-		};
-
-		const onScroll = () => {
-			if (rafId) return;
-			rafId = requestAnimationFrame(setActive);
-		};
-		// RO/resize fire synchronously after style invalidation; reading
-		// geometry inline triggers a forced reflow per burst. Defer measure()
-		// into rAF so font-swap / image-decode bursts collapse to one pass.
-		let measureRaf = 0;
-		const scheduleMeasure = () => {
-			if (measureRaf) return;
-			measureRaf = requestAnimationFrame(() => {
-				measureRaf = 0;
-				measure();
-				setActive();
-			});
-		};
-		window.addEventListener("scroll", onScroll, { passive: true });
-		window.addEventListener("resize", scheduleMeasure, { passive: true });
-		// Late layout shifts (font swap, image decode) — recompute when body resizes.
-		new ResizeObserver(scheduleMeasure).observe(document.body);
-		measure();
-		setActive();
-	})();
-</script>

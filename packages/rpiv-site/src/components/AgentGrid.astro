@@ -1,7 +1,5 @@
 ---
-import { getAgentsByTier, type CapabilityTier } from "../lib/agents";
-import AgentCard from "./AgentCard.astro";
-import SumiInk from "./SumiInk.astro";
+import { getAgentsByTier, type CapabilityTier, siteDescription } from "../lib/agents";
 
 const groups = await getAgentsByTier();
 
@@ -15,67 +13,48 @@ const TIER_META: Record<CapabilityTier, { label: string; note: string; cap: stri
 
 <section id="agents">
 	<div class="container">
-		<p class="kicker">§ subagents · 13 cards · 4 tiers</p>
 		<h2>Specialists, not generalists.</h2>
 		<p class="agents__lede">
 			Skills do orchestration. Agents do one narrow thing. Each is isolated,
-			each is read-only, each tier is defined by its tool allowlist. Code-review&rsquo;s
-			specialists return rows of pipe-delimited findings, never prose, so
-			verification stays mechanical.
+			each is read-only, each tier is defined by its tool allowlist.
 		</p>
 
-		<SumiInk variant="divider" />
-
-		<div class="ladder" role="list">
+		<div class="agents__list">
 			{groups.map(({ tier, agents }, tierIdx) => agents.length > 0 && (
-				<div class="ladder__rung" role="listitem" data-solo={agents.length === 1 ? "true" : "false"}>
-					<div class="rung__label">
-						<p class="rung__num mono">tier {String(tierIdx + 1).padStart(2, "0")}</p>
-						<h3 class="mono rung__name">{TIER_META[tier].label}</h3>
-						<p class="rung__note">{TIER_META[tier].note}</p>
-						<p class="rung__count mono">
-							<span class="rung__count-num">{agents.length}</span>
-							<span class="rung__count-word">{agents.length === 1 ? "agent" : "agents"}</span>
-						</p>
+				<article class="tier__block">
+					<header class="tier__header">
+						<h3>Tier {tierIdx + 1}: {TIER_META[tier].label}</h3>
+						<p>{TIER_META[tier].note} (Capability: <code>{TIER_META[tier].cap}</code>)</p>
+					</header>
 
-						{agents.length > 3 && (
-							<div class="rung__pager"
-								role="status"
-								aria-label={`${agents.length - 3} more agent${agents.length - 3 === 1 ? "" : "s"} hidden — scroll horizontally to reveal`}>
-								<div class="rung__pager-bars" aria-hidden="true">
-									{Array.from({ length: agents.length }, (_, i) => (
-										<span class:list={["rung__pager-bar", i < 3 && "is-visible"]} />
-									))}
-								</div>
-								<p class="mono rung__pager-cap" aria-hidden="true">
-									scroll&nbsp;<span class="rung__pager-arrow">→</span>&nbsp;
-									<span class="rung__pager-num">{agents.length - 3}</span> hidden
-								</p>
-							</div>
-						)}
-					</div>
+					<ul class="agent__ul">
+						{agents.map((agent) => {
+							const desc = siteDescription(agent);
+							const dispatched = agent.copy?.dispatched_by?.length ?? 0;
+							const tools = agent.data.tools?.split(",").map((t) => t.trim()).filter(Boolean) ?? [];
 
-					<div class="rung__cells">
-						<div class="rung__cards" role="list" data-overflow={agents.length > 3 ? "true" : "false"}>
-							{agents.map((agent) => (
-								<div role="listitem" class="rung__card-wrap"><AgentCard agent={agent} /></div>
-							))}
-						</div>
-
-						{agents.length > 3 && (
-							<div class="rung__edge" aria-hidden="true">
-								<span class="rung__edge-chevron">›</span>
-							</div>
-						)}
-
-						{agents.length === 1 && (
-							<aside class="rung__solo" aria-hidden="true">
-								<SumiInk variant="corner" className="rung__solo-ink" />
-								<p class="mono rung__solo-cap">only one in tier · capability: <code>{TIER_META[tier].cap}</code></p>
-							</aside>
-						)}
-					</div>
-				</div>
+							return (
+								<li class="agent__li">
+									<strong>{agent.slug}</strong> 
+									{dispatched > 0 && (
+										<span class="agent__multiplier">
+											(Used by {dispatched} skill{dispatched === 1 ? "" : "s"})
+										</span>
+									)}
+									<p>{desc}</p>
+									{tools.length > 0 && (
+										<div class="agent__tools">
+											<strong>Tools:</strong>
+											<ul class="mono">
+												{tools.map(t => <li>{t}</li>)}
+											</ul>
+										</div>
+									)}
+								</li>
+							);
+						})}
+					</ul>
+				</article>
 			))}
 		</div>
 	</div>
@@ -83,264 +62,61 @@ const TIER_META: Record<CapabilityTier, { label: string; note: string; cap: stri
 
 <style>
 	.agents__lede {
+		margin-bottom: var(--space-6);
 		color: var(--text-quiet);
-		max-width: 64ch;
+	}
+
+	.tier__block {
+		margin-bottom: var(--space-8);
+		padding-bottom: var(--space-6);
+		border-bottom: 1px solid var(--rule);
+	}
+
+	.tier__header {
+		margin-bottom: var(--space-4);
+	}
+
+	.tier__header h3 {
+		color: var(--sage);
+		margin-bottom: var(--space-1);
+	}
+
+	.agent__ul {
+		list-style: square;
+		padding-left: var(--space-5);
+	}
+
+	.agent__li {
 		margin-bottom: var(--space-6);
 	}
-
-	.ladder {
-		list-style: none;
-		padding: 0;
-		margin: 0;
-	}
-	.ladder__rung {
-		display: grid;
-		grid-template-columns: 1fr;
-		gap: var(--space-4);
-		padding: var(--space-6) 0;
-		border-top: 1px solid var(--rule);
-	}
-	/* First rung sits directly under the SumiInk brushstroke — a hairline
-	   here would duplicate the divider read. Brushstroke handles the intro;
-	   hairlines resume between subsequent rungs. */
-	.ladder__rung:first-child { border-top: 0; padding-top: var(--space-4); }
-	.ladder__rung:last-child { padding-bottom: 0; }
-
-	@media (min-width: 920px) {
-		.ladder__rung {
-			grid-template-columns: 220px 1fr;
-			gap: var(--space-7);
-			padding: var(--space-7) 0;
-		}
-	}
-
-	/* Tier label rail */
-	.rung__label {
-		display: flex;
-		flex-direction: column;
-		gap: var(--space-2);
-	}
-	.rung__num {
-		font-size: var(--type-tiny);
-		letter-spacing: 0.18em;
-		color: var(--text-distant);
-		text-transform: uppercase;
-		margin: 0;
-	}
-	.rung__name {
-		font-size: var(--type-h3);
-		margin: 0;
+	
+	.agent__li strong {
 		color: var(--washi);
 	}
-	.rung__note {
-		font-family: var(--font-serif);
+
+	.agent__li > span {
+		color: var(--text-distant);
 		font-size: var(--type-small);
+	}
+
+	.agent__multiplier {
+		color: var(--text-distant);
+		margin-left: var(--space-2);
+	}
+
+	.agent__tools {
+		margin-top: var(--space-2);
+		font-size: var(--type-small);
+	}
+
+	.agent__tools strong {
 		color: var(--text-quiet);
-		margin: 0;
-		max-width: 32ch;
 	}
-	.rung__count {
-		font-size: var(--type-tiny);
-		color: var(--text-distant);
-		margin: var(--space-2) 0 0;
-		display: inline-flex;
-		align-items: baseline;
-		gap: var(--space-2);
-		padding-top: var(--space-2);
-		border-top: 1px solid var(--rule);
-		max-width: max-content;
-	}
-	.rung__count-num {
+
+	.agent__tools ul {
+		margin-top: var(--space-1);
+		padding-left: var(--space-4);
 		color: var(--sage);
-		font-size: var(--type-small);
-	}
-
-	/* Right area — relative for the floating chevron affordance */
-	.rung__cells {
-		display: grid;
-		grid-template-columns: 1fr;
-		gap: var(--space-4);
-		position: relative;
-	}
-	/* Uniform card sizing across all tiers: fixed-width flex track.
-	   Tiers with > 3 agents become a minimalistic horizontal slider:
-	   native scroll-snap + visible peek of the next card + soft fade +
-	   pulsing chevron + cursor:grab. */
-	.rung__cards {
-		display: flex;
-		gap: var(--space-4);
-		overflow-x: auto;
-		scroll-snap-type: x mandatory;
-		scroll-padding-left: 0;
-		padding-bottom: var(--space-2);
-		-webkit-overflow-scrolling: touch;
-
-		/* Scrollbar hidden at rest; revealed on hover / scroll / keyboard focus.
-		   Firefox: thin scrollbar with transparent thumb until interaction.
-		   WebKit: zero-height scrollbar (no layout reservation) until interaction. */
-		scrollbar-width: thin;
-		scrollbar-color: transparent transparent;
-		transition: scrollbar-color 0.3s var(--ease-ink);
-	}
-	.rung__cards:hover,
-	.rung__cards:focus-within,
-	.rung__cards:active {
-		scrollbar-color: var(--sage-deep) transparent;
-	}
-
-	.rung__cards[data-overflow="true"] {
-		cursor: grab;
-		mask-image: linear-gradient(to right, black calc(100% - 56px), transparent 100%);
-		-webkit-mask-image: linear-gradient(to right, black calc(100% - 56px), transparent 100%);
-	}
-	.rung__cards[data-overflow="true"]:active { cursor: grabbing; }
-
-	.rung__cards::-webkit-scrollbar { height: 4px; }
-	.rung__cards::-webkit-scrollbar-track { background: transparent; }
-	.rung__cards::-webkit-scrollbar-thumb {
-		background: transparent;
-		border-radius: var(--radius-sm);
-		transition: background var(--dur-quick) var(--ease-ink);
-	}
-	.rung__cards:hover::-webkit-scrollbar-thumb,
-	.rung__cards:focus-within::-webkit-scrollbar-thumb,
-	.rung__cards:active::-webkit-scrollbar-thumb {
-		background: var(--sage-deep);
-	}
-	.rung__cards::-webkit-scrollbar-thumb:hover { background: var(--sage); }
-
-	/* Card width: 224px gives the locator (4 cards) a real ~64px peek
-	   of the 4th card past the cells column edge — enough to read its
-	   name and ×N badge before any scroll. */
-	.rung__card-wrap {
-		flex: 0 0 224px;
-		display: flex;
-		min-width: 0;
-		scroll-snap-align: start;
-	}
-	.rung__card-wrap > .agent { flex: 1; min-width: 0; }
-
-	/* Right-edge chevron: floats over the faded peek, vertically centered.
-	   Subtle pulse animation (translate 6px right) draws the eye to the
-	   action zone without violating wabi-sabi restraint. */
-	.rung__edge {
-		position: absolute;
-		top: 0;
-		right: 0;
-		bottom: var(--space-2); /* clear the scrollbar */
-		width: 32px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		pointer-events: none;
-		z-index: 2;
-	}
-	.rung__edge-chevron {
-		font-family: var(--font-mono);
-		font-size: 32px;
-		line-height: 1;
-		color: var(--sage);
-		opacity: 0.75;
-		animation: rung-chevron-pulse 2.4s var(--ease-ink) infinite;
-	}
-	@keyframes rung-chevron-pulse {
-		0%, 100% { transform: translateX(0); opacity: 0.55; }
-		50%      { transform: translateX(6px); opacity: 0.95; }
-	}
-	@media (prefers-reduced-motion: reduce) {
-		.rung__edge-chevron { animation: none; opacity: 0.85; }
-	}
-
-	/* Rail pager: lives directly under the agent count, in the user's
-	   reading flow. Film-strip bars + mono caption that names the count
-	   of hidden cards explicitly. */
-	.rung__pager {
-		margin-top: var(--space-3);
-		padding-top: var(--space-3);
-		border-top: 1px solid var(--rule);
-		display: flex;
-		flex-direction: column;
-		gap: var(--space-2);
-	}
-	.rung__pager-bars {
-		display: flex;
-		gap: 4px;
-		align-items: center;
-	}
-	.rung__pager-bar {
-		display: inline-block;
-		width: 16px;
-		height: 3px;
-		background: var(--rule-strong);
-		border-radius: var(--radius-xs);
-	}
-	.rung__pager-bar.is-visible {
-		background: var(--sage);
-	}
-	.rung__pager-cap {
-		font-size: var(--type-tiny);
-		color: var(--text-distant);
-		letter-spacing: 0.16em;
-		text-transform: uppercase;
-		margin: 0;
-		display: flex;
-		align-items: baseline;
-		gap: var(--space-1);
-	}
-	.rung__pager-arrow {
-		color: var(--sage);
-		font-size: var(--type-small);
-	}
-	.rung__pager-num {
-		color: var(--ochre);
-		font-size: var(--type-small);
-	}
-
-	/* Solo-tier composition: ink mark + watermark caption */
-	.ladder__rung[data-solo="true"] .rung__cards {
-		overflow: visible;
-		scroll-snap-type: none;
-		padding-bottom: 0;
-	}
-	.rung__solo {
-		position: relative;
-		min-height: 80px;
-		display: flex;
-		align-items: end;
-		justify-content: end;
-		padding: var(--space-4) var(--space-3) 0;
-	}
-	.rung__solo-ink {
-		position: absolute;
-		top: 0;
-		right: 0;
-		width: 160px;
-		height: auto;
-		color: var(--ochre);
-		opacity: 0.55;
-		pointer-events: none;
-	}
-	.rung__solo-cap {
-		font-size: var(--type-tiny);
-		color: var(--text-distant);
-		margin: 0;
-		text-align: right;
-		max-width: 28ch;
-		position: relative;
-		z-index: 1;
-	}
-	.rung__solo-cap code {
-		color: var(--ochre);
-		background: transparent;
-	}
-
-	/* On wider screens, lay solo card and ink-mark side-by-side */
-	@media (min-width: 720px) {
-		.ladder__rung[data-solo="true"] .rung__cells {
-			grid-template-columns: 224px 1fr;
-			align-items: stretch;
-			gap: var(--space-6);
-		}
-		.rung__solo { min-height: 100%; }
+		list-style: disc;
 	}
 </style>

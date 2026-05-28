@@ -7,18 +7,25 @@ const pipeline = await getPipelineSkills();
 <section id="top" class="hero">
 	<SumiInk variant="backdrop" />
 	<div class="container hero__inner">
-		<p class="kicker hero__kicker">§ rpiv-pi · pi plugin</p>
+		<div class="hero__badge">
+			<span class="hero__badge-pill">§ rpiv-pi · pi plugin</span>
+		</div>
 
 		<h1 class="hero__title">
-			<span class="hero__line hero__line--1">research</span>
-			<span class="hero__line hero__line--2">design</span>
-			<span class="hero__line hero__line--3">ship</span>
+			<span class="hero__line hero__line--1">research.</span>
+			<span class="hero__line hero__line--2">design.</span>
+			<span class="hero__line hero__line--3">ship.</span>
 		</h1>
 
 		<p class="hero__lede">
 			A pipeline of skills and subagents for the Pi coding agent. Turns a vague
 			task into research questions, into a design, into a plan, into shipped code.
 		</p>
+
+		<div class="hero__actions">
+			<a href="#install" class="hero__btn hero__btn--primary">install &nbsp;↓</a>
+			<a href="/docs" class="hero__btn hero__btn--secondary">read docs</a>
+		</div>
 
 		<ol class="hero__rail" aria-label="default pipeline">
 			{pipeline.map((skill, i) => (
@@ -28,10 +35,6 @@ const pipeline = await getPipelineSkills();
 				</li>
 			))}
 		</ol>
-
-		<p class="hero__cta">
-			<a href="#install" class="hero__link">install &nbsp;↓</a>
-		</p>
 	</div>
 </section>
 
@@ -40,50 +43,77 @@ const pipeline = await getPipelineSkills();
 		min-height: 92dvh;
 		display: flex;
 		align-items: center;
+		justify-content: center;
 		padding: var(--space-10) 0 var(--space-9);
 		position: relative;
 		overflow: hidden;
+		text-align: center;
 	}
-	.hero__inner { position: relative; z-index: 1; }
+	.hero__inner {
+		position: relative;
+		z-index: 1;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		max-width: 800px;
+		margin: 0 auto;
+	}
+
+	.hero__badge {
+		margin-bottom: var(--space-6);
+	}
+	.hero__badge-pill {
+		font-family: var(--font-mono);
+		font-size: var(--type-tiny);
+		letter-spacing: 0.18em;
+		text-transform: uppercase;
+		color: var(--sage);
+		background: color-mix(in oklab, var(--sage) 12%, transparent);
+		padding: var(--space-2) var(--space-4);
+		border-radius: 999px;
+		border: 1px solid color-mix(in oklab, var(--sage) 25%, transparent);
+	}
+
 	.hero__title {
 		font-size: var(--type-h1);
 		line-height: 0.95;
 		margin-bottom: var(--space-6);
-	}
-	.hero__line {
-		display: block;
+		font-weight: 800;
+		letter-spacing: -0.04em;
+		color: var(--washi);
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: center;
+		gap: 0 0.25em;
 	}
 
-	/* ── Page-load stagger ──
-	   Single orchestrated reveal: kicker, then three title lines (offset 80ms each),
-	   then lede, then pipeline rail chips (each 60ms apart), then CTA.
-	   Uses the system tokens (--ease-ink, --dur-ink) so motion stays on-vocabulary. */
+	/* ── Page-load stagger ── */
 	@keyframes hero-rise {
-		from { opacity: 0; transform: translateY(8px); }
+		from { opacity: 0; transform: translateY(12px); }
 		to   { opacity: 1; transform: translateY(0);   }
 	}
-	.hero__kicker,
+	.hero__badge,
 	.hero__line,
 	.hero__lede,
-	.hero__node,
-	.hero__cta {
+	.hero__actions,
+	.hero__node {
 		opacity: 0;
 		animation: hero-rise var(--dur-ink) var(--ease-ink) forwards;
 	}
-	.hero__kicker  { animation-delay:   0ms; }
+	.hero__badge   { animation-delay:   0ms; }
 	.hero__line--1 { animation-delay: 120ms; }
 	.hero__line--2 { animation-delay: 200ms; }
 	.hero__line--3 { animation-delay: 280ms; }
 	.hero__lede    { animation-delay: 460ms; }
-	.hero__node    { animation-delay: calc(620ms + var(--rail-i, 0) * 60ms); }
-	.hero__cta     { animation-delay: 1080ms; }
+	.hero__actions { animation-delay: 620ms; }
+	.hero__node    { animation-delay: calc(780ms + var(--rail-i, 0) * 60ms); }
 
 	@media (prefers-reduced-motion: reduce) {
-		.hero__kicker,
+		.hero__badge,
 		.hero__line,
 		.hero__lede,
-		.hero__node,
-		.hero__cta {
+		.hero__actions,
+		.hero__node {
 			opacity: 1;
 			animation: none;
 		}
@@ -96,13 +126,54 @@ const pipeline = await getPipelineSkills();
 		line-height: var(--leading-body);
 		margin-bottom: var(--space-7);
 	}
+
+	.hero__actions {
+		display: flex;
+		gap: var(--space-4);
+		margin-bottom: var(--space-8);
+		flex-wrap: wrap;
+		justify-content: center;
+	}
+	.hero__btn {
+		font-family: var(--font-mono);
+		font-size: var(--type-small);
+		padding: var(--space-3) var(--space-5);
+		border-radius: var(--radius-sm);
+		text-transform: uppercase;
+		letter-spacing: 0.1em;
+		transition: all var(--dur-quick) var(--ease-ink);
+		border-bottom: none;
+	}
+	.hero__btn--primary {
+		background: var(--ochre);
+		color: var(--ink);
+		font-weight: 600;
+		box-shadow: 0 4px 14px color-mix(in oklab, var(--ochre) 30%, transparent);
+	}
+	.hero__btn--primary:hover {
+		transform: translateY(-2px);
+		box-shadow: 0 6px 20px color-mix(in oklab, var(--ochre) 45%, transparent);
+		color: var(--ink);
+	}
+	.hero__btn--secondary {
+		background: var(--ink-raised);
+		color: var(--washi);
+		border: 1px solid var(--rule-strong);
+	}
+	.hero__btn--secondary:hover {
+		border-color: var(--sage);
+		color: var(--sage);
+		transform: translateY(-2px);
+	}
+
 	.hero__rail {
 		list-style: none;
 		display: flex;
 		flex-wrap: wrap;
+		justify-content: center;
 		gap: var(--space-3);
 		padding: 0;
-		margin: 0 0 var(--space-7);
+		margin: 0;
 	}
 	.hero__node {
 		display: inline-flex;
@@ -113,16 +184,8 @@ const pipeline = await getPipelineSkills();
 		color: var(--text-distant);
 		font-family: var(--font-mono);
 	}
-	.hero__cta {
-		font-family: var(--font-mono);
-		font-size: var(--type-small);
-		margin: 0;
-	}
-	.hero__link {
-		color: var(--ochre);
-		border-bottom-color: var(--kuro);
-	}
 	@media (max-width: 720px) {
 		.hero { min-height: auto; padding: var(--space-8) 0 var(--space-7); }
+		.hero__title { font-size: clamp(40px, 10vw, 64px); gap: 0 0.15em; }
 	}
 </style>

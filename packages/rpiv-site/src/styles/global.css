@@ -212,23 +212,21 @@ main > section {
 .card {
 	padding: var(--space-6) var(--space-5);
 	background: var(--ink-raised);
-	border-top: 1px solid var(--rule);
-	border-left: 1px solid var(--rule);
-	border-right: 1px solid var(--rule);
-	border-bottom: 1px solid var(--rule-strong);
+	border: 1px solid var(--rule-strong);
+	border-radius: var(--radius-md);
 	position: relative;
 	overflow: hidden;
+	box-shadow: 0 4px 24px rgba(15, 23, 42, 0.08);
+	transition:
+		border-color var(--dur-quick) var(--ease-ink),
+		transform var(--dur-quick) var(--ease-ink),
+		box-shadow var(--dur-quick) var(--ease-ink);
 }
 
-.card::before {
-	content: "";
-	position: absolute;
-	inset: 0;
-	pointer-events: none;
-	background:
-		radial-gradient(1200px 200px at 30% 0%, rgba(168, 137, 108, 0.04), transparent 60%),
-		radial-gradient(800px 200px at 80% 100%, rgba(138, 149, 128, 0.03), transparent 60%);
-	mix-blend-mode: lighten;
+.card:hover {
+	border-color: var(--sage);
+	box-shadow: 0 10px 30px rgba(6, 182, 212, 0.15);
+	transform: translateY(-2px);
 }
 
 main > section:target h2 {

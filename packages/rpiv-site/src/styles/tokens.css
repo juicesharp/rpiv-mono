@@ -1,35 +1,32 @@
 :root {
-	/* Surface — sumi ink canvas, washi paper accents */
-	--ink: #1c1a17;
-	--ink-raised: #252220;
-	--ink-muted: #2d2925;
-	--washi: #ede6d3;
-	--washi-soft: #c9c0a8;
+	/* Surface — pure white for maximum contrast */
+	--ink: #ffffff;
+	--ink-raised: #f9f9f9;
+	--ink-muted: #eeeeee;
+	--washi: #000000;
+	--washi-soft: #222222;
 
 	/* Text */
-	--text: #ede6d3;
-	--text-quiet: #a8a29e;
-	--text-distant: #9c968d;
+	--text: #111111;
+	--text-quiet: #555555;
+	--text-distant: #777777;
 
-	/* Accents — sage, moss, ochre, kuro */
-	--sage: #8a9580;
-	--sage-deep: #5e6b56;
-	--ochre: #a8896c;
-	--moss: #4a5544;
-	--kuro: #3d2f24;
+	/* Accents — classic web colors */
+	--sage: #0000ee; /* Classic hyperlink blue */
+	--sage-deep: #0000aa;
+	--ochre: #cc0000; /* Classic dark red */
+	--moss: #008800;
+	--kuro: #dddddd;
 
-	/* Alert — desaturated terracotta, the only "stop-and-look" tone in the
-	   system. Reserved for severity:critical and failed verification marks
-	   inside review-report mocks. Never used as a UI accent. */
-	--alert: #b04a3a;
+	/* Alert — vivid modern red */
+	--alert: #ff0000;
 
 	/* Hairlines */
-	--rule: #2e2b27;
-	--rule-strong: #3a3631;
-	/* Link underline — sage tinted, kept distinct from structural rules so
-	   `--rule-strong` stays reserved for card edges + emphasis dividers. */
-	--underline: color-mix(in oklab, var(--sage) 35%, transparent);
-	--underline-hover: color-mix(in oklab, var(--sage) 60%, transparent);
+	--rule: #dddddd;
+	--rule-strong: #aaaaaa;
+	/* Link underline */
+	--underline: var(--sage);
+	--underline-hover: var(--washi);
 
 	/* Spacing — "ma" rhythm based on 8px unit */
 	--space-1: 4px;
@@ -44,32 +41,22 @@
 	--space-10: 128px;
 	--space-11: 192px;
 
-	/* Type — mono for structure, serif for prose.
-	   Mono cascade: Berkeley Mono is the design intent (commercial, not shipped);
-	   JetBrains Mono is loaded as webfont in Base.astro so visitors without
-	   Berkeley still get a coherent mono voice; ui-monospace / SF Mono / Cascadia
-	   cover the no-CDN fallback path.
-	   Serif cascade: Iowan Old Style ships with macOS, Charter ships with iOS+
-	   modern macOS, Source Serif Pro covers Linux/Windows fallbacks. */
-	--font-mono: "Berkeley Mono", "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Code", monospace;
-	--font-serif: "Iowan Old Style", "Hoefler Text", "Charter", "Source Serif Pro", Georgia, serif;
+	/* Type — mono for structure, gorgeous Outfit sans-serif for body/prose. */
+	--font-mono: "JetBrains Mono", "Berkeley Mono", ui-monospace, "SF Mono", monospace;
+	--font-serif: "Outfit", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 
-	--type-micro: 10px;
-	--type-tiny: 11px;
-	--type-kicker: 12px;
-	--type-small: 13px;
-	--type-base: 16px;
-	--type-lead: 17px;
-	--type-h3: 20px;
-	--type-h-hero: 30px;
-	--type-h2: clamp(28px, 4vw, 40px);
-	--type-h1: clamp(48px, 8vw, 96px);
+	--type-micro: 11px;
+	--type-tiny: 13px;
+	--type-kicker: 14px;
+	--type-small: 16px;
+	--type-base: 18px;
+	--type-lead: 20px;
+	--type-h3: 24px;
+	--type-h-hero: 36px;
+	--type-h2: clamp(32px, 5vw, 48px);
+	--type-h1: clamp(56px, 9vw, 112px);
 
-	/* Sectional / docs scale — scanning rhythm, not editorial weight.
-	   --type-h-section: in-section h3 used by landing composers (Guidance et al.),
-	   slightly larger than --type-h3 with fluid step.
-	   --type-h-docs-h2 / -h3: tighter ramp inside `.prose--docs` so reference
-	   pages scan rather than read. h1 inside `.prose--docs` already uses --type-h2. */
+	/* Sectional / docs scale — scanning rhythm, not editorial weight. */
 	--type-h-section: clamp(22px, 2.4vw, 26px);
 	--type-h-docs-h2: 24px;
 	--type-h-docs-h3: 18px;
@@ -79,19 +66,18 @@
 	--leading-relaxed: 1.55;
 	--leading-body: 1.65;
 
-	/* Motion — slow, organic ink. Durations stack from quickest tap-feedback
-	   through entrance ticks to the signature long-form ink reveal. */
-	--ease-ink: cubic-bezier(0.23, 0.71, 0.27, 0.98);
+	/* Motion — slow, organic ink. */
+	--ease-ink: cubic-bezier(0.16, 1, 0.3, 1);
 	--dur-fast: 120ms;
 	--dur-quick: 320ms;
 	--dur-tick: 360ms;
 	--dur-ink: 600ms;
 	--dur-enter: 1200ms;
 
-	/* Radii — slightly imperfect, never crisp */
-	--radius-xs: 1px;
-	--radius-sm: 2px;
-	--radius-md: 3px;
+	/* Radii — elegant, smooth modern rounded curves */
+	--radius-xs: 4px;
+	--radius-sm: 8px;
+	--radius-md: 12px;
 }
 
 @media (prefers-reduced-motion: reduce) {
