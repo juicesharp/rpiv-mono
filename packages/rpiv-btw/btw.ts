@@ -291,8 +291,23 @@ export function registerMessageEndSnapshot(pi: ExtensionAPI): void {
 }
 
 export function registerInvalidationHooks(pi: ExtensionAPI): void {
-	pi.on("session_compact", async (_e, ctx) => invalidateSnapshot(ctx));
-	pi.on("session_tree", async (_e, ctx) => invalidateSnapshot(ctx));
+	// session_compact / session_tree: invalidate the snapshot cache after compaction
+	// or tree navigation. The extension runner ctx may be stale if a
+	// concurrent session replacement invalidated the proxy.
+	pi.on("session_compact", async (_e, ctx) => {
+		try {
+			invalidateSnapshot(ctx);
+		} catch {
+			// stale ctx — nothing to invalidate
+		}
+	});
+	pi.on("session_tree", async (_e, ctx) => {
+		try {
+			invalidateSnapshot(ctx);
+		} catch {
+			// stale ctx — nothing to invalidate
+		}
+	});
 }
 
 export function registerBtwCommand(pi: ExtensionAPI): void {

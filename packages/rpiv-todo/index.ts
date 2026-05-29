@@ -62,13 +62,24 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("session_compact", async (_event, ctx) => {
-		replaceState(replayFromBranch(ctx));
+		// After auto-compaction the extension runner ctx may be stale
+		// (invalidated by a concurrent session replacement or reload).
+		// Keep existing state when replay is unavailable.
+		try {
+			replaceState(replayFromBranch(ctx));
+		} catch {
+			// stale ctx — keep current state
+		}
 		todoOverlay?.resetCompletedDisplayState();
 		todoOverlay?.update();
 	});
 
 	pi.on("session_tree", async (_event, ctx) => {
-		replaceState(replayFromBranch(ctx));
+		try {
+			replaceState(replayFromBranch(ctx));
+		} catch {
+			// stale ctx — keep current state
+		}
 		todoOverlay?.resetCompletedDisplayState();
 		todoOverlay?.update();
 	});

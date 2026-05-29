@@ -130,7 +130,16 @@ async function onSessionCompact(_event: unknown, ctx: { cwd: string }, pi: Exten
 	resetInjectionState();
 	clearGitContextCache();
 	resetInjectedMarker();
-	injectRootGuidance(ctx.cwd, pi);
+	// After auto-compaction the extension runner ctx may be stale
+	// (invalidated by a concurrent session replacement or reload).
+	// Fall back to process.cwd() when the proxy throws.
+	let cwd: string;
+	try {
+		cwd = ctx.cwd;
+	} catch {
+		cwd = process.cwd();
+	}
+	injectRootGuidance(cwd, pi);
 	await injectGitContext(pi, (msg) => sendGitContextMessage(pi, msg));
 }
 
