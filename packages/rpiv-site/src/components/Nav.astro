@@ -31,7 +31,14 @@ function isActive(path: string) {
 			<a href="/agents" class={isActive("/agents") ? "is-active" : ""}>agents</a>
 			<a href="/tools" class={isActive("/tools") ? "is-active" : ""}>tools</a>
 			<a href="/docs" class={isActive("/docs") ? "is-active" : ""}>docs</a>
-			<a href="https://github.com/juicesharp/rpiv-mono">github</a>
+			<a href="https://github.com/juicesharp/rpiv-mono" target="_blank" rel="noopener" class="nav__link--external">
+				github
+				<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+					<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+					<polyline points="15 3 21 3 21 9"/>
+					<line x1="10" y1="14" x2="21" y2="3"/>
+				</svg>
+			</a>
 		</nav>
 	</div>
 </header>
@@ -80,6 +87,21 @@ function isActive(path: string) {
 	.nav__links a {
 		color: var(--sage);
 		text-decoration: none;
+		border-bottom: none;
+	}
+
+	.nav__link--external {
+		display: inline-flex;
+		align-items: center;
+		gap: 2px;
+	}
+
+	.nav__link--external svg {
+		color: var(--sage);
+	}
+
+	.nav__link--external:hover svg {
+		color: var(--washi);
 	}
 
 	.nav__links a:hover {
