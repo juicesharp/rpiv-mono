@@ -14,7 +14,7 @@ Let the model ask a stronger model for a second opinion before it acts. `rpiv-ad
 
 ## Features
 
-- **Reviewer model selector** - `/advisor` opens a picker over any model in Pi's registry, plus a reasoning-effort picker for reasoning-capable models.
+- **Reviewer model selector** - `/advisor` opens a picker over any model in Pi's registry, plus a reasoning-effort picker for reasoning-capable models. Start typing to fuzzy-filter the list by model name or `provider:id`.
 - **Persisted across sessions** - selection saved at `~/.config/rpiv-advisor/advisor.json` (chmod 0600).
 - **Off by default** - the `advisor` tool is excluded until you pick a model; choose "No advisor" to disable.
 - **Per-executor blocklist** - list executor models in `disabledForModels` (in `advisor.json`) to strip the `advisor` tool when those models drive the session. Entries can be plain strings (block at any effort) or `{ "model": "<provider:id>", "minEffort": "<level>" }` to block only when the executor's effort meets or exceeds the threshold. Available levels, lowest to highest: `minimal`, `low`, `medium`, `high`, `xhigh`.
