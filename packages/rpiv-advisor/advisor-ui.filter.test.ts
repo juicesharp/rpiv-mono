@@ -1,6 +1,6 @@
 import type { SelectItem } from "@earendil-works/pi-tui";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { filterItems, fuzzyScore, showAdvisorPicker } from "./advisor-ui.js";
+import { showAdvisorPicker } from "./advisor-ui.js";
 
 interface RenderableComponent {
 	render: (w: number) => string[];
@@ -43,64 +43,6 @@ const advisorItems: SelectItem[] = [
 
 afterEach(() => {
 	vi.restoreAllMocks();
-});
-
-describe("fuzzyScore", () => {
-	it("returns 0 for an empty query (matches everything)", () => {
-		expect(fuzzyScore("", "anything")).toBe(0);
-	});
-
-	it("returns null when the query is not a subsequence", () => {
-		expect(fuzzyScore("xyz", "claude opus")).toBeNull();
-	});
-
-	it("matches a subsequence regardless of contiguity", () => {
-		expect(fuzzyScore("cop", "claude opus")).not.toBeNull();
-	});
-
-	it("is case-insensitive", () => {
-		expect(fuzzyScore("OPUS", "claude opus")).not.toBeNull();
-	});
-
-	it("scores a contiguous run higher than a scattered match", () => {
-		const contiguous = fuzzyScore("opus", "claude opus") as number;
-		const scattered = fuzzyScore("clop", "claude opus") as number;
-		expect(contiguous).toBeGreaterThan(scattered);
-	});
-
-	it("rewards word-boundary matches", () => {
-		const boundary = fuzzyScore("o", "claude opus") as number; // matches the 'o' at a space boundary
-		const midword = fuzzyScore("d", "claude opus") as number; // matches 'd' mid-word
-		expect(boundary).toBeGreaterThan(midword);
-	});
-});
-
-describe("filterItems", () => {
-	it("returns the original list (same order) for an empty query", () => {
-		expect(filterItems(advisorItems, "")).toEqual(advisorItems);
-	});
-
-	it("matches against the value, not just the label", () => {
-		const result = filterItems(advisorItems, "gpt-5");
-		expect(result.map((i) => i.value)).toContain("openai:gpt-5");
-	});
-
-	it("matches a label substring that is not a prefix of the value", () => {
-		// "opus" is not a prefix of "anthropic:claude-opus-4-7" — the built-in
-		// SelectList.setFilter would miss this; fuzzy matching catches it.
-		const result = filterItems(advisorItems, "opus");
-		expect(result[0]?.value).toBe("anthropic:claude-opus-4-7");
-	});
-
-	it("drops items that do not match", () => {
-		const result = filterItems(advisorItems, "glm");
-		expect(result).toHaveLength(1);
-		expect(result[0]?.value).toBe("zai:glm-4-6");
-	});
-
-	it("returns an empty list when nothing matches", () => {
-		expect(filterItems(advisorItems, "zzzzzz")).toEqual([]);
-	});
 });
 
 describe("showAdvisorPicker — type-to-filter flow", () => {

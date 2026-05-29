@@ -50,7 +50,7 @@ beforeEach(async () => {
 	const todo = await import("../packages/rpiv-todo/todo.js");
 	todo.__resetState();
 
-	const advisor = await import("../packages/rpiv-advisor/advisor.js");
+	const advisor = await import("../packages/rpiv-advisor/advisor/index.js");
 	advisor.setAdvisorModel(undefined);
 	advisor.setAdvisorEffort(undefined);
 	advisor.setDisabledForModels([]);

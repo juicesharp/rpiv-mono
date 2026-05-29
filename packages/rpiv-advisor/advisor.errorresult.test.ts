@@ -10,7 +10,7 @@ vi.mock("@earendil-works/pi-ai", async (importOriginal) => {
 	};
 });
 
-import { registerAdvisorTool, setAdvisorEffort, setAdvisorModel } from "./advisor.js";
+import { registerAdvisorTool, setAdvisorEffort, setAdvisorModel } from "./advisor/index.js";
 
 describe("advisor execute — buildErrorResult envelope", () => {
 	it("omits advisorModel when label undefined (no model selected)", async () => {

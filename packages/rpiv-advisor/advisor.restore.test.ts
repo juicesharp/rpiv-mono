@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createMockCtx, createMockPi } from "@juicesharp/rpiv-test-utils";
 import { describe, expect, it, vi } from "vitest";
-import { __resetAdvisorAnnounced, getAdvisorEffort, getAdvisorModel, restoreAdvisorState } from "./advisor.js";
+import { __resetAdvisorAnnounced, getAdvisorEffort, getAdvisorModel, restoreAdvisorState } from "./advisor/index.js";
 
 const CONFIG_PATH = join(process.env.HOME!, ".config", "rpiv-advisor", "advisor.json");
 

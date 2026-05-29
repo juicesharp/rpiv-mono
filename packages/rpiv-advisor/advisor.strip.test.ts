@@ -1,7 +1,7 @@
 import type { Message } from "@earendil-works/pi-ai";
 import { makeAssistantMessage, makeToolResult, makeUserMessage } from "@juicesharp/rpiv-test-utils";
 import { describe, expect, it } from "vitest";
-import { ensureUserTailForAdvisor, stripInflightAdvisorCall } from "./advisor.js";
+import { ensureUserTailForAdvisor, stripInflightAdvisorCall } from "./advisor/index.js";
 
 describe("stripInflightAdvisorCall", () => {
 	it("returns original array for empty messages", () => {

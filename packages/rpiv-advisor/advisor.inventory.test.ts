@@ -1,6 +1,6 @@
 import type { ToolInfo } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
-import { getInventoryMessage, stableStringify } from "./advisor.js";
+import { getInventoryMessage, stableStringify } from "./advisor/index.js";
 
 const tool = (overrides: Partial<ToolInfo>): ToolInfo =>
 	({

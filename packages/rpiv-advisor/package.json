@@ -28,8 +28,9 @@
 	},
 	"files": [
 		"index.ts",
-		"advisor.ts",
+		"advisor/",
 		"advisor-ui.ts",
+		"fuzzy.ts",
 		"prompts/",
 		"README.md",
 		"LICENSE"

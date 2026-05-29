@@ -26,7 +26,7 @@ vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
 
 import { completeSimple } from "@earendil-works/pi-ai";
 import { buildSessionContext } from "@earendil-works/pi-coding-agent";
-import { registerAdvisorTool, setAdvisorModel } from "./advisor.js";
+import { registerAdvisorTool, setAdvisorModel } from "./advisor/index.js";
 
 function resp(input: { text?: string; stopReason?: "done" | "aborted" | "error" | "toolUse"; errorMessage?: string }) {
 	return {

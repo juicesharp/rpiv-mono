@@ -18,7 +18,7 @@ import {
 	restoreAdvisorState,
 	setAdvisorModel,
 	setDisabledForModels,
-} from "./advisor.js";
+} from "./advisor/index.js";
 import { showAdvisorPicker, showEffortPicker } from "./advisor-ui.js";
 
 const modelA = { provider: "anthropic", id: "opus", name: "Opus" } as unknown as Model<Api>;

@@ -1,7 +1,7 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
-import { loadAdvisorConfig, saveAdvisorConfig } from "./advisor.js";
+import { loadAdvisorConfig, saveAdvisorConfig } from "./advisor/index.js";
 
 const CONFIG_PATH = join(process.env.HOME!, ".config", "rpiv-advisor", "advisor.json");
 

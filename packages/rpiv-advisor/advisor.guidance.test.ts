@@ -9,7 +9,7 @@ import {
 	loadAdvisorConfig,
 	registerAdvisorTool,
 	saveAdvisorConfig,
-} from "./advisor.js";
+} from "./advisor/index.js";
 
 const CONFIG_PATH = join(process.env.HOME!, ".config", "rpiv-advisor", "advisor.json");
 

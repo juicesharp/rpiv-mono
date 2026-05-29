@@ -14,11 +14,11 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
 	registerAdvisorBeforeAgentStart,
 	registerAdvisorCommand,
+	registerAdvisorSessionStart,
 	registerAdvisorTool,
 	registerModelSelectHandler,
 	registerThinkingLevelSelectHandler,
-	restoreAdvisorState,
-} from "./advisor.js";
+} from "./advisor/index.js";
 
 export default function (pi: ExtensionAPI) {
 	registerAdvisorTool(pi);
@@ -26,8 +26,5 @@ export default function (pi: ExtensionAPI) {
 	registerAdvisorBeforeAgentStart(pi);
 	registerModelSelectHandler(pi);
 	registerThinkingLevelSelectHandler(pi);
-
-	pi.on("session_start", async (_event, ctx) => {
-		restoreAdvisorState(ctx, pi);
-	});
+	registerAdvisorSessionStart(pi);
 }
