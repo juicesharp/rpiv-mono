@@ -1,0 +1,44 @@
+{
+  "name": "@solforged/rpiv-goal",
+  "version": "0.0.1",
+  "description": "Pi extension. Session-scoped goal mode that keeps the agent working until explicit completion.",
+  "license": "MIT",
+  "type": "module",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "rpiv",
+    "goal",
+    "agent-loop",
+    "autonomous"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/juicesharp/rpiv-mono.git",
+    "directory": "packages/rpiv-goal"
+  },
+  "homepage": "",
+  "files": [
+    "index.ts",
+    "prompt.ts",
+    "state.ts",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

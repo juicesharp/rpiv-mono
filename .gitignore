@@ -28,7 +28,8 @@ thoughts/
 *.swo
 *~
 
-# Agent metadata (Claude Code local session state)
+# Agent metadata (local session state)
+.agents/
 .claude/
 
 # Package specific
