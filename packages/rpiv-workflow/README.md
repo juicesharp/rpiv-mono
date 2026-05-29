@@ -332,12 +332,21 @@ There is no framework default for `produces` — load-time validation rejects a 
 The collector is the user-supplyable primitive — one method, one return type:
 
 ```ts
-import { defineCollector, opaque, type Artifact } from "@juicesharp/rpiv-workflow";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { defineCollector, opaque } from "@juicesharp/rpiv-workflow";
 
-export const linearTicketCollector = defineCollector((ctx) => {
-  const id = parseLinearIdFromBranch(ctx.branch);
-  if (!id) return { kind: "fatal", message: "stage did not emit a Linear ticket id" };
-  return { kind: "ok", artifacts: [{ handle: opaque(id), role: "ticket" }] };
+const git = promisify(execFile);
+
+export const linearTicketCollector = defineCollector({
+  collect: async (ctx) => {
+    // `ctx.branch` is the assistant transcript, not the git branch — read the
+    // branch name from git (via `ctx.cwd`) and pull the ticket id out of it.
+    const { stdout } = await git("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: ctx.cwd });
+    const id = stdout.trim().match(/[A-Z]{2,}-\d+/)?.[0];
+    if (!id) return { kind: "fatal", message: "no Linear ticket id (e.g. ENG-1234) in the branch name" };
+    return { kind: "ok", artifacts: [{ handle: opaque(id), role: "ticket" }] };
+  },
 });
 ```
 
