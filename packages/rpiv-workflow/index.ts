@@ -140,6 +140,7 @@ export {
 	ON_INVALID_VALUES,
 	type OnInvalid,
 	type ProducesScriptFn,
+	type PromptFn,
 	produces,
 	READS_DATA,
 	type ScriptContext,

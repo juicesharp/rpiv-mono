@@ -222,6 +222,28 @@ export type ProducesScriptFn<K extends string = string, D = unknown> = (
  */
 export type ActsScriptFn = (ctx: ScriptContext) => void | Promise<void>;
 
+/**
+ * Raw-prompt dispatch body — the third dispatch alongside `skill`
+ * (`/skill:<name> <args>`) and script `run` (pure TS, no model). Returns the
+ * COMPLETE user message sent into the stage's session: no `/skill:` prefix and
+ * no implicit upstream-artifact arg appended. The dynamic form receives the
+ * same `ScriptContext` script stages get, so a prompt can weave in the upstream
+ * `Output` (`ctx.input`) or the named registry (`ctx.state.named`):
+ *
+ *   acts({ prompt: "Implement the design spec discussed above.", sessionPolicy: "continue" })
+ *   produces({ prompt: ({ input }) =>
+ *     `Summarise ${handleToString(input!.artifacts[0]!.handle)} in 3 bullets.`, outcome })
+ *
+ * A plain `string` is sugar for `() => string`. Unlike a skill stage, a prompt
+ * stage skips the skill-registry preflight (there is no skill to register).
+ * Mutually exclusive with `skill` (explicit), `run`, `reads`, and — in v1 —
+ * `fanout`/`iterate`. Composes with `kind` (a `produces` prompt stage runs the
+ * `outcome` collector and publishes; a `side-effect` prompt stage just talks)
+ * and `sessionPolicy` (`continue` = a follow-up turn on a session a prior stage
+ * populated). (validated at load + preflight.)
+ */
+export type PromptFn = (ctx: ScriptContext) => string | Promise<string>;
+
 // ===========================================================================
 // Types
 // ===========================================================================
@@ -343,6 +365,18 @@ export interface StageDef<TIn = unknown, TOut = unknown> {
 	 * by `validateWorkflow`.
 	 */
 	run?: ProducesScriptFn<string, TOut> | ActsScriptFn;
+	/**
+	 * Raw-prompt dispatch: when set, the runner sends this text (resolved per
+	 * the `PromptFn`, or the literal string) into the stage's session instead
+	 * of `/skill:<skill>`. The stage runs the model with no skill body and no
+	 * skill-registry check. Presence of `prompt` is the third dispatch
+	 * discriminator alongside `run`.
+	 *
+	 * Mutually exclusive with `skill` (explicit), `run`, `reads`, and — in v1 —
+	 * `fanout`/`iterate`. Composes with `kind` and `sessionPolicy`. (validated
+	 * at load + preflight.)
+	 */
+	prompt?: string | PromptFn;
 	/**
 	 * Names this stage consumes from `state.named` to build its prompt.
 	 * When set, the runner replaces the default single-artifact prompt
