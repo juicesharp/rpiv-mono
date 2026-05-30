@@ -100,23 +100,23 @@ export const PIPELINE_META = {
 	},
 	research: {
 		collects: ["Open questions", "Codebase facts", "Cross-file traces", "Cited line refs"],
-		why: "Parallel analysis agents answer structured questions and synthesize one cited document. Design reads this, not the codebase.",
+		why: "The cited document becomes design's single source of truth — it reads this, never the codebase. Parallelism keeps a wide question set cheap.",
 	},
 	design: {
 		collects: ["Architectural decisions", "Vertical slices", "File map", "Ordering", "Risk notes"],
-		why: "Decomposes the feature into the smallest set of vertical slices that can land independently.",
+		why: "Slices are cut to land independently, so planning can parallelize them and no piece waits on the rest to ship.",
 	},
 	plan: {
 		collects: ["Atomic phases", "Parallelization graph", "Success criteria", "Rollback notes"],
-		why: "Turns the design into phases sized for one verification loop each, with the criteria that prove a phase is done.",
+		why: "Each phase is sized for a single verification loop and carries the criteria that prove it's done before the next starts.",
 	},
 	implement: {
 		collects: ["Code edits", "Phase verification logs", "Failure-recovery notes"],
-		why: "Executes phases one at a time, runs the success criteria, refuses to advance until they pass.",
+		why: "Gating each phase on its own criteria keeps a failure contained to one slice instead of compounding across the change.",
 	},
 	validate: {
 		collects: ["Pass/fail per criterion", "Drift notes", "Follow-up tickets"],
-		why: "Independent re-check of the plan against the working tree. Catches half-finished phases the implement loop missed.",
+		why: "A separate pass that never saw the implement loop can't inherit its blind spots — the re-check is only trustworthy because it's independent.",
 	},
 } satisfies Record<PipelineStep, PipelineMeta>;
 

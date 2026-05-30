@@ -57,14 +57,15 @@ const revise = await getSkill("revise");
 						style={`--reveal-delay: ${i * 60}ms`}>
 						<div class="emaki__head">
 							<span class="emaki__num mono">{stepNum}</span>
+							{(isOptional || skill.data["disable-model-invocation"]) && (
+								<span class="emaki__tags mono">
+									{isOptional && <span class="emaki__tag emaki__tag--optional">optional</span>}
+									{skill.data["disable-model-invocation"] && <span class="emaki__tag emaki__tag--manual">manual only</span>}
+								</span>
+							)}
 							<span class="emaki__rule" aria-hidden="true"></span>
 							<span class="emaki__name mono">/skill:{skill.data.name}</span>
 							<span class="emaki__open mono" aria-hidden="true">open</span>
-						</div>
-
-						<div class="emaki__chips">
-							{isOptional && <span class="chip chip--muted">optional</span>}
-							{skill.data["disable-model-invocation"] && <span class="chip chip--ochre">manual only</span>}
 						</div>
 
 						<p class="emaki__tagline">{skill.tagline}</p>
@@ -406,21 +407,40 @@ const revise = await getSkill("revise");
 	.emaki__panel.is-open .emaki__num { color: var(--ochre); }
 
 	.emaki__head {
-		display: grid;
-		grid-template-columns: auto 1fr auto auto;
+		display: flex;
 		align-items: center;
 		gap: var(--space-2);
 		padding-bottom: var(--space-2);
-		border-bottom: 1px solid var(--rule-strong);
 	}
 	.emaki__num {
 		font-size: var(--type-tiny);
 		letter-spacing: 0.18em;
 		color: var(--washi);
+		flex: none;
 		transition: color var(--dur-quick) var(--ease-ink);
 	}
+	/* Compact inline tags (optional / manual only) live in the header so they
+	   don't add a body row — keeps every panel's body aligned. Sized to the
+	   header line height so the optional card stays the same height as the rest. */
+	.emaki__tags {
+		display: flex;
+		align-items: center;
+		gap: var(--space-2);
+		flex: none;
+	}
+	.emaki__tag {
+		font-size: var(--type-tiny);
+		letter-spacing: 0.16em;
+		text-transform: uppercase;
+		line-height: 1;
+		white-space: nowrap;
+	}
+	.emaki__tag--optional { color: var(--ochre); }
+	.emaki__tag--manual { color: var(--sage); }
 	.emaki__rule {
 		display: block;
+		flex: 1;
+		min-width: var(--space-3);
 		height: 1px;
 		background: var(--rule-strong);
 	}
@@ -438,20 +458,22 @@ const revise = await getSkill("revise");
 		transition: opacity var(--dur-quick) var(--ease-ink);
 	}
 
-	.emaki__chips {
-		display: flex;
-		flex-wrap: wrap;
-		gap: var(--space-2);
-		min-height: 0;
-	}
-	.emaki__chips:empty { display: none; }
-
 	.emaki__tagline {
 		font-family: var(--font-serif);
 		font-size: var(--type-small);
 		line-height: var(--leading-snug);
 		color: var(--text);
 		margin: 0;
+	}
+
+	/* Side-by-side layout only: reserve a consistent tagline height so
+	   COLLECTS / WHY / PRODUCES line up row-to-row across panels. Below 481px
+	   panels stack, so alignment is moot and the reserve is dropped to avoid
+	   wasted vertical space. 5.4em ≈ four lines of the longest tagline. */
+	@media (min-width: 481px) {
+		.emaki__tagline { min-height: 5.4em; }
+		/* Hold two lines so the WHY row stays aligned when a collects list is short. */
+		.emaki__collectList { min-height: 2.7em; }
 	}
 
 	.emaki__field {
