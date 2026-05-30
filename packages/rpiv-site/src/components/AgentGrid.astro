@@ -81,6 +81,73 @@ const TIER_META: Record<CapabilityTier, { label: string; note: string; cap: stri
 	</div>
 </section>
 
+<script>
+	(() => {
+		const rows = Array.from(
+			document.querySelectorAll<HTMLElement>('.rung__cards[data-overflow="true"]'),
+		);
+		if (!rows.length) return;
+
+		for (const track of rows) {
+			// Mouse drag-to-scroll. The grab/grabbing cursor advertises this; native
+			// overflow-x already covers touch + trackpad, this adds parity for mouse.
+			let dragging = false;
+			let dragStartX = 0;
+			let dragStartScroll = 0;
+
+			track.addEventListener("mousedown", (e) => {
+				const me = e as MouseEvent;
+				if (me.button !== 0) return;
+				dragging = true;
+				dragStartX = me.pageX;
+				dragStartScroll = track.scrollLeft;
+				track.classList.add("is-dragging");
+			});
+			window.addEventListener("mousemove", (e) => {
+				if (!dragging) return;
+				const me = e as MouseEvent;
+				track.scrollLeft = dragStartScroll - (me.pageX - dragStartX);
+			});
+			const endDrag = () => {
+				if (!dragging) return;
+				dragging = false;
+				track.classList.remove("is-dragging");
+			};
+			window.addEventListener("mouseup", endDrag);
+			window.addEventListener("blur", endDrag);
+
+			// Keyboard: focusable row, arrow/Home/End advance one card at a time.
+			track.tabIndex = 0;
+			track.addEventListener("keydown", (e) => {
+				const ke = e as KeyboardEvent;
+				if (ke.key !== "ArrowLeft" && ke.key !== "ArrowRight" && ke.key !== "Home" && ke.key !== "End") return;
+				e.preventDefault();
+				const cards = Array.from(track.querySelectorAll<HTMLElement>(".rung__card-wrap"));
+				if (!cards.length) return;
+				const trackLeft = track.getBoundingClientRect().left;
+				// Offset of each card from the track's scroll origin. Card nearest the
+				// left edge is the current anchor.
+				const offsets = cards.map((c) => track.scrollLeft + (c.getBoundingClientRect().left - trackLeft));
+				let current = 0;
+				let bestDist = Infinity;
+				offsets.forEach((off, i) => {
+					const d = Math.abs(off - track.scrollLeft);
+					if (d < bestDist) {
+						bestDist = d;
+						current = i;
+					}
+				});
+				let target = current;
+				if (ke.key === "ArrowLeft") target = Math.max(0, current - 1);
+				else if (ke.key === "ArrowRight") target = Math.min(cards.length - 1, current + 1);
+				else if (ke.key === "Home") target = 0;
+				else if (ke.key === "End") target = cards.length - 1;
+				track.scrollTo({ left: offsets[target], behavior: "smooth" });
+			});
+		}
+	})();
+</script>
+
 <style>
 	.agents__lede {
 		color: var(--text-quiet);
@@ -175,17 +242,15 @@ const TIER_META: Record<CapabilityTier, { label: string; note: string; cap: stri
 		padding-bottom: var(--space-2);
 		-webkit-overflow-scrolling: touch;
 
-		/* Scrollbar hidden at rest; revealed on hover / scroll / keyboard focus.
-		   Firefox: thin scrollbar with transparent thumb until interaction.
-		   WebKit: zero-height scrollbar (no layout reservation) until interaction. */
+		/* Neutral, always-visible scrollbar — matches the pipeline (.emaki) and
+		   sibling-card scrollers for a consistent read across the page. */
 		scrollbar-width: thin;
-		scrollbar-color: transparent transparent;
-		transition: scrollbar-color 0.3s var(--ease-ink);
+		scrollbar-color: var(--rule-strong) transparent;
 	}
-	.rung__cards:hover,
-	.rung__cards:focus-within,
-	.rung__cards:active {
-		scrollbar-color: var(--sage-deep) transparent;
+	.rung__cards[data-overflow="true"] { outline: none; }
+	.rung__cards[data-overflow="true"]:focus-visible {
+		outline: 1px solid var(--sage);
+		outline-offset: 4px;
 	}
 
 	.rung__cards[data-overflow="true"] {
@@ -194,20 +259,20 @@ const TIER_META: Record<CapabilityTier, { label: string; note: string; cap: stri
 		-webkit-mask-image: linear-gradient(to right, black calc(100% - 56px), transparent 100%);
 	}
 	.rung__cards[data-overflow="true"]:active { cursor: grabbing; }
+	/* During an active mouse drag, suppress snap (it fights the drag) and text
+	   selection, and pin the grabbing cursor even if the pointer leaves the row. */
+	.rung__cards.is-dragging {
+		cursor: grabbing;
+		scroll-snap-type: none;
+		user-select: none;
+	}
 
-	.rung__cards::-webkit-scrollbar { height: 4px; }
+	.rung__cards::-webkit-scrollbar { height: 6px; }
 	.rung__cards::-webkit-scrollbar-track { background: transparent; }
 	.rung__cards::-webkit-scrollbar-thumb {
-		background: transparent;
-		border-radius: var(--radius-sm);
-		transition: background var(--dur-quick) var(--ease-ink);
+		background: var(--rule-strong);
+		border-radius: var(--radius-md);
 	}
-	.rung__cards:hover::-webkit-scrollbar-thumb,
-	.rung__cards:focus-within::-webkit-scrollbar-thumb,
-	.rung__cards:active::-webkit-scrollbar-thumb {
-		background: var(--sage-deep);
-	}
-	.rung__cards::-webkit-scrollbar-thumb:hover { background: var(--sage); }
 
 	/* Card width: 224px gives the locator (4 cards) a real ~64px peek
 	   of the 4th card past the cells column edge — enough to read its
