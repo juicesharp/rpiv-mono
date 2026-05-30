@@ -61,7 +61,11 @@ const currentPath = Astro.url.pathname;
 	}
 
 	.docs-layout.has-toc {
-		grid-template-columns: 240px minmax(0, 1fr) 180px;
+		/* Content column tracks the reading measure (~68ch) instead of greedily
+		   filling 1fr, which left a dead gap between the 64ch text and the TOC.
+		   The recovered width goes to a roomier TOC so its headings stop
+		   wrapping to two lines. */
+		grid-template-columns: 240px minmax(0, 720px) minmax(220px, 1fr);
 	}
 
 	.docs-sidebar {

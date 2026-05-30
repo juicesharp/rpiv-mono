@@ -199,6 +199,17 @@
 	margin-top: var(--space-2);
 }
 
+/* On docs article pages (those with an on-this-page TOC) the content column
+   is sized to a comfortable scanning measure. Let the container fill that
+   column and cap only the running text, so code blocks, tables, and images
+   span the full width instead of overflowing the 64ch reading cap. */
+.has-toc .prose--docs {
+	max-width: none;
+}
+.has-toc .prose--docs > :is(p, ul, ol, blockquote, h2, h3, h4) {
+	max-width: 68ch;
+}
+
 /* Page-level lede paragraph (sits under the docs h1, above any meta strip).
    Single source of truth so the four detail/index pages stop drifting on
    line-height (snug vs relaxed vs default) and margin-bottom (5 vs 6 vs 7).
