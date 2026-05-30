@@ -16,6 +16,7 @@
 import { readFileSync } from "node:fs";
 import { basename, isAbsolute, join } from "node:path";
 import {
+	type Artifact,
 	acts,
 	defineRoute,
 	defineWorkflow,
@@ -27,7 +28,10 @@ import {
 	gt,
 	handleToString,
 	type IterateFn,
+	type Output,
+	type PromptFn,
 	produces,
+	type RunState,
 	typeboxSchema,
 	type Workflow,
 } from "@juicesharp/rpiv-workflow";
@@ -238,6 +242,33 @@ const vetWorkflow = defineWorkflow({
 /** `### Phase N — name` headings define the review's dependency-ordered phases. */
 const REVIEW_PHASE_RE = /^### Phase (\d+) — (.+)$/gm;
 
+/** Latest `fs`-handle artifact most recently published under `name` (undefined if none). */
+const latestFsArtifact = (state: Readonly<RunState>, name: string): Artifact | undefined =>
+	state.named[name]?.at(-1)?.artifacts.find((a) => a.handle.kind === "fs");
+
+/** Resolve a workflow-relative path against `cwd`. */
+const resolveCwd = (path: string, cwd: string): string => (isAbsolute(path) ? path : join(cwd, path));
+
+/** Number of `### Phase N —` headings in the latest architecture review (0 if none). */
+const reviewPhaseCount = (state: Readonly<RunState>, cwd: string): number => {
+	const review = latestFsArtifact(state, "architecture-reviews");
+	if (review?.handle.kind !== "fs") return 0;
+	return [...readFileSync(resolveCwd(review.handle.path, cwd), "utf-8").matchAll(REVIEW_PHASE_RE)].length;
+};
+
+/**
+ * The plans from the most recent blueprint pass. blueprint's iterate stage
+ * pushes one `Output` per review phase into `state.named["plans"]`; on a
+ * corrective loop it re-plans every phase, so keep only the last `phaseCount`
+ * (the review's phase count) and drop the stale generation. Shared by the
+ * implement fanout and the validate prompt so both see the same plan set.
+ */
+const latestPlans = (state: Readonly<RunState>, cwd: string): readonly Output[] => {
+	const plans = state.named.plans ?? [];
+	const phaseCount = reviewPhaseCount(state, cwd);
+	return phaseCount > 0 && plans.length > phaseCount ? plans.slice(-phaseCount) : plans;
+};
+
 /**
  * Per-review-phase blueprint generator (the `iterate` dual of PHASE_FANOUT).
  * One blueprint pass per review phase, each seeing the plans already produced
@@ -250,11 +281,9 @@ const REVIEW_PHASE_RE = /^### Phase (\d+) — (.+)$/gm;
 const REVIEW_PHASE_ITERATE: IterateFn = ({ artifact, state, accumulated, cwd }) => {
 	// Source the review from the named registry — robust to corrective re-entry,
 	// where the rolling primary is the latest code-review doc, not the review.
-	const review =
-		state.named["architecture-reviews"]?.at(-1)?.artifacts.find((a) => a.handle.kind === "fs") ?? artifact;
+	const review = latestFsArtifact(state, "architecture-reviews") ?? artifact;
 	if (review?.handle.kind !== "fs") return null;
-	const abs = isAbsolute(review.handle.path) ? review.handle.path : join(cwd, review.handle.path);
-	const phases = [...readFileSync(abs, "utf-8").matchAll(REVIEW_PHASE_RE)];
+	const phases = [...readFileSync(resolveCwd(review.handle.path, cwd), "utf-8").matchAll(REVIEW_PHASE_RE)];
 	const i = accumulated.length;
 	if (i >= phases.length) return null; // every phase planned → terminate
 	const phaseName = phases[i]![2]!.trim();
@@ -264,7 +293,7 @@ const REVIEW_PHASE_ITERATE: IterateFn = ({ artifact, state, accumulated, cwd }) 
 		.filter((a) => a.handle.kind === "fs")
 		.map((a) => handleToString(a.handle));
 	// On a corrective pass the latest code-review is in `reviews`; fold its blockers in.
-	const feedback = state.named.reviews?.at(-1)?.artifacts.find((a) => a.handle.kind === "fs");
+	const feedback = latestFsArtifact(state, "reviews");
 
 	let prompt = `${handleToString(review.handle)} Implement Phase ${phases[i]![1]}: ${phaseName}`;
 	if (prior.length) prompt += `\nPrior phase plans (read first; build on them, don't duplicate): ${prior.join(", ")}`;
@@ -274,30 +303,17 @@ const REVIEW_PHASE_ITERATE: IterateFn = ({ artifact, state, accumulated, cwd }) 
 };
 
 /**
- * Fan implement out over the `## Phase N:` headings of EVERY plan the iterate
- * stage produced. On a corrective loop the iterate stage re-plans all review
- * phases, so `state.named["plans"]` accumulates one plan per review phase PER
- * pass; we take only the latest pass (the most recent `phaseCount` plans) so a
- * re-plan supersedes the stale generation rather than double-implementing it.
- * This is the dedup the design's deterministic-filename scheme bought — done
- * here in the fanout instead, so blueprint keeps its natural timestamped
- * filenames and needs no change.
+ * Fan implement out over the `## Phase N:` headings of EVERY plan in the latest
+ * blueprint pass (see `latestPlans` for the corrective-loop dedup). This is the
+ * dedup the design's deterministic-filename scheme bought — done here over the
+ * accumulation instead, so blueprint keeps its natural timestamped filenames.
  */
 const PLANS_PHASE_FANOUT: FanoutFn = ({ state, cwd }) => {
-	const plans = state.named.plans ?? [];
-	const review = state.named["architecture-reviews"]?.at(-1)?.artifacts.find((a) => a.handle.kind === "fs");
-	let latest = plans;
-	if (review?.handle.kind === "fs") {
-		const abs = isAbsolute(review.handle.path) ? review.handle.path : join(cwd, review.handle.path);
-		const phaseCount = [...readFileSync(abs, "utf-8").matchAll(REVIEW_PHASE_RE)].length;
-		if (phaseCount > 0 && plans.length > phaseCount) latest = plans.slice(-phaseCount);
-	}
-
 	const units: FanoutUnit[] = [];
-	for (const out of latest) {
+	for (const out of latestPlans(state, cwd)) {
 		for (const a of out.artifacts) {
 			if (a.handle.kind !== "fs") continue;
-			const abs = isAbsolute(a.handle.path) ? a.handle.path : join(cwd, a.handle.path);
+			const abs = resolveCwd(a.handle.path, cwd);
 			for (const m of readFileSync(abs, "utf-8").matchAll(/^## Phase (\d+):/gm)) {
 				units.push({
 					prompt: `${handleToString(a.handle)} Phase ${m[1]}`,
@@ -312,6 +328,21 @@ const PLANS_PHASE_FANOUT: FanoutFn = ({ state, cwd }) => {
 	return units;
 };
 
+/**
+ * Hand the single validate session EVERY plan from the latest blueprint pass
+ * (`latestPlans`). The runner's default rolling-primary — and a plain
+ * `reads: ["plans"]`, which only reads `.at(-1)` — would point validate at the
+ * LAST plan alone, leaving earlier phases unvalidated. A `prompt` stage owns
+ * its whole message, so the `/skill:validate` prefix is explicit.
+ */
+const VALIDATE_PLANS_PROMPT: PromptFn = ({ state, cwd }) => {
+	const paths = latestPlans(state, cwd)
+		.flatMap((o) => o.artifacts)
+		.filter((a) => a.handle.kind === "fs")
+		.map((a) => handleToString(a.handle));
+	return `/skill:validate ${paths.join(" ")}`;
+};
+
 const polishWorkflow = defineWorkflow({
 	name: "polish",
 	description:
@@ -321,7 +352,7 @@ const polishWorkflow = defineWorkflow({
 		"architecture-review": produces({ outcome: rpivBucketOutcome("architecture-reviews") }),
 		blueprint: produces({ outcome: rpivBucketOutcome("plans"), iterate: REVIEW_PHASE_ITERATE }),
 		implement: acts({ fanout: PLANS_PHASE_FANOUT }),
-		validate: produces({ outcome: rpivBucketOutcome("validation") }),
+		validate: produces({ outcome: rpivBucketOutcome("validation"), prompt: VALIDATE_PLANS_PROMPT }),
 		"code-review": produces({ outcome: rpivBucketOutcome("reviews"), outputSchema: CODE_REVIEW_SCHEMA }),
 		commit: acts({ outcome: gitCommitOutcome }),
 	},

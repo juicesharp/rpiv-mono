@@ -695,6 +695,37 @@ describe("polish workflow", () => {
 			]);
 		});
 
+		it("validate receives EVERY plan from the latest blueprint pass in one /skill:validate call", async () => {
+			write(".rpiv/artifacts/architecture-reviews/rev.md", review2);
+			write(".rpiv/artifacts/plans/plan-1.md", plan());
+			write(".rpiv/artifacts/plans/plan-2.md", plan());
+			write(".rpiv/artifacts/validation/val.md", "");
+			write(".rpiv/artifacts/reviews/cr.md", cr(0));
+
+			const chain = createMockSessionChain({
+				cwd: tmpDir,
+				steps: [
+					impl("wrote .rpiv/artifacts/architecture-reviews/rev.md"),
+					impl("wrote .rpiv/artifacts/plans/plan-1.md"),
+					impl("wrote .rpiv/artifacts/plans/plan-2.md"),
+					impl("phase done"),
+					impl("phase done"),
+					impl("wrote .rpiv/artifacts/validation/val.md"),
+					impl("wrote .rpiv/artifacts/reviews/cr.md"),
+					impl("committed"),
+				],
+			});
+
+			const result = await runWorkflow(chain.ctx, { workflow: findWorkflow("polish"), input: "x" });
+
+			expect(result.success).toBe(true);
+			// The single validate session is handed ALL accumulated plans — not just
+			// the rolling-primary (last) plan — so every phase gets validated.
+			expect(chain.sentMessages.filter((m) => m.startsWith("/skill:validate"))).toEqual([
+				"/skill:validate .rpiv/artifacts/plans/plan-1.md .rpiv/artifacts/plans/plan-2.md",
+			]);
+		});
+
 		it("corrective loop: implement consumes only the LATEST blueprint pass, never re-implementing a stale plan", async () => {
 			write(".rpiv/artifacts/architecture-reviews/rev.md", review1);
 			for (const n of [1, 2, 3]) write(`.rpiv/artifacts/plans/plan-${n}.md`, plan());
@@ -734,6 +765,13 @@ describe("polish workflow", () => {
 				"/skill:implement .rpiv/artifacts/plans/plan-1.md Phase 1",
 				"/skill:implement .rpiv/artifacts/plans/plan-2.md Phase 1",
 				"/skill:implement .rpiv/artifacts/plans/plan-3.md Phase 1",
+			]);
+			// validate shares the same latest-pass slice — each round validates only
+			// that pass's plan, never a stale generation.
+			expect(chain.sentMessages.filter((m) => m.startsWith("/skill:validate"))).toEqual([
+				"/skill:validate .rpiv/artifacts/plans/plan-1.md",
+				"/skill:validate .rpiv/artifacts/plans/plan-2.md",
+				"/skill:validate .rpiv/artifacts/plans/plan-3.md",
 			]);
 		});
 	});
