@@ -30,7 +30,7 @@ jobs:
           # git ls-remote gives reliable semver ordering via --sort=-v:refname
           TAG=$(git ls-remote --tags --sort=-v:refname \
             https://github.com/juicesharp/rpiv-mono.git | \
-            grep -oE 'refs/tags/v[0-9].+' | head -1 | sed 's|refs/tags/||')
+            grep -oE 'refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$' | head -1 | sed 's|refs/tags/v||')
           if [ -z "$TAG" ]; then
             echo "Could not resolve latest upstream tag"
             echo "tag=unknown" >> "$GITHUB_OUTPUT"
@@ -68,14 +68,5 @@ jobs:
           GH_TOKEN: ${{ secrets.PAT_DISPATCH_TOKEN }}
         run: |
           gh api repos/${{ github.repository }}/dispatches \
-            -f event_type=upstream-release \
-            -f "client_payload[tag]=${{ steps.upstream.outputs.tag }}"
-
-      - name: Trigger publishing repo sync
-        if: steps.check.outputs.has_new_release == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.PAT_DISPATCH_TOKEN }}
-        run: |
-          gh api repos/spacemeld/rpiv-pi/dispatches \
             -f event_type=upstream-release \
             -f "client_payload[tag]=${{ steps.upstream.outputs.tag }}"
