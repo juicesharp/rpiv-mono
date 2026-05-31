@@ -53,7 +53,7 @@ The final artifact feeds design or blueprint.
      prompt: "$ARGUMENTS"
    })
    ```
-   The agent reads any mentioned files, sweeps anchor terms via grep/find/ls, reads 5-10 key files for depth, then emits a Discovery Summary + 5-10 dense numbered questions inline in its final message. Nothing is written to disk.
+   The agent reads any mentioned files, sweeps anchor terms via fff-multi-grep/cymbal_search, falling back to grep/find/ls when unavailable, reads 5-10 key files for depth, then emits a Discovery Summary + 5-10 dense numbered questions inline in its final message. Nothing is written to disk.
 
 4. **Parse the agent's final message** as the questions artifact body. Extract: Discovery Summary (3-5 sentence file-landscape overview), Questions (numbered dense 3-6 sentence paragraphs).
 

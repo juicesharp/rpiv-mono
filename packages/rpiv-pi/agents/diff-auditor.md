@@ -2,7 +2,7 @@
 name: diff-auditor
 description: "Row-only patch auditor. Walks a patch against a caller-supplied surface-list and emits one pipe-delimited row per finding (`file:line | verbatim | surface-id | note`). Use whenever a diff needs evidence-only enumeration of matching patterns, with no narrative or severity."
 tools: read, grep, find, ls, ffgrep, fffind, fff-multi-grep, cymbal_map, cymbal_structure, cymbal_search, cymbal_outline, cymbal_show, cymbal_refs, cymbal_impact, cymbal_importers, cymbal_impls, cymbal_context, cymbal_diff, cymbal_trace, cymbal_investigate
-isolated: true
+extensions: cymbal,ff
 ---
 <!-- rpiv-code-tools-policy:start -->
 ## Agent-Native Code Navigation Policy

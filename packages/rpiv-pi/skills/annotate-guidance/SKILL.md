@@ -2,7 +2,7 @@
 name: annotate-guidance
 description: Generate architecture.md guidance files under .rpiv/guidance/ that document a project's architecture and patterns for AI assistants, written to a shadow tree alongside the source. Use when the user wants to onboard Claude, Cursor, or an AI agent to a codebase via the guidance system, document architecture, or asks to "annotate guidance". Prefer this over annotate-inline when the project uses the .rpiv/guidance/ shadow tree instead of inline CLAUDE.md files.
 argument-hint: [target-directory]
-allowed-tools: Agent, Read, Write, Glob, Grep
+allowed-tools: Agent, Read, Write, fffind, ffgrep
 ---
 
 # Annotate Guidance
@@ -30,7 +30,7 @@ You are tasked with generating architecture guidance files for a brownfield proj
 
    **Agent B — Architecture and conventions:**
    - subagent_type: `codebase-locator`
-   - Prompt: "Identify the architectural layout of {target directory} from path shape and manifest files — NO content analysis. Detect: (1) Architecture pattern inferred from folder shape — clean-arch via Domain/Application/Infrastructure dirs; MVC via Controllers/Models/Views; monorepo via packages/* + workspaces; microservices via services/* with individual manifests; hexagonal via ports/adapters. (2) Main layers/modules — top-level source directories + their names. (3) Frameworks and languages from manifest files (package.json dependencies, *.csproj TargetFramework, pyproject.toml, go.mod, Cargo.toml) and file extensions. (4) Build system from build-config filenames (vite/webpack/tsup/esbuild configs, Makefile, nx.json, turbo.json, dotnet .sln). For each main layer/module, check sub-directory composition. If sub-directories with distinct names/roles exist, flag each as a guidance target candidate with: (a) path, (b) role inferred from folder name (controllers/, services/, entities/, components/, stores/, etc.), (c) file count via ls, (d) how its sub-directory composition differs from sibling layers. Use grep/find/ls only. Do not read file contents. Pass 2 runs codebase-analyzer + codebase-pattern-finder per target folder for deep analysis."
+   - Prompt: "Identify the architectural layout of {target directory} from path shape and manifest files — NO content analysis. Detect: (1) Architecture pattern inferred from folder shape — clean-arch via Domain/Application/Infrastructure dirs; MVC via Controllers/Models/Views; monorepo via packages/* + workspaces; microservices via services/* with individual manifests; hexagonal via ports/adapters. (2) Main layers/modules — top-level source directories + their names. (3) Frameworks and languages from manifest files (package.json dependencies, *.csproj TargetFramework, pyproject.toml, go.mod, Cargo.toml) and file extensions. (4) Build system from build-config filenames (vite/webpack/tsup/esbuild configs, Makefile, nx.json, turbo.json, dotnet .sln). For each main layer/module, check sub-directory composition. If sub-directories with distinct names/roles exist, flag each as a guidance target candidate with: (a) path, (b) role inferred from folder name (controllers/, services/, entities/, components/, stores/, etc.), (c) file count via ls, (d) how its sub-directory composition differs from sibling layers. Prefer fffind/ffgrep/fff-multi-grep and cymbal_map/cymbal_search for orientation; fall back to find/grep/ls when unavailable. Do not read file contents. Pass 2 runs codebase-analyzer + codebase-pattern-finder per target folder for deep analysis."
 
    - While agents run, read .gitignore yourself to understand exclusion rules
 

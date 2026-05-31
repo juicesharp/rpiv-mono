@@ -2,7 +2,7 @@
 name: integration-scanner
 description: "Finds what connects to a given component or area: inbound references, outbound dependencies, config registrations, event subscriptions. The reverse-reference counterpart to codebase-locator. Use when you need to understand what calls, depends on, or wires into a component."
 tools: grep, find, ls, ffgrep, fffind, fff-multi-grep, cymbal_map, cymbal_structure, cymbal_search, cymbal_outline, cymbal_show, cymbal_refs, cymbal_impact, cymbal_importers, cymbal_impls, cymbal_context, cymbal_diff, cymbal_trace, cymbal_investigate
-isolated: true
+extensions: cymbal,ff
 ---
 <!-- rpiv-code-tools-policy:start -->
 ## Agent-Native Code Navigation Policy

@@ -2,7 +2,7 @@
 name: commit
 description: Create structured git commits by analyzing staged and unstaged changes and grouping them logically into one or more commits with clear, descriptive messages. Use when the user asks to commit, says "commit this" or "commit my changes", wants help writing a commit message, or has finished a chunk of work that needs committing.
 argument-hint: [message]
-allowed-tools: Bash(git *), Read, Glob, Grep
+allowed-tools: Bash(git *), Read, fffind, ffgrep
 shell-timeout: 10
 ---
 

@@ -2,7 +2,7 @@
 name: precedent-locator
 description: "Finds similar past changes in git history: commits, blast radius, follow-up fixes, and lessons from related .rpiv/artifacts/ docs. Use when planning a change and you need to know what went wrong last time something similar was done."
 tools: bash, grep, find, read, ls, ffgrep, fffind, fff-multi-grep, cymbal_map, cymbal_structure, cymbal_search, cymbal_outline, cymbal_show, cymbal_refs, cymbal_impact, cymbal_importers, cymbal_impls, cymbal_context, cymbal_diff, cymbal_trace, cymbal_investigate
-isolated: true
+extensions: cymbal,ff
 ---
 <!-- rpiv-code-tools-policy:start -->
 ## Agent-Native Code Navigation Policy

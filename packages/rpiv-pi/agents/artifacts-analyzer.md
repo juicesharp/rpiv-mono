@@ -2,7 +2,7 @@
 name: artifacts-analyzer
 description: The research equivalent of codebase-analyzer. Use this subagent_type when wanting to deep dive on a research topic. Not commonly needed otherwise.
 tools: read, grep, find, ls, ffgrep, fffind, fff-multi-grep
-isolated: true
+extensions: ff
 ---
 <!-- rpiv-code-tools-policy:start -->
 ## Agent-Native Code Navigation Policy

@@ -2,7 +2,7 @@
 name: scope-tracer
 description: "Traces the scope of a research investigation. Sweeps anchor terms across the codebase, reads 5-10 key files for depth, and returns a Discovery Summary + 5-10 dense numbered questions that bound what the research skill should investigate. Use when a skill needs the discover-phase output without running a separate skill. Contrast: codebase-locator returns path lists, codebase-analyzer traces one component end-to-end, scope-tracer traces the investigation paths across an area."
 tools: read, grep, find, ls, ffgrep, fffind, fff-multi-grep, cymbal_map, cymbal_structure, cymbal_search, cymbal_outline, cymbal_show, cymbal_refs, cymbal_impact, cymbal_importers, cymbal_impls, cymbal_context, cymbal_diff, cymbal_trace, cymbal_investigate
-isolated: true
+extensions: cymbal,ff
 ---
 <!-- rpiv-code-tools-policy:start -->
 ## Agent-Native Code Navigation Policy

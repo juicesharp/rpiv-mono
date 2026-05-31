@@ -2,7 +2,7 @@
 name: codebase-locator
 description: Locates files, directories, and components relevant to a feature or task. Call `codebase-locator` with a human-language prompt describing what you're looking for. A "super grep/find/ls" tool. Reach for it when you would otherwise reach for grep, find, or ls more than once.
 tools: grep, find, ls, ffgrep, fffind, fff-multi-grep, cymbal_map, cymbal_structure, cymbal_search, cymbal_outline, cymbal_refs, cymbal_impact, cymbal_importers, cymbal_impls, cymbal_context, cymbal_diff, cymbal_trace, cymbal_investigate
-isolated: true
+extensions: cymbal,ff
 ---
 <!-- rpiv-code-tools-policy:start -->
 ## Agent-Native Code Navigation Policy

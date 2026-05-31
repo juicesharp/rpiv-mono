@@ -2,7 +2,7 @@
 name: artifact-code-reviewer
 description: "Independent post-finalization code reviewer. Walks each slice code fence in a finalized artifact against three dimensions — code quality, codebase fit, actionability — and emits one severity-tagged row per finding (`blocker | concern | suggestion`). Use whenever a finalized plan or design needs adversarial vetting of its emitted code against the live codebase before implementation begins."
 tools: read, grep, find, ls, ffgrep, fffind, fff-multi-grep, cymbal_map, cymbal_structure, cymbal_search, cymbal_outline, cymbal_show, cymbal_refs, cymbal_impact, cymbal_importers, cymbal_impls, cymbal_context, cymbal_diff, cymbal_trace, cymbal_investigate
-isolated: true
+extensions: cymbal,ff
 ---
 <!-- rpiv-code-tools-policy:start -->
 ## Agent-Native Code Navigation Policy

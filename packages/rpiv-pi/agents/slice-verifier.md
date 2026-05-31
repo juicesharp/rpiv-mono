@@ -2,7 +2,7 @@
 name: slice-verifier
 description: "Per-slice adversarial verifier for incremental plan or design generation. Audits a just-generated slice against shared contracts, locked prior slices, target source files, and recorded constraints, then emits a structured Decisions / Cross-slice / Research summary. Use whenever a freshly-generated slice in a phased artifact needs adversarial vetting before it is locked, especially to catch forward-references, cross-slice symbol mismatches, decision drift, and atomicity violations that a post-finalization reviewer cannot find structurally."
 tools: read, grep, find, ls, ffgrep, fffind, fff-multi-grep, cymbal_map, cymbal_structure, cymbal_search, cymbal_outline, cymbal_show, cymbal_refs, cymbal_impact, cymbal_importers, cymbal_impls, cymbal_context, cymbal_diff, cymbal_trace, cymbal_investigate
-isolated: true
+extensions: cymbal,ff
 ---
 <!-- rpiv-code-tools-policy:start -->
 ## Agent-Native Code Navigation Policy

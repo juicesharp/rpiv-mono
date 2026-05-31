@@ -2,7 +2,7 @@
 name: peer-comparator
 description: "Pairwise peer-invariant comparator. Given `(new_file, peer_file)` pairs, tags each peer invariant Mirrored / Missing / Diverged / Intentionally-absent against the new file. Use when an entity parallels an existing sibling (aggregate, service, handler, reducer, repository) and the new file must be checked against the peer's public surface."
 tools: read, grep, find, ls, ffgrep, fffind, fff-multi-grep, cymbal_map, cymbal_structure, cymbal_search, cymbal_outline, cymbal_show, cymbal_refs, cymbal_impact, cymbal_importers, cymbal_impls, cymbal_context, cymbal_diff, cymbal_trace, cymbal_investigate
-isolated: true
+extensions: cymbal,ff
 ---
 <!-- rpiv-code-tools-policy:start -->
 ## Agent-Native Code Navigation Policy

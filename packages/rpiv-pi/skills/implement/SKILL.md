@@ -2,7 +2,7 @@
 name: implement
 description: Execute an approved implementation plan from .rpiv/artifacts/plans/ phase by phase, applying changes and verifying each phase against its success criteria before moving on. Use when the user invokes /implement, asks to "implement this plan", or wants an existing phased plan executed. Pair with revise to update plans mid-flight and validate to confirm completion.
 argument-hint: "[plan-path] [Phase N]"
-allowed-tools: Read, Edit, Write, Bash(*), Glob, Grep, ffgrep, fffind, fff-multi-grep, cymbal_search, cymbal_outline, cymbal_show, cymbal_refs, cymbal_impact, cymbal_trace, cymbal_investigate
+allowed-tools: Read, Edit, Write, Bash(*), fffind, ffgrep
 ---
 
 # Implement

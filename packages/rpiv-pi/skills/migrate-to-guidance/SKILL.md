@@ -2,7 +2,7 @@
 name: migrate-to-guidance
 description: Migrate a project's inline CLAUDE.md files to the .rpiv/guidance/ shadow-tree system. Finds every CLAUDE.md, transforms internal references, and creates equivalent architecture.md files under .rpiv/guidance/. Use when the user wants to move from inline CLAUDE.md to the guidance shadow tree, consolidate scattered CLAUDE.md files into one place, or invokes /migrate-to-guidance.
 argument-hint: [--delete-originals]
-allowed-tools: Bash, Read, Glob
+allowed-tools: Bash, Read, fffind
 ---
 
 # Migrate CLAUDE.md to Guidance
@@ -18,7 +18,7 @@ The migration relocates files from in-place `CLAUDE.md` to `.rpiv/guidance/{path
 ## Steps to follow:
 
 1. **Pre-flight check:**
-   - Use Glob to find all `**/CLAUDE.md` files in the project
+   - Use fffind to find all `**/CLAUDE.md` files in the project
    - If none are found, inform the user: "No CLAUDE.md files found in this project. Nothing to migrate." and stop
    - If `.rpiv/guidance/` already exists, note this — there may be conflicts
 
