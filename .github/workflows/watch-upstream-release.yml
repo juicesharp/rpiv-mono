@@ -70,3 +70,12 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/${{ github.repository }}/dispatches" \
             -d '{"event_type":"upstream-release","client_payload":{"tag":"${{ steps.upstream.outputs.tag }}"}}'
+
+      - name: Trigger publishing repo sync
+        if: steps.check.outputs.has_new_release == 'true'
+        run: |
+          curl -sf -X POST \
+            -H "Authorization: token ${{ secrets.PUBLISH_REPO_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/spacemeld/rpiv-pi/dispatches" \
+            -d '{"event_type":"upstream-release","client_payload":{"tag":"${{ steps.upstream.outputs.tag }}"}}'
