@@ -48,10 +48,12 @@ jobs:
 
       - name: Install dependencies
         if: steps.overlay.outcome == 'success'
+        id: deps
+        continue-on-error: true
         run: mise exec node@lts -- npm ci
 
       - name: Verify overlay and package tests
-        if: steps.overlay.outcome == 'success'
+        if: steps.overlay.outcome == 'success' && steps.deps.outcome == 'success'
         continue-on-error: true
         id: test
         run: mise exec node@lts -- npm test --workspace=@juicesharp/rpiv-pi
@@ -75,7 +77,7 @@ jobs:
             exit 0
           fi
           FORK_VERSION=$(node -pe 'JSON.parse(require("fs").readFileSync("packages/rpiv-pi/package.json","utf8")).version')
-          git add -A
+          git add -A -- . ':!node_modules'
           git commit -m "chore(local): sync upstream as ${FORK_VERSION}"
           echo "committed=true" >> "$GITHUB_OUTPUT"
 
