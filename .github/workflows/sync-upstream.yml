@@ -76,7 +76,7 @@ jobs:
             echo "committed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          FORK_VERSION=$(node -pe 'JSON.parse(require("fs").readFileSync("packages/rpiv-pi/package.json","utf8")).version')
+          FORK_VERSION=$(mise exec node@lts -- node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync("packages/rpiv-pi/package.json","utf8")).version)')
           git add -A -- . ':!node_modules'
           git commit -m "chore(local): sync upstream as ${FORK_VERSION}"
           echo "committed=true" >> "$GITHUB_OUTPUT"
@@ -84,7 +84,7 @@ jobs:
       - name: Push fork release
         if: steps.commit.outputs.committed == 'true'
         run: |
-          VERSION=$(node -pe 'JSON.parse(require("fs").readFileSync("packages/rpiv-pi/package.json","utf8")).version')
+          VERSION=$(mise exec node@lts -- node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync("packages/rpiv-pi/package.json","utf8")).version)')
           git tag -f "v${VERSION}"
           git push origin HEAD:main
           git push origin "refs/tags/v${VERSION}" --force
