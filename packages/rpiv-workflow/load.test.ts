@@ -786,4 +786,17 @@ export default {
 			),
 		).toBe(true);
 	});
+
+	// Regression: `isEnvelope` accepts the shape on `skillAliases`/`default` alone,
+	// so a truthy non-array `workflows` reaches normalisation. It must surface as a
+	// load error — never a thrown `TypeError` from `.every()` (loader never throws).
+	it("rejects a non-array `workflows` in an alias-bearing envelope without throwing", async () => {
+		writeProjectConfig(TEST_TMP, "export default { workflows: 'oops', skillAliases: { commit: 'x' } };\n");
+		const loaded = await loadWorkflows(TEST_TMP);
+		expect(
+			loaded.issues.some(
+				(i) => i.kind === "load" && i.severity === "error" && /`workflows` must be a Workflow\[\]/.test(i.message),
+			),
+		).toBe(true);
+	});
 });

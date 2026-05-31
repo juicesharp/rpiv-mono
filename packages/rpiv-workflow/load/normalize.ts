@@ -60,6 +60,14 @@ export function normalizeDefaultExport(raw: unknown, kind: FileKind): NormalizeR
 					"`{ workflows, default?, skillAliases? }` envelope is only accepted in the config file config.ts.",
 			};
 		}
+		// `isEnvelope` recognises the envelope when `skillAliases`/`default` is
+		// present even if `workflows` is absent or malformed. A present-but-non-array
+		// `workflows` must error explicitly: `??` only guards null/undefined, so a
+		// truthy non-array (string, object) would otherwise reach `.every()` and
+		// throw a `TypeError`, violating the loader's "never throws" contract.
+		if (raw.workflows !== undefined && !Array.isArray(raw.workflows)) {
+			return { kind: "err", error: "default-export `workflows` must be a Workflow[]" };
+		}
 		const workflows = raw.workflows ?? [];
 		if (!workflows.every(isWorkflow)) {
 			return { kind: "err", error: "default-export `workflows` must contain only Workflow objects" };

@@ -213,8 +213,10 @@ export const MSG_NO_WORKFLOWS_REGISTERED =
 export const LEGACY_OVERLAY_NOTICE = (cwd: string): string =>
 	`rpiv-workflow: detected legacy \`${join(cwd, ".rpiv-workflow")}\` — project config now lives at ` +
 	"`.rpiv/workflows/config.ts` + `.rpiv/workflows/packs/` and is the only location read. " +
-	"Move it: `mv .rpiv-workflow/workflows.config.ts .rpiv/workflows/config.ts` && " +
-	"`mv .rpiv-workflow/workflows .rpiv/workflows/packs` (the old directory is ignored).";
+	"Move it: `mkdir -p .rpiv/workflows/packs && " +
+	"mv .rpiv-workflow/workflows.config.ts .rpiv/workflows/config.ts && " +
+	"mv .rpiv-workflow/workflows/*.ts .rpiv/workflows/packs/ && rm -rf .rpiv-workflow` " +
+	"(the old directory is ignored).";
 
 /** Pi command registry — displayed by Pi's `/?` / command list. */
 export const CMD_DESCRIPTION = "Run a skill workflow: /wf [workflow] [description]";
