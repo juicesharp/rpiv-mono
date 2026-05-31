@@ -1,0 +1,82 @@
+name: Sync Upstream
+
+on:
+  repository_dispatch:
+    types: [upstream-release]
+  workflow_dispatch:
+
+concurrency:
+  group: sync-upstream-main
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    name: merge upstream and reapply local overlay
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: jdx/mise-action@v2
+
+      - name: Configure git author
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Merge upstream main
+        id: merge
+        run: |
+          if ! git remote get-url upstream >/dev/null 2>&1; then
+            git remote add upstream https://github.com/juicesharp/rpiv-mono.git
+          fi
+          git fetch upstream main
+          if ! git merge --no-edit upstream/main; then
+            git merge --abort
+            echo "failed=true" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+      - name: Reapply local code tools overlay
+        id: overlay
+        continue-on-error: true
+        run: mise exec node@lts -- npm run local:apply-code-tools
+
+      - name: Verify overlay and package tests
+        if: steps.overlay.outcome == 'success'
+        run: mise exec node@lts -- npm test --workspace=@juicesharp/rpiv-pi
+
+      - name: Label fork version after successful overlay
+        if: steps.overlay.outcome == 'success'
+        run: mise exec node@lts -- node scripts/set-fork-rpiv-pi-version.mjs overlay
+
+      - name: Fallback to upstream agents when overlay fails
+        if: steps.overlay.outcome == 'failure'
+        run: |
+          git checkout upstream/main -- packages/rpiv-pi/agents packages/rpiv-pi/skills/implement packages/rpiv-pi/skills/validate
+          mise exec node@lts -- node scripts/set-fork-rpiv-pi-version.mjs no-overlay
+
+      - name: Commit overlay refresh
+        id: commit
+        run: |
+          if git diff --quiet && git diff --cached --quiet; then
+            echo "Overlay already up to date."
+            echo "committed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          FORK_VERSION=$(node -pe 'JSON.parse(require("fs").readFileSync("packages/rpiv-pi/package.json","utf8")).version')
+          git add package.json scripts/ packages/rpiv-pi/agents packages/rpiv-pi/skills/implement packages/rpiv-pi/skills/validate packages/rpiv-pi/extensions/rpiv-core packages/rpiv-pi/package.json
+          git commit -m "chore(local): sync upstream as ${FORK_VERSION}"
+          echo "committed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Push fork release
+        if: steps.commit.outputs.committed == 'true'
+        run: |
+          VERSION=$(node -pe 'JSON.parse(require("fs").readFileSync("packages/rpiv-pi/package.json","utf8")).version')
+          git tag -f "v${VERSION}"
+          git push origin HEAD:main
+          git push origin "refs/tags/v${VERSION}" --force

@@ -11,6 +11,41 @@ The pipeline needs most of them. **rpiv-args** expands shell-style `$1` and `$AR
 > [!TIP]
 > **For the full pipeline narrative, the subagent map, and install instructions, visit [rpiv-pi.com](https://rpiv-pi.com).**
 
+## Fork overlay (code tools)
+
+This repository is a **direct fork** of [juicesharp/rpiv-mono](https://github.com/juicesharp/rpiv-mono). It is maintained for personal tooling preferences and is **not intended for upstream contribution**.
+
+### Install (replace upstream npm)
+
+```bash
+pi uninstall npm:@juicesharp/rpiv-pi
+pi install git:github.com/spacemeld/rpiv-pi
+```
+
+Then inside Pi: `/rpiv-setup`, restart, `/rpiv-update-agents`.
+
+### Upstream sync and version labels
+
+When [juicesharp/rpiv-mono](https://github.com/juicesharp/rpiv-mono) releases (e.g. `1.16.2`), `.github/workflows/sync-upstream.yml` merges upstream, re-applies the code tools overlay, and labels the fork package version:
+
+| Outcome | Version example |
+| --- | --- |
+| Overlay applied | `1.16.2-overlay` |
+| Overlay failed (upstream agents restored) | `1.16.2-no-overlay` |
+
+Pi shows an update at startup when the installed version differs. Quit and run `pi update` to apply it. If the overlay failed to apply, the postinstall hook prints a yellow warning during `pi update` directing you to check the Sync Upstream workflow run. No extra runtime extension is involved.
+
+### Code tool prerequisites
+
+| Extension | npm package | What it adds |
+| --- | --- | --- |
+| Pi-fff | `@ff-labs/pi-fff` | `fffind`, `ffgrep`, `fff-multi-grep` — fast fuzzy file and content search |
+| Pi-cymbal | `pi-cymbal` | `cymbal_*` tools — symbol search, refs, impact, and call-graph navigation |
+
+**Cymbal binary required.** `pi-cymbal` wraps the [Cymbal](https://chain.sh/cymbal/) CLI. Install Cymbal (`v0.13.5+`) and ensure `cymbal` is on your `PATH`, or set `CYMBAL_BIN` to its absolute path before starting Pi. Pi-fff has no separate binary — it ships a native Rust binding via npm. Both extensions are installed by `/rpiv-setup`.
+
+See [packages/rpiv-pi/README.md](./packages/rpiv-pi/README.md) for troubleshooting.
+
 ## Roadmap
 
 The realization shaping AI-assisted development right now is that LLMs produce correct code, not aligned code. The output compiles and passes tests, but it isn't enterprise-grade in the way human engineers produce: fitting the codebase's existing patterns, respecting conventions that aren't written down anywhere, making the boring choices mature systems rely on, staying reviewable and extensible by the next person who touches it. Closing that gap takes a driver: an experienced engineer who carries the context the model can't have, who frames the task correctly upfront, who steers architecture, who pushes back when output drifts. Without that active driver, the codebase fills with locally-correct, globally-misaligned diffs that look fine in PR review and erode the team's confidence over time.

@@ -60,6 +60,16 @@ export const SIBLINGS: readonly SiblingPlugin[] = [
 		matches: /rpiv-workflow(?![-\w])/i,
 		provides: "/wf command + workflow runner — chain skills into typed multi-stage pipelines",
 	},
+	{
+		pkg: "npm:@ff-labs/pi-fff",
+		matches: /@ff-labs\/pi-fff/i,
+		provides: "fffind, ffgrep, fff-multi-grep — SIMD-accelerated file and content search",
+	},
+	{
+		pkg: "npm:pi-cymbal",
+		matches: /(^|[^\w/-])pi-cymbal(?![-\w])/i,
+		provides: "cymbal_* tools — agent-native symbol navigation, refs, and impact analysis",
+	},
 ];
 
 /**

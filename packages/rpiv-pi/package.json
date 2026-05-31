@@ -25,7 +25,8 @@
     "access": "public"
   },
   "scripts": {
-    "test": "vitest run"
+    "test": "vitest run",
+    "postinstall": "node scripts/postinstall.mjs"
   },
   "files": [
     "extensions/",

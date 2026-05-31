@@ -18,6 +18,7 @@
 		"publish": "npm run prepublishOnly && npm publish -ws --access public",
 		"publish:dry": "npm run prepublishOnly && npm publish -ws --access public --dry-run",
 		"release:patch": "node scripts/release.mjs patch",
+		"local:apply-code-tools": "node scripts/apply-code-tools-overlay.mjs",
 		"release:minor": "node scripts/release.mjs minor",
 		"release:major": "node scripts/release.mjs major",
 		"prepare": "husky"

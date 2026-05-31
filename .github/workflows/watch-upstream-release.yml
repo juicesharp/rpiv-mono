@@ -1,0 +1,71 @@
+name: Watch Upstream Release
+
+on:
+  schedule:
+    # Every 5 minutes (GitHub's minimum cron interval)
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: watch-upstream-release
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: check for new upstream tag
+    runs-on: ubuntu-latest
+    outputs:
+      has_new_release: ${{ steps.check.outputs.has_new_release }}
+      new_tag: ${{ steps.upstream.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Fetch latest upstream tag
+        id: upstream
+        run: |
+          # git ls-remote gives reliable semver ordering via --sort=-v:refname
+          TAG=$(git ls-remote --tags --sort=-v:refname \
+            https://github.com/juicesharp/rpiv-mono.git | \
+            grep -oE 'refs/tags/v[0-9].+' | head -1 | sed 's|refs/tags/||')
+          if [ -z "$TAG" ]; then
+            echo "Could not resolve latest upstream tag"
+            echo "tag=unknown" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Latest upstream tag: $TAG"
+
+      - name: Get last known synced version
+        id: known
+        run: |
+          FORK_VERSION=$(jq -r '.version' packages/rpiv-pi/package.json)
+          # Strip fork suffix for comparison
+          KNOWN=$(echo "$FORK_VERSION" | sed 's/-overlay$//;s/-no-overlay$//')
+          echo "known=$KNOWN" >> "$GITHUB_OUTPUT"
+          echo "Last synced: $KNOWN"
+
+      - name: Compare tags
+        id: check
+        run: |
+          TAG="${{ steps.upstream.outputs.tag }}"
+          KNOWN="${{ steps.known.outputs.known }}"
+          echo "Comparing upstream ${TAG} vs known ${KNOWN}"
+          if [ "$TAG" = "$KNOWN" ]; then
+            echo "Already synced — no new release."
+            echo "has_new_release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "New upstream tag detected: ${TAG}"
+            echo "has_new_release=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Trigger sync workflow
+        if: steps.check.outputs.has_new_release == 'true'
+        run: |
+          curl -sf -X POST \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/dispatches" \
+            -d '{"event_type":"upstream-release","client_payload":{"tag":"${{ steps.upstream.outputs.tag }}"}}'
