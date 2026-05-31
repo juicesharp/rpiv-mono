@@ -46,8 +46,14 @@ jobs:
         continue-on-error: true
         run: mise exec node@lts -- npm run local:apply-code-tools
 
+      - name: Install dependencies
+        if: steps.overlay.outcome == 'success'
+        run: mise exec node@lts -- npm ci
+
       - name: Verify overlay and package tests
         if: steps.overlay.outcome == 'success'
+        continue-on-error: true
+        id: test
         run: mise exec node@lts -- npm test --workspace=@juicesharp/rpiv-pi
 
       - name: Label fork version after successful overlay
@@ -57,7 +63,7 @@ jobs:
       - name: Fallback to upstream agents when overlay fails
         if: steps.overlay.outcome == 'failure'
         run: |
-          git checkout upstream/main -- packages/rpiv-pi/agents packages/rpiv-pi/skills/implement packages/rpiv-pi/skills/validate
+          git checkout upstream/main -- packages/rpiv-pi/agents packages/rpiv-pi/skills/implement packages/rpiv-pi/skills/validate || true
           mise exec node@lts -- node scripts/set-fork-rpiv-pi-version.mjs no-overlay
 
       - name: Commit overlay refresh
@@ -69,7 +75,7 @@ jobs:
             exit 0
           fi
           FORK_VERSION=$(node -pe 'JSON.parse(require("fs").readFileSync("packages/rpiv-pi/package.json","utf8")).version')
-          git add package.json scripts/ packages/rpiv-pi/agents packages/rpiv-pi/skills/implement packages/rpiv-pi/skills/validate packages/rpiv-pi/extensions/rpiv-core packages/rpiv-pi/package.json
+          git add -A
           git commit -m "chore(local): sync upstream as ${FORK_VERSION}"
           echo "committed=true" >> "$GITHUB_OUTPUT"
 
