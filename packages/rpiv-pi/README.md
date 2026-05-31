@@ -63,12 +63,30 @@ Skill-based development workflow for [Pi Agent](https://github.com/badlogic/pi-m
 
 - **git** *(recommended)* - rpiv-pi works without it, but branch and commit context won't be available to skills.
 
+### Code tools *(this fork only)*
+
+Upstream `@juicesharp/rpiv-pi` on npm does not include the code tools overlay. **This fork** patches bundled agent and skill prompts to prefer Pi-fff and Pi-cymbal over broad `grep` / `find` / `read` loops during research and code review.
+
+| Requirement | Notes |
+| --- | --- |
+| `@ff-labs/pi-fff` | Installed by `/rpiv-setup`. No extra binary. |
+| `pi-cymbal` | Installed by `/rpiv-setup`. Requires the **Cymbal CLI** (`v0.13.5+`) on `PATH`, or `CYMBAL_BIN` pointing at the binary. |
+| `/rpiv-setup` + restart | Installs both extensions alongside the standard pipeline siblings. |
+| `/rpiv-update-agents` | Refreshes bundled agent frontmatters after an upgrade. |
+
+Cymbal indexes Git-tracked source with tree-sitter. For non-Git paths or generated artifacts under `.rpiv/artifacts/`, agents fall back to Pi-fff or built-in file tools.
+
 ## Quick Start
 
 1. Install rpiv-pi:
 
 ```bash
+# Upstream npm (no code tools overlay)
 pi install npm:@juicesharp/rpiv-pi
+
+# This fork — uninstall upstream first if switching
+pi uninstall npm:@juicesharp/rpiv-pi
+pi install git:github.com/spacemeld/rpiv-pi
 ```
 
 2. Start a Pi Agent session and install sibling plugins:
@@ -92,6 +110,17 @@ On first Pi Agent session start, rpiv-pi automatically:
 - Detects outdated or removed agents on subsequent starts
 - Migrates legacy pipeline-artifact content into `.rpiv/artifacts/` (one-way) when an old `thoughts/shared/` tree is found; otherwise `.rpiv/artifacts/` is created lazily by the first skill that writes an artifact
 - Shows a warning if any sibling plugins are missing
+
+### Fork updates *(spacemeld/rpiv-pi)*
+
+When upstream `@juicesharp/rpiv-pi` releases `1.16.2`, the fork sync workflow merges it and labels this package:
+
+- **`1.16.2-overlay`** — code tools overlay applied (Pi-fff / Pi-cymbal agent tweaks included)
+- **`1.16.2-no-overlay`** — overlay failed; upstream agent prompts restored (still usable)
+
+Pi notifies you at startup when a newer version is available. Quit and run `pi update` to apply it — the version label (including `-no-overlay`) appears in the update output. After updating, run `/rpiv-update-agents` to refresh bundled agent frontmatters.
+
+If you see `-no-overlay`, check the [Sync Upstream workflow run](https://github.com/spacemeld/rpiv-pi/actions) and retry locally with `npm run local:apply-code-tools` once the overlay script is fixed.
 
 ## Usage
 
@@ -227,6 +256,9 @@ Pi Agent discovers extensions via `"extensions": ["./extensions"]` and skills vi
 | Symptom | Cause | Fix |
 |---|---|---|
 | Warning about missing siblings on session start | Sibling plugins not installed | Run `/rpiv-setup` |
+| `cymbal_*` tools missing or errors | Cymbal CLI not installed or not on PATH | Install [Cymbal](https://chain.sh/cymbal/) (`v0.13.5+`); ensure `cymbal` is on PATH or set `CYMBAL_BIN` |
+| `fffind` / `ffgrep` tools missing | Pi-fff not installed | Run `/rpiv-setup` or `pi install npm:@ff-labs/pi-fff` |
+| Installed `-no-overlay` version after `pi update` | Fork sync failed to re-apply overlay | A yellow warning is printed during `pi update` with a link to the workflow run. Check [GitHub Actions](https://github.com/spacemeld/rpiv-pi/actions) for details; once the overlay script is fixed, the next sync will label the release `-overlay` |
 | `/rpiv-setup` fails on a package | Network or registry issue | Check connection, retry with `pi install npm:<pkg>`, re-run `/rpiv-setup` |
 | `/rpiv-setup` says "requires interactive mode" | Running in headless mode | Install manually: `pi install npm:<pkg>` for each sibling |
 | `web_search` or `web_fetch` errors | Active provider's API key not configured | Run `/web-search-config` or set the matching env var (e.g. `BRAVE_SEARCH_API_KEY`, `EXA_API_KEY`) |

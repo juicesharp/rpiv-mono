@@ -8,7 +8,7 @@
  * the code tools delta repeatable after upstream updates:
  *
  *   1. Merge or rebase upstream.
- *   2. Run `node scripts/apply-local-nav-tools.mjs`.
+ *   2. Run `node scripts/apply-code-tools-overlay.mjs`.
  *   3. Inspect the diff and resolve any real upstream prompt conflicts.
  *
  * The edits are intentionally mechanical:
