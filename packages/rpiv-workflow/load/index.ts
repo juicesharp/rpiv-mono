@@ -97,13 +97,12 @@ export interface LoadedWorkflows {
 	/** Aggregated load + validation issues. Errors block the runner; warnings are advisory. */
 	issues: readonly Issue[];
 	/**
-	 * The merged, applied skill-alias map (project over user, per-key).
-	 * `loadWorkflows` always populates it (empty `{}` when no layer declared
-	 * `skillAliases`); optional only so external constructors (test mocks) may
-	 * omit it. `/wf` preview renders this as a banner; every dispatching stage
-	 * in `workflows` already reflects the remap.
+	 * The merged, applied skill-alias map (project over user, per-key) — always
+	 * present, `{}` when no layer declared `skillAliases`. `/wf` preview renders
+	 * this as a banner; every dispatching stage in `workflows` already reflects
+	 * the remap.
 	 */
-	skillAliases?: Readonly<Record<string, string>>;
+	skillAliases: Readonly<Record<string, string>>;
 }
 
 // ===========================================================================

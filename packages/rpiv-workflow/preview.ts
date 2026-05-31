@@ -158,8 +158,8 @@ function formatLayerBanner(layers: readonly ConfigLayer[]): string {
  * banner surfaces every active remap so a reader can see why a stage dispatches
  * a different skill than its name.
  */
-function formatAliasBanner(aliases: Readonly<Record<string, string>> | undefined): string | undefined {
-	const entries = Object.entries(aliases ?? {});
+function formatAliasBanner(aliases: Readonly<Record<string, string>>): string | undefined {
+	const entries = Object.entries(aliases);
 	if (entries.length === 0) return undefined;
 	return `Skill aliases in effect: ${entries.map(([from, to]) => `${from} → ${to}`).join(", ")}`;
 }

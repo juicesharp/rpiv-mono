@@ -43,6 +43,7 @@ vi.mock("./load/index.js", () => ({
 		]),
 		layers: ["built-in"],
 		issues: [],
+		skillAliases: {},
 	})),
 	findWorkflow: vi.fn((loaded: { workflows: { name: string }[] }, name: string) =>
 		loaded.workflows.find((w) => w.name === name),
@@ -194,6 +195,7 @@ describe("/wf — issue surfacing", () => {
 					layer: "built-in",
 				},
 			],
+			skillAliases: {},
 		});
 		const { pi, captured } = createMockPi();
 		registerWorkflowCommand(pi);
@@ -209,6 +211,7 @@ describe("/wf — issue surfacing", () => {
 			workflowSources: new Map([["tiny", "built-in"]]),
 			layers: ["built-in"],
 			issues: [{ kind: "load", layer: "project", path: "rpiv.config.ts", severity: "error", message: "broke" }],
+			skillAliases: {},
 		});
 		const { pi, captured } = createMockPi();
 		registerWorkflowCommand(pi);
@@ -235,6 +238,7 @@ describe("/wf — empty registry", () => {
 			workflowSources: new Map(),
 			layers: [],
 			issues: [],
+			skillAliases: {},
 		});
 		const { pi, captured } = createMockPi();
 		registerWorkflowCommand(pi);
@@ -251,6 +255,7 @@ describe("/wf — empty registry", () => {
 			workflowSources: new Map(),
 			layers: [],
 			issues: [],
+			skillAliases: {},
 		});
 		const { pi, captured } = createMockPi();
 		registerWorkflowCommand(pi);

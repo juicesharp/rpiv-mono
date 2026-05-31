@@ -50,6 +50,7 @@ const baseLoaded = (overrides: Partial<LoadedWorkflows> = {}): LoadedWorkflows =
 	]),
 	layers: ["built-in", "project"],
 	issues: [],
+	skillAliases: {},
 	...overrides,
 });
 
@@ -115,6 +116,7 @@ describe("formatWorkflowList", () => {
 			workflowSources: new Map([["described", "built-in"]]),
 			layers: ["built-in"],
 			issues: [],
+			skillAliases: {},
 		};
 		const out = formatWorkflowList(loaded);
 		const descLine = out.split("\n").find((l) => l.includes("described")) ?? "";
@@ -136,6 +138,7 @@ describe("formatWorkflowList", () => {
 			workflowSources: new Map([["long", "built-in"]]),
 			layers: ["built-in"],
 			issues: [],
+			skillAliases: {},
 		};
 		const out = formatWorkflowList(loaded);
 		const descLine = out.split("\n").find((l) => l.includes("long")) ?? "";
@@ -225,6 +228,7 @@ describe("formatWorkflowDetails", () => {
 			workflowSources: new Map([["branching", "built-in"]]),
 			layers: ["built-in"],
 			issues: [],
+			skillAliases: {},
 		};
 		const out = formatWorkflowDetails(loaded, "branching");
 		const crLine = out.split("\n").find((l) => /code-review/.test(l)) ?? "";
@@ -250,6 +254,7 @@ describe("formatWorkflowDetails", () => {
 			workflowSources: new Map([["described", "built-in"]]),
 			layers: ["built-in"],
 			issues: [],
+			skillAliases: {},
 		};
 		const out = formatWorkflowDetails(loaded, "described");
 		const lines = out.split("\n");
@@ -276,6 +281,7 @@ describe("formatWorkflowDetails", () => {
 			workflowSources: new Map([["schemas", "built-in"]]),
 			layers: ["built-in"],
 			issues: [],
+			skillAliases: {},
 		};
 		const out = formatWorkflowDetails(loaded, "schemas");
 		const lines = out.split("\n");
@@ -306,6 +312,7 @@ describe("formatWorkflowDetails", () => {
 			workflowSources: new Map([["aliased", "built-in"]]),
 			layers: ["built-in"],
 			issues: [],
+			skillAliases: {},
 		};
 		const out = formatWorkflowDetails(loaded, "aliased");
 		const aliasLine = out.split("\n").find((l) => /implement-after-revise/.test(l)) ?? "";
