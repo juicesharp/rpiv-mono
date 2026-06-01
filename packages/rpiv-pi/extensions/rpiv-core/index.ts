@@ -13,9 +13,8 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { registerBuiltIns } from "@juicesharp/rpiv-workflow";
-import { builtInWorkflows } from "./built-in-workflows.js";
 import { FLAG_DEBUG } from "./constants.js";
+import { registerBuiltInWorkflows } from "./register-built-in-workflows.js";
 import { registerSessionHooks } from "./session-hooks.js";
 import { registerSetupCommand } from "./setup-command.js";
 import { registerUpdateAgentsCommand } from "./update-agents-command.js";
@@ -26,8 +25,17 @@ export default function (pi: ExtensionAPI) {
 		type: "boolean",
 		default: false,
 	});
+	// These three register UNCONDITIONALLY and FIRST — they must work on a clean
+	// install where the rpiv-workflow sibling is absent, so the missing-sibling
+	// banner and /rpiv-setup are what guide the user to install it.
 	registerSessionHooks(pi);
 	registerUpdateAgentsCommand(pi);
 	registerSetupCommand(pi);
-	registerBuiltIns(builtInWorkflows);
+	// Built-in workflows feed the sibling's `/wf` command. Deferred behind a
+	// dynamic import so a missing sibling degrades gracefully instead of taking
+	// the whole extension down (see register-built-in-workflows.ts). Fire-and-
+	// forget: the registry is read lazily at `/wf` time, long after this settles.
+	registerBuiltInWorkflows().catch((err: unknown) => {
+		console.error("[rpiv-core] failed to register built-in workflows:", err);
+	});
 }
