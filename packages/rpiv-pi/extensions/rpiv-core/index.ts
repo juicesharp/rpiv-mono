@@ -37,14 +37,22 @@ export default function (pi: ExtensionAPI) {
 	// lifecycle listener registration degrades gracefully when the sibling is
 	// absent (isModuleNotFound guard inside registerModelOverrideLifecycle).
 	registerModelOverrideSessionStart(pi);
-	registerModelOverrideLifecycle(pi).catch((err: unknown) => {
-		console.error("[rpiv-core] failed to register model override lifecycle:", err);
-	});
-	// Built-in workflows feed the sibling's `/wf` command. Deferred behind a
-	// dynamic import so a missing sibling degrades gracefully instead of taking
-	// the whole extension down (see register-built-in-workflows.ts). Fire-and-
-	// forget: the registry is read lazily at `/wf` time, long after this settles.
-	registerBuiltInWorkflows().catch((err: unknown) => {
-		console.error("[rpiv-core] failed to register built-in workflows:", err);
-	});
+	// Both registerModelOverrideLifecycle and registerBuiltInWorkflows dynamically
+	// `import("@juicesharp/rpiv-workflow")`. Firing them concurrently makes jiti
+	// (Pi's dev loader) hand the second caller a half-initialized barrel namespace
+	// whose re-export getters (e.g. registerBuiltIns) read from a not-yet-evaluated
+	// submodule and throw "Cannot read properties of undefined". Chaining them means
+	// the second import resolves from jiti's module cache after the first has fully
+	// evaluated the barrel — no race. Both are fire-and-forget (the workflow
+	// registry is read lazily at `/wf` time, long after this settles) and both
+	// degrade gracefully when the sibling is absent (isModuleNotFound guards).
+	registerModelOverrideLifecycle(pi)
+		.catch((err: unknown) => {
+			console.error("[rpiv-core] failed to register model override lifecycle:", err);
+		})
+		.finally(() => {
+			registerBuiltInWorkflows().catch((err: unknown) => {
+				console.error("[rpiv-core] failed to register built-in workflows:", err);
+			});
+		});
 }
