@@ -48,13 +48,3 @@ export function saveAdvisorConfig(key: string | undefined, effort: ThinkingLevel
 	else delete config.effort;
 	return saveJsonConfig(ADVISOR_CONFIG_PATH, config);
 }
-
-export function parseModelKey(key: string): { provider: string; modelId: string } | undefined {
-	const idx = key.indexOf(":");
-	if (idx < 1) return undefined;
-	return { provider: key.slice(0, idx), modelId: key.slice(idx + 1) };
-}
-
-export function modelKey(m: { provider: string; id: string }): string {
-	return `${m.provider}:${m.id}`;
-}

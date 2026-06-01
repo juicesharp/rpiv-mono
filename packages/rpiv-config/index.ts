@@ -3,6 +3,8 @@ export {
 	type GuidanceFields,
 	GuidanceFieldsSchema,
 	loadJsonConfig,
+	modelKey,
+	parseModelKey,
 	readEnvVar,
 	saveJsonConfig,
 	validateConfig,

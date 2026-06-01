@@ -5,6 +5,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	configPath,
 	loadJsonConfig,
+	modelKey,
+	parseModelKey,
 	readEnvVar,
 	saveJsonConfig,
 	validateConfig,
@@ -209,6 +211,57 @@ describe("validateGuidanceFields", () => {
 			promptGuidelines: ["guide"],
 		});
 		expect(result).toEqual({ promptSnippet: "snippet", promptGuidelines: ["guide"] });
+	});
+});
+
+// ---------------------------------------------------------------------------
+// readEnvVar
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// parseModelKey
+// ---------------------------------------------------------------------------
+
+describe("parseModelKey", () => {
+	it("parses provider:modelId format", () => {
+		expect(parseModelKey("anthropic:claude-sonnet-4-20250514")).toEqual({
+			provider: "anthropic",
+			modelId: "claude-sonnet-4-20250514",
+		});
+	});
+
+	it("returns undefined for no colon", () => {
+		expect(parseModelKey("just-a-string")).toBeUndefined();
+	});
+
+	it("returns undefined for leading colon", () => {
+		expect(parseModelKey(":model-id")).toBeUndefined();
+	});
+
+	it("handles provider with hyphens", () => {
+		expect(parseModelKey("google-gemini:gemini-2.5-pro")).toEqual({
+			provider: "google-gemini",
+			modelId: "gemini-2.5-pro",
+		});
+	});
+});
+
+// ---------------------------------------------------------------------------
+// modelKey
+// ---------------------------------------------------------------------------
+
+describe("modelKey", () => {
+	it("composes provider:id format", () => {
+		expect(modelKey({ provider: "anthropic", id: "claude-sonnet-4-20250514" })).toBe(
+			"anthropic:claude-sonnet-4-20250514",
+		);
+	});
+
+	it("round-trips with parseModelKey", () => {
+		const key = "openai:o3-pro";
+		const parsed = parseModelKey(key);
+		expect(parsed).toBeDefined();
+		expect(modelKey({ provider: parsed!.provider, id: parsed!.modelId })).toBe(key);
 	});
 });
 

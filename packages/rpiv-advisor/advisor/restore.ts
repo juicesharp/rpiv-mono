@@ -5,7 +5,8 @@
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { loadAdvisorConfig, parseModelKey, validateDisabledForModels } from "./config.js";
+import { parseModelKey } from "@juicesharp/rpiv-config";
+import { loadAdvisorConfig, validateDisabledForModels } from "./config.js";
 import { ADVISOR_TOOL_NAME, errModelUnavailable, msgAdvisorRestored, msgAdvisorRestoredInactive } from "./messages.js";
 import { isExecutorBlocked, setDisabledForModels } from "./policy.js";
 import { setAdvisorEffort, setAdvisorModel } from "./state.js";

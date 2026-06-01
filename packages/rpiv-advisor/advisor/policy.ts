@@ -5,7 +5,8 @@
 
 import type { Api, Model, ThinkingLevel } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { type DisabledForModelsEntry, modelKey } from "./config.js";
+import { modelKey } from "@juicesharp/rpiv-config";
+import type { DisabledForModelsEntry } from "./config.js";
 import { EFFORT_ORDINAL } from "./messages.js";
 
 let disabledForModelsCache: DisabledForModelsEntry[] = [];

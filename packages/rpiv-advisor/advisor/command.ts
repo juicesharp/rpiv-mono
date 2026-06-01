@@ -9,8 +9,9 @@ import type { Api, Model } from "@earendil-works/pi-ai";
 import { getSupportedThinkingLevels, type ThinkingLevel } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { SelectItem } from "@earendil-works/pi-tui";
+import { modelKey } from "@juicesharp/rpiv-config";
 import { showAdvisorPicker, showEffortPicker } from "../advisor-ui.js";
-import { modelKey, saveAdvisorConfig } from "./config.js";
+import { saveAdvisorConfig } from "./config.js";
 import { reconcileAdvisorTool } from "./handlers.js";
 import {
 	ADVISOR_TOOL_NAME,

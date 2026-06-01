@@ -143,6 +143,22 @@ export function validateGuidanceFields(fields: unknown): GuidanceFields {
 }
 
 // ---------------------------------------------------------------------------
+// Model key codec — provider:id string ↔ { provider, modelId } object.
+// ---------------------------------------------------------------------------
+
+/** Parse a "provider:modelId" string into its components. */
+export function parseModelKey(key: string): { provider: string; modelId: string } | undefined {
+	const idx = key.indexOf(":");
+	if (idx < 1) return undefined;
+	return { provider: key.slice(0, idx), modelId: key.slice(idx + 1) };
+}
+
+/** Compose a "provider:modelId" string from provider and modelId components. */
+export function modelKey(m: { provider: string; id: string }): string {
+	return `${m.provider}:${m.id}`;
+}
+
+// ---------------------------------------------------------------------------
 // Env-var fallback
 // ---------------------------------------------------------------------------
 
