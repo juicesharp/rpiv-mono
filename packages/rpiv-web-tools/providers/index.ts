@@ -8,6 +8,7 @@ import { SEARXNG_PROVIDER_META } from "./searxng.js";
 import { SERPER_PROVIDER_META } from "./serper.js";
 import { TAVILY_PROVIDER_META } from "./tavily.js";
 import type { ProviderMeta } from "./types.js";
+import { YOUCOM_PROVIDER_META } from "./youcom.js";
 
 export { BRAVE_API_KEY_ENV_VAR, BRAVE_PROVIDER_META, BraveProvider } from "./brave.js";
 export { EXA_API_KEY_ENV_VAR, EXA_PROVIDER_META, ExaProvider } from "./exa.js";
@@ -60,6 +61,7 @@ export type {
 	SearchResponse,
 	SearchResult,
 } from "./types.js";
+export { YOUCOM_API_KEY_ENV_VAR, YOUCOM_PROVIDER_META, YouComProvider } from "./youcom.js";
 
 // Typed as readonly ProviderMeta[] (not `as const`) so iterators can access
 // the optional META fields (baseUrlEnvVar, defaultBaseUrl, configure) without
@@ -70,6 +72,7 @@ export const PROVIDERS: readonly ProviderMeta[] = [
 	TAVILY_PROVIDER_META,
 	SERPER_PROVIDER_META,
 	EXA_PROVIDER_META,
+	YOUCOM_PROVIDER_META,
 	JINA_PROVIDER_META,
 	FIRECRAWL_PROVIDER_META,
 	PERPLEXITY_PROVIDER_META,

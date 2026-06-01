@@ -1,7 +1,7 @@
 {
 	"name": "@juicesharp/rpiv-web-tools",
 	"version": "1.17.0",
-	"description": "Pi extension. Web search and fetch for the model with pluggable providers (Brave, Tavily, Serper, Exa, Jina, Firecrawl, Perplexity, SearXNG, Ollama).",
+	"description": "Pi extension. Web search and fetch for the model with pluggable providers (Brave, Tavily, Serper, Exa, You.com, Jina, Firecrawl, Perplexity, SearXNG, Ollama).",
 	"keywords": [
 		"pi-package",
 		"pi-extension",
@@ -21,6 +21,7 @@
 		"tavily",
 		"serper",
 		"exa",
+		"youcom",
 		"jina",
 		"firecrawl",
 		"perplexity",

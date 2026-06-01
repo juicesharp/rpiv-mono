@@ -8,7 +8,7 @@
   </a>
 </div>
 
-Let the model search the web and read pages. `rpiv-web-tools` adds `web_search` and `web_fetch` tools to [Pi Agent](https://github.com/badlogic/pi-mono) with pluggable providers (Brave, Tavily, Serper, Exa, Jina, Firecrawl, Perplexity, [SearXNG](https://docs.searxng.org/), [Ollama](https://ollama.com)), plus `/web-tools` for interactive provider selection and API-key setup.
+Let the model search the web and read pages. `rpiv-web-tools` adds `web_search` and `web_fetch` tools to [Pi Agent](https://github.com/badlogic/pi-mono) with pluggable providers (Brave, Tavily, Serper, Exa, You.com, Jina, Firecrawl, Perplexity, [SearXNG](https://docs.searxng.org/), [Ollama](https://ollama.com)), plus `/web-tools` for interactive provider selection and API-key setup.
 
 ![Provider selection prompt](https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-web-tools/docs/config.jpg)
 
@@ -22,6 +22,7 @@ Pick one as the active backend; switch any time without losing the others' keys.
 | Tavily | `TAVILY_API_KEY` | [tavily.com](https://tavily.com) | native extraction (plain text) | |
 | Serper | `SERPER_API_KEY` | [serper.dev](https://serper.dev) | raw HTTP → htmlToText, `raw: true` available | |
 | Exa | `EXA_API_KEY` | [exa.ai](https://exa.ai) | native extraction (plain text) | |
+| You.com | `YOUCOM_API_KEY` | [you.com](https://you.com) | native extraction (markdown) | $5/1K search + $1/1K fetch |
 | Jina | `JINA_API_KEY` | [jina.ai/reader](https://jina.ai/reader) | native extraction (markdown) | |
 | Firecrawl | `FIRECRAWL_API_KEY` | [firecrawl.dev](https://firecrawl.dev) | native extraction (markdown) | |
 | Perplexity | `PERPLEXITY_API_KEY` | [docs.perplexity.ai](https://docs.perplexity.ai/) | raw HTTP → htmlToText, `raw: true` available | |
@@ -30,7 +31,7 @@ Pick one as the active backend; switch any time without losing the others' keys.
 
 ## Features
 
-- **Read any URL** - fetch http/https pages with HTML-to-text extraction, or get the raw response with `raw: true` (honoured by Brave/Serper/Perplexity/SearXNG; extraction providers — Tavily/Exa/Jina/Firecrawl/Ollama — always return their parsed text).
+- **Read any URL** - fetch http/https pages with HTML-to-text extraction, or get the raw response with `raw: true` (honoured by Brave/Serper/Perplexity/SearXNG; extraction providers — Tavily/Exa/You.com/Jina/Firecrawl/Ollama — always return their parsed text).
 - **GitHub URL interceptor (opt-in)** - github.com URLs route through `gh`/`git` for full repository content (file tree, README, individual file contents) instead of the rendered HTML page. Off by default; enable per-user via config or per-consumer at registration time. See [§GitHub URL interceptor](#github-url-interceptor).
 - **Large-page spillover** - oversized responses truncate inline and spill the full body to a temp file the model can read on demand.
 - **SSRF guard** - refuses loopback, RFC 1918, link-local, and cloud-metadata addresses (`localhost`, `127.0.0.0/8`, `10.0.0.0/8`, `169.254.0.0/16`, `172.16.0.0/12`, `192.168.0.0/16`, `::1`, `fc00::/7`, `fe80::/10`).
@@ -50,7 +51,7 @@ Then restart your Pi session.
   1–10 results per call.
 - **`web_fetch`** - read an http/https URL. Lookup order: opt-in URL interceptors
   (see [§GitHub URL interceptor](#github-url-interceptor)), then the active provider's native
-  fetch endpoint when it has one (Tavily/Exa/Jina/Firecrawl/Ollama → vendor extraction;
+  fetch endpoint when it has one (Tavily/Exa/You.com/Jina/Firecrawl/Ollama → vendor extraction;
   Brave/Serper/Perplexity/SearXNG → shared raw HTTP + HTML-to-text fallback). Large responses truncate
   inline and spill the full body to a temp file the model can read on demand.
 
@@ -70,7 +71,7 @@ Returns:
   content: [{ type: "text", text: string }], // markdown list of "**title**\n url\n snippet"
   details: {
     query: string,
-    backend: "brave" | "tavily" | "serper" | "exa" | "jina" | "firecrawl" | "perplexity" | "searxng" | "ollama",
+    backend: "brave" | "tavily" | "serper" | "exa" | "youcom" | "jina" | "firecrawl" | "perplexity" | "searxng" | "ollama",
     resultCount: number,
     results?: Array<{ title: string, url: string, snippet: string }>,
   }
@@ -104,7 +105,7 @@ Returns:
 }
 ```
 
-Throws on invalid URL, non-http(s) protocol, private/loopback hostnames (SSRF guard), non-2xx response, or `image/` / `video/` / `audio/` content types. Extraction providers (Tavily/Exa/Jina/Firecrawl) additionally throw when the API returns an empty body or a vendor-level failure (e.g. Firecrawl `success: false`, Tavily `failed_results`).
+Throws on invalid URL, non-http(s) protocol, private/loopback hostnames (SSRF guard), non-2xx response, or `image/` / `video/` / `audio/` content types. Extraction providers (Tavily/Exa/You.com/Jina/Firecrawl) additionally throw when the API returns an empty body or a vendor-level failure (e.g. Firecrawl `success: false`, Tavily `failed_results`).
 
 ## Commands
 
@@ -118,7 +119,7 @@ Throws on invalid URL, non-http(s) protocol, private/loopback hostnames (SSRF gu
 
 First match wins:
 
-1. The active provider's environment variable: `BRAVE_SEARCH_API_KEY`, `TAVILY_API_KEY`, `SERPER_API_KEY`, `EXA_API_KEY`, `JINA_API_KEY`, `FIRECRAWL_API_KEY`, `PERPLEXITY_API_KEY`, `SEARXNG_API_KEY`, or `OLLAMA_API_KEY`
+1. The active provider's environment variable: `BRAVE_SEARCH_API_KEY`, `TAVILY_API_KEY`, `SERPER_API_KEY`, `EXA_API_KEY`, `YOUCOM_API_KEY`, `JINA_API_KEY`, `FIRECRAWL_API_KEY`, `PERPLEXITY_API_KEY`, `SEARXNG_API_KEY`, or `OLLAMA_API_KEY`
 2. `apiKeys.<provider>` field in `~/.config/rpiv-web-tools/config.json`
 3. Legacy `apiKey` field (Brave only — auto-migrated to the new shape on next save)
 

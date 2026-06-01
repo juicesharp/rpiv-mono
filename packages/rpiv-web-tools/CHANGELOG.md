@@ -8,6 +8,7 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **You.com search+fetch provider** — new `FullProvider` backed by You.com's Search API (`POST /v1/search`) and Contents API (`POST /v1/contents`). Returns native markdown with `contentType: "text/markdown"`. Configure via `YOUCOM_API_KEY` env var or `apiKeys.youcom` in `~/.config/rpiv-web-tools/config.json`. `web_fetch` uses the Contents API for clean markdown extraction (same path as Jina/Firecrawl).
 - **Perplexity search provider** — search-only `SearchProvider` posting to `POST https://api.perplexity.ai/search` with `Authorization: Bearer $PERPLEXITY_API_KEY`. Configure via env var or `/web-tools` (paste the key from [docs.perplexity.ai](https://docs.perplexity.ai/)). `web_fetch` falls through to the shared raw-HTTP + htmlToText pipeline (same path as Brave/Serper/SearXNG). $5/1K requests, 50 RPS tier-independent rate limit. See README provider table.
 
 ## [1.17.0] - 2026-06-01

@@ -8,6 +8,7 @@ import { SearxngProvider } from "./searxng.js";
 import { SerperProvider } from "./serper.js";
 import { TavilyProvider } from "./tavily.js";
 import type { FullProvider, SearchProvider } from "./types.js";
+import { YouComProvider } from "./youcom.js";
 
 export interface ProviderCredentials {
 	apiKey?: string;
@@ -29,6 +30,8 @@ export function createSearchProvider(name: string, creds: ProviderCredentials): 
 			return new SerperProvider(apiKey);
 		case "exa":
 			return new ExaProvider(apiKey);
+		case "youcom":
+			return new YouComProvider(apiKey);
 		case "jina":
 			return new JinaProvider(apiKey);
 		case "firecrawl":
