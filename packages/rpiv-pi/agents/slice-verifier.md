@@ -37,7 +37,7 @@ The caller's dispatch prompt provides:
 - `slice_id` — identifier for the slice under audit, in whatever vocabulary the orchestrator uses
 - `current_slice_code` — verbatim content of the just-generated slice the orchestrator intends to lock, covering BOTH the code fences (every `#### N. path/...` block) AND the slice's success criteria (`### Success Criteria:` Automated + Manual subsections). When present, audit this AS the current slice; the artifact's `slice_id` section may legitimately be a skeleton (empty code fence + empty criteria) at this stage because writes are gated on developer approval. When absent, fall back to the artifact's `slice_id` section — and if that is also empty, the slice is truly missing and that is a real violation.
 - `target_files` — files the slice modifies, depends on, or assumes about
-- `overlapping_priors` — OPTIONAL. A deterministically precomputed overlap partition: the prior slices that share a target file or symbol with the current slice. When present, Step 3 deep-walks exactly these and treats every other prior slice as the collapsed `no overlap` aggregate — the partition is already proven, so do not re-derive it. When absent, Step 3 self-partitions.
+- `overlapping_priors` — OPTIONAL. Precomputed list of priors sharing a file/symbol with this slice; drives Step 3 when present.
 
 Read the artifact in full (no limit/offset). Read every target file in full.
 
@@ -49,7 +49,7 @@ Locate the artifact's commitments — architectural decisions, contracts, scoped
 
 ### Step 3: Cross-slice audit
 
-When the dispatch provides `overlapping_priors`, that partition has already been computed deterministically — deep-walk exactly those prior slices and record every other prior under one aggregate note (`no overlap — <slice ids>`); do NOT re-derive the partition. When it is absent, partition locked prior slices (headings preceding `slice_id` in artifact order) by overlap with the current slice: a prior slice OVERLAPS if it touches a `target_files` entry OR declares a symbol the current slice references. Non-overlapping slices cannot collide — collapse them to one aggregate note (`no overlap — <slice ids>`) and do not walk them.
+If `overlapping_priors` is given, trust it: deep-walk exactly those prior slices, collapse the rest to one `no overlap — <slice ids>` note. Otherwise, partition locked prior slices (headings preceding `slice_id` in artifact order) by overlap with the current slice: a prior slice OVERLAPS if it touches a `target_files` entry OR declares a symbol the current slice references. Non-overlapping slices cannot collide — collapse them to one aggregate note (`no overlap — <slice ids>`) and do not walk them.
 
 Walk every OVERLAPPING prior slice in full. For each: state what it produced, check the current slice for overlaps/collisions/redeclarations, verify every cross-slice symbol reference matches character-for-character, verify every claim the current slice makes about prior-slice behaviors against the projected intermediate state.
 

@@ -281,7 +281,7 @@ Then dispatch the `slice-verifier` agent with:
 - `slice_id`: `Phase N`
 - `current_slice_code`: inline the just-generated slice verbatim — every `#### N. path/...` block with its full code fence AND the `### Success Criteria:` block (Automated + Manual subsections).
 - `target_files`: files this slice modifies, plus key files prior phases introduced
-- `overlapping_priors`: the `overlapping:` ids from slice-overlap.mjs — the only prior phases the agent must deep-walk; the `non_overlapping:` ones are pre-proven collision-free. Omit only if the helper failed to run.
+- `overlapping_priors`: the `overlapping:` ids from slice-overlap.mjs — the only priors to deep-walk. Omit if the helper failed (agent self-partitions).
 
 The agent emits a 3-row summary (`Decisions / Cross-slice / Research`). On any VIOLATION, take one of:
 
