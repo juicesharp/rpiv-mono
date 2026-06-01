@@ -44,6 +44,13 @@ try {
 	// SDK absent — extension still loads with English-only UI.
 }
 
+// pi-core's ExtensionRunner throws this exact phrase from an invalidated ctx
+// proxy after session replacement/reload. Match the stable substring so genuine
+// replay bugs still propagate instead of being silently swallowed.
+function isStaleCtxError(e: unknown): boolean {
+	return /stale after session replacement/.test(String(e));
+}
+
 export default function (pi: ExtensionAPI) {
 	// Todo overlay widget — constructed lazily at the first session_start with UI.
 	let todoOverlay: TodoOverlay | undefined;
@@ -62,13 +69,27 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("session_compact", async (_event, ctx) => {
-		replaceState(replayFromBranch(ctx));
+		// Auto-compaction races session disposal: pi-core invalidates the
+		// extension runner while still emitting session_compact, so `ctx` may be
+		// a dead proxy whose getters throw the stale error. The compacting session
+		// is being discarded — the replacement session's session_start replays
+		// state — so keep current state on a stale ctx. Other errors are real
+		// replay bugs and must propagate.
+		try {
+			replaceState(replayFromBranch(ctx));
+		} catch (e) {
+			if (!isStaleCtxError(e)) throw e;
+		}
 		todoOverlay?.resetCompletedDisplayState();
 		todoOverlay?.update();
 	});
 
 	pi.on("session_tree", async (_event, ctx) => {
-		replaceState(replayFromBranch(ctx));
+		try {
+			replaceState(replayFromBranch(ctx));
+		} catch (e) {
+			if (!isStaleCtxError(e)) throw e;
+		}
 		todoOverlay?.resetCompletedDisplayState();
 		todoOverlay?.update();
 	});

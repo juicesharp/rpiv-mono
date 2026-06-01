@@ -31,6 +31,11 @@ import {
 	userMessageText,
 } from "./btw.js";
 
+// The exact phrase pi-core's ExtensionRunner throws from an invalidated proxy.
+const STALE_CTX_MESSAGE =
+	"This extension ctx is stale after session replacement or reload. " +
+	"Do not use a captured pi or command ctx after ctx.newSession().";
+
 function makeCompletionResponse(input: {
 	text?: string;
 	stopReason?: "done" | "aborted" | "error" | "toolUse";
@@ -331,6 +336,29 @@ describe("registerInvalidationHooks", () => {
 		await compactHandler?.({} as never, createMockCtx() as never);
 		const state = (globalThis as Record<symbol, { snapshots: Map<string, unknown> }>)[BTW_STATE_KEY];
 		expect(state.snapshots.has("/tmp/test-session.jsonl")).toBe(false);
+	});
+	it("swallows a stale-ctx error (session is being discarded)", async () => {
+		const { pi, captured } = createMockPi();
+		registerInvalidationHooks(pi);
+		// invalidateSnapshot reads ctx.sessionManager first — make it throw stale.
+		const staleCtx = {
+			get sessionManager(): never {
+				throw new Error(STALE_CTX_MESSAGE);
+			},
+		};
+		const compactHandler = captured.events.get("session_compact")?.[0];
+		await expect(compactHandler?.({} as never, staleCtx as never)).resolves.toBeUndefined();
+	});
+	it("propagates a non-stale error", async () => {
+		const { pi, captured } = createMockPi();
+		registerInvalidationHooks(pi);
+		const boomCtx = {
+			get sessionManager(): never {
+				throw new Error("boom: real bug");
+			},
+		};
+		const treeHandler = captured.events.get("session_tree")?.[0];
+		await expect(treeHandler?.({} as never, boomCtx as never)).rejects.toThrow("boom");
 	});
 });
 

@@ -130,8 +130,20 @@ async function onSessionCompact(_event: unknown, ctx: { cwd: string }, pi: Exten
 	resetInjectionState();
 	clearGitContextCache();
 	resetInjectedMarker();
-	injectRootGuidance(ctx.cwd, pi);
-	await injectGitContext(pi, (msg) => sendGitContextMessage(pi, msg));
+	// Auto-compaction races session disposal: pi-core's AgentSession.dispose()
+	// invalidates the extension runner while _runAutoCompaction is still emitting
+	// session_compact, so both `ctx` and `pi` become dead proxies whose
+	// getters/methods throw the stale error. Guessing a cwd buys nothing — the
+	// very next pi.sendMessage throws the same way — and the compacting session
+	// is being discarded anyway: the replacement session's session_start re-runs
+	// all of this. So on a stale ctx, bail. Any other error is a real bug in
+	// guidance/git injection and must propagate.
+	try {
+		injectRootGuidance(ctx.cwd, pi);
+		await injectGitContext(pi, (msg) => sendGitContextMessage(pi, msg));
+	} catch (e) {
+		if (!isStaleCtxError(e)) throw e;
+	}
 }
 
 async function onSessionShutdown(): Promise<void> {
@@ -185,6 +197,13 @@ function isOwnedSkill(name: string): boolean {
 
 function resetInjectionState(): void {
 	clearInjectionState();
+}
+
+// pi-core's ExtensionRunner throws this exact phrase from an invalidated ctx/pi
+// proxy (see runner.ts `invalidate()`). Match on the stable substring so genuine
+// errors still propagate instead of being silently swallowed.
+export function isStaleCtxError(e: unknown): boolean {
+	return /stale after session replacement/.test(String(e));
 }
 
 function migrateThoughtsToArtifacts(cwd: string): void {

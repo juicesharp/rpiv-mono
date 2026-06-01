@@ -33,6 +33,11 @@ import { clearInjectionState } from "./guidance.js";
 import { findMissingSiblings } from "./package-checks.js";
 import { __resetSessionHooksAnnounced, registerSessionHooks } from "./session-hooks.js";
 
+// The exact phrase pi-core's ExtensionRunner throws from an invalidated proxy.
+const STALE_CTX_MESSAGE =
+	"This extension ctx is stale after session replacement or reload. " +
+	"Do not use a captured pi or command ctx after ctx.newSession().";
+
 const emptySync: SyncResult = {
 	added: [],
 	updated: [],
@@ -498,6 +503,31 @@ describe("session_compact hook", () => {
 		// resetInjectedMarker + clearGitContextCache make takeGitContextIfChanged re-emit.
 		const sendAfter = (pi.sendMessage as ReturnType<typeof vi.fn>).mock.calls.length;
 		expect(sendAfter).toBeGreaterThan(sendBefore);
+	});
+
+	it("swallows a stale-ctx error (compacting session is being replaced)", async () => {
+		const { pi, captured } = createMockPi();
+		registerSessionHooks(pi);
+		const handler = captured.events.get("session_compact")?.[0];
+		// pi-core invalidates the runner mid-compaction; ctx.cwd then throws.
+		const staleCtx = {
+			get cwd(): string {
+				throw new Error(STALE_CTX_MESSAGE);
+			},
+		};
+		await expect(handler?.({} as never, staleCtx as never)).resolves.toBeUndefined();
+	});
+
+	it("propagates a non-stale error from guidance/git injection", async () => {
+		const { pi, captured } = createMockPi();
+		registerSessionHooks(pi);
+		const handler = captured.events.get("session_compact")?.[0];
+		const boomCtx = {
+			get cwd(): string {
+				throw new Error("boom: real bug in guidance injection");
+			},
+		};
+		await expect(handler?.({} as never, boomCtx as never)).rejects.toThrow("boom");
 	});
 });
 

@@ -287,8 +287,27 @@ export function registerMessageEndSnapshot(pi: ExtensionAPI): void {
 }
 
 export function registerInvalidationHooks(pi: ExtensionAPI): void {
-	pi.on("session_compact", async (_e, ctx) => invalidateSnapshot(ctx));
-	pi.on("session_tree", async (_e, ctx) => invalidateSnapshot(ctx));
+	pi.on("session_compact", async (_e, ctx) => safeInvalidateSnapshot(ctx));
+	pi.on("session_tree", async (_e, ctx) => safeInvalidateSnapshot(ctx));
+}
+
+// Auto-compaction races session disposal: pi-core invalidates the extension
+// runner while still emitting session_compact, so `ctx` may be a dead proxy
+// whose getters throw the stale error. The compacting session is being
+// discarded — there is no snapshot worth invalidating — so swallow only the
+// stale error. Any other error is a real bug and must propagate.
+function safeInvalidateSnapshot(ctx: ExtensionContext): void {
+	try {
+		invalidateSnapshot(ctx);
+	} catch (e) {
+		if (!isStaleCtxError(e)) throw e;
+	}
+}
+
+// pi-core's ExtensionRunner throws this exact phrase from an invalidated ctx
+// proxy after session replacement/reload. Match the stable substring.
+function isStaleCtxError(e: unknown): boolean {
+	return /stale after session replacement/.test(String(e));
 }
 
 export function registerBtwCommand(pi: ExtensionAPI): void {
