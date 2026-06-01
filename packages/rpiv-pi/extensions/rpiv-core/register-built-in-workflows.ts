@@ -18,27 +18,7 @@
  * other siblings already follow (siblings.ts header).
  */
 
-/**
- * True for a Node module-resolution failure (the sibling isn't installed).
- *
- * Walks the `cause` chain: a clean `await import(...)` of a missing package
- * rejects with `code === "ERR_MODULE_NOT_FOUND"` directly, but ESM loaders and
- * tooling (vitest's mock layer, some bundlers) wrap that error, nesting the
- * real code under `.cause`. Bounded against pathological self-referential
- * chains.
- */
-export function isModuleNotFound(err: unknown): boolean {
-	for (
-		let cur: unknown = err, depth = 0;
-		cur != null && depth < 16;
-		cur = (cur as { cause?: unknown }).cause, depth++
-	) {
-		if (typeof cur === "object" && (cur as { code?: unknown }).code === "ERR_MODULE_NOT_FOUND") {
-			return true;
-		}
-	}
-	return false;
-}
+import { isModuleNotFound } from "./utils.js";
 
 /**
  * Register the five built-in workflows (ship / build / arch / vet / polish)

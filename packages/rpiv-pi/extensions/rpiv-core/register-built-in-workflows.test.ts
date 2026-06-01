@@ -9,27 +9,9 @@
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { isModuleNotFound, registerBuiltInWorkflows } from "./register-built-in-workflows.js";
+import { registerBuiltInWorkflows } from "./register-built-in-workflows.js";
 
 const BUILT_IN_NAMES = ["arch", "build", "polish", "ship", "vet"];
-
-describe("isModuleNotFound", () => {
-	it("is true for an ERR_MODULE_NOT_FOUND error", () => {
-		const err = Object.assign(new Error("Cannot find package"), { code: "ERR_MODULE_NOT_FOUND" });
-		expect(isModuleNotFound(err)).toBe(true);
-	});
-
-	it("is false for other error codes and codeless errors", () => {
-		expect(isModuleNotFound(Object.assign(new Error("boom"), { code: "ERR_OTHER" }))).toBe(false);
-		expect(isModuleNotFound(new Error("no code"))).toBe(false);
-	});
-
-	it("is false for non-object values", () => {
-		expect(isModuleNotFound(null)).toBe(false);
-		expect(isModuleNotFound(undefined)).toBe(false);
-		expect(isModuleNotFound("ERR_MODULE_NOT_FOUND")).toBe(false);
-	});
-});
 
 describe("registerBuiltInWorkflows", () => {
 	it("registers the five built-in workflows when rpiv-workflow is present", async () => {

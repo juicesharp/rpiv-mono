@@ -27,7 +27,9 @@ import {
 } from "node:fs";
 import { isAbsolute, join, resolve, sep } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import { getAgentModelConfig, loadModelsConfig, type ModelsConfig, parseModelKey } from "./models-config.js";
+import { parseModelKey } from "@juicesharp/rpiv-config";
+import { parseFrontmatterBounds } from "./frontmatter.js";
+import { getAgentModelConfig, loadModelsConfig, type ModelsConfig } from "./models-config.js";
 import { BUNDLED_AGENTS_DIR } from "./paths.js";
 import { isPlainObject, toErrorMessage } from "./utils.js";
 
@@ -340,6 +342,42 @@ function toAgentFrontmatterModel(model: string): string {
 }
 
 /**
+ * Apply key-value updates to frontmatter lines.
+ *
+ * For each key in `keysToSet`, replaces the existing line if present
+ * (within the frontmatter bounds), or inserts a new line before the
+ * closing `---`. Returns the (possibly modified) lines array.
+ *
+ * The closing-fence index (`bounds.end`) is stable across in-place
+ * replacements — only the value changes, not the line count — so the
+ * insertion point remains correct without re-scanning.
+ */
+function applyKeyUpdates(
+	lines: string[],
+	bounds: { start: number; end: number },
+	keysToSet: { key: string; value: string }[],
+): string[] {
+	const result = [...lines];
+	const insertLines: string[] = [];
+
+	for (const { key, value } of keysToSet) {
+		const prefix = `${key}: `;
+		const existingIdx = result.findIndex((line, i) => i > 0 && i < bounds.end && line.startsWith(prefix));
+		if (existingIdx !== -1) {
+			result[existingIdx] = `${prefix}${value}`;
+		} else {
+			insertLines.push(`${prefix}${value}`);
+		}
+	}
+
+	if (insertLines.length > 0) {
+		result.splice(bounds.end, 0, ...insertLines);
+	}
+
+	return result;
+}
+
+/**
  * Inject model/thinking frontmatter into agent .md content.
  *
  * Idempotent: re-injecting produces identical bytes. The function finds
@@ -360,50 +398,18 @@ export function injectModelFrontmatter(content: string, agentName: string, confi
 		return content;
 	}
 
-	// Find the frontmatter block
 	const lines = content.split("\n");
-	if (lines.length === 0 || lines[0] !== "---") return content; // no frontmatter
+	const bounds = parseFrontmatterBounds(lines);
+	if (!bounds) return content;
 
-	let closingIdx = -1;
-	for (let i = 1; i < lines.length; i++) {
-		if (lines[i] === "---") {
-			closingIdx = i;
-			break;
-		}
-	}
-	if (closingIdx === -1) return content; // unclosed frontmatter
-
-	// Build lines to inject/replace
-	const result = [...lines];
 	const keysToSet: { key: string; value: string }[] = [];
 	// D9: agent frontmatter requires slash-delimited provider/modelId, NOT the
 	// colon form stored in models.json. The stage-override path keeps the colon.
 	if (override.model !== undefined) keysToSet.push({ key: "model", value: toAgentFrontmatterModel(override.model) });
 	if (override.thinking !== undefined) keysToSet.push({ key: "thinking", value: override.thinking });
 
-	// For each key, find existing line or mark for insertion
-	const insertLines: string[] = [];
-	for (const { key, value } of keysToSet) {
-		const prefix = `${key}: `;
-		const existingIdx = result.findIndex((line, i) => i > 0 && i < closingIdx && line.startsWith(prefix));
-		if (existingIdx !== -1) {
-			// Replace existing value
-			result[existingIdx] = `${prefix}${value}`;
-		} else {
-			insertLines.push(`${prefix}${value}`);
-		}
-	}
-
-	// Insert new lines before the closing --- (at closingIdx, which shifts)
-	if (insertLines.length > 0) {
-		// Re-find closingIdx in case replacements changed it (they don't in this impl,
-		// but be safe)
-		const newClosingIdx = result.indexOf("---", 1);
-		if (newClosingIdx === -1) return content; // shouldn't happen
-		result.splice(newClosingIdx, 0, ...insertLines);
-	}
-
-	return result.join("\n");
+	const updated = applyKeyUpdates(lines, bounds, keysToSet);
+	return updated.join("\n");
 }
 
 /**

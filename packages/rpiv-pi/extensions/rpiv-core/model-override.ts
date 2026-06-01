@@ -21,7 +21,12 @@
 
 import type { ThinkingLevel } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { getStageModelConfig, loadModelsConfig, parseModelKey } from "./models-config.js";
+import { parseModelKey } from "@juicesharp/rpiv-config";
+import { getStageModelConfig, loadModelsConfig } from "./models-config.js";
+import { isModuleNotFound } from "./utils.js";
+
+/** First parameter type of pi.setModel() — avoids importing Pi's Model<Api> generic. */
+type CapturedModel = Parameters<ExtensionAPI["setModel"]>[0];
 
 // ---------------------------------------------------------------------------
 // Module-level state — captured from session_start, used by lifecycle listeners.
@@ -37,7 +42,7 @@ let capturedModelRegistry: { find(provider: string, modelId: string): unknown } 
  * newSession (which may re-fire session_start with the override model) can't
  * pollute the baseline we restore at workflow end.
  */
-let capturedModel: unknown;
+let capturedModel: CapturedModel | undefined;
 
 /**
  * Baseline snapshot — set at workflow start, restored at workflow end.
@@ -45,7 +50,7 @@ let capturedModel: unknown;
  * file (runtime-confirmed), so failing to restore the model permanently
  * rewrites the user's global default.
  */
-let baseline: { thinking: string; model: unknown } | undefined;
+let baseline: { thinking: string; model: CapturedModel | undefined } | undefined;
 let baselineCaptured = false;
 
 /** Test reset — wired into test/setup.ts beforeEach. */
@@ -65,7 +70,7 @@ export function __resetModelOverrideState(): void {
 export function registerModelOverrideSessionStart(pi: ExtensionAPI): void {
 	pi.on(
 		"session_start",
-		async (_event: unknown, ctx: { modelRegistry?: typeof capturedModelRegistry; model?: unknown }) => {
+		async (_event: unknown, ctx: { modelRegistry?: typeof capturedModelRegistry; model?: CapturedModel }) => {
 			if (ctx.modelRegistry) {
 				capturedModelRegistry = ctx.modelRegistry;
 			}
@@ -85,11 +90,11 @@ export function registerModelOverrideSessionStart(pi: ExtensionAPI): void {
 // ---------------------------------------------------------------------------
 
 /** Resolve model string to Model object via captured modelRegistry. */
-function resolveModel(modelStr?: string): unknown {
+function resolveModel(modelStr?: string): CapturedModel | undefined {
 	if (!modelStr || !capturedModelRegistry) return undefined;
 	const parsed = parseModelKey(modelStr);
 	if (!parsed) return undefined;
-	return capturedModelRegistry.find(parsed.provider, parsed.modelId);
+	return capturedModelRegistry.find(parsed.provider, parsed.modelId) as CapturedModel | undefined;
 }
 
 /**
@@ -99,9 +104,12 @@ function resolveModel(modelStr?: string): unknown {
  * setModel returning false. (Unconfigured stages compose against the baseline
  * inline in onStageStart rather than calling this.)
  */
-async function applyBaseline(pi: ExtensionAPI, base: { thinking: string; model: unknown }): Promise<void> {
+async function applyBaseline(
+	pi: ExtensionAPI,
+	base: { thinking: string; model: CapturedModel | undefined },
+): Promise<void> {
 	if (base.model !== undefined) {
-		const ok = await pi.setModel(base.model as Parameters<ExtensionAPI["setModel"]>[0]);
+		const ok = await pi.setModel(base.model);
 		if (!ok) {
 			console.warn("[rpiv-pi] failed to restore baseline model — proceeding on current model");
 		}
@@ -137,23 +145,6 @@ async function applyOrSkipIfStale(fn: () => void | Promise<void>): Promise<void>
 	} catch (e) {
 		if (!isStaleCtxError(e)) throw e;
 	}
-}
-
-/**
- * Check if an error is a module-not-found error.
- * Local copy to avoid circular import from register-built-in-workflows.js.
- */
-function isModuleNotFound(err: unknown): boolean {
-	for (
-		let cur: unknown = err, depth = 0;
-		cur != null && depth < 16;
-		cur = (cur as { cause?: unknown }).cause, depth++
-	) {
-		if (typeof cur === "object" && (cur as { code?: unknown }).code === "ERR_MODULE_NOT_FOUND") {
-			return true;
-		}
-	}
-	return false;
 }
 
 /**
@@ -215,7 +206,7 @@ export async function registerModelOverrideLifecycle(pi: ExtensionAPI): Promise<
 				// noise the user can't act on.
 				await applyOrSkipIfStale(async () => {
 					if (effectiveModel !== undefined) {
-						const ok = await pi.setModel(effectiveModel as Parameters<ExtensionAPI["setModel"]>[0]);
+						const ok = await pi.setModel(effectiveModel);
 						if (!ok) {
 							console.warn(
 								`[rpiv-pi] setModel failed for stage "${stage.name}" (no API key?) — proceeding on current model`,
@@ -236,7 +227,7 @@ export async function registerModelOverrideLifecycle(pi: ExtensionAPI): Promise<
 				// it: a discarded session has nothing to restore, and the replacement
 				// session_start already rebuilt from the on-disk default. State MUST
 				// still reset regardless, so a future workflow starts clean.
-				await applyOrSkipIfStale(() => applyBaseline(pi, baseline as { thinking: string; model: unknown }));
+				await applyOrSkipIfStale(() => applyBaseline(pi, baseline!));
 
 				// Reset state for next workflow
 				baseline = undefined;

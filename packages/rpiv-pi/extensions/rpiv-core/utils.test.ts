@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
 	getPiAgentSettingsPath,
+	isModuleNotFound,
 	isPlainObject,
 	PI_AGENT_SETTINGS,
 	readPiAgentSettings,
@@ -68,6 +69,24 @@ describe("toErrorMessage", () => {
 
 	it("prefers Error.message over the fallback", () => {
 		expect(toErrorMessage(new Error("real cause"), "Failed to do thing")).toBe("real cause");
+	});
+});
+
+describe("isModuleNotFound", () => {
+	it("is true for an ERR_MODULE_NOT_FOUND error", () => {
+		const err = Object.assign(new Error("Cannot find package"), { code: "ERR_MODULE_NOT_FOUND" });
+		expect(isModuleNotFound(err)).toBe(true);
+	});
+
+	it("is false for other error codes and codeless errors", () => {
+		expect(isModuleNotFound(Object.assign(new Error("boom"), { code: "ERR_OTHER" }))).toBe(false);
+		expect(isModuleNotFound(new Error("no code"))).toBe(false);
+	});
+
+	it("is false for non-object values", () => {
+		expect(isModuleNotFound(null)).toBe(false);
+		expect(isModuleNotFound(undefined)).toBe(false);
+		expect(isModuleNotFound("ERR_MODULE_NOT_FOUND")).toBe(false);
 	});
 });
 

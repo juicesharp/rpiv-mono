@@ -8,8 +8,8 @@
  * doesn't recognise.
  *
  * Follows the rpiv-telemetry/config.ts pattern: TypeBox schema → validateConfig →
- * per-field defaults. The config file is read on every call (no globalThis
- * cache) so edits take effect on the next session start or /rpiv-update-agents.
+ * per-field defaults. The config is cached after the first call (session-scoped) so edits
+ * take effect on the next session start or /rpiv-update-agents.
  */
 
 import { configPath, loadJsonConfig, validateConfig } from "@juicesharp/rpiv-config";
@@ -88,23 +88,6 @@ export interface ModelsConfig {
 }
 
 // ---------------------------------------------------------------------------
-// Codec — provider:modelId string ↔ { provider, modelId } object.
-// Mirrors rpiv-advisor/advisor/config.ts parseModelKey / modelKey.
-// ---------------------------------------------------------------------------
-
-/** Parse a "provider:modelId" string into its components. */
-export function parseModelKey(key: string): { provider: string; modelId: string } | undefined {
-	const idx = key.indexOf(":");
-	if (idx < 1) return undefined;
-	return { provider: key.slice(0, idx), modelId: key.slice(idx + 1) };
-}
-
-/** Compose a "provider:modelId" string from provider and modelId components. */
-export function modelKey(m: { provider: string; id: string }): string {
-	return `${m.provider}:${m.id}`;
-}
-
-// ---------------------------------------------------------------------------
 // Helper — resolve a ModelEntry (string or object) to ResolvedModelConfig.
 // ---------------------------------------------------------------------------
 
@@ -139,8 +122,13 @@ function resolveModelEntry(entry: unknown): ResolvedModelConfig {
 
 const CONFIG_PATH = configPath("rpiv-pi", "models.json");
 
+/** Session-scoped cache — populated on first call, cleared by __resetModelsConfigCache(). */
+let modelsConfigCache: ModelsConfig | undefined;
+
 /** Load, validate, and resolve models.json. Returns empty config on any failure. */
 export function loadModelsConfig(): ModelsConfig {
+	if (modelsConfigCache !== undefined) return modelsConfigCache;
+
 	const raw = loadJsonConfig<ModelsConfigSchema>(CONFIG_PATH);
 	const validated = validateConfig(ModelsConfigSchema, raw);
 
@@ -160,11 +148,18 @@ export function loadModelsConfig(): ModelsConfig {
 		}
 	}
 
-	return {
+	const result: ModelsConfig = {
 		defaults,
 		agents: Object.keys(agents).length > 0 ? agents : undefined,
 		stages: Object.keys(stages).length > 0 ? stages : undefined,
 	};
+	modelsConfigCache = result;
+	return result;
+}
+
+/** Test-only reset — wired into test/setup.ts beforeEach. */
+export function __resetModelsConfigCache(): void {
+	modelsConfigCache = undefined;
 }
 
 /** Resolve a single entry (no cascade). */

@@ -2,56 +2,16 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+	__resetModelsConfigCache,
 	getAgentModelConfig,
 	getStageModelConfig,
 	loadModelsConfig,
 	type ModelsConfig,
-	modelKey,
-	parseModelKey,
 } from "./models-config.js";
 
 const TEST_HOME = process.env.HOME!;
 
 describe("models-config", () => {
-	describe("parseModelKey", () => {
-		it("parses provider:modelId format", () => {
-			expect(parseModelKey("anthropic:claude-sonnet-4-20250514")).toEqual({
-				provider: "anthropic",
-				modelId: "claude-sonnet-4-20250514",
-			});
-		});
-
-		it("returns undefined for no colon", () => {
-			expect(parseModelKey("just-a-string")).toBeUndefined();
-		});
-
-		it("returns undefined for leading colon", () => {
-			expect(parseModelKey(":model-id")).toBeUndefined();
-		});
-
-		it("handles provider with hyphens", () => {
-			expect(parseModelKey("google-gemini:gemini-2.5-pro")).toEqual({
-				provider: "google-gemini",
-				modelId: "gemini-2.5-pro",
-			});
-		});
-	});
-
-	describe("modelKey", () => {
-		it("composes provider:id format", () => {
-			expect(modelKey({ provider: "anthropic", id: "claude-sonnet-4-20250514" })).toBe(
-				"anthropic:claude-sonnet-4-20250514",
-			);
-		});
-
-		it("round-trips with parseModelKey", () => {
-			const key = "openai:o3-pro";
-			const parsed = parseModelKey(key);
-			expect(parsed).toBeDefined();
-			expect(modelKey({ provider: parsed!.provider, id: parsed!.modelId })).toBe(key);
-		});
-	});
-
 	describe("loadModelsConfig", () => {
 		const configDir = join(TEST_HOME, ".config", "rpiv-pi");
 		const configFilePath = join(configDir, "models.json");
@@ -189,6 +149,37 @@ describe("models-config", () => {
 			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("unknown thinking level"));
 
 			warnSpy.mockRestore();
+		});
+	});
+
+	describe("loadModelsConfig cache", () => {
+		const configDir = join(TEST_HOME, ".config", "rpiv-pi");
+		const configFilePath = join(configDir, "models.json");
+
+		beforeEach(() => {
+			__resetModelsConfigCache();
+			mkdirSync(configDir, { recursive: true });
+		});
+
+		it("returns cached result on second call", () => {
+			writeFileSync(configFilePath, JSON.stringify({ defaults: "openai:gpt-5.5" }), "utf-8");
+
+			const first = loadModelsConfig();
+			const second = loadModelsConfig();
+			expect(first).toBe(second); // strict reference equality — same object
+		});
+
+		it("re-reads after __resetModelsConfigCache", () => {
+			writeFileSync(configFilePath, JSON.stringify({ defaults: "openai:gpt-5.5" }), "utf-8");
+
+			const first = loadModelsConfig();
+
+			writeFileSync(configFilePath, JSON.stringify({ defaults: "anthropic:claude-sonnet-4-20250514" }), "utf-8");
+
+			__resetModelsConfigCache();
+			const afterReset = loadModelsConfig();
+			expect(afterReset).not.toBe(first); // different object — re-read
+			expect(afterReset.defaults?.model).toBe("anthropic:claude-sonnet-4-20250514");
 		});
 	});
 
