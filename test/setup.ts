@@ -73,6 +73,8 @@ beforeEach(async () => {
 	sessionHooks.__resetSessionHooksAnnounced();
 	const modelOverride = await import("../packages/rpiv-pi/extensions/rpiv-core/model-override.js");
 	modelOverride.__resetModelOverrideState();
+	const modelsConfigModule = await import("../packages/rpiv-pi/extensions/rpiv-core/models-config.js");
+	modelsConfigModule.__resetModelsConfigCache();
 
 	const titleSpinner = await import("../packages/rpiv-warp/title-spinner.js");
 	titleSpinner.__resetState();

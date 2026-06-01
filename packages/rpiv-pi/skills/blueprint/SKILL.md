@@ -268,11 +268,20 @@ No pseudocode, no TODOs, no placeholders — the code must be copy-pasteable by 
 
 #### 6.2. Verify slice
 
-Mandatory for every slice — no skipping, no shortcuts. Dispatch the `slice-verifier` agent with:
+Mandatory for every slice — no skipping, no shortcuts.
+
+First compute the cross-slice overlap partition deterministically — this keeps the O(M) prior-phase classification out of the agent:
+
+```
+node "${SKILL_DIR}/../_shared/slice-overlap.mjs" "<artifact_path>" "Phase N"
+```
+
+Then dispatch the `slice-verifier` agent with:
 - `artifact_path`: the Step-5 Write `file_path` (contains the skeleton plus locked prior phases)
 - `slice_id`: `Phase N`
 - `current_slice_code`: inline the just-generated slice verbatim — every `#### N. path/...` block with its full code fence AND the `### Success Criteria:` block (Automated + Manual subsections).
 - `target_files`: files this slice modifies, plus key files prior phases introduced
+- `overlapping_priors`: the `overlapping:` ids from slice-overlap.mjs — the only prior phases the agent must deep-walk; the `non_overlapping:` ones are pre-proven collision-free. Omit only if the helper failed to run.
 
 The agent emits a 3-row summary (`Decisions / Cross-slice / Research`). On any VIOLATION, take one of:
 
