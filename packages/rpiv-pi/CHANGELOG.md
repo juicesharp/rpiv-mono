@@ -7,6 +7,14 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- `web-search-researcher`: migrated frontmatter to `@tintinweb/pi-subagents` `0.10.0` tool/extension semantics. `web_search`/`web_fetch` are extension tools (from `@juicesharp/rpiv-web-tools`), not built-ins, so they now route through `ext:` selectors and the extension is pinned via `extensions:`:
+  ```yaml
+  extensions: [rpiv-web-tools]
+  tools: read, grep, find, ls, ext:rpiv-web-tools/web_search, ext:rpiv-web-tools/web_fetch
+  ```
+  Under 0.10.0 the old `tools: web_search, web_fetch, …` form fired `tools-error: … not a known built-in` warnings and silently exposed the full extension tool surface instead of just the two web tools. Run `/rpiv-update-agents` after upgrading to refresh the bundled frontmatter. **Customised `<cwd>/.pi/agents/web-search-researcher.md` files are not touched** — edit them by hand to the form above. Do not add `isolated: true` to this agent: it strips `ext:` selectors and would remove web access entirely.
+
 ## [1.17.0] - 2026-06-01
 
 ### Added

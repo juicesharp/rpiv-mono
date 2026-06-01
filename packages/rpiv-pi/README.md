@@ -8,7 +8,9 @@
   </a>
 </div>
 
-> **Pi compatibility** - `rpiv-pi` `0.14.x` tracks `@earendil-works/pi-coding-agent` `0.70.x` and `@tintinweb/pi-subagents` `0.6.x`. If you see peer-dep resolution issues after a Pi upgrade, open an issue.
+> **Pi compatibility** - `rpiv-pi` tracks `@earendil-works/pi-coding-agent` and `@tintinweb/pi-subagents` `0.10.x`. If you see peer-dep resolution issues after a Pi upgrade, open an issue.
+
+> **⚠️ Upgrading to `@tintinweb/pi-subagents` `0.10.x`** - frontmatter tool gating changed: extension tools now route through `ext:<extension>/<tool>`. The bundled `web-search-researcher` is migrated - run `/rpiv-update-agents` to refresh it. Customised copies need a manual edit (see CHANGELOG).
 
 > **⚠️ Upgrading from `0.13.x`** - `1.0.0` swaps the subagent provider from `npm:pi-subagents` (nicobailon fork) back to `npm:@tintinweb/pi-subagents` (resumed maintenance). On first launch after upgrade you'll see *"rpiv-pi requires 1 sibling extension(s): @tintinweb/pi-subagents"* - **run `/rpiv-setup` once and restart Pi**. The setup dialog previews both changes (install `@tintinweb/pi-subagents`, remove `npm:pi-subagents` from `~/.pi/agent/settings.json`) and applies them only after you confirm. After restart, run `/rpiv-update-agents` to refresh the 12 bundled specialist frontmatters. Customised `<cwd>/.pi/agents/*.md` files are not touched. The tool name reverts from `subagent` → `Agent` (param `subagent_type`/`description`/`prompt`) - only your own custom skills/agents need editing; the bundled rpiv-pi specialists are migrated in this release.
 
