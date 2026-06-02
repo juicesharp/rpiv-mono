@@ -22,8 +22,17 @@ export interface SiblingPlugin {
 export const SIBLINGS: readonly SiblingPlugin[] = [
 	{
 		pkg: "npm:@tintinweb/pi-subagents",
-		matches: /@tintinweb\/pi-subagents/i,
-		provides: "Agent / get_subagent_result / steer_subagent tools",
+		// Accept both the upstream tintinweb fork AND the @gotgenes/pi-subagents
+		// fork (API-compatible: same `subagent` / `get_subagent_result` /
+		// `steer_subagent` tool surface). Default `pkg` stays the upstream fork
+		// because that's what /rpiv-setup installs; the regex widens the
+		// detection so users on the gotgenes fork don't see a false
+		// "missing sibling" banner on session_start. The trailing `(?![-\w])`
+		// word boundary matches the defensive pattern used by LEGACY_SIBLINGS
+		// and prevents over-matching a hypothetical `@scope/pi-subagents-*`
+		// variant (e.g. `pi-subagents-utils`).
+		matches: /@(tintinweb|gotgenes)\/pi-subagents(?![-\w])/i,
+		provides: "Agent / get_subagent_result / steer_subagent tools (tintinweb or gotgenes fork)",
 	},
 	{
 		pkg: "npm:@juicesharp/rpiv-ask-user-question",

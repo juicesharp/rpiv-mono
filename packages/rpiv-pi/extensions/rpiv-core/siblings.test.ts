@@ -44,6 +44,30 @@ describe("SIBLINGS registry", () => {
 		expect(i18nEntry?.matches.test("@juicesharp/rpiv-i18n")).toBe(true);
 	});
 
+	it("pi-subagents SIBLINGS[0] matches BOTH the @tintinweb/pi-subagents fork and the @gotgenes/pi-subagents fork", () => {
+		const subagentsEntry = SIBLINGS[0];
+		expect(subagentsEntry).toBeDefined();
+		// Upstream fork (default install target via /rpiv-setup)
+		expect(subagentsEntry?.matches.test("@tintinweb/pi-subagents")).toBe(true);
+		// @gotgenes/pi-subagents — API-compatible fork with the same tool surface
+		expect(subagentsEntry?.matches.test("@gotgenes/pi-subagents")).toBe(true);
+	});
+
+	it("pi-subagents SIBLINGS[0] regex is case-insensitive across both fork namespaces", () => {
+		const subagentsEntry = SIBLINGS[0];
+		expect(subagentsEntry?.matches.test("@TINTINWEB/PI-SUBAGENTS")).toBe(true);
+		expect(subagentsEntry?.matches.test("@GOTGENES/PI-SUBAGENTS")).toBe(true);
+	});
+
+	it("pi-subagents SIBLINGS[0] regex does NOT match unrelated @-scoped pi-subagents-* variants", () => {
+		const subagentsEntry = SIBLINGS[0];
+		// Word-boundary guard: must not over-match a hypothetical future sibling
+		// such as `@juicesharp/pi-subagents-utils` (a dash right after the
+		// `pi-subagents` token is excluded via `(?![-\w])`).
+		expect(subagentsEntry?.matches.test("@tintinweb/pi-subagents-utils")).toBe(false);
+		expect(subagentsEntry?.matches.test("@gotgenes/pi-subagents-utils")).toBe(false);
+	});
+
 	it("every entry has non-empty pkg + provides", () => {
 		for (const s of SIBLINGS) {
 			expect(s.pkg.length).toBeGreaterThan(0);
