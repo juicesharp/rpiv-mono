@@ -7,6 +7,12 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- Add release notes blog post for v1.16 → v1.17.
+
+### Fixed
+- Code blocks in the v1.16 → v1.17 release notes post no longer cause horizontal scroll.
+
 ## [1.17.1] - 2026-06-01
 
 ## [1.17.0] - 2026-06-01

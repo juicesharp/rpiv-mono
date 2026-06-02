@@ -7,6 +7,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- Drop Notes column from the providers table in the README.
+
 ## [1.17.1] - 2026-06-01
 
 ### Added

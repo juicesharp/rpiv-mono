@@ -7,6 +7,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- Stale extension context after auto-compaction no longer causes spurious warnings during overlay replay.
+
 ## [1.17.1] - 2026-06-01
 
 ## [1.17.0] - 2026-06-01
