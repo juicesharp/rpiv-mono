@@ -220,6 +220,37 @@ describe("/rpiv-models — override checkmarks", () => {
 		expect(agentItems.find((i) => i.value !== target)?.label).not.toContain("✓");
 	});
 
+	it("floats scopes that hold overrides to the top, keeping reset-all last", async () => {
+		rmSync(CONFIG_PATH, { force: true });
+		mkdirSync(dirname(CONFIG_PATH), { recursive: true });
+		writeFileSync(CONFIG_PATH, JSON.stringify({ stages: { plan: "zai/glm-4-7" } }), "utf-8");
+
+		vi.mocked(showFilterablePicker).mockResolvedValueOnce(null); // cancel at scope
+		const { pi, handler } = makePi();
+		registerRpivModelsCommand(pi);
+		await handler()("", makeCtx());
+
+		const scopeListItems = (vi.mocked(showFilterablePicker).mock.calls[0][1] as { items: SelectItem[] }).items;
+		expect(scopeListItems[0].value).toBe("stages"); // overridden scope floated up
+		expect(scopeListItems[scopeListItems.length - 1].value).toBe("__reset_all__"); // reset stays last
+	});
+
+	it("floats an overridden key to the top of its key picker", async () => {
+		const agents = bundledAgentNames();
+		const target = agents[agents.length - 1]; // last in natural order
+		rmSync(CONFIG_PATH, { force: true });
+		mkdirSync(dirname(CONFIG_PATH), { recursive: true });
+		writeFileSync(CONFIG_PATH, JSON.stringify({ agents: { [target]: "zai/glm-4-7" } }), "utf-8");
+
+		vi.mocked(showFilterablePicker).mockResolvedValueOnce("agents").mockResolvedValueOnce(null);
+		const { pi, handler } = makePi();
+		registerRpivModelsCommand(pi);
+		await handler()("", makeCtx());
+
+		const agentItems = (vi.mocked(showFilterablePicker).mock.calls[1][1] as { items: SelectItem[] }).items;
+		expect(agentItems[0].value).toBe(target); // floated from last to first
+	});
+
 	it("floats the current model to the top of the model list and keeps its ✓", async () => {
 		rmSync(CONFIG_PATH, { force: true });
 		mkdirSync(dirname(CONFIG_PATH), { recursive: true });
@@ -259,6 +290,23 @@ describe("/rpiv-models — per-entry reset", () => {
 		const stored = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
 		expect(stored.agents).toBeUndefined();
 		expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("Removed"), "info");
+	});
+
+	it("removes a defaults override (no trailing slash in the label)", async () => {
+		rmSync(CONFIG_PATH, { force: true });
+		mkdirSync(dirname(CONFIG_PATH), { recursive: true });
+		writeFileSync(CONFIG_PATH, JSON.stringify({ defaults: "zai/glm-4-7" }), "utf-8");
+
+		// scope=defaults → model picker → reset.
+		vi.mocked(showFilterablePicker).mockResolvedValueOnce("defaults").mockResolvedValueOnce("__reset__");
+		const { pi, handler } = makePi();
+		registerRpivModelsCommand(pi);
+		const ctx = makeCtx();
+		await handler()("", ctx);
+
+		const stored = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
+		expect(stored.defaults).toBeUndefined();
+		expect(ctx.ui.notify).toHaveBeenCalledWith("Removed defaults.", "info");
 	});
 
 	it("reports honestly (no misleading 'Removed') when the key has no override", async () => {

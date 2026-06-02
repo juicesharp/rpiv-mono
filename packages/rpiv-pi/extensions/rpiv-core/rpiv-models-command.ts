@@ -37,6 +37,18 @@ const RESET_LABEL = "Reset to default";
 const CHECK = " ✓";
 const withCheck = (label: string, has: boolean): string => (has ? `${label}${CHECK}` : label);
 
+/** Stable partition: ✓-marked items float to the front, original order preserved. */
+function floatChecked(items: SelectItem[]): SelectItem[] {
+	const checked = items.filter((i) => i.label.endsWith(CHECK));
+	const rest = items.filter((i) => !i.label.endsWith(CHECK));
+	return [...checked, ...rest];
+}
+
+/** Build key-picker items: ✓-decorate via `has`, then float the marked ones up. */
+function keyItems(names: string[], has: (name: string) => boolean): SelectItem[] {
+	return floatChecked(names.map((n) => ({ value: n, label: withCheck(n, has(n)) })));
+}
+
 // `thinking` is narrowed to the 5-value `ThinkingLevelValue` union (vs. raw
 // `string`) so the picker's persisted output mirrors the schema's runtime
 // validation surface (Plan Review row #concern-F).
@@ -244,7 +256,7 @@ export function registerRpivModelsCommand(pi: ExtensionAPI): void {
 			const scope = await showFilterablePicker(ctx, {
 				title: "Model Overrides",
 				proseLines: ["Select scope."],
-				items: scopeItems(raw),
+				items: floatChecked(scopeItems(raw)),
 			});
 			if (!scope) return;
 
@@ -268,10 +280,7 @@ export function registerRpivModelsCommand(pi: ExtensionAPI): void {
 			const keyPath: string[] = [];
 
 			if (scope === SCOPE_AGENTS) {
-				const items = bundledAgentNames().map((n) => ({
-					value: n,
-					label: withCheck(n, keyHasOverride(raw, SCOPE_AGENTS, n)),
-				}));
+				const items = keyItems(bundledAgentNames(), (n) => keyHasOverride(raw, SCOPE_AGENTS, n));
 				if (items.length === 0) {
 					ctx.ui.notify("No bundled agents found.", "error");
 					return;
@@ -293,7 +302,7 @@ export function registerRpivModelsCommand(pi: ExtensionAPI): void {
 				const picked = await showFilterablePicker(ctx, {
 					title: "Stage",
 					proseLines: ["Select stage."],
-					items: stages.map((s) => ({ value: s, label: withCheck(s, keyHasOverride(raw, SCOPE_STAGES, s)) })),
+					items: keyItems(stages, (s) => keyHasOverride(raw, SCOPE_STAGES, s)),
 				});
 				if (!picked) return;
 				keyPath.push(picked);
@@ -306,7 +315,7 @@ export function registerRpivModelsCommand(pi: ExtensionAPI): void {
 				const picked = await showFilterablePicker(ctx, {
 					title: "Skill",
 					proseLines: ["Select skill."],
-					items: names.map((n) => ({ value: n, label: withCheck(n, keyHasOverride(raw, SCOPE_SKILLS, n)) })),
+					items: keyItems(names, (n) => keyHasOverride(raw, SCOPE_SKILLS, n)),
 				});
 				if (!picked) return;
 				keyPath.push(picked);
@@ -320,7 +329,7 @@ export function registerRpivModelsCommand(pi: ExtensionAPI): void {
 				const wf = await showFilterablePicker(ctx, {
 					title: "Workflow",
 					proseLines: ["Select workflow."],
-					items: wfNames.map((n) => ({ value: n, label: withCheck(n, keyHasOverride(raw, SCOPE_PRESETS, n)) })),
+					items: keyItems(wfNames, (n) => keyHasOverride(raw, SCOPE_PRESETS, n)),
 				});
 				if (!wf) return;
 				const stages = wfMap[wf] ?? [];
@@ -331,7 +340,7 @@ export function registerRpivModelsCommand(pi: ExtensionAPI): void {
 				const stage = await showFilterablePicker(ctx, {
 					title: `Stage — ${wf}`,
 					proseLines: ["Select stage."],
-					items: stages.map((s) => ({ value: s, label: withCheck(s, presetStageHasOverride(raw, wf, s)) })),
+					items: keyItems(stages, (s) => presetStageHasOverride(raw, wf, s)),
 				});
 				if (!stage) return;
 				keyPath.push(wf, stage);
@@ -344,9 +353,9 @@ export function registerRpivModelsCommand(pi: ExtensionAPI): void {
 			}
 			const currentKey = getCurrentOverrideKey(scope, keyPath);
 			const items = buildModelItems(available, currentKey);
-			if (scope !== SCOPE_DEFAULTS) {
-				items.push({ value: RESET_VALUE, label: RESET_LABEL });
-			}
+			// Offer per-entry reset for every scope (defaults included) so a single
+			// override can be cleared without the all-or-nothing "reset all".
+			items.push({ value: RESET_VALUE, label: RESET_LABEL });
 			const modelChoice = await showFilterablePicker(ctx, {
 				title: "Model",
 				proseLines: ["Select model."],
@@ -356,7 +365,7 @@ export function registerRpivModelsCommand(pi: ExtensionAPI): void {
 			if (!modelChoice) return;
 
 			if (modelChoice === RESET_VALUE) {
-				const label = `${scope}/${keyPath.join("/")}`;
+				const label = scope === SCOPE_DEFAULTS ? scope : `${scope}/${keyPath.join("/")}`;
 				const fresh = loadJsonConfig<RawModelsConfig>(CONFIG_PATH);
 				const { next: updated, removed } = removeOverride(fresh, scope, keyPath);
 				if (!removed) {
