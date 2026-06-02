@@ -22,10 +22,9 @@
  *  - Restore baseline ALWAYS at agent_end (setModel persists to disk).
  */
 
-import type { ThinkingLevel } from "@earendil-works/pi-ai";
 import { type ExtensionAPI, type InputEvent, parseSkillBlock } from "@earendil-works/pi-coding-agent";
 import { applyOrSkipIfStale, getCapturedModel, isWorkflowBaselineCaptured, resolveModel } from "./model-override.js";
-import { loadModelsConfig } from "./models-config.js";
+import { loadModelsConfig, type ModelThinkingLevelValue } from "./models-config.js";
 
 type CapturedModel = ReturnType<typeof getCapturedModel>;
 
@@ -104,7 +103,7 @@ export function registerSkillBracket(pi: ExtensionAPI): void {
 					);
 				}
 			}
-			pi.setThinkingLevel((override.thinking ?? baselineThinking) as ThinkingLevel);
+			pi.setThinkingLevel((override.thinking ?? baselineThinking) as ModelThinkingLevelValue);
 		});
 
 		return { action: "continue" } as const;
@@ -130,7 +129,7 @@ export function registerSkillBracket(pi: ExtensionAPI): void {
 					);
 				}
 			}
-			pi.setThinkingLevel(baseline.thinking as ThinkingLevel);
+			pi.setThinkingLevel(baseline.thinking as ModelThinkingLevelValue);
 		});
 	});
 }

@@ -978,6 +978,13 @@ describe("agent frontmatter injection", () => {
 		expect(out).toContain("model: anthropic/claude-sonnet-4-20250514");
 	});
 
+	it("injects an explicit thinking: off (disable reasoning) and stays idempotent", () => {
+		const offCfg: ModelsConfig = { agents: { "test-agent": { model: "anthropic/opus", thinking: "off" } } };
+		const out = injectModelFrontmatter(agentContent, "test-agent.md", offCfg);
+		expect(out).toContain("thinking: off");
+		expect(injectModelFrontmatter(out, "test-agent.md", offCfg)).toBe(out);
+	});
+
 	it("cascades a defaults model into an otherwise-unconfigured agent", () => {
 		const defaultsCfg: ModelsConfig = {
 			defaults: { model: "openai/o3-pro" },

@@ -136,6 +136,53 @@ describe("/rpiv-models — effort picker for reasoning models", () => {
 	});
 });
 
+describe("/rpiv-models — first-class off vs inherit", () => {
+	it("persists thinking:'off' when the off effort is chosen", async () => {
+		rmSync(CONFIG_PATH, { force: true });
+		vi.mocked(showFilterablePicker)
+			.mockResolvedValueOnce("defaults")
+			.mockResolvedValueOnce("openai/gpt-5.5")
+			.mockResolvedValueOnce("off");
+		const { pi, handler } = makePi();
+		registerRpivModelsCommand(pi);
+		await handler()("", makeCtx());
+
+		const stored = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
+		expect(stored.defaults).toEqual({ model: "openai/gpt-5.5", thinking: "off" });
+	});
+
+	it("persists a bare model (no thinking ⇒ inherit) when inherit is chosen", async () => {
+		rmSync(CONFIG_PATH, { force: true });
+		vi.mocked(showFilterablePicker)
+			.mockResolvedValueOnce("defaults")
+			.mockResolvedValueOnce("openai/gpt-5.5")
+			.mockResolvedValueOnce("__inherit__");
+		const { pi, handler } = makePi();
+		registerRpivModelsCommand(pi);
+		await handler()("", makeCtx());
+
+		const stored = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
+		expect(stored.defaults).toBe("openai/gpt-5.5"); // bare string, no thinking field
+	});
+
+	it("offers inherit first, then off, in the effort picker for a reasoning model", async () => {
+		rmSync(CONFIG_PATH, { force: true });
+		vi.mocked(showFilterablePicker)
+			.mockResolvedValueOnce("defaults")
+			.mockResolvedValueOnce("openai/gpt-5.5")
+			.mockResolvedValueOnce(null); // cancel at effort
+		const { pi, handler } = makePi();
+		registerRpivModelsCommand(pi);
+		await handler()("", makeCtx());
+
+		const effortItems = (vi.mocked(showFilterablePicker).mock.calls[2][1] as { items: SelectItem[] }).items;
+		const values = effortItems.map((i) => i.value);
+		expect(values[0]).toBe("__inherit__");
+		expect(values).toContain("off");
+		expect(values).toContain("minimal");
+	});
+});
+
 describe("/rpiv-models — cache invalidation", () => {
 	it("resets cache after successful save (next loadModelsConfig sees new value)", async () => {
 		mkdirSync(dirname(CONFIG_PATH), { recursive: true });

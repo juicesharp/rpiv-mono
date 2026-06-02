@@ -238,7 +238,7 @@ describe("models-config", () => {
 				configFilePath,
 				JSON.stringify({
 					agents: {
-						"test-agent": { model: "openai:gpt-5.5", thinking: "off" },
+						"test-agent": { model: "openai:gpt-5.5", thinking: "ultra" },
 					},
 				}),
 				"utf-8",
@@ -249,6 +249,24 @@ describe("models-config", () => {
 			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("unknown thinking level"));
 
 			warnSpy.mockRestore();
+		});
+
+		it("accepts an explicit 'off' thinking level (disable reasoning)", () => {
+			writeFileSync(
+				configFilePath,
+				JSON.stringify({ agents: { "test-agent": { model: "openai/gpt-5.5", thinking: "off" } } }),
+				"utf-8",
+			);
+			expect(loadModelsConfig().agents!["test-agent"]).toEqual({ model: "openai/gpt-5.5", thinking: "off" });
+		});
+
+		it("cascades defaults.thinking 'off' into a model-only entry", () => {
+			writeFileSync(
+				configFilePath,
+				JSON.stringify({ defaults: { thinking: "off" }, agents: { a: "openai/gpt-5.5" } }),
+				"utf-8",
+			);
+			expect(loadModelsConfig().agents!.a).toEqual({ model: "openai/gpt-5.5", thinking: "off" });
 		});
 	});
 

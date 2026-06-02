@@ -19,10 +19,9 @@
  * degradation when the sibling is not installed.
  */
 
-import type { ThinkingLevel } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { parseModelKey } from "@juicesharp/rpiv-config";
-import { loadModelsConfig, resolveStageModel } from "./models-config.js";
+import { loadModelsConfig, type ModelThinkingLevelValue, resolveStageModel } from "./models-config.js";
 import { isModuleNotFound } from "./utils.js";
 
 /** First parameter type of pi.setModel() — avoids importing Pi's Model<Api> generic. */
@@ -114,7 +113,7 @@ async function applyBaseline(
 			console.warn("[rpiv-pi] failed to restore baseline model — proceeding on current model");
 		}
 	}
-	pi.setThinkingLevel(base.thinking as ThinkingLevel);
+	pi.setThinkingLevel(base.thinking as ModelThinkingLevelValue);
 }
 
 // ---------------------------------------------------------------------------
@@ -224,7 +223,7 @@ export async function registerModelOverrideLifecycle(pi: ExtensionAPI): Promise<
 						}
 					}
 
-					pi.setThinkingLevel((override?.thinking ?? baselineThinking) as ThinkingLevel);
+					pi.setThinkingLevel((override?.thinking ?? baselineThinking) as ModelThinkingLevelValue);
 				});
 			},
 

@@ -136,6 +136,15 @@ describe("model-override", () => {
 			expect(setThinkingLevel).toHaveBeenLastCalledWith("high");
 		});
 
+		it("applies an explicit thinking: off (disable reasoning) override", async () => {
+			writeModels({ stages: { plan: { model: "openai:o3-pro", thinking: "off" } } });
+			const { setThinkingLevel, lc } = await setup();
+
+			await lc.onStageStart?.({ name: "plan" }, { workflow: "test-wf" });
+
+			expect(setThinkingLevel).toHaveBeenLastCalledWith("off");
+		});
+
 		it("falls back to baseline model AND baseline thinking for an unconfigured stage (no bleedthrough)", async () => {
 			writeModels({ stages: { plan: { model: "openai:o3-pro" } } });
 			const { setModel, setThinkingLevel, lc } = await setup();

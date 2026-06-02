@@ -272,7 +272,7 @@ With this file, `/wf ship plan` and `/wf ship design` use GPT-5.5; `/wf polish p
 
 **Model key form** — canonical is `provider/modelId` (slash-separated). The legacy `provider:modelId` (colon) form still parses for back-compatibility with persisted advisor configs; new saves emit slash form, and legacy values auto-migrate on the next save.
 
-**Reasoning levels** — five values accepted in the `thinking` field: `minimal`, `low`, `medium`, `high`, `xhigh`. The literal `off` is rejected with a warning (use absence of the field instead).
+**Reasoning levels** — six values accepted in the `thinking` field: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`. Note the distinction between **`off`** (explicitly disable reasoning) and **omitting** the field (inherit the session/baseline level). In `/rpiv-models` the effort picker offers `inherit (no override)` and `off (disable reasoning)` as separate choices. Any other value is rejected with a warning.
 
 ## Uninstall
 

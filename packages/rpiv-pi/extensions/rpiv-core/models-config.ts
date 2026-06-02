@@ -16,22 +16,32 @@ import { configPath, loadJsonConfig, validateConfig } from "@juicesharp/rpiv-con
 import { type Static, Type } from "typebox";
 
 // ---------------------------------------------------------------------------
-// ThinkingLevel — 5 values only (pi-ai/dist/types.d.ts:12).
-// "off" belongs to ModelThinkingLevel, not ThinkingLevel, and is rejected
-// by both the frontmatter seam and setThinkingLevel.
+// Thinking levels.
+//
+// The host's setThinkingLevel (pi-agent-core ThinkingLevel) AND agent
+// frontmatter both accept "off" — "off" is a first-class level meaning "no
+// reasoning" (it's even the session default). models.json therefore persists
+// all SIX values. Note the distinction from ABSENCE: a missing `thinking`
+// field means "inherit the session/baseline level"; an explicit "off" means
+// "disable reasoning". THINKING_LEVEL_VALUES (the 5 reasoning levels) is kept
+// for surfaces that list only the graded levels (e.g. the picker).
 // ---------------------------------------------------------------------------
 
-/** The 5 valid ThinkingLevel values accepted by models.json. */
+/** The 5 graded reasoning levels (excludes "off"). */
 export const THINKING_LEVEL_VALUES = ["minimal", "low", "medium", "high", "xhigh"] as const;
 export type ThinkingLevelValue = (typeof THINKING_LEVEL_VALUES)[number];
+
+/** All 6 persistable thinking values, including the explicit "off" (disable reasoning). */
+export const MODEL_THINKING_LEVEL_VALUES = ["off", ...THINKING_LEVEL_VALUES] as const;
+export type ModelThinkingLevelValue = (typeof MODEL_THINKING_LEVEL_VALUES)[number];
 
 // ---------------------------------------------------------------------------
 // TypeBox schemas
 // ---------------------------------------------------------------------------
 
 const ThinkingLevelSchema = Type.Union(
-	THINKING_LEVEL_VALUES.map((v) => Type.Literal(v)),
-	{ description: "Effort/thinking level: minimal | low | medium | high | xhigh" },
+	MODEL_THINKING_LEVEL_VALUES.map((v) => Type.Literal(v)),
+	{ description: "Effort/thinking level: off | minimal | low | medium | high | xhigh" },
 );
 
 /**
@@ -107,7 +117,8 @@ type ModelsConfigSchema = Static<typeof ModelsConfigSchema>;
 /** Resolved model config entry — after schema validation and cascade. */
 export interface ResolvedModelConfig {
 	model?: string;
-	thinking?: ThinkingLevelValue;
+	/** Explicit level incl. "off" (disable). Absent ⇒ inherit session/baseline. */
+	thinking?: ModelThinkingLevelValue;
 }
 
 /** The resolved config shape returned by loadModelsConfig. */
@@ -135,11 +146,11 @@ function resolveModelEntry(entry: unknown): ResolvedModelConfig {
 			result.model = obj.model;
 		}
 		if (typeof obj.thinking === "string") {
-			if (THINKING_LEVEL_VALUES.includes(obj.thinking as ThinkingLevelValue)) {
-				result.thinking = obj.thinking as ThinkingLevelValue;
+			if (MODEL_THINKING_LEVEL_VALUES.includes(obj.thinking as ModelThinkingLevelValue)) {
+				result.thinking = obj.thinking as ModelThinkingLevelValue;
 			} else {
 				console.warn(
-					`[rpiv-pi] models.json: unknown thinking level "${obj.thinking}" — valid values: ${THINKING_LEVEL_VALUES.join(", ")}`,
+					`[rpiv-pi] models.json: unknown thinking level "${obj.thinking}" — valid values: ${MODEL_THINKING_LEVEL_VALUES.join(", ")}`,
 				);
 			}
 		}

@@ -14,11 +14,16 @@
  */
 
 import type { Api, Model } from "@earendil-works/pi-ai";
-import { getSupportedThinkingLevels, type ThinkingLevel } from "@earendil-works/pi-ai";
+import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { SelectItem } from "@earendil-works/pi-tui";
 import { configPath, loadJsonConfig, modelKey, saveJsonConfig } from "@juicesharp/rpiv-config";
-import { __resetModelsConfigCache, THINKING_LEVEL_VALUES, type ThinkingLevelValue } from "./models-config.js";
+import {
+	__resetModelsConfigCache,
+	type ModelThinkingLevelValue,
+	THINKING_LEVEL_VALUES,
+	type ThinkingLevelValue,
+} from "./models-config.js";
 import { bundledAgentNames, loadWorkflowMap, skillCommandNames } from "./models-config-sources.js";
 import { showFilterablePicker } from "./models-picker.js";
 
@@ -32,6 +37,9 @@ const SCOPE_PRESETS = "presets";
 const SCOPE_RESET_ALL = "__reset_all__";
 const RESET_VALUE = "__reset__";
 const RESET_LABEL = "Reset to default";
+// Effort sentinel: "inherit" persists NO thinking field (inherit baseline);
+// distinct from the real "off" value, which persists thinking:"off" (disable).
+const INHERIT_VALUE = "__inherit__";
 
 /** Suffix appended to a picker label to mark "an override is set here". */
 const CHECK = " ✓";
@@ -49,10 +57,9 @@ function keyItems(names: string[], has: (name: string) => boolean): SelectItem[]
 	return floatChecked(names.map((n) => ({ value: n, label: withCheck(n, has(n)) })));
 }
 
-// `thinking` is narrowed to the 5-value `ThinkingLevelValue` union (vs. raw
-// `string`) so the picker's persisted output mirrors the schema's runtime
-// validation surface (Plan Review row #concern-F).
-type RawModelEntry = string | { model?: string; thinking?: ThinkingLevelValue };
+// `thinking` is the 6-value `ModelThinkingLevelValue` union (incl. "off") so the
+// picker's persisted output mirrors the schema's runtime validation surface.
+type RawModelEntry = string | { model?: string; thinking?: ModelThinkingLevelValue };
 
 interface RawModelsConfig {
 	defaults?: RawModelEntry;
@@ -89,10 +96,14 @@ function buildModelItems(models: Model<Api>[], currentKey?: string): SelectItem[
 }
 
 function buildEffortItems(picked: Model<Api>): SelectItem[] {
-	const levels = getSupportedThinkingLevels(picked).filter((l): l is (typeof THINKING_LEVEL_VALUES)[number] =>
-		THINKING_LEVEL_VALUES.includes(l as never),
-	);
-	return [{ value: "__off__", label: "off" }, ...levels.map((level) => ({ value: level, label: level }))];
+	const supported = getSupportedThinkingLevels(picked);
+	const levels = supported.filter((l): l is ThinkingLevelValue => THINKING_LEVEL_VALUES.includes(l as never));
+	// "inherit" (no override → session baseline) vs the real "off" (disable
+	// reasoning) are distinct choices. "off" is offered only when the model
+	// supports it (getSupportedThinkingLevels includes it).
+	const items: SelectItem[] = [{ value: INHERIT_VALUE, label: "inherit (no override)" }];
+	if (supported.includes("off")) items.push({ value: "off", label: "off (disable reasoning)" });
+	return [...items, ...levels.map((level) => ({ value: level, label: level }))];
 }
 
 function loadRawConfig(): RawModelsConfig {
@@ -198,7 +209,7 @@ function applyOverride(
 	config: RawModelsConfig,
 	scope: string,
 	keyPath: string[],
-	entry: { model: string; thinking?: ThinkingLevel },
+	entry: { model: string; thinking?: ModelThinkingLevelValue },
 ): RawModelsConfig {
 	const next: RawModelsConfig = { ...config };
 	if (scope === SCOPE_DEFAULTS) {
@@ -387,7 +398,9 @@ export function registerRpivModelsCommand(pi: ExtensionAPI): void {
 				return;
 			}
 
-			let effort: ThinkingLevel | undefined;
+			// `effort === undefined` ⇒ persist NO thinking field (inherit baseline);
+			// `effort === "off"` ⇒ persist thinking:"off" (disable reasoning).
+			let effort: ModelThinkingLevelValue | undefined;
 			if (picked.reasoning) {
 				const effortChoice = await showFilterablePicker(ctx, {
 					title: "Reasoning Effort",
@@ -395,7 +408,7 @@ export function registerRpivModelsCommand(pi: ExtensionAPI): void {
 					items: buildEffortItems(picked),
 				});
 				if (!effortChoice) return;
-				effort = effortChoice === "__off__" ? undefined : (effortChoice as ThinkingLevel);
+				effort = effortChoice === INHERIT_VALUE ? undefined : (effortChoice as ModelThinkingLevelValue);
 			}
 
 			const fresh = loadJsonConfig<RawModelsConfig>(CONFIG_PATH);
