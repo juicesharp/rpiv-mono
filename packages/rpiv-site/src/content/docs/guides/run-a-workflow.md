@@ -117,6 +117,8 @@ When a stage genuinely needs the prior conversation — typically because the re
 
 `continue` reuses the previous stage's session via `host.sendUserMessage()` rather than opening a new one. Two costs: context grows monotonically (every continued stage stacks on top of the last), and `continue` is incompatible with `fanout` and with script stages (load-time validation rejects the combination). Reach for it only when the alternative — materializing reasoning into an artifact the next fresh stage can read — would lose something important.
 
+Session policy isn't the only per-stage knob. Which model a stage runs and how hard it reasons are configurable per stage too, without touching the workflow definition: pin the strong, high-effort model to `design` or the review stage and let `commit` run cheap. → [Right-size the model](/docs/guides/right-size-the-model).
+
 ## When hand-driving still wins
 
 Pick the runner when the shape of the work matches one of the five bundled chains and you've walked that chain enough times to trust it. Otherwise stay in the loop:

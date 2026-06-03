@@ -155,6 +155,8 @@ Good fits:
 
 **Plan-review with a stronger model** *(advanced)*. When you're driving the pipeline with a smaller, cheaper model (GLM-5.1, Kimi K2.5, MiMo-V2-Pro), it's often worth handing the plan to a stronger model for a second-opinion review before kicking off implement. `rpiv-advisor` handles this in-flow, or you can drop the plan into a separate chat with the stronger model and ask it to assess completeness, actionability, and correctness. Feed the resulting feedback through `/skill:revise` so the plan absorbs the corrections in place. Not mandatory, overkill for small or mid-size work, but on large features it materially raises the quality of what comes out of implement. The earlier the catch, the cheaper the fix: a plan-level miss costs you a re-plan; the same miss after implement costs you a redo.
 
+To make that split permanent rather than a manual swap, pin the stronger model to the steps that earn it (`design`, `plan`, or the review stage) and let everything else stay cheap. → [Right-size the model](/docs/guides/right-size-the-model).
+
 ## The compounding part
 
 The recipe is enough on day one. The rest is what compounds.
