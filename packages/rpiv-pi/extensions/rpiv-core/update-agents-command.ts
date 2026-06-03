@@ -6,7 +6,7 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { cleanupPerCwdAgents, type SyncResult, summarizeCleanupSkips, syncBundledAgents } from "./agents.js";
-import { __resetModelsConfigCache } from "./models-config.js";
+import { invalidateModelsConfigCache } from "./models-config.js";
 
 const MSG_UP_TO_DATE = "All agents already up-to-date.";
 const MSG_NO_CHANGES = "No changes needed.";
@@ -26,7 +26,7 @@ export function registerUpdateAgentsCommand(pi: ExtensionAPI): void {
 			// re-injects the stale config loaded at session_start, silently
 			// breaking the "/rpiv-update-agents applies edits" promise
 			// (models-config.ts module doc).
-			__resetModelsConfigCache();
+			invalidateModelsConfigCache();
 			const cleanup = cleanupPerCwdAgents(ctx.cwd);
 			const result = syncBundledAgents(true);
 			if (!ctx.hasUI) return;

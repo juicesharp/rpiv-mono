@@ -23,10 +23,15 @@
  */
 
 import { type ExtensionAPI, type InputEvent, parseSkillBlock } from "@earendil-works/pi-coding-agent";
-import { applyOrSkipIfStale, getCapturedModel, isWorkflowBaselineCaptured, resolveModel } from "./model-override.js";
+import {
+	applyEffectiveModel,
+	applyOrSkipIfStale,
+	type BaselineSnapshot,
+	getCapturedModel,
+	isWorkflowBaselineCaptured,
+	restoreBaseline,
+} from "./model-override.js";
 import { loadModelsConfig, type ModelThinkingLevelValue } from "./models-config.js";
-
-type CapturedModel = ReturnType<typeof getCapturedModel>;
 
 const SKILL_PREFIX = "/skill:";
 
@@ -34,7 +39,7 @@ const SKILL_PREFIX = "/skill:";
 // at agent_end we skip the restore-setModel when no model change was applied
 // (thinking-only overrides), avoiding an unnecessary write to the on-disk
 // settings file (Plan Review row #concern-D).
-let armedBaseline: { thinking: string; model: CapturedModel; hasModelChange: boolean } | undefined;
+let armedBaseline: BaselineSnapshot | undefined;
 
 /** Test reset — wired into test/setup.ts beforeEach. */
 export function __resetSkillBracketState(): void {
@@ -80,30 +85,22 @@ export function registerSkillBracket(pi: ExtensionAPI): void {
 			// (Plan Review row #concern-B).
 			if (isWorkflowBaselineCaptured()) return;
 
-			const baselineThinking = pi.getThinkingLevel();
+			const baselineThinking = pi.getThinkingLevel() as ModelThinkingLevelValue;
 			armedBaseline = {
 				thinking: baselineThinking,
 				model: getCapturedModel(),
 				hasModelChange: false,
 			};
 
-			if (override.model !== undefined) {
-				const resolved = resolveModel(override.model);
-				if (resolved) {
-					const ok = await pi.setModel(resolved);
-					if (!ok) {
-						console.warn(
-							`[rpiv-pi] setModel failed for /skill:${parsed.name} (no API key?) — proceeding on current model`,
-						);
-					}
-					armedBaseline.hasModelChange = true;
-				} else {
-					console.warn(
-						`[rpiv-pi] model not found: ${override.model} (/skill:${parsed.name}) — using baseline model`,
-					);
-				}
-			}
-			pi.setThinkingLevel((override.thinking ?? baselineThinking) as ModelThinkingLevelValue);
+			const { hasModelChange } = await applyEffectiveModel(pi, {
+				overrideModel: override.model,
+				baselineModel: armedBaseline.model,
+				overrideThinking: override.thinking,
+				baselineThinking,
+				label: `/skill:${parsed.name}`,
+				setBaselineModel: false,
+			});
+			armedBaseline.hasModelChange = hasModelChange;
 		});
 
 		return { action: "continue" } as const;
@@ -116,20 +113,6 @@ export function registerSkillBracket(pi: ExtensionAPI): void {
 		// double-restore on next agent_end.
 		armedBaseline = undefined;
 
-		await applyOrSkipIfStale(async () => {
-			// Skip setModel restore if we never changed the model (thinking-only
-			// override). pi.setModel persists to the on-disk settings file even
-			// when called with the same value — the skip avoids an unnecessary
-			// disk write (Plan Review row #concern-D).
-			if (baseline.hasModelChange && baseline.model !== undefined) {
-				const ok = await pi.setModel(baseline.model);
-				if (!ok) {
-					console.warn(
-						"[rpiv-pi] failed to restore baseline model after /skill: bracket — proceeding on current model",
-					);
-				}
-			}
-			pi.setThinkingLevel(baseline.thinking as ModelThinkingLevelValue);
-		});
+		await applyOrSkipIfStale(() => restoreBaseline(pi, baseline));
 	});
 }

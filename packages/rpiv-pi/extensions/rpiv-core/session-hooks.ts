@@ -33,6 +33,7 @@ import {
 import { ARTIFACTS_SUBDIR, clearInjectionState, handleToolCallGuidance, injectRootGuidance } from "./guidance.js";
 import { findMissingSiblings } from "./package-checks.js";
 import { BUNDLED_SKILL_NAMES } from "./paths.js";
+import { isStaleCtxError } from "./utils.js";
 
 /**
  * Module-local "already announced" latch for the startup banner block
@@ -197,13 +198,6 @@ function isOwnedSkill(name: string): boolean {
 
 function resetInjectionState(): void {
 	clearInjectionState();
-}
-
-// pi-core's ExtensionRunner throws this exact phrase from an invalidated ctx/pi
-// proxy (see runner.ts `invalidate()`). Match on the stable substring so genuine
-// errors still propagate instead of being silently swallowed.
-export function isStaleCtxError(e: unknown): boolean {
-	return /stale after session replacement/.test(String(e));
 }
 
 function migrateThoughtsToArtifacts(cwd: string): void {

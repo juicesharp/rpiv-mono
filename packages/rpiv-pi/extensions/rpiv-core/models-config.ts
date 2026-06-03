@@ -40,9 +40,26 @@ export type ModelThinkingLevelValue = (typeof MODEL_THINKING_LEVEL_VALUES)[numbe
 // ---------------------------------------------------------------------------
 
 const ThinkingLevelSchema = Type.Union(
-	MODEL_THINKING_LEVEL_VALUES.map((v) => Type.Literal(v)),
+	[
+		Type.Literal("off"),
+		Type.Literal("minimal"),
+		Type.Literal("low"),
+		Type.Literal("medium"),
+		Type.Literal("high"),
+		Type.Literal("xhigh"),
+	] as const,
 	{ description: "Effort/thinking level: off | minimal | low | medium | high | xhigh" },
 );
+
+// Guard: schema literals must stay in lockstep with MODEL_THINKING_LEVEL_VALUES.
+// If either drifts, the bidirectional extends check fails and this won't compile.
+type _ThinkingLevelsInSync =
+	Static<typeof ThinkingLevelSchema> extends ModelThinkingLevelValue
+		? ModelThinkingLevelValue extends Static<typeof ThinkingLevelSchema>
+			? true
+			: never
+		: never;
+const _thinkingLevelsInSync: _ThinkingLevelsInSync = true;
 
 /**
  * Model config leaf: either a bare model string ("provider/modelId")
@@ -108,7 +125,7 @@ const ModelsConfigSchema = Type.Object(
 	{ additionalProperties: false },
 );
 
-type ModelsConfigSchema = Static<typeof ModelsConfigSchema>;
+export type ModelsConfigSchema = Static<typeof ModelsConfigSchema>;
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -163,9 +180,9 @@ function resolveModelEntry(entry: unknown): ResolvedModelConfig {
 // Config load — fail-soft, validate, cascade defaults
 // ---------------------------------------------------------------------------
 
-const CONFIG_PATH = configPath("rpiv-pi", "models.json");
+export const CONFIG_PATH = configPath("rpiv-pi", "models.json");
 
-/** Session-scoped cache — populated on first call, cleared by __resetModelsConfigCache(). */
+/** Session-scoped cache — populated on first call, cleared by invalidateModelsConfigCache(). */
 let modelsConfigCache: ModelsConfig | undefined;
 
 /** Load, validate, and resolve models.json. Returns empty config on any failure. */
@@ -225,8 +242,10 @@ export function loadModelsConfig(): ModelsConfig {
 	return result;
 }
 
-/** Test-only reset — wired into test/setup.ts beforeEach. */
-export function __resetModelsConfigCache(): void {
+/** Invalidate the session-scoped models.json cache. Called in production by
+ *  /rpiv-update-agents and /rpiv-models after config mutations, and in tests
+ *  via test/setup.ts beforeEach. */
+export function invalidateModelsConfigCache(): void {
 	modelsConfigCache = undefined;
 }
 

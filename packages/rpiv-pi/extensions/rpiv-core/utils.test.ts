@@ -5,6 +5,7 @@ import {
 	getPiAgentSettingsPath,
 	isModuleNotFound,
 	isPlainObject,
+	isStaleCtxError,
 	PI_AGENT_SETTINGS,
 	readPiAgentSettings,
 	toErrorMessage,
@@ -87,6 +88,36 @@ describe("isModuleNotFound", () => {
 		expect(isModuleNotFound(null)).toBe(false);
 		expect(isModuleNotFound(undefined)).toBe(false);
 		expect(isModuleNotFound("ERR_MODULE_NOT_FOUND")).toBe(false);
+	});
+});
+
+describe("isStaleCtxError", () => {
+	// The exact phrase pi-core's ExtensionRunner throws from an invalidated proxy.
+	// If pi-core changes this wording, THIS TEST MUST FAIL so the regex in
+	// utils.ts gets updated in lockstep (L2-02 phrase-pinning guard).
+	const STALE_CTX_MESSAGE =
+		"This extension ctx is stale after session replacement or reload. " +
+		"Do not use a captured pi or command ctx after ctx.newSession().";
+
+	it("matches the exact pi-core stale-ctx error message", () => {
+		expect(isStaleCtxError(new Error(STALE_CTX_MESSAGE))).toBe(true);
+	});
+
+	it("matches a message containing the stable substring", () => {
+		expect(isStaleCtxError(new Error("Error: ctx is stale after session replacement — dispose"))).toBe(true);
+	});
+
+	it("does not match unrelated errors", () => {
+		expect(isStaleCtxError(new Error("some other error"))).toBe(false);
+		expect(isStaleCtxError(new Error("stale connection"))).toBe(false);
+		expect(isStaleCtxError(null)).toBe(false);
+		expect(isStaleCtxError(undefined)).toBe(false);
+		expect(isStaleCtxError("just a string")).toBe(false);
+	});
+
+	it("does not match non-stale session errors", () => {
+		expect(isStaleCtxError(new Error("session expired"))).toBe(false);
+		expect(isStaleCtxError(new Error("session timeout"))).toBe(false);
 	});
 });
 

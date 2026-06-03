@@ -73,6 +73,19 @@ export function isModuleNotFound(err: unknown): boolean {
 	return false;
 }
 
+/**
+ * True for a stale extension ctx/pi error thrown by pi-core's ExtensionRunner
+ * after session replacement or reload. Matches the stable substring so genuine
+ * errors still propagate.
+ *
+ * Fragile by necessity: pi-core exposes no error code for this condition
+ * (unlike the robust `isModuleNotFound` code-match above). A phrase-pinning
+ * test in utils.test.ts guards against silent drift.
+ */
+export function isStaleCtxError(e: unknown): boolean {
+	return /stale after session replacement/.test(String(e));
+}
+
 // ---------------------------------------------------------------------------
 // Settings reader
 // ---------------------------------------------------------------------------

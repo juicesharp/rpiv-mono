@@ -7,7 +7,7 @@
  * Tool-owning plugins are siblings (see siblings.ts); install via /rpiv-setup.
  *
  * Workflow runtime + `/wf` command live in `@juicesharp/rpiv-workflow`. We
- * contribute three built-in workflows (small / mid / large) via the
+ * contribute five built-in workflows (ship / build / arch / vet / polish) via the
  * sibling's `registerBuiltIns` programmatic API so they're available to
  * users running `/wf` without authoring their own.
  */
@@ -17,7 +17,7 @@ import { FLAG_DEBUG } from "./constants.js";
 import { registerModelOverrideLifecycle, registerModelOverrideSessionStart } from "./model-override.js";
 import { registerModelsConfigValidation } from "./models-config-validate.js";
 import { registerBuiltInWorkflows } from "./register-built-in-workflows.js";
-import { registerRpivModelsCommand } from "./rpiv-models-command.js";
+import { registerRpivModelsCommand } from "./rpiv-models/index.js";
 import { registerSessionHooks } from "./session-hooks.js";
 import { registerSetupCommand } from "./setup-command.js";
 import { registerSkillBracket } from "./skill-bracket.js";
@@ -59,13 +59,12 @@ export default function (pi: ExtensionAPI) {
 	// evaluated the barrel — no race. Both are fire-and-forget (the workflow
 	// registry is read lazily at `/wf` time, long after this settles) and both
 	// degrade gracefully when the sibling is absent (isModuleNotFound guards).
+	const logRegistrationFailure = (label: string) => (err: unknown) =>
+		console.error(`[rpiv-core] failed to register ${label}:`, err);
+
 	registerModelOverrideLifecycle(pi)
-		.catch((err: unknown) => {
-			console.error("[rpiv-core] failed to register model override lifecycle:", err);
-		})
+		.catch(logRegistrationFailure("model override lifecycle"))
 		.finally(() => {
-			registerBuiltInWorkflows().catch((err: unknown) => {
-				console.error("[rpiv-core] failed to register built-in workflows:", err);
-			});
+			registerBuiltInWorkflows().catch(logRegistrationFailure("built-in workflows"));
 		});
 }

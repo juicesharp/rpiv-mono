@@ -2,9 +2,9 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-	__resetModelsConfigCache,
 	findUnknownModelKeys,
 	getAgentModelConfig,
+	invalidateModelsConfigCache,
 	loadModelsConfig,
 	type ModelsConfig,
 	resolveStageModel,
@@ -275,7 +275,7 @@ describe("models-config", () => {
 		const configFilePath = join(configDir, "models.json");
 
 		beforeEach(() => {
-			__resetModelsConfigCache();
+			invalidateModelsConfigCache();
 			mkdirSync(configDir, { recursive: true });
 		});
 
@@ -287,14 +287,14 @@ describe("models-config", () => {
 			expect(first).toBe(second); // strict reference equality — same object
 		});
 
-		it("re-reads after __resetModelsConfigCache", () => {
+		it("re-reads after invalidateModelsConfigCache", () => {
 			writeFileSync(configFilePath, JSON.stringify({ defaults: "openai:gpt-5.5" }), "utf-8");
 
 			const first = loadModelsConfig();
 
 			writeFileSync(configFilePath, JSON.stringify({ defaults: "anthropic:claude-sonnet-4-20250514" }), "utf-8");
 
-			__resetModelsConfigCache();
+			invalidateModelsConfigCache();
 			const afterReset = loadModelsConfig();
 			expect(afterReset).not.toBe(first); // different object — re-read
 			expect(afterReset.defaults?.model).toBe("anthropic:claude-sonnet-4-20250514");

@@ -376,10 +376,10 @@ function applyKeyUpdates(
  * Exported so the idempotency invariant can be unit-tested directly:
  * `inject(inject(x)) === inject(x)` (see Verification Notes).
  */
-export function injectModelFrontmatter(content: string, agentName: string, config: ModelsConfig): string {
+export function injectModelFrontmatter(content: string, agentFile: string, config: ModelsConfig): string {
 	// Strip .md extension — source entries are filenames like "codebase-analyzer.md"
 	// but models.json keys are agent names like "codebase-analyzer".
-	const agentKey = agentName.replace(/\.md$/, "");
+	const agentKey = agentFile.replace(/\.md$/, "");
 	const override = getAgentModelConfig(config, agentKey);
 	if (!override || (override.model === undefined && override.thinking === undefined)) {
 		return content;

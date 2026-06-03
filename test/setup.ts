@@ -76,7 +76,7 @@ beforeEach(async () => {
 	const skillBracket = await import("../packages/rpiv-pi/extensions/rpiv-core/skill-bracket.js");
 	skillBracket.__resetSkillBracketState();
 	const modelsConfigModule = await import("../packages/rpiv-pi/extensions/rpiv-core/models-config.js");
-	modelsConfigModule.__resetModelsConfigCache();
+	modelsConfigModule.invalidateModelsConfigCache();
 	const modelsConfigValidate = await import("../packages/rpiv-pi/extensions/rpiv-core/models-config-validate.js");
 	modelsConfigValidate.__resetModelsConfigValidation();
 
@@ -122,7 +122,7 @@ beforeEach(async () => {
 	rmSync(todoConfig, { force: true });
 	rmSync(askUserQuestionConfig, { force: true });
 	rmSync(webToolsConfig, { force: true });
-	rmSync(modelsConfig, { force: true });
+	rmSync(modelsConfig, { force: true, recursive: true });
 
 	const telemetryConfig = join(process.env.HOME!, ".config", "rpiv-telemetry", "config.json");
 	rmSync(telemetryConfig, { force: true });

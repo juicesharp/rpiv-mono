@@ -15,11 +15,11 @@ vi.mock("./agents.js", () => ({
 }));
 
 vi.mock("./models-config.js", () => ({
-	__resetModelsConfigCache: vi.fn(),
+	invalidateModelsConfigCache: vi.fn(),
 }));
 
 import { cleanupPerCwdAgents, SYNC_OP, syncBundledAgents } from "./agents.js";
-import { __resetModelsConfigCache } from "./models-config.js";
+import { invalidateModelsConfigCache } from "./models-config.js";
 import { registerUpdateAgentsCommand } from "./update-agents-command.js";
 
 const emptyCleanup = () => ({ cleanedUp: [], skipped: [], errors: [] });
@@ -27,7 +27,7 @@ const emptyCleanup = () => ({ cleanedUp: [], skipped: [], errors: [] });
 beforeEach(() => {
 	vi.mocked(syncBundledAgents).mockReset();
 	vi.mocked(cleanupPerCwdAgents).mockReset();
-	vi.mocked(__resetModelsConfigCache).mockReset();
+	vi.mocked(invalidateModelsConfigCache).mockReset();
 	vi.mocked(cleanupPerCwdAgents).mockReturnValue(emptyCleanup());
 });
 
@@ -88,9 +88,9 @@ describe("/rpiv-update-agents", () => {
 		registerUpdateAgentsCommand(pi);
 		const ctx = createMockCtx({ hasUI: true });
 		await captured.commands.get("rpiv-update-agents")?.handler("", ctx as never);
-		expect(__resetModelsConfigCache).toHaveBeenCalledTimes(1);
+		expect(invalidateModelsConfigCache).toHaveBeenCalledTimes(1);
 		// Reset must precede sync — sync re-reads config and injects frontmatter.
-		expect(vi.mocked(__resetModelsConfigCache).mock.invocationCallOrder[0]).toBeLessThan(
+		expect(vi.mocked(invalidateModelsConfigCache).mock.invocationCallOrder[0]).toBeLessThan(
 			vi.mocked(syncBundledAgents).mock.invocationCallOrder[0],
 		);
 	});

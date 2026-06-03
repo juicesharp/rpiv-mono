@@ -5,7 +5,7 @@ import type { SelectItem } from "@earendil-works/pi-tui";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadModelsConfig } from "./models-config.js";
 import { bundledAgentNames } from "./models-config-sources.js";
-import { registerRpivModelsCommand, removeOverride } from "./rpiv-models-command.js";
+import { applyOverride, registerRpivModelsCommand, removeOverride } from "./rpiv-models/index.js";
 
 vi.mock("./models-picker.js", () => ({
 	showFilterablePicker: vi.fn(),
@@ -501,9 +501,85 @@ describe("/rpiv-models — save failure", () => {
 		expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("Failed to save"), "error");
 
 		// Tightened (per slice-verifier WARNING): cache MUST NOT have been reset.
-		// The seeded sentinel persists — proving __resetModelsConfigCache was NOT
+		// The seeded sentinel persists — proving invalidateModelsConfigCache was NOT
 		// called (early return on saveJsonConfig=false).
 		const afterFail = loadModelsConfig();
 		expect(afterFail.defaults?.model).toBe("anthropic/seed");
+	});
+});
+
+describe("applyOverride", () => {
+	it("writes a defaults entry as a bare model string", () => {
+		const result = applyOverride({}, "defaults", [], { model: "zai/glm-4-7" });
+		expect(result.defaults).toBe("zai/glm-4-7");
+	});
+
+	it("writes a defaults entry with thinking as an object", () => {
+		const result = applyOverride({}, "defaults", [], { model: "zai/glm-4-7", thinking: "high" });
+		expect(result.defaults).toEqual({ model: "zai/glm-4-7", thinking: "high" });
+	});
+
+	it("adds an agent entry to a new scope map", () => {
+		const result = applyOverride({}, "agents", ["commit"], { model: "zai/glm-4-7" });
+		expect(result.agents).toEqual({ commit: "zai/glm-4-7" });
+	});
+
+	it("merges into an existing scope map", () => {
+		const result = applyOverride({ agents: { existing: "openai/gpt-5.5" } }, "agents", ["commit"], {
+			model: "zai/glm-4-7",
+		});
+		expect(result.agents).toEqual({ existing: "openai/gpt-5.5", commit: "zai/glm-4-7" });
+	});
+
+	it("adds a stage entry with thinking as an object", () => {
+		const result = applyOverride({}, "stages", ["plan"], { model: "openai/gpt-5.5", thinking: "off" });
+		expect(result.stages).toEqual({ plan: { model: "openai/gpt-5.5", thinking: "off" } });
+	});
+
+	it("adds a preset stage to a new workflow", () => {
+		const result = applyOverride({}, "presets", ["ship", "research"], { model: "zai/glm-4-7" });
+		expect(result.presets).toEqual({ ship: { stages: { research: "zai/glm-4-7" } } });
+	});
+
+	it("adds a preset stage to an existing workflow", () => {
+		const result = applyOverride(
+			{ presets: { ship: { stages: { research: "zai/glm-4-7" } } } },
+			"presets",
+			["ship", "plan"],
+			{ model: "openai/gpt-5.5", thinking: "medium" },
+		);
+		expect(result.presets).toEqual({
+			ship: { stages: { research: "zai/glm-4-7", plan: { model: "openai/gpt-5.5", thinking: "medium" } } },
+		});
+	});
+
+	it("returns config unchanged for an unknown scope", () => {
+		const config = { defaults: "zai/glm-4-7" };
+		const result = applyOverride(config, "unknown", ["key"], { model: "openai/gpt-5.5" });
+		expect(result).toEqual(config);
+	});
+});
+
+describe("/rpiv-models — loadWorkflowMap error handling", () => {
+	it("notifies error when loadWorkflowMap throws for stages scope", async () => {
+		const sources = await import("./models-config-sources.js");
+		vi.spyOn(sources, "loadWorkflowMap").mockRejectedValueOnce(new Error("load failed"));
+		vi.mocked(showFilterablePicker).mockResolvedValueOnce("stages");
+		const { pi, handler } = makePi();
+		registerRpivModelsCommand(pi);
+		const ctx = makeCtx();
+		await handler()("", ctx);
+		expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("No workflows"), "error");
+	});
+
+	it("notifies error when loadWorkflowMap throws for presets scope", async () => {
+		const sources = await import("./models-config-sources.js");
+		vi.spyOn(sources, "loadWorkflowMap").mockRejectedValueOnce(new Error("load failed"));
+		vi.mocked(showFilterablePicker).mockResolvedValueOnce("presets");
+		const { pi, handler } = makePi();
+		registerRpivModelsCommand(pi);
+		const ctx = makeCtx();
+		await handler()("", ctx);
+		expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("No workflows"), "error");
 	});
 });
