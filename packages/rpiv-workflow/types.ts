@@ -160,6 +160,14 @@ export interface RunContext {
 	trigger: RunTrigger;
 	/** Lifecycle event dispatcher — see `lifecycle.ts`. Threaded by reference. */
 	lifecycle: LifecycleDispatcher;
+	/**
+	 * Optional cooperative-cancellation signal from `RunWorkflowOptions.signal`.
+	 * Checked at the between-stage seam (top of `runStageOrRecordFailure`, before
+	 * the start stage and before every routed next stage). An aborted signal
+	 * records an `"aborted"` terminal row and unwinds — it does NOT interrupt a
+	 * stage already streaming (Pi owns the live session).
+	 */
+	signal?: AbortSignal;
 }
 
 /**

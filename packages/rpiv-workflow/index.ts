@@ -17,6 +17,7 @@
  *   1. Authoring DSL — `./api.js`, `./predicates.js`, `./typebox-adapter.js`
  *      What a `workflows.config.ts` author imports to declare a workflow:
  *      `defineWorkflow`, `produces`, `acts`, `terminal`, `defineRoute`, `gate`,
+ *      `STOP` (terminal-edge sentinel; `"stop"` literal also valid),
  *      `Workflow`, `StageDef`, `EdgeFn`, `EdgeTarget`, `EdgeContext`,
  *      `StageSchema`, `StageKind`, `SessionPolicy`, `OutputSpec`,
  *      `READS_DATA`, the runtime-mirror `*_VALUES` arrays, the
@@ -24,9 +25,14 @@
  *      (the TypeBox adapter).
  *
  *   2. Runner (programmatic embedders) — `./runner/index.js`, `./host.js`
- *      Drive a workflow from outside `/wf`: `runWorkflow`,
- *      `RunWorkflowOptions`, `RunWorkflowResult`. Embedders type their
- *      host handles against `WorkflowHost` / `WorkflowHostContext` (the host
+ *      Drive a workflow from outside `/wf`: `runWorkflow` (+ the by-name
+ *      sugar `runWorkflowByName`) and `resumeWorkflow` (+ the by-run-id
+ *      sugar `resumeWorkflowByRunId`), with `RunWorkflowOptions`,
+ *      `RunWorkflowByNameOptions`, `ResumeWorkflowOptions`,
+ *      `ResumeWorkflowByRunIdOptions`, and the shared `RunWorkflowResult`.
+ *      Every options bag accepts an optional `signal: AbortSignal` for
+ *      between-stage cooperative cancellation. Embedders type their host
+ *      handles against `WorkflowHost` / `WorkflowHostContext` (the host
  *      ports) — Pi's `ExtensionAPI` / `ExtensionCommandContext` /
  *      `ReplacedSessionContext` structurally satisfy them, so the
  *      values pass through without casting.
@@ -77,7 +83,8 @@
  *
  *   8. Persistence (low-level — JSONL inspect) — `./state/index.js`
  *      Read past runs at `<cwd>/.rpiv/workflows/runs/<run-id>.jsonl`:
- *      `listRuns`, `readHeader`, `readLastStage`, `listArtifacts`,
+ *      `listRuns`, `readHeader`, `resolveRun` (run-id → header; today an
+ *      alias of `readHeader`), `readLastStage`, `listArtifacts`,
  *      `stateFilePath`, `runsDir`, `RunSummary`,
  *      `WorkflowHeader`, `WorkflowStage`. `recordStage` lives on
  *      `@juicesharp/rpiv-workflow/internal` (test-only — rpiv-pi's
@@ -98,11 +105,14 @@
  *
  *   • `WorkflowHost`     — registry-level (default export + continue sends)
  *   • `WorkflowHostContext`  — per-command ctx for `runWorkflow`; also the
- *                          replacement ctx delivered to `newSession`'s
- *                          `withSession` callback. `sendUserMessage` is
- *                          optional at the type level (the outer command
- *                          ctx omits it); the runtime guarantees it is
- *                          present inside `withSession`.
+ *                          base shape of the replacement ctx delivered to
+ *                          `newSession`'s `withSession` callback.
+ *                          `sendUserMessage` is optional at the type level
+ *                          (the outer command ctx omits it); the runtime
+ *                          guarantees it is present inside `withSession`.
+ *   • `WorkflowSessionContext` — the narrower subtype delivered inside
+ *                          `withSession`, where `sendUserMessage` is
+ *                          GUARANTEED present (optional → required).
  *
  * Pi's `ExtensionAPI` / `ExtensionCommandContext` are structurally
  * compatible with these ports — embedders pass their existing Pi handles
@@ -149,6 +159,7 @@ export {
 	SESSION_POLICIES,
 	type SessionPolicy,
 	STAGE_KINDS,
+	STOP,
 	type StageDef,
 	type StageKind,
 	type StageSchema,
@@ -209,11 +220,13 @@ export type {
 export { defineCollector, defineParser } from "./output-spec.js";
 export { eq, gt, gte, lt, lte, type Predicate } from "./predicates.js";
 export {
+	type ResumeWorkflowByRunIdOptions,
 	type ResumeWorkflowOptions,
 	type RunWorkflowByNameOptions,
 	type RunWorkflowOptions,
 	type RunWorkflowResult,
 	resumeWorkflow,
+	resumeWorkflowByRunId,
 	runWorkflow,
 	runWorkflowByName,
 } from "./runner/index.js";

@@ -4,7 +4,13 @@
 
 ### Added
 - `runWorkflowByName` — one-shot helper that loads, finds, and runs a workflow by name: refuses on error-severity load issues and returns a failure envelope (never throws) when the name is unknown.
+- `resumeWorkflowByRunId` — the resume-side counterpart to `runWorkflowByName`. Folds `resolveRun → loadWorkflows → findWorkflow → resumeWorkflow` into one call keyed on a run-id (the `<run-id>` slug from `RunSummary.runId`); returns a failure envelope (never throws) for an unresolvable run-id, error-severity load issues, or a workflow that's no longer registered. New exported type `ResumeWorkflowByRunIdOptions`.
 - New exported types `WorkflowHostContext`, `WorkflowSessionContext`, and `RunWorkflowByNameOptions`.
+- `RunWorkflowOptions.signal` / `ResumeWorkflowOptions.signal` — optional `AbortSignal` for cooperative cancellation. The runner checks it at the between-stage seam (before the start stage and before every routed next stage); an aborted signal records an `"aborted"` terminal row for the stage about to run and returns `{ success: false }`. It does not interrupt a stage already streaming (Pi owns the live session), so cancellation takes effect at the next stage boundary. Threads through `runWorkflowByName` / `resumeWorkflowByRunId` unchanged.
+
+### Changed
+- `resumeWorkflow` no longer self-notifies its reconstruct refusals (no-rows / stage-gone / fanout-unsupported) — it returns a pure `RunWorkflowResult` envelope like `runWorkflow`'s pre-flight rejections, with `runId` absent on every no-JSONL refusal. The caller surfaces `result.error` (the `/wf` command notifies no-JSONL refusals via the `!result.runId` discriminator). This unifies the run and resume families on one notify contract. (`resumeWorkflow` is unreleased — no prior published behavior changes.)
+- The `STOP` terminal-edge sentinel is now re-exported from the package entry, matching its long-standing mention in the authoring docstring. Authors can write `edges: { commit: STOP }` for a typed terminal edge; the bare `"stop"` literal remains valid (`EdgeTarget = string | typeof STOP | EdgeFn`).
 
 ### Changed
 - The workflow host-context type is unified under a single `WorkflowHostContext` port (re-exported from the package entry) and threaded through the runner, sessions, fanout, lifecycle, and `/wf` layers.

@@ -37,7 +37,9 @@ import {
 	ERR_RESUME_FANOUT_UNSUPPORTED,
 	ERR_RESUME_NO_ROWS,
 	ERR_RESUME_STAGE_GONE,
+	ERR_WORKFLOW_ABORTED,
 	MSG_STAGE_THREW,
+	MSG_WORKFLOW_ABORTED,
 	MSG_WORKFLOW_COMPLETE,
 	STATUS_KEY,
 } from "../messages.js";
@@ -101,6 +103,15 @@ export interface RunWorkflowOptions {
 	 * run.
 	 */
 	lifecycle?: LifecycleListeners;
+	/**
+	 * Cooperative cancellation. When the signal is aborted, the runner stops at
+	 * the next between-stage seam — it records an `"aborted"` terminal row for
+	 * the stage about to run and returns `{ success: false }` with an aborted
+	 * error. It does NOT interrupt a stage already streaming (Pi owns the live
+	 * session), so cancellation takes effect at the next stage boundary, not
+	 * mid-stage.
+	 */
+	signal?: AbortSignal;
 }
 
 export interface RunWorkflowResult {
@@ -259,6 +270,7 @@ export async function runWorkflow(ctx: WorkflowHostContext, options: RunWorkflow
 		maxIterations,
 		trigger,
 		lifecycle,
+		signal: options.signal,
 	};
 
 	return executeRun(ctx, run, () => runStageOrRecordFailure(ctx, workflow.start, 0, run));
@@ -279,6 +291,8 @@ export interface ResumeWorkflowOptions {
 	ref: string;
 	/** Per-call lifecycle listener bundle. */
 	lifecycle?: LifecycleListeners;
+	/** Cooperative cancellation — see `RunWorkflowOptions.signal`. */
+	signal?: AbortSignal;
 }
 
 /**
@@ -299,9 +313,12 @@ export async function resumeWorkflow(
 
 	const recon = reconstructState(cwd, workflow, header);
 	if (!recon.ok) {
-		const error = resumeRefusalError(recon, header.workflow);
-		ctx.ui.notify(error, "error"); // refusal writes no JSONL → command won't double-notify
-		return { stagesCompleted: 0, success: false, error };
+		// Pure envelope — no self-notify, mirroring `runWorkflow`'s pre-flight
+		// rejections. A reconstruct refusal writes no JSONL, so the caller surfaces
+		// it: `command.ts` via the `!result.runId` discriminator, programmatic
+		// embedders via `if (!result.success)`. Keeps the run and resume families
+		// on one notify contract.
+		return { stagesCompleted: 0, success: false, error: resumeRefusalError(recon, header.workflow) };
 	}
 
 	// Same continue-policy guard as runWorkflow.
@@ -329,6 +346,7 @@ export async function resumeWorkflow(
 		maxIterations: options.maxIterations ?? MAX_ITERATIONS,
 		trigger,
 		lifecycle: new LifecycleDispatcher(options.lifecycle),
+		signal: options.signal,
 	};
 
 	const last = recon.rows[recon.rows.length - 1]!;
@@ -420,6 +438,19 @@ export async function runStageOrRecordFailure(
 	idx: number,
 	run: RunContext,
 ): Promise<void> {
+	// Cooperative cancellation seam. Checked before the start stage and before
+	// every routed next stage (advanceChain funnels through here), so an aborted
+	// signal stops the chain at the next stage boundary without interrupting a
+	// stage already streaming. Records an "aborted" terminal row + halts.
+	if (run.signal?.aborted) {
+		await recordTerminalFailure(curCtx, auditCtxFor(run, name, name), {
+			status: "aborted",
+			notifyMsg: MSG_WORKFLOW_ABORTED,
+			notifyLevel: "warning",
+			errMsg: ERR_WORKFLOW_ABORTED(name),
+		});
+		return;
+	}
 	try {
 		await runStage(curCtx, name, idx, run);
 	} catch (e) {

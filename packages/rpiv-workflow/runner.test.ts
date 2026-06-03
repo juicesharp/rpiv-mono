@@ -2523,6 +2523,86 @@ describe("runWorkflow", () => {
 			expect(readState(tmpDir).header.trigger).toEqual({ kind: "command", name: "wf" });
 		});
 	});
+
+	describe("cooperative cancellation (signal)", () => {
+		it("a pre-aborted signal records an 'aborted' start-stage row and never opens a session", async () => {
+			const controller = new AbortController();
+			controller.abort();
+			const chain = createMockSessionChain({ cwd: tmpDir, steps: [] });
+
+			const result = await runWorkflow(chain.ctx, {
+				workflow: wf("tiny", ["research"]),
+				input: "x",
+				signal: controller.signal,
+			});
+
+			expect(result.success).toBe(false);
+			expect(result.stagesCompleted).toBe(0);
+			expect(result.error).toMatch(/aborted before stage "research"/);
+			// A JSONL file IS written (header + aborted row), so runId is present —
+			// distinguishing an abort from a pre-flight rejection (no file, no runId).
+			expect(result.runId).toBeTruthy();
+			expect(chain.ctx.newSession).not.toHaveBeenCalled();
+
+			const { stages } = readState(tmpDir);
+			expect(stages).toHaveLength(1);
+			expect(stages[0]).toMatchObject({ stage: "research", status: "aborted" });
+		});
+
+		it("aborting after stage 1 stops the chain: stage 2 is recorded 'aborted', its session never opens", async () => {
+			writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md");
+			const controller = new AbortController();
+			const chain = createMockSessionChain({
+				cwd: tmpDir,
+				// Only one step — stage 2 must never run.
+				steps: [{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/research/r.md")] }],
+			});
+
+			const result = await runWorkflow(chain.ctx, {
+				workflow: wf("two", ["research", "design"]),
+				input: "x",
+				signal: controller.signal,
+				// onStageEnd fires after stage 1's success row, before advanceChain
+				// routes to stage 2 — abort here halts at the next-stage seam.
+				lifecycle: {
+					onStageEnd: (stage) => {
+						if (stage.name === "research") controller.abort();
+					},
+				},
+			});
+
+			expect(result.success).toBe(false);
+			expect(result.stagesCompleted).toBe(1);
+			expect(result.error).toMatch(/aborted before stage "design"/);
+			// Stage 1 streamed; stage 2 never opened a session.
+			expect(chain.ctx.newSession).toHaveBeenCalledTimes(1);
+			expect(chain.remaining()).toBe(0);
+
+			const { stages } = readState(tmpDir);
+			expect(stages.map((s) => [s.stage, s.status])).toEqual([
+				["research", "completed"],
+				["design", "aborted"],
+			]);
+		});
+
+		it("a never-aborted signal does not affect a normal run", async () => {
+			writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md");
+			const controller = new AbortController();
+			const chain = createMockSessionChain({
+				cwd: tmpDir,
+				steps: [{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/research/r.md")] }],
+			});
+
+			const result = await runWorkflow(chain.ctx, {
+				workflow: wf("tiny", ["research"]),
+				input: "x",
+				signal: controller.signal,
+			});
+
+			expect(result.success).toBe(true);
+			expect(result.stagesCompleted).toBe(1);
+		});
+	});
 });
 
 describe("transcript offset helpers", () => {

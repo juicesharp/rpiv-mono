@@ -2,21 +2,18 @@
 
 import type { WorkflowHost, WorkflowHostContext } from "./host.js";
 import { renderConfigLayer } from "./layers.js";
-import { findWorkflow, type Issue, type LoadedWorkflows, loadWorkflows } from "./load/index.js";
+import { findWorkflow, type Issue, loadWorkflows } from "./load/index.js";
 import {
 	CMD_DESCRIPTION,
 	MSG_INTERACTIVE_ONLY,
 	MSG_LOAD_ABORTED,
 	MSG_NO_WORKFLOWS_REGISTERED,
 	MSG_RESUME_USAGE,
-	MSG_RESUME_WORKFLOW_GONE,
-	MSG_RUN_NOT_FOUND,
 	MSG_WORKFLOW_NOT_FOUND,
 	MSG_WORKFLOW_THREW,
 } from "./messages.js";
 import { formatWorkflowDetails, formatWorkflowList } from "./preview.js";
-import { resumeWorkflow, runWorkflow } from "./runner/index.js";
-import { resolveRun } from "./state/index.js";
+import { resumeWorkflowByRunId, runWorkflow } from "./runner/index.js";
 
 // ---------------------------------------------------------------------------
 // Public entry
@@ -46,13 +43,7 @@ async function handleWorkflowCommand(host: WorkflowHost, args: string, ctx: Work
 	const parsed = parseArgs(args, { workflowNames, default: loaded.default });
 
 	if (parsed.kind === "resume") {
-		// Load errors still block (a partially-loaded set could mis-resolve the workflow).
-		const errorCount = loaded.issues.filter((i) => i.severity === "error").length;
-		if (errorCount > 0) {
-			ctx.ui.notify(MSG_LOAD_ABORTED(errorCount), "error");
-			return;
-		}
-		await handleResume(host, ctx, loaded, parsed.ref);
+		await handleResume(host, ctx, parsed.ref);
 		return;
 	}
 
@@ -105,29 +96,21 @@ async function handleWorkflowCommand(host: WorkflowHost, args: string, ctx: Work
 // Resume handler
 // ---------------------------------------------------------------------------
 
-async function handleResume(
-	host: WorkflowHost,
-	ctx: WorkflowHostContext,
-	loaded: LoadedWorkflows,
-	ref: string,
-): Promise<void> {
-	if (!ref) {
+async function handleResume(host: WorkflowHost, ctx: WorkflowHostContext, runId: string): Promise<void> {
+	if (!runId) {
 		ctx.ui.notify(MSG_RESUME_USAGE, "error");
 		return;
 	}
-	const header = resolveRun(ctx.cwd, ref);
-	if (!header) {
-		ctx.ui.notify(MSG_RUN_NOT_FOUND(ref), "error");
-		return;
-	}
-	const workflow = findWorkflow(loaded, header.workflow);
-	if (!workflow) {
-		ctx.ui.notify(MSG_RESUME_WORKFLOW_GONE(header.workflow, ref), "error");
-		return;
-	}
 	try {
-		// resumeWorkflow owns its own refusal/stage notifies; command only catches a hard throw.
-		await resumeWorkflow(ctx, { workflow, header, host, ref });
+		const result = await resumeWorkflowByRunId(ctx, runId, { host });
+		// A failure with no runId is a no-JSONL refusal (run-id didn't resolve,
+		// load error, workflow gone, or an unreconstructable trail) — nothing else
+		// surfaces it, so notify here. An in-run failure carries a runId and was
+		// already notified by the stage machinery via its JSONL failure row;
+		// re-notifying would double up.
+		if (!result.success && result.runId === undefined && result.error) {
+			ctx.ui.notify(result.error, "error");
+		}
 	} catch (e) {
 		ctx.ui.notify(MSG_WORKFLOW_THREW(e instanceof Error ? e.message : String(e)), "error");
 	}

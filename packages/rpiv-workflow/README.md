@@ -129,7 +129,7 @@ edges: { "code-review": gate("blockers_count", { revise: gt(0), commit: eq(0) })
 
 Branches are evaluated against `Number(output.data[field])` in declaration order; the first matching predicate wins, and the last declared branch is the fallback when no predicate matches (so missing or non-numeric fields route to the last branch).
 
-Hand-rolled routes use `defineRoute(targets, fn, opts?)` — by default `opts.readsData` is `true` (reads `output.data`, requires the source stage to declare an `outputSchema`); pass `{ readsData: false }` for a route that consults only `state` / `output.meta`.
+`gate` is the numeric convenience only. String/enum, multi-field, or computed routing uses `defineRoute(targets, fn, opts?)` — the body is plain TS (e.g. `output.data.verdict === "approve" ? "commit" : "revise"`), so there's no separate string helper. By default `opts.readsData` is `true` (reads `output.data`, requires the source stage to declare an `outputSchema`); pass `{ readsData: false }` for a route that consults only `state` / `output.meta`.
 
 ## Script stages (no Pi session)
 
@@ -307,6 +307,37 @@ if (!result.success) ctx.ui.notify(result.error ?? "workflow failed", "error");
 ```
 
 It never throws — every expected failure comes back in the same `RunWorkflowResult` envelope: error-severity load issues refuse the run, and an unknown name returns a failure envelope listing the available workflows. The fourth argument is `RunWorkflowByNameOptions` (`RunWorkflowOptions` minus `workflow`/`input`), so `host`, `trigger`, `lifecycle`, and the iteration caps thread through unchanged.
+
+### Resume by run-id
+
+`resumeWorkflowByRunId` is the resume-side counterpart — it folds the `resolveRun` → `loadWorkflows` → `findWorkflow` → `resumeWorkflow` dance into one call keyed on the run-id (the `<run-id>` slug, exactly what `listRuns()` returns on `RunSummary.runId`). The run's header already names its workflow, so you supply only the id:
+
+```ts
+import { resumeWorkflowByRunId, listRuns } from "@juicesharp/rpiv-workflow";
+
+const [latest] = listRuns(ctx.cwd).filter((r) => !r.success);   // e.g. a past failed run
+if (latest) {
+  const result = await resumeWorkflowByRunId(ctx, latest.runId, { host: piHost });
+  if (!result.success) ctx.ui.notify(result.error ?? "resume failed", "error");
+}
+```
+
+Like `runWorkflowByName` it never throws: an unresolvable run-id, error-severity load issues, or a workflow that's no longer registered each come back as a failure envelope. The suffix is `ByRunId`, not `ByName`, on purpose — you resume one specific past *run* (a workflow has many), so the key is the run-id, not a workflow name. The third argument is `ResumeWorkflowByRunIdOptions` (`ResumeWorkflowOptions` minus `workflow`/`header`/`ref`).
+
+> **Notify contract.** `resumeWorkflow` and `resumeWorkflowByRunId` are pure — they return envelopes and never notify, matching `runWorkflow`/`runWorkflowByName`. A no-JSONL refusal (bad run-id, load error, workflow gone, unreconstructable trail) carries **no `runId`** on the envelope; an in-run failure carries one and was already surfaced by the stage machinery's JSONL failure row. The `/wf` command uses exactly that `!result.runId` discriminator to notify the former once without double-notifying the latter.
+
+### Cancellation
+
+Pass an `AbortSignal` to cancel a long run cooperatively:
+
+```ts
+const controller = new AbortController();
+const p = runWorkflow(ctx, { workflow, input, host: piHost, signal: controller.signal });
+// …later, from a timeout / webhook / user action:
+controller.abort();
+```
+
+The runner checks the signal at the **between-stage** seam — before the start stage and before every routed next stage. On abort it records an `"aborted"` terminal row for the stage about to run and resolves with `{ success: false }`. It does **not** interrupt a stage already streaming (Pi owns the live session), so cancellation lands at the next stage boundary, not mid-stage. Threads through `runWorkflowByName` / `resumeWorkflowByRunId` unchanged.
 
 ### Lifecycle
 

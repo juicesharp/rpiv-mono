@@ -44,6 +44,10 @@ export const ERR_STAGE_NO_RESPONSE = (skill: string) => `${skill} produced no as
 export const MSG_WORKFLOW_COMPLETE = (stages: number) => `rpiv: workflow complete (${stages} stages)`;
 export const MSG_WORKFLOW_CANCELLED = "rpiv: workflow cancelled";
 
+// Programmatic abort via RunWorkflowOptions.signal — checked between stages.
+export const MSG_WORKFLOW_ABORTED = "rpiv: workflow aborted";
+export const ERR_WORKFLOW_ABORTED = (stage: string) => `workflow aborted before stage "${stage}" (signal)`;
+
 export const MSG_VALIDATION_RETRY = (skill: string, attempt: number) =>
 	`rpiv: ${skill} output validation failed — asking agent to fix (attempt ${attempt})`;
 export const MSG_VALIDATION_EXHAUSTED = (skill: string) => `rpiv: ${skill} output validation exhausted retries`;
@@ -181,7 +185,8 @@ export const MSG_SCRIPT_THREW = (stage: string, reason: string) =>
 export const ERR_SCRIPT_THREW = (stage: string, reason: string) => `${stage} script threw: ${reason}`;
 
 // ---------------------------------------------------------------------------
-// Resume-refusal messages — resumeWorkflow own-notify path
+// Resume-refusal messages — reconstruct refusals returned in the
+// RunWorkflowResult envelope (the caller notifies; no-JSONL → no machinery row)
 // ---------------------------------------------------------------------------
 
 export const ERR_RESUME_NO_ROWS = (runId: string) => `rpiv: run ${runId} has no recorded stages — nothing to resume`;
@@ -192,7 +197,8 @@ export const ERR_RESUME_FANOUT_UNSUPPORTED = (stage: string) =>
 	`rpiv: cannot resume — stage "${stage}" uses fanout/iterate; resuming these is not supported yet`;
 
 // ---------------------------------------------------------------------------
-// Resume-refusal messages — command-level guards (before resumeWorkflow is called)
+// Resume-refusal messages — resumeWorkflowByRef pre-resume guards (resolve →
+// load-gate → find); returned in the envelope before resumeWorkflow is reached
 // ---------------------------------------------------------------------------
 
 export const MSG_RESUME_USAGE = "rpiv: usage — /wf @<run-id>";

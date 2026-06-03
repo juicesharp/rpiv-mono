@@ -5,6 +5,7 @@
  */
 
 export { type RunWorkflowByNameOptions, runWorkflowByName } from "./by-name.js";
+export { type ResumeWorkflowByRunIdOptions, resumeWorkflowByRunId } from "./by-run-id.js";
 export {
 	MAX_BACKWARD_JUMPS,
 	type ResumeWorkflowOptions,

@@ -2,15 +2,12 @@ import { createMockCommandCtx, createMockPi } from "@juicesharp/rpiv-test-utils"
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { acts, defineWorkflow, produces } from "./api.js";
 
-// Mock runner to avoid needing the full Pi session runtime.
+// Mock runner to avoid needing the full Pi session runtime. The resume path
+// delegates to resumeWorkflowByRunId (which owns resolve → load-gate → find →
+// resumeWorkflow); its internals are covered in runner/by-run-id.test.ts.
 vi.mock("./runner/index.js", () => ({
 	runWorkflow: vi.fn(async () => ({ stagesCompleted: 2, success: true })),
-	resumeWorkflow: vi.fn(async () => ({ stagesCompleted: 1, success: true })),
-}));
-
-// Mock state/resolveRun to avoid filesystem I/O. Default: not found.
-vi.mock("./state/index.js", () => ({
-	resolveRun: vi.fn(() => undefined),
+	resumeWorkflowByRunId: vi.fn(async () => ({ runId: "r", stagesCompleted: 1, success: true })),
 }));
 
 // Mock load.ts to avoid jiti + filesystem I/O. The mock provides a stable
@@ -58,16 +55,13 @@ vi.mock("./load/index.js", () => ({
 
 import { parseArgs, registerWorkflowCommand } from "./command.js";
 import { loadWorkflows } from "./load/index.js";
-import { resumeWorkflow, runWorkflow } from "./runner/index.js";
-import { resolveRun } from "./state/index.js";
+import { resumeWorkflowByRunId, runWorkflow } from "./runner/index.js";
 
 beforeEach(() => {
 	vi.mocked(runWorkflow).mockReset();
 	vi.mocked(runWorkflow).mockResolvedValue({ stagesCompleted: 2, success: true });
-	vi.mocked(resumeWorkflow).mockReset();
-	vi.mocked(resumeWorkflow).mockResolvedValue({ stagesCompleted: 1, success: true });
-	vi.mocked(resolveRun).mockReset();
-	vi.mocked(resolveRun).mockReturnValue(undefined);
+	vi.mocked(resumeWorkflowByRunId).mockReset();
+	vi.mocked(resumeWorkflowByRunId).mockResolvedValue({ runId: "r", stagesCompleted: 1, success: true });
 });
 
 // ---------------------------------------------------------------------------
@@ -331,80 +325,78 @@ describe("parseArgs — empty registry", () => {
 // /wf @<ref> — resume dispatch
 // ---------------------------------------------------------------------------
 
-const fakeHeader = {
-	runId: "2026-06-03_07-30-00-ab12",
-	workflow: "mid",
-	input: "Add dark mode",
-	ts: "2026-06-03T07:30:00Z",
-};
+const RESUME_RUN_ID = "2026-06-03_07-30-00-ab12";
 
-describe("/wf @<ref> — guard: empty ref", () => {
-	it("notifies usage message and does not call resumeWorkflow", async () => {
+describe("/wf @<run-id> — guard: empty run-id", () => {
+	it("notifies usage message and does not call resumeWorkflowByRunId", async () => {
 		const { pi, captured } = createMockPi();
 		registerWorkflowCommand(pi);
 		const ctx = createMockCommandCtx({ hasUI: true });
 		await captured.commands.get("wf")?.handler("@", ctx);
 		expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("usage"), "error");
-		expect(resumeWorkflow).not.toHaveBeenCalled();
+		expect(resumeWorkflowByRunId).not.toHaveBeenCalled();
 		expect(runWorkflow).not.toHaveBeenCalled();
 	});
 });
 
-describe("/wf @<ref> — guard: run not found", () => {
-	it("notifies run-not-found and does not call resumeWorkflow", async () => {
-		vi.mocked(resolveRun).mockReturnValue(undefined);
+describe("/wf @<run-id> — delegates to resumeWorkflowByRunId", () => {
+	it("strips the @ sigil and forwards the run-id + host", async () => {
 		const { pi, captured } = createMockPi();
 		registerWorkflowCommand(pi);
 		const ctx = createMockCommandCtx({ hasUI: true });
-		await captured.commands.get("wf")?.handler("@bogus-run-id", ctx);
-		expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("no run found"), "error");
-		expect(resumeWorkflow).not.toHaveBeenCalled();
+		await captured.commands.get("wf")?.handler(`@${RESUME_RUN_ID}`, ctx);
+		expect(resumeWorkflowByRunId).toHaveBeenCalledTimes(1);
+		const [, runId, opts] = vi.mocked(resumeWorkflowByRunId).mock.calls[0]!;
+		expect(runId).toBe(RESUME_RUN_ID);
+		expect(opts?.host).toBe(pi);
+		expect(runWorkflow).not.toHaveBeenCalled();
 	});
 });
 
-describe("/wf @<ref> — guard: workflow gone", () => {
-	it("notifies workflow-gone when header's workflow is not in loaded set", async () => {
-		vi.mocked(resolveRun).mockReturnValue({ ...fakeHeader, workflow: "deleted-wf" });
-		const { pi, captured } = createMockPi();
-		registerWorkflowCommand(pi);
-		const ctx = createMockCommandCtx({ hasUI: true });
-		await captured.commands.get("wf")?.handler(`@${fakeHeader.runId}`, ctx);
-		expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("no longer registered"), "error");
-		expect(resumeWorkflow).not.toHaveBeenCalled();
-	});
-});
-
-describe("/wf @<ref> — guard: load errors block resume", () => {
-	it("aborts on load errors — resumeWorkflow is not invoked", async () => {
-		vi.mocked(loadWorkflows).mockResolvedValueOnce({
-			workflows: [midWorkflow],
-			default: "mid",
-			workflowSources: new Map([["mid", "built-in"]]),
-			layers: ["built-in"],
-			issues: [{ kind: "load", layer: "project", path: "rpiv.config.ts", severity: "error", message: "broke" }],
-			skillAliases: {},
+describe("/wf @<run-id> — notify discriminator (runId presence)", () => {
+	it("notifies a no-JSONL refusal (no runId on the envelope) exactly once", async () => {
+		vi.mocked(resumeWorkflowByRunId).mockResolvedValueOnce({
+			stagesCompleted: 0,
+			success: false,
+			error: 'rpiv: no run found for "gone"',
 		});
 		const { pi, captured } = createMockPi();
 		registerWorkflowCommand(pi);
 		const ctx = createMockCommandCtx({ hasUI: true });
-		await captured.commands.get("wf")?.handler(`@${fakeHeader.runId}`, ctx);
-		expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("config error"), "error");
-		expect(resumeWorkflow).not.toHaveBeenCalled();
+		await captured.commands.get("wf")?.handler("@gone", ctx);
+		expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("no run found"), "error");
 	});
-});
 
-describe("/wf @<ref> — happy path", () => {
-	it("calls resumeWorkflow once with the resolved header and workflow", async () => {
-		vi.mocked(resolveRun).mockReturnValue(fakeHeader);
+	it("does NOT re-notify an in-run failure (envelope carries a runId — machinery already notified)", async () => {
+		vi.mocked(resumeWorkflowByRunId).mockResolvedValueOnce({
+			runId: RESUME_RUN_ID,
+			stagesCompleted: 1,
+			success: false,
+			error: "stage build failed",
+		});
 		const { pi, captured } = createMockPi();
 		registerWorkflowCommand(pi);
 		const ctx = createMockCommandCtx({ hasUI: true });
-		await captured.commands.get("wf")?.handler(`@${fakeHeader.runId}`, ctx);
-		expect(resumeWorkflow).toHaveBeenCalledTimes(1);
-		const opts = vi.mocked(resumeWorkflow).mock.calls[0]?.[1];
-		expect(opts?.header.runId).toBe(fakeHeader.runId);
-		expect(opts?.workflow.name).toBe("mid");
-		expect(opts?.ref).toBe(fakeHeader.runId);
-		expect(runWorkflow).not.toHaveBeenCalled();
+		await captured.commands.get("wf")?.handler(`@${RESUME_RUN_ID}`, ctx);
+		expect(ctx.ui.notify).not.toHaveBeenCalledWith(expect.stringContaining("stage build failed"), "error");
+	});
+
+	it("does not notify on success", async () => {
+		const { pi, captured } = createMockPi();
+		registerWorkflowCommand(pi);
+		const ctx = createMockCommandCtx({ hasUI: true });
+		await captured.commands.get("wf")?.handler(`@${RESUME_RUN_ID}`, ctx);
+		expect(ctx.ui.notify).not.toHaveBeenCalledWith(expect.anything(), "error");
+	});
+});
+
+describe("/wf @<run-id> — hard throw", () => {
+	it("catches a thrown resumeWorkflowByRunId and notifies the generic failure", async () => {
+		vi.mocked(resumeWorkflowByRunId).mockRejectedValueOnce(new Error("boom"));
+		const { pi, captured } = createMockPi();
+		registerWorkflowCommand(pi);
+		const ctx = createMockCommandCtx({ hasUI: true });
+		await captured.commands.get("wf")?.handler(`@${RESUME_RUN_ID}`, ctx);
+		expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("boom"), "error");
 	});
 });

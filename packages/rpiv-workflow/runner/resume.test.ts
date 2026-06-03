@@ -744,7 +744,7 @@ describe("resumeWorkflow", () => {
 		expect(chain.ctx.newSession).not.toHaveBeenCalled();
 	});
 
-	it("no-rows refusal: returns error envelope + notifies once", async () => {
+	it("no-rows refusal: returns error envelope, no self-notify (caller surfaces it)", async () => {
 		// Header-only file (no stage rows)
 		writeHeader(tmpDir, resumeHeader);
 
@@ -759,16 +759,21 @@ describe("resumeWorkflow", () => {
 		expect(result.success).toBe(false);
 		expect(result.error).toMatch(/no recorded stages/);
 		expect(result.stagesCompleted).toBe(0);
+		// No runId on a no-JSONL refusal — the discriminator command uses to decide
+		// whether to notify (the stage machinery never wrote a failure row here).
+		expect(result.runId).toBeUndefined();
 
+		// Pure envelope: resumeWorkflow does NOT self-notify (mirrors runWorkflow's
+		// pre-flight rejections). The caller surfaces result.error.
 		const errorNotifies = chain.notifications.filter((n) => n.level === "error" && /no recorded stages/.test(n.msg));
-		expect(errorNotifies).toHaveLength(1);
+		expect(errorNotifies).toHaveLength(0);
 
 		// No new JSONL rows written on refusal
 		const stages = readRunStages(resumeHeader.runId);
 		expect(stages).toHaveLength(0);
 	});
 
-	it("stage-gone refusal: returns error envelope + notifies once", async () => {
+	it("stage-gone refusal: returns error envelope, no self-notify", async () => {
 		writeRun(resumeHeader, [
 			{
 				stageNumber: 1,
@@ -797,12 +802,13 @@ describe("resumeWorkflow", () => {
 
 		expect(result.success).toBe(false);
 		expect(result.error).toMatch(/no longer exists/);
+		expect(result.runId).toBeUndefined();
 
 		const errorNotifies = chain.notifications.filter((n) => n.level === "error" && /no longer exists/.test(n.msg));
-		expect(errorNotifies).toHaveLength(1);
+		expect(errorNotifies).toHaveLength(0);
 	});
 
-	it("fanout-unsupported refusal: returns error envelope + notifies once", async () => {
+	it("fanout-unsupported refusal: returns error envelope, no self-notify", async () => {
 		const fanoutWf: Workflow = {
 			name: "fanout-wf",
 			start: "plan",
@@ -841,9 +847,10 @@ describe("resumeWorkflow", () => {
 
 		expect(result.success).toBe(false);
 		expect(result.error).toMatch(/fanout\/iterate/);
+		expect(result.runId).toBeUndefined();
 
 		const errorNotifies = chain.notifications.filter((n) => n.level === "error" && /fanout\/iterate/.test(n.msg));
-		expect(errorNotifies).toHaveLength(1);
+		expect(errorNotifies).toHaveLength(0);
 	});
 
 	it("resume does not write a new header (append-only)", async () => {
