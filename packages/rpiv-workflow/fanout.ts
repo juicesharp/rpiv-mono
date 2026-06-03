@@ -13,16 +13,21 @@
 import type { FanoutUnit } from "./api.js";
 import { buildLifecycleContext, skillStageRef } from "./lifecycle.js";
 import { MSG_STAGE_COMPLETE, STATUS_FANOUT_UNIT, STATUS_KEY } from "./messages.js";
-import type { FanoutSession, RunContext, RunnerCtx } from "./types.js";
+import type { FanoutSession, RunContext, WorkflowHostContext } from "./types.js";
 
 export interface FanoutDeps {
-	runFanoutSession: (ctx: RunnerCtx, session: FanoutSession) => Promise<void>;
+	runFanoutSession: (ctx: WorkflowHostContext, session: FanoutSession) => Promise<void>;
 	/**
 	 * Resume the chain after the fanout node's units finish. Receives the
 	 * fanout node's name so the routing layer can look up the outgoing
 	 * edge from it.
 	 */
-	advanceAfter: (curCtx: RunnerCtx, completedName: string, completedIdx: number, run: RunContext) => Promise<void>;
+	advanceAfter: (
+		curCtx: WorkflowHostContext,
+		completedName: string,
+		completedIdx: number,
+		run: RunContext,
+	) => Promise<void>;
 }
 
 /**
@@ -41,7 +46,7 @@ export interface FanoutDeps {
  * session to run — the continuation-style self-call increments it.
  */
 export async function runFanout(
-	curCtx: RunnerCtx,
+	curCtx: WorkflowHostContext,
 	stageIdx: number,
 	currentName: string,
 	skill: string,

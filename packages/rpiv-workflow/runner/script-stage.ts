@@ -44,7 +44,7 @@ import {
 	STATUS_STAGE,
 } from "../messages.js";
 import { finalizeOutput, type Output } from "../output.js";
-import type { RunContext, RunnerCtx, RunState } from "../types.js";
+import type { RunContext, RunState, WorkflowHostContext } from "../types.js";
 import { DEFAULT_VALIDATION_RETRIES, validateOutputData } from "../validate-output.js";
 import { advanceChain } from "./chain-advance.js";
 import { lifecycleCtxFor } from "./runner.js";
@@ -60,7 +60,12 @@ import type { ResolvedStage } from "./stage-lifecycle.js";
  *   - `ensureInputValid` already passed (post-prompt-checks pipeline).
  *   - `tryFanout` returned `false` (fanout incompatible by validation).
  */
-export async function runScript(curCtx: RunnerCtx, stage: ResolvedStage, idx: number, run: RunContext): Promise<void> {
+export async function runScript(
+	curCtx: WorkflowHostContext,
+	stage: ResolvedStage,
+	idx: number,
+	run: RunContext,
+): Promise<void> {
 	curCtx.ui.setStatus(STATUS_KEY, STATUS_STAGE(stage.stageNumber, run.totalStages, stage.name));
 
 	const ref = scriptStageRef(stage.name, stage.stageNumber);
@@ -124,7 +129,7 @@ type ScriptInvocationResult =
  * failure attributed via `MSG_SCRIPT_THREW` + `ERR_SCRIPT_THREW`.
  */
 async function invokeRun(
-	curCtx: RunnerCtx,
+	curCtx: WorkflowHostContext,
 	stage: ResolvedStage,
 	scriptCtx: ScriptContext,
 	ref: ReturnType<typeof scriptStageRef>,
@@ -160,7 +165,7 @@ async function invokeRun(
  * no `onStageEnd` fire — caller owns lifecycle ordering here).
  */
 function recordScriptSuccess(
-	curCtx: RunnerCtx,
+	curCtx: WorkflowHostContext,
 	stage: ResolvedStage,
 	output: Output,
 	state: RunState,

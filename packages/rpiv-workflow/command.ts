@@ -1,6 +1,6 @@
 /** /wf slash command: parse → loadWorkflows → runWorkflow. */
 
-import type { WorkflowContext, WorkflowHost } from "./host.js";
+import type { WorkflowHost, WorkflowHostContext } from "./host.js";
 import { renderConfigLayer } from "./layers.js";
 import { findWorkflow, type Issue, loadWorkflows } from "./load/index.js";
 import {
@@ -21,7 +21,7 @@ import { runWorkflow } from "./runner/index.js";
 export function registerWorkflowCommand(host: WorkflowHost): void {
 	host.registerCommand("wf", {
 		description: CMD_DESCRIPTION,
-		handler: (args: string, ctx: WorkflowContext) => handleWorkflowCommand(host, args, ctx),
+		handler: (args: string, ctx: WorkflowHostContext) => handleWorkflowCommand(host, args, ctx),
 	});
 }
 
@@ -29,7 +29,7 @@ export function registerWorkflowCommand(host: WorkflowHost): void {
 // Orchestrator
 // ---------------------------------------------------------------------------
 
-async function handleWorkflowCommand(host: WorkflowHost, args: string, ctx: WorkflowContext): Promise<void> {
+async function handleWorkflowCommand(host: WorkflowHost, args: string, ctx: WorkflowHostContext): Promise<void> {
 	if (!ctx.hasUI) {
 		ctx.ui.notify(MSG_INTERACTIVE_ONLY, "error");
 		return;
@@ -119,7 +119,7 @@ export function parseArgs(
 // ---------------------------------------------------------------------------
 
 /** Surface every load + validation issue as a notify, prefixed by severity. */
-function surfaceIssues(ctx: WorkflowContext, issues: readonly Issue[]): void {
+function surfaceIssues(ctx: WorkflowHostContext, issues: readonly Issue[]): void {
 	for (const issue of issues) {
 		const level: "warning" | "error" = issue.severity === "error" ? "error" : "warning";
 		ctx.ui.notify(formatIssue(issue), level);

@@ -22,7 +22,7 @@ import { iterateRowStage } from "./audit.js";
 import type { Artifact } from "./handle.js";
 import { MSG_ITERATE_ZERO_UNITS, MSG_STAGE_COMPLETE, STATUS_ITERATE_UNIT, STATUS_KEY } from "./messages.js";
 import type { Output } from "./output.js";
-import type { RunContext, RunnerCtx, StageSession } from "./types.js";
+import type { RunContext, StageSession, WorkflowHostContext } from "./types.js";
 
 export interface IterateDeps {
 	/**
@@ -30,18 +30,23 @@ export interface IterateDeps {
 	 * validate → record → accumulate). The same `runStageSession` a normal
 	 * `produces` stage uses — iterate adds no bespoke session machinery.
 	 */
-	runStageSession: (ctx: RunnerCtx, s: StageSession) => Promise<void>;
+	runStageSession: (ctx: WorkflowHostContext, s: StageSession) => Promise<void>;
 	/**
 	 * Resume the chain after the iterate node's units finish (generator
 	 * returned null). Receives the iterate node's REAL name so routing looks up
 	 * the outgoing edge from it — the per-unit audit decoration never leaks
 	 * into routing.
 	 */
-	advanceAfter: (curCtx: RunnerCtx, completedName: string, completedIdx: number, run: RunContext) => Promise<void>;
+	advanceAfter: (
+		curCtx: WorkflowHostContext,
+		completedName: string,
+		completedIdx: number,
+		run: RunContext,
+	) => Promise<void>;
 	/** Re-capture the outcome's pre-stage snapshot per unit (each unit is its own produces pass). */
 	captureSnapshot: (def: StageDef, idx: number, run: RunContext) => Promise<unknown>;
 	/** Record the terminal failure when the `maxIterations` backstop trips. */
-	haltIterations: (curCtx: RunnerCtx, run: RunContext, stageName: string, count: number) => Promise<void>;
+	haltIterations: (curCtx: WorkflowHostContext, run: RunContext, stageName: string, count: number) => Promise<void>;
 }
 
 /**
@@ -63,7 +68,7 @@ export interface IterateDeps {
  * `onSuccess`).
  */
 export async function runIterate(
-	curCtx: RunnerCtx,
+	curCtx: WorkflowHostContext,
 	stageIdx: number,
 	currentName: string,
 	skill: string,

@@ -6,10 +6,11 @@ import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { EdgeTarget, FanoutFn, ScriptContext, StageDef, StageKind, StageSchema, Workflow } from "./api.js";
 import { defineRoute, defineWorkflow, gate, produces, terminal } from "./api.js";
+import { registerBuiltIns } from "./built-ins.js";
 import { fs as fsHandle } from "./handle.js";
 import type { OutputSpec } from "./output.js";
 import { eq, gt } from "./predicates.js";
-import { runWorkflow } from "./runner/index.js";
+import { runWorkflow, runWorkflowByName } from "./runner/index.js";
 import { appendRoutingDecision, readRoutingDecisions } from "./state/index.js";
 import { hasAssistantMessage, lastAssistantStopReason } from "./transcript.js";
 import { typeboxSchema } from "./typebox-adapter.js";
@@ -2455,6 +2456,71 @@ describe("runWorkflow", () => {
 					lateDispose?.();
 				}
 			});
+		});
+	});
+
+	// -------------------------------------------------------------------------
+	// runWorkflowByName — convenience one-shot over loadWorkflows + findWorkflow
+	// + runWorkflow. Workflows are surfaced via the `built-in` layer
+	// (registerBuiltIns); the global test setup resets that registry per test,
+	// and tmpDir is a fresh cwd with no project overlay, so each case sees only
+	// what it registers.
+	// -------------------------------------------------------------------------
+	describe("runWorkflowByName", () => {
+		it("loads the named workflow and runs it to success", async () => {
+			registerBuiltIns([wf("byname-tiny", ["research"])]);
+			writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md");
+			const chain = createMockSessionChain({
+				cwd: tmpDir,
+				steps: [{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/research/r.md")] }],
+			});
+
+			const result = await runWorkflowByName(chain.ctx, "byname-tiny", "add dark mode");
+
+			expect(result).toEqual({
+				runId: expect.stringMatching(/^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}-[0-9a-f]{4}$/),
+				success: true,
+				stagesCompleted: 1,
+				lastArtifact: ".rpiv/artifacts/research/r.md",
+				error: undefined,
+			});
+			expect(chain.sentMessages).toEqual(["/skill:research add dark mode"]);
+			// A JSONL run file was written under the resolved runId.
+			expect(readState(tmpDir).header.workflow).toBe("byname-tiny");
+		});
+
+		it("returns a failure envelope (never throws) when the name is unknown", async () => {
+			registerBuiltIns([wf("present", ["research"])]);
+			const chain = createMockSessionChain({ cwd: tmpDir, steps: [] });
+
+			const result = await runWorkflowByName(chain.ctx, "ghost", "x");
+
+			expect(result.success).toBe(false);
+			expect(result.stagesCompleted).toBe(0);
+			expect(result.runId).toBeUndefined();
+			expect(result.error).toMatch(/workflow "ghost" not found/);
+			// Surfaces what IS available so the caller can recover.
+			expect(result.error).toContain("present");
+			// Nothing ran: no session opened, no run file written.
+			expect(chain.ctx.newSession).not.toHaveBeenCalled();
+			expect(existsSync(join(tmpDir, ".rpiv", "workflows", "runs"))).toBe(false);
+		});
+
+		it("forwards options (trigger) through to runWorkflow", async () => {
+			registerBuiltIns([wf("byname-tiny", ["research"])]);
+			writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md");
+			const chain = createMockSessionChain({
+				cwd: tmpDir,
+				steps: [{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/research/r.md")] }],
+			});
+
+			const result = await runWorkflowByName(chain.ctx, "byname-tiny", "add dark mode", {
+				trigger: { kind: "command", name: "wf" },
+			});
+
+			expect(result.success).toBe(true);
+			// The trigger reached the JSONL header via runWorkflow.
+			expect(readState(tmpDir).header.trigger).toEqual({ kind: "command", name: "wf" });
 		});
 	});
 });

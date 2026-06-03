@@ -9,8 +9,9 @@
  *    layer. Always read the chain's primary artifact via
  *    `currentPrimaryArtifact(state)` (internal-utils.ts) — it prefers
  *    `output.artifacts[0]` and falls back to `fallbackPrimaryArtifact`.
- *  - `RunnerCtx` — Pi command ctx augmented with idle-await guarantees;
- *    threaded from `withSession` callbacks down through stage/phase helpers.
+ *  - `WorkflowHostContext` — the host port (defined in `host.js`, re-exported
+ *    here) threaded from `withSession` callbacks down through stage/phase
+ *    helpers, so the runtime layers import all three nouns from one module.
  *
  * Per-stage / per-phase sessions extend a shared `SessionContext` base
  * (cwd, runId, state, prompt, skill). The audit layer pins its dependency
@@ -23,18 +24,14 @@
 
 import type { StageDef, Workflow } from "./api.js";
 import type { Artifact } from "./handle.js";
-import type { WorkflowContext, WorkflowHost } from "./host.js";
+import type { WorkflowHost, WorkflowHostContext } from "./host.js";
 import type { LifecycleDispatcher } from "./lifecycle.js";
 import type { Output } from "./output.js";
 import type { RunTrigger } from "./triggers.js";
 
-/**
- * Per-stage runtime ctx. Alias for `WorkflowContext` (the port) —
- * kept as a domain noun ("the runner's command ctx") so consumers can
- * read stage/phase code without learning the port name. Identical
- * shape; rename-only.
- */
-export type RunnerCtx = WorkflowContext;
+// Re-export the host port so runtime layers can pull `RunContext`,
+// `RunState`, and the threaded ctx from this single runtime-types module.
+export type { WorkflowHostContext } from "./host.js";
 
 /** Mutable per-run bookkeeping threaded through the chain by reference. */
 export interface RunState {
@@ -218,8 +215,8 @@ export interface StageSession extends SessionContext {
 	continueHost?: WorkflowHost;
 	/** Only set for continue stages — branch slice offset. */
 	branchOffset?: number;
-	onFailure?: (ctx: RunnerCtx) => void;
-	onSuccess: (ctx: RunnerCtx, artifact: Artifact | undefined) => Promise<void>;
+	onFailure?: (ctx: WorkflowHostContext) => void;
+	onSuccess: (ctx: WorkflowHostContext, artifact: Artifact | undefined) => Promise<void>;
 }
 
 /**
@@ -241,5 +238,5 @@ export interface FanoutSession extends SessionContext {
 	id?: string;
 	/** Parent stage's 0-based index. */
 	stageIndex: number;
-	onSuccess: (ctx: RunnerCtx) => Promise<void>;
+	onSuccess: (ctx: WorkflowHostContext) => Promise<void>;
 }

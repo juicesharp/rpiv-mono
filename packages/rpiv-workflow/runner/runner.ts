@@ -27,13 +27,13 @@
 import type { Workflow } from "../api.js";
 import { notifyPartialArtifacts, nowIso, recordTerminalFailure } from "../audit.js";
 import { handleToString } from "../handle.js";
-import type { WorkflowContext, WorkflowHost } from "../host.js";
+import type { WorkflowHost, WorkflowHostContext } from "../host.js";
 import { currentPrimaryArtifact } from "../internal-utils.js";
 import { buildLifecycleContext, LifecycleDispatcher, type LifecycleListeners } from "../lifecycle.js";
 import { MSG_STAGE_THREW, MSG_WORKFLOW_COMPLETE, STATUS_KEY } from "../messages.js";
 import { generateRunId, writeHeader } from "../state/index.js";
 import { DEFAULT_TRIGGER, type RunTrigger } from "../triggers.js";
-import type { RunContext, RunnerCtx, RunState } from "../types.js";
+import type { RunContext, RunState } from "../types.js";
 import { runStage, StagePreflightError } from "./stage-lifecycle.js";
 
 // ---------------------------------------------------------------------------
@@ -132,7 +132,7 @@ export interface RunWorkflowResult {
  * previous withSession — never on a captured outer ctx (which Pi invalidates
  * as soon as the session is replaced).
  */
-export async function runWorkflow(ctx: WorkflowContext, options: RunWorkflowOptions): Promise<RunWorkflowResult> {
+export async function runWorkflow(ctx: WorkflowHostContext, options: RunWorkflowOptions): Promise<RunWorkflowResult> {
 	const { workflow } = options;
 	if (!workflow.stages[workflow.start]) {
 		return {
@@ -300,7 +300,7 @@ function countReachableStages(workflow: Workflow): number {
  *   generic `MSG_STAGE_THREW` shape attributed to the stage id.
  */
 export async function runStageOrRecordFailure(
-	curCtx: RunnerCtx,
+	curCtx: WorkflowHostContext,
 	name: string,
 	idx: number,
 	run: RunContext,
@@ -340,7 +340,7 @@ function auditCtxFor(run: RunContext, stageName: string, skill: string) {
 	};
 }
 
-export function finalizeWorkflow(curCtx: RunnerCtx, run: RunContext): void {
+export function finalizeWorkflow(curCtx: WorkflowHostContext, run: RunContext): void {
 	curCtx.ui.setStatus(STATUS_KEY, undefined);
 	curCtx.ui.notify(MSG_WORKFLOW_COMPLETE(run.state.stagesCompleted), "info");
 	run.state.termination.success = true;

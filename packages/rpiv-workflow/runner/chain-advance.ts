@@ -18,7 +18,7 @@ import {
 } from "../messages.js";
 import { edgeIsDecision, nextStage } from "../routing.js";
 import { appendRoutingDecision } from "../state/index.js";
-import type { RunContext, RunnerCtx } from "../types.js";
+import type { RunContext, WorkflowHostContext } from "../types.js";
 import { finalizeWorkflow, lifecycleCtxFor, runStageOrRecordFailure } from "./runner.js";
 
 /**
@@ -27,7 +27,7 @@ import { finalizeWorkflow, lifecycleCtxFor, runStageOrRecordFailure } from "./ru
  * structural concern.
  */
 export async function advanceChain(
-	curCtx: RunnerCtx,
+	curCtx: WorkflowHostContext,
 	currentName: string,
 	idx: number,
 	run: RunContext,
@@ -83,7 +83,7 @@ export async function advanceChain(
  * routing rows are pure telemetry).
  */
 function auditRoutingDecision(
-	curCtx: RunnerCtx,
+	curCtx: WorkflowHostContext,
 	run: RunContext,
 	idx: number,
 	currentName: string,
@@ -124,7 +124,11 @@ function auditRoutingDecision(
  * Trip attribution targets `nextName` (the stage the guard refused to
  * re-enter), not the just-completed stage. Same lesson as Q12+IB.
  */
-async function checkBackwardJumpGuard(curCtx: RunnerCtx, run: RunContext, nextName: string): Promise<boolean> {
+async function checkBackwardJumpGuard(
+	curCtx: WorkflowHostContext,
+	run: RunContext,
+	nextName: string,
+): Promise<boolean> {
 	const { state } = run;
 	if (!run.visited.has(nextName)) {
 		state.telemetry.backwardJumps = 0;
@@ -159,7 +163,7 @@ async function checkBackwardJumpGuard(curCtx: RunnerCtx, run: RunContext, nextNa
  * `currentName` (the edge belongs to the just-completed stage).
  */
 async function haltOnRoutingError(
-	curCtx: RunnerCtx,
+	curCtx: WorkflowHostContext,
 	run: RunContext,
 	currentName: string,
 	reason: string,

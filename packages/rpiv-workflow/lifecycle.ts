@@ -148,7 +148,7 @@ export interface LifecycleListeners {
 // Internal — dispatcher (consumed by the runner; not exported publicly)
 // ---------------------------------------------------------------------------
 
-/** Subset of `WorkflowContext` the dispatcher needs for throw-safe logging. */
+/** Subset of `WorkflowHostContext` the dispatcher needs for throw-safe logging. */
 export interface DispatchHost {
 	ui: { notify(message: string, level?: "info" | "warning" | "error"): void };
 }

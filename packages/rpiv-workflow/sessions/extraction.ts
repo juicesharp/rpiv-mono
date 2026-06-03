@@ -25,7 +25,7 @@ import { sideEffectOutcome } from "../outcomes/index.js";
 import { finalizeOutput, type Output } from "../output.js";
 import type { CollectCtx, OutputSpec } from "../output-spec.js";
 import { type BranchEntry, readBranch } from "../transcript.js";
-import type { RunnerCtx, StageSession } from "../types.js";
+import type { StageSession, WorkflowHostContext } from "../types.js";
 import {
 	DEFAULT_VALIDATION_RETRIES,
 	DEFAULT_VALIDATION_RETRY_TIMEOUT_MS,
@@ -46,7 +46,7 @@ export type OutputProduction =
 
 /** Retry loop re-produces against the latest branch after each fix request. */
 export async function produceAndValidateOutput(
-	ctx: RunnerCtx,
+	ctx: WorkflowHostContext,
 	s: StageSession,
 	branch: BranchEntry[],
 	branchOffset: number | undefined,
@@ -187,7 +187,7 @@ interface RetryDeps {
 }
 
 async function retryUntilValid(
-	ctx: RunnerCtx,
+	ctx: WorkflowHostContext,
 	s: StageSession,
 	deps: RetryDeps,
 	initial: Output,
@@ -276,7 +276,7 @@ async function validateOrFatal(
 }
 
 async function askAgentToFix(
-	ctx: RunnerCtx,
+	ctx: WorkflowHostContext,
 	s: StageSession,
 	attempt: number,
 	failures: SchemaValidationFailure[],

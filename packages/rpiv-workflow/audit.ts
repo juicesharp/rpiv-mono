@@ -23,7 +23,7 @@ import {
 } from "./messages.js";
 import { appendStage, listArtifacts, type WorkflowStage } from "./state/index.js";
 import type { StopSignal } from "./transcript.js";
-import type { FanoutSession, RunnerCtx, RunState, SessionContext } from "./types.js";
+import type { FanoutSession, RunState, SessionContext, WorkflowHostContext } from "./types.js";
 
 /** Single source of ISO-8601 timestamps for audit rows + output meta. */
 export const nowIso = (): string => new Date().toISOString();
@@ -90,7 +90,7 @@ export function recordStage(
 }
 
 /** Surface every artifact recorded so far — recap on stage failure. */
-export function notifyPartialArtifacts(ctx: RunnerCtx, cwd: string, runId: string): void {
+export function notifyPartialArtifacts(ctx: WorkflowHostContext, cwd: string, runId: string): void {
 	const items = listArtifacts(cwd, runId);
 	if (items.length === 0) return;
 	const artifactList = items.map((i) => `  • ${i.stage}: ${handleToString(i.artifact.handle)}`).join("\n");
@@ -98,7 +98,7 @@ export function notifyPartialArtifacts(ctx: RunnerCtx, cwd: string, runId: strin
 }
 
 export async function recordTerminalFailure(
-	ctx: RunnerCtx,
+	ctx: WorkflowHostContext,
 	audit: AuditCtx,
 	args: {
 		status: "failed" | "aborted";
@@ -106,7 +106,7 @@ export async function recordTerminalFailure(
 		notifyLevel: "warning" | "error";
 		errMsg: string;
 	},
-	onFailure?: (ctx: RunnerCtx) => void,
+	onFailure?: (ctx: WorkflowHostContext) => void,
 ): Promise<void> {
 	recordStage(
 		audit.cwd,
@@ -154,11 +154,11 @@ export async function recordTerminalFailure(
  * and state.termination.error.
  */
 export async function recordStopFailure(
-	ctx: RunnerCtx,
+	ctx: WorkflowHostContext,
 	audit: AuditCtx,
 	stop: Exclude<StopSignal, "stop">,
 	errorMessage: string,
-	onFailure?: (ctx: RunnerCtx) => void,
+	onFailure?: (ctx: WorkflowHostContext) => void,
 ): Promise<void> {
 	await recordTerminalFailure(ctx, audit, stopFailureArgs(audit.skill, stop, errorMessage), onFailure);
 }
@@ -214,7 +214,7 @@ function stopFailureArgs(
 	}
 }
 
-export function recordCancellation(ctx: RunnerCtx, audit: AuditCtx): void {
+export function recordCancellation(ctx: WorkflowHostContext, audit: AuditCtx): void {
 	recordStage(
 		audit.cwd,
 		audit.runId,

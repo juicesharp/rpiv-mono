@@ -26,7 +26,7 @@
  *   2. Runner (programmatic embedders) — `./runner/index.js`, `./host.js`
  *      Drive a workflow from outside `/wf`: `runWorkflow`,
  *      `RunWorkflowOptions`, `RunWorkflowResult`. Embedders type their
- *      host handles against `WorkflowHost` / `WorkflowContext` (the host
+ *      host handles against `WorkflowHost` / `WorkflowHostContext` (the host
  *      ports) — Pi's `ExtensionAPI` / `ExtensionCommandContext` /
  *      `ReplacedSessionContext` structurally satisfy them, so the
  *      values pass through without casting.
@@ -97,7 +97,7 @@
  * workflow-owned port in `./host.js`:
  *
  *   • `WorkflowHost`     — registry-level (default export + continue sends)
- *   • `WorkflowContext`  — per-command ctx for `runWorkflow`; also the
+ *   • `WorkflowHostContext`  — per-command ctx for `runWorkflow`; also the
  *                          replacement ctx delivered to `newSession`'s
  *                          `withSession` callback. `sendUserMessage` is
  *                          optional at the type level (the outer command
@@ -165,7 +165,7 @@ export {
 	opaque,
 	url,
 } from "./handle.js";
-export type { WorkflowContext, WorkflowHost } from "./host.js";
+export type { WorkflowHost, WorkflowHostContext, WorkflowSessionContext } from "./host.js";
 export { type LifecycleContext, type LifecycleListeners, registerLifecycle, type StageRef } from "./lifecycle.js";
 export type { ConfigLayer, Issue, LoadedWorkflows, LoadIssue, OverlayPaths } from "./load/index.js";
 export { aliasSkills, loadWorkflows, projectOverlayPaths, userOverlayPaths } from "./load/index.js";
@@ -208,7 +208,13 @@ export type {
 } from "./output.js";
 export { defineCollector, defineParser } from "./output-spec.js";
 export { eq, gt, gte, lt, lte, type Predicate } from "./predicates.js";
-export { type RunWorkflowOptions, type RunWorkflowResult, runWorkflow } from "./runner/index.js";
+export {
+	type RunWorkflowByNameOptions,
+	type RunWorkflowOptions,
+	type RunWorkflowResult,
+	runWorkflow,
+	runWorkflowByName,
+} from "./runner/index.js";
 export {
 	listArtifacts,
 	listRuns,

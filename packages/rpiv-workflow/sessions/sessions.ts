@@ -36,7 +36,7 @@ import {
 } from "../messages.js";
 import type { Output } from "../output.js";
 import { type BranchEntry, classifyStop, readBranch, type StopSignal } from "../transcript.js";
-import type { FanoutSession, RunnerCtx, SessionContext, StageSession } from "../types.js";
+import type { FanoutSession, SessionContext, StageSession, WorkflowHostContext } from "../types.js";
 import { produceAndValidateOutput } from "./extraction.js";
 import { FRESH_HANDLER, handlerFor } from "./spawn.js";
 
@@ -45,14 +45,14 @@ import { FRESH_HANDLER, handlerFor } from "./spawn.js";
 // ===========================================================================
 
 /** Execute one DAG stage in its own session. */
-export async function runStageSession(ctx: RunnerCtx, s: StageSession): Promise<void> {
+export async function runStageSession(ctx: WorkflowHostContext, s: StageSession): Promise<void> {
 	const handler = handlerFor(s.stage.sessionPolicy);
 	const { cancelled } = await handler.spawn(ctx, s.prompt, (sessionCtx) => postStage(sessionCtx, s), s.continueHost);
 	if (cancelled) await recordCancellation(ctx, auditFor(s));
 }
 
 /** Execute one fanout-unit iteration. Always fresh. */
-export async function runFanoutSession(ctx: RunnerCtx, s: FanoutSession): Promise<void> {
+export async function runFanoutSession(ctx: WorkflowHostContext, s: FanoutSession): Promise<void> {
 	const { cancelled } = await FRESH_HANDLER.spawn(ctx, s.prompt, (sessionCtx) => postFanout(sessionCtx, s));
 	if (cancelled) await recordCancellation(ctx, auditFor(s));
 }
@@ -62,7 +62,7 @@ export async function runFanoutSession(ctx: RunnerCtx, s: FanoutSession): Promis
 // ===========================================================================
 
 /** Stage post-processing: classify outcome → produce & validate output → persist → chain. */
-async function postStage(ctx: RunnerCtx, s: StageSession): Promise<void> {
+async function postStage(ctx: WorkflowHostContext, s: StageSession): Promise<void> {
 	const handler = handlerFor(s.stage.sessionPolicy);
 	const offset = handler.branchOffset(s.branchOffset);
 	const outcome = readSessionOutcome(ctx, offset);
@@ -77,7 +77,7 @@ async function postStage(ctx: RunnerCtx, s: StageSession): Promise<void> {
 }
 
 /** Fanout-unit post-processing: classify outcome → persist bare row → chain. */
-async function postFanout(ctx: RunnerCtx, s: FanoutSession): Promise<void> {
+async function postFanout(ctx: WorkflowHostContext, s: FanoutSession): Promise<void> {
 	const outcome = readSessionOutcome(ctx, undefined);
 	if (outcome.stop !== "stop") return haltFanout(ctx, s, outcome.stop);
 
@@ -89,11 +89,11 @@ async function postFanout(ctx: RunnerCtx, s: FanoutSession): Promise<void> {
 // HALT HELPERS — turn a halt reason into the right audit-layer call
 // ===========================================================================
 
-async function haltStage(ctx: RunnerCtx, s: StageSession, stop: Exclude<StopSignal, "stop">): Promise<void> {
+async function haltStage(ctx: WorkflowHostContext, s: StageSession, stop: Exclude<StopSignal, "stop">): Promise<void> {
 	await recordStopFailure(ctx, auditFor(s), stop, `${s.skill} failed`, s.onFailure);
 }
 
-async function haltStageWithExtractionError(ctx: RunnerCtx, s: StageSession, message: string): Promise<void> {
+async function haltStageWithExtractionError(ctx: WorkflowHostContext, s: StageSession, message: string): Promise<void> {
 	await recordTerminalFailure(
 		ctx,
 		auditFor(s),
@@ -102,7 +102,11 @@ async function haltStageWithExtractionError(ctx: RunnerCtx, s: StageSession, mes
 	);
 }
 
-async function haltStageWithValidationFailure(ctx: RunnerCtx, s: StageSession, failureSummary: string): Promise<void> {
+async function haltStageWithValidationFailure(
+	ctx: WorkflowHostContext,
+	s: StageSession,
+	failureSummary: string,
+): Promise<void> {
 	await recordTerminalFailure(
 		ctx,
 		auditFor(s),
@@ -116,7 +120,11 @@ async function haltStageWithValidationFailure(ctx: RunnerCtx, s: StageSession, f
 	);
 }
 
-async function haltFanout(ctx: RunnerCtx, s: FanoutSession, stop: Exclude<StopSignal, "stop">): Promise<void> {
+async function haltFanout(
+	ctx: WorkflowHostContext,
+	s: FanoutSession,
+	stop: Exclude<StopSignal, "stop">,
+): Promise<void> {
 	await recordStopFailure(ctx, auditFor(s), stop, `${s.skill} unit ${s.unitIndex} (${s.label}) failed`);
 }
 
@@ -181,7 +189,7 @@ function maybeAdvancePrimary(s: StageSession, output: Output): void {
  * `state.output` / `state.primaryArtifact` at their prior values and sets
  * `state.termination.error` to halt the run.
  */
-async function recordStageSuccess(ctx: RunnerCtx, s: StageSession, output: Output): Promise<boolean> {
+async function recordStageSuccess(ctx: WorkflowHostContext, s: StageSession, output: Output): Promise<boolean> {
 	if (tryRecordStage(s, { stage: s.stageName, skill: s.skill, output })) {
 		maybeAdvancePrimary(s, output);
 		ctx.ui.notify(MSG_STAGE_COMPLETE(s.skill), "info");
@@ -199,7 +207,7 @@ async function recordStageSuccess(ctx: RunnerCtx, s: StageSession, output: Outpu
 	return false;
 }
 
-async function recordFanoutSuccess(ctx: RunnerCtx, s: FanoutSession): Promise<boolean> {
+async function recordFanoutSuccess(ctx: WorkflowHostContext, s: FanoutSession): Promise<boolean> {
 	const stageLabel = fanoutRowStage(s);
 	if (tryRecordStage(s, { stage: stageLabel, skill: s.skill })) {
 		await s.lifecycle.fire(
@@ -246,7 +254,7 @@ interface SessionOutcome {
  * No longer scans the transcript for an artifact path — discovery is
  * the collector's job, not the runner's.
  */
-function readSessionOutcome(ctx: RunnerCtx, branchOffset: number | undefined): SessionOutcome {
+function readSessionOutcome(ctx: WorkflowHostContext, branchOffset: number | undefined): SessionOutcome {
 	const branch = readBranch(ctx);
 	return {
 		branch,

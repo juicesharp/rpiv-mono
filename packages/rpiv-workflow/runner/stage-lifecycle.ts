@@ -34,7 +34,7 @@ import {
 } from "../messages.js";
 import { runFanoutSession, runStageSession } from "../sessions/index.js";
 import { readBranch } from "../transcript.js";
-import type { RunContext, RunnerCtx } from "../types.js";
+import type { RunContext, WorkflowHostContext } from "../types.js";
 import {
 	DEFAULT_VALIDATION_RETRY_TIMEOUT_MS,
 	MAX_VALIDATION_RETRY_TIMEOUT_MS,
@@ -186,7 +186,12 @@ function formatNamedInputs(names: ReadonlyArray<string>, run: RunContext): strin
  * Each `PreflightCheck` throws `StagePreflightError` on failure;
  * `runStageOrRecordFailure` catches and records the JSONL row.
  */
-export async function runStage(curCtx: RunnerCtx, currentName: string, idx: number, run: RunContext): Promise<void> {
+export async function runStage(
+	curCtx: WorkflowHostContext,
+	currentName: string,
+	idx: number,
+	run: RunContext,
+): Promise<void> {
 	const stage = resolveStage(currentName, idx, run);
 
 	if (await tryFanout(curCtx, stage, idx, run)) return;
@@ -268,7 +273,12 @@ function resolveStage(currentName: string, idx: number, run: RunContext): Resolv
  * FanoutFn. Returns true iff fanout fired (i.e. at least one unit was
  * returned) — caller then returns without running the single-stage path.
  */
-async function tryFanout(curCtx: RunnerCtx, stage: ResolvedStage, idx: number, run: RunContext): Promise<boolean> {
+async function tryFanout(
+	curCtx: WorkflowHostContext,
+	stage: ResolvedStage,
+	idx: number,
+	run: RunContext,
+): Promise<boolean> {
 	if (!stage.def.fanout) return false;
 	const primary = currentPrimaryArtifact(run.state);
 	const units = await stage.def.fanout({
@@ -306,7 +316,12 @@ async function tryFanout(curCtx: RunnerCtx, stage: ResolvedStage, idx: number, r
  * stage-entry primary is frozen and threaded as `entryArtifact` so the
  * generator keeps seeing its true source even as the rolling primary advances.
  */
-async function tryIterate(curCtx: RunnerCtx, stage: ResolvedStage, idx: number, run: RunContext): Promise<boolean> {
+async function tryIterate(
+	curCtx: WorkflowHostContext,
+	stage: ResolvedStage,
+	idx: number,
+	run: RunContext,
+): Promise<boolean> {
 	if (!stage.def.iterate) return false;
 	// Runtime mirror of the load-time invariant — defense-in-depth for embedders
 	// that bypass validateWorkflow. iterate dispatches via runStageSession, which
@@ -341,7 +356,12 @@ async function tryIterate(curCtx: RunnerCtx, stage: ResolvedStage, idx: number, 
  * run-wide `maxIterations` cap. Mirrors `checkBackwardJumpGuard`'s terminal
  * path (chain-advance.ts): attribution targets the iterate node's real name.
  */
-async function haltIterations(curCtx: RunnerCtx, run: RunContext, stageName: string, count: number): Promise<void> {
+async function haltIterations(
+	curCtx: WorkflowHostContext,
+	run: RunContext,
+	stageName: string,
+	count: number,
+): Promise<void> {
 	await recordTerminalFailure(
 		curCtx,
 		{
@@ -466,7 +486,7 @@ function enforceSessionInvariants(stage: ResolvedStage, run: RunContext): void {
 }
 
 /** Entries before this index belong to prior stages; only meaningful for continue. */
-function computeBranchOffset(curCtx: RunnerCtx, def: StageDef): number | undefined {
+function computeBranchOffset(curCtx: WorkflowHostContext, def: StageDef): number | undefined {
 	if (def.sessionPolicy !== "continue") return undefined;
 	return readBranch(curCtx).length;
 }

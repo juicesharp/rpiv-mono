@@ -15,7 +15,7 @@
 
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { it } from "vitest";
-import type { WorkflowContext, WorkflowHost } from "./host.js";
+import type { WorkflowHost, WorkflowHostContext, WorkflowSessionContext } from "./host.js";
 
 // Pi keeps `ReplacedSessionContext` (the withSession parameter type)
 // internal — derive it from `newSession`'s signature so we don't depend
@@ -29,11 +29,17 @@ type PiReplacedSessionContext = WithSessionParam<Parameters<ExtensionCommandCont
 type Satisfies<Concrete, Port> = Concrete extends Port ? true : false;
 
 const _hostOk: Satisfies<ExtensionAPI, WorkflowHost> = true;
-const _cmdOk: Satisfies<ExtensionCommandContext, WorkflowContext> = true;
-const _sessionOk: Satisfies<PiReplacedSessionContext, WorkflowContext> = true;
+const _cmdOk: Satisfies<ExtensionCommandContext, WorkflowHostContext> = true;
+const _sessionOk: Satisfies<PiReplacedSessionContext, WorkflowHostContext> = true;
+// The replacement ctx must satisfy the STRONGER session port: Pi wires a
+// `sendUserMessage` into freshly-opened sessions. If Pi ever drops it from
+// the withSession ctx, this fails — and the `FRESH_HANDLER.spawn` guard we
+// removed would need restoring.
+const _sessionSenderOk: Satisfies<PiReplacedSessionContext, WorkflowSessionContext> = true;
 
 void _hostOk;
 void _cmdOk;
 void _sessionOk;
+void _sessionSenderOk;
 
 it("host ports are structurally satisfied by pi-coding-agent types (see compile-time asserts above)", () => {});

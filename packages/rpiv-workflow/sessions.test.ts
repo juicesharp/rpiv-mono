@@ -9,7 +9,7 @@
  *
  * Wiring strategy: every test allocates a temp cwd (audit writes JSONL there)
  * and feeds runStageSession either a `createMockSessionChain` ctx (fresh path,
- * scripted branch) or a hand-rolled RunnerCtx (continue path, outer branch).
+ * scripted branch) or a hand-rolled WorkflowHostContext (continue path, outer branch).
  * Stage nodes carry custom `outcome` functions that close over an attempt
  * counter — this is how we drive retry-loop scenarios without mutating the
  * mock branch between attempts.
@@ -38,7 +38,7 @@ import type { CollectCtx, OutputSpec } from "./output.js";
 import { runFanoutSession, runStageSession } from "./sessions/index.js";
 import { DEFAULT_TRIGGER } from "./triggers.js";
 import { typeboxSchema } from "./typebox-adapter.js";
-import type { FanoutSession, RunnerCtx, RunState, StageSession } from "./types.js";
+import type { FanoutSession, RunState, StageSession, WorkflowHostContext } from "./types.js";
 
 /** Default test wiring for SessionContext's lifecycle + runIdentity fields. */
 const testLifecycle = () => new LifecycleDispatcher(undefined);
@@ -169,7 +169,7 @@ describe("sessions — validation retry loop", () => {
 		const onSuccess = vi.fn(async () => {});
 
 		await runStageSession(
-			chain.ctx as RunnerCtx,
+			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
 				state,
@@ -193,7 +193,7 @@ describe("sessions — validation retry loop", () => {
 		const onSuccess = vi.fn(async () => {});
 
 		await runStageSession(
-			chain.ctx as RunnerCtx,
+			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
 				state,
@@ -225,7 +225,7 @@ describe("sessions — validation retry loop", () => {
 		const onFailure = vi.fn();
 
 		await runStageSession(
-			chain.ctx as RunnerCtx,
+			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
 				state,
@@ -255,7 +255,7 @@ describe("sessions — validation retry loop", () => {
 		const outcome = scriptedOutcome([okPayload({ foo: 1 })]);
 
 		await runStageSession(
-			chain.ctx as RunnerCtx,
+			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
 				state: freshRunState(),
@@ -284,7 +284,7 @@ describe("sessions — validation retry loop", () => {
 		const onFailure = vi.fn();
 
 		await runStageSession(
-			chain.ctx as RunnerCtx,
+			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
 				state: freshRunState(),
@@ -343,7 +343,7 @@ describe("sessions — validation retry loop", () => {
 		);
 
 		await runStageSession(
-			chain.ctx as RunnerCtx,
+			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
 				state,
@@ -372,7 +372,7 @@ describe("sessions — validation retry loop", () => {
 		const onFailure = vi.fn();
 
 		await runStageSession(
-			chain.ctx as RunnerCtx,
+			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
 				state,
@@ -405,7 +405,7 @@ describe("sessions — validation retry loop", () => {
 		});
 
 		await runStageSession(
-			chain.ctx as RunnerCtx,
+			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
 				state: freshRunState(),
@@ -450,7 +450,7 @@ describe("sessions — validation retry loop", () => {
 		};
 
 		await runStageSession(
-			chain.ctx as RunnerCtx,
+			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
 				state,
@@ -488,7 +488,7 @@ describe("sessions — validation retry loop", () => {
 		};
 
 		await runStageSession(
-			chain.ctx as RunnerCtx,
+			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
 				state,
@@ -536,7 +536,7 @@ describe("sessions — validation retry loop", () => {
 		};
 
 		await runStageSession(
-			chain.ctx as RunnerCtx,
+			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
 				state,
@@ -579,7 +579,7 @@ describe("sessions — outcome resolution", () => {
 		const explicit = scriptedOutcome([okPayload({ tag: "explicit" })]);
 
 		await runStageSession(
-			chain.ctx as RunnerCtx,
+			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
 				state: freshRunState(),
@@ -601,7 +601,7 @@ describe("sessions — outcome resolution", () => {
 		// runner's defense-in-depth throw must surface.
 		await expect(
 			runStageSession(
-				chain.ctx as RunnerCtx,
+				chain.ctx as WorkflowHostContext,
 				stageSession({
 					cwd: tmpDir,
 					state: freshRunState(),
@@ -621,7 +621,7 @@ describe("sessions — outcome resolution", () => {
 		const onSuccess = vi.fn(async () => {});
 
 		await runStageSession(
-			chain.ctx as RunnerCtx,
+			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
 				state,
@@ -649,7 +649,7 @@ describe("sessions — outcome resolution", () => {
 		const onSuccess = vi.fn(async () => {});
 
 		await runStageSession(
-			chain.ctx as RunnerCtx,
+			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
 				state,
@@ -728,7 +728,7 @@ describe("sessions — collector ctx (always-unsliced branch + policy-derived of
 		});
 
 		await runStageSession(
-			chain.ctx as RunnerCtx,
+			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
 				state: freshRunState(),
@@ -769,7 +769,7 @@ describe("sessions — collector ctx (always-unsliced branch + policy-derived of
 		});
 
 		await runStageSession(
-			chain.ctx as RunnerCtx,
+			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
 				state: freshRunState(),
@@ -800,7 +800,7 @@ describe("sessions — collector ctx (always-unsliced branch + policy-derived of
 		const chain = createMockSessionChain({ cwd: tmpDir, steps: [{ branch }] });
 
 		await runStageSession(
-			chain.ctx as RunnerCtx,
+			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
 				state: freshRunState(),
@@ -842,7 +842,7 @@ describe("sessions — spawn primitive", () => {
 		});
 
 		await runStageSession(
-			chain.ctx as RunnerCtx,
+			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
 				state: freshRunState(),
@@ -867,7 +867,7 @@ describe("sessions — spawn primitive", () => {
 		const onSuccess = vi.fn(async () => {});
 
 		await runStageSession(
-			chain.ctx as RunnerCtx,
+			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
 				state,
@@ -896,7 +896,7 @@ describe("sessions — spawn primitive", () => {
 		const onFailure = vi.fn();
 
 		await runStageSession(
-			chain.ctx as RunnerCtx,
+			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
 				state: freshRunState(),
@@ -941,7 +941,7 @@ describe("sessions — success persistence", () => {
 		// input.
 		const recorded = ".rpiv/artifacts/research/from-collector.md";
 		await runStageSession(
-			chain.ctx as RunnerCtx,
+			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
 				state,
@@ -973,7 +973,7 @@ describe("sessions — success persistence", () => {
 		const path = ".rpiv/artifacts/research/r.md";
 
 		await runStageSession(
-			chain.ctx as RunnerCtx,
+			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
 				state,
@@ -1003,7 +1003,7 @@ describe("sessions — success persistence", () => {
 		const state = freshRunState();
 
 		await runStageSession(
-			chain.ctx as RunnerCtx,
+			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
 				state,
@@ -1038,7 +1038,7 @@ describe("sessions — success persistence", () => {
 			onSuccess,
 		};
 
-		await runFanoutSession(chain.ctx as RunnerCtx, phase);
+		await runFanoutSession(chain.ctx as WorkflowHostContext, phase);
 
 		expect(onSuccess).toHaveBeenCalledTimes(1);
 		const rows = readStageRows(tmpDir);
@@ -1071,7 +1071,7 @@ describe("sessions — success persistence", () => {
 			onSuccess,
 		};
 
-		await runFanoutSession(chain.ctx as RunnerCtx, phase);
+		await runFanoutSession(chain.ctx as WorkflowHostContext, phase);
 
 		expect(onSuccess).not.toHaveBeenCalled();
 		const rows = readStageRows(tmpDir);
@@ -1102,7 +1102,7 @@ describe("sessions — halt routing", () => {
 		const onFailure = vi.fn();
 
 		await runStageSession(
-			chain.ctx as RunnerCtx,
+			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
 				state,
@@ -1124,7 +1124,7 @@ describe("sessions — halt routing", () => {
 		const onFailure = vi.fn();
 
 		await runStageSession(
-			chain.ctx as RunnerCtx,
+			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
 				state,
@@ -1148,7 +1148,7 @@ describe("sessions — halt routing", () => {
 		const onFailure = vi.fn();
 
 		await runStageSession(
-			chain.ctx as RunnerCtx,
+			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
 				state,

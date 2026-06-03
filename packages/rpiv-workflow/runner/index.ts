@@ -4,4 +4,5 @@
  * re-exports only the symbols the package itself needs to publish.
  */
 
+export { type RunWorkflowByNameOptions, runWorkflowByName } from "./by-name.js";
 export { MAX_BACKWARD_JUMPS, type RunWorkflowOptions, type RunWorkflowResult, runWorkflow } from "./runner.js";

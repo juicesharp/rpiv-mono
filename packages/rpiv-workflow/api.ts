@@ -191,7 +191,7 @@ export type IterateUnit = FanoutUnit;
  * read-only state snapshot.
  *
  * Script stages cannot fanout, cannot use `sessionPolicy: "continue"`,
- * and do not receive a Pi `RunnerCtx` — they're pure TS calls.
+ * and do not receive a Pi `WorkflowHostContext` — they're pure TS calls.
  */
 export interface ScriptContext {
 	cwd: string;

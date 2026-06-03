@@ -11,7 +11,7 @@
 
 import type { SessionPolicy } from "../api.js";
 import type { WorkflowHost } from "../host.js";
-import type { RunnerCtx } from "../types.js";
+import type { WorkflowHostContext } from "../types.js";
 
 /**
  * Three policy-specific decisions that used to live as five ternaries
@@ -42,22 +42,21 @@ import type { RunnerCtx } from "../types.js";
 export interface SessionPolicyHandler {
 	branchOffset(capturedOffset: number | undefined): number | undefined;
 	spawn(
-		ctx: RunnerCtx,
+		ctx: WorkflowHostContext,
 		prompt: string,
-		body: (sessionCtx: RunnerCtx) => Promise<void>,
+		body: (sessionCtx: WorkflowHostContext) => Promise<void>,
 		host?: WorkflowHost,
 	): Promise<{ cancelled: boolean }>;
-	send(ctx: RunnerCtx, msg: string, host?: WorkflowHost): Promise<void>;
+	send(ctx: WorkflowHostContext, msg: string, host?: WorkflowHost): Promise<void>;
 }
 
 export const FRESH_HANDLER: SessionPolicyHandler = {
 	branchOffset: () => undefined,
 	async spawn(ctx, prompt, body) {
 		const { cancelled } = await ctx.newSession({
+			// `freshCtx` is a `WorkflowSessionContext` — the port guarantees
+			// `sendUserMessage` on the replacement ctx, so no runtime guard.
 			withSession: async (freshCtx) => {
-				if (!freshCtx.sendUserMessage) {
-					throw new Error("FRESH_HANDLER.spawn: replacement ctx missing sendUserMessage");
-				}
 				await freshCtx.sendUserMessage(prompt);
 				await body(freshCtx);
 			},
@@ -65,9 +64,10 @@ export const FRESH_HANDLER: SessionPolicyHandler = {
 		return { cancelled };
 	},
 	async send(ctx, msg) {
-		// Inside fresh-policy stages, ctx is the replacement delivered to
-		// `withSession` — Pi guarantees `sendUserMessage` is present there.
-		// The port marks it optional because the outer command ctx lacks it.
+		// At runtime ctx is the in-session replacement (a
+		// `WorkflowSessionContext`), but the shared `SessionPolicyHandler`
+		// types it as the base `WorkflowHostContext` (continue's send may run
+		// on the senderless start ctx), so this seam keeps a defensive guard.
 		if (!ctx.sendUserMessage) {
 			throw new Error("FRESH_HANDLER.send: replacement ctx missing sendUserMessage");
 		}
@@ -116,7 +116,11 @@ export const CONTINUE_HANDLER: SessionPolicyHandler = {
  * `enforceSessionInvariants` should have rejected the workflow before
  * we land here.
  */
-async function sendIntoExistingSession(ctx: RunnerCtx, host: WorkflowHost | undefined, msg: string): Promise<void> {
+async function sendIntoExistingSession(
+	ctx: WorkflowHostContext,
+	host: WorkflowHost | undefined,
+	msg: string,
+): Promise<void> {
 	if (ctx.sendUserMessage) {
 		await ctx.sendUserMessage(msg);
 		return;
