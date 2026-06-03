@@ -1,8 +1,11 @@
 ## [Unreleased]
 
+### Added
+- `modelKey` and `parseModelKey` are now exported from `@juicesharp/rpiv-config` (consolidated out of `rpiv-advisor`) so all consumers share one model-key codec.
+
 ### Changed
-- parseModelKey now accepts BOTH `provider/modelId` (canonical slash form) AND `provider:modelId` (legacy colon form) — slash preferred when both separators are present. Consumers persisting colon-form keys auto-migrate on the next save by any consumer that re-serialises via `modelKey`.
-- `modelKey()` now emits only the canonical slash form (`provider/modelId`). Previously emitted `provider:modelId`. Paired with the tolerant read above, this is non-breaking on the read side — but persisted output flips to slash form on every consumer's next write.
+- `parseModelKey` now accepts both `provider/modelId` (canonical slash form) and `provider:modelId` (legacy colon form), preferring slash when both separators are present.
+- `modelKey()` now emits only the canonical slash form (`provider/modelId`); it previously emitted `provider:modelId`. Paired with the tolerant read, persisted colon-form keys auto-migrate to slash on the next save by any consumer that re-serialises through the codec.
 
 ## [1.17.1] - 2026-06-01
 

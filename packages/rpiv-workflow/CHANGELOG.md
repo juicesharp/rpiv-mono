@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Added
+- `runWorkflowByName` — one-shot helper that loads, finds, and runs a workflow by name: refuses on error-severity load issues and returns a failure envelope (never throws) when the name is unknown.
+- New exported types `WorkflowHostContext`, `WorkflowSessionContext`, and `RunWorkflowByNameOptions`.
+
+### Changed
+- The workflow host-context type is unified under a single `WorkflowHostContext` port (re-exported from the package entry) and threaded through the runner, sessions, fanout, lifecycle, and `/wf` layers.
+
+### Breaking / Upgrade Notes
+- The exported `WorkflowContext` type is renamed to `WorkflowHostContext`. Update embedders that type host handles against `WorkflowContext`.
+
 ## [1.17.1] - 2026-06-01
 
 ## [1.17.0] - 2026-06-01

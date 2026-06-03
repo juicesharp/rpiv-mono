@@ -7,6 +7,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- Persisted model keys now use the canonical `provider/modelId` (slash) form; legacy `provider:modelId` (colon) entries are still read and matched, and configs auto-migrate to slash form on the next `/advisor` save. Rollback caveat: rolling back across this release without first re-running `/advisor` can silently disable the advisor, since the older key parser is colon-strict.
+
 ## [1.17.1] - 2026-06-01
 
 ## [1.17.0] - 2026-06-01
