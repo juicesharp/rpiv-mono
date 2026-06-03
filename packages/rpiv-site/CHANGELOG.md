@@ -7,8 +7,13 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- New "Right-size the model" guide: per-skill, per-stage, per-preset-stage, and per-agent model and reasoning-effort overrides via `/rpiv-models`.
+- Release notes blog post for v1.18.0.
+
 ### Changed
 - Add release notes blog post for v1.16 → v1.17.
+- Update the workflow guides for the v1.18 release: the `/wf @<run-id>` resume verb, resume from a mid-fanout or mid-iterate death, the `runWorkflowByName` / `resumeWorkflowByRunId` helpers and `AbortSignal` cancellation, the typed `STOP` sentinel, the `IterateFn` / `FanoutFn` determinism contract, and the corrected five-workflow (`polish`) count.
 
 ### Fixed
 - Code blocks in the v1.16 → v1.17 release notes post no longer cause horizontal scroll.
