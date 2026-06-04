@@ -22,8 +22,10 @@ export interface SiblingPlugin {
 export const SIBLINGS: readonly SiblingPlugin[] = [
 	{
 		pkg: "npm:@tintinweb/pi-subagents",
-		matches: /@tintinweb\/pi-subagents/i,
-		provides: "Agent / get_subagent_result / steer_subagent tools",
+		// Detect both the upstream tintinweb fork and the API-compatible
+		// @gotgenes fork; pkg stays upstream so /rpiv-setup installs that.
+		matches: /@(tintinweb|gotgenes)\/pi-subagents(?![-\w])/i,
+		provides: "Agent / get_subagent_result / steer_subagent tools (tintinweb or gotgenes fork)",
 	},
 	{
 		pkg: "npm:@juicesharp/rpiv-ask-user-question",

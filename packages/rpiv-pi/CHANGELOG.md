@@ -7,6 +7,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- Sibling detection now recognizes the API-compatible `@gotgenes/pi-subagents` fork (same `subagent` / `get_subagent_result` / `steer_subagent` tool surface), so users running it no longer see a false "1 sibling extension missing" banner on `session_start`. Detection-only change: `pkg` stays `npm:@tintinweb/pi-subagents`, so `/rpiv-setup` still installs the upstream fork by default, and the `LEGACY_SIBLINGS` prune leaves the scoped `@gotgenes` namespace untouched. The widened regex adds a `(?![-\w])` word boundary to avoid over-matching a hypothetical `@scope/pi-subagents-*` variant.
+
 ## [1.18.0] - 2026-06-04
 
 ### Added
