@@ -1,24 +1,18 @@
 import { flushTraces, init } from "@mlflow/core";
 import { type MlflowConfig, resolveMlflowConfig } from "../../config.js";
 import type { TelemetryEvent } from "../../types/events.js";
-import type { TelemetryProvider, TelemetryProviderMeta } from "../../types/provider.js";
+import type { TelemetryProvider } from "../../types/provider.js";
 import { onAttributeEvent } from "./attribute-events.js";
 import { onLlmRequestEnd, onLlmRequestStart, onMessageEnd } from "./llm-spans.js";
+import { MLFLOW_PROVIDER_META } from "./meta.js";
 import { onSessionShutdown } from "./session-shutdown.js";
 import { MlflowSpanRegistry } from "./span-registry.js";
 import { onSubAgentEvent } from "./subagent-spans.js";
 import { onToolExecutionEnd, onToolExecutionStart } from "./tool-spans.js";
 import { onAgentEnd, onAgentStart } from "./turn-spans.js";
 
-// ---------------------------------------------------------------------------
-// Provider metadata
-// ---------------------------------------------------------------------------
-
-export const MLFLOW_PROVIDER_META: TelemetryProviderMeta = {
-	name: "mlflow",
-	label: "MLflow",
-	envVars: ["MLFLOW_TRACKING_URI", "MLFLOW_EXPERIMENT_ID", "MLFLOW_TRACKING_TOKEN"],
-};
+// META lives in ./meta.js (no @mlflow/core); re-exported to keep the import surface.
+export { MLFLOW_PROVIDER_META } from "./meta.js";
 
 // ---------------------------------------------------------------------------
 // MlflowProvider — per-turn traces with nested tool + llm-request spans
