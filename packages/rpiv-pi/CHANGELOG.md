@@ -5,7 +5,7 @@ All notable changes to `@juicesharp/rpiv-pi` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.18.0] - 2026-06-04
 
 ### Added
 - Per-agent and per-stage model/effort configuration via `~/.config/rpiv-pi/models.json`. Configured agents have `model`/`thinking` frontmatter injected at sync time; workflow stages have `setModel`/`setThinkingLevel` applied via lifecycle listeners. Supports `defaults` cascade into both agents and stages. 5-value ThinkingLevel vocabulary (`minimal|low|medium|high|xhigh`); "off" is rejected with a warning.

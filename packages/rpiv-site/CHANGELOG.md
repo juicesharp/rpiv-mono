@@ -5,7 +5,7 @@ All notable changes to `@juicesharp/rpiv-site` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.18.0] - 2026-06-04
 
 ### Added
 - New "Right-size the model" guide: per-skill, per-stage, per-preset-stage, and per-agent model and reasoning-effort overrides via `/rpiv-models`.

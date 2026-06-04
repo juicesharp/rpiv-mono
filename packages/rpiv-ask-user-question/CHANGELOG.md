@@ -5,7 +5,7 @@ All notable changes to `@juicesharp/rpiv-ask-user-question` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.18.0] - 2026-06-04
 
 ### Changed
 - The questionnaire view/render graph (TUI components, preview, markdown) now loads lazily on the first `ask_user_question` invocation instead of at extension registration, cutting the extension's session-start load cost (~227ms → ~58ms).

@@ -5,7 +5,7 @@ All notable changes to `@juicesharp/rpiv-telemetry` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.18.0] - 2026-06-04
 
 ### Changed
 - `@mlflow/core` now loads lazily — only when an MLflow provider is configured. `pi.extensions` points at a thin `extension.ts` so loading the extension no longer evaluates the MLflow provider (the heavy SDK, ~325ms); a session without MLflow telemetry never pays that cost. The package barrel remains the embedder API.

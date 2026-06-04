@@ -1,4 +1,4 @@
-## [Unreleased]
+## [1.18.0] - 2026-06-04
 
 ### Added
 - `modelKey` and `parseModelKey` are now exported from `@juicesharp/rpiv-config` (consolidated out of `rpiv-advisor`) so all consumers share one model-key codec.

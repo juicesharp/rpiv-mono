@@ -5,7 +5,7 @@ All notable changes to `@juicesharp/rpiv-advisor` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.18.0] - 2026-06-04
 
 ### Changed
 - Persisted model keys now use the canonical `provider/modelId` (slash) form; legacy `provider:modelId` (colon) entries are still read and matched, and configs auto-migrate to slash form on the next `/advisor` save. Rollback caveat: rolling back across this release without first re-running `/advisor` can silently disable the advisor, since the older key parser is colon-strict.

@@ -1,6 +1,6 @@
 # @juicesharp/rpiv-workflow
 
-## [Unreleased]
+## [1.18.0] - 2026-06-04
 
 ### Added
 - `runWorkflowByName` — one-shot helper that loads, finds, and runs a workflow by name: refuses on error-severity load issues and returns a failure envelope (never throws) when the name is unknown.
