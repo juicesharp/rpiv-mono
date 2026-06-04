@@ -102,6 +102,26 @@ describe("showFilterablePicker — keyboard flow", () => {
 		expect(r).toBe("openai/gpt");
 	});
 
+	it("escHint customizes the nav hint wording (defaults to 'cancel')", async () => {
+		const renders: string[] = [];
+		const { custom } = driveCustom<string | null>((c, done) => {
+			renders.push(c.render(80).join("\n"));
+			done(null);
+		});
+		const ctx = { ui: { custom } } as never;
+		await showFilterablePicker(ctx, { ...baseOpts, escHint: "back" });
+		expect(renders[0]).toContain("esc back");
+		expect(renders[0]).not.toContain("esc cancel");
+
+		const renders2: string[] = [];
+		const { custom: custom2 } = driveCustom<string | null>((c, done) => {
+			renders2.push(c.render(80).join("\n"));
+			done(null);
+		});
+		await showFilterablePicker({ ui: { custom: custom2 } } as never, baseOpts);
+		expect(renders2[0]).toContain("esc cancel");
+	});
+
 	it("handleInput triggers tui.requestRender and render()/invalidate() are callable", async () => {
 		const { custom, requestRender } = driveCustom<string | null>((c, done) => {
 			expect(() => c.render(80)).not.toThrow();

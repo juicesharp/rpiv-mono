@@ -2,9 +2,13 @@
  * rpiv-models/overrides — Scope descriptor table for models.json override CRUD.
  *
  * Each scope (defaults, agents, stages, skills, presets) is modeled as a
- * ScopeDescriptor with has/get/remove/apply/pickKey accessors. This eliminates
- * repeated `as Record<string, unknown>` casts and inline four-branch key-picker
- * blocks from the command handler.
+ * ScopeDescriptor with has/get/remove/apply accessors plus an ordered list of
+ * keySteps. This eliminates repeated `as Record<string, unknown>` casts and
+ * inline four-branch key-picker blocks from the command handler.
+ *
+ * Key selection is decomposed into one KeyStep per path segment so the cascade
+ * stepper can navigate exactly one level up on ESC — even through multi-segment
+ * scopes like presets (workflow → stage).
  *
  * Modeled on the Record<X, Meta> descriptor-table pattern (cf.
  * rpiv-ask-user-question/state/row-intent.ts:72-115).
@@ -58,6 +62,86 @@ export interface OverrideEntry {
 	thinking?: ModelThinkingLevelValue;
 }
 
+/** On-disk override-entry leaf: `string | { model?, thinking? }` (ModelEntrySchema). */
+type ModelEntryValue = NonNullable<ModelsConfigSchema["defaults"]>;
+
+/**
+ * Codec for the override-entry leaf — the one place its on-disk shape is read or
+ * written. An entry is a bare model string when there's no thinking override,
+ * else a { model, thinking } object. Every descriptor's applyOverride routes
+ * through `encodeEntry`, and every getCurrentKey through `entryModel`.
+ */
+export function encodeEntry(entry: OverrideEntry): ModelEntryValue {
+	return entry.thinking ? { model: entry.model, thinking: entry.thinking } : entry.model;
+}
+
+/** Read the model key out of a stored entry (string or { model, thinking }). */
+export function entryModel(entry: unknown): string | undefined {
+	if (typeof entry === "string") return entry;
+	if (entry && typeof entry === "object") return (entry as { model?: string }).model;
+	return undefined;
+}
+
+/**
+ * Outcome of one key-selection sub-step:
+ *   - value: the chosen path segment
+ *   - back:  user pressed ESC — the stepper moves one level up
+ *   - abort: an error was already surfaced via notify — the stepper exits
+ */
+export type KeyStepResult = { kind: "value"; value: string } | { kind: "back" } | { kind: "abort" };
+
+/**
+ * One key-selection sub-step (one path segment). `prior` holds the segments
+ * already chosen to the left (e.g. [workflow] when picking a preset stage);
+ * `preselect` is the previously-chosen value for this segment, used to
+ * re-highlight the row when the user navigates back into the step.
+ */
+export interface KeyStep {
+	run(
+		ctx: ExtensionContext,
+		raw: ModelsConfigSchema,
+		prior: string[],
+		pi: ExtensionAPI,
+		preselect: string | undefined,
+	): Promise<KeyStepResult>;
+}
+
+const STEP_BACK: KeyStepResult = { kind: "back" };
+const STEP_ABORT: KeyStepResult = { kind: "abort" };
+
+/**
+ * Show a key-selection picker over `names` (✓-decorated + floated via `has`) and
+ * map the result to a KeyStepResult — the shared tail of every key step. ESC →
+ * back, since key steps are always inner cascade levels.
+ */
+async function pickKey(
+	ctx: ExtensionContext,
+	title: string,
+	prose: string,
+	names: string[],
+	has: (name: string) => boolean,
+	preselect: string | undefined,
+): Promise<KeyStepResult> {
+	const picked = await showFilterablePicker(ctx, {
+		title,
+		proseLines: [prose],
+		items: keyItems(names, has),
+		preferredValue: preselect,
+		escHint: "back",
+	});
+	return picked == null ? STEP_BACK : { kind: "value", value: picked };
+}
+
+/** Load the workflow map, or notify + return null (caller returns STEP_ABORT). */
+async function workflowMapOrNull(ctx: ExtensionContext): Promise<Record<string, string[]> | null> {
+	try {
+		return await loadWorkflowMap(ctx.cwd);
+	} catch {
+		ctx.ui.notify(MSG_NO_WORKFLOWS, "error");
+		return null;
+	}
+}
+
 /**
  * Per-scope descriptor: each scope in the models.json taxonomy is modeled as
  * one entry with CRUD + interactive key-picker accessors. This replaces the
@@ -75,26 +159,27 @@ export interface ScopeDescriptor {
 	/** Apply an override entry at the given scope+keyPath. */
 	applyOverride(config: ModelsConfigSchema, keyPath: string[], entry: OverrideEntry): ModelsConfigSchema;
 	/**
-	 * Interactive key picker for this scope. Returns the keyPath array, or null
-	 * if the user cancelled. Defaults returns []; flat-maps return [key];
-	 * presets returns [workflow, stage].
+	 * Ordered key-selection sub-steps. Empty for `defaults`; one step for the
+	 * flat-map scopes (agents/stages/skills); two for `presets` (workflow →
+	 * stage). One step per segment lets the cascade stepper move exactly one
+	 * level up on ESC.
 	 */
-	pickKey(ctx: ExtensionContext, raw: ModelsConfigSchema, pi: ExtensionAPI): Promise<string[] | null>;
+	keySteps: KeyStep[];
 }
 
 // ---------------------------------------------------------------------------
 // Flat-map descriptor factory (agents, stages, skills)
 // ---------------------------------------------------------------------------
 
-/** Error message for missing workflows — shared by stages and presets pickKey. */
+/** Error message for missing workflows — shared by stages and presets key steps. */
 const MSG_NO_WORKFLOWS = "No workflows discovered; install rpiv-workflow or define a workflow first.";
 
 /**
  * Factory for the three structurally-identical flat-map scopes. Each accesses
  * `raw[scope]` as a typed optional record — no casts needed since the closure
- * captures the literal scope key.
+ * captures the literal scope key. Each takes a single key step (one segment).
  */
-function flatMapScope(scope: "agents" | "stages" | "skills", pickKey: ScopeDescriptor["pickKey"]): ScopeDescriptor {
+function flatMapScope(scope: "agents" | "stages" | "skills", keyStep: KeyStep): ScopeDescriptor {
 	return {
 		hasOverride(raw) {
 			const map = raw[scope];
@@ -105,12 +190,7 @@ function flatMapScope(scope: "agents" | "stages" | "skills", pickKey: ScopeDescr
 			return !!map && keyPath[0] in map;
 		},
 		getCurrentKey(raw, keyPath) {
-			const map = raw[scope];
-			if (!map) return undefined;
-			const entry = map[keyPath[0]];
-			if (typeof entry === "string") return entry;
-			if (entry && typeof entry === "object") return entry.model;
-			return undefined;
+			return entryModel(raw[scope]?.[keyPath[0]]);
 		},
 		removeOverride(config, keyPath) {
 			const next: ModelsConfigSchema = { ...config };
@@ -126,11 +206,11 @@ function flatMapScope(scope: "agents" | "stages" | "skills", pickKey: ScopeDescr
 			const next: ModelsConfigSchema = { ...config };
 			const target = next[scope];
 			const updated = { ...(target ?? {}) };
-			updated[keyPath[0]] = entry.thinking ? { model: entry.model, thinking: entry.thinking } : entry.model;
+			updated[keyPath[0]] = encodeEntry(entry);
 			next[scope] = updated;
 			return next;
 		},
-		pickKey,
+		keySteps: [keyStep],
 	};
 }
 
@@ -146,10 +226,7 @@ const defaultsDescriptor: ScopeDescriptor = {
 		return raw.defaults !== undefined;
 	},
 	getCurrentKey(raw) {
-		const entry = raw.defaults;
-		if (typeof entry === "string") return entry;
-		if (entry && typeof entry === "object") return entry.model;
-		return undefined;
+		return entryModel(raw.defaults);
 	},
 	removeOverride(config) {
 		const next: ModelsConfigSchema = { ...config };
@@ -159,61 +236,52 @@ const defaultsDescriptor: ScopeDescriptor = {
 	},
 	applyOverride(config, _keyPath, entry) {
 		const next: ModelsConfigSchema = { ...config };
-		next.defaults = entry.thinking ? { model: entry.model, thinking: entry.thinking } : entry.model;
+		next.defaults = encodeEntry(entry);
 		return next;
 	},
-	async pickKey() {
-		return [];
-	},
+	keySteps: [],
 };
 
-const agentsDescriptor: ScopeDescriptor = flatMapScope(SCOPE_AGENTS, async (ctx, raw) => {
-	const items = keyItems(bundledAgentNames(), (n) => agentsDescriptor.keyHasOverride(raw, [n]));
-	if (items.length === 0) {
-		ctx.ui.notify("No bundled agents found.", "error");
-		return null;
-	}
-	const picked = await showFilterablePicker(ctx, {
-		title: "Agent",
-		proseLines: ["Select agent."],
-		items,
-	});
-	return picked ? [picked] : null;
+const agentsDescriptor: ScopeDescriptor = flatMapScope(SCOPE_AGENTS, {
+	async run(ctx, raw, _prior, _pi, preselect) {
+		const names = bundledAgentNames();
+		if (names.length === 0) {
+			ctx.ui.notify("No bundled agents found.", "error");
+			return STEP_ABORT;
+		}
+		return pickKey(ctx, "Agent", "Select agent.", names, (n) => agentsDescriptor.keyHasOverride(raw, [n]), preselect);
+	},
 });
 
-const stagesDescriptor: ScopeDescriptor = flatMapScope(SCOPE_STAGES, async (ctx, raw) => {
-	let wfMap: Record<string, string[]>;
-	try {
-		wfMap = await loadWorkflowMap(ctx.cwd);
-	} catch {
-		ctx.ui.notify(MSG_NO_WORKFLOWS, "error");
-		return null;
-	}
-	const stages = Array.from(new Set(Object.values(wfMap).flat())).sort();
-	if (stages.length === 0) {
-		ctx.ui.notify(MSG_NO_WORKFLOWS, "error");
-		return null;
-	}
-	const picked = await showFilterablePicker(ctx, {
-		title: "Stage",
-		proseLines: ["Select stage."],
-		items: keyItems(stages, (s) => stagesDescriptor.keyHasOverride(raw, [s])),
-	});
-	return picked ? [picked] : null;
+const stagesDescriptor: ScopeDescriptor = flatMapScope(SCOPE_STAGES, {
+	async run(ctx, raw, _prior, _pi, preselect) {
+		const wfMap = await workflowMapOrNull(ctx);
+		if (!wfMap) return STEP_ABORT;
+		const stages = Array.from(new Set(Object.values(wfMap).flat())).sort();
+		if (stages.length === 0) {
+			ctx.ui.notify(MSG_NO_WORKFLOWS, "error");
+			return STEP_ABORT;
+		}
+		return pickKey(
+			ctx,
+			"Stage",
+			"Select stage.",
+			stages,
+			(s) => stagesDescriptor.keyHasOverride(raw, [s]),
+			preselect,
+		);
+	},
 });
 
-const skillsDescriptor: ScopeDescriptor = flatMapScope(SCOPE_SKILLS, async (ctx, raw, pi) => {
-	const names = skillCommandNames(pi);
-	if (names.length === 0) {
-		ctx.ui.notify("No skills registered; install or enable an extension that contributes skills.", "error");
-		return null;
-	}
-	const picked = await showFilterablePicker(ctx, {
-		title: "Skill",
-		proseLines: ["Select skill."],
-		items: keyItems(names, (n) => skillsDescriptor.keyHasOverride(raw, [n])),
-	});
-	return picked ? [picked] : null;
+const skillsDescriptor: ScopeDescriptor = flatMapScope(SCOPE_SKILLS, {
+	async run(ctx, raw, _prior, pi, preselect) {
+		const names = skillCommandNames(pi);
+		if (names.length === 0) {
+			ctx.ui.notify("No skills registered; install or enable an extension that contributes skills.", "error");
+			return STEP_ABORT;
+		}
+		return pickKey(ctx, "Skill", "Select skill.", names, (n) => skillsDescriptor.keyHasOverride(raw, [n]), preselect);
+	},
 });
 
 const presetsDescriptor: ScopeDescriptor = {
@@ -231,10 +299,7 @@ const presetsDescriptor: ScopeDescriptor = {
 	},
 	getCurrentKey(raw, keyPath) {
 		const [wf, stage] = keyPath;
-		const entry = raw.presets?.[wf]?.stages?.[stage];
-		if (typeof entry === "string") return entry;
-		if (entry && typeof entry === "object") return entry.model;
-		return undefined;
+		return entryModel(raw.presets?.[wf]?.stages?.[stage]);
 	},
 	removeOverride(config, keyPath) {
 		const next: ModelsConfigSchema = { ...config };
@@ -261,44 +326,43 @@ const presetsDescriptor: ScopeDescriptor = {
 		const presets = { ...(next.presets ?? {}) };
 		const presetBlock = { ...(presets[wf] ?? {}) };
 		const stages = { ...(presetBlock.stages ?? {}) };
-		stages[stage] = entry.thinking ? { model: entry.model, thinking: entry.thinking } : entry.model;
+		stages[stage] = encodeEntry(entry);
 		presetBlock.stages = stages;
 		presets[wf] = presetBlock;
 		next.presets = presets;
 		return next;
 	},
-	async pickKey(ctx, raw) {
-		let wfMap: Record<string, string[]>;
-		try {
-			wfMap = await loadWorkflowMap(ctx.cwd);
-		} catch {
-			ctx.ui.notify(MSG_NO_WORKFLOWS, "error");
-			return null;
-		}
-		const wfNames = Object.keys(wfMap).sort();
-		if (wfNames.length === 0) {
-			ctx.ui.notify(MSG_NO_WORKFLOWS, "error");
-			return null;
-		}
-		const wf = await showFilterablePicker(ctx, {
-			title: "Workflow",
-			proseLines: ["Select workflow."],
-			items: keyItems(wfNames, (n) => presetsDescriptor.keyHasOverride(raw, [n])),
-		});
-		if (!wf) return null;
-		const stages = wfMap[wf] ?? [];
-		if (stages.length === 0) {
-			ctx.ui.notify(`Workflow "${wf}" has no stages.`, "error");
-			return null;
-		}
-		const stage = await showFilterablePicker(ctx, {
-			title: `Stage — ${wf}`,
-			proseLines: ["Select stage."],
-			items: keyItems(stages, (s) => presetsDescriptor.keyHasOverride(raw, [wf, s])),
-		});
-		if (!stage) return null;
-		return [wf, stage];
-	},
+	keySteps: [
+		// Segment 0 — workflow.
+		{
+			async run(ctx, raw, _prior, _pi, preselect) {
+				const wfMap = await workflowMapOrNull(ctx);
+				if (!wfMap) return STEP_ABORT;
+				const wfNames = Object.keys(wfMap).sort();
+				if (wfNames.length === 0) {
+					ctx.ui.notify(MSG_NO_WORKFLOWS, "error");
+					return STEP_ABORT;
+				}
+				const has = (n: string) => presetsDescriptor.keyHasOverride(raw, [n]);
+				return pickKey(ctx, "Workflow", "Select workflow.", wfNames, has, preselect);
+			},
+		},
+		// Segment 1 — stage within the chosen workflow (prior[0]).
+		{
+			async run(ctx, raw, prior, _pi, preselect) {
+				const wf = prior[0];
+				const wfMap = await workflowMapOrNull(ctx);
+				if (!wfMap) return STEP_ABORT;
+				const stages = wfMap[wf] ?? [];
+				if (stages.length === 0) {
+					ctx.ui.notify(`Workflow "${wf}" has no stages.`, "error");
+					return STEP_ABORT;
+				}
+				const has = (s: string) => presetsDescriptor.keyHasOverride(raw, [wf, s]);
+				return pickKey(ctx, `Stage — ${wf}`, "Select stage.", stages, has, preselect);
+			},
+		},
+	],
 };
 
 // ---------------------------------------------------------------------------
