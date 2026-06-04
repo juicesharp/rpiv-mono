@@ -23,6 +23,11 @@
 import type { Workflow } from "./api.js";
 
 const REGISTRY_KEY = Symbol.for("@juicesharp/rpiv-workflow:built-ins");
+const PROVIDERS_KEY = Symbol.for("@juicesharp/rpiv-workflow:built-in-providers");
+const FLUSH_KEY = Symbol.for("@juicesharp/rpiv-workflow:built-in-flush");
+
+/** A lazy contributor of built-in workflows — run once by `flushBuiltInProviders`. */
+type BuiltInsProvider = () => void | Promise<void>;
 
 type Global = Record<symbol, unknown>;
 
@@ -34,6 +39,18 @@ function getRegistry(): Workflow[] {
 		g[REGISTRY_KEY] = registry;
 	}
 	return registry;
+}
+
+// Provider list + flush latch use the same `Symbol.for` global-slot strategy as
+// the registry, so a duplicate module load shares one process-wide state.
+function getProviders(): BuiltInsProvider[] {
+	const g = globalThis as unknown as Global;
+	let providers = g[PROVIDERS_KEY] as BuiltInsProvider[] | undefined;
+	if (!providers) {
+		providers = [];
+		g[PROVIDERS_KEY] = providers;
+	}
+	return providers;
 }
 
 /**
@@ -51,15 +68,42 @@ export function registerBuiltIns(workflows: readonly Workflow[]): void {
 	}
 }
 
+/**
+ * Register a LAZY built-in provider. The thunk runs once on the first
+ * `flushBuiltInProviders()` (which `loadWorkflows` awaits), letting a sibling
+ * defer constructing its workflow definitions off startup and onto first `/wf`.
+ * Register before the first read — `/wf` is the earliest reader.
+ */
+export function registerBuiltInsProvider(provider: BuiltInsProvider): void {
+	getProviders().push(provider);
+}
+
+/**
+ * Run all pending providers once, then memoize. Concurrency-safe (callers await
+ * the same promise; later calls are no-ops). Providers registered after the
+ * first flush won't run — acceptable, all register at extension load.
+ */
+export function flushBuiltInProviders(): Promise<void> {
+	const g = globalThis as unknown as Global;
+	const existing = g[FLUSH_KEY] as Promise<void> | undefined;
+	if (existing) return existing;
+	const pending = getProviders().splice(0);
+	const flush = Promise.all(pending.map((p) => p())).then(() => undefined);
+	g[FLUSH_KEY] = flush;
+	return flush;
+}
+
 /** Read-only view of the registry — consumed by `load.ts`. */
 export function getBuiltIns(): readonly Workflow[] {
 	return getRegistry();
 }
 
 /**
- * Test reset. Wired into the repo-wide test setup so cross-test
- * registration leaks don't bias the next case.
+ * Test reset (wired into repo-wide setup). Clears the registry, pending lazy
+ * providers, and the flush latch so the next case starts clean.
  */
 export function __resetBuiltIns(): void {
 	getRegistry().length = 0;
+	getProviders().length = 0;
+	(globalThis as unknown as Global)[FLUSH_KEY] = undefined;
 }

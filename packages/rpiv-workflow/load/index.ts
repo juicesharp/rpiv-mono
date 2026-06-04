@@ -53,7 +53,7 @@
 import { existsSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { Workflow } from "../api.js";
-import { getBuiltIns } from "../built-ins.js";
+import { flushBuiltInProviders, getBuiltIns } from "../built-ins.js";
 import type { ConfigLayer } from "../layers.js";
 import { LEGACY_OVERLAY_NOTICE, LEGACY_RUNS_NOTICE, LEGACY_USER_CONFIG_NOTICE } from "../messages.js";
 import { validateWorkflow, type WorkflowValidationIssue } from "../validate-workflow.js";
@@ -128,6 +128,10 @@ export function findWorkflow(loaded: LoadedWorkflows, name: string): Workflow | 
  * resolved set. Never throws — load + validation errors flow through `issues`.
  */
 export async function loadWorkflows(cwd: string): Promise<LoadedWorkflows> {
+	// Flush lazy built-in providers before reading the registry — lets siblings
+	// defer constructing definitions to first `/wf` (the earliest reader).
+	await flushBuiltInProviders();
+
 	const acc: LoadAccumulator = {
 		issues: [],
 		workflowMap: new Map(),

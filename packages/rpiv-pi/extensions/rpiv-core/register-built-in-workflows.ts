@@ -28,13 +28,15 @@ import { isModuleNotFound } from "./utils.js";
  */
 export async function registerBuiltInWorkflows(): Promise<void> {
 	try {
-		// built-in-workflows.js top-level-imports the workflow DSL, so resolving
-		// it is enough to trigger the same module failure when the sibling is
-		// gone — but import the package explicitly first so the absence check is
-		// unambiguous and we never partially evaluate the workflow definitions.
-		const { registerBuiltIns } = await import("@juicesharp/rpiv-workflow");
-		const { builtInWorkflows } = await import("./built-in-workflows.js");
-		registerBuiltIns(builtInWorkflows);
+		// Thin `/startup` entry (~9ms, no DSL/runner). Register a LAZY provider so
+		// `built-in-workflows.js` (the ~180ms authoring-DSL graph) builds the five
+		// definitions on first `/wf`, not at startup. Missing sibling →
+		// ERR_MODULE_NOT_FOUND → no-op (no `/wf` without it).
+		const { registerBuiltInsProvider, registerBuiltIns } = await import("@juicesharp/rpiv-workflow/startup");
+		registerBuiltInsProvider(async () => {
+			const { builtInWorkflows } = await import("./built-in-workflows.js");
+			registerBuiltIns(builtInWorkflows);
+		});
 	} catch (err) {
 		if (isModuleNotFound(err)) return; // sibling absent — /rpiv-setup prompts the user
 		throw err;

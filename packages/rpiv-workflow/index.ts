@@ -1,9 +1,7 @@
 /**
- * rpiv-workflow — Pi extension entry point.
- *
- * Registers the `/wf` slash command and (optionally) exposes the workflow
- * runtime as a programmatic API for sibling packages that want to
- * contribute built-in workflows via `registerBuiltIns(...)`.
+ * rpiv-workflow — public API barrel for embedders. The Pi extension `default`
+ * entry lives in the thin `./extension.ts` (not here); startup-time siblings
+ * should import the runner-free `@juicesharp/rpiv-workflow/registration` entry.
  *
  * Skill-agnostic: the runner sends `/skill:<name>` via Pi's native skill
  * dispatch — workflows can name any skill installed in Pi's search path
@@ -128,97 +126,12 @@
  * if Pi's types drift below the port's required shape.
  */
 
-import { registerWorkflowCommand } from "./command.js";
-import { type DocsProtocolHost, registerDocsProtocol } from "./docs-protocol.js";
-import type { WorkflowHost } from "./host.js";
+// Runner-free surface (DSL, registrars, loader, outcomes, …) lives in
+// `./registration.js`; startup-time siblings import that to skip the ~530ms
+// engine. This entry layers the runner on top for embedders.
+export * from "./registration.js";
 
-export {
-	type ActsScriptFn,
-	acts,
-	type DefineRouteOptions,
-	defineRoute,
-	defineWorkflow,
-	type EdgeContext,
-	type EdgeFn,
-	type EdgeTarget,
-	type FanoutContext,
-	type FanoutFn,
-	type FanoutUnit,
-	gate,
-	type IterateContext,
-	type IterateFn,
-	type IterateUnit,
-	marksReadsData,
-	ON_INVALID_VALUES,
-	type OnInvalid,
-	type ProducesScriptFn,
-	type PromptFn,
-	produces,
-	READS_DATA,
-	type ScriptContext,
-	SESSION_POLICIES,
-	type SessionPolicy,
-	STAGE_KINDS,
-	STOP,
-	type StageDef,
-	type StageKind,
-	type StageSchema,
-	terminal,
-	type Workflow,
-} from "./api.js";
-export { registerBuiltIns } from "./built-ins.js";
-export {
-	type Artifact,
-	type ArtifactHandle,
-	fs,
-	handleToString,
-	inline,
-	opaque,
-	url,
-} from "./handle.js";
-export type { WorkflowHost, WorkflowHostContext, WorkflowSessionContext } from "./host.js";
-export { type LifecycleContext, type LifecycleListeners, registerLifecycle, type StageRef } from "./lifecycle.js";
-export type { ConfigLayer, Issue, LoadedWorkflows, LoadIssue, OverlayPaths } from "./load/index.js";
-export { aliasSkills, loadWorkflows, projectOverlayPaths, userOverlayPaths } from "./load/index.js";
-export {
-	type DirectoryPathCollectorOpts,
-	directoryPathCollector,
-	type GitCommitData,
-	type GitHeadSnapshot,
-	gitCommitCollector,
-	gitCommitOutcome,
-	gitCommitParser,
-	gitHeadSnapshot,
-	jsonBodyParser,
-	noopCollector,
-	sideEffectOutcome,
-	type ToolCall,
-	type ToolCallCollectorOpts,
-	type TranscriptPathCollectorOpts,
-	toolCallCollector,
-	transcriptPathCollector,
-	type UrlCollectorOpts,
-	unionCollectors,
-	urlCollector,
-	type WorkspaceDiffCollectorOpts,
-	type WorkspaceDiffSnapshot,
-	workspaceDiffCollector,
-} from "./outcomes/index.js";
-export type {
-	ArtifactCollector,
-	ArtifactParser,
-	CollectCtx,
-	CollectResult,
-	Output,
-	OutputMeta,
-	OutputSpec,
-	ParseCtx,
-	ParseResult,
-	SnapshotCtx,
-	SnapshotFn,
-} from "./output.js";
-export { defineCollector, defineParser } from "./output-spec.js";
-export { eq, gt, gte, lt, lte, type Predicate } from "./predicates.js";
+// The execution engine — the only re-export unique to this entry.
 export {
 	type ResumeWorkflowByRunIdOptions,
 	type ResumeWorkflowOptions,
@@ -230,35 +143,6 @@ export {
 	runWorkflow,
 	runWorkflowByName,
 } from "./runner/index.js";
-export {
-	listArtifacts,
-	listRuns,
-	type RunSummary,
-	readHeader,
-	readLastStage,
-	resolveRun,
-	runsDir,
-	stateFilePath,
-	type WorkflowHeader,
-	type WorkflowStage,
-} from "./state/index.js";
-export { DEFAULT_TRIGGER, type RunTrigger } from "./triggers.js";
-export { typeboxSchema } from "./typebox-adapter.js";
-export type { RunState } from "./types.js";
-export { type SchemaValidationFailure, validateOutputData } from "./validate-output.js";
-export { validateWorkflow, type WorkflowValidationIssue } from "./validate-workflow.js";
 
-/**
- * Local intersection of the two host ports this extension's `default`
- * function needs. `WorkflowHost` covers the workflow-command surface;
- * `DocsProtocolHost` covers the `on("before_agent_start", ...)` hook used
- * to prepend the docs-protocol block. Pi's `ExtensionAPI` structurally
- * satisfies both; programmatic embedders keep using the narrower
- * `WorkflowHost` port, so this alias stays local — not re-exported.
- */
-type ExtensionHost = WorkflowHost & DocsProtocolHost;
-
-export default function (host: ExtensionHost): void {
-	registerWorkflowCommand(host);
-	registerDocsProtocol(host);
-}
+// NOTE: the Pi extension `default` entry is `./extension.ts`, not this barrel,
+// so loading the extension doesn't evaluate the runtime re-exports above.

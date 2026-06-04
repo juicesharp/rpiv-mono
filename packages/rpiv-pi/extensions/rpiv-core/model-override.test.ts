@@ -528,8 +528,10 @@ describe("model-override", () => {
 	describe("dynamic-import fallback", () => {
 		it("degrades gracefully (no throw, no registration) when rpiv-workflow is absent", async () => {
 			vi.resetModules();
-			vi.doMock("@juicesharp/rpiv-workflow", () => {
-				const err = new Error("Cannot find package '@juicesharp/rpiv-workflow'");
+			// registerModelOverrideLifecycle imports the thin `/startup` entry for
+			// registerLifecycle, so the absence simulation mocks THAT specifier.
+			vi.doMock("@juicesharp/rpiv-workflow/startup", () => {
+				const err = new Error("Cannot find package '@juicesharp/rpiv-workflow/startup'");
 				(err as NodeJS.ErrnoException).code = "ERR_MODULE_NOT_FOUND";
 				throw err;
 			});
@@ -539,7 +541,7 @@ describe("model-override", () => {
 				// The isModuleNotFound guard swallows the absent-sibling failure.
 				await expect(mod.registerModelOverrideLifecycle(fake.pi)).resolves.toBeUndefined();
 			} finally {
-				vi.doUnmock("@juicesharp/rpiv-workflow");
+				vi.doUnmock("@juicesharp/rpiv-workflow/startup");
 				vi.resetModules();
 			}
 		});

@@ -39,7 +39,9 @@ export async function loadWorkflowMap(cwd: string): Promise<Record<string, strin
 	// no-sibling case (does NOT throw), so an `isModuleNotFound` catch would
 	// be unreachable AND would silently swallow genuine load failures. Real
 	// errors propagate to the caller, which decides how to surface them.
-	const wf = await import("@juicesharp/rpiv-workflow");
+	// Runner-free `/registration` entry — only the loader is needed, never the
+	// ~530ms engine.
+	const wf = await import("@juicesharp/rpiv-workflow/registration");
 	const loaded = await wf.loadWorkflows(cwd);
 	const map: Record<string, string[]> = {};
 	for (const w of loaded.workflows) {

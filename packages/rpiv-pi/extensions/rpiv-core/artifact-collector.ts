@@ -34,7 +34,8 @@ import {
 	type OutputSpec,
 	type ParseCtx,
 	transcriptPathCollector,
-} from "@juicesharp/rpiv-workflow";
+	// Runner-free entry — keeps the ~530ms engine off the startup path.
+} from "@juicesharp/rpiv-workflow/registration";
 
 // ---------------------------------------------------------------------------
 // Collectors — text-scan over assistant transcript

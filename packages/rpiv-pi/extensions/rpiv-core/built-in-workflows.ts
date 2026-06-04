@@ -34,7 +34,7 @@ import {
 	type RunState,
 	typeboxSchema,
 	type Workflow,
-} from "@juicesharp/rpiv-workflow";
+} from "@juicesharp/rpiv-workflow/registration";
 import { Type } from "typebox";
 import { rpivBucketOutcome } from "./artifact-collector.js";
 

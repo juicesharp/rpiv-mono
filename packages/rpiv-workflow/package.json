@@ -38,6 +38,9 @@
 		"audit.ts",
 		"built-ins.ts",
 		"command.ts",
+		"command-run.ts",
+		"extension.ts",
+		"registration.ts",
 		"fanout.ts",
 		"handle.ts",
 		"host.ts",
@@ -54,6 +57,7 @@
 		"preview.ts",
 		"routing.ts",
 		"runner/",
+		"startup.ts",
 		"sessions/",
 		"state/",
 		"transcript.ts",
@@ -69,11 +73,13 @@
 	],
 	"exports": {
 		".": "./index.ts",
+		"./startup": "./startup.ts",
+		"./registration": "./registration.ts",
 		"./internal": "./internal.ts"
 	},
 	"pi": {
 		"extensions": [
-			"./index.ts"
+			"./extension.ts"
 		]
 	},
 	"dependencies": {

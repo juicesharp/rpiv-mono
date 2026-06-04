@@ -15,10 +15,15 @@ const BUILT_IN_NAMES = ["arch", "build", "polish", "ship", "vet"];
 
 describe("registerBuiltInWorkflows", () => {
 	it("registers the five built-in workflows when rpiv-workflow is present", async () => {
-		const { getBuiltIns } = await import("@juicesharp/rpiv-workflow/internal");
+		const { getBuiltIns, flushBuiltInProviders } = await import("@juicesharp/rpiv-workflow/internal");
 		expect(getBuiltIns()).toEqual([]); // setup.ts beforeEach resets the registry
 
 		await registerBuiltInWorkflows();
+		// registerBuiltInWorkflows now registers a LAZY provider — the registry
+		// stays empty until the first loadWorkflows() flushes it. Flush directly
+		// to assert the provider contributes the five definitions.
+		expect(getBuiltIns()).toEqual([]);
+		await flushBuiltInProviders();
 
 		expect(
 			getBuiltIns()
@@ -28,22 +33,25 @@ describe("registerBuiltInWorkflows", () => {
 	});
 
 	it("is idempotent — re-registering does not duplicate", async () => {
-		const { getBuiltIns } = await import("@juicesharp/rpiv-workflow/internal");
+		const { getBuiltIns, flushBuiltInProviders } = await import("@juicesharp/rpiv-workflow/internal");
 		await registerBuiltInWorkflows();
 		await registerBuiltInWorkflows();
+		await flushBuiltInProviders();
 		expect(getBuiltIns()).toHaveLength(BUILT_IN_NAMES.length);
 	});
 
 	describe("when the rpiv-workflow sibling is absent", () => {
 		afterEach(() => {
-			vi.doUnmock("@juicesharp/rpiv-workflow");
+			// registerBuiltInWorkflows imports the thin `/startup` entry, so the
+			// absence simulation mocks THAT specifier (not the bare barrel).
+			vi.doUnmock("@juicesharp/rpiv-workflow/startup");
 			vi.resetModules();
 		});
 
 		it("no-ops without throwing and registers nothing", async () => {
 			vi.resetModules();
-			vi.doMock("@juicesharp/rpiv-workflow", () => {
-				throw Object.assign(new Error("Cannot find package '@juicesharp/rpiv-workflow'"), {
+			vi.doMock("@juicesharp/rpiv-workflow/startup", () => {
+				throw Object.assign(new Error("Cannot find package '@juicesharp/rpiv-workflow/startup'"), {
 					code: "ERR_MODULE_NOT_FOUND",
 				});
 			});
@@ -52,7 +60,8 @@ describe("registerBuiltInWorkflows", () => {
 			const fresh = await import("./register-built-in-workflows.js");
 			await expect(fresh.registerBuiltInWorkflows()).resolves.toBeUndefined();
 
-			const { getBuiltIns } = await import("@juicesharp/rpiv-workflow/internal");
+			const { getBuiltIns, flushBuiltInProviders } = await import("@juicesharp/rpiv-workflow/internal");
+			await flushBuiltInProviders();
 			expect(getBuiltIns()).toEqual([]);
 		});
 	});

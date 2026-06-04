@@ -233,7 +233,8 @@ export async function restoreBaseline(pi: ExtensionAPI, base: BaselineSnapshot):
  */
 export async function registerModelOverrideLifecycle(pi: ExtensionAPI): Promise<void> {
 	try {
-		const { registerLifecycle } = await import("@juicesharp/rpiv-workflow");
+		// Thin `/startup` entry (~8ms) — keeps the loader/DSL/runner off startup.
+		const { registerLifecycle } = await import("@juicesharp/rpiv-workflow/startup");
 
 		registerLifecycle({
 			onWorkflowStart: async () => {
