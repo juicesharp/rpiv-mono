@@ -36,27 +36,22 @@ import { BUNDLED_SKILL_NAMES } from "./paths.js";
 import { isStaleCtxError } from "./utils.js";
 
 /**
- * Module-local "already announced" latch for the startup banner block
- * (cleanup / agent-sync drift / missing-siblings warning). Pi fires
- * `session_start` for every session including programmatic spawns
- * (workflow stages, batch ops, any extension's `newSession` call).
- * Filesystem work runs every fire — the banner notifications should NOT,
- * or `/wf <large>` re-emits the entire startup splash 10 times.
+ * Module-local latch for the startup-maintenance block (per-cwd agent cleanup,
+ * bundled-agent sync, and the banner). Pi fires `session_start` for every
+ * session including programmatic spawns (workflow stages, batch ops), but this
+ * work must run ONCE per process load, not per fire: the banner would otherwise
+ * reprint on every `/wf` stage, and `syncBundledAgents` targets the global
+ * `~/.pi/agent/agents/` dir whose source can't change mid-process (upgrades need
+ * a restart or `/reload`) — so re-running just recomputes identical hashes.
+ * `/rpiv-update-agents` and `/reload` remain the explicit re-sync paths.
  *
- * Latches on the first banner emission. Reset on `/reload` (module
- * reload) and on process restart. Test-resettable via
- * `__resetSessionHooksAnnounced()`.
- *
- * Replaces an earlier coupling to rpiv-workflow's child-session Symbol —
- * "have I announced yet" is a per-extension concern, not a per-spawner
- * one. No other package needs to know whether session_start came from
- * the user or from a programmatic spawner.
+ * Latches on first `session_start`; reset on `/reload` + restart. Test-resettable.
  */
-let bannerAnnounced = false;
+let startupMaintenanceDone = false;
 
 /** Test reset — wired into test/setup.ts `beforeEach`. */
 export function __resetSessionHooksAnnounced(): void {
-	bannerAnnounced = false;
+	startupMaintenanceDone = false;
 }
 
 const msgAgentsAdded = (n: number) => `Copied ${n} rpiv-pi agent(s) to ~/.pi/agent/agents/`;
@@ -114,16 +109,21 @@ async function onSessionStart(
 	injectRootGuidance(ctx.cwd, pi);
 	migrateThoughtsToArtifacts(ctx.cwd);
 	await injectGitContext(pi, (msg) => sendGitContextMessage(pi, msg));
+
+	// Injections above run every fire (each stage needs its own guidance + git
+	// context); startup maintenance below runs once per process load — see the
+	// `startupMaintenanceDone` doc-block.
+	if (startupMaintenanceDone) return;
+	startupMaintenanceDone = true;
+
 	const cleanup = cleanupPerCwdAgents(ctx.cwd);
 	const agents = syncBundledAgents(false);
-	// Banner emits once per module load (process start or /reload). Programmatic
-	// session spawns (workflow stages, any other extension's newSession) inherit
-	// the latched state and stay silent. Filesystem work above always runs.
-	if (ctx.hasUI && !bannerAnnounced) {
+	// Banner only when a UI is bound; the filesystem work above runs regardless,
+	// so a headless first session still installs agents.
+	if (ctx.hasUI) {
 		notifyCleanup(ctx.ui, cleanup);
 		notifyAgentSyncDrift(ctx.ui, agents);
 		warnMissingSiblings(ctx.ui);
-		bannerAnnounced = true;
 	}
 }
 

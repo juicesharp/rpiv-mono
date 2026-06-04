@@ -363,13 +363,14 @@ describe("session_start hook — notifications", () => {
 	});
 });
 
-describe("session_start hook — banner notify-once latch", () => {
+describe("session_start hook — startup-maintenance-once latch", () => {
 	// Pi fires session_start for every session including programmatic spawns
-	// (workflow stages, batch ops). Filesystem work (agent sync, cleanup)
-	// runs every fire; the banner notifications latch on the first
-	// announcement and stay quiet for the rest of the module lifetime.
-	// Replaces the older cross-package coupling to rpiv-workflow's
-	// child-session Symbol.
+	// (workflow stages, batch ops). Startup maintenance — agent sync, per-cwd
+	// cleanup, and the banner — latches on the first fire and is skipped for the
+	// rest of the module lifetime: the bundled source is immutable mid-process,
+	// so re-syncing on every stage spawn is pure waste (amplified N× by /wf).
+	// Replaces the older cross-package coupling to rpiv-workflow's child-session
+	// Symbol.
 
 	it("first session_start fires the cleanup/agent-sync/missing-siblings notifies", async () => {
 		vi.mocked(syncBundledAgents).mockReturnValueOnce({
@@ -388,7 +389,7 @@ describe("session_start hook — banner notify-once latch", () => {
 		expect(ctx.ui.notify).toHaveBeenCalled();
 	});
 
-	it("subsequent session_starts (workflow stage spawns) re-run filesystem work but do NOT re-notify", async () => {
+	it("subsequent session_starts (workflow stage spawns) skip filesystem work AND do NOT re-notify", async () => {
 		vi.mocked(syncBundledAgents).mockReturnValue({ ...emptySync, added: ["a.md"] });
 		vi.mocked(cleanupPerCwdAgents).mockReturnValue({ cleanedUp: ["/tmp/old"], skipped: [], errors: [] });
 		vi.mocked(findMissingSiblings).mockReturnValue([]);
@@ -404,9 +405,12 @@ describe("session_start hook — banner notify-once latch", () => {
 		await handler?.({ reason: "startup" } as never, ctx as never);
 		await handler?.({ reason: "startup" } as never, ctx as never);
 
-		// Filesystem work runs every fire (3 session_starts → 3 calls each).
-		expect(vi.mocked(syncBundledAgents)).toHaveBeenCalledTimes(3);
-		expect(vi.mocked(cleanupPerCwdAgents)).toHaveBeenCalledTimes(3);
+		// Startup maintenance runs once per module load: 3 session_starts → 1 call
+		// each. The bundled source is immutable mid-process, so re-syncing on the
+		// stage-spawn fires would only recompute identical hashes (the N× cost the
+		// latch removes).
+		expect(vi.mocked(syncBundledAgents)).toHaveBeenCalledTimes(1);
+		expect(vi.mocked(cleanupPerCwdAgents)).toHaveBeenCalledTimes(1);
 		// First pass emits its notifies; passes 2-3 add ZERO new notifies.
 		expect(firstPassNotifyCount).toBeGreaterThan(0);
 		expect(notify.mock.calls.length).toBe(firstPassNotifyCount);
@@ -477,6 +481,11 @@ describe("G0: session_start → real syncBundledAgents → notifyAgentSyncDrift"
 		const ctx1 = createMockCtx({ cwd: projectDir, hasUI: true });
 		await captured.events.get("session_start")?.[0]({ reason: "startup" } as never, ctx1 as never);
 
+		// A second cold-start is a second process. Re-arm the once-per-process
+		// latch (what a fresh module load does) so this fire actually re-runs the
+		// real sync — without the reset it would be skipped and the idempotency
+		// claim below would go unexercised.
+		__resetSessionHooksAnnounced();
 		const ctx2 = createMockCtx({ cwd: projectDir, hasUI: true });
 		await captured.events.get("session_start")?.[0]({ reason: "startup" } as never, ctx2 as never);
 
