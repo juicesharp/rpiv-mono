@@ -39,13 +39,16 @@ import {
 	ERR_RESUME_NO_ROWS,
 	ERR_RESUME_STAGE_GONE,
 	ERR_WORKFLOW_ABORTED,
+	MSG_NAME_COLLISION,
+	MSG_NAME_INDEX_WRITE_FAILED,
+	MSG_NAME_INVALID,
 	MSG_STAGE_THREW,
 	MSG_WORKFLOW_ABORTED,
 	MSG_WORKFLOW_COMPLETE,
 	STATUS_KEY,
 } from "../messages.js";
 import { runFanoutSession, runStageSession } from "../sessions/index.js";
-import { generateRunId, writeHeader } from "../state/index.js";
+import { type ClaimResult, claimName, generateRunId, writeHeader } from "../state/index.js";
 import type { WorkflowHeader } from "../state/state.js";
 import { DEFAULT_TRIGGER, type RunTrigger } from "../triggers.js";
 import type { RunContext, RunState } from "../types.js";
@@ -122,6 +125,12 @@ export interface RunWorkflowOptions {
 	 * mid-stage.
 	 */
 	signal?: AbortSignal;
+	/**
+	 * Human-readable alias for this run. Stored in the JSONL header and the
+	 * sidecar names.json index. Rejected if already in use — the error
+	 * identifies the conflicting runId.
+	 */
+	name?: string;
 }
 
 export interface RunWorkflowResult {
@@ -199,6 +208,18 @@ async function executeRun(
 // runWorkflow — workflow entry point
 // ---------------------------------------------------------------------------
 
+/** Map a failed `claimName` outcome to its user-facing message. */
+function nameClaimError(name: string, claim: Extract<ClaimResult, { ok: false }>): string {
+	switch (claim.reason) {
+		case "invalid":
+			return MSG_NAME_INVALID(name);
+		case "collision":
+			return MSG_NAME_COLLISION(name, claim.runId);
+		case "write-failed":
+			return MSG_NAME_INDEX_WRITE_FAILED(name);
+	}
+}
+
 /**
  * Each subsequent `newSession()` is invoked on the freshCtx returned by the
  * previous withSession — never on a captured outer ctx (which Pi invalidates
@@ -221,7 +242,22 @@ export async function runWorkflow(ctx: WorkflowHostContext, options: RunWorkflow
 	const runId = generateRunId();
 	const trigger = options.trigger ?? DEFAULT_TRIGGER;
 
-	writeHeader(cwd, { runId, workflow: workflow.name, input: options.input, ts: nowIso(), trigger });
+	// Reserve the name (validate → collision → persist) through the state
+	// layer's single door, BEFORE the JSONL header so the collision guard's
+	// truth-source can never lag the header. Nothing is written on failure.
+	if (options.name) {
+		const claim = claimName(cwd, options.name, runId);
+		if (!claim.ok) return { stagesCompleted: 0, success: false, error: nameClaimError(options.name, claim) };
+	}
+
+	writeHeader(cwd, {
+		runId,
+		workflow: workflow.name,
+		input: options.input,
+		ts: nowIso(),
+		trigger,
+		name: options.name,
+	});
 
 	const run = buildRunContext(cwd, workflow, options, {
 		runId,

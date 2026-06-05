@@ -109,6 +109,37 @@ describe("parseArgs", () => {
 			input: "Add feature",
 		});
 	});
+
+	it("extracts --name and strips it from the input", () => {
+		expect(parseArgs("mid --name auth-spike Add dark mode", built)).toEqual({
+			kind: "run",
+			workflow: "mid",
+			input: "Add dark mode",
+			name: "auth-spike",
+		});
+	});
+
+	it("extracts --name when bound to the default workflow", () => {
+		expect(parseArgs("Add dark mode --name spike", built)).toEqual({
+			kind: "run",
+			workflow: "mid",
+			input: "Add dark mode",
+			name: "spike",
+		});
+	});
+
+	it("extracts --name on a workflow-name-only invocation", () => {
+		expect(parseArgs("review --name r1", built)).toEqual({
+			kind: "run",
+			workflow: "review",
+			input: "",
+			name: "r1",
+		});
+	});
+
+	it("leaves name absent when --name is not supplied", () => {
+		expect(parseArgs("mid go", built)).toEqual({ kind: "run", workflow: "mid", input: "go" });
+	});
 });
 
 // ---------------------------------------------------------------------------
@@ -142,6 +173,14 @@ describe("parseArgs — resume (@ref)", () => {
 
 	it("tolerates a space after the sigil (@ ref === @ref)", () => {
 		expect(parseArgs("@ run-id", built)).toEqual({ kind: "resume", ref: "run-id" });
+	});
+
+	it("carries a --name supplied with @resume as droppedName (resolved later as ignored)", () => {
+		expect(parseArgs("@run-id --name x", built)).toEqual({
+			kind: "resume",
+			ref: "run-id",
+			droppedName: "x",
+		});
 	});
 });
 
@@ -217,6 +256,48 @@ describe("/wf — valid invocation", () => {
 		const ctx = createMockCommandCtx({ hasUI: true });
 		await captured.commands.get("wf")?.handler("   ", ctx);
 		expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("Available workflows"), "info");
+		expect(runWorkflow).not.toHaveBeenCalled();
+	});
+});
+
+describe("/wf — --name flag", () => {
+	it("rejects an invalid --name before calling runWorkflow", async () => {
+		const { pi, captured } = createMockPi();
+		registerWorkflowCommand(pi);
+		const ctx = createMockCommandCtx({ hasUI: true });
+		await captured.commands.get("wf")?.handler("mid --name 1bad go", ctx);
+		expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("invalid name"), "error");
+		expect(runWorkflow).not.toHaveBeenCalled();
+	});
+
+	it("threads a valid --name through to runWorkflow", async () => {
+		const { pi, captured } = createMockPi();
+		registerWorkflowCommand(pi);
+		const ctx = createMockCommandCtx({ hasUI: true });
+		await captured.commands.get("wf")?.handler("mid --name auth go", ctx);
+		expect(vi.mocked(runWorkflow).mock.calls[0]?.[1]?.name).toBe("auth");
+	});
+
+	it("surfaces a pre-flight collision rejection (success:false, no runId)", async () => {
+		vi.mocked(runWorkflow).mockResolvedValueOnce({
+			stagesCompleted: 0,
+			success: false,
+			error: "name 'auth' already used by run r0",
+		});
+		const { pi, captured } = createMockPi();
+		registerWorkflowCommand(pi);
+		const ctx = createMockCommandCtx({ hasUI: true });
+		await captured.commands.get("wf")?.handler("mid --name auth go", ctx);
+		expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("already used"), "error");
+	});
+
+	it("warns that --name is ignored on @resume and still resumes", async () => {
+		const { pi, captured } = createMockPi();
+		registerWorkflowCommand(pi);
+		const ctx = createMockCommandCtx({ hasUI: true });
+		await captured.commands.get("wf")?.handler("@run-id --name x", ctx);
+		expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("--name has no effect"), "warning");
+		expect(resumeWorkflowByRunId).toHaveBeenCalledWith(ctx, "run-id", expect.anything());
 		expect(runWorkflow).not.toHaveBeenCalled();
 	});
 });

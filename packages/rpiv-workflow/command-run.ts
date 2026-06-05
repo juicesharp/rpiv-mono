@@ -11,6 +11,8 @@ import { findWorkflow, type Issue, loadWorkflows } from "./load/index.js";
 import {
 	MSG_INTERACTIVE_ONLY,
 	MSG_LOAD_ABORTED,
+	MSG_NAME_IGNORED_ON_RESUME,
+	MSG_NAME_INVALID,
 	MSG_NO_WORKFLOWS_REGISTERED,
 	MSG_RESUME_USAGE,
 	MSG_WORKFLOW_NOT_FOUND,
@@ -18,6 +20,7 @@ import {
 } from "./messages.js";
 import { formatWorkflowDetails, formatWorkflowList } from "./preview.js";
 import { resumeWorkflowByRunId, runWorkflow } from "./runner/index.js";
+import { isValidName } from "./state/index.js";
 
 // ---------------------------------------------------------------------------
 // Orchestrator
@@ -36,11 +39,19 @@ export async function handleWorkflowCommand(host: WorkflowHost, args: string, ct
 	const parsed = parseArgs(args, { workflowNames, default: loaded.default });
 
 	if (parsed.kind === "resume") {
+		if (parsed.droppedName !== undefined) {
+			ctx.ui.notify(MSG_NAME_IGNORED_ON_RESUME, "warning");
+		}
 		await handleResume(host, ctx, parsed.ref);
 		return;
 	}
 
-	const { workflow: workflowName, input } = parsed;
+	const { workflow: workflowName, input, name } = parsed;
+
+	if (name !== undefined && !isValidName(name)) {
+		ctx.ui.notify(MSG_NAME_INVALID(name), "error");
+		return;
+	}
 
 	if (!input) {
 		const trimmed = args.trim();
@@ -78,7 +89,17 @@ export async function handleWorkflowCommand(host: WorkflowHost, args: string, ct
 	// thrown predicate or invariant could still bubble. Catch so Pi's
 	// dispatcher doesn't print a raw stack.
 	try {
-		await runWorkflow(ctx, { workflow, input, host, trigger: { kind: "command", name: "wf" } });
+		const result = await runWorkflow(ctx, {
+			workflow,
+			input,
+			host,
+			trigger: { kind: "command", name: "wf" },
+			name,
+		});
+		// Surface pre-flight rejections (collision, etc.) — no runId means no JSONL on disk.
+		if (!result.success && result.runId === undefined && result.error) {
+			ctx.ui.notify(result.error, "error");
+		}
 	} catch (e) {
 		const reason = e instanceof Error ? e.message : String(e);
 		ctx.ui.notify(MSG_WORKFLOW_THREW(reason), "error");
@@ -89,13 +110,13 @@ export async function handleWorkflowCommand(host: WorkflowHost, args: string, ct
 // Resume handler
 // ---------------------------------------------------------------------------
 
-async function handleResume(host: WorkflowHost, ctx: WorkflowHostContext, runId: string): Promise<void> {
-	if (!runId) {
+async function handleResume(host: WorkflowHost, ctx: WorkflowHostContext, ref: string): Promise<void> {
+	if (!ref) {
 		ctx.ui.notify(MSG_RESUME_USAGE, "error");
 		return;
 	}
 	try {
-		const result = await resumeWorkflowByRunId(ctx, runId, { host });
+		const result = await resumeWorkflowByRunId(ctx, ref, { host });
 		// A failure with no runId is a no-JSONL refusal (run-id didn't resolve,
 		// load error, workflow gone, or an unreconstructable trail) — nothing else
 		// surfaces it, so notify here. An in-run failure carries a runId and was

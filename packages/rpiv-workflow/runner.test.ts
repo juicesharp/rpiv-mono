@@ -11,7 +11,13 @@ import { fs as fsHandle } from "./handle.js";
 import type { OutputSpec } from "./output.js";
 import { eq, gt } from "./predicates.js";
 import { runWorkflow, runWorkflowByName } from "./runner/index.js";
-import { appendRoutingDecision, readRoutingDecisions } from "./state/index.js";
+import {
+	addNameToIndex,
+	appendRoutingDecision,
+	readHeader,
+	readNamesIndex,
+	readRoutingDecisions,
+} from "./state/index.js";
 import { hasAssistantMessage, lastAssistantStopReason } from "./transcript.js";
 import { typeboxSchema } from "./typebox-adapter.js";
 
@@ -219,6 +225,54 @@ describe("runWorkflow", () => {
 		expect(result.error).toMatch(/start stage "ghost" is not declared/);
 		expect(chain.ctx.newSession).not.toHaveBeenCalled();
 		expect(existsSync(join(tmpDir, ".rpiv", "workflows", "runs"))).toBe(false);
+	});
+
+	it("rejects an invalid --name before writing any JSONL (defense-in-depth for programmatic callers)", async () => {
+		const chain = createMockSessionChain({ cwd: tmpDir, steps: [] });
+		const result = await runWorkflow(chain.ctx, {
+			workflow: wf("tiny", ["research"]),
+			input: "x",
+			name: "1-bad-start",
+		});
+
+		expect(result.success).toBe(false);
+		expect(result.error).toMatch(/invalid name/);
+		expect(chain.ctx.newSession).not.toHaveBeenCalled();
+		expect(existsSync(join(tmpDir, ".rpiv", "workflows", "runs"))).toBe(false);
+	});
+
+	it("rejects a name already claimed in the index, without starting a session", async () => {
+		addNameToIndex(tmpDir, "auth", "prior-run");
+		const chain = createMockSessionChain({ cwd: tmpDir, steps: [] });
+		const result = await runWorkflow(chain.ctx, {
+			workflow: wf("tiny", ["research"]),
+			input: "x",
+			name: "auth",
+		});
+
+		expect(result.success).toBe(false);
+		expect(result.error).toMatch(/already used by run prior-run/);
+		expect(chain.ctx.newSession).not.toHaveBeenCalled();
+	});
+
+	it("claims the name in the index and stamps it on the header on a successful run", async () => {
+		writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md");
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/research/r.md")] }],
+		});
+
+		const result = await runWorkflow(chain.ctx, {
+			workflow: wf("tiny", ["research"]),
+			input: "add dark mode",
+			name: "auth",
+		});
+
+		expect(result.success).toBe(true);
+		// `readState` asserts a single file in runs/ — the named run also drops
+		// names.json there, so read the header directly by runId instead.
+		expect(readHeader(tmpDir, result.runId!)?.name).toBe("auth");
+		expect(readNamesIndex(tmpDir)).toEqual({ auth: result.runId });
 	});
 
 	it("completes a single-step workflow on success and records header + completed step", async () => {

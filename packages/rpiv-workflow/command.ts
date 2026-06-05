@@ -27,7 +27,11 @@ export function registerWorkflowCommand(host: WorkflowHost): void {
 // Arg parsing (pure; exported for tests + consumed by ./command-run.js)
 // ---------------------------------------------------------------------------
 
-export type ParsedCommand = { kind: "run"; workflow: string; input: string } | { kind: "resume"; ref: string };
+const NAME_FLAG = /--name\s+([^\s]+)/;
+
+export type ParsedCommand =
+	| { kind: "run"; workflow: string; input: string; name?: string }
+	| { kind: "resume"; ref: string; droppedName?: string };
 
 /**
  * First token is a workflow name iff recognised; otherwise the whole arg is
@@ -43,15 +47,24 @@ export function parseArgs(
 	args: string,
 	loaded: { workflowNames: ReadonlySet<string>; default: string | undefined },
 ): ParsedCommand {
-	const trimmed = args.trim();
+	let trimmed = args.trim();
+	let name: string | undefined;
+
+	// Extract --name <slug> flag and strip it before further parsing.
+	const nameMatch = NAME_FLAG.exec(trimmed);
+	if (nameMatch) {
+		name = nameMatch[1];
+		trimmed = trimmed.replace(NAME_FLAG, "").trim();
+	}
 
 	if (trimmed.startsWith("@")) {
-		// First token after the sigil is the ref; ignore any trailing tokens for now.
-		return { kind: "resume", ref: trimmed.slice(1).trim().split(/\s+/)[0] ?? "" };
+		// @resume — name has no meaning here; carry it as `droppedName` so the
+		// command layer can warn instead of silently dropping it.
+		return { kind: "resume", ref: trimmed.slice(1).trim().split(/\s+/)[0] ?? "", droppedName: name };
 	}
 
 	if (!trimmed) {
-		return { kind: "run", workflow: loaded.default ?? "", input: "" };
+		return { kind: "run", workflow: loaded.default ?? "", input: "", name };
 	}
 
 	const firstSpace = trimmed.indexOf(" ");
@@ -59,8 +72,8 @@ export function parseArgs(
 
 	if (loaded.workflowNames.has(firstToken)) {
 		const remaining = firstSpace === -1 ? "" : trimmed.slice(firstSpace + 1).trim();
-		return { kind: "run", workflow: firstToken, input: remaining };
+		return { kind: "run", workflow: firstToken, input: remaining, name };
 	}
 
-	return { kind: "run", workflow: loaded.default ?? "", input: trimmed };
+	return { kind: "run", workflow: loaded.default ?? "", input: trimmed, name };
 }

@@ -222,6 +222,17 @@ export const MSG_INTERACTIVE_ONLY = "/wf requires interactive mode";
 
 export const MSG_WORKFLOW_THREW = (reason: string) => `/wf: workflow runner failed unexpectedly: ${reason}`;
 
+export const MSG_NAME_INVALID = (name: string) =>
+	`rpiv: invalid name "${name}" — must be 1-64 chars, start with a letter or underscore, only letters, digits, hyphens, underscores`;
+
+export const MSG_NAME_COLLISION = (name: string, runId: string) => `name '${name}' already used by run ${runId}`;
+
+export const MSG_NAME_INDEX_WRITE_FAILED = (name: string) =>
+	`/wf: could not persist name "${name}" to the names index — run aborted (no run started). Check filesystem permissions for .rpiv/workflows/runs/`;
+
+export const MSG_NAME_IGNORED_ON_RESUME =
+	"/wf: --name has no effect on @resume (the ref already identifies the run) — ignoring it";
+
 export const MSG_LOAD_ABORTED = (count: number) =>
 	`/wf: ${count} ${count === 1 ? "config error" : "config errors"} — see warnings above (fix and re-run)`;
 

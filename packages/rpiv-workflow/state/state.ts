@@ -71,6 +71,9 @@ export interface WorkflowHeader {
 	 * `undefined` as "trigger unknown."
 	 */
 	trigger?: RunTrigger;
+	/** Human-readable alias assigned at creation via `--name`. Optional so
+	 * older JSONL files (written before the name field was added) still parse. */
+	name?: string;
 }
 
 /**
@@ -89,6 +92,8 @@ export interface RunSummary {
 	ts: string;
 	/** Mirrors `WorkflowHeader.trigger`; undefined for legacy rows. */
 	trigger?: RunTrigger;
+	/** Mirrors `WorkflowHeader.name`; undefined for unnamed runs. */
+	name?: string;
 }
 
 export interface RoutingDecision {
@@ -103,7 +108,17 @@ export interface RoutingDecision {
 // Public barrel — paths + writes + reads
 // ---------------------------------------------------------------------------
 
-export { generateRunId, runsDir, stateFilePath } from "./paths.js";
+export {
+	addNameToIndex,
+	type ClaimResult,
+	claimName,
+	isValidName,
+	type NamesIndex,
+	readNamesIndex,
+	rebuildIndex,
+	VALID_NAME,
+} from "./names.js";
+export { generateRunId, namesFilePath, runsDir, stateFilePath } from "./paths.js";
 export {
 	listArtifacts,
 	listRuns,

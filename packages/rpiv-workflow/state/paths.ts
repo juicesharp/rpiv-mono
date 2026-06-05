@@ -41,6 +41,10 @@ export function runsDir(cwd: string): string {
 	return join(cwd, ".rpiv", "workflows", "runs");
 }
 
+export function namesFilePath(cwd: string): string {
+	return join(runsDir(cwd), "names.json");
+}
+
 export function stateFilePath(cwd: string, runId: string): string {
 	return join(runsDir(cwd), `${runId}.jsonl`);
 }

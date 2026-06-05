@@ -5,6 +5,8 @@
  */
 
 export type {
+	ClaimResult,
+	NamesIndex,
 	RoutingDecision,
 	RunSummary,
 	StageStatus,
@@ -12,17 +14,24 @@ export type {
 	WorkflowStage,
 } from "./state.js";
 export {
+	addNameToIndex,
 	appendRoutingDecision,
 	appendStage,
+	claimName,
 	generateRunId,
+	isValidName,
 	listArtifacts,
 	listRuns,
+	namesFilePath,
 	readAllStages,
 	readHeader,
 	readLastStage,
+	readNamesIndex,
 	readRoutingDecisions,
+	rebuildIndex,
 	resolveRun,
 	runsDir,
 	stateFilePath,
+	VALID_NAME,
 	writeHeader,
 } from "./state.js";

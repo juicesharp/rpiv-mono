@@ -18,6 +18,7 @@
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import type { Artifact } from "../handle.js";
+import { readNamesIndex } from "./names.js";
 import { runsDir, stateFilePath } from "./paths.js";
 import type { RoutingDecision, RunSummary, WorkflowHeader, WorkflowStage } from "./state.js";
 
@@ -158,14 +159,25 @@ export function readHeader(cwd: string, runId: string): WorkflowHeader | undefin
  * Which to call: reach for `resolveRun` when the ref is **user-supplied** (the
  * `/wf @<ref>` token, a CLI arg); reach for `readHeader` when you already hold
  * a concrete `runId` (e.g. straight off `RunSummary.runId`). The split is
- * intent, not behaviour: **today `resolveRun` is an exact alias of
- * `readHeader`** (`ref === runId`). It exists as the single place a future
- * symbolic resolver — `@latest`, relative refs, a friendly-name index
- * (name → runId → readHeader) — slots in without touching any caller.
+ * intent, not behaviour.
+ *
+ * Resolution order:
+ *  1. Check the names index (`names.json`) for a name → runId mapping.
+ *     If found and the target JSONL exists, return its header.
+ *  2. Fall back to literal runId lookup via `readHeader`.
  *
  * Fail-soft like every reader — returns undefined when the ref doesn't resolve.
+ * A missing or corrupt `names.json` degrades gracefully: the index lookup
+ * returns `undefined` and the literal fallback runs.
  */
 export function resolveRun(cwd: string, ref: string): WorkflowHeader | undefined {
+	// Try the names index first — O(1) lookup for human-readable aliases.
+	const index = readNamesIndex(cwd);
+	if (index?.[ref]) {
+		const resolved = readHeader(cwd, index[ref]!);
+		if (resolved) return resolved;
+	}
+	// Fall back to literal runId lookup.
 	return readHeader(cwd, ref);
 }
 
@@ -204,6 +216,7 @@ export function listRuns(cwd: string): RunSummary[] {
 				input: header.input,
 				ts: header.ts,
 				trigger: header.trigger,
+				name: header.name,
 			});
 	}
 	return summaries;
