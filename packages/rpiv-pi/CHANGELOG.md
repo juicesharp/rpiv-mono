@@ -7,6 +7,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- `/code-review` now works inside a git worktree. The skill hardcoded `.git/code-review-patch.diff` as its patch tempfile; in a worktree `.git` is a gitlink **file**, not a directory, so the write failed with `Not a directory` (ENOTDIR) and the review aborted. `review-range.mjs` now emits a `patch_path:` key resolved via `git rev-parse --git-path` (absolute, so the orchestrator and every subagent target the same file regardless of cwd), and `SKILL.md` substitutes `<patch_path>` at every write/read site. Plain clones are unaffected — the path resolves to the same `.git/…` location. (#63)
+
 ## [1.18.2] - 2026-06-04
 
 ### Fixed
