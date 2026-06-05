@@ -26,6 +26,7 @@
 //   tip:            <hash>|(n/a)
 //   range:          <base>..<tip>|(n/a)
 //   fp_flag:        --first-parent|(empty)
+//   patch_path:     <worktree-safe path for the diff tempfile>
 //   note:           <reason>          (only when strategy=unrecognised)
 //   ---changed-files---
 //   <deduplicated file list, capped at 2000 entries OR 40 KB whichever first>
@@ -48,6 +49,7 @@
 //     `note:` so the LLM can ask the user via ask_user_question rather than fail.
 
 import { execFileSync } from "node:child_process";
+import { resolve } from "node:path";
 
 const CHANGED_FILES_LINE_CAP = 2000;
 const CHANGED_FILES_BYTE_CAP = 40 * 1024;
@@ -252,6 +254,16 @@ if (result.strategy === "first-parent") {
 	}
 }
 
+// Worktree-safe tempfile location. In a git worktree (or submodule) `.git` is a
+// regular FILE (a gitlink), so a literal `.git/<name>` write fails with ENOTDIR.
+// `rev-parse --git-path` resolves to the real per-worktree gitdir; in a plain
+// checkout it returns `.git/<name>` unchanged. `rev-parse` returns the path
+// relative to CWD — resolve to absolute so the orchestrator and every subagent
+// hit the same file regardless of the directory they run from.
+const patchPath = resolve(
+	safe(["rev-parse", "--git-path", "code-review-patch.diff"], ".git/code-review-patch.diff"),
+);
+
 const lines = [
 	`default_branch: ${result.default_branch}`,
 	`strategy:       ${result.strategy}`,
@@ -261,6 +273,7 @@ const lines = [
 	`tip:            ${result.tip}`,
 	`range:          ${result.range}`,
 	`fp_flag:        ${result.fp_flag}`,
+	`patch_path:     ${patchPath}`,
 ];
 if (result.strategy === "unrecognised" && result.note) {
 	lines.push(`note:           ${result.note}`);

@@ -29,7 +29,7 @@ Scope resolution (default branch, range, ChangedFiles) is LLM-invoked at Step 1.
 
 **File-orientation contract**: agents reason about *files* as coherent units. Hunks are evidence *within* a file's analysis, never the unit of analysis. The `-U30` patch (Step 1) inlines function-level context so agents rarely need extra `Read` calls.
 
-Every Wave-2 agent prompt contains EXACTLY: (a) `Known Context:` followed by the Discovery Map verbatim, and (b) the literal string `.git/code-review-patch.diff` as the patch path. Nothing else from Wave-1 outputs — NOT the raw integration-scanner dump, NOT precedent-locator output, NOT Dependencies/CVE output. See "Wave-2 context isolation" in Step 3 for the failure mode when this is violated. Wave-1 agents that do not consume the Discovery Map (precedents, dependencies, CVE) get `ChangedFiles` / manifest-diff only.
+Every Wave-2 agent prompt contains EXACTLY: (a) `Known Context:` followed by the Discovery Map verbatim, and (b) the resolved `<patch_path>` value (the helper's `patch_path:` field) as the patch path. Nothing else from Wave-1 outputs — NOT the raw integration-scanner dump, NOT precedent-locator output, NOT Dependencies/CVE output. See "Wave-2 context isolation" in Step 3 for the failure mode when this is violated. Wave-1 agents that do not consume the Discovery Map (precedents, dependencies, CVE) get `ChangedFiles` / manifest-diff only.
 
 ## Steps
 
@@ -41,7 +41,7 @@ Every Wave-2 agent prompt contains EXACTLY: (a) `Known Context:` followed by the
    node "${SKILL_DIR}/_helpers/review-range.mjs" "<scope-spec>"
    ```
 
-   The helper emits labeled key/value lines (`default_branch:`, `strategy:`, `oldest:`, `newest:`, `base:`, `tip:`, `range:`, `fp_flag:`) followed by a `---changed-files---` block. Read those as authoritative for the rest of Step 1. If `strategy: unrecognised` appears, the `note:` field explains why — clarify via `ask_user_question` and re-invoke with a valid spec.
+   The helper emits labeled key/value lines (`default_branch:`, `strategy:`, `oldest:`, `newest:`, `base:`, `tip:`, `range:`, `fp_flag:`, `patch_path:`) followed by a `---changed-files---` block. Read those as authoritative for the rest of Step 1. If `strategy: unrecognised` appears, the `note:` field explains why — clarify via `ask_user_question` and re-invoke with a valid spec.
 
    `<scope-spec>` translation table — map the user's substituted argument to one of these forms:
 
@@ -62,12 +62,12 @@ Every Wave-2 agent prompt contains EXACTLY: (a) `Known Context:` followed by the
 
    `--first-parent` is orthogonal to `--no-merges`: the former prunes second-parent subtrees from reachability, the latter drops merge commits themselves from the log. Both flags are independently controllable below.
 
-3. **Assemble the UNION of changes** (not the net endpoint-diff — so reverted intermediate work stays visible). Save the patch to a tempfile once with generous context; do NOT re-run `git log --patch` to slice windows later. Substitute literal `<range>` and `<fp_flag>` values from the helper output (`<fp_flag>` is `--first-parent` or empty — omit the flag entirely when empty):
+3. **Assemble the UNION of changes** (not the net endpoint-diff — so reverted intermediate work stays visible). Save the patch to a tempfile once with generous context; do NOT re-run `git log --patch` to slice windows later. Substitute literal `<range>`, `<fp_flag>`, and `<patch_path>` values from the helper output (`<fp_flag>` is `--first-parent` or empty — omit the flag entirely when empty; `<patch_path>` is the worktree-safe diff tempfile — a literal `.git/…` path fails inside a worktree):
    - `ChangedFiles` — read from the helper's `---changed-files---` block. If a `(... N more files truncated ...)` footer appears, the change set exceeded the helper's 2000-line/40 KB cap; scope the review tighter or run the patch-tempfile command below to recover the full surface from disk.
    - `git log "<range>" <fp_flag> --stat --reverse` → per-commit size summary
-   - `git log "<range>" <fp_flag> --patch --reverse --no-merges -U30 > .git/code-review-patch.diff` → union patches with **30 lines of surrounding context per hunk** (function-level context inline)
+   - `git log "<range>" <fp_flag> --patch --reverse --no-merges -U30 > <patch_path>` → union patches with **30 lines of surrounding context per hunk** (function-level context inline)
    - `git log "<range>" --reverse --format="%H %s%n%n%b%n---"` → commit-message context
-   - **Working-tree branch** (`strategy: working-tree`, no `<range>`): for `staged` use `git diff --cached --stat` + `git diff --cached -U30 > .git/code-review-patch.diff`; for `working` use `git diff --stat` + `git diff -U30 > .git/code-review-patch.diff` (unstaged only); for `modified` use `git diff HEAD --stat` + `git diff HEAD -U30 > .git/code-review-patch.diff` (every tracked change vs HEAD — staged + unstaged, no untracked); for `commit` use `git show HEAD --stat` + `git show HEAD -U30 > .git/code-review-patch.diff`. Commit-message context is N/A for `staged` / `working` / `modified`; for `commit` use `git show HEAD --format="%H %s%n%n%b%n---" --no-patch`. ChangedFiles still comes from the helper.
+   - **Working-tree branch** (`strategy: working-tree`, no `<range>`): for `staged` use `git diff --cached --stat` + `git diff --cached -U30 > <patch_path>`; for `working` use `git diff --stat` + `git diff -U30 > <patch_path>` (unstaged only); for `modified` use `git diff HEAD --stat` + `git diff HEAD -U30 > <patch_path>` (every tracked change vs HEAD — staged + unstaged, no untracked); for `commit` use `git show HEAD --stat` + `git show HEAD -U30 > <patch_path>`. Commit-message context is N/A for `staged` / `working` / `modified`; for `commit` use `git show HEAD --format="%H %s%n%n%b%n---" --no-patch`. ChangedFiles still comes from the helper.
    - **Patch-size fallback**: `-U30` produces ~2–3× the size of `-U0`. If the resulting patch exceeds ~1MB, drop to `-U10` for this run; never use `-U0` — it defeats the skill's design.
 
 3. **Bail-out**: if `ChangedFiles` is empty, print `No changes in scope {scope}. Exiting.` and STOP. Do not write an artifact.
@@ -174,9 +174,9 @@ Peer mirrors: {peer-mirror agent output verbatim — Missing/Diverged rows only;
 
 ### Step 3: Dispatch Wave-2 — Quality + Security Lenses
 
-Spawn Quality + Security in parallel using the Agent tool. Each receives the Discovery Map block inline as `Known Context` above its task, and a pointer to `.git/code-review-patch.diff` for the diff itself. Precedents / Dependencies / CVE are already running from Wave-1 — do NOT re-dispatch them here; the prompts below document what those Wave-1 agents received, they are not re-issued.
+Spawn Quality + Security in parallel using the Agent tool. Each receives the Discovery Map block inline as `Known Context` above its task, and a pointer to `<patch_path>` for the diff itself. Precedents / Dependencies / CVE are already running from Wave-1 — do NOT re-dispatch them here; the prompts below document what those Wave-1 agents received, they are not re-issued.
 
-**Wave-2 context isolation (LOAD-BEARING — violations cause silent quality collapse)**: Each Wave-2 agent receives EXACTLY two things, nothing else: (1) the Discovery Map (digested form) and (2) the literal path string `.git/code-review-patch.diff`.
+**Wave-2 context isolation (LOAD-BEARING — violations cause silent quality collapse)**: Each Wave-2 agent receives EXACTLY two things, nothing else: (1) the Discovery Map (digested form) and (2) the resolved `<patch_path>` value.
 
 **DO NOT paste into Wave-2 prompts**, under any circumstance, even if the orchestrator has already received them:
 - raw integration-scanner output (the Discovery Map already summarises its auth/ref/wiring findings)
@@ -193,7 +193,7 @@ Spawn Quality + Security in parallel using the Agent tool. Each receives the Dis
 
 **Quality lens** (`diff-auditor`) — **file-oriented**:
   ```
-  Analyse changes file by file. For each file in ChangedFiles, read its diff region in `.git/code-review-patch.diff` (patch has `-U30` — full function context is already inline; rarely need an extra Read call), form a mental model of what the file does and what the diff changes about it, then apply the 13 surfaces below to the file as a whole. Cite `file:line` with verbatim line text (citation contract) for every finding. Omit findings not traceable to a diff-touched change. No severity.
+  Analyse changes file by file. For each file in ChangedFiles, read its diff region in `<patch_path>` (patch has `-U30` — full function context is already inline; rarely need an extra Read call), form a mental model of what the file does and what the diff changes about it, then apply the 13 surfaces below to the file as a whole. Cite `file:line` with verbatim line text (citation contract) for every finding. Omit findings not traceable to a diff-touched change. No severity.
 
   **File order strategy**: prioritise by role tag — `[boundary]` files first (security-sensitive), then `[persistence]` (durable-state surfaces), then `[hub]` (blast-radius amplifiers), then `[code]`, then `[config]`, then `[test]` last. Within the same tag, prioritise files with the largest diffs.
 
@@ -220,7 +220,7 @@ Spawn Quality + Security in parallel using the Agent tool. Each receives the Dis
 
 **Security lens** (`diff-auditor`) — **file-oriented**:
   ```
-  Analyse each changed file as a whole, looking for sinks in the classes below. For each file, grep the file's diff region in `.git/code-review-patch.diff` (patch has `-U30` — sink context is inline) for the sink patterns, and for each hit provide the verbatim line (citation contract) plus 2 surrounding lines and `confidence: N/10` that user-controlled input can reach the sink under current deployment. Drop hits with confidence < 8. Cross-reference Discovery Map auth-boundary crossings and inbound refs — a sink in a file reached from an auth-boundary file is in scope even if the sink file itself doesn't cross the boundary.
+  Analyse each changed file as a whole, looking for sinks in the classes below. For each file, grep the file's diff region in `<patch_path>` (patch has `-U30` — sink context is inline) for the sink patterns, and for each hit provide the verbatim line (citation contract) plus 2 surrounding lines and `confidence: N/10` that user-controlled input can reach the sink under current deployment. Drop hits with confidence < 8. Cross-reference Discovery Map auth-boundary crossings and inbound refs — a sink in a file reached from an auth-boundary file is in scope even if the sink file itself doesn't cross the boundary.
 
   **File order strategy**: `[boundary]` files first (direct source→sink exposure); then `[persistence]` (query injection, unsafe deserialization); then `[code]` (command exec, SSRF, explicit-trust rendering); then `[hub]` / `[config]`; skip `[test]` unless a test helper touches a sink.
 
@@ -338,7 +338,7 @@ No agent dispatch. Compute inline while 4a / 4b run:
 
 1. **Coverage map** — parse Quality + Security outputs; for each finding row extract its `file:line` citation and map `file → {finding-id}`. Files with ≥1 row are covered; files with none are uncovered.
 2. **In-scope filter** — keep files tagged `[boundary]`, `[persistence]`, `[code]`, or `[hub]` AND whose diff delta (sum of added + removed lines) is ≥ 5. Drop `[test]` and `[config]` entirely; drop files with tiny deltas.
-3. **Emit gap findings** — walk uncovered in-scope files in role-tag priority `[boundary]` → `[persistence]` → `[hub]` → `[code]`. For each, open its diff region in `.git/code-review-patch.diff` and pick ONE risk-bearing line (first non-comment `+` line, or the function-declaration header if a whole function was added). Emit:
+3. **Emit gap findings** — walk uncovered in-scope files in role-tag priority `[boundary]` → `[persistence]` → `[hub]` → `[code]`. For each, open its diff region in `<patch_path>` and pick ONE risk-bearing line (first non-comment `+` line, or the function-declaration header if a whole function was added). Emit:
 
    `G<ordinal> — file:line — \`<verbatim line>\` — {role-tag} — <risk class in 3-6 words>`
 
