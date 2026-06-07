@@ -3,6 +3,19 @@ name: research
 description: Answer structured research questions about a codebase using targeted parallel analysis agents, then synthesize findings into a research document in .rpiv/artifacts/research/. Internally dispatches the scope-tracer agent to formulate trace-quality research questions, then answers them. Use when the user wants in-depth research on a codebase area, asks to "research X", or needs answers to architecture or behavior questions before designing changes.
 argument-hint: "[free-text research prompt]"
 shell-timeout: 10
+contract:
+  produces:
+    kind: produces
+    meta:
+      artifactKind: research
+    data:
+      type: object
+      properties:
+        status:
+          enum: [in-progress, in-review, ready]
+  consumes:
+    meta:
+      artifactKind: [frd]
 ---
 
 # Research
@@ -222,7 +235,7 @@ Findings go into Precedents & Lessons. Otherwise skip and note "git history unav
    repository: {Repository name}
    topic: "{User's Research Topic}"
    tags: [research, codebase, relevant-component-names]
-   status: complete
+   status: ready
    last_updated: {Same ISO timestamp as `date:` above}
    last_updated_by: {`author:` from Metadata block}
    ---

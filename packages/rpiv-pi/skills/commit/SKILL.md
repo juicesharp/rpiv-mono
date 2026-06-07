@@ -4,6 +4,14 @@ description: Create structured git commits by analyzing staged and unstaged chan
 argument-hint: [message]
 allowed-tools: Bash(git *), Read, Glob, Grep
 shell-timeout: 10
+contract:
+  produces:
+    kind: side-effect
+    meta:
+      effect: git-commit
+  consumes:
+    meta:
+      world: dirty-tree
 ---
 
 # Commit Changes

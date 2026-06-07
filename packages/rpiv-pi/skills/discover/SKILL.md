@@ -3,6 +3,16 @@ name: discover
 description: Interview the developer one question at a time to extract feature intent and requirements, then synthesize into a Feature Requirements Document at .rpiv/artifacts/discover/. The first question is intent-only and runs before any codebase probe; subsequent questions ground in evidence the probe surfaces. Use as the canonical entry point of the pipeline before research, or to stress-test a feature idea before codebase discovery. The FRD's Decisions block is consumed by `research` and propagates through Developer Context into `design`.
 argument-hint: "[free-text feature description | existing artifact path]"
 shell-timeout: 10
+contract:
+  produces:
+    kind: produces
+    meta:
+      artifactKind: frd
+    data:
+      type: object
+      properties:
+        status:
+          enum: [in-progress, in-review, ready]
 ---
 
 # Discover
@@ -172,7 +182,7 @@ Compile interview output into the FRD. The interview's logical order (problem �
    - `date:` / `last_updated:` ← `<iso>` (first tab-separated field on line 1 of the Metadata block above, offset verbatim).
    - Interviewer: `author:` from the Metadata block (fallback: `unknown`).
 
-2. **Write the FRD** using the Write tool. Frontmatter `status: complete`. All template sections present and filled. The Write tool creates parent directories automatically — no `mkdir -p` needed in the skill.
+2. **Write the FRD** using the Write tool. Frontmatter `status: ready`. All template sections present and filled. The Write tool creates parent directories automatically — no `mkdir -p` needed in the skill.
 
 3. **Present and chain**:
    ```

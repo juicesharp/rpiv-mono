@@ -3,6 +3,25 @@ name: explore
 description: Analyze solution options for a feature or change, comparing approaches with pros, cons, trade-offs, and a recommended path. Use when the user is weighing approaches, asks "what are the options" or "how should we approach X", wants approaches compared, says "explore solutions", or faces a decision with multiple valid implementations. Produces solutions documents in .rpiv/artifacts/solutions/, which can feed the design skill.
 argument-hint: "[feature/change description]"
 shell-timeout: 10
+contract:
+  produces:
+    kind: produces
+    meta:
+      artifactKind: solutions
+    data:
+      type: object
+      properties:
+        verdict:
+          enum: [pass, fail, needs_input]
+        status:
+          enum: [in-progress, ready]
+        confidence:
+          enum: [high, medium, low]
+        complexity:
+          enum: [low, medium, high]
+  consumes:
+    meta:
+      artifactKind: [research]
 ---
 
 # Explore
@@ -133,8 +152,8 @@ Wait for ALL agents to complete before proceeding.
 
 - Cross-reference per-candidate findings — fill the candidate × dimension grid with evidence per cell.
 - Apply the fit filter qualitatively per candidate: a candidate "clears" when no kept dimension surfaces a blocking concern (integration-risk that breaks load-bearing seams, migration-cost that exceeds the topic's scope, verification-cost with no path to coverage).
-- **If ≥1 candidate clears the fit filter**: pick the strongest, document rationale with evidence, and explain why alternatives weren't chosen. Identify conditions that would change the recommendation.
-- **If every candidate fails the fit filter**: produce a "no-fit" recommendation — list each candidate's blocking dimension with evidence, recommend re-scoping the question or expanding the candidate pool, and set Step 7 frontmatter `confidence: low` and `status: blocked`.
+- **If ≥1 candidate clears the fit filter**: pick the strongest, document rationale with evidence, and explain why alternatives weren't chosen. Identify conditions that would change the recommendation. Set frontmatter `verdict: pass`.
+- **If every candidate fails the fit filter**: produce a "no-fit" recommendation — list each candidate's blocking dimension with evidence, recommend re-scoping the question or expanding the candidate pool, and set Step 7 frontmatter `confidence: low` and `verdict: fail` (`needs_input` when the call is the developer's).
 
 ### Step 6: Determine Metadata and Filename
 
@@ -160,7 +179,8 @@ Use the substituted values from the Metadata block at the top of this skill:
   topic: "{Feature/Problem}"
   confidence: high | medium | low
   complexity: low | medium | high
-  status: ready | awaiting_input | blocked
+  status: ready
+  verdict: pass | fail | needs_input
   tags: [solutions, component-names]
   last_updated: {Same ISO timestamp as `date:` above}
   last_updated_by: {Author name}
@@ -287,7 +307,7 @@ Use the substituted values from the Metadata block at the top of this skill:
   - {Re-scope the question} — {how the topic should narrow/widen so candidates can clear}
   - OR {Expand the candidate pool} — {what new candidate sources to enumerate; e.g., named ecosystem option not surfaced by Step 2}
 
-  **Frontmatter overrides:** set `confidence: low` and `status: blocked`.
+  **Frontmatter overrides:** set `confidence: low` and `verdict: fail`.
 
   ## Scope Boundaries
   - {What we're building}

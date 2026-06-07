@@ -4,6 +4,23 @@ description: Verify that an implementation plan was correctly executed by runnin
 argument-hint: "[plan-path]"
 allowed-tools: Read, Bash(git *), Bash(make *), Glob, Grep, Agent
 shell-timeout: 10
+contract:
+  produces:
+    kind: produces
+    meta:
+      artifactKind: validation
+    data:
+      type: object
+      properties:
+        status:
+          enum: [in-progress, in-review, ready]
+        verdict:
+          enum: [pass, fail]
+  consumes:
+    reads:
+      plans: {}
+    meta:
+      world: working-tree
 ---
 
 # Validate
@@ -107,9 +124,9 @@ For each phase in the plan:
    - `tags:` ← `[validation, ...]` plus any tags carried from the plan's frontmatter.
    - `topic:` ← `"Validation of <plan topic>"`.
 
-2. **Determine status**:
-   - `complete` — every phase marked `- [x]` in the plan is verified against the code, every automated command passes, no Deviations from Plan and no Potential Issues require action.
-   - `needs_changes` — any phase fails verification, any automated command fails, or Deviations / Potential Issues list items that require action.
+2. **Determine verdict** (`status` is always `ready` — written once):
+   - `verdict: pass` — every phase marked `- [x]` in the plan is verified against the code, every automated command passes, no Deviations from Plan and no Potential Issues require action.
+   - `verdict: fail` — any phase fails verification, any automated command fails, or Deviations / Potential Issues list items that require action.
 
 3. **Write the artifact** using the Write tool (no Edit — this skill writes once per run). Read `templates/validation.md`, fill every `{placeholder}` with the values determined above and the observations gathered in Step 2, apply the section-omission rules in the template (omit `#### Pattern Conformance:` and `#### Potential Issues:` entirely when empty; keep all other sections and emit `None — …` literals when empty), and Write the result to the target path.
 
@@ -121,7 +138,7 @@ For each phase in the plan:
 Validation written to:
 `.rpiv/artifacts/validation/{filename}.md`
 
-Status: {complete | needs_changes}
+Verdict: {pass | fail}
 ```
 
 Follow-up footer:
@@ -130,7 +147,7 @@ Follow-up footer:
 
 💬 Follow-up: if findings are localized, fix them and re-run `/skill:validate`. If findings imply plan-level changes, escalate to `/skill:revise <plan-path>` first.
 
-**Next step:** `/skill:commit` — group the validated changes into atomic commits (skip if status is `needs_changes` — fix the gaps first, then re-run `/skill:validate`).
+**Next step:** `/skill:commit` — group the validated changes into atomic commits (skip if `verdict: fail` — fix the gaps first, then re-run `/skill:validate`).
 
 > 🆕 Tip: start a fresh session with `/new` first — chained skills work best with a clean context window.
 
@@ -139,7 +156,7 @@ Follow-up footer:
 - **Validate does not edit code or plans.** It produces a report. Fixes happen in implement; plan revisions happen in revise.
 - **Localized gaps.** If findings are small and localized, fix them in-place and re-run `/skill:validate` for a fresh report.
 - **Plan-level gaps.** If findings imply the plan itself is wrong (missing phases, wrong approach, untestable success criteria), escalate to `/skill:revise <plan-path>` first, then re-implement, then re-validate.
-- **No append mode.** Each validation run produces a fresh report — there is no `## Follow-up` append. The previous block's `Next step:` stays valid only when status is `complete`.
+- **No append mode.** Each validation run produces a fresh report — there is no `## Follow-up` append. The previous block's `Next step:` stays valid only when `verdict: pass`.
 
 ## Working with Existing Context
 
@@ -175,6 +192,6 @@ Recommended workflow:
 2. `/skill:validate` - Verify implementation correctness
 3. `/skill:commit` - Create atomic commits for the validated changes
 
-Validate runs against the working tree (staged or committed), so running it before commit avoids amend churn when fixing `needs_changes`.
+Validate runs against the working tree (staged or committed), so running it before commit avoids amend churn when fixing a `verdict: fail`.
 
 Remember: Good validation catches issues before they reach production. Be constructive but thorough in identifying gaps or improvements.

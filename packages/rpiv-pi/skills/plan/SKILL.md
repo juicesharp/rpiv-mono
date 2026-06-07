@@ -3,6 +3,23 @@ name: plan
 description: Convert a design artifact into a phased implementation plan with parallelized atomic phases and explicit success criteria, written to .rpiv/artifacts/plans/. Use after the design skill when the user wants a design turned into an actionable, phase-by-phase plan to hand to the implement skill. Prefer plan when a straightforward phased breakdown is sufficient, and prefer blueprint when iterative vertical-slice micro-checkpoints between phases are needed.
 argument-hint: "[design artifact path]"
 shell-timeout: 10
+contract:
+  produces:
+    kind: produces
+    meta:
+      artifactKind: plan
+    data:
+      type: object
+      properties:
+        status:
+          enum: [in-progress, in-review, ready]
+        phase_count:
+          type: integer
+          minimum: 1
+          maximum: 32
+  consumes:
+    meta:
+      artifactKind: [design]
 ---
 
 # Plan

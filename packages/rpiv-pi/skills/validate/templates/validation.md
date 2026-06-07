@@ -6,7 +6,8 @@ commit: {Current commit hash}
 branch: {Current branch name}
 repository: {Repository name}
 topic: "Validation of {plan topic}"
-status: {complete | needs_changes}
+status: ready
+verdict: {pass | fail}
 parent: "{plan path}"
 tags: [validation, {inherit relevant tags from the plan's frontmatter}]
 last_updated: {Same ISO timestamp as date: above}
@@ -68,4 +69,4 @@ None — {one-line reason, e.g., "the plan explicitly requires no functional cha
 
 - {Actionable bullet — e.g., "Address linting warnings before merge"}
 - {…}
-- {Or, when status is `complete`:} Ready to commit — implementation is complete and validated.
+- {Or, when `verdict: pass`:} Ready to commit — implementation is complete and validated.

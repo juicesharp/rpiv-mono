@@ -3,6 +3,19 @@ name: design
 description: Design complex features by decomposing them into vertical slices, generating code slice-by-slice with per-slice verifier dispatch and post-finalization independent code review, and producing a design artifact (architecture decisions, slice breakdown, file map) in .rpiv/artifacts/designs/. The design feeds the plan or blueprint skill. Use for complex multi-component features touching 6+ files across multiple layers, when the user wants a feature designed before implementation. Requires a research artifact or a solutions artifact (from explore). Prefer design over plan or blueprint when the focus is architecture and decomposition rather than phased execution steps.
 argument-hint: "[research artifact path]"
 shell-timeout: 10
+contract:
+  produces:
+    kind: produces
+    meta:
+      artifactKind: design
+    data:
+      type: object
+      properties:
+        status:
+          enum: [in-progress, in-review, ready]
+  consumes:
+    meta:
+      artifactKind: [research, solutions]
 ---
 
 # Design

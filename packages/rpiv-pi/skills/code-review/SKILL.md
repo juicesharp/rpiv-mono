@@ -3,6 +3,23 @@ name: code-review
 description: "Conduct comprehensive code reviews of pending changes, a branch, or a PR using parallel specialist agents that audit the diff, compare against peer code, and verify claims. Use when the user asks to 'review this', wants pending changes, a PR, a branch, or a diff reviewed, or asks for a code review. Produces review documents in .rpiv/artifacts/reviews/. Internal mechanics like row-only agent contracts and Gap-Finder set arithmetic are documented in the skill body."
 argument-hint: "[scope]"
 shell-timeout: 10
+contract:
+  produces:
+    kind: produces
+    meta:
+      artifactKind: review
+    data:
+      type: object
+      required: [blockers_count]
+      properties:
+        status:
+          enum: [in-progress, in-review, ready]
+        blockers_count:
+          type: integer
+          minimum: 0
+  consumes:
+    meta:
+      world: working-tree
 ---
 
 # Code Review
@@ -425,7 +442,7 @@ Before writing the artifact, spawn ONE `claim-verifier` whose sole job is to gro
 - **Verified** findings — carry through unchanged to Step 7.
 - **Edge case**: if a 🔴 Cross-Finding Interaction bullet relies on constituents that are now Falsified or Weakened, re-evaluate the interaction. Drop the interaction if it no longer stands on ≥2 Verified constituents from different files.
 
-**Gate**: if verification removes / demotes ALL 🔴 findings AND there are no remaining 🟡 findings, set `status: approved` in the artifact frontmatter. Otherwise `status: needs_changes` (or `requesting_changes` for verified 🔴 > 3).
+**Gate**: after verification, set `blockers_count` = remaining 🔴 + 🟡 findings and `status: ready` in the artifact frontmatter. Emit no verdict — the review reports the count, nothing more.
 
 **Do not skip this step** — it is the only mechanism that stops confident-but-unread lens assertions from reaching the artifact.
 
@@ -468,7 +485,7 @@ Severity:     {C} critical · {I} important · {S} suggestions
 Lenses:       {Q} quality · {Se} security · {D} dependencies
 Verification: {V} verified · {W} weakened · {F} falsified (dropped)
 Advisor:      {adjudicated | inline}
-Status:       {approved | needs_changes | requesting_changes}
+Blockers:     {B} unresolved (🔴 + 🟡) · status ready
 
 Top items:
 1. {ID} — `file:line` — {headline}
@@ -481,7 +498,7 @@ Ask follow-ups, or chain forward.
 
 💬 Follow-up: describe the question in chat to append a timestamped Follow-up section. Retired IDs stay retired; re-run `/skill:code-review` for a fresh review.
 
-**Next step:** `/skill:design "Address findings from .rpiv/artifacts/reviews/{filename}.md"` — run the design phase over the review document to produce a fix plan (only when status is `needs_changes` or `requesting_changes`).
+**Next step:** `/skill:design "Address findings from .rpiv/artifacts/reviews/{filename}.md"` — run the design phase over the review document to produce a fix plan.
 
 > 🆕 Tip: start a fresh session with `/new` first — chained skills work best with a clean context window.
 ```

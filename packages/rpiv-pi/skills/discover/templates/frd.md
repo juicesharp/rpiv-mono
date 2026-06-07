@@ -6,7 +6,7 @@ branch: {Current branch name}
 repository: {Repository name}
 topic: "{Feature topic}"
 tags: [intent, frd, relevant-component-names]
-status: complete
+status: ready
 last_updated: {Same ISO timestamp as `date:` above}
 last_updated_by: {`author:` from Metadata block}
 ---
