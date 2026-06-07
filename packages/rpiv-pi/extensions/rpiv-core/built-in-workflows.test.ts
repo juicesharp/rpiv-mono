@@ -369,9 +369,9 @@ describe("[I9] phase fanout rows preserve both stage name (record key) and skill
 		mkdirSync(join(tmpDir, ".rpiv", "artifacts", "plans"), { recursive: true });
 		writeFileSync(join(tmpDir, planRelPath), "# Plan\n\n## Phase 1: a\nbody\n## Phase 2: b\nbody\n");
 
-		// Local copy of the `## Phase N:` convention used by rpiv-pi's built-in
-		// workflows — mirrors `PHASE_FANOUT` in `built-in-workflows.ts`. Inlined
-		// rather than imported so the test exercises the public FanoutFn shape.
+		// Local `## Phase N:` fanout — inlined (not imported) so the test exercises
+		// the public FanoutFn shape; aliasing audit is what's under test, not phase
+		// parsing, so a minimal number-only fanout suffices.
 		const phaseFanout: FanoutFn = ({ artifact: primary, cwd }) => {
 			if (primary?.handle.kind !== "fs") return [];
 			const path = primary.handle.path;
@@ -643,7 +643,9 @@ describe("polish workflow", () => {
 			mkdirSync(join(tmpDir, ...parts.slice(0, -1)), { recursive: true });
 			writeFileSync(join(tmpDir, relPath), content);
 		};
-		const plan = (phase = 1) => `---\ntopic: t\n---\n## Phase ${phase}: do the thing\nbody\n`;
+		// Each plan carries the `phases:` array the implement fanout enumerates.
+		const plan = (phase = 1) =>
+			`---\ntopic: t\nphases:\n  - { n: ${phase}, title: do the thing }\n---\n## Phase ${phase}: do the thing\nbody\n`;
 		// The review carries a structured `phases:` array (derived from its
 		// `### Phase N — name` headings) — what the iterate enumerates over.
 		const review2 =
@@ -686,10 +688,10 @@ describe("polish workflow", () => {
 				"/skill:blueprint .rpiv/artifacts/architecture-reviews/rev.md Implement Phase 2: Beta\n" +
 					"Prior phase plans (read first; build on them, don't duplicate): .rpiv/artifacts/plans/plan-1.md",
 			);
-			// implement fanned out the `## Phase N:` heading of each accumulated plan.
+			// implement fanned out each accumulated plan's `phases:` array, title-enriched.
 			expect(chain.sentMessages.filter((m) => m.startsWith("/skill:implement"))).toEqual([
-				"/skill:implement .rpiv/artifacts/plans/plan-1.md Phase 1",
-				"/skill:implement .rpiv/artifacts/plans/plan-2.md Phase 1",
+				"/skill:implement .rpiv/artifacts/plans/plan-1.md Phase 1: do the thing",
+				"/skill:implement .rpiv/artifacts/plans/plan-2.md Phase 1: do the thing",
 			]);
 		});
 
@@ -760,9 +762,9 @@ describe("polish workflow", () => {
 			// Each implement round saw ONLY that pass's plan — the latest-pass slice
 			// dropped the stale generations, so no plan is implemented twice.
 			expect(chain.sentMessages.filter((m) => m.startsWith("/skill:implement"))).toEqual([
-				"/skill:implement .rpiv/artifacts/plans/plan-1.md Phase 1",
-				"/skill:implement .rpiv/artifacts/plans/plan-2.md Phase 1",
-				"/skill:implement .rpiv/artifacts/plans/plan-3.md Phase 1",
+				"/skill:implement .rpiv/artifacts/plans/plan-1.md Phase 1: do the thing",
+				"/skill:implement .rpiv/artifacts/plans/plan-2.md Phase 1: do the thing",
+				"/skill:implement .rpiv/artifacts/plans/plan-3.md Phase 1: do the thing",
 			]);
 			// validate shares the same latest-pass slice — each round validates only
 			// that pass's plan, never a stale generation.
@@ -1048,6 +1050,37 @@ describe("polish — REVIEW_PHASE_ITERATE (frontmatter-driven)", () => {
 
 		const unit3 = await iterate()({ cwd: tmpDir, artifact, state, accumulated: [out(), out()], index: 2 });
 		expect(unit3).toBeNull(); // every phase planned → terminate
+	});
+
+	it("reads only the depended-on prior plans; blast_radius/effort tag the label", async () => {
+		const rel = ".rpiv/artifacts/architecture-reviews/rev.md";
+		write(
+			rel,
+			`---\nstatus: ready\nphases:\n` +
+				`  - { n: 1, title: Foundation, blast_radius: internal, effort: S }\n` +
+				`  - { n: 2, title: Vocabulary, depends_on: [1], effort: M }\n` +
+				`  - { n: 3, title: Behavioural, depends_on: [1], blast_radius: public-API, effort: L }\n` +
+				`---\n# Arch Review\n\n### Phase 1 — Foundation\nbody\n### Phase 2 — Vocabulary\nbody\n### Phase 3 — Behavioural\nbody\n`,
+		);
+		const { artifact, state } = stateFor(rel);
+		const planOut = (n: number) =>
+			({
+				artifacts: [{ handle: fsHandle(`.rpiv/artifacts/plans/plan-${n}.md`) }],
+				data: undefined,
+				kind: "",
+				meta: {},
+			}) as unknown as Output;
+
+		const u1 = await iterate()({ cwd: tmpDir, artifact, state, accumulated: [], index: 0 });
+		expect(u1?.label).toBe("phase 1/3 — Foundation [S, internal]");
+
+		// Phase 3 depends_on [1] only → reads plan-1, not the accumulated plan-2.
+		const u3 = await iterate()({ cwd: tmpDir, artifact, state, accumulated: [planOut(1), planOut(2)], index: 2 });
+		expect(u3?.prompt).toBe(
+			`${rel} Implement Phase 3: Behavioural\n` +
+				`Prior phase plans (read first; build on them, don't duplicate): .rpiv/artifacts/plans/plan-1.md`,
+		);
+		expect(u3?.label).toBe("phase 3/3 — Behavioural [L, public-API]");
 	});
 
 	it("throws when the frontmatter phases disagree with the body headings (stale derive)", () => {

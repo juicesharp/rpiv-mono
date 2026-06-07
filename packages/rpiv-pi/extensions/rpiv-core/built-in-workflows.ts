@@ -44,76 +44,93 @@ import { rpivBucketOutcome } from "./artifact-collector.js";
 // same numeric gate: `gate("blockers_count", { <fix>: gt(0), commit: eq(0) })`.
 
 /**
- * Markdown `## Phase N:` headings in the inherited plan artifact define
- * fanout units for the bundled `implement` skill. The convention lives
- * here — rpiv-workflow knows nothing about phases.
+ * A plan's structured `phases:` frontmatter array — the machine-readable phase
+ * enumeration a plan-producing skill (`blueprint`, `plan`) derives from its
+ * `## Phase N:` body headings — is what drives `implement` fanout. The
+ * convention lives here; rpiv-workflow knows nothing about phases.
  *
- * Cap: a plan declaring more than 32 phases throws. The rpiv-pi `plan`
- * skill caps around 8 phases in practice; 32 leaves headroom for stretch
- * plans without letting a pathological (or hostile) plan drive an
- * unbounded fanout loop.
+ * Cap: a plan declaring more than 32 phases throws. The rpiv-pi planning skills
+ * cap around 8 phases in practice; 32 leaves headroom for stretch plans without
+ * letting a pathological (or hostile) plan drive an unbounded fanout loop.
  */
 const MAX_PHASES = 32;
 
-const PHASE_FANOUT: FanoutFn = ({ artifact: primary, cwd }) => {
-	if (primary?.handle.kind !== "fs") return [];
-	const path = primary.handle.path;
-	const abs = isAbsolute(path) ? path : join(cwd, path);
-	const content = readFileSync(abs, "utf-8");
-	const matches = [...content.matchAll(/^## Phase (\d+):/gm)];
-	if (matches.length > MAX_PHASES) {
+/**
+ * `## Phase N:` headings — the source of truth a plan's `phases:` frontmatter
+ * array is derived from. Used to verify that derived array, not to enumerate
+ * (enumeration reads the typed `phases:` array).
+ */
+const PLAN_PHASE_RE = /^## Phase (\d+):/gm;
+
+/**
+ * One parsed entry of a plan's `phases:` array. `entry` carries the whole raw
+ * frontmatter object, so a consumer can read fields beyond `{ n, title }`
+ * without this parser knowing about them.
+ */
+interface PhaseRecord {
+	entry: Record<string, unknown>;
+	/** From `entry.n`, falling back to the 1-based array position. */
+	n: number;
+	/** From `entry.title`, or "" when absent. */
+	title: string;
+	/** 0-based position in the array. */
+	index: number;
+	/** Total phases in this plan. */
+	total: number;
+}
+
+/**
+ * Parse a plan's `phases:` frontmatter into records, derive-checked against the
+ * body's `## Phase N:` headings — the source of truth both the single-plan
+ * (`FRONTMATTER_PHASE_FANOUT`) and multi-plan (`PLANS_PHASE_FANOUT`) fanouts
+ * share. A length mismatch means the producer's rebuild step was skipped or the
+ * array went stale; throw rather than dispatch a wrong unit list. `who`/`path`
+ * shape the diagnostic.
+ */
+const planPhaseRecords = (content: string, who: string, path: string): readonly PhaseRecord[] => {
+	const { frontmatter } = parseFrontmatter(content);
+	const raw = (frontmatter as Record<string, unknown>).phases;
+	const phases = Array.isArray(raw) ? raw : [];
+	const headingCount = [...content.matchAll(PLAN_PHASE_RE)].length;
+	if (phases.length !== headingCount) {
 		throw new Error(
-			`PHASE_FANOUT: plan ${path} declares ${matches.length} phases — exceeds MAX_PHASES (${MAX_PHASES}); split into smaller plans`,
+			`${who}: plan ${path} frontmatter phases (${phases.length}) ≠ '## Phase N:' headings (${headingCount}) — the derived array is stale against the body`,
 		);
 	}
-	const promptPath = handleToString(primary.handle);
-	return matches.map((m, i) => ({
-		prompt: `${promptPath} Phase ${m[1]}`,
-		label: `phase ${i + 1}/${matches.length}`,
-	}));
+	return phases.map((entry, index) => {
+		const e = (entry ?? {}) as Record<string, unknown>;
+		return {
+			entry: e,
+			n: typeof e.n === "number" ? e.n : index + 1,
+			title: typeof e.title === "string" ? e.title : "",
+			index,
+			total: phases.length,
+		};
+	});
 };
 
 /**
- * Fan `implement` out over a plan's structured `phases:` frontmatter array — the
- * machine-readable phase enumeration `blueprint` derives from its `## Phase N:`
- * headings. Each unit's prompt carries the phase title. Reading the frontmatter
- * from the artifact file (not `output.data`) keeps the fanout deterministic
- * w.r.t. its entry artifact on resume — same posture as `PHASE_FANOUT`.
- *
- * Derive-check: the array is derived from the body headings, so its length must
- * equal the `## Phase N:` heading count. A mismatch means the producer's rebuild
- * step was skipped or the array went stale — throw rather than dispatch a wrong
- * unit list.
+ * Fan `implement` out over a single plan's structured `phases:` frontmatter
+ * array. Each unit's prompt carries the phase title. Used by every workflow
+ * whose `implement` inherits one plan (ship/build/arch/vet); polish's
+ * accumulating multi-plan variant is `PLANS_PHASE_FANOUT`.
  */
 const FRONTMATTER_PHASE_FANOUT: FanoutFn = ({ artifact: primary, cwd }) => {
 	if (primary?.handle.kind !== "fs") return [];
 	const path = primary.handle.path;
 	const abs = isAbsolute(path) ? path : join(cwd, path);
 	const content = readFileSync(abs, "utf-8");
-	const { frontmatter } = parseFrontmatter(content);
-	const raw = (frontmatter as Record<string, unknown>).phases;
-	const phases = Array.isArray(raw) ? raw : [];
-	if (phases.length > MAX_PHASES) {
+	const records = planPhaseRecords(content, "FRONTMATTER_PHASE_FANOUT", path);
+	if (records.length > MAX_PHASES) {
 		throw new Error(
-			`FRONTMATTER_PHASE_FANOUT: plan ${path} declares ${phases.length} phases — exceeds MAX_PHASES (${MAX_PHASES}); split into smaller plans`,
-		);
-	}
-	const headingCount = [...content.matchAll(/^## Phase (\d+):/gm)].length;
-	if (phases.length !== headingCount) {
-		throw new Error(
-			`FRONTMATTER_PHASE_FANOUT: plan ${path} frontmatter phases (${phases.length}) ≠ '## Phase N:' headings (${headingCount}) — the derived array is stale against the body`,
+			`FRONTMATTER_PHASE_FANOUT: plan ${path} declares ${records.length} phases — exceeds MAX_PHASES (${MAX_PHASES}); split into smaller plans`,
 		);
 	}
 	const promptPath = handleToString(primary.handle);
-	return phases.map((entry, i) => {
-		const phase = (entry ?? {}) as { n?: unknown; title?: unknown };
-		const n = typeof phase.n === "number" ? phase.n : i + 1;
-		const title = typeof phase.title === "string" ? phase.title : "";
-		return {
-			prompt: `${promptPath} Phase ${n}: ${title}`.trimEnd(),
-			label: `phase ${i + 1}/${phases.length}`,
-		};
-	});
+	return records.map((r) => ({
+		prompt: `${promptPath} Phase ${r.n}: ${r.title}`.trimEnd(),
+		label: `phase ${r.index + 1}/${r.total}`,
+	}));
 };
 
 // ===========================================================================
@@ -154,7 +171,7 @@ const buildWorkflow = defineWorkflow({
 	stages: {
 		research: produces({ outcome: rpivBucketOutcome("research") }),
 		blueprint: produces({ outcome: rpivBucketOutcome("plans") }),
-		implement: acts({ fanout: PHASE_FANOUT }),
+		implement: acts({ fanout: FRONTMATTER_PHASE_FANOUT }),
 		validate: produces({ outcome: rpivBucketOutcome("validation") }),
 		"code-review": produces({ outcome: rpivBucketOutcome("reviews") }),
 		revise: produces({ outcome: rpivBucketOutcome("plans"), reads: ["plans", "reviews"] }),
@@ -191,7 +208,7 @@ const archWorkflow = defineWorkflow({
 		research: produces({ outcome: rpivBucketOutcome("research") }),
 		design: produces({ outcome: rpivBucketOutcome("designs") }),
 		plan: produces({ outcome: rpivBucketOutcome("plans") }),
-		implement: acts({ fanout: PHASE_FANOUT }),
+		implement: acts({ fanout: FRONTMATTER_PHASE_FANOUT }),
 		validate: produces({ outcome: rpivBucketOutcome("validation") }),
 		"code-review": produces({ outcome: rpivBucketOutcome("reviews") }),
 		commit: acts({ outcome: gitCommitOutcome }),
@@ -225,7 +242,7 @@ const vetWorkflow = defineWorkflow({
 	stages: {
 		"code-review": produces({ outcome: rpivBucketOutcome("reviews") }),
 		blueprint: produces({ outcome: rpivBucketOutcome("plans") }),
-		implement: acts({ fanout: PHASE_FANOUT }),
+		implement: acts({ fanout: FRONTMATTER_PHASE_FANOUT }),
 		validate: produces({ outcome: rpivBucketOutcome("validation") }),
 		commit: acts({ outcome: gitCommitOutcome }),
 	},
@@ -290,27 +307,41 @@ const latestPlans = (state: Readonly<RunState>, cwd: string): readonly Output[] 
 	return phaseCount > 0 && plans.length > phaseCount ? plans.slice(-phaseCount) : plans;
 };
 
+/** Phase number for a `phases:` entry, falling back to its 1-based position. */
+const phaseNum = (entry: unknown, index: number): number => {
+	const n = (entry as { n?: unknown } | undefined)?.n;
+	return typeof n === "number" ? n : index + 1;
+};
+
+/** `depends_on` phase numbers an entry declares (empty when absent). */
+const phaseDeps = (entry: unknown): number[] => {
+	const raw = (entry as { depends_on?: unknown } | undefined)?.depends_on;
+	return Array.isArray(raw) ? raw.filter((d): d is number => typeof d === "number") : [];
+};
+
 /**
  * Per-review-phase blueprint generator (the `iterate` dual of
- * FRONTMATTER_PHASE_FANOUT). One blueprint pass per review phase, each seeing the
- * plans already produced so it builds on them instead of duplicating. Enumerates
- * over the review's structured `phases:` frontmatter array (derived by
- * architecture-review from its `### Phase N — name` headings); each unit's prompt
- * carries the phase title. blueprint writes its own natural
- * `.rpiv/artifacts/plans/<slug>_<topic>.md` file — the iterate stage's `plans`
- * collector captures whatever path it announces, so no output-path plumbing is
- * needed.
+ * FRONTMATTER_PHASE_FANOUT). One blueprint pass per review phase, enumerating the
+ * review's structured `phases:` array (derived by architecture-review from its
+ * `### Phase N — name` headings). blueprint writes its own natural plan file; the
+ * `plans` collector captures whatever path it announces.
  *
- * Derive-check (first call): the array is derived from the body headings, so its
- * length must equal the `### Phase N — name` heading count; a mismatch means the
- * producer's rebuild step was skipped or the array went stale.
+ * Each phase reads only the plans of the phases it `depends_on` (vs. every prior
+ * plan) — accurate context, and the seam B-schedule would parallelize on later.
+ * `blast_radius`/`effort` tag the label. Absent `depends_on` falls back to all
+ * prior plans.
+ *
+ * Guards (first call): the array's length must equal the `### Phase N — name`
+ * heading count (stale derive), and every `depends_on` must reference an earlier
+ * phase (exists, no self/forward/cyclic edge against body order).
  */
 const REVIEW_PHASE_ITERATE: IterateFn = ({ artifact, state, accumulated, cwd }) => {
 	// Source the review from the named registry — robust to corrective re-entry,
 	// where the rolling primary is the latest code-review doc, not the review.
 	const review = latestFsArtifact(state, "architecture-reviews") ?? artifact;
 	if (review?.handle.kind !== "fs") return null;
-	const content = readFileSync(resolveCwd(review.handle.path, cwd), "utf-8");
+	const reviewPath = review.handle.path; // captured: narrowing is lost inside nested closures below
+	const content = readFileSync(resolveCwd(reviewPath, cwd), "utf-8");
 	const { frontmatter } = parseFrontmatter(content);
 	const raw = (frontmatter as Record<string, unknown>).phases;
 	const phases = Array.isArray(raw) ? raw : [];
@@ -319,19 +350,37 @@ const REVIEW_PHASE_ITERATE: IterateFn = ({ artifact, state, accumulated, cwd }) 
 		const headingCount = [...content.matchAll(REVIEW_PHASE_RE)].length;
 		if (phases.length !== headingCount) {
 			throw new Error(
-				`REVIEW_PHASE_ITERATE: review ${review.handle.path} frontmatter phases (${phases.length}) ≠ '### Phase N —' headings (${headingCount}) — the derived array is stale against the body`,
+				`REVIEW_PHASE_ITERATE: review ${reviewPath} frontmatter phases (${phases.length}) ≠ '### Phase N —' headings (${headingCount}) — the derived array is stale against the body`,
 			);
 		}
+		const indexByN = new Map(phases.map((e, idx) => [phaseNum(e, idx), idx]));
+		phases.forEach((e, idx) => {
+			for (const d of phaseDeps(e)) {
+				const di = indexByN.get(d);
+				if (di === undefined)
+					throw new Error(
+						`REVIEW_PHASE_ITERATE: review ${reviewPath} phase ${phaseNum(e, idx)} depends_on ${d}, which is not a declared phase`,
+					);
+				if (di >= idx)
+					throw new Error(
+						`REVIEW_PHASE_ITERATE: review ${reviewPath} phase ${phaseNum(e, idx)} depends_on ${d}, which is not an earlier phase (self/forward/cyclic dependency)`,
+					);
+			}
+		});
 	}
 	if (i >= phases.length) return null; // every phase planned → terminate
-	const phase = (phases[i] ?? {}) as { n?: unknown; title?: unknown };
-	const n = typeof phase.n === "number" ? phase.n : i + 1;
-	const title = typeof phase.title === "string" ? phase.title : "";
+	const entry = (phases[i] ?? {}) as { title?: unknown; blast_radius?: unknown; effort?: unknown };
+	const n = phaseNum(entry, i);
+	const title = typeof entry.title === "string" ? entry.title : "";
 
-	const prior = accumulated
-		.flatMap((o) => o.artifacts)
-		.filter((a) => a.handle.kind === "fs")
-		.map((a) => handleToString(a.handle));
+	// accumulated[j] is phase j's output — map each prior phase number to its plans.
+	const priorByN = new Map<number, string[]>();
+	accumulated.forEach((o, j) => {
+		const paths = o.artifacts.filter((a) => a.handle.kind === "fs").map((a) => handleToString(a.handle));
+		if (paths.length) priorByN.set(phaseNum(phases[j], j), paths);
+	});
+	const deps = phaseDeps(phases[i]);
+	const prior = deps.length ? deps.flatMap((d) => priorByN.get(d) ?? []) : [...priorByN.values()].flat();
 	// On a corrective pass the latest code-review is in `reviews`; fold its blockers in.
 	const feedback = latestFsArtifact(state, "reviews");
 
@@ -339,25 +388,32 @@ const REVIEW_PHASE_ITERATE: IterateFn = ({ artifact, state, accumulated, cwd }) 
 	if (prior.length) prompt += `\nPrior phase plans (read first; build on them, don't duplicate): ${prior.join(", ")}`;
 	if (feedback?.handle.kind === "fs")
 		prompt += `\nAddress the blockers in the latest code review: ${handleToString(feedback.handle)}`;
-	return { prompt, label: `phase ${i + 1}/${phases.length} — ${title}`, id: `phase-${n}` };
+	const tags = [entry.effort, entry.blast_radius].filter((t): t is string => typeof t === "string");
+	let label = `phase ${i + 1}/${phases.length} — ${title}`;
+	if (tags.length) label += ` [${tags.join(", ")}]`;
+	return { prompt, label, id: `phase-${n}` };
 };
 
 /**
- * Fan implement out over the `## Phase N:` headings of EVERY plan in the latest
- * blueprint pass (see `latestPlans` for the corrective-loop dedup). This is the
- * dedup the design's deterministic-filename scheme bought — done here over the
- * accumulation instead, so blueprint keeps its natural timestamped filenames.
+ * Fan implement out over the `phases:` array of EVERY plan in the latest
+ * blueprint pass (see `latestPlans` for the corrective-loop dedup), so blueprint
+ * keeps its natural timestamped filenames. The single-plan
+ * `FRONTMATTER_PHASE_FANOUT` is the same over one inherited plan; both share
+ * `planPhaseRecords`. MAX_PHASES is enforced on the aggregate unit count, since
+ * polish fans one implement pass over the whole plan set.
  */
 const PLANS_PHASE_FANOUT: FanoutFn = ({ state, cwd }) => {
 	const units: FanoutUnit[] = [];
 	for (const out of latestPlans(state, cwd)) {
 		for (const a of out.artifacts) {
 			if (a.handle.kind !== "fs") continue;
-			const abs = resolveCwd(a.handle.path, cwd);
-			for (const m of readFileSync(abs, "utf-8").matchAll(/^## Phase (\d+):/gm)) {
+			const path = a.handle.path;
+			const content = readFileSync(resolveCwd(path, cwd), "utf-8");
+			const promptPath = handleToString(a.handle);
+			for (const r of planPhaseRecords(content, "PLANS_PHASE_FANOUT", path)) {
 				units.push({
-					prompt: `${handleToString(a.handle)} Phase ${m[1]}`,
-					label: `${basename(a.handle.path)} P${m[1]}`,
+					prompt: `${promptPath} Phase ${r.n}: ${r.title}`.trimEnd(),
+					label: `${basename(path)} P${r.n}`,
 				});
 			}
 		}

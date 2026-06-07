@@ -27,6 +27,13 @@ contract:
             properties:
               n: { type: integer, minimum: 1 }
               title: { type: string }
+              depends_on:
+                type: array
+                items: { type: integer, minimum: 1 }
+              blast_radius:
+                enum: [internal, public-API, on-disk, cross-module]
+              effort:
+                enum: [S, M, L]
   consumes:
     meta:
       world: target-path
@@ -267,7 +274,7 @@ Phases are agent-driven: each one will be handed to `blueprint` → `implement`.
        Phase 6 (Public-API)
    ```
 
-6. **Confirm the plan + flip status.** Use the `ask_user_question` tool: "{N} phases ({F} findings across {Files} files). Approve or adjust?". Header: "Plan". Options: "Approve (Recommended)" (**rebuild the `phases:` frontmatter array from the `### Phase N — name` headings** — one `{ n, title }` entry per heading, in body order, e.g. `phases: [{ n: 1, title: Foundation }, { n: 2, title: Vocabulary }]`; then Edit frontmatter `status: in-progress` → `status: ready`, proceed to Step 9); "Adjust phase boundaries" (describe); "Resequence phases" (describe); "Other".
+6. **Confirm the plan + flip status.** Use the `ask_user_question` tool: "{N} phases ({F} findings across {Files} files). Approve or adjust?". Header: "Plan". Options: "Approve (Recommended)" (**rebuild the `phases:` frontmatter array from the `### Phase N — name` headings** — one `{ n, title, depends_on, blast_radius, effort }` entry per heading, in body order: `depends_on` from the dependency graph (Step 5, earlier phases only), `blast_radius` the phase's widest of `internal`/`public-API`/`on-disk`/`cross-module` (Step 3), `effort` `S`/`M`/`L`; e.g. `phases: [{ n: 1, title: Foundation, depends_on: [], blast_radius: internal, effort: S }, { n: 2, title: Vocabulary, depends_on: [1], blast_radius: internal, effort: M }]`; then Edit frontmatter `status: in-progress` → `status: ready`, proceed to Step 9); "Adjust phase boundaries" (describe); "Resequence phases" (describe); "Other".
 
 ### Step 9: Present and Chain
 

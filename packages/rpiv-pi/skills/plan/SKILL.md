@@ -10,6 +10,7 @@ contract:
       artifactKind: plan
     data:
       type: object
+      required: [phases]
       properties:
         status:
           enum: [in-progress, in-review, ready]
@@ -17,6 +18,16 @@ contract:
           type: integer
           minimum: 1
           maximum: 32
+        phases:
+          type: array
+          minItems: 1
+          maxItems: 32
+          items:
+            type: object
+            required: [n, title]
+            properties:
+              n: { type: integer, minimum: 1 }
+              title: { type: string }
   consumes:
     meta:
       artifactKind: [design]
@@ -109,6 +120,7 @@ Write the plan **incrementally** — skeleton first, then fill each phase. Code 
      - With ticket: `2025-01-08_14-30-00_ENG-1478-parent-child-tracking.md`
      - Without ticket: `2025-01-08_14-30-00_improve-error-handling.md`
    - The skeleton includes everything EXCEPT large code blocks: frontmatter, Overview, Desired End State, What We're NOT Doing, full phase structure (Overview, Changes Required with file paths and change summaries, **Success Criteria copied verbatim from design's `## Slices`**, parallelism annotations), Testing Strategy, Performance Considerations, References. Phase boundaries are inherited 1:1 from `## Slices` — no recomposition.
+   - **Frontmatter `phases:` array** — one `{ n, title }` entry per `## Phase N:` section, in body order; `phase_count` equals its length. `implement` fans out over it.
 
 2. **Fill code blocks using Edit** — one phase at a time:
    - For each phase, Edit to insert the code blocks from the design's `## Architecture` section into the Changes Required subsections. Use the slice's `**Files**:` list (from the design's `## Slices`) to know which Architecture entries belong to which phase.
@@ -127,6 +139,10 @@ topic: "{Feature/Task Name}"
 tags: [plan, relevant-component-names]
 status: in-progress
 parent: "{path to design artifact}"
+phase_count: {number of `## Phase N:` sections}
+phases:
+  - { n: 1, title: {Phase 1 name} }
+  - { n: 2, title: {Phase 2 name} }
 last_updated: {Same ISO timestamp as `date:` above}
 last_updated_by: {`author:` from Metadata block}
 ---
@@ -302,7 +318,9 @@ The 8-column header is retained when only one source returns; only rows from the
 
    **Order and batching**: blockers sequentially (resolution may invalidate later rows). Concerns and suggestions: batch up to 4 independent rows per `ask_user_question` call. Independent = different files / different intents AND neither recommendation references the other's location; otherwise sequential.
 
-2. **Flip status to ready**: once every row has a `resolution` (or the table is empty per Step 4's no-findings / failure-fallback path), Edit frontmatter `status: in-review` → `status: ready`. Artifact is now implement-ready.
+2. **Rebuild `phases:` then flip status to ready**: once every row has a `resolution` (or the table is empty per Step 4's no-findings / failure-fallback path):
+   - **Rebuild the `phases:` frontmatter array (and `phase_count`) from the `## Phase N:` headings** — one `{ n, title }` entry per section, in body order. The implement fanout derive-checks length against the headings, so a triage-applied split/merge that left the array stale fails fast.
+   - Edit frontmatter `status: in-review` → `status: ready`. Artifact is now implement-ready.
 
 3. **Present the plan location** (after triage is complete):
    ```
@@ -329,7 +347,7 @@ The 8-column header is retained when only one source returns; only rows from the
 
 - **Edit in-place.** Use the Edit tool to update the plan artifact directly. Phase numbering stays stable when possible — renumber only when a phase is split or merged.
 - **Bump frontmatter.** Update `last_updated` + `last_updated_by`; set `last_updated_note: "<one-line summary>"`.
-- **Phase-level moves.** Split large phases, merge small phases, adjust success criteria, reorder phases — all in-place. Continue refining until the developer is satisfied.
+- **Phase-level moves.** Split large phases, merge small phases, adjust success criteria, reorder phases — all in-place. Continue refining until the developer is satisfied. On any boundary change (split/merge/reorder), **rebuild `phases:` and `phase_count` from the `## Phase N:` headings** — the implement fanout throws on a stale array.
 - **When to re-invoke instead.** For surgical edits driven by review findings, prefer `/skill:revise <plan-path>`. Re-run `/skill:plan` only when the underlying design changed materially. The previous block's `Next step:` stays valid for the existing plan.
 
 ## Guidelines
