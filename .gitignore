@@ -36,7 +36,7 @@ thoughts/
 coverage/
 .nyc_output/
 packages/rpiv-site/dist/
-packages/rpiv-site/.astro/
+packages/*/.astro/
 # Astro generates a `.astro/` cache wherever it's invoked from. The
 # packages-level rule above doesn't cover the case of running Astro from the
 # monorepo root (e.g. via a workspace script), so ignore the root cache too.
