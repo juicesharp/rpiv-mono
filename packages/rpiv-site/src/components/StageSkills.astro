@@ -126,9 +126,15 @@ const byGroup = (g: string): StageSkill[] => skills.filter((s) => s.group === g)
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		gap: var(--space-2);
+		flex-wrap: wrap;
+		gap: var(--space-1) var(--space-2);
 	}
+	/* Keep the skill chip on one line — a long name (/skill:architecture-review)
+	   must not break mid-word. Paths that fit sit beside the chip; one too long
+	   to share the row drops to its own line whole, never wrapping the chip. */
+	.sk-card__head .chip { white-space: nowrap; }
 	.sk-card__out {
+		min-width: 0;
 		font-size: var(--type-micro);
 		color: var(--text-distant);
 		letter-spacing: 0.02em;

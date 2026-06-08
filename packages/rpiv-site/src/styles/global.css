@@ -103,7 +103,7 @@ section[id] {
    rhythm via the `.ref-section` rules below and should not inherit the
    page-level padding. */
 main > section {
-	padding: var(--space-9) 0;
+	padding: var(--space-8) 0;
 	position: relative;
 }
 @media (max-width: 720px) {
@@ -229,6 +229,13 @@ main > section {
 		radial-gradient(1200px 200px at 30% 0%, rgba(168, 137, 108, 0.04), transparent 60%),
 		radial-gradient(800px 200px at 80% 100%, rgba(138, 149, 128, 0.03), transparent 60%);
 	mix-blend-mode: lighten;
+}
+
+/* Landing section headings carry the warm ochre accent — unified across every
+   section (the docs/blog mains are class-less or `.docs-content`, so they keep
+   the default --washi h2). */
+.landing > section h2 {
+	color: var(--ochre);
 }
 
 main > section:target h2 {

@@ -47,7 +47,7 @@ const loop = showcase.loop; // review → re-entry arc, drawn on the automated r
 				{/* ── transition — shared columns fuse into one rail ── */}
 				{stages.map((_, i) => {
 					const x = nodeX(i);
-					return <line x1={x} y1={Y_TOP + 30} x2={x} y2={Y_BOT - 30} stroke="var(--sage)" stroke-width="0.6" opacity="0.1" stroke-dasharray="2 6" />;
+					return <line x1={x} y1={Y_TOP + 30} x2={x} y2={Y_BOT - 30} stroke="var(--sage)" stroke-width="0.7" opacity="0.18" stroke-dasharray="2 6" />;
 				})}
 				<text x={MID} y={(Y_TOP + Y_BOT) / 2 + 3} text-anchor="middle" font-family="var(--font-mono)" font-size="8" fill="var(--text-distant)" letter-spacing="0.2em" opacity="0.85">↓ FUSED ONTO ONE RAIL</text>
 
@@ -60,9 +60,9 @@ const loop = showcase.loop; // review → re-entry arc, drawn on the automated r
 						<g>
 							{/* broken hop — not a rail */}
 							<path d={`M${a + 13},${Y_TOP} Q${mid},${Y_TOP - 13} ${b - 13},${Y_TOP}`}
-								fill="none" stroke="var(--washi-soft)" stroke-width="0.7" opacity="0.22" stroke-dasharray="2 3" stroke-linecap="round" />
+								fill="none" stroke="var(--washi-soft)" stroke-width="0.8" opacity="0.34" stroke-dasharray="2 3" stroke-linecap="round" />
 							{/* inert artifact sitting in the gap — you must carry it */}
-							<rect x={mid - 2.5} y={Y_TOP - 3} width="5" height="6.5" rx="0.6" fill="var(--washi-soft)" opacity="0.3" />
+							<rect x={mid - 2.5} y={Y_TOP - 3} width="5" height="6.5" rx="0.6" fill="var(--washi-soft)" opacity="0.42" />
 						</g>
 					);
 				})}
@@ -72,8 +72,8 @@ const loop = showcase.loop; // review → re-entry arc, drawn on the automated r
 					const x = nodeX(i);
 					return (
 						<g>
-							<circle cx={x} cy={Y_TOP} r="11" fill="var(--ink)" stroke="var(--sage)" stroke-width="0.9" opacity="0.5" stroke-dasharray="3 2.5" />
-							<text x={x} y={Y_TOP + 26} text-anchor="middle" font-family="var(--font-mono)" font-size="9.5" fill="var(--text-distant)" letter-spacing="0.02em">{name}</text>
+							<circle cx={x} cy={Y_TOP} r="11" fill="var(--ink)" stroke="var(--sage)" stroke-width="1" opacity="0.68" stroke-dasharray="3 2.5" />
+							<text x={x} y={Y_TOP + 26} text-anchor="middle" font-family="var(--font-mono)" font-size="9.5" fill="var(--text-quiet)" letter-spacing="0.02em">{name}</text>
 						</g>
 					);
 				})}
