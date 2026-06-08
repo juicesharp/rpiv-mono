@@ -1,128 +1,403 @@
 ---
-import { getPipelineSkills } from "../lib/skills";
-import SumiInk from "./SumiInk.astro";
-const pipeline = await getPipelineSkills();
+import { getWorkflows } from "../lib/workflows";
+
+const workflows = await getWorkflows();
+const showcase = workflows.find((w) => w.showcase) ?? workflows[0];
+
+// Rail geometry — 720-wide viewBox. Insets kept small (x0/x1 near the edges) so
+// the first node sits almost flush with the headline's left grid edge and the
+// rail reaches the right, rather than floating indented toward centre. Node
+// centres are evenly spaced across the span.
+const RAIL = { vw: 720, vh: 96, y: 50, x0: 36, x1: 684 } as const;
+const nodeX = (i: number, n: number) => (n <= 1 ? RAIL.x0 : RAIL.x0 + (i * (RAIL.x1 - RAIL.x0)) / (n - 1));
 ---
 
 <section id="top" class="hero">
-	<SumiInk variant="backdrop" />
+	{/* Bespoke ambient wash — the sanctioned SumiInk ink-blur glow (warm ochre,
+	    behind the command) PLUS the brand's signature hand-drawn stroke arcs,
+	    here routed through the upper-left and lower-right negative space so the
+	    central horizontal band stays clear and the arcs never cross the chain
+	    rail or compete with the review loop. */}
+	<div class="hero__wash" aria-hidden="true">
+		<svg class="hero__washGlow" viewBox="0 0 1200 600" preserveAspectRatio="xMidYMid slice">
+			<defs>
+				<radialGradient id="hero-wash" cx="50%" cy="50%" r="50%">
+					<stop offset="0%" stop-color="currentColor" stop-opacity="0.20" />
+					<stop offset="55%" stop-color="currentColor" stop-opacity="0.05" />
+					<stop offset="100%" stop-color="currentColor" stop-opacity="0" />
+				</radialGradient>
+			</defs>
+			{/* Two offset ochre blobs — the old SumiInk backdrop's asymmetric
+			    backsplash, pooled behind the headline (left-of-centre, not a flat
+			    centred wash). */}
+			<circle cx="372" cy="296" r="372" fill="url(#hero-wash)" />
+			<circle cx="196" cy="470" r="196" fill="url(#hero-wash)" opacity="0.6" />
+		</svg>
+		<svg class="hero__washArcs" viewBox="0 0 1200 600" preserveAspectRatio="xMidYMid slice">
+			<g fill="none" stroke="var(--sage)" stroke-linecap="round">
+				{/* upper-left sweep — the dominant arc, lifting toward the corner */}
+				<path d="M-60 244 q220 -192 560 -208 q214 -10 404 80" stroke-width="1.4" opacity="0.24" />
+				<path d="M16 282 q204 -122 476 -134" stroke-width="0.7" opacity="0.14" />
+				{/* lower-right trailing stroke — balances the composition off-axis */}
+				<path d="M648 486 q236 66 588 16" stroke-width="1.2" opacity="0.18" />
+				<circle cx="978" cy="150" r="2.4" opacity="0.42" />
+				<circle cx="214" cy="206" r="1.6" opacity="0.34" />
+			</g>
+		</svg>
+	</div>
 	<div class="container hero__inner">
-		<p class="kicker hero__kicker">§ rpiv-pi · pi plugin</p>
+		<p class="kicker hero__kicker">§ rpiv-pi · workflow runner</p>
 
+		{/* Headline — the human arc, typography-as-art. The mechanical detail
+		    (which skills, in what order) lives in the chain figure below; these
+		    three words are what someone remembers a week later. */}
 		<h1 class="hero__title">
 			<span class="hero__line hero__line--1">research</span>
-			<span class="hero__line hero__line--2">design</span>
+			<span class="hero__line hero__line--2">build</span>
 			<span class="hero__line hero__line--3">ship</span>
 		</h1>
 
+		{/* Demonstration unit — the command is the INPUT, the chain is what it
+		    runs. Held tight together so they read as one "type this → get this"
+		    gesture rather than two stacked bands. The command is mono, demoted
+		    from the headline role it used to carry. */}
+		<div class="hero__demo">
+			<p class="hero__cmd">
+				<span class="hero__cmd-prompt" aria-hidden="true">$</span>
+				<span class="hero__cmd-text">/wf&nbsp;<em class="hero__cmd-name" data-wf-name>{showcase.name}</em>
+					<span class="hero__cmd-brief" data-wf-brief>{showcase.arg}</span></span>
+			</p>
+
+			{/* One chain figure per workflow; only the active one is shown. No-JS
+			    falls back to the showcase; the chips below upgrade to a selector. */}
+			<div class="hero__chains">
+			{workflows.map((wf) => {
+				const n = wf.stages.length;
+				return (
+					<figure
+						class:list={["hero__chain", wf.name === showcase.name && "is-initial"]}
+						data-wf-chain={wf.name}
+						hidden={wf.name !== showcase.name}
+						aria-label={`The ${wf.name} workflow: ${wf.stages.map((s) => s.name).join(", ")}${wf.loop ? ", with a review loop" : ""}, run by one command.`}
+					>
+						<svg viewBox={`0 0 ${RAIL.vw} ${RAIL.vh}`} class="hero__chainSvg" preserveAspectRatio="xMidYMid meet" role="presentation">
+							{/* rail hairline */}
+							<g fill="none" stroke="var(--sage-deep)" stroke-linecap="round">
+								<path d={`M${RAIL.x0},${RAIL.y} L${RAIL.x1},${RAIL.y}`} stroke-width="1" opacity="0.7" />
+								<path d={`M${RAIL.x0 + 8},${RAIL.y + 4} L${RAIL.x1 - 8},${RAIL.y + 4}`} stroke-width="0.5" opacity="0.25" />
+							</g>
+
+							{/* ochre artifact ticks between consecutive stages — one
+							    artifact flows into the next stage */}
+							{wf.stages.slice(0, -1).map((_, i) => {
+								const mx = (nodeX(i, n) + nodeX(i + 1, n)) / 2;
+								return <circle cx={mx} cy={RAIL.y} r="2.4" fill="var(--ochre)" opacity="0.75" />;
+							})}
+
+							{/* backward review loop — ochre arc above the rail, chevron
+							    pointing back toward the re-entry node */}
+							{wf.loop && (() => {
+								const fx = nodeX(wf.loop.from, n);
+								const tx = nodeX(wf.loop.to, n);
+								const mid = (fx + tx) / 2;
+								const apexY = 16;
+								return (
+									<g fill="none" stroke-linecap="round">
+										<path d={`M${fx},${RAIL.y - 14} Q${mid},${apexY} ${tx},${RAIL.y - 14}`} stroke="var(--ochre)" stroke-width="1.1" opacity="0.7" />
+										<path d={`M${fx},${RAIL.y - 11} Q${mid},${apexY + 4} ${tx},${RAIL.y - 11}`} stroke="var(--ochre)" stroke-width="0.5" opacity="0.3" />
+										{/* hand-drawn chevron at the re-entry (left/target) end */}
+										<path d={`M${tx + 6},${RAIL.y - 18} L${tx},${RAIL.y - 14} L${tx + 6},${RAIL.y - 10}`} stroke="var(--ochre)" stroke-width="1" opacity="0.7" />
+										<text x={mid} y={apexY - 2} text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="var(--text-distant)" letter-spacing="0.06em">{wf.loop.label}</text>
+									</g>
+								);
+							})()}
+
+							{/* stage nodes — Pipeline strip glyph; fanout node renders a
+							    stacked ghost pair behind it */}
+							{wf.stages.map((s, i) => {
+								const x = nodeX(i, n);
+								return (
+									<g class="hero__node" style={`--node-i: ${i}`}>
+										{s.fanout && (
+											<g fill="none" stroke="var(--sage)" stroke-width="0.7" opacity="0.32" stroke-dasharray="2 2">
+												<circle cx={x - 3.5} cy={RAIL.y - 3.5} r="9" />
+												<circle cx={x + 3.5} cy={RAIL.y + 3.5} r="9" />
+											</g>
+										)}
+										<circle cx={x} cy={RAIL.y} r="13" fill="none" stroke="var(--sage)" stroke-width="0.7" opacity="0.4" />
+										<circle cx={x} cy={RAIL.y} r="9" fill="var(--ink)" stroke="var(--sage)" stroke-width="1.1" />
+										<circle cx={x} cy={RAIL.y} r="9" fill="var(--sage)" opacity="0.16" />
+										<text x={x} y={RAIL.y + 30} text-anchor="middle" font-family="var(--font-mono)" font-size="10.5" fill="var(--text-quiet)" letter-spacing="0.02em">{s.name}</text>
+									</g>
+								);
+							})}
+						</svg>
+					</figure>
+				);
+			})}
+			</div>
+		</div>
+
 		<p class="hero__lede">
-			A pipeline of skills and subagents for the Pi coding agent. Turns a vague
-			task into research questions, into a design, into a plan, into shipped code.
+			<strong>A workflow chains Pi skills into one runnable pipeline.</strong>
+			Artifacts flow stage to stage. Reviews loop until clean. Every run is
+			audited. Five ship with rpiv-pi, or write your own.
 		</p>
 
-		<ol class="hero__rail" aria-label="default pipeline">
-			{pipeline.map((skill, i) => (
-				<li class="hero__node" style={`--rail-i: ${i}`}>
-					<span class="chip chip--sage">/skill:{skill.data.name}</span>
-					{i < pipeline.length - 1 && <span class="hero__arrow" aria-hidden="true">→</span>}
+		<ul class="hero__rail" aria-label="five built-in workflows, select one to preview its chain">
+			{workflows.map((wf) => (
+				<li class="hero__railItem">
+					<button
+						type="button"
+						class:list={["chip", "hero__wfBtn", wf.name === showcase.name && "chip--sage"]}
+						data-wf-select={wf.name}
+						data-wf-arg={wf.arg}
+						aria-pressed={wf.name === showcase.name ? "true" : "false"}
+						title={wf.when}
+					>
+						{wf.name}<span class="hero__wfCount mono" aria-hidden="true"> · {wf.stageCount}</span>
+					</button>
 				</li>
 			))}
-		</ol>
+		</ul>
 
 		<p class="hero__cta">
-			<a href="#install" class="hero__link">install &nbsp;↓</a>
+			<a href="#install" class="hero__link hero__link--primary">install&nbsp;↓</a>
+			<a href="#catalog" class="hero__link">see the five flows&nbsp;↓</a>
 		</p>
 	</div>
 </section>
 
+<script>
+	(() => {
+		const root = document.querySelector<HTMLElement>(".hero");
+		if (!root) return;
+		const nameEl = root.querySelector<HTMLElement>("[data-wf-name]");
+		const briefEl = root.querySelector<HTMLElement>("[data-wf-brief]");
+		const buttons = Array.from(root.querySelectorAll<HTMLButtonElement>("[data-wf-select]"));
+		const chains = Array.from(root.querySelectorAll<HTMLElement>("[data-wf-chain]"));
+
+		const select = (name: string) => {
+			if (nameEl) nameEl.textContent = name;
+			for (const c of chains) {
+				const active = c.dataset.wfChain === name;
+				c.hidden = !active;
+				// Hand the page-load reveal over to the click reveal so every
+				// selection unspools identically.
+				c.classList.remove("is-initial", "is-entering");
+				if (active) {
+					void c.offsetWidth; // reflow so the animation restarts on re-select
+					c.classList.add("is-entering");
+				}
+			}
+			for (const b of buttons) {
+				const active = b.dataset.wfSelect === name;
+				b.setAttribute("aria-pressed", active ? "true" : "false");
+				b.classList.toggle("chip--sage", active);
+				// Swap the command brief to the selected flow's real argument —
+				// a quoted brief for fresh flows, a flag/range or path for diff flows.
+				if (active && briefEl && b.dataset.wfArg) briefEl.textContent = b.dataset.wfArg;
+			}
+		};
+
+		for (const b of buttons) {
+			b.addEventListener("click", () => b.dataset.wfSelect && select(b.dataset.wfSelect));
+		}
+	})();
+</script>
+
 <style>
 	.hero {
-		min-height: 92dvh;
+		min-height: 86dvh;
+		/* Column flex: justify-content centres the block VERTICALLY; the inner
+		   stays a full-width flex item (default align-items: stretch) so the
+		   .container's own max-width + margin:auto centre it and its content
+		   left-aligns at the grid edge. (Row flex shrank the inner to content
+		   width and auto-margins then centred the whole block — the bug that
+		   pulled everything into the middle.) */
 		display: flex;
-		align-items: center;
-		padding: var(--space-10) 0 var(--space-9);
+		flex-direction: column;
+		justify-content: center;
+		padding: var(--space-9) 0 var(--space-8);
 		position: relative;
 		overflow: hidden;
 	}
 	.hero__inner { position: relative; z-index: 1; }
-	.hero__title {
-		font-size: var(--type-h1);
-		line-height: 0.95;
-		margin-bottom: var(--space-6);
+	.hero__wash {
+		position: absolute;
+		inset: 0;
+		z-index: 0;
+		color: var(--ochre);
+		pointer-events: none;
+		/* Feather the whole atmosphere (glow + arcs) to nothing before the hero's
+		   bottom edge — the section's overflow:hidden would otherwise hard-cut the
+		   lower glow into a visible seam. With this, the backsplash dissolves into
+		   the page so the next section flows in without an edge. */
+		-webkit-mask-image: linear-gradient(to bottom, #000 50%, transparent 88%);
+		mask-image: linear-gradient(to bottom, #000 50%, transparent 88%);
 	}
-	.hero__line {
+	.hero__wash svg {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
 		display: block;
 	}
-
-	/* ── Page-load stagger ──
-	   Single orchestrated reveal: kicker, then three title lines (offset 80ms each),
-	   then lede, then pipeline rail chips (each 60ms apart), then CTA.
-	   Uses the system tokens (--ease-ink, --dur-ink) so motion stays on-vocabulary. */
-	@keyframes hero-rise {
-		from { opacity: 0; transform: translateY(8px); }
-		to   { opacity: 1; transform: translateY(0);   }
-	}
-	.hero__kicker,
-	.hero__line,
-	.hero__lede,
-	.hero__node,
-	.hero__cta {
-		opacity: 0;
-		animation: hero-rise var(--dur-ink) var(--ease-ink) forwards;
-	}
-	.hero__kicker  { animation-delay:   0ms; }
-	.hero__line--1 { animation-delay: 120ms; }
-	.hero__line--2 { animation-delay: 200ms; }
-	.hero__line--3 { animation-delay: 280ms; }
-	.hero__lede    { animation-delay: 460ms; }
-	.hero__node    { animation-delay: calc(620ms + var(--rail-i, 0) * 60ms); }
-	.hero__cta     { animation-delay: 1080ms; }
-
+	/* Arcs ride above the ochre glow; their reveal is the slowest stroke in the
+	   page-load cascade so the atmosphere settles in after the content lands. */
+	.hero__washArcs { opacity: 0; animation: hero-rise var(--dur-enter) var(--ease-ink) 200ms forwards; }
 	@media (prefers-reduced-motion: reduce) {
-		.hero__kicker,
-		.hero__line,
-		.hero__lede,
-		.hero__node,
-		.hero__cta {
-			opacity: 1;
-			animation: none;
-		}
+		.hero__washArcs { opacity: 1; animation: none; }
 	}
+
+	/* ── Headline — research / build / ship. Mono display doing editorial work
+	   (h1 inherits --font-mono + --type-h1 from global.css). Stacked lines are
+	   the single dominant focal point; the chain figure carries the mechanical
+	   detail. ── */
+	.hero__title {
+		/* Hero headline runs its own, smaller scale than the global h1 (which
+		   tops out at 96px) — three stacked lines at that size overflow the fold
+		   once the command + chain + selector are stacked below. */
+		font-size: clamp(40px, 5.5vw, 68px);
+		line-height: 0.95;
+		letter-spacing: -0.01em;
+		margin-bottom: var(--space-6);
+	}
+	.hero__line { display: block; color: var(--text); }
+	/* The middle beat carries the warm accent so the eye lands mid-stack on the
+	   verb that does the work, not the top line. */
+	.hero__line--2 { color: var(--ochre); }
+
+	/* ── Demonstration unit — the command (input) sits tight above its chain
+	   (output) so the pair reads as one "type this → get this" gesture. The
+	   unit's margin-bottom is the break to the lede/selector/CTA group; the
+	   command is demoted from the headline role it used to carry. ── */
+	.hero__demo { margin-bottom: var(--space-7); }
+	.hero__cmd {
+		font-family: var(--font-mono);
+		font-size: var(--type-h3);
+		line-height: var(--leading-snug);
+		margin: 0 0 var(--space-4);
+		display: flex;
+		gap: var(--space-3);
+		align-items: baseline;
+		color: var(--text);
+	}
+	.hero__cmd-prompt { color: var(--sage); opacity: 0.7; }
+	.hero__cmd-name { font-style: normal; color: var(--ochre); }
+	.hero__cmd-brief { color: var(--washi-soft); letter-spacing: -0.01em; }
+
+	/* ── Chain figure — the widest element, so its DEFINITE width sets how far
+	   the shrink-wrapped column extends to the right (every line left-aligns to
+	   the grid edge; this figure decides where that edge sits). Kept to ~680px
+	   so the hero reads as a focused editorial column, not a full-bleed band —
+	   the original was never this wide. 6 nodes still breathe at this width. ── */
+	.hero__chains { margin-bottom: 0; }
+	.hero__chain { margin: 0; width: min(900px, 94vw); }
+	.hero__chain[hidden] { display: none; }
+	.hero__chainSvg { width: 100%; height: auto; display: block; overflow: visible; }
+
+	/* ── Lede ── */
 	.hero__lede {
 		font-family: var(--font-serif);
-		max-width: 56ch;
+		max-width: 48ch;
 		color: var(--text-quiet);
 		font-size: var(--type-lead);
 		line-height: var(--leading-body);
-		margin-bottom: var(--space-7);
+		margin-bottom: var(--space-6);
+		/* even out line lengths so no orphan tail line, comfortable measure */
+		text-wrap: balance;
 	}
+	.hero__lede strong { color: var(--text); font-weight: 400; }
+
+	/* ── Workflow selector ── */
 	.hero__rail {
 		list-style: none;
 		display: flex;
 		flex-wrap: wrap;
 		gap: var(--space-3);
 		padding: 0;
-		margin: 0 0 var(--space-7);
+		margin: 0 0 var(--space-6);
 	}
-	.hero__node {
-		display: inline-flex;
-		align-items: center;
-		gap: var(--space-3);
+	.hero__railItem { display: inline-flex; }
+	.hero__wfBtn {
+		cursor: pointer;
+		transition: color var(--dur-quick) var(--ease-ink), border-color var(--dur-quick) var(--ease-ink);
 	}
-	.hero__arrow {
-		color: var(--text-distant);
-		font-family: var(--font-mono);
-	}
+	.hero__wfBtn:hover { border-color: var(--sage-deep); color: var(--sage); }
+	.hero__wfBtn:focus-visible { outline: 1px solid var(--sage); outline-offset: 2px; }
+	.hero__wfCount { color: var(--text-distant); }
+
+	/* ── CTA ── */
 	.hero__cta {
 		font-family: var(--font-mono);
 		font-size: var(--type-small);
 		margin: 0;
+		display: flex;
+		gap: var(--space-5);
+		flex-wrap: wrap;
 	}
-	.hero__link {
-		color: var(--ochre);
-		border-bottom-color: var(--kuro);
+	.hero__link { color: var(--sage); border-bottom-color: var(--kuro); }
+	.hero__link--primary { color: var(--ochre); }
+
+	/* ── Page-load ink stagger ──
+	   kicker → headline lines (80ms apart) → command → chain nodes unspool
+	   (60ms apart, from the command) → lede → selector → CTA. The narrative:
+	   identity, then "you type this", then the chain unspools from it, then the
+	   explanation. Uses the system tokens so motion stays on-vocabulary; the
+	   prefers-reduced-motion override in tokens.css zeros every duration,
+	   collapsing the cascade to the resting state for free. */
+	@keyframes hero-rise {
+		from { opacity: 0; transform: translateY(8px); }
+		to   { opacity: 1; transform: translateY(0);   }
 	}
+	.hero__kicker,
+	.hero__line,
+	.hero__cmd,
+	.hero__lede,
+	.hero__rail,
+	.hero__cta {
+		opacity: 0;
+		animation: hero-rise var(--dur-ink) var(--ease-ink) forwards;
+	}
+	.hero__kicker   { animation-delay:   0ms; }
+	.hero__line--1  { animation-delay: 120ms; }
+	.hero__line--2  { animation-delay: 200ms; }
+	.hero__line--3  { animation-delay: 280ms; }
+	.hero__cmd      { animation-delay: 420ms; }
+	.hero__lede     { animation-delay:  900ms; }
+	.hero__rail     { animation-delay: 1010ms; }
+	.hero__cta      { animation-delay: 1110ms; }
+
+	/* Chain nodes unspool left→right — the SAME reveal whether the figure is the
+	   initial showcase (.is-initial, sequenced after the headline cascade) or a
+	   JS-selected workflow (.is-entering, replayed on each chip click via a
+	   reflow restart). Only the lead delay differs, so every selection animates
+	   identically. */
+	.hero__chain.is-initial .hero__node,
+	.hero__chain.is-entering .hero__node {
+		opacity: 0;
+		animation: hero-rise var(--dur-tick) var(--ease-ink) forwards;
+	}
+	.hero__chain.is-initial  .hero__node { animation-delay: calc(520ms + var(--node-i, 0) * 60ms); }
+	.hero__chain.is-entering .hero__node { animation-delay: calc(var(--node-i, 0) * 55ms); }
+
+	@media (prefers-reduced-motion: reduce) {
+		.hero__kicker,
+		.hero__line,
+		.hero__cmd,
+		.hero__lede,
+		.hero__rail,
+		.hero__cta,
+		.hero__chain.is-initial .hero__node,
+		.hero__chain.is-entering .hero__node {
+			opacity: 1;
+			animation: none;
+		}
+	}
+
 	@media (max-width: 720px) {
 		.hero { min-height: auto; padding: var(--space-8) 0 var(--space-7); }
+		.hero__cmd { font-size: var(--type-lead); }
 	}
 </style>

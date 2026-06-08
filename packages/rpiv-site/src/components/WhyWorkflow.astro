@@ -1,0 +1,298 @@
+---
+// §1 — the two modes. The same skills run either in MANUAL mode (top row: you
+// dispatch each skill and carry every artifact by hand — broken nodes, inert
+// artifacts sitting in the gaps) or AUTOMATED mode (bottom row: one /wf command
+// drives a single fused rail — flowing tokens, a review loop). Both rows share
+// node columns so the rhyme reads node-for-node, and reuse the showcase
+// workflow's stages so this stays in lockstep with the Hero chain.
+import { getWorkflows } from "../lib/workflows";
+
+const workflows = await getWorkflows();
+const showcase = workflows.find((w) => w.showcase) ?? workflows[0];
+const stages = showcase.stages.map((s) => s.name);
+const N = stages.length;
+
+// Shared rail geometry — node columns are identical top and bottom; a left
+// gutter (x < 40) holds the rotated mode labels.
+const X0 = 150;
+const X1 = 700;
+const Y_TOP = 100;
+const Y_BOT = 246;
+const MID = (X0 + X1) / 2;
+const nodeX = (i: number) => (N <= 1 ? X0 : X0 + (i * (X1 - X0)) / (N - 1));
+const loop = showcase.loop; // review → re-entry arc, drawn on the automated row
+---
+
+<section id="why">
+	<div class="container">
+		<p class="kicker">§ two modes · manual <span class="why__arrow">→</span> automated</p>
+		<h2>Run it by hand. Or let /wf drive.</h2>
+		<p class="why__lede">
+			Every pipeline runs two ways.
+			<strong class="why__mode why__mode--m">Manual mode</strong>: you dispatch
+			each skill yourself and carry each artifact to the next by hand.
+			<strong class="why__mode why__mode--a">Automated mode</strong>: one
+			<code>/wf</code> command drives the whole chain end to end &mdash; handing
+			off artifacts, looping review until clean, auditing every run.
+		</p>
+
+		<figure class="dip" aria-label="The same skills run in two modes. Manual mode (top): disconnected nodes with an artifact sitting in each gap that you carry by hand, one dispatch per skill. Automated mode (bottom): one /wf command drives a single continuous rail, flowing each artifact to the next stage and looping review until clean.">
+			<svg viewBox="0 0 760 300" class="dip__svg" preserveAspectRatio="xMidYMid meet" role="presentation">
+				{/* ── left gutter — rotated mode labels, one per rail ── */}
+				<text transform={`translate(17 ${Y_TOP}) rotate(-90)`} text-anchor="middle" font-family="var(--font-mono)" font-size="10" fill="var(--washi-soft)" letter-spacing="0.22em">MANUAL</text>
+				<text transform={`translate(31 ${Y_TOP}) rotate(-90)`} text-anchor="middle" font-family="var(--font-mono)" font-size="7.5" fill="var(--text-distant)" letter-spacing="0.04em">{N} dispatches</text>
+				<text transform={`translate(17 ${Y_BOT}) rotate(-90)`} text-anchor="middle" font-family="var(--font-mono)" font-size="10" fill="var(--ochre)" letter-spacing="0.22em">AUTOMATED</text>
+				<text transform={`translate(31 ${Y_BOT}) rotate(-90)`} text-anchor="middle" font-family="var(--font-mono)" font-size="7.5" fill="var(--text-distant)" letter-spacing="0.04em">1 command</text>
+
+				{/* ── transition — shared columns fuse into one rail ── */}
+				{stages.map((_, i) => {
+					const x = nodeX(i);
+					return <line x1={x} y1={Y_TOP + 30} x2={x} y2={Y_BOT - 30} stroke="var(--sage)" stroke-width="0.6" opacity="0.1" stroke-dasharray="2 6" />;
+				})}
+				<text x={MID} y={(Y_TOP + Y_BOT) / 2 + 3} text-anchor="middle" font-family="var(--font-mono)" font-size="8" fill="var(--text-distant)" letter-spacing="0.2em" opacity="0.85">↓ FUSED ONTO ONE RAIL</text>
+
+				{/* ── TOP ROW — manual: broken hops, an artifact waiting in every gap ── */}
+				{stages.slice(0, -1).map((_, i) => {
+					const a = nodeX(i);
+					const b = nodeX(i + 1);
+					const mid = (a + b) / 2;
+					return (
+						<g>
+							{/* broken hop — not a rail */}
+							<path d={`M${a + 13},${Y_TOP} Q${mid},${Y_TOP - 13} ${b - 13},${Y_TOP}`}
+								fill="none" stroke="var(--washi-soft)" stroke-width="0.7" opacity="0.22" stroke-dasharray="2 3" stroke-linecap="round" />
+							{/* inert artifact sitting in the gap — you must carry it */}
+							<rect x={mid - 2.5} y={Y_TOP - 3} width="5" height="6.5" rx="0.6" fill="var(--washi-soft)" opacity="0.3" />
+						</g>
+					);
+				})}
+
+				{/* disconnected, dashed nodes */}
+				{stages.map((name, i) => {
+					const x = nodeX(i);
+					return (
+						<g>
+							<circle cx={x} cy={Y_TOP} r="11" fill="var(--ink)" stroke="var(--sage)" stroke-width="0.9" opacity="0.5" stroke-dasharray="3 2.5" />
+							<text x={x} y={Y_TOP + 26} text-anchor="middle" font-family="var(--font-mono)" font-size="9.5" fill="var(--text-distant)" letter-spacing="0.02em">{name}</text>
+						</g>
+					);
+				})}
+
+				{/* cursor carrying an artifact + "you" — the manual hand-off, at the first gap */}
+				{(() => {
+					const cx = (nodeX(0) + nodeX(1)) / 2;
+					return (
+						<g>
+							<rect x={cx - 4} y={Y_TOP - 31} width="12" height="14" rx="1" fill="var(--ink-raised)" stroke="var(--washi-soft)" stroke-width="0.6" opacity="0.9" />
+							<line x1={cx - 1} y1={Y_TOP - 27} x2={cx + 5} y2={Y_TOP - 27} stroke="var(--washi-soft)" stroke-width="0.5" opacity="0.6" />
+							<line x1={cx - 1} y1={Y_TOP - 23} x2={cx + 4} y2={Y_TOP - 23} stroke="var(--washi-soft)" stroke-width="0.5" opacity="0.45" />
+							<path d={`M${cx - 8},${Y_TOP - 12} L${cx - 8},${Y_TOP + 4} L${cx - 4},${Y_TOP} L${cx - 1},${Y_TOP + 7} L${cx + 1},${Y_TOP + 6} L${cx - 2},${Y_TOP - 1} L${cx + 3},${Y_TOP - 1} Z`}
+								fill="var(--washi)" stroke="var(--kuro)" stroke-width="0.6" opacity="0.92" />
+							<text x={cx - 12} y={Y_TOP - 4} text-anchor="end" font-family="var(--font-mono)" font-size="8" fill="var(--text-distant)" letter-spacing="0.1em">you</text>
+						</g>
+					);
+				})()}
+
+				{/* ── BOTTOM ROW — automated: one fused rail the runner drives ── */}
+				{/* /wf stamp at the rail head */}
+				<g>
+					<rect x={X0 - 54} y={Y_BOT - 9} width="38" height="18" rx="2" fill="var(--ink-raised)" stroke="var(--ochre)" stroke-width="1" />
+					<rect x={X0 - 54} y={Y_BOT - 9} width="38" height="18" rx="2" fill="var(--ochre)" opacity="0.16" />
+					<text x={X0 - 35} y={Y_BOT + 3.5} text-anchor="middle" font-family="var(--font-mono)" font-size="9.5" fill="var(--washi)" letter-spacing="0.02em">/wf</text>
+					<path d={`M${X0 - 13},${Y_BOT} L${X0 - 4},${Y_BOT}`} stroke="var(--ochre)" stroke-width="0.8" opacity="0.6" stroke-linecap="round" />
+					<path d={`M${X0 - 8},${Y_BOT - 3} L${X0 - 3},${Y_BOT} L${X0 - 8},${Y_BOT + 3}`} fill="none" stroke="var(--ochre)" stroke-width="0.8" opacity="0.6" stroke-linecap="round" />
+				</g>
+
+				{/* continuous rail */}
+				<g fill="none" stroke="var(--sage-deep)" stroke-linecap="round">
+					<path d={`M${X0},${Y_BOT} L${X1},${Y_BOT}`} stroke-width="1" opacity="0.7" />
+					<path d={`M${X0 + 8},${Y_BOT + 4} L${X1 - 8},${Y_BOT + 4}`} stroke-width="0.5" opacity="0.25" />
+				</g>
+
+				{/* flowing artifact chevrons — the runner pushes each one downstream */}
+				{stages.slice(0, -1).map((_, i) => {
+					const mx = (nodeX(i) + nodeX(i + 1)) / 2;
+					return (
+						<path d={`M${mx - 2},${Y_BOT - 3} L${mx + 2.5},${Y_BOT} L${mx - 2},${Y_BOT + 3}`}
+							fill="none" stroke="var(--ochre)" stroke-width="1" opacity="0.8" stroke-linecap="round" stroke-linejoin="round" />
+					);
+				})}
+
+				{/* review loop arc */}
+				{loop && (() => {
+					const fx = nodeX(loop.from);
+					const tx = nodeX(loop.to);
+					const mid = (fx + tx) / 2;
+					return (
+						<g fill="none" stroke-linecap="round">
+							<path d={`M${fx},${Y_BOT - 13} Q${mid},${Y_BOT - 42} ${tx},${Y_BOT - 13}`} stroke="var(--ochre)" stroke-width="1" opacity="0.65" />
+							<path d={`M${tx + 6},${Y_BOT - 17} L${tx},${Y_BOT - 13} L${tx + 6},${Y_BOT - 9}`} stroke="var(--ochre)" stroke-width="0.9" opacity="0.65" />
+							<text x={mid} y={Y_BOT - 46} text-anchor="middle" font-family="var(--font-mono)" font-size="8.5" fill="var(--text-distant)" letter-spacing="0.04em">↺ until clean</text>
+						</g>
+					);
+				})()}
+
+				{/* solid, connected nodes */}
+				{stages.map((name, i) => {
+					const x = nodeX(i);
+					return (
+						<g>
+							<circle cx={x} cy={Y_BOT} r="11" fill="none" stroke="var(--sage)" stroke-width="0.7" opacity="0.4" />
+							<circle cx={x} cy={Y_BOT} r="8" fill="var(--ink)" stroke="var(--sage)" stroke-width="1.1" />
+							<circle cx={x} cy={Y_BOT} r="8" fill="var(--sage)" opacity="0.16" />
+							<text x={x} y={Y_BOT + 26} text-anchor="middle" font-family="var(--font-mono)" font-size="9.5" fill="var(--text-quiet)" letter-spacing="0.02em">{name}</text>
+						</g>
+					);
+				})}
+			</svg>
+		</figure>
+
+		{/* two-column prose contrast */}
+		<div class="why__cols">
+			<div class="why__col why__col--manual">
+				<p class="mono why__colHead">manual mode</p>
+				<p class="why__colBody">
+					Run <code>/skill:research</code>. Read the result. Run
+					<code>/skill:blueprint</code> on it. Then implement each phase,
+					validate, review, commit. Six dispatches. You carry every artifact
+					forward, you decide every hand-off, and nothing re-checks the output.
+				</p>
+			</div>
+			<div class="why__col why__col--auto">
+				<p class="mono why__colHead why__colHead--auto">automated mode</p>
+				<p class="why__colBody">
+					One dispatch &mdash; <code>/wf build</code>. The runner passes each
+					artifact to the next stage, fans <code>implement</code> out across the
+					plan&rsquo;s phases, loops <code>code-review</code> until zero blockers,
+					checks every stage against its contract, and writes a JSONL audit you
+					can resume.
+				</p>
+			</div>
+		</div>
+
+		{/* gain / cost ledger — same idiom as the §blueprint / §guidance trades */}
+		<div class="why-trade">
+			<div class="why-trade__col why-trade__col--gain">
+				<p class="mono why-trade__label">gain</p>
+				<ul class="why-trade__list">
+					<li>one command instead of six dispatches</li>
+					<li>artifacts hand off automatically, no copy-paste</li>
+					<li>implement fans out over the plan&rsquo;s phases</li>
+					<li>review loops until zero blockers, then commits</li>
+					<li>every stage validated, every run audited and resumable</li>
+				</ul>
+			</div>
+			<div class="why-trade__col why-trade__col--cost">
+				<p class="mono why-trade__label">cost</p>
+				<ul class="why-trade__list">
+					<li>less manual control mid-chain</li>
+					<li class="why-trade__answer">drop to running skills directly whenever you want it</li>
+				</ul>
+			</div>
+		</div>
+	</div>
+</section>
+
+<style>
+	.why__arrow { color: var(--ochre); }
+	.why__lede {
+		font-family: var(--font-serif);
+		max-width: 60ch;
+		color: var(--text-quiet);
+		font-size: var(--type-lead);
+		line-height: var(--leading-body);
+		margin: var(--space-4) 0 var(--space-7);
+		text-wrap: pretty;
+	}
+	/* Mode tags in the lede — named, color-coded so "manual" and "automated"
+	   read as the two first-class concepts the section is built around. */
+	.why__mode { font-family: var(--font-mono); font-weight: 400; font-size: 0.82em; letter-spacing: 0.02em; }
+	.why__mode--m { color: var(--washi-soft); }
+	.why__mode--a { color: var(--ochre); }
+
+	/* ── Diptych figure ── */
+	.dip { margin: 0 0 var(--space-7); }
+	.dip__svg { width: 100%; max-width: 900px; height: auto; display: block; overflow: visible; }
+
+	/* ── Two-column prose contrast ── */
+	.why__cols {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: var(--space-6);
+		max-width: 920px;
+		margin-bottom: var(--space-7);
+	}
+	.why__colHead {
+		font-size: var(--type-small);
+		color: var(--text-distant);
+		letter-spacing: 0.04em;
+		margin: 0 0 var(--space-2);
+		padding-bottom: var(--space-2);
+		border-bottom: 1px solid var(--rule);
+	}
+	.why__colHead--auto { color: var(--ochre); }
+	.why__colBody {
+		font-family: var(--font-serif);
+		font-size: var(--type-base);
+		line-height: var(--leading-relaxed);
+		color: var(--text-quiet);
+		margin: 0;
+		text-wrap: pretty;
+	}
+	.why__col--manual .why__colBody code { color: var(--text-distant); }
+	.why__col--auto .why__colBody code { color: var(--washi-soft); }
+
+	/* ── Gain / cost ledger ── */
+	.why-trade {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: var(--space-6);
+		max-width: 920px;
+		border-top: 1px solid var(--rule-strong);
+		padding-top: var(--space-5);
+	}
+	.why-trade__label {
+		font-size: var(--type-tiny);
+		text-transform: uppercase;
+		letter-spacing: 0.16em;
+		margin: 0 0 var(--space-3);
+	}
+	.why-trade__col--gain .why-trade__label { color: var(--sage); }
+	.why-trade__col--cost .why-trade__label { color: var(--ochre); }
+	.why-trade__list {
+		list-style: none;
+		padding: 0;
+		margin: 0;
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-2);
+	}
+	.why-trade__list li {
+		font-family: var(--font-serif);
+		font-size: var(--type-small);
+		line-height: var(--leading-snug);
+		color: var(--text-quiet);
+		padding-left: var(--space-4);
+		position: relative;
+	}
+	.why-trade__col--gain .why-trade__list li::before {
+		content: "+";
+		position: absolute;
+		left: 0;
+		color: var(--sage);
+		font-family: var(--font-mono);
+	}
+	.why-trade__col--cost .why-trade__list li::before {
+		content: "−";
+		position: absolute;
+		left: 0;
+		color: var(--ochre);
+		font-family: var(--font-mono);
+	}
+	.why-trade__answer { color: var(--text-distant); font-style: italic; }
+	.why-trade__col--cost .why-trade__answer::before { content: "↳"; }
+
+	@media (max-width: 720px) {
+		.why__cols, .why-trade { grid-template-columns: 1fr; gap: var(--space-5); }
+	}
+</style>

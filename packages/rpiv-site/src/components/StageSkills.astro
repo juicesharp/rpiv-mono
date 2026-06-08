@@ -1,0 +1,193 @@
+---
+// §4 — the parts catalog. The ten skills a workflow chains, reframed as
+// building blocks. Each card surfaces the contract handshake (reads → writes)
+// that lets the runner pass one stage's output into the next, plus the flows it
+// appears in (closing the loop with §catalog).
+import { getStageSkills, type StageSkill } from "../lib/stage-skills";
+
+const skills = await getStageSkills();
+const GROUPS = [
+	{ key: "plan", label: "Plan the work", hint: "produce the artifact the change is built from" },
+	{ key: "make", label: "Make the change", hint: "turn the plan into verified code" },
+	{ key: "close", label: "Close the loop", hint: "review, revise, and land it" },
+] as const;
+const byGroup = (g: string): StageSkill[] => skills.filter((s) => s.group === g);
+---
+
+<section id="skills">
+	<div class="container">
+		<p class="kicker">§ stage skills · the parts a workflow chains</p>
+		<h2>Ten skills, wired by contract.</h2>
+		<p class="sk__lede">
+			A workflow is just these skills in a chain. They compose because each
+			declares a contract: what it <strong>reads</strong> and what it
+			<strong>writes</strong>. The runner passes one stage&rsquo;s artifact
+			straight into the next, and rejects a mismatch before the run starts. Run
+			any of them on their own, too.
+		</p>
+
+		{GROUPS.map((group) => (
+			<div class="sk__group">
+				<header class="sk__groupHead">
+					<h3 class="mono sk__groupName">{group.label}</h3>
+					<span class="sk__groupHint">{group.hint}</span>
+				</header>
+
+				<div class="sk__cards" role="list">
+					{byGroup(group.key).map((s) => (
+						<article class="sk-card" role="listitem">
+							<header class="sk-card__head">
+								<span class="chip chip--sage">/skill:{s.name}</span>
+								<span class="sk-card__out mono">{s.artifact ?? "side effect"}</span>
+							</header>
+
+							<p class="sk-card__role">{s.role}</p>
+
+							{/* the contract handshake — the connective tissue */}
+							<p class="sk-card__contract mono">
+								<span class="sk-card__cLabel">reads</span>
+								<span class="sk-card__cVal">{s.reads}</span>
+								<span class="sk-card__cArrow" aria-hidden="true">→</span>
+								<span class="sk-card__cLabel">writes</span>
+								<span class="sk-card__cVal sk-card__cVal--out">{s.writes}</span>
+							</p>
+
+							<p class="sk-card__in mono">
+								<span class="sk-card__inLabel">in</span>
+								{s.in.map((w) => (
+									<a href="#catalog" class="sk-card__wf">{w}</a>
+								))}
+							</p>
+						</article>
+					))}
+				</div>
+			</div>
+		))}
+
+		<p class="sk__foot mono">
+			<span class="sk__footArrow">→</span>
+			full reference, inputs, and steps for every skill in the
+			<a href="/docs/reference/skills">skills docs</a>.
+		</p>
+	</div>
+</section>
+
+<style>
+	.sk__lede {
+		font-family: var(--font-serif);
+		max-width: 60ch;
+		color: var(--text-quiet);
+		font-size: var(--type-lead);
+		line-height: var(--leading-body);
+		margin: var(--space-4) 0 var(--space-7);
+		text-wrap: pretty;
+	}
+	.sk__lede strong { color: var(--text); font-weight: 400; }
+
+	.sk__group { margin-bottom: var(--space-7); }
+	.sk__groupHead {
+		display: flex;
+		align-items: baseline;
+		gap: var(--space-3);
+		margin-bottom: var(--space-4);
+		padding-bottom: var(--space-2);
+		border-bottom: 1px solid var(--rule-strong);
+	}
+	.sk__groupName { font-size: var(--type-h3); color: var(--text); margin: 0; }
+	.sk__groupHint {
+		font-family: var(--font-serif);
+		font-style: italic;
+		font-size: var(--type-small);
+		color: var(--text-distant);
+	}
+
+	.sk__cards {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+		gap: var(--space-4);
+	}
+
+	.sk-card {
+		/* Canonical two-tone card edge — recessed top/sides (--rule), weighted
+		   base (--rule-strong) — matching the global .card hairline signature. */
+		border-top: 1px solid var(--rule);
+		border-left: 1px solid var(--rule);
+		border-right: 1px solid var(--rule);
+		border-bottom: 1px solid var(--rule-strong);
+		border-radius: var(--radius-sm);
+		padding: var(--space-5);
+		background: var(--ink-raised);
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-3);
+	}
+
+	.sk-card__head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--space-2);
+	}
+	.sk-card__out {
+		font-size: var(--type-micro);
+		color: var(--text-distant);
+		letter-spacing: 0.02em;
+		text-align: right;
+	}
+
+	.sk-card__role {
+		font-family: var(--font-serif);
+		font-size: var(--type-base);
+		line-height: var(--leading-snug);
+		color: var(--text-quiet);
+		margin: 0;
+		text-wrap: pretty;
+	}
+
+	/* the contract row — the new connective element */
+	.sk-card__contract {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: var(--space-1) var(--space-2);
+		font-size: var(--type-tiny);
+		margin: 0;
+		padding: var(--space-2) var(--space-3);
+		border: 1px solid var(--rule);
+		border-radius: var(--radius-xs);
+		background: var(--ink);
+	}
+	.sk-card__cLabel { color: var(--text-distant); }
+	.sk-card__cVal { color: var(--washi-soft); }
+	.sk-card__cVal--out { color: var(--sage); }
+	.sk-card__cArrow { color: var(--ochre); padding: 0 var(--space-1); }
+
+	.sk-card__in {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: var(--space-2);
+		font-size: var(--type-micro);
+		margin: 0;
+	}
+	.sk-card__inLabel { color: var(--text-distant); letter-spacing: 0.1em; text-transform: uppercase; }
+	.sk-card__wf {
+		color: var(--text-quiet);
+		border: 1px solid var(--rule);
+		border-radius: var(--radius-xs);
+		padding: 1px var(--space-2);
+		border-bottom-color: var(--rule);
+	}
+	.sk-card__wf:hover { color: var(--ochre); border-color: var(--kuro); }
+
+	.sk__foot {
+		font-size: var(--type-small);
+		color: var(--text-quiet);
+		margin: var(--space-6) 0 0;
+	}
+	.sk__footArrow { color: var(--ochre); }
+
+	@media (max-width: 720px) {
+		.sk__cards { grid-template-columns: 1fr; }
+	}
+</style>

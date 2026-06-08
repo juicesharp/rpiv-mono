@@ -1,0 +1,261 @@
+---
+// §3 — anatomy of a run. The trust-builder: walk ONE /wf build and expose the
+// five things a real runtime does that a prompt can't. The trace is hardcoded
+// to the build graph (gate field, loop bound, artifact buckets are
+// build-specific) — a narrative diagram, not a data-driven list. Numbered
+// markers ①–⑤ on the SVG tie to the annotation rows below.
+
+// Main rail nodes (gate is a diamond between code-review and commit).
+const NODES = [
+	{ x: 56, label: "research" },
+	{ x: 172, label: "blueprint" },
+	{ x: 304, label: "implement" },
+	{ x: 436, label: "validate" },
+	{ x: 556, label: "code-review" },
+	{ x: 792, label: "commit" },
+] as const;
+const RAIL_Y = 112;
+const GATE_X = 648;
+
+const MARKERS = [
+	{ n: "1", title: "Artifacts hand off", lead: "research writes a file. blueprint reads it.", body: "Every producing stage writes to .rpiv/artifacts/<bucket>/ and the next stage consumes it. If that file never appears, the chain halts, so a stage never runs on a missing input." },
+	{ n: "2", title: "implement fans out", lead: "one unit per plan phase.", body: "The plan declares its phases in frontmatter. implement fans out into one unit per phase (up to 32), each scoped and verified on its own, instead of one long undifferentiated pass." },
+	{ n: "3", title: "Review gates the commit", lead: "blockers_count decides the route.", body: "code-review emits a blockers_count. More than zero loops the run back through revise → implement; zero lets it commit. The loop is bounded: at most three review passes, then it stops." },
+	{ n: "4", title: "Validated, not parsed", lead: "the gate routes on a checked number.", body: "blockers_count is required by code-review's skill contract and validated at the stage boundary. The gate routes on a verified field, never on prose it guessed from, so it can't silently misroute." },
+	{ n: "5", title: "Every run is audited", lead: ".rpiv/workflows/runs/<id>.jsonl", body: "Each stage appends a row: input, output, route taken. Inspect a finished run, or resume a failed one from exactly where it stopped." },
+] as const;
+---
+
+<section id="anatomy">
+	<div class="container">
+		<p class="kicker">§ anatomy of a run · what the runner does for you</p>
+		<h2>A prompt can&rsquo;t do these five things.</h2>
+		<p class="run__lede">
+			Hit enter on one <code>/wf build</code> and the runner takes over. Here is
+			the whole trace, and the five guarantees that make it a runtime, not a
+			macro.
+		</p>
+
+		<figure class="run-fig" aria-label="An annotated trace of a /wf build run: research, blueprint, implement (fanned out over phases), validate, code-review, a blockers_count gate that either loops back through revise or commits, and a JSONL ledger recording every stage.">
+			<svg viewBox="0 0 840 312" class="run-svg" preserveAspectRatio="xMidYMid meet" role="presentation">
+				{/* ── main rail ── */}
+				<g fill="none" stroke="var(--sage-deep)" stroke-linecap="round">
+					<path d={`M44,${RAIL_Y} L800,${RAIL_Y}`} stroke-width="1" opacity="0.7" />
+					<path d={`M52,${RAIL_Y + 4} L792,${RAIL_Y + 4}`} stroke-width="0.5" opacity="0.22" />
+				</g>
+
+				{/* ── artifact tokens between consecutive stages ── */}
+				{[114, 238, 370, 496, 720].map((mx) => (
+					<circle cx={mx} cy={RAIL_Y} r="2.6" fill="var(--ochre)" opacity="0.8" />
+				))}
+
+				{/* ── implement fanout — one unit per plan phase ── */}
+				<g fill="none" stroke="var(--sage)" stroke-width="0.7" opacity="0.4" stroke-linecap="round" stroke-dasharray="2 3">
+					<path d="M299,124 Q288,148 282,162" />
+					<path d="M304,125 L304,162" />
+					<path d="M309,124 Q320,148 326,162" />
+				</g>
+				<g fill="var(--ink)" stroke="var(--sage)" stroke-width="0.8" opacity="0.5" stroke-dasharray="2 2">
+					<circle cx="282" cy="169" r="6.5" />
+					<circle cx="304" cy="169" r="6.5" />
+					<circle cx="326" cy="169" r="6.5" />
+				</g>
+				<text x="346" y="173" text-anchor="start" font-family="var(--font-mono)" font-size="11" fill="var(--sage)" letter-spacing="0.04em" opacity="0.9">per phase</text>
+
+				{/* ── stage nodes ── */}
+				{NODES.map((node) => (
+					<g>
+						<circle cx={node.x} cy={RAIL_Y} r="12" fill="none" stroke="var(--sage)" stroke-width="0.7" opacity="0.4" />
+						<circle cx={node.x} cy={RAIL_Y} r="9" fill="var(--ink)" stroke="var(--sage)" stroke-width="1.1" />
+						<circle cx={node.x} cy={RAIL_Y} r="9" fill="var(--sage)" opacity="0.16" />
+						<text x={node.x} y={RAIL_Y + 34} text-anchor="middle" font-family="var(--font-mono)" font-size="13" fill="var(--text-quiet)" letter-spacing="0.02em">{node.label}</text>
+					</g>
+				))}
+
+				{/* ── gate diamond on the rail (code-review → ◇ → commit) ── */}
+				<g>
+					<polygon points={`${GATE_X},${RAIL_Y - 14} ${GATE_X + 14},${RAIL_Y} ${GATE_X},${RAIL_Y + 14} ${GATE_X - 14},${RAIL_Y}`}
+						fill="var(--ink-raised)" stroke="var(--ochre)" stroke-width="1.3" />
+					<polygon points={`${GATE_X},${RAIL_Y - 14} ${GATE_X + 14},${RAIL_Y} ${GATE_X},${RAIL_Y + 14} ${GATE_X - 14},${RAIL_Y}`}
+						fill="var(--ochre)" opacity="0.18" />
+					<text x={GATE_X} y={RAIL_Y + 3} text-anchor="middle" font-family="var(--font-mono)" font-size="8.5" fill="var(--washi)" letter-spacing="0.02em">gate</text>
+					{/* gate field — below-right of the gate, clear of the down-left >0 edge and of commit */}
+					<text x={GATE_X + 8} y={RAIL_Y + 34} text-anchor="start" font-family="var(--font-mono)" font-size="10" fill="var(--text-distant)" letter-spacing="0.04em">blockers_count</text>
+					{/* =0 exit forward to commit */}
+					<text x={702} y={RAIL_Y - 8} text-anchor="middle" font-family="var(--font-mono)" font-size="11" fill="var(--sage)">0</text>
+				</g>
+
+				{/* ── review loop: gate bottom vertex →(>0) revise → implement ── */}
+				<g fill="none" stroke="var(--ochre)" stroke-linecap="round">
+					{/* from the diamond's BOTTOM corner, down-left to revise */}
+					<path d={`M${GATE_X},${RAIL_Y + 14} Q562,188 486,200`} stroke-width="1.1" opacity="0.7" stroke-dasharray="4 3" />
+					{/* revise up-left back to implement */}
+					<path d={`M466,200 Q380,186 304,${RAIL_Y + 13}`} stroke-width="1.1" opacity="0.7" stroke-dasharray="4 3" />
+					{/* arrowhead into implement (pointing up) */}
+					<path d={`M310,${RAIL_Y + 19} L304,${RAIL_Y + 12} L298,${RAIL_Y + 19}`} stroke-width="1" opacity="0.7" />
+				</g>
+				<text x={598} y={166} font-family="var(--font-mono)" font-size="11" fill="var(--ochre)" opacity="0.9">&gt;0</text>
+				{/* revise node — label below the circle, like the rail nodes */}
+				<g>
+					<circle cx={476} cy={200} r="10" fill="var(--ink)" stroke="var(--ochre)" stroke-width="1.2" />
+					<circle cx={476} cy={200} r="10" fill="var(--ochre)" opacity="0.16" />
+					<text x={476} y={226} text-anchor="middle" font-family="var(--font-mono)" font-size="13" fill="var(--text-quiet)" letter-spacing="0.02em">revise</text>
+					<text x={476} y={244} text-anchor="middle" font-family="var(--font-mono)" font-size="11" fill="var(--text-distant)" letter-spacing="0.04em">↺ ≤ 3 passes</text>
+				</g>
+
+				{/* ── JSONL ledger strip ── */}
+				<line x1="44" y1="274" x2="800" y2="274" stroke="var(--rule-strong)" stroke-width="0.6" />
+				{NODES.map((node) => (
+					<line x1={node.x} y1="270" x2={node.x} y2="278" stroke="var(--washi-soft)" stroke-width="0.8" opacity="0.6" />
+				))}
+				<line x1={476} y1="270" x2={476} y2="278" stroke="var(--ochre)" stroke-width="0.8" opacity="0.6" />
+				<text x="44" y="296" font-family="var(--font-mono)" font-size="10" fill="var(--text-distant)" letter-spacing="0.04em">.rpiv/workflows/runs/&lt;id&gt;.jsonl · one row per stage · resumable</text>
+
+				{/* ── numbered markers with leader lines to their feature ── */}
+				{[
+					{ n: "1", x: 114, y: 80, tx: 114, ty: 108 }, // artifact token
+					{ n: "2", x: 304, y: 208, tx: 304, ty: 186 }, // fanout cluster
+					{ n: "3", x: GATE_X, y: 74, tx: GATE_X, ty: 99 }, // gate
+					{ n: "4", x: 556, y: 74, tx: 556, ty: 101 }, // code-review (blockers source)
+					{ n: "5", x: 48, y: 256, tx: 48, ty: 272 }, // ledger
+				].map((m) => {
+					const targetBelow = m.ty > m.y;
+					const y1 = targetBelow ? m.y + 11 : m.y - 11;
+					return (
+						<g>
+							<line x1={m.x} y1={y1} x2={m.tx} y2={m.ty} stroke="var(--ochre)" stroke-width="0.8" opacity="0.5" />
+							<circle cx={m.x} cy={m.y} r="10" fill="var(--ochre)" opacity="0.95" />
+							<text x={m.x} y={m.y + 3.5} text-anchor="middle" font-family="var(--font-mono)" font-size="11" fill="var(--ink)" letter-spacing="0">{m.n}</text>
+						</g>
+					);
+				})}
+			</svg>
+		</figure>
+
+		{/* ── five annotation rows, tied to the markers ── */}
+		<ol class="run-notes">
+			{MARKERS.map((m) => (
+				<li class="run-note">
+					<span class="run-note__num mono">{m.n}</span>
+					<div class="run-note__body">
+						<h3 class="mono run-note__title">{m.title}</h3>
+						<p class="run-note__lead mono">{m.lead}</p>
+						<p class="run-note__text">{m.body}</p>
+					</div>
+				</li>
+			))}
+		</ol>
+
+		{/* ── covers / your call ledger ── */}
+		<div class="run-trade">
+			<div class="run-trade__col run-trade__col--gain">
+				<p class="mono run-trade__label">the runner guarantees</p>
+				<ul class="run-trade__list">
+					<li>artifacts hand off; a missing input halts the run</li>
+					<li>each phase runs as its own unit, gated on its own criteria</li>
+					<li>the review loop is bounded and gated on a validated number</li>
+					<li>a full JSONL audit you can inspect or resume</li>
+				</ul>
+			</div>
+			<div class="run-trade__col run-trade__col--cost">
+				<p class="mono run-trade__label">stays your call</p>
+				<ul class="run-trade__list">
+					<li>which flow to run: you pick ship / build / arch / vet / polish</li>
+					<li>a loop still red after three passes stops and hands back to you</li>
+					<li>nothing is hidden: a halted stage surfaces, you decide next</li>
+				</ul>
+			</div>
+		</div>
+	</div>
+</section>
+
+<style>
+	.run__lede {
+		font-family: var(--font-serif);
+		max-width: 58ch;
+		color: var(--text-quiet);
+		font-size: var(--type-lead);
+		line-height: var(--leading-body);
+		margin: var(--space-4) 0 var(--space-7);
+		text-wrap: pretty;
+	}
+	.run__lede code { font-family: var(--font-mono); color: var(--washi-soft); font-size: 0.92em; }
+
+	.run-fig { margin: 0 0 var(--space-7); }
+	.run-svg { width: 100%; max-width: 960px; height: auto; display: block; overflow: visible; }
+
+	/* ── annotation rows ── */
+	.run-notes {
+		list-style: none;
+		padding: 0;
+		margin: 0 0 var(--space-7);
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+		gap: var(--space-5) var(--space-6);
+		max-width: 920px;
+	}
+	.run-note { display: flex; gap: var(--space-3); }
+	.run-note__num {
+		flex: none;
+		width: 22px;
+		height: 22px;
+		display: grid;
+		place-items: center;
+		font-size: var(--type-tiny);
+		color: var(--ink);
+		background: var(--ochre);
+		border-radius: 50%;
+	}
+	.run-note__title {
+		font-size: var(--type-h3);
+		color: var(--text);
+		margin: 0 0 var(--space-1);
+		line-height: var(--leading-tight);
+	}
+	.run-note__lead {
+		font-size: var(--type-small);
+		color: var(--ochre);
+		margin: 0 0 var(--space-2);
+	}
+	.run-note__text {
+		font-family: var(--font-serif);
+		font-size: var(--type-small);
+		line-height: var(--leading-relaxed);
+		color: var(--text-quiet);
+		margin: 0;
+		text-wrap: pretty;
+	}
+
+	/* ── covers / your call ledger ── */
+	.run-trade {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: var(--space-6);
+		max-width: 920px;
+		border-top: 1px solid var(--rule-strong);
+		padding-top: var(--space-5);
+	}
+	.run-trade__label {
+		font-size: var(--type-tiny);
+		text-transform: uppercase;
+		letter-spacing: 0.16em;
+		margin: 0 0 var(--space-3);
+	}
+	.run-trade__col--gain .run-trade__label { color: var(--sage); }
+	.run-trade__col--cost .run-trade__label { color: var(--ochre); }
+	.run-trade__list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+	.run-trade__list li {
+		font-family: var(--font-serif);
+		font-size: var(--type-small);
+		line-height: var(--leading-snug);
+		color: var(--text-quiet);
+		padding-left: var(--space-4);
+		position: relative;
+	}
+	.run-trade__col--gain .run-trade__list li::before { content: "✓"; position: absolute; left: 0; color: var(--sage); font-family: var(--font-mono); }
+	.run-trade__col--cost .run-trade__list li::before { content: "→"; position: absolute; left: 0; color: var(--ochre); font-family: var(--font-mono); }
+
+	@media (max-width: 720px) {
+		.run-notes, .run-trade { grid-template-columns: 1fr; }
+	}
+</style>

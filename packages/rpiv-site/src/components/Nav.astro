@@ -34,10 +34,10 @@ const isHome = Astro.url.pathname === "/";
 		<a href={isHome ? "#install" : "/#install"} class="nav__cta mono">install</a>
 
 		<nav class="nav__links mono" aria-label="primary">
-			<a href={isHome ? "#pipeline" : "/#pipeline"} data-nav-link="pipeline">pipeline</a>
-			<a href={isHome ? "#guidance" : "/#guidance"} data-nav-link="guidance">guidance</a>
-			<a href={isHome ? "#flows"    : "/#flows"}    data-nav-link="flows">blueprint</a>
-			<a href={isHome ? "#review"   : "/#review"}   data-nav-link="review">review</a>
+			<a href={isHome ? "#catalog"  : "/#catalog"}  data-nav-link="catalog">flows</a>
+			<a href={isHome ? "#anatomy"  : "/#anatomy"}  data-nav-link="anatomy">run</a>
+			<a href={isHome ? "#skills"   : "/#skills"}   data-nav-link="skills">skills</a>
+			<a href={isHome ? "#around"   : "/#around"}   data-nav-link="around">around</a>
 			<a href={isHome ? "#agents"   : "/#agents"}   data-nav-link="agents">agents</a>
 			<a href={isHome ? "#siblings" : "/#siblings"} data-nav-link="siblings">siblings</a>
 		</nav>
