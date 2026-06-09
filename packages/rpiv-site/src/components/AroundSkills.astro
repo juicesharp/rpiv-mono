@@ -192,10 +192,9 @@ const byMoment = (m: string): AroundSkill[] => skills.filter((s) => s.moment ===
 	.ar-card__head {
 		position: relative;
 		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		flex-wrap: wrap;
-		gap: var(--space-1) var(--space-2);
+		flex-direction: column;
+		align-items: flex-start;
+		gap: var(--space-2);
 		padding-bottom: var(--space-3);
 		border-bottom: 1px solid var(--rule);
 	}
@@ -208,7 +207,8 @@ const byMoment = (m: string): AroundSkill[] => skills.filter((s) => s.moment ===
 		font-size: var(--type-micro);
 		color: var(--text-distant);
 		letter-spacing: 0.02em;
-		text-align: right;
+		text-align: left;
+		word-break: break-word;
 	}
 	/* "leads to" glyph — ties the produced artifact/effect to the skill rather
 	   than letting the path float orphaned at the far edge. */

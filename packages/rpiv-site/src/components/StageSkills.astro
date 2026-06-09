@@ -38,7 +38,10 @@ const byGroup = (g: string): StageSkill[] => skills.filter((s) => s.group === g)
 						<article class="sk-card" role="listitem">
 							<header class="sk-card__head">
 								<span class="chip chip--sage">/skill:{s.name}</span>
-								<span class="sk-card__out mono">{s.artifact ?? "side effect"}</span>
+								<span class:list={["sk-card__out", "mono", { "sk-card__out--effect": s.artifact === null }]}>
+									<span class="sk-card__lead" aria-hidden="true">↳</span>
+									{s.artifact ?? "side effect"}
+								</span>
 							</header>
 
 							<p class="sk-card__role">{s.role}</p>
@@ -124,22 +127,30 @@ const byGroup = (g: string): StageSkill[] => skills.filter((s) => s.group === g)
 
 	.sk-card__head {
 		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		flex-wrap: wrap;
-		gap: var(--space-1) var(--space-2);
+		flex-direction: column;
+		align-items: flex-start;
+		gap: var(--space-2);
 	}
 	/* Keep the skill chip on one line — a long name (/skill:architecture-review)
-	   must not break mid-word. Paths that fit sit beside the chip; one too long
-	   to share the row drops to its own line whole, never wrapping the chip. */
+	   must not break mid-word. The artifact path always sits on its own line
+	   beneath the chip, tied to it by the ↳ glyph. */
 	.sk-card__head .chip { white-space: nowrap; }
 	.sk-card__out {
 		min-width: 0;
+		display: inline-flex;
+		align-items: baseline;
+		gap: var(--space-1);
 		font-size: var(--type-micro);
 		color: var(--text-distant);
 		letter-spacing: 0.02em;
-		text-align: right;
+		text-align: left;
+		word-break: break-word;
 	}
+	/* "leads to" glyph — ties the produced artifact/effect to the skill above. */
+	.sk-card__lead { color: var(--sage-deep); }
+	/* A working-tree side effect has no stored path; mark it quieter + italic so
+	   it reads as "no artifact" rather than a literal path. */
+	.sk-card__out--effect { font-style: italic; color: var(--text-faint, var(--text-distant)); }
 
 	.sk-card__role {
 		font-family: var(--font-serif);
