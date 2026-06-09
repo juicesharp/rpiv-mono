@@ -47,7 +47,7 @@ export default defineWorkflow({
 });
 ```
 
-The graph is validated at load time. `validateWorkflow()` rejects a dangling edge, a `produces` stage with no outcome, a `gate` over a stage that declares no `outputSchema`, or a `reads:` name no stage publishes — all before a single session opens. A broken workflow fails to load, not halfway through a run. `/wf <name>` previews the graph so you can read every stage, its dispatch, and where the branches land before you spend a token.
+The graph is validated at load time. `validateWorkflow()` rejects a dangling edge, a `produces` stage with no outcome (neither wired inline nor derivable from the skill's contract), or a `reads:` name no stage publishes — and warns when a `gate` routes on a stage whose data has no schema to validate against, inline or contract-sourced — all before a single session opens. A broken workflow fails to load, not halfway through a run. `/wf <name>` previews the graph so you can read every stage, its dispatch, and where the branches land before you spend a token.
 
 ## Two guarantees you get for free
 
@@ -184,22 +184,11 @@ const polishWorkflow = defineWorkflow({
   name: "polish",
   start: "architecture-review",
   stages: {
-    "architecture-review": produces({
-      outcome: rpivBucketOutcome("architecture-reviews"),
-    }),
-    blueprint: produces({
-      outcome: rpivBucketOutcome("plans"),
-      iterate: REVIEW_PHASE_ITERATE,
-    }),
-    implement: acts({ fanout: PLANS_PHASE_FANOUT }),
-    validate: produces({
-      outcome: rpivBucketOutcome("validation"),
-      prompt: VALIDATE_PLANS_PROMPT,
-    }),
-    "code-review": produces({
-      outcome: rpivBucketOutcome("reviews"),
-      outputSchema: CODE_REVIEW_SCHEMA,
-    }),
+    "architecture-review": produces(),
+    blueprint: produces({ iterate: REVIEW_PHASE_ITERATE }),
+    implement: acts({ fanout: PLANS_PHASE_FANOUT, reads: ["plans"] }),
+    validate: produces({ prompt: VALIDATE_PLANS_PROMPT }),
+    "code-review": produces(),
     commit: acts({ outcome: gitCommitOutcome }),
   },
   edges: {
@@ -216,7 +205,7 @@ const polishWorkflow = defineWorkflow({
 });
 ```
 
-Three moves make it work:
+Notice how little wiring the stages carry. Each `produces` stage's outcome — the bucket it publishes to (`plans`, `reviews`, `validation`) and the schema its data is validated against — is **derived from the dispatched skill's contract**, not restated on the stage. So `blueprint` lands in the `plans` channel and `code-review`'s `{ blockers_count }` routing schema both come from their `SKILL.md` contracts; the workflow only names what the contract can't infer (the `iterate`/`fanout` decomposition, the `prompt` override, the `reads`, and `commit`'s `gitCommitOutcome`). Three moves make it work:
 
 - **`blueprint` iterates over the review's phases.** `REVIEW_PHASE_ITERATE` reads the `### Phase N — name` headings from the architecture review and pulls one per call, handing each pass the paths of the plans the earlier passes already wrote (`Prior phase plans … build on them, don't duplicate`). Where `fanout` would plan every phase blind, `iterate` lets phase 3's plan see phases 1 and 2. On a corrective loop it folds the latest code review's blockers into each pass.
 - **`implement` fans out over every plan.** `PLANS_PHASE_FANOUT` walks the `## Phase N:` headings of *all* the plans the blueprint pass accumulated — push decomposition, because implementing one phase doesn't depend on implementing another.
