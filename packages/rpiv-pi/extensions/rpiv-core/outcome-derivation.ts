@@ -9,8 +9,6 @@
  * Registered via `registerOutcomeDeriver` (from `@juicesharp/rpiv-workflow/startup`)
  * so the loader invokes it after `buildEffectiveContracts` and before the
  * validation loop — see `load/index.ts`.
- *
- * B2 roadmap item. Closes Gap D: "Presets still hand-wired, not contract-derived."
  */
 
 import type { OutcomeDeriverFn } from "@juicesharp/rpiv-workflow/registration";
@@ -22,9 +20,9 @@ import { isModuleNotFound } from "./utils.js";
  * name used in `state.named[bucket]` / `reads: [bucket]`. One entry per
  * `produces`-kind skill. Unknown kinds trigger a `LoadIssue` error via the
  * `onIssue` callback — a silent miss would become a runtime throw in
- * `resolveOutcome` (`extraction.ts:83-88`) once explicit calls are deleted.
+ * `resolveOutcome` once explicit calls are deleted.
  *
- * Convergence invariant: same artifactKind → same bucket. 4 skills share
+ * Convergence invariant: same artifactKind → same bucket. Four skills share
  * `"plans"` (blueprint, plan, revise, create-handoff).
  */
 export const BUCKET_BY_KIND: Readonly<Record<string, string>> = {

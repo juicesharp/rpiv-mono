@@ -91,7 +91,7 @@ describe("skill-contracts", () => {
 	});
 
 	describe("owner-scoping (#12 prune + #4 collision)", () => {
-		it("owner re-registration prunes skills no longer included (#12)", () => {
+		it("owner re-registration prunes skills no longer included", () => {
 			registerSkillContracts(
 				[
 					["research", declared],
@@ -114,7 +114,7 @@ describe("skill-contracts", () => {
 			expect(reg.has("design")).toBe(true);
 		});
 
-		it("different owner registering same name with divergent contract pushes a collision (#4)", () => {
+		it("different owner registering same name with divergent contract pushes a collision", () => {
 			registerSkillContracts([["research", declared]], "owner-a");
 			const different: SkillContract = { source: "declared", produces: { kind: "side-effect" } };
 			registerSkillContracts([["research", different]], "owner-b");
@@ -139,7 +139,7 @@ describe("skill-contracts", () => {
 			expect(drainSkillContractCollisions()).toHaveLength(0);
 		});
 
-		it("semantically-identical contract with different key order records nothing (#I4)", () => {
+		it("semantically-identical contract with different key order records nothing", () => {
 			// Same data, different insertion order — a JSON.stringify compare would
 			// read these as divergent and raise a spurious collision; the structural
 			// deepEqual compare treats them as identical.
@@ -330,7 +330,7 @@ describe("skill-contracts", () => {
 			expect(canCompose("unknown-a", "unknown-b")).toEqual({ ok: true });
 		});
 
-		it("accepts an explicit contracts map (#3)", () => {
+		it("accepts an explicit contracts map", () => {
 			const map = new Map([
 				["research", stringProducer],
 				["design", numberConsumer],
@@ -392,7 +392,7 @@ describe("skill-contracts", () => {
 		});
 	});
 
-	describe("canCompose — reads-channel (meta) promotion (A2)", () => {
+	describe("canCompose — reads-channel (meta) promotion", () => {
 		const kindComparator: CompositionComparator = (produces, consumes, ch) => {
 			const want = (consumes.reads?.[ch]?.meta as { artifactKind?: string } | undefined)?.artifactKind;
 			const got = (produces.meta as { artifactKind?: string } | undefined)?.artifactKind;
@@ -422,7 +422,7 @@ describe("skill-contracts", () => {
 		});
 	});
 
-	describe("composition comparators (A2 registry)", () => {
+	describe("composition comparators", () => {
 		const plansComparator: CompositionComparator = () => ({ ok: true });
 
 		it("registers a comparator under its channel name", () => {

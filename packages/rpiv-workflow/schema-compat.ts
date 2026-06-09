@@ -1,8 +1,8 @@
 /**
  * Conservative structural compatibility of JSON Schema producer → consumer.
  *
- * Extracted from json-schema.ts (L0-01): the bridge + introspection helpers
- * stay there; this module owns the compat engine and nothing else. The engine
+ * The bridge + introspection helpers stay in json-schema.ts; this module owns
+ * the compat engine and nothing else. The engine
  * flags DEFINITE mismatches (no false positives) — everything else returns
  * `{ ok: true }` (not provably incompatible).
  *
@@ -81,7 +81,7 @@ function fieldEnumConflict(key: string, p: JsonSchemaObject, c: JsonSchemaObject
  * differ. Compares with `deepEqual` (key-order-independent) to match the
  * `registerSkillContracts` collision check (registry.ts) — `JSON.stringify`
  * is insertion-order dependent, so `{ a, b }` vs `{ b, a }` would register as
- * identical yet read as incompatible here (same class as `1b9a4d2`).
+ * identical yet read as incompatible here.
  */
 function fieldConstConflict(key: string, p: JsonSchemaObject, c: JsonSchemaObject): SchemaCompatResult | undefined {
 	if ("const" in p && "const" in c && !deepEqual(p.const, c.const)) {

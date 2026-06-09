@@ -10,9 +10,6 @@
  *   - harvest.ts     — harvestStageContracts + buildEffectiveContracts.
  *   - composition.ts — canCompose + legalNextSkills.
  *   - registries.ts  — CompositionComparator + OutcomeDeriver registries.
- *
- * See `skill-contracts.ts` (pre-split) header for the module-level rationale
- * (global-slot anchoring, provider+flush idiom, etc.).
  */
 
 import { deepEqual, globalSlot } from "../internal-utils.js";
@@ -51,11 +48,11 @@ function setFlushLatch(latch: Promise<void> | undefined): void {
  *
  * `owner` (optional consumer label, e.g. `"rpiv-pi"`) makes two real-world cases
  * safe:
- *   - #12 prune-on-reload — an owner's call is treated as its FULL current
+ *   - prune-on-reload — an owner's call is treated as its FULL current
  *     snapshot: any name this owner previously registered but didn't include now
  *     (a skill deleted between `/reload`s) is dropped, so stale contracts don't
  *     linger. Other owners' entries are untouched.
- *   - #4 collision surfacing — a DIFFERENT owner overwriting a name with a
+ *   - collision surfacing — a DIFFERENT owner overwriting a name with a
  *     DIVERGENT contract is recorded (drained into a `LoadIssue` by
  *     `loadWorkflows`), turning a silent last-writer-wins into a visible warning.
  * Omit `owner` for the simple additive behaviour (no prune, no ownership claim).
@@ -68,7 +65,7 @@ export function registerSkillContracts(contracts: Iterable<readonly [string, Ski
 	if (owner !== undefined) {
 		for (const [name, prevOwner] of [...owners]) {
 			if (prevOwner === owner && !incomingNames.has(name)) {
-				registry.delete(name); // #12: this owner dropped the skill — drop its contract
+				registry.delete(name); // this owner dropped the skill — drop its contract
 				owners.delete(name);
 			}
 		}
@@ -138,7 +135,7 @@ export function drainSkillContractProviderErrors(): unknown[] {
 
 /**
  * Drain (return + clear) the cross-owner collision messages recorded since the
- * last drain (#4). `loadWorkflows` maps each into a `warning` `LoadIssue`.
+ * last drain. `loadWorkflows` maps each into a `warning` `LoadIssue`.
  * Internal — not on the public barrel.
  */
 export function drainSkillContractCollisions(): string[] {

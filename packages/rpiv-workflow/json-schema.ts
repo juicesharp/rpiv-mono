@@ -1,8 +1,8 @@
 /**
  * Raw-JSON-Schema ↔ Standard Schema bridge + introspection helpers.
  *
- * Phase 0 of the skill-contract stack: makes schemas inspectable AS DATA, not
- * just executable validators. Two directions:
+ * Makes schemas inspectable AS DATA, not just executable validators. Two
+ * directions:
  *
  *   - `jsonSchemaToStandard(schema)` wraps a plain JSON-Schema-shaped object
  *     (a skill's frontmatter `consumes.data` / `produces.data`) into a Standard
@@ -11,7 +11,7 @@
  *     spec `jsonSchema` Converter so the captured schema round-trips back out.
  *   - `hasJsonSchema(schema)` / `extractJsonSchema(schema, target?)` feature-detect
  *     and pull the JSON Schema off ANY `~standard` value (TypeBox- or raw-wrapped).
- *     Phase 2's edge-compat checker uses them; opaque schemas (Zod/Valibot without
+ *     The edge-compat checker uses them; opaque schemas (Zod/Valibot without
  *     the Converter) degrade to `undefined` and the caller skips + warns.
  *
  * No new dependency: `typebox@1.1.39` is keyword-driven, so `Value.Check`
@@ -115,7 +115,7 @@ export function hasJsonSchema(schema: StandardSchemaV1 | undefined): schema is J
 /**
  * Pull the JSON Schema back off a `~standard` value as data, or `undefined`
  * when the schema is opaque (no Converter) or the Converter throws for the
- * requested target. Phase 2's edge-compat checker calls this and skips + warns
+ * requested target. The edge-compat checker calls this and skips + warns
  * on `undefined`. Defaults to `draft-2020-12` — the TypeBox-native dialect.
  */
 export function extractJsonSchema(

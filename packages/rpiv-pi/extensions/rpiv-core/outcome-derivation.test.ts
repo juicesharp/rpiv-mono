@@ -1,8 +1,8 @@
 /**
- * Tests for the contract-derived outcome resolver (B2).
+ * Tests for the contract-derived outcome resolver.
  *
- * The equivalence test is the acceptance gate for Phase 3's deletion of 19
- * explicit `rpivBucketOutcome` calls from `built-in-workflows.ts`.
+ * The equivalence test guards the deletion of the explicit `rpivBucketOutcome`
+ * calls from `built-in-workflows.ts` — derivation must reproduce them exactly.
  */
 
 import type { SkillContract, SkillContractMap, Workflow } from "@juicesharp/rpiv-workflow/registration";
@@ -225,15 +225,14 @@ describe("deriveOutcomes", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Equivalence test — acceptance gate for Phase 3
+// Equivalence test
 // ---------------------------------------------------------------------------
 
 describe("equivalence — built-in workflows", () => {
 	/**
-	 * The complete contract map for all skills used in built-in workflows.
-	 * After Phase 3, the loader's deriveOutcomes pass will wire these
-	 * automatically. This test verifies the derivation produces the correct
-	 * outcome.name for every produces stage.
+	 * The complete contract map for all skills used in built-in workflows. The
+	 * loader's deriveOutcomes pass wires these automatically; this test verifies
+	 * the derivation produces the correct outcome.name for every produces stage.
 	 */
 	const BUILTIN_CONTRACTS: Array<[string, string]> = [
 		["research", "research"],
@@ -356,11 +355,11 @@ describe("equivalence — built-in workflows", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Reload regression (I1) — peek semantics must re-wire outcomes on fresh stage
+// Reload regression — peek semantics must re-wire outcomes on fresh stage
 // objects from overlay re-imports.
 // ---------------------------------------------------------------------------
 
-describe("reload regression (I1): deriveOutcomes re-wires on fresh stage objects", () => {
+describe("reload regression: deriveOutcomes re-wires on fresh stage objects", () => {
 	it("second derivation pass on fresh objects wires outcomes (peek, not drain)", () => {
 		const contracts = contractsFromKinds([["s1", "plan"]]);
 

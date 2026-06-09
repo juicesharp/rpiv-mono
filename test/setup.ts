@@ -138,7 +138,7 @@ beforeEach(async () => {
 	rmSync(workflowUserRoot, { recursive: true, force: true });
 
 	// Clean global agent dir parent (`~/.pi/agent/`) — not just `~/.pi/agent/agents/` —
-	// so Q18-style tests that place a regular file at `~/.pi/agent` can write into a
+	// so tests that place a regular file at `~/.pi/agent` can write into a
 	// clean slot, and so no test inherits an empty-dir residue from a prior worker run.
 	const globalAgentDir = join(process.env.HOME!, ".pi", "agent");
 	rmSync(globalAgentDir, { recursive: true, force: true });

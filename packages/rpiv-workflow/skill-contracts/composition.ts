@@ -17,7 +17,7 @@ import { getSkillContracts } from "./registry.js";
  * Conservative (via `isSchemaCompatible`): returns `{ ok: true }` when either
  * schema is absent/opaque (not provably incompatible).
  *
- * IMPORTANT (#3): the default `contracts` is the GLOBAL registry
+ * IMPORTANT: the default `contracts` is the GLOBAL registry
  * (`getSkillContracts()`), which holds only `declared` + `injected` contracts —
  * NOT the `harvested` ones, which exist solely on `LoadedWorkflows.skillContracts`
  * (built per load, never written back to the global). So the zero-arg call sees a
@@ -32,14 +32,14 @@ export function canCompose(
 ): SchemaCompatResult {
 	const producerContract = contracts.get(producerSkill);
 	const consumerContract = contracts.get(consumerSkill);
-	// Data-channel (Phase 2): a provable data mismatch is decisive.
+	// Data channel: a provable data mismatch is decisive.
 	const producerData = producerContract?.produces?.data;
 	const consumerData = consumerContract?.consumes?.data;
 	if (producerData && consumerData) {
 		const dataCompat = isSchemaCompatible(producerData, consumerData);
 		if (!dataCompat.ok) return dataCompat;
 	}
-	// Named-channel (reads) compat (A2): consult per-channel comparators for the
+	// Named-channel (reads) compat: consult per-channel comparators for the
 	// consumer's declared reads channels. Degrades to `{ ok: true }` when no comparator
 	// is registered or the producer has no `produces` spec. Only adjudicates channels
 	// where the consumer has explicitly declared a meta requirement (readSpec.meta
@@ -65,7 +65,7 @@ export function canCompose(
 /**
  * Every known skill whose `consumes` is not provably incompatible with `skill`'s
  * `produces` — the generator's search-space narrowing. Sorted for determinism.
- * Same default-map caveat as `canCompose` (#3): pass `loaded.skillContracts` for
+ * Same default-map caveat as `canCompose`: pass `loaded.skillContracts` for
  * the effective (declared ⊕ harvested) view, else only declared/injected skills
  * are considered. Conservative by design — absent/opaque schemas count as
  * compatible, so this excludes only PROVABLE data-channel mismatches.

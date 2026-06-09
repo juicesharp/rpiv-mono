@@ -102,8 +102,8 @@ const planPhaseRecords = (content: string, who: string, path: string): readonly 
 			true,
 		);
 	}
-	// Phase 6 (Decision 5): the REQUIRED scalar `phase_count` must equal the derived
-	// phase count — it drives the fanout unit count. Fire only when the file declares
+	// The REQUIRED scalar `phase_count` must equal the derived phase count — it
+	// drives the fanout unit count. Fire only when the file declares
 	// plan-ness (has phases OR a phase_count) so a genuinely empty / non-plan file
 	// still degrades to [] (the existing "neither phases nor headings" path); a plan
 	// that declares phases but omits phase_count THROWS (the field is contract-required).
@@ -139,10 +139,9 @@ const resolveCwd = (path: string, cwd: string): string => (isAbsolute(path) ? pa
  * Fan `implement` out over the structured `phases:` frontmatter array of the
  * latest plan published to the named `"plans"` channel. Sourcing from the named
  * channel (not the rolling primary) makes the stage's `reads: ["plans"]`
- * declaration semantically honest and is forward-compatible with the Phase C
- * `fanoutOver({ source: "plans" })` builder (design 2026-06-05_18-05-45). Used by
- * every workflow whose `implement` inherits one plan (ship/build/arch/vet);
- * polish's accumulating multi-plan variant is `PLANS_PHASE_FANOUT`.
+ * declaration semantically honest. Used by every workflow whose `implement`
+ * inherits one plan (ship/build/arch/vet); polish's accumulating multi-plan
+ * variant is `PLANS_PHASE_FANOUT`.
  */
 const FRONTMATTER_PHASE_FANOUT: FanoutFn = ({ state, cwd }) => {
 	const plan = latestFsArtifact(state, "plans");
@@ -364,7 +363,7 @@ const phaseDeps = (entry: unknown): number[] => {
  * `plans` collector captures whatever path it announces.
  *
  * Each phase reads only the plans of the phases it `depends_on` (vs. every prior
- * plan) — accurate context, and the seam B-schedule would parallelize on later.
+ * plan) — accurate context, and the seam a future scheduler could parallelize on.
  * `blast_radius`/`effort` tag the label. Absent `depends_on` falls back to all
  * prior plans.
  *

@@ -200,7 +200,7 @@ describe("normalizeContract produces.data keyword guard", () => {
 	});
 });
 
-describe("bundled skill contracts (Phase 2 annotation)", () => {
+describe("bundled skill contracts", () => {
 	// The 12 pipeline skills carry a contract: block. This is the count the /wf
 	// banner reports as "N declared" — a drift guard if a block is added,
 	// dropped, or fails to parse (a malformed block is silently skipped).
@@ -358,7 +358,7 @@ describe("bundled skill contracts (Phase 2 annotation)", () => {
 
 	it("side-effect skills declare no produces.data", () => {
 		// kind: side-effect means the skill describes itself via meta/reads, not
-		// an adjudicated data channel (parent §1: side-effects fill meta, not data).
+		// an adjudicated data channel — side-effects fill meta, not data.
 		const sideEffectSkills = [
 			"implement",
 			"commit",
@@ -375,8 +375,8 @@ describe("bundled skill contracts (Phase 2 annotation)", () => {
 		}
 	});
 
-	// §4 coherence — the drift that bit us at RUNTIME (a validate artifact wrote
-	// `status: complete`, which the contract enum rejected). Catch it at build
+	// Template/contract coherence — the drift that bit us at RUNTIME (a validate
+	// artifact wrote `status: complete`, which the contract enum rejected). Catch it at build
 	// time instead: every enum-constrained `status`/`verdict` value a skill
 	// TEMPLATE tells the LLM to write must be a member of the contract enum.
 	// A template value is either a literal (`status: ready`) or a placeholder set
@@ -422,7 +422,7 @@ describe("bundled skill contracts (Phase 2 annotation)", () => {
 	});
 });
 
-describe("artifactKindComparator (A2 plans comparator)", () => {
+describe("artifactKindComparator (plans channel)", () => {
 	const produces = (artifactKind?: string): ProducesSpec => ({
 		kind: "produces",
 		...(artifactKind ? { meta: { artifactKind } } : {}),

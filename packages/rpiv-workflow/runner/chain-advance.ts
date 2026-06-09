@@ -123,7 +123,7 @@ function auditRoutingDecision(
  * global pool that drains across unrelated loops.
  *
  * Trip attribution targets `nextName` (the stage the guard refused to
- * re-enter), not the just-completed stage. Same lesson as Q12+IB.
+ * re-enter), not the just-completed stage.
  */
 async function checkBackwardJumpGuard(
 	curCtx: WorkflowHostContext,

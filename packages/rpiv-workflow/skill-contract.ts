@@ -8,7 +8,7 @@
  * (see `skill-contracts.ts`). This package never reads skill files or parses
  * YAML — the primary consumer (rpiv-pi) supplies already-parsed contracts.
  *
- * Three field tiers, by who understands them (Decision 7):
+ * Three field tiers, by who understands them:
  *   - data channel (`consumes.data` / `produces.data`, JSON Schema) — the ONLY
  *     channel this framework adjudicates; JSON Schema is consumer-neutral.
  *   - framework-native structure (`produces.kind`, `consumes.reads`) — derived
@@ -97,7 +97,7 @@ export type SkillContractMap = ReadonlyMap<string, SkillContract>;
 /**
  * A consumer-supplied adjudicator for one named channel's `meta` compatibility.
  * The framework INVOKES it but never reads inside `meta` — the channel's
- * ontology lives entirely with the consumer (Decision 7). Registered per channel
+ * ontology lives entirely with the consumer. Registered per channel
  * via `registerCompositionComparator(channelName, comparator)` and consulted by
  * the three adjudication points (`canCompose`/`legalNextSkills`,
  * `checkEdgeSchemaCompat`, `ensureContractInputValid`) for any consumer

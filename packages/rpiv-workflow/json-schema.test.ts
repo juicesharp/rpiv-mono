@@ -1,6 +1,6 @@
 /**
  * Tests for json-schema.ts — Raw-JSON-Schema ↔ Standard Schema bridge +
- * introspection helpers (Phase 0).
+ * introspection helpers.
  */
 
 import { Type } from "typebox";
@@ -256,7 +256,7 @@ describe("typeboxSchema <-> extractJsonSchema round-trip", () => {
 });
 
 // ---------------------------------------------------------------------------
-// isSchemaCompatible — conservative structural comparator (Phase 6)
+// isSchemaCompatible — conservative structural comparator
 // ---------------------------------------------------------------------------
 
 describe("isSchemaCompatible", () => {

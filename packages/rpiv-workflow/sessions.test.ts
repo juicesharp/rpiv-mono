@@ -1167,11 +1167,11 @@ describe("sessions — halt routing", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Phase-1 spike: output validation sourced from contract `produces.data`
-// when the stage carries no `outputSchema` of its own.
+// Output validation sourced from contract `produces.data` when the stage
+// carries no `outputSchema` of its own.
 // ---------------------------------------------------------------------------
 
-describe("sessions — contract-sourced output validation (Phase 1)", () => {
+describe("sessions — contract-sourced output validation", () => {
 	let tmpDir: string;
 
 	beforeEach(() => {

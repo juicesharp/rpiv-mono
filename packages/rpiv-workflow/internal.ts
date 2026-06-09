@@ -4,8 +4,8 @@
  * Exports below are NOT part of the package's authoring or embedding
  * contract. They exist solely for:
  *
- *   - rpiv-pi's `[I3]` regression test that exercises `recordStage`
- *     directly (asserting the JSONL append + stageNumber monotonicity).
+ *   - rpiv-pi's regression test that exercises `recordStage` directly
+ *     (asserting the JSONL append + stageNumber monotonicity).
  *   - `test/setup.ts`'s per-worker `beforeEach` reset of module-level
  *     singleton state (the built-in workflow registry, the jiti import
  *     cache).

@@ -27,7 +27,7 @@ import { getSkillContracts } from "./registry.js";
  * (polymorphic union / drift detection deferred). Reuses `isDispatchingStage`
  * — the shared predicate the alias remap + no-op warning already agree on.
  *
- * LIMITATION (#2): the `data` channel only harvests from schemas that expose
+ * LIMITATION: the `data` channel only harvests from schemas that expose
  * their JSON Schema as data — i.e. `typeboxSchema(...)` (and `jsonSchemaToStandard`
  * raw wraps). A stage authored with Zod / Valibot / Arktype has an OPAQUE
  * `~standard` (no `jsonSchema` Converter), so `extractJsonSchema` returns

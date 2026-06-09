@@ -1137,7 +1137,7 @@ describe("runWorkflow", () => {
 		});
 
 		// -------------------------------------------------------------------
-		// Q12+IB — when a mid-chain stage throws (here: stage 2 hits the
+		// When a mid-chain stage throws (here: stage 2 hits the
 		// continue-without-pi invariant), the recorded failure must be
 		// attributed to the *failing* stage, not to the prior stage whose
 		// success triggered advanceChain. Before runStageOrRecordFailure, the
@@ -1650,7 +1650,7 @@ describe("runWorkflow", () => {
 			expect(result.stagesCompleted).toBe(2);
 		});
 
-		describe("named-channel (reads) compatibility (A2 lift)", () => {
+		describe("named-channel (reads) compatibility", () => {
 			const kindComparator: CompositionComparator = (produces, consumes, ch) => {
 				const want = (consumes.reads?.[ch]?.meta as { artifactKind?: string } | undefined)?.artifactKind;
 				const got = (produces.meta as { artifactKind?: string } | undefined)?.artifactKind;
@@ -1970,8 +1970,8 @@ describe("runWorkflow", () => {
 		});
 
 		// -------------------------------------------------------------------
-		// Q7+IH — routing-write failure is fail-soft (run continues) but
-		// MUST be observable: appendRoutingDecision returns false so the
+		// Routing-write failure is fail-soft (run continues) but MUST be
+		// observable: appendRoutingDecision returns false so the
 		// runner can notify + surface a droppedRoutingRows entry in the
 		// envelope. Asymmetric with appendStage (which halts on failure)
 		// because routing rows are pure telemetry — no in-memory state
@@ -2064,7 +2064,7 @@ describe("runWorkflow", () => {
 			expect(stageRows.filter((s) => s.status === "completed")).toHaveLength(6);
 			expect(stageRows.filter((s) => s.status === "failed")).toHaveLength(1);
 			// Trip attribution: failure row blames `a` (the would-be revisit
-			// target), not `b` (the just-completed stage). Q12-family lesson.
+			// target), not `b` (the just-completed stage).
 			expect(stageRows.filter((s) => s.status === "failed")[0]?.skill).toBe("a");
 
 			const exhaustionNotice = chain.notifications.find((n) => /backward-jump limit exceeded/i.test(n.msg));
@@ -2251,7 +2251,7 @@ describe("runWorkflow", () => {
 		});
 
 		// -------------------------------------------------------------------
-		// Q13+IG — the core fix: an N-node decision-mediated loop must allow
+		// The core fix: an N-node decision-mediated loop must allow
 		// MAX_BACKWARD_JUMPS retry iterations, not trip mid-iteration on the
 		// deterministic hops within the cycle body. Previously a 3-node loop
 		// burned the budget on two deterministic forward hops INSIDE the
@@ -2359,7 +2359,7 @@ describe("runWorkflow", () => {
 	});
 
 	// -----------------------------------------------------------------------
-	// Q20+ID — workflow runner emits `/skill:<name>` via sendUserMessage, which
+	// The workflow runner emits `/skill:<name>` via sendUserMessage, which
 	// goes through `prompt({expandPromptTemplates: false})` — Pi's built-in
 	// `_expandSkillCommand` is skipped, so `rpiv-args` is the only expander.
 	// If the skill isn't registered, `rpiv-args` returns `{action:"continue"}`

@@ -24,7 +24,7 @@ import { jsonSchemaConverter, validateToJsonSchemaIssues } from "./json-schema.j
  * Wrap a TypeBox schema to return a `JsonSchemaCapable` — a Standard Schema v1
  * that ALSO exposes its JSON Schema as data via the spec `jsonSchema` Converter.
  * Downstream code (`validateOutputData`) still consults `~standard.validate`;
- * the new Converter lets Phase 2's edge-compat checker extract the schema as
+ * the new Converter lets the edge-compat checker extract the schema as
  * data without needing to know the schema library.
  *
  * Generic over the input schema `S` so the parsed type (`Static<S>`) flows

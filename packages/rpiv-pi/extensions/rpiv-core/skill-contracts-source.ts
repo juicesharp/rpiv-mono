@@ -48,7 +48,7 @@ function hasSchemaKeyword(obj: Record<string, unknown>): boolean {
  * Map a raw frontmatter `contract:` object to a declared SkillContract. Domain
  * tags the framework treats as opaque (artifactKind, …) are expected under
  * `consumes.meta` / `produces.meta` in frontmatter — how rpiv-pi shapes its own
- * frontmatter is the consumer's call (Decision 7); the framework never reads
+ * frontmatter is the consumer's call; the framework never reads
  * inside `meta`. Both `consumes` and `produces` are validated per-field (not
  * blindly cast) so a block with a non-object `data`/`reads`/`meta` (or, for
  * produces, a missing required `kind`) can't yield a structurally-invalid spec.
@@ -97,11 +97,11 @@ export function normalizeContract(raw: Record<string, unknown>): SkillContract {
 }
 
 /**
- * Composition comparator for an artifactKind-tagged named channel (A2). Stateless
+ * Composition comparator for an artifactKind-tagged named channel. Stateless
  * structural compare: the producer's emitted `produces.meta.artifactKind` must
  * equal the kind the consumer declares it requires on `consumes.reads[channel].meta`.
  * Degrades to `{ ok: true }` when EITHER side omits the tag — the framework stays
- * ontology-blind and a missing kind never HALTs (Decision 1, Decision 7). Channel-
+ * ontology-blind and a missing kind never HALTs. Channel-
  * generic via `channelName`, so it can adjudicate any artifactKind channel a future
  * consumer registers it for; rpiv-pi wires it to "plans" today.
  */
@@ -164,10 +164,10 @@ export async function registerSkillContractsSource(): Promise<void> {
 			// Reuse the existing PACKAGE_ROOT/skills constant rather than re-deriving
 			// the path via an ad-hoc import.meta.url walk.
 			// Pass an owner so a `/reload` that drops a skill prunes its stale contract
-			// (#12) and a divergent override from another extension is surfaced (#4).
+			// and a divergent override from another extension is surfaced.
 			registerSkillContracts(buildSkillContractsFromFrontmatter(BUNDLED_SKILLS_DIR), "rpiv-pi");
 		});
-		// B2: register the contract-derived outcome resolver so `produces` stages
+		// Register the contract-derived outcome resolver so `produces` stages
 		// auto-wire `rpivBucketOutcome(bucket)` from `artifactKind` at load time.
 		await registerOutcomeDerivation();
 	} catch (err) {

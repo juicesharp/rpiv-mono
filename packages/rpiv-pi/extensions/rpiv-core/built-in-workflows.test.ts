@@ -1,27 +1,20 @@
 /**
- * Regression tests for blockers identified in the 2026-05-23 code review
- * of feat/rpiv-workflow-command. Each describe block asserts the
- * EXPECTED (post-fix) behavior, so a test fails on the current source
- * until that blocker is resolved.
+ * Regression tests for built-in workflow behaviour. Each describe block
+ * asserts the expected behaviour for one previously-broken path:
  *
- * Critical:
- * - I1 — `validate → commit` auto edge skips the code-review fix loop.
- * - I2 — `writeHeader` silent failure drops the first stage row.
- * - I6 — Missing `severeIssueCount` silently routes to `commit`.
- * - I7 — `StopReason ∈ {"length","toolUse"}` collapses to `"ok"`.
+ *   - the `validate → commit` auto edge must not skip the code-review fix loop;
+ *   - `writeHeader` failure must not silently drop the first stage row;
+ *   - a missing routing field must not silently route to `commit`;
+ *   - a truncated reply (`stopReason ∈ {"length","toolUse"}`) must not collapse
+ *     to `"ok"`;
+ *   - `recordStage` must not reuse stageNumbers after an append failure, so
+ *     `stagesCompleted` can't drift above the on-disk row count;
+ *   - phase fanout must label JSONL rows by `stage.skill`, not stage id (which
+ *     is wrong for aliased implement stages);
+ *   - the runner must not reuse `originalInput` past the first stage, so later
+ *     stages receive the upstream output rather than the user's brief.
  *
- * Important:
- * - I3 — recordStage swallows append failures and reuses stageNumbers on
- *        the next successful write; stagesCompleted drifts above the
- *        actual on-disk row count.
- * - I9 — Phase fanout labels JSONL rows by stage id (wrong for aliased
- *        implement stages); should label by stage.skill instead.
- * - Q7 — runner reuses originalInput whenever artifactPath is unset, not
- *        just at the first stage; later stages silently receive the user's
- *        original brief instead of the upstream stage's output.
- *
- * These tests follow Phase 5 of the TS-native workflow migration — they
- * exercise the new `Workflow` shape directly, not the legacy `WorkflowDag`.
+ * They exercise the `Workflow` shape directly.
  */
 
 import { appendFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -60,8 +53,8 @@ const DECLARED_CONTRACTS = new Map(buildSkillContractsFromFrontmatter(BUNDLED_SK
 
 /**
  * Prepare a workflow for validation by deriving contract-sourced outcomes onto
- * a mutable copy. The built-in workflows no longer carry explicit outcomes
- * (B2: contract-derived outcomes). The deriver must run before validateWorkflow
+ * a mutable copy. The built-in workflows no longer carry explicit outcomes —
+ * they are contract-derived. The deriver must run before validateWorkflow
  * checks the `produces-without-outcome` guard.
  */
 const deriveAndValidate = (
@@ -94,10 +87,10 @@ const findWorkflow = (name: string): Workflow => {
 };
 
 // ---------------------------------------------------------------------------
-// I1 — validate must route to code-review (not commit) in build/arch workflows.
+// validate must route to code-review (not commit) in build/arch workflows.
 // ---------------------------------------------------------------------------
 
-describe("[I1] validate → code-review routing in built-in workflows", () => {
+describe("validate → code-review routing in built-in workflows", () => {
 	it("routes validate → code-review in build", () => {
 		const build = findWorkflow("build");
 		expect(build.edges.validate).toBe("code-review");
@@ -125,11 +118,11 @@ describe("[I1] validate → code-review routing in built-in workflows", () => {
 });
 
 // ---------------------------------------------------------------------------
-// I2 — When writeHeader silently fails, the first stage row written by
-//      appendStage lands at line 0 and is dropped by every reader.
+// When writeHeader silently fails, the first stage row written by appendStage
+// lands at line 0 and is dropped by every reader.
 // ---------------------------------------------------------------------------
 
-describe("[I2] readers must not silently drop the first row when no header is on disk", () => {
+describe("readers must not silently drop the first row when no header is on disk", () => {
 	let tmpDir: string;
 
 	beforeEach(() => {
@@ -161,12 +154,12 @@ describe("[I2] readers must not silently drop the first row when no header is on
 });
 
 // ---------------------------------------------------------------------------
-// I6 — Predicate fires on un-validated frontmatter; missing severeIssueCount
-//      must not silently route to commit. The output-schema layer is what
-//      makes missing data impossible to reach the predicate.
+// A predicate firing on un-validated frontmatter (missing severeIssueCount)
+// must not silently route to commit. The output-schema layer is what makes
+// missing data impossible to reach the predicate.
 // ---------------------------------------------------------------------------
 
-describe("[I6] code-review routing field is sourced + validated from the contract", () => {
+describe("code-review routing field is sourced + validated from the contract", () => {
 	it("no built-in code-review stage carries an inline outputSchema", () => {
 		// Single source of truth: blockers_count lives in the skill contract,
 		// not copy-pasted per workflow. Sourced at runtime by effectiveOutputSchema.
@@ -196,11 +189,11 @@ describe("[I6] code-review routing field is sourced + validated from the contrac
 });
 
 // ---------------------------------------------------------------------------
-// I7 — A `stopReason: "length"` reply on a side-effect stage must NOT be
-//      recorded as a successful "completed" stage.
+// A `stopReason: "length"` reply on a side-effect stage must NOT be recorded
+// as a successful "completed" stage.
 // ---------------------------------------------------------------------------
 
-describe("[I7] truncated reply (stopReason=length) must not record as completed", () => {
+describe("truncated reply (stopReason=length) must not record as completed", () => {
 	let tmpDir: string;
 
 	beforeEach(() => {
@@ -257,11 +250,11 @@ describe("[I7] truncated reply (stopReason=length) must not record as completed"
 });
 
 // ---------------------------------------------------------------------------
-// I3 — recordStage must signal write success/failure so stagesCompleted
-//      stays aligned with on-disk rows, and stageNumbers never repeat.
+// recordStage must signal write success/failure so stagesCompleted stays
+// aligned with on-disk rows, and stageNumbers never repeat.
 // ---------------------------------------------------------------------------
 
-describe("[I3] recordStage signals success and advances stageNumber monotonically", () => {
+describe("recordStage signals success and advances stageNumber monotonically", () => {
 	let tmpDir: string;
 	let warnSpy: ReturnType<typeof vi.spyOn>;
 
@@ -329,11 +322,11 @@ describe("[I3] recordStage signals success and advances stageNumber monotonicall
 });
 
 // ---------------------------------------------------------------------------
-// Q7 — Non-first stages must NOT silently fall back to originalInput when
-//      their upstream produced no artifactPath.
+// Non-first stages must NOT silently fall back to originalInput when their
+// upstream produced no artifactPath.
 // ---------------------------------------------------------------------------
 
-describe("[Q7] non-first stage with no artifactPath halts instead of reusing originalInput", () => {
+describe("non-first stage with no artifactPath halts instead of reusing originalInput", () => {
 	let tmpDir: string;
 
 	beforeEach(() => {
@@ -372,10 +365,10 @@ describe("[Q7] non-first stage with no artifactPath halts instead of reusing ori
 });
 
 // ---------------------------------------------------------------------------
-// I9 — Phase fanout must label JSONL rows by stage.skill, not by the stage name.
+// Phase fanout must label JSONL rows by stage.skill, not by the stage name.
 // ---------------------------------------------------------------------------
 
-describe("[I9] phase fanout rows preserve both stage name (record key) and skill body across aliasing", () => {
+describe("phase fanout rows preserve both stage name (record key) and skill body across aliasing", () => {
 	let tmpDir: string;
 
 	beforeEach(() => {
@@ -456,11 +449,10 @@ describe("[I9] phase fanout rows preserve both stage name (record key) and skill
 });
 
 // ---------------------------------------------------------------------------
-// Q4 — Dedicated tests for vet workflow routing predicate and
-//       backward-jump loop behavior.
+// vet workflow routing predicate and backward-jump loop behavior.
 // ---------------------------------------------------------------------------
 
-describe("[Q4] vet workflow", () => {
+describe("vet workflow", () => {
 	const findEdge = (): EdgeFn => {
 		const wf = findWorkflow("vet");
 		const edge = wf.edges["code-review"];
@@ -1059,11 +1051,11 @@ describe("ship workflow", () => {
 });
 
 // ---------------------------------------------------------------------------
-// implement reads wiring (Phase 3) — every implement stage declares
-// reads: ["plans"] and validates clean with contracts threaded in.
+// implement reads wiring — every implement stage declares reads: ["plans"]
+// and validates clean with contracts threaded in.
 // ---------------------------------------------------------------------------
 
-describe("implement reads wiring (Phase 3)", () => {
+describe("implement reads wiring", () => {
 	it('every implement stage declares reads: ["plans"]', () => {
 		for (const wf of builtInWorkflows) {
 			expect(wf.stages.implement?.reads, `${wf.name}.implement`).toEqual(["plans"]);
@@ -1227,8 +1219,8 @@ describe("contract ownership drift guards", () => {
 	it("the gate-routed field (blockers_count) is owned by the code-review contract's produces.data", () => {
 		// Built-in workflows route only on `blockers_count` (gate("blockers_count", …)); gate()
 		// captures the field in a closure (not introspectable), so assert the known routed
-		// field is a required produces.data property of its producer. Complements [I6], which
-		// validates it is sourced + output-validated at runtime.
+		// field is a required produces.data property of its producer. Complements the
+		// runtime check that it is sourced + output-validated.
 		const data = DECLARED_CONTRACTS.get("code-review")?.produces?.data as
 			| { required?: string[]; properties?: Record<string, unknown> }
 			| undefined;

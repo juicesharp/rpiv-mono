@@ -349,7 +349,7 @@ function checkIterateInvariants(w: Workflow, name: string, stage: StageDef, issu
  *     skill or sending raw text — `skill` defaulting to the record key does
  *     NOT trip this, only an explicitly-set `skill`);
  *   - mutually exclusive with `fanout`/`iterate` in v1 (chat fan-out is a
- *     deferred composition — see the design's §3 non-goals);
+ *     deferred composition);
  *   - mutually exclusive with `reads` — a skill stage's `reads` auto-builds a
  *     labelled-flag arg, but a prompt stage's text is author-owned; rather than
  *     give `reads` two meanings, require the prompt to read `state.named`
@@ -629,7 +629,7 @@ function checkEdgeSchemaCompat(
 
 /**
  * Load-time named-channel (`reads`) compat — the COMPLETE authoring gate for
- * `reads:` wiring (A2). For each consumer with `consumes.reads`, adjudicate
+ * `reads:` wiring. For each consumer with `consumes.reads`, adjudicate
  * against EVERY `produces` stage that publishes the channel
  * (`resolvePublishName === channel`), not just the edge predecessor — named
  * channels are many-to-one (loop-backs, non-adjacent producers). The publisher

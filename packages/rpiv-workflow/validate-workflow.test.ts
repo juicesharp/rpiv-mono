@@ -233,7 +233,7 @@ describe("validateWorkflow — reachability", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Semantic checks — restored from the old validateDag (SB2)
+// Semantic checks — restored from the old validateDag
 // ---------------------------------------------------------------------------
 
 describe("validateWorkflow — semantic stage constraints", () => {
@@ -338,7 +338,7 @@ describe("validateWorkflow — route-edge schema check", () => {
 	it("DOES warn when a hand-rolled defineRoute reads output.data with no upstream outputSchema", () => {
 		// defineRoute defaults to readsData: true, so any hand-rolled route
 		// that reads output.data on a stage without outputSchema trips the
-		// lint — closes the I3 gap where the marker was opt-in.
+		// lint — closing the gap where the marker was opt-in.
 		const w: Workflow = {
 			name: "data-read",
 			start: "code-review",
@@ -431,7 +431,7 @@ describe("validateWorkflow — route-edge schema check", () => {
 	});
 });
 
-describe("validateWorkflow — reads-channel (meta) compatibility (A2)", () => {
+describe("validateWorkflow — reads-channel (meta) compatibility", () => {
 	afterEach(() => __resetSkillContracts());
 
 	const kindComparator: CompositionComparator = (produces, consumes, ch) => {
@@ -790,7 +790,7 @@ describe("validateWorkflow — issue shape", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Edge-schema compatibility (Phase 6 — Slice 6)
+// Edge-schema compatibility
 // ---------------------------------------------------------------------------
 
 describe("validateWorkflow — edge-schema compatibility", () => {

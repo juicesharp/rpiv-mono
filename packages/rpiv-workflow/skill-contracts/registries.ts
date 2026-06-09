@@ -18,7 +18,7 @@ const DERIVERS_KEY = Symbol.for("@juicesharp/rpiv-workflow:outcome-derivers");
  * the ontology (the `artifactKind → bucket` normalization table). The loader
  * invokes drained derivers after `buildEffectiveContracts` and before the
  * validation loop, so derived outcomes satisfy the `produces`-without-`outcome`
- * guard at `validate-workflow.ts:241-245`.
+ * guard.
  *
  * Implementations mutate `stage.outcome` in place on stages that lack an
  * explicit outcome. The framework stays ontology-blind — it never reads
@@ -35,14 +35,14 @@ export type OutcomeDeriverFn = (
 	onIssue: (message: string, severity: "error" | "warning") => void,
 ) => void;
 
-/** channel name → consumer-supplied composition comparator (A2). */
+/** channel name → consumer-supplied composition comparator. */
 export const getCompositionComparators = globalSlot(COMPARATORS_KEY, () => new Map<string, CompositionComparator>());
 
 /**
- * Register a per-channel composition comparator (A2). The framework invokes the
+ * Register a per-channel composition comparator. The framework invokes the
  * comparator at all three adjudication points for any consumer that declares
  * `consumes.reads[channelName]`, but never interprets the `meta` it compares —
- * the channel's ontology is the consumer's (Decision 1, Decision 7). Per-channel
+ * the channel's ontology is the consumer's. Per-channel
  * (not a single global comparator) so different consumers own different channels
  * without collision. Idempotent on channel name (re-register replaces). Anchored
  * on a `Symbol.for` slot like the rest of the registry, so it survives Pi's

@@ -159,7 +159,7 @@ export async function loadWorkflows(cwd: string): Promise<LoadedWorkflows> {
 	};
 	const layers: ConfigLayer[] = getBuiltIns().length > 0 ? ["built-in"] : [];
 
-	// Surface any provider failure as a LoadIssue rather than swallowing it (#6) —
+	// Surface any provider failure as a LoadIssue rather than swallowing it —
 	// loader still never throws, but a buggy provider is now visible in loaded.issues.
 	for (const err of drainSkillContractProviderErrors()) {
 		acc.issues.push({
@@ -169,7 +169,7 @@ export async function loadWorkflows(cwd: string): Promise<LoadedWorkflows> {
 			severity: "warning",
 		});
 	}
-	// Surface cross-owner contract collisions (#4) — last-writer still wins, but the
+	// Surface cross-owner contract collisions — last-writer still wins, but the
 	// divergence is no longer silent.
 	for (const message of drainSkillContractCollisions()) {
 		acc.issues.push({ kind: "load", layer: "built-in", message, severity: "warning" });
@@ -204,14 +204,14 @@ export async function loadWorkflows(cwd: string): Promise<LoadedWorkflows> {
 	const skillAliases = applySkillAliases(acc, userOutcome, projectOutcome);
 
 	// Build the effective registry BEFORE the validation loop, so checkEdgeSchemaCompat
-	// (Phase 6) sees it. Returns a NEW map (harvested gap-fill first, declared overriding
+	// sees it. Returns a NEW map (harvested gap-fill first, declared overriding
 	// per skill) — never mutates the shared global registry.
 	const skillContracts = buildEffectiveContracts([...acc.workflowMap.values()]);
 
 	// Invoke registered outcome derivers (e.g. rpiv-pi's BUCKET_BY_KIND resolver)
 	// so `produces` stages that don't declare an explicit `outcome` get one wired
 	// from the contract registry before validation checks
-	// `produces-without-outcome` at validate-workflow.ts:241-245.
+	// `produces-without-outcome`.
 	for (const deriver of getOutcomeDerivers()) {
 		try {
 			deriver(acc.workflowMap.values(), skillContracts, (message, severity) => {
