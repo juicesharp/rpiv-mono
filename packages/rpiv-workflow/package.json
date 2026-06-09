@@ -39,6 +39,7 @@
 		"built-ins.ts",
 		"command.ts",
 		"command-run.ts",
+		"control-flow.ts",
 		"extension.ts",
 		"registration.ts",
 		"fanout.ts",

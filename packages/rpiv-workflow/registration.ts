@@ -43,6 +43,20 @@ export {
 } from "./api.js";
 export { registerBuiltIns, registerBuiltInsProvider } from "./built-ins.js";
 export {
+	type ControlFlowSpec,
+	describeFlow,
+	type FanoutSpec,
+	fanoutOver,
+	fanoutSpecOf,
+	type IterateSpec,
+	iterateOver,
+	iterateSpecOf,
+	type SpeccedFanoutFn,
+	type SpeccedIterateFn,
+	type StageShape,
+	type UnitSelector,
+} from "./control-flow.js";
+export {
 	type Artifact,
 	type ArtifactHandle,
 	fs,

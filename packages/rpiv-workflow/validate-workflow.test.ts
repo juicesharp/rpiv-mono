@@ -22,6 +22,7 @@ import {
 	terminal,
 	type Workflow,
 } from "./api.js";
+import { fanoutOver, iterateOver } from "./control-flow.js";
 import { noopCollector } from "./outcomes/index.js";
 import { eq, gt } from "./predicates.js";
 import type { CompositionComparator, SkillContractMap } from "./skill-contract.js";
@@ -941,5 +942,78 @@ describe("validateWorkflow — edge-schema compatibility", () => {
 			edges: { a: "stop" },
 		};
 		expect(warnings(w).filter((i) => /schema incompatibility/.test(i.message))).toEqual([]);
+	});
+});
+
+describe("checkFanoutSource (control-flow source lint)", () => {
+	const fanoutMsgs = (w: Workflow) => warnings(w).filter((i) => /(fans out|iterates) over/.test(i.message));
+
+	it("warns when a fanout spec's source is not published by any produces stage", () => {
+		const w: Workflow = {
+			name: "t",
+			start: "start",
+			stages: {
+				start: produces(),
+				impl: acts({ fanout: fanoutOver({ source: "plans", run: () => [] }) }),
+			},
+			edges: { start: "impl", impl: "stop" },
+		};
+		const msgs = fanoutMsgs(w);
+		expect(msgs).toHaveLength(1);
+		expect(msgs[0]?.message).toContain('fans out over source "plans"');
+	});
+
+	it("warns when an iterate spec's source is unpublished (the no-`reads` case)", () => {
+		const w: Workflow = {
+			name: "t",
+			start: "start",
+			stages: {
+				start: produces(),
+				bp: produces({ iterate: iterateOver({ source: "architecture-reviews", run: () => null }) }),
+			},
+			edges: { start: "bp", bp: "stop" },
+		};
+		expect(fanoutMsgs(w).some((i) => /iterates over source "architecture-reviews"/.test(i.message))).toBe(true);
+	});
+
+	it("is silent when the source IS published", () => {
+		const w: Workflow = {
+			name: "t",
+			start: "plans",
+			stages: {
+				plans: produces(), // publishes channel "plans" (outcome.name ?? record-key)
+				impl: acts({ fanout: fanoutOver({ source: "plans", run: () => [] }) }),
+			},
+			edges: { plans: "impl", impl: "stop" },
+		};
+		expect(fanoutMsgs(w)).toEqual([]);
+	});
+
+	it("defers to checkReadsReferences when the source is in the stage's reads (no double-report)", () => {
+		const w: Workflow = {
+			name: "t",
+			start: "start",
+			stages: {
+				start: produces(),
+				impl: acts({ fanout: fanoutOver({ source: "plans", run: () => [] }), reads: ["plans"] }),
+			},
+			edges: { start: "impl", impl: "stop" },
+		};
+		// reads owns "plans" (errors); checkFanoutSource stays quiet
+		expect(fanoutMsgs(w)).toEqual([]);
+		expect(errors(w).some((i) => /reads "plans"/.test(i.message))).toBe(true);
+	});
+
+	it("is silent for a raw fanout with no spec (opaque → degrade)", () => {
+		const w: Workflow = {
+			name: "t",
+			start: "start",
+			stages: {
+				start: produces(),
+				impl: acts({ fanout: () => [] }),
+			},
+			edges: { start: "impl", impl: "stop" },
+		};
+		expect(fanoutMsgs(w)).toEqual([]);
 	});
 });

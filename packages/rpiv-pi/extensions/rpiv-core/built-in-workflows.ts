@@ -21,13 +21,13 @@ import {
 	acts,
 	defineWorkflow,
 	eq,
-	type FanoutFn,
 	type FanoutUnit,
+	fanoutOver,
 	gate,
 	gitCommitOutcome,
 	gt,
 	handleToString,
-	type IterateFn,
+	iterateOver,
 	type Output,
 	type PromptFn,
 	produces,
@@ -143,38 +143,43 @@ const resolveCwd = (path: string, cwd: string): string => (isAbsolute(path) ? pa
  * inherits one plan (ship/build/arch/vet); polish's accumulating multi-plan
  * variant is `PLANS_PHASE_FANOUT`.
  */
-const FRONTMATTER_PHASE_FANOUT: FanoutFn = ({ state, cwd }) => {
-	const plan = latestFsArtifact(state, "plans");
-	if (plan?.handle.kind !== "fs") return [];
-	const path = plan.handle.path;
-	let content: string;
-	try {
-		content = readFileSync(resolveCwd(path, cwd), "utf-8");
-	} catch (err) {
-		throw new StagePreflightError(
-			"halt",
-			"FRONTMATTER_PHASE_FANOUT",
-			`FRONTMATTER_PHASE_FANOUT: plan file not found`,
-			`FRONTMATTER_PHASE_FANOUT: could not read ${path} — ${err instanceof Error ? err.message : String(err)}`,
-			true,
-		);
-	}
-	const records = planPhaseRecords(content, "FRONTMATTER_PHASE_FANOUT", path);
-	if (records.length > MAX_PHASES) {
-		throw new StagePreflightError(
-			"halt",
-			"FRONTMATTER_PHASE_FANOUT",
-			`FRONTMATTER_PHASE_FANOUT: plan ${path} exceeds phase limit`,
-			`FRONTMATTER_PHASE_FANOUT: plan ${path} declares ${records.length} phases — exceeds MAX_PHASES (${MAX_PHASES}); split into smaller plans`,
-			true,
-		);
-	}
-	const promptPath = handleToString(plan.handle);
-	return records.map((r) => ({
-		prompt: `${promptPath} Phase ${r.n}: ${r.title}`.trimEnd(),
-		label: `phase ${r.index + 1}/${r.total}`,
-	}));
-};
+const FRONTMATTER_PHASE_FANOUT = fanoutOver({
+	source: "plans",
+	unit: { by: "frontmatter-array", pattern: "phases" },
+	max: MAX_PHASES,
+	run: ({ state, cwd }) => {
+		const plan = latestFsArtifact(state, "plans");
+		if (plan?.handle.kind !== "fs") return [];
+		const path = plan.handle.path;
+		let content: string;
+		try {
+			content = readFileSync(resolveCwd(path, cwd), "utf-8");
+		} catch (err) {
+			throw new StagePreflightError(
+				"halt",
+				"FRONTMATTER_PHASE_FANOUT",
+				`FRONTMATTER_PHASE_FANOUT: plan file not found`,
+				`FRONTMATTER_PHASE_FANOUT: could not read ${path} — ${err instanceof Error ? err.message : String(err)}`,
+				true,
+			);
+		}
+		const records = planPhaseRecords(content, "FRONTMATTER_PHASE_FANOUT", path);
+		if (records.length > MAX_PHASES) {
+			throw new StagePreflightError(
+				"halt",
+				"FRONTMATTER_PHASE_FANOUT",
+				`FRONTMATTER_PHASE_FANOUT: plan ${path} exceeds phase limit`,
+				`FRONTMATTER_PHASE_FANOUT: plan ${path} declares ${records.length} phases — exceeds MAX_PHASES (${MAX_PHASES}); split into smaller plans`,
+				true,
+			);
+		}
+		const promptPath = handleToString(plan.handle);
+		return records.map((r) => ({
+			prompt: `${promptPath} Phase ${r.n}: ${r.title}`.trimEnd(),
+			label: `phase ${r.index + 1}/${r.total}`,
+		}));
+	},
+});
 
 // ===========================================================================
 // ship — blueprint → implement → validate → commit
@@ -371,76 +376,82 @@ const phaseDeps = (entry: unknown): number[] => {
  * heading count (stale derive), and every `depends_on` must reference an earlier
  * phase (exists, no self/forward/cyclic edge against body order).
  */
-const REVIEW_PHASE_ITERATE: IterateFn = ({ artifact, state, accumulated, cwd }) => {
-	// Source the review from the named registry — robust to corrective re-entry,
-	// where the rolling primary is the latest code-review doc, not the review.
-	const review = latestFsArtifact(state, "architecture-reviews") ?? artifact;
-	if (review?.handle.kind !== "fs") return null;
-	const reviewPath = review.handle.path; // captured: narrowing is lost inside nested closures below
-	const content = readFileSync(resolveCwd(reviewPath, cwd), "utf-8");
-	const { frontmatter } = parseFrontmatter(content);
-	const raw = (frontmatter as Record<string, unknown>).phases;
-	const phases = Array.isArray(raw) ? raw : [];
-	const i = accumulated.length;
-	if (i === 0) {
-		const headingCount = [...content.matchAll(REVIEW_PHASE_RE)].length;
-		if (phases.length !== headingCount) {
-			throw new StagePreflightError(
-				"halt",
-				"REVIEW_PHASE_ITERATE",
-				`REVIEW_PHASE_ITERATE: review ${reviewPath} has mismatched phases`,
-				`REVIEW_PHASE_ITERATE: review ${reviewPath} frontmatter phases (${phases.length}) ≠ '### Phase N —' headings (${headingCount}) — the derived array is stale against the body`,
-				true,
-			);
-		}
-		const indexByN = new Map(phases.map((e, idx) => [phaseNum(e, idx), idx]));
-		phases.forEach((e, idx) => {
-			for (const d of phaseDeps(e)) {
-				const di = indexByN.get(d);
-				if (di === undefined)
-					throw new StagePreflightError(
-						"halt",
-						"REVIEW_PHASE_ITERATE",
-						`REVIEW_PHASE_ITERATE: review ${reviewPath} has invalid depends_on`,
-						`REVIEW_PHASE_ITERATE: review ${reviewPath} phase ${phaseNum(e, idx)} depends_on ${d}, which is not a declared phase`,
-						true,
-					);
-				if (di >= idx)
-					throw new StagePreflightError(
-						"halt",
-						"REVIEW_PHASE_ITERATE",
-						`REVIEW_PHASE_ITERATE: review ${reviewPath} has cyclic dependency`,
-						`REVIEW_PHASE_ITERATE: review ${reviewPath} phase ${phaseNum(e, idx)} depends_on ${d}, which is not an earlier phase (self/forward/cyclic dependency)`,
-						true,
-					);
+const REVIEW_PHASE_ITERATE = iterateOver({
+	source: "architecture-reviews",
+	unit: { by: "frontmatter-array", pattern: "phases" },
+	max: MAX_PHASES,
+	run: ({ artifact, state, accumulated, cwd }) => {
+		// Source the review from the named registry — robust to corrective re-entry,
+		// where the rolling primary is the latest code-review doc, not the review.
+		const review = latestFsArtifact(state, "architecture-reviews") ?? artifact;
+		if (review?.handle.kind !== "fs") return null;
+		const reviewPath = review.handle.path; // captured: narrowing is lost inside nested closures below
+		const content = readFileSync(resolveCwd(reviewPath, cwd), "utf-8");
+		const { frontmatter } = parseFrontmatter(content);
+		const raw = (frontmatter as Record<string, unknown>).phases;
+		const phases = Array.isArray(raw) ? raw : [];
+		const i = accumulated.length;
+		if (i === 0) {
+			const headingCount = [...content.matchAll(REVIEW_PHASE_RE)].length;
+			if (phases.length !== headingCount) {
+				throw new StagePreflightError(
+					"halt",
+					"REVIEW_PHASE_ITERATE",
+					`REVIEW_PHASE_ITERATE: review ${reviewPath} has mismatched phases`,
+					`REVIEW_PHASE_ITERATE: review ${reviewPath} frontmatter phases (${phases.length}) ≠ '### Phase N —' headings (${headingCount}) — the derived array is stale against the body`,
+					true,
+				);
 			}
+			const indexByN = new Map(phases.map((e, idx) => [phaseNum(e, idx), idx]));
+			phases.forEach((e, idx) => {
+				for (const d of phaseDeps(e)) {
+					const di = indexByN.get(d);
+					if (di === undefined)
+						throw new StagePreflightError(
+							"halt",
+							"REVIEW_PHASE_ITERATE",
+							`REVIEW_PHASE_ITERATE: review ${reviewPath} has invalid depends_on`,
+							`REVIEW_PHASE_ITERATE: review ${reviewPath} phase ${phaseNum(e, idx)} depends_on ${d}, which is not a declared phase`,
+							true,
+						);
+					if (di >= idx)
+						throw new StagePreflightError(
+							"halt",
+							"REVIEW_PHASE_ITERATE",
+							`REVIEW_PHASE_ITERATE: review ${reviewPath} has cyclic dependency`,
+							`REVIEW_PHASE_ITERATE: review ${reviewPath} phase ${phaseNum(e, idx)} depends_on ${d}, which is not an earlier phase (self/forward/cyclic dependency)`,
+							true,
+						);
+				}
+			});
+		}
+		if (i >= phases.length) return null; // every phase planned → terminate
+		const entry = (phases[i] ?? {}) as { title?: unknown; blast_radius?: unknown; effort?: unknown };
+		const n = phaseNum(entry, i);
+		const title = typeof entry.title === "string" ? entry.title : "";
+
+		// accumulated[j] is phase j's output — map each prior phase number to its plans.
+		const priorByN = new Map<number, string[]>();
+		accumulated.forEach((o, j) => {
+			const paths = o.artifacts.filter((a) => a.handle.kind === "fs").map((a) => handleToString(a.handle));
+			if (paths.length) priorByN.set(phaseNum(phases[j], j), paths);
 		});
-	}
-	if (i >= phases.length) return null; // every phase planned → terminate
-	const entry = (phases[i] ?? {}) as { title?: unknown; blast_radius?: unknown; effort?: unknown };
-	const n = phaseNum(entry, i);
-	const title = typeof entry.title === "string" ? entry.title : "";
+		const deps = phaseDeps(phases[i]);
+		const prior = deps.length ? deps.flatMap((d) => priorByN.get(d) ?? []) : [...priorByN.values()].flat();
+		// On a corrective pass the latest code-review is in `reviews`; fold its blockers in.
+		const feedback = latestFsArtifact(state, "reviews");
 
-	// accumulated[j] is phase j's output — map each prior phase number to its plans.
-	const priorByN = new Map<number, string[]>();
-	accumulated.forEach((o, j) => {
-		const paths = o.artifacts.filter((a) => a.handle.kind === "fs").map((a) => handleToString(a.handle));
-		if (paths.length) priorByN.set(phaseNum(phases[j], j), paths);
-	});
-	const deps = phaseDeps(phases[i]);
-	const prior = deps.length ? deps.flatMap((d) => priorByN.get(d) ?? []) : [...priorByN.values()].flat();
-	// On a corrective pass the latest code-review is in `reviews`; fold its blockers in.
-	const feedback = latestFsArtifact(state, "reviews");
-
-	let prompt = `${handleToString(review.handle)} Implement Phase ${n}: ${title}`;
-	if (prior.length) prompt += `\nPrior phase plans (read first; build on them, don't duplicate): ${prior.join(", ")}`;
-	if (feedback?.handle.kind === "fs")
-		prompt += `\nAddress the blockers in the latest code review: ${handleToString(feedback.handle)}`;
-	const tags = [entry.effort, entry.blast_radius].filter((t): t is string => typeof t === "string");
-	let label = `phase ${i + 1}/${phases.length} — ${title}`;
-	if (tags.length) label += ` [${tags.join(", ")}]`;
-	return { prompt, label, id: `phase-${n}` };
-};
+		let prompt = `${handleToString(review.handle)} Implement Phase ${n}: ${title}`;
+		if (prior.length)
+			prompt += `\nPrior phase plans (read first; build on them, don't duplicate): ${prior.join(", ")}`;
+		if (feedback?.handle.kind === "fs")
+			prompt += `\nAddress the blockers in the latest code review: ${handleToString(feedback.handle)}`;
+		const tags = [entry.effort, entry.blast_radius].filter((t): t is string => typeof t === "string");
+		let label = `phase ${i + 1}/${phases.length} — ${title}`;
+		if (tags.length) label += ` [${tags.join(", ")}]`;
+		return { prompt, label, id: `phase-${n}` };
+	},
+});
 
 /**
  * Fan implement out over the `phases:` array of EVERY plan in the latest
@@ -450,33 +461,38 @@ const REVIEW_PHASE_ITERATE: IterateFn = ({ artifact, state, accumulated, cwd }) 
  * `planPhaseRecords`. MAX_PHASES is enforced on the aggregate unit count, since
  * polish fans one implement pass over the whole plan set.
  */
-const PLANS_PHASE_FANOUT: FanoutFn = ({ state, cwd }) => {
-	const units: FanoutUnit[] = [];
-	for (const out of latestPlans(state, cwd)) {
-		for (const a of out.artifacts) {
-			if (a.handle.kind !== "fs") continue;
-			const path = a.handle.path;
-			const content = readFileSync(resolveCwd(path, cwd), "utf-8");
-			const promptPath = handleToString(a.handle);
-			for (const r of planPhaseRecords(content, "PLANS_PHASE_FANOUT", path)) {
-				units.push({
-					prompt: `${promptPath} Phase ${r.n}: ${r.title}`.trimEnd(),
-					label: `${basename(path)} P${r.n}`,
-				});
+const PLANS_PHASE_FANOUT = fanoutOver({
+	source: "plans",
+	unit: { by: "frontmatter-array", pattern: "phases" },
+	max: MAX_PHASES,
+	run: ({ state, cwd }) => {
+		const units: FanoutUnit[] = [];
+		for (const out of latestPlans(state, cwd)) {
+			for (const a of out.artifacts) {
+				if (a.handle.kind !== "fs") continue;
+				const path = a.handle.path;
+				const content = readFileSync(resolveCwd(path, cwd), "utf-8");
+				const promptPath = handleToString(a.handle);
+				for (const r of planPhaseRecords(content, "PLANS_PHASE_FANOUT", path)) {
+					units.push({
+						prompt: `${promptPath} Phase ${r.n}: ${r.title}`.trimEnd(),
+						label: `${basename(path)} P${r.n}`,
+					});
+				}
 			}
 		}
-	}
-	if (units.length > MAX_PHASES) {
-		throw new StagePreflightError(
-			"halt",
-			"PLANS_PHASE_FANOUT",
-			`PLANS_PHASE_FANOUT: phase limit exceeded`,
-			`PLANS_PHASE_FANOUT: ${units.length} phases exceeds MAX_PHASES (${MAX_PHASES})`,
-			true,
-		);
-	}
-	return units;
-};
+		if (units.length > MAX_PHASES) {
+			throw new StagePreflightError(
+				"halt",
+				"PLANS_PHASE_FANOUT",
+				`PLANS_PHASE_FANOUT: phase limit exceeded`,
+				`PLANS_PHASE_FANOUT: ${units.length} phases exceeds MAX_PHASES (${MAX_PHASES})`,
+				true,
+			);
+		}
+		return units;
+	},
+});
 
 /**
  * Hand the single validate session EVERY plan from the latest blueprint pass

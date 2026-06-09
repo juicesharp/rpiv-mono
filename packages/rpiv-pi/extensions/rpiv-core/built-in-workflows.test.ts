@@ -36,7 +36,7 @@ import {
 	validateWorkflow,
 	type Workflow,
 } from "@juicesharp/rpiv-workflow";
-import { fs as fsHandle } from "@juicesharp/rpiv-workflow/registration";
+import { describeFlow, fs as fsHandle } from "@juicesharp/rpiv-workflow/registration";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { rpivArtifactMdOutcome } from "./artifact-collector.js";
 import { builtInWorkflows } from "./built-in-workflows.js";
@@ -1226,5 +1226,40 @@ describe("contract ownership drift guards", () => {
 			| undefined;
 		expect(data?.properties?.blockers_count).toBeDefined();
 		expect(data?.required).toContain("blockers_count");
+	});
+});
+
+describe("control-flow specs are introspectable (presets self-describe)", () => {
+	const shapeOf = (workflow: string, stage: string) => {
+		const wf = builtInWorkflows.find((w) => w.name === workflow);
+		if (!wf) throw new Error(`workflow ${workflow} not found`);
+		return describeFlow(wf).find((s) => s.stage === stage);
+	};
+
+	it("build/implement reports a fanout spec sourcing the plans channel", () => {
+		const impl = shapeOf("build", "implement");
+		expect(impl?.control.mode).toBe("fanout");
+		expect(impl?.control.spec).toMatchObject({
+			kind: "fanout",
+			source: "plans",
+			unit: { by: "frontmatter-array", pattern: "phases" },
+			max: 32,
+		});
+	});
+
+	it("polish/blueprint reports an iterate spec sourcing architecture-reviews", () => {
+		const bp = shapeOf("polish", "blueprint");
+		expect(bp?.control.mode).toBe("iterate");
+		expect(bp?.control.spec).toMatchObject({
+			kind: "iterate",
+			dependsOnPrior: true,
+			source: "architecture-reviews",
+		});
+	});
+
+	it("code-review reports a route edge with both branch targets", () => {
+		const cr = shapeOf("build", "code-review");
+		expect(cr?.edge.mode).toBe("route");
+		expect(cr?.edge.targets).toEqual(expect.arrayContaining(["revise", "commit"]));
 	});
 });

@@ -30,6 +30,7 @@ import {
 	type StageDef,
 	type Workflow,
 } from "./api.js";
+import { fanoutSpecOf, iterateSpecOf } from "./control-flow.js";
 import { resolvePublishName, resolveSkill } from "./internal-utils.js";
 import { extractJsonSchema } from "./json-schema.js";
 import type { ConfigLayer } from "./layers.js";
@@ -93,6 +94,7 @@ export function validateWorkflow(
 	checkStageSemantics(workflow, issues);
 	checkPredicateSchemas(workflow, issues, opts?.skillContracts);
 	checkReadsReferences(workflow, issues);
+	checkFanoutSource(workflow, issues);
 	checkEdgeSchemaCompat(workflow, issues, opts?.skillContracts);
 	checkReadsChannelCompat(workflow, issues, opts?.skillContracts);
 
@@ -547,6 +549,41 @@ function checkReadsReferences(w: Workflow, issues: WorkflowValidationIssue[]): v
 				),
 			);
 		}
+	}
+}
+
+/**
+ * Load-time fanout/iterate source check (Phase 3 — control-flow as data). A stage
+ * whose `fanout`/`iterate` carries a declarative `.spec` (via `fanoutOver`/
+ * `iterateOver`) with a `source` channel must have that channel published by some
+ * `produces` stage in this workflow — otherwise the stage splits over a channel
+ * nothing fills. Same publisher model as `checkReadsReferences`
+ * (`stage.outcome?.name ?? <record-key>`).
+ *
+ * WARNS (never errors): `source` is an introspective hint, and a raw/opaque fanout
+ * (no `.spec`) or a spec without `source` degrades silently — mirrors the
+ * edge-compat posture. When the source is already in the stage's `reads`,
+ * `checkReadsReferences` owns it (errors) — skip to avoid double-reporting. The
+ * additive value is the `iterate`/closure-sourced case, which declares no `reads:`
+ * and is otherwise unchecked.
+ */
+function checkFanoutSource(w: Workflow, issues: WorkflowValidationIssue[]): void {
+	const published = new Set<string>();
+	for (const [name, stage] of Object.entries(w.stages)) {
+		if (stage.kind === "produces") published.add(stage.outcome?.name ?? name);
+	}
+	for (const [name, stage] of Object.entries(w.stages)) {
+		const spec = fanoutSpecOf(stage.fanout) ?? iterateSpecOf(stage.iterate);
+		const source = spec?.source;
+		if (!source || published.has(source)) continue; // opaque / no source / satisfied → degrade
+		if (stage.reads?.includes(source)) continue; // checkReadsReferences owns this channel
+		issues.push(
+			warning(
+				w.name,
+				name,
+				`stage "${name}" ${spec.kind === "fanout" ? "fans out" : "iterates"} over source "${source}" but no produces stage in this workflow publishes it`,
+			),
+		);
 	}
 }
 
