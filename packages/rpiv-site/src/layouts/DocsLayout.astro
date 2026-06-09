@@ -80,6 +80,47 @@ const currentPath = Astro.url.pathname;
 		padding-bottom: var(--space-7);
 	}
 
+	/* Quiet scrollbars for the sidebar columns: invisible thumb at rest,
+	   a hairline --rule-strong thumb only on hover/focus. Firefox uses the
+	   scrollbar-* properties; WebKit uses the ::-webkit-scrollbar pseudos. */
+	.docs-sidebar,
+	.docs-toc {
+		scrollbar-width: thin;
+		scrollbar-color: transparent transparent;
+		transition: scrollbar-color 0.2s ease;
+	}
+	.docs-sidebar:hover,
+	.docs-sidebar:focus-within,
+	.docs-toc:hover,
+	.docs-toc:focus-within {
+		scrollbar-color: var(--rule-strong) transparent;
+	}
+
+	.docs-sidebar::-webkit-scrollbar,
+	.docs-toc::-webkit-scrollbar {
+		width: 6px;
+	}
+	.docs-sidebar::-webkit-scrollbar-track,
+	.docs-toc::-webkit-scrollbar-track {
+		background: transparent;
+	}
+	.docs-sidebar::-webkit-scrollbar-thumb,
+	.docs-toc::-webkit-scrollbar-thumb {
+		background: transparent;
+		border-radius: var(--radius-sm);
+		transition: background 0.2s ease;
+	}
+	.docs-sidebar:hover::-webkit-scrollbar-thumb,
+	.docs-sidebar:focus-within::-webkit-scrollbar-thumb,
+	.docs-toc:hover::-webkit-scrollbar-thumb,
+	.docs-toc:focus-within::-webkit-scrollbar-thumb {
+		background: var(--rule-strong);
+	}
+	.docs-sidebar:hover::-webkit-scrollbar-thumb:hover,
+	.docs-toc:hover::-webkit-scrollbar-thumb:hover {
+		background: var(--text-distant);
+	}
+
 	.docs-content {
 		position: relative;
 		min-width: 0;
