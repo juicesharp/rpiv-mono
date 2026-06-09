@@ -79,6 +79,14 @@ interface PhaseRecord {
 	total: number;
 }
 
+/** Read an artifact file, resolving a workflow-relative path against `cwd`. */
+const readArtifactFile = (path: string, cwd: string): string =>
+	readFileSync(isAbsolute(path) ? path : join(cwd, path), "utf-8");
+
+/** Build the halting `StagePreflightError` shape every phase fanout/iterate guard `throw`s. */
+const haltPreflight = (who: string, summary: string, detail: string): StagePreflightError =>
+	new StagePreflightError("halt", who, summary, detail, true);
+
 /**
  * Parse a plan's `phases:` frontmatter into records, derive-checked against the
  * body's `## Phase N:` headings — the source of truth both the single-plan
@@ -94,12 +102,10 @@ const planPhaseRecords = (content: string, who: string, path: string): readonly 
 	const phases = Array.isArray(raw) ? raw : [];
 	const headingCount = [...content.matchAll(PLAN_PHASE_RE)].length;
 	if (phases.length !== headingCount) {
-		throw new StagePreflightError(
-			"halt",
+		throw haltPreflight(
 			who,
 			`${who}: plan ${path} has mismatched phases`,
 			`${who}: plan ${path} frontmatter phases (${phases.length}) ≠ '## Phase N:' headings (${headingCount}) — the derived array is stale against the body`,
-			true,
 		);
 	}
 	// The REQUIRED scalar `phase_count` must equal the derived phase count — it
@@ -108,12 +114,10 @@ const planPhaseRecords = (content: string, who: string, path: string): readonly 
 	// still degrades to [] (the existing "neither phases nor headings" path); a plan
 	// that declares phases but omits phase_count THROWS (the field is contract-required).
 	if ((phases.length > 0 || fm.phase_count !== undefined) && fm.phase_count !== phases.length) {
-		throw new StagePreflightError(
-			"halt",
+		throw haltPreflight(
 			who,
 			`${who}: plan ${path} has invalid phase_count`,
 			`${who}: plan ${path} frontmatter phase_count (${String(fm.phase_count)}) ≠ phases length (${phases.length}) — rebuild phase_count from the '## Phase N:' headings`,
-			true,
 		);
 	}
 	return phases.map((entry, index) => {
@@ -131,9 +135,6 @@ const planPhaseRecords = (content: string, who: string, path: string): readonly 
 /** Latest `fs`-handle artifact most recently published under `name` (undefined if none). */
 const latestFsArtifact = (state: Readonly<RunState>, name: string): Artifact | undefined =>
 	state.named[name]?.at(-1)?.artifacts.find((a) => a.handle.kind === "fs");
-
-/** Resolve a workflow-relative path against `cwd`. */
-const resolveCwd = (path: string, cwd: string): string => (isAbsolute(path) ? path : join(cwd, path));
 
 /**
  * Fan `implement` out over the structured `phases:` frontmatter array of the
@@ -153,24 +154,20 @@ const FRONTMATTER_PHASE_FANOUT = fanoutOver({
 		const path = plan.handle.path;
 		let content: string;
 		try {
-			content = readFileSync(resolveCwd(path, cwd), "utf-8");
+			content = readArtifactFile(path, cwd);
 		} catch (err) {
-			throw new StagePreflightError(
-				"halt",
+			throw haltPreflight(
 				"FRONTMATTER_PHASE_FANOUT",
 				`FRONTMATTER_PHASE_FANOUT: plan file not found`,
 				`FRONTMATTER_PHASE_FANOUT: could not read ${path} — ${err instanceof Error ? err.message : String(err)}`,
-				true,
 			);
 		}
 		const records = planPhaseRecords(content, "FRONTMATTER_PHASE_FANOUT", path);
 		if (records.length > MAX_PHASES) {
-			throw new StagePreflightError(
-				"halt",
+			throw haltPreflight(
 				"FRONTMATTER_PHASE_FANOUT",
 				`FRONTMATTER_PHASE_FANOUT: plan ${path} exceeds phase limit`,
 				`FRONTMATTER_PHASE_FANOUT: plan ${path} declares ${records.length} phases — exceeds MAX_PHASES (${MAX_PHASES}); split into smaller plans`,
-				true,
 			);
 		}
 		const promptPath = handleToString(plan.handle);
@@ -330,7 +327,7 @@ const REVIEW_PHASE_RE = /^### Phase (\d+) — (.+)$/gm;
 const reviewPhaseCount = (state: Readonly<RunState>, cwd: string): number => {
 	const review = latestFsArtifact(state, "architecture-reviews");
 	if (review?.handle.kind !== "fs") return 0;
-	const { frontmatter } = parseFrontmatter(readFileSync(resolveCwd(review.handle.path, cwd), "utf-8"));
+	const { frontmatter } = parseFrontmatter(readArtifactFile(review.handle.path, cwd));
 	const raw = (frontmatter as Record<string, unknown>).phases;
 	return Array.isArray(raw) ? raw.length : 0;
 };
@@ -386,7 +383,7 @@ const REVIEW_PHASE_ITERATE = iterateOver({
 		const review = latestFsArtifact(state, "architecture-reviews") ?? artifact;
 		if (review?.handle.kind !== "fs") return null;
 		const reviewPath = review.handle.path; // captured: narrowing is lost inside nested closures below
-		const content = readFileSync(resolveCwd(reviewPath, cwd), "utf-8");
+		const content = readArtifactFile(reviewPath, cwd);
 		const { frontmatter } = parseFrontmatter(content);
 		const raw = (frontmatter as Record<string, unknown>).phases;
 		const phases = Array.isArray(raw) ? raw : [];
@@ -394,12 +391,10 @@ const REVIEW_PHASE_ITERATE = iterateOver({
 		if (i === 0) {
 			const headingCount = [...content.matchAll(REVIEW_PHASE_RE)].length;
 			if (phases.length !== headingCount) {
-				throw new StagePreflightError(
-					"halt",
+				throw haltPreflight(
 					"REVIEW_PHASE_ITERATE",
 					`REVIEW_PHASE_ITERATE: review ${reviewPath} has mismatched phases`,
 					`REVIEW_PHASE_ITERATE: review ${reviewPath} frontmatter phases (${phases.length}) ≠ '### Phase N —' headings (${headingCount}) — the derived array is stale against the body`,
-					true,
 				);
 			}
 			const indexByN = new Map(phases.map((e, idx) => [phaseNum(e, idx), idx]));
@@ -407,20 +402,16 @@ const REVIEW_PHASE_ITERATE = iterateOver({
 				for (const d of phaseDeps(e)) {
 					const di = indexByN.get(d);
 					if (di === undefined)
-						throw new StagePreflightError(
-							"halt",
+						throw haltPreflight(
 							"REVIEW_PHASE_ITERATE",
 							`REVIEW_PHASE_ITERATE: review ${reviewPath} has invalid depends_on`,
 							`REVIEW_PHASE_ITERATE: review ${reviewPath} phase ${phaseNum(e, idx)} depends_on ${d}, which is not a declared phase`,
-							true,
 						);
 					if (di >= idx)
-						throw new StagePreflightError(
-							"halt",
+						throw haltPreflight(
 							"REVIEW_PHASE_ITERATE",
 							`REVIEW_PHASE_ITERATE: review ${reviewPath} has cyclic dependency`,
 							`REVIEW_PHASE_ITERATE: review ${reviewPath} phase ${phaseNum(e, idx)} depends_on ${d}, which is not an earlier phase (self/forward/cyclic dependency)`,
-							true,
 						);
 				}
 			});
@@ -471,7 +462,7 @@ const PLANS_PHASE_FANOUT = fanoutOver({
 			for (const a of out.artifacts) {
 				if (a.handle.kind !== "fs") continue;
 				const path = a.handle.path;
-				const content = readFileSync(resolveCwd(path, cwd), "utf-8");
+				const content = readArtifactFile(path, cwd);
 				const promptPath = handleToString(a.handle);
 				for (const r of planPhaseRecords(content, "PLANS_PHASE_FANOUT", path)) {
 					units.push({
@@ -482,12 +473,10 @@ const PLANS_PHASE_FANOUT = fanoutOver({
 			}
 		}
 		if (units.length > MAX_PHASES) {
-			throw new StagePreflightError(
-				"halt",
+			throw haltPreflight(
 				"PLANS_PHASE_FANOUT",
 				`PLANS_PHASE_FANOUT: phase limit exceeded`,
 				`PLANS_PHASE_FANOUT: ${units.length} phases exceeds MAX_PHASES (${MAX_PHASES})`,
-				true,
 			);
 		}
 		return units;
