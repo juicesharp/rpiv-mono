@@ -458,23 +458,62 @@ describe("validateWorkflow — reads-channel (meta) compatibility (A2)", () => {
 			],
 		]);
 
-	it("warns when the producer's artifactKind is disjoint from the channel's required kind", () => {
+	it("ERRORS when a publisher's artifactKind is disjoint from the channel's required kind", () => {
 		registerCompositionComparator("plans", kindComparator);
 		const issues = validateWorkflow(wf, { skillContracts: contractsWith("design", "plan") });
-		expect(issues.some((i) => i.severity === "warning" && /channel "plans" incompatibility/.test(i.message))).toBe(
-			true,
-		);
+		expect(
+			issues.some(
+				(i) =>
+					i.severity === "error" &&
+					/reads channel "plans" but publisher "blueprint" is incompatible/.test(i.message),
+			),
+		).toBe(true);
 	});
 
-	it("does NOT warn when kinds match", () => {
+	it("does NOT error when kinds match", () => {
 		registerCompositionComparator("plans", kindComparator);
 		const issues = validateWorkflow(wf, { skillContracts: contractsWith("plan", "plan") });
-		expect(issues.filter((i) => /channel "plans"/.test(i.message))).toEqual([]);
+		expect(issues.filter((i) => /reads channel "plans"/.test(i.message))).toEqual([]);
 	});
 
-	it("degrades (no warning) when no comparator is registered for the channel", () => {
+	it("degrades (no error) when no comparator is registered for the channel", () => {
 		const issues = validateWorkflow(wf, { skillContracts: contractsWith("design", "plan") });
-		expect(issues.filter((i) => /channel "plans"/.test(i.message))).toEqual([]);
+		expect(issues.filter((i) => /reads channel "plans"/.test(i.message))).toEqual([]);
+	});
+
+	it("degrades (no error) when the publisher is unsigned", () => {
+		registerCompositionComparator("plans", kindComparator);
+		// consumer signed + requires plan; producer (blueprint) absent from registry → degrade
+		const issues = validateWorkflow(wf, {
+			skillContracts: new Map([
+				["implement", { source: "declared", consumes: { reads: { plans: { meta: { artifactKind: "plan" } } } } }],
+			]),
+		});
+		expect(issues.filter((i) => /reads channel "plans"/.test(i.message))).toEqual([]);
+	});
+
+	it("errors on a NON-ADJACENT publisher the edge-local walk would miss (all-publishers)", () => {
+		registerCompositionComparator("plans", kindComparator);
+		// blueprint (adjacent, compatible) AND revise (loop-back, disjoint) both publish "plans".
+		const loopback: Workflow = {
+			name: "loopback",
+			start: "blueprint",
+			stages: {
+				blueprint: produces({ outcome: { collector: noopCollector, name: "plans" } }),
+				implement: acts({ reads: ["plans"] }),
+				revise: produces({ outcome: { collector: noopCollector, name: "plans" } }),
+			},
+			edges: { blueprint: "implement", implement: "revise", revise: "implement" },
+		};
+		const contracts: SkillContractMap = new Map([
+			["blueprint", { source: "declared", produces: { kind: "produces", meta: { artifactKind: "plan" } } }],
+			["revise", { source: "declared", produces: { kind: "produces", meta: { artifactKind: "design" } } }],
+			["implement", { source: "declared", consumes: { reads: { plans: { meta: { artifactKind: "plan" } } } } }],
+		]);
+		const issues = validateWorkflow(loopback, { skillContracts: contracts });
+		expect(issues.some((i) => i.severity === "error" && /publisher "revise" is incompatible/.test(i.message))).toBe(
+			true,
+		);
 	});
 });
 

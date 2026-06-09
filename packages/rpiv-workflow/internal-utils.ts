@@ -42,6 +42,16 @@ export function resolvePublishName(def: StageDef, stageName: string): string {
 	return def.outcome?.name ?? stageName;
 }
 
+/**
+ * Resolve a stage's effective skill — the contract-registry key. Twin of
+ * `resolvePublishName`. Single source of truth so the runtime resolution
+ * (`resolveStage`) and the load-time lookups (`validate-workflow.ts`) key the
+ * registry identically and can't drift.
+ */
+export function resolveSkill(def: StageDef, stageName: string): string {
+	return def.skill ?? stageName;
+}
+
 /** Thrown by `withTimeout` when the caller passes a `SchemaTimeoutError`
  *  instance as the message. Lets consumers distinguish timeout errors from
  *  inner-promise rejections via `instanceof` instead of string-identity

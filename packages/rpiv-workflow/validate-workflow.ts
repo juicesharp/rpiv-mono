@@ -12,6 +12,12 @@
  * to halt on any error and surface warnings non-fatally.
  *
  * No I/O, no throws — purely a graph walk + predicate probe.
+ *
+ * Enforcement layers (where each contract channel is adjudicated):
+ *   - reads / wiring  → LOAD-TIME, complete (`checkReadsChannelCompat`, all
+ *                       publishers, errors on signed mismatch — all stage kinds).
+ *   - linear `data` + `status` → RUNTIME (`ensureContractInputValid`).
+ *   - produces self-check → PRODUCE-TIME (`extraction.ts:effectiveOutputSchema`).
  */
 
 import {
@@ -24,9 +30,10 @@ import {
 	type StageDef,
 	type Workflow,
 } from "./api.js";
+import { resolvePublishName, resolveSkill } from "./internal-utils.js";
 import { extractJsonSchema, isSchemaCompatible } from "./json-schema.js";
 import type { ConfigLayer } from "./layers.js";
-import type { SkillContractMap } from "./skill-contract.js";
+import type { ProducesSpec, SkillContractMap } from "./skill-contract.js";
 import { getCompositionComparators } from "./skill-contracts.js";
 import {
 	MAX_VALIDATION_RETRIES,
@@ -86,6 +93,7 @@ export function validateWorkflow(
 	checkPredicateSchemas(workflow, issues, opts?.skillContracts);
 	checkReadsReferences(workflow, issues);
 	checkEdgeSchemaCompat(workflow, issues, opts?.skillContracts);
+	checkReadsChannelCompat(workflow, issues, opts?.skillContracts);
 
 	return issues;
 }
@@ -568,12 +576,9 @@ function checkPredicateSchemas(
 		if (!marksReadsData(target)) continue;
 		const stage = w.stages[from];
 		if (!stage || stage.outputSchema) continue;
-		// Contract-sourced output schema covers the stage just as its own
-		// `outputSchema` would — mirror `effectiveOutputSchema`'s fallback.
-		// Skill-name key MUST match that runtime resolution (`def.skill ??
-		// stageName`); `stage.skill ?? from` is the same fallback (`from` is the
-		// stage record key). Keep both in sync or load-lint and runtime diverge.
-		const contractData = skillContracts?.get(stage.skill ?? from)?.produces?.data;
+		// Contract-sourced output schema covers the stage like its own `outputSchema`
+		// would — mirror `effectiveOutputSchema`'s fallback (same `resolveSkill` key).
+		const contractData = skillContracts?.get(resolveSkill(stage, from))?.produces?.data;
 		if (contractData) continue;
 		issues.push(
 			warning(
@@ -586,32 +591,28 @@ function checkPredicateSchemas(
 }
 
 /**
- * Phase 2 — load-time edge-compat: for each direct string edge from→to, compare
- * the producer skill's `produces.data` schema to the consumer skill's
- * `consumes.data` schema (registry-sourced, falling back to the stage's own
- * output/input schema). Warns (never errors) on a DEFINITE mismatch. Degrades
- * (skips) on predicate/STOP edges and opaque/absent schemas — same posture as
- * `checkPredicateSchemas` and the reachability skip. Paired with the runtime
- * mirror `ensureContractInputValid` (Phase 7).
+ * Load-time compat for the LINEAR `data` channel: for each string edge from→to,
+ * compare the producer's `produces.data` to the consumer's `consumes.data`
+ * (registry-sourced, falling back to the stage's own output/input schema). Warns
+ * on a definite mismatch; degrades on predicate/STOP edges and opaque schemas.
+ *
+ * Edge-local is correct here — the rolling primary flows along edges. The
+ * many-to-one NAMED (`reads`) channel is handled by `checkReadsChannelCompat`.
+ * Runtime mirror: `ensureContractInputValid`.
  */
 function checkEdgeSchemaCompat(
 	w: Workflow,
 	issues: WorkflowValidationIssue[],
 	skillContracts: SkillContractMap | undefined,
 ): void {
-	const comparators = getCompositionComparators();
 	for (const [from, target] of Object.entries(w.edges)) {
 		if (typeof target !== "string" || target === STOP) continue; // degrade on predicate/STOP edges
 		const fromStage = w.stages[from];
 		const toStage = w.stages[target];
 		if (!fromStage || !toStage) continue; // unknown stages already reported by edge-target checks
-		const producerSkill = fromStage.skill ?? from;
-		const consumerSkill = toStage.skill ?? target;
-		const producerContract = skillContracts?.get(producerSkill);
-		const consumerContract = skillContracts?.get(consumerSkill);
+		const producerContract = skillContracts?.get(resolveSkill(fromStage, from));
+		const consumerContract = skillContracts?.get(resolveSkill(toStage, target));
 
-		// Data-channel compat (Phase 2 — unchanged behaviour; no longer `continue`s so
-		// the reads-branch below can also run on this edge).
 		const producer = producerContract?.produces?.data ?? extractJsonSchema(fromStage.outputSchema);
 		const consumer = consumerContract?.consumes?.data ?? extractJsonSchema(toStage.inputSchema);
 		if (producer && consumer) {
@@ -622,27 +623,70 @@ function checkEdgeSchemaCompat(
 				);
 			}
 		}
+	}
+}
 
-		// Named-channel (reads) compat (A2): when the predecessor publishes a channel
-		// the consumer reads, invoke the consumer-supplied per-channel comparator on
-		// `produces.meta ↔ consumes.reads[channel].meta`. WARNs (never errors) on a clean
-		// mismatch; degrades (skips) on absent contract/comparator, or a channel this
-		// predecessor doesn't publish. Mirrors the runtime lift (Phase 5) — lockstep.
-		const reads = consumerContract?.consumes?.reads;
-		if (comparators.size && producerContract?.produces && reads) {
-			const channel = fromStage.outcome?.name ?? from;
+/**
+ * Load-time named-channel (`reads`) compat — the COMPLETE authoring gate for
+ * `reads:` wiring (A2). For each consumer with `consumes.reads`, adjudicate
+ * against EVERY `produces` stage that publishes the channel
+ * (`resolvePublishName === channel`), not just the edge predecessor — named
+ * channels are many-to-one (loop-backs, non-adjacent producers). The publisher
+ * set is statically computable.
+ *
+ * ERRORS on a clean comparator incompatibility between two SIGNED contracts —
+ * the "mechanically reject invalid wirings" guarantee, uniform across all stage
+ * kinds, which is why no runtime reads gate is needed. Degrades (never errors)
+ * when either side is unsigned, no comparator is registered, the channel isn't
+ * declared, or the comparator throws. "No publisher at all" is
+ * `checkReadsReferences`'s job, not this one's.
+ */
+function checkReadsChannelCompat(
+	w: Workflow,
+	issues: WorkflowValidationIssue[],
+	skillContracts: SkillContractMap | undefined,
+): void {
+	if (!skillContracts) return;
+	const comparators = getCompositionComparators();
+	if (comparators.size === 0) return; // no adjudicators registered
+
+	// Index signed publishers by channel. `kind === "produces"` mirrors the
+	// runtime publish rule (`applyCompletedStage`).
+	const publishersByChannel = new Map<string, Array<{ stage: string; produces: ProducesSpec }>>();
+	for (const [name, stage] of Object.entries(w.stages)) {
+		if (stage.kind !== "produces") continue;
+		const produces = skillContracts.get(resolveSkill(stage, name))?.produces;
+		if (!produces) continue; // unsigned producer — degrade
+		const channel = resolvePublishName(stage, name);
+		const list = publishersByChannel.get(channel);
+		if (list) list.push({ stage: name, produces });
+		else publishersByChannel.set(channel, [{ stage: name, produces }]);
+	}
+
+	for (const [consumerName, consumer] of Object.entries(w.stages)) {
+		if (!consumer.reads?.length) continue;
+		const consumes = skillContracts.get(resolveSkill(consumer, consumerName))?.consumes;
+		if (!consumes?.reads) continue; // unsigned consumer — degrade
+		for (const channel of consumer.reads) {
 			const comparator = comparators.get(channel);
-			if (reads[channel] && comparator) {
-				const compat = comparator(producerContract.produces, consumerContract.consumes!, channel);
-				if (!compat.ok) {
-					issues.push(
-						warning(
-							w.name,
-							from,
-							`edge "${from}" → "${target}": channel "${channel}" incompatibility — ${compat.reason}`,
-						),
-					);
+			if (!comparator || !consumes.reads[channel]) continue; // no adjudicator / undeclared channel — degrade
+			const publishers = publishersByChannel.get(channel);
+			if (!publishers) continue; // "no publisher at all" is checkReadsReferences's job
+			for (const { stage: producerName, produces } of publishers) {
+				let compat: { ok: boolean; reason?: string };
+				try {
+					compat = comparator(produces, consumes, channel);
+				} catch {
+					continue; // comparator threw — author defect, degrade
 				}
+				if (compat.ok) continue;
+				issues.push(
+					error(
+						w.name,
+						consumerName,
+						`stage "${consumerName}" reads channel "${channel}" but publisher "${producerName}" is incompatible — ${compat.reason ?? "named-channel meta incompatibility"}`,
+					),
+				);
 			}
 		}
 	}

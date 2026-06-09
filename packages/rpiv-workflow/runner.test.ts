@@ -1671,43 +1671,14 @@ describe("runWorkflow", () => {
 			const readsWf = () =>
 				wf("two", ["research", "revise"], { research: { outcome: plansOutcome }, revise: { reads: ["plans"] } });
 
-			it("HALTs a non-fanout reads consumer when the producer's channel kind is disjoint", async () => {
-				writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md", "---\nstatus: ready\n---\n");
-				registerCompositionComparator("plans", kindComparator);
-				registerKinds("design", "plan"); // producer emits design; consumer requires plan
-				const chain = createMockSessionChain({
-					cwd: tmpDir,
-					steps: [{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/research/r.md")] }],
-				});
-				const result = await runWorkflow(chain.ctx, { workflow: readsWf(), input: "x" });
-				expect(result.success).toBe(false);
-				expect(result.stagesCompleted).toBe(1);
-				expect(result.error).toMatch(/input validation failed/i);
-				const { stages } = readState(tmpDir);
-				expect(stages[1]).toMatchObject({ skill: "revise", status: "failed" });
-			});
-
-			it("proceeds when the producer's channel kind matches the consumer's required kind", async () => {
+			// Reads validity is a complete LOAD-TIME guarantee (`checkReadsChannelCompat`);
+			// the runner does NOT adjudicate reads. This locks that decision: even a
+			// disjoint channel with a registered comparator runs to completion at runtime.
+			it("does NOT halt at runtime on a disjoint reads channel — reads validity is load-time", async () => {
 				writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md", "---\nstatus: ready\n---\n");
 				writeArtifact(tmpDir, ".rpiv/artifacts/plans/p.md", "---\nstatus: ready\n---\n");
 				registerCompositionComparator("plans", kindComparator);
-				registerKinds("plan", "plan");
-				const chain = createMockSessionChain({
-					cwd: tmpDir,
-					steps: [
-						{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/research/r.md")] },
-						{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/plans/p.md")] },
-					],
-				});
-				const result = await runWorkflow(chain.ctx, { workflow: readsWf(), input: "x" });
-				expect(result.success).toBe(true);
-				expect(result.stagesCompleted).toBe(2);
-			});
-
-			it("degrades (no halt) when no comparator is registered for the channel", async () => {
-				writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md", "---\nstatus: ready\n---\n");
-				writeArtifact(tmpDir, ".rpiv/artifacts/plans/p.md", "---\nstatus: ready\n---\n");
-				registerKinds("design", "plan"); // disjoint, but no comparator registered → degrade
+				registerKinds("design", "plan"); // disjoint at the channel — yet must not halt the run
 				const chain = createMockSessionChain({
 					cwd: tmpDir,
 					steps: [

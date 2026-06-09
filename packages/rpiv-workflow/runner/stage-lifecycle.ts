@@ -13,7 +13,7 @@ import type { PromptFn, StageDef } from "../api.js";
 import { auditCtxFor, notifyPartialArtifacts, recordTerminalFailure, runIdentityOf } from "../audit.js";
 import { runFanout } from "../fanout.js";
 import { handleToString } from "../handle.js";
-import { currentPrimaryArtifact, SchemaTimeoutError, withTimeout } from "../internal-utils.js";
+import { currentPrimaryArtifact, resolveSkill, SchemaTimeoutError, withTimeout } from "../internal-utils.js";
 import { runIterate } from "../iterate.js";
 import { isJsonSchemaObject, jsonSchemaToStandard } from "../json-schema.js";
 import { skillStageRef } from "../lifecycle.js";
@@ -34,7 +34,6 @@ import {
 	STATUS_STAGE,
 } from "../messages.js";
 import { runFanoutSession, runStageSession } from "../sessions/index.js";
-import { getCompositionComparators } from "../skill-contracts.js";
 import { readBranch } from "../transcript.js";
 import type { RunContext, WorkflowHostContext } from "../types.js";
 import {
@@ -264,9 +263,9 @@ function resolveStage(currentName: string, idx: number, run: RunContext): Resolv
 		// validateWorkflow should catch this; defensive for tests bypassing validation.
 		throw new Error(`runStage: stage "${currentName}" referenced by edges but missing from workflow.stages`);
 	}
-	// `skill` defaults to the record key — the common case where stage id and
-	// Pi skill match doesn't restate the name at the call site.
-	return { def, name: currentName, stageNumber: idx + 1, skill: def.skill ?? currentName };
+	// `skill` defaults to the record key; `resolveSkill` is the shared derivation
+	// the load-time contract lookups also use, so runtime and load can't disagree.
+	return { def, name: currentName, stageNumber: idx + 1, skill: resolveSkill(def, currentName) };
 }
 
 /**
@@ -560,74 +559,24 @@ const PRE_PROMPT_CHECKS: readonly PreflightCheck[] = [
 ];
 
 /**
- * Phase 2 runtime mirror of `checkEdgeSchemaCompat`. When the consumer skill has
- * a DECLARED `consumes.data` contract but the stage carries no `inputSchema` of
- * its own, validate the upstream `output.data` against the contract schema —
- * closing the gap `ensureInputValid` leaves (it only runs when the stage has an
- * inputSchema). A CLEAN data-vs-schema failure is a DEFINITE violation, so it
- * HALTS like `ensureInputValid` — the load-time pass only WARNS because it
- * compares schema-vs-schema. Fail-soft toward consumer-supplied contracts:
- * DEGRADES (returns) when the `consumes.data` is not a plain-object schema, or
- * the keyword engine THROWS evaluating it (unknown keywords / `$ref` / if-then) —
- * those are the contract author's defect, not a data violation. Also degrades
- * (returns) when: no registry snapshot, no contract/`consumes.data`, the stage
- * owns an `inputSchema`, the stage dispatches raw `prompt`, the stage reads from
- * NAMED channels (`reads:` — its input isn't the linear `output.data`), or there
- * is no upstream data.
+ * Runtime mirror of `checkEdgeSchemaCompat` for the LINEAR `data` channel. When
+ * the consumer declares `consumes.data` but the stage has no `inputSchema`,
+ * validate upstream `output.data` against the contract schema — the gap
+ * `ensureInputValid` leaves. A clean failure HALTS (load-time only warns, being
+ * schema-vs-schema). Degrades (returns) when `consumes.data` is not a plain-object
+ * schema or the keyword engine throws (author defect), and when there's no
+ * registry/contract/`consumes.data`, an `inputSchema`, a raw `prompt`, or upstream
+ * data.
+ *
+ * NAMED-channel (`reads:`) validity is a complete LOAD-TIME guarantee
+ * (`checkReadsChannelCompat`), not checked here — a reads-only stage degrades
+ * through the data-path below.
  */
 async function ensureContractInputValid(stage: ResolvedStage, run: RunContext): Promise<void> {
 	if (stage.def.prompt !== undefined) return;
 	if (stage.def.inputSchema) return; // ensureInputValid owns the stage-schema path
 	const contract = run.skillContracts?.get(stage.skill);
 
-	// Named-channel (reads) consumer (A2 runtime lift — mirror of checkEdgeSchemaCompat,
-	// Phase 4). Its real input is state.named (NOT the linear predecessor's output.data),
-	// so adjudicate `produces.meta ↔ consumes.reads[channel].meta` via the per-channel
-	// comparator and return WITHOUT the output.data check below. HALT only on a CLEAN
-	// comparator violation; degrade (continue/return) when: no declared reads contract,
-	// no comparator for the channel, the channel isn't declared, the channel slot isn't
-	// filled, or the producer's contract/identity is absent. NOTE: fanout/iterate/script
-	// stages short-circuit runStage before POST_PROMPT_CHECKS, so this guard never runs
-	// for them by design (e.g. implement is fanout — adjudicated at load + agent-facing).
-	if (stage.def.reads?.length) {
-		const consumes = contract?.consumes;
-		const reads = consumes?.reads;
-		if (!consumes || !reads) return; // legacy reads stage with no declared reads contract — degrade
-		const comparators = getCompositionComparators();
-		for (const channel of stage.def.reads) {
-			const comparator = comparators.get(channel);
-			const readSpec = reads[channel];
-			if (!comparator || !readSpec) continue; // degrade: no comparator / channel not in contract
-			const latest = run.state.named[channel]?.at(-1);
-			const producerSkill = latest?.meta.skill ?? latest?.meta.stage;
-			const producer = producerSkill ? run.skillContracts?.get(producerSkill)?.produces : undefined;
-			if (!producer) continue; // degrade: producer contract/identity absent
-			let compat: { ok: boolean; reason?: string };
-			try {
-				compat = comparator(producer, consumes, channel);
-			} catch {
-				// Comparator threw — author's defect (bad schema traversal, etc.),
-				// NOT a data violation. Degrade (skip channel) rather than kill
-				// the run, matching the data-path's degrade-on-throw policy at :647.
-				continue;
-			}
-			if (compat.ok) continue;
-			throw new StagePreflightError(
-				"halt",
-				stage.skill,
-				MSG_INPUT_VALIDATION_FAILED(stage.skill, producerSkill ?? "unknown"),
-				ERR_INPUT_VALIDATION_FAILED(
-					stage.skill,
-					producerSkill ?? "unknown",
-					compat.reason ?? "named-channel meta incompatibility",
-				),
-				true,
-			);
-		}
-		return;
-	}
-
-	// Linear consumes.data consumer (Phase 2 — unchanged behaviour).
 	if (run.state.output?.data === undefined) return;
 	const consumesData = contract?.consumes?.data;
 	// Untrusted injected contract — degrade (never HALT) on a non-object schema.
