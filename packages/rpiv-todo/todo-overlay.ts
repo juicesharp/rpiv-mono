@@ -154,7 +154,7 @@ export class TodoOverlay {
 		if (layout.hiddenCompleted === 0 && layout.truncatedTail === 0) {
 			const last = lines.length - 1;
 			lines[last] = lines[last].replace("├─", "└─");
-			return lines;
+			return this.withTrailingSpacer(lines);
 		}
 
 		const totalHidden = layout.hiddenCompleted + layout.truncatedTail;
@@ -165,6 +165,19 @@ export class TodoOverlay {
 		const summary =
 			overflowParts.length > 0 ? `+${totalHidden} ${more} (${overflowParts.join(", ")})` : `+${totalHidden} ${more}`;
 		lines.push(truncate(`${theme.fg("dim", "└─")} ${theme.fg("dim", summary)}`));
+		return this.withTrailingSpacer(lines);
+	}
+
+	/**
+	 * Append a trailing blank line so the overlay isn't flush against the
+	 * editor box. Pi's host adds a leading spacer above the widget but none
+	 * below, which leaves the last "└─" row (or the "+N more" summary) glued
+	 * to the input box. The empty string gives the "Todos" panel a little
+	 * breathing room — mirrors the same fix in the agents overlay widget.
+	 */
+	private withTrailingSpacer(lines: string[]): string[] {
+		if (lines.length === 0) return lines;
+		lines.push("");
 		return lines;
 	}
 

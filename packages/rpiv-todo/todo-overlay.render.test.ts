@@ -73,10 +73,11 @@ describe("TodoOverlay — natural-order rendering (no overflow)", () => {
 			{ action: "create", subject: "c" },
 		]);
 		const lines = widget.render(200);
-		expect(lines).toHaveLength(4); // heading + 3
+		expect(lines).toHaveLength(5); // heading + 3 + trailing spacer
 		expect(lines[1]).toContain("├─");
 		expect(lines[2]).toContain("├─");
 		expect(lines[3]).toContain("└─");
+		expect(lines[4]).toBe(""); // trailing spacer below the panel
 	});
 
 	it("omits deleted tasks from the rendered output", async () => {
@@ -157,13 +158,14 @@ describe("TodoOverlay — overflow collapse", () => {
 		}
 		const { widget } = await setup(actions);
 		const lines = widget.render(200);
-		// heading + 10 visible + 1 summary = 12
-		expect(lines).toHaveLength(12);
+		// heading + 10 visible + 1 summary + trailing spacer = 13
+		expect(lines).toHaveLength(13);
 		// All pending present
 		for (let i = 1; i <= 8; i++) expect(lines.join("\n")).toContain(`p${i}`);
-		// Summary correct
-		expect(lines[lines.length - 1]).toContain("+2 more");
-		expect(lines[lines.length - 1]).toContain("2 completed");
+		// Last row is the trailing spacer; the summary sits just above it
+		expect(lines[lines.length - 1]).toBe("");
+		expect(lines[lines.length - 2]).toContain("+2 more");
+		expect(lines[lines.length - 2]).toContain("2 completed");
 	});
 
 	it("truncates pending tail when dropping all completed isn't enough", async () => {
@@ -172,8 +174,9 @@ describe("TodoOverlay — overflow collapse", () => {
 		for (let i = 1; i <= 12; i++) actions.push({ action: "create", subject: `t${i}` });
 		const { widget } = await setup(actions);
 		const lines = widget.render(200);
-		expect(lines).toHaveLength(12);
-		const summary = lines[lines.length - 1];
+		expect(lines).toHaveLength(13);
+		expect(lines[lines.length - 1]).toBe("");
+		const summary = lines[lines.length - 2];
 		expect(summary).toContain("+2 more");
 		expect(summary).toContain("2 pending");
 		expect(summary).not.toContain("completed");
@@ -190,7 +193,8 @@ describe("TodoOverlay — overflow collapse", () => {
 			actions.push({ action: "update", id: i, status: "completed" });
 		}
 		const { widget } = await setup(actions);
-		const summary = widget.render(200).slice(-1)[0];
+		// Last line is the trailing spacer, so the summary is the second-to-last.
+		const summary = widget.render(200).slice(-2)[0];
 		expect(summary).toContain("+5 more");
 		expect(summary).toContain("3 completed");
 		expect(summary).toContain("2 pending");
@@ -217,15 +221,16 @@ describe("TodoOverlay — overflow collapse", () => {
 	});
 
 	it("does not engage overflow at exactly 11 visible tasks", async () => {
-		// 11 tasks → all fit in 12 lines (heading + 11). No summary row.
+		// 11 tasks → all fit (heading + 11 = 12), plus trailing spacer = 13. No summary row.
 		const actions: Array<{ action: TaskAction; [k: string]: unknown }> = [];
 		for (let i = 1; i <= 11; i++) actions.push({ action: "create", subject: `t${i}` });
 		const { widget } = await setup(actions);
 		const lines = widget.render(200);
-		expect(lines).toHaveLength(12);
-		// Last row is a task row, not a summary
-		expect(lines[lines.length - 1]).not.toContain("+");
-		expect(lines[lines.length - 1]).toContain("└─");
+		expect(lines).toHaveLength(13);
+		// Last row is the trailing spacer; the row above is the last task row
+		expect(lines[lines.length - 1]).toBe("");
+		expect(lines[lines.length - 2]).not.toContain("+");
+		expect(lines[lines.length - 2]).toContain("└─");
 	});
 });
 
