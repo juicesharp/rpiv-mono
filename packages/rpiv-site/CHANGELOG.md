@@ -7,6 +7,18 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Workflow framework explainer ("How a workflow works") and a companion narrative blog post ("The workflow author's tale").
+- Brownfield guidance section explaining `/skill:annotate-guidance` for onboarding an existing codebase.
+- Staggered scroll-in entrance for the flow catalog (honors `prefers-reduced-motion`).
+
+### Changed
+- Redesigned the landing page around the `/wf` workflow runner — new hero with a workflow flow graphic plus workflow-focused sections (catalog, run anatomy, stage skills, around-the-flow skills) and refreshed navigation.
+- Trimmed the primary nav to its core wayfinding tabs.
+- Agent tiers render as a wrapped grid with deduplicated tool chips; around-skill cards now link to their reference pages.
+- Workflow guides describe contract-based, numeric routing, and the compose guide derives stage outcomes from skill contracts; `/rpiv-setup` and fanout copy rewritten for accuracy (fanout runs its units sequentially for isolation, not in parallel).
+- Docs sidebar scrollbars stay hidden until hover.
+
 ## [1.18.2] - 2026-06-04
 
 ## [1.18.1] - 2026-06-04

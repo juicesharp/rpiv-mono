@@ -7,6 +7,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- The todos overlay renders a trailing blank line so its last row no longer sits flush against the input box. (#65)
+
 ## [1.18.2] - 2026-06-04
 
 ## [1.18.1] - 2026-06-04

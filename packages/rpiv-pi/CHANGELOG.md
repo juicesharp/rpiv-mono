@@ -7,8 +7,20 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Pipeline skills (`code-review`, `commit`, `design`, `discover`, `explore`, `implement`, `plan`, `research`, `validate`, and the annotate/handoff/frontend skills) now declare `produces`/`consumes` contracts in their frontmatter, so workflows can derive routing and validate stage-to-stage compatibility automatically.
+- The `plan` skill emits a `phases:` frontmatter array and `implement` fans out one pass per plan phase; `architecture-review` phases carry scheduling metadata (`depends_on`, `blast_radius`, `effort`) so blueprint passes run in dependency order and each pass sees only the plans it depends on.
+
+### Changed
+- `ship` and `polish` presets are now contract-driven — their phase fan-out and stage outcomes derive from the plan's `phases` contract rather than hand-wired buckets.
+
+### Removed
+- Experimental prototype presets `blueprint-c`, `architecture-review-c`, `shipx`, and `polishx`; their proven behavior is now folded into the shipped `ship`/`polish` flows.
+
 ### Fixed
-- `/code-review` now works inside a git worktree. The skill hardcoded `.git/code-review-patch.diff` as its patch tempfile; in a worktree `.git` is a gitlink **file**, not a directory, so the write failed with `Not a directory` (ENOTDIR) and the review aborted. `review-range.mjs` now emits a `patch_path:` key resolved via `git rev-parse --git-path` (absolute, so the orchestrator and every subagent target the same file regardless of cwd), and `SKILL.md` substitutes `<patch_path>` at every write/read site. Plain clones are unaffected — the path resolves to the same `.git/…` location. (#63)
+- `/code-review` now works inside a git worktree. The patch tempfile path resolves via `git rev-parse --git-path` instead of a hardcoded `.git/code-review-patch.diff`, which failed with `Not a directory` (ENOTDIR) where `.git` is a gitlink file. (#63)
+- `implement` can check off `Automated Verification` checkboxes again; the plan-mutation ban is narrowed to plan content only. (#64)
+- `validate` skill guidance no longer contradicts the runtime ordering of `implement → validate → commit`. (#62)
 
 ## [1.18.2] - 2026-06-04
 
