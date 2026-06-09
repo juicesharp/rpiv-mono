@@ -3,7 +3,8 @@
  *
  * Lifecycle controller for Pi's `setWidget` contract: factory-form
  * registration in widgetContainerAbove, register-once + requestRender()
- * refresh, 12-line collapse-not-scroll, auto-hide when empty.
+ * refresh, 12-line collapse-not-scroll (plus a trailing spacer row, so the
+ * widget renders up to 13 lines), auto-hide when empty.
  *
  * Reads live state via `getState()` at render time — NEVER `replayFromBranch`
  * from `tool_execution_end` (branch is stale; `message_end` runs after).
@@ -17,6 +18,8 @@ import { getState } from "./state/store.js";
 import { formatOverlayTaskLine } from "./view/format.js";
 
 const WIDGET_KEY = "rpiv-todos";
+// Budget for content rows (heading + tasks/summary). The rendered widget is
+// one line taller — withTrailingSpacer() appends a blank row below the panel.
 const MAX_WIDGET_LINES = 12;
 
 // English fallbacks for localized overlay chrome strings.
@@ -173,7 +176,7 @@ export class TodoOverlay {
 	 * editor box. Pi's host adds a leading spacer above the widget but none
 	 * below, which leaves the last "└─" row (or the "+N more" summary) glued
 	 * to the input box. The empty string gives the "Todos" panel a little
-	 * breathing room — mirrors the same fix in the agents overlay widget.
+	 * breathing room.
 	 */
 	private withTrailingSpacer(lines: string[]): string[] {
 		if (lines.length === 0) return lines;
