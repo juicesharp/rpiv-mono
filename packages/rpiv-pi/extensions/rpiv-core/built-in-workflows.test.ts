@@ -1051,6 +1051,39 @@ describe("ship workflow", () => {
 });
 
 // ---------------------------------------------------------------------------
+// pr-triage security-gate — the script-stage guard must fail closed on
+// missing / malformed security_flag (NaN), not silently pass as SAFE.
+// ---------------------------------------------------------------------------
+
+describe("pr-triage security-gate", () => {
+	const gateRun = () => {
+		const stage = findWorkflow("pr-triage").stages["security-gate"];
+		if (!stage?.run) throw new Error("pr-triage security-gate stage has no run function");
+		return stage.run as (ctx: { input?: { data?: unknown } }) => void;
+	};
+
+	it("throws on missing input (undefined)", () => {
+		expect(() => gateRun()({ input: undefined })).toThrow(/BLOCK/);
+	});
+
+	it("throws on non-numeric security_flag (NaN)", () => {
+		expect(() => gateRun()({ input: { data: { security_flag: "not-a-number" } } })).toThrow(/BLOCK/);
+	});
+
+	it("throws on BLOCK (security_flag = 2)", () => {
+		expect(() => gateRun()({ input: { data: { security_flag: 2 } } })).toThrow(/BLOCK/);
+	});
+
+	it("does not throw on SAFE (security_flag = 0)", () => {
+		expect(() => gateRun()({ input: { data: { security_flag: 0 } } })).not.toThrow();
+	});
+
+	it("does not throw on REVIEW (security_flag = 1)", () => {
+		expect(() => gateRun()({ input: { data: { security_flag: 1 } } })).not.toThrow();
+	});
+});
+
+// ---------------------------------------------------------------------------
 // implement reads wiring — every implement stage declares reads: ["plans"]
 // and validates clean with contracts threaded in.
 // ---------------------------------------------------------------------------
@@ -1058,11 +1091,13 @@ describe("ship workflow", () => {
 describe("implement reads wiring", () => {
 	it('every implement stage declares reads: ["plans"]', () => {
 		for (const wf of builtInWorkflows) {
-			expect(wf.stages.implement?.reads, `${wf.name}.implement`).toEqual(["plans"]);
+			// Not every workflow has an implement stage (pr-triage is read-only triage).
+			if (!wf.stages.implement) continue;
+			expect(wf.stages.implement.reads, `${wf.name}.implement`).toEqual(["plans"]);
 		}
 	});
 
-	it('all five built-in workflows validate clean with reads:["plans"] (contracts threaded in)', () => {
+	it("every built-in workflow with an implement stage validates clean (contracts threaded in)", () => {
 		for (const name of ["ship", "build", "arch", "vet", "polish"]) {
 			const issues = deriveAndValidate(findWorkflow(name), { skillContracts: DECLARED_CONTRACTS });
 			expect(

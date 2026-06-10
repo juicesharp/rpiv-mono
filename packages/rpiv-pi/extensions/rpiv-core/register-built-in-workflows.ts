@@ -21,7 +21,7 @@
 import { isModuleNotFound } from "./utils.js";
 
 /**
- * Register the five built-in workflows (ship / build / arch / vet / polish)
+ * Register the six built-in workflows (ship / build / arch / vet / polish / pr-triage)
  * with the rpiv-workflow runtime, if that sibling is installed. A missing
  * sibling resolves to a no-op; any other failure is re-thrown so genuine bugs
  * surface rather than hiding behind the absent-sibling path.
@@ -29,7 +29,7 @@ import { isModuleNotFound } from "./utils.js";
 export async function registerBuiltInWorkflows(): Promise<void> {
 	try {
 		// Thin `/startup` entry (~9ms, no DSL/runner). Register a LAZY provider so
-		// `built-in-workflows.js` (the ~180ms authoring-DSL graph) builds the five
+		// `built-in-workflows.js` (the ~180ms authoring-DSL graph) builds the six
 		// definitions on first `/wf`, not at startup. Missing sibling →
 		// ERR_MODULE_NOT_FOUND → no-op (no `/wf` without it).
 		const { registerBuiltInsProvider, registerBuiltIns } = await import("@juicesharp/rpiv-workflow/startup");

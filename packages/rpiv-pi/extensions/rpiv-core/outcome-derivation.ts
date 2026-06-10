@@ -35,6 +35,7 @@ export const BUCKET_BY_KIND: Readonly<Record<string, string>> = {
 	"architecture-review": "architecture-reviews",
 	frd: "discover",
 	handoff: "handoffs",
+	triage: "triage",
 };
 
 /**

@@ -525,6 +525,58 @@ const polishWorkflow = defineWorkflow({
 });
 
 // ===========================================================================
+// pr-triage — pr-triage → security-gate → stop
+//   Read-only front door for an incoming GitHub PR. The `pr-triage` skill
+//   fetches the PR thread, assesses the diff against whatever standard the repo
+//   actually carries, writes a triage artifact, and recommends a triage
+//   disposition (Review / Request changes / Hold / Decline) as a plain next
+//   action. The `security-gate` script stage reads the skill's
+//   `security_flag` and HALTS the run on a BLOCK (≥ 2) via `haltPreflight` — the
+//   "security gate first, before any checkout" posture — while SAFE/REVIEW (< 2)
+//   fall through to `stop` carrying the verdict.
+//
+//   It terminates rather than dispatching a follow-up workflow: triage gates entry
+//   to review, it does not merge. The disposition is a plain action; `vet` (the
+//   review stage) is offered as optional sugar under Review. Only the security gate
+//   is enforced by the graph. A linear guard stage (not a `gate(...)`
+//   edge) keeps the halt off the data-routing path — the throw lives inside the
+//   script, read from the prior stage's output.
+// ===========================================================================
+
+/** BLOCK tier the pr-triage `security_flag` contract field emits (0 SAFE · 1 REVIEW · 2 BLOCK). */
+const PR_TRIAGE_BLOCK = 2;
+
+const prTriageWorkflow = defineWorkflow({
+	name: "pr-triage",
+	description:
+		"Read-only triage of a GitHub PR before any review effort. Fetches the PR thread, assesses the diff against the repo's own standards, writes a triage artifact, and recommends a triage disposition (Review / Request changes / Hold / Decline). A security BLOCK halts the run before any checkout. Best as the entry point for an incoming PR. Chain: pr-triage → security-gate → stop.",
+	start: "pr-triage",
+	stages: {
+		"pr-triage": produces(),
+		// Skillless guard: read the triage skill's `security_flag` from the prior
+		// stage's output and halt on BLOCK. A script stage (not a skill) — no LLM,
+		// no session — so the gate is free. On SAFE/REVIEW it is a no-op side effect
+		// and the chain advances to `stop`.
+		"security-gate": acts.script({
+			run: ({ input }) => {
+				const flag = Number((input?.data as { security_flag?: unknown } | undefined)?.security_flag);
+				if (Number.isNaN(flag) || flag >= PR_TRIAGE_BLOCK) {
+					throw haltPreflight(
+						"pr-triage",
+						"pr-triage: security BLOCK — do not proceed",
+						`pr-triage: security_flag=${flag} (BLOCK) — the PR diff carries a high-confidence security risk. Resolve it before any checkout or review; see the triage artifact for the traced finding.`,
+					);
+				}
+			},
+		}),
+	},
+	edges: {
+		"pr-triage": "security-gate",
+		"security-gate": "stop",
+	},
+});
+
+// ===========================================================================
 // Exports
 // ===========================================================================
 
@@ -534,4 +586,5 @@ export const builtInWorkflows: readonly Workflow[] = [
 	archWorkflow,
 	vetWorkflow,
 	polishWorkflow,
+	prTriageWorkflow,
 ];

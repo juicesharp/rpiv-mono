@@ -206,8 +206,8 @@ describe("bundled skill contracts", () => {
 	// dropped, or fails to parse (a malformed block is silently skipped).
 	const declared = new Map(buildSkillContractsFromFrontmatter(BUNDLED_SKILLS_DIR));
 
-	it("declares a contract for the 19 pipeline + orthogonal skills", () => {
-		expect(declared.size).toBe(19);
+	it("declares a contract for the 20 pipeline + orthogonal skills", () => {
+		expect(declared.size).toBe(20);
 		for (const name of [
 			"discover",
 			"research",
@@ -228,6 +228,7 @@ describe("bundled skill contracts", () => {
 			"resume-handoff",
 			"frontend-design",
 			"migrate-to-guidance",
+			"pr-triage",
 		]) {
 			expect(declared.has(name)).toBe(true);
 		}
@@ -252,6 +253,7 @@ describe("bundled skill contracts", () => {
 	it("documents the declared-but-not-harvested orthogonal set", () => {
 		// These skills declare a contract but don't appear in any built-in workflow.
 		// The orthogonal set: 7 new + discover + explore + commit = 10 skills.
+		// (pr-triage IS harvested — it's dispatched by the pr-triage workflow.)
 		const harvested = harvestStageContracts(builtInWorkflows);
 		const notHarvested: string[] = [];
 		for (const [name] of declared) {
@@ -273,7 +275,7 @@ describe("bundled skill contracts", () => {
 		);
 	});
 
-	it("every declared kind matches the harvested kind for the five built-in workflows", () => {
+	it("every declared kind matches the harvested kind for the six built-in workflows", () => {
 		// Harvest derives each dispatched skill's kind from how the built-ins use
 		// it (produces() → "produces", acts() → "side-effect"). A declared kind
 		// that disagrees would make the rendered graph lie — catch it here.

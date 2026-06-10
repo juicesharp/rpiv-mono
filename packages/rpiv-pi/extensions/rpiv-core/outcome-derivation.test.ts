@@ -46,8 +46,8 @@ function stripOutcomes(w: Workflow): Workflow {
 // ---------------------------------------------------------------------------
 
 describe("BUCKET_BY_KIND", () => {
-	it("contains exactly 9 entries", () => {
-		expect(Object.keys(BUCKET_BY_KIND)).toHaveLength(9);
+	it("contains exactly 10 entries", () => {
+		expect(Object.keys(BUCKET_BY_KIND)).toHaveLength(10);
 	});
 
 	it("covers all artifactKinds used by produces skills", () => {
@@ -61,6 +61,7 @@ describe("BUCKET_BY_KIND", () => {
 			"architecture-review",
 			"frd",
 			"handoff",
+			"triage",
 		];
 		for (const kind of expectedKinds) {
 			expect(BUCKET_BY_KIND[kind]).toBeDefined();
@@ -242,10 +243,11 @@ describe("equivalence — built-in workflows", () => {
 		["validate", "validation"],
 		["code-review", "review"],
 		["revise", "plan"],
+		["pr-triage", "triage"],
 	];
 
 	/**
-	 * Expected bucket name for each produces stage across all 5 workflows.
+	 * Expected bucket name for each produces stage across all 6 workflows.
 	 * Key: "workflowName::stageName". Value: expected outcome.name.
 	 */
 	const EXPECTED: Record<string, string> = {
@@ -273,6 +275,8 @@ describe("equivalence — built-in workflows", () => {
 		"polish::blueprint": "plans",
 		"polish::validate": "validation",
 		"polish::code-review": "reviews",
+		// pr-triage
+		"pr-triage::pr-triage": "triage",
 	};
 
 	/**
@@ -343,14 +347,14 @@ describe("equivalence — built-in workflows", () => {
 		});
 	}
 
-	it("total produces stages across all workflows = 19", () => {
+	it("total produces stages across all workflows = 20", () => {
 		let count = 0;
 		for (const w of builtInWorkflows) {
 			for (const stage of Object.values(w.stages)) {
 				if (stage.kind === "produces") count++;
 			}
 		}
-		expect(count).toBe(19);
+		expect(count).toBe(20);
 	});
 });
 
