@@ -43,6 +43,9 @@
       "./skills"
     ]
   },
+  "dependencies": {
+    "@juicesharp/rpiv-config": "^1.19.0"
+  },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",
     "@tintinweb/pi-subagents": "*",
@@ -53,7 +56,6 @@
     "@juicesharp/rpiv-web-tools": "*",
     "@juicesharp/rpiv-args": "*",
     "@juicesharp/rpiv-workflow": "*",
-    "@juicesharp/rpiv-config": "*",
     "yaml": "*",
     "typebox": "*",
     "jiti": "*",

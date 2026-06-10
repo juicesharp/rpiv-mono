@@ -19,7 +19,6 @@ import type {
 	SchemaCompatResult,
 	SkillContract,
 } from "@juicesharp/rpiv-workflow/registration";
-import { registerOutcomeDerivation } from "./outcome-derivation.js";
 import { BUNDLED_SKILLS_DIR } from "./paths.js";
 import { isModuleNotFound } from "./utils.js";
 
@@ -169,6 +168,15 @@ export async function registerSkillContractsSource(): Promise<void> {
 		});
 		// Register the contract-derived outcome resolver so `produces` stages
 		// auto-wire `rpivBucketOutcome(bucket)` from `artifactKind` at load time.
+		// Dynamic import (not static): `outcome-derivation.js` pulls in
+		// `artifact-collector.js`, which value-imports `@juicesharp/rpiv-workflow/registration`
+		// at module-eval. A static edge would make THAT a load-time requirement of the
+		// whole extension — so when the sibling is absent or not co-located, rpiv-core
+		// fails to load entirely (the bug in #66). Deferring it here keeps the sibling
+		// edge off the entry path: it only resolves after the `/startup` import above
+		// already succeeded, and a missing/non-resolvable sibling degrades to the
+		// isModuleNotFound no-op below instead of crashing the extension.
+		const { registerOutcomeDerivation } = await import("./outcome-derivation.js");
 		await registerOutcomeDerivation();
 	} catch (err) {
 		if (isModuleNotFound(err)) return; // sibling absent — /rpiv-setup prompts the user
