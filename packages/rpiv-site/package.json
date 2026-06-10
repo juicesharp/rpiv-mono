@@ -1,6 +1,6 @@
 {
 	"name": "@juicesharp/rpiv-site",
-	"version": "1.19.0",
+	"version": "1.19.1",
 	"private": true,
 	"description": "The site for rpiv-pi at rpiv-pi.com. A static Astro build, deployed to GitHub Pages.",
 	"keywords": [

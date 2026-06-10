@@ -5,7 +5,7 @@ All notable changes to `@juicesharp/rpiv-pi` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.19.1] - 2026-06-10
 
 ### Added
 - New `pr-triage` built-in workflow — read-only triage for incoming GitHub PRs. The `pr-triage` skill fetches the PR thread, assesses the diff against repo standards, and writes a triage artifact with a recommended disposition; a script-stage security gate halts the run on BLOCK (`security_flag ≥ 2`) before any checkout. Chain: `pr-triage → security-gate → stop`. Adds the `triage` outcome bucket and brings the built-in workflow count from five to six.

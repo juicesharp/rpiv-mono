@@ -1,64 +1,64 @@
 {
-  "name": "@juicesharp/rpiv-pi",
-  "version": "1.19.0",
-  "description": "A skill-based development workflow for Pi Agent. Five skills (research, design, plan, implement, validate) and the shared subagents that compose its ship-loop.",
-  "keywords": [
-    "pi-package",
-    "pi-extension",
-    "rpiv",
-    "skills",
-    "workflow"
-  ],
-  "license": "MIT",
-  "author": "juicesharp",
-  "type": "module",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/juicesharp/rpiv-mono.git",
-    "directory": "packages/rpiv-pi"
-  },
-  "homepage": "https://github.com/juicesharp/rpiv-mono/tree/main/packages/rpiv-pi#readme",
-  "bugs": {
-    "url": "https://github.com/juicesharp/rpiv-mono/issues"
-  },
-  "publishConfig": {
-    "access": "public"
-  },
-  "scripts": {
-    "test": "vitest run"
-  },
-  "files": [
-    "extensions/",
-    "skills/",
-    "agents/",
-    "scripts/",
-    "README.md",
-    "LICENSE"
-  ],
-  "pi": {
-    "extensions": [
-      "./extensions"
-    ],
-    "skills": [
-      "./skills"
-    ]
-  },
-  "dependencies": {
-    "@juicesharp/rpiv-config": "^1.19.0"
-  },
-  "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "*",
-    "@tintinweb/pi-subagents": "*",
-    "@juicesharp/rpiv-ask-user-question": "*",
-    "@juicesharp/rpiv-todo": "*",
-    "@juicesharp/rpiv-advisor": "*",
-    "@juicesharp/rpiv-i18n": "*",
-    "@juicesharp/rpiv-web-tools": "*",
-    "@juicesharp/rpiv-args": "*",
-    "@juicesharp/rpiv-workflow": "*",
-    "yaml": "*",
-    "typebox": "*",
-    "jiti": "*",
-    "@standard-schema/spec": "*"
-  }
+	"name": "@juicesharp/rpiv-pi",
+	"version": "1.19.1",
+	"description": "A skill-based development workflow for Pi Agent. Five skills (research, design, plan, implement, validate) and the shared subagents that compose its ship-loop.",
+	"keywords": [
+		"pi-package",
+		"pi-extension",
+		"rpiv",
+		"skills",
+		"workflow"
+	],
+	"license": "MIT",
+	"author": "juicesharp",
+	"type": "module",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/juicesharp/rpiv-mono.git",
+		"directory": "packages/rpiv-pi"
+	},
+	"homepage": "https://github.com/juicesharp/rpiv-mono/tree/main/packages/rpiv-pi#readme",
+	"bugs": {
+		"url": "https://github.com/juicesharp/rpiv-mono/issues"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"scripts": {
+		"test": "vitest run"
+	},
+	"files": [
+		"extensions/",
+		"skills/",
+		"agents/",
+		"scripts/",
+		"README.md",
+		"LICENSE"
+	],
+	"pi": {
+		"extensions": [
+			"./extensions"
+		],
+		"skills": [
+			"./skills"
+		]
+	},
+	"dependencies": {
+		"@juicesharp/rpiv-config": "^1.19.1"
+	},
+	"peerDependencies": {
+		"@earendil-works/pi-coding-agent": "*",
+		"@tintinweb/pi-subagents": "*",
+		"@juicesharp/rpiv-ask-user-question": "*",
+		"@juicesharp/rpiv-todo": "*",
+		"@juicesharp/rpiv-advisor": "*",
+		"@juicesharp/rpiv-i18n": "*",
+		"@juicesharp/rpiv-web-tools": "*",
+		"@juicesharp/rpiv-args": "*",
+		"@juicesharp/rpiv-workflow": "*",
+		"yaml": "*",
+		"typebox": "*",
+		"jiti": "*",
+		"@standard-schema/spec": "*"
+	}
 }
