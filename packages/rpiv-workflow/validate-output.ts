@@ -50,6 +50,74 @@ export const DEFAULT_VALIDATION_RETRY_TIMEOUT_MS = 5 * 60 * 1000;
 export const MAX_VALIDATION_RETRY_TIMEOUT_MS = 30 * 60 * 1000;
 export const MIN_VALIDATION_RETRY_TIMEOUT_MS = 1_000;
 
+/**
+ * Thrown by `withTimeout` (internal-utils.ts) when the caller passes a
+ * `SchemaTimeoutError` instance as the message. Lets validation consumers
+ * distinguish a schema-evaluation timeout from inner-promise rejections via
+ * `instanceof` instead of string-identity comparison. Lives in the validation
+ * domain — it is part of the schema-validation contract, not a generic
+ * timeout utility.
+ */
+export class SchemaTimeoutError extends Error {}
+
+// ---------------------------------------------------------------------------
+// Retry-policy loop
+// ---------------------------------------------------------------------------
+
+/**
+ * Hooks for `runValidationRetryLoop`. `H` is the caller's halt payload — a
+ * tagged value that aborts the loop immediately (extraction's fatal arm; the
+ * script path's already-recorded failure marker). Throws are NOT caught:
+ * they propagate to the caller's own catch posture (the runner's single
+ * catch site for the script path; extraction wraps inside its hooks).
+ */
+export interface RetryLoopHooks<T, H> {
+	/** Produce attempt `n` (0-based; 0 = the initial production). */
+	produce(attempt: number): Promise<{ ok: true; value: T } | { ok: false; halt: H }>;
+	/** Validate one produced value. */
+	validate(value: T): Promise<{ ok: true; result: ValidationResult } | { ok: false; halt: H }>;
+	/** Between a failed validation and the next produce. `attempt` is 1-based. */
+	onRetry(attempt: number, failures: SchemaValidationFailure[]): Promise<{ ok: true } | { ok: false; halt: H }>;
+}
+
+export type RetryLoopOutcome<T, H> =
+	| { kind: "ok"; value: T }
+	| { kind: "exhausted"; failures: SchemaValidationFailure[] }
+	| { kind: "halt"; halt: H };
+
+/**
+ * THE produce → validate → retry policy loop, shared by the skill path
+ * (extraction.ts — re-prompts the agent between attempts) and the script
+ * path (script-stage.ts — re-invokes the function). One structure: produce,
+ * validate, and while invalid — stop on `haltOnInvalid` or a spent budget
+ * (`"exhausted"`), otherwise fire the retry hook and go again. Total
+ * productions are bounded by `maxRetries + 1`.
+ */
+export async function runValidationRetryLoop<T, H>(
+	policy: { maxRetries: number; haltOnInvalid: boolean },
+	hooks: RetryLoopHooks<T, H>,
+): Promise<RetryLoopOutcome<T, H>> {
+	let attempt = 0;
+	let produced = await hooks.produce(attempt);
+	if (!produced.ok) return { kind: "halt", halt: produced.halt };
+	let validation = await hooks.validate(produced.value);
+	if (!validation.ok) return { kind: "halt", halt: validation.halt };
+
+	while (!validation.result.valid) {
+		if (policy.haltOnInvalid || attempt >= policy.maxRetries) {
+			return { kind: "exhausted", failures: validation.result.failures };
+		}
+		attempt++;
+		const retried = await hooks.onRetry(attempt, validation.result.failures);
+		if (!retried.ok) return { kind: "halt", halt: retried.halt };
+		produced = await hooks.produce(attempt);
+		if (!produced.ok) return { kind: "halt", halt: produced.halt };
+		validation = await hooks.validate(produced.value);
+		if (!validation.ok) return { kind: "halt", halt: validation.halt };
+	}
+	return { kind: "ok", value: produced.value };
+}
+
 // ---------------------------------------------------------------------------
 // Validation
 // ---------------------------------------------------------------------------

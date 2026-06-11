@@ -21,8 +21,8 @@ import { createMockPi, createMockSessionChain, mockAssistantMessage } from "@jui
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { StageDef, StageSchema } from "./api.js";
+import { currentPrimaryArtifact } from "./chain-state.js";
 import { fs as fsHandle } from "./handle.js";
-import { currentPrimaryArtifact } from "./internal-utils.js";
 import { LifecycleDispatcher } from "./lifecycle.js";
 import {
 	ERR_VALIDATION_FAILED,

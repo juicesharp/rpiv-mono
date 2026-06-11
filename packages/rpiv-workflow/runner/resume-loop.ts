@@ -19,14 +19,12 @@
 
 import type { LoopDef } from "../api.js";
 import { auditCtxFor, recordTerminalFailure } from "../audit.js";
+import { resolveSkill } from "../chain-state.js";
 import { effectiveLoopOf } from "../control-flow.js";
-import { resolveSkill } from "../internal-utils.js";
-import { skillStageRef } from "../lifecycle.js";
-import { type LoopDeps, type LoopEntry, runLoop } from "../loop.js";
+import { announceLoopStart, type LoopDeps, type LoopEntry, runLoop } from "../loop.js";
 import { ERR_MISSING_ARTIFACT, MSG_MISSING_ARTIFACT, MSG_RESUME_LOOP_MISMATCH } from "../messages.js";
 import type { RunContext, WorkflowHostContext } from "../types.js";
 import type { LoopResumePoint } from "./resume.js";
-import { lifecycleCtxFor } from "./runner.js";
 
 export async function resumeLoopStage(
 	ctx: WorkflowHostContext,
@@ -69,17 +67,7 @@ export async function resumeLoopStage(
 		units: point.units, // fanout: the fold's recomputed-and-verified list — no second compute
 	};
 
-	if (await hasPendingUnit(loop, point, run)) {
-		const ref = skillStageRef(point.parent, idx + 1, skill);
-		await run.lifecycle.fire(ctx, "onStageStart", ref, lifecycleCtxFor(run));
-		await run.lifecycle.fire(
-			ctx,
-			"onLoopStart",
-			ref,
-			{ kind: def.verify ? ("verify" as const) : loop.kind, ...(point.units ? { units: point.units } : {}) },
-			lifecycleCtxFor(run),
-		);
-	}
+	if (await hasPendingUnit(loop, point, run)) await announceLoopStart(ctx, run, entry);
 
 	await runLoop(ctx, entry, point.cursor, run, deps);
 }

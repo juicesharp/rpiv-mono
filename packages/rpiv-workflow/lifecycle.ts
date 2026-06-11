@@ -30,8 +30,8 @@ import type { CapPolicy, Unit, UnitRole } from "./api.js";
 import { formatError, globalSlot } from "./internal-utils.js";
 import { MSG_LIFECYCLE_THREW } from "./messages.js";
 import type { Output, RunView } from "./output.js";
-import type { RunWorkflowResult } from "./runner/runner.js";
 import type { RunTrigger } from "./triggers.js";
+import type { RunWorkflowResult } from "./types.js";
 
 /**
  * Run-scoped context shared by every lifecycle callback. Mirrors the
@@ -297,6 +297,54 @@ export function buildLifecycleContext(args: {
 	state: RunView;
 }): LifecycleContext {
 	return args;
+}
+
+/**
+ * Build a `LifecycleContext` from the current `RunContext` (typed
+ * structurally so this base-layer module never imports the runtime types).
+ * Captured per fire so listeners always see the latest `state` snapshot.
+ * THE one RunContext → LifecycleContext projection — the runner, the loop
+ * driver, and the resume entries all share it (the old per-module clones
+ * were kept aligned only by convention).
+ */
+export function lifecycleCtxFor(run: {
+	cwd: string;
+	runId: string;
+	workflow: { name: string };
+	totalStages: number;
+	trigger: RunTrigger;
+	state: RunView;
+}): LifecycleContext {
+	return buildLifecycleContext({
+		cwd: run.cwd,
+		runId: run.runId,
+		workflow: run.workflow.name,
+		totalStages: run.totalStages,
+		trigger: run.trigger,
+		state: run.state,
+	});
+}
+
+/**
+ * Build a `LifecycleContext` from any SessionContext/AuditCtx-shaped object
+ * (cwd + runId + the frozen `runIdentity` + live state). The session, audit,
+ * and extraction layers all fire through this projection instead of
+ * re-spelling the six-field literal.
+ */
+export function lifecycleCtxFromSession(s: {
+	cwd: string;
+	runId: string;
+	runIdentity: { workflow: string; totalStages: number; trigger: RunTrigger };
+	state: RunView;
+}): LifecycleContext {
+	return buildLifecycleContext({
+		cwd: s.cwd,
+		runId: s.runId,
+		workflow: s.runIdentity.workflow,
+		totalStages: s.runIdentity.totalStages,
+		trigger: s.runIdentity.trigger,
+		state: s.state,
+	});
 }
 
 /** Build the `"skill"` arm of `StageRef`. */

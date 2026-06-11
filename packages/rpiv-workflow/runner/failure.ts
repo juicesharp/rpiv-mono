@@ -1,0 +1,115 @@
+/**
+ * Terminal-outcome translation for the chain walk — a LEAF imported downward
+ * by runner.ts, chain-advance.ts, and stage-lifecycle.ts. Owns the ONE
+ * "entry threw" → failure-row translation and the run-completion finalizer,
+ * plus the `ChainOutcome` vocabulary the whole walk returns.
+ */
+
+import {
+	abortedArgs,
+	auditCtxFor,
+	failedArgs,
+	notifyPartialArtifacts,
+	recordTerminalFailure,
+	terminate,
+} from "../audit.js";
+import { formatError } from "../internal-utils.js";
+import {
+	ERR_WORKFLOW_ABORTED,
+	MSG_STAGE_THREW,
+	MSG_WORKFLOW_ABORTED,
+	MSG_WORKFLOW_COMPLETE,
+	STATUS_KEY,
+} from "../messages.js";
+import type { RunContext, WorkflowHostContext } from "../types.js";
+import { StagePreflightError } from "./errors.js";
+
+/**
+ * Explicit result of one chain-walk step, threaded up through
+ * `advanceChain` / `runStage` / `runStageOrRecordFailure`. The walk's halt
+ * protocol used to be record-then-quietly-unwind by convention — every halt
+ * site had to remember a bare `return` after `recordTerminalFailure`. With a
+ * non-void return type, a branch that records a failure but forgets to stop
+ * the walk no longer typechecks: every arm must RETURN an outcome, and halts
+ * read `return haltChain(...)`.
+ *
+ *  - `"halted"`     — a terminal failure/abort row was recorded; the walk
+ *                     stops here and unwinds.
+ *  - `"completed"`  — the chain reached `stop`; `finalizeWorkflow` ran.
+ *  - `"dispatched"` — the walk handed off to a session/loop continuation
+ *                     (Pi owns the live session; the eventual outcome
+ *                     resolves inside the continuation's own walk frames).
+ */
+export type ChainOutcome = "halted" | "completed" | "dispatched";
+
+/**
+ * The composed chain-advance continuation (stage-lifecycle.ts wires it) —
+ * injected into stage runners that advance the chain themselves (the script
+ * path) so they never import the composition site back.
+ */
+export type AdvanceFn = (
+	curCtx: WorkflowHostContext,
+	completedName: string,
+	completedIdx: number,
+	run: RunContext,
+) => Promise<ChainOutcome>;
+
+/**
+ * Record a terminal failure and yield the `"halted"` outcome — the standard
+ * halt idiom for walk arms: `return haltChain(...)`.
+ */
+export async function haltChain(
+	curCtx: WorkflowHostContext,
+	run: RunContext,
+	stageName: string,
+	skill: string,
+	args: Parameters<typeof recordTerminalFailure>[2],
+	onFailure?: (ctx: WorkflowHostContext) => void,
+): Promise<ChainOutcome> {
+	await recordTerminalFailure(curCtx, auditCtxFor(run, stageName, skill), args, onFailure);
+	return "halted";
+}
+
+/**
+ * The ONE "entry threw" → terminal-failure-row translation (live + resume
+ * entries). Two flavours of throw land here:
+ *
+ * - `StagePreflightError` — a known preflight failure carrying its own
+ *   attribution + messages. Recorded with the carried payload exactly.
+ * - Any other `Error` — unexpected machinery failure; recorded with the
+ *   generic `MSG_STAGE_THREW` shape attributed to the stage id.
+ */
+export async function recordEntryThrow(
+	curCtx: WorkflowHostContext,
+	name: string,
+	run: RunContext,
+	e: unknown,
+): Promise<ChainOutcome> {
+	if (e instanceof StagePreflightError) {
+		return haltChain(
+			curCtx,
+			run,
+			name,
+			e.skill,
+			failedArgs(e.notifyMsg, e.errMsg),
+			e.notifyPartial ? (ctx) => notifyPartialArtifacts(ctx, run.cwd, run.runId) : undefined,
+		);
+	}
+	const reason = formatError(e);
+	return haltChain(curCtx, run, name, name, failedArgs(MSG_STAGE_THREW(name, reason), reason));
+}
+
+/**
+ * Record the `"aborted"` terminal row for a cooperative-cancellation stop at
+ * the between-stage seam (`run.signal` aborted before `name` ran).
+ */
+export function recordAbortedAtSeam(curCtx: WorkflowHostContext, name: string, run: RunContext): Promise<ChainOutcome> {
+	return haltChain(curCtx, run, name, name, abortedArgs(MSG_WORKFLOW_ABORTED, ERR_WORKFLOW_ABORTED(name)));
+}
+
+export function finalizeWorkflow(curCtx: WorkflowHostContext, run: RunContext): ChainOutcome {
+	curCtx.ui.setStatus(STATUS_KEY, undefined);
+	curCtx.ui.notify(MSG_WORKFLOW_COMPLETE(run.state.stagesCompleted), "info");
+	terminate(run.state, { status: "completed" });
+	return "completed";
+}

@@ -22,6 +22,7 @@
 
 import {
 	type EdgeTarget,
+	LOOP_KINDS,
 	marksReadsData,
 	ON_INVALID_VALUES,
 	SESSION_POLICIES,
@@ -30,8 +31,8 @@ import {
 	type StageDef,
 	type Workflow,
 } from "./api.js";
-import { loopSpecOf, verifyShapeIssues } from "./control-flow.js";
-import { isDispatchingStage, resolvePublishName, resolveSkill } from "./internal-utils.js";
+import { isDispatchingStage, resolvePublishName, resolveSkill } from "./chain-state.js";
+import { judgeOf, loopSpecOf, verifyShapeIssues } from "./control-flow.js";
 import { extractJsonSchema } from "./json-schema.js";
 import { judgeShapeIssues } from "./judge.js";
 import type { ConfigLayer } from "./layers.js";
@@ -210,8 +211,6 @@ function checkStageSemantics(w: Workflow, issues: WorkflowValidationIssue[]): vo
 		checkScriptStageInvariants(w, name, stage, issues);
 	}
 }
-
-const LOOP_KINDS = ["fanout", "iterate", "assess"] as const;
 
 /**
  * One rule block for the single `loop` field. Constructors already threw on
@@ -628,7 +627,7 @@ function publishedNamesOf(w: Workflow): Set<string> {
 	const published = new Set<string>();
 	for (const [name, stage] of Object.entries(w.stages)) {
 		if (stage.kind === "produces") published.add(resolvePublishName(stage, name));
-		const judge = stage.loop?.kind === "assess" ? stage.loop.judge : stage.verify?.judge;
+		const judge = judgeOf(stage);
 		if (judge?.outcome?.name) published.add(judge.outcome.name);
 	}
 	return published;
@@ -824,7 +823,7 @@ function checkReadsChannelCompat(
 			if (produces) indexPublisher(resolvePublishName(stage, name), name, produces);
 		}
 		// A skill judge is a publisher of its verdict channel; unsigned judges degrade.
-		const judge = stage.loop?.kind === "assess" ? stage.loop.judge : stage.verify?.judge;
+		const judge = judgeOf(stage);
 		if (judge?.skill && judge.outcome?.name) {
 			const produces = skillContracts.get(judge.skill)?.produces;
 			if (produces) indexPublisher(judge.outcome.name, name, produces);

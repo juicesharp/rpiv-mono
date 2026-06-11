@@ -16,11 +16,11 @@
  */
 
 import type { StageDef, StageSchema } from "../api.js";
-import { allocateStageNumber, currentStageRef, nowIso } from "../audit.js";
+import { allocateStageNumber, currentStageRef } from "../audit.js";
 import type { Artifact } from "../handle.js";
-import { assertNever, formatError, withTimeout } from "../internal-utils.js";
+import { assertNever, formatError, nowIso, withTimeout } from "../internal-utils.js";
 import { isJsonSchemaObject, jsonSchemaToStandard } from "../json-schema.js";
-import { buildLifecycleContext } from "../lifecycle.js";
+import { lifecycleCtxFromSession } from "../lifecycle.js";
 import {
 	ERR_COLLECTOR_THREW,
 	ERR_PARSER_THREW,
@@ -264,20 +264,7 @@ async function retryUntilValid(
 		// Ref shares the activation's ALLOCATOR number (currentStageRef) so
 		// listeners can correlate this retry with the end/error event it
 		// belongs to — graph position (`stageIndex + 1`) diverges past any loop.
-		await s.lifecycle.fire(
-			ctx,
-			"onStageRetry",
-			currentStageRef(s),
-			attempts,
-			buildLifecycleContext({
-				cwd: s.cwd,
-				runId: s.runId,
-				workflow: s.runIdentity.workflow,
-				totalStages: s.runIdentity.totalStages,
-				trigger: s.runIdentity.trigger,
-				state: s.state,
-			}),
-		);
+		await s.lifecycle.fire(ctx, "onStageRetry", currentStageRef(s), attempts, lifecycleCtxFromSession(s));
 		try {
 			await askAgentToFix(ctx, s, attempts, result.failures, timeoutMs);
 		} catch (e) {

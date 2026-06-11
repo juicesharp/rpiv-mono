@@ -25,7 +25,7 @@
 import type { StageDef, Workflow } from "./api.js";
 import type { Artifact } from "./handle.js";
 import type { WorkflowHost, WorkflowHostContext } from "./host.js";
-import type { LifecycleDispatcher } from "./lifecycle.js";
+import type { LifecycleDispatcher, LifecycleListeners } from "./lifecycle.js";
 import type { Output } from "./output.js";
 import type { SkillContractMap } from "./skill-contract.js";
 import type { RunTrigger } from "./triggers.js";
@@ -126,6 +126,109 @@ export type RunTermination =
 	| { status: "failed"; error: string }
 	| { status: "aborted"; error: string }
 	| { status: "cancelled"; error: string };
+
+// ---------------------------------------------------------------------------
+// Public run envelope — options in, result out
+// ---------------------------------------------------------------------------
+// Lives here (the runtime-types leaf), NOT in runner/runner.ts: the result
+// envelope is public surface consumed by lifecycle.ts (`onWorkflowEnd`) and
+// every embedder — a base-layer module must not import the deepest engine
+// module to name it.
+
+export interface RunWorkflowOptions {
+	/** Workflow to execute — caller resolves by name from `LoadedWorkflows`. */
+	workflow: Workflow;
+	/** Passed to the start stage as its argument. */
+	input: string;
+	/** Required for "continue"-policy stages (host.sendUserMessage). */
+	host?: WorkflowHost;
+	/** Defaults to MAX_BACKWARD_JUMPS. */
+	maxBackwardJumps?: number;
+	/** Run-wide safety cap on iterate-stage units. Defaults to MAX_ITERATIONS. */
+	maxIterations?: number;
+	/**
+	 * What triggered this run. `/wf` sets `{ kind: "command", name: "wf" }`;
+	 * programmatic embedders default to `DEFAULT_TRIGGER`. Recorded in the
+	 * JSONL header and surfaced on every lifecycle callback via
+	 * `LifecycleContext.trigger`.
+	 */
+	trigger?: RunTrigger;
+	/**
+	 * Per-call lifecycle listener bundle. Fires AFTER every globally
+	 * registered bundle (see `registerLifecycle`). Listener throws are
+	 * caught + logged via `ctx.ui.notify(..., "warning")`; never halt the
+	 * run.
+	 */
+	lifecycle?: LifecycleListeners;
+	/**
+	 * Cooperative cancellation. When the signal is aborted, the runner stops at
+	 * the next between-stage seam — it records an `"aborted"` terminal row for
+	 * the stage about to run and returns `{ success: false }` with an aborted
+	 * error. It does NOT interrupt a stage already streaming (Pi owns the live
+	 * session), so cancellation takes effect at the next stage boundary, not
+	 * mid-stage.
+	 */
+	signal?: AbortSignal;
+	/**
+	 * Human-readable alias for this run. Stored in the JSONL header and the
+	 * sidecar names.json index. Rejected if already in use — the error
+	 * identifies the conflicting runId.
+	 */
+	name?: string;
+}
+
+export interface RunWorkflowResult {
+	/**
+	 * The run's identity on disk — the `<run-id>` portion of
+	 * `<cwd>/.rpiv/workflows/runs/<run-id>.jsonl`. Live consumers can hand
+	 * this to `readLastStage` / `listArtifacts` / future inspect-past-run
+	 * helpers without recomputing the slug.
+	 *
+	 * Undefined ONLY for pre-flight rejections (start stage not declared,
+	 * continue-policy stages without pi) where no JSONL file was created.
+	 */
+	runId?: string;
+	stagesCompleted: number;
+	success: boolean;
+	/**
+	 * Primary artifact at run termination, serialised to its handle's
+	 * canonical string form (fs → path, url → href, opaque → id). Undefined
+	 * if no produces stage produced one. Callers that need the full
+	 * structured handle read `output.artifacts[0]` off the run's last
+	 * recorded stage (via `readLastStage`).
+	 */
+	lastArtifact?: string;
+	error?: string;
+	/**
+	 * Discriminated termination outcome — the full-fidelity form behind the
+	 * `success`/`error` projections above (which can't represent "cancelled"
+	 * vs "aborted" vs "failed"). `{ status: "running" }` means the runner
+	 * unwound without reaching any terminal write — callers treat it as
+	 * failure, same as the `success: false` projection does.
+	 *
+	 * Undefined ONLY for pre-flight rejections (no run was constructed) —
+	 * same rule as `runId`.
+	 */
+	termination?: RunTermination;
+	/**
+	 * Routing decisions made in memory but whose JSONL audit row failed to
+	 * persist. Empty in the common case. Surfaced so consumers reading the
+	 * run's JSONL can disambiguate a missing routing row ("deterministic
+	 * edge — never written") from a dropped one ("decision was made, write
+	 * failed"). The run still succeeds — routing rows are telemetry, not
+	 * reconstruction inputs.
+	 */
+	droppedRoutingRows?: Array<{ fromStageIndex: number; fromStage: string; decision: string }>;
+	/**
+	 * Stages whose terminal failure/aborted row failed to persist. Empty in
+	 * the common case. Unlike routing rows, failure rows ARE reconstruction
+	 * inputs: a trail missing its failure row reads as if the run stopped
+	 * after its last successful stage, so a later resume would route onward
+	 * past the stage that actually failed. Consumers holding this list should
+	 * not resume the run from disk.
+	 */
+	droppedFailureRows?: string[];
+}
 
 /** Per-run context the chain carries from stage to stage. */
 export interface RunContext {
@@ -320,6 +423,10 @@ export interface StageSession extends SessionContext {
 	 * `artifacts[0]`) — loop continuations thread it into `accumulated` /
 	 * `feedForward` directly, removing the `run.state.output!` back-read
 	 * pattern the old drivers carried.
+	 *
+	 * Return type is `Promise<unknown>` (not `void`) so the chain walk's
+	 * `ChainOutcome`-returning continuations plug in directly; the session
+	 * layer only awaits settlement.
 	 */
-	onSuccess: (ctx: WorkflowHostContext, output: Output) => Promise<void>;
+	onSuccess: (ctx: WorkflowHostContext, output: Output) => Promise<unknown>;
 }

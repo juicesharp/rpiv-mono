@@ -291,6 +291,16 @@ export interface AssessLoop extends LoopCommon, JudgedRepetition {
  */
 export type LoopDef = FanoutLoop | IterateLoop | AssessLoop;
 
+/**
+ * Runtime enumeration of `LoopDef["kind"]` — exported from where `LoopDef`
+ * lives so the validator (kind whitelist) and the per-kind strategy table
+ * (loop-kinds.ts) consume one list. The `satisfies` pin rejects a stray
+ * member; completeness is enforced by the strategy table's
+ * `Record<LoopDef["kind"], …>` shape (a new union arm fails compilation
+ * there first).
+ */
+export const LOOP_KINDS = ["fanout", "iterate", "assess"] as const satisfies readonly LoopDef["kind"][];
+
 // ===========================================================================
 // Script-stage primitives — skillless TS functions in place of `/skill:<x>`
 // ===========================================================================

@@ -294,6 +294,16 @@ export function effectiveLoopOf(def: StageDef): LoopDef | undefined {
 	return def.verify ? synthesizeVerifyLoop(def.verify) : undefined;
 }
 
+/**
+ * THE judge-of-stage derivation — an assess loop's judge or the verify
+ * post-condition's, whichever the stage carries (they're mutually exclusive
+ * by load validation). Twin of `effectiveLoopOf` for the judge facet, so the
+ * validator's judge-dependent rules key off one expression.
+ */
+export function judgeOf(stage: StageDef): Judge | undefined {
+	return stage.loop?.kind === "assess" ? stage.loop.judge : stage.verify?.judge;
+}
+
 /** `max < 1` would cap at unit 0 and silently produce nothing — reject at construction. */
 function checkedMax(ctor: string, max: number | undefined): number | undefined {
 	if (max === undefined) return undefined;

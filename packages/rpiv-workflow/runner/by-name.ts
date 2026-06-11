@@ -21,7 +21,8 @@
 
 import type { WorkflowHostContext } from "../host.js";
 import { findWorkflow, loadWorkflows } from "../load/index.js";
-import { type RunWorkflowOptions, type RunWorkflowResult, runWorkflow } from "./runner.js";
+import type { RunWorkflowOptions, RunWorkflowResult } from "../types.js";
+import { runWorkflow } from "./runner.js";
 
 /**
  * Options for `runWorkflowByName` — the full `RunWorkflowOptions` surface

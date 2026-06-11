@@ -19,16 +19,13 @@
 import {
 	type AuditCtx,
 	currentStageRef,
-	nowIso,
 	recordCancellation,
-	recordStage,
 	recordStopFailure,
 	recordTerminalFailure,
 	terminate,
-	unitRowFields,
 } from "../audit.js";
-import { applyCompletedStage } from "../internal-utils.js";
-import { buildLifecycleContext, skillStageRef, type UnitEvent } from "../lifecycle.js";
+import { persistStageSuccess } from "../audit-rows.js";
+import { lifecycleCtxFromSession, skillStageRef, type UnitEvent } from "../lifecycle.js";
 import {
 	ERR_AUDIT_WRITE_FAILED,
 	ERR_VALIDATION_FAILED,
@@ -40,7 +37,7 @@ import {
 } from "../messages.js";
 import type { Output } from "../output.js";
 import { type BranchEntry, classifyStop, readBranch, type StopSignal } from "../transcript.js";
-import type { SessionContext, StageSession, WorkflowHostContext } from "../types.js";
+import type { StageSession, WorkflowHostContext } from "../types.js";
 import { produceAndValidateOutput } from "./extraction.js";
 import { handlerFor } from "./spawn.js";
 
@@ -116,45 +113,15 @@ async function haltStageWithValidationFailure(
 // ===========================================================================
 
 /**
- * Write + counter-increment guard for `recordStageSuccess`. Returns `true`
- * iff the JSONL row landed.
- * Output assignment lives here so callers get the same "output is
- * set iff the row that carried it landed" invariant. Unit rows carry the
- * structured identity fields alongside the decorated display `stage`; a
- * single stage (or a fanout unit, whose row label is built upstream) has no
- * `unit`, so `unitRowFields` adds nothing and the row stays byte-identical.
- */
-function tryRecordStage(
-	s: SessionContext & Pick<StageSession, "unit">,
-	row: { stage: string; skill?: string; output?: Output },
-): boolean {
-	const assigned = recordStage(
-		s.cwd,
-		s.runId,
-		{
-			stage: row.stage,
-			skill: row.skill,
-			status: "completed",
-			ts: nowIso(),
-			output: row.output,
-			...unitRowFields(s.unit),
-		},
-		s.state,
-		// The activation's number was allocated before its output was built —
-		// the row reuses it, so `output.meta.stageNumber` and the row agree.
-		s.allocatedStageNumber,
-	);
-	if (assigned === undefined) return false;
-	if (row.output) s.state.output = row.output;
-	s.state.stagesCompleted++;
-	return true;
-}
-
-/**
  * Returns true on successful write — caller gates `onSuccess` on this so the
  * chain advances only when the audit row landed. On failure, leaves
- * `state.output` / `state.primaryArtifact` at their prior values and sets
- * `state.termination.error` to halt the run.
+ * `state.output` / `state.primaryArtifact` at their prior values ("output is
+ * set iff the row that carried it landed") and sets `state.termination.error`
+ * to halt the run. Persistence + state apply run through
+ * `persistStageSuccess` (audit-rows.ts) — the ONE success pipeline shared
+ * with the script path: the row reuses the activation's pre-allocated number
+ * so `output.meta.stageNumber` and the row agree, and unit rows carry the
+ * structured identity fields alongside the decorated display `stage`.
  *
  * Single stages keep the `onStageEnd` + `MSG_STAGE_COMPLETE` contract
  * verbatim. Loop units fire `onUnitEnd` (NEVER `onStageEnd` — that's reserved
@@ -163,8 +130,20 @@ function tryRecordStage(
  * display decoration.
  */
 async function recordStageSuccess(ctx: WorkflowHostContext, s: StageSession, output: Output): Promise<boolean> {
-	if (tryRecordStage(s, { stage: s.stageName, skill: s.skill, output })) {
-		applyCompletedStage(s.state, s.stage, s.stageName, output);
+	const persisted = persistStageSuccess(
+		s.state,
+		{
+			cwd: s.cwd,
+			runId: s.runId,
+			stage: s.stageName,
+			skill: s.skill,
+			output,
+			unit: s.unit,
+			preAllocated: s.allocatedStageNumber,
+		},
+		s.stage,
+	);
+	if (persisted) {
 		if (s.unit) {
 			ctx.ui.notify(MSG_UNIT_COMPLETE(s.skill, s.unit.label), "info");
 			await s.lifecycle.fire(
@@ -192,18 +171,6 @@ async function recordStageSuccess(ctx: WorkflowHostContext, s: StageSession, out
 function unitEventOf(s: StageSession): UnitEvent {
 	const u = s.unit!;
 	return { role: u.role, index: u.index, unitId: u.id, label: u.label, skill: s.skill };
-}
-
-/** Build a `LifecycleContext` from any SessionContext-shaped object. */
-function lifecycleCtxFromSession(s: SessionContext) {
-	return buildLifecycleContext({
-		cwd: s.cwd,
-		runId: s.runId,
-		workflow: s.runIdentity.workflow,
-		totalStages: s.runIdentity.totalStages,
-		trigger: s.runIdentity.trigger,
-		state: s.state,
-	});
 }
 
 // ===========================================================================

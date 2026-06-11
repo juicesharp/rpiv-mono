@@ -1,17 +1,21 @@
 /**
  * Routing layer after a stage completes successfully: pick the next stage,
  * audit predicate-mediated decisions, enforce the backward-jump guard,
- * then recurse via `runStageOrRecordFailure`.
+ * then recurse via the injected `deps.runNext`.
  *
  * `nextStage` returns a tagged union; `advanceChain` switches on `kind`
- * instead of catching. `runStageOrRecordFailure` owns the catch for
- * downstream-stage throws.
+ * instead of catching. The injected runner owns the catch for
+ * downstream-stage throws — the `ChainDeps` injection (the `LoopDeps`
+ * pattern) keeps this module's imports strictly downward: the chain walk's
+ * runStage ↔ advanceChain recursion is composed in stage-lifecycle.ts, not
+ * spelled as a module cycle.
  */
 
 import { takeRouteNote } from "../api.js";
-import { auditCtxFor, nowIso, recordTerminalFailure } from "../audit.js";
-import { resolveSkill } from "../internal-utils.js";
-import { skillStageRef } from "../lifecycle.js";
+import { auditCtxFor, failedArgs, recordTerminalFailure } from "../audit.js";
+import { resolveSkill } from "../chain-state.js";
+import { nowIso } from "../internal-utils.js";
+import { lifecycleCtxFor, skillStageRef } from "../lifecycle.js";
 import {
 	ERR_BACKWARD_JUMP_EXHAUSTED,
 	MSG_BACKWARD_JUMP_EXHAUSTED,
@@ -21,7 +25,17 @@ import {
 import { edgeIsDecision, nextStage } from "../routing.js";
 import { appendRoutingDecision } from "../state/index.js";
 import type { RunContext, WorkflowHostContext } from "../types.js";
-import { finalizeWorkflow, lifecycleCtxFor, runStageOrRecordFailure } from "./runner.js";
+import { type ChainOutcome, finalizeWorkflow } from "./failure.js";
+
+/**
+ * The walk continuation injected by the composition site
+ * (stage-lifecycle.ts): run the routed next stage through the single catch
+ * site. Injected so this module never imports the per-stage pipeline back —
+ * the mutual recursion of the chain walk lives in ONE composing module.
+ */
+export interface ChainDeps {
+	runNext: (curCtx: WorkflowHostContext, name: string, idx: number, run: RunContext) => Promise<ChainOutcome>;
+}
 
 /**
  * Decomposed into three helpers — `auditRoutingDecision`,
@@ -33,7 +47,8 @@ export async function advanceChain(
 	currentName: string,
 	idx: number,
 	run: RunContext,
-): Promise<void> {
+	deps: ChainDeps,
+): Promise<ChainOutcome> {
 	// Mark the just-completed stage as visited BEFORE consulting the next edge.
 	// A thrown EdgeFn would otherwise leave currentName un-marked, opening a
 	// (narrow) window where a recovery path could under-count revisits.
@@ -43,22 +58,21 @@ export async function advanceChain(
 	const result = nextStage(run.workflow, currentName, { output: run.state.output, state: run.state });
 
 	if (result.kind === "err") {
-		await haltOnRoutingError(curCtx, run, currentName, result.reason);
-		return;
+		return haltOnRoutingError(curCtx, run, currentName, result.reason);
 	}
 
 	const fromRef = skillStageRef(currentName, idx + 1, resolveSkill(run.workflow.stages[currentName]!, currentName));
 
 	if (result.kind === "stop") {
 		await run.lifecycle.fire(curCtx, "onRoute", fromRef, "stop", lifecycleCtxFor(run));
-		finalizeWorkflow(curCtx, run);
-		return;
+		return finalizeWorkflow(curCtx, run);
 	}
 
 	const nextName = result.stage;
 	if (wasDecision) {
 		auditRoutingDecision(curCtx, run, idx, currentName, nextName);
-		if (!(await checkBackwardJumpGuard(curCtx, run, nextName))) return;
+		const guard = await checkBackwardJumpGuard(curCtx, run, nextName);
+		if (guard !== "continue") return guard;
 	}
 
 	// Fire onRoute after the routing decision has been audited (when applicable),
@@ -66,11 +80,11 @@ export async function advanceChain(
 	// listeners see every transition.
 	await run.lifecycle.fire(curCtx, "onRoute", fromRef, nextName, lifecycleCtxFor(run));
 
-	// runStageOrRecordFailure owns the catch for throws out of the *next* stage,
-	// so the JSONL row records `nextName` (the stage that actually threw)
-	// rather than `currentName` (which would mis-attribute the failure to
-	// the prior stage that already completed successfully).
-	await runStageOrRecordFailure(curCtx, nextName, idx + 1, run);
+	// deps.runNext owns the catch for throws out of the *next* stage, so the
+	// JSONL row records `nextName` (the stage that actually threw) rather than
+	// `currentName` (which would mis-attribute the failure to the prior stage
+	// that already completed successfully).
+	return deps.runNext(curCtx, nextName, idx + 1, run);
 }
 
 /**
@@ -112,9 +126,9 @@ function auditRoutingDecision(
 }
 
 /**
- * Per-loop cap on decision-edge retries. Returns `true` when the run may
- * continue, `false` when the cap tripped (and the terminal failure has
- * been recorded).
+ * Per-loop cap on decision-edge retries. Returns `"continue"` when the run
+ * may proceed, or the `"halted"` outcome when the cap tripped (and the
+ * terminal failure has been recorded).
  *
  * A "backward jump" is a *decision-edge* resolving to an already-visited
  * stage — i.e. a deliberate retry choice. Deterministic forward edges that
@@ -136,21 +150,23 @@ async function checkBackwardJumpGuard(
 	curCtx: WorkflowHostContext,
 	run: RunContext,
 	nextName: string,
-): Promise<boolean> {
+): Promise<"continue" | ChainOutcome> {
 	const { state } = run;
 	if (!run.visited.has(nextName)) {
 		state.telemetry.backwardJumps = 0;
-		return true;
+		return "continue";
 	}
 	state.telemetry.backwardJumps++;
-	if (state.telemetry.backwardJumps <= run.maxBackwardJumps) return true;
-	await recordTerminalFailure(curCtx, auditCtxFor(run, nextName, nextName), {
-		status: "failed",
-		notifyMsg: MSG_BACKWARD_JUMP_EXHAUSTED(state.telemetry.backwardJumps, run.maxBackwardJumps),
-		notifyLevel: "error",
-		errMsg: ERR_BACKWARD_JUMP_EXHAUSTED(state.telemetry.backwardJumps, run.maxBackwardJumps),
-	});
-	return false;
+	if (state.telemetry.backwardJumps <= run.maxBackwardJumps) return "continue";
+	await recordTerminalFailure(
+		curCtx,
+		auditCtxFor(run, nextName, nextName),
+		failedArgs(
+			MSG_BACKWARD_JUMP_EXHAUSTED(state.telemetry.backwardJumps, run.maxBackwardJumps),
+			ERR_BACKWARD_JUMP_EXHAUSTED(state.telemetry.backwardJumps, run.maxBackwardJumps),
+		),
+	);
+	return "halted";
 }
 
 /**
@@ -163,11 +179,11 @@ async function haltOnRoutingError(
 	run: RunContext,
 	currentName: string,
 	reason: string,
-): Promise<void> {
-	await recordTerminalFailure(curCtx, auditCtxFor(run, currentName, currentName), {
-		status: "failed",
-		notifyMsg: MSG_CHAIN_ADVANCE_FAILED(currentName, reason),
-		notifyLevel: "error",
-		errMsg: reason,
-	});
+): Promise<ChainOutcome> {
+	await recordTerminalFailure(
+		curCtx,
+		auditCtxFor(run, currentName, currentName),
+		failedArgs(MSG_CHAIN_ADVANCE_FAILED(currentName, reason), reason),
+	);
+	return "halted";
 }

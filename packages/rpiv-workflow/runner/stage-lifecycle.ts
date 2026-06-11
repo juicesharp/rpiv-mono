@@ -1,39 +1,36 @@
 /**
- * Per-stage lifecycle: resolve the stage def, run the preflight pipeline,
- * prepare the prompt + status + branchOffset, capture the outcome's
- * snapshot, and hand off to `runStageSession`.
+ * Per-stage execution pipeline + the chain walk's COMPOSITION SITE.
  *
- * Owns the typed-throw preflight machinery (`StagePreflightError`,
- * `PreflightCheck`, `PRE_PROMPT_CHECKS`, `POST_PROMPT_CHECKS`) and the
- * six bundled preflight checks. `runStageOrRecordFailure` (runner.ts)
- * catches `StagePreflightError` and records the JSONL row.
+ * `runStage` resolves the stage once (`resolveStage` — mode + dispatch
+ * derived in one place) and switches on `mode`:
+ *   - `"loop"`   — the unit-loop driver (loop.ts), one session per unit;
+ *   - `"script"` — `def.run` called directly (script-stage.ts);
+ *   - `"prompt"`/`"skill"` — preflights → prompt prep → input validation →
+ *     snapshot → one Pi session.
+ *
+ * The chain walk is mutually recursive (runStage → session continuation →
+ * advanceChain → next runStage); the recursion is composed HERE via
+ * injection — `advanceChain` receives `ChainDeps.runNext`, the loop driver
+ * receives `LoopDeps`, the script stage receives `advance` — so every other
+ * engine module's imports point strictly downward (zero value-import
+ * cycles; the LoopDeps precedent applied to the whole walk).
+ *
+ * `runStageOrRecordFailure` is the walk's single catch site: a throw from
+ * anywhere in the pipeline (preflights, user fns, machinery) lands a uniform
+ * JSONL failure row via failure.ts.
  */
 
-import type { StageDef } from "../api.js";
-import { auditCtxFor, notifyPartialArtifacts, recordTerminalFailure, runIdentityOf } from "../audit.js";
-import { effectiveLoopOf } from "../control-flow.js";
-import {
-	currentPrimaryArtifact,
-	formatError,
-	resolveSkill,
-	resolveStagePrompt,
-	stageEntryArgs,
-} from "../internal-utils.js";
-import type { Judge } from "../judge.js";
-import { skillStageRef } from "../lifecycle.js";
-import { freshCursor, type LoopDeps, type LoopEntry, runLoop } from "../loop.js";
+import type { StageDef, Unit } from "../api.js";
+import { failedArgs, notifyPartialArtifacts, runIdentityOf } from "../audit.js";
+import { currentPrimaryArtifact, resolveStagePrompt, stageEntryArgs } from "../chain-state.js";
+import { formatError } from "../internal-utils.js";
+import { lifecycleCtxFor, skillStageRef } from "../lifecycle.js";
+import { announceLoopStart, freshCursor, type LoopDeps, type LoopEntry, runLoop } from "../loop.js";
 import {
 	ERR_LOOP_CAP_HALT,
-	ERR_MISSING_ARTIFACT,
-	ERR_MISSING_NAMED_READ,
-	ERR_SKILL_NOT_REGISTERED,
 	ERR_VERIFY_FAILED,
 	MSG_LOOP_CAP_HALT,
-	MSG_MISSING_ARTIFACT,
-	MSG_MISSING_NAMED_READ,
-	MSG_SKILL_NOT_REGISTERED,
 	MSG_SNAPSHOT_FAILED,
-	MSG_STAGE_THREW,
 	MSG_VERIFY_FAILED,
 	STATUS_KEY,
 	STATUS_STAGE,
@@ -41,59 +38,70 @@ import {
 import { runStageSession } from "../sessions/index.js";
 import { readBranch } from "../transcript.js";
 import type { RunContext, WorkflowHostContext } from "../types.js";
-import { advanceChain } from "./chain-advance.js";
+import { advanceChain, type ChainDeps } from "./chain-advance.js";
+import { type ChainOutcome, haltChain, recordAbortedAtSeam, recordEntryThrow } from "./failure.js";
 import { ensureContractInputValid, ensureInputValid } from "./input-validation.js";
-import { lifecycleCtxFor } from "./runner.js";
+import { ensureLoopNotContinue, runLoopPreflights, runSingleStagePreflights } from "./preflight.js";
+import { type ResolvedStage, resolveStage } from "./resolve-stage.js";
 import { runScript } from "./script-stage.js";
 
-export interface ResolvedStage {
-	def: StageDef;
-	name: string;
-	/** 1-based; for status line + audit row. */
-	stageNumber: number;
-	/** Label written to JSONL + the status line. */
-	skill: string;
+// Re-exported for the package barrel + existing consumers; the class itself
+// lives in the leaf errors.ts so preflight/input-validation can throw it
+// without importing this module back.
+export { StagePreflightError } from "./errors.js";
+export type { ResolvedStage } from "./resolve-stage.js";
+
+// ---------------------------------------------------------------------------
+// Walk composition — the ONE place the mutual recursion is wired
+// ---------------------------------------------------------------------------
+
+const CHAIN_DEPS: ChainDeps = {
+	runNext: (curCtx, name, idx, run) => runStageOrRecordFailure(curCtx, name, idx, run),
+};
+
+/**
+ * Advance the chain after `completedName` finished at `completedIdx` — the
+ * composed `advanceChain` every continuation calls (session onSuccess, loop
+ * driver advance, script stage, resume route-onward).
+ */
+export function advance(
+	curCtx: WorkflowHostContext,
+	completedName: string,
+	completedIdx: number,
+	run: RunContext,
+): Promise<ChainOutcome> {
+	return advanceChain(curCtx, completedName, completedIdx, run, CHAIN_DEPS);
 }
 
 /**
- * Thrown by a `PreflightCheck` on failure; carries the recorded-row
- * attribution + notify/err messages so `runStageOrRecordFailure` can land
- * a uniform JSONL row regardless of which slot tripped.
+ * Wraps `runStage` so a thrown stage records a JSONL failure row attributed
+ * to the stage that actually threw — not to the prior stage in the chain.
+ * Used by `runWorkflow` (start stage), `advanceChain` (next stage, via
+ * `ChainDeps`), and the resume entries, so there's exactly one place that
+ * translates "stage threw" → `state.termination.error` + JSONL row.
  *
- * `kind` annotates the violation class for diagnostics only — control
- * flow at the catch site is uniform:
- *   - `"halt"`     — runtime-state failure (skill not registered, missing
- *                    upstream artifact, schema mismatch).
- *   - `"invariant"` — authoring-time-knowable violation that
- *                    `validateWorkflow` should reject at load. A throw
- *                    here means validation was bypassed or the rule lives
- *                    only in the runner (continue-without-pi).
+ * Also the cooperative-cancellation seam: checked before the start stage and
+ * before every routed next stage, so an aborted signal stops the chain at
+ * the next stage boundary without interrupting a stage already streaming
+ * (Pi owns the live session).
  */
-export class StagePreflightError extends Error {
-	constructor(
-		public readonly kind: "halt" | "invariant",
-		public readonly skill: string,
-		public readonly notifyMsg: string,
-		public readonly errMsg: string,
-		public readonly notifyPartial: boolean,
-	) {
-		super(errMsg);
-		this.name = "StagePreflightError";
+export async function runStageOrRecordFailure(
+	curCtx: WorkflowHostContext,
+	name: string,
+	idx: number,
+	run: RunContext,
+): Promise<ChainOutcome> {
+	if (run.signal?.aborted) return recordAbortedAtSeam(curCtx, name, run);
+	try {
+		return await runStage(curCtx, name, idx, run);
+	} catch (e) {
+		return recordEntryThrow(curCtx, name, run, e);
 	}
 }
 
-interface PreflightCheck {
-	name: string;
-	kind: "halt" | "invariant";
-	/**
-	 * Checks may be sync (`enforceSessionInvariants`, `ensureSkillRegistered`,
-	 * `ensureUpstreamArtifact`) or async (`ensureInputValid` once schemas may
-	 * be async). `runStage` awaits the return value, so sync checks pay only
-	 * one microtask and async checks (filesystem-backed, registry-backed,
-	 * async-by-default schema libs) round-trip cleanly.
-	 */
-	run(stage: ResolvedStage, run: RunContext): void | Promise<void>;
-}
+// ---------------------------------------------------------------------------
+// Per-stage pipeline
+// ---------------------------------------------------------------------------
 
 /**
  * Builds the `/skill:<name> <args>` line sent into the session. The audit
@@ -106,7 +114,7 @@ function buildPrompt(skill: string, inputForStage: string): string {
 
 /**
  * The arg string the stage's `/skill:<name> <args>` prompt carries — a thin
- * wrapper over the `stageEntryArgs` authority (internal-utils.ts), which the
+ * wrapper over the `stageEntryArgs` authority (chain-state.ts), which the
  * resume fold also consumes at loop-generation open so live and resume can't
  * drift. The preflights (`ensureUpstreamArtifact` / `ensureNamedReads`)
  * guarantee every projection input on this path, so the authority's
@@ -116,72 +124,60 @@ export function inputForStage(stage: ResolvedStage, run: RunContext): string {
 	return stageEntryArgs(stage.def, stage.name, run.workflow.start, run.state)!;
 }
 
-/**
- * Slot ordering (load-bearing):
- *
- *   1. tryLoop                   — shortcut: a `loop`-field stage expands into
- *                                  one session per unit through the ONE driver
- *                                  (loop.ts); subsequent slots skipped for this
- *                                  stage. A push loop whose unit source returned
- *                                  an empty list falls through to the
- *                                  single-stage path (return false).
- *   2. PRE_PROMPT_CHECKS         — preflights that don't need prompt prep.
- *      a. ensureUpstreamArtifact — halt: missing inherited artifact.
- *      b. enforceSessionInvariants — invariant: authoring-time-knowable
- *         throws (precede the registry check so the structural violation
- *         surfaces regardless of the runtime registry).
- *      c. ensureSkillRegistered  — halt: skill not registered in Pi.
- *   3. prompt + status + branchOffset prep.
- *   4. POST_PROMPT_CHECKS        — preflights gated on prompt-prep state.
- *      a. ensureInputValid       — halt: upstream output fails inputSchema.
- *   5. captureStageSnapshot      — outcome.collector.snapshot hook (must run
- *                                  before the Pi session so post-stage diffs work).
- *
- * Each `PreflightCheck` throws `StagePreflightError` on failure;
- * `runStageOrRecordFailure` catches and records the JSONL row.
- */
+/** One stage activation — dispatch on the mode derived once by `resolveStage`. */
 export async function runStage(
 	curCtx: WorkflowHostContext,
 	currentName: string,
 	idx: number,
 	run: RunContext,
-): Promise<void> {
+): Promise<ChainOutcome> {
 	const stage = resolveStage(currentName, idx, run);
-
-	// Unit-loop driver: checked FIRST. A `loop`-field stage runs through the ONE
-	// driver (loop.ts) — one session per unit.
-	if (await tryLoop(curCtx, stage, idx, run)) return;
-
-	// Script stages (`stage.def.run` set) skip the entire skill pipeline —
-	// no `/skill:<name>` prompt to build, no skill-registry check, no
-	// session to open, no outcome/collector to snapshot. Input-schema
-	// validation still applies (`ensureInputValid` runs upstream output
-	// against `inputSchema` if declared); the script-stage runner owns
-	// its own status line + lifecycle fires from here.
-	if (stage.def.run) {
-		await ensureInputValid(stage, run);
-		await runScript(curCtx, stage, idx, run);
-		return;
+	switch (stage.mode) {
+		case "loop":
+			return runLoopStage(curCtx, stage, idx, run);
+		case "script":
+			// Script stages skip the skill pipeline — no `/skill:` prompt, no
+			// registry check, no session, no collector snapshot. Input-schema
+			// validation still applies; the script runner owns its own status
+			// line + lifecycle fires.
+			await ensureInputValid(stage, run);
+			return runScript(curCtx, stage, idx, run, advance);
+		case "prompt":
+		case "skill":
+			return runSingleStage(curCtx, stage, idx, run);
 	}
+}
 
-	for (const check of PRE_PROMPT_CHECKS) await check.run(stage, run);
+/**
+ * The single-session path (prompt + skill dispatch): preflights → prompt
+ * prep → input validation → snapshot → session.
+ *
+ * Dispatch: a `prompt` stage sends author-owned raw text (resolved by the
+ * shared `resolveStagePrompt` authority — the loop driver's round-0 producer
+ * uses the same resolver); a skill stage sends `/skill:<name>
+ * <inputForStage>`. `stage.skill` already equals the record key for a
+ * prompt stage (it cannot set an explicit skill — load validation forbids
+ * it), so the status/session/audit labels are correct for both without a
+ * separate label. A PromptFn throw propagates to
+ * `runStageOrRecordFailure`, which records a terminal failure.
+ */
+async function runSingleStage(
+	curCtx: WorkflowHostContext,
+	stage: ResolvedStage,
+	idx: number,
+	run: RunContext,
+): Promise<ChainOutcome> {
+	runSingleStagePreflights(stage, run);
 
-	// Dispatch: a `prompt` stage sends author-owned raw text (resolved by the
-	// shared `resolveStagePrompt` authority — the loop driver's round-0 producer
-	// uses the same resolver); a skill stage sends `/skill:<name>
-	// <inputForStage>`. `stage.skill` already equals the record key for a
-	// prompt stage (it cannot set an explicit skill — load validation forbids
-	// it), so the status/session/audit labels are correct for both without a
-	// separate label. A PromptFn throw propagates to
-	// `runStageOrRecordFailure`, which records a terminal failure.
 	const prompt =
-		stage.def.prompt !== undefined
-			? await resolveStagePrompt(stage.def.prompt, run.cwd, run.state)
+		stage.dispatch === "prompt"
+			? await resolveStagePrompt(stage.def.prompt!, run.cwd, run.state)
 			: buildPrompt(stage.skill, inputForStage(stage, run));
 	curCtx.ui.setStatus(STATUS_KEY, STATUS_STAGE(stage.stageNumber, run.totalStages, stage.skill));
 	const branchOffset = computeBranchOffset(curCtx, stage.def);
 
-	for (const check of POST_PROMPT_CHECKS) await check.run(stage, run);
+	await ensureInputValid(stage, run);
+	await ensureContractInputValid(stage, run);
 
 	const snapshot = await captureStageSnapshot(curCtx, stage.name, stage.def, idx, run);
 
@@ -209,134 +205,69 @@ export async function runStage(
 		continueHost: run.continueHost,
 		branchOffset,
 		onFailure: (freshCtx) => notifyPartialArtifacts(freshCtx, run.cwd, run.runId),
-		onSuccess: (freshCtx) => advanceChain(freshCtx, currentName, idx, run),
+		onSuccess: (freshCtx) => advance(freshCtx, stage.name, idx, run),
 	});
-}
-
-function resolveStage(currentName: string, idx: number, run: RunContext): ResolvedStage {
-	const def = run.workflow.stages[currentName];
-	if (!def) {
-		// validateWorkflow should catch this; defensive for tests bypassing validation.
-		throw new Error(`runStage: stage "${currentName}" referenced by edges but missing from workflow.stages`);
-	}
-	// `skill` defaults to the record key; `resolveSkill` is the shared derivation
-	// the load-time contract lookups also use, so runtime and load can't disagree.
-	return { def, name: currentName, stageNumber: idx + 1, skill: resolveSkill(def, currentName) };
+	return "dispatched";
 }
 
 /**
- * A stage with `def.loop` expands into one session per unit through the ONE
- * driver. Returns true iff the loop fired; a push loop whose unit source
- * returned an empty list falls through to the single-stage path (return
- * false) — that path runs its own preflights, so e.g. a missing named read
- * still halts with the targeted message (today's consumer contract).
+ * A stage with an effective loop (incl. the verify desugar) expands into one
+ * session per unit through the ONE driver. A push loop whose unit source
+ * returned an empty list falls through to the single-stage path — that path
+ * runs its own preflights, so e.g. a missing named read still halts with the
+ * targeted message (today's consumer contract).
  *
- * Preflights run UNIFORMLY here (the old shortcuts bypassed them: a ≥1-unit
- * fanout ran none; iterate ran none; assess re-ran two inline):
- *   - continue guard (one rule — runtime mirror of load validation);
- *   - ensureNamedReads + ensureSkillRegistered for ALL loops (every loop's
- *     units dispatch `/skill:<skill>`, and generators read declared channels);
- *   - ensureUpstreamArtifact for ASSESS ONLY — the round-0 producer arg is
- *     the one loop input that consumes the rolling primary (fanout/iterate
- *     unit prompts are author-built; an entry-point loop with no primary is
- *     legal for them, as today);
- *   - judge-skill registry check for any loop carrying a `.skill` judge.
+ * Push loops compute units FIRST (a throw — incl. a consumer haltPreflight —
+ * propagates with its own attribution; empty ⇒ single-stage fall-through);
+ * the remaining loop preflights run after (see preflight.ts).
  *
  * Capture semantics (pinned): `entryArtifact`, `entryArgs`, and `entryPair`
  * are frozen HERE, before unit 1; per-unit snapshots are captured by the
  * driver immediately before each unit's session.
  *
- * A `verify`-bearing stage enters here too (the desugar — `effectiveLoopOf`);
- * its onLoopStart reports `kind: "verify"` so listeners aren't told it's an
- * assess loop.
+ * A `verify`-bearing stage enters here too (the desugar — `effectiveLoopOf`,
+ * folded into `resolveStage`); its onLoopStart reports `kind: "verify"` so
+ * listeners aren't told it's an assess loop.
  *
  * A prompt-dispatch assess/verify stage also enters here: the skill-registry
- * and upstream-artifact preflights already skip prompt stages, and its
+ * and upstream-artifact preflights skip non-skill dispatch, and its
  * `entryArgs` freezes to `""` (the `stageEntryArgs` prompt arm) — the round-0
  * message is the stage's own `prompt`, resolved by the driver at dispatch.
  */
-async function tryLoop(
+async function runLoopStage(
 	curCtx: WorkflowHostContext,
 	stage: ResolvedStage,
 	idx: number,
 	run: RunContext,
-): Promise<boolean> {
-	const loop = effectiveLoopOf(stage.def);
-	if (!loop) return false;
+): Promise<ChainOutcome> {
+	const loop = stage.loop!;
+	ensureLoopNotContinue(stage);
 
-	if (stage.def.sessionPolicy === "continue") {
-		const reason =
-			`runStage: stage "${stage.name}" cannot combine loop with sessionPolicy "continue" — ` +
-			"each unit requires an isolated session";
-		throw new StagePreflightError("invariant", stage.name, MSG_STAGE_THREW(stage.name, reason), reason, false);
-	}
-
-	// Push loops compute units FIRST (a throw — incl. a consumer haltPreflight —
-	// propagates with its own attribution; empty ⇒ single-stage fall-through).
-	let units: readonly import("../api.js").Unit[] | undefined;
+	// Push loops compute units FIRST (pinned ordering — a units() throw beats
+	// any other preflight's halt; empty ⇒ single-stage fall-through).
+	let units: readonly Unit[] | undefined;
 	if (loop.kind === "fanout") {
 		units = await loop.units({ cwd: run.cwd, artifact: currentPrimaryArtifact(run.state), state: run.state });
-		if (units.length === 0) return false;
+		if (units.length === 0) return runSingleStage(curCtx, stage, idx, run);
 	}
 
-	ensureNamedReads(stage, run);
-	ensureSkillRegistered(stage, run);
-	if (loop.kind === "assess") {
-		ensureUpstreamArtifact(stage, run);
-		ensureJudgeSkillRegistered(loop.judge, stage, run);
-	}
+	runLoopPreflights(stage, run);
 
-	const entryArgs = loop.kind === "assess" ? inputForStage(stage, run) : "";
-	const entryArtifact = currentPrimaryArtifact(run.state);
-	const entryPair = { output: run.state.output, primaryArtifact: run.state.primaryArtifact };
+	const entry: LoopEntry = {
+		stageIdx: idx,
+		name: stage.name,
+		skill: stage.skill,
+		def: stage.def,
+		loop,
+		entryArtifact: currentPrimaryArtifact(run.state),
+		entryArgs: loop.kind === "assess" ? inputForStage(stage, run) : "",
+		entryPair: { output: run.state.output, primaryArtifact: run.state.primaryArtifact },
+		units,
+	};
 
-	const presentedKind = stage.def.verify ? ("verify" as const) : loop.kind;
-	const ref = skillStageRef(stage.name, stage.stageNumber, stage.skill);
-	await run.lifecycle.fire(curCtx, "onStageStart", ref, lifecycleCtxFor(run));
-	await run.lifecycle.fire(
-		curCtx,
-		"onLoopStart",
-		ref,
-		{ kind: presentedKind, ...(units ? { units } : {}) },
-		lifecycleCtxFor(run),
-	);
-
-	await runLoop(
-		curCtx,
-		{
-			stageIdx: idx,
-			name: stage.name,
-			skill: stage.skill,
-			def: stage.def,
-			loop,
-			entryArtifact,
-			entryArgs,
-			entryPair,
-			units,
-		},
-		freshCursor(),
-		run,
-		buildLoopDeps(),
-	);
-	return true;
-}
-
-/**
- * Registry preflight for a Judge carrying `.skill` — `ensureSkillRegistered`
- * only inspects `stage.skill`. Fail-soft when `registeredSkills` is undefined
- * (hostless embedder). Generalized: any future Judge site (verify, panel)
- * calls the same helper.
- */
-export function ensureJudgeSkillRegistered(judge: Judge, stage: ResolvedStage, run: RunContext): void {
-	if (judge.skill === undefined || run.registeredSkills === undefined) return;
-	if (run.registeredSkills.has(judge.skill)) return;
-	throw new StagePreflightError(
-		"halt",
-		judge.skill,
-		MSG_SKILL_NOT_REGISTERED(judge.skill),
-		ERR_SKILL_NOT_REGISTERED(judge.skill, stage.stageNumber),
-		true,
-	);
+	await announceLoopStart(curCtx, run, entry);
+	await runLoop(curCtx, entry, freshCursor(), run, buildLoopDeps());
+	return "dispatched";
 }
 
 /**
@@ -347,7 +278,7 @@ export function ensureJudgeSkillRegistered(judge: Judge, stage: ResolvedStage, r
 export function buildLoopDeps(): LoopDeps {
 	return {
 		runStageSession,
-		advanceAfter: (freshCtx, name, completedIdx, ctx) => advanceChain(freshCtx, name, completedIdx, ctx),
+		advanceAfter: (freshCtx, name, completedIdx, ctx) => advance(freshCtx, name, completedIdx, ctx),
 		captureSnapshot: (ctx, name, def, i, r) => captureStageSnapshot(ctx, name, def, i, r),
 		haltLoop,
 	};
@@ -366,116 +297,9 @@ export async function haltLoop(
 	cap: number,
 ): Promise<void> {
 	const args = e.def.verify
-		? {
-				status: "failed" as const,
-				notifyMsg: MSG_VERIFY_FAILED(e.name, cap),
-				notifyLevel: "error" as const,
-				errMsg: ERR_VERIFY_FAILED(e.name, cap),
-			}
-		: {
-				status: "failed" as const,
-				notifyMsg: MSG_LOOP_CAP_HALT(count, cap),
-				notifyLevel: "error" as const,
-				errMsg: ERR_LOOP_CAP_HALT(count, cap),
-			};
-	await recordTerminalFailure(curCtx, auditCtxFor(run, e.name, e.name), args);
-}
-
-/**
- * Verify `stage.skill` resolves to a Pi-registered skill BEFORE the prompt
- * is dispatched. The workflow runner emits `/skill:<name>` text via
- * `sendUserMessage` (the programmatic path), which goes through
- * `prompt({expandPromptTemplates: false})` — meaning Pi's built-in
- * `_expandSkillCommand` is skipped and `rpiv-args` is the ONLY expander.
- * If the skill isn't registered, `rpiv-args` returns `{action:"continue"}`
- * and the raw `/skill:<name> …` text reaches the LLM as a bare user-message
- * imperative outside the `<skill>...</skill>` contract — silent LLM-prompt
- * corruption with no diagnostic. Catching it here turns that silent failure
- * into a properly-attributed stage halt.
- *
- * Reads the snapshot in `run.registeredSkills` rather than calling
- * `host.getCommands()` mid-run, because Pi marks the `WorkflowHost` handle
- * stale on the first `ctx.newSession()` — a registry call after research's
- * fresh session opens throws "extension ctx is stale". The snapshot is
- * built once in `runWorkflow` before any session replaces the outer ctx.
- *
- * `registeredSkills` is undefined when the embedder didn't pass a host —
- * skip the check (same fail-soft posture as the rest of the host-optional
- * surface).
- */
-function ensureSkillRegistered(stage: ResolvedStage, run: RunContext): void {
-	// A prompt stage dispatches raw text, not /skill:<name> — there is no skill
-	// to verify. (Mirrors how the script-stage path skips this check entirely.)
-	if (stage.def.prompt !== undefined) return;
-	if (!run.registeredSkills) return;
-	if (run.registeredSkills.has(stage.skill)) return;
-
-	throw new StagePreflightError(
-		"halt",
-		stage.skill,
-		MSG_SKILL_NOT_REGISTERED(stage.skill),
-		ERR_SKILL_NOT_REGISTERED(stage.skill, stage.stageNumber),
-		true,
-	);
-}
-
-/**
- * The start node consumes the user's brief; subsequent stages MUST inherit
- * an upstream artifactPath. Falling back to originalInput past the start
- * would silently hand a downstream skill the raw feature description.
- *
- * Two opt-outs skip the check:
- *   - `inheritsArtifacts: false` (authored via `terminal()`) — stage consumes
- *     `originalInput` by design.
- *   - `reads: [...]` — stage builds its prompt from the named-publish
- *     registry instead of the rolling primary slot; `ensureNamedReads`
- *     enforces its own coverage rule.
- */
-function ensureUpstreamArtifact(stage: ResolvedStage, run: RunContext): void {
-	if (stage.name === run.workflow.start) return;
-	if (stage.def.inheritsArtifacts === false) return;
-	if (stage.def.reads?.length) return;
-	// A prompt stage builds its own text and never consumes the rolling primary
-	// as an arg, so it doesn't require an upstream artifact (a continue chat
-	// turn typically leans on session context, not a handle).
-	if (stage.def.prompt !== undefined) return;
-	if (currentPrimaryArtifact(run.state)) return;
-	throw new StagePreflightError(
-		"halt",
-		stage.skill,
-		MSG_MISSING_ARTIFACT(stage.skill),
-		ERR_MISSING_ARTIFACT(stage.skill, stage.stageNumber),
-		true,
-	);
-}
-
-/**
- * A stage declaring `reads: [...]` must find every name filled in
- * `state.named` before the prompt is built. `validateWorkflow` already
- * confirms the names CAN exist (some upstream stage publishes them); this
- * catches the runtime path where the producer hasn't fired yet — e.g.
- * the stage was placed before its producer in the edge graph.
- */
-function ensureNamedReads(stage: ResolvedStage, run: RunContext): void {
-	const reads = stage.def.reads;
-	if (!reads?.length) return;
-	for (const name of reads) {
-		if (run.state.named[name]?.length) continue;
-		throw new StagePreflightError(
-			"halt",
-			stage.skill,
-			MSG_MISSING_NAMED_READ(stage.skill, name),
-			ERR_MISSING_NAMED_READ(stage.skill, name, stage.stageNumber),
-			true,
-		);
-	}
-}
-
-function enforceSessionInvariants(stage: ResolvedStage, run: RunContext): void {
-	if (stage.def.sessionPolicy === "continue" && !run.continueHost) {
-		const reason = `runStage: stage "${stage.name}" uses sessionPolicy "continue" but no workflow host was provided to runWorkflow`;
-		throw new StagePreflightError("invariant", stage.name, MSG_STAGE_THREW(stage.name, reason), reason, false);
-	}
+		? failedArgs(MSG_VERIFY_FAILED(e.name, cap), ERR_VERIFY_FAILED(e.name, cap))
+		: failedArgs(MSG_LOOP_CAP_HALT(count, cap), ERR_LOOP_CAP_HALT(count, cap));
+	await haltChain(curCtx, run, e.name, e.name, args);
 }
 
 /** Entries before this index belong to prior stages; only meaningful for continue. */
@@ -514,15 +338,3 @@ export async function captureStageSnapshot(
 		return undefined;
 	}
 }
-
-const PRE_PROMPT_CHECKS: readonly PreflightCheck[] = [
-	{ name: "ensureUpstreamArtifact", kind: "halt", run: ensureUpstreamArtifact },
-	{ name: "ensureNamedReads", kind: "halt", run: ensureNamedReads },
-	{ name: "enforceSessionInvariants", kind: "invariant", run: enforceSessionInvariants },
-	{ name: "ensureSkillRegistered", kind: "halt", run: ensureSkillRegistered },
-];
-
-const POST_PROMPT_CHECKS: readonly PreflightCheck[] = [
-	{ name: "ensureInputValid", kind: "halt", run: ensureInputValid },
-	{ name: "ensureContractInputValid", kind: "halt", run: ensureContractInputValid },
-];

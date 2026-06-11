@@ -16,11 +16,13 @@
 
 import { describe, expect, it } from "vitest";
 import type { StageDef } from "./api.js";
+import { applyCompletedStage, resolveSkill } from "./chain-state.js";
 import type { Artifact } from "./handle.js";
 import { fs as fsHandle } from "./handle.js";
-import { applyCompletedStage, globalSlot, resolveSkill, SchemaTimeoutError, withTimeout } from "./internal-utils.js";
+import { globalSlot, withTimeout } from "./internal-utils.js";
 import type { Output } from "./output.js";
 import type { RunState } from "./types.js";
+import { SchemaTimeoutError } from "./validate-output.js";
 
 // NOTE: test/setup.ts runs beforeEach and clears globalThis Symbol.for slots via
 // __resetSkillContracts. globalSlot tests below use dedicated Symbol.for keys

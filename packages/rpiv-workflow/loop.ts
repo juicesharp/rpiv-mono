@@ -42,11 +42,12 @@
  */
 
 import type { LoopDef, StageDef, Unit, UnitRole } from "./api.js";
-import { decorateStage, nowIso, runIdentityOf } from "./audit.js";
+import { decorateStage, runIdentityOf } from "./audit.js";
+import { resolveStagePrompt } from "./chain-state.js";
 import { type Artifact, handleToString } from "./handle.js";
-import { resolveStagePrompt } from "./internal-utils.js";
+import { nowIso } from "./internal-utils.js";
 import { type Judge, resolveJudgePrompt } from "./judge.js";
-import { buildLifecycleContext, type LifecycleContext, skillStageRef, type UnitEvent } from "./lifecycle.js";
+import { lifecycleCtxFor, skillStageRef, type UnitEvent } from "./lifecycle.js";
 import {
 	MSG_LOOP_CAP_ADVANCE,
 	MSG_LOOP_ZERO_UNITS,
@@ -61,13 +62,17 @@ import type { RunContext, StageSession, UnitRef, WorkflowHostContext } from "./t
 export interface LoopDeps {
 	/** Dispatch one unit through the standard stage-session path. */
 	runStageSession: (ctx: WorkflowHostContext, s: StageSession) => Promise<void>;
-	/** Resume the chain after the loop finishes — receives the loop node's REAL name. */
+	/**
+	 * Resume the chain after the loop finishes — receives the loop node's REAL
+	 * name. `Promise<unknown>` so the walk's `ChainOutcome`-returning composed
+	 * advance plugs in directly (the driver only awaits settlement).
+	 */
 	advanceAfter: (
 		curCtx: WorkflowHostContext,
 		completedName: string,
 		completedIdx: number,
 		run: RunContext,
-	) => Promise<void>;
+	) => Promise<unknown>;
 	/** Re-capture the outcome's pre-stage snapshot per unit (ctx + stage name for the fail-soft warning). */
 	captureSnapshot: (
 		curCtx: WorkflowHostContext,
@@ -169,6 +174,39 @@ export function advanceCursor(cursor: LoopCursor, role: UnitRole, output: Output
  */
 export function judgeStageDef(judge: Judge): StageDef {
 	return { kind: "produces", outcome: judge.outcome, sessionPolicy: "fresh" };
+}
+
+/**
+ * The kind a loop PRESENTS to listeners and wording — `"verify"` for a
+ * verify-bearing stage (the author declared a post-condition, not a loop),
+ * the loop's own kind otherwise. Derived from the parent def, never from the
+ * loop object (the verify synthesis carries no marker), so live and resume
+ * can't disagree about flavoring.
+ */
+export const presentedKindOf = (def: StageDef, loop: LoopDef): "verify" | LoopDef["kind"] =>
+	def.verify ? "verify" : loop.kind;
+
+/**
+ * The loop-entry announcement — `onStageStart` then `onLoopStart` with the
+ * presented kind (+ the precomputed unit list when the loop has one). ONE
+ * helper for the live entry (`runLoopStage`) and the resume re-entry
+ * (`resumeLoopStage`), which used to re-spell the pair and keep the
+ * presented-kind expression aligned by convention.
+ */
+export async function announceLoopStart(
+	curCtx: WorkflowHostContext,
+	run: RunContext,
+	e: Pick<LoopEntry, "stageIdx" | "name" | "skill" | "def" | "loop" | "units">,
+): Promise<void> {
+	const ref = skillStageRef(e.name, e.stageIdx + 1, e.skill);
+	await run.lifecycle.fire(curCtx, "onStageStart", ref, lifecycleCtxFor(run));
+	await run.lifecycle.fire(
+		curCtx,
+		"onLoopStart",
+		ref,
+		{ kind: presentedKindOf(e.def, e.loop), ...(e.units ? { units: e.units } : {}) },
+		lifecycleCtxFor(run),
+	);
 }
 
 /** Run (or resume) one loop generation. The caller fired onStageStart/onLoopStart. */
@@ -351,7 +389,7 @@ async function dispatchUnit(
 		"onUnitStart",
 		skillStageRef(e.name, e.stageIdx + 1, u.skill),
 		event,
-		lifecycleCtxOf(run),
+		lifecycleCtxFor(run),
 	);
 
 	const snapshot = await deps.captureSnapshot(curCtx, e.name, u.def, e.stageIdx, run);
@@ -449,23 +487,7 @@ async function hitCap(
 		"onLoopCap",
 		skillStageRef(e.name, e.stageIdx + 1, e.skill),
 		{ kind: e.loop.kind, count, max: cap, policy: "advance" as const },
-		lifecycleCtxOf(run),
+		lifecycleCtxFor(run),
 	);
 	return finishLoop(curCtx, e, cursor, run, deps);
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/** Local LifecycleContext builder (no runner import — cycle-free, mirrors the old fanout.ts). */
-function lifecycleCtxOf(run: RunContext): LifecycleContext {
-	return buildLifecycleContext({
-		cwd: run.cwd,
-		runId: run.runId,
-		workflow: run.workflow.name,
-		totalStages: run.totalStages,
-		trigger: run.trigger,
-		state: run.state,
-	});
 }

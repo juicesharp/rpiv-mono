@@ -1,19 +1,29 @@
 /**
- * Workflow orchestration entry point. `runWorkflow` walks a `Workflow`'s
- * edge graph stage-by-stage; per-stage work (sessions, extraction,
- * validation, audit row writes) lives in sessions.ts + audit.ts. This
- * directory owns graph traversal, per-stage prerequisites, and routing.
+ * Workflow orchestration entry points. `runWorkflow` walks a `Workflow`'s
+ * edge graph stage-by-stage; `resumeWorkflow` rebuilds state from a past
+ * run's JSONL trail and re-enters the chain at the right seam. Per-stage
+ * work (sessions, extraction, validation, audit row writes) lives in
+ * sessions.ts + audit.ts; this directory owns graph traversal, per-stage
+ * prerequisites, and routing.
  *
- * Modules:
+ * Modules (imports point strictly downward — the walk's mutual recursion is
+ * composed by injection in stage-lifecycle.ts, never as a module cycle):
  *  - runner.ts          — runWorkflow + resumeWorkflow + executeRun (shared
- *                         tail) + countReachableStages +
- *                         runStageOrRecordFailure + finalizeWorkflow.
- *  - stage-lifecycle.ts — runStage + StagePreflightError + preflight
- *                         pipeline + outcome.collector.snapshot hook.
+ *                         tail) + resume-entry selection.
+ *  - stage-lifecycle.ts — runStage (mode dispatch) + runStageOrRecordFailure
+ *                         (single catch site) + the walk composition.
  *  - chain-advance.ts   — advanceChain + routing audit + backward-jump
- *                         guard + halt-on-error.
+ *                         guard + halt-on-error (ChainDeps-injected).
+ *  - resolve-stage.ts   — ResolvedStage: mode/dispatch derived once.
+ *  - preflight.ts       — runtime preflights (throw StagePreflightError).
+ *  - input-validation.ts— schema-backed input preflights.
+ *  - script-stage.ts    — skillless TS-stage runtime (no session/collector).
+ *  - failure.ts         — ChainOutcome + entry-throw → failure-row + finalize.
+ *  - run-context.ts     — RunContext/RunState construction + policy caps.
+ *  - errors.ts          — StagePreflightError.
  *  - resume.ts          — reconstructState: pure RunState rebuild from a
  *                         past run's JSONL trail (consumed by resumeWorkflow).
+ *  - resume-loop.ts     — loop-trailer re-entry + drift refusals.
  *
  * Ctx lifecycle: every level only touches the ctx it was handed.
  * - `newSession({cancelled: false})` invalidates the outer ctx; all
@@ -28,166 +38,37 @@
  */
 
 import type { Workflow } from "../api.js";
-import { auditCtxFor, notifyPartialArtifacts, nowIso, recordTerminalFailure, terminate } from "../audit.js";
+import { currentPrimaryArtifact } from "../chain-state.js";
 import { handleToString } from "../handle.js";
 import type { WorkflowHost, WorkflowHostContext } from "../host.js";
-import { currentPrimaryArtifact, formatError } from "../internal-utils.js";
-import { buildLifecycleContext, LifecycleDispatcher, type LifecycleListeners } from "../lifecycle.js";
+import { nowIso } from "../internal-utils.js";
+import { type LifecycleListeners, lifecycleCtxFor } from "../lifecycle.js";
 import {
 	ERR_RESUME_MALFORMED_ROW,
 	ERR_RESUME_NO_ROWS,
 	ERR_RESUME_STAGE_GONE,
 	ERR_RESUME_VERSION_MISMATCH,
-	ERR_WORKFLOW_ABORTED,
 	MSG_HEADER_WRITE_FAILED,
 	MSG_NAME_COLLISION,
 	MSG_NAME_INDEX_WRITE_FAILED,
 	MSG_NAME_INVALID,
-	MSG_STAGE_THREW,
-	MSG_WORKFLOW_ABORTED,
-	MSG_WORKFLOW_COMPLETE,
-	STATUS_KEY,
 } from "../messages.js";
-import { getSkillContracts } from "../skill-contracts/index.js";
 import {
 	type ClaimResult,
 	claimName,
 	generateRunId,
 	releaseName,
 	STATE_SCHEMA_VERSION,
+	type WorkflowHeader,
 	writeHeader,
 } from "../state/index.js";
-import type { WorkflowHeader } from "../state/state.js";
-import { DEFAULT_TRIGGER, type RunTrigger } from "../triggers.js";
-import type { RunContext, RunState, RunTermination } from "../types.js";
-import { advanceChain } from "./chain-advance.js";
-import { freshRunState, type ReconstructResult, reconstructState } from "./resume.js";
+import { DEFAULT_TRIGGER } from "../triggers.js";
+import type { RunContext, RunWorkflowOptions, RunWorkflowResult } from "../types.js";
+import { recordEntryThrow } from "./failure.js";
+import { type ReconstructResult, reconstructState } from "./resume.js";
 import { recordLoopDriftFailure, resumeLoopStage } from "./resume-loop.js";
-import { buildLoopDeps, runStage, StagePreflightError } from "./stage-lifecycle.js";
-
-// ---------------------------------------------------------------------------
-// Policy constants
-// ---------------------------------------------------------------------------
-
-/**
- * Per-loop cap on decision-edge retries. A "backward jump" is a *decision*
- * resolving to an already-visited stage — i.e. the user's predicate chose to
- * retry. Deterministic edges through a cycle (the loop body) are NOT
- * counted; the budget is per retry iteration, not per hop. A decision
- * escaping the loop (target not visited) resets the counter so each
- * independent loop in the workflow gets its own fresh budget. With 2: the
- * loop runs once unconditionally and may retry up to 2 more times.
- */
-export const MAX_BACKWARD_JUMPS = 2;
-
-/**
- * Run-wide safety cap on loop units — the backstop for any loop kind whose
- * source never terminates (a pull generator that never returns `null`, an
- * assess `done` that never trips). Clamps the effective cap of every loop
- * (`min(loop.max, run.maxIterations)`). Mirrors rpiv-pi's `MAX_PHASES` (the
- * convention cap a fanout author would self-impose); 32 is comfortably above
- * any realistic per-stage unit count while still halting a runaway loop.
- */
-export const MAX_ITERATIONS = 32;
-
-// ---------------------------------------------------------------------------
-// Public surface
-// ---------------------------------------------------------------------------
-
-export interface RunWorkflowOptions {
-	/** Workflow to execute — caller resolves by name from `LoadedWorkflows`. */
-	workflow: Workflow;
-	/** Passed to the start stage as its argument. */
-	input: string;
-	/** Required for "continue"-policy stages (host.sendUserMessage). */
-	host?: WorkflowHost;
-	/** Defaults to MAX_BACKWARD_JUMPS. */
-	maxBackwardJumps?: number;
-	/** Run-wide safety cap on iterate-stage units. Defaults to MAX_ITERATIONS. */
-	maxIterations?: number;
-	/**
-	 * What triggered this run. `/wf` sets `{ kind: "command", name: "wf" }`;
-	 * programmatic embedders default to `DEFAULT_TRIGGER`. Recorded in the
-	 * JSONL header and surfaced on every lifecycle callback via
-	 * `LifecycleContext.trigger`.
-	 */
-	trigger?: RunTrigger;
-	/**
-	 * Per-call lifecycle listener bundle. Fires AFTER every globally
-	 * registered bundle (see `registerLifecycle`). Listener throws are
-	 * caught + logged via `ctx.ui.notify(..., "warning")`; never halt the
-	 * run.
-	 */
-	lifecycle?: LifecycleListeners;
-	/**
-	 * Cooperative cancellation. When the signal is aborted, the runner stops at
-	 * the next between-stage seam — it records an `"aborted"` terminal row for
-	 * the stage about to run and returns `{ success: false }` with an aborted
-	 * error. It does NOT interrupt a stage already streaming (Pi owns the live
-	 * session), so cancellation takes effect at the next stage boundary, not
-	 * mid-stage.
-	 */
-	signal?: AbortSignal;
-	/**
-	 * Human-readable alias for this run. Stored in the JSONL header and the
-	 * sidecar names.json index. Rejected if already in use — the error
-	 * identifies the conflicting runId.
-	 */
-	name?: string;
-}
-
-export interface RunWorkflowResult {
-	/**
-	 * The run's identity on disk — the `<run-id>` portion of
-	 * `<cwd>/.rpiv/workflows/runs/<run-id>.jsonl`. Live consumers can hand
-	 * this to `readLastStage` / `listArtifacts` / future inspect-past-run
-	 * helpers without recomputing the slug.
-	 *
-	 * Undefined ONLY for pre-flight rejections (start stage not declared,
-	 * continue-policy stages without pi) where no JSONL file was created.
-	 */
-	runId?: string;
-	stagesCompleted: number;
-	success: boolean;
-	/**
-	 * Primary artifact at run termination, serialised to its handle's
-	 * canonical string form (fs → path, url → href, opaque → id). Undefined
-	 * if no produces stage produced one. Callers that need the full
-	 * structured handle read `output.artifacts[0]` off the run's last
-	 * recorded stage (via `readLastStage`).
-	 */
-	lastArtifact?: string;
-	error?: string;
-	/**
-	 * Discriminated termination outcome — the full-fidelity form behind the
-	 * `success`/`error` projections above (which can't represent "cancelled"
-	 * vs "aborted" vs "failed"). `{ status: "running" }` means the runner
-	 * unwound without reaching any terminal write — callers treat it as
-	 * failure, same as the `success: false` projection does.
-	 *
-	 * Undefined ONLY for pre-flight rejections (no run was constructed) —
-	 * same rule as `runId`.
-	 */
-	termination?: RunTermination;
-	/**
-	 * Routing decisions made in memory but whose JSONL audit row failed to
-	 * persist. Empty in the common case. Surfaced so consumers reading the
-	 * run's JSONL can disambiguate a missing routing row ("deterministic
-	 * edge — never written") from a dropped one ("decision was made, write
-	 * failed"). The run still succeeds — routing rows are telemetry, not
-	 * reconstruction inputs.
-	 */
-	droppedRoutingRows?: Array<{ fromStageIndex: number; fromStage: string; decision: string }>;
-	/**
-	 * Stages whose terminal failure/aborted row failed to persist. Empty in
-	 * the common case. Unlike routing rows, failure rows ARE reconstruction
-	 * inputs: a trail missing its failure row reads as if the run stopped
-	 * after its last successful stage, so a later resume would route onward
-	 * past the stage that actually failed. Consumers holding this list should
-	 * not resume the run from disk.
-	 */
-	droppedFailureRows?: string[];
-}
+import { buildRunContext, freshRunState } from "./run-context.js";
+import { advance, buildLoopDeps, runStageOrRecordFailure } from "./stage-lifecycle.js";
 
 // ---------------------------------------------------------------------------
 // Shared tail — executeRun
@@ -202,7 +83,7 @@ export interface RunWorkflowResult {
 async function executeRun(
 	ctx: WorkflowHostContext,
 	run: RunContext,
-	entry: () => Promise<void>,
+	entry: () => Promise<unknown>,
 ): Promise<RunWorkflowResult> {
 	await run.lifecycle.fire(ctx, "onWorkflowStart", lifecycleCtxFor(run));
 
@@ -364,7 +245,7 @@ export async function resumeWorkflow(
 }
 
 // ---------------------------------------------------------------------------
-// Run-construction helpers (shared by runWorkflow + resumeWorkflow)
+// Entry helpers
 // ---------------------------------------------------------------------------
 
 /**
@@ -381,51 +262,6 @@ function hostMissingForContinueStages(workflow: Workflow, host: WorkflowHost | u
 }
 
 /**
- * Assemble the `RunContext` shared by both entry points. `identity` carries the
- * four fields that differ between a new run (fresh id/state/visited, caller
- * trigger) and a resume (same run id, reconstructed state/visited, resume
- * trigger); everything else derives identically from `options`.
- *
- * The skill-registry snapshot happens here, BEFORE any stage opens a fresh
- * session — Pi invalidates the `WorkflowHost` handle on the first
- * `ctx.newSession()`, so this is the only safe moment to enumerate. After this
- * the runner reads `run.registeredSkills`; `options.host` survives only on
- * `run.continueHost` for the continue-policy session handler.
- */
-function buildRunContext(
-	cwd: string,
-	workflow: Workflow,
-	options: {
-		host?: WorkflowHost;
-		maxBackwardJumps?: number;
-		maxIterations?: number;
-		lifecycle?: LifecycleListeners;
-		signal?: AbortSignal;
-	},
-	identity: { runId: string; state: RunState; visited: Set<string>; trigger: RunTrigger },
-): RunContext {
-	return {
-		cwd,
-		runId: identity.runId,
-		workflow,
-		totalStages: countReachableStages(workflow),
-		state: identity.state,
-		visited: identity.visited,
-		registeredSkills: options.host ? snapshotRegisteredSkills(options.host) : undefined,
-		// Defensive COPY (not the live global Map) so a later registerSkillContracts
-		// call cannot mutate this run's snapshot mid-run — parity with the fresh-Set
-		// copy snapshotRegisteredSkills makes.
-		skillContracts: new Map(getSkillContracts()),
-		continueHost: options.host,
-		maxBackwardJumps: options.maxBackwardJumps ?? MAX_BACKWARD_JUMPS,
-		maxIterations: options.maxIterations ?? MAX_ITERATIONS,
-		trigger: identity.trigger,
-		lifecycle: new LifecycleDispatcher(options.lifecycle),
-		signal: options.signal,
-	};
-}
-
-/**
  * Pick the chain re-entry thunk from the trail trailer. Dispatch keys on the
  * STRUCTURED `parent` field — no string matching, no per-primitive arms:
  *   - fold-detected drift → record the parent-attributed terminal failure
@@ -438,7 +274,7 @@ function selectResumeEntry(
 	ctx: WorkflowHostContext,
 	recon: Extract<ReconstructResult, { ok: true }>,
 	run: RunContext,
-): () => Promise<void> {
+): () => Promise<unknown> {
 	if (recon.drift) {
 		const { parent, errMsg } = recon.drift;
 		return () => recordLoopDriftFailure(ctx, run, parent, errMsg);
@@ -461,7 +297,7 @@ function selectResumeEntry(
 	}
 	if (last.status === "completed") {
 		// route onward; finished run ⇒ hits stop ⇒ no-op
-		return () => guardResumeEntry(ctx, last.stage, run, () => advanceChain(ctx, last.stage, idx, run));
+		return () => guardResumeEntry(ctx, last.stage, run, () => advance(ctx, last.stage, idx, run));
 	}
 	return () => runStageOrRecordFailure(ctx, last.stage, idx, run); // re-run the failed/aborted stage
 }
@@ -478,7 +314,7 @@ async function guardResumeEntry(
 	curCtx: WorkflowHostContext,
 	name: string,
 	run: RunContext,
-	entry: () => Promise<void>,
+	entry: () => Promise<unknown>,
 ): Promise<void> {
 	try {
 		await entry();
@@ -498,139 +334,4 @@ function resumeRefusalError(recon: Extract<ReconstructResult, { ok: false }>, wo
 		case "version-mismatch":
 			return ERR_RESUME_VERSION_MISMATCH(recon.detail, STATE_SCHEMA_VERSION);
 	}
-}
-
-/** Build a `LifecycleContext` from the current `RunContext`. Captured per fire so listeners always see the latest `state` snapshot. */
-export function lifecycleCtxFor(run: RunContext) {
-	return buildLifecycleContext({
-		cwd: run.cwd,
-		runId: run.runId,
-		workflow: run.workflow.name,
-		totalStages: run.totalStages,
-		trigger: run.trigger,
-		state: run.state,
-	});
-}
-
-/**
- * Upper bound for the status-line denominator — BFS reach from `workflow.start`.
- *
- * Relies on every `EdgeFn` carrying `.targets`. `validate-workflow.ts` enforces
- * this at load time, so by the time the runner sees a workflow the contract
- * holds. A `.targets`-less EdgeFn here means validation was bypassed (test
- * fixture or programmatic embedder) — surface loudly instead of silently
- * counting all declared stages.
- */
-function countReachableStages(workflow: Workflow): number {
-	const seen = new Set<string>();
-	const frontier: string[] = [workflow.start];
-	while (frontier.length > 0) {
-		const cur = frontier.shift()!;
-		if (seen.has(cur)) continue;
-		seen.add(cur);
-		const edge = workflow.edges[cur];
-		if (edge === undefined || edge === "stop") continue;
-		if (typeof edge === "string") {
-			if (workflow.stages[edge] && !seen.has(edge)) frontier.push(edge);
-		} else if (Array.isArray(edge.targets)) {
-			for (const t of edge.targets) {
-				if (t !== "stop" && workflow.stages[t] && !seen.has(t)) frontier.push(t);
-			}
-		} else {
-			throw new Error(
-				`countReachableStages: edge from "${cur}" is an EdgeFn without .targets — validateWorkflow should have rejected this workflow`,
-			);
-		}
-	}
-	return seen.size;
-}
-
-/**
- * Wraps `runStage` so a thrown stage records a JSONL failure row attributed
- * to the stage that actually threw — not to the prior stage in the chain.
- * Used by both `runWorkflow` (start stage) and `advanceChain` (next stage)
- * so there's exactly one place that translates "stage threw" →
- * `state.termination.error` + JSONL row. Without this, the start-stage call
- * leaves a header-only file and `advanceChain`'s own catch mis-attributes
- * the failure to the prior stage (`currentName` is still bound to the
- * iteration that just succeeded).
- *
- * Two flavours of throw are caught here:
- *
- * - `StagePreflightError` — a known preflight failure carrying its own
- *   attribution + messages. Recorded with the carried payload exactly.
- * - Any other `Error` — unexpected machinery failure; recorded with the
- *   generic `MSG_STAGE_THREW` shape attributed to the stage id.
- */
-export async function runStageOrRecordFailure(
-	curCtx: WorkflowHostContext,
-	name: string,
-	idx: number,
-	run: RunContext,
-): Promise<void> {
-	// Cooperative cancellation seam. Checked before the start stage and before
-	// every routed next stage (advanceChain funnels through here), so an aborted
-	// signal stops the chain at the next stage boundary without interrupting a
-	// stage already streaming. Records an "aborted" terminal row + halts.
-	if (run.signal?.aborted) {
-		await recordTerminalFailure(curCtx, auditCtxFor(run, name, name), {
-			status: "aborted",
-			notifyMsg: MSG_WORKFLOW_ABORTED,
-			notifyLevel: "warning",
-			errMsg: ERR_WORKFLOW_ABORTED(name),
-		});
-		return;
-	}
-	try {
-		await runStage(curCtx, name, idx, run);
-	} catch (e) {
-		await recordEntryThrow(curCtx, name, run, e);
-	}
-}
-
-/** The ONE "entry threw" → terminal-failure-row translation (live + resume entries). */
-async function recordEntryThrow(curCtx: WorkflowHostContext, name: string, run: RunContext, e: unknown): Promise<void> {
-	if (e instanceof StagePreflightError) {
-		await recordTerminalFailure(
-			curCtx,
-			auditCtxFor(run, name, e.skill),
-			{ status: "failed", notifyMsg: e.notifyMsg, notifyLevel: "error", errMsg: e.errMsg },
-			e.notifyPartial ? (ctx) => notifyPartialArtifacts(ctx, run.cwd, run.runId) : undefined,
-		);
-		return;
-	}
-	const reason = formatError(e);
-	await recordTerminalFailure(curCtx, auditCtxFor(run, name, name), {
-		status: "failed",
-		notifyMsg: MSG_STAGE_THREW(name, reason),
-		notifyLevel: "error",
-		errMsg: reason,
-	});
-}
-
-export function finalizeWorkflow(curCtx: WorkflowHostContext, run: RunContext): void {
-	curCtx.ui.setStatus(STATUS_KEY, undefined);
-	curCtx.ui.notify(MSG_WORKFLOW_COMPLETE(run.state.stagesCompleted), "info");
-	terminate(run.state, { status: "completed" });
-}
-
-/**
- * Build the `registeredSkills` snapshot consumed by `ensureSkillRegistered`.
- *
- * Pi prefixes skill-source commands with `"skill:"` (agent-session.js); we
- * strip the prefix so the set keys match `stage.skill` directly. Called
- * exactly once per run, before any `ctx.newSession()` opens (which is when
- * Pi marks the `WorkflowHost` handle stale).
- *
- * Non-skill commands (slash commands registered by extensions) are filtered
- * out — the preflight only cares about skills.
- */
-function snapshotRegisteredSkills(host: WorkflowHost): ReadonlySet<string> {
-	const skills = new Set<string>();
-	for (const cmd of host.getCommands()) {
-		if (cmd.source !== "skill") continue;
-		const name = cmd.name.startsWith("skill:") ? cmd.name.slice("skill:".length) : cmd.name;
-		skills.add(name);
-	}
-	return skills;
 }

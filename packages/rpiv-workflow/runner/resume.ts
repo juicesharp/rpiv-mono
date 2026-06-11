@@ -25,15 +25,21 @@
  */
 
 import type { LoopDef, StageDef, Unit, Workflow } from "../api.js";
+import { applyCompletedStage, stageEntryArgs } from "../chain-state.js";
 import { effectiveLoopOf } from "../control-flow.js";
 import type { Artifact } from "../handle.js";
-import { applyCompletedStage, formatError, stageEntryArgs } from "../internal-utils.js";
+import { formatError } from "../internal-utils.js";
 import { advanceCursor, freshCursor, judgeStageDef, type LoopCursor, projectResult, unitTagOf } from "../loop.js";
 import { ERR_RESUME_LOOP_MISMATCH } from "../messages.js";
 import type { Output } from "../output.js";
-import { readAllStagesForResume, STATE_SCHEMA_VERSION } from "../state/index.js";
-import type { WorkflowHeader, WorkflowStage } from "../state/state.js";
+import {
+	readAllStagesForResume,
+	STATE_SCHEMA_VERSION,
+	type WorkflowHeader,
+	type WorkflowStage,
+} from "../state/index.js";
 import type { RunState } from "../types.js";
+import { freshRunState } from "./run-context.js";
 
 /** Trailing open generation — everything `resume-loop.ts` needs to re-enter `runLoop`. */
 export interface LoopResumePoint {
@@ -74,25 +80,6 @@ export type ReconstructResult =
 			drift?: { parent: string; errMsg: string };
 	  }
 	| { ok: false; reason: "no-rows" | "stage-gone" | "malformed-row" | "version-mismatch"; detail: string };
-
-/**
- * A pristine `RunState`. New runs start here (`runWorkflow`); the fold starts
- * here too and replays the trail on top — ONE construction site, so a new
- * `RunState` field can never silently diverge between live runs and resumes.
- * (Phase 3 moves this beside `buildRunContext` in `runner/run-context.ts`.)
- */
-export function freshRunState(originalInput: string): RunState {
-	return {
-		originalInput,
-		primaryArtifact: undefined,
-		output: undefined,
-		named: {},
-		stagesCompleted: 0,
-		lastAllocatedStageNumber: 0,
-		telemetry: { backwardJumps: 0, droppedRoutingRows: [], droppedFailureRows: [] },
-		termination: { status: "running" },
-	};
-}
 
 export async function reconstructState(
 	cwd: string,

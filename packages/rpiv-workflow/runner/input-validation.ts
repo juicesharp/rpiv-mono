@@ -15,7 +15,7 @@
  * halting only on timeouts.
  */
 
-import { formatError, SchemaTimeoutError, withTimeout } from "../internal-utils.js";
+import { formatError, withTimeout } from "../internal-utils.js";
 import { isJsonSchemaObject, jsonSchemaToStandard } from "../json-schema.js";
 import { ERR_INPUT_VALIDATION_FAILED, ERR_SCHEMA_TIMEOUT, MSG_INPUT_VALIDATION_FAILED } from "../messages.js";
 import type { RunContext } from "../types.js";
@@ -24,6 +24,7 @@ import {
 	describeFailure,
 	MAX_VALIDATION_RETRY_TIMEOUT_MS,
 	MIN_VALIDATION_RETRY_TIMEOUT_MS,
+	SchemaTimeoutError,
 	type ValidationResult,
 	validateOutputData,
 } from "../validate-output.js";

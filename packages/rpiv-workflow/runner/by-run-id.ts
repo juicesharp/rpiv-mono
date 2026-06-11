@@ -36,7 +36,8 @@ import type { WorkflowHostContext } from "../host.js";
 import { findWorkflow, loadWorkflows } from "../load/index.js";
 import { MSG_LOAD_ABORTED, MSG_RESUME_WORKFLOW_GONE, MSG_RUN_NOT_FOUND } from "../messages.js";
 import { resolveRun } from "../state/index.js";
-import { type ResumeWorkflowOptions, type RunWorkflowResult, resumeWorkflow } from "./runner.js";
+import type { RunWorkflowResult } from "../types.js";
+import { type ResumeWorkflowOptions, resumeWorkflow } from "./runner.js";
 
 /**
  * Options for `resumeWorkflowByRunId` — the full `ResumeWorkflowOptions` surface
