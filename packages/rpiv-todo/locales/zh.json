@@ -1,0 +1,17 @@
+{
+  "_meta.notes": "中文翻译。欢迎中文母语者通过 PR 审校。",
+
+  "status.pending": "待处理",
+  "status.in_progress": "进行中",
+  "status.completed": "已完成",
+  "status.deleted": "已删除",
+
+  "overlay.heading": "任务清单",
+  "overlay.more": "更多",
+
+  "command.no_todos": "暂无任务。可以让 agent 添加一些！",
+  "command.requires_interactive": "/todos 需要交互模式",
+  "command.section.pending": "── 待处理 ──",
+  "command.section.in_progress": "── 进行中 ──",
+  "command.section.completed": "── 已完成 ──"
+}

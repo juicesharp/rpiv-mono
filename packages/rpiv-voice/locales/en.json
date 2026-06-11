@@ -38,5 +38,8 @@
   "settings.language_value_auto": "Auto-detect",
   "settings.language_hint": "Run /languages to change.",
   "settings.hallucination_filter_label": "Filter Whisper noise",
-  "settings.hallucination_filter_hint": "Drops silence-segment artifacts. Turn off for single-word dictation."
+  "settings.hallucination_filter_hint": "Drops silence-segment artifacts. Turn off for single-word dictation.",
+
+  "settings.equalizer_label": "Equalizer",
+  "settings.equalizer_hint": "Show the live audio waveform under the transcript. Off by default."
 }
