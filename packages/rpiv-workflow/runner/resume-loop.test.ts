@@ -31,7 +31,7 @@ import { createMockSessionChain, mockAssistantMessage } from "@juicesharp/rpiv-t
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { acts, type FanoutFn, gate, type IterateFn, produces, type Workflow } from "../api.js";
-import { assess, fanout, iterate } from "../control-flow.js";
+import { assess, fanout, iterate, verify } from "../control-flow.js";
 import { fs as fsHandle } from "../handle.js";
 import { judge } from "../judge.js";
 import type { Output, OutputSpec } from "../output.js";
@@ -738,7 +738,7 @@ describe("loop-resume — assess", () => {
 		]);
 	});
 
-	// --- NON-start assess stage — entryArgsFor's recovered-primary branch ---
+	// --- NON-start assess stage — stageEntryArgs' recovered-primary branch (frozen at fold open) ---
 
 	const seedOutput = (num: number): Output => ({
 		kind: "artifacts",
@@ -836,5 +836,238 @@ describe("loop-resume — assess", () => {
 		const rows = readAllStages(tmpDir, header.runId);
 		expect(rows[rows.length - 1]).toMatchObject({ stage: "breakdown", status: "failed" });
 		expect(chain.sentMessages).toEqual([]);
+	});
+});
+
+describe("loop-resume — verify", () => {
+	const header: WorkflowHeader = {
+		runId: "2026-06-10_22-00-00-bb22",
+		workflow: "gated",
+		input: "build it",
+		ts: "2026-06-10T22:00:00Z",
+	};
+
+	const pass = (v: Output) => Boolean((v.data as { done?: boolean }).done);
+	const vFeedForward = ({ verdict, round }: { verdict: Output; round: number }) =>
+		`fix round=${round} fb=${(verdict.data as { feedback?: string }).feedback}`;
+
+	const gatedWf = (maxAttempts = 3): Workflow =>
+		({
+			name: "gated",
+			start: "build",
+			stages: {
+				build: produces({
+					outcome: transcriptOutcome("impl"),
+					verify:
+						maxAttempts === 1
+							? verify({ judge: judge({ skill: "grade", outcome: verdictOutcome("verdict") }), pass })
+							: verify({
+									judge: judge({ skill: "grade", outcome: verdictOutcome("verdict") }),
+									pass,
+									feedForward: vFeedForward,
+									maxAttempts,
+								}),
+				}),
+				consume: acts(),
+			},
+			edges: { build: "consume", consume: "stop" },
+		}) as Workflow;
+
+	const writeVerdict = (n: number, isDone: boolean, feedback = `fb${n}`): string => {
+		const rel = `.rpiv/verdicts/v${n}.json`;
+		writeFile(rel, JSON.stringify({ done: isDone, feedback }));
+		return rel;
+	};
+
+	const implOutput = (attempt: number, num: number): Output => ({
+		kind: "artifacts",
+		artifacts: [{ handle: fsHandle(`.rpiv/artifacts/impl/i${attempt}.md`), role: "primary" }],
+		data: {},
+		meta: { stage: "build", stageNumber: num, ts: "", runId: "" },
+	});
+
+	const verdictOutput = (attempt: number, num: number, isDone: boolean): Output => ({
+		kind: "artifacts",
+		artifacts: [{ handle: fsHandle(`.rpiv/verdicts/v${attempt}.json`), role: "primary" }],
+		data: { done: isDone, feedback: `fb${attempt}` },
+		meta: { stage: "build", stageNumber: num, ts: "", runId: "" },
+	});
+
+	const attemptRow = (attempt: number, num: number, status: WorkflowStage["status"] = "completed"): WorkflowStage => ({
+		stageNumber: num,
+		stage: `build (a${attempt}·attempt)`,
+		skill: "build",
+		status,
+		ts: `t${num}`,
+		parent: "build",
+		role: "produce",
+		unitIndex: attempt,
+		...(status === "completed" ? { output: implOutput(attempt, num) } : { errMsg: "boom" }),
+	});
+
+	const verdictRow = (attempt: number, num: number, isDone: boolean): WorkflowStage => ({
+		stageNumber: num,
+		stage: `build (a${attempt}·verify)`,
+		skill: "grade",
+		status: "completed",
+		ts: `t${num}`,
+		parent: "build",
+		role: "verify",
+		unitIndex: attempt,
+		output: verdictOutput(attempt, num, isDone),
+	});
+
+	function writeRun(stages: WorkflowStage[]): void {
+		writeHeader(tmpDir, header);
+		for (const s of stages) appendStage(tmpDir, header.runId, s);
+	}
+
+	it("pending verify: a completed-attempt trailer grades it, then advances on pass (no attempt re-run)", async () => {
+		writeRun([attemptRow(0, 1)]); // died after the attempt, before the verify
+		writeVerdict(0, true);
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [
+				{ branch: [mockAssistantMessage("verdict .rpiv/verdicts/v0.json")] }, // verify attempt 0
+				{ branch: [mockAssistantMessage("consumed")] }, // consume
+			],
+		});
+
+		const result = await resumeWorkflow(chain.ctx, { workflow: gatedWf(), header, ref: "@x" });
+
+		expect(result.success).toBe(true);
+		expect(chain.sentMessages).toEqual([
+			"/skill:grade .rpiv/artifacts/impl/i0.md",
+			"/skill:consume .rpiv/artifacts/impl/i0.md",
+		]);
+		const rows = readAllStages(tmpDir, header.runId);
+		expect(rows[rows.length - 1]).toMatchObject({ stage: "consume", status: "completed" });
+	});
+
+	it("recovered fail verdict: the next attempt runs with feedForward (no re-grade of attempt 0)", async () => {
+		writeRun([attemptRow(0, 1), verdictRow(0, 2, false)]);
+		writeVerdict(1, true);
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/impl/i1.md")] }, // attempt 1
+				{ branch: [mockAssistantMessage("verdict .rpiv/verdicts/v1.json")] }, // verify attempt 1
+				{ branch: [mockAssistantMessage("consumed")] },
+			],
+		});
+
+		const result = await resumeWorkflow(chain.ctx, { workflow: gatedWf(), header, ref: "@x" });
+
+		expect(result.success).toBe(true);
+		expect(chain.sentMessages).toEqual([
+			"/skill:build fix round=0 fb=fb0",
+			"/skill:grade .rpiv/artifacts/impl/i1.md",
+			"/skill:consume .rpiv/artifacts/impl/i1.md",
+		]);
+	});
+
+	it("pass fast-advance: a passing verdict trailer goes straight downstream, zero re-runs", async () => {
+		writeRun([attemptRow(0, 1), verdictRow(0, 2, true)]);
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [{ branch: [mockAssistantMessage("consumed")] }],
+		});
+
+		const result = await resumeWorkflow(chain.ctx, { workflow: gatedWf(), header, ref: "@x" });
+
+		expect(result.success).toBe(true);
+		expect(chain.sentMessages).toEqual(["/skill:consume .rpiv/artifacts/impl/i0.md"]);
+	});
+
+	it("pass-predicate drift: a recorded fail followed by a retry row, with `pass` now true → terminal failure", async () => {
+		const driftedWf = {
+			...gatedWf(),
+			stages: {
+				build: produces({
+					outcome: transcriptOutcome("impl"),
+					verify: verify({
+						judge: judge({ skill: "grade", outcome: verdictOutcome("verdict") }),
+						pass: () => true, // drifted — the run recorded a retry after this verdict
+						feedForward: vFeedForward,
+						maxAttempts: 3,
+					}),
+				}),
+				consume: acts(),
+			},
+		} as Workflow;
+		writeRun([attemptRow(0, 1), verdictRow(0, 2, false), attemptRow(1, 3, "failed")]);
+		const chain = createMockSessionChain({ cwd: tmpDir, steps: [] });
+
+		const result = await resumeWorkflow(chain.ctx, { workflow: driftedWf, header, ref: "@x" });
+
+		expect(result.success).toBe(false);
+		expect(result.error).toMatch(/deterministic/);
+		const rows = readAllStages(tmpDir, header.runId);
+		expect(rows[rows.length - 1]).toMatchObject({ stage: "build", status: "failed" });
+		expect(chain.sentMessages).toEqual([]);
+	});
+
+	it("gate-only recovered fail: maxAttempts 1 + a failing verdict trailer → verification-failed halt, zero dispatch", async () => {
+		writeRun([attemptRow(0, 1), verdictRow(0, 2, false)]);
+		const chain = createMockSessionChain({ cwd: tmpDir, steps: [] });
+
+		const result = await resumeWorkflow(chain.ctx, { workflow: gatedWf(1), header, ref: "@x" });
+
+		expect(result.success).toBe(false);
+		expect(result.error).toMatch(/Verification failed for "build"/);
+		const rows = readAllStages(tmpDir, header.runId);
+		expect(rows[rows.length - 1]).toMatchObject({ stage: "build", status: "failed" });
+		expect(chain.sentMessages).toEqual([]);
+	});
+
+	it("verify × reads: a failed attempt-0 trailer re-runs with the FROZEN labelled-flag arg", async () => {
+		const readsWf: Workflow = {
+			name: "gated",
+			start: "design",
+			stages: {
+				design: produces({ outcome: transcriptOutcome("design") }),
+				build: produces({
+					outcome: transcriptOutcome("impl"),
+					reads: ["design"],
+					verify: verify({ judge: judge({ skill: "grade", outcome: verdictOutcome("verdict") }), pass }),
+				}),
+				consume: acts(),
+			},
+			edges: { design: "build", build: "consume", consume: "stop" },
+		} as Workflow;
+		writeRun([
+			{
+				stageNumber: 1,
+				stage: "design",
+				skill: "design",
+				status: "completed",
+				ts: "t1",
+				output: {
+					kind: "artifacts",
+					artifacts: [{ handle: fsHandle(".rpiv/artifacts/design/d0.md"), role: "primary" }],
+					data: {},
+					meta: { stage: "design", stageNumber: 1, ts: "", runId: "" },
+				},
+			},
+			attemptRow(0, 2, "failed"), // attempt 0 died — resume re-runs it with the frozen entry arg
+		]);
+		writeVerdict(0, true);
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/impl/i0.md")] },
+				{ branch: [mockAssistantMessage("verdict .rpiv/verdicts/v0.json")] },
+				{ branch: [mockAssistantMessage("consumed")] },
+			],
+		});
+
+		const result = await resumeWorkflow(chain.ctx, { workflow: readsWf, header, ref: "@x" });
+
+		expect(result.success).toBe(true);
+		expect(chain.sentMessages).toEqual([
+			"/skill:build --design .rpiv/artifacts/design/d0.md",
+			"/skill:grade .rpiv/artifacts/impl/i0.md",
+			"/skill:consume .rpiv/artifacts/impl/i0.md",
+		]);
 	});
 });

@@ -5,7 +5,7 @@
  * string that `command.ts` hands straight to `ctx.ui.notify(..., "info")`.
  */
 
-import type { LoopDef, StageDef, Workflow } from "./api.js";
+import type { LoopDef, StageDef, VerifySpec, Workflow } from "./api.js";
 import { type ConfigLayer, renderConfigLayer } from "./layers.js";
 import type { LoadedWorkflows } from "./load/index.js";
 import { CMD_USAGE_LIST, CMD_USAGE_PREVIEW, CMD_USAGE_RUN } from "./messages.js";
@@ -112,6 +112,7 @@ function formatStageRow(idx: number, stageName: string, stage: StageDef, workflo
 	if (stage.inputSchema) decorations.push("in-schema");
 	if (stage.outputSchema) decorations.push("out-schema");
 	if (stage.loop) decorations.push(loopTag(stage.loop));
+	if (stage.verify) decorations.push(verifyTag(stage.verify));
 
 	const displayName = stage.skill && stage.skill !== stageName ? `${stageName} (skill: ${stage.skill})` : stageName;
 	const arrow = formatEdge(workflow, stageName);
@@ -153,6 +154,18 @@ function loopTag(loop: LoopDef): string {
 		return `assess(judge: ${judge})·max=${loop.max}`;
 	}
 	return loop.max !== undefined ? `${loop.kind}·max=${loop.max}` : loop.kind;
+}
+
+/**
+ * Decoration for a verify-bearing stage: `verify(skill:<name>)` /
+ * `verify(prompt)`, with the attempt budget appended when retrying
+ * (`·attempts=N`); a gate-only verify (the default, maxAttempts 1) stays
+ * compact.
+ */
+function verifyTag(v: VerifySpec): string {
+	const judge = v.judge.skill ? `skill:${v.judge.skill}` : "prompt";
+	const attempts = (v.maxAttempts ?? 1) > 1 ? `·attempts=${v.maxAttempts}` : "";
+	return `verify(${judge})${attempts}`;
 }
 
 /** Render the outgoing edge as a human-readable trailer (string or predicate target set). */

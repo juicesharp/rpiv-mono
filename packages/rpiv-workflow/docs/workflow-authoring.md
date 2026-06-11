@@ -8,6 +8,7 @@ Complete reference for the `@juicesharp/rpiv-workflow` authoring DSL. A workflow
 - [Stage factories](#stage-factories)
   - [produces](#produces)
   - [Loops (fanout / iterate / assess)](#loops-fanout--iterate--assess)
+  - [Per-stage verification (verify)](#per-stage-verification-verify)
   - [acts](#acts)
   - [terminal](#terminal)
   - [Script stages](#script-stages)
@@ -213,7 +214,7 @@ A `Judge` names a dispatchable grading session. Author it with `judge({ ... })`,
 - **≥1-artifact constraint**: the judge's collector MUST materialize at least one artifact (e.g. a JSON verdict file whose parser yields `{ done, feedback }`). A judge session that collects zero artifacts is a **fatal halt** — no retry, no soft-stop.
 - **Skill label for per-unit consumers**: a `skill` judge's units carry that skill name in `onUnitStart`/`onUnitEnd` and the JSONL rows; a `prompt` judge dispatches under the synthetic label **`<stageName>-judge`**. Per-unit listeners that key on the dispatched skill (e.g. rpiv-pi's `models.json` `skills.<name>` model-override rung) can target a prompt-judge by adding an entry under that synthetic name; with no entry, judge units run on the baseline model.
 
-Keeping the termination predicate OFF `Judge` is what makes it reusable: `assess()` adds `done(verdict)`; a future per-stage `verify` hook adds pass/fail; a future `panel()` composes N judges with a vote fold.
+Keeping the termination predicate OFF `Judge` is what makes it reusable: `assess()` adds `done(verdict)`; the per-stage `verify` field adds `pass(verdict)`; a future `panel()` composes N judges with a vote fold.
 
 #### The loop knobs
 
@@ -229,7 +230,7 @@ Every constructor accepts the shared introspectable facet and policy knobs:
 
 #### The resume contract (all loop kinds)
 
-A unit source must be **deterministic w.r.t. the fold-replayed `RunState` at the unit boundary plus this generation's accumulated outputs**. On resume, the fold re-calls your `units()` / `next()` at every folded boundary and compares each recomputed unit against what the run recorded. If they diverge — a non-deterministic generator recomputed a different unit — resume **refuses** with a terminal failure rather than re-run the wrong units. Set a stable `id` on each unit so the join survives a reworded `label`. Runs recorded before this redesign carry no `parent` field on their unit rows and cannot be resumed (`stage-gone` refusal — no migration).
+A unit source must be **deterministic w.r.t. the fold-replayed `RunState` at the unit boundary plus this generation's accumulated outputs**. On resume, the fold re-calls your `units()` / `next()` at every folded boundary and compares each recomputed unit against what the run recorded. If they diverge — a non-deterministic generator recomputed a different unit — resume **refuses** with a terminal failure rather than re-run the wrong units. Set a stable `id` on each unit so the join survives a reworded `label`. The same contract covers the model-judged predicates: `assess`'s `done` / `feedForward` and `verify`'s `pass` are recomputed on resume (never persisted), so each must be deterministic w.r.t. the verdict `Output`. Runs recorded before this redesign carry no `parent` field on their unit rows and cannot be resumed (`stage-gone` refusal — no migration).
 
 #### Loop lifecycle hooks
 
@@ -243,6 +244,53 @@ Loops are observed through unit-generic lifecycle hooks (register via `registerL
 | `onLoopCap(stage, info)` | `LoopCapInfo` `{ kind, count, max, policy }` | after an `onCap: "advance"` trip (after the `{type:"loop-cap"}` row append attempt) |
 
 `UnitEvent.skill` is the unit's *dispatched* skill body — the parent stage's skill for produce units, the judge's own skill for judge units — so a model-override listener can resolve a per-unit model through the existing `models.json` cascade (`skills.<name>`) with no new configuration axes.
+
+### Per-stage verification (verify)
+
+**verify** attaches a post-condition judge to a `produces` stage: after each attempt completes (collected, validated, persisted), the judge session grades the attempt's primary artifact and `pass(verdict)` gates advancement — true → the chain advances with the attempt's producer pair; false → a fresh retry attempt (prompt arg built by `feedForward`) up to `maxAttempts` (default 1 = gate-only), then the workflow halts with "verification failed". A pass on the final attempt is a normal completion. Requires `kind: "produces"` + an `outcome` with a `name`; composes with `reads`; mutually exclusive with `loop`, `run`, `prompt`, and `sessionPolicy: "continue"`.
+
+```ts
+import { judge, produces, verify } from "@juicesharp/rpiv-workflow";
+
+// Gate-only: one attempt; a failing verdict halts the workflow.
+const GATED = produces({
+  outcome: implOutcome, // publishes "impl"
+  verify: verify({
+    judge: judge({ skill: "review-gate", outcome: verdictOutcome }), // publishes "impl-verdict"
+    pass: (v) => (v.data as { ok?: boolean }).ok === true,
+  }),
+});
+
+// Retry-with-feedback: up to 3 fresh attempts, each retried prompt carrying the verdict's feedback.
+const RETRIED = produces({
+  outcome: implOutcome,
+  reads: ["design", "plan"], // composes — attempt prompts use the labelled-flag projection
+  verify: verify({
+    judge: judge({ skill: "review-gate", outcome: verdictOutcome }),
+    pass: (v) => (v.data as { ok?: boolean }).ok === true,
+    feedForward: ({ verdict }) => `address: ${(verdict.data as { feedback?: string }).feedback}`,
+    maxAttempts: 3, // requires feedForward when > 1
+  }),
+});
+```
+
+**Two budgets, two cost scales:** `verify.maxAttempts` is the FULL-attempt budget — each attempt is a fresh session running the whole produce→validate→persist cycle. `stage.maxRetries` stays the orthogonal in-session schema-fix budget and remains live inside every attempt.
+
+**Lifecycle (loop semantics):** a verified stage runs through the loop driver, so `onLoopStart` fires with `kind: "verify"`, each attempt/verdict fires `onUnitStart`/`onUnitEnd` (roles `"produce"`/`"verify"`), and the stage does NOT fire `onStageEnd` — observe units, not stage-end. A model-override listener resolves the judge's own skill through `onUnitStart`, exactly as for assess judges.
+
+**Fallback routing instead of halting:** the verdict publishes durably to `state.named[judge.outcome.name]`, so a route can read it — no built-in fail→route policy exists (or is needed):
+
+```ts
+edges: {
+  implement: defineRoute(
+    ["ship", "fallback"],
+    ({ state }) => ((state.named["impl-verdict"]?.at(-1)?.data as { ok?: boolean })?.ok ? "ship" : "fallback"),
+    { readsData: false },
+  ),
+}
+```
+
+**Resume:** crash after an attempt but before its verdict → resume re-runs just the verify; a recovered failing verdict re-computes `pass` and continues the retry (or halts a gate-only verify); a recovered passing verdict fast-advances. `pass` is recomputed, never persisted — it joins the loop determinism contract (deterministic w.r.t. the verdict `Output`).
 
 ### acts
 
@@ -846,7 +894,7 @@ Generated workflows must pass `validateWorkflow()` before writing. The validator
 - **A collecting loop requires an `outcome` with a `name`** so units publish to a stable named slot (iterate and assess always; a `fanout` when its stage `kind` is `produces`)
 - `iterate` / `assess` require `kind: "produces"` — each unit runs an outcome collector
 - `loop.max` must be an integer `>= 1` (the run-wide `maxIterations` caps the upper bound)
-- `assess` cannot set `reads` in v1, and the judge's `outcome.name` must differ from the producer's publish name
+- a judge's `outcome.name` must differ from the producer's publish name (`assess` and `verify`); `assess` composes with `reads` (the v1 restriction is lifted — round-0 producer args are derived by one authority and frozen by the resume fold at loop-generation open)
 - **prompt and loop are mutually exclusive** — units own their prompts; prompt stages also cannot set `skill`, `run`, or `reads`; a `produces` prompt stage still needs an `outcome`; an empty prompt string is rejected
 - **Script stages cannot loop — write a loop inside run() instead**; they also cannot declare `skill`, `outcome`, `prompt`, or `sessionPolicy: "continue"`
 

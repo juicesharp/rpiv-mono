@@ -133,25 +133,72 @@ export interface IterateContext {
 	index: number;
 }
 
-/** Context handed to `AssessLoop.feedForward`. */
+/** Context handed to `AssessLoop.feedForward` and `VerifySpec.feedForward`. */
 export interface FeedForwardContext {
 	cwd: string;
 	/** Producer output just judged. */
 	output: import("./output.js").Output;
 	/** Judge verdict (incl. feedback). */
 	verdict: import("./output.js").Output;
-	/** 0-based round index of the round just judged. */
+	/** 0-based round index of the round just judged (== the attempt index for verify). */
 	round: number;
 	state: Readonly<RunState>;
 }
 
 /**
- * Role a unit row/event carries. Every main-work unit — fanout unit, iterate
- * unit, assess producer — is `"produce"`; judge sub-steps are `"judge"`. A
- * future `verify` hook extends the union. The `result: "last"` projection and
- * the resume fold's apply rule key on this.
+ * Per-stage post-condition judge — the data shape behind `StageDef.verify`.
+ * After each attempt of the stage completes (collected, validated, persisted),
+ * the judge session grades the attempt's primary artifact; `pass(verdict)`
+ * true → verified, the chain advances with the attempt's producer pair;
+ * false → a fresh retry attempt (prompt arg built by `feedForward`) up to
+ * `maxAttempts`, then a terminal "verification failed" halt. Author via the
+ * `verify()` constructor (control-flow.ts), which validates at construction;
+ * load-time validation re-checks hand-rolled literals through the same
+ * `verifyShapeIssues` rule source.
+ *
+ * Runtime: the runner desugars the field into a degenerate assess loop
+ * (`done: pass`, `max: maxAttempts ?? 1`, `onCap: "halt"`, `result: "last"`)
+ * run by the ONE loop driver. Attempts and verdicts land as unit rows
+ * (`role: "produce"` / `role: "verify"`, `unitIndex` = 0-based attempt); the
+ * verdict publishes durably to `state.named[judge.outcome.name]` (so
+ * declarative fallback routing over `EdgeContext.state.named` works); and
+ * `projectResult` restores the last attempt's producer pair before the chain
+ * advances — downstream stages never inherit the verdict.
  */
-export type UnitRole = "produce" | "judge";
+export interface VerifySpec {
+	judge: import("./judge.js").Judge;
+	/**
+	 * Sync TS reading the model-made verdict. `true` → verified, advance.
+	 * RESUME CONTRACT: recomputed on resume (never persisted) — must be
+	 * deterministic w.r.t. the verdict `Output`. A pass on the final attempt
+	 * is a normal completion (the predicate wins over the attempt cap).
+	 */
+	pass: (verdict: import("./output.js").Output) => boolean;
+	/**
+	 * Builds the next attempt's prompt arg from the just-failed attempt's
+	 * producer output + verdict. REQUIRED when `maxAttempts > 1` (without it
+	 * the retried prompt would be byte-identical to the original and the model
+	 * would have no signal about why it failed); never called when
+	 * `maxAttempts` is 1.
+	 */
+	feedForward?: (ctx: FeedForwardContext) => string;
+	/**
+	 * Total attempt budget — each attempt is a FRESH session running the full
+	 * produce→validate→persist cycle. Orthogonal to `stage.maxRetries` (the
+	 * cheap in-session schema-fix budget, which stays live inside every
+	 * attempt). Integer >= 1; default 1 (gate-only). Clamped by
+	 * `run.maxIterations` at runtime like every loop cap.
+	 */
+	maxAttempts?: number;
+}
+
+/**
+ * Role a unit row/event carries. Every main-work unit — fanout unit, iterate
+ * unit, assess producer, verify attempt — is `"produce"`; assess judge
+ * sub-steps are `"judge"`; verify verdict sub-steps are `"verify"`. The
+ * `result: "last"` projection and the resume fold's apply rule key on this.
+ */
+export type UnitRole = "produce" | "judge" | "verify";
 
 /**
  * What happens when a loop hits its effective cap (`min(max, run.maxIterations)`):
@@ -380,10 +427,27 @@ export interface StageDef<TIn = unknown, TOut = unknown> {
 	 *   - `assess({...})`  — producer→judge rounds; requires `kind: "produces"`
 	 *     + `outcome.name` (the producer is a collecting unit too).
 	 * Mutually exclusive with `run`/`prompt` and `sessionPolicy: "continue"`
-	 * (validated at load + at preflight). `assess` keeps the v1 `reads`
-	 * restriction.
+	 * (validated at load + at preflight).
 	 */
 	loop?: LoopDef;
+	/**
+	 * Opt-in post-condition judge. When set, the runner desugars this stage
+	 * into a degenerate assess loop (attempt → verify rounds through the ONE
+	 * driver, loop.ts): each attempt is graded by `verify.judge`;
+	 * `verify.pass(verdict)` gates advancement; failures retry with
+	 * `verify.feedForward` feedback up to `verify.maxAttempts`, then halt with
+	 * "verification failed". Author via the `verify()` constructor.
+	 *
+	 * Lifecycle follows LOOP semantics: `onLoopStart` fires with
+	 * `kind: "verify"`, attempts/verdicts fire `onUnitStart`/`onUnitEnd`, and
+	 * the stage does NOT fire `onStageEnd` (same contract as every loop
+	 * stage). The verdict publishes to `state.named[verify.judge.outcome.name]`.
+	 *
+	 * Requires `kind: "produces"` (the judge grades the attempt's artifact).
+	 * Composes with `reads`. Mutually exclusive with `loop`, `run`, `prompt`,
+	 * and `sessionPolicy: "continue"` (validated at load).
+	 */
+	verify?: VerifySpec;
 	/**
 	 * Whether the stage inherits the chain's primary artifact from
 	 * upstream `produces` stages. Default `true`. Set to `false` on a

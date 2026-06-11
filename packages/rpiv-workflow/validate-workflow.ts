@@ -30,7 +30,7 @@ import {
 	type StageDef,
 	type Workflow,
 } from "./api.js";
-import { loopSpecOf } from "./control-flow.js";
+import { loopSpecOf, verifyShapeIssues } from "./control-flow.js";
 import { resolvePublishName, resolveSkill } from "./internal-utils.js";
 import { extractJsonSchema } from "./json-schema.js";
 import { judgeShapeIssues } from "./judge.js";
@@ -201,6 +201,7 @@ function checkStageSemantics(w: Workflow, issues: WorkflowValidationIssue[]): vo
 		checkTimeoutBounds(w, name, stage, issues);
 		checkStageEnums(w, name, stage, issues);
 		checkLoopInvariants(w, name, stage, issues);
+		checkVerifyInvariants(w, name, stage, issues);
 		checkPromptInvariants(w, name, stage, issues);
 		checkInheritsArtifactsKind(w, name, stage, issues);
 		checkScriptStageInvariants(w, name, stage, issues);
@@ -269,15 +270,6 @@ function checkLoopInvariants(w: Workflow, name: string, stage: StageDef, issues:
 
 	if (loop.kind !== "assess") return;
 
-	if (stage.reads?.length) {
-		issues.push(
-			error(
-				w.name,
-				name,
-				`stage "${name}": assess cannot set \`reads\` in v1 — the round-0 producer prompt uses the primary-handle projection`,
-			),
-		);
-	}
 	// Judge shape — SAME rule source as the judge() factory (no wording drift).
 	for (const issue of judgeShapeIssues(loop.judge)) {
 		issues.push(error(w.name, name, `stage "${name}": assess ${issue}`));
@@ -308,6 +300,85 @@ function checkLoopInvariants(w: Workflow, name: string, stage: StageDef, issues:
 				w.name,
 				name,
 				`stage "${name}": judge.outcome.name "${loop.judge.outcome.name}" collides with the producer's publish name — give the verdict its own channel`,
+			),
+		);
+	}
+}
+
+/**
+ * One rule block for the `verify` field. The `verify()` constructor already
+ * threw on shape violations at authoring time; this is the defensive load
+ * gate for hand-rolled literals (jiti erases TS types), plus the
+ * workflow-level rules that need the stage's identity. The runtime engine is
+ * the loop driver (the desugar), so the structural exclusions mirror the
+ * loop rules — but verify-worded, because the author declared a
+ * post-condition, not a loop.
+ */
+function checkVerifyInvariants(w: Workflow, name: string, stage: StageDef, issues: WorkflowValidationIssue[]): void {
+	const v = stage.verify;
+	if (!v) return;
+
+	// Shape — SAME rule source as the verify() factory (no wording drift).
+	for (const issue of verifyShapeIssues(v)) {
+		issues.push(error(w.name, name, `stage "${name}": ${issue}`));
+	}
+	if (stage.loop) {
+		issues.push(
+			error(
+				w.name,
+				name,
+				`stage "${name}": verify and loop are mutually exclusive in v1 — verify already runs the stage through the loop driver`,
+			),
+		);
+	}
+	if (stage.run) {
+		issues.push(
+			error(
+				w.name,
+				name,
+				`stage "${name}": verify and run are mutually exclusive — verify attempts dispatch /skill:<skill>; a script stage has no session`,
+			),
+		);
+	}
+	if (stage.kind !== "produces") {
+		issues.push(
+			error(
+				w.name,
+				name,
+				`stage "${name}": verify requires kind "produces" — the judge grades the attempt's produced artifact`,
+			),
+		);
+	}
+	if (stage.sessionPolicy === "continue") {
+		issues.push(
+			error(
+				w.name,
+				name,
+				`stage "${name}": verify cannot combine with sessionPolicy "continue" — each attempt requires an isolated session`,
+			),
+		);
+	}
+	// Attempts publish to a stable named slot — without `outcome.name` the
+	// fallback publish key would be the DECORATED unit display string
+	// ("build (a0·attempt)"), splitting the accumulation slot per attempt
+	// (same rationale as the collecting-loop rule).
+	if (stage.kind === "produces" && !stage.run && !stage.outcome?.name) {
+		issues.push(
+			error(
+				w.name,
+				name,
+				`stage "${name}": verify requires an \`outcome\` with a \`name\` so attempts publish to a stable named slot`,
+			),
+		);
+	}
+	// Verdict-channel collision — STAYS workflow-level (needs the producer's
+	// publish identity, which only the stage knows). Mirrors the assess rule.
+	if (v.judge?.outcome?.name && v.judge.outcome.name === (stage.outcome?.name ?? name)) {
+		issues.push(
+			error(
+				w.name,
+				name,
+				`stage "${name}": verify judge.outcome.name "${v.judge.outcome.name}" collides with the producer's publish name — give the verdict its own channel`,
 			),
 		);
 	}
@@ -408,6 +479,15 @@ function checkPromptInvariants(w: Workflow, name: string, stage: StageDef, issue
 	if (stage.loop) {
 		issues.push(
 			error(w.name, name, `stage "${name}": prompt and loop are mutually exclusive — units own their prompts`),
+		);
+	}
+	if (stage.verify) {
+		issues.push(
+			error(
+				w.name,
+				name,
+				`stage "${name}": prompt and verify are mutually exclusive in v1 — verify attempts dispatch /skill:<skill>; a prompt stage has no skill`,
+			),
 		);
 	}
 	if (stage.reads?.length) {
@@ -538,6 +618,25 @@ function checkScriptStageInvariants(
 }
 
 /**
+ * Every named channel some stage in this workflow can publish: top-level
+ * `produces` publishes (`resolvePublishName` — the runtime write rule), PLUS
+ * judge verdict channels from `loop` (assess) and `verify` — judge sessions
+ * run as `produces` and publish to `judge.outcome.name` (`judgeStageDef`).
+ * The old produces-only scan missed verdict channels, so a downstream
+ * `reads: ["<verdict>"]` falsely errored at load while the runtime
+ * `ensureNamedReads` preflight would have passed.
+ */
+function publishedNamesOf(w: Workflow): Set<string> {
+	const published = new Set<string>();
+	for (const [name, stage] of Object.entries(w.stages)) {
+		if (stage.kind === "produces") published.add(resolvePublishName(stage, name));
+		const judge = stage.loop?.kind === "assess" ? stage.loop.judge : stage.verify?.judge;
+		if (judge?.outcome?.name) published.add(judge.outcome.name);
+	}
+	return published;
+}
+
+/**
  * Every name in a stage's `reads:` must be filled by some `produces` stage
  * in the workflow. The publish key is `stage.outcome?.name ?? <record-key>`
  * — same rule the runner enforces at write time (see
@@ -549,11 +648,7 @@ function checkScriptStageInvariants(
  * preflight handles the "haven't fired yet" case.
  */
 function checkReadsReferences(w: Workflow, issues: WorkflowValidationIssue[]): void {
-	const publishedNames = new Set<string>();
-	for (const [name, stage] of Object.entries(w.stages)) {
-		if (stage.kind !== "produces") continue;
-		publishedNames.add(stage.outcome?.name ?? name);
-	}
+	const publishedNames = publishedNamesOf(w);
 	for (const [name, stage] of Object.entries(w.stages)) {
 		if (!stage.reads?.length) continue;
 		for (const read of stage.reads) {
@@ -585,10 +680,7 @@ function checkReadsReferences(w: Workflow, issues: WorkflowValidationIssue[]): v
 const LOOP_VERB = { fanout: "fans out over", iterate: "iterates over", assess: "assesses over" } as const;
 
 function checkFanoutSource(w: Workflow, issues: WorkflowValidationIssue[]): void {
-	const published = new Set<string>();
-	for (const [name, stage] of Object.entries(w.stages)) {
-		if (stage.kind === "produces") published.add(stage.outcome?.name ?? name);
-	}
+	const published = publishedNamesOf(w);
 	for (const [name, stage] of Object.entries(w.stages)) {
 		const spec = loopSpecOf(stage.loop);
 		const source = spec?.source;
@@ -708,14 +800,22 @@ function checkReadsChannelCompat(
 	// Index signed publishers by channel. `kind === "produces"` mirrors the
 	// runtime publish rule (`applyCompletedStage`).
 	const publishersByChannel = new Map<string, Array<{ stage: string; produces: ProducesSpec }>>();
-	for (const [name, stage] of Object.entries(w.stages)) {
-		if (stage.kind !== "produces") continue;
-		const produces = skillContracts.get(resolveSkill(stage, name))?.produces;
-		if (!produces) continue; // unsigned producer — degrade
-		const channel = resolvePublishName(stage, name);
+	const indexPublisher = (channel: string, stage: string, produces: ProducesSpec): void => {
 		const list = publishersByChannel.get(channel);
-		if (list) list.push({ stage: name, produces });
-		else publishersByChannel.set(channel, [{ stage: name, produces }]);
+		if (list) list.push({ stage, produces });
+		else publishersByChannel.set(channel, [{ stage, produces }]);
+	};
+	for (const [name, stage] of Object.entries(w.stages)) {
+		if (stage.kind === "produces") {
+			const produces = skillContracts.get(resolveSkill(stage, name))?.produces;
+			if (produces) indexPublisher(resolvePublishName(stage, name), name, produces);
+		}
+		// A skill judge is a publisher of its verdict channel; unsigned judges degrade.
+		const judge = stage.loop?.kind === "assess" ? stage.loop.judge : stage.verify?.judge;
+		if (judge?.skill && judge.outcome?.name) {
+			const produces = skillContracts.get(judge.skill)?.produces;
+			if (produces) indexPublisher(judge.outcome.name, name, produces);
+		}
 	}
 
 	for (const [consumerName, consumer] of Object.entries(w.stages)) {

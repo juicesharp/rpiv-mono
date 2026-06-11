@@ -8,7 +8,7 @@
 
 import { isAbsolute, join } from "node:path";
 import type { StageDef } from "./api.js";
-import type { Artifact } from "./handle.js";
+import { type Artifact, handleToString } from "./handle.js";
 import type { Output } from "./output.js";
 import type { RunState } from "./types.js";
 
@@ -50,6 +50,55 @@ export function resolvePublishName(def: StageDef, stageName: string): string {
  */
 export function resolveSkill(def: StageDef, stageName: string): string {
 	return def.skill ?? stageName;
+}
+
+/**
+ * The single arg-projection authority: the string a stage's
+ * `/skill:<name> <args>` prompt carries, derived purely from
+ * (def, stageName, startStage, state). Four cases in priority order:
+ *   1. The start stage receives `originalInput` (the user's brief).
+ *   2. A stage opting out of inheritance (`inheritsArtifacts: false`,
+ *      i.e. authored via `terminal()`) also receives `originalInput`.
+ *   3. A stage with `reads: [...]` receives the labelled multi-flag form
+ *      `--<name1> <handle1> --<name2> <handle2> …` — each name resolves
+ *      against `state.named[name].at(-1)`; a multi-artifact entry repeats
+ *      the flag.
+ *   4. Otherwise: the rolling primary artifact's handle string.
+ *
+ * Returns `undefined` (instead of non-null-asserting) when a required
+ * projection input is missing — the rolling primary is unset, or a `reads`
+ * name has no published entry. The LIVE path never sees `undefined`: the
+ * preflights (`ensureUpstreamArtifact` / `ensureNamedReads`) guarantee the
+ * inputs before `inputForStage` delegates here. The RESUME fold freezes this
+ * value at loop-generation open, where replayed state is byte-identical to
+ * live loop entry (THE REPLAY CONTRACT); `undefined` there means a
+ * truncated/corrupted trail and becomes a recorded refusal.
+ *
+ * Lives here (not runner/) so the resume fold consumes it cycle-free —
+ * twin posture to `applyCompletedStage`, the other live+fold shared
+ * authority.
+ */
+export function stageEntryArgs(
+	def: StageDef,
+	stageName: string,
+	startStage: string,
+	state: RunState,
+): string | undefined {
+	if (stageName === startStage) return state.originalInput;
+	if (def.inheritsArtifacts === false) return state.originalInput;
+	if (def.reads?.length) {
+		const parts: string[] = [];
+		for (const name of def.reads) {
+			const latest = state.named[name]?.at(-1);
+			if (!latest) return undefined;
+			for (const artifact of latest.artifacts) {
+				parts.push(`--${name}`, handleToString(artifact.handle));
+			}
+		}
+		return parts.join(" ");
+	}
+	const primary = currentPrimaryArtifact(state);
+	return primary === undefined ? undefined : handleToString(primary.handle);
 }
 
 /**

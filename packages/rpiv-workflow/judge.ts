@@ -11,9 +11,9 @@
  * VALIDATED by `outcome` and published into its own dedicated
  * `state.named[outcome.name]` channel. What the verdict DECIDES lives on the
  * consuming site, not here: the `assess()` constructor adds `done(verdict)`;
- * a future per-stage `verify` hook adds pass/fail semantics; `panel()` will
- * compose N judges with a vote fold. Keeping the termination predicate off
- * `Judge` is what makes the concept reusable across all three.
+ * the per-stage `verify` field adds `pass(verdict)`; `panel()` will compose
+ * N judges with a vote fold. Keeping the termination predicate off `Judge`
+ * is what makes the concept reusable across all three.
  *
  * Leaf module — type-only imports; safe on the runner-free `registration`
  * surface (siblings register built-ins without dragging the runner in).
@@ -98,4 +98,16 @@ export function judge(spec: Judge): Judge {
 	const issues = judgeShapeIssues(spec);
 	if (issues.length > 0) throw new Error(`judge(): ${issues[0]}`);
 	return spec;
+}
+
+/**
+ * Resolve a static or dynamic `Judge.prompt`. A dynamic prompt may be async.
+ * (Moved from loop.ts — the ONE resolver for every Judge dispatch site.)
+ */
+export async function resolveJudgePrompt(
+	prompt: string | ((ctx: JudgeContext) => string | Promise<string>),
+	ctx: JudgeContext,
+): Promise<string> {
+	if (typeof prompt === "string") return prompt;
+	return prompt(ctx);
 }

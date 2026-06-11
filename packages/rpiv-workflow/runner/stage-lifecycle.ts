@@ -11,21 +11,23 @@
 
 import type { PromptFn, StageDef } from "../api.js";
 import { auditCtxFor, notifyPartialArtifacts, recordTerminalFailure, runIdentityOf } from "../audit.js";
-import { handleToString } from "../handle.js";
-import { currentPrimaryArtifact, resolveSkill } from "../internal-utils.js";
+import { effectiveLoopOf } from "../control-flow.js";
+import { currentPrimaryArtifact, resolveSkill, stageEntryArgs } from "../internal-utils.js";
 import type { Judge } from "../judge.js";
 import { skillStageRef } from "../lifecycle.js";
-import { freshCursor, type LoopDeps, runLoop } from "../loop.js";
+import { freshCursor, type LoopDeps, type LoopEntry, runLoop } from "../loop.js";
 import {
 	ERR_LOOP_CAP_HALT,
 	ERR_MISSING_ARTIFACT,
 	ERR_MISSING_NAMED_READ,
 	ERR_SKILL_NOT_REGISTERED,
+	ERR_VERIFY_FAILED,
 	MSG_LOOP_CAP_HALT,
 	MSG_MISSING_ARTIFACT,
 	MSG_MISSING_NAMED_READ,
 	MSG_SKILL_NOT_REGISTERED,
 	MSG_STAGE_THREW,
+	MSG_VERIFY_FAILED,
 	STATUS_KEY,
 	STATUS_STAGE,
 } from "../messages.js";
@@ -108,49 +110,15 @@ async function resolvePrompt(prompt: string | PromptFn, run: RunContext): Promis
 }
 
 /**
- * The arg string the stage's `/skill:<name> <args>` prompt carries. Four
- * cases (checked in order):
- *   1. The start stage always receives `originalInput` (the user's brief).
- *   2. A stage opting out of inheritance (`inheritsArtifacts: false`, i.e.
- *      authored via `terminal()`) also receives `originalInput` — the
- *      `ensureUpstreamArtifact` preflight is bypassed for the same opt-out.
- *   3. A stage with `reads: [...]` receives a labelled multi-flag form:
- *      `--<name1> <handle1> --<name2> <handle2> …`. Each name resolves
- *      against `state.named[name].at(-1)` (the latest entry). When that
- *      entry's `artifacts` array carries multiple handles, the flag
- *      repeats: `--<name> <h1> --<name> <h2>`. The `ensureNamedReads`
- *      preflight has already verified every name resolves; the `!` is safe.
- *   4. Otherwise: the upstream primary artifact's handle string. The
- *      `ensureUpstreamArtifact` preflight guarantees the slot is set; the
- *      `!` is safe.
+ * The arg string the stage's `/skill:<name> <args>` prompt carries — a thin
+ * wrapper over the `stageEntryArgs` authority (internal-utils.ts), which the
+ * resume fold also consumes at loop-generation open so live and resume can't
+ * drift. The preflights (`ensureUpstreamArtifact` / `ensureNamedReads`)
+ * guarantee every projection input on this path, so the authority's
+ * `undefined` arm is unreachable here; the `!` is safe.
  */
 export function inputForStage(stage: ResolvedStage, run: RunContext): string {
-	const isStart = stage.name === run.workflow.start;
-	if (isStart) return run.state.originalInput;
-	if (stage.def.inheritsArtifacts === false) return run.state.originalInput;
-	if (stage.def.reads?.length) return formatNamedInputs(stage.def.reads, run);
-	return handleToString(currentPrimaryArtifact(run.state)!.handle);
-}
-
-/**
- * Build the labelled-flag prompt body for a `reads:`-style stage. Iterates
- * declared names in author-supplied order, resolves each to the latest
- * `Output` accumulated in `state.named`, and emits one `--<name> <handle>`
- * pair per artifact in that output (so multi-artifact stages get
- * flag-repetition rather than space-collision).
- *
- * Pre-condition: every name resolves (enforced by `ensureNamedReads`).
- */
-export function formatNamedInputs(names: ReadonlyArray<string>, run: RunContext): string {
-	const parts: string[] = [];
-	for (const name of names) {
-		const latest = run.state.named[name]?.at(-1);
-		if (!latest) continue; // unreachable given preflight; defensive
-		for (const artifact of latest.artifacts) {
-			parts.push(`--${name}`, handleToString(artifact.handle));
-		}
-	}
-	return parts.join(" ");
+	return stageEntryArgs(stage.def, stage.name, run.workflow.start, run.state)!;
 }
 
 /**
@@ -279,6 +247,10 @@ function resolveStage(currentName: string, idx: number, run: RunContext): Resolv
  * Capture semantics (pinned): `entryArtifact`, `entryArgs`, and `entryPair`
  * are frozen HERE, before unit 1; per-unit snapshots are captured by the
  * driver immediately before each unit's session.
+ *
+ * A `verify`-bearing stage enters here too (the desugar — `effectiveLoopOf`);
+ * its onLoopStart reports `kind: "verify"` so listeners aren't told it's an
+ * assess loop.
  */
 async function tryLoop(
 	curCtx: WorkflowHostContext,
@@ -286,7 +258,7 @@ async function tryLoop(
 	idx: number,
 	run: RunContext,
 ): Promise<boolean> {
-	const loop = stage.def.loop;
+	const loop = effectiveLoopOf(stage.def);
 	if (!loop) return false;
 
 	if (stage.def.sessionPolicy === "continue") {
@@ -315,13 +287,14 @@ async function tryLoop(
 	const entryArtifact = currentPrimaryArtifact(run.state);
 	const entryPair = { output: run.state.output, primaryArtifact: run.state.primaryArtifact };
 
+	const presentedKind = stage.def.verify ? ("verify" as const) : loop.kind;
 	const ref = skillStageRef(stage.name, stage.stageNumber, stage.skill);
 	await run.lifecycle.fire(curCtx, "onStageStart", ref, lifecycleCtxFor(run));
 	await run.lifecycle.fire(
 		curCtx,
 		"onLoopStart",
 		ref,
-		{ kind: loop.kind, ...(units ? { units } : {}) },
+		{ kind: presentedKind, ...(units ? { units } : {}) },
 		lifecycleCtxFor(run),
 	);
 
@@ -377,20 +350,32 @@ export function buildLoopDeps(): LoopDeps {
 	};
 }
 
-/** Terminal failure when a loop's `onCap: "halt"` trips (generalizes haltIterations). */
+/**
+ * Terminal failure when a loop's `onCap: "halt"` trips. Verify stages get
+ * the verification-failed wording — the author declared a post-condition,
+ * not a loop, so "loop cap exceeded" would misattribute the failure.
+ */
 export async function haltLoop(
 	curCtx: WorkflowHostContext,
 	run: RunContext,
-	stageName: string,
+	e: Pick<LoopEntry, "name" | "def">,
 	count: number,
 	cap: number,
 ): Promise<void> {
-	await recordTerminalFailure(curCtx, auditCtxFor(run, stageName, stageName), {
-		status: "failed",
-		notifyMsg: MSG_LOOP_CAP_HALT(count, cap),
-		notifyLevel: "error",
-		errMsg: ERR_LOOP_CAP_HALT(count, cap),
-	});
+	const args = e.def.verify
+		? {
+				status: "failed" as const,
+				notifyMsg: MSG_VERIFY_FAILED(e.name, cap),
+				notifyLevel: "error" as const,
+				errMsg: ERR_VERIFY_FAILED(e.name, cap),
+			}
+		: {
+				status: "failed" as const,
+				notifyMsg: MSG_LOOP_CAP_HALT(count, cap),
+				notifyLevel: "error" as const,
+				errMsg: ERR_LOOP_CAP_HALT(count, cap),
+			};
+	await recordTerminalFailure(curCtx, auditCtxFor(run, e.name, e.name), args);
 }
 
 /**

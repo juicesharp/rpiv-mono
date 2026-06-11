@@ -15,9 +15,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMockPi, createMockSessionChain, mockAssistantMessage } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { acts, type FanoutFn, type IterateFn, produces } from "./api.js";
-import { assess, fanout, iterate } from "./control-flow.js";
-import { fs as fsHandle } from "./handle.js";
+import { acts, type FanoutFn, type IterateFn, produces, type VerifySpec } from "./api.js";
+import { assess, fanout, iterate, verify } from "./control-flow.js";
+import { fs as fsHandle, handleToString } from "./handle.js";
 import { judge } from "./judge.js";
 import { type LifecycleListeners, registerLifecycle } from "./lifecycle.js";
 import type { Output, OutputSpec } from "./output.js";
@@ -988,5 +988,261 @@ describe("loop driver — preflights", () => {
 
 		expect(result.success).toBe(false);
 		expect(result.error).toMatch(/cannot combine loop with sessionPolicy "continue"/);
+	});
+});
+
+// ===========================================================================
+// Verify (desugared assess loop)
+// ===========================================================================
+
+describe("loop driver — verify", () => {
+	const pass = (v: Output) => Boolean((v.data as { done?: boolean }).done);
+	const vFeedForward = ({ verdict, round }: { verdict: Output; round: number }) =>
+		`fix round=${round} done=${(verdict.data as { done?: boolean }).done}`;
+
+	const gateOnly = () => verify({ judge: judge({ skill: "grade", outcome: verdictOutcome("verdict") }), pass });
+	const retrying = (maxAttempts = 3) =>
+		verify({
+			judge: judge({ skill: "grade", outcome: verdictOutcome("verdict") }),
+			pass,
+			feedForward: vFeedForward,
+			maxAttempts,
+		});
+
+	const verifyWf = (v: VerifySpec) => ({
+		name: "gated",
+		start: "build",
+		stages: {
+			build: produces({ outcome: mdOutcome("impl"), verify: v }),
+			consume: acts(),
+		},
+		edges: { build: "consume", consume: "stop" } as Record<string, string>,
+	});
+
+	it("gate-only pass: attempt + verify rows land; the consumer gets the PRODUCER output", async () => {
+		writeVerdict(0, true);
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/impl/i0.md")] },
+				{ branch: [mockAssistantMessage("verdict .rpiv/verdicts/v0.json")] },
+				{ branch: [mockAssistantMessage("consumed")] },
+			],
+		});
+
+		const result = await runWorkflow(chain.ctx, { workflow: verifyWf(gateOnly()), input: "x" });
+
+		expect(result.success).toBe(true);
+		// 1 attempt + 1 verify + 1 consume.
+		expect(result.stagesCompleted).toBe(3);
+		expect(chain.sentMessages).toEqual([
+			"/skill:build x",
+			"/skill:grade .rpiv/artifacts/impl/i0.md",
+			// consume inherits the ATTEMPT's producer output, never the verdict.
+			"/skill:consume .rpiv/artifacts/impl/i0.md",
+		]);
+		const rows = readRows();
+		expect(rows[0]).toMatchObject({ stage: "build (a0·attempt)", role: "produce", unitIndex: 0 });
+		expect(rows[1]).toMatchObject({ stage: "build (a0·verify)", skill: "grade", role: "verify", unitIndex: 0 });
+		// Verify units carry no stable unitId (identity is (role, unitIndex), like assess).
+		expect(rows[0]?.unitId).toBeUndefined();
+		expect(rows[1]?.unitId).toBeUndefined();
+	});
+
+	it("gate-only fail: terminal verification-failed halt (not the loop-cap wording)", async () => {
+		writeVerdict(0, false);
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/impl/i0.md")] },
+				{ branch: [mockAssistantMessage("verdict .rpiv/verdicts/v0.json")] },
+			],
+		});
+
+		const result = await runWorkflow(chain.ctx, { workflow: verifyWf(gateOnly()), input: "x" });
+
+		expect(result.success).toBe(false);
+		expect(result.error).toMatch(/Verification failed for "build"/);
+		expect(result.error).toMatch(/after 1 attempt(?!s)/);
+		const rows = readRows();
+		expect(rows[rows.length - 1]).toMatchObject({ stage: "build", status: "failed" });
+		expect(rows[rows.length - 1]?.errMsg).not.toMatch(/Loop cap exceeded/);
+	});
+
+	it("retry: a failing verdict feeds the next attempt; pass advances with the LAST attempt's output", async () => {
+		writeVerdict(0, false);
+		writeVerdict(1, true);
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/impl/i0.md")] },
+				{ branch: [mockAssistantMessage("verdict .rpiv/verdicts/v0.json")] },
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/impl/i1.md")] },
+				{ branch: [mockAssistantMessage("verdict .rpiv/verdicts/v1.json")] },
+				{ branch: [mockAssistantMessage("consumed")] },
+			],
+		});
+
+		const result = await runWorkflow(chain.ctx, { workflow: verifyWf(retrying()), input: "x" });
+
+		expect(result.success).toBe(true);
+		expect(chain.sentMessages).toEqual([
+			"/skill:build x",
+			"/skill:grade .rpiv/artifacts/impl/i0.md",
+			"/skill:build fix round=0 done=false",
+			"/skill:grade .rpiv/artifacts/impl/i1.md",
+			"/skill:consume .rpiv/artifacts/impl/i1.md",
+		]);
+		const rows = readRows();
+		expect(rows[2]).toMatchObject({ stage: "build (a1·attempt)", role: "produce", unitIndex: 1 });
+		expect(rows[3]).toMatchObject({ stage: "build (a1·verify)", role: "verify", unitIndex: 1 });
+	});
+
+	it("exhausted attempts: both verdicts fail at maxAttempts 2 → verification-failed halt", async () => {
+		writeVerdict(0, false);
+		writeVerdict(1, false);
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/impl/i0.md")] },
+				{ branch: [mockAssistantMessage("verdict .rpiv/verdicts/v0.json")] },
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/impl/i1.md")] },
+				{ branch: [mockAssistantMessage("verdict .rpiv/verdicts/v1.json")] },
+			],
+		});
+
+		const result = await runWorkflow(chain.ctx, { workflow: verifyWf(retrying(2)), input: "x" });
+
+		expect(result.success).toBe(false);
+		expect(result.error).toMatch(/Verification failed for "build".*after 2 attempts/);
+	});
+
+	it("pass on the final attempt is a normal completion (done wins over the cap)", async () => {
+		writeVerdict(0, false);
+		writeVerdict(1, true);
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/impl/i0.md")] },
+				{ branch: [mockAssistantMessage("verdict .rpiv/verdicts/v0.json")] },
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/impl/i1.md")] },
+				{ branch: [mockAssistantMessage("verdict .rpiv/verdicts/v1.json")] },
+				{ branch: [mockAssistantMessage("consumed")] },
+			],
+		});
+
+		const result = await runWorkflow(chain.ctx, { workflow: verifyWf(retrying(2)), input: "x" });
+
+		expect(result.success).toBe(true);
+		expect(result.lastArtifact).toBe(".rpiv/artifacts/impl/i1.md");
+	});
+
+	it("prompt judge: dispatches the raw prompt verbatim; synthetic <stage>-verify skill label", async () => {
+		writeVerdict(0, true);
+		const v = verify({
+			judge: judge({
+				prompt: ({ output }) => `grade ${handleToString(output.artifacts[0]!.handle)} strictly`,
+				outcome: verdictOutcome("verdict"),
+			}),
+			pass,
+		});
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/impl/i0.md")] },
+				{ branch: [mockAssistantMessage("verdict .rpiv/verdicts/v0.json")] },
+				{ branch: [mockAssistantMessage("consumed")] },
+			],
+		});
+
+		const result = await runWorkflow(chain.ctx, { workflow: verifyWf(v), input: "x" });
+
+		expect(result.success).toBe(true);
+		expect(chain.sentMessages[1]).toBe("grade .rpiv/artifacts/impl/i0.md strictly");
+		const rows = readRows();
+		expect(rows[1]).toMatchObject({ skill: "build-verify", role: "verify" });
+	});
+
+	it("verify × reads: attempt 0's prompt is the labelled-flag projection", async () => {
+		writeVerdict(0, true);
+		const wf = {
+			name: "gated-reads",
+			start: "design",
+			stages: {
+				design: produces({ outcome: mdOutcome("design") }),
+				build: produces({ outcome: mdOutcome("impl"), reads: ["design"], verify: gateOnly() }),
+				consume: acts(),
+			},
+			edges: { design: "build", build: "consume", consume: "stop" } as Record<string, string>,
+		};
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/design/d0.md")] },
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/impl/i0.md")] },
+				{ branch: [mockAssistantMessage("verdict .rpiv/verdicts/v0.json")] },
+				{ branch: [mockAssistantMessage("consumed")] },
+			],
+		});
+
+		const result = await runWorkflow(chain.ctx, { workflow: wf, input: "x" });
+
+		expect(result.success).toBe(true);
+		expect(chain.sentMessages).toEqual([
+			"/skill:design x",
+			"/skill:build --design .rpiv/artifacts/design/d0.md",
+			"/skill:grade .rpiv/artifacts/impl/i0.md",
+			"/skill:consume .rpiv/artifacts/impl/i0.md",
+		]);
+	});
+
+	it("lifecycle: onLoopStart reports kind 'verify'; units fire per attempt+verdict; NO onStageEnd", async () => {
+		writeVerdict(0, true);
+		const events: string[] = [];
+		const listeners: LifecycleListeners = {
+			onStageStart: (s) => {
+				events.push(`stageStart:${s.name}`);
+			},
+			onStageEnd: (s) => {
+				events.push(`stageEnd:${s.name}`);
+			},
+			onLoopStart: (s, info) => {
+				events.push(`loopStart:${s.name}:${info.kind}`);
+			},
+			onUnitStart: (_s, u) => {
+				events.push(`unitStart:${u.label}:${u.role}:${u.skill}`);
+			},
+			onUnitEnd: (_s, u) => {
+				events.push(`unitEnd:${u.label}:${u.role}`);
+			},
+		};
+		const dispose = registerLifecycle(listeners);
+		try {
+			const chain = createMockSessionChain({
+				cwd: tmpDir,
+				steps: [
+					{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/impl/i0.md")] },
+					{ branch: [mockAssistantMessage("verdict .rpiv/verdicts/v0.json")] },
+					{ branch: [mockAssistantMessage("consumed")] },
+				],
+			});
+
+			const result = await runWorkflow(chain.ctx, { workflow: verifyWf(gateOnly()), input: "x" });
+
+			expect(result.success).toBe(true);
+			expect(events.slice(0, 6)).toEqual([
+				"stageStart:build",
+				"loopStart:build:verify",
+				"unitStart:a0·attempt:produce:build",
+				"unitEnd:a0·attempt:produce",
+				// A model-override listener keys on UnitEvent.skill — the judge's own skill.
+				"unitStart:a0·verify:verify:grade",
+				"unitEnd:a0·verify:verify",
+			]);
+			// Verified stages follow loop semantics — no stage-level completion event.
+			expect(events.some((e) => e.startsWith("stageEnd:build"))).toBe(false);
+		} finally {
+			dispose();
+		}
 	});
 });

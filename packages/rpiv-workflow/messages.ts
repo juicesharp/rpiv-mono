@@ -132,6 +132,18 @@ export const ERR_LOOP_CAP_HALT = (count: number, max: number) => `Loop cap excee
 export const MSG_LOOP_CAP_ADVANCE = (skill: string, max: number) =>
 	`rpiv: ${skill} loop reached its cap (${max}) — projecting the configured result and advancing`;
 
+/**
+ * A verify-bearing stage exhausted its attempt budget without a passing
+ * verdict (the synthesized loop's `onCap: "halt"` tripped). Verify-worded —
+ * the author declared a post-condition, not a loop, so the loop-cap pair
+ * would misattribute the failure. A pass on the final attempt never reaches
+ * this (`done` wins over the cap).
+ */
+export const MSG_VERIFY_FAILED = (stage: string, attempts: number) =>
+	`✗ ${stage} verification failed after ${attempts} attempt${attempts === 1 ? "" : "s"} — stopping workflow`;
+export const ERR_VERIFY_FAILED = (stage: string, attempts: number) =>
+	`Verification failed for "${stage}": the judge's verdict did not satisfy \`pass\` after ${attempts} attempt${attempts === 1 ? "" : "s"}`;
+
 export const MSG_AUDIT_WRITE_FAILED = (skill: string) =>
 	`✗ ${skill} completed but audit row could not be written — stopping workflow`;
 export const ERR_AUDIT_WRITE_FAILED = (skill: string) =>

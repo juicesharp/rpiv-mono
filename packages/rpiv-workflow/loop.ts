@@ -6,6 +6,10 @@
  * dispatch, persistence, cap policy, result projection, and completion are
  * shared.
  *
+ * A `verify`-bearing stage runs here too — `effectiveLoopOf` desugars it into
+ * a degenerate assess loop; the only verify-aware code in this module is
+ * presentation (role/label flavoring keyed on `e.def.verify`).
+ *
  * Every unit runs `runStageSession` with a pre-decorated session: `stageName`
  * carries the DISPLAY decoration (`decorateStage`), `unit` carries the
  * machine identity that lands in the row's `parent`/`role`/`unitId`/`unitIndex`
@@ -31,10 +35,10 @@
  * no-op (pinned behavior).
  */
 
-import type { LoopDef, StageDef, Unit } from "./api.js";
+import type { LoopDef, StageDef, Unit, UnitRole } from "./api.js";
 import { decorateStage, nowIso, runIdentityOf } from "./audit.js";
 import { type Artifact, handleToString } from "./handle.js";
-import type { Judge, JudgeContext } from "./judge.js";
+import { type Judge, resolveJudgePrompt } from "./judge.js";
 import { buildLifecycleContext, type LifecycleContext, skillStageRef, type UnitEvent } from "./lifecycle.js";
 import {
 	MSG_LOOP_CAP_ADVANCE,
@@ -59,11 +63,11 @@ export interface LoopDeps {
 	) => Promise<void>;
 	/** Re-capture the outcome's pre-stage snapshot per unit. */
 	captureSnapshot: (def: StageDef, idx: number, run: RunContext) => Promise<unknown>;
-	/** Record the terminal failure when `onCap: "halt"` trips. */
+	/** Record the terminal failure when `onCap: "halt"` trips — verify-worded for verify stages. */
 	haltLoop: (
 		curCtx: WorkflowHostContext,
 		run: RunContext,
-		stageName: string,
+		e: Pick<LoopEntry, "name" | "def">,
 		count: number,
 		cap: number,
 	) => Promise<void>;
@@ -150,7 +154,7 @@ type NextStep =
 	| { kind: "cap"; count: number }
 	| {
 			kind: "unit";
-			role: "produce" | "judge";
+			role: UnitRole;
 			/** Display + identity tag (`unitId` for fanout/iterate; `r{n}·{phase}` display-only for assess). */
 			tag: string;
 			id?: string;
@@ -225,11 +229,14 @@ async function pullNext(e: LoopEntry, cursor: LoopCursor, cap: number, run: RunC
 		};
 	}
 
-	// assess
+	// assess — including a synthesized verify loop. Verify-ness is derived from
+	// the parent def (`e.def.verify`), never from the loop object: the synthesis
+	// carries no marker, so live and resume can't disagree about flavoring.
+	const isVerify = e.def.verify !== undefined;
 	if (cursor.phase === "judge") {
 		const lp = cursor.lastProduce!; // a judge step always follows a completed produce
 		const judge = loop.judge;
-		const judgeSkill = judge.skill ?? `${e.name}-judge`;
+		const judgeSkill = judge.skill ?? (isVerify ? `${e.name}-verify` : `${e.name}-judge`);
 		const prompt =
 			judge.skill !== undefined
 				? `/skill:${judge.skill} ${handleToString(lp.artifact!.handle)}`
@@ -240,8 +247,16 @@ async function pullNext(e: LoopEntry, cursor: LoopCursor, cap: number, run: RunC
 						state: run.state,
 						round: cursor.index,
 					});
-		const label = `r${cursor.index}·judge`;
-		return { kind: "unit", role: "judge", tag: label, label, skill: judgeSkill, prompt, def: judgeStageDef(judge) };
+		const label = isVerify ? `a${cursor.index}·verify` : `r${cursor.index}·judge`;
+		return {
+			kind: "unit",
+			role: isVerify ? "verify" : "judge",
+			tag: label,
+			label,
+			skill: judgeSkill,
+			prompt,
+			def: judgeStageDef(judge),
+		};
 	}
 
 	// assess produce — done wins over cap (one code path for live + resume fast-advance)
@@ -259,7 +274,7 @@ async function pullNext(e: LoopEntry, cursor: LoopCursor, cap: number, run: RunC
 					state: run.state,
 				})
 			: e.entryArgs;
-	const label = `r${cursor.index}·produce`;
+	const label = isVerify ? `a${cursor.index}·attempt` : `r${cursor.index}·produce`;
 	return {
 		kind: "unit",
 		role: "produce",
@@ -389,7 +404,7 @@ async function hitCap(
 	run: RunContext,
 	deps: LoopDeps,
 ): Promise<void> {
-	if (e.loop.onCap === "halt") return deps.haltLoop(curCtx, run, e.name, count, cap);
+	if (e.loop.onCap === "halt") return deps.haltLoop(curCtx, run, e, count, cap);
 	appendLoopCap(run.cwd, run.runId, { type: "loop-cap", stage: e.name, count, max: cap, ts: nowIso() });
 	curCtx.ui.notify(MSG_LOOP_CAP_ADVANCE(e.skill, cap), "warning");
 	await run.lifecycle.fire(
@@ -405,15 +420,6 @@ async function hitCap(
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/** Resolve a static or dynamic `Judge.prompt`. A dynamic prompt may be async. */
-async function resolveJudgePrompt(
-	prompt: string | ((ctx: JudgeContext) => string | Promise<string>),
-	ctx: JudgeContext,
-): Promise<string> {
-	if (typeof prompt === "string") return prompt;
-	return prompt(ctx);
-}
 
 /** Local LifecycleContext builder (no runner import — cycle-free, mirrors the old fanout.ts). */
 function lifecycleCtxOf(run: RunContext): LifecycleContext {

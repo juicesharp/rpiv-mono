@@ -20,9 +20,10 @@ import {
 	type ScriptContext,
 	type StageDef,
 	terminal,
+	type VerifySpec,
 	type Workflow,
 } from "./api.js";
-import { assess, fanout, iterate } from "./control-flow.js";
+import { assess, fanout, iterate, verify } from "./control-flow.js";
 import { judge } from "./judge.js";
 import { noopCollector } from "./outcomes/index.js";
 import { eq, gt } from "./predicates.js";
@@ -740,9 +741,17 @@ describe("validateWorkflow — assess loop invariants", () => {
 		expect(errors(wf(stage))).toEqual([]);
 	});
 
-	it("rejects assess alongside reads (v1 restriction)", () => {
-		const e = errors(wf(base({ reads: ["tasks"] })));
-		expect(e.some((i) => /assess cannot set `reads` in v1/.test(i.message))).toBe(true);
+	it("no longer rejects assess alongside reads (v1 restriction lifted — entryArgs is fold-frozen)", () => {
+		const w: Workflow = {
+			name: "assessing",
+			start: "up",
+			stages: {
+				up: { kind: "produces", sessionPolicy: "fresh", outcome: { name: "specs", collector: noopCollector } },
+				s: base({ reads: ["specs"] }),
+			},
+			edges: { up: "s", s: "stop" },
+		};
+		expect(errors(w)).toEqual([]);
 	});
 
 	it('rejects assess on a non-produces stage (kind: "side-effect")', () => {
@@ -808,6 +817,172 @@ describe("validateWorkflow — assess loop invariants", () => {
 		});
 		expect(errors(wf(withMax))).toEqual([]);
 		expect(errors(wf(base()))).toEqual([]);
+	});
+});
+
+describe("validateWorkflow — verify invariants", () => {
+	const producerOutcome = { name: "impl", collector: noopCollector };
+	const verdictOutcome = { name: "verdict", collector: noopCollector };
+
+	const wf = (stage: StageDef): Workflow => ({
+		name: "gated",
+		start: "s",
+		stages: { s: stage },
+		edges: { s: "stop" },
+	});
+
+	const skillJudge = () => judge({ skill: "grade", outcome: verdictOutcome });
+	const wellFormed = () => verify({ judge: skillJudge(), pass: () => true });
+
+	const base = (overrides: Partial<StageDef> = {}): StageDef => ({
+		kind: "produces",
+		sessionPolicy: "fresh",
+		outcome: producerOutcome,
+		verify: wellFormed(),
+		...overrides,
+	});
+
+	// Hand-rolled verify literal — bypasses the constructor's construction-time
+	// throws so the defensive LOAD gate can be exercised (jiti erases TS types).
+	const rawVerify = (over: Record<string, unknown> = {}, judgeOver: Record<string, unknown> = {}): VerifySpec =>
+		({
+			judge: { skill: "grade", outcome: verdictOutcome, ...judgeOver },
+			pass: () => true,
+			...over,
+		}) as unknown as VerifySpec;
+
+	it("accepts a well-formed gate-only verify stage (produces + skill judge + fresh)", () => {
+		expect(errors(wf(base()))).toEqual([]);
+	});
+
+	it("accepts verify alongside reads (composes — unlike the retired assess restriction)", () => {
+		const w: Workflow = {
+			name: "gated",
+			start: "up",
+			stages: {
+				up: { kind: "produces", sessionPolicy: "fresh", outcome: { name: "design", collector: noopCollector } },
+				s: base({ reads: ["design"] }),
+			},
+			edges: { up: "s", s: "stop" },
+		};
+		expect(errors(w)).toEqual([]);
+	});
+
+	it('rejects verify on a non-produces stage (kind: "side-effect")', () => {
+		const e = errors(wf(base({ kind: "side-effect", outcome: undefined })));
+		expect(e.some((i) => /verify requires kind "produces"/.test(i.message))).toBe(true);
+	});
+
+	it("rejects verify alongside loop (v1)", () => {
+		const e = errors(wf(base({ loop: iterate({ next: () => null }) })));
+		expect(e.some((i) => /verify and loop are mutually exclusive/.test(i.message))).toBe(true);
+	});
+
+	it("rejects verify alongside run (script stages have no session to grade)", () => {
+		const e = errors(wf(base({ run: () => ({ kind: "x", artifacts: [], data: {} }) })));
+		expect(e.some((i) => /verify and run are mutually exclusive/.test(i.message))).toBe(true);
+	});
+
+	it("rejects verify alongside prompt (v1 — verify attempts dispatch /skill:)", () => {
+		const e = errors(wf(base({ prompt: "do it" })));
+		expect(e.some((i) => /prompt and verify are mutually exclusive/.test(i.message))).toBe(true);
+	});
+
+	it('rejects verify with sessionPolicy "continue"', () => {
+		const e = errors(wf(base({ sessionPolicy: "continue" })));
+		expect(e.some((i) => /verify cannot combine with sessionPolicy "continue"/.test(i.message))).toBe(true);
+	});
+
+	it("rejects a producer outcome without a name (attempts need a stable named slot)", () => {
+		const e = errors(wf(base({ outcome: { collector: noopCollector } })));
+		expect(e.some((i) => /verify requires an `outcome` with a `name`/.test(i.message))).toBe(true);
+	});
+
+	it("rejects a verdict channel that collides with the producer's publish name", () => {
+		const e = errors(
+			wf(base({ verify: verify({ judge: judge({ skill: "grade", outcome: producerOutcome }), pass: () => true }) })),
+		);
+		expect(e.some((i) => /collides with the producer's publish name/.test(i.message))).toBe(true);
+	});
+
+	it("rejects a hand-rolled judge whose outcome has no name (defensive load gate)", () => {
+		const e = errors(wf(base({ verify: rawVerify({}, { outcome: { collector: noopCollector } }) })));
+		expect(e.some((i) => /judge\.outcome must carry a `name`/.test(i.message))).toBe(true);
+	});
+
+	it("rejects a hand-rolled non-function pass", () => {
+		const e = errors(wf(base({ verify: rawVerify({ pass: true }) })));
+		expect(e.some((i) => /`pass` to be a function/.test(i.message))).toBe(true);
+	});
+
+	it.each([0, -1, 1.5])("rejects verify.maxAttempts: %s (must be an integer >= 1)", (maxAttempts) => {
+		const e = errors(wf(base({ verify: rawVerify({ maxAttempts, feedForward: () => "x" }) })));
+		expect(e.some((i) => /maxAttempts.*must be an integer >= 1/.test(i.message))).toBe(true);
+	});
+
+	it("rejects maxAttempts > 1 without feedForward (hand-rolled literal)", () => {
+		const e = errors(wf(base({ verify: rawVerify({ maxAttempts: 2 }) })));
+		expect(e.some((i) => /maxAttempts > 1 requires `feedForward`/.test(i.message))).toBe(true);
+	});
+});
+
+describe("validateWorkflow — judge verdict channels are published names", () => {
+	const noop = noopCollector;
+	const baseStage = (over: Partial<StageDef> = {}): StageDef => ({
+		kind: "produces",
+		sessionPolicy: "fresh",
+		outcome: { name: "impl", collector: noop },
+		...over,
+	});
+
+	it("reads of a verify verdict channel passes at load (was a false error for judge channels)", () => {
+		const w: Workflow = {
+			name: "gated",
+			start: "s",
+			stages: {
+				s: baseStage({
+					verify: verify({
+						judge: judge({ skill: "grade", outcome: { name: "verdict", collector: noop } }),
+						pass: () => true,
+					}),
+				}),
+				next: { kind: "side-effect", sessionPolicy: "fresh", reads: ["verdict"] },
+			},
+			edges: { s: "next", next: "stop" },
+		};
+		expect(errors(w)).toEqual([]);
+	});
+
+	it("reads of an assess verdict channel no longer false-errors (gap repaired for assess too)", () => {
+		const w: Workflow = {
+			name: "assessing",
+			start: "s",
+			stages: {
+				s: baseStage({
+					loop: assess({
+						judge: judge({ skill: "grade", outcome: { name: "verdict", collector: noop } }),
+						done: () => true,
+						feedForward: () => "x",
+					}),
+				}),
+				next: { kind: "side-effect", sessionPolicy: "fresh", reads: ["verdict"] },
+			},
+			edges: { s: "next", next: "stop" },
+		};
+		expect(errors(w)).toEqual([]);
+	});
+
+	it("reads of an unknown name still errors", () => {
+		const w: Workflow = {
+			name: "gated",
+			start: "s",
+			stages: {
+				s: baseStage(),
+				next: { kind: "side-effect", sessionPolicy: "fresh", reads: ["nope"] },
+			},
+			edges: { s: "next", next: "stop" },
+		};
+		expect(errors(w).some((i) => /reads "nope" but no produces stage/.test(i.message))).toBe(true);
 	});
 });
 

@@ -67,9 +67,12 @@ export type StageRef =
  * Payload for `onLoopStart`. `units` is present only when the loop
  * precomputes its unit list (fanout) — pull loops (iterate/assess) discover
  * units one at a time, so listeners observe them via `onUnitStart`.
+ * `kind: "verify"` is a verify-bearing stage (a desugared attempt→verify
+ * loop) — verified stages follow loop semantics: observe units, not
+ * `onStageEnd`.
  */
 export interface LoopStartInfo {
-	kind: "fanout" | "iterate" | "assess";
+	kind: "fanout" | "iterate" | "assess" | "verify";
 	units?: readonly Unit[];
 }
 

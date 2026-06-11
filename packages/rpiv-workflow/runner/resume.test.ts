@@ -27,9 +27,9 @@ import { join } from "node:path";
 import { createMockSessionChain, mockAssistantMessage } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type FanoutFn, type IterateFn, produces, type Workflow } from "../api.js";
-import { assess, fanout, iterate } from "../control-flow.js";
+import { assess, fanout, iterate, verify } from "../control-flow.js";
 import type { Artifact } from "../handle.js";
-import { fs as fsHandle } from "../handle.js";
+import { fs as fsHandle, handleToString } from "../handle.js";
 import { judge } from "../judge.js";
 import type { Output } from "../output.js";
 import {
@@ -732,6 +732,181 @@ const twoStageWf: Workflow = {
 		build: "stop",
 	},
 };
+
+// --- verify row builders (siblings of assessProduceRow/assessJudgeRow) ---
+
+const verifyAttemptRow = (parent: string, attempt: number, num: number, output: Output): WorkflowStage => ({
+	stageNumber: num,
+	stage: `${parent} (a${attempt}·attempt)`,
+	skill: parent,
+	status: "completed",
+	ts: `t${num}`,
+	parent,
+	role: "produce",
+	unitIndex: attempt,
+	output,
+});
+
+const verifyVerdictRow = (
+	parent: string,
+	judgeSkill: string,
+	attempt: number,
+	num: number,
+	output: Output,
+): WorkflowStage => ({
+	stageNumber: num,
+	stage: `${parent} (a${attempt}·verify)`,
+	skill: judgeSkill,
+	status: "completed",
+	ts: `t${num}`,
+	parent,
+	role: "verify",
+	unitIndex: attempt,
+	output,
+});
+
+describe("reconstructState — verify generations", () => {
+	const pass = (v: Output) => Boolean((v.data as { done?: boolean }).done);
+	const gateVerify = () => verify({ judge: judge({ skill: "grade", outcome: makeOutcome("verdict") }), pass });
+	const retryVerify = () =>
+		verify({
+			judge: judge({ skill: "grade", outcome: makeOutcome("verdict") }),
+			pass,
+			feedForward: () => "again",
+			maxAttempts: 3,
+		});
+
+	it("closed verify generation: attempts + verdicts publish to separate channels; close restores the producer pair", async () => {
+		const a0 = fakeArtifact("impl/i0.md");
+		const v0 = fakeArtifact("verdicts/v0.json");
+		const a1 = fakeArtifact("impl/i1.md");
+		const v1 = fakeArtifact("verdicts/v1.json");
+		const g1 = fakeArtifact("gates/g1.md");
+		const wf: Workflow = {
+			name: "test-wf",
+			start: "build",
+			stages: {
+				build: produces({ outcome: makeOutcome("impl"), verify: retryVerify() }),
+				gate: produces({ outcome: makeOutcome("gates") }),
+			},
+			edges: { build: "gate", gate: "stop" },
+		} as Workflow;
+
+		writeRunStages([
+			verifyAttemptRow("build", 0, 1, fakeOutput([a0])),
+			verifyVerdictRow("build", "grade", 0, 2, fakeOutput([v0])),
+			verifyAttemptRow("build", 1, 3, fakeOutput([a1])),
+			verifyVerdictRow("build", "grade", 1, 4, fakeOutput([v1])),
+			{ stageNumber: 5, stage: "gate", skill: "gate", status: "completed", ts: "t5", output: fakeOutput([g1]) },
+		]);
+
+		const result = await reconstructState(tmpDir, wf, baseHeader);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+
+		expect(result.state.named.impl?.map((o) => o.artifacts[0])).toEqual([a0, a1]);
+		expect(result.state.named.verdict?.map((o) => o.artifacts[0])).toEqual([v0, v1]);
+		// Generation closed before gate → "last" projects the last attempt (a1), THEN gate rolled it.
+		expect(result.state.primaryArtifact).toStrictEqual(g1);
+		expect(result.state.stagesCompleted).toBe(5);
+		expect(result.trailing).toBeUndefined();
+		expect(result.drift).toBeUndefined();
+	});
+
+	it("trailing pending verify: a completed-attempt trailer reconstructs cursor phase 'judge'", async () => {
+		const a0 = fakeArtifact("impl/i0.md");
+		const wf: Workflow = {
+			name: "test-wf",
+			start: "build",
+			stages: { build: produces({ outcome: makeOutcome("impl"), verify: gateVerify() }) },
+			edges: { build: "stop" },
+		} as Workflow;
+
+		writeRunStages([verifyAttemptRow("build", 0, 1, fakeOutput([a0]))]);
+
+		const result = await reconstructState(tmpDir, wf, baseHeader);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+
+		// The synthesized loop is recovered (no stage-gone refusal) and the
+		// cursor says: attempt 0 done, verdict pending.
+		expect(result.trailing?.parent).toBe("build");
+		expect(result.trailing?.cursor.phase).toBe("judge");
+		expect(result.trailing?.cursor.index).toBe(0);
+		expect(result.trailing?.cursor.lastProduce?.artifact).toStrictEqual(a0);
+		expect(result.drift).toBeUndefined();
+	});
+
+	it("role drift: a verdict row carrying role 'judge' on a verify stage trips the guard", async () => {
+		const a0 = fakeArtifact("impl/i0.md");
+		const v0 = fakeArtifact("verdicts/v0.json");
+		const wf: Workflow = {
+			name: "test-wf",
+			start: "build",
+			stages: { build: produces({ outcome: makeOutcome("impl"), verify: gateVerify() }) },
+			edges: { build: "stop" },
+		} as Workflow;
+
+		writeRunStages([
+			verifyAttemptRow("build", 0, 1, fakeOutput([a0])),
+			// Wrong role for a verify stage — the driver would have emitted "verify".
+			assessJudgeRow("build", "grade", 0, 2, fakeOutput([v0])),
+		]);
+
+		const result = await reconstructState(tmpDir, wf, baseHeader);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.drift?.parent).toBe("build");
+	});
+
+	it("entryArgs freeze: a reads projection is frozen at generation open (a trailing verdict's transient roll can't leak in)", async () => {
+		const d0 = fakeArtifact("design/d0.md");
+		const a0 = fakeArtifact("impl/i0.md");
+		const v0 = fakeArtifact("verdicts/v0.json");
+		const wf: Workflow = {
+			name: "test-wf",
+			start: "design",
+			stages: {
+				design: produces({ outcome: makeOutcome("design") }),
+				build: produces({ outcome: makeOutcome("impl"), reads: ["design"], verify: retryVerify() }),
+			},
+			edges: { design: "build", build: "stop" },
+		} as Workflow;
+
+		writeRunStages([
+			{ stageNumber: 1, stage: "design", skill: "design", status: "completed", ts: "t1", output: fakeOutput([d0]) },
+			verifyAttemptRow("build", 0, 2, fakeOutput([a0])),
+			verifyVerdictRow("build", "grade", 0, 3, fakeOutput([v0])), // fail verdict — generation still open
+		]);
+
+		const result = await reconstructState(tmpDir, wf, baseHeader);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+
+		expect(result.trailing?.entryArgs).toBe(`--design ${handleToString(d0.handle)}`);
+	});
+
+	it("truncated trail: a reads-bearing verify generation with no producer row yields entryArgs undefined", async () => {
+		const a0 = fakeArtifact("impl/i0.md");
+		const wf: Workflow = {
+			name: "test-wf",
+			start: "design",
+			stages: {
+				design: produces({ outcome: makeOutcome("design") }),
+				build: produces({ outcome: makeOutcome("impl"), reads: ["design"], verify: gateVerify() }),
+			},
+			edges: { design: "build", build: "stop" },
+		} as Workflow;
+
+		// The design row is gone — only the attempt row survives.
+		writeRunStages([verifyAttemptRow("build", 0, 1, fakeOutput([a0]))]);
+
+		const result = await reconstructState(tmpDir, wf, baseHeader);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.trailing?.entryArgs).toBeUndefined();
+	});
+});
 
 const resumeHeader: WorkflowHeader = {
 	runId: "2026-06-03_07-30-00-ab12",

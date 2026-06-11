@@ -47,6 +47,7 @@ export {
 	type Unit,
 	type UnitRole,
 	type UnitSelector,
+	type VerifySpec,
 	type Workflow,
 } from "./api.js";
 export { registerBuiltIns, registerBuiltInsProvider } from "./built-ins.js";
@@ -56,9 +57,13 @@ export {
 	describeFlow,
 	fanout,
 	iterate,
+	type JudgeSpec,
+	judgeSpecOf,
 	type LoopSpec,
 	loopSpecOf,
 	type StageShape,
+	verify,
+	verifyShapeIssues,
 } from "./control-flow.js";
 export {
 	type Artifact,

@@ -25,8 +25,9 @@
  */
 
 import type { LoopDef, StageDef, Unit, Workflow } from "../api.js";
+import { effectiveLoopOf } from "../control-flow.js";
 import type { Artifact } from "../handle.js";
-import { applyCompletedStage } from "../internal-utils.js";
+import { applyCompletedStage, stageEntryArgs } from "../internal-utils.js";
 import { freshCursor, judgeStageDef, type LoopCursor, projectResult, unitTagOf } from "../loop.js";
 import { ERR_RESUME_LOOP_MISMATCH } from "../messages.js";
 import type { Output } from "../output.js";
@@ -39,6 +40,13 @@ export interface LoopResumePoint {
 	parent: string;
 	entryArtifact: Artifact | undefined;
 	entryPair: { output: Output | undefined; primaryArtifact: Artifact | undefined };
+	/**
+	 * Round-0 producer arg, FROZEN at generation open (assess-kind loops only;
+	 * `""` otherwise). `undefined` = the trail no longer carries the rows that
+	 * published this stage's inputs (truncated/corrupted) — re-entry records a
+	 * refusal instead of dispatching with a wrong arg.
+	 */
+	entryArgs: string | undefined;
 	/** The driver's own cursor, reconstructed: next (role, index), accumulated, lastProduce, lastVerdict. */
 	cursor: LoopCursor;
 	/** Fanout: the recomputed-and-verified unit list (re-entry reuses it — no second compute). */
@@ -123,6 +131,8 @@ interface OpenGeneration {
 	def: StageDef;
 	entryArtifact: Artifact | undefined;
 	entryPair: { output: Output | undefined; primaryArtifact: Artifact | undefined };
+	/** Frozen at generation open — see LoopResumePoint.entryArgs. */
+	entryArgs: string | undefined;
 	cursor: LoopCursor;
 	units?: readonly Unit[];
 	/**
@@ -169,19 +179,28 @@ async function foldUnitRow(
 	if (!acc.gen || acc.gen.parent !== row.parent) {
 		closeGeneration(acc);
 		const def = workflow.stages[row.parent!];
-		if (!def?.loop) return { ok: false, reason: "stage-gone", detail: row.stage };
+		// `effectiveLoopOf` — a verify stage's unit rows recover their synthesized
+		// loop here; without it every verify-stage trailer would refuse stage-gone.
+		const loop = def ? effectiveLoopOf(def) : undefined;
+		if (!def || !loop) return { ok: false, reason: "stage-gone", detail: row.stage };
 		acc.gen = {
 			parent: row.parent!,
-			loop: def.loop,
+			loop,
 			def,
 			entryArtifact: acc.state.primaryArtifact,
 			entryPair: { output: acc.state.output, primaryArtifact: acc.state.primaryArtifact },
+			// Frozen HERE: replayed state at generation open is byte-identical to
+			// what the live driver saw at loop entry (THE REPLAY CONTRACT) — the
+			// only safe place to derive the round-0 arg. `reads` projections in
+			// particular must NOT be re-derived post-fold, where the generation's
+			// own appends have moved the `.at(-1)` cursors.
+			entryArgs: loop.kind === "assess" ? stageEntryArgs(def, row.parent!, workflow.start, acc.state) : "",
 			cursor: freshCursor(),
 			units: undefined,
 		};
-		if (def.loop.kind === "fanout") {
+		if (loop.kind === "fanout") {
 			acc.gen.units = await guarded(acc, acc.gen.parent, () =>
-				(def.loop as Extract<LoopDef, { kind: "fanout" }>).units({
+				(loop as Extract<LoopDef, { kind: "fanout" }>).units({
 					cwd: acc.cwd,
 					artifact: acc.state.primaryArtifact,
 					state: acc.state,
@@ -201,7 +220,7 @@ async function foldUnitRow(
 	if (!row.output) return undefined; // defensive — completed unit rows always carry output
 	acc.state.output = row.output;
 
-	if (row.role === "judge") {
+	if (row.role === "judge" || row.role === "verify") {
 		// Apply-then-project: the verdict rolls the pair TRANSIENTLY (exactly
 		// like the live judge unit); projection at generation close restores.
 		// Replaces the old never-apply mirror + manual named push.
@@ -234,7 +253,8 @@ async function foldUnitRow(
  * so the failure can be recorded against complete state.
  */
 async function guardRow(acc: FoldAcc, gen: OpenGeneration, row: WorkflowStage): Promise<void> {
-	const expectRole = gen.loop.kind === "assess" ? gen.cursor.phase : "produce";
+	const judgeRole = gen.def.verify ? "verify" : "judge";
+	const expectRole = gen.loop.kind === "assess" ? (gen.cursor.phase === "judge" ? judgeRole : "produce") : "produce";
 	if (row.role !== expectRole || row.unitIndex !== gen.cursor.index) return setDrift(acc, gen.parent);
 
 	if (gen.loop.kind === "fanout") {
@@ -291,6 +311,7 @@ function toPoint(gen: OpenGeneration): LoopResumePoint {
 		parent: gen.parent,
 		entryArtifact: gen.entryArtifact,
 		entryPair: gen.entryPair,
+		entryArgs: gen.entryArgs,
 		cursor: gen.cursor,
 		units: gen.units,
 	};

@@ -17,9 +17,9 @@
  * probe pull is the documented harmless deterministic double-pull.
  */
 
-import type { LoopDef, StageDef } from "../api.js";
+import type { LoopDef } from "../api.js";
 import { auditCtxFor, recordTerminalFailure } from "../audit.js";
-import { handleToString } from "../handle.js";
+import { effectiveLoopOf } from "../control-flow.js";
 import { resolveSkill } from "../internal-utils.js";
 import { skillStageRef } from "../lifecycle.js";
 import { type LoopDeps, type LoopEntry, runLoop } from "../loop.js";
@@ -35,23 +35,23 @@ export async function resumeLoopStage(
 	run: RunContext,
 	deps: LoopDeps,
 ): Promise<void> {
-	const def = run.workflow.stages[point.parent]!; // fold verified the parent carries a loop
-	const loop = def.loop!;
+	const def = run.workflow.stages[point.parent]!; // fold verified the parent carries a loop (or verify)
+	const loop = effectiveLoopOf(def)!;
 	const skill = resolveSkill(def, point.parent);
 
-	// Frozen-entry round-0 producer arg (assess only). Derived from the
-	// GENERATION's frozen entry — never from post-fold state, so a trailing
-	// judge row's transient roll can't leak into the arg. A missing artifact
-	// means the trail no longer carries the upstream produces row — recorded
-	// refusal with the forward preflight's messages (today's posture).
+	// Round-0 producer arg (assess-kind only), FROZEN by the fold at generation
+	// open — never re-derived from post-fold state, so neither a trailing judge
+	// row's transient roll nor the generation's own named appends can leak into
+	// it. `undefined` means the trail no longer carries the rows that published
+	// this stage's inputs — recorded refusal with the forward preflight's
+	// messages (today's posture, now covering `reads` projections too).
 	let entryArgs = "";
 	if (loop.kind === "assess") {
-		const derived = entryArgsFor(point, def, run);
-		if (derived === undefined) {
+		if (point.entryArgs === undefined) {
 			await recordMissingArtifactFailure(ctx, run, point.parent, skill, idx);
 			return;
 		}
-		entryArgs = derived;
+		entryArgs = point.entryArgs;
 	}
 
 	const entry: LoopEntry = {
@@ -73,7 +73,7 @@ export async function resumeLoopStage(
 			ctx,
 			"onLoopStart",
 			ref,
-			{ kind: loop.kind, ...(point.units ? { units: point.units } : {}) },
+			{ kind: def.verify ? ("verify" as const) : loop.kind, ...(point.units ? { units: point.units } : {}) },
 			lifecycleCtxFor(run),
 		);
 	}
@@ -103,13 +103,6 @@ async function hasPendingUnit(loop: LoopDef, point: LoopResumePoint, run: RunCon
 	// recovered verdict is done (the driver's fast-advance path).
 	if (point.cursor.phase === "judge") return true;
 	return !(point.cursor.lastVerdict !== undefined && loop.done(point.cursor.lastVerdict));
-}
-
-/** Frozen-entry derivation of the round-0 producer arg (mirrors `inputForStage` minus `reads`, which assess rejects). */
-function entryArgsFor(point: LoopResumePoint, def: StageDef, run: RunContext): string | undefined {
-	if (point.parent === run.workflow.start) return run.state.originalInput;
-	if (def.inheritsArtifacts === false) return run.state.originalInput;
-	return point.entryArtifact === undefined ? undefined : handleToString(point.entryArtifact.handle);
 }
 
 /** Recorded refusal for a corrupted/truncated trail (reuses the forward preflight's messages). */
