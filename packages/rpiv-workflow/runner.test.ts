@@ -14,7 +14,7 @@ import { eq, gt } from "./predicates.js";
 import { runWorkflow, runWorkflowByName } from "./runner/index.js";
 import type { CompositionComparator } from "./skill-contract.js";
 import { registerCompositionComparator, registerSkillContracts } from "./skill-contracts/index.js";
-import { appendRoutingDecision, readHeader, readNamesIndex, readRoutingDecisions } from "./state/index.js";
+import { appendRoutingDecision, readHeader, readNamesIndex, readRoutingDecisions, writeHeader } from "./state/index.js";
 // Deep import: addNameToIndex is deliberately NOT on the state barrels
 // (production code goes through claimName); tests seed collisions directly.
 import { addNameToIndex } from "./state/names.js";
@@ -242,6 +242,15 @@ describe("runWorkflow", () => {
 	});
 
 	it("rejects a name already claimed in the index, without starting a session", async () => {
+		// The holder must exist on disk — claimName treats an entry whose run
+		// file is gone as stale (re-claimable), not as a collision.
+		writeHeader(tmpDir, {
+			runId: "prior-run",
+			workflow: "tiny",
+			input: "x",
+			ts: "2026-06-11T00:00:00Z",
+			name: "auth",
+		});
 		addNameToIndex(tmpDir, "auth", "prior-run");
 		const chain = createMockSessionChain({ cwd: tmpDir, steps: [] });
 		const result = await runWorkflow(chain.ctx, {

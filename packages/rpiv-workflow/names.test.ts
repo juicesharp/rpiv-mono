@@ -75,9 +75,19 @@ describe("claimName", () => {
 	});
 
 	it("rejects a collision, names the holding runId, and leaves the index untouched", () => {
+		seedRun("r0", "auth");
 		addNameToIndex(tmpDir, "auth", "r0");
 		expect(claimName(tmpDir, "auth", "r1")).toEqual({ ok: false, reason: "collision", runId: "r0" });
 		expect(readNamesIndex(tmpDir)).toEqual({ auth: "r0" });
+	});
+
+	it("re-claims a name whose holder has no run file (stale entry from a failed releaseName rollback)", () => {
+		// The I6 stranded-entry state: claimName succeeded, writeHeader failed,
+		// releaseName's rollback ALSO failed — the index points at a run that
+		// never existed. The name must not be blocked forever.
+		addNameToIndex(tmpDir, "auth", "ghost-run");
+		expect(claimName(tmpDir, "auth", "r1")).toEqual({ ok: true });
+		expect(readNamesIndex(tmpDir)).toEqual({ auth: "r1" });
 	});
 });
 
@@ -142,9 +152,24 @@ describe("resolveRun", () => {
 		expect(resolveRun(tmpDir, runId)?.runId).toBe(runId);
 	});
 
-	it("returns undefined for a stale name whose JSONL was deleted (literal fallback also misses)", () => {
+	it("prunes a stale name whose JSONL is gone — undefined result, but the dead entry is removed", () => {
 		addNameToIndex(tmpDir, "ghost", "missing-run-id");
 		expect(resolveRun(tmpDir, "ghost")).toBeUndefined();
+		// The stale-present hit triggered a rebuild, which persisted an index
+		// without the dead entry — the name is free again.
+		expect(readNamesIndex(tmpDir)).toEqual({});
+	});
+
+	it("recovers through a stale-present entry to the real run via rebuild", () => {
+		const runId = generateRunId();
+		seedRun(runId, "auth");
+		// names.json points "auth" at a dead runId while the real named run
+		// exists on disk (e.g. a clobbered index). The index HIT must not end
+		// resolution — the absent-name recovery is gated off for present keys,
+		// so step 1 owns this rebuild.
+		addNameToIndex(tmpDir, "auth", "dead-run-id");
+		expect(resolveRun(tmpDir, "auth")?.runId).toBe(runId);
+		expect(readNamesIndex(tmpDir)).toEqual({ auth: runId });
 	});
 
 	it("recovers a named run when names.json is missing, by rebuilding from headers", () => {

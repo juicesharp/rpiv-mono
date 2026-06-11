@@ -22,7 +22,9 @@ import type { AssessLoop, IterateLoop, LoopDef, StageDef, Unit, UnitRole } from 
 import { resolveStagePrompt } from "./chain-state.js";
 import { type Artifact, handleToString } from "./handle.js";
 import { type Judge, resolveJudgePrompt } from "./judge.js";
+import { MSG_LOOP_CURSOR_CORRUPT } from "./messages.js";
 import type { Output } from "./output.js";
+import { StagePreflightError } from "./runner/errors.js";
 import type { RunContext, RunState } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -100,6 +102,24 @@ export function advanceCursor(cursor: LoopCursor, role: UnitRole, output: Output
 		cursor.phase = "produce";
 		cursor.index++;
 	}
+}
+
+/**
+ * Defensive read of `cursor.lastProduce` for cursor states that PROVE a
+ * completed produce precedes them (`phase === "judge"`, or `lastVerdict` set —
+ * both only reachable through `advanceCursor`, which assigns `lastProduce`
+ * first). The resume fold's deep shape guards (`readAllStagesForResume`,
+ * `guardRow`) refuse corrupted trails before they can rebuild such a cursor,
+ * so a miss here is an internal bug — surfaced as the runner's typed
+ * preflight error (stage-attributed JSONL row) instead of a bare `TypeError`.
+ */
+function lastProduceOf(cursor: LoopCursor, stage: string): NonNullable<LoopCursor["lastProduce"]> {
+	const lp = cursor.lastProduce;
+	if (!lp) {
+		const msg = MSG_LOOP_CURSOR_CORRUPT(stage, "no completed produce on the cursor");
+		throw new StagePreflightError("invariant", stage, msg, msg, false);
+	}
+	return lp;
 }
 
 /**
@@ -282,19 +302,27 @@ const assessStrategy: LoopKindStrategy = {
 		const loop = e.loop as AssessLoop;
 		const isVerify = e.def.verify !== undefined;
 		if (cursor.phase === "judge") {
-			const lp = cursor.lastProduce!; // a judge step always follows a completed produce
+			const lp = lastProduceOf(cursor, e.name); // a judge step always follows a completed produce
 			const judge = loop.judge;
 			const judgeSkill = judge.skill ?? (isVerify ? `${e.name}-verify` : `${e.name}-judge`);
-			const prompt =
-				judge.skill !== undefined
-					? `/skill:${judge.skill} ${handleToString(lp.artifact!.handle)}`
-					: await resolveJudgePrompt(judge.prompt!, {
-							cwd: run.cwd,
-							output: lp.output,
-							entryArtifact: e.entryArtifact,
-							state: run.state,
-							round: cursor.index,
-						});
+			let prompt: string;
+			if (judge.skill !== undefined) {
+				// produces-validation guarantees the producer emitted an artifact —
+				// a miss is the same corrupted-cursor class as a missing produce.
+				if (!lp.artifact) {
+					const msg = MSG_LOOP_CURSOR_CORRUPT(e.name, "judge skill dispatch found no produced artifact");
+					throw new StagePreflightError("invariant", e.name, msg, msg, false);
+				}
+				prompt = `/skill:${judge.skill} ${handleToString(lp.artifact.handle)}`;
+			} else {
+				prompt = await resolveJudgePrompt(judge.prompt!, {
+					cwd: run.cwd,
+					output: lp.output,
+					entryArtifact: e.entryArtifact,
+					state: run.state,
+					round: cursor.index,
+				});
+			}
 			const label = isVerify ? `a${cursor.index}·verify` : `r${cursor.index}·judge`;
 			return {
 				kind: "unit",
@@ -322,7 +350,7 @@ const assessStrategy: LoopKindStrategy = {
 			cursor.lastVerdict !== undefined
 				? loop.feedForward({
 						cwd: run.cwd,
-						output: cursor.lastProduce!.output,
+						output: lastProduceOf(cursor, e.name).output,
 						verdict: cursor.lastVerdict,
 						round: cursor.index - 1,
 						state: run.state,

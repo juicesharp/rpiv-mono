@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Post-review hardening (remediation review I6/Q1)
+
+#### Fixed
+- **Stale `names.json` entries self-heal.** A failed `releaseName` rollback (the header write failed AND the rollback write failed) left `names.json` pointing at a run that never existed — blocking the name forever (`claimName` reported a collision against a nonexistent run) and evading the index-rebuild recovery, which is gated on the name being *absent* from the index. Now `resolveRun` treats an index hit whose header is unreadable as positive evidence of staleness (rebuilds + retries once, pruning the dead entry as a side effect), and `claimName` only reports a collision when the holding run's file actually exists on disk.
+- **Corrupted loop cursors fail with stage attribution.** The assess strategy's `cursor.lastProduce!` / `lp.artifact!` dereferences are now guarded: a cursor state the state machine forbids throws a stage-attributed `StagePreflightError` (new `MSG_LOOP_CURSOR_CORRUPT`) instead of a bare `TypeError`. Defensive only — `advanceCursor` makes these states unreachable and the resume fold's shape guards refuse corrupted trails before they reach the driver.
+
 ### Phase 5 — naming + documentation alignment
 
 #### Changed

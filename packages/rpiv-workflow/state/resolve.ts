@@ -21,6 +21,11 @@ import type { WorkflowHeader } from "./state.js";
  * Resolution order:
  *  1. Check the names index (`names.json`) for a name → runId mapping on the
  *     RAW ref. If found and the target JSONL exists, return its header.
+ *     If found but the target JSONL is GONE (stale-present entry — a failed
+ *     `releaseName` rollback or a hand-deleted run file), that hit is
+ *     positive evidence the index is stale: rebuild `names.json` from the
+ *     JSONL headers and retry the name lookup once. The rebuild also prunes
+ *     the dead entry, freeing the name for re-claim.
  *  2. Fall back to runId lookup via `readHeader`, on the ref normalized to a
  *     slug — a trailing `.jsonl` is stripped and any directory prefix is
  *     dropped (`basename`). This lets `/wf @<path>` accept an editor's
@@ -29,7 +34,9 @@ import type { WorkflowHeader } from "./state.js";
  *  3. Index-miss recovery: if both lookups failed AND the ref is a
  *     well-formed run name absent from the index, rebuild `names.json` from
  *     the JSONL headers (`rebuildIndex`) and retry the name lookup once —
- *     a deleted/corrupt `names.json` no longer orphans named runs.
+ *     a deleted/corrupt `names.json` no longer orphans named runs. (Gated on
+ *     ABSENCE, so it can never fire for the stale-present case — that
+ *     recovery lives in step 1.)
  *
  * Name lookup stays on the raw ref: a run name is never a path, so a name like
  * `auth.jsonl` (were it ever claimed) must match verbatim, not as a slug.
@@ -43,6 +50,11 @@ export function resolveRun(cwd: string, ref: string): WorkflowHeader | undefined
 	if (index?.[ref]) {
 		const resolved = readHeader(cwd, index[ref]!);
 		if (resolved) return resolved;
+		// Stale-present entry: the index maps this name to a runId whose header
+		// is unreadable. Rebuild + retry once — and even when the retry misses,
+		// the rebuild has pruned the dead entry, so the name is re-claimable.
+		const recovered = rebuildIndex(cwd)?.[ref];
+		if (recovered) return readHeader(cwd, recovered);
 	}
 	// Fall back to runId lookup, tolerating a pasted/autosuggested path:
 	// reduce to the bare slug (drop dir prefix + trailing `.jsonl`).

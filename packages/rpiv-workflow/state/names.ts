@@ -22,7 +22,7 @@
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { formatError } from "../internal-utils.js";
-import { namesFilePath, runsDir } from "./paths.js";
+import { namesFilePath, runsDir, stateFilePath } from "./paths.js";
 import { enumerateRunIds, readFirstJsonlLine } from "./raw.js";
 
 // ---------------------------------------------------------------------------
@@ -148,7 +148,16 @@ export function claimName(cwd: string, name: string, runId: string): ClaimResult
 	if (!isValidName(name)) return { ok: false, reason: "invalid" };
 	const current = readNamesIndex(cwd) ?? {};
 	const existing = current[name];
-	if (existing) return { ok: false, reason: "collision", runId: existing };
+	// Collision only when the holder actually exists on disk: a mapping whose
+	// run file is gone is a stale entry (failed `releaseName` rollback,
+	// hand-deleted run), so the name is re-claimable — `addNameToIndex` simply
+	// overwrites it. A concurrent claimant inside its own claim→header window
+	// could be misread as stale, but that window is two consecutive
+	// synchronous calls and falls under the module header's accepted
+	// cross-process race.
+	if (existing && existsSync(stateFilePath(cwd, existing))) {
+		return { ok: false, reason: "collision", runId: existing };
+	}
 	if (!addNameToIndex(cwd, name, runId, current)) return { ok: false, reason: "write-failed" };
 	return { ok: true };
 }

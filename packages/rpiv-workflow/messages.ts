@@ -192,6 +192,16 @@ export const MSG_STAGE_THREW = (skill: string, reason: string) =>
 	`✗ stage ${skill} failed: ${reason} — stopping workflow`;
 
 /**
+ * Loop cursor reached a state its state machine forbids (e.g. a judge step
+ * with no completed produce behind it). `advanceCursor` makes these states
+ * unreachable and the resume fold's shape guards refuse corrupted trails, so
+ * a throw here is an internal bug surfaced with stage attribution instead of
+ * a bare `TypeError`.
+ */
+export const MSG_LOOP_CURSOR_CORRUPT = (stage: string, detail: string) =>
+	`✗ loop stage ${stage}: cursor invariant violated — ${detail}`;
+
+/**
  * Collector/parser throws — `collect`/`parse` are the PRIMARY user extension
  * points, so a throw is attributed to the throwing half (not folded into the
  * generic stage-machinery wording). Lands in `state.termination.error` via
