@@ -10,6 +10,12 @@
  * a degenerate assess loop; the only verify-aware code in this module is
  * presentation (role/label flavoring keyed on `e.def.verify`).
  *
+ * An assess-kind producer is skill-XOR-prompt, mirroring the judge arm: a
+ * prompt-dispatch stage's round 0 sends its resolved `prompt` raw, and retry
+ * rounds send `feedForward(...)`'s output raw (for prompt dispatch it IS the
+ * complete message, not a skill arg). Fanout/iterate producers stay
+ * skill-only — units own their prompts (load validation enforces it).
+ *
  * Every unit runs `runStageSession` with a pre-decorated session: `stageName`
  * carries the DISPLAY decoration (`decorateStage`), `unit` carries the
  * machine identity that lands in the row's `parent`/`role`/`unitId`/`unitIndex`
@@ -38,6 +44,7 @@
 import type { LoopDef, StageDef, Unit, UnitRole } from "./api.js";
 import { decorateStage, nowIso, runIdentityOf } from "./audit.js";
 import { type Artifact, handleToString } from "./handle.js";
+import { resolveStagePrompt } from "./internal-utils.js";
 import { type Judge, resolveJudgePrompt } from "./judge.js";
 import { buildLifecycleContext, type LifecycleContext, skillStageRef, type UnitEvent } from "./lifecycle.js";
 import {
@@ -89,7 +96,11 @@ export interface LoopEntry {
 	loop: LoopDef;
 	/** Stage-entry primary, FROZEN (IterateContext.artifact / JudgeContext.entryArtifact). */
 	entryArtifact: Artifact | undefined;
-	/** Round-0 producer arg (assess) — precomputed via `inputForStage`. */
+	/**
+	 * Round-0 producer arg (assess) — precomputed via `inputForStage`. `""` for
+	 * a prompt-dispatch stage (its round-0 message is the stage's own resolved
+	 * `prompt`, re-resolved at dispatch time — never frozen here).
+	 */
 	entryArgs: string;
 	/** {output, primaryArtifact} captured at loop entry — the "entry" projection. */
 	entryPair: { output: Output | undefined; primaryArtifact: Artifact | undefined };
@@ -262,6 +273,12 @@ async function pullNext(e: LoopEntry, cursor: LoopCursor, cap: number, run: RunC
 	// assess produce — done wins over cap (one code path for live + resume fast-advance)
 	if (cursor.lastVerdict !== undefined && loop.done(cursor.lastVerdict)) return { kind: "complete" };
 	if (cursor.index >= cap) return { kind: "cap", count: cursor.index };
+	// Producer dispatch is skill XOR prompt (the judge arm's posture). For
+	// prompt dispatch the message is sent raw: round 0 resolves the stage's own
+	// `prompt` at dispatch time (re-resolved on resume — the PromptFn joins the
+	// loop determinism contract), and retry rounds send feedForward's output as
+	// the COMPLETE message (there is no skill to prefix an arg onto).
+	const isPrompt = e.def.prompt !== undefined;
 	// `lastVerdict` is only set by a completed judge, which also bumps `index` —
 	// so `index - 1 ≥ 0` whenever feedForward runs (round 0 takes entryArgs).
 	const arg =
@@ -273,7 +290,9 @@ async function pullNext(e: LoopEntry, cursor: LoopCursor, cap: number, run: RunC
 					round: cursor.index - 1,
 					state: run.state,
 				})
-			: e.entryArgs;
+			: isPrompt
+				? await resolveStagePrompt(e.def.prompt!, run.cwd, run.state)
+				: e.entryArgs;
 	const label = isVerify ? `a${cursor.index}·attempt` : `r${cursor.index}·produce`;
 	return {
 		kind: "unit",
@@ -281,7 +300,7 @@ async function pullNext(e: LoopEntry, cursor: LoopCursor, cap: number, run: RunC
 		tag: label,
 		label,
 		skill: e.skill,
-		prompt: `/skill:${e.skill} ${arg}`,
+		prompt: isPrompt ? arg : `/skill:${e.skill} ${arg}`,
 		def: e.def,
 	};
 }

@@ -15,7 +15,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMockPi, createMockSessionChain, mockAssistantMessage } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { acts, type FanoutFn, type IterateFn, produces, type VerifySpec } from "./api.js";
+import { acts, type FanoutFn, type IterateFn, produces, type ScriptContext, type VerifySpec } from "./api.js";
 import { assess, fanout, iterate, verify } from "./control-flow.js";
 import { fs as fsHandle, handleToString } from "./handle.js";
 import { judge } from "./judge.js";
@@ -1244,5 +1244,146 @@ describe("loop driver — verify", () => {
 		} finally {
 			dispose();
 		}
+	});
+});
+
+// ===========================================================================
+// Prompt dispatch — assess/verify × prompt (the producer arm's raw-text mode)
+// ===========================================================================
+
+describe("loop driver — prompt dispatch", () => {
+	const pass = (v: Output) => Boolean((v.data as { done?: boolean }).done);
+	const gateOnly = () => verify({ judge: judge({ skill: "grade", outcome: verdictOutcome("verdict") }), pass });
+
+	it("verify × prompt gate-only pass: attempt 0 sends the prompt RAW; skill judge + consumer get handles", async () => {
+		writeVerdict(0, true);
+		const wf = {
+			name: "gated-prompt",
+			start: "build",
+			stages: {
+				build: produces({
+					outcome: mdOutcome("impl"),
+					prompt: "write the impl to .rpiv/artifacts/impl/",
+					verify: gateOnly(),
+				}),
+				consume: acts(),
+			},
+			edges: { build: "consume", consume: "stop" } as Record<string, string>,
+		};
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/impl/i0.md")] },
+				{ branch: [mockAssistantMessage("verdict .rpiv/verdicts/v0.json")] },
+				{ branch: [mockAssistantMessage("consumed")] },
+			],
+		});
+
+		const result = await runWorkflow(chain.ctx, { workflow: wf, input: "x" });
+
+		expect(result.success).toBe(true);
+		expect(chain.sentMessages).toEqual([
+			// Raw — no /skill: prefix and no implicit input arg appended.
+			"write the impl to .rpiv/artifacts/impl/",
+			"/skill:grade .rpiv/artifacts/impl/i0.md",
+			"/skill:consume .rpiv/artifacts/impl/i0.md",
+		]);
+		const rows = readRows();
+		expect(rows[0]).toMatchObject({ stage: "build (a0·attempt)", role: "produce", unitIndex: 0 });
+		expect(rows[1]).toMatchObject({ stage: "build (a0·verify)", skill: "grade", role: "verify", unitIndex: 0 });
+	});
+
+	it("verify × prompt retry: feedForward's output IS the next attempt's whole message (no /skill: prefix)", async () => {
+		writeVerdict(0, false);
+		writeVerdict(1, true);
+		const wf = {
+			name: "gated-prompt",
+			start: "build",
+			stages: {
+				build: produces({
+					outcome: mdOutcome("impl"),
+					prompt: "draft the impl",
+					verify: verify({
+						judge: judge({ skill: "grade", outcome: verdictOutcome("verdict") }),
+						pass,
+						feedForward: ({ verdict, round }) =>
+							`rewrite attempt=${round + 1} done=${(verdict.data as { done?: boolean }).done}`,
+						maxAttempts: 3,
+					}),
+				}),
+				consume: acts(),
+			},
+			edges: { build: "consume", consume: "stop" } as Record<string, string>,
+		};
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/impl/i0.md")] },
+				{ branch: [mockAssistantMessage("verdict .rpiv/verdicts/v0.json")] },
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/impl/i1.md")] },
+				{ branch: [mockAssistantMessage("verdict .rpiv/verdicts/v1.json")] },
+				{ branch: [mockAssistantMessage("consumed")] },
+			],
+		});
+
+		const result = await runWorkflow(chain.ctx, { workflow: wf, input: "x" });
+
+		expect(result.success).toBe(true);
+		expect(chain.sentMessages).toEqual([
+			"draft the impl",
+			"/skill:grade .rpiv/artifacts/impl/i0.md",
+			"rewrite attempt=1 done=false",
+			"/skill:grade .rpiv/artifacts/impl/i1.md",
+			"/skill:consume .rpiv/artifacts/impl/i1.md",
+		]);
+	});
+
+	it("assess × prompt: a dynamic PromptFn (weaving ctx.input) opens round 0; feedForward drives round 1 raw", async () => {
+		writeVerdict(0, false);
+		writeVerdict(1, true);
+		const wf = {
+			name: "refining",
+			start: "up",
+			stages: {
+				up: produces({ outcome: mdOutcome("design") }),
+				draft: produces({
+					outcome: mdOutcome("draft"),
+					prompt: ({ input }: ScriptContext) => `draft from ${handleToString(input!.artifacts[0]!.handle)}`,
+					loop: assess({
+						judge: judge({ skill: "grade", outcome: verdictOutcome("verdict") }),
+						done,
+						feedForward: ({ verdict, round }) =>
+							`polish round=${round} fb=${(verdict.data as { feedback?: string }).feedback}`,
+					}),
+				}),
+			},
+			edges: { up: "draft", draft: "stop" } as Record<string, string>,
+		};
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/design/d0.md")] },
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/draft/t0.md")] },
+				{ branch: [mockAssistantMessage("verdict .rpiv/verdicts/v0.json")] },
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/draft/t1.md")] },
+				{ branch: [mockAssistantMessage("verdict .rpiv/verdicts/v1.json")] },
+			],
+		});
+
+		const result = await runWorkflow(chain.ctx, { workflow: wf, input: "x" });
+
+		expect(result.success).toBe(true);
+		expect(chain.sentMessages).toEqual([
+			"/skill:up x",
+			// Round 0: the PromptFn resolved against the upstream Output, sent raw.
+			"draft from .rpiv/artifacts/design/d0.md",
+			"/skill:grade .rpiv/artifacts/draft/t0.md",
+			// Round 1: feedForward's output IS the message.
+			"polish round=0 fb=fb0",
+			"/skill:grade .rpiv/artifacts/draft/t1.md",
+		]);
+		const rows = readRows();
+		expect(rows[1]).toMatchObject({ stage: "draft (r0·produce)", role: "produce", unitIndex: 0 });
+		expect(rows[2]).toMatchObject({ stage: "draft (r0·judge)", role: "judge", unitIndex: 0 });
 	});
 });

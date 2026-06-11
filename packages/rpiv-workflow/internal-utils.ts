@@ -7,7 +7,7 @@
  */
 
 import { isAbsolute, join } from "node:path";
-import type { StageDef } from "./api.js";
+import type { PromptFn, StageDef } from "./api.js";
 import { type Artifact, handleToString } from "./handle.js";
 import type { Output } from "./output.js";
 import type { RunState } from "./types.js";
@@ -53,9 +53,30 @@ export function resolveSkill(def: StageDef, stageName: string): string {
 }
 
 /**
+ * Resolve a stage's `prompt` dispatch text — the COMPLETE user message a
+ * prompt stage sends (no `/skill:` prefix, no implicit arg). The dynamic form
+ * receives the same `ScriptContext` script stages get. The ONE resolver for
+ * every prompt-dispatch site: the single-shot path (stage-lifecycle) and the
+ * loop driver's round-0 producer (loop.ts) — resolved at dispatch time, never
+ * persisted, so a `PromptFn` on a loop stage joins the loop determinism
+ * contract (deterministic w.r.t. the fold-replayed state). Lives here (not
+ * runner/) so loop.ts consumes it cycle-free — same posture as
+ * `stageEntryArgs` below.
+ */
+export async function resolveStagePrompt(prompt: string | PromptFn, cwd: string, state: RunState): Promise<string> {
+	if (typeof prompt === "string") return prompt;
+	return prompt({ cwd, input: state.output, state });
+}
+
+/**
  * The single arg-projection authority: the string a stage's
  * `/skill:<name> <args>` prompt carries, derived purely from
- * (def, stageName, startStage, state). Four cases in priority order:
+ * (def, stageName, startStage, state). Five cases in priority order:
+ *   0. A prompt-dispatch stage (`def.prompt` set) owns its WHOLE message —
+ *      no skill args exist; returns `""` (never `undefined`: the missing-input
+ *      refusal arms below must not fire for a stage that doesn't consume the
+ *      rolling primary or named reads). The round-0 producer message of a
+ *      prompt-dispatch loop is `resolveStagePrompt`, not this projection.
  *   1. The start stage receives `originalInput` (the user's brief).
  *   2. A stage opting out of inheritance (`inheritsArtifacts: false`,
  *      i.e. authored via `terminal()`) also receives `originalInput`.
@@ -84,6 +105,7 @@ export function stageEntryArgs(
 	startStage: string,
 	state: RunState,
 ): string | undefined {
+	if (def.prompt !== undefined) return "";
 	if (stageName === startStage) return state.originalInput;
 	if (def.inheritsArtifacts === false) return state.originalInput;
 	if (def.reads?.length) {

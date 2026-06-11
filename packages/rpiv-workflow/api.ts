@@ -176,10 +176,11 @@ export interface VerifySpec {
 	pass: (verdict: import("./output.js").Output) => boolean;
 	/**
 	 * Builds the next attempt's prompt arg from the just-failed attempt's
-	 * producer output + verdict. REQUIRED when `maxAttempts > 1` (without it
-	 * the retried prompt would be byte-identical to the original and the model
-	 * would have no signal about why it failed); never called when
-	 * `maxAttempts` is 1.
+	 * producer output + verdict. On a prompt-dispatch stage the returned string
+	 * is the COMPLETE retry message (sent raw — there is no skill to prefix an
+	 * arg onto). REQUIRED when `maxAttempts > 1` (without it the retried prompt
+	 * would be byte-identical to the original and the model would have no
+	 * signal about why it failed); never called when `maxAttempts` is 1.
 	 */
 	feedForward?: (ctx: FeedForwardContext) => string;
 	/**
@@ -331,11 +332,13 @@ export type ActsScriptFn = (ctx: ScriptContext) => void | Promise<void>;
  *
  * A plain `string` is sugar for `() => string`. Unlike a skill stage, a prompt
  * stage skips the skill-registry preflight (there is no skill to register).
- * Mutually exclusive with `skill` (explicit), `run`, `reads`, and — in v1 —
- * `fanout`/`iterate`. Composes with `kind` (a `produces` prompt stage runs the
- * `outcome` collector and publishes; a `side-effect` prompt stage just talks)
- * and `sessionPolicy` (`continue` = a follow-up turn on a session a prior stage
- * populated). (validated at load + preflight.)
+ * Mutually exclusive with `skill` (explicit), `run`, `reads`, and
+ * `fanout`/`iterate` loops (units own their prompts). Composes with `kind` (a
+ * `produces` prompt stage runs the `outcome` collector and publishes; a
+ * `side-effect` prompt stage just talks), with `sessionPolicy` (`continue` = a
+ * follow-up turn on a session a prior stage populated), and with `assess`
+ * loops / `verify` — the prompt is round/attempt 0's message; `feedForward`
+ * builds each retry's complete message. (validated at load + preflight.)
  */
 export type PromptFn = (ctx: ScriptContext) => string | Promise<string>;
 
@@ -426,8 +429,10 @@ export interface StageDef<TIn = unknown, TOut = unknown> {
 	 *     `kind: "produces"` + `outcome.name`.
 	 *   - `assess({...})`  — producer→judge rounds; requires `kind: "produces"`
 	 *     + `outcome.name` (the producer is a collecting unit too).
-	 * Mutually exclusive with `run`/`prompt` and `sessionPolicy: "continue"`
-	 * (validated at load + at preflight).
+	 * Mutually exclusive with `run` and `sessionPolicy: "continue"`; `prompt`
+	 * composes with `assess` only (round 0 = the resolved prompt; retries =
+	 * `feedForward` raw) — fanout/iterate units own their prompts. (validated
+	 * at load + at preflight.)
 	 */
 	loop?: LoopDef;
 	/**
@@ -444,8 +449,10 @@ export interface StageDef<TIn = unknown, TOut = unknown> {
 	 * stage). The verdict publishes to `state.named[verify.judge.outcome.name]`.
 	 *
 	 * Requires `kind: "produces"` (the judge grades the attempt's artifact).
-	 * Composes with `reads`. Mutually exclusive with `loop`, `run`, `prompt`,
-	 * and `sessionPolicy: "continue"` (validated at load).
+	 * Composes with `reads` and with `prompt` dispatch (attempt 0 sends the
+	 * stage's resolved `prompt`; retries send `feedForward`'s output raw).
+	 * Mutually exclusive with `loop`, `run`, and `sessionPolicy: "continue"`
+	 * (validated at load).
 	 */
 	verify?: VerifySpec;
 	/**
@@ -481,9 +488,10 @@ export interface StageDef<TIn = unknown, TOut = unknown> {
 	 * skill-registry check. Presence of `prompt` is the third dispatch
 	 * discriminator alongside `run`.
 	 *
-	 * Mutually exclusive with `skill` (explicit), `run`, `reads`, and — in v1 —
-	 * `fanout`/`iterate`. Composes with `kind` and `sessionPolicy`. (validated
-	 * at load + preflight.)
+	 * Mutually exclusive with `skill` (explicit), `run`, `reads`, and
+	 * `fanout`/`iterate` loops. Composes with `kind`, `sessionPolicy`, `assess`
+	 * loops, and `verify` (the prompt is round/attempt 0's message; retries
+	 * dispatch `feedForward`'s output raw). (validated at load + preflight.)
 	 */
 	prompt?: string | PromptFn;
 	/**
@@ -561,10 +569,13 @@ interface ActsScriptOptions<TIn = unknown> {
 /**
  * Options accepted by `produces.prompt({ prompt, outcome, ... })` — the typed
  * builder for a raw-prompt `produces` stage. The dispatch-conflicting fields
- * (`skill`, `run`, `loop`, `reads`) are STRUCTURALLY ABSENT, so an
- * object-literal call site that sets one fails TypeScript's excess-property
- * check — the load-time exclusion becomes compile-time for the idiomatic path.
- * `outcome` is required (a `produces` stage always needs one).
+ * (`skill`, `run`, `reads`) are STRUCTURALLY ABSENT, so an object-literal call
+ * site that sets one fails TypeScript's excess-property check — the load-time
+ * exclusion becomes compile-time for the idiomatic path. `loop` is narrowed to
+ * `AssessLoop` (fanout/iterate units own their prompts — un-typable here, and
+ * rejected at load on the bare-field form); `verify` composes (attempt 0 sends
+ * the resolved prompt; retries send `feedForward`'s output raw). `outcome` is
+ * required (a `produces` stage always needs one).
  */
 interface ProducesPromptOptions<TIn = unknown, TOut = unknown> {
 	prompt: string | PromptFn;
@@ -574,6 +585,10 @@ interface ProducesPromptOptions<TIn = unknown, TOut = unknown> {
 	onInvalid?: OnInvalid;
 	maxRetries?: number;
 	validateTimeoutMs?: number;
+	/** Model-judged refinement rounds over this prompt stage — assess only. */
+	loop?: AssessLoop;
+	/** Post-condition judge gating the prompt stage's output. */
+	verify?: VerifySpec;
 	/** `"continue"` makes this a follow-up turn on a session a prior stage populated. */
 	sessionPolicy?: SessionPolicy;
 }
@@ -626,6 +641,8 @@ function producesPrompt<TIn = unknown, TOut = unknown>(opts: ProducesPromptOptio
 		onInvalid: opts.onInvalid,
 		maxRetries: opts.maxRetries,
 		validateTimeoutMs: opts.validateTimeoutMs,
+		loop: opts.loop,
+		verify: opts.verify,
 	};
 }
 
@@ -680,7 +697,8 @@ function terminalScript<TIn = unknown>(opts: ActsScriptOptions<TIn>): StageDef<T
  * Raw-prompt variant: `produces.prompt({ prompt, outcome, ... })` dispatches
  * author-owned text (no `/skill:` prefix) and collects the reply via `outcome`.
  * The typed options omit the dispatch-conflicting fields so invalid combos are
- * un-typable on a literal call site.
+ * un-typable on a literal call site; `loop` is narrowed to `AssessLoop` and
+ * `verify` composes (prompt = round/attempt 0; `feedForward` = retries, raw).
  */
 export const produces = Object.assign(producesFn, { script: producesScript, prompt: producesPrompt });
 

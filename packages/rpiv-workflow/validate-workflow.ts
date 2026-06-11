@@ -448,8 +448,12 @@ function checkStageEnums(w: Workflow, name: string, stage: StageDef, issues: Wor
  *   - mutually exclusive with an explicit `skill` (you're either invoking a
  *     skill or sending raw text — `skill` defaulting to the record key does
  *     NOT trip this, only an explicitly-set `skill`);
- *   - mutually exclusive with a `loop` in v1 (chat fan-out is a deferred
- *     composition; units own their own prompts);
+ *   - mutually exclusive with `fanout`/`iterate` loops (principled, not
+ *     deferred: every unit's message comes from `units()`/`next()`, so a
+ *     stage-level `prompt` would have no role). `assess` loops and `verify`
+ *     COMPOSE: the stage's `prompt` is round/attempt 0's message and
+ *     `feedForward` builds each retry's complete message (raw — no `/skill:`
+ *     prefix to attach an arg to);
  *   - mutually exclusive with `reads` — a skill stage's `reads` auto-builds a
  *     labelled-flag arg, but a prompt stage's text is author-owned; rather than
  *     give `reads` two meanings, require the prompt to read `state.named`
@@ -476,17 +480,12 @@ function checkPromptInvariants(w: Workflow, name: string, stage: StageDef, issue
 			),
 		);
 	}
-	if (stage.loop) {
-		issues.push(
-			error(w.name, name, `stage "${name}": prompt and loop are mutually exclusive — units own their prompts`),
-		);
-	}
-	if (stage.verify) {
+	if (stage.loop && stage.loop.kind !== "assess") {
 		issues.push(
 			error(
 				w.name,
 				name,
-				`stage "${name}": prompt and verify are mutually exclusive in v1 — verify attempts dispatch /skill:<skill>; a prompt stage has no skill`,
+				`stage "${name}": prompt and ${stage.loop.kind} loops are mutually exclusive — units own their prompts (only assess loops and verify compose with prompt dispatch)`,
 			),
 		);
 	}

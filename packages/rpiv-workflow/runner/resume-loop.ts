@@ -44,7 +44,10 @@ export async function resumeLoopStage(
 	// row's transient roll nor the generation's own named appends can leak into
 	// it. `undefined` means the trail no longer carries the rows that published
 	// this stage's inputs — recorded refusal with the forward preflight's
-	// messages (today's posture, now covering `reads` projections too).
+	// messages (today's posture, now covering `reads` projections too). A
+	// prompt-dispatch stage never refuses here: the authority freezes `""` (no
+	// skill args exist) and the driver re-resolves the stage's own `prompt` at
+	// round-0 dispatch.
 	let entryArgs = "";
 	if (loop.kind === "assess") {
 		if (point.entryArgs === undefined) {

@@ -883,9 +883,8 @@ describe("validateWorkflow — verify invariants", () => {
 		expect(e.some((i) => /verify and run are mutually exclusive/.test(i.message))).toBe(true);
 	});
 
-	it("rejects verify alongside prompt (v1 — verify attempts dispatch /skill:)", () => {
-		const e = errors(wf(base({ prompt: "do it" })));
-		expect(e.some((i) => /prompt and verify are mutually exclusive/.test(i.message))).toBe(true);
+	it("accepts verify alongside prompt (composes — attempt 0 sends the resolved prompt raw)", () => {
+		expect(errors(wf(base({ prompt: "do it" })))).toEqual([]);
 	});
 
 	it('rejects verify with sessionPolicy "continue"', () => {
@@ -1011,7 +1010,7 @@ describe("validateWorkflow — prompt invariants", () => {
 		expect(e.some((i) => /a prompt stage cannot also set `skill`/.test(i.message))).toBe(true);
 	});
 
-	it("rejects prompt + loop", () => {
+	it("rejects prompt + iterate (units own their prompts)", () => {
 		const e = errors(
 			wf({
 				kind: "produces",
@@ -1021,7 +1020,36 @@ describe("validateWorkflow — prompt invariants", () => {
 				loop: iterate({ next: () => null }),
 			}),
 		);
-		expect(e.some((i) => /prompt and loop are mutually exclusive/.test(i.message))).toBe(true);
+		expect(e.some((i) => /prompt and iterate loops are mutually exclusive/.test(i.message))).toBe(true);
+	});
+
+	it("rejects prompt + fanout (units own their prompts)", () => {
+		const e = errors(
+			wf({
+				kind: "side-effect",
+				sessionPolicy: "fresh",
+				prompt: "x",
+				loop: fanout({ units: () => [] }),
+			}),
+		);
+		expect(e.some((i) => /prompt and fanout loops are mutually exclusive/.test(i.message))).toBe(true);
+	});
+
+	it("accepts prompt + assess (the prompt is round 0's message; feedForward builds retries)", () => {
+		const e = errors(
+			wf({
+				kind: "produces",
+				sessionPolicy: "fresh",
+				prompt: "draft it",
+				outcome: { name: "p", collector: noopCollector },
+				loop: assess({
+					judge: judge({ skill: "grade", outcome: { name: "p-verdict", collector: noopCollector } }),
+					done: () => true,
+					feedForward: () => "again",
+				}),
+			}),
+		);
+		expect(e).toEqual([]);
 	});
 
 	it("rejects prompt + reads", () => {

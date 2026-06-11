@@ -247,7 +247,7 @@ Loops are observed through unit-generic lifecycle hooks (register via `registerL
 
 ### Per-stage verification (verify)
 
-**verify** attaches a post-condition judge to a `produces` stage: after each attempt completes (collected, validated, persisted), the judge session grades the attempt's primary artifact and `pass(verdict)` gates advancement — true → the chain advances with the attempt's producer pair; false → a fresh retry attempt (prompt arg built by `feedForward`) up to `maxAttempts` (default 1 = gate-only), then the workflow halts with "verification failed". A pass on the final attempt is a normal completion. Requires `kind: "produces"` + an `outcome` with a `name`; composes with `reads`; mutually exclusive with `loop`, `run`, `prompt`, and `sessionPolicy: "continue"`.
+**verify** attaches a post-condition judge to a `produces` stage: after each attempt completes (collected, validated, persisted), the judge session grades the attempt's primary artifact and `pass(verdict)` gates advancement — true → the chain advances with the attempt's producer pair; false → a fresh retry attempt (prompt arg built by `feedForward`) up to `maxAttempts` (default 1 = gate-only), then the workflow halts with "verification failed". A pass on the final attempt is a normal completion. Requires `kind: "produces"` + an `outcome` with a `name`; composes with `reads` and with `prompt` dispatch (attempt 0 sends the stage's resolved `prompt` raw; retries send `feedForward`'s output raw — for prompt dispatch it is the complete retry message, not a skill arg); mutually exclusive with `loop`, `run`, and `sessionPolicy: "continue"`.
 
 ```ts
 import { judge, produces, verify } from "@juicesharp/rpiv-workflow";
@@ -446,9 +446,13 @@ stages: {
 ```
 
 **Constraints (load + preflight):**
-- Mutually exclusive with an explicit `skill`, with `run`, with `reads`, and —
-  in v1 — with a `loop`. (Read `state.named` from the `PromptFn` itself
-  instead of `reads`.)
+- Mutually exclusive with an explicit `skill`, with `run`, with `reads`, and
+  with `fanout`/`iterate` loops (units own their prompts — every unit's message
+  comes from `units()`/`next()`, so a stage-level `prompt` would have no role).
+  Read `state.named` from the `PromptFn` itself instead of `reads`.
+- Composes with `assess` loops and with `verify`: the stage's `prompt` is
+  round/attempt 0's message, and `feedForward` builds each retry's COMPLETE
+  message (sent raw — there is no skill to prefix an arg onto).
 - `produces` + `prompt` still requires an `outcome`. `side-effect` + `prompt` is
   a pure chat turn.
 - A prompt stage skips the skill-registry check (no skill to register) and the
@@ -895,7 +899,7 @@ Generated workflows must pass `validateWorkflow()` before writing. The validator
 - `iterate` / `assess` require `kind: "produces"` — each unit runs an outcome collector
 - `loop.max` must be an integer `>= 1` (the run-wide `maxIterations` caps the upper bound)
 - a judge's `outcome.name` must differ from the producer's publish name (`assess` and `verify`); `assess` composes with `reads` (the v1 restriction is lifted — round-0 producer args are derived by one authority and frozen by the resume fold at loop-generation open)
-- **prompt and loop are mutually exclusive** — units own their prompts; prompt stages also cannot set `skill`, `run`, or `reads`; a `produces` prompt stage still needs an `outcome`; an empty prompt string is rejected
+- **prompt and fanout/iterate loops are mutually exclusive** — units own their prompts (`assess` loops and `verify` compose with prompt dispatch); prompt stages also cannot set `skill`, `run`, or `reads`; a `produces` prompt stage still needs an `outcome`; an empty prompt string is rejected
 - **Script stages cannot loop — write a loop inside run() instead**; they also cannot declare `skill`, `outcome`, `prompt`, or `sessionPolicy: "continue"`
 
 > **Important:** The `/wf` command blocks execution on any `severity: "error"` issue. Always validate before writing.

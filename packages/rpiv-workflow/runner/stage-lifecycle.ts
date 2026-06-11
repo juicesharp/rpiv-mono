@@ -9,10 +9,10 @@
  * catches `StagePreflightError` and records the JSONL row.
  */
 
-import type { PromptFn, StageDef } from "../api.js";
+import type { StageDef } from "../api.js";
 import { auditCtxFor, notifyPartialArtifacts, recordTerminalFailure, runIdentityOf } from "../audit.js";
 import { effectiveLoopOf } from "../control-flow.js";
-import { currentPrimaryArtifact, resolveSkill, stageEntryArgs } from "../internal-utils.js";
+import { currentPrimaryArtifact, resolveSkill, resolveStagePrompt, stageEntryArgs } from "../internal-utils.js";
 import type { Judge } from "../judge.js";
 import { skillStageRef } from "../lifecycle.js";
 import { freshCursor, type LoopDeps, type LoopEntry, runLoop } from "../loop.js";
@@ -98,18 +98,6 @@ function buildPrompt(skill: string, inputForStage: string): string {
 }
 
 /**
- * Resolve a `prompt`-dispatch stage's text. The whole user message is
- * author-owned — no `/skill:` prefix, no implicit arg. The dynamic form gets
- * the same `ScriptContext` script stages get, so it can weave in the upstream
- * `Output` (`run.state.output`) or `state.named`. A throw here propagates to
- * `runStageOrRecordFailure`, which records a terminal failure for the stage.
- */
-async function resolvePrompt(prompt: string | PromptFn, run: RunContext): Promise<string> {
-	if (typeof prompt === "string") return prompt;
-	return prompt({ cwd: run.cwd, input: run.state.output, state: run.state });
-}
-
-/**
  * The arg string the stage's `/skill:<name> <args>` prompt carries — a thin
  * wrapper over the `stageEntryArgs` authority (internal-utils.ts), which the
  * resume fold also consumes at loop-generation open so live and resume can't
@@ -171,14 +159,17 @@ export async function runStage(
 
 	for (const check of PRE_PROMPT_CHECKS) await check.run(stage, run);
 
-	// Dispatch: a `prompt` stage sends author-owned raw text; a skill stage
-	// sends `/skill:<name> <inputForStage>`. `stage.skill` already equals the
-	// record key for a prompt stage (it cannot set an explicit skill — load
-	// validation forbids it), so the status/session/audit labels are correct
-	// for both without a separate label.
+	// Dispatch: a `prompt` stage sends author-owned raw text (resolved by the
+	// shared `resolveStagePrompt` authority — the loop driver's round-0 producer
+	// uses the same resolver); a skill stage sends `/skill:<name>
+	// <inputForStage>`. `stage.skill` already equals the record key for a
+	// prompt stage (it cannot set an explicit skill — load validation forbids
+	// it), so the status/session/audit labels are correct for both without a
+	// separate label. A PromptFn throw propagates to
+	// `runStageOrRecordFailure`, which records a terminal failure.
 	const prompt =
 		stage.def.prompt !== undefined
-			? await resolvePrompt(stage.def.prompt, run)
+			? await resolveStagePrompt(stage.def.prompt, run.cwd, run.state)
 			: buildPrompt(stage.skill, inputForStage(stage, run));
 	curCtx.ui.setStatus(STATUS_KEY, STATUS_STAGE(stage.stageNumber, run.totalStages, stage.skill));
 	const branchOffset = computeBranchOffset(curCtx, stage.def);
@@ -251,6 +242,11 @@ function resolveStage(currentName: string, idx: number, run: RunContext): Resolv
  * A `verify`-bearing stage enters here too (the desugar — `effectiveLoopOf`);
  * its onLoopStart reports `kind: "verify"` so listeners aren't told it's an
  * assess loop.
+ *
+ * A prompt-dispatch assess/verify stage also enters here: the skill-registry
+ * and upstream-artifact preflights already skip prompt stages, and its
+ * `entryArgs` freezes to `""` (the `stageEntryArgs` prompt arm) — the round-0
+ * message is the stage's own `prompt`, resolved by the driver at dispatch.
  */
 async function tryLoop(
 	curCtx: WorkflowHostContext,

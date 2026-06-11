@@ -206,7 +206,9 @@ export function assess(opts: AssessOptions): AssessLoop {
  * from `feedForward`) up to `maxAttempts` (default 1 = gate-only), then a
  * terminal "verification failed" halt. Requires `kind: "produces"` + an
  * `outcome` with a `name` (workflow-level, checked at load). Composes with
- * `reads`; mutually exclusive with `loop`/`run`/`prompt`/continue.
+ * `reads` and with `prompt` dispatch (attempt 0 sends the stage's resolved
+ * prompt; retries send `feedForward`'s output raw); mutually exclusive with
+ * `loop`/`run`/continue.
  *
  * The runner desugars the spec into a degenerate assess loop
  * (`synthesizeVerifyLoop`) run by the ONE driver — verify rides the tested
