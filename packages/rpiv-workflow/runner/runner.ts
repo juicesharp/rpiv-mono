@@ -9,7 +9,7 @@
  * Modules (imports point strictly downward — the walk's mutual recursion is
  * composed by injection in stage-lifecycle.ts, never as a module cycle):
  *  - runner.ts          — runWorkflow + resumeWorkflow + executeRun (shared
- *                         tail) + resume-entry selection.
+ *                         tail).
  *  - stage-lifecycle.ts — runStage (mode dispatch) + runStageOrRecordFailure
  *                         (single catch site) + the walk composition.
  *  - chain-advance.ts   — advanceChain + routing audit + backward-jump
@@ -23,6 +23,7 @@
  *  - errors.ts          — StagePreflightError.
  *  - resume.ts          — reconstructState: pure RunState rebuild from a
  *                         past run's JSONL trail (consumed by resumeWorkflow).
+ *  - resume-entry.ts    — trail trailer → chain re-entry thunk + refusal text.
  *  - resume-loop.ts     — loop-trailer re-entry + drift refusals.
  *
  * Ctx lifecycle: every level only touches the ctx it was handed.
@@ -44,10 +45,6 @@ import type { WorkflowHost, WorkflowHostContext } from "../host.js";
 import { nowIso } from "../internal-utils.js";
 import { type LifecycleListeners, lifecycleCtxFor } from "../lifecycle.js";
 import {
-	ERR_RESUME_MALFORMED_ROW,
-	ERR_RESUME_NO_ROWS,
-	ERR_RESUME_STAGE_GONE,
-	ERR_RESUME_VERSION_MISMATCH,
 	MSG_HEADER_WRITE_FAILED,
 	MSG_NAME_COLLISION,
 	MSG_NAME_INDEX_WRITE_FAILED,
@@ -64,11 +61,10 @@ import {
 } from "../state/index.js";
 import { DEFAULT_TRIGGER } from "../triggers.js";
 import type { RunContext, RunWorkflowOptions, RunWorkflowResult } from "../types.js";
-import { recordEntryThrow } from "./failure.js";
-import { type ReconstructResult, reconstructState } from "./resume.js";
-import { recordLoopDriftFailure, resumeLoopStage } from "./resume-loop.js";
+import { reconstructState } from "./resume.js";
+import { resumeRefusalError, selectResumeEntry } from "./resume-entry.js";
 import { buildRunContext, freshRunState } from "./run-context.js";
-import { advance, buildLoopDeps, runStageOrRecordFailure } from "./stage-lifecycle.js";
+import { runStageOrRecordFailure } from "./stage-lifecycle.js";
 
 // ---------------------------------------------------------------------------
 // Shared tail — executeRun
@@ -259,79 +255,4 @@ function hostMissingForContinueStages(workflow: Workflow, host: WorkflowHost | u
 	if (host !== undefined) return undefined;
 	if (!Object.values(workflow.stages).some((s) => s.sessionPolicy === "continue")) return undefined;
 	return "workflow contains continue-policy stages which require a workflow host";
-}
-
-/**
- * Pick the chain re-entry thunk from the trail trailer. Dispatch keys on the
- * STRUCTURED `parent` field — no string matching, no per-primitive arms:
- *   - fold-detected drift → record the parent-attributed terminal failure
- *     (zero dispatch; lifecycle bracketing identical to every other entry);
- *   - trailing unit row → re-enter the loop with the fold's cursor;
- *   - completed normal trailer → route onward (finished run hits stop ⇒ no-op);
- *   - failed/aborted trailer → re-run that stage.
- */
-function selectResumeEntry(
-	ctx: WorkflowHostContext,
-	recon: Extract<ReconstructResult, { ok: true }>,
-	run: RunContext,
-): () => Promise<unknown> {
-	if (recon.drift) {
-		const { parent, errMsg } = recon.drift;
-		return () => recordLoopDriftFailure(ctx, run, parent, errMsg);
-	}
-
-	// The fold's reconstructed chain index — NOT `stageNumber - 1`: the
-	// allocator counts every row including loop units, so past any loop the
-	// two diverge (a 10-unit loop would resume showing "stage 14/5").
-	const last = recon.rows[recon.rows.length - 1]!;
-	const idx = recon.lastChainIndex; // status-line / routing index; JSONL number comes from the allocator
-
-	if (last.parent !== undefined) {
-		// `recon.trailing` is set by construction: the fold always produces a
-		// trailing point for an open generation, and a unit-row trailer means
-		// the generation is open.
-		return () =>
-			guardResumeEntry(ctx, last.parent!, run, () =>
-				resumeLoopStage(ctx, recon.trailing!, idx, run, buildLoopDeps()),
-			);
-	}
-	if (last.status === "completed") {
-		// route onward; finished run ⇒ hits stop ⇒ no-op
-		return () => guardResumeEntry(ctx, last.stage, run, () => advance(ctx, last.stage, idx, run));
-	}
-	return () => runStageOrRecordFailure(ctx, last.stage, idx, run); // re-run the failed/aborted stage
-}
-
-/**
- * Resume-entry counterpart of `runStageOrRecordFailure`'s catch. The live
- * chain reaches user fns (loop `next`/`done`/`feedForward`, judge prompts,
- * route predicates) only under that catch; the resume-loop and route-onward
- * entry thunks call the same fns directly, so a throw would otherwise escape
- * `executeRun` as a raw rejection — `onWorkflowEnd` never fires and the
- * caller loses the result envelope.
- */
-async function guardResumeEntry(
-	curCtx: WorkflowHostContext,
-	name: string,
-	run: RunContext,
-	entry: () => Promise<unknown>,
-): Promise<void> {
-	try {
-		await entry();
-	} catch (e) {
-		await recordEntryThrow(curCtx, name, run, e);
-	}
-}
-
-function resumeRefusalError(recon: Extract<ReconstructResult, { ok: false }>, workflow: string): string {
-	switch (recon.reason) {
-		case "no-rows":
-			return ERR_RESUME_NO_ROWS(recon.detail);
-		case "stage-gone":
-			return ERR_RESUME_STAGE_GONE(recon.detail, workflow);
-		case "malformed-row":
-			return ERR_RESUME_MALFORMED_ROW(recon.detail);
-		case "version-mismatch":
-			return ERR_RESUME_VERSION_MISMATCH(recon.detail, STATE_SCHEMA_VERSION);
-	}
 }

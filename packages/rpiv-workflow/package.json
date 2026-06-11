@@ -52,6 +52,7 @@
 		"layers.ts",
 		"lifecycle.ts",
 		"loop.ts",
+		"loop-kinds.ts",
 		"load/",
 		"output.ts",
 		"messages.ts",

@@ -1,7 +1,8 @@
 /**
  * Input-validation preflights for the runner's per-stage pipeline.
  *
- * Two validators run as `POST_PROMPT_CHECKS` in `stage-lifecycle.ts`:
+ * Two validators run after prompt prep in the single-stage pipeline
+ * (`runSingleStage`, stage-lifecycle.ts):
  *   - `ensureInputValid` — validates upstream output against the stage's
  *     declared `inputSchema`.
  *   - `ensureContractInputValid` — validates upstream output against the
@@ -28,8 +29,8 @@ import {
 	type ValidationResult,
 	validateOutputData,
 } from "../validate-output.js";
-import type { ResolvedStage } from "./stage-lifecycle.js";
-import { StagePreflightError } from "./stage-lifecycle.js";
+import { StagePreflightError } from "./errors.js";
+import type { ResolvedStage } from "./resolve-stage.js";
 
 // ---------------------------------------------------------------------------
 // Shared helper

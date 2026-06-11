@@ -25,11 +25,13 @@
  */
 
 import type { LoopDef, StageDef, Unit, Workflow } from "../api.js";
-import { applyCompletedStage, stageEntryArgs } from "../chain-state.js";
+import { applyStageSuccess } from "../audit-rows.js";
+import { stageEntryArgs } from "../chain-state.js";
 import { effectiveLoopOf } from "../control-flow.js";
 import type { Artifact } from "../handle.js";
 import { formatError } from "../internal-utils.js";
-import { advanceCursor, freshCursor, judgeStageDef, type LoopCursor, projectResult, unitTagOf } from "../loop.js";
+import { projectResult } from "../loop.js";
+import { advanceCursor, freshCursor, judgeStageDef, type LoopCursor, loopStrategyOf } from "../loop-kinds.js";
 import { ERR_RESUME_LOOP_MISMATCH } from "../messages.js";
 import type { Output } from "../output.js";
 import {
@@ -189,15 +191,16 @@ function noteChainNode(acc: FoldAcc, stage: string, reentrant: boolean): void {
 	acc.prevNode = { stage, reentrant };
 }
 
-/** Normal-stage fold — unchanged semantics from today. */
+/**
+ * Normal-stage fold. A completed row replays through `applyStageSuccess` —
+ * the same apply the live success persistence runs, minus the I/O (the row
+ * is already on disk).
+ */
 function foldKnownStage(acc: FoldAcc, def: StageDef, row: WorkflowStage): void {
 	acc.visited.add(row.stage);
 	acc.lastStageNumber = Math.max(acc.lastStageNumber, row.stageNumber);
 	if (row.status !== "completed") return;
-	acc.state.stagesCompleted++;
-	if (!row.output) return;
-	acc.state.output = row.output;
-	applyCompletedStage(acc.state, def, row.stage, row.output);
+	applyStageSuccess(acc.state, def, row.stage, row.output);
 }
 
 /** Close the open generation: project the declared result — the live loop-advance, replayed. */
@@ -256,20 +259,17 @@ async function foldUnitRow(
 	if (!acc.drift) await guardRow(acc, gen, row);
 
 	if (row.status !== "completed") return undefined; // pending unit — cursor stays (resume re-runs it)
-	acc.state.stagesCompleted++;
-	if (!row.output) return undefined; // defensive — completed unit rows always carry output
-	acc.state.output = row.output;
 
 	if (row.role === "judge" || row.role === "verify") {
 		// Apply-then-project: the verdict rolls the pair TRANSIENTLY (exactly
 		// like the live judge unit); projection at generation close restores.
-		// Replaces the old never-apply mirror + manual named push.
-		applyCompletedStage(
+		applyStageSuccess(
 			acc.state,
 			judgeStageDef((gen.loop as Extract<LoopDef, { kind: "assess" }>).judge),
 			row.stage,
 			row.output,
 		);
+		if (!row.output) return undefined; // defensive — completed unit rows always carry output
 		// `guardRow` already verified `row.unitIndex === cursor.index` (drift
 		// otherwise), so the shared transition lands the same cursor the live
 		// driver had.
@@ -278,7 +278,8 @@ async function foldUnitRow(
 	}
 
 	// produce row — fanout/iterate units and assess producers alike
-	applyCompletedStage(acc.state, gen.def, row.stage, row.output);
+	applyStageSuccess(acc.state, gen.def, row.stage, row.output);
+	if (!row.output) return undefined; // defensive — completed unit rows always carry output
 	advanceCursor(gen.cursor, "produce", row.output, gen.loop.kind);
 	gen.expected = undefined; // consumed
 	return undefined;
@@ -287,47 +288,21 @@ async function foldUnitRow(
 /**
  * The full-row determinism guard — every unit row is checked against the
  * recomputed expectation at its boundary (the replayed state IS what the live
- * driver saw). Drift marks `acc.drift` and stops guarding; applying continues
- * so the failure can be recorded against complete state.
+ * driver saw). The kind-agnostic (role, unitIndex) arithmetic lives here; the
+ * per-kind re-check delegates to the strategy table (loop-kinds.ts). Drift
+ * marks `acc.drift` and stops guarding; applying continues so the failure can
+ * be recorded against complete state.
  */
 async function guardRow(acc: FoldAcc, gen: OpenGeneration, row: WorkflowStage): Promise<void> {
 	const judgeRole = gen.def.verify ? "verify" : "judge";
 	const expectRole = gen.loop.kind === "assess" ? (gen.cursor.phase === "judge" ? judgeRole : "produce") : "produce";
 	if (row.role !== expectRole || row.unitIndex !== gen.cursor.index) return setDrift(acc, gen.parent);
 
-	if (gen.loop.kind === "fanout") {
-		if (!gen.units || gen.cursor.index >= gen.units.length) return setDrift(acc, gen.parent);
-		if (unitTagOf(gen.units[gen.cursor.index]!) !== row.unitId) return setDrift(acc, gen.parent);
-		return;
-	}
-
-	if (gen.loop.kind === "iterate") {
-		if (!gen.expected || gen.expected.index !== gen.cursor.index) {
-			const u = await guarded(acc, gen.parent, () =>
-				(gen.loop as Extract<LoopDef, { kind: "iterate" }>).next({
-					cwd: acc.cwd,
-					artifact: gen.entryArtifact,
-					state: acc.state,
-					accumulated: gen.cursor.accumulated,
-					index: gen.cursor.index,
-				}),
-			);
-			if (acc.drift) return;
-			gen.expected = { index: gen.cursor.index, tag: u ? unitTagOf(u) : undefined };
-		}
-		// `tag: undefined` = the generator now terminates here, but a row exists — drift.
-		if (gen.expected.tag !== row.unitId) return setDrift(acc, gen.parent);
-		return;
-	}
-
-	// assess: (role, unitIndex) arithmetic already matched above. Full-check
-	// extra: a produce row for round n>0 implies done(verdict n-1) was false
-	// on the live run — a now-true done means the predicate drifted.
-	if (row.role === "produce" && gen.cursor.lastVerdict !== undefined) {
-		const loop = gen.loop as Extract<LoopDef, { kind: "assess" }>;
-		const done = await guarded(acc, gen.parent, () => loop.done(gen.cursor.lastVerdict!));
-		if (!acc.drift && done) setDrift(acc, gen.parent);
-	}
+	const matches = await guarded(acc, gen.parent, () =>
+		loopStrategyOf(gen.loop.kind).guardExpectation(gen, row, acc.cwd, acc.state),
+	);
+	if (acc.drift) return;
+	if (!matches) setDrift(acc, gen.parent);
 }
 
 function setDrift(acc: FoldAcc, parent: string): void {

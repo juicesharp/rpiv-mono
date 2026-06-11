@@ -25,7 +25,8 @@ import { failedArgs, notifyPartialArtifacts, runIdentityOf } from "../audit.js";
 import { currentPrimaryArtifact, resolveStagePrompt, stageEntryArgs } from "../chain-state.js";
 import { formatError } from "../internal-utils.js";
 import { lifecycleCtxFor, skillStageRef } from "../lifecycle.js";
-import { announceLoopStart, freshCursor, type LoopDeps, type LoopEntry, runLoop } from "../loop.js";
+import { announceLoopStart, type LoopDeps, runLoop } from "../loop.js";
+import { freshCursor, type LoopEntry } from "../loop-kinds.js";
 import {
 	ERR_LOOP_CAP_HALT,
 	ERR_VERIFY_FAILED,

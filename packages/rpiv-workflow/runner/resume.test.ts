@@ -31,7 +31,7 @@ import { assess, fanout, iterate, verify } from "../control-flow.js";
 import type { Artifact } from "../handle.js";
 import { fs as fsHandle, handleToString } from "../handle.js";
 import { judge } from "../judge.js";
-import { advanceCursor, freshCursor } from "../loop.js";
+import { advanceCursor, freshCursor } from "../loop-kinds.js";
 import type { Output } from "../output.js";
 import {
 	appendStage,

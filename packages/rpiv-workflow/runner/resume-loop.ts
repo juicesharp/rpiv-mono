@@ -17,11 +17,11 @@
  * probe pull is the documented harmless deterministic double-pull.
  */
 
-import type { LoopDef } from "../api.js";
-import { auditCtxFor, recordTerminalFailure } from "../audit.js";
+import { auditCtxFor, failedArgs, recordTerminalFailure } from "../audit.js";
 import { resolveSkill } from "../chain-state.js";
 import { effectiveLoopOf } from "../control-flow.js";
-import { announceLoopStart, type LoopDeps, type LoopEntry, runLoop } from "../loop.js";
+import { announceLoopStart, type LoopDeps, runLoop } from "../loop.js";
+import { type LoopEntry, loopStrategyOf } from "../loop-kinds.js";
 import { ERR_MISSING_ARTIFACT, MSG_MISSING_ARTIFACT, MSG_RESUME_LOOP_MISMATCH } from "../messages.js";
 import type { RunContext, WorkflowHostContext } from "../types.js";
 import type { LoopResumePoint } from "./resume.js";
@@ -67,33 +67,11 @@ export async function resumeLoopStage(
 		units: point.units, // fanout: the fold's recomputed-and-verified list — no second compute
 	};
 
-	if (await hasPendingUnit(loop, point, run)) await announceLoopStart(ctx, run, entry);
+	// Pending-work probe (strategy table) gates the announce only — a
+	// finished-loop resume stays a pinned SILENT no-op.
+	if (await loopStrategyOf(loop.kind).hasPending(loop, point, run)) await announceLoopStart(ctx, run, entry);
 
 	await runLoop(ctx, entry, point.cursor, run, deps);
-}
-
-/**
- * Pending-work probe — never dispatches; gates the announce only. The
- * iterate arm re-pulls `next()` at the cursor (the driver pulls the same
- * index again right after) — the harmless double-pull is safe because the
- * resume contract requires generators to be deterministic.
- */
-async function hasPendingUnit(loop: LoopDef, point: LoopResumePoint, run: RunContext): Promise<boolean> {
-	if (loop.kind === "fanout") return point.cursor.index < (point.units?.length ?? 0);
-	if (loop.kind === "iterate") {
-		const u = await loop.next({
-			cwd: run.cwd,
-			artifact: point.entryArtifact,
-			state: run.state,
-			accumulated: point.cursor.accumulated,
-			index: point.cursor.index,
-		});
-		return u !== null && u !== undefined;
-	}
-	// assess: a pending judge always runs; a pending produce runs unless the
-	// recovered verdict is done (the driver's fast-advance path).
-	if (point.cursor.phase === "judge") return true;
-	return !(point.cursor.lastVerdict !== undefined && loop.done(point.cursor.lastVerdict));
 }
 
 /** Recorded refusal for a corrupted/truncated trail (reuses the forward preflight's messages). */
@@ -104,12 +82,11 @@ function recordMissingArtifactFailure(
 	skill: string,
 	idx: number,
 ): Promise<void> {
-	return recordTerminalFailure(ctx, auditCtxFor(run, parent, skill), {
-		status: "failed",
-		notifyMsg: MSG_MISSING_ARTIFACT(skill),
-		notifyLevel: "error",
-		errMsg: ERR_MISSING_ARTIFACT(skill, idx + 1),
-	});
+	return recordTerminalFailure(
+		ctx,
+		auditCtxFor(run, parent, skill),
+		failedArgs(MSG_MISSING_ARTIFACT(skill), ERR_MISSING_ARTIFACT(skill, idx + 1)),
+	);
 }
 
 /**
@@ -125,10 +102,9 @@ export function recordLoopDriftFailure(
 	errMsg: string,
 ): Promise<void> {
 	const skill = resolveSkill(run.workflow.stages[parent]!, parent);
-	return recordTerminalFailure(ctx, auditCtxFor(run, parent, skill), {
-		status: "failed",
-		notifyMsg: MSG_RESUME_LOOP_MISMATCH(parent),
-		notifyLevel: "error",
-		errMsg,
-	});
+	return recordTerminalFailure(
+		ctx,
+		auditCtxFor(run, parent, skill),
+		failedArgs(MSG_RESUME_LOOP_MISMATCH(parent), errMsg),
+	);
 }
