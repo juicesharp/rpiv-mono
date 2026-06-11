@@ -1,0 +1,47 @@
+{
+  "_meta.notes": "中文翻译。欢迎中文母语者通过 PR 审校。",
+
+  "command.description": "用语音输入文字——本地 STT，无需云端",
+
+  "error.requires_interactive": "/voice 需要交互模式",
+  "error.model_download_failed": "STT 模型下载失败，请检查网络连接。",
+  "error.model_extract_failed": "下载的 STT 模型压缩包已损坏，请重试。",
+  "error.model_verify_failed": "STT 模型文件下载不完整，请重试。",
+  "error.model_stale_install": "STT 模型文件已被删除或损坏，下次启动时将重新下载。",
+  "error.engine_load_failed": "STT 模型加载失败。",
+  "error.mic_unavailable": "麦克风不可用。请检查是否连接了输入设备，以及 Pi 是否有麦克风权限。",
+
+  "splash.preparing": "正在准备模型……",
+  "splash.downloading": "正在下载 Whisper……",
+  "splash.extracting": "正在解压模型文件……",
+  "splash.verifying": "正在校验模型文件……",
+  "splash.loading_engine": "正在加载语音模型……",
+  "splash.initializing_mic": "正在初始化麦克风……",
+
+  "footer.enter_paste": "回车粘贴",
+  "footer.space_pause": "空格暂停",
+  "footer.space_resume": "空格继续",
+  "footer.tab_settings": "Tab 设置",
+  "footer.esc_cancel": "Esc 取消",
+  "footer.esc_back": "Esc 返回",
+  "footer.ctrl_s_save": "Ctrl-S 保存",
+  "footer.enter_toggle": "回车切换",
+
+  "transcript.placeholder": "正在聆听……",
+
+  "notify.settings_saved": "语音设置已保存",
+
+  "status.recording": "录制中",
+  "status.paused": "已暂停",
+
+  "settings.microphone_label": "麦克风",
+  "settings.microphone_value_default": "系统默认输入设备",
+  "settings.language_label": "语言",
+  "settings.language_value_auto": "自动检测",
+  "settings.language_hint": "运行 /languages 切换语言。",
+  "settings.hallucination_filter_label": "过滤 Whisper 噪声",
+  "settings.hallucination_filter_hint": "丢弃静音段伪影。单词语音转写时可关闭。",
+
+  "settings.equalizer_label": "均衡器",
+  "settings.equalizer_hint": "在转录文本下方显示实时音频波形。默认关闭。"
+}

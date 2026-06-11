@@ -1,0 +1,29 @@
+{
+  "_meta.notes": "中文翻译。欢迎中文母语者通过 PR 审校。TUI 符号（↑/↓、⚠）为通用 CLI 约定，保持原文不译。Enter、Space 采用中文惯用说法（回车、空格）；Esc、Tab、Ctrl、n 等保留原文。",
+
+  "sentinel.other": "输入内容",
+  "sentinel.chat": "聊聊这个",
+  "sentinel.next": "下一个",
+
+  "submit.label": "提交答案",
+  "submit.cancel": "取消",
+
+  "hint.enter": "回车选择",
+  "hint.navigate": "↑/↓ 导航",
+  "hint.toggle": "空格切换",
+  "hint.notes": "按 n 添加备注",
+  "hint.tab": "Tab 切换问题",
+  "hint.collapse": "Ctrl+] 折叠",
+  "hint.expand_line": "Ctrl+] 展开 · Esc 取消",
+  "hint.cancel": "Esc 取消",
+
+  "review.heading": "检查你的答案",
+  "review.ready": "准备提交答案了吗？",
+  "review.incomplete": "⚠ 提交前请先回答以下问题：",
+
+  "preview.no_preview": "暂无预览",
+  "preview.notes_affordance": "备注：按 n 添加",
+
+  "chat.summary": "用户想聊聊这个话题",
+  "notes.header": "备注："
+}
