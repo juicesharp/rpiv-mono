@@ -419,12 +419,40 @@ function selectResumeEntry(
 	const idx = last.stageNumber - 1; // status-line / routing index; JSONL number comes from the allocator
 
 	if (last.parent !== undefined) {
-		return () => resumeLoopStage(ctx, recon.trailing!, idx, run, buildLoopDeps());
+		// `recon.trailing` is set by construction: the fold always produces a
+		// trailing point for an open generation, and a unit-row trailer means
+		// the generation is open.
+		return () =>
+			guardResumeEntry(ctx, last.parent!, run, () =>
+				resumeLoopStage(ctx, recon.trailing!, idx, run, buildLoopDeps()),
+			);
 	}
 	if (last.status === "completed") {
-		return () => advanceChain(ctx, last.stage, idx, run); // route onward; finished run ⇒ hits stop ⇒ no-op
+		// route onward; finished run ⇒ hits stop ⇒ no-op
+		return () => guardResumeEntry(ctx, last.stage, run, () => advanceChain(ctx, last.stage, idx, run));
 	}
 	return () => runStageOrRecordFailure(ctx, last.stage, idx, run); // re-run the failed/aborted stage
+}
+
+/**
+ * Resume-entry counterpart of `runStageOrRecordFailure`'s catch. The live
+ * chain reaches user fns (loop `next`/`done`/`feedForward`, judge prompts,
+ * route predicates) only under that catch; the resume-loop and route-onward
+ * entry thunks call the same fns directly, so a throw would otherwise escape
+ * `executeRun` as a raw rejection — `onWorkflowEnd` never fires and the
+ * caller loses the result envelope.
+ */
+async function guardResumeEntry(
+	curCtx: WorkflowHostContext,
+	name: string,
+	run: RunContext,
+	entry: () => Promise<void>,
+): Promise<void> {
+	try {
+		await entry();
+	} catch (e) {
+		await recordEntryThrow(curCtx, name, run, e);
+	}
 }
 
 function resumeRefusalError(recon: Extract<ReconstructResult, { ok: false }>, workflow: string): string {
@@ -520,23 +548,28 @@ export async function runStageOrRecordFailure(
 	try {
 		await runStage(curCtx, name, idx, run);
 	} catch (e) {
-		if (e instanceof StagePreflightError) {
-			await recordTerminalFailure(
-				curCtx,
-				auditCtxFor(run, name, e.skill),
-				{ status: "failed", notifyMsg: e.notifyMsg, notifyLevel: "error", errMsg: e.errMsg },
-				e.notifyPartial ? (ctx) => notifyPartialArtifacts(ctx, run.cwd, run.runId) : undefined,
-			);
-			return;
-		}
-		const reason = e instanceof Error ? e.message : String(e);
-		await recordTerminalFailure(curCtx, auditCtxFor(run, name, name), {
-			status: "failed",
-			notifyMsg: MSG_STAGE_THREW(name, reason),
-			notifyLevel: "error",
-			errMsg: reason,
-		});
+		await recordEntryThrow(curCtx, name, run, e);
 	}
+}
+
+/** The ONE "entry threw" → terminal-failure-row translation (live + resume entries). */
+async function recordEntryThrow(curCtx: WorkflowHostContext, name: string, run: RunContext, e: unknown): Promise<void> {
+	if (e instanceof StagePreflightError) {
+		await recordTerminalFailure(
+			curCtx,
+			auditCtxFor(run, name, e.skill),
+			{ status: "failed", notifyMsg: e.notifyMsg, notifyLevel: "error", errMsg: e.errMsg },
+			e.notifyPartial ? (ctx) => notifyPartialArtifacts(ctx, run.cwd, run.runId) : undefined,
+		);
+		return;
+	}
+	const reason = e instanceof Error ? e.message : String(e);
+	await recordTerminalFailure(curCtx, auditCtxFor(run, name, name), {
+		status: "failed",
+		notifyMsg: MSG_STAGE_THREW(name, reason),
+		notifyLevel: "error",
+		errMsg: reason,
+	});
 }
 
 export function finalizeWorkflow(curCtx: WorkflowHostContext, run: RunContext): void {

@@ -408,6 +408,27 @@ describe("loop-resume — iterate", () => {
 		expect(rows[rows.length - 1]).toMatchObject({ stage: "blueprint", status: "failed" });
 		expect(chain.sentMessages).toEqual([]);
 	});
+
+	it("generator throw AFTER the fold: recorded terminal failure envelope, not an escaped rejection", async () => {
+		// Deterministic through the fold's two verification pulls, then throws —
+		// exercises the post-fold re-entry (the `hasPendingUnit` probe + the
+		// driver's pull), which runs outside the fold's guarded() wrapper.
+		let calls = 0;
+		const throwsAfterFold: IterateFn = (ctx) => {
+			calls++;
+			if (calls > 2) throw new Error("probe boom");
+			return reviewPhaseIterate(ctx);
+		};
+		writeRun([reviewRow, planRow(1, 2, "completed"), planRow(2, 3, "failed")]);
+		const chain = createMockSessionChain({ cwd: tmpDir, steps: [] });
+		const result = await resumeWorkflow(chain.ctx, { workflow: polishWf(throwsAfterFold), header, ref: "@x" });
+		expect(result.success).toBe(false);
+		expect(result.error).toBe("probe boom");
+		expect(result.runId).toBe(header.runId);
+		const rows = readAllStages(tmpDir, header.runId);
+		expect(rows[rows.length - 1]).toMatchObject({ stage: "blueprint", status: "failed" });
+		expect(chain.sentMessages).toEqual([]);
+	});
 });
 
 // ===========================================================================
