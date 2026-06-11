@@ -19,6 +19,7 @@
 import {
 	type AuditCtx,
 	currentStageRef,
+	failedArgs,
 	recordCancellation,
 	recordStopFailure,
 	recordTerminalFailure,
@@ -27,13 +28,11 @@ import {
 import { persistStageSuccess } from "../audit-rows.js";
 import { lifecycleCtxFromSession, skillStageRef, type UnitEvent } from "../lifecycle.js";
 import {
-	ERR_AUDIT_WRITE_FAILED,
-	ERR_VALIDATION_FAILED,
-	MSG_AUDIT_WRITE_FAILED,
+	FAIL_AUDIT_WRITE,
+	FAIL_VALIDATION_EXHAUSTED,
 	MSG_STAGE_COMPLETE,
 	MSG_STAGE_FAILED,
 	MSG_UNIT_COMPLETE,
-	MSG_VALIDATION_EXHAUSTED,
 } from "../messages.js";
 import type { Output } from "../output.js";
 import { type BranchEntry, classifyStop, readBranch, type StopSignal } from "../transcript.js";
@@ -98,12 +97,7 @@ async function haltStageWithValidationFailure(
 	await recordTerminalFailure(
 		ctx,
 		auditFor(s),
-		{
-			status: "failed",
-			notifyMsg: MSG_VALIDATION_EXHAUSTED(s.skill),
-			notifyLevel: "error",
-			errMsg: ERR_VALIDATION_FAILED(s.skill, failureSummary),
-		},
+		failedArgs(FAIL_VALIDATION_EXHAUSTED(s.skill, failureSummary)),
 		s.onFailure,
 	);
 }
@@ -162,8 +156,9 @@ async function recordStageSuccess(ctx: WorkflowHostContext, s: StageSession, out
 		}
 		return true;
 	}
-	ctx.ui.notify(MSG_AUDIT_WRITE_FAILED(s.skill), "error");
-	terminate(s.state, { status: "failed", error: ERR_AUDIT_WRITE_FAILED(s.skill) });
+	const auditFailure = FAIL_AUDIT_WRITE(s.skill);
+	ctx.ui.notify(auditFailure.toast, "error");
+	terminate(s.state, { status: "failed", error: auditFailure.error });
 	return false;
 }
 

@@ -12,6 +12,7 @@
 export * from "./collectors/index.js";
 export {
 	type GitCommitData,
+	type GitCommitOutput,
 	type GitHeadSnapshot,
 	gitCommitCollector,
 	gitCommitOutcome,

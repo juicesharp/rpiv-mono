@@ -35,13 +35,10 @@ import type { Artifact } from "../handle.js";
 import { formatError, nowIso } from "../internal-utils.js";
 import { lifecycleCtxFor, scriptStageRef } from "../lifecycle.js";
 import {
-	ERR_AUDIT_WRITE_FAILED,
-	ERR_SCRIPT_THREW,
-	ERR_VALIDATION_FAILED,
-	MSG_AUDIT_WRITE_FAILED,
-	MSG_SCRIPT_THREW,
+	FAIL_AUDIT_WRITE,
+	FAIL_SCRIPT_THREW,
+	FAIL_VALIDATION_EXHAUSTED,
 	MSG_STAGE_COMPLETE,
-	MSG_VALIDATION_EXHAUSTED,
 	STATUS_KEY,
 	STATUS_STAGE,
 } from "../messages.js";
@@ -128,7 +125,7 @@ export async function runScript(
 		await recordTerminalFailure(
 			curCtx,
 			scriptAuditCtx(run, stage, stageNumber),
-			failedArgs(MSG_VALIDATION_EXHAUSTED(stage.name), ERR_VALIDATION_FAILED(stage.name, failureSummary)),
+			failedArgs(FAIL_VALIDATION_EXHAUSTED(stage.name, failureSummary)),
 		);
 		return "halted";
 	}
@@ -142,8 +139,9 @@ export async function runScript(
 		stage.def,
 	);
 	if (!persisted) {
-		curCtx.ui.notify(MSG_AUDIT_WRITE_FAILED(stage.name), "error");
-		terminate(run.state, { status: "failed", error: ERR_AUDIT_WRITE_FAILED(stage.name) });
+		const auditFailure = FAIL_AUDIT_WRITE(stage.name);
+		curCtx.ui.notify(auditFailure.toast, "error");
+		terminate(run.state, { status: "failed", error: auditFailure.error });
 		return "halted";
 	}
 	curCtx.ui.notify(MSG_STAGE_COMPLETE(stage.name), "info");
@@ -184,7 +182,7 @@ async function invokeRun(
 		await recordTerminalFailure(
 			curCtx,
 			scriptAuditCtx(run, stage, stageNumber),
-			failedArgs(MSG_SCRIPT_THREW(stage.name, reason), ERR_SCRIPT_THREW(stage.name, reason)),
+			failedArgs(FAIL_SCRIPT_THREW(stage.name, reason)),
 		);
 		return { ok: false };
 	}

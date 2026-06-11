@@ -26,15 +26,14 @@
  */
 
 import { type Artifact, opaque } from "../handle.js";
+import type { Output } from "../output.js";
 import type { ArtifactCollector, ArtifactParser, CollectCtx, Outcome, ParseCtx, SnapshotCtx } from "../output-spec.js";
 import { execFileAsync, GIT_EXEC_TIMEOUT_MS } from "./exec.js";
 
 /**
- * Output data shape produced by `gitCommitParser` — co-located with
- * the outcome that emits it. The `GitCommitOutput` alias in
- * `output.ts` re-imports this type so downstream stages can narrow on
- * `output.kind === "git-commit"` without reaching into per-outcome
- * paths.
+ * Output data shape produced by `gitCommitParser` — co-located with the
+ * outcome that emits it, as is the `GitCommitOutput` narrowing alias below
+ * (G6: the core envelope module never enumerates a concrete outcome).
  */
 export interface GitCommitData {
 	sha: string;
@@ -43,6 +42,9 @@ export interface GitCommitData {
 	filesChanged: number;
 	noOp?: boolean;
 }
+
+/** Tagged-union narrowing alias: `output.kind === "git-commit"` ⇒ `data: GitCommitData`. */
+export type GitCommitOutput = Output<"git-commit", GitCommitData>;
 
 /** Snapshot captured before the stage runs. */
 export interface GitHeadSnapshot {

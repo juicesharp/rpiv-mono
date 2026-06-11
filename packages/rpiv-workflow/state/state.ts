@@ -186,6 +186,6 @@ export {
 	readLastStage,
 	readLoopCaps,
 	readRoutingDecisions,
-	resolveRun,
 } from "./reads.js";
+export { resolveRun } from "./resolve.js";
 export { appendLoopCap, appendRoutingDecision, appendStage, writeHeader } from "./writes.js";

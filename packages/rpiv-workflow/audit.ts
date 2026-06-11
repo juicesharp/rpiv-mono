@@ -15,17 +15,14 @@ import { handleToString } from "./handle.js";
 import { assertNever, nowIso } from "./internal-utils.js";
 import { lifecycleCtxFromSession, scriptStageRef, skillStageRef } from "./lifecycle.js";
 import {
-	ERR_STAGE_ABORTED,
-	ERR_STAGE_NO_RESPONSE,
-	ERR_STAGE_TOOL_STALLED,
-	ERR_STAGE_TRUNCATED,
+	FAIL_STAGE_ABORTED,
+	FAIL_STAGE_NO_RESPONSE,
+	FAIL_STAGE_TOOL_STALLED,
+	FAIL_STAGE_TRUNCATED,
+	type FailureText,
 	MSG_FAILURE_ROW_DROPPED,
 	MSG_PARTIAL_ARTIFACTS,
-	MSG_STAGE_ABORTED,
 	MSG_STAGE_FAILED,
-	MSG_STAGE_NO_RESPONSE,
-	MSG_STAGE_TOOL_STALLED,
-	MSG_STAGE_TRUNCATED,
 	MSG_WORKFLOW_CANCELLED,
 	STATUS_KEY,
 } from "./messages.js";
@@ -149,12 +146,18 @@ export interface TerminalFailureArgs {
  * aborts at `"warning"` (cooperative cancellation is expected, not
  * exceptional).
  */
-export function failedArgs(notifyMsg: string, errMsg: string): TerminalFailureArgs {
-	return { status: "failed", notifyMsg, notifyLevel: "error", errMsg };
+export function failedArgs(failure: FailureText): TerminalFailureArgs;
+export function failedArgs(notifyMsg: string, errMsg: string): TerminalFailureArgs;
+export function failedArgs(a: FailureText | string, b?: string): TerminalFailureArgs {
+	const f = typeof a === "string" ? { toast: a, error: b as string } : a;
+	return { status: "failed", notifyMsg: f.toast, notifyLevel: "error", errMsg: f.error };
 }
 
-export function abortedArgs(notifyMsg: string, errMsg: string): TerminalFailureArgs {
-	return { status: "aborted", notifyMsg, notifyLevel: "warning", errMsg };
+export function abortedArgs(failure: FailureText): TerminalFailureArgs;
+export function abortedArgs(notifyMsg: string, errMsg: string): TerminalFailureArgs;
+export function abortedArgs(a: FailureText | string, b?: string): TerminalFailureArgs {
+	const f = typeof a === "string" ? { toast: a, error: b as string } : a;
+	return { status: "aborted", notifyMsg: f.toast, notifyLevel: "warning", errMsg: f.error };
 }
 
 export async function recordTerminalFailure(
@@ -221,13 +224,13 @@ export async function recordStopFailure(
 function stopFailureArgs(skill: string, stop: Exclude<StopSignal, "stop">, errorMessage: string): TerminalFailureArgs {
 	switch (stop) {
 		case "aborted":
-			return abortedArgs(MSG_STAGE_ABORTED(skill), ERR_STAGE_ABORTED(skill));
+			return abortedArgs(FAIL_STAGE_ABORTED(skill));
 		case "length":
-			return failedArgs(MSG_STAGE_TRUNCATED(skill), ERR_STAGE_TRUNCATED(skill));
+			return failedArgs(FAIL_STAGE_TRUNCATED(skill));
 		case "toolUse":
-			return failedArgs(MSG_STAGE_TOOL_STALLED(skill), ERR_STAGE_TOOL_STALLED(skill));
+			return failedArgs(FAIL_STAGE_TOOL_STALLED(skill));
 		case "noResponse":
-			return failedArgs(MSG_STAGE_NO_RESPONSE(skill), ERR_STAGE_NO_RESPONSE(skill));
+			return failedArgs(FAIL_STAGE_NO_RESPONSE(skill));
 		case "error":
 			return failedArgs(MSG_STAGE_FAILED(skill), errorMessage);
 		default:

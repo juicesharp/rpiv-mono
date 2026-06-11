@@ -27,15 +27,7 @@ import { formatError } from "../internal-utils.js";
 import { lifecycleCtxFor, skillStageRef } from "../lifecycle.js";
 import { announceLoopStart, type LoopDeps, runLoop } from "../loop.js";
 import { freshCursor, type LoopEntry } from "../loop-kinds.js";
-import {
-	ERR_LOOP_CAP_HALT,
-	ERR_VERIFY_FAILED,
-	MSG_LOOP_CAP_HALT,
-	MSG_SNAPSHOT_FAILED,
-	MSG_VERIFY_FAILED,
-	STATUS_KEY,
-	STATUS_STAGE,
-} from "../messages.js";
+import { FAIL_LOOP_CAP_HALT, FAIL_VERIFY_FAILED, MSG_SNAPSHOT_FAILED, STATUS_KEY, STATUS_STAGE } from "../messages.js";
 import { runStageSession } from "../sessions/index.js";
 import { readBranch } from "../transcript.js";
 import type { RunContext, WorkflowHostContext } from "../types.js";
@@ -297,9 +289,7 @@ export async function haltLoop(
 	count: number,
 	cap: number,
 ): Promise<void> {
-	const args = e.def.verify
-		? failedArgs(MSG_VERIFY_FAILED(e.name, cap), ERR_VERIFY_FAILED(e.name, cap))
-		: failedArgs(MSG_LOOP_CAP_HALT(count, cap), ERR_LOOP_CAP_HALT(count, cap));
+	const args = e.def.verify ? failedArgs(FAIL_VERIFY_FAILED(e.name, cap)) : failedArgs(FAIL_LOOP_CAP_HALT(count, cap));
 	await haltChain(curCtx, run, e.name, e.name, args);
 }
 

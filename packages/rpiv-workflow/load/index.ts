@@ -43,35 +43,28 @@
  *
  * Module map:
  *   ./issues.ts           — LoadIssue + Issue (the layer/path-attributed wrapper)
+ *   ./skill-contract-phase.ts — provider flush/drain + effective registry + derivers
  *   ./paths.ts            — OverlayPaths + per-layer path helpers
  *   ./shape-guards.ts     — isWorkflow, isEnvelope, describe
  *   ./normalize.ts        — normalizeDefaultExport + NormalizeResult
  *   ./merge.ts            — LoadAccumulator, LayerOutcome, loadLayer, mergeOverlay, loadError
+ *   ./legacy.ts           — legacy-layout advisories (notices + probes)
  *   ./resolve-default.ts  — resolveDefault (first-workflow fallback)
  *   ./cache.ts            — mtime-keyed jiti import cache + __resetLoadCache
  */
 
-import { existsSync, readdirSync } from "node:fs";
-import { dirname, join } from "node:path";
 import type { Workflow } from "../api.js";
 import { flushBuiltInProviders, getBuiltIns } from "../built-ins.js";
-import { formatError } from "../internal-utils.js";
 import type { ConfigLayer } from "../layers.js";
-import { LEGACY_OVERLAY_NOTICE, LEGACY_RUNS_NOTICE, LEGACY_USER_CONFIG_NOTICE } from "../messages.js";
 import type { SkillContractMap } from "../skill-contract.js";
-import {
-	buildEffectiveContracts,
-	drainSkillContractCollisions,
-	drainSkillContractProviderErrors,
-	flushSkillContractProviders,
-	getOutcomeDerivers,
-} from "../skill-contracts/index.js";
 import { validateWorkflow } from "../validate-workflow.js";
 import { applySkillAliases } from "./alias.js";
 import type { Issue } from "./issues.js";
+import { pushLegacyNotices } from "./legacy.js";
 import { type LoadAccumulator, loadLayer } from "./merge.js";
-import { type OverlayPaths, projectOverlayPaths, userOverlayPaths } from "./paths.js";
+import { projectOverlayPaths, userOverlayPaths } from "./paths.js";
 import { resolveDefault } from "./resolve-default.js";
+import { applySkillContractPhase } from "./skill-contract-phase.js";
 
 // ===========================================================================
 // Public types
@@ -80,7 +73,7 @@ import { resolveDefault } from "./resolve-default.js";
 export type { ConfigLayer } from "../layers.js";
 export { aliasSkills } from "./alias.js";
 export { __resetLoadCache } from "./cache.js";
-export type { Issue, LoadIssue } from "./issues.js";
+export type { Issue, LoadIssue, LoadIssueOrigin } from "./issues.js";
 export type { OverlayPaths } from "./paths.js";
 export { projectOverlayPaths, userOverlayPaths } from "./paths.js";
 
@@ -140,11 +133,6 @@ export async function loadWorkflows(cwd: string): Promise<LoadedWorkflows> {
 	// defer constructing definitions to first `/wf` (the earliest reader).
 	await flushBuiltInProviders();
 
-	// Flush skill-contract providers beside the built-in flush. Same provider+flush
-	// idiom; contract providers read the filesystem / parse frontmatter (failure-prone),
-	// so each throw is recorded (drained below) rather than propagated.
-	await flushSkillContractProviders();
-
 	const acc: LoadAccumulator = {
 		issues: [],
 		workflowMap: new Map(),
@@ -152,22 +140,6 @@ export async function loadWorkflows(cwd: string): Promise<LoadedWorkflows> {
 		sourcePaths: new Map(),
 	};
 	const layers: ConfigLayer[] = getBuiltIns().length > 0 ? ["built-in"] : [];
-
-	// Surface any provider failure as a LoadIssue rather than swallowing it —
-	// loader still never throws, but a buggy provider is now visible in loaded.issues.
-	for (const err of drainSkillContractProviderErrors()) {
-		acc.issues.push({
-			kind: "load",
-			layer: "built-in",
-			message: `skill-contract provider failed: ${formatError(err)}`,
-			severity: "warning",
-		});
-	}
-	// Surface cross-owner contract collisions — last-writer still wins, but the
-	// divergence is no longer silent.
-	for (const message of drainSkillContractCollisions()) {
-		acc.issues.push({ kind: "load", layer: "built-in", message, severity: "warning" });
-	}
 
 	for (const w of getBuiltIns()) {
 		acc.workflowMap.set(w.name, w);
@@ -197,45 +169,11 @@ export async function loadWorkflows(cwd: string): Promise<LoadedWorkflows> {
 	// declared the key — see `applySkillAliases` in `./alias.ts`.
 	const skillAliases = applySkillAliases(acc, userOutcome, projectOutcome);
 
-	// Build the effective registry BEFORE the validation loop, so checkEdgeSchemaCompat
-	// sees it. Returns a NEW map (harvested gap-fill first, declared overriding
-	// per skill) — never mutates the shared global registry.
-	const skillContracts = buildEffectiveContracts([...acc.workflowMap.values()]);
-
-	// Invoke registered outcome derivers (e.g. rpiv-pi's BUCKET_BY_KIND resolver)
-	// so `produces` stages that don't declare an explicit `outcome` get one wired
-	// from the contract registry before validation checks
-	// `produces-without-outcome`.
-	//
-	// Deriver mutations (`stage.outcome = ...`) must land on PER-LOAD copies,
-	// never on shared sources: built-ins live in a process-global registry and
-	// unchanged overlay files come back BY REFERENCE from the mtime cache, so an
-	// in-place mutation would pin this load's derived outcome onto every future
-	// load — the deriver's `if (stage.outcome) continue` idempotency guard would
-	// then skip re-derivation even after a contract change. Shallow-copy each
-	// workflow's stage records first (same `{...stage}` copy `aliasSkills` uses).
-	if (getOutcomeDerivers().length > 0) {
-		for (const [name, w] of acc.workflowMap) {
-			acc.workflowMap.set(name, {
-				...w,
-				stages: Object.fromEntries(Object.entries(w.stages).map(([k, s]) => [k, { ...s }])),
-			});
-		}
-	}
-	for (const deriver of getOutcomeDerivers()) {
-		try {
-			deriver(acc.workflowMap.values(), skillContracts, (message, severity) => {
-				acc.issues.push({ kind: "load", layer: "built-in", severity, message });
-			});
-		} catch (err) {
-			acc.issues.push({
-				kind: "load",
-				layer: "built-in",
-				severity: "error",
-				message: `outcome deriver failed: ${formatError(err)}`,
-			});
-		}
-	}
+	// Skill-contract phase: flush providers, surface their failures +
+	// collisions (attributed to "framework", not a config layer), build the
+	// effective registry, run outcome derivers on per-load stage copies. Must
+	// precede validation — see `./skill-contract-phase.ts`.
+	const skillContracts = await applySkillContractPhase(acc);
 
 	// Validate every merged workflow once. Validation runs even on built-in so
 	// that a future built-in regression surfaces in the same channel as user
@@ -260,45 +198,4 @@ export async function loadWorkflows(cwd: string): Promise<LoadedWorkflows> {
 		skillAliases,
 		skillContracts,
 	};
-}
-
-/**
- * Push the three independent legacy-migration advisories. Each is a `"warning"`
- * (never blocks the run) and each probes a distinct stale layout the unified
- * `.rpiv/workflows/` move left behind:
- *   - project dashed dir   `<cwd>/.rpiv-workflow/`           → config.ts + packs/
- *   - orphaned run JSONLs   `<cwd>/.rpiv/workflows/*.jsonl`   → runs/
- *   - user-layer rename     `~/.config/rpiv-workflow/workflows.config.ts` → config.ts
- */
-function pushLegacyNotices(cwd: string, userPaths: OverlayPaths, acc: LoadAccumulator): void {
-	if (existsSync(join(cwd, ".rpiv-workflow"))) {
-		acc.issues.push({ kind: "load", layer: "project", severity: "warning", message: LEGACY_OVERLAY_NOTICE(cwd) });
-	}
-
-	if (hasOrphanedRunFiles(cwd)) {
-		acc.issues.push({ kind: "load", layer: "project", severity: "warning", message: LEGACY_RUNS_NOTICE(cwd) });
-	}
-
-	const userDir = dirname(userPaths.configFile);
-	if (existsSync(join(userDir, "workflows.config.ts"))) {
-		acc.issues.push({
-			kind: "load",
-			layer: "user",
-			severity: "warning",
-			message: LEGACY_USER_CONFIG_NOTICE(userDir),
-		});
-	}
-}
-
-/**
- * True when `<cwd>/.rpiv/workflows/` holds top-level `*.jsonl` run files written
- * before the `runs/` relocation. `readdirSync` lists only immediate entries, so
- * files already inside `runs/` never match. A missing / unreadable dir → false.
- */
-function hasOrphanedRunFiles(cwd: string): boolean {
-	try {
-		return readdirSync(join(cwd, ".rpiv", "workflows")).some((f) => f.endsWith(".jsonl"));
-	} catch {
-		return false;
-	}
 }

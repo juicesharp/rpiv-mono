@@ -6,7 +6,9 @@
  */
 
 import type { WorkflowHost, WorkflowHostContext } from "./host.js";
-import { CMD_DESCRIPTION } from "./messages.js";
+
+/** Pi command registry — displayed by Pi's `/?` / command list. */
+export const CMD_DESCRIPTION = "Run a skill workflow: /wf [workflow] [description]";
 
 // ---------------------------------------------------------------------------
 // Public entry

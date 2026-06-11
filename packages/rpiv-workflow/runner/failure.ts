@@ -14,13 +14,7 @@ import {
 	terminate,
 } from "../audit.js";
 import { formatError } from "../internal-utils.js";
-import {
-	ERR_WORKFLOW_ABORTED,
-	MSG_STAGE_THREW,
-	MSG_WORKFLOW_ABORTED,
-	MSG_WORKFLOW_COMPLETE,
-	STATUS_KEY,
-} from "../messages.js";
+import { FAIL_WORKFLOW_ABORTED, MSG_STAGE_THREW, MSG_WORKFLOW_COMPLETE, STATUS_KEY } from "../messages.js";
 import type { RunContext, WorkflowHostContext } from "../types.js";
 import { StagePreflightError } from "./errors.js";
 
@@ -104,7 +98,7 @@ export async function recordEntryThrow(
  * the between-stage seam (`run.signal` aborted before `name` ran).
  */
 export function recordAbortedAtSeam(curCtx: WorkflowHostContext, name: string, run: RunContext): Promise<ChainOutcome> {
-	return haltChain(curCtx, run, name, name, abortedArgs(MSG_WORKFLOW_ABORTED, ERR_WORKFLOW_ABORTED(name)));
+	return haltChain(curCtx, run, name, name, abortedArgs(FAIL_WORKFLOW_ABORTED(name)));
 }
 
 export function finalizeWorkflow(curCtx: WorkflowHostContext, run: RunContext): ChainOutcome {

@@ -20,9 +20,10 @@
  * on failure; writers warn via `console.warn` with `[rpiv-workflow]` prefix.
  */
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { formatError } from "../internal-utils.js";
-import { namesFilePath, runsDir, stateFilePath } from "./paths.js";
+import { namesFilePath, runsDir } from "./paths.js";
+import { enumerateRunIds, readFirstJsonlLine } from "./raw.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -163,22 +164,12 @@ export function claimName(cwd: string, name: string, runId: string): ClaimResult
  */
 export function rebuildIndex(cwd: string): NamesIndex | undefined {
 	try {
-		const dir = runsDir(cwd);
-		let entries: string[];
-		try {
-			entries = readdirSync(dir);
-		} catch {
-			return undefined;
-		}
-
 		const index: NamesIndex = {};
-		for (const fileName of entries) {
-			if (!fileName.endsWith(".jsonl")) continue;
-			const runId = fileName.slice(0, -".jsonl".length);
-			// Read only the name field from the JSONL header — avoids importing
-			// readHeader from reads.ts (which would create a circular dependency
-			// since reads.ts imports readNamesIndex from this module).
-			const name = readNameFromJsonlHeader(cwd, runId);
+		for (const runId of enumerateRunIds(cwd)) {
+			// Read only the name field off the raw first line (shared `raw.ts`
+			// leaf) — the full typed WorkflowHeader isn't needed here.
+			const header = readFirstJsonlLine(cwd, runId) as Record<string, unknown> | undefined;
+			const name = typeof header?.name === "string" ? header.name : undefined;
 			if (name) {
 				// readdirSync order is filesystem-dependent — surface duplicate
 				// claims instead of silently picking a winner.
@@ -195,30 +186,6 @@ export function rebuildIndex(cwd: string): NamesIndex | undefined {
 		return index;
 	} catch (e) {
 		console.warn(`[rpiv-workflow] names index rebuild: ${formatError(e)}`);
-		return undefined;
-	}
-}
-
-/**
- * Read only the `name` field from a JSONL run file's header line. Returns
- * `undefined` when the file is missing, the first line isn't valid JSON, or
- * the header has no `name` field. Intentionally does not validate the full
- * header shape — rebuildIndex only needs the name, not the typed WorkflowHeader.
- *
- * Internal helper — not exported. Keeps names.ts acyclic with reads.ts.
- */
-function readNameFromJsonlHeader(cwd: string, runId: string): string | undefined {
-	try {
-		const filePath = stateFilePath(cwd, runId);
-		if (!existsSync(filePath)) return undefined;
-		const content = readFileSync(filePath, "utf-8");
-		const firstLine = content.split("\n", 1)[0] ?? "";
-		if (!firstLine) return undefined;
-		const parsed: unknown = JSON.parse(firstLine);
-		return typeof (parsed as Record<string, unknown>)?.name === "string"
-			? ((parsed as Record<string, unknown>).name as string)
-			: undefined;
-	} catch {
 		return undefined;
 	}
 }

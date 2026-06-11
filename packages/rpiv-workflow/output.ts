@@ -11,7 +11,6 @@
  */
 
 import type { Artifact } from "./handle.js";
-import type { GitCommitData } from "./outcomes/git-commit.js";
 
 // ---------------------------------------------------------------------------
 // Output envelope
@@ -49,14 +48,14 @@ export interface Output<K extends string = string, D = unknown> {
 // ---------------------------------------------------------------------------
 // Built-in output kind aliases
 //
-// Tagged-union narrowing convenience for consumers. Data shapes live
-// with their producing outcomes; `GitCommitData` is type-only imported
-// from `outcomes/git-commit.ts` (no runtime cycle).
+// Tagged-union narrowing convenience for consumers. Only the two
+// framework-native kinds live here; outcome-specific aliases live with
+// their producing outcome (`GitCommitOutput` → outcomes/git-commit.ts) so
+// the core envelope module never enumerates concrete plugins (G6).
 // ---------------------------------------------------------------------------
 
 export type ArtifactsOutput = Output<"artifacts", readonly Artifact[]>;
 export type SideEffectOutput = Output<"side-effect", Record<string, never>>;
-export type GitCommitOutput = Output<"git-commit", GitCommitData>;
 
 /**
  * A judge's graded output — structurally just an `Output` (the verdict is a

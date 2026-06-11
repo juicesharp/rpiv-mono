@@ -1,9 +1,11 @@
 /**
  * Fail-soft JSONL appends. Every public helper here is a thin wrapper
- * around `tryAppendJsonl` so the write protocol (mkdirSync + append +
- * stderr warn on throw) lives in one place — changes to atomicity,
- * checksums, or alternative storage backends touch this file and this
- * file only.
+ * around `tryAppendJsonl` so the WRITE protocol (mkdirSync + append +
+ * stderr warn on throw) lives in one place — changes to append atomicity
+ * or checksums touch this file only. This is NOT a full storage-backend
+ * seam: `reads.ts`, `raw.ts`, and `names.ts` hit `node:fs` directly, so
+ * swapping the backend means touching all of `state/` (a `RunStore` port
+ * is a known possible follow-up, deliberately deferred — M13).
  *
  *   writeHeader              — boolean; the runner refuses the run start on failure.
  *   appendStage              — boolean; allocator gates monotonic counters on it.

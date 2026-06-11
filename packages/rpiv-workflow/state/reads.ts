@@ -16,12 +16,11 @@
  *     header-only or projection-only reads sized for inspect UIs.
  */
 
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { basename } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
 import type { Artifact } from "../handle.js";
 import { formatError } from "../internal-utils.js";
-import { isValidName, readNamesIndex, rebuildIndex } from "./names.js";
-import { runsDir, stateFilePath } from "./paths.js";
+import { stateFilePath } from "./paths.js";
+import { enumerateRunIds, readFirstJsonlLine } from "./raw.js";
 import type { LoopCapRow, RoutingDecision, RunSummary, WorkflowHeader, WorkflowStage } from "./state.js";
 
 /**
@@ -189,80 +188,21 @@ export function listArtifacts(
 // ---------------------------------------------------------------------------
 
 /**
- * Read only the first JSONL line and parse it as a `WorkflowHeader`. Used
- * by `listRuns` so enumerating N past runs reads N first-lines instead
- * of fully parsing every row in every file. Returns undefined when the
- * file is missing, empty, or the first line doesn't match the header
- * shape.
+ * Read only the first JSONL line (a BOUNDED prefix read via
+ * `readFirstJsonlLine` — the file's stage rows are never loaded) and parse
+ * it as a `WorkflowHeader`. Used by `listRuns` so enumerating N past runs
+ * costs N small reads. Returns undefined when the file is missing, empty,
+ * or the first line doesn't match the header shape.
  *
  * Fail-soft like every other reader — never throws.
  *
  * Takes a concrete `runId`. For a user-supplied reference that may later need
- * symbolic resolution (`@latest`, relative), call `resolveRun` instead.
+ * symbolic resolution (`@latest`, relative), call `resolveRun` (resolve.ts)
+ * instead.
  */
 export function readHeader(cwd: string, runId: string): WorkflowHeader | undefined {
-	try {
-		const filePath = stateFilePath(cwd, runId);
-		if (!existsSync(filePath)) return undefined;
-		const content = readFileSync(filePath, "utf-8");
-		const firstLine = content.split("\n", 1)[0] ?? "";
-		if (!firstLine) return undefined;
-		const parsed = JSON.parse(firstLine);
-		return isWorkflowHeader(parsed) ? parsed : undefined;
-	} catch {
-		// Malformed JSON or I/O error — caller treats as "header unreadable".
-		return undefined;
-	}
-}
-
-/**
- * Resolve a run *reference* to its header — the ref-resolution seam.
- *
- * Which to call: reach for `resolveRun` when the ref is **user-supplied** (the
- * `/wf @<ref>` token, a CLI arg); reach for `readHeader` when you already hold
- * a concrete `runId` (e.g. straight off `RunSummary.runId`). The split is
- * intent, not behaviour.
- *
- * Resolution order:
- *  1. Check the names index (`names.json`) for a name → runId mapping on the
- *     RAW ref. If found and the target JSONL exists, return its header.
- *  2. Fall back to runId lookup via `readHeader`, on the ref normalized to a
- *     slug — a trailing `.jsonl` is stripped and any directory prefix is
- *     dropped (`basename`). This lets `/wf @<path>` accept an editor's
- *     file-autosuggested path to the run's JSONL (`.../runs/<id>.jsonl`),
- *     a bare `<id>.jsonl`, or the plain `<id>` slug interchangeably.
- *  3. Index-miss recovery: if both lookups failed AND the ref is a
- *     well-formed run name absent from the index, rebuild `names.json` from
- *     the JSONL headers (`rebuildIndex`) and retry the name lookup once —
- *     a deleted/corrupt `names.json` no longer orphans named runs.
- *
- * Name lookup stays on the raw ref: a run name is never a path, so a name like
- * `auth.jsonl` (were it ever claimed) must match verbatim, not as a slug.
- *
- * Fail-soft like every reader — returns undefined when the ref doesn't resolve.
- */
-export function resolveRun(cwd: string, ref: string): WorkflowHeader | undefined {
-	// Try the names index first — O(1) lookup for human-readable aliases.
-	// Matched on the raw ref: a name is never a path/`.jsonl` file.
-	const index = readNamesIndex(cwd);
-	if (index?.[ref]) {
-		const resolved = readHeader(cwd, index[ref]!);
-		if (resolved) return resolved;
-	}
-	// Fall back to runId lookup, tolerating a pasted/autosuggested path:
-	// reduce to the bare slug (drop dir prefix + trailing `.jsonl`).
-	const slug = basename(ref).replace(/\.jsonl$/, "");
-	const bySlug = readHeader(cwd, slug);
-	if (bySlug) return bySlug;
-	// Recovery: a lost/corrupt names.json silently orphans named runs. Rebuild
-	// from headers only when the ref LOOKS like a name the index should have
-	// carried (valid shape, not present) — an unresolvable runId slug never
-	// triggers the O(runs) rescan.
-	if (isValidName(ref) && !index?.[ref]) {
-		const runId = rebuildIndex(cwd)?.[ref];
-		if (runId) return readHeader(cwd, runId);
-	}
-	return undefined;
+	const parsed = readFirstJsonlLine(cwd, runId);
+	return parsed !== undefined && isWorkflowHeader(parsed) ? parsed : undefined;
 }
 
 /**
@@ -280,18 +220,8 @@ export function resolveRun(cwd: string, ref: string): WorkflowHeader | undefined
  * `runId` is monotonic for runs created on the same host).
  */
 export function listRuns(cwd: string): RunSummary[] {
-	const dir = runsDir(cwd);
-	let entries: string[];
-	try {
-		entries = readdirSync(dir);
-	} catch {
-		// Directory doesn't exist (no runs yet) or unreadable — treat as empty.
-		return [];
-	}
 	const summaries: RunSummary[] = [];
-	for (const name of entries) {
-		if (!name.endsWith(".jsonl")) continue;
-		const runId = name.slice(0, -".jsonl".length);
+	for (const runId of enumerateRunIds(cwd)) {
 		const header = readHeader(cwd, runId);
 		if (header)
 			summaries.push({

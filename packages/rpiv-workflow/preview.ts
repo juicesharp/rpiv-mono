@@ -5,11 +5,20 @@
  * string that `command.ts` hands straight to `ctx.ui.notify(..., "info")`.
  */
 
-import type { LoopDef, StageDef, VerifySpec, Workflow } from "./api.js";
+import { STOP, type StageDef } from "./api.js";
+import { describeFlow, type StageShape } from "./control-flow.js";
 import { type ConfigLayer, renderConfigLayer } from "./layers.js";
 import type { LoadedWorkflows } from "./load/index.js";
-import { CMD_USAGE_LIST, CMD_USAGE_PREVIEW, CMD_USAGE_RUN } from "./messages.js";
 import type { SkillContractMap } from "./skill-contract.js";
+
+/** No-args listing footer — generic usage hint. */
+export const CMD_USAGE_LIST = "Usage: /wf [workflow] <description>";
+
+/** No-args listing footer — preview-mode hint paired with CMD_USAGE_LIST. */
+export const CMD_USAGE_PREVIEW = "/wf <workflow>             — preview stages";
+
+/** Per-workflow details footer — narrowed to the workflow the user previewed. */
+export const CMD_USAGE_RUN = (name: string) => `Usage: /wf ${name} <description>`;
 
 // ===========================================================================
 // Public formatters
@@ -78,8 +87,13 @@ export function formatWorkflowDetails(loaded: LoadedWorkflows, name: string): st
 	const layer = loaded.workflowSources.get(name) ?? "built-in";
 	const heading = formatWorkflowHeading(name, layer, name === loaded.default);
 	const descriptionLine = workflow.description ? [workflow.description] : [];
+	// Flow facets (loop / verify / edge) come from `describeFlow` — the ONE
+	// introspector (M12: preview must never lag a new loop kind again, the
+	// 09032b1 retrofit lesson). Per-stage knobs (kind, policy, outcome,
+	// schemas) are plain field reads off the def.
+	const shapeByStage = new Map(describeFlow(workflow).map((shape) => [shape.stage, shape]));
 	const stageRows = Object.entries(workflow.stages).map(([stageName, stage], i) =>
-		formatStageRow(i + 1, stageName, stage, workflow),
+		formatStageRow(i + 1, stageName, stage, shapeByStage.get(stageName)!, stageName in workflow.edges),
 	);
 	const aliasBanner = formatAliasBanner(loaded.skillAliases);
 
@@ -106,16 +120,22 @@ function formatWorkflowHeading(name: string, layer: ConfigLayer, isDefault: bool
 }
 
 /** Numbered row showing the stage + its outgoing edge target(s). */
-function formatStageRow(idx: number, stageName: string, stage: StageDef, workflow: Workflow): string {
+function formatStageRow(
+	idx: number,
+	stageName: string,
+	stage: StageDef,
+	shape: StageShape,
+	edgeDeclared: boolean,
+): string {
 	const num = `${idx}.`.padEnd(3);
 	const decorations = [stage.kind.padEnd(13), stage.sessionPolicy, outcomeTag(stage)];
 	if (stage.inputSchema) decorations.push("in-schema");
 	if (stage.outputSchema) decorations.push("out-schema");
-	if (stage.loop) decorations.push(loopTag(stage.loop));
-	if (stage.verify) decorations.push(verifyTag(stage.verify));
+	if (shape.control.mode !== "single") decorations.push(loopTag(shape.control));
+	if (shape.verify) decorations.push(verifyTag(shape.verify));
 
-	const displayName = stage.skill && stage.skill !== stageName ? `${stageName} (skill: ${stage.skill})` : stageName;
-	const arrow = formatEdge(workflow, stageName);
+	const displayName = shape.skill && shape.skill !== stageName ? `${stageName} (skill: ${shape.skill})` : stageName;
+	const arrow = formatEdge(shape.edge, edgeDeclared);
 	const trailer = arrow ? `  → ${arrow}` : "";
 
 	return `  ${num} ${displayName.padEnd(36)} ${decorations.join(" · ")}${trailer}`;
@@ -147,12 +167,14 @@ function outcomeTag(stage: StageDef): string {
  * for the first time: `fanout·max=32`, `iterate·max=32`, or the bare kind
  * when no cap is declared (the run-wide maxIterations still backstops).
  */
-function loopTag(loop: LoopDef): string {
-	if (loop.kind === "assess") {
-		const judge = loop.judge.skill ? `skill:${loop.judge.skill}` : "prompt";
-		return `assess(judge: ${judge})·max=${loop.max}`;
+function loopTag(control: StageShape["control"]): string {
+	const spec = control.spec;
+	if (!spec) return control.mode;
+	if (spec.kind === "assess") {
+		const judge = spec.judge?.skill ? `skill:${spec.judge.skill}` : "prompt";
+		return `assess(judge: ${judge})·max=${spec.max}`;
 	}
-	return loop.max !== undefined ? `${loop.kind}·max=${loop.max}` : loop.kind;
+	return spec.max !== undefined ? `${spec.kind}·max=${spec.max}` : spec.kind;
 }
 
 /**
@@ -160,21 +182,23 @@ function loopTag(loop: LoopDef): string {
  * `verify(prompt)`, with the attempt budget appended when retrying
  * (`·attempts=N`); a gate-only verify (the default, max 1) stays compact.
  */
-function verifyTag(v: VerifySpec): string {
-	const judge = v.judge.skill ? `skill:${v.judge.skill}` : "prompt";
-	const attempts = (v.max ?? 1) > 1 ? `·attempts=${v.max}` : "";
+function verifyTag(v: NonNullable<StageShape["verify"]>): string {
+	const judge = v.skill ? `skill:${v.skill}` : "prompt";
+	const attempts = v.max > 1 ? `·attempts=${v.max}` : "";
 	return `verify(${judge})${attempts}`;
 }
 
-/** Render the outgoing edge as a human-readable trailer (string or predicate target set). */
-function formatEdge(workflow: Workflow, from: string): string | undefined {
-	const target = workflow.edges[from];
-	if (target === undefined) return "(terminal — no edge declared)";
-	if (target === "stop") return "stop";
-	if (typeof target === "string") return target;
-	const targets = target.targets;
-	if (Array.isArray(targets) && targets.length > 0) return `predicate(${targets.join(" | ")})`;
-	return "predicate";
+/**
+ * Render the outgoing edge as a human-readable trailer from the introspected
+ * `StageShape.edge`. `describeFlow` collapses "no edge declared" and an
+ * explicit `STOP` into one `terminal` mode; the declared-or-not distinction
+ * is a one-key lookup the caller supplies (it matters to authors — the
+ * validator warns on the undeclared form).
+ */
+function formatEdge(edge: StageShape["edge"], declared: boolean): string | undefined {
+	if (edge.mode === "terminal") return declared ? STOP : "(terminal — no edge declared)";
+	if (edge.mode === "linear") return edge.targets?.[0];
+	return edge.targets?.length ? `predicate(${edge.targets.join(" | ")})` : "predicate";
 }
 
 /** "Sources: built-in + user + project" — single-line layer banner. */

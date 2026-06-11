@@ -53,6 +53,61 @@ export function globalSlot<T>(key: symbol, init: () => T): () => T {
 }
 
 /**
+ * Register-providers / flush-once / memoize lifecycle over global slots —
+ * the shared structure behind `registerBuiltInsProvider`/`flushBuiltInProviders`
+ * and their skill-contract twins, which were implemented twice near
+ * line-for-line (D2). The one real divergence — error posture — is the
+ * `onError` parameter: when given, each provider throw is RECORDED via the
+ * callback (the registry stays usable, the caller drains and surfaces);
+ * when omitted, a throw rejects the flush promise (trusted in-process
+ * providers).
+ *
+ * State (provider list + flush latch) is anchored on `Symbol.for` slots
+ * derived from `key`, so a duplicate module load shares one process-wide
+ * lifecycle — same rationale as `globalSlot` itself. The latch is a mutable
+ * box because the slot value must never be reset to `undefined` (globalSlot
+ * would re-init), only its contents.
+ */
+export interface LazyProviderRegistry {
+	/** Register a lazy thunk — runs once on the first `flush()`. Register before the first read. */
+	register(provider: () => void | Promise<void>): void;
+	/** Run all pending providers once, then memoize. Concurrency-safe (callers await the same promise). */
+	flush(): Promise<void>;
+	/** Test reset: clears pending providers and the flush latch. */
+	reset(): void;
+}
+
+export function lazyProviderRegistry(key: string, opts?: { onError: (err: unknown) => void }): LazyProviderRegistry {
+	type Provider = () => void | Promise<void>;
+	const getProviders = globalSlot(Symbol.for(`${key}:providers`), () => [] as Provider[]);
+	const getFlushBox = globalSlot(Symbol.for(`${key}:flush`), () => ({
+		flushed: undefined as Promise<void> | undefined,
+	}));
+	const onError = opts?.onError;
+	return {
+		register(provider) {
+			getProviders().push(provider);
+		},
+		flush() {
+			const box = getFlushBox();
+			if (box.flushed) return box.flushed;
+			const pending = getProviders().splice(0);
+			box.flushed = Promise.all(
+				pending.map((p) => {
+					const run = Promise.resolve().then(p);
+					return onError ? run.catch(onError) : run;
+				}),
+			).then(() => undefined);
+			return box.flushed;
+		},
+		reset() {
+			getProviders().length = 0;
+			getFlushBox().flushed = undefined;
+		},
+	};
+}
+
+/**
  * Race a promise against `ms`. The inner promise is NOT cancelled — Pi's
  * `ctx.waitForIdle()` has no abort signal today; the dangling promise becomes
  * inert when the next stage's `newSession` replaces the ctx.

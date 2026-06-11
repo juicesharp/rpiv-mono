@@ -18,7 +18,7 @@
 
 import { formatError, withTimeout } from "../internal-utils.js";
 import { isJsonSchemaObject, jsonSchemaToStandard } from "../json-schema.js";
-import { ERR_INPUT_VALIDATION_FAILED, ERR_SCHEMA_TIMEOUT, MSG_INPUT_VALIDATION_FAILED } from "../messages.js";
+import { ERR_SCHEMA_TIMEOUT, FAIL_INPUT_VALIDATION } from "../messages.js";
 import type { RunContext } from "../types.js";
 import {
 	DEFAULT_VALIDATION_RETRY_TIMEOUT_MS,
@@ -77,26 +77,14 @@ async function validateOrThrow(
 		result = await withTimeout(Promise.resolve(validateOutputData(schema, data)), timeoutMs, timeoutError);
 	} catch (e) {
 		if (errorPolicy === "degrade-on-non-timeout" && !(e instanceof SchemaTimeoutError)) return;
-		const reason = formatError(e);
-		throw new StagePreflightError(
-			"halt",
-			stage.skill,
-			MSG_INPUT_VALIDATION_FAILED(stage.skill, prevSkill),
-			ERR_INPUT_VALIDATION_FAILED(stage.skill, prevSkill, reason),
-			true,
-		);
+		const f = FAIL_INPUT_VALIDATION(stage.skill, prevSkill, formatError(e));
+		throw new StagePreflightError("halt", stage.skill, f.toast, f.error, true);
 	}
 
 	if (result.valid) return;
 
-	const failureSummary = result.failures.map(describeFailure).join("; ");
-	throw new StagePreflightError(
-		"halt",
-		stage.skill,
-		MSG_INPUT_VALIDATION_FAILED(stage.skill, prevSkill),
-		ERR_INPUT_VALIDATION_FAILED(stage.skill, prevSkill, failureSummary),
-		true,
-	);
+	const f = FAIL_INPUT_VALIDATION(stage.skill, prevSkill, result.failures.map(describeFailure).join("; "));
+	throw new StagePreflightError("halt", stage.skill, f.toast, f.error, true);
 }
 
 // ---------------------------------------------------------------------------

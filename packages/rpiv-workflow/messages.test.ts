@@ -18,13 +18,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { loadWorkflows } from "./load/index.js";
+import { LEGACY_OVERLAY_NOTICE, LEGACY_RUNS_NOTICE } from "./load/legacy.js";
 import {
-	ERR_LOOP_CAP_HALT,
 	ERR_RESUME_LOOP_MISMATCH,
-	LEGACY_OVERLAY_NOTICE,
-	LEGACY_RUNS_NOTICE,
+	FAIL_LOOP_CAP_HALT,
 	MSG_LOOP_CAP_ADVANCE,
-	MSG_LOOP_CAP_HALT,
 	MSG_LOOP_ZERO_UNITS,
 	MSG_RESUME_LOOP_MISMATCH,
 	MSG_UNIT_COMPLETE,
@@ -167,11 +165,11 @@ describe("unified loop message templates", () => {
 		);
 	});
 
-	it("MSG/ERR_LOOP_CAP_HALT render the terminal cap wording", () => {
-		expect(MSG_LOOP_CAP_HALT(5, 5)).toBe(
-			"rpiv: loop cap exceeded (5/5) — stopping workflow to prevent an unbounded loop",
-		);
-		expect(ERR_LOOP_CAP_HALT(5, 5)).toBe("Loop cap exceeded: 5 units (max 5)");
+	it("FAIL_LOOP_CAP_HALT renders the terminal cap wording on both channels", () => {
+		expect(FAIL_LOOP_CAP_HALT(5, 5)).toEqual({
+			toast: "rpiv: loop cap exceeded (5/5) — stopping workflow to prevent an unbounded loop",
+			error: "Loop cap exceeded: 5 units (max 5)",
+		});
 	});
 
 	it("MSG_LOOP_CAP_ADVANCE renders the soft-stop wording", () => {

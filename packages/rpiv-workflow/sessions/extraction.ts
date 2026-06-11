@@ -21,13 +21,7 @@ import type { Artifact } from "../handle.js";
 import { assertNever, formatError, nowIso, withTimeout } from "../internal-utils.js";
 import { isJsonSchemaObject, jsonSchemaToStandard } from "../json-schema.js";
 import { lifecycleCtxFromSession } from "../lifecycle.js";
-import {
-	ERR_COLLECTOR_THREW,
-	ERR_PARSER_THREW,
-	ERR_SCHEMA_TIMEOUT,
-	MSG_VALIDATION_RETRY,
-	MSG_VALIDATION_RETRY_PROMPT,
-} from "../messages.js";
+import { ERR_COLLECTOR_THREW, ERR_PARSER_THREW, ERR_SCHEMA_TIMEOUT, MSG_VALIDATION_RETRY } from "../messages.js";
 import { sideEffectOutcome } from "../outcomes/index.js";
 import { finalizeOutput, type Output } from "../output.js";
 import type { CollectCtx, Outcome } from "../output-spec.js";
@@ -287,6 +281,18 @@ async function retryUntilValid(
 	if (!result.valid) return validationExhausted(result.failures);
 	return { kind: "ok", output };
 }
+
+/**
+ * Sent to the AGENT as a follow-up message when an output-schema validation
+ * fails — instructs it to re-write the artifact at the same path with a
+ * corrected frontmatter. Lives beside its only consumer (M8: this is
+ * model-facing prompt text, not a UI constant). `errorLines` is a pre-joined
+ * bullet list (one line per failure) so the factory stays single-arg-typed.
+ */
+const MSG_VALIDATION_RETRY_PROMPT = (skill: string, errorLines: string) =>
+	`The ${skill} artifact's frontmatter doesn't satisfy the expected output schema. ` +
+	"Fix only the fields listed below, then re-write the artifact at the same path (don't move it):\n\n" +
+	`${errorLines}`;
 
 /**
  * Translate a thrown `validateOutputData` (user-authored schemas may throw

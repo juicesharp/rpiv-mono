@@ -149,6 +149,9 @@ function surfaceIssues(ctx: WorkflowHostContext, issues: readonly Issue[]): void
 
 function formatIssue(issue: Issue): string {
 	if (issue.kind === "load") {
+		// "framework" = the loader's own machinery (providers, derivers) — no
+		// config file caused it, so no "config" suffix.
+		if (issue.layer === "framework") return `[framework] ${issue.message}`;
 		const where = issue.path ? ` (${issue.path})` : "";
 		return `[${renderConfigLayer(issue.layer)} config${where}] ${issue.message}`;
 	}

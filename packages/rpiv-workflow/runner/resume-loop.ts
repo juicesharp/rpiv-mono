@@ -22,7 +22,7 @@ import { resolveSkill } from "../chain-state.js";
 import { effectiveLoopOf } from "../control-flow.js";
 import { announceLoopStart, type LoopDeps, runLoop } from "../loop.js";
 import { type LoopEntry, loopStrategyOf } from "../loop-kinds.js";
-import { ERR_MISSING_ARTIFACT, MSG_MISSING_ARTIFACT, MSG_RESUME_LOOP_MISMATCH } from "../messages.js";
+import { FAIL_MISSING_ARTIFACT, MSG_RESUME_LOOP_MISMATCH } from "../messages.js";
 import type { RunContext, WorkflowHostContext } from "../types.js";
 import type { LoopResumePoint } from "./resume.js";
 
@@ -85,7 +85,7 @@ function recordMissingArtifactFailure(
 	return recordTerminalFailure(
 		ctx,
 		auditCtxFor(run, parent, skill),
-		failedArgs(MSG_MISSING_ARTIFACT(skill), ERR_MISSING_ARTIFACT(skill, idx + 1)),
+		failedArgs(FAIL_MISSING_ARTIFACT(skill, idx + 1)),
 	);
 }
 

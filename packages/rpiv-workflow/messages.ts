@@ -3,56 +3,72 @@
  * - `STATUS_*` via `ctx.ui.setStatus` — persists across `newSession`.
  * - `MSG_*` / `ERR_*` via `ctx.ui.notify` — one-shot; may be repainted by
  *   Pi's session transition (the status line is the durable channel).
+ * - `FAIL_*` — structured terminal-failure descriptors (see `FailureText`).
+ *
+ * Audience split (M8): this module is the UI/runtime constants. The
+ * model-facing validation-retry prompt lives beside its only consumer
+ * (sessions/extraction.ts); legacy-migration notices live in load/legacy.ts;
+ * `/wf` usage strings live in command.ts / preview.ts.
  */
 
-import { join } from "node:path";
-
 export const STATUS_KEY = "rpiv-workflow";
+
+/**
+ * One structured descriptor per terminal-failure kind — the `toast` (the
+ * one-shot `ctx.ui.notify` line) and the `error` (what lands in
+ * `state.termination.error` + the JSONL row's `errMsg`) rendered from ONE
+ * factory so the two channels can never drift again (D5 — the old MSG_/ERR_
+ * twin constants had already diverged in content). Halt sites hand the
+ * descriptor to `failedArgs`/`abortedArgs` (audit.ts) or spread it into
+ * `StagePreflightError`.
+ */
+export interface FailureText {
+	toast: string;
+	error: string;
+}
 
 export const STATUS_STAGE = (stage: number, total: number, skill: string) => `rpiv: stage ${stage}/${total} — ${skill}`;
 
 export const MSG_STAGE_COMPLETE = (skill: string) => `✓ ${skill} completed`;
 export const MSG_STAGE_FAILED = (skill: string) => `✗ ${skill} failed — stopping workflow`;
-export const MSG_STAGE_ABORTED = (skill: string) => `⏸ ${skill} aborted (ESC) — stopping workflow`;
-export const MSG_STAGE_TRUNCATED = (skill: string) =>
-	`✗ ${skill} truncated — model hit output cap mid-reply, stopping workflow`;
-export const MSG_STAGE_TOOL_STALLED = (skill: string) => `✗ ${skill} tool loop did not settle — stopping workflow`;
-export const MSG_STAGE_NO_RESPONSE = (skill: string) => `✗ ${skill} produced no response — stopping workflow`;
 
-export const ERR_STAGE_ABORTED = (skill: string) => `${skill} aborted by user (ESC)`;
-export const ERR_STAGE_TRUNCATED = (skill: string) => `${skill} truncated — model hit output-length cap mid-reply`;
-export const ERR_STAGE_TOOL_STALLED = (skill: string) =>
-	`${skill} tool loop did not settle before the orchestrator inspected the branch`;
-export const ERR_STAGE_NO_RESPONSE = (skill: string) => `${skill} produced no assistant message`;
+export const FAIL_STAGE_ABORTED = (skill: string): FailureText => ({
+	toast: `⏸ ${skill} aborted (ESC) — stopping workflow`,
+	error: `${skill} aborted by user (ESC)`,
+});
+export const FAIL_STAGE_TRUNCATED = (skill: string): FailureText => ({
+	toast: `✗ ${skill} truncated — model hit output cap mid-reply, stopping workflow`,
+	error: `${skill} truncated — model hit output-length cap mid-reply`,
+});
+export const FAIL_STAGE_TOOL_STALLED = (skill: string): FailureText => ({
+	toast: `✗ ${skill} tool loop did not settle — stopping workflow`,
+	error: `${skill} tool loop did not settle before the orchestrator inspected the branch`,
+});
+export const FAIL_STAGE_NO_RESPONSE = (skill: string): FailureText => ({
+	toast: `✗ ${skill} produced no response — stopping workflow`,
+	error: `${skill} produced no assistant message`,
+});
 
 export const MSG_WORKFLOW_COMPLETE = (stages: number) => `rpiv: workflow complete (${stages} stages)`;
 export const MSG_WORKFLOW_CANCELLED = "rpiv: workflow cancelled";
 
 // Programmatic abort via RunWorkflowOptions.signal — checked between stages.
-export const MSG_WORKFLOW_ABORTED = "rpiv: workflow aborted";
-export const ERR_WORKFLOW_ABORTED = (stage: string) => `workflow aborted before stage "${stage}" (signal)`;
+export const FAIL_WORKFLOW_ABORTED = (stage: string): FailureText => ({
+	toast: "rpiv: workflow aborted",
+	error: `workflow aborted before stage "${stage}" (signal)`,
+});
 
 export const MSG_VALIDATION_RETRY = (skill: string, attempt: number) =>
 	`rpiv: ${skill} output validation failed — asking agent to fix (attempt ${attempt})`;
-export const MSG_VALIDATION_EXHAUSTED = (skill: string) => `rpiv: ${skill} output validation exhausted retries`;
-export const ERR_VALIDATION_FAILED = (skill: string, failures: string) =>
-	`${skill} output validation failed after retries: ${failures}`;
+export const FAIL_VALIDATION_EXHAUSTED = (skill: string, failures: string): FailureText => ({
+	toast: `rpiv: ${skill} output validation exhausted retries`,
+	error: `${skill} output validation failed after retries: ${failures}`,
+});
 
-/**
- * Sent to the agent as a follow-up message when an output-schema validation
- * fails — instructs the agent to re-write the artifact at the same path with
- * a corrected frontmatter. `errorLines` is a pre-joined bullet list (one
- * line per failure) so the factory stays single-arg-typed.
- */
-export const MSG_VALIDATION_RETRY_PROMPT = (skill: string, errorLines: string) =>
-	`The ${skill} artifact's frontmatter doesn't satisfy the expected output schema. ` +
-	"Fix only the fields listed below, then re-write the artifact at the same path (don't move it):\n\n" +
-	`${errorLines}`;
-
-export const MSG_INPUT_VALIDATION_FAILED = (currentSkill: string, prevSkill: string) =>
-	`✗ ${currentSkill} input validation failed — upstream ${prevSkill} produced invalid data`;
-export const ERR_INPUT_VALIDATION_FAILED = (currentSkill: string, prevSkill: string, failures: string) =>
-	`Input validation failed for '${currentSkill}': upstream '${prevSkill}' produced invalid data: ${failures}`;
+export const FAIL_INPUT_VALIDATION = (currentSkill: string, prevSkill: string, failures: string): FailureText => ({
+	toast: `✗ ${currentSkill} input validation failed — upstream ${prevSkill} produced invalid data`,
+	error: `Input validation failed for '${currentSkill}': upstream '${prevSkill}' produced invalid data: ${failures}`,
+});
 
 /**
  * Bound on a single schema-validate call. Sync schemas resolve in one
@@ -65,10 +81,10 @@ export const ERR_INPUT_VALIDATION_FAILED = (currentSkill: string, prevSkill: str
 export const ERR_SCHEMA_TIMEOUT = (slot: "outputSchema" | "inputSchema", ms: number) =>
 	`${slot} validation exceeded ${ms}ms — schema's ~standard.validate did not settle`;
 
-export const MSG_MISSING_ARTIFACT = (currentSkill: string) =>
-	`✗ ${currentSkill} has no upstream artifact to consume — stopping workflow`;
-export const ERR_MISSING_ARTIFACT = (currentSkill: string, stageNumber: number) =>
-	`Stage ${stageNumber} (${currentSkill}) has no upstream artifactPath; only stage 1 may consume the user's original input`;
+export const FAIL_MISSING_ARTIFACT = (currentSkill: string, stageNumber: number): FailureText => ({
+	toast: `✗ ${currentSkill} has no upstream artifact to consume — stopping workflow`,
+	error: `Stage ${stageNumber} (${currentSkill}) has no upstream artifactPath; only stage 1 may consume the user's original input`,
+});
 
 /**
  * A stage declares `reads: [..., name, ...]` but `state.named[name]` is
@@ -78,16 +94,15 @@ export const ERR_MISSING_ARTIFACT = (currentSkill: string, stageNumber: number) 
  * the producer was authored with no outcome and a name that doesn't
  * match any stage record key.
  */
-export const MSG_MISSING_NAMED_READ = (currentSkill: string, name: string) =>
-	`✗ ${currentSkill} reads "${name}" but no upstream produces stage has published it yet — stopping workflow`;
-export const ERR_MISSING_NAMED_READ = (currentSkill: string, name: string, stageNumber: number) =>
-	`Stage ${stageNumber} (${currentSkill}) reads "${name}" but state.named["${name}"] is empty; check that an upstream produces stage publishes this name`;
+export const FAIL_MISSING_NAMED_READ = (currentSkill: string, name: string, stageNumber: number): FailureText => ({
+	toast: `✗ ${currentSkill} reads "${name}" but no upstream produces stage has published it yet — stopping workflow`,
+	error: `Stage ${stageNumber} (${currentSkill}) reads "${name}" but state.named["${name}"] is empty; check that an upstream produces stage publishes this name`,
+});
 
-export const MSG_BACKWARD_JUMP_EXHAUSTED = (jumps: number, max: number) =>
-	`rpiv: backward-jump limit exceeded (${jumps}/${max}) — stopping workflow to prevent infinite loop`;
-
-export const ERR_BACKWARD_JUMP_EXHAUSTED = (jumps: number, max: number) =>
-	`Backward-jump limit exceeded: ${jumps} backward jumps (max ${max})`;
+export const FAIL_BACKWARD_JUMP_EXHAUSTED = (jumps: number, max: number): FailureText => ({
+	toast: `rpiv: backward-jump limit exceeded (${jumps}/${max}) — stopping workflow to prevent infinite loop`,
+	error: `Backward-jump limit exceeded: ${jumps} backward jumps (max ${max})`,
+});
 
 /**
  * Status line for one loop unit. `skill` is the unit's dispatched skill body
@@ -120,9 +135,10 @@ export const MSG_LOOP_ZERO_UNITS = (skill: string) =>
  * A loop hit its effective cap (`min(loop.max, run.maxIterations)`) under
  * `onCap: "halt"` — terminal failure, mirroring the backward-jump guard.
  */
-export const MSG_LOOP_CAP_HALT = (count: number, max: number) =>
-	`rpiv: loop cap exceeded (${count}/${max}) — stopping workflow to prevent an unbounded loop`;
-export const ERR_LOOP_CAP_HALT = (count: number, max: number) => `Loop cap exceeded: ${count} units (max ${max})`;
+export const FAIL_LOOP_CAP_HALT = (count: number, max: number): FailureText => ({
+	toast: `rpiv: loop cap exceeded (${count}/${max}) — stopping workflow to prevent an unbounded loop`,
+	error: `Loop cap exceeded: ${count} units (max ${max})`,
+});
 
 /**
  * A loop hit its effective cap under `onCap: "advance"` — soft-stop: warn,
@@ -139,15 +155,15 @@ export const MSG_LOOP_CAP_ADVANCE = (skill: string, max: number) =>
  * would misattribute the failure. A pass on the final attempt never reaches
  * this (`done` wins over the cap).
  */
-export const MSG_VERIFY_FAILED = (stage: string, attempts: number) =>
-	`✗ ${stage} verification failed after ${attempts} attempt${attempts === 1 ? "" : "s"} — stopping workflow`;
-export const ERR_VERIFY_FAILED = (stage: string, attempts: number) =>
-	`Verification failed for "${stage}": the judge's verdict did not satisfy \`pass\` after ${attempts} attempt${attempts === 1 ? "" : "s"}`;
+export const FAIL_VERIFY_FAILED = (stage: string, attempts: number): FailureText => ({
+	toast: `✗ ${stage} verification failed after ${attempts} attempt${attempts === 1 ? "" : "s"} — stopping workflow`,
+	error: `Verification failed for "${stage}": the judge's verdict did not satisfy \`pass\` after ${attempts} attempt${attempts === 1 ? "" : "s"}`,
+});
 
-export const MSG_AUDIT_WRITE_FAILED = (skill: string) =>
-	`✗ ${skill} completed but audit row could not be written — stopping workflow`;
-export const ERR_AUDIT_WRITE_FAILED = (skill: string) =>
-	`${skill} completed but the JSONL audit row could not be appended; halting to keep in-memory state aligned with disk`;
+export const FAIL_AUDIT_WRITE = (skill: string): FailureText => ({
+	toast: `✗ ${skill} completed but audit row could not be written — stopping workflow`,
+	error: `${skill} completed but the JSONL audit row could not be appended; halting to keep in-memory state aligned with disk`,
+});
 
 /**
  * Notified when a TERMINAL failure/aborted row could not be appended. Unlike
@@ -192,10 +208,10 @@ export const ERR_PARSER_THREW = (skill: string, reason: string) => `${skill}: ou
  * unknown skill name would otherwise reach the model as a bare user-message
  * imperative outside the `<skill>...</skill>` contract.
  */
-export const MSG_SKILL_NOT_REGISTERED = (skill: string) =>
-	`✗ ${skill} is not a registered Pi skill — stopping workflow`;
-export const ERR_SKILL_NOT_REGISTERED = (skill: string, stageNumber: number) =>
-	`Stage ${stageNumber} requires Pi skill "${skill}" but no skill by that name is registered with Pi (check installed sibling packages and \`pi.skills\` manifest entries)`;
+export const FAIL_SKILL_NOT_REGISTERED = (skill: string, stageNumber: number): FailureText => ({
+	toast: `✗ ${skill} is not a registered Pi skill — stopping workflow`,
+	error: `Stage ${stageNumber} requires Pi skill "${skill}" but no skill by that name is registered with Pi (check installed sibling packages and \`pi.skills\` manifest entries)`,
+});
 
 /**
  * Notified live when a routing-decision row could not be appended. The chain
@@ -228,9 +244,10 @@ export const MSG_SNAPSHOT_FAILED = (stage: string, reason: string) =>
  * the failure surface attributed to the script function rather than to
  * the runner.
  */
-export const MSG_SCRIPT_THREW = (stage: string, reason: string) =>
-	`✗ ${stage} script threw — stopping workflow: ${reason}`;
-export const ERR_SCRIPT_THREW = (stage: string, reason: string) => `${stage} script threw: ${reason}`;
+export const FAIL_SCRIPT_THREW = (stage: string, reason: string): FailureText => ({
+	toast: `✗ ${stage} script threw — stopping workflow: ${reason}`,
+	error: `${stage} script threw: ${reason}`,
+});
 
 // ---------------------------------------------------------------------------
 // Resume-refusal messages — reconstruct refusals returned in the
@@ -320,63 +337,3 @@ export const MSG_WORKFLOW_NOT_FOUND = (name: string) => `/wf: workflow "${name}"
  */
 export const MSG_NO_WORKFLOWS_REGISTERED =
 	"/wf: no workflows registered — install a sibling that bundles workflows or author one in `.rpiv/workflows/config.ts`";
-
-/**
- * Legacy `.rpiv-workflow/` overlay directory detected at load time. The
- * package moved project config under the unified `.rpiv/workflows/` tree
- * (config.ts + packs/) alongside run state. The old directory is NO LONGER
- * read — this notice points the user at the new location and the one-line
- * `mv` migration. Emitted as a load WARNING (advisory, non-blocking).
- *
- * The embedded shell is `;`-sequenced (not `&&`-chained) and each move is
- * guarded (`[ -f … ]` for the config, `find … 2>/dev/null` for the packs) so
- * the terminal `rm -rf` ALWAYS runs — a config-only legacy dir (no `workflows/`
- * subdir) no longer halts the chain and re-fires this warning forever.
- */
-export const LEGACY_OVERLAY_NOTICE = (cwd: string): string =>
-	`rpiv-workflow: detected legacy \`${join(cwd, ".rpiv-workflow")}\` — project config now lives at ` +
-	"`.rpiv/workflows/config.ts` + `.rpiv/workflows/packs/` and is the only location read. " +
-	"Move it: `mkdir -p .rpiv/workflows/packs; " +
-	"[ -f .rpiv-workflow/workflows.config.ts ] && mv .rpiv-workflow/workflows.config.ts .rpiv/workflows/config.ts; " +
-	"find .rpiv-workflow/workflows -name '*.ts' -exec mv {} .rpiv/workflows/packs/ \\; 2>/dev/null; " +
-	"rm -rf .rpiv-workflow` " +
-	"(the old directory is ignored). " +
-	"Note: `.rpiv/workflows/` is commonly gitignored (it holds run state), so the moved " +
-	"`config.ts` + `packs/` may be silently uncommittable — add `!.rpiv/workflows/config.ts` and " +
-	"`!.rpiv/workflows/packs/` to your `.gitignore` to version-control team workflow config.";
-
-/**
- * Orphaned run JSONLs detected directly under `.rpiv/workflows/` at load time.
- * Run state moved one level down into `.rpiv/workflows/runs/`; files written by
- * an older version still sit at the parent and are no longer enumerated by
- * `listRuns` (so `/wf` past-run inspection silently can't see them). Emitted as
- * a load WARNING (advisory, non-blocking) — the files are orphaned, not deleted.
- */
-export const LEGACY_RUNS_NOTICE = (cwd: string): string =>
-	`rpiv-workflow: detected legacy run files directly under \`${join(cwd, ".rpiv", "workflows")}\` — ` +
-	"run state now lives in `.rpiv/workflows/runs/` and these top-level `*.jsonl` files are no longer " +
-	"read by `/wf`. Move them: `mkdir -p .rpiv/workflows/runs && mv .rpiv/workflows/*.jsonl .rpiv/workflows/runs/`.";
-
-/**
- * Legacy user-layer config filename (`workflows.config.ts`) detected at load
- * time. The user overlay's inner name was aligned with the project layer
- * (`config.ts`) and is the ONLY name read — a stale `workflows.config.ts` would
- * otherwise silently stop contributing its aliases / default / overlay
- * workflows. Mirrors `LEGACY_OVERLAY_NOTICE` at the user layer. Load WARNING.
- */
-export const LEGACY_USER_CONFIG_NOTICE = (dir: string): string =>
-	`rpiv-workflow: detected legacy \`${join(dir, "workflows.config.ts")}\` — the user-layer config now lives at ` +
-	`\`${join(dir, "config.ts")}\` and is the only name read. ` +
-	`Move it: \`mv ${join(dir, "workflows.config.ts")} ${join(dir, "config.ts")}\` (the old name is ignored).`;
-
-/** Pi command registry — displayed by Pi's `/?` / command list. */
-export const CMD_DESCRIPTION = "Run a skill workflow: /wf [workflow] [description]";
-
-/** No-args listing footer — generic usage hint. */
-export const CMD_USAGE_LIST = "Usage: /wf [workflow] <description>";
-
-/** No-args listing footer — preview-mode hint paired with CMD_USAGE_LIST. */
-export const CMD_USAGE_PREVIEW = "/wf <workflow>             — preview stages";
-
-/** Per-workflow details footer — narrowed to the workflow the user previewed. */
-export const CMD_USAGE_RUN = (name: string) => `Usage: /wf ${name} <description>`;

@@ -21,22 +21,17 @@
  */
 
 import type { Workflow } from "./api.js";
-import { globalSlot } from "./internal-utils.js";
+import { globalSlot, lazyProviderRegistry } from "./internal-utils.js";
 
 const REGISTRY_KEY = Symbol.for("@juicesharp/rpiv-workflow:built-ins");
-const PROVIDERS_KEY = Symbol.for("@juicesharp/rpiv-workflow:built-in-providers");
-const FLUSH_KEY = Symbol.for("@juicesharp/rpiv-workflow:built-in-flush");
-
-/** A lazy contributor of built-in workflows — run once by `flushBuiltInProviders`. */
-type BuiltInsProvider = () => void | Promise<void>;
 
 const getRegistry = globalSlot(REGISTRY_KEY, () => [] as Workflow[]);
-// Provider list + flush latch share the same global-slot strategy as the
-// registry, so a duplicate module load shares one process-wide state. The
-// flush latch is a mutable box because the slot value itself must never be
-// reset to `undefined` (globalSlot would re-init), only its contents.
-const getProviders = globalSlot(PROVIDERS_KEY, () => [] as BuiltInsProvider[]);
-const getFlushBox = globalSlot(FLUSH_KEY, () => ({ flushed: undefined as Promise<void> | undefined }));
+// Provider lifecycle (register / flush-once / memoize) via the shared
+// `lazyProviderRegistry` helper — same global-slot strategy as the registry,
+// so a duplicate module load shares one process-wide state. No `onError`:
+// built-in providers are trusted in-process code, a throw propagates to the
+// awaiting `loadWorkflows` caller.
+const providers = lazyProviderRegistry("@juicesharp/rpiv-workflow:built-in-providers");
 
 /**
  * Register one or more workflows into the `built-in` layer. Idempotent on
@@ -59,8 +54,8 @@ export function registerBuiltIns(workflows: readonly Workflow[]): void {
  * defer constructing its workflow definitions off startup and onto first `/wf`.
  * Register before the first read — `/wf` is the earliest reader.
  */
-export function registerBuiltInsProvider(provider: BuiltInsProvider): void {
-	getProviders().push(provider);
+export function registerBuiltInsProvider(provider: () => void | Promise<void>): void {
+	providers.register(provider);
 }
 
 /**
@@ -69,11 +64,7 @@ export function registerBuiltInsProvider(provider: BuiltInsProvider): void {
  * first flush won't run — acceptable, all register at extension load.
  */
 export function flushBuiltInProviders(): Promise<void> {
-	const box = getFlushBox();
-	if (box.flushed) return box.flushed;
-	const pending = getProviders().splice(0);
-	box.flushed = Promise.all(pending.map((p) => p())).then(() => undefined);
-	return box.flushed;
+	return providers.flush();
 }
 
 /** Read-only view of the registry — consumed by `load.ts`. */
@@ -87,6 +78,5 @@ export function getBuiltIns(): readonly Workflow[] {
  */
 export function __resetBuiltIns(): void {
 	getRegistry().length = 0;
-	getProviders().length = 0;
-	getFlushBox().flushed = undefined;
+	providers.reset();
 }

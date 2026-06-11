@@ -12,34 +12,33 @@
  *   - registries.ts  — CompositionComparator + OutcomeDeriver registries.
  */
 
-import { deepEqual, globalSlot } from "../internal-utils.js";
+import { deepEqual, globalSlot, lazyProviderRegistry } from "../internal-utils.js";
 import type { SkillContract, SkillContractMap } from "../skill-contract.js";
 
 const REGISTRY_KEY = Symbol.for("@juicesharp/rpiv-workflow:skill-contracts");
-const PROVIDERS_KEY = Symbol.for("@juicesharp/rpiv-workflow:skill-contract-providers");
-const FLUSH_KEY = Symbol.for("@juicesharp/rpiv-workflow:skill-contract-flush");
 const FAILURES_KEY = Symbol.for("@juicesharp/rpiv-workflow:skill-contract-failures");
 const COLLISIONS_KEY = Symbol.for("@juicesharp/rpiv-workflow:skill-contract-collisions");
 const OWNERS_KEY = Symbol.for("@juicesharp/rpiv-workflow:skill-contract-owners");
 
-/** A lazy contributor of skill contracts — run once by `flushSkillContractProviders`. */
-type SkillContractsProvider = () => void | Promise<void>;
-
 const getRegistry = globalSlot(REGISTRY_KEY, () => new Map<string, SkillContract>());
-const getProviders = globalSlot(PROVIDERS_KEY, () => [] as SkillContractsProvider[]);
 /** name → owner label of whoever last registered it (for prune-on-reload + collision detection). */
 const getOwners = globalSlot(OWNERS_KEY, () => new Map<string, string>());
 const getCollisions = globalSlot(COLLISIONS_KEY, () => [] as string[]);
 const getFailures = globalSlot(FAILURES_KEY, () => [] as unknown[]);
 
-/** The memoised flush latch — a Promise once flushed, `undefined` before first flush / after reset. */
-function getFlushLatch(): Promise<void> | undefined {
-	return (globalThis as Record<symbol, unknown>)[FLUSH_KEY] as Promise<void> | undefined;
-}
-
-function setFlushLatch(latch: Promise<void> | undefined): void {
-	(globalThis as Record<symbol, unknown>)[FLUSH_KEY] = latch;
-}
+// Provider lifecycle via the shared `lazyProviderRegistry` (D2). DELIBERATE
+// divergence from the built-ins registry: `onError` RECORDS each provider
+// throw (drained by `drainSkillContractProviderErrors`) instead of
+// propagating. Contract providers read the filesystem / parse frontmatter
+// (failure-prone), and `loadWorkflows` must honor its never-throws contract —
+// a malformed source degrades to a partial/empty registry instead of crashing
+// `/wf`, but the error is NOT swallowed silently: `loadWorkflows` surfaces it
+// as a LoadIssue so a buggy provider is debuggable.
+const providers = lazyProviderRegistry("@juicesharp/rpiv-workflow:skill-contract-providers", {
+	onError: (err) => {
+		getFailures().push(err);
+	},
+});
 
 /**
  * Register one or more skill contracts, keyed by RESOLVED skill name — a flat
@@ -90,37 +89,17 @@ export function registerSkillContracts(contracts: Iterable<readonly [string, Ski
  * sibling defer reading skill frontmatter off startup and onto first `/wf`.
  * Register before the first read.
  */
-export function registerSkillContractsProvider(provider: SkillContractsProvider): void {
-	getProviders().push(provider);
+export function registerSkillContractsProvider(provider: () => void | Promise<void>): void {
+	providers.register(provider);
 }
 
 /**
- * Run all pending providers once, then memoize. Concurrency-safe (callers await
- * the same promise). DELIBERATE divergence from `flushBuiltInProviders`: each
- * provider is wrapped so a throw is RECORDED (into the failures slot, drained by
- * `drainSkillContractProviderErrors`), not propagated. Contract providers read
- * the filesystem / parse frontmatter (failure-prone), and `loadWorkflows` must
- * honor its never-throws contract — a malformed source degrades to a
- * partial/empty registry instead of crashing `/wf`, but the error is NOT
- * swallowed silently: `loadWorkflows` surfaces it as a `LoadIssue` so a buggy
- * provider is debuggable. Built-in providers are trusted in-process code and so
- * don't need the guard.
+ * Run all pending providers once, then memoize. Concurrency-safe (callers
+ * await the same promise). Error posture: recorded, not propagated — see the
+ * `lazyProviderRegistry` construction comment above.
  */
 export function flushSkillContractProviders(): Promise<void> {
-	const existing = getFlushLatch();
-	if (existing) return existing;
-	const pending = getProviders().splice(0);
-	const flush = Promise.all(
-		pending.map((p) =>
-			Promise.resolve()
-				.then(p)
-				.catch((err) => {
-					getFailures().push(err);
-				}),
-		),
-	).then(() => undefined);
-	setFlushLatch(flush);
-	return flush;
+	return providers.flush();
 }
 
 /**
@@ -156,9 +135,8 @@ export function getSkillContracts(): SkillContractMap {
  */
 export function __resetRegistry(): void {
 	getRegistry().clear();
-	getProviders().length = 0;
+	providers.reset();
 	getFailures().length = 0;
 	getCollisions().length = 0;
 	getOwners().clear();
-	setFlushLatch(undefined);
 }

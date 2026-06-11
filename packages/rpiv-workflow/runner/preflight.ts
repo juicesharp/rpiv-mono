@@ -12,12 +12,9 @@
 import { currentPrimaryArtifact } from "../chain-state.js";
 import type { Judge } from "../judge.js";
 import {
-	ERR_MISSING_ARTIFACT,
-	ERR_MISSING_NAMED_READ,
-	ERR_SKILL_NOT_REGISTERED,
-	MSG_MISSING_ARTIFACT,
-	MSG_MISSING_NAMED_READ,
-	MSG_SKILL_NOT_REGISTERED,
+	FAIL_MISSING_ARTIFACT,
+	FAIL_MISSING_NAMED_READ,
+	FAIL_SKILL_NOT_REGISTERED,
 	MSG_STAGE_THREW,
 } from "../messages.js";
 import type { RunContext } from "../types.js";
@@ -86,13 +83,8 @@ export function runLoopPreflights(stage: ResolvedStage, run: RunContext): void {
 export function ensureJudgeSkillRegistered(judge: Judge, stage: ResolvedStage, run: RunContext): void {
 	if (judge.skill === undefined || run.registeredSkills === undefined) return;
 	if (run.registeredSkills.has(judge.skill)) return;
-	throw new StagePreflightError(
-		"halt",
-		judge.skill,
-		MSG_SKILL_NOT_REGISTERED(judge.skill),
-		ERR_SKILL_NOT_REGISTERED(judge.skill, stage.stageNumber),
-		true,
-	);
+	const f = FAIL_SKILL_NOT_REGISTERED(judge.skill, stage.stageNumber);
+	throw new StagePreflightError("halt", judge.skill, f.toast, f.error, true);
 }
 
 /**
@@ -122,13 +114,8 @@ function ensureSkillRegistered(stage: ResolvedStage, run: RunContext): void {
 	if (!run.registeredSkills) return;
 	if (run.registeredSkills.has(stage.skill)) return;
 
-	throw new StagePreflightError(
-		"halt",
-		stage.skill,
-		MSG_SKILL_NOT_REGISTERED(stage.skill),
-		ERR_SKILL_NOT_REGISTERED(stage.skill, stage.stageNumber),
-		true,
-	);
+	const f = FAIL_SKILL_NOT_REGISTERED(stage.skill, stage.stageNumber);
+	throw new StagePreflightError("halt", stage.skill, f.toast, f.error, true);
 }
 
 /**
@@ -152,13 +139,8 @@ function ensureUpstreamArtifact(stage: ResolvedStage, run: RunContext): void {
 	if (stage.def.reads?.length) return;
 	if (stage.dispatch === "prompt") return;
 	if (currentPrimaryArtifact(run.state)) return;
-	throw new StagePreflightError(
-		"halt",
-		stage.skill,
-		MSG_MISSING_ARTIFACT(stage.skill),
-		ERR_MISSING_ARTIFACT(stage.skill, stage.stageNumber),
-		true,
-	);
+	const f = FAIL_MISSING_ARTIFACT(stage.skill, stage.stageNumber);
+	throw new StagePreflightError("halt", stage.skill, f.toast, f.error, true);
 }
 
 /**
@@ -173,13 +155,8 @@ function ensureNamedReads(stage: ResolvedStage, run: RunContext): void {
 	if (!reads?.length) return;
 	for (const name of reads) {
 		if (run.state.named[name]?.length) continue;
-		throw new StagePreflightError(
-			"halt",
-			stage.skill,
-			MSG_MISSING_NAMED_READ(stage.skill, name),
-			ERR_MISSING_NAMED_READ(stage.skill, name, stage.stageNumber),
-			true,
-		);
+		const f = FAIL_MISSING_NAMED_READ(stage.skill, name, stage.stageNumber);
+		throw new StagePreflightError("halt", stage.skill, f.toast, f.error, true);
 	}
 }
 

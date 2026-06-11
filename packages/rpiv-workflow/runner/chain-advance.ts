@@ -16,12 +16,7 @@ import { auditCtxFor, failedArgs, recordTerminalFailure } from "../audit.js";
 import { resolveSkill } from "../chain-state.js";
 import { nowIso } from "../internal-utils.js";
 import { lifecycleCtxFor, skillStageRef } from "../lifecycle.js";
-import {
-	ERR_BACKWARD_JUMP_EXHAUSTED,
-	MSG_BACKWARD_JUMP_EXHAUSTED,
-	MSG_CHAIN_ADVANCE_FAILED,
-	MSG_ROUTING_AUDIT_DROPPED,
-} from "../messages.js";
+import { FAIL_BACKWARD_JUMP_EXHAUSTED, MSG_CHAIN_ADVANCE_FAILED, MSG_ROUTING_AUDIT_DROPPED } from "../messages.js";
 import { edgeIsDecision, nextStage } from "../routing.js";
 import { appendRoutingDecision } from "../state/index.js";
 import type { RunContext, WorkflowHostContext } from "../types.js";
@@ -161,10 +156,7 @@ async function checkBackwardJumpGuard(
 	await recordTerminalFailure(
 		curCtx,
 		auditCtxFor(run, nextName, nextName),
-		failedArgs(
-			MSG_BACKWARD_JUMP_EXHAUSTED(state.telemetry.backwardJumps, run.maxBackwardJumps),
-			ERR_BACKWARD_JUMP_EXHAUSTED(state.telemetry.backwardJumps, run.maxBackwardJumps),
-		),
+		failedArgs(FAIL_BACKWARD_JUMP_EXHAUSTED(state.telemetry.backwardJumps, run.maxBackwardJumps)),
 	);
 	return "halted";
 }

@@ -19,6 +19,15 @@
  * Adding a new export here is a signal you have test-coupling to
  * production state. Reach for it sparingly; prefer making the
  * production module itself idempotent across `beforeEach` resets.
+ *
+ * KNOWN DEBT (M15, deliberately deferred): most of these exist because the
+ * built-in/contract registries are process-global singletons (a deliberate
+ * choice — siblings register across package-instance boundaries via
+ * `Symbol.for` slots). Making them instantiable and threading an instance
+ * through `loadWorkflows` would let tests construct fresh registries and
+ * shrink this file toward zero; it's an API-design change that must be
+ * coordinated with rpiv-pi's internal-subpath regression test, so it ships
+ * in a follow-up minor, not the pre-release window.
  */
 
 export { recordStage } from "./audit.js";

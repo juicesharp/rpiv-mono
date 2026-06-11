@@ -25,13 +25,12 @@ import { currentPrimaryArtifact } from "./chain-state.js";
 import { fs as fsHandle } from "./handle.js";
 import { LifecycleDispatcher } from "./lifecycle.js";
 import {
-	ERR_VALIDATION_FAILED,
-	MSG_STAGE_ABORTED,
+	FAIL_STAGE_ABORTED,
+	FAIL_STAGE_NO_RESPONSE,
+	FAIL_VALIDATION_EXHAUSTED,
 	MSG_STAGE_COMPLETE,
 	MSG_STAGE_FAILED,
-	MSG_STAGE_NO_RESPONSE,
 	MSG_UNIT_COMPLETE,
-	MSG_VALIDATION_EXHAUSTED,
 	MSG_VALIDATION_RETRY,
 } from "./messages.js";
 import type { Output } from "./output.js";
@@ -242,8 +241,10 @@ describe("sessions — validation retry loop", () => {
 
 		expect(onSuccess).not.toHaveBeenCalled();
 		expect(onFailure).toHaveBeenCalledTimes(1);
-		expect(chain.notifications.some((n) => n.msg === MSG_VALIDATION_EXHAUSTED("test"))).toBe(true);
-		expect(state.termination.error).toMatch(new RegExp(ERR_VALIDATION_FAILED("test", "foo").split(":")[0] ?? ""));
+		expect(chain.notifications.some((n) => n.msg === FAIL_VALIDATION_EXHAUSTED("test", "").toast)).toBe(true);
+		expect(state.termination.error).toMatch(
+			new RegExp(FAIL_VALIDATION_EXHAUSTED("test", "foo").error.split(":")[0] ?? ""),
+		);
 		expect(state.termination.error).toContain("foo:");
 	});
 
@@ -1153,7 +1154,7 @@ describe("sessions — halt routing", () => {
 		);
 
 		expect(onFailure).toHaveBeenCalledTimes(1);
-		expect(chain.notifications.some((n) => n.msg === MSG_STAGE_NO_RESPONSE("test"))).toBe(true);
+		expect(chain.notifications.some((n) => n.msg === FAIL_STAGE_NO_RESPONSE("test").toast)).toBe(true);
 		expect(state.termination.error).toMatch(/no assistant message/);
 	});
 
@@ -1175,7 +1176,7 @@ describe("sessions — halt routing", () => {
 		);
 
 		expect(onFailure).toHaveBeenCalledTimes(1);
-		expect(chain.notifications.some((n) => n.msg === MSG_STAGE_ABORTED("test"))).toBe(true);
+		expect(chain.notifications.some((n) => n.msg === FAIL_STAGE_ABORTED("test").toast)).toBe(true);
 		expect(state.termination.error).toMatch(/aborted by user/);
 		const rows = readStageRows(tmpDir);
 		expect(rows[0]?.status).toBe("aborted");

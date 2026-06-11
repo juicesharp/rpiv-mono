@@ -14,7 +14,19 @@
 
 import { deepEqual } from "./internal-utils.js";
 import type { JsonSchemaObject } from "./json-schema.js";
-import type { SchemaCompatResult } from "./skill-contract.js";
+
+/**
+ * Result of a conservative structural compatibility check between a
+ * producer's output schema and a consumer's input schema. Owned by the
+ * engine that defines its semantics (this module); the contract domain
+ * (`skill-contract.ts`) re-exports it so `CompositionComparator` consumers
+ * stay self-contained (G7 — the old direction was a utility→domain
+ * inversion).
+ */
+export interface SchemaCompatResult {
+	ok: boolean;
+	reason?: string;
+}
 
 /** The set of JSON-Schema `type`s a schema allows (string or string[]), or undefined if untyped. */
 function typeSet(schema: JsonSchemaObject): Set<string> | undefined {
