@@ -163,7 +163,7 @@ describe("unified loop message templates", () => {
 
 	it("MSG_LOOP_ZERO_UNITS warns the loop published nothing", () => {
 		expect(MSG_LOOP_ZERO_UNITS("blueprint")).toBe(
-			"rpiv: blueprint loop produced zero units — nothing published, advancing",
+			"rpiv: blueprint iterate loop produced zero units — nothing published, advancing",
 		);
 	});
 
@@ -176,7 +176,7 @@ describe("unified loop message templates", () => {
 
 	it("MSG_LOOP_CAP_ADVANCE renders the soft-stop wording", () => {
 		expect(MSG_LOOP_CAP_ADVANCE("breakdown", 8)).toBe(
-			"rpiv: breakdown loop reached its cap (8) — keeping the projected result and advancing",
+			"rpiv: breakdown loop reached its cap (8) — projecting the configured result and advancing",
 		);
 	});
 

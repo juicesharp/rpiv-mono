@@ -228,6 +228,36 @@ export async function restoreBaseline(pi: ExtensionAPI, base: BaselineSnapshot):
 }
 
 /**
+ * The ONE override cascade — shared by onStageStart (per-stage) and
+ * onUnitStart (per-unit). Resolves through models.json with the dispatched
+ * skill, applies effective model + thinking, and records hasModelChange.
+ * setBaselineModel=true enforces the D7 no-bleedthrough invariant: an
+ * unconfigured stage/unit reverts to baseline, not the previous override.
+ */
+async function applyCascade(
+	pi: ExtensionAPI,
+	target: { workflow: string; stage: string; skill: string | undefined },
+	label: string,
+): Promise<void> {
+	if (!baselineCaptured || !baseline) return;
+
+	const config = loadModelsConfig();
+	const override = resolveStageModel(config, target);
+
+	await applyOrSkipIfStale(async () => {
+		const { hasModelChange } = await applyEffectiveModel(pi, {
+			overrideModel: override?.model,
+			baselineModel: baseline!.model,
+			overrideThinking: override?.thinking,
+			baselineThinking: baseline!.thinking,
+			label,
+			setBaselineModel: true,
+		});
+		baseline!.hasModelChange = hasModelChange;
+	});
+}
+
+/**
  * Register the stage model override lifecycle listener with rpiv-workflow.
  * Call from index.ts with pi — NOT from registerBuiltInWorkflows.
  */
@@ -263,29 +293,11 @@ export async function registerModelOverrideLifecycle(pi: ExtensionAPI): Promise<
 				//     fed in by `defineWorkflow({ name })` or built-in registration).
 				// `stage.skill` is `undefined` for script stages — `resolveStageModel`
 				// handles that by skipping the skills cascade rung.
-				if (!baselineCaptured || !baseline) return;
-
-				const config = loadModelsConfig();
-				const override = resolveStageModel(config, {
-					workflow: ctx.workflow,
-					stage: stage.name,
-					skill: stage.skill,
-				});
-
-				// Apply effective model + thinking via the shared helper.
-				// setBaselineModel=true enforces the D7 no-bleedthrough invariant:
-				// unconfigured stages revert to baseline, not the previous stage's override.
-				await applyOrSkipIfStale(async () => {
-					const { hasModelChange } = await applyEffectiveModel(pi, {
-						overrideModel: override?.model,
-						baselineModel: baseline!.model,
-						overrideThinking: override?.thinking,
-						baselineThinking: baseline!.thinking,
-						label: `stage "${stage.name}"`,
-						setBaselineModel: true,
-					});
-					baseline!.hasModelChange = hasModelChange;
-				});
+				await applyCascade(
+					pi,
+					{ workflow: ctx.workflow, stage: stage.name, skill: stage.skill },
+					`stage "${stage.name}"`,
+				);
 			},
 
 			onUnitStart: async (stage: { name: string }, unit: { skill: string }, ctx: { workflow: string }) => {
@@ -294,28 +306,12 @@ export async function registerModelOverrideLifecycle(pi: ExtensionAPI): Promise<
 				// own override (idempotent re-apply); JUDGE units resolve
 				// `skills.<judge.skill>` — judges get their own model for the first time.
 				// Units run strictly sequentially, so the global setModel flip is
-				// race-free; setBaselineModel=true keeps the D7 no-bleedthrough invariant
-				// (an unconfigured unit reverts to baseline, not the prior unit's model).
-				if (!baselineCaptured || !baseline) return;
-
-				const config = loadModelsConfig();
-				const override = resolveStageModel(config, {
-					workflow: ctx.workflow,
-					stage: stage.name,
-					skill: unit.skill,
-				});
-
-				await applyOrSkipIfStale(async () => {
-					const { hasModelChange } = await applyEffectiveModel(pi, {
-						overrideModel: override?.model,
-						baselineModel: baseline!.model,
-						overrideThinking: override?.thinking,
-						baselineThinking: baseline!.thinking,
-						label: `unit "${stage.name} (${unit.skill})"`,
-						setBaselineModel: true,
-					});
-					baseline!.hasModelChange = hasModelChange;
-				});
+				// race-free.
+				await applyCascade(
+					pi,
+					{ workflow: ctx.workflow, stage: stage.name, skill: unit.skill },
+					`unit "${stage.name} (${unit.skill})"`,
+				);
 			},
 
 			onWorkflowEnd: async () => {

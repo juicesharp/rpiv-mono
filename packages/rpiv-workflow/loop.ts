@@ -247,6 +247,8 @@ async function pullNext(e: LoopEntry, cursor: LoopCursor, cap: number, run: RunC
 	// assess produce — done wins over cap (one code path for live + resume fast-advance)
 	if (cursor.lastVerdict !== undefined && loop.done(cursor.lastVerdict)) return { kind: "complete" };
 	if (cursor.index >= cap) return { kind: "cap", count: cursor.index };
+	// `lastVerdict` is only set by a completed judge, which also bumps `index` —
+	// so `index - 1 ≥ 0` whenever feedForward runs (round 0 takes entryArgs).
 	const arg =
 		cursor.lastVerdict !== undefined
 			? loop.feedForward({

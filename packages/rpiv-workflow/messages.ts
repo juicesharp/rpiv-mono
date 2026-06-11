@@ -114,7 +114,7 @@ export const MSG_UNIT_COMPLETE = (skill: string, label: string) => `✓ ${skill}
  * the entry pair; warn so the author notices the empty input.
  */
 export const MSG_LOOP_ZERO_UNITS = (skill: string) =>
-	`rpiv: ${skill} loop produced zero units — nothing published, advancing`;
+	`rpiv: ${skill} iterate loop produced zero units — nothing published, advancing`;
 
 /**
  * A loop hit its effective cap (`min(loop.max, run.maxIterations)`) under
@@ -130,7 +130,7 @@ export const ERR_LOOP_CAP_HALT = (count: number, max: number) => `Loop cap excee
  * advance. Deliberately no ERR_ twin (not a failure).
  */
 export const MSG_LOOP_CAP_ADVANCE = (skill: string, max: number) =>
-	`rpiv: ${skill} loop reached its cap (${max}) — keeping the projected result and advancing`;
+	`rpiv: ${skill} loop reached its cap (${max}) — projecting the configured result and advancing`;
 
 export const MSG_AUDIT_WRITE_FAILED = (skill: string) =>
 	`✗ ${skill} completed but audit row could not be written — stopping workflow`;
