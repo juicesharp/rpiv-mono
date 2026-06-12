@@ -1,13 +1,34 @@
 ---
 import { VERSION } from "../lib/version";
 
+interface Props {
+	/** Landing-variant section links. Supplying this marks the page as a
+	 *  landing surface: section anchors resolve locally, the brand link and
+	 *  install CTA stay on-page, and the mobile counter renders. Omit it on
+	 *  docs/blog pages (anchors fall back to the home landing) and on the
+	 *  home landing itself (the default set below). */
+	links?: { id: string; label: string }[];
+}
+
+const DEFAULT_LINKS = [
+	{ id: "why", label: "the gap" },
+	{ id: "install", label: "start" },
+	{ id: "firstrun", label: "first run" },
+	{ id: "catalog", label: "flows" },
+	{ id: "models", label: "models" },
+	{ id: "roadmap", label: "roadmap" },
+];
+
 const isHome = Astro.url.pathname === "/";
+const isLanding = isHome || Astro.props.links !== undefined;
+const links = Astro.props.links ?? DEFAULT_LINKS;
+const counterTotal = String(links.length).padStart(2, "0");
 ---
 
 <header class="nav" data-nav>
 	<div class="container nav__inner">
 		<div class="nav__brand-group">
-			<a href={isHome ? "#top" : "/"} class="nav__brand mono">rpiv-pi</a>
+			<a href={isLanding ? "#top" : "/"} class="nav__brand mono">rpiv-pi</a>
 			<a
 				class="nav__version mono"
 				href={`https://www.npmjs.com/package/@juicesharp/rpiv-pi/v/${VERSION}`}
@@ -31,23 +52,20 @@ const isHome = Astro.url.pathname === "/";
 			<a class="nav__blog mono" href="/blog">blog</a>
 		</div>
 
-		<a href={isHome ? "#install" : "/#install"} class="nav__cta mono">install</a>
+		<a href={isLanding ? "#install" : "/#install"} class="nav__cta mono">install</a>
 
 		<nav class="nav__links mono" aria-label="primary">
-			<a href={isHome ? "#catalog"  : "/#catalog"}  data-nav-link="catalog">flows</a>
-			<a href={isHome ? "#anatomy"  : "/#anatomy"}  data-nav-link="anatomy">run</a>
-			<a href={isHome ? "#skills"   : "/#skills"}   data-nav-link="skills">skills</a>
-			<a href={isHome ? "#around"   : "/#around"}   data-nav-link="around">around</a>
-			<a href={isHome ? "#guidance" : "/#guidance"} data-nav-link="guidance">guidance</a>
-			<a href={isHome ? "#agents"   : "/#agents"}   data-nav-link="agents">agents</a>
+			{links.map((l) => (
+				<a href={isLanding ? `#${l.id}` : `/#${l.id}`} data-nav-link={l.id}>{l.label}</a>
+			))}
 		</nav>
 
-		{isHome && (
+		{isLanding && (
 		<span class="nav__counter mono" aria-hidden="true">
 			<span class="nav__counter-rule"></span>
-			<span class="nav__counter-num" data-nav-counter>—</span>
+			<span class="nav__counter-num" data-nav-counter>00</span>
 			<span class="nav__counter-sep">/</span>
-			<span class="nav__counter-total">06</span>
+			<span class="nav__counter-total">{counterTotal}</span>
 		</span>
 		)}
 	</div>
@@ -383,7 +401,7 @@ const isHome = Astro.url.pathname === "/";
 			});
 			if (counter) {
 				counter.textContent =
-					activeIndex < 0 ? "—" : String(activeIndex + 1).padStart(2, "0");
+					activeIndex < 0 ? "00" : String(activeIndex + 1).padStart(2, "0");
 			}
 		};
 

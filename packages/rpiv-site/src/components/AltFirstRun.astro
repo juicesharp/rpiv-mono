@@ -1,0 +1,235 @@
+---
+// §3 — the first run. Once installed, the distance from "new user" to "first
+// aligned commit" is three commands of escalating commitment, then a vertical
+// trace of what the runner does and — crucially for the thesis — where the
+// driver decides. The "you" hanko ticks mark the human moments.
+const COMMANDS = [
+	{ cmd: "/wf", note: "preview every flow: what each one chains, shortest to deepest." },
+	{ cmd: "/wf build", note: "inspect the graph before committing to it: stages, gate, loop." },
+	{ cmd: "/wf build “describe your change”", note: "run the whole chain. Your brief is the only required input." },
+];
+
+const TRACE = [
+	{
+		name: "research",
+		note: "subagents fan out under fresh context; grounded questions come back to you before the doc is written.",
+		you: true,
+	},
+	{
+		name: "blueprint",
+		note: "the plan pauses at micro-checkpoints. Your call before any code is written.",
+		you: true,
+	},
+	{
+		name: "implement",
+		note: "fans out across the plan's phases, each verified against its success criteria.",
+	},
+	{
+		name: "validate",
+		note: "the finished work re-checked phase by phase against the plan.",
+	},
+	{
+		name: "code-review",
+		note: "gates on a contract-validated blockers_count and loops back until it reads zero.",
+		loop: true,
+	},
+	{
+		name: "commit",
+		note: "grouped logically, message written, your name on the diff.",
+	},
+];
+---
+
+<section id="firstrun">
+	<div class="container">
+		<p class="kicker">§ first run · one command</p>
+		<h2>Your first run, end to end.</h2>
+		<p class="fr__lede">
+			Three commands of escalating commitment: look, inspect, go. The
+			runner drives the chain; you decide at the moments that shape the
+			outcome.
+		</p>
+
+		<div class="fr__duo">
+			<div class="fr__col">
+				<p class="mono fr__colHead">look · inspect · go</p>
+				<ol class="fr__cmds">
+					{COMMANDS.map((c) => (
+						<li class="fr__cmdRow">
+							<pre class="fr__pre"><code>{c.cmd}</code></pre>
+							<p class="fr__cmdNote">{c.note}</p>
+						</li>
+					))}
+				</ol>
+			</div>
+
+			<div class="fr__col">
+				<p class="mono fr__colHead fr__colHead--trace">what happens on go</p>
+				<ol class="fr__trace">
+					{TRACE.map((t, i) => (
+						<li class="fr__step">
+							<span class="fr__num mono">{String(i + 1).padStart(2, "0")}</span>
+							<span class="fr__rail" aria-hidden="true"></span>
+							<div class="fr__body">
+								<p class="fr__name mono">
+									{t.name}
+									{t.you && <span class="fr__you mono">■ you</span>}
+									{t.loop && <span class="fr__loop mono">↺ ≤ 3 passes</span>}
+								</p>
+								<p class="fr__note">{t.note}</p>
+							</div>
+						</li>
+					))}
+				</ol>
+			</div>
+		</div>
+
+		<p class="fr__foot mono">
+			one JSONL ledger per run · <code>.rpiv/workflows/runs/&lt;id&gt;.jsonl</code> · resume any run with <code>/wf @&lt;run-id&gt;</code>
+		</p>
+	</div>
+</section>
+
+<style>
+	.fr__lede {
+		font-family: var(--font-serif);
+		max-width: 60ch;
+		color: var(--text-quiet);
+		font-size: var(--type-lead);
+		line-height: var(--leading-body);
+		margin: var(--space-4) 0 var(--space-7);
+		text-wrap: pretty;
+	}
+
+	/* ── Two-column duo: commands left, trace right ── */
+	.fr__duo {
+		display: grid;
+		grid-template-columns: minmax(300px, 420px) 1fr;
+		gap: var(--space-8);
+		margin-bottom: var(--space-6);
+	}
+	.fr__colHead {
+		font-size: var(--type-tiny);
+		text-transform: uppercase;
+		letter-spacing: 0.16em;
+		color: var(--ochre);
+		margin: 0 0 var(--space-4);
+		padding-bottom: var(--space-2);
+		border-bottom: 1px solid var(--rule);
+	}
+	.fr__colHead--trace { color: var(--sage); }
+
+	/* ── Command rows ── */
+	.fr__cmds {
+		list-style: none;
+		padding: 0;
+		margin: 0;
+		display: grid;
+		gap: var(--space-5);
+	}
+	.fr__pre {
+		margin: 0 0 var(--space-2);
+		border-left-color: var(--ochre);
+	}
+	.fr__cmdNote {
+		font-family: var(--font-serif);
+		font-size: var(--type-small);
+		color: var(--text-quiet);
+		margin: 0;
+		text-wrap: pretty;
+	}
+
+	/* ── Vertical trace ── */
+	.fr__trace {
+		list-style: none;
+		padding: 0;
+		margin: 0;
+	}
+	.fr__step {
+		display: grid;
+		grid-template-columns: 32px 17px 1fr;
+		gap: 0 var(--space-4);
+	}
+	.fr__num {
+		color: var(--text-distant);
+		font-size: var(--type-tiny);
+		letter-spacing: 0.18em;
+		padding-top: 3px;
+	}
+	/* the rail — a node dot with a connecting spine to the next step */
+	.fr__rail {
+		position: relative;
+		display: block;
+	}
+	.fr__rail::before {
+		content: "";
+		position: absolute;
+		top: 5px;
+		left: 50%;
+		transform: translateX(-50%);
+		width: 9px;
+		height: 9px;
+		border-radius: 50%;
+		background: var(--ink);
+		border: 1.5px solid var(--sage);
+	}
+	.fr__rail::after {
+		content: "";
+		position: absolute;
+		top: 18px;
+		bottom: -4px;
+		left: 50%;
+		transform: translateX(-50%);
+		width: 1px;
+		background: var(--sage-deep);
+		opacity: 0.55;
+	}
+	.fr__step:last-child .fr__rail::after { display: none; }
+
+	.fr__body { padding-bottom: var(--space-5); }
+	.fr__name {
+		font-size: var(--type-small);
+		color: var(--washi);
+		letter-spacing: 0.02em;
+		margin: 0 0 var(--space-1);
+		display: flex;
+		align-items: baseline;
+		gap: var(--space-3);
+	}
+	/* hanko tick — the driver moment */
+	.fr__you {
+		font-size: var(--type-tiny);
+		color: var(--ochre);
+		letter-spacing: 0.1em;
+	}
+	.fr__loop {
+		font-size: var(--type-tiny);
+		color: var(--text-distant);
+		letter-spacing: 0.06em;
+	}
+	.fr__note {
+		font-family: var(--font-serif);
+		font-size: var(--type-small);
+		line-height: var(--leading-snug);
+		color: var(--text-quiet);
+		margin: 0;
+		max-width: 58ch;
+		text-wrap: pretty;
+	}
+
+	.fr__foot {
+		font-size: var(--type-tiny);
+		color: var(--text-distant);
+		letter-spacing: 0.04em;
+		padding: var(--space-3) 0;
+		border-top: 1px solid var(--rule);
+		border-bottom: 1px solid var(--rule);
+		max-width: 920px;
+		margin: 0;
+	}
+	.fr__foot code { color: var(--text-quiet); }
+
+	@media (max-width: 960px) {
+		.fr__duo { grid-template-columns: 1fr; gap: var(--space-7); }
+	}
+</style>

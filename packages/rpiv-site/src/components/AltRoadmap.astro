@@ -1,0 +1,174 @@
+---
+// §8 — direction. A hand-maintained mirror of the repo's roadmap.md (same
+// pattern as src/lib/workflows.ts mirroring built-in-workflows.ts): no dates,
+// no version targets. Keep in sync when roadmap.md changes.
+//
+// Layout note: shipped items render as a compact chip band, not a column —
+// everything in it was already demonstrated by the page above, and "items
+// settle as they ship" is the section's own metaphor. The room goes to the
+// live columns: what's next (featured, gold) and what's possible (quiet).
+const SHIPPED = [
+	"the skill pipeline",
+	"named subagents",
+	"built-in /wf flows",
+	"per-stage model control",
+	"workflow engine",
+	"unified loop driver",
+	"judges + verify",
+	"mid-loop resume",
+	"skill contracts",
+	"the sibling family",
+];
+
+const NEXT = [
+	"panel(): N judges + vote fold for adversarial verification",
+	"first-class fan-in / synthesize affordance",
+	"match() enum gate",
+	"automatic flow generation via agent",
+	"headless Pi / out-of-process execution",
+	"verification under affordable models: fresh-context isolation + frontier escalation",
+	"delegation strategy optimization",
+];
+
+const POSSIBLE = [
+	"telemetry public release",
+	"non-Pi host embedding",
+	"third-party skill contracts + user workflow packs",
+	"tournament bracket ranking",
+	"true parallelism with worktree isolation",
+];
+---
+
+<section id="roadmap">
+	<div class="container">
+		<p class="kicker">§ roadmap · done → next → possible</p>
+		<h2>Where this is going.</h2>
+		<p class="rm__lede">
+			No dates, no version targets. Items move down the list as they
+			ship. The direction is the promise: keep an experienced driver in the
+			loop while the work moves at LLM speed.
+		</p>
+
+		{/* shipped — settled into the product the page just showed */}
+		<div class="rm__shipped">
+			<p class="mono rm__label rm__label--shipped">shipped · the product you just scrolled</p>
+			<ul class="rm__chips" aria-label="shipped">
+				{SHIPPED.map((item) => <li class="chip rm__chip">{item}</li>)}
+			</ul>
+		</div>
+
+		<div class="rm__cols">
+			<div class="rm__col">
+				<p class="mono rm__label rm__label--next">what's next</p>
+				<ul class="rm__list rm__list--next">
+					{NEXT.map((item) => <li>{item}</li>)}
+				</ul>
+			</div>
+			<div class="rm__col">
+				<p class="mono rm__label rm__label--possible">what's possible</p>
+				<ul class="rm__list rm__list--possible">
+					{POSSIBLE.map((item) => <li>{item}</li>)}
+				</ul>
+			</div>
+		</div>
+
+		<p class="rm__foot">
+			→ the structured list lives in
+			<a href="https://github.com/juicesharp/rpiv-mono/blob/main/roadmap.md">roadmap.md</a>;
+			the <a href="https://github.com/juicesharp/rpiv-mono#roadmap">README</a> keeps the philosophy.
+		</p>
+	</div>
+</section>
+
+<style>
+	.rm__lede {
+		font-family: var(--font-serif);
+		max-width: 60ch;
+		color: var(--text-quiet);
+		font-size: var(--type-lead);
+		line-height: var(--leading-body);
+		margin: var(--space-4) 0 var(--space-7);
+		text-wrap: pretty;
+	}
+
+	.rm__label {
+		font-size: var(--type-tiny);
+		text-transform: uppercase;
+		letter-spacing: 0.16em;
+		margin: 0 0 var(--space-3);
+		padding-bottom: var(--space-2);
+		border-bottom: 1px solid var(--rule-strong);
+	}
+	.rm__label--shipped { color: var(--sage); }
+	/* gold marks the promise — same semantics as the page's other ledgers */
+	.rm__label--next { color: var(--ochre); }
+	.rm__label--possible { color: var(--text-distant); }
+
+	/* ── Shipped chip band — settled, compact, already proven above ── */
+	.rm__shipped { margin-bottom: var(--space-7); }
+	.rm__chips {
+		list-style: none;
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--space-2) var(--space-3);
+		padding: 0;
+		margin: 0;
+	}
+	.rm__chip::before {
+		content: "✓";
+		color: var(--sage);
+		margin-right: var(--space-2);
+	}
+
+	/* ── Live columns ── */
+	.rm__cols {
+		display: grid;
+		grid-template-columns: 1.2fr 1fr;
+		gap: var(--space-7);
+		margin-bottom: var(--space-6);
+		max-width: 1000px;
+	}
+	.rm__list {
+		list-style: none;
+		padding: 0;
+		margin: 0;
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-3);
+	}
+	.rm__list li {
+		font-family: var(--font-serif);
+		line-height: var(--leading-snug);
+		padding-left: var(--space-4);
+		position: relative;
+		text-wrap: pretty;
+	}
+	.rm__list li::before {
+		position: absolute;
+		left: 0;
+		font-family: var(--font-mono);
+	}
+	/* featured: the promise reads at body size, warm marker */
+	.rm__list--next li {
+		font-size: var(--type-base);
+		color: var(--text-quiet);
+	}
+	.rm__list--next li::before { content: "→"; color: var(--ochre); }
+	/* quiet: the maybe-list recedes */
+	.rm__list--possible li {
+		font-size: var(--type-small);
+		color: var(--text-distant);
+	}
+	.rm__list--possible li::before { content: "·"; color: var(--text-distant); }
+
+	.rm__foot {
+		font-family: var(--font-serif);
+		font-size: var(--type-small);
+		color: var(--text-quiet);
+		margin: 0;
+	}
+
+	@media (max-width: 960px) {
+		.rm__cols { grid-template-columns: 1fr; gap: var(--space-6); }
+	}
+</style>

@@ -1,17 +1,24 @@
 ---
-const sections = [
+interface Props {
+	/** Override the section list for landing variants. Defaults to the home
+	 *  landing's eleven sections. */
+	sections?: { id: string; label: string }[];
+}
+
+const DEFAULT_SECTIONS = [
 	{ id: "top", label: "intro" },
-	{ id: "why", label: "shift" },
-	{ id: "catalog", label: "flows" },
-	{ id: "anatomy", label: "run" },
-	{ id: "skills", label: "skills" },
-	{ id: "around", label: "around" },
-	{ id: "guidance", label: "guidance" },
-	{ id: "agents", label: "agents" },
-	{ id: "siblings", label: "siblings" },
+	{ id: "why", label: "the gap" },
 	{ id: "install", label: "install" },
+	{ id: "firstrun", label: "first run" },
+	{ id: "catalog", label: "flows" },
+	{ id: "surface", label: "surface" },
+	{ id: "siblings", label: "siblings" },
+	{ id: "models", label: "models" },
+	{ id: "roadmap", label: "roadmap" },
 	{ id: "setup", label: "setup" },
 ];
+
+const sections = Astro.props.sections ?? DEFAULT_SECTIONS;
 ---
 
 <aside class="indicator" aria-label="section indicator" data-indicator>

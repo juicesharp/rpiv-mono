@@ -1,37 +1,42 @@
 ---
+// The landing — positioning-first, aligned to the roadmap's thesis:
+// correct ≠ aligned, keep the driver in the loop — with install front-loaded
+// so a first-time visitor can start within one scroll.
+// Shape: thesis (AltHero, AltThesis) → start (Install, AltFirstRun) → depth
+// (WorkflowCatalog, AltSurface, SiblingGrid) → economics + direction
+// (AltModels, AltRoadmap) → SetupTrace.
+// The previous mechanism-first landing is archived at /classic.
 import Base from "../layouts/Base.astro";
 import Nav from "../components/Nav.astro";
 import ScrollIndicator from "../components/ScrollIndicator.astro";
-import Hero from "../components/Hero.astro";
-import WhyWorkflow from "../components/WhyWorkflow.astro";
-import WorkflowCatalog from "../components/WorkflowCatalog.astro";
-import RunAnatomy from "../components/RunAnatomy.astro";
-import StageSkills from "../components/StageSkills.astro";
-import AroundSkills from "../components/AroundSkills.astro";
-import Guidance from "../components/Guidance.astro";
-import AgentGrid from "../components/AgentGrid.astro";
-import SiblingGrid from "../components/SiblingGrid.astro";
+import AltHero from "../components/AltHero.astro";
+import AltThesis from "../components/AltThesis.astro";
 import Install from "../components/Install.astro";
+import AltFirstRun from "../components/AltFirstRun.astro";
+import WorkflowCatalog from "../components/WorkflowCatalog.astro";
+import AltSurface from "../components/AltSurface.astro";
+import SiblingGrid from "../components/SiblingGrid.astro";
+import AltModels from "../components/AltModels.astro";
+import AltRoadmap from "../components/AltRoadmap.astro";
 import SetupTrace from "../components/SetupTrace.astro";
 ---
 
 <Base
-	title="rpiv-pi · workflow runner for the Pi coding agent"
-	description="Five workflows that chain Pi skills into one command. /wf turns a task into research, a plan, an implementation, a review, and a commit, end to end."
+	title="rpiv-pi · keep the driver in the loop"
+	description="LLMs produce correct code, not aligned code. rpiv-pi is a pipeline of skills, workflows, and subagents for the Pi coding agent that keeps an experienced driver in the loop at LLM speed."
 >
 	<Nav />
 	<ScrollIndicator />
 	<main class="landing">
-		<Hero />
-		<WhyWorkflow />
-		<WorkflowCatalog />
-		<RunAnatomy />
-		<StageSkills />
-		<AroundSkills />
-		<Guidance />
-		<AgentGrid />
-		<SiblingGrid />
+		<AltHero />
+		<AltThesis />
 		<Install />
+		<AltFirstRun />
+		<WorkflowCatalog />
+		<AltSurface />
+		<SiblingGrid />
+		<AltModels />
+		<AltRoadmap />
 		<SetupTrace />
 	</main>
 </Base>

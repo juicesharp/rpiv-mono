@@ -1,0 +1,210 @@
+---
+// §1 — the gap. Correct and aligned are two different bars, and the space
+// between them is where misaligned diffs accumulate. Two-column contrast
+// (same idiom as WhyWorkflow's manual/automated columns), a cost ledger for
+// what the gap silently charges, and "the bet" — the project's stated reason
+// to exist, set as a bordered aside.
+---
+
+<section id="why">
+	<div class="container">
+		<p class="kicker">§ the gap · correct <span class="thesis__arrow">→</span> aligned</p>
+		<h2>Correct code isn't aligned code.</h2>
+		<p class="thesis__lede">
+			Output that compiles and passes tests can still be wrong for your
+			codebase. Misaligned code isn&rsquo;t zero-value. It&rsquo;s
+			negative-value: it ships, then it taxes every engineer who reads that
+			file afterward.
+		</p>
+
+		<div class="thesis__cols">
+			<div class="thesis__col">
+				<p class="mono thesis__colHead">correct</p>
+				<p class="thesis__colBody">
+					It compiles. The tests pass. The diff looks fine in PR review.
+					Every capable model produces this reliably today, at any price
+					point. This bar is no longer the hard part.
+				</p>
+			</div>
+			<div class="thesis__col">
+				<p class="mono thesis__colHead thesis__colHead--aligned">aligned</p>
+				<p class="thesis__colBody">
+					It fits the codebase&rsquo;s existing patterns. It respects
+					conventions that aren&rsquo;t written down anywhere. It makes the
+					boring choices mature systems rely on, and it stays reviewable and
+					extensible by the next person who touches it.
+				</p>
+			</div>
+		</div>
+
+		{/* the two worlds, continued — columns pair vertically with the contrast
+		    above: left = the correct-only world (without a driver), right = the
+		    aligned world (with one in the loop) */}
+		<div class="thesis-trade">
+			<div class="thesis-trade__col thesis-trade__col--cost">
+				<p class="mono thesis-trade__label">without a driver</p>
+				<ul class="thesis-trade__list">
+					<li>locally-correct, globally-misaligned diffs that pass review</li>
+					<li>near-duplicates that cost the next refactor half a day</li>
+					<li>architectural coherence eroding quietly, untraceable to any one diff</li>
+					<li class="thesis-trade__answer">alignment debt is paid later, by someone else</li>
+				</ul>
+			</div>
+			<div class="thesis-trade__col thesis-trade__col--gain">
+				<p class="mono thesis-trade__label">with the driver in the loop</p>
+				<ul class="thesis-trade__list">
+					<li>the pipeline asks the right questions at the right moments</li>
+					<li>architectural decisions surface where they actually matter</li>
+					<li>involvement is participation, not rubber-stamp approval</li>
+					<li>review loops on hard data until the blockers read zero</li>
+				</ul>
+			</div>
+		</div>
+
+		<aside class="thesis__bet">
+			<p class="mono thesis__betLabel">the bet</p>
+			<p class="thesis__betBody">
+				Models will keep getting better; that isn&rsquo;t the bet. The
+				bet is that the structural conditions for fully autonomous coding are
+				a decade-scale problem. For that whole interval, the realistic
+				operating model is an experienced driver in the loop. rpiv-pi is the
+				engine for that loop: it writes and verifies code under expert
+				supervision, at LLM speed.
+			</p>
+		</aside>
+	</div>
+</section>
+
+<style>
+	.thesis__arrow { color: var(--ochre); }
+	.thesis__lede {
+		font-family: var(--font-serif);
+		max-width: 60ch;
+		color: var(--text-quiet);
+		font-size: var(--type-lead);
+		line-height: var(--leading-body);
+		margin: var(--space-4) 0 var(--space-7);
+		text-wrap: pretty;
+	}
+
+	/* ── Two-column contrast ── */
+	.thesis__cols {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: var(--space-6);
+		max-width: 920px;
+		margin-bottom: var(--space-7);
+	}
+	.thesis__colHead {
+		font-size: var(--type-small);
+		color: var(--text-distant);
+		letter-spacing: 0.04em;
+		margin: 0 0 var(--space-2);
+		padding-bottom: var(--space-2);
+		border-bottom: 1px solid var(--rule);
+	}
+	/* the right column is the "good" column in both rows of this section
+	   (aligned above, with-the-driver below) — it carries the warm ochre
+	   accent; the correct-only world on the left stays grey. */
+	.thesis__colHead--aligned { color: var(--ochre); }
+	.thesis__colBody {
+		font-family: var(--font-serif);
+		font-size: var(--type-base);
+		line-height: var(--leading-relaxed);
+		color: var(--text-quiet);
+		margin: 0;
+		text-wrap: pretty;
+	}
+
+	/* ── Ledger — same idiom as the §why gain/cost trade ── */
+	.thesis-trade {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: var(--space-6);
+		max-width: 920px;
+		border-top: 1px solid var(--rule-strong);
+		padding-top: var(--space-5);
+		margin-bottom: var(--space-7);
+	}
+	.thesis-trade__label {
+		font-size: var(--type-tiny);
+		text-transform: uppercase;
+		letter-spacing: 0.16em;
+		margin: 0 0 var(--space-3);
+	}
+	.thesis-trade__col--gain .thesis-trade__label { color: var(--ochre); }
+	.thesis-trade__col--cost .thesis-trade__label { color: var(--text-distant); }
+	.thesis-trade__list {
+		list-style: none;
+		padding: 0;
+		margin: 0;
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-2);
+	}
+	.thesis-trade__list li {
+		font-family: var(--font-serif);
+		font-size: var(--type-small);
+		line-height: var(--leading-snug);
+		color: var(--text-quiet);
+		padding-left: var(--space-4);
+		position: relative;
+	}
+	.thesis-trade__col--gain .thesis-trade__list li::before {
+		content: "+";
+		position: absolute;
+		left: 0;
+		color: var(--ochre);
+		font-family: var(--font-mono);
+	}
+	.thesis-trade__col--cost .thesis-trade__list li::before {
+		content: "−";
+		position: absolute;
+		left: 0;
+		color: var(--text-distant);
+		font-family: var(--font-mono);
+	}
+	.thesis-trade__answer { color: var(--text-distant); font-style: italic; }
+	.thesis-trade__col--cost .thesis-trade__answer::before { content: "↳"; }
+
+	/* ── The bet — the thesis punchline, marked with the hanko square the
+	   system stamps on significant moments (ScrollIndicator seal, Install) ── */
+	.thesis__bet {
+		max-width: 920px;
+		border-left: 1px solid var(--ochre);
+		padding: var(--space-2) 0 var(--space-2) var(--space-5);
+	}
+	.thesis__betLabel {
+		display: flex;
+		align-items: center;
+		gap: var(--space-2);
+		font-size: var(--type-tiny);
+		text-transform: uppercase;
+		letter-spacing: 0.16em;
+		color: var(--ochre);
+		margin: 0 0 var(--space-2);
+	}
+	.thesis__betLabel::before {
+		content: "";
+		width: 9px;
+		height: 9px;
+		background: var(--ochre);
+		transform: rotate(8deg);
+		box-shadow:
+			inset 0 0 0 0.5px color-mix(in oklab, var(--kuro) 60%, transparent),
+			0 0 12px color-mix(in oklab, var(--ochre) 25%, transparent);
+	}
+	.thesis__betBody {
+		font-family: var(--font-serif);
+		font-size: var(--type-base);
+		line-height: var(--leading-relaxed);
+		color: var(--text-quiet);
+		margin: 0;
+		max-width: 64ch;
+		text-wrap: pretty;
+	}
+
+	@media (max-width: 720px) {
+		.thesis__cols, .thesis-trade { grid-template-columns: 1fr; gap: var(--space-5); }
+	}
+</style>

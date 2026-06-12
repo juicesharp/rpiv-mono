@@ -1,0 +1,144 @@
+---
+// §5 — the surface in numbers. One install command pulls in the whole working
+// set; every count is derived at build time from the same source its detail
+// surface renders from (src/lib/counts.ts), so a stat and the section it
+// links to can never disagree.
+import { getSurfaceCounts } from "../lib/counts";
+import { VERSION } from "../lib/version";
+
+const counts = await getSurfaceCounts();
+
+const STATS = [
+	{
+		n: counts.workflows,
+		label: "workflows",
+		note: "one /wf command each, from a brief to a reviewed commit.",
+		href: "#catalog",
+		link: "the flows",
+	},
+	{
+		n: counts.skills,
+		label: "skills",
+		note: "contract-carrying, /skill:-runnable on their own, chainable by /wf.",
+		href: "/docs/reference/skills",
+		link: "skills reference",
+	},
+	{
+		n: counts.agents,
+		label: "subagents",
+		note: "specialists dispatched in parallel under fresh context.",
+		href: "/docs/reference/agents",
+		link: "agents reference",
+	},
+	{
+		n: counts.siblings,
+		label: "siblings",
+		note: "every tool surface is its own extension; rpiv-pi registers zero tools.",
+		href: "#siblings",
+		link: "the family",
+	},
+];
+---
+
+<section id="surface">
+	<div class="container">
+		<p class="kicker">§ the surface · what one install pulls in</p>
+		<h2>Small command, deep surface.</h2>
+		<p class="surface__lede">
+			Everything below ships behind <code>pi install npm:@juicesharp/rpiv-pi</code>
+			and one <code>/rpiv-setup</code>. Every piece is documented, and every
+			piece is yours to run directly. The workflows are composition, not
+			a cage.
+		</p>
+
+		<div class="surface__grid">
+			{STATS.map((s) => (
+				<article class="card surface__stat">
+					<p class="surface__num mono">{s.n}</p>
+					<p class="surface__label mono">{s.label}</p>
+					<p class="surface__note">{s.note}</p>
+					<p class="surface__link mono"><a href={s.href}>→ {s.link}</a></p>
+				</article>
+			))}
+		</div>
+
+		<p class="surface__foot mono">
+			MIT · v{VERSION} · ships raw TypeScript · no build step, Pi loads it directly
+		</p>
+	</div>
+</section>
+
+<style>
+	.surface__lede {
+		font-family: var(--font-serif);
+		max-width: 60ch;
+		color: var(--text-quiet);
+		font-size: var(--type-lead);
+		line-height: var(--leading-body);
+		margin: var(--space-4) 0 var(--space-7);
+		text-wrap: pretty;
+	}
+
+	.surface__grid {
+		display: grid;
+		grid-template-columns: repeat(4, 1fr);
+		gap: var(--space-4);
+		margin-bottom: var(--space-6);
+	}
+	.surface__stat {
+		border-radius: var(--radius-sm);
+		display: flex;
+		flex-direction: column;
+	}
+	.surface__num {
+		font-size: var(--type-h2);
+		line-height: 1;
+		color: var(--washi);
+		margin: 0 0 var(--space-2);
+	}
+	.surface__label {
+		font-size: var(--type-tiny);
+		text-transform: uppercase;
+		letter-spacing: 0.16em;
+		color: var(--ochre);
+		margin: 0 0 var(--space-3);
+		padding-bottom: var(--space-3);
+		border-bottom: 1px solid var(--rule);
+	}
+	.surface__note {
+		font-family: var(--font-serif);
+		font-size: var(--type-small);
+		line-height: var(--leading-snug);
+		color: var(--text-quiet);
+		margin: 0 0 var(--space-4);
+		text-wrap: pretty;
+		flex-grow: 1;
+	}
+	.surface__link {
+		font-size: var(--type-tiny);
+		letter-spacing: 0.06em;
+		margin: 0;
+	}
+	.surface__link a {
+		color: var(--sage);
+		border-bottom: none;
+	}
+	.surface__link a:hover { color: var(--washi); }
+
+	.surface__foot {
+		font-size: var(--type-tiny);
+		color: var(--text-distant);
+		letter-spacing: 0.06em;
+		padding: var(--space-3) 0;
+		border-top: 1px solid var(--rule);
+		border-bottom: 1px solid var(--rule);
+		margin: 0;
+	}
+
+	@media (max-width: 960px) {
+		.surface__grid { grid-template-columns: repeat(2, 1fr); }
+	}
+	@media (max-width: 540px) {
+		.surface__grid { grid-template-columns: 1fr; }
+	}
+</style>

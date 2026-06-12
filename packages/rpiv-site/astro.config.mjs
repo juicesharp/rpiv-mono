@@ -9,5 +9,7 @@ export default defineConfig({
 		assets: "_astro",
 		inlineStylesheets: "always",
 	},
-	integrations: [sitemap()],
+	// /classic is the archived previous landing, kept for comparison — out of
+	// the sitemap (it also carries a noindex meta via Base).
+	integrations: [sitemap({ filter: (page) => !page.startsWith("https://rpiv-pi.com/classic") })],
 });

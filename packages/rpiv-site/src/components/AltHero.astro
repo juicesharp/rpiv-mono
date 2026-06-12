@@ -1,0 +1,286 @@
+---
+// Alt hero — leads with the thesis instead of the mechanism. The home hero
+// answers "what is this" (a workflow runner); this one answers "why does it
+// exist": LLMs produce correct code, not aligned code, and closing that gap
+// takes a driver. The rail keeps the landing's visual vocabulary but adds a
+// driver line above it — hanko marks at the moments the human decides,
+// because that participation is the product.
+import SumiInk from "./SumiInk.astro";
+
+const STAGES = [
+	{ name: "research", driver: "your answers" },
+	{ name: "blueprint", driver: "your checkpoints" },
+	{ name: "implement" },
+	{ name: "validate" },
+	{ name: "code-review" },
+	{ name: "commit" },
+];
+const N = STAGES.length;
+
+// Rail geometry — same proportions as the home hero's flow rail, with extra
+// headroom (y pushed down) for the driver line and its hanko drops. x0 leaves
+// room for the "your brief" head label + hanko left of the first node.
+const RAIL = { vw: 760, vh: 118, y: 74, x0: 150, x1: 716 } as const;
+const DRIVER_Y = 18;
+const nodeX = (i: number) => (N <= 1 ? RAIL.x0 : RAIL.x0 + (i * (RAIL.x1 - RAIL.x0)) / (N - 1));
+const driverStops = STAGES.map((s, i) => ({ ...s, i })).filter((s) => s.driver);
+---
+
+<section id="top" class="ahero">
+	<SumiInk variant="backdrop" />
+	<div class="container ahero__inner">
+		<p class="kicker ahero__kicker">§ rpiv-pi · keep the driver in the loop</p>
+
+		{/* Slogan spread — display stack left, deck hanging in the right
+		    whitespace, bottom-anchored to the headline's baseline. The deck
+		    carries the skim-proof category line + the thesis lede behind one
+		    hairline rule, so the slogan reads as a magazine standfirst instead
+		    of a cramped single column. */}
+		<div class="ahero__slogan">
+			<h1 class="ahero__title">
+				<span class="ahero__line ahero__line--1">correct</span>
+				<span class="ahero__line ahero__line--2">≠</span>
+				<span class="ahero__line ahero__line--3">aligned</span>
+			</h1>
+
+			<div class="ahero__deck">
+				<p class="ahero__strap mono">
+					A driver-in-the-loop pipeline for the Pi coding agent.
+					One <span class="ahero__strapWf">/wf</span> command from brief to reviewed commit.
+				</p>
+				<p class="ahero__lede">
+					LLMs produce correct code: it compiles, it passes tests. Aligned code,
+					the kind that fits your patterns and your unwritten conventions, still
+					takes a driver. rpiv-pi keeps that driver in the loop at LLM speed.
+				</p>
+			</div>
+		</div>
+
+		<figure
+			class="ahero__flow"
+			aria-label={`One /wf command drives the chain ${STAGES.map((s) => s.name).join(", ")}. Above the rail, the driver line: you write the brief, and the plan pauses at your checkpoints before any code is written.`}
+		>
+			<svg viewBox={`0 0 ${RAIL.vw} ${RAIL.vh}`} class="ahero__flowSvg" preserveAspectRatio="xMidYMid meet" role="presentation">
+				{/* ── driver line — the head label IS the first driver moment: your
+				    brief, whose hanko drops into the /wf stamp below ── */}
+				<g class="ahero__driver">
+					<text x="6" y={DRIVER_Y - 9} font-family="var(--font-mono)" font-size="8" fill="var(--washi-soft)" letter-spacing="0.06em">your brief</text>
+					<path d={`M76,${DRIVER_Y} L${RAIL.x1},${DRIVER_Y}`} stroke="var(--washi-soft)" stroke-width="0.6" opacity="0.3" stroke-dasharray="2 5" stroke-linecap="round" fill="none" />
+
+					{/* brief hanko — drops into the /wf stamp */}
+					<g>
+						<rect x="58.5" y={DRIVER_Y - 5.5} width="11" height="11" rx="1" transform={`rotate(8 64 ${DRIVER_Y})`} fill="var(--ochre)" opacity="0.92" stroke="var(--kuro)" stroke-width="0.6" />
+						<path d={`M64,${DRIVER_Y + 7} L64,${RAIL.y - 13}`} stroke="var(--ochre)" stroke-width="0.7" opacity="0.5" stroke-dasharray="1.5 3" stroke-linecap="round" fill="none" />
+						<path d={`M61,${RAIL.y - 17} L64,${RAIL.y - 12} L67,${RAIL.y - 17}`} fill="none" stroke="var(--ochre)" stroke-width="0.7" opacity="0.5" stroke-linecap="round" />
+					</g>
+
+					{/* checkpoint drops — the plan pauses for your call */}
+					{driverStops.map((s) => {
+						const x = nodeX(s.i);
+						return (
+							<g>
+								<rect x={x - 5.5} y={DRIVER_Y - 5.5} width="11" height="11" rx="1" transform={`rotate(8 ${x} ${DRIVER_Y})`} fill="var(--ochre)" opacity="0.92" stroke="var(--kuro)" stroke-width="0.6" />
+								<text x={x + 12} y={DRIVER_Y - 9} font-family="var(--font-mono)" font-size="8" fill="var(--text-distant)" letter-spacing="0.06em">{s.driver}</text>
+								<path d={`M${x},${DRIVER_Y + 7} L${x},${RAIL.y - 16}`} stroke="var(--ochre)" stroke-width="0.7" opacity="0.5" stroke-dasharray="1.5 3" stroke-linecap="round" fill="none" />
+								<path d={`M${x - 3},${RAIL.y - 20} L${x},${RAIL.y - 15} L${x + 3},${RAIL.y - 20}`} fill="none" stroke="var(--ochre)" stroke-width="0.7" opacity="0.5" stroke-linecap="round" />
+							</g>
+						);
+					})}
+				</g>
+
+				{/* ── /wf stamp — the one command that drives the rail; centred under
+				    the brief hanko so the drop lands square on it ── */}
+				<g>
+					<rect x="36" y={RAIL.y - 10} width="56" height="20" rx="2" fill="var(--ink-raised)" stroke="var(--ochre)" stroke-width="1" />
+					<rect x="36" y={RAIL.y - 10} width="56" height="20" rx="2" fill="var(--ochre)" opacity="0.16" />
+					<text x="64" y={RAIL.y + 4} text-anchor="middle" font-family="var(--font-mono)" font-size="10.5" fill="var(--washi)" letter-spacing="0.02em">/wf</text>
+					<path d={`M94,${RAIL.y} L${RAIL.x0 - 16},${RAIL.y}`} stroke="var(--ochre)" stroke-width="0.8" opacity="0.6" stroke-linecap="round" />
+					<path d={`M${RAIL.x0 - 20},${RAIL.y - 3} L${RAIL.x0 - 15},${RAIL.y} L${RAIL.x0 - 20},${RAIL.y + 3}`} fill="none" stroke="var(--ochre)" stroke-width="0.8" opacity="0.6" stroke-linecap="round" />
+				</g>
+
+				{/* ── continuous machine rail ── */}
+				<g fill="none" stroke="var(--sage-deep)" stroke-linecap="round">
+					<path d={`M${RAIL.x0},${RAIL.y} L${RAIL.x1},${RAIL.y}`} stroke-width="1" opacity="0.7" />
+					<path d={`M${RAIL.x0 + 8},${RAIL.y + 4} L${RAIL.x1 - 8},${RAIL.y + 4}`} stroke-width="0.5" opacity="0.25" />
+				</g>
+
+				{/* ochre artifact ticks — one flows into the next stage */}
+				{STAGES.slice(0, -1).map((_, i) => {
+					const mx = (nodeX(i) + nodeX(i + 1)) / 2;
+					return <circle cx={mx} cy={RAIL.y} r="2.4" fill="var(--ochre)" opacity="0.75" />;
+				})}
+
+				{/* stage nodes — same vocabulary as the home hero rail */}
+				{STAGES.map((s, i) => {
+					const x = nodeX(i);
+					return (
+						<g class="ahero__node" style={`--rail-i: ${i}`}>
+							<circle cx={x} cy={RAIL.y} r="13" fill="none" stroke="var(--sage)" stroke-width="0.7" opacity="0.4" />
+							<circle cx={x} cy={RAIL.y} r="9" fill="var(--ink)" stroke="var(--sage)" stroke-width="1.1" />
+							<circle cx={x} cy={RAIL.y} r="9" fill="var(--sage)" opacity="0.16" />
+							<text x={x} y={RAIL.y + 30} text-anchor="middle" font-family="var(--font-mono)" font-size="10.5" fill="var(--text-quiet)" letter-spacing="0.02em">{s.name}</text>
+						</g>
+					);
+				})}
+			</svg>
+		</figure>
+
+		<p class="ahero__cta">
+			<a href="#install" class="ahero__btn mono">start in three steps&nbsp;↓</a>
+			<span class="ahero__cmd mono">pi install npm:@juicesharp/rpiv-pi</span>
+		</p>
+	</div>
+</section>
+
+<style>
+	.ahero {
+		min-height: 92dvh;
+		display: flex;
+		align-items: center;
+		padding: var(--space-8) 0 var(--space-8);
+		position: relative;
+		overflow: hidden;
+	}
+	/* Confine the SumiInk backdrop to the empty upper-right quadrant — at full
+	   bleed its brush arc crosses the driver rail and reads as a stray line
+	   through the diagram. Up here it backs the headline's negative space. */
+	.ahero :global(.sumi--backdrop) {
+		inset: -12% -8% auto auto;
+		width: 58%;
+		height: 64%;
+	}
+	.ahero__inner { position: relative; z-index: 1; }
+
+	/* ── Slogan spread: display stack | deck ──
+	   The deck bottom-anchors to the headline so it reads after the eye's
+	   sweep down the stack, and the air above it belongs to the headline. */
+	.ahero__slogan {
+		display: grid;
+		grid-template-columns: auto 1fr;
+		column-gap: var(--space-8);
+		align-items: end;
+		margin-bottom: var(--space-7);
+	}
+	.ahero__title {
+		font-size: var(--type-h1);
+		line-height: 0.95;
+		margin-bottom: 0;
+	}
+	.ahero__deck {
+		max-width: 46ch;
+		border-left: 1px solid var(--rule-strong);
+		padding-left: var(--space-6);
+		/* optical: clear the headline's descender line */
+		padding-bottom: var(--space-2);
+	}
+	.ahero__line { display: block; }
+	/* the inequality is the argument — the single chromatic event in the title */
+	.ahero__line--2 { color: var(--ochre); }
+
+	/* ── Page-load stagger — same orchestration as the home hero ── */
+	@keyframes ahero-rise {
+		from { opacity: 0; transform: translateY(8px); }
+		to   { opacity: 1; transform: translateY(0);   }
+	}
+	.ahero__kicker,
+	.ahero__line,
+	.ahero__deck,
+	.ahero__node,
+	.ahero__driver,
+	.ahero__cta {
+		opacity: 0;
+		animation: ahero-rise var(--dur-ink) var(--ease-ink) forwards;
+	}
+	.ahero__kicker  { animation-delay:   0ms; }
+	.ahero__line--1 { animation-delay: 120ms; }
+	.ahero__line--2 { animation-delay: 200ms; }
+	.ahero__line--3 { animation-delay: 280ms; }
+	.ahero__deck    { animation-delay: 460ms; }
+	.ahero__node    { animation-delay: calc(680ms + var(--rail-i, 0) * 60ms); }
+	.ahero__driver  { animation-delay: 1100ms; }
+	.ahero__cta     { animation-delay: 1240ms; }
+
+	@media (prefers-reduced-motion: reduce) {
+		.ahero__kicker,
+		.ahero__line,
+		.ahero__deck,
+		.ahero__node,
+		.ahero__driver,
+		.ahero__cta {
+			opacity: 1;
+			animation: none;
+		}
+	}
+
+	.ahero__strap {
+		font-size: var(--type-kicker);
+		letter-spacing: 0.14em;
+		text-transform: uppercase;
+		color: var(--washi-soft);
+		line-height: 1.8;
+		margin: 0 0 var(--space-4);
+		/* wraps to the deck measure with an even rag — exempt from the global
+		   64ch paragraph cap */
+		max-width: none;
+		text-wrap: balance;
+	}
+	.ahero__strapWf { color: var(--ochre); }
+
+	.ahero__lede {
+		font-family: var(--font-serif);
+		color: var(--text-quiet);
+		font-size: var(--type-lead);
+		line-height: var(--leading-body);
+		margin: 0;
+	}
+
+	.ahero__flow {
+		margin: 0 0 var(--space-6);
+		/* definite width drives the shrink-to-fit column — see Hero.astro */
+		width: min(900px, 92vw);
+	}
+	.ahero__flowSvg { width: 100%; height: auto; display: block; overflow: visible; }
+
+	.ahero__cta {
+		font-family: var(--font-mono);
+		font-size: var(--type-small);
+		margin: 0;
+		display: flex;
+		align-items: center;
+		gap: var(--space-5);
+		flex-wrap: wrap;
+	}
+	/* CTA chip — echoes the nav install chip; the page's one action button */
+	.ahero__btn {
+		border: 1px solid var(--ochre);
+		border-bottom: 1px solid var(--ochre);
+		border-radius: var(--radius-sm);
+		padding: var(--space-2) var(--space-4);
+		color: var(--washi);
+		letter-spacing: 0.08em;
+		transition:
+			color var(--dur-ink) var(--ease-ink),
+			background var(--dur-ink) var(--ease-ink);
+	}
+	.ahero__btn:hover {
+		color: var(--ink);
+		background: var(--ochre);
+	}
+	.ahero__cmd {
+		font-size: var(--type-tiny);
+		color: var(--text-distant);
+		letter-spacing: 0.02em;
+	}
+	@media (max-width: 960px) {
+		/* collapse the spread — the deck keeps its standfirst rule below the stack */
+		.ahero__slogan {
+			grid-template-columns: 1fr;
+			row-gap: var(--space-6);
+			align-items: start;
+		}
+		.ahero__deck { padding-bottom: 0; }
+	}
+	@media (max-width: 720px) {
+		.ahero { min-height: auto; padding: var(--space-8) 0 var(--space-7); }
+	}
+</style>
