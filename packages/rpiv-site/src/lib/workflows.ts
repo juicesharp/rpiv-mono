@@ -1,5 +1,5 @@
 /**
- * The five workflows rpiv-pi registers into rpiv-workflow's `built-in` layer
+ * The six workflows rpiv-pi registers into rpiv-workflow's `built-in` layer
  * (see packages/rpiv-pi/extensions/rpiv-core/built-in-workflows.ts). This is a
  * hand-maintained presentation mirror: the Hero renders a curated stage *spine*
  * per workflow, not the full edge graph (that's the §anatomy section's job).
@@ -133,9 +133,19 @@ const WORKFLOWS: readonly WorkflowEntry[] = [
 		loop: { from: 4, to: 1, label: "↺ until clean" },
 		group: "diff",
 	},
+	{
+		name: "pr-triage",
+		when: "An incoming PR. Decide if it earns a review: read-only, halts on a security BLOCK.",
+		arg: "#482",
+		stageCount: 2,
+		// security-gate is a free script stage (no LLM): it reads the triage
+		// skill's security_flag and halts the run before any checkout on BLOCK.
+		stages: [{ name: "pr-triage" }, { name: "security-gate" }],
+		group: "diff",
+	},
 ];
 
-/** All five built-in workflows, showcase entry first-class via `.showcase`. */
+/** All six built-in workflows, showcase entry first-class via `.showcase`. */
 export async function getWorkflows(): Promise<WorkflowEntry[]> {
 	return [...WORKFLOWS];
 }

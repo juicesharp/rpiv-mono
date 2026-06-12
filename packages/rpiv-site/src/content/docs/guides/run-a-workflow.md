@@ -1,6 +1,6 @@
 ---
 title: "Run a workflow"
-description: "Hand the skill chain to /wf. The five bundled workflows, when to use each, and when hand-driving still wins."
+description: "Hand the skill chain to /wf. The six bundled workflows, when to use each, and when hand-driving still wins."
 section: "guides"
 order: 5
 ---
@@ -24,9 +24,9 @@ Preview first. The graph view shows every stage, its skill, the edges out (linea
 
 Resume last. `@<run-id>` is the resume sigil — pass the id of a run that failed or was cut off and the runner reads its JSONL trail back, rebuilds the accumulated state, and re-enters at the first stage that never finished. The id is the `<run-id>` slug in the run's filename (`.rpiv/workflows/runs/<run-id>.jsonl`), also surfaced as `runId` on the rows `listRuns` returns.
 
-## The five bundled workflows
+## The six bundled workflows
 
-`rpiv-pi` ships five workflows. Each maps to a posture from [Pick your path](/docs/guides/pick-a-path), not 1:1, but close enough to pick by name:
+`rpiv-pi` ships six workflows. Each maps to a posture from [Pick your path](/docs/guides/pick-a-path), not 1:1, but close enough to pick by name:
 
 ### `/wf ship <input>`
 
@@ -47,6 +47,10 @@ Examine an existing diff for approval, optionally repair it. `code-review → (b
 ### `/wf polish <input>`
 
 Architecture-review-driven polish for a review too large to plan in one pass. `architecture-review → blueprint (one pass per review phase) → implement → validate → code-review → (blueprint loop) → commit`. The distinguishing move is the `blueprint` stage's `iterate` — the dual of the `fanout` the other chains run on `implement`. Where `fanout` computes every unit up front and runs them blind to one another, `iterate` runs `blueprint` as a pull-loop — once per `### Phase N — <name>` heading the architecture review declares, each pass handed the plans the earlier passes already wrote so it builds on them instead of duplicating. (Both run sequentially under Pi's single-active-session model; the difference is that `iterate`'s units see each other's output and `fanout`'s don't.) `implement` then fans out over the `## Phase N:` headings of every plan in that latest blueprint pass, and `validate` is handed all of them in one session. The review loop routes on the same `{ blockers_count: integer }` schema as `build`, but the backward edge returns to `blueprint` — a corrective pass re-plans every review phase, folding the latest review's blockers in — under the same `maxBackwardJumps` bound. Reach for it when an architecture review has surfaced dependency-ordered phases that have to be planned in sequence, each on top of the last, rather than enumerated in a single plan.
+
+### `/wf pr-triage <pr>`
+
+Read-only triage of an incoming GitHub PR, before any review effort is spent. `pr-triage → security-gate → stop`. The triage skill fetches the PR thread, assesses the diff against the repo's own standards, writes a triage artifact, and recommends a disposition (Review / Request changes / Hold / Decline) plus a security tier (0 SAFE / 1 REVIEW / 2 BLOCK). The distinguishing move is the `security-gate` — a script stage, no LLM, no session, so the gate is free — that reads the contract-emitted `security_flag` and halts the run before any checkout when it reads BLOCK. Nothing in the chain mutates the working tree; when the disposition says the PR earns a full pass, follow up with `/wf vet <branch>`.
 
 ## What `/wf` adds over hand-driving
 
@@ -121,7 +125,7 @@ Session policy isn't the only per-stage knob. Which model a stage runs and how h
 
 ## When hand-driving still wins
 
-Pick the runner when the shape of the work matches one of the five bundled chains and you've walked that chain enough times to trust it. Otherwise stay in the loop:
+Pick the runner when the shape of the work matches one of the six bundled chains and you've walked that chain enough times to trust it. Otherwise stay in the loop:
 
 - **First pass on an unfamiliar codebase.** The artifact-by-artifact pause is where you learn what the model is doing. The runner collapses that into one command — useful later, not now.
 - **Exploratory work where you'll pivot mid-chain.** If you'll likely abandon `blueprint`'s output to re-run `discover` with a different framing, the runner's straight-through execution costs you tokens you didn't need to spend.
@@ -129,7 +133,7 @@ Pick the runner when the shape of the work matches one of the five bundled chain
 
 ## Author your own workflow
 
-The five bundled workflows are skill-agnostic in shape — the runner doesn't know `research` or `commit` ship from `rpiv-pi`. Drop a TypeScript file under `.rpiv/workflows/config.ts` in your project (or `~/.config/rpiv-workflow/config.ts` for a user-level default) and chain your own skills:
+The six bundled workflows are skill-agnostic in shape — the runner doesn't know `research` or `commit` ship from `rpiv-pi`. Drop a TypeScript file under `.rpiv/workflows/config.ts` in your project (or `~/.config/rpiv-workflow/config.ts` for a user-level default) and chain your own skills:
 
 ```ts
 import {

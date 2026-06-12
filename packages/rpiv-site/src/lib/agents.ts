@@ -16,13 +16,12 @@ export type AgentEntry = {
 
 export type CapabilityTier = "locator" | "analyzer" | "external" | "specialist";
 
-/** The 13 named agents that ship as built docs pages. Exported so
+/** The 12 named agents that ship as built docs pages. Exported so
  *  `getStaticPaths` (agents/[slug].astro) can filter `agentSpecs` against it,
  *  keeping `artifact-code-reviewer` / `artifact-coverage-reviewer` / `slice-verifier` invisible per FRD Non-Goals. */
 export const TIER_BY_NAME: Record<string, CapabilityTier> = {
 	"codebase-locator": "locator",
 	"artifacts-locator": "locator",
-	"test-case-locator": "locator",
 	"integration-scanner": "locator",
 	"codebase-analyzer": "analyzer",
 	"codebase-pattern-finder": "analyzer",
@@ -43,7 +42,6 @@ const FULL_DESCRIPTION_AGENTS = new Set([
 	"precedent-locator",
 	"codebase-locator",
 	"integration-scanner",
-	"test-case-locator",
 ]);
 
 /** Fallback derivation when no visitor tagline is authored yet. Trim jokey multi-sentence to first sentence. */

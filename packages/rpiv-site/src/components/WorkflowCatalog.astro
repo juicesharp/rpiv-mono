@@ -1,5 +1,5 @@
 ---
-// §2 — the catalog. The reader chooses a flow here. Five workflows grouped by
+// §2 — the catalog. The reader chooses a flow here. Six workflows grouped by
 // entry condition (start from a brief vs start from a diff) and ordered along a
 // fast→deep spectrum. Each card carries a mini chain rail, the stage sequence,
 // derived trait badges, and the true stage count.
@@ -15,6 +15,7 @@ function traits(w: WorkflowEntry): string[] {
 	if (w.stages.some((s) => s.name === "research")) out.push("research-backed");
 	if (w.stages.some((s) => s.name === "design")) out.push("design-led");
 	if (w.stages.some((s) => s.name === "architecture-review")) out.push("architecture review");
+	if (w.stages.some((s) => s.name === "security-gate")) out.push("security gate");
 	if (w.stages.some((s) => s.fanout)) out.push("phase fanout");
 	if (w.loop) out.push("review loop");
 	return out;
@@ -26,14 +27,14 @@ const dotX = (i: number, n: number) => (n <= 1 ? MR.x0 : MR.x0 + (i * (MR.x1 - M
 
 const GROUPS = [
 	{ key: "fresh", label: "Starting fresh", hint: "from a one-line brief", items: fresh },
-	{ key: "diff", label: "You already have a diff", hint: "yours or a teammate's", items: diff },
+	{ key: "diff", label: "You already have a diff", hint: "yours, a teammate's, or an incoming PR", items: diff },
 ] as const;
 ---
 
 <section id="catalog">
 	<div class="container">
-		<p class="kicker cat__kicker">§ the five flows · pick one</p>
-		<h2 class="cat__title">Five ways to ship.</h2>
+		<p class="kicker cat__kicker">§ the six flows · pick one</p>
+		<h2 class="cat__title">Six ways to ship.</h2>
 		<p class="cat__lede">
 			Two questions choose your flow: how big is the change, and do you already
 			have a diff? They run shortest to deepest, left to right.

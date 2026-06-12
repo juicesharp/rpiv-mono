@@ -4,6 +4,9 @@ import AgentCard from "./AgentCard.astro";
 import SumiInk from "./SumiInk.astro";
 
 const groups = await getAgentsByTier();
+// Derived, not hardcoded — TIER_BY_NAME and the on-disk specs both move.
+const agentCount = groups.reduce((n, g) => n + g.agents.length, 0);
+const tierCount = groups.filter((g) => g.agents.length > 0).length;
 
 const TIER_META: Record<CapabilityTier, { label: string; note: string; cap: string }> = {
 	locator:    { label: "Locators",                note: "where. No file content access.",                                       cap: "find" },
@@ -28,7 +31,7 @@ function sharedTools(agents: AgentEntry[]): string[] {
 
 <section id="agents">
 	<div class="container">
-		<p class="kicker">§ subagents · 13 across 4 tiers</p>
+		<p class="kicker">§ subagents · {agentCount} across {tierCount} tiers</p>
 		<h2>Specialists, not generalists.</h2>
 		<p class="agents__lede">
 			Skills do orchestration. Agents do one narrow thing. Each is isolated,
