@@ -1,5 +1,5 @@
 ---
-import { SECTION_LABELS, type DocEntry, type DocSection } from "../lib/docs";
+import { docPath, SECTION_LABELS, type DocEntry, type DocSection } from "../lib/docs";
 
 interface Props {
 	sections: Array<{ section: DocSection; entries: DocEntry[] }>;
@@ -10,7 +10,7 @@ const { sections, currentPath } = Astro.props;
 ---
 
 <nav class="docs-nav" aria-label="Documentation navigation">
-	<a href="/docs" class:list={["docs-nav__home mono", currentPath === "/docs" && "is-active"]}>
+	<a href="/docs" class="docs-nav__home mono">
 		docs
 	</a>
 
@@ -22,8 +22,8 @@ const { sections, currentPath } = Astro.props;
 				<div class="docs-nav__links">
 					{entries.map((entry) => (
 						<a
-							href={`/docs/${entry.id}`}
-							class:list={["docs-nav__link mono", currentPath === `/docs/${entry.id}` && "is-active"]}
+							href={docPath(entry)}
+							class:list={["docs-nav__link mono", currentPath === docPath(entry) && "is-active"]}
 						>
 							{entry.data.title}
 						</a>

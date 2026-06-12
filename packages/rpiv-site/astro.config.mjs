@@ -5,6 +5,11 @@ export default defineConfig({
 	site: "https://rpiv-pi.com",
 	output: "static",
 	trailingSlash: "ignore",
+	// The install walkthrough moved from /docs/getting-started to /docs itself
+	// (the docs root renders the article; the old hub page is gone).
+	redirects: {
+		"/docs/getting-started": "/docs",
+	},
 	build: {
 		assets: "_astro",
 		inlineStylesheets: "always",

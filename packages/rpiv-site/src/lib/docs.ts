@@ -13,6 +13,14 @@ export const SECTION_LABELS = {
 	reference: "Reference",
 } satisfies Record<DocSection, string>;
 
+/** The entry that renders at /docs itself — the docs root is the install
+ *  walkthrough, not a hub page. Every other entry lives at /docs/<id>. */
+export const DOCS_ROOT_ID = "getting-started";
+
+export function docPath(entry: DocEntry): string {
+	return entry.id === DOCS_ROOT_ID ? "/docs" : `/docs/${entry.id}`;
+}
+
 export async function getPublishedDocs(): Promise<DocEntry[]> {
 	const docs = await getCollection("docs", ({ data }) => !data.draft);
 	return docs.sort((a, b) => {
