@@ -13,6 +13,9 @@ The pipeline needs most of them. **rpiv-args** expands shell-style `$1` and `$AR
 
 ## Roadmap
 
+> [!NOTE]
+> For the structured, directional view — what's done, what's next, and what's possible — see the companion [**roadmap.md**](./roadmap.md). This section keeps the philosophy.
+
 The realization shaping AI-assisted development right now is that LLMs produce correct code, not aligned code. The output compiles and passes tests, but it isn't enterprise-grade in the way human engineers produce: fitting the codebase's existing patterns, respecting conventions that aren't written down anywhere, making the boring choices mature systems rely on, staying reviewable and extensible by the next person who touches it. Closing that gap takes a driver: an experienced engineer who carries the context the model can't have, who frames the task correctly upfront, who steers architecture, who pushes back when output drifts. Without that active driver, the codebase fills with locally-correct, globally-misaligned diffs that look fine in PR review and erode the team's confidence over time.
 
 Misaligned code isn't zero-value, it's negative-value: it compiles, it ships, then it taxes every engineer who reads that file afterward and costs the next refactor a half-day of reasoning about near-duplicates that shouldn't exist. Worse, it quietly subtracts from the architecture's coherence in a way no PR review catches. Misaligned-diff throughput is alignment-debt throughput. The cost of a driver-in-the-loop pipeline is latency, paid up front and visible on a dashboard; the cost of skipping it is alignment debt, paid later, by someone else, and rarely traced back to the diff that caused it.
