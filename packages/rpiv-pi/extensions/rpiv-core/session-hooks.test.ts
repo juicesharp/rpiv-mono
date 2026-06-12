@@ -177,7 +177,7 @@ describe("session_start hook — migration", () => {
 
 	it.skipIf(process.platform === "win32")("never crashes session_start even when migration step fails", async () => {
 		// ESM module namespaces are not configurable under this Vitest config
-		// (see agents.test.ts Q7), so induce the failure at the filesystem layer:
+		// (see agents.test.ts), so induce the failure at the filesystem layer:
 		// chmod 0o000 on thoughts/shared makes the inner readdirSync throw EACCES,
 		// hitting the migration's catch block.
 		const sharedDir = join(projectDir, "thoughts", "shared");
@@ -269,7 +269,7 @@ describe("session_start hook — notifications", () => {
 		expect(ctx.ui.notify).not.toHaveBeenCalled();
 	});
 
-	it("I3: emits a 'Synced bundled agent(s)' info combining updated + removed", async () => {
+	it("emits a 'Synced bundled agent(s)' info combining updated + removed", async () => {
 		vi.mocked(syncBundledAgents).mockReturnValueOnce({
 			...emptySync,
 			updated: ["a.md", "b.md"],
@@ -347,7 +347,7 @@ describe("session_start hook — notifications", () => {
 		expect(warnCall?.[0]).toContain("1 error");
 	});
 
-	it("I3: emits a 'sync errors' warning when result.errors > 0", async () => {
+	it("emits a 'sync errors' warning when result.errors > 0", async () => {
 		vi.mocked(syncBundledAgents).mockReturnValueOnce({
 			...emptySync,
 			errors: [{ op: SYNC_OP.MANIFEST_WRITE, message: "EACCES" }],
@@ -459,7 +459,6 @@ describe("G0: session_start → real syncBundledAgents → notifyAgentSyncDrift"
 		const agentsDir = join(homedir(), ".pi", "agent", "agents");
 		expect(existsSync(agentsDir)).toBe(true);
 		expect(existsSync(join(agentsDir, ".rpiv-managed.json"))).toBe(true);
-		expect(existsSync(join(agentsDir, ".rpiv-managed.v2"))).toBe(true);
 
 		const addedCalls = (ctx.ui.notify as ReturnType<typeof vi.fn>).mock.calls.filter(
 			(c) => typeof c[0] === "string" && /Copied \d+ rpiv-pi agent/.test(c[0]),

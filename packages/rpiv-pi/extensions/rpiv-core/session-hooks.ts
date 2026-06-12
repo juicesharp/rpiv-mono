@@ -248,8 +248,8 @@ function notifyAgentSyncDrift(ui: UI, result: SyncResult): void {
 	if (result.added.length > 0) {
 		ui.notify(msgAgentsAdded(result.added.length), "info");
 	}
-	// Self-healing events on session_start: legacy-migration overwrites + smart-gate
-	// auto-removes. Surface these explicitly so the user knows local files were touched.
+	// Self-healing events on session_start: smart-gate auto-updates and auto-removes.
+	// Surface these explicitly so the user knows local files were touched.
 	const healed: string[] = [];
 	if (result.updated.length > 0) healed.push(`${result.updated.length} updated`);
 	if (result.removed.length > 0) healed.push(`${result.removed.length} removed`);

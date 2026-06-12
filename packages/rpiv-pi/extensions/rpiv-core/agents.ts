@@ -141,7 +141,7 @@ export function summarizeCleanupSkips(skipped: CleanupSkip[]): string {
 }
 
 // ---------------------------------------------------------------------------
-// Path-traversal allowlist (I2 — hardens the manifest reader boundary)
+// Path-traversal allowlist (hardens the manifest reader boundary)
 // ---------------------------------------------------------------------------
 
 /**
@@ -183,50 +183,17 @@ function safeJoin(targetDir: string, name: string): string | null {
 // ---------------------------------------------------------------------------
 
 const MANIFEST_FILE = ".rpiv-managed.json";
-/**
- * V2-active sentinel: empty sidecar file written the first time syncBundledAgents
- * commits a v2-shaped manifest. Decouples "v2 active" from manifest contents so
- * JSON corruption, partial writes, or empty-hash collapse cannot re-arm the
- * legacy-migration "package wins" branch.
- */
-const V2_MARKER_FILE = ".rpiv-managed.v2";
 
-/** Filename → sha256 hex of the content we last installed. Empty string = legacy / unknown. */
+/** Filename → sha256 hex of the content we last installed. Empty string = unknown. */
 type Manifest = Record<string, string>;
-
-/**
- * `hasV2Data` derives from this marker, NOT from manifest content. The marker
- * is created exactly once per project — on the first successful writeManifest
- * after migration — and survives JSON corruption, partial writes, and
- * empty-hash collapse. This makes the legacy-migration window deterministically
- * one-shot per project.
- */
-function hasV2Marker(targetDir: string): boolean {
-	return existsSync(join(targetDir, V2_MARKER_FILE));
-}
-
-/**
- * Commit the V2 sentinel marker. Fail-soft: a write failure leaves the marker
- * absent, so the next run will retry. Worst case the legacy-migration branch
- * re-arms exactly once more.
- */
-function writeV2Marker(targetDir: string): void {
-	try {
-		writeFileSync(join(targetDir, V2_MARKER_FILE), "", "utf-8");
-	} catch {
-		// non-fatal — see comment above.
-	}
-}
 
 function sha256(buf: Buffer | string): string {
 	return createHash("sha256").update(buf).digest("hex");
 }
 
 /**
- * Read the managed-file manifest from the target directory.
- * Supports both v1 (string[]) and v2 (Record<string,string>) formats. v1 entries
- * migrate as `{name: ""}` — the empty hash marks them as unknown, forcing the
- * manual gate until a `/rpiv-update-agents` run baselines the real hash.
+ * Read the managed-file manifest (`Record<filename, sha256>`) from the target
+ * directory. Any other shape (missing, corrupt JSON, non-object) reads as `{}`.
  *
  * Hardened against path-traversal: keys failing `isManagedAgentName` are dropped
  * silently. A subsequent `writeManifest` rewrites the on-disk manifest without
@@ -240,11 +207,6 @@ function readManifest(targetDir: string): Manifest {
 	try {
 		const raw = readFileSync(manifestPath, "utf-8");
 		const parsed = JSON.parse(raw);
-		if (Array.isArray(parsed)) {
-			const out: Manifest = {};
-			for (const e of parsed) if (typeof e === "string" && isManagedAgentName(e)) out[e] = "";
-			return out;
-		}
 		if (isPlainObject(parsed)) {
 			const out: Manifest = {};
 			for (const [k, v] of Object.entries(parsed)) {
@@ -259,7 +221,7 @@ function readManifest(targetDir: string): Manifest {
 }
 
 /**
- * Write the managed-file manifest to the target directory (v2 format).
+ * Write the managed-file manifest to the target directory.
  * Pushes a `{ op: "manifest-write" }` SyncError on failure so consumers
  * (notifyAgentSyncDrift, /rpiv-update-agents) can surface it instead of
  * silently swallowing permission / disk-full errors.
@@ -299,16 +261,13 @@ function writeManifest(targetDir: string, manifest: Manifest, result: SyncResult
 // ---------------------------------------------------------------------------
 
 /**
- * Unified safety gate for destructive operations (update + remove).
- * Returns true when the operation is safe to auto-apply without user consent:
- *   - Smart gate: recorded hash matches destination (user hasn't edited)
- *   - Legacy gate: no v2 marker and no recorded hash (pre-migration)
+ * Unified safety gate for destructive operations (update + remove): safe to
+ * auto-apply only when the recorded hash matches the destination (we installed
+ * those bytes and the user hasn't edited them). No recorded hash → gated.
  */
-export function isSafeDestructiveOp(opts: { hasV2Data: boolean; knownHash: string; destHash: string }): boolean {
-	const { hasV2Data, knownHash, destHash } = opts;
-	const safeSmart = knownHash !== "" && destHash === knownHash;
-	const safeLegacy = !hasV2Data && knownHash === "";
-	return safeSmart || safeLegacy;
+export function isSafeDestructiveOp(opts: { knownHash: string; destHash: string }): boolean {
+	const { knownHash, destHash } = opts;
+	return knownHash !== "" && destHash === knownHash;
 }
 
 // ---------------------------------------------------------------------------
@@ -410,7 +369,6 @@ function processSourceEntries(
 	sourceEntries: string[],
 	targetDir: string,
 	manifest: Manifest,
-	hasV2Data: boolean,
 	apply: boolean,
 	result: SyncResult,
 ): Manifest {
@@ -473,7 +431,7 @@ function processSourceEntries(
 			continue;
 		}
 
-		if (apply || isSafeDestructiveOp({ hasV2Data, knownHash, destHash })) {
+		if (apply || isSafeDestructiveOp({ knownHash, destHash })) {
 			try {
 				writeFileSync(dest, injected, "utf-8");
 				result.updated.push(entry);
@@ -499,7 +457,6 @@ function classifyStaleEntries(
 	manifest: Manifest,
 	sourceNames: Set<string>,
 	targetDir: string,
-	hasV2Data: boolean,
 	apply: boolean,
 	newManifest: Manifest,
 	result: SyncResult,
@@ -516,7 +473,7 @@ function classifyStaleEntries(
 			continue;
 		}
 		if (!existsSync(destPath)) {
-			// Vanished tracked file: tidy from manifest AND surface as removed (Q5).
+			// Vanished tracked file: tidy from manifest AND surface as removed.
 			result.removed.push(name);
 			continue;
 		}
@@ -531,7 +488,7 @@ function classifyStaleEntries(
 		}
 		const destHash = sha256(destContent);
 
-		if (apply || isSafeDestructiveOp({ hasV2Data, knownHash, destHash })) {
+		if (apply || isSafeDestructiveOp({ knownHash, destHash })) {
 			toUnlink.push({ name, destPath });
 		} else {
 			result.pendingRemove.push(name);
@@ -580,14 +537,9 @@ function commitStaleUnlinks(
  *   - Existing files, dest === src → unchanged, hash recorded.
  *   - Existing files, dest ≠ src:
  *     - dest === recorded hash → auto-update (smart gate).
- *     - V2 marker absent (legacy v1, missing, or never-installed) → auto-update;
- *       package wins. Triggers exactly while transitioning to v2; the marker
- *       file (.rpiv-managed.v2) is written once committed and never re-fires
- *       for this installation, surviving JSON corruption / partial writes / empty-
- *       hash collapse.
- *     - otherwise (V2 marker present, dest differs from recorded hash) →
- *       pendingUpdate (gated; respects user edits).
- *   - Stale managed files: same three-way decision applied to removal.
+ *     - otherwise (no recorded hash, or dest differs from it) → pendingUpdate
+ *       (gated; respects user edits).
+ *   - Stale managed files: same decision applied to removal.
  *
  * apply=true (/rpiv-update-agents): force adds/updates/removes regardless of
  * recorded hash (manual override; user-edited files are overwritten).
@@ -622,19 +574,15 @@ export function syncBundledAgents(apply: boolean): SyncResult {
 
 	const sourceNames = new Set(sourceEntries);
 	const manifest = readManifest(targetDir);
-	const hasV2Data = hasV2Marker(targetDir);
 
 	// 2. Process each source file
-	const newManifest = processSourceEntries(sourceEntries, targetDir, manifest, hasV2Data, apply, result);
+	const newManifest = processSourceEntries(sourceEntries, targetDir, manifest, apply, result);
 
 	// 3. Stale-removal: Pass A (classify) → Pass B (write manifest) → Pass C (commit unlinks).
-	const toUnlink = classifyStaleEntries(manifest, sourceNames, targetDir, hasV2Data, apply, newManifest, result);
+	const toUnlink = classifyStaleEntries(manifest, sourceNames, targetDir, apply, newManifest, result);
 
 	// Pass B — persist manifest before destructive ops.
 	writeManifest(targetDir, newManifest, result);
-	if (!hasV2Data && !result.errors.some((e) => e.op === SYNC_OP.MANIFEST_WRITE)) {
-		writeV2Marker(targetDir);
-	}
 
 	// Pass C — commit unlinks after the manifest is durable.
 	commitStaleUnlinks(toUnlink, manifest, newManifest, targetDir, result);
@@ -717,9 +665,8 @@ export function cleanupPerCwdAgents(cwd: string): CleanupResult {
 	try {
 		const allFiles = readdirSync(perCwdDir);
 		const managedNames = new Set(Object.keys(manifest));
-		const managedMetadata = new Set([MANIFEST_FILE, V2_MARKER_FILE]);
 		for (const f of allFiles) {
-			if (!managedNames.has(f) && !managedMetadata.has(f)) {
+			if (!managedNames.has(f) && f !== MANIFEST_FILE) {
 				// Non-managed file present (user custom agent or other content)
 				result.skipped.push({ dir: perCwdDir, reason: CLEANUP_SKIP_REASON.CUSTOM_FILES });
 				return result;
