@@ -11,6 +11,8 @@ This guide walks **the mid-size feature path** on a single example: **adding a p
 
 > **Reset between every step.** Run `/new` (or your harness's equivalent) before each `/skill:*` invocation below. The chain hands off through markdown files in `.rpiv/artifacts/`, not the chat transcript. See [Reset between skills](/docs/guides/reset-between-skills) for why.
 
+> **A note on filenames.** The artifact paths below are shown as `…/password-reset.md` for readability. On disk every skill timestamp-prefixes its output — the real file is `<YYYY-MM-DD_HH-MM-SS>_password-reset.md` — so multiple runs on the same topic never clobber each other.
+
 ## 01 · Discover *(optional)*
 
 Start with a vague intent. No code is read yet.
@@ -77,6 +79,8 @@ An independent re-check.
 
 `/skill:validate` re-reads the plan and re-runs the success criteria against the working tree as it stands now. It produces a pass/fail row per criterion with drift notes for anything `/skill:implement` finished but didn't quite finish. The second pair of eyes the chain needed but never got.
 
+**Output**: a validation report at `.rpiv/artifacts/validation/password-reset.md`, with a `verdict: pass | fail` in its frontmatter.
+
 ## 06 · Code-review
 
 A multi-lens review over the whole diff.
@@ -85,7 +89,7 @@ A multi-lens review over the whole diff.
 /skill:code-review
 ```
 
-`/skill:code-review` runs parallel specialist agents (quality, security, dependencies, peer-comparison) and writes a review document. It's the most token-hungry skill in the pipeline, but it does A+ work for the cost. You can also drop it in anywhere ad-hoc, not just here.
+`/skill:code-review` runs parallel specialist agents across its Quality, Security, and Dependencies lenses (plus peer-mirror, precedent, and CVE checks where they apply) and writes a review document. It's the most token-hungry skill in the pipeline, but it does A+ work for the cost. You can also drop it in anywhere ad-hoc, not just here.
 
 **Output**: a review document at `.rpiv/artifacts/reviews/<slug>.md`.
 

@@ -19,7 +19,7 @@ The chain proper starts at `/skill:research`. How you get there depends on what 
 |---|---|
 | A spec, ticket, or sharp description | `/skill:research <free-text>`. No pre-phase needed. |
 | A fuzzy idea | `/skill:discover` first. It interviews you one question at a time and writes a Feature Requirements Document that `/skill:research` then reads. |
-| A clear feature, unsure of the technical approach | `/skill:explore` first. Compares valid technical approaches side-by-side. The solutions document feeds `/skill:design` or `/skill:blueprint` directly, or routes through `/skill:research` first for codebase grounding. |
+| A clear feature, unsure of the technical approach | `/skill:explore` first. Compares valid technical approaches side-by-side. The solutions document feeds `/skill:design` or `/skill:blueprint` directly. For codebase grounding, run `/skill:research` first and hand its output to `/skill:explore`. |
 
 ## Hand-drive, or hand it to `/wf`
 

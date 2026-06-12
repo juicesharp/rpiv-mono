@@ -13,17 +13,17 @@ Skipping the reset is the single most common cause of muddled output.
 
 ## The reminder pattern
 
-The skills themselves emit a hand-off reminder when they finish:
+Every skill that hands off to a next step emits a reminder when it finishes:
 
 ```
-🆕 Tip: start a fresh session with /new first
+🆕 Tip: start a fresh session with `/new` first — chained skills work best with a clean context window.
 ```
 
-It applies to every transition in the chain, not just the one you just saw. The tip is a polite nag; the rule is hard.
+It applies to every transition in the chain, not just the one you just saw. (The lone exception is `commit`, the chain terminus — it has no next step to remind you about.) The tip is a polite nag; the rule is hard.
 
 ## When NOT to reset
 
-One case only: **within a single skill invocation**. `discover` runs a one-question-at-a-time interview inside one call, and `code-review` dispatches parallel specialist agents inside one call. The reset rule applies between skill *invocations*, not within them.
+One case: **within a single skill invocation**. Several skills run multi-turn work inside one call — `discover` runs a one-question-at-a-time interview, `code-review` dispatches parallel specialist agents, and `blueprint`, `research`, and `explore` each run their own internal checkpoint loops. The reset rule applies between skill *invocations*, never within them.
 
 Every other transition resets. That includes phase-by-phase `/skill:implement` (see below).
 

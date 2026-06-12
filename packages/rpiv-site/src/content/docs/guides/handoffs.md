@@ -28,23 +28,23 @@ Inside your current session, when you're ready to pause:
 
 `/skill:create-handoff` compacts the active task, recent decisions, in-flight file changes, and open questions into a single markdown file. It's intentionally concise: enough for a fresh session to pick up, not a full transcript.
 
-**Output**: a handoff document under `.rpiv/artifacts/handoffs/<slug>.md`.
+**Output**: a handoff document under `.rpiv/artifacts/handoffs/<YYYY-MM-DD_HH-MM-SS>_<topic>.md` (timestamp-prefixed, like every other artifact skill).
 
-`create-handoff` sits outside the pipeline chain — no pipeline skill hands off to it as a next step. You reach for it deliberately: invoke `/skill:create-handoff` yourself, or let the agent surface it when the session is getting large or you ask to wrap up. Pausing is a decision you make, not a step the chain takes on its own.
+`create-handoff` sits to the side of the main chain — only `implement` surfaces it, as an optional next step for session pauses, and no skill *requires* a handoff to continue. You reach for it deliberately: invoke `/skill:create-handoff` yourself, or let the agent surface it when the session is getting large or you ask to wrap up. Pausing is a decision you make, not a step the chain takes on its own.
 
 ## Resume from a handoff
 
 In a new session (fresh context, possibly a different machine), point `resume-handoff` at the handoff file:
 
 ```
-/skill:resume-handoff .rpiv/artifacts/handoffs/<slug>.md
+/skill:resume-handoff .rpiv/artifacts/handoffs/<YYYY-MM-DD_HH-MM-SS>_<topic>.md
 ```
 
 `/skill:resume-handoff` reads the handoff, verifies the current repo and branch state (warns if things have drifted since the handoff was written), and continues from the next step the handoff identifies. It's interactive: it asks before assuming.
 
 ## Where handoffs live
 
-Handoffs are gitignored by design, under `.rpiv/artifacts/`. They live locally on the machine that wrote them. To hand off to a teammate, share the handoff file directly: commit it to a working branch, paste the contents in chat, copy it across machines. The pipeline never depends on handoffs for chain integrity; they're a convenience layer over the durable artifact chain underneath.
+The whole `.rpiv/artifacts/` tree is gitignored by design, handoffs included. They live locally on the machine that wrote them. To hand off to a teammate, share the handoff file directly: commit it to a working branch, paste the contents in chat, copy it across machines. The pipeline never depends on handoffs for chain integrity; they're a convenience layer over the durable artifact chain underneath.
 
 ## Next steps
 
