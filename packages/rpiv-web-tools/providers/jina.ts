@@ -19,11 +19,13 @@ interface JinaSearchResult {
 interface JinaSearchResponse {
 	code?: number;
 	status?: number;
-	data?: {
-		query?: string;
-		total?: number;
-		results?: JinaSearchResult[];
-	};
+	data?:
+		| JinaSearchResult[]
+		| {
+				query?: string;
+				total?: number;
+				results?: JinaSearchResult[];
+		  };
 }
 
 function normalizeJinaResults(results: JinaSearchResult[]): SearchResult[] {
@@ -68,7 +70,9 @@ export class JinaProvider implements FullProvider {
 		}
 
 		const raw = (await res.json()) as JinaSearchResponse;
-		const results = normalizeJinaResults(raw.data?.results ?? []).slice(0, maxResults);
+		const results = normalizeJinaResults(
+			Array.isArray(raw.data) ? raw.data : (raw.data?.results ?? [])
+		).slice(0, maxResults);
 		return { query, results };
 	}
 
