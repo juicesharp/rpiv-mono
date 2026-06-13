@@ -171,6 +171,18 @@ export const ISSUE_DEFS = {
 			`verify judge.outcome.name "${p.channel}" collides with the producer's publish name — give the verdict its own channel`,
 	),
 
+	// --- panel invariants -------------------------------------------------------
+	"panel-member-channel-collision": def<{ channel: string }>(
+		"error",
+		(p) =>
+			`panel member verdict channel "${p.channel}" is claimed more than once — each member, the producer, and the fold need a distinct channel`,
+	),
+	"panel-verdict-channel-collision": def<{ channel: string }>(
+		"error",
+		(p) =>
+			`panel folded-verdict channel "${p.channel}" collides with another published channel in this stage — give the fold its own channel`,
+	),
+
 	// --- prompt invariants ------------------------------------------------------
 	"prompt-with-skill": def(
 		"error",

@@ -17,16 +17,24 @@ import {
 	type VerifySpec,
 	type Workflow,
 } from "./api.js";
-import { type Judge, judge } from "./judge.js";
+import { type Judge, judge, marksCanonicalFold, type NamedOutcome } from "./judge.js";
 import {
+	all,
+	any,
 	assess,
 	DEFAULT_ASSESS_MAX,
 	describeFlow,
 	effectiveLoopOf,
 	fanout,
 	iterate,
+	judgeSlotSpecOf,
 	judgeSpecOf,
 	loopSpecOf,
+	majority,
+	type PanelSpec,
+	panel,
+	panelShapeIssues,
+	panelSpecOf,
 	synthesizeVerifyLoop,
 	verify,
 } from "./loop-constructors.js";
@@ -354,5 +362,154 @@ describe("synthesizeVerifyLoop / effectiveLoopOf", () => {
 		const j = skillJudge();
 		const loop = assess({ judge: j, done: () => true, feedForward: () => "x" });
 		expect(loopSpecOf(loop)?.judge).toEqual(judgeSpecOf(j));
+	});
+});
+
+// === Panel — Phase 2: construction + sugar folds (no execution) ============
+
+/** A minimal member verdict — sugar folds only read what `pred` interprets. */
+const verdict = (ok: boolean) => ({ data: { ok } }) as unknown as Output;
+const isOk = (v: Output) => (v.data as { ok: boolean }).ok;
+const memberA = judge({ skill: "grade-a", outcome: { name: "va" } as Judge["outcome"] });
+const memberB = judge({ skill: "grade-b", outcome: { name: "vb" } as Judge["outcome"] });
+const customOutcome = { name: "score" } as NamedOutcome;
+
+describe("sugar folds (majority / all / any)", () => {
+	it("majority passes on a strict majority and reports the split", () => {
+		const v = majority(isOk)([verdict(true), verdict(true), verdict(false)]) as {
+			pass: boolean;
+			votes: { pass: number; fail: number };
+			agreement: number;
+			tie: boolean;
+		};
+		expect(v).toEqual({ pass: true, votes: { pass: 2, fail: 1 }, agreement: 2 / 3, tie: false });
+	});
+
+	it("majority fails an even split and flags the tie", () => {
+		const v = majority(isOk)([verdict(true), verdict(false)]) as { pass: boolean; tie: boolean; agreement: number };
+		expect(v.pass).toBe(false);
+		expect(v.tie).toBe(true);
+		expect(v.agreement).toBe(0.5);
+	});
+
+	it("all passes only when every member passes (one fail vetoes)", () => {
+		expect((all(isOk)([verdict(true), verdict(true)]) as { pass: boolean }).pass).toBe(true);
+		expect((all(isOk)([verdict(true), verdict(false)]) as { pass: boolean }).pass).toBe(false);
+	});
+
+	it("any passes when at least one member passes; fails only when all fail", () => {
+		expect((any(isOk)([verdict(false), verdict(true)]) as { pass: boolean }).pass).toBe(true);
+		expect((any(isOk)([verdict(false), verdict(false)]) as { pass: boolean }).pass).toBe(false);
+	});
+
+	it("brands sugar folds canonical (and leaves raw folds unbranded)", () => {
+		expect(marksCanonicalFold(majority(isOk))).toBe(true);
+		expect(marksCanonicalFold(all(isOk))).toBe(true);
+		expect(marksCanonicalFold(any(isOk))).toBe(true);
+		expect(marksCanonicalFold((vs) => vs)).toBe(false);
+	});
+});
+
+describe("panelShapeIssues / panel()", () => {
+	it("accepts a canonical panel (sugar fold, no outcome)", () => {
+		expect(panelShapeIssues({ kind: "panel", members: [memberA, memberB], fold: majority(isOk) })).toEqual([]);
+		const p = panel({ members: [memberA, memberB], fold: majority(isOk) });
+		expect(p.kind).toBe("panel");
+		expect(p.members).toEqual([memberA, memberB]);
+		expect(p.outcome).toBeUndefined();
+	});
+
+	it("accepts a custom panel (raw fold + outcome)", () => {
+		const spec: PanelSpec = { members: [memberA, memberB], fold: (vs) => vs.length, outcome: customOutcome };
+		expect(panel(spec).outcome).toBe(customOutcome);
+	});
+
+	it("rejects a sugar fold paired with an explicit outcome (sugar ⊕ outcome)", () => {
+		expect(() => panel({ members: [memberA, memberB], fold: majority(isOk), outcome: customOutcome })).toThrow(
+			/sugar ⊕ outcome/,
+		);
+	});
+
+	it("rejects a raw fold with no outcome (raw ⊕ outcome)", () => {
+		expect(() => panel({ members: [memberA, memberB], fold: (vs) => vs })).toThrow(/raw ⊕ outcome/);
+	});
+
+	it("rejects a nested panel member (no nesting)", () => {
+		const inner = panel({ members: [memberA, memberB], fold: majority(isOk) });
+		expect(() => panel({ members: [inner as unknown as Judge], fold: majority(isOk) })).toThrow(/may not nest/);
+	});
+
+	it("rejects a member with a bad judge shape", () => {
+		const bad = { outcome: { name: "x" } } as unknown as Judge; // neither skill nor prompt
+		expect(() => panel({ members: [bad], fold: majority(isOk) })).toThrow(/panel member:.*one is required/);
+	});
+
+	it("rejects an empty members array", () => {
+		expect(() => panel({ members: [], fold: majority(isOk) })).toThrow(/non-empty/);
+	});
+
+	it("flags a missing panel object", () => {
+		expect(panelShapeIssues(undefined)).toEqual(["a panel object is required"]);
+	});
+});
+
+// === Panel — Phase 4: member-walking at introspection sites ================
+
+describe("panel introspection (panelSpecOf / judgeSlotSpecOf / loopSpecOf / describeFlow)", () => {
+	const memberSpecs = [
+		{ skill: "grade-a", prompt: false, outcome: "va" },
+		{ skill: "grade-b", prompt: false, outcome: "vb" },
+	];
+
+	it("summarises members + the sugar fold name; canonical panel has an empty outcome", () => {
+		expect(panelSpecOf(panel({ members: [memberA, memberB], fold: majority(isOk) }))).toEqual({
+			panel: memberSpecs,
+			fold: "majority",
+			outcome: "",
+		});
+	});
+
+	it("reports the specific sugar fold (all / any)", () => {
+		expect(panelSpecOf(panel({ members: [memberA, memberB], fold: all(isOk) })).fold).toBe("all");
+		expect(panelSpecOf(panel({ members: [memberA, memberB], fold: any(isOk) })).fold).toBe("any");
+	});
+
+	it("summarises a custom panel as fold:'custom' carrying its outcome channel", () => {
+		const p = panel({ members: [memberA, memberB], fold: (vs) => vs.length, outcome: customOutcome });
+		expect(panelSpecOf(p)).toEqual({ panel: memberSpecs, fold: "custom", outcome: "score" });
+	});
+
+	it("judgeSlotSpecOf routes a single judge through judgeSpecOf and a panel through panelSpecOf", () => {
+		expect(judgeSlotSpecOf(memberA)).toEqual(judgeSpecOf(memberA));
+		const p = panel({ members: [memberA, memberB], fold: majority(isOk) });
+		expect(judgeSlotSpecOf(p)).toEqual(panelSpecOf(p));
+	});
+
+	it("loopSpecOf projects an assess panel through the judge-slot summary", () => {
+		const p = panel({ members: [memberA, memberB], fold: majority(isOk) });
+		const loop = assess({ judge: p, done: () => true, feedForward: () => "x" });
+		expect(loopSpecOf(loop)?.judge).toEqual(panelSpecOf(p));
+	});
+
+	it("describeFlow renders a verify panel stage (control stays 'single'; verify carries the panel spec + max)", () => {
+		const w: Workflow = {
+			name: "paneled",
+			start: "build",
+			stages: {
+				build: {
+					kind: "produces",
+					sessionPolicy: "fresh",
+					outcome: { name: "impl" } as Outcome & { name: string },
+					verify: verify({
+						judge: panel({ members: [memberA, memberB], fold: majority(isOk) }),
+						done: () => true,
+					}),
+				},
+			},
+			edges: { build: "stop" },
+		};
+		const [shape] = describeFlow(w);
+		expect(shape?.control.mode).toBe("single");
+		expect(shape?.verify).toEqual({ panel: memberSpecs, fold: "majority", outcome: "", max: 1 });
 	});
 });

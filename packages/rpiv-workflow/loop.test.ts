@@ -15,11 +15,20 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMockPi, createMockSessionChain, mockAssistantMessage } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { acts, type FanoutFn, type IterateFn, produces, type ScriptContext, type VerifySpec } from "./api.js";
+import {
+	acts,
+	defineRoute,
+	type FanoutFn,
+	type IterateFn,
+	match,
+	produces,
+	type ScriptContext,
+	type VerifySpec,
+} from "./api.js";
 import { type LifecycleListeners, registerLifecycle } from "./events.js";
 import { fs as fsHandle, handleToString } from "./handle.js";
 import { judge } from "./judge.js";
-import { assess, fanout, iterate, verify } from "./loop-constructors.js";
+import { all, any, assess, fanout, iterate, majority, panel, verify } from "./loop-constructors.js";
 import type { Output } from "./output.js";
 import type { Outcome } from "./output-spec.js";
 import { runWorkflow } from "./runner/index.js";
@@ -545,6 +554,333 @@ describe("loop driver — assess", () => {
 });
 
 // ===========================================================================
+// Assess × panel — N judges + a vote fold (the adversarial generalization)
+// ===========================================================================
+
+describe("loop driver — assess × panel", () => {
+	// The SITE's `done` reads the FOLDED canonical verdict (`{ pass, votes,
+	// agreement, tie }`), never a member's own `{ done }` schema — the panel's
+	// product is the fold's `pass`. The per-member `pred` (`done`) interprets each
+	// member's own verdict; the two predicates are deliberately distinct (§4).
+	const panelPass = (v: Output) => Boolean((v.data as { pass?: boolean }).pass);
+	const panelFeed = ({ verdict, round }: { verdict: Output; round: number }) =>
+		`refine round=${round} pass=${(verdict.data as { pass?: boolean }).pass}`;
+
+	const threeMembers = () => [
+		judge({ skill: "grade-a", outcome: verdictOutcome("verdict-a") }),
+		judge({ skill: "grade-b", outcome: verdictOutcome("verdict-b") }),
+		judge({ skill: "grade-c", outcome: verdictOutcome("verdict-c") }),
+	];
+
+	const panelAssess = (fold: ReturnType<typeof majority>, max = 4) =>
+		assess({ judge: panel({ members: threeMembers(), fold }), done: panelPass, feedForward: panelFeed, max });
+
+	const wf = (loop: ReturnType<typeof assess>, consume = acts()) => ({
+		name: "panel",
+		start: "breakdown",
+		stages: {
+			breakdown: produces({ outcome: mdOutcome("tasks"), loop }),
+			consume,
+		},
+		edges: { breakdown: "consume", consume: "stop" } as Record<string, string>,
+	});
+
+	/** A distinctly-named member verdict file ({@link writeVerdict} only writes `v{n}`). */
+	const namedVerdict = (name: string, isDone: boolean): string => {
+		const rel = `.rpiv/verdicts/${name}.json`;
+		writeFile(rel, JSON.stringify({ done: isDone, feedback: name }));
+		return rel;
+	};
+
+	it("runs N judge sessions then one produce; majority folds the verdict the `done` predicate reads", async () => {
+		namedVerdict("v0a", true);
+		namedVerdict("v0b", true);
+		namedVerdict("v0c", false); // 2-of-3 pass → majority pass
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/tasks/t0.md")] },
+				{ branch: [mockAssistantMessage("verdict .rpiv/verdicts/v0a.json")] },
+				{ branch: [mockAssistantMessage("verdict .rpiv/verdicts/v0b.json")] },
+				{ branch: [mockAssistantMessage("verdict .rpiv/verdicts/v0c.json")] },
+				{ branch: [mockAssistantMessage("consumed")] },
+			],
+		});
+
+		const result = await runWorkflow(chain.ctx, { workflow: wf(panelAssess(majority(done))), input: "x" });
+
+		expect(result.success).toBe(true);
+		// 1 produce + 3 judge members + 1 consume (one round; the fold passed).
+		expect(result.stagesCompleted).toBe(5);
+		expect(chain.sentMessages).toEqual([
+			"/skill:breakdown x",
+			// Every member grades the SAME producer artifact, dispatched in member order.
+			"/skill:grade-a .rpiv/artifacts/tasks/t0.md",
+			"/skill:grade-b .rpiv/artifacts/tasks/t0.md",
+			"/skill:grade-c .rpiv/artifacts/tasks/t0.md",
+			// majority(2/3) → pass → done; consume inherits the PRODUCER output, never a verdict.
+			"/skill:consume .rpiv/artifacts/tasks/t0.md",
+		]);
+
+		const rows = readRows();
+		expect(rows[0]).toMatchObject({ stage: "breakdown (r0·produce)", role: "produce", unitIndex: 0 });
+		// Member rows are identity-bearing — `#{memberIndex}` (the `unitId`) tells the
+		// three judges of one round apart; a single judge carries no `unitId`.
+		expect(rows[1]).toMatchObject({
+			stage: "breakdown (r0·judge#0)",
+			skill: "grade-a",
+			role: "judge",
+			unitId: "r0·judge#0",
+			unitIndex: 0,
+		});
+		expect(rows[2]).toMatchObject({
+			stage: "breakdown (r0·judge#1)",
+			skill: "grade-b",
+			unitId: "r0·judge#1",
+			unitIndex: 0,
+		});
+		expect(rows[3]).toMatchObject({
+			stage: "breakdown (r0·judge#2)",
+			skill: "grade-c",
+			unitId: "r0·judge#2",
+			unitIndex: 0,
+		});
+		// The folded verdict is NEVER persisted as a row — the members are the durable trail.
+		expect(rows.filter((r) => r.role === "judge")).toHaveLength(3);
+	});
+
+	it("all (unanimous) fold: one veto fails the round and drives a retry; feedForward threads the FOLDED verdict", async () => {
+		namedVerdict("v0a", true);
+		namedVerdict("v0b", true);
+		namedVerdict("v0c", false); // one veto → all() fails round 0
+		namedVerdict("v1a", true);
+		namedVerdict("v1b", true);
+		namedVerdict("v1c", true); // unanimous → all() passes round 1
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/tasks/t0.md")] },
+				{ branch: [mockAssistantMessage("verdict .rpiv/verdicts/v0a.json")] },
+				{ branch: [mockAssistantMessage("verdict .rpiv/verdicts/v0b.json")] },
+				{ branch: [mockAssistantMessage("verdict .rpiv/verdicts/v0c.json")] },
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/tasks/t1.md")] },
+				{ branch: [mockAssistantMessage("verdict .rpiv/verdicts/v1a.json")] },
+				{ branch: [mockAssistantMessage("verdict .rpiv/verdicts/v1b.json")] },
+				{ branch: [mockAssistantMessage("verdict .rpiv/verdicts/v1c.json")] },
+				{ branch: [mockAssistantMessage("consumed")] },
+			],
+		});
+
+		const result = await runWorkflow(chain.ctx, { workflow: wf(panelAssess(all(done))), input: "x" });
+
+		expect(result.success).toBe(true);
+		// 2 produce + 6 judge members + 1 consume.
+		expect(result.stagesCompleted).toBe(9);
+		expect(chain.sentMessages).toEqual([
+			"/skill:breakdown x",
+			"/skill:grade-a .rpiv/artifacts/tasks/t0.md",
+			"/skill:grade-b .rpiv/artifacts/tasks/t0.md",
+			"/skill:grade-c .rpiv/artifacts/tasks/t0.md",
+			// Round 0 folded to pass=false (the `c` veto) → retry; feedForward carries the fold.
+			"/skill:breakdown refine round=0 pass=false",
+			"/skill:grade-a .rpiv/artifacts/tasks/t1.md",
+			"/skill:grade-b .rpiv/artifacts/tasks/t1.md",
+			"/skill:grade-c .rpiv/artifacts/tasks/t1.md",
+			"/skill:consume .rpiv/artifacts/tasks/t1.md",
+		]);
+		const rows = readRows();
+		// Round 1 members re-bear (round, memberIndex) — the resume drift join key.
+		expect(rows[4]).toMatchObject({ stage: "breakdown (r1·produce)", role: "produce", unitIndex: 1 });
+		expect(rows[5]).toMatchObject({
+			stage: "breakdown (r1·judge#0)",
+			role: "judge",
+			unitId: "r1·judge#0",
+			unitIndex: 1,
+		});
+		expect(rows[7]).toMatchObject({
+			stage: "breakdown (r1·judge#2)",
+			role: "judge",
+			unitId: "r1·judge#2",
+			unitIndex: 1,
+		});
+	});
+
+	it("any (veto/rescue) fold: a single passing member carries the round", async () => {
+		namedVerdict("v0a", false);
+		namedVerdict("v0b", false);
+		namedVerdict("v0c", true); // one pass → any() passes
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/tasks/t0.md")] },
+				{ branch: [mockAssistantMessage("verdict .rpiv/verdicts/v0a.json")] },
+				{ branch: [mockAssistantMessage("verdict .rpiv/verdicts/v0b.json")] },
+				{ branch: [mockAssistantMessage("verdict .rpiv/verdicts/v0c.json")] },
+				{ branch: [mockAssistantMessage("consumed")] },
+			],
+		});
+
+		const result = await runWorkflow(chain.ctx, { workflow: wf(panelAssess(any(done))), input: "x" });
+
+		expect(result.success).toBe(true);
+		// One pass of three → any() done after a single round.
+		expect(result.stagesCompleted).toBe(5);
+		expect(chain.sentMessages.at(-1)).toBe("/skill:consume .rpiv/artifacts/tasks/t0.md");
+		expect(chain.sentMessages.filter((m) => m.startsWith("/skill:grade")).length).toBe(3);
+	});
+
+	it("panel-close publish: the FOLDED verdict lands on the `<stage>-panel` channel; each member on its OWN channel", async () => {
+		namedVerdict("v0a", true);
+		namedVerdict("v0b", true);
+		namedVerdict("v0c", false); // 2-of-3 pass → majority pass
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/tasks/t0.md")] },
+				{ branch: [mockAssistantMessage("verdict .rpiv/verdicts/v0a.json")] },
+				{ branch: [mockAssistantMessage("verdict .rpiv/verdicts/v0b.json")] },
+				{ branch: [mockAssistantMessage("verdict .rpiv/verdicts/v0c.json")] },
+				{ branch: [mockAssistantMessage("consumed")] },
+			],
+		});
+
+		// A route reads `state.named` at decision time — the live driver must have
+		// published the fold + every member channel BEFORE the loop advanced here.
+		let seen: { fold?: unknown; a?: number; b?: number; c?: number } = {};
+		const routed = {
+			name: "panel",
+			start: "breakdown",
+			stages: {
+				breakdown: produces({ outcome: mdOutcome("tasks"), loop: panelAssess(majority(done)) }),
+				consume: acts(),
+			},
+			edges: {
+				breakdown: defineRoute(["consume"], ({ state }) => {
+					seen = {
+						fold: state.named["breakdown-panel"]?.at(-1)?.data,
+						a: state.named["verdict-a"]?.length,
+						b: state.named["verdict-b"]?.length,
+						c: state.named["verdict-c"]?.length,
+					};
+					return "consume";
+				}),
+				consume: "stop",
+			} as Record<string, ReturnType<typeof defineRoute> | string>,
+		};
+
+		const result = await runWorkflow(chain.ctx, { workflow: routed, input: "x" });
+
+		expect(result.success).toBe(true);
+		// Canonical PANEL_VERDICT — published to the per-stage `<stage>-panel` channel
+		// (NOT the PANEL_VERDICT_OUTCOME fallback name), once for the single round.
+		expect(seen.fold).toEqual({ pass: true, votes: { pass: 2, fail: 1 }, agreement: 2 / 3, tie: false });
+		// Every member published to its OWN channel — member def per row, never member 0's.
+		expect([seen.a, seen.b, seen.c]).toEqual([1, 1, 1]);
+	});
+});
+
+// ===========================================================================
+// Worked example — generate → panel screen → match (escalate-on-disagreement)
+//
+// The panel's product is the ROUTING DECISION, not a loop gate (orq.ai): the
+// screen stage ALWAYS advances (`done: () => true`, assess's soft-stop) and
+// publishes the folded verdict to `screen-panel`; a `match` on that channel
+// routes a tie (disagreement) to escalation and an agreement to keep-survivor.
+// An EVEN panel (2 members) is used so `majority` can produce a genuine tie.
+// ===========================================================================
+
+describe("loop driver — panel × match (worked example)", () => {
+	// The panel runs once and publishes; `done` always advances — routing, not gating.
+	// (`done` here is the per-member `pred`, the module-level verdict reader.)
+	const screenPanel = assess({
+		judge: panel({
+			members: [
+				judge({ skill: "grade-a", outcome: verdictOutcome("verdict-a") }),
+				judge({ skill: "grade-b", outcome: verdictOutcome("verdict-b") }),
+			],
+			fold: majority(done),
+		}),
+		done: () => true,
+		feedForward: () => "unused — done is always true",
+		max: 1,
+	});
+
+	const workflow = {
+		name: "generate-and-filter",
+		start: "generate",
+		stages: {
+			generate: produces({ outcome: mdOutcome("candidate") }),
+			screen: produces({ outcome: mdOutcome("screened"), loop: screenPanel }),
+			escalate: acts(),
+			keep: acts(),
+		},
+		edges: {
+			generate: "screen",
+			// Disagreement (tie) → escalate; otherwise keep the survivor. Sourced from
+			// the panel's published verdict channel, never the stage's producer output.
+			screen: match("tie", { escalate: true }, { fallback: "keep", from: "screen-panel" }),
+			escalate: "stop",
+			keep: "stop",
+		} as Record<string, ReturnType<typeof match> | string>,
+	};
+
+	const namedVerdict = (name: string, isDone: boolean): string => {
+		const rel = `.rpiv/verdicts/${name}.json`;
+		writeFile(rel, JSON.stringify({ done: isDone, feedback: name }));
+		return rel;
+	};
+
+	it("routes a SPLIT panel (tie) to the escalation stage", async () => {
+		namedVerdict("va", true);
+		namedVerdict("vb", false); // 1-1 split → majority ties → tie=true
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/candidate/c0.md")] },
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/screened/s0.md")] },
+				{ branch: [mockAssistantMessage("verdict .rpiv/verdicts/va.json")] },
+				{ branch: [mockAssistantMessage("verdict .rpiv/verdicts/vb.json")] },
+				{ branch: [mockAssistantMessage("escalated")] },
+			],
+		});
+
+		const result = await runWorkflow(chain.ctx, { workflow, input: "x" });
+
+		expect(result.success).toBe(true);
+		expect(chain.sentMessages).toEqual([
+			"/skill:generate x",
+			"/skill:screen .rpiv/artifacts/candidate/c0.md",
+			"/skill:grade-a .rpiv/artifacts/screened/s0.md",
+			"/skill:grade-b .rpiv/artifacts/screened/s0.md",
+			// tie → match("tie") escalates; escalate inherits the screened producer output.
+			"/skill:escalate .rpiv/artifacts/screened/s0.md",
+		]);
+	});
+
+	it("routes an AGREEING panel (no tie) to the keep-survivor fallback", async () => {
+		namedVerdict("va", true);
+		namedVerdict("vb", true); // unanimous → tie=false → match fallback
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/candidate/c0.md")] },
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/screened/s0.md")] },
+				{ branch: [mockAssistantMessage("verdict .rpiv/verdicts/va.json")] },
+				{ branch: [mockAssistantMessage("verdict .rpiv/verdicts/vb.json")] },
+				{ branch: [mockAssistantMessage("kept")] },
+			],
+		});
+
+		const result = await runWorkflow(chain.ctx, { workflow, input: "x" });
+
+		expect(result.success).toBe(true);
+		expect(chain.sentMessages.at(-1)).toBe("/skill:keep .rpiv/artifacts/screened/s0.md");
+		// The escalation stage never ran — the fallback carried the survivor.
+		expect(chain.sentMessages.some((m) => m.startsWith("/skill:escalate"))).toBe(false);
+	});
+});
+
+// ===========================================================================
 // Cap policy
 // ===========================================================================
 
@@ -964,6 +1300,45 @@ describe("loop driver — preflights", () => {
 
 		expect(result.success).toBe(false);
 		expect(result.error).toMatch(/requires Pi skill "grade"/);
+	});
+
+	it("judge-skill registry check walks EVERY panel member (halts on an unregistered member, not just member 0)", async () => {
+		const chain = createMockSessionChain({ cwd: tmpDir, steps: [] });
+		// Producer + member 0 ("grade-a") registered; member 1 ("grade-b") NOT — the
+		// pre-member-walking check inspected member 0 only and would have passed.
+		const host = createMockPi({ skills: ["breakdown", "grade-a"] }).pi;
+
+		const result = await runWorkflow(chain.ctx, {
+			workflow: {
+				name: "panelreg",
+				start: "breakdown",
+				stages: {
+					breakdown: produces({
+						outcome: mdOutcome("tasks"),
+						loop: assess({
+							judge: panel({
+								members: [
+									judge({ skill: "grade-a", outcome: verdictOutcome("verdict-a") }),
+									judge({ skill: "grade-b", outcome: verdictOutcome("verdict-b") }),
+								],
+								fold: majority(done),
+							}),
+							done,
+							feedForward,
+							max: 4,
+						}),
+					}),
+				},
+				edges: { breakdown: "stop" },
+			},
+			input: "x",
+			host,
+		});
+
+		expect(result.success).toBe(false);
+		expect(result.error).toMatch(/requires Pi skill "grade-b"/);
+		// Halted at preflight — no session dispatched.
+		expect(chain.sentMessages).toEqual([]);
 	});
 
 	it("loop × sessionPolicy 'continue' throws the invariant", async () => {
@@ -1388,5 +1763,225 @@ describe("loop driver — prompt dispatch", () => {
 		const rows = readRows();
 		expect(rows[1]).toMatchObject({ stage: "draft (r0·produce)", role: "produce", unitIndex: 0 });
 		expect(rows[2]).toMatchObject({ stage: "draft (r0·judge)", role: "judge", unitIndex: 0 });
+	});
+});
+
+// ===========================================================================
+// verify × panel — a panel composes into the verify gate with ZERO verify-specific
+// code (verify desugars to a degenerate assess loop). Exercises member dispatch,
+// the folded gate, and retry-with-feedback end-to-end through runWorkflow.
+// ===========================================================================
+
+describe("loop driver — verify × panel", () => {
+	// The GATE's `done` reads the FOLDED canonical verdict (`{ pass, ... }`); the
+	// per-member `pred` (the module-level `done`) reads each member's own `{ done }`.
+	const gatePass = (v: Output) => Boolean((v.data as { pass?: boolean }).pass);
+	const panelFeed = ({ verdict, round }: { verdict: Output; round: number }) =>
+		`fix round=${round} pass=${(verdict.data as { pass?: boolean }).pass}`;
+
+	const twoMembers = () => [
+		judge({ skill: "grade-a", outcome: verdictOutcome("verdict-a") }),
+		judge({ skill: "grade-b", outcome: verdictOutcome("verdict-b") }),
+	];
+	const verifyPanel = (max = 1): VerifySpec =>
+		verify({
+			judge: panel({ members: twoMembers(), fold: majority(done) }),
+			done: gatePass,
+			feedForward: panelFeed,
+			max,
+		});
+
+	const named = (name: string, isDone: boolean): void => {
+		writeFile(`.rpiv/verdicts/${name}.json`, JSON.stringify({ done: isDone, feedback: name }));
+	};
+
+	it("gate pass: both members grade ONE attempt; the folded majority opens the gate; members + fold publish per-channel", async () => {
+		named("va", true);
+		named("vb", true); // 2-0 → majority pass → gate opens
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/impl/i0.md")] },
+				{ branch: [mockAssistantMessage("verdict .rpiv/verdicts/va.json")] },
+				{ branch: [mockAssistantMessage("verdict .rpiv/verdicts/vb.json")] },
+				{ branch: [mockAssistantMessage("consumed")] },
+			],
+		});
+
+		// A route reads the published channels at decision time — proves the live
+		// driver folded + published BEFORE the gate advanced the chain here.
+		let seen: { fold?: unknown; a?: number; b?: number } = {};
+		const wf = {
+			name: "gated",
+			start: "build",
+			stages: {
+				build: produces({ outcome: mdOutcome("impl"), verify: verifyPanel() }),
+				consume: acts(),
+			},
+			edges: {
+				build: defineRoute(["consume"], ({ state }) => {
+					seen = {
+						fold: state.named["build-panel"]?.at(-1)?.data,
+						a: state.named["verdict-a"]?.length,
+						b: state.named["verdict-b"]?.length,
+					};
+					return "consume";
+				}),
+				consume: "stop",
+			} as Record<string, ReturnType<typeof defineRoute> | string>,
+		};
+
+		const result = await runWorkflow(chain.ctx, { workflow: wf, input: "x" });
+
+		expect(result.success).toBe(true);
+		// 1 attempt + 2 verify members + 1 consume.
+		expect(result.stagesCompleted).toBe(4);
+		expect(chain.sentMessages).toEqual([
+			"/skill:build x",
+			// Both members grade the SAME attempt artifact, in member order.
+			"/skill:grade-a .rpiv/artifacts/impl/i0.md",
+			"/skill:grade-b .rpiv/artifacts/impl/i0.md",
+			// gate opened on the FOLDED pass; consume inherits the ATTEMPT output, never a verdict.
+			"/skill:consume .rpiv/artifacts/impl/i0.md",
+		]);
+		// Canonical PANEL_VERDICT on the per-stage `<stage>-panel` channel; each
+		// member on its OWN channel (member def per row, never member 0's).
+		expect(seen.fold).toEqual({ pass: true, votes: { pass: 2, fail: 0 }, agreement: 1, tie: false });
+		expect([seen.a, seen.b]).toEqual([1, 1]);
+
+		const rows = readRows();
+		// Verify members are identity-bearing — `a{round}·verify#{member}` (the `unitId`).
+		expect(rows[1]).toMatchObject({
+			stage: "build (a0·verify#0)",
+			skill: "grade-a",
+			role: "verify",
+			unitId: "a0·verify#0",
+			unitIndex: 0,
+		});
+		expect(rows[2]).toMatchObject({
+			stage: "build (a0·verify#1)",
+			skill: "grade-b",
+			role: "verify",
+			unitId: "a0·verify#1",
+			unitIndex: 0,
+		});
+	});
+
+	it("retry: a folded fail feeds the next attempt (feedForward threads the FOLDED verdict); pass advances with the LAST attempt", async () => {
+		named("va0", true);
+		named("vb0", false); // 1-1 → majority fails → retry
+		named("va1", true);
+		named("vb1", true); // 2-0 → majority passes
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/impl/i0.md")] },
+				{ branch: [mockAssistantMessage("verdict .rpiv/verdicts/va0.json")] },
+				{ branch: [mockAssistantMessage("verdict .rpiv/verdicts/vb0.json")] },
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/impl/i1.md")] },
+				{ branch: [mockAssistantMessage("verdict .rpiv/verdicts/va1.json")] },
+				{ branch: [mockAssistantMessage("verdict .rpiv/verdicts/vb1.json")] },
+				{ branch: [mockAssistantMessage("consumed")] },
+			],
+		});
+
+		const wf = {
+			name: "gated",
+			start: "build",
+			stages: {
+				build: produces({ outcome: mdOutcome("impl"), verify: verifyPanel(3) }),
+				consume: acts(),
+			},
+			edges: { build: "consume", consume: "stop" } as Record<string, string>,
+		};
+
+		const result = await runWorkflow(chain.ctx, { workflow: wf, input: "x" });
+
+		expect(result.success).toBe(true);
+		expect(chain.sentMessages).toEqual([
+			"/skill:build x",
+			"/skill:grade-a .rpiv/artifacts/impl/i0.md",
+			"/skill:grade-b .rpiv/artifacts/impl/i0.md",
+			// Round 0 folded to pass=false → retry; feedForward carries the FOLDED verdict.
+			"/skill:build fix round=0 pass=false",
+			"/skill:grade-a .rpiv/artifacts/impl/i1.md",
+			"/skill:grade-b .rpiv/artifacts/impl/i1.md",
+			// pass on attempt 1 → advance with the LAST attempt's producer output.
+			"/skill:consume .rpiv/artifacts/impl/i1.md",
+		]);
+		expect(result.lastArtifact).toBe(".rpiv/artifacts/impl/i1.md");
+	});
+});
+
+// ===========================================================================
+// assess × panel (custom fold) — a RAW FoldFn + explicit `outcome` (the §4 custom
+// path). The fold emits the AUTHOR's schema to the AUTHOR's channel (never the
+// canonical `<stage>-panel`), flows through applyCompletedStage, and a downstream
+// route resolves it.
+// ===========================================================================
+
+describe("loop driver — assess × panel (custom fold)", () => {
+	it("raw fold: emits the author schema to the author channel (not <stage>-panel); a downstream route reads it", async () => {
+		writeFile(".rpiv/verdicts/va.json", JSON.stringify({ done: true, feedback: "va" }));
+		writeFile(".rpiv/verdicts/vb.json", JSON.stringify({ done: false, feedback: "vb" }));
+
+		// RAW fold — counts passing members into a CUSTOM shape (not PANEL_VERDICT).
+		// A raw fold REQUIRES an explicit `outcome` (the §4 raw ⊕ outcome XOR).
+		const scoreFold = (verdicts: readonly Output[]) => ({
+			passes: verdicts.filter(done).length,
+			total: verdicts.length,
+		});
+		const screen = assess({
+			judge: panel({
+				members: [
+					judge({ skill: "grade-a", outcome: verdictOutcome("verdict-a") }),
+					judge({ skill: "grade-b", outcome: verdictOutcome("verdict-b") }),
+				],
+				fold: scoreFold,
+				outcome: emptyVerdictOutcome("screen-score"),
+			}),
+			done: () => true, // run once and publish — routing, not gating
+			feedForward: () => "unused",
+			max: 1,
+		});
+
+		let seen: { score?: unknown; canonical?: unknown } = {};
+		const wf = {
+			name: "scored",
+			start: "screen",
+			stages: {
+				screen: produces({ outcome: mdOutcome("screened"), loop: screen }),
+				consume: acts(),
+			},
+			edges: {
+				screen: defineRoute(["consume"], ({ state }) => {
+					seen = {
+						score: state.named["screen-score"]?.at(-1)?.data,
+						canonical: state.named["screen-panel"],
+					};
+					return "consume";
+				}),
+				consume: "stop",
+			} as Record<string, ReturnType<typeof defineRoute> | string>,
+		};
+
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/screened/s0.md")] },
+				{ branch: [mockAssistantMessage("verdict .rpiv/verdicts/va.json")] },
+				{ branch: [mockAssistantMessage("verdict .rpiv/verdicts/vb.json")] },
+				{ branch: [mockAssistantMessage("consumed")] },
+			],
+		});
+
+		const result = await runWorkflow(chain.ctx, { workflow: wf, input: "x" });
+
+		expect(result.success).toBe(true);
+		// The fold output is the AUTHOR's schema, landed via applyCompletedStage on
+		// the AUTHOR's channel and read back by the downstream route.
+		expect(seen.score).toEqual({ passes: 1, total: 2 });
+		// The canonical `<stage>-panel` channel is NEVER published on the custom path (§4 XOR).
+		expect(seen.canonical).toBeUndefined();
 	});
 });

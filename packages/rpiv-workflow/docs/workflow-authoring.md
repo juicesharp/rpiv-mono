@@ -9,6 +9,7 @@ Complete reference for the `@juicesharp/rpiv-workflow` authoring DSL. A workflow
   - [produces](#produces)
   - [Loops (fanout / iterate / assess)](#loops-fanout--iterate--assess)
   - [Per-stage verification (verify)](#per-stage-verification-verify)
+  - [Adversarial verification (panel)](#adversarial-verification-panel)
   - [acts](#acts)
   - [terminal](#terminal)
   - [Script stages](#script-stages)
@@ -16,6 +17,7 @@ Complete reference for the `@juicesharp/rpiv-workflow` authoring DSL. A workflow
 - [Edge targets](#edge-targets)
 - [Conditional routing](#conditional-routing)
   - [gate](#gate)
+  - [match](#match)
   - [defineRoute](#defineroute)
   - [Predicate helpers](#predicate-helpers)
 - [Outcomes](#outcomes)
@@ -214,7 +216,7 @@ A `Judge` names a dispatchable grading session. Author it with `judge({ ... })`,
 - **≥1-artifact constraint**: the judge's collector MUST materialize at least one artifact (e.g. a JSON verdict file whose parser yields `{ done, feedback }`). A judge session that collects zero artifacts is a **fatal halt** — no retry, no soft-stop.
 - **Skill label for per-unit consumers**: a `skill` judge's units carry that skill name in `onUnitStart`/`onUnitEnd` and the JSONL rows; a `prompt` judge dispatches under the synthetic label **`<stageName>-judge`**. Per-unit listeners that key on the dispatched skill (e.g. rpiv-pi's `models.json` `skills.<name>` model-override rung) can target a prompt-judge by adding an entry under that synthetic name; with no entry, judge units run on the baseline model.
 
-Keeping the termination predicate OFF `Judge` is what makes it reusable: `assess()` adds `done(verdict)`; the per-stage `verify` field adds `pass(verdict)`; a future `panel()` composes N judges with a vote fold.
+Keeping the termination predicate OFF `Judge` is what makes it reusable: both `assess()` and the per-stage `verify` field add their own `done(verdict)` predicate over the same opaque verdict `Output` (they share the `JudgedRepetition` vocabulary — `done` + `max`); [`panel()`](#adversarial-verification-panel) composes N judges into one verdict the same `done` reads. A panel therefore slots into any of them with zero per-site code.
 
 #### The loop knobs
 
@@ -230,7 +232,7 @@ Every constructor accepts the shared introspectable facet and policy knobs:
 
 #### The resume contract (all loop kinds)
 
-A unit source must be **deterministic w.r.t. the fold-replayed `RunState` at the unit boundary plus this generation's accumulated outputs**. On resume, the fold re-calls your `units()` / `next()` at every folded boundary and compares each recomputed unit against what the run recorded. If they diverge — a non-deterministic generator recomputed a different unit — resume **refuses** with a terminal failure rather than re-run the wrong units. Set a stable `id` on each unit so the join survives a reworded `label`. The same contract covers the model-judged predicates: `assess`'s `done` / `feedForward` and `verify`'s `pass` are recomputed on resume (never persisted), so each must be deterministic w.r.t. the verdict `Output`. Runs recorded before this redesign carry no `parent` field on their unit rows and cannot be resumed (`stage-gone` refusal — no migration).
+A unit source must be **deterministic w.r.t. the fold-replayed `RunState` at the unit boundary plus this generation's accumulated outputs**. On resume, the fold re-calls your `units()` / `next()` at every folded boundary and compares each recomputed unit against what the run recorded. If they diverge — a non-deterministic generator recomputed a different unit — resume **refuses** with a terminal failure rather than re-run the wrong units. Set a stable `id` on each unit so the join survives a reworded `label`. The same contract covers the model-judged predicates: `assess`'s and `verify`'s `done` / `feedForward` are recomputed on resume (never persisted), so each must be deterministic w.r.t. the verdict `Output`. Runs recorded before this redesign carry no `parent` field on their unit rows and cannot be resumed (`stage-gone` refusal — no migration).
 
 #### Loop lifecycle hooks
 
@@ -247,7 +249,7 @@ Loops are observed through unit-generic lifecycle hooks (register via `registerL
 
 ### Per-stage verification (verify)
 
-**verify** attaches a post-condition judge to a `produces` stage: after each attempt completes (collected, validated, persisted), the judge session grades the attempt's primary artifact and `pass(verdict)` gates advancement — true → the chain advances with the attempt's producer pair; false → a fresh retry attempt (prompt arg built by `feedForward`) up to `maxAttempts` (default 1 = gate-only), then the workflow halts with "verification failed". A pass on the final attempt is a normal completion. Requires `kind: "produces"` + an `outcome` with a `name`; composes with `reads` and with `prompt` dispatch (attempt 0 sends the stage's resolved `prompt` raw; retries send `feedForward`'s output raw — for prompt dispatch it is the complete retry message, not a skill arg); mutually exclusive with `loop`, `run`, and `sessionPolicy: "continue"`.
+**verify** attaches a post-condition judge to a `produces` stage: after each attempt completes (collected, validated, persisted), the judge session grades the attempt's primary artifact and `done(verdict)` gates advancement — true → the chain advances with the attempt's producer pair; false → a fresh retry attempt (prompt arg built by `feedForward`) up to `max` attempts (default 1 = gate-only), then the workflow halts with "verification failed". A pass on the final attempt is a normal completion. Requires `kind: "produces"` + an `outcome` with a `name`; composes with `reads` and with `prompt` dispatch (attempt 0 sends the stage's resolved `prompt` raw; retries send `feedForward`'s output raw — for prompt dispatch it is the complete retry message, not a skill arg); mutually exclusive with `loop`, `run`, and `sessionPolicy: "continue"`. `verify` shares the `JudgedRepetition` field vocabulary with `assess` — `done` (the pass predicate), `max` (the attempt budget), and `feedForward` — one set of names for both judged-repetition shapes.
 
 ```ts
 import { judge, produces, verify } from "@juicesharp/rpiv-workflow";
@@ -257,7 +259,7 @@ const GATED = produces({
   outcome: implOutcome, // publishes "impl"
   verify: verify({
     judge: judge({ skill: "review-gate", outcome: verdictOutcome }), // publishes "impl-verdict"
-    pass: (v) => (v.data as { ok?: boolean }).ok === true,
+    done: (v) => (v.data as { ok?: boolean }).ok === true,
   }),
 });
 
@@ -267,14 +269,14 @@ const RETRIED = produces({
   reads: ["design", "plan"], // composes — attempt prompts use the labelled-flag projection
   verify: verify({
     judge: judge({ skill: "review-gate", outcome: verdictOutcome }),
-    pass: (v) => (v.data as { ok?: boolean }).ok === true,
+    done: (v) => (v.data as { ok?: boolean }).ok === true,
     feedForward: ({ verdict }) => `address: ${(verdict.data as { feedback?: string }).feedback}`,
-    maxAttempts: 3, // requires feedForward when > 1
+    max: 3, // requires feedForward when > 1
   }),
 });
 ```
 
-**Two budgets, two cost scales:** `verify.maxAttempts` is the FULL-attempt budget — each attempt is a fresh session running the whole produce→validate→persist cycle. `stage.maxRetries` stays the orthogonal in-session schema-fix budget and remains live inside every attempt.
+**Two budgets, two cost scales:** `verify.max` is the FULL-attempt budget — each attempt is a fresh session running the whole produce→validate→persist cycle. `stage.maxRetries` stays the orthogonal in-session schema-fix budget and remains live inside every attempt.
 
 **Lifecycle (loop semantics):** a verified stage runs through the loop driver, so `onLoopStart` fires with `kind: "verify"`, each attempt/verdict fires `onUnitStart`/`onUnitEnd` (roles `"produce"`/`"verify"`), and the stage does NOT fire `onStageEnd` — observe units, not stage-end. A model-override listener resolves the judge's own skill through `onUnitStart`, exactly as for assess judges.
 
@@ -290,7 +292,95 @@ edges: {
 }
 ```
 
-**Resume:** crash after an attempt but before its verdict → resume re-runs just the verify; a recovered failing verdict re-computes `pass` and continues the retry (or halts a gate-only verify); a recovered passing verdict fast-advances. `pass` is recomputed, never persisted — it joins the loop determinism contract (deterministic w.r.t. the verdict `Output`).
+**Resume:** crash after an attempt but before its verdict → resume re-runs just the verify; a recovered failing verdict re-computes `done` and continues the retry (or halts a gate-only verify); a recovered passing verdict fast-advances. `done` is recomputed, never persisted — it joins the loop determinism contract (deterministic w.r.t. the verdict `Output`).
+
+### Adversarial verification (panel)
+
+A single judge agreeing with itself is not a check — that is self-preference bias. **`panel()`** turns one judge into N independent skeptics and reduces their verdicts to one decision with a **fold**. It is a `Judge`-shaped *value*, not a new site: it slots into any slot a `judge` does — `assess({ judge })` or `verify({ judge })` — with **zero per-site code**, because every judge site dispatches through one expander (`panelMembers`) and reads the fold opaquely via its existing `done` predicate. A plain `judge` is simply a panel of one.
+
+```ts
+import { judge, majority, panel, produces, verify } from "@juicesharp/rpiv-workflow";
+import type { PanelVerdict } from "@juicesharp/rpiv-workflow";
+
+// Three independent skeptics — distinct lenses beat N copies (correctness, security, repro).
+const REVIEW_PANEL = panel({
+  members: [
+    judge({ skill: "review-correctness", outcome: { name: "v-correctness", collector } }),
+    judge({ skill: "review-security",    outcome: { name: "v-security",    collector } }),
+    judge({ skill: "review-repro",       outcome: { name: "v-repro",       collector } }),
+  ],
+  // The per-member `pred` interprets each member's OWN verdict schema.
+  fold: majority((v) => (v.data as { ok?: boolean }).ok === true),
+});
+
+// Slots into a verify site. The site's `done` reads the FOLDED canonical verdict.
+const VERIFIED = produces({
+  outcome: implOutcome,                               // publishes "impl"
+  verify: verify({
+    judge: REVIEW_PANEL,                              // fold publishes to "impl-panel"
+    done: (v) => (v.data as PanelVerdict).pass,       // the strict-majority result
+  }),
+});
+```
+
+**Two predicates, not one redundancy.** The per-member `pred` (passed to `majority`/`all`/`any`) interprets *one member's* own verdict; the site's `done` (`assess`'s and `verify`'s termination predicate) interprets *the fold*. Members never need a shared verdict schema — only the `pred` knows each member's shape.
+
+**`panel({ members, fold, outcome? })`:**
+
+- `members` — a **non-empty** array of single `judge(...)` values. Each carries its own `outcome` whose `name` must be **mutually distinct** and **distinct from the producer's** (a load-time check). Members do **not** nest — `panel` of `panel` is rejected at construction (§ "Explicitly not building").
+- `fold` — a function reducing the member verdicts to the panel's decision data. Either a **sugar** fold (`majority`/`all`/`any`, branded) or a **raw** `FoldFn`.
+- `outcome` — present **only** on the custom (raw-fold) path; it names + validates the fold's channel.
+
+#### Canonical ⊕ custom — a hard XOR
+
+The fold output is a validated, publishable `Output` so a downstream route can branch on it. Two disjoint ways to obtain the `(schema, channel, fold)` triple:
+
+| Path | `fold` | `outcome` | Schema / channel | Use |
+|---|---|---|---|---|
+| **Canonical** | sugar (`majority`/`all`/`any`) | **omitted** | built-in `PANEL_VERDICT`; channel `<stage>-panel` | zero-config disagreement routing |
+| **Custom** | raw `FoldFn` | **required** | author's schema + name | mean / weighted / synthesize |
+
+The XOR is enforced at construction (and re-checked at load for hand-rolled literals), so exactly one source names the verdict — never both, never neither:
+
+```
+sugar fold  +  outcome present  → construction error  (sugar ⊕ outcome)
+raw fold     +  outcome absent   → construction error  (raw ⊕ outcome)
+```
+
+#### The canonical verdict — `PANEL_VERDICT`
+
+Sugar folds emit this shape; disagreement is first-class because production routing keys on it:
+
+```ts
+PANEL_VERDICT = {
+  pass: boolean,                          // the fold's decision (per the sugar rule below)
+  votes: { pass: number, fail: number },  // the split
+  agreement: number,                      // |majority| / N — the disagreement signal
+  tie: boolean,                           // an even split
+}
+```
+
+| Sugar fold | `pass` is true when | Meaning |
+|---|---|---|
+| `majority(pred)` | strict majority of members pass `pred` | even split is a tie ⇒ fail (see `tie`/`agreement`) |
+| `all(pred)` | every member passes `pred` | unanimous — one fail vetoes |
+| `any(pred)` | at least one member passes `pred` | veto / rescue — one pass carries it |
+
+#### Where the fold publishes
+
+The fold publishes **decision data**, not a file artifact. It lands on its own named channel — `<stage>-panel` (canonical) or your `outcome.name` (custom) — with `artifacts: []`, so it never claims the rolling primary. Each member *also* publishes its own verdict to its own `outcome.name` channel, so the full per-member trail is preserved. A downstream stage that wants to **read survivors** reads the producer/member artifacts; a route that wants the **decision** reads the fold channel (see [`match`](#match)'s `from`).
+
+#### The four flows
+
+- **Generate-and-filter** — `fanout` to generate candidates → a stage whose `verify` judge is a `panel(...)` → `match` on the published verdict to keep survivors.
+- **Classify-and-route** — panel verdict → `match("decision", …)`.
+- **Escalate-on-disagreement** (highest value) — route on `tie`/`agreement` to a human/escalation stage; falls out for free once the channel + disagreement signal exist.
+- **Tournament** — unchanged; a future `iterate` over a bracket.
+
+#### Caveats & resume
+
+- **Sequential cost.** Pi is single-active-session, so members run one after another — a panel costs **N judge sessions per check**. Panels are slower, never incorrect. Parallelism is a roadmap item, not a property of the fold.
+- **Resume parity.** Each member is its own durable audit row (member-index-bearing tag); the **folded verdict is never persisted** — it is recomputed from the member rows and republished at the same transition on resume, byte-identical to live. The fold must therefore be deterministic w.r.t. the member verdicts (it joins the loop determinism contract). A crash mid-panel re-runs only the pending member, then recomputes the fold.
 
 ### acts
 
@@ -487,6 +577,7 @@ A conditional edge is an **`EdgeFn`**: a `(ctx) => string` predicate carrying a 
 
 - **`defineRoute(targets, fn)`** — general. Arbitrary TS body, explicit `targets`. Use for strings, enums, multiple fields, ranges — anything.
 - **`gate(field, branches)`** — terse convenience for one **numeric** field with threshold predicates; derives `.targets` from the branch keys. Not more powerful than `defineRoute`, just shorter for the numeric case.
+- **`match(field, branches, opts?)`** — the string/boolean companion to `gate`: classify on a discrete (enum) field by strict `===`. Derives `.targets` from the branch keys; shorter than `defineRoute` for the enum case.
 
 ### gate (numeric field)
 
@@ -502,6 +593,33 @@ edges: {
   })
 }
 ```
+
+### match (enum field)
+
+`match(field, branches, opts?)` maps each target stage to the **discrete value** that routes to it. The field is compared by strict `===` in declaration order; first match wins. Where `gate` keys on a `Number(...)` threshold, `match` keys on a string/number/boolean equal — the enum classifier `gate` can't express.
+
+```typescript
+import { match } from "@juicesharp/rpiv-workflow";
+
+edges: {
+  triage: match("severity", { escalate: "p0", fix: "p1", backlog: "p2" }),
+}
+```
+
+**No-match is explicit, never silent.** With `opts.fallback` the unmatched value routes there; without one it terminates (`STOP`). Either way the no-match lands a routing-audit `note`.
+
+**Routing on a panel's verdict** — `opts.from` reads the field from a named channel's latest output (`state.named[from].at(-1).data[field]`) instead of the stage's projected `output.data`. This is how `match` branches on a [panel](#adversarial-verification-panel)'s published fold (the fold lands on a channel, never on the stage's projected output):
+
+```typescript
+// Escalate when the panel split, otherwise keep survivors.
+edges: {
+  review: match("tie", { escalate: true }, { fallback: "keep", from: "review-panel" }),
+}
+```
+
+A channel-sourced route validates the *channel's* data, not the source stage's output, so it does **not** mark the source stage `READS_DATA`.
+
+**Construction rules:** each enum value must map to exactly one stage (a duplicate value throws — ambiguous), and branch keys must not be integer-like (`"2"`) — JS hoists array-index keys ahead of declaration order, silently reordering priority. Built on `defineRoute`, so `.targets` (incl. the fallback) feeds the reachability BFS and `READS_DATA` auto-applies unless `from` sources a channel.
 
 ### defineRoute (strings, enums, multi-field)
 

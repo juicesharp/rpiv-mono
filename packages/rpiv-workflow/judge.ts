@@ -94,6 +94,91 @@ export interface PromptJudge extends JudgeBase {
 export type Judge = SkillJudge | PromptJudge;
 
 /**
+ * A fold reduces the N member verdicts of a `PanelJudge` to the panel's
+ * decision DATA — `unknown` here because the *shape* is path-dependent
+ * (canonical `PANEL_VERDICT` vs. a custom author schema), validated downstream
+ * by the panel's `outcome`. The fold is pure (the replay contract leans on
+ * this: live + resume both recompute it from the durable member rows).
+ */
+export type FoldFn = (verdicts: readonly Output[]) => unknown;
+
+/**
+ * N independent judges plus a vote `fold` — the adversarial-verification
+ * generalization of a single `Judge` (Cohere PoLL: a jury beats a self-agreeing
+ * judge). `kind: "panel"` is the discriminator; a single `Judge` carries no
+ * `kind`, so `isPanel` distinguishes them structurally.
+ *
+ * `members` is `Judge[]` — each a full `SkillJudge | PromptJudge`, so the whole
+ * judge surface (skill XOR prompt, named verdict outcome, dispatch) is reused
+ * per member with zero new vocabulary. Nesting is rejected at construction
+ * (`members` is NOT `AnyJudge[]`).
+ *
+ * `outcome` is the canonical-vs-custom switch: ABSENT ⇒ the built-in
+ * `PANEL_VERDICT` shape on the `<stage>-panel` channel (sugar fold); PRESENT ⇒
+ * the author's schema + channel (raw fold). The two are kept disjoint by a hard
+ * XOR enforced by the `panel()` factory (Phase 2) — never both.
+ */
+export interface PanelJudge {
+	kind: "panel";
+	members: readonly Judge[];
+	fold: FoldFn;
+	outcome?: NamedOutcome;
+}
+
+/**
+ * The slot type every judge SITE (`assess`, `verify`, any future judge phase)
+ * accepts — a plain `Judge` OR a `PanelJudge`. A single judge is the panel of
+ * one: sites reference the judge opaquely and let `panelMembers` expand it, so
+ * widening this slot is the ONLY signature change panel support imposes.
+ */
+export type AnyJudge = Judge | PanelJudge;
+
+/** Discriminate a `PanelJudge` from a single `Judge` (singles carry no `kind`). */
+export const isPanel = (j: AnyJudge): j is PanelJudge => (j as PanelJudge).kind === "panel";
+
+/**
+ * THE expander — the single place a judge value becomes its member list. A
+ * panel yields its `members`; a single judge yields `[judge]` (the panel of
+ * one). Every member-walking site (preflight skill registration, introspection,
+ * the judge-phase dispatch) routes through this, so single-judge behavior is
+ * the degenerate case of the general path by construction.
+ */
+export const panelMembers = (j: AnyJudge): readonly Judge[] => (isPanel(j) ? j.members : [j]);
+
+/** The sugar-fold constructors — the canonical folds (`majority`/`all`/`any`). */
+export type CanonicalFoldName = "majority" | "all" | "any";
+
+/**
+ * Brand carrying the SUGAR-fold name (`majority`/`all`/`any`) so consumers can
+ * (a) tell a canonical fold from a raw author closure — the structural signal
+ * behind the §4 XOR (sugar ⊕ `outcome`) — and (b) report WHICH fold it is in
+ * the introspection summary (`panelSpecOf`). `Symbol.for` so it survives
+ * `import` boundaries cleanly, matching the `READS_DATA` / `ROUTE_NOTE`
+ * precedent.
+ *
+ * Framework plumbing, not authoring surface — the sugar constructors brand;
+ * `panelShapeIssues` / `validateWorkflow` / `panelSpecOf` read. NOT re-exported
+ * from `registration.ts`, like `ROUTE_NOTE`.
+ */
+export const CANONICAL_FOLD: unique symbol = Symbol.for("rpiv.workflow.canonicalFold");
+
+/** True iff `fold` was produced by a sugar constructor (carries the `CANONICAL_FOLD` brand). */
+export function marksCanonicalFold(fold: FoldFn): boolean {
+	return canonicalFoldName(fold) !== undefined;
+}
+
+/** The sugar constructor that produced `fold` (`majority`/`all`/`any`), or `undefined` for a raw author closure. */
+export function canonicalFoldName(fold: FoldFn): CanonicalFoldName | undefined {
+	return (fold as unknown as Record<symbol, CanonicalFoldName | undefined>)[CANONICAL_FOLD];
+}
+
+/** Attach the `CANONICAL_FOLD` brand (the sugar name) and return the fold — the ONE write site (sugar constructors). */
+export function brandCanonicalFold(name: CanonicalFoldName, fold: FoldFn): FoldFn {
+	(fold as unknown as Record<symbol, CanonicalFoldName>)[CANONICAL_FOLD] = name;
+	return fold;
+}
+
+/**
  * Single rule source for the judge shape. Returns human-readable violations
  * (empty array = valid). `judge()` throws on the first; `validateWorkflow`
  * maps each to a load issue for hand-rolled literals that bypassed the

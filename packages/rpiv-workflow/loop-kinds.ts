@@ -21,9 +21,9 @@
 import type { AssessLoop, IterateLoop, LoopDef, StageDef, Unit, UnitRole } from "./api.js";
 import { resolveStagePrompt } from "./chain-state.js";
 import { type Artifact, handleToString } from "./handle.js";
-import { type Judge, resolveJudgePrompt } from "./judge.js";
+import { isPanel, type Judge, type PanelJudge, panelMembers, resolveJudgePrompt } from "./judge.js";
 import { MSG_LOOP_CURSOR_CORRUPT } from "./messages.js";
-import type { Output } from "./output.js";
+import { finalizeOutput, type Output, type OutputMeta } from "./output.js";
 import { StagePreflightError } from "./runner/errors.js";
 import type { RunContext, RunState } from "./types.js";
 
@@ -71,6 +71,15 @@ export interface LoopCursor {
 	lastVerdict?: Output;
 	/** Which assess sub-step is next ("produce" for non-assess loops). */
 	phase: "produce" | "judge";
+	/**
+	 * Mid-flight panel sub-state — present ONLY while a multi-member judge phase
+	 * is in progress (a single judge never sets it; a panel clears it the moment
+	 * its last member folds). `memberIndex` is the NEXT member to dispatch;
+	 * `verdicts` accumulates the graded member Outputs the fold reduces. Both the
+	 * live driver and the resume fold rebuild it through `advanceCursor`, so the
+	 * two paths fold byte-identically (THE REPLAY CONTRACT).
+	 */
+	panel?: { memberIndex: number; verdicts: Output[] };
 	/** Units dispatched by THIS driver invocation — the resume silence rule. */
 	ranThisInvocation: number;
 }
@@ -90,18 +99,61 @@ export const unitTagOf = (u: Unit): string => u.id ?? u.label;
  * advance byte-identically, so neither may hand-roll the transition again.
  * `ranThisInvocation` is deliberately NOT advanced here: it is live-dispatch
  * accounting (the resume silence rule), not replayed state.
+ *
+ * Takes the whole `LoopDef` (not just its `kind`) so the judge arm can read the
+ * assess loop's judge SLOT: a single judge sets `lastVerdict` directly (today's
+ * transition, byte-for-byte); a panel accumulates each member verdict and, on
+ * the LAST member, folds the N verdicts into the one decision the produce phase
+ * reads. The fold + `finalizeOutput` are pure, so live and resume — both of which
+ * call this from the durable member rows — manufacture an identical verdict.
  */
-export function advanceCursor(cursor: LoopCursor, role: UnitRole, output: Output, loopKind: LoopDef["kind"]): void {
+export function advanceCursor(cursor: LoopCursor, role: UnitRole, output: Output, loop: LoopDef): void {
 	if (role === "produce") {
 		cursor.accumulated.push(output);
 		cursor.lastProduce = { output, artifact: output.artifacts[0] };
-		if (loopKind === "assess") cursor.phase = "judge";
+		if (loop.kind === "assess") cursor.phase = "judge";
 		else cursor.index++;
+		return;
+	}
+
+	// judge / verify role — assess loops only (the only kind with a judge phase).
+	const slot = (loop as AssessLoop).judge;
+	if (isPanel(slot)) {
+		const verdicts = cursor.panel?.verdicts ?? [];
+		verdicts.push(output);
+		const memberIndex = cursor.panel?.memberIndex ?? 0;
+		if (memberIndex + 1 < slot.members.length) {
+			// More members to grade — stay in the judge phase, advance the member,
+			// keep the round (`index`) + `lastVerdict` untouched.
+			cursor.panel = { memberIndex: memberIndex + 1, verdicts };
+			return;
+		}
+		// Last member — fold the N verdicts to the panel's decision (pure) and
+		// clear the sub-state. The folded verdict is what the produce phase's
+		// `done` reads, exactly where a single judge's verdict would sit.
+		cursor.lastVerdict = foldPanelVerdict(slot, verdicts, output.meta);
+		cursor.panel = undefined;
 	} else {
 		cursor.lastVerdict = output;
-		cursor.phase = "produce";
-		cursor.index++;
 	}
+	cursor.phase = "produce";
+	cursor.index++;
+}
+
+/** Manufactured `Output.kind` for a panel's folded verdict — data-only, no artifact. */
+const PANEL_VERDICT_KIND = "panel-verdict";
+
+/**
+ * Reduce a panel's N member verdicts to the single decision the produce phase
+ * reads. PURE (the author fold + `finalizeOutput` are pure) and DETERMINISTIC:
+ * reusing the last member's `meta` keeps the manufactured verdict byte-identical
+ * across live + resume (the member rows are the durable, replayed trail; a fresh
+ * `nowIso()` would break the replay contract). The folded Output carries NO
+ * artifact — it is routable decision DATA, not a file the loop projects (§5
+ * boundary: the fold publishes data, member reasoning lives on member channels).
+ */
+function foldPanelVerdict(panel: PanelJudge, verdicts: readonly Output[], meta: OutputMeta): Output {
+	return finalizeOutput({ kind: PANEL_VERDICT_KIND, artifacts: [], data: panel.fold(verdicts) }, meta);
 }
 
 /**
@@ -132,6 +184,19 @@ function lastProduceOf(cursor: LoopCursor, stage: string): NonNullable<LoopCurso
  */
 export function judgeStageDef(judge: Judge): StageDef {
 	return { kind: "produces", outcome: judge.outcome, sessionPolicy: "fresh" };
+}
+
+/**
+ * Judge-unit display label + identity tag. A single judge keeps the bare
+ * `r{round}·judge` / `a{round}·verify` form (its identity is `(role, round)`, no
+ * `unitId`); a panel member appends `#{memberIndex}` so each member row is
+ * identity-bearing — the `(round, memberIndex)` key the resume drift join reads
+ * to tell members of the same round apart. The ONE construction site for both
+ * the live dispatch tag and the resume guard's expectation, so they can't drift.
+ */
+export function judgeUnitLabel(round: number, isVerify: boolean, memberIndex: number | undefined): string {
+	const base = isVerify ? `a${round}·verify` : `r${round}·judge`;
+	return memberIndex === undefined ? base : `${base}#${memberIndex}`;
 }
 
 /**
@@ -169,14 +234,16 @@ export type NextStep =
  * fold's `OpenGeneration` satisfies it structurally. `expected` is the
  * iterate strategy's pull-once-per-index cache (a failed row followed by its
  * resumed re-run row re-checks the same expectation without double-pulling
- * the generator); the strategy owns the field.
+ * the generator); the strategy owns the field. `memberIndex` extends the join
+ * key to `(index, memberIndex)` for assess panels — within one round all member
+ * rows share `index`, so the member dimension is what tells them apart.
  */
 export interface GenerationGuardCtx {
 	loop: LoopDef;
 	entryArtifact: Artifact | undefined;
 	cursor: LoopCursor;
 	units?: readonly Unit[];
-	expected?: { index: number; tag: string | undefined };
+	expected?: { index: number; memberIndex?: number; tag: string | undefined };
 }
 
 /** The unit-row facts a guard strategy compares against (a `WorkflowStage` row satisfies it). */
@@ -303,7 +370,14 @@ const assessStrategy: LoopKindStrategy = {
 		const isVerify = e.def.verify !== undefined;
 		if (cursor.phase === "judge") {
 			const lp = lastProduceOf(cursor, e.name); // a judge step always follows a completed produce
-			const judge = loop.judge;
+			// Expand the judge slot to its members and dispatch the member the
+			// panel sub-state points at. A single judge is the panel of one
+			// (`memberIndex` undefined, member 0 the only member), so its transition
+			// is byte-identical to today; a panel walks member 0..N-1 across
+			// successive judge-phase pulls, `advanceCursor` bumping
+			// `cursor.panel.memberIndex` between them.
+			const memberIndex = isPanel(loop.judge) ? (cursor.panel?.memberIndex ?? 0) : undefined;
+			const judge = panelMembers(loop.judge)[memberIndex ?? 0]!;
 			const judgeSkill = judge.skill ?? (isVerify ? `${e.name}-verify` : `${e.name}-judge`);
 			let prompt: string;
 			if (judge.skill !== undefined) {
@@ -323,11 +397,15 @@ const assessStrategy: LoopKindStrategy = {
 					round: cursor.index,
 				});
 			}
-			const label = isVerify ? `a${cursor.index}·verify` : `r${cursor.index}·judge`;
+			const label = judgeUnitLabel(cursor.index, isVerify, memberIndex);
 			return {
 				kind: "unit",
 				role: isVerify ? "verify" : "judge",
 				tag: label,
+				// Panel member rows carry an `id` so they are identity-bearing for the
+				// resume join (`unitId` = the `#{memberIndex}` tag); a single judge keeps
+				// identity `(role, round)` with no `id`, exactly as before.
+				id: memberIndex === undefined ? undefined : label,
 				label,
 				skill: judgeSkill,
 				prompt,
@@ -370,12 +448,26 @@ const assessStrategy: LoopKindStrategy = {
 		};
 	},
 	// The kind-agnostic (role, unitIndex) arithmetic already matched in the
-	// caller. Full-check extra: a produce row for round n>0 implies
-	// done(verdict n-1) was false on the live run — a now-true done means the
-	// predicate drifted.
+	// caller. Full-check extras:
+	//  - a produce row for round n>0 implies done(verdict n-1) was false on the
+	//    live run — a now-true done means the predicate drifted;
+	//  - a PANEL judge/verify row carries its member index in `unitId`, the
+	//    dimension the (role, unitIndex) check can't see — verify it matches the
+	//    member the rebuilt sub-state expects, so a missing/reordered member row
+	//    is drift, not a silently mis-folded verdict.
 	async guardExpectation(gen, row) {
 		if (row.role === "produce" && gen.cursor.lastVerdict !== undefined) {
 			return !(gen.loop as AssessLoop).done(gen.cursor.lastVerdict);
+		}
+		const slot = (gen.loop as AssessLoop).judge;
+		if ((row.role === "judge" || row.role === "verify") && isPanel(slot)) {
+			const memberIndex = gen.cursor.panel?.memberIndex ?? 0;
+			gen.expected = {
+				index: gen.cursor.index,
+				memberIndex,
+				tag: judgeUnitLabel(gen.cursor.index, row.role === "verify", memberIndex),
+			};
+			return gen.expected.tag === row.unitId;
 		}
 		return true;
 	},

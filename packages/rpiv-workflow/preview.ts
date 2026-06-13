@@ -8,7 +8,7 @@
 import { STOP, type StageDef } from "./api.js";
 import { type ConfigLayer, renderConfigLayer } from "./layers.js";
 import type { LoadedWorkflows } from "./load/index.js";
-import { describeFlow, type StageShape } from "./loop-constructors.js";
+import { type AnyJudgeSpec, describeFlow, type StageShape } from "./loop-constructors.js";
 import type { SkillContractMap } from "./skill-contract.js";
 
 /** No-args listing footer — generic usage hint. */
@@ -170,21 +170,31 @@ function loopTag(control: StageShape["control"]): string {
 	const spec = control.spec;
 	if (!spec) return control.mode;
 	if (spec.kind === "assess") {
-		const judge = spec.judge?.skill ? `skill:${spec.judge.skill}` : "prompt";
+		const judge = spec.judge ? judgeSlotTag(spec.judge) : "prompt";
 		return `assess(judge: ${judge})·max=${spec.max}`;
 	}
 	return spec.max !== undefined ? `${spec.kind}·max=${spec.max}` : spec.kind;
 }
 
 /**
+ * Render a judge SLOT for a stage tag: `skill:<name>` / `prompt` for a single
+ * judge, or `panel(<N>, <fold>)` for an N-member panel (`fold` is the sugar
+ * name or `custom`) — the fan-in surfaces at a glance.
+ */
+function judgeSlotTag(spec: AnyJudgeSpec): string {
+	if ("panel" in spec) return `panel(${spec.panel.length}, ${spec.fold})`;
+	return spec.skill ? `skill:${spec.skill}` : "prompt";
+}
+
+/**
  * Decoration for a verify-bearing stage: `verify(skill:<name>)` /
- * `verify(prompt)`, with the attempt budget appended when retrying
- * (`·attempts=N`); a gate-only verify (the default, max 1) stays compact.
+ * `verify(prompt)` / `verify(panel(N, fold))`, with the attempt budget appended
+ * when retrying (`·attempts=N`); a gate-only verify (the default, max 1) stays
+ * compact.
  */
 function verifyTag(v: NonNullable<StageShape["verify"]>): string {
-	const judge = v.skill ? `skill:${v.skill}` : "prompt";
 	const attempts = v.max > 1 ? `·attempts=${v.max}` : "";
-	return `verify(${judge})${attempts}`;
+	return `verify(${judgeSlotTag(v)})${attempts}`;
 }
 
 /**

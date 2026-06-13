@@ -199,3 +199,112 @@ export function gate(field: string, branches: Record<string, NumericPredicate>, 
 	});
 	return route;
 }
+
+/** A discrete value a `match` branch compares its field against (strict `===`). */
+export type MatchValue = string | number | boolean;
+
+/** Options for `match`. */
+export interface MatchOptions {
+	/**
+	 * Stage to route to when no branch value matches. Optional: when omitted, an
+	 * unmatched value TERMINATES the chain (`STOP`). Either way the no-match is a
+	 * visible event — the routing-audit row carries a `note`. Provide a fallback
+	 * to keep the run going on an unexpected value (the roadmap-P4 `triage` shape).
+	 */
+	fallback?: string;
+	/**
+	 * Read the matched field from a NAMED CHANNEL's latest output
+	 * (`state.named[from].at(-1).data[field]`) instead of the stage's projected
+	 * `output.data`. This is how a `match` routes on a panel's PUBLISHED verdict
+	 * (the `<stage>-panel` channel) — the fold lands on a channel, never on the
+	 * stage's projected output (which stays the producer artifact). A
+	 * channel-sourced route validates the channel's data, not the source stage's
+	 * output, so it does NOT mark the source stage `READS_DATA`.
+	 */
+	from?: string;
+}
+
+/**
+ * Conditional routing keyed on an ENUM field — the string/boolean companion to
+ * the numeric `gate`. Each branch maps a target stage to the discrete value that
+ * routes to it; the field is compared by strict `===` in declaration order and
+ * the first match wins:
+ *
+ * ```ts
+ * match("severity", { escalate: "p0", fix: "p1", backlog: "p2" })
+ * match("tie", { escalate: true }, { fallback: "keep", from: "review-panel" })
+ * ```
+ *
+ * Sourcing (`opts.from`) lets a `match` branch on a panel's published verdict —
+ * `match("tie", …, { from: "<stage>-panel" })` reads the folded `PANEL_VERDICT`
+ * off its channel, the disagreement-routing companion to `panel()`.
+ *
+ * No-match handling is EXPLICIT, never silent: with an `opts.fallback` the
+ * unmatched value routes there; without one it terminates (`STOP`). Both record
+ * a routing-audit `note`.
+ *
+ * Each enum value must map to exactly one stage (a duplicate value is ambiguous
+ * → construction error), and branch keys must not be integer-like (`"2"`) — JS
+ * hoists array-index keys ahead of declaration order, silently reordering match
+ * priority. Built on `defineRoute`, so `.targets` is attached structurally
+ * (reachability BFS sees every branch incl. the fallback) and `READS_DATA`
+ * auto-applies (unless `from` sources a channel instead of the stage output).
+ */
+export function match(field: string, branches: Record<string, MatchValue>, opts?: MatchOptions): EdgeFn {
+	const branchTargets = Object.keys(branches);
+	if (branchTargets.length === 0) {
+		throw new Error("match: branches must declare at least one possible return value");
+	}
+	const claimedBy = new Map<string, string>();
+	for (const key of branchTargets) {
+		if (INTEGER_LIKE_KEY.test(key)) {
+			throw new Error(
+				`match: branch key "${key}" is integer-like — JS reorders such keys ahead of declaration order, ` +
+					`silently changing match priority. Rename the stage.`,
+			);
+		}
+		// Type-tag the value so 0/"0"/false stay distinct when deduping.
+		const value = branches[key]!;
+		const valueKey = `${typeof value}:${String(value)}`;
+		const prior = claimedBy.get(valueKey);
+		if (prior !== undefined) {
+			throw new Error(
+				`match: value ${JSON.stringify(value)} is claimed by both "${prior}" and "${key}" — ` +
+					`each enum value must map to exactly one stage`,
+			);
+		}
+		claimedBy.set(valueKey, key);
+	}
+
+	const fallback = opts?.fallback;
+	if (fallback !== undefined && (typeof fallback !== "string" || fallback.length === 0)) {
+		throw new Error("match: `fallback`, when provided, must be a non-empty stage name");
+	}
+	const noMatch = fallback ?? STOP;
+	const targets = [...new Set([...branchTargets, noMatch])];
+
+	const from = opts?.from;
+	const route: EdgeFn = defineRoute(
+		targets,
+		({ output, state }) => {
+			const source =
+				from !== undefined
+					? (state.named[from]?.at(-1)?.data as Record<string, unknown> | undefined)
+					: (output?.data as Record<string, unknown> | undefined);
+			const raw = source?.[field];
+			for (const target of branchTargets) {
+				if (raw === branches[target]) return target;
+			}
+			(route as unknown as Record<symbol, string>)[ROUTE_NOTE] =
+				`match("${field}"): value ${JSON.stringify(raw ?? null)} matched no branch — ${
+					fallback ? `fell back to "${fallback}"` : `terminated (no fallback)`
+				}`;
+			return noMatch;
+		},
+		// A channel-sourced match validates the CHANNEL's data, not the source
+		// stage's projected output — so don't demand the source stage carry an
+		// outputSchema. A stage-output match reads `output.data` (default mark).
+		from !== undefined ? { readsData: false } : undefined,
+	);
+	return route;
+}

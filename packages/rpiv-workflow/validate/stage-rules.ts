@@ -13,8 +13,14 @@
 
 import { LOOP_KINDS, ON_INVALID_VALUES, SESSION_POLICIES, STAGE_KINDS, type StageDef, type Workflow } from "../api.js";
 import { resolvePublishName } from "../chain-state.js";
-import { judgeShapeIssues } from "../judge.js";
-import { judgeOf, loopSpecOf, verifyShapeIssues } from "../loop-constructors.js";
+import { type AnyJudge, isPanel, judgeShapeIssues } from "../judge.js";
+import {
+	judgeSlotOf,
+	loopSpecOf,
+	panelShapeIssues,
+	panelVerdictChannel,
+	verifyShapeIssues,
+} from "../loop-constructors.js";
 import {
 	MAX_VALIDATION_RETRIES,
 	MAX_VALIDATION_RETRY_TIMEOUT_MS,
@@ -78,8 +84,12 @@ function checkLoopInvariants(stage: StageDef, name: string, report: ReportFn): v
 
 	if (loop.kind !== "assess") return;
 
-	// Judge shape — SAME rule source as the judge() factory (no wording drift).
-	for (const issue of judgeShapeIssues(loop.judge)) {
+	// Judge shape — SAME rule sources as the judge()/panel() factories (no
+	// wording drift). The slot is an `AnyJudge`: a panel routes through
+	// `panelShapeIssues`, a single judge through `judgeShapeIssues`.
+	const slot = loop.judge;
+	const shapeIssues = slot && isPanel(slot) ? panelShapeIssues(slot) : judgeShapeIssues(slot);
+	for (const issue of shapeIssues) {
 		report("assess-judge-shape", { issue });
 	}
 	if (typeof loop.done !== "function") {
@@ -88,11 +98,49 @@ function checkLoopInvariants(stage: StageDef, name: string, report: ReportFn): v
 	if (typeof loop.feedForward !== "function") {
 		report("assess-feed-forward-not-function");
 	}
-	// Verdict-channel collision — STAYS workflow-level (needs the producer's
+	// Verdict-channel collisions — STAY workflow-level (need the producer's
 	// publish identity, which only the stage knows).
-	if (loop.judge?.outcome?.name && loop.judge.outcome.name === (stage.outcome?.name ?? name)) {
-		report("assess-verdict-channel-collision", { channel: loop.judge.outcome.name });
+	checkVerdictChannels(slot, name, stage, "assess-verdict-channel-collision", report);
+}
+
+/**
+ * Verdict-channel collisions for a judge SLOT (`AnyJudge`) — workflow-level
+ * because it needs the producer's publish identity (`stage.outcome?.name ??
+ * name`). A single judge owns ONE verdict channel; a PANEL owns one channel per
+ * member PLUS the folded-verdict channel, and every one of them must be
+ * distinct from the others and from the producer's own slot, or two sessions
+ * clobber a single `state.named` entry. The SHAPE is checked separately through
+ * the matching rule source; this is purely the channel-namespace rule.
+ *
+ * `singleCode` (assess- vs verify-worded) is the only per-site difference; the
+ * panel codes are site-independent.
+ */
+function checkVerdictChannels(
+	slot: AnyJudge | undefined,
+	name: string,
+	stage: StageDef,
+	singleCode: "assess-verdict-channel-collision" | "verify-verdict-channel-collision",
+	report: ReportFn,
+): void {
+	if (!slot) return;
+	const producer = stage.outcome?.name ?? name;
+	if (!isPanel(slot)) {
+		if (slot.outcome?.name && slot.outcome.name === producer) {
+			report(singleCode, { channel: slot.outcome.name });
+		}
+		return;
 	}
+	// Panel: members + fold share one namespace with the producer. First
+	// claimant of a name wins; a later claimant is the collision.
+	const claimed = new Set<string>([producer]);
+	for (const m of slot.members) {
+		const channel = m?.outcome?.name;
+		if (!channel) continue; // a member missing outcome.name is a shape issue (panelShapeIssues)
+		if (claimed.has(channel)) report("panel-member-channel-collision", { channel });
+		else claimed.add(channel);
+	}
+	const fold = panelVerdictChannel(slot, name);
+	if (claimed.has(fold)) report("panel-verdict-channel-collision", { channel: fold });
 }
 
 /**
@@ -131,11 +179,10 @@ function checkVerifyInvariants(stage: StageDef, name: string, report: ReportFn):
 	if (stage.kind === "produces" && !stage.run && !stage.outcome?.name) {
 		report("verify-outcome-name-required");
 	}
-	// Verdict-channel collision — STAYS workflow-level (needs the producer's
-	// publish identity, which only the stage knows). Mirrors the assess rule.
-	if (v.judge?.outcome?.name && v.judge.outcome.name === (stage.outcome?.name ?? name)) {
-		report("verify-verdict-channel-collision", { channel: v.judge.outcome.name });
-	}
+	// Verdict-channel collisions — STAY workflow-level (need the producer's
+	// publish identity, which only the stage knows). Mirrors the assess rule;
+	// `checkVerdictChannels` walks panel members + fold for an `AnyJudge` slot.
+	checkVerdictChannels(v.judge, name, stage, "verify-verdict-channel-collision", report);
 }
 
 function checkRetryBounds(stage: StageDef, report: ReportFn): void {
@@ -298,10 +345,11 @@ function checkScriptStageInvariants(stage: StageDef, report: ReportFn): void {
  * Every named channel some stage in this workflow can publish: top-level
  * `produces` publishes (`resolvePublishName` — the runtime write rule), PLUS
  * judge verdict channels from `loop` (assess) and `verify` — judge sessions
- * run as `produces` and publish to `judge.outcome.name` (`judgeStageDef`).
- * The old produces-only scan missed verdict channels, so a downstream
- * `reads: ["<verdict>"]` falsely errored at load while the runtime
- * `ensureNamedReads` preflight would have passed.
+ * run as `produces` and publish to `judge.outcome.name` (`judgeStageDef`). A
+ * PANEL slot publishes one channel per member verdict plus the folded verdict
+ * (`panelVerdictChannel`). The old produces-only scan missed verdict channels,
+ * so a downstream `reads: ["<verdict>"]` falsely errored at load while the
+ * runtime `ensureNamedReads` preflight would have passed.
  *
  * Computed ONCE by the orchestrator and threaded to both consumers
  * (`checkReadsReferences`, `checkFanoutSource`).
@@ -310,8 +358,16 @@ export function publishedNamesOf(w: Workflow): Set<string> {
 	const published = new Set<string>();
 	for (const [name, stage] of Object.entries(w.stages)) {
 		if (stage.kind === "produces") published.add(resolvePublishName(stage, name));
-		const judge = judgeOf(stage);
-		if (judge?.outcome?.name) published.add(judge.outcome.name);
+		const slot = judgeSlotOf(stage);
+		if (!slot) continue;
+		if (isPanel(slot)) {
+			// A panel publishes one channel per MEMBER verdict plus the folded
+			// verdict (`<stage>-panel` or the author's `outcome.name`).
+			for (const m of slot.members) if (m?.outcome?.name) published.add(m.outcome.name);
+			published.add(panelVerdictChannel(slot, name));
+		} else if (slot.outcome?.name) {
+			published.add(slot.outcome.name);
+		}
 	}
 	return published;
 }

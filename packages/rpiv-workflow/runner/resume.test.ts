@@ -30,7 +30,7 @@ import { type FanoutFn, type IterateFn, produces, type Workflow } from "../api.j
 import type { Artifact } from "../handle.js";
 import { fs as fsHandle, handleToString } from "../handle.js";
 import { judge } from "../judge.js";
-import { assess, fanout, iterate, verify } from "../loop-constructors.js";
+import { assess, fanout, iterate, majority, panel, verify } from "../loop-constructors.js";
 import { advanceCursor, freshCursor } from "../loop-kinds.js";
 import type { Output } from "../output.js";
 import {
@@ -197,6 +197,36 @@ const assessJudgeRow = (
 	role: "judge",
 	unitIndex: round,
 	output,
+});
+
+/** A panel member's judge row — identity-bearing (`#{memberIndex}` in `unitId`). */
+const assessPanelJudgeRow = (
+	parent: string,
+	judgeSkill: string,
+	round: number,
+	memberIndex: number,
+	num: number,
+	output: Output,
+): WorkflowStage => ({
+	session: null,
+	stageNumber: num,
+	stage: `${parent} (r${round}·judge#${memberIndex})`,
+	skill: judgeSkill,
+	status: "completed",
+	ts: `t${num}`,
+	parent,
+	role: "judge",
+	unitId: `r${round}·judge#${memberIndex}`,
+	unitIndex: round,
+	output,
+});
+
+/** A member verdict Output carrying `{ done }` data the per-member `pred` reads. */
+const memberVerdict = (path: string, isDone: boolean): Output => ({
+	kind: "artifacts",
+	artifacts: [fakeArtifact(path)],
+	data: { done: isDone },
+	meta: { stage: "test", stageNumber: 1, ts: "", runId: "" },
 });
 
 // ---------------------------------------------------------------------------
@@ -711,6 +741,111 @@ describe("reconstructState", () => {
 		expect(result.drift).toBeUndefined();
 	});
 
+	it("assess × panel: each member verdict publishes to its OWN channel; the fold publishes to `<stage>-panel`", async () => {
+		const p0 = fakeArtifact("tasks/t0.md");
+		const outA = memberVerdict("verdicts/v0a.json", true);
+		const outB = memberVerdict("verdicts/v0b.json", true);
+		const outC = memberVerdict("verdicts/v0c.json", false); // 2-of-3 pass → majority pass
+		const loop = assess({
+			judge: panel({
+				members: [
+					judge({ skill: "grade-a", outcome: makeOutcome("verdict-a") }),
+					judge({ skill: "grade-b", outcome: makeOutcome("verdict-b") }),
+					judge({ skill: "grade-c", outcome: makeOutcome("verdict-c") }),
+				],
+				fold: majority((v) => Boolean((v.data as { done?: boolean }).done)),
+			}),
+			done: (v) => Boolean((v.data as { pass?: boolean }).pass),
+			feedForward: () => "more",
+		});
+		const wf: Workflow = {
+			name: "test-wf",
+			start: "breakdown",
+			stages: { breakdown: produces({ outcome: makeOutcome("tasks"), loop }) },
+			edges: { breakdown: "stop" },
+		} as Workflow;
+
+		writeRunStages([
+			assessProduceRow("breakdown", 0, 1, fakeOutput([p0])),
+			assessPanelJudgeRow("breakdown", "grade-a", 0, 0, 2, outA),
+			assessPanelJudgeRow("breakdown", "grade-b", 0, 1, 3, outB),
+			assessPanelJudgeRow("breakdown", "grade-c", 0, 2, 4, outC),
+		]);
+
+		const result = await reconstructState(tmpDir, wf, baseHeader);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.drift).toBeUndefined();
+
+		// Each member rolled onto its OWN channel — the fold replays each row through
+		// THAT member's def (`panelMembers[memberIndex]`), never member 0's. Pre-fix,
+		// members b + c silently landed on `verdict-a`.
+		expect(result.state.named["verdict-a"]).toEqual([outA]);
+		expect(result.state.named["verdict-b"]).toEqual([outB]);
+		expect(result.state.named["verdict-c"]).toEqual([outC]);
+		// The folded verdict — recomputed-and-republished at the same transition the
+		// live driver folds — is a data-only Output (no artifact) carrying the
+		// canonical PANEL_VERDICT shape, on the per-stage `<stage>-panel` channel.
+		const folded = result.state.named["breakdown-panel"];
+		expect(folded).toHaveLength(1);
+		expect(folded?.[0]?.artifacts).toEqual([]);
+		expect(folded?.[0]?.data).toEqual({ pass: true, votes: { pass: 2, fail: 1 }, agreement: 2 / 3, tie: false });
+	});
+
+	it("assess × panel: a THROWING fold becomes drift (recorded terminal failure), never an unguarded rejection", async () => {
+		// The fold runs the author `panel.fold` via `advanceCursor` on the LAST
+		// member. It lives in `reconstructState`, which `resumeWorkflow` awaits
+		// BEFORE `executeRun` brackets the lifecycle — so before the guard a throw
+		// escaped as a raw promise rejection (no JSONL failure row, no
+		// `onWorkflowEnd`). It must instead land as drift: this call RESOLVES
+		// (ok=true, drift set) rather than rejecting.
+		const p0 = fakeArtifact("tasks/t0.md");
+		const outA = memberVerdict("verdicts/v0a.json", true);
+		const outB = memberVerdict("verdicts/v0b.json", true);
+		const outC = memberVerdict("verdicts/v0c.json", false);
+		const loop = assess({
+			judge: panel({
+				members: [
+					judge({ skill: "grade-a", outcome: makeOutcome("verdict-a") }),
+					judge({ skill: "grade-b", outcome: makeOutcome("verdict-b") }),
+					judge({ skill: "grade-c", outcome: makeOutcome("verdict-c") }),
+				],
+				// Raw fold (requires an `outcome`) that throws on the last-member fold.
+				fold: () => {
+					throw new Error("fold exploded");
+				},
+				outcome: makeOutcome("breakdown-panel"),
+			}),
+			done: (v) => Boolean((v.data as { pass?: boolean }).pass),
+			feedForward: () => "more",
+		});
+		const wf: Workflow = {
+			name: "test-wf",
+			start: "breakdown",
+			stages: { breakdown: produces({ outcome: makeOutcome("tasks"), loop }) },
+			edges: { breakdown: "stop" },
+		} as Workflow;
+
+		writeRunStages([
+			assessProduceRow("breakdown", 0, 1, fakeOutput([p0])),
+			assessPanelJudgeRow("breakdown", "grade-a", 0, 0, 2, outA),
+			assessPanelJudgeRow("breakdown", "grade-b", 0, 1, 3, outB),
+			assessPanelJudgeRow("breakdown", "grade-c", 0, 2, 4, outC),
+		]);
+
+		// Resolves with drift set — the fold did not reject out of reconstructState.
+		const result = await reconstructState(tmpDir, wf, baseHeader);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.drift?.parent).toBe("breakdown");
+		expect(result.drift?.errMsg).toMatch(/fold exploded/);
+		// State is still complete up to the throw: the last member's verdict applied
+		// (on its OWN channel) BEFORE `advanceCursor` ran the throwing fold.
+		expect(result.state.named["verdict-c"]).toEqual([outC]);
+		// The fold never produced a value, so no folded verdict was published.
+		expect(result.state.named["breakdown-panel"]).toBeUndefined();
+	});
+
 	it("REPLAY PARITY (C1): the fold's trailing cursor is byte-equal to a live cursor advanced over the same outputs", async () => {
 		// `advanceCursor` is the ONE cursor state machine; this test pins the
 		// contract that the fold and the live driver advance identically. The
@@ -744,9 +879,9 @@ describe("reconstructState", () => {
 
 		// The live driver's exact sequence for the same three completed units.
 		const live = freshCursor();
-		advanceCursor(live, "produce", p0, "assess");
-		advanceCursor(live, "judge", v0, "assess");
-		advanceCursor(live, "produce", p1, "assess");
+		advanceCursor(live, "produce", p0, loop);
+		advanceCursor(live, "judge", v0, loop);
+		advanceCursor(live, "produce", p1, loop);
 
 		expect(JSON.stringify(result.trailing?.cursor)).toBe(JSON.stringify(live));
 	});
@@ -757,10 +892,11 @@ describe("reconstructState", () => {
 			{ prompt: "u1", label: "phase 1/2", id: "phase-1" },
 			{ prompt: "u2", label: "phase 2/2", id: "phase-2" },
 		];
+		const loop = fanout({ units });
 		const wf: Workflow = {
 			name: "test-wf",
 			start: "build",
-			stages: { build: produces({ outcome: makeOutcome("builds"), loop: fanout({ units }) }) },
+			stages: { build: produces({ outcome: makeOutcome("builds"), loop }) },
 			edges: { build: "stop" },
 		} as Workflow;
 
@@ -772,7 +908,7 @@ describe("reconstructState", () => {
 		expect(result.drift).toBeUndefined();
 
 		const live = freshCursor();
-		advanceCursor(live, "produce", u1, "fanout");
+		advanceCursor(live, "produce", u1, loop);
 
 		expect(JSON.stringify(result.trailing?.cursor)).toBe(JSON.stringify(live));
 	});

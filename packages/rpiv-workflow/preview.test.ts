@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { acts, defineWorkflow, gate, produces, type StageDef, type Workflow } from "./api.js";
 import { judge } from "./judge.js";
 import type { LoadedWorkflows } from "./load/index.js";
-import { assess, fanout, iterate } from "./loop-constructors.js";
+import { assess, fanout, iterate, majority, panel, verify } from "./loop-constructors.js";
 import { gitCommitOutcome } from "./outcomes/index.js";
 import { eq, gt } from "./predicates.js";
 import { formatWorkflowDetails, formatWorkflowList } from "./preview.js";
@@ -366,6 +366,81 @@ describe("formatWorkflowDetails", () => {
 		const out = formatWorkflowDetails(loaded, "assessed-prompt");
 		const bdLine = out.split("\n").find((l) => /breakdown/.test(l)) ?? "";
 		expect(bdLine).toContain("assess(judge: prompt)·max=8");
+	});
+
+	it("renders the loop tag for an assess stage — N-judge panel (fan-in + fold name)", () => {
+		const vspec = (name: string) => ({ name, collector: { snapshot: false } }) as never;
+		const panelWorkflow: Workflow = {
+			name: "paneled",
+			start: "breakdown",
+			stages: {
+				breakdown: produces({
+					loop: assess({
+						judge: panel({
+							members: [
+								judge({ skill: "grade-a", outcome: vspec("va") }),
+								judge({ skill: "grade-b", outcome: vspec("vb") }),
+								judge({ skill: "grade-c", outcome: vspec("vc") }),
+							],
+							fold: majority(() => true),
+						}),
+						done: () => true,
+						feedForward: () => "again",
+						max: 5,
+					}),
+				}),
+				commit: acts(),
+			},
+			edges: { breakdown: "commit", commit: "stop" },
+		};
+		const loaded: LoadedWorkflows = {
+			workflows: [panelWorkflow],
+			default: "paneled",
+			workflowSources: new Map([["paneled", "built-in"]]),
+			layers: ["built-in"],
+			issues: [],
+			skillAliases: {},
+			skillContracts: new Map(),
+		};
+		const out = formatWorkflowDetails(loaded, "paneled");
+		const bdLine = out.split("\n").find((l) => /breakdown/.test(l)) ?? "";
+		expect(bdLine).toContain("assess(judge: panel(3, majority))·max=5");
+	});
+
+	it("renders the verify tag for a panel post-condition", () => {
+		const vspec = (name: string) => ({ name, collector: { snapshot: false } }) as never;
+		const verifyWorkflow: Workflow = {
+			name: "gated",
+			start: "build",
+			stages: {
+				build: produces({
+					outcome: { name: "impl", collector: { snapshot: false } } as never,
+					verify: verify({
+						judge: panel({
+							members: [
+								judge({ skill: "grade-a", outcome: vspec("va") }),
+								judge({ skill: "grade-b", outcome: vspec("vb") }),
+							],
+							fold: majority(() => true),
+						}),
+						done: () => true,
+					}),
+				}),
+			},
+			edges: { build: "stop" },
+		};
+		const loaded: LoadedWorkflows = {
+			workflows: [verifyWorkflow],
+			default: "gated",
+			workflowSources: new Map([["gated", "built-in"]]),
+			layers: ["built-in"],
+			issues: [],
+			skillAliases: {},
+			skillContracts: new Map(),
+		};
+		const out = formatWorkflowDetails(loaded, "gated");
+		const buildLine = out.split("\n").find((l) => /build/.test(l)) ?? "";
+		expect(buildLine).toContain("verify(panel(2, majority))");
 	});
 
 	it("renders the loop tag for fanout / iterate stages (max and bare kind)", () => {

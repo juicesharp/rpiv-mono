@@ -36,10 +36,13 @@
  * no-op (pinned behavior).
  */
 
-import type { LoopDef, StageDef } from "./api.js";
+import type { AssessLoop, LoopDef, StageDef } from "./api.js";
 import { decorateStage, runIdentityOf } from "./audit.js";
+import { applyCompletedStage } from "./chain-state.js";
 import { lifecycleCtxFor, skillStageRef, type UnitEvent } from "./events.js";
 import { nowIso } from "./internal-utils.js";
+import { isPanel } from "./judge.js";
+import { panelVerdictChannel, panelVerdictDef } from "./loop-constructors.js";
 import {
 	advanceCursor,
 	type LoopCursor,
@@ -185,10 +188,45 @@ async function dispatchUnit(
 		onFailure: undefined,
 		onSuccess: (freshCtx, output) => {
 			cursor.ranThisInvocation++;
-			advanceCursor(cursor, u.role, output, e.loop.kind);
+			advanceCursor(cursor, u.role, output, e.loop);
+			publishPanelVerdict(e.loop, e.name, cursor, run.state);
 			return step(freshCtx, e, cursor, cap, run, deps);
 		},
 	});
+}
+
+/**
+ * Panel-close publish — lands a panel's FOLDED verdict on its named channel,
+ * run by BOTH the live driver (`dispatchUnit.onSuccess`) and the resume fold
+ * (`runner/resume.ts` `foldUnitRow`) immediately after the SAME `advanceCursor`,
+ * so the two paths publish byte-identically (THE REPLAY CONTRACT). Fires exactly
+ * once per round — only on the transition that closes a panel: the LAST member's
+ * judge advance is the one that clears `cursor.panel` AND flips back to `produce`
+ * with the folded verdict already on `lastVerdict`. A single judge (non-panel),
+ * a mid-panel member advance (`cursor.panel` still set), and every produce
+ * advance (`phase` left at `judge`) all fall through untouched. `advanceCursor`
+ * already manufactured the verdict (pure); this only appends it — the fold
+ * carries no artifact, so `applyCompletedStage` leaves the rolling primary alone
+ * and writes only the named channel. It lives BESIDE `advanceCursor`, not inside
+ * it: publishing mutates `RunState`, and `advanceCursor` must stay pure for the
+ * live + resume folds to agree.
+ */
+export function publishPanelVerdict(
+	loop: LoopDef,
+	stageName: string,
+	cursor: LoopCursor,
+	state: RunContext["state"],
+): void {
+	if (loop.kind !== "assess") return;
+	const judge = (loop as AssessLoop).judge;
+	if (!isPanel(judge) || cursor.panel !== undefined || cursor.phase !== "produce") return;
+	if (cursor.lastVerdict === undefined) return; // defensive — the fold always set it
+	applyCompletedStage(
+		state,
+		panelVerdictDef(judge, stageName),
+		panelVerdictChannel(judge, stageName),
+		cursor.lastVerdict,
+	);
 }
 
 // ---------------------------------------------------------------------------

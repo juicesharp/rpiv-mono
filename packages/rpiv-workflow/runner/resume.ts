@@ -29,7 +29,8 @@ import { applyStageSuccess } from "../audit-rows.js";
 import { stageEntryArgs } from "../chain-state.js";
 import type { Artifact } from "../handle.js";
 import { formatError } from "../internal-utils.js";
-import { projectResult } from "../loop.js";
+import { panelMembers } from "../judge.js";
+import { projectResult, publishPanelVerdict } from "../loop.js";
 import { effectiveLoopOf } from "../loop-constructors.js";
 import { advanceCursor, freshCursor, judgeStageDef, type LoopCursor, loopStrategyOf } from "../loop-kinds.js";
 import { ERR_RESUME_LOOP_MISMATCH } from "../messages.js";
@@ -261,26 +262,47 @@ async function foldUnitRow(
 	if (row.status !== "completed") return undefined; // pending unit — cursor stays (resume re-runs it)
 
 	if (row.role === "judge" || row.role === "verify") {
-		// Apply-then-project: the verdict rolls the pair TRANSIENTLY (exactly
-		// like the live judge unit); projection at generation close restores.
-		applyStageSuccess(
-			acc.state,
-			judgeStageDef((gen.loop as Extract<LoopDef, { kind: "assess" }>).judge),
-			row.stage,
-			row.output,
-		);
-		if (!row.output) return undefined; // defensive — completed unit rows always carry output
+		// Apply-then-project: each member verdict rolls the pair TRANSIENTLY
+		// (exactly like the live judge unit); projection at generation close
+		// restores. The member this row graded is the one the rebuilt sub-state
+		// currently points at — `cursor.panel.memberIndex` BEFORE `advanceCursor`
+		// bumps it (0 for a single judge, the panel of one). Using that member's
+		// own def publishes the verdict to the member's OWN channel, matching the
+		// live session path (`judgeStageDef(member)`) per member — `[0]` for every
+		// member would have mis-filed members 1..N-1 onto member 0's channel.
+		const judgeSlot = (gen.loop as Extract<LoopDef, { kind: "assess" }>).judge;
+		const memberIndex = gen.cursor.panel?.memberIndex ?? 0;
+		applyStageSuccess(acc.state, judgeStageDef(panelMembers(judgeSlot)[memberIndex]!), row.stage, row.output);
+		const role = row.role; // narrowed to "judge" | "verify" — captured for the closure below
+		const verdict = row.output;
+		if (!verdict) return undefined; // defensive — completed unit rows always carry output
 		// `guardRow` already verified `row.unitIndex === cursor.index` (drift
 		// otherwise), so the shared transition lands the same cursor the live
-		// driver had.
-		advanceCursor(gen.cursor, row.role, row.output, gen.loop.kind);
+		// driver had — and, on the last member, the same folded verdict.
+		//
+		// `advanceCursor` runs the author fold on the LAST member (`panel.fold`,
+		// which a sugar fold's per-member `pred` reaches too), and
+		// `publishPanelVerdict` lands it — BOTH behind `guarded()`. A fold/pred
+		// throw must become drift (a recorded terminal failure), NOT an unguarded
+		// rejection: this fold runs in `reconstructState`, which `resumeWorkflow`
+		// awaits BEFORE `executeRun` brackets the lifecycle — an escape here yields
+		// no JSONL failure row and no `onWorkflowEnd`. The live driver's same
+		// `advanceCursor`+`publishPanelVerdict` pair runs under
+		// `runStageOrRecordFailure`'s catch (loop.ts `dispatchUnit`); this is its
+		// resume-side error boundary.
+		await guarded(acc, gen.parent, () => {
+			advanceCursor(gen.cursor, role, verdict, gen.loop);
+			// Panel-close publish — the SAME call the live driver makes after the
+			// last member's advance, so the folded verdict lands byte-identically.
+			publishPanelVerdict(gen.loop, gen.parent, gen.cursor, acc.state);
+		});
 		return undefined;
 	}
 
 	// produce row — fanout/iterate units and assess producers alike
 	applyStageSuccess(acc.state, gen.def, row.stage, row.output);
 	if (!row.output) return undefined; // defensive — completed unit rows always carry output
-	advanceCursor(gen.cursor, "produce", row.output, gen.loop.kind);
+	advanceCursor(gen.cursor, "produce", row.output, gen.loop);
 	gen.expected = undefined; // consumed
 	return undefined;
 }

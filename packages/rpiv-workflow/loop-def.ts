@@ -9,7 +9,7 @@
  */
 
 import type { Artifact } from "./handle.js";
-import type { Judge } from "./judge.js";
+import type { AnyJudge } from "./judge.js";
 import type { Output, RunView } from "./output.js";
 
 /**
@@ -86,7 +86,13 @@ export interface FeedForwardContext {
  * the same two knobs).
  */
 export interface JudgedRepetition {
-	judge: Judge;
+	/**
+	 * The judge SLOT — a single `Judge` or an N-member `PanelJudge` (a single
+	 * judge is the panel of one). Widened to `AnyJudge` so `assess`/`verify`
+	 * compose a panel with zero per-site code; the runtime expands it through
+	 * `panelMembers` at the one judge-dispatch site.
+	 */
+	judge: AnyJudge;
 	/**
 	 * Sync TS reading the model-made verdict. `true` → the repetition stops
 	 * and the chain advances with the last producer pair. RESUME CONTRACT:

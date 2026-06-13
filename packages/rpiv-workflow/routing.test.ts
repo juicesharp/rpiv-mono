@@ -6,9 +6,11 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { type EdgeContext, gate, type Workflow } from "./api.js";
+import { type EdgeContext, gate, marksReadsData, match, STOP, type Workflow } from "./api.js";
+import type { Output } from "./output.js";
 import { eq, gt } from "./predicates.js";
 import { edgeIsDecision, nextStage } from "./routing.js";
+import { takeRouteNote } from "./routing-dsl.js";
 import type { RunState } from "./types.js";
 
 const makeState = (outputData?: Record<string, unknown>): RunState => ({
@@ -181,5 +183,106 @@ describe("edgeIsDecision", () => {
 
 	it("is false for stages with no outgoing edge", () => {
 		expect(edgeIsDecision(workflow, "d")).toBe(false);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// match — the enum companion to gate
+// ---------------------------------------------------------------------------
+
+describe("match", () => {
+	const channelOutput = (data: Record<string, unknown>): Output => ({
+		kind: "artifact-md",
+		artifacts: [],
+		data,
+		meta: { stage: "panel", skill: "panel", stageNumber: 1, ts: "", runId: "" },
+	});
+
+	// A ctx whose `state.named` carries a single channel — for the `from` source.
+	const ctxWithChannel = (channel: string, data: Record<string, unknown>): EdgeContext => {
+		const state = makeState();
+		return { output: state.output, state: { ...state, named: { [channel]: [channelOutput(data)] } } };
+	};
+
+	it("routes a string enum field to the matching branch (strict ===, first match wins)", () => {
+		const workflow: Workflow = {
+			name: "severity",
+			start: "a",
+			stages: { a: stage("a"), escalate: stage("escalate"), fix: stage("fix"), backlog: stage("backlog") },
+			edges: { a: match("severity", { escalate: "p0", fix: "p1", backlog: "p2" }, { fallback: "backlog" }) },
+		};
+		expect(nextStage(workflow, "a", ctxOf({ severity: "p0" }))).toEqual({ kind: "next", stage: "escalate" });
+		expect(nextStage(workflow, "a", ctxOf({ severity: "p1" }))).toEqual({ kind: "next", stage: "fix" });
+		expect(nextStage(workflow, "a", ctxOf({ severity: "p2" }))).toEqual({ kind: "next", stage: "backlog" });
+	});
+
+	it("matches a boolean field by strict equality", () => {
+		const workflow: Workflow = {
+			name: "tie",
+			start: "a",
+			stages: { a: stage("a"), b: stage("b"), c: stage("c") },
+			edges: { a: match("tie", { b: true }, { fallback: "c" }) },
+		};
+		expect(nextStage(workflow, "a", ctxOf({ tie: true }))).toEqual({ kind: "next", stage: "b" });
+		expect(nextStage(workflow, "a", ctxOf({ tie: false }))).toEqual({ kind: "next", stage: "c" });
+	});
+
+	it("falls back on no match and records a routing note", () => {
+		const route = match("severity", { escalate: "p0" }, { fallback: "triage" });
+		expect(route(ctxOf({ severity: "p9" }))).toBe("triage");
+		expect(takeRouteNote(route)).toMatch(/matched no branch — fell back to "triage"/);
+	});
+
+	it("terminates (STOP) on no match when no fallback is declared, with a note", () => {
+		const route = match("severity", { escalate: "p0" });
+		expect(route(ctxOf({ severity: "p9" }))).toBe(STOP);
+		expect(takeRouteNote(route)).toMatch(/matched no branch — terminated \(no fallback\)/);
+	});
+
+	it("a missing field is a no-match (routes to the fallback / STOP)", () => {
+		expect(match("severity", { escalate: "p0" }, { fallback: "triage" })(ctxOf({}))).toBe("triage");
+		expect(match("severity", { escalate: "p0" })(ctxOf({}))).toBe(STOP);
+	});
+
+	it("`from` sources the field from a NAMED CHANNEL instead of output.data (panel-verdict routing)", () => {
+		const route = match("tie", { escalate: true }, { fallback: "keep", from: "review-panel" });
+		// output.data has no `tie`; the channel does — the channel wins.
+		expect(route(ctxWithChannel("review-panel", { tie: true, pass: false }))).toBe("escalate");
+		expect(route(ctxWithChannel("review-panel", { tie: false, pass: true }))).toBe("keep");
+		// Absent channel → no-match → fallback.
+		expect(route(ctxOf({ tie: true }))).toBe("keep");
+	});
+
+	it("auto-marks READS_DATA for a stage-output match, but NOT for a channel-sourced one", () => {
+		expect(marksReadsData(match("severity", { escalate: "p0" }, { fallback: "triage" }))).toBe(true);
+		expect(marksReadsData(match("tie", { escalate: true }, { fallback: "keep", from: "review-panel" }))).toBe(false);
+	});
+
+	it("attaches `.targets` (branches + fallback) for reachability, and reads as a decision edge", () => {
+		const workflow: Workflow = {
+			name: "targets",
+			start: "a",
+			stages: { a: stage("a"), escalate: stage("escalate"), fix: stage("fix"), triage: stage("triage") },
+			edges: { a: match("severity", { escalate: "p0", fix: "p1" }, { fallback: "triage" }) },
+		};
+		const edge = workflow.edges.a;
+		expect(typeof edge === "function" && edge.targets).toEqual(["escalate", "fix", "triage"]);
+		expect(edgeIsDecision(workflow, "a")).toBe(true);
+	});
+
+	it("includes STOP in `.targets` when no fallback is declared", () => {
+		const edge = match("severity", { escalate: "p0", fix: "p1" });
+		expect(edge.targets).toEqual(["escalate", "fix", STOP]);
+	});
+
+	it("rejects construction-time defects", () => {
+		expect(() => match("f", {})).toThrow(/at least one possible return value/);
+		expect(() => match("f", { "2": "x" })).toThrow(/integer-like/);
+		expect(() => match("f", { a: "x", b: "x" })).toThrow(/each enum value must map to exactly one stage/);
+		expect(() => match("f", { a: "x" }, { fallback: "" })).toThrow(/non-empty stage name/);
+	});
+
+	it('keeps distinct-typed values apart when deduping (0 ≠ "0" ≠ false)', () => {
+		expect(() => match("f", { a: 0, b: "0", c: false })).not.toThrow();
 	});
 });

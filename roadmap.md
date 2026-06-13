@@ -11,15 +11,14 @@ Keeping an experienced driver in the loop while the work moves at LLM speed. Com
 - rpiv-workflow engine — declarative, validatable, auditable, resumable pipelines with predicate routing
 - Unified loop driver — `fanout` / `iterate` / `assess`
 - First-class judges + per-stage `verify`
+- `panel()` — N judges + vote fold (adversarial verification), with `match()` enum-gate disagreement routing
 - Session-backed, mid-loop resume
 - Skill-contract architecture (load-time + runtime schema checks)
 - Sibling family — `ask-user-question`, `todo`, `advisor`, `web-tools`, `args`, `i18n`, `btw`, `voice`, `warp`, `telemetry`
 
 ## What's Next
 
-- `panel()` — N judges + vote fold (adversarial verification)
 - First-class fan-in / synthesize affordance
-- `match()` enum gate
 - Automatic flow generation via agent
 - Headless Pi / out-of-process execution
 - Verification under affordable models (fresh-context isolation + frontier escalation)

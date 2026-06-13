@@ -15,6 +15,7 @@ import {
 	type EdgeFn,
 	gate,
 	type LoopDef,
+	match,
 	type ProducesScriptFn,
 	produces as producesRaw,
 	type ScriptContext,
@@ -24,7 +25,7 @@ import {
 	type Workflow,
 } from "./api.js";
 import { judge } from "./judge.js";
-import { assess, fanout, iterate, verify } from "./loop-constructors.js";
+import { assess, fanout, iterate, majority, panel, verify } from "./loop-constructors.js";
 import { noopCollector } from "./outcomes/index.js";
 import { eq, gt } from "./predicates.js";
 import type { CompositionComparator, SkillContractMap } from "./skill-contract.js";
@@ -213,6 +214,38 @@ describe("validateWorkflow — reachability", () => {
 		};
 		const w2 = warnings(w);
 		expect(w2.find((i) => i.code === "stage-unreachable")).toBeUndefined();
+	});
+
+	it("treats `match` branches (incl. fallback) as reachable via .targets metadata", () => {
+		const w: Workflow = {
+			name: "panel-route",
+			start: "screen",
+			stages: { screen: produces(), escalate: produces(), keep: produces() },
+			// match on the published panel verdict: `tie` → escalate, otherwise → keep.
+			// Both branch + fallback targets must enumerate so neither orphans.
+			edges: {
+				screen: match("tie", { escalate: true }, { fallback: "keep", from: "screen-panel" }),
+				escalate: "stop",
+				keep: "stop",
+			},
+		};
+		const issues = validateWorkflow(w);
+		expect(issues.filter((i) => i.code === "stage-unreachable")).toEqual([]);
+		expect(issues.filter((i) => i.severity === "error")).toEqual([]);
+	});
+
+	it("flags a `match` target that is not a declared stage (static edge-target check)", () => {
+		const w: Workflow = {
+			name: "panel-route-bad",
+			start: "screen",
+			stages: { screen: produces(), keep: produces() },
+			// `escalate` is undeclared — the static edge-target check sees it via .targets.
+			edges: {
+				screen: match("tie", { escalate: true }, { fallback: "keep", from: "screen-panel" }),
+				keep: "stop",
+			},
+		};
+		expect(errors(w).some((i) => i.code === "edge-target-unknown" && i.params.target === "escalate")).toBe(true);
 	});
 
 	it("treats a back-edge cycle as reachable (e.g. revise loop)", () => {
@@ -1029,6 +1062,163 @@ describe("validateWorkflow — verify invariants", () => {
 		expect(
 			e.some((i) => i.code === "verify-shape" && String(i.params.issue).includes("max > 1 requires `feedForward`")),
 		).toBe(true);
+	});
+});
+
+describe("validateWorkflow — panel invariants", () => {
+	const producerOutcome = { name: "tasks", collector: noopCollector };
+	const memberA = () => judge({ skill: "grade-a", outcome: { name: "verdict-a", collector: noopCollector } });
+	const memberB = () => judge({ skill: "grade-b", outcome: { name: "verdict-b", collector: noopCollector } });
+	const memberC = () => judge({ prompt: "grade it", outcome: { name: "verdict-c", collector: noopCollector } });
+	// Sugar fold reading each member's own `{ pass }` verdict.
+	const maj = () => majority((v) => Boolean((v.data as { pass?: boolean }).pass));
+
+	const wf = (stage: StageDef): Workflow => ({
+		name: "paneled",
+		start: "s",
+		stages: { s: stage },
+		edges: { s: "stop" },
+	});
+
+	const base = (overrides: Partial<StageDef> = {}): StageDef =>
+		({
+			kind: "produces",
+			sessionPolicy: "fresh",
+			outcome: producerOutcome,
+			...overrides,
+		}) as StageDef;
+
+	// Hand-rolled panel literal — bypasses the panel()/assess()/verify()
+	// construction throws so the defensive LOAD gate can be exercised (jiti
+	// erases TS types, so a programmatic embedder can ship a malformed panel).
+	const rawPanel = (over: Record<string, unknown> = {}): unknown => ({
+		kind: "panel",
+		members: [memberA(), memberB()],
+		fold: maj(),
+		...over,
+	});
+
+	// Wrap a (possibly malformed) judge slot in a hand-rolled assess loop literal.
+	const assessOf = (slot: unknown): StageDef =>
+		base({
+			loop: {
+				kind: "assess",
+				judge: slot,
+				done: () => true,
+				feedForward: () => "again",
+				max: 8,
+				onCap: "advance",
+				result: "last",
+			} as unknown as LoopDef,
+		});
+
+	it("accepts a canonical 3-member panel in assess (sugar fold, no outcome)", () => {
+		const stage = base({
+			loop: assess({
+				judge: panel({ members: [memberA(), memberB(), memberC()], fold: maj() }),
+				done: () => true,
+				feedForward: () => "again",
+			}),
+		});
+		expect(errors(wf(stage))).toEqual([]);
+	});
+
+	it("accepts a custom panel (raw fold + outcome) in verify", () => {
+		const stage = base({
+			verify: verify({
+				judge: panel({
+					members: [memberA(), memberB()],
+					fold: (vs) => ({ mean: vs.length }),
+					outcome: { name: "panel-score", collector: noopCollector },
+				}),
+				done: () => true,
+			}),
+		});
+		expect(errors(wf(stage))).toEqual([]);
+	});
+
+	it("routes a hand-rolled panel shape violation through panelShapeIssues (nested member)", () => {
+		const e = errors(wf(assessOf(rawPanel({ members: [memberA(), rawPanel()] }))));
+		expect(e.some((i) => i.code === "assess-judge-shape" && String(i.params.issue).includes("may not nest"))).toBe(
+			true,
+		);
+	});
+
+	it("routes a panel XOR violation (sugar fold + outcome) through verify-shape", () => {
+		const v = {
+			judge: rawPanel({ outcome: { name: "extra", collector: noopCollector } }),
+			done: () => true,
+		} as unknown as VerifySpec;
+		const e = errors(wf(base({ verify: v })));
+		expect(e.some((i) => i.code === "verify-shape" && String(i.params.issue).includes("drop `outcome`"))).toBe(true);
+	});
+
+	it("rejects duplicate member verdict channels", () => {
+		const dupB = judge({ skill: "grade-b", outcome: { name: "verdict-a", collector: noopCollector } });
+		const stage = base({
+			loop: assess({
+				judge: panel({ members: [memberA(), dupB], fold: maj() }),
+				done: () => true,
+				feedForward: () => "x",
+			}),
+		});
+		const e = errors(wf(stage));
+		expect(e.some((i) => i.code === "panel-member-channel-collision" && i.params.channel === "verdict-a")).toBe(true);
+	});
+
+	it("rejects a member verdict channel that collides with the producer's publish name", () => {
+		const collide = judge({ skill: "grade-b", outcome: { name: "tasks", collector: noopCollector } });
+		const stage = base({
+			loop: assess({
+				judge: panel({ members: [memberA(), collide], fold: maj() }),
+				done: () => true,
+				feedForward: () => "x",
+			}),
+		});
+		const e = errors(wf(stage));
+		expect(e.some((i) => i.code === "panel-member-channel-collision" && i.params.channel === "tasks")).toBe(true);
+	});
+
+	it("rejects a custom fold channel that collides with the producer's publish name", () => {
+		const stage = base({
+			loop: assess({
+				judge: panel({
+					members: [memberA(), memberB()],
+					fold: (vs) => ({ n: vs.length }),
+					outcome: { name: "tasks", collector: noopCollector },
+				}),
+				done: () => true,
+				feedForward: () => "x",
+			}),
+		});
+		const e = errors(wf(stage));
+		expect(e.some((i) => i.code === "panel-verdict-channel-collision" && i.params.channel === "tasks")).toBe(true);
+	});
+
+	it("publishes member + folded-verdict channels so downstream reads resolve", () => {
+		const up = base({
+			loop: assess({
+				judge: panel({ members: [memberA(), memberB()], fold: maj() }),
+				done: () => true,
+				feedForward: () => "again",
+			}),
+		});
+		const w: Workflow = {
+			name: "paneled",
+			start: "s",
+			stages: {
+				s: up,
+				down: {
+					kind: "produces",
+					sessionPolicy: "fresh",
+					outcome: { name: "summary", collector: noopCollector },
+					// member verdict channel + the canonical `<stage>-panel` fold channel
+					reads: ["verdict-a", "s-panel"],
+				} as StageDef,
+			},
+			edges: { s: "down", down: "stop" },
+		};
+		expect(errors(w).filter((i) => i.code === "reads-unpublished")).toEqual([]);
 	});
 });
 

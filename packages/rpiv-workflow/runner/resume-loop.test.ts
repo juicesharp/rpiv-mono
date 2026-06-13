@@ -33,7 +33,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { acts, type FanoutFn, gate, type IterateFn, produces, type Workflow } from "../api.js";
 import { fs as fsHandle } from "../handle.js";
 import { judge } from "../judge.js";
-import { assess, fanout, iterate, verify } from "../loop-constructors.js";
+import { assess, fanout, iterate, majority, panel, verify } from "../loop-constructors.js";
 import type { Output } from "../output.js";
 import type { Outcome } from "../output-spec.js";
 import { eq, gt } from "../predicates.js";
@@ -846,6 +846,157 @@ describe("loop-resume — assess", () => {
 		const rows = readAllStages(tmpDir, header.runId);
 		expect(rows[rows.length - 1]).toMatchObject({ stage: "breakdown", status: "failed" });
 		expect(chain.sentMessages).toEqual([]);
+	});
+});
+
+describe("loop-resume — assess × panel", () => {
+	const header: WorkflowHeader = {
+		runId: "2026-06-03_11-00-00-cc33",
+		workflow: "decompose",
+		input: "decompose this",
+		ts: "2026-06-03T11:00:00Z",
+	};
+
+	// The SITE's `done` reads the FOLDED verdict's `pass`; each member's `pred`
+	// reads its own `{ done }` — the two predicates are deliberately distinct (§4).
+	const panelDone = (v: Output) => Boolean((v.data as { pass?: boolean }).pass);
+	const panelFeed = ({ verdict, round }: { verdict: Output; round: number }) =>
+		`refine round=${round} pass=${(verdict.data as { pass?: boolean }).pass}`;
+
+	/** breakdown (assess × 3-judge panel; start) → consume. */
+	const panelWf: Workflow = {
+		name: "decompose",
+		start: "breakdown",
+		stages: {
+			breakdown: produces({
+				outcome: transcriptOutcome("tasks"),
+				loop: assess({
+					judge: panel({
+						members: [
+							judge({ skill: "grade-a", outcome: verdictOutcome("verdict-a") }),
+							judge({ skill: "grade-b", outcome: verdictOutcome("verdict-b") }),
+							judge({ skill: "grade-c", outcome: verdictOutcome("verdict-c") }),
+						],
+						fold: majority((v) => Boolean((v.data as { done?: boolean }).done)),
+					}),
+					done: panelDone,
+					feedForward: panelFeed,
+				}),
+			}),
+			consume: acts(),
+		},
+		edges: { breakdown: "consume", consume: "stop" },
+	} as Workflow;
+
+	const taskOutput = (round: number, num: number): Output => ({
+		kind: "artifacts",
+		artifacts: [{ handle: fsHandle(`.rpiv/artifacts/tasks/t${round}.md`), role: "primary" }],
+		data: {},
+		meta: { stage: "breakdown", stageNumber: num, ts: "", runId: "" },
+	});
+
+	const produceRow = (round: number, num: number, status: WorkflowStage["status"] = "completed"): WorkflowStage => ({
+		session: null,
+		stageNumber: num,
+		stage: `breakdown (r${round}·produce)`,
+		skill: "breakdown",
+		status,
+		ts: `t${num}`,
+		parent: "breakdown",
+		role: "produce",
+		unitIndex: round,
+		...(status === "completed" ? { output: taskOutput(round, num) } : { errMsg: "boom" }),
+	});
+
+	const memberRow = (round: number, m: number, num: number, isDone: boolean): WorkflowStage => ({
+		session: null,
+		stageNumber: num,
+		stage: `breakdown (r${round}·judge#${m})`,
+		skill: `grade-${"abc"[m]}`,
+		status: "completed",
+		ts: `t${num}`,
+		parent: "breakdown",
+		role: "judge",
+		unitId: `r${round}·judge#${m}`,
+		unitIndex: round,
+		output: {
+			kind: "artifacts",
+			artifacts: [{ handle: fsHandle(`.rpiv/verdicts/v${round}${"abc"[m]}.json`), role: "primary" }],
+			data: { done: isDone },
+			meta: { stage: "breakdown", stageNumber: num, ts: "", runId: "" },
+		},
+	});
+
+	function writeRun(stages: WorkflowStage[]): void {
+		writeHeader(tmpDir, header);
+		for (const s of stages) appendStage(tmpDir, header.runId, s);
+	}
+
+	it("mid-panel resume: re-runs ONLY the pending member, folds all three verdicts, advances on the folded pass", async () => {
+		// Round 0: producer + members a, b graded; the process died before member c.
+		writeRun([produceRow(0, 1), memberRow(0, 0, 2, true), memberRow(0, 1, 3, true)]);
+		// Member c grades not-done → majority(2-of-3) still passes ⇒ done, no retry.
+		writeFile(".rpiv/verdicts/v0c.json", JSON.stringify({ done: false }));
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [
+				{ branch: [mockAssistantMessage("verdict .rpiv/verdicts/v0c.json")] }, // ONLY member c re-runs
+				{ branch: [mockAssistantMessage("consumed")] },
+			],
+		});
+
+		const result = await resumeWorkflow(chain.ctx, { workflow: panelWf, header, ref: "@x" });
+
+		expect(result.success).toBe(true);
+		// Members a + b replayed from the trail (no re-grade); only c re-dispatched,
+		// then the recomputed fold passed → straight to consume (no producer re-run).
+		expect(chain.sentMessages).toEqual([
+			"/skill:grade-c .rpiv/artifacts/tasks/t0.md",
+			"/skill:consume .rpiv/artifacts/tasks/t0.md",
+		]);
+		// Member c's row landed after the two replayed members — one panel round total.
+		const rows = readAllStages(tmpDir, header.runId);
+		expect(rows.filter((r) => r.role === "judge").map((r) => r.unitId)).toEqual([
+			"r0·judge#0",
+			"r0·judge#1",
+			"r0·judge#2",
+		]);
+		expect(rows[rows.length - 1]).toMatchObject({ stage: "consume", status: "completed" });
+	});
+
+	it("mid-panel resume drives a RETRY when the recomputed fold fails (unanimous veto via majority miss)", async () => {
+		// Round 0: members a (done), b (not-done) graded; died before c. If c is also
+		// not-done, majority is 1-of-3 → fail ⇒ feedForward + a round-1 producer.
+		writeRun([produceRow(0, 1), memberRow(0, 0, 2, true), memberRow(0, 1, 3, false)]);
+		writeFile(".rpiv/verdicts/v0c.json", JSON.stringify({ done: false })); // 1-of-3 → fold fails
+		writeFile(".rpiv/verdicts/v1a.json", JSON.stringify({ done: true }));
+		writeFile(".rpiv/verdicts/v1b.json", JSON.stringify({ done: true }));
+		writeFile(".rpiv/verdicts/v1c.json", JSON.stringify({ done: true })); // unanimous → round 1 passes
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [
+				{ branch: [mockAssistantMessage("verdict .rpiv/verdicts/v0c.json")] }, // member c (round 0)
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/tasks/t1.md")] }, // round-1 producer
+				{ branch: [mockAssistantMessage("verdict .rpiv/verdicts/v1a.json")] },
+				{ branch: [mockAssistantMessage("verdict .rpiv/verdicts/v1b.json")] },
+				{ branch: [mockAssistantMessage("verdict .rpiv/verdicts/v1c.json")] },
+				{ branch: [mockAssistantMessage("consumed")] },
+			],
+		});
+
+		const result = await resumeWorkflow(chain.ctx, { workflow: panelWf, header, ref: "@x" });
+
+		expect(result.success).toBe(true);
+		// c re-runs and folds to fail → feedForward carries the FOLDED verdict into
+		// round 1 (all three members re-grade), which passes → consume.
+		expect(chain.sentMessages).toEqual([
+			"/skill:grade-c .rpiv/artifacts/tasks/t0.md",
+			"/skill:breakdown refine round=0 pass=false",
+			"/skill:grade-a .rpiv/artifacts/tasks/t1.md",
+			"/skill:grade-b .rpiv/artifacts/tasks/t1.md",
+			"/skill:grade-c .rpiv/artifacts/tasks/t1.md",
+			"/skill:consume .rpiv/artifacts/tasks/t1.md",
+		]);
 	});
 });
 

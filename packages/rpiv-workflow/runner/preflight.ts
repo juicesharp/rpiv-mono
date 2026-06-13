@@ -10,7 +10,7 @@
  */
 
 import { currentPrimaryArtifact } from "../chain-state.js";
-import type { Judge } from "../judge.js";
+import { type AnyJudge, panelMembers } from "../judge.js";
 import {
 	FAIL_MISSING_ARTIFACT,
 	FAIL_MISSING_NAMED_READ,
@@ -75,16 +75,21 @@ export function runLoopPreflights(stage: ResolvedStage, run: RunContext): void {
 }
 
 /**
- * Registry preflight for a Judge carrying `.skill` — `ensureSkillRegistered`
- * only inspects `stage.skill`. Fail-soft when `registeredSkills` is undefined
- * (hostless embedder). Generalized: any future Judge site (verify, panel)
- * calls the same helper.
+ * Registry preflight for a judge SLOT (`AnyJudge`) — walks `panelMembers`, so a
+ * single judge checks its one `.skill` and a panel checks EVERY member's skill
+ * (the first unregistered member halts). `ensureSkillRegistered` only inspects
+ * `stage.skill`; this covers the judge dispatch. Fail-soft when
+ * `registeredSkills` is undefined (hostless embedder); members without a
+ * `.skill` (prompt judges) are skipped.
  */
-export function ensureJudgeSkillRegistered(judge: Judge, stage: ResolvedStage, run: RunContext): void {
-	if (judge.skill === undefined || run.registeredSkills === undefined) return;
-	if (run.registeredSkills.has(judge.skill)) return;
-	const f = FAIL_SKILL_NOT_REGISTERED(judge.skill, stage.stageNumber);
-	throw new StagePreflightError("halt", judge.skill, f.toast, f.error, true);
+export function ensureJudgeSkillRegistered(judge: AnyJudge, stage: ResolvedStage, run: RunContext): void {
+	if (run.registeredSkills === undefined) return;
+	for (const member of panelMembers(judge)) {
+		if (member.skill === undefined) continue;
+		if (run.registeredSkills.has(member.skill)) continue;
+		const f = FAIL_SKILL_NOT_REGISTERED(member.skill, stage.stageNumber);
+		throw new StagePreflightError("halt", member.skill, f.toast, f.error, true);
+	}
 }
 
 /**
