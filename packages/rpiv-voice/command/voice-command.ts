@@ -84,7 +84,7 @@ export function registerVoiceCommand(pi: ExtensionAPI): void {
 	});
 }
 
-async function handleVoiceCommand(ctx: ExtensionCommandContext): Promise<void> {
+export async function handleVoiceCommand(ctx: ExtensionCommandContext): Promise<void> {
 	if (!ctx.hasUI) {
 		ctx.ui.notify(t("error.requires_interactive", "/voice requires interactive mode"), "error");
 		return;
