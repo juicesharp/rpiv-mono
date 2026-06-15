@@ -30,7 +30,7 @@ import { join } from "node:path";
 import { createMockSessionChain, mockAssistantMessage } from "@juicesharp/rpiv-test-utils";
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { acts, type FanoutFn, gate, type IterateFn, produces, type Workflow } from "../api.js";
+import { acts, type FanoutFn, fanin, gate, type IterateFn, produces, type Workflow } from "../api.js";
 import { fs as fsHandle } from "../handle.js";
 import { judge } from "../judge.js";
 import { assess, fanout, iterate, majority, panel, verify } from "../loop-constructors.js";
@@ -286,6 +286,41 @@ describe("loop-resume — fanout", () => {
 		const rows = readAllStages(tmpDir, header.runId);
 		expect(rows[rows.length - 1]).toMatchObject({ stage: "impl", status: "failed" });
 		expect(chain.sentMessages).toEqual([]);
+	});
+
+	it("resume mid-fanout then synthesize: the fan-in read sees the full byte-identical array", async () => {
+		// impl (3-unit fanout, publishes "plans") → synthesize (reads fanin("plans")).
+		const synthWf: Workflow = {
+			name: "fanout-wf",
+			start: "impl",
+			stages: {
+				impl: produces({ outcome: transcriptOutcome("plans"), loop: fanout({ units: threeUnits }) }),
+				synthesize: acts({ reads: [fanin("plans")] }),
+			},
+			edges: { impl: "synthesize", synthesize: "stop" },
+		} as Workflow;
+
+		// Process died after unit 1 was recorded; units 2-3 re-run live, then synthesize.
+		writeRun([unitRow(1, 1, "completed")]);
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/plans/p2.md")] },
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/plans/p3.md")] },
+				{ branch: [mockAssistantMessage("synthesized")] },
+			],
+		});
+
+		const result = await resumeWorkflow(chain.ctx, { workflow: synthWf, header, ref: "@x" });
+
+		expect(result.success).toBe(true);
+		// The replayed unit-1 append + the two live appends all land in state.named.plans,
+		// so the synthesize barrier reads all three handles in run order.
+		expect(chain.sentMessages).toEqual([
+			"/skill:impl phase 2",
+			"/skill:impl phase 3",
+			"/skill:synthesize --plans .rpiv/artifacts/plans/p1.md --plans .rpiv/artifacts/plans/p2.md --plans .rpiv/artifacts/plans/p3.md",
+		]);
 	});
 });
 

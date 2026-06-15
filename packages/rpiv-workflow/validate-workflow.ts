@@ -35,9 +35,11 @@ import {
 } from "./validate/graph.js";
 import { issueReporter, type WorkflowValidationIssue } from "./validate/issue.js";
 import {
+	checkFanoutReadHint,
 	checkFanoutSource,
 	checkReadsReferences,
 	checkStageSemantics,
+	fanoutPublishedChannels,
 	publishedNamesOf,
 } from "./validate/stage-rules.js";
 
@@ -76,6 +78,7 @@ export function validateWorkflow(
 	const published = publishedNamesOf(workflow);
 	checkReadsReferences(workflow, published, r);
 	checkFanoutSource(workflow, published, r);
+	checkFanoutReadHint(workflow, fanoutPublishedChannels(workflow), r);
 
 	checkPredicateSchemas(workflow, r, opts?.skillContracts);
 	checkEdgeSchemaCompat(workflow, r, opts?.skillContracts);

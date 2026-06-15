@@ -1,6 +1,6 @@
 import { Type } from "@sinclair/typebox";
 import { afterEach, describe, expect, it } from "vitest";
-import { acts, defineWorkflow, produces as producesRaw, type StageDef } from "./api.js";
+import { acts, defineWorkflow, fanin, produces as producesRaw, type StageDef } from "./api.js";
 import { noopCollector } from "./outcomes/index.js";
 import type { CompositionComparator, ProducesSpec, SkillContract, SkillContractMap } from "./skill-contract.js";
 import {
@@ -233,6 +233,21 @@ describe("skill-contracts", () => {
 			});
 			const harvested = harvestStageContracts([w]);
 			const contract = harvested.get("a");
+			expect(contract?.consumes?.reads).toEqual({ research: {} });
+		});
+
+		it("harvests a fanin() read keyed by the normalized channel name", () => {
+			const w = defineWorkflow({
+				name: "test",
+				start: "a",
+				stages: {
+					a: producesRaw({ outcome: STUB_OUTCOME, reads: [fanin("research")] }),
+				},
+				edges: { a: "stop" },
+			});
+			const harvested = harvestStageContracts([w]);
+			const contract = harvested.get("a");
+			// Keyed by "research", never "[object Object]".
 			expect(contract?.consumes?.reads).toEqual({ research: {} });
 		});
 

@@ -14,6 +14,7 @@
 import type { PromptFn, SkillStage, StageDef } from "./api.js";
 import { type Artifact, handleToString } from "./handle.js";
 import type { Output } from "./output.js";
+import { readName, readsAll } from "./stage-def.js";
 import type { RunState } from "./types.js";
 
 /**
@@ -97,9 +98,10 @@ export async function resolveStagePrompt(prompt: string | PromptFn, cwd: string,
  *   2. A stage opting out of inheritance (`inheritsArtifacts: false`,
  *      i.e. authored via `terminal()`) also receives `originalInput`.
  *   3. A stage with `reads: [...]` receives the labelled multi-flag form
- *      `--<name1> <handle1> --<name2> <handle2> …` — each name resolves
- *      against `state.named[name].at(-1)`; a multi-artifact entry repeats
- *      the flag.
+ *      `--<name1> <handle1> --<name2> <handle2> …` — a bare-string name
+ *      resolves against `state.named[name].at(-1)` (latest-wins); a
+ *      `fanin(name)` read flag-repeats across EVERY accumulated entry of the
+ *      channel; a multi-artifact entry repeats the flag per artifact.
  *   4. Otherwise: the rolling primary artifact's handle string.
  *
  * Returns `undefined` (instead of non-null-asserting) when a required
@@ -122,11 +124,16 @@ export function stageEntryArgs(
 	if (def.inheritsArtifacts === false) return state.originalInput;
 	if (def.reads?.length) {
 		const parts: string[] = [];
-		for (const name of def.reads) {
-			const latest = state.named[name]?.at(-1);
-			if (!latest) return undefined;
-			for (const artifact of latest.artifacts) {
-				parts.push(`--${name}`, handleToString(artifact.handle));
+		for (const read of def.reads) {
+			const name = readName(read);
+			const slot = state.named[name];
+			if (!slot?.length) return undefined;
+			// `all` → every accumulated entry (fan-in); bare string → latest-wins.
+			const entries = readsAll(read) ? slot : [slot[slot.length - 1]!];
+			for (const entry of entries) {
+				for (const artifact of entry.artifacts) {
+					parts.push(`--${name}`, handleToString(artifact.handle));
+				}
 			}
 		}
 		return parts.join(" ");

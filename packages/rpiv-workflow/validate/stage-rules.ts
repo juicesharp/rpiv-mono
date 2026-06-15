@@ -21,6 +21,7 @@ import {
 	panelVerdictChannel,
 	verifyShapeIssues,
 } from "../loop-constructors.js";
+import { readName } from "../stage-def.js";
 import {
 	MAX_VALIDATION_RETRIES,
 	MAX_VALIDATION_RETRY_TIMEOUT_MS,
@@ -388,8 +389,9 @@ export function checkReadsReferences(w: Workflow, published: ReadonlySet<string>
 		if (!stage.reads?.length) continue;
 		const report = r.forStage(name);
 		for (const read of stage.reads) {
-			if (published.has(read)) continue;
-			report("reads-unpublished", { channel: read });
+			const channel = readName(read);
+			if (published.has(channel)) continue;
+			report("reads-unpublished", { channel });
 		}
 	}
 }
@@ -414,7 +416,48 @@ export function checkFanoutSource(w: Workflow, published: ReadonlySet<string>, r
 		const spec = loopSpecOf(stage.loop);
 		const source = spec?.source;
 		if (!source || published.has(source)) continue; // no source / satisfied → degrade
-		if (stage.reads?.includes(source)) continue; // checkReadsReferences owns this channel
+		if (stage.reads?.some((read) => readName(read) === source)) continue; // checkReadsReferences owns this channel
 		r.forStage(name)("loop-source-unpublished", { verb: LOOP_VERB[spec.kind], source });
+	}
+}
+
+/**
+ * Channels published by a `fanout()` stage — the producer walk of
+ * `publishedNamesOf`, narrowed to fanout loops. Built once and threaded to
+ * `checkFanoutReadHint`.
+ *
+ * The `stage.kind === "produces"` clause is LOAD-BEARING — only a COLLECTING
+ * fanout (produces kind) accumulates per-unit Outputs into a named channel; an
+ * `acts()` fanout (`kind: "side-effect"`) publishes nothing, so its name would
+ * be a false fanout channel. rpiv-pi's built-ins carry fanout loops on
+ * `acts()` implement stages while the "plans" channel they read is published by
+ * a separate `produces()` stage — relaxing this predicate would fire the hint
+ * across every shipped built-in and break the sibling package's zero-warning
+ * release gate.
+ */
+export function fanoutPublishedChannels(w: Workflow): Set<string> {
+	const channels = new Set<string>();
+	for (const [name, stage] of Object.entries(w.stages)) {
+		if (loopSpecOf(stage.loop)?.kind === "fanout" && stage.kind === "produces") {
+			channels.add(resolvePublishName(stage, name));
+		}
+	}
+	return channels;
+}
+
+/**
+ * Soft nudge: a bare-string read of a channel that a fanout fills reads only the
+ * last unit's output (`array.at(-1)`). Almost always the author meant `fanin()`
+ * — the fanout-and-synthesize barrier. WARNS (never errors): latest-only is
+ * legal. `fanin()` reads are already opted in (object form) — skipped.
+ */
+export function checkFanoutReadHint(w: Workflow, fanoutChannels: ReadonlySet<string>, r: IssueReporter): void {
+	for (const [name, stage] of Object.entries(w.stages)) {
+		if (!stage.reads?.length) continue;
+		const report = r.forStage(name);
+		for (const read of stage.reads) {
+			if (typeof read !== "string") continue; // already opted in via fanin()
+			if (fanoutChannels.has(read)) report("reads-latest-from-fanout", { channel: read });
+		}
 	}
 }

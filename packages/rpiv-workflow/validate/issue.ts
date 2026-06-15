@@ -224,6 +224,12 @@ export const ISSUE_DEFS = {
 		(p) =>
 			`reads "${p.channel}" but no produces stage in this workflow publishes it (check outcome.name or stage record key)`,
 	),
+	"reads-latest-from-fanout": def<{ channel: string }>(
+		"warning",
+		(p) =>
+			`reads "${p.channel}" latest-only, but that channel is filled by a fanout — ` +
+			`wrap it in fanin("${p.channel}") to synthesize over every unit (latest-wins reads only the last)`,
+	),
 
 	// --- contract / schema compatibility --------------------------------------
 	"route-reads-unvalidated-data": def(

@@ -52,6 +52,7 @@ import {
 } from "./judge.js";
 import { noopCollector } from "./outcomes/index.js";
 import type { Output } from "./output.js";
+import { readName, readsAll } from "./stage-def.js";
 
 // `UnitSelector` moved to api.ts (it lives with the loop vocabulary now);
 // re-exported here so existing consumers' import path is unchanged.
@@ -78,6 +79,13 @@ export interface StageShape {
 	 * A `panel()` post-condition projects a `PanelJudgeSpec` here (still + `max`).
 	 */
 	verify?: AnyJudgeSpec & { max: number };
+	/**
+	 * Present iff the stage declares `reads:`. One entry per read, in declared
+	 * order, carrying the normalized channel `name` and `all` (true ⇒ a
+	 * `fanin()` read that consumes EVERY accumulated entry — the fan-in barrier;
+	 * false ⇒ latest-wins). Pure data — the preview layer renders the marker.
+	 */
+	reads?: ReadonlyArray<{ name: string; all: boolean }>;
 	edge: { mode: "linear" | "route" | "terminal"; targets?: readonly string[] };
 }
 
@@ -98,11 +106,13 @@ export function describeFlow(w: Workflow): StageShape[] {
 			edge = { mode: "route", targets: (target as EdgeFn).targets };
 		}
 
+		const reads = stage.reads?.map((r) => ({ name: readName(r), all: readsAll(r) }));
 		return {
 			stage: name,
 			skill: stage.skill,
 			control,
 			...(stage.verify ? { verify: { ...judgeSlotSpecOf(stage.verify.judge), max: stage.verify.max ?? 1 } } : {}),
+			...(reads?.length ? { reads } : {}),
 			edge,
 		};
 	});

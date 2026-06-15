@@ -17,6 +17,7 @@ import {
 	FAIL_SKILL_NOT_REGISTERED,
 	MSG_STAGE_THREW,
 } from "../messages.js";
+import { readName } from "../stage-def.js";
 import type { RunContext } from "../types.js";
 import { StagePreflightError } from "./errors.js";
 import type { ResolvedStage } from "./resolve-stage.js";
@@ -158,7 +159,8 @@ function ensureUpstreamArtifact(stage: ResolvedStage, run: RunContext): void {
 function ensureNamedReads(stage: ResolvedStage, run: RunContext): void {
 	const reads = stage.def.reads;
 	if (!reads?.length) return;
-	for (const name of reads) {
+	for (const read of reads) {
+		const name = readName(read);
 		if (run.state.named[name]?.length) continue;
 		const f = FAIL_MISSING_NAMED_READ(stage.skill, name, stage.stageNumber);
 		throw new StagePreflightError("halt", stage.skill, f.toast, f.error, true);

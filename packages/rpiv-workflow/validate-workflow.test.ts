@@ -13,6 +13,7 @@ import {
 	defineRoute,
 	defineWorkflow,
 	type EdgeFn,
+	fanin,
 	gate,
 	type LoopDef,
 	match,
@@ -1669,6 +1670,21 @@ describe("checkFanoutSource (control-flow source lint)", () => {
 		expect(errors(w).some((i) => i.code === "reads-unpublished" && i.params.channel === "plans")).toBe(true);
 	});
 
+	it("defers when the source is consumed via fanin() (normalized membership, no spurious warning)", () => {
+		// Array.includes is strict-equality — a fanin() object never equals the
+		// string source, so without normalization this would falsely fire.
+		const w: Workflow = {
+			name: "t",
+			start: "plans",
+			stages: {
+				plans: produces(), // publishes "plans"
+				impl: acts({ loop: fanout({ source: "plans", units: () => [] }), reads: [fanin("plans")] }),
+			},
+			edges: { plans: "impl", impl: "stop" },
+		};
+		expect(loopMsgs(w)).toEqual([]);
+	});
+
 	it("is silent for a loop with no source (degrade)", () => {
 		const w: Workflow = {
 			name: "t",
@@ -1680,5 +1696,80 @@ describe("checkFanoutSource (control-flow source lint)", () => {
 			edges: { start: "impl", impl: "stop" },
 		};
 		expect(loopMsgs(w)).toEqual([]);
+	});
+});
+
+describe("checkFanoutReadHint (reads-latest-from-fanout nudge)", () => {
+	const hintMsgs = (w: Workflow) => warnings(w).filter((i) => i.code === "reads-latest-from-fanout");
+
+	it("warns when a bare-string read targets a collecting-fanout channel", () => {
+		const w: Workflow = {
+			name: "t",
+			start: "gen",
+			stages: {
+				gen: produces({
+					outcome: { name: "plans", collector: noopCollector },
+					loop: fanout({ units: () => [] }),
+				}),
+				synth: produces({ outcome: { name: "report", collector: noopCollector }, reads: ["plans"] }),
+			},
+			edges: { gen: "synth", synth: "stop" },
+		};
+		const msgs = hintMsgs(w);
+		expect(msgs).toHaveLength(1);
+		expect(msgs[0]?.params).toMatchObject({ channel: "plans" });
+	});
+
+	it("is silent once the read is wrapped in fanin() (already opted in)", () => {
+		const w: Workflow = {
+			name: "t",
+			start: "gen",
+			stages: {
+				gen: produces({
+					outcome: { name: "plans", collector: noopCollector },
+					loop: fanout({ units: () => [] }),
+				}),
+				synth: produces({ outcome: { name: "report", collector: noopCollector }, reads: [fanin("plans")] }),
+			},
+			edges: { gen: "synth", synth: "stop" },
+		};
+		expect(hintMsgs(w)).toEqual([]);
+	});
+
+	it("is silent for a bare read of a NON-fanout channel (plain produces / iterate)", () => {
+		const w: Workflow = {
+			name: "t",
+			start: "gen",
+			stages: {
+				gen: produces({ outcome: { name: "plans", collector: noopCollector } }),
+				bp: produces({
+					outcome: { name: "reviews", collector: noopCollector },
+					loop: iterate({ next: () => null }),
+				}),
+				synth: produces({
+					outcome: { name: "report", collector: noopCollector },
+					reads: ["plans", "reviews"],
+				}),
+			},
+			edges: { gen: "bp", bp: "synth", synth: "stop" },
+		};
+		expect(hintMsgs(w)).toEqual([]);
+	});
+
+	it("is silent when the fanout sits on an acts() side-effect stage (the load-bearing produces-kind clause)", () => {
+		// Mirrors rpiv-pi's built-ins: the fanout loop rides an `acts()` implement
+		// stage (kind: side-effect, publishes nothing), while the read channel is
+		// published by a separate produces stage. Relaxing the produces-kind clause
+		// would falsely fire here and break the sibling package's zero-warning gate.
+		const w: Workflow = {
+			name: "t",
+			start: "blueprint",
+			stages: {
+				blueprint: produces({ outcome: { name: "plans", collector: noopCollector } }),
+				implement: acts({ loop: fanout({ source: "plans", units: () => [] }), reads: ["plans"] }),
+			},
+			edges: { blueprint: "implement", implement: "stop" },
+		};
+		expect(hintMsgs(w)).toEqual([]);
 	});
 });

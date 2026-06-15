@@ -132,6 +132,8 @@ function formatStageRow(
 	if (stage.outputSchema) decorations.push("out-schema");
 	if (shape.control.mode !== "single") decorations.push(loopTag(shape.control));
 	if (shape.verify) decorations.push(verifyTag(shape.verify));
+	const fanin = faninTag(shape);
+	if (fanin) decorations.push(fanin);
 
 	const displayName = shape.skill && shape.skill !== stageName ? `${stageName} (skill: ${shape.skill})` : stageName;
 	const arrow = formatEdge(shape.edge, edgeDeclared);
@@ -184,6 +186,17 @@ function loopTag(control: StageShape["control"]): string {
 function judgeSlotTag(spec: AnyJudgeSpec): string {
 	if ("panel" in spec) return `panel(${spec.panel.length}, ${spec.fold})`;
 	return spec.skill ? `skill:${spec.skill}` : "prompt";
+}
+
+/**
+ * Decoration for a stage that reads ALL accumulated entries of one or more
+ * channels via `fanin()` — the fanout-and-synthesize fan-in barrier: `⇉ <names>`.
+ * Mirrors the `panel(N, fold)` fan-in surfacing on judge slots — the merge point
+ * shows at a glance. Latest-wins (bare-string) reads are unmarked.
+ */
+function faninTag(shape: StageShape): string | undefined {
+	const allReads = shape.reads?.filter((r) => r.all).map((r) => r.name);
+	return allReads?.length ? `⇉ ${allReads.join(",")}` : undefined;
 }
 
 /**

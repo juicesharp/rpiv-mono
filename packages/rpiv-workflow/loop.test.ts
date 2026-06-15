@@ -19,6 +19,7 @@ import {
 	acts,
 	defineRoute,
 	type FanoutFn,
+	fanin,
 	type IterateFn,
 	match,
 	produces,
@@ -205,6 +206,30 @@ describe("loop driver — fanout", () => {
 			unitIndex: 1,
 		});
 		// Both units published into the same named slot (decoration never splits it).
+	});
+
+	it("a downstream fanin() read sees EVERY fanout unit's plan handle (the synthesize barrier)", async () => {
+		writeFile(".rpiv/artifacts/reviews/rev.md");
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/reviews/rev.md")] },
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/plans/p1.md")] },
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/plans/p2.md")] },
+				{ branch: [mockAssistantMessage("synthesized")] },
+			],
+		});
+
+		const result = await runWorkflow(chain.ctx, {
+			workflow: wf(acts({ reads: [fanin("plans")] })),
+			input: "x",
+		});
+
+		expect(result.success).toBe(true);
+		// fanin("plans") flag-repeats across BOTH unit outputs — not just .at(-1).
+		expect(chain.sentMessages.at(-1)).toBe(
+			"/skill:consume --plans .rpiv/artifacts/plans/p1.md --plans .rpiv/artifacts/plans/p2.md",
+		);
 	});
 
 	it("empty units() ⇒ single-stage fall-through (single-stage preflights fire)", async () => {

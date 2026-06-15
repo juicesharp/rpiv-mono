@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Fanout-and-synthesize fan-in — `fanin()` read modifier
+
+#### Fixed
+- **A synthesize stage reading a fanout's channel now sees every unit, not just the last.** `stageEntryArgs` resolved a `reads:` name to `state.named[name].at(-1)` — the LAST accumulated `Output` — so the fan-in half of fanout-and-synthesize silently dropped N−1 of N units. Latest-wins remains the default for a bare-string read; opt into all-entries with `fanin()`.
+
+#### Added
+- **`fanin(name)` read modifier.** A `reads:` entry wrapped in `fanin("channel")` flag-repeats across EVERY accumulated entry of the channel (× each entry's artifacts) — the canonical consumer side of `fanout()`. The `reads:` element type widens to `string | { name; all? }`; bare strings keep latest-wins. Exported from `registration` alongside the `StageRead` type. `readName`/`readsAll` normalize the union for all `reads:` consumers.
+- **`reads-latest-from-fanout` validation warning.** A bare-string read of a channel filled by a (`produces`-kind) `fanout` nudges the author toward `fanin()`. Warns only — latest-only is legal; `fanin()` reads are already opted in and never flagged.
+- **`⇉ <names>` fan-in marker in `/wf` preview** on stages with `fanin()` reads, mirroring the `panel(N, fold)` fan-in surfacing. `describeFlow` gains a `reads` facet (normalized `{ name, all }` per read) backing it.
+
 ## [1.20.0] - 2026-06-15
 
 ### Consumer extension points — bucket-kind mappings + provider refresh

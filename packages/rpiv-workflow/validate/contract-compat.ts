@@ -27,6 +27,7 @@ import { extractJsonSchema } from "../json-schema.js";
 import { judgeOf } from "../loop-constructors.js";
 import type { ProducesSpec, SkillContractMap } from "../skill-contract.js";
 import { adjudicateChannel, compareDataChannel, getCompositionComparators } from "../skill-contracts/index.js";
+import { readName } from "../stage-def.js";
 import type { IssueReporter } from "./issue.js";
 
 /**
@@ -167,7 +168,8 @@ export function checkReadsChannelCompat(
 			: undefined;
 		if (!consumes?.reads) continue; // unsigned consumer — degrade
 		const report = r.forStage(consumerName);
-		for (const channel of consumer.reads) {
+		for (const rawRead of consumer.reads) {
+			const channel = readName(rawRead);
 			const publishers = publishersByChannel.get(channel);
 			if (!publishers) continue; // "no publisher at all" is checkReadsReferences's job
 			for (const { stage: producerName, produces } of publishers) {

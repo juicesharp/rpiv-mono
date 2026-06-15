@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import {
 	acts,
 	defineWorkflow,
+	fanin,
 	gate,
 	type Outcome,
 	produces,
@@ -103,6 +104,31 @@ describe("describeFlow", () => {
 		expect(byStage["code-review"]?.edge.mode).toBe("route");
 		expect(byStage["code-review"]?.edge.targets).toEqual(["blueprint", "commit"]);
 		expect(byStage.commit?.edge).toEqual({ mode: "terminal" });
+	});
+
+	it("exposes a reads facet: bare string → all:false, fanin() → all:true, declared order; omitted when no reads", () => {
+		const w = defineWorkflow({
+			name: "fanin-flow",
+			description: "d",
+			start: "plan",
+			stages: {
+				plan: produces({
+					loop: fanout({ units: () => [{ prompt: "x", label: "1/1" }] }),
+					outcome: { name: "plans", collector: { snapshot: false } } as never,
+				}),
+				rubric: produces({ outcome: { name: "rubric", collector: { snapshot: false } } as never }),
+				synthesize: produces({ reads: [fanin("plans"), "rubric"] }),
+			},
+			edges: { plan: "rubric", rubric: "synthesize", synthesize: "stop" },
+		});
+		const by = Object.fromEntries(describeFlow(w).map((s) => [s.stage, s]));
+		expect(by.synthesize?.reads).toEqual([
+			{ name: "plans", all: true },
+			{ name: "rubric", all: false },
+		]);
+		// A stage with no reads omits the facet entirely.
+		expect(by.plan?.reads).toBeUndefined();
+		expect(by.rubric?.reads).toBeUndefined();
 	});
 });
 

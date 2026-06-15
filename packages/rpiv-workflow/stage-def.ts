@@ -142,6 +142,44 @@ export type ActsScriptFn = (ctx: ScriptContext) => void | Promise<void>;
 export type PromptFn = (ctx: ScriptContext) => string | Promise<string>;
 
 // ===========================================================================
+// Channel-read declarations for `reads:` stage fields
+// ===========================================================================
+
+/**
+ * A single `reads:` entry: a bare channel name (latest-wins, the historical
+ * default) or a spec selecting ALL accumulated entries of the channel.
+ * `fanin()` builds the all-entries spec — the consumer-side mirror of
+ * `fanout()`, the fanout-and-synthesize fan-in idiom.
+ */
+export type StageRead = string | { readonly name: string; readonly all?: boolean };
+
+/**
+ * Read EVERY accumulated entry of a channel (run order), not just the latest.
+ * The canonical consumer side of fanout-and-synthesize:
+ *   fanout({ ..., outcome: { name: "plans" } })
+ *   stage({ reads: [fanin("plans")], skill: "synthesize" })
+ * Throws on an empty name, mirroring the value-returning loop/routing builders
+ * (gate()/match()/assess()) — NOT the pure passthrough factories in this file
+ * (produces()/acts()/terminal()), which apply defaults without validating.
+ */
+export function fanin(name: string): { readonly name: string; readonly all: true } {
+	if (typeof name !== "string" || name.length === 0) {
+		throw new Error("fanin(name): name must be a non-empty channel name");
+	}
+	return { name, all: true };
+}
+
+/** The channel name of a read, normalizing bare-string and spec forms. */
+export function readName(read: StageRead): string {
+	return typeof read === "string" ? read : read.name;
+}
+
+/** Whether a read consumes ALL accumulated entries (vs. latest-wins). */
+export function readsAll(read: StageRead): boolean {
+	return typeof read !== "string" && read.all === true;
+}
+
+// ===========================================================================
 // StageDef — the discriminated union over the dispatch axis (T1)
 // ===========================================================================
 
@@ -240,9 +278,13 @@ export interface SkillStage<TIn = unknown, TOut = unknown> extends StageDefBase<
 	 * Names this stage consumes from `state.named` to build its prompt.
 	 * When set, the runner replaces the default single-artifact prompt
 	 * (`/skill:<name> <handle>`) with a labelled-flag form
-	 * (`/skill:<name> --<n1> <h1> --<n2> <h2> …`), reading the most recent
-	 * `Output` each name has accumulated and iterating its `artifacts` list.
-	 * Empty (or unset) → default prompt behaviour preserved.
+	 * (`/skill:<name> --<n1> <h1> --<n2> <h2> …`), reading each name's
+	 * accumulated `Output` and iterating its `artifacts` list.
+	 *
+	 * A bare string reads the channel's LATEST entry (`array.at(-1)`); wrap a
+	 * name in `fanin("name")` to read EVERY accumulated entry — the
+	 * fanout-and-synthesize fan-in idiom. Empty (or unset) → default prompt
+	 * behaviour preserved.
 	 *
 	 * Names address `state.named` slots, which are keyed by
 	 * `stage.outcome?.name ?? stage.<record-key>`. Every name in `reads:`
@@ -250,7 +292,7 @@ export interface SkillStage<TIn = unknown, TOut = unknown> extends StageDefBase<
 	 * at load time by `validateWorkflow`; the `ensureNamedReads` preflight
 	 * catches the "haven't reached the producer yet" case at runtime).
 	 */
-	reads?: ReadonlyArray<string>;
+	reads?: ReadonlyArray<StageRead>;
 	run?: never;
 	prompt?: never;
 }
@@ -270,8 +312,8 @@ export interface SkillStage<TIn = unknown, TOut = unknown> extends StageDefBase<
  */
 export interface ScriptStage<TIn = unknown, TOut = unknown> extends StageDefBase<TIn, TOut> {
 	run: ProducesScriptFn<string, TOut> | ActsScriptFn;
-	/** Same named-channel consumption as a skill stage — `ScriptContext.state.named` still needs the producer gate. */
-	reads?: ReadonlyArray<string>;
+	/** Same named-channel consumption as a skill stage — `ScriptContext.state.named` still needs the producer gate. `fanin()` reads all entries. */
+	reads?: ReadonlyArray<StageRead>;
 	skill?: never;
 	outcome?: never;
 	loop?: never;

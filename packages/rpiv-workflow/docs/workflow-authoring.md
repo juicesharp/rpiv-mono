@@ -858,6 +858,38 @@ When `reads:` is set the runner replaces the default prompt with a labelled-flag
 
 Multi-artifact stages get flag repetition: an upstream with two `fs` artifacts expands to `--plans <a> --plans <b>` so skill arg-parsers collect repeated flags into arrays the same way `argparse`/`clap`/shell utilities do.
 
+### Fan-in: reading every entry (`fanin` — fanout-and-synthesize)
+
+A bare-string read resolves to the channel's **latest** entry (`array.at(-1)`). That is the wrong default for the fan-in half of *fanout-and-synthesize*: a `fanout` produces N per-unit `Output`s on one channel, and the synthesize stage's whole job is to **merge all N into one**. Latest-wins would hand it only the last unit.
+
+Wrap a name in `fanin(name)` to read **every accumulated entry** of the channel, in run order:
+
+```typescript
+import { acts, fanin, fanout, produces } from "@juicesharp/rpiv-workflow";
+
+// fan-out: one collecting unit per plan phase → each appends to state.named["drafts"]
+draft: produces({
+  outcome: draftOutcome,                  // outcome.name === "drafts"
+  loop: fanout({ source: "plans", unit: { by: "frontmatter-array", pattern: "phases" } }),
+}),
+
+// fan-in (the barrier): read ALL drafts, synthesize one result
+synthesize: produces({
+  outcome: summaryOutcome,
+  reads: [fanin("drafts")],               // every unit's artifacts, not just the last
+}),
+```
+
+The synthesize prompt flag-repeats across the whole channel (× each entry's artifacts):
+
+```
+/skill:synthesize --drafts <unit1> --drafts <unit2> --drafts <unit3> …
+```
+
+`fanin()` is the consumer-side mirror of `fanout()` — fan-out on the producer, fan-in on the consumer. It composes with non-fanout channels too (e.g. reading every `iterate` accumulation), and one `reads:` list may mix forms: `reads: [fanin("drafts"), "spec"]` reads all drafts but only the latest spec. The `reads:` element type is `string | { name; all? }`; `fanin(name)` builds `{ name, all: true }`.
+
+A lint backs the idiom: a **bare-string** read of a channel that a `fanout` fills emits the `reads-latest-from-fanout` warning ("wrap it in `fanin(...)`"). It only warns — latest-only is legal — and `fanin()` reads are already opted in, so they're never flagged. `/wf` preview marks a fan-in consumer with `⇉ <names>`, mirroring the `panel(N, fold)` fan-in surfacing.
+
 ### The named-publish registry — `state.named`
 
 Every `produces` stage APPENDS its full `Output` envelope onto `state.named[key]` after each successful run. The key is computed once at write time:
@@ -871,7 +903,7 @@ Two layers, no override knob:
 - **Outcome carries a name.** Multiple stages wiring the same outcome converge — both stages append onto the same slot, latest-wins on read. This is how a workflow expresses "two stages both produce the canonical plan" without restating the name on each stage.
 - **Outcome has no name.** Stages publish under their record key. Downstream `reads: ["blueprint", "code-review"]` references stage record keys directly.
 
-Slots are **arrays** — iteration history is preserved across backward-jump loops; the default read resolves to `array.at(-1)`. Side-effect stages don't write to the registry. The slot is never cleared by `terminal()` either: it's an additive channel orthogonal to the rolling primary.
+Slots are **arrays** — iteration history is preserved across backward-jump loops; the default read resolves to `array.at(-1)` (latest-wins), while a `fanin(name)` read consumes the whole slot (see [Fan-in](#fan-in-reading-every-entry-fanin--fanout-and-synthesize)). Side-effect stages don't write to the registry. The slot is never cleared by `terminal()` either: it's an additive channel orthogonal to the rolling primary.
 
 ### Validation + preflight
 
@@ -892,7 +924,7 @@ A fresh-session stage starts a clean Pi conversation. It only sees (1) the rolli
 | 2 | `workspaceDiffCollector` outcome on the upstream stage | Every file the stage touched, as `fs` artifacts | Free when the work IS files on disk. Captures *what*, not *why*. |
 | 3 | `transcriptPathCollector` outcome on the upstream stage | The last regex-matched chunk of assistant text, written to disk | Captures narrative knowledge. Needs the skill to emit a recognizable marker. |
 | 4 | Custom collector / parser (+ optional `outputSchema`) | Author-defined typed shape | Most precise; most authoring effort. Enables gate routing. |
-| 5 | `reads:` on the downstream stage referencing named-publish slots | Latest `Output` per declared name, woven into a labelled-flag prompt | Reaches further back than the rolling primary; survives intermediate produces stages overwriting the chain. See [Multi-input stages](#multi-input-stages). |
+| 5 | `reads:` on the downstream stage referencing named-publish slots | Latest `Output` per declared name (or **all** entries via `fanin(name)`), woven into a labelled-flag prompt | Reaches further back than the rolling primary; survives intermediate produces stages overwriting the chain. `fanin()` is the fanout-and-synthesize barrier. See [Multi-input stages](#multi-input-stages). |
 
 **Picking between them — where does the knowledge live after the stage finishes?**
 

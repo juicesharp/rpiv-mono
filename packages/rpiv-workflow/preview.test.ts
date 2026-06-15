@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { acts, defineWorkflow, gate, produces, type StageDef, type Workflow } from "./api.js";
+import { acts, defineWorkflow, fanin, gate, produces, type StageDef, type Workflow } from "./api.js";
 import { judge } from "./judge.js";
 import type { LoadedWorkflows } from "./load/index.js";
 import { assess, fanout, iterate, majority, panel, verify } from "./loop-constructors.js";
@@ -472,6 +472,38 @@ describe("formatWorkflowDetails", () => {
 		expect(buildLine).toContain("fanout·max=32");
 		expect(bpLine).toContain("iterate");
 		expect(bpLine).not.toContain("iterate·max");
+	});
+
+	it("renders the fan-in marker for a fanin() read and leaves bare-string reads unmarked", () => {
+		const faninWorkflow: Workflow = {
+			name: "synth",
+			start: "plan",
+			stages: {
+				plan: produces({
+					outcome: { name: "plans", collector: { snapshot: false } } as never,
+					loop: fanout({ units: () => [], max: 3 }),
+				}),
+				rubric: produces({ outcome: { name: "rubric", collector: { snapshot: false } } as never }),
+				synthesize: produces({ reads: [fanin("plans"), "rubric"], skill: "synthesize" }),
+			},
+			edges: { plan: "rubric", rubric: "synthesize", synthesize: "stop" },
+		};
+		const loaded: LoadedWorkflows = {
+			workflows: [faninWorkflow],
+			default: "synth",
+			workflowSources: new Map([["synth", "built-in"]]),
+			layers: ["built-in"],
+			issues: [],
+			skillAliases: {},
+			skillContracts: new Map(),
+		};
+		const out = formatWorkflowDetails(loaded, "synth");
+		const synthLine = out.split("\n").find((l) => /^\s*\d+\.\s+synthesize\b/.test(l)) ?? "";
+		const rubricLine = out.split("\n").find((l) => /^\s*\d+\.\s+rubric\b/.test(l)) ?? "";
+		// fanin("plans") is marked; the latest-wins "rubric" read is not.
+		expect(synthLine).toContain("⇉ plans");
+		expect(synthLine).not.toContain("⇉ plans,rubric");
+		expect(rubricLine).not.toContain("⇉");
 	});
 
 	it("annotates aliased stages with (skill: <body>) when stage.skill differs from the stage id", () => {

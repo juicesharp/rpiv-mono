@@ -13,7 +13,7 @@ import { join } from "node:path";
 import { createMockSessionChain, mockAssistantMessage } from "@juicesharp/rpiv-test-utils";
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { acts, defineWorkflow, gate, produces, type StageDef, type Workflow } from "./api.js";
+import { acts, defineWorkflow, fanin, gate, produces, type StageDef, type Workflow } from "./api.js";
 import { fs as fsHandle } from "./handle.js";
 import type { Outcome } from "./output-spec.js";
 import { eq, gt } from "./predicates.js";
@@ -343,6 +343,155 @@ describe("reads: prompt format", () => {
 });
 
 // ---------------------------------------------------------------------------
+// reads: fanin() all-entries projection (fanout-and-synthesize)
+// ---------------------------------------------------------------------------
+
+describe("reads: fanin() all-entries projection", () => {
+	let tmpDir: string;
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "rpiv-fanin-"));
+	});
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	/** A frontmatter-reading "plans" outcome so the loop-back gate routes deterministically. */
+	const fmPlansOutcome = (): Outcome<unknown, "artifact-md", Record<string, unknown>> => ({
+		name: "plans",
+		collector: makeOutcome("plans").collector,
+		parser: {
+			parse: (ctx) => {
+				const primary = ctx.artifacts[0];
+				if (primary?.handle.kind !== "fs") {
+					return { kind: "ok", payload: { kind: "artifact-md", data: {} } };
+				}
+				const abs = primary.handle.path.startsWith("/") ? primary.handle.path : join(ctx.cwd, primary.handle.path);
+				if (!existsSync(abs)) {
+					return { kind: "ok", payload: { kind: "artifact-md", data: {} } };
+				}
+				const text = readFileSync(abs, "utf-8");
+				const m = text.match(/blockers_count:\s*(\d+)/);
+				return { kind: "ok", payload: { kind: "artifact-md", data: { blockers_count: Number(m?.[1] ?? 0) } } };
+			},
+		},
+	});
+
+	it("reads EVERY accumulated entry when the read is wrapped in fanin()", async () => {
+		writeArtifact(tmpDir, ".rpiv/artifacts/plans/p1.md", "---\nblockers_count: 1\n---\n");
+		writeArtifact(tmpDir, ".rpiv/artifacts/plans/p2.md", "---\nblockers_count: 1\n---\n");
+		writeArtifact(tmpDir, ".rpiv/artifacts/plans/p3.md", "---\nblockers_count: 0\n---\n");
+
+		const workflow = defineWorkflow({
+			name: "wf",
+			start: "produce",
+			stages: {
+				produce: produces({
+					outcome: fmPlansOutcome(),
+					outputSchema: typeboxSchema(Type.Object({ blockers_count: Type.Number() })),
+				}),
+				synthesize: acts({ reads: [fanin("plans")] }),
+			},
+			edges: {
+				produce: gate("blockers_count", { produce: gt(0), synthesize: eq(0) }, "synthesize"),
+				synthesize: "stop",
+			},
+		});
+
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/plans/p1.md")] },
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/plans/p2.md")] },
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/plans/p3.md")] },
+				{ branch: [mockAssistantMessage("synthesized")] },
+			],
+		});
+
+		const result = await runWorkflow(chain.ctx, { workflow, input: "x" });
+		expect(result.success).toBe(true);
+		// The synthesize barrier sees all three plan handles, in run order.
+		expect(chain.sentMessages.at(-1)).toBe(
+			"/skill:synthesize --plans .rpiv/artifacts/plans/p1.md --plans .rpiv/artifacts/plans/p2.md --plans .rpiv/artifacts/plans/p3.md",
+		);
+	});
+
+	it("mixes fanin (all) and bare (latest) reads in declared order", async () => {
+		writeArtifact(tmpDir, ".rpiv/artifacts/plans/p1.md", "---\nblockers_count: 1\n---\n");
+		writeArtifact(tmpDir, ".rpiv/artifacts/plans/p2.md", "---\nblockers_count: 0\n---\n");
+		writeArtifact(tmpDir, ".rpiv/artifacts/reviews/r.md");
+
+		const workflow = defineWorkflow({
+			name: "wf",
+			start: "produce",
+			stages: {
+				produce: produces({
+					outcome: fmPlansOutcome(),
+					outputSchema: typeboxSchema(Type.Object({ blockers_count: Type.Number() })),
+				}),
+				review: produces({ outcome: makeOutcome("reviews") }),
+				synthesize: acts({ reads: [fanin("plans"), "reviews"] }),
+			},
+			edges: {
+				produce: gate("blockers_count", { produce: gt(0), review: eq(0) }, "review"),
+				review: "synthesize",
+				synthesize: "stop",
+			},
+		});
+
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/plans/p1.md")] },
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/plans/p2.md")] },
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/reviews/r.md")] },
+				{ branch: [mockAssistantMessage("synthesized")] },
+			],
+		});
+
+		const result = await runWorkflow(chain.ctx, { workflow, input: "x" });
+		expect(result.success).toBe(true);
+		// All of plans (run order), then the latest of reviews — declared order.
+		expect(chain.sentMessages.at(-1)).toBe(
+			"/skill:synthesize --plans .rpiv/artifacts/plans/p1.md --plans .rpiv/artifacts/plans/p2.md --reviews .rpiv/artifacts/reviews/r.md",
+		);
+	});
+
+	it("treats an explicit { all: false } read as latest-wins", async () => {
+		writeArtifact(tmpDir, ".rpiv/artifacts/plans/p1.md", "---\nblockers_count: 1\n---\n");
+		writeArtifact(tmpDir, ".rpiv/artifacts/plans/p2.md", "---\nblockers_count: 0\n---\n");
+
+		const workflow = defineWorkflow({
+			name: "wf",
+			start: "produce",
+			stages: {
+				produce: produces({
+					outcome: fmPlansOutcome(),
+					outputSchema: typeboxSchema(Type.Object({ blockers_count: Type.Number() })),
+				}),
+				consume: acts({ reads: [{ name: "plans", all: false }] }),
+			},
+			edges: {
+				produce: gate("blockers_count", { produce: gt(0), consume: eq(0) }, "consume"),
+				consume: "stop",
+			},
+		});
+
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/plans/p1.md")] },
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/plans/p2.md")] },
+				{ branch: [mockAssistantMessage("consumed")] },
+			],
+		});
+
+		const result = await runWorkflow(chain.ctx, { workflow, input: "x" });
+		expect(result.success).toBe(true);
+		expect(chain.sentMessages.at(-1)).toBe("/skill:consume --plans .rpiv/artifacts/plans/p2.md");
+	});
+});
+
+// ---------------------------------------------------------------------------
 // reads: validation + preflight
 // ---------------------------------------------------------------------------
 
@@ -388,6 +537,35 @@ describe("reads: validation + preflight", () => {
 		});
 		expect(validateWorkflow(workflow).filter((i) => i.severity === "error")).toEqual([]);
 	});
+
+	it("accepts a fanin() read of a published channel", () => {
+		const workflow = defineWorkflow({
+			name: "wf",
+			start: "p",
+			stages: {
+				p: produces({ outcome: makeOutcome("plans") }),
+				c: acts({ reads: [fanin("plans")] }),
+			},
+			edges: { p: "c", c: "stop" },
+		});
+		expect(validateWorkflow(workflow).filter((i) => i.severity === "error")).toEqual([]);
+	});
+
+	it("rejects a fanin() read of a non-published name (normalized channel in the message)", () => {
+		const workflow = defineWorkflow({
+			name: "wf",
+			start: "consume",
+			stages: {
+				consume: acts({ reads: [fanin("does-not-exist")] }),
+			},
+			edges: { consume: "stop" },
+		});
+		const issues = validateWorkflow(workflow);
+		const err = issues.find((i) => /does-not-exist/.test(i.message));
+		expect(err?.severity).toBe("error");
+		// Proves the object read is normalized — never "[object Object]".
+		expect(issues.some((i) => /\[object Object\]/.test(i.message))).toBe(false);
+	});
 });
 
 describe("reads: runtime preflight halts when slot is empty", () => {
@@ -409,6 +587,30 @@ describe("reads: runtime preflight halts when slot is empty", () => {
 			start: "consume",
 			stages: {
 				consume: acts({ reads: ["produce"] }) as StageDef,
+				produce: produces({ outcome: makeOutcome() }),
+			},
+			edges: { consume: "stop", produce: "stop" },
+		};
+
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [{ branch: [mockAssistantMessage("should never run")] }],
+		});
+
+		const result = await runWorkflow(chain.ctx, { workflow, input: "x" });
+		expect(result.success).toBe(false);
+		expect(result.error).toMatch(/reads "produce"/);
+		expect(result.error).toMatch(/state.named\["produce"\] is empty/);
+	});
+
+	it("halts naming the normalized channel for a fanin() read with an empty slot", async () => {
+		// Same shape as above but the read is wrapped in fanin() — proves the
+		// preflight normalizes the object read (no "[object Object]" key regression).
+		const workflow: Workflow = {
+			name: "wf",
+			start: "consume",
+			stages: {
+				consume: acts({ reads: [fanin("produce")] }) as StageDef,
 				produce: produces({ outcome: makeOutcome() }),
 			},
 			edges: { consume: "stop", produce: "stop" },
