@@ -5,7 +5,7 @@ All notable changes to `@juicesharp/rpiv-advisor` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.20.0] - 2026-06-15
 
 ### Fixed
 - Restore now strips the advisor tool (and its prompt block) from the active set when there is no usable advisor model — missing config, an unparseable model key, or a model no longer in the registry. The tool is registered active-by-default at load, so its prompt snippet previously lingered in the base system prompt even though every `advisor()` call would fail with `ERR_NO_MODEL` (#72).

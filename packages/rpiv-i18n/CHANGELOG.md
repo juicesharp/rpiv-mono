@@ -5,7 +5,7 @@ All notable changes to `@juicesharp/rpiv-i18n` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.20.0] - 2026-06-15
 
 ### Added
 - Chinese (`zh`, 中文) added to `SUPPORTED_LOCALES`, so the `/languages` picker now offers it (#68).

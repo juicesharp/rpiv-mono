@@ -1,6 +1,6 @@
 # @juicesharp/rpiv-workflow
 
-## [Unreleased]
+## [1.20.0] - 2026-06-15
 
 ### Consumer extension points — bucket-kind mappings + provider refresh
 

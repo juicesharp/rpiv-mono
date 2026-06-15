@@ -5,7 +5,7 @@ All notable changes to `@juicesharp/rpiv-pi` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.20.0] - 2026-06-15
 
 ### Added
 - **User-installed skill contracts.** A new lazy contract provider (owner `"user-skills"`) harvests `contract:` frontmatter from skills in Pi's default user locations (`<agentDir>/skills` + `<cwd>/.pi/skills`) and registers them alongside the bundled set, so workflows naming user skills get contract-driven validation and outcome derivation. Enumeration is filesystem-based via Pi's `loadSkills` (no captured `pi` handle — those go stale on session replacement / `/reload`); bundled skills are excluded by a realpath-safe path check. Skills shipped by other Pi packages register their own contracts via `registerSkillContracts`.

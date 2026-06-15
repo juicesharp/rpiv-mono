@@ -1,6 +1,6 @@
 {
 	"name": "@juicesharp/rpiv-voice",
-	"version": "1.19.1",
+	"version": "1.20.0",
 	"private": false,
 	"description": "Pi extension. Voice dictation via /voice — local on-device STT with sherpa-onnx Whisper (base multilingual int8), microphone capture via decibri.",
 	"keywords": [
@@ -79,7 +79,7 @@
 		]
 	},
 	"dependencies": {
-		"@juicesharp/rpiv-config": "^1.19.1",
+		"@juicesharp/rpiv-config": "^1.20.0",
 		"sherpa-onnx-node": "^1.13.0",
 		"decibri": "^3.4.0"
 	},
