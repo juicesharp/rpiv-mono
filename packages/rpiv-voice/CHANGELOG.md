@@ -7,6 +7,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Chinese (`zh`) translations (`locales/zh.json`), plus the matching English copy for the equalizer setting label/hint (#68).
+
 ## [1.19.1] - 2026-06-10
 
 ## [1.19.0] - 2026-06-09

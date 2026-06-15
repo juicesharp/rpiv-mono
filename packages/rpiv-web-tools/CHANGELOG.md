@@ -7,6 +7,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- Jina search now handles the Search API returning `data` as a direct array (not just a `{ data: [...] }` envelope), so `web_search` no longer yields zero results against that response shape (#73).
+
 ## [1.19.1] - 2026-06-10
 
 ## [1.19.0] - 2026-06-09
