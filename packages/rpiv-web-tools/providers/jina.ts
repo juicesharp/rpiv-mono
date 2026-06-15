@@ -70,9 +70,10 @@ export class JinaProvider implements FullProvider {
 		}
 
 		const raw = (await res.json()) as JinaSearchResponse;
-		const results = normalizeJinaResults(
-			Array.isArray(raw.data) ? raw.data : (raw.data?.results ?? [])
-		).slice(0, maxResults);
+		const results = normalizeJinaResults(Array.isArray(raw.data) ? raw.data : (raw.data?.results ?? [])).slice(
+			0,
+			maxResults,
+		);
 		return { query, results };
 	}
 

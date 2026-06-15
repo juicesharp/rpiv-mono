@@ -108,11 +108,9 @@ const PROVIDER_MATRIX = [
 			JSON.stringify({
 				code: 200,
 				status: 20000,
-				data: {
-					results: [{ title: "T", url: "https://x", description: "snip" }],
-				},
+				data: [{ title: "T", url: "https://x", description: "snip" }],
 			}),
-		emptyResponse: () => JSON.stringify({ code: 200, status: 20000, data: { results: [] } }),
+		emptyResponse: () => JSON.stringify({ code: 200, status: 20000, data: [] }),
 		authHeader: "Authorization" as string | null,
 	},
 	{
