@@ -3,17 +3,17 @@
  * `runStageSession` is the only public entry (loop units run through it too,
  * threading their identity via `StageSession.unit`).
  *
- * The fresh-vs-continue policy split is owned by `SessionPolicyHandler`
- * (see `spawn.ts`): `FRESH_HANDLER` and `CONTINUE_HANDLER` implement
- * the three policy-specific decisions. Everything in this file —
- * post-processing, halt routing, success persistence, outcome reading
- * — is policy-agnostic.
+ * Every stage runs in its own detached child session (`spawnChildAndRun`,
+ * spawn.ts); the only surviving policy divergence is the branch offset
+ * (`branchOffsetFor`). Everything in this file — post-processing, halt routing,
+ * success persistence, outcome reading — is policy-agnostic.
  *
  * Companion modules:
  *   - extraction.ts — produceAndValidateOutput + retry loop +
  *                     outcome helpers (collector → parser pipeline).
- *   - spawn.ts      — SessionPolicyHandler + FRESH/CONTINUE handlers +
- *                     handlerFor.
+ *   - spawn.ts      — the child-spawn primitives (`spawnChildAndRun`,
+ *                     `reattachChildSession`, `resendIntoChild`) + `laneFor` /
+ *                     `branchOffsetFor`.
  *   - reattach.ts   — session-backed resume (promotion + reattach); reuses
  *                     postStage / recordStageSuccess / the halt helpers
  *                     exported below instead of duplicating them.
@@ -23,37 +23,36 @@ import {
 	type AuditCtx,
 	currentStageRef,
 	failedArgs,
-	recordCancellation,
 	recordStopFailure,
 	recordTerminalFailure,
+	recordUnitHalt,
 	terminate,
 } from "../audit.js";
-import { persistStageSuccess } from "../audit-rows.js";
+import { allocateStageNumber, persistStageSuccess } from "../audit-rows.js";
 import { lifecycleCtxFromSession, skillStageRef, type UnitEvent } from "../events.js";
+import { nowIso, WorkflowAbortError } from "../internal-utils.js";
 import {
 	FAIL_AUDIT_WRITE,
 	FAIL_VALIDATION_EXHAUSTED,
 	MSG_STAGE_COMPLETE,
 	MSG_STAGE_FAILED,
 	MSG_UNIT_COMPLETE,
+	MSG_UNIT_FAILED,
 } from "../messages.js";
-import type { Output } from "../output.js";
+import { failedOutput, type Output, type OutputMeta } from "../output.js";
 import type { SessionRef } from "../state/index.js";
 import { type BranchEntry, classifyStop, readBranch, readSessionRef, type StopSignal } from "../transcript.js";
-import type { StageSession, WorkflowHostContext } from "../types.js";
+import type { StageSession, WorkflowHostContext, WorkflowSessionContext } from "../types.js";
 import { produceAndValidateOutput } from "./extraction.js";
-import { handlerFor } from "./spawn.js";
+import { branchOffsetFor, spawnChildAndRun } from "./spawn.js";
 
 // ===========================================================================
 // PUBLIC ENTRIES — what the orchestrator calls
 // ===========================================================================
 
-/** Execute one DAG stage (or loop unit) in its own session. */
+/** Execute one DAG stage (or loop unit) in its own detached child session. */
 export async function runStageSession(ctx: WorkflowHostContext, s: StageSession): Promise<void> {
-	const handler = handlerFor(s.stage.sessionPolicy);
-	const { cancelled } = await handler.spawn(ctx, s.prompt, (sessionCtx) => postStage(sessionCtx, s), s.continueHost);
-	// Pre-open cancellation — no session ever backed this activation.
-	if (cancelled) recordCancellation(ctx, auditFor(s, null));
+	await spawnChildAndRun(ctx, s, (child) => postStage(ctx, child, s));
 }
 
 // ===========================================================================
@@ -65,26 +64,62 @@ export async function runStageSession(ctx: WorkflowHostContext, s: StageSession)
  * persist → chain. Exported to the `reattach.ts` companion — a reattached
  * session's continuation runs this exact pipeline, byte-identical to live.
  *
+ * TWO ctxs (detachment): `obsCtx` is the long-lived LAUNCHER/observer ctx the
+ * walk threads — it stays valid across every stage, so the user-facing recording
+ * (success/halt rows + notifications + lifecycle) AND the chain continuation
+ * (`onSuccess` → advance/step, which spawns the NEXT stage's child) all run on
+ * it, NOT on the per-stage child (whose UI is the lane binding — noOp in the
+ * background lane — and which is disposed when the stage ends). `child` is the
+ * in-session ctx: the agent transcript (`readBranch`/`readSessionRef`) and the
+ * validation-retry re-prompt (`produceAndValidateOutput` → `resendIntoChild`)
+ * read/write through it. Spawning the next stage off `obsCtx` is what keeps the
+ * launcher the single spawner (no nested-child chain).
+ *
  * The backing `SessionRef` is captured ONCE at entry — every row this
  * pipeline can write (success, stop-failure, extraction/validation failure)
  * carries the same provenance value.
  */
-export async function postStage(ctx: WorkflowHostContext, s: StageSession): Promise<void> {
-	const handler = handlerFor(s.stage.sessionPolicy);
-	const offset = handler.branchOffset(s.branchOffset);
-	const session = readSessionRef(ctx, offset);
-	const outcome = readSessionOutcome(ctx, offset);
-	if (outcome.stop !== "stop") return haltStage(ctx, s, outcome.stop, session);
+export async function postStage(
+	obsCtx: WorkflowHostContext,
+	child: WorkflowSessionContext,
+	s: StageSession,
+): Promise<void> {
+	const offset = branchOffsetFor(s.stage.sessionPolicy, s.branchOffset);
+	const session = readSessionRef(child, offset);
+	const outcome = readSessionOutcome(child, offset);
+	// Abort surfaces as a STOP CLASSIFICATION, not a promise rejection:
+	// `session.abort()` makes the SDK RESOLVE `prompt()` with a
+	// `stopReason:"aborted"` transcript message, so an aborted in-flight child runs
+	// straight into here. Throw BEFORE haltStage/softHaltUnit/any row write so:
+	// (a) no `collected:true` row is written (else the resume fold marks the unit
+	// "don't re-dispatch" → permanent work loss), (b) the parallel fold's
+	// `isAbortError` branch leaves the slot unfilled, and (c) resume re-dispatches
+	// the unit cleanly.
+	if (s.signal?.aborted || outcome.stop === "aborted") throw new WorkflowAbortError();
+	// A fanout unit marked `collectAll` records a NON-terminal failed row + a
+	// sentinel slot instead of halting the run; everything else keeps the existing
+	// fail-fast halt. Recording + the continuation run on obsCtx (the launcher) —
+	// the per-stage child is disposed when the stage ends.
+	if (outcome.stop !== "stop") {
+		if (s.collectAll) return softHaltUnit(obsCtx, s, `${s.skill} stopped (${outcome.stop})`, session);
+		return haltStage(obsCtx, s, outcome.stop, session);
+	}
 
-	const result = await produceAndValidateOutput(ctx, s, outcome.branch, offset);
-	if (result.kind === "fatal") return haltStageWithExtractionError(ctx, s, result.message, session);
-	if (result.kind === "validation-exhausted")
-		return haltStageWithValidationFailure(ctx, s, result.failureSummary, session);
+	const result = await produceAndValidateOutput(child, s, outcome.branch, offset);
+	if (result.kind === "fatal") {
+		if (s.collectAll) return softHaltUnit(obsCtx, s, result.message, session);
+		return haltStageWithExtractionError(obsCtx, s, result.message, session);
+	}
+	if (result.kind === "validation-exhausted") {
+		if (s.collectAll) return softHaltUnit(obsCtx, s, result.failureSummary, session);
+		return haltStageWithValidationFailure(obsCtx, s, result.failureSummary, session);
+	}
 
-	if (!(await recordStageSuccess(ctx, s, result.output, session))) return;
+	if (!(await recordStageSuccess(obsCtx, s, result.output, session))) return;
 	// The validated Output goes to the continuation directly — loop drivers
-	// thread it into accumulated / feedForward without state back-reads.
-	await s.onSuccess(ctx, result.output);
+	// thread it into accumulated / feedForward without state back-reads. Runs on
+	// obsCtx so the next stage's child is spawned off the launcher.
+	await s.onSuccess(obsCtx, result.output);
 }
 
 // ===========================================================================
@@ -112,6 +147,39 @@ async function haltStageWithExtractionError(
 		{ status: "failed", notifyMsg: MSG_STAGE_FAILED(s.skill), notifyLevel: "error", errMsg: message },
 		s.onFailure,
 	);
+}
+
+/**
+ * Collect-all fanout unit halt: write a NON-terminal failed row, then hand a
+ * `failedOutput` sentinel to the continuation (`onSuccess`) so the parallel fold
+ * places it by declared index (`foldFanoutCompletion` → `placeFanoutOutput`) and
+ * `fanin(...).filter(Boolean)` skips it. The run survives — no `terminate()`. No
+ * direct `applyCompletedStage` here (the fold owns the single channel-write — a
+ * push here would double-write the slot). Recording + `onSuccess` run on the
+ * launcher/observer `ctx` (the same posture as `postStage`).
+ */
+async function softHaltUnit(
+	ctx: WorkflowHostContext,
+	s: StageSession,
+	reason: string,
+	session: SessionRef | null,
+): Promise<void> {
+	s.allocatedStageNumber ??= allocateStageNumber(s.state);
+	recordUnitHalt(ctx, auditFor(s, session), reason); // status:"failed" collected:true row (resume reads errMsg)
+	ctx.ui.notify(MSG_UNIT_FAILED(s.skill, s.unit?.label ?? s.stageName), "warning");
+	await s.onSuccess(ctx, failedOutput(outputMetaFor(s), reason));
+}
+
+/** OutputMeta for a sentinel — same stage number the failed row carries, so the
+ *  live sentinel and the resume-rebuilt one are byte-identical. */
+function outputMetaFor(s: StageSession): OutputMeta {
+	return {
+		stage: s.stageName,
+		skill: s.skill,
+		stageNumber: s.allocatedStageNumber ?? s.state.lastAllocatedStageNumber,
+		ts: nowIso(),
+		runId: s.runId,
+	};
 }
 
 /** Exported to the `reattach.ts` companion — a promotion's validation-exhausted halt is identical to live. */

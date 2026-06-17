@@ -12,11 +12,15 @@
 import { closeSync, existsSync, openSync, readdirSync, readSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { SessionRef } from "../state/index.js";
+import { childSessionsDir } from "../state/paths.js";
 
 /**
  * id → on-disk session file. Fail-soft: `null` means "fall back to cold
  * re-run".
  *
+ *   0. When a `runId`+`cwd` are known, try the run-scoped child dir by id
+ *      FIRST (`childSessionsDir(cwd, runId)/<id>.jsonl`, O(1)) — detached
+ *      children persist there keyed by `SessionRef.id`.
  *   1. `ref.file` exists on disk → use it (fast path).
  *   2. Else search `dirname(ref.file)` for `*_<id>.jsonl` (Pi's filename
  *      convention embeds the session id).
@@ -24,10 +28,14 @@ import type { SessionRef } from "../state/index.js";
  *      (robust against filename-convention drift).
  *   4. Else `null`.
  *
- * No `file` hint at all (in-memory session) → `null` immediately: without
- * the hint there is no directory to search.
+ * No `file` hint at all (in-memory session) → `null` immediately AFTER the
+ * id-first rung: without the hint there is no directory to search.
  */
-export function locateSessionFile(ref: SessionRef): string | null {
+export function locateSessionFile(ref: SessionRef, runId?: string, cwd?: string): string | null {
+	if (runId && cwd) {
+		const candidate = join(childSessionsDir(cwd, runId), `${ref.id}.jsonl`);
+		if (isFile(candidate)) return candidate;
+	}
 	if (!ref.file) return null;
 	try {
 		if (existsSync(ref.file) && statSync(ref.file).isFile()) return ref.file;

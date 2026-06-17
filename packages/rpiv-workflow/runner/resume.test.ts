@@ -31,16 +31,18 @@ import type { Artifact } from "../handle.js";
 import { fs as fsHandle, handleToString } from "../handle.js";
 import { judge } from "../judge.js";
 import { assess, fanout, iterate, majority, panel, verify } from "../loop-constructors.js";
-import { advanceCursor, freshCursor } from "../loop-kinds.js";
+import { advanceCursor, foldFanoutCompletion, freshCursor } from "../loop-kinds.js";
 import type { Output } from "../output.js";
 import {
 	appendStage,
 	readAllStages,
+	STATE_SCHEMA_VERSION,
 	stateFilePath,
 	type WorkflowHeader,
 	type WorkflowStage,
 	writeHeader,
 } from "../state/index.js";
+import type { RunState } from "../types.js";
 import { reconstructState } from "./resume.js";
 import { resumeWorkflow } from "./runner.js";
 
@@ -120,6 +122,7 @@ const baseHeader: WorkflowHeader = {
 	workflow: "test-wf",
 	input: "Add dark mode",
 	ts: "2026-06-03T07:30:00Z",
+	v: STATE_SCHEMA_VERSION,
 };
 
 // ---------------------------------------------------------------------------
@@ -413,7 +416,7 @@ describe("reconstructState", () => {
 		expect(result.detail).toBe(baseHeader.runId);
 	});
 
-	it("REFUSES (malformed-row) instead of skipping a stage-shaped row that fails the deep guard (T9)", async () => {
+	it("REFUSES (malformed-row) instead of skipping a stage-shaped row that fails the deep guard", async () => {
 		// Fault injection: the trail's failure row lost its valid `status` (torn
 		// write, foreign writer). Pre-fix the shallow guard skipped it and the
 		// fold replayed the run as if `build` never ran — a resume would route
@@ -471,7 +474,7 @@ describe("reconstructState", () => {
 		expect(result.detail).toContain('stage row 2 ("build")');
 	});
 
-	it("REFUSES (version-mismatch) a header written under an unknown schema version (T5)", async () => {
+	it("REFUSES (version-mismatch) a header written under an unknown schema version", async () => {
 		writeRunStages([
 			{
 				session: null,
@@ -484,17 +487,18 @@ describe("reconstructState", () => {
 			},
 		]);
 
-		const result = await reconstructState(tmpDir, linearWorkflow, { ...baseHeader, v: 2 });
+		const result = await reconstructState(tmpDir, linearWorkflow, { ...baseHeader, v: 99 });
 		expect(result.ok).toBe(false);
 		if (result.ok) return;
 		expect(result.reason).toBe("version-mismatch");
-		expect(result.detail).toContain("schema v2");
+		expect(result.detail).toContain("schema v99");
 	});
 
-	it("treats an absent header `v` as version 1 and resumes (T5 back-compat rule)", async () => {
-		// baseHeader deliberately carries no `v` — files written before the
-		// field existed must keep resuming.
-		expect(baseHeader.v).toBeUndefined();
+	it("REFUSES a v1 (sequential) trail — absent or explicit `v: 1` — with version-mismatch (schema v2)", async () => {
+		// Under schema v2 the fold places completion rows by `unitIndex`; a v1
+		// (sequential) trail cannot replay under the new rules, so it is rejected
+		// cleanly ("start a fresh run") rather than mis-folded. An absent `v`
+		// resolves to 1 and is rejected identically.
 		writeRunStages([
 			{
 				session: null,
@@ -507,12 +511,18 @@ describe("reconstructState", () => {
 			},
 		]);
 
-		const result = await reconstructState(tmpDir, linearWorkflow, baseHeader);
-		expect(result.ok).toBe(true);
+		// An absent `v` resolves to version 1.
+		const { v: _omit, ...absentHeader } = baseHeader;
+		const absent = await reconstructState(tmpDir, linearWorkflow, absentHeader);
+		expect(absent.ok).toBe(false);
+		if (absent.ok) return;
+		expect(absent.reason).toBe("version-mismatch");
 
-		// An explicit v: 1 resumes identically.
+		// An explicit v: 1 is rejected identically.
 		const explicit = await reconstructState(tmpDir, linearWorkflow, { ...baseHeader, v: 1 });
-		expect(explicit.ok).toBe(true);
+		expect(explicit.ok).toBe(false);
+		if (explicit.ok) return;
+		expect(explicit.reason).toBe("version-mismatch");
 	});
 
 	it("row whose stage is not in workflow.stages: returns stage-gone refusal", async () => {
@@ -630,7 +640,7 @@ describe("reconstructState", () => {
 		expect(result.state.stagesCompleted).toBe(1);
 	});
 
-	it("legacy decorated row without `parent` refuses stage-gone (pre-redesign run, no migration)", async () => {
+	it("legacy decorated row without `parent` refuses stage-gone (older run shape, no migration)", async () => {
 		writeRunStages([
 			{ session: null, stageNumber: 1, stage: "build (phase 1/2)", skill: "build", status: "completed", ts: "t1" },
 		]);
@@ -846,7 +856,7 @@ describe("reconstructState", () => {
 		expect(result.state.named["breakdown-panel"]).toBeUndefined();
 	});
 
-	it("REPLAY PARITY (C1): the fold's trailing cursor is byte-equal to a live cursor advanced over the same outputs", async () => {
+	it("REPLAY PARITY: the fold's trailing cursor is byte-equal to a live cursor advanced over the same outputs", async () => {
 		// `advanceCursor` is the ONE cursor state machine; this test pins the
 		// contract that the fold and the live driver advance identically. The
 		// trail ends mid-assess (produce, judge, produce — generation open) so
@@ -886,7 +896,7 @@ describe("reconstructState", () => {
 		expect(JSON.stringify(result.trailing?.cursor)).toBe(JSON.stringify(live));
 	});
 
-	it("REPLAY PARITY (C1): fanout trailing cursor matches the live transition", async () => {
+	it("REPLAY PARITY: fanout trailing cursor matches the live transition", async () => {
 		const u1 = fakeOutput([fakeArtifact("builds/b1.md")]);
 		const units: FanoutFn = () => [
 			{ prompt: "u1", label: "phase 1/2", id: "phase-1" },
@@ -907,8 +917,20 @@ describe("reconstructState", () => {
 		if (!result.ok) return;
 		expect(result.drift).toBeUndefined();
 
+		// The live fanout driver advances the cursor through `foldFanoutCompletion`
+		// (place-by-index into pre-sized slots), NOT the sequential `advanceCursor` —
+		// so the resume fold (which now uses the SAME authority) must match THAT, not
+		// a hand-rolled sequential cursor. Throwaway state: only the cursor is compared.
 		const live = freshCursor();
-		advanceCursor(live, "produce", u1, loop);
+		foldFanoutCompletion(
+			{ named: {}, primaryArtifact: undefined } as RunState,
+			live,
+			wf.stages.build!,
+			"build",
+			0,
+			2,
+			u1,
+		);
 
 		expect(JSON.stringify(result.trailing?.cursor)).toBe(JSON.stringify(live));
 	});
@@ -1271,7 +1293,7 @@ describe("reconstructState — verify generations", () => {
 });
 
 // ---------------------------------------------------------------------------
-// lastChainIndex (C16) — the fold reconstructs the chain index instead of
+// lastChainIndex — the fold reconstructs the chain index instead of
 // reusing the allocator's stageNumber (which counts every loop-unit row, so
 // the two diverge past any loop: a 10-unit loop made status show "stage 14/5").
 // ---------------------------------------------------------------------------
@@ -1430,6 +1452,7 @@ const resumeHeader: WorkflowHeader = {
 	workflow: "resume-wf",
 	input: "Add dark mode",
 	ts: "2026-06-03T07:30:00Z",
+	v: STATE_SCHEMA_VERSION,
 };
 
 describe("resumeWorkflow", () => {
@@ -1600,7 +1623,7 @@ describe("resumeWorkflow", () => {
 		expect(stages).toHaveLength(2);
 
 		// No new session was spawned
-		expect(chain.ctx.newSession).not.toHaveBeenCalled();
+		expect(chain.ctx.spawnChild).not.toHaveBeenCalled();
 	});
 
 	it("no-rows refusal: returns error envelope, no self-notify (caller surfaces it)", async () => {

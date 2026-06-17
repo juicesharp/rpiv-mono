@@ -249,6 +249,11 @@ export const ISSUE_DEFS = {
 		"error",
 		(p) => `reads channel "${p.channel}" but publisher "${p.producer}" is incompatible — ${p.reason}`,
 	),
+	"fanout-foreground-skill": def<{ skill: string }>(
+		"error",
+		(p) =>
+			`fans out over units but skill "${p.skill}" declares interaction "foreground" — a fanout runs many parallel units; the skill must be background`,
+	),
 } satisfies Record<string, IssueSpec<never>>;
 
 // ===========================================================================

@@ -24,7 +24,12 @@
 
 import type { Workflow } from "./api.js";
 import type { SkillContractMap } from "./skill-contract.js";
-import { checkEdgeSchemaCompat, checkPredicateSchemas, checkReadsChannelCompat } from "./validate/contract-compat.js";
+import {
+	checkEdgeSchemaCompat,
+	checkFanoutInteraction,
+	checkPredicateSchemas,
+	checkReadsChannelCompat,
+} from "./validate/contract-compat.js";
 import {
 	checkEdgeKeys,
 	checkEdgeTargets,
@@ -74,7 +79,7 @@ export function validateWorkflow(
 
 	checkStageSemantics(workflow, r);
 
-	// The publisher set is computed ONCE and threaded to both consumers (D10).
+	// The publisher set is computed ONCE and threaded to both consumers.
 	const published = publishedNamesOf(workflow);
 	checkReadsReferences(workflow, published, r);
 	checkFanoutSource(workflow, published, r);
@@ -83,6 +88,7 @@ export function validateWorkflow(
 	checkPredicateSchemas(workflow, r, opts?.skillContracts);
 	checkEdgeSchemaCompat(workflow, r, opts?.skillContracts);
 	checkReadsChannelCompat(workflow, r, opts?.skillContracts);
+	checkFanoutInteraction(workflow, r, opts?.skillContracts);
 
 	return issues;
 }

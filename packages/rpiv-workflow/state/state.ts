@@ -114,6 +114,15 @@ export interface WorkflowStage {
 	role?: UnitRole;
 	unitId?: string;
 	unitIndex?: number;
+	/**
+	 * Marks a NON-terminal collect-all fanout unit halt (`recordUnitHalt`):
+	 * the unit failed but the run survives and a `failedOutput` sentinel fills its
+	 * declared slot. Distinguishes a SOFT halt from a hard `recordTerminalFailure`
+	 * row (byte-identical otherwise) so the resume fold rebuilds the
+	 * sentinel by `unitIndex` rather than re-dispatching the unit. Absent on every
+	 * other row (`undefined` is dropped by `JSON.stringify`).
+	 */
+	collected?: true;
 }
 
 /**
@@ -137,10 +146,15 @@ export interface LoopCapRow {
  * `reconstructState` refuses headers carrying any other version
  * (`reason: "version-mismatch"`) instead of silently mis-replaying.
  *
- * BACK-COMPAT RULE: an absent `v` is version 1 — files written before the
- * field existed resume normally. Tested in `runner/resume.test.ts`.
+ * v2 = parallel-fanout trails: completion rows are placed by `unitIndex` (not
+ * trail order), and a `collected:true` failed row's `errMsg` rebuilds a
+ * `failedOutput` sentinel. A v1 trail (sequential fold) — and an absent
+ * `v`, which resolves to 1 — is rejected by `reconstructState`'s header version
+ * gate with `version-mismatch` ("start a fresh run"): there is no in-place
+ * migration (sole consumer rpiv-pi; no back-compat). Tested in
+ * `runner/resume.test.ts`.
  */
-export const STATE_SCHEMA_VERSION = 1;
+export const STATE_SCHEMA_VERSION = 2;
 
 /** First line of the JSONL file. */
 export interface WorkflowHeader {

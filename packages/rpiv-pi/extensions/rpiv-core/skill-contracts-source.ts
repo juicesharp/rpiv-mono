@@ -78,6 +78,12 @@ export function normalizeContract(raw: Record<string, unknown>): SkillContract {
 		const produces: ProducesSpec = {
 			kind: typeof rawProduces.kind === "string" ? rawProduces.kind : "produces",
 		};
+		// `interaction` is a typed sibling of `kind` the framework INTERPRETS:
+		// only carry the two recognized values; anything else (or absent) degrades
+		// to background-safe, mirroring the per-field string-guard on `kind`.
+		if (rawProduces.interaction === "foreground" || rawProduces.interaction === "background") {
+			produces.interaction = rawProduces.interaction;
+		}
 		// Only carry a `data` schema when it's a plain object with at least one
 		// recognized JSON Schema structural keyword. Objects with no structural
 		// keywords (e.g. { foo: 1 }) are silently dropped — they would bypass

@@ -67,6 +67,28 @@ describe("locateSessionFile", () => {
 		expect(locateSessionFile({ id: "sess-1" })).toBeNull();
 	});
 
+	it("id-first rung: finds the run-scoped child session by id before any fallback", () => {
+		// childSessionsDir(cwd, runId) === <cwd>/.rpiv/workflows/runs/<runId>/sessions/
+		const runId = "2026-06-17_10-00-00-ab12";
+		const childDir = join(dir, ".rpiv", "workflows", "runs", runId, "sessions");
+		mkdirSync(childDir, { recursive: true });
+		const childFile = join(childDir, "sess-1.jsonl");
+		writeFileSync(childFile, sessionHeader("sess-1"));
+
+		// Even with a STALE/absent `file` hint, the id-first lookup wins (O(1)).
+		expect(locateSessionFile({ id: "sess-1", file: join(dir, "gone.jsonl") }, runId, dir)).toBe(childFile);
+		// No file hint at all still resolves via the id-first rung.
+		expect(locateSessionFile({ id: "sess-1" }, runId, dir)).toBe(childFile);
+	});
+
+	it("id-first rung: falls through to the legacy ladder when no run-scoped child exists", () => {
+		const runId = "2026-06-17_10-00-00-ab12";
+		mkdirSync(join(dir, ".rpiv", "workflows", "runs", runId, "sessions"), { recursive: true }); // empty
+		const actual = join(dir, "real_sess-1.jsonl");
+		writeFileSync(actual, sessionHeader("sess-1"));
+		expect(locateSessionFile({ id: "sess-1", file: actual }, runId, dir)).toBe(actual);
+	});
+
 	it("never returns a directory — only regular files survive every rung", () => {
 		const asDir = join(dir, "weird_sess-1.jsonl");
 		mkdirSync(asDir);

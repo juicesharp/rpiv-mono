@@ -47,6 +47,7 @@
 		"@juicesharp/rpiv-config": "^1.20.0"
 	},
 	"peerDependencies": {
+		"@earendil-works/pi-ai": "*",
 		"@earendil-works/pi-coding-agent": "*",
 		"@tintinweb/pi-subagents": "*",
 		"@juicesharp/rpiv-ask-user-question": "*",

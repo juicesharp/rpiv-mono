@@ -26,7 +26,7 @@ import { sideEffectOutcome } from "../outcomes/index.js";
 import { finalizeOutput, type Output } from "../output.js";
 import type { CollectCtx, Outcome } from "../output-spec.js";
 import { type BranchEntry, readBranch } from "../transcript.js";
-import type { StageSession, WorkflowHostContext } from "../types.js";
+import type { StageSession, WorkflowSessionContext } from "../types.js";
 import {
 	DEFAULT_VALIDATION_RETRIES,
 	DEFAULT_VALIDATION_RETRY_TIMEOUT_MS,
@@ -39,7 +39,7 @@ import {
 	type ValidationResult,
 	validateOutputData,
 } from "../validate-output.js";
-import { handlerFor } from "./spawn.js";
+import { resendIntoChild } from "./spawn.js";
 
 export type OutputProduction =
 	| { kind: "ok"; output: Output }
@@ -48,7 +48,7 @@ export type OutputProduction =
 
 /** Retry loop re-produces against the latest branch after each fix request. */
 export async function produceAndValidateOutput(
-	ctx: WorkflowHostContext,
+	ctx: WorkflowSessionContext,
 	s: StageSession,
 	branch: BranchEntry[],
 	branchOffset: number | undefined,
@@ -231,7 +231,7 @@ interface RetryDeps {
 }
 
 async function retryUntilValid(
-	ctx: WorkflowHostContext,
+	ctx: WorkflowSessionContext,
 	s: StageSession,
 	deps: RetryDeps,
 	initial: Output,
@@ -320,7 +320,7 @@ async function validateOrFatal(
 }
 
 async function askAgentToFix(
-	ctx: WorkflowHostContext,
+	ctx: WorkflowSessionContext,
 	s: StageSession,
 	attempt: number,
 	failures: SchemaValidationFailure[],
@@ -329,7 +329,7 @@ async function askAgentToFix(
 	ctx.ui.notify(MSG_VALIDATION_RETRY(s.skill, attempt), "warning");
 	const errorLines = failures.map((f) => ` • ${describeFailure(f)}`).join("\n");
 	await withTimeout(
-		handlerFor(s.stage.sessionPolicy).send(ctx, MSG_VALIDATION_RETRY_PROMPT(s.skill, errorLines), s.continueHost),
+		resendIntoChild(ctx, MSG_VALIDATION_RETRY_PROMPT(s.skill, errorLines)),
 		timeoutMs,
 		`${s.skill}: validation retry attempt ${attempt} exceeded ${timeoutMs}ms — agent did not settle`,
 	);

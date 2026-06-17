@@ -37,7 +37,14 @@ import { assess, fanout, iterate, majority, panel, verify } from "../loop-constr
 import type { Output } from "../output.js";
 import type { Outcome } from "../output-spec.js";
 import { eq, gt } from "../predicates.js";
-import { appendStage, readAllStages, type WorkflowHeader, type WorkflowStage, writeHeader } from "../state/index.js";
+import {
+	appendStage,
+	readAllStages,
+	STATE_SCHEMA_VERSION,
+	type WorkflowHeader,
+	type WorkflowStage,
+	writeHeader,
+} from "../state/index.js";
 import { typeboxSchema } from "../typebox-adapter.js";
 import { resumeWorkflow } from "./runner.js";
 
@@ -129,6 +136,7 @@ describe("loop-resume — fanout", () => {
 		workflow: "fanout-wf",
 		input: "Ship it",
 		ts: "2026-06-03T07:30:00Z",
+		v: STATE_SCHEMA_VERSION,
 	};
 
 	/** Deterministic 3-unit fanout (blind to artifact, stable across re-call). */
@@ -187,6 +195,45 @@ describe("loop-resume — fanout", () => {
 		expect(rows[3]).toMatchObject({ stage: "impl (phase-3)", status: "completed", parent: "impl", unitIndex: 2 });
 	});
 
+	it("collected soft-halt row: rebuilds the failedOutput sentinel by index (skipped by fanin), no re-dispatch", async () => {
+		// CONTRAST with the hard-failure case above: a `collected:true` row is a
+		// non-terminal collect-all unit halt. The resume fold rebuilds a failedOutput
+		// sentinel at the unit's declared index — FILLING the slot — so resume does NOT
+		// re-dispatch it; fanin then skips the sentinel. A hard `status:"failed"` row
+		// (no `collected`) leaves the slot unfilled and re-runs (see "mid-fanout failure").
+		const synthWf: Workflow = {
+			name: "fanout-wf",
+			start: "impl",
+			stages: {
+				impl: produces({ outcome: transcriptOutcome("plans"), loop: fanout({ units: threeUnits }) }),
+				synthesize: acts({ reads: [fanin("plans")] }),
+			},
+			edges: { impl: "synthesize", synthesize: "stop" },
+		} as Workflow;
+		writeRun([
+			unitRow(1, 1, "completed"),
+			{ ...unitRow(2, 2, "failed"), collected: true, errMsg: "unit 2 boom" },
+			unitRow(3, 3, "completed"),
+		]);
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [{ branch: [mockAssistantMessage("synthesized")] }],
+		});
+
+		const result = await resumeWorkflow(chain.ctx, { workflow: synthWf, header, ref: "@x" });
+
+		expect(result.success).toBe(true);
+		// No fanout unit re-dispatched — index 1's slot is filled by the rebuilt sentinel,
+		// not left pending. The only dispatch is the synthesize stage, whose fanin read
+		// skips the failed sentinel (p1 + p3, NOT p2).
+		expect(chain.sentMessages).toEqual([
+			"/skill:synthesize --plans .rpiv/artifacts/plans/p1.md --plans .rpiv/artifacts/plans/p3.md",
+		]);
+		// The collected row is NOT re-dispatched, so no new unit rows for impl land.
+		const rows = readAllStages(tmpDir, header.runId);
+		expect(rows.filter((r) => r.parent === "impl")).toHaveLength(3);
+	});
+
 	it("process died mid-fanout (no failure row): resumes at the next unit", async () => {
 		writeRun([unitRow(1, 1, "completed")]); // only unit 1 recorded
 		const chain = createMockSessionChain({
@@ -224,7 +271,7 @@ describe("loop-resume — fanout", () => {
 		});
 
 		expect(result.success).toBe(true);
-		expect(chain.ctx.newSession).not.toHaveBeenCalled();
+		expect(chain.ctx.spawnChild).not.toHaveBeenCalled();
 		expect(readAllStages(tmpDir, header.runId)).toHaveLength(3); // no new rows
 		// The finished loop is NOT re-announced.
 		expect(loopStarts).toEqual([]);
@@ -334,6 +381,7 @@ describe("loop-resume — iterate", () => {
 		workflow: "polish",
 		input: "Ship it",
 		ts: "2026-06-03T08:00:00Z",
+		v: STATE_SCHEMA_VERSION,
 	};
 	const REVIEW_3_PHASES = "# Review\n\n### Phase 1 — Alpha\nx\n### Phase 2 — Beta\ny\n### Phase 3 — Gamma\nz\n";
 
@@ -480,6 +528,7 @@ describe("loop-resume — iterate corrective back-edge", () => {
 		workflow: "polish-loop",
 		input: "Ship it",
 		ts: "2026-06-03T09:00:00Z",
+		v: STATE_SCHEMA_VERSION,
 	};
 	const REVIEW_2_PHASES = "# Review\n\n### Phase 1 — A\nx\n### Phase 2 — B\ny\n";
 
@@ -630,6 +679,7 @@ describe("loop-resume — assess", () => {
 		workflow: "decompose",
 		input: "decompose this",
 		ts: "2026-06-03T10:00:00Z",
+		v: STATE_SCHEMA_VERSION,
 	};
 
 	const done = (v: Output) => Boolean((v.data as { done?: boolean }).done);
@@ -890,10 +940,11 @@ describe("loop-resume — assess × panel", () => {
 		workflow: "decompose",
 		input: "decompose this",
 		ts: "2026-06-03T11:00:00Z",
+		v: STATE_SCHEMA_VERSION,
 	};
 
 	// The SITE's `done` reads the FOLDED verdict's `pass`; each member's `pred`
-	// reads its own `{ done }` — the two predicates are deliberately distinct (§4).
+	// reads its own `{ done }` — the two predicates are deliberately distinct.
 	const panelDone = (v: Output) => Boolean((v.data as { pass?: boolean }).pass);
 	const panelFeed = ({ verdict, round }: { verdict: Output; round: number }) =>
 		`refine round=${round} pass=${(verdict.data as { pass?: boolean }).pass}`;
@@ -1041,6 +1092,7 @@ describe("loop-resume — verify", () => {
 		workflow: "gated",
 		input: "build it",
 		ts: "2026-06-10T22:00:00Z",
+		v: STATE_SCHEMA_VERSION,
 	};
 
 	const pass = (v: Output) => Boolean((v.data as { done?: boolean }).done);
@@ -1281,6 +1333,7 @@ describe("loop-resume — prompt dispatch", () => {
 		workflow: "gated-prompt",
 		input: "build it",
 		ts: "2026-06-10T23:30:00Z",
+		v: STATE_SCHEMA_VERSION,
 	};
 
 	const pass = (v: Output) => Boolean((v.data as { done?: boolean }).done);

@@ -82,7 +82,13 @@ export {
 	opaque,
 	url,
 } from "./handle.js";
-export type { WorkflowHost, WorkflowHostContext, WorkflowSessionContext } from "./host.js";
+export type {
+	ExecutionLane,
+	ModelSelection,
+	WorkflowHost,
+	WorkflowHostContext,
+	WorkflowSessionContext,
+} from "./host.js";
 // Only the contract data types are public — they're referenced by kept public
 // signatures (`JsonSchemaCapable` ← `typeboxSchema`, `JsonSchemaObject` ←
 // `ConsumesSpec`/`ProducesSpec.data`, `SchemaCompatResult` ← `canCompose`). The

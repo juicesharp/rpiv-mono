@@ -1,139 +1,111 @@
 /**
- * Session policy dispatch. Owns the three policy-specific decisions the
- * stage / phase machinery has to make per session: which branch offset
- * the outcome sees, how the session is opened, and how an
- * already-established session is sent to.
- *
- * Two handlers — `FRESH_HANDLER` and `CONTINUE_HANDLER` — implement the
- * interface; `handlerFor(policy)` picks. Everything else in the
- * `sessions/` directory is policy-agnostic.
+ * Session opening — the child-spawn primitive every stage and loop unit runs
+ * through. Detachment collapses the old fresh-vs-continue handler table: with
+ * every stage isolated in its own child session, "send into an existing
+ * session" no longer exists, so the 3-rung stale-ctx fallback ladder, the
+ * registry-host fallback param, and both defensive `sendUserMessage` guards
+ * are gone. The ONLY decision that still
+ * varies by policy is the branch offset; continue policy collapses to a fresh
+ * child (no shipped workflow uses it — its prior-session lineage cannot survive
+ * detachment, by design — OQ1).
  */
 
 import type { SessionPolicy } from "../api.js";
-import type { WorkflowHost } from "../host.js";
-import type { WorkflowHostContext } from "../types.js";
+import type { ExecutionLane, WorkflowHostContext, WorkflowSessionContext } from "../host.js";
+import type { SkillContractMap } from "../skill-contract.js";
+import type { StageSession } from "../types.js";
 
 /**
- * Three policy-specific decisions that used to live as five ternaries
- * scattered across sessions.ts:
- *
- *   - `branchOffset(captured)` — the offset outcomes apply to skip
- *     the prior-stage prefix in continue sessions. Fresh ignores the
- *     stage-side captured value (it's `undefined` from
- *     `computeBranchOffset` for fresh stages anyway); continue returns
- *     it as-is.
- *   - `spawn(ctx, prompt, body, host?)` — open the session and run `body`
- *     on whichever ctx is valid for that policy (fresh → freshCtx
- *     inside `withSession`; continue → the supplied ctx, after a
- *     send+waitForIdle settles the existing session). `cancelled: true`
- *     means a fresh session was cancelled before `withSession` ran.
- *   - `send(ctx, msg, host?)` — send into an already-established session
- *     and wait for it to settle (used by the validation-retry path).
- *
- * `host` is the registry-level fallback for continue stages — used only
- * when `ctx.sendUserMessage` is absent (the outer command ctx at the
- * very start of a workflow whose first stage is continue-policy).
- * Everywhere else (continue stages following any other stage),
- * `ctx.sendUserMessage` is present and preferred because Pi marks the
- * captured host stale after `ctx.newSession()`. `enforceSessionInvariants`
- * still requires a host whenever any stage is continue-policy so the
- * start-stage path has a working fallback. Fresh ignores `host` entirely.
+ * The per-policy branch offset — fresh ignores the stage-captured value
+ * (`undefined` from `computeBranchOffset` anyway); continue flows it through so
+ * a continue stage's outcome still skips the offset its row recorded (trail /
+ * replay symmetry). The sole surviving policy divergence.
  */
-export interface SessionPolicyHandler {
-	branchOffset(capturedOffset: number | undefined): number | undefined;
-	spawn(
-		ctx: WorkflowHostContext,
-		prompt: string,
-		body: (sessionCtx: WorkflowHostContext) => Promise<void>,
-		host?: WorkflowHost,
-	): Promise<{ cancelled: boolean }>;
-	send(ctx: WorkflowHostContext, msg: string, host?: WorkflowHost): Promise<void>;
+export function branchOffsetFor(policy: SessionPolicy | undefined, captured: number | undefined): number | undefined {
+	return policy === "continue" ? captured : undefined;
 }
 
-export const FRESH_HANDLER: SessionPolicyHandler = {
-	branchOffset: () => undefined,
-	async spawn(ctx, prompt, body) {
-		const { cancelled } = await ctx.newSession({
-			// `freshCtx` is a `WorkflowSessionContext` — the port guarantees
-			// `sendUserMessage` on the replacement ctx, so no runtime guard.
-			withSession: async (freshCtx) => {
-				await freshCtx.sendUserMessage(prompt);
-				await body(freshCtx);
-			},
-		});
-		return { cancelled };
-	},
-	async send(ctx, msg) {
-		// At runtime ctx is the in-session replacement (a
-		// `WorkflowSessionContext`), but the shared `SessionPolicyHandler`
-		// types it as the base `WorkflowHostContext` (continue's send may run
-		// on the senderless start ctx), so this seam keeps a defensive guard.
-		if (!ctx.sendUserMessage) {
-			throw new Error("FRESH_HANDLER.send: replacement ctx missing sendUserMessage");
-		}
-		await ctx.sendUserMessage(msg);
-	},
-};
-
-export const CONTINUE_HANDLER: SessionPolicyHandler = {
-	branchOffset: (captured) => captured,
-	async spawn(ctx, prompt, body, host) {
-		// Prefer the live `ctx.sendUserMessage` over the captured `host`.
-		// Pi marks the registry-level host handle stale after the first
-		// `ctx.newSession()`, so a continue stage that follows a fresh
-		// stage would throw "extension ctx is stale" if we called
-		// `host.sendUserMessage` here. The inner replacement ctx delivered
-		// to `withSession` always exposes `sendUserMessage` (the port
-		// marks it optional because only the outer command ctx lacks it).
-		// `host` remains the fallback for the workflow-start-with-continue
-		// case where there is no inner ctx yet — `enforceSessionInvariants`
-		// requires a host whenever any stage is continue-policy, so the
-		// fallback can be taken safely.
-		//
-		// Awaiting the send (vs fire-and-forget) lands transport errors on
-		// this stage's halt path; pre-I5b we discarded the promise and the
-		// runner walked the chain blind on rejection.
-		await sendIntoExistingSession(ctx, host, prompt);
-		await ctx.waitForIdle();
-		await body(ctx);
-		return { cancelled: false };
-	},
-	async send(ctx, msg, host) {
-		// Same precedence as spawn: live ctx first, captured host as
-		// fallback. Validation-retry sends always run inside a stage's
-		// session, so `ctx.sendUserMessage` is present in practice; the
-		// host branch is there for symmetry with spawn.
-		await sendIntoExistingSession(ctx, host, msg);
-		await ctx.waitForIdle();
-	},
-};
+/**
+ * Which lane a stage's child binds to: a skill whose contract declares
+ * `interaction: "foreground"` gets the single-slot real-UI lane; everything
+ * else (declared background, or undeclared → background-safe) runs in the
+ * concurrent headless lane. The validator forbids fanning a `foreground` skill
+ * (`checkFanoutInteraction`), so a fanout unit is always background here.
+ */
+export function laneFor(skillContracts: SkillContractMap | undefined, skill: string): ExecutionLane {
+	return skillContracts?.get(skill)?.produces?.interaction === "foreground" ? "foreground" : "background";
+}
 
 /**
- * Send a message into the already-active session. Prefers the live
- * `ctx.sendUserMessage`; falls back to the captured registry-level
- * `host.sendUserMessage` only when ctx doesn't expose one (workflow start
- * with a continue-first-stage). Throws if neither path is available —
- * `enforceSessionInvariants` should have rejected the workflow before
- * we land here.
+ * THE child-spawn primitive. Open an isolated child session (parent stays
+ * valid), let the host send the prompt + apply lane/model, wait for the agent
+ * to settle, then run `body` on the guaranteed-in-session child ctx. Up to
+ * `ctx.maxConcurrency` of these may be in flight (the loop's semaphore bounds
+ * fanout; single stages run one).
  */
-async function sendIntoExistingSession(
+export function spawnChildAndRun(
 	ctx: WorkflowHostContext,
-	host: WorkflowHost | undefined,
-	msg: string,
+	s: Pick<StageSession, "prompt" | "lane" | "model" | "signal">,
+	body: (child: WorkflowSessionContext) => Promise<void>,
 ): Promise<void> {
-	if (ctx.sendUserMessage) {
-		await ctx.sendUserMessage(msg);
-		return;
-	}
-	if (host) {
-		await host.sendUserMessage(msg);
-		return;
-	}
-	throw new Error(
-		"CONTINUE_HANDLER: neither ctx.sendUserMessage nor a workflow host available — continue policy requires one of them",
-	);
+	return ctx.spawnChild({
+		prompt: s.prompt,
+		lane: s.lane,
+		model: s.model,
+		signal: s.signal,
+		withSession: async (child) => {
+			await child.waitForIdle();
+			await body(child);
+		},
+	});
 }
 
-export function handlerFor(policy: SessionPolicy | undefined): SessionPolicyHandler {
-	return policy === "continue" ? CONTINUE_HANDLER : FRESH_HANDLER;
+/**
+ * THE reattach primitive — the detached replacement for the deleted
+ * live-session swap (`ctx.switchSession`). Spawn a child bound to the PERSISTED
+ * session at `sessionFile` (the host opens it, no fresh creation, no initial `prompt`),
+ * then run `body` on the in-session child ctx whose `getBranch` reflects the
+ * prior transcript. `body` is `reattachStageSession` (sessions/reattach.ts),
+ * which promotes from the loaded branch or nudges via `resendIntoChild`.
+ *
+ * `sessionFile` is supplied by the resume entry (a `locateSessionFile` hit), so
+ * the host always has a real file; a missing/in-memory case is gated upstream.
+ * There is NO `{ cancelled }` arm — a detached reattach has no live-session swap
+ * for the user to dismiss.
+ */
+export function reattachChildSession(
+	ctx: WorkflowHostContext,
+	s: Pick<StageSession, "prompt" | "lane" | "model" | "signal">,
+	sessionFile: string,
+	body: (child: WorkflowSessionContext) => Promise<void>,
+): Promise<void> {
+	return ctx.spawnChild({
+		prompt: s.prompt, // carried for parity; NOT replayed in reattach mode (the host skips it)
+		lane: s.lane,
+		model: s.model,
+		signal: s.signal,
+		reattach: { sessionFile },
+		withSession: async (child) => {
+			await child.waitForIdle();
+			await body(child);
+		},
+	});
+}
+
+/**
+ * Re-prompt an already-open child and wait for it to settle — the
+ * validation-retry path (`askAgentToFix`) and the resume reattach nudge.
+ * Replaces the old policy-handler send path; the child ctx always exposes
+ * `sendUserMessage`, so no guard.
+ *
+ * IDLE-BEFORE-REPROMPT INVARIANT: uses `sendUserMessage` (which QUEUES, safe
+ * mid-stream), NOT `prompt()` — the SDK THROWS "Agent is already processing" if
+ * `prompt()` is called while streaming. Every entry point honors this:
+ * `spawnChildAndRun` calls `waitForIdle()` before `body`, and the host's
+ * `prompt()` is only the single initial send. Callers must never call a child's
+ * `prompt()` again after the first; re-prompts go through `sendUserMessage` here.
+ */
+export async function resendIntoChild(child: WorkflowSessionContext, msg: string): Promise<void> {
+	await child.sendUserMessage(msg);
+	await child.waitForIdle();
 }

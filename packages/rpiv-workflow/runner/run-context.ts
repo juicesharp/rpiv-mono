@@ -8,7 +8,7 @@
 
 import type { Workflow } from "../api.js";
 import { LifecycleDispatcher, type LifecycleListeners } from "../events.js";
-import type { WorkflowHost } from "../host.js";
+import type { ModelSelection, WorkflowHost } from "../host.js";
 import { getSkillContracts } from "../skill-contracts/index.js";
 import type { RunTrigger } from "../triggers.js";
 import type { RunContext, RunState } from "../types.js";
@@ -67,11 +67,11 @@ export function freshRunState(originalInput: string): RunState {
  * trigger) and a resume (same run id, reconstructed state/visited, resume
  * trigger); everything else derives identically from `options`.
  *
- * The skill-registry snapshot happens here, BEFORE any stage opens a fresh
- * session — Pi invalidates the `WorkflowHost` handle on the first
- * `ctx.newSession()`, so this is the only safe moment to enumerate. After this
- * the runner reads `run.registeredSkills`; `options.host` survives only on
- * `run.continueHost` for the continue-policy session handler.
+ * The skill-registry snapshot happens here, BEFORE any stage opens its first
+ * child session — `options.host` (Pi's registry-level handle) is enumerated once
+ * for `run.registeredSkills`; the runner reads that set thereafter and never
+ * touches the host again (every stage now runs in a detached child, so there is
+ * no stale-after-swap concern and no continue-policy host fallback).
  */
 export function buildRunContext(
 	cwd: string,
@@ -82,6 +82,7 @@ export function buildRunContext(
 		maxIterations?: number;
 		lifecycle?: LifecycleListeners;
 		signal?: AbortSignal;
+		resolveModel?: (id: { stage: string; skill: string }) => ModelSelection | undefined;
 	},
 	identity: { runId: string; state: RunState; visited: Set<string>; trigger: RunTrigger },
 ): RunContext {
@@ -97,12 +98,12 @@ export function buildRunContext(
 		// call cannot mutate this run's snapshot mid-run — parity with the fresh-Set
 		// copy snapshotRegisteredSkills makes.
 		skillContracts: new Map(getSkillContracts()),
-		continueHost: options.host,
 		maxBackwardJumps: options.maxBackwardJumps ?? MAX_BACKWARD_JUMPS,
 		maxIterations: options.maxIterations ?? MAX_ITERATIONS,
 		trigger: identity.trigger,
 		lifecycle: new LifecycleDispatcher(options.lifecycle),
 		signal: options.signal,
+		resolveModel: options.resolveModel,
 	};
 }
 
@@ -111,8 +112,7 @@ export function buildRunContext(
  *
  * Pi prefixes skill-source commands with `"skill:"` (agent-session.js); we
  * strip the prefix so the set keys match `stage.skill` directly. Called
- * exactly once per run, before any `ctx.newSession()` opens (which is when
- * Pi marks the `WorkflowHost` handle stale).
+ * exactly once per run, at run start, off the launcher's registry-level host.
  *
  * Non-skill commands (slash commands registered by extensions) are filtered
  * out — the preflight only cares about skills.

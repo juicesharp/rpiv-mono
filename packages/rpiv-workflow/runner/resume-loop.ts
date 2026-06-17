@@ -19,7 +19,7 @@
 
 import { auditCtxFor, failedArgs, recordTerminalFailure } from "../audit.js";
 import { resolveSkill } from "../chain-state.js";
-import { announceLoopStart, type LoopDeps, runLoop } from "../loop.js";
+import { announceLoopStart, type LoopDeps, pendingFanoutIndices, runFanoutResume, runLoop } from "../loop.js";
 import { effectiveLoopOf } from "../loop-constructors.js";
 import { type LoopEntry, loopStrategyOf } from "../loop-kinds.js";
 import { FAIL_MISSING_ARTIFACT, MSG_RESUME_LOOP_MISMATCH } from "../messages.js";
@@ -67,8 +67,19 @@ export async function resumeLoopStage(
 		units: point.units, // fanout: the fold's recomputed-and-verified list — no second compute
 	};
 
-	// Pending-work probe (strategy table) gates the announce only — a
-	// finished-loop resume stays a pinned SILENT no-op.
+	// Fanout resume re-dispatches ONLY the still-unfilled indices in bounded
+	// parallel (folding each at its declared slot) — never a cold whole-loop
+	// re-entry, so already-completed/collected units keep their place. The
+	// announce fires iff at least one unit is pending.
+	if (loop.kind === "fanout") {
+		const pending = pendingFanoutIndices(point.cursor, point.units!.length); // slots === undefined
+		if (pending.length > 0) await announceLoopStart(ctx, run, entry);
+		await runFanoutResume(ctx, entry, point.cursor, run, deps, pending);
+		return;
+	}
+
+	// iterate/assess: pending-work probe (strategy table) gates the announce only —
+	// a finished-loop resume stays a pinned SILENT no-op — then cold re-entry.
 	if (await loopStrategyOf(loop.kind).hasPending(loop, point, run)) await announceLoopStart(ctx, run, entry);
 
 	await runLoop(ctx, entry, point.cursor, run, deps);

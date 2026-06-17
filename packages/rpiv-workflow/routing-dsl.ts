@@ -209,7 +209,7 @@ export interface MatchOptions {
 	 * Stage to route to when no branch value matches. Optional: when omitted, an
 	 * unmatched value TERMINATES the chain (`STOP`). Either way the no-match is a
 	 * visible event — the routing-audit row carries a `note`. Provide a fallback
-	 * to keep the run going on an unexpected value (the roadmap-P4 `triage` shape).
+	 * to keep the run going on an unexpected value (the `triage` shape).
 	 */
 	fallback?: string;
 	/**
@@ -287,6 +287,10 @@ export function match(field: string, branches: Record<string, MatchValue>, opts?
 	const route: EdgeFn = defineRoute(
 		targets,
 		({ output, state }) => {
+			// `.at(-1)` on a PRE-SIZED produces-fanout channel could read a
+			// pending (`undefined`) or failed-sentinel tail. Safe by ordering: routes
+			// fire at `finishLoop`, AFTER `foldFanoutCompletion` has filled every
+			// settled slot, so the channel is never observed half-filled here.
 			const source =
 				from !== undefined
 					? (state.named[from]?.at(-1)?.data as Record<string, unknown> | undefined)

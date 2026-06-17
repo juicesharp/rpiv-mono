@@ -247,30 +247,16 @@ describe("prompt dispatch — continue follow-up turn", () => {
 		rmSync(tmpDir, { recursive: true, force: true });
 	});
 
-	/**
-	 * Wire a continue chain: a shared mutable branch the fresh stage reads as-is,
-	 * grown by the continue stage's send so its reply lands after `branchOffset`.
-	 * `grow` decides what (if anything) each sent message appends.
-	 */
-	const continueChain = (firstEntry: string, grow: (text: string, branch: unknown[]) => void) => {
-		const sharedBranch: unknown[] = [mockAssistantMessage(firstEntry)];
+	it("a side-effect continue prompt stage spawns its own child and sends raw text", async () => {
+		// Continue collapses to a detached child like fresh: BOTH stages spawn off
+		// the launcher, and the followup prompt stage's raw text is the child's
+		// initial prompt (no /skill: prefix, no host fallback).
 		const chain = createMockSessionChain({
 			cwd: tmpDir,
-			steps: [{ branch: sharedBranch }],
-			pi: createMockPi({ skills: ["lead"] }).pi,
-		});
-		chain.sendUserMessageFn.mockImplementation((content: unknown) => {
-			const text = typeof content === "string" ? content : JSON.stringify(content);
-			chain.sentMessages.push(text);
-			grow(text, sharedBranch);
-		});
-		return chain;
-	};
-
-	it("a side-effect continue prompt stage reuses the prior session and sends raw text", async () => {
-		const chain = continueChain("wrote .rpiv/artifacts/research/r.md", (text, branch) => {
-			if (text === "Summarise the research above in three bullets.")
-				branch.push(mockAssistantMessage("- a\n- b\n- c"));
+			steps: [
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/research/r.md")] },
+				{ branch: [mockAssistantMessage("- a\n- b\n- c")] },
+			],
 		});
 
 		const result = await runWorkflow(chain.ctx, {
@@ -287,20 +273,24 @@ describe("prompt dispatch — continue follow-up turn", () => {
 				edges: { lead: "followup", followup: "stop" },
 			}),
 			input: "x",
-			host: chain.pi,
 		});
 
 		expect(result.success).toBe(true);
 		expect(result.stagesCompleted).toBe(2);
-		// One newSession (lead, fresh); followup reused the live inner ctx, not the host.
-		expect(chain.ctx.newSession).toHaveBeenCalledTimes(1);
-		expect(chain.pi?.sendUserMessage).not.toHaveBeenCalled();
+		expect(chain.ctx.spawnChild).toHaveBeenCalledTimes(2);
 		expect(chain.sentMessages).toEqual(["/skill:lead x", "Summarise the research above in three bullets."]);
 	});
 
-	it("a produces continue prompt stage collects from the NEW turn (branch-offset slicing)", async () => {
-		const chain = continueChain("wrote .rpiv/artifacts/research/r.md", (text, branch) => {
-			if (text.startsWith("Refine")) branch.push(mockAssistantMessage("wrote .rpiv/artifacts/summary/s.md"));
+	it("a produces continue prompt stage collects from its own NEW turn", async () => {
+		// The refine child's branch carries only ITS turn (s.md), never lead's r.md
+		// — a detached child has no prior-stage transcript — so the collector lands
+		// the refine artifact with no false positive from the prior stage.
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/research/r.md")] },
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/summary/s.md")] },
+			],
 		});
 
 		const result = await runWorkflow(chain.ctx, {
@@ -318,13 +308,10 @@ describe("prompt dispatch — continue follow-up turn", () => {
 				edges: { lead: "refine", refine: "stop" },
 			}),
 			input: "x",
-			host: chain.pi,
 		});
 
 		expect(result.success).toBe(true);
 		expect(result.stagesCompleted).toBe(2);
-		// The collector scanned from branchOffset — it saw the refine turn's
-		// artifact (s.md), NOT lead's r.md, proving the slice is correct.
 		expect(result.lastArtifact).toBe(".rpiv/artifacts/summary/s.md");
 		expect(chain.sentMessages).toEqual(["/skill:lead x", "Refine the research into a summary."]);
 	});

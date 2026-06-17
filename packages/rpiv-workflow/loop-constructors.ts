@@ -142,6 +142,8 @@ interface LoopOptionsBase {
 export interface FanoutOptions extends LoopOptionsBase {
 	/** Push-model unit source — all units computed up front. */
 	units: FanoutFn;
+	/** Opt out of collect-all: any unit failure halts the run (default ⇒ collect-all). */
+	failFast?: boolean;
 }
 
 export interface IterateOptions extends LoopOptionsBase {
@@ -173,6 +175,7 @@ export function fanout(opts: FanoutOptions): FanoutLoop {
 		max: checkedMax("fanout", opts.max),
 		onCap: opts.onCap ?? "halt",
 		result: opts.result ?? "entry",
+		...(opts.failFast !== undefined ? { failFast: opts.failFast } : {}),
 	};
 }
 
@@ -327,7 +330,7 @@ export function synthesizeVerifyLoop(v: VerifySpec): AssessLoop {
  * The canonical fold output shape — what `majority`/`all`/`any` emit and what
  * a downstream `defineRoute`/`gate`/`match` branches on. `agreement` (|majority|
  * / N) is the first-class disagreement signal; `tie` flags an even split. A
- * custom (raw) fold publishes the author's own schema instead (the §4 XOR).
+ * custom (raw) fold publishes the author's own schema instead (the XOR rule).
  */
 export const PANEL_VERDICT = Type.Object({
 	pass: Type.Boolean(),
@@ -404,7 +407,7 @@ export function any(pred: (v: Output) => boolean): FoldFn {
  * untyped jiti-loaded literal.
  *
  * Enforces: a non-empty `members` array, each member a VALID single judge with
- * NO nesting (§9 — `members` is `Judge[]`), a function `fold`, and the §4 XOR
+ * NO nesting (`members` is `Judge[]`), a function `fold`, and the XOR rule
  * (canonical sugar ⊕ `outcome` — exactly one names the verdict schema/channel).
  */
 export function panelShapeIssues(candidate: unknown): string[] {
@@ -429,7 +432,7 @@ export function panelShapeIssues(candidate: unknown): string[] {
 		issues.push("panel.fold must be a function reducing the member verdicts to the panel's decision");
 	}
 
-	// The §4 XOR — a sugar fold OWNS the canonical verdict (no `outcome`); a raw
+	// The XOR rule — a sugar fold OWNS the canonical verdict (no `outcome`); a raw
 	// fold REQUIRES an `outcome` to name + validate its channel. Never both.
 	const isSugar = foldIsFn && marksCanonicalFold(p.fold as FoldFn);
 	const hasOutcome = p.outcome !== undefined;
@@ -518,7 +521,7 @@ export function effectiveLoopOf(def: StageDef): LoopDef | undefined {
  */
 export function judgeOf(stage: StageDef): Judge | undefined {
 	const slot = judgeSlotOf(stage);
-	// Panel widening (Phase 1): collapse the `AnyJudge` slot to its member-0
+	// Panel widening: collapse the `AnyJudge` slot to its member-0
 	// view so the single-`Judge` consumers not yet panel-aware (introspection,
 	// contract-compat) keep their signature. For a single judge this is an
 	// identity; panel-aware sites use `judgeSlotOf` to see the whole panel.

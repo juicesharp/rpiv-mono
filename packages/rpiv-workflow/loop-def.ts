@@ -195,10 +195,20 @@ interface LoopCommon {
 	result: ResultProjection;
 }
 
-/** Parallel-shaped push loop (units still run sequentially today). */
+/** Parallel-shaped push loop — units run in bounded parallel (maxConcurrency). */
 export interface FanoutLoop extends LoopCommon {
 	kind: "fanout";
 	units: FanoutFn;
+	/** Opt out of collect-all: any unit failure halts the run. Default (absent) ⇒
+	 *  collect-all. Under parallel dispatch, the first failing unit halts the
+	 *  run terminally AND cancels in-flight siblings via the per-generation
+	 *  `genAbort` controller: the worker that records the terminal failure fires
+	 *  `genAbort.abort()`, which `session.abort()`s every still-running sibling and
+	 *  drains queued units from the semaphore. Cancelled siblings leave unfilled
+	 *  slots (no row written), so a terminally-failed run that is later resumed
+	 *  re-dispatches them. `genAbort` is also driven by run-level abort (Ctrl-C /
+	 *  `run.signal`), so the same machinery serves both. */
+	failFast?: boolean;
 }
 
 /** Sequential accumulating pull loop. */

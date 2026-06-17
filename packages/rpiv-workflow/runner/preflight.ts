@@ -35,7 +35,6 @@ import type { ResolvedStage } from "./resolve-stage.js";
 export function runSingleStagePreflights(stage: ResolvedStage, run: RunContext): void {
 	ensureUpstreamArtifact(stage, run);
 	ensureNamedReads(stage, run);
-	enforceSessionInvariants(stage, run);
 	ensureSkillRegistered(stage, run);
 }
 
@@ -106,9 +105,8 @@ export function ensureJudgeSkillRegistered(judge: AnyJudge, stage: ResolvedStage
  * into a properly-attributed stage halt.
  *
  * Reads the snapshot in `run.registeredSkills` rather than calling
- * `host.getCommands()` mid-run, because Pi marks the `WorkflowHost` handle
- * stale on the first `ctx.newSession()` — the snapshot is built once in
- * `buildRunContext` before any session replaces the outer ctx.
+ * `host.getCommands()` mid-run — the snapshot is built once in
+ * `buildRunContext` at run start, off the launcher's registry-level host.
  *
  * Skipped for non-skill dispatch (a prompt stage sends raw text — there is
  * no skill to verify) and when `registeredSkills` is undefined (hostless
@@ -161,15 +159,12 @@ function ensureNamedReads(stage: ResolvedStage, run: RunContext): void {
 	if (!reads?.length) return;
 	for (const read of reads) {
 		const name = readName(read);
+		// Reads `.length` of a possibly PRE-SIZED produces-fanout channel as
+		// "satisfied". Safe by ordering: this runs at the READING stage's entry,
+		// AFTER the upstream fanout stage's fold completed its channel, so it never
+		// observes a half-filled produces-fanout channel.
 		if (run.state.named[name]?.length) continue;
 		const f = FAIL_MISSING_NAMED_READ(stage.skill, name, stage.stageNumber);
 		throw new StagePreflightError("halt", stage.skill, f.toast, f.error, true);
-	}
-}
-
-function enforceSessionInvariants(stage: ResolvedStage, run: RunContext): void {
-	if (stage.def.sessionPolicy === "continue" && !run.continueHost) {
-		const reason = `runStage: stage "${stage.name}" uses sessionPolicy "continue" but no workflow host was provided to runWorkflow`;
-		throw new StagePreflightError("invariant", stage.name, MSG_STAGE_THREW(stage.name, reason), reason, false);
 	}
 }

@@ -64,6 +64,7 @@ beforeEach(async () => {
 	workflowInternal.__resetLoadCache();
 	workflowInternal.__resetLifecycleRegistry();
 	workflowInternal.__resetSkillContracts();
+	workflowInternal.__resetWorkflowExecutionHost();
 
 	const guidance = await import("../packages/rpiv-pi/extensions/rpiv-core/guidance.js");
 	guidance.clearInjectionState();

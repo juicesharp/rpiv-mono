@@ -49,6 +49,14 @@ export function stateFilePath(cwd: string, runId: string): string {
 	return join(runsDir(cwd), `${runId}.jsonl`);
 }
 
+/** Per-run directory holding each detached child's persisted session file,
+ *  keyed by SessionRef.id — `.rpiv/workflows/runs/<runId>/sessions/`. The flat
+ *  `<runId>.jsonl` trail stays a sibling under `runsDir`. INTERNAL — not on the
+ *  public barrel (same encapsulation rule as runsDir/stateFilePath). */
+export function childSessionsDir(cwd: string, runId: string): string {
+	return join(runsDir(cwd), runId, "sessions");
+}
+
 /**
  * OPAQUE display path of a run's JSONL file — the only layout projection on
  * the public surface (`runsDir`/`stateFilePath` previously invited external

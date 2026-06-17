@@ -179,6 +179,14 @@ export async function recordTerminalFailure(
 	args: TerminalFailureArgs,
 	onFailure?: (ctx: WorkflowHostContext) => void,
 ): Promise<void> {
+	// First-failure-wins: under parallel fanout dispatch with
+	// `failFast`, two siblings can fail near-simultaneously and BOTH reach here.
+	// This writer is NOT status-gated, so without this guard it would write two
+	// terminal rows + fire `onStageError` twice + `terminate()` twice. Skip the
+	// duplicate so the trail records the ONE original failure.
+	// Harmless on the sequential path (always `"running"` at the
+	// first and only terminal failure).
+	if (audit.state.termination.status !== "running") return;
 	const written = recordStage(
 		audit.cwd,
 		audit.runId,
@@ -217,6 +225,39 @@ export async function recordTerminalFailure(
 		? scriptStageRef(audit.stageName, audit.state.lastAllocatedStageNumber)
 		: skillStageRef(audit.stageName, audit.state.lastAllocatedStageNumber, audit.skill);
 	await audit.lifecycle.fire(ctx, "onStageError", ref, args.errMsg, lifecycleCtxFromSession(audit));
+}
+
+/**
+ * Persist a NON-TERMINAL failed unit row (collect-all fanout): the unit halted,
+ * but the run survives and the synthesis stage sees a failed slot. Mirrors
+ * `recordTerminalFailure`'s `recordStage` write (same unit fields, same
+ * pre-allocated number) WITHOUT `terminate()` (the only state mutation it skips)
+ * and WITHOUT the `onStageError` fire (this is not a hard fail). The row carries
+ * `collected: true` so the resume fold can tell it apart from a hard
+ * `recordTerminalFailure` row (byte-identical otherwise) and rebuild the
+ * `failedOutput` sentinel by `unitIndex` instead of re-dispatching it.
+ */
+export function recordUnitHalt(ctx: WorkflowHostContext, audit: AuditCtx, errMsg: string): void {
+	const written = recordStage(
+		audit.cwd,
+		audit.runId,
+		{
+			stage: audit.stageName,
+			skill: audit.isScript ? undefined : audit.skill,
+			status: "failed",
+			collected: true, // distinguishes a soft collect-all halt from a hard terminal failure on resume
+			ts: nowIso(),
+			errMsg,
+			session: audit.session,
+			...unitRowFields(audit.unit),
+		},
+		audit.state,
+		audit.allocatedStageNumber,
+	);
+	if (written === undefined) {
+		ctx.ui.notify(MSG_FAILURE_ROW_DROPPED(audit.stageName), "warning");
+		audit.state.telemetry.droppedFailureRows.push(audit.stageName);
+	}
 }
 
 /**

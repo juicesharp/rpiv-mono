@@ -17,7 +17,7 @@ export const STATUS_KEY = "rpiv-workflow";
  * One structured descriptor per terminal-failure kind — the `toast` (the
  * one-shot `ctx.ui.notify` line) and the `error` (what lands in
  * `state.termination.error` + the JSONL row's `errMsg`) rendered from ONE
- * factory so the two channels can never drift again (D5 — the old MSG_/ERR_
+ * factory so the two channels can never drift again (the old MSG_/ERR_
  * twin constants had already diverged in content). Halt sites hand the
  * descriptor to `failedArgs`/`abortedArgs` (audit.ts) or spread it into
  * `StagePreflightError`.
@@ -121,6 +121,23 @@ export const STATUS_LOOP_UNIT = (stage: number, total: number, skill: string, la
  * end still owns MSG_STAGE_COMPLETE).
  */
 export const MSG_UNIT_COMPLETE = (skill: string, label: string) => `✓ ${skill} (${label})`;
+
+/**
+ * Per-unit SOFT-halt toast — a collect-all fanout unit failed but the run
+ * survives (a `failedOutput` sentinel fills its slot; synthesis skips it).
+ * Warns (not errors): the run is not terminating.
+ */
+export const MSG_UNIT_FAILED = (skill: string, label: string) => `rpiv: ${skill} unit "${label}" failed (collected)`;
+
+/** Rollup status under concurrency — N units in flight on one status line. */
+export const STATUS_FANOUT_ROLLUP = (
+	stage: number,
+	total: number,
+	skill: string,
+	active: number,
+	done: number,
+	count: number,
+) => `rpiv: stage ${stage}/${total} — ${skill} (${active} running, ${done}/${count} done)`;
 
 /**
  * A loop produced zero units (push: empty array handled upstream as

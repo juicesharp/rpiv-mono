@@ -94,11 +94,17 @@ export async function recordEntryThrow(
 }
 
 /**
- * Record the `"aborted"` terminal row for a cooperative-cancellation stop at
- * the between-stage seam (`run.signal` aborted before `name` ran).
+ * Record the `"aborted"` terminal row for a cooperative-cancellation stop — at
+ * the between-stage seam (`run.signal` aborted before `name` ran) OR when a
+ * mid-stage `postStage` throws `WorkflowAbortError`. Mirrors the error
+ * path's partial-artifacts recap (`recordEntryThrow` → `notifyPartialArtifacts`):
+ * artifacts produced by earlier stages are surfaced so the operator sees them
+ * instead of grepping the JSONL. No-op when no artifacts exist.
  */
 export function recordAbortedAtSeam(curCtx: WorkflowHostContext, name: string, run: RunContext): Promise<ChainOutcome> {
-	return haltChain(curCtx, run, name, name, abortedArgs(FAIL_WORKFLOW_ABORTED(name)));
+	return haltChain(curCtx, run, name, name, abortedArgs(FAIL_WORKFLOW_ABORTED(name)), (ctx) =>
+		notifyPartialArtifacts(ctx, run.cwd, run.runId),
+	);
 }
 
 export function finalizeWorkflow(curCtx: WorkflowHostContext, run: RunContext): ChainOutcome {

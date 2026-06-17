@@ -21,10 +21,10 @@
  */
 
 import type { StageDef, Unit } from "../api.js";
-import { auditCtxFor, failedArgs, notifyPartialArtifacts, recordCancellation, runIdentityOf } from "../audit.js";
+import { failedArgs, notifyPartialArtifacts, runIdentityOf } from "../audit.js";
 import { currentPrimaryArtifact, resolveStagePrompt, stageEntryArgs } from "../chain-state.js";
 import { lifecycleCtxFor, skillStageRef } from "../events.js";
-import { formatError } from "../internal-utils.js";
+import { formatError, isAbortError } from "../internal-utils.js";
 import { announceLoopStart, type LoopDeps, runLoop } from "../loop.js";
 import { freshCursor, type LoopEntry } from "../loop-kinds.js";
 import {
@@ -36,6 +36,7 @@ import {
 	STATUS_STAGE,
 } from "../messages.js";
 import { locateSessionFile, reattachStageSession, runStageSession } from "../sessions/index.js";
+import { laneFor, reattachChildSession } from "../sessions/spawn.js";
 import type { WorkflowStage } from "../state/index.js";
 import { readBranch } from "../transcript.js";
 import type { RunContext, StageSession, WorkflowHostContext } from "../types.js";
@@ -96,6 +97,10 @@ export async function runStageOrRecordFailure(
 	try {
 		return await runStage(curCtx, name, idx, run);
 	} catch (e) {
+		// A mid-stage abort surfaces as a `WorkflowAbortError` thrown by
+		// postStage (the SDK resolved prompt() with stopReason:"aborted"). Classify
+		// it as an envelope-safe abort, NOT a terminal entry-throw.
+		if (isAbortError(e)) return recordAbortedAtSeam(curCtx, name, run);
 		return recordEntryThrow(curCtx, name, run, e);
 	}
 }
@@ -204,7 +209,9 @@ function buildSingleStageSession(
 		skillContracts: run.skillContracts,
 		stageIndex: idx,
 		snapshot: prep.snapshot,
-		continueHost: run.continueHost,
+		lane: laneFor(run.skillContracts, stage.skill),
+		model: run.resolveModel?.({ stage: stage.name, skill: stage.skill }),
+		signal: run.signal,
 		branchOffset,
 		onFailure: (freshCtx) => notifyPartialArtifacts(freshCtx, run.cwd, run.runId),
 		onSuccess: (freshCtx) => advance(freshCtx, stage.name, idx, run),
@@ -258,18 +265,20 @@ async function runSingleStage(
  *   1. cooperative-abort check (same seam as `runStageOrRecordFailure`);
  *   2. resolved mode must be `prompt`/`skill` (loop trailers never reach
  *      this arm — they carry `parent`; script stages are sessionless);
- *   3. the host must expose `switchSession` (optional port method);
- *   4. `locateSessionFile` must find the file on disk;
- *   5. the same `prepareSingleStage` steps as live (a preflight throw lands
+ *   3. `locateSessionFile` must find the file on disk;
+ *   4. the same `prepareSingleStage` steps as live (a preflight throw lands
  *      in the same catch as the live entry);
- *   6. `switchSession` adopts the session and `reattachStageSession`
+ *   5. `reattachChildSession` spawns a child BOUND to the persisted file (the
+ *      host opens it, does NOT replay the prompt) and `reattachStageSession`
  *      (sessions/reattach.ts) runs promotion → reattach inside it, with the
  *      SAME `StageSession` the live path builds — `branchOffset` taken from
  *      the PERSISTED row (continue-policy stages), `undefined` for fresh.
  *
- * Lifecycle: `onStageStart` fires before `switchSession` (same bracketing
+ * Lifecycle: `onStageStart` fires before the child (re)opens (same bracketing
  * as live); promotion then fires `onStageEnd` via `recordStageSuccess` — a
- * fast start→end pair is honest ("the stage's work was adopted").
+ * fast start→end pair is honest ("the stage's work was adopted"). There is no
+ * `{ cancelled }` arm — a detached reattach opens its own child, with no
+ * live-session swap for the user to dismiss.
  */
 export async function resumeStageWithSession(
 	curCtx: WorkflowHostContext,
@@ -281,6 +290,9 @@ export async function resumeStageWithSession(
 	try {
 		return await resumeWithSessionLadder(curCtx, last, idx, run);
 	} catch (e) {
+		// A reattached postStage can throw WorkflowAbortError; classify
+		// it as an abort (envelope-safe), not a terminal entry-throw.
+		if (isAbortError(e)) return recordAbortedAtSeam(curCtx, last.stage, run);
 		return recordEntryThrow(curCtx, last.stage, run, e);
 	}
 }
@@ -304,14 +316,13 @@ async function resumeWithSessionLadder(
 	if (stage.mode !== "prompt" && stage.mode !== "skill") {
 		return runStageOrRecordFailure(curCtx, last.stage, idx, run);
 	}
-	if (!curCtx.switchSession) return fallBackCold("host cannot switch sessions");
-	const file = locateSessionFile(ref);
+	const file = locateSessionFile(ref, run.runId, run.cwd);
 	if (!file) return fallBackCold("session file not found");
 
 	const prep = await prepareSingleStage(curCtx, stage, idx, run);
 	const s = buildSingleStageSession(stage, idx, run, prep, ref.branchOffset);
 
-	// Same bracketing as live: onStageStart before the session (re)opens.
+	// Same bracketing as live: onStageStart before the (re)attached child opens.
 	await run.lifecycle.fire(
 		curCtx,
 		"onStageStart",
@@ -319,12 +330,11 @@ async function resumeWithSessionLadder(
 		lifecycleCtxFor(run),
 	);
 
-	const { cancelled } = await curCtx.switchSession(file, {
-		withSession: (sessCtx) => reattachStageSession(sessCtx, s),
-	});
-	// Pre-adopt cancellation (user dismissed the swap) — mirror the live
-	// pre-open cancellation: sessionless skipped row, run cancelled.
-	if (cancelled) recordCancellation(curCtx, auditCtxFor(run, stage.name, stage.skill));
+	// Detached reattach: spawn a child BOUND to the persisted session file (the
+	// host opens it and does NOT replay the prompt); reattachStageSession promotes
+	// from the loaded branch or nudges via resendIntoChild. Replaces the deleted
+	// live-session swap (`curCtx.switchSession`).
+	await reattachChildSession(curCtx, s, file, (child) => reattachStageSession(curCtx, child, s));
 	return "dispatched";
 }
 
@@ -399,6 +409,13 @@ export function buildLoopDeps(): LoopDeps {
 		advanceAfter: (freshCtx, name, completedIdx, ctx) => advance(freshCtx, name, completedIdx, ctx),
 		captureSnapshot: (ctx, name, def, i, r) => captureStageSnapshot(ctx, name, def, i, r),
 		haltLoop,
+		// Mid-flight run abort at the loop seam → FAIL_WORKFLOW_ABORTED.
+		recordAborted: (curCtx, name, run) => recordAbortedAtSeam(curCtx, name, run).then(() => undefined),
+		// Unexpected worker rejection → terminal-failure row, no re-throw.
+		// recordEntryThrow is UNCHANGED (4-arg, existing call sites); fold the unit
+		// index into the stage NAME rather than adding a pass-through param nothing reads.
+		recordWorkerThrow: (curCtx, name, unitIndex, run, err) =>
+			recordEntryThrow(curCtx, `${name} (unit ${unitIndex})`, run, err).then(() => undefined),
 	};
 }
 

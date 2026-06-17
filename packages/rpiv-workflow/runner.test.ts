@@ -223,7 +223,7 @@ describe("runWorkflow", () => {
 		expect(result.success).toBe(false);
 		expect(result.stagesCompleted).toBe(0);
 		expect(result.error).toMatch(/start stage "ghost" is not declared/);
-		expect(chain.ctx.newSession).not.toHaveBeenCalled();
+		expect(chain.ctx.spawnChild).not.toHaveBeenCalled();
 		expect(existsSync(join(tmpDir, ".rpiv", "workflows", "runs"))).toBe(false);
 	});
 
@@ -237,7 +237,7 @@ describe("runWorkflow", () => {
 
 		expect(result.success).toBe(false);
 		expect(result.error).toMatch(/invalid name/);
-		expect(chain.ctx.newSession).not.toHaveBeenCalled();
+		expect(chain.ctx.spawnChild).not.toHaveBeenCalled();
 		expect(existsSync(join(tmpDir, ".rpiv", "workflows", "runs"))).toBe(false);
 	});
 
@@ -261,7 +261,7 @@ describe("runWorkflow", () => {
 
 		expect(result.success).toBe(false);
 		expect(result.error).toMatch(/already used by run prior-run/);
-		expect(chain.ctx.newSession).not.toHaveBeenCalled();
+		expect(chain.ctx.spawnChild).not.toHaveBeenCalled();
 	});
 
 	it("claims the name in the index and stamps it on the header on a successful run", async () => {
@@ -304,7 +304,7 @@ describe("runWorkflow", () => {
 			error: undefined,
 			termination: { status: "completed" },
 		});
-		expect(chain.ctx.newSession).toHaveBeenCalledTimes(1);
+		expect(chain.ctx.spawnChild).toHaveBeenCalledTimes(1);
 		expect(chain.sentMessages).toEqual(["/skill:research add dark mode"]);
 
 		const { header, stages } = readState(tmpDir);
@@ -321,11 +321,10 @@ describe("runWorkflow", () => {
 		);
 	});
 
-	it("chains the second step on freshCtx — outer.newSession is called exactly once", async () => {
-		// The runner contract: every newSession after the first MUST be invoked
-		// on the freshCtx handed to the previous withSession callback. If the
-		// runner ever regressed to capturing the outer ctx, this assertion
-		// would fire (outer.newSession.calls would be 2).
+	it("chains the second step by spawning a fresh child — the parent ctx is reused, never swapped", async () => {
+		// The runner contract: each fresh stage spawns one child off the SAME
+		// parent ctx (no swap, no re-derivation). Two fresh stages ⇒ two
+		// spawnChild calls on the parent.
 		writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md");
 		writeArtifact(tmpDir, ".rpiv/artifacts/designs/d.md");
 		const chain = createMockSessionChain({
@@ -344,7 +343,7 @@ describe("runWorkflow", () => {
 		expect(result.success).toBe(true);
 		expect(result.stagesCompleted).toBe(2);
 		expect(result.lastArtifact).toBe(".rpiv/artifacts/designs/d.md");
-		expect(chain.ctx.newSession).toHaveBeenCalledTimes(1);
+		expect(chain.ctx.spawnChild).toHaveBeenCalledTimes(2);
 		// Step 2's prompt uses the artifact produced by step 1 — not the
 		// original user input. This is the artifact-handoff invariant.
 		expect(chain.sentMessages).toEqual(["/skill:research x", "/skill:design .rpiv/artifacts/research/r.md"]);
@@ -394,7 +393,11 @@ describe("runWorkflow", () => {
 		expect(stages[0]?.output).toBeUndefined();
 	});
 
-	it("records skipped + emits cancelled notification when outer newSession resolves cancelled", async () => {
+	it("a rejecting spawnChild is recorded as a stage failure — no throw escapes the run", async () => {
+		// The detached replacement for the old `{cancelled}` return: a child that
+		// rejects (e.g. cancelled before any work) propagates to the single catch
+		// site (runStageOrRecordFailure → recordEntryThrow) as a recorded failure
+		// row, never an uncaught throw out of runWorkflow.
 		const chain = createMockSessionChain({
 			cwd: tmpDir,
 			steps: [{ cancelled: true }],
@@ -406,19 +409,12 @@ describe("runWorkflow", () => {
 		});
 
 		expect(result.success).toBe(false);
-		// User-cancelled returns a populated error string — distinguishes from
-		// "workflow never started" (which also has success: false).
-		expect(result.error).toMatch(/cancelled by user/i);
+		expect(result.error).toBeTruthy();
 		expect(result.stagesCompleted).toBe(0);
-		expect(chain.notifications.some((n) => /cancelled/i.test(n.msg))).toBe(true);
 
 		const { stages } = readState(tmpDir);
 		expect(stages).toHaveLength(1);
-		expect(stages[0]).toMatchObject({ skill: "research", status: "skipped" });
-
-		// Status was set on entry and cleared once the user dismissed the
-		// newSession confirm dialog — same teardown contract as abort/failure.
-		expect(chain.statusUpdates.at(-1)).toEqual({ key: "rpiv-workflow", value: undefined });
+		expect(stages[0]).toMatchObject({ skill: "research", status: "failed" });
 	});
 
 	it("expands an implement step into N phases when its plan artifact has ## Phase headings", async () => {
@@ -454,8 +450,8 @@ describe("runWorkflow", () => {
 		// 1 research + 3 phase rows
 		expect(result.stagesCompleted).toBe(4);
 		expect(chain.remaining()).toBe(0);
-		// Outer ctx still only initiates the very first step
-		expect(chain.ctx.newSession).toHaveBeenCalledTimes(1);
+		// The parent ctx spawns every child (no swap): 1 research + 3 phases.
+		expect(chain.ctx.spawnChild).toHaveBeenCalledTimes(4);
 		// Each phase's prompt suffixes the plan path with "Phase N"
 		expect(chain.sentMessages).toEqual([
 			"/skill:research x",
@@ -853,160 +849,42 @@ describe("runWorkflow", () => {
 	});
 
 	describe("sessionPolicy: continue", () => {
-		it("completes a single continue stage via pi.sendUserMessage", async () => {
-			writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md");
-			const chain = createMockSessionChain({
-				cwd: tmpDir,
-				steps: [],
-				pi: createMockPi({ skills: ["research"] }).pi,
-				outerBranch: [],
-			});
-
-			// Simulate branch growth: getBranch returns a reference to the
-			// internal array, so pushing makes new entries visible to the runner.
-			const branch = chain.ctx.sessionManager.getBranch() as unknown[];
-			(chain.pi!.sendUserMessage as ReturnType<typeof vi.fn>).mockImplementation((content: unknown) => {
-				chain.sentMessages.push(typeof content === "string" ? content : JSON.stringify(content));
-				branch.push(mockAssistantMessage("Wrote .rpiv/artifacts/research/r.md"));
-			});
-
-			const result = await runWorkflow(chain.ctx, {
-				workflow: wf("cont", ["research"], { research: { sessionPolicy: "continue" } }),
-				input: "x",
-				host: chain.pi,
-			});
-
-			expect(result.success).toBe(true);
-			expect(result.stagesCompleted).toBe(1);
-			expect(result.lastArtifact).toBe(".rpiv/artifacts/research/r.md");
-			// No newSession called — the continue path reuses the outer session
-			expect(chain.ctx.newSession).not.toHaveBeenCalled();
-			// Message sent via pi.sendUserMessage (sync)
-			expect(chain.pi!.sendUserMessage).toHaveBeenCalledWith("/skill:research x");
-		});
-
-		it("chains fresh → continue with correct branch offset", async () => {
+		it("chains fresh → continue: continue spawns a detached child like fresh, with artifact handoff", async () => {
+			// Continue collapses to a detached child (no host fallback, no shared
+			// live session — its prior-session lineage cannot survive detachment by
+			// design). Both stages spawn off the SAME launcher ctx; stage 2's prompt
+			// still consumes stage 1's artifact (the handoff invariant).
 			writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md");
 			writeArtifact(tmpDir, ".rpiv/artifacts/designs/d.md");
-			const priorArtifact = ".rpiv/artifacts/research/r.md";
-			const designArtifact = ".rpiv/artifacts/designs/d.md";
-
-			// Shared mutable branch — the fresh stage reads it as-is; the
-			// continue stage's sendUserMessage appends its entries.
-			const sharedBranch: unknown[] = [mockAssistantMessage(`Wrote ${priorArtifact}`)];
-
 			const chain = createMockSessionChain({
 				cwd: tmpDir,
-				steps: [{ branch: sharedBranch }],
-				pi: createMockPi({ skills: ["research", "design"] }).pi,
-			});
-
-			// Continue stage send goes through the inner ctx (not the captured
-			// host — see `CONTINUE_HANDLER.spawn` precedence), so override the
-			// inner-ctx mock fn to grow the branch. The same vi.fn() backs
-			// both the FRESH and CONTINUE send paths now; gate branch growth
-			// on the design prompt so research's send doesn't double-fire it.
-			chain.sendUserMessageFn.mockImplementation((content: unknown) => {
-				const text = typeof content === "string" ? content : JSON.stringify(content);
-				chain.sentMessages.push(text);
-				if (text.startsWith("/skill:design")) {
-					sharedBranch.push(mockAssistantMessage(`Designed ${designArtifact}`));
-				}
+				steps: [
+					{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/research/r.md")] },
+					{ branch: [mockAssistantMessage("Designed .rpiv/artifacts/designs/d.md")] },
+				],
 			});
 
 			const result = await runWorkflow(chain.ctx, {
 				workflow: wf("fc", ["research", "design"], { design: { sessionPolicy: "continue" } }),
 				input: "x",
-				host: chain.pi,
 			});
 
 			expect(result.success).toBe(true);
 			expect(result.stagesCompleted).toBe(2);
-			expect(result.lastArtifact).toBe(designArtifact);
-			// Stage 1 used newSession; stage 2 reused the inner session ctx
-			// via ctx.sendUserMessage (NOT host.sendUserMessage — the host is
-			// the fallback for workflow-start-with-continue only).
-			expect(chain.ctx.newSession).toHaveBeenCalledTimes(1);
-			expect(chain.pi!.sendUserMessage).not.toHaveBeenCalled();
-			expect(chain.sentMessages).toEqual(["/skill:research x", `/skill:design ${priorArtifact}`]);
-		});
-
-		it("continue after fresh routes through live ctx, not the stale host (regression)", async () => {
-			// Regression: pre-fix, CONTINUE_HANDLER unconditionally called
-			// `host.sendUserMessage`. Pi marks the captured host stale after
-			// the first ctx.newSession() — so a continue stage following a
-			// fresh stage would throw "extension ctx is stale". Post-fix,
-			// CONTINUE_HANDLER prefers `ctx.sendUserMessage` (the live inner
-			// ctx delivered to withSession, always valid); the host is only
-			// the fallback for workflow-start-with-continue-first-stage.
-			writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md");
-			writeArtifact(tmpDir, ".rpiv/artifacts/designs/d.md");
-			const priorArtifact = ".rpiv/artifacts/research/r.md";
-			const designArtifact = ".rpiv/artifacts/designs/d.md";
-
-			const sharedBranch: unknown[] = [mockAssistantMessage(`Wrote ${priorArtifact}`)];
-			const chain = createMockSessionChain({
-				cwd: tmpDir,
-				steps: [{ branch: sharedBranch }],
-				pi: createMockPi({ skills: ["research", "design"] }).pi,
-			});
-
-			// Simulate Pi's stale-host behavior: any call to host.sendUserMessage
-			// after the first newSession throws. If the runner regresses to
-			// using the host for continue sends, the workflow will fail with
-			// this error in result.error.
-			(chain.pi!.sendUserMessage as ReturnType<typeof vi.fn>).mockImplementation(() => {
-				throw new Error(
-					"This extension ctx is stale after session replacement or reload. " +
-						"Do not use a captured pi or command ctx after ctx.newSession().",
-				);
-			});
-
-			chain.sendUserMessageFn.mockImplementation((content: unknown) => {
-				const text = typeof content === "string" ? content : JSON.stringify(content);
-				chain.sentMessages.push(text);
-				if (text.startsWith("/skill:design")) {
-					sharedBranch.push(mockAssistantMessage(`Designed ${designArtifact}`));
-				}
-			});
-
-			const result = await runWorkflow(chain.ctx, {
-				workflow: wf("fc", ["research", "design"], { design: { sessionPolicy: "continue" } }),
-				input: "x",
-				host: chain.pi,
-			});
-
-			// Both stages completed — the stale-host throw never fired because
-			// CONTINUE_HANDLER took the ctx path.
-			expect(result.success).toBe(true);
-			expect(result.stagesCompleted).toBe(2);
-			expect(result.lastArtifact).toBe(designArtifact);
-			// Load-bearing assertion: host.sendUserMessage was NEVER called.
-			// Pre-fix this would be called once for the design stage and would
-			// throw the stale-ctx error.
-			expect(chain.pi!.sendUserMessage).not.toHaveBeenCalled();
-			// Both prompts landed via the inner ctx.
-			expect(chain.sentMessages).toEqual(["/skill:research x", `/skill:design ${priorArtifact}`]);
+			expect(result.lastArtifact).toBe(".rpiv/artifacts/designs/d.md");
+			expect(chain.ctx.spawnChild).toHaveBeenCalledTimes(2);
+			expect(chain.sentMessages).toEqual(["/skill:research x", "/skill:design .rpiv/artifacts/research/r.md"]);
 		});
 
 		it("continue stage abort halts the chain", async () => {
 			const chain = createMockSessionChain({
 				cwd: tmpDir,
-				steps: [],
-				pi: createMockPi({ skills: ["research"] }).pi,
-				outerBranch: [],
-			});
-
-			const branch = chain.ctx.sessionManager.getBranch() as unknown[];
-			(chain.pi!.sendUserMessage as ReturnType<typeof vi.fn>).mockImplementation((content: unknown) => {
-				chain.sentMessages.push(typeof content === "string" ? content : JSON.stringify(content));
-				branch.push(mockAssistantMessage("interrupted", "aborted"));
+				steps: [{ branch: [mockAssistantMessage("interrupted", "aborted")] }],
 			});
 
 			const result = await runWorkflow(chain.ctx, {
 				workflow: wf("cont", ["research"], { research: { sessionPolicy: "continue" } }),
 				input: "x",
-				host: chain.pi,
 			});
 
 			expect(result.success).toBe(false);
@@ -1020,18 +898,12 @@ describe("runWorkflow", () => {
 		it("continue stage with no assistant message fails", async () => {
 			const chain = createMockSessionChain({
 				cwd: tmpDir,
-				steps: [],
-				pi: createMockPi({ skills: ["research"] }).pi,
-				outerBranch: [],
+				steps: [{ branch: [] }],
 			});
-
-			// Don't override sendUserMessage — branch stays empty after the call.
-			// The runner sees branchOffset=0, slice gives [], no assistant message.
 
 			const result = await runWorkflow(chain.ctx, {
 				workflow: wf("cont", ["research"], { research: { sessionPolicy: "continue" } }),
 				input: "x",
-				host: chain.pi,
 			});
 
 			expect(result.success).toBe(false);
@@ -1042,21 +914,12 @@ describe("runWorkflow", () => {
 		it("continue stage with no artifact (requireArtifact) fails", async () => {
 			const chain = createMockSessionChain({
 				cwd: tmpDir,
-				steps: [],
-				pi: createMockPi({ skills: ["research"] }).pi,
-				outerBranch: [],
-			});
-
-			const branch = chain.ctx.sessionManager.getBranch() as unknown[];
-			(chain.pi!.sendUserMessage as ReturnType<typeof vi.fn>).mockImplementation((content: unknown) => {
-				chain.sentMessages.push(typeof content === "string" ? content : JSON.stringify(content));
-				branch.push(mockAssistantMessage("I asked a clarifying question"));
+				steps: [{ branch: [mockAssistantMessage("I asked a clarifying question")] }],
 			});
 
 			const result = await runWorkflow(chain.ctx, {
 				workflow: wf("cont", ["research"], { research: { sessionPolicy: "continue" } }),
 				input: "x",
-				host: chain.pi,
 			});
 
 			expect(result.success).toBe(false);
@@ -1067,21 +930,12 @@ describe("runWorkflow", () => {
 		it("continue stage with side-effect stop strategy completes without artifact", async () => {
 			const chain = createMockSessionChain({
 				cwd: tmpDir,
-				steps: [],
-				pi: createMockPi({ skills: ["commit"] }).pi,
-				outerBranch: [],
-			});
-
-			const branch = chain.ctx.sessionManager.getBranch() as unknown[];
-			(chain.pi!.sendUserMessage as ReturnType<typeof vi.fn>).mockImplementation((content: unknown) => {
-				chain.sentMessages.push(typeof content === "string" ? content : JSON.stringify(content));
-				branch.push(mockAssistantMessage("Committed 3 files."));
+				steps: [{ branch: [mockAssistantMessage("Committed 3 files.")] }],
 			});
 
 			const result = await runWorkflow(chain.ctx, {
 				workflow: wf("cont", ["commit"], { commit: { sessionPolicy: "continue" } }),
 				input: "x",
-				host: chain.pi,
 			});
 
 			expect(result.success).toBe(true);
@@ -1118,27 +972,6 @@ describe("runWorkflow", () => {
 			const failedRows = stages.filter((s) => s.status === "failed");
 			expect(failedRows).toHaveLength(1);
 			expect(failedRows[0]?.skill).toBe("implement");
-		});
-
-		it("rejects at preflight when continue node runs without pi (no stages execute)", async () => {
-			const chain = createMockSessionChain({
-				cwd: tmpDir,
-				steps: [],
-			});
-
-			const result = await runWorkflow(chain.ctx, {
-				workflow: wf("cont", ["research"], { research: { sessionPolicy: "continue" } }),
-				input: "x",
-				// No host provided — caught by the preflight before any stage runs.
-			});
-
-			expect(result.success).toBe(false);
-			expect(result.error).toBe("workflow contains continue-policy stages which require a workflow host");
-			expect(result.stagesCompleted).toBe(0);
-
-			// Preflight short-circuits before writeHeader / any recordStage call —
-			// no JSONL workflow file is produced at all.
-			expect(existsSync(join(tmpDir, ".rpiv", "workflows", "runs"))).toBe(false);
 		});
 
 		// -------------------------------------------------------------------
@@ -1187,38 +1020,24 @@ describe("runWorkflow", () => {
 			expect(failedRows[0]?.skill).toBe("implement");
 		});
 
-		it("branch offset prevents false positive from prior stage artifact", async () => {
+		it("a detached continue child sees no prior-stage artifact (no false positive)", async () => {
+			// In the detached model the continue stage runs in its OWN child — its
+			// branch never contains the prior stage's artifact announcement, so a
+			// continue stage that produces no artifact of its own fails cleanly (no
+			// false positive from the fresh stage's prior `.md`).
 			writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md");
-			// Fresh stage produces artifact, continue stage fails to produce its own.
-			// Without offset, extractArtifactPath would return the prior artifact.
-			const priorArtifact = ".rpiv/artifacts/research/r.md";
-
-			// Shared mutable branch: pre-populated with the fresh stage's entry.
-			const sharedBranch: unknown[] = [mockAssistantMessage(`Wrote ${priorArtifact}`)];
 
 			const chain = createMockSessionChain({
 				cwd: tmpDir,
-				steps: [{ branch: sharedBranch }],
-				pi: createMockPi({ skills: ["research", "design"] }).pi,
-			});
-
-			// Continue stage produces a message but no artifact. Continue
-			// sends go through the inner ctx (preferred over the captured
-			// host in CONTINUE_HANDLER.spawn) — override the inner-ctx fn.
-			// Gate branch growth on the design prompt so research's send
-			// doesn't double-fire it.
-			chain.sendUserMessageFn.mockImplementation((content: unknown) => {
-				const text = typeof content === "string" ? content : JSON.stringify(content);
-				chain.sentMessages.push(text);
-				if (text.startsWith("/skill:design")) {
-					sharedBranch.push(mockAssistantMessage("I analyzed the design but didn't write a plan"));
-				}
+				steps: [
+					{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/research/r.md")] },
+					{ branch: [mockAssistantMessage("I analyzed the design but didn't write a plan")] },
+				],
 			});
 
 			const result = await runWorkflow(chain.ctx, {
 				workflow: wf("fc", ["research", "design"], { design: { sessionPolicy: "continue" } }),
 				input: "x",
-				host: chain.pi,
 			});
 
 			// Stage 2 failed — no artifact produced by the continue stage
@@ -2474,7 +2293,7 @@ describe("runWorkflow", () => {
 		it("snapshots the skill registry once at workflow start (host.getCommands not called per-stage)", async () => {
 			// Regression: pre-fix, ensureSkillRegistered called host.getCommands()
 			// for every downstream stage's preflight. Pi marks the host handle
-			// stale after the first ctx.newSession(), so the second call threw
+			// stale once the first child session opens, so the second call threw
 			// "extension ctx is stale" — a research → blueprint chain halted on
 			// stage 2 with no toast (the throw was caught by
 			// runStageOrRecordFailure and the user-visible error never surfaced).
@@ -2499,10 +2318,7 @@ describe("runWorkflow", () => {
 			getCommandsSpy.mockImplementation(() => {
 				callCount++;
 				if (callCount === 1) return firstResult;
-				throw new Error(
-					"This extension ctx is stale after session replacement or reload. " +
-						"Do not use a captured pi or command ctx after ctx.newSession().",
-				);
+				throw new Error("This extension ctx is stale after session replacement or reload.");
 			});
 
 			const chain = createMockSessionChain({
@@ -3000,7 +2816,7 @@ describe("runWorkflow", () => {
 			// Surfaces what IS available so the caller can recover.
 			expect(result.error).toContain("present");
 			// Nothing ran: no session opened, no run file written.
-			expect(chain.ctx.newSession).not.toHaveBeenCalled();
+			expect(chain.ctx.spawnChild).not.toHaveBeenCalled();
 			expect(existsSync(join(tmpDir, ".rpiv", "workflows", "runs"))).toBe(false);
 		});
 
@@ -3040,7 +2856,7 @@ describe("runWorkflow", () => {
 			// A JSONL file IS written (header + aborted row), so runId is present —
 			// distinguishing an abort from a pre-flight rejection (no file, no runId).
 			expect(result.runId).toBeTruthy();
-			expect(chain.ctx.newSession).not.toHaveBeenCalled();
+			expect(chain.ctx.spawnChild).not.toHaveBeenCalled();
 
 			const { stages } = readState(tmpDir);
 			expect(stages).toHaveLength(1);
@@ -3073,7 +2889,7 @@ describe("runWorkflow", () => {
 			expect(result.stagesCompleted).toBe(1);
 			expect(result.error).toMatch(/aborted before stage "design"/);
 			// Stage 1 streamed; stage 2 never opened a session.
-			expect(chain.ctx.newSession).toHaveBeenCalledTimes(1);
+			expect(chain.ctx.spawnChild).toHaveBeenCalledTimes(1);
 			expect(chain.remaining()).toBe(0);
 
 			const { stages } = readState(tmpDir);

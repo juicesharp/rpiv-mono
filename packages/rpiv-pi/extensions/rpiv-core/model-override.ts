@@ -19,7 +19,7 @@
  * degradation when the sibling is not installed.
  */
 
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionUIContext, ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { parseModelKey } from "@juicesharp/rpiv-config";
 // Type-only — erased at runtime, so safe when the rpiv-workflow sibling is
 // absent (the value import of registerLifecycle stays dynamic + guarded).
@@ -53,8 +53,22 @@ export interface BaselineSnapshot {
 // Reset by __resetModelOverrideState() in test/setup.ts.
 // ---------------------------------------------------------------------------
 
-/** Captured modelRegistry from session_start ExtensionContext. */
-let capturedModelRegistry: { find(provider: string, modelId: string): unknown } | undefined;
+/**
+ * Captured modelRegistry from session_start ExtensionContext. Typed as the
+ * NOMINAL `ModelRegistry` (not a structural `{ find }`) so `getCapturedModelRegistry`
+ * can hand it to `SdkWorkflowHostDeps.modelRegistry: ModelRegistry` — TS enforces
+ * nominal compatibility for classes carrying private members, so a structural
+ * shape would be rejected there. `ctx.modelRegistry` already IS one.
+ */
+let capturedModelRegistry: ModelRegistry | undefined;
+
+/**
+ * Captured foreground UI context from session_start. Borrowed by the
+ * detached executor factory to bind foreground children to the real human and to
+ * tap ESC/Ctrl-C for the run-abort signal. LifecycleContext lacks it, so it is
+ * captured here alongside modelRegistry.
+ */
+let capturedUiContext: ExtensionUIContext | undefined;
 
 /**
  * Current model captured from session_start ExtensionContext.model. Refreshed
@@ -76,6 +90,7 @@ let baselineCaptured = false;
 /** Test reset — wired into test/setup.ts beforeEach. */
 export function __resetModelOverrideState(): void {
 	capturedModelRegistry = undefined;
+	capturedUiContext = undefined;
 	capturedModel = undefined;
 	baseline = undefined;
 	baselineCaptured = false;
@@ -90,9 +105,19 @@ export function __resetModelOverrideState(): void {
 export function registerModelOverrideSessionStart(pi: ExtensionAPI): void {
 	pi.on(
 		"session_start",
-		async (_event: unknown, ctx: { modelRegistry?: typeof capturedModelRegistry; model?: CapturedModel }) => {
+		async (
+			_event: unknown,
+			ctx: { modelRegistry?: ModelRegistry; model?: CapturedModel; ui?: ExtensionUIContext },
+		) => {
 			if (ctx.modelRegistry) {
 				capturedModelRegistry = ctx.modelRegistry;
+			}
+			// Foreground UI for the detached executor — the real human's
+			// ctx.ui, bound to foreground children and tapped for the abort signal.
+			// (No authStorage / resourceLoader on ctx — absent from the SDK
+			// ExtensionContext; createAgentSession defaults them per child.)
+			if (ctx.ui) {
+				capturedUiContext = ctx.ui;
 			}
 			// ExtensionContext.model is the current model (LifecycleContext lacks it).
 			// Only capture while no workflow is active — a stage's newSession can
@@ -104,6 +129,15 @@ export function registerModelOverrideSessionStart(pi: ExtensionAPI): void {
 		},
 	);
 }
+
+/** Captured nominal `ModelRegistry` from session_start — borrowed by the detached
+ *  executor (`SdkWorkflowHost`) so every child resolves models through the same
+ *  auth/OAuth-backed registry without a global `pi.setModel` flip. */
+export const getCapturedModelRegistry = (): ModelRegistry | undefined => capturedModelRegistry;
+
+/** Captured foreground UI context from session_start — read by the executor
+ *  factory to bind foreground children + tap ESC/Ctrl-C for the abort signal. */
+export const getCapturedUiContext = (): ExtensionUIContext | undefined => capturedUiContext;
 
 // ---------------------------------------------------------------------------
 // Model resolution — uses captured modelRegistry, not lifecycle context.
@@ -156,7 +190,7 @@ interface ApplyEffectiveModelOpts {
 	label: string;
 	/**
 	 * When true (workflow path): on override-miss, re-apply baseline model via setModel
-	 * to enforce the D7 no-bleedthrough invariant (unconfigured stages revert to baseline,
+	 * to enforce the no-bleedthrough invariant (unconfigured stages revert to baseline,
 	 * not the previous stage's override). When false (bracket path): on override-miss,
 	 * skip setModel entirely (one-shot arm, nothing to undo).
 	 */
@@ -198,7 +232,7 @@ export async function applyEffectiveModel(
 		}
 	}
 
-	// When no override model resolved: either re-apply baseline (workflow: D7
+	// When no override model resolved: either re-apply baseline (workflow:
 	// no-bleedthrough) or skip setModel entirely (bracket: one-shot arm).
 	if (!hasModelChange && opts.setBaselineModel && opts.baselineModel !== undefined) {
 		const ok = await pi.setModel(opts.baselineModel);
@@ -234,7 +268,7 @@ export async function restoreBaseline(pi: ExtensionAPI, base: BaselineSnapshot):
  * The ONE override cascade — shared by onStageStart (per-stage) and
  * onUnitStart (per-unit). Resolves through models.json with the dispatched
  * skill, applies effective model + thinking, and records hasModelChange.
- * setBaselineModel=true enforces the D7 no-bleedthrough invariant: an
+ * setBaselineModel=true enforces the no-bleedthrough invariant: an
  * unconfigured stage/unit reverts to baseline, not the previous override.
  */
 async function applyCascade(

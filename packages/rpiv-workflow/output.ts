@@ -116,3 +116,25 @@ export function finalizeOutput<K extends string, D>(
 		meta,
 	};
 }
+
+// ---------------------------------------------------------------------------
+// Failed-unit sentinel (collect-all fanout)
+// ---------------------------------------------------------------------------
+
+/** The data shape of a failed-unit sentinel — collect-all fanout places one of
+ *  these in a unit's declared slot when the unit halts (the run survives). */
+export const FAILED_OUTPUT_KIND = "failed";
+export type FailedOutput = Output<"failed", { reason: string }>;
+
+/**
+ * A failed unit's contribution to a collect-all fanout. A real `Output` with NO
+ * artifacts, so: `applyCompletedStage` leaves the rolling primary alone; the
+ * `fanin` reader contributes no args for it (the `.filter(Boolean)` convention
+ * needs no widening); `advanceCursor` advances the index without making it the
+ * "last" produce; and the resume fold replays it like any produce row.
+ */
+export function failedOutput(meta: OutputMeta, reason: string): FailedOutput {
+	return finalizeOutput({ kind: FAILED_OUTPUT_KIND, artifacts: [], data: { reason } }, meta);
+}
+
+export const isFailedOutput = (o: Output): o is FailedOutput => o.kind === FAILED_OUTPUT_KIND;

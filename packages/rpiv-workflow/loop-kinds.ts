@@ -19,11 +19,15 @@
  */
 
 import type { AssessLoop, IterateLoop, LoopDef, StageDef, Unit, UnitRole } from "./api.js";
-import { resolveStagePrompt } from "./chain-state.js";
+// Fanout completion is INDEX-ADDRESSED (place-by-unitIndex), the
+// shared authority for the live parallel fold AND the resume fold so the two
+// reconstruct byte-identical declared-order state regardless of
+// completion/resume order. iterate/assess keep advanceCursor (sequential).
+import { placeFanoutOutput, resolveStagePrompt } from "./chain-state.js";
 import { type Artifact, handleToString } from "./handle.js";
 import { isPanel, type Judge, type PanelJudge, panelMembers, resolveJudgePrompt } from "./judge.js";
 import { MSG_LOOP_CURSOR_CORRUPT } from "./messages.js";
-import { finalizeOutput, type Output, type OutputMeta } from "./output.js";
+import { finalizeOutput, isFailedOutput, type Output, type OutputMeta } from "./output.js";
 import { StagePreflightError } from "./runner/errors.js";
 import type { RunContext, RunState } from "./types.js";
 
@@ -82,6 +86,9 @@ export interface LoopCursor {
 	panel?: { memberIndex: number; verdicts: Output[] };
 	/** Units dispatched by THIS driver invocation — the resume silence rule. */
 	ranThisInvocation: number;
+	/** Fanout only — declared-index slot array (length = units.length). A unit's
+	 *  output lands at slots[unitIndex]; `undefined` = still pending. */
+	slots?: (Output | undefined)[];
 }
 
 /** Pristine cursor for a live (non-resume) loop entry. */
@@ -110,7 +117,14 @@ export const unitTagOf = (u: Unit): string => u.id ?? u.label;
 export function advanceCursor(cursor: LoopCursor, role: UnitRole, output: Output, loop: LoopDef): void {
 	if (role === "produce") {
 		cursor.accumulated.push(output);
-		cursor.lastProduce = { output, artifact: output.artifacts[0] };
+		// A failed sentinel advances the index but is NOT the "last" produce, so
+		// `result:"last"` projects the last SUCCESSFUL output. DEFENSIVE only: ALL
+		// fanout (the sole producer of `failedOutput`) routes through
+		// `foldFanoutCompletion`, never `advanceCursor`, at every concurrency
+		// including 1 and on both live + resume; iterate/assess (which DO use
+		// advanceCursor) never collect-all. Keeps a future collect-all iterate kind
+		// from silently corrupting `lastProduce`.
+		if (!isFailedOutput(output)) cursor.lastProduce = { output, artifact: output.artifacts[0] };
 		if (loop.kind === "assess") cursor.phase = "judge";
 		else cursor.index++;
 		return;
@@ -149,8 +163,8 @@ const PANEL_VERDICT_KIND = "panel-verdict";
  * reusing the last member's `meta` keeps the manufactured verdict byte-identical
  * across live + resume (the member rows are the durable, replayed trail; a fresh
  * `nowIso()` would break the replay contract). The folded Output carries NO
- * artifact — it is routable decision DATA, not a file the loop projects (§5
- * boundary: the fold publishes data, member reasoning lives on member channels).
+ * artifact — it is routable decision DATA, not a file the loop projects (the
+ * fold publishes data, member reasoning lives on member channels).
  */
 function foldPanelVerdict(panel: PanelJudge, verdicts: readonly Output[], meta: OutputMeta): Output {
 	return finalizeOutput({ kind: PANEL_VERDICT_KIND, artifacts: [], data: panel.fold(verdicts) }, meta);
@@ -260,6 +274,9 @@ export interface ResumeProbe {
 }
 
 export interface LoopKindStrategy {
+	/** Whether this kind's units are mutually independent and may be dispatched
+	 *  in bounded parallel (fanout only — iterate/assess consume the prior). */
+	parallelizable: boolean;
 	/**
 	 * The live driver's next-step rule. Cap-check positions preserve pinned
 	 * semantics: iterate checks POST-pull (the null terminator wins; the
@@ -284,23 +301,59 @@ export interface LoopKindStrategy {
 	hasPending(loop: LoopDef, probe: ResumeProbe, run: RunContext): Promise<boolean>;
 }
 
+/** Place a fanout unit's output at its DECLARED index in both the cursor and the
+ *  named channel. `cursor.index` becomes the filled-slot COUNT (completion);
+ *  `lastProduce` is the highest-index non-failed slot (deterministic — order-free,
+ *  so live + resume + re-dispatch agree). */
+export function foldFanoutCompletion(
+	state: RunState,
+	cursor: LoopCursor,
+	def: StageDef,
+	stageName: string,
+	index: number,
+	total: number,
+	output: Output,
+): void {
+	if (!cursor.slots) cursor.slots = new Array<Output | undefined>(total);
+	cursor.slots[index] = output;
+	cursor.index = cursor.slots.reduce<number>((n, s) => (s !== undefined ? n + 1 : n), 0);
+	cursor.lastProduce = lastNonFailedSlot(cursor.slots);
+	placeFanoutOutput(state, def, stageName, index, total, output);
+}
+
+/** Highest-index non-failed slot — the deterministic `result:"last"` source. */
+function lastNonFailedSlot(slots: readonly (Output | undefined)[]): LoopCursor["lastProduce"] {
+	for (let i = slots.length - 1; i >= 0; i--) {
+		const o = slots[i];
+		if (o && !isFailedOutput(o)) return { output: o, artifact: o.artifacts[0] };
+	}
+	return undefined;
+}
+
+/** The fanout unit descriptor at `index` — the shape `fanoutStrategy.pull`
+ *  builds, made index-addressable so the parallel dispatcher and the sequential
+ *  pull share ONE construction site (no drift between live + parallel). */
+export function fanoutUnitAt(e: LoopEntry, index: number): Extract<NextStep, { kind: "unit" }> {
+	const u = e.units![index]!;
+	const tag = unitTagOf(u);
+	return {
+		kind: "unit",
+		role: "produce",
+		tag,
+		id: tag,
+		label: u.label,
+		skill: e.skill,
+		prompt: `/skill:${e.skill} ${u.prompt}`,
+		def: e.def,
+	};
+}
+
 const fanoutStrategy: LoopKindStrategy = {
+	parallelizable: true,
 	async pull(e, cursor, cap) {
-		const units = e.units!; // runLoopStage computed it (empty list never reaches the driver)
-		if (cursor.index >= units.length) return { kind: "complete" };
+		if (cursor.index >= e.units!.length) return { kind: "complete" }; // runLoopStage computed units (empty never reaches the driver)
 		if (cursor.index >= cap) return { kind: "cap", count: cursor.index };
-		const u = units[cursor.index]!;
-		const tag = unitTagOf(u);
-		return {
-			kind: "unit",
-			role: "produce",
-			tag,
-			id: tag,
-			label: u.label,
-			skill: e.skill,
-			prompt: `/skill:${e.skill} ${u.prompt}`,
-			def: e.def,
-		};
+		return fanoutUnitAt(e, cursor.index); // shared descriptor
 	},
 	async guardExpectation(gen, row) {
 		if (!gen.units || gen.cursor.index >= gen.units.length) return false;
@@ -312,6 +365,7 @@ const fanoutStrategy: LoopKindStrategy = {
 };
 
 const iterateStrategy: LoopKindStrategy = {
+	parallelizable: false,
 	async pull(e, cursor, cap, run) {
 		const loop = e.loop as IterateLoop;
 		const u = await loop.next({
@@ -362,6 +416,7 @@ const iterateStrategy: LoopKindStrategy = {
 };
 
 const assessStrategy: LoopKindStrategy = {
+	parallelizable: false,
 	// Including a synthesized verify loop. Verify-ness is derived from the
 	// parent def (`e.def.verify`), never from the loop object: the synthesis
 	// carries no marker, so live and resume can't disagree about flavoring.

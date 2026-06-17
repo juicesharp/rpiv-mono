@@ -9,7 +9,32 @@ import type {
 	ToolDefinition,
 	ToolInfo,
 } from "@earendil-works/pi-coding-agent";
+import type {
+	ExecutionLane,
+	ModelSelection,
+	WorkflowHostContext,
+	WorkflowSessionContext,
+} from "@juicesharp/rpiv-workflow";
 import { vi } from "vitest";
+
+/**
+ * The mock command ctx satisfies BOTH Pi's `ExtensionCommandContext` (so tests
+ * reading `model`/`modelRegistry`/etc. keep working) AND rpiv-workflow's
+ * post-detachment host port (`spawnChild`/`maxConcurrency`), so consumers can
+ * cast `mockCtx as WorkflowHostContext` with a plain assertion. The shape is
+ * synthesized via `as unknown as` — the type is the contract, not the literal.
+ */
+type MockWorkflowCtx = ExtensionCommandContext & WorkflowHostContext;
+
+/** Options the runtime hands `spawnChild` — mirrors the rpiv-workflow host port. */
+interface MockSpawnChildOptions<T = void> {
+	prompt: string;
+	lane: ExecutionLane;
+	model?: ModelSelection;
+	signal?: AbortSignal;
+	reattach?: { sessionFile: string };
+	withSession: (child: WorkflowSessionContext) => Promise<T>;
+}
 
 export interface CapturedPi {
 	tools: Map<string, ToolDefinition>;
@@ -164,6 +189,8 @@ export interface MockCtxOptions {
 	branch?: SessionEntry[];
 	models?: Model<Api>[];
 	ui?: Partial<ExtensionUIContext>;
+	/** Background-lane concurrency cap the ctx advertises. Defaults to 1 (sequential). */
+	maxConcurrency?: number;
 }
 
 export function createMockCtx(opts: MockCtxOptions = {}): ExtensionContext {
@@ -179,49 +206,63 @@ export function createMockCtx(opts: MockCtxOptions = {}): ExtensionContext {
 }
 
 /**
- * Minimal `ExtensionCommandContext` mock for unit tests that mock the runner
- * (or otherwise never exercise `newSession` for real). Adds `waitForIdle` and
- * a no-op `newSession` to satisfy the type — both are `vi.fn` so tests can
- * still assert `expect(ctx.newSession).not.toHaveBeenCalled()`.
+ * Minimal command ctx mock for unit tests that mock the runner (or otherwise
+ * never spawn a child for real). Adds `waitForIdle`, `maxConcurrency`, and a
+ * `spawnChild` `vi.fn` that synthesizes a guaranteed-in-session child ctx
+ * (carrying `sendUserMessage`) and runs `withSession` on it — the PARENT ctx
+ * STAYS VALID (no swap). Tests can still assert spawn accounting via
+ * `expect(ctx.spawnChild).not.toHaveBeenCalled()`.
  *
- * For tests that DO drive `newSession({ withSession })` recursively, use
- * `createMockSessionChain` — it scripts a queue of responses and gives every
- * freshCtx its own spy.
+ * For tests that DO drive a scripted sequence of child sessions, use
+ * `createMockSessionChain` — it scripts a queue of responses, one per spawned
+ * child.
  */
-export function createMockCommandCtx(opts: MockCtxOptions = {}): ExtensionCommandContext {
+export function createMockCommandCtx(opts: MockCtxOptions = {}): MockWorkflowCtx {
 	const base = createMockCtx(opts);
+	const spawnChild = vi.fn(async <T>(options: MockSpawnChildOptions<T>): Promise<T> => {
+		const child = {
+			...createMockCtx(opts),
+			waitForIdle: vi.fn(async () => {}),
+			maxConcurrency: opts.maxConcurrency ?? 1,
+			sendUserMessage: vi.fn(async () => {}),
+			spawnChild: vi.fn(),
+		} as unknown as WorkflowSessionContext;
+		return options.withSession(child);
+	});
 	return {
 		...base,
 		waitForIdle: vi.fn(async () => {}),
-		newSession: vi.fn(async () => ({ cancelled: false })),
-	} as unknown as ExtensionCommandContext;
+		maxConcurrency: opts.maxConcurrency ?? 1,
+		spawnChild,
+	} as unknown as MockWorkflowCtx;
 }
 
 // ---------------------------------------------------------------------------
 // Session chain fixture — for tests that drive runWorkflow/runStage/runImplementPhases
-// across multiple newSession() calls. The outer ctx and every freshCtx share
-// a single scripted queue; pop order is the order in which the production
-// code calls newSession (recursively, on the freshCtx returned from each
-// withSession callback).
+// across multiple spawnChild() calls. The outer ctx and every child share a
+// single scripted queue; pop order is the order in which the production code
+// spawns children. The parent ctx STAYS VALID — children never swap it out.
 // ---------------------------------------------------------------------------
 
-/** One scripted response in a session chain. */
+/** One scripted response in a session chain — one spawned child session. */
 export interface MockSessionStep {
 	/**
-	 * Branch entries the freshCtx's sessionManager.getBranch() will return
-	 * inside withSession. Each element should be a BranchEntry-shaped object
-	 * (e.g. built with `mockAssistantMessage`).
+	 * Branch entries the child's sessionManager.getBranch() will return inside
+	 * withSession. Each element should be a BranchEntry-shaped object (e.g.
+	 * built with `mockAssistantMessage`).
 	 */
 	branch?: unknown[];
 	/**
-	 * If true, newSession resolves `{ cancelled: true }` without invoking
-	 * withSession. Mutually exclusive with `branch`.
+	 * If true, this child's `spawnChild` REJECTS without invoking withSession —
+	 * the dispatcher treats a rejection as an unfilled slot (the detached
+	 * replacement for the old `{ cancelled: true }` return, which had no
+	 * live-session swap to dismiss). Mutually exclusive with `branch`.
 	 */
 	cancelled?: boolean;
 }
 
 export interface MockSessionChainOptions extends MockCtxOptions {
-	/** Scripted responses, in the order newSession will consume them. */
+	/** Scripted responses, in the order spawnChild will consume them. */
 	steps: MockSessionStep[];
 	/** Optional mock pi — if provided, the chain exposes it for "continue" path assertions. */
 	pi?: ExtensionAPI;
@@ -234,9 +275,9 @@ export interface MockSessionChainOptions extends MockCtxOptions {
 }
 
 export interface MockSessionChain {
-	/** The outer ExtensionCommandContext passed into runWorkflow(). */
-	ctx: ExtensionCommandContext;
-	/** Every `sendUserMessage(...)` call across all freshCtxs AND pi, in order. */
+	/** The outer command ctx passed into runWorkflow(). */
+	ctx: MockWorkflowCtx;
+	/** Every `sendUserMessage(...)` call across all child ctxs AND pi, in order. */
 	sentMessages: string[];
 	/** Every `ui.notify(msg, level)` call across outer + freshCtxs, in order. */
 	notifications: Array<{ msg: string; level: string }>;
@@ -254,28 +295,27 @@ export interface MockSessionChain {
 	/** Shared vi.fn() backing every `ui.setStatus` — for direct `.mock.calls` assertions. */
 	setStatusFn: ReturnType<typeof vi.fn>;
 	/**
-	 * Shared `vi.fn()` backing every replacement (inner) ctx's
-	 * `sendUserMessage`. Tests that need a continue-policy stage to
-	 * influence the shared branch (e.g. push an assistant entry on send)
-	 * override this rather than `pi.sendUserMessage`, because
-	 * `CONTINUE_HANDLER` now prefers the live ctx over the captured host —
-	 * mocking only the host leaves the inner ctx path uninstrumented.
+	 * Shared `vi.fn()` backing every child ctx's `sendUserMessage`. Tests that
+	 * need a stage to influence the shared branch (e.g. push an assistant entry
+	 * on send) override this — every spawned child session routes its
+	 * `sendUserMessage` through it.
 	 */
 	sendUserMessageFn: ReturnType<typeof vi.fn>;
 }
 
 /**
  * Build a chained session-mock for tests that exercise `runWorkflow` (or any
- * code that calls `newSession({ withSession })` recursively). Every call to
- * `newSession` — whether on the outer ctx or on a freshCtx handed to a prior
- * `withSession` callback — dequeues one step from `opts.steps`. If the test
- * scripts fewer steps than the code under test consumes, the next call throws
- * a clear "no more scripted steps" error pointing back at the fixture.
+ * code that calls `spawnChild({ withSession })`). Every call to `spawnChild` —
+ * whether on the outer ctx or on a child handed to a prior `withSession`
+ * callback — dequeues one step from `opts.steps`. If the test scripts fewer
+ * steps than the code under test consumes, the next call throws a clear "no
+ * more scripted steps" error pointing back at the fixture.
  *
- * The outer ctx's `newSession` is its own `vi.fn` (so tests can assert
- * `expect(chain.ctx.newSession).toHaveBeenCalledTimes(1)` to verify that the
- * chain advances on freshCtx, not on the outer ctx). Every freshCtx gets its
- * own newSession spy too, but they all share the same script queue.
+ * The outer ctx's `spawnChild` is its own `vi.fn` (so tests can assert
+ * `expect(chain.ctx.spawnChild).toHaveBeenCalledTimes(1)`). The PARENT ctx
+ * STAYS VALID across every spawn — children never swap it out. Each spawned
+ * child gets its own `spawnChild` spy too, but they all share the same script
+ * queue.
  */
 export function createMockSessionChain(opts: MockSessionChainOptions): MockSessionChain {
 	const queue: MockSessionStep[] = [...opts.steps];
@@ -304,7 +344,7 @@ export function createMockSessionChain(opts: MockSessionChainOptions): MockSessi
 		sentMessages.push(typeof content === "string" ? content : JSON.stringify(content));
 	});
 
-	const buildCtx = (kind: "outer" | "replaced", branch: unknown[]): ExtensionCommandContext => {
+	const buildCtx = (kind: "outer" | "child", branch: unknown[]): MockWorkflowCtx => {
 		const base = createMockCtx({
 			...opts,
 			// Override branch with the provided parameter — for "outer" kind this is
@@ -317,28 +357,40 @@ export function createMockSessionChain(opts: MockSessionChainOptions): MockSessi
 			},
 		});
 
-		const newSessionSpy = vi.fn(async (options?: { withSession?: (ctx: unknown) => Promise<void> }) => {
+		const spawnChildSpy = vi.fn(async <T>(options: MockSpawnChildOptions<T>): Promise<T> => {
 			const step = queue.shift();
 			if (!step) {
 				throw new Error(
-					"createMockSessionChain: newSession called but no more scripted steps remain (chain consumed too many).",
+					"createMockSessionChain: spawnChild called but no more scripted steps remain (chain consumed too many).",
 				);
 			}
-			if (step.cancelled) return { cancelled: true };
-			const freshCtx = buildCtx("replaced", step.branch ?? []);
-			if (options?.withSession) {
-				await options.withSession(freshCtx);
+			// A scripted cancellation REJECTS — the dispatcher treats a rejection as
+			// an unfilled slot (the detached replacement for the old `{cancelled}`
+			// return, which had no live-session swap to dismiss).
+			if (step.cancelled) {
+				throw new Error("createMockSessionChain: scripted child cancellation (spawnChild rejected).");
 			}
-			return { cancelled: false };
+			// The HOST sends the initial prompt as part of spawnChild (the production
+			// code no longer calls the child's sendUserMessage for it). Record it to
+			// `sentMessages` so prompt-ordering assertions hold — EXCEPT in reattach
+			// mode, where the host opens the persisted session without replaying it.
+			if (!options.reattach) sentMessages.push(options.prompt);
+			// `reattach` opens a persisted session WITHOUT replaying `prompt` — the
+			// child's branch is the scripted "resumed" transcript. The mock body never
+			// replays `prompt` anyway, so the child is synthesized the same way; the
+			// step's branch carries the prior session's messages.
+			const child = buildCtx("child", step.branch ?? []) as unknown as WorkflowSessionContext;
+			return options.withSession(child);
 		});
 
 		const ctx = {
 			...base,
 			waitForIdle: vi.fn(async () => {}),
-			newSession: newSessionSpy,
+			maxConcurrency: opts.maxConcurrency ?? 1,
+			spawnChild: spawnChildSpy,
 		} as Record<string, unknown>;
 
-		if (kind === "replaced") {
+		if (kind === "child") {
 			ctx.sendUserMessage = sendUserMessageFn;
 			ctx.sendMessage = vi.fn(async () => {});
 			ctx.sessionManager = {
@@ -347,7 +399,7 @@ export function createMockSessionChain(opts: MockSessionChainOptions): MockSessi
 			};
 		}
 
-		return ctx as unknown as ExtensionCommandContext;
+		return ctx as unknown as MockWorkflowCtx;
 	};
 
 	return {

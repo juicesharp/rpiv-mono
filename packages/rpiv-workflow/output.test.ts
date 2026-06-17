@@ -10,7 +10,7 @@
 
 import { describe, expect, it } from "vitest";
 import { fs } from "./handle.js";
-import { finalizeOutput } from "./output.js";
+import { FAILED_OUTPUT_KIND, failedOutput, finalizeOutput, isFailedOutput } from "./output.js";
 
 const baseCtx = {
 	stage: "research",
@@ -71,5 +71,21 @@ describe("finalizeOutput", () => {
 		// Downstream callers that need immutability MUST clone themselves;
 		// this keeps the hot path cheap.
 		expect(m.data).toBe(data);
+	});
+});
+
+describe("failedOutput / isFailedOutput (collect-all sentinel)", () => {
+	it("builds a real Output with the failed kind, NO artifacts, and the reason in data", () => {
+		const o = failedOutput(baseCtx, "validation exhausted");
+		expect(o.kind).toBe(FAILED_OUTPUT_KIND);
+		expect(o.artifacts).toEqual([]); // no artifacts → fanin readers skip it naturally
+		expect(o.data).toEqual({ reason: "validation exhausted" });
+		expect(o.meta).toEqual(baseCtx); // stamps meta like any other Output
+	});
+
+	it("isFailedOutput discriminates the sentinel from a normal Output", () => {
+		expect(isFailedOutput(failedOutput(baseCtx, "boom"))).toBe(true);
+		const normal = finalizeOutput({ kind: "artifacts", artifacts: [{ handle: fs("a.md") }], data: {} }, baseCtx);
+		expect(isFailedOutput(normal)).toBe(false);
 	});
 });

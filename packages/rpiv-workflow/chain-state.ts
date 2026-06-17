@@ -13,7 +13,7 @@
 
 import type { PromptFn, SkillStage, StageDef } from "./api.js";
 import { type Artifact, handleToString } from "./handle.js";
-import type { Output } from "./output.js";
+import { isFailedOutput, type Output } from "./output.js";
 import { readName, readsAll } from "./stage-def.js";
 import type { RunState } from "./types.js";
 
@@ -113,6 +113,18 @@ export async function resolveStagePrompt(prompt: string | PromptFn, cwd: string,
  * live loop entry (THE REPLAY CONTRACT); `undefined` there means a
  * truncated/corrupted trail and becomes a recorded refusal.
  */
+/** The last REAL (filled, non-failed) entry of a channel slot — the latest-wins
+ *  source. A produces-fanout channel is pre-sized + positionally filled, so its
+ *  tail can be `undefined` (pending) or a failed sentinel; scan backward instead
+ *  of asserting `slot[length-1]`. Returns `undefined` for an all-failed/empty slot. */
+function lastReal(slot: readonly (Output | undefined)[]): Output | undefined {
+	for (let i = slot.length - 1; i >= 0; i--) {
+		const o = slot[i];
+		if (o && !isFailedOutput(o)) return o;
+	}
+	return undefined;
+}
+
 export function stageEntryArgs(
 	def: StageDef,
 	stageName: string,
@@ -129,8 +141,22 @@ export function stageEntryArgs(
 			const slot = state.named[name];
 			if (!slot?.length) return undefined;
 			// `all` → every accumulated entry (fan-in); bare string → latest-wins.
-			const entries = readsAll(read) ? slot : [slot[slot.length - 1]!];
+			// A produces-fanout channel is PRE-SIZED (length === total) and
+			// positionally filled, so a slot can carry `undefined` (pending) or a
+			// failed sentinel. The latest-wins branch must NOT `slot[length-1]!`
+			// blindly: scan backward for the last REAL entry, and the per-entry loop
+			// skips unfilled/failed slots so a `fanin(...)` read contributes no args
+			// for them (the `.filter(Boolean)` convention needs no widening).
+			//
+			// ALL-FAILED FANIN CONTRACT: pre-sizing means the channel is
+			// always present once the fold ran, so the `!slot?.length` bail no longer
+			// fires for a fanout channel; when EVERY unit failed/unfilled this read
+			// contributes ZERO `--name` args and `stageEntryArgs` returns the
+			// assembled (possibly empty) string — NEVER `undefined`. Collect-all
+			// fanout runs synthesis even when all units failed.
+			const entries = readsAll(read) ? slot : [lastReal(slot)];
 			for (const entry of entries) {
+				if (!entry || isFailedOutput(entry)) continue; // unfilled (pending) or failed → no args
 				for (const artifact of entry.artifacts) {
 					parts.push(`--${name}`, handleToString(artifact.handle));
 				}
@@ -158,6 +184,21 @@ export function stageEntryArgs(
  *   - other side-effect          → leave the slot untouched.
  */
 export function applyCompletedStage(state: RunState, def: StageDef, stageName: string, output: Output): void {
+	// Fanout owns its channel through the index-addressed `placeFanoutOutput`
+	// fold (foldFanoutCompletion), so the produces-channel push here would
+	// double-write. Early-return for fanout. But the acts/side-effect
+	// PRIMARY-CLEAR (`inheritsArtifacts === false`) is IDEMPOTENT (it only sets
+	// primary = undefined), so run it here for fanout TOO: the SEQUENTIAL path (a
+	// resumed/non-pristine acts-fanout that routes through `step` → `dispatchUnit`
+	// → `recordStageSuccess` → here, not through foldFanoutCompletion until parallel
+	// resume is wired) would otherwise lose the primary-clear the only
+	// shipped fanout kind (acts) relies on. Live acts-fanout calls BOTH this and
+	// placeFanoutOutput — both set primary = undefined, harmless. Produces-fanout's
+	// channel push stays fold-only (non-idempotent → must not double-write).
+	if (def.loop?.kind === "fanout") {
+		if (def.kind !== "produces" && def.inheritsArtifacts === false) state.primaryArtifact = undefined;
+		return;
+	}
 	if (def.kind === "produces") {
 		const next = output.artifacts[0];
 		if (next) state.primaryArtifact = next;
@@ -173,4 +214,38 @@ export function applyCompletedStage(state: RunState, def: StageDef, stageName: s
 	if (def.inheritsArtifacts === false) {
 		state.primaryArtifact = undefined;
 	}
+}
+
+// The fanout fold's SINGLE state-effect site. It subsumes BOTH
+// arms of applyCompletedStage (which early-returns for fanout),
+// index-addressed:
+//   • produces-fanout (collecting): pre-size the channel slot to `total`, assign
+//     the unit's output at its declared `index`; set primaryArtifact from
+//     artifacts[0] unless this is a failed sentinel (no artifacts).
+//   • acts-fanout (side-effect, def.kind !== "produces"): no channel; mirror the
+//     applyCompletedStage `inheritsArtifacts === false ⇒ clear primary` rule so
+//     today's acts-fanout semantics are preserved.
+// Called ONLY by foldFanoutCompletion (live + resume).
+export function placeFanoutOutput(
+	state: RunState,
+	def: StageDef,
+	stageName: string,
+	index: number,
+	total: number,
+	output: Output,
+): void {
+	if (def.kind === "produces") {
+		const key = resolvePublishName(def, stageName);
+		let slot = state.named[key];
+		if (!slot || slot.length !== total) {
+			slot = new Array<Output | undefined>(total) as Output[];
+			state.named[key] = slot;
+		}
+		slot[index] = output;
+		const next = output.artifacts[0];
+		if (next && !isFailedOutput(output)) state.primaryArtifact = next;
+		return;
+	}
+	// acts/side-effect fanout — mirror applyCompletedStage's non-produces arm.
+	if (def.inheritsArtifacts === false) state.primaryArtifact = undefined;
 }

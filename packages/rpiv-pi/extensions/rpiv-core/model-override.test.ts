@@ -366,11 +366,10 @@ describe("model-override", () => {
 	});
 
 	describe("stale-ctx resilience", () => {
-		// The exact phrase pi-core's ExtensionRunner throws from an invalidated
-		// proxy after the captured session was replaced/disposed mid-workflow.
-		const STALE_CTX_MESSAGE =
-			"This extension ctx is stale after session replacement or reload. " +
-			"Do not use a captured pi or command ctx after ctx.newSession().";
+		// Pins the substring `isStaleCtxError` matches in the phrase pi-core's
+		// ExtensionRunner throws from an invalidated proxy after the captured
+		// session was replaced/disposed mid-workflow.
+		const STALE_CTX_MESSAGE = "This extension ctx is stale after session replacement or reload.";
 
 		async function setupActive(
 			piOverrides: Partial<Record<"setModel" | "setThinkingLevel" | "getThinkingLevel", unknown>>,
