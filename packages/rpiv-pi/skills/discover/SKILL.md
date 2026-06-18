@@ -6,6 +6,7 @@ shell-timeout: 10
 contract:
   produces:
     kind: produces
+    interaction: foreground
     meta:
       artifactKind: frd
     data:
