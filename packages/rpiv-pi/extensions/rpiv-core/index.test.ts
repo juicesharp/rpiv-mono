@@ -5,7 +5,7 @@
  * (`workflow-execution-host.ts`): the ESC/Ctrl-C abort tap, the headless
  * degrade (no UI ⇒ no signal/dispose), the config→domain model mapping, the
  * `/startup`-seam registration, and the retirement of the workflow-path
- * model-override lifecycle latch (the per-child model now lives in
+ * model lifecycle latch (the per-child model now lives in
  * SdkWorkflowHost).
  *
  * The abort tap is the load-bearing logic: `ctx.signal` is dead during
@@ -22,7 +22,7 @@ import type { ExtensionAPI, ExtensionUIContext } from "@earendil-works/pi-coding
 import { createMockCommandCtx, createMockModelRegistry } from "@juicesharp/rpiv-test-utils";
 import { registerWorkflowExecutionHost } from "@juicesharp/rpiv-workflow/startup";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { __resetModelOverrideState, registerModelOverrideSessionStart } from "./model-override.js";
+import { __resetSessionCaptureState, registerSessionCapture } from "./session-capture.js";
 import {
 	createWorkflowExecution,
 	DEFAULT_MAX_CONCURRENCY,
@@ -60,7 +60,7 @@ function captureSession(ui: ExtensionUIContext): void {
 			if (event === "session_start") handler = h;
 		}),
 	} as unknown as ExtensionAPI;
-	registerModelOverrideSessionStart(pi);
+	registerSessionCapture(pi);
 	// ctx is `unknown` at the hook boundary — fire the capture directly.
 	void handler?.({}, { modelRegistry: createMockModelRegistry(), ui });
 }
@@ -72,7 +72,7 @@ function writeModels(config: unknown): void {
 }
 
 beforeEach(() => {
-	__resetModelOverrideState();
+	__resetSessionCaptureState();
 	vi.clearAllMocks();
 });
 

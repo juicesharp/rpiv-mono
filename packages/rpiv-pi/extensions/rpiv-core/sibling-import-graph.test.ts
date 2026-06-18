@@ -100,7 +100,7 @@ describe("sibling import graph", () => {
 		// Sanity: the walker actually traversed the registrar graph — guards
 		// against an edge-extraction regression silently visiting nothing.
 		expect(visited.length).toBeGreaterThan(10);
-		expect(visited).toContain("model-override.ts");
+		expect(visited).toContain("session-capture.ts");
 		expect(visited).toContain("skill-contracts-source.ts");
 		expect(violations).toEqual([]);
 	});

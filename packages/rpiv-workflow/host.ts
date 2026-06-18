@@ -132,9 +132,9 @@ export interface WorkflowHostContext {
 	 * in-flight children, not just between stages.
 	 *
 	 * `reattach`, when provided, makes the host OPEN the persisted session at
-	 * `sessionFile` (instead of creating a fresh one) and DELIVER it to
-	 * `withSession` WITHOUT sending `prompt` — the prior turn already ran, so
-	 * the body promotes from the existing branch or re-prompts via
+	 * `sessionFile` IN PLACE (appending to it) instead of creating a fresh one,
+	 * and DELIVER it to `withSession` WITHOUT sending `prompt` — the prior turn
+	 * already ran, so the body promotes from the existing branch or re-prompts via
 	 * `sendUserMessage`. This is the detached replacement for the deleted
 	 * adopt-a-file session-swap path: session-backed resume of a failed
 	 * single stage (`resumeWithSessionLadder`) and per-unit reattach
@@ -142,6 +142,17 @@ export interface WorkflowHostContext {
 	 * On a non-persisting (in-memory) host or a missing
 	 * file the host falls back to a fresh child; the runner already gates
 	 * `reattach` on a `locateSessionFile` hit, so the file is known to exist.
+	 *
+	 * `fork`, when provided, makes the host FORK the persisted session at
+	 * `sessionFile` into a NEW child session (new id, new file) carrying the full
+	 * prior transcript as context, WITHOUT mutating the source file and WITHOUT
+	 * sending `prompt` (the body sends the continuation turn via `sendUserMessage`,
+	 * then measures the inherited prefix). This is how `sessionPolicy: "continue"`
+	 * continues its predecessor's conversation under detachment — the predecessor's
+	 * file stays intact (DAG-fork-safe; the continue child has its own resumable
+	 * identity). The runner gates `fork` on a `locateSessionFile` hit, so the file
+	 * is known to exist. At most one of `reattach` / `fork` is set; both suppress
+	 * the host's initial `prompt` send.
 	 */
 	spawnChild<T>(options: {
 		prompt: string;
@@ -149,16 +160,17 @@ export interface WorkflowHostContext {
 		model?: ModelSelection;
 		signal?: AbortSignal;
 		reattach?: { sessionFile: string };
+		fork?: { sessionFile: string };
 		withSession: (child: WorkflowSessionContext) => Promise<T>;
 	}): Promise<T>;
 }
 
 /**
- * The child ctx delivered to `spawnChild`'s `withSession` callback. Identical
- * to `WorkflowHostContext` except `sendUserMessage` is GUARANTEED present — the
- * host always wires a sender into a freshly-spawned child session. Narrowing
- * the (now removed) optional to required here is a compile-time fact for every
- * caller operating inside a session.
+ * The child ctx delivered to `spawnChild`'s `withSession` callback. The parent
+ * `WorkflowHostContext` declares NO sender; this session subtype ADDS
+ * `sendUserMessage` as the guaranteed in-session sender — the host always wires
+ * one into a freshly-spawned child session. So any caller operating inside a
+ * session can send without a presence check, a compile-time fact of the subtype.
  */
 export interface WorkflowSessionContext extends WorkflowHostContext {
 	sendUserMessage(content: string): Promise<void>;

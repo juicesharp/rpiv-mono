@@ -483,7 +483,17 @@ describe("loop driver — parallel fanout abort + fault tolerance", () => {
 			expect(stageErrors).toHaveLength(1); // the rejected worker → recordWorkerThrow → onStageError
 			expect(endFired).toBe(true); // onWorkflowEnd still fired (the envelope always fires)
 			expect(endSuccess).toBe(false);
-			expect(readRows().filter((r) => r.status === "failed")).toHaveLength(1); // exactly one terminal-failure row
+			const failed = readRows().filter((r) => r.status === "failed");
+			expect(failed).toHaveLength(1); // exactly one terminal-failure row
+			// L4-02: the unit identity rides as STRUCTURED row fields — `stage` stays
+			// the parent graph identity (never the old `name (unit N)` string).
+			const row = failed[0]!;
+			expect(row.stage).toBe("audit"); // parent graph identity, no "(unit …)" fold
+			expect(String(row.stage)).not.toContain("(unit ");
+			expect(row.parent).toBe("audit");
+			expect(row.role).toBe("produce");
+			expect(row.unitIndex).toBe(1); // the worker that threw was unit index 1
+			expect(row.unitId).toBe("u1"); // author-stable unit identity
 		} finally {
 			dispose();
 		}

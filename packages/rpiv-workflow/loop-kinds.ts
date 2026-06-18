@@ -18,7 +18,8 @@
  * `unitTagOf`, `judgeStageDef`, `LoopEntry`, `NextStep`.
  */
 
-import type { AssessLoop, IterateLoop, LoopDef, StageDef, Unit, UnitRole } from "./api.js";
+import type { AssessLoop, FanoutLoop, IterateLoop, LoopDef, StageDef, Unit, UnitRole } from "./api.js";
+import { decorateStage, runIdentityOf } from "./audit.js";
 // Fanout completion is INDEX-ADDRESSED (place-by-unitIndex), the
 // shared authority for the live parallel fold AND the resume fold so the two
 // reconstruct byte-identical declared-order state regardless of
@@ -29,7 +30,8 @@ import { isPanel, type Judge, type PanelJudge, panelMembers, resolveJudgePrompt 
 import { MSG_LOOP_CURSOR_CORRUPT } from "./messages.js";
 import { finalizeOutput, isFailedOutput, type Output, type OutputMeta } from "./output.js";
 import { StagePreflightError } from "./runner/errors.js";
-import type { RunContext, RunState } from "./types.js";
+import { laneFor } from "./sessions/spawn.js";
+import type { RunContext, RunState, StageSession, UnitRef, WorkflowHostContext } from "./types.js";
 
 // ---------------------------------------------------------------------------
 // Cursor + entry vocabulary (kind-agnostic, shared live + fold)
@@ -63,6 +65,61 @@ export interface LoopEntry {
 	units?: readonly Unit[];
 }
 
+/**
+ * The dependency-injection contract every loop driver runs against — the engine
+ * primitives (`runner/run-stage.ts` `buildLoopDeps`) handed to the sequential
+ * (`loop.ts`), parallel (`loop-parallel.ts`), and resume (`runner/resume-loop.ts`)
+ * paths so none of them imports the engine back (cycle-free). Homed HERE beside
+ * `LoopEntry` — the type it references — so it is a leaf shared by all consumers
+ * with no module owning a back-edge to declare it.
+ */
+export interface LoopDeps {
+	/** Dispatch one unit through the standard stage-session path. */
+	runStageSession: (ctx: WorkflowHostContext, s: StageSession) => Promise<void>;
+	/**
+	 * Resume the chain after the loop finishes — receives the loop node's REAL
+	 * name. `Promise<unknown>` so the walk's `ChainOutcome`-returning composed
+	 * advance plugs in directly (the driver only awaits settlement).
+	 */
+	advanceAfter: (
+		curCtx: WorkflowHostContext,
+		completedName: string,
+		completedIdx: number,
+		run: RunContext,
+	) => Promise<unknown>;
+	/** Re-capture the outcome's pre-stage snapshot per unit (ctx + stage name for the fail-soft warning). */
+	captureSnapshot: (
+		curCtx: WorkflowHostContext,
+		stageName: string,
+		def: StageDef,
+		idx: number,
+		run: RunContext,
+	) => Promise<unknown>;
+	/** Record the terminal failure when `onCap: "halt"` trips — verify-worded for verify stages. */
+	haltLoop: (
+		curCtx: WorkflowHostContext,
+		run: RunContext,
+		e: Pick<LoopEntry, "name" | "def">,
+		count: number,
+		cap: number,
+	) => Promise<void>;
+	/** Record a mid-flight run abort at the loop seam (FAIL_WORKFLOW_ABORTED).
+	 *  Keeps the drivers free of engine imports; wired to `recordAbortedAtSeam`. */
+	recordAborted: (curCtx: WorkflowHostContext, name: string, run: RunContext) => Promise<void>;
+	/** Funnel an UNEXPECTED worker rejection (not a workflow halt) to a
+	 *  terminal-failure row + onStageError, terminating state WITHOUT re-throwing,
+	 *  so entry() resolves and onWorkflowEnd still fires. Wraps recordEntryThrow.
+	 *  The unit's identity (`unit` + its `skill`) lands as STRUCTURED row fields —
+	 *  the row's `stage` stays the parent graph identity. */
+	recordWorkerThrow: (
+		curCtx: WorkflowHostContext,
+		unit: UnitRef,
+		skill: string,
+		run: RunContext,
+		err: unknown,
+	) => Promise<void>;
+}
+
 /** Mutable generation cursor threaded through the continuation self-calls. */
 export interface LoopCursor {
 	/** 0-based index of the NEXT unit (== the round for assess). */
@@ -89,6 +146,11 @@ export interface LoopCursor {
 	/** Fanout only — declared-index slot array (length = units.length). A unit's
 	 *  output lands at slots[unitIndex]; `undefined` = still pending. */
 	slots?: (Output | undefined)[];
+	/** Fanout only — count of filled slots (completion bookkeeping), derived from
+	 *  `slots` by `foldFanoutCompletion`. Distinct from `index` (the next-unit
+	 *  pointer): parallel completion fills slots out of order, so this count is NOT
+	 *  a position. `undefined` until the first unit folds. */
+	filledCount?: number;
 }
 
 /** Pristine cursor for a live (non-resume) loop entry. */
@@ -302,9 +364,10 @@ export interface LoopKindStrategy {
 }
 
 /** Place a fanout unit's output at its DECLARED index in both the cursor and the
- *  named channel. `cursor.index` becomes the filled-slot COUNT (completion);
- *  `lastProduce` is the highest-index non-failed slot (deterministic — order-free,
- *  so live + resume + re-dispatch agree). */
+ *  named channel. `cursor.filledCount` becomes the filled-slot count (completion);
+ *  `cursor.index` is left untouched — it stays the next-unit pointer. `lastProduce`
+ *  is the highest-index non-failed slot (deterministic — order-free, so live +
+ *  resume + re-dispatch agree). */
 export function foldFanoutCompletion(
 	state: RunState,
 	cursor: LoopCursor,
@@ -316,7 +379,7 @@ export function foldFanoutCompletion(
 ): void {
 	if (!cursor.slots) cursor.slots = new Array<Output | undefined>(total);
 	cursor.slots[index] = output;
-	cursor.index = cursor.slots.reduce<number>((n, s) => (s !== undefined ? n + 1 : n), 0);
+	cursor.filledCount = cursor.slots.reduce<number>((n, s) => (s !== undefined ? n + 1 : n), 0);
 	cursor.lastProduce = lastNonFailedSlot(cursor.slots);
 	placeFanoutOutput(state, def, stageName, index, total, output);
 }
@@ -328,6 +391,56 @@ function lastNonFailedSlot(slots: readonly (Output | undefined)[]): LoopCursor["
 		if (o && !isFailedOutput(o)) return { output: o, artifact: o.artifacts[0] };
 	}
 	return undefined;
+}
+
+/** THE fanout fail-fast narrow — `true` when a fanout loop opted out of the
+ *  default collect-all via `fanout({ failFast: true })`. The ONE spelling of the
+ *  kind+field guard the dispatcher (sibling-cancel) and `buildUnitSession`
+ *  (`collectAll`) both read, so the narrow can't drift across its read sites. */
+export const isFailFast = (loop: LoopDef): boolean => loop.kind === "fanout" && (loop as FanoutLoop).failFast === true;
+
+/** Factored unit StageSession — shared by the sequential `dispatchUnit` (loop.ts)
+ *  and the parallel `dispatchUnitDetached` (loop-parallel.ts); differs only in
+ *  `onSuccess` and the threaded `signal`. Populates the per-child execution
+ *  controls (lane/model/signal). The sequential path passes `run.signal`
+ *  (run-level abort only); the detached path passes the per-generation
+ *  `genAbort.signal` (run-level abort OR fail-fast sibling cancel). */
+export function buildUnitSession(
+	e: LoopEntry,
+	u: Extract<NextStep, { kind: "unit" }>,
+	index: number,
+	run: RunContext,
+	snapshot: unknown,
+	signal: AbortSignal | undefined,
+	onSuccess: StageSession["onSuccess"],
+): StageSession {
+	return {
+		cwd: run.cwd,
+		runId: run.runId,
+		state: run.state,
+		prompt: u.prompt,
+		stageName: decorateStage(e.name, u.tag), // DISPLAY only — machine identity is `unit`
+		skill: u.skill,
+		lifecycle: run.lifecycle,
+		runIdentity: runIdentityOf(run),
+		stage: u.def,
+		skillContracts: run.skillContracts,
+		stageIndex: e.stageIdx,
+		snapshot,
+		branchOffset: undefined,
+		unit: { parent: e.name, role: u.role, index, id: u.id, label: u.label },
+		lane: laneFor(run.skillContracts, u.skill),
+		model: run.resolveModel?.({ stage: e.name, skill: u.skill }),
+		signal,
+		// fanout units collect-all by default (opt out via fanout({ failFast: true }));
+		// the `kind === "fanout"` guard is LOAD-BEARING: iterate/assess units MUST NOT
+		// collect-all — they advance the cursor (advanceCursor), so a soft-halt sentinel
+		// would land in `accumulated` AND diverge live/resume (the resume fold skips the
+		// collected:true row). See advanceCursor's "never collect-all" invariant note.
+		collectAll: e.loop.kind === "fanout" && !isFailFast(e.loop),
+		onFailure: undefined,
+		onSuccess,
+	};
 }
 
 /** The fanout unit descriptor at `index` — the shape `fanoutStrategy.pull`
@@ -350,17 +463,24 @@ export function fanoutUnitAt(e: LoopEntry, index: number): Extract<NextStep, { k
 
 const fanoutStrategy: LoopKindStrategy = {
 	parallelizable: true,
+	// `pull` is the sequential single-dispatch fallback — currently UNREACHED for
+	// fanout (live entry routes to runFanoutParallel; resume routes to
+	// runFanoutResume before `runLoop` ever calls `step`). Kept so the strategy
+	// Record stays total. `cursor.index` is the next-unit pointer (not the count).
 	async pull(e, cursor, cap) {
 		if (cursor.index >= e.units!.length) return { kind: "complete" }; // runLoopStage computed units (empty never reaches the driver)
 		if (cursor.index >= cap) return { kind: "cap", count: cursor.index };
 		return fanoutUnitAt(e, cursor.index); // shared descriptor
 	},
+	// Dead at runtime — `guardRow` (resume.ts) short-circuits fanout drift via
+	// `row.unitIndex`/`unitId` and never calls this. Kept for Record totality.
+	// `cursor.index` here is the next-unit pointer.
 	async guardExpectation(gen, row) {
 		if (!gen.units || gen.cursor.index >= gen.units.length) return false;
 		return unitTagOf(gen.units[gen.cursor.index]!) === row.unitId;
 	},
 	async hasPending(_loop, probe) {
-		return probe.cursor.index < (probe.units?.length ?? 0);
+		return (probe.cursor.filledCount ?? 0) < (probe.units?.length ?? 0);
 	},
 };
 

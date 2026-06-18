@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### State trail schema v1 → v2 (BREAKING — resume)
+
+#### Changed
+- **`STATE_SCHEMA_VERSION` bumped 1 → 2.** Parallel-fanout trails place completion rows by `unitIndex` (not trail order) and carry a `collected:true` discriminator for soft-halted collect-all units — a shape the v1 sequential fold cannot replay. New runs write v2.
+
+#### Breaking
+- **v1 runs are not resumable.** `reconstructState`'s header version gate cleanly refuses a v1 trail (an explicit `v: 1` or an absent `v`) with `version-mismatch` ("start a fresh run") rather than silently mis-replaying it under v2 semantics. There is no in-place migration. The version gate is the corruption interlock that makes this refusal safe at the upgrade boundary — a v1 trail left on disk after upgrade is rejected, never eaten by the v2 fold. (This bump is a second breaking change alongside the `WorkflowHost` port replacement; the detached-execution commit documented only the port.)
+
 ### Fanout-and-synthesize fan-in — `fanin()` read modifier
 
 #### Fixed

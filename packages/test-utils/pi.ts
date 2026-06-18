@@ -33,6 +33,7 @@ interface MockSpawnChildOptions<T = void> {
 	model?: ModelSelection;
 	signal?: AbortSignal;
 	reattach?: { sessionFile: string };
+	fork?: { sessionFile: string };
 	withSession: (child: WorkflowSessionContext) => Promise<T>;
 }
 
@@ -259,6 +260,14 @@ export interface MockSessionStep {
 	 * live-session swap to dismiss). Mutually exclusive with `branch`.
 	 */
 	cancelled?: boolean;
+	/**
+	 * The on-disk session file this child's `getSessionFile()` reports. Used by
+	 * `sessionPolicy: "continue"` tests: a stage's recorded `SessionRef.file` must
+	 * point at a REAL file so `locateSessionFile` resolves it and the next
+	 * continue stage forks it. Write the file yourself (a one-line JSONL header is
+	 * enough). Default: the shared `/tmp/test-session.jsonl` stub.
+	 */
+	sessionFile?: string;
 }
 
 export interface MockSessionChainOptions extends MockCtxOptions {
@@ -344,7 +353,7 @@ export function createMockSessionChain(opts: MockSessionChainOptions): MockSessi
 		sentMessages.push(typeof content === "string" ? content : JSON.stringify(content));
 	});
 
-	const buildCtx = (kind: "outer" | "child", branch: unknown[]): MockWorkflowCtx => {
+	const buildCtx = (kind: "outer" | "child", branch: unknown[], sessionFile?: string): MockWorkflowCtx => {
 		const base = createMockCtx({
 			...opts,
 			// Override branch with the provided parameter — for "outer" kind this is
@@ -373,13 +382,17 @@ export function createMockSessionChain(opts: MockSessionChainOptions): MockSessi
 			// The HOST sends the initial prompt as part of spawnChild (the production
 			// code no longer calls the child's sendUserMessage for it). Record it to
 			// `sentMessages` so prompt-ordering assertions hold — EXCEPT in reattach
-			// mode, where the host opens the persisted session without replaying it.
-			if (!options.reattach) sentMessages.push(options.prompt);
-			// `reattach` opens a persisted session WITHOUT replaying `prompt` — the
-			// child's branch is the scripted "resumed" transcript. The mock body never
-			// replays `prompt` anyway, so the child is synthesized the same way; the
-			// step's branch carries the prior session's messages.
-			const child = buildCtx("child", step.branch ?? []) as unknown as WorkflowSessionContext;
+			// AND fork modes, where the host opens/forks the persisted session without
+			// replaying `prompt` (the body sends the continuation via sendUserMessage).
+			if (!options.reattach && !options.fork) sentMessages.push(options.prompt);
+			// `reattach` opens a persisted session in place; `fork` copies a
+			// predecessor's session into a new child. Both load a scripted prior
+			// transcript and the mock body never replays `prompt`, so the child is
+			// synthesized the same way; the step's branch carries the prior messages
+			// (and, for fork, grows when the body sends the continuation via an
+			// overridden `sendUserMessageFn`). `sessionFile` lets the recorded
+			// `SessionRef.file` point at a real file so a later continue can fork it.
+			const child = buildCtx("child", step.branch ?? [], step.sessionFile) as unknown as WorkflowSessionContext;
 			return options.withSession(child);
 		});
 
@@ -396,6 +409,9 @@ export function createMockSessionChain(opts: MockSessionChainOptions): MockSessi
 			ctx.sessionManager = {
 				...((base as { sessionManager?: object }).sessionManager ?? {}),
 				getBranch: vi.fn(() => branch),
+				// A continue stage forks the predecessor whose recorded `SessionRef.file`
+				// this reports; override only when the step declares a real file.
+				...(sessionFile !== undefined ? { getSessionFile: vi.fn(() => sessionFile) } : {}),
 			};
 		}
 

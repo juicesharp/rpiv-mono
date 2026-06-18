@@ -29,6 +29,8 @@
  * rpiv-pi).
  */
 
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import type { Model } from "@earendil-works/pi-ai";
 import {
 	type AgentSession,
@@ -59,14 +61,67 @@ import type {
  * `rpiv-warp` arms a 300ms idle timer on `agent_end` that calls
  * `buildIdlePromptPayload(ctx)` reading `ctx.cwd`; once the child is disposed
  * the orphaned timer fires against the invalidated runner → uncaught stale-ctx
- * crash. Matched by package dir anywhere in the extension's path. Extend this
- * list as other terminal/UI observer extensions appear; `session_shutdown`-on-
- * teardown (B) is the general safety net for anything not listed here.
+ * crash.
+ *
+ * An extension opts ITSELF out of child loading by declaring
+ * `"pi": { "ambientObserver": true }` in its `package.json` — a self-declared
+ * capability marker read pre-factory (see `isAmbientChildExtension`). This list
+ * is a TRANSITIONAL backstop matched by package dir anywhere in the extension's
+ * path, for siblings that have not yet adopted the marker; drop a name once its
+ * package ships the manifest flag. `session_shutdown`-on-teardown (B) is the
+ * general safety net for anything missed by both.
  */
 export const CHILD_AMBIENT_EXTENSION_DENYLIST: readonly string[] = ["rpiv-warp"];
 
-/** True when an extension is a launcher-only ambient observer (denylisted). */
+/** The `pi` manifest flag a sibling sets to opt itself out of child loading. */
+export const AMBIENT_OBSERVER_MANIFEST_FLAG = "ambientObserver";
+
+/**
+ * Memoized lookup of a boolean `pi.<flag>` from the `package.json` owning
+ * `resolvedPath`. Keyed by `resolvedPath::flag`; manifests are immutable for a
+ * run so this needs no reset. Fail-soft: any missing file / parse error → false.
+ */
+const manifestFlagCache = new Map<string, boolean>();
+
+function findPackageJson(startPath: string): string | undefined {
+	let dir = dirname(startPath);
+	for (let i = 0; i < 32; i++) {
+		const candidate = join(dir, "package.json");
+		if (existsSync(candidate)) return candidate;
+		const parent = dirname(dir);
+		if (parent === dir) return undefined; // hit filesystem root
+		dir = parent;
+	}
+	return undefined;
+}
+
+/** Read `pi.<flag> === true` from the package owning `resolvedPath` (pre-factory, fail-soft). */
+export function readPiManifestFlag(resolvedPath: string, flag: string): boolean {
+	if (!resolvedPath) return false;
+	const key = `${resolvedPath}::${flag}`;
+	const cached = manifestFlagCache.get(key);
+	if (cached !== undefined) return cached;
+	let result = false;
+	try {
+		const pkgPath = findPackageJson(resolvedPath);
+		if (pkgPath) {
+			const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as { pi?: Record<string, unknown> };
+			result = pkg.pi?.[flag] === true;
+		}
+	} catch {
+		result = false; // fail-soft — a malformed/absent manifest is "not ambient"
+	}
+	manifestFlagCache.set(key, result);
+	return result;
+}
+
+/**
+ * True when an extension is a launcher-only ambient observer. Prefers the
+ * sibling's self-declared `pi.ambientObserver` manifest marker (read pre-factory
+ * from its `resolvedPath`); falls back to the transitional name denylist.
+ */
 export function isAmbientChildExtension(ext: Pick<Extension, "path" | "resolvedPath">): boolean {
+	if (readPiManifestFlag(ext.resolvedPath ?? "", AMBIENT_OBSERVER_MANIFEST_FLAG)) return true;
 	const haystack = `${ext.path ?? ""}\n${ext.resolvedPath ?? ""}`;
 	return CHILD_AMBIENT_EXTENSION_DENYLIST.some((name) => haystack.includes(name));
 }
@@ -108,6 +163,15 @@ export interface SdkWorkflowHostDeps {
 }
 
 /**
+ * Maximum nested fan-out depth. A child carries the full executor surface, so a
+ * skill running in a child could itself `fanout` → `spawnChild` recursively. The
+ * host root is depth 0; each child increments. `2` permits host → child →
+ * grandchild and rejects the 4th level — a backstop against runaway recursion
+ * and unbounded rate-limit blast-radius, not an expected workflow shape.
+ */
+export const MAX_FANOUT_DEPTH = 2;
+
+/**
  * Detached executor host. Every stage / fanout unit runs in a child
  * `AgentSession` this host owns; the interactive session never executes a stage
  * and is never swapped. The model is resolved per child (NO `pi.setModel()`);
@@ -139,30 +203,45 @@ export class SdkWorkflowHost implements WorkflowHostContext {
 		return Promise.resolve();
 	}
 
-	async spawnChild<T>(options: {
+	spawnChild<T>(options: {
 		prompt: string;
 		lane: ExecutionLane;
 		model?: ModelSelection;
 		signal?: AbortSignal;
 		reattach?: { sessionFile: string };
+		fork?: { sessionFile: string };
 		withSession: (child: WorkflowSessionContext) => Promise<T>;
 	}): Promise<T> {
-		// (A) Build the child's resource loader with the SAME discovery
-		// createAgentSession would do when omitted (cwd + agentDir + settings),
-		// but filtered: ambient launcher-only observers (rpiv-warp et al.) are
-		// dropped before their factories run. A FRESH loader per child is
-		// mandatory — `LoadExtensionsResult` carries a shared `runtime`, so
-		// reusing one loader across concurrent children would cross-wire their
-		// extension runtimes.
-		const agentDir = getAgentDir();
-		const resourceLoader = new DefaultResourceLoader({
-			cwd: this.cwd,
-			agentDir,
-			settingsManager: SettingsManager.create(this.cwd, agentDir),
-			extensionsOverride: withoutAmbientExtensions,
-		});
-		await resourceLoader.reload();
+		// The runner's top-level dispatch enters at depth 0; nested fan-out from
+		// within a child increments (see `adapt`).
+		return this.spawnAtDepth(0, options);
+	}
 
+	/**
+	 * Spawn one child at a known fan-out depth. The orchestration spine: build the
+	 * filtered loader → create the child session → wire abort → bind UI lane →
+	 * dispatch the prompt → run `withSession` → tear down. The depth guard fires
+	 * BEFORE any session is created, so an over-deep fan-out costs nothing.
+	 */
+	private async spawnAtDepth<T>(
+		depth: number,
+		options: {
+			prompt: string;
+			lane: ExecutionLane;
+			model?: ModelSelection;
+			signal?: AbortSignal;
+			reattach?: { sessionFile: string };
+			fork?: { sessionFile: string };
+			withSession: (child: WorkflowSessionContext) => Promise<T>;
+		},
+	): Promise<T> {
+		if (depth > MAX_FANOUT_DEPTH) {
+			throw new Error(
+				`rpiv: nested fan-out depth ${depth} exceeds MAX_FANOUT_DEPTH (${MAX_FANOUT_DEPTH}) — a child fanned out too deeply`,
+			);
+		}
+
+		const resourceLoader = await this.buildChildResourceLoader();
 		const { session } = await createAgentSession({
 			cwd: this.cwd,
 			// Borrow ONLY the registry; authStorage is still defaulted per child
@@ -170,13 +249,7 @@ export class SdkWorkflowHost implements WorkflowHostContext {
 			// not defaulted, so children skip launcher-only observer extensions.
 			modelRegistry: this.deps.modelRegistry,
 			resourceLoader,
-			// FRESH child: run-scoped persistence (a new file under childSessionsDir,
-			// keyed by the new sessionId). REATTACH: OPEN the
-			// persisted file so the child carries the prior transcript/branch — the
-			// detached replacement for the deleted ctx.switchSession adopt.
-			sessionManager: options.reattach
-				? SessionManager.open(options.reattach.sessionFile, this.deps.childSessionsDir)
-				: SessionManager.create(this.cwd, this.deps.childSessionsDir),
+			sessionManager: this.createChildSessionManager(options),
 			model: this.resolveModelKey(options.model?.model),
 			thinkingLevel: options.model?.thinking,
 		});
@@ -195,17 +268,64 @@ export class SdkWorkflowHost implements WorkflowHostContext {
 			await session.bindExtensions({
 				uiContext: options.lane === "foreground" ? this.deps.uiContext : undefined,
 			});
-			// FRESH child: send the initial prompt (/skill: text-expansion; resolves
-			// even on abort). REATTACH: the prior turn already ran and its
-			// transcript is loaded, so DO NOT replay the prompt — withSession's body
-			// promotes from the branch or re-prompts via sendUserMessage. Replaying
-			// here would double-run the stage.
-			if (!options.reattach) await session.prompt(options.prompt);
-			return await options.withSession(this.adapt(session, options.lane));
+			await this.dispatchChildPrompt(session, options);
+			return await options.withSession(this.adapt(session, options.lane, depth));
 		} finally {
 			options.signal?.removeEventListener("abort", onAbort);
 			await this.teardownChild(session); // (B) session_shutdown → dispose
 		}
+	}
+
+	/**
+	 * (A) Build the child's resource loader with the SAME discovery
+	 * createAgentSession would do when omitted (cwd + agentDir + settings), but
+	 * filtered: ambient launcher-only observers (rpiv-warp et al.) are dropped
+	 * before their factories run. A FRESH loader per child is mandatory —
+	 * `LoadExtensionsResult` carries a shared `runtime`, so reusing one loader
+	 * across concurrent children would cross-wire their extension runtimes.
+	 */
+	private async buildChildResourceLoader(): Promise<DefaultResourceLoader> {
+		const agentDir = getAgentDir();
+		const resourceLoader = new DefaultResourceLoader({
+			cwd: this.cwd,
+			agentDir,
+			settingsManager: SettingsManager.create(this.cwd, agentDir),
+			extensionsOverride: withoutAmbientExtensions,
+		});
+		await resourceLoader.reload();
+		return resourceLoader;
+	}
+
+	/**
+	 * Select the child's session source. FRESH: run-scoped persistence (a new file
+	 * under childSessionsDir, keyed by the new sessionId). REATTACH: OPEN the
+	 * persisted file IN PLACE so the child carries the prior transcript/branch —
+	 * the detached replacement for the deleted ctx.switchSession adopt. FORK: copy
+	 * a predecessor's persisted session into a NEW file (new id) carrying its full
+	 * transcript, leaving the source intact — how `continue` continues its
+	 * predecessor's conversation without mutating its file.
+	 */
+	private createChildSessionManager(options: {
+		reattach?: { sessionFile: string };
+		fork?: { sessionFile: string };
+	}): SessionManager {
+		if (options.reattach) return SessionManager.open(options.reattach.sessionFile, this.deps.childSessionsDir);
+		if (options.fork) return SessionManager.forkFrom(options.fork.sessionFile, this.cwd, this.deps.childSessionsDir);
+		return SessionManager.create(this.cwd, this.deps.childSessionsDir);
+	}
+
+	/**
+	 * FRESH child: send the initial prompt (/skill: text-expansion; resolves even
+	 * on abort). REATTACH/FORK: the loaded transcript already carries the prior
+	 * turn(s), so DO NOT replay the prompt — withSession's body promotes from the
+	 * branch (reattach) or sends the continuation turn via sendUserMessage after
+	 * measuring the inherited prefix (fork). Replaying here would double-run the stage.
+	 */
+	private async dispatchChildPrompt(
+		session: AgentSession,
+		options: { prompt: string; reattach?: unknown; fork?: unknown },
+	): Promise<void> {
+		if (!options.reattach && !options.fork) await session.prompt(options.prompt);
 	}
 
 	/**
@@ -232,13 +352,15 @@ export class SdkWorkflowHost implements WorkflowHostContext {
 	}
 
 	/** A child ctx — the guaranteed-in-session surface the stage machinery holds. */
-	private adapt(session: AgentSession, lane: ExecutionLane): WorkflowSessionContext {
+	private adapt(session: AgentSession, lane: ExecutionLane, depth: number): WorkflowSessionContext {
 		return {
 			cwd: this.cwd,
 			hasUI: lane === "foreground" && this.deps.live.hasUI,
 			ui: this.relayUi(),
 			maxConcurrency: this.maxConcurrency,
-			spawnChild: this.spawnChild.bind(this), // a child may itself fan out (depth budget — deferred)
+			// A child may itself fan out — each level increments the depth, bounded
+			// by MAX_FANOUT_DEPTH (guarded in spawnAtDepth).
+			spawnChild: (opts) => this.spawnAtDepth(depth + 1, opts),
 			sessionManager: {
 				// The transcript reader (`transcript.ts`) expects the ENVELOPED branch
 				// shape `{ type: "message", message: {...} }` (SessionEntry[]) — the same

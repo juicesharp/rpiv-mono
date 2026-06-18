@@ -2,10 +2,9 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { registerModelOverrideLifecycle, registerModelOverrideSessionStart } from "./model-override.js";
+import { registerSessionCapture } from "./session-capture.js";
 import { parseSkillInvocation, registerSkillBracket } from "./skill-bracket.js";
 
-const LIFECYCLE_KEY = Symbol.for("@juicesharp/rpiv-workflow:lifecycle");
 const BASELINE_MODEL = { provider: "anthropic", id: "baseline" };
 
 interface Handlers {
@@ -37,7 +36,7 @@ function writeModels(config: unknown) {
 
 async function setupBracket(opts: { setModelResult?: boolean; baselineThinking?: string } = {}) {
 	const fake = makePi(opts);
-	registerModelOverrideSessionStart(fake.pi);
+	registerSessionCapture(fake.pi);
 	registerSkillBracket(fake.pi);
 	const registry = { find: vi.fn((p: string, m: string) => ({ provider: p, id: m })) };
 	await fake.handlers.session_start?.({}, { modelRegistry: registry, model: BASELINE_MODEL });
@@ -107,26 +106,6 @@ describe("skill-bracket — input arming", () => {
 		expect(setModel).not.toHaveBeenCalled();
 	});
 
-	it("no-op when workflow has armed its baseline (re-entrancy guard)", async () => {
-		writeModels({ skills: { commit: { model: "zai/glm-4-7" } } });
-		const fake = makePi();
-		registerModelOverrideSessionStart(fake.pi);
-		await registerModelOverrideLifecycle(fake.pi);
-		registerSkillBracket(fake.pi);
-		const registry = { find: vi.fn((p: string, m: string) => ({ provider: p, id: m })) };
-		await fake.handlers.session_start?.({}, { modelRegistry: registry, model: BASELINE_MODEL });
-
-		const reg = ((globalThis as Record<symbol, unknown>)[LIFECYCLE_KEY] ?? []) as Array<{
-			onWorkflowStart?: (ctx: unknown) => unknown;
-		}>;
-		expect(reg.length).toBeGreaterThan(0);
-		await reg[reg.length - 1].onWorkflowStart?.({});
-
-		fake.setModel.mockClear();
-		await fake.handlers.input!({ text: "/skill:commit", source: "interactive" });
-		expect(fake.setModel).not.toHaveBeenCalled();
-	});
-
 	it("parses wrapped <skill name=…> form when rpiv-args transformed first", async () => {
 		writeModels({ skills: { research: { model: "openai/gpt-5.5" } } });
 		const { handlers, setModel } = await setupBracket();
@@ -181,7 +160,7 @@ describe("skill-bracket — stale-ctx resilience", () => {
 		(fake.pi as unknown as Record<string, unknown>).setModel = vi.fn(async () => {
 			throw new Error(STALE);
 		});
-		registerModelOverrideSessionStart(fake.pi);
+		registerSessionCapture(fake.pi);
 		registerSkillBracket(fake.pi);
 		const registry = { find: vi.fn((p: string, m: string) => ({ provider: p, id: m })) };
 		await fake.handlers.session_start?.({}, { modelRegistry: registry, model: BASELINE_MODEL });
@@ -194,7 +173,7 @@ describe("skill-bracket — stale-ctx resilience", () => {
 	it("swallows stale-ctx on agent_end restore AND clears state", async () => {
 		writeModels({ skills: { commit: { model: "zai/glm-4-7" } } });
 		const fake = makePi();
-		registerModelOverrideSessionStart(fake.pi);
+		registerSessionCapture(fake.pi);
 		registerSkillBracket(fake.pi);
 		const registry = { find: vi.fn((p: string, m: string) => ({ provider: p, id: m })) };
 		await fake.handlers.session_start?.({}, { modelRegistry: registry, model: BASELINE_MODEL });
@@ -218,7 +197,7 @@ describe("skill-bracket — stale-ctx resilience", () => {
 		(fake.pi as unknown as Record<string, unknown>).setModel = vi.fn(async () => {
 			throw new Error("boom: real bug");
 		});
-		registerModelOverrideSessionStart(fake.pi);
+		registerSessionCapture(fake.pi);
 		registerSkillBracket(fake.pi);
 		const registry = { find: vi.fn((p: string, m: string) => ({ provider: p, id: m })) };
 		await fake.handlers.session_start?.({}, { modelRegistry: registry, model: BASELINE_MODEL });
@@ -242,7 +221,7 @@ describe("skill-bracket — soft-fail on setModel returning false", () => {
 });
 
 // Local sweep — repo-wide test/setup.ts beforeEach handles
-// __resetSkillBracketState + __resetModelOverrideState.
+// __resetSkillBracketState + __resetSessionCaptureState.
 beforeEach(() => {
 	vi.restoreAllMocks();
 });

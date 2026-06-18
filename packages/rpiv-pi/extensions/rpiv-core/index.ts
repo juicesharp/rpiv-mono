@@ -14,10 +14,10 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { FLAG_DEBUG } from "./constants.js";
-import { registerModelOverrideSessionStart } from "./model-override.js";
 import { registerModelsConfigValidation } from "./models-config-validate.js";
 import { registerBuiltInWorkflows } from "./register-built-in-workflows.js";
 import { registerRpivModelsCommand } from "./rpiv-models/index.js";
+import { registerSessionCapture } from "./session-capture.js";
 import { registerSessionHooks } from "./session-hooks.js";
 import { registerSetupCommand } from "./setup-command.js";
 import { registerSkillBracket } from "./skill-bracket.js";
@@ -46,9 +46,9 @@ export default function (pi: ExtensionAPI) {
 	// rpiv-workflow). The detached executor (SdkWorkflowHost) borrows the captured
 	// registry/uiContext for per-child models — the workflow-path lifecycle latch
 	// is retired. The /skill: bracket below still consumes the capture.
-	registerModelOverrideSessionStart(pi);
+	registerSessionCapture(pi);
 	// Standalone /skill: model/effort override bracket. MUST register AFTER
-	// registerModelOverrideSessionStart so the bracket's `getCapturedModel()`
+	// registerSessionCapture so the bracket's `getCapturedModel()`
 	// read at input-arm time sees the populated baseline. The bracket's
 	// `input` + `agent_end` handlers are independent of rpiv-workflow's
 	// presence — they read models.json directly.
@@ -73,7 +73,7 @@ export default function (pi: ExtensionAPI) {
 	// the workflow registry is read lazily at `/wf` time, long after this settles.
 	//
 	// The SDK execution-host provider REPLACES the retired workflow-path
-	// model-override lifecycle latch — per-child models are resolved through the
+	// model lifecycle latch — per-child models are resolved through the
 	// provider's resolveModel and applied at child-session creation, not via a
 	// global pi.setModel() flip. (The session_start capture + /skill: bracket stay.)
 	void (async () => {

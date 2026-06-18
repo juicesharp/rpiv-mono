@@ -44,7 +44,7 @@ import type { SessionRef } from "../state/index.js";
 import { type BranchEntry, classifyStop, readBranch, readSessionRef, type StopSignal } from "../transcript.js";
 import type { StageSession, WorkflowHostContext, WorkflowSessionContext } from "../types.js";
 import { produceAndValidateOutput } from "./extraction.js";
-import { branchOffsetFor, spawnChildAndRun } from "./spawn.js";
+import { branchOffsetFor, resendIntoChild, spawnChildAndRun } from "./spawn.js";
 
 // ===========================================================================
 // PUBLIC ENTRIES — what the orchestrator calls
@@ -53,6 +53,30 @@ import { branchOffsetFor, spawnChildAndRun } from "./spawn.js";
 /** Execute one DAG stage (or loop unit) in its own detached child session. */
 export async function runStageSession(ctx: WorkflowHostContext, s: StageSession): Promise<void> {
 	await spawnChildAndRun(ctx, s, (child) => postStage(ctx, child, s));
+}
+
+/**
+ * Continue body — runs inside a FORKED child (`forkChildSession`, spawn.ts)
+ * carrying the predecessor's full transcript. Re-derive the inherited-prefix
+ * offset from the actual forked branch BEFORE the continuation turn is sent
+ * (the boundary past which only this stage's own output lives), send the turn
+ * via `resendIntoChild` (`/skill:` and templates expand through the rpiv-args
+ * input hook exactly as a fresh prompt would), then run the standard `postStage`
+ * scoped by that offset. From there the flow is byte-identical to a fresh stage —
+ * stop classification, extraction, persistence — only sliced past the prefix.
+ *
+ * The re-derived offset (not a launcher-branch read) flows into `postStage` →
+ * `readSessionRef`, so the continue stage's own row records the offset its forked
+ * branch ran under; resume re-applies that persisted value verbatim.
+ */
+export async function continueStageSession(
+	obsCtx: WorkflowHostContext,
+	child: WorkflowSessionContext,
+	s: StageSession,
+): Promise<void> {
+	const offset = readBranch(child).length;
+	await resendIntoChild(child, s.prompt);
+	await postStage(obsCtx, child, s, offset);
 }
 
 // ===========================================================================
@@ -83,8 +107,11 @@ export async function postStage(
 	obsCtx: WorkflowHostContext,
 	child: WorkflowSessionContext,
 	s: StageSession,
+	// Defaults to the policy-derived offset (fresh ⇒ undefined; resume continue ⇒
+	// the persisted row's value). The live continue body passes the value it
+	// re-derived from the forked branch, which is authoritative there.
+	offset: number | undefined = branchOffsetFor(s.stage.sessionPolicy, s.branchOffset),
 ): Promise<void> {
-	const offset = branchOffsetFor(s.stage.sessionPolicy, s.branchOffset);
 	const session = readSessionRef(child, offset);
 	const outcome = readSessionOutcome(child, offset);
 	// Abort surfaces as a STOP CLASSIFICATION, not a promise rejection:
@@ -96,24 +123,18 @@ export async function postStage(
 	// `isAbortError` branch leaves the slot unfilled, and (c) resume re-dispatches
 	// the unit cleanly.
 	if (s.signal?.aborted || outcome.stop === "aborted") throw new WorkflowAbortError();
-	// A fanout unit marked `collectAll` records a NON-terminal failed row + a
-	// sentinel slot instead of halting the run; everything else keeps the existing
-	// fail-fast halt. Recording + the continuation run on obsCtx (the launcher) —
-	// the per-stage child is disposed when the stage ends.
-	if (outcome.stop !== "stop") {
-		if (s.collectAll) return softHaltUnit(obsCtx, s, `${s.skill} stopped (${outcome.stop})`, session);
-		return haltStage(obsCtx, s, outcome.stop, session);
-	}
+	// Every halt below routes through the single `haltStageOrSoftHalt` gate: a
+	// fanout unit marked `collectAll` records a NON-terminal failed row + a sentinel
+	// slot instead of halting the run; everything else takes the arm's fail-fast
+	// halt. Recording + the continuation run on obsCtx (the launcher) — the per-stage
+	// child is disposed when the stage ends.
+	if (outcome.stop !== "stop") return haltStageOrSoftHalt(obsCtx, s, { kind: "stop", stop: outcome.stop }, session);
 
 	const result = await produceAndValidateOutput(child, s, outcome.branch, offset);
-	if (result.kind === "fatal") {
-		if (s.collectAll) return softHaltUnit(obsCtx, s, result.message, session);
-		return haltStageWithExtractionError(obsCtx, s, result.message, session);
-	}
-	if (result.kind === "validation-exhausted") {
-		if (s.collectAll) return softHaltUnit(obsCtx, s, result.failureSummary, session);
-		return haltStageWithValidationFailure(obsCtx, s, result.failureSummary, session);
-	}
+	if (result.kind === "fatal")
+		return haltStageOrSoftHalt(obsCtx, s, { kind: "extraction", message: result.message }, session);
+	if (result.kind === "validation-exhausted")
+		return haltStageOrSoftHalt(obsCtx, s, { kind: "validation", failureSummary: result.failureSummary }, session);
 
 	if (!(await recordStageSuccess(obsCtx, s, result.output, session))) return;
 	// The validated Output goes to the continuation directly — loop drivers
@@ -125,6 +146,61 @@ export async function postStage(
 // ===========================================================================
 // HALT HELPERS — turn a halt reason into the right audit-layer call
 // ===========================================================================
+
+/**
+ * A stage's reason-to-halt, tagged by the post-processing arm that produced it.
+ * Carries BOTH the fail-fast halt shape (the per-arm record call) and the
+ * collect-all soft-halt reason string, so ONE gate decides between them.
+ */
+type HaltReason =
+	| { kind: "stop"; stop: Exclude<StopSignal, "stop"> }
+	| { kind: "extraction"; message: string }
+	| { kind: "validation"; failureSummary: string };
+
+/**
+ * The single collect-all fork. A `collectAll` fanout unit soft-halts (a
+ * NON-terminal `collected:true` row + a `failedOutput` sentinel the parallel fold
+ * places by index); every other stage takes the arm's fail-fast terminal halt.
+ * Replaces the `if (s.collectAll)` that was inlined at all three halt sites.
+ */
+async function haltStageOrSoftHalt(
+	ctx: WorkflowHostContext,
+	s: StageSession,
+	reason: HaltReason,
+	session: SessionRef | null,
+): Promise<void> {
+	if (s.collectAll) return softHaltUnit(ctx, s, softHaltReason(s, reason), session);
+	return failFastHalt(ctx, s, reason, session);
+}
+
+/** Collect-all reason text per arm — byte-identical to the prior inline strings. */
+function softHaltReason(s: StageSession, reason: HaltReason): string {
+	switch (reason.kind) {
+		case "stop":
+			return `${s.skill} stopped (${reason.stop})`;
+		case "extraction":
+			return reason.message;
+		case "validation":
+			return reason.failureSummary;
+	}
+}
+
+/** Fail-fast terminal halt per arm — dispatches to the existing helpers, unchanged. */
+function failFastHalt(
+	ctx: WorkflowHostContext,
+	s: StageSession,
+	reason: HaltReason,
+	session: SessionRef | null,
+): Promise<void> {
+	switch (reason.kind) {
+		case "stop":
+			return haltStage(ctx, s, reason.stop, session);
+		case "extraction":
+			return haltStageWithExtractionError(ctx, s, reason.message, session);
+		case "validation":
+			return haltStageWithValidationFailure(ctx, s, reason.failureSummary, session);
+	}
+}
 
 async function haltStage(
 	ctx: WorkflowHostContext,
@@ -255,6 +331,11 @@ export async function recordStageSuccess(
 				lifecycleCtxFromSession(s),
 			);
 		} else {
+			// Roll the predecessor session forward: a downstream `continue` stage
+			// forks THIS session. Single stages only — loop units take the `if (s.unit)`
+			// branch above and never seed a continuation. `null` (in-memory predecessor)
+			// degrades a later continue to fresh, since `locateSessionFile` finds no file.
+			s.state.lastSession = session ?? undefined;
 			ctx.ui.notify(MSG_STAGE_COMPLETE(s.skill), "info");
 			await s.lifecycle.fire(ctx, "onStageEnd", currentStageRef(s), output, lifecycleCtxFromSession(s));
 		}

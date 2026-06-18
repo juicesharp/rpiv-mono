@@ -817,8 +817,11 @@ describe("sessions — collector ctx (always-unsliced branch + policy-derived of
 		const currentTail = [mockAssistantMessage("current stage output")];
 		const childBranch = [...priorPrefix, ...currentTail];
 
-		// Continue collapses to a detached child like fresh; the only divergence is
-		// the preserved branchOffset (branchOffsetFor returns the captured value).
+		// postStage scopes a continue stage's outcome by the offset on its session
+		// (`branchOffsetFor` returns the captured value for continue) — the mechanism
+		// the live continue body re-derives from the forked branch and the resume
+		// path takes from the persisted row. Driven here through `runStageSession`
+		// with an explicit `branchOffset` to test the slicing in isolation.
 		const chain = createMockSessionChain({
 			cwd: tmpDir,
 			steps: [{ branch: childBranch }],
@@ -897,9 +900,9 @@ describe("sessions — collector ctx (always-unsliced branch + policy-derived of
 				cwd: tmpDir,
 				state: freshRunState(),
 				stage: stage({ sessionPolicy: "fresh", outcome: recordingOutcome }),
-				// Stage's captured offset is set artificially here; in production
-				// `computeBranchOffset` returns undefined for fresh stages anyway.
-				// The handler short-circuits — fresh ALWAYS emits `undefined`.
+				// Stage's captured offset is set artificially here; a fresh stage's
+				// session is never assigned one in production. `branchOffsetFor`
+				// short-circuits — fresh ALWAYS emits `undefined`.
 				branchOffset: 5,
 			}),
 		);

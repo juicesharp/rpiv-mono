@@ -14,6 +14,10 @@
  * concurrent session files.
  */
 
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { WorkflowHostContext } from "@juicesharp/rpiv-workflow";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -98,8 +102,11 @@ vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
 });
 
 import {
+	AMBIENT_OBSERVER_MANIFEST_FLAG,
 	CHILD_AMBIENT_EXTENSION_DENYLIST,
 	isAmbientChildExtension,
+	MAX_FANOUT_DEPTH,
+	readPiManifestFlag,
 	SdkWorkflowHost,
 	type SdkWorkflowHostDeps,
 	withoutAmbientExtensions,
@@ -506,5 +513,121 @@ describe("child teardown (B) — session_shutdown before dispose", () => {
 
 		// the rejected shutdown emit is swallowed; dispose still runs.
 		expect(sessions[0].dispose).toHaveBeenCalledTimes(1);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// (L0-06) Nested fan-out is depth-bounded. A child carries the full executor
+// surface, so a skill in a child could recurse fanout → spawnChild forever; the
+// guard caps it and rejects BEFORE a child session is created.
+// ---------------------------------------------------------------------------
+
+describe("spawnChild — nested fan-out depth guard", () => {
+	it("allows nesting up to MAX_FANOUT_DEPTH", async () => {
+		expect(MAX_FANOUT_DEPTH).toBe(2);
+		const { deps } = makeDeps();
+		const host = new SdkWorkflowHost(deps);
+
+		// depth 0 → 1 → 2 (== cap), all succeed
+		const result = await host.spawnChild({
+			prompt: "p",
+			lane: "background",
+			withSession: (c1) =>
+				c1.spawnChild({
+					prompt: "p",
+					lane: "background",
+					withSession: (c2) =>
+						c2.spawnChild({ prompt: "p", lane: "background", withSession: async () => "deep-ok" }),
+				}),
+		});
+
+		expect(result).toBe("deep-ok");
+		expect(createAgentSessionMock).toHaveBeenCalledTimes(3); // one per allowed level
+	});
+
+	it("rejects beyond MAX_FANOUT_DEPTH without creating the over-deep child session", async () => {
+		const { deps } = makeDeps();
+		const host = new SdkWorkflowHost(deps);
+
+		await expect(
+			host.spawnChild({
+				prompt: "p",
+				lane: "background",
+				withSession: (c1) =>
+					c1.spawnChild({
+						prompt: "p",
+						lane: "background",
+						withSession: (c2) =>
+							c2.spawnChild({
+								prompt: "p",
+								lane: "background",
+								withSession: (c3) =>
+									c3.spawnChild({ prompt: "p", lane: "background", withSession: async () => "too-deep" }),
+							}),
+					}),
+			}),
+		).rejects.toThrow(/depth/i);
+
+		// depths 0,1,2 created sessions (3); depth 3 threw before createAgentSession.
+		expect(createAgentSessionMock).toHaveBeenCalledTimes(3);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// (L0-04) Self-declared ambient-observer manifest marker. A sibling opts itself
+// out of child loading via `pi.ambientObserver:true` in its package.json, read
+// pre-factory from resolvedPath. The name denylist is a transitional backstop.
+// ---------------------------------------------------------------------------
+
+describe("ambient-observer manifest marker (L0-04)", () => {
+	let tmp: string;
+	afterEach(() => {
+		if (tmp) rmSync(tmp, { recursive: true, force: true });
+	});
+
+	it("readPiManifestFlag reads pi.<flag> from the nearest package.json (fail-soft otherwise)", () => {
+		tmp = mkdtempSync(join(tmpdir(), "rpiv-marker-"));
+		writeFileSync(join(tmp, "package.json"), JSON.stringify({ name: "x", pi: { ambientObserver: true } }));
+		expect(readPiManifestFlag(join(tmp, "nested", "index.ts"), AMBIENT_OBSERVER_MANIFEST_FLAG)).toBe(true);
+		// A path with no resolvable manifest fails soft.
+		expect(readPiManifestFlag("/nonexistent/deep/index.ts", AMBIENT_OBSERVER_MANIFEST_FLAG)).toBe(false);
+		expect(readPiManifestFlag("", AMBIENT_OBSERVER_MANIFEST_FLAG)).toBe(false);
+	});
+
+	it("isAmbientChildExtension honors the marker regardless of package name", () => {
+		tmp = mkdtempSync(join(tmpdir(), "rpiv-marker-"));
+		writeFileSync(
+			join(tmp, "package.json"),
+			JSON.stringify({ name: "rpiv-totally-fine", pi: { ambientObserver: true } }),
+		);
+		const resolvedPath = join(tmp, "index.ts");
+		// Marked → filtered, even though the name is NOT on the denylist.
+		expect(isAmbientChildExtension({ path: resolvedPath, resolvedPath })).toBe(true);
+	});
+
+	it("falls back to the name denylist for a marker-less extension", () => {
+		// Synthetic paths resolve no real package.json → marker false → denylist decides.
+		expect(
+			isAmbientChildExtension({
+				path: "/repo/packages/rpiv-warp/index.ts",
+				resolvedPath: "/repo/packages/rpiv-warp/index.ts",
+			}),
+		).toBe(true);
+		expect(
+			isAmbientChildExtension({
+				path: "/repo/packages/rpiv-todo/index.ts",
+				resolvedPath: "/repo/packages/rpiv-todo/index.ts",
+			}),
+		).toBe(false);
+	});
+
+	it("the real rpiv-warp package.json declares the ambientObserver marker", () => {
+		const warpPkg = fileURLToPath(new URL("../../../rpiv-warp/package.json", import.meta.url));
+		const pkg = JSON.parse(readFileSync(warpPkg, "utf8")) as { pi?: { ambientObserver?: boolean } };
+		expect(pkg.pi?.ambientObserver).toBe(true);
+		// And rpiv-pi's own package (the launcher) is NOT marked.
+		const selfPkg = fileURLToPath(new URL("../../package.json", import.meta.url));
+		const self = JSON.parse(readFileSync(selfPkg, "utf8")) as { pi?: { ambientObserver?: boolean } };
+		expect(self.pi?.ambientObserver ?? false).toBe(false);
 	});
 });

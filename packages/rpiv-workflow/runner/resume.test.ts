@@ -281,6 +281,75 @@ describe("reconstructState", () => {
 		expect(result.rows).toHaveLength(2);
 	});
 
+	it("reconstructs lastSession from the most recent completed single-stage row (cold continue forks it on resume)", async () => {
+		const out1 = fakeOutput([fakeArtifact("plans/p1.md")]);
+		const out2 = fakeOutput([fakeArtifact("plans/p2.md")]);
+		writeRunStages([
+			{
+				session: { id: "sess-plan", file: "/runs/plan.jsonl" },
+				stageNumber: 1,
+				stage: "plan",
+				skill: "plan",
+				status: "completed",
+				ts: "t1",
+				output: out1,
+			},
+			{
+				session: { id: "sess-build", file: "/runs/build.jsonl" },
+				stageNumber: 2,
+				stage: "build",
+				skill: "build",
+				status: "completed",
+				ts: "t2",
+				output: out2,
+			},
+		]);
+
+		const result = await reconstructState(tmpDir, linearWorkflow, baseHeader);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return; // type narrow
+
+		// The MOST RECENT completed single stage's session rolls forward (build
+		// overwrites plan) — what a downstream `continue` stage forks after a
+		// resume, byte-identical to the live `recordStageSuccess` single-stage branch.
+		expect(result.state.lastSession).toEqual({ id: "sess-build", file: "/runs/build.jsonl" });
+	});
+
+	it("a session:null row (script stage) does NOT clobber lastSession on resume (F2 replay parity)", async () => {
+		const out1 = fakeOutput([fakeArtifact("plans/p1.md")]);
+		const sideOut = fakeOutput([]); // script/side-effect output, no artifacts
+		writeRunStages([
+			{
+				session: { id: "sess-plan", file: "/runs/plan.jsonl" },
+				stageNumber: 1,
+				stage: "plan",
+				skill: "plan",
+				status: "completed",
+				ts: "t1",
+				output: out1,
+			},
+			{
+				// Script/side-effect stages persist `session: null` and the LIVE path
+				// never touches `lastSession` — so the fold must leave it untouched too.
+				session: null,
+				stageNumber: 2,
+				stage: "commit",
+				skill: "commit",
+				status: "completed",
+				ts: "t2",
+				output: sideOut,
+			},
+		]);
+
+		const result = await reconstructState(tmpDir, sideEffectWorkflow, baseHeader);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return; // type narrow
+
+		// `lastSession` stays on plan's real session — a `continue` after the
+		// sessionless stage forks plan on BOTH live and resume (no degrade-to-fresh).
+		expect(result.state.lastSession).toEqual({ id: "sess-plan", file: "/runs/plan.jsonl" });
+	});
+
 	it("side-effect stage between produces: primary preserved, named untouched by side-effect", async () => {
 		const art1 = fakeArtifact("plans/p1.md");
 		const out1 = fakeOutput([art1]);

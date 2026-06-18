@@ -29,6 +29,7 @@ import type { Artifact } from "./handle.js";
 import type { ExecutionLane, ModelSelection, WorkflowHost, WorkflowHostContext } from "./host.js";
 import type { Output } from "./output.js";
 import type { SkillContractMap } from "./skill-contract.js";
+import type { SessionRef } from "./state/index.js";
 import type { RunTrigger } from "./triggers.js";
 
 // Re-export the host port so runtime layers can pull `RunContext`,
@@ -81,6 +82,19 @@ export interface RunState {
 	stagesCompleted: number;
 	/** Most recently allocated stageNumber. Advances on every recordStage call. */
 	lastAllocatedStageNumber: number;
+	/**
+	 * The `SessionRef` of the most recently completed SINGLE stage — what a
+	 * downstream `sessionPolicy: "continue"` stage forks from (its predecessor's
+	 * persisted child session). Rolls forward like `output`: set on every
+	 * single-stage success (`recordStageSuccess`) and reconstructed by the resume
+	 * fold from the last completed single-stage row. Loop UNITS never touch it
+	 * (they take the unit branch of `recordStageSuccess` and fold via
+	 * `foldUnitRow`), so a `continue` right after a loop forks the last single
+	 * stage — the loop was a fan-out excursion with no single session to continue.
+	 * Undefined at run start or when the predecessor persisted no session (an
+	 * in-memory host); either degrades a `continue` stage to a fresh dispatch.
+	 */
+	lastSession?: SessionRef;
 
 	// ── Telemetry (post-hoc only; not consulted by chain advancement) ──
 	telemetry: {

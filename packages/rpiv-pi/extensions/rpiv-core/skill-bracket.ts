@@ -14,24 +14,22 @@
  *    wrapped `<skill name="…">…</skill>` — Decision 3).
  *  - Arm ONLY on explicit config.skills?.[name] entry (Decision 7 refined —
  *    defaults are not a trigger; only explicit per-skill entries arm).
- *  - Defer when isWorkflowBaselineCaptured() is true (Decision 5).
  *  - All pi mutations wrapped in applyOrSkipIfStale (shared with
- *    model-override.ts).
+ *    session-capture.ts).
  *  - Single nullable arm slot — Pi serializes turns; concurrent input cannot
  *    fire while agent_end is pending.
  *  - Restore baseline ALWAYS at agent_end (setModel persists to disk).
  */
 
 import { type ExtensionAPI, type InputEvent, parseSkillBlock } from "@earendil-works/pi-coding-agent";
+import { loadModelsConfig, type ModelThinkingLevelValue } from "./models-config.js";
 import {
 	applyEffectiveModel,
 	applyOrSkipIfStale,
 	type BaselineSnapshot,
 	getCapturedModel,
-	isWorkflowBaselineCaptured,
 	restoreBaseline,
-} from "./model-override.js";
-import { loadModelsConfig, type ModelThinkingLevelValue } from "./models-config.js";
+} from "./session-capture.js";
 
 const SKILL_PREFIX = "/skill:";
 
@@ -71,7 +69,6 @@ export function registerSkillBracket(pi: ExtensionAPI): void {
 		if (event.source !== "interactive") return { action: "continue" } as const;
 		const parsed = parseSkillInvocation(event.text);
 		if (!parsed) return { action: "continue" } as const;
-		if (isWorkflowBaselineCaptured()) return { action: "continue" } as const;
 
 		const config = loadModelsConfig();
 		const override = config.skills?.[parsed.name];
@@ -80,11 +77,6 @@ export function registerSkillBracket(pi: ExtensionAPI): void {
 		}
 
 		await applyOrSkipIfStale(async () => {
-			// Re-check workflow re-entrancy INSIDE applyOrSkipIfStale to defend
-			// against a workflow arming between the outer guard and this point
-			// (Plan Review row #concern-B).
-			if (isWorkflowBaselineCaptured()) return;
-
 			const baselineThinking = pi.getThinkingLevel() as ModelThinkingLevelValue;
 			armedBaseline = {
 				thinking: baselineThinking,

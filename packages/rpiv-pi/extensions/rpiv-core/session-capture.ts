@@ -1,31 +1,26 @@
 /**
- * model-override — Stage-level model/effort override via rpiv-workflow lifecycle.
+ * session-capture — session_start capture of {modelRegistry, uiContext, model}
+ * + shared model/effort apply/restore helpers.
  *
- * Registers a lifecycle listener that resolves per-stage model/effort overrides
- * from models.json and applies setModel/setThinkingLevel before each stage.
- * Baseline { model, thinking } is snapshotted at onWorkflowStart and restored
- * at onWorkflowEnd. Restoring the model is MANDATORY: setModel persists to the
- * on-disk settings file (runtime-traced), so an unrestored override permanently
- * rewrites the user's global default model.
+ * Captures modelRegistry, the current model, and the foreground UI context from
+ * session_start's ExtensionContext (which exposes them) and stores them in
+ * module scope. The detached executor (`SdkWorkflowHost`) borrows the captured
+ * registry/UI to resolve per-child models at child-session creation; the
+ * standalone `/skill:` bracket (skill-bracket.ts) borrows the captured model
+ * plus the shared `applyEffectiveModel`/`restoreBaseline` helpers.
+ *
+ * Restoring the model is MANDATORY: setModel persists to the on-disk settings
+ * file (runtime-traced), so an unrestored override permanently rewrites the
+ * user's global default model.
  *
  * Uses pi (ExtensionAPI) from closure — not WorkflowHostContext/WorkflowHost —
  * because pi persists across session replacements and is never invalidated.
- *
- * Both modelRegistry AND the current model are captured from session_start's
- * ExtensionContext (which exposes them) and stored in module scope, because
- * LifecycleContext (received by lifecycle listeners) exposes neither.
- *
- * Dynamic import of rpiv-workflow with isModuleNotFound guard — graceful
- * degradation when the sibling is not installed.
  */
 
 import type { ExtensionAPI, ExtensionUIContext, ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { parseModelKey } from "@juicesharp/rpiv-config";
-// Type-only — erased at runtime, so safe when the rpiv-workflow sibling is
-// absent (the value import of registerLifecycle stays dynamic + guarded).
-import type { LifecycleContext, StageRef, UnitEvent } from "@juicesharp/rpiv-workflow/registration";
-import { loadModelsConfig, type ModelThinkingLevelValue, resolveStageModel } from "./models-config.js";
-import { isModuleNotFound, isStaleCtxError } from "./utils.js";
+import type { ModelThinkingLevelValue } from "./models-config.js";
+import { isStaleCtxError } from "./utils.js";
 
 /** First parameter type of pi.setModel() — avoids importing Pi's Model<Api> generic. */
 export type CapturedModel = Parameters<ExtensionAPI["setModel"]>[0];
@@ -49,8 +44,9 @@ export interface BaselineSnapshot {
 }
 
 // ---------------------------------------------------------------------------
-// Module-level state — captured from session_start, used by lifecycle listeners.
-// Reset by __resetModelOverrideState() in test/setup.ts.
+// Module-level state — captured from session_start, used by SdkWorkflowHost
+// (registry/UI) + the skill bracket (model). Reset by
+// __resetSessionCaptureState() in test/setup.ts.
 // ---------------------------------------------------------------------------
 
 /**
@@ -71,29 +67,18 @@ let capturedModelRegistry: ModelRegistry | undefined;
 let capturedUiContext: ExtensionUIContext | undefined;
 
 /**
- * Current model captured from session_start ExtensionContext.model. Refreshed
- * only while NO workflow is active (!baselineCaptured) so a stage's own
- * newSession (which may re-fire session_start with the override model) can't
- * pollute the baseline we restore at workflow end.
+ * Current model captured from session_start ExtensionContext.model. Borrowed by
+ * the standalone `/skill:` bracket as the restore baseline. Under detachment
+ * every stage runs in an isolated child session, so a stage never re-fires the
+ * launcher's session_start — the capture stays the real human's current model.
  */
 let capturedModel: CapturedModel | undefined;
 
-/**
- * Baseline snapshot — set at workflow start, restored at workflow end.
- * Captures BOTH thinking and model: setModel persists to the on-disk settings
- * file (runtime-confirmed), so failing to restore the model permanently
- * rewrites the user's global default.
- */
-let baseline: BaselineSnapshot | undefined;
-let baselineCaptured = false;
-
 /** Test reset — wired into test/setup.ts beforeEach. */
-export function __resetModelOverrideState(): void {
+export function __resetSessionCaptureState(): void {
 	capturedModelRegistry = undefined;
 	capturedUiContext = undefined;
 	capturedModel = undefined;
-	baseline = undefined;
-	baselineCaptured = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -102,7 +87,7 @@ export function __resetModelOverrideState(): void {
 // This hook runs on every session_start, refreshing the captured reference.
 // ---------------------------------------------------------------------------
 
-export function registerModelOverrideSessionStart(pi: ExtensionAPI): void {
+export function registerSessionCapture(pi: ExtensionAPI): void {
 	pi.on(
 		"session_start",
 		async (
@@ -119,11 +104,11 @@ export function registerModelOverrideSessionStart(pi: ExtensionAPI): void {
 			if (ctx.ui) {
 				capturedUiContext = ctx.ui;
 			}
-			// ExtensionContext.model is the current model (LifecycleContext lacks it).
-			// Only capture while no workflow is active — a stage's newSession can
-			// re-fire session_start with the override model, which must NOT become
-			// the restore baseline.
-			if (!baselineCaptured && ctx.model !== undefined) {
+			// ExtensionContext.model is the current model — the restore baseline
+			// the /skill: bracket reads. Refreshed on every session_start; under
+			// detachment a stage's isolated child never re-fires the launcher's
+			// session_start, so this stays the real human's current model.
+			if (ctx.model !== undefined) {
 				capturedModel = ctx.model;
 			}
 		},
@@ -152,8 +137,7 @@ export function resolveModel(modelStr?: string): CapturedModel | undefined {
 }
 
 // ---------------------------------------------------------------------------
-// Lifecycle registration — registers onWorkflowStart/onStageStart/onWorkflowEnd.
-// Dynamic import of rpiv-workflow with isModuleNotFound guard.
+// Stale-ctx guard — shared by the skill bracket's apply/restore calls.
 // ---------------------------------------------------------------------------
 
 /**
@@ -163,7 +147,7 @@ export function resolveModel(modelStr?: string): CapturedModel | undefined {
  * session is gone the override is moot — the replacement session_start rebuilds
  * state — so there is nothing to apply. Any OTHER error (bad model key,
  * setModel rejected, real plumbing bug) is genuine and must propagate so the
- * lifecycle dispatcher surfaces it to the user.
+ * skill bracket surfaces it to the user.
  */
 export async function applyOrSkipIfStale(fn: () => void | Promise<void>): Promise<void> {
 	try {
@@ -264,127 +248,7 @@ export async function restoreBaseline(pi: ExtensionAPI, base: BaselineSnapshot):
 	pi.setThinkingLevel(base.thinking);
 }
 
-/**
- * The ONE override cascade — shared by onStageStart (per-stage) and
- * onUnitStart (per-unit). Resolves through models.json with the dispatched
- * skill, applies effective model + thinking, and records hasModelChange.
- * setBaselineModel=true enforces the no-bleedthrough invariant: an
- * unconfigured stage/unit reverts to baseline, not the previous override.
- */
-async function applyCascade(
-	pi: ExtensionAPI,
-	target: { workflow: string; stage: string; skill: string | undefined },
-	label: string,
-): Promise<void> {
-	if (!baselineCaptured || !baseline) return;
-
-	const config = loadModelsConfig();
-	const override = resolveStageModel(config, target);
-
-	await applyOrSkipIfStale(async () => {
-		const { hasModelChange } = await applyEffectiveModel(pi, {
-			overrideModel: override?.model,
-			baselineModel: baseline!.model,
-			overrideThinking: override?.thinking,
-			baselineThinking: baseline!.thinking,
-			label,
-			setBaselineModel: true,
-		});
-		baseline!.hasModelChange = hasModelChange;
-	});
-}
-
-/**
- * Register the stage model override lifecycle listener with rpiv-workflow.
- * Call from index.ts with pi — NOT from registerBuiltInWorkflows.
- */
-export async function registerModelOverrideLifecycle(pi: ExtensionAPI): Promise<void> {
-	try {
-		// Thin `/startup` entry (~8ms) — keeps the loader/DSL/runner off startup.
-		const { registerLifecycle } = await import("@juicesharp/rpiv-workflow/startup");
-
-		registerLifecycle({
-			onWorkflowStart: async () => {
-				// Snapshot baseline thinking + model. LifecycleContext lacks
-				// ctx.model, so model comes from capturedModel (set by the
-				// session_start handler while no workflow was active).
-				// getThinkingLevel reads the captured pi, which can be stale if the
-				// session was already replaced — bail quietly if so, leaving
-				// baselineCaptured false so later stages early-return.
-				await applyOrSkipIfStale(() => {
-					baseline = {
-						thinking: pi.getThinkingLevel() as ModelThinkingLevelValue,
-						model: capturedModel,
-						hasModelChange: false,
-					};
-					baselineCaptured = true; // freezes capturedModel until onWorkflowEnd
-				});
-			},
-
-			onStageStart: async (stage: StageRef, ctx: LifecycleContext) => {
-				// StageRef is discriminated on `kind` — only the "skill" arm carries
-				// `skill` (the post-alias dispatch target). Script stages pass
-				// `undefined`, and `resolveStageModel` skips the skills cascade rung.
-				await applyCascade(
-					pi,
-					{
-						workflow: ctx.workflow,
-						stage: stage.name,
-						skill: stage.kind === "skill" ? stage.skill : undefined,
-					},
-					`stage "${stage.name}"`,
-				);
-			},
-
-			onUnitStart: async (stage: StageRef, unit: UnitEvent, ctx: LifecycleContext) => {
-				// Per-unit model resolution through the SAME cascade onStageStart uses,
-				// with the unit's dispatched skill: produce units re-resolve the stage's
-				// own override (idempotent re-apply); JUDGE units resolve
-				// `skills.<judge.skill>` — judges get their own model for the first time.
-				// Units run strictly sequentially, so the global setModel flip is
-				// race-free.
-				await applyCascade(
-					pi,
-					{ workflow: ctx.workflow, stage: stage.name, skill: unit.skill },
-					`unit "${stage.name} (${unit.skill})"`,
-				);
-			},
-
-			onWorkflowEnd: async () => {
-				if (!baselineCaptured || !baseline) return;
-				const base = baseline;
-				// Reset state BEFORE attempting restore so a GENUINE (non-stale)
-				// throw from restoreBaseline can't leave baselineCaptured=true and
-				// poison every future workflow (each onStageStart would think a
-				// workflow is active; the skill-bracket would defer forever). The
-				// stale-ctx case is swallowed by applyOrSkipIfStale either way.
-				// Mirrors skill-bracket.ts agent_end's clear-before-restore.
-				baseline = undefined;
-				baselineCaptured = false;
-
-				// Restore baseline model + thinking. restoreBaseline skips setModel
-				// when hasModelChange=false (thinking-only overrides), avoiding an
-				// unnecessary disk write. setModel persists to disk, so restoring is
-				// MANDATORY when a model change was applied. If the session was
-				// replaced mid-run pi is stale and this throws — swallow it.
-				await applyOrSkipIfStale(() => restoreBaseline(pi, base));
-			},
-		});
-	} catch (err) {
-		if (isModuleNotFound(err)) return; // sibling absent — /rpiv-setup guides the user
-		throw err;
-	}
-}
-
 /** Return the captured baseline model from session_start, used by the standalone-skill bracket. */
 export function getCapturedModel(): CapturedModel | undefined {
 	return capturedModel;
-}
-
-/**
- * Return true if a workflow has armed its baseline. The skill-bracket reads
- * this to defer when the workflow path owns restore (Decision 5).
- */
-export function isWorkflowBaselineCaptured(): boolean {
-	return baselineCaptured;
 }

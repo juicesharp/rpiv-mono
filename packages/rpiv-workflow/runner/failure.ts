@@ -15,7 +15,7 @@ import {
 } from "../audit.js";
 import { formatError } from "../internal-utils.js";
 import { FAIL_WORKFLOW_ABORTED, MSG_STAGE_THREW, MSG_WORKFLOW_COMPLETE, STATUS_KEY } from "../messages.js";
-import type { RunContext, WorkflowHostContext } from "../types.js";
+import type { RunContext, UnitRef, WorkflowHostContext } from "../types.js";
 import { StagePreflightError } from "./errors.js";
 
 /**
@@ -59,8 +59,14 @@ export async function haltChain(
 	skill: string,
 	args: Parameters<typeof recordTerminalFailure>[2],
 	onFailure?: (ctx: WorkflowHostContext) => void,
+	unit?: UnitRef,
 ): Promise<ChainOutcome> {
-	await recordTerminalFailure(curCtx, auditCtxFor(run, stageName, skill), args, onFailure);
+	await recordTerminalFailure(
+		curCtx,
+		auditCtxFor(run, stageName, skill, unit ? { unit } : undefined),
+		args,
+		onFailure,
+	);
 	return "halted";
 }
 
@@ -72,12 +78,18 @@ export async function haltChain(
  *   attribution + messages. Recorded with the carried payload exactly.
  * - Any other `Error` — unexpected machinery failure; recorded with the
  *   generic `MSG_STAGE_THREW` shape attributed to the stage id.
+ *
+ * `unit` is present only for the fanout worker-throw sink (`recordWorkerThrow`):
+ * its `{ ref, skill }` lands the unit's structured identity on the row
+ * (`parent`/`role`/`unitId`/`unitIndex` via `unitRowFields`) and the fanned
+ * `skill`, so the unit's identity is NOT folded into the `stage` name string.
  */
 export async function recordEntryThrow(
 	curCtx: WorkflowHostContext,
 	name: string,
 	run: RunContext,
 	e: unknown,
+	unit?: { ref: UnitRef; skill: string },
 ): Promise<ChainOutcome> {
 	if (e instanceof StagePreflightError) {
 		return haltChain(
@@ -90,7 +102,15 @@ export async function recordEntryThrow(
 		);
 	}
 	const reason = formatError(e);
-	return haltChain(curCtx, run, name, name, failedArgs(MSG_STAGE_THREW(name, reason), reason));
+	return haltChain(
+		curCtx,
+		run,
+		name,
+		unit?.skill ?? name,
+		failedArgs(MSG_STAGE_THREW(name, reason), reason),
+		undefined,
+		unit?.ref,
+	);
 }
 
 /**

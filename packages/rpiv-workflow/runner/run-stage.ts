@@ -25,20 +25,20 @@ import { failedArgs, notifyPartialArtifacts, runIdentityOf } from "../audit.js";
 import { currentPrimaryArtifact, resolveStagePrompt, stageEntryArgs } from "../chain-state.js";
 import { lifecycleCtxFor, skillStageRef } from "../events.js";
 import { formatError, isAbortError } from "../internal-utils.js";
-import { announceLoopStart, type LoopDeps, runLoop } from "../loop.js";
-import { freshCursor, type LoopEntry } from "../loop-kinds.js";
+import { announceLoopStart, runLoop } from "../loop.js";
+import { freshCursor, type LoopDeps, type LoopEntry } from "../loop-kinds.js";
 import {
 	FAIL_LOOP_CAP_HALT,
 	FAIL_VERIFY_FAILED,
+	MSG_CONTINUE_FALLBACK,
 	MSG_RESUME_SESSION_FALLBACK,
 	MSG_SNAPSHOT_FAILED,
 	STATUS_KEY,
 	STATUS_STAGE,
 } from "../messages.js";
-import { locateSessionFile, reattachStageSession, runStageSession } from "../sessions/index.js";
-import { laneFor, reattachChildSession } from "../sessions/spawn.js";
+import { continueStageSession, locateSessionFile, reattachStageSession, runStageSession } from "../sessions/index.js";
+import { forkChildSession, laneFor, reattachChildSession } from "../sessions/spawn.js";
 import type { WorkflowStage } from "../state/index.js";
-import { readBranch } from "../transcript.js";
 import type { RunContext, StageSession, WorkflowHostContext } from "../types.js";
 import { advanceChain, type ChainDeps } from "./chain-advance.js";
 import { type ChainOutcome, haltChain, recordAbortedAtSeam, recordEntryThrow } from "./failure.js";
@@ -238,7 +238,6 @@ async function runSingleStage(
 	run: RunContext,
 ): Promise<ChainOutcome> {
 	const prep = await prepareSingleStage(curCtx, stage, idx, run);
-	const branchOffset = computeBranchOffset(curCtx, stage.def);
 
 	// onStageStart fires after preflight, before the Pi session opens.
 	await run.lifecycle.fire(
@@ -248,8 +247,34 @@ async function runSingleStage(
 		lifecycleCtxFor(run),
 	);
 
-	await runStageSession(curCtx, buildSingleStageSession(stage, idx, run, prep, branchOffset));
+	// `continue` forks the predecessor's persisted session (`run.state.lastSession`)
+	// into a fresh child carrying its transcript; `continueStageSession` re-derives
+	// the branch offset from that forked branch (NOT the launcher's). No predecessor
+	// session — start stage, after a loop, or the file is gone — degrades to a fresh
+	// dispatch, matching the `prompt-continue-at-start` warning. Fresh stages always
+	// pass `branchOffset: undefined`.
+	if (stage.def.sessionPolicy === "continue") {
+		const file = continueForkFile(run);
+		if (file) {
+			const s = buildSingleStageSession(stage, idx, run, prep, undefined);
+			await forkChildSession(curCtx, s, file, (child) => continueStageSession(curCtx, child, s));
+			return "dispatched";
+		}
+		curCtx.ui.notify(MSG_CONTINUE_FALLBACK(stage.skill), "info");
+	}
+
+	await runStageSession(curCtx, buildSingleStageSession(stage, idx, run, prep, undefined));
 	return "dispatched";
+}
+
+/**
+ * The predecessor session a `continue` stage forks from, resolved to an on-disk
+ * file — or `null` to degrade to a fresh dispatch (no prior session recorded, or
+ * its file was cleaned up / moved beyond `locateSessionFile`'s reach).
+ */
+function continueForkFile(run: RunContext): string | null {
+	const ref = run.state.lastSession;
+	return ref ? locateSessionFile(ref, run.runId, run.cwd) : null;
 }
 
 /**
@@ -411,11 +436,11 @@ export function buildLoopDeps(): LoopDeps {
 		haltLoop,
 		// Mid-flight run abort at the loop seam → FAIL_WORKFLOW_ABORTED.
 		recordAborted: (curCtx, name, run) => recordAbortedAtSeam(curCtx, name, run).then(() => undefined),
-		// Unexpected worker rejection → terminal-failure row, no re-throw.
-		// recordEntryThrow is UNCHANGED (4-arg, existing call sites); fold the unit
-		// index into the stage NAME rather than adding a pass-through param nothing reads.
-		recordWorkerThrow: (curCtx, name, unitIndex, run, err) =>
-			recordEntryThrow(curCtx, `${name} (unit ${unitIndex})`, run, err).then(() => undefined),
+		// Unexpected worker rejection → terminal-failure row, no re-throw. The
+		// unit's identity rides as a STRUCTURED field (`unit`) on the row — `stage`
+		// stays the parent graph identity, not a `name (unit N)` string.
+		recordWorkerThrow: (curCtx, unit, skill, run, err) =>
+			recordEntryThrow(curCtx, unit.parent, run, err, { ref: unit, skill }).then(() => undefined),
 	};
 }
 
@@ -433,12 +458,6 @@ export async function haltLoop(
 ): Promise<void> {
 	const args = e.def.verify ? failedArgs(FAIL_VERIFY_FAILED(e.name, cap)) : failedArgs(FAIL_LOOP_CAP_HALT(count, cap));
 	await haltChain(curCtx, run, e.name, e.name, args);
-}
-
-/** Entries before this index belong to prior stages; only meaningful for continue. */
-function computeBranchOffset(curCtx: WorkflowHostContext, def: StageDef): number | undefined {
-	if (def.sessionPolicy !== "continue") return undefined;
-	return readBranch(curCtx).length;
 }
 
 /** Runs whose snapshot-failure warning already fired — one notify per run, not per stage/unit. */

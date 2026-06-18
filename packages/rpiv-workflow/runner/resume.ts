@@ -214,6 +214,18 @@ function foldKnownStage(acc: FoldAcc, def: StageDef, row: WorkflowStage): void {
 	acc.lastStageNumber = Math.max(acc.lastStageNumber, row.stageNumber);
 	if (row.status !== "completed") return;
 	applyStageSuccess(acc.state, def, row.stage, row.output);
+	// Roll the predecessor session forward, mirroring the live `recordStageSuccess`
+	// single-stage branch — so a post-resume cold dispatch of a `continue` stage
+	// forks the same predecessor the live run would have. Single-stage rows only
+	// (unit rows fold via `foldUnitRow`, which never touches this slot).
+	//
+	// GUARD on a real session: the live writer runs ONLY for the skill/prompt
+	// single-stage success path (a non-null `SessionRef`). Script stages persist
+	// `session: null` via `persistStageSuccess` and never touch `lastSession`, so a
+	// `null` row here must LEAVE it untouched — clobbering it to `undefined` would
+	// degrade a `continue`-after-script to a fresh dispatch on resume while live
+	// forked the predecessor (a replay-parity breach).
+	if (row.session !== null) acc.state.lastSession = row.session;
 }
 
 /** Close the open generation: project the declared result — the live loop-advance, replayed. */
@@ -363,10 +375,10 @@ async function foldUnitRow(
  */
 async function guardRow(acc: FoldAcc, gen: OpenGeneration, row: WorkflowStage): Promise<void> {
 	// Fanout no longer asserts trail order: parallel completion + resume re-dispatch
-	// produce out-of-order trails, and `cursor.index` is a FILLED-SLOT COUNT (not a
-	// trail position), so the sequential `unitIndex === cursor.index` check would
-	// falsely drift. The `unitId` is a PLACEMENT key — verify it identifies the unit
-	// declared at `row.unitIndex`.
+	// produce out-of-order trails, and the fanout cursor tracks `filledCount` (a
+	// count, not a trail position), so a sequential `unitIndex === cursor.index`
+	// check would falsely drift. The `unitId` is a PLACEMENT key — verify it
+	// identifies the unit declared at `row.unitIndex`.
 	if (gen.loop.kind === "fanout") {
 		const i = row.unitIndex ?? -1;
 		const ok = i >= 0 && i < (gen.units?.length ?? 0) && unitTagOf(gen.units![i]!) === row.unitId;

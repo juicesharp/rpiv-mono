@@ -849,19 +849,34 @@ describe("runWorkflow", () => {
 	});
 
 	describe("sessionPolicy: continue", () => {
-		it("chains fresh → continue: continue spawns a detached child like fresh, with artifact handoff", async () => {
-			// Continue collapses to a detached child (no host fallback, no shared
-			// live session — its prior-session lineage cannot survive detachment by
-			// design). Both stages spawn off the SAME launcher ctx; stage 2's prompt
-			// still consumes stage 1's artifact (the handoff invariant).
+		it("chains fresh → continue: continue FORKS the predecessor's persisted session (offset re-derived)", async () => {
+			// Under detachment a `continue` stage forks its predecessor's persisted
+			// child session — carrying the prior transcript as context — instead of
+			// running fresh (the prior-session lineage survives detachment via
+			// SessionManager.forkFrom; OQ1 resolved). Stage 1's recorded
+			// SessionRef.file must point at a REAL file so `locateSessionFile`
+			// resolves it; stage 2 then spawns with `fork:{sessionFile}`, sends its
+			// turn via sendUserMessage (NOT a host prompt replay), and re-derives the
+			// branch offset from the forked branch (never the launcher's).
 			writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md");
 			writeArtifact(tmpDir, ".rpiv/artifacts/designs/d.md");
+			const s1File = join(tmpDir, "s1-session.jsonl");
+			writeFileSync(s1File, `${JSON.stringify({ type: "session", id: "s1" })}\n`);
+
+			// Stage 2's forked child starts as the inherited prior transcript; the
+			// continuation turn (carrying the artifact) is appended when the body
+			// sends it — exactly as a real sendUserMessage grows the branch.
+			const forkBranch: unknown[] = [mockAssistantMessage("earlier research discussion")];
 			const chain = createMockSessionChain({
 				cwd: tmpDir,
 				steps: [
-					{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/research/r.md")] },
-					{ branch: [mockAssistantMessage("Designed .rpiv/artifacts/designs/d.md")] },
+					{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/research/r.md")], sessionFile: s1File },
+					{ branch: forkBranch },
 				],
+			});
+			chain.sendUserMessageFn.mockImplementation(async (content: unknown) => {
+				chain.sentMessages.push(String(content));
+				forkBranch.push(mockAssistantMessage("Designed .rpiv/artifacts/designs/d.md"));
 			});
 
 			const result = await runWorkflow(chain.ctx, {
@@ -873,7 +888,46 @@ describe("runWorkflow", () => {
 			expect(result.stagesCompleted).toBe(2);
 			expect(result.lastArtifact).toBe(".rpiv/artifacts/designs/d.md");
 			expect(chain.ctx.spawnChild).toHaveBeenCalledTimes(2);
+
+			// Stage 2 FORKED stage 1's persisted session — not a fresh child, not an
+			// in-place reattach.
+			const secondSpawn = (chain.ctx.spawnChild as ReturnType<typeof vi.fn>).mock.calls[1]![0];
+			expect(secondSpawn.fork).toEqual({ sessionFile: s1File });
+			expect(secondSpawn.reattach).toBeUndefined();
+
+			// Stage 1's prompt was host-sent; stage 2's continuation was body-sent
+			// (sendUserMessage) — yet the handoff arg still consumes stage 1's artifact.
 			expect(chain.sentMessages).toEqual(["/skill:research x", "/skill:design .rpiv/artifacts/research/r.md"]);
+
+			// The continue row records the offset re-derived from the forked branch
+			// (1 inherited prior entry), proving the outcome skipped the prefix.
+			const { stages } = readState(tmpDir);
+			expect(stages[1]).toMatchObject({ skill: "design", status: "completed" });
+			expect((stages[1]!.session as { branchOffset?: number }).branchOffset).toBe(1);
+		});
+
+		it("continue with no prior session degrades to a fresh dispatch with a fallback notice", async () => {
+			// A `continue` stage at the START has no predecessor to fork — it degrades
+			// to a fresh dispatch (no `fork`/`reattach`, host-sent prompt) and emits a
+			// one-line fallback notice rather than refusing.
+			writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md");
+			const chain = createMockSessionChain({
+				cwd: tmpDir,
+				steps: [{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/research/r.md")] }],
+			});
+
+			const result = await runWorkflow(chain.ctx, {
+				workflow: wf("cstart", ["research"], { research: { sessionPolicy: "continue" } }),
+				input: "x",
+			});
+
+			expect(result.success).toBe(true);
+			expect(result.stagesCompleted).toBe(1);
+			const spawn = (chain.ctx.spawnChild as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+			expect(spawn.fork).toBeUndefined();
+			expect(spawn.reattach).toBeUndefined();
+			expect(chain.sentMessages).toEqual(["/skill:research x"]); // host-sent (fresh path)
+			expect(chain.notifications.some((n) => /no prior session to continue/.test(n.msg))).toBe(true);
 		});
 
 		it("continue stage abort halts the chain", async () => {

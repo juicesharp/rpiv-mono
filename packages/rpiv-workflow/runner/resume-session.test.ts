@@ -33,6 +33,7 @@ import { mockAssistantMessage } from "@juicesharp/rpiv-test-utils";
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Workflow } from "../api.js";
+import { registerWorkflowExecutionHost } from "../execution-host.js";
 import { fs as fsHandle } from "../handle.js";
 import type { WorkflowSessionContext } from "../host.js";
 import {
@@ -394,5 +395,93 @@ describe("session-backed resume — reattach", () => {
 		expect(rows.map((r) => r.status)).toEqual(["failed", "failed"]);
 		// The new failure row carries the adopted session — resumable again.
 		expect(rows[1]?.session).toEqual({ id: "sess-1", file });
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Resume-detach parity (L4-01) — resume must build the executor host via the
+// provider exactly like a live run, instead of executing on the bare launcher
+// ctx (which has no real `spawnChild`). The other suites in this file register
+// NO provider, so `detachExecutor` degrades to the passed ctx and their
+// hand-injected `spawnChild` IS the executor — they prove the contract. These
+// prove the production WIRING: with a provider registered, resume runs on the
+// provider's host, and the launcher is only the observer createHost is built from.
+// ---------------------------------------------------------------------------
+
+describe("session-backed resume — detaches to the provider's executor host", () => {
+	/** A launcher whose `spawnChild` THROWS — any reliance on it (the pre-L4-01
+	 *  behavior) surfaces as a thrown error instead of silently passing. */
+	const throwingLauncher = (): WorkflowHostContext =>
+		({
+			cwd: tmpDir,
+			hasUI: false,
+			ui: { notify: () => {}, setStatus: () => {} },
+			sessionManager: {
+				getBranch: () => [],
+				getSessionId: () => "outer-session",
+				getSessionFile: () => undefined,
+			},
+			waitForIdle: async () => {},
+			maxConcurrency: 1,
+			spawnChild: () => {
+				throw new Error("LAUNCHER spawnChild must not run on resume — resume must detach to the executor host");
+			},
+		}) as unknown as WorkflowHostContext;
+
+	it("reattaches the resumed stage on the provider host, never the launcher ctx", async () => {
+		const file = writeSessionFile("sess-1");
+		writeRun([failedRow({ id: "sess-1", file })]);
+
+		// The provider's executor host is the recording harness ctx; the launcher we
+		// pass to resumeWorkflow throws if its spawnChild is ever touched.
+		const h = makeHarness({ switchBranch: [mockAssistantMessage("wrote .rpiv/artifacts/x/a.md")] });
+		let createHostCalls = 0;
+		let observerSeen: unknown;
+		registerWorkflowExecutionHost({
+			createHost: (observer) => {
+				createHostCalls++;
+				observerSeen = observer;
+				return { host: h.ctx };
+			},
+		});
+
+		const launcher = throwingLauncher();
+		const result = await resumeWorkflow(launcher, {
+			workflow: singleStageWorkflow(announceOutcome()),
+			header,
+			ref: "@1",
+		});
+
+		// The provider built the executor from the launcher OBSERVER...
+		expect(createHostCalls).toBe(1);
+		expect(observerSeen).toBe(launcher);
+		// ...and the resumed stage reattached on the PROVIDER host (the launcher's
+		// throwing spawnChild was never reached — promotion adopted the artifact).
+		expect(h.switchSessionSpy).toHaveBeenCalledTimes(1);
+		expect(result.success).toBe(true);
+		expect(result.error).toBeUndefined();
+	});
+
+	it("threads the provider's resolveModel onto resumed stages", async () => {
+		const file = writeSessionFile("sess-1");
+		writeRun([failedRow({ id: "sess-1", file })]);
+
+		const h = makeHarness({ switchBranch: [mockAssistantMessage("wrote .rpiv/artifacts/x/a.md")] });
+		const resolveModel = vi.fn(() => ({ model: "anthropic/claude-opus-4-8" }));
+		registerWorkflowExecutionHost({
+			createHost: () => ({ host: h.ctx }),
+			resolveModel,
+		});
+
+		const result = await resumeWorkflow(throwingLauncher(), {
+			workflow: singleStageWorkflow(announceOutcome()),
+			header,
+			ref: "@1",
+		});
+
+		// The resumed stage resolved its per-child model through the provider — proving
+		// resolveModel is threaded onto resumed stages, not just live ones.
+		expect(result.success).toBe(true);
+		expect(resolveModel).toHaveBeenCalledWith({ stage: "build", skill: "build" });
 	});
 });

@@ -4,11 +4,11 @@
  * node:fs over temp dirs; no Pi involvement.
  */
 
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { locateSessionFile } from "./locate.js";
+import { locateSessionFile, pruneOrphanedChildSessions } from "./locate.js";
 
 describe("locateSessionFile", () => {
 	let dir: string;
@@ -95,5 +95,73 @@ describe("locateSessionFile", () => {
 		const actual = join(dir, "real_sess-1.jsonl");
 		writeFileSync(actual, sessionHeader("sess-1"));
 		expect(locateSessionFile({ id: "sess-1", file: asDir })).toBe(actual);
+	});
+});
+
+describe("pruneOrphanedChildSessions", () => {
+	let dir: string;
+	const runId = "2026-06-18_09-00-00-ab12";
+
+	const sessionHeader = (id: string) =>
+		`${JSON.stringify({ type: "session", version: 3, id, timestamp: "2026-06-18T00:00:00Z", cwd: "/x" })}\n`;
+
+	beforeEach(() => {
+		dir = mkdtempSync(join(tmpdir(), "rpiv-prune-"));
+	});
+	afterEach(() => {
+		rmSync(dir, { recursive: true, force: true });
+	});
+
+	// childSessionsDir(cwd, runId) === <cwd>/.rpiv/workflows/runs/<runId>/sessions/
+	const childDir = () => join(dir, ".rpiv", "workflows", "runs", runId, "sessions");
+	const writeChild = (name: string, body: string): string => {
+		const path = join(childDir(), name);
+		writeFileSync(path, body);
+		return path;
+	};
+
+	it("deletes a file whose header id no row references, keeps referenced ones", () => {
+		mkdirSync(childDir(), { recursive: true });
+		const kept = writeChild("sess-keep.jsonl", sessionHeader("sess-keep"));
+		const orphan = writeChild("sess-orphan.jsonl", sessionHeader("sess-orphan"));
+
+		pruneOrphanedChildSessions(dir, runId, new Set(["sess-keep"]));
+
+		expect(existsSync(kept)).toBe(true); // referenced → survives
+		expect(existsSync(orphan)).toBe(false); // unreferenced → swept
+	});
+
+	it("matches on the HEADER id, not the filename (Pi convention drift)", () => {
+		mkdirSync(childDir(), { recursive: true });
+		// Filename does NOT carry the id; only the header line does.
+		const orphan = writeChild("renamed-label.jsonl", sessionHeader("sess-orphan"));
+		const kept = writeChild("other-name.jsonl", sessionHeader("sess-keep"));
+
+		pruneOrphanedChildSessions(dir, runId, new Set(["sess-keep"]));
+
+		expect(existsSync(orphan)).toBe(false);
+		expect(existsSync(kept)).toBe(true);
+	});
+
+	it("CONSERVATIVE: an unreadable header keeps the file (never delete what we can't identify)", () => {
+		mkdirSync(childDir(), { recursive: true });
+		const corrupt = writeChild("corrupt.jsonl", "{not json\n");
+
+		pruneOrphanedChildSessions(dir, runId, new Set()); // nothing referenced
+
+		expect(existsSync(corrupt)).toBe(true); // unidentifiable → kept
+	});
+
+	it("ignores non-.jsonl neighbours", () => {
+		mkdirSync(childDir(), { recursive: true });
+		const note = writeChild("notes.txt", "irrelevant");
+
+		pruneOrphanedChildSessions(dir, runId, new Set());
+
+		expect(existsSync(note)).toBe(true);
+	});
+
+	it("no-op (no throw) when the child-sessions dir does not exist", () => {
+		expect(() => pruneOrphanedChildSessions(dir, runId, new Set())).not.toThrow();
 	});
 });

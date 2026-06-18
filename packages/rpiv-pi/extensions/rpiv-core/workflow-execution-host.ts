@@ -12,15 +12,15 @@
  * `signal` the runner threads onto `RunContext.signal`, interrupting in-flight
  * children; `dispose` unsubscribes the keystroke tap in the runner's `finally`.
  *
- * The provider replaces the retired workflow-path model-override lifecycle latch:
+ * The provider replaces the retired workflow-path model lifecycle latch:
  * per-child models are now resolved through `resolveModel` and applied at child
  * session creation by `SdkWorkflowHost` — no global `pi.setModel()` flip.
  */
 
 import type { ModelSelection, WorkflowHostContext } from "@juicesharp/rpiv-workflow";
-import { getCapturedModelRegistry, getCapturedUiContext } from "./model-override.js";
 import { loadModelsConfig, resolveStageModel } from "./models-config.js";
 import { SdkWorkflowHost } from "./sdk-workflow-host.js";
+import { getCapturedModelRegistry, getCapturedUiContext } from "./session-capture.js";
 import { isModuleNotFound } from "./utils.js";
 
 /** Build the detached executor + abort tap from the live observer ctx + run identity. */
@@ -65,10 +65,21 @@ export function createWorkflowExecution(
 	observer: WorkflowHostContext,
 	{ runId, childSessionsDir }: { runId: string; childSessionsDir: string },
 ): WorkflowExecution {
-	const uiContext = getCapturedUiContext()!; // session_start capture — also the abort tap
+	// session_start capture — uiContext also backs the abort tap, modelRegistry
+	// resolves per-child models. A miss here means session_start never ran (an
+	// embedder without the hook, or a registration-ordering bug); fail with a
+	// named, actionable error at the boundary instead of an opaque NPE deep in
+	// SdkWorkflowHost.
+	const uiContext = getCapturedUiContext();
+	const modelRegistry = getCapturedModelRegistry();
+	if (!uiContext || !modelRegistry) {
+		throw new Error(
+			"rpiv: session_start capture missing — ensure registerSessionCapture runs before the first /wf run",
+		);
+	}
 	const host = new SdkWorkflowHost({
 		live: observer,
-		modelRegistry: getCapturedModelRegistry()!, // session_start capture (real ctx field)
+		modelRegistry, // session_start capture (real ctx field)
 		uiContext, // foreground-child UI binding
 		// authStorage + resourceLoader intentionally NOT passed — createAgentSession
 		// defaults them per child: auth from disk, own resourceLoader per child.

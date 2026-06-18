@@ -10,7 +10,7 @@
  * representation is then identical to the sequential path (D3).
  */
 
-import { WorkflowAbortError } from "./internal-utils.js";
+import { WorkflowAbortError, WorkflowConfigError } from "./internal-utils.js";
 
 export class Semaphore {
 	private active = 0;
@@ -20,7 +20,7 @@ export class Semaphore {
 		private readonly limit: number,
 		private readonly signal?: AbortSignal,
 	) {
-		if (limit < 1) throw new Error(`Semaphore limit must be ≥ 1, got ${limit}`);
+		if (limit < 1) throw new WorkflowConfigError(`Semaphore limit must be ≥ 1, got ${limit}`);
 		signal?.addEventListener("abort", () => this.drain(), { once: true });
 	}
 

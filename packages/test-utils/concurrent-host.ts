@@ -35,6 +35,7 @@ export interface FakeSpawnRecord {
 	model?: ModelSelection;
 	signal?: AbortSignal;
 	reattach?: { sessionFile: string };
+	fork?: { sessionFile: string };
 	/** 1-based order in which this spawnChild was ENTERED. */
 	startOrder: number;
 	/** 1-based order in which this spawnChild SETTLED (-1 until settled). */
@@ -150,6 +151,7 @@ export function createFakeConcurrentHost(opts: FakeConcurrentHostOptions = {}): 
 		model?: ModelSelection;
 		signal?: AbortSignal;
 		reattach?: { sessionFile: string };
+		fork?: { sessionFile: string };
 		withSession: (child: WorkflowSessionContext) => Promise<T>;
 	}): Promise<T> => {
 		const index = spawns.length;
@@ -159,6 +161,7 @@ export function createFakeConcurrentHost(opts: FakeConcurrentHostOptions = {}): 
 			model: options.model,
 			signal: options.signal,
 			reattach: options.reattach,
+			fork: options.fork,
 			startOrder: ++started,
 			endOrder: -1,
 		};

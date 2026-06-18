@@ -57,6 +57,7 @@
 		"events.ts",
 		"loop.ts",
 		"loop-kinds.ts",
+		"loop-parallel.ts",
 		"load/",
 		"output.ts",
 		"messages.ts",

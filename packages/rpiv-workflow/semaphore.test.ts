@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { isAbortError } from "./internal-utils.js";
+import { isAbortError, WorkflowConfigError } from "./internal-utils.js";
 import { Semaphore } from "./semaphore.js";
 
 /** A manually-resolvable promise — the test controls when each task settles. */
@@ -24,7 +24,8 @@ function deferred<T = void>() {
 const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe("Semaphore", () => {
-	it("rejects a limit < 1", () => {
+	it("rejects a limit < 1 with a typed WorkflowConfigError", () => {
+		expect(() => new Semaphore(0)).toThrow(WorkflowConfigError);
 		expect(() => new Semaphore(0)).toThrow(/limit must be ≥ 1/);
 	});
 

@@ -51,6 +51,19 @@ export class WorkflowAbortError extends Error {
 export const isAbortError = (e: unknown): e is WorkflowAbortError => e instanceof WorkflowAbortError;
 
 /**
+ * Thrown on a programmer-error misconfiguration of a runtime primitive (e.g. a
+ * `Semaphore` constructed with `limit < 1`). A named type — matching the
+ * package convention (`WorkflowAbortError`, `StagePreflightError`) — so a
+ * misconfiguration surfaces a typed error rather than a bare `Error`.
+ */
+export class WorkflowConfigError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = "WorkflowConfigError";
+	}
+}
+
+/**
  * Create a lazily-initialised global-slot getter anchored on a `Symbol.for` key.
  * The returned function reads from `globalThis` on every call, initialising the
  * slot on first access. The indirection through `globalThis` (rather than

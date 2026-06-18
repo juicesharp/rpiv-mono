@@ -59,9 +59,13 @@ export const STAGE_KINDS = ["produces", "side-effect"] as const;
 export type StageKind = (typeof STAGE_KINDS)[number];
 
 /**
- * - `"fresh"` — wraps the stage in `ctx.newSession({ withSession })`.
- * - `"continue"` — reuses the prior session via `host.sendUserMessage()` +
- *   `ctx.waitForIdle()`; branch sliced by `branchOffset`.
+ * - `"fresh"` — the stage runs in a brand-new detached child session.
+ * - `"continue"` — the stage FORKS its predecessor's persisted child session
+ *   (`SessionManager.forkFrom`), so the child carries the prior conversation as
+ *   context; the continuation turn is then sent into it, and its outcome is
+ *   sliced past the inherited prefix by a `branchOffset` re-derived from the
+ *   forked branch. No predecessor session (start stage / after a loop / file
+ *   gone) degrades to a fresh dispatch.
  */
 export const SESSION_POLICIES = ["fresh", "continue"] as const;
 export type SessionPolicy = (typeof SESSION_POLICIES)[number];

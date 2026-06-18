@@ -73,8 +73,8 @@ beforeEach(async () => {
 	gitContext.resetInjectedMarker();
 	const sessionHooks = await import("../packages/rpiv-pi/extensions/rpiv-core/session-hooks.js");
 	sessionHooks.__resetSessionHooksAnnounced();
-	const modelOverride = await import("../packages/rpiv-pi/extensions/rpiv-core/model-override.js");
-	modelOverride.__resetModelOverrideState();
+	const sessionCapture = await import("../packages/rpiv-pi/extensions/rpiv-core/session-capture.js");
+	sessionCapture.__resetSessionCaptureState();
 	const skillBracket = await import("../packages/rpiv-pi/extensions/rpiv-core/skill-bracket.js");
 	skillBracket.__resetSkillBracketState();
 	const modelsConfigModule = await import("../packages/rpiv-pi/extensions/rpiv-core/models-config.js");

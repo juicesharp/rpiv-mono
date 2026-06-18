@@ -129,16 +129,6 @@ export const MSG_UNIT_COMPLETE = (skill: string, label: string) => `✓ ${skill}
  */
 export const MSG_UNIT_FAILED = (skill: string, label: string) => `rpiv: ${skill} unit "${label}" failed (collected)`;
 
-/** Rollup status under concurrency — N units in flight on one status line. */
-export const STATUS_FANOUT_ROLLUP = (
-	stage: number,
-	total: number,
-	skill: string,
-	active: number,
-	done: number,
-	count: number,
-) => `rpiv: stage ${stage}/${total} — ${skill} (${active} running, ${done}/${count} done)`;
-
 /**
  * A loop produced zero units (push: empty array handled upstream as
  * single-stage fall-through, so this fires only for a pull loop whose FIRST
@@ -332,6 +322,15 @@ export const MSG_RESUME_REATTACHED = (skill: string) => `↻ ${skill}: reattache
  */
 export const MSG_RESUME_SESSION_FALLBACK = (skill: string, why: string) =>
 	`rpiv: ${skill} — ${why}; re-running the stage from scratch`;
+
+/**
+ * One notice when a `sessionPolicy: "continue"` stage has no predecessor session
+ * to fork — the start stage (nothing to continue), a stage right after a loop
+ * with no prior single session, or the predecessor's session file is gone. The
+ * stage degrades to a fresh dispatch rather than refusing.
+ */
+export const MSG_CONTINUE_FALLBACK = (skill: string) =>
+	`rpiv: ${skill} — no prior session to continue; running the stage fresh`;
 
 /**
  * Sent to the AGENT when a stage reattaches to its interrupted session
