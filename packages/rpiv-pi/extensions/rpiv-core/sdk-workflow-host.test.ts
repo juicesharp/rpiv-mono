@@ -32,10 +32,15 @@ interface FakeSession {
 	bindExtensions: ReturnType<typeof vi.fn>;
 	abort: ReturnType<typeof vi.fn>;
 	dispose: ReturnType<typeof vi.fn>;
+	hasExtensionHandlers: ReturnType<typeof vi.fn>;
+	extensionRunner: { emit: ReturnType<typeof vi.fn> };
 }
 
 const sessions: FakeSession[] = [];
 let nextSessionSeq = 0;
+// Toggle for the (B) teardown tests: whether a child's runner reports a
+// `session_shutdown` handler. Reset to true each test in beforeEach.
+let shutdownHandlersPresent = true;
 
 function makeFakeSession(): FakeSession {
 	const seq = nextSessionSeq++;
@@ -50,6 +55,8 @@ function makeFakeSession(): FakeSession {
 		bindExtensions: vi.fn(async () => {}),
 		abort: vi.fn(async () => {}),
 		dispose: vi.fn(() => {}),
+		hasExtensionHandlers: vi.fn((_event: string) => shutdownHandlersPresent),
+		extensionRunner: { emit: vi.fn(async () => ({})) },
 	};
 	sessions.push(s);
 	return s;
@@ -58,6 +65,15 @@ function makeFakeSession(): FakeSession {
 const createAgentSessionMock = vi.fn(async (_opts: unknown) => ({ session: makeFakeSession() }));
 const sessionManagerCreate = vi.fn((_cwd: string, _dir?: string) => ({ kind: "created" }));
 const sessionManagerOpen = vi.fn((_file: string, _dir?: string) => ({ kind: "opened" }));
+
+// Captures every DefaultResourceLoader the host builds for a child, so (A) tests
+// can inspect the `extensionsOverride` wired into it. `reload()` is a no-op stub
+// — no disk discovery in unit tests.
+interface CapturedLoader {
+	opts: Record<string, unknown>;
+}
+const resourceLoaders: CapturedLoader[] = [];
+const resourceLoaderReload = vi.fn(async () => {});
 
 vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("@earendil-works/pi-coding-agent")>();
@@ -68,10 +84,26 @@ vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
 			create: (cwd: string, dir?: string) => sessionManagerCreate(cwd, dir),
 			open: (file: string, dir?: string) => sessionManagerOpen(file, dir),
 		},
+		getAgentDir: () => "/agent",
+		SettingsManager: { create: () => ({ kind: "settings" }) },
+		DefaultResourceLoader: class {
+			opts: Record<string, unknown>;
+			reload = resourceLoaderReload;
+			constructor(opts: Record<string, unknown>) {
+				this.opts = opts;
+				resourceLoaders.push(this as unknown as CapturedLoader);
+			}
+		},
 	};
 });
 
-import { SdkWorkflowHost, type SdkWorkflowHostDeps } from "./sdk-workflow-host.js";
+import {
+	CHILD_AMBIENT_EXTENSION_DENYLIST,
+	isAmbientChildExtension,
+	SdkWorkflowHost,
+	type SdkWorkflowHostDeps,
+	withoutAmbientExtensions,
+} from "./sdk-workflow-host.js";
 
 // ---------------------------------------------------------------------------
 // Compile-time executor-port tripwire. If the port drifts, this won't
@@ -123,9 +155,12 @@ function makeDeps(overrides: Partial<SdkWorkflowHostDeps> = {}): {
 beforeEach(() => {
 	sessions.length = 0;
 	nextSessionSeq = 0;
+	shutdownHandlersPresent = true;
+	resourceLoaders.length = 0;
 	createAgentSessionMock.mockClear();
 	sessionManagerCreate.mockClear();
 	sessionManagerOpen.mockClear();
+	resourceLoaderReload.mockClear();
 });
 
 afterEach(() => {
@@ -137,7 +172,7 @@ it("SdkWorkflowHost satisfies the executor port (compile-time assert above)", ()
 });
 
 describe("spawnChild — fresh child", () => {
-	it("borrows only modelRegistry (no authStorage/resourceLoader) and creates a run-scoped session", async () => {
+	it("borrows only modelRegistry (authStorage defaulted), supplies a filtered resourceLoader, creates a run-scoped session", async () => {
 		const { deps } = makeDeps();
 		const host = new SdkWorkflowHost(deps);
 
@@ -151,7 +186,11 @@ describe("spawnChild — fresh child", () => {
 		const passed = createAgentSessionMock.mock.calls[0][0] as Record<string, unknown>;
 		expect(passed.modelRegistry).toBe(deps.modelRegistry);
 		expect(passed).not.toHaveProperty("authStorage");
-		expect(passed).not.toHaveProperty("resourceLoader");
+		// (A) resourceLoader is now SUPPLIED (filtered + reloaded), not omitted.
+		expect(passed.resourceLoader).toBeDefined();
+		expect(resourceLoaders).toHaveLength(1);
+		expect(resourceLoaderReload).toHaveBeenCalledTimes(1);
+		expect(typeof resourceLoaders[0].opts.extensionsOverride).toBe("function");
 		expect(passed.cwd).toBe("/work");
 		expect(sessionManagerCreate).toHaveBeenCalledWith("/work", "/run/sessions");
 		expect(sessionManagerOpen).not.toHaveBeenCalled();
@@ -339,5 +378,133 @@ describe("concurrency + observer relay", () => {
 		host.ui.setStatus("k", "v");
 		expect(notify).toHaveBeenCalledWith("hello", "warning");
 		expect(setStatus).toHaveBeenCalledWith("k", "v");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// (A) Children must NOT load launcher-only ambient observer extensions. This is
+// the regression guard for the rpiv-warp stale-ctx crash: warp arms a 300ms
+// idle timer on agent_end; loading it into a child and then disposing the child
+// orphaned that timer, which fired against the invalidated runner reading
+// ctx.cwd → uncaughtException.
+// ---------------------------------------------------------------------------
+
+describe("child extension filtering (A)", () => {
+	const ext = (path: string) => ({ path, resolvedPath: path });
+
+	it("denylists rpiv-warp by path; tool/skill extensions pass", () => {
+		expect(CHILD_AMBIENT_EXTENSION_DENYLIST).toContain("rpiv-warp");
+		expect(isAmbientChildExtension(ext("/repo/packages/rpiv-warp/index.ts"))).toBe(true);
+		expect(isAmbientChildExtension(ext("/x/node_modules/@juicesharp/rpiv-warp/index.ts"))).toBe(true);
+		expect(isAmbientChildExtension(ext("/repo/packages/rpiv-ask-user-question/index.ts"))).toBe(false);
+		expect(isAmbientChildExtension(ext("/repo/packages/rpiv-web-tools/index.ts"))).toBe(false);
+	});
+
+	it("withoutAmbientExtensions drops warp, keeps the rest, and preserves the shared runtime/errors", () => {
+		const base = {
+			extensions: [ext("/p/rpiv-warp/index.ts"), ext("/p/rpiv-web-tools/index.ts"), ext("/p/rpiv-todo/index.ts")],
+			errors: [{ path: "x", error: "e" }],
+			runtime: { sentinel: true },
+		} as unknown as Parameters<typeof withoutAmbientExtensions>[0];
+
+		const filtered = withoutAmbientExtensions(base);
+
+		expect((filtered.extensions as Array<{ path: string }>).map((e) => e.path)).toEqual([
+			"/p/rpiv-web-tools/index.ts",
+			"/p/rpiv-todo/index.ts",
+		]);
+		// non-extension fields pass through by reference (shared runtime must NOT be cloned).
+		expect(filtered.runtime).toBe(base.runtime);
+		expect(filtered.errors).toBe(base.errors);
+	});
+
+	it("the loader spawnChild builds wires withoutAmbientExtensions as its extensionsOverride", async () => {
+		const { deps } = makeDeps();
+		const host = new SdkWorkflowHost(deps);
+		await host.spawnChild({ prompt: "p", lane: "background", withSession: async () => undefined });
+
+		const override = resourceLoaders[0].opts.extensionsOverride as (b: unknown) => {
+			extensions: Array<{ path: string }>;
+		};
+		const out = override({
+			extensions: [
+				{ path: "rpiv-warp/i.ts", resolvedPath: "rpiv-warp/i.ts" },
+				{ path: "rpiv-todo/i.ts", resolvedPath: "rpiv-todo/i.ts" },
+			],
+			errors: [],
+			runtime: {},
+		});
+		expect(out.extensions.map((e) => e.path)).toEqual(["rpiv-todo/i.ts"]);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// (B) Child teardown emits session_shutdown BEFORE dispose, so extension cleanup
+// (timer cancellation, terminal restore) runs while the runner is still live.
+// dispose() alone only invalidates the runner — it never fires session_shutdown.
+// ---------------------------------------------------------------------------
+
+describe("child teardown (B) — session_shutdown before dispose", () => {
+	it("emits session_shutdown then disposes (cleanup precedes runner invalidation)", async () => {
+		const { deps } = makeDeps();
+		const host = new SdkWorkflowHost(deps);
+
+		await host.spawnChild({ prompt: "p", lane: "background", withSession: async () => undefined });
+
+		const s = sessions[0];
+		expect(s.hasExtensionHandlers).toHaveBeenCalledWith("session_shutdown");
+		expect(s.extensionRunner.emit).toHaveBeenCalledWith({ type: "session_shutdown", reason: "quit" });
+		expect(s.dispose).toHaveBeenCalledTimes(1);
+		const emitOrder = s.extensionRunner.emit.mock.invocationCallOrder[0];
+		const disposeOrder = s.dispose.mock.invocationCallOrder[0];
+		expect(emitOrder).toBeLessThan(disposeOrder);
+	});
+
+	it("still emits shutdown then disposes when withSession throws", async () => {
+		const { deps } = makeDeps();
+		const host = new SdkWorkflowHost(deps);
+
+		await expect(
+			host.spawnChild({
+				prompt: "p",
+				lane: "background",
+				withSession: async () => {
+					throw new Error("boom");
+				},
+			}),
+		).rejects.toThrow("boom");
+
+		const s = sessions[0];
+		expect(s.extensionRunner.emit).toHaveBeenCalledWith({ type: "session_shutdown", reason: "quit" });
+		expect(s.dispose).toHaveBeenCalledTimes(1);
+	});
+
+	it("skips the emit when no session_shutdown handlers exist, but still disposes", async () => {
+		shutdownHandlersPresent = false;
+		const { deps } = makeDeps();
+		const host = new SdkWorkflowHost(deps);
+
+		await host.spawnChild({ prompt: "p", lane: "background", withSession: async () => undefined });
+
+		const s = sessions[0];
+		expect(s.hasExtensionHandlers).toHaveBeenCalledWith("session_shutdown");
+		expect(s.extensionRunner.emit).not.toHaveBeenCalled();
+		expect(s.dispose).toHaveBeenCalledTimes(1);
+	});
+
+	it("disposes even if a session_shutdown handler throws (best-effort teardown)", async () => {
+		const { deps } = makeDeps();
+		const host = new SdkWorkflowHost(deps);
+
+		await host.spawnChild({
+			prompt: "p",
+			lane: "background",
+			withSession: async (_child) => {
+				sessions[0].extensionRunner.emit.mockRejectedValueOnce(new Error("handler blew up"));
+			},
+		});
+
+		// the rejected shutdown emit is swallowed; dispose still runs.
+		expect(sessions[0].dispose).toHaveBeenCalledTimes(1);
 	});
 });

@@ -8,10 +8,15 @@
  * aborts in-flight children.
  *
  * Service sourcing: the host BORROWS only `modelRegistry` (captured
- * from session_start, carrying auth/OAuth state) and OMITS `authStorage` +
- * `resourceLoader` so `createAgentSession` defaults them per child from disk.
- * The per-unit model is resolved through the borrowed registry and applied at
- * child-session creation — NEVER via global `pi.setModel()`.
+ * from session_start, carrying auth/OAuth state); `authStorage` is defaulted
+ * per child from disk. The `resourceLoader` is SUPPLIED per child (not
+ * defaulted) so it can filter out launcher-only ambient extensions — see
+ * `withoutAmbientExtensions` (A). The per-unit model is resolved through the
+ * borrowed registry and applied at child-session creation — NEVER via global
+ * `pi.setModel()`.
+ *
+ * Child teardown emits `session_shutdown` BEFORE `dispose()` (B) so loaded
+ * extensions run their cleanup; `dispose()` alone only invalidates the runner.
  *
  * The lane decides the UI binding: a "foreground" child binds the real
  * interactive `ExtensionUIContext` (so `ask_user_question` reaches the human);
@@ -28,9 +33,15 @@ import type { Model } from "@earendil-works/pi-ai";
 import {
 	type AgentSession,
 	createAgentSession,
+	DefaultResourceLoader,
+	type Extension,
 	type ExtensionUIContext,
+	getAgentDir,
+	type LoadExtensionsResult,
 	type ModelRegistry,
 	SessionManager,
+	type SessionShutdownEvent,
+	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { parseModelKey } from "@juicesharp/rpiv-config";
 import type {
@@ -39,6 +50,35 @@ import type {
 	WorkflowHostContext,
 	WorkflowSessionContext,
 } from "@juicesharp/rpiv-workflow";
+
+/**
+ * Launcher-only "ambient observer" extensions: they register session-lifecycle
+ * handlers + side effects (timers, intervals, OSC/terminal writers, spinners)
+ * but expose NO tools or commands a stage skill invokes. A detached child has
+ * no terminal of its own, so loading one per child is pure cost AND a hazard —
+ * `rpiv-warp` arms a 300ms idle timer on `agent_end` that calls
+ * `buildIdlePromptPayload(ctx)` reading `ctx.cwd`; once the child is disposed
+ * the orphaned timer fires against the invalidated runner → uncaught stale-ctx
+ * crash. Matched by package dir anywhere in the extension's path. Extend this
+ * list as other terminal/UI observer extensions appear; `session_shutdown`-on-
+ * teardown (B) is the general safety net for anything not listed here.
+ */
+export const CHILD_AMBIENT_EXTENSION_DENYLIST: readonly string[] = ["rpiv-warp"];
+
+/** True when an extension is a launcher-only ambient observer (denylisted). */
+export function isAmbientChildExtension(ext: Pick<Extension, "path" | "resolvedPath">): boolean {
+	const haystack = `${ext.path ?? ""}\n${ext.resolvedPath ?? ""}`;
+	return CHILD_AMBIENT_EXTENSION_DENYLIST.some((name) => haystack.includes(name));
+}
+
+/**
+ * `extensionsOverride` for a child's resource loader (A): drop ambient observer
+ * extensions BEFORE the runner invokes their factories, so they never register
+ * a handler or arm a timer in a child session.
+ */
+export function withoutAmbientExtensions(base: LoadExtensionsResult): LoadExtensionsResult {
+	return { ...base, extensions: base.extensions.filter((e) => !isAmbientChildExtension(e)) };
+}
 
 /**
  * What the launcher borrows from the live interactive session + the run
@@ -107,13 +147,29 @@ export class SdkWorkflowHost implements WorkflowHostContext {
 		reattach?: { sessionFile: string };
 		withSession: (child: WorkflowSessionContext) => Promise<T>;
 	}): Promise<T> {
+		// (A) Build the child's resource loader with the SAME discovery
+		// createAgentSession would do when omitted (cwd + agentDir + settings),
+		// but filtered: ambient launcher-only observers (rpiv-warp et al.) are
+		// dropped before their factories run. A FRESH loader per child is
+		// mandatory — `LoadExtensionsResult` carries a shared `runtime`, so
+		// reusing one loader across concurrent children would cross-wire their
+		// extension runtimes.
+		const agentDir = getAgentDir();
+		const resourceLoader = new DefaultResourceLoader({
+			cwd: this.cwd,
+			agentDir,
+			settingsManager: SettingsManager.create(this.cwd, agentDir),
+			extensionsOverride: withoutAmbientExtensions,
+		});
+		await resourceLoader.reload();
+
 		const { session } = await createAgentSession({
 			cwd: this.cwd,
-			// Borrow ONLY the registry. authStorage + resourceLoader are
-			// intentionally OMITTED so createAgentSession defaults them per child:
-			// authStorage ← ~/.pi/agent/auth.json (same creds), resourceLoader ←
-			// a fresh DefaultResourceLoader + reload() per child.
+			// Borrow ONLY the registry; authStorage is still defaulted per child
+			// from ~/.pi/agent/auth.json. resourceLoader is SUPPLIED (filtered),
+			// not defaulted, so children skip launcher-only observer extensions.
 			modelRegistry: this.deps.modelRegistry,
+			resourceLoader,
 			// FRESH child: run-scoped persistence (a new file under childSessionsDir,
 			// keyed by the new sessionId). REATTACH: OPEN the
 			// persisted file so the child carries the prior transcript/branch — the
@@ -148,7 +204,30 @@ export class SdkWorkflowHost implements WorkflowHostContext {
 			return await options.withSession(this.adapt(session, options.lane));
 		} finally {
 			options.signal?.removeEventListener("abort", onAbort);
-			session.dispose(); // unsubscribe + release; leaks accumulate across many units
+			await this.teardownChild(session); // (B) session_shutdown → dispose
+		}
+	}
+
+	/**
+	 * Tear a child down lifecycle-correctly (B): emit `session_shutdown` so any
+	 * loaded extension runs its cleanup (cancel timers/intervals, restore the
+	 * terminal) BEFORE `dispose()` invalidates the runner. `dispose()` alone only
+	 * calls `extensionRunner.invalidate()` — it never fires `session_shutdown` —
+	 * so a captured-ctx timer (e.g. rpiv-warp's idle prompt) would otherwise leak
+	 * and fire against a stale ctx. Mirrors the SDK runtime's own teardown order
+	 * (shutdown → dispose). Best-effort: a throwing handler must not block
+	 * release, and `dispose()` always runs.
+	 */
+	private async teardownChild(session: AgentSession): Promise<void> {
+		try {
+			if (session.hasExtensionHandlers("session_shutdown")) {
+				const shutdown: SessionShutdownEvent = { type: "session_shutdown", reason: "quit" };
+				await session.extensionRunner.emit(shutdown);
+			}
+		} catch {
+			// teardown is best-effort; never block dispose.
+		} finally {
+			session.dispose();
 		}
 	}
 
@@ -161,7 +240,14 @@ export class SdkWorkflowHost implements WorkflowHostContext {
 			maxConcurrency: this.maxConcurrency,
 			spawnChild: this.spawnChild.bind(this), // a child may itself fan out (depth budget — deferred)
 			sessionManager: {
-				getBranch: () => session.messages,
+				// The transcript reader (`transcript.ts`) expects the ENVELOPED branch
+				// shape `{ type: "message", message: {...} }` (SessionEntry[]) — the same
+				// `sessionManager.getBranch()` returns and the old `ctx.sessionManager`
+				// path delivered. `session.messages` is the RAW un-enveloped
+				// `AgentMessage[]` ({ role, content, stopReason }), so reading it made
+				// `hasAssistantMessage` see zero assistant messages and every stage halt
+				// with FAIL_STAGE_NO_RESPONSE even after a full, successful run.
+				getBranch: () => session.sessionManager.getBranch(),
 				getSessionId: () => session.sessionId,
 				getSessionFile: () => session.sessionFile,
 			},
