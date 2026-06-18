@@ -172,6 +172,30 @@ export interface SdkWorkflowHostDeps {
 export const MAX_FANOUT_DEPTH = 2;
 
 /**
+ * Nested fan-out exceeded `MAX_FANOUT_DEPTH`. A typed error (not a bare `Error`)
+ * so a catcher can `instanceof`-detect a host POLICY violation versus an
+ * unexpected worker bug, and tests assert the type rather than a message regex.
+ * Carries the offending `depth` + `max` for inspection.
+ *
+ * Defined HERE (host-local), deliberately NOT a sibling's `WorkflowConfigError`:
+ * a value-import of rpiv-workflow from a file on the extension's static graph
+ * would break the clean-install contract (`sibling-import-graph.test.ts`). It
+ * propagates to the engine as an opaque rejection, where the runner records a
+ * terminal failure — the correct outcome (NOT swallowed as an abort, which would
+ * re-dispatch on resume and loop forever on an over-deep workflow). The message
+ * is operator-grade, so the persisted `errMsg` reads clearly on its own.
+ */
+export class FanoutDepthExceededError extends Error {
+	constructor(
+		readonly depth: number,
+		readonly max: number,
+	) {
+		super(`rpiv: nested fan-out depth ${depth} exceeds MAX_FANOUT_DEPTH (${max}) — a child fanned out too deeply`);
+		this.name = "FanoutDepthExceededError";
+	}
+}
+
+/**
  * Detached executor host. Every stage / fanout unit runs in a child
  * `AgentSession` this host owns; the interactive session never executes a stage
  * and is never swapped. The model is resolved per child (NO `pi.setModel()`);
@@ -236,9 +260,7 @@ export class SdkWorkflowHost implements WorkflowHostContext {
 		},
 	): Promise<T> {
 		if (depth > MAX_FANOUT_DEPTH) {
-			throw new Error(
-				`rpiv: nested fan-out depth ${depth} exceeds MAX_FANOUT_DEPTH (${MAX_FANOUT_DEPTH}) — a child fanned out too deeply`,
-			);
+			throw new FanoutDepthExceededError(depth, MAX_FANOUT_DEPTH);
 		}
 
 		const resourceLoader = await this.buildChildResourceLoader();

@@ -104,6 +104,7 @@ vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
 import {
 	AMBIENT_OBSERVER_MANIFEST_FLAG,
 	CHILD_AMBIENT_EXTENSION_DENYLIST,
+	FanoutDepthExceededError,
 	isAmbientChildExtension,
 	MAX_FANOUT_DEPTH,
 	readPiManifestFlag,
@@ -545,12 +546,13 @@ describe("spawnChild — nested fan-out depth guard", () => {
 		expect(createAgentSessionMock).toHaveBeenCalledTimes(3); // one per allowed level
 	});
 
-	it("rejects beyond MAX_FANOUT_DEPTH without creating the over-deep child session", async () => {
+	it("rejects beyond MAX_FANOUT_DEPTH with a typed FanoutDepthExceededError, no over-deep child session", async () => {
 		const { deps } = makeDeps();
 		const host = new SdkWorkflowHost(deps);
 
-		await expect(
-			host.spawnChild({
+		// Capture the rejection ONCE (a second spawn would double the session count).
+		const err = await host
+			.spawnChild({
 				prompt: "p",
 				lane: "background",
 				withSession: (c1) =>
@@ -565,8 +567,17 @@ describe("spawnChild — nested fan-out depth guard", () => {
 									c3.spawnChild({ prompt: "p", lane: "background", withSession: async () => "too-deep" }),
 							}),
 					}),
-			}),
-		).rejects.toThrow(/depth/i);
+			})
+			.then(
+				() => undefined,
+				(e) => e,
+			);
+
+		// Typed (not a bare Error) so a catcher distinguishes a host POLICY violation
+		// from an unexpected worker bug; carries the offending depth + cap.
+		expect(err).toBeInstanceOf(FanoutDepthExceededError);
+		expect(err).toMatchObject({ depth: 3, max: MAX_FANOUT_DEPTH });
+		expect((err as Error).message).toMatch(/nested fan-out depth/i);
 
 		// depths 0,1,2 created sessions (3); depth 3 threw before createAgentSession.
 		expect(createAgentSessionMock).toHaveBeenCalledTimes(3);
