@@ -281,8 +281,9 @@ describe("spawnChild — lane → UI binding", () => {
 		expect(getLane("run-abc")?.pendingInput).toHaveLength(1);
 		expect(getLane("run-abc")?.pendingInput[0].factory).toBe(factory);
 		expect(uiCustom).not.toHaveBeenCalled();
-		// Non-`custom` members forward to the real ctx (the toast fired through it).
-		expect(uiNotify).toHaveBeenCalledWith("⚑ a background run needs input — /lanes to switch in", "warning");
+		// Deferring is silent at root: the enqueue notifies the registry (the always-on
+		// dock surfaces ⚑), so the relay fires NO redundant chat toast.
+		expect(uiNotify).not.toHaveBeenCalled();
 	});
 
 	it("background binds NO uiContext (⇒ noOpUIContext) and the child reports hasUI:false", async () => {

@@ -432,6 +432,7 @@ describe("LaneDock — active (focused) state", () => {
 		const out = (widget?.render(120) ?? []).join("\n");
 		expect(out).not.toContain("▸");
 		expect(out).toContain("/lanes");
+		expect(out).toContain("↓"); // the DOWN-from-empty entry gesture is advertised
 		expect(out).not.toContain("⏎ open");
 		overlay.dispose();
 	});

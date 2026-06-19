@@ -262,7 +262,10 @@ describe("lane-switcher — hotkey resolution (Phase E)", () => {
 			| undefined;
 		const identityTheme = { fg: (_c: string, s: string) => s } as unknown;
 		const lines = factory?.({ requestRender: vi.fn() }, identityTheme).render(120) ?? [];
-		expect(lines.join("\n")).toContain("^L");
+		const out = lines.join("\n");
+		expect(out).toContain("^L"); // resolved hotkey glyph
+		expect(out).toContain("↓"); // DOWN-from-empty entry gesture
+		expect(out).toContain("/lanes"); // always-safe command
 	});
 });
 

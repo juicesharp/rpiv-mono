@@ -36,7 +36,7 @@ const MAX_WIDGET_LINES = 12;
 /** Default discoverability footer — surfaces how to switch in. The switcher overrides
  *  it via setFooterText with the ACTUAL resolved hotkey glyph (Phase E); this fallback
  *  (no hotkey prefix) is used in tests / before the switcher wires the binding. */
-const DEFAULT_FOOTER_TEXT = "/lanes — step into runs";
+const DEFAULT_FOOTER_TEXT = "↓ · /lanes — step into runs";
 /** Footer shown while the dock is active (the user has stepped in) — the navigation
  *  contract: arrows move, ⏎ opens the selected run, esc/↑-at-top return to the input. */
 const ACTIVE_FOOTER_TEXT = "↑/↓ move · ⏎ open · x stop · esc input";

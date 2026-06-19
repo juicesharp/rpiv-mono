@@ -1,7 +1,7 @@
 /**
  * lane-relay-ui tests — the deferring, leak-proof ExtensionUIContext bound to a
  * floated run's foreground stage (FR5 + Phase 7.1). Verifies the allow-policy:
- * `custom` defers (enqueue + pending promise + one-shot toast), `notify` is
+ * `custom` defers (enqueue + pending promise, no redundant chat toast), `notify` is
  * focus-gated, ambient-surface mutators are suppressed at root, `onTerminalInput`
  * is a no-op tap, other members forward with `this` bound, the relay is branded,
  * and the deferred promise settles on drain or evict.
@@ -108,15 +108,16 @@ describe("lane-relay-ui — custom defers", () => {
 		expect(result.settled).toBe(false);
 	});
 
-	it("toasts once on the real ctx when a questionnaire is deferred (the relay's own signal — always)", () => {
+	it("does NOT toast on the real ctx when a questionnaire is deferred (the dock is the signal — no redundant chat toast)", () => {
 		recordRun("run-1", "ship");
 		const { real, notify } = makeRealCtx();
 		const relay = createLaneRelayUiContext(real, "run-1");
 
 		void relay.custom((() => ({})) as never, undefined as never);
 
-		expect(notify).toHaveBeenCalledTimes(1);
-		expect(notify).toHaveBeenCalledWith("⚑ a background run needs input — /lanes to switch in", "warning");
+		// The enqueue notifies the registry → the always-on dock shows the ⚑ heading;
+		// a separate chat toast would be redundant, so none fires here.
+		expect(notify).not.toHaveBeenCalled();
 	});
 });
 

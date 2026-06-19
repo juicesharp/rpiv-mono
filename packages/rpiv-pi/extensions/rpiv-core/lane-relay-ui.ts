@@ -13,7 +13,9 @@
  *                       (the stall is free — the child stays isStreaming, the slot
  *                       stays held). The switcher replays the factory on the real
  *                       UI on switch-in (lane-switcher.drainPendingInput) and
- *                       resolves the promise. Plus a one-shot "needs input" toast.
+ *                       resolves the promise. The enqueue notifies the registry, so
+ *                       the always-on dock surfaces the ⚑ needs-input signal — no
+ *                       separate chat toast (it would be redundant with the dock).
  *   - `notify`        → FOCUS-GATED: forwarded to the real ctx ONLY while the user
  *                       is switched into THIS lane (getFocusedRun() === runId);
  *                       otherwise dropped, so a parked/background child's notifies
@@ -62,11 +64,11 @@ const SUPPRESSED_AT_ROOT = new Set<string>([
 export function createLaneRelayUiContext(real: ExtensionUIContext, runId: string): ExtensionUIContext {
 	const relayCustom: ExtensionUIContext["custom"] = (factory, options) =>
 		new Promise((resolve) => {
-			// Queue the request (notifies → ambient overlay shows the ⚑ needs-input badge)
-			// and toast once so the user knows a background run is waiting on them. This
-			// toast is the LAUNCHER's own signal (not a child notify) — it always fires.
+			// Queue the request — this notifies the registry, so the always-on dock
+			// surfaces the ⚑ needs-input heading + flagged lane row and ages it via the
+			// heartbeat. The persistent dock IS the signal; a separate chat toast here
+			// would be redundant with it, so we don't emit one.
 			enqueueInput(runId, { factory, options, resolve: resolve as (r: unknown) => void });
-			real.notify("⚑ a background run needs input — /lanes to switch in", "warning");
 		});
 
 	// Forwarded to the real ctx ONLY while the user is switched into THIS lane.
