@@ -134,8 +134,9 @@ describe("LaneDock — rendering", () => {
 		const overlay = new LaneDock();
 		const { widget } = mount(overlay, makeCtx());
 		const lines = widget?.render(80) ?? [];
-		expect(lines[0]).toBe("─".repeat(80)); // top rule frames the dock
-		expect(lines[1]).toContain("Runs (2 active)");
+		expect(lines[0]).toBe(""); // leading blank (rhythm); no top rule — editor border is the top boundary
+		expect(lines[1]).toContain("Runs (2 active)"); // title
+		expect(lines[lines.length - 1]).toBe("─".repeat(80)); // bottom rule
 		expect(lines.join("\n")).toContain("ship");
 		expect(lines.join("\n")).toContain("build");
 		for (const line of lines) expect(line.length).toBeLessThanOrEqual(80);
@@ -219,9 +220,9 @@ describe("LaneDock — rendering", () => {
 		const overlay = new LaneDock();
 		const { widget } = mount(overlay, makeCtx());
 		const lines = widget?.render(120) ?? [];
-		// Framed: top rule first, bottom rule last.
-		expect(lines[0]).toBe("─".repeat(120));
+		// Bottom rule last; no top rule (editor border is the top boundary).
 		expect(lines[lines.length - 1]).toBe("─".repeat(120));
+		expect(lines[0]).toBe(""); // leading blank, not a rule
 		// The "+N more" summary is the last LANE row; the footer sits below it.
 		const moreIdx = lines.findIndex((l) => l.includes("more") && l.includes("+"));
 		const footerIdx = lines.findIndex((l) => l.includes("/lanes"));
@@ -230,21 +231,20 @@ describe("LaneDock — rendering", () => {
 		overlay.dispose();
 	});
 
-	it("frames the dock with a top + bottom rule; the footer sits directly above the bottom rule", () => {
+	it("bounds the dock with a single bottom rule; the footer sits directly above it (ask_user_question rhythm)", () => {
 		recordRun("run-1", "ship");
 		const overlay = new LaneDock();
 		const { widget } = mount(overlay, makeCtx());
 		const lines = widget?.render(120) ?? [];
-		// Top + bottom rules bound the panel (the separator from Pi's status chrome).
-		expect(lines[0]).toBe("─".repeat(120));
-		expect(lines[lines.length - 1]).toBe("─".repeat(120));
+		// No top rule (the editor border above is the top boundary); a single bottom rule.
+		expect(lines[0]).toBe(""); // leading blank for breathing room under the editor border
+		expect(lines[1]).toContain("Runs"); // title directly after the leading blank
+		expect(lines[lines.length - 1]).toBe("─".repeat(120)); // bottom rule
 		const footerIdx = lines.findIndex((l) => l.includes("/lanes"));
 		expect(footerIdx).toBeGreaterThan(0);
-		expect(lines[footerIdx]).toContain("/lanes");
-		// The bottom rule (not a blank line) immediately follows the footer.
+		// A blank line precedes the footer (rhythm); the bottom rule follows it.
+		expect(lines[footerIdx - 1]).toBe("");
 		expect(lines[footerIdx + 1]).toBe("─".repeat(120));
-		// No interior blank line anymore (the rules do the separating).
-		expect(lines).not.toContain("");
 		for (const line of lines) expect(line.length).toBeLessThanOrEqual(120);
 		overlay.dispose();
 	});
@@ -436,14 +436,14 @@ describe("LaneDock — active (focused) state", () => {
 		const overlay = new LaneDock();
 		const { widget } = mount(overlay, makeCtx());
 		const out = (widget?.render(120) ?? []).join("\n");
-		expect(out).not.toContain("▸");
+		expect(out).not.toContain("❯");
 		expect(out).toContain("/lanes");
-		expect(out).toContain("↓ step in"); // the DOWN-from-empty entry gesture is labeled
-		expect(out).not.toContain("⏎"); // no run-action keys in the ambient footer
+		expect(out).toContain("↓ to step in"); // the DOWN-from-empty entry gesture is labeled
+		expect(out).not.toContain("Enter to view"); // no run-action contract in the ambient footer
 		overlay.dispose();
 	});
 
-	it("active state paints the ▸ cursor on the selected row and the navigation footer", () => {
+	it("active state paints the cursor on the selected row and the navigation footer", () => {
 		recordRun("run-1", "ship");
 		recordRun("run-2", "build");
 		const overlay = new LaneDock();
@@ -453,8 +453,8 @@ describe("LaneDock — active (focused) state", () => {
 		const lines = widget?.render(120) ?? [];
 		const out = lines.join("\n");
 		// Exactly one row carries the cursor; the footer flips to the nav contract.
-		expect(lines.filter((l) => l.includes("▸")).length).toBe(1);
-		expect(out).toContain("⏎ view transcript");
+		expect(lines.filter((l) => l.includes("❯")).length).toBe(1);
+		expect(out).toContain("Enter to view");
 		expect(out).not.toContain("/lanes"); // ambient discoverability hint is replaced by the nav footer
 		overlay.dispose();
 	});
@@ -466,10 +466,10 @@ describe("LaneDock — active (focused) state", () => {
 		const { widget } = mount(overlay, makeCtx());
 		setDockActive(true);
 		setDockSelection(0);
-		const first = (widget?.render(120) ?? []).find((l) => l.includes("▸")) ?? "";
+		const first = (widget?.render(120) ?? []).find((l) => l.includes("❯")) ?? "";
 		expect(first).toContain("ship");
 		setDockSelection(1);
-		const second = (widget?.render(120) ?? []).find((l) => l.includes("▸")) ?? "";
+		const second = (widget?.render(120) ?? []).find((l) => l.includes("❯")) ?? "";
 		expect(second).toContain("build");
 		overlay.dispose();
 	});
@@ -483,8 +483,8 @@ describe("LaneDock — active (focused) state", () => {
 		setDockSelection(0);
 		const activeRow = (widget?.render(120) ?? []).find((l) => l.includes("polish")) ?? "";
 		// The cursor appears only when active…
-		expect(ambientRow).not.toContain("▸");
-		expect(activeRow).toContain("▸");
+		expect(ambientRow).not.toContain("❯");
+		expect(activeRow).toContain("❯");
 		// …but the lane name sits at the SAME column in both (no layout jump).
 		expect(activeRow.indexOf("polish")).toBe(ambientRow.indexOf("polish"));
 		overlay.dispose();
@@ -499,7 +499,7 @@ describe("LaneDock — active (focused) state", () => {
 		overlay.dispose();
 	});
 
-	it("the framing rules are dim when ambient and accent when focused", () => {
+	it("the bottom rule is dim when ambient and accent when focused", () => {
 		recordRun("run-1", "ship");
 		const overlay = new LaneDock();
 		const ui = makeCtx();
@@ -515,9 +515,10 @@ describe("LaneDock — active (focused) state", () => {
 			strikethrough: (s: string) => s,
 		} as unknown as Theme;
 		const widget = factory({ requestRender: vi.fn() }, colorTheme);
-		expect(widget.render(20)[0].startsWith("dim:─")).toBe(true); // ambient → dim
+		const bottomRule = (r: string[]) => r[r.length - 1]; // the last line is the bottom rule
+		expect(bottomRule(widget.render(20)).startsWith("dim:─")).toBe(true); // ambient → dim
 		setDockActive(true);
-		expect(widget.render(20)[0].startsWith("accent:─")).toBe(true); // focused → accent
+		expect(bottomRule(widget.render(20)).startsWith("accent:─")).toBe(true); // focused → accent
 		overlay.dispose();
 	});
 

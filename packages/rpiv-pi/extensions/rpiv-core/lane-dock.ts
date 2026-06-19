@@ -36,15 +36,14 @@ const MAX_WIDGET_LINES = 12;
 /** Default discoverability footer — surfaces how to switch in. The switcher overrides
  *  it via setFooterText with the ACTUAL resolved hotkey glyph (Phase E); this fallback
  *  (no hotkey prefix) is used in tests / before the switcher wires the binding. */
-const DEFAULT_FOOTER_TEXT = "↓ step in · /lanes";
-/** Footer shown while the dock is active (the user has stepped in) — the navigation
- *  contract: arrows move, ⏎ opens the read-only transcript, esc/↑-at-top return to the
- *  input. ⏎ reads "view transcript" because the viewer is read-only (and answers any
- *  queued input on a needs-input lane). */
-const ACTIVE_FOOTER_TEXT = "↑/↓ move · ⏎ view transcript · x stop · esc input";
-/** Selection-gutter cells prepended to every row while the dock is active (so all rows
- *  shift equally — column stability holds within the active state). */
-const CURSOR_SELECTED = "▸ ";
+const DEFAULT_FOOTER_TEXT = "↓ to step in · /lanes";
+/** Footer shown while the dock is active (the user has stepped in). Phrased in the
+ *  ask_user_question style — keys spelled out, "<key> to <verb>". ⏎ reads "view"
+ *  because the viewer is read-only (and answers any queued input on a needs-input lane). */
+const ACTIVE_FOOTER_TEXT = "Enter to view · ↑/↓ to navigate · x to stop · Esc to exit";
+/** Selection-gutter cells reserved on every row (so a row never shifts when stepping in):
+ *  the `❯` cursor (matching pi's selectors) on the active selection, two spaces otherwise. */
+const CURSOR_SELECTED = "❯ ";
 const CURSOR_UNSELECTED = "  ";
 /** Heartbeat cadence (Phase C) — refresh the aging "needs input · 4m" heading even when
  *  no lane is streaming (the spinner timer is then idle). Minute-granularity needs only
@@ -237,48 +236,51 @@ export class LaneDock {
 		} else {
 			headText = activeCount > 0 ? `Runs (${activeCount} active)` : `Runs (${lanes.length})`;
 		}
-		const heading = truncate(`${theme.fg(headColor, headIcon)} ${theme.fg(headColor, headText)}`);
+		// Title in the ask_user_question style: 2-space indent, bold, leading state icon.
+		const heading = truncate(`  ${theme.fg(headColor, headIcon)} ${theme.fg(headColor, theme.bold(headText))}`);
 
-		// Bracketing rules bound the dock as a distinct panel so it never blends into
-		// Pi's own status chrome below it. The rule is accent while the dock is focused
-		// (reinforces "you're in it") and dim otherwise.
+		// A single bottom rule separates the dock from Pi's status chrome below; the
+		// editor's own border above is the top boundary (no top rule — it would double
+		// up with that border). Accent while focused, dim otherwise.
 		const rule = theme.fg(active ? "accent" : "dim", "─".repeat(Math.max(0, width)));
-		const lines: string[] = [rule, heading];
+		// ask_user_question vertical rhythm: a blank under the editor border, the title,
+		// a blank, the rows, a blank, the footer, then the bottom rule.
+		const lines: string[] = ["", heading, ""];
 		const budget = MAX_WIDGET_LINES - 1; // rows available after the heading
 
 		// The 2-col selection gutter is ALWAYS reserved (see renderRow) so stepping in
-		// only swaps spaces for the `▸` cursor — no row ever shifts. sel(i) marks the
+		// only swaps spaces for the `❯` cursor — no row ever shifts. sel(i) marks the
 		// active selection (only true while active).
 		const sel = (i: number): boolean => active && i === selection;
 		if (lanes.length <= budget) {
 			lanes.forEach((lane, i) => {
-				lines.push(truncate(this.renderRow(theme, lane, i === lanes.length - 1, width, sel(i))));
+				lines.push(truncate(this.renderRow(theme, lane, width, sel(i))));
 			});
 		} else {
 			// Reserve the last row for the "+N more" summary.
 			const shown = lanes.slice(0, budget - 1);
 			shown.forEach((lane, i) => {
-				lines.push(truncate(this.renderRow(theme, lane, false, width, sel(i))));
+				lines.push(truncate(this.renderRow(theme, lane, width, sel(i))));
 			});
 			const moreCount = lanes.length - shown.length;
-			// Same reserved gutter so the summary row aligns with the lane rows above.
-			lines.push(truncate(`${CURSOR_UNSELECTED}${theme.fg("dim", "└─")} ${theme.fg("dim", `+${moreCount} more`)}`));
+			// Same reserved gutter so the summary aligns with the lane rows above.
+			lines.push(truncate(`${CURSOR_UNSELECTED}${theme.fg("dim", `+${moreCount} more`)}`));
 		}
 		// Footer hint (dim), indented one space — active shows the navigation contract,
-		// ambient the discoverability hint. The bracketing bottom rule (not a blank line)
-		// is the separator from Pi's status chrome below.
+		// ambient the discoverability hint. Preceded by a blank line (rhythm) and followed
+		// by the bottom rule (the separator from Pi's status chrome below).
+		lines.push("");
 		lines.push(truncate(` ${theme.fg("dim", active ? ACTIVE_FOOTER_TEXT : this.footerText)}`));
 		lines.push(rule);
 		return lines;
 	}
 
-	private renderRow(theme: Theme, lane: LaneEntry, isLast: boolean, width: number, selected: boolean): string {
-		// Selection gutter, ALWAYS 2 cols so it's reserved in every state: `▸ ` (accent)
+	private renderRow(theme: Theme, lane: LaneEntry, width: number, selected: boolean): string {
+		// Selection gutter, ALWAYS 2 cols so it's reserved in every state: `❯ ` (accent)
 		// on the active selection, two blank spaces otherwise (ambient or unselected).
 		// Reserving it in the ambient state is what prevents a layout shift when the user
 		// steps in — the row content never moves, only the gutter glyph swaps.
 		const gutter = selected ? theme.fg("accent", CURSOR_SELECTED) : CURSOR_UNSELECTED;
-		const branch = isLast ? "└─" : "├─";
 		const needs = laneNeedsInput(lane.runId);
 		const progress = lane.progress;
 		const running = lane.status === "running";
@@ -304,11 +306,12 @@ export class LaneDock {
 			glyphColor = "dim";
 		}
 
-		// Fixed-width leading columns: glyph · name · short-id. These align on every
-		// row so the status region (bar / label) always starts at the same column.
-		// The preset name renders in the normal "text" color; the short-id is dim
-		// metadata — mirrors TodoOverlay (subject "text", metadata "dim", format.ts).
-		const head = `${gutter}${theme.fg("dim", branch)} ${theme.fg(glyphColor, glyph)} `;
+		// Fixed-width leading columns: cursor-gutter · status-glyph · name · short-id.
+		// These align on every row so the status region (bar / label) always starts at
+		// the same column. The preset name renders in the normal "text" color; the
+		// short-id is dim metadata — mirrors TodoOverlay (format.ts). No tree branch —
+		// the dock follows pi's selector style (cursor + content), not a tree.
+		const head = `${gutter}${theme.fg(glyphColor, glyph)} `;
 		const prefix =
 			`${head}${padCol(theme, "text", lane.name, NAME_COL)} ` +
 			`${padCol(theme, "dim", shortRunId(lane.runId), ID_COL)} `;
