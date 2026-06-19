@@ -57,9 +57,10 @@ function hotkeyGlyph(key: string): string {
 
 /** Build the dock footer hint reflecting the ACTUAL binding (Phase E). */
 function footerText(hotkey: string | undefined): string {
-	// Surface all three entry gestures: ↓ (from an empty prompt — the ergonomic
-	// default), the resolved hotkey glyph (when bound), and the always-safe /lanes.
-	return hotkey ? `↓ · ${hotkeyGlyph(hotkey)} · /lanes — step into runs` : "↓ · /lanes — step into runs";
+	// Surface all three entry gestures, with ↓ explicitly labeled (the ergonomic
+	// default, from an empty prompt): the resolved hotkey glyph (when bound) and the
+	// always-safe /lanes command are listed as the alternates that do the same thing.
+	return hotkey ? `↓ step in · ${hotkeyGlyph(hotkey)} · /lanes` : "↓ step in · /lanes";
 }
 
 let overlay: LaneDock | undefined;

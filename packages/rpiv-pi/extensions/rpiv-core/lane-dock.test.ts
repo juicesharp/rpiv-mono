@@ -438,8 +438,8 @@ describe("LaneDock — active (focused) state", () => {
 		const out = (widget?.render(120) ?? []).join("\n");
 		expect(out).not.toContain("▸");
 		expect(out).toContain("/lanes");
-		expect(out).toContain("↓"); // the DOWN-from-empty entry gesture is advertised
-		expect(out).not.toContain("⏎ open");
+		expect(out).toContain("↓ step in"); // the DOWN-from-empty entry gesture is labeled
+		expect(out).not.toContain("⏎"); // no run-action keys in the ambient footer
 		overlay.dispose();
 	});
 
@@ -454,7 +454,7 @@ describe("LaneDock — active (focused) state", () => {
 		const out = lines.join("\n");
 		// Exactly one row carries the cursor; the footer flips to the nav contract.
 		expect(lines.filter((l) => l.includes("▸")).length).toBe(1);
-		expect(out).toContain("⏎ open");
+		expect(out).toContain("⏎ view transcript");
 		expect(out).not.toContain("/lanes"); // ambient discoverability hint is replaced by the nav footer
 		overlay.dispose();
 	});

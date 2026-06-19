@@ -36,10 +36,12 @@ const MAX_WIDGET_LINES = 12;
 /** Default discoverability footer — surfaces how to switch in. The switcher overrides
  *  it via setFooterText with the ACTUAL resolved hotkey glyph (Phase E); this fallback
  *  (no hotkey prefix) is used in tests / before the switcher wires the binding. */
-const DEFAULT_FOOTER_TEXT = "↓ · /lanes — step into runs";
+const DEFAULT_FOOTER_TEXT = "↓ step in · /lanes";
 /** Footer shown while the dock is active (the user has stepped in) — the navigation
- *  contract: arrows move, ⏎ opens the selected run, esc/↑-at-top return to the input. */
-const ACTIVE_FOOTER_TEXT = "↑/↓ move · ⏎ open · x stop · esc input";
+ *  contract: arrows move, ⏎ opens the read-only transcript, esc/↑-at-top return to the
+ *  input. ⏎ reads "view transcript" because the viewer is read-only (and answers any
+ *  queued input on a needs-input lane). */
+const ACTIVE_FOOTER_TEXT = "↑/↓ move · ⏎ view transcript · x stop · esc input";
 /** Selection-gutter cells prepended to every row while the dock is active (so all rows
  *  shift equally — column stability holds within the active state). */
 const CURSOR_SELECTED = "▸ ";
