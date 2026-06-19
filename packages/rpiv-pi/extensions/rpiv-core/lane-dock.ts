@@ -219,12 +219,7 @@ export class LaneDock {
 		const needsInputLanes = lanes.filter((l) => laneNeedsInput(l.runId));
 		const anyNeedsInput = needsInputLanes.length > 0;
 		const activeCount = lanes.filter((l) => l.status === "running").length;
-		// needs-input is the loudest state (warning); running is accent; an all-terminal
-		// retained set is dim. Mirrors TodoOverlay's active/idle root convention.
-		const headColor = anyNeedsInput ? "warning" : activeCount > 0 ? "accent" : "dim";
-		// ● needs-input · spinner while running · ○ when only terminal lanes remain.
-		const headIcon = anyNeedsInput ? "●" : activeCount > 0 ? SPINNER_FRAMES[this.frame] : "○";
-		// Phase C — when a run is blocked on input, the heading SHOUTS it and ages: the
+		// Phase C — when a run is blocked on input, the title SHOUTS it and ages: the
 		// oldest pending question drives "N run(s) need input · 4m". Otherwise show the
 		// active count (terminal lanes are retained — Phase A — so total ≠ active).
 		let headText: string;
@@ -236,8 +231,12 @@ export class LaneDock {
 		} else {
 			headText = activeCount > 0 ? `Runs (${activeCount} active)` : `Runs (${lanes.length})`;
 		}
-		// Title in the ask_user_question style: 2-space indent, bold, leading state icon.
-		const heading = truncate(`  ${theme.fg(headColor, headIcon)} ${theme.fg(headColor, theme.bold(headText))}`);
+		// Title is a plain LABEL, not a selectable/active-looking option: 2-space indent +
+		// bold, no spinner/progress (that lives on the rows), not accent-styled. A STATIC
+		// ● (warning) flags needs-input urgency — a status, not an animated progress glyph.
+		const titleColor = anyNeedsInput ? "warning" : "text";
+		const titleIcon = anyNeedsInput ? `${theme.fg("warning", "●")} ` : "";
+		const heading = truncate(`  ${titleIcon}${theme.fg(titleColor, theme.bold(headText))}`);
 
 		// A single bottom rule separates the dock from Pi's status chrome below; the
 		// editor's own border above is the top boundary (no top rule — it would double
@@ -252,15 +251,17 @@ export class LaneDock {
 		// only swaps spaces for the `❯` cursor — no row ever shifts. sel(i) marks the
 		// active selection (only true while active).
 		const sel = (i: number): boolean => active && i === selection;
+		const row = (lane: LaneEntry, i: number): string =>
+			this.highlight(theme, truncate(this.renderRow(theme, lane, width, sel(i))), width, sel(i));
 		if (lanes.length <= budget) {
 			lanes.forEach((lane, i) => {
-				lines.push(truncate(this.renderRow(theme, lane, width, sel(i))));
+				lines.push(row(lane, i));
 			});
 		} else {
 			// Reserve the last row for the "+N more" summary.
 			const shown = lanes.slice(0, budget - 1);
 			shown.forEach((lane, i) => {
-				lines.push(truncate(this.renderRow(theme, lane, width, sel(i))));
+				lines.push(row(lane, i));
 			});
 			const moreCount = lanes.length - shown.length;
 			// Same reserved gutter so the summary aligns with the lane rows above.
@@ -273,6 +274,17 @@ export class LaneDock {
 		lines.push(truncate(` ${theme.fg("dim", active ? ACTIVE_FOOTER_TEXT : this.footerText)}`));
 		lines.push(rule);
 		return lines;
+	}
+
+	/**
+	 * Full-width selectedBg highlight for the active row — pi's selector convention
+	 * (session-selector.js: `theme.bg("selectedBg", line)`). Padded to the viewport
+	 * width so the whole row lights up, not just the text. A no-op for unselected rows.
+	 */
+	private highlight(theme: Theme, line: string, width: number, selected: boolean): string {
+		if (!selected) return line;
+		const pad = Math.max(0, width - visibleWidth(line));
+		return theme.bg("selectedBg", line + " ".repeat(pad));
 	}
 
 	private renderRow(theme: Theme, lane: LaneEntry, width: number, selected: boolean): string {

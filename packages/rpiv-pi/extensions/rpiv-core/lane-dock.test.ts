@@ -348,14 +348,16 @@ describe("LaneDock — spinner animation", () => {
 		recordRun("run-1", "ship");
 		const overlay = new LaneDock();
 		const { widget, tui } = mount(overlay, makeCtx());
-		const frame0 = widget?.render(120)[1]; // [0] is the top rule; heading carries the spinner
+		// The spinner lives on the RUN ROW now (the title is a static label, no progress).
+		const rowOf = (r: string[] | undefined) => (r ?? []).find((l) => l.includes("ship")) ?? "";
+		const frame0 = rowOf(widget?.render(120));
 		// rpiv-warp's ambient-activity braille indicator (title-spinner.ts SPINNER_FRAMES).
 		const SPINNER_FRAMES = ["⠴", "⠦", "⠖", "⠲"];
-		expect(SPINNER_FRAMES.some((g) => frame0?.includes(g))).toBe(true);
+		expect(SPINNER_FRAMES.some((g) => frame0.includes(g))).toBe(true);
 		// Drive the interval → frame advances and the widget repaints.
 		vi.advanceTimersByTime(160);
 		expect(tui?.requestRender).toHaveBeenCalled();
-		const frame1 = widget?.render(120)[1];
+		const frame1 = rowOf(widget?.render(120));
 		expect(frame1).not.toBe(frame0);
 		overlay.dispose();
 	});
@@ -496,6 +498,43 @@ describe("LaneDock — active (focused) state", () => {
 		const { widget } = mount(overlay, makeCtx());
 		setDockActive(true);
 		for (const line of widget?.render(40) ?? []) expect(visibleWidth(line)).toBeLessThanOrEqual(40);
+		overlay.dispose();
+	});
+
+	it("the title is a plain label — no spinner/progress glyph even while a lane runs", () => {
+		vi.useFakeTimers();
+		recordRun("run-1", "ship"); // running → row spins, but the title must not
+		const overlay = new LaneDock();
+		const { widget } = mount(overlay, makeCtx());
+		const title = (widget?.render(120) ?? [])[1] ?? "";
+		const SPINNER_FRAMES = ["⠴", "⠦", "⠖", "⠲"];
+		expect(SPINNER_FRAMES.some((g) => title.includes(g))).toBe(false);
+		expect(title).toContain("Runs (1 active)");
+		overlay.dispose();
+	});
+
+	it("the active row carries a full-width selectedBg highlight (pi selector convention)", () => {
+		recordRun("run-1", "ship");
+		recordRun("run-2", "build");
+		const overlay = new LaneDock();
+		const ui = makeCtx();
+		overlay.setUICtx(ui);
+		overlay.update();
+		const setWidget = ui.setWidget as unknown as ReturnType<typeof vi.fn>;
+		const factory = setWidget.mock.calls[0]?.[1] as WidgetFactory;
+		// bg-encoding theme: bg(color, text) → "[color]text", so the highlight is observable.
+		const bgTheme = {
+			fg: (_c: string, s: string) => s,
+			bg: (c: string, s: string) => `[${c}]${s}`,
+			bold: (s: string) => s,
+			strikethrough: (s: string) => s,
+		} as unknown as Theme;
+		const widget = factory({ requestRender: vi.fn() }, bgTheme);
+		setDockActive(true);
+		setDockSelection(0);
+		const highlighted = widget.render(60).filter((l) => l.includes("[selectedBg]"));
+		expect(highlighted.length).toBe(1); // exactly the selected row
+		expect(highlighted[0]).toContain("ship"); // the first (selected) run
 		overlay.dispose();
 	});
 
