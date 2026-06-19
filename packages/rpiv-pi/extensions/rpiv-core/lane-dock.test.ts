@@ -134,7 +134,8 @@ describe("LaneDock — rendering", () => {
 		const overlay = new LaneDock();
 		const { widget } = mount(overlay, makeCtx());
 		const lines = widget?.render(80) ?? [];
-		expect(lines[0]).toContain("Runs (2 active)");
+		expect(lines[0]).toBe("─".repeat(80)); // top rule frames the dock
+		expect(lines[1]).toContain("Runs (2 active)");
 		expect(lines.join("\n")).toContain("ship");
 		expect(lines.join("\n")).toContain("build");
 		for (const line of lines) expect(line.length).toBeLessThanOrEqual(80);
@@ -170,7 +171,7 @@ describe("LaneDock — rendering", () => {
 		const overlay = new LaneDock();
 		const { widget } = mount(overlay, makeCtx());
 		enqueueInput("run-1", { factory: (() => ({})) as never, options: undefined as never, resolve: () => {} });
-		const heading = (widget?.render(120) ?? [])[0] ?? "";
+		const heading = (widget?.render(120) ?? [])[1] ?? ""; // [0] is the top rule
 		expect(heading).toMatch(/1 run needs input · \d+s/);
 	});
 
@@ -182,7 +183,7 @@ describe("LaneDock — rendering", () => {
 		const pend = { factory: (() => ({})) as never, options: undefined as never, resolve: () => {} };
 		enqueueInput("run-1", pend);
 		enqueueInput("run-2", pend);
-		expect((widget?.render(120) ?? [])[0]).toContain("2 runs need input");
+		expect((widget?.render(120) ?? [])[1]).toContain("2 runs need input"); // [0] is the top rule
 	});
 
 	it("needs-input lane is never hidden below the '+N more' fold (Phase B priority sort)", () => {
@@ -217,28 +218,33 @@ describe("LaneDock — rendering", () => {
 		for (let i = 0; i < 20; i++) recordRun(`run-${i}`, `wf-${i}`);
 		const overlay = new LaneDock();
 		const { widget } = mount(overlay, makeCtx());
-		const lines = (widget?.render(120) ?? []).filter((l) => l.length > 0); // drop trailing spacer
-		// heading + 11 budgeted rows + footer
-		expect(lines.length).toBe(13);
-		// footer is last; the "+N more" summary is the last LANE row above it.
-		expect(lines[lines.length - 1]).toContain("/lanes");
-		expect(lines[lines.length - 2]).toContain("more");
-		expect(lines[lines.length - 2]).toContain("+");
+		const lines = widget?.render(120) ?? [];
+		// Framed: top rule first, bottom rule last.
+		expect(lines[0]).toBe("─".repeat(120));
+		expect(lines[lines.length - 1]).toBe("─".repeat(120));
+		// The "+N more" summary is the last LANE row; the footer sits below it.
+		const moreIdx = lines.findIndex((l) => l.includes("more") && l.includes("+"));
+		const footerIdx = lines.findIndex((l) => l.includes("/lanes"));
+		expect(moreIdx).toBeGreaterThan(0);
+		expect(footerIdx).toBeGreaterThan(moreIdx);
 		overlay.dispose();
 	});
 
-	it("renders the footer as a blank separator line then the '/lanes' hint (ask_user_question layout)", () => {
+	it("frames the dock with a top + bottom rule; the footer sits directly above the bottom rule", () => {
 		recordRun("run-1", "ship");
 		const overlay = new LaneDock();
 		const { widget } = mount(overlay, makeCtx());
 		const lines = widget?.render(120) ?? [];
+		// Top + bottom rules bound the panel (the separator from Pi's status chrome).
+		expect(lines[0]).toBe("─".repeat(120));
+		expect(lines[lines.length - 1]).toBe("─".repeat(120));
 		const footerIdx = lines.findIndex((l) => l.includes("/lanes"));
 		expect(footerIdx).toBeGreaterThan(0);
-		// Default footer (Phase E) surfaces only the always-safe /lanes command — the
-		// hotkey glyph is injected by the switcher via setFooterText (see below).
 		expect(lines[footerIdx]).toContain("/lanes");
-		// A blank separator line precedes the hint (the "empty line" in ask_user_question).
-		expect(lines[footerIdx - 1]).toBe("");
+		// The bottom rule (not a blank line) immediately follows the footer.
+		expect(lines[footerIdx + 1]).toBe("─".repeat(120));
+		// No interior blank line anymore (the rules do the separating).
+		expect(lines).not.toContain("");
 		for (const line of lines) expect(line.length).toBeLessThanOrEqual(120);
 		overlay.dispose();
 	});
@@ -342,14 +348,14 @@ describe("LaneDock — spinner animation", () => {
 		recordRun("run-1", "ship");
 		const overlay = new LaneDock();
 		const { widget, tui } = mount(overlay, makeCtx());
-		const frame0 = widget?.render(120)[0];
+		const frame0 = widget?.render(120)[1]; // [0] is the top rule; heading carries the spinner
 		// rpiv-warp's ambient-activity braille indicator (title-spinner.ts SPINNER_FRAMES).
 		const SPINNER_FRAMES = ["⠴", "⠦", "⠖", "⠲"];
 		expect(SPINNER_FRAMES.some((g) => frame0?.includes(g))).toBe(true);
 		// Drive the interval → frame advances and the widget repaints.
 		vi.advanceTimersByTime(160);
 		expect(tui?.requestRender).toHaveBeenCalled();
-		const frame1 = widget?.render(120)[0];
+		const frame1 = widget?.render(120)[1];
 		expect(frame1).not.toBe(frame0);
 		overlay.dispose();
 	});
@@ -474,6 +480,28 @@ describe("LaneDock — active (focused) state", () => {
 		const { widget } = mount(overlay, makeCtx());
 		setDockActive(true);
 		for (const line of widget?.render(40) ?? []) expect(visibleWidth(line)).toBeLessThanOrEqual(40);
+		overlay.dispose();
+	});
+
+	it("the framing rules are dim when ambient and accent when focused", () => {
+		recordRun("run-1", "ship");
+		const overlay = new LaneDock();
+		const ui = makeCtx();
+		overlay.setUICtx(ui);
+		overlay.update();
+		const setWidget = ui.setWidget as unknown as ReturnType<typeof vi.fn>;
+		const factory = setWidget.mock.calls[0]?.[1] as WidgetFactory;
+		// Color-encoding theme: fg(color, text) → "color:text", so the rule's color is observable.
+		const colorTheme = {
+			fg: (c: string, s: string) => `${c}:${s}`,
+			bg: (_c: string, s: string) => s,
+			bold: (s: string) => s,
+			strikethrough: (s: string) => s,
+		} as unknown as Theme;
+		const widget = factory({ requestRender: vi.fn() }, colorTheme);
+		expect(widget.render(20)[0].startsWith("dim:─")).toBe(true); // ambient → dim
+		setDockActive(true);
+		expect(widget.render(20)[0].startsWith("accent:─")).toBe(true); // focused → accent
 		overlay.dispose();
 	});
 

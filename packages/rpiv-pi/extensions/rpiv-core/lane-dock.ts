@@ -237,7 +237,11 @@ export class LaneDock {
 		}
 		const heading = truncate(`${theme.fg(headColor, headIcon)} ${theme.fg(headColor, headText)}`);
 
-		const lines: string[] = [heading];
+		// Bracketing rules bound the dock as a distinct panel so it never blends into
+		// Pi's own status chrome below it. The rule is accent while the dock is focused
+		// (reinforces "you're in it") and dim otherwise.
+		const rule = theme.fg(active ? "accent" : "dim", "─".repeat(Math.max(0, width)));
+		const lines: string[] = [rule, heading];
 		const budget = MAX_WIDGET_LINES - 1; // rows available after the heading
 
 		// While active, a leading selection gutter is prepended to every row — pass the
@@ -257,11 +261,11 @@ export class LaneDock {
 			const gutter = active ? CURSOR_UNSELECTED : "";
 			lines.push(truncate(`${gutter}${theme.fg("dim", "└─")} ${theme.fg("dim", `+${moreCount} more`)}`));
 		}
-		// Footer — mirrors the ask_user_question footer layout (tab-content-strategy.ts:
-		// 139-144): a blank separator line, then the dim hint indented one space. Active
-		// shows the navigation contract; ambient shows the discoverability hint.
-		lines.push("");
+		// Footer hint (dim), indented one space — active shows the navigation contract,
+		// ambient the discoverability hint. The bracketing bottom rule (not a blank line)
+		// is the separator from Pi's status chrome below.
 		lines.push(truncate(` ${theme.fg("dim", active ? ACTIVE_FOOTER_TEXT : this.footerText)}`));
+		lines.push(rule);
 		return lines;
 	}
 
