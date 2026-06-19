@@ -143,6 +143,29 @@ describe("LaneDock — rendering", () => {
 		overlay.dispose();
 	});
 
+	it("renders the title as a selectedBg chip (ask_user_question header style), not tightly truncated", () => {
+		recordRun("run-1", "ship");
+		const overlay = new LaneDock();
+		const ui = makeCtx();
+		overlay.setUICtx(ui);
+		overlay.update();
+		const setWidget = ui.setWidget as unknown as ReturnType<typeof vi.fn>;
+		const factory = setWidget.mock.calls[0]?.[1] as WidgetFactory;
+		// bg-encoding theme makes the chip observable: bg(color, text) → "[color]text".
+		const bgTheme = {
+			fg: (_c: string, s: string) => s,
+			bg: (c: string, s: string) => `[${c}]${s}`,
+			bold: (s: string) => s,
+			strikethrough: (s: string) => s,
+		} as unknown as Theme;
+		const widget = factory({ requestRender: vi.fn() }, bgTheme);
+		const title = widget.render(120)[1] ?? "";
+		// Same as ask_user_question's header badge: a selectedBg block with one space of
+		// padding on each side around the full title text.
+		expect(title).toContain("[selectedBg] Runs (1 active) ");
+		overlay.dispose();
+	});
+
 	it("running lanes read 'streaming…'; terminal lanes show their raw status", () => {
 		recordRun("run-1", "ship");
 		recordRun("run-2", "build");
@@ -513,7 +536,7 @@ describe("LaneDock — active (focused) state", () => {
 		overlay.dispose();
 	});
 
-	it("the active row carries a full-width selectedBg highlight (pi selector convention)", () => {
+	it("marks the selected row with an accent+bold name and NO background block (ask_user_question style)", () => {
 		recordRun("run-1", "ship");
 		recordRun("run-2", "build");
 		const overlay = new LaneDock();
@@ -522,19 +545,49 @@ describe("LaneDock — active (focused) state", () => {
 		overlay.update();
 		const setWidget = ui.setWidget as unknown as ReturnType<typeof vi.fn>;
 		const factory = setWidget.mock.calls[0]?.[1] as WidgetFactory;
-		// bg-encoding theme: bg(color, text) → "[color]text", so the highlight is observable.
-		const bgTheme = {
-			fg: (_c: string, s: string) => s,
+		// Encoding theme: fg → "color:text", bold → "*text*", bg → "[color]text" so the
+		// selected-row styling (accent+bold label, no background) is observable.
+		const encTheme = {
+			fg: (c: string, s: string) => `${c}:${s}`,
 			bg: (c: string, s: string) => `[${c}]${s}`,
-			bold: (s: string) => s,
+			bold: (s: string) => `*${s}*`,
 			strikethrough: (s: string) => s,
 		} as unknown as Theme;
-		const widget = factory({ requestRender: vi.fn() }, bgTheme);
+		const widget = factory({ requestRender: vi.fn() }, encTheme);
 		setDockActive(true);
 		setDockSelection(0);
-		const highlighted = widget.render(60).filter((l) => l.includes("[selectedBg]"));
-		expect(highlighted.length).toBe(1); // exactly the selected row
-		expect(highlighted[0]).toContain("ship"); // the first (selected) run
+		const lines = widget.render(60);
+		// The selected row's name is accent+bold; the unselected row's name is plain "text".
+		const selectedRow = lines.find((l) => l.includes("ship")) ?? "";
+		const otherRow = lines.find((l) => l.includes("build")) ?? "";
+		// No background block on the ROWS — ask_user_question marks row selection with text
+		// style, not a fill. (bg encodes as "[color]"; the title chip's selectedBg is a
+		// separate line and intentionally excluded here.)
+		expect(/\[[a-zA-Z]/.test(selectedRow)).toBe(false);
+		expect(/\[[a-zA-Z]/.test(otherRow)).toBe(false);
+		expect(selectedRow).toContain("accent:*ship*");
+		expect(otherRow).toContain("text:build");
+		expect(otherRow).not.toContain("accent:*build*");
+		overlay.dispose();
+	});
+
+	it("ambient leaves a blank top (editor border is the boundary); active draws its own top rule", () => {
+		recordRun("run-1", "ship");
+		const overlay = new LaneDock();
+		const { widget } = mount(overlay, makeCtx());
+		// Ambient: the editor's bottom border above is the top boundary, so line 0 is a
+		// breathing-room blank — NOT a rule.
+		const ambient = widget?.render(40) ?? [];
+		expect(ambient[0]).toBe("");
+		// Active: the editor hides itself, so the dock frames itself — a leading blank, its
+		// own top rule, a blank, THEN the title (blank · HR · blank · title). Both ends carry a rule.
+		setDockActive(true);
+		const focused = widget?.render(40) ?? [];
+		expect(focused[0]).toBe(""); // leading blank above the rule
+		expect(focused[1]).toBe("─".repeat(40)); // top rule
+		expect(focused[2]).toBe(""); // blank between the rule and the title
+		expect(focused[3]).toContain("Runs"); // title under the blank
+		expect(focused[focused.length - 1]).toBe("─".repeat(40)); // bottom rule still present
 		overlay.dispose();
 	});
 

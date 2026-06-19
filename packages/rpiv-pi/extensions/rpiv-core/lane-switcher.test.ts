@@ -260,7 +260,11 @@ describe("lane-switcher — hotkey resolution (Phase E)", () => {
 		const factory = setWidget.mock.calls[0]?.[1] as
 			| ((tui: { requestRender: () => void }, theme: unknown) => { render: (w: number) => string[] })
 			| undefined;
-		const identityTheme = { fg: (_c: string, s: string) => s, bold: (s: string) => s } as unknown;
+		const identityTheme = {
+			fg: (_c: string, s: string) => s,
+			bg: (_c: string, s: string) => s,
+			bold: (s: string) => s,
+		} as unknown;
 		const lines = factory?.({ requestRender: vi.fn() }, identityTheme).render(120) ?? [];
 		const out = lines.join("\n");
 		expect(out).toContain("^L"); // resolved hotkey glyph

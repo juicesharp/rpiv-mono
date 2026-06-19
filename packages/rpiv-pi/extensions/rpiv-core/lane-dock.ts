@@ -83,11 +83,14 @@ const NUM_COL = 5;
  * plain spaces to EXACTLY `width`, returning the content colored + the pad bare.
  * Operates on raw (uncolored) text so visibleWidth is exact; the trailing pad is
  * uncolored (invisible) so columns align across rows without per-cell theming.
+ * `bold` applies emphasis to the content (not the pad) — used for the selected row's
+ * name, mirroring ask_user_question's accent+bold `selectedText`.
  */
-function padCol(theme: Theme, color: ThemeColor, text: string, width: number): string {
+function padCol(theme: Theme, color: ThemeColor, text: string, width: number, bold = false): string {
 	const truncated = truncateToWidth(text, width, "…");
 	const gap = Math.max(0, width - visibleWidth(truncated));
-	return theme.fg(color, truncated) + " ".repeat(gap);
+	const content = bold ? theme.bold(truncated) : truncated;
+	return theme.fg(color, content) + " ".repeat(gap);
 }
 
 /** Per-status glyph; needs-input overrides it (see renderRow). */
@@ -231,28 +234,33 @@ export class LaneDock {
 		} else {
 			headText = activeCount > 0 ? `Runs (${activeCount} active)` : `Runs (${lanes.length})`;
 		}
-		// Title is a plain LABEL, not a selectable/active-looking option: 2-space indent +
-		// bold, no spinner/progress (that lives on the rows), not accent-styled. A STATIC
-		// ● (warning) flags needs-input urgency — a status, not an animated progress glyph.
-		const titleColor = anyNeedsInput ? "warning" : "text";
+		// Title is rendered as a CHIP, exactly like ask_user_question's question HEADER
+		// badge (tab-content-strategy.ts): a selectedBg block with one space of padding on
+		// each side — no spinner/progress (that lives on the rows). A STATIC ● (warning)
+		// flags needs-input urgency outside the chip. The chip is NOT truncated to a tight
+		// character budget: the whole dock width is available before it clips.
 		const titleIcon = anyNeedsInput ? `${theme.fg("warning", "●")} ` : "";
-		const heading = truncate(`  ${titleIcon}${theme.fg(titleColor, theme.bold(headText))}`);
+		const heading = truncate(`  ${titleIcon}${theme.bg("selectedBg", ` ${headText} `)}`);
 
-		// A single bottom rule separates the dock from Pi's status chrome below; the
-		// editor's own border above is the top boundary (no top rule — it would double
-		// up with that border). Accent while focused, dim otherwise.
+		// A bottom rule separates the dock from Pi's status chrome below. Accent while
+		// focused, dim otherwise. The TOP boundary depends on focus: ambient leaves a
+		// blank because the editor's own border above is the boundary; ACTIVE hides that
+		// editor (LaneDockEditor suppresses its render while stepped in), so the dock
+		// draws its own top rule to stay framed as a panel.
 		const rule = theme.fg(active ? "accent" : "dim", "─".repeat(Math.max(0, width)));
-		// ask_user_question vertical rhythm: a blank under the editor border, the title,
-		// a blank, the rows, a blank, the footer, then the bottom rule.
-		const lines: string[] = ["", heading, ""];
+		// ask_user_question vertical rhythm. Ambient: a breathing-room blank (the editor
+		// border above is the boundary), the title, a blank, then the rows. ACTIVE: the
+		// editor is hidden, so lead with a blank, the top rule, a blank, THEN the title —
+		// (blank · HR · blank · title) keeps the rule off the chrome above and gives the
+		// title room to breathe under the rule.
+		const lines: string[] = active ? ["", rule, "", heading, ""] : ["", heading, ""];
 		const budget = MAX_WIDGET_LINES - 1; // rows available after the heading
 
 		// The 2-col selection gutter is ALWAYS reserved (see renderRow) so stepping in
 		// only swaps spaces for the `❯` cursor — no row ever shifts. sel(i) marks the
 		// active selection (only true while active).
 		const sel = (i: number): boolean => active && i === selection;
-		const row = (lane: LaneEntry, i: number): string =>
-			this.highlight(theme, truncate(this.renderRow(theme, lane, width, sel(i))), width, sel(i));
+		const row = (lane: LaneEntry, i: number): string => truncate(this.renderRow(theme, lane, width, sel(i)));
 		if (lanes.length <= budget) {
 			lanes.forEach((lane, i) => {
 				lines.push(row(lane, i));
@@ -276,23 +284,17 @@ export class LaneDock {
 		return lines;
 	}
 
-	/**
-	 * Full-width selectedBg highlight for the active row — pi's selector convention
-	 * (session-selector.js: `theme.bg("selectedBg", line)`). Padded to the viewport
-	 * width so the whole row lights up, not just the text. A no-op for unselected rows.
-	 */
-	private highlight(theme: Theme, line: string, width: number, selected: boolean): string {
-		if (!selected) return line;
-		const pad = Math.max(0, width - visibleWidth(line));
-		return theme.bg("selectedBg", line + " ".repeat(pad));
-	}
-
 	private renderRow(theme: Theme, lane: LaneEntry, width: number, selected: boolean): string {
-		// Selection gutter, ALWAYS 2 cols so it's reserved in every state: `❯ ` (accent)
-		// on the active selection, two blank spaces otherwise (ambient or unselected).
+		// Selection styling mirrors ask_user_question (WrappingSelect): the selected row
+		// is marked by the `❯ ` pointer plus an accent+bold LABEL — NOT a full-width
+		// background block. Secondary metadata (id, status/progress) keeps its own color,
+		// exactly as ask_user_question leaves the description dim on the active row.
+		//
+		// Selection gutter, ALWAYS 2 cols so it's reserved in every state: `❯ ` (accent+
+		// bold) on the active selection, two blank spaces otherwise (ambient or unselected).
 		// Reserving it in the ambient state is what prevents a layout shift when the user
 		// steps in — the row content never moves, only the gutter glyph swaps.
-		const gutter = selected ? theme.fg("accent", CURSOR_SELECTED) : CURSOR_UNSELECTED;
+		const gutter = selected ? theme.fg("accent", theme.bold(CURSOR_SELECTED)) : CURSOR_UNSELECTED;
 		const needs = laneNeedsInput(lane.runId);
 		const progress = lane.progress;
 		const running = lane.status === "running";
@@ -324,8 +326,11 @@ export class LaneDock {
 		// short-id is dim metadata — mirrors TodoOverlay (format.ts). No tree branch —
 		// the dock follows pi's selector style (cursor + content), not a tree.
 		const head = `${gutter}${theme.fg(glyphColor, glyph)} `;
+		// The name is the row's LABEL: accent+bold when selected (ask_user_question's
+		// `selectedText`), normal "text" otherwise. The short-id stays dim metadata in
+		// both states (like ask_user_question's always-dim description).
 		const prefix =
-			`${head}${padCol(theme, "text", lane.name, NAME_COL)} ` +
+			`${head}${padCol(theme, selected ? "accent" : "text", lane.name, NAME_COL, selected)} ` +
 			`${padCol(theme, "dim", shortRunId(lane.runId), ID_COL)} `;
 
 		// needs-input ALWAYS wins the trailing label (overrides live progress, FR7).

@@ -19,6 +19,12 @@
  * overload of the arrow keys entirely (there is no text to navigate). Exit: ↑ at
  * the top row, esc, or simply typing (the keystroke is forwarded so editing
  * resumes seamlessly). ⏎ opens the selected run.
+ *
+ * The editor stays FOCUSED while stepped in (it has to, to keep proxying keys), so
+ * its render() is overridden to HIDE the input box (border + blinking cursor) for
+ * the duration — otherwise an empty prompt with a live cursor would sit above the
+ * dock you're navigating. It reappears the instant focus returns to the prompt
+ * (dock deactivated). The dock draws its own top rule in that state to stay framed.
  */
 
 import { CustomEditor, type KeybindingsManager } from "@earendil-works/pi-coding-agent";
@@ -124,6 +130,20 @@ export class LaneDockEditor extends CustomEditor {
 		private readonly onOpen: (runId: string) => void,
 	) {
 		super(tui, theme, keybindings);
+	}
+
+	/**
+	 * Hide the input box while the dock holds navigation focus. The editor remains
+	 * focused (so handleInput keeps receiving keystrokes), but rendering a single blank
+	 * line suppresses the empty prompt + reversed-video cursor that would otherwise
+	 * float above the dock — WITHOUT collapsing the editor to zero height (which would
+	 * yank the dock up against Pi's chrome). Falls straight back to the normal editor
+	 * render the moment the dock is deactivated, so the prompt returns when focus comes
+	 * back to the input.
+	 */
+	render(width: number): string[] {
+		if (getDockState().active) return [""];
+		return super.render(width);
 	}
 
 	handleInput(data: string): void {

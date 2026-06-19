@@ -1,5 +1,8 @@
-import { describe, expect, it } from "vitest";
-import { type DockDecisionContext, type DockKey, decideDockAction } from "./lane-dock-editor.js";
+import type { KeybindingsManager } from "@earendil-works/pi-coding-agent";
+import type { EditorTheme, TUI } from "@earendil-works/pi-tui";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { type DockDecisionContext, type DockKey, decideDockAction, LaneDockEditor } from "./lane-dock-editor.js";
+import { __resetRunLaneRegistry, setDockActive } from "./run-lane-registry.js";
 
 /** Base context: dock inactive, prompt empty, no autocomplete, two lanes, top selected. */
 function ctx(overrides: Partial<DockDecisionContext> = {}): DockDecisionContext {
@@ -77,5 +80,40 @@ describe("decideDockAction — active (navigation)", () => {
 	it("an open autocomplete defensively keeps all keys (never steals from the dropdown)", () => {
 		expect(decideDockAction("up", active({ autocompleteOpen: true }))).toEqual({ kind: "passthrough" });
 		expect(decideDockAction("down", active({ autocompleteOpen: true }))).toEqual({ kind: "passthrough" });
+	});
+});
+
+describe("LaneDockEditor — input visibility while stepped in", () => {
+	// A minimal harness: the base Editor.render only touches tui.terminal.rows +
+	// theme.borderColor (the editor box is just horizontal rules around the text),
+	// and CustomEditor merely stores keybindings — so these stubs suffice.
+	function makeEditor(): LaneDockEditor {
+		const tui = { terminal: { rows: 40 }, requestRender: () => {} } as unknown as TUI;
+		const theme = { borderColor: (s: string) => s, selectList: {} } as unknown as EditorTheme;
+		const keybindings = { matches: () => false } as unknown as KeybindingsManager;
+		return new LaneDockEditor(tui, theme, keybindings, () => {});
+	}
+
+	beforeEach(() => __resetRunLaneRegistry());
+	afterEach(() => __resetRunLaneRegistry());
+
+	it("renders the normal input box while the dock is inactive", () => {
+		expect(makeEditor().render(80).length).toBeGreaterThan(0);
+	});
+
+	it("hides the input box while the dock holds navigation focus, keeping one blank line", () => {
+		const editor = makeEditor();
+		setDockActive(true);
+		// A single blank line: no border, no cursor — but the editor keeps its height so
+		// the dock below doesn't jump up against Pi's chrome.
+		expect(editor.render(80)).toEqual([""]);
+	});
+
+	it("restores the input box when focus returns to the prompt (dock deactivated)", () => {
+		const editor = makeEditor();
+		setDockActive(true);
+		expect(editor.render(80)).toEqual([""]);
+		setDockActive(false);
+		expect(editor.render(80).length).toBeGreaterThan(1);
 	});
 });
