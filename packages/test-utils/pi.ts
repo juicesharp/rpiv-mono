@@ -37,9 +37,17 @@ interface MockSpawnChildOptions<T = void> {
 	withSession: (child: WorkflowSessionContext) => Promise<T>;
 }
 
+/** A captured `registerShortcut` registration (KeyId → handler). */
+export interface CapturedShortcut {
+	description?: string;
+	handler: (ctx: unknown) => Promise<void> | void;
+}
+
 export interface CapturedPi {
 	tools: Map<string, ToolDefinition>;
 	commands: Map<string, Omit<RegisteredCommand, "name" | "sourceInfo">>;
+	/** Keyboard shortcuts registered via `pi.registerShortcut(keyId, opts)`. */
+	shortcuts: Map<string, CapturedShortcut>;
 	flags: Map<string, unknown>;
 	events: Map<string, Array<(...args: unknown[]) => unknown>>;
 	eventsEmitted: Map<string, unknown[]>;
@@ -72,6 +80,7 @@ export function createMockPi(options: CreateMockPiOptions = {}): MockPi {
 	const captured: CapturedPi = {
 		tools: new Map(),
 		commands: new Map(),
+		shortcuts: new Map(),
 		flags: new Map(),
 		events: new Map(),
 		eventsEmitted: new Map(),
@@ -96,6 +105,9 @@ export function createMockPi(options: CreateMockPiOptions = {}): MockPi {
 		}),
 		registerCommand: vi.fn((name: string, cmd: Omit<RegisteredCommand, "name" | "sourceInfo">) => {
 			captured.commands.set(name, cmd);
+		}),
+		registerShortcut: vi.fn((shortcut: string, opts: CapturedShortcut) => {
+			captured.shortcuts.set(shortcut, opts);
 		}),
 		registerFlag: vi.fn((name: string, value: unknown) => {
 			captured.flags.set(name, value);

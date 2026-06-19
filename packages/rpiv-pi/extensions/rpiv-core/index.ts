@@ -14,6 +14,8 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { FLAG_DEBUG } from "./constants.js";
+import { registerLaneProgressHook } from "./lane-progress.js";
+import { registerLaneSwitcher } from "./lane-switcher.js";
 import { registerModelsConfigValidation } from "./models-config-validate.js";
 import { registerBuiltInWorkflows } from "./register-built-in-workflows.js";
 import { registerRpivModelsCommand } from "./rpiv-models/index.js";
@@ -23,7 +25,7 @@ import { registerSetupCommand } from "./setup-command.js";
 import { registerSkillBracket } from "./skill-bracket.js";
 import { registerSkillContractsSource, registerUserSkillContractsSource } from "./skill-contracts-source.js";
 import { registerUpdateAgentsCommand } from "./update-agents-command.js";
-import { registerWorkflowExecutionHostProvider } from "./workflow-execution-host.js";
+import { registerWorkflowExecutionHostProviderHook } from "./workflow-execution-host.js";
 
 export default function (pi: ExtensionAPI) {
 	pi.registerFlag(FLAG_DEBUG, {
@@ -47,6 +49,21 @@ export default function (pi: ExtensionAPI) {
 	// registry/uiContext for per-child models — the workflow-path lifecycle latch
 	// is retired. The /skill: bracket below still consumes the capture.
 	registerSessionCapture(pi);
+	// Ambient lane overlay + /lanes + focused manager (launcher owns the registry).
+	// Independent of the rpiv-workflow sibling: the registry is populated only when a
+	// /wf run actually launches, so this is a safe unconditional registration. Its
+	// session_start hook is root-gated (skips detached children — Phase 7.2).
+	registerLaneSwitcher(pi);
+	// SDK execution-host provider — registered on the ROOT launcher's session_start
+	// (NOT here / not in the IIFE below) so a detached child re-loading rpiv-core can
+	// never overwrite the process-global provider box (Phase 7.2). The session_start
+	// timing is safe: /wf is interactive-only and only fires after session start.
+	registerWorkflowExecutionHostProviderHook(pi);
+	// Lifecycle→registry bridge for live overlay stage progress (Phase 8). Root-gated
+	// + idempotent, same as the provider hook above: registered on the ROOT launcher's
+	// session_start so a re-loading child never double-subscribes, and it dynamically
+	// imports the rpiv-workflow `/startup` entry (degrades when the sibling is absent).
+	registerLaneProgressHook(pi);
 	// Standalone /skill: model/effort override bracket. MUST register AFTER
 	// registerSessionCapture so the bracket's `getCapturedModel()`
 	// read at input-arm time sees the populated baseline. The bracket's
@@ -72,12 +89,13 @@ export default function (pi: ExtensionAPI) {
 	// must still run) and degrades gracefully when the sibling is absent. Fire-and-forget:
 	// the workflow registry is read lazily at `/wf` time, long after this settles.
 	//
-	// The SDK execution-host provider REPLACES the retired workflow-path
-	// model lifecycle latch — per-child models are resolved through the
-	// provider's resolveModel and applied at child-session creation, not via a
-	// global pi.setModel() flip. (The session_start capture + /skill: bracket stay.)
+	// The SDK execution-host provider is NOT registered here — it is wired to the
+	// root launcher's session_start (registerWorkflowExecutionHostProviderHook above)
+	// so a detached child re-loading rpiv-core cannot overwrite the process-global
+	// provider box (Phase 7.2). Per-child models are resolved through the provider's
+	// resolveModel and applied at child-session creation, not via a global
+	// pi.setModel() flip. (The session_start capture + /skill: bracket stay.)
 	void (async () => {
-		await registerWorkflowExecutionHostProvider().catch(logRegistrationFailure("workflow execution host"));
 		await registerBuiltInWorkflows().catch(logRegistrationFailure("built-in workflows"));
 		await registerSkillContractsSource().catch(logRegistrationFailure("skill contracts source"));
 		await registerUserSkillContractsSource().catch(logRegistrationFailure("user skill contracts source"));

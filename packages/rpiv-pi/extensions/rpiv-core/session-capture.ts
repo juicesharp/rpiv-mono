@@ -19,6 +19,7 @@
 
 import type { ExtensionAPI, ExtensionUIContext, ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { parseModelKey } from "@juicesharp/rpiv-config";
+import { isLaneRelayUiContext } from "./lane-relay-ui.js";
 import type { ModelThinkingLevelValue } from "./models-config.js";
 import { isStaleCtxError } from "./utils.js";
 
@@ -94,6 +95,12 @@ export function registerSessionCapture(pi: ExtensionAPI): void {
 			_event: unknown,
 			ctx: { modelRegistry?: ModelRegistry; model?: CapturedModel; ui?: ExtensionUIContext },
 		) => {
+			// Phase 7.2: a detached child re-loads rpiv-core and re-fires this hook with
+			// its bound relay ui. Skip it — capturing the relay would re-point the
+			// launcher's captured foreground UI at a child (corrupting every later /wf,
+			// whose foreground children would bind a defunct relay). The launcher's own
+			// (real-ui) session_start is the only one that captures.
+			if (isLaneRelayUiContext(ctx.ui)) return;
 			if (ctx.modelRegistry) {
 				capturedModelRegistry = ctx.modelRegistry;
 			}

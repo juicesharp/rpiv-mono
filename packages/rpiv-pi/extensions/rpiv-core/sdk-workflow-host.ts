@@ -52,6 +52,8 @@ import type {
 	WorkflowHostContext,
 	WorkflowSessionContext,
 } from "@juicesharp/rpiv-workflow";
+import { createLaneRelayUiContext } from "./lane-relay-ui.js";
+import { getLane, setCurrentSession } from "./run-lane-registry.js";
 
 /**
  * Launcher-only "ambient observer" extensions: they register session-lifecycle
@@ -276,6 +278,11 @@ export class SdkWorkflowHost implements WorkflowHostContext {
 			thinkingLevel: options.model?.thinking,
 		});
 
+		// Lane registry (FR1): expose this run's currently-live child as the viewer's
+		// transcript source. Replaces any prior child; under fanout the latest-spawned
+		// wins. No-op until the run is recorded (createWorkflowExecution, Phase 3).
+		setCurrentSession(this.deps.runId, session);
+
 		// session.abort() does NOT reject prompt(); the SDK catches the abort,
 		// writes a stopReason:"aborted" transcript message, and RESOLVES the run
 		// (@earendil-works/pi-agent-core/dist/agent.js). So abort here just
@@ -285,15 +292,25 @@ export class SdkWorkflowHost implements WorkflowHostContext {
 		const onAbort = () => void session.abort();
 		options.signal?.addEventListener("abort", onAbort, { once: true });
 		try {
-			// foreground binds the real UI (ask_user_question works as today);
-			// background binds none ⇒ hasUI:false ⇒ ask_user_question degrades.
+			// foreground binds the DEFERRING relay (FR5): a floated run's foreground stage
+			// queues + badges its questionnaire instead of grabbing the (possibly hidden)
+			// real UI; the switcher replays it on switch-in. background binds none ⇒
+			// hasUI:false ⇒ ask_user_question degrades exactly as before.
 			await session.bindExtensions({
-				uiContext: options.lane === "foreground" ? this.deps.uiContext : undefined,
+				uiContext:
+					options.lane === "foreground"
+						? createLaneRelayUiContext(this.deps.uiContext, this.deps.runId)
+						: undefined,
 			});
 			await this.dispatchChildPrompt(session, options);
 			return await options.withSession(this.adapt(session, options.lane, depth));
 		} finally {
 			options.signal?.removeEventListener("abort", onAbort);
+			// Clear only if WE are still the current child — a fanout sibling spawned
+			// later may now own the slot; don't clobber it on our teardown.
+			if (getLane(this.deps.runId)?.currentSession === session) {
+				setCurrentSession(this.deps.runId, undefined);
+			}
 			await this.teardownChild(session); // (B) session_shutdown → dispose
 		}
 	}

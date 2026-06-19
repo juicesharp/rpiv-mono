@@ -75,6 +75,12 @@ beforeEach(async () => {
 	sessionHooks.__resetSessionHooksAnnounced();
 	const sessionCapture = await import("../packages/rpiv-pi/extensions/rpiv-core/session-capture.js");
 	sessionCapture.__resetSessionCaptureState();
+	const runLaneRegistry = await import("../packages/rpiv-pi/extensions/rpiv-core/run-lane-registry.js");
+	runLaneRegistry.__resetRunLaneRegistry();
+	const laneSwitcher = await import("../packages/rpiv-pi/extensions/rpiv-core/lane-switcher.js");
+	laneSwitcher.__resetLaneSwitcher();
+	const laneProgress = await import("../packages/rpiv-pi/extensions/rpiv-core/lane-progress.js");
+	laneProgress.__resetLaneProgress();
 	const skillBracket = await import("../packages/rpiv-pi/extensions/rpiv-core/skill-bracket.js");
 	skillBracket.__resetSkillBracketState();
 	const modelsConfigModule = await import("../packages/rpiv-pi/extensions/rpiv-core/models-config.js");

@@ -111,24 +111,27 @@ export async function handleWorkflowCommand(host: WorkflowHost, args: string, ct
 		return;
 	}
 
-	// runWorkflow returns a result envelope rather than throwing — but a
-	// thrown predicate or invariant could still bubble. Catch so Pi's
-	// dispatcher doesn't print a raw stack.
-	try {
-		const result = await runWorkflow(ctx, {
-			workflow,
-			input,
-			host,
-			trigger: { kind: "command", name: "wf" },
-			name,
+	// Float the run off the prompt (FR1): /wf returns immediately; the run executes
+	// detached and appears as a lane. runWorkflow returns an envelope (never throws on
+	// run failure), but a thrown predicate/invariant could still bubble — .catch keeps
+	// Pi's dispatcher from printing a raw stack AND a floated promise from going
+	// unhandled (NFR).
+	void runWorkflow(ctx, {
+		workflow,
+		input,
+		host,
+		trigger: { kind: "command", name: "wf" },
+		name,
+	})
+		.then((result) => {
+			// Surface pre-flight rejections (collision, etc.) — no runId means no JSONL on disk.
+			if (!result.success && result.runId === undefined && result.error) {
+				ctx.ui.notify(result.error, "error");
+			}
+		})
+		.catch((e) => {
+			ctx.ui.notify(MSG_WORKFLOW_THREW(formatError(e)), "error");
 		});
-		// Surface pre-flight rejections (collision, etc.) — no runId means no JSONL on disk.
-		if (!result.success && result.runId === undefined && result.error) {
-			ctx.ui.notify(result.error, "error");
-		}
-	} catch (e) {
-		ctx.ui.notify(MSG_WORKFLOW_THREW(formatError(e)), "error");
-	}
 }
 
 // ---------------------------------------------------------------------------
@@ -140,19 +143,21 @@ async function handleResume(host: WorkflowHost, ctx: WorkflowHostContext, ref: s
 		ctx.ui.notify(MSG_RESUME_USAGE, "error");
 		return;
 	}
-	try {
-		const result = await resumeWorkflowByRunId(ctx, ref, { host });
-		// A failure with no runId is a no-JSONL refusal (run-id didn't resolve,
-		// load error, workflow gone, or an unreconstructable trail) — nothing else
-		// surfaces it, so notify here. An in-run failure carries a runId and was
-		// already notified by the stage machinery via its JSONL failure row;
-		// re-notifying would double up.
-		if (!result.success && result.runId === undefined && result.error) {
-			ctx.ui.notify(result.error, "error");
-		}
-	} catch (e) {
-		ctx.ui.notify(MSG_WORKFLOW_THREW(formatError(e)), "error");
-	}
+	// Float the resume off the prompt (FR1) — identical shape to the run path.
+	void resumeWorkflowByRunId(ctx, ref, { host })
+		.then((result) => {
+			// A failure with no runId is a no-JSONL refusal (run-id didn't resolve,
+			// load error, workflow gone, or an unreconstructable trail) — nothing else
+			// surfaces it, so notify here. An in-run failure carries a runId and was
+			// already notified by the stage machinery via its JSONL failure row;
+			// re-notifying would double up.
+			if (!result.success && result.runId === undefined && result.error) {
+				ctx.ui.notify(result.error, "error");
+			}
+		})
+		.catch((e) => {
+			ctx.ui.notify(MSG_WORKFLOW_THREW(formatError(e)), "error");
+		});
 }
 
 // ---------------------------------------------------------------------------

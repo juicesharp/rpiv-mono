@@ -22,6 +22,7 @@ import type { ExtensionAPI, ExtensionUIContext } from "@earendil-works/pi-coding
 import { createMockCommandCtx, createMockModelRegistry } from "@juicesharp/rpiv-test-utils";
 import { registerWorkflowExecutionHost } from "@juicesharp/rpiv-workflow/startup";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { __resetRunLaneRegistry, getLane, recordRun, setFocusedRun } from "./run-lane-registry.js";
 import { __resetSessionCaptureState, registerSessionCapture } from "./session-capture.js";
 import {
 	createWorkflowExecution,
@@ -73,12 +74,13 @@ function writeModels(config: unknown): void {
 
 beforeEach(() => {
 	__resetSessionCaptureState();
+	__resetRunLaneRegistry();
 	vi.clearAllMocks();
 });
 
-describe("createWorkflowExecution — abort tap", () => {
+describe("createWorkflowExecution — focus-gated abort tap + lane lifecycle", () => {
 	it("registers an onTerminalInput listener and returns { host, signal, dispose } when the observer has UI", () => {
-		const { ui, onTerminalInput, unsub } = makeSpyUi();
+		const { ui, onTerminalInput } = makeSpyUi();
 		captureSession(ui);
 		const observer = createMockCommandCtx({ hasUI: true });
 
@@ -89,10 +91,42 @@ describe("createWorkflowExecution — abort tap", () => {
 		expect(exec.host.hasUI).toBe(true);
 		expect(exec.signal).toBeInstanceOf(AbortSignal);
 		expect(exec.signal?.aborted).toBe(false);
-		expect(exec.dispose).toBe(unsub);
+		// dispose is now a wrapper (unsub + evictRun), not identity-equal to unsub.
+		expect(typeof exec.dispose).toBe("function");
 	});
 
-	it("fires the AbortController on ESC and consumes the keystroke", () => {
+	it("records the lane at build under its name; dispose unsubscribes the tap and retires a still-running lane (Phase A retention)", () => {
+		const { ui, unsub } = makeSpyUi();
+		captureSession(ui);
+		const observer = createMockCommandCtx({ hasUI: true });
+
+		const exec = createWorkflowExecution(observer, {
+			runId: "run-1",
+			childSessionsDir: "/tmp/run-1/sessions",
+			name: "ship",
+		});
+
+		expect(getLane("run-1")?.name).toBe("ship");
+
+		// Phase A: terminal runs are RETAINED, not deleted. The normal retirement path is
+		// onWorkflowEnd; dispose is the fallback for a throw/crash that left the lane
+		// "running" — it retires to "aborted" so a lane is never stranded "running".
+		exec.dispose?.();
+		expect(unsub).toHaveBeenCalledTimes(1);
+		expect(getLane("run-1")?.status).toBe("aborted");
+	});
+
+	it("falls back to the runId as the lane name when no name is given", () => {
+		const { ui } = makeSpyUi();
+		captureSession(ui);
+		const observer = createMockCommandCtx({ hasUI: true });
+
+		createWorkflowExecution(observer, { runId: "run-1", childSessionsDir: "/tmp/run-1/sessions" });
+
+		expect(getLane("run-1")?.name).toBe("run-1");
+	});
+
+	it("passes ESC through (never consumed) regardless of focus", () => {
 		const { ui, onTerminalInput } = makeSpyUi();
 		captureSession(ui);
 		const observer = createMockCommandCtx({ hasUI: true });
@@ -100,13 +134,14 @@ describe("createWorkflowExecution — abort tap", () => {
 		const exec = createWorkflowExecution(observer, { runId: "run-1", childSessionsDir: "/tmp/run-1/sessions" });
 		const tap = onTerminalInput.mock.calls[0][0];
 
-		const result = tap(ESC);
-
-		expect(result).toEqual({ consume: true });
-		expect(exec.signal?.aborted).toBe(true);
+		// Even when switched into this lane, ESC belongs to the viewer (esc = back to root).
+		recordRun("run-1", "ship");
+		setFocusedRun("run-1");
+		expect(tap(ESC)).toBeUndefined();
+		expect(exec.signal?.aborted).toBe(false);
 	});
 
-	it("fires the AbortController on Ctrl-C and consumes the keystroke", () => {
+	it("fires the AbortController on Ctrl-C ONLY when this run is focused", () => {
 		const { ui, onTerminalInput } = makeSpyUi();
 		captureSession(ui);
 		const observer = createMockCommandCtx({ hasUI: true });
@@ -114,10 +149,30 @@ describe("createWorkflowExecution — abort tap", () => {
 		const exec = createWorkflowExecution(observer, { runId: "run-1", childSessionsDir: "/tmp/run-1/sessions" });
 		const tap = onTerminalInput.mock.calls[0][0];
 
+		recordRun("run-1", "ship");
+		setFocusedRun("run-1");
 		const result = tap(CTRL_C);
 
 		expect(result).toEqual({ consume: true });
 		expect(exec.signal?.aborted).toBe(true);
+	});
+
+	it("passes Ctrl-C through when this run is NOT focused (root or a sibling is focused)", () => {
+		const { ui, onTerminalInput } = makeSpyUi();
+		captureSession(ui);
+		const observer = createMockCommandCtx({ hasUI: true });
+
+		const exec = createWorkflowExecution(observer, { runId: "run-1", childSessionsDir: "/tmp/run-1/sessions" });
+		const tap = onTerminalInput.mock.calls[0][0];
+
+		// At root (focus undefined): pass through.
+		expect(tap(CTRL_C)).toBeUndefined();
+		expect(exec.signal?.aborted).toBe(false);
+
+		// A sibling focused: still pass through (never abort an arbitrary run).
+		setFocusedRun("other-run");
+		expect(tap(CTRL_C)).toBeUndefined();
+		expect(exec.signal?.aborted).toBe(false);
 	});
 
 	it("passes non-interrupt keystrokes through without aborting", () => {
@@ -128,21 +183,31 @@ describe("createWorkflowExecution — abort tap", () => {
 		const exec = createWorkflowExecution(observer, { runId: "run-1", childSessionsDir: "/tmp/run-1/sessions" });
 		const tap = onTerminalInput.mock.calls[0][0];
 
+		recordRun("run-1", "ship");
+		setFocusedRun("run-1");
 		expect(tap("a")).toBeUndefined();
 		expect(exec.signal?.aborted).toBe(false);
 	});
 
-	it("headless (no UI) registers no listener and yields signal/dispose undefined", () => {
+	it("headless (no UI) registers no listener and yields signal undefined — but still records + dispose retires", () => {
 		const { ui, onTerminalInput } = makeSpyUi();
 		captureSession(ui);
 		const observer = createMockCommandCtx({ hasUI: false });
 
-		const exec = createWorkflowExecution(observer, { runId: "run-1", childSessionsDir: "/tmp/run-1/sessions" });
+		const exec = createWorkflowExecution(observer, {
+			runId: "run-1",
+			childSessionsDir: "/tmp/run-1/sessions",
+			name: "ship",
+		});
 
 		expect(onTerminalInput).not.toHaveBeenCalled();
 		expect(exec.signal).toBeUndefined();
-		expect(exec.dispose).toBeUndefined();
 		expect(exec.host).toBeDefined(); // the host is still built — only the abort handle degrades
+		// Retirement is symmetric even with signal/tap undefined.
+		expect(getLane("run-1")?.name).toBe("ship");
+		expect(typeof exec.dispose).toBe("function");
+		exec.dispose?.();
+		expect(getLane("run-1")?.status).toBe("aborted");
 	});
 });
 

@@ -18,6 +18,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import type { WorkflowHostContext } from "@juicesharp/rpiv-workflow";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -30,6 +31,9 @@ interface FakeSession {
 	sessionFile: string | undefined;
 	isStreaming: boolean;
 	messages: unknown[];
+	// Present so a FakeSession structurally satisfies the registry's LaneSession
+	// (the viewer's transcript source) — the host registers `session` verbatim.
+	sessionManager: { getBranch: ReturnType<typeof vi.fn> };
 	subscribe: ReturnType<typeof vi.fn>;
 	prompt: ReturnType<typeof vi.fn>;
 	sendUserMessage: ReturnType<typeof vi.fn>;
@@ -53,6 +57,7 @@ function makeFakeSession(): FakeSession {
 		sessionFile: `/run/sessions/sid-${seq}.jsonl`,
 		isStreaming: false,
 		messages: [],
+		sessionManager: { getBranch: vi.fn(() => []) },
 		subscribe: vi.fn(() => () => {}),
 		prompt: vi.fn(async () => {}),
 		sendUserMessage: vi.fn(async () => {}),
@@ -101,6 +106,7 @@ vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
 	};
 });
 
+import { __resetRunLaneRegistry, getLane, recordRun } from "./run-lane-registry.js";
 import {
 	AMBIENT_OBSERVER_MANIFEST_FLAG,
 	CHILD_AMBIENT_EXTENSION_DENYLIST,
@@ -131,11 +137,15 @@ function makeDeps(overrides: Partial<SdkWorkflowHostDeps> = {}): {
 	notify: ReturnType<typeof vi.fn>;
 	setStatus: ReturnType<typeof vi.fn>;
 	uiCustom: ReturnType<typeof vi.fn>;
+	uiNotify: ReturnType<typeof vi.fn>;
 	find: ReturnType<typeof vi.fn>;
 } {
 	const notify = vi.fn();
 	const setStatus = vi.fn();
 	const uiCustom = vi.fn(async () => ({ answers: [], cancelled: false }));
+	// The launcher uiContext (bound to foreground children via the relay) — its
+	// notify is what the relay toasts through on a deferred questionnaire.
+	const uiNotify = vi.fn();
 	const find = vi.fn((provider: string, modelId: string) => ({ provider, id: modelId, _fake: true }));
 
 	const deps = {
@@ -149,7 +159,7 @@ function makeDeps(overrides: Partial<SdkWorkflowHostDeps> = {}): {
 			},
 		},
 		modelRegistry: { find } as unknown as SdkWorkflowHostDeps["modelRegistry"],
-		uiContext: { custom: uiCustom } as unknown as SdkWorkflowHostDeps["uiContext"],
+		uiContext: { custom: uiCustom, notify: uiNotify } as unknown as SdkWorkflowHostDeps["uiContext"],
 		cwd: "/work",
 		runId: "run-abc",
 		childSessionsDir: "/run/sessions",
@@ -157,7 +167,7 @@ function makeDeps(overrides: Partial<SdkWorkflowHostDeps> = {}): {
 		...overrides,
 	} as SdkWorkflowHostDeps;
 
-	return { deps, notify, setStatus, uiCustom, find };
+	return { deps, notify, setStatus, uiCustom, uiNotify, find };
 }
 
 beforeEach(() => {
@@ -169,6 +179,7 @@ beforeEach(() => {
 	sessionManagerCreate.mockClear();
 	sessionManagerOpen.mockClear();
 	resourceLoaderReload.mockClear();
+	__resetRunLaneRegistry();
 });
 
 afterEach(() => {
@@ -242,8 +253,10 @@ describe("spawnChild — fresh child", () => {
 });
 
 describe("spawnChild — lane → UI binding", () => {
-	it("foreground binds the real uiContext and the child reports hasUI:true", async () => {
-		const { deps } = makeDeps();
+	it("foreground binds the DEFERRING relay (its custom enqueues, does not hit the real ctx) and the child reports hasUI:true", async () => {
+		// Record the run so the relay's custom can enqueue into a live lane (Slice 7/FR5).
+		recordRun("run-abc", "ship");
+		const { deps, uiCustom, uiNotify } = makeDeps();
 		const host = new SdkWorkflowHost(deps);
 
 		let childHasUI: boolean | undefined;
@@ -255,8 +268,21 @@ describe("spawnChild — lane → UI binding", () => {
 			},
 		});
 
-		expect(sessions[0].bindExtensions).toHaveBeenCalledWith({ uiContext: deps.uiContext });
 		expect(childHasUI).toBe(true);
+		const boundArg = sessions[0].bindExtensions.mock.calls[0][0] as { uiContext?: ExtensionUIContext };
+		// A relay, NOT the raw uiContext — it forwards everything but `custom`.
+		expect(boundArg.uiContext).toBeDefined();
+		expect(boundArg.uiContext).not.toBe(deps.uiContext);
+
+		// Its `custom` DEFERS: calling it enqueues the questionnaire into the lane and
+		// returns a pending promise — it must NOT reach the real ctx.ui.custom.
+		const factory = (() => ({})) as never;
+		void boundArg.uiContext?.custom(factory, undefined as never);
+		expect(getLane("run-abc")?.pendingInput).toHaveLength(1);
+		expect(getLane("run-abc")?.pendingInput[0].factory).toBe(factory);
+		expect(uiCustom).not.toHaveBeenCalled();
+		// Non-`custom` members forward to the real ctx (the toast fired through it).
+		expect(uiNotify).toHaveBeenCalledWith("⚑ a background run needs input — /lanes to switch in", "warning");
 	});
 
 	it("background binds NO uiContext (⇒ noOpUIContext) and the child reports hasUI:false", async () => {
@@ -640,5 +666,95 @@ describe("ambient-observer manifest marker (L0-04)", () => {
 		const selfPkg = fileURLToPath(new URL("../../package.json", import.meta.url));
 		const self = JSON.parse(readFileSync(selfPkg, "utf8")) as { pi?: { ambientObserver?: boolean } };
 		expect(self.pi?.ambientObserver ?? false).toBe(false);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// (Slice 2) Retain the run's currently-live child as the viewer's transcript
+// source (FR1): set-on-spawn / clear-on-teardown, plus the fanout ownership
+// guard (a sibling's teardown must not clobber a later-spawned sibling).
+// ---------------------------------------------------------------------------
+
+describe("spawnChild — lane current-session retention (Slice 2)", () => {
+	it("points the lane at the live child during the stage and clears it on teardown", async () => {
+		recordRun("run-abc", "ship");
+		const { deps } = makeDeps();
+		const host = new SdkWorkflowHost(deps);
+
+		let liveDuringStage: unknown;
+		await host.spawnChild({
+			prompt: "p",
+			lane: "background",
+			withSession: async () => {
+				liveDuringStage = getLane("run-abc")?.currentSession;
+			},
+		});
+
+		// During the stage the lane exposed the live child; after the finally it's cleared.
+		expect(liveDuringStage).toBe(sessions[0]);
+		expect(getLane("run-abc")?.currentSession).toBeUndefined();
+	});
+
+	it("a sibling's teardown does NOT clobber a later-spawned sibling's currentSession", async () => {
+		recordRun("run-abc", "ship");
+		const { deps } = makeDeps();
+		const host = new SdkWorkflowHost(deps);
+
+		// Sequence two concurrent siblings deterministically: A is created first
+		// (slot = A), then B (slot = B, the latest-spawned owner). A then tears down
+		// while B is still live — its teardown must leave B's ownership intact.
+		let aReached!: () => void;
+		const aReachedP = new Promise<void>((r) => (aReached = r));
+		let releaseA!: () => void;
+		const aMayReturn = new Promise<void>((r) => (releaseA = r));
+		let bReached!: () => void;
+		const bReachedP = new Promise<void>((r) => (bReached = r));
+		let releaseB!: () => void;
+		const bMayReturn = new Promise<void>((r) => (releaseB = r));
+
+		const aP = host.spawnChild({
+			prompt: "a",
+			lane: "background",
+			withSession: async () => {
+				aReached();
+				await aMayReturn;
+			},
+		});
+		await aReachedP; // A created → slot = sessions[0]
+
+		const bP = host.spawnChild({
+			prompt: "b",
+			lane: "background",
+			withSession: async () => {
+				bReached();
+				await bMayReturn;
+			},
+		});
+		await bReachedP; // B created → slot = sessions[1] (latest-spawned wins)
+
+		expect(getLane("run-abc")?.currentSession).toBe(sessions[1]);
+
+		// A tears down while B is still live — the identity guard skips the clear.
+		releaseA();
+		await aP;
+		expect(getLane("run-abc")?.currentSession).toBe(sessions[1]);
+
+		// B (the owner) tears down → it clears the slot.
+		releaseB();
+		await bP;
+		expect(getLane("run-abc")?.currentSession).toBeUndefined();
+	});
+
+	it("setCurrentSession before the run is recorded is a no-op (Phase 2 may land before Phase 3 records)", async () => {
+		// deps.runId ("run-abc") is intentionally NOT recorded.
+		const { deps } = makeDeps();
+		const host = new SdkWorkflowHost(deps);
+
+		await expect(host.spawnChild({ prompt: "p", lane: "background", withSession: async () => "ok" })).resolves.toBe(
+			"ok",
+		);
+
+		// No lane was created as a side effect; setCurrentSession silently ignored it.
+		expect(getLane("run-abc")).toBeUndefined();
 	});
 });

@@ -484,4 +484,50 @@ describe("session-backed resume — detaches to the provider's executor host", (
 		expect(result.success).toBe(true);
 		expect(resolveModel).toHaveBeenCalledWith({ stage: "build", skill: "build" });
 	});
+
+	it("threads the lane name to createHost — header.workflow when the run carried no --name alias", async () => {
+		const file = writeSessionFile("sess-1");
+		writeRun([failedRow({ id: "sess-1", file })]);
+
+		const h = makeHarness({ switchBranch: [mockAssistantMessage("wrote .rpiv/artifacts/x/a.md")] });
+		let nameSeen: string | undefined;
+		registerWorkflowExecutionHost({
+			createHost: (_observer, opts) => {
+				nameSeen = opts.name;
+				return { host: h.ctx };
+			},
+		});
+
+		const result = await resumeWorkflow(throwingLauncher(), {
+			workflow: singleStageWorkflow(announceOutcome()),
+			header, // no `name` field — falls back to header.workflow ("wf")
+			ref: "@1",
+		});
+
+		expect(result.success).toBe(true);
+		expect(nameSeen).toBe("wf");
+	});
+
+	it("prefers header.name (the --name alias) over the workflow for the lane name", async () => {
+		const file = writeSessionFile("sess-1");
+		writeRun([failedRow({ id: "sess-1", file })]);
+
+		const h = makeHarness({ switchBranch: [mockAssistantMessage("wrote .rpiv/artifacts/x/a.md")] });
+		let nameSeen: string | undefined;
+		registerWorkflowExecutionHost({
+			createHost: (_observer, opts) => {
+				nameSeen = opts.name;
+				return { host: h.ctx };
+			},
+		});
+
+		const result = await resumeWorkflow(throwingLauncher(), {
+			workflow: singleStageWorkflow(announceOutcome()),
+			header: { ...header, name: "nightly-ship" },
+			ref: "@1",
+		});
+
+		expect(result.success).toBe(true);
+		expect(nameSeen).toBe("nightly-ship");
+	});
 });

@@ -168,13 +168,18 @@ async function detachExecutor(
 	options: {
 		resolveModel?: (id: { stage: string; skill: string }) => ModelSelection | undefined;
 		signal?: AbortSignal;
+		name?: string; // lane display name (run --name ?? workflow name)
 	},
 ): Promise<DetachedExecutor> {
 	const provider = getWorkflowExecutionProvider();
 	if (!provider) return { execCtx: ctx, resolveModel: options.resolveModel, signal: options.signal };
 	// Resolve the run-scoped session dir here (internal layout helper) and hand the
 	// provider a concrete string; rpiv-pi never imports childSessionsDir.
-	const exec = await provider.createHost(ctx, { runId, childSessionsDir: childSessionsDir(cwd, runId) });
+	const exec = await provider.createHost(ctx, {
+		runId,
+		childSessionsDir: childSessionsDir(cwd, runId),
+		name: options.name, // rpiv-pi records the lane under this name
+	});
 	return {
 		execCtx: exec.host,
 		dispose: exec.dispose,
@@ -245,7 +250,10 @@ export async function runWorkflow(ctx: WorkflowHostContext, options: RunWorkflow
 	}
 
 	// Detach to the executor host (the executor relays UI back to the live session).
-	const { execCtx, resolveModel, signal, dispose } = await detachExecutor(ctx, cwd, runId, options);
+	const { execCtx, resolveModel, signal, dispose } = await detachExecutor(ctx, cwd, runId, {
+		...options,
+		name: options.name ?? workflow.name,
+	});
 
 	// `buildRunContext` is INSIDE the try so a throw there (e.g. countReachableStages
 	// on a malformed EdgeFn that bypassed load-time validation) still runs `dispose`
@@ -327,7 +335,10 @@ export async function resumeWorkflow(
 	// pending-fanout re-dispatch, or a cold-routed continue fork) runs against the
 	// real executor, not the bare launcher ctx. Same run id ⇒ same childSessionsDir,
 	// so reattach/fork resolve the original run's persisted child sessions.
-	const { execCtx, resolveModel, signal, dispose } = await detachExecutor(ctx, cwd, header.runId, options);
+	const { execCtx, resolveModel, signal, dispose } = await detachExecutor(ctx, cwd, header.runId, {
+		...options,
+		name: header.name ?? header.workflow,
+	});
 
 	// `buildRunContext` + `selectResumeEntry` are INSIDE the try so a throw in either
 	// still runs `dispose` (tap-leak parity with `runWorkflow`).

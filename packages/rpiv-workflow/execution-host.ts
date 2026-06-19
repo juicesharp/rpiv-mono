@@ -26,7 +26,7 @@ export interface WorkflowExecutionProvider {
 	 *  rpiv-pi never imports a layout function across the package boundary. */
 	createHost(
 		observer: WorkflowHostContext,
-		opts: { runId: string; childSessionsDir: string },
+		opts: { runId: string; childSessionsDir: string; name?: string },
 	): WorkflowExecution | Promise<WorkflowExecution>;
 	/** Per-stage model resolution (rpiv-pi's resolveStageModel) — threaded onto
 	 *  RunContext.resolveModel so the dispatcher fills each child's ModelSelection. */
