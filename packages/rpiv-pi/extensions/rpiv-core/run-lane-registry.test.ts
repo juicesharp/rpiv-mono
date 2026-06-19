@@ -64,18 +64,35 @@ describe("run-lane-registry", () => {
 			expect(laneCount()).toBe(1);
 		});
 
-		it("is idempotent on the same id and only updates the name", () => {
+		it("updates the name without spawning a duplicate lane", () => {
 			recordRun("run-1", "ship");
-			setLaneStatus("run-1", "completed");
-			const session = makeSession("s1");
-			setCurrentSession("run-1", session);
 			recordRun("run-1", "renamed");
+			expect(laneCount()).toBe(1);
+			expect(getLane("run-1")?.name).toBe("renamed");
+		});
+
+		it("REACTIVATES a retained terminal lane on re-record (resume reuses the run id)", () => {
+			// A run fails and is retained (Phase A): terminal status + a transcript snapshot.
+			recordRun("run-1", "ship");
+			setLaneProgress("run-1", {
+				stageNumber: 2,
+				totalStages: 3,
+				stageName: "build",
+				phase: "running",
+			});
+			setCurrentSession("run-1", { ...makeSession("s1"), sessionManager: { getBranch: () => [{ type: "x" }] } });
+			retireRun("run-1", "failed"); // → status "failed", finalBranch captured
+			expect(getLane("run-1")?.status).toBe("failed");
+			expect(getLane("run-1")?.finalBranch).toBeDefined();
+
+			// Resuming re-records the SAME id — the lane must come back to life, not stay failed.
+			recordRun("run-1", "ship");
 			const lane = getLane("run-1");
 			expect(laneCount()).toBe(1);
-			expect(lane?.name).toBe("renamed");
-			// status + currentSession preserved (not reset by the second record).
-			expect(lane?.status).toBe("completed");
-			expect(lane?.currentSession).toBe(session);
+			expect(lane?.status).toBe("running"); // reactivated, no longer "failed"
+			expect(lane?.finalBranch).toBeUndefined(); // stale snapshot dropped
+			expect(lane?.progress).toBeUndefined(); // stale progress cleared
+			expect(lane?.needsInputSince).toBeUndefined();
 		});
 	});
 

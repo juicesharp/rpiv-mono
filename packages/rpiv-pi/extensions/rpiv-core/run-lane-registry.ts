@@ -178,12 +178,25 @@ function notify(): void {
 // Mutations — every one notifies.
 // ---------------------------------------------------------------------------
 
-/** Record a run at launch (FR1). Idempotent: a second record updates the name. */
+/**
+ * Record a run at launch (FR1). recordRun is the launch signal for BOTH a fresh run
+ * and a RESUME — and a resume reuses the original run id. A failed/finished run's
+ * lane is RETAINED (Phase A), so on resume that id already exists in a TERMINAL state.
+ * Re-recording must therefore REACTIVATE it (back to live "running", terminal snapshot
+ * + stale progress/needs-input cleared), not merely refresh the name — otherwise the
+ * resumed run keeps rendering as the old failed/finished lane and never re-appears as
+ * an in-flight one. `currentSession` is repointed by setCurrentSession when the resumed
+ * stage spawns its child; the abort handle is re-wired by setLaneAbort.
+ */
 export function recordRun(runId: string, name: string): void {
 	const { lanes } = state();
 	const existing = lanes.get(runId);
 	if (existing) {
 		existing.name = name;
+		existing.status = "running"; // reactivate a retained terminal lane (resume)
+		existing.finalBranch = undefined; // drop the prior run's transcript snapshot
+		existing.progress = undefined; // clear stale stage progress
+		existing.needsInputSince = undefined; // clear any stale needs-input clock
 	} else {
 		lanes.set(runId, {
 			runId,
