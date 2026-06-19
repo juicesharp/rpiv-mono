@@ -246,22 +246,23 @@ export class LaneDock {
 		const lines: string[] = [rule, heading];
 		const budget = MAX_WIDGET_LINES - 1; // rows available after the heading
 
-		// While active, a leading selection gutter is prepended to every row — pass the
-		// per-row selected flag down so the cursor lands on the dock's selected index.
+		// The 2-col selection gutter is ALWAYS reserved (see renderRow) so stepping in
+		// only swaps spaces for the `▸` cursor — no row ever shifts. sel(i) marks the
+		// active selection (only true while active).
 		const sel = (i: number): boolean => active && i === selection;
 		if (lanes.length <= budget) {
 			lanes.forEach((lane, i) => {
-				lines.push(truncate(this.renderRow(theme, lane, i === lanes.length - 1, width, active, sel(i))));
+				lines.push(truncate(this.renderRow(theme, lane, i === lanes.length - 1, width, sel(i))));
 			});
 		} else {
 			// Reserve the last row for the "+N more" summary.
 			const shown = lanes.slice(0, budget - 1);
 			shown.forEach((lane, i) => {
-				lines.push(truncate(this.renderRow(theme, lane, false, width, active, sel(i))));
+				lines.push(truncate(this.renderRow(theme, lane, false, width, sel(i))));
 			});
 			const moreCount = lanes.length - shown.length;
-			const gutter = active ? CURSOR_UNSELECTED : "";
-			lines.push(truncate(`${gutter}${theme.fg("dim", "└─")} ${theme.fg("dim", `+${moreCount} more`)}`));
+			// Same reserved gutter so the summary row aligns with the lane rows above.
+			lines.push(truncate(`${CURSOR_UNSELECTED}${theme.fg("dim", "└─")} ${theme.fg("dim", `+${moreCount} more`)}`));
 		}
 		// Footer hint (dim), indented one space — active shows the navigation contract,
 		// ambient the discoverability hint. The bracketing bottom rule (not a blank line)
@@ -271,17 +272,12 @@ export class LaneDock {
 		return lines;
 	}
 
-	private renderRow(
-		theme: Theme,
-		lane: LaneEntry,
-		isLast: boolean,
-		width: number,
-		active: boolean,
-		selected: boolean,
-	): string {
-		// Active-state selection gutter: `▸ ` (accent) on the selected row, two spaces
-		// otherwise. Prepended before the tree branch so every active row shifts equally.
-		const gutter = active ? (selected ? theme.fg("accent", CURSOR_SELECTED) : CURSOR_UNSELECTED) : "";
+	private renderRow(theme: Theme, lane: LaneEntry, isLast: boolean, width: number, selected: boolean): string {
+		// Selection gutter, ALWAYS 2 cols so it's reserved in every state: `▸ ` (accent)
+		// on the active selection, two blank spaces otherwise (ambient or unselected).
+		// Reserving it in the ambient state is what prevents a layout shift when the user
+		// steps in — the row content never moves, only the gutter glyph swaps.
+		const gutter = selected ? theme.fg("accent", CURSOR_SELECTED) : CURSOR_UNSELECTED;
 		const branch = isLast ? "└─" : "├─";
 		const needs = laneNeedsInput(lane.runId);
 		const progress = lane.progress;

@@ -474,6 +474,22 @@ describe("LaneDock — active (focused) state", () => {
 		overlay.dispose();
 	});
 
+	it("stepping in does NOT shift row content — the selection gutter is reserved in both states", () => {
+		recordRun("run-1", "polish");
+		const overlay = new LaneDock();
+		const { widget } = mount(overlay, makeCtx());
+		const ambientRow = (widget?.render(120) ?? []).find((l) => l.includes("polish")) ?? "";
+		setDockActive(true);
+		setDockSelection(0);
+		const activeRow = (widget?.render(120) ?? []).find((l) => l.includes("polish")) ?? "";
+		// The cursor appears only when active…
+		expect(ambientRow).not.toContain("▸");
+		expect(activeRow).toContain("▸");
+		// …but the lane name sits at the SAME column in both (no layout jump).
+		expect(activeRow.indexOf("polish")).toBe(ambientRow.indexOf("polish"));
+		overlay.dispose();
+	});
+
 	it("active rows stay within width (the selection gutter never overflows)", () => {
 		recordRun("run-1", "a-fairly-long-workflow-name");
 		const overlay = new LaneDock();
