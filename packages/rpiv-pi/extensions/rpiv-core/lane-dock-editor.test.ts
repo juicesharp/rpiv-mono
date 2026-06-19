@@ -2,7 +2,14 @@ import type { KeybindingsManager } from "@earendil-works/pi-coding-agent";
 import type { EditorTheme, TUI } from "@earendil-works/pi-tui";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type DockDecisionContext, type DockKey, decideDockAction, LaneDockEditor } from "./lane-dock-editor.js";
-import { __resetRunLaneRegistry, setDockActive } from "./run-lane-registry.js";
+import {
+	__resetRunLaneRegistry,
+	enqueueInput,
+	getDockState,
+	recordRun,
+	setDockActive,
+	setDockSelection,
+} from "./run-lane-registry.js";
 
 /** Base context: dock inactive, prompt empty, no autocomplete, two lanes, top selected. */
 function ctx(overrides: Partial<DockDecisionContext> = {}): DockDecisionContext {
@@ -33,7 +40,15 @@ describe("decideDockAction — inactive (entry gesture)", () => {
 		expect(decideDockAction("down", ctx({ laneCount: 0 }))).toEqual({ kind: "passthrough" });
 	});
 
-	it.each<DockKey>(["up", "enter", "tab", "escape", "stop", "other"])("%s passes through while inactive", (key) => {
+	it.each<DockKey>([
+		"up",
+		"enter",
+		"right",
+		"tab",
+		"escape",
+		"stop",
+		"other",
+	])("%s passes through while inactive", (key) => {
 		expect(decideDockAction(key, ctx())).toEqual({ kind: "passthrough" });
 	});
 });
@@ -61,8 +76,12 @@ describe("decideDockAction — active (navigation)", () => {
 		expect(decideDockAction("tab", active({ selection: 2, laneCount: 3 }))).toEqual({ kind: "select", index: 0 });
 	});
 
-	it("ENTER opens the selected run", () => {
-		expect(decideDockAction("enter", active({ selection: 1 }))).toEqual({ kind: "open" });
+	it("ENTER is the dedicated answer key (the adapter no-ops it when nothing is queued)", () => {
+		expect(decideDockAction("enter", active({ selection: 1 }))).toEqual({ kind: "answer" });
+	});
+
+	it("RIGHT is the dedicated transcript key — always opens the viewer", () => {
+		expect(decideDockAction("right", active({ selection: 1 }))).toEqual({ kind: "open" });
 	});
 
 	it("STOP (x) acts on the selected lane (abort/remove resolved by the adapter)", () => {
@@ -115,5 +134,55 @@ describe("LaneDockEditor — input visibility while stepped in", () => {
 		expect(editor.render(80)).toEqual([""]);
 		setDockActive(false);
 		expect(editor.render(80).length).toBeGreaterThan(1);
+	});
+});
+
+describe("LaneDockEditor — dedicated answer/transcript dispatch", () => {
+	const ENTER = "\r"; // Key.enter codepoint 13
+	const RIGHT = "\x1b[C"; // legacy right-arrow sequence
+
+	function makeSpyEditor(): { editor: LaneDockEditor; calls: Array<{ runId: string; mode: string }> } {
+		const tui = { terminal: { rows: 40 }, requestRender: () => {} } as unknown as TUI;
+		const theme = { borderColor: (s: string) => s, selectList: {} } as unknown as EditorTheme;
+		const keybindings = { matches: () => false } as unknown as KeybindingsManager;
+		const calls: Array<{ runId: string; mode: string }> = [];
+		const editor = new LaneDockEditor(tui, theme, keybindings, (runId, mode) => calls.push({ runId, mode }));
+		return { editor, calls };
+	}
+
+	function enqueue(runId: string): void {
+		enqueueInput(runId, { factory: (() => ({})) as never, options: undefined as never, resolve: () => {} });
+	}
+
+	beforeEach(() => __resetRunLaneRegistry());
+	afterEach(() => __resetRunLaneRegistry());
+
+	it("ENTER answers a flagged lane (drains its queued question)", () => {
+		recordRun("run-1", "ship");
+		enqueue("run-1");
+		setDockActive(true);
+		setDockSelection(0);
+		const { editor, calls } = makeSpyEditor();
+		editor.handleInput(ENTER);
+		expect(calls).toEqual([{ runId: "run-1", mode: "answer" }]);
+	});
+
+	it("ENTER is inert on a lane with nothing queued — stays stepped in, opens nothing", () => {
+		recordRun("run-1", "ship");
+		setDockActive(true);
+		setDockSelection(0);
+		const { editor, calls } = makeSpyEditor();
+		editor.handleInput(ENTER);
+		expect(calls).toEqual([]);
+		expect(getDockState().active).toBe(true);
+	});
+
+	it("RIGHT (→) opens the transcript for any lane (view mode), flagged or not", () => {
+		recordRun("run-1", "ship");
+		setDockActive(true);
+		setDockSelection(0);
+		const { editor, calls } = makeSpyEditor();
+		editor.handleInput(RIGHT);
+		expect(calls).toEqual([{ runId: "run-1", mode: "view" }]);
 	});
 });

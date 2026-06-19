@@ -2,7 +2,7 @@ import type { ExtensionAPI, ExtensionUIContext } from "@earendil-works/pi-coding
 import { createMockPi, createMockUI } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createLaneRelayUiContext } from "./lane-relay-ui.js";
-import { __resetLaneSwitcher, registerLaneSwitcher, switchIntoLane } from "./lane-switcher.js";
+import { __resetLaneSwitcher, answerLane, registerLaneSwitcher, switchIntoLane } from "./lane-switcher.js";
 import { showLaneViewer } from "./lane-viewer.js";
 import {
 	__resetRunLaneRegistry,
@@ -217,6 +217,67 @@ describe("lane-switcher — drainPendingInput (FR5)", () => {
 
 		await switchIntoLane(ui, "run-1");
 		expect(resolve).toHaveBeenCalledWith(undefined); // never strands the child
+	});
+});
+
+describe("lane-switcher — answerLane (direct answer, no viewer)", () => {
+	it("drains queued questionnaires on the real UI WITHOUT opening the viewer", async () => {
+		recordRun("run-1", "ship");
+		const factoryA = (() => ({})) as never;
+		const factoryB = (() => ({})) as never;
+		const resolveA = vi.fn();
+		const resolveB = vi.fn();
+		enqueueInput("run-1", { factory: factoryA, options: "optsA" as never, resolve: resolveA });
+		enqueueInput("run-1", { factory: factoryB, options: "optsB" as never, resolve: resolveB });
+
+		const custom = vi.fn().mockResolvedValueOnce("ans-A").mockResolvedValueOnce("ans-B");
+		const ui = createMockUI({ custom }) as unknown as ExtensionUIContext;
+
+		await answerLane(ui, "run-1");
+
+		expect(mockShowLaneViewer).not.toHaveBeenCalled(); // never opens the transcript
+		expect(custom).toHaveBeenNthCalledWith(1, factoryA, "optsA");
+		expect(custom).toHaveBeenNthCalledWith(2, factoryB, "optsB");
+		expect(resolveA).toHaveBeenCalledWith("ans-A");
+		expect(resolveB).toHaveBeenCalledWith("ans-B");
+	});
+
+	it("settles the child with undefined when the replayed questionnaire throws", async () => {
+		recordRun("run-1", "ship");
+		const resolve = vi.fn();
+		enqueueInput("run-1", { factory: (() => ({})) as never, options: undefined as never, resolve });
+		const custom = vi.fn().mockRejectedValue(new Error("dismissed"));
+		const ui = createMockUI({ custom }) as unknown as ExtensionUIContext;
+
+		await answerLane(ui, "run-1");
+		expect(resolve).toHaveBeenCalledWith(undefined);
+	});
+
+	it("stays stepped in when another lane still needs input", async () => {
+		recordRun("run-1", "ship");
+		recordRun("run-2", "build");
+		enqueueInput("run-1", { factory: (() => ({})) as never, options: undefined as never, resolve: vi.fn() });
+		enqueueInput("run-2", { factory: (() => ({})) as never, options: undefined as never, resolve: vi.fn() });
+		const custom = vi.fn().mockResolvedValue(undefined);
+		const ui = createMockUI({ custom }) as unknown as ExtensionUIContext;
+
+		await answerLane(ui, "run-1");
+
+		expect(getDockState()).toEqual({ active: true, selection: 0 }); // re-enters for run-2
+		expect(getFocusedRun()).toBeUndefined();
+	});
+
+	it("returns to the root prompt when no lane needs input after answering", async () => {
+		recordRun("run-1", "ship");
+		enqueueInput("run-1", { factory: (() => ({})) as never, options: undefined as never, resolve: vi.fn() });
+		setDockActive(true);
+		const custom = vi.fn().mockResolvedValue(undefined);
+		const ui = createMockUI({ custom }) as unknown as ExtensionUIContext;
+
+		await answerLane(ui, "run-1");
+
+		expect(getDockState().active).toBe(false);
+		expect(getFocusedRun()).toBeUndefined();
 	});
 });
 

@@ -21,6 +21,8 @@ import {
 	dequeueInput,
 	getFocusedRun,
 	laneCount,
+	laneNeedsInput,
+	listLanes,
 	setDockActive,
 	setDockSelection,
 	setFocusedRun,
@@ -101,6 +103,33 @@ export async function switchIntoLane(ui: ExtensionUIContext, runId: string): Pro
 }
 
 /**
+ * Answer a needs-input lane WITHOUT opening the transcript viewer (the ⏎ shortcut
+ * on a flagged lane): drain its queued foreground questions straight onto the real
+ * UI. Shares `switchingLane` so it never stacks with a viewer/another drain. When
+ * other lanes still await input it RE-ENTERS the dock at the top (they sort there),
+ * so a run of ⏎ presses walks through them; otherwise it drops back to root.
+ */
+export async function answerLane(ui: ExtensionUIContext, runId: string): Promise<void> {
+	if (switchingLane) return; // never stack onto a viewer/another drain
+	switchingLane = true;
+	setFocusedRun(runId);
+	try {
+		await drainPendingInput(ui, runId);
+	} finally {
+		setFocusedRun(undefined);
+		switchingLane = false;
+		// Stay stepped in while more lanes await input (they sort to the top), so the
+		// next ⏎ answers the next one; otherwise return to the ambient prompt.
+		if (listLanes().some((l) => laneNeedsInput(l.runId))) {
+			setDockActive(true);
+			setDockSelection(0);
+		} else {
+			setDockActive(false);
+		}
+	}
+}
+
+/**
  * FR5 — replay each queued foreground-stage questionnaire on the launcher's REAL
  * UI and resolve the child's stalled promise. Sequential (block-while-occupied);
  * a dismissed/error questionnaire still settles the child so it never hangs.
@@ -139,7 +168,12 @@ export function registerLaneSwitcher(pi: ExtensionAPI): void {
 			editorCtx = ui;
 			ui.setEditorComponent(
 				(tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager) =>
-					new LaneDockEditor(tui, theme, keybindings, (runId) => void switchIntoLane(ui, runId)),
+					new LaneDockEditor(
+						tui,
+						theme,
+						keybindings,
+						(runId, mode) => void (mode === "answer" ? answerLane(ui, runId) : switchIntoLane(ui, runId)),
+					),
 			);
 		}
 	});

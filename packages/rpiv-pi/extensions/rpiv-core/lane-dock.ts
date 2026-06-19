@@ -37,10 +37,11 @@ const MAX_WIDGET_LINES = 12;
  *  it via setFooterText with the ACTUAL resolved hotkey glyph (Phase E); this fallback
  *  (no hotkey prefix) is used in tests / before the switcher wires the binding. */
 const DEFAULT_FOOTER_TEXT = "↓ to step in · /lanes";
-/** Footer shown while the dock is active (the user has stepped in). Phrased in the
- *  ask_user_question style — keys spelled out, "<key> to <verb>". ⏎ reads "view"
- *  because the viewer is read-only (and answers any queued input on a needs-input lane). */
-const ACTIVE_FOOTER_TEXT = "Enter to view · ↑/↓ to navigate · x to stop · Esc to exit";
+/** Footer shown while the dock is active (the user has stepped in). ⏎ and → are
+ *  DEDICATED keys (answer / transcript) that never swap meaning; the footer only hides
+ *  the ⏎ hint on a lane with nothing to answer, where ⏎ is inert. */
+const ACTIVE_FOOTER_NEEDS_INPUT = "⏎ answer · → transcript · ↑/↓ navigate · x stop · esc exit";
+const ACTIVE_FOOTER_DEFAULT = "→ transcript · ↑/↓ navigate · x stop · esc exit";
 /** Selection-gutter cells reserved on every row (so a row never shifts when stepping in):
  *  the `❯` cursor (matching pi's selectors) on the active selection, two spaces otherwise. */
 const CURSOR_SELECTED = "❯ ";
@@ -279,7 +280,11 @@ export class LaneDock {
 		// ambient the discoverability hint. Preceded by a blank line (rhythm) and followed
 		// by the bottom rule (the separator from Pi's status chrome below).
 		lines.push("");
-		lines.push(truncate(` ${theme.fg("dim", active ? ACTIVE_FOOTER_TEXT : this.footerText)}`));
+		// Active footer is contextual to the selected lane (answer vs view); ambient shows
+		// the discoverability hint. selection indexes the SAME listLanesForDisplay() order.
+		const selLane = active ? lanes[selection] : undefined;
+		const activeFooter = selLane && laneNeedsInput(selLane.runId) ? ACTIVE_FOOTER_NEEDS_INPUT : ACTIVE_FOOTER_DEFAULT;
+		lines.push(truncate(` ${theme.fg("dim", active ? activeFooter : this.footerText)}`));
 		lines.push(rule);
 		return lines;
 	}

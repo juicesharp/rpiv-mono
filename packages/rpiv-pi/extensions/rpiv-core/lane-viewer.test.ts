@@ -4,6 +4,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import { LaneViewer } from "./lane-viewer.js";
 import {
 	__resetRunLaneRegistry,
+	enqueueInput,
 	getLane,
 	type LaneSession,
 	recordRun,
@@ -114,6 +115,25 @@ describe("LaneViewer — render", () => {
 		// run-1 never recorded (or dismissed via the manager's `x`) → getLane undefined.
 		const viewer = new LaneViewer("run-1", makeTui(), identityTheme, vi.fn());
 		expect(viewer.render(120).join("\n")).toContain("(run dismissed — esc to return)");
+		viewer.dispose();
+	});
+
+	it("footer reads 'esc back' when the lane has no queued question", () => {
+		const session = makeSession(() => [assistantEntry("hi")]);
+		recordRun("run-1", "ship");
+		setCurrentSession("run-1", session);
+		const viewer = new LaneViewer("run-1", makeTui(), identityTheme, vi.fn());
+		expect(viewer.render(120).join("\n")).toContain("esc back");
+		viewer.dispose();
+	});
+
+	it("footer reads 'esc to answer' when the lane has a queued question (B affordance)", () => {
+		const session = makeSession(() => [assistantEntry("hi")]);
+		recordRun("run-1", "ship");
+		setCurrentSession("run-1", session);
+		enqueueInput("run-1", { factory: (() => ({})) as never, options: undefined as never, resolve: vi.fn() });
+		const viewer = new LaneViewer("run-1", makeTui(), identityTheme, vi.fn());
+		expect(viewer.render(120).join("\n")).toContain("esc to answer");
 		viewer.dispose();
 	});
 

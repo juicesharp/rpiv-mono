@@ -33,6 +33,7 @@ import {
 	evictRun,
 	getDockState,
 	laneCount,
+	laneNeedsInput,
 	listLanesForDisplay,
 	moveDockSelection,
 	setDockActive,
@@ -40,8 +41,9 @@ import {
 } from "./run-lane-registry.js";
 
 /** The navigation keys the dock cares about; everything else is "other".
- *  "stop" is the `x` key (abort a running lane / dismiss a finished one). */
-export type DockKey = "up" | "down" | "enter" | "escape" | "tab" | "stop" | "other";
+ *  "stop" is the `x` key (abort a running lane / dismiss a finished one).
+ *  "right" (→) always opens the selected lane's transcript viewer. */
+export type DockKey = "up" | "down" | "enter" | "right" | "escape" | "tab" | "stop" | "other";
 
 /** Live inputs the decision depends on — snapshotted from the editor + registry. */
 export interface DockDecisionContext {
@@ -62,7 +64,8 @@ export type DockAction =
 	| { kind: "activate" } // step into the dock at the top
 	| { kind: "move"; delta: number } // shift selection (registry clamps)
 	| { kind: "select"; index: number } // jump selection to an absolute row (tab wrap)
-	| { kind: "open" } // switch into the selected run
+	| { kind: "open" } // view the selected run's transcript (viewer; drains on esc)
+	| { kind: "answer" } // drain the selected run's queued question directly (no viewer)
 	| { kind: "stop" } // abort (running) / dismiss (finished) the selected lane
 	| { kind: "deactivate" } // step back to the input, swallow the key
 	| { kind: "exit-passthrough" } // step back AND forward the key (resume typing)
@@ -93,7 +96,12 @@ export function decideDockAction(key: DockKey, ctx: DockDecisionContext): DockAc
 			// Tab cycles with wraparound (last → first).
 			return { kind: "select", index: ctx.laneCount > 0 ? (ctx.selection + 1) % ctx.laneCount : 0 };
 		case "enter":
-			return { kind: "open" };
+			// ⏎ is the dedicated ANSWER key — it drains the selected lane's queued
+			// question (the adapter makes it a no-op when nothing is queued). Right is the
+			// dedicated TRANSCRIPT key (below); the two never swap meaning.
+			return { kind: "answer" };
+		case "right":
+			return { kind: "open" }; // always view the transcript, even on a needs-input lane
 		case "stop":
 			return { kind: "stop" };
 		case "escape":
@@ -109,6 +117,7 @@ function classifyKey(data: string): DockKey {
 	if (matchesKey(data, Key.up)) return "up";
 	if (matchesKey(data, Key.down)) return "down";
 	if (matchesKey(data, Key.enter)) return "enter";
+	if (matchesKey(data, Key.right)) return "right";
 	if (matchesKey(data, Key.escape)) return "escape";
 	if (matchesKey(data, Key.tab)) return "tab";
 	if (data === "x") return "stop"; // mirrors the retired manager's `x` binding
@@ -127,7 +136,7 @@ export class LaneDockEditor extends CustomEditor {
 		tui: TUI,
 		theme: EditorTheme,
 		keybindings: KeybindingsManager,
-		private readonly onOpen: (runId: string) => void,
+		private readonly onOpen: (runId: string, mode: "view" | "answer") => void,
 	) {
 		super(tui, theme, keybindings);
 	}
@@ -171,7 +180,18 @@ export class LaneDockEditor extends CustomEditor {
 				// step out before opening so the dock isn't "active" behind the viewer.
 				const lane = listLanesForDisplay()[getDockState().selection];
 				setDockActive(false);
-				if (lane) this.onOpen(lane.runId);
+				if (lane) this.onOpen(lane.runId, "view");
+				return;
+			}
+			case "answer": {
+				// ⏎ drains the selected lane's queued question directly (no viewer). When the
+				// lane has nothing queued ⏎ is inert — stay in the dock rather than stepping
+				// out, so the key never does something surprising on a non-flagged lane.
+				const lane = listLanesForDisplay()[getDockState().selection];
+				if (lane && laneNeedsInput(lane.runId)) {
+					setDockActive(false);
+					this.onOpen(lane.runId, "answer");
+				}
 				return;
 			}
 			case "stop": {

@@ -464,7 +464,7 @@ describe("LaneDock — active (focused) state", () => {
 		expect(out).not.toContain("❯");
 		expect(out).toContain("/lanes");
 		expect(out).toContain("↓ to step in"); // the DOWN-from-empty entry gesture is labeled
-		expect(out).not.toContain("Enter to view"); // no run-action contract in the ambient footer
+		expect(out).not.toContain("transcript"); // no run-action contract in the ambient footer
 		overlay.dispose();
 	});
 
@@ -479,8 +479,21 @@ describe("LaneDock — active (focused) state", () => {
 		const out = lines.join("\n");
 		// Exactly one row carries the cursor; the footer flips to the nav contract.
 		expect(lines.filter((l) => l.includes("❯")).length).toBe(1);
-		expect(out).toContain("Enter to view");
+		expect(out).toContain("→ transcript"); // dedicated transcript key (no queued input → no ⏎ answer hint)
 		expect(out).not.toContain("/lanes"); // ambient discoverability hint is replaced by the nav footer
+		overlay.dispose();
+	});
+
+	it("active footer advertises ⏎ answer when the selected lane has a queued question", () => {
+		recordRun("run-1", "ship");
+		enqueueInput("run-1", { factory: (() => ({})) as never, options: undefined as never, resolve: () => {} });
+		const overlay = new LaneDock();
+		const { widget } = mount(overlay, makeCtx());
+		setDockActive(true);
+		setDockSelection(0); // the needs-input lane
+		const out = (widget?.render(120) ?? []).join("\n");
+		expect(out).toContain("⏎ answer");
+		expect(out).toContain("→ transcript");
 		overlay.dispose();
 	});
 

@@ -29,7 +29,7 @@ import {
 	UserMessageComponent,
 } from "@earendil-works/pi-coding-agent";
 import { type Component, Key, matchesKey, type TUI, truncateToWidth } from "@earendil-works/pi-tui";
-import { getLane, type LaneSession, type LaneStatus, subscribeLanes } from "./run-lane-registry.js";
+import { getLane, type LaneSession, type LaneStatus, laneNeedsInput, subscribeLanes } from "./run-lane-registry.js";
 
 const MAX_HEIGHT_RATIO = 0.9;
 
@@ -137,7 +137,14 @@ export class LaneViewer implements Component {
 				? `▶ ${name} — live`
 				: `${TERMINAL_GLYPH[lane.status] ?? "•"} ${name} — ${lane.status}`;
 		const header = truncateToWidth(this.theme.fg("accent", headText), width, "…");
-		const footer = truncateToWidth(this.theme.fg("dim", "↑/↓ scroll · esc back"), width, "…");
+		// When the lane has a queued question, esc closes the viewer AND surfaces it
+		// (switchIntoLane drains after the viewer resolves) — so advertise "esc to answer".
+		const needs = laneNeedsInput(this.runId);
+		const footer = truncateToWidth(
+			this.theme.fg(needs ? "warning" : "dim", needs ? "↑/↓ scroll · esc to answer" : "↑/↓ scroll · esc back"),
+			width,
+			"…",
+		);
 		const termRows = (this.tui.terminal as { rows?: number }).rows ?? 24;
 		const maxRows = Math.max(6, Math.floor(termRows * MAX_HEIGHT_RATIO));
 		const bodyBudget = Math.max(1, maxRows - 2); // header + footer
