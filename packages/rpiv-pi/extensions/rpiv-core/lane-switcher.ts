@@ -1,27 +1,28 @@
 /**
  * lane-switcher — composition for the parallel-run lane switcher (FR3/FR4/FR5).
  *
- * The launcher (root) owns this: it mounts the ambient lane overlay on the
- * captured launcher UI, subscribes it to the run-lane registry so it re-renders
- * as runs start / finish / need input, and registers the /lanes command that
- * opens the focused lane manager. The manager resolves with a selection; the
- * switcher then opens the read-only viewer AFTER the manager closes (LIFO-safe —
- * never two stacked overlays), and after the viewer closes drains any queued
- * foreground-stage questions onto the real UI (FR5: context first, then answer).
+ * The launcher (root) owns this: it mounts the always-on lane DOCK below the editor
+ * on the captured launcher UI, subscribes it to the run-lane registry so it
+ * re-renders as runs start / finish / need input, and installs the LaneDockEditor —
+ * the input editor that proxies arrow/enter/tab/x keys into the dock's navigation
+ * (widgets can't take focus; the editor is the only component reliably reached at
+ * the idle prompt). `/lanes` and the `^Q` hotkey simply step INTO the dock. When the
+ * user opens a run (⏎), switchIntoLane opens the read-only viewer, then drains any
+ * queued foreground-stage questions onto the real UI (FR5: context first, then answer).
  */
 
-import type { ExtensionAPI, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
-import type { KeyId } from "@earendil-works/pi-tui";
-import { showLaneManager } from "./lane-manager.js";
-import { LaneOverlay } from "./lane-overlay.js";
+import type { ExtensionAPI, ExtensionUIContext, KeybindingsManager } from "@earendil-works/pi-coding-agent";
+import type { EditorTheme, KeyId, TUI } from "@earendil-works/pi-tui";
+import { LaneDock } from "./lane-dock.js";
+import { LaneDockEditor } from "./lane-dock-editor.js";
 import { isLaneRelayUiContext } from "./lane-relay-ui.js";
 import { showLaneViewer } from "./lane-viewer.js";
 import {
 	dequeueInput,
-	evictRun,
 	getFocusedRun,
-	getLane,
-	listLanes,
+	laneCount,
+	setDockActive,
+	setDockSelection,
 	setFocusedRun,
 	subscribeLanes,
 } from "./run-lane-registry.js";
@@ -54,51 +55,45 @@ function hotkeyGlyph(key: string): string {
 	return m ? `^${m[1].toUpperCase()}` : key;
 }
 
-/** Build the overlay footer hint reflecting the ACTUAL binding (Phase E). */
+/** Build the dock footer hint reflecting the ACTUAL binding (Phase E). */
 function footerText(hotkey: string | undefined): string {
-	return hotkey ? `${hotkeyGlyph(hotkey)} · /lanes — open run manager` : "/lanes — open run manager";
+	return hotkey ? `${hotkeyGlyph(hotkey)} · /lanes — step into runs` : "/lanes — step into runs";
 }
 
-let overlay: LaneOverlay | undefined;
+let overlay: LaneDock | undefined;
 let unsubscribe: (() => void) | undefined;
-/** Guard so a second hotkey/`/lanes` press never stacks a second switcher overlay. */
-let switcherOpen = false;
+/** The launcher UI that owns the dock editor — kept so __resetLaneSwitcher can
+ *  restore Pi's default editor. Set once per ctx identity at session_start. */
+let editorCtx: ExtensionUIContext | undefined;
+/** Guard so a second ⏎ never stacks a second viewer (re-entrancy belt-and-braces;
+ *  while a viewer is open the editor isn't focused, so this rarely trips). */
+let switchingLane = false;
+
+/** Step INTO the dock at the top row — the shared body of `/lanes` and the hotkey. */
+function enterDock(): void {
+	if (laneCount() === 0) return;
+	setDockActive(true);
+	setDockSelection(0);
+}
 
 /**
- * Open the focused manager, then (on a switch selection) open the read-only
- * viewer, then drain the lane's queued questions — sequentially, so overlays
- * never stack. `dismiss`/`ambient` fall back to the root (the ambient overlay
- * stays mounted underneath).
+ * Switch into a run: open the read-only viewer, then drain its queued foreground
+ * questions — sequentially, so overlays never stack. Marks the lane focused for the
+ * whole switched-in session so THIS run's abort tap (and only it) interprets Ctrl-C;
+ * cleared in finally so a viewer/drain throw can't strand focus (which would leave
+ * Ctrl-C hijacked at root). Called by the dock editor's `onOpen` on ⏎.
  */
-async function openLaneSwitcher(ui: ExtensionUIContext): Promise<void> {
-	if (switcherOpen) return; // already open (hotkey + /lanes both route here) — never stack
-	switcherOpen = true;
+export async function switchIntoLane(ui: ExtensionUIContext, runId: string): Promise<void> {
+	if (switchingLane) return; // never stack two viewers
+	switchingLane = true;
+	setFocusedRun(runId);
 	try {
-		const result = await showLaneManager(ui);
-		if (result.kind === "switch") {
-			// Mark this lane focused for the whole switched-in session: while it's set,
-			// THIS run's abort tap (and only it) interprets Ctrl-C, so esc-to-return in
-			// the viewer and Ctrl-C-to-abort target the run on screen — never a sibling
-			// or the editor. Cleared in finally so a viewer/drain throw can't strand
-			// focus (which would leave Ctrl-C hijacked at root).
-			setFocusedRun(result.runId);
-			try {
-				await showLaneViewer(ui, result.runId); // 1) see live context (esc → back)
-				await drainPendingInput(ui, result.runId); // 2) then answer any queued questions (FR5)
-			} finally {
-				setFocusedRun(undefined);
-			}
-		} else if (result.kind === "cancel") {
-			// Phase D — abort a running lane without switching in (the abort tap is
-			// focus-gated; this calls the run's own AbortController directly). The lane
-			// then retires to "aborted" and stays visible until dismissed.
-			getLane(result.runId)?.abort?.();
-		} else if (result.kind === "remove") {
-			// Phase D — dismiss a finished (retained) lane from the overlay.
-			evictRun(result.runId);
-		}
+		await showLaneViewer(ui, runId); // 1) see live context (esc → back)
+		await drainPendingInput(ui, runId); // 2) then answer any queued questions (FR5)
 	} finally {
-		switcherOpen = false;
+		setFocusedRun(undefined);
+		setDockActive(false); // back at root: the dock is ambient again
+		switchingLane = false;
 	}
 }
 
@@ -126,24 +121,35 @@ export function registerLaneSwitcher(pi: ExtensionAPI): void {
 		// registry subscription. A child mounting its own overlay would re-point the
 		// shared singleton at its relay and clobber the launcher's `rpiv-lanes` widget.
 		if (!ctx.hasUI || !ctx.ui || isLaneRelayUiContext(ctx.ui)) return;
-		overlay ??= new LaneOverlay();
+		const ui = ctx.ui;
+		overlay ??= new LaneDock();
 		overlay.setFooterText(footerText(hotkey)); // Phase E — advertise the actual binding
-		overlay.setUICtx(ctx.ui);
+		overlay.setUICtx(ui);
 		overlay.update();
-		// Subscribe once: re-render the ambient overlay on any registry change
-		// (run recorded/evicted, status, current session, needs-input).
+		// Subscribe once: re-render the dock on any registry change (run recorded/
+		// evicted, status, current session, needs-input, dock selection).
 		unsubscribe ??= subscribeLanes(() => overlay?.update());
+		// Install the dock editor once per ctx identity (re-install on /reload). It
+		// proxies dock navigation; ⏎ on a selected lane switches into it. The host
+		// preserves editor text + app keybindings across the swap.
+		if (ui !== editorCtx) {
+			editorCtx = ui;
+			ui.setEditorComponent(
+				(tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager) =>
+					new LaneDockEditor(tui, theme, keybindings, (runId) => void switchIntoLane(ui, runId)),
+			);
+		}
 	});
 
 	pi.registerCommand("lanes", {
-		description: "Open the workflow run lane switcher",
+		description: "Step into the workflow run lane dock",
 		handler: async (_args, ctx) => {
 			if (!ctx.hasUI) return;
-			if (listLanes().length === 0) {
+			if (laneCount() === 0) {
 				ctx.ui.notify("No in-flight runs.", "info");
 				return;
 			}
-			await openLaneSwitcher(ctx.ui);
+			enterDock();
 		},
 	});
 
@@ -151,16 +157,17 @@ export function registerLaneSwitcher(pi: ExtensionAPI): void {
 	// via Pi's shortcut dispatch (NOT a raw onTerminalInput tap, which doesn't reliably
 	// reach the idle editor). Gated like /lanes: only with a UI, only at root (not
 	// switched into a lane — the viewer owns input there), only when a lane is in-flight.
-	// The switcherOpen guard inside openLaneSwitcher prevents stacking. Skipped entirely
-	// when the binding is disabled (RPIV_LANES_HOTKEY=off) — /lanes still works (Phase E).
+	// Skipped entirely when the binding is disabled (RPIV_LANES_HOTKEY=off) — /lanes
+	// still works (Phase E). The DOWN-from-empty-prompt gesture (LaneDockEditor) is a
+	// third, always-available way in.
 	if (hotkey) {
 		// Cast: an env-provided KeyId is validated by Pi at registration; an unknown id
 		// simply never fires (the user still has /lanes).
 		pi.registerShortcut(hotkey as KeyId, {
-			description: "Open the workflow run lane switcher",
+			description: "Step into the workflow run lane dock",
 			handler: (ctx) => {
-				if (!ctx.hasUI || getFocusedRun() !== undefined || listLanes().length === 0) return;
-				void openLaneSwitcher(ctx.ui);
+				if (!ctx.hasUI || getFocusedRun() !== undefined || laneCount() === 0) return;
+				enterDock();
 			},
 		});
 	}
@@ -170,7 +177,9 @@ export function registerLaneSwitcher(pi: ExtensionAPI): void {
 export function __resetLaneSwitcher(): void {
 	unsubscribe?.();
 	unsubscribe = undefined;
-	switcherOpen = false;
+	switchingLane = false;
+	editorCtx?.setEditorComponent(undefined); // restore Pi's default editor
+	editorCtx = undefined;
 	overlay?.dispose();
 	overlay = undefined;
 }

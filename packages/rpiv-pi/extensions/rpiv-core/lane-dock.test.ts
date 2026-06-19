@@ -2,12 +2,16 @@ import type { ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent"
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { createMockUI } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { LaneOverlay } from "./lane-overlay.js";
+import { LaneDock } from "./lane-dock.js";
 import {
 	__resetRunLaneRegistry,
 	dequeueInput,
 	enqueueInput,
+	evictRun,
+	getDockState,
 	recordRun,
+	setDockActive,
+	setDockSelection,
 	setLaneProgress,
 	setLaneStatus,
 } from "./run-lane-registry.js";
@@ -32,7 +36,7 @@ function makeCtx() {
 }
 
 /** Mount the overlay, invoke the captured setWidget factory, return the live widget + the tui spy. */
-function mount(overlay: LaneOverlay, ui: ExtensionUIContext) {
+function mount(overlay: LaneDock, ui: ExtensionUIContext) {
 	overlay.setUICtx(ui);
 	overlay.update();
 	const setWidget = ui.setWidget as unknown as ReturnType<typeof vi.fn>;
@@ -52,15 +56,15 @@ afterEach(() => {
 	__resetRunLaneRegistry();
 });
 
-describe("LaneOverlay — lifecycle / auto-show-hide", () => {
+describe("LaneDock — lifecycle / auto-show-hide", () => {
 	it("update() with no UI ctx bound is a no-op", () => {
-		const overlay = new LaneOverlay();
+		const overlay = new LaneDock();
 		expect(() => overlay.update()).not.toThrow();
 		overlay.dispose();
 	});
 
 	it("update() with no lanes registers no widget", () => {
-		const overlay = new LaneOverlay();
+		const overlay = new LaneDock();
 		const ui = makeCtx();
 		overlay.setUICtx(ui);
 		overlay.update();
@@ -68,9 +72,9 @@ describe("LaneOverlay — lifecycle / auto-show-hide", () => {
 		overlay.dispose();
 	});
 
-	it("first lane registers the widget exactly once via setWidget(KEY, factory, {aboveEditor})", () => {
+	it("first lane registers the widget exactly once via setWidget(KEY, factory, {belowEditor})", () => {
 		recordRun("run-1", "ship");
-		const overlay = new LaneOverlay();
+		const overlay = new LaneDock();
 		const ui = makeCtx();
 		overlay.setUICtx(ui);
 		overlay.update();
@@ -78,13 +82,13 @@ describe("LaneOverlay — lifecycle / auto-show-hide", () => {
 		expect(setWidget).toHaveBeenCalledTimes(1);
 		expect(setWidget.mock.calls[0][0]).toBe(WIDGET_KEY);
 		expect(typeof setWidget.mock.calls[0][1]).toBe("function");
-		expect(setWidget.mock.calls[0][2]).toEqual({ placement: "aboveEditor" });
+		expect(setWidget.mock.calls[0][2]).toEqual({ placement: "belowEditor" });
 		overlay.dispose();
 	});
 
 	it("second update after registration calls tui.requestRender instead of re-registering", () => {
 		recordRun("run-1", "ship");
-		const overlay = new LaneOverlay();
+		const overlay = new LaneDock();
 		const ui = makeCtx();
 		const { setWidget, tui } = mount(overlay, ui);
 		overlay.update();
@@ -95,7 +99,7 @@ describe("LaneOverlay — lifecycle / auto-show-hide", () => {
 
 	it("dropping to zero lanes unregisters the widget (auto-hide)", () => {
 		recordRun("run-1", "ship");
-		const overlay = new LaneOverlay();
+		const overlay = new LaneDock();
 		const ui = makeCtx();
 		mount(overlay, ui);
 		__resetRunLaneRegistry();
@@ -108,7 +112,7 @@ describe("LaneOverlay — lifecycle / auto-show-hide", () => {
 
 	it("setUICtx(same ctx) is idempotent; a new ctx re-registers", () => {
 		recordRun("run-1", "ship");
-		const overlay = new LaneOverlay();
+		const overlay = new LaneDock();
 		const ui1 = makeCtx();
 		overlay.setUICtx(ui1);
 		overlay.update();
@@ -123,11 +127,11 @@ describe("LaneOverlay — lifecycle / auto-show-hide", () => {
 	});
 });
 
-describe("LaneOverlay — rendering", () => {
+describe("LaneDock — rendering", () => {
 	it("renders a heading + a row per lane, every line within width", () => {
 		recordRun("run-1", "ship");
 		recordRun("run-2", "build");
-		const overlay = new LaneOverlay();
+		const overlay = new LaneDock();
 		const { widget } = mount(overlay, makeCtx());
 		const lines = widget?.render(80) ?? [];
 		expect(lines[0]).toContain("Runs (2 active)");
@@ -141,7 +145,7 @@ describe("LaneOverlay — rendering", () => {
 		recordRun("run-1", "ship");
 		recordRun("run-2", "build");
 		setLaneStatus("run-2", "completed");
-		const overlay = new LaneOverlay();
+		const overlay = new LaneDock();
 		const { widget } = mount(overlay, makeCtx());
 		const out = (widget?.render(120) ?? []).join("\n");
 		expect(out).toContain("streaming…");
@@ -151,7 +155,7 @@ describe("LaneOverlay — rendering", () => {
 
 	it("heading flips to the accent ● when any lane needs input", () => {
 		recordRun("run-1", "ship");
-		const overlay = new LaneOverlay();
+		const overlay = new LaneDock();
 		const { widget } = mount(overlay, makeCtx());
 		expect(widget?.render(120)[0]).not.toContain("●");
 		enqueueInput("run-1", { factory: (() => ({})) as never, options: undefined as never, resolve: () => {} });
@@ -163,7 +167,7 @@ describe("LaneOverlay — rendering", () => {
 
 	it("aging heading: shouts the needs-input count and a relative age (Phase C)", () => {
 		recordRun("run-1", "ship");
-		const overlay = new LaneOverlay();
+		const overlay = new LaneDock();
 		const { widget } = mount(overlay, makeCtx());
 		enqueueInput("run-1", { factory: (() => ({})) as never, options: undefined as never, resolve: () => {} });
 		const heading = (widget?.render(120) ?? [])[0] ?? "";
@@ -173,7 +177,7 @@ describe("LaneOverlay — rendering", () => {
 	it("aging heading: pluralizes when multiple lanes need input (Phase C)", () => {
 		recordRun("run-1", "ship");
 		recordRun("run-2", "vet");
-		const overlay = new LaneOverlay();
+		const overlay = new LaneDock();
 		const { widget } = mount(overlay, makeCtx());
 		const pend = { factory: (() => ({})) as never, options: undefined as never, resolve: () => {} };
 		enqueueInput("run-1", pend);
@@ -185,7 +189,7 @@ describe("LaneOverlay — rendering", () => {
 		// 12 lanes (> the 11-row budget) → collapse; the LAST-launched one needs input.
 		for (let i = 0; i < 12; i++) recordRun(`run-${i}`, `lane${i}`);
 		enqueueInput("run-11", { factory: (() => ({})) as never, options: undefined as never, resolve: () => {} });
-		const overlay = new LaneOverlay();
+		const overlay = new LaneDock();
 		const { widget } = mount(overlay, makeCtx());
 		const out = (widget?.render(200) ?? []).join("\n");
 		expect(out).toContain("+"); // collapse line present
@@ -200,7 +204,7 @@ describe("LaneOverlay — rendering", () => {
 		// suffix differs. slice(0,6) would render "2026-0" for both — useless.
 		recordRun("2026-06-19_08-14-17-a1b2", "ship");
 		recordRun("2026-06-19_08-14-17-c3d4", "vet");
-		const overlay = new LaneOverlay();
+		const overlay = new LaneDock();
 		const { widget } = mount(overlay, makeCtx());
 		const out = (widget?.render(120) ?? []).join("\n");
 		expect(out).toContain("a1b2");
@@ -211,7 +215,7 @@ describe("LaneOverlay — rendering", () => {
 	it("beyond MAX_WIDGET_LINES budget the last lane row is '+N more' (footer below it)", () => {
 		// budget = MAX_WIDGET_LINES (12) - 1 heading = 11 rows; exceed it.
 		for (let i = 0; i < 20; i++) recordRun(`run-${i}`, `wf-${i}`);
-		const overlay = new LaneOverlay();
+		const overlay = new LaneDock();
 		const { widget } = mount(overlay, makeCtx());
 		const lines = (widget?.render(120) ?? []).filter((l) => l.length > 0); // drop trailing spacer
 		// heading + 11 budgeted rows + footer
@@ -225,7 +229,7 @@ describe("LaneOverlay — rendering", () => {
 
 	it("renders the footer as a blank separator line then the '/lanes' hint (ask_user_question layout)", () => {
 		recordRun("run-1", "ship");
-		const overlay = new LaneOverlay();
+		const overlay = new LaneDock();
 		const { widget } = mount(overlay, makeCtx());
 		const lines = widget?.render(120) ?? [];
 		const footerIdx = lines.findIndex((l) => l.includes("/lanes"));
@@ -241,7 +245,7 @@ describe("LaneOverlay — rendering", () => {
 
 	it("setFooterText injects the resolved hotkey glyph into the footer (Phase E)", () => {
 		recordRun("run-1", "ship");
-		const overlay = new LaneOverlay();
+		const overlay = new LaneDock();
 		overlay.setFooterText("^Q · /lanes — open run manager");
 		const { widget } = mount(overlay, makeCtx());
 		const lines = widget?.render(120) ?? [];
@@ -251,11 +255,11 @@ describe("LaneOverlay — rendering", () => {
 	});
 });
 
-describe("LaneOverlay — live stage progress (Phase 8)", () => {
+describe("LaneDock — live stage progress (Phase 8)", () => {
 	it("a lane with progress renders N/total + stageName instead of 'streaming…'", () => {
 		recordRun("run-1", "ship");
 		setLaneProgress("run-1", { stageNumber: 3, totalStages: 7, stageName: "plan-layers", phase: "running" });
-		const overlay = new LaneOverlay();
+		const overlay = new LaneDock();
 		const { widget } = mount(overlay, makeCtx());
 		const out = (widget?.render(120) ?? []).join("\n");
 		expect(out).toContain("3/7");
@@ -275,7 +279,7 @@ describe("LaneOverlay — live stage progress (Phase 8)", () => {
 			phase: "running",
 			units: { done: 2, total: 4 },
 		});
-		const overlay = new LaneOverlay();
+		const overlay = new LaneDock();
 		const { widget } = mount(overlay, makeCtx());
 		const out = (widget?.render(120) ?? []).join("\n");
 		expect(out).toContain("retry 2");
@@ -287,7 +291,7 @@ describe("LaneOverlay — live stage progress (Phase 8)", () => {
 		recordRun("run-1", "ship");
 		setLaneProgress("run-1", { stageNumber: 3, totalStages: 7, stageName: "plan-layers", phase: "running" });
 		enqueueInput("run-1", { factory: (() => ({})) as never, options: undefined as never, resolve: () => {} });
-		const overlay = new LaneOverlay();
+		const overlay = new LaneDock();
 		const { widget } = mount(overlay, makeCtx());
 		const out = (widget?.render(120) ?? []).join("\n");
 		expect(out).toContain("needs input");
@@ -302,7 +306,7 @@ describe("LaneOverlay — live stage progress (Phase 8)", () => {
 		recordRun("r-2", "a-very-long-workflow-name");
 		setLaneProgress("r-1", { stageNumber: 1, totalStages: 6, stageName: "plan", phase: "running" });
 		setLaneProgress("r-2", { stageNumber: 1, totalStages: 5, stageName: "build", phase: "running" });
-		const overlay = new LaneOverlay();
+		const overlay = new LaneDock();
 		const { widget } = mount(overlay, makeCtx());
 		// Strip ANSI: truncateToWidth injects reset codes into the truncated long name,
 		// which would skew a raw indexOf — the ON-SCREEN column is what must align.
@@ -318,7 +322,7 @@ describe("LaneOverlay — live stage progress (Phase 8)", () => {
 	it("drops the bar first under narrow width; every line stays within width", () => {
 		recordRun("run-1", "polish");
 		setLaneProgress("run-1", { stageNumber: 3, totalStages: 7, stageName: "plan-layers", phase: "running" });
-		const overlay = new LaneOverlay();
+		const overlay = new LaneDock();
 		const { widget } = mount(overlay, makeCtx());
 		const narrow = widget?.render(36) ?? [];
 		// Measure DISPLAY width: truncateToWidth injects ANSI reset codes at the cut,
@@ -332,11 +336,11 @@ describe("LaneOverlay — live stage progress (Phase 8)", () => {
 	});
 });
 
-describe("LaneOverlay — spinner animation", () => {
+describe("LaneDock — spinner animation", () => {
 	it("a running lane renders a spinner glyph; advancing the timer cycles the frame + requests render", () => {
 		vi.useFakeTimers();
 		recordRun("run-1", "ship");
-		const overlay = new LaneOverlay();
+		const overlay = new LaneDock();
 		const { widget, tui } = mount(overlay, makeCtx());
 		const frame0 = widget?.render(120)[0];
 		// rpiv-warp's ambient-activity braille indicator (title-spinner.ts SPINNER_FRAMES).
@@ -355,7 +359,7 @@ describe("LaneOverlay — spinner animation", () => {
 		const setIntervalSpy = vi.spyOn(globalThis, "setInterval");
 		const clearIntervalSpy = vi.spyOn(globalThis, "clearInterval");
 		recordRun("run-1", "ship");
-		const overlay = new LaneOverlay();
+		const overlay = new LaneDock();
 		mount(overlay, makeCtx());
 		expect(setIntervalSpy).toHaveBeenCalledTimes(1);
 		// Move the only lane to a terminal status → next update clears the timer.
@@ -370,7 +374,7 @@ describe("LaneOverlay — spinner animation", () => {
 		const setIntervalSpy = vi.spyOn(globalThis, "setInterval");
 		recordRun("run-1", "ship");
 		setLaneStatus("run-1", "completed");
-		const overlay = new LaneOverlay();
+		const overlay = new LaneDock();
 		mount(overlay, makeCtx());
 		expect(setIntervalSpy).not.toHaveBeenCalled();
 		overlay.dispose();
@@ -379,7 +383,7 @@ describe("LaneOverlay — spinner animation", () => {
 	it("dispose clears the spin timer (no requestRender after dispose)", () => {
 		vi.useFakeTimers();
 		recordRun("run-1", "ship");
-		const overlay = new LaneOverlay();
+		const overlay = new LaneDock();
 		const { tui } = mount(overlay, makeCtx());
 		overlay.dispose();
 		(tui?.requestRender as ReturnType<typeof vi.fn>)?.mockClear();
@@ -395,7 +399,7 @@ describe("LaneOverlay — spinner animation", () => {
 		recordRun("run-1", "ship");
 		enqueueInput("run-1", { factory: (() => ({})) as never, options: undefined as never, resolve: () => {} });
 		setLaneStatus("run-1", "completed"); // not "running" → spinner timer stays off
-		const overlay = new LaneOverlay();
+		const overlay = new LaneDock();
 		const { tui } = mount(overlay, makeCtx());
 		(tui?.requestRender as ReturnType<typeof vi.fn>)?.mockClear();
 		vi.advanceTimersByTime(10_000); // NEEDS_INPUT_TICK_MS
@@ -409,12 +413,78 @@ describe("LaneOverlay — spinner animation", () => {
 		recordRun("run-1", "ship");
 		enqueueInput("run-1", { factory: (() => ({})) as never, options: undefined as never, resolve: () => {} });
 		setLaneStatus("run-1", "completed");
-		const overlay = new LaneOverlay();
+		const overlay = new LaneDock();
 		mount(overlay, makeCtx());
 		// Drain the queue → next update clears the heartbeat timer.
 		dequeueInput("run-1");
 		overlay.update();
 		expect(clearIntervalSpy).toHaveBeenCalled();
+		overlay.dispose();
+	});
+});
+
+describe("LaneDock — active (focused) state", () => {
+	it("ambient state shows no selection cursor and the discoverability footer", () => {
+		recordRun("run-1", "ship");
+		recordRun("run-2", "build");
+		const overlay = new LaneDock();
+		const { widget } = mount(overlay, makeCtx());
+		const out = (widget?.render(120) ?? []).join("\n");
+		expect(out).not.toContain("▸");
+		expect(out).toContain("/lanes");
+		expect(out).not.toContain("⏎ open");
+		overlay.dispose();
+	});
+
+	it("active state paints the ▸ cursor on the selected row and the navigation footer", () => {
+		recordRun("run-1", "ship");
+		recordRun("run-2", "build");
+		const overlay = new LaneDock();
+		const { widget } = mount(overlay, makeCtx());
+		setDockActive(true);
+		setDockSelection(1);
+		const lines = widget?.render(120) ?? [];
+		const out = lines.join("\n");
+		// Exactly one row carries the cursor; the footer flips to the nav contract.
+		expect(lines.filter((l) => l.includes("▸")).length).toBe(1);
+		expect(out).toContain("⏎ open");
+		expect(out).not.toContain("/lanes"); // ambient discoverability hint is replaced by the nav footer
+		overlay.dispose();
+	});
+
+	it("the cursor lands on the row at dockSelection (display order)", () => {
+		recordRun("run-1", "ship");
+		recordRun("run-2", "build");
+		const overlay = new LaneDock();
+		const { widget } = mount(overlay, makeCtx());
+		setDockActive(true);
+		setDockSelection(0);
+		const first = (widget?.render(120) ?? []).find((l) => l.includes("▸")) ?? "";
+		expect(first).toContain("ship");
+		setDockSelection(1);
+		const second = (widget?.render(120) ?? []).find((l) => l.includes("▸")) ?? "";
+		expect(second).toContain("build");
+		overlay.dispose();
+	});
+
+	it("active rows stay within width (the selection gutter never overflows)", () => {
+		recordRun("run-1", "a-fairly-long-workflow-name");
+		const overlay = new LaneDock();
+		const { widget } = mount(overlay, makeCtx());
+		setDockActive(true);
+		for (const line of widget?.render(40) ?? []) expect(visibleWidth(line)).toBeLessThanOrEqual(40);
+		overlay.dispose();
+	});
+
+	it("dropping to zero lanes clears an active dock (auto-hide deactivates)", () => {
+		recordRun("run-1", "ship");
+		const overlay = new LaneDock();
+		mount(overlay, makeCtx());
+		setDockActive(true);
+		expect(getDockState().active).toBe(true);
+		evictRun("run-1"); // last lane gone
+		overlay.update(); // lanes == 0 → update() calls setDockActive(false)
+		expect(getDockState().active).toBe(false);
 		overlay.dispose();
 	});
 });

@@ -159,6 +159,7 @@ export interface MockUI {
 	setHiddenThinkingLabel: ReturnType<typeof vi.fn>;
 	onTerminalInput: ReturnType<typeof vi.fn>;
 	pasteToEditor: ReturnType<typeof vi.fn>;
+	setEditorComponent: ReturnType<typeof vi.fn>;
 }
 
 export function createMockUI(overrides: Partial<ExtensionUIContext> = {}): MockUI {
@@ -173,6 +174,7 @@ export function createMockUI(overrides: Partial<ExtensionUIContext> = {}): MockU
 		setHiddenThinkingLabel: vi.fn(),
 		onTerminalInput: vi.fn(() => () => {}),
 		pasteToEditor: vi.fn(),
+		setEditorComponent: vi.fn(),
 		...overrides,
 	} as unknown as MockUI;
 }

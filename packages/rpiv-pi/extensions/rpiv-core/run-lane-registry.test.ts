@@ -4,6 +4,7 @@ import {
 	dequeueInput,
 	enqueueInput,
 	evictRun,
+	getDockState,
 	getFocusedRun,
 	getLane,
 	type LaneSession,
@@ -11,10 +12,13 @@ import {
 	laneNeedsInput,
 	listLanes,
 	listLanesForDisplay,
+	moveDockSelection,
 	type PendingInput,
 	recordRun,
 	retireRun,
 	setCurrentSession,
+	setDockActive,
+	setDockSelection,
 	setFocusedRun,
 	setLaneAbort,
 	setLaneProgress,
@@ -329,17 +333,90 @@ describe("run-lane-registry", () => {
 		});
 	});
 
+	describe("dock state", () => {
+		it("getDockState defaults to inactive at the top", () => {
+			expect(getDockState()).toEqual({ active: false, selection: 0 });
+		});
+
+		it("setDockActive toggles and notifies only on a real change", () => {
+			const listener = vi.fn();
+			subscribeLanes(listener);
+			setDockActive(false); // already inactive — no notify
+			expect(listener).not.toHaveBeenCalled();
+			setDockActive(true);
+			expect(getDockState().active).toBe(true);
+			expect(listener).toHaveBeenCalledTimes(1);
+			setDockActive(true); // unchanged — no second notify
+			expect(listener).toHaveBeenCalledTimes(1);
+		});
+
+		it("deactivating resets the selection to the top", () => {
+			recordRun("run-1", "a");
+			recordRun("run-2", "b");
+			recordRun("run-3", "c");
+			setDockActive(true);
+			setDockSelection(2);
+			expect(getDockState().selection).toBe(2);
+			setDockActive(false);
+			expect(getDockState().selection).toBe(0);
+		});
+
+		it("setDockSelection clamps to [0, lanes-1] and notifies only on change", () => {
+			recordRun("run-1", "a");
+			recordRun("run-2", "b");
+			const listener = vi.fn();
+			subscribeLanes(listener);
+			setDockSelection(5); // clamps to last index (1)
+			expect(getDockState().selection).toBe(1);
+			expect(listener).toHaveBeenCalledTimes(1);
+			setDockSelection(5); // already clamped to 1 — no notify
+			expect(listener).toHaveBeenCalledTimes(1);
+			setDockSelection(-3); // clamps to 0
+			expect(getDockState().selection).toBe(0);
+		});
+
+		it("moveDockSelection steps and clamps at both ends", () => {
+			recordRun("run-1", "a");
+			recordRun("run-2", "b");
+			moveDockSelection(1);
+			expect(getDockState().selection).toBe(1);
+			moveDockSelection(1); // clamp at last
+			expect(getDockState().selection).toBe(1);
+			moveDockSelection(-5); // clamp at first
+			expect(getDockState().selection).toBe(0);
+		});
+
+		it("getDockState clamps a stale selection after a lane is evicted", () => {
+			recordRun("run-1", "a");
+			recordRun("run-2", "b");
+			recordRun("run-3", "c");
+			setDockSelection(2);
+			evictRun("run-3");
+			evictRun("run-2");
+			// Selection was 2; only run-1 remains → read clamps to 0 (never dangles).
+			expect(getDockState().selection).toBe(0);
+		});
+
+		it("selection is 0 when there are no lanes", () => {
+			setDockSelection(3);
+			expect(getDockState().selection).toBe(0);
+		});
+	});
+
 	describe("__resetRunLaneRegistry", () => {
-		it("clears lanes, listeners, and focus", () => {
+		it("clears lanes, listeners, focus, and dock state", () => {
 			const listener = vi.fn();
 			subscribeLanes(listener);
 			recordRun("run-1", "ship");
 			setFocusedRun("run-1");
+			setDockActive(true);
+			setDockSelection(0);
 			const callsBeforeReset = listener.mock.calls.length;
 			__resetRunLaneRegistry();
 			expect(laneCount()).toBe(0);
 			expect(listLanes()).toEqual([]);
 			expect(getFocusedRun()).toBeUndefined();
+			expect(getDockState()).toEqual({ active: false, selection: 0 });
 			// listeners cleared: a post-reset mutation must not call the old listener.
 			recordRun("run-2", "build");
 			expect(listener.mock.calls.length).toBe(callsBeforeReset);

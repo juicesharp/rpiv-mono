@@ -1,29 +1,25 @@
 import type { ExtensionAPI, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import { createMockPi, createMockUI } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ManagerResult } from "./lane-manager.js";
-import { showLaneManager } from "./lane-manager.js";
 import { createLaneRelayUiContext } from "./lane-relay-ui.js";
-import { __resetLaneSwitcher, registerLaneSwitcher } from "./lane-switcher.js";
+import { __resetLaneSwitcher, registerLaneSwitcher, switchIntoLane } from "./lane-switcher.js";
 import { showLaneViewer } from "./lane-viewer.js";
 import {
 	__resetRunLaneRegistry,
 	enqueueInput,
+	getDockState,
 	getFocusedRun,
-	getLane,
 	recordRun,
+	setDockActive,
 	setFocusedRun,
-	setLaneAbort,
 	subscribeLanes,
 } from "./run-lane-registry.js";
 
-// Mock the focused overlays so we can assert sequencing (manager → viewer → drain)
-// without driving the real ctx.ui.custom overlay machinery.
-vi.mock("./lane-manager.js", () => ({ showLaneManager: vi.fn() }));
+// Mock the viewer so we can assert the switch flow without driving the real
+// ctx.ui.custom overlay machinery.
 vi.mock("./lane-viewer.js", () => ({ showLaneViewer: vi.fn() }));
-// Keep the registry REAL (lane-overlay + the switcher both depend on its live
-// behavior) but wrap subscribeLanes so we can count subscriptions and capture the
-// returned unsub. Each subscription still actually delegates to the real registry.
+// Keep the registry REAL (the dock + switcher both depend on its live behavior) but
+// wrap subscribeLanes so we can count subscriptions and capture the returned unsub.
 vi.mock("./run-lane-registry.js", async (importActual) => {
 	const actual = await importActual<typeof import("./run-lane-registry.js")>();
 	return {
@@ -32,7 +28,6 @@ vi.mock("./run-lane-registry.js", async (importActual) => {
 	};
 });
 
-const mockShowLaneManager = vi.mocked(showLaneManager);
 const mockShowLaneViewer = vi.mocked(showLaneViewer);
 const mockSubscribeLanes = vi.mocked(subscribeLanes);
 
@@ -57,12 +52,6 @@ function register(): {
 	return { pi, lanes, sessionStart, shortcut, shortcutKey };
 }
 
-/** Let queued microtasks settle (manager await, viewer await). */
-const flush = async () => {
-	await Promise.resolve();
-	await Promise.resolve();
-};
-
 beforeEach(() => {
 	vi.clearAllMocks();
 	__resetRunLaneRegistry();
@@ -74,12 +63,12 @@ afterEach(() => {
 });
 
 describe("lane-switcher — /lanes command", () => {
-	it("notifies and does not open the manager when there are no in-flight runs", async () => {
+	it("notifies and does NOT activate the dock when there are no in-flight runs", async () => {
 		const { lanes } = register();
 		const ui = createMockUI() as unknown as ExtensionUIContext;
 		await lanes("", { hasUI: true, ui });
 		expect(ui.notify).toHaveBeenCalledWith("No in-flight runs.", "info");
-		expect(mockShowLaneManager).not.toHaveBeenCalled();
+		expect(getDockState().active).toBe(false);
 	});
 
 	it("is a no-op without a UI (headless command invocation)", async () => {
@@ -88,130 +77,146 @@ describe("lane-switcher — /lanes command", () => {
 		const ui = createMockUI() as unknown as ExtensionUIContext;
 		await lanes("", { hasUI: false, ui });
 		expect(ui.notify).not.toHaveBeenCalled();
-		expect(mockShowLaneManager).not.toHaveBeenCalled();
+		expect(getDockState().active).toBe(false);
 	});
 
-	it("opens the manager when at least one run is in-flight", async () => {
+	it("steps into the dock at the top row when at least one run is in-flight", async () => {
 		const { lanes } = register();
 		recordRun("run-1", "ship");
-		mockShowLaneManager.mockResolvedValue({ kind: "dismiss" });
+		recordRun("run-2", "build");
 		const ui = createMockUI() as unknown as ExtensionUIContext;
 		await lanes("", { hasUI: true, ui });
-		expect(mockShowLaneManager).toHaveBeenCalledWith(ui);
+		expect(getDockState()).toEqual({ active: true, selection: 0 });
 	});
 });
 
-describe("lane-switcher — Ctrl-Q shortcut (Phase 8.4)", () => {
+describe("lane-switcher — Ctrl-Q shortcut", () => {
 	it("registers a ctrl+q keyboard shortcut", () => {
 		const { shortcut, shortcutKey } = register();
 		expect(shortcutKey).toBe("ctrl+q");
 		expect(typeof shortcut).toBe("function");
 	});
 
-	it("opens the switcher at root when a lane is in-flight", async () => {
-		recordRun("run-1", "ship");
-		mockShowLaneManager.mockResolvedValue({ kind: "dismiss" });
-		const ui = createMockUI() as unknown as ExtensionUIContext;
-		const { shortcut } = register();
-		await shortcut?.({ hasUI: true, ui });
-		await flush();
-		expect(mockShowLaneManager).toHaveBeenCalledWith(ui);
-	});
-
-	it("is a no-op without a UI", async () => {
+	it("steps into the dock at root when a lane is in-flight", () => {
 		recordRun("run-1", "ship");
 		const ui = createMockUI() as unknown as ExtensionUIContext;
 		const { shortcut } = register();
-		await shortcut?.({ hasUI: false, ui });
-		expect(mockShowLaneManager).not.toHaveBeenCalled();
+		shortcut?.({ hasUI: true, ui });
+		expect(getDockState().active).toBe(true);
 	});
 
-	it("is a no-op when there are no in-flight lanes", async () => {
+	it("is a no-op without a UI", () => {
+		recordRun("run-1", "ship");
 		const ui = createMockUI() as unknown as ExtensionUIContext;
 		const { shortcut } = register();
-		await shortcut?.({ hasUI: true, ui });
-		expect(mockShowLaneManager).not.toHaveBeenCalled();
+		shortcut?.({ hasUI: false, ui });
+		expect(getDockState().active).toBe(false);
 	});
 
-	it("is a no-op when switched into a lane (focus set — viewer owns input)", async () => {
+	it("is a no-op when there are no in-flight lanes", () => {
+		const ui = createMockUI() as unknown as ExtensionUIContext;
+		const { shortcut } = register();
+		shortcut?.({ hasUI: true, ui });
+		expect(getDockState().active).toBe(false);
+	});
+
+	it("is a no-op when switched into a lane (focus set — viewer owns input)", () => {
 		recordRun("run-1", "ship");
 		const ui = createMockUI() as unknown as ExtensionUIContext;
 		const { shortcut } = register();
 		setFocusedRun("run-1");
-		await shortcut?.({ hasUI: true, ui });
-		expect(mockShowLaneManager).not.toHaveBeenCalled();
-	});
-
-	it("does not stack a second switcher while one is already open", async () => {
-		recordRun("run-1", "ship");
-		mockShowLaneManager.mockReturnValue(new Promise<ManagerResult>(() => {})); // never resolves
-		const ui = createMockUI() as unknown as ExtensionUIContext;
-		const { shortcut } = register();
-		await shortcut?.({ hasUI: true, ui });
-		await flush();
-		await shortcut?.({ hasUI: true, ui }); // second press while manager open → guarded
-		await flush();
-		expect(mockShowLaneManager).toHaveBeenCalledTimes(1);
+		shortcut?.({ hasUI: true, ui });
+		expect(getDockState().active).toBe(false);
 	});
 });
 
-describe("lane-switcher — openLaneSwitcher sequencing", () => {
-	it("opens the viewer only AFTER the manager has resolved (overlays never stack)", async () => {
-		const { lanes } = register();
+describe("lane-switcher — switchIntoLane sequencing", () => {
+	it("opens the viewer for the run on the launcher UI identity", async () => {
 		recordRun("run-1", "ship");
-		let resolveManager!: (r: ManagerResult) => void;
-		mockShowLaneManager.mockReturnValue(new Promise<ManagerResult>((res) => (resolveManager = res)));
 		mockShowLaneViewer.mockResolvedValue(undefined);
 		const ui = createMockUI() as unknown as ExtensionUIContext;
-
-		const handlerPromise = lanes("", { hasUI: true, ui });
-		await flush();
-		// Manager still open → viewer must not have been opened yet.
-		expect(mockShowLaneViewer).not.toHaveBeenCalled();
-
-		resolveManager({ kind: "switch", runId: "run-1" });
-		await handlerPromise;
+		await switchIntoLane(ui, "run-1");
 		expect(mockShowLaneViewer).toHaveBeenCalledTimes(1);
-		// Same launcher UI identity is handed to the viewer (read-only; nothing swaps it).
 		expect(mockShowLaneViewer).toHaveBeenCalledWith(ui, "run-1");
 	});
 
-	it("does NOT open the viewer or drain on dismiss / ambient", async () => {
-		const { lanes } = register();
+	it("does not stack a second viewer while one is already open", async () => {
 		recordRun("run-1", "ship");
-		const ui = createMockUI({ custom: vi.fn() }) as unknown as ExtensionUIContext;
+		mockShowLaneViewer.mockReturnValue(new Promise<void>(() => {})); // never resolves
+		const ui = createMockUI() as unknown as ExtensionUIContext;
+		void switchIntoLane(ui, "run-1");
+		await Promise.resolve();
+		void switchIntoLane(ui, "run-1"); // second call while viewer open → guarded
+		await Promise.resolve();
+		expect(mockShowLaneViewer).toHaveBeenCalledTimes(1);
+	});
 
-		mockShowLaneManager.mockResolvedValue({ kind: "dismiss" });
-		await lanes("", { hasUI: true, ui });
-		mockShowLaneManager.mockResolvedValue({ kind: "ambient" });
-		await lanes("", { hasUI: true, ui });
-
-		expect(mockShowLaneViewer).not.toHaveBeenCalled();
-		expect((ui.custom as ReturnType<typeof vi.fn>) ?? vi.fn()).not.toHaveBeenCalled();
+	it("deactivates the dock once the user returns to root", async () => {
+		recordRun("run-1", "ship");
+		mockShowLaneViewer.mockResolvedValue(undefined);
+		setDockActive(true);
+		const ui = createMockUI() as unknown as ExtensionUIContext;
+		await switchIntoLane(ui, "run-1");
+		expect(getDockState().active).toBe(false);
 	});
 });
 
-describe("lane-switcher — cancel / remove (Phase D)", () => {
-	it("cancel selection calls the run's stored abort handle (no switch-in needed)", async () => {
-		const { lanes } = register();
+describe("lane-switcher — focus lifecycle", () => {
+	it("sets focus while switched in and clears it in finally (even if the viewer throws)", async () => {
 		recordRun("run-1", "ship");
-		const abort = vi.fn();
-		setLaneAbort("run-1", abort);
-		mockShowLaneManager.mockResolvedValue({ kind: "cancel", runId: "run-1" });
+		let focusDuringViewer: string | undefined;
+		mockShowLaneViewer.mockImplementation(async () => {
+			focusDuringViewer = getFocusedRun();
+			throw new Error("viewer boom");
+		});
 		const ui = createMockUI() as unknown as ExtensionUIContext;
-		await lanes("", { hasUI: true, ui });
-		expect(abort).toHaveBeenCalledTimes(1);
-		expect(mockShowLaneViewer).not.toHaveBeenCalled(); // never opened the viewer
+		await expect(switchIntoLane(ui, "run-1")).rejects.toThrow("viewer boom");
+		expect(focusDuringViewer).toBe("run-1"); // focused while the viewer was open
+		expect(getFocusedRun()).toBeUndefined(); // cleared in finally despite the throw
 	});
 
-	it("remove selection evicts the (retained) lane from the registry", async () => {
-		const { lanes } = register();
+	it("clears focus after a normal switch completes", async () => {
 		recordRun("run-1", "ship");
-		mockShowLaneManager.mockResolvedValue({ kind: "remove", runId: "run-1" });
+		mockShowLaneViewer.mockResolvedValue(undefined);
 		const ui = createMockUI() as unknown as ExtensionUIContext;
-		await lanes("", { hasUI: true, ui });
-		expect(getLane("run-1")).toBeUndefined();
-		expect(mockShowLaneViewer).not.toHaveBeenCalled();
+		await switchIntoLane(ui, "run-1");
+		expect(getFocusedRun()).toBeUndefined();
+	});
+});
+
+describe("lane-switcher — drainPendingInput (FR5)", () => {
+	it("replays each queued questionnaire on the real UI in FIFO order and resolves each child", async () => {
+		recordRun("run-1", "ship");
+		const factoryA = (() => ({})) as never;
+		const factoryB = (() => ({})) as never;
+		const resolveA = vi.fn();
+		const resolveB = vi.fn();
+		enqueueInput("run-1", { factory: factoryA, options: "optsA" as never, resolve: resolveA });
+		enqueueInput("run-1", { factory: factoryB, options: "optsB" as never, resolve: resolveB });
+
+		const custom = vi.fn().mockResolvedValueOnce("ans-A").mockResolvedValueOnce("ans-B");
+		const ui = createMockUI({ custom }) as unknown as ExtensionUIContext;
+		mockShowLaneViewer.mockResolvedValue(undefined);
+
+		await switchIntoLane(ui, "run-1");
+
+		expect(custom).toHaveBeenNthCalledWith(1, factoryA, "optsA");
+		expect(custom).toHaveBeenNthCalledWith(2, factoryB, "optsB");
+		expect(resolveA).toHaveBeenCalledWith("ans-A");
+		expect(resolveB).toHaveBeenCalledWith("ans-B");
+	});
+
+	it("settles the child with undefined when the replayed questionnaire throws / is dismissed", async () => {
+		recordRun("run-1", "ship");
+		const resolve = vi.fn();
+		enqueueInput("run-1", { factory: (() => ({})) as never, options: undefined as never, resolve });
+
+		const custom = vi.fn().mockRejectedValue(new Error("dismissed"));
+		const ui = createMockUI({ custom }) as unknown as ExtensionUIContext;
+		mockShowLaneViewer.mockResolvedValue(undefined);
+
+		await switchIntoLane(ui, "run-1");
+		expect(resolve).toHaveBeenCalledWith(undefined); // never strands the child
 	});
 });
 
@@ -245,7 +250,7 @@ describe("lane-switcher — hotkey resolution (Phase E)", () => {
 		expect(shortcutKey).toBe("ctrl+l");
 	});
 
-	it("session_start advertises the resolved binding in the overlay footer", async () => {
+	it("session_start advertises the resolved binding in the dock footer", async () => {
 		process.env[ENV] = "ctrl+l";
 		const { sessionStart } = register();
 		recordRun("run-1", "ship");
@@ -261,85 +266,30 @@ describe("lane-switcher — hotkey resolution (Phase E)", () => {
 	});
 });
 
-describe("lane-switcher — focus lifecycle", () => {
-	it("sets focus while switched in and clears it in finally (even if the viewer throws)", async () => {
-		const { lanes } = register();
-		recordRun("run-1", "ship");
-		let focusDuringViewer: string | undefined;
-		mockShowLaneManager.mockResolvedValue({ kind: "switch", runId: "run-1" });
-		mockShowLaneViewer.mockImplementation(async () => {
-			focusDuringViewer = getFocusedRun();
-			throw new Error("viewer boom");
-		});
-		const ui = createMockUI() as unknown as ExtensionUIContext;
-
-		await expect(lanes("", { hasUI: true, ui })).rejects.toThrow("viewer boom");
-		expect(focusDuringViewer).toBe("run-1"); // focused while the viewer was open
-		expect(getFocusedRun()).toBeUndefined(); // cleared in finally despite the throw
-	});
-
-	it("clears focus after a normal switch completes", async () => {
-		const { lanes } = register();
-		recordRun("run-1", "ship");
-		mockShowLaneManager.mockResolvedValue({ kind: "switch", runId: "run-1" });
-		mockShowLaneViewer.mockResolvedValue(undefined);
-		const ui = createMockUI() as unknown as ExtensionUIContext;
-		await lanes("", { hasUI: true, ui });
-		expect(getFocusedRun()).toBeUndefined();
-	});
-});
-
-describe("lane-switcher — drainPendingInput (FR5)", () => {
-	it("replays each queued questionnaire on the real UI in FIFO order and resolves each child", async () => {
-		const { lanes } = register();
-		recordRun("run-1", "ship");
-		const factoryA = (() => ({})) as never;
-		const factoryB = (() => ({})) as never;
-		const resolveA = vi.fn();
-		const resolveB = vi.fn();
-		enqueueInput("run-1", { factory: factoryA, options: "optsA" as never, resolve: resolveA });
-		enqueueInput("run-1", { factory: factoryB, options: "optsB" as never, resolve: resolveB });
-
-		const custom = vi.fn().mockResolvedValueOnce("ans-A").mockResolvedValueOnce("ans-B");
-		const ui = createMockUI({ custom }) as unknown as ExtensionUIContext;
-		mockShowLaneManager.mockResolvedValue({ kind: "switch", runId: "run-1" });
-		mockShowLaneViewer.mockResolvedValue(undefined);
-
-		await lanes("", { hasUI: true, ui });
-
-		expect(custom).toHaveBeenNthCalledWith(1, factoryA, "optsA");
-		expect(custom).toHaveBeenNthCalledWith(2, factoryB, "optsB");
-		expect(resolveA).toHaveBeenCalledWith("ans-A");
-		expect(resolveB).toHaveBeenCalledWith("ans-B");
-	});
-
-	it("settles the child with undefined when the replayed questionnaire throws / is dismissed", async () => {
-		const { lanes } = register();
-		recordRun("run-1", "ship");
-		const resolve = vi.fn();
-		enqueueInput("run-1", { factory: (() => ({})) as never, options: undefined as never, resolve });
-
-		const custom = vi.fn().mockRejectedValue(new Error("dismissed"));
-		const ui = createMockUI({ custom }) as unknown as ExtensionUIContext;
-		mockShowLaneManager.mockResolvedValue({ kind: "switch", runId: "run-1" });
-		mockShowLaneViewer.mockResolvedValue(undefined);
-
-		await lanes("", { hasUI: true, ui });
-		expect(resolve).toHaveBeenCalledWith(undefined); // never strands the child
-	});
-});
-
 describe("lane-switcher — registration / lifecycle", () => {
-	it("session_start mounts the overlay and subscribes the registry exactly once", async () => {
+	it("session_start mounts the dock, subscribes once, and installs the dock editor once", async () => {
 		const { sessionStart } = register();
 		recordRun("run-1", "ship");
 		const ui = createMockUI() as unknown as ExtensionUIContext;
 
 		await sessionStart(undefined, { hasUI: true, ui });
-		await sessionStart(undefined, { hasUI: true, ui }); // a second start must not double-subscribe
+		await sessionStart(undefined, { hasUI: true, ui }); // a second start must not double-wire
 
-		expect(ui.setWidget).toHaveBeenCalled(); // overlay mounted (lane present)
+		expect(ui.setWidget).toHaveBeenCalled(); // dock mounted (lane present)
 		expect(mockSubscribeLanes).toHaveBeenCalledTimes(1);
+		// Editor installed exactly once for this ctx identity.
+		expect(ui.setEditorComponent as unknown as ReturnType<typeof vi.fn>).toHaveBeenCalledTimes(1);
+	});
+
+	it("a new ctx (/reload) re-installs the dock editor", async () => {
+		const { sessionStart } = register();
+		recordRun("run-1", "ship");
+		const ui1 = createMockUI() as unknown as ExtensionUIContext;
+		const ui2 = createMockUI() as unknown as ExtensionUIContext;
+		await sessionStart(undefined, { hasUI: true, ui: ui1 });
+		await sessionStart(undefined, { hasUI: true, ui: ui2 });
+		expect(ui1.setEditorComponent as unknown as ReturnType<typeof vi.fn>).toHaveBeenCalledTimes(1);
+		expect(ui2.setEditorComponent as unknown as ReturnType<typeof vi.fn>).toHaveBeenCalledTimes(1);
 	});
 
 	it("session_start is a no-op without a UI", async () => {
@@ -348,6 +298,7 @@ describe("lane-switcher — registration / lifecycle", () => {
 		const ui = createMockUI() as unknown as ExtensionUIContext;
 		await sessionStart(undefined, { hasUI: false, ui });
 		expect(ui.setWidget).not.toHaveBeenCalled();
+		expect(ui.setEditorComponent as unknown as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
 		expect(mockSubscribeLanes).not.toHaveBeenCalled();
 	});
 
@@ -355,15 +306,14 @@ describe("lane-switcher — registration / lifecycle", () => {
 		const { sessionStart } = register();
 		recordRun("run-1", "ship");
 		const realUi = createMockUI() as unknown as ExtensionUIContext;
-		// A foreground child re-fires session_start with its branded relay ui — the
-		// launcher's overlay must NOT mount on it (no widget, no extra subscription).
 		const relay = createLaneRelayUiContext(realUi, "run-1");
 		await sessionStart(undefined, { hasUI: true, ui: relay });
 		expect(realUi.setWidget).not.toHaveBeenCalled();
+		expect(realUi.setEditorComponent as unknown as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
 		expect(mockSubscribeLanes).not.toHaveBeenCalled();
 	});
 
-	it("__resetLaneSwitcher unsubscribes the registry listener and disposes the overlay", async () => {
+	it("__resetLaneSwitcher unsubscribes, disposes the dock, and restores the default editor", async () => {
 		const { sessionStart } = register();
 		recordRun("run-1", "ship");
 		const ui = createMockUI() as unknown as ExtensionUIContext;
@@ -373,6 +323,8 @@ describe("lane-switcher — registration / lifecycle", () => {
 		__resetLaneSwitcher();
 
 		expect(unsub).toHaveBeenCalled(); // registry listener removed
-		expect(ui.setWidget).toHaveBeenLastCalledWith("rpiv-lanes", undefined); // overlay disposed
+		expect(ui.setWidget).toHaveBeenLastCalledWith("rpiv-lanes", undefined); // dock disposed
+		// Default editor restored (setEditorComponent(undefined)).
+		expect(ui.setEditorComponent as unknown as ReturnType<typeof vi.fn>).toHaveBeenLastCalledWith(undefined);
 	});
 });

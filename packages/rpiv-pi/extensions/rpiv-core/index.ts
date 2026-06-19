@@ -49,17 +49,17 @@ export default function (pi: ExtensionAPI) {
 	// registry/uiContext for per-child models — the workflow-path lifecycle latch
 	// is retired. The /skill: bracket below still consumes the capture.
 	registerSessionCapture(pi);
-	// Ambient lane overlay + /lanes + focused manager (launcher owns the registry).
-	// Independent of the rpiv-workflow sibling: the registry is populated only when a
-	// /wf run actually launches, so this is a safe unconditional registration. Its
-	// session_start hook is root-gated (skips detached children — Phase 7.2).
+	// Always-on lane dock (belowEditor) + dock editor + /lanes/^Q entry (launcher owns
+	// the registry). Independent of the rpiv-workflow sibling: the registry is populated
+	// only when a /wf run actually launches, so this is a safe unconditional registration.
+	// Its session_start hook is root-gated (skips detached children — Phase 7.2).
 	registerLaneSwitcher(pi);
 	// SDK execution-host provider — registered on the ROOT launcher's session_start
 	// (NOT here / not in the IIFE below) so a detached child re-loading rpiv-core can
 	// never overwrite the process-global provider box (Phase 7.2). The session_start
 	// timing is safe: /wf is interactive-only and only fires after session start.
 	registerWorkflowExecutionHostProviderHook(pi);
-	// Lifecycle→registry bridge for live overlay stage progress (Phase 8). Root-gated
+	// Lifecycle→registry bridge for live dock stage progress (Phase 8). Root-gated
 	// + idempotent, same as the provider hook above: registered on the ROOT launcher's
 	// session_start so a re-loading child never double-subscribes, and it dynamically
 	// imports the rpiv-workflow `/startup` entry (degrades when the sibling is absent).

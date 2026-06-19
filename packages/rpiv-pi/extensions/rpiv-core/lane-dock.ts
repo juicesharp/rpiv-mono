@@ -1,22 +1,32 @@
 /**
- * lane-overlay — ambient setWidget lane list above the editor (FR4/FR7).
+ * lane-dock — the always-mounted lane dock rendered BELOW the editor (FR4/FR7).
  *
- * Lifecycle controller for Pi's setWidget contract, mirroring TodoOverlay:
- * register-once factory in widgetContainerAbove, requestRender() refresh,
+ * Lifecycle controller for Pi's setWidget contract (placement: "belowEditor"),
+ * mirroring TodoOverlay: register-once factory, requestRender() refresh,
  * height-stable single-line rows with a fixed budget + "+N more" collapse,
  * auto-hide when no runs are in-flight. Reads live state from the run-lane
  * registry at render time (never a stale snapshot).
+ *
+ * The dock has TWO states, both rendered from registry dock-state (getDockState):
+ *   - ambient (inactive): a read-only run list — the discoverability footer
+ *     advertises how to step in.
+ *   - active (focused): the same list with a `▸` selection cursor on the selected
+ *     row and a navigation footer. The dock is not itself focusable (widgets never
+ *     receive input); LaneDockEditor proxies arrow/enter/tab keys from the editor
+ *     into the registry's dock selection, and this widget renders the result.
  */
 
 import type { ExtensionUIContext, Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { type TUI, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import {
+	getDockState,
 	type LaneEntry,
 	type LaneProgress,
 	type LaneStatus,
 	laneNeedsInput,
 	listLanes,
 	listLanesForDisplay,
+	setDockActive,
 	shortRunId,
 } from "./run-lane-registry.js";
 
@@ -26,7 +36,14 @@ const MAX_WIDGET_LINES = 12;
 /** Default discoverability footer — surfaces how to switch in. The switcher overrides
  *  it via setFooterText with the ACTUAL resolved hotkey glyph (Phase E); this fallback
  *  (no hotkey prefix) is used in tests / before the switcher wires the binding. */
-const DEFAULT_FOOTER_TEXT = "/lanes — open run manager";
+const DEFAULT_FOOTER_TEXT = "/lanes — step into runs";
+/** Footer shown while the dock is active (the user has stepped in) — the navigation
+ *  contract: arrows move, ⏎ opens the selected run, esc/↑-at-top return to the input. */
+const ACTIVE_FOOTER_TEXT = "↑/↓ move · ⏎ open · x stop · esc input";
+/** Selection-gutter cells prepended to every row while the dock is active (so all rows
+ *  shift equally — column stability holds within the active state). */
+const CURSOR_SELECTED = "▸ ";
+const CURSOR_UNSELECTED = "  ";
 /** Heartbeat cadence (Phase C) — refresh the aging "needs input · 4m" heading even when
  *  no lane is streaming (the spinner timer is then idle). Minute-granularity needs only
  *  a slow tick; `.unref()` so it never keeps the process alive. */
@@ -90,7 +107,7 @@ const SPINNER_FRAMES = ["⠴", "⠦", "⠖", "⠲"] as const;
 /** Spinner repaint cadence while ≥1 lane is running (matches rpiv-warp's 160ms). */
 const SPIN_INTERVAL_MS = 160;
 
-export class LaneOverlay {
+export class LaneDock {
 	private uiCtx: ExtensionUIContext | undefined;
 	private widgetRegistered = false;
 	private tui: TUI | undefined;
@@ -125,6 +142,11 @@ export class LaneOverlay {
 		this.syncSpinner(lanes); // start/stop the repaint timer with running-lane presence
 		this.syncHeartbeat(lanes); // start/stop the aging heartbeat with needs-input presence
 		if (lanes.length === 0) {
+			// No lanes → the dock hides; there is nothing to navigate, so drop any
+			// stale navigation focus too (e.g. the last lane was evicted while the
+			// user was stepped in). setDockActive(false) is a no-op when already
+			// inactive, so this never recurses past one shallow notify.
+			setDockActive(false);
 			if (this.widgetRegistered) {
 				this.uiCtx.setWidget(WIDGET_KEY, undefined);
 				this.widgetRegistered = false;
@@ -145,7 +167,7 @@ export class LaneOverlay {
 						},
 					};
 				},
-				{ placement: "aboveEditor" },
+				{ placement: "belowEditor" },
 			);
 			this.widgetRegistered = true;
 		} else {
@@ -189,6 +211,9 @@ export class LaneOverlay {
 		const lanes = listLanesForDisplay();
 		if (lanes.length === 0) return [];
 		const truncate = (line: string): string => truncateToWidth(line, width, "…");
+		// Dock navigation state — drives the `▸` selection cursor and the footer hint.
+		// Selection indexes this same listLanesForDisplay() order (clamped on read).
+		const { active, selection } = getDockState();
 
 		const needsInputLanes = lanes.filter((l) => laneNeedsInput(l.runId));
 		const anyNeedsInput = needsInputLanes.length > 0;
@@ -215,26 +240,42 @@ export class LaneOverlay {
 		const lines: string[] = [heading];
 		const budget = MAX_WIDGET_LINES - 1; // rows available after the heading
 
+		// While active, a leading selection gutter is prepended to every row — pass the
+		// per-row selected flag down so the cursor lands on the dock's selected index.
+		const sel = (i: number): boolean => active && i === selection;
 		if (lanes.length <= budget) {
 			lanes.forEach((lane, i) => {
-				lines.push(truncate(this.renderRow(theme, lane, i === lanes.length - 1, width)));
+				lines.push(truncate(this.renderRow(theme, lane, i === lanes.length - 1, width, active, sel(i))));
 			});
 		} else {
 			// Reserve the last row for the "+N more" summary.
 			const shown = lanes.slice(0, budget - 1);
-			for (const lane of shown) lines.push(truncate(this.renderRow(theme, lane, false, width)));
+			shown.forEach((lane, i) => {
+				lines.push(truncate(this.renderRow(theme, lane, false, width, active, sel(i))));
+			});
 			const moreCount = lanes.length - shown.length;
-			lines.push(truncate(`${theme.fg("dim", "└─")} ${theme.fg("dim", `+${moreCount} more`)}`));
+			const gutter = active ? CURSOR_UNSELECTED : "";
+			lines.push(truncate(`${gutter}${theme.fg("dim", "└─")} ${theme.fg("dim", `+${moreCount} more`)}`));
 		}
-		// Discoverability footer (Phase 8) — mirrors the ask_user_question footer layout
-		// (tab-content-strategy.ts:139-144): a blank separator line, then the dim hint
-		// indented one space.
+		// Footer — mirrors the ask_user_question footer layout (tab-content-strategy.ts:
+		// 139-144): a blank separator line, then the dim hint indented one space. Active
+		// shows the navigation contract; ambient shows the discoverability hint.
 		lines.push("");
-		lines.push(truncate(` ${theme.fg("dim", this.footerText)}`));
+		lines.push(truncate(` ${theme.fg("dim", active ? ACTIVE_FOOTER_TEXT : this.footerText)}`));
 		return lines;
 	}
 
-	private renderRow(theme: Theme, lane: LaneEntry, isLast: boolean, width: number): string {
+	private renderRow(
+		theme: Theme,
+		lane: LaneEntry,
+		isLast: boolean,
+		width: number,
+		active: boolean,
+		selected: boolean,
+	): string {
+		// Active-state selection gutter: `▸ ` (accent) on the selected row, two spaces
+		// otherwise. Prepended before the tree branch so every active row shifts equally.
+		const gutter = active ? (selected ? theme.fg("accent", CURSOR_SELECTED) : CURSOR_UNSELECTED) : "";
 		const branch = isLast ? "└─" : "├─";
 		const needs = laneNeedsInput(lane.runId);
 		const progress = lane.progress;
@@ -265,7 +306,7 @@ export class LaneOverlay {
 		// row so the status region (bar / label) always starts at the same column.
 		// The preset name renders in the normal "text" color; the short-id is dim
 		// metadata — mirrors TodoOverlay (subject "text", metadata "dim", format.ts).
-		const head = `${theme.fg("dim", branch)} ${theme.fg(glyphColor, glyph)} `;
+		const head = `${gutter}${theme.fg("dim", branch)} ${theme.fg(glyphColor, glyph)} `;
 		const prefix =
 			`${head}${padCol(theme, "text", lane.name, NAME_COL)} ` +
 			`${padCol(theme, "dim", shortRunId(lane.runId), ID_COL)} `;
