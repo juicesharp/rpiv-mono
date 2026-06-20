@@ -1,4 +1,4 @@
-import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
 	SPLASH_FRAME_INTERVAL_MS,
 	SPLASH_FRAMES,
@@ -15,7 +15,7 @@ export interface SplashRunnerConfig {
 }
 
 export async function runWithSplash<T>(
-	ctx: ExtensionCommandContext,
+	ctx: ExtensionContext,
 	config: SplashRunnerConfig,
 	work: (controller: SplashController) => Promise<T>,
 ): Promise<T> {

@@ -1,4 +1,4 @@
-import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { makeTheme, makeTui } from "@juicesharp/rpiv-test-utils";
 import { describe, expect, it, vi } from "vitest";
 
@@ -14,7 +14,7 @@ interface CapturedComponent {
 // captures the returned component, and returns a `done` resolver the caller
 // invokes when the body's work promise settles.
 function makeCtx(): {
-	ctx: ExtensionCommandContext;
+	ctx: ExtensionContext;
 	getComponent: () => CapturedComponent;
 	donePromise: Promise<void>;
 } {
@@ -43,7 +43,7 @@ function makeCtx(): {
 				});
 			},
 		},
-	} as unknown as ExtensionCommandContext;
+	} as unknown as ExtensionContext;
 	return { ctx, getComponent: () => component!, donePromise };
 }
 
