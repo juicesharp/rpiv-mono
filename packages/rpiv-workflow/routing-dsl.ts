@@ -148,6 +148,27 @@ export function takeRouteNote(fn: EdgeFn): string | undefined {
 const INTEGER_LIKE_KEY = /^\d+$/;
 
 /**
+ * Shared branch-key guards for `gate`/`match`: at least one branch must be
+ * declared, and no key may be integer-like (`"2"`) — JS hoists array-index keys
+ * ahead of declaration order, silently reordering match priority. `factory`
+ * names the throwing builder; `renameHint` is the builder-specific tail of the
+ * integer-key message (gate offers `otherwise`, match does not).
+ */
+function validateBranchKeys(factory: "gate" | "match", branchTargets: string[], renameHint: string): void {
+	if (branchTargets.length === 0) {
+		throw new Error(`${factory}: branches must declare at least one possible return value`);
+	}
+	for (const key of branchTargets) {
+		if (INTEGER_LIKE_KEY.test(key)) {
+			throw new Error(
+				`${factory}: branch key "${key}" is integer-like — JS reorders such keys ahead of declaration order, ` +
+					`silently changing match priority. ${renameHint}`,
+			);
+		}
+	}
+}
+
+/**
  * Conditional routing keyed on a numeric field in `output.data`. Each
  * branch's predicate is evaluated against `Number(output.data[field])` in
  * declaration order; the first matching branch wins. When no predicate
@@ -173,19 +194,9 @@ const INTEGER_LIKE_KEY = /^\d+$/;
  */
 export function gate(field: string, branches: Record<string, NumericPredicate>, otherwise: string): EdgeFn {
 	const branchTargets = Object.keys(branches);
-	if (branchTargets.length === 0) {
-		throw new Error("gate: branches must declare at least one possible return value");
-	}
+	validateBranchKeys("gate", branchTargets, "Rename the stage or route to it via `otherwise`.");
 	if (typeof otherwise !== "string" || otherwise.length === 0) {
 		throw new Error("gate: an explicit `otherwise` branch is required — the no-match fallback must be deliberate");
-	}
-	for (const key of branchTargets) {
-		if (INTEGER_LIKE_KEY.test(key)) {
-			throw new Error(
-				`gate: branch key "${key}" is integer-like — JS reorders such keys ahead of declaration order, ` +
-					`silently changing match priority. Rename the stage or route to it via \`otherwise\`.`,
-			);
-		}
 	}
 	const targets = [...new Set([...branchTargets, otherwise])];
 	const route: EdgeFn = defineRoute(targets, ({ output }) => {
@@ -252,17 +263,9 @@ export interface MatchOptions {
  */
 export function match(field: string, branches: Record<string, MatchValue>, opts?: MatchOptions): EdgeFn {
 	const branchTargets = Object.keys(branches);
-	if (branchTargets.length === 0) {
-		throw new Error("match: branches must declare at least one possible return value");
-	}
+	validateBranchKeys("match", branchTargets, "Rename the stage.");
 	const claimedBy = new Map<string, string>();
 	for (const key of branchTargets) {
-		if (INTEGER_LIKE_KEY.test(key)) {
-			throw new Error(
-				`match: branch key "${key}" is integer-like — JS reorders such keys ahead of declaration order, ` +
-					`silently changing match priority. Rename the stage.`,
-			);
-		}
 		// Type-tag the value so 0/"0"/false stay distinct when deduping.
 		const value = branches[key]!;
 		const valueKey = `${typeof value}:${String(value)}`;

@@ -15,6 +15,7 @@ import { lifecycleCtxFromSession, scriptStageRef, skillStageRef } from "./events
 import { handleToString } from "./handle.js";
 import { assertNever, nowIso } from "./internal-utils.js";
 import {
+	FAIL_AUDIT_WRITE,
 	FAIL_STAGE_ABORTED,
 	FAIL_STAGE_NO_RESPONSE,
 	FAIL_STAGE_TOOL_STALLED,
@@ -44,6 +45,21 @@ export { allocateStageNumber, decorateStage, recordStage, unitRowFields } from "
  */
 export function terminate(state: RunState, outcome: Exclude<RunTermination, { status: "running" }>): void {
 	state.termination = outcome;
+}
+
+/**
+ * Terminal halt for "the success row failed to persist." The audit JSONL is the
+ * run's system of record, so a dropped append leaves state un-advanced and ends
+ * the run. THE single notify+terminate idiom shared by the skill/unit success
+ * path (`recordStageSuccess`, sessions.ts) and the script path
+ * (`runScript`, script-stage.ts); each caller maps the void return to its own
+ * halt token (`false` / `"halted"`). `subject` is the skill (or stage) the
+ * failure message names.
+ */
+export function failAuditWrite(ctx: WorkflowHostContext, state: RunState, subject: string): void {
+	const failure = FAIL_AUDIT_WRITE(subject);
+	ctx.ui.notify(failure.toast, "error");
+	terminate(state, { status: "failed", error: failure.error });
 }
 
 /**

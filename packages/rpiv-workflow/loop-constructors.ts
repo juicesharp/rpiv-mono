@@ -538,6 +538,32 @@ export function judgeSlotOf(stage: StageDef): AnyJudge | undefined {
 	return stage.loop?.kind === "assess" ? stage.loop.judge : stage.verify?.judge;
 }
 
+/**
+ * Enumerate the verdict channels a stage's judge slot publishes, each with the
+ * skill that SIGNS it — `undefined` for the manufactured panel-fold channel
+ * (`panelVerdictChannel`), which is data-only and carries no producer contract.
+ * THE single judge-publisher walk: `publishedNamesOf` (load reachability —
+ * consumes EVERY channel) and `checkReadsChannelCompat`'s publisher index
+ * (contract adjudication — consumes only SIGNED channels) both read it, so a
+ * panel-member channel can no longer be seen by one and missed by the other. The
+ * contract-compat index used to walk only member-0 (via `judgeOf`), silently
+ * skipping panel members 1..N-1 and the fold — that gap closes here.
+ */
+export function forEachJudgeChannel(
+	stage: StageDef,
+	name: string,
+	visit: (channel: string, signingSkill: string | undefined) => void,
+): void {
+	const slot = judgeSlotOf(stage);
+	if (!slot) return;
+	if (isPanel(slot)) {
+		for (const m of slot.members) if (m?.outcome?.name) visit(m.outcome.name, m.skill);
+		visit(panelVerdictChannel(slot, name), undefined); // manufactured fold — unsigned
+	} else if (slot.outcome?.name) {
+		visit(slot.outcome.name, slot.skill);
+	}
+}
+
 /** `max < 1` would cap at unit 0 and silently produce nothing — reject at construction. */
 function checkedMax(ctor: string, max: number | undefined): number | undefined {
 	if (max === undefined) return undefined;

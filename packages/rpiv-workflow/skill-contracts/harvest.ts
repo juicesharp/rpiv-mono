@@ -9,10 +9,10 @@
  */
 
 import type { Workflow } from "../api.js";
-import { isDispatchingStage, resolveSkill } from "../chain-state.js";
 import { extractJsonSchema } from "../json-schema.js";
 import type { ConsumesSpec, ProducesSpec, SkillContract } from "../skill-contract.js";
 import { readName } from "../stage-def.js";
+import { isDispatchingStage, resolveSkill } from "../stage-identity.js";
 import { getSkillContracts } from "./registry.js";
 
 /**

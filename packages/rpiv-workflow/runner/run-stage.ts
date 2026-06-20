@@ -26,7 +26,7 @@ import { currentPrimaryArtifact, resolveStagePrompt, stageEntryArgs } from "../c
 import { lifecycleCtxFor, skillStageRef } from "../events.js";
 import { formatError, isAbortError } from "../internal-utils.js";
 import { announceLoopStart, runLoop } from "../loop.js";
-import { freshCursor, type LoopDeps, type LoopEntry } from "../loop-kinds.js";
+import { buildLoopEntry, freshCursor, type LoopDeps, type LoopEntry } from "../loop-kinds.js";
 import {
 	FAIL_LOOP_CAP_HALT,
 	FAIL_VERIFY_FAILED,
@@ -405,17 +405,15 @@ async function runLoopStage(
 
 	runLoopPreflights(stage, run);
 
-	const entry: LoopEntry = {
-		stageIdx: idx,
-		name: stage.name,
-		skill: stage.skill,
-		def: stage.def,
-		loop,
-		entryArtifact: currentPrimaryArtifact(run.state),
-		entryArgs: loop.kind === "assess" ? inputForStage(stage, run) : "",
-		entryPair: { output: run.state.output, primaryArtifact: run.state.primaryArtifact },
-		units,
-	};
+	const entry = buildLoopEntry(
+		{ stageIdx: idx, name: stage.name, skill: stage.skill, def: stage.def, loop },
+		{
+			entryArtifact: currentPrimaryArtifact(run.state),
+			entryArgs: loop.kind === "assess" ? inputForStage(stage, run) : "",
+			entryPair: { output: run.state.output, primaryArtifact: run.state.primaryArtifact },
+			units,
+		},
+	);
 
 	await announceLoopStart(curCtx, run, entry);
 	await runLoop(curCtx, entry, freshCursor(), run, buildLoopDeps());

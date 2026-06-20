@@ -21,17 +21,16 @@
 import {
 	type AuditCtx,
 	currentStageRef,
+	failAuditWrite,
 	failedArgs,
 	recordStopFailure,
 	recordTerminalFailure,
 	recordUnitHalt,
-	terminate,
 } from "../audit.js";
-import { allocateStageNumber, persistStageSuccess } from "../audit-rows.js";
+import { allocateStageNumber, persistStageSuccess, rollLastSession } from "../audit-rows.js";
 import { lifecycleCtxFromSession, skillStageRef, type UnitEvent } from "../events.js";
 import { nowIso, WorkflowAbortError } from "../internal-utils.js";
 import {
-	FAIL_AUDIT_WRITE,
 	FAIL_VALIDATION_EXHAUSTED,
 	MSG_STAGE_COMPLETE,
 	MSG_STAGE_FAILED,
@@ -332,17 +331,15 @@ export async function recordStageSuccess(
 		} else {
 			// Roll the predecessor session forward: a downstream `continue` stage
 			// forks THIS session. Single stages only — loop units take the `if (s.unit)`
-			// branch above and never seed a continuation. `null` (in-memory predecessor)
-			// degrades a later continue to fresh, since `locateSessionFile` finds no file.
-			s.state.lastSession = session ?? undefined;
+			// branch above and never seed a continuation. Shared with the resume fold
+			// (`rollLastSession`) so the null-handling can't drift between the paths.
+			rollLastSession(s.state, session);
 			ctx.ui.notify(MSG_STAGE_COMPLETE(s.skill), "info");
 			await s.lifecycle.fire(ctx, "onStageEnd", currentStageRef(s), output, lifecycleCtxFromSession(s));
 		}
 		return true;
 	}
-	const auditFailure = FAIL_AUDIT_WRITE(s.skill);
-	ctx.ui.notify(auditFailure.toast, "error");
-	terminate(s.state, { status: "failed", error: auditFailure.error });
+	failAuditWrite(ctx, s.state, s.skill);
 	return false;
 }
 

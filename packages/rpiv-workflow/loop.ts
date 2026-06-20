@@ -36,7 +36,7 @@
  * no-op (pinned behavior).
  */
 
-import type { AssessLoop, LoopDef } from "./api.js";
+import type { LoopDef } from "./api.js";
 import { applyCompletedStage } from "./chain-state.js";
 import { lifecycleCtxFor, skillStageRef } from "./events.js";
 import { nowIso } from "./internal-utils.js";
@@ -52,6 +52,7 @@ import {
 	loopStrategyOf,
 	type NextStep,
 	presentedKindOf,
+	sequentialStrategyOf,
 } from "./loop-kinds.js";
 import { runFanoutDispatch } from "./loop-parallel.js";
 import {
@@ -174,7 +175,7 @@ async function step(
 	run: RunContext,
 	deps: LoopDeps,
 ): Promise<void> {
-	const next = await loopStrategyOf(e.loop.kind).pull(e, cursor, cap, run);
+	const next = await sequentialStrategyOf(e.loop.kind).pull(e, cursor, cap, run);
 	if (next.kind === "complete") return finishLoop(curCtx, e, cursor, run, deps);
 	if (next.kind === "cap") return hitCap(curCtx, e, cursor, next.count, cap, run, deps);
 	return dispatchUnit(curCtx, e, cursor, next, cap, run, deps);
@@ -249,8 +250,8 @@ export function publishPanelVerdict(
 	cursor: LoopCursor,
 	state: RunContext["state"],
 ): void {
-	if (loop.kind !== "assess") return;
-	const judge = (loop as AssessLoop).judge;
+	if (loop.kind !== "assess") return; // narrows `loop` to AssessLoop — no cast needed below
+	const judge = loop.judge;
 	if (!isPanel(judge) || cursor.panel !== undefined || cursor.phase !== "produce") return;
 	if (cursor.lastVerdict === undefined) return; // defensive — the fold always set it
 	applyCompletedStage(

@@ -1,24 +1,29 @@
 /**
  * loop-kinds.ts — the per-loop-kind vocabulary and strategy table.
  *
- * Everything that varies BY KIND across the loop machinery lives here, in
- * one `Record<LoopDef["kind"], LoopKindStrategy>`:
+ * Everything that varies BY KIND across the loop machinery lives here, in one
+ * `Record<LoopDef["kind"], LoopKindStrategy>`. The contract is split by
+ * parallelizability: the base `LoopKindStrategy` carries only `parallelizable`,
+ * and the SEQUENTIAL kinds (iterate/assess) add — via `SequentialStrategy` —
+ * the three methods only their path reaches:
  *   - `pull`             — the live driver's next-step rule (loop.ts `step`);
  *   - `guardExpectation` — the resume fold's per-row determinism re-check
  *                          (runner/resume.ts `guardRow`);
  *   - `hasPending`       — the resume re-entry announce probe
  *                          (runner/resume-loop.ts).
- * A new loop kind (`panel` is hinted) extends the `LoopDef` union and this
- * table — the `Record` shape makes a missing strategy a compile error — and
- * touches nothing else: dispatch, persistence, cap policy, projection, and
- * completion are kind-agnostic in loop.ts.
+ * Fanout (parallelizable) implements NONE of those — its live entry, resume
+ * re-dispatch, and pending probe are index-addressed and reached first; the
+ * sequential callers go through `sequentialStrategyOf`. A new loop kind extends
+ * the `LoopDef` union and this table — the `Record`/`satisfies` shape makes a
+ * missing strategy a compile error — and touches nothing else: dispatch,
+ * persistence, cap policy, projection, and completion are kind-agnostic in loop.ts.
  *
  * Also home to the kind-agnostic cursor vocabulary the live driver and the
  * fold share: `LoopCursor`, `advanceCursor` (THE cursor state machine),
  * `unitTagOf`, `judgeStageDef`, `LoopEntry`, `NextStep`.
  */
 
-import type { AssessLoop, FanoutLoop, IterateLoop, LoopDef, StageDef, Unit, UnitRole } from "./api.js";
+import type { AssessLoop, IterateLoop, LoopDef, StageDef, Unit, UnitRole } from "./api.js";
 import { decorateStage, runIdentityOf } from "./audit.js";
 // Fanout completion is INDEX-ADDRESSED (place-by-unitIndex), the
 // shared authority for the live parallel fold AND the resume fold so the two
@@ -29,7 +34,7 @@ import { type Artifact, handleToString } from "./handle.js";
 import { isPanel, type Judge, type PanelJudge, panelMembers, resolveJudgePrompt } from "./judge.js";
 import { MSG_LOOP_CURSOR_CORRUPT } from "./messages.js";
 import { finalizeOutput, isFailedOutput, type Output, type OutputMeta } from "./output.js";
-import { StagePreflightError } from "./runner/errors.js";
+import { StagePreflightError } from "./stage-errors.js";
 import type { RunContext, RunState, StageSession, UnitRef, WorkflowHostContext } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -62,6 +67,22 @@ export interface LoopEntry {
 	entryPair: { output: Output | undefined; primaryArtifact: Artifact | undefined };
 	/** Precomputed unit list — fanout only (computed by runLoopStage / verified by the resume fold). */
 	units?: readonly Unit[];
+}
+
+/**
+ * Assemble a `LoopEntry` from its stage identity + the frozen per-invocation
+ * inputs. THE single construction site for both the live entry (`runLoopStage`,
+ * which derives the frozen inputs from current `RunState`) and the resume
+ * re-entry (`resumeLoopStage`, which replays them off the `LoopResumePoint`) —
+ * so a new `LoopEntry` field is added once here instead of being rebuilt by hand
+ * in both. The two paths legitimately differ ONLY in how they obtain `frozen`
+ * (compute vs replay); the envelope shape is shared.
+ */
+export function buildLoopEntry(
+	id: Pick<LoopEntry, "stageIdx" | "name" | "skill" | "def" | "loop">,
+	frozen: Pick<LoopEntry, "entryArtifact" | "entryArgs" | "entryPair" | "units">,
+): LoopEntry {
+	return { ...id, ...frozen };
 }
 
 /**
@@ -334,16 +355,39 @@ export interface ResumeProbe {
 	units?: readonly Unit[];
 }
 
+/**
+ * The kind-invariant constants every loop strategy carries. Parallelizable
+ * kinds (fanout) implement ONLY this — their live entry, resume re-dispatch,
+ * and pending probe are all index-addressed (`runFanoutParallel` /
+ * `runFanoutResume` / `pendingFanoutIndices`), reached BEFORE any sequential
+ * method. The `SequentialStrategy` methods below are reached only on the
+ * non-parallelizable path, so giving fanout dead stubs for them "to keep the
+ * Record total" was an LSP/ISP smell — the split deletes the stubs and lets the
+ * compiler refuse `pull`/`guardExpectation`/`hasPending` on a parallel kind.
+ */
 export interface LoopKindStrategy {
 	/** Whether this kind's units are mutually independent and may be dispatched
-	 *  in bounded parallel (fanout only — iterate/assess consume the prior). */
+	 *  in bounded parallel (fanout only — iterate/assess consume the prior). When
+	 *  true, the kind routes through the index-addressed parallel path and NONE of
+	 *  the `SequentialStrategy` methods apply. */
 	parallelizable: boolean;
+}
+
+/**
+ * The sequential (one-unit-per-pull) loop kinds — iterate and assess. They own
+ * the live next-step rule, the resume determinism re-check, and the resume
+ * announce probe; all three are entered only after fanout has routed to the
+ * parallel dispatcher (`step`, `guardRow`, and the announce all narrow fanout
+ * away first), so they live on this narrower contract, not on the base.
+ */
+export interface SequentialStrategy extends LoopKindStrategy {
+	parallelizable: false;
 	/**
 	 * The live driver's next-step rule. Cap-check positions preserve pinned
 	 * semantics: iterate checks POST-pull (the null terminator wins; the
-	 * generator gets one extra discarded call), assess checks pre-round,
-	 * fanout checks pre-index. For assess, a `done` verdict wins over the cap
-	 * (a done loop is a normal completion, never a cap event).
+	 * generator gets one extra discarded call), assess checks pre-round. For
+	 * assess, a `done` verdict wins over the cap (a done loop is a normal
+	 * completion, never a cap event).
 	 */
 	pull(e: LoopEntry, cursor: LoopCursor, cap: number, run: RunContext): Promise<NextStep>;
 	/**
@@ -396,7 +440,7 @@ function lastNonFailedSlot(slots: readonly (Output | undefined)[]): LoopCursor["
  *  default collect-all via `fanout({ failFast: true })`. The ONE spelling of the
  *  kind+field guard the dispatcher (sibling-cancel) and `buildUnitSession`
  *  (`collectAll`) both read, so the narrow can't drift across its read sites. */
-export const isFailFast = (loop: LoopDef): boolean => loop.kind === "fanout" && (loop as FanoutLoop).failFast === true;
+export const isFailFast = (loop: LoopDef): boolean => loop.kind === "fanout" && loop.failFast === true;
 
 /** Factored unit StageSession — shared by the sequential `dispatchUnit` (loop.ts)
  *  and the parallel `dispatchUnitDetached` (loop-parallel.ts); differs only in
@@ -459,30 +503,17 @@ export function fanoutUnitAt(e: LoopEntry, index: number): Extract<NextStep, { k
 	};
 }
 
+// Fanout carries ONLY `parallelizable`: its live entry (`runFanoutParallel`),
+// resume re-dispatch (`runFanoutResume`), and pending probe
+// (`pendingFanoutIndices`) are all index-addressed and reached before any
+// sequential method — `step`/`guardRow`/the resume announce each route fanout to
+// the parallel path first. The former `pull`/`guardExpectation`/`hasPending`
+// stubs were dead at runtime; they're gone with the interface split.
 const fanoutStrategy: LoopKindStrategy = {
 	parallelizable: true,
-	// `pull` is the sequential single-dispatch fallback — currently UNREACHED for
-	// fanout (live entry routes to runFanoutParallel; resume routes to
-	// runFanoutResume before `runLoop` ever calls `step`). Kept so the strategy
-	// Record stays total. `cursor.index` is the next-unit pointer (not the count).
-	async pull(e, cursor, cap) {
-		if (cursor.index >= e.units!.length) return { kind: "complete" }; // runLoopStage computed units (empty never reaches the driver)
-		if (cursor.index >= cap) return { kind: "cap", count: cursor.index };
-		return fanoutUnitAt(e, cursor.index); // shared descriptor
-	},
-	// Dead at runtime — `guardRow` (resume.ts) short-circuits fanout drift via
-	// `row.unitIndex`/`unitId` and never calls this. Kept for Record totality.
-	// `cursor.index` here is the next-unit pointer.
-	async guardExpectation(gen, row) {
-		if (!gen.units || gen.cursor.index >= gen.units.length) return false;
-		return unitTagOf(gen.units[gen.cursor.index]!) === row.unitId;
-	},
-	async hasPending(_loop, probe) {
-		return (probe.cursor.filledCount ?? 0) < (probe.units?.length ?? 0);
-	},
 };
 
-const iterateStrategy: LoopKindStrategy = {
+const iterateStrategy: SequentialStrategy = {
 	parallelizable: false,
 	async pull(e, cursor, cap, run) {
 		const loop = e.loop as IterateLoop;
@@ -533,7 +564,7 @@ const iterateStrategy: LoopKindStrategy = {
 	},
 };
 
-const assessStrategy: LoopKindStrategy = {
+const assessStrategy: SequentialStrategy = {
 	parallelizable: false,
 	// Including a synthesized verify loop. Verify-ness is derived from the
 	// parent def (`e.def.verify`), never from the loop object: the synthesis
@@ -629,10 +660,11 @@ const assessStrategy: LoopKindStrategy = {
 	//    member the rebuilt sub-state expects, so a missing/reordered member row
 	//    is drift, not a silently mis-folded verdict.
 	async guardExpectation(gen, row) {
+		const loop = gen.loop as AssessLoop; // assessStrategy ⇒ gen.loop is the assess arm by construction
 		if (row.role === "produce" && gen.cursor.lastVerdict !== undefined) {
-			return !(gen.loop as AssessLoop).done(gen.cursor.lastVerdict);
+			return !loop.done(gen.cursor.lastVerdict);
 		}
-		const slot = (gen.loop as AssessLoop).judge;
+		const slot = loop.judge;
 		if ((row.role === "judge" || row.role === "verify") && isPanel(slot)) {
 			const memberIndex = gen.cursor.panel?.memberIndex ?? 0;
 			gen.expected = {
@@ -654,13 +686,32 @@ const assessStrategy: LoopKindStrategy = {
 
 /**
  * One strategy per kind — the `Record` shape turns "added a `LoopDef` arm,
- * forgot the strategy" into a compile error. (`FanoutLoop` has no
- * strategy-specific fields beyond `units`, read off `LoopEntry`.)
+ * forgot the strategy" into a compile error. Keyed value types are preserved
+ * (fanout: base `LoopKindStrategy`; iterate/assess: `SequentialStrategy`) so
+ * `sequentialStrategyOf` hands back the narrower contract.
  */
-export const LOOP_STRATEGIES: Record<LoopDef["kind"], LoopKindStrategy> = {
+export const LOOP_STRATEGIES = {
 	fanout: fanoutStrategy,
 	iterate: iterateStrategy,
 	assess: assessStrategy,
-};
+} satisfies Record<LoopDef["kind"], LoopKindStrategy>;
 
+/** Base-contract accessor — all `parallelizable` reads (loop.ts route choice). */
 export const loopStrategyOf = (kind: LoopDef["kind"]): LoopKindStrategy => LOOP_STRATEGIES[kind];
+
+/**
+ * Sequential-contract accessor for the live `step()` next-step rule, the resume
+ * `guardRow` re-check, and the resume announce probe — paths reached ONLY after
+ * fanout has routed to the index-addressed parallel dispatcher. The runtime
+ * guard makes a future routing regression fail loudly here instead of silently
+ * mis-typing a parallelizable strategy; the cast is the one place the
+ * never-fanout invariant is asserted (replacing the dead per-method stubs).
+ */
+export function sequentialStrategyOf(kind: LoopDef["kind"]): SequentialStrategy {
+	const s = LOOP_STRATEGIES[kind];
+	if (s.parallelizable) {
+		const msg = MSG_LOOP_CURSOR_CORRUPT(kind, `sequential driver entered for parallelizable kind "${kind}"`);
+		throw new StagePreflightError("invariant", kind, msg, msg, false);
+	}
+	return s as SequentialStrategy;
+}

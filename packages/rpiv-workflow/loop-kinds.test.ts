@@ -18,11 +18,11 @@ import {
 	freshCursor,
 	type LoopCursor,
 	type LoopEntry,
-	loopStrategyOf,
 	type NextStep,
+	sequentialStrategyOf,
 } from "./loop-kinds.js";
 import type { Output } from "./output.js";
-import { StagePreflightError } from "./runner/errors.js";
+import { StagePreflightError } from "./stage-errors.js";
 import type { RunContext, RunState } from "./types.js";
 
 const output = (artifacts: Output["artifacts"] = [{ handle: fsHandle("a.md"), role: "primary" }]): Output => ({
@@ -67,7 +67,7 @@ const run = { cwd: "/tmp", state: {} } as unknown as RunContext;
 describe("assess strategy — corrupted-cursor guards", () => {
 	it("judge phase with no lastProduce throws a stage-attributed preflight error, not a TypeError", async () => {
 		const loop = assessLoop("review");
-		const pull = loopStrategyOf("assess").pull(entryFor(loop), cursorAt({ phase: "judge" }), 8, run);
+		const pull = sequentialStrategyOf("assess").pull(entryFor(loop), cursorAt({ phase: "judge" }), 8, run);
 		await expect(pull).rejects.toThrow(StagePreflightError);
 		await expect(pull).rejects.toThrow(/loop stage draft: cursor invariant violated/);
 	});
@@ -75,7 +75,7 @@ describe("assess strategy — corrupted-cursor guards", () => {
 	it("judge skill dispatch with a produce that carried no artifact throws the same invariant class", async () => {
 		const loop = assessLoop("review");
 		const cursor = cursorAt({ phase: "judge", lastProduce: { output: output([]), artifact: undefined } });
-		const pull = loopStrategyOf("assess").pull(entryFor(loop), cursor, 8, run);
+		const pull = sequentialStrategyOf("assess").pull(entryFor(loop), cursor, 8, run);
 		await expect(pull).rejects.toThrow(StagePreflightError);
 		await expect(pull).rejects.toThrow(/no produced artifact/);
 	});
@@ -83,7 +83,7 @@ describe("assess strategy — corrupted-cursor guards", () => {
 	it("feedForward round with a verdict but no lastProduce throws instead of dereferencing undefined", async () => {
 		const loop = assessLoop("review");
 		const cursor = cursorAt({ phase: "produce", lastVerdict: output() });
-		const pull = loopStrategyOf("assess").pull(entryFor(loop), cursor, 8, run);
+		const pull = sequentialStrategyOf("assess").pull(entryFor(loop), cursor, 8, run);
 		await expect(pull).rejects.toThrow(StagePreflightError);
 		await expect(pull).rejects.toThrow(/no completed produce on the cursor/);
 	});

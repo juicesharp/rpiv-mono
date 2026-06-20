@@ -12,22 +12,22 @@
  */
 
 import { LOOP_KINDS, ON_INVALID_VALUES, SESSION_POLICIES, STAGE_KINDS, type StageDef, type Workflow } from "../api.js";
-import { resolvePublishName } from "../chain-state.js";
 import { type AnyJudge, isPanel, judgeShapeIssues } from "../judge.js";
 import {
-	judgeSlotOf,
+	forEachJudgeChannel,
 	loopSpecOf,
 	panelShapeIssues,
 	panelVerdictChannel,
 	verifyShapeIssues,
 } from "../loop-constructors.js";
 import { readName } from "../stage-def.js";
+import { resolvePublishName } from "../stage-identity.js";
 import {
 	MAX_VALIDATION_RETRIES,
 	MAX_VALIDATION_RETRY_TIMEOUT_MS,
 	MIN_VALIDATION_RETRIES,
 	MIN_VALIDATION_RETRY_TIMEOUT_MS,
-} from "../validate-output.js";
+} from "../validation-bounds.js";
 import type { IssueReporter, ReportFn } from "./issue.js";
 
 /**
@@ -359,16 +359,9 @@ export function publishedNamesOf(w: Workflow): Set<string> {
 	const published = new Set<string>();
 	for (const [name, stage] of Object.entries(w.stages)) {
 		if (stage.kind === "produces") published.add(resolvePublishName(stage, name));
-		const slot = judgeSlotOf(stage);
-		if (!slot) continue;
-		if (isPanel(slot)) {
-			// A panel publishes one channel per MEMBER verdict plus the folded
-			// verdict (`<stage>-panel` or the author's `outcome.name`).
-			for (const m of slot.members) if (m?.outcome?.name) published.add(m.outcome.name);
-			published.add(panelVerdictChannel(slot, name));
-		} else if (slot.outcome?.name) {
-			published.add(slot.outcome.name);
-		}
+		// Every judge channel (single judge, panel members, AND the folded verdict)
+		// counts for reachability — shared walk with the contract-compat index.
+		forEachJudgeChannel(stage, name, (channel) => published.add(channel));
 	}
 	return published;
 }

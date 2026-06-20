@@ -22,12 +22,12 @@
  */
 
 import { marksReadsData, STOP, type Workflow } from "../api.js";
-import { isDispatchingStage, resolvePublishName, resolveSkill } from "../chain-state.js";
 import { extractJsonSchema } from "../json-schema.js";
-import { judgeOf } from "../loop-constructors.js";
+import { forEachJudgeChannel } from "../loop-constructors.js";
 import type { ProducesSpec, SkillContractMap } from "../skill-contract.js";
 import { adjudicateChannel, compareDataChannel, getCompositionComparators } from "../skill-contracts/index.js";
 import { readName } from "../stage-def.js";
+import { isDispatchingStage, resolvePublishName, resolveSkill } from "../stage-identity.js";
 import type { IssueReporter } from "./issue.js";
 
 /**
@@ -151,12 +151,15 @@ export function checkReadsChannelCompat(
 			const produces = skillContracts.get(resolveSkill(stage, name))?.produces;
 			if (produces) indexPublisher(resolvePublishName(stage, name), name, produces);
 		}
-		// A skill judge is a publisher of its verdict channel; unsigned judges degrade.
-		const judge = judgeOf(stage);
-		if (judge?.skill && judge.outcome?.name) {
-			const produces = skillContracts.get(judge.skill)?.produces;
-			if (produces) indexPublisher(judge.outcome.name, name, produces);
-		}
+		// Skill judges publish their verdict channel — the SINGLE judge AND every
+		// PANEL member (the shared walk yields all of them; the unsigned fold
+		// channel arrives with `signingSkill === undefined` and is skipped, since a
+		// manufactured verdict has no producer contract to adjudicate against).
+		forEachJudgeChannel(stage, name, (channel, signingSkill) => {
+			if (!signingSkill) return;
+			const produces = skillContracts.get(signingSkill)?.produces;
+			if (produces) indexPublisher(channel, name, produces);
+		});
 	}
 
 	for (const [consumerName, consumer] of Object.entries(w.stages)) {

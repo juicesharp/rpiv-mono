@@ -29,13 +29,12 @@
  */
 
 import type { ScriptContext } from "../api.js";
-import { auditCtxFor, failedArgs, recordTerminalFailure, terminate } from "../audit.js";
+import { auditCtxFor, failAuditWrite, failedArgs, recordTerminalFailure } from "../audit.js";
 import { allocateStageNumber, persistStageSuccess } from "../audit-rows.js";
 import { lifecycleCtxFor, scriptStageRef } from "../events.js";
 import type { Artifact } from "../handle.js";
 import { formatError, nowIso } from "../internal-utils.js";
 import {
-	FAIL_AUDIT_WRITE,
 	FAIL_SCRIPT_THREW,
 	FAIL_VALIDATION_EXHAUSTED,
 	MSG_STAGE_COMPLETE,
@@ -140,9 +139,7 @@ export async function runScript(
 		stage.def,
 	);
 	if (!persisted) {
-		const auditFailure = FAIL_AUDIT_WRITE(stage.name);
-		curCtx.ui.notify(auditFailure.toast, "error");
-		terminate(run.state, { status: "failed", error: auditFailure.error });
+		failAuditWrite(curCtx, run.state, stage.name);
 		return "halted";
 	}
 	curCtx.ui.notify(MSG_STAGE_COMPLETE(stage.name), "info");

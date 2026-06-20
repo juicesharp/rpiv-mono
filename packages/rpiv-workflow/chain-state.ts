@@ -11,11 +11,18 @@
  * `internal-utils.ts`; anything in this file is workflow-chain domain logic.
  */
 
-import type { PromptFn, SkillStage, StageDef } from "./api.js";
+import type { PromptFn, StageDef } from "./api.js";
 import { type Artifact, handleToString } from "./handle.js";
 import { isFailedOutput, type Output } from "./output.js";
 import { readName, readsAll } from "./stage-def.js";
+import { resolvePublishName } from "./stage-identity.js";
 import type { RunState } from "./types.js";
+
+// Stage-identity projections live in the dependency-free `stage-identity.ts`
+// leaf so the load-time validators can consume them without importing this
+// runtime-state module. Re-exported here so this module's own runtime callers
+// (runner/*, registration) keep a single chain-state import.
+export { isDispatchingStage, resolvePublishName, resolveSkill } from "./stage-identity.js";
 
 /**
  * Canonical accessor for "the primary artifact the chain is currently
@@ -26,47 +33,6 @@ import type { RunState } from "./types.js";
  */
 export function currentPrimaryArtifact(state: RunState): Artifact | undefined {
 	return state.primaryArtifact;
-}
-
-/**
- * Resolve the `state.named` key a produces stage appends its `Output`
- * envelope onto. Two layers of fallback, in priority order:
- *   1. `stage.outcome?.name` — categorical name carried by the outcome.
- *   2. The stage's record key — always defined.
- *
- * Single source of truth for the key derivation so the skill-stage path
- * and the script-stage path stay in lockstep, and so `validateWorkflow`
- * can compute the same key set at load time.
- */
-export function resolvePublishName(def: StageDef, stageName: string): string {
-	return def.outcome?.name ?? stageName;
-}
-
-/**
- * Resolve a stage's effective skill — the contract-registry key. Twin of
- * `resolvePublishName`. Single source of truth so the runtime resolution
- * (`resolveStage`) and the load-time lookups (`validate-workflow.ts`) key the
- * registry identically and can't drift.
- */
-export function resolveSkill(def: StageDef, stageName: string): string {
-	return def.skill ?? stageName;
-}
-
-/**
- * A stage dispatches a `/skill:<name>` exactly when it carries neither a `run`
- * (script body) nor a `prompt` (raw-text body). `fanout`/`iterate` stages carry
- * neither, so they ARE dispatching stages. The shared predicate for every site
- * that treats `resolveSkill`'s result as a REAL skill identity — the alias
- * remap + its no-op warning, contract harvest, and the validator's contract
- * lookups must all agree, or a script/prompt stage whose record key matches a
- * registered skill inherits that skill's contract by accident.
- *
- * A TYPE GUARD since the StageDef union (T1): a positive narrows to
- * `SkillStage`, so callers that wire skill-derived data onto the stage
- * (the alias remap, outcome derivers) get the writable arm.
- */
-export function isDispatchingStage(stage: StageDef): stage is SkillStage {
-	return stage.run == null && stage.prompt == null;
 }
 
 /**
@@ -196,7 +162,7 @@ export function applyCompletedStage(state: RunState, def: StageDef, stageName: s
 	// placeFanoutOutput — both set primary = undefined, harmless. Produces-fanout's
 	// channel push stays fold-only (non-idempotent → must not double-write).
 	if (def.loop?.kind === "fanout") {
-		if (def.kind !== "produces" && def.inheritsArtifacts === false) state.primaryArtifact = undefined;
+		clearPrimaryForActs(state, def);
 		return;
 	}
 	if (def.kind === "produces") {
@@ -211,9 +177,19 @@ export function applyCompletedStage(state: RunState, def: StageDef, stageName: s
 		slot.push(output);
 		return;
 	}
-	if (def.inheritsArtifacts === false) {
-		state.primaryArtifact = undefined;
-	}
+	clearPrimaryForActs(state, def);
+}
+
+/**
+ * The acts/side-effect primary-clear rule, in ONE place: a `terminal()` stage
+ * (`inheritsArtifacts === false`) drops the rolling primary; every other
+ * side-effect leaves it. Idempotent and produces-safe (the `kind` guard makes it
+ * a no-op for produces stages, whose channel arm owns the primary). Shared by
+ * `applyCompletedStage` (the fanout early-return AND the sequential acts arm) and
+ * `placeFanoutOutput`, so the rule can't drift across the three sites.
+ */
+function clearPrimaryForActs(state: RunState, def: StageDef): void {
+	if (def.kind !== "produces" && def.inheritsArtifacts === false) state.primaryArtifact = undefined;
 }
 
 // The fanout fold's SINGLE state-effect site. It subsumes BOTH
@@ -246,6 +222,6 @@ export function placeFanoutOutput(
 		if (next && !isFailedOutput(output)) state.primaryArtifact = next;
 		return;
 	}
-	// acts/side-effect fanout — mirror applyCompletedStage's non-produces arm.
-	if (def.inheritsArtifacts === false) state.primaryArtifact = undefined;
+	// acts/side-effect fanout — same primary-clear rule as the sequential path.
+	clearPrimaryForActs(state, def);
 }

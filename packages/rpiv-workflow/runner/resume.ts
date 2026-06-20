@@ -25,7 +25,7 @@
  */
 
 import type { LoopDef, StageDef, Unit, Workflow } from "../api.js";
-import { applyStageSuccess } from "../audit-rows.js";
+import { applyStageSuccess, rollLastSession } from "../audit-rows.js";
 import { stageEntryArgs } from "../chain-state.js";
 import type { Artifact } from "../handle.js";
 import { formatError } from "../internal-utils.js";
@@ -38,7 +38,7 @@ import {
 	freshCursor,
 	judgeStageDef,
 	type LoopCursor,
-	loopStrategyOf,
+	sequentialStrategyOf,
 	unitTagOf,
 } from "../loop-kinds.js";
 import { ERR_RESUME_LOOP_MISMATCH } from "../messages.js";
@@ -214,18 +214,12 @@ function foldKnownStage(acc: FoldAcc, def: StageDef, row: WorkflowStage): void {
 	acc.lastStageNumber = Math.max(acc.lastStageNumber, row.stageNumber);
 	if (row.status !== "completed") return;
 	applyStageSuccess(acc.state, def, row.stage, row.output);
-	// Roll the predecessor session forward, mirroring the live `recordStageSuccess`
-	// single-stage branch — so a post-resume cold dispatch of a `continue` stage
-	// forks the same predecessor the live run would have. Single-stage rows only
-	// (unit rows fold via `foldUnitRow`, which never touches this slot).
-	//
-	// GUARD on a real session: the live writer runs ONLY for the skill/prompt
-	// single-stage success path (a non-null `SessionRef`). Script stages persist
-	// `session: null` via `persistStageSuccess` and never touch `lastSession`, so a
-	// `null` row here must LEAVE it untouched — clobbering it to `undefined` would
-	// degrade a `continue`-after-script to a fresh dispatch on resume while live
-	// forked the predecessor (a replay-parity breach).
-	if (row.session !== null) acc.state.lastSession = row.session;
+	// Roll the predecessor session forward through the SAME authority the live
+	// `recordStageSuccess` single-stage branch uses (`rollLastSession`) — so a
+	// post-resume cold dispatch of a `continue` stage forks the same predecessor
+	// the live run would have, and the null-handling can't drift. Single-stage
+	// rows only (unit rows fold via `foldUnitRow`, which never touches this slot).
+	rollLastSession(acc.state, row.session);
 }
 
 /** Close the open generation: project the declared result — the live loop-advance, replayed. */
@@ -390,7 +384,7 @@ async function guardRow(acc: FoldAcc, gen: OpenGeneration, row: WorkflowStage): 
 	if (row.role !== expectRole || row.unitIndex !== gen.cursor.index) return setDrift(acc, gen.parent);
 
 	const matches = await guarded(acc, gen.parent, () =>
-		loopStrategyOf(gen.loop.kind).guardExpectation(gen, row, acc.cwd, acc.state),
+		sequentialStrategyOf(gen.loop.kind).guardExpectation(gen, row, acc.cwd, acc.state),
 	);
 	if (acc.drift) return;
 	if (!matches) setDrift(acc, gen.parent);

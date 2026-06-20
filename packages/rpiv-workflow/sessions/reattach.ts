@@ -27,10 +27,9 @@
  * Validation-exhausted from promotion halts exactly as live does.
  */
 
-import type { WorkflowHostContext, WorkflowSessionContext } from "../host.js";
 import { MSG_RESUME_PROMOTED, MSG_RESUME_REATTACHED, REATTACH_PROMPT } from "../messages.js";
 import { readBranch, readSessionRef } from "../transcript.js";
-import type { StageSession } from "../types.js";
+import type { StageSession, WorkflowHostContext, WorkflowSessionContext } from "../types.js";
 import { produceAndValidateOutput } from "./extraction.js";
 import { haltStageWithValidationFailure, postStage, recordStageSuccess } from "./sessions.js";
 import { branchOffsetFor, resendIntoChild } from "./spawn.js";

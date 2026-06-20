@@ -87,6 +87,25 @@ export function applyStageSuccess(state: RunState, def: StageDef, stageName: str
 }
 
 /**
+ * Roll the predecessor session forward after a single-stage success so a
+ * downstream `continue` stage forks it. THE single authority for this slot's
+ * write rule — the live success path (`recordStageSuccess`, sessions.ts) and the
+ * resume fold (`foldKnownStage`, resume.ts) both call it, so the null-handling
+ * can no longer drift between them (it used to: live clobbered to `undefined`,
+ * the fold skipped).
+ *
+ * A `null` session (sessionless paths — script + side-effect stages persist
+ * `session: null`) LEAVES the slot untouched: those stages are transparent to
+ * the continuation chain, so a `continue` after one forks the most recent
+ * SESSION-BEARING predecessor on both live and resume. Loop-unit rows never
+ * reach here (they take the `s.unit` / `foldUnitRow` branch and never seed a
+ * continuation).
+ */
+export function rollLastSession(state: RunState, session: SessionRef | null | undefined): void {
+	if (session != null) state.lastSession = session;
+}
+
+/**
  * Persist a completed stage's success row, then apply its state effects —
  * the ONE live-path success persistence (skill sessions + script stages).
  * Returns `true` iff the JSONL row landed; on `false` the state is left at

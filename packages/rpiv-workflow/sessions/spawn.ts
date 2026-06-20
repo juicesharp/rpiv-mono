@@ -21,8 +21,7 @@
  */
 
 import type { SessionPolicy } from "../api.js";
-import type { WorkflowHostContext, WorkflowSessionContext } from "../host.js";
-import type { StageSession } from "../types.js";
+import type { StageSession, WorkflowHostContext, WorkflowSessionContext } from "../types.js";
 
 /**
  * The per-policy branch offset — fresh ignores the stage-captured value;
@@ -41,27 +40,48 @@ export function branchOffsetFor(policy: SessionPolicy | undefined, captured: num
 	return policy === "continue" ? captured : undefined;
 }
 
+/** Optional open mode — absent ⇒ FRESH; `reattach` opens a persisted file in
+ *  place; `fork` copies a predecessor's session into a new file. The two carry
+ *  the same `{ sessionFile }` shape; only the host's open semantics differ. */
+type OpenMode = { reattach: { sessionFile: string } } | { fork: { sessionFile: string } };
+
 /**
- * THE child-spawn primitive. Open an isolated child session (parent stays
- * valid), let the host send the prompt + apply the model, wait for the agent
- * to settle, then run `body` on the guaranteed-in-session child ctx. Up to
- * `ctx.maxConcurrency` of these may be in flight (the loop's semaphore bounds
- * fanout; single stages run one).
+ * THE child-spawn primitive every mode below reduces to. Open an isolated child
+ * (parent stays valid) in the requested `mode`, let the host apply the
+ * prompt/model/signal (+ reattach/fork), wait for the agent to settle, then run
+ * `body` on the guaranteed-in-session child ctx. The await-idle-then-body
+ * sequence — load-bearing for the IDLE-BEFORE-REPROMPT invariant — lives here
+ * once, so the three named entries can't drift on it. Up to `ctx.maxConcurrency`
+ * may be in flight (the loop's semaphore bounds fanout; single stages run one).
+ */
+function openChild(
+	ctx: WorkflowHostContext,
+	s: Pick<StageSession, "prompt" | "model" | "signal">,
+	body: (child: WorkflowSessionContext) => Promise<void>,
+	mode?: OpenMode,
+): Promise<void> {
+	return ctx.spawnChild({
+		prompt: s.prompt, // FRESH: host sends it. REATTACH/FORK: carried for parity; host skips auto-replay.
+		model: s.model,
+		signal: s.signal,
+		...mode,
+		withSession: async (child) => {
+			await child.waitForIdle();
+			await body(child);
+		},
+	});
+}
+
+/**
+ * FRESH open. Open a brand-new isolated child session; the host sends the prompt
+ * and applies the model. The default stage/loop-unit entry.
  */
 export function spawnChildAndRun(
 	ctx: WorkflowHostContext,
 	s: Pick<StageSession, "prompt" | "model" | "signal">,
 	body: (child: WorkflowSessionContext) => Promise<void>,
 ): Promise<void> {
-	return ctx.spawnChild({
-		prompt: s.prompt,
-		model: s.model,
-		signal: s.signal,
-		withSession: async (child) => {
-			await child.waitForIdle();
-			await body(child);
-		},
-	});
+	return openChild(ctx, s, body);
 }
 
 /**
@@ -83,16 +103,7 @@ export function reattachChildSession(
 	sessionFile: string,
 	body: (child: WorkflowSessionContext) => Promise<void>,
 ): Promise<void> {
-	return ctx.spawnChild({
-		prompt: s.prompt, // carried for parity; NOT replayed in reattach mode (the host skips it)
-		model: s.model,
-		signal: s.signal,
-		reattach: { sessionFile },
-		withSession: async (child) => {
-			await child.waitForIdle();
-			await body(child);
-		},
-	});
+	return openChild(ctx, s, body, { reattach: { sessionFile } });
 }
 
 /**
@@ -117,16 +128,7 @@ export function forkChildSession(
 	sessionFile: string,
 	body: (child: WorkflowSessionContext) => Promise<void>,
 ): Promise<void> {
-	return ctx.spawnChild({
-		prompt: s.prompt, // carried; the body sends it (host skips auto-replay in fork mode)
-		model: s.model,
-		signal: s.signal,
-		fork: { sessionFile },
-		withSession: async (child) => {
-			await child.waitForIdle();
-			await body(child);
-		},
-	});
+	return openChild(ctx, s, body, { fork: { sessionFile } });
 }
 
 /**

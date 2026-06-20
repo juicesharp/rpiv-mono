@@ -42,13 +42,17 @@ export interface ValidationResult {
 // Constants
 // ---------------------------------------------------------------------------
 
-export const MIN_VALIDATION_RETRIES = 1;
-export const MAX_VALIDATION_RETRIES = 3;
-export const DEFAULT_VALIDATION_RETRIES = 1;
-
-export const DEFAULT_VALIDATION_RETRY_TIMEOUT_MS = 5 * 60 * 1000;
-export const MAX_VALIDATION_RETRY_TIMEOUT_MS = 30 * 60 * 1000;
-export const MIN_VALIDATION_RETRY_TIMEOUT_MS = 1_000;
+// The policy bounds live in the dependency-free `validation-bounds.ts` leaf so
+// the load-time validator can read them without importing this runtime module;
+// re-exported here so this module's runtime callers keep a single import.
+export {
+	DEFAULT_VALIDATION_RETRIES,
+	DEFAULT_VALIDATION_RETRY_TIMEOUT_MS,
+	MAX_VALIDATION_RETRIES,
+	MAX_VALIDATION_RETRY_TIMEOUT_MS,
+	MIN_VALIDATION_RETRIES,
+	MIN_VALIDATION_RETRY_TIMEOUT_MS,
+} from "./validation-bounds.js";
 
 /**
  * Thrown by `withTimeout` (internal-utils.ts) when the caller passes a
