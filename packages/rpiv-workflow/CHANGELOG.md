@@ -5,6 +5,7 @@
 ### Packaging
 
 #### Fixed
+- **`typebox` moved from `peerDependencies` to `dependencies`** (`^1.1.24`, matching the Pi host's range) so the DSL's schema imports resolve under installers that don't materialise peer deps. Fixes `ERR_MODULE_NOT_FOUND: typebox` on standalone consumer installs (#79).
 - **Test files are no longer published in the npm tarball.** The directory globs in `files` (`load/`, `runner/`, `outcomes/`, `validate/`, …) packed `**/*.test.ts`, which import the private, unpublished `@juicesharp/rpiv-test-utils` fixture package. Added a `!**/*.test.ts` exclusion to `files` (#80).
 
 ### Fanout-and-synthesize fan-in — `fanin()` read modifier

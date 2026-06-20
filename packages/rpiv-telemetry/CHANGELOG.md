@@ -7,6 +7,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- Moved `typebox` from `peerDependencies` to `dependencies` (`^1.1.24`, matching the Pi host's range) so the config + EventBus payload schemas resolve under installers that don't materialise peer deps. Consistency with the #79 fix across the family (this package is private/unpublished).
+
 ## [1.20.0] - 2026-06-15
 
 ## [1.19.1] - 2026-06-10
