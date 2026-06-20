@@ -9,7 +9,7 @@
  * Behavior is verified against a partial mock of `@earendil-works/pi-coding-agent`
  * that stubs `createAgentSession` + `SessionManager` (everything else stays
  * real). The stub session records every call so we can assert the service
- * sourcing, the lane→UI binding, the no-global-setModel model resolution, the
+ * sourcing, the deferring-relay UI binding, the no-global-setModel model resolution, the
  * fresh-vs-reattach create/open + prompt split, abort/dispose, and distinct
  * concurrent session files.
  */
@@ -143,7 +143,7 @@ function makeDeps(overrides: Partial<SdkWorkflowHostDeps> = {}): {
 	const notify = vi.fn();
 	const setStatus = vi.fn();
 	const uiCustom = vi.fn(async () => ({ answers: [], cancelled: false }));
-	// The launcher uiContext (bound to foreground children via the relay) — its
+	// The launcher uiContext (every child binds it via the relay) — its
 	// notify is what the relay toasts through on a deferred questionnaire.
 	const uiNotify = vi.fn();
 	const find = vi.fn((provider: string, modelId: string) => ({ provider, id: modelId, _fake: true }));
@@ -197,7 +197,6 @@ describe("spawnChild — fresh child", () => {
 
 		await host.spawnChild({
 			prompt: "/skill:blueprint x",
-			lane: "background",
 			withSession: async () => "ok",
 		});
 
@@ -221,7 +220,6 @@ describe("spawnChild — fresh child", () => {
 
 		const result = await host.spawnChild({
 			prompt: "/skill:blueprint x",
-			lane: "background",
 			withSession: async (child) => {
 				expect(child.cwd).toBe("/work");
 				return 42;
@@ -241,7 +239,6 @@ describe("spawnChild — fresh child", () => {
 		await expect(
 			host.spawnChild({
 				prompt: "p",
-				lane: "background",
 				withSession: async () => {
 					throw new Error("boom");
 				},
@@ -252,8 +249,8 @@ describe("spawnChild — fresh child", () => {
 	});
 });
 
-describe("spawnChild — lane → UI binding", () => {
-	it("foreground binds the DEFERRING relay (its custom enqueues, does not hit the real ctx) and the child reports hasUI:true", async () => {
+describe("spawnChild — UI binding (deferring relay)", () => {
+	it("binds the DEFERRING relay (its custom enqueues, does not hit the real ctx) and the child inherits hasUI from the live ctx", async () => {
 		// Record the run so the relay's custom can enqueue into a live lane (Slice 7/FR5).
 		recordRun("run-abc", "ship");
 		const { deps, uiCustom, uiNotify } = makeDeps();
@@ -262,13 +259,12 @@ describe("spawnChild — lane → UI binding", () => {
 		let childHasUI: boolean | undefined;
 		await host.spawnChild({
 			prompt: "p",
-			lane: "foreground",
 			withSession: async (child) => {
 				childHasUI = child.hasUI;
 			},
 		});
 
-		expect(childHasUI).toBe(true);
+		expect(childHasUI).toBe(true); // inherits live.hasUI (true in makeDeps)
 		const boundArg = sessions[0].bindExtensions.mock.calls[0][0] as { uiContext?: ExtensionUIContext };
 		// A relay, NOT the raw uiContext — it forwards everything but `custom`.
 		expect(boundArg.uiContext).toBeDefined();
@@ -286,20 +282,23 @@ describe("spawnChild — lane → UI binding", () => {
 		expect(uiNotify).not.toHaveBeenCalled();
 	});
 
-	it("background binds NO uiContext (⇒ noOpUIContext) and the child reports hasUI:false", async () => {
+	it("still binds the relay but reports hasUI:false under a headless launcher (live.hasUI:false) so UI tools degrade", async () => {
 		const { deps } = makeDeps();
-		const host = new SdkWorkflowHost(deps);
+		const host = new SdkWorkflowHost({ ...deps, live: { ...deps.live, hasUI: false } });
 
 		let childHasUI: boolean | undefined;
 		await host.spawnChild({
 			prompt: "p",
-			lane: "background",
 			withSession: async (child) => {
 				childHasUI = child.hasUI;
 			},
 		});
 
-		expect(sessions[0].bindExtensions).toHaveBeenCalledWith({ uiContext: undefined });
+		// The relay is bound unconditionally, but hasUI follows the live ctx — a headless
+		// launcher yields hasUI:false, so ask_user_question degrades instead of parking
+		// on a dock nobody can answer.
+		const boundArg = sessions[0].bindExtensions.mock.calls[0][0] as { uiContext?: ExtensionUIContext };
+		expect(boundArg.uiContext).toBeDefined();
 		expect(childHasUI).toBe(false);
 	});
 });
@@ -311,7 +310,6 @@ describe("spawnChild — model resolution (no global pi.setModel)", () => {
 
 		await host.spawnChild({
 			prompt: "p",
-			lane: "background",
 			model: { model: "anthropic/claude-opus-4-8", thinking: "high" },
 			withSession: async () => undefined,
 		});
@@ -326,7 +324,7 @@ describe("spawnChild — model resolution (no global pi.setModel)", () => {
 		const { deps, find } = makeDeps();
 		const host = new SdkWorkflowHost(deps);
 
-		await host.spawnChild({ prompt: "p", lane: "background", withSession: async () => undefined });
+		await host.spawnChild({ prompt: "p", withSession: async () => undefined });
 
 		expect(find).not.toHaveBeenCalled();
 		const passed = createAgentSessionMock.mock.calls[0][0] as Record<string, unknown>;
@@ -341,7 +339,6 @@ describe("spawnChild — reattach", () => {
 
 		await host.spawnChild({
 			prompt: "should-not-be-sent",
-			lane: "background",
 			reattach: { sessionFile: "/run/sessions/prior.jsonl" },
 			withSession: async () => undefined,
 		});
@@ -360,7 +357,6 @@ describe("spawnChild — abort", () => {
 
 		await host.spawnChild({
 			prompt: "p",
-			lane: "background",
 			signal: ac.signal,
 			withSession: async () => {
 				ac.abort();
@@ -381,12 +377,10 @@ describe("concurrency + observer relay", () => {
 		const [a, b] = await Promise.all([
 			host.spawnChild({
 				prompt: "a",
-				lane: "background",
 				withSession: async (c) => c.sessionManager.getSessionFile(),
 			}),
 			host.spawnChild({
 				prompt: "b",
-				lane: "background",
 				withSession: async (c) => c.sessionManager.getSessionFile(),
 			}),
 		]);
@@ -456,7 +450,7 @@ describe("child extension filtering (A)", () => {
 	it("the loader spawnChild builds wires withoutAmbientExtensions as its extensionsOverride", async () => {
 		const { deps } = makeDeps();
 		const host = new SdkWorkflowHost(deps);
-		await host.spawnChild({ prompt: "p", lane: "background", withSession: async () => undefined });
+		await host.spawnChild({ prompt: "p", withSession: async () => undefined });
 
 		const override = resourceLoaders[0].opts.extensionsOverride as (b: unknown) => {
 			extensions: Array<{ path: string }>;
@@ -484,7 +478,7 @@ describe("child teardown (B) — session_shutdown before dispose", () => {
 		const { deps } = makeDeps();
 		const host = new SdkWorkflowHost(deps);
 
-		await host.spawnChild({ prompt: "p", lane: "background", withSession: async () => undefined });
+		await host.spawnChild({ prompt: "p", withSession: async () => undefined });
 
 		const s = sessions[0];
 		expect(s.hasExtensionHandlers).toHaveBeenCalledWith("session_shutdown");
@@ -502,7 +496,6 @@ describe("child teardown (B) — session_shutdown before dispose", () => {
 		await expect(
 			host.spawnChild({
 				prompt: "p",
-				lane: "background",
 				withSession: async () => {
 					throw new Error("boom");
 				},
@@ -519,7 +512,7 @@ describe("child teardown (B) — session_shutdown before dispose", () => {
 		const { deps } = makeDeps();
 		const host = new SdkWorkflowHost(deps);
 
-		await host.spawnChild({ prompt: "p", lane: "background", withSession: async () => undefined });
+		await host.spawnChild({ prompt: "p", withSession: async () => undefined });
 
 		const s = sessions[0];
 		expect(s.hasExtensionHandlers).toHaveBeenCalledWith("session_shutdown");
@@ -533,7 +526,6 @@ describe("child teardown (B) — session_shutdown before dispose", () => {
 
 		await host.spawnChild({
 			prompt: "p",
-			lane: "background",
 			withSession: async (_child) => {
 				sessions[0].extensionRunner.emit.mockRejectedValueOnce(new Error("handler blew up"));
 			},
@@ -559,13 +551,10 @@ describe("spawnChild — nested fan-out depth guard", () => {
 		// depth 0 → 1 → 2 (== cap), all succeed
 		const result = await host.spawnChild({
 			prompt: "p",
-			lane: "background",
 			withSession: (c1) =>
 				c1.spawnChild({
 					prompt: "p",
-					lane: "background",
-					withSession: (c2) =>
-						c2.spawnChild({ prompt: "p", lane: "background", withSession: async () => "deep-ok" }),
+					withSession: (c2) => c2.spawnChild({ prompt: "p", withSession: async () => "deep-ok" }),
 				}),
 		});
 
@@ -581,17 +570,13 @@ describe("spawnChild — nested fan-out depth guard", () => {
 		const err = await host
 			.spawnChild({
 				prompt: "p",
-				lane: "background",
 				withSession: (c1) =>
 					c1.spawnChild({
 						prompt: "p",
-						lane: "background",
 						withSession: (c2) =>
 							c2.spawnChild({
 								prompt: "p",
-								lane: "background",
-								withSession: (c3) =>
-									c3.spawnChild({ prompt: "p", lane: "background", withSession: async () => "too-deep" }),
+								withSession: (c3) => c3.spawnChild({ prompt: "p", withSession: async () => "too-deep" }),
 							}),
 					}),
 			})
@@ -685,7 +670,6 @@ describe("spawnChild — lane current-session retention (Slice 2)", () => {
 		let liveDuringStage: unknown;
 		await host.spawnChild({
 			prompt: "p",
-			lane: "background",
 			withSession: async () => {
 				liveDuringStage = getLane("run-abc")?.currentSession;
 			},
@@ -715,7 +699,6 @@ describe("spawnChild — lane current-session retention (Slice 2)", () => {
 
 		const aP = host.spawnChild({
 			prompt: "a",
-			lane: "background",
 			withSession: async () => {
 				aReached();
 				await aMayReturn;
@@ -725,7 +708,6 @@ describe("spawnChild — lane current-session retention (Slice 2)", () => {
 
 		const bP = host.spawnChild({
 			prompt: "b",
-			lane: "background",
 			withSession: async () => {
 				bReached();
 				await bMayReturn;
@@ -751,9 +733,7 @@ describe("spawnChild — lane current-session retention (Slice 2)", () => {
 		const { deps } = makeDeps();
 		const host = new SdkWorkflowHost(deps);
 
-		await expect(host.spawnChild({ prompt: "p", lane: "background", withSession: async () => "ok" })).resolves.toBe(
-			"ok",
-		);
+		await expect(host.spawnChild({ prompt: "p", withSession: async () => "ok" })).resolves.toBe("ok");
 
 		// No lane was created as a side effect; setCurrentSession silently ignored it.
 		expect(getLane("run-abc")).toBeUndefined();

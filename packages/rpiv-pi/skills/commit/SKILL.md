@@ -7,7 +7,6 @@ shell-timeout: 10
 contract:
   produces:
     kind: side-effect
-    interaction: foreground
     meta:
       effect: git-commit
   consumes:

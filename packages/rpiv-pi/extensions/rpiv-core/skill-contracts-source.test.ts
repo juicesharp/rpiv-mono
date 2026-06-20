@@ -210,34 +210,6 @@ describe("normalizeContract produces.data keyword guard", () => {
 	});
 });
 
-describe("normalizeContract produces.interaction guard", () => {
-	it('carries interaction "foreground"', () => {
-		const contract = normalizeContract({
-			produces: { kind: "produces", interaction: "foreground" },
-		});
-		expect(contract.produces?.interaction).toBe("foreground");
-	});
-
-	it('carries interaction "background"', () => {
-		const contract = normalizeContract({
-			produces: { kind: "produces", interaction: "background" },
-		});
-		expect(contract.produces?.interaction).toBe("background");
-	});
-
-	it("drops an unrecognized interaction value (degrades to background-safe)", () => {
-		const contract = normalizeContract({
-			produces: { kind: "produces", interaction: "interactive" },
-		});
-		expect(contract.produces?.interaction).toBeUndefined();
-	});
-
-	it("leaves interaction absent when the frontmatter omits it", () => {
-		const contract = normalizeContract({ produces: { kind: "produces" } });
-		expect(contract.produces?.interaction).toBeUndefined();
-	});
-});
-
 describe("bundled skill contracts", () => {
 	// The 12 pipeline skills carry a contract: block. This is the count the /wf
 	// banner reports as "N declared" — a drift guard if a block is added,

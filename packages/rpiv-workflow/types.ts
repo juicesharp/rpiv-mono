@@ -26,17 +26,16 @@
 import type { StageDef, Workflow } from "./api.js";
 import type { LifecycleDispatcher, LifecycleListeners } from "./events.js";
 import type { Artifact } from "./handle.js";
-import type { ExecutionLane, ModelSelection, WorkflowHost, WorkflowHostContext } from "./host.js";
+import type { ModelSelection, WorkflowHost, WorkflowHostContext } from "./host.js";
 import type { Output } from "./output.js";
 import type { SkillContractMap } from "./skill-contract.js";
 import type { SessionRef } from "./state/index.js";
 import type { RunTrigger } from "./triggers.js";
 
 // Re-export the host port so runtime layers can pull `RunContext`,
-// `RunState`, and the threaded ctx + new lane/model types from this single
+// `RunState`, and the threaded ctx + model type from this single
 // runtime-types module.
 export type {
-	ExecutionLane,
 	ModelSelection,
 	WorkflowHostContext,
 	WorkflowSessionContext,
@@ -414,15 +413,6 @@ export interface StageSession extends SessionContext {
 	stageIndex: number;
 	/** Pre-stage snapshot value (undefined if the stage's `outcome` has no `snapshot`). */
 	snapshot: unknown;
-	/**
-	 * Which UI/concurrency lane this session's child binds to — `"foreground"`
-	 * for a real-UI skill (single slot), `"background"` for the headless
-	 * concurrent lane. Computed at session construction by `laneFor`
-	 * (sessions/spawn.ts) from the skill's `produces.interaction`. Always set
-	 * (no host invents a lane); fanout units are always `"background"` (the
-	 * validator forbids fanning a foreground skill).
-	 */
-	lane: ExecutionLane;
 	/**
 	 * Resolved per-unit model override (from `RunContext.resolveModel`), applied
 	 * by the host at child-session creation — NOT via global mutation. Undefined

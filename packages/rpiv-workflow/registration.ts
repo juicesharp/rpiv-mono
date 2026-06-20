@@ -83,7 +83,6 @@ export {
 	url,
 } from "./handle.js";
 export type {
-	ExecutionLane,
 	ModelSelection,
 	WorkflowHost,
 	WorkflowHostContext,

@@ -366,8 +366,6 @@ describe("loop driver — parallel fanout dispatch", () => {
 		expect(result.stagesCompleted).toBe(5);
 		expect(host.spawns).toHaveLength(5);
 		expect(host.maxActive).toBe(2); // peak never exceeded the cap
-		// Fanout never binds the foreground lane (the validator forbids it).
-		expect(host.spawns.every((s) => s.lane === "background")).toBe(true);
 		// The run-level abort signal is threaded into every child (genAbort, not aborted).
 		expect(host.spawns.every((s) => s.signal instanceof AbortSignal)).toBe(true);
 	});

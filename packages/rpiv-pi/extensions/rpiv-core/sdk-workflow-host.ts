@@ -18,11 +18,13 @@
  * Child teardown emits `session_shutdown` BEFORE `dispose()` (B) so loaded
  * extensions run their cleanup; `dispose()` alone only invalidates the runner.
  *
- * The lane decides the UI binding: a "foreground" child binds the real
- * interactive `ExtensionUIContext` (so `ask_user_question` reaches the human);
- * a "background" child binds none ⇒ the SDK's `noOpUIContext` ⇒ `hasUI:false` ⇒
- * UI-requiring tools degrade instead of blocking, which is what makes the
- * background lane safe to fan out.
+ * Every child binds the DEFERRING relay (`createLaneRelayUiContext`): a stage's
+ * `ask_user_question` queues + badges its questionnaire in the lane dock instead
+ * of grabbing the (possibly hidden) real UI, and the switcher replays it on
+ * switch-in (FR5). `hasUI` is inherited from the live launcher ctx, so a headless
+ * launcher (`live.hasUI:false`) still yields `hasUI:false` ⇒ UI-requiring tools
+ * degrade instead of blocking; under an interactive launcher every stage can ask
+ * via the dock, and a fanout's questions queue and pace by `maxConcurrency`.
  *
  * The executor-port satisfaction assertion lives in this package's
  * `sdk-workflow-host.test.ts`, NOT in rpiv-workflow (which must not import
@@ -46,12 +48,7 @@ import {
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { parseModelKey } from "@juicesharp/rpiv-config";
-import type {
-	ExecutionLane,
-	ModelSelection,
-	WorkflowHostContext,
-	WorkflowSessionContext,
-} from "@juicesharp/rpiv-workflow";
+import type { ModelSelection, WorkflowHostContext, WorkflowSessionContext } from "@juicesharp/rpiv-workflow";
 import { createLaneRelayUiContext } from "./lane-relay-ui.js";
 import { getLane, setCurrentSession } from "./run-lane-registry.js";
 
@@ -154,7 +151,7 @@ export interface SdkWorkflowHostDeps {
 	live: Pick<WorkflowHostContext, "ui" | "sessionManager" | "hasUI">;
 	/** Borrowed at session_start (carries auth/OAuth state). */
 	modelRegistry: ModelRegistry;
-	/** The real foreground UI (bound to foreground children; captured at session_start). */
+	/** The real launcher UI the deferring relay forwards to (captured at session_start). */
 	uiContext: ExtensionUIContext;
 	cwd: string;
 	runId: string;
@@ -201,7 +198,7 @@ export class FanoutDepthExceededError extends Error {
  * Detached executor host. Every stage / fanout unit runs in a child
  * `AgentSession` this host owns; the interactive session never executes a stage
  * and is never swapped. The model is resolved per child (NO `pi.setModel()`);
- * the lane decides the UI binding.
+ * every child binds the deferring relay (its questionnaires queue in the lane dock).
  */
 export class SdkWorkflowHost implements WorkflowHostContext {
 	readonly cwd: string;
@@ -231,7 +228,6 @@ export class SdkWorkflowHost implements WorkflowHostContext {
 
 	spawnChild<T>(options: {
 		prompt: string;
-		lane: ExecutionLane;
 		model?: ModelSelection;
 		signal?: AbortSignal;
 		reattach?: { sessionFile: string };
@@ -245,7 +241,7 @@ export class SdkWorkflowHost implements WorkflowHostContext {
 
 	/**
 	 * Spawn one child at a known fan-out depth. The orchestration spine: build the
-	 * filtered loader → create the child session → wire abort → bind UI lane →
+	 * filtered loader → create the child session → wire abort → bind the relay UI →
 	 * dispatch the prompt → run `withSession` → tear down. The depth guard fires
 	 * BEFORE any session is created, so an over-deep fan-out costs nothing.
 	 */
@@ -253,7 +249,6 @@ export class SdkWorkflowHost implements WorkflowHostContext {
 		depth: number,
 		options: {
 			prompt: string;
-			lane: ExecutionLane;
 			model?: ModelSelection;
 			signal?: AbortSignal;
 			reattach?: { sessionFile: string };
@@ -292,18 +287,16 @@ export class SdkWorkflowHost implements WorkflowHostContext {
 		const onAbort = () => void session.abort();
 		options.signal?.addEventListener("abort", onAbort, { once: true });
 		try {
-			// foreground binds the DEFERRING relay (FR5): a floated run's foreground stage
-			// queues + badges its questionnaire instead of grabbing the (possibly hidden)
-			// real UI; the switcher replays it on switch-in. background binds none ⇒
-			// hasUI:false ⇒ ask_user_question degrades exactly as before.
+			// Every child binds the DEFERRING relay (FR5): a floated run's stage queues +
+			// badges its questionnaire instead of grabbing the (possibly hidden) real UI;
+			// the switcher replays it on switch-in. When the launcher is headless
+			// (live.hasUI:false) the child reports hasUI:false (see `adapt`), so
+			// ask_user_question degrades instead of parking on a dock nobody can answer.
 			await session.bindExtensions({
-				uiContext:
-					options.lane === "foreground"
-						? createLaneRelayUiContext(this.deps.uiContext, this.deps.runId)
-						: undefined,
+				uiContext: createLaneRelayUiContext(this.deps.uiContext, this.deps.runId),
 			});
 			await this.dispatchChildPrompt(session, options);
-			return await options.withSession(this.adapt(session, options.lane, depth));
+			return await options.withSession(this.adapt(session, depth));
 		} finally {
 			options.signal?.removeEventListener("abort", onAbort);
 			// Clear only if WE are still the current child — a fanout sibling spawned
@@ -391,10 +384,10 @@ export class SdkWorkflowHost implements WorkflowHostContext {
 	}
 
 	/** A child ctx — the guaranteed-in-session surface the stage machinery holds. */
-	private adapt(session: AgentSession, lane: ExecutionLane, depth: number): WorkflowSessionContext {
+	private adapt(session: AgentSession, depth: number): WorkflowSessionContext {
 		return {
 			cwd: this.cwd,
-			hasUI: lane === "foreground" && this.deps.live.hasUI,
+			hasUI: this.deps.live.hasUI,
 			ui: this.relayUi(),
 			maxConcurrency: this.maxConcurrency,
 			// A child may itself fan out — each level increments the depth, bounded

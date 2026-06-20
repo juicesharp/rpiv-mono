@@ -24,12 +24,7 @@
 
 import type { Workflow } from "./api.js";
 import type { SkillContractMap } from "./skill-contract.js";
-import {
-	checkEdgeSchemaCompat,
-	checkFanoutInteraction,
-	checkPredicateSchemas,
-	checkReadsChannelCompat,
-} from "./validate/contract-compat.js";
+import { checkEdgeSchemaCompat, checkPredicateSchemas, checkReadsChannelCompat } from "./validate/contract-compat.js";
 import {
 	checkEdgeKeys,
 	checkEdgeTargets,
@@ -88,7 +83,6 @@ export function validateWorkflow(
 	checkPredicateSchemas(workflow, r, opts?.skillContracts);
 	checkEdgeSchemaCompat(workflow, r, opts?.skillContracts);
 	checkReadsChannelCompat(workflow, r, opts?.skillContracts);
-	checkFanoutInteraction(workflow, r, opts?.skillContracts);
 
 	return issues;
 }

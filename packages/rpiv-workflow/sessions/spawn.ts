@@ -21,8 +21,7 @@
  */
 
 import type { SessionPolicy } from "../api.js";
-import type { ExecutionLane, WorkflowHostContext, WorkflowSessionContext } from "../host.js";
-import type { SkillContractMap } from "../skill-contract.js";
+import type { WorkflowHostContext, WorkflowSessionContext } from "../host.js";
 import type { StageSession } from "../types.js";
 
 /**
@@ -43,31 +42,19 @@ export function branchOffsetFor(policy: SessionPolicy | undefined, captured: num
 }
 
 /**
- * Which lane a stage's child binds to: a skill whose contract declares
- * `interaction: "foreground"` gets the single-slot real-UI lane; everything
- * else (declared background, or undeclared → background-safe) runs in the
- * concurrent headless lane. The validator forbids fanning a `foreground` skill
- * (`checkFanoutInteraction`), so a fanout unit is always background here.
- */
-export function laneFor(skillContracts: SkillContractMap | undefined, skill: string): ExecutionLane {
-	return skillContracts?.get(skill)?.produces?.interaction === "foreground" ? "foreground" : "background";
-}
-
-/**
  * THE child-spawn primitive. Open an isolated child session (parent stays
- * valid), let the host send the prompt + apply lane/model, wait for the agent
+ * valid), let the host send the prompt + apply the model, wait for the agent
  * to settle, then run `body` on the guaranteed-in-session child ctx. Up to
  * `ctx.maxConcurrency` of these may be in flight (the loop's semaphore bounds
  * fanout; single stages run one).
  */
 export function spawnChildAndRun(
 	ctx: WorkflowHostContext,
-	s: Pick<StageSession, "prompt" | "lane" | "model" | "signal">,
+	s: Pick<StageSession, "prompt" | "model" | "signal">,
 	body: (child: WorkflowSessionContext) => Promise<void>,
 ): Promise<void> {
 	return ctx.spawnChild({
 		prompt: s.prompt,
-		lane: s.lane,
 		model: s.model,
 		signal: s.signal,
 		withSession: async (child) => {
@@ -92,13 +79,12 @@ export function spawnChildAndRun(
  */
 export function reattachChildSession(
 	ctx: WorkflowHostContext,
-	s: Pick<StageSession, "prompt" | "lane" | "model" | "signal">,
+	s: Pick<StageSession, "prompt" | "model" | "signal">,
 	sessionFile: string,
 	body: (child: WorkflowSessionContext) => Promise<void>,
 ): Promise<void> {
 	return ctx.spawnChild({
 		prompt: s.prompt, // carried for parity; NOT replayed in reattach mode (the host skips it)
-		lane: s.lane,
 		model: s.model,
 		signal: s.signal,
 		reattach: { sessionFile },
@@ -127,13 +113,12 @@ export function reattachChildSession(
  */
 export function forkChildSession(
 	ctx: WorkflowHostContext,
-	s: Pick<StageSession, "prompt" | "lane" | "model" | "signal">,
+	s: Pick<StageSession, "prompt" | "model" | "signal">,
 	sessionFile: string,
 	body: (child: WorkflowSessionContext) => Promise<void>,
 ): Promise<void> {
 	return ctx.spawnChild({
 		prompt: s.prompt, // carried; the body sends it (host skips auto-replay in fork mode)
-		lane: s.lane,
 		model: s.model,
 		signal: s.signal,
 		fork: { sessionFile },

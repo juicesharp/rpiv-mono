@@ -30,7 +30,6 @@ import { isPanel, type Judge, type PanelJudge, panelMembers, resolveJudgePrompt 
 import { MSG_LOOP_CURSOR_CORRUPT } from "./messages.js";
 import { finalizeOutput, isFailedOutput, type Output, type OutputMeta } from "./output.js";
 import { StagePreflightError } from "./runner/errors.js";
-import { laneFor } from "./sessions/spawn.js";
 import type { RunContext, RunState, StageSession, UnitRef, WorkflowHostContext } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -429,7 +428,6 @@ export function buildUnitSession(
 		snapshot,
 		branchOffset: undefined,
 		unit: { parent: e.name, role: u.role, index, id: u.id, label: u.label },
-		lane: laneFor(run.skillContracts, u.skill),
 		model: run.resolveModel?.({ stage: e.name, skill: u.skill }),
 		signal,
 		// fanout units collect-all by default (opt out via fanout({ failFast: true }));

@@ -9,12 +9,7 @@ import type {
 	ToolDefinition,
 	ToolInfo,
 } from "@earendil-works/pi-coding-agent";
-import type {
-	ExecutionLane,
-	ModelSelection,
-	WorkflowHostContext,
-	WorkflowSessionContext,
-} from "@juicesharp/rpiv-workflow";
+import type { ModelSelection, WorkflowHostContext, WorkflowSessionContext } from "@juicesharp/rpiv-workflow";
 import { vi } from "vitest";
 
 /**
@@ -29,7 +24,6 @@ type MockWorkflowCtx = ExtensionCommandContext & WorkflowHostContext;
 /** Options the runtime hands `spawnChild` — mirrors the rpiv-workflow host port. */
 interface MockSpawnChildOptions<T = void> {
 	prompt: string;
-	lane: ExecutionLane;
 	model?: ModelSelection;
 	signal?: AbortSignal;
 	reattach?: { sessionFile: string };
@@ -204,7 +198,7 @@ export interface MockCtxOptions {
 	branch?: SessionEntry[];
 	models?: Model<Api>[];
 	ui?: Partial<ExtensionUIContext>;
-	/** Background-lane concurrency cap the ctx advertises. Defaults to 1 (sequential). */
+	/** Concurrency cap the ctx advertises. Defaults to 1 (sequential). */
 	maxConcurrency?: number;
 }
 

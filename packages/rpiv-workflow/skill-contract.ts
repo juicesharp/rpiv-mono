@@ -72,16 +72,6 @@ export interface ConsumesSpec {
 export interface ProducesSpec {
 	kind: string;
 	data?: JsonSchemaObject;
-	/**
-	 * Whether the skill needs the live human UI (`"foreground"`) or is safe to
-	 * run headless in the concurrent background lane (`"background"`, the default
-	 * when absent/unrecognized). A typed sibling of `kind` (NOT `meta` — the
-	 * framework interprets it): `laneFor` (sessions/spawn.ts) maps it to the
-	 * child's `ExecutionLane`, and `checkFanoutInteraction` forbids
-	 * fanning out a `"foreground"` skill. Parsed from frontmatter; unrecognized
-	 * values degrade to background-safe.
-	 */
-	interaction?: "foreground" | "background";
 	meta?: Record<string, unknown>;
 }
 

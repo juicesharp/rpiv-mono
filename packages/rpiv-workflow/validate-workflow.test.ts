@@ -645,65 +645,6 @@ describe("validateWorkflow — reads-channel (meta) compatibility", () => {
 	});
 });
 
-describe("validateWorkflow — fanout/foreground interaction gate", () => {
-	// A fanout stage dispatching `/skill:auditor` over a published channel.
-	const fanoutWf: Workflow = {
-		name: "fanout-interaction",
-		start: "scan",
-		stages: {
-			scan: produces({ outcome: { collector: noopCollector, name: "findings" } }),
-			audit: produces({
-				skill: "auditor",
-				loop: fanout({ source: "findings", units: () => [] }),
-				outcome: { collector: noopCollector, name: "audits" },
-				reads: ["findings"],
-			}),
-		},
-		edges: { scan: "audit", audit: "stop" },
-	};
-	const contractsFor = (interaction?: "foreground" | "background"): SkillContractMap =>
-		new Map([
-			["auditor", { source: "declared", produces: { kind: "produces", ...(interaction ? { interaction } : {}) } }],
-		]);
-
-	it("ERRORS when a fanout stage dispatches a foreground skill", () => {
-		const issues = validateWorkflow(fanoutWf, { skillContracts: contractsFor("foreground") });
-		const issue = issues.find((i) => i.code === "fanout-foreground-skill");
-		expect(issue).toBeDefined();
-		expect(issue?.severity).toBe("error");
-		expect(issue?.stage).toBe("audit");
-		expect(issue?.params.skill).toBe("auditor");
-	});
-
-	it("does NOT error when the fanned-out skill is background", () => {
-		const issues = validateWorkflow(fanoutWf, { skillContracts: contractsFor("background") });
-		expect(issues.filter((i) => i.code === "fanout-foreground-skill")).toEqual([]);
-	});
-
-	it("does NOT error when the fanned-out skill leaves interaction undeclared", () => {
-		const issues = validateWorkflow(fanoutWf, { skillContracts: contractsFor() });
-		expect(issues.filter((i) => i.code === "fanout-foreground-skill")).toEqual([]);
-	});
-
-	it("degrades (no gate) for an unsigned project with no skillContracts", () => {
-		const issues = validateWorkflow(fanoutWf);
-		expect(issues.filter((i) => i.code === "fanout-foreground-skill")).toEqual([]);
-	});
-
-	it("does NOT fire for a foreground skill on a NON-fanout stage", () => {
-		const linear: Workflow = {
-			name: "linear-foreground",
-			start: "audit",
-			stages: {
-				audit: produces({ skill: "auditor", outcome: { collector: noopCollector, name: "audits" } }),
-			},
-			edges: { audit: "stop" },
-		};
-		const issues = validateWorkflow(linear, { skillContracts: contractsFor("foreground") });
-		expect(issues.filter((i) => i.code === "fanout-foreground-skill")).toEqual([]);
-	});
-});
-
 describe("validateWorkflow — workflow name", () => {
 	it("errors when name is the empty string", () => {
 		const w: Workflow = {

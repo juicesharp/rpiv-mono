@@ -12,8 +12,7 @@
  *   - extraction.ts — produceAndValidateOutput + retry loop +
  *                     outcome helpers (collector → parser pipeline).
  *   - spawn.ts      — the child-spawn primitives (`spawnChildAndRun`,
- *                     `reattachChildSession`, `resendIntoChild`) + `laneFor` /
- *                     `branchOffsetFor`.
+ *                     `reattachChildSession`, `resendIntoChild`) + `branchOffsetFor`.
  *   - reattach.ts   — session-backed resume (promotion + reattach); reuses
  *                     postStage / recordStageSuccess / the halt helpers
  *                     exported below instead of duplicating them.

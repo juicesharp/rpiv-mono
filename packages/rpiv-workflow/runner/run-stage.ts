@@ -37,7 +37,7 @@ import {
 	STATUS_STAGE,
 } from "../messages.js";
 import { continueStageSession, locateSessionFile, reattachStageSession, runStageSession } from "../sessions/index.js";
-import { forkChildSession, laneFor, reattachChildSession } from "../sessions/spawn.js";
+import { forkChildSession, reattachChildSession } from "../sessions/spawn.js";
 import type { WorkflowStage } from "../state/index.js";
 import type { RunContext, StageSession, WorkflowHostContext } from "../types.js";
 import { advanceChain, type ChainDeps } from "./chain-advance.js";
@@ -209,7 +209,6 @@ function buildSingleStageSession(
 		skillContracts: run.skillContracts,
 		stageIndex: idx,
 		snapshot: prep.snapshot,
-		lane: laneFor(run.skillContracts, stage.skill),
 		model: run.resolveModel?.({ stage: stage.name, skill: stage.skill }),
 		signal: run.signal,
 		branchOffset,

@@ -2,8 +2,8 @@
  * FakeConcurrentHost — a `WorkflowHostContext` double with NO Pi import, built
  * to PROVE the parallel fanout dispatcher's concurrency behavior end-to-end
  * through `runWorkflow`. Its `spawnChild`:
- *   - records `{ prompt, lane, model, signal, reattach, startOrder, endOrder }`
- *     per call so tests assert dispatch order + lane/model/signal threading;
+ *   - records `{ prompt, model, signal, reattach, startOrder, endOrder }`
+ *     per call so tests assert dispatch order + model/signal threading;
  *   - tracks the live in-flight count + the PEAK (`maxActive`) so a test can
  *     assert "never more than `maxConcurrency` ran at once" and "exactly the cap
  *     ran concurrently";
@@ -21,17 +21,11 @@
  * production code (test-utils boundary rule).
  */
 
-import type {
-	ExecutionLane,
-	ModelSelection,
-	WorkflowHostContext,
-	WorkflowSessionContext,
-} from "@juicesharp/rpiv-workflow";
+import type { ModelSelection, WorkflowHostContext, WorkflowSessionContext } from "@juicesharp/rpiv-workflow";
 
 /** What the host recorded for one `spawnChild` call. */
 export interface FakeSpawnRecord {
 	prompt: string;
-	lane: ExecutionLane;
 	model?: ModelSelection;
 	signal?: AbortSignal;
 	reattach?: { sessionFile: string };
@@ -43,7 +37,7 @@ export interface FakeSpawnRecord {
 }
 
 export interface FakeConcurrentHostOptions {
-	/** Background-lane concurrency cap the ctx advertises. Default 1 (sequential). */
+	/** Concurrency cap the ctx advertises. Default 1 (sequential). */
 	maxConcurrency?: number;
 	/** Real temp dir — the run writes its JSONL trail under here. */
 	cwd?: string;
@@ -147,7 +141,6 @@ export function createFakeConcurrentHost(opts: FakeConcurrentHostOptions = {}): 
 
 	const spawnChild = async <T>(options: {
 		prompt: string;
-		lane: ExecutionLane;
 		model?: ModelSelection;
 		signal?: AbortSignal;
 		reattach?: { sessionFile: string };
@@ -157,7 +150,6 @@ export function createFakeConcurrentHost(opts: FakeConcurrentHostOptions = {}): 
 		const index = spawns.length;
 		const rec: FakeSpawnRecord = {
 			prompt: options.prompt,
-			lane: options.lane,
 			model: options.model,
 			signal: options.signal,
 			reattach: options.reattach,

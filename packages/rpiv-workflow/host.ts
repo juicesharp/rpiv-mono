@@ -59,9 +59,6 @@ export interface WorkflowHost {
  */
 export type WorkflowLauncherContext = Omit<WorkflowHostContext, "spawnChild" | "maxConcurrency">;
 
-/** Which UI/concurrency lane a child session runs in. */
-export type ExecutionLane = "foreground" | "background";
-
 /**
  * Resolved per-unit model override, applied by the host at child-session
  * creation — NOT via global mutation. `model` is a host-opaque model key the
@@ -115,8 +112,7 @@ export interface WorkflowHostContext {
 	signal?: AbortSignal;
 
 	/** Max child sessions runnable at once. 1 ⇒ sequential. The loop reads this;
-	 *  it never invents a number. Background-lane cap; foreground is implicitly
-	 *  serial (the fanout gate forbids foreground fanout). */
+	 *  it never invents a number. */
 	readonly maxConcurrency: number;
 
 	/**
@@ -124,9 +120,8 @@ export interface WorkflowHostContext {
 	 * return body's result. The PARENT ctx STAYS VALID (no swap). The runner may
 	 * have up to `maxConcurrency` spawnChild calls in flight at once.
 	 *
-	 * `lane` selects the UI/concurrency lane. `model` is the resolved
-	 * per-unit override, applied by the host at session creation — NOT via
-	 * global mutation. `signal`, when provided, lets the host abort THIS
+	 * `model` is the resolved per-unit override, applied by the host at session
+	 * creation — NOT via global mutation. `signal`, when provided, lets the host abort THIS
 	 * child mid-flight (`session.abort()`/`dispose()`) the moment it fires —
 	 * the dispatcher threads `run.signal` here so an aborted run interrupts
 	 * in-flight children, not just between stages.
@@ -156,7 +151,6 @@ export interface WorkflowHostContext {
 	 */
 	spawnChild<T>(options: {
 		prompt: string;
-		lane: ExecutionLane;
 		model?: ModelSelection;
 		signal?: AbortSignal;
 		reattach?: { sessionFile: string };

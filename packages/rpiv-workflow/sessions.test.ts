@@ -95,7 +95,6 @@ const stageSession = (overrides: Partial<StageSession> & Pick<StageSession, "cwd
 	stage: stage(),
 	stageIndex: 0,
 	snapshot: undefined,
-	lane: "background",
 	onSuccess: async () => {},
 	...overrides,
 });
@@ -320,7 +319,7 @@ describe("sessions — validation retry loop", () => {
 		// converts the stall into a fatal halt rather than an unhandled rejection.
 		const realSpawnChild = chain.ctx.spawnChild as (o: unknown) => Promise<unknown>;
 		(chain.ctx as { spawnChild: unknown }).spawnChild = vi.fn(
-			async (opts: { prompt: string; lane: string; withSession?: (c: unknown) => Promise<void> }) => {
+			async (opts: { prompt: string; withSession?: (c: unknown) => Promise<void> }) => {
 				return realSpawnChild({
 					...opts,
 					withSession: async (freshCtx: unknown) => {

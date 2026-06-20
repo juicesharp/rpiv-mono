@@ -24,7 +24,7 @@
 import { marksReadsData, STOP, type Workflow } from "../api.js";
 import { isDispatchingStage, resolvePublishName, resolveSkill } from "../chain-state.js";
 import { extractJsonSchema } from "../json-schema.js";
-import { judgeOf, loopSpecOf } from "../loop-constructors.js";
+import { judgeOf } from "../loop-constructors.js";
 import type { ProducesSpec, SkillContractMap } from "../skill-contract.js";
 import { adjudicateChannel, compareDataChannel, getCompositionComparators } from "../skill-contracts/index.js";
 import { readName } from "../stage-def.js";
@@ -106,27 +106,6 @@ export function checkEdgeSchemaCompat(
 		if (!compat.ok) {
 			r.forStage(from)("edge-schema-incompatible", { to: target, reason: compat.reason ?? "provably incompatible" });
 		}
-	}
-}
-
-/**
- * Reject a `fanout` stage whose dispatched skill declares `interaction:
- * "foreground"` — a fanout runs many parallel units, and a foreground skill
- * needs the single human. A load-time ERROR, the same class as a
- * produces/consumes mismatch (`reads-channel-incompatible`).
- */
-export function checkFanoutInteraction(
-	w: Workflow,
-	r: IssueReporter,
-	skillContracts: SkillContractMap | undefined,
-): void {
-	if (!skillContracts) return; // unsigned project — degrade
-	for (const [name, stage] of Object.entries(w.stages)) {
-		if (loopSpecOf(stage.loop)?.kind !== "fanout") continue;
-		if (!isDispatchingStage(stage)) continue; // no skill identity to read interaction from
-		const skill = resolveSkill(stage, name);
-		if (skillContracts.get(skill)?.produces?.interaction !== "foreground") continue; // bg / undeclared → ok
-		r.forStage(name)("fanout-foreground-skill", { skill });
 	}
 }
 
