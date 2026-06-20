@@ -61,4 +61,11 @@ describe("verifyShipManifest", () => {
 		makePackage(dir, ["index.ts", "README.md", "load"], ["index.ts", "README.md", "load/cache.ts"]);
 		expect(verifyShipManifest(dir).stale).toEqual([]);
 	});
+
+	it("`!`-prefixed negation entries are not flagged stale and do not cover files", () => {
+		makePackage(dir, ["providers/", "!**/*.test.ts"], ["providers/github.ts", "providers/github.test.ts"]);
+		const result = verifyShipManifest(dir);
+		expect(result.stale).toEqual([]);
+		expect(result.missing).toEqual([]);
+	});
 });

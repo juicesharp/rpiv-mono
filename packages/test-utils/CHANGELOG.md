@@ -4,6 +4,8 @@ All notable changes to this package will be documented in this file.
 
 ## [Unreleased]
 
+- `verifyShipManifest` now understands npm `files` negation patterns: a `!`-prefixed entry (e.g. `"!**/*.test.ts"`) is treated as an exclusion rule rather than a path, so it is no longer reported as `stale` and does not cover on-disk files (#80).
+
 ## [1.20.0] - 2026-06-15
 
 ## [1.19.1] - 2026-06-10

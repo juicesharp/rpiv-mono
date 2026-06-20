@@ -55,8 +55,7 @@
 		"@juicesharp/rpiv-i18n": "*",
 		"@earendil-works/pi-ai": "*",
 		"@earendil-works/pi-coding-agent": "*",
-		"@earendil-works/pi-tui": "*",
-		"typebox": "*"
+		"@earendil-works/pi-tui": "*"
 	},
 	"peerDependenciesMeta": {
 		"@juicesharp/rpiv-i18n": {
@@ -64,6 +63,7 @@
 		}
 	},
 	"dependencies": {
-		"@juicesharp/rpiv-config": "^1.20.0"
+		"@juicesharp/rpiv-config": "^1.20.0",
+		"typebox": "^1.1.24"
 	}
 }

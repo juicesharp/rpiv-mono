@@ -10,6 +10,12 @@
 #### Breaking
 - **v1 runs are not resumable.** `reconstructState`'s header version gate cleanly refuses a v1 trail (an explicit `v: 1` or an absent `v`) with `version-mismatch` ("start a fresh run") rather than silently mis-replaying it under v2 semantics. There is no in-place migration. The version gate is the corruption interlock that makes this refusal safe at the upgrade boundary — a v1 trail left on disk after upgrade is rejected, never eaten by the v2 fold. (This bump is a second breaking change alongside the `WorkflowHost` port replacement; the detached-execution commit documented only the port.)
 
+### Packaging
+
+#### Fixed
+- **`typebox` moved from `peerDependencies` to `dependencies`** (`^1.1.24`, matching the Pi host's range) so the DSL's schema imports resolve under installers that don't materialise peer deps. Fixes `ERR_MODULE_NOT_FOUND: typebox` on standalone consumer installs (#79).
+- **Test files are no longer published in the npm tarball.** The directory globs in `files` (`load/`, `runner/`, `outcomes/`, `validate/`, …) packed `**/*.test.ts`, which import the private, unpublished `@juicesharp/rpiv-test-utils` fixture package. Added a `!**/*.test.ts` exclusion to `files` (#80).
+
 ### Fanout-and-synthesize fan-in — `fanin()` read modifier
 
 #### Fixed
