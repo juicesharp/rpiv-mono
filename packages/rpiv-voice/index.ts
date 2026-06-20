@@ -17,6 +17,9 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { registerVoiceCommand } from "./command/voice-command.js";
+
+export { startVoiceDictation } from "./command/voice-command.js";
+
 import { I18N_NAMESPACE } from "./state/i18n-bridge.js";
 
 type I18nLoader = {

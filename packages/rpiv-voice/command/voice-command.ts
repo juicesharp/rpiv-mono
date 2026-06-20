@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { createMic, type DecibriLike } from "../audio/mic-source.js";
 import {
 	assertModelIntact,
@@ -80,11 +80,11 @@ interface Preflight {
 export function registerVoiceCommand(pi: ExtensionAPI): void {
 	pi.registerCommand(VOICE_COMMAND_NAME, {
 		description: t("command.description", "Dictate text with your voice — local STT, no cloud"),
-		handler: (_args: string, ctx: ExtensionCommandContext) => handleVoiceCommand(ctx),
+		handler: (_args: string, ctx: ExtensionContext) => startVoiceDictation(ctx),
 	});
 }
 
-export async function handleVoiceCommand(ctx: ExtensionCommandContext): Promise<void> {
+export async function startVoiceDictation(ctx: ExtensionContext): Promise<void> {
 	if (!ctx.hasUI) {
 		ctx.ui.notify(t("error.requires_interactive", "/voice requires interactive mode"), "error");
 		return;
@@ -99,7 +99,7 @@ export async function handleVoiceCommand(ctx: ExtensionCommandContext): Promise<
 	}
 }
 
-async function runPreflight(ctx: ExtensionCommandContext): Promise<Preflight | null> {
+async function runPreflight(ctx: ExtensionContext): Promise<Preflight | null> {
 	try {
 		return await runWithSplash<Preflight>(
 			ctx,
@@ -206,7 +206,7 @@ function preflightUserMessage(stage: PreflightStage): string {
 }
 
 async function runDictationSession(
-	ctx: ExtensionCommandContext,
+	ctx: ExtensionContext,
 	sttEngine: SttEngine,
 	mic: DecibriLike,
 ): Promise<VoiceResult> {
