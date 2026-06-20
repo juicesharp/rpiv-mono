@@ -23,6 +23,7 @@ import {
 	laneCount,
 	laneNeedsInput,
 	listLanes,
+	listLanesForDisplay,
 	setDockActive,
 	setDockSelection,
 	setFocusedRun,
@@ -105,9 +106,12 @@ export async function switchIntoLane(ui: ExtensionUIContext, runId: string): Pro
 /**
  * Answer a needs-input lane WITHOUT opening the transcript viewer (the ⏎ shortcut
  * on a flagged lane): drain its queued foreground questions straight onto the real
- * UI. Shares `switchingLane` so it never stacks with a viewer/another drain. When
- * other lanes still await input it RE-ENTERS the dock at the top (they sort there),
- * so a run of ⏎ presses walks through them; otherwise it drops back to root.
+ * UI. Shares `switchingLane` so it never stacks with a viewer/another drain. After
+ * answering it STAYS stepped into the dock — the user came from the dock and expects
+ * to land back on the lane, not the primary prompt. When other lanes still await
+ * input they sort to the top, so it parks on row 0 and a run of ⏎ presses walks
+ * through them; otherwise it keeps the cursor on the lane just answered. It only
+ * drops back to root when no lane remains to step onto.
  */
 export async function answerLane(ui: ExtensionUIContext, runId: string): Promise<void> {
 	if (switchingLane) return; // never stack onto a viewer/another drain
@@ -118,13 +122,17 @@ export async function answerLane(ui: ExtensionUIContext, runId: string): Promise
 	} finally {
 		setFocusedRun(undefined);
 		switchingLane = false;
-		// Stay stepped in while more lanes await input (they sort to the top), so the
-		// next ⏎ answers the next one; otherwise return to the ambient prompt.
-		if (listLanes().some((l) => laneNeedsInput(l.runId))) {
-			setDockActive(true);
+		if (laneCount() === 0) {
+			setDockActive(false); // nothing left to step onto — back to the ambient prompt
+		} else if (listLanes().some((l) => laneNeedsInput(l.runId))) {
+			setDockActive(true); // another lane awaits — park at the top so the next ⏎ walks to it
 			setDockSelection(0);
 		} else {
-			setDockActive(false);
+			// No lane needs input: stay stepped in on the lane we just answered, so focus
+			// returns to it rather than the primary session input. ↑/esc steps back out.
+			setDockActive(true);
+			const idx = listLanesForDisplay().findIndex((l) => l.runId === runId);
+			setDockSelection(idx >= 0 ? idx : 0);
 		}
 	}
 }

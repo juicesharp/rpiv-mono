@@ -7,6 +7,7 @@ import { showLaneViewer } from "./lane-viewer.js";
 import {
 	__resetRunLaneRegistry,
 	enqueueInput,
+	evictRun,
 	getDockState,
 	getFocusedRun,
 	recordRun,
@@ -267,11 +268,33 @@ describe("lane-switcher — answerLane (direct answer, no viewer)", () => {
 		expect(getFocusedRun()).toBeUndefined();
 	});
 
-	it("returns to the root prompt when no lane needs input after answering", async () => {
+	it("stays stepped in on the answered lane when no other lane needs input", async () => {
 		recordRun("run-1", "ship");
+		recordRun("run-2", "build");
 		enqueueInput("run-1", { factory: (() => ({})) as never, options: undefined as never, resolve: vi.fn() });
 		setDockActive(true);
 		const custom = vi.fn().mockResolvedValue(undefined);
+		const ui = createMockUI({ custom }) as unknown as ExtensionUIContext;
+
+		await answerLane(ui, "run-1");
+
+		// Focus returns to the lane (the dock), not the primary session input. With no
+		// needs-input lanes left, both run as "running" in insertion order, so the
+		// just-answered run-1 sits at row 0.
+		expect(getDockState()).toEqual({ active: true, selection: 0 });
+		expect(getFocusedRun()).toBeUndefined();
+	});
+
+	it("drops back to the root prompt only when no lane remains after answering", async () => {
+		recordRun("run-1", "ship");
+		enqueueInput("run-1", { factory: (() => ({})) as never, options: undefined as never, resolve: vi.fn() });
+		setDockActive(true);
+		// The lane evicts itself while its question is being answered (run finished),
+		// leaving nothing to step onto.
+		const custom = vi.fn().mockImplementation(async () => {
+			evictRun("run-1");
+			return undefined;
+		});
 		const ui = createMockUI({ custom }) as unknown as ExtensionUIContext;
 
 		await answerLane(ui, "run-1");
