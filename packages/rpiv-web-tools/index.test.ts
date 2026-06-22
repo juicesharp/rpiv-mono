@@ -2224,3 +2224,165 @@ describe("formatShowConfigMessage — URL interceptors block", () => {
 		expect(msg).toContain("clonePath:");
 	});
 });
+
+// Per-call provider override — web_search accepts an optional `provider` param
+// that routes the call to a different backend than `config.provider` without
+// mutating persisted state. Key/URL resolution still reads from env/config
+// under the named provider, so the override must have its own credentials.
+describe("web_search.execute — per-call provider override", () => {
+	it("routes to the override provider when its key is configured", async () => {
+		// Active provider is brave (with key), but the call asks for tavily.
+		process.env.BRAVE_SEARCH_API_KEY = "brave-key";
+		process.env.TAVILY_API_KEY = "tavily-key";
+		writeConfig({ provider: "brave" });
+		const stub = stubFetch([
+			{
+				match: (u) => u.includes("api.tavily.com"),
+				response: () =>
+					new Response(JSON.stringify({ results: [{ title: "T", url: "https://x", content: "snip" }] }), {
+						status: 200,
+					}),
+			},
+		]);
+		const { captured } = registerAndCapture();
+		const r = await captured.tools
+			.get("web_search")
+			?.execute?.(
+				"tc",
+				{ query: "hello", provider: "tavily" },
+				undefined as never,
+				undefined as never,
+				createMockCtx(),
+			);
+		expect((r?.details as { backend: string }).backend).toBe("tavily");
+		expect(stub.calls[0].url).toContain("api.tavily.com");
+		const body = JSON.parse(stub.calls[0].init?.body as string);
+		expect(body.api_key).toBe("tavily-key");
+	});
+
+	it("override works with config-file key (no env var)", async () => {
+		writeConfig({ provider: "brave", apiKeys: { brave: "brave-key", exa: "exa-config-key" } });
+		const stub = stubFetch([
+			{
+				match: (u) => u.includes("api.exa.ai"),
+				response: () =>
+					new Response(JSON.stringify({ results: [{ title: "T", url: "https://x", text: "snip" }] }), {
+						status: 200,
+					}),
+			},
+		]);
+		const { captured } = registerAndCapture();
+		const r = await captured.tools
+			.get("web_search")
+			?.execute?.("tc", { query: "x", provider: "exa" }, undefined as never, undefined as never, createMockCtx());
+		expect((r?.details as { backend: string }).backend).toBe("exa");
+		const headers = stub.calls[0].init?.headers as Record<string, string>;
+		expect(headers["x-api-key"]).toBe("exa-config-key");
+	});
+
+	it("override resolves baseUrl for self-hosted providers (searxng)", async () => {
+		process.env.SEARXNG_URL = "http://override-host:9090";
+		// Active provider is brave; override to searxng should pick up SEARXNG_URL.
+		process.env.BRAVE_SEARCH_API_KEY = "brave-key";
+		writeConfig({ provider: "brave" });
+		const stub = stubFetch([
+			{
+				match: (u) => u.startsWith("http://override-host:9090/"),
+				response: () =>
+					new Response(
+						JSON.stringify({
+							results: [{ title: "T", url: "https://x", content: "snip" }],
+						}),
+						{ status: 200 },
+					),
+			},
+		]);
+		const { captured } = registerAndCapture();
+		const r = await captured.tools
+			.get("web_search")
+			?.execute?.(
+				"tc",
+				{ query: "x", provider: "searxng" },
+				undefined as never,
+				undefined as never,
+				createMockCtx(),
+			);
+		expect((r?.details as { backend: string }).backend).toBe("searxng");
+		expect(new URL(stub.calls[0].url).host).toBe("override-host:9090");
+	});
+
+	it("override throws when the named provider has no key configured (no silent fallback)", async () => {
+		// Active provider brave has a key, but the override (exa) does not.
+		process.env.BRAVE_SEARCH_API_KEY = "brave-key";
+		writeConfig({ provider: "brave" });
+		const { captured } = registerAndCapture();
+		await expect(
+			captured.tools
+				.get("web_search")
+				?.execute?.("tc", { query: "x", provider: "exa" }, undefined as never, undefined as never, createMockCtx()),
+		).rejects.toThrow(/EXA_API_KEY is not set/);
+	});
+
+	it("override with an unknown provider name throws a clear error", async () => {
+		process.env.BRAVE_SEARCH_API_KEY = "brave-key";
+		writeConfig({ provider: "brave" });
+		const { captured } = registerAndCapture();
+		await expect(
+			captured.tools
+				.get("web_search")
+				?.execute?.(
+					"tc",
+					{ query: "x", provider: "nonexistent" },
+					undefined as never,
+					undefined as never,
+					createMockCtx(),
+				),
+		).rejects.toThrow(/Unknown web_search provider: "nonexistent"/);
+	});
+
+	it("override omitted falls back to config.provider (default path unchanged)", async () => {
+		process.env.BRAVE_SEARCH_API_KEY = "brave-key";
+		writeConfig({ provider: "brave" });
+		const stub = stubFetch([
+			{
+				match: (u) => u.includes("api.search.brave.com"),
+				response: () =>
+					new Response(
+						JSON.stringify({
+							web: { results: [{ title: "T", url: "https://x", description: "snip" }] },
+						}),
+						{ status: 200 },
+					),
+			},
+		]);
+		const { captured } = registerAndCapture();
+		const r = await captured.tools
+			.get("web_search")
+			?.execute?.("tc", { query: "x" }, undefined as never, undefined as never, createMockCtx());
+		expect((r?.details as { backend: string }).backend).toBe("brave");
+		expect(stub.calls[0].url).toContain("api.search.brave.com");
+	});
+
+	it("schema declares the provider enum with all known names", () => {
+		const { captured } = registerAndCapture();
+		const params = captured.tools.get("web_search")?.parameters as unknown as {
+			properties: { provider: { anyOf: Array<{ const: string }> } };
+		};
+		const literals = params.properties.provider?.anyOf?.map((e) => e.const) ?? [];
+		expect(literals).toEqual(
+			expect.arrayContaining([
+				"brave",
+				"tavily",
+				"serper",
+				"exa",
+				"youcom",
+				"jina",
+				"firecrawl",
+				"perplexity",
+				"searxng",
+				"ollama",
+			]),
+		);
+		expect(literals).toHaveLength(10);
+	});
+});
