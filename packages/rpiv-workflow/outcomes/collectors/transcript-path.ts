@@ -20,9 +20,8 @@
 
 import { fs } from "../../handle.js";
 import type { ArtifactCollector } from "../../output-spec.js";
-import { defineCollector } from "../../output-spec.js";
-import { lastMatchInBranch } from "../../transcript.js";
 import { requireOpt } from "./require-opt.js";
+import { textScanCollector } from "./text-scan.js";
 
 export interface TranscriptPathCollectorOpts {
 	/**
@@ -36,17 +35,5 @@ export interface TranscriptPathCollectorOpts {
 
 export function transcriptPathCollector(opts: TranscriptPathCollectorOpts): ArtifactCollector {
 	requireOpt("transcriptPathCollector", "pattern", "is required and must be a RegExp", opts.pattern instanceof RegExp);
-	const pattern = opts.pattern;
-	return defineCollector({
-		collect: (ctx) => {
-			const path = lastMatchInBranch(ctx.branch, pattern, ctx.branchOffset);
-			if (!path) {
-				return {
-					kind: "fatal",
-					message: `${ctx.skill} finished without producing a path matching ${pattern.source}`,
-				};
-			}
-			return { kind: "ok", artifacts: [{ handle: fs(path), role: "primary" }] };
-		},
-	});
+	return textScanCollector({ pattern: opts.pattern, toHandle: fs, noun: "path" });
 }

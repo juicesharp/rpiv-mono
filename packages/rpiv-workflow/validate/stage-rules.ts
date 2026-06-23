@@ -186,41 +186,58 @@ function checkVerifyInvariants(stage: StageDef, name: string, report: ReportFn):
 	checkVerdictChannels(v.judge, name, stage, "verify-verdict-channel-collision", report);
 }
 
+/**
+ * ONE range probe — collapses `checkRetryBounds`/`checkTimeoutBounds`. Optional-
+ * field early-out → range predicate → `{value, min, max}` report. The bounds
+ * constants already live first-class at each call site, so the probe carries
+ * zero information not expressible as parameters.
+ */
+function checkRange(
+	report: ReportFn,
+	code: "max-retries-out-of-range" | "validate-timeout-out-of-range",
+	value: number | undefined,
+	min: number,
+	max: number,
+): void {
+	if (value === undefined) return;
+	if (value < min || value > max) report(code, { value, min, max });
+}
+
+/**
+ * ONE enum probe — collapses the three same-shape `{value, allowed}` guards in
+ * `checkStageEnums` (onInvalid / kind / sessionPolicy). NOTE: `loop-kind-unknown`
+ * (`checkLoopInvariants`) is intentionally NOT unified — it reports `{kind,
+ * allowed}` (different param key) and carries an early `return` after the report
+ * (kind-specific rules would misfire on an unknown kind); forcing it through this
+ * helper would touch the public issue-param shape for marginal gain.
+ */
+function checkEnum(
+	report: ReportFn,
+	code: "on-invalid-unknown" | "stage-kind-unknown" | "session-policy-unknown",
+	value: string | undefined,
+	allowed: readonly string[],
+): void {
+	if (value !== undefined && !allowed.includes(value)) report(code, { value, allowed: allowed.join(", ") });
+}
+
 function checkRetryBounds(stage: StageDef, report: ReportFn): void {
-	if (stage.maxRetries === undefined) return;
-	if (stage.maxRetries < MIN_VALIDATION_RETRIES || stage.maxRetries > MAX_VALIDATION_RETRIES) {
-		report("max-retries-out-of-range", {
-			value: stage.maxRetries,
-			min: MIN_VALIDATION_RETRIES,
-			max: MAX_VALIDATION_RETRIES,
-		});
-	}
+	checkRange(report, "max-retries-out-of-range", stage.maxRetries, MIN_VALIDATION_RETRIES, MAX_VALIDATION_RETRIES);
 }
 
 function checkTimeoutBounds(stage: StageDef, report: ReportFn): void {
-	if (stage.validateTimeoutMs === undefined) return;
-	if (
-		stage.validateTimeoutMs < MIN_VALIDATION_RETRY_TIMEOUT_MS ||
-		stage.validateTimeoutMs > MAX_VALIDATION_RETRY_TIMEOUT_MS
-	) {
-		report("validate-timeout-out-of-range", {
-			value: stage.validateTimeoutMs,
-			min: MIN_VALIDATION_RETRY_TIMEOUT_MS,
-			max: MAX_VALIDATION_RETRY_TIMEOUT_MS,
-		});
-	}
+	checkRange(
+		report,
+		"validate-timeout-out-of-range",
+		stage.validateTimeoutMs,
+		MIN_VALIDATION_RETRY_TIMEOUT_MS,
+		MAX_VALIDATION_RETRY_TIMEOUT_MS,
+	);
 }
 
 function checkStageEnums(stage: StageDef, report: ReportFn): void {
-	if (stage.onInvalid !== undefined && !(ON_INVALID_VALUES as readonly string[]).includes(stage.onInvalid)) {
-		report("on-invalid-unknown", { value: stage.onInvalid, allowed: ON_INVALID_VALUES.join(", ") });
-	}
-	if (!(STAGE_KINDS as readonly string[]).includes(stage.kind)) {
-		report("stage-kind-unknown", { value: stage.kind, allowed: STAGE_KINDS.join(", ") });
-	}
-	if (!(SESSION_POLICIES as readonly string[]).includes(stage.sessionPolicy)) {
-		report("session-policy-unknown", { value: stage.sessionPolicy, allowed: SESSION_POLICIES.join(", ") });
-	}
+	checkEnum(report, "on-invalid-unknown", stage.onInvalid, ON_INVALID_VALUES);
+	checkEnum(report, "stage-kind-unknown", stage.kind, STAGE_KINDS);
+	checkEnum(report, "session-policy-unknown", stage.sessionPolicy, SESSION_POLICIES);
 	if (stage.kind === "produces" && !stage.outcome && !stage.run) {
 		report("produces-without-outcome");
 	}

@@ -94,26 +94,29 @@ export async function runScript(
 		{
 			produce: async () => {
 				const invocation = await invokeRun(curCtx, stage, scriptCtx, run, stageNumber);
-				if (!invocation.ok) return { ok: false, halt: "recorded" };
+				if (!invocation.ok) return { kind: "halt", halt: "recorded" };
 				const output = finalizeOutput(invocation.raw, {
 					stage: stage.name,
 					stageNumber,
 					ts: nowIso(),
 					runId: run.runId,
 				});
-				return { ok: true, value: output };
+				return { kind: "ok", value: output };
 			},
 			validate: async (output) => {
 				if (!(stage.def.kind === "produces" && stage.def.outputSchema)) {
-					return { ok: true, result: { valid: true, failures: [] } };
+					return { kind: "ok", result: { valid: true, failures: [] } };
 				}
 				// No catch: a throwing author schema propagates to the runner's
 				// single catch site (today's contract).
-				return { ok: true, result: await Promise.resolve(validateOutputData(stage.def.outputSchema, output.data)) };
+				return {
+					kind: "ok",
+					result: await Promise.resolve(validateOutputData(stage.def.outputSchema, output.data)),
+				};
 			},
 			onRetry: async (attempt) => {
 				await run.lifecycle.fire(curCtx, "onStageRetry", ref, attempt, lifecycleCtxFor(run));
-				return { ok: true };
+				return { kind: "ok" };
 			},
 		},
 	);

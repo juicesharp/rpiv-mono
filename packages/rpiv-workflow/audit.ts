@@ -169,24 +169,59 @@ export interface TerminalFailureArgs {
 }
 
 /**
+ * The ONE `(status, notifyLevel)` pairing — notifyLevel is DERIVED from status
+ * (failed → error, aborted → warning), so a mismatch is unrepresentable. The
+ * overload-resolution body that `failedArgs`/`abortedArgs` used to spell twice
+ * lives here once. Modeled after `stopFailureArgs` (parameterize by status).
+ */
+function terminalArgsOf(status: "failed" | "aborted", a: FailureText | string, b?: string): TerminalFailureArgs {
+	const f = typeof a === "string" ? { toast: a, error: b as string } : a;
+	return { status, notifyMsg: f.toast, notifyLevel: status === "failed" ? "error" : "warning", errMsg: f.error };
+}
+
+/**
  * Argument constructors for `recordTerminalFailure` — the
  * `{status, notifyMsg, notifyLevel, errMsg}` quadruple every halt site used
  * to spell by hand. One per terminal status: failures notify at `"error"`,
  * aborts at `"warning"` (cooperative cancellation is expected, not
- * exceptional).
+ * exceptional). 1-line facades over `terminalArgsOf` so the status/level
+ * pairing lives once.
  */
 export function failedArgs(failure: FailureText): TerminalFailureArgs;
 export function failedArgs(notifyMsg: string, errMsg: string): TerminalFailureArgs;
 export function failedArgs(a: FailureText | string, b?: string): TerminalFailureArgs {
-	const f = typeof a === "string" ? { toast: a, error: b as string } : a;
-	return { status: "failed", notifyMsg: f.toast, notifyLevel: "error", errMsg: f.error };
+	return terminalArgsOf("failed", a, b);
 }
 
 export function abortedArgs(failure: FailureText): TerminalFailureArgs;
 export function abortedArgs(notifyMsg: string, errMsg: string): TerminalFailureArgs;
 export function abortedArgs(a: FailureText | string, b?: string): TerminalFailureArgs {
-	const f = typeof a === "string" ? { toast: a, error: b as string } : a;
-	return { status: "aborted", notifyMsg: f.toast, notifyLevel: "warning", errMsg: f.error };
+	return terminalArgsOf("aborted", a, b);
+}
+
+/**
+ * THE one terminal/halt/cancellation row-write authority. `recordStage` + the
+ * dropped-row guard (notify + telemetry) — the side effects the three writers
+ * (`recordTerminalFailure` / `recordUnitHalt` / `recordCancellation`) share.
+ * Each caller builds its row fields (terminal `args.status`; halt
+ * `collected:true`; cancellation `status:"skipped"`) and delegates the write +
+ * guard here, so the dropped-failure-row invariant — a dropped row corrupts
+ * resume: the trail's last row reads "completed" and a later resume routes
+ * onward past the stage — is enforced ONCE (parity contract, precedent
+ * `advanceCursor` at loop.ts). Returns the assigned stageNumber on success
+ * (undefined on drop), matching `audit-rows.ts:recordStage`'s contract.
+ */
+function writeFailureRow(
+	ctx: WorkflowHostContext,
+	audit: AuditCtx,
+	row: Parameters<typeof recordStage>[2],
+): number | undefined {
+	const written = recordStage(audit.cwd, audit.runId, row, audit.state, audit.allocatedStageNumber);
+	if (written === undefined) {
+		ctx.ui.notify(MSG_FAILURE_ROW_DROPPED(audit.stageName), "warning");
+		audit.state.telemetry.droppedFailureRows.push(audit.stageName);
+	}
+	return written;
 }
 
 export async function recordTerminalFailure(
@@ -203,36 +238,19 @@ export async function recordTerminalFailure(
 	// Harmless on the sequential path (always `"running"` at the
 	// first and only terminal failure).
 	if (audit.state.termination.status !== "running") return;
-	const written = recordStage(
-		audit.cwd,
-		audit.runId,
+	writeFailureRow(ctx, audit, {
+		stage: audit.stageName,
 		// Script-stage failure rows omit `skill` (the row split landed in A.0);
 		// skill rows continue to carry it. `undefined` is dropped by JSON.stringify.
 		// `errMsg` mirrors `state.termination.error` so the failure reason
 		// survives in JSONL even when the `ctx.ui.notify` toast is missed.
-		{
-			stage: audit.stageName,
-			skill: audit.isScript ? undefined : audit.skill,
-			status: args.status,
-			ts: nowIso(),
-			errMsg: args.errMsg,
-			session: audit.session,
-			...unitRowFields(audit.unit),
-		},
-		audit.state,
-		// Reuse the activation's pre-allocated number when output production
-		// already burned one — the failure row carries the SAME stage number
-		// the activation's output/lifecycle refs used (no gap, no skew).
-		audit.allocatedStageNumber,
-	);
-	if (written === undefined) {
-		// A dropped FAILURE row corrupts resume: the trail's last row reads
-		// "completed" and a resume would route onward past this stage. The run
-		// is already halting — surface loudly + flag the envelope so callers
-		// know the trail is unsafe to resume from.
-		ctx.ui.notify(MSG_FAILURE_ROW_DROPPED(audit.stageName), "warning");
-		audit.state.telemetry.droppedFailureRows.push(audit.stageName);
-	}
+		skill: audit.isScript ? undefined : audit.skill,
+		status: args.status,
+		ts: nowIso(),
+		errMsg: args.errMsg,
+		session: audit.session,
+		...unitRowFields(audit.unit),
+	});
 	ctx.ui.setStatus(STATUS_KEY, undefined);
 	ctx.ui.notify(args.notifyMsg, args.notifyLevel);
 	onFailure?.(ctx);
@@ -254,26 +272,16 @@ export async function recordTerminalFailure(
  * `failedOutput` sentinel by `unitIndex` instead of re-dispatching it.
  */
 export function recordUnitHalt(ctx: WorkflowHostContext, audit: AuditCtx, errMsg: string): void {
-	const written = recordStage(
-		audit.cwd,
-		audit.runId,
-		{
-			stage: audit.stageName,
-			skill: audit.isScript ? undefined : audit.skill,
-			status: "failed",
-			collected: true, // distinguishes a soft collect-all halt from a hard terminal failure on resume
-			ts: nowIso(),
-			errMsg,
-			session: audit.session,
-			...unitRowFields(audit.unit),
-		},
-		audit.state,
-		audit.allocatedStageNumber,
-	);
-	if (written === undefined) {
-		ctx.ui.notify(MSG_FAILURE_ROW_DROPPED(audit.stageName), "warning");
-		audit.state.telemetry.droppedFailureRows.push(audit.stageName);
-	}
+	writeFailureRow(ctx, audit, {
+		stage: audit.stageName,
+		skill: audit.isScript ? undefined : audit.skill,
+		status: "failed",
+		collected: true, // distinguishes a soft collect-all halt from a hard terminal failure on resume
+		ts: nowIso(),
+		errMsg,
+		session: audit.session,
+		...unitRowFields(audit.unit),
+	});
 }
 
 /**
@@ -314,20 +322,15 @@ export function recordCancellation(ctx: WorkflowHostContext, audit: AuditCtx): v
 	// `errMsg` is mirrored into the JSONL row so post-mortems work from the
 	// trail alone (same posture as `recordTerminalFailure`).
 	const errMsg = `${audit.skill} cancelled by user`;
-	recordStage(
-		audit.cwd,
-		audit.runId,
-		{
-			stage: audit.stageName,
-			skill: audit.skill,
-			status: "skipped",
-			ts: nowIso(),
-			errMsg,
-			session: audit.session,
-			...unitRowFields(audit.unit),
-		},
-		audit.state,
-	);
+	writeFailureRow(ctx, audit, {
+		stage: audit.stageName,
+		skill: audit.skill,
+		status: "skipped",
+		ts: nowIso(),
+		errMsg,
+		session: audit.session,
+		...unitRowFields(audit.unit),
+	});
 	ctx.ui.setStatus(STATUS_KEY, undefined);
 	ctx.ui.notify(MSG_WORKFLOW_CANCELLED, "info");
 	terminate(audit.state, { status: "cancelled", error: errMsg });

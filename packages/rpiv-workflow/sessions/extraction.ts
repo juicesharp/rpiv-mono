@@ -39,11 +39,24 @@ import {
 	type ValidationResult,
 	validateOutputData,
 } from "../validate-output.js";
+import { clampRange } from "../validation-bounds.js";
 import { resendIntoChild } from "./spawn.js";
+
+/**
+ * The fatal arm shared by every extraction-stage outcome — `{ kind: "fatal";
+ * message }`. Declared four times inline before (OutputProduction,
+ * RunOutcomeResult, enforceCompletionContract, validateOrFatal); the ok arms
+ * genuinely differ (OutputProduction carries a validation-exhausted third arm;
+ * validateOrFatal's ok payload is a ValidationResult under `result`, not an
+ * Output under `output`), so a single generic `FatalOr<T>` would force a field
+ * misnomer — the fatal arm is the part that's actually identical, so it's the
+ * thing to name once.
+ */
+type Fatal = { kind: "fatal"; message: string };
 
 export type OutputProduction =
 	| { kind: "ok"; output: Output }
-	| { kind: "fatal"; message: string }
+	| Fatal
 	| { kind: "validation-exhausted"; failureSummary: string };
 
 /** Retry loop re-produces against the latest branch after each fix request. */
@@ -130,7 +143,7 @@ function wrapOutput(s: StageSession, parts: { kind: string; artifacts: readonly 
 	});
 }
 
-type RunOutcomeResult = { kind: "ok"; output: Output } | { kind: "fatal"; message: string };
+type RunOutcomeResult = { kind: "ok"; output: Output } | Fatal;
 
 /**
  * The collector → parser pipeline. When `parser` is omitted, the
@@ -190,7 +203,7 @@ function enforceCompletionContract(
 	stage: StageDef,
 	skill: string,
 	output: Output,
-): { kind: "ok"; output: Output } | { kind: "fatal"; message: string } {
+): { kind: "ok"; output: Output } | Fatal {
 	if (stage.kind === "produces" && output.artifacts.length === 0) {
 		return {
 			kind: "fatal",
@@ -237,13 +250,17 @@ async function retryUntilValid(
 	initial: Output,
 ): Promise<OutputProduction> {
 	const schema = effectiveOutputSchema(s)!;
-	const maxRetries = Math.max(
+	const maxRetries = clampRange(
+		s.stage.maxRetries,
 		MIN_VALIDATION_RETRIES,
-		Math.min(s.stage.maxRetries ?? DEFAULT_VALIDATION_RETRIES, MAX_VALIDATION_RETRIES),
+		DEFAULT_VALIDATION_RETRIES,
+		MAX_VALIDATION_RETRIES,
 	);
-	const timeoutMs = Math.max(
+	const timeoutMs = clampRange(
+		s.stage.validateTimeoutMs,
 		MIN_VALIDATION_RETRY_TIMEOUT_MS,
-		Math.min(s.stage.validateTimeoutMs ?? DEFAULT_VALIDATION_RETRY_TIMEOUT_MS, MAX_VALIDATION_RETRY_TIMEOUT_MS),
+		DEFAULT_VALIDATION_RETRY_TIMEOUT_MS,
+		MAX_VALIDATION_RETRY_TIMEOUT_MS,
 	);
 
 	let output = initial;
@@ -306,7 +323,7 @@ async function validateOrFatal(
 	data: unknown,
 	skill: string,
 	timeoutMs: number,
-): Promise<{ kind: "ok"; result: ValidationResult } | { kind: "fatal"; message: string }> {
+): Promise<{ kind: "ok"; result: ValidationResult } | Fatal> {
 	try {
 		const result = await withTimeout(
 			Promise.resolve(validateOutputData(schema, data)),

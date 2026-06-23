@@ -13,7 +13,7 @@ import {
 	recordTerminalFailure,
 	terminate,
 } from "../audit.js";
-import { formatError } from "../internal-utils.js";
+import { formatError, isAbortError } from "../internal-utils.js";
 import { FAIL_WORKFLOW_ABORTED, MSG_STAGE_THREW, MSG_WORKFLOW_COMPLETE, STATUS_KEY } from "../messages.js";
 import type { RunContext, UnitRef, WorkflowHostContext } from "../types.js";
 import { StagePreflightError } from "./errors.js";
@@ -125,6 +125,36 @@ export function recordAbortedAtSeam(curCtx: WorkflowHostContext, name: string, r
 	return haltChain(curCtx, run, name, name, abortedArgs(FAIL_WORKFLOW_ABORTED(name)), (ctx) =>
 		notifyPartialArtifacts(ctx, run.cwd, run.runId),
 	);
+}
+
+/**
+ * THE stage-entry guard — the ONE classify-then-record policy both single-stage
+ * entries share: pre-check the cooperative-abort signal, run `inner`, and on a
+ * throw classify it (mid-stage `WorkflowAbortError` → envelope-safe abort;
+ * anything else → terminal entry-throw row). Modeled after `advanceCursor`
+ * (loop.ts): one shared authority, callers hold their own preconditions.
+ *
+ * The two call sites (`runStageOrRecordFailure` live, `resumeStageWithSession`
+ * resume) cover DISJOINT scopes — the resume catch protects the reattach ladder
+ * (`resumeWithSessionLadder`) the live catch cannot reach — so both must exist.
+ * This wrapper merges the CLASSIFICATION POLICY (which throw is an abort vs a
+ * real entry-throw), not the scopes: each caller invokes it with its own `inner`
+ * + `name`, so a future widening of "what counts as abort" (a new cooperative-
+ * cancel signal beyond `WorkflowAbortError`) is one edit, here.
+ */
+export async function withStageEntryGuard(
+	curCtx: WorkflowHostContext,
+	name: string,
+	run: RunContext,
+	inner: () => Promise<ChainOutcome>,
+): Promise<ChainOutcome> {
+	if (run.signal?.aborted) return recordAbortedAtSeam(curCtx, name, run);
+	try {
+		return await inner();
+	} catch (e) {
+		if (isAbortError(e)) return recordAbortedAtSeam(curCtx, name, run);
+		return recordEntryThrow(curCtx, name, run, e);
+	}
 }
 
 export function finalizeWorkflow(curCtx: WorkflowHostContext, run: RunContext): ChainOutcome {

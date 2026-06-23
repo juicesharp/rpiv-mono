@@ -29,6 +29,7 @@ import {
 	type ValidationResult,
 	validateOutputData,
 } from "../validate-output.js";
+import { clampRange } from "../validation-bounds.js";
 import { StagePreflightError } from "./errors.js";
 import type { ResolvedStage } from "./resolve-stage.js";
 
@@ -100,9 +101,11 @@ async function validateOrThrow(
  * firing a 100 ms timeout before a real I/O probe gets a chance to settle.
  */
 function clampValidateTimeoutMs(raw: number | undefined): number {
-	return Math.max(
+	return clampRange(
+		raw,
 		MIN_VALIDATION_RETRY_TIMEOUT_MS,
-		Math.min(raw ?? DEFAULT_VALIDATION_RETRY_TIMEOUT_MS, MAX_VALIDATION_RETRY_TIMEOUT_MS),
+		DEFAULT_VALIDATION_RETRY_TIMEOUT_MS,
+		MAX_VALIDATION_RETRY_TIMEOUT_MS,
 	);
 }
 

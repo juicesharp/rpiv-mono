@@ -22,7 +22,7 @@ import { resolveSkill } from "../chain-state.js";
 import { announceLoopStart, pendingFanoutIndices, runFanoutResume, runLoop } from "../loop.js";
 import { effectiveLoopOf } from "../loop-constructors.js";
 import { buildLoopEntry, type LoopDeps, sequentialStrategyOf } from "../loop-kinds.js";
-import { FAIL_MISSING_ARTIFACT, MSG_RESUME_LOOP_MISMATCH } from "../messages.js";
+import { FAIL_MISSING_ARTIFACT, type FailureText, MSG_RESUME_LOOP_MISMATCH } from "../messages.js";
 import type { RunContext, WorkflowHostContext } from "../types.js";
 import type { LoopResumePoint } from "./resume.js";
 
@@ -83,6 +83,24 @@ export async function resumeLoopStage(
 	await runLoop(ctx, entry, point.cursor, run, deps);
 }
 
+/**
+ * One refusal recorder — the shared 3-step body the two resume recorders
+ * (`recordMissingArtifactFailure` / `recordLoopDriftFailure`) used to spell:
+ * resolve the terminal args + build the audit ctx + `recordTerminalFailure`.
+ * Each caller supplies its own descriptor — a `FailureText` (missing-artifact)
+ * or a `[notifyMsg, errMsg]` tuple (loop drift).
+ */
+function recordResumeRefusal(
+	ctx: WorkflowHostContext,
+	run: RunContext,
+	parent: string,
+	skill: string,
+	descriptor: FailureText | [notifyMsg: string, errMsg: string],
+): Promise<void> {
+	const args = Array.isArray(descriptor) ? failedArgs(descriptor[0], descriptor[1]) : failedArgs(descriptor);
+	return recordTerminalFailure(ctx, auditCtxFor(run, parent, skill), args);
+}
+
 /** Recorded refusal for a corrupted/truncated trail (reuses the forward preflight's messages). */
 function recordMissingArtifactFailure(
 	ctx: WorkflowHostContext,
@@ -91,11 +109,7 @@ function recordMissingArtifactFailure(
 	skill: string,
 	idx: number,
 ): Promise<void> {
-	return recordTerminalFailure(
-		ctx,
-		auditCtxFor(run, parent, skill),
-		failedArgs(FAIL_MISSING_ARTIFACT(skill, idx + 1)),
-	);
+	return recordResumeRefusal(ctx, run, parent, skill, FAIL_MISSING_ARTIFACT(skill, idx + 1));
 }
 
 /**
@@ -111,9 +125,5 @@ export function recordLoopDriftFailure(
 	errMsg: string,
 ): Promise<void> {
 	const skill = resolveSkill(run.workflow.stages[parent]!, parent);
-	return recordTerminalFailure(
-		ctx,
-		auditCtxFor(run, parent, skill),
-		failedArgs(MSG_RESUME_LOOP_MISMATCH(parent), errMsg),
-	);
+	return recordResumeRefusal(ctx, run, parent, skill, [MSG_RESUME_LOOP_MISMATCH(parent), errMsg]);
 }

@@ -24,7 +24,7 @@ import type { StageDef, Unit } from "../api.js";
 import { failedArgs, notifyPartialArtifacts, runIdentityOf } from "../audit.js";
 import { currentPrimaryArtifact, resolveStagePrompt, stageEntryArgs } from "../chain-state.js";
 import { lifecycleCtxFor, skillStageRef } from "../events.js";
-import { formatError, isAbortError } from "../internal-utils.js";
+import { formatError } from "../internal-utils.js";
 import { announceLoopStart, runLoop } from "../loop.js";
 import { buildLoopEntry, freshCursor, type LoopDeps, type LoopEntry } from "../loop-kinds.js";
 import {
@@ -41,7 +41,7 @@ import { forkChildSession, reattachChildSession } from "../sessions/spawn.js";
 import type { WorkflowStage } from "../state/index.js";
 import type { RunContext, StageSession, WorkflowHostContext } from "../types.js";
 import { advanceChain, type ChainDeps } from "./chain-advance.js";
-import { type ChainOutcome, haltChain, recordAbortedAtSeam, recordEntryThrow } from "./failure.js";
+import { type ChainOutcome, haltChain, recordAbortedAtSeam, recordEntryThrow, withStageEntryGuard } from "./failure.js";
 import { ensureContractInputValid, ensureInputValid } from "./input-validation.js";
 import { ensureLoopNotContinue, runLoopPreflights, runSingleStagePreflights } from "./preflight.js";
 import { type ResolvedStage, resolveStage } from "./resolve-stage.js";
@@ -79,13 +79,10 @@ export function advance(
  * Wraps `runStage` so a thrown stage records a JSONL failure row attributed
  * to the stage that actually threw — not to the prior stage in the chain.
  * Used by `runWorkflow` (start stage), `advanceChain` (next stage, via
- * `ChainDeps`), and the resume entries, so there's exactly one place that
- * translates "stage threw" → `state.termination.error` + JSONL row.
- *
- * Also the cooperative-cancellation seam: checked before the start stage and
- * before every routed next stage, so an aborted signal stops the chain at
- * the next stage boundary without interrupting a stage already streaming
- * (Pi owns the live session).
+ * `ChainDeps`), and the resume entries — the walk's single catch site.
+ * Delegates the classify-then-record policy (cooperative-abort seam +
+ * mid-stage `WorkflowAbortError` vs terminal entry-throw) to
+ * `withStageEntryGuard` (failure.ts).
  */
 export async function runStageOrRecordFailure(
 	curCtx: WorkflowHostContext,
@@ -93,16 +90,7 @@ export async function runStageOrRecordFailure(
 	idx: number,
 	run: RunContext,
 ): Promise<ChainOutcome> {
-	if (run.signal?.aborted) return recordAbortedAtSeam(curCtx, name, run);
-	try {
-		return await runStage(curCtx, name, idx, run);
-	} catch (e) {
-		// A mid-stage abort surfaces as a `WorkflowAbortError` thrown by
-		// postStage (the SDK resolved prompt() with stopReason:"aborted"). Classify
-		// it as an envelope-safe abort, NOT a terminal entry-throw.
-		if (isAbortError(e)) return recordAbortedAtSeam(curCtx, name, run);
-		return recordEntryThrow(curCtx, name, run, e);
-	}
+	return withStageEntryGuard(curCtx, name, run, () => runStage(curCtx, name, idx, run));
 }
 
 // ---------------------------------------------------------------------------
@@ -281,28 +269,12 @@ function continueForkFile(run: RunContext): string | null {
  * interrupted session's branch (promotion) or continue it from its leaf
  * (reattach), instead of re-running cold. Selected by `selectResumeEntry`
  * when the failed trailer carries a `session` (the structured dispatch).
- *
- * Owns the FALLBACK LADDER: every precondition miss notifies
- * (`MSG_RESUME_SESSION_FALLBACK`) and degrades to today's cold re-run via
- * `runStageOrRecordFailure` — never a refusal, never a throw:
- *
- *   1. cooperative-abort check (same seam as `runStageOrRecordFailure`);
- *   2. resolved mode must be `prompt`/`skill` (loop trailers never reach
- *      this arm — they carry `parent`; script stages are sessionless);
- *   3. `locateSessionFile` must find the file on disk;
- *   4. the same `prepareSingleStage` steps as live (a preflight throw lands
- *      in the same catch as the live entry);
- *   5. `reattachChildSession` spawns a child BOUND to the persisted file (the
- *      host opens it, does NOT replay the prompt) and `reattachStageSession`
- *      (sessions/reattach.ts) runs promotion → reattach inside it, with the
- *      SAME `StageSession` the live path builds — `branchOffset` taken from
- *      the PERSISTED row (continue-policy stages), `undefined` for fresh.
- *
- * Lifecycle: `onStageStart` fires before the child (re)opens (same bracketing
- * as live); promotion then fires `onStageEnd` via `recordStageSuccess` — a
- * fast start→end pair is honest ("the stage's work was adopted"). There is no
- * `{ cancelled }` arm — a detached reattach opens its own child, with no
- * live-session swap for the user to dismiss.
+ * Delegates the same classify-then-record policy as the live entry
+ * (`runStageOrRecordFailure`) to `withStageEntryGuard` (failure.ts); the
+ * fallback ladder itself lives in `resumeWithSessionLadder` below — the
+ * resume `inner` still wraps it, so a reattached `postStage`
+ * `WorkflowAbortError` or machinery throw is classified (abort vs terminal
+ * entry-throw) by the same authority as the live path.
  */
 export async function resumeStageWithSession(
 	curCtx: WorkflowHostContext,
@@ -310,17 +282,36 @@ export async function resumeStageWithSession(
 	idx: number,
 	run: RunContext,
 ): Promise<ChainOutcome> {
-	if (run.signal?.aborted) return recordAbortedAtSeam(curCtx, last.stage, run);
-	try {
-		return await resumeWithSessionLadder(curCtx, last, idx, run);
-	} catch (e) {
-		// A reattached postStage can throw WorkflowAbortError; classify
-		// it as an abort (envelope-safe), not a terminal entry-throw.
-		if (isAbortError(e)) return recordAbortedAtSeam(curCtx, last.stage, run);
-		return recordEntryThrow(curCtx, last.stage, run, e);
-	}
+	return withStageEntryGuard(curCtx, last.stage, run, () => resumeWithSessionLadder(curCtx, last, idx, run));
 }
 
+/**
+ * THE resume fallback ladder (called by `resumeStageWithSession` via
+ * `withStageEntryGuard`). Every precondition miss notifies
+ * (`MSG_RESUME_SESSION_FALLBACK`) and degrades to today's cold re-run via
+ * `runStageOrRecordFailure` — never a refusal, never a throw:
+ *
+ *   1. resolved mode must be `prompt`/`skill` (loop trailers never reach
+ *      this arm — they carry `parent`; script stages are sessionless);
+ *   2. `locateSessionFile` must find the file on disk;
+ *   3. the same `prepareSingleStage` steps as live (a preflight throw lands
+ *      in the same catch as the live entry);
+ *   4. `reattachChildSession` spawns a child BOUND to the persisted file (the
+ *      host opens it, does NOT replay the prompt) and `reattachStageSession`
+ *      (sessions/reattach.ts) runs promotion → reattach inside it, with the
+ *      SAME `StageSession` the live path builds — `branchOffset` taken from
+ *      the PERSISTED row (continue-policy stages), `undefined` for fresh.
+ *
+ * (The cooperative-abort pre-check — formerly step 1 here — now lives in
+ * `withStageEntryGuard`, which wraps this ladder; a mid-stage
+ * `WorkflowAbortError` thrown inside it is classified there too.)
+ *
+ * Lifecycle: `onStageStart` fires before the child (re)opens (same bracketing
+ * as live); promotion then fires `onStageEnd` via `recordStageSuccess` — a
+ * fast start→end pair is honest ("the stage's work was adopted"). There is no
+ * `{ cancelled }` arm — a detached reattach opens its own child, with no
+ * live-session swap for the user to dismiss.
+ */
 async function resumeWithSessionLadder(
 	curCtx: WorkflowHostContext,
 	last: WorkflowStage,

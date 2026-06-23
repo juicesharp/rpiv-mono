@@ -38,6 +38,7 @@ import type {
 import { STOP } from "./api.js";
 import {
 	type AnyJudge,
+	assertShape,
 	brandCanonicalFold,
 	type CanonicalFoldName,
 	canonicalFoldName,
@@ -206,17 +207,7 @@ export function iterate(opts: IterateOptions): IterateLoop {
  * stable named slot like any other collecting loop.
  */
 export function assess(opts: AssessOptions): AssessLoop {
-	// The judge slot is an `AnyJudge`: route a panel through `panelShapeIssues`,
-	// a single judge through `judgeShapeIssues` (same rule sources the load gate
-	// re-checks for hand-rolled literals).
-	const issues = isPanel(opts.judge) ? panelShapeIssues(opts.judge) : judgeShapeIssues(opts.judge);
-	if (issues.length > 0) throw new Error(`assess(): ${issues[0]}`);
-	if (typeof opts.done !== "function") {
-		throw new Error("assess(): `done` must be a function deciding termination from the verdict");
-	}
-	if (typeof opts.feedForward !== "function") {
-		throw new Error("assess(): `feedForward` must be a function building the next producer arg");
-	}
+	assertShape("assess", assessShapeIssues(opts));
 	return {
 		kind: "assess",
 		judge: opts.judge,
@@ -228,6 +219,32 @@ export function assess(opts: AssessOptions): AssessLoop {
 		onCap: opts.onCap ?? "advance",
 		result: opts.result ?? "last",
 	};
+}
+
+/**
+ * Single rule source for the assess shape — mirrors `verifyShapeIssues`. Returns
+ * human-readable violations (empty = valid); `assess()` throws on the first via
+ * `assertShape`. Takes `unknown` ON PURPOSE (jiti-loaded literals erase TS
+ * types). `assess` was previously the only judge-bearing constructor without a
+ * rule source (inline `typeof` throws); this restores family uniformity so
+ * judge/assess/verify/panel each pair a `*ShapeIssues` source with `assertShape`.
+ * NOTE: the load gate (`validate/stage-rules.ts`) keeps its own per-code assess
+ * reporting (`assess-judge-shape`/`assess-done-not-function`/`assess-feed-forward-not-function`);
+ * it does NOT consume this source — adopting it would change the public issue-code
+ * surface (tests at `validate-workflow.test.ts:923,928` pin the current codes).
+ */
+export function assessShapeIssues(candidate: unknown): string[] {
+	if (!candidate || typeof candidate !== "object") return ["an assess object is required"];
+	const a = candidate as Partial<AssessOptions>;
+	const judgeIssues = a.judge && isPanel(a.judge) ? panelShapeIssues(a.judge) : judgeShapeIssues(a.judge);
+	const issues: string[] = [...judgeIssues];
+	if (typeof a.done !== "function") {
+		issues.push("`done` must be a function deciding termination from the verdict");
+	}
+	if (typeof a.feedForward !== "function") {
+		issues.push("`feedForward` must be a function building the next producer arg");
+	}
+	return issues;
 }
 
 /**
@@ -246,8 +263,7 @@ export function assess(opts: AssessOptions): AssessLoop {
  * pair-restore / per-attempt-snapshot / resume machinery rather than forking it.
  */
 export function verify(spec: VerifySpec): VerifySpec {
-	const issues = verifyShapeIssues(spec);
-	if (issues.length > 0) throw new Error(`verify(): ${issues[0]}`);
+	assertShape("verify", verifyShapeIssues(spec));
 	return spec;
 }
 
@@ -468,8 +484,7 @@ export interface PanelSpec {
  */
 export function panel(spec: PanelSpec): PanelJudge {
 	const candidate: PanelJudge = { kind: "panel", ...spec };
-	const issues = panelShapeIssues(candidate);
-	if (issues.length > 0) throw new Error(`panel(): ${issues[0]}`);
+	assertShape("panel", panelShapeIssues(candidate));
 	return candidate;
 }
 

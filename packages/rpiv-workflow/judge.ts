@@ -15,11 +15,14 @@
  * N judges with a vote fold. Keeping the termination predicate off `Judge`
  * is what makes the concept reusable across all three.
  *
- * Leaf module — type-only imports; safe on the runner-free `registration`
+ * Leaf module — value imports are limited to `internal-utils.ts` (the
+ * `readSymbol`/`markSymbol` leaf, which is itself runner-free); otherwise
+ * type-only. Safe on the runner-free `registration`
  * surface (siblings register built-ins without dragging the runner in).
  */
 
 import type { Artifact } from "./handle.js";
+import { markSymbol, readSymbol } from "./internal-utils.js";
 import type { Output, RunView } from "./output.js";
 import type { Outcome } from "./output-spec.js";
 
@@ -169,12 +172,12 @@ export function marksCanonicalFold(fold: FoldFn): boolean {
 
 /** The sugar constructor that produced `fold` (`majority`/`all`/`any`), or `undefined` for a raw author closure. */
 export function canonicalFoldName(fold: FoldFn): CanonicalFoldName | undefined {
-	return (fold as unknown as Record<symbol, CanonicalFoldName | undefined>)[CANONICAL_FOLD];
+	return readSymbol<CanonicalFoldName>(fold, CANONICAL_FOLD);
 }
 
 /** Attach the `CANONICAL_FOLD` brand (the sugar name) and return the fold — the ONE write site (sugar constructors). */
 export function brandCanonicalFold(name: CanonicalFoldName, fold: FoldFn): FoldFn {
-	(fold as unknown as Record<symbol, CanonicalFoldName>)[CANONICAL_FOLD] = name;
+	markSymbol(fold, CANONICAL_FOLD, name);
 	return fold;
 }
 
@@ -205,14 +208,27 @@ export function judgeShapeIssues(candidate: unknown): string[] {
 }
 
 /**
+ * THE collect-then-throw-first idiom — one named operation for the
+ * `*ShapeIssues(candidate)` → throw-on-first policy the judge/assess/verify/
+ * panel factories share. Throws `new Error(`${ctor}(): ${issues[0]}`)` iff the
+ * rule source found any violation; the remaining issues are deliberately
+ * discarded (one actionable error at the authoring site). The load gate
+ * (`validate/stage-rules.ts`) consumes the SAME rule sources via collect-and-
+ * report (it does NOT route through here — assertShape owns only the
+ * throw-first shape).
+ */
+export function assertShape(ctor: string, issues: string[]): void {
+	if (issues.length > 0) throw new Error(`${ctor}(): ${issues[0]}`);
+}
+
+/**
  * Promote a judge literal to a validated `Judge` — identity passthrough that
  * throws on an invalid shape, so a `judge(...)`-authored value is correct by
  * construction (cf. `defineRoute`). Composes into `assess({ judge: judge({...}) })`
  * today and `panel(judge({...}), judge({...}))` in the follow-up.
  */
 export function judge(spec: Judge): Judge {
-	const issues = judgeShapeIssues(spec);
-	if (issues.length > 0) throw new Error(`judge(): ${issues[0]}`);
+	assertShape("judge", judgeShapeIssues(spec));
 	return spec;
 }
 

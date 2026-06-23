@@ -87,6 +87,27 @@ export function globalSlot<T>(key: symbol, init: () => T): () => T {
 }
 
 /**
+ * Read a symbol-keyed property off a function object — the centralised
+ * alternative to sprinkling `obj as unknown as Record<symbol, T>` at every
+ * read site. Returns `undefined` when the symbol is unset. `globalSlot` is the
+ * twin for `globalThis`-anchored slots; this pair is for properties stored on
+ * plain function objects (the `READS_DATA` / `ROUTE_NOTE` / `CANONICAL_FOLD`
+ * family). One cast lives here so the domain modules read intent, not mechanics.
+ */
+export function readSymbol<T>(obj: object, sym: symbol): T | undefined {
+	return (obj as Record<symbol, T | undefined>)[sym];
+}
+
+/**
+ * Write a symbol-keyed property onto a function object — the centralised write
+ * twin of `readSymbol`. The domain modules' sugar constructors / factories call
+ * this instead of inlining the `as unknown as Record<symbol, T>` cast.
+ */
+export function markSymbol<T>(obj: object, sym: symbol, value: T): void {
+	(obj as Record<symbol, T>)[sym] = value;
+}
+
+/**
  * Register-providers / flush-on-demand lifecycle over global slots —
  * the shared structure behind `registerBuiltInsProvider`/`flushBuiltInProviders`
  * and their skill-contract twins, which were implemented twice near

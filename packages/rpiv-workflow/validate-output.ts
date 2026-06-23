@@ -77,11 +77,11 @@ export class SchemaTimeoutError extends Error {}
  */
 export interface RetryLoopHooks<T, H> {
 	/** Produce attempt `n` (0-based; 0 = the initial production). */
-	produce(attempt: number): Promise<{ ok: true; value: T } | { ok: false; halt: H }>;
+	produce(attempt: number): Promise<{ kind: "ok"; value: T } | { kind: "halt"; halt: H }>;
 	/** Validate one produced value. */
-	validate(value: T): Promise<{ ok: true; result: ValidationResult } | { ok: false; halt: H }>;
+	validate(value: T): Promise<{ kind: "ok"; result: ValidationResult } | { kind: "halt"; halt: H }>;
 	/** Between a failed validation and the next produce. `attempt` is 1-based. */
-	onRetry(attempt: number, failures: SchemaValidationFailure[]): Promise<{ ok: true } | { ok: false; halt: H }>;
+	onRetry(attempt: number, failures: SchemaValidationFailure[]): Promise<{ kind: "ok" } | { kind: "halt"; halt: H }>;
 }
 
 export type RetryLoopOutcome<T, H> =
@@ -103,9 +103,9 @@ export async function runValidationRetryLoop<T, H>(
 ): Promise<RetryLoopOutcome<T, H>> {
 	let attempt = 0;
 	let produced = await hooks.produce(attempt);
-	if (!produced.ok) return { kind: "halt", halt: produced.halt };
+	if (produced.kind !== "ok") return { kind: "halt", halt: produced.halt };
 	let validation = await hooks.validate(produced.value);
-	if (!validation.ok) return { kind: "halt", halt: validation.halt };
+	if (validation.kind !== "ok") return { kind: "halt", halt: validation.halt };
 
 	while (!validation.result.valid) {
 		if (policy.haltOnInvalid || attempt >= policy.maxRetries) {
@@ -113,11 +113,11 @@ export async function runValidationRetryLoop<T, H>(
 		}
 		attempt++;
 		const retried = await hooks.onRetry(attempt, validation.result.failures);
-		if (!retried.ok) return { kind: "halt", halt: retried.halt };
+		if (retried.kind !== "ok") return { kind: "halt", halt: retried.halt };
 		produced = await hooks.produce(attempt);
-		if (!produced.ok) return { kind: "halt", halt: produced.halt };
+		if (produced.kind !== "ok") return { kind: "halt", halt: produced.halt };
 		validation = await hooks.validate(produced.value);
-		if (!validation.ok) return { kind: "halt", halt: validation.halt };
+		if (validation.kind !== "ok") return { kind: "halt", halt: validation.halt };
 	}
 	return { kind: "ok", value: produced.value };
 }

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type AuditCtx, decorateStage, recordCancellation, recordTerminalFailure, unitRowFields } from "./audit.js";
 import { LifecycleDispatcher } from "./events.js";
-import { MSG_FAILURE_ROW_DROPPED } from "./messages.js";
+import { MSG_FAILURE_ROW_DROPPED, MSG_WORKFLOW_CANCELLED } from "./messages.js";
 import { readAllStages } from "./state/index.js";
 import type { RunState, UnitRef, WorkflowHostContext } from "./types.js";
 
@@ -159,6 +159,26 @@ describe("recordTerminalFailure", () => {
 			// The terminal bookkeeping still completes — error recorded, toast shown.
 			expect(state.termination.error).toBe("build failed");
 			expect(notifications).toContainEqual({ msg: "boom", level: "error" });
+		} finally {
+			warnSpy.mockRestore();
+		}
+	});
+
+	it("recordCancellation surfaces a dropped row (A3) — the guard now fires before terminate", () => {
+		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+		try {
+			const { ctx, notifications } = makeCtx();
+			const state = freshState();
+
+			recordCancellation(ctx, auditFor("/dev/null/impossible", state));
+
+			// A3: the dropped-row guard now fires for recordCancellation too (it
+			// was the only one of the three writers that skipped it).
+			expect(state.telemetry.droppedFailureRows).toEqual(["build"]);
+			expect(notifications).toContainEqual({ msg: MSG_FAILURE_ROW_DROPPED("build"), level: "warning" });
+			// The cancellation outcome still lands — the guard runs BEFORE terminate().
+			expect(state.termination.status).toBe("cancelled");
+			expect(notifications).toContainEqual({ msg: MSG_WORKFLOW_CANCELLED, level: "info" });
 		} finally {
 			warnSpy.mockRestore();
 		}

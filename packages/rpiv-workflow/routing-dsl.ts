@@ -6,6 +6,7 @@
  * EXECUTION lives in routing.ts — this module is authoring-surface only.
  */
 
+import { markSymbol, readSymbol } from "./internal-utils.js";
 import type { Output, RunView } from "./output.js";
 import type { NumericPredicate } from "./predicates.js";
 
@@ -67,12 +68,13 @@ export const READS_DATA: unique symbol = Symbol.for("rpiv.workflow.readsData");
  * declare an `outputSchema` — data-reading routes need a validated output
  * shape; state-only routes don't.
  *
- * Centralises the double-cast required to symbol-key into a function object
- * so consumers don't sprinkle `as unknown as Record<symbol, …>` at every
- * read site.
+ * Delegates the symbol-keyed read to `readSymbol` (`internal-utils.ts`) — the
+ * single home for the function-object symbol-access cast — so consumers read
+ * intent, not mechanics. The `READS_DATA`/`ROUTE_NOTE`/`CANONICAL_FOLD` family
+ * all route through the same `readSymbol`/`markSymbol` pair.
  */
 export function marksReadsData(fn: EdgeFn): boolean {
-	return Boolean((fn as unknown as Record<symbol, boolean>)[READS_DATA]);
+	return Boolean(readSymbol<boolean>(fn, READS_DATA));
 }
 
 /** Options for `defineRoute`. */
@@ -112,7 +114,7 @@ export function defineRoute(targets: readonly string[], fn: EdgePredicate, opts?
 	// must not inherit a marker a prior call attached.
 	const wrapped: EdgeFn = (ctx) => fn(ctx);
 	wrapped.targets = [...targets];
-	if (opts?.readsData !== false) (wrapped as unknown as Record<symbol, boolean>)[READS_DATA] = true;
+	if (opts?.readsData !== false) markSymbol(wrapped, READS_DATA, true);
 	return wrapped;
 }
 
@@ -134,9 +136,8 @@ export const ROUTE_NOTE: unique symbol = Symbol.for("rpiv.workflow.routeNote");
  * Returns undefined when the edge recorded nothing (the common case).
  */
 export function takeRouteNote(fn: EdgeFn): string | undefined {
-	const slot = fn as unknown as Record<symbol, string | undefined>;
-	const note = slot[ROUTE_NOTE];
-	if (note !== undefined) slot[ROUTE_NOTE] = undefined;
+	const note = readSymbol<string>(fn, ROUTE_NOTE);
+	if (note !== undefined) markSymbol(fn, ROUTE_NOTE, undefined);
 	return note;
 }
 
@@ -204,8 +205,7 @@ export function gate(field: string, branches: Record<string, NumericPredicate>, 
 		for (const target of branchTargets) {
 			if (branches[target]!(value)) return target;
 		}
-		(route as unknown as Record<symbol, string>)[ROUTE_NOTE] =
-			`gate("${field}"): no branch matched value ${value} — fell back to "${otherwise}"`;
+		markSymbol(route, ROUTE_NOTE, `gate("${field}"): no branch matched value ${value} — fell back to "${otherwise}"`);
 		return otherwise;
 	});
 	return route;
@@ -302,10 +302,13 @@ export function match(field: string, branches: Record<string, MatchValue>, opts?
 			for (const target of branchTargets) {
 				if (raw === branches[target]) return target;
 			}
-			(route as unknown as Record<symbol, string>)[ROUTE_NOTE] =
+			markSymbol(
+				route,
+				ROUTE_NOTE,
 				`match("${field}"): value ${JSON.stringify(raw ?? null)} matched no branch — ${
 					fallback ? `fell back to "${fallback}"` : `terminated (no fallback)`
-				}`;
+				}`,
+			);
 			return noMatch;
 		},
 		// A channel-sourced match validates the CHANNEL's data, not the source

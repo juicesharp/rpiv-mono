@@ -460,15 +460,22 @@ interface ActsPromptOptions<TIn = unknown> extends Pick<PromptStage<TIn, void>, 
 	sessionPolicy?: SessionPolicy;
 }
 
+/**
+ * THE stage-defaults authority — owns the load-bearing `as StageDef` cast (a
+ * `Partial<StageDef>` union can't be proven to complete a single arm, so the
+ * cast is required for the `Partial`-override factories; taming it here means
+ * callers don't repeat the concession) + the duplicated
+ * `{ kind, sessionPolicy: "fresh", ...overrides }` body. `producesFn`/`actsFn`
+ * differed only by the `kind` literal; this helper parameterizes it. The cast's
+ * load-bearingness is documented ONCE here, not on each twin (the old
+ * `producesFn:466-469` comment had no `actsFn` counterpart).
+ */
+function withDefaults(kind: "produces" | "side-effect", overrides: Partial<StageDef> = {}): StageDef {
+	return { kind, sessionPolicy: "fresh", ...overrides } as StageDef;
+}
+
 function producesFn(overrides: Partial<StageDef> = {}): StageDef {
-	// The cast is the factory's one concession: a `Partial` of a union can't be
-	// proven to complete a single arm. Call sites stay arm-checked (an object
-	// literal mixing dispatches fails before it reaches the spread).
-	return {
-		kind: "produces",
-		sessionPolicy: "fresh",
-		...overrides,
-	} as StageDef;
+	return withDefaults("produces", overrides);
 }
 
 function producesScript<TIn = unknown, TOut = unknown>(opts: ProducesScriptOptions<TIn, TOut>): StageDef<TIn, TOut> {
@@ -488,11 +495,7 @@ function producesPrompt<TIn = unknown, TOut = unknown>(opts: ProducesPromptOptio
 }
 
 function actsFn(overrides: Partial<StageDef> = {}): StageDef {
-	return {
-		kind: "side-effect",
-		sessionPolicy: "fresh",
-		...overrides,
-	} as StageDef;
+	return withDefaults("side-effect", overrides);
 }
 
 function actsPrompt<TIn = unknown>(opts: ActsPromptOptions<TIn>): StageDef<TIn, void> {
@@ -511,10 +514,15 @@ function actsScript<TIn = unknown>(opts: ActsScriptOptions<TIn>): StageDef<TIn, 
 	};
 }
 
+// A terminal stage = side-effect + inheritsArtifacts: false (see the `terminal()`
+// public doc). `terminalFn` (Partial path) and `terminalScript` (concrete-opts
+// path below) are the two realizations; both set the same marker.
 function terminalFn(overrides: Partial<StageDef> = {}): StageDef {
-	return actsFn({ ...overrides, inheritsArtifacts: false } as Partial<StageDef>);
+	return withDefaults("side-effect", { ...overrides, inheritsArtifacts: false });
 }
 
+// Concrete-opts twin of `terminalFn` above — both realize "side-effect +
+// inheritsArtifacts: false" via their respective paths (script vs Partial).
 function terminalScript<TIn = unknown>(opts: ActsScriptOptions<TIn>): StageDef<TIn, void> {
 	return actsScript({ ...opts, inheritsArtifacts: false });
 }
