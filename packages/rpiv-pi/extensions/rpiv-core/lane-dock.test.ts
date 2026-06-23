@@ -316,6 +316,42 @@ describe("LaneDock — live stage progress (Phase 8)", () => {
 		overlay.dispose();
 	});
 
+	it("the fraction is distinct-visited/total; a re-entered (looped) stage shows a ↻lap marker, not 'N of fewer'", () => {
+		// Cyclic walk: 7th activation in a 4-stage graph, only 3 distinct nodes visited.
+		recordRun("run-1", "ship");
+		setLaneProgress("run-1", {
+			stageNumber: 7,
+			totalStages: 4,
+			visited: 3,
+			stageName: "implement",
+			phase: "running",
+		});
+		const overlay = new LaneDock();
+		const { widget } = mount(overlay, makeCtx());
+		const out = (widget?.render(120) ?? []).join("\n");
+		expect(out).toContain("3/4"); // fraction never inverts — visited ≤ total
+		expect(out).not.toContain("7/4"); // the old misleading ordinal/graph fraction is gone
+		expect(out).toContain("↻7"); // path ordinal surfaced as a lap marker
+		overlay.dispose();
+	});
+
+	it("an acyclic walk (ordinal == visited) shows a clean fraction with no lap marker", () => {
+		recordRun("run-1", "ship");
+		setLaneProgress("run-1", {
+			stageNumber: 3,
+			totalStages: 4,
+			visited: 3,
+			stageName: "implement",
+			phase: "running",
+		});
+		const overlay = new LaneDock();
+		const { widget } = mount(overlay, makeCtx());
+		const out = (widget?.render(120) ?? []).join("\n");
+		expect(out).toContain("3/4");
+		expect(out).not.toContain("↻"); // no re-entry → no lap noise
+		overlay.dispose();
+	});
+
 	it("needs-input still wins the trailing label over live progress", () => {
 		recordRun("run-1", "ship");
 		setLaneProgress("run-1", { stageNumber: 3, totalStages: 7, stageName: "plan-layers", phase: "running" });

@@ -132,6 +132,7 @@ describe("lane-progress event mapping", () => {
 		expect(getLane("run-1")?.progress).toMatchObject({
 			stageNumber: 3,
 			totalStages: 7,
+			visited: 1, // first distinct stage entered on this run
 			stageName: "plan-layers",
 			phase: "running",
 		});
@@ -149,6 +150,23 @@ describe("lane-progress event mapping", () => {
 		recordRun("run-1", "ship");
 		b.onStageError?.({ stageNumber: 4, name: "synthesize" }, "boom", { runId: "run-1", totalStages: 7 });
 		expect(getLane("run-1")?.progress?.phase).toBe("error");
+	});
+
+	it("visited counts DISTINCT stages — a loop-back re-enters a stage without inflating the fraction numerator", async () => {
+		const b = await register();
+		recordRun("run-1", "ship");
+		const ctx = { runId: "run-1", totalStages: 4 };
+		// A→B→C then loop back to B: 4 activations, 3 distinct nodes.
+		b.onStageStart?.({ stageNumber: 1, name: "research" }, ctx);
+		b.onStageStart?.({ stageNumber: 2, name: "implement" }, ctx);
+		b.onStageStart?.({ stageNumber: 3, name: "review" }, ctx);
+		b.onStageStart?.({ stageNumber: 4, name: "implement" }, ctx); // re-entry — already visited
+		expect(getLane("run-1")?.progress).toMatchObject({
+			stageNumber: 4, // path ordinal keeps climbing
+			visited: 3, // distinct nodes — does NOT double-count "implement"
+			totalStages: 4,
+			stageName: "implement",
+		});
 	});
 
 	it("setLaneProgress no-ops on a non-recorded run (non-detached runs cost nothing)", async () => {

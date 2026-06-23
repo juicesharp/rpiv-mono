@@ -64,6 +64,14 @@ function formatAge(ms: number): string {
 const BAR_FILLED = "▰";
 const BAR_EMPTY = "▱";
 const BAR_MAX_CELLS = 7;
+/**
+ * Lap marker (`↻7`) for the path ordinal. `stageNumber` counts every activation
+ * incl. loop-backs, so it can exceed the distinct-stage fraction; shown ONLY when
+ * the walk has actually re-entered a stage (`stageNumber > visited`) so an acyclic
+ * run stays a clean `3/4` with no marker. Distinct from `RETRY_GLYPH` (same stage,
+ * retried) — this is the loop/re-entry counter.
+ */
+const LAP_MARK = "↻";
 /** Retry glyph (onStageRetry); running uses the spinner, error the failed glyph. */
 const RETRY_GLYPH = "⟲";
 
@@ -358,15 +366,22 @@ export class LaneDock {
 		// regardless of each workflow's stage count (a 5-stage and a 6-stage run must
 		// not shift the N/total column by a cell).
 		const cells = BAR_MAX_CELLS;
-		const ratio = progress.totalStages > 0 ? progress.stageNumber / progress.totalStages : 0;
+		// Fraction is DISTINCT-STAGES-VISITED / graph size — the only pair where the
+		// numerator can't exceed the denominator. `stageNumber` (the path ordinal) is
+		// NOT used here: dividing it by graph size produced the misleading "7/4".
+		const visited = progress.visited ?? Math.min(progress.stageNumber, progress.totalStages);
+		const ratio = progress.totalStages > 0 ? visited / progress.totalStages : 0;
 		const filled = Math.max(0, Math.min(cells, Math.round(ratio * cells)));
 		const filledStr = BAR_FILLED.repeat(filled);
 		const emptyStr = BAR_EMPTY.repeat(cells - filled);
 
 		// N/total is its OWN fixed-width column so stage names align across rows.
-		const numRaw = `${progress.stageNumber}/${progress.totalStages}`;
+		const numRaw = `${visited}/${progress.totalStages}`;
 		let nameRaw = progress.stageName;
 		if (progress.phase === "retry" && progress.attempt !== undefined) nameRaw += ` · retry ${progress.attempt}`;
+		// Lap marker: surface the path ordinal only once the walk has re-entered a
+		// stage, so it reads as "on lap 7 of this 4-stage flow", never as "7 of 4".
+		if (progress.stageNumber > visited) nameRaw += ` · ${LAP_MARK}${progress.stageNumber}`;
 		if (progress.units) nameRaw += ` · units ${progress.units.done}/${progress.units.total}`;
 
 		const barRaw = filledStr + emptyStr;

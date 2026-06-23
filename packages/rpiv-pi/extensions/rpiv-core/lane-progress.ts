@@ -31,7 +31,7 @@
 
 import type { ExtensionAPI, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import { isLaneRelayUiContext } from "./lane-relay-ui.js";
-import { getLane, retireRun, setLaneProgress } from "./run-lane-registry.js";
+import { getLane, noteVisitedStage, retireRun, setLaneProgress } from "./run-lane-registry.js";
 import { getCapturedUiContext } from "./session-capture.js";
 import { isModuleNotFound } from "./utils.js";
 
@@ -85,10 +85,14 @@ export async function registerLaneProgress(): Promise<void> {
 		// loader/DSL/runner graph off startup and avoids the barrel-import race.
 		const { registerLifecycle } = await import("@juicesharp/rpiv-workflow/startup");
 		g.dispose = registerLifecycle({
+			// `noteVisitedStage` is idempotent per stage name, so calling it from every
+			// per-stage event keeps `visited` (the distinct-nodes-visited fraction
+			// numerator) correct without inflating on a loop-back — see LaneProgress.
 			onStageStart: (stage, ctx) =>
 				setLaneProgress(ctx.runId, {
 					stageNumber: stage.stageNumber,
 					totalStages: ctx.totalStages,
+					visited: noteVisitedStage(ctx.runId, stage.name),
 					stageName: stage.name,
 					phase: "running",
 				}),
@@ -96,6 +100,7 @@ export async function registerLaneProgress(): Promise<void> {
 				setLaneProgress(ctx.runId, {
 					stageNumber: stage.stageNumber,
 					totalStages: ctx.totalStages,
+					visited: noteVisitedStage(ctx.runId, stage.name),
 					stageName: stage.name,
 					phase: "retry",
 					attempt,
@@ -104,6 +109,7 @@ export async function registerLaneProgress(): Promise<void> {
 				setLaneProgress(ctx.runId, {
 					stageNumber: stage.stageNumber,
 					totalStages: ctx.totalStages,
+					visited: noteVisitedStage(ctx.runId, stage.name),
 					stageName: stage.name,
 					phase: "error",
 				}),
@@ -111,6 +117,7 @@ export async function registerLaneProgress(): Promise<void> {
 				setLaneProgress(ctx.runId, {
 					stageNumber: stage.stageNumber,
 					totalStages: ctx.totalStages,
+					visited: noteVisitedStage(ctx.runId, stage.name),
 					stageName: stage.name,
 					phase: "running",
 					// Fanout precomputes its unit list; pull loops (iterate/assess) discover
@@ -123,6 +130,7 @@ export async function registerLaneProgress(): Promise<void> {
 				setLaneProgress(ctx.runId, {
 					stageNumber: stage.stageNumber,
 					totalStages: ctx.totalStages,
+					visited: noteVisitedStage(ctx.runId, stage.name),
 					stageName: stage.name,
 					phase: "running",
 					units: { done: unit.index + 1, total },

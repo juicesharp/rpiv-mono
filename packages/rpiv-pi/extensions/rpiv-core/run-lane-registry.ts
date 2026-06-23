@@ -27,9 +27,15 @@ export type LaneStatus = "running" | "completed" | "failed" | "aborted" | "cance
 export interface LaneSession {
 	readonly sessionId: string;
 	readonly isStreaming: boolean;
-	/** In-memory branch (always current); the viewer renders this. Typed `unknown`
-	 *  — the viewer narrows via rpiv-workflow's BranchEntry shape. */
-	readonly sessionManager: { getBranch(): unknown };
+	/** In-memory branch (always current) + the cwd tool renderers resolve paths against.
+	 *  `getBranch()` is typed `unknown` — the viewer narrows via rpiv-workflow's
+	 *  BranchEntry shape; `getCwd()` is concrete (a plain string). */
+	readonly sessionManager: { getBranch(): unknown; getCwd(): string };
+	/** Per-tool renderer lookup for the viewer's ToolExecutionComponent pass. Typed
+	 *  `unknown` — the viewer narrows to the SDK's ToolDefinition at the call site so
+	 *  the registry stays free of an SDK value/type import. Returns undefined when the
+	 *  tool isn't registered (the component falls back to a generic renderer). */
+	getToolDefinition(name: string): unknown;
 	/** Fires on every streaming tick; the viewer re-renders on it. Returns unsub. */
 	subscribe(listener: () => void): () => void;
 }
@@ -58,8 +64,22 @@ export interface PendingInput {
  * `streaming…` label. Absent (undefined) before the first stage starts.
  */
 export interface LaneProgress {
+	/**
+	 * Path ordinal — the count of stage ACTIVATIONS along the executed walk
+	 * (`idx + 1`), so it climbs on every loop-back / re-entry and is unbounded by
+	 * graph size. This is the "lap" number (`↻7`), NOT a fraction numerator: it is
+	 * incommensurable with `totalStages` (distance travelled vs. map size).
+	 */
 	stageNumber: number;
+	/** Distinct reachable stage NODES in the workflow graph (static, BFS at launch). */
 	totalStages: number;
+	/**
+	 * Distinct stage nodes VISITED so far (≤ totalStages) — the one quantity for
+	 * which `visited/totalStages ≤ 1` holds, so it (not `stageNumber`) is the
+	 * progress-fraction numerator. Undefined for snapshots built outside the
+	 * lifecycle bridge; the renderer falls back to `min(stageNumber, totalStages)`.
+	 */
+	visited?: number;
 	stageName: string;
 	/** Glyph selector: running spinner · ⟲ retry · ✗ error. */
 	phase: "running" | "retry" | "error";
@@ -83,11 +103,32 @@ export interface LaneEntry {
 	/** Live stage progress (Phase 8); undefined until the first onStageStart. */
 	progress: LaneProgress | undefined;
 	/**
+	 * Distinct stage names entered over this run's life — the accumulator behind
+	 * `LaneProgress.visited`. Lives on the entry (not the per-event progress
+	 * snapshot, which the bridge rebuilds wholesale) so a cyclic walk that revisits
+	 * a stage never inflates the count. Retained across a same-session resume
+	 * (those stages WERE visited); only a launcher restart resets it, which resets
+	 * the whole lane anyway. Lazily created by `noteVisitedStage`.
+	 */
+	visitedStages?: Set<string>;
+	/**
 	 * Transcript snapshot captured at retirement (Phase A) — the live session is
 	 * dropped when a run terminates, so the viewer renders this for a finished
 	 * (retained-but-not-yet-dismissed) lane. Typed `unknown`; the viewer narrows.
 	 */
 	finalBranch?: unknown;
+	/**
+	 * cwd captured at retirement (Phase 4) — the viewer's tool-result renderers resolve
+	 * relative paths against it on the snapshot, where the live session's getCwd is gone.
+	 */
+	finalCwd?: string;
+	/**
+	 * Tool definitions for the tool names present in `finalBranch`, snapshotted at
+	 * retirement (Phase 4) so the viewer's ToolExecutionComponent pass keeps per-tool
+	 * rendering (diffs, file reads, …) after the live session — the only
+	 * getToolDefinition source — is dropped. Values typed `unknown`; the viewer narrows.
+	 */
+	finalToolDefs?: Map<string, unknown>;
 	/**
 	 * When this lane first started waiting on a deferred foreground question
 	 * (Phase C) — `Date.now()` at the 0→≥1 pendingInput transition, cleared when
@@ -219,16 +260,49 @@ export function recordRun(runId: string, name: string): void {
  * clears the needs-input clock. The lane lives until the user dismisses it
  * (`evictRun`, via the manager's `x`) or a session reset.
  */
+/**
+ * Snapshot the tool definition of every assistant `toolCall` name in a captured branch
+ * while the session is still alive, so the retired-lane viewer keeps per-tool rendering
+ * after getToolDefinition (a live-session-only API) is gone. This is the one spot the
+ * registry peeks at branch shape — a deliberate, contained narrowing that mirrors the
+ * viewer's ViewerEntry; fail-soft per tool (a missing def degrades to the fallback).
+ */
+function snapshotToolDefs(branch: unknown, session: LaneSession): Map<string, unknown> {
+	const defs = new Map<string, unknown>();
+	if (!Array.isArray(branch)) return defs;
+	for (const e of branch as Array<{ message?: { content?: Array<{ type?: string; name?: string }> } }>) {
+		const content = e?.message?.content;
+		if (!Array.isArray(content)) continue;
+		for (const c of content) {
+			if (c?.type === "toolCall" && typeof c.name === "string" && !defs.has(c.name)) {
+				try {
+					defs.set(c.name, session.getToolDefinition(c.name));
+				} catch {
+					// tool unregistered / session disposed — skip; viewer falls back
+				}
+			}
+		}
+	}
+	return defs;
+}
+
 export function retireRun(runId: string, status: Exclude<LaneStatus, "running">): void {
 	const entry = state().lanes.get(runId);
 	if (!entry) return;
 	entry.status = status;
-	// Snapshot the transcript before dropping the live session — fail-soft: a
-	// disposed/odd session just yields no snapshot (viewer shows "unavailable").
+	// Snapshot the transcript + the render inputs (cwd, per-tool definitions) before
+	// dropping the live session — fail-soft: a disposed/odd session just yields no
+	// snapshot (viewer shows "unavailable").
 	try {
-		entry.finalBranch = entry.currentSession?.sessionManager.getBranch();
+		const sess = entry.currentSession;
+		const branch = sess?.sessionManager.getBranch();
+		entry.finalBranch = branch;
+		entry.finalCwd = sess?.sessionManager.getCwd();
+		entry.finalToolDefs = sess ? snapshotToolDefs(branch, sess) : undefined;
 	} catch {
 		entry.finalBranch = undefined;
+		entry.finalCwd = undefined;
+		entry.finalToolDefs = undefined;
 	}
 	entry.currentSession = undefined;
 	entry.needsInputSince = undefined;
@@ -272,6 +346,23 @@ export function setLaneProgress(runId: string, progress: LaneProgress | undefine
 	if (!entry) return;
 	entry.progress = progress;
 	notify();
+}
+
+/**
+ * Record a stage entry and return the running count of DISTINCT stages visited
+ * for this run — the `LaneProgress.visited` numerator. Idempotent per stage name
+ * (a `Set`), so the bridge can call it from every per-stage event (start, retry,
+ * unit-end) and always read back the correct distinct count without inflating it
+ * on a loop-back. Returns 0 for a missing/evicted run (best-effort, like
+ * `setLaneProgress`). Does NOT `notify()` — the paired `setLaneProgress` does.
+ */
+export function noteVisitedStage(runId: string, stageName: string): number {
+	const entry = state().lanes.get(runId);
+	if (!entry) return 0;
+	const visited = entry.visitedStages ?? new Set<string>();
+	visited.add(stageName);
+	entry.visitedStages = visited;
+	return visited.size;
 }
 
 /** Enqueue a deferred foreground-stage UI request (FR5, Slice 7). Stamps the

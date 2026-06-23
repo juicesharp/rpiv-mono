@@ -33,7 +33,8 @@ function makeSession(getBranch: BranchFn): LaneSession & { fire: () => void; uns
 	return {
 		sessionId: "sess-1",
 		isStreaming: true,
-		sessionManager: { getBranch },
+		sessionManager: { getBranch, getCwd: () => "/tmp" },
+		getToolDefinition: () => undefined,
 		subscribe: (l: () => void) => {
 			listener = l;
 			return unsub;
@@ -54,6 +55,20 @@ const userEntry = (text: string) => ({
 const toolResultEntry = () => ({
 	type: "message",
 	message: { role: "user", content: [{ type: "tool_result" }] },
+});
+const assistantToolCallEntry = (id: string, name: string, args: Record<string, unknown> = {}) => ({
+	type: "message",
+	message: { role: "assistant", content: [{ type: "toolCall", id, name, arguments: args }] },
+});
+const toolResultMessageEntry = (toolCallId: string, text: string) => ({
+	type: "message",
+	message: {
+		role: "toolResult",
+		toolCallId,
+		toolName: "bash",
+		isError: false,
+		content: [{ type: "text", text }],
+	},
 });
 
 // The SDK message components read a module-global theme proxy that throws until
@@ -91,6 +106,76 @@ describe("LaneViewer — render", () => {
 		viewer.dispose();
 	});
 
+	it("pairs a toolCall with its toolResult and renders the output (not the dim collapse)", () => {
+		const session = makeSession(() => [
+			assistantToolCallEntry("call-1", "bash", { command: "echo hi" }),
+			toolResultMessageEntry("call-1", "TOOL_OUTPUT_MARKER"),
+		]);
+		recordRun("run-1", "ship");
+		setCurrentSession("run-1", session);
+		const viewer = new LaneViewer("run-1", makeTui(), identityTheme, vi.fn());
+		const out = viewer.render(120).join("\n");
+		expect(out).toContain("TOOL_OUTPUT_MARKER"); // result folded into the ToolExecutionComponent
+		expect(out).not.toContain("└ tool result"); // no longer collapsed
+		viewer.dispose();
+	});
+
+	it("renders a bashExecution entry's command + output", () => {
+		const session = makeSession(() => [
+			{
+				type: "message",
+				message: {
+					role: "bashExecution",
+					command: "echo hi",
+					output: "BASH_STDOUT_MARKER",
+					exitCode: 0,
+					cancelled: false,
+				},
+			},
+		]);
+		recordRun("run-1", "ship");
+		setCurrentSession("run-1", session);
+		const viewer = new LaneViewer("run-1", makeTui(), identityTheme, vi.fn());
+		const out = viewer.render(120).join("\n");
+		expect(out).toContain("BASH_STDOUT_MARKER");
+		expect(out).not.toContain("· bashExecution"); // not the dim fallback
+		viewer.dispose();
+	});
+
+	it("renders a displayed custom message but skips display:false", () => {
+		const shown = makeSession(() => [
+			{ type: "message", message: { role: "custom", customType: "note", content: "CUSTOM_SHOWN", display: true } },
+		]);
+		recordRun("run-1", "ship");
+		setCurrentSession("run-1", shown);
+		const v1 = new LaneViewer("run-1", makeTui(), identityTheme, vi.fn());
+		expect(v1.render(120).join("\n")).toContain("CUSTOM_SHOWN");
+		v1.dispose();
+
+		__resetRunLaneRegistry();
+		const hidden = makeSession(() => [
+			{ type: "message", message: { role: "custom", customType: "note", content: "CUSTOM_HIDDEN", display: false } },
+		]);
+		recordRun("run-2", "ship");
+		setCurrentSession("run-2", hidden);
+		const v2 = new LaneViewer("run-2", makeTui(), identityTheme, vi.fn());
+		expect(v2.render(120).join("\n")).not.toContain("CUSTOM_HIDDEN");
+		v2.dispose();
+	});
+
+	it("renders a compactionSummary entry via its SDK component (collapsed header), not the dim fallback", () => {
+		const session = makeSession(() => [
+			{ type: "message", message: { role: "compactionSummary", summary: "COMPACTED_MARKER", tokensBefore: 1234 } },
+		]);
+		recordRun("run-1", "ship");
+		setCurrentSession("run-1", session);
+		const viewer = new LaneViewer("run-1", makeTui(), identityTheme, vi.fn());
+		const out = viewer.render(120).join("\n");
+		expect(out).toContain("compaction"); // SDK component's collapsed label (summary shown only when expanded)
+		expect(out).not.toContain("· compactionSummary"); // not the dim fallback
+		viewer.dispose();
+	});
+
 	it("retired lane renders the finalBranch snapshot + a terminal-status header (Phase A)", () => {
 		const session = makeSession(() => [assistantEntry("final answer from the run")]);
 		recordRun("run-1", "ship");
@@ -101,6 +186,21 @@ describe("LaneViewer — render", () => {
 		expect(out).toContain("final answer from the run"); // from the snapshot, not a live session
 		expect(out).toContain("completed"); // header reflects terminal status, not "live"
 		expect(out).toContain("✓");
+		viewer.dispose();
+	});
+
+	it("retired lane still pairs toolCall + toolResult from the snapshot (Phase 4)", () => {
+		const session = makeSession(() => [
+			assistantToolCallEntry("call-1", "bash", { command: "echo hi" }),
+			toolResultMessageEntry("call-1", "SNAPSHOT_TOOL_OUTPUT"),
+		]);
+		recordRun("run-1", "ship");
+		setCurrentSession("run-1", session);
+		retireRun("run-1", "completed"); // drops the session; cwd + tool defs were snapshotted
+		const viewer = new LaneViewer("run-1", makeTui(), identityTheme, vi.fn());
+		const out = viewer.render(120).join("\n");
+		expect(out).toContain("SNAPSHOT_TOOL_OUTPUT"); // tool result still folded in post-retirement
+		expect(out).not.toContain("└ tool result"); // not the dim collapse
 		viewer.dispose();
 	});
 
@@ -134,6 +234,34 @@ describe("LaneViewer — render", () => {
 		enqueueInput("run-1", { factory: (() => ({})) as never, options: undefined as never, resolve: vi.fn() });
 		const viewer = new LaneViewer("run-1", makeTui(), identityTheme, vi.fn());
 		expect(viewer.render(120).join("\n")).toContain("esc to answer");
+		viewer.dispose();
+	});
+
+	it("`t` toggles expanded state — footer hint flips and collapsed-only content reveals", () => {
+		const session = makeSession(() => [
+			{
+				type: "message",
+				message: { role: "compactionSummary", summary: "EXPANDED_ONLY_SUMMARY", tokensBefore: 1234 },
+			},
+		]);
+		recordRun("run-1", "ship");
+		setCurrentSession("run-1", session);
+		const viewer = new LaneViewer("run-1", makeTui(), identityTheme, vi.fn());
+
+		// Collapsed by default: footer advertises "t expand"; the summary body is hidden.
+		const collapsed = viewer.render(120).join("\n");
+		expect(collapsed).toContain("t expand");
+		expect(collapsed).not.toContain("EXPANDED_ONLY_SUMMARY");
+
+		// Press `t` → expanded: footer flips and the summary body is revealed.
+		viewer.handleInput("t");
+		const expanded = viewer.render(120).join("\n");
+		expect(expanded).toContain("t collapse");
+		expect(expanded).toContain("EXPANDED_ONLY_SUMMARY");
+
+		// Press `t` again → back to collapsed.
+		viewer.handleInput("t");
+		expect(viewer.render(120).join("\n")).toContain("t expand");
 		viewer.dispose();
 	});
 

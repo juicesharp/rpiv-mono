@@ -13,6 +13,7 @@ import {
 	listLanes,
 	listLanesForDisplay,
 	moveDockSelection,
+	noteVisitedStage,
 	type PendingInput,
 	recordRun,
 	retireRun,
@@ -32,7 +33,8 @@ function makeSession(sessionId: string): LaneSession {
 	return {
 		sessionId,
 		isStreaming: false,
-		sessionManager: { getBranch: () => [] },
+		sessionManager: { getBranch: () => [], getCwd: () => "/tmp" },
+		getToolDefinition: () => undefined,
 		subscribe: () => () => {},
 	};
 }
@@ -80,7 +82,10 @@ describe("run-lane-registry", () => {
 				stageName: "build",
 				phase: "running",
 			});
-			setCurrentSession("run-1", { ...makeSession("s1"), sessionManager: { getBranch: () => [{ type: "x" }] } });
+			setCurrentSession("run-1", {
+				...makeSession("s1"),
+				sessionManager: { getBranch: () => [{ type: "x" }], getCwd: () => "/tmp" },
+			});
 			retireRun("run-1", "failed"); // → status "failed", finalBranch captured
 			expect(getLane("run-1")?.status).toBe("failed");
 			expect(getLane("run-1")?.finalBranch).toBeDefined();
@@ -122,7 +127,10 @@ describe("run-lane-registry", () => {
 		it("retains the lane with terminal status, snapshots the branch, clears the session, settles pending", () => {
 			recordRun("run-1", "ship");
 			const branch = [{ type: "message" }];
-			setCurrentSession("run-1", { ...makeSession("s1"), sessionManager: { getBranch: () => branch } });
+			setCurrentSession("run-1", {
+				...makeSession("s1"),
+				sessionManager: { getBranch: () => branch, getCwd: () => "/tmp" },
+			});
 			const p = makePending();
 			enqueueInput("run-1", p);
 			retireRun("run-1", "completed");
@@ -135,6 +143,27 @@ describe("run-lane-registry", () => {
 			expect(p.resolve).toHaveBeenCalledWith(undefined); // stalled child never hangs
 		});
 
+		it("snapshots cwd + per-tool definitions for the toolCall names in the branch (Phase 4)", () => {
+			recordRun("run-1", "ship");
+			const branch = [
+				{ type: "message", message: { role: "assistant", content: [{ type: "toolCall", name: "bash" }] } },
+				{ type: "message", message: { role: "assistant", content: [{ type: "toolCall", name: "edit" }] } },
+			];
+			const getToolDefinition = vi.fn((name: string) => ({ name, label: `def:${name}` }));
+			setCurrentSession("run-1", {
+				...makeSession("s1"),
+				sessionManager: { getBranch: () => branch, getCwd: () => "/work/dir" },
+				getToolDefinition,
+			});
+			retireRun("run-1", "completed");
+			const lane = getLane("run-1");
+			expect(lane?.finalCwd).toBe("/work/dir");
+			expect(lane?.finalToolDefs?.get("bash")).toEqual({ name: "bash", label: "def:bash" });
+			expect(lane?.finalToolDefs?.get("edit")).toEqual({ name: "edit", label: "def:edit" });
+			// Each distinct tool name resolved exactly once.
+			expect(getToolDefinition).toHaveBeenCalledTimes(2);
+		});
+
 		it("fail-soft when getBranch throws — leaves finalBranch undefined, still retires", () => {
 			recordRun("run-1", "ship");
 			setCurrentSession("run-1", {
@@ -143,6 +172,7 @@ describe("run-lane-registry", () => {
 					getBranch: () => {
 						throw new Error("disposed");
 					},
+					getCwd: () => "/tmp",
 				},
 			});
 			expect(() => retireRun("run-1", "failed")).not.toThrow();
@@ -277,6 +307,28 @@ describe("run-lane-registry", () => {
 			).not.toThrow();
 			expect(listener).not.toHaveBeenCalled();
 			expect(getLane("nope")).toBeUndefined();
+		});
+	});
+
+	describe("noteVisitedStage", () => {
+		it("returns the running count of DISTINCT stage names (a repeat does not inflate it)", () => {
+			recordRun("run-1", "ship");
+			expect(noteVisitedStage("run-1", "research")).toBe(1);
+			expect(noteVisitedStage("run-1", "implement")).toBe(2);
+			expect(noteVisitedStage("run-1", "review")).toBe(3);
+			expect(noteVisitedStage("run-1", "implement")).toBe(3); // loop-back — already counted
+		});
+
+		it("does not notify (the paired setLaneProgress owns the redraw)", () => {
+			recordRun("run-1", "ship");
+			const listener = vi.fn();
+			subscribeLanes(listener);
+			noteVisitedStage("run-1", "research");
+			expect(listener).not.toHaveBeenCalled();
+		});
+
+		it("returns 0 for a missing/evicted run", () => {
+			expect(noteVisitedStage("ghost", "x")).toBe(0);
 		});
 	});
 
