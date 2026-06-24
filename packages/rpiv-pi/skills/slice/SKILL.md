@@ -1,8 +1,7 @@
 ---
 name: slice
-description: Decompose a research artifact (or a free-text brief) into independent vertical slices — each a self-contained, separately-designable unit — and write a slice map to .rpiv/artifacts/slices/ with a machine-readable `slices:` frontmatter array. Single-pass, no inner review; asks the user only when a decomposition choice is genuinely ambiguous. Feeds a per-slice design fanout. Use to break a feature into parallelizable slices before designing.
+description: Decompose a research artifact (or a free-text brief) into independent vertical slices — each a self-contained, separately-designable unit — and write a slice map to .rpiv/artifacts/slices/ with a machine-readable `slices:` frontmatter array. Runs a lightweight codebase research sweep when no research artifact is provided, then confirms the decomposition with you before writing. Feeds a per-slice design fanout. Use to break a feature into parallelizable slices before designing.
 argument-hint: "[research-path | free-text brief]"
-allowed-tools: Read, Grep, Glob, Write
 shell-timeout: 10
 contract:
   produces:
@@ -41,7 +40,7 @@ contract:
 
 # Slice
 
-You decompose a feature into **independent vertical slices** and write a slice map. One pass. You do **not** design, plan phases, write implementation steps, or self-review — the workflow's grade panel judges your output. You **may** ask the user when a slicing decision is genuinely ambiguous.
+You decompose a feature into **independent vertical slices** and write a slice map. You do **not** design, plan phases, write implementation steps, or self-review — `design-slice` fills each slice in next. When no research artifact is provided, you ground the cut with a quick codebase sweep first; you confirm the decomposition with the developer before writing.
 
 ## Input
 
@@ -53,6 +52,10 @@ You decompose a feature into **independent vertical slices** and write a slice m
 node "${SKILL_DIR}/../_shared/now.mjs"
 echo
 node "${SKILL_DIR}/../_shared/git-context.mjs"
+echo
+echo "### recent (read only in case of empty user input)"
+echo "recent research:"
+node "${SKILL_DIR}/../_shared/list-recent.mjs" .rpiv/artifacts/research 4
 ```
 
 Copy values verbatim — do not reformat the timezone offset. `<iso>` is the first tab-separated field on line 1; `<slug>` is the second.
@@ -66,16 +69,19 @@ A vertical slice is a coherent, independently-buildable capability that cuts thr
 - **Right-sized** — roughly one focused design pass each. Aim for **2–8**; hard cap **32**.
 - **Honest about dependencies** — when slice B genuinely needs slice A first, record it in `deps`. Keep real deps rare; if everything depends on everything, the cut is wrong.
 
+## Flow
+
+1. Input → 2. Research (only if none provided) → 3. Decompose → 4. Resolve ambiguity → 5. Confirm → 6. Write → 7. Summary
+
 ## Steps
 
-1. **Read the research/brief fully** (no limit/offset).
-2. **Identify the capabilities** the work delivers, then group them into independent vertical slices. Prefer fewer cohesive slices over many tiny ones.
-3. **Resolve ambiguity:**
-   - Settle it from the research wherever you can.
-   - When a genuine decomposition fork remains (e.g. "combine auth + session into one slice, or split them?") **and it cannot be settled from the research**, use `ask_user_question` with 2–4 concrete options. **One question at a time**, wait for the answer. This is your **only** interactive surface.
-   - Do **not** ask the user to confirm or approve your finished slice map — that is the grade panel's job, not a checkpoint.
-4. **Write the slice map** (below) with `status: ready`.
-5. **Print the path**, then a one-line summary: `<N> slices: <comma-separated titles>`.
+1. **Input.** Given a research path: read it FULLY (no limit/offset) and read the key source files it cites — these are your grounding. No argument: pick from the `recent research:` listing (ask). Plain free-text: treat it as the topic for Step 2.
+2. **Research — only when no research artifact was provided (parallel agents).** A quick DEPTH sweep, not discovery. Spawn in parallel with the Agent tool: `codebase-pattern-finder` (the shape to model) and `integration-scanner` (wiring + the natural slice seams); add `precedent-locator` for risky surfaces (auth, migrations, schema, hot paths) and `web-search-researcher` for external APIs/SDKs. Read the key files they surface. Wait for ALL agents before proceeding. Skip this step entirely when a research artifact already gave you the grounding.
+3. **Decompose.** Identify the capabilities the work delivers, then group them into independent vertical slices — prefer fewer cohesive slices over many tiny ones. Every slice's `Draws on:` cites a real `file:line` from Step 1/2.
+4. **Resolve ambiguity.** Settle from the research/code wherever you can. When a genuine decomposition fork remains (e.g. "combine auth + session into one slice, or split them?"), use `ask_user_question` with 2–4 concrete options — **one at a time**, wait for the answer.
+5. **Confirm the decomposition.** Once, before writing: `ask_user_question` — "{N} slices for {topic}. Slice 1: {name}. Slices 2–N: {brief}. Approve?". Header "Slices". Options: "Approve (Recommended)" (write the map); "Adjust slices" (reorder/merge/split); "Change scope" (add/remove). Apply the answer, then write.
+6. **Write the slice map** (below) with `status: ready`.
+7. **Print the path**, then a one-line summary: `<N> slices: <comma-separated titles>`.
 
 ## Output document
 
@@ -119,4 +125,5 @@ tags: [slices]
 
 - Exactly one `## Slice N:` heading per `slices:` entry; `slice_count` == array length == heading count. Number `n` contiguously `1..N`.
 - **Scope boundaries, not designs.** No architecture decisions, no file maps, no implementation steps — `design-slice` fills each slice in next.
-- **No subagents. No self-review.** Ask only to resolve a genuine slicing fork; otherwise decide and write.
+- **Subagents only for Step 2**, and only when no research artifact was provided; no self-review.
+- **Read input before agents; wait for all agents; confirm the decomposition before writing.**

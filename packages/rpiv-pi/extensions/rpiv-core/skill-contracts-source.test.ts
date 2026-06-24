@@ -216,8 +216,8 @@ describe("bundled skill contracts", () => {
 	// dropped, or fails to parse (a malformed block is silently skipped).
 	const declared = new Map(buildSkillContractsFromFrontmatter(BUNDLED_SKILLS_DIR));
 
-	it("declares a contract for the 25 pipeline + orthogonal skills", () => {
-		expect(declared.size).toBe(25);
+	it("declares a contract for the 26 pipeline + orthogonal skills", () => {
+		expect(declared.size).toBe(26);
 		for (const name of [
 			"discover",
 			"research",
@@ -242,6 +242,7 @@ describe("bundled skill contracts", () => {
 			"slice",
 			"design-slice",
 			"synthesize",
+			"elaborate",
 			"grade",
 			"refine",
 		]) {
@@ -267,9 +268,9 @@ describe("bundled skill contracts", () => {
 
 	it("documents the declared-but-not-harvested orthogonal set", () => {
 		// These skills declare a contract but don't appear in any built-in workflow.
-		// The orthogonal set: 7 doc/util + 5 slice-flow (slice/design-slice/
-		// synthesize/grade/refine, used by the ship-slice project pack, not a
-		// built-in) + discover + explore + commit = 15 skills.
+		// The orthogonal set: 7 doc/util + 6 slice-flow (slice/design-slice/
+		// synthesize/elaborate/grade/refine, used by the ship-slice project pack,
+		// not a built-in) + discover + explore + commit = 16 skills.
 		// (pr-triage IS harvested — it's dispatched by the pr-triage workflow.)
 		const harvested = harvestStageContracts(builtInWorkflows);
 		const notHarvested: string[] = [];
@@ -285,6 +286,7 @@ describe("bundled skill contracts", () => {
 				"create-handoff",
 				"design-slice",
 				"discover",
+				"elaborate",
 				"explore",
 				"frontend-design",
 				"grade",
