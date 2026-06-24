@@ -28,14 +28,14 @@ The input above is `<plan-path> [phase]`:
 - Anything after it (e.g. "Phase 2") names a single phase to scope to.
 
 Rules:
-- If a phase is named, implement ONLY that phase. Stop and print the closing block as soon as its success criteria pass. Do not read, edit, or check off other phases' sections.
-- If no phase is named, implement every phase in the plan sequentially.
+- If a phase is named → **single-phase (fan-out lane) mode.** The named phase is a self-contained unit. The other phases are running **concurrently in sibling lanes and are NOT guaranteed done** — never implement them, never check them off, never wait on them. Implement ONLY the named phase. Do not read, edit, or check off other phases' sections. Stop and print the closing block as soon as the named phase's own success criteria pass.
+- If no phase is named → **sequential full-plan mode:** implement every phase in the plan sequentially.
 - If the input is empty or the plan path is missing/literal, ask the user for the plan path before proceeding.
 
 ## Getting Started
 
 With a plan path in hand:
-- Read the plan completely and check for any existing checkmarks (- [x])
+- Read the plan completely for context (overview, ordering constraints, other phases' file changes yours may build on). In **single-phase mode**, do **not** scan for checkmarks as a resume signal: any `- [x]` outside the named phase is a sibling lane's in-flight progress, not prior-completed work. Checkmarks only matter within the named phase's own section.
 - Read the original ticket and all files mentioned in the plan
 - **Read files fully** - never use limit/offset parameters, you need complete context
 - Think deeply about how the pieces fit together
@@ -46,9 +46,9 @@ With a plan path in hand:
 
 Plans are carefully designed, but reality can be messy. Your job is to:
 - Follow the plan's intent while adapting to what you find
-- Implement each in-scope phase fully before starting the next
+- In sequential full-plan mode, implement each phase fully before starting the next. In **single-phase mode** there is no "next" — you implement only the named phase (its prior phases run concurrently in other lanes and are not guaranteed done)
 - Verify your work makes sense in the broader codebase context
-- Update checkboxes in the plan as you complete sections
+- Update checkboxes in the plan as you complete sections — in **single-phase mode**, only within the named phase's own section; never touch another phase's `- [ ]` / `- [x]`
 
 When things don't match the plan exactly, think about why and communicate clearly. The plan is your guide, but your judgment matters too.
 
@@ -68,11 +68,12 @@ If you encounter a mismatch:
 ## Verification Approach
 
 After implementing a phase:
-- Run the success criteria checks (usually `make check test` covers everything)
+- **Sequential full-plan mode:** run the success criteria checks (usually `make check test` covers everything).
+- **Single-phase mode:** run **only the commands under the named phase's own `#### Automated Verification:` block** — and flip exactly those `- [ ]` → `- [x]`. Do **not** gate completion on the whole `make check test` / full-test suite: that runs sibling phases' not-yet-present code and is the downstream `validate` stage's job (whole-plan / cross-phase validation), not implement's.
 - Fix any issues before proceeding
 - Update your progress in both the plan and your todos
 - Check off completed items in the plan file itself using Edit
-- If the input scopes you to a single phase, stop immediately after that phase's checks pass — do not advance to other phases
+- If the input scopes you to a single phase, stop immediately after the named phase's own checks pass — do not advance to other phases
 
 Don't let verification interrupt your flow - batch it at natural stopping points.
 
@@ -87,10 +88,12 @@ Use skills sparingly - mainly for targeted debugging or exploring unfamiliar ter
 
 ## Resuming Work
 
-If the plan has existing checkmarks:
+These resume heuristics assume **sequential** accumulation and apply to **sequential full-plan mode** only:
 - Trust that completed work is done
 - Pick up from the first unchecked item
 - Verify previous work only if something seems off
+
+In **single-phase mode**, ignore checkmarks outside the named phase entirely — they are sibling lanes' parallel progress, not a base to build on. Resume logic applies **only within the named phase's own section**: if your phase's own `#### Automated Verification:` items are already `- [x]` from a prior run of this same lane, trust those; otherwise implement the named phase's changes per the plan regardless of checkbox state elsewhere.
 
 Remember: You're implementing a solution, not just checking boxes. Keep the end goal in mind and maintain forward momentum.
 
