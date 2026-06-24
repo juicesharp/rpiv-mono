@@ -169,6 +169,10 @@ async function detachExecutor(
 		resolveModel?: (id: { stage: string; skill: string }) => ModelSelection | undefined;
 		signal?: AbortSignal;
 		name?: string; // lane display name (run --name ?? workflow name)
+		/** Workflow name (the dock's dim `workflow:` tag); threaded from workflow.name / header.workflow. */
+		workflow?: string;
+		/** The run's original input (user prompt); threaded from options.input / header.input. */
+		input?: string;
 	},
 ): Promise<DetachedExecutor> {
 	const provider = getWorkflowExecutionProvider();
@@ -179,6 +183,8 @@ async function detachExecutor(
 		runId,
 		childSessionsDir: childSessionsDir(cwd, runId),
 		name: options.name, // rpiv-pi records the lane under this name
+		workflow: options.workflow, // dock tag (the workflow name)
+		input: options.input, // dock descriptor (the user prompt)
 	});
 	return {
 		execCtx: exec.host,
@@ -253,6 +259,8 @@ export async function runWorkflow(ctx: WorkflowHostContext, options: RunWorkflow
 	const { execCtx, resolveModel, signal, dispose } = await detachExecutor(ctx, cwd, runId, {
 		...options,
 		name: options.name ?? workflow.name,
+		workflow: workflow.name,
+		input: options.input,
 	});
 
 	// `buildRunContext` is INSIDE the try so a throw there (e.g. countReachableStages
@@ -338,6 +346,8 @@ export async function resumeWorkflow(
 	const { execCtx, resolveModel, signal, dispose } = await detachExecutor(ctx, cwd, header.runId, {
 		...options,
 		name: header.name ?? header.workflow,
+		workflow: header.workflow,
+		input: header.input,
 	});
 
 	// `buildRunContext` + `selectResumeEntry` are INSIDE the try so a throw in either

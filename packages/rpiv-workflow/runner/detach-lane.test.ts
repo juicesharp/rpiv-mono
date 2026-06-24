@@ -27,7 +27,15 @@ import { runWorkflow } from "./runner.js";
  *  records the createHost opts + a dispose spy. */
 function spyProvider() {
 	const dispose = vi.fn();
-	let opts: { runId: string; childSessionsDir: string; name?: string } | undefined;
+	let opts:
+		| {
+				runId: string;
+				childSessionsDir: string;
+				name?: string;
+				workflow?: string;
+				input?: string;
+		  }
+		| undefined;
 	registerWorkflowExecutionHost({
 		createHost: (observer, o) => {
 			opts = o;
@@ -68,6 +76,8 @@ describe("detachExecutor — lane name threading (run path)", () => {
 		expect(provider.lastOpts()?.name).toBe("ship-flow");
 		expect(typeof provider.lastOpts()?.runId).toBe("string");
 		expect(typeof provider.lastOpts()?.childSessionsDir).toBe("string");
+		expect(provider.lastOpts()?.workflow).toBe("ship-flow");
+		expect(provider.lastOpts()?.input).toBe("x");
 	});
 
 	it("forwards options.name over workflow.name when --name is supplied", async () => {
@@ -78,6 +88,8 @@ describe("detachExecutor — lane name threading (run path)", () => {
 
 		expect(result.success).toBe(true);
 		expect(provider.lastOpts()?.name).toBe("my-alias");
+		expect(provider.lastOpts()?.workflow).toBe("ship-flow");
+		expect(provider.lastOpts()?.input).toBe("x");
 	});
 });
 

@@ -490,10 +490,10 @@ describe("session-backed resume — detaches to the provider's executor host", (
 		writeRun([failedRow({ id: "sess-1", file })]);
 
 		const h = makeHarness({ switchBranch: [mockAssistantMessage("wrote .rpiv/artifacts/x/a.md")] });
-		let nameSeen: string | undefined;
+		let seen: { name?: string; workflow?: string; input?: string } | undefined;
 		registerWorkflowExecutionHost({
 			createHost: (_observer, opts) => {
-				nameSeen = opts.name;
+				seen = { name: opts.name, workflow: opts.workflow, input: opts.input };
 				return { host: h.ctx };
 			},
 		});
@@ -505,7 +505,9 @@ describe("session-backed resume — detaches to the provider's executor host", (
 		});
 
 		expect(result.success).toBe(true);
-		expect(nameSeen).toBe("wf");
+		expect(seen?.name).toBe("wf");
+		expect(seen?.workflow).toBe("wf");
+		expect(seen?.input).toBe("ship it");
 	});
 
 	it("prefers header.name (the --name alias) over the workflow for the lane name", async () => {
@@ -513,10 +515,10 @@ describe("session-backed resume — detaches to the provider's executor host", (
 		writeRun([failedRow({ id: "sess-1", file })]);
 
 		const h = makeHarness({ switchBranch: [mockAssistantMessage("wrote .rpiv/artifacts/x/a.md")] });
-		let nameSeen: string | undefined;
+		let seen: { name?: string; workflow?: string; input?: string } | undefined;
 		registerWorkflowExecutionHost({
 			createHost: (_observer, opts) => {
-				nameSeen = opts.name;
+				seen = { name: opts.name, workflow: opts.workflow, input: opts.input };
 				return { host: h.ctx };
 			},
 		});
@@ -528,6 +530,8 @@ describe("session-backed resume — detaches to the provider's executor host", (
 		});
 
 		expect(result.success).toBe(true);
-		expect(nameSeen).toBe("nightly-ship");
+		expect(seen?.name).toBe("nightly-ship");
+		expect(seen?.workflow).toBe("wf");
+		expect(seen?.input).toBe("ship it");
 	});
 });

@@ -26,7 +26,18 @@ export interface WorkflowExecutionProvider {
 	 *  rpiv-pi never imports a layout function across the package boundary. */
 	createHost(
 		observer: WorkflowHostContext,
-		opts: { runId: string; childSessionsDir: string; name?: string },
+		opts: {
+			runId: string;
+			childSessionsDir: string;
+			name?: string;
+			/** Workflow name — lets the lane dock render a `workflow:` tag. Threaded
+			 *  from workflow.name (run path) / header.workflow (resume path). */
+			workflow?: string;
+			/** The run's original `/wf` input (the user prompt) — the dock renders it as the
+			 *  descriptor label when no `--name` alias is set. Threaded from options.input /
+			 *  header.input. */
+			input?: string;
+		},
 	): WorkflowExecution | Promise<WorkflowExecution>;
 	/** Per-stage model resolution (rpiv-pi's resolveStageModel) — threaded onto
 	 *  RunContext.resolveModel so the dispatcher fills each child's ModelSelection. */

@@ -66,7 +66,13 @@ export function toModelSelection(
  */
 export function createWorkflowExecution(
 	observer: WorkflowHostContext,
-	{ runId, childSessionsDir, name }: { runId: string; childSessionsDir: string; name?: string },
+	{
+		runId,
+		childSessionsDir,
+		name,
+		workflow,
+		input,
+	}: { runId: string; childSessionsDir: string; name?: string; workflow?: string; input?: string },
 ): WorkflowExecution {
 	// session_start capture — uiContext also backs the abort tap, modelRegistry
 	// resolves per-child models. A miss here means session_start never ran (an
@@ -94,7 +100,7 @@ export function createWorkflowExecution(
 
 	// FR1: record this run as a switchable lane at launch (appears in the ambient
 	// overlay while in-flight). Done unconditionally (headless too) so eviction is symmetric.
-	recordRun(runId, name ?? runId);
+	recordRun(runId, name ?? runId, { workflow, input });
 
 	// Abort tap — FOCUS-GATED (the float fix). Pre-float, /wf awaited and the run
 	// WAS the foreground, so a global ESC/Ctrl-C abort was correct. Once the run

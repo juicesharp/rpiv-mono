@@ -31,7 +31,6 @@ import {
 	listLanes,
 	listLanesForDisplay,
 	setDockActive,
-	shortRunId,
 } from "./run-lane-registry.js";
 
 const WIDGET_KEY = "rpiv-lanes";
@@ -92,12 +91,24 @@ const RETRY_GLYPH = "⟲";
 // ---------------------------------------------------------------------------
 // Fixed-width columns (FR7 — column stability). Each leading field is truncated
 // or right-padded to a constant DISPLAY width so the bar / status region starts
-// at the same column on every row, regardless of name or short-id length.
+// at the same column on every row, regardless of workflow name or descriptor.
 // ---------------------------------------------------------------------------
-/** Display width of the lane-name column (longer names truncate with …). */
-const NAME_COL = 12;
-/** Display width of the short-run-id column (the distinguishing hex tail). */
-const ID_COL = 6;
+/** Display width of the workflow-tag column (the dim `ship:` prefix). Workflow names
+ *  are short slugs; longer names truncate with … so the tag never exceeds this width
+ *  and the descriptor column always starts at the same offset. */
+const TAG_COL = 12;
+/** Cap on the descriptor-label width. The label = --name alias OR truncated user prompt.
+ *  Its ACTUAL width is content-aware (the max descriptor among the visible lanes), so the
+ *  progress region stays column-aligned AND a no-descriptor lane keeps the old narrow
+ *  prefix (no dead label column squeezing the failure-reason chip under width pressure). */
+const MAX_LABEL_WIDTH = 40;
+/** Leading fixed cells before the label cell: head (gutter 2 + glyph 1 + space 1) + tag
+ *  (TAG_COL) + 2 separators. Used to bound the label width by available row width. */
+const LABEL_LEADING = 4 + TAG_COL + 2;
+/** Minimum progress footprint (N/total + 1 + a short stage name) reserved so a long
+ *  descriptor never eats the entire row — the descriptor is the signal, but stage
+ *  progress must survive. */
+const PROGRESS_MIN_WIDTH = 12;
 /** Display width of the `N/total` stage-counter column (fits up to "99/99"). */
 const NUM_COL = 5;
 
@@ -114,6 +125,21 @@ function padCol(theme: Theme, color: ThemeColor, text: string, width: number, bo
 	const gap = Math.max(0, width - visibleWidth(truncated));
 	const content = bold ? theme.bold(truncated) : truncated;
 	return theme.fg(color, content) + " ".repeat(gap);
+}
+
+/**
+ * The dock descriptor for a lane — the run's `--name` alias (when it differs from the
+ * workflow), else the user prompt (whitespace-collapsed so a multi-line input never
+ * breaks the single-line row), else undefined (a bare-workflow row). Shared by
+ * `renderWidget` (the content-aware label-width computation) AND `renderRow` (the
+ * render) so the two never drift. A `--name` that happens to equal the workflow name
+ * degrades gracefully — no alias, so the label falls through to the prompt (or bare tag).
+ */
+function laneDescriptor(lane: LaneEntry): string | undefined {
+	const workflow = lane.workflow ?? lane.name;
+	const alias = lane.name !== workflow ? lane.name : undefined;
+	const prompt = lane.input ? lane.input.replace(/\s+/g, " ").trim() : undefined;
+	return alias ?? (prompt || undefined);
 }
 
 /** Per-status glyph; needs-input overrides it (see renderRow). */
@@ -307,7 +333,17 @@ export class LaneDock {
 		// only swaps spaces for the `❯` cursor — no row ever shifts. sel(i) marks the
 		// active selection (only true while active).
 		const sel = (i: number): boolean => active && i === selection;
-		const row = (lane: LaneEntry, i: number): string => truncate(this.renderRow(theme, lane, width, sel(i)));
+		// Content-aware descriptor-label width — the MAX descriptor width among the visible
+		// lanes (clamped to MAX_LABEL_WIDTH and the available row width), so the progress
+		// region (bar / N-total) stays column-aligned (FR7) AND a render with no descriptors
+		// keeps the old narrow prefix (labelWidth 0 → no label cell). Constant across rows.
+		const labelWidth = Math.min(
+			MAX_LABEL_WIDTH,
+			lanes.reduce((m, l) => Math.max(m, visibleWidth(laneDescriptor(l) ?? "")), 0),
+			Math.max(0, width - LABEL_LEADING - PROGRESS_MIN_WIDTH),
+		);
+		const row = (lane: LaneEntry, i: number): string =>
+			truncate(this.renderRow(theme, lane, width, labelWidth, sel(i)));
 		if (lanes.length <= budget) {
 			lanes.forEach((lane, i) => {
 				lines.push(row(lane, i));
@@ -341,7 +377,7 @@ export class LaneDock {
 		return lines;
 	}
 
-	private renderRow(theme: Theme, lane: LaneEntry, width: number, selected: boolean): string {
+	private renderRow(theme: Theme, lane: LaneEntry, width: number, labelWidth: number, selected: boolean): string {
 		// Selection styling mirrors ask_user_question (WrappingSelect): the selected row
 		// is marked by the `❯ ` pointer plus an accent+bold LABEL — NOT a full-width
 		// background block. Secondary metadata (id, status/progress) keeps its own color,
@@ -377,18 +413,24 @@ export class LaneDock {
 			glyphColor = "dim";
 		}
 
-		// Fixed-width leading columns: cursor-gutter · status-glyph · name · short-id.
-		// These align on every row so the status region (bar / label) always starts at
-		// the same column. The preset name renders in the normal "text" color; the
-		// short-id is dim metadata — mirrors TodoOverlay (format.ts). No tree branch —
-		// the dock follows pi's selector style (cursor + content), not a tree.
+		// Fixed-width leading columns: cursor-gutter · status-glyph · workflow-tag · descriptor.
+		// The workflow name is a dim tag (always present, so the workflow never disappears);
+		// the descriptor is the run's --name alias OR the truncated user prompt, accent+bold
+		// when selected. Tag + descriptor are fixed-width (per render) so the status region
+		// (bar / label) always starts at the same column. Mirrors ask_user_question's
+		// accent+bold `selectedText` + always-dim description split.
 		const head = `${gutter}${theme.fg(glyphColor, glyph)} `;
-		// The name is the row's LABEL: accent+bold when selected (ask_user_question's
-		// `selectedText`), normal "text" otherwise. The short-id stays dim metadata in
-		// both states (like ask_user_question's always-dim description).
+		const workflow = lane.workflow ?? lane.name;
+		const descriptor = laneDescriptor(lane);
+		const tagRaw = descriptor ? `${workflow}:` : workflow;
+		// The label cell is emitted ONLY when this render reserved label width (≥1 descriptor
+		// somewhere). A no-descriptor render has labelWidth 0 → bare tag prefix (old shape),
+		// so a no-descriptor lane never pays dead label space that would squeeze the reason chip.
 		const prefix =
-			`${head}${padCol(theme, selected ? "accent" : "text", lane.name, NAME_COL, selected)} ` +
-			`${padCol(theme, "dim", shortRunId(lane.runId), ID_COL)} `;
+			`${head}${padCol(theme, "dim", tagRaw, TAG_COL)} ` +
+			(labelWidth > 0
+				? `${padCol(theme, selected ? "accent" : "text", descriptor ?? "", labelWidth, selected)} `
+				: "");
 
 		// needs-input ALWAYS wins the trailing label (overrides live progress, FR7).
 		if (needs) return `${prefix}${theme.fg("warning", "needs input")}`;

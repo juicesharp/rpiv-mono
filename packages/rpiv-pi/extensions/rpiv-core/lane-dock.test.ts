@@ -243,16 +243,34 @@ describe("LaneDock — rendering", () => {
 		overlay.dispose();
 	});
 
-	it("renders the distinguishing hex short-id, not the shared date prefix (Phase 7.4)", () => {
-		// Two runs launched the same second share the timestamp slug; only the hex
-		// suffix differs. slice(0,6) would render "2026-0" for both — useless.
-		recordRun("2026-06-19_08-14-17-a1b2", "ship");
-		recordRun("2026-06-19_08-14-17-c3d4", "vet");
+	it("renders the workflow tag + truncated prompt as the descriptor (no --name)", () => {
+		recordRun("run-1", "ship", { workflow: "ship", input: "refactor the auth module end to end" });
 		const overlay = new LaneDock();
 		const { widget } = mount(overlay, makeCtx());
 		const out = (widget?.render(120) ?? []).join("\n");
-		expect(out).toContain("a1b2");
-		expect(out).toContain("c3d4");
+		expect(out).toContain("ship:"); // workflow tag with colon
+		expect(out).toContain("refactor"); // truncated prompt descriptor
+		overlay.dispose();
+	});
+
+	it("renders the --name alias as the descriptor when provided (alias wins over prompt)", () => {
+		recordRun("run-1", "authfix", { workflow: "ship", input: "ignored when alias set" });
+		const overlay = new LaneDock();
+		const { widget } = mount(overlay, makeCtx());
+		const out = (widget?.render(120) ?? []).join("\n");
+		expect(out).toContain("ship:"); // tag
+		expect(out).toContain("authfix"); // alias descriptor
+		expect(out).not.toContain("ignored when alias set"); // alias wins
+		overlay.dispose();
+	});
+
+	it("renders the bare workflow name (no tag colon) when there is no --name and no input", () => {
+		recordRun("run-1", "ship", { workflow: "ship" });
+		const overlay = new LaneDock();
+		const { widget } = mount(overlay, makeCtx());
+		const out = (widget?.render(120) ?? []).join("\n");
+		expect(out).toContain("ship");
+		expect(out).not.toContain("ship:"); // no colon — no descriptor follows
 		overlay.dispose();
 	});
 
@@ -451,8 +469,8 @@ describe("LaneDock — failure reason chip (Problem 1)", () => {
 		});
 		const overlay = new LaneDock();
 		const { widget } = mount(overlay, makeCtx());
-		const narrow = widget?.render(44) ?? [];
-		for (const line of narrow) expect(visibleWidth(line)).toBeLessThanOrEqual(44);
+		const narrow = widget?.render(40) ?? [];
+		for (const line of narrow) expect(visibleWidth(line)).toBeLessThanOrEqual(40);
 		const out = narrow.join("\n");
 		expect(out).not.toContain("▰"); // bar sacrificed first
 		expect(out).toContain("3/7"); // the signal survives
@@ -669,9 +687,9 @@ describe("LaneDock — active (focused) state", () => {
 		overlay.dispose();
 	});
 
-	it("marks the selected row with an accent+bold name and NO background block (ask_user_question style)", () => {
-		recordRun("run-1", "ship");
-		recordRun("run-2", "build");
+	it("marks the selected row's descriptor with accent+bold and NO background block (ask_user_question style)", () => {
+		recordRun("run-1", "ship", { workflow: "ship", input: "refactor auth" });
+		recordRun("run-2", "build", { workflow: "build", input: "add tests" });
 		const overlay = new LaneDock();
 		const ui = makeCtx();
 		overlay.setUICtx(ui);
@@ -679,7 +697,7 @@ describe("LaneDock — active (focused) state", () => {
 		const setWidget = ui.setWidget as unknown as ReturnType<typeof vi.fn>;
 		const factory = setWidget.mock.calls[0]?.[1] as WidgetFactory;
 		// Encoding theme: fg → "color:text", bold → "*text*", bg → "[color]text" so the
-		// selected-row styling (accent+bold label, no background) is observable.
+		// selected-row styling (accent+bold descriptor, no background) is observable.
 		const encTheme = {
 			fg: (c: string, s: string) => `${c}:${s}`,
 			bg: (c: string, s: string) => `[${c}]${s}`,
@@ -690,17 +708,20 @@ describe("LaneDock — active (focused) state", () => {
 		setDockActive(true);
 		setDockSelection(0);
 		const lines = widget.render(60);
-		// The selected row's name is accent+bold; the unselected row's name is plain "text".
-		const selectedRow = lines.find((l) => l.includes("ship")) ?? "";
-		const otherRow = lines.find((l) => l.includes("build")) ?? "";
+		// The selected row's descriptor is accent+bold; the unselected row's descriptor is plain "text".
+		const selectedRow = lines.find((l) => l.includes("refactor auth")) ?? "";
+		const otherRow = lines.find((l) => l.includes("add tests")) ?? "";
 		// No background block on the ROWS — ask_user_question marks row selection with text
 		// style, not a fill. (bg encodes as "[color]"; the title chip's selectedBg is a
 		// separate line and intentionally excluded here.)
 		expect(/\[[a-zA-Z]/.test(selectedRow)).toBe(false);
 		expect(/\[[a-zA-Z]/.test(otherRow)).toBe(false);
-		expect(selectedRow).toContain("accent:*ship*");
-		expect(otherRow).toContain("text:build");
-		expect(otherRow).not.toContain("accent:*build*");
+		expect(selectedRow).toContain("accent:*refactor auth*");
+		expect(otherRow).toContain("text:add tests");
+		expect(otherRow).not.toContain("accent:*add tests*");
+		// the workflow tag stays dim on BOTH rows (ask_user_question's always-dim description split)
+		expect(selectedRow).toContain("dim:ship");
+		expect(otherRow).toContain("dim:build");
 		overlay.dispose();
 	});
 

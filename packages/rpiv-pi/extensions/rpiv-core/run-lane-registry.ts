@@ -100,6 +100,13 @@ export interface LaneEntry {
 	readonly runId: string;
 	/** Display name — the run's --name, else the workflow name. */
 	name: string;
+	/** The run's workflow name — the dock renders it as a dim `workflow:` tag. Set at
+	 *  recordRun; undefined only for lanes recorded before this field existed (impossible
+	 *  in a session — the launcher restart clears the registry). */
+	workflow?: string;
+	/** The run's original `/wf` input (the user prompt) — the dock renders it as the
+	 *  descriptor label when no `--name` alias is set. Undefined for a prompt-less run. */
+	input?: string;
 	status: LaneStatus;
 	/** The run's currently-live child session (the viewer source); undefined
 	 *  between stages, before the first child spawns, or after retirement. */
@@ -250,11 +257,13 @@ function notify(): void {
  * an in-flight one. `currentSession` is repointed by setCurrentSession when the resumed
  * stage spawns its child; the abort handle is re-wired by setLaneAbort.
  */
-export function recordRun(runId: string, name: string): void {
+export function recordRun(runId: string, name: string, meta?: { workflow?: string; input?: string }): void {
 	const { lanes } = state();
 	const existing = lanes.get(runId);
 	if (existing) {
 		existing.name = name;
+		existing.workflow = meta?.workflow ?? existing.workflow;
+		existing.input = meta?.input ?? existing.input;
 		existing.status = "running"; // reactivate a retained terminal lane (resume)
 		existing.finalBranch = undefined; // drop the prior run's transcript snapshot
 		existing.error = undefined; // clear the prior run's terminal failure reason
@@ -265,6 +274,8 @@ export function recordRun(runId: string, name: string): void {
 		lanes.set(runId, {
 			runId,
 			name,
+			workflow: meta?.workflow,
+			input: meta?.input,
 			status: "running",
 			currentSession: undefined,
 			pendingInput: [],
@@ -515,18 +526,6 @@ export function laneNeedsInput(runId: string): boolean {
 /** Count of in-flight lanes — the overlay's auto-show/hide gate. */
 export function laneCount(): number {
 	return state().lanes.size;
-}
-
-/**
- * The run's DISTINGUISHING short id for the overlay/manager rows (Phase 7.4).
- * `generateRunId` is `<timestamp-slug>-<hex>` (rpiv-workflow state/paths.ts), so
- * `slice(0, 6)` of the runId yields the shared date prefix (e.g. "2026-0") for
- * every same-month run — useless for telling two concurrent runs apart. The hex
- * suffix (after the LAST dash) is the random tail that actually differs. Falls
- * back to the whole id when there is no dash.
- */
-export function shortRunId(runId: string): string {
-	return runId.slice(runId.lastIndexOf("-") + 1);
 }
 
 // ---------------------------------------------------------------------------

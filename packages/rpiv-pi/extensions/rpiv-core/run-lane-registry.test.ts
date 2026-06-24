@@ -24,7 +24,6 @@ import {
 	setLaneAbort,
 	setLaneProgress,
 	setLaneStatus,
-	shortRunId,
 	subscribeLanes,
 } from "./run-lane-registry.js";
 
@@ -98,6 +97,21 @@ describe("run-lane-registry", () => {
 			expect(lane?.finalBranch).toBeUndefined(); // stale snapshot dropped
 			expect(lane?.progress).toBeUndefined(); // stale progress cleared
 			expect(lane?.needsInputSince).toBeUndefined();
+		});
+
+		it("stores workflow + input (lane label inputs)", () => {
+			recordRun("run-1", "ship", { workflow: "ship", input: "refactor auth" });
+			const lane = getLane("run-1");
+			expect(lane?.workflow).toBe("ship");
+			expect(lane?.input).toBe("refactor auth");
+		});
+
+		it("re-record (resume reactivate) preserves workflow/input when meta is absent", () => {
+			recordRun("run-1", "ship", { workflow: "ship", input: "refactor auth" });
+			recordRun("run-1", "ship"); // reactivate without meta
+			const lane = getLane("run-1");
+			expect(lane?.workflow).toBe("ship");
+			expect(lane?.input).toBe("refactor auth");
 		});
 	});
 
@@ -530,21 +544,6 @@ describe("run-lane-registry", () => {
 			const fresh = await import("./run-lane-registry.js");
 			expect(fresh.getLane("g-1")).toBeDefined();
 			expect(fresh.listLanes().map((l) => l.runId)).toContain("g-1");
-		});
-	});
-
-	describe("shortRunId (Phase 7.4)", () => {
-		it("returns the random hex suffix after the last dash (not the shared date prefix)", () => {
-			// generateRunId() shape: <date>_<time>-<hex>; slice(0,6) would yield "2026-0".
-			expect(shortRunId("2026-06-19_08-14-17-a1b2")).toBe("a1b2");
-		});
-
-		it("distinguishes two runs launched in the same second", () => {
-			expect(shortRunId("2026-06-19_08-14-17-a1b2")).not.toBe(shortRunId("2026-06-19_08-14-17-c3d4"));
-		});
-
-		it("falls back to the whole id when there is no dash", () => {
-			expect(shortRunId("plainid")).toBe("plainid");
 		});
 	});
 });
