@@ -18,7 +18,9 @@
 
 import type { ExtensionUIContext, Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { type TUI, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { shortFailureReason } from "./lane-failure.js";
 import { type RenderSource, renderBranch, type ToolDefArg, type ViewerEntry } from "./lane-transcript.js";
+import { type DiskBranch, loadBranchFromDisk } from "./lane-transcript-disk.js";
 import {
 	getDockState,
 	type LaneEntry,
@@ -73,6 +75,9 @@ function formatAge(ms: number): string {
 const BAR_FILLED = "▰";
 const BAR_EMPTY = "▱";
 const BAR_MAX_CELLS = 7;
+/** Minimum leftover display columns to bother showing a failure-reason chip (Problem 1).
+ *  Below this the chip would be all separator + ellipsis, so it is dropped entirely. */
+const MIN_REASON_WIDTH = 6;
 /**
  * Lap marker (`↻7`) for the path ordinal. `stageNumber` counts every activation
  * incl. loop-backs, so it can exceed the distinct-stage fraction; shown ONLY when
@@ -143,6 +148,9 @@ export class LaneDock {
 	 *  guarded so an unrelated registry notify never stacks a second subscription (a leak). */
 	private previewSession: LaneSession | undefined;
 	private previewUnsub: (() => void) | undefined;
+	/** Disk-jsonl preview fallback (Problem 2) parsed ONCE and cached by file key — the
+	 *  preview re-renders on every spinner tick, so the disk read must not repeat per frame. */
+	private previewDiskCache: { key: string; value: DiskBranch | undefined } | undefined;
 
 	setUICtx(ctx: ExtensionUIContext): void {
 		// Identity-compare so repeat session_start handlers are idempotent;
@@ -384,19 +392,34 @@ export class LaneDock {
 
 		// needs-input ALWAYS wins the trailing label (overrides live progress, FR7).
 		if (needs) return `${prefix}${theme.fg("warning", "needs input")}`;
-		// Live stage progress (Phase 8): [bar] N/total stageName [· units x/y].
-		if (progress) return this.renderProgressRow(theme, prefix, progress, width);
-		// No progress yet: running animates "streaming…"; terminal shows its raw status.
+		// Failure cause (Problem 1) — the trimmed headline of either the terminal
+		// `lane.error` (post-retirement) or the live `error`-phase reason (pre-retirement).
+		const reason = shortFailureReason(lane.error ?? (progress?.phase === "error" ? progress.reason : undefined));
+		// Live stage progress (Phase 8): [bar] N/total stageName [· reason] [· units x/y].
+		if (progress) return this.renderProgressRow(theme, prefix, progress, width, reason);
+		// No progress yet: running animates "streaming…"; terminal shows its raw status,
+		// with the failure reason appended (clipped by the row's width truncate).
 		const label = running ? "streaming…" : lane.status;
-		return `${prefix}${theme.fg("muted", label)}`;
+		const tail = reason
+			? `${theme.fg("muted", label)}${theme.fg("warning", ` — ${reason}`)}`
+			: theme.fg("muted", label);
+		return `${prefix}${tail}`;
 	}
 
 	/**
-	 * Render a lane row carrying live stage progress. The mini-bar is dropped FIRST
-	 * under width pressure (the `N/total stageName` label is the signal; the bar is
-	 * decoration), measured pre-color via visibleWidth so the decision is ANSI-safe.
+	 * Render a lane row carrying live stage progress. Width priority under pressure:
+	 * the `N/total stageName` label (the signal) is always kept; the failure `reason`
+	 * chip is kept next (truncated to the leftover); the mini-bar (decoration) is
+	 * dropped FIRST — so a failed row shows its cause before its bar. All widths are
+	 * measured pre-color via visibleWidth so the decision is ANSI-safe.
 	 */
-	private renderProgressRow(theme: Theme, prefix: string, progress: LaneProgress, width: number): string {
+	private renderProgressRow(
+		theme: Theme,
+		prefix: string,
+		progress: LaneProgress,
+		width: number,
+		reason?: string,
+	): string {
 		// Mini-bar: ALWAYS BAR_MAX_CELLS cells wide (the filled portion is scaled to
 		// progress) so the bar — and every column after it — aligns across rows
 		// regardless of each workflow's stage count (a 5-stage and a 6-stage run must
@@ -420,15 +443,28 @@ export class LaneDock {
 		if (progress.stageNumber > visited) nameRaw += ` · ${LAP_MARK}${progress.stageNumber}`;
 		if (progress.units) nameRaw += ` · units ${progress.units.done}/${progress.units.total}`;
 
-		const barRaw = filledStr + emptyStr;
-		// Drop the bar first if the row (prefix + bar + num + name) would overflow.
-		const includeBar = visibleWidth(prefix) + visibleWidth(`${barRaw}  ${numRaw}  ${nameRaw}`) <= width && cells > 0;
-
 		const numCol = padCol(theme, "muted", numRaw, NUM_COL);
 		const coloredName = theme.fg("muted", nameRaw);
-		if (!includeBar) return `${prefix}${numCol} ${coloredName}`;
+
+		// Core (always rendered): prefix + numCol + " " + name. numCol pads to NUM_COL.
+		const coreW = visibleWidth(prefix) + Math.max(NUM_COL, visibleWidth(numRaw)) + 1 + visibleWidth(nameRaw);
+
+		// Failure-reason chip (priority OVER the bar): a warning ` — <reason>` truncated to
+		// the leftover after the core; dropped when the leftover can't hold a fragment.
+		let reasonStr = "";
+		if (reason) {
+			const leftover = width - coreW;
+			if (leftover >= MIN_REASON_WIDTH)
+				reasonStr = theme.fg("warning", truncateToWidth(` — ${reason}`, leftover, "…"));
+		}
+		const reasonW = visibleWidth(reasonStr);
+
+		// The mini-bar is the LOWEST priority: include it only if the core + reason + bar all
+		// fit, so a failed row never sacrifices its cause for decoration. cells + 2 = bar + gap.
+		const includeBar = cells > 0 && coreW + reasonW + cells + 2 <= width;
+		if (!includeBar) return `${prefix}${numCol} ${coloredName}${reasonStr}`;
 		const coloredBar = `${theme.fg("accent", filledStr)}${theme.fg("dim", emptyStr)}`;
-		return `${prefix}${coloredBar}  ${numCol} ${coloredName}`;
+		return `${prefix}${coloredBar}  ${numCol} ${coloredName}${reasonStr}`;
 	}
 
 	/**
@@ -456,7 +492,15 @@ export class LaneDock {
 				const defs = lane.finalToolDefs;
 				source = { cwd: lane.finalCwd ?? "", toolDef: (name) => defs?.get(name) as ToolDefArg };
 			} else {
-				return [rule, theme.fg("dim", "  (stage starting…)")]; // no live child + no snapshot yet
+				// No live child + no snapshot — fall through to the on-disk jsonl (Problem 2)
+				// exactly like the viewer: live → finalBranch → disk → placeholder.
+				const disk = this.loadPreviewDiskBranch(lane);
+				if (disk) {
+					entries = disk.entries;
+					source = disk.source;
+				} else {
+					return [rule, theme.fg("dim", "  (stage starting…)")];
+				}
 			}
 		} catch {
 			return [rule, theme.fg("dim", "  (transcript unavailable)")];
@@ -464,6 +508,16 @@ export class LaneDock {
 		if (!this.tui) return [rule]; // pre-mount guard (tui is set by the widget factory before render)
 		const body = renderBranch(entries, width, source, this.tui, theme, false);
 		return [rule, ...body.slice(Math.max(0, body.length - PREVIEW_LINES))];
+	}
+
+	/** Disk-jsonl preview fallback (Problem 2), memoized by `runId::lastSessionFile` so the
+	 *  per-tick preview render re-reads disk at most once per source. */
+	private loadPreviewDiskBranch(lane: LaneEntry): DiskBranch | undefined {
+		const key = `${lane.runId}::${lane.lastSessionFile ?? ""}`;
+		if (this.previewDiskCache?.key !== key) {
+			this.previewDiskCache = { key, value: loadBranchFromDisk(lane.runId, lane.lastSessionFile) };
+		}
+		return this.previewDiskCache.value;
 	}
 
 	dispose(): void {

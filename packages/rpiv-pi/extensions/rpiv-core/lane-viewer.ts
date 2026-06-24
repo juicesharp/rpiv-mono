@@ -30,7 +30,15 @@
 import type { ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
 import { type Component, Key, matchesKey, type TUI, truncateToWidth } from "@earendil-works/pi-tui";
 import { type RenderSource, renderBranch, type ToolDefArg, type ViewerEntry } from "./lane-transcript.js";
-import { getLane, type LaneSession, type LaneStatus, laneNeedsInput, subscribeLanes } from "./run-lane-registry.js";
+import { type DiskBranch, loadBranchFromDisk } from "./lane-transcript-disk.js";
+import {
+	getLane,
+	type LaneEntry,
+	type LaneSession,
+	type LaneStatus,
+	laneNeedsInput,
+	subscribeLanes,
+} from "./run-lane-registry.js";
 
 const MAX_HEIGHT_RATIO = 0.9;
 
@@ -50,6 +58,9 @@ export class LaneViewer implements Component {
 	private currentSession: LaneSession | undefined;
 	private sessionUnsub: (() => void) | undefined;
 	private readonly registryUnsub: () => void;
+	/** Disk-jsonl fallback (Problem 2) parsed ONCE and cached by file key — render runs
+	 *  synchronously every streaming tick, so the disk read must not repeat per frame. */
+	private diskCache: { key: string; value: DiskBranch | undefined } | undefined;
 
 	constructor(
 		private readonly runId: string,
@@ -72,6 +83,16 @@ export class LaneViewer implements Component {
 			this.sessionUnsub = next?.subscribe(() => this.tui.requestRender());
 		}
 		this.tui.requestRender();
+	}
+
+	/** Disk-jsonl transcript fallback (Problem 2), memoized by `runId::lastSessionFile`
+	 *  so the synchronous per-tick render re-reads disk at most once per source. */
+	private loadDiskBranch(lane: LaneEntry): DiskBranch | undefined {
+		const key = `${this.runId}::${lane.lastSessionFile ?? ""}`;
+		if (this.diskCache?.key !== key) {
+			this.diskCache = { key, value: loadBranchFromDisk(this.runId, lane.lastSessionFile) };
+		}
+		return this.diskCache.value;
 	}
 
 	render(width: number): string[] {
@@ -97,10 +118,18 @@ export class LaneViewer implements Component {
 					cwd: lane.finalCwd ?? "",
 					toolDef: (name) => defs?.get(name) as ToolDefArg,
 				};
-			} else if (lane.status === "running") {
-				return this.frame([this.theme.fg("dim", "(stage starting…)")], width); // between stages
 			} else {
-				return this.frame([this.theme.fg("dim", "(no transcript — esc to return)")], width);
+				// No live session + no in-memory snapshot — fall through to the on-disk jsonl
+				// (Problem 2 durable path) before giving up: live → finalBranch → disk → none.
+				const disk = this.loadDiskBranch(lane);
+				if (disk) {
+					entries = disk.entries;
+					source = disk.source;
+				} else if (lane.status === "running") {
+					return this.frame([this.theme.fg("dim", "(stage starting…)")], width); // between stages
+				} else {
+					return this.frame([this.theme.fg("dim", "(no transcript — esc to return)")], width);
+				}
 			}
 		} catch {
 			// disposed mid-render / unexpected shape — fail soft (never throw inside the overlay)
@@ -113,11 +142,16 @@ export class LaneViewer implements Component {
 	private frame(body: string[], width: number): string[] {
 		const lane = getLane(this.runId);
 		const name = lane?.name ?? this.runId;
-		// Live runs read "▶ name — live"; a retained terminal run reflects its outcome.
+		// Live runs read "▶ name — live"; a retained terminal run reflects its outcome,
+		// and a failed/aborted run appends its full cause (Problem 1) — "✗ ship — failed:
+		// <reason>" — truncated to width by the header truncate below.
+		const glyph = lane ? (TERMINAL_GLYPH[lane.status] ?? "•") : "•";
 		const headText =
 			!lane || lane.status === "running"
 				? `▶ ${name} — live`
-				: `${TERMINAL_GLYPH[lane.status] ?? "•"} ${name} — ${lane.status}`;
+				: lane.error
+					? `${glyph} ${name} — ${lane.status}: ${lane.error}`
+					: `${glyph} ${name} — ${lane.status}`;
 		const header = truncateToWidth(this.theme.fg("accent", headText), width, "…");
 		// A queued question is answered IN PLACE with ⏎ (switchIntoLane drains only on the
 		// "answer" intent); esc/← back out without draining, so the view verb and the answer

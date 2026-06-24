@@ -11,6 +11,7 @@ import {
 	getDockState,
 	type LaneSession,
 	recordRun,
+	retireRun,
 	setCurrentSession,
 	setDockActive,
 	setDockSelection,
@@ -415,6 +416,59 @@ describe("LaneDock — live stage progress (Phase 8)", () => {
 		const out = narrow.join("\n");
 		expect(out).not.toContain("▰");
 		expect(out).toContain("3/7");
+		overlay.dispose();
+	});
+});
+
+describe("LaneDock — failure reason chip (Problem 1)", () => {
+	it("a failed (error-phase) row appends the reason after the stage name, with the ✗ glyph", () => {
+		recordRun("run-1", "ship");
+		setLaneProgress("run-1", {
+			stageNumber: 2,
+			totalStages: 4,
+			stageName: "blueprint",
+			phase: "error",
+			reason: "no plan artifact",
+		});
+		const overlay = new LaneDock();
+		const { widget } = mount(overlay, makeCtx());
+		const out = (widget?.render(120) ?? []).join("\n");
+		expect(out).toContain("✗"); // error-phase glyph
+		expect(out).toContain("blueprint"); // stage name
+		expect(out).toContain("no plan artifact"); // the cause chip
+		expect(out).toContain("▰"); // wide enough → bar AND reason both shown
+		overlay.dispose();
+	});
+
+	it("drops the bar before the reason under width pressure (reason > bar)", () => {
+		recordRun("run-1", "polish");
+		setLaneProgress("run-1", {
+			stageNumber: 3,
+			totalStages: 7,
+			stageName: "plan",
+			phase: "error",
+			reason: "boom",
+		});
+		const overlay = new LaneDock();
+		const { widget } = mount(overlay, makeCtx());
+		const narrow = widget?.render(44) ?? [];
+		for (const line of narrow) expect(visibleWidth(line)).toBeLessThanOrEqual(44);
+		const out = narrow.join("\n");
+		expect(out).not.toContain("▰"); // bar sacrificed first
+		expect(out).toContain("3/7"); // the signal survives
+		expect(out).toContain("boom"); // the reason survives the squeeze
+		overlay.dispose();
+	});
+
+	it("a retired failed lane surfaces termination.error from lane.error", () => {
+		recordRun("run-1", "ship");
+		setLaneProgress("run-1", { stageNumber: 2, totalStages: 4, stageName: "blueprint", phase: "error" });
+		retireRun("run-1", "failed", "disk write failed — out of space");
+		const overlay = new LaneDock();
+		const { widget } = mount(overlay, makeCtx());
+		const out = (widget?.render(120) ?? []).join("\n");
+		expect(out).toContain("disk write failed"); // the trimmed leading clause
+		expect(out).not.toContain("out of space"); // elaboration dropped at the ` — ` cut
 		overlay.dispose();
 	});
 });

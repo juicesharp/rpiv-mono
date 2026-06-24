@@ -186,6 +186,28 @@ describe("run-lane-registry", () => {
 			retireRun("nope", "completed");
 			expect(listener).not.toHaveBeenCalled();
 		});
+
+		it("is idempotent — FIRST retire wins; a second retire preserves the snapshot and status", () => {
+			recordRun("run-1", "ship");
+			const branch = [{ type: "message" }];
+			setCurrentSession("run-1", {
+				...makeSession("s1"),
+				sessionManager: { getBranch: () => branch, getCwd: () => "/tmp" },
+			});
+			// First retire (e.g. the manager's optimistic `x` cancel) snapshots the live
+			// session and drops it.
+			retireRun("run-1", "aborted");
+			expect(getLane("run-1")?.finalBranch).toBe(branch);
+
+			// Second retire (e.g. the runner's later onWorkflowEnd for the same run) must
+			// NOT re-snapshot off the now-absent session — that would wipe finalBranch.
+			const listener = vi.fn();
+			subscribeLanes(listener);
+			retireRun("run-1", "completed");
+			expect(getLane("run-1")?.status).toBe("aborted"); // first status held
+			expect(getLane("run-1")?.finalBranch).toBe(branch); // transcript preserved
+			expect(listener).not.toHaveBeenCalled(); // no spurious notify on the no-op
+		});
 	});
 
 	describe("listLanesForDisplay (Phase B)", () => {

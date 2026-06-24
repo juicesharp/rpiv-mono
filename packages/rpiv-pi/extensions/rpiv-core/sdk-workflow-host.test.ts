@@ -33,7 +33,8 @@ interface FakeSession {
 	messages: unknown[];
 	// Present so a FakeSession structurally satisfies the registry's LaneSession
 	// (the viewer's transcript source) — the host registers `session` verbatim.
-	sessionManager: { getBranch: ReturnType<typeof vi.fn> };
+	sessionManager: { getBranch: ReturnType<typeof vi.fn>; getCwd: ReturnType<typeof vi.fn> };
+	getToolDefinition: ReturnType<typeof vi.fn>;
 	subscribe: ReturnType<typeof vi.fn>;
 	prompt: ReturnType<typeof vi.fn>;
 	sendUserMessage: ReturnType<typeof vi.fn>;
@@ -57,7 +58,8 @@ function makeFakeSession(): FakeSession {
 		sessionFile: `/run/sessions/sid-${seq}.jsonl`,
 		isStreaming: false,
 		messages: [],
-		sessionManager: { getBranch: vi.fn(() => []) },
+		sessionManager: { getBranch: vi.fn(() => []), getCwd: vi.fn(() => "/work") },
+		getToolDefinition: vi.fn(() => undefined),
 		subscribe: vi.fn(() => () => {}),
 		prompt: vi.fn(async () => {}),
 		sendUserMessage: vi.fn(async () => {}),
@@ -106,7 +108,7 @@ vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
 	};
 });
 
-import { __resetRunLaneRegistry, getLane, recordRun } from "./run-lane-registry.js";
+import { __resetRunLaneRegistry, getLane, recordRun, retireRun } from "./run-lane-registry.js";
 import {
 	AMBIENT_OBSERVER_MANIFEST_FLAG,
 	CHILD_AMBIENT_EXTENSION_DENYLIST,
@@ -737,5 +739,51 @@ describe("spawnChild — lane current-session retention (Slice 2)", () => {
 
 		// No lane was created as a side effect; setCurrentSession silently ignored it.
 		expect(getLane("run-abc")).toBeUndefined();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// (Problem 2) The transcript snapshot must be captured WHILE the child session is
+// alive — in the per-stage finally, before currentSession is dropped + the session
+// disposed — so the runner's later onWorkflowEnd → retireRun (which sees no live
+// session) keeps a viewable transcript instead of snapshotting undefined.
+// ---------------------------------------------------------------------------
+
+describe("spawnChild — final snapshot + session file (Problem 2)", () => {
+	const branch = [{ type: "message", message: { role: "assistant", content: [{ type: "text", text: "DONE" }] } }];
+
+	it("captures finalBranch before teardown; a post-teardown retire preserves it", async () => {
+		recordRun("run-abc", "ship");
+		const { deps } = makeDeps();
+		const host = new SdkWorkflowHost(deps);
+
+		await host.spawnChild({
+			prompt: "p",
+			withSession: async () => {
+				// The child's branch is non-empty by the time the stage finishes.
+				sessions[0].sessionManager.getBranch.mockReturnValue(branch);
+			},
+		});
+
+		// The finally cleared the live session but captured the snapshot first.
+		const lane = getLane("run-abc");
+		expect(lane?.currentSession).toBeUndefined();
+		expect(lane?.finalBranch).toEqual(branch);
+		expect(lane?.finalCwd).toBe("/work");
+
+		// The runner's terminal onWorkflowEnd fires AFTER teardown, with no live session —
+		// it must NOT clobber the captured snapshot (the original Problem 2 bug).
+		retireRun("run-abc", "completed");
+		expect(getLane("run-abc")?.finalBranch).toEqual(branch);
+	});
+
+	it("records lastSessionFile from the child's sessionFile (durable disk-fallback seed)", async () => {
+		recordRun("run-abc", "ship");
+		const { deps } = makeDeps();
+		const host = new SdkWorkflowHost(deps);
+
+		await host.spawnChild({ prompt: "p", withSession: async () => undefined });
+
+		expect(getLane("run-abc")?.lastSessionFile).toBe(sessions[0].sessionFile);
 	});
 });

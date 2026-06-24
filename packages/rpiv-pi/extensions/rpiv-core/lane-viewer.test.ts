@@ -1,5 +1,9 @@
-import { initTheme, type Theme } from "@earendil-works/pi-coding-agent";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { initTheme, SessionManager, type Theme } from "@earendil-works/pi-coding-agent";
 import type { TUI } from "@earendil-works/pi-tui";
+import { makeAssistantMessage, makeUserMessage } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { LaneViewer } from "./lane-viewer.js";
 import {
@@ -10,6 +14,7 @@ import {
 	recordRun,
 	retireRun,
 	setCurrentSession,
+	setLaneSessionFile,
 } from "./run-lane-registry.js";
 
 /** Identity theme — fg returns its text unchanged. */
@@ -202,6 +207,48 @@ describe("LaneViewer — render", () => {
 		expect(out).toContain("SNAPSHOT_TOOL_OUTPUT"); // tool result still folded in post-retirement
 		expect(out).not.toContain("└ tool result"); // not the dim collapse
 		viewer.dispose();
+	});
+
+	it("retired failed lane header shows the failure reason in full (Problem 1)", () => {
+		const session = makeSession(() => [assistantEntry("partial work before the failure")]);
+		recordRun("run-1", "ship");
+		setCurrentSession("run-1", session);
+		retireRun("run-1", "failed", "blueprint produced no plan artifact — stopping workflow");
+		const viewer = new LaneViewer("run-1", makeTui(), identityTheme, vi.fn());
+		const out = viewer.render(200).join("\n");
+		// The header carries the FULL cause (not just the leading clause), truncated only by width.
+		expect(out).toContain("failed: blueprint produced no plan artifact — stopping workflow");
+		expect(out).toContain("✗");
+		viewer.dispose();
+	});
+
+	it("disk fallback (Problem 2): a retired lane with no finalBranch renders from the on-disk jsonl", () => {
+		const tmp = mkdtempSync(join(tmpdir(), "rpiv-viewer-disk-"));
+		try {
+			// Persist a real session to disk, then point the lane at it via lastSessionFile.
+			const sessionDir = join(tmp, "sessions");
+			mkdirSync(sessionDir, { recursive: true });
+			const mgr = SessionManager.create(tmp, sessionDir);
+			mgr.appendMessage(makeUserMessage("a user turn"));
+			mgr.appendMessage(makeAssistantMessage({ text: "ON_DISK_TRANSCRIPT" }));
+			const file = mgr.getSessionFile();
+			expect(file).toBeDefined();
+
+			// Retire WITHOUT ever attaching a live session → finalBranch stays undefined, the
+			// exact state the original bug left behind. The disk fallback must still render.
+			recordRun("run-1", "ship");
+			retireRun("run-1", "failed", "boom");
+			setLaneSessionFile("run-1", file);
+			expect(getLane("run-1")?.finalBranch).toBeUndefined();
+
+			const viewer = new LaneViewer("run-1", makeTui(), identityTheme, vi.fn());
+			const out = viewer.render(120).join("\n");
+			expect(out).toContain("ON_DISK_TRANSCRIPT"); // recovered from disk, not memory
+			expect(out).not.toContain("(no transcript"); // the original bug is gone
+			viewer.dispose();
+		} finally {
+			rmSync(tmp, { recursive: true, force: true });
+		}
 	});
 
 	it("no current session → '(stage starting…)'", () => {

@@ -35,7 +35,7 @@ interface Bundle {
 		ctx: { runId: string; totalStages: number },
 	) => void;
 	onWorkflowEnd?: (
-		result: { termination?: { status: string } },
+		result: { termination?: { status: string; error?: string } },
 		ctx: { runId: string; workflow: string; totalStages: number },
 	) => void;
 }
@@ -152,6 +152,19 @@ describe("lane-progress event mapping", () => {
 		expect(getLane("run-1")?.progress?.phase).toBe("error");
 	});
 
+	it("onStageError carries the failure reason onto progress (Problem 1)", async () => {
+		const b = await register();
+		recordRun("run-1", "ship");
+		b.onStageError?.({ stageNumber: 2, name: "blueprint" }, "blueprint finished without producing a path", {
+			runId: "run-1",
+			totalStages: 4,
+		});
+		expect(getLane("run-1")?.progress).toMatchObject({
+			phase: "error",
+			reason: "blueprint finished without producing a path",
+		});
+	});
+
 	it("visited counts DISTINCT stages — a loop-back re-enters a stage without inflating the fraction numerator", async () => {
 		const b = await register();
 		recordRun("run-1", "ship");
@@ -201,6 +214,23 @@ describe("onWorkflowEnd — terminal retention + completion toast (Phase A)", ()
 		b.onWorkflowEnd?.({ termination: { status: "failed" } }, { runId: "run-1", workflow: "ship", totalStages: 7 });
 		expect(getLane("run-1")?.status).toBe("failed");
 		expect(REAL_UI.notify).toHaveBeenCalledWith(expect.stringContaining("failed"), "error");
+	});
+
+	it("failed → retains termination.error on the lane + injects the short reason into the toast (Problem 1)", async () => {
+		await captureUi(REAL_UI);
+		const b = await register();
+		recordRun("run-1", "ship");
+		b.onWorkflowEnd?.(
+			{ termination: { status: "failed", error: "blueprint produced no plan artifact — stopping workflow" } },
+			{ runId: "run-1", workflow: "ship", totalStages: 7 },
+		);
+		// The full cause is retained on the lane (dock chip + viewer header read it).
+		expect(getLane("run-1")?.error).toBe("blueprint produced no plan artifact — stopping workflow");
+		// The toast carries the trimmed leading clause so the user learns WHY without opening the lane.
+		expect(REAL_UI.notify).toHaveBeenCalledWith(
+			expect.stringContaining("failed: blueprint produced no plan artifact"),
+			"error",
+		);
 	});
 
 	it("aborted → status aborted + a warning toast", async () => {

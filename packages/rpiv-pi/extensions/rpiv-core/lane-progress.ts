@@ -30,6 +30,7 @@
  */
 
 import type { ExtensionAPI, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
+import { shortFailureReason } from "./lane-failure.js";
 import { isLaneRelayUiContext } from "./lane-relay-ui.js";
 import { getLane, noteVisitedStage, retireRun, setLaneProgress } from "./run-lane-registry.js";
 import { getCapturedUiContext } from "./session-capture.js";
@@ -105,13 +106,16 @@ export async function registerLaneProgress(): Promise<void> {
 					phase: "retry",
 					attempt,
 				}),
-			onStageError: (stage, _error, ctx) =>
+			// Carry the stage's failure cause (Problem 1) so the dock row can surface WHY
+			// it failed before the run retires — no longer discarded.
+			onStageError: (stage, error, ctx) =>
 				setLaneProgress(ctx.runId, {
 					stageNumber: stage.stageNumber,
 					totalStages: ctx.totalStages,
 					visited: noteVisitedStage(ctx.runId, stage.name),
 					stageName: stage.name,
 					phase: "error",
+					reason: error,
 				}),
 			onLoopStart: (stage, info, ctx) =>
 				setLaneProgress(ctx.runId, {
@@ -144,12 +148,22 @@ export async function registerLaneProgress(): Promise<void> {
 				const status = result.termination?.status;
 				if (!status || status === "running") return; // still in-flight — nothing to retire
 				const name = getLane(ctx.runId)?.name ?? ctx.workflow;
-				retireRun(ctx.runId, status);
+				// `termination.error` is the readable cause (the same text as the trail's
+				// errMsg) — retain it on the lane (Problem 1) for the dock chip + viewer header.
+				const error = result.termination?.error;
+				retireRun(ctx.runId, status, error);
 				const ui = getCapturedUiContext();
 				if (!ui) return;
 				if (status === "completed") ui.notify(`✓ ${name} finished — /lanes to view`, "info");
-				else if (status === "failed") ui.notify(`⚠ ${name} failed — /lanes to view`, "error");
-				else ui.notify(`⊘ ${name} ${status}`, "warning"); // aborted / cancelled
+				else if (status === "failed") {
+					// Inject the short reason into the toast so the user learns WHY without
+					// opening the lane; falls back to the bare line when no cause is known.
+					const short = shortFailureReason(error);
+					ui.notify(
+						short ? `⚠ ${name} failed: ${short} — /lanes to view` : `⚠ ${name} failed — /lanes to view`,
+						"error",
+					);
+				} else ui.notify(`⊘ ${name} ${status}`, "warning"); // aborted / cancelled
 			},
 		});
 	} catch (err) {

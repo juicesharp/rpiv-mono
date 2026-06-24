@@ -36,6 +36,7 @@ import {
 	laneNeedsInput,
 	listLanesForDisplay,
 	moveDockSelection,
+	retireRun,
 	setDockActive,
 	setDockSelection,
 } from "./run-lane-registry.js";
@@ -200,13 +201,24 @@ export class LaneDockEditor extends CustomEditor {
 				return;
 			}
 			case "stop": {
-				// `x` on the selected lane: abort a running run (it retires to "aborted"),
-				// or dismiss a finished/retained one. The dock stays active so the user can
-				// keep acting on the list; selection re-clamps as lanes drop.
+				// `x` on the selected lane: abort a running run, or dismiss a
+				// finished/retained one. The dock stays active so the user can keep acting
+				// on the list; selection re-clamps as lanes drop.
 				const lane = listLanesForDisplay()[getDockState().selection];
 				if (lane) {
-					if (lane.status === "running") lane.abort?.();
-					else evictRun(lane.runId);
+					if (lane.status === "running") {
+						// Fire the cooperative abort to actually halt the run, THEN
+						// optimistically retire the lane so the overlay clears on the
+						// keystroke. The runner's terminal `onWorkflowEnd` is the canonical
+						// writer, but on an abort the dispatched session can be torn down
+						// before the chain reaches a terminal write — `onWorkflowEnd` then
+						// never fires and the lane would be stranded "running" (overlay keeps
+						// showing it in progress). Retiring here makes the UI authoritative
+						// for the user's own cancel; `retireRun` is idempotent, so a later
+						// `onWorkflowEnd` for the same run is a no-op.
+						lane.abort?.();
+						retireRun(lane.runId, "aborted");
+					} else evictRun(lane.runId);
 				}
 				return;
 			}

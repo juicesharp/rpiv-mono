@@ -83,6 +83,12 @@ export interface LaneProgress {
 	stageName: string;
 	/** Glyph selector: running spinner · ⟲ retry · ✗ error. */
 	phase: "running" | "retry" | "error";
+	/**
+	 * Stage failure cause (Problem 1) — set on the `"error"` phase from
+	 * `onStageError`'s `error` param so a failed row can show WHY before the run
+	 * retires. The dock chip trims it via `shortFailureReason`; absent otherwise.
+	 */
+	reason?: string;
 	/** onStageRetry — "retry 2/3". */
 	attempt?: number;
 	/** Fanout sub-progress (onLoopStart seeds total; onUnitStart/End advance done). */
@@ -129,6 +135,21 @@ export interface LaneEntry {
 	 * getToolDefinition source — is dropped. Values typed `unknown`; the viewer narrows.
 	 */
 	finalToolDefs?: Map<string, unknown>;
+	/**
+	 * Terminal failure cause (Problem 1) — `result.termination.error` captured at
+	 * `retireRun`, the readable reason a `failed`/`aborted`/`cancelled` run ended.
+	 * The dock chip trims it (`shortFailureReason`); the viewer header shows it in
+	 * full. Absent for a `completed` run (no error) and while still running.
+	 */
+	error?: string;
+	/**
+	 * The persisted session file of this run's most-recent child (Problem 2) —
+	 * recorded at `setLaneSessionFile` when a child spawns, so it OUTLIVES the
+	 * disposed live session. Seeds the disk-jsonl transcript fallback
+	 * (`loadBranchFromDisk`) when neither a live session nor a `finalBranch`
+	 * snapshot is available. Absent before the first child spawns.
+	 */
+	lastSessionFile?: string;
 	/**
 	 * When this lane first started waiting on a deferred foreground question
 	 * (Phase C) — `Date.now()` at the 0→≥1 pendingInput transition, cleared when
@@ -236,6 +257,8 @@ export function recordRun(runId: string, name: string): void {
 		existing.name = name;
 		existing.status = "running"; // reactivate a retained terminal lane (resume)
 		existing.finalBranch = undefined; // drop the prior run's transcript snapshot
+		existing.error = undefined; // clear the prior run's terminal failure reason
+		existing.lastSessionFile = undefined; // drop the prior run's session-file pointer
 		existing.progress = undefined; // clear stale stage progress
 		existing.needsInputSince = undefined; // clear any stale needs-input clock
 	} else {
@@ -286,29 +309,81 @@ function snapshotToolDefs(branch: unknown, session: LaneSession): Map<string, un
 	return defs;
 }
 
-export function retireRun(runId: string, status: Exclude<LaneStatus, "running">): void {
-	const entry = state().lanes.get(runId);
-	if (!entry) return;
-	entry.status = status;
-	// Snapshot the transcript + the render inputs (cwd, per-tool definitions) before
-	// dropping the live session — fail-soft: a disposed/odd session just yields no
-	// snapshot (viewer shows "unavailable").
+/**
+ * Snapshot a live session's transcript + render inputs (branch, cwd, per-tool
+ * definitions) onto a lane. Fail-soft: a disposed/odd session yields an empty
+ * snapshot (viewer shows "unavailable") rather than throwing. Shared by the two
+ * capture paths: `retireRun` (when a session is still attached, e.g. the manager's
+ * optimistic `x` cancel) and `captureFinalSnapshot` (the host's per-stage teardown,
+ * which captures BEFORE the session is dropped so the end-of-run `retireRun` finds
+ * the snapshot already in place — see Problem 2's ordering fix).
+ */
+function captureSnapshotInto(entry: LaneEntry, session: LaneSession): void {
 	try {
-		const sess = entry.currentSession;
-		const branch = sess?.sessionManager.getBranch();
+		const branch = session.sessionManager.getBranch();
 		entry.finalBranch = branch;
-		entry.finalCwd = sess?.sessionManager.getCwd();
-		entry.finalToolDefs = sess ? snapshotToolDefs(branch, sess) : undefined;
+		entry.finalCwd = session.sessionManager.getCwd();
+		entry.finalToolDefs = snapshotToolDefs(branch, session);
 	} catch {
 		entry.finalBranch = undefined;
 		entry.finalCwd = undefined;
 		entry.finalToolDefs = undefined;
 	}
+}
+
+export function retireRun(runId: string, status: Exclude<LaneStatus, "running">, error?: string): void {
+	const entry = state().lanes.get(runId);
+	if (!entry) return;
+	// Idempotent: FIRST retire wins. A lane can be retired by more than one path —
+	// the manager's optimistic `x` cancel (lane-dock-editor) AND the runner's
+	// terminal `onWorkflowEnd` (lane-progress) both call here for the same run.
+	// The first call snapshots the transcript while the session is still live and
+	// drops `currentSession`; a second call would re-snapshot off the now-absent
+	// session and clobber `finalBranch` with `undefined`, wiping the viewable
+	// transcript. Re-recording the SAME id (resume) flips the lane back to
+	// "running" via `recordRun`, so this guard never strands a reactivated run.
+	if (entry.status !== "running") return;
+	entry.status = status;
+	if (error !== undefined) entry.error = error; // terminal failure reason (Problem 1)
+	// Snapshot from a STILL-LIVE session if one is attached (the manager's `x` path,
+	// where the abort teardown has not yet run). In the normal detached path the host
+	// already captured the snapshot via `captureFinalSnapshot` before dropping the
+	// session, so `currentSession` is undefined here — DON'T re-snapshot, which would
+	// clobber the captured `finalBranch` with nothing (Problem 2's root cause).
+	if (entry.currentSession) captureSnapshotInto(entry, entry.currentSession);
 	entry.currentSession = undefined;
 	entry.needsInputSince = undefined;
 	for (const p of entry.pendingInput) p.resolve(undefined);
 	entry.pendingInput.length = 0;
 	notify();
+}
+
+/**
+ * Capture a run's transcript snapshot WHILE its child session is still alive
+ * (Problem 2 fast-path). The detached host calls this from its per-stage `finally`,
+ * BEFORE `setCurrentSession(runId, undefined)` drops the session and `dispose()`
+ * invalidates it — so when the runner's `onWorkflowEnd` later calls `retireRun`
+ * (with `currentSession` already gone), the snapshot is already in place. Best-effort:
+ * a missing/evicted lane is a no-op. Does NOT notify — the paired `setCurrentSession`
+ * that immediately follows in the host does.
+ */
+export function captureFinalSnapshot(runId: string, session: LaneSession): void {
+	const entry = state().lanes.get(runId);
+	if (!entry) return;
+	captureSnapshotInto(entry, session);
+}
+
+/**
+ * Record the persisted session file of a run's most-recent child (Problem 2 durable
+ * path) — a durable string that outlives the disposed session and seeds the disk-jsonl
+ * transcript fallback. Called by the host alongside `setCurrentSession` when a child
+ * spawns. Best-effort: a missing lane or absent file is a no-op. No notify — it is
+ * read lazily at disk-fallback time, and the paired `setCurrentSession` already notified.
+ */
+export function setLaneSessionFile(runId: string, file: string | undefined): void {
+	if (file === undefined) return;
+	const entry = state().lanes.get(runId);
+	if (entry) entry.lastSessionFile = file;
 }
 
 /** DISMISS a lane — hard-delete from the registry (FR6). The terminal-lane reaper:
