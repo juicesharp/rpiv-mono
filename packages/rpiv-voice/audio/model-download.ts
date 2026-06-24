@@ -20,39 +20,35 @@ import { join } from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { promisify } from "node:util";
+import { loadVoiceConfig } from "../config/voice-config.js";
 import { t } from "../state/i18n-bridge.js";
 
 const execFileAsync = promisify(execFile);
 
 // ── Paths ────────────────────────────────────────────────────────────────────
-const MODEL_DIR_NAME = "whisper-base";
 export const MODELS_DIR = join(homedir(), ".pi", "models");
-export const WHISPER_BASE_DIR = join(MODELS_DIR, MODEL_DIR_NAME);
+export const WHISPER_BASE_DIR = join(MODELS_DIR, "whisper-base");
 export const SENTINEL_FILE = ".download-complete";
+
+export function getModelDir(flavour: string): string {
+	return join(MODELS_DIR, `whisper-${flavour}`);
+}
+
+function getWhisperFlavour(): string {
+	const config = loadVoiceConfig();
+	return config.whisperModelType || "base";
+}
 
 // ── Source archive ───────────────────────────────────────────────────────────
 // Approx archive size on the wire is ~198 MB; the splash now shows the exact
 // total once Content-Length is parsed, so we no longer encode the estimate
 // in any user-facing string. Kept here for documentation only.
 const MODEL_RELEASE_TAG = "asr-models";
-const MODEL_ARCHIVE_NAME = "sherpa-onnx-whisper-base.tar.bz2";
-const MODEL_URL = `https://github.com/k2-fsa/sherpa-onnx/releases/download/${MODEL_RELEASE_TAG}/${MODEL_ARCHIVE_NAME}`;
-
-// ── Files we keep (int8 quantized) ──────────────────────────────────────────
-const ENCODER_FILE = "base-encoder.int8.onnx";
-const DECODER_FILE = "base-decoder.int8.onnx";
-const TOKENS_FILE = "base-tokens.txt";
-const REQUIRED_FILES: readonly string[] = [ENCODER_FILE, DECODER_FILE, TOKENS_FILE];
-
-// ── Files we delete after extraction (fp32 dupes we don't need on CPU) ──────
-const FP32_ENCODER_FILE = "base-encoder.onnx";
-const FP32_DECODER_FILE = "base-decoder.onnx";
-const FP32_DUPLICATE_FILES: readonly string[] = [FP32_ENCODER_FILE, FP32_DECODER_FILE];
 
 // ── Tar invocation ───────────────────────────────────────────────────────────
 const TAR_BIN = "tar";
 // `--strip-components=1` flattens sherpa's top-level wrapper directory so the
-// REQUIRED_FILES land directly inside WHISPER_BASE_DIR.
+// REQUIRED_FILES land directly inside the model directory.
 const TAR_FLAGS: readonly string[] = ["-xjf"];
 const TAR_STRIP_FLAG = "--strip-components=1";
 
@@ -108,14 +104,17 @@ export class ModelInstallError extends Error {
 }
 
 export function isModelDownloaded(): boolean {
-	return existsSync(join(WHISPER_BASE_DIR, SENTINEL_FILE));
+	const flavour = getWhisperFlavour();
+	return existsSync(join(getModelDir(flavour), SENTINEL_FILE));
 }
 
 export function getModelPaths(): ModelPaths {
+	const flavour = getWhisperFlavour();
+	const modelDir = getModelDir(flavour);
 	return {
-		encoderPath: join(WHISPER_BASE_DIR, ENCODER_FILE),
-		decoderPath: join(WHISPER_BASE_DIR, DECODER_FILE),
-		tokensPath: join(WHISPER_BASE_DIR, TOKENS_FILE),
+		encoderPath: join(modelDir, `${flavour}-encoder.int8.onnx`),
+		decoderPath: join(modelDir, `${flavour}-decoder.int8.onnx`),
+		tokensPath: join(modelDir, `${flavour}-tokens.txt`),
 	};
 }
 
@@ -129,20 +128,29 @@ export function getModelPaths(): ModelPaths {
  * and on failure should `removeModelInstall()` so the next launch redownloads.
  */
 export function assertModelIntact(): void {
-	verifyModelFiles();
+	const flavour = getWhisperFlavour();
+	const modelDir = getModelDir(flavour);
+	verifyModelFiles(flavour, modelDir);
 }
 
 /** Wipe the entire model directory — used to recover from any partial /
  * corrupt install state. Idempotent and silent on missing dir. */
 export function removeModelInstall(): void {
-	rmSync(WHISPER_BASE_DIR, { recursive: true, force: true });
+	const flavour = getWhisperFlavour();
+	const modelDir = getModelDir(flavour);
+	rmSync(modelDir, { recursive: true, force: true });
 }
 
 export async function ensureModelDownloaded(onProgress: ProgressCallback, signal?: AbortSignal): Promise<ModelPaths> {
 	if (isModelDownloaded()) return getModelPaths();
 
-	mkdirSync(WHISPER_BASE_DIR, { recursive: true });
-	const archivePath = join(WHISPER_BASE_DIR, MODEL_ARCHIVE_NAME);
+	const flavour = getWhisperFlavour();
+	const modelDir = getModelDir(flavour);
+
+	mkdirSync(modelDir, { recursive: true });
+	const archiveName = `sherpa-onnx-whisper-${flavour}.tar.bz2`;
+	const archivePath = join(modelDir, archiveName);
+	const url = `https://github.com/k2-fsa/sherpa-onnx/releases/download/${MODEL_RELEASE_TAG}/${archiveName}`;
 
 	// Any failure between mkdir and writeSentinel leaves a half-populated
 	// directory (partial archive, partially-extracted .onnx, etc.) but no
@@ -154,7 +162,7 @@ export async function ensureModelDownloaded(onProgress: ProgressCallback, signal
 		onProgress({ phase: "downloading", message: msgDownloading() });
 		try {
 			let lastEmitMs = 0;
-			await downloadArchive(MODEL_URL, archivePath, signal, (stats) => {
+			await downloadArchive(url, archivePath, signal, (stats) => {
 				const now = Date.now();
 				const isFinal = stats.totalBytes !== undefined && stats.bytesReceived >= stats.totalBytes;
 				if (!isFinal && now - lastEmitMs < PROGRESS_THROTTLE_MS) return;
@@ -177,21 +185,21 @@ export async function ensureModelDownloaded(onProgress: ProgressCallback, signal
 
 		onProgress({ phase: "extracting", message: msgExtracting() });
 		try {
-			await extractArchive(archivePath, WHISPER_BASE_DIR);
+			await extractArchive(archivePath, modelDir);
 			rmSync(archivePath, { force: true });
-			pruneFp32Duplicates();
+			pruneFp32Duplicates(flavour, modelDir);
 		} catch (err) {
 			throw new ModelInstallError("extract", err);
 		}
 
 		onProgress({ phase: "verifying", message: msgVerifying() });
 		try {
-			verifyModelFiles();
+			verifyModelFiles(flavour, modelDir);
 		} catch (err) {
 			throw new ModelInstallError("verify", err);
 		}
 
-		writeSentinel();
+		writeSentinel(modelDir);
 		return getModelPaths();
 	} catch (err) {
 		removeModelInstall();
@@ -249,20 +257,22 @@ async function extractArchive(archivePath: string, destDir: string): Promise<voi
 
 // The Whisper archive ships fp32 + int8 side-by-side (~290 MB of fp32 we
 // don't use on CPU). Drop them so the install settles around ~157 MB.
-function pruneFp32Duplicates(): void {
-	for (const name of FP32_DUPLICATE_FILES) {
-		rmSync(join(WHISPER_BASE_DIR, name), { force: true });
+function pruneFp32Duplicates(flavour: string, modelDir: string): void {
+	const fp32Files = [`${flavour}-encoder.onnx`, `${flavour}-decoder.onnx`];
+	for (const name of fp32Files) {
+		rmSync(join(modelDir, name), { force: true });
 	}
 }
 
-function verifyModelFiles(): void {
-	for (const name of REQUIRED_FILES) {
-		if (!existsSync(join(WHISPER_BASE_DIR, name))) {
+function verifyModelFiles(flavour: string, modelDir: string): void {
+	const requiredFiles = [`${flavour}-encoder.int8.onnx`, `${flavour}-decoder.int8.onnx`, `${flavour}-tokens.txt`];
+	for (const name of requiredFiles) {
+		if (!existsSync(join(modelDir, name))) {
 			throw new Error(`Model verification failed: missing ${name}`);
 		}
 	}
 }
 
-function writeSentinel(): void {
-	writeFileSync(join(WHISPER_BASE_DIR, SENTINEL_FILE), "", "utf-8");
+function writeSentinel(modelDir: string): void {
+	writeFileSync(join(modelDir, SENTINEL_FILE), "", "utf-8");
 }

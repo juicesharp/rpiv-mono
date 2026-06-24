@@ -22,6 +22,7 @@ const VOICE_STATE_KEY = Symbol.for("rpiv-voice");
 export interface VoiceConfig {
 	readonly hallucinationFilterEnabled?: boolean;
 	readonly equalizerEnabled?: boolean;
+	readonly whisperModelType?: string;
 }
 
 /**

@@ -20,6 +20,11 @@ describe("loadVoiceConfig", () => {
 		const config = loadVoiceConfig();
 		expect(config.hallucinationFilterEnabled).toBe(false);
 	});
+	it("roundtrips whisperModelType", () => {
+		saveVoiceConfig({ whisperModelType: "tiny" });
+		const config = loadVoiceConfig();
+		expect(config.whisperModelType).toBe("tiny");
+	});
 });
 
 describe("saveVoiceConfig", () => {
