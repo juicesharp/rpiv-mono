@@ -44,6 +44,7 @@ describe("decideDockAction — inactive (entry gesture)", () => {
 		"up",
 		"enter",
 		"right",
+		"left",
 		"tab",
 		"escape",
 		"stop",
@@ -90,6 +91,10 @@ describe("decideDockAction — active (navigation)", () => {
 
 	it("ESC steps back to the input", () => {
 		expect(decideDockAction("escape", active())).toEqual({ kind: "deactivate" });
+	});
+
+	it("LEFT backs out of the dock (deactivate), mirroring → stepping in", () => {
+		expect(decideDockAction("left", active({ selection: 1 }))).toEqual({ kind: "deactivate" });
 	});
 
 	it("any other key exits the dock AND forwards the keystroke (resume typing)", () => {

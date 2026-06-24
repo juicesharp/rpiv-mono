@@ -227,13 +227,16 @@ describe("LaneViewer — render", () => {
 		viewer.dispose();
 	});
 
-	it("footer reads 'esc to answer' when the lane has a queued question (B affordance)", () => {
+	it("footer reads '⏎ answer' + back when the lane has a queued question (answer-in-place affordance)", () => {
 		const session = makeSession(() => [assistantEntry("hi")]);
 		recordRun("run-1", "ship");
 		setCurrentSession("run-1", session);
 		enqueueInput("run-1", { factory: (() => ({})) as never, options: undefined as never, resolve: vi.fn() });
 		const viewer = new LaneViewer("run-1", makeTui(), identityTheme, vi.fn());
-		expect(viewer.render(120).join("\n")).toContain("esc to answer");
+		const out = viewer.render(120).join("\n");
+		expect(out).toContain("⏎ answer"); // answer in place via ⏎
+		expect(out).toContain("←/esc back"); // back affordance stays alongside
+		expect(out).not.toContain("esc to answer"); // old esc-overload wording gone
 		viewer.dispose();
 	});
 
@@ -308,12 +311,42 @@ describe("LaneViewer — liveness / following the lane", () => {
 });
 
 describe("LaneViewer — input", () => {
-	it("esc calls done", () => {
+	it("esc calls done('back')", () => {
 		recordRun("run-1", "ship");
 		const done = vi.fn();
 		const viewer = new LaneViewer("run-1", makeTui(), identityTheme, done);
 		viewer.handleInput("\x1b"); // ESC
 		expect(done).toHaveBeenCalledTimes(1);
+		expect(done).toHaveBeenCalledWith("back");
+		viewer.dispose();
+	});
+
+	it("← calls done('back') (mirrors → opening the viewer)", () => {
+		recordRun("run-1", "ship");
+		const done = vi.fn();
+		const viewer = new LaneViewer("run-1", makeTui(), identityTheme, done);
+		viewer.handleInput("\x1b[D"); // Left arrow
+		expect(done).toHaveBeenCalledTimes(1);
+		expect(done).toHaveBeenCalledWith("back");
+		viewer.dispose();
+	});
+
+	it("⏎ answers in place with done('answer') when the lane has a queued question", () => {
+		recordRun("run-1", "ship");
+		enqueueInput("run-1", { factory: (() => ({})) as never, options: undefined as never, resolve: vi.fn() });
+		const done = vi.fn();
+		const viewer = new LaneViewer("run-1", makeTui(), identityTheme, done);
+		viewer.handleInput("\r"); // ENTER
+		expect(done).toHaveBeenCalledWith("answer");
+		viewer.dispose();
+	});
+
+	it("⏎ is inert when the lane has nothing queued (no done call — view verb stays decoupled)", () => {
+		recordRun("run-1", "ship");
+		const done = vi.fn();
+		const viewer = new LaneViewer("run-1", makeTui(), identityTheme, done);
+		viewer.handleInput("\r"); // ENTER
+		expect(done).not.toHaveBeenCalled();
 		viewer.dispose();
 	});
 

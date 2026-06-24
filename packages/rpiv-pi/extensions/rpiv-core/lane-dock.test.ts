@@ -1,7 +1,7 @@
-import type { ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
+import { type ExtensionUIContext, initTheme, type Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { createMockUI } from "@juicesharp/rpiv-test-utils";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { LaneDock } from "./lane-dock.js";
 import {
 	__resetRunLaneRegistry,
@@ -9,7 +9,9 @@ import {
 	enqueueInput,
 	evictRun,
 	getDockState,
+	type LaneSession,
 	recordRun,
+	setCurrentSession,
 	setDockActive,
 	setDockSelection,
 	setLaneProgress,
@@ -45,6 +47,22 @@ function mount(overlay: LaneDock, ui: ExtensionUIContext) {
 	const tui = { requestRender: vi.fn() };
 	const widget = factory(tui, identityTheme);
 	return { setWidget, widget, tui };
+}
+
+beforeAll(() => {
+	initTheme(); // SDK message components (renderBranch in the preview) read a global theme proxy
+});
+
+function makeSession(getBranch: () => unknown = () => []): LaneSession & { unsub: ReturnType<typeof vi.fn> } {
+	const unsub = vi.fn();
+	return {
+		sessionId: "sess",
+		isStreaming: true,
+		sessionManager: { getBranch, getCwd: () => "/tmp" },
+		getToolDefinition: () => undefined,
+		subscribe: vi.fn(() => unsub),
+		unsub,
+	};
 }
 
 beforeEach(() => {
@@ -272,14 +290,14 @@ describe("LaneDock — rendering", () => {
 		overlay.dispose();
 	});
 
-	it("setFooterText injects the resolved hotkey glyph into the footer (Phase E)", () => {
+	it("the ambient footer advertises step-in / lanes only — never the ^Q hotkey glyph", () => {
 		recordRun("run-1", "ship");
 		const overlay = new LaneDock();
-		overlay.setFooterText("^Q · /lanes — open run manager");
 		const { widget } = mount(overlay, makeCtx());
 		const lines = widget?.render(120) ?? [];
 		const footerIdx = lines.findIndex((l) => l.includes("/lanes"));
-		expect(lines[footerIdx]).toContain("^Q");
+		expect(lines[footerIdx]).toContain("step in");
+		expect(lines[footerIdx]).not.toContain("^Q");
 		overlay.dispose();
 	});
 });
@@ -499,7 +517,7 @@ describe("LaneDock — active (focused) state", () => {
 		const out = (widget?.render(120) ?? []).join("\n");
 		expect(out).not.toContain("❯");
 		expect(out).toContain("/lanes");
-		expect(out).toContain("↓ to step in"); // the DOWN-from-empty entry gesture is labeled
+		expect(out).toContain("↓ step in"); // DEFAULT_FOOTER_TEXT discoverability wording
 		expect(out).not.toContain("transcript"); // no run-action contract in the ambient footer
 		overlay.dispose();
 	});
@@ -530,6 +548,18 @@ describe("LaneDock — active (focused) state", () => {
 		const out = (widget?.render(120) ?? []).join("\n");
 		expect(out).toContain("⏎ answer");
 		expect(out).toContain("→ transcript");
+		overlay.dispose();
+	});
+
+	it("active footer uses unified back wording (←/esc back), not the old 'esc exit'", () => {
+		recordRun("run-1", "ship");
+		const overlay = new LaneDock();
+		const { widget } = mount(overlay, makeCtx());
+		setDockActive(true);
+		setDockSelection(0);
+		const out = (widget?.render(120) ?? []).join("\n");
+		expect(out).toContain("←/esc back");
+		expect(out).not.toContain("esc exit");
 		overlay.dispose();
 	});
 
@@ -672,6 +702,146 @@ describe("LaneDock — active (focused) state", () => {
 		evictRun("run-1"); // last lane gone
 		overlay.update(); // lanes == 0 → update() calls setDockActive(false)
 		expect(getDockState().active).toBe(false);
+		overlay.dispose();
+	});
+});
+
+describe("LaneDock — preview subscription (Slice 5)", () => {
+	it("does not subscribe to any session while ambient (inactive)", () => {
+		recordRun("run-1", "ship");
+		const session = makeSession();
+		setCurrentSession("run-1", session);
+		const overlay = new LaneDock();
+		mount(overlay, makeCtx());
+		overlay.update();
+		expect(session.subscribe).not.toHaveBeenCalled();
+		overlay.dispose();
+	});
+
+	it("subscribes to the selected lane's session while active and identity-guards unrelated notifies", () => {
+		recordRun("run-1", "ship");
+		const session = makeSession();
+		setCurrentSession("run-1", session);
+		const overlay = new LaneDock();
+		mount(overlay, makeCtx());
+		setDockActive(true);
+		setDockSelection(0);
+		overlay.update(); // resolve selection → subscribe once
+		expect(session.subscribe).toHaveBeenCalledTimes(1);
+		// An unrelated registry change must NOT stack a second subscription.
+		setLaneProgress("run-1", { stageNumber: 1, totalStages: 3, stageName: "plan", phase: "running" });
+		overlay.update();
+		expect(session.subscribe).toHaveBeenCalledTimes(1);
+		expect(session.unsub).not.toHaveBeenCalled();
+		overlay.dispose();
+	});
+
+	it("re-points the subscription when the selection moves to another lane", () => {
+		recordRun("run-1", "ship");
+		recordRun("run-2", "build");
+		const s1 = makeSession();
+		const s2 = makeSession();
+		setCurrentSession("run-1", s1);
+		setCurrentSession("run-2", s2);
+		const overlay = new LaneDock();
+		mount(overlay, makeCtx());
+		setDockActive(true);
+		setDockSelection(0);
+		overlay.update(); // subscribe s1
+		expect(s1.subscribe).toHaveBeenCalledTimes(1);
+		setDockSelection(1);
+		overlay.update(); // move to run-2 → unsub s1, subscribe s2
+		expect(s1.unsub).toHaveBeenCalledTimes(1);
+		expect(s2.subscribe).toHaveBeenCalledTimes(1);
+		overlay.dispose();
+	});
+
+	it("dispose tears down the preview subscription", () => {
+		recordRun("run-1", "ship");
+		const session = makeSession();
+		setCurrentSession("run-1", session);
+		const overlay = new LaneDock();
+		mount(overlay, makeCtx());
+		setDockActive(true);
+		setDockSelection(0);
+		overlay.update();
+		overlay.dispose();
+		expect(session.unsub).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe("LaneDock — active transcript preview (Slice 6)", () => {
+	const assistantEntry = (text: string) => ({
+		type: "message",
+		message: { role: "assistant", content: [{ type: "text", text }] },
+	});
+
+	it("ambient (inactive) shows NO preview — no transcript leaks into the ambient dock", () => {
+		recordRun("run-1", "ship");
+		setCurrentSession(
+			"run-1",
+			makeSession(() => [assistantEntry("PREVIEW_BODY")]),
+		);
+		const overlay = new LaneDock();
+		const { widget } = mount(overlay, makeCtx());
+		expect((widget?.render(120) ?? []).join("\n")).not.toContain("PREVIEW_BODY");
+		overlay.dispose();
+	});
+
+	it("active dock renders the selected lane's transcript tail beneath a dim separator rule", () => {
+		recordRun("run-1", "ship");
+		setCurrentSession(
+			"run-1",
+			makeSession(() => [assistantEntry("PREVIEW_BODY")]),
+		);
+		const overlay = new LaneDock();
+		const { widget } = mount(overlay, makeCtx());
+		setDockActive(true);
+		setDockSelection(0);
+		const lines = widget?.render(120) ?? [];
+		expect(lines.join("\n")).toContain("PREVIEW_BODY"); // tail of the selected lane
+		// Assert the separator by POSITION, not mere presence: the active dock already emits
+		// its own top + bottom rules (which under identityTheme also equal "─".repeat(120)), so
+		// `lines.some(l => l === rule)` would pass even if the preview rule regressed. Pin the
+		// rule to BETWEEN the lane row and the preview body — only the preview separator lives there.
+		const rowIdx = lines.findIndex((l) => l.includes("ship")); // the selected lane row
+		const bodyIdx = lines.findIndex((l) => l.includes("PREVIEW_BODY")); // the preview tail
+		const ruleIdx = lines.findIndex((l, i) => i > rowIdx && i < bodyIdx && l === "─".repeat(120));
+		expect(bodyIdx).toBeGreaterThan(rowIdx); // the preview renders after the lane rows
+		expect(ruleIdx).toBeGreaterThan(-1); // a full-width separator introduces the preview block
+		overlay.dispose();
+	});
+
+	it("caps the preview at PREVIEW_LINES — only the newest tail survives a long transcript", () => {
+		const many = Array.from({ length: 50 }, (_, i) => assistantEntry(`preview-line-${i}`));
+		recordRun("run-1", "ship");
+		setCurrentSession(
+			"run-1",
+			makeSession(() => many),
+		);
+		const overlay = new LaneDock();
+		const { widget } = mount(overlay, makeCtx());
+		setDockActive(true);
+		setDockSelection(0);
+		const out = (widget?.render(120) ?? []).join("\n");
+		expect(out).toContain("preview-line-49"); // newest line in the tail
+		expect(out).not.toContain("preview-line-0"); // the oldest is sliced off by the cap
+		overlay.dispose();
+	});
+
+	it("stepping in does not shift ambient lane rows (preview is active-gated)", () => {
+		recordRun("run-1", "polish");
+		setCurrentSession(
+			"run-1",
+			makeSession(() => [assistantEntry("body")]),
+		);
+		const overlay = new LaneDock();
+		const { widget } = mount(overlay, makeCtx());
+		const ambientRow = (widget?.render(120) ?? []).find((l) => l.includes("polish")) ?? "";
+		setDockActive(true);
+		setDockSelection(0);
+		const activeRow = (widget?.render(120) ?? []).find((l) => l.includes("polish")) ?? "";
+		expect(activeRow.indexOf("polish")).toBe(ambientRow.indexOf("polish"));
 		overlay.dispose();
 	});
 });

@@ -43,7 +43,7 @@ import {
 /** The navigation keys the dock cares about; everything else is "other".
  *  "stop" is the `x` key (abort a running lane / dismiss a finished one).
  *  "right" (→) always opens the selected lane's transcript viewer. */
-export type DockKey = "up" | "down" | "enter" | "right" | "escape" | "tab" | "stop" | "other";
+export type DockKey = "up" | "down" | "enter" | "right" | "left" | "escape" | "tab" | "stop" | "other";
 
 /** Live inputs the decision depends on — snapshotted from the editor + registry. */
 export interface DockDecisionContext {
@@ -104,6 +104,10 @@ export function decideDockAction(key: DockKey, ctx: DockDecisionContext): DockAc
 			return { kind: "open" }; // always view the transcript, even on a needs-input lane
 		case "stop":
 			return { kind: "stop" };
+		case "left":
+			// ← backs out of the dock (mirror of → stepping in / opening the viewer). deactivate
+			// SWALLOWS the key (unlike exit-passthrough), so ← never also moves the editor cursor.
+			return { kind: "deactivate" };
 		case "escape":
 			return { kind: "deactivate" };
 		default:
@@ -118,6 +122,7 @@ function classifyKey(data: string): DockKey {
 	if (matchesKey(data, Key.down)) return "down";
 	if (matchesKey(data, Key.enter)) return "enter";
 	if (matchesKey(data, Key.right)) return "right";
+	if (matchesKey(data, Key.left)) return "left";
 	if (matchesKey(data, Key.escape)) return "escape";
 	if (matchesKey(data, Key.tab)) return "tab";
 	if (data === "x") return "stop"; // mirrors the retired manager's `x` binding

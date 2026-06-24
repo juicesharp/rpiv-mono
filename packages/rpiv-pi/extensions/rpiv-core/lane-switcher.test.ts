@@ -134,7 +134,7 @@ describe("lane-switcher — Ctrl-Q shortcut", () => {
 describe("lane-switcher — switchIntoLane sequencing", () => {
 	it("opens the viewer for the run on the launcher UI identity", async () => {
 		recordRun("run-1", "ship");
-		mockShowLaneViewer.mockResolvedValue(undefined);
+		mockShowLaneViewer.mockResolvedValue("back");
 		const ui = createMockUI() as unknown as ExtensionUIContext;
 		await switchIntoLane(ui, "run-1");
 		expect(mockShowLaneViewer).toHaveBeenCalledTimes(1);
@@ -143,7 +143,7 @@ describe("lane-switcher — switchIntoLane sequencing", () => {
 
 	it("does not stack a second viewer while one is already open", async () => {
 		recordRun("run-1", "ship");
-		mockShowLaneViewer.mockReturnValue(new Promise<void>(() => {})); // never resolves
+		mockShowLaneViewer.mockReturnValue(new Promise<"answer" | "back">(() => {})); // never resolves
 		const ui = createMockUI() as unknown as ExtensionUIContext;
 		void switchIntoLane(ui, "run-1");
 		await Promise.resolve();
@@ -152,13 +152,40 @@ describe("lane-switcher — switchIntoLane sequencing", () => {
 		expect(mockShowLaneViewer).toHaveBeenCalledTimes(1);
 	});
 
-	it("deactivates the dock once the user returns to root", async () => {
+	it("re-parks on the originating lane (not root) when the user backs out of the viewer", async () => {
 		recordRun("run-1", "ship");
-		mockShowLaneViewer.mockResolvedValue(undefined);
+		mockShowLaneViewer.mockResolvedValue("back"); // esc/← → back: no drain, re-park
+		setDockActive(true);
+		const ui = createMockUI() as unknown as ExtensionUIContext;
+		await switchIntoLane(ui, "run-1");
+		// → and esc converge: focus returns to the lane in the dock, NOT the ambient root.
+		expect(getDockState()).toEqual({ active: true, selection: 0 });
+		expect(getFocusedRun()).toBeUndefined();
+	});
+
+	it("drops to the root prompt when the lane is evicted before the viewer closes", async () => {
+		recordRun("run-1", "ship");
+		// The run finishes + is dismissed while the viewer is open → nothing left to step onto.
+		mockShowLaneViewer.mockImplementation(async () => {
+			evictRun("run-1");
+			return "back";
+		});
 		setDockActive(true);
 		const ui = createMockUI() as unknown as ExtensionUIContext;
 		await switchIntoLane(ui, "run-1");
 		expect(getDockState().active).toBe(false);
+	});
+
+	it("drains the queued questions only when the viewer reports the 'answer' intent", async () => {
+		recordRun("run-1", "ship");
+		const resolve = vi.fn();
+		enqueueInput("run-1", { factory: (() => ({})) as never, options: undefined as never, resolve });
+		const custom = vi.fn().mockResolvedValue("ans");
+		const ui = createMockUI({ custom }) as unknown as ExtensionUIContext;
+		mockShowLaneViewer.mockResolvedValue("back"); // backed out without answering
+		await switchIntoLane(ui, "run-1");
+		expect(custom).not.toHaveBeenCalled(); // "back" never drains
+		expect(resolve).not.toHaveBeenCalled(); // the queued question survives for next time
 	});
 });
 
@@ -178,7 +205,7 @@ describe("lane-switcher — focus lifecycle", () => {
 
 	it("clears focus after a normal switch completes", async () => {
 		recordRun("run-1", "ship");
-		mockShowLaneViewer.mockResolvedValue(undefined);
+		mockShowLaneViewer.mockResolvedValue("back");
 		const ui = createMockUI() as unknown as ExtensionUIContext;
 		await switchIntoLane(ui, "run-1");
 		expect(getFocusedRun()).toBeUndefined();
@@ -197,7 +224,7 @@ describe("lane-switcher — drainPendingInput (FR5)", () => {
 
 		const custom = vi.fn().mockResolvedValueOnce("ans-A").mockResolvedValueOnce("ans-B");
 		const ui = createMockUI({ custom }) as unknown as ExtensionUIContext;
-		mockShowLaneViewer.mockResolvedValue(undefined);
+		mockShowLaneViewer.mockResolvedValue("answer");
 
 		await switchIntoLane(ui, "run-1");
 
@@ -214,7 +241,7 @@ describe("lane-switcher — drainPendingInput (FR5)", () => {
 
 		const custom = vi.fn().mockRejectedValue(new Error("dismissed"));
 		const ui = createMockUI({ custom }) as unknown as ExtensionUIContext;
-		mockShowLaneViewer.mockResolvedValue(undefined);
+		mockShowLaneViewer.mockResolvedValue("answer");
 
 		await switchIntoLane(ui, "run-1");
 		expect(resolve).toHaveBeenCalledWith(undefined); // never strands the child
@@ -334,7 +361,7 @@ describe("lane-switcher — hotkey resolution (Phase E)", () => {
 		expect(shortcutKey).toBe("ctrl+l");
 	});
 
-	it("session_start advertises the resolved binding in the dock footer", async () => {
+	it("session_start renders the static step-in footer — the hotkey is not advertised", async () => {
 		process.env[ENV] = "ctrl+l";
 		const { sessionStart } = register();
 		recordRun("run-1", "ship");
@@ -351,9 +378,9 @@ describe("lane-switcher — hotkey resolution (Phase E)", () => {
 		} as unknown;
 		const lines = factory?.({ requestRender: vi.fn() }, identityTheme).render(120) ?? [];
 		const out = lines.join("\n");
-		expect(out).toContain("^L"); // resolved hotkey glyph
-		expect(out).toContain("↓"); // DOWN-from-empty entry gesture
+		expect(out).toContain("step in"); // DOWN-from-empty entry gesture
 		expect(out).toContain("/lanes"); // always-safe command
+		expect(out).not.toContain("^L"); // the hotkey is intentionally not advertised
 	});
 });
 

@@ -18,10 +18,12 @@
 
 import type { ExtensionUIContext, Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { type TUI, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { type RenderSource, renderBranch, type ToolDefArg, type ViewerEntry } from "./lane-transcript.js";
 import {
 	getDockState,
 	type LaneEntry,
 	type LaneProgress,
+	type LaneSession,
 	type LaneStatus,
 	laneNeedsInput,
 	listLanes,
@@ -33,15 +35,22 @@ import {
 const WIDGET_KEY = "rpiv-lanes";
 /** Content-row budget (heading + lane rows). The footer + trailing spacer render below it. */
 const MAX_WIDGET_LINES = 12;
-/** Default discoverability footer — surfaces how to switch in. The switcher overrides
- *  it via setFooterText with the ACTUAL resolved hotkey glyph (Phase E); this fallback
- *  (no hotkey prefix) is used in tests / before the switcher wires the binding. */
-const DEFAULT_FOOTER_TEXT = "↓ to step in · /lanes";
+/** Ambient discoverability footer — surfaces how to step in with the two self-explanatory
+ *  gestures only: ↓ from an empty prompt, or the always-available /lanes command. The `^Q`
+ *  hotkey still steps in (lane-switcher) but is intentionally NOT advertised here — its glyph
+ *  is the least legible of the three and Ctrl+Q reads as "quit" elsewhere, so the footer keeps
+ *  to the two hints that explain themselves. */
+const DEFAULT_FOOTER_TEXT = "↓ step in · /lanes";
 /** Footer shown while the dock is active (the user has stepped in). ⏎ and → are
  *  DEDICATED keys (answer / transcript) that never swap meaning; the footer only hides
- *  the ⏎ hint on a lane with nothing to answer, where ⏎ is inert. */
-const ACTIVE_FOOTER_NEEDS_INPUT = "⏎ answer · → transcript · ↑/↓ navigate · x stop · esc exit";
-const ACTIVE_FOOTER_DEFAULT = "→ transcript · ↑/↓ navigate · x stop · esc exit";
+ *  the ⏎ hint on a lane with nothing to answer, where ⏎ is inert. Back wording is
+ *  unified with the viewer: ←/esc back. */
+const ACTIVE_FOOTER_NEEDS_INPUT = "⏎ answer · → transcript · ↑/↓ navigate · x stop · ←/esc back";
+const ACTIVE_FOOTER_DEFAULT = "→ transcript · ↑/↓ navigate · x stop · ←/esc back";
+/** Active-only preview height cap — the dock shows at most this many lines of the
+ *  selected lane's transcript tail. Self-bounded: MAX_WIDGET_LINES governs only the lane
+ *  rows, not the preview, so the preview must cap its own footprint. */
+const PREVIEW_LINES = 6;
 /** Selection-gutter cells reserved on every row (so a row never shifts when stepping in):
  *  the `❯` cursor (matching pi's selectors) on the active selection, two spaces otherwise. */
 const CURSOR_SELECTED = "❯ ";
@@ -130,14 +139,10 @@ export class LaneDock {
 	private spinTimer: ReturnType<typeof setInterval> | undefined;
 	/** Heartbeat timer (Phase C) — alive ONLY while a lane needs input, to age the heading. */
 	private needsInputTimer: ReturnType<typeof setInterval> | undefined;
-	/** Footer hint text — set by the switcher with the resolved hotkey glyph (Phase E). */
-	private footerText = DEFAULT_FOOTER_TEXT;
-
-	/** Set the discoverability footer (Phase E) — the switcher passes the resolved
-	 *  hotkey hint so the overlay never advertises a key that isn't bound. */
-	setFooterText(text: string): void {
-		this.footerText = text;
-	}
+	/** The selected lane's live child session the preview follows. Identity-
+	 *  guarded so an unrelated registry notify never stacks a second subscription (a leak). */
+	private previewSession: LaneSession | undefined;
+	private previewUnsub: (() => void) | undefined;
 
 	setUICtx(ctx: ExtensionUIContext): void {
 		// Identity-compare so repeat session_start handlers are idempotent;
@@ -154,6 +159,7 @@ export class LaneDock {
 		const lanes = listLanes();
 		this.syncSpinner(lanes); // start/stop the repaint timer with running-lane presence
 		this.syncHeartbeat(lanes); // start/stop the aging heartbeat with needs-input presence
+		this.syncPreviewSubscription(); // follow the SELECTED lane's live session
 		if (lanes.length === 0) {
 			// No lanes → the dock hides; there is nothing to navigate, so drop any
 			// stale navigation focus too (e.g. the last lane was evicted while the
@@ -216,6 +222,30 @@ export class LaneDock {
 			clearInterval(this.needsInputTimer);
 			this.needsInputTimer = undefined;
 		}
+	}
+
+	/**
+	 * Follow the SELECTED lane's live child session while the dock is active so the preview
+	 * repaints on every streaming tick — mirrors the viewer's identity-guarded
+	 * subscription (lane-viewer.ts). The guard is essential: without it every unrelated
+	 * registry notify (setLaneProgress/setLaneStatus) would stack a NEW
+	 * currentSession.subscribe and leak listeners. One guard covers all transitions: arrow
+	 * to another lane, the selected lane advances a stage (currentSession swaps), or it
+	 * retires (→ undefined, the preview falls back to finalBranch). No-op while ambient
+	 * (no selection) — the preview is active-only.
+	 */
+	private syncPreviewSubscription(): void {
+		const { active, selection } = getDockState();
+		const selLane = active ? listLanesForDisplay()[selection] : undefined;
+		const next = selLane?.currentSession;
+		if (next === this.previewSession) return;
+		this.previewUnsub?.();
+		this.previewSession = next;
+		// `this.tui?` is read LAZILY at fire time, not captured: update() (and thus this
+		// subscribe) can run before the widget factory assigns this.tui (e.g. the first
+		// update() during mount, ahead of the factory). The optional-chain no-ops until the
+		// widget mounts, then repaints normally — so DON'T hoist this.tui into a local here.
+		this.previewUnsub = next?.subscribe(() => this.tui?.requestRender());
 	}
 
 	private renderWidget(theme: Theme, width: number): string[] {
@@ -284,15 +314,21 @@ export class LaneDock {
 			// Same reserved gutter so the summary aligns with the lane rows above.
 			lines.push(truncate(`${CURSOR_UNSELECTED}${theme.fg("dim", `+${moreCount} more`)}`));
 		}
+		// Active-only transcript-tail preview of the SELECTED lane: a dim separator
+		// rule then the last PREVIEW_LINES of its transcript, between the rows / "+N more" fold
+		// and the footer. Active-gated so ambient stays byte-for-byte stable.
+		// NB: this is the SAME `selLane` the footer below reads — declared once here, replacing
+		// the old standalone footer-block declaration. Do not re-declare it.
+		const selLane = active ? lanes[selection] : undefined;
+		if (active && selLane) {
+			for (const line of this.renderPreview(theme, selLane, width)) lines.push(truncate(line));
+		}
 		// Footer hint (dim), indented one space — active shows the navigation contract,
 		// ambient the discoverability hint. Preceded by a blank line (rhythm) and followed
 		// by the bottom rule (the separator from Pi's status chrome below).
 		lines.push("");
-		// Active footer is contextual to the selected lane (answer vs view); ambient shows
-		// the discoverability hint. selection indexes the SAME listLanesForDisplay() order.
-		const selLane = active ? lanes[selection] : undefined;
 		const activeFooter = selLane && laneNeedsInput(selLane.runId) ? ACTIVE_FOOTER_NEEDS_INPUT : ACTIVE_FOOTER_DEFAULT;
-		lines.push(truncate(` ${theme.fg("dim", active ? activeFooter : this.footerText)}`));
+		lines.push(truncate(` ${theme.fg("dim", active ? activeFooter : DEFAULT_FOOTER_TEXT)}`));
 		lines.push(rule);
 		return lines;
 	}
@@ -395,6 +431,41 @@ export class LaneDock {
 		return `${prefix}${coloredBar}  ${numCol} ${coloredName}`;
 	}
 
+	/**
+	 * Active-only transcript-tail preview of the selected lane. A dim separator rule
+	 * then the last PREVIEW_LINES of the lane's rendered transcript — sourced from the live
+	 * child session, else the retirement snapshot, exactly like the viewer (lane-viewer.ts).
+	 * Reuses the shared renderBranch; toolsExpanded is always false so the preview stays compact.
+	 * Fail-soft: a disposed/odd session degrades to a dim placeholder, never throws into the widget.
+	 * scrollOffset is deliberately absent — scrolling stays in the focused viewer; this is a fixed tail.
+	 */
+	private renderPreview(theme: Theme, lane: LaneEntry, width: number): string[] {
+		const rule = theme.fg("dim", "─".repeat(Math.max(0, width)));
+		let entries: ViewerEntry[];
+		let source: RenderSource;
+		try {
+			const session = lane.currentSession;
+			if (session) {
+				entries = (session.sessionManager.getBranch() as ViewerEntry[] | undefined) ?? [];
+				source = {
+					cwd: session.sessionManager.getCwd(),
+					toolDef: (name) => session.getToolDefinition(name) as ToolDefArg,
+				};
+			} else if (lane.finalBranch !== undefined) {
+				entries = (lane.finalBranch as ViewerEntry[]) ?? [];
+				const defs = lane.finalToolDefs;
+				source = { cwd: lane.finalCwd ?? "", toolDef: (name) => defs?.get(name) as ToolDefArg };
+			} else {
+				return [rule, theme.fg("dim", "  (stage starting…)")]; // no live child + no snapshot yet
+			}
+		} catch {
+			return [rule, theme.fg("dim", "  (transcript unavailable)")];
+		}
+		if (!this.tui) return [rule]; // pre-mount guard (tui is set by the widget factory before render)
+		const body = renderBranch(entries, width, source, this.tui, theme, false);
+		return [rule, ...body.slice(Math.max(0, body.length - PREVIEW_LINES))];
+	}
+
 	dispose(): void {
 		if (this.spinTimer) {
 			clearInterval(this.spinTimer);
@@ -404,6 +475,9 @@ export class LaneDock {
 			clearInterval(this.needsInputTimer);
 			this.needsInputTimer = undefined;
 		}
+		this.previewUnsub?.();
+		this.previewUnsub = undefined;
+		this.previewSession = undefined;
 		if (this.uiCtx) this.uiCtx.setWidget(WIDGET_KEY, undefined);
 		this.widgetRegistered = false;
 		this.tui = undefined;

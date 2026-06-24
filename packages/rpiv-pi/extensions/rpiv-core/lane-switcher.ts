@@ -52,20 +52,6 @@ function resolveHotkey(): string | undefined {
 	return v;
 }
 
-/** Render a KeyId as a compact footer glyph: "ctrl+q" → "^Q", else the raw id. */
-function hotkeyGlyph(key: string): string {
-	const m = /^ctrl\+([a-z])$/i.exec(key);
-	return m ? `^${m[1].toUpperCase()}` : key;
-}
-
-/** Build the dock footer hint reflecting the ACTUAL binding (Phase E). */
-function footerText(hotkey: string | undefined): string {
-	// Surface all three entry gestures, with ↓ explicitly labeled (the ergonomic
-	// default, from an empty prompt): the resolved hotkey glyph (when bound) and the
-	// always-safe /lanes command are listed as the alternates that do the same thing.
-	return hotkey ? `↓ step in · ${hotkeyGlyph(hotkey)} · /lanes` : "↓ step in · /lanes";
-}
-
 let overlay: LaneDock | undefined;
 let unsubscribe: (() => void) | undefined;
 /** The launcher UI that owns the dock editor — kept so __resetLaneSwitcher can
@@ -83,6 +69,30 @@ function enterDock(): void {
 }
 
 /**
+ * Re-park dock focus after leaving a lane — the shared tail of switchIntoLane's "back"
+ * and answerLane. Reads ONLY registry state, so it is throw-safe inside a finally. The
+ * tri-state (the focus-after-verb fix from 8c4a2f4):
+ *  - no lanes left → drop to the ambient root prompt;
+ *  - some lane still needs input → park row 0 so a run of ⏎ presses walks the queue
+ *    (needs-input lanes bucket-sort to the top, run-lane-registry.ts:422-433);
+ *  - otherwise → keep the cursor on the originating lane, so focus returns to it.
+ */
+function reparkAfterLane(runId: string): void {
+	if (laneCount() === 0) {
+		setDockActive(false); // nothing left to step onto — back to the ambient prompt
+	} else if (listLanes().some((l) => laneNeedsInput(l.runId))) {
+		setDockActive(true); // another lane awaits — park at the top so the next ⏎ walks to it
+		setDockSelection(0);
+	} else {
+		// No lane needs input: stay stepped in on the originating lane, so focus returns
+		// to it rather than the primary session input. ↑/esc steps back out.
+		setDockActive(true);
+		const idx = listLanesForDisplay().findIndex((l) => l.runId === runId);
+		setDockSelection(idx >= 0 ? idx : 0);
+	}
+}
+
+/**
  * Switch into a run: open the read-only viewer, then drain its queued foreground
  * questions — sequentially, so overlays never stack. Marks the lane focused for the
  * whole switched-in session so THIS run's abort tap (and only it) interprets Ctrl-C;
@@ -94,12 +104,12 @@ export async function switchIntoLane(ui: ExtensionUIContext, runId: string): Pro
 	switchingLane = true;
 	setFocusedRun(runId);
 	try {
-		await showLaneViewer(ui, runId); // 1) see live context (esc → back)
-		await drainPendingInput(ui, runId); // 2) then answer any queued questions (FR5)
+		const intent = await showLaneViewer(ui, runId); // 1) see live context; esc/← → "back"
+		if (intent === "answer") await drainPendingInput(ui, runId); // 2) ⏎ in the viewer → answer in place (FR5)
 	} finally {
 		setFocusedRun(undefined);
-		setDockActive(false); // back at root: the dock is ambient again
 		switchingLane = false;
+		reparkAfterLane(runId); // → and ⏎ converge: land back on the originating lane, not at root
 	}
 }
 
@@ -122,18 +132,7 @@ export async function answerLane(ui: ExtensionUIContext, runId: string): Promise
 	} finally {
 		setFocusedRun(undefined);
 		switchingLane = false;
-		if (laneCount() === 0) {
-			setDockActive(false); // nothing left to step onto — back to the ambient prompt
-		} else if (listLanes().some((l) => laneNeedsInput(l.runId))) {
-			setDockActive(true); // another lane awaits — park at the top so the next ⏎ walks to it
-			setDockSelection(0);
-		} else {
-			// No lane needs input: stay stepped in on the lane we just answered, so focus
-			// returns to it rather than the primary session input. ↑/esc steps back out.
-			setDockActive(true);
-			const idx = listLanesForDisplay().findIndex((l) => l.runId === runId);
-			setDockSelection(idx >= 0 ? idx : 0);
-		}
+		reparkAfterLane(runId); // same re-park as switchIntoLane's "back" path
 	}
 }
 
@@ -163,7 +162,6 @@ export function registerLaneSwitcher(pi: ExtensionAPI): void {
 		if (!ctx.hasUI || !ctx.ui || isLaneRelayUiContext(ctx.ui)) return;
 		const ui = ctx.ui;
 		overlay ??= new LaneDock();
-		overlay.setFooterText(footerText(hotkey)); // Phase E — advertise the actual binding
 		overlay.setUICtx(ui);
 		overlay.update();
 		// Subscribe once: re-render the dock on any registry change (run recorded/
