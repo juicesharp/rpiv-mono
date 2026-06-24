@@ -8,7 +8,7 @@
   </a>
 </div>
 
-Talk to [Pi Agent](https://github.com/badlogic/pi-mono) instead of typing. `rpiv-voice` adds the `/voice` slash command — open the overlay, speak, hit `Enter`, and your transcript drops straight into Pi's editor. Speech-to-text runs **entirely on your machine** via [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) Whisper (base multilingual int8). No cloud, no API keys, no telemetry.
+Talk to [Pi Agent](https://github.com/badlogic/pi-mono) instead of typing. `rpiv-voice` adds the `/voice` slash command — open the overlay, speak, hit `Enter`, and your transcript drops straight into Pi's editor. Speech-to-text runs **entirely on your machine** via [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) Whisper models (defaulting to the base multilingual int8 model, but fully configurable to other sizes/languages). No cloud, no API keys, no telemetry.
 
 ![Voice dictation overlay above the Pi editor](https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-voice/docs/overlay.jpg)
 
@@ -63,7 +63,7 @@ The dim trailing text after the committed transcript is the rolling partial — 
 
 ### First run
 
-The first time you run `/voice`, the splash overlay downloads the Whisper base multilingual model (~198 MB compressed, ~157 MB on disk) into `~/.pi/models/whisper-base/`. Subsequent runs load directly from disk in under a second. If a previous download was interrupted, the stale model directory is detected and re-downloaded automatically.
+The first time you run `/voice`, the splash overlay downloads the selected Whisper model (by default, the base multilingual model, ~198 MB compressed, ~157 MB on disk) into `~/.pi/models/whisper-${flavour}/`. Subsequent runs load directly from disk in under a second. If a previous download was interrupted, the stale model directory is detected and re-downloaded automatically.
 
 ## Configuration
 
@@ -71,17 +71,19 @@ The first time you run `/voice`, the splash overlay downloads the Whisper base m
 
 ```json
 {
-  "hallucinationFilterEnabled": false
+  "hallucinationFilterEnabled": false,
+  "whisperModelType": "tiny"
 }
 ```
 
 | Field | Default | Effect |
 |---|---|---|
 | `hallucinationFilterEnabled` | `true` | When `false`, keeps Whisper's "Thanks for watching" / "[Music]" / repeating-token loops. Useful when dictating short single words that the filter might mistake for noise. |
+| `whisperModelType` | `"base"` | The Whisper model flavour to download and use (e.g. `"tiny"`, `"tiny.en"`, `"base"`, `"base.en"`, `"small"`, `"small.en"`, `"medium"`, `"medium.en"`, `"large-v3"`, `"large-v3-turbo"`). |
 
 You can also flip the toggle interactively from the **Settings** screen (`Tab` from dictation, `Ctrl-S` to save).
 
-The microphone is the OS default input — `rpiv-voice` does not expose device selection. The bundled Whisper base multilingual model is loaded from `~/.pi/models/whisper-base/`; alternative models aren't supported today.
+The microphone is the OS default input — `rpiv-voice` does not expose device selection. The default Whisper base multilingual model is loaded from `~/.pi/models/whisper-base/`, but other flavours can be configured using `whisperModelType`.
 
 ## Privacy
 
@@ -94,8 +96,8 @@ The microphone is the OS default input — `rpiv-voice` does not expose device s
 
 - [Pi Agent CLI](https://www.npmjs.com/package/@earendil-works/pi-coding-agent)
 - A working microphone reachable by [`decibri`](https://www.npmjs.com/package/decibri) (mic permission granted to your terminal on macOS)
-- ~200 MB free disk under `~/.pi/models/whisper-base/`
-- Network access on first run only
+- Sufficient free disk space under `~/.pi/models/` for the chosen model flavour (from ~40 MB for `tiny` to ~1.4 GB for `large-v3`)
+- Network access on first run only (or when changing model flavours to download the new model archive)
 
 ## Troubleshooting
 
