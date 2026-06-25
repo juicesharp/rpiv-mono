@@ -33,7 +33,7 @@ import {
 	type NextStep,
 } from "./loop-kinds.js";
 import { STATUS_KEY, STATUS_LOOP_UNIT } from "./messages.js";
-import { failedOutput, type Output, type OutputMeta } from "./output.js";
+import { failedOutput, type Output, type OutputMeta, outputMeta } from "./output.js";
 import { Semaphore } from "./semaphore.js";
 import type { RunContext, UnitRef, WorkflowHostContext } from "./types.js";
 
@@ -176,11 +176,11 @@ async function dispatchUnitDetached(
  *  when this is used, so the sentinel is never read downstream; it only keeps the
  *  fold's Output type intact without a throw. */
 function unitOutputMeta(e: LoopEntry, u: Extract<NextStep, { kind: "unit" }>, run: RunContext): OutputMeta {
-	return {
+	return outputMeta({
 		stage: decorateStage(e.name, u.tag),
 		skill: u.skill,
 		stageNumber: run.state.lastAllocatedStageNumber,
 		ts: nowIso(),
 		runId: run.runId,
-	};
+	});
 }

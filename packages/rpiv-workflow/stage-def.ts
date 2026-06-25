@@ -517,6 +517,15 @@ function actsScript<TIn = unknown>(opts: ActsScriptOptions<TIn>): StageDef<TIn, 
 // A terminal stage = side-effect + inheritsArtifacts: false (see the `terminal()`
 // public doc). `terminalFn` (Partial path) and `terminalScript` (concrete-opts
 // path below) are the two realizations; both set the same marker.
+//
+// "terminal" SENSE 1 (the factory — this fn + the `terminal` export below): a
+// side-effect stage that does NOT inherit the upstream artifact. Distinct from
+// SENSE 2 (graph sink — `StageShape.edge.mode: "terminal"` in loop-constructors.ts
+// / `{ kind: "stop" }` in routing.ts: no outgoing edge OR explicit `STOP`;
+// orthogonal to this factory — a `terminal()` stage can route onward, and a
+// plain stage can be a sink) and SENSE 3 (run-outcome prose — "terminal
+// failure/outcome" = a halt that ends the run, e.g. audit.ts `writeFailureRow`).
+// See the `terminal` export doc below for the full glossary.
 function terminalFn(overrides: Partial<StageDef> = {}): StageDef {
 	return withDefaults("side-effect", { ...overrides, inheritsArtifacts: false });
 }
@@ -577,5 +586,19 @@ export const acts = Object.assign(actsFn, { script: actsScript, prompt: actsProm
  * Desugars to `acts({ ...overrides, inheritsArtifacts: false })`. The
  * skillless variant `terminal.script({ run, ... })` desugars to
  * `acts.script({ ...opts, inheritsArtifacts: false })`.
+ *
+ * ── Glossary: "terminal" has three unrelated senses in this package ──
+ *  1. FACTORY (this export, `terminalFn`/`terminalScript`): a side-effect
+ *     stage that does NOT inherit the upstream artifact (`inheritsArtifacts:
+ *     false`). A `terminal()` stage may still carry a downstream edge.
+ *  2. GRAPH SINK (`StageShape.edge.mode: "terminal"` in loop-constructors.ts;
+ *     `{ kind: "stop" }` in routing.ts `RoutingResult`; rendered "(terminal)"
+ *     by preview.ts `formatEdge`; "implicit terminals" in validate/graph.ts):
+ *     a stage with NO outgoing edge OR an explicit `STOP`. Orthogonal to the
+ *     factory — a `terminal()` stage can route onward, a plain stage can be a
+ *     sink.
+ *  3. RUN OUTCOME ("terminal failure/outcome" prose, e.g. audit.ts
+ *     `writeFailureRow` / `recordTerminalFailure`): a failure/cancellation/
+ *     abort that ends the run.
  */
 export const terminal = Object.assign(terminalFn, { script: terminalScript });

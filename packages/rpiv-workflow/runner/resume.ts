@@ -31,7 +31,7 @@ import type { Artifact } from "../handle.js";
 import { formatError } from "../internal-utils.js";
 import { panelMembers } from "../judge.js";
 import { projectResult, publishPanelVerdict } from "../loop.js";
-import { effectiveLoopOf } from "../loop-constructors.js";
+import { effectiveLoopOf, freezesEntryArgsOf } from "../loop-constructors.js";
 import {
 	advanceCursor,
 	foldFanoutCompletion,
@@ -42,7 +42,7 @@ import {
 	unitTagOf,
 } from "../loop-kinds.js";
 import { ERR_RESUME_LOOP_MISMATCH } from "../messages.js";
-import { failedOutput, type Output } from "../output.js";
+import { failedOutput, type Output, outputMeta } from "../output.js";
 import {
 	readAllStagesForResume,
 	STATE_SCHEMA_VERSION,
@@ -256,7 +256,7 @@ async function foldUnitRow(
 			// only safe place to derive the round-0 arg. `reads` projections in
 			// particular must NOT be re-derived post-fold, where the generation's
 			// own appends have moved the `.at(-1)` cursors.
-			entryArgs: loop.kind === "assess" ? stageEntryArgs(def, row.parent!, workflow.start, acc.state) : "",
+			entryArgs: freezesEntryArgsOf(loop) ? stageEntryArgs(def, row.parent!, workflow.start, acc.state) : "",
 			cursor: freshCursor(),
 			units: undefined,
 		};
@@ -299,7 +299,13 @@ async function foldUnitRow(
 			foldFanoutCompletion(acc.state, gen.cursor, gen.def, gen.parent, row.unitIndex!, gen.units.length, row.output);
 		} else if (row.collected && row.errMsg !== undefined) {
 			const sentinel = failedOutput(
-				{ stage: row.stage, skill: row.skill, stageNumber: row.stageNumber, ts: row.ts, runId: acc.runId },
+				outputMeta({
+					stage: row.stage,
+					skill: row.skill,
+					stageNumber: row.stageNumber,
+					ts: row.ts,
+					runId: acc.runId,
+				}),
 				row.errMsg,
 			);
 			foldFanoutCompletion(acc.state, gen.cursor, gen.def, gen.parent, row.unitIndex!, gen.units.length, sentinel);

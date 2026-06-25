@@ -34,7 +34,7 @@ import { acts, type FanoutFn, fanin, gate, type IterateFn, produces, type Workfl
 import { fs as fsHandle } from "../handle.js";
 import { judge } from "../judge.js";
 import { assess, fanout, iterate, majority, panel, verify } from "../loop-constructors.js";
-import type { Output } from "../output.js";
+import { failedOutput, type Output, outputMeta } from "../output.js";
 import type { Outcome } from "../output-spec.js";
 import { eq, gt } from "../predicates.js";
 import {
@@ -232,6 +232,22 @@ describe("loop-resume — fanout", () => {
 		// The collected row is NOT re-dispatched, so no new unit rows for impl land.
 		const rows = readAllStages(tmpDir, header.runId);
 		expect(rows.filter((r) => r.parent === "impl")).toHaveLength(3);
+	});
+
+	it("collected soft-halt row: the rebuilt sentinel's meta is byte-identical to a live failedOutput (both via outputMeta)", () => {
+		// The resume fold rebuilds the sentinel through `outputMeta({ ts: row.ts })`;
+		// the live `softHaltUnit` path mints `nowIso()`. Both now route through the
+		// single `outputMeta` assembler, so when fed the same activation fields the
+		// meta is structurally equal — a live-vs-resume divergence is unrepresentable.
+		const rowFields = {
+			stage: "impl (phase-2)",
+			skill: "impl",
+			stageNumber: 2,
+			ts: "t2",
+			runId: header.runId,
+		};
+		const rebuilt = failedOutput(outputMeta({ ...rowFields, ts: rowFields.ts }), "unit 2 boom");
+		expect(rebuilt.meta).toStrictEqual(rowFields);
 	});
 
 	it("process died mid-fanout (no failure row): resumes at the next unit", async () => {

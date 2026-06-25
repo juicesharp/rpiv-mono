@@ -7,4 +7,4 @@
  * (`runStageOrRecordFailure`, run-stage.ts) catches it as before.
  */
 
-export { StagePreflightError } from "../stage-errors.js";
+export { haltPreflight, invariantPreflight, StagePreflightError } from "../stage-errors.js";

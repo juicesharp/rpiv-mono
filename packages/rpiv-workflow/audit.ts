@@ -210,6 +210,11 @@ export function abortedArgs(a: FailureText | string, b?: string): TerminalFailur
  * onward past the stage — is enforced ONCE (parity contract, precedent
  * `advanceCursor` at loop.ts). Returns the assigned stageNumber on success
  * (undefined on drop), matching `audit-rows.ts:recordStage`'s contract.
+ *
+ * "terminal" here is the RUN-OUTCOME sense (a failure/cancellation that ends
+ * the run) — distinct from the `terminal()` stage factory (stage-def.ts) and
+ * the graph-sink `edge.mode: "terminal"` (loop-constructors.ts). See the
+ * glossary on `stage-def.ts`'s `terminal` export.
  */
 function writeFailureRow(
 	ctx: WorkflowHostContext,
@@ -318,9 +323,13 @@ function stopFailureArgs(skill: string, stop: Exclude<StopSignal, "stop">, error
 }
 
 export function recordCancellation(ctx: WorkflowHostContext, audit: AuditCtx): void {
-	// Cancellation is a first-class termination outcome (`status: "cancelled"`);
-	// `errMsg` is mirrored into the JSONL row so post-mortems work from the
-	// trail alone (same posture as `recordTerminalFailure`).
+	// Cancellation is a first-class termination outcome: the canonical in-memory
+	// name is `RunTermination.status: "cancelled"` (types.ts), but the JSONL row
+	// is written with the FROZEN `StageStatus: "skipped"` (state/state.ts) — a
+	// deliberate split (the row value is a versioned on-disk contract; renaming
+	// it would break resume + every past-run reader). THIS is the sole writer of
+	// a `"skipped"` row. `errMsg` is mirrored into the row so post-mortems work
+	// from the trail alone (same posture as `recordTerminalFailure`).
 	const errMsg = `${audit.skill} cancelled by user`;
 	writeFailureRow(ctx, audit, {
 		stage: audit.stageName,

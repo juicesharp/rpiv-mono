@@ -19,7 +19,7 @@ import {
 } from "../messages.js";
 import { readName } from "../stage-def.js";
 import type { RunContext } from "../types.js";
-import { StagePreflightError } from "./errors.js";
+import { haltPreflight, invariantPreflight } from "./errors.js";
 import type { ResolvedStage } from "./resolve-stage.js";
 
 /**
@@ -49,7 +49,7 @@ export function ensureLoopNotContinue(stage: ResolvedStage): void {
 	const reason =
 		`runStage: stage "${stage.name}" cannot combine loop with sessionPolicy "continue" — ` +
 		"each unit requires an isolated session";
-	throw new StagePreflightError("invariant", stage.name, MSG_STAGE_THREW(stage.name, reason), reason, false);
+	throw invariantPreflight(stage.name, MSG_STAGE_THREW(stage.name, reason), reason);
 }
 
 /**
@@ -88,7 +88,7 @@ export function ensureJudgeSkillRegistered(judge: AnyJudge, stage: ResolvedStage
 		if (member.skill === undefined) continue;
 		if (run.registeredSkills.has(member.skill)) continue;
 		const f = FAIL_SKILL_NOT_REGISTERED(member.skill, stage.stageNumber);
-		throw new StagePreflightError("halt", member.skill, f.toast, f.error, true);
+		throw haltPreflight(member.skill, f);
 	}
 }
 
@@ -119,7 +119,7 @@ function ensureSkillRegistered(stage: ResolvedStage, run: RunContext): void {
 	if (run.registeredSkills.has(stage.skill)) return;
 
 	const f = FAIL_SKILL_NOT_REGISTERED(stage.skill, stage.stageNumber);
-	throw new StagePreflightError("halt", stage.skill, f.toast, f.error, true);
+	throw haltPreflight(stage.skill, f);
 }
 
 /**
@@ -144,7 +144,7 @@ function ensureUpstreamArtifact(stage: ResolvedStage, run: RunContext): void {
 	if (stage.dispatch === "prompt") return;
 	if (currentPrimaryArtifact(run.state)) return;
 	const f = FAIL_MISSING_ARTIFACT(stage.skill, stage.stageNumber);
-	throw new StagePreflightError("halt", stage.skill, f.toast, f.error, true);
+	throw haltPreflight(stage.skill, f);
 }
 
 /**
@@ -165,6 +165,6 @@ function ensureNamedReads(stage: ResolvedStage, run: RunContext): void {
 		// observes a half-filled produces-fanout channel.
 		if (run.state.named[name]?.length) continue;
 		const f = FAIL_MISSING_NAMED_READ(stage.skill, name, stage.stageNumber);
-		throw new StagePreflightError("halt", stage.skill, f.toast, f.error, true);
+		throw haltPreflight(stage.skill, f);
 	}
 }

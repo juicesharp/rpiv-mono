@@ -121,9 +121,17 @@ describe("recordTerminalFailure", () => {
 
 		recordCancellation(ctx, auditFor(tmpDir, state));
 
+		// PIN: the three-way cross-reference for a user-cancellation —
+		//   canonical in-memory termination   RunTermination.status: "cancelled"  (types.ts)
+		//   frozen on-disk row value           StageStatus: "skipped"              (state/state.ts)
+		//   sole writer of a "skipped" row     recordCancellation                  (audit.ts)
+		// The canonical name ("cancelled") and the frozen row value ("skipped")
+		// differ by design — the row value is a versioned on-disk contract that
+		// resume + past-run readers depend on, so it stays "skipped" even though
+		// the in-memory outcome is "cancelled". The assertion value below is
+		// FROZEN; do not "fix" it to "cancelled".
 		expect(state.termination.status).toBe("cancelled");
 		expect(state.termination.error).toContain("cancelled by user");
-		// The JSONL row keeps the long-standing "skipped" status.
 		expect(readAllStages(tmpDir, "run-1").map((r) => r.status)).toEqual(["skipped"]);
 	});
 

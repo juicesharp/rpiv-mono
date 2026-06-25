@@ -27,6 +27,7 @@ import { join } from "node:path";
 import { createMockSessionChain, mockAssistantMessage } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type FanoutFn, type IterateFn, produces, type Workflow } from "../api.js";
+import { stageEntryArgs } from "../chain-state.js";
 import type { Artifact } from "../handle.js";
 import { fs as fsHandle, handleToString } from "../handle.js";
 import { judge } from "../judge.js";
@@ -963,6 +964,74 @@ describe("reconstructState", () => {
 		advanceCursor(live, "produce", p1, loop);
 
 		expect(JSON.stringify(result.trailing?.cursor)).toBe(JSON.stringify(live));
+	});
+
+	it("assess round-0 entryArgs freeze: reconstructState yields trailing.entryArgs equal to stageEntryArgs over the state-at-generation-open (not post-fold)", async () => {
+		// Pins live==resume derivation of the assess round-0 producer arg through the
+		// one `freezesEntryArgsOf(loop)` authority. The `refine` stage READS its OWN
+		// outcome channel (`drafts`), so each producer round APPENDS to that channel
+		// — moving the `.at(-1)` cursor the reads projection consumes. The frozen
+		// arg must therefore equal `stageEntryArgs` over the state reconstructed
+		// from the trail TRUNCATED BEFORE the assess generation (the seed row only),
+		// NOT `stageEntryArgs` over the full trail's post-fold state (the hazard the
+		// `resume.ts` generation-open comment warns of).
+		const seedArt = fakeArtifact("drafts/seed.md");
+		const r0 = fakeArtifact("drafts/r0.md");
+		const v0 = fakeArtifact("verdicts/v0.json");
+		const loop = assess({
+			judge: judge({ skill: "grade", outcome: makeOutcome("verdict") }),
+			done: () => false,
+			feedForward: () => "more",
+		});
+		const wf: Workflow = {
+			name: "test-wf",
+			start: "seed",
+			stages: {
+				seed: produces({ outcome: makeOutcome("drafts") }),
+				refine: produces({ outcome: makeOutcome("drafts"), reads: ["drafts"], loop }),
+			},
+			edges: { seed: "refine", refine: "stop" },
+		} as Workflow;
+
+		const seedRow: WorkflowStage = {
+			session: null,
+			stageNumber: 1,
+			stage: "seed",
+			skill: "seed",
+			status: "completed",
+			ts: "t1",
+			output: fakeOutput([seedArt]),
+		};
+		const fullRows: WorkflowStage[] = [
+			seedRow,
+			assessProduceRow("refine", 0, 2, fakeOutput([r0])),
+			assessJudgeRow("refine", "grade", 0, 3, fakeOutput([v0])),
+		];
+
+		// Full trail — generation left open (trailing), so entryArgs is frozen on it.
+		writeRunStages(fullRows);
+		const result = await reconstructState(tmpDir, wf, baseHeader);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+
+		// State-at-generation-open: the trail truncated BEFORE the assess generation
+		// (seed row only). At that point the reads channel carries just the seed entry.
+		writeRunStages([seedRow]);
+		const atOpen = await reconstructState(tmpDir, wf, baseHeader);
+		expect(atOpen.ok).toBe(true);
+		if (!atOpen.ok) return;
+
+		const expected = stageEntryArgs(wf.stages.refine!, "refine", "seed", atOpen.state);
+		// The frozen value is reads-derived (truthy, not just originalInput)…
+		expect(expected).toBeTruthy();
+		// …and matches what the fold froze at generation open.
+		expect(result.trailing?.entryArgs).toBe(expected);
+
+		// The HAZARD: re-deriving from the FULL trail's post-fold state would yield a
+		// DIFFERENT arg — the generation's own appends moved the reads cursor to r0.
+		// This pins WHY the freeze happens at generation open, not post-fold.
+		const postFold = stageEntryArgs(wf.stages.refine!, "refine", "seed", result.state);
+		expect(postFold).not.toBe(expected);
 	});
 
 	it("REPLAY PARITY: fanout trailing cursor matches the live transition", async () => {

@@ -29,6 +29,15 @@ import type { RunTrigger } from "../triggers.js";
 // Row shapes
 // ---------------------------------------------------------------------------
 
+/**
+ * On-disk status stamped on every `WorkflowStage` row. `"skipped"` is the
+ * FROZEN on-disk marker for a user-cancellation: the canonical in-memory name
+ * is `RunTermination.status: "cancelled"` (../types.ts), and the sole writer of
+ * a `"skipped"` row is `recordCancellation` (../audit.ts). The split is
+ * deliberate — the row value is a versioned on-disk contract (see
+ * `STATE_SCHEMA_VERSION`), so it keeps its long-standing spelling even though
+ * the in-memory outcome reads "cancelled". Literal unchanged.
+ */
 export type StageStatus = "completed" | "failed" | "skipped" | "aborted";
 
 /**

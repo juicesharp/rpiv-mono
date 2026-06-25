@@ -138,7 +138,10 @@ export interface RunState {
  *  - `"failed"`    — a stage/preflight/routing halt; `error` carries the cause.
  *  - `"aborted"`   — cooperative cancellation via `RunWorkflowOptions.signal`,
  *                    or the model aborted the stage.
- *  - `"cancelled"` — the user dismissed the live session mid-stage.
+ *  - `"cancelled"` — the user dismissed the live session mid-stage. Recorded
+ *    on disk as the legacy FROZEN `StageStatus: "skipped"` (state/state.ts),
+ *    written solely by `recordCancellation` (audit.ts); the canonical name
+ *    (`"cancelled"`) and the frozen row value (`"skipped"`) differ by design.
  */
 export type RunTermination =
 	| { status: "running"; error?: undefined }

@@ -117,6 +117,42 @@ export function finalizeOutput<K extends string, D>(
 	};
 }
 
+/**
+ * The single construction home for an `OutputMeta` literal. The five former
+ * assembly sites (`sessions/extraction.ts:wrapOutput`, `sessions/sessions.ts:
+ * outputMetaFor`, `loop-parallel.ts:unitOutputMeta`, the `runner/script-stage.ts`
+ * produce hook, and the `runner/resume.ts` soft-halt sentinel) all route through
+ * this — so a structural divergence between the live path's minted meta and the
+ * resume fold's rebuilt sentinel is unrepresentable (modeled on the `audit.ts`
+ * `terminalArgsOf` flat-pairing authority).
+ *
+ * `ts` is a PARAMETER, not an injected `nowIso()`: live call sites pass
+ * `nowIso()`; the resume fold replays the persisted `row.ts`. That is what lets
+ * the two paths share one constructor — resume stays byte-identical to the row
+ * the live path wrote.
+ *
+ * `skill` is conditionally spread (not defaulted) so a call site that omits it
+ * (script-stage rows, and any resume row whose `skill` is absent) produces an
+ * object with NO `skill` key — preserving the script-row "no skill field"
+ * contract (`JSON.stringify` drops `undefined`, so this must stay a key
+ * omission, not `{ skill: undefined }`).
+ */
+export function outputMeta(args: {
+	stage: string;
+	skill?: string;
+	stageNumber: number;
+	ts: string;
+	runId: string;
+}): OutputMeta {
+	return {
+		stage: args.stage,
+		...(args.skill !== undefined ? { skill: args.skill } : {}),
+		stageNumber: args.stageNumber,
+		ts: args.ts,
+		runId: args.runId,
+	};
+}
+
 // ---------------------------------------------------------------------------
 // Failed-unit sentinel (collect-all fanout)
 // ---------------------------------------------------------------------------

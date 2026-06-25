@@ -8,6 +8,12 @@
  * routing layer detected a violation (an `EdgeFn` body threw, or an
  * `EdgeFn` returned an undeclared target).
  *
+ * `{ kind: "stop" }` (and "terminal stages" above/below) is the GRAPH-SINK
+ * sense — a stage with no outgoing edge OR an explicit `STOP`. Unrelated to
+ * the `terminal()` stage factory (stage-def.ts) and to "terminal failure"
+ * run-outcome prose (audit.ts). See the glossary on `stage-def.ts`'s
+ * `terminal` export. The `kind: "stop"` literal is untouched.
+ *
  * Errors are returned, not thrown. The caller (runner) switches on
  * `kind` and routes `"err"` through `recordTerminalFailure` — same as
  * any other halt site.

@@ -41,7 +41,7 @@ import {
 	STATUS_KEY,
 	STATUS_STAGE,
 } from "../messages.js";
-import { finalizeOutput, type Output } from "../output.js";
+import { finalizeOutput, type Output, outputMeta } from "../output.js";
 import type { RunContext, WorkflowHostContext } from "../types.js";
 import {
 	DEFAULT_VALIDATION_RETRIES,
@@ -89,18 +89,21 @@ export async function runScript(
 	const result = await runValidationRetryLoop<Output, "recorded">(
 		{
 			maxRetries: stage.def.maxRetries ?? DEFAULT_VALIDATION_RETRIES,
-			haltOnInvalid: (stage.def.onInvalid ?? "retry") === "halt",
+			failFast: (stage.def.onInvalid ?? "retry") === "halt",
 		},
 		{
 			produce: async () => {
 				const invocation = await invokeRun(curCtx, stage, scriptCtx, run, stageNumber);
-				if (!invocation.ok) return { kind: "halt", halt: "recorded" };
-				const output = finalizeOutput(invocation.raw, {
-					stage: stage.name,
-					stageNumber,
-					ts: nowIso(),
-					runId: run.runId,
-				});
+				if (!invocation.ok) return { kind: "aborted", abort: "recorded" };
+				const output = finalizeOutput(
+					invocation.raw,
+					outputMeta({
+						stage: stage.name,
+						stageNumber,
+						ts: nowIso(),
+						runId: run.runId,
+					}),
+				);
 				return { kind: "ok", value: output };
 			},
 			validate: async (output) => {
@@ -121,7 +124,7 @@ export async function runScript(
 		},
 	);
 
-	if (result.kind === "halt") return "halted";
+	if (result.kind === "aborted") return "halted";
 	if (result.kind === "exhausted") {
 		const failureSummary = result.failures.map(describeFailure).join("; ");
 		await recordTerminalFailure(

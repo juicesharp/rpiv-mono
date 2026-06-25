@@ -23,7 +23,7 @@ import { assertNever, formatError, nowIso, withTimeout } from "../internal-utils
 import { isJsonSchemaObject, jsonSchemaToStandard } from "../json-schema.js";
 import { ERR_COLLECTOR_THREW, ERR_PARSER_THREW, ERR_SCHEMA_TIMEOUT, MSG_VALIDATION_RETRY } from "../messages.js";
 import { sideEffectOutcome } from "../outcomes/index.js";
-import { finalizeOutput, type Output } from "../output.js";
+import { finalizeOutput, type Output, outputMeta } from "../output.js";
 import type { CollectCtx, Outcome } from "../output-spec.js";
 import { type BranchEntry, readBranch } from "../transcript.js";
 import type { StageSession, WorkflowSessionContext } from "../types.js";
@@ -35,6 +35,7 @@ import {
 	MAX_VALIDATION_RETRY_TIMEOUT_MS,
 	MIN_VALIDATION_RETRIES,
 	MIN_VALIDATION_RETRY_TIMEOUT_MS,
+	runValidationRetryLoop,
 	type SchemaValidationFailure,
 	type ValidationResult,
 	validateOutputData,
@@ -131,16 +132,19 @@ function buildCollectCtx(s: StageSession, branch: BranchEntry[], branchOffset: n
 }
 
 function wrapOutput(s: StageSession, parts: { kind: string; artifacts: readonly Artifact[]; data: unknown }): Output {
-	return finalizeOutput(parts, {
-		stage: s.stageName,
-		skill: s.skill,
-		// Pre-allocated by `produceAndValidateOutput` before any finalize runs —
-		// no `lastAllocatedStageNumber + 1` peek, no temporal coupling with
-		// recordStage.
-		stageNumber: s.allocatedStageNumber!,
-		ts: nowIso(),
-		runId: s.runId,
-	});
+	return finalizeOutput(
+		parts,
+		outputMeta({
+			stage: s.stageName,
+			skill: s.skill,
+			// Pre-allocated by `produceAndValidateOutput` before any finalize runs —
+			// no `lastAllocatedStageNumber + 1` peek, no temporal coupling with
+			// recordStage.
+			stageNumber: s.allocatedStageNumber!,
+			ts: nowIso(),
+			runId: s.runId,
+		}),
+	);
 }
 
 type RunOutcomeResult = { kind: "ok"; output: Output } | Fatal;
@@ -263,40 +267,63 @@ async function retryUntilValid(
 		MAX_VALIDATION_RETRY_TIMEOUT_MS,
 	);
 
-	let output = initial;
-	const initialValidation = await validateOrFatal(schema, output.data, s.skill, timeoutMs);
-	if (initialValidation.kind === "fatal") return initialValidation;
-	let result = initialValidation.result;
-	let attempts = 0;
+	// The retry policy is the SHARED `runValidationRetryLoop` engine
+	// (validate-output.ts) — the same produce → validate → retry structure the
+	// script path runs. The four equivalence cases (invalid+failFast → exhausted;
+	// invalid+budget-spent → exhausted; invalid+retryable → retry; any fatal →
+	// Fatal) fall out of the engine's three-arm outcome:
+	//   - `produce(0)` → the already-produced `initial` (produced + contract-
+	//     checked before this loop opened); `produce(n>0)` → re-read the branch,
+	//     re-run the collector/parser, re-check the completion contract.
+	//   - `validate` → `validateOrFatal`, mapping its `Fatal` onto the engine's
+	//     `{ kind: "aborted"; abort: Fatal }` abort arm.
+	//   - `onRetry` → `onStageRetry` + `askAgentToFix`; a throw becomes an abort.
+	// `failFast` mirrors the script path's stop-flag polarity —
+	// `(onInvalid ?? "retry") === "halt"` is byte-identical to today's
+	// `onInvalid !== "halt"` loop-continue condition, just expressed as the
+	// engine's stop flag. Total productions stay bounded by `maxRetries + 1`.
+	const outcome = await runValidationRetryLoop<Output, Fatal>(
+		{
+			maxRetries,
+			failFast: (s.stage.onInvalid ?? "retry") === "halt",
+		},
+		{
+			produce: async (attempt) => {
+				// `produce(0)` returns the already-produced initial — no re-collection,
+				// no contract re-check (both ran before the loop opened).
+				if (attempt === 0) return { kind: "ok", value: initial };
+				const retryBranch = readBranch(ctx);
+				const retryCtx: CollectCtx = { ...deps.collectCtx, branch: retryBranch };
+				const reRun = await runOutcome(deps.outcome, retryCtx, deps.finalize);
+				if (reRun.kind === "fatal") return { kind: "aborted", abort: reRun };
+				const contract = enforceCompletionContract(s.stage, s.skill, reRun.output);
+				if (contract.kind === "fatal") return { kind: "aborted", abort: contract };
+				return { kind: "ok", value: contract.output };
+			},
+			validate: async (output) => {
+				const validation = await validateOrFatal(schema, output.data, s.skill, timeoutMs);
+				if (validation.kind === "fatal") return { kind: "aborted", abort: validation };
+				return { kind: "ok", result: validation.result };
+			},
+			onRetry: async (attempt, failures) => {
+				// onStageRetry fires before the agent is re-prompted; `attempt` is 1-based.
+				// Ref shares the activation's ALLOCATOR number (currentStageRef) so
+				// listeners can correlate this retry with the end/error event it
+				// belongs to — graph position (`stageIndex + 1`) diverges past any loop.
+				await s.lifecycle.fire(ctx, "onStageRetry", currentStageRef(s), attempt, lifecycleCtxFromSession(s));
+				try {
+					await askAgentToFix(ctx, s, attempt, failures, timeoutMs);
+					return { kind: "ok" };
+				} catch (e) {
+					return { kind: "aborted", abort: { kind: "fatal", message: formatError(e) } };
+				}
+			},
+		},
+	);
 
-	while (!result.valid && attempts < maxRetries && s.stage.onInvalid !== "halt") {
-		attempts++;
-		// onStageRetry fires before the agent is re-prompted; `attempt` is 1-based.
-		// Ref shares the activation's ALLOCATOR number (currentStageRef) so
-		// listeners can correlate this retry with the end/error event it
-		// belongs to — graph position (`stageIndex + 1`) diverges past any loop.
-		await s.lifecycle.fire(ctx, "onStageRetry", currentStageRef(s), attempts, lifecycleCtxFromSession(s));
-		try {
-			await askAgentToFix(ctx, s, attempts, result.failures, timeoutMs);
-		} catch (e) {
-			return { kind: "fatal", message: formatError(e) };
-		}
-
-		const retryBranch = readBranch(ctx);
-		const retryCtx: CollectCtx = { ...deps.collectCtx, branch: retryBranch };
-		const reRun = await runOutcome(deps.outcome, retryCtx, deps.finalize);
-		if (reRun.kind === "fatal") return reRun;
-		const contract = enforceCompletionContract(s.stage, s.skill, reRun.output);
-		if (contract.kind === "fatal") return contract;
-
-		output = contract.output;
-		const reValidation = await validateOrFatal(schema, output.data, s.skill, timeoutMs);
-		if (reValidation.kind === "fatal") return reValidation;
-		result = reValidation.result;
-	}
-
-	if (!result.valid) return validationExhausted(result.failures);
-	return { kind: "ok", output };
+	if (outcome.kind === "aborted") return outcome.abort;
+	if (outcome.kind === "exhausted") return validationExhausted(outcome.failures);
+	return { kind: "ok", output: outcome.value };
 }
 
 /**

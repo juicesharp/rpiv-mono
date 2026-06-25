@@ -37,7 +37,7 @@ import {
 	MSG_UNIT_COMPLETE,
 	MSG_UNIT_FAILED,
 } from "../messages.js";
-import { failedOutput, type Output, type OutputMeta } from "../output.js";
+import { failedOutput, type Output, type OutputMeta, outputMeta } from "../output.js";
 import type { SessionRef } from "../state/index.js";
 import { type BranchEntry, classifyStop, readBranch, readSessionRef, type StopSignal } from "../transcript.js";
 import type { StageSession, WorkflowHostContext, WorkflowSessionContext } from "../types.js";
@@ -247,13 +247,13 @@ async function softHaltUnit(
 /** OutputMeta for a sentinel — same stage number the failed row carries, so the
  *  live sentinel and the resume-rebuilt one are byte-identical. */
 function outputMetaFor(s: StageSession): OutputMeta {
-	return {
+	return outputMeta({
 		stage: s.stageName,
 		skill: s.skill,
 		stageNumber: s.allocatedStageNumber ?? s.state.lastAllocatedStageNumber,
 		ts: nowIso(),
 		runId: s.runId,
-	};
+	});
 }
 
 /** Exported to the `reattach.ts` companion — a promotion's validation-exhausted halt is identical to live. */

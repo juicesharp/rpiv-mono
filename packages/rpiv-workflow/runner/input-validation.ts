@@ -30,7 +30,7 @@ import {
 	validateOutputData,
 } from "../validate-output.js";
 import { clampRange } from "../validation-bounds.js";
-import { StagePreflightError } from "./errors.js";
+import { haltPreflight } from "./errors.js";
 import type { ResolvedStage } from "./resolve-stage.js";
 
 // ---------------------------------------------------------------------------
@@ -79,13 +79,13 @@ async function validateOrThrow(
 	} catch (e) {
 		if (errorPolicy === "degrade-on-non-timeout" && !(e instanceof SchemaTimeoutError)) return;
 		const f = FAIL_INPUT_VALIDATION(stage.skill, prevSkill, formatError(e));
-		throw new StagePreflightError("halt", stage.skill, f.toast, f.error, true);
+		throw haltPreflight(stage.skill, f);
 	}
 
 	if (result.valid) return;
 
 	const f = FAIL_INPUT_VALIDATION(stage.skill, prevSkill, result.failures.map(describeFailure).join("; "));
-	throw new StagePreflightError("halt", stage.skill, f.toast, f.error, true);
+	throw haltPreflight(stage.skill, f);
 }
 
 // ---------------------------------------------------------------------------

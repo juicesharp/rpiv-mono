@@ -26,6 +26,7 @@ import { currentPrimaryArtifact, resolveStagePrompt, stageEntryArgs } from "../c
 import { lifecycleCtxFor, skillStageRef } from "../events.js";
 import { formatError } from "../internal-utils.js";
 import { announceLoopStart, runLoop } from "../loop.js";
+import { freezesEntryArgsOf } from "../loop-constructors.js";
 import { buildLoopEntry, freshCursor, type LoopDeps, type LoopEntry } from "../loop-kinds.js";
 import {
 	FAIL_LOOP_CAP_HALT,
@@ -206,6 +207,26 @@ function buildSingleStageSession(
 }
 
 /**
+ * The single-stage entry announcement — `onStageStart`. ONE helper for the
+ * live entry (`runSingleStage`) and the session-backed resume re-entry
+ * (`resumeWithSessionLadder`), which used to re-spell the fire and keep it
+ * aligned by a "Same bracketing as live" comment. Mirrors `announceLoopStart`
+ * (loop.ts) — the loop path's one-helper-for-live-and-resume exemplar.
+ */
+function announceSingleStageStart(
+	curCtx: WorkflowHostContext,
+	run: RunContext,
+	stage: Pick<ResolvedStage, "name" | "stageNumber" | "skill">,
+): Promise<void> {
+	return run.lifecycle.fire(
+		curCtx,
+		"onStageStart",
+		skillStageRef(stage.name, stage.stageNumber, stage.skill),
+		lifecycleCtxFor(run),
+	);
+}
+
+/**
  * The single-session path (prompt + skill dispatch): preflights → prompt
  * prep → input validation → snapshot → session.
  *
@@ -227,12 +248,7 @@ async function runSingleStage(
 	const prep = await prepareSingleStage(curCtx, stage, idx, run);
 
 	// onStageStart fires after preflight, before the Pi session opens.
-	await run.lifecycle.fire(
-		curCtx,
-		"onStageStart",
-		skillStageRef(stage.name, stage.stageNumber, stage.skill),
-		lifecycleCtxFor(run),
-	);
+	await announceSingleStageStart(curCtx, run, stage);
 
 	// `continue` forks the predecessor's persisted session (`run.state.lastSession`)
 	// into a fresh child carrying its transcript; `continueStageSession` re-derives
@@ -338,12 +354,7 @@ async function resumeWithSessionLadder(
 	const s = buildSingleStageSession(stage, idx, run, prep, ref.branchOffset);
 
 	// Same bracketing as live: onStageStart before the (re)attached child opens.
-	await run.lifecycle.fire(
-		curCtx,
-		"onStageStart",
-		skillStageRef(stage.name, stage.stageNumber, stage.skill),
-		lifecycleCtxFor(run),
-	);
+	await announceSingleStageStart(curCtx, run, stage);
 
 	// Detached reattach: spawn a child BOUND to the persisted session file (the
 	// host opens it and does NOT replay the prompt); reattachStageSession promotes
@@ -400,7 +411,7 @@ async function runLoopStage(
 		{ stageIdx: idx, name: stage.name, skill: stage.skill, def: stage.def, loop },
 		{
 			entryArtifact: currentPrimaryArtifact(run.state),
-			entryArgs: loop.kind === "assess" ? inputForStage(stage, run) : "",
+			entryArgs: freezesEntryArgsOf(loop) ? inputForStage(stage, run) : "",
 			entryPair: { output: run.state.output, primaryArtifact: run.state.primaryArtifact },
 			units,
 		},

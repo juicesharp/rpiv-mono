@@ -216,6 +216,11 @@ function verifyTag(v: NonNullable<StageShape["verify"]>): string {
  * explicit `STOP` into one `terminal` mode; the declared-or-not distinction
  * is a one-key lookup the caller supplies (it matters to authors — the
  * validator warns on the undeclared form).
+ *
+ * The "terminal" rendered below is the GRAPH-SINK sense (a stage with no
+ * outgoing edge OR an explicit `STOP`) — NOT the `terminal()` stage factory
+ * (stage-def.ts) and NOT a "terminal failure" run outcome (audit.ts). See the
+ * glossary on `stage-def.ts`'s `terminal` export.
  */
 function formatEdge(edge: StageShape["edge"], declared: boolean): string | undefined {
 	if (edge.mode === "terminal") return declared ? STOP : "(terminal — no edge declared)";

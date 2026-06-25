@@ -20,7 +20,7 @@
 import { auditCtxFor, failedArgs, recordTerminalFailure } from "../audit.js";
 import { resolveSkill } from "../chain-state.js";
 import { announceLoopStart, pendingFanoutIndices, runFanoutResume, runLoop } from "../loop.js";
-import { effectiveLoopOf } from "../loop-constructors.js";
+import { effectiveLoopOf, freezesEntryArgsOf } from "../loop-constructors.js";
 import { buildLoopEntry, type LoopDeps, sequentialStrategyOf } from "../loop-kinds.js";
 import { FAIL_MISSING_ARTIFACT, type FailureText, MSG_RESUME_LOOP_MISMATCH } from "../messages.js";
 import type { RunContext, WorkflowHostContext } from "../types.js";
@@ -47,7 +47,7 @@ export async function resumeLoopStage(
 	// skill args exist) and the driver re-resolves the stage's own `prompt` at
 	// round-0 dispatch.
 	let entryArgs = "";
-	if (loop.kind === "assess") {
+	if (freezesEntryArgsOf(loop)) {
 		if (point.entryArgs === undefined) {
 			await recordMissingArtifactFailure(ctx, run, point.parent, skill, idx);
 			return;

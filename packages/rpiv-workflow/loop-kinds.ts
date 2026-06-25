@@ -34,7 +34,7 @@ import { type Artifact, handleToString } from "./handle.js";
 import { isPanel, type Judge, type PanelJudge, panelMembers, resolveJudgePrompt } from "./judge.js";
 import { MSG_LOOP_CURSOR_CORRUPT } from "./messages.js";
 import { finalizeOutput, isFailedOutput, type Output, type OutputMeta } from "./output.js";
-import { StagePreflightError } from "./stage-errors.js";
+import { invariantPreflight } from "./stage-errors.js";
 import type { RunContext, RunState, StageSession, UnitRef, WorkflowHostContext } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -265,7 +265,7 @@ function lastProduceOf(cursor: LoopCursor, stage: string): NonNullable<LoopCurso
 	const lp = cursor.lastProduce;
 	if (!lp) {
 		const msg = MSG_LOOP_CURSOR_CORRUPT(stage, "no completed produce on the cursor");
-		throw new StagePreflightError("invariant", stage, msg, msg, false);
+		throw invariantPreflight(stage, msg);
 	}
 	return lp;
 }
@@ -589,7 +589,7 @@ const assessStrategy: SequentialStrategy = {
 				// a miss is the same corrupted-cursor class as a missing produce.
 				if (!lp.artifact) {
 					const msg = MSG_LOOP_CURSOR_CORRUPT(e.name, "judge skill dispatch found no produced artifact");
-					throw new StagePreflightError("invariant", e.name, msg, msg, false);
+					throw invariantPreflight(e.name, msg);
 				}
 				prompt = `/skill:${judge.skill} ${handleToString(lp.artifact.handle)}`;
 			} else {
@@ -711,7 +711,7 @@ export function sequentialStrategyOf(kind: LoopDef["kind"]): SequentialStrategy 
 	const s = LOOP_STRATEGIES[kind];
 	if (s.parallelizable) {
 		const msg = MSG_LOOP_CURSOR_CORRUPT(kind, `sequential driver entered for parallelizable kind "${kind}"`);
-		throw new StagePreflightError("invariant", kind, msg, msg, false);
+		throw invariantPreflight(kind, msg);
 	}
 	return s as SequentialStrategy;
 }

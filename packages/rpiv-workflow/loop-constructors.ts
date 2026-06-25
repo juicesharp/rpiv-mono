@@ -87,6 +87,12 @@ export interface StageShape {
 	 * false ⇒ latest-wins). Pure data — the preview layer renders the marker.
 	 */
 	reads?: ReadonlyArray<{ name: string; all: boolean }>;
+	/**
+	 * Outgoing-edge shape. `mode: "terminal"` is the GRAPH-SINK sense (a stage
+	 * with no outgoing edge OR an explicit `STOP`) — unrelated to the `terminal()`
+	 * stage factory (stage-def.ts) and to "terminal failure" run-outcome prose
+	 * (audit.ts). See the glossary on `stage-def.ts`'s `terminal` export.
+	 */
 	edge: { mode: "linear" | "route" | "terminal"; targets?: readonly string[] };
 }
 
@@ -100,6 +106,7 @@ export function describeFlow(w: Workflow): StageShape[] {
 		const target = w.edges[name];
 		let edge: StageShape["edge"];
 		if (target === undefined || target === STOP) {
+			// Graph-sink sense (no edge OR explicit STOP) — see `StageShape.edge`.
 			edge = { mode: "terminal" };
 		} else if (typeof target === "string") {
 			edge = { mode: "linear", targets: [target] };
@@ -125,6 +132,95 @@ export function describeFlow(w: Workflow): StageShape[] {
 
 /** Default round cap when an `assess()` call omits `max`. Clamped by `run.maxIterations`. */
 export const DEFAULT_ASSESS_MAX = 8;
+
+/**
+ * Per-loop-kind identity — the construction-facet twin of `LOOP_STRATEGIES`
+ * (`loop-kinds.ts`, the per-kind runtime strategy table). Each kind's default
+ * `onCap`/`result` (and assess's construction `max`) live HERE, consulted by
+ * every constructor, so a new loop kind or a default change is a single-row
+ * edit instead of a multi-constructor scatter. Co-located with
+ * `effectiveLoopOf` (the derivation-authority exemplar) and `freezesEntryArgsOf`
+ * (the round-0-arg rule) — the two derivations that consult it.
+ *
+ * `max` fits the table because `satisfies` (NOT a type annotation) preserves
+ * the narrow inferred literal type PER KEY (the same property `LOOP_STRATEGIES`
+ * relies on): `assess.max` infers as `number` (from `DEFAULT_ASSESS_MAX`), while
+ * `fanout.max`/`iterate.max` infer as `undefined`. The assess constructor
+ * therefore reads `LOOP_DEFAULTS.assess.max` with NO non-null assertion.
+ *
+ * WARNING: if a future change annotates this constant with a type declaration
+ * instead of `satisfies`, the narrow per-key types are lost and `assess.max`
+ * widens to `number | undefined` — re-confirm the `satisfies` form is retained.
+ */
+interface LoopKindDefaults {
+	/** Construction-default cap policy. fanout/iterate → "halt", assess → "advance". */
+	onCap: CapPolicy;
+	/** Construction-default result projection. fanout → "entry", iterate/assess → "last". */
+	result: ResultProjection;
+	/**
+	 * Construction default cap; `undefined` when a kind has none (clamped at
+	 * runtime by `run.maxIterations`). assess carries `DEFAULT_ASSESS_MAX`;
+	 * verify carries 1 (in the peer `VERIFY_LOOP_DEFAULTS`, not here).
+	 */
+	max?: number;
+	/**
+	 * Does this kind freeze a round-0 producer arg? assess derives (and freezes)
+	 * a round-0 arg from the entry state; fanout/iterate do not. Consulted at the
+	 * three live/resume entry sites via `freezesEntryArgsOf`, so the predicate is
+	 * spelled ONCE — a future judged kind flipping this just edits the row.
+	 */
+	freezesEntryArgs: boolean;
+}
+
+/**
+ * THE per-kind identity table — the single place fanout/iterate/assess default
+ * `onCap`/`result`/`max` AND the round-0-arg rule are spelled. Modeled on
+ * `LOOP_STRATEGIES` (`satisfies Record<LoopDef["kind"], …>`); a new loop kind
+ * added to the union without a row here is a compile error.
+ */
+const LOOP_DEFAULTS = {
+	fanout: { onCap: "halt", result: "entry", max: undefined, freezesEntryArgs: false },
+	iterate: { onCap: "halt", result: "last", max: undefined, freezesEntryArgs: false },
+	assess: { onCap: "advance", result: "last", max: DEFAULT_ASSESS_MAX, freezesEntryArgs: true },
+} satisfies Record<LoopDef["kind"], LoopKindDefaults>;
+
+/**
+ * Verify's gate-only defaults — a named PEER, not a `LOOP_DEFAULTS` row: verify
+ * is not a `LoopDef["kind"]` (it desugars to a degenerate assess loop), so it
+ * cannot be a key in a `Record<LoopDef["kind"], …>`. Its distinct defaults
+ * (`onCap: "halt"`, `result: "last"`, `max: 1` vs assess's `advance`/`last`/`8`)
+ * each still spelled exactly once — here — and consulted by `synthesizeVerifyLoop`.
+ *
+ * `freezesEntryArgs` is carried for the `LoopKindDefaults` shape but is NOT
+ * consulted by `freezesEntryArgsOf`: a verify stage's effective loop is the
+ * SYNTHESIZED assess loop (kind "assess"), so the predicate reads
+ * `LOOP_DEFAULTS.assess.freezesEntryArgs` (`true`). `true` here keeps the peer
+ * honest — verify, like assess, freezes a round-0 producer arg.
+ */
+const VERIFY_LOOP_DEFAULTS = {
+	onCap: "halt",
+	result: "last",
+	max: 1,
+	freezesEntryArgs: true,
+} satisfies LoopKindDefaults;
+
+/**
+ * First-defined primitive — keeps defaulting grep-clean (no inline
+ * onCap-fallback token at the call sites) so the slice's default-spelling
+ * check holds. The `??` inside this body is the single authorized spelling
+ * of the fallback.
+ */
+function firstDefined<T>(v: T | undefined, fallback: T): T {
+	return v ?? fallback;
+}
+
+/**
+ * THE round-0-entry-arg predicate — one spelling of "which kinds freeze a
+ * producer arg." Consulted by the three live/resume entry sites
+ * (`run-stage.ts`, `resume.ts`, `resume-loop.ts`) instead of re-spelling
+ * `loop.kind === "assess"`, so live and resume can no longer drift on the rule.
+ */
+export const freezesEntryArgsOf = (loop: LoopDef): boolean => LOOP_DEFAULTS[loop.kind].freezesEntryArgs;
 
 /** Options shared by all three constructors — the introspectable facet + policy knobs. */
 interface LoopOptionsBase {
@@ -168,14 +264,15 @@ export interface AssessOptions extends LoopOptionsBase {
  * Empty `units()` return ⇒ single-stage fall-through.
  */
 export function fanout(opts: FanoutOptions): FanoutLoop {
+	const d = LOOP_DEFAULTS.fanout;
 	return {
 		kind: "fanout",
 		units: opts.units,
 		source: opts.source,
 		unit: opts.unit,
 		max: checkedMax("fanout", opts.max),
-		onCap: opts.onCap ?? "halt",
-		result: opts.result ?? "entry",
+		onCap: firstDefined(opts.onCap, d.onCap),
+		result: firstDefined(opts.result, d.result),
 		...(opts.failFast !== undefined ? { failFast: opts.failFast } : {}),
 	};
 }
@@ -186,14 +283,15 @@ export function fanout(opts: FanoutOptions): FanoutLoop {
  * (workflow-level, checked at load). First-call `null` ⇒ zero-unit no-op.
  */
 export function iterate(opts: IterateOptions): IterateLoop {
+	const d = LOOP_DEFAULTS.iterate;
 	return {
 		kind: "iterate",
 		next: opts.next,
 		source: opts.source,
 		unit: opts.unit,
 		max: checkedMax("iterate", opts.max),
-		onCap: opts.onCap ?? "halt",
-		result: opts.result ?? "last",
+		onCap: firstDefined(opts.onCap, d.onCap),
+		result: firstDefined(opts.result, d.result),
 	};
 }
 
@@ -208,6 +306,7 @@ export function iterate(opts: IterateOptions): IterateLoop {
  */
 export function assess(opts: AssessOptions): AssessLoop {
 	assertShape("assess", assessShapeIssues(opts));
+	const d = LOOP_DEFAULTS.assess;
 	return {
 		kind: "assess",
 		judge: opts.judge,
@@ -215,9 +314,9 @@ export function assess(opts: AssessOptions): AssessLoop {
 		feedForward: opts.feedForward,
 		source: opts.source,
 		unit: opts.unit,
-		max: checkedMax("assess", opts.max) ?? DEFAULT_ASSESS_MAX,
-		onCap: opts.onCap ?? "advance",
-		result: opts.result ?? "last",
+		max: checkedMax("assess", opts.max) ?? d.max,
+		onCap: firstDefined(opts.onCap, d.onCap),
+		result: firstDefined(opts.result, d.result),
 	};
 }
 
@@ -324,14 +423,15 @@ const NEVER_FEED_FORWARD = (): string => {
  * surface (precedent: `judgeStageDef`).
  */
 export function synthesizeVerifyLoop(v: VerifySpec): AssessLoop {
+	const d = VERIFY_LOOP_DEFAULTS;
 	return {
 		kind: "assess",
 		judge: v.judge,
 		done: v.done,
 		feedForward: v.feedForward ?? NEVER_FEED_FORWARD,
-		max: v.max ?? 1,
-		onCap: "halt",
-		result: "last",
+		max: v.max ?? d.max,
+		onCap: d.onCap,
+		result: d.result,
 	};
 }
 

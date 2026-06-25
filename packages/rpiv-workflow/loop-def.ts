@@ -133,14 +133,16 @@ export interface JudgedRepetition {
  *    would be byte-identical to the original and the model would have no
  *    signal about why it failed); never called when `max` is 1.
  *
- * Runtime: the runner desugars the field into a degenerate assess loop
- * (`max: max ?? 1`, `onCap: "halt"`, `result: "last"`) run by the ONE loop
- * driver. Attempts and verdicts land as unit rows (`role: "produce"` /
- * `role: "verify"`, `unitIndex` = 0-based attempt); the verdict publishes
- * durably to `state.named[judge.outcome.name]` (so declarative fallback
- * routing over `EdgeContext.state.named` works); and `projectResult`
- * restores the last attempt's producer pair before the chain advances —
- * downstream stages never inherit the verdict.
+ * Runtime: the runner desugars the field into a degenerate assess loop run by
+ * the ONE loop driver. The desugar's gate-only defaults (`max`, `onCap`,
+ * `result`) are spelled ONCE in `VERIFY_LOOP_DEFAULTS` (loop-constructors.ts) —
+ * the named peer to `LOOP_DEFAULTS` (verify is not a `LoopDef["kind"]`) —
+ * and consulted by `synthesizeVerifyLoop`. Attempts and verdicts land as unit
+ * rows (`role: "produce"` / `role: "verify"`, `unitIndex` = 0-based attempt);
+ * the verdict publishes durably to `state.named[judge.outcome.name]` (so
+ * declarative fallback routing over `EdgeContext.state.named` works); and
+ * `projectResult` restores the last attempt's producer pair before the chain
+ * advances — downstream stages never inherit the verdict.
  */
 export type VerifySpec = JudgedRepetition;
 
@@ -163,12 +165,15 @@ export type CapPolicy = "halt" | "advance";
 /**
  * What the loop leaves in `{state.output, state.primaryArtifact}` — the PAIR
  * is governed as one (routing + downstream prompts read both):
- * `"entry"` — restore the pair captured at loop entry (fanout default;
- *             reproduces routing-sees-upstream);
- * `"last"`  — the last completed `role: "produce"` unit's pair (iterate /
- *             assess default; zero produce units degrades to entry).
- * Applied at ONE point — loop advance — by the live driver and the resume
- * fold's generation close identically. Mid-loop transient rolls are accepted.
+ * `"entry"` — restore the pair captured at loop entry;
+ * `"last"`  — the last completed `role: "produce"` unit's pair (zero produce
+ *             units degrades to entry).
+ * The per-kind default (`entry` for fanout, `last` for iterate/assess) is
+ * spelled ONCE in `LOOP_DEFAULTS` (loop-constructors.ts) and consulted by each
+ * constructor via `firstDefined` — see that table rather than re-stating the
+ * per-kind literal here. Applied at ONE point — loop advance — by the live
+ * driver and the resume fold's generation close identically. Mid-loop
+ * transient rolls are accepted.
  */
 export type ResultProjection = "entry" | "last";
 
