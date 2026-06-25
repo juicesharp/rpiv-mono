@@ -55,7 +55,7 @@ const TAR_STRIP_FLAG = "--strip-components=1";
 // ── Status messages ──────────────────────────────────────────────────────────
 // Resolved at progress-emit time (not module load) so live `/languages` flips
 // take effect mid-download.
-const msgDownloading = (): string => t("splash.downloading", "Downloading Whisper…");
+const msgDownloading = (flavour: string): string => t("splash.downloading", `Downloading Whisper ${flavour} model…`);
 const msgExtracting = (): string => t("splash.extracting", "Extracting model files…");
 const msgVerifying = (): string => t("splash.verifying", "Verifying model files…");
 
@@ -159,7 +159,7 @@ export async function ensureModelDownloaded(onProgress: ProgressCallback, signal
 	// redownload start from a clean slate and prevents a hypothetical
 	// race where another caller observes the partial state mid-run.
 	try {
-		onProgress({ phase: "downloading", message: msgDownloading() });
+		onProgress({ phase: "downloading", message: msgDownloading(flavour) });
 		try {
 			let lastEmitMs = 0;
 			await downloadArchive(url, archivePath, signal, (stats) => {
@@ -173,7 +173,7 @@ export async function ensureModelDownloaded(onProgress: ProgressCallback, signal
 						: undefined;
 				onProgress({
 					phase: "downloading",
-					message: msgDownloading(),
+					message: msgDownloading(flavour),
 					percent,
 					bytesReceived: stats.bytesReceived,
 					totalBytes: stats.totalBytes,
