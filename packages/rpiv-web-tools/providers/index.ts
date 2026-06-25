@@ -61,7 +61,12 @@ export type {
 	SearchResponse,
 	SearchResult,
 } from "./types.js";
-export { YOUCOM_API_KEY_ENV_VAR, YOUCOM_PROVIDER_META, YouComProvider } from "./youcom.js";
+export {
+	YOUCOM_API_KEY_ENV_VAR,
+	YOUCOM_API_KEY_ENV_VAR_FALLBACK,
+	YOUCOM_PROVIDER_META,
+	YouComProvider,
+} from "./youcom.js";
 
 // Typed as readonly ProviderMeta[] (not `as const`) so iterators can access
 // the optional META fields (baseUrlEnvVar, defaultBaseUrl, configure) without

@@ -7,6 +7,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- You.com provider now reads the canonical `YDC_API_KEY` env var (used by You.com's own docs/SDK and the LangChain/CrewAI/DSPy integrations), falling back to `YOUCOM_API_KEY` for backward compatibility. Existing setups keep working unchanged.
+
 ### Fixed
 - Moved `typebox` from `peerDependencies` to `dependencies` (`^1.1.24`, matching the Pi host's range) so `web_search` / `web_fetch` parameter schemas resolve under installers that don't materialise peer deps. Fixes `ERR_MODULE_NOT_FOUND: typebox` on standalone consumer installs (#79).
 - Test files are no longer published in the npm tarball. `files` packed `providers/**/*.test.ts`, which import the private, unpublished `@juicesharp/rpiv-test-utils` fixture package, so a standalone consumer running the bundled tests hit `ERR_MODULE_NOT_FOUND`. Added a `!**/*.test.ts` exclusion to `files` (#80).
