@@ -22,7 +22,7 @@ Pick one as the active backend; switch any time without losing the others' keys.
 | Tavily | `TAVILY_API_KEY` | [tavily.com](https://tavily.com) | native extraction (plain text) |
 | Serper | `SERPER_API_KEY` | [serper.dev](https://serper.dev) | raw HTTP → htmlToText, `raw: true` available |
 | Exa | `EXA_API_KEY` | [exa.ai](https://exa.ai) | native extraction (plain text) |
-| You.com | `YOUCOM_API_KEY` | [you.com](https://you.com) | native extraction (markdown) |
+| You.com | `YDC_API_KEY` (fallback `YOUCOM_API_KEY`) | [you.com](https://you.com) | native extraction (markdown) |
 | Jina | `JINA_API_KEY` | [jina.ai/reader](https://jina.ai/reader) | native extraction (markdown) |
 | Firecrawl | `FIRECRAWL_API_KEY` | [firecrawl.dev](https://firecrawl.dev) | native extraction (markdown) |
 | Perplexity | `PERPLEXITY_API_KEY` | [docs.perplexity.ai](https://docs.perplexity.ai/) | raw HTTP → htmlToText, `raw: true` available |
@@ -119,7 +119,7 @@ Throws on invalid URL, non-http(s) protocol, private/loopback hostnames (SSRF gu
 
 First match wins:
 
-1. The active provider's environment variable: `BRAVE_SEARCH_API_KEY`, `TAVILY_API_KEY`, `SERPER_API_KEY`, `EXA_API_KEY`, `YOUCOM_API_KEY`, `JINA_API_KEY`, `FIRECRAWL_API_KEY`, `PERPLEXITY_API_KEY`, `SEARXNG_API_KEY`, or `OLLAMA_API_KEY`
+1. The active provider's environment variable: `BRAVE_SEARCH_API_KEY`, `TAVILY_API_KEY`, `SERPER_API_KEY`, `EXA_API_KEY`, `YDC_API_KEY` (fallback `YOUCOM_API_KEY`), `JINA_API_KEY`, `FIRECRAWL_API_KEY`, `PERPLEXITY_API_KEY`, `SEARXNG_API_KEY`, or `OLLAMA_API_KEY`
 2. `apiKeys.<provider>` field in `~/.config/rpiv-web-tools/config.json`
 3. Legacy `apiKey` field (Brave only — auto-migrated to the new shape on next save)
 

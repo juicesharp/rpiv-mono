@@ -103,7 +103,9 @@ function resolveProviderApiKey(providerName: string, config: WebToolsConfig): st
 	const meta = PROVIDERS.find((p) => p.name === providerName);
 	if (!meta) return undefined;
 
-	const envKey = meta.envVar ? process.env[meta.envVar]?.trim() : undefined;
+	const envKey =
+		(meta.envVar ? process.env[meta.envVar]?.trim() : undefined) ||
+		(meta.fallbackEnvVar ? process.env[meta.fallbackEnvVar]?.trim() : undefined);
 	if (envKey) return envKey;
 
 	const configKey = config.apiKeys?.[providerName]?.trim();
@@ -469,7 +471,9 @@ function formatShowConfigMessage(current: WebToolsConfig): string {
 	lines.push(`  active provider: ${providerName}`);
 
 	for (const meta of PROVIDERS) {
-		const envKey = meta.envVar ? process.env[meta.envVar]?.trim() : undefined;
+		const envKey =
+			(meta.envVar ? process.env[meta.envVar]?.trim() : undefined) ||
+			(meta.fallbackEnvVar ? process.env[meta.fallbackEnvVar]?.trim() : undefined);
 		const configKey = current.apiKeys?.[meta.name]?.trim();
 		const legacyKey = meta.name === LEGACY_TOP_LEVEL_KEY_PROVIDER ? current.apiKey?.trim() : undefined;
 		const resolved = envKey ?? configKey ?? legacyKey;

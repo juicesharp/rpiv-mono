@@ -2,11 +2,16 @@ import type { FetchResponse, FullProvider, SearchResponse, SearchResult } from "
 
 const YOUCOM_SEARCH_URL = "https://ydc-index.io/v1/search";
 const YOUCOM_CONTENTS_URL = "https://ydc-index.io/v1/contents";
-export const YOUCOM_API_KEY_ENV_VAR = "YOUCOM_API_KEY";
+// YDC_API_KEY is You.com's canonical env var (used by their docs/SDK and the
+// LangChain/CrewAI/DSPy integrations). YOUCOM_API_KEY is kept as a
+// backward-compatible fallback for existing setups.
+export const YOUCOM_API_KEY_ENV_VAR = "YDC_API_KEY";
+export const YOUCOM_API_KEY_ENV_VAR_FALLBACK = "YOUCOM_API_KEY";
 export const YOUCOM_PROVIDER_META = {
 	name: "youcom",
 	label: "You.com",
 	envVar: YOUCOM_API_KEY_ENV_VAR,
+	fallbackEnvVar: YOUCOM_API_KEY_ENV_VAR_FALLBACK,
 	roles: ["search", "fetch"] as const,
 } as const;
 
@@ -46,7 +51,9 @@ export class YouComProvider implements FullProvider {
 
 	async search(query: string, maxResults: number, signal?: AbortSignal): Promise<SearchResponse> {
 		if (!this.apiKey) {
-			throw new Error(`${this.envVar} is not set. Run /web-tools to configure, or export the env var.`);
+			throw new Error(
+				`${this.envVar} (or ${YOUCOM_API_KEY_ENV_VAR_FALLBACK}) is not set. Run /web-tools to configure, or export the env var.`,
+			);
 		}
 
 		const res = await fetch(YOUCOM_SEARCH_URL, {
@@ -73,7 +80,9 @@ export class YouComProvider implements FullProvider {
 
 	async fetch(url: string, _raw: boolean, signal?: AbortSignal): Promise<FetchResponse> {
 		if (!this.apiKey) {
-			throw new Error(`${this.envVar} is not set. Run /web-tools to configure, or export the env var.`);
+			throw new Error(
+				`${this.envVar} (or ${YOUCOM_API_KEY_ENV_VAR_FALLBACK}) is not set. Run /web-tools to configure, or export the env var.`,
+			);
 		}
 
 		const res = await fetch(YOUCOM_CONTENTS_URL, {
