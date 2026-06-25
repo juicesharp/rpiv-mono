@@ -58,7 +58,8 @@ function whisperLanguageForLocale(locale: string | undefined): string | undefine
 
 const SPLASH_INITIAL_ENGINE: SplashPhase = { kind: "loading_engine" };
 function splashInitialDownload(): SplashPhase {
-	return { kind: "downloading", message: t("splash.preparing", "Preparing model…") };
+	const modelType = loadVoiceConfig().whisperModelType || "base";
+	return { kind: "downloading", message: t("splash.preparing", `Preparing Whisper ${modelType} model…`) };
 }
 
 type PreflightStage = "download" | "extract" | "verify" | "stale_install" | "engine" | "mic";

@@ -12,7 +12,16 @@ vi.mock("node:fs", async (importOriginal) => {
 	};
 });
 
+vi.mock("../config/voice-config.js", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../config/voice-config.js")>();
+	return {
+		...actual,
+		loadVoiceConfig: vi.fn(() => ({})),
+	};
+});
+
 import { existsSync, rmSync } from "node:fs";
+import { loadVoiceConfig } from "../config/voice-config.js";
 import {
 	assertModelIntact,
 	ensureModelDownloaded,
@@ -22,6 +31,10 @@ import {
 	removeModelInstall,
 	WHISPER_BASE_DIR,
 } from "./model-download.js";
+
+beforeEach(() => {
+	vi.mocked(loadVoiceConfig).mockReturnValue({});
+});
 
 describe("isModelDownloaded", () => {
 	it("returns true when sentinel file exists", () => {
@@ -41,6 +54,15 @@ describe("getModelPaths", () => {
 		expect(paths.decoderPath).toContain("whisper-base");
 		expect(paths.tokensPath).toContain("whisper-base");
 	});
+
+	it("returns paths under whisper-tiny/ when configured", () => {
+		vi.mocked(loadVoiceConfig).mockReturnValue({ whisperModelType: "tiny" });
+		const paths = getModelPaths();
+		expect(paths.encoderPath).toContain("whisper-tiny");
+		expect(paths.decoderPath).toContain("whisper-tiny");
+		expect(paths.tokensPath).toContain("whisper-tiny");
+		expect(paths.encoderPath).toContain("tiny-encoder.int8.onnx");
+	});
 });
 
 describe("ensureModelDownloaded", () => {
@@ -49,6 +71,15 @@ describe("ensureModelDownloaded", () => {
 		const onProgress = vi.fn();
 		const paths = await ensureModelDownloaded(onProgress);
 		expect(paths.encoderPath).toContain("base-encoder.int8.onnx");
+		expect(onProgress).not.toHaveBeenCalled();
+	});
+
+	it("skips download when custom model already exists", async () => {
+		vi.mocked(loadVoiceConfig).mockReturnValue({ whisperModelType: "tiny" });
+		vi.mocked(existsSync).mockReturnValue(true);
+		const onProgress = vi.fn();
+		const paths = await ensureModelDownloaded(onProgress);
+		expect(paths.encoderPath).toContain("tiny-encoder.int8.onnx");
 		expect(onProgress).not.toHaveBeenCalled();
 	});
 });
