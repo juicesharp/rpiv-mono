@@ -204,6 +204,13 @@ interface LoopCommon {
 export interface FanoutLoop extends LoopCommon {
 	kind: "fanout";
 	units: FanoutFn;
+	/** Per-fanout concurrency ceiling. Caps in-flight units to
+	 *  `min(concurrency, host maxConcurrency)`; `1` SERIALIZES the loop — the safe
+	 *  model for a stage that mutates SHARED state (e.g. `implement` applying a plan
+	 *  to one working tree, where parallel phases race on a shared file and a
+	 *  dependent phase can run before its prerequisite has landed). Absent ⇒ the host
+	 *  cap governs. Must be an integer ≥ 1 (validated at construction + load). */
+	concurrency?: number;
 	/** Opt out of collect-all: any unit failure halts the run. Default (absent) ⇒
 	 *  collect-all. Under parallel dispatch, the first failing unit halts the
 	 *  run terminally AND cancels in-flight siblings via the per-generation

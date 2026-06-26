@@ -113,6 +113,11 @@ export const ISSUE_DEFS = {
 		"error",
 		(p) => `loop.max: ${p.max} — must be an integer >= 1 (run.maxIterations caps the upper bound)`,
 	),
+	"loop-concurrency-invalid": def<{ concurrency: number }>(
+		"error",
+		(p) =>
+			`fanout concurrency: ${p.concurrency} — must be an integer >= 1 (host maxConcurrency caps the upper bound)`,
+	),
 	"loop-requires-produces": def<{ kind: string }>(
 		"error",
 		(p) => `${p.kind} requires kind "produces" — each unit runs an outcome collector`,

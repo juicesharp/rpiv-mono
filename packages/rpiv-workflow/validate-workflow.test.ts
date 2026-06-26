@@ -945,6 +945,30 @@ describe("validateWorkflow — assess loop invariants", () => {
 		expect(e.some((i) => i.code === "loop-max-invalid" && i.params.max === max)).toBe(true);
 	});
 
+	it.each([0, -1, 1.5])("rejects fanout concurrency: %s (must be an integer >= 1)", (concurrency) => {
+		const e = errors(
+			wf({
+				kind: "produces",
+				sessionPolicy: "fresh",
+				outcome: { name: "x", collector: noopCollector },
+				loop: { ...fanout({ units: () => [] }), concurrency },
+			} as StageDef),
+		);
+		expect(e.some((i) => i.code === "loop-concurrency-invalid" && i.params.concurrency === concurrency)).toBe(true);
+	});
+
+	it("accepts fanout concurrency: 1", () => {
+		const e = errors(
+			wf({
+				kind: "produces",
+				sessionPolicy: "fresh",
+				outcome: { name: "x", collector: noopCollector },
+				loop: { ...fanout({ units: () => [] }), concurrency: 1 },
+			} as StageDef),
+		);
+		expect(e.some((i) => i.code === "loop-concurrency-invalid")).toBe(false);
+	});
+
 	it("accepts loop.max: 1 and an omitted max", () => {
 		const withMax = base({
 			loop: assess({ judge: skillJudge(), done: () => true, feedForward: () => "x", max: 1 }),

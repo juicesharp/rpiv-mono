@@ -239,6 +239,11 @@ interface LoopOptionsBase {
 export interface FanoutOptions extends LoopOptionsBase {
 	/** Push-model unit source — all units computed up front. */
 	units: FanoutFn;
+	/** Per-fanout concurrency ceiling — caps in-flight units to
+	 *  `min(concurrency, host maxConcurrency)`; `1` serializes (the safe model for a
+	 *  stage that mutates shared state, e.g. `implement` applying a plan to one tree).
+	 *  Integer ≥ 1; absent ⇒ host cap governs. */
+	concurrency?: number;
 	/** Opt out of collect-all: any unit failure halts the run (default ⇒ collect-all). */
 	failFast?: boolean;
 }
@@ -273,6 +278,7 @@ export function fanout(opts: FanoutOptions): FanoutLoop {
 		max: checkedMax("fanout", opts.max),
 		onCap: firstDefined(opts.onCap, d.onCap),
 		result: firstDefined(opts.result, d.result),
+		...(opts.concurrency !== undefined ? { concurrency: checkedConcurrency(opts.concurrency) } : {}),
 		...(opts.failFast !== undefined ? { failFast: opts.failFast } : {}),
 	};
 }
@@ -686,6 +692,14 @@ function checkedMax(ctor: string, max: number | undefined): number | undefined {
 		throw new Error(`${ctor}(): max must be an integer >= 1 (got ${max})`);
 	}
 	return max;
+}
+
+function checkedConcurrency(concurrency: number | undefined): number | undefined {
+	if (concurrency === undefined) return undefined;
+	if (!Number.isInteger(concurrency) || concurrency < 1) {
+		throw new Error(`fanout(): concurrency must be an integer >= 1 (got ${concurrency})`);
+	}
+	return concurrency;
 }
 
 // ===========================================================================

@@ -70,6 +70,13 @@ function checkLoopInvariants(stage: StageDef, name: string, report: ReportFn): v
 	if (loop.max !== undefined && (!Number.isInteger(loop.max) || loop.max < 1)) {
 		report("loop-max-invalid", { max: loop.max });
 	}
+	if (
+		loop.kind === "fanout" &&
+		loop.concurrency !== undefined &&
+		(!Number.isInteger(loop.concurrency) || loop.concurrency < 1)
+	) {
+		report("loop-concurrency-invalid", { concurrency: loop.concurrency });
+	}
 	// Pull loops + assess run the stage's outcome collector per unit.
 	if ((loop.kind === "iterate" || loop.kind === "assess") && stage.kind !== "produces") {
 		report("loop-requires-produces", { kind: loop.kind });

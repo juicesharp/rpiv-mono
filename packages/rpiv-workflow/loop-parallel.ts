@@ -6,6 +6,15 @@
  * never completion order — so `fanin` synthesis + resume stay deterministic at
  * every concurrency (Semaphore(1) just serializes).
  *
+ * CONCURRENCY MODEL — what is and isn't fold-confined. ONLY the `LoopCursor`
+ * (`slots`/`filledCount`/`lastProduce`) is mutated exclusively by the serial
+ * post-`allSettled` fold below. `run.state` is NOT: each worker's `postStage`
+ * mutates `lastAllocatedStageNumber`, `stagesCompleted`, `output`, and
+ * `primaryArtifact` CONCURRENTLY across siblings. That is safe — every such mutator
+ * is a synchronous, `await`-free read-modify-write (JS run-to-completion makes each
+ * atomic), and every order-sensitive result is re-derived by the index-addressed
+ * fold (`foldFanoutCompletion`) or overwritten by `projectResult` at close.
+ *
  * `runFanoutDispatch` is the ONE dispatch primitive both the live entry
  * (`runFanoutParallel`) and the resume re-dispatch (`runFanoutResume`) — both thin
  * wrappers in loop.ts — degenerate to: each passes its operand list (live:
@@ -76,7 +85,14 @@ export async function runFanoutDispatch(
 		else run.signal.addEventListener("abort", onRunAbort, { once: true });
 	}
 	const failFast = isFailFast(e.loop);
-	const sem = new Semaphore(Math.max(1, curCtx.maxConcurrency), genAbort.signal); // drains queued units on either abort
+	// A fanout may cap its own concurrency BELOW the host cap (e.g. `implement`'s
+	// `concurrency: 1` serializes shared-tree application); floored at 1 so a stray
+	// value never deadlocks, and never raised ABOVE the host cap.
+	const loopCap = e.loop.kind === "fanout" ? e.loop.concurrency : undefined;
+	const sem = new Semaphore(
+		Math.max(1, Math.min(loopCap ?? curCtx.maxConcurrency, curCtx.maxConcurrency)),
+		genAbort.signal,
+	); // drains queued units on either abort
 	const settled = await Promise.allSettled(
 		operands.map((i) =>
 			sem
