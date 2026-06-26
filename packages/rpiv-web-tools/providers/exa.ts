@@ -10,7 +10,13 @@ export const EXA_PROVIDER_META = {
 	roles: ["search", "fetch"] as const,
 } as const;
 const EXA_MAX_SNIPPET_CHARACTERS = 300;
-const EXA_MAX_FETCH_CHARACTERS = 10000;
+// Exa's documented maximum is 10 000 characters (OpenAPI schema has
+// `maximum: 10000`), but the live API accepts up to 1 000 000.
+// Using the higher value lets rpiv-web-tools' own truncation
+// (DEFAULT_MAX_BYTES = 50 KiB) take over, which appends a
+// truncation footer and spills full content to a temp file so
+// the model can recover it with the read tool.
+const EXA_MAX_FETCH_CHARACTERS = 1_000_000;
 
 interface ExaRawResult {
 	title?: string;
