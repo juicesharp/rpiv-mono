@@ -14,7 +14,7 @@ import {
 	terminate,
 } from "../audit.js";
 import { formatError, isAbortError } from "../internal-utils.js";
-import { FAIL_WORKFLOW_ABORTED, MSG_STAGE_THREW, MSG_WORKFLOW_COMPLETE, STATUS_KEY } from "../messages.js";
+import { FAIL_WORKFLOW_ABORTED, MSG_STAGE_THREW, MSG_WORKFLOW_COMPLETE } from "../messages.js";
 import type { RunContext, UnitRef, WorkflowHostContext } from "../types.js";
 import { StagePreflightError } from "./errors.js";
 
@@ -158,7 +158,6 @@ export async function withStageEntryGuard(
 }
 
 export function finalizeWorkflow(curCtx: WorkflowHostContext, run: RunContext): ChainOutcome {
-	curCtx.ui.setStatus(STATUS_KEY, undefined);
 	curCtx.ui.notify(MSG_WORKFLOW_COMPLETE(run.state.stagesCompleted), "info");
 	terminate(run.state, { status: "completed" });
 	return "completed";

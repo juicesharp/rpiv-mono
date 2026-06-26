@@ -28,9 +28,7 @@ import { WorkflowAbortError } from "./internal-utils.js";
 import {
 	FAIL_STAGE_NO_RESPONSE,
 	FAIL_VALIDATION_EXHAUSTED,
-	MSG_STAGE_COMPLETE,
 	MSG_STAGE_FAILED,
-	MSG_UNIT_COMPLETE,
 	MSG_VALIDATION_RETRY,
 } from "./messages.js";
 import type { Output } from "./output.js";
@@ -179,7 +177,7 @@ describe("sessions — validation retry loop", () => {
 
 		expect(onSuccess).toHaveBeenCalledTimes(1);
 		expect(chain.notifications.find((n) => /asking agent to fix/i.test(n.msg))).toBeUndefined();
-		expect(chain.notifications.some((n) => n.msg === MSG_STAGE_COMPLETE("test"))).toBe(true);
+		expect(readStageRows(tmpDir).some((r) => r.status === "completed")).toBe(true);
 		expect(state.stagesCompleted).toBe(1);
 	});
 
@@ -517,7 +515,7 @@ describe("sessions — validation retry loop", () => {
 
 		// No timeout error surfaced → clamp held.
 		expect(chain.notifications.some((n) => /exceeded/.test(n.msg))).toBe(false);
-		expect(chain.notifications.some((n) => n.msg === MSG_STAGE_COMPLETE("test"))).toBe(true);
+		expect(readStageRows(tmpDir).some((r) => r.status === "completed")).toBe(true);
 	});
 
 	// -----------------------------------------------------------------------
@@ -559,7 +557,7 @@ describe("sessions — validation retry loop", () => {
 
 		expect(onFailure).not.toHaveBeenCalled();
 		expect(onSuccess).toHaveBeenCalledTimes(1);
-		expect(chain.notifications.some((n) => n.msg === MSG_STAGE_COMPLETE("test"))).toBe(true);
+		expect(readStageRows(tmpDir).some((r) => r.status === "completed")).toBe(true);
 	});
 
 	it("async-rejected schema halts the stage via fatal-extraction, not via an escaped throw", async () => {
@@ -685,7 +683,7 @@ describe("sessions — outcome resolution", () => {
 		);
 
 		expect(explicit.collectSpy).toHaveBeenCalledTimes(1);
-		expect(chain.notifications.some((n) => n.msg === MSG_STAGE_COMPLETE("test"))).toBe(true);
+		expect(readStageRows(tmpDir).some((r) => r.status === "completed")).toBe(true);
 	});
 
 	it("produces without outcome throws (load-time validation should reject; runtime is defense-in-depth)", async () => {
@@ -1310,7 +1308,7 @@ describe("sessions — loop unit session", () => {
 		rmSync(tmpDir, { recursive: true, force: true });
 	});
 
-	it("writes structured row fields, fires onUnitEnd (never onStageEnd), and toasts MSG_UNIT_COMPLETE", async () => {
+	it("writes structured row fields, fires onUnitEnd (never onStageEnd), emits no completion toast", async () => {
 		const chain = createMockSessionChain({
 			cwd: tmpDir,
 			steps: [{ branch: [mockAssistantMessage("done")] }],
@@ -1349,9 +1347,8 @@ describe("sessions — loop unit session", () => {
 		});
 		expect(output.artifacts).toBeDefined();
 
-		// Labeled per-unit toast, not the stage banner.
-		expect(chain.notifications.some((n) => n.msg === MSG_UNIT_COMPLETE("implement", "phase 2/5"))).toBe(true);
-		expect(chain.notifications.some((n) => n.msg === MSG_STAGE_COMPLETE("implement"))).toBe(false);
+		// Completion is silent — neither a per-unit nor a stage banner is emitted.
+		expect(chain.notifications.some((n) => n.msg.startsWith("✓"))).toBe(false);
 
 		// The success row carries the decorated display `stage` + all four structured identity fields.
 		const completed = readStageRows(tmpDir).find((r) => r.status === "completed")!;
@@ -1367,7 +1364,7 @@ describe("sessions — loop unit session", () => {
 		expect(successOutput.artifacts).toEqual((output as Output).artifacts);
 	});
 
-	it("single-stage session stays byte-identical: no structured fields, onStageEnd + MSG_STAGE_COMPLETE", async () => {
+	it("single-stage session stays byte-identical: no structured fields, onStageEnd, no completion toast", async () => {
 		const chain = createMockSessionChain({
 			cwd: tmpDir,
 			steps: [{ branch: [mockAssistantMessage("done")] }],
@@ -1388,7 +1385,8 @@ describe("sessions — loop unit session", () => {
 
 		expect(onStageEnd).toHaveBeenCalledTimes(1);
 		expect(onUnitEnd).not.toHaveBeenCalled();
-		expect(chain.notifications.some((n) => n.msg === MSG_STAGE_COMPLETE("test"))).toBe(true);
+		// Completion is silent — no toast on the notify channel.
+		expect(chain.notifications.some((n) => n.msg.startsWith("✓"))).toBe(false);
 
 		const completed = readStageRows(tmpDir).find((r) => r.status === "completed")!;
 		expect(completed).not.toHaveProperty("parent");

@@ -454,7 +454,6 @@ export class SdkWorkflowHost implements WorkflowHostContext {
 	private relayUi() {
 		return {
 			notify: (message: string, level?: "info" | "warning" | "error") => this.deps.live.ui.notify(message, level),
-			setStatus: (key: string, text: string | undefined) => this.deps.live.ui.setStatus(key, text),
 		};
 	}
 }

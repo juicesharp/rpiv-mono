@@ -292,8 +292,8 @@ describe("loop-resume — fanout", () => {
 		// The finished loop is NOT re-announced.
 		expect(loopStarts).toEqual([]);
 		expect(stageStarts).toEqual([]);
-		// ...and the only completion toast is the workflow-level one.
-		expect(chain.notifications.filter((n) => n.msg === "✓ impl completed")).toEqual([]);
+		// ...loop completion is silent (no per-stage toast); only the workflow-level notice fires.
+		expect(chain.notifications.filter((n) => n.msg.startsWith("✓"))).toEqual([]);
 		expect(chain.notifications.filter((n) => /workflow complete/.test(n.msg))).toHaveLength(1);
 	});
 

@@ -34,8 +34,6 @@ import {
 	MSG_CONTINUE_FALLBACK,
 	MSG_RESUME_SESSION_FALLBACK,
 	MSG_SNAPSHOT_FAILED,
-	STATUS_KEY,
-	STATUS_STAGE,
 } from "../messages.js";
 import { continueStageSession, locateSessionFile, reattachStageSession, runStageSession } from "../sessions/index.js";
 import { forkChildSession, reattachChildSession } from "../sessions/spawn.js";
@@ -163,7 +161,6 @@ async function prepareSingleStage(
 		stage.dispatch === "prompt"
 			? await resolveStagePrompt(stage.def.prompt!, run.cwd, run.state)
 			: buildPrompt(stage.skill, inputForStage(stage, run));
-	curCtx.ui.setStatus(STATUS_KEY, STATUS_STAGE(stage.stageNumber, run.totalStages, stage.skill));
 
 	await ensureInputValid(stage, run);
 	await ensureContractInputValid(stage, run);

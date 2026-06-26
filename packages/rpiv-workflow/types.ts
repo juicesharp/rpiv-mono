@@ -265,10 +265,12 @@ export interface RunContext {
 	runId: string;
 	workflow: Workflow;
 	/**
-	 * Upper bound for stage status display — count of stages reachable from
+	 * Upper bound for stage-progress display — count of stages reachable from
 	 * `workflow.start`, computed once at run start. The actual stage count
-	 * is path-dependent (a predicate edge may short-circuit), so this is
-	 * the denominator users see; the numerator is the live stage index.
+	 * is path-dependent (a predicate edge may short-circuit), so this is the
+	 * denominator surfaced through the lifecycle `LifecycleContext.totalStages`
+	 * (e.g. the lane-dock `visited/totalStages` progress bar); the numerator is
+	 * the live stage index.
 	 */
 	totalStages: number;
 	state: RunState;

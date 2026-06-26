@@ -25,8 +25,6 @@ import {
 	MSG_LOOP_CAP_ADVANCE,
 	MSG_LOOP_ZERO_UNITS,
 	MSG_RESUME_LOOP_MISMATCH,
-	MSG_UNIT_COMPLETE,
-	STATUS_LOOP_UNIT,
 } from "./messages.js";
 
 /** Extract the single backtick-delimited shell after `Move it:` from a notice. */
@@ -151,14 +149,6 @@ describe.skipIf(process.platform === "win32")("LEGACY_RUNS_NOTICE — embedded m
 });
 
 describe("unified loop message templates", () => {
-	it("STATUS_LOOP_UNIT renders the stage/skill/label status line", () => {
-		expect(STATUS_LOOP_UNIT(4, 7, "implement", "phase 2/5")).toBe("rpiv: stage 4/7 — implement (phase 2/5)");
-	});
-
-	it("MSG_UNIT_COMPLETE renders a labeled per-unit completion toast", () => {
-		expect(MSG_UNIT_COMPLETE("implement", "phase 2/5")).toBe("✓ implement (phase 2/5)");
-	});
-
 	it("MSG_LOOP_ZERO_UNITS warns the loop published nothing", () => {
 		expect(MSG_LOOP_ZERO_UNITS("blueprint")).toBe(
 			"rpiv: blueprint iterate loop produced zero units — nothing published, advancing",

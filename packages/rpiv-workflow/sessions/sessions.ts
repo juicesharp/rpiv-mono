@@ -30,13 +30,7 @@ import {
 import { allocateStageNumber, persistStageSuccess, rollLastSession } from "../audit-rows.js";
 import { lifecycleCtxFromSession, skillStageRef, type UnitEvent } from "../events.js";
 import { nowIso, WorkflowAbortError } from "../internal-utils.js";
-import {
-	FAIL_VALIDATION_EXHAUSTED,
-	MSG_STAGE_COMPLETE,
-	MSG_STAGE_FAILED,
-	MSG_UNIT_COMPLETE,
-	MSG_UNIT_FAILED,
-} from "../messages.js";
+import { FAIL_VALIDATION_EXHAUSTED, MSG_STAGE_FAILED, MSG_UNIT_FAILED } from "../messages.js";
 import { failedOutput, type Output, type OutputMeta, outputMeta } from "../output.js";
 import type { SessionRef } from "../state/index.js";
 import { type BranchEntry, classifyStop, readBranch, readSessionRef, type StopSignal } from "../transcript.js";
@@ -286,11 +280,11 @@ export async function haltStageWithValidationFailure(
  * so `output.meta.stageNumber` and the row agree, and unit rows carry the
  * structured identity fields alongside the decorated display `stage`.
  *
- * Single stages keep the `onStageEnd` + `MSG_STAGE_COMPLETE` contract
- * verbatim. Loop units fire `onUnitEnd` (NEVER `onStageEnd` — that's reserved
- * for single-stage and loop-level semantics) with a labeled toast, the ref
- * carrying the PARENT stage name so listeners key on graph identity, not the
- * display decoration.
+ * Single stages keep the `onStageEnd` contract verbatim. Loop units fire
+ * `onUnitEnd` (NEVER `onStageEnd` — that's reserved for single-stage and
+ * loop-level semantics), the ref carrying the PARENT stage name so listeners
+ * key on graph identity, not the display decoration. Neither path emits a
+ * completion toast — the status line is the live progress channel.
  *
  * Exported to the `reattach.ts` companion — promotion persists through this
  * exact pipeline (one success path, live and adopted alike).
@@ -317,7 +311,6 @@ export async function recordStageSuccess(
 	);
 	if (persisted) {
 		if (s.unit) {
-			ctx.ui.notify(MSG_UNIT_COMPLETE(s.skill, s.unit.label), "info");
 			await s.lifecycle.fire(
 				ctx,
 				"onUnitEnd",
@@ -334,7 +327,6 @@ export async function recordStageSuccess(
 			// branch above and never seed a continuation. Shared with the resume fold
 			// (`rollLastSession`) so the null-handling can't drift between the paths.
 			rollLastSession(s.state, session);
-			ctx.ui.notify(MSG_STAGE_COMPLETE(s.skill), "info");
 			await s.lifecycle.fire(ctx, "onStageEnd", currentStageRef(s), output, lifecycleCtxFromSession(s));
 		}
 		return true;

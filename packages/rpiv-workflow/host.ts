@@ -83,7 +83,6 @@ export interface WorkflowHostContext {
 	hasUI: boolean;
 	ui: {
 		notify(message: string, level?: "info" | "warning" | "error"): void;
-		setStatus(key: string, text: string | undefined): void;
 	};
 	sessionManager: {
 		/**

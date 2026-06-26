@@ -354,16 +354,6 @@ describe("runWorkflow", () => {
 		expect((stages[1]?.output as { artifacts: Array<{ handle: { path: string } }> }).artifacts[0]?.handle.path).toBe(
 			".rpiv/artifacts/designs/d.md",
 		);
-
-		// The persistent status line updates exactly once per stage (in order),
-		// then clears on workflow completion. Pi's `notify` channel gets
-		// repainted by `newSession` transitions; the status line survives them,
-		// which is why we use `setStatus` for "currently running X."
-		expect(chain.statusUpdates).toEqual([
-			{ key: "rpiv-workflow", value: "rpiv: stage 1/2 — research" },
-			{ key: "rpiv-workflow", value: "rpiv: stage 2/2 — design" },
-			{ key: "rpiv-workflow", value: undefined },
-		]);
 	});
 
 	it("stops on step failure, records a failed entry, and never consumes later steps", async () => {
@@ -584,13 +574,6 @@ describe("runWorkflow", () => {
 		// A warning-level notification surfaces the abort.
 		const abortNotice = chain.notifications.find((n) => /aborted/i.test(n.msg));
 		expect(abortNotice?.level).toBe("warning");
-
-		// The status line was set when stage 1 began and cleared when the abort
-		// halted the chain — no stale "stage 1/2 — research" left behind.
-		expect(chain.statusUpdates).toEqual([
-			{ key: "rpiv-workflow", value: "rpiv: stage 1/2 — research" },
-			{ key: "rpiv-workflow", value: undefined },
-		]);
 	});
 
 	it("abort mid-chain surfaces partial artifacts produced by earlier stages", async () => {
@@ -1218,9 +1201,6 @@ describe("runWorkflow", () => {
 			expect(stages).toHaveLength(2);
 			expect(stages[0]).toMatchObject({ skill: "research", status: "completed" });
 			expect(stages[1]).toMatchObject({ skill: "design", status: "failed" });
-
-			// Status line cleared
-			expect(chain.statusUpdates.at(-1)).toEqual({ key: "rpiv-workflow", value: undefined });
 		});
 
 		// inputSchema mirrors outputSchema's async-safety posture: an async
@@ -2103,30 +2083,6 @@ describe("runWorkflow", () => {
 			expect(result.success).toBe(false);
 			expect(result.error).toMatch(/backward-jump limit exceeded/i);
 			expect(result.stagesCompleted).toBe(2);
-		});
-
-		it("clears status line on backward-jump exhaustion", async () => {
-			writeArtifact(tmpDir, ".rpiv/artifacts/a/a1.md");
-			writeArtifact(tmpDir, ".rpiv/artifacts/b/b1.md");
-
-			const chain = createMockSessionChain({
-				cwd: tmpDir,
-				steps: [
-					{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/a/a1.md")] },
-					{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/b/b1.md")] },
-				],
-			});
-
-			const workflow = wf(
-				"cycle",
-				["a", "b", "c"],
-				{},
-				{ b: defineRoute(["a", "c"], () => "a", { readsData: false }) },
-			);
-
-			await runWorkflow(chain.ctx, { workflow, input: "x", maxBackwardJumps: 0 });
-
-			expect(chain.statusUpdates.at(-1)).toEqual({ key: "rpiv-workflow", value: undefined });
 		});
 
 		it("records a failure row on backward-jump exhaustion (co-extensive with state.termination.error)", async () => {
@@ -3024,10 +2980,22 @@ describe("totalStages denominator (countReachableNodes)", () => {
 		rmSync(tmpDir, { recursive: true, force: true });
 	});
 
-	const stageDenominator = (statusUpdates: Array<{ key: string; value: string | undefined }>): number | undefined => {
-		const first = statusUpdates.find((u) => u.value !== undefined);
-		const match = first?.value?.match(/stage \d+\/(\d+)/);
-		return match ? Number(match[1]) : undefined;
+	// The denominator is the `totalStages` the runner computes via
+	// countReachableStages and surfaces on the lifecycle context (it was formerly
+	// read off the now-removed status line).
+	const captureTotalStages = (): {
+		lifecycle: { onWorkflowStart: (ctx: { totalStages: number }) => void };
+		get: () => number | undefined;
+	} => {
+		let total: number | undefined;
+		return {
+			lifecycle: {
+				onWorkflowStart: (ctx) => {
+					total = ctx.totalStages;
+				},
+			},
+			get: () => total,
+		};
 	};
 
 	it("counts every reachable node along a linear chain", async () => {
@@ -3037,6 +3005,7 @@ describe("totalStages denominator (countReachableNodes)", () => {
 			steps: [{ branch: [mockAssistantMessage("done")] }],
 		});
 		// 3-node linear chain — denominator should be 3.
+		const cap = captureTotalStages();
 		await runWorkflow(chain.ctx, {
 			workflow: {
 				name: "linear",
@@ -3049,8 +3018,9 @@ describe("totalStages denominator (countReachableNodes)", () => {
 				edges: { a: "b", b: "c", c: "stop" },
 			},
 			input: "x",
+			lifecycle: cap.lifecycle,
 		});
-		expect(stageDenominator(chain.statusUpdates)).toBe(3);
+		expect(cap.get()).toBe(3);
 	});
 
 	it("counts both branches when an edge is a gate (with .targets)", async () => {
@@ -3058,6 +3028,7 @@ describe("totalStages denominator (countReachableNodes)", () => {
 			cwd: tmpDir,
 			steps: [{ branch: [mockAssistantMessage("done")] }],
 		});
+		const cap = captureTotalStages();
 		await runWorkflow(chain.ctx, {
 			workflow: {
 				name: "branching",
@@ -3071,8 +3042,9 @@ describe("totalStages denominator (countReachableNodes)", () => {
 				edges: { a: gate("count", { b: gt(0), c: eq(0) }, "c"), b: "stop", c: "stop" },
 			},
 			input: "x",
+			lifecycle: cap.lifecycle,
 		});
-		expect(stageDenominator(chain.statusUpdates)).toBe(3);
+		expect(cap.get()).toBe(3);
 	});
 
 	it("excludes orphan (unreachable) nodes from the count", async () => {
@@ -3081,6 +3053,7 @@ describe("totalStages denominator (countReachableNodes)", () => {
 			steps: [{ branch: [mockAssistantMessage("done")] }],
 		});
 		// `orphan` is declared but never reachable from start.
+		const cap = captureTotalStages();
 		await runWorkflow(chain.ctx, {
 			workflow: {
 				name: "with-orphan",
@@ -3093,9 +3066,10 @@ describe("totalStages denominator (countReachableNodes)", () => {
 				edges: { a: "b", b: "stop", orphan: "stop" },
 			},
 			input: "x",
+			lifecycle: cap.lifecycle,
 		});
 		// BFS reaches {a, b} — denominator is 2, not 3.
-		expect(stageDenominator(chain.statusUpdates)).toBe(2);
+		expect(cap.get()).toBe(2);
 	});
 
 	it("throws when an EdgeFn has no .targets — validation should have rejected the workflow", async () => {

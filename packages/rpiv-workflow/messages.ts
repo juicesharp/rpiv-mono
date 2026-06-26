@@ -1,8 +1,7 @@
 /**
  * User-facing message constants.
- * - `STATUS_*` via `ctx.ui.setStatus` — persists across `newSession`.
  * - `MSG_*` / `ERR_*` via `ctx.ui.notify` — one-shot; may be repainted by
- *   Pi's session transition (the status line is the durable channel).
+ *   Pi's session transition.
  * - `FAIL_*` — structured terminal-failure descriptors (see `FailureText`).
  *
  * Audience split: this module is the UI/runtime constants. The
@@ -10,8 +9,6 @@
  * (sessions/extraction.ts); legacy-migration notices live in load/legacy.ts;
  * `/wf` usage strings live in command.ts / preview.ts.
  */
-
-export const STATUS_KEY = "rpiv-workflow";
 
 /**
  * One structured descriptor per terminal-failure kind — the `toast` (the
@@ -27,9 +24,6 @@ export interface FailureText {
 	error: string;
 }
 
-export const STATUS_STAGE = (stage: number, total: number, skill: string) => `rpiv: stage ${stage}/${total} — ${skill}`;
-
-export const MSG_STAGE_COMPLETE = (skill: string) => `✓ ${skill} completed`;
 export const MSG_STAGE_FAILED = (skill: string) => `✗ ${skill} failed — stopping workflow`;
 
 export const FAIL_STAGE_ABORTED = (skill: string): FailureText => ({
@@ -103,24 +97,6 @@ export const FAIL_BACKWARD_JUMP_EXHAUSTED = (jumps: number, max: number): Failur
 	toast: `rpiv: backward-jump limit exceeded (${jumps}/${max}) — stopping workflow to prevent infinite loop`,
 	error: `Backward-jump limit exceeded: ${jumps} backward jumps (max ${max})`,
 });
-
-/**
- * Status line for one loop unit. `skill` is the unit's dispatched skill body
- * (the judge's skill — or the synthetic `<parent>-judge` label — on a judge
- * unit); `label` is the unit's display tag (`"phase 2/5"`, `"r0·judge"`).
- * One template for all three loop kinds — the retired fanout/iterate
- * templates were byte-identical; assess threads its round/phase cursor as
- * the label.
- */
-export const STATUS_LOOP_UNIT = (stage: number, total: number, skill: string, label: string) =>
-	`rpiv: stage ${stage}/${total} — ${skill} (${label})`;
-
-/**
- * Per-unit completion toast — labeled so eight units of one fanout read as
- * eight distinct completions, not eight copies of the stage banner (the loop
- * end still owns MSG_STAGE_COMPLETE).
- */
-export const MSG_UNIT_COMPLETE = (skill: string, label: string) => `✓ ${skill} (${label})`;
 
 /**
  * Per-unit SOFT-halt toast — a collect-all fanout unit failed but the run

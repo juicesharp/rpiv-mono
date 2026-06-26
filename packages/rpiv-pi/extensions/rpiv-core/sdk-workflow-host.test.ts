@@ -137,13 +137,11 @@ void _executorOk;
 function makeDeps(overrides: Partial<SdkWorkflowHostDeps> = {}): {
 	deps: SdkWorkflowHostDeps;
 	notify: ReturnType<typeof vi.fn>;
-	setStatus: ReturnType<typeof vi.fn>;
 	uiCustom: ReturnType<typeof vi.fn>;
 	uiNotify: ReturnType<typeof vi.fn>;
 	find: ReturnType<typeof vi.fn>;
 } {
 	const notify = vi.fn();
-	const setStatus = vi.fn();
 	const uiCustom = vi.fn(async () => ({ answers: [], cancelled: false }));
 	// The launcher uiContext (every child binds it via the relay) — its
 	// notify is what the relay toasts through on a deferred questionnaire.
@@ -153,7 +151,7 @@ function makeDeps(overrides: Partial<SdkWorkflowHostDeps> = {}): {
 	const deps = {
 		live: {
 			hasUI: true,
-			ui: { notify, setStatus },
+			ui: { notify },
 			sessionManager: {
 				getBranch: () => [],
 				getSessionId: () => "live-session",
@@ -169,7 +167,7 @@ function makeDeps(overrides: Partial<SdkWorkflowHostDeps> = {}): {
 		...overrides,
 	} as SdkWorkflowHostDeps;
 
-	return { deps, notify, setStatus, uiCustom, uiNotify, find };
+	return { deps, notify, uiCustom, uiNotify, find };
 }
 
 beforeEach(() => {
@@ -402,13 +400,11 @@ describe("concurrency + observer relay", () => {
 		expect(host.maxConcurrency).toBe(4);
 	});
 
-	it("ui relays notify/setStatus to the live observer", () => {
-		const { deps, notify, setStatus } = makeDeps();
+	it("ui relays notify to the live observer", () => {
+		const { deps, notify } = makeDeps();
 		const host = new SdkWorkflowHost(deps);
 		host.ui.notify("hello", "warning");
-		host.ui.setStatus("k", "v");
 		expect(notify).toHaveBeenCalledWith("hello", "warning");
-		expect(setStatus).toHaveBeenCalledWith("k", "v");
 	});
 });
 

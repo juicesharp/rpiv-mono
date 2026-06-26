@@ -60,17 +60,10 @@ afterEach(() => {
 });
 
 describe("registerSessionHooks — event wiring", () => {
-	it("registers 6 events", () => {
+	it("registers 5 events", () => {
 		const { pi, captured } = createMockPi();
 		registerSessionHooks(pi);
-		for (const ev of [
-			"session_start",
-			"session_compact",
-			"session_shutdown",
-			"tool_call",
-			"before_agent_start",
-			"agent_end",
-		]) {
+		for (const ev of ["session_start", "session_compact", "session_shutdown", "tool_call", "before_agent_start"]) {
 			expect(captured.events.has(ev)).toBe(true);
 		}
 	});
@@ -588,56 +581,5 @@ describe("before_agent_start hook", () => {
 		await handler?.({ prompt: "" } as never, ctx as never);
 		const second = await handler?.({ prompt: "" } as never, ctx as never);
 		expect(second).toBeUndefined();
-	});
-
-	it("sets status to 'rpiv: <name>' when prompt contains an owned rpiv-pi skill block", async () => {
-		const { pi, captured } = createMockPi({
-			exec: stubGitExec({ branch: "main", commit: "abc", user: "alice" }) as never,
-		});
-		registerSessionHooks(pi);
-		const handler = captured.events.get("before_agent_start")?.[0];
-		const ctx = createMockCtx({ cwd: projectDir });
-		const skillPrompt = `<skill name="discover" location="/some/path">\nbody\n</skill>`;
-		await handler?.({ prompt: skillPrompt } as never, ctx as never);
-		expect(ctx.ui.setStatus).toHaveBeenCalledWith("rpiv-skill", "rpiv: discover");
-	});
-
-	it("does not set status for a skill block whose name is not bundled with rpiv-pi", async () => {
-		// Foreign / user-supplied skills must not be branded as rpiv: — only names that
-		// match a directory under packages/rpiv-pi/skills/ get the rpiv-skill status.
-		const { pi, captured } = createMockPi({
-			exec: stubGitExec({ branch: "main", commit: "abc", user: "alice" }) as never,
-		});
-		registerSessionHooks(pi);
-		const handler = captured.events.get("before_agent_start")?.[0];
-		const ctx = createMockCtx({ cwd: projectDir });
-		const skillPrompt = `<skill name="not-an-rpiv-skill" location="/home/u/.pi/skills/not-an-rpiv-skill">\nbody\n</skill>`;
-		await handler?.({ prompt: skillPrompt } as never, ctx as never);
-		const setStatusCalls = (ctx.ui.setStatus as ReturnType<typeof vi.fn>).mock.calls.filter(
-			(c) => c[0] === "rpiv-skill",
-		);
-		expect(setStatusCalls).toHaveLength(0);
-	});
-
-	it("does not set status when prompt has no skill block", async () => {
-		const { pi, captured } = createMockPi({
-			exec: stubGitExec({ branch: "main", commit: "abc", user: "alice" }) as never,
-		});
-		registerSessionHooks(pi);
-		const handler = captured.events.get("before_agent_start")?.[0];
-		const ctx = createMockCtx({ cwd: projectDir });
-		await handler?.({ prompt: "just a normal chat message" } as never, ctx as never);
-		expect(ctx.ui.setStatus).not.toHaveBeenCalled();
-	});
-});
-
-describe("agent_end hook", () => {
-	it("clears the rpiv-skill status", async () => {
-		const { pi, captured } = createMockPi();
-		registerSessionHooks(pi);
-		const handler = captured.events.get("agent_end")?.[0];
-		const ctx = createMockCtx();
-		await handler?.({ messages: [] } as never, ctx as never);
-		expect(ctx.ui.setStatus).toHaveBeenCalledWith("rpiv-skill", undefined);
 	});
 });

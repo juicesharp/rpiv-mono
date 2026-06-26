@@ -55,13 +55,7 @@ import {
 	sequentialStrategyOf,
 } from "./loop-kinds.js";
 import { runFanoutDispatch } from "./loop-parallel.js";
-import {
-	MSG_LOOP_CAP_ADVANCE,
-	MSG_LOOP_ZERO_UNITS,
-	MSG_STAGE_COMPLETE,
-	STATUS_KEY,
-	STATUS_LOOP_UNIT,
-} from "./messages.js";
+import { MSG_LOOP_CAP_ADVANCE, MSG_LOOP_ZERO_UNITS } from "./messages.js";
 import { appendLoopCap } from "./state/index.js";
 import type { RunContext, WorkflowHostContext } from "./types.js";
 
@@ -191,8 +185,6 @@ async function dispatchUnit(
 	run: RunContext,
 	deps: LoopDeps,
 ): Promise<void> {
-	curCtx.ui.setStatus(STATUS_KEY, STATUS_LOOP_UNIT(e.stageIdx + 1, run.totalStages, u.skill, u.label));
-
 	await run.lifecycle.fire(
 		curCtx,
 		"onUnitStart",
@@ -293,9 +285,9 @@ export function projectResult(
 }
 
 /**
- * Notification rules: banner iff THIS invocation ran units; the zero-unit
- * warning only for a live empty pull loop; a resumed finished loop stays
- * SILENT (pinned — no re-announce, no double completion toast).
+ * Notification rules: the only toast is the zero-unit warning for a live empty
+ * pull loop. Loop completion itself is silent (the status line is the live
+ * progress channel); a resumed finished loop stays silent too.
  */
 async function finishLoop(
 	curCtx: WorkflowHostContext,
@@ -305,9 +297,7 @@ async function finishLoop(
 	deps: LoopDeps,
 ): Promise<void> {
 	projectResult(e.loop, e.entryPair, cursor, run.state);
-	if (cursor.ranThisInvocation > 0) {
-		curCtx.ui.notify(MSG_STAGE_COMPLETE(e.skill), "info");
-	} else if (cursor.accumulated.length === 0 && e.loop.kind === "iterate") {
+	if (cursor.ranThisInvocation === 0 && cursor.accumulated.length === 0 && e.loop.kind === "iterate") {
 		curCtx.ui.notify(MSG_LOOP_ZERO_UNITS(e.skill), "warning");
 	}
 	await deps.advanceAfter(curCtx, e.name, e.stageIdx, run);

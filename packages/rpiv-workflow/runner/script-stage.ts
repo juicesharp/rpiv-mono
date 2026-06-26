@@ -34,13 +34,7 @@ import { allocateStageNumber, persistStageSuccess } from "../audit-rows.js";
 import { lifecycleCtxFor, scriptStageRef } from "../events.js";
 import type { Artifact } from "../handle.js";
 import { formatError, nowIso } from "../internal-utils.js";
-import {
-	FAIL_SCRIPT_THREW,
-	FAIL_VALIDATION_EXHAUSTED,
-	MSG_STAGE_COMPLETE,
-	STATUS_KEY,
-	STATUS_STAGE,
-} from "../messages.js";
+import { FAIL_SCRIPT_THREW, FAIL_VALIDATION_EXHAUSTED } from "../messages.js";
 import { finalizeOutput, type Output, outputMeta } from "../output.js";
 import type { RunContext, WorkflowHostContext } from "../types.js";
 import {
@@ -69,8 +63,6 @@ export async function runScript(
 	run: RunContext,
 	advance: AdvanceFn,
 ): Promise<ChainOutcome> {
-	curCtx.ui.setStatus(STATUS_KEY, STATUS_STAGE(stage.stageNumber, run.totalStages, stage.name));
-
 	const ref = scriptStageRef(stage.name, stage.stageNumber);
 	await run.lifecycle.fire(curCtx, "onStageStart", ref, lifecycleCtxFor(run));
 
@@ -148,7 +140,6 @@ export async function runScript(
 		failAuditWrite(curCtx, run.state, stage.name);
 		return "halted";
 	}
-	curCtx.ui.notify(MSG_STAGE_COMPLETE(stage.name), "info");
 
 	await run.lifecycle.fire(curCtx, "onStageEnd", ref, output, lifecycleCtxFor(run));
 	return advance(curCtx, stage.name, idx, run);

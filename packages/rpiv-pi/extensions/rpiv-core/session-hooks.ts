@@ -8,12 +8,10 @@
 import { cpSync, existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import {
-	type AgentEndEvent,
 	type BeforeAgentStartEvent,
 	type ExtensionAPI,
 	type ExtensionContext,
 	isToolCallEventType,
-	parseSkillBlock,
 	type ToolCallEvent,
 } from "@earendil-works/pi-coding-agent";
 import {
@@ -33,7 +31,6 @@ import {
 } from "./git-context.js";
 import { ARTIFACTS_SUBDIR, clearInjectionState, handleToolCallGuidance, injectRootGuidance } from "./guidance.js";
 import { findMissingSiblings } from "./package-checks.js";
-import { BUNDLED_SKILL_NAMES } from "./paths.js";
 import { isStaleCtxError } from "./utils.js";
 
 /**
@@ -95,7 +92,6 @@ export function registerSessionHooks(pi: ExtensionAPI): void {
 	pi.on("session_shutdown", async () => onSessionShutdown());
 	pi.on("tool_call", async (event, ctx) => onToolCall(event, ctx, pi));
 	pi.on("before_agent_start", async (event, ctx) => onBeforeAgentStart(event, ctx, pi));
-	pi.on("agent_end", async (_event, ctx) => onAgentEnd(_event, ctx));
 }
 
 // ---------------------------------------------------------------------------
@@ -167,36 +163,21 @@ async function onToolCall(event: ToolCallEvent, ctx: ExtensionContext, pi: Exten
 	}
 }
 
-// Runs every fire — `rpiv: <skill>` is a per-stage display string (each
-// stage owns the status line during its run), and the git-context injection
-// is keyed off `takeGitContextIfChanged` which is its own dedup layer.
+// Runs every fire — the git-context injection is keyed off
+// `takeGitContextIfChanged` which is its own dedup layer.
 async function onBeforeAgentStart(
-	event: BeforeAgentStartEvent,
-	ctx: ExtensionContext,
+	_event: BeforeAgentStartEvent,
+	_ctx: ExtensionContext,
 	pi: ExtensionAPI,
 ): Promise<{ message: ReturnType<typeof buildGitContextMessage> } | undefined> {
-	const parsed = parseSkillBlock(event.prompt);
-	if (parsed && isOwnedSkill(parsed.name)) ctx.ui.setStatus("rpiv-skill", `rpiv: ${parsed.name}`);
 	const content = await takeGitContextIfChanged(pi);
 	if (!content) return undefined;
 	return { message: buildGitContextMessage(pi, content) };
 }
 
-async function onAgentEnd(_event: AgentEndEvent, ctx: ExtensionContext): Promise<void> {
-	ctx.ui.setStatus("rpiv-skill", undefined);
-}
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-// Allowlist of rpiv-pi's own skill names, sourced from the shared
-// `BUNDLED_SKILL_NAMES` constant. Prevents the status bar from claiming
-// `rpiv:` ownership of user-supplied or third-party skills. The set is
-// computed once at module load in paths.ts.
-function isOwnedSkill(name: string): boolean {
-	return BUNDLED_SKILL_NAMES.has(name);
-}
 
 function resetInjectionState(): void {
 	clearInjectionState();

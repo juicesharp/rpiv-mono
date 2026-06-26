@@ -25,7 +25,6 @@ import {
 	MSG_PARTIAL_ARTIFACTS,
 	MSG_STAGE_FAILED,
 	MSG_WORKFLOW_CANCELLED,
-	STATUS_KEY,
 } from "./messages.js";
 import { listArtifacts, type SessionRef } from "./state/index.js";
 import type { StopSignal } from "./transcript.js";
@@ -256,7 +255,6 @@ export async function recordTerminalFailure(
 		session: audit.session,
 		...unitRowFields(audit.unit),
 	});
-	ctx.ui.setStatus(STATUS_KEY, undefined);
 	ctx.ui.notify(args.notifyMsg, args.notifyLevel);
 	onFailure?.(ctx);
 	terminate(audit.state, { status: args.status, error: args.errMsg });
@@ -340,7 +338,6 @@ export function recordCancellation(ctx: WorkflowHostContext, audit: AuditCtx): v
 		session: audit.session,
 		...unitRowFields(audit.unit),
 	});
-	ctx.ui.setStatus(STATUS_KEY, undefined);
 	ctx.ui.notify(MSG_WORKFLOW_CANCELLED, "info");
 	terminate(audit.state, { status: "cancelled", error: errMsg });
 }

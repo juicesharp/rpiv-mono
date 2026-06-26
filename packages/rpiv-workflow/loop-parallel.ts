@@ -41,7 +41,6 @@ import {
 	type LoopEntry,
 	type NextStep,
 } from "./loop-kinds.js";
-import { STATUS_KEY, STATUS_LOOP_UNIT } from "./messages.js";
 import { failedOutput, type Output, type OutputMeta, outputMeta } from "./output.js";
 import { Semaphore } from "./semaphore.js";
 import type { RunContext, UnitRef, WorkflowHostContext } from "./types.js";
@@ -168,7 +167,6 @@ async function dispatchUnitDetached(
 ): Promise<Output> {
 	if (signal?.aborted) throw new WorkflowAbortError(); // never open a child after abort; isAbortError → unfilled slot
 	const u = fanoutUnitAt(e, index);
-	curCtx.ui.setStatus(STATUS_KEY, STATUS_LOOP_UNIT(e.stageIdx + 1, run.totalStages, u.skill, u.label));
 	await run.lifecycle.fire(
 		curCtx,
 		"onUnitStart",

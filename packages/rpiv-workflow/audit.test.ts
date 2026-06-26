@@ -80,7 +80,6 @@ describe("recordTerminalFailure", () => {
 			cwd: tmpDir,
 			ui: {
 				notify: (msg: string, level: string) => notifications.push({ msg, level }),
-				setStatus: () => {},
 			},
 		} as unknown as WorkflowHostContext;
 		return { ctx, notifications };

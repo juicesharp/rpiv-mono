@@ -152,7 +152,6 @@ function makeHarness(opts: {
 	const sentIntoSession: string[] = [];
 	const ui = {
 		notify: (msg: string, level?: string) => notifications.push({ msg, level: level ?? "info" }),
-		setStatus: () => {},
 	};
 
 	const sessionCtxFor = (branch: unknown[], id: string, file: string | undefined): WorkflowSessionContext =>
@@ -415,7 +414,7 @@ describe("session-backed resume — detaches to the provider's executor host", (
 		({
 			cwd: tmpDir,
 			hasUI: false,
-			ui: { notify: () => {}, setStatus: () => {} },
+			ui: { notify: () => {} },
 			sessionManager: {
 				getBranch: () => [],
 				getSessionId: () => "outer-session",
