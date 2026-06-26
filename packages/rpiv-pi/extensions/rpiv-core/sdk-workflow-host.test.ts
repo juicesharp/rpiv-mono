@@ -108,7 +108,7 @@ vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
 	};
 });
 
-import { __resetRunLaneRegistry, getLane, recordRun, retireRun } from "./run-lane-registry.js";
+import { __resetRunLaneRegistry, getLane, type LaneSession, recordRun, retireRun } from "./run-lane-registry.js";
 import {
 	AMBIENT_OBSERVER_MANIFEST_FLAG,
 	CHILD_AMBIENT_EXTENSION_DENYLIST,
@@ -669,7 +669,7 @@ describe("spawnChild — lane current-session retention (Slice 2)", () => {
 		const { deps } = makeDeps();
 		const host = new SdkWorkflowHost(deps);
 
-		let liveDuringStage: unknown;
+		let liveDuringStage: LaneSession | undefined;
 		await host.spawnChild({
 			prompt: "p",
 			withSession: async () => {
@@ -677,8 +677,10 @@ describe("spawnChild — lane current-session retention (Slice 2)", () => {
 			},
 		});
 
-		// During the stage the lane exposed the live child; after the finally it's cleared.
-		expect(liveDuringStage).toBe(sessions[0]);
+		// The lane exposed a STREAMING VIEW over the live child — same session identity, now
+		// carrying the getStreamingMessage accessor; after the finally it's cleared.
+		expect(liveDuringStage?.sessionId).toBe(sessions[0].sessionId);
+		expect(typeof liveDuringStage?.getStreamingMessage).toBe("function");
 		expect(getLane("run-abc")?.currentSession).toBeUndefined();
 	});
 
@@ -717,12 +719,12 @@ describe("spawnChild — lane current-session retention (Slice 2)", () => {
 		});
 		await bReachedP; // B created → slot = sessions[1] (latest-spawned wins)
 
-		expect(getLane("run-abc")?.currentSession).toBe(sessions[1]);
+		expect(getLane("run-abc")?.currentSession?.sessionId).toBe(sessions[1].sessionId);
 
 		// A tears down while B is still live — the identity guard skips the clear.
 		releaseA();
 		await aP;
-		expect(getLane("run-abc")?.currentSession).toBe(sessions[1]);
+		expect(getLane("run-abc")?.currentSession?.sessionId).toBe(sessions[1].sessionId);
 
 		// B (the owner) tears down → it clears the slot.
 		releaseB();

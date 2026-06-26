@@ -29,7 +29,15 @@
 
 import type { ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
 import { type Component, Key, matchesKey, type TUI, truncateToWidth } from "@earendil-works/pi-tui";
-import { type RenderSource, renderBranch, type ToolDefArg, type ViewerEntry } from "./lane-transcript.js";
+import {
+	type RenderSource,
+	renderBranch,
+	renderStreamingMessage,
+	type StreamingHandle,
+	type ToolDefArg,
+	type ViewerEntry,
+	type ViewerMessage,
+} from "./lane-transcript.js";
 import { type DiskBranch, loadBranchFromDisk } from "./lane-transcript-disk.js";
 import {
 	getLane,
@@ -57,6 +65,11 @@ export class LaneViewer implements Component {
 	private toolsExpanded = false;
 	private currentSession: LaneSession | undefined;
 	private sessionUnsub: (() => void) | undefined;
+	/** The live child's in-flight partial, rendered as its own persistent component appended
+	 *  after the committed body. Reset on syncSession identity change (so a stage swap never
+	 *  shows the prior child's partial); cleared automatically the tick getStreamingMessage()
+	 *  returns undefined (turn committed). */
+	private streamingComponent: StreamingHandle | undefined;
 	private readonly registryUnsub: () => void;
 	/** Disk-jsonl fallback (Problem 2) parsed ONCE and cached by file key — render runs
 	 *  synchronously every streaming tick, so the disk read must not repeat per frame. */
@@ -80,6 +93,7 @@ export class LaneViewer implements Component {
 		if (next !== this.currentSession) {
 			this.sessionUnsub?.();
 			this.currentSession = next;
+			this.streamingComponent = undefined; // drop any in-flight partial from the old child
 			this.sessionUnsub = next?.subscribe(() => this.tui.requestRender());
 		}
 		this.tui.requestRender();
@@ -135,7 +149,30 @@ export class LaneViewer implements Component {
 			// disposed mid-render / unexpected shape — fail soft (never throw inside the overlay)
 			return this.frame([this.theme.fg("dim", "(transcript unavailable)")], width);
 		}
-		return this.frame(renderBranch(entries, width, source, this.tui, this.theme, this.toolsExpanded), width);
+		const body = renderBranch(entries, width, source, this.tui, this.theme, this.toolsExpanded);
+		if (session) {
+			// Live source only: append the in-flight partial after the committed body so it sits at the
+			// bottom-anchored tail. getStreamingMessage() → undefined the instant the turn commits, so the
+			// component clears and renderBranch shows the committed turn — no double-render.
+			const { component, lines } = renderStreamingMessage(
+				this.streamingComponent,
+				this.readStreaming(session),
+				width,
+			);
+			this.streamingComponent = component;
+			body.push(...lines);
+		}
+		return this.frame(body, width);
+	}
+
+	/** Read the live session's in-flight partial, narrowed to ViewerMessage at the call site
+	 *  (the boundary decision). Fail-soft: a throwing accessor yields undefined. */
+	private readStreaming(session: LaneSession): ViewerMessage | undefined {
+		try {
+			return session.getStreamingMessage() as ViewerMessage | undefined;
+		} catch {
+			return undefined;
+		}
 	}
 
 	/** Header + bottom-anchored windowed body + footer. scrollOffset 0 = newest (tail). */

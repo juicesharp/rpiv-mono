@@ -35,6 +35,7 @@ function makeSession(sessionId: string): LaneSession {
 		isStreaming: false,
 		sessionManager: { getBranch: () => [], getCwd: () => "/tmp" },
 		getToolDefinition: () => undefined,
+		getStreamingMessage: () => undefined,
 		subscribe: () => () => {},
 	};
 }

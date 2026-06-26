@@ -19,7 +19,15 @@
 import type { ExtensionUIContext, Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { type TUI, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { shortFailureReason } from "./lane-failure.js";
-import { type RenderSource, renderBranch, type ToolDefArg, type ViewerEntry } from "./lane-transcript.js";
+import {
+	type RenderSource,
+	renderBranch,
+	renderStreamingMessage,
+	type StreamingHandle,
+	type ToolDefArg,
+	type ViewerEntry,
+	type ViewerMessage,
+} from "./lane-transcript.js";
 import { type DiskBranch, loadBranchFromDisk } from "./lane-transcript-disk.js";
 import {
 	getDockState,
@@ -174,6 +182,11 @@ export class LaneDock {
 	 *  guarded so an unrelated registry notify never stacks a second subscription (a leak). */
 	private previewSession: LaneSession | undefined;
 	private previewUnsub: (() => void) | undefined;
+	/** The selected lane's in-flight partial, rendered as its own persistent component appended
+	 *  before the PREVIEW_LINES tail-slice. Reset on preview-session identity change
+	 *  (syncPreviewSubscription) so a switched-away lane's partial never lingers; nulled on dispose;
+	 *  cleared automatically the tick getStreamingMessage() returns undefined (turn committed). */
+	private streamingComponent: StreamingHandle | undefined;
 	/** Disk-jsonl preview fallback (Problem 2) parsed ONCE and cached by file key — the
 	 *  preview re-renders on every spinner tick, so the disk read must not repeat per frame. */
 	private previewDiskCache: { key: string; value: DiskBranch | undefined } | undefined;
@@ -275,6 +288,7 @@ export class LaneDock {
 		if (next === this.previewSession) return;
 		this.previewUnsub?.();
 		this.previewSession = next;
+		this.streamingComponent = undefined; // drop any in-flight partial from the previously-followed child
 		// `this.tui?` is read LAZILY at fire time, not captured: update() (and thus this
 		// subscribe) can run before the widget factory assigns this.tui (e.g. the first
 		// update() during mount, ahead of the factory). The optional-chain no-ops until the
@@ -549,7 +563,30 @@ export class LaneDock {
 		}
 		if (!this.tui) return [rule]; // pre-mount guard (tui is set by the widget factory before render)
 		const body = renderBranch(entries, width, source, this.tui, theme, false);
+		const live = lane.currentSession;
+		if (live) {
+			// Live source only (terminal lanes carry no partial): append the in-flight partial's thinking
+			// before the tail-slice so the dock preview's last-PREVIEW_LINES window shows it. Cleared the
+			// instant the turn commits (getStreamingMessage → undefined) — no double-render.
+			const { component, lines } = renderStreamingMessage(
+				this.streamingComponent,
+				this.readPreviewStreaming(live),
+				width,
+			);
+			this.streamingComponent = component;
+			body.push(...lines);
+		}
 		return [rule, ...body.slice(Math.max(0, body.length - PREVIEW_LINES))];
+	}
+
+	/** Read the selected lane's live in-flight partial, narrowed to ViewerMessage at the call
+	 *  site. Fail-soft: a throwing accessor yields undefined. */
+	private readPreviewStreaming(session: LaneSession): ViewerMessage | undefined {
+		try {
+			return session.getStreamingMessage() as ViewerMessage | undefined;
+		} catch {
+			return undefined;
+		}
 	}
 
 	/** Disk-jsonl preview fallback (Problem 2), memoized by `runId::lastSessionFile` so the
@@ -574,6 +611,7 @@ export class LaneDock {
 		this.previewUnsub?.();
 		this.previewUnsub = undefined;
 		this.previewSession = undefined;
+		this.streamingComponent = undefined;
 		if (this.uiCtx) this.uiCtx.setWidget(WIDGET_KEY, undefined);
 		this.widgetRegistered = false;
 		this.tui = undefined;

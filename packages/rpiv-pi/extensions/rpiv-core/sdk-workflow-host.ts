@@ -50,6 +50,7 @@ import {
 import { parseModelKey } from "@juicesharp/rpiv-config";
 import type { ModelSelection, WorkflowHostContext, WorkflowSessionContext } from "@juicesharp/rpiv-workflow";
 import { createLaneRelayUiContext } from "./lane-relay-ui.js";
+import { createLaneSessionView } from "./lane-streaming.js";
 import { captureFinalSnapshot, getLane, setCurrentSession, setLaneSessionFile } from "./run-lane-registry.js";
 
 /**
@@ -274,9 +275,12 @@ export class SdkWorkflowHost implements WorkflowHostContext {
 		});
 
 		// Lane registry (FR1): expose this run's currently-live child as the viewer's
-		// transcript source. Replaces any prior child; under fanout the latest-spawned
-		// wins. No-op until the run is recorded (createWorkflowExecution, Phase 3).
-		setCurrentSession(this.deps.runId, session);
+		// transcript source — published as a STREAMING VIEW (lane-streaming.ts) so the
+		// viewer/dock can read the in-flight partial via getStreamingMessage(). The raw
+		// `session` stays local for abort + teardown + snapshot. Under fanout the latest
+		// view wins; no-op until the run is recorded (createWorkflowExecution, Phase 3).
+		const laneView = createLaneSessionView(session);
+		setCurrentSession(this.deps.runId, laneView);
 
 		// session.abort() does NOT reject prompt(); the SDK catches the abort,
 		// writes a stopReason:"aborted" transcript message, and RESOLVES the run
@@ -299,13 +303,16 @@ export class SdkWorkflowHost implements WorkflowHostContext {
 			return await options.withSession(this.adapt(session, depth));
 		} finally {
 			options.signal?.removeEventListener("abort", onAbort);
-			// Clear only if WE are still the current child — a fanout sibling spawned
-			// later may now own the slot; don't clobber it on our teardown.
-			if (getLane(this.deps.runId)?.currentSession === session) {
-				// Snapshot the transcript WHILE the session is still alive (Problem 2): the
-				// runner's onWorkflowEnd → retireRun fires AFTER this teardown, by which point
-				// the session is disposed — so capture here, before dropping + disposing it.
-				captureFinalSnapshot(this.deps.runId, session);
+			// Clear only if WE are still the current child — compare against the VIEW we
+			// published (a fanout sibling spawned later may now own the slot; don't clobber it).
+			if (getLane(this.deps.runId)?.currentSession === laneView) {
+				// Snapshot the transcript off the live child WHILE it is still alive (Problem 2):
+				// the runner's onWorkflowEnd → retireRun fires AFTER this teardown, by which point
+				// the session is disposed — so capture here, before dropping + disposing it. Captured
+				// through the published VIEW (which shares the raw session's sessionManager + delegates
+				// getToolDefinition); the snapshot is committed-only (getBranch), so it carries no
+				// in-flight partial.
+				captureFinalSnapshot(this.deps.runId, laneView);
 				// Seed the durable disk-fallback pointer from the SAME last-living child whose
 				// transcript we just snapshotted, so the disk fallback and finalBranch always
 				// agree on which child they represent (under fanout: the slot owner, not an
@@ -314,6 +321,7 @@ export class SdkWorkflowHost implements WorkflowHostContext {
 				setLaneSessionFile(this.deps.runId, session.sessionFile);
 				setCurrentSession(this.deps.runId, undefined);
 			}
+			laneView.dispose(); // tear down the streaming-capture subscription (before session dispose)
 			await this.teardownChild(session); // (B) session_shutdown → dispose
 		}
 	}

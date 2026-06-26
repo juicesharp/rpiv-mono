@@ -5,6 +5,7 @@ import { initTheme, SessionManager, type Theme } from "@earendil-works/pi-coding
 import type { TUI } from "@earendil-works/pi-tui";
 import { makeAssistantMessage, makeUserMessage } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ViewerMessage } from "./lane-transcript.js";
 import { LaneViewer } from "./lane-viewer.js";
 import {
 	__resetRunLaneRegistry,
@@ -31,21 +32,30 @@ function makeTui(rows = 24) {
 
 type BranchFn = () => unknown;
 
-/** A LaneSession stub whose getBranch + subscribe are controllable. */
-function makeSession(getBranch: BranchFn): LaneSession & { fire: () => void; unsub: ReturnType<typeof vi.fn> } {
+/** A LaneSession stub whose getBranch + subscribe + streaming partial are controllable. */
+function makeSession(getBranch: BranchFn): LaneSession & {
+	fire: () => void;
+	unsub: ReturnType<typeof vi.fn>;
+	setStreaming: (m: ViewerMessage | undefined) => void;
+} {
 	let listener: (() => void) | undefined;
+	let streaming: ViewerMessage | undefined;
 	const unsub = vi.fn();
 	return {
 		sessionId: "sess-1",
 		isStreaming: true,
 		sessionManager: { getBranch, getCwd: () => "/tmp" },
 		getToolDefinition: () => undefined,
+		getStreamingMessage: () => streaming,
 		subscribe: (l: () => void) => {
 			listener = l;
 			return unsub;
 		},
 		fire: () => listener?.(),
 		unsub,
+		setStreaming: (m) => {
+			streaming = m;
+		},
 	};
 }
 
@@ -324,6 +334,30 @@ describe("LaneViewer — render", () => {
 		const viewer = new LaneViewer("run-1", makeTui(), identityTheme, vi.fn());
 		expect(() => viewer.render(120)).not.toThrow();
 		expect(viewer.render(120).join("\n")).toContain("(transcript unavailable)");
+		viewer.dispose();
+	});
+
+	it("appends the live streaming partial's thinking after the committed body", () => {
+		const session = makeSession(() => [assistantEntry("committed turn")]);
+		session.setStreaming({ role: "assistant", content: [{ type: "thinking", thinking: "STREAMING_THOUGHT" }] });
+		recordRun("run-1", "ship");
+		setCurrentSession("run-1", session);
+		const viewer = new LaneViewer("run-1", makeTui(), identityTheme, vi.fn());
+		const out = viewer.render(120).join("\n");
+		expect(out).toContain("committed turn");
+		expect(out).toContain("STREAMING_THOUGHT");
+		viewer.dispose();
+	});
+
+	it("drops the streaming partial once the turn commits (getStreamingMessage → undefined)", () => {
+		const session = makeSession(() => [assistantEntry("committed turn")]);
+		session.setStreaming({ role: "assistant", content: [{ type: "thinking", thinking: "TRANSIENT" }] });
+		recordRun("run-1", "ship");
+		setCurrentSession("run-1", session);
+		const viewer = new LaneViewer("run-1", makeTui(), identityTheme, vi.fn());
+		expect(viewer.render(120).join("\n")).toContain("TRANSIENT");
+		session.setStreaming(undefined); // turn committed → folded into getBranch()
+		expect(viewer.render(120).join("\n")).not.toContain("TRANSIENT");
 		viewer.dispose();
 	});
 });

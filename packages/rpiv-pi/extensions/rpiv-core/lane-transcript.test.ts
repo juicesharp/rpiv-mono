@@ -1,7 +1,14 @@
 import { initTheme, type Theme } from "@earendil-works/pi-coding-agent";
 import type { TUI } from "@earendil-works/pi-tui";
 import { beforeAll, describe, expect, it, vi } from "vitest";
-import { type RenderSource, renderBranch, type ViewerEntry } from "./lane-transcript.js";
+import {
+	type RenderSource,
+	renderBranch,
+	renderStreamingMessage,
+	type StreamingHandle,
+	type ViewerEntry,
+	type ViewerMessage,
+} from "./lane-transcript.js";
 
 /** Identity theme — fg returns its text unchanged so render assertions read plainly. */
 const identityTheme = {
@@ -81,5 +88,42 @@ describe("renderBranch — shared transcript replay", () => {
 		expect(() =>
 			renderBranch([{ type: "message" } as ViewerEntry], 120, source, makeTui(), identityTheme, false),
 		).not.toThrow();
+	});
+});
+
+const thinkingPartial = (thinking: string): ViewerMessage => ({
+	role: "assistant",
+	content: [{ type: "thinking", thinking }],
+});
+
+describe("renderStreamingMessage — live partial render", () => {
+	it("renders an assistant thinking partial's text", () => {
+		const { component, lines } = renderStreamingMessage(undefined, thinkingPartial("pondering the plan"), 120);
+		expect(component).toBeDefined();
+		expect(lines.join("\n")).toContain("pondering the plan");
+	});
+
+	it("reuses the previous handle across ticks (one persistent component, updated in place)", () => {
+		const first = renderStreamingMessage(undefined, thinkingPartial("step one"), 120);
+		const second = renderStreamingMessage(first.component, thinkingPartial("step one then two"), 120);
+		expect(second.component).toBe(first.component); // same instance
+		expect(second.lines.join("\n")).toContain("step one then two");
+	});
+
+	it("clears the handle on an undefined partial (turn committed → dedup)", () => {
+		const prev: StreamingHandle | undefined = renderStreamingMessage(undefined, thinkingPartial("x"), 120).component;
+		const { component, lines } = renderStreamingMessage(prev, undefined, 120);
+		expect(component).toBeUndefined();
+		expect(lines).toEqual([]);
+	});
+
+	it("ignores a non-assistant partial", () => {
+		const { component, lines } = renderStreamingMessage(
+			undefined,
+			{ role: "user", content: [{ type: "text", text: "hi" }] },
+			120,
+		);
+		expect(component).toBeUndefined();
+		expect(lines).toEqual([]);
 	});
 });

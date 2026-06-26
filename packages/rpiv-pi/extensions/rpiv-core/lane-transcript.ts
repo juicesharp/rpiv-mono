@@ -33,6 +33,7 @@ import { type Component, type TUI, truncateToWidth } from "@earendil-works/pi-tu
 export interface ViewerContentPart {
 	type: string;
 	text?: string;
+	thinking?: string;
 	name?: string;
 	id?: string;
 	arguments?: Record<string, unknown>;
@@ -207,4 +208,34 @@ export function renderBranch(
 		}
 	}
 	return body;
+}
+
+/** Opaque handle for a surface's persistent streaming component. Surfaces hold one across
+ *  ticks but never construct it — `renderStreamingMessage` owns the SDK component value, so
+ *  `lane-viewer.ts`/`lane-dock.ts` import only this type (no SDK component value import). */
+export type StreamingHandle = AssistantMessageComponent;
+
+/**
+ * Render the in-flight partial assistant message into its own persistent component,
+ * mirroring interactive-mode's `streamingComponent` (NOT a fresh per-tick replay through
+ * `renderBranch`). The surface passes its previous handle and the latest partial; this
+ * `updateContent`s the handle (reused across ticks so only this one component rebuilds per
+ * token) and returns its rendered lines. A `undefined`/non-assistant partial — no turn
+ * streaming, or the turn just committed into `getBranch()` — returns an empty handle + no
+ * lines, which is how the surface drops the component at the streaming→committed boundary.
+ * Fail-soft: a throwing `updateContent`/`render` clears the handle and yields nothing.
+ */
+export function renderStreamingMessage(
+	prev: StreamingHandle | undefined,
+	partial: ViewerMessage | undefined,
+	width: number,
+): { component: StreamingHandle | undefined; lines: string[] } {
+	if (partial?.role !== "assistant") return { component: undefined, lines: [] };
+	const component = prev ?? new AssistantMessageComponent(undefined);
+	try {
+		component.updateContent(partial as unknown as AssistantMessage);
+		return { component, lines: component.render(width) };
+	} catch {
+		return { component: undefined, lines: [] };
+	}
 }

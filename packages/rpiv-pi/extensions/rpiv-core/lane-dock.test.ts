@@ -3,6 +3,7 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 import { createMockUI } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { LaneDock } from "./lane-dock.js";
+import type { ViewerMessage } from "./lane-transcript.js";
 import {
 	__resetRunLaneRegistry,
 	dequeueInput,
@@ -54,15 +55,22 @@ beforeAll(() => {
 	initTheme(); // SDK message components (renderBranch in the preview) read a global theme proxy
 });
 
-function makeSession(getBranch: () => unknown = () => []): LaneSession & { unsub: ReturnType<typeof vi.fn> } {
+function makeSession(
+	getBranch: () => unknown = () => [],
+): LaneSession & { unsub: ReturnType<typeof vi.fn>; setStreaming: (m: ViewerMessage | undefined) => void } {
+	let streaming: ViewerMessage | undefined;
 	const unsub = vi.fn();
 	return {
 		sessionId: "sess",
 		isStreaming: true,
 		sessionManager: { getBranch, getCwd: () => "/tmp" },
 		getToolDefinition: () => undefined,
+		getStreamingMessage: () => streaming,
 		subscribe: vi.fn(() => unsub),
 		unsub,
+		setStreaming: (m) => {
+			streaming = m;
+		},
 	};
 }
 
@@ -917,6 +925,35 @@ describe("LaneDock — active transcript preview (Slice 6)", () => {
 		setDockSelection(0);
 		const activeRow = (widget?.render(120) ?? []).find((l) => l.includes("polish")) ?? "";
 		expect(activeRow.indexOf("polish")).toBe(ambientRow.indexOf("polish"));
+		overlay.dispose();
+	});
+
+	it("active preview appends the live streaming partial's thinking in the tail", () => {
+		recordRun("run-1", "ship");
+		const session = makeSession(() => [assistantEntry("COMMITTED_BODY")]);
+		session.setStreaming({ role: "assistant", content: [{ type: "thinking", thinking: "STREAMING_THOUGHT" }] });
+		setCurrentSession("run-1", session);
+		const overlay = new LaneDock();
+		const { widget } = mount(overlay, makeCtx());
+		setDockActive(true);
+		setDockSelection(0);
+		expect((widget?.render(120) ?? []).join("\n")).toContain("STREAMING_THOUGHT");
+		overlay.dispose();
+	});
+
+	it("drops the streaming partial once the turn commits (getStreamingMessage → undefined)", () => {
+		recordRun("run-1", "ship");
+		const session = makeSession(() => [assistantEntry("COMMITTED_BODY")]);
+		session.setStreaming({ role: "assistant", content: [{ type: "thinking", thinking: "TRANSIENT" }] });
+		setCurrentSession("run-1", session);
+		const overlay = new LaneDock();
+		const { widget } = mount(overlay, makeCtx());
+		setDockActive(true);
+		setDockSelection(0);
+		expect((widget?.render(120) ?? []).join("\n")).toContain("TRANSIENT");
+		session.setStreaming(undefined);
+		overlay.update(); // re-render after the turn commits
+		expect((widget?.render(120) ?? []).join("\n")).not.toContain("TRANSIENT");
 		overlay.dispose();
 	});
 });

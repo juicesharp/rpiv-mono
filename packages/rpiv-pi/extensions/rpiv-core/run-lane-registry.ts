@@ -36,6 +36,14 @@ export interface LaneSession {
 	 *  the registry stays free of an SDK value/type import. Returns undefined when the
 	 *  tool isn't registered (the component falls back to a generic renderer). */
 	getToolDefinition(name: string): unknown;
+	/** The in-flight partial assistant message during streaming — the same value the
+	 *  SDK's `message_update` event carries, narrowed to `ViewerMessage` at the call site.
+	 *  Typed `unknown` so the registry stays free of an SDK message-type import, exactly
+	 *  like `getBranch`/`getToolDefinition`. Returns `undefined` when no turn is streaming
+	 *  OR the instant the turn commits into `getBranch()` (the per-turn dedup signal) — so a
+	 *  surface reading it after each tick shows live thinking without double-rendering the
+	 *  committed turn. Backed by the host's `createLaneSessionView` (lane-streaming.ts). */
+	getStreamingMessage(): unknown;
 	/** Fires on every streaming tick; the viewer re-renders on it. Returns unsub. */
 	subscribe(listener: () => void): () => void;
 }
