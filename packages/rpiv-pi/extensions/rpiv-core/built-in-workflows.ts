@@ -667,11 +667,26 @@ const sliceRecords = (content: string, who: string, path: string): readonly Phas
 	});
 };
 
-/** Fan `design-slice` out over the latest slice map's `slices:` array — one design session per slice. */
+// Relocated ABOVE SLICE_DESIGN_FANOUT (deleted from its old location below) so it sits
+// above its first textual reference. (No TDZ today even unrelocated — `sliceDeps` is only
+// read inside the `units` runtime closure, which runs at dispatch, not module-eval — but
+// placing it above the fanout keeps the read-order obvious and matches `clusterSliceDag`'s
+// existing use below.)
+/** The slice-number deps a slice-map entry declares (empty when absent). */
+const sliceDeps = (entry: Record<string, unknown>): number[] => {
+	const raw = entry.deps;
+	return Array.isArray(raw) ? raw.filter((d): d is number => typeof d === "number") : [];
+};
+
+/** Fan `design-slice` out over the latest slice map's `slices:` array — one design
+ *  session per slice, dependency-ordered. `deps` (slice-N unit ids) drive the wave
+ *  scheduler; `depArtifactFlag` injects each completed dependency's design path as
+ *  `--upstream <path>` so a dependent slice reads its dependency's decided Key Interfaces. */
 const SLICE_DESIGN_FANOUT = fanout({
 	source: "slices",
 	unit: { by: "frontmatter-array", pattern: "slices" },
 	max: MAX_PHASES,
+	depArtifactFlag: "--upstream",
 	units: ({ state, cwd }) => {
 		const doc = latestFsArtifact(state, "slices");
 		if (doc?.handle.kind !== "fs") return [];
@@ -681,18 +696,13 @@ const SLICE_DESIGN_FANOUT = fanout({
 			prompt: `${promptPath} Slice ${r.n}: ${r.title}`.trimEnd(),
 			label: `slice ${r.index + 1}/${r.total}`,
 			id: `slice-${r.n}`,
+			deps: sliceDeps(r.entry).map((n) => `slice-${n}`), // directed edges → unit ids (slice-N)
 		}));
 	},
 });
 
 /** Max slices per synth cluster — a context-budget proxy; oversized DAG components split by this. */
 const MAX_CLUSTER_SLICES = 6;
-
-/** The slice-number deps a slice-map entry declares (empty when absent). */
-const sliceDeps = (entry: Record<string, unknown>): number[] => {
-	const raw = entry.deps;
-	return Array.isArray(raw) ? raw.filter((d): d is number => typeof d === "number") : [];
-};
 
 /**
  * Group slices into clusters = connected components of the `deps` DAG (a slice

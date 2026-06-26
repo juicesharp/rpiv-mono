@@ -1044,6 +1044,60 @@ describe("ship workflow", () => {
 	});
 });
 
+describe("SLICE_DESIGN_FANOUT (carve design — deps + --upstream)", () => {
+	let tmpDir: string;
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "rpiv-carve-design-"));
+	});
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	const designLoop = () => {
+		const loop = findWorkflow("carve").stages.design?.loop;
+		if (loop?.kind !== "fanout") throw new Error("carve design stage has no fanout loop");
+		return loop;
+	};
+	const writeSlices = (rel: string, body: string) => {
+		const parts = rel.split("/");
+		mkdirSync(join(tmpDir, ...parts.slice(0, -1)), { recursive: true });
+		writeFileSync(join(tmpDir, rel), body);
+	};
+	const runFanout = (rel: string) =>
+		designLoop().units({
+			cwd: tmpDir,
+			artifact: undefined,
+			state: {
+				named: { slices: [{ artifacts: [{ handle: fsHandle(rel) }], data: undefined, kind: "", meta: {} }] },
+			} as unknown as RunView,
+		});
+
+	it("carries the --upstream dep-artifact flag", () => {
+		expect(designLoop().depArtifactFlag).toBe("--upstream");
+	});
+
+	it("maps each slice's frontmatter deps to slice-N unit ids", async () => {
+		const rel = ".rpiv/artifacts/slices/map.md";
+		writeSlices(
+			rel,
+			`---\nstatus: ready\nslice_count: 3\nslices:\n  - { n: 1, title: Types, deps: [] }\n  - { n: 2, title: Logic, deps: [1] }\n  - { n: 3, title: Wiring, deps: [1, 2] }\n---\n## Slice 1: Types\n## Slice 2: Logic\n## Slice 3: Wiring\n`,
+		);
+		const units = await runFanout(rel);
+		expect(units.map((u) => u.id)).toEqual(["slice-1", "slice-2", "slice-3"]);
+		expect(units.map((u) => u.deps)).toEqual([[], ["slice-1"], ["slice-1", "slice-2"]]);
+	});
+
+	it("emits empty deps for a flat (independent) slice map", async () => {
+		const rel = ".rpiv/artifacts/slices/flat.md";
+		writeSlices(
+			rel,
+			`---\nstatus: ready\nslice_count: 2\nslices:\n  - { n: 1, title: A, deps: [] }\n  - { n: 2, title: B, deps: [] }\n---\n## Slice 1: A\n## Slice 2: B\n`,
+		);
+		const units = await runFanout(rel);
+		expect(units.every((u) => u.deps?.length === 0)).toBe(true);
+	});
+});
+
 // ---------------------------------------------------------------------------
 // pr-triage security-gate — the script-stage guard must fail closed on
 // missing / malformed security_flag (NaN), not silently pass as SAFE.
