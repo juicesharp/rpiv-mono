@@ -6,15 +6,15 @@
  * refresh, 12-line collapse-not-scroll (plus a trailing spacer row, so the
  * widget renders up to 13 lines), auto-hide when empty.
  *
- * Reads live state via `getState()` at render time — NEVER `replayFromBranch`
- * from `tool_execution_end` (branch is stale; `message_end` runs after).
+ * Reads live state via `getRenderState()` (the ctx-less foreground slot) at render
+ * time — NEVER `replayFromBranch` from `tool_execution_end` (branch is stale;
  */
 
 import type { ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
 import { type TUI, truncateToWidth } from "@earendil-works/pi-tui";
 import { formatStatusLabel, t } from "./state/i18n-bridge.js";
 import { selectHasActive, selectOverlayLayout, selectShowTaskIds, selectTodoCounts } from "./state/selectors.js";
-import { getState } from "./state/store.js";
+import { getRenderState } from "./state/store.js";
 import { formatOverlayTaskLine } from "./view/format.js";
 
 const WIDGET_KEY = "rpiv-todos";
@@ -95,7 +95,7 @@ export class TodoOverlay {
 	}
 
 	private getSnapshot() {
-		const state = getState();
+		const state = getRenderState();
 		if (this.lastNextId !== undefined && state.nextId < this.lastNextId) {
 			this.resetCompletedDisplayState();
 		}

@@ -1,7 +1,7 @@
 import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
-import { createMockPi, createMockUI } from "@juicesharp/rpiv-test-utils";
+import { createMockCtx, createMockPi, createMockUI } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { __resetState, registerTodoTool } from "./todo.js";
+import { __resetState, registerTodoTool, setActiveRenderSession } from "./todo.js";
 import { TodoOverlay } from "./todo-overlay.js";
 
 const WIDGET_KEY = "rpiv-todos";
@@ -18,9 +18,11 @@ const identityTheme = {
 async function seed(captured: ReturnType<typeof createMockPi>["captured"], actions: unknown[]) {
 	const tool = captured.tools.get("todo");
 	if (!tool) throw new Error("todo tool not registered");
+	const ctx = createMockCtx();
 	for (const p of actions) {
-		await tool.execute?.("tc", p as never, undefined as never, undefined as never, {} as never);
+		await tool.execute?.("tc", p as never, undefined as never, undefined as never, ctx as never);
 	}
+	setActiveRenderSession("test-session");
 	return tool;
 }
 
@@ -99,7 +101,13 @@ describe("TodoOverlay — lifecycle", () => {
 		overlay.update();
 		const setWidget = ui.setWidget as ReturnType<typeof vi.fn>;
 		// Delete → then hard-remove via "clear" to leave visibility list empty.
-		await tool.execute?.("tc", { action: "clear" } as never, undefined as never, undefined as never, {} as never);
+		await tool.execute?.(
+			"tc",
+			{ action: "clear" } as never,
+			undefined as never,
+			undefined as never,
+			createMockCtx() as never,
+		);
 		overlay.update();
 		expect(setWidget).toHaveBeenCalledTimes(2);
 		expect(setWidget.mock.calls[1]).toEqual([WIDGET_KEY, undefined]);
@@ -112,14 +120,20 @@ describe("TodoOverlay — lifecycle", () => {
 		const ui = makeCtx();
 		overlay.setUICtx(ui);
 		overlay.update();
-		await tool.execute?.("tc", { action: "clear" } as never, undefined as never, undefined as never, {} as never);
+		await tool.execute?.(
+			"tc",
+			{ action: "clear" } as never,
+			undefined as never,
+			undefined as never,
+			createMockCtx() as never,
+		);
 		overlay.update();
 		await tool.execute?.(
 			"tc",
 			{ action: "create", subject: "b" } as never,
 			undefined as never,
 			undefined as never,
-			{} as never,
+			createMockCtx() as never,
 		);
 		overlay.update();
 		const setWidget = ui.setWidget as ReturnType<typeof vi.fn>;
@@ -226,7 +240,7 @@ describe("TodoOverlay — lifecycle", () => {
 			{ action: "update", id: 1, status: "deleted" } as never,
 			undefined as never,
 			undefined as never,
-			{} as never,
+			createMockCtx() as never,
 		);
 		const overlay = new TodoOverlay();
 		const ui = makeCtx();

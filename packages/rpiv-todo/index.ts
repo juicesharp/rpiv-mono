@@ -22,7 +22,14 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { I18N_NAMESPACE } from "./state/i18n-bridge.js";
 import { replayFromBranch } from "./state/replay.js";
-import { replaceState } from "./state/store.js";
+import {
+	clearActiveRenderSession,
+	evictSession,
+	getActiveRenderSession,
+	replaceState,
+	setActiveRenderSession,
+	sid,
+} from "./state/store.js";
 import { registerTodosCommand, registerTodoTool, TOOL_NAME } from "./todo.js";
 import { TodoOverlay } from "./todo-overlay.js";
 
@@ -59,13 +66,23 @@ export default function (pi: ExtensionAPI) {
 	registerTodosCommand(pi);
 
 	pi.on("session_start", async (_event, ctx) => {
-		replaceState(replayFromBranch(ctx));
-		if (ctx.hasUI) {
-			todoOverlay ??= new TodoOverlay();
-			todoOverlay.setUICtx(ctx.ui);
-			todoOverlay.resetCompletedDisplayState();
-			todoOverlay.update();
+		const id = sid(ctx);
+		// Every session replays into its OWN data slot (Phase 1 isolation).
+		replaceState(id, replayFromBranch(ctx));
+		if (!ctx.hasUI) return;
+		// First UI-bearing session_start claims the foreground (the interactive
+		// launcher, by spawn-ordering). A child hitting a live overlay cannot
+		// clobber the pointer — `todoOverlay` is already set.
+		if (todoOverlay === undefined) {
+			todoOverlay = new TodoOverlay();
+			setActiveRenderSession(id);
 		}
+		// Only the foreground re-binds/refreshes the shared overlay. A child
+		// (distinct sid) is skipped — does not rebind to a relay/stale ui.
+		if (id !== getActiveRenderSession()) return;
+		todoOverlay.setUICtx(ctx.ui);
+		todoOverlay.resetCompletedDisplayState();
+		todoOverlay.update();
 	});
 
 	pi.on("session_compact", async (_event, ctx) => {
@@ -74,29 +91,58 @@ export default function (pi: ExtensionAPI) {
 		// a dead proxy whose getters throw the stale error. The compacting session
 		// is being discarded — the replacement session's session_start replays
 		// state — so keep current state on a stale ctx. Other errors are real
-		// replay bugs and must propagate.
+		// replay bugs and must propagate. The render below is sid-gated so a child
+		// compacting never refreshes the foreground overlay.
+		let isForeground = false;
 		try {
-			replaceState(replayFromBranch(ctx));
+			const id = sid(ctx);
+			replaceState(id, replayFromBranch(ctx));
+			isForeground = id === getActiveRenderSession();
 		} catch (e) {
 			if (!isStaleCtxError(e)) throw e;
 		}
-		todoOverlay?.resetCompletedDisplayState();
-		todoOverlay?.update();
+		if (isForeground) {
+			todoOverlay?.resetCompletedDisplayState();
+			todoOverlay?.update();
+		}
 	});
 
 	pi.on("session_tree", async (_event, ctx) => {
+		let isForeground = false;
 		try {
-			replaceState(replayFromBranch(ctx));
+			const id = sid(ctx);
+			replaceState(id, replayFromBranch(ctx));
+			isForeground = id === getActiveRenderSession();
 		} catch (e) {
 			if (!isStaleCtxError(e)) throw e;
 		}
-		todoOverlay?.resetCompletedDisplayState();
-		todoOverlay?.update();
+		if (isForeground) {
+			todoOverlay?.resetCompletedDisplayState();
+			todoOverlay?.update();
+		}
 	});
 
-	pi.on("session_shutdown", async () => {
-		todoOverlay?.dispose();
-		todoOverlay = undefined;
+	pi.on("session_shutdown", async (_event, ctx) => {
+		// Best-effort sid: disposal can race a stale ctx (like compact). An
+		// unknown/stale sid resolves to "" and is treated as foreground — the
+		// safe pre-isolation default that disposes as before.
+		let s: string;
+		try {
+			s = sid(ctx);
+		} catch (e) {
+			if (!isStaleCtxError(e)) throw e;
+			s = "";
+		}
+		// The shutting-down session's own data slot is always evicted.
+		evictSession(s);
+		// Overlay teardown is sid-gated: a child shutdown (distinct sid) must not
+		// dispose the foreground's overlay. Only the foreground's own shutdown
+		// (or an unknown/stale sid) tears it down and clears the pointer.
+		if (s === "" || s === getActiveRenderSession()) {
+			todoOverlay?.dispose();
+			todoOverlay = undefined;
+			clearActiveRenderSession();
+		}
 	});
 
 	// Reads getTodos() at render time; do NOT call replayFromBranch here

@@ -19,6 +19,7 @@ function throwingCtx(message: string) {
 }
 
 const SEEDED = { tasks: [{ id: 1, subject: "keep me", status: "pending" }], nextId: 2 };
+const SID = "s1";
 
 function setup() {
 	__resetState();
@@ -33,11 +34,11 @@ afterEach(() => __resetState());
 describe.each(["session_compact", "session_tree"] as const)("%s — stale ctx handling", (event) => {
 	it("keeps current state on a stale ctx (replacement session replays)", async () => {
 		const { captured } = setup();
-		replaceState(SEEDED as never);
+		replaceState(SID, SEEDED as never);
 		const handler = captured.events.get(event)?.[0];
 		await expect(handler?.({} as never, throwingCtx(STALE_CTX_MESSAGE) as never)).resolves.toBeUndefined();
-		// State untouched — no replay ran, the prior seed survives.
-		expect(getState()).toEqual(SEEDED);
+		// State untouched — no replay ran, the prior seed survives on the same session.
+		expect(getState(SID)).toEqual(SEEDED);
 	});
 
 	it("propagates a non-stale replay error", async () => {
