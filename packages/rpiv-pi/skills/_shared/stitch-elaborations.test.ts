@@ -77,6 +77,44 @@ const elaboration = (n: number, title: string, code: string) =>
 		"",
 	].join("\n");
 
+// An elaboration mirroring the real `elaborate` output that stalled carve: a
+// `## ` heading buried inside a Find/Replace code fence (must NOT be read as a
+// section boundary), plus a trailing `## Notes / Deferred` that is an H2 SIBLING
+// of `## Phase N:` (must be owned by the phase, not preserved as an orphan).
+const elaborationWithTrailers = (n: number, title: string, code: string) =>
+	[
+		"---",
+		`phase_n: ${n}`,
+		"status: ready",
+		"---",
+		"",
+		`## Phase ${n}: ${title}`,
+		"### Changes",
+		"#### `x.ts`",
+		"```ts",
+		code,
+		"```",
+		"#### `doc.md`",
+		"Find:",
+		"````markdown",
+		"## Substitution Order (byte-equivalent)",
+		"1. positional",
+		"````",
+		"Replace with:",
+		"````markdown",
+		"## Substitution Order (byte-equivalent)",
+		"0. mask",
+		"1. positional",
+		"````",
+		"### Success Criteria",
+		"#### Automated Verification:",
+		"- [ ] npm test",
+		"",
+		"## Notes / Deferred",
+		`- deferred note for phase ${n}`,
+		"",
+	].join("\n");
+
 let root: string;
 let plansDir: string;
 let elaborationsDir: string;
@@ -188,6 +226,52 @@ describe("stitch-elaborations.mjs", () => {
 
 		expect(stitched).not.toContain("WRONG = true;");
 		expect(stitched).toContain("export const foo = 1;");
+	});
+
+	it("treats a `## ` heading inside a code fence as phase content, not a section boundary", () => {
+		writeFileSync(
+			join(elaborationsDir, "2026-06-24_demo__phase-1.md"),
+			elaborationWithTrailers(1, "First", "export const foo = 1;"),
+		);
+		writeFileSync(
+			join(elaborationsDir, "2026-06-24_demo__phase-2.md"),
+			elaborationWithTrailers(2, "Second", "export const bar = 2;"),
+		);
+
+		run(planPath);
+		const stitched = readFileSync(planPath, "utf-8");
+
+		// The fenced Find/Replace blocks survive intact (2 phases × Find+Replace),
+		// not shredded into orphan fragments with dangling Replace-with markers.
+		expect((stitched.match(/## Substitution Order/g) ?? []).length).toBe(4);
+		// Exactly one Success Criteria and one Notes/Deferred per phase.
+		expect((stitched.match(/^### Success Criteria$/gm) ?? []).length).toBe(2);
+		expect((stitched.match(/^## Notes \/ Deferred$/gm) ?? []).length).toBe(2);
+		expect([...stitched.matchAll(/^## Phase (\d+):/gm)].length).toBe(2);
+	});
+
+	it("is idempotent: re-stitching does not accumulate duplicate per-phase trailers", () => {
+		writeFileSync(
+			join(elaborationsDir, "2026-06-24_demo__phase-1.md"),
+			elaborationWithTrailers(1, "First", "export const foo = 1;"),
+		);
+		writeFileSync(
+			join(elaborationsDir, "2026-06-24_demo__phase-2.md"),
+			elaborationWithTrailers(2, "Second", "export const bar = 2;"),
+		);
+
+		run(planPath);
+		const first = readFileSync(planPath, "utf-8");
+		run(planPath);
+		const second = readFileSync(planPath, "utf-8");
+
+		// Byte-identical: carve's stitch-gate → elaborate loop re-stitches every
+		// round; a non-idempotent stitch grew the plan (tripled Success-Criteria /
+		// Notes blocks) until the backward-jump guard halted the run.
+		expect(second).toBe(first);
+		expect((second.match(/^### Success Criteria$/gm) ?? []).length).toBe(2);
+		expect((second.match(/^## Notes \/ Deferred$/gm) ?? []).length).toBe(2);
+		expect([...second.matchAll(/^## Phase (\d+):/gm)].length).toBe(2);
 	});
 
 	it("exits 1 when no matching elaboration docs exist (wiring error)", () => {

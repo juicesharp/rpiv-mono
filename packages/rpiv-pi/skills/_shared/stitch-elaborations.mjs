@@ -14,8 +14,12 @@
 // output contract). Each carries a single `## Phase <N>: <title>` section with
 // implement-ready code; its frontmatter is stripped before splicing.
 //
-// Preserved verbatim: the plan's frontmatter (incl. `phase_count`) and every
-// non-phase section (`## Synthesis Notes`, etc.). The heading count is unchanged
+// Preserved verbatim: the plan's frontmatter (incl. `phase_count`) and the
+// preamble before the first phase (`## Synthesis Notes`, etc.). Phase boundaries
+// are detected fence-aware (a `## ` inside a Find/Replace code block is NOT a
+// boundary) and each phase owns everything up to the next `## Phase N:` heading,
+// so the swap is idempotent — re-stitching can't accumulate duplicate per-phase
+// trailers (Success Criteria / Notes / Deferred). The heading count is unchanged
 // (1:1 swap), so the downstream `phase_count == '## Phase N:' headings`
 // derive-check stays valid.
 //
@@ -94,27 +98,58 @@ if (elaborations.size === 0) {
 
 const [frontmatter, body] = splitFrontmatter(readFileSync(planPath, "utf-8"));
 
-// Tokenize the body into top-level `## ` sections; the lead text before the first
-// heading (Synthesis Notes' preamble, etc.) is kept as the preamble.
-const headingStarts = [...body.matchAll(/^## .*$/gm)].map((m) => m.index);
-const preamble = headingStarts.length ? body.slice(0, headingStarts[0]) : body;
-const sections = headingStarts.map((start, i) => body.slice(start, headingStarts[i + 1] ?? body.length));
+// `## Phase N:` headings at column 0 and OUTSIDE fenced code blocks are the ONLY
+// section boundaries: each phase owns everything up to the next phase heading
+// (its `### Success Criteria`, `## Notes / Deferred`, and any `## …` that appears
+// inside a Find/Replace fence). Two reasons this matters:
+//   • Fence-aware — an elaboration's Find/Replace blocks legitimately contain
+//     `## ` lines (doc edits); a naive `/^## /m` split shreds them into orphan
+//     fragments with dangling Replace-with markers.
+//   • Idempotent — replacing a phase subsumes whatever trailing matter a prior
+//     stitch left behind, so re-elaborate → re-stitch cycles can't accumulate
+//     duplicate Success-Criteria / Notes sections. (A non-idempotent stitch made
+//     the carve `stitch-gate → elaborate` loop diverge until the backward-jump
+//     guard halted the run.)
+// Content before the first phase (Synthesis Notes, etc.) is the preamble, kept
+// verbatim. Content after the last phase is absorbed into that phase — the plan
+// format has no post-phase appendix; trailing matter belongs to the elaboration.
+const lines = body.split("\n");
+const starts = []; // { offset, n }
+let inFence = false;
+let fenceLen = 0;
+let offset = 0;
+for (const line of lines) {
+	const fence = line.match(/^\s*(`{3,}|~{3,})/);
+	if (fence) {
+		const len = fence[1].length;
+		if (!inFence) {
+			inFence = true;
+			fenceLen = len;
+		} else if (len >= fenceLen && line.trim().length === len) {
+			inFence = false;
+			fenceLen = 0;
+		}
+	} else if (!inFence) {
+		const m = line.match(PHASE_HEADING_RE);
+		if (m) starts.push({ offset, n: Number.parseInt(m[1], 10) });
+	}
+	offset += line.length + 1; // +1 for the stripped "\n"
+}
+
+const preamble = starts.length ? body.slice(0, starts[0].offset) : body;
 
 let stitched = 0;
 const missing = [];
-let total = 0;
-const rebuilt = sections.map((section) => {
-	const m = section.match(PHASE_HEADING_RE);
-	if (!m) return section.trim(); // non-phase section (e.g. a trailing appendix) — keep
-	total++;
-	const n = Number.parseInt(m[1], 10);
+const total = starts.length;
+const rebuilt = starts.map(({ offset: start, n }, i) => {
+	const original = body.slice(start, starts[i + 1]?.offset ?? body.length);
 	const replacement = elaborations.get(n);
 	if (replacement) {
 		stitched++;
 		return replacement;
 	}
 	missing.push(n);
-	return section.trim();
+	return original.trim();
 });
 
 const newBody = [preamble.trim(), ...rebuilt].filter((s) => s.length > 0).join("\n\n");
