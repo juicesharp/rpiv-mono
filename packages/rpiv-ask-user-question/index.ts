@@ -17,6 +17,7 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { registerAskUserQuestionTool } from "./ask-user-question.js";
+import { registerAskUserQuestionReconciler } from "./reconcile.js";
 import { I18N_NAMESPACE } from "./state/i18n-bridge.js";
 
 type I18nLoader = {
@@ -46,4 +47,5 @@ export {
 
 export default function (pi: ExtensionAPI) {
 	registerAskUserQuestionTool(pi);
+	registerAskUserQuestionReconciler(pi);
 }

@@ -34,6 +34,7 @@
 		"config.ts",
 		"events.ts",
 		"index.ts",
+		"reconcile.ts",
 		"LICENSE",
 		"locales/",
 		"README.md",

@@ -32,6 +32,9 @@ function emitAskUserPromptEvent(pi: ExtensionAPI, params: QuestionParams): void 
 	pi.events.emit(ASK_USER_PROMPT_EVENT, payload);
 }
 
+/** Canonical tool name — single source of truth shared with the reconcile module. */
+export const ASK_USER_QUESTION_TOOL_NAME = "ask_user_question";
+
 const ERROR_NO_UI = "Error: UI not available (running in non-interactive mode)";
 
 export function buildItemsForQuestion(question: QuestionData): WrappingSelectItem[] {
@@ -58,7 +61,7 @@ export const DEFAULT_PROMPT_GUIDELINES: string[] = [
 export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
 	const guidance = validateGuidanceFields(loadConfig().guidance);
 	pi.registerTool({
-		name: "ask_user_question",
+		name: ASK_USER_QUESTION_TOOL_NAME,
 		label: "Ask User Question",
 		description: `Ask the user one or more structured questions during execution. Use when you need to:
 1. Gather user preferences or requirements
