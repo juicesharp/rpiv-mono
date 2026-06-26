@@ -29,6 +29,7 @@ import {
 	match,
 	produces,
 	type ScriptContext,
+	type Unit,
 	type VerifySpec,
 } from "./api.js";
 import { type LifecycleListeners, registerLifecycle } from "./events.js";
@@ -576,6 +577,144 @@ describe("loop driver — parallel fanout abort + fault tolerance", () => {
 		expect(rows.some((r) => r.status === "failed" || r.status === "aborted")).toBe(false);
 		// The two non-aborted units completed normally.
 		expect(rows.filter((r) => r.status === "completed").length).toBeGreaterThanOrEqual(2);
+	});
+});
+
+// ===========================================================================
+// DAG-ordered wave dispatch — Unit.deps + depArtifactFlag (carve design stage)
+// ===========================================================================
+
+describe("loop driver — DAG-ordered wave dispatch", () => {
+	/** A fanout whose units form a dependency DAG; `depArtifactFlag` injects each
+	 *  completed dep's artifact path into the dependent's prompt. */
+	const dagWf = (units: Unit[], opts: { failFast?: boolean } = {}) => ({
+		name: "dag",
+		start: "design",
+		stages: {
+			design: produces({
+				outcome: mdOutcome("designs"),
+				loop: fanout({
+					depArtifactFlag: "--upstream",
+					units: () => units,
+					...(opts.failFast ? { failFast: true } : {}),
+				}),
+			}),
+		},
+		edges: { design: "stop" } as Record<string, string>,
+	});
+
+	const chain: Unit[] = [
+		{ prompt: "s1", label: "s1", id: "slice-1" },
+		{ prompt: "s2", label: "s2", id: "slice-2", deps: ["slice-1"] },
+		{ prompt: "s3", label: "s3", id: "slice-3", deps: ["slice-2"] },
+	];
+
+	it("gates a dependent behind its dependency's wave (no fan-out with the root)", async () => {
+		const host = createFakeConcurrentHost({ cwd: tmpDir, maxConcurrency: 5, gate: true, bucket: "designs" });
+		const p = runWorkflow(host.ctx, { workflow: dagWf(chain), input: "x" });
+
+		// Wave 0 = {slice-1} only. Even at cap 5 the two dependents do NOT dispatch —
+		// a flat fanout would have fired all three. THE wave-ordering proof.
+		await host.waitForActive(1);
+		expect(host.active()).toBe(1);
+		expect(host.spawns).toHaveLength(1);
+		expect(host.spawns[0]!.prompt).toContain("s1");
+
+		host.release();
+		const result = await p;
+		expect(result.success).toBe(true);
+		expect(host.spawns).toHaveLength(3);
+		expect(host.maxActive).toBe(1); // a linear chain never runs two at once
+	});
+
+	it("dispatches independent same-level units in parallel, then their shared dependent", async () => {
+		const diamond: Unit[] = [
+			{ prompt: "s1", label: "s1", id: "slice-1" },
+			{ prompt: "s2", label: "s2", id: "slice-2" },
+			{ prompt: "s3", label: "s3", id: "slice-3", deps: ["slice-1", "slice-2"] },
+		];
+		const host = createFakeConcurrentHost({ cwd: tmpDir, maxConcurrency: 5, gate: true, bucket: "designs" });
+		const p = runWorkflow(host.ctx, { workflow: dagWf(diamond), input: "x" });
+
+		// Wave 0 = {slice-1, slice-2} dispatched together (two roots).
+		await host.waitForActive(2);
+		expect(host.active()).toBe(2);
+		expect(host.spawns).toHaveLength(2);
+
+		host.release();
+		const result = await p;
+		expect(result.success).toBe(true);
+		expect(host.spawns).toHaveLength(3);
+		// slice-3 dispatched last, in its own wave, after both roots settled.
+		const s3 = host.spawns.find((s) => s.prompt.includes("s3"))!;
+		expect(s3.endOrder).toBeGreaterThan(host.spawns[0]!.endOrder);
+	});
+
+	it("injects --upstream with each completed dependency's artifact path", async () => {
+		const host = createFakeConcurrentHost({ cwd: tmpDir, maxConcurrency: 5, bucket: "designs" });
+		const result = await runWorkflow(host.ctx, { workflow: dagWf(chain), input: "x" });
+		expect(result.success).toBe(true);
+
+		// slice-1 (spawn 0) wrote unit-0.md; slice-2 must read it via --upstream.
+		const s2 = host.spawns.find((s) => s.prompt.includes("s2"))!;
+		expect(s2.prompt).toContain("--upstream");
+		expect(s2.prompt).toContain("designs/unit-0.md");
+		// slice-3 reads slice-2's design (unit-1.md), not slice-1's.
+		const s3 = host.spawns.find((s) => s.prompt.includes("s3"))!;
+		expect(s3.prompt).toContain("--upstream");
+		expect(s3.prompt).toContain("designs/unit-1.md");
+	});
+
+	it("skips a FAILED dependency in the upstream injection (degrades to blind, no crash)", async () => {
+		const host = createFakeConcurrentHost({
+			cwd: tmpDir,
+			maxConcurrency: 5,
+			bucket: "designs",
+			childBranch: (_rec, index) =>
+				index === 0
+					? [mockAssistantMessage("no artifact path here")] // slice-1 collects nothing → failed sentinel slot
+					: [mockAssistantMessage(`wrote .rpiv/artifacts/designs/unit-${index}.md`)],
+		});
+		const result = await runWorkflow(host.ctx, { workflow: dagWf(chain), input: "x" });
+		// collect-all: the failed dep does NOT halt; the dependent still dispatched...
+		expect(host.spawns).toHaveLength(3);
+		// ...but with no path to inject, so no --upstream flag (blind, as today).
+		const s2 = host.spawns.find((s) => s.prompt.includes("s2"))!;
+		expect(s2.prompt).not.toContain("--upstream");
+		void result;
+	});
+
+	it("cross-wave fail-fast: a wave-0 failure prevents the dependent's wave from dispatching", async () => {
+		const host = createFakeConcurrentHost({
+			cwd: tmpDir,
+			maxConcurrency: 5,
+			bucket: "designs",
+			childBranch: (_rec, index) =>
+				index === 0
+					? [mockAssistantMessage("no artifact path here")] // slice-1 hard-halts (failFast ⇒ not collect-all)
+					: [mockAssistantMessage(`wrote .rpiv/artifacts/designs/unit-${index}.md`)],
+		});
+		const result = await runWorkflow(host.ctx, {
+			workflow: dagWf([chain[0]!, chain[1]!], { failFast: true }),
+			input: "x",
+		});
+		expect(result.success).toBe(false);
+		expect(host.spawns).toHaveLength(1); // slice-2's wave never dispatched
+		expect(readRows().filter((r) => r.status === "failed")).toHaveLength(1);
+	});
+
+	it("a deps-free fanout collapses to a single wave (regression: flat dispatch preserved)", async () => {
+		const flat: Unit[] = [
+			{ prompt: "a", label: "a", id: "a" },
+			{ prompt: "b", label: "b", id: "b" },
+			{ prompt: "c", label: "c", id: "c" },
+		];
+		const host = createFakeConcurrentHost({ cwd: tmpDir, maxConcurrency: 3, gate: true, bucket: "designs" });
+		const p = runWorkflow(host.ctx, { workflow: dagWf(flat), input: "x" });
+		await host.waitForActive(3); // all three dispatched at once — one wave
+		expect(host.spawns).toHaveLength(3);
+		host.release();
+		expect((await p).success).toBe(true);
 	});
 });
 

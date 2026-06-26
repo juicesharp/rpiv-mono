@@ -491,10 +491,10 @@ export function buildUnitSession(
 	};
 }
 
-/** The fanout unit descriptor at `index` — the shape `fanoutStrategy.pull`
- *  builds, made index-addressable so the parallel dispatcher and the sequential
- *  pull share ONE construction site (no drift between live + parallel). */
-export function fanoutUnitAt(e: LoopEntry, index: number): Extract<NextStep, { kind: "unit" }> {
+/** The fanout unit descriptor at `index` — the shape the parallel dispatcher builds.
+ *  `promptSuffix` is the resolved dep-artifact injection (`depArtifactSuffix`), appended
+ *  to the unit prompt; "" for a deps-free unit or a fanout with no `depArtifactFlag`. */
+export function fanoutUnitAt(e: LoopEntry, index: number, promptSuffix = ""): Extract<NextStep, { kind: "unit" }> {
 	const u = e.units![index]!;
 	const tag = unitTagOf(u);
 	return {
@@ -504,7 +504,7 @@ export function fanoutUnitAt(e: LoopEntry, index: number): Extract<NextStep, { k
 		id: tag,
 		label: u.label,
 		skill: e.skill,
-		prompt: `/skill:${e.skill} ${u.prompt}`,
+		prompt: `/skill:${e.skill} ${u.prompt}${promptSuffix}`,
 		def: e.def,
 	};
 }

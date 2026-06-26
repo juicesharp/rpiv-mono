@@ -246,6 +246,11 @@ export interface FanoutOptions extends LoopOptionsBase {
 	concurrency?: number;
 	/** Opt out of collect-all: any unit failure halts the run (default ⇒ collect-all). */
 	failFast?: boolean;
+	/** When set, the dispatcher appends `${depArtifactFlag} <path>` per direct
+	 *  `Unit.deps` entry with a non-failed filled slot — handing the dependent unit
+	 *  its dependencies' published artifacts (e.g. `"--upstream"`). Non-empty string;
+	 *  pairs with `Unit.deps`. */
+	depArtifactFlag?: string;
 }
 
 export interface IterateOptions extends LoopOptionsBase {
@@ -279,8 +284,18 @@ export function fanout(opts: FanoutOptions): FanoutLoop {
 		onCap: firstDefined(opts.onCap, d.onCap),
 		result: firstDefined(opts.result, d.result),
 		...(opts.concurrency !== undefined ? { concurrency: checkedConcurrency(opts.concurrency) } : {}),
+		...(opts.depArtifactFlag !== undefined ? { depArtifactFlag: checkedDepArtifactFlag(opts.depArtifactFlag) } : {}),
 		...(opts.failFast !== undefined ? { failFast: opts.failFast } : {}),
 	};
+}
+
+/** A blank/whitespace flag would inject a bare ` <path>` with no marker — reject at construction. */
+function checkedDepArtifactFlag(flag: string | undefined): string | undefined {
+	if (flag === undefined) return undefined;
+	if (typeof flag !== "string" || flag.trim().length === 0) {
+		throw new Error(`fanout(): depArtifactFlag must be a non-empty string (got ${JSON.stringify(flag)})`);
+	}
+	return flag;
 }
 
 /**

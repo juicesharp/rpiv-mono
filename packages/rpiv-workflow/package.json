@@ -60,6 +60,7 @@
 		"loop.ts",
 		"loop-kinds.ts",
 		"loop-parallel.ts",
+		"loop-waves.ts",
 		"load/",
 		"output.ts",
 		"messages.ts",

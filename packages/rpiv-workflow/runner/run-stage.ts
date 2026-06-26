@@ -28,6 +28,7 @@ import { formatError } from "../internal-utils.js";
 import { announceLoopStart, runLoop } from "../loop.js";
 import { freezesEntryArgsOf } from "../loop-constructors.js";
 import { buildLoopEntry, freshCursor, type LoopDeps, type LoopEntry } from "../loop-kinds.js";
+import { validateUnitDeps } from "../loop-waves.js";
 import {
 	FAIL_LOOP_CAP_HALT,
 	FAIL_VERIFY_FAILED,
@@ -400,6 +401,9 @@ async function runLoopStage(
 	if (loop.kind === "fanout") {
 		units = await loop.units({ cwd: run.cwd, artifact: currentPrimaryArtifact(run.state), state: run.state });
 		if (units.length === 0) return runSingleStage(curCtx, stage, idx, run);
+		// deps cycle / dangling-id → clean halt BEFORE any dispatch (the runtime unit
+		// list is invisible to the static load gate, so this is the only place it runs).
+		validateUnitDeps(units, stage.name);
 	}
 
 	runLoopPreflights(stage, run);

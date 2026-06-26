@@ -118,6 +118,11 @@ export const ISSUE_DEFS = {
 		(p) =>
 			`fanout concurrency: ${p.concurrency} — must be an integer >= 1 (host maxConcurrency caps the upper bound)`,
 	),
+	"loop-dep-flag-invalid": def<{ depArtifactFlag: string }>(
+		"error",
+		(p) =>
+			`fanout depArtifactFlag: ${JSON.stringify(p.depArtifactFlag)} — must be a non-empty string (the flag the dispatcher prefixes each dep artifact path with)`,
+	),
 	"loop-requires-produces": def<{ kind: string }>(
 		"error",
 		(p) => `${p.kind} requires kind "produces" — each unit runs an outcome collector`,

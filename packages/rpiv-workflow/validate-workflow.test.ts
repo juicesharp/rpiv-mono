@@ -969,6 +969,32 @@ describe("validateWorkflow — assess loop invariants", () => {
 		expect(e.some((i) => i.code === "loop-concurrency-invalid")).toBe(false);
 	});
 
+	it.each(["", "   "])("rejects an empty/blank fanout depArtifactFlag: %j", (depArtifactFlag) => {
+		const e = errors(
+			wf({
+				kind: "produces",
+				sessionPolicy: "fresh",
+				outcome: { name: "x", collector: noopCollector },
+				loop: { ...fanout({ units: () => [] }), depArtifactFlag },
+			} as StageDef),
+		);
+		expect(e.some((i) => i.code === "loop-dep-flag-invalid" && i.params.depArtifactFlag === depArtifactFlag)).toBe(
+			true,
+		);
+	});
+
+	it("accepts a non-empty fanout depArtifactFlag", () => {
+		const e = errors(
+			wf({
+				kind: "produces",
+				sessionPolicy: "fresh",
+				outcome: { name: "x", collector: noopCollector },
+				loop: { ...fanout({ units: () => [] }), depArtifactFlag: "--upstream" },
+			} as StageDef),
+		);
+		expect(e.some((i) => i.code === "loop-dep-flag-invalid")).toBe(false);
+	});
+
 	it("accepts loop.max: 1 and an omitted max", () => {
 		const withMax = base({
 			loop: assess({ judge: skillJudge(), done: () => true, feedForward: () => "x", max: 1 }),

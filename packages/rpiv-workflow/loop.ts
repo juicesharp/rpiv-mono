@@ -54,7 +54,7 @@ import {
 	presentedKindOf,
 	sequentialStrategyOf,
 } from "./loop-kinds.js";
-import { runFanoutDispatch } from "./loop-parallel.js";
+import { runFanoutWaves } from "./loop-parallel.js";
 import { MSG_LOOP_CAP_ADVANCE, MSG_LOOP_ZERO_UNITS } from "./messages.js";
 import { appendLoopCap } from "./state/index.js";
 import type { RunContext, WorkflowHostContext } from "./types.js";
@@ -109,11 +109,11 @@ export async function runLoop(
 }
 
 /**
- * Live bounded-parallel fanout entry — thin wrapper over the shared
- * `runFanoutDispatch` (loop-parallel.ts). Dispatches the first `cap` units
- * (`0..dispatchCount-1`); on completion picks the cap policy: over-cap units
- * trip `hitCap`, otherwise the loop finishes. iterate/assess never reach here
- * (not parallelizable).
+ * Live bounded-parallel fanout entry — thin wrapper over `runFanoutWaves`
+ * (loop-parallel.ts). Dispatches the first `cap` units (`0..dispatchCount-1`) in
+ * dependency-ordered waves; on completion picks the cap policy: over-cap units trip
+ * `hitCap` on the last wave, otherwise the loop finishes. iterate/assess never reach
+ * here (not parallelizable).
  */
 function runFanoutParallel(
 	curCtx: WorkflowHostContext,
@@ -123,8 +123,8 @@ function runFanoutParallel(
 	run: RunContext,
 	deps: LoopDeps,
 ): Promise<void> {
-	const operands = Array.from({ length: Math.min(e.units!.length, cap) }, (_u, i) => i);
-	return runFanoutDispatch(curCtx, e, cursor, run, deps, operands, () =>
+	const active = Array.from({ length: Math.min(e.units!.length, cap) }, (_u, i) => i);
+	return runFanoutWaves(curCtx, e, cursor, run, deps, active, () =>
 		e.units!.length > cap ? hitCap(curCtx, e, cursor, cap, cap, run, deps) : finishLoop(curCtx, e, cursor, run, deps),
 	);
 }
@@ -136,11 +136,14 @@ export function pendingFanoutIndices(cursor: LoopCursor, total: number): number[
 	return out;
 }
 
-/** Resume re-dispatch — thin wrapper over the shared `runFanoutDispatch`
- *  (loop-parallel.ts). Runs the still-pending fanout units in bounded parallel,
- *  folding each at its declared index (so completed slots keep their position),
- *  and always finishes (the live run already settled the cap policy). Pending
- *  fanout units COLD re-dispatch (a fresh child each) — fanout units are
+/** Resume re-dispatch — thin wrapper over `runFanoutWaves`. Runs the still-pending
+ *  fanout units in dependency-ordered waves (partitioning the pending set into
+ *  topological levels), folding each at its declared index (so completed slots keep
+ *  their position), and always finishes (the live run already settled the cap policy).
+ *  A ≥3-level DAG where wave 0 completed but waves 1-2 aborted re-waves correctly:
+ *  already-filled slots are skipped (not in `pending`); the remaining pending units
+ *  dispatch level-by-level, never a level-2 unit concurrent with its level-1 dep.
+ *  Pending fanout units COLD re-dispatch (a fresh child each) — fanout units are
  *  idempotent (each writes its own distinct artifact at its declared index), so a
  *  partial in-flight session is discarded rather than reattached; this matches
  *  what the live loop does. The run-scoped `childSessionsDir` + the id-first
@@ -154,7 +157,7 @@ export function runFanoutResume(
 	deps: LoopDeps,
 	pending: readonly number[],
 ): Promise<void> {
-	return runFanoutDispatch(curCtx, e, cursor, run, deps, pending, () => finishLoop(curCtx, e, cursor, run, deps));
+	return runFanoutWaves(curCtx, e, cursor, run, deps, pending, () => finishLoop(curCtx, e, cursor, run, deps));
 }
 
 // ---------------------------------------------------------------------------

@@ -24,6 +24,16 @@ export interface Unit {
 	prompt: string;
 	label: string;
 	id?: string;
+	/**
+	 * Fanout only — the `id ?? label` identities of the units this unit depends
+	 * on. The wave scheduler topologically orders dispatch over these directed
+	 * edges: a unit dispatches only after every unit it lists here has completed
+	 * (its slot filled). Absent/empty ⇒ a root (wave 0). A reference that matches
+	 * no unit's `id ?? label`, or any cycle, halts the stage at the live entry
+	 * (`validateUnitDeps`). Ignored by the sequential kinds (iterate/assess
+	 * consume the prior unit, so ordering is implicit).
+	 */
+	deps?: readonly string[];
 }
 
 /**
@@ -221,6 +231,19 @@ export interface FanoutLoop extends LoopCommon {
 	 *  re-dispatches them. `genAbort` is also driven by run-level abort (Ctrl-C /
 	 *  `run.signal`), so the same machinery serves both. */
 	failFast?: boolean;
+	/**
+	 * When set, the dispatcher injects each completed dependency's published
+	 * artifact path into the dependent unit's prompt as `${depArtifactFlag} <path>`
+	 * (one per direct `Unit.deps` entry whose slot is filled with a non-failed
+	 * output). Pairs with `Unit.deps`: deps order the waves, this flag hands the
+	 * dependent the upstream artifact to read (carve `design` sets `"--upstream"`
+	 * so a dependent slice reads its dependency's decided Key Interfaces). A
+	 * failed/sentinel dep slot is skipped — the dependent designs blind for that
+	 * dep, exactly as today. Engine-generic: the flag string is data; the engine
+	 * knows nothing of the consuming skill. Validated non-empty at construction +
+	 * load.
+	 */
+	depArtifactFlag?: string;
 }
 
 /** Sequential accumulating pull loop. */

@@ -22,6 +22,7 @@ import { resolveSkill } from "../chain-state.js";
 import { announceLoopStart, pendingFanoutIndices, runFanoutResume, runLoop } from "../loop.js";
 import { effectiveLoopOf, freezesEntryArgsOf } from "../loop-constructors.js";
 import { buildLoopEntry, type LoopDeps, sequentialStrategyOf } from "../loop-kinds.js";
+import { validateUnitDeps } from "../loop-waves.js";
 import { FAIL_MISSING_ARTIFACT, type FailureText, MSG_RESUME_LOOP_MISMATCH } from "../messages.js";
 import type { RunContext, WorkflowHostContext } from "../types.js";
 import type { LoopResumePoint } from "./resume.js";
@@ -70,6 +71,10 @@ export async function resumeLoopStage(
 	// re-entry, so already-completed/collected units keep their place. The
 	// announce fires iff at least one unit is pending.
 	if (loop.kind === "fanout") {
+		// Re-validate the recomputed DAG: the id-only drift guard PASSES when a user edits
+		// only a slice's `deps` (ids/titles unchanged), so a newly-introduced cycle would
+		// otherwise reach the dispatcher. guardResumeEntry catches this throw → clean failure.
+		validateUnitDeps(point.units!, point.parent);
 		const pending = pendingFanoutIndices(point.cursor, point.units!.length); // slots === undefined
 		if (pending.length > 0) await announceLoopStart(ctx, run, entry);
 		await runFanoutResume(ctx, entry, point.cursor, run, deps, pending);

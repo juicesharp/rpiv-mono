@@ -1,35 +1,38 @@
 /**
- * loop-parallel.ts — bounded-parallel fanout dispatch. Fanout units are mutually
- * independent (each writes its own distinct artifact at its declared index), so
- * they dispatch up to `cap` at a time through a `Semaphore(maxConcurrency)` and
- * fold into the cursor in DECLARED (index) order through `foldFanoutCompletion` —
- * never completion order — so `fanin` synthesis + resume stay deterministic at
- * every concurrency (Semaphore(1) just serializes).
+ * loop-parallel.ts — bounded-parallel, dependency-ordered fanout dispatch. Fanout
+ * units fold into the cursor in DECLARED (index) order through `foldFanoutCompletion`
+ * — never completion order — so `fanin` synthesis + resume stay deterministic at every
+ * concurrency (Semaphore(1) just serializes). When units declare `Unit.deps`, the
+ * scheduler dispatches in Kahn TOPOLOGICAL LEVELS (`computeWaveLevels`, loop-waves.ts):
+ * one bounded-parallel wave per level, a dependent never opening before the units it
+ * depends on have filled their slots. A deps-free fanout has ONE level — byte-identical
+ * to the pre-wave flat dispatch.
  *
  * CONCURRENCY MODEL — what is and isn't fold-confined. ONLY the `LoopCursor`
  * (`slots`/`filledCount`/`lastProduce`) is mutated exclusively by the serial
- * post-`allSettled` fold below. `run.state` is NOT: each worker's `postStage`
- * mutates `lastAllocatedStageNumber`, `stagesCompleted`, `output`, and
- * `primaryArtifact` CONCURRENTLY across siblings. That is safe — every such mutator
- * is a synchronous, `await`-free read-modify-write (JS run-to-completion makes each
- * atomic), and every order-sensitive result is re-derived by the index-addressed
- * fold (`foldFanoutCompletion`) or overwritten by `projectResult` at close.
+ * post-`allSettled` fold below. `run.state` is NOT: each worker's `postStage` mutates
+ * `lastAllocatedStageNumber`, `stagesCompleted`, `output`, `primaryArtifact`
+ * CONCURRENTLY across siblings. That is safe — every such mutator is a synchronous,
+ * `await`-free read-modify-write (JS run-to-completion makes each atomic), and every
+ * order-sensitive result is re-derived by the index-addressed fold or overwritten by
+ * `projectResult` at close.
  *
- * `runFanoutDispatch` is the ONE dispatch primitive both the live entry
- * (`runFanoutParallel`) and the resume re-dispatch (`runFanoutResume`) — both thin
- * wrappers in loop.ts — degenerate to: each passes its operand list (live:
- * `0..dispatchCount-1`; resume: the still-pending indices) and a `tail` hook for
- * the path-specific completion (live: hitCap-vs-finishLoop on the cap; resume:
- * always finishLoop). The abort/semaphore/fold sequence is shared here, so an
- * abort or fold fix is made once.
+ * `runFanoutWaves` is the ONE orchestrator both the live entry (`runFanoutParallel`)
+ * and the resume re-dispatch (`runFanoutResume`) — both thin wrappers in loop.ts —
+ * degenerate to: each passes its `active` operand set (live: `0..dispatchCount-1`;
+ * resume: the still-pending indices) and a `finalTail` for the path-specific completion
+ * (live: hitCap-vs-finishLoop on the cap; resume: always finishLoop). It owns ONE
+ * per-generation `genAbort` across every wave (so a fail-fast halt or run-abort in wave
+ * k cancels in-flight siblings AND prevents wave k+1), computes the levels, intersects
+ * each with `active`, and runs `dispatchWave` per non-empty level.
  *
  * This module is a downward leaf: it consumes the shared loop foundation
- * (`loop-kinds.ts` — `buildUnitSession`, `fanoutUnitAt`, `foldFanoutCompletion`,
- * `isFailFast`, `LoopDeps`) and never imports loop.ts back (loop.ts → here only).
+ * (`loop-kinds.ts`, `loop-waves.ts`) and never imports loop.ts back (loop.ts → here only).
  */
 
 import { decorateStage } from "./audit.js";
 import { lifecycleCtxFor, skillStageRef } from "./events.js";
+import { handleToString } from "./handle.js";
 import { isAbortError, nowIso, WorkflowAbortError } from "./internal-utils.js";
 import {
 	buildUnitSession,
@@ -41,122 +44,168 @@ import {
 	type LoopEntry,
 	type NextStep,
 } from "./loop-kinds.js";
-import { failedOutput, type Output, type OutputMeta, outputMeta } from "./output.js";
+import { computeWaveLevels, unitIdIndex } from "./loop-waves.js";
+import { failedOutput, isFailedOutput, type Output, type OutputMeta, outputMeta } from "./output.js";
 import { Semaphore } from "./semaphore.js";
 import type { RunContext, UnitRef, WorkflowHostContext } from "./types.js";
 
 /** Structured identity for fanout unit `i` — carried on a worker-throw failure
  *  row (`recordWorkerThrow`) so the unit's identity lands in the row's structured
- *  `unit*` fields instead of being folded into the `stage` name string. Mirrors
- *  the `unit` shape `buildUnitSession` puts on a live unit session. */
+ *  `unit*` fields instead of being folded into the `stage` name string. */
 const fanoutUnitRef = (e: LoopEntry, i: number): UnitRef => {
 	const u = fanoutUnitAt(e, i);
 	return { parent: e.name, role: u.role, index: i, id: u.id, label: u.label };
 };
 
 /**
- * THE shared parallel-fanout dispatch primitive — wire the per-generation abort,
- * fan the `operands` out through the semaphore, fold each result at its DECLARED
- * index, then run the path-specific `tail`. Both `runFanoutParallel` (live) and
- * `runFanoutResume` (resume) reduce to choosing the operand list + the tail.
+ * THE wave orchestrator — owns ONE per-generation `AbortController` across every
+ * topological level. Computes Kahn levels over the full unit list, intersects each
+ * with `active` (live: the first-cap indices; resume: the still-pending indices), and
+ * dispatches the non-empty levels in order. The LAST active level runs `finalTail`
+ * (live: hitCap-vs-finishLoop; resume: finishLoop); intermediate levels just settle.
  *
- * The per-generation `AbortController` is the signal the children + the semaphore
- * actually observe. It fires on EITHER (a) run-level abort (Ctrl-C, `run.signal` —
- * propagated below) OR (b) the first fail-fast unit halt (so in-flight siblings
- * are cancelled mid-flight, not merely halted-after-settle).
+ * The `genAbort` fires on EITHER (a) run-level abort (Ctrl-C, `run.signal` — propagated
+ * below) OR (b) the first fail-fast unit halt inside `dispatchWave`. The listener is
+ * dropped BEFORE `finalTail` (which runs the downstream chain) so it never accumulates
+ * across stages. Levels are computed BEFORE the listener is wired, so a defensive
+ * cycle-throw from `computeWaveLevels` can't leak it.
  */
-export async function runFanoutDispatch(
+export async function runFanoutWaves(
 	curCtx: WorkflowHostContext,
 	e: LoopEntry,
 	cursor: LoopCursor,
 	run: RunContext,
 	deps: LoopDeps,
-	operands: readonly number[],
-	tail: () => Promise<void> | void,
+	active: readonly number[],
+	finalTail: () => Promise<void> | void,
 ): Promise<void> {
+	const activeSet = new Set(active);
+	const waves = computeWaveLevels(e.units!, e.name)
+		.map((level) => level.filter((i) => activeSet.has(i)))
+		.filter((level) => level.length > 0);
+	// Resolve the dep→artifact identity map once (only when the flag is set).
+	const idToIndex = e.loop.kind === "fanout" && e.loop.depArtifactFlag ? unitIdIndex(e.units!) : undefined;
+	// No active units (e.g. a resume with everything already filled) — still close the
+	// loop via the tail (projection + advance), matching today's empty/all-done path.
+	if (waves.length === 0) return finalTail();
+
 	const genAbort = new AbortController();
 	// Name the handler so it can be REMOVED once this generation settles — run.signal
-	// lives for the WHOLE run, so an anonymous listener per fanout stage would
-	// accumulate (and retain its genAbort closure) across N non-aborted stages.
+	// lives for the WHOLE run, so an anonymous listener would accumulate across stages.
 	const onRunAbort = () => genAbort.abort();
 	if (run.signal) {
 		if (run.signal.aborted) genAbort.abort();
 		else run.signal.addEventListener("abort", onRunAbort, { once: true });
 	}
+	const detach = () => run.signal?.removeEventListener("abort", onRunAbort);
+
+	for (let w = 0; w < waves.length; w++) {
+		await dispatchWave(curCtx, e, cursor, run, deps, waves[w]!, genAbort, idToIndex);
+		// Cross-wave gates — the same two checks the single-dispatch tail made, now
+		// BETWEEN waves so a wave-k failure prevents wave-(k+1) dispatch. A fail-fast
+		// halt already terminated state inside the worker; a run abort drained the
+		// semaphore and rejects every later acquire.
+		if (run.state.termination.status !== "running") {
+			detach();
+			return;
+		}
+		if (run.signal?.aborted) {
+			detach();
+			return deps.recordAborted(curCtx, e.name, run); // mid-flight abort → FAIL_WORKFLOW_ABORTED
+		}
+	}
+	detach(); // all waves settled cleanly — drop the run-lifetime listener BEFORE the tail
+	return finalTail();
+}
+
+/**
+ * Dispatch ONE topological level's operands through a shared semaphore + the
+ * per-generation `genAbort`, folding each result at its DECLARED index. The body the
+ * former single-shot `runFanoutDispatch` ran, MINUS the genAbort lifecycle (the
+ * orchestrator owns it across waves) and the terminal disposition (the orchestrator
+ * runs the tail once, after the last wave). NEVER throws — an unexpected worker
+ * rejection lands a terminal-failure row via `recordWorkerThrow` (D12); allSettled
+ * guarantees every unit settled.
+ */
+async function dispatchWave(
+	curCtx: WorkflowHostContext,
+	e: LoopEntry,
+	cursor: LoopCursor,
+	run: RunContext,
+	deps: LoopDeps,
+	ops: readonly number[],
+	genAbort: AbortController,
+	idToIndex: Map<string, number> | undefined,
+): Promise<void> {
 	const failFast = isFailFast(e.loop);
-	// A fanout may cap its own concurrency BELOW the host cap (e.g. `implement`'s
-	// `concurrency: 1` serializes shared-tree application); floored at 1 so a stray
-	// value never deadlocks, and never raised ABOVE the host cap.
+	// A fanout may cap its own concurrency BELOW the host cap (`implement`'s
+	// `concurrency: 1`); floored at 1, never raised above the host cap.
 	const loopCap = e.loop.kind === "fanout" ? e.loop.concurrency : undefined;
 	const sem = new Semaphore(
 		Math.max(1, Math.min(loopCap ?? curCtx.maxConcurrency, curCtx.maxConcurrency)),
 		genAbort.signal,
 	); // drains queued units on either abort
 	const settled = await Promise.allSettled(
-		operands.map((i) =>
-			sem
-				.run(() => dispatchUnitDetached(curCtx, e, i, run, deps, genAbort.signal))
+		ops.map((i) => {
+			// Resolve `--upstream`-style dep-artifact injection from the slots prior waves
+			// already filled. Empty when the loop sets no flag or the unit has no deps.
+			const suffix = idToIndex ? depArtifactSuffix(e, cursor, i, idToIndex) : "";
+			return sem
+				.run(() => dispatchUnitDetached(curCtx, e, i, run, deps, genAbort.signal, suffix))
 				.then((out) => {
 					// a fail-fast unit's worker terminated state via recordTerminalFailure;
-					// fire genAbort so the in-flight siblings get session.abort()'d NOW. Each
-					// worker is its own task, so this fires while siblings are still running.
+					// fire genAbort so in-flight siblings get session.abort()'d NOW.
 					if (failFast && run.state.termination.status !== "running") genAbort.abort();
 					return out;
-				}),
-		),
+				});
+		}),
 	);
-	run.signal?.removeEventListener("abort", onRunAbort); // generation settled — drop the run-lifetime listener
-	// the fold NEVER throws. allSettled guarantees every unit has settled, so
-	// entry() always resolves and onWorkflowEnd always fires. `operands[k]` maps the
-	// k-th settled result back to its DECLARED unit index — the identity for both
-	// the live (0..dispatchCount-1) and resume (pending[]) operand lists.
+	// `ops[k]` maps the k-th settled result back to its DECLARED unit index.
 	for (let k = 0; k < settled.length; k++) {
 		const r = settled[k]!;
-		const i = operands[k]!;
+		const i = ops[k]!;
 		if (r.status === "rejected") {
 			if (isAbortError(r.reason)) continue; // aborted / never-started → unfilled slot (resume re-dispatches)
-			// UNEXPECTED rejection (programming error, not a workflow halt). Funnel to
-			// a terminal-failure row + onStageError; do NOT re-throw (that would skip
-			// onWorkflowEnd). recordWorkerThrow terminates state and records the row.
 			await deps.recordWorkerThrow(curCtx, fanoutUnitRef(e, i), e.skill, run, r.reason);
 			continue;
 		}
 		cursor.ranThisInvocation++;
 		// index-addressed placement (shared with the resume fold) so declared order
-		// survives parallel completion + resume.
+		// survives parallel completion + waves + resume.
 		foldFanoutCompletion(run.state, cursor, e.def, e.name, i, e.units!.length, r.value);
 	}
-	// A fail-fast unit halt already ran recordTerminalFailure inside its worker's
-	// postStage (terminate()d state, fired onStageError). Detect it and return
-	// gracefully — executeRun builds the envelope + fires onWorkflowEnd.
-	if (run.state.termination.status !== "running") return;
-	if (run.signal?.aborted) return deps.recordAborted(curCtx, e.name, run); // mid-flight abort → FAIL_WORKFLOW_ABORTED
-	// path-specific completion: live picks hitCap-vs-finishLoop on the cap; resume
-	// always finishes (the live run already settled the cap policy).
-	return tail();
 }
 
-/** Dispatch one fanout unit in its own child and RETURN its output. The cursor
- *  is NOT touched here — the parallel fold consumes the return value in index
- *  order. A halted unit leaves `captured` unset; returns failedOutput.
- *
- *  Lifecycle parity (matches the sequential `dispatchUnit`): fires `onUnitStart`
- *  HERE before the child opens; `onUnitEnd` fires for free inside
- *  `recordStageSuccess` (gated on `s.unit`) when the unit succeeds.
- *
- *  Three settle shapes. Only ABORT throws (intentionally); the two no-output
- *  shapes never throw (an unexpected throw would reject the allSettled
- *  slot and, if re-thrown, skip onWorkflowEnd):
- *   • collect-all unit failure: softHaltUnit DID call onSuccess(sentinel), so
- *     `captured` is the failedOutput sentinel — returned and placed normally.
- *   • fail-fast unit halt: postStage ran haltStage → recordTerminalFailure
- *     already terminated state + fired onStageError, and did NOT call onSuccess,
- *     so `captured` is undefined. Return a placement sentinel; the caller's
- *     `state.termination.status !== "running"` check then returns gracefully.
- *   • ABORT: postStage threw WorkflowAbortError (the SDK resolved prompt()
- *     with stopReason:"aborted"). The throw propagates to runFanoutDispatch's
- *     allSettled, where isAbortError leaves the slot unfilled so resume
- *     re-dispatches the unit. No row is written. */
+/**
+ * Resolve the `depArtifactFlag` injection for unit `index`: ` <flag> <path>` per direct
+ * dep whose slot is filled with a NON-FAILED output. A failed/sentinel or still-unfilled
+ * dep slot is SKIPPED (the dependent designs blind for that dep) — so a failed upstream
+ * degrades gracefully instead of injecting a broken path; synthesize stays the backstop.
+ * Dangling ids never reach here (`validateUnitDeps` rejected them at the live entry); the
+ * `undefined` guard is defensive.
+ */
+function depArtifactSuffix(e: LoopEntry, cursor: LoopCursor, index: number, idToIndex: Map<string, number>): string {
+	const flag = e.loop.kind === "fanout" ? e.loop.depArtifactFlag : undefined;
+	const deps = e.units![index]!.deps;
+	if (!flag || !deps?.length) return "";
+	let suffix = "";
+	for (const depId of deps) {
+		const di = idToIndex.get(depId);
+		if (di === undefined) continue; // dangling (defensive — validated away at the entry)
+		const out = cursor.slots?.[di];
+		if (!out || isFailedOutput(out)) continue; // unfilled or failed → skip (blind for this dep)
+		const handle = out.artifacts[0]?.handle;
+		if (handle) suffix += ` ${flag} ${handleToString(handle)}`;
+	}
+	return suffix;
+}
+
+/** Dispatch one fanout unit in its own child and RETURN its output. The cursor is NOT
+ *  touched here — the wave fold consumes the return value in index order. `promptSuffix`
+ *  (the resolved dep-artifact injection) is appended to the unit prompt by `fanoutUnitAt`.
+ *  A halted unit leaves `captured` unset; returns failedOutput. (Settle shapes unchanged
+ *  from the pre-wave dispatcher: collect-all unit failure → sentinel; fail-fast halt →
+ *  placement sentinel + graceful return; ABORT → throws WorkflowAbortError → unfilled slot.) */
 async function dispatchUnitDetached(
 	curCtx: WorkflowHostContext,
 	e: LoopEntry,
@@ -164,9 +213,10 @@ async function dispatchUnitDetached(
 	run: RunContext,
 	deps: LoopDeps,
 	signal: AbortSignal | undefined, // genAbort.signal — run-level abort OR fail-fast sibling cancel
+	promptSuffix = "",
 ): Promise<Output> {
 	if (signal?.aborted) throw new WorkflowAbortError(); // never open a child after abort; isAbortError → unfilled slot
-	const u = fanoutUnitAt(e, index);
+	const u = fanoutUnitAt(e, index, promptSuffix);
 	await run.lifecycle.fire(
 		curCtx,
 		"onUnitStart",
@@ -186,9 +236,9 @@ async function dispatchUnitDetached(
 	return captured ?? failedOutput(unitOutputMeta(e, u, run), `${u.label}: unit halted`);
 }
 
-/** Minimal OutputMeta for a fail-fast placement sentinel. The run is terminating
- *  when this is used, so the sentinel is never read downstream; it only keeps the
- *  fold's Output type intact without a throw. */
+/** Minimal OutputMeta for a fail-fast placement sentinel. The run is terminating when
+ *  this is used, so the sentinel is never read downstream; it only keeps the fold's
+ *  Output type intact without a throw. */
 function unitOutputMeta(e: LoopEntry, u: Extract<NextStep, { kind: "unit" }>, run: RunContext): OutputMeta {
 	return outputMeta({
 		stage: decorateStage(e.name, u.tag),
