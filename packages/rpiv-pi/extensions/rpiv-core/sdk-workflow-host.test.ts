@@ -786,4 +786,51 @@ describe("spawnChild — final snapshot + session file (Problem 2)", () => {
 
 		expect(getLane("run-abc")?.lastSessionFile).toBe(sessions[0].sessionFile);
 	});
+
+	it("a sibling's teardown seeds lastSessionFile from the last-living owner, not an arbitrary sibling", async () => {
+		recordRun("run-abc", "ship");
+		const { deps } = makeDeps();
+		const host = new SdkWorkflowHost(deps);
+
+		// Same deterministic two-sibling sequencing as the currentSession guard test:
+		// A created first (slot = A), then B (slot = B, the latest-spawned owner).
+		let aReached!: () => void;
+		const aReachedP = new Promise<void>((r) => (aReached = r));
+		let releaseA!: () => void;
+		const aMayReturn = new Promise<void>((r) => (releaseA = r));
+		let bReached!: () => void;
+		const bReachedP = new Promise<void>((r) => (bReached = r));
+		let releaseB!: () => void;
+		const bMayReturn = new Promise<void>((r) => (releaseB = r));
+
+		const aP = host.spawnChild({
+			prompt: "a",
+			withSession: async () => {
+				aReached();
+				await aMayReturn;
+			},
+		});
+		await aReachedP; // A created → slot = sessions[0]
+
+		const bP = host.spawnChild({
+			prompt: "b",
+			withSession: async () => {
+				bReached();
+				await bMayReturn;
+			},
+		});
+		await bReachedP; // B created → slot = sessions[1] (latest-spawned owner)
+
+		// A tears down while B is still live — guard false, so A seeds NOTHING.
+		// (Under the old spawn-time write this would already be sessions[1].)
+		releaseA();
+		await aP;
+		expect(getLane("run-abc")?.lastSessionFile).toBeUndefined();
+
+		// B (the slot owner) tears down → seeds lastSessionFile from its own file,
+		// coherent with the finalBranch snapshot captured in the same guard block.
+		releaseB();
+		await bP;
+		expect(getLane("run-abc")?.lastSessionFile).toBe(sessions[1].sessionFile);
+	});
 });

@@ -23,6 +23,7 @@ import {
 	setFocusedRun,
 	setLaneAbort,
 	setLaneProgress,
+	setLaneSessionFile,
 	setLaneStatus,
 	subscribeLanes,
 } from "./run-lane-registry.js";
@@ -253,7 +254,7 @@ describe("run-lane-registry", () => {
 	});
 
 	describe("needsInputSince (Phase C)", () => {
-		it("stamps on the 0→1 transition, preserves across a second enqueue, clears when drained", () => {
+		it("stamps on first enqueue, holds across a second enqueue AND a full drain, clears only at retire", () => {
 			recordRun("run-1", "ship");
 			expect(getLane("run-1")?.needsInputSince).toBeUndefined();
 			enqueueInput("run-1", makePending());
@@ -263,8 +264,17 @@ describe("run-lane-registry", () => {
 			expect(getLane("run-1")?.needsInputSince).toBe(stamped);
 			dequeueInput("run-1"); // still one queued → clock holds
 			expect(getLane("run-1")?.needsInputSince).toBe(stamped);
-			dequeueInput("run-1"); // queue drained → clock clears
-			expect(getLane("run-1")?.needsInputSince).toBeUndefined();
+			dequeueInput("run-1"); // queue FULLY drained → clock STILL holds (continuous-wait marker)
+			expect(getLane("run-1")?.needsInputSince).toBe(stamped);
+		});
+
+		it("a drain→refill keeps the original wait start (no aging-clock reset)", () => {
+			recordRun("run-1", "ship");
+			enqueueInput("run-1", makePending());
+			const stamped = getLane("run-1")?.needsInputSince;
+			dequeueInput("run-1"); // queue empties during a switch-in drain
+			enqueueInput("run-1", makePending()); // a background sibling refills it
+			expect(getLane("run-1")?.needsInputSince).toBe(stamped); // age preserved, not reset to "now"
 		});
 
 		it("retireRun clears the needs-input clock", () => {
@@ -272,6 +282,32 @@ describe("run-lane-registry", () => {
 			enqueueInput("run-1", makePending());
 			retireRun("run-1", "aborted");
 			expect(getLane("run-1")?.needsInputSince).toBeUndefined();
+		});
+	});
+
+	describe("setLaneSessionFile / lastSessionFile (Problem 2 durable path)", () => {
+		it("records the durable session-file pointer without notifying", () => {
+			recordRun("run-1", "ship");
+			const listener = vi.fn();
+			subscribeLanes(listener);
+			setLaneSessionFile("run-1", "/sessions/run-1.jsonl");
+			expect(getLane("run-1")?.lastSessionFile).toBe("/sessions/run-1.jsonl");
+			expect(listener).not.toHaveBeenCalled(); // read lazily at disk-fallback time — no redraw
+		});
+
+		it("is a no-op when file is undefined (never clears) and on a missing lane", () => {
+			recordRun("run-1", "ship");
+			setLaneSessionFile("run-1", "/sessions/run-1.jsonl");
+			setLaneSessionFile("run-1", undefined); // ignored — does not clear
+			expect(getLane("run-1")?.lastSessionFile).toBe("/sessions/run-1.jsonl");
+			expect(() => setLaneSessionFile("nope", "/x.jsonl")).not.toThrow();
+		});
+
+		it("re-record (resume) drops the prior run's session-file pointer", () => {
+			recordRun("run-1", "ship");
+			setLaneSessionFile("run-1", "/sessions/run-1.jsonl");
+			recordRun("run-1", "ship"); // reactivate — resume reuses the run id
+			expect(getLane("run-1")?.lastSessionFile).toBeUndefined();
 		});
 	});
 

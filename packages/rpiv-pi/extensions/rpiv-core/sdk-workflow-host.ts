@@ -277,9 +277,6 @@ export class SdkWorkflowHost implements WorkflowHostContext {
 		// transcript source. Replaces any prior child; under fanout the latest-spawned
 		// wins. No-op until the run is recorded (createWorkflowExecution, Phase 3).
 		setCurrentSession(this.deps.runId, session);
-		// Record the child's persisted session file (Problem 2 durable path) — a string
-		// that outlives the disposed session and seeds the disk-jsonl transcript fallback.
-		setLaneSessionFile(this.deps.runId, session.sessionFile);
 
 		// session.abort() does NOT reject prompt(); the SDK catches the abort,
 		// writes a stopReason:"aborted" transcript message, and RESOLVES the run
@@ -309,6 +306,12 @@ export class SdkWorkflowHost implements WorkflowHostContext {
 				// runner's onWorkflowEnd → retireRun fires AFTER this teardown, by which point
 				// the session is disposed — so capture here, before dropping + disposing it.
 				captureFinalSnapshot(this.deps.runId, session);
+				// Seed the durable disk-fallback pointer from the SAME last-living child whose
+				// transcript we just snapshotted, so the disk fallback and finalBranch always
+				// agree on which child they represent (under fanout: the slot owner, not an
+				// arbitrary last-SPAWNED sibling). Read lazily only for a retired lane with no
+				// finalBranch, by which point all children have torn down.
+				setLaneSessionFile(this.deps.runId, session.sessionFile);
 				setCurrentSession(this.deps.runId, undefined);
 			}
 			await this.teardownChild(session); // (B) session_shutdown → dispose

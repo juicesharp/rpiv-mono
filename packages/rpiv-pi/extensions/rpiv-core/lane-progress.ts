@@ -13,7 +13,9 @@
  *   - onStageRetry → phase "retry" + attempt           ("⟲ … retry 2/3")
  *   - onStageError → phase "error"                      (brief — the run then evicts)
  *   - onLoopStart  → seed units.total (fanout precomputes its unit list)
- *   - onUnitStart/onUnitEnd → advance units.done        ("units x/y")
+ *   - onUnitEnd    → advance units.done by a TRUE completion count ("units x/y").
+ *                    No onUnitStart handler is registered — done advances ONLY on
+ *                    completion, so it stays monotone under out-of-order fanout.
  * `setLaneProgress` no-ops on a non-recorded run, so non-detached runs cost nothing.
  *
  * Clean-install contract: a static top-level VALUE import of the rpiv-workflow
@@ -129,15 +131,23 @@ export async function registerLaneProgress(): Promise<void> {
 					units: info.units ? { done: 0, total: info.units.length } : undefined,
 				}),
 			onUnitEnd: (stage, unit, _output, ctx) => {
-				// Advance units.done; preserve the total seeded at onLoopStart.
-				const total = getLane(ctx.runId)?.progress?.units?.total ?? unit.index + 1;
+				// Advance units.done by a TRUE completion count. onUnitEnd fires in
+				// COMPLETION order (units finish out of declared order under
+				// maxConcurrency > 1), so keying off `unit.index + 1` jumps and
+				// regresses (e.g. 3/3 → 1/3 → 2/3). setLaneProgress replaces progress
+				// wholesale, so read the prior count back and increment; the `?? 0`
+				// baseline matches the onLoopStart seed and the `?? unit.index + 1`
+				// total fallback matches the pre-existing pull-loop (unseeded) path.
+				const prev = getLane(ctx.runId)?.progress?.units;
+				const total = prev?.total ?? unit.index + 1;
+				const done = (prev?.done ?? 0) + 1;
 				setLaneProgress(ctx.runId, {
 					stageNumber: stage.stageNumber,
 					totalStages: ctx.totalStages,
 					visited: noteVisitedStage(ctx.runId, stage.name),
 					stageName: stage.name,
 					phase: "running",
-					units: { done: unit.index + 1, total },
+					units: { done, total },
 				});
 			},
 			// Phase A — the run terminated: RETAIN the lane with its terminal status (so

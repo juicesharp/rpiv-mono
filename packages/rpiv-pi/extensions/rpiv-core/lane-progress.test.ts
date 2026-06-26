@@ -34,6 +34,17 @@ interface Bundle {
 		error: string,
 		ctx: { runId: string; totalStages: number },
 	) => void;
+	onLoopStart?: (
+		stage: { stageNumber: number; name: string },
+		info: { units?: unknown[] },
+		ctx: { runId: string; totalStages: number },
+	) => void;
+	onUnitEnd?: (
+		stage: { stageNumber: number; name: string },
+		unit: { index: number },
+		output: unknown,
+		ctx: { runId: string; totalStages: number },
+	) => void;
 	onWorkflowEnd?: (
 		result: { termination?: { status: string; error?: string } },
 		ctx: { runId: string; workflow: string; totalStages: number },
@@ -187,6 +198,26 @@ describe("lane-progress event mapping", () => {
 		// No recordRun for "ghost".
 		expect(() => b.onStageStart?.({ stageNumber: 1, name: "x" }, { runId: "ghost", totalStages: 3 })).not.toThrow();
 		expect(getLane("ghost")).toBeUndefined();
+	});
+
+	it("onLoopStart seeds units {done:0,total}; onUnitEnd advances monotonically under out-of-order completion", async () => {
+		const b = await register();
+		recordRun("run-1", "ship");
+		const ctx = { runId: "run-1", totalStages: 4 };
+		const stage = { stageNumber: 2, name: "fanout" };
+
+		b.onLoopStart?.(stage, { units: [{}, {}, {}] }, ctx);
+		expect(getLane("run-1")?.progress?.units).toEqual({ done: 0, total: 3 });
+
+		// Units complete OUT of declared order: 2, then 0, then 1. done must climb
+		// 1→2→3 monotonically; total is preserved. The old `unit.index + 1` would
+		// have shown 3/3 → 1/3 → 2/3 (jumps, regresses, wrong terminal value).
+		b.onUnitEnd?.(stage, { index: 2 }, {}, ctx);
+		expect(getLane("run-1")?.progress?.units).toEqual({ done: 1, total: 3 });
+		b.onUnitEnd?.(stage, { index: 0 }, {}, ctx);
+		expect(getLane("run-1")?.progress?.units).toEqual({ done: 2, total: 3 });
+		b.onUnitEnd?.(stage, { index: 1 }, {}, ctx);
+		expect(getLane("run-1")?.progress?.units).toEqual({ done: 3, total: 3 }); // terminal value correct
 	});
 });
 

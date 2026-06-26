@@ -91,7 +91,12 @@ export interface LaneProgress {
 	reason?: string;
 	/** onStageRetry — "retry 2/3". */
 	attempt?: number;
-	/** Fanout sub-progress (onLoopStart seeds total; onUnitStart/End advance done). */
+	/**
+	 * Fanout sub-progress: `onLoopStart` seeds `total`; `onUnitEnd` advances `done`
+	 * by a TRUE completion count (not the declared unit index, which regresses under
+	 * out-of-order parallel completion). No `onUnitStart` handler is registered — the
+	 * bridge only advances `done` on unit completion.
+	 */
 	units?: { done: number; total: number };
 }
 
@@ -159,10 +164,12 @@ export interface LaneEntry {
 	lastSessionFile?: string;
 	/**
 	 * When this lane first started waiting on a deferred foreground question
-	 * (Phase C) — `Date.now()` at the 0→≥1 pendingInput transition, cleared when
-	 * the queue drains or the lane retires/evicts. Drives the overlay's aging
-	 * "needs input · 4m" heading. `Date.now()` is fine here (extension code; the
-	 * no-`Date.now` rule applies to workflow *scripts*, not the rpiv-pi runtime).
+	 * (Phase C) — `Date.now()` stamped on the FIRST enqueue that finds the clock
+	 * unset, and HELD across transient drains so a switch-in drain racing a
+	 * background sibling enqueue never resets the displayed age. Cleared only when
+	 * the lane stops needing input for real: retire/evict/reactivate (`recordRun`).
+	 * Drives the overlay's aging "needs input · 4m" heading. `Date.now()` is fine
+	 * here (extension code; the no-`Date.now` rule applies to workflow *scripts*).
 	 */
 	needsInputSince?: number;
 	/**
@@ -452,7 +459,8 @@ export function noteVisitedStage(runId: string, stageName: string): number {
 }
 
 /** Enqueue a deferred foreground-stage UI request (FR5, Slice 7). Stamps the
- *  needs-input clock (Phase C) on the 0→≥1 transition so the overlay can age it. */
+ *  needs-input clock (Phase C) on the FIRST enqueue that finds it unset — held
+ *  across a transient drain→refill so the aging heading never resets mid-wait. */
 export function enqueueInput(runId: string, pending: PendingInput): void {
 	const entry = state().lanes.get(runId);
 	if (!entry) {
@@ -460,20 +468,22 @@ export function enqueueInput(runId: string, pending: PendingInput): void {
 		pending.resolve(undefined);
 		return;
 	}
-	if (entry.pendingInput.length === 0) entry.needsInputSince = Date.now();
+	// Stamp only when the clock is unset (not merely when the queue is empty): a
+	// drain that empties the queue no longer clears the clock, so a sibling that
+	// refills it keeps the original wait start instead of resetting to "now".
+	if (entry.needsInputSince === undefined) entry.needsInputSince = Date.now();
 	entry.pendingInput.push(pending);
 	notify();
 }
 
 /** Pop the oldest pending input for a lane (FR5, Slice 7) — the manager replays it.
- *  Clears the needs-input clock (Phase C) once the queue drains. */
+ *  Does NOT clear the needs-input clock on drain-to-empty (Phase C): the clock is a
+ *  continuous-wait marker reset only at retire/evict/reactivate, so a drain racing a
+ *  background sibling enqueue can't reset the overlay's aging heading. */
 export function dequeueInput(runId: string): PendingInput | undefined {
 	const entry = state().lanes.get(runId);
 	const pending = entry?.pendingInput.shift();
-	if (pending) {
-		if (entry && entry.pendingInput.length === 0) entry.needsInputSince = undefined;
-		notify();
-	}
+	if (pending) notify();
 	return pending;
 }
 
