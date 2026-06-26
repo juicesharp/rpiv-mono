@@ -608,8 +608,7 @@ const prTriageWorkflow = defineWorkflow({
 //   in parallel, merge hierarchically (per-cluster sub-plans → one plan) so no
 //   pass holds every design, gate the plan on quality dimensions BEFORE any
 //   code, elaborate code per phase and stitch it in, re-grade the code-bearing
-//   plan, then implement/validate/commit. The parallel generalization of
-//   `arch`. Promoted (and extended) from the `ship-slice` project pack.
+//   plan, then implement/validate/commit. The parallel generalization of `arch`.
 // ===========================================================================
 
 /**
