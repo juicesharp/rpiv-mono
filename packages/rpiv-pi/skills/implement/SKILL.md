@@ -28,7 +28,11 @@ The input above is `<plan-path> [phase]`:
 - Anything after it (e.g. "Phase 2") names a single phase to scope to.
 
 Rules:
-- If a phase is named → **single-phase (fan-out lane) mode.** The named phase is a self-contained unit. The other phases are running **concurrently in sibling lanes and are NOT guaranteed done** — never implement them, never check them off, never wait on them. Implement ONLY the named phase. Do not read, edit, or check off other phases' sections. Stop and print the closing block as soon as the named phase's own success criteria pass.
+- If a phase is named → **single-phase (sequenced lane) mode.** Phases run **sequentially, in the plan's dependency order**, so every earlier phase has **already landed its files** — your prerequisites are present in the working tree. Implement **ONLY the named phase**, touching **only the files that phase owns**. Hard rules for this mode:
+  - **Never implement, create, or edit another phase's files** — not even if one is missing. You are one unit of a sequenced run; back-filling another phase's work duplicates it and corrupts the next lane.
+  - **A genuinely missing prerequisite is a hard error, not a decision.** If a file your phase must read or edit (one an earlier phase owns) is absent, **STOP and fail** with `prerequisite missing: <path> (expected from an earlier phase)`. Do **not** create it, do **not** `ask_user_question` about it, and do **not** defer your own edits — fail loudly so the run surfaces the ordering defect.
+  - **Never silently defer your phase's own edits.** Apply every change the named phase owns, or fail. A phase that writes a partial slice and checks off nothing is worse than a clean failure.
+  - Do not read, edit, or check off other phases' sections. Stop and print the closing block as soon as the named phase's own success criteria pass.
 - If no phase is named → **sequential full-plan mode:** implement every phase in the plan sequentially.
 - If the input is empty or the plan path is missing/literal, ask the user for the plan path before proceeding.
 

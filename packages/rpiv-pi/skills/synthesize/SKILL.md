@@ -1,7 +1,7 @@
 ---
 name: synthesize
-description: Merge N independent per-slice designs (plus the research they rest on) into ONE coherent phased plan in .rpiv/artifacts/plans/ — reconciling cross-slice overlaps, wiring inter-slice integration, and ordering phases by slice dependencies. Single-pass, no subagents, no self-review. The fan-in barrier of a fanout-and-synthesize flow — one phase per slice, plan-compatible so implement/validate consume it unchanged. Use after a per-slice design fanout.
-argument-hint: "--designs <path> [--designs <path> ...] [--research <path>]"
+description: Merge N independent per-slice designs (plus the research they rest on) into ONE coherent phased plan in .rpiv/artifacts/plans/ — reconciling cross-slice overlaps, wiring inter-slice integration, and ordering phases by slice dependencies. Single-pass, no subagents, no self-review. The fan-in barrier of a fanout-and-synthesize flow — one phase per slice, plan-compatible so implement/validate consume it unchanged. For large slice maps it also runs hierarchically — as a per-cluster partial (`--as-subplan` turns designs into a subplan) and as the root merge (`--subplans` turns subplans into a plan) — so no single pass must hold every design at once. Use after a per-slice design fanout.
+argument-hint: "--designs <path>... [--research <path>] [--as-subplan]  |  --subplans <path>... [--research <path>]"
 allowed-tools: Read, Grep, Glob, Write
 shell-timeout: 10
 contract:
@@ -32,6 +32,7 @@ contract:
   consumes:
     reads:
       designs: {}
+      subplans: {}
       research: {}
 ---
 
@@ -43,10 +44,24 @@ You merge several independent per-slice designs into **one coherent phased plan*
 
 `$ARGUMENTS` — flags (the orchestrator wires them from the fan-in):
 
-- `--designs <path>` **(repeats, ≥1)** — every per-slice design doc from the design fanout.
+- `--designs <path>` **(repeats)** — per-slice design docs from the design fanout.
+- `--subplans <path>` **(repeats)** — partial sub-plans from a cluster fanout (root mode).
 - `--research <path>` *(optional)* — the research the slices rest on, for cross-slice constraints.
+- `--as-subplan` *(flag)* — emit a **sub-plan** (partial mode) instead of a full plan.
 
-Recognize the repeated `--designs` flags and the single `--research`. If no `--designs` are present, print an error and stop.
+If neither `--designs` nor `--subplans` is present, print an error and stop.
+
+## Modes
+
+Pick the mode from the flags — the work is the same fan-in reconciliation at three scales:
+
+| Mode | Selected by | Reads | Writes to | Output kind |
+|---|---|---|---|---|
+| **Flat** (default) | `--designs` only | every design | `.rpiv/artifacts/plans/` | full plan |
+| **Partial** (per-cluster) | `--designs … --as-subplan` | one **cluster**'s designs | `.rpiv/artifacts/subplans/` | sub-plan |
+| **Root** (merge) | `--subplans …` | the cluster sub-plans | `.rpiv/artifacts/plans/` | full plan |
+
+Hierarchical synthesis (partial → root) bounds each pass's context: a **partial** sees only its cluster's designs and exports the seams other clusters integrate with; the **root** merges the compact sub-plans (their `summary` + `exports` + phases), never re-reading every design. Flat mode is the single-pass form for small slice maps.
 
 ## Metadata
 
@@ -60,20 +75,34 @@ Copy values verbatim. `<iso>` is the first tab-separated field; `<slug>` is the 
 
 ## Steps
 
-1. **Read every `--designs` doc fully** (and `--research` if given). For each design note its `slice_n`, `slice_title`, `depends_on`, File Map, Key Interfaces, Integration Points, Success Criteria.
-2. **Reconcile across slices** — this is the whole point of the barrier:
-   - **Overlap** — when two slices touch the same file/symbol, merge them into a single coherent change (or split into ordered phases) rather than emitting contradictory edits.
-   - **Integration** — wire the inter-slice seams: a slice that depends on another's interface must reference the real shape the other slice defines.
-   - **Conflict** — when two designs make incompatible decisions, resolve to one, and record the resolution in Synthesis Notes (the grade panel's correctness/architecture-fit members will check it).
-3. **Sequence phases** — one phase per slice, ordered so a phase never precedes a slice it `depends_on`. Tightly-coupled slices may merge into one phase; note any merge.
-4. **Write the plan** (below), `status: ready`. It is a standard plan artifact — phases with concrete changes and Success Criteria that pass through unchanged to `implement`/`validate`.
-5. **Print the path**, then a one-line summary: `<N> phases from <M> slices`.
+1. **Read every input fully** — each `--designs` doc (flat/partial) or `--subplans` doc (root), plus `--research` if given.
+   - For a **design** note its `slice_n`, `slice_title`, `depends_on`, File Map, Key Interfaces, Integration Points, Success Criteria.
+   - For a **sub-plan** note its `summary`, `exports` (the seams it owns), `depends_on` clusters, and its phases.
+2. **Reconcile across the inputs** — this is the whole point of the barrier:
+   - **Overlap** — when two inputs touch the same file/symbol, merge them into a single coherent change (or split into ordered phases) rather than emitting contradictory edits.
+   - **Integration** — wire the seams: an input that depends on another's interface must reference the real shape the other defines. In root mode, this is where each sub-plan's `exports` get connected.
+   - **Conflict** — when two inputs make incompatible decisions, resolve to one, and record the resolution in Synthesis Notes (the grade panel's correctness/architecture-fit members will check it).
+3. **Sequence phases** — one phase per slice (flat/partial) or carry the sub-plans' phases through (root), ordered so a phase never precedes one it `depends_on`. Tightly-coupled units may merge into one phase; note any merge.
+4. **Write the output** (below), `status: ready`:
+   - **Flat / root** → a standard **plan** in `.rpiv/artifacts/plans/` — phases with concrete changes and Success Criteria that pass through unchanged to `implement`/`validate`.
+   - **Partial** (`--as-subplan`) → a **sub-plan** in `.rpiv/artifacts/subplans/` — the same phase shape PLUS a `summary` and an `exports` block naming the seams (files/symbols/interfaces this cluster owns) the root will wire other clusters into. Keep it compact: the root reads it instead of your cluster's designs.
+5. **Print the path**, then a one-line summary: `<N> phases from <M> {slices|sub-plans}` (note the mode).
 
-This skill is **non-interactive**: when an inter-slice conflict can't be cleanly resolved, make the most defensible call, record it in Synthesis Notes, and let the grade panel catch a bad merge. Do not ask the user.
+This skill is **non-interactive**: when a conflict can't be cleanly resolved, make the most defensible call, record it in Synthesis Notes, and let the grade panel catch a bad merge. Do not ask the user.
 
 ## Output document
 
-Path: `.rpiv/artifacts/plans/<slug>_<topic>.md`. The frontmatter **must** carry a `phases:` array and `phase_count` equal to **both** the array length **and** the number of `## Phase N:` headings in the body (a downstream derive-check rejects a mismatch).
+**Flat / root mode** → Path: `.rpiv/artifacts/plans/<slug>_<topic>.md`.
+**Partial mode** (`--as-subplan`) → Path: `.rpiv/artifacts/subplans/<slug>_cluster-<k>.md`, with the same body shape plus a `summary:` scalar and an `exports:` list in frontmatter, e.g.:
+
+```yaml
+summary: "<one-paragraph what this cluster delivers>"
+exports:
+  - "src/foo.ts:Foo — the interface other clusters call"
+depends_on_clusters: []
+```
+
+The frontmatter **must** carry a `phases:` array and `phase_count` equal to **both** the array length **and** the number of `## Phase N:` headings in the body (a downstream derive-check rejects a mismatch) — for sub-plans too.
 
 ```markdown
 ---

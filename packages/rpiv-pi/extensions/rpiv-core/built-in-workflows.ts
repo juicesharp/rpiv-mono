@@ -13,20 +13,26 @@
  * users author their own over their own skills.
  */
 
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { basename, isAbsolute, join } from "node:path";
+import { basename, dirname, isAbsolute, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
 import {
 	type Artifact,
 	acts,
+	defineRoute,
 	defineWorkflow,
+	directoryPathCollector,
 	eq,
+	fanin,
 	fanout,
 	gate,
 	gitCommitOutcome,
 	gt,
 	handleToString,
 	iterate,
+	jsonBodyParser,
 	type Output,
 	type PromptFn,
 	produces,
@@ -35,6 +41,7 @@ import {
 	type Workflow,
 } from "@juicesharp/rpiv-workflow/registration";
 import { StagePreflightError } from "@juicesharp/rpiv-workflow/runner";
+import { rpivBucketOutcome } from "./artifact-collector.js";
 
 // The code-review stage's output schema is no longer declared here — every
 // code-review stage sources it from the skill's contract `produces.data`
@@ -178,6 +185,17 @@ const FRONTMATTER_PHASE_FANOUT = fanout({
 	},
 });
 
+/**
+ * `implement`'s serial twin of `FRONTMATTER_PHASE_FANOUT`. Applying a plan to ONE
+ * working tree is a patch-series / migration: phases share files (a later phase
+ * EDITS a file an earlier phase CREATES) and mutate shared state, so running them
+ * in parallel races on those files and lets a dependent phase run before its
+ * prerequisite has landed. `concurrency: 1` serializes the units in the plan's
+ * (topological) phase order — same units, no race, prerequisites always present.
+ * `elaborate` keeps the parallel fanout: it writes ISOLATED per-phase docs.
+ */
+const IMPLEMENT_PHASE_FANOUT = { ...FRONTMATTER_PHASE_FANOUT, concurrency: 1 };
+
 // ===========================================================================
 // ship — blueprint → implement → validate → commit
 // ===========================================================================
@@ -189,7 +207,7 @@ const shipWorkflow = defineWorkflow({
 	start: "blueprint",
 	stages: {
 		blueprint: produces(),
-		implement: acts({ loop: FRONTMATTER_PHASE_FANOUT, reads: ["plans"] }),
+		implement: acts({ loop: IMPLEMENT_PHASE_FANOUT, reads: ["plans"] }),
 		validate: produces(),
 		commit: acts({ outcome: gitCommitOutcome }),
 	},
@@ -216,7 +234,7 @@ const buildWorkflow = defineWorkflow({
 	stages: {
 		research: produces(),
 		blueprint: produces(),
-		implement: acts({ loop: FRONTMATTER_PHASE_FANOUT, reads: ["plans"] }),
+		implement: acts({ loop: IMPLEMENT_PHASE_FANOUT, reads: ["plans"] }),
 		validate: produces(),
 		"code-review": produces(),
 		revise: produces({ reads: ["plans", "reviews"] }),
@@ -253,7 +271,7 @@ const archWorkflow = defineWorkflow({
 		research: produces(),
 		design: produces(),
 		plan: produces(),
-		implement: acts({ loop: FRONTMATTER_PHASE_FANOUT, reads: ["plans"] }),
+		implement: acts({ loop: IMPLEMENT_PHASE_FANOUT, reads: ["plans"] }),
 		validate: produces(),
 		"code-review": produces(),
 		commit: acts({ outcome: gitCommitOutcome }),
@@ -287,7 +305,7 @@ const vetWorkflow = defineWorkflow({
 	stages: {
 		"code-review": produces(),
 		blueprint: produces(),
-		implement: acts({ loop: FRONTMATTER_PHASE_FANOUT, reads: ["plans"] }),
+		implement: acts({ loop: IMPLEMENT_PHASE_FANOUT, reads: ["plans"] }),
 		validate: produces(),
 		commit: acts({ outcome: gitCommitOutcome }),
 	},
@@ -483,6 +501,9 @@ const PLANS_PHASE_FANOUT = fanout({
 	},
 });
 
+/** `implement`'s serial twin of `PLANS_PHASE_FANOUT` (polish's multi-plan variant) — same serialize-shared-tree rationale as `IMPLEMENT_PHASE_FANOUT`. */
+const IMPLEMENT_PLANS_FANOUT = { ...PLANS_PHASE_FANOUT, concurrency: 1 };
+
 /**
  * Hand the single validate session EVERY plan from the latest blueprint pass
  * (`latestPlans`). The runner's default rolling-primary — and a plain
@@ -506,7 +527,7 @@ const polishWorkflow = defineWorkflow({
 	stages: {
 		"architecture-review": produces(),
 		blueprint: produces({ loop: REVIEW_PHASE_ITERATE }),
-		implement: acts({ loop: PLANS_PHASE_FANOUT, reads: ["plans"] }),
+		implement: acts({ loop: IMPLEMENT_PLANS_FANOUT, reads: ["plans"] }),
 		validate: produces({ prompt: VALIDATE_PLANS_PROMPT }),
 		"code-review": produces(),
 		commit: acts({ outcome: gitCommitOutcome }),
@@ -577,6 +598,381 @@ const prTriageWorkflow = defineWorkflow({
 });
 
 // ===========================================================================
+// carve — slice → slice-gate (reslice loop) → design (fanout) →
+//         synth-partial (cluster fanout) → synth-root → plan-gate (refine loop) →
+//         elaborate (fanout) → stitch → stitch-gate (re-elaborate loop) →
+//         implement → validate → commit
+//   The sliced, panel-gated heavy path: decompose the brief into independent
+//   vertical slices, gate that breakdown on sizing dimensions BEFORE any design
+//   (so each slice is independently designable in one pass), design every slice
+//   in parallel, merge hierarchically (per-cluster sub-plans → one plan) so no
+//   pass holds every design, gate the plan on quality dimensions BEFORE any
+//   code, elaborate code per phase and stitch it in, re-grade the code-bearing
+//   plan, then implement/validate/commit. The parallel generalization of
+//   `arch`. Promoted (and extended) from the `ship-slice` project pack.
+// ===========================================================================
+
+/**
+ * Sizing dimensions the EARLY gate grades the slice map against — before any
+ * design — so every slice is independently designable in a single pass.
+ * Mirrors the `slice-breakdown` rubric rows in the `grade` skill.
+ */
+const SLICE_DIMENSIONS = ["right-sizing", "independence", "design-readiness", "vertical-shape"] as const;
+
+/**
+ * Quality dimensions the LATER gate grades the synthesized plan against. No
+ * `architecture-fit` — that dimension needs a research artifact for its
+ * `--context`, and carve is the no-research path.
+ */
+const PLAN_DIMENSIONS = ["completeness", "correctness", "actionability", "pattern-following"] as const;
+
+/** `## Slice N:` headings — the source of truth a slice map's `slices:` array is derived from. */
+const SLICE_HEADING_RE = /^## Slice (\d+):/gm;
+
+/**
+ * Parse a slice map's `slices:` frontmatter into `{ n, title }` records,
+ * derive-checked against the body's `## Slice N:` headings and the required
+ * `slice_count` scalar — the slices twin of `planPhaseRecords`. A mismatch means
+ * the producer's rebuild was skipped or the array went stale; throw rather than
+ * dispatch a wrong unit list.
+ */
+const sliceRecords = (content: string, who: string, path: string): readonly PhaseRecord[] => {
+	const { frontmatter } = parseFrontmatter(content);
+	const fm = frontmatter as Record<string, unknown>;
+	const raw = fm.slices;
+	const slices = Array.isArray(raw) ? raw : [];
+	const headingCount = [...content.matchAll(SLICE_HEADING_RE)].length;
+	if (slices.length !== headingCount) {
+		throw haltPreflight(
+			who,
+			`${who}: slice map ${path} has mismatched slices`,
+			`${who}: slice map ${path} frontmatter slices (${slices.length}) ≠ '## Slice N:' headings (${headingCount}) — the derived array is stale against the body`,
+		);
+	}
+	if ((slices.length > 0 || fm.slice_count !== undefined) && fm.slice_count !== slices.length) {
+		throw haltPreflight(
+			who,
+			`${who}: slice map ${path} has invalid slice_count`,
+			`${who}: slice map ${path} frontmatter slice_count (${String(fm.slice_count)}) ≠ slices length (${slices.length}) — rebuild slice_count from the '## Slice N:' headings`,
+		);
+	}
+	return slices.map((entry, index) => {
+		const e = (entry ?? {}) as Record<string, unknown>;
+		return {
+			entry: e,
+			n: typeof e.n === "number" ? e.n : index + 1,
+			title: typeof e.title === "string" ? e.title : "",
+			index,
+			total: slices.length,
+		};
+	});
+};
+
+/** Fan `design-slice` out over the latest slice map's `slices:` array — one design session per slice. */
+const SLICE_DESIGN_FANOUT = fanout({
+	source: "slices",
+	unit: { by: "frontmatter-array", pattern: "slices" },
+	max: MAX_PHASES,
+	units: ({ state, cwd }) => {
+		const doc = latestFsArtifact(state, "slices");
+		if (doc?.handle.kind !== "fs") return [];
+		const path = doc.handle.path;
+		const promptPath = handleToString(doc.handle);
+		return sliceRecords(readArtifactFile(path, cwd), "SLICE_DESIGN_FANOUT", path).map((r) => ({
+			prompt: `${promptPath} Slice ${r.n}: ${r.title}`.trimEnd(),
+			label: `slice ${r.index + 1}/${r.total}`,
+			id: `slice-${r.n}`,
+		}));
+	},
+});
+
+/** Max slices per synth cluster — a context-budget proxy; oversized DAG components split by this. */
+const MAX_CLUSTER_SLICES = 6;
+
+/** The slice-number deps a slice-map entry declares (empty when absent). */
+const sliceDeps = (entry: Record<string, unknown>): number[] => {
+	const raw = entry.deps;
+	return Array.isArray(raw) ? raw.filter((d): d is number => typeof d === "number") : [];
+};
+
+/**
+ * Group slices into clusters = connected components of the `deps` DAG (a slice
+ * and everything it transitively depends on / that depends on it land together),
+ * so coupled slices reconcile inside ONE synth-partial pass and only cross-cluster
+ * seams reach the root. Components larger than `MAX_CLUSTER_SLICES` are chunked
+ * (by slice number) to bound each pass's context. Returns clusters of slice
+ * numbers, each sorted ascending; components ordered by their smallest slice.
+ */
+const clusterSliceDag = (records: readonly PhaseRecord[]): number[][] => {
+	const ns = records.map((r) => r.n);
+	const parent = new Map<number, number>(ns.map((n) => [n, n]));
+	const find = (x: number): number => {
+		let root = x;
+		while (parent.get(root) !== root) root = parent.get(root) ?? root;
+		let cur = x;
+		while (parent.get(cur) !== root) {
+			const next = parent.get(cur) ?? root;
+			parent.set(cur, root);
+			cur = next;
+		}
+		return root;
+	};
+	const union = (a: number, b: number): void => {
+		const ra = find(a);
+		const rb = find(b);
+		if (ra !== rb) parent.set(ra, rb);
+	};
+	for (const r of records) for (const d of sliceDeps(r.entry)) if (parent.has(d)) union(r.n, d);
+	const byRoot = new Map<number, number[]>();
+	for (const n of ns) {
+		const root = find(n);
+		const arr = byRoot.get(root);
+		if (arr) arr.push(n);
+		else byRoot.set(root, [n]);
+	}
+	const clusters: number[][] = [];
+	for (const comp of [...byRoot.values()].sort((a, b) => (a[0] ?? 0) - (b[0] ?? 0))) {
+		const sorted = [...comp].sort((a, b) => a - b);
+		for (let i = 0; i < sorted.length; i += MAX_CLUSTER_SLICES) {
+			clusters.push(sorted.slice(i, i + MAX_CLUSTER_SLICES));
+		}
+	}
+	return clusters;
+};
+
+/** A design filename encodes its slice as `…slice-<N>…` — the design-fanout naming convention. */
+const DESIGN_SLICE_RE = /slice-(\d+)/;
+
+/** Map slice number → its design artifact path, from the design fanout's published outputs. */
+const designPathsBySlice = (state: RunView): Map<number, string> => {
+	const bySlice = new Map<number, string>();
+	(state.named.designs ?? []).forEach((out, idx) => {
+		for (const a of out.artifacts) {
+			if (a.handle.kind !== "fs") continue;
+			const match = DESIGN_SLICE_RE.exec(basename(a.handle.path));
+			const n = match ? Number(match[1]) : idx + 1; // fallback: positional (design i ↔ slice i+1)
+			if (!bySlice.has(n)) bySlice.set(n, handleToString(a.handle));
+		}
+	});
+	return bySlice;
+};
+
+/**
+ * Fan `synth-partial` out over slice-DAG clusters. Each unit merges ONE cluster's
+ * per-slice designs into a sub-plan (`--as-subplan`), so no single pass holds
+ * every design — the context-bounding twin of the flat fan-in `synthesize`.
+ */
+const SYNTH_CLUSTER_FANOUT = fanout({
+	source: "designs",
+	unit: { by: "slice-dag-cluster", pattern: "clusters" },
+	max: MAX_PHASES,
+	units: ({ state, cwd }) => {
+		const doc = latestFsArtifact(state, "slices");
+		if (doc?.handle.kind !== "fs") return [];
+		const records = sliceRecords(readArtifactFile(doc.handle.path, cwd), "SYNTH_CLUSTER_FANOUT", doc.handle.path);
+		const designBySlice = designPathsBySlice(state);
+		return clusterSliceDag(records)
+			.map((cluster, i) => {
+				const designs = cluster
+					.map((n) => designBySlice.get(n))
+					.filter((p): p is string => p !== undefined)
+					.map((p) => `--designs ${p}`);
+				if (!designs.length) return undefined;
+				return {
+					prompt: `${designs.join(" ")} --as-subplan`,
+					label: `cluster ${i + 1} (slices ${cluster.join(",")})`,
+					id: `cluster-${i + 1}`,
+				};
+			})
+			.filter((u): u is { prompt: string; label: string; id: string } => u !== undefined);
+	},
+});
+
+/**
+ * A grade panel: one `grade` session per dimension over the latest artifact on
+ * `channel`. Each unit's prompt is the `grade` skill's flags
+ * (`--dimension <d> --artifact <path>`); the per-dimension verdicts fold via
+ * `allDimensionsPass`. Shared by the slice gate (over `slices`) and the plan
+ * gate (over `plans`).
+ */
+const gradePanelFanout = (channel: string, dimensions: readonly string[]) =>
+	fanout({
+		source: channel,
+		unit: { by: "dimension-list", pattern: "dimensions" },
+		max: dimensions.length,
+		units: ({ state }) => {
+			const doc = latestFsArtifact(state, channel);
+			if (doc?.handle.kind !== "fs") return [];
+			const target = handleToString(doc.handle);
+			return dimensions.map((d) => ({
+				prompt: `--dimension ${d} --artifact ${target}`,
+				label: d,
+				id: `${channel}-dim-${d}`,
+			}));
+		},
+	});
+
+const SLICE_DIMENSION_FANOUT = gradePanelFanout("slices", SLICE_DIMENSIONS);
+const PLAN_DIMENSION_FANOUT = gradePanelFanout("plans", PLAN_DIMENSIONS);
+
+/**
+ * Fold the per-dimension verdicts into a gate decision: keep the latest verdict
+ * per dimension (verdicts accumulate across refine loops), require all-pass.
+ * Deterministic ⇒ resume-safe for a `readsData: false` route.
+ */
+const allDimensionsPass = (entries: readonly Output[] = []): boolean => {
+	const latest = new Map<string, boolean>();
+	for (const o of entries) {
+		const v = o.data as { dimension?: string; pass?: boolean } | undefined;
+		if (typeof v?.dimension === "string") latest.set(v.dimension, v.pass === true);
+	}
+	const verdicts = [...latest.values()];
+	return verdicts.length > 0 && verdicts.every(Boolean);
+};
+
+/**
+ * Verdict channels — grade writes JSON to `.rpiv/artifacts/verdicts/`, so these
+ * use the JSON directory collector + `jsonBodyParser` (NOT the md
+ * `rpivBucketOutcome`). The slice gate and plan gate publish to DISTINCT named
+ * channels (same dir, different artifact basenames) so their verdicts never
+ * collide and `refine` can pick each via the `-verdicts` suffix convention.
+ */
+const verdictOutcome = (name: string) => ({
+	name,
+	collector: directoryPathCollector({ dir: ".rpiv/artifacts/verdicts", ext: "json" }),
+	parser: jsonBodyParser,
+});
+const sliceVerdictOutcome = verdictOutcome("slice-verdicts");
+const planVerdictOutcome = verdictOutcome("plan-verdicts");
+// The post-stitch gate re-grades the now code-bearing plan on its own channel,
+// so its verdicts never mix with the pre-elaborate plan gate's.
+const stitchVerdictOutcome = verdictOutcome("stitch-verdicts");
+
+/**
+ * Absolute path to rpiv-pi's bundled deterministic stitch script. Resolved off
+ * this module's own URL so it points inside the installed package at runtime
+ * (built-in-workflows lives in extensions/rpiv-core; the script in skills/_shared).
+ */
+const STITCH_SCRIPT = join(
+	dirname(fileURLToPath(import.meta.url)),
+	"..",
+	"..",
+	"skills",
+	"_shared",
+	"stitch-elaborations.mjs",
+);
+
+const carveWorkflow = defineWorkflow({
+	name: "carve",
+	description:
+		"Ship, sliced: decompose the brief into vertical slices → sizing-panel gate (right-sizing/independence/design-readiness/vertical-shape — each slice independently designable in one pass) with a reslice loop → design each slice in parallel → synthesize hierarchically (per-cluster sub-plans → one merged plan) → quality-panel gate (completeness/correctness/actionability/pattern-following) with a refine loop → elaborate code per phase in parallel → stitch → re-grade the code-bearing plan → implement → validate → commit. No research; three gates, before design, before code, and after stitch.",
+	start: "slice",
+	stages: {
+		slice: produces(),
+		// Sizing gate (one grade session per sizing dimension); verdicts on their own channel.
+		"slice-gate": produces({
+			skill: "grade",
+			loop: SLICE_DIMENSION_FANOUT,
+			outcome: sliceVerdictOutcome,
+			reads: ["slices"],
+		}),
+		// Re-cut the slice map from the failing verdicts. Routes through `slice`
+		// (re-slice mode), NOT the surgical `refine`: a `right-sizing`/`independence`
+		// failure needs STRUCTURAL authority — split an epic, break a cycle, renumber —
+		// which a surgical "touch only the cited line" edit cannot do, so `refine`
+		// looped without converging until the backward-jump guard halted the run.
+		reslice: produces({
+			skill: "slice",
+			outcome: rpivBucketOutcome("slices"),
+			reads: ["slices", fanin("slice-verdicts")],
+		}),
+		// Design every slice in parallel.
+		design: produces({ skill: "design-slice", loop: SLICE_DESIGN_FANOUT }),
+		// Hierarchical fan-in: merge each slice-DAG cluster into a sub-plan in
+		// parallel (bounded context), then merge the sub-plans into one plan.
+		"synth-partial": produces({
+			skill: "synthesize",
+			loop: SYNTH_CLUSTER_FANOUT,
+			outcome: rpivBucketOutcome("subplans"),
+		}),
+		"synth-root": produces({ skill: "synthesize", reads: [fanin("subplans")] }),
+		// Quality gate over the plan; verdicts on their own channel.
+		"plan-gate": produces({
+			skill: "grade",
+			loop: PLAN_DIMENSION_FANOUT,
+			outcome: planVerdictOutcome,
+			reads: ["plans"],
+		}),
+		refine: produces({
+			skill: "refine",
+			outcome: rpivBucketOutcome("plans"),
+			reads: ["plans", fanin("plan-verdicts")],
+		}),
+		// Elaborate implement-ready code into each phase in parallel (fanout),
+		// deterministically splice it back into the plan (stitch), then re-grade
+		// the now code-bearing plan — guarding the blind-splice risk.
+		elaborate: produces({ skill: "elaborate", loop: FRONTMATTER_PHASE_FANOUT, reads: ["plans"] }),
+		stitch: acts.script({
+			reads: ["plans"],
+			run: ({ state, cwd }) => {
+				const plan = latestFsArtifact(state, "plans");
+				if (plan?.handle.kind !== "fs") {
+					throw haltPreflight(
+						"stitch",
+						"stitch: no plan to stitch",
+						"stitch: no fs plan artifact on the 'plans' channel — synthesize must run before elaborate/stitch",
+					);
+				}
+				const planPath = isAbsolute(plan.handle.path) ? plan.handle.path : join(cwd, plan.handle.path);
+				execFileSync("node", [STITCH_SCRIPT, planPath], { cwd });
+			},
+		}),
+		"stitch-gate": produces({
+			skill: "grade",
+			loop: PLAN_DIMENSION_FANOUT,
+			outcome: stitchVerdictOutcome,
+			reads: ["plans"],
+		}),
+		implement: acts({ loop: IMPLEMENT_PHASE_FANOUT, reads: ["plans"] }),
+		validate: produces(),
+		commit: acts({ outcome: gitCommitOutcome }),
+	},
+	edges: {
+		slice: "slice-gate",
+		// Sizing gate BEFORE any design. All sizing dims pass ⇒ design; any fails ⇒
+		// reslice and loop back. Bounded by the runner's maxBackwardJumps (default 2).
+		"slice-gate": defineRoute(
+			["design", "reslice"],
+			({ state }) => (allDimensionsPass(state.named["slice-verdicts"]) ? "design" : "reslice"),
+			{ readsData: false },
+		),
+		reslice: "slice-gate",
+		design: "synth-partial",
+		"synth-partial": "synth-root",
+		"synth-root": "plan-gate",
+		// Quality gate BEFORE any code. Pass ⇒ elaborate; any fails ⇒ refine and loop back.
+		"plan-gate": defineRoute(
+			["elaborate", "refine"],
+			({ state }) => (allDimensionsPass(state.named["plan-verdicts"]) ? "elaborate" : "refine"),
+			{ readsData: false },
+		),
+		refine: "plan-gate",
+		elaborate: "stitch",
+		stitch: "stitch-gate",
+		// Re-grade the code-bearing plan. Pass ⇒ implement; any fails ⇒ re-elaborate
+		// (and re-stitch, re-grade). Bounded by the runner's maxBackwardJumps.
+		"stitch-gate": defineRoute(
+			["implement", "elaborate"],
+			({ state }) => (allDimensionsPass(state.named["stitch-verdicts"]) ? "implement" : "elaborate"),
+			{ readsData: false },
+		),
+		implement: "validate",
+		validate: "commit",
+		commit: "stop",
+	},
+});
+
+// ===========================================================================
 // Exports
 // ===========================================================================
 
@@ -587,4 +983,5 @@ export const builtInWorkflows: readonly Workflow[] = [
 	vetWorkflow,
 	polishWorkflow,
 	prTriageWorkflow,
+	carveWorkflow,
 ];

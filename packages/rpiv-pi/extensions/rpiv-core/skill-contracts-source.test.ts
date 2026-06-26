@@ -268,9 +268,9 @@ describe("bundled skill contracts", () => {
 
 	it("documents the declared-but-not-harvested orthogonal set", () => {
 		// These skills declare a contract but don't appear in any built-in workflow.
-		// The orthogonal set: 7 doc/util + 6 slice-flow (slice/design-slice/
-		// synthesize/elaborate/grade/refine, used by the ship-slice project pack,
-		// not a built-in) + discover + explore + commit = 16 skills.
+		// The orthogonal set: 7 doc/util + discover + explore + commit = 10 skills.
+		// The entire slice-flow (slice/design-slice/synthesize/grade/refine/elaborate)
+		// IS now harvested by the `carve` built-in.
 		// (pr-triage IS harvested — it's dispatched by the pr-triage workflow.)
 		const harvested = harvestStageContracts(builtInWorkflows);
 		const notHarvested: string[] = [];
@@ -284,17 +284,11 @@ describe("bundled skill contracts", () => {
 				"changelog",
 				"commit",
 				"create-handoff",
-				"design-slice",
 				"discover",
-				"elaborate",
 				"explore",
 				"frontend-design",
-				"grade",
 				"migrate-to-guidance",
-				"refine",
 				"resume-handoff",
-				"slice",
-				"synthesize",
 			].sort(),
 		);
 	});

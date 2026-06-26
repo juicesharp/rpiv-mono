@@ -33,11 +33,16 @@ function contractsFromKinds(entries: Array<[string, string]>): SkillContractMap 
 	return map;
 }
 
-/** Strip `outcome` from every stage in a workflow (non-mutating). */
-function stripOutcomes(w: Workflow): Workflow {
+/**
+ * Strip `outcome` from every stage in a workflow (non-mutating), EXCEPT stages
+ * for which `keep(stageName)` is true — those retain their explicit outcome so
+ * the deriver's rung-1 ("explicit wins") skips them. Used to model carve's
+ * explicit-by-design stages, which are never meant to be derived.
+ */
+function stripOutcomes(w: Workflow, keep: (stageName: string) => boolean = () => false): Workflow {
 	const stages: typeof w.stages = {};
 	for (const [name, stage] of Object.entries(w.stages)) {
-		if (stage.outcome) {
+		if (stage.outcome && !keep(name)) {
 			const { outcome: _, ...rest } = stage;
 			stages[name] = rest;
 		} else {
@@ -52,15 +57,17 @@ function stripOutcomes(w: Workflow): Workflow {
 // ---------------------------------------------------------------------------
 
 describe("BUCKET_BY_KIND", () => {
-	it("contains exactly 10 entries", () => {
-		expect(Object.keys(BUCKET_BY_KIND)).toHaveLength(10);
+	it("contains exactly 12 entries", () => {
+		expect(Object.keys(BUCKET_BY_KIND)).toHaveLength(12);
 	});
 
 	it("covers all artifactKinds used by produces skills", () => {
 		const expectedKinds = [
 			"plan",
 			"research",
+			"slices",
 			"design",
+			"elaboration",
 			"solutions",
 			"review",
 			"validation",
@@ -260,6 +267,11 @@ describe("equivalence — built-in workflows", () => {
 		["code-review", "review"],
 		["revise", "plan"],
 		["pr-triage", "triage"],
+		// carve's derivable produces skills
+		["slice", "slices"],
+		["design-slice", "design"],
+		["synthesize", "plan"],
+		["elaborate", "elaboration"],
 	];
 
 	/**
@@ -293,6 +305,30 @@ describe("equivalence — built-in workflows", () => {
 		"polish::code-review": "reviews",
 		// pr-triage
 		"pr-triage::pr-triage": "triage",
+		// carve (derivable produces stages only — the explicit-outcome stages
+		// below are asserted separately)
+		"carve::slice": "slices",
+		"carve::design": "designs",
+		"carve::synth-root": "plans",
+		"carve::elaborate": "elaborations",
+		"carve::validate": "validation",
+	};
+
+	/**
+	 * carve's explicit-by-design produces stages — NOT derived (rung 1 wins):
+	 * the two grade gates publish verdicts to DISTINCT channels (derivation maps
+	 * one kind → one bucket, so it can't split them), and the generic `refine`
+	 * skill is reused for both the slice map and the plan (its contract has no
+	 * single artifactKind to derive). These keep explicit outcomes; the test
+	 * asserts those names rather than a derived one.
+	 */
+	const EXPLICIT_OUTCOMES: Record<string, string> = {
+		"carve::slice-gate": "slice-verdicts",
+		"carve::reslice": "slices",
+		"carve::synth-partial": "subplans",
+		"carve::plan-gate": "plan-verdicts",
+		"carve::refine": "plans",
+		"carve::stitch-gate": "stitch-verdicts",
 	};
 
 	/**
@@ -310,6 +346,9 @@ describe("equivalence — built-in workflows", () => {
 		"vet::implement",
 		"polish::commit",
 		"polish::implement",
+		"carve::commit",
+		"carve::implement",
+		"carve::stitch",
 	]);
 
 	// Need architecture-review contract too
@@ -317,7 +356,7 @@ describe("equivalence — built-in workflows", () => {
 
 	for (const w of builtInWorkflows) {
 		describe(`workflow: ${w.name}`, () => {
-			const stripped = stripOutcomes(w);
+			const stripped = stripOutcomes(w, (name) => EXPLICIT_OUTCOMES[`${w.name}::${name}`] !== undefined);
 			const issues: Array<{ message: string; severity: string }> = [];
 
 			deriveOutcomes(
@@ -348,6 +387,15 @@ describe("equivalence — built-in workflows", () => {
 
 				if (stage.kind !== "produces") continue;
 
+				const explicit = EXPLICIT_OUTCOMES[key];
+				if (explicit) {
+					it(`${stageName}: carries explicit outcome.name = "${explicit}" (not derived)`, () => {
+						expect(stage.outcome).toBeDefined();
+						expect(stage.outcome?.name).toBe(explicit);
+					});
+					continue;
+				}
+
 				const expected = EXPECTED[key];
 				if (!expected) {
 					it(`${stageName}: produces stage with no expected mapping — SKIPPED`, () => {
@@ -368,14 +416,14 @@ describe("equivalence — built-in workflows", () => {
 		});
 	}
 
-	it("total produces stages across all workflows = 20", () => {
+	it("total produces stages across all workflows = 31", () => {
 		let count = 0;
 		for (const w of builtInWorkflows) {
 			for (const stage of Object.values(w.stages)) {
 				if (stage.kind === "produces") count++;
 			}
 		}
-		expect(count).toBe(20);
+		expect(count).toBe(31);
 	});
 });
 
