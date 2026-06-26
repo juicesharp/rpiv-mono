@@ -11,13 +11,16 @@ import {
 	evictRun,
 	getDockState,
 	type LaneSession,
+	markUnitDone,
 	recordRun,
 	retireRun,
+	SINGLE_UNIT_KEY,
 	setCurrentSession,
 	setDockActive,
 	setDockSelection,
 	setLaneProgress,
 	setLaneStatus,
+	setUnitStarted,
 } from "./run-lane-registry.js";
 
 const WIDGET_KEY = "rpiv-lanes";
@@ -210,7 +213,11 @@ describe("LaneDock — rendering", () => {
 		const overlay = new LaneDock();
 		const { widget } = mount(overlay, makeCtx());
 		expect(widget?.render(120)[0]).not.toContain("●");
-		enqueueInput("run-1", { factory: (() => ({})) as never, options: undefined as never, resolve: () => {} });
+		enqueueInput("run-1", SINGLE_UNIT_KEY, {
+			factory: (() => ({})) as never,
+			options: undefined as never,
+			resolve: () => {},
+		});
 		const out = (widget?.render(120) ?? []).join("\n");
 		expect(out).toContain("●");
 		expect(out).toContain("needs input");
@@ -221,7 +228,11 @@ describe("LaneDock — rendering", () => {
 		recordRun("run-1", "ship");
 		const overlay = new LaneDock();
 		const { widget } = mount(overlay, makeCtx());
-		enqueueInput("run-1", { factory: (() => ({})) as never, options: undefined as never, resolve: () => {} });
+		enqueueInput("run-1", SINGLE_UNIT_KEY, {
+			factory: (() => ({})) as never,
+			options: undefined as never,
+			resolve: () => {},
+		});
 		const heading = (widget?.render(120) ?? [])[1] ?? ""; // [0] is the top rule
 		expect(heading).toMatch(/1 run needs input · \d+s/);
 	});
@@ -232,15 +243,19 @@ describe("LaneDock — rendering", () => {
 		const overlay = new LaneDock();
 		const { widget } = mount(overlay, makeCtx());
 		const pend = { factory: (() => ({})) as never, options: undefined as never, resolve: () => {} };
-		enqueueInput("run-1", pend);
-		enqueueInput("run-2", pend);
+		enqueueInput("run-1", SINGLE_UNIT_KEY, pend);
+		enqueueInput("run-2", SINGLE_UNIT_KEY, pend);
 		expect((widget?.render(120) ?? [])[1]).toContain("2 runs need input"); // [0] is the top rule
 	});
 
 	it("needs-input lane is never hidden below the '+N more' fold (Phase B priority sort)", () => {
 		// 12 lanes (> the 11-row budget) → collapse; the LAST-launched one needs input.
 		for (let i = 0; i < 12; i++) recordRun(`run-${i}`, `lane${i}`);
-		enqueueInput("run-11", { factory: (() => ({})) as never, options: undefined as never, resolve: () => {} });
+		enqueueInput("run-11", SINGLE_UNIT_KEY, {
+			factory: (() => ({})) as never,
+			options: undefined as never,
+			resolve: () => {},
+		});
 		const overlay = new LaneDock();
 		const { widget } = mount(overlay, makeCtx());
 		const out = (widget?.render(200) ?? []).join("\n");
@@ -400,7 +415,11 @@ describe("LaneDock — live stage progress (Phase 8)", () => {
 	it("needs-input still wins the trailing label over live progress", () => {
 		recordRun("run-1", "ship");
 		setLaneProgress("run-1", { stageNumber: 3, totalStages: 7, stageName: "plan-layers", phase: "running" });
-		enqueueInput("run-1", { factory: (() => ({})) as never, options: undefined as never, resolve: () => {} });
+		enqueueInput("run-1", SINGLE_UNIT_KEY, {
+			factory: (() => ({})) as never,
+			options: undefined as never,
+			resolve: () => {},
+		});
 		const overlay = new LaneDock();
 		const { widget } = mount(overlay, makeCtx());
 		const out = (widget?.render(120) ?? []).join("\n");
@@ -562,7 +581,11 @@ describe("LaneDock — spinner animation", () => {
 	it("the needs-input heartbeat repaints to age the heading even when no lane is running (Phase C)", () => {
 		vi.useFakeTimers();
 		recordRun("run-1", "ship");
-		enqueueInput("run-1", { factory: (() => ({})) as never, options: undefined as never, resolve: () => {} });
+		enqueueInput("run-1", SINGLE_UNIT_KEY, {
+			factory: (() => ({})) as never,
+			options: undefined as never,
+			resolve: () => {},
+		});
 		setLaneStatus("run-1", "completed"); // not "running" → spinner timer stays off
 		const overlay = new LaneDock();
 		const { tui } = mount(overlay, makeCtx());
@@ -576,12 +599,16 @@ describe("LaneDock — spinner animation", () => {
 		vi.useFakeTimers();
 		const clearIntervalSpy = vi.spyOn(globalThis, "clearInterval");
 		recordRun("run-1", "ship");
-		enqueueInput("run-1", { factory: (() => ({})) as never, options: undefined as never, resolve: () => {} });
+		enqueueInput("run-1", SINGLE_UNIT_KEY, {
+			factory: (() => ({})) as never,
+			options: undefined as never,
+			resolve: () => {},
+		});
 		setLaneStatus("run-1", "completed");
 		const overlay = new LaneDock();
 		mount(overlay, makeCtx());
 		// Drain the queue → next update clears the heartbeat timer.
-		dequeueInput("run-1");
+		dequeueInput("run-1", SINGLE_UNIT_KEY);
 		overlay.update();
 		expect(clearIntervalSpy).toHaveBeenCalled();
 		overlay.dispose();
@@ -620,7 +647,11 @@ describe("LaneDock — active (focused) state", () => {
 
 	it("active footer advertises ⏎ answer when the selected lane has a queued question", () => {
 		recordRun("run-1", "ship");
-		enqueueInput("run-1", { factory: (() => ({})) as never, options: undefined as never, resolve: () => {} });
+		enqueueInput("run-1", SINGLE_UNIT_KEY, {
+			factory: (() => ({})) as never,
+			options: undefined as never,
+			resolve: () => {},
+		});
 		const overlay = new LaneDock();
 		const { widget } = mount(overlay, makeCtx());
 		setDockActive(true);
@@ -793,7 +824,7 @@ describe("LaneDock — preview subscription (Slice 5)", () => {
 	it("does not subscribe to any session while ambient (inactive)", () => {
 		recordRun("run-1", "ship");
 		const session = makeSession();
-		setCurrentSession("run-1", session);
+		setCurrentSession("run-1", SINGLE_UNIT_KEY, session);
 		const overlay = new LaneDock();
 		mount(overlay, makeCtx());
 		overlay.update();
@@ -804,7 +835,7 @@ describe("LaneDock — preview subscription (Slice 5)", () => {
 	it("subscribes to the selected lane's session while active and identity-guards unrelated notifies", () => {
 		recordRun("run-1", "ship");
 		const session = makeSession();
-		setCurrentSession("run-1", session);
+		setCurrentSession("run-1", SINGLE_UNIT_KEY, session);
 		const overlay = new LaneDock();
 		mount(overlay, makeCtx());
 		setDockActive(true);
@@ -824,8 +855,8 @@ describe("LaneDock — preview subscription (Slice 5)", () => {
 		recordRun("run-2", "build");
 		const s1 = makeSession();
 		const s2 = makeSession();
-		setCurrentSession("run-1", s1);
-		setCurrentSession("run-2", s2);
+		setCurrentSession("run-1", SINGLE_UNIT_KEY, s1);
+		setCurrentSession("run-2", SINGLE_UNIT_KEY, s2);
 		const overlay = new LaneDock();
 		mount(overlay, makeCtx());
 		setDockActive(true);
@@ -842,7 +873,7 @@ describe("LaneDock — preview subscription (Slice 5)", () => {
 	it("dispose tears down the preview subscription", () => {
 		recordRun("run-1", "ship");
 		const session = makeSession();
-		setCurrentSession("run-1", session);
+		setCurrentSession("run-1", SINGLE_UNIT_KEY, session);
 		const overlay = new LaneDock();
 		mount(overlay, makeCtx());
 		setDockActive(true);
@@ -863,6 +894,7 @@ describe("LaneDock — active transcript preview (Slice 6)", () => {
 		recordRun("run-1", "ship");
 		setCurrentSession(
 			"run-1",
+			SINGLE_UNIT_KEY,
 			makeSession(() => [assistantEntry("PREVIEW_BODY")]),
 		);
 		const overlay = new LaneDock();
@@ -875,6 +907,7 @@ describe("LaneDock — active transcript preview (Slice 6)", () => {
 		recordRun("run-1", "ship");
 		setCurrentSession(
 			"run-1",
+			SINGLE_UNIT_KEY,
 			makeSession(() => [assistantEntry("PREVIEW_BODY")]),
 		);
 		const overlay = new LaneDock();
@@ -900,6 +933,7 @@ describe("LaneDock — active transcript preview (Slice 6)", () => {
 		recordRun("run-1", "ship");
 		setCurrentSession(
 			"run-1",
+			SINGLE_UNIT_KEY,
 			makeSession(() => many),
 		);
 		const overlay = new LaneDock();
@@ -916,6 +950,7 @@ describe("LaneDock — active transcript preview (Slice 6)", () => {
 		recordRun("run-1", "polish");
 		setCurrentSession(
 			"run-1",
+			SINGLE_UNIT_KEY,
 			makeSession(() => [assistantEntry("body")]),
 		);
 		const overlay = new LaneDock();
@@ -932,7 +967,7 @@ describe("LaneDock — active transcript preview (Slice 6)", () => {
 		recordRun("run-1", "ship");
 		const session = makeSession(() => [assistantEntry("COMMITTED_BODY")]);
 		session.setStreaming({ role: "assistant", content: [{ type: "thinking", thinking: "STREAMING_THOUGHT" }] });
-		setCurrentSession("run-1", session);
+		setCurrentSession("run-1", SINGLE_UNIT_KEY, session);
 		const overlay = new LaneDock();
 		const { widget } = mount(overlay, makeCtx());
 		setDockActive(true);
@@ -945,7 +980,7 @@ describe("LaneDock — active transcript preview (Slice 6)", () => {
 		recordRun("run-1", "ship");
 		const session = makeSession(() => [assistantEntry("COMMITTED_BODY")]);
 		session.setStreaming({ role: "assistant", content: [{ type: "thinking", thinking: "TRANSIENT" }] });
-		setCurrentSession("run-1", session);
+		setCurrentSession("run-1", SINGLE_UNIT_KEY, session);
 		const overlay = new LaneDock();
 		const { widget } = mount(overlay, makeCtx());
 		setDockActive(true);
@@ -954,6 +989,90 @@ describe("LaneDock — active transcript preview (Slice 6)", () => {
 		session.setStreaming(undefined);
 		overlay.update(); // re-render after the turn commits
 		expect((widget?.render(120) ?? []).join("\n")).not.toContain("TRANSIENT");
+		overlay.dispose();
+	});
+});
+
+describe("LaneDock — fanout unit sub-rows (Phase 6)", () => {
+	const assistantEntry = (text: string) => ({
+		type: "message",
+		message: { role: "assistant", content: [{ type: "text", text }] },
+	});
+	const pending = () => ({ factory: (() => ({})) as never, options: undefined as never, resolve: () => {} });
+
+	it("flattens a fanout lane into 1 + N rows: the lane row + an indented sub-row per unit", () => {
+		recordRun("run-1", "carve");
+		setUnitStarted("run-1", 0, "phase 1/3");
+		setUnitStarted("run-1", 1, "phase 2/3");
+		setUnitStarted("run-1", 2, "phase 3/3");
+		const overlay = new LaneDock();
+		const { widget } = mount(overlay, makeCtx());
+		const out = (widget?.render(120) ?? []).join("\n");
+		// the lane (parent) row + one labelled sub-row per fanout unit.
+		expect(out).toContain("carve");
+		expect(out).toContain("phase 1/3");
+		expect(out).toContain("phase 2/3");
+		expect(out).toContain("phase 3/3");
+		overlay.dispose();
+	});
+
+	it("a single-stage run (sentinel-only) shows exactly one lane row, no sub-rows", () => {
+		recordRun("run-1", "ship");
+		setCurrentSession("run-1", SINGLE_UNIT_KEY, makeSession());
+		const overlay = new LaneDock();
+		const { widget } = mount(overlay, makeCtx());
+		const lines = widget?.render(120) ?? [];
+		// SINGLE_UNIT_KEY (-1) never flattens into a sub-row, so the workflow appears once.
+		expect(lines.filter((l) => l.includes("ship")).length).toBe(1);
+		overlay.dispose();
+	});
+
+	it("unit sub-row glyph priority: needs-input ⚑ wins; done shows ✓; a still-running unit spins", () => {
+		vi.useFakeTimers();
+		recordRun("run-1", "carve");
+		setUnitStarted("run-1", 0, "u-running");
+		setUnitStarted("run-1", 1, "u-done");
+		markUnitDone("run-1", 1, "done");
+		setUnitStarted("run-1", 2, "u-needs");
+		enqueueInput("run-1", 2, pending());
+		const overlay = new LaneDock();
+		const { widget } = mount(overlay, makeCtx());
+		const lines = widget?.render(120) ?? [];
+		const rowOf = (label: string) => lines.find((l) => l.includes(label)) ?? "";
+		expect(rowOf("u-needs")).toContain("⚑");
+		expect(rowOf("u-done")).toContain("✓");
+		const SPINNER_FRAMES = ["⠴", "⠦", "⠖", "⠲"];
+		expect(SPINNER_FRAMES.some((g) => rowOf("u-running").includes(g))).toBe(true);
+		overlay.dispose();
+	});
+
+	it("the active preview follows the SELECTED unit sub-row's own session (not the lane's)", () => {
+		recordRun("run-1", "carve");
+		setUnitStarted("run-1", 0, "phase 1");
+		setUnitStarted("run-1", 1, "phase 2");
+		setCurrentSession(
+			"run-1",
+			1,
+			makeSession(() => [assistantEntry("UNIT1_BODY")]),
+		);
+		const overlay = new LaneDock();
+		const { widget } = mount(overlay, makeCtx());
+		setDockActive(true);
+		// flattened rows: 0=lane, 1=unit0, 2=unit1 — select the unit-1 sub-row.
+		setDockSelection(2);
+		const out = (widget?.render(120) ?? []).join("\n");
+		expect(out).toContain("UNIT1_BODY");
+		overlay.dispose();
+	});
+
+	it("x on a unit sub-row is the parent run's — the lane heading counts come from the lane set", () => {
+		recordRun("run-1", "carve");
+		setUnitStarted("run-1", 0, "phase 1");
+		setUnitStarted("run-1", 1, "phase 2");
+		const overlay = new LaneDock();
+		const { widget } = mount(overlay, makeCtx());
+		// 1 running lane → heading reads "(1 active)" despite 3 display rows.
+		expect((widget?.render(120) ?? [])[1]).toContain("Runs (1 active)");
 		overlay.dispose();
 	});
 });

@@ -30,7 +30,9 @@ import {
 } from "./lane-transcript.js";
 import { type DiskBranch, loadBranchFromDisk } from "./lane-transcript-disk.js";
 import {
+	type DisplayRow,
 	getDockState,
+	getUnit,
 	type LaneEntry,
 	type LaneProgress,
 	type LaneSession,
@@ -38,7 +40,10 @@ import {
 	laneNeedsInput,
 	listLanes,
 	listLanesForDisplay,
+	SINGLE_UNIT_KEY,
 	setDockActive,
+	type UnitLane,
+	unitNeedsInput,
 } from "./run-lane-registry.js";
 
 const WIDGET_KEY = "rpiv-lanes";
@@ -261,7 +266,7 @@ export class LaneDock {
 	 *  stalled run's "needs input · Nm" heading ages visibly even when nothing streams.
 	 *  Independent of the spinner timer (which stops when no lane is running). */
 	private syncHeartbeat(lanes: LaneEntry[]): void {
-		const anyNeedsInput = lanes.some((l) => l.pendingInput.length > 0);
+		const anyNeedsInput = lanes.some((l) => laneNeedsInput(l.runId));
 		if (anyNeedsInput && !this.needsInputTimer) {
 			this.needsInputTimer = setInterval(() => this.tui?.requestRender(), NEEDS_INPUT_TICK_MS);
 			this.needsInputTimer.unref?.();
@@ -282,9 +287,8 @@ export class LaneDock {
 	 * (no selection) — the preview is active-only.
 	 */
 	private syncPreviewSubscription(): void {
-		const { active, selection } = getDockState();
-		const selLane = active ? listLanesForDisplay()[selection] : undefined;
-		const next = selLane?.currentSession;
+		const sel = this.selectedUnit();
+		const next = sel?.unit?.currentSession;
 		if (next === this.previewSession) return;
 		this.previewUnsub?.();
 		this.previewSession = next;
@@ -296,19 +300,35 @@ export class LaneDock {
 		this.previewUnsub = next?.subscribe(() => this.tui?.requestRender());
 	}
 
+	/** Resolve the selected display row to a unit address — the SINGLE seam both the
+	 *  preview subscription and the preview render go through (so they can't drift). A
+	 *  lane (parent) row resolves the sentinel unit; a unit sub-row resolves itself.
+	 *  No-op while ambient (no selection) — the preview is active-only. */
+	private selectedUnit(): { runId: string; unitIndex: number; unit: UnitLane | undefined } | undefined {
+		const { active, selection } = getDockState();
+		if (!active) return undefined;
+		const row = listLanesForDisplay()[selection];
+		if (!row) return undefined;
+		if (row.kind === "unit") return { runId: row.lane.runId, unitIndex: row.unit.index, unit: row.unit };
+		return { runId: row.lane.runId, unitIndex: SINGLE_UNIT_KEY, unit: getUnit(row.lane.runId, SINGLE_UNIT_KEY) };
+	}
+
 	private renderWidget(theme: Theme, width: number): string[] {
-		// Phase B — display order is a stable priority sort (needs-input → running →
-		// terminal), so the lane that needs the user never hides below the `+N more` fold.
-		const lanes = listLanesForDisplay();
-		if (lanes.length === 0) return [];
+		// Flattened display rows (lane rows + indented unit sub-rows); selection indexes
+		// THIS list. Phase B — display order is a stable priority sort (needs-input →
+		// running → terminal), so the lane that needs the user never hides below the fold.
+		const rows = listLanesForDisplay();
+		if (rows.length === 0) return [];
+		// Lane-level heading counts come from the lane set, not the (larger) row count.
+		const allLanes = listLanes();
 		const truncate = (line: string): string => truncateToWidth(line, width, "…");
-		// Dock navigation state — drives the `▸` selection cursor and the footer hint.
+		// Dock navigation state — drives the `❯` selection cursor and the footer hint.
 		// Selection indexes this same listLanesForDisplay() order (clamped on read).
 		const { active, selection } = getDockState();
 
-		const needsInputLanes = lanes.filter((l) => laneNeedsInput(l.runId));
+		const needsInputLanes = allLanes.filter((l) => laneNeedsInput(l.runId));
 		const anyNeedsInput = needsInputLanes.length > 0;
-		const activeCount = lanes.filter((l) => l.status === "running").length;
+		const activeCount = allLanes.filter((l) => l.status === "running").length;
 		// Phase C — when a run is blocked on input, the title SHOUTS it and ages: the
 		// oldest pending question drives "N run(s) need input · 4m". Otherwise show the
 		// active count (terminal lanes are retained — Phase A — so total ≠ active).
@@ -319,7 +339,7 @@ export class LaneDock {
 			const verb = needsInputLanes.length === 1 ? "run needs" : "runs need";
 			headText = `${needsInputLanes.length} ${verb} input · ${formatAge(now - oldest)}`;
 		} else {
-			headText = activeCount > 0 ? `Runs (${activeCount} active)` : `Runs (${lanes.length})`;
+			headText = activeCount > 0 ? `Runs (${activeCount} active)` : `Runs (${allLanes.length})`;
 		}
 		// Title is rendered as a CHIP, exactly like ask_user_question's question HEADER
 		// badge (tab-content-strategy.ts): a selectedBg block with one space of padding on
@@ -347,48 +367,97 @@ export class LaneDock {
 		// only swaps spaces for the `❯` cursor — no row ever shifts. sel(i) marks the
 		// active selection (only true while active).
 		const sel = (i: number): boolean => active && i === selection;
-		// Content-aware descriptor-label width — the MAX descriptor width among the visible
-		// lanes (clamped to MAX_LABEL_WIDTH and the available row width), so the progress
-		// region (bar / N-total) stays column-aligned (FR7) AND a render with no descriptors
-		// keeps the old narrow prefix (labelWidth 0 → no label cell). Constant across rows.
+		// Content-aware descriptor-label width — the MAX descriptor width among the LANE
+		// rows (the column the lane row's descriptor occupies), clamped to MAX_LABEL_WIDTH
+		// and the available row width, so the progress region stays column-aligned (FR7).
+		// Unit sub-rows render under it with their own indent. Constant across rows.
 		const labelWidth = Math.min(
 			MAX_LABEL_WIDTH,
-			lanes.reduce((m, l) => Math.max(m, visibleWidth(laneDescriptor(l) ?? "")), 0),
+			allLanes.reduce((m, l) => Math.max(m, visibleWidth(laneDescriptor(l) ?? "")), 0),
 			Math.max(0, width - LABEL_LEADING - PROGRESS_MIN_WIDTH),
 		);
-		const row = (lane: LaneEntry, i: number): string =>
-			truncate(this.renderRow(theme, lane, width, labelWidth, sel(i)));
-		if (lanes.length <= budget) {
-			lanes.forEach((lane, i) => {
-				lines.push(row(lane, i));
+		const renderAt = (row: DisplayRow, i: number): string =>
+			truncate(
+				row.kind === "lane"
+					? this.renderRow(theme, row.lane, width, labelWidth, sel(i))
+					: this.renderUnitRow(theme, row.lane, row.unit, width, labelWidth, sel(i)),
+			);
+		if (rows.length <= budget) {
+			rows.forEach((row, i) => {
+				lines.push(renderAt(row, i));
 			});
 		} else {
 			// Reserve the last row for the "+N more" summary.
-			const shown = lanes.slice(0, budget - 1);
-			shown.forEach((lane, i) => {
-				lines.push(row(lane, i));
+			const shown = rows.slice(0, budget - 1);
+			shown.forEach((row, i) => {
+				lines.push(renderAt(row, i));
 			});
-			const moreCount = lanes.length - shown.length;
+			const moreCount = rows.length - shown.length;
 			// Same reserved gutter so the summary aligns with the lane rows above.
 			lines.push(truncate(`${CURSOR_UNSELECTED}${theme.fg("dim", `+${moreCount} more`)}`));
 		}
-		// Active-only transcript-tail preview of the SELECTED lane: a dim separator
-		// rule then the last PREVIEW_LINES of its transcript, between the rows / "+N more" fold
-		// and the footer. Active-gated so ambient stays byte-for-byte stable.
-		// NB: this is the SAME `selLane` the footer below reads — declared once here, replacing
-		// the old standalone footer-block declaration. Do not re-declare it.
-		const selLane = active ? lanes[selection] : undefined;
-		if (active && selLane) {
-			for (const line of this.renderPreview(theme, selLane, width)) lines.push(truncate(line));
+		// Active-only transcript-tail preview of the SELECTED row's unit: a dim separator
+		// rule then the last PREVIEW_LINES of its transcript, between the rows / "+N more"
+		// fold and the footer. Active-gated so ambient stays byte-for-byte stable.
+		const selUnit = this.selectedUnit();
+		if (active && selUnit) {
+			for (const line of this.renderPreview(theme, selUnit.runId, selUnit.unitIndex, selUnit.unit, width))
+				lines.push(truncate(line));
 		}
 		// Footer hint (dim), indented one space — active shows the navigation contract,
 		// ambient the discoverability hint. Preceded by a blank line (rhythm) and followed
 		// by the bottom rule (the separator from Pi's status chrome below).
 		lines.push("");
-		const activeFooter = selLane && laneNeedsInput(selLane.runId) ? ACTIVE_FOOTER_NEEDS_INPUT : ACTIVE_FOOTER_DEFAULT;
+		const activeFooter =
+			selUnit && unitNeedsInput(selUnit.runId, selUnit.unitIndex)
+				? ACTIVE_FOOTER_NEEDS_INPUT
+				: ACTIVE_FOOTER_DEFAULT;
 		lines.push(truncate(` ${theme.fg("dim", active ? activeFooter : DEFAULT_FOOTER_TEXT)}`));
 		lines.push(rule);
 		return lines;
+	}
+
+	/**
+	 * Render an indented unit SUB-ROW (a fan-out unit). Mirrors `renderRow`'s gutter +
+	 * glyph priority (needs-input → running spinner → terminal glyph) but is keyed on the
+	 * UNIT's own `pendingInput`/`status` and shows its label + a compact status word — the
+	 * unit carries no stage-progress bar (that belongs to the parent lane row).
+	 */
+	private renderUnitRow(
+		theme: Theme,
+		lane: LaneEntry,
+		unit: UnitLane,
+		_width: number,
+		labelWidth: number,
+		selected: boolean,
+	): string {
+		const gutter = selected ? theme.fg("accent", theme.bold(CURSOR_SELECTED)) : CURSOR_UNSELECTED;
+		const needs = unitNeedsInput(lane.runId, unit.index);
+		let glyph: string;
+		let glyphColor: ThemeColor;
+		if (needs) {
+			glyph = NEEDS_INPUT_GLYPH;
+			glyphColor = "warning";
+		} else if (unit.status === "running") {
+			glyph = SPINNER_FRAMES[this.frame];
+			glyphColor = "accent";
+		} else if (unit.status === "failed") {
+			glyph = STATUS_GLYPH.failed;
+			glyphColor = "warning";
+		} else {
+			glyph = STATUS_GLYPH.completed; // "done" → ✓
+			glyphColor = "dim";
+		}
+		// Indent one level (a 2-col child indent) past the gutter so sub-rows read as
+		// children of the lane row above; align the label to the lane descriptor column.
+		const indent = "  ";
+		const label = unit.label ?? `unit ${unit.index}`;
+		const labelCell =
+			labelWidth > 0 ? padCol(theme, selected ? "accent" : "text", label, labelWidth, selected) : label;
+		const tail = needs
+			? theme.fg("warning", "needs input")
+			: theme.fg("muted", unit.status === "running" ? "live" : unit.status);
+		return `${gutter}${indent}${theme.fg(glyphColor, glyph)} ${labelCell} ${tail}`;
 	}
 
 	private renderRow(theme: Theme, lane: LaneEntry, width: number, labelWidth: number, selected: boolean): string {
@@ -531,26 +600,32 @@ export class LaneDock {
 	 * Fail-soft: a disposed/odd session degrades to a dim placeholder, never throws into the widget.
 	 * scrollOffset is deliberately absent — scrolling stays in the focused viewer; this is a fixed tail.
 	 */
-	private renderPreview(theme: Theme, lane: LaneEntry, width: number): string[] {
+	private renderPreview(
+		theme: Theme,
+		runId: string,
+		unitIndex: number,
+		unit: UnitLane | undefined,
+		width: number,
+	): string[] {
 		const rule = theme.fg("dim", "─".repeat(Math.max(0, width)));
 		let entries: ViewerEntry[];
 		let source: RenderSource;
 		try {
-			const session = lane.currentSession;
+			const session = unit?.currentSession;
 			if (session) {
 				entries = (session.sessionManager.getBranch() as ViewerEntry[] | undefined) ?? [];
 				source = {
 					cwd: session.sessionManager.getCwd(),
 					toolDef: (name) => session.getToolDefinition(name) as ToolDefArg,
 				};
-			} else if (lane.finalBranch !== undefined) {
-				entries = (lane.finalBranch as ViewerEntry[]) ?? [];
-				const defs = lane.finalToolDefs;
-				source = { cwd: lane.finalCwd ?? "", toolDef: (name) => defs?.get(name) as ToolDefArg };
+			} else if (unit?.finalBranch !== undefined) {
+				entries = (unit.finalBranch as ViewerEntry[]) ?? [];
+				const defs = unit.finalToolDefs;
+				source = { cwd: unit.finalCwd ?? "", toolDef: (name) => defs?.get(name) as ToolDefArg };
 			} else {
 				// No live child + no snapshot — fall through to the on-disk jsonl (Problem 2)
 				// exactly like the viewer: live → finalBranch → disk → placeholder.
-				const disk = this.loadPreviewDiskBranch(lane);
+				const disk = this.loadPreviewDiskBranch(runId, unitIndex, unit);
 				if (disk) {
 					entries = disk.entries;
 					source = disk.source;
@@ -563,7 +638,7 @@ export class LaneDock {
 		}
 		if (!this.tui) return [rule]; // pre-mount guard (tui is set by the widget factory before render)
 		const body = renderBranch(entries, width, source, this.tui, theme, false);
-		const live = lane.currentSession;
+		const live = unit?.currentSession;
 		if (live) {
 			// Live source only (terminal lanes carry no partial): append the in-flight partial's thinking
 			// before the tail-slice so the dock preview's last-PREVIEW_LINES window shows it. Cleared the
@@ -589,12 +664,13 @@ export class LaneDock {
 		}
 	}
 
-	/** Disk-jsonl preview fallback (Problem 2), memoized by `runId::lastSessionFile` so the
-	 *  per-tick preview render re-reads disk at most once per source. */
-	private loadPreviewDiskBranch(lane: LaneEntry): DiskBranch | undefined {
-		const key = `${lane.runId}::${lane.lastSessionFile ?? ""}`;
+	/** Disk-jsonl preview fallback (Problem 2), memoized by the PER-UNIT key
+	 *  `runId::unitIndex::file` so two units' caches never collide and the per-tick
+	 *  preview render re-reads disk at most once per source. */
+	private loadPreviewDiskBranch(runId: string, unitIndex: number, unit: UnitLane | undefined): DiskBranch | undefined {
+		const key = `${runId}::${unitIndex}::${unit?.lastSessionFile ?? ""}`;
 		if (this.previewDiskCache?.key !== key) {
-			this.previewDiskCache = { key, value: loadBranchFromDisk(lane.runId, lane.lastSessionFile) };
+			this.previewDiskCache = { key, value: loadBranchFromDisk(runId, unit?.lastSessionFile) };
 		}
 		return this.previewDiskCache.value;
 	}

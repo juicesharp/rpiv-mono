@@ -16,6 +16,7 @@ const registerWorkflowExecutionHost = vi.fn();
 vi.mock("@juicesharp/rpiv-workflow/startup", () => ({ registerWorkflowExecutionHost }));
 
 import { createLaneRelayUiContext } from "./lane-relay-ui.js";
+import { SINGLE_UNIT_KEY } from "./run-lane-registry.js";
 import { registerWorkflowExecutionHostProviderHook } from "./workflow-execution-host.js";
 
 type SessionStartHandler = (ev: unknown, ctx: unknown) => unknown | Promise<unknown>;
@@ -50,7 +51,7 @@ describe("registerWorkflowExecutionHostProviderHook (Phase 7.2)", () => {
 	it("does NOT register for a detached foreground child (branded relay ui)", async () => {
 		const { pi, sessionStart } = makePi();
 		registerWorkflowExecutionHostProviderHook(pi);
-		const relay = createLaneRelayUiContext(REAL_UI, "child-run");
+		const relay = createLaneRelayUiContext(REAL_UI, "child-run", SINGLE_UNIT_KEY);
 		await sessionStart()!({}, { hasUI: true, ui: relay });
 		expect(registerWorkflowExecutionHost).not.toHaveBeenCalled();
 	});

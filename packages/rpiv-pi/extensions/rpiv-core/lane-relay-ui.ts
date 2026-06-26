@@ -61,14 +61,22 @@ const SUPPRESSED_AT_ROOT = new Set<string>([
 	"pasteToEditor",
 ]);
 
-export function createLaneRelayUiContext(real: ExtensionUIContext, runId: string): ExtensionUIContext {
+export function createLaneRelayUiContext(
+	real: ExtensionUIContext,
+	runId: string,
+	/** The depth-gated unit key the host bound this relay to (a fan-out index, or the
+	 *  reserved single-unit key for a non-fan-out / nested child). A deferred question
+	 *  enqueues onto THIS unit so it flags its own dock sub-row and "answer" drains only
+	 *  its queue. */
+	unitIndex: number,
+): ExtensionUIContext {
 	const relayCustom: ExtensionUIContext["custom"] = (factory, options) =>
 		new Promise((resolve) => {
-			// Queue the request — this notifies the registry, so the always-on dock
-			// surfaces the ⚑ needs-input heading + flagged lane row and ages it via the
+			// Queue onto this unit — notifies the registry, so the dock surfaces the ⚑ on
+			// the unit's own sub-row (and the lane's aggregate heading) and ages it via the
 			// heartbeat. The persistent dock IS the signal; a separate chat toast here
 			// would be redundant with it, so we don't emit one.
-			enqueueInput(runId, { factory, options, resolve: resolve as (r: unknown) => void });
+			enqueueInput(runId, unitIndex, { factory, options, resolve: resolve as (r: unknown) => void });
 		});
 
 	// Forwarded to the real ctx ONLY while the user is switched into THIS lane.

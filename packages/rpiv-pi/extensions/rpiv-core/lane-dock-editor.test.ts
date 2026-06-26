@@ -7,17 +7,18 @@ import {
 	enqueueInput,
 	getDockState,
 	recordRun,
+	SINGLE_UNIT_KEY,
 	setDockActive,
 	setDockSelection,
 } from "./run-lane-registry.js";
 
-/** Base context: dock inactive, prompt empty, no autocomplete, two lanes, top selected. */
+/** Base context: dock inactive, prompt empty, no autocomplete, two rows, top selected. */
 function ctx(overrides: Partial<DockDecisionContext> = {}): DockDecisionContext {
 	return {
 		dockActive: false,
 		autocompleteOpen: false,
 		editorEmpty: true,
-		laneCount: 2,
+		rowCount: 2,
 		selection: 0,
 		...overrides,
 	};
@@ -36,8 +37,8 @@ describe("decideDockAction — inactive (entry gesture)", () => {
 		expect(decideDockAction("down", ctx({ autocompleteOpen: true }))).toEqual({ kind: "passthrough" });
 	});
 
-	it("DOWN does nothing special when there are no lanes", () => {
-		expect(decideDockAction("down", ctx({ laneCount: 0 }))).toEqual({ kind: "passthrough" });
+	it("DOWN does nothing special when there are no rows", () => {
+		expect(decideDockAction("down", ctx({ rowCount: 0 }))).toEqual({ kind: "passthrough" });
 	});
 
 	it.each<DockKey>([
@@ -70,11 +71,11 @@ describe("decideDockAction — active (navigation)", () => {
 	});
 
 	it("TAB cycles to the next row", () => {
-		expect(decideDockAction("tab", active({ selection: 0, laneCount: 3 }))).toEqual({ kind: "select", index: 1 });
+		expect(decideDockAction("tab", active({ selection: 0, rowCount: 3 }))).toEqual({ kind: "select", index: 1 });
 	});
 
 	it("TAB wraps from the last row back to the top", () => {
-		expect(decideDockAction("tab", active({ selection: 2, laneCount: 3 }))).toEqual({ kind: "select", index: 0 });
+		expect(decideDockAction("tab", active({ selection: 2, rowCount: 3 }))).toEqual({ kind: "select", index: 0 });
 	});
 
 	it("ENTER is the dedicated answer key (the adapter no-ops it when nothing is queued)", () => {
@@ -146,17 +147,26 @@ describe("LaneDockEditor — dedicated answer/transcript dispatch", () => {
 	const ENTER = "\r"; // Key.enter codepoint 13
 	const RIGHT = "\x1b[C"; // legacy right-arrow sequence
 
-	function makeSpyEditor(): { editor: LaneDockEditor; calls: Array<{ runId: string; mode: string }> } {
+	function makeSpyEditor(): {
+		editor: LaneDockEditor;
+		calls: Array<{ runId: string; unitIndex: number; mode: string }>;
+	} {
 		const tui = { terminal: { rows: 40 }, requestRender: () => {} } as unknown as TUI;
 		const theme = { borderColor: (s: string) => s, selectList: {} } as unknown as EditorTheme;
 		const keybindings = { matches: () => false } as unknown as KeybindingsManager;
-		const calls: Array<{ runId: string; mode: string }> = [];
-		const editor = new LaneDockEditor(tui, theme, keybindings, (runId, mode) => calls.push({ runId, mode }));
+		const calls: Array<{ runId: string; unitIndex: number; mode: string }> = [];
+		const editor = new LaneDockEditor(tui, theme, keybindings, (runId, unitIndex, mode) =>
+			calls.push({ runId, unitIndex, mode }),
+		);
 		return { editor, calls };
 	}
 
 	function enqueue(runId: string): void {
-		enqueueInput(runId, { factory: (() => ({})) as never, options: undefined as never, resolve: () => {} });
+		enqueueInput(runId, SINGLE_UNIT_KEY, {
+			factory: (() => ({})) as never,
+			options: undefined as never,
+			resolve: () => {},
+		});
 	}
 
 	beforeEach(() => __resetRunLaneRegistry());
@@ -169,7 +179,7 @@ describe("LaneDockEditor — dedicated answer/transcript dispatch", () => {
 		setDockSelection(0);
 		const { editor, calls } = makeSpyEditor();
 		editor.handleInput(ENTER);
-		expect(calls).toEqual([{ runId: "run-1", mode: "answer" }]);
+		expect(calls).toEqual([{ runId: "run-1", unitIndex: SINGLE_UNIT_KEY, mode: "answer" }]);
 	});
 
 	it("ENTER is inert on a lane with nothing queued — stays stepped in, opens nothing", () => {
@@ -188,6 +198,6 @@ describe("LaneDockEditor — dedicated answer/transcript dispatch", () => {
 		setDockSelection(0);
 		const { editor, calls } = makeSpyEditor();
 		editor.handleInput(RIGHT);
-		expect(calls).toEqual([{ runId: "run-1", mode: "view" }]);
+		expect(calls).toEqual([{ runId: "run-1", unitIndex: SINGLE_UNIT_KEY, mode: "view" }]);
 	});
 });

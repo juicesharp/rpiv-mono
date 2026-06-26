@@ -66,6 +66,53 @@ export interface PendingInput {
 	readonly resolve: (result: unknown) => void;
 }
 
+/** Reserved unit key for the non-fanout single-stage child (it carries no fanout
+ *  index). Real fanout unit indices are 0..N-1, so the sentinel never collides:
+ *  the lane (parent) row resolves `units.get(SINGLE_UNIT_KEY)`, and ONLY keys ≥ 0
+ *  flatten into selectable unit sub-rows — a single-stage run shows just its lane
+ *  row, byte-identical to the pre-change scalar path. Nested fan-out (depth>0) also
+ *  collapses onto this key (the host's depth-gate), so grandchildren never collide
+ *  with their top-level cousins' indices. */
+export const SINGLE_UNIT_KEY = -1;
+
+/**
+ * One fan-out unit's switchable sub-lane (Slice 1). Bundles everything that used to
+ * live as a single scalar on `LaneEntry` — the live child session, the terminal
+ * snapshot (branch/cwd/tool-defs), the durable disk-fallback pointer, and the FR5
+ * deferred-input queue — so each concurrent unit owns its own slot keyed by its
+ * declared fan-out `index`. Under fan-out a sibling's teardown can never clobber
+ * another's entry (each owns its key), which retires the slot-owner identity guard.
+ */
+export interface UnitLane {
+	/** The fan-out unit index this sub-lane addresses (== the map key);
+	 *  `SINGLE_UNIT_KEY` for the non-fan-out single-stage child. */
+	readonly index: number;
+	/** Display label from the bridge's `onUnitStart` (e.g. "phase 2/5"). Undefined
+	 *  until `setUnitStarted` fires — the host may publish a live session first. */
+	label?: string;
+	/** Per-unit lifecycle status — drives the sub-row glyph and the orphan sweep.
+	 *  "running" until `markUnitDone`/`sweepRunningUnits` flips it terminal. */
+	status: "running" | "done" | "failed";
+	/** This unit's currently-live child session (the viewer/preview source);
+	 *  undefined before the child spawns, between stages, or after teardown. */
+	currentSession: LaneSession | undefined;
+	/** Transcript snapshot captured at teardown WHILE the child is still alive
+	 *  (Problem 2, per unit) — rendered for a finished-but-retained unit. */
+	finalBranch?: unknown;
+	/** cwd captured alongside `finalBranch` so the snapshot's tool-result renderers
+	 *  resolve relative paths after the live session's `getCwd` is gone. */
+	finalCwd?: string;
+	/** Tool defs for the tool names present in `finalBranch`, snapshotted at teardown
+	 *  so per-tool rendering survives the dropped live `getToolDefinition`. */
+	finalToolDefs?: Map<string, unknown>;
+	/** This unit's most-recent persisted child session file — seeds the per-unit
+	 *  disk-jsonl fallback (`runId::index::lastSessionFile`). */
+	lastSessionFile?: string;
+	/** FIFO of THIS unit's deferred foreground-stage UI requests (FR5). The relay
+	 *  enqueues onto the unit it was bound to; the switcher drains only this queue. */
+	readonly pendingInput: PendingInput[];
+}
+
 /**
  * Live stage progress for a lane (Phase 8) — sourced from the workflow lifecycle
  * bus (lane-progress.ts) and rendered by the overlay in place of the blind
@@ -121,11 +168,14 @@ export interface LaneEntry {
 	 *  descriptor label when no `--name` alias is set. Undefined for a prompt-less run. */
 	input?: string;
 	status: LaneStatus;
-	/** The run's currently-live child session (the viewer source); undefined
-	 *  between stages, before the first child spawns, or after retirement. */
-	currentSession: LaneSession | undefined;
-	/** FIFO of deferred foreground-stage UI requests (FR5). */
-	readonly pendingInput: PendingInput[];
+	/**
+	 * Per-unit sub-lanes keyed by fan-out index (Slice 1) — the replacement for the
+	 * collapsing single-slot session/snapshot scalars. A non-fan-out stage writes the
+	 * `SINGLE_UNIT_KEY` slot; a fan-out generation writes 0..N-1. Cleared at each new
+	 * fan-out generation (`clearUnitLanes`, D2) so the dock shows the CURRENT
+	 * generation only; the final generation's snapshots survive retirement (D5).
+	 */
+	readonly units: Map<number, UnitLane>;
 	/** Live stage progress (Phase 8); undefined until the first onStageStart. */
 	progress: LaneProgress | undefined;
 	/**
@@ -138,38 +188,12 @@ export interface LaneEntry {
 	 */
 	visitedStages?: Set<string>;
 	/**
-	 * Transcript snapshot captured at retirement (Phase A) — the live session is
-	 * dropped when a run terminates, so the viewer renders this for a finished
-	 * (retained-but-not-yet-dismissed) lane. Typed `unknown`; the viewer narrows.
-	 */
-	finalBranch?: unknown;
-	/**
-	 * cwd captured at retirement (Phase 4) — the viewer's tool-result renderers resolve
-	 * relative paths against it on the snapshot, where the live session's getCwd is gone.
-	 */
-	finalCwd?: string;
-	/**
-	 * Tool definitions for the tool names present in `finalBranch`, snapshotted at
-	 * retirement (Phase 4) so the viewer's ToolExecutionComponent pass keeps per-tool
-	 * rendering (diffs, file reads, …) after the live session — the only
-	 * getToolDefinition source — is dropped. Values typed `unknown`; the viewer narrows.
-	 */
-	finalToolDefs?: Map<string, unknown>;
-	/**
 	 * Terminal failure cause (Problem 1) — `result.termination.error` captured at
 	 * `retireRun`, the readable reason a `failed`/`aborted`/`cancelled` run ended.
 	 * The dock chip trims it (`shortFailureReason`); the viewer header shows it in
 	 * full. Absent for a `completed` run (no error) and while still running.
 	 */
 	error?: string;
-	/**
-	 * The persisted session file of this run's most-recent child (Problem 2) —
-	 * recorded at `setLaneSessionFile` when a child spawns, so it OUTLIVES the
-	 * disposed live session. Seeds the disk-jsonl transcript fallback
-	 * (`loadBranchFromDisk`) when neither a live session nor a `finalBranch`
-	 * snapshot is available. Absent before the first child spawns.
-	 */
-	lastSessionFile?: string;
 	/**
 	 * When this lane first started waiting on a deferred foreground question
 	 * (Phase C) — `Date.now()` stamped on the FIRST enqueue that finds the clock
@@ -280,9 +304,8 @@ export function recordRun(runId: string, name: string, meta?: { workflow?: strin
 		existing.workflow = meta?.workflow ?? existing.workflow;
 		existing.input = meta?.input ?? existing.input;
 		existing.status = "running"; // reactivate a retained terminal lane (resume)
-		existing.finalBranch = undefined; // drop the prior run's transcript snapshot
+		existing.units.clear(); // drop the prior run's per-unit sessions + terminal snapshots
 		existing.error = undefined; // clear the prior run's terminal failure reason
-		existing.lastSessionFile = undefined; // drop the prior run's session-file pointer
 		existing.progress = undefined; // clear stale stage progress
 		existing.needsInputSince = undefined; // clear any stale needs-input clock
 	} else {
@@ -292,8 +315,7 @@ export function recordRun(runId: string, name: string, meta?: { workflow?: strin
 			workflow: meta?.workflow,
 			input: meta?.input,
 			status: "running",
-			currentSession: undefined,
-			pendingInput: [],
+			units: new Map<number, UnitLane>(),
 			progress: undefined,
 		});
 	}
@@ -335,25 +357,35 @@ function snapshotToolDefs(branch: unknown, session: LaneSession): Map<string, un
 	return defs;
 }
 
+/** Get or lazily create the `UnitLane` for `index` on an entry. The host (live
+ *  session) and the bridge (label/status) both upsert the same key, in either order. */
+function upsertUnit(entry: LaneEntry, index: number): UnitLane {
+	let unit = entry.units.get(index);
+	if (!unit) {
+		unit = { index, status: "running", currentSession: undefined, pendingInput: [] };
+		entry.units.set(index, unit);
+	}
+	return unit;
+}
+
 /**
- * Snapshot a live session's transcript + render inputs (branch, cwd, per-tool
- * definitions) onto a lane. Fail-soft: a disposed/odd session yields an empty
- * snapshot (viewer shows "unavailable") rather than throwing. Shared by the two
- * capture paths: `retireRun` (when a session is still attached, e.g. the manager's
- * optimistic `x` cancel) and `captureFinalSnapshot` (the host's per-stage teardown,
- * which captures BEFORE the session is dropped so the end-of-run `retireRun` finds
- * the snapshot already in place — see Problem 2's ordering fix).
+ * Snapshot a live session's transcript + render inputs onto ONE unit sub-lane.
+ * Fail-soft: a disposed/odd session yields an empty snapshot (the viewer shows
+ * "unavailable") rather than throwing. Shared by `retireRun` (still-attached
+ * session) and `captureFinalSnapshot` (the host's per-unit teardown, BEFORE the
+ * session is dropped — Problem 2's ordering fix, now per unit). `snapshotToolDefs`
+ * is unchanged (it takes the branch + session).
  */
-function captureSnapshotInto(entry: LaneEntry, session: LaneSession): void {
+function captureSnapshotInto(unit: UnitLane, session: LaneSession): void {
 	try {
 		const branch = session.sessionManager.getBranch();
-		entry.finalBranch = branch;
-		entry.finalCwd = session.sessionManager.getCwd();
-		entry.finalToolDefs = snapshotToolDefs(branch, session);
+		unit.finalBranch = branch;
+		unit.finalCwd = session.sessionManager.getCwd();
+		unit.finalToolDefs = snapshotToolDefs(branch, session);
 	} catch {
-		entry.finalBranch = undefined;
-		entry.finalCwd = undefined;
-		entry.finalToolDefs = undefined;
+		unit.finalBranch = undefined;
+		unit.finalCwd = undefined;
+		unit.finalToolDefs = undefined;
 	}
 }
 
@@ -371,16 +403,18 @@ export function retireRun(runId: string, status: Exclude<LaneStatus, "running">,
 	if (entry.status !== "running") return;
 	entry.status = status;
 	if (error !== undefined) entry.error = error; // terminal failure reason (Problem 1)
-	// Snapshot from a STILL-LIVE session if one is attached (the manager's `x` path,
-	// where the abort teardown has not yet run). In the normal detached path the host
-	// already captured the snapshot via `captureFinalSnapshot` before dropping the
-	// session, so `currentSession` is undefined here — DON'T re-snapshot, which would
-	// clobber the captured `finalBranch` with nothing (Problem 2's root cause).
-	if (entry.currentSession) captureSnapshotInto(entry, entry.currentSession);
-	entry.currentSession = undefined;
+	for (const unit of entry.units.values()) {
+		// Snapshot from a STILL-LIVE session if one is attached (the `x` path). In the
+		// normal detached path the host already captured per unit via
+		// `captureFinalSnapshot` and dropped the session, so `currentSession` is
+		// undefined here — DON'T re-snapshot (Problem 2's root cause, now per unit).
+		if (unit.currentSession) captureSnapshotInto(unit, unit.currentSession);
+		unit.currentSession = undefined; // drop the live session; KEEP finalBranch (D5)
+		if (unit.status === "running") unit.status = "done"; // a never-ended unit reads terminal
+		for (const p of unit.pendingInput) p.resolve(undefined); // never strand a child's resolver
+		unit.pendingInput.length = 0;
+	}
 	entry.needsInputSince = undefined;
-	for (const p of entry.pendingInput) p.resolve(undefined);
-	entry.pendingInput.length = 0;
 	notify();
 }
 
@@ -393,10 +427,10 @@ export function retireRun(runId: string, status: Exclude<LaneStatus, "running">,
  * a missing/evicted lane is a no-op. Does NOT notify — the paired `setCurrentSession`
  * that immediately follows in the host does.
  */
-export function captureFinalSnapshot(runId: string, session: LaneSession): void {
+export function captureFinalSnapshot(runId: string, index: number, session: LaneSession): void {
 	const entry = state().lanes.get(runId);
 	if (!entry) return;
-	captureSnapshotInto(entry, session);
+	captureSnapshotInto(upsertUnit(entry, index), session);
 }
 
 /**
@@ -406,10 +440,10 @@ export function captureFinalSnapshot(runId: string, session: LaneSession): void 
  * spawns. Best-effort: a missing lane or absent file is a no-op. No notify — it is
  * read lazily at disk-fallback time, and the paired `setCurrentSession` already notified.
  */
-export function setLaneSessionFile(runId: string, file: string | undefined): void {
+export function setLaneSessionFile(runId: string, index: number, file: string | undefined): void {
 	if (file === undefined) return;
 	const entry = state().lanes.get(runId);
-	if (entry) entry.lastSessionFile = file;
+	if (entry) upsertUnit(entry, index).lastSessionFile = file;
 }
 
 /** DISMISS a lane — hard-delete from the registry (FR6). The terminal-lane reaper:
@@ -420,7 +454,7 @@ export function evictRun(runId: string): void {
 	const entry = lanes.get(runId);
 	if (!entry) return;
 	lanes.delete(runId);
-	for (const p of entry.pendingInput) p.resolve(undefined);
+	for (const unit of entry.units.values()) for (const p of unit.pendingInput) p.resolve(undefined);
 	notify();
 }
 
@@ -432,11 +466,72 @@ export function setLaneStatus(runId: string, status: LaneStatus): void {
 	notify();
 }
 
-/** Point a lane at its currently-live child (Slice 2) — replaces the prior. */
-export function setCurrentSession(runId: string, session: LaneSession | undefined): void {
+/** Point a unit sub-lane at its currently-live child (Slice 3) — replaces the prior.
+ *  The clear path (`session === undefined`, the host's teardown) only operates on an
+ *  EXISTING unit, so a teardown after `clearUnitLanes` never resurrects a cleared unit. */
+export function setCurrentSession(runId: string, index: number, session: LaneSession | undefined): void {
 	const entry = state().lanes.get(runId);
 	if (!entry) return; // run not recorded (or already evicted) — ignore
-	entry.currentSession = session;
+	if (session === undefined) {
+		const unit = entry.units.get(index);
+		if (!unit) return; // nothing to clear
+		unit.currentSession = undefined;
+	} else {
+		upsertUnit(entry, index).currentSession = session;
+	}
+	notify();
+}
+
+/** Mark a fan-out unit STARTED (bridge `onUnitStart`): upsert its sub-lane with the
+ *  display `label` + running status. The host publishes the live session separately
+ *  via `setCurrentSession`; both lazily upsert the same key in either order. */
+export function setUnitStarted(runId: string, index: number, label: string): void {
+	const entry = state().lanes.get(runId);
+	if (!entry) return;
+	const unit = upsertUnit(entry, index);
+	unit.label = label;
+	unit.status = "running";
+	notify();
+}
+
+/** Flip ONE unit terminal (bridge `onUnitEnd` → "done"). Best-effort — the row stays
+ *  viewable via its snapshot/disk transcript; a missing/unchanged unit is a no-op. */
+export function markUnitDone(runId: string, index: number, status: "done" | "failed"): void {
+	const unit = state().lanes.get(runId)?.units.get(index);
+	if (!unit || unit.status === status) return;
+	unit.status = status;
+	notify();
+}
+
+/** Orphan sweep (the asymmetric `onUnitStart`…`onUnitEnd` bracket): flip every
+ *  still-"running" unit to a terminal status. The bridge calls this from
+ *  `onStageError`/`onWorkflowEnd` because a fail-fast/abort/throw unit fires
+ *  `onUnitStart` with NO matching `onUnitEnd` — without the sweep its sub-row would
+ *  spin forever. The disk `.jsonl` still backs the transcript for post-mortem. */
+export function sweepRunningUnits(runId: string, status: "done" | "failed"): void {
+	const entry = state().lanes.get(runId);
+	if (!entry) return;
+	let changed = false;
+	for (const unit of entry.units.values()) {
+		if (unit.status === "running") {
+			unit.status = status;
+			changed = true;
+		}
+	}
+	if (changed) notify();
+}
+
+/** Clear the per-unit map at a NEW fan-out generation (bridge `onLoopStart`, D2): the
+ *  engine resets `cursor.slots` per loop, so the registry shows only the CURRENT
+ *  generation's units (a run may fan out several times, reusing indices 0..N).
+ *  Settles any dangling `pendingInput` so a child never hangs, and resets the lane
+ *  clock. No-op on an empty map (the single-stage / first-generation path). */
+export function clearUnitLanes(runId: string): void {
+	const entry = state().lanes.get(runId);
+	if (!entry || entry.units.size === 0) return;
+	for (const unit of entry.units.values()) for (const p of unit.pendingInput) p.resolve(undefined);
+	entry.units.clear();
+	entry.needsInputSince = undefined;
 	notify();
 }
 
@@ -466,31 +561,27 @@ export function noteVisitedStage(runId: string, stageName: string): number {
 	return visited.size;
 }
 
-/** Enqueue a deferred foreground-stage UI request (FR5, Slice 7). Stamps the
- *  needs-input clock (Phase C) on the FIRST enqueue that finds it unset — held
- *  across a transient drain→refill so the aging heading never resets mid-wait. */
-export function enqueueInput(runId: string, pending: PendingInput): void {
+/** Enqueue a deferred foreground-stage UI request onto a UNIT's queue (FR5, Slice 3
+ *  relay). Stamps the LANE-level needs-input clock on the FIRST enqueue across the
+ *  lane that finds it unset (held across a transient drain→refill so the aging
+ *  heading never resets mid-wait). A missing run settles immediately so the child
+ *  never hangs. */
+export function enqueueInput(runId: string, index: number, pending: PendingInput): void {
 	const entry = state().lanes.get(runId);
 	if (!entry) {
-		// No lane — the run is gone; settle so the child never hangs forever.
 		pending.resolve(undefined);
 		return;
 	}
-	// Stamp only when the clock is unset (not merely when the queue is empty): a
-	// drain that empties the queue no longer clears the clock, so a sibling that
-	// refills it keeps the original wait start instead of resetting to "now".
 	if (entry.needsInputSince === undefined) entry.needsInputSince = Date.now();
-	entry.pendingInput.push(pending);
+	upsertUnit(entry, index).pendingInput.push(pending);
 	notify();
 }
 
-/** Pop the oldest pending input for a lane (FR5, Slice 7) — the manager replays it.
- *  Does NOT clear the needs-input clock on drain-to-empty (Phase C): the clock is a
- *  continuous-wait marker reset only at retire/evict/reactivate, so a drain racing a
- *  background sibling enqueue can't reset the overlay's aging heading. */
-export function dequeueInput(runId: string): PendingInput | undefined {
-	const entry = state().lanes.get(runId);
-	const pending = entry?.pendingInput.shift();
+/** Pop the oldest pending input for ONE unit (FR5, Slice 7 drain). Does NOT clear the
+ *  lane clock on drain-to-empty (it's a continuous-wait marker reset only at
+ *  retire/evict/reactivate/clear). */
+export function dequeueInput(runId: string, index: number): PendingInput | undefined {
+	const pending = state().lanes.get(runId)?.units.get(index)?.pendingInput.shift();
 	if (pending) notify();
 	return pending;
 }
@@ -516,29 +607,57 @@ export function listLanes(): LaneEntry[] {
 	return [...state().lanes.values()];
 }
 
+/** One row in the dock's flattened display/selection list (D4): a lane (parent) row
+ *  or a unit sub-row. Selection indexes this list; the four lane-resolving dock
+ *  actions dereference a row to `(runId, unitIndex)`. */
+export type DisplayRow =
+	| { readonly kind: "lane"; readonly lane: LaneEntry }
+	| { readonly kind: "unit"; readonly lane: LaneEntry; readonly unit: UnitLane };
+
 /**
- * Lanes ordered for DISPLAY (Phase B) — a STABLE priority sort so the lane that
- * needs the user never hides below the overlay's `+N more` fold and sits at the
- * top of the manager: needs-input → running → terminal, insertion order preserved
- * within each bucket. Display-only; `listLanes()` keeps launch order for callers
- * that index by it.
+ * Rows ordered for DISPLAY (Phase B + D4) — the same STABLE lane priority sort
+ * (needs-input → running → terminal, insertion-stable within a bucket) with each
+ * lane's CURRENT-generation unit sub-rows flattened directly beneath it, ascending by
+ * declared index (the fold's order, so a sibling completing never shifts a selected
+ * row). Only keys ≥ 0 become sub-rows — the `SINGLE_UNIT_KEY` slot is the lane row's
+ * own session, so a single-stage run yields exactly one (lane) row.
  */
-export function listLanesForDisplay(): LaneEntry[] {
+export function listLanesForDisplay(): DisplayRow[] {
 	const bucket = (l: LaneEntry): number => {
-		if (l.pendingInput.length > 0) return 0;
+		if (laneNeedsInput(l.runId)) return 0;
 		if (l.status === "running") return 1;
 		return 2;
 	};
-	// Stable: decorate with the original index, sort by (bucket, index).
-	return [...state().lanes.values()]
+	const lanes = [...state().lanes.values()]
 		.map((lane, index) => ({ lane, index }))
 		.sort((a, b) => bucket(a.lane) - bucket(b.lane) || a.index - b.index)
 		.map((d) => d.lane);
+	const rows: DisplayRow[] = [];
+	for (const lane of lanes) {
+		rows.push({ kind: "lane", lane });
+		const indices = [...lane.units.keys()].filter((k) => k >= 0).sort((a, b) => a - b);
+		for (const i of indices) rows.push({ kind: "unit", lane, unit: lane.units.get(i)! });
+	}
+	return rows;
 }
 
-/** True when a lane has ≥1 deferred UI request (the "needs input" badge source). */
+/** A unit sub-lane by (runId, index), or undefined. The viewer/dock address source. */
+export function getUnit(runId: string, index: number): UnitLane | undefined {
+	return state().lanes.get(runId)?.units.get(index);
+}
+
+/** True when ANY of a lane's units has ≥1 deferred UI request (the lane-level
+ *  ⚑ badge + the needs-input display bucket). */
 export function laneNeedsInput(runId: string): boolean {
-	return (state().lanes.get(runId)?.pendingInput.length ?? 0) > 0;
+	const entry = state().lanes.get(runId);
+	if (!entry) return false;
+	for (const unit of entry.units.values()) if (unit.pendingInput.length > 0) return true;
+	return false;
+}
+
+/** True when a SPECIFIC unit sub-row has ≥1 deferred UI request (the per-row ⚑). */
+export function unitNeedsInput(runId: string, index: number): boolean {
+	return (state().lanes.get(runId)?.units.get(index)?.pendingInput.length ?? 0) > 0;
 }
 
 /** Count of in-flight lanes — the overlay's auto-show/hide gate. */
@@ -584,9 +703,21 @@ export function getFocusedRun(): string | undefined {
 // on read so an evicted lane never strands the cursor past the last row.
 // ---------------------------------------------------------------------------
 
-/** Clamp `index` into the valid selection range for the current display list. */
+/** Count of flattened display rows (Σ over lanes of 1 lane row + its unit sub-rows,
+ *  keys ≥ 0). The clamp ceiling — replacing `lanes.size`, which could never reach a
+ *  unit row below the last lane. */
+function displayRowCount(): number {
+	let n = 0;
+	for (const lane of state().lanes.values()) {
+		n += 1; // the lane row
+		for (const k of lane.units.keys()) if (k >= 0) n += 1; // its unit sub-rows
+	}
+	return n;
+}
+
+/** Clamp `index` into the valid selection range for the current FLATTENED display. */
 function clampSelection(index: number): number {
-	const last = state().lanes.size - 1;
+	const last = displayRowCount() - 1;
 	if (last < 0) return 0;
 	return Math.max(0, Math.min(last, index));
 }

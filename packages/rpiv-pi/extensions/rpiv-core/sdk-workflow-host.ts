@@ -51,7 +51,7 @@ import { parseModelKey } from "@juicesharp/rpiv-config";
 import type { ModelSelection, WorkflowHostContext, WorkflowSessionContext } from "@juicesharp/rpiv-workflow";
 import { createLaneRelayUiContext } from "./lane-relay-ui.js";
 import { createLaneSessionView } from "./lane-streaming.js";
-import { captureFinalSnapshot, getLane, setCurrentSession, setLaneSessionFile } from "./run-lane-registry.js";
+import { captureFinalSnapshot, SINGLE_UNIT_KEY, setCurrentSession, setLaneSessionFile } from "./run-lane-registry.js";
 
 /**
  * Launcher-only "ambient observer" extensions: they register session-lifecycle
@@ -233,6 +233,7 @@ export class SdkWorkflowHost implements WorkflowHostContext {
 		signal?: AbortSignal;
 		reattach?: { sessionFile: string };
 		fork?: { sessionFile: string };
+		unitIndex?: number;
 		withSession: (child: WorkflowSessionContext) => Promise<T>;
 	}): Promise<T> {
 		// The runner's top-level dispatch enters at depth 0; nested fan-out from
@@ -254,6 +255,7 @@ export class SdkWorkflowHost implements WorkflowHostContext {
 			signal?: AbortSignal;
 			reattach?: { sessionFile: string };
 			fork?: { sessionFile: string };
+			unitIndex?: number;
 			withSession: (child: WorkflowSessionContext) => Promise<T>;
 		},
 	): Promise<T> {
@@ -274,13 +276,18 @@ export class SdkWorkflowHost implements WorkflowHostContext {
 			thinkingLevel: options.model?.thinking,
 		});
 
-		// Lane registry (FR1): expose this run's currently-live child as the viewer's
-		// transcript source — published as a STREAMING VIEW (lane-streaming.ts) so the
-		// viewer/dock can read the in-flight partial via getStreamingMessage(). The raw
-		// `session` stays local for abort + teardown + snapshot. Under fanout the latest
-		// view wins; no-op until the run is recorded (createWorkflowExecution, Phase 3).
+		// Lane registry (FR1): publish this child as the viewer's transcript source under
+		// its OWN per-unit slot — a STREAMING VIEW (lane-streaming.ts) so the viewer/dock
+		// read the in-flight partial via getStreamingMessage(). The raw `session` stays
+		// local for abort + teardown + snapshot. No-op until the run is recorded
+		// (createWorkflowExecution, Phase 3).
 		const laneView = createLaneSessionView(session);
-		setCurrentSession(this.deps.runId, laneView);
+		// D3 — only depth-0 fan-out units are individually addressable; a nested child
+		// (depth>0) collapses onto the reserved single-unit key so its indices never
+		// collide with the top-level cousins'. A non-fan-out single stage has no
+		// `unitIndex` and also lands on the sentinel.
+		const unitKey = depth === 0 ? (options.unitIndex ?? SINGLE_UNIT_KEY) : SINGLE_UNIT_KEY;
+		setCurrentSession(this.deps.runId, unitKey, laneView);
 
 		// session.abort() does NOT reject prompt(); the SDK catches the abort,
 		// writes a stopReason:"aborted" transcript message, and RESOLVES the run
@@ -297,30 +304,27 @@ export class SdkWorkflowHost implements WorkflowHostContext {
 			// (live.hasUI:false) the child reports hasUI:false (see `adapt`), so
 			// ask_user_question degrades instead of parking on a dock nobody can answer.
 			await session.bindExtensions({
-				uiContext: createLaneRelayUiContext(this.deps.uiContext, this.deps.runId),
+				uiContext: createLaneRelayUiContext(this.deps.uiContext, this.deps.runId, unitKey),
 			});
 			await this.dispatchChildPrompt(session, options);
 			return await options.withSession(this.adapt(session, depth));
 		} finally {
 			options.signal?.removeEventListener("abort", onAbort);
-			// Clear only if WE are still the current child — compare against the VIEW we
-			// published (a fanout sibling spawned later may now own the slot; don't clobber it).
-			if (getLane(this.deps.runId)?.currentSession === laneView) {
-				// Snapshot the transcript off the live child WHILE it is still alive (Problem 2):
-				// the runner's onWorkflowEnd → retireRun fires AFTER this teardown, by which point
-				// the session is disposed — so capture here, before dropping + disposing it. Captured
-				// through the published VIEW (which shares the raw session's sessionManager + delegates
-				// getToolDefinition); the snapshot is committed-only (getBranch), so it carries no
-				// in-flight partial.
-				captureFinalSnapshot(this.deps.runId, laneView);
-				// Seed the durable disk-fallback pointer from the SAME last-living child whose
-				// transcript we just snapshotted, so the disk fallback and finalBranch always
-				// agree on which child they represent (under fanout: the slot owner, not an
-				// arbitrary last-SPAWNED sibling). Read lazily only for a retired lane with no
-				// finalBranch, by which point all children have torn down.
-				setLaneSessionFile(this.deps.runId, session.sessionFile);
-				setCurrentSession(this.deps.runId, undefined);
-			}
+			// Each unit owns its own registry key, so a sibling's teardown can NEVER clobber
+			// another's entry — the `currentSession === laneView` slot-owner guard (the
+			// single-slot workaround) is gone (D1). Snapshot the transcript off the live child
+			// WHILE it is still alive (Problem 2): the runner's onWorkflowEnd → retireRun fires
+			// AFTER this teardown, by which point the session is disposed — so capture here,
+			// before dropping + disposing it. Captured through the published VIEW (which shares
+			// the raw session's sessionManager + delegates getToolDefinition); the snapshot is
+			// committed-only (getBranch), so it carries no in-flight partial.
+			captureFinalSnapshot(this.deps.runId, unitKey, laneView);
+			// Seed the durable disk-fallback pointer from the SAME child whose transcript we just
+			// snapshotted, so the disk fallback and finalBranch always agree on which child they
+			// represent. Read lazily only for a retired unit with no finalBranch, by which point
+			// all children have torn down.
+			setLaneSessionFile(this.deps.runId, unitKey, session.sessionFile);
+			setCurrentSession(this.deps.runId, unitKey, undefined);
 			laneView.dispose(); // tear down the streaming-capture subscription (before session dispose)
 			await this.teardownChild(session); // (B) session_shutdown → dispose
 		}

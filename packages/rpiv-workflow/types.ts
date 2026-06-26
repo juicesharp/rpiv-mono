@@ -438,6 +438,17 @@ export interface StageSession extends SessionContext {
 	 * fanout; the soft-halt routing lives in `postStage`.
 	 */
 	collectAll?: boolean;
+	/**
+	 * The per-unit lane key for rpiv-pi's lane dock/viewer (D8) — set ONLY for fan-out
+	 * units (`e.loop.kind === "fanout"`), to the unit's declared `index`. Undefined for
+	 * sequential loop units (iterate/assess) and single stages, which collapse onto the
+	 * host's reserved single-unit slot so the lane (parent) row keeps showing the one
+	 * live session. Distinct from `unit.index` (the audit identity threaded for every
+	 * loop unit): this field exists purely so the host can decide which spawns become
+	 * individually-addressable concurrent sub-lanes. `openChild` threads it into
+	 * `spawnChild`'s `unitIndex`; inert on a non-lane host.
+	 */
+	laneUnitIndex?: number;
 	/** Only set for continue stages — branch slice offset. */
 	branchOffset?: number;
 	/**

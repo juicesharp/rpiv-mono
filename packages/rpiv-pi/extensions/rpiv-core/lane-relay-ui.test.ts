@@ -14,10 +14,14 @@ import {
 	__resetRunLaneRegistry,
 	dequeueInput,
 	evictRun,
-	getLane,
+	getUnit,
 	recordRun,
 	setFocusedRun,
 } from "./run-lane-registry.js";
+
+/** The fan-out unit this relay is bound to — its deferred questions queue onto this
+ *  unit's own sub-row and the switcher drains only this queue. */
+const UNIT = 0;
 
 /**
  * A hand-built real ctx stub. `marker` + the method bodies reading `this.marker`
@@ -91,13 +95,13 @@ describe("lane-relay-ui — custom defers", () => {
 	it("enqueues the factory/options/resolve into the lane and returns a pending promise", async () => {
 		recordRun("run-1", "ship");
 		const { real } = makeRealCtx();
-		const relay = createLaneRelayUiContext(real, "run-1");
+		const relay = createLaneRelayUiContext(real, "run-1", UNIT);
 
 		const factory = (() => ({})) as never;
 		const options = { overlay: true } as never;
 		const result = track(relay.custom(factory, options));
 
-		const pending = getLane("run-1")?.pendingInput;
+		const pending = getUnit("run-1", UNIT)?.pendingInput;
 		expect(pending).toHaveLength(1);
 		expect(pending?.[0].factory).toBe(factory);
 		expect(pending?.[0].options).toBe(options);
@@ -111,7 +115,7 @@ describe("lane-relay-ui — custom defers", () => {
 	it("does NOT toast on the real ctx when a questionnaire is deferred (the dock is the signal — no redundant chat toast)", () => {
 		recordRun("run-1", "ship");
 		const { real, notify } = makeRealCtx();
-		const relay = createLaneRelayUiContext(real, "run-1");
+		const relay = createLaneRelayUiContext(real, "run-1", UNIT);
 
 		void relay.custom((() => ({})) as never, undefined as never);
 
@@ -125,7 +129,7 @@ describe("lane-relay-ui — notify is focus-gated (Phase 7.1)", () => {
 	it("drops a child notify at root (this lane is NOT focused)", () => {
 		recordRun("run-1", "ship");
 		const { real, notify } = makeRealCtx();
-		const relay = createLaneRelayUiContext(real, "run-1");
+		const relay = createLaneRelayUiContext(real, "run-1", UNIT);
 
 		relay.notify("Advisor restored", "info");
 		expect(notify).not.toHaveBeenCalled(); // never reaches the launcher
@@ -134,7 +138,7 @@ describe("lane-relay-ui — notify is focus-gated (Phase 7.1)", () => {
 	it("forwards a child notify only while the user is switched into THIS lane", () => {
 		recordRun("run-1", "ship");
 		const { real, notify } = makeRealCtx();
-		const relay = createLaneRelayUiContext(real, "run-1");
+		const relay = createLaneRelayUiContext(real, "run-1", UNIT);
 
 		setFocusedRun("run-1");
 		relay.notify("hello", "warning");
@@ -152,7 +156,7 @@ describe("lane-relay-ui — ambient surfaces suppressed (Phase 7.1)", () => {
 	it("never forwards setWidget/setStatus/setWorkingMessage/setHiddenThinkingLabel/pasteToEditor", () => {
 		recordRun("run-1", "ship");
 		const ctx = makeRealCtx();
-		const relay = createLaneRelayUiContext(ctx.real, "run-1") as unknown as Record<
+		const relay = createLaneRelayUiContext(ctx.real, "run-1", UNIT) as unknown as Record<
 			string,
 			(...a: unknown[]) => unknown
 		>;
@@ -174,7 +178,7 @@ describe("lane-relay-ui — ambient surfaces suppressed (Phase 7.1)", () => {
 	it("onTerminalInput returns a no-op unsubscribe and never taps the launcher", () => {
 		recordRun("run-1", "ship");
 		const { real, onTerminalInput } = makeRealCtx();
-		const relay = createLaneRelayUiContext(real, "run-1");
+		const relay = createLaneRelayUiContext(real, "run-1", UNIT);
 
 		const unsub = relay.onTerminalInput(() => undefined);
 		expect(typeof unsub).toBe("function");
@@ -187,7 +191,7 @@ describe("lane-relay-ui — forwarding (Proxy get trap)", () => {
 	it("forwards a non-suppressed method to the real ctx with `this` bound", async () => {
 		recordRun("run-1", "ship");
 		const { real, confirmCalls } = makeRealCtx();
-		const relay = createLaneRelayUiContext(real, "run-1");
+		const relay = createLaneRelayUiContext(real, "run-1", UNIT);
 
 		await (relay as unknown as { confirm(m: string): Promise<boolean> }).confirm("ok?");
 
@@ -198,7 +202,7 @@ describe("lane-relay-ui — forwarding (Proxy get trap)", () => {
 	it("forwards the theme getter to the real ctx", () => {
 		recordRun("run-1", "ship");
 		const { real, theme } = makeRealCtx();
-		const relay = createLaneRelayUiContext(real, "run-1");
+		const relay = createLaneRelayUiContext(real, "run-1", UNIT);
 
 		expect((relay as unknown as { theme: unknown }).theme).toBe(theme);
 	});
@@ -207,7 +211,7 @@ describe("lane-relay-ui — forwarding (Proxy get trap)", () => {
 describe("lane-relay-ui — brand (Phase 7.2 child detection)", () => {
 	it("a relay is detectable via isLaneRelayUiContext; a plain ctx is not", () => {
 		const { real } = makeRealCtx();
-		const relay = createLaneRelayUiContext(real, "run-1");
+		const relay = createLaneRelayUiContext(real, "run-1", UNIT);
 		expect(isLaneRelayUiContext(relay)).toBe(true);
 		expect(isLaneRelayUiContext(real)).toBe(false);
 		expect(isLaneRelayUiContext(undefined)).toBe(false);
@@ -219,14 +223,14 @@ describe("lane-relay-ui — settling the deferred promise", () => {
 	it("resolves the parked promise with the drained answer", async () => {
 		recordRun("run-1", "ship");
 		const { real } = makeRealCtx();
-		const relay = createLaneRelayUiContext(real, "run-1");
+		const relay = createLaneRelayUiContext(real, "run-1", UNIT);
 
 		const result = track(relay.custom((() => ({})) as never, undefined as never));
 		await flush();
 		expect(result.settled).toBe(false);
 
 		// The switcher drains the queue and resolves the child (drainPendingInput).
-		const pending = dequeueInput("run-1");
+		const pending = dequeueInput("run-1", UNIT);
 		pending?.resolve("the-answer");
 		await flush();
 
@@ -237,7 +241,7 @@ describe("lane-relay-ui — settling the deferred promise", () => {
 	it("resolves the parked promise with undefined when the run is evicted (never strands the child)", async () => {
 		recordRun("run-1", "ship");
 		const { real } = makeRealCtx();
-		const relay = createLaneRelayUiContext(real, "run-1");
+		const relay = createLaneRelayUiContext(real, "run-1", UNIT);
 
 		const result = track(relay.custom((() => ({})) as never, undefined as never));
 		await flush();

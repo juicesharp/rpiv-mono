@@ -75,41 +75,47 @@ function enterDock(): void {
  *  - no lanes left → drop to the ambient root prompt;
  *  - some lane still needs input → park row 0 so a run of ⏎ presses walks the queue
  *    (needs-input lanes bucket-sort to the top, run-lane-registry.ts:422-433);
- *  - otherwise → keep the cursor on the originating lane, so focus returns to it.
+ *  - otherwise → return to the EXACT display row the user opened (the unit sub-row for a
+ *    fan-out unit, else the lane row), so focus returns to it.
  */
-function reparkAfterLane(runId: string): void {
+function reparkAfterLane(runId: string, unitIndex: number): void {
 	if (laneCount() === 0) {
 		setDockActive(false); // nothing left to step onto — back to the ambient prompt
 	} else if (listLanes().some((l) => laneNeedsInput(l.runId))) {
 		setDockActive(true); // another lane awaits — park at the top so the next ⏎ walks to it
 		setDockSelection(0);
 	} else {
-		// No lane needs input: stay stepped in on the originating lane, so focus returns
+		// No lane needs input: stay stepped in on the originating row, so focus returns
 		// to it rather than the primary session input. ↑/esc steps back out.
 		setDockActive(true);
-		const idx = listLanesForDisplay().findIndex((l) => l.runId === runId);
+		const idx = listLanesForDisplay().findIndex((r) =>
+			unitIndex >= 0
+				? r.kind === "unit" && r.lane.runId === runId && r.unit.index === unitIndex
+				: r.kind === "lane" && r.lane.runId === runId,
+		);
 		setDockSelection(idx >= 0 ? idx : 0);
 	}
 }
 
 /**
- * Switch into a run: open the read-only viewer, then drain its queued foreground
- * questions — sequentially, so overlays never stack. Marks the lane focused for the
- * whole switched-in session so THIS run's abort tap (and only it) interprets Ctrl-C;
- * cleared in finally so a viewer/drain throw can't strand focus (which would leave
- * Ctrl-C hijacked at root). Called by the dock editor's `onOpen` on ⏎.
+ * Switch into a run's UNIT: open the read-only viewer for `(runId, unitIndex)`, then
+ * drain THAT unit's queued foreground questions — sequentially, so overlays never stack.
+ * Marks the lane focused for the whole switched-in session so THIS run's abort tap (and
+ * only it) interprets Ctrl-C; cleared in finally so a viewer/drain throw can't strand
+ * focus (which would leave Ctrl-C hijacked at root). Called by the dock editor's `onOpen`
+ * on → / ⏎.
  */
-export async function switchIntoLane(ui: ExtensionUIContext, runId: string): Promise<void> {
+export async function switchIntoLane(ui: ExtensionUIContext, runId: string, unitIndex: number): Promise<void> {
 	if (switchingLane) return; // never stack two viewers
 	switchingLane = true;
 	setFocusedRun(runId);
 	try {
-		const intent = await showLaneViewer(ui, runId); // 1) see live context; esc/← → "back"
-		if (intent === "answer") await drainPendingInput(ui, runId); // 2) ⏎ in the viewer → answer in place (FR5)
+		const intent = await showLaneViewer(ui, runId, unitIndex); // 1) see live context; esc/← → "back"
+		if (intent === "answer") await drainPendingInput(ui, runId, unitIndex); // 2) ⏎ in the viewer → answer (FR5)
 	} finally {
 		setFocusedRun(undefined);
 		switchingLane = false;
-		reparkAfterLane(runId); // → and ⏎ converge: land back on the originating lane, not at root
+		reparkAfterLane(runId, unitIndex); // → and ⏎ converge: land back on the originating row, not at root
 	}
 }
 
@@ -123,26 +129,27 @@ export async function switchIntoLane(ui: ExtensionUIContext, runId: string): Pro
  * through them; otherwise it keeps the cursor on the lane just answered. It only
  * drops back to root when no lane remains to step onto.
  */
-export async function answerLane(ui: ExtensionUIContext, runId: string): Promise<void> {
+export async function answerLane(ui: ExtensionUIContext, runId: string, unitIndex: number): Promise<void> {
 	if (switchingLane) return; // never stack onto a viewer/another drain
 	switchingLane = true;
 	setFocusedRun(runId);
 	try {
-		await drainPendingInput(ui, runId);
+		await drainPendingInput(ui, runId, unitIndex);
 	} finally {
 		setFocusedRun(undefined);
 		switchingLane = false;
-		reparkAfterLane(runId); // same re-park as switchIntoLane's "back" path
+		reparkAfterLane(runId, unitIndex); // same re-park as switchIntoLane's "back" path
 	}
 }
 
 /**
- * FR5 — replay each queued foreground-stage questionnaire on the launcher's REAL
- * UI and resolve the child's stalled promise. Sequential (block-while-occupied);
- * a dismissed/error questionnaire still settles the child so it never hangs.
+ * FR5 — replay each of THIS unit's queued foreground-stage questionnaires on the
+ * launcher's REAL UI and resolve the child's stalled promise. Sequential
+ * (block-while-occupied); a dismissed/error questionnaire still settles the child so it
+ * never hangs.
  */
-async function drainPendingInput(ui: ExtensionUIContext, runId: string): Promise<void> {
-	for (let pending = dequeueInput(runId); pending; pending = dequeueInput(runId)) {
+async function drainPendingInput(ui: ExtensionUIContext, runId: string, unitIndex: number): Promise<void> {
+	for (let pending = dequeueInput(runId, unitIndex); pending; pending = dequeueInput(runId, unitIndex)) {
 		try {
 			pending.resolve(await ui.custom(pending.factory, pending.options));
 		} catch {
@@ -178,7 +185,8 @@ export function registerLaneSwitcher(pi: ExtensionAPI): void {
 						tui,
 						theme,
 						keybindings,
-						(runId, mode) => void (mode === "answer" ? answerLane(ui, runId) : switchIntoLane(ui, runId)),
+						(runId, unitIndex, mode) =>
+							void (mode === "answer" ? answerLane(ui, runId, unitIndex) : switchIntoLane(ui, runId, unitIndex)),
 					),
 			);
 		}

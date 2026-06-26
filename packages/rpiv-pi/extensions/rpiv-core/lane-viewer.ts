@@ -41,11 +41,12 @@ import {
 import { type DiskBranch, loadBranchFromDisk } from "./lane-transcript-disk.js";
 import {
 	getLane,
-	type LaneEntry,
+	getUnit,
 	type LaneSession,
 	type LaneStatus,
-	laneNeedsInput,
 	subscribeLanes,
+	type UnitLane,
+	unitNeedsInput,
 } from "./run-lane-registry.js";
 
 const MAX_HEIGHT_RATIO = 0.9;
@@ -57,6 +58,9 @@ const TERMINAL_GLYPH: Partial<Record<LaneStatus, string>> = {
 	aborted: "⊘",
 	cancelled: "⊘",
 };
+
+/** Header glyph for a finished unit sub-row (mirrors TERMINAL_GLYPH). */
+const UNIT_GLYPH: Record<"done" | "failed", string> = { done: "✓", failed: "✗" };
 
 export class LaneViewer implements Component {
 	private scrollOffset = 0;
@@ -77,19 +81,24 @@ export class LaneViewer implements Component {
 
 	constructor(
 		private readonly runId: string,
+		/** The unit this viewer follows — a fan-out index, or SINGLE_UNIT_KEY for the
+		 *  lane (parent) row / single-stage run. */
+		private readonly unitIndex: number,
 		private readonly tui: TUI,
 		private readonly theme: Theme,
 		private readonly done: (intent: "answer" | "back") => void,
 	) {
-		this.currentSession = getLane(runId)?.currentSession;
+		this.currentSession = getUnit(runId, unitIndex)?.currentSession;
 		this.sessionUnsub = this.currentSession?.subscribe(() => this.tui.requestRender());
-		// Follow the lane across stage transitions + detect eviction.
+		// Follow the unit across stage transitions + detect eviction.
 		this.registryUnsub = subscribeLanes(() => this.syncSession());
 	}
 
-	/** Re-point to the lane's current child if it changed; always re-render. */
+	/** Re-point to THIS unit's current child if it changed; always re-render. The
+	 *  identity-guard logic is unchanged and now a sibling spawn never drags the view
+	 *  away (each unit owns its own slot). */
 	private syncSession(): void {
-		const next = getLane(this.runId)?.currentSession;
+		const next = getUnit(this.runId, this.unitIndex)?.currentSession;
 		if (next !== this.currentSession) {
 			this.sessionUnsub?.();
 			this.currentSession = next;
@@ -99,12 +108,12 @@ export class LaneViewer implements Component {
 		this.tui.requestRender();
 	}
 
-	/** Disk-jsonl transcript fallback (Problem 2), memoized by `runId::lastSessionFile`
-	 *  so the synchronous per-tick render re-reads disk at most once per source. */
-	private loadDiskBranch(lane: LaneEntry): DiskBranch | undefined {
-		const key = `${this.runId}::${lane.lastSessionFile ?? ""}`;
+	/** Disk-jsonl fallback memoized by `runId::unitIndex::lastSessionFile` — the per-unit
+	 *  key so two units' caches never collide. */
+	private loadDiskBranch(unit: UnitLane | undefined): DiskBranch | undefined {
+		const key = `${this.runId}::${this.unitIndex}::${unit?.lastSessionFile ?? ""}`;
 		if (this.diskCache?.key !== key) {
-			this.diskCache = { key, value: loadBranchFromDisk(this.runId, lane.lastSessionFile) };
+			this.diskCache = { key, value: loadBranchFromDisk(this.runId, unit?.lastSessionFile) };
 		}
 		return this.diskCache.value;
 	}
@@ -112,6 +121,7 @@ export class LaneViewer implements Component {
 	render(width: number): string[] {
 		const lane = getLane(this.runId);
 		if (!lane) return this.frame([this.theme.fg("dim", "(run dismissed — esc to return)")], width);
+		const unit = getUnit(this.runId, this.unitIndex);
 		const session = this.currentSession;
 		let entries: ViewerEntry[];
 		let source: RenderSource;
@@ -123,19 +133,18 @@ export class LaneViewer implements Component {
 					cwd: session.sessionManager.getCwd(),
 					toolDef: (name) => session.getToolDefinition(name) as ToolDefArg,
 				};
-			} else if (lane.finalBranch !== undefined) {
-				// Phase A — terminated run: the live session is gone, render the snapshot,
-				// and resolve cwd + tool defs from what retireRun captured (Phase 4).
-				entries = (lane.finalBranch as ViewerEntry[]) ?? [];
-				const defs = lane.finalToolDefs;
+			} else if (unit?.finalBranch !== undefined) {
+				// Terminated unit: render its snapshot + the cwd/tool-defs captured at teardown.
+				entries = (unit.finalBranch as ViewerEntry[]) ?? [];
+				const defs = unit.finalToolDefs;
 				source = {
-					cwd: lane.finalCwd ?? "",
+					cwd: unit.finalCwd ?? "",
 					toolDef: (name) => defs?.get(name) as ToolDefArg,
 				};
 			} else {
-				// No live session + no in-memory snapshot — fall through to the on-disk jsonl
-				// (Problem 2 durable path) before giving up: live → finalBranch → disk → none.
-				const disk = this.loadDiskBranch(lane);
+				// No live session + no in-memory snapshot — fall through to this unit's on-disk
+				// jsonl (Problem 2 durable path): live → unit.finalBranch → unit disk → none.
+				const disk = this.loadDiskBranch(unit);
 				if (disk) {
 					entries = disk.entries;
 					source = disk.source;
@@ -178,22 +187,33 @@ export class LaneViewer implements Component {
 	/** Header + bottom-anchored windowed body + footer. scrollOffset 0 = newest (tail). */
 	private frame(body: string[], width: number): string[] {
 		const lane = getLane(this.runId);
-		const name = lane?.name ?? this.runId;
-		// Live runs read "▶ name — live"; a retained terminal run reflects its outcome,
-		// and a failed/aborted run appends its full cause (Problem 1) — "✗ ship — failed:
-		// <reason>" — truncated to width by the header truncate below.
-		const glyph = lane ? (TERMINAL_GLYPH[lane.status] ?? "•") : "•";
-		const headText =
-			!lane || lane.status === "running"
-				? `▶ ${name} — live`
-				: lane.error
-					? `${glyph} ${name} — ${lane.status}: ${lane.error}`
-					: `${glyph} ${name} — ${lane.status}`;
+		const unit = getUnit(this.runId, this.unitIndex);
+		// A real fan-out unit (unitIndex ≥ 0) reflects ITS OWN status + label; the lane
+		// row / sentinel keeps the run-driven header (name + run status + cause).
+		const isUnit = this.unitIndex >= 0 && unit !== undefined;
+		const name = (isUnit ? unit.label : undefined) ?? lane?.name ?? this.runId;
+		let headText: string;
+		if (isUnit) {
+			headText =
+				unit.status === "running" ? `▶ ${name} — live` : `${UNIT_GLYPH[unit.status]} ${name} — ${unit.status}`;
+		} else {
+			// Live runs read "▶ name — live"; a retained terminal run reflects its outcome,
+			// and a failed/aborted run appends its full cause (Problem 1) — "✗ ship — failed:
+			// <reason>" — truncated to width by the header truncate below.
+			const glyph = lane ? (TERMINAL_GLYPH[lane.status] ?? "•") : "•";
+			headText =
+				!lane || lane.status === "running"
+					? `▶ ${name} — live`
+					: lane.error
+						? `${glyph} ${name} — ${lane.status}: ${lane.error}`
+						: `${glyph} ${name} — ${lane.status}`;
+		}
 		const header = truncateToWidth(this.theme.fg("accent", headText), width, "…");
 		// A queued question is answered IN PLACE with ⏎ (switchIntoLane drains only on the
 		// "answer" intent); esc/← back out without draining, so the view verb and the answer
-		// verb never share a key. Advertise both on a needs-input lane.
-		const needs = laneNeedsInput(this.runId);
+		// verb never share a key. Needs-input is now PER-UNIT — the ⏎ answer hint + drain
+		// target is THIS unit.
+		const needs = unitNeedsInput(this.runId, this.unitIndex);
 		const toggle = this.toolsExpanded ? "t collapse" : "t expand";
 		const footer = truncateToWidth(
 			this.theme.fg(
@@ -220,7 +240,7 @@ export class LaneViewer implements Component {
 			this.done("back");
 			return;
 		}
-		if (matchesKey(data, Key.enter) && laneNeedsInput(this.runId)) {
+		if (matchesKey(data, Key.enter) && unitNeedsInput(this.runId, this.unitIndex)) {
 			this.done("answer");
 			return;
 		}
@@ -256,8 +276,8 @@ export class LaneViewer implements Component {
  * calls this on → / ⏎; resolves with the user's exit INTENT: esc/← → "back" (don't drain),
  * ⏎ on a needs-input lane → "answer" (switchIntoLane then drains the queued question).
  */
-export function showLaneViewer(ui: ExtensionUIContext, runId: string): Promise<"answer" | "back"> {
-	return ui.custom<"answer" | "back">((tui, theme, _kb, done) => new LaneViewer(runId, tui, theme, done), {
+export function showLaneViewer(ui: ExtensionUIContext, runId: string, unitIndex: number): Promise<"answer" | "back"> {
+	return ui.custom<"answer" | "back">((tui, theme, _kb, done) => new LaneViewer(runId, unitIndex, tui, theme, done), {
 		overlay: true,
 		overlayOptions: {
 			anchor: "bottom-center",

@@ -1,7 +1,7 @@
 import type { ExtensionAPI, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createLaneRelayUiContext } from "./lane-relay-ui.js";
-import { __resetRunLaneRegistry, recordRun } from "./run-lane-registry.js";
+import { __resetRunLaneRegistry, recordRun, SINGLE_UNIT_KEY } from "./run-lane-registry.js";
 import {
 	__resetSessionCaptureState,
 	getCapturedModel,
@@ -107,7 +107,7 @@ describe("session-capture", () => {
 			await handler({}, { modelRegistry: registry, model: BASELINE_MODEL, ui: FAKE_UI });
 
 			// A foreground child re-fires session_start with its branded relay ui — gated.
-			const relay = createLaneRelayUiContext(FAKE_UI, "child-run");
+			const relay = createLaneRelayUiContext(FAKE_UI, "child-run", SINGLE_UNIT_KEY);
 			const childRegistry = makeRegistry();
 			const childModel = { provider: "openai", id: "child-override" };
 			await handler({}, { modelRegistry: childRegistry, model: childModel, ui: relay });

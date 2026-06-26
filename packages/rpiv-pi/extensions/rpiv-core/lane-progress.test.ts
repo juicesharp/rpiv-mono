@@ -18,7 +18,7 @@ vi.mock("@juicesharp/rpiv-workflow/startup", () => ({ registerLifecycle }));
 
 import { __resetLaneProgress, registerLaneProgressHook } from "./lane-progress.js";
 import { createLaneRelayUiContext } from "./lane-relay-ui.js";
-import { __resetRunLaneRegistry, getLane, recordRun } from "./run-lane-registry.js";
+import { __resetRunLaneRegistry, getLane, getUnit, recordRun, SINGLE_UNIT_KEY } from "./run-lane-registry.js";
 import { __resetSessionCaptureState, registerSessionCapture } from "./session-capture.js";
 
 /** Loose projection of the listener bundle — enough to drive the events under test. */
@@ -36,12 +36,17 @@ interface Bundle {
 	) => void;
 	onLoopStart?: (
 		stage: { stageNumber: number; name: string },
-		info: { units?: unknown[] },
+		info: { kind?: string; units?: unknown[] },
+		ctx: { runId: string; totalStages: number },
+	) => void;
+	onUnitStart?: (
+		stage: { stageNumber: number; name: string },
+		unit: { index: number; label: string },
 		ctx: { runId: string; totalStages: number },
 	) => void;
 	onUnitEnd?: (
 		stage: { stageNumber: number; name: string },
-		unit: { index: number },
+		unit: { index: number; label?: string },
 		output: unknown,
 		ctx: { runId: string; totalStages: number },
 	) => void;
@@ -107,7 +112,7 @@ describe("registerLaneProgressHook (Phase 8)", () => {
 	it("does NOT register for a detached foreground child (branded relay ui)", async () => {
 		const { pi, sessionStart } = makePi();
 		registerLaneProgressHook(pi);
-		const relay = createLaneRelayUiContext(REAL_UI, "child-run");
+		const relay = createLaneRelayUiContext(REAL_UI, "child-run", SINGLE_UNIT_KEY);
 		await sessionStart()!({}, { hasUI: true, ui: relay });
 		expect(registerLifecycle).not.toHaveBeenCalled();
 	});
@@ -221,6 +226,139 @@ describe("lane-progress event mapping", () => {
 	});
 });
 
+describe("per-unit sub-rows (Phase 4 — onUnitStart/onUnitEnd lifecycle)", () => {
+	async function register(): Promise<Bundle> {
+		const { pi, sessionStart } = makePi();
+		registerLaneProgressHook(pi);
+		await sessionStart()!({}, { hasUI: true, ui: REAL_UI });
+		return bundle();
+	}
+
+	it("onUnitStart materializes a per-unit sub-row (label + running) for fan-out units", async () => {
+		const b = await register();
+		recordRun("run-1", "carve");
+		const ctx = { runId: "run-1", totalStages: 4 };
+		const stage = { stageNumber: 2, name: "design" };
+		b.onLoopStart?.(stage, { kind: "fanout", units: [{}, {}, {}] }, ctx);
+		b.onUnitStart?.(stage, { index: 0, label: "phase 1/3" }, ctx);
+		b.onUnitStart?.(stage, { index: 1, label: "phase 2/3" }, ctx);
+		expect(getUnit("run-1", 0)).toMatchObject({ index: 0, label: "phase 1/3", status: "running" });
+		expect(getUnit("run-1", 1)).toMatchObject({ index: 1, label: "phase 2/3", status: "running" });
+	});
+
+	it("out-of-order start/end (indices 2,0,1) resolves each unit row independently + climbs done monotonically", async () => {
+		const b = await register();
+		recordRun("run-1", "carve");
+		const ctx = { runId: "run-1", totalStages: 4 };
+		const stage = { stageNumber: 2, name: "design" };
+		b.onLoopStart?.(stage, { kind: "fanout", units: [{}, {}, {}] }, ctx);
+
+		// Units start + complete OUT of declared order: 2, then 0, then 1.
+		b.onUnitStart?.(stage, { index: 2, label: "phase 3/3" }, ctx);
+		b.onUnitStart?.(stage, { index: 0, label: "phase 1/3" }, ctx);
+		b.onUnitStart?.(stage, { index: 1, label: "phase 2/3" }, ctx);
+
+		b.onUnitEnd?.(stage, { index: 2 }, {}, ctx);
+		expect(getUnit("run-1", 2)?.status).toBe("done");
+		expect(getUnit("run-1", 0)?.status).toBe("running"); // sibling unaffected
+		expect(getUnit("run-1", 1)?.status).toBe("running");
+		expect(getLane("run-1")?.progress?.units).toEqual({ done: 1, total: 3 });
+
+		b.onUnitEnd?.(stage, { index: 0 }, {}, ctx);
+		expect(getUnit("run-1", 0)?.status).toBe("done");
+		expect(getLane("run-1")?.progress?.units).toEqual({ done: 2, total: 3 });
+
+		b.onUnitEnd?.(stage, { index: 1 }, {}, ctx);
+		// Each row resolved to its OWN terminal status; aggregate climbed 1→2→3.
+		expect([0, 1, 2].map((i) => getUnit("run-1", i)?.status)).toEqual(["done", "done", "done"]);
+		expect(getLane("run-1")?.progress?.units).toEqual({ done: 3, total: 3 });
+	});
+
+	it("a second fanout onLoopStart clears the prior generation's unit rows then repopulates 0..N", async () => {
+		const b = await register();
+		recordRun("run-1", "carve");
+		const ctx = { runId: "run-1", totalStages: 6 };
+		const stageA = { stageNumber: 2, name: "design" };
+		b.onLoopStart?.(stageA, { kind: "fanout", units: [{}, {}, {}] }, ctx);
+		b.onUnitStart?.(stageA, { index: 0, label: "a0" }, ctx);
+		b.onUnitStart?.(stageA, { index: 1, label: "a1" }, ctx);
+		b.onUnitStart?.(stageA, { index: 2, label: "a2" }, ctx);
+		expect(getUnit("run-1", 2)?.label).toBe("a2");
+
+		// Second fanout generation — fewer units. The prior generation's rows are dropped.
+		const stageB = { stageNumber: 5, name: "refine" };
+		b.onLoopStart?.(stageB, { kind: "fanout", units: [{}, {}] }, ctx);
+		expect(getUnit("run-1", 2)).toBeUndefined(); // cleared
+		b.onUnitStart?.(stageB, { index: 0, label: "b0" }, ctx);
+		b.onUnitStart?.(stageB, { index: 1, label: "b1" }, ctx);
+		expect(getUnit("run-1", 0)?.label).toBe("b0");
+		expect(getUnit("run-1", 1)?.label).toBe("b1");
+	});
+
+	it("a sequential iterate/assess loop never materializes unit sub-rows (the fanoutRuns gate drops it)", async () => {
+		const b = await register();
+		recordRun("run-1", "ship");
+		const ctx = { runId: "run-1", totalStages: 4 };
+		const stage = { stageNumber: 2, name: "iterate" };
+		b.onLoopStart?.(stage, { kind: "iterate" }, ctx); // non-fanout — gate stays off
+		b.onUnitStart?.(stage, { index: 0, label: "round 1" }, ctx);
+		b.onUnitStart?.(stage, { index: 1, label: "round 2" }, ctx);
+		// No sub-rows for a sequential loop — they collapse onto the lane's single slot.
+		expect(getUnit("run-1", 0)).toBeUndefined();
+		expect(getUnit("run-1", 1)).toBeUndefined();
+	});
+
+	it("a fanout generation followed by a non-fanout loop drops the gate (no new sub-rows)", async () => {
+		const b = await register();
+		recordRun("run-1", "carve");
+		const ctx = { runId: "run-1", totalStages: 6 };
+		b.onLoopStart?.({ stageNumber: 2, name: "design" }, { kind: "fanout", units: [{}] }, ctx);
+		b.onUnitStart?.({ stageNumber: 2, name: "design" }, { index: 0, label: "d0" }, ctx);
+		expect(getUnit("run-1", 0)?.label).toBe("d0");
+
+		// A subsequent iterate loop clears nothing but drops the gate; its units stay off-row.
+		const seq = { stageNumber: 4, name: "assess" };
+		b.onLoopStart?.(seq, { kind: "assess" }, ctx);
+		b.onUnitStart?.(seq, { index: 5, label: "round" }, ctx);
+		expect(getUnit("run-1", 5)).toBeUndefined();
+	});
+
+	it("orphan sweep — a unit that fires onUnitStart with NO onUnitEnd reads terminal after onStageError", async () => {
+		const b = await register();
+		recordRun("run-1", "carve");
+		const ctx = { runId: "run-1", totalStages: 4 };
+		const stage = { stageNumber: 2, name: "design" };
+		b.onLoopStart?.(stage, { kind: "fanout", units: [{}, {}, {}] }, ctx);
+		b.onUnitStart?.(stage, { index: 0, label: "p0" }, ctx);
+		b.onUnitStart?.(stage, { index: 1, label: "p1" }, ctx);
+		b.onUnitStart?.(stage, { index: 2, label: "p2" }, ctx);
+		// A fail-fast halt: unit 1 completed, units 0 + 2 never fire onUnitEnd.
+		b.onUnitEnd?.(stage, { index: 1 }, {}, ctx);
+
+		b.onStageError?.(stage, "boom", ctx);
+		// The still-running siblings are swept to ✗; the completed one keeps its status.
+		expect(getUnit("run-1", 0)?.status).toBe("failed");
+		expect(getUnit("run-1", 2)?.status).toBe("failed");
+		expect(getUnit("run-1", 1)?.status).toBe("done");
+	});
+
+	it("orphan sweep — onWorkflowEnd (abort) flips every still-running sub-row terminal before retiring", async () => {
+		const b = await register();
+		recordRun("run-1", "carve");
+		const ctx = { runId: "run-1", workflow: "carve", totalStages: 4 };
+		const stage = { stageNumber: 2, name: "design" };
+		b.onLoopStart?.(stage, { kind: "fanout", units: [{}, {}] }, ctx);
+		b.onUnitStart?.(stage, { index: 0, label: "p0" }, ctx);
+		b.onUnitStart?.(stage, { index: 1, label: "p1" }, ctx);
+
+		b.onWorkflowEnd?.({ termination: { status: "aborted" } }, ctx);
+		// Both stuck sub-rows read ✗ on an aborted run; the run itself is retired.
+		expect(getUnit("run-1", 0)?.status).toBe("failed");
+		expect(getUnit("run-1", 1)?.status).toBe("failed");
+		expect(getLane("run-1")?.status).toBe("aborted");
+	});
+});
+
 describe("onWorkflowEnd — terminal retention + completion toast (Phase A)", () => {
 	async function register(): Promise<Bundle> {
 		const { pi, sessionStart } = makePi();
@@ -236,6 +374,41 @@ describe("onWorkflowEnd — terminal retention + completion toast (Phase A)", ()
 		b.onWorkflowEnd?.({ termination: { status: "completed" } }, { runId: "run-1", workflow: "ship", totalStages: 7 });
 		expect(getLane("run-1")?.status).toBe("completed"); // retained, not deleted
 		expect(REAL_UI.notify).toHaveBeenCalledWith(expect.stringContaining("finished"), "info");
+	});
+
+	it("completed → paints the bar full (visited = totalStages) so a finished run isn't frozen below 100%", async () => {
+		const b = await register();
+		recordRun("run-1", "carve");
+		const ctx = { runId: "run-1", totalStages: 4 };
+		// A successful path that skips a branch-exclusive stage: 3 distinct of 4
+		// visited (the carve 13/14 shape). The last live snapshot caps below 100%.
+		b.onStageStart?.({ stageNumber: 1, name: "slice" }, ctx);
+		b.onStageStart?.({ stageNumber: 2, name: "elaborate" }, ctx);
+		b.onStageStart?.({ stageNumber: 3, name: "commit" }, ctx);
+		expect(getLane("run-1")?.progress?.visited).toBe(3); // frozen below total pre-end
+
+		b.onWorkflowEnd?.(
+			{ termination: { status: "completed" } },
+			{ runId: "run-1", workflow: "carve", totalStages: 4 },
+		);
+
+		// Bar painted full on completion; the terminal stage name is preserved.
+		expect(getLane("run-1")?.progress).toMatchObject({ visited: 4, totalStages: 4, stageName: "commit" });
+		expect(getLane("run-1")?.status).toBe("completed");
+	});
+
+	it("failed → leaves the last real snapshot frozen (does NOT paint the bar full)", async () => {
+		const b = await register();
+		recordRun("run-1", "carve");
+		const ctx = { runId: "run-1", totalStages: 4 };
+		b.onStageStart?.({ stageNumber: 1, name: "slice" }, ctx);
+		b.onStageError?.({ stageNumber: 2, name: "elaborate" }, "boom", ctx); // visited 2, phase error
+
+		b.onWorkflowEnd?.({ termination: { status: "failed" } }, { runId: "run-1", workflow: "carve", totalStages: 4 });
+
+		// A failed row stays frozen at the stage that died — NOT bumped to 4/4.
+		expect(getLane("run-1")?.progress).toMatchObject({ visited: 2, phase: "error", stageName: "elaborate" });
+		expect(getLane("run-1")?.status).toBe("failed");
 	});
 
 	it("failed → status failed + an error toast", async () => {

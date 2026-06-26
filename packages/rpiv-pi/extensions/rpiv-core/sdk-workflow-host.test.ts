@@ -108,7 +108,15 @@ vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
 	};
 });
 
-import { __resetRunLaneRegistry, getLane, type LaneSession, recordRun, retireRun } from "./run-lane-registry.js";
+import {
+	__resetRunLaneRegistry,
+	getLane,
+	getUnit,
+	type LaneSession,
+	recordRun,
+	retireRun,
+	SINGLE_UNIT_KEY,
+} from "./run-lane-registry.js";
 import {
 	AMBIENT_OBSERVER_MANIFEST_FLAG,
 	CHILD_AMBIENT_EXTENSION_DENYLIST,
@@ -274,8 +282,9 @@ describe("spawnChild — UI binding (deferring relay)", () => {
 		// returns a pending promise — it must NOT reach the real ctx.ui.custom.
 		const factory = (() => ({})) as never;
 		void boundArg.uiContext?.custom(factory, undefined as never);
-		expect(getLane("run-abc")?.pendingInput).toHaveLength(1);
-		expect(getLane("run-abc")?.pendingInput[0].factory).toBe(factory);
+		// A non-fan-out single stage has no unitIndex → it lands on the reserved single-unit slot.
+		expect(getUnit("run-abc", SINGLE_UNIT_KEY)?.pendingInput).toHaveLength(1);
+		expect(getUnit("run-abc", SINGLE_UNIT_KEY)?.pendingInput[0].factory).toBe(factory);
 		expect(uiCustom).not.toHaveBeenCalled();
 		// Deferring is silent at root: the enqueue notifies the registry (the always-on
 		// dock surfaces ⚑), so the relay fires NO redundant chat toast.
@@ -669,25 +678,26 @@ describe("spawnChild — lane current-session retention (Slice 2)", () => {
 		await host.spawnChild({
 			prompt: "p",
 			withSession: async () => {
-				liveDuringStage = getLane("run-abc")?.currentSession;
+				liveDuringStage = getUnit("run-abc", SINGLE_UNIT_KEY)?.currentSession;
 			},
 		});
 
-		// The lane exposed a STREAMING VIEW over the live child — same session identity, now
+		// The unit exposed a STREAMING VIEW over the live child — same session identity, now
 		// carrying the getStreamingMessage accessor; after the finally it's cleared.
 		expect(liveDuringStage?.sessionId).toBe(sessions[0].sessionId);
 		expect(typeof liveDuringStage?.getStreamingMessage).toBe("function");
-		expect(getLane("run-abc")?.currentSession).toBeUndefined();
+		expect(getUnit("run-abc", SINGLE_UNIT_KEY)?.currentSession).toBeUndefined();
 	});
 
-	it("a sibling's teardown does NOT clobber a later-spawned sibling's currentSession", async () => {
+	it("each unit owns its own key — a sibling's teardown never clobbers another unit's currentSession", async () => {
 		recordRun("run-abc", "ship");
 		const { deps } = makeDeps();
 		const host = new SdkWorkflowHost(deps);
 
-		// Sequence two concurrent siblings deterministically: A is created first
-		// (slot = A), then B (slot = B, the latest-spawned owner). A then tears down
-		// while B is still live — its teardown must leave B's ownership intact.
+		// Two concurrent fan-out units at declared indices 0 and 1. Each publishes under
+		// its OWN registry key (D1), so there is no shared slot for a teardown to clobber.
+		// Sequence them deterministically: unit 0 created first (sessions[0]), then unit 1
+		// (sessions[1]); unit 0 tears down while unit 1 is still live.
 		let aReached!: () => void;
 		const aReachedP = new Promise<void>((r) => (aReached = r));
 		let releaseA!: () => void;
@@ -699,33 +709,38 @@ describe("spawnChild — lane current-session retention (Slice 2)", () => {
 
 		const aP = host.spawnChild({
 			prompt: "a",
+			unitIndex: 0,
 			withSession: async () => {
 				aReached();
 				await aMayReturn;
 			},
 		});
-		await aReachedP; // A created → slot = sessions[0]
+		await aReachedP; // unit 0 created → sessions[0]
 
 		const bP = host.spawnChild({
 			prompt: "b",
+			unitIndex: 1,
 			withSession: async () => {
 				bReached();
 				await bMayReturn;
 			},
 		});
-		await bReachedP; // B created → slot = sessions[1] (latest-spawned wins)
+		await bReachedP; // unit 1 created → sessions[1]
 
-		expect(getLane("run-abc")?.currentSession?.sessionId).toBe(sessions[1].sessionId);
+		// Both live concurrently, each pinned to its OWN key — no last-wins collapse.
+		expect(getUnit("run-abc", 0)?.currentSession?.sessionId).toBe(sessions[0].sessionId);
+		expect(getUnit("run-abc", 1)?.currentSession?.sessionId).toBe(sessions[1].sessionId);
 
-		// A tears down while B is still live — the identity guard skips the clear.
+		// Unit 0 tears down while unit 1 is still live — only its own key clears; unit 1 intact.
 		releaseA();
 		await aP;
-		expect(getLane("run-abc")?.currentSession?.sessionId).toBe(sessions[1].sessionId);
+		expect(getUnit("run-abc", 0)?.currentSession).toBeUndefined();
+		expect(getUnit("run-abc", 1)?.currentSession?.sessionId).toBe(sessions[1].sessionId);
 
-		// B (the owner) tears down → it clears the slot.
+		// Unit 1 tears down → its own key clears.
 		releaseB();
 		await bP;
-		expect(getLane("run-abc")?.currentSession).toBeUndefined();
+		expect(getUnit("run-abc", 1)?.currentSession).toBeUndefined();
 	});
 
 	it("setCurrentSession before the run is recorded is a no-op (Phase 2 may land before Phase 3 records)", async () => {
@@ -763,16 +778,16 @@ describe("spawnChild — final snapshot + session file (Problem 2)", () => {
 			},
 		});
 
-		// The finally cleared the live session but captured the snapshot first.
-		const lane = getLane("run-abc");
-		expect(lane?.currentSession).toBeUndefined();
-		expect(lane?.finalBranch).toEqual(branch);
-		expect(lane?.finalCwd).toBe("/work");
+		// The finally cleared the live session but captured the snapshot first (per unit).
+		const unit = getUnit("run-abc", SINGLE_UNIT_KEY);
+		expect(unit?.currentSession).toBeUndefined();
+		expect(unit?.finalBranch).toEqual(branch);
+		expect(unit?.finalCwd).toBe("/work");
 
 		// The runner's terminal onWorkflowEnd fires AFTER teardown, with no live session —
 		// it must NOT clobber the captured snapshot (the original Problem 2 bug).
 		retireRun("run-abc", "completed");
-		expect(getLane("run-abc")?.finalBranch).toEqual(branch);
+		expect(getUnit("run-abc", SINGLE_UNIT_KEY)?.finalBranch).toEqual(branch);
 	});
 
 	it("records lastSessionFile from the child's sessionFile (durable disk-fallback seed)", async () => {
@@ -782,16 +797,16 @@ describe("spawnChild — final snapshot + session file (Problem 2)", () => {
 
 		await host.spawnChild({ prompt: "p", withSession: async () => undefined });
 
-		expect(getLane("run-abc")?.lastSessionFile).toBe(sessions[0].sessionFile);
+		expect(getUnit("run-abc", SINGLE_UNIT_KEY)?.lastSessionFile).toBe(sessions[0].sessionFile);
 	});
 
-	it("a sibling's teardown seeds lastSessionFile from the last-living owner, not an arbitrary sibling", async () => {
+	it("each unit seeds its own lastSessionFile from its own child (no shared slot)", async () => {
 		recordRun("run-abc", "ship");
 		const { deps } = makeDeps();
 		const host = new SdkWorkflowHost(deps);
 
-		// Same deterministic two-sibling sequencing as the currentSession guard test:
-		// A created first (slot = A), then B (slot = B, the latest-spawned owner).
+		// Same deterministic two-unit sequencing as the currentSession per-key test:
+		// unit 0 created first (sessions[0]), then unit 1 (sessions[1]).
 		let aReached!: () => void;
 		const aReachedP = new Promise<void>((r) => (aReached = r));
 		let releaseA!: () => void;
@@ -803,32 +818,35 @@ describe("spawnChild — final snapshot + session file (Problem 2)", () => {
 
 		const aP = host.spawnChild({
 			prompt: "a",
+			unitIndex: 0,
 			withSession: async () => {
 				aReached();
 				await aMayReturn;
 			},
 		});
-		await aReachedP; // A created → slot = sessions[0]
+		await aReachedP; // unit 0 created → sessions[0]
 
 		const bP = host.spawnChild({
 			prompt: "b",
+			unitIndex: 1,
 			withSession: async () => {
 				bReached();
 				await bMayReturn;
 			},
 		});
-		await bReachedP; // B created → slot = sessions[1] (latest-spawned owner)
+		await bReachedP; // unit 1 created → sessions[1]
 
-		// A tears down while B is still live — guard false, so A seeds NOTHING.
-		// (Under the old spawn-time write this would already be sessions[1].)
+		// Unit 0 tears down → seeds ONLY its own key, from its own child's file.
+		// Unit 1 is still live, so its key carries no seed yet.
 		releaseA();
 		await aP;
-		expect(getLane("run-abc")?.lastSessionFile).toBeUndefined();
+		expect(getUnit("run-abc", 0)?.lastSessionFile).toBe(sessions[0].sessionFile);
+		expect(getUnit("run-abc", 1)?.lastSessionFile).toBeUndefined();
 
-		// B (the slot owner) tears down → seeds lastSessionFile from its own file,
-		// coherent with the finalBranch snapshot captured in the same guard block.
+		// Unit 1 tears down → seeds its own key from its own file, coherent with the
+		// finalBranch snapshot captured in the same per-unit finally.
 		releaseB();
 		await bP;
-		expect(getLane("run-abc")?.lastSessionFile).toBe(sessions[1].sessionFile);
+		expect(getUnit("run-abc", 1)?.lastSessionFile).toBe(sessions[1].sessionFile);
 	});
 });

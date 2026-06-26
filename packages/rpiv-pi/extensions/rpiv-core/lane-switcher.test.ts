@@ -11,8 +11,10 @@ import {
 	getDockState,
 	getFocusedRun,
 	recordRun,
+	SINGLE_UNIT_KEY,
 	setDockActive,
 	setFocusedRun,
+	setUnitStarted,
 	subscribeLanes,
 } from "./run-lane-registry.js";
 
@@ -136,18 +138,18 @@ describe("lane-switcher — switchIntoLane sequencing", () => {
 		recordRun("run-1", "ship");
 		mockShowLaneViewer.mockResolvedValue("back");
 		const ui = createMockUI() as unknown as ExtensionUIContext;
-		await switchIntoLane(ui, "run-1");
+		await switchIntoLane(ui, "run-1", SINGLE_UNIT_KEY);
 		expect(mockShowLaneViewer).toHaveBeenCalledTimes(1);
-		expect(mockShowLaneViewer).toHaveBeenCalledWith(ui, "run-1");
+		expect(mockShowLaneViewer).toHaveBeenCalledWith(ui, "run-1", SINGLE_UNIT_KEY);
 	});
 
 	it("does not stack a second viewer while one is already open", async () => {
 		recordRun("run-1", "ship");
 		mockShowLaneViewer.mockReturnValue(new Promise<"answer" | "back">(() => {})); // never resolves
 		const ui = createMockUI() as unknown as ExtensionUIContext;
-		void switchIntoLane(ui, "run-1");
+		void switchIntoLane(ui, "run-1", SINGLE_UNIT_KEY);
 		await Promise.resolve();
-		void switchIntoLane(ui, "run-1"); // second call while viewer open → guarded
+		void switchIntoLane(ui, "run-1", SINGLE_UNIT_KEY); // second call while viewer open → guarded
 		await Promise.resolve();
 		expect(mockShowLaneViewer).toHaveBeenCalledTimes(1);
 	});
@@ -157,9 +159,23 @@ describe("lane-switcher — switchIntoLane sequencing", () => {
 		mockShowLaneViewer.mockResolvedValue("back"); // esc/← → back: no drain, re-park
 		setDockActive(true);
 		const ui = createMockUI() as unknown as ExtensionUIContext;
-		await switchIntoLane(ui, "run-1");
+		await switchIntoLane(ui, "run-1", SINGLE_UNIT_KEY);
 		// → and esc converge: focus returns to the lane in the dock, NOT the ambient root.
 		expect(getDockState()).toEqual({ active: true, selection: 0 });
+		expect(getFocusedRun()).toBeUndefined();
+	});
+
+	it("re-parks onto the EXACT unit sub-row the user opened (a fan-out unit, not the lane row)", async () => {
+		recordRun("run-1", "ship");
+		// Two fan-out unit sub-rows under the lane → flattened rows are [lane, unit0, unit1].
+		setUnitStarted("run-1", 0, "phase 1/2");
+		setUnitStarted("run-1", 1, "phase 2/2");
+		mockShowLaneViewer.mockResolvedValue("back"); // esc/← → back: re-park onto the opened row
+		setDockActive(true);
+		const ui = createMockUI() as unknown as ExtensionUIContext;
+		await switchIntoLane(ui, "run-1", 1); // open unit index 1 → its sub-row is the last row
+		// No lane needs input → land back on THAT unit's sub-row (row 2), not the lane row.
+		expect(getDockState()).toEqual({ active: true, selection: 2 });
 		expect(getFocusedRun()).toBeUndefined();
 	});
 
@@ -172,18 +188,18 @@ describe("lane-switcher — switchIntoLane sequencing", () => {
 		});
 		setDockActive(true);
 		const ui = createMockUI() as unknown as ExtensionUIContext;
-		await switchIntoLane(ui, "run-1");
+		await switchIntoLane(ui, "run-1", SINGLE_UNIT_KEY);
 		expect(getDockState().active).toBe(false);
 	});
 
 	it("drains the queued questions only when the viewer reports the 'answer' intent", async () => {
 		recordRun("run-1", "ship");
 		const resolve = vi.fn();
-		enqueueInput("run-1", { factory: (() => ({})) as never, options: undefined as never, resolve });
+		enqueueInput("run-1", SINGLE_UNIT_KEY, { factory: (() => ({})) as never, options: undefined as never, resolve });
 		const custom = vi.fn().mockResolvedValue("ans");
 		const ui = createMockUI({ custom }) as unknown as ExtensionUIContext;
 		mockShowLaneViewer.mockResolvedValue("back"); // backed out without answering
-		await switchIntoLane(ui, "run-1");
+		await switchIntoLane(ui, "run-1", SINGLE_UNIT_KEY);
 		expect(custom).not.toHaveBeenCalled(); // "back" never drains
 		expect(resolve).not.toHaveBeenCalled(); // the queued question survives for next time
 	});
@@ -198,7 +214,7 @@ describe("lane-switcher — focus lifecycle", () => {
 			throw new Error("viewer boom");
 		});
 		const ui = createMockUI() as unknown as ExtensionUIContext;
-		await expect(switchIntoLane(ui, "run-1")).rejects.toThrow("viewer boom");
+		await expect(switchIntoLane(ui, "run-1", SINGLE_UNIT_KEY)).rejects.toThrow("viewer boom");
 		expect(focusDuringViewer).toBe("run-1"); // focused while the viewer was open
 		expect(getFocusedRun()).toBeUndefined(); // cleared in finally despite the throw
 	});
@@ -207,7 +223,7 @@ describe("lane-switcher — focus lifecycle", () => {
 		recordRun("run-1", "ship");
 		mockShowLaneViewer.mockResolvedValue("back");
 		const ui = createMockUI() as unknown as ExtensionUIContext;
-		await switchIntoLane(ui, "run-1");
+		await switchIntoLane(ui, "run-1", SINGLE_UNIT_KEY);
 		expect(getFocusedRun()).toBeUndefined();
 	});
 });
@@ -219,14 +235,14 @@ describe("lane-switcher — drainPendingInput (FR5)", () => {
 		const factoryB = (() => ({})) as never;
 		const resolveA = vi.fn();
 		const resolveB = vi.fn();
-		enqueueInput("run-1", { factory: factoryA, options: "optsA" as never, resolve: resolveA });
-		enqueueInput("run-1", { factory: factoryB, options: "optsB" as never, resolve: resolveB });
+		enqueueInput("run-1", SINGLE_UNIT_KEY, { factory: factoryA, options: "optsA" as never, resolve: resolveA });
+		enqueueInput("run-1", SINGLE_UNIT_KEY, { factory: factoryB, options: "optsB" as never, resolve: resolveB });
 
 		const custom = vi.fn().mockResolvedValueOnce("ans-A").mockResolvedValueOnce("ans-B");
 		const ui = createMockUI({ custom }) as unknown as ExtensionUIContext;
 		mockShowLaneViewer.mockResolvedValue("answer");
 
-		await switchIntoLane(ui, "run-1");
+		await switchIntoLane(ui, "run-1", SINGLE_UNIT_KEY);
 
 		expect(custom).toHaveBeenNthCalledWith(1, factoryA, "optsA");
 		expect(custom).toHaveBeenNthCalledWith(2, factoryB, "optsB");
@@ -237,13 +253,13 @@ describe("lane-switcher — drainPendingInput (FR5)", () => {
 	it("settles the child with undefined when the replayed questionnaire throws / is dismissed", async () => {
 		recordRun("run-1", "ship");
 		const resolve = vi.fn();
-		enqueueInput("run-1", { factory: (() => ({})) as never, options: undefined as never, resolve });
+		enqueueInput("run-1", SINGLE_UNIT_KEY, { factory: (() => ({})) as never, options: undefined as never, resolve });
 
 		const custom = vi.fn().mockRejectedValue(new Error("dismissed"));
 		const ui = createMockUI({ custom }) as unknown as ExtensionUIContext;
 		mockShowLaneViewer.mockResolvedValue("answer");
 
-		await switchIntoLane(ui, "run-1");
+		await switchIntoLane(ui, "run-1", SINGLE_UNIT_KEY);
 		expect(resolve).toHaveBeenCalledWith(undefined); // never strands the child
 	});
 });
@@ -255,13 +271,13 @@ describe("lane-switcher — answerLane (direct answer, no viewer)", () => {
 		const factoryB = (() => ({})) as never;
 		const resolveA = vi.fn();
 		const resolveB = vi.fn();
-		enqueueInput("run-1", { factory: factoryA, options: "optsA" as never, resolve: resolveA });
-		enqueueInput("run-1", { factory: factoryB, options: "optsB" as never, resolve: resolveB });
+		enqueueInput("run-1", SINGLE_UNIT_KEY, { factory: factoryA, options: "optsA" as never, resolve: resolveA });
+		enqueueInput("run-1", SINGLE_UNIT_KEY, { factory: factoryB, options: "optsB" as never, resolve: resolveB });
 
 		const custom = vi.fn().mockResolvedValueOnce("ans-A").mockResolvedValueOnce("ans-B");
 		const ui = createMockUI({ custom }) as unknown as ExtensionUIContext;
 
-		await answerLane(ui, "run-1");
+		await answerLane(ui, "run-1", SINGLE_UNIT_KEY);
 
 		expect(mockShowLaneViewer).not.toHaveBeenCalled(); // never opens the transcript
 		expect(custom).toHaveBeenNthCalledWith(1, factoryA, "optsA");
@@ -273,23 +289,31 @@ describe("lane-switcher — answerLane (direct answer, no viewer)", () => {
 	it("settles the child with undefined when the replayed questionnaire throws", async () => {
 		recordRun("run-1", "ship");
 		const resolve = vi.fn();
-		enqueueInput("run-1", { factory: (() => ({})) as never, options: undefined as never, resolve });
+		enqueueInput("run-1", SINGLE_UNIT_KEY, { factory: (() => ({})) as never, options: undefined as never, resolve });
 		const custom = vi.fn().mockRejectedValue(new Error("dismissed"));
 		const ui = createMockUI({ custom }) as unknown as ExtensionUIContext;
 
-		await answerLane(ui, "run-1");
+		await answerLane(ui, "run-1", SINGLE_UNIT_KEY);
 		expect(resolve).toHaveBeenCalledWith(undefined);
 	});
 
 	it("stays stepped in when another lane still needs input", async () => {
 		recordRun("run-1", "ship");
 		recordRun("run-2", "build");
-		enqueueInput("run-1", { factory: (() => ({})) as never, options: undefined as never, resolve: vi.fn() });
-		enqueueInput("run-2", { factory: (() => ({})) as never, options: undefined as never, resolve: vi.fn() });
+		enqueueInput("run-1", SINGLE_UNIT_KEY, {
+			factory: (() => ({})) as never,
+			options: undefined as never,
+			resolve: vi.fn(),
+		});
+		enqueueInput("run-2", SINGLE_UNIT_KEY, {
+			factory: (() => ({})) as never,
+			options: undefined as never,
+			resolve: vi.fn(),
+		});
 		const custom = vi.fn().mockResolvedValue(undefined);
 		const ui = createMockUI({ custom }) as unknown as ExtensionUIContext;
 
-		await answerLane(ui, "run-1");
+		await answerLane(ui, "run-1", SINGLE_UNIT_KEY);
 
 		expect(getDockState()).toEqual({ active: true, selection: 0 }); // re-enters for run-2
 		expect(getFocusedRun()).toBeUndefined();
@@ -298,12 +322,16 @@ describe("lane-switcher — answerLane (direct answer, no viewer)", () => {
 	it("stays stepped in on the answered lane when no other lane needs input", async () => {
 		recordRun("run-1", "ship");
 		recordRun("run-2", "build");
-		enqueueInput("run-1", { factory: (() => ({})) as never, options: undefined as never, resolve: vi.fn() });
+		enqueueInput("run-1", SINGLE_UNIT_KEY, {
+			factory: (() => ({})) as never,
+			options: undefined as never,
+			resolve: vi.fn(),
+		});
 		setDockActive(true);
 		const custom = vi.fn().mockResolvedValue(undefined);
 		const ui = createMockUI({ custom }) as unknown as ExtensionUIContext;
 
-		await answerLane(ui, "run-1");
+		await answerLane(ui, "run-1", SINGLE_UNIT_KEY);
 
 		// Focus returns to the lane (the dock), not the primary session input. With no
 		// needs-input lanes left, both run as "running" in insertion order, so the
@@ -314,7 +342,11 @@ describe("lane-switcher — answerLane (direct answer, no viewer)", () => {
 
 	it("drops back to the root prompt only when no lane remains after answering", async () => {
 		recordRun("run-1", "ship");
-		enqueueInput("run-1", { factory: (() => ({})) as never, options: undefined as never, resolve: vi.fn() });
+		enqueueInput("run-1", SINGLE_UNIT_KEY, {
+			factory: (() => ({})) as never,
+			options: undefined as never,
+			resolve: vi.fn(),
+		});
 		setDockActive(true);
 		// The lane evicts itself while its question is being answered (run finished),
 		// leaving nothing to step onto.
@@ -324,7 +356,7 @@ describe("lane-switcher — answerLane (direct answer, no viewer)", () => {
 		});
 		const ui = createMockUI({ custom }) as unknown as ExtensionUIContext;
 
-		await answerLane(ui, "run-1");
+		await answerLane(ui, "run-1", SINGLE_UNIT_KEY);
 
 		expect(getDockState().active).toBe(false);
 		expect(getFocusedRun()).toBeUndefined();
@@ -424,7 +456,7 @@ describe("lane-switcher — registration / lifecycle", () => {
 		const { sessionStart } = register();
 		recordRun("run-1", "ship");
 		const realUi = createMockUI() as unknown as ExtensionUIContext;
-		const relay = createLaneRelayUiContext(realUi, "run-1");
+		const relay = createLaneRelayUiContext(realUi, "run-1", SINGLE_UNIT_KEY);
 		await sessionStart(undefined, { hasUI: true, ui: relay });
 		expect(realUi.setWidget).not.toHaveBeenCalled();
 		expect(realUi.setEditorComponent as unknown as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();

@@ -7,16 +7,19 @@ import {
 	getDockState,
 	getFocusedRun,
 	getLane,
+	getUnit,
 	type LaneSession,
 	laneCount,
 	laneNeedsInput,
 	listLanes,
 	listLanesForDisplay,
+	markUnitDone,
 	moveDockSelection,
 	noteVisitedStage,
 	type PendingInput,
 	recordRun,
 	retireRun,
+	SINGLE_UNIT_KEY,
 	setCurrentSession,
 	setDockActive,
 	setDockSelection,
@@ -25,7 +28,9 @@ import {
 	setLaneProgress,
 	setLaneSessionFile,
 	setLaneStatus,
+	setUnitStarted,
 	subscribeLanes,
+	unitNeedsInput,
 } from "./run-lane-registry.js";
 
 /** Minimal LaneSession stub — structural, so the registry needs no real AgentSession. */
@@ -60,8 +65,9 @@ describe("run-lane-registry", () => {
 			recordRun("run-1", "ship");
 			const lane = getLane("run-1");
 			expect(lane).toMatchObject({ runId: "run-1", name: "ship", status: "running" });
-			expect(lane?.currentSession).toBeUndefined();
-			expect(lane?.pendingInput).toEqual([]);
+			expect(lane?.units.size).toBe(0); // no unit sub-lanes until a child publishes
+			expect(getUnit("run-1", SINGLE_UNIT_KEY)).toBeUndefined();
+			expect(laneNeedsInput("run-1")).toBe(false);
 			expect(lane?.progress).toBeUndefined();
 			expect(listLanes()).toHaveLength(1);
 			expect(laneCount()).toBe(1);
@@ -83,20 +89,21 @@ describe("run-lane-registry", () => {
 				stageName: "build",
 				phase: "running",
 			});
-			setCurrentSession("run-1", {
+			setCurrentSession("run-1", SINGLE_UNIT_KEY, {
 				...makeSession("s1"),
 				sessionManager: { getBranch: () => [{ type: "x" }], getCwd: () => "/tmp" },
 			});
-			retireRun("run-1", "failed"); // → status "failed", finalBranch captured
+			retireRun("run-1", "failed"); // → status "failed", per-unit finalBranch captured
 			expect(getLane("run-1")?.status).toBe("failed");
-			expect(getLane("run-1")?.finalBranch).toBeDefined();
+			expect(getUnit("run-1", SINGLE_UNIT_KEY)?.finalBranch).toBeDefined();
 
 			// Resuming re-records the SAME id — the lane must come back to life, not stay failed.
 			recordRun("run-1", "ship");
 			const lane = getLane("run-1");
 			expect(laneCount()).toBe(1);
 			expect(lane?.status).toBe("running"); // reactivated, no longer "failed"
-			expect(lane?.finalBranch).toBeUndefined(); // stale snapshot dropped
+			expect(lane?.units.size).toBe(0); // stale per-unit snapshots dropped
+			expect(getUnit("run-1", SINGLE_UNIT_KEY)).toBeUndefined();
 			expect(lane?.progress).toBeUndefined(); // stale progress cleared
 			expect(lane?.needsInputSince).toBeUndefined();
 		});
@@ -122,11 +129,22 @@ describe("run-lane-registry", () => {
 			recordRun("run-1", "ship");
 			const a = makePending();
 			const b = makePending();
-			enqueueInput("run-1", a);
-			enqueueInput("run-1", b);
+			enqueueInput("run-1", SINGLE_UNIT_KEY, a);
+			enqueueInput("run-1", SINGLE_UNIT_KEY, b);
 			evictRun("run-1");
 			expect(getLane("run-1")).toBeUndefined();
 			expect(laneCount()).toBe(0);
+			expect(a.resolve).toHaveBeenCalledWith(undefined);
+			expect(b.resolve).toHaveBeenCalledWith(undefined);
+		});
+
+		it("settles EVERY unit's queue across a fan-out lane", () => {
+			recordRun("run-1", "ship");
+			const a = makePending();
+			const b = makePending();
+			enqueueInput("run-1", 0, a);
+			enqueueInput("run-1", 1, b);
+			evictRun("run-1");
 			expect(a.resolve).toHaveBeenCalledWith(undefined);
 			expect(b.resolve).toHaveBeenCalledWith(undefined);
 		});
@@ -143,19 +161,20 @@ describe("run-lane-registry", () => {
 		it("retains the lane with terminal status, snapshots the branch, clears the session, settles pending", () => {
 			recordRun("run-1", "ship");
 			const branch = [{ type: "message" }];
-			setCurrentSession("run-1", {
+			setCurrentSession("run-1", SINGLE_UNIT_KEY, {
 				...makeSession("s1"),
 				sessionManager: { getBranch: () => branch, getCwd: () => "/tmp" },
 			});
 			const p = makePending();
-			enqueueInput("run-1", p);
+			enqueueInput("run-1", SINGLE_UNIT_KEY, p);
 			retireRun("run-1", "completed");
 			const lane = getLane("run-1");
+			const unit = getUnit("run-1", SINGLE_UNIT_KEY);
 			expect(lane).toBeDefined(); // RETAINED, not deleted
 			expect(lane?.status).toBe("completed");
-			expect(lane?.finalBranch).toBe(branch); // snapshot captured before dropping the session
-			expect(lane?.currentSession).toBeUndefined();
-			expect(lane?.pendingInput).toHaveLength(0);
+			expect(unit?.finalBranch).toBe(branch); // snapshot captured before dropping the session
+			expect(unit?.currentSession).toBeUndefined();
+			expect(unit?.pendingInput).toHaveLength(0);
 			expect(p.resolve).toHaveBeenCalledWith(undefined); // stalled child never hangs
 		});
 
@@ -166,23 +185,23 @@ describe("run-lane-registry", () => {
 				{ type: "message", message: { role: "assistant", content: [{ type: "toolCall", name: "edit" }] } },
 			];
 			const getToolDefinition = vi.fn((name: string) => ({ name, label: `def:${name}` }));
-			setCurrentSession("run-1", {
+			setCurrentSession("run-1", SINGLE_UNIT_KEY, {
 				...makeSession("s1"),
 				sessionManager: { getBranch: () => branch, getCwd: () => "/work/dir" },
 				getToolDefinition,
 			});
 			retireRun("run-1", "completed");
-			const lane = getLane("run-1");
-			expect(lane?.finalCwd).toBe("/work/dir");
-			expect(lane?.finalToolDefs?.get("bash")).toEqual({ name: "bash", label: "def:bash" });
-			expect(lane?.finalToolDefs?.get("edit")).toEqual({ name: "edit", label: "def:edit" });
+			const unit = getUnit("run-1", SINGLE_UNIT_KEY);
+			expect(unit?.finalCwd).toBe("/work/dir");
+			expect(unit?.finalToolDefs?.get("bash")).toEqual({ name: "bash", label: "def:bash" });
+			expect(unit?.finalToolDefs?.get("edit")).toEqual({ name: "edit", label: "def:edit" });
 			// Each distinct tool name resolved exactly once.
 			expect(getToolDefinition).toHaveBeenCalledTimes(2);
 		});
 
 		it("fail-soft when getBranch throws — leaves finalBranch undefined, still retires", () => {
 			recordRun("run-1", "ship");
-			setCurrentSession("run-1", {
+			setCurrentSession("run-1", SINGLE_UNIT_KEY, {
 				...makeSession("s1"),
 				sessionManager: {
 					getBranch: () => {
@@ -193,7 +212,14 @@ describe("run-lane-registry", () => {
 			});
 			expect(() => retireRun("run-1", "failed")).not.toThrow();
 			expect(getLane("run-1")?.status).toBe("failed");
-			expect(getLane("run-1")?.finalBranch).toBeUndefined();
+			expect(getUnit("run-1", SINGLE_UNIT_KEY)?.finalBranch).toBeUndefined();
+		});
+
+		it("flips a never-ended unit's status terminal (running → done)", () => {
+			recordRun("run-1", "ship");
+			setUnitStarted("run-1", 0, "phase 1/1"); // running, no onUnitEnd
+			retireRun("run-1", "completed");
+			expect(getUnit("run-1", 0)?.status).toBe("done");
 		});
 
 		it("is a no-op for an unknown id", () => {
@@ -206,14 +232,14 @@ describe("run-lane-registry", () => {
 		it("is idempotent — FIRST retire wins; a second retire preserves the snapshot and status", () => {
 			recordRun("run-1", "ship");
 			const branch = [{ type: "message" }];
-			setCurrentSession("run-1", {
+			setCurrentSession("run-1", SINGLE_UNIT_KEY, {
 				...makeSession("s1"),
 				sessionManager: { getBranch: () => branch, getCwd: () => "/tmp" },
 			});
 			// First retire (e.g. the manager's optimistic `x` cancel) snapshots the live
 			// session and drops it.
 			retireRun("run-1", "aborted");
-			expect(getLane("run-1")?.finalBranch).toBe(branch);
+			expect(getUnit("run-1", SINGLE_UNIT_KEY)?.finalBranch).toBe(branch);
 
 			// Second retire (e.g. the runner's later onWorkflowEnd for the same run) must
 			// NOT re-snapshot off the now-absent session — that would wipe finalBranch.
@@ -221,22 +247,43 @@ describe("run-lane-registry", () => {
 			subscribeLanes(listener);
 			retireRun("run-1", "completed");
 			expect(getLane("run-1")?.status).toBe("aborted"); // first status held
-			expect(getLane("run-1")?.finalBranch).toBe(branch); // transcript preserved
+			expect(getUnit("run-1", SINGLE_UNIT_KEY)?.finalBranch).toBe(branch); // transcript preserved
 			expect(listener).not.toHaveBeenCalled(); // no spurious notify on the no-op
 		});
 	});
 
-	describe("listLanesForDisplay (Phase B)", () => {
+	describe("listLanesForDisplay (Phase B + D4 flatten)", () => {
 		it("stable priority sort: needs-input → running → terminal, insertion order within a bucket", () => {
 			recordRun("done-1", "a");
 			retireRun("done-1", "completed");
 			recordRun("run-1", "b"); // running
 			recordRun("run-2", "c"); // running, will need input
-			enqueueInput("run-2", makePending());
-			const order = listLanesForDisplay().map((l) => l.runId);
+			enqueueInput("run-2", SINGLE_UNIT_KEY, makePending());
+			const order = listLanesForDisplay().map((r) => r.lane.runId);
 			expect(order).toEqual(["run-2", "run-1", "done-1"]);
 			// listLanes() keeps launch (insertion) order — display sort must not mutate it.
 			expect(listLanes().map((l) => l.runId)).toEqual(["done-1", "run-1", "run-2"]);
+		});
+
+		it("flattens fan-out unit sub-rows ascending by index directly beneath their lane", () => {
+			recordRun("run-1", "ship");
+			// Publish out of order — the flatten still sorts ascending by declared index.
+			setUnitStarted("run-1", 2, "phase 3/3");
+			setUnitStarted("run-1", 0, "phase 1/3");
+			setUnitStarted("run-1", 1, "phase 2/3");
+			const rows = listLanesForDisplay();
+			expect(rows.map((r) => r.kind)).toEqual(["lane", "unit", "unit", "unit"]);
+			expect(rows.filter((r) => r.kind === "unit").map((r) => (r.kind === "unit" ? r.unit.index : -9))).toEqual([
+				0, 1, 2,
+			]);
+		});
+
+		it("a single-stage run (sentinel-only) yields exactly one lane row — no sub-rows", () => {
+			recordRun("run-1", "ship");
+			setCurrentSession("run-1", SINGLE_UNIT_KEY, makeSession("s1")); // writes the sentinel slot
+			const rows = listLanesForDisplay();
+			expect(rows).toHaveLength(1);
+			expect(rows[0]?.kind).toBe("lane");
 		});
 	});
 
@@ -258,29 +305,37 @@ describe("run-lane-registry", () => {
 		it("stamps on first enqueue, holds across a second enqueue AND a full drain, clears only at retire", () => {
 			recordRun("run-1", "ship");
 			expect(getLane("run-1")?.needsInputSince).toBeUndefined();
-			enqueueInput("run-1", makePending());
+			enqueueInput("run-1", SINGLE_UNIT_KEY, makePending());
 			const stamped = getLane("run-1")?.needsInputSince;
 			expect(typeof stamped).toBe("number");
-			enqueueInput("run-1", makePending()); // second enqueue must not re-stamp
+			enqueueInput("run-1", SINGLE_UNIT_KEY, makePending()); // second enqueue must not re-stamp
 			expect(getLane("run-1")?.needsInputSince).toBe(stamped);
-			dequeueInput("run-1"); // still one queued → clock holds
+			dequeueInput("run-1", SINGLE_UNIT_KEY); // still one queued → clock holds
 			expect(getLane("run-1")?.needsInputSince).toBe(stamped);
-			dequeueInput("run-1"); // queue FULLY drained → clock STILL holds (continuous-wait marker)
+			dequeueInput("run-1", SINGLE_UNIT_KEY); // queue FULLY drained → clock STILL holds (continuous-wait marker)
+			expect(getLane("run-1")?.needsInputSince).toBe(stamped);
+		});
+
+		it("stamps once across DISTINCT units (lane-level clock), not per unit", () => {
+			recordRun("run-1", "ship");
+			enqueueInput("run-1", 0, makePending());
+			const stamped = getLane("run-1")?.needsInputSince;
+			enqueueInput("run-1", 1, makePending()); // a sibling unit must not re-stamp the lane clock
 			expect(getLane("run-1")?.needsInputSince).toBe(stamped);
 		});
 
 		it("a drain→refill keeps the original wait start (no aging-clock reset)", () => {
 			recordRun("run-1", "ship");
-			enqueueInput("run-1", makePending());
+			enqueueInput("run-1", SINGLE_UNIT_KEY, makePending());
 			const stamped = getLane("run-1")?.needsInputSince;
-			dequeueInput("run-1"); // queue empties during a switch-in drain
-			enqueueInput("run-1", makePending()); // a background sibling refills it
+			dequeueInput("run-1", SINGLE_UNIT_KEY); // queue empties during a switch-in drain
+			enqueueInput("run-1", SINGLE_UNIT_KEY, makePending()); // a background sibling refills it
 			expect(getLane("run-1")?.needsInputSince).toBe(stamped); // age preserved, not reset to "now"
 		});
 
 		it("retireRun clears the needs-input clock", () => {
 			recordRun("run-1", "ship");
-			enqueueInput("run-1", makePending());
+			enqueueInput("run-1", SINGLE_UNIT_KEY, makePending());
 			retireRun("run-1", "aborted");
 			expect(getLane("run-1")?.needsInputSince).toBeUndefined();
 		});
@@ -291,24 +346,32 @@ describe("run-lane-registry", () => {
 			recordRun("run-1", "ship");
 			const listener = vi.fn();
 			subscribeLanes(listener);
-			setLaneSessionFile("run-1", "/sessions/run-1.jsonl");
-			expect(getLane("run-1")?.lastSessionFile).toBe("/sessions/run-1.jsonl");
+			setLaneSessionFile("run-1", SINGLE_UNIT_KEY, "/sessions/run-1.jsonl");
+			expect(getUnit("run-1", SINGLE_UNIT_KEY)?.lastSessionFile).toBe("/sessions/run-1.jsonl");
 			expect(listener).not.toHaveBeenCalled(); // read lazily at disk-fallback time — no redraw
 		});
 
 		it("is a no-op when file is undefined (never clears) and on a missing lane", () => {
 			recordRun("run-1", "ship");
-			setLaneSessionFile("run-1", "/sessions/run-1.jsonl");
-			setLaneSessionFile("run-1", undefined); // ignored — does not clear
-			expect(getLane("run-1")?.lastSessionFile).toBe("/sessions/run-1.jsonl");
-			expect(() => setLaneSessionFile("nope", "/x.jsonl")).not.toThrow();
+			setLaneSessionFile("run-1", SINGLE_UNIT_KEY, "/sessions/run-1.jsonl");
+			setLaneSessionFile("run-1", SINGLE_UNIT_KEY, undefined); // ignored — does not clear
+			expect(getUnit("run-1", SINGLE_UNIT_KEY)?.lastSessionFile).toBe("/sessions/run-1.jsonl");
+			expect(() => setLaneSessionFile("nope", SINGLE_UNIT_KEY, "/x.jsonl")).not.toThrow();
+		});
+
+		it("seeds the pointer on a PER-UNIT key (two units never collide)", () => {
+			recordRun("run-1", "ship");
+			setLaneSessionFile("run-1", 0, "/sessions/u0.jsonl");
+			setLaneSessionFile("run-1", 1, "/sessions/u1.jsonl");
+			expect(getUnit("run-1", 0)?.lastSessionFile).toBe("/sessions/u0.jsonl");
+			expect(getUnit("run-1", 1)?.lastSessionFile).toBe("/sessions/u1.jsonl");
 		});
 
 		it("re-record (resume) drops the prior run's session-file pointer", () => {
 			recordRun("run-1", "ship");
-			setLaneSessionFile("run-1", "/sessions/run-1.jsonl");
+			setLaneSessionFile("run-1", SINGLE_UNIT_KEY, "/sessions/run-1.jsonl");
 			recordRun("run-1", "ship"); // reactivate — resume reuses the run id
-			expect(getLane("run-1")?.lastSessionFile).toBeUndefined();
+			expect(getUnit("run-1", SINGLE_UNIT_KEY)).toBeUndefined();
 		});
 	});
 
@@ -336,22 +399,61 @@ describe("run-lane-registry", () => {
 	});
 
 	describe("setCurrentSession", () => {
-		it("sets, replaces, and clears currentSession", () => {
+		it("sets, replaces, and clears a unit's currentSession", () => {
 			recordRun("run-1", "ship");
 			const a = makeSession("a");
 			const b = makeSession("b");
-			setCurrentSession("run-1", a);
-			expect(getLane("run-1")?.currentSession).toBe(a);
-			setCurrentSession("run-1", b);
-			expect(getLane("run-1")?.currentSession).toBe(b);
-			setCurrentSession("run-1", undefined);
-			expect(getLane("run-1")?.currentSession).toBeUndefined();
+			setCurrentSession("run-1", SINGLE_UNIT_KEY, a);
+			expect(getUnit("run-1", SINGLE_UNIT_KEY)?.currentSession).toBe(a);
+			setCurrentSession("run-1", SINGLE_UNIT_KEY, b);
+			expect(getUnit("run-1", SINGLE_UNIT_KEY)?.currentSession).toBe(b);
+			setCurrentSession("run-1", SINGLE_UNIT_KEY, undefined);
+			expect(getUnit("run-1", SINGLE_UNIT_KEY)?.currentSession).toBeUndefined();
+		});
+
+		it("each unit owns its own session slot — a sibling publish never clobbers another", () => {
+			recordRun("run-1", "ship");
+			const a = makeSession("a");
+			const b = makeSession("b");
+			setCurrentSession("run-1", 0, a);
+			setCurrentSession("run-1", 1, b);
+			expect(getUnit("run-1", 0)?.currentSession).toBe(a);
+			expect(getUnit("run-1", 1)?.currentSession).toBe(b);
+		});
+
+		it("clearing a never-created unit is a no-op (does not resurrect it)", () => {
+			recordRun("run-1", "ship");
+			setCurrentSession("run-1", 5, undefined);
+			expect(getUnit("run-1", 5)).toBeUndefined();
 		});
 
 		it("is a no-op when the run isn't recorded", () => {
 			const listener = vi.fn();
 			subscribeLanes(listener);
-			expect(() => setCurrentSession("nope", makeSession("a"))).not.toThrow();
+			expect(() => setCurrentSession("nope", SINGLE_UNIT_KEY, makeSession("a"))).not.toThrow();
+			expect(listener).not.toHaveBeenCalled();
+		});
+	});
+
+	describe("setUnitStarted / markUnitDone", () => {
+		it("upserts a unit with its label + running status, then flips it terminal", () => {
+			recordRun("run-1", "ship");
+			setUnitStarted("run-1", 0, "phase 1/2");
+			const unit = getUnit("run-1", 0);
+			expect(unit?.label).toBe("phase 1/2");
+			expect(unit?.status).toBe("running");
+			markUnitDone("run-1", 0, "done");
+			expect(getUnit("run-1", 0)?.status).toBe("done");
+		});
+
+		it("markUnitDone is a no-op (no notify) on a missing/unchanged unit", () => {
+			recordRun("run-1", "ship");
+			setUnitStarted("run-1", 0, "phase 1/1");
+			markUnitDone("run-1", 0, "done");
+			const listener = vi.fn();
+			subscribeLanes(listener);
+			markUnitDone("run-1", 0, "done"); // unchanged
+			markUnitDone("run-1", 9, "done"); // missing
 			expect(listener).not.toHaveBeenCalled();
 		});
 	});
@@ -406,29 +508,43 @@ describe("run-lane-registry", () => {
 	});
 
 	describe("enqueueInput / dequeueInput", () => {
-		it("queues FIFO on a recorded run and flips laneNeedsInput true", () => {
+		it("queues FIFO on a recorded run and flips laneNeedsInput / unitNeedsInput true", () => {
 			recordRun("run-1", "ship");
 			expect(laneNeedsInput("run-1")).toBe(false);
+			expect(unitNeedsInput("run-1", SINGLE_UNIT_KEY)).toBe(false);
 			const a = makePending();
 			const b = makePending();
-			enqueueInput("run-1", a);
-			enqueueInput("run-1", b);
+			enqueueInput("run-1", SINGLE_UNIT_KEY, a);
+			enqueueInput("run-1", SINGLE_UNIT_KEY, b);
 			expect(laneNeedsInput("run-1")).toBe(true);
-			expect(dequeueInput("run-1")).toBe(a);
-			expect(dequeueInput("run-1")).toBe(b);
+			expect(unitNeedsInput("run-1", SINGLE_UNIT_KEY)).toBe(true);
+			expect(dequeueInput("run-1", SINGLE_UNIT_KEY)).toBe(a);
+			expect(dequeueInput("run-1", SINGLE_UNIT_KEY)).toBe(b);
+		});
+
+		it("drains only the addressed unit's queue (a sibling unit's queue is untouched)", () => {
+			recordRun("run-1", "ship");
+			const a = makePending();
+			const b = makePending();
+			enqueueInput("run-1", 0, a);
+			enqueueInput("run-1", 1, b);
+			expect(dequeueInput("run-1", 0)).toBe(a);
+			expect(unitNeedsInput("run-1", 0)).toBe(false);
+			expect(unitNeedsInput("run-1", 1)).toBe(true); // sibling still queued
+			expect(laneNeedsInput("run-1")).toBe(true); // lane-level still flags
 		});
 
 		it("resolves immediately with undefined on an unrecorded run (never strands the child)", () => {
 			const p = makePending();
-			enqueueInput("nope", p);
+			enqueueInput("nope", SINGLE_UNIT_KEY, p);
 			expect(p.resolve).toHaveBeenCalledWith(undefined);
 			expect(getLane("nope")).toBeUndefined();
 		});
 
 		it("dequeueInput returns undefined when empty", () => {
 			recordRun("run-1", "ship");
-			expect(dequeueInput("run-1")).toBeUndefined();
-			expect(dequeueInput("nope")).toBeUndefined();
+			expect(dequeueInput("run-1", SINGLE_UNIT_KEY)).toBeUndefined();
+			expect(dequeueInput("nope", SINGLE_UNIT_KEY)).toBeUndefined();
 		});
 	});
 
@@ -503,18 +619,29 @@ describe("run-lane-registry", () => {
 			expect(getDockState().selection).toBe(0);
 		});
 
-		it("setDockSelection clamps to [0, lanes-1] and notifies only on change", () => {
+		it("setDockSelection clamps to [0, rows-1] and notifies only on change", () => {
 			recordRun("run-1", "a");
 			recordRun("run-2", "b");
 			const listener = vi.fn();
 			subscribeLanes(listener);
-			setDockSelection(5); // clamps to last index (1)
+			setDockSelection(5); // clamps to last row index (1)
 			expect(getDockState().selection).toBe(1);
 			expect(listener).toHaveBeenCalledTimes(1);
 			setDockSelection(5); // already clamped to 1 — no notify
 			expect(listener).toHaveBeenCalledTimes(1);
 			setDockSelection(-3); // clamps to 0
 			expect(getDockState().selection).toBe(0);
+		});
+
+		it("clamp ceiling reaches the last UNIT sub-row of a flattened fan-out lane (D4)", () => {
+			recordRun("run-1", "ship");
+			// Lane row + 3 unit sub-rows ⇒ 4 flattened display rows (indices 0..3).
+			setUnitStarted("run-1", 0, "phase 1/3");
+			setUnitStarted("run-1", 1, "phase 2/3");
+			setUnitStarted("run-1", 2, "phase 3/3");
+			expect(listLanesForDisplay()).toHaveLength(4);
+			setDockSelection(3); // the last unit sub-row — unreachable under the old lanes.size ceiling
+			expect(getDockState().selection).toBe(3);
 		});
 
 		it("moveDockSelection steps and clamps at both ends", () => {
@@ -539,6 +666,15 @@ describe("run-lane-registry", () => {
 			expect(getDockState().selection).toBe(0);
 		});
 
+		it("evicting a fan-out lane re-clamps a unit-row selection without stranding the cursor", () => {
+			recordRun("run-1", "ship");
+			setUnitStarted("run-1", 0, "phase 1/2");
+			setUnitStarted("run-1", 1, "phase 2/2");
+			setDockSelection(2); // last unit sub-row
+			evictRun("run-1");
+			expect(getDockState().selection).toBe(0);
+		});
+
 		it("selection is 0 when there are no lanes", () => {
 			setDockSelection(3);
 			expect(getDockState().selection).toBe(0);
@@ -546,10 +682,11 @@ describe("run-lane-registry", () => {
 	});
 
 	describe("__resetRunLaneRegistry", () => {
-		it("clears lanes, listeners, focus, and dock state", () => {
+		it("clears lanes (and their units map), listeners, focus, and dock state", () => {
 			const listener = vi.fn();
 			subscribeLanes(listener);
 			recordRun("run-1", "ship");
+			setUnitStarted("run-1", 0, "phase 1/1"); // populate the units map
 			setFocusedRun("run-1");
 			setDockActive(true);
 			setDockSelection(0);
@@ -557,6 +694,7 @@ describe("run-lane-registry", () => {
 			__resetRunLaneRegistry();
 			expect(laneCount()).toBe(0);
 			expect(listLanes()).toEqual([]);
+			expect(getUnit("run-1", 0)).toBeUndefined(); // units map gone with the lane
 			expect(getFocusedRun()).toBeUndefined();
 			expect(getDockState()).toEqual({ active: false, selection: 0 });
 			// listeners cleared: a post-reset mutation must not call the old listener.

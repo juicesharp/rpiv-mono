@@ -30,15 +30,17 @@
 import { CustomEditor, type KeybindingsManager } from "@earendil-works/pi-coding-agent";
 import { type EditorTheme, Key, matchesKey, type TUI } from "@earendil-works/pi-tui";
 import {
+	type DisplayRow,
 	evictRun,
 	getDockState,
-	laneCount,
-	laneNeedsInput,
+	type LaneEntry,
 	listLanesForDisplay,
 	moveDockSelection,
 	retireRun,
+	SINGLE_UNIT_KEY,
 	setDockActive,
 	setDockSelection,
+	unitNeedsInput,
 } from "./run-lane-registry.js";
 
 /** The navigation keys the dock cares about; everything else is "other".
@@ -54,8 +56,9 @@ export interface DockDecisionContext {
 	readonly autocompleteOpen: boolean;
 	/** Is the prompt empty? (DOWN-entry is gated on this to avoid arrow overload.) */
 	readonly editorEmpty: boolean;
-	/** Number of lanes (the dock's auto-show gate + tab-wrap modulus). */
-	readonly laneCount: number;
+	/** Number of flattened DISPLAY ROWS (lane rows + unit sub-rows) — the dock's
+	 *  auto-show gate AND the tab-wrap modulus (tab now cycles unit sub-rows too). */
+	readonly rowCount: number;
 	/** Current dock selection (index into listLanesForDisplay()). */
 	readonly selection: number;
 }
@@ -79,7 +82,7 @@ export type DockAction =
 export function decideDockAction(key: DockKey, ctx: DockDecisionContext): DockAction {
 	if (!ctx.dockActive) {
 		// Entry: DOWN from an empty prompt, no autocomplete open, with lanes present.
-		if (key === "down" && ctx.editorEmpty && !ctx.autocompleteOpen && ctx.laneCount > 0) {
+		if (key === "down" && ctx.editorEmpty && !ctx.autocompleteOpen && ctx.rowCount > 0) {
 			return { kind: "activate" };
 		}
 		return { kind: "passthrough" };
@@ -95,7 +98,7 @@ export function decideDockAction(key: DockKey, ctx: DockDecisionContext): DockAc
 			return { kind: "move", delta: 1 };
 		case "tab":
 			// Tab cycles with wraparound (last → first).
-			return { kind: "select", index: ctx.laneCount > 0 ? (ctx.selection + 1) % ctx.laneCount : 0 };
+			return { kind: "select", index: ctx.rowCount > 0 ? (ctx.selection + 1) % ctx.rowCount : 0 };
 		case "enter":
 			// ⏎ is the dedicated ANSWER key — it drains the selected lane's queued
 			// question (the adapter makes it a no-op when nothing is queued). Right is the
@@ -131,6 +134,17 @@ function classifyKey(data: string): DockKey {
 }
 
 /**
+ * Resolve a display row to a unit address. A lane (parent) row → the reserved
+ * single-unit key; a unit sub-row → its own index. The lane is carried for the
+ * run-level `x` action (D7 — `x` targets the PARENT run, never a single unit).
+ */
+function resolveRow(row: DisplayRow | undefined): { runId: string; unitIndex: number; lane: LaneEntry } | undefined {
+	if (!row) return undefined;
+	if (row.kind === "unit") return { runId: row.lane.runId, unitIndex: row.unit.index, lane: row.lane };
+	return { runId: row.lane.runId, unitIndex: SINGLE_UNIT_KEY, lane: row.lane };
+}
+
+/**
  * Editor that proxies dock navigation. Constructed by the factory passed to
  * ctx.ui.setEditorComponent (lane-switcher wires `onOpen` to switchIntoLane). The
  * host copies app keybindings, onEscape/onCtrlD/onExtensionShortcut, autocomplete
@@ -142,7 +156,7 @@ export class LaneDockEditor extends CustomEditor {
 		tui: TUI,
 		theme: EditorTheme,
 		keybindings: KeybindingsManager,
-		private readonly onOpen: (runId: string, mode: "view" | "answer") => void,
+		private readonly onOpen: (runId: string, unitIndex: number, mode: "view" | "answer") => void,
 	) {
 		super(tui, theme, keybindings);
 	}
@@ -167,7 +181,7 @@ export class LaneDockEditor extends CustomEditor {
 			dockActive: dock.active,
 			autocompleteOpen: this.isShowingAutocomplete(),
 			editorEmpty: this.getText().trim().length === 0,
-			laneCount: laneCount(),
+			rowCount: listLanesForDisplay().length,
 			selection: dock.selection,
 		});
 		switch (action.kind) {
@@ -184,29 +198,30 @@ export class LaneDockEditor extends CustomEditor {
 			case "open": {
 				// Resolve the selection against the SAME order the dock renders, then
 				// step out before opening so the dock isn't "active" behind the viewer.
-				const lane = listLanesForDisplay()[getDockState().selection];
+				// A unit sub-row opens THAT unit's transcript; a lane row opens the sentinel.
+				const t = resolveRow(listLanesForDisplay()[getDockState().selection]);
 				setDockActive(false);
-				if (lane) this.onOpen(lane.runId, "view");
+				if (t) this.onOpen(t.runId, t.unitIndex, "view");
 				return;
 			}
 			case "answer": {
-				// ⏎ drains the selected lane's queued question directly (no viewer). When the
-				// lane has nothing queued ⏎ is inert — stay in the dock rather than stepping
-				// out, so the key never does something surprising on a non-flagged lane.
-				const lane = listLanesForDisplay()[getDockState().selection];
-				if (lane && laneNeedsInput(lane.runId)) {
+				// ⏎ drains THIS row's unit queue (lane row → sentinel queue; unit row → its
+				// own). Inert when that unit has nothing queued — stay in the dock rather than
+				// stepping out, so the key never does something surprising on a non-flagged row.
+				const t = resolveRow(listLanesForDisplay()[getDockState().selection]);
+				if (t && unitNeedsInput(t.runId, t.unitIndex)) {
 					setDockActive(false);
-					this.onOpen(lane.runId, "answer");
+					this.onOpen(t.runId, t.unitIndex, "answer");
 				}
 				return;
 			}
 			case "stop": {
-				// `x` on the selected lane: abort a running run, or dismiss a
-				// finished/retained one. The dock stays active so the user can keep acting
-				// on the list; selection re-clamps as lanes drop.
-				const lane = listLanesForDisplay()[getDockState().selection];
-				if (lane) {
-					if (lane.status === "running") {
+				// `x` targets the row's PARENT run (D7 — no per-unit abort): abort a running
+				// run, or dismiss a finished/retained one. The dock stays active so the user
+				// can keep acting on the list; selection re-clamps as lanes drop.
+				const t = resolveRow(listLanesForDisplay()[getDockState().selection]);
+				if (t) {
+					if (t.lane.status === "running") {
 						// Fire the cooperative abort to actually halt the run, THEN
 						// optimistically retire the lane so the overlay clears on the
 						// keystroke. The runner's terminal `onWorkflowEnd` is the canonical
@@ -216,9 +231,9 @@ export class LaneDockEditor extends CustomEditor {
 						// showing it in progress). Retiring here makes the UI authoritative
 						// for the user's own cancel; `retireRun` is idempotent, so a later
 						// `onWorkflowEnd` for the same run is a no-op.
-						lane.abort?.();
-						retireRun(lane.runId, "aborted");
-					} else evictRun(lane.runId);
+						t.lane.abort?.();
+						retireRun(t.lane.runId, "aborted");
+					} else evictRun(t.lane.runId);
 				}
 				return;
 			}
