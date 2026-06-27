@@ -196,24 +196,31 @@ export async function registerLaneProgress(): Promise<void> {
 			onUnitEnd: (stage, unit, _output, ctx) => {
 				// Flip THIS unit's sub-row terminal (fan-out only). The row stays viewable via
 				// its snapshot/disk transcript.
-				if (fanoutRuns.has(ctx.runId)) markUnitDone(ctx.runId, unit.index, "done");
-				// Advance units.done by a TRUE completion count. onUnitEnd fires in
-				// COMPLETION order (units finish out of declared order under
-				// maxConcurrency > 1), so keying off `unit.index + 1` jumps and
-				// regresses (e.g. 3/3 → 1/3 → 2/3). setLaneProgress replaces progress
-				// wholesale, so read the prior count back and increment; the `?? 0`
-				// baseline matches the onLoopStart seed and the `?? unit.index + 1`
-				// total fallback matches the pre-existing pull-loop (unseeded) path.
-				const prev = getLane(ctx.runId)?.progress?.units;
-				const total = prev?.total ?? unit.index + 1;
-				const done = (prev?.done ?? 0) + 1;
+				const isFanout = fanoutRuns.has(ctx.runId);
+				if (isFanout) markUnitDone(ctx.runId, unit.index, "done");
+				// Advance units.done by a TRUE completion count — FANOUT ONLY. onUnitEnd fires
+				// in COMPLETION order (units finish out of declared order under
+				// maxConcurrency > 1), so keying off `unit.index + 1` jumps and regresses
+				// (e.g. 3/3 → 1/3 → 2/3); setLaneProgress replaces progress wholesale, so
+				// read the prior count back and increment (`?? 0` matches the onLoopStart seed).
+				// Pull loops (iterate/assess/verify) carry NO precomputed total — `onLoopStart`
+				// seeds `units: undefined` for them, so `units` stays undefined here and the
+				// dock omits the `· units x/y` segment (fanout-only sub-progress). The
+				// `prev?.total ?? unit.index + 1` seed is thus unreachable on the pull-loop
+				// path: a pull loop never has a seeded `prev.total`, so the inverted
+				// "1/1 → 2/1 → 3/1" (total frozen at unit.index+1 while done climbed) is gone.
+				let units: { done: number; total: number } | undefined;
+				if (isFanout) {
+					const prev = getLane(ctx.runId)?.progress?.units;
+					units = { done: (prev?.done ?? 0) + 1, total: prev?.total ?? unit.index + 1 };
+				}
 				setLaneProgress(ctx.runId, {
 					stageNumber: stage.stageNumber,
 					totalStages: ctx.totalStages,
 					visited: noteVisitedStage(ctx.runId, stage.name),
 					stageName: stage.name,
 					phase: "running",
-					units: { done, total },
+					units,
 				});
 			},
 			// Phase A — the run terminated: RETAIN the lane with its terminal status (so

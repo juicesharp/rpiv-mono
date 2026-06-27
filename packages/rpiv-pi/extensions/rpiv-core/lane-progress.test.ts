@@ -217,7 +217,7 @@ describe("lane-progress event mapping", () => {
 		const ctx = { runId: "run-1", totalStages: 4 };
 		const stage = { stageNumber: 2, name: "fanout" };
 
-		b.onLoopStart?.(stage, { units: [{}, {}, {}] }, ctx);
+		b.onLoopStart?.(stage, { kind: "fanout", units: [{}, {}, {}] }, ctx);
 		expect(getLane("run-1")?.progress?.units).toEqual({ done: 0, total: 3 });
 
 		// Units complete OUT of declared order: 2, then 0, then 1. done must climb
@@ -229,6 +229,79 @@ describe("lane-progress event mapping", () => {
 		expect(getLane("run-1")?.progress?.units).toEqual({ done: 2, total: 3 });
 		b.onUnitEnd?.(stage, { index: 1 }, {}, ctx);
 		expect(getLane("run-1")?.progress?.units).toEqual({ done: 3, total: 3 }); // terminal value correct
+	});
+});
+
+describe("pull-loop units.total contract (units field is fanout-only)", () => {
+	async function register(): Promise<Bundle> {
+		const { pi, sessionStart } = makePi();
+		registerLaneProgressHook(pi);
+		await sessionStart()!({}, { hasUI: true, ui: REAL_UI });
+		return bundle();
+	}
+
+	it("iterate loop: units stays undefined across onUnitEnd (the 1/1 → 2/1 → 3/1 inversion is gone)", async () => {
+		const b = await register();
+		recordRun("run-1", "ship");
+		const ctx = { runId: "run-1", totalStages: 4 };
+		const stage = { stageNumber: 2, name: "iterate" };
+		// A pull loop carries no precomputed unit list → onLoopStart seeds units: undefined.
+		b.onLoopStart?.(stage, { kind: "iterate" }, ctx);
+		expect(getLane("run-1")?.progress?.units).toBeUndefined();
+
+		// Pre-fix: onUnitEnd keyed total off `unit.index + 1` (0+1=1), then froze total
+		// at 1 while done climbed 1→2→3 — rendering "1/1" → "2/1" → "3/1". Now the
+		// fanoutRuns gate drops units entirely for a pull loop → the dock omits the segment.
+		b.onUnitStart?.(stage, { index: 0, label: "round 1" }, ctx);
+		b.onUnitEnd?.(stage, { index: 0 }, {}, ctx);
+		expect(getLane("run-1")?.progress?.units).toBeUndefined();
+
+		b.onUnitStart?.(stage, { index: 1, label: "round 2" }, ctx);
+		b.onUnitEnd?.(stage, { index: 1 }, {}, ctx);
+		expect(getLane("run-1")?.progress?.units).toBeUndefined();
+
+		b.onUnitEnd?.(stage, { index: 2 }, {}, ctx);
+		expect(getLane("run-1")?.progress?.units).toBeUndefined();
+	});
+
+	it("assess loop: units stays undefined across onUnitEnd", async () => {
+		const b = await register();
+		recordRun("run-1", "ship");
+		const ctx = { runId: "run-1", totalStages: 4 };
+		const stage = { stageNumber: 2, name: "assess" };
+		b.onLoopStart?.(stage, { kind: "assess" }, ctx);
+		b.onUnitEnd?.(stage, { index: 0 }, {}, ctx);
+		b.onUnitEnd?.(stage, { index: 1 }, {}, ctx);
+		expect(getLane("run-1")?.progress?.units).toBeUndefined();
+	});
+
+	it("verify loop: units stays undefined across onUnitEnd (all pull-loop kinds omit identically)", async () => {
+		const b = await register();
+		recordRun("run-1", "ship");
+		const ctx = { runId: "run-1", totalStages: 4 };
+		const stage = { stageNumber: 2, name: "verify" };
+		b.onLoopStart?.(stage, { kind: "verify" }, ctx);
+		b.onUnitEnd?.(stage, { index: 0 }, {}, ctx);
+		b.onUnitEnd?.(stage, { index: 1 }, {}, ctx);
+		expect(getLane("run-1")?.progress?.units).toBeUndefined();
+	});
+
+	it("fanout (contrast): seeds {done:0,total:N} and advances done monotonically while total stays N", async () => {
+		const b = await register();
+		recordRun("run-1", "carve");
+		const ctx = { runId: "run-1", totalStages: 4 };
+		const stage = { stageNumber: 2, name: "design" };
+		b.onLoopStart?.(stage, { kind: "fanout", units: [{}, {}, {}] }, ctx);
+		expect(getLane("run-1")?.progress?.units).toEqual({ done: 0, total: 3 });
+
+		// Out-of-order completion (2, then 0, then 1): done climbs 1→2→3; total frozen at
+		// 3. The inverted "2/1" never appears on the fanout path (prev.total is seeded).
+		b.onUnitEnd?.(stage, { index: 2 }, {}, ctx);
+		expect(getLane("run-1")?.progress?.units).toEqual({ done: 1, total: 3 });
+		b.onUnitEnd?.(stage, { index: 0 }, {}, ctx);
+		expect(getLane("run-1")?.progress?.units).toEqual({ done: 2, total: 3 });
+		b.onUnitEnd?.(stage, { index: 1 }, {}, ctx);
+		expect(getLane("run-1")?.progress?.units).toEqual({ done: 3, total: 3 });
 	});
 });
 
