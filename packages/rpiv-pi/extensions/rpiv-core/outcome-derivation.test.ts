@@ -387,6 +387,17 @@ describe("equivalence — built-in workflows", () => {
 
 				if (stage.kind !== "produces") continue;
 
+				// Script produces stages (e.g. carve's deterministic `slice-structure`
+				// floor) carry no derivable outcome — the run function IS the envelope, so
+				// deriveOutcomes skips them on `stage.run != null` and they have no EXPECTED
+				// bucket. They publish under their own stage name.
+				if (stage.run != null) {
+					it(`${stageName}: script produces stage, no outcome derived`, () => {
+						expect(stage.outcome).toBeUndefined();
+					});
+					continue;
+				}
+
 				const explicit = EXPLICIT_OUTCOMES[key];
 				if (explicit) {
 					it(`${stageName}: carries explicit outcome.name = "${explicit}" (not derived)`, () => {
@@ -416,14 +427,17 @@ describe("equivalence — built-in workflows", () => {
 		});
 	}
 
-	it("total produces stages across all workflows = 31", () => {
+	it("total produces stages across all workflows = 32 (31 derivable + carve's script-stage floor)", () => {
 		let count = 0;
+		let scriptProduces = 0;
 		for (const w of builtInWorkflows) {
 			for (const stage of Object.values(w.stages)) {
 				if (stage.kind === "produces") count++;
+				if (stage.kind === "produces" && stage.run != null) scriptProduces++;
 			}
 		}
-		expect(count).toBe(31);
+		expect(count).toBe(32);
+		expect(scriptProduces).toBe(1); // carve::slice-structure
 	});
 });
 

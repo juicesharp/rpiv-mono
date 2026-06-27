@@ -1099,6 +1099,104 @@ describe("SLICE_DESIGN_FANOUT (carve design — deps + --upstream)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// slice-structure — the deterministic Phase-1 floor under the designability
+// gate: dependency-cycle freedom + brief-coverage conservation (frozen at the
+// first cut). Both are computed from the slice-map text, no LLM.
+// ---------------------------------------------------------------------------
+
+describe("carve slice-structure (deterministic floor)", () => {
+	let tmpDir: string;
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "rpiv-carve-structure-"));
+	});
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	const structureRun = () => {
+		const stage = findWorkflow("carve").stages["slice-structure"];
+		if (!stage?.run) throw new Error("carve slice-structure stage has no run function");
+		return stage.run as (ctx: { cwd: string; input?: undefined; state: RunView }) => {
+			data: Record<string, unknown>;
+		};
+	};
+	const write = (rel: string, body: string) => {
+		const parts = rel.split("/");
+		mkdirSync(join(tmpDir, ...parts.slice(0, -1)), { recursive: true });
+		writeFileSync(join(tmpDir, rel), body);
+		return { artifacts: [{ handle: fsHandle(rel) }], data: undefined, kind: "", meta: {} };
+	};
+	// state.named.slices = round-0 (frozen coverage source) ... latest (graded).
+	const runOn = (...slices: ReturnType<typeof write>[]) =>
+		structureRun()({ cwd: tmpDir, input: undefined, state: { named: { slices } } as unknown as RunView }).data;
+
+	const map = (opts: { sliceLines: string; coverage?: string; count: number }) =>
+		`---\nstatus: ready\nslice_count: ${opts.count}\n${opts.coverage ?? ""}slices:\n${opts.sliceLines}---\n${Array.from({ length: opts.count }, (_, i) => `## Slice ${i + 1}: S${i + 1}`).join("\n")}\n`;
+
+	const COV = "coverage:\n  - { id: c1, brief: one }\n  - { id: c2, brief: two }\n";
+
+	it("passes an acyclic, fully-covered slice map", () => {
+		const rel = ".rpiv/artifacts/slices/ok.md";
+		const m = write(
+			rel,
+			map({
+				count: 2,
+				coverage: COV,
+				sliceLines:
+					"  - { n: 1, title: A, deps: [], covers: [c1] }\n  - { n: 2, title: B, deps: [1], covers: [c2] }\n",
+			}),
+		);
+		const data = runOn(m);
+		expect(data.dimension).toBe("structure");
+		expect(data.pass).toBe(true);
+		expect(data.findings).toEqual([]);
+	});
+
+	it("fails on a dependency cycle (1->2->1)", () => {
+		const rel = ".rpiv/artifacts/slices/cycle.md";
+		const m = write(
+			rel,
+			map({
+				count: 2,
+				coverage: COV,
+				sliceLines:
+					"  - { n: 1, title: A, deps: [2], covers: [c1] }\n  - { n: 2, title: B, deps: [1], covers: [c2] }\n",
+			}),
+		);
+		const data = runOn(m);
+		expect(data.pass).toBe(false);
+		expect(String(data.feedback)).toMatch(/cycle/i);
+	});
+
+	it("fails when a reslice drops a coverage unit frozen at the first cut", () => {
+		const first = write(
+			".rpiv/artifacts/slices/first.md",
+			map({
+				count: 2,
+				coverage: COV,
+				sliceLines:
+					"  - { n: 1, title: A, deps: [], covers: [c1] }\n  - { n: 2, title: B, deps: [1], covers: [c2] }\n",
+			}),
+		);
+		// Latest reslice covers only c1 — c2 silently dropped. Frozen set is read from `first`.
+		const latest = write(
+			".rpiv/artifacts/slices/latest.md",
+			map({ count: 1, coverage: COV, sliceLines: "  - { n: 1, title: A, deps: [], covers: [c1] }\n" }),
+		);
+		const data = runOn(first, latest);
+		expect(data.pass).toBe(false);
+		expect(String(data.feedback)).toMatch(/c2/);
+	});
+
+	it("is a no-op on coverage when the first cut froze no units", () => {
+		const rel = ".rpiv/artifacts/slices/nocov.md";
+		const m = write(rel, map({ count: 1, sliceLines: "  - { n: 1, title: A, deps: [] }\n" }));
+		const data = runOn(m);
+		expect(data.pass).toBe(true);
+	});
+});
+
+// ---------------------------------------------------------------------------
 // pr-triage security-gate — the script-stage guard must fail closed on
 // missing / malformed security_flag (NaN), not silently pass as SAFE.
 // ---------------------------------------------------------------------------

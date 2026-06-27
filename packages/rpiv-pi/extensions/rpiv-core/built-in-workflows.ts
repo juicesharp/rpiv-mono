@@ -37,6 +37,7 @@ import {
 	type PromptFn,
 	produces,
 	type RunView,
+	type ScriptContext,
 	type Unit,
 	type Workflow,
 } from "@juicesharp/rpiv-workflow/registration";
@@ -598,25 +599,38 @@ const prTriageWorkflow = defineWorkflow({
 });
 
 // ===========================================================================
-// carve — slice → slice-gate (reslice loop) → design (fanout) →
+// carve — slice → slice-structure (deterministic floor) → slice-gate
+//         (designability, reslice loop) → design (fanout) →
 //         synth-partial (cluster fanout) → synth-root → plan-gate (refine loop) →
 //         elaborate (fanout) → stitch → stitch-gate (re-elaborate loop) →
 //         implement → validate → commit
 //   The sliced, panel-gated heavy path: decompose the brief into independent
-//   vertical slices, gate that breakdown on sizing dimensions BEFORE any design
-//   (so each slice is independently designable in one pass), design every slice
-//   in parallel, merge hierarchically (per-cluster sub-plans → one plan) so no
-//   pass holds every design, gate the plan on quality dimensions BEFORE any
-//   code, elaborate code per phase and stitch it in, re-grade the code-bearing
-//   plan, then implement/validate/commit. The parallel generalization of `arch`.
+//   vertical slices, gate that breakdown BEFORE any design so each slice is
+//   chewable by one design-slice pass. The gate is two-phase: a DETERMINISTIC
+//   floor (`slice-structure`) enforces dependency-cycle freedom and brief-coverage
+//   conservation (a reslice may redistribute the brief, never drop scope to pass),
+//   then ONE LLM `designability` judgment reconciles the formerly-opposing
+//   split/merge forces. Then design every slice in parallel, merge hierarchically
+//   (per-cluster sub-plans → one plan) so no pass holds every design, gate the
+//   plan on quality dimensions BEFORE any code, elaborate code per phase and
+//   stitch it in, re-grade the code-bearing plan, then implement/validate/commit.
+//   The parallel generalization of `arch`.
 // ===========================================================================
 
 /**
- * Sizing dimensions the EARLY gate grades the slice map against — before any
- * design — so every slice is independently designable in a single pass.
- * Mirrors the `slice-breakdown` rubric rows in the `grade` skill.
+ * The single LLM dimension the EARLY gate grades the slice map against — before
+ * any design. `designability` asks the one question the whole gate exists to
+ * answer: is each slice chewable by ONE `design-slice` pass? It subsumes the old
+ * four-way panel (right-sizing + vertical-shape + design-readiness + the
+ * contract-ownership half of independence) into one holistic judgment, so the
+ * formerly-opposing split-pressure (right-sizing) and merge-pressure
+ * (vertical-shape) forces are reconciled by ONE grader instead of two blind
+ * panelists that ping-pong the reslice loop. The structural floor that was the
+ * other half of independence — dependency-cycle freedom — plus brief-coverage
+ * conservation are enforced DETERMINISTICALLY by `slice-structure`, not graded
+ * here. Mirrors the `designability` rubric row in the `grade` skill.
  */
-const SLICE_DIMENSIONS = ["right-sizing", "independence", "design-readiness", "vertical-shape"] as const;
+const SLICE_DIMENSIONS = ["designability"] as const;
 
 /**
  * Quality dimensions the LATER gate grades the synthesized plan against. No
@@ -749,6 +763,137 @@ const clusterSliceDag = (records: readonly PhaseRecord[]): number[][] => {
 	return clusters;
 };
 
+/**
+ * A directed dependency cycle in the slice DAG (`A→B→…→A`), returned as the slice
+ * numbers on the cycle; empty when acyclic. `clusterSliceDag` groups by the
+ * UNDIRECTED connected component, which a directed cycle survives — so the
+ * designability gate needs this separate directed check. A cycle is the true
+ * independence defect (slices in a cycle cannot be designed independently); the
+ * deterministic floor catches it without an LLM coin-flip.
+ */
+const sliceDepCycle = (records: readonly PhaseRecord[]): number[] => {
+	const deps = new Map<number, number[]>(records.map((r) => [r.n, sliceDeps(r.entry)]));
+	const WHITE = 0;
+	const GRAY = 1;
+	const BLACK = 2;
+	const color = new Map<number, number>();
+	const stack: number[] = [];
+	let cycle: number[] = [];
+	const visit = (n: number): boolean => {
+		color.set(n, GRAY);
+		stack.push(n);
+		for (const d of deps.get(n) ?? []) {
+			if (!deps.has(d)) continue; // a dangling dep is a derive/numbering concern, not a cycle
+			const c = color.get(d) ?? WHITE;
+			if (c === GRAY) {
+				cycle = stack.slice(stack.indexOf(d));
+				return true;
+			}
+			if (c === WHITE && visit(d)) return true;
+		}
+		stack.pop();
+		color.set(n, BLACK);
+		return false;
+	};
+	for (const r of records) if ((color.get(r.n) ?? WHITE) === WHITE && visit(r.n)) break;
+	return cycle;
+};
+
+/**
+ * One frozen coverage unit — the brief's ID'd decomposition, set once at the
+ * first (human-confirmed) cut and conserved across every reslice. The conserved
+ * quantity the gate was missing: a reslice may REDISTRIBUTE units across slices,
+ * never DROP one — which is what closes the "pass by simplifying / shrinking
+ * scope" escape hatch the sizing dimensions can't see.
+ */
+interface CoverageUnit {
+	id: string;
+	brief: string;
+}
+
+/** Parse a slice map's `coverage:` frontmatter into `{ id, brief }` units (empty when absent). */
+const sliceCoverageUnits = (content: string): CoverageUnit[] => {
+	const { frontmatter } = parseFrontmatter(content);
+	const raw = (frontmatter as Record<string, unknown>).coverage;
+	if (!Array.isArray(raw)) return [];
+	return raw.flatMap((e) => {
+		const o = (e ?? {}) as Record<string, unknown>;
+		return typeof o.id === "string" ? [{ id: o.id, brief: typeof o.brief === "string" ? o.brief : "" }] : [];
+	});
+};
+
+/** The coverage-unit ids a slice entry claims to deliver (its `covers:` array). */
+const sliceCovers = (entry: Record<string, unknown>): string[] => {
+	const raw = entry.covers;
+	return Array.isArray(raw) ? raw.filter((c): c is string => typeof c === "string") : [];
+};
+
+/**
+ * Deterministic Phase-1 slice-gate check — the un-gameable floor beneath the LLM
+ * `designability` panel. It enforces the two invariants a prose grader cannot
+ * reliably hold because it grades the slicer's own self-description:
+ *   • acyclicity — the `deps` DAG must be cycle-free.
+ *   • coverage conservation — every coverage unit FROZEN at the first cut
+ *     (`state.named.slices[0]`) must still be claimed by ≥1 slice's `covers`,
+ *     so a reslice can only redistribute the brief, never simplify by dropping
+ *     scope. Anchored to the FIRST cut (not the latest map) so a reslice cannot
+ *     disable the check by deleting the `coverage:` array — the frozen set is
+ *     read from round 0.
+ * Emits one combined `{ dimension: "structure" }` verdict onto the
+ * `slice-structure` channel; the gate route folds it with the LLM verdicts.
+ * Deterministic ⇒ idempotent across reslice rounds (no flicker, resume-safe).
+ */
+const sliceStructureCheck = ({ state, cwd }: ScriptContext): Omit<Output, "meta"> => {
+	const latest = latestFsArtifact(state, "slices");
+	if (latest?.handle.kind !== "fs") {
+		throw haltPreflight(
+			"slice-structure",
+			"slice-structure: no slice map to check",
+			"slice-structure: no fs artifact on the 'slices' channel — slice must run before the structure check",
+		);
+	}
+	const records = sliceRecords(readArtifactFile(latest.handle.path, cwd), "slice-structure", latest.handle.path);
+	const findings: { detail: string; where: string }[] = [];
+
+	const cycle = sliceDepCycle(records);
+	if (cycle.length > 0) {
+		const loop = [...cycle, cycle[0]].join("→");
+		findings.push({
+			detail: `Dependency cycle ${loop} — slices in a cycle cannot be designed independently. Break it: merge the cycle into one slice, or invert one edge so a shared contract has a single owning slice.`,
+			where: `deps: ${cycle.map((n) => `Slice ${n}`).join(", ")}`,
+		});
+	}
+
+	// Coverage conservation, anchored to the FROZEN units of the first cut.
+	const firstFs = state.named.slices?.[0]?.artifacts.find((a) => a.handle.kind === "fs");
+	const frozen = firstFs?.handle.kind === "fs" ? sliceCoverageUnits(readArtifactFile(firstFs.handle.path, cwd)) : [];
+	if (frozen.length > 0) {
+		const covered = new Set(records.flatMap((r) => sliceCovers(r.entry)));
+		const dropped = frozen.filter((u) => !covered.has(u.id));
+		if (dropped.length > 0) {
+			findings.push({
+				detail: `Coverage regression — ${dropped.length} brief unit(s) frozen at the first cut are no longer claimed by any slice's 'covers': ${dropped.map((u) => `${u.id} (${u.brief})`).join("; ")}. A reslice must redistribute every unit across slices, never drop one. Re-add the dropped unit(s) to an owning slice's 'covers'.`,
+				where: `coverage: ${dropped.map((u) => u.id).join(", ")}`,
+			});
+		}
+	}
+
+	const pass = findings.length === 0;
+	return {
+		kind: "json",
+		artifacts: [],
+		data: {
+			dimension: "structure",
+			pass,
+			score: pass ? 100 : 0,
+			severity: pass ? "none" : "high",
+			artifact: handleToString(latest.handle),
+			findings,
+			feedback: pass ? "" : findings.map((f) => f.detail).join(" "),
+		},
+	};
+};
+
 /** A design filename encodes its slice as `…slice-<N>…` — the design-fanout naming convention. */
 const DESIGN_SLICE_RE = /slice-(\d+)/;
 
@@ -874,11 +1019,13 @@ const STITCH_SCRIPT = join(
 const carveWorkflow = defineWorkflow({
 	name: "carve",
 	description:
-		"Ship, sliced: decompose the brief into vertical slices → sizing-panel gate (right-sizing/independence/design-readiness/vertical-shape — each slice independently designable in one pass) with a reslice loop → design each slice in parallel → synthesize hierarchically (per-cluster sub-plans → one merged plan) → quality-panel gate (completeness/correctness/actionability/pattern-following) with a refine loop → elaborate code per phase in parallel → stitch → re-grade the code-bearing plan → implement → validate → commit. No research; three gates, before design, before code, and after stitch.",
+		"Ship, sliced: decompose the brief into vertical slices → two-phase slice gate (a deterministic floor — dependency-cycle freedom + brief-coverage conservation so a reslice can't pass by dropping scope — then one LLM designability judgment that each slice is chewable by a single design pass) with a reslice loop → design each slice in parallel → synthesize hierarchically (per-cluster sub-plans → one merged plan) → quality-panel gate (completeness/correctness/actionability/pattern-following) with a refine loop → elaborate code per phase in parallel → stitch → re-grade the code-bearing plan → implement → validate → commit. No research; three gates, before design, before code, and after stitch.",
 	start: "slice",
 	stages: {
 		slice: produces(),
-		// Sizing gate (one grade session per sizing dimension); verdicts on their own channel.
+		// Phase 1 of the gate: the DETERMINISTIC floor (cycle-freedom + coverage conservation), no LLM.
+		"slice-structure": produces.script({ reads: ["slices"], run: sliceStructureCheck }),
+		// Phase 2 of the gate: ONE LLM designability judgment; verdicts on their own channel.
 		"slice-gate": produces({
 			skill: "grade",
 			loop: SLICE_DIMENSION_FANOUT,
@@ -886,14 +1033,14 @@ const carveWorkflow = defineWorkflow({
 			reads: ["slices"],
 		}),
 		// Re-cut the slice map from the failing verdicts. Routes through `slice`
-		// (re-slice mode), NOT the surgical `refine`: a `right-sizing`/`independence`
+		// (re-slice mode), NOT the surgical `refine`: a `designability` or structural
 		// failure needs STRUCTURAL authority — split an epic, break a cycle, renumber —
 		// which a surgical "touch only the cited line" edit cannot do, so `refine`
 		// looped without converging until the backward-jump guard halted the run.
 		reslice: produces({
 			skill: "slice",
 			outcome: rpivBucketOutcome("slices"),
-			reads: ["slices", fanin("slice-verdicts")],
+			reads: ["slices", fanin("slice-verdicts"), fanin("slice-structure")],
 		}),
 		// Design every slice in parallel.
 		design: produces({ skill: "design-slice", loop: SLICE_DESIGN_FANOUT }),
@@ -947,15 +1094,19 @@ const carveWorkflow = defineWorkflow({
 		commit: acts({ outcome: gitCommitOutcome }),
 	},
 	edges: {
-		slice: "slice-gate",
-		// Sizing gate BEFORE any design. All sizing dims pass ⇒ design; any fails ⇒
+		slice: "slice-structure",
+		"slice-structure": "slice-gate",
+		// Designability gate BEFORE any design. Structure + designability pass⇒ design; any fails ⇒
 		// reslice and loop back. Bounded by the runner's maxBackwardJumps (default 2).
 		"slice-gate": defineRoute(
 			["design", "reslice"],
-			({ state }) => (allDimensionsPass(state.named["slice-verdicts"]) ? "design" : "reslice"),
+			({ state }) =>
+				allDimensionsPass(state.named["slice-structure"]) && allDimensionsPass(state.named["slice-verdicts"])
+					? "design"
+					: "reslice",
 			{ readsData: false },
 		),
-		reslice: "slice-gate",
+		reslice: "slice-structure",
 		design: "synth-partial",
 		"synth-partial": "synth-root",
 		"synth-root": "plan-gate",
