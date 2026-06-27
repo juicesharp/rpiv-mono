@@ -195,6 +195,9 @@ export class LaneDock {
 	/** Disk-jsonl preview fallback (Problem 2) parsed ONCE and cached by file key — the
 	 *  preview re-renders on every spinner tick, so the disk read must not repeat per frame. */
 	private previewDiskCache: { key: string; value: DiskBranch | undefined } | undefined;
+	/** Last height-shape signature (see shapeSignature) — drives the forced-redraw decision in
+	 *  update(). undefined until the widget mounts (re-seeded on (re)registration). */
+	private lastShapeSig: string | undefined;
 
 	setUICtx(ctx: ExtensionUIContext): void {
 		// Identity-compare so repeat session_start handlers are idempotent;
@@ -222,6 +225,7 @@ export class LaneDock {
 				this.uiCtx.setWidget(WIDGET_KEY, undefined);
 				this.widgetRegistered = false;
 				this.tui = undefined;
+				this.lastShapeSig = undefined; // re-seed on the next (re)registration
 			}
 			return;
 		}
@@ -235,15 +239,47 @@ export class LaneDock {
 						invalidate: () => {
 							this.widgetRegistered = false;
 							this.tui = undefined;
+							this.lastShapeSig = undefined; // re-seed on the next (re)registration
 						},
 					};
 				},
 				{ placement: "belowEditor" },
 			);
 			this.widgetRegistered = true;
+			// Seed the shape baseline so the first post-mount update() doesn't force a spurious
+			// full redraw (mount already paints clean from an empty previousLines).
+			this.lastShapeSig = this.shapeSignature();
 		} else {
-			this.tui?.requestRender();
+			// pi-tui's differential renderer mis-paints when this belowEditor widget changes
+			// HEIGHT between frames: a fan-out stage transition swaps the prior stage's unit
+			// sub-rows for the next stage's (and the lane row advances a stage), growing the dock
+			// mid-frame. The line-diff then paints the taller frame BELOW the shorter previous one
+			// instead of over it, leaving a stale duplicate block (two `❯` rows with DIFFERENT
+			// spinner frames — proof of two surviving render passes) until a wider repaint
+			// overwrites it. Forcing a full redraw whenever our row shape changes resets
+			// previousLines so the grown frame paints clean. Gated on the shape signature so
+			// spinner ticks (which bypass update() entirely) and stable-shape progress notifies
+			// stay cheap differential renders — only a structural height step pays for a clear.
+			const sig = this.shapeSignature();
+			const shapeChanged = sig !== this.lastShapeSig;
+			this.lastShapeSig = sig;
+			this.tui?.requestRender(shapeChanged);
 		}
+	}
+
+	/**
+	 * Cheap height-shape signature: the flattened display-row count plus the active selection
+	 * index (active-only — ambient has no `❯` cursor and no preview, so selection can't move the
+	 * height there). A change in either is a structural height step — rows added/removed (the
+	 * fan-out unit churn that triggers the duplicate-block artifact), stepping in/out (the
+	 * preview region + top rule appear/disappear), or moving the selection (the active preview
+	 * re-targets a different lane's transcript tail). Deliberately EXCLUDES the spinner frame and
+	 * the streaming-preview tail length: those change every tick but are absorbed by the
+	 * differential path without artifacts, and forcing a screen-clear on each would flicker.
+	 */
+	private shapeSignature(): string {
+		const { active, selection } = getDockState();
+		return `${listLanesForDisplay().length}:${active ? selection : -1}`;
 	}
 
 	/** Drive a repaint timer ONLY while ≥1 lane is running — a finished/idle set
@@ -692,5 +728,6 @@ export class LaneDock {
 		this.widgetRegistered = false;
 		this.tui = undefined;
 		this.uiCtx = undefined;
+		this.lastShapeSig = undefined;
 	}
 }

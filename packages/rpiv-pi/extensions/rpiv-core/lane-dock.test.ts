@@ -157,6 +157,65 @@ describe("LaneDock — lifecycle / auto-show-hide", () => {
 	});
 });
 
+describe("LaneDock — forced redraw on height-shape change (duplicate-block fix)", () => {
+	// pi-tui's differential renderer paints a GROWN frame below the shorter previous one when a
+	// belowEditor widget changes height mid-frame, leaving a stale duplicate block. The dock
+	// forces a full redraw (requestRender(true)) only when its row shape changes — spinner/
+	// progress ticks that keep the shape stay cheap differential renders (requestRender(false)).
+	it("a stable-shape progress tick does NOT force a full redraw", () => {
+		recordRun("run-1", "ship");
+		setUnitStarted("run-1", 0, "u0");
+		setUnitStarted("run-1", 1, "u1");
+		const overlay = new LaneDock();
+		const { tui } = mount(overlay, makeCtx());
+		setLaneProgress("run-1", { stageNumber: 4, totalStages: 15, stageName: "design", phase: "running" });
+		overlay.update();
+		expect(tui?.requestRender).toHaveBeenLastCalledWith(false);
+		overlay.dispose();
+	});
+
+	it("adding a fan-out unit sub-row forces a full redraw", () => {
+		recordRun("run-1", "ship");
+		setUnitStarted("run-1", 0, "u0");
+		const overlay = new LaneDock();
+		const { tui } = mount(overlay, makeCtx());
+		setUnitStarted("run-1", 1, "u1"); // +1 display row → the dock grows mid-frame
+		overlay.update();
+		expect(tui?.requestRender).toHaveBeenLastCalledWith(true);
+		overlay.dispose();
+	});
+
+	it("removing fan-out unit sub-rows forces a full redraw", () => {
+		recordRun("run-1", "ship");
+		setUnitStarted("run-1", 0, "u0");
+		setUnitStarted("run-1", 1, "u1");
+		const overlay = new LaneDock();
+		const { tui } = mount(overlay, makeCtx());
+		// A new fan-out generation drops the prior stage's sub-rows (shrink is the same artifact class).
+		__resetRunLaneRegistry();
+		recordRun("run-1", "ship");
+		overlay.update();
+		expect(tui?.requestRender).toHaveBeenLastCalledWith(true);
+		overlay.dispose();
+	});
+
+	it("stepping in and moving the active selection both force a full redraw", () => {
+		recordRun("run-1", "ship");
+		recordRun("run-2", "build");
+		const overlay = new LaneDock();
+		const { tui } = mount(overlay, makeCtx());
+		const spy = tui?.requestRender as unknown as ReturnType<typeof vi.fn>;
+		setDockActive(true); // ambient → active: the preview region + top rule appear (height step)
+		overlay.update();
+		expect(spy).toHaveBeenLastCalledWith(true);
+		spy.mockClear();
+		setDockSelection(1); // active selection moves → the preview re-targets another lane's tail
+		overlay.update();
+		expect(spy).toHaveBeenLastCalledWith(true);
+		overlay.dispose();
+	});
+});
+
 describe("LaneDock — rendering", () => {
 	it("renders a heading + a row per lane, every line within width", () => {
 		recordRun("run-1", "ship");
