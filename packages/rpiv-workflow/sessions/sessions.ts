@@ -234,6 +234,20 @@ async function softHaltUnit(
 ): Promise<void> {
 	s.allocatedStageNumber ??= allocateStageNumber(s.state);
 	recordUnitHalt(ctx, auditFor(s, session), reason); // status:"failed" collected:true row (resume reads errMsg)
+	// Fire the soft-halt lifecycle signal (mirrors recordStageSuccess's onUnitEnd) AFTER the row
+	// lands. Without it this unit emits NO terminal lifecycle event — recordUnitHalt deliberately
+	// skips onStageError ("not a hard fail") and the success-only onUnitEnd never runs — so a lane
+	// bridge would leave the sub-row spinning until onWorkflowEnd, where a completed run's sweep
+	// paints it ✓ (a failed-but-collected unit mis-rendered as success). The ref carries the PARENT
+	// stage name (graph identity), same allocator base as every other ref of this activation.
+	await s.lifecycle.fire(
+		ctx,
+		"onUnitHalt",
+		skillStageRef(s.unit!.parent, s.allocatedStageNumber ?? s.state.lastAllocatedStageNumber, s.skill),
+		unitEventOf(s),
+		reason,
+		lifecycleCtxFromSession(s),
+	);
 	await s.onSuccess(ctx, failedOutput(outputMetaFor(s), reason));
 }
 

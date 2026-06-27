@@ -185,6 +185,14 @@ export async function registerLaneProgress(): Promise<void> {
 			onUnitStart: (_stage, unit, ctx) => {
 				if (fanoutRuns.has(ctx.runId)) setUnitStarted(ctx.runId, unit.index, unit.label);
 			},
+			// A collect-all fanout unit soft-halted: NON-terminal (the run survives, the synthesis
+			// fold skips its sentinel), so it fires neither onStageError (recordUnitHalt skips it)
+			// nor onUnitEnd (the success path). Flip its sub-row ✗ HERE — otherwise it spins until
+			// onWorkflowEnd, where a completed run's sweep paints it ✓ (a failed unit shown as
+			// success). Fan-out only (D8); a missing/unchanged sub-row is a no-op.
+			onUnitHalt: (_stage, unit, _reason, ctx) => {
+				if (fanoutRuns.has(ctx.runId)) markUnitDone(ctx.runId, unit.index, "failed");
+			},
 			onUnitEnd: (stage, unit, _output, ctx) => {
 				// Flip THIS unit's sub-row terminal (fan-out only). The row stays viewable via
 				// its snapshot/disk transcript.

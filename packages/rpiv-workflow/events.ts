@@ -133,6 +133,7 @@ export interface LoopCapInfo {
  *   onLoopStart:     (stage, info)         => console.log(`  ⇉ ${stage.name} [${info.kind}]`),
  *   onUnitStart:     (stage, u)            => console.log(`     → ${u.label} (${u.role})`),
  *   onUnitEnd:       (stage, u)            => console.log(`     · ${stage.name} #${u.index}`),
+ *   onUnitHalt:      (stage, u, reason)    => console.warn(`     ✗ ${stage.name} #${u.index}: ${reason}`),
  *   onLoopCap:       (stage, c)            => console.warn(`  ⚠ ${stage.name} capped at ${c.max}`),
  *   onWorkflowEnd:   (result)              =>
  *     console.log(result.success ? "✓ done" : `✗ ${result.error ?? "halted"}`),
@@ -183,6 +184,18 @@ export interface LifecycleListeners {
 
 	/** Per unit, after the unit's JSONL row lands. Loop units never fire `onStageEnd`. */
 	onUnitEnd?(stage: StageRef, unit: UnitEvent, output: Output, ctx: LifecycleContext): void | Promise<void>;
+
+	/**
+	 * Per unit, after a collect-all fanout unit's NON-TERMINAL `collected:true`
+	 * failed row lands — the unit halted but the run survives (the synthesis fold
+	 * skips its sentinel slot). Fired ONLY on the soft-halt path; a fail-fast unit
+	 * fires `onStageError` (terminal) instead, and a successful unit fires
+	 * `onUnitEnd`. Distinct from both so a lane surface can flip the unit's sub-row
+	 * ✗ rather than leaving it to spin (then be swept ✓ at `onWorkflowEnd`).
+	 * `reason` is the halt cause — the same text the `collected:true` row's
+	 * `errMsg` carries.
+	 */
+	onUnitHalt?(stage: StageRef, unit: UnitEvent, reason: string, ctx: LifecycleContext): void | Promise<void>;
 
 	/** After an `onCap: "advance"` trip — fired after the `{type:"loop-cap"}` telemetry row append attempt. */
 	onLoopCap?(stage: StageRef, info: LoopCapInfo, ctx: LifecycleContext): void | Promise<void>;

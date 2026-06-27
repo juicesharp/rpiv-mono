@@ -50,6 +50,12 @@ interface Bundle {
 		output: unknown,
 		ctx: { runId: string; totalStages: number },
 	) => void;
+	onUnitHalt?: (
+		stage: { stageNumber: number; name: string },
+		unit: { index: number; label?: string },
+		reason: string,
+		ctx: { runId: string; totalStages: number },
+	) => void;
 	onWorkflowEnd?: (
 		result: { termination?: { status: string; error?: string } },
 		ctx: { runId: string; workflow: string; totalStages: number },
@@ -384,6 +390,39 @@ describe("per-unit sub-rows (Phase 4 — onUnitStart/onUnitEnd lifecycle)", () =
 		expect(getUnit("run-1", 0)?.status).toBe("failed");
 		expect(getUnit("run-1", 2)?.status).toBe("failed");
 		expect(getUnit("run-1", 1)?.status).toBe("done");
+	});
+
+	it("onUnitHalt — a collect-all soft-halted unit reads ✗ and SURVIVES a completed run's onWorkflowEnd sweep (not painted ✓)", async () => {
+		const b = await register();
+		recordRun("run-1", "carve");
+		const ctx = { runId: "run-1", workflow: "carve", totalStages: 4 };
+		const stage = { stageNumber: 2, name: "design" };
+		b.onLoopStart?.(stage, { kind: "fanout", units: [{}, {}] }, ctx);
+		b.onUnitStart?.(stage, { index: 0, label: "p0" }, ctx);
+		b.onUnitStart?.(stage, { index: 1, label: "p1" }, ctx);
+
+		// Unit 1 soft-halts (collect-all): the run survives, so it fires onUnitHalt — NOT onUnitEnd
+		// (success) and NOT onStageError (terminal). Its sub-row flips ✗ immediately.
+		b.onUnitHalt?.(stage, { index: 1 }, "slice blew up", ctx);
+		expect(getUnit("run-1", 1)?.status).toBe("failed");
+		expect(getUnit("run-1", 0)?.status).toBe("running"); // sibling unaffected
+
+		// The run completes overall. Pre-fix the unit stayed "running" through here and the
+		// `status === "completed" ? "done"` sweep painted it ✓ — a failed unit shown as success.
+		// Now it is already terminal, so the sweep (which touches only still-"running" rows) leaves it ✗.
+		b.onWorkflowEnd?.({ termination: { status: "completed" } }, ctx);
+		expect(getUnit("run-1", 1)?.status).toBe("failed"); // stays ✗ — NOT swept to ✓
+		expect(getUnit("run-1", 0)?.status).toBe("done"); // the genuinely-running sibling resolves ✓
+	});
+
+	it("onUnitHalt — the fanoutRuns gate drops it for a non-fanout loop (no stray sub-row)", async () => {
+		const b = await register();
+		recordRun("run-1", "ship");
+		const ctx = { runId: "run-1", totalStages: 4 };
+		const stage = { stageNumber: 2, name: "iterate" };
+		b.onLoopStart?.(stage, { kind: "iterate" }, ctx); // non-fanout — gate stays off
+		b.onUnitHalt?.(stage, { index: 0 }, "halted", ctx);
+		expect(getUnit("run-1", 0)).toBeUndefined();
 	});
 
 	it("orphan sweep — onWorkflowEnd (abort) flips every still-running sub-row terminal before retiring", async () => {

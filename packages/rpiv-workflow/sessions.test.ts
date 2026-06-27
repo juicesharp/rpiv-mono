@@ -1360,6 +1360,60 @@ describe("sessions — loop unit session", () => {
 		expect(successOutput.artifacts).toEqual((output as Output).artifacts);
 	});
 
+	it("collect-all unit soft-halt fires onUnitHalt (not onUnitEnd/onStageError), survives the run, writes a collected:true row", async () => {
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [{ branch: [mockAssistantMessage("done")] }],
+		});
+		const state = freshRunState();
+		const onUnitHalt = vi.fn();
+		const onUnitEnd = vi.fn();
+		const onStageError = vi.fn();
+		const onSuccess = vi.fn<(ctx: WorkflowHostContext, output: Output) => Promise<void>>(async () => {});
+
+		await runStageSession(
+			chain.ctx as WorkflowHostContext,
+			stageSession({
+				cwd: tmpDir,
+				state,
+				stageName: "design (slice-3)",
+				skill: "design",
+				// collect-all fanout unit: an extraction-fatal halt soft-halts THIS unit instead of
+				// terminating the run (the fold places a failedOutput sentinel by index).
+				collectAll: true,
+				lifecycle: new LifecycleDispatcher({ onUnitHalt, onUnitEnd, onStageError }),
+				stage: stage({ outputSchema: FOO_EQ_2_SCHEMA, outcome: scriptedOutcome([fatalPayload("slice blew up")]) }),
+				unit: { parent: "design", role: "produce", index: 2, id: "slice-3", label: "slice 3/4" },
+				onSuccess,
+			}),
+		);
+
+		// onUnitHalt fires once with the PARENT-named ref + the halt reason; the success-only
+		// onUnitEnd and the terminal onStageError never fire for a soft-halt.
+		expect(onUnitHalt).toHaveBeenCalledTimes(1);
+		expect(onUnitEnd).not.toHaveBeenCalled();
+		expect(onStageError).not.toHaveBeenCalled();
+		const [ref, unitEvent, reason] = onUnitHalt.mock.calls[0]!;
+		expect(ref.name).toBe("design");
+		expect(unitEvent).toMatchObject({
+			role: "produce",
+			index: 2,
+			unitId: "slice-3",
+			label: "slice 3/4",
+			skill: "design",
+		});
+		expect(reason).toContain("slice blew up");
+
+		// The run SURVIVES — onSuccess advances the fold with the failedOutput sentinel; no terminate.
+		expect(onSuccess).toHaveBeenCalledTimes(1);
+		expect(state.termination.status).toBe("running");
+
+		// A NON-terminal collected:true failed row lands (resume reads errMsg to rebuild the sentinel).
+		const failed = readStageRows(tmpDir).find((r) => r.status === "failed")!;
+		expect(failed.collected).toBe(true);
+		expect(failed.unitIndex).toBe(2);
+	});
+
 	it("single-stage session stays byte-identical: no structured fields, onStageEnd, no completion toast", async () => {
 		const chain = createMockSessionChain({
 			cwd: tmpDir,
