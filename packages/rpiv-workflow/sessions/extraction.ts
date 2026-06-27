@@ -21,7 +21,7 @@ import { lifecycleCtxFromSession } from "../events.js";
 import type { Artifact } from "../handle.js";
 import { assertNever, formatError, nowIso, withTimeout } from "../internal-utils.js";
 import { isJsonSchemaObject, jsonSchemaToStandard } from "../json-schema.js";
-import { ERR_COLLECTOR_THREW, ERR_PARSER_THREW, ERR_SCHEMA_TIMEOUT, MSG_VALIDATION_RETRY } from "../messages.js";
+import { ERR_COLLECTOR_THREW, ERR_PARSER_THREW, ERR_SCHEMA_TIMEOUT } from "../messages.js";
 import { sideEffectOutcome } from "../outcomes/index.js";
 import { finalizeOutput, type Output, outputMeta } from "../output.js";
 import type { CollectCtx, Outcome } from "../output-spec.js";
@@ -370,7 +370,6 @@ async function askAgentToFix(
 	failures: SchemaValidationFailure[],
 	timeoutMs: number,
 ): Promise<void> {
-	ctx.ui.notify(MSG_VALIDATION_RETRY(s.skill, attempt), "warning");
 	const errorLines = failures.map((f) => ` • ${describeFailure(f)}`).join("\n");
 	await withTimeout(
 		resendIntoChild(ctx, MSG_VALIDATION_RETRY_PROMPT(s.skill, errorLines)),

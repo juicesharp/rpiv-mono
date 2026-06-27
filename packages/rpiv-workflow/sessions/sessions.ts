@@ -30,7 +30,7 @@ import {
 import { allocateStageNumber, persistStageSuccess, rollLastSession } from "../audit-rows.js";
 import { lifecycleCtxFromSession, skillStageRef, type UnitEvent } from "../events.js";
 import { nowIso, WorkflowAbortError } from "../internal-utils.js";
-import { FAIL_VALIDATION_EXHAUSTED, MSG_STAGE_FAILED, MSG_UNIT_FAILED } from "../messages.js";
+import { FAIL_VALIDATION_EXHAUSTED, MSG_STAGE_FAILED } from "../messages.js";
 import { failedOutput, type Output, type OutputMeta, outputMeta } from "../output.js";
 import type { SessionRef } from "../state/index.js";
 import { type BranchEntry, classifyStop, readBranch, readSessionRef, type StopSignal } from "../transcript.js";
@@ -234,7 +234,6 @@ async function softHaltUnit(
 ): Promise<void> {
 	s.allocatedStageNumber ??= allocateStageNumber(s.state);
 	recordUnitHalt(ctx, auditFor(s, session), reason); // status:"failed" collected:true row (resume reads errMsg)
-	ctx.ui.notify(MSG_UNIT_FAILED(s.skill, s.unit?.label ?? s.stageName), "warning");
 	await s.onSuccess(ctx, failedOutput(outputMetaFor(s), reason));
 }
 

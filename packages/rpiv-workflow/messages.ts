@@ -52,8 +52,6 @@ export const FAIL_WORKFLOW_ABORTED = (stage: string): FailureText => ({
 	error: `workflow aborted before stage "${stage}" (signal)`,
 });
 
-export const MSG_VALIDATION_RETRY = (skill: string, attempt: number) =>
-	`rpiv: ${skill} output validation failed — asking agent to fix (attempt ${attempt})`;
 export const FAIL_VALIDATION_EXHAUSTED = (skill: string, failures: string): FailureText => ({
 	toast: `rpiv: ${skill} output validation exhausted retries`,
 	error: `${skill} output validation failed after retries: ${failures}`,
@@ -97,13 +95,6 @@ export const FAIL_BACKWARD_JUMP_EXHAUSTED = (jumps: number, max: number): Failur
 	toast: `rpiv: backward-jump limit exceeded (${jumps}/${max}) — stopping workflow to prevent infinite loop`,
 	error: `Backward-jump limit exceeded: ${jumps} backward jumps (max ${max})`,
 });
-
-/**
- * Per-unit SOFT-halt toast — a collect-all fanout unit failed but the run
- * survives (a `failedOutput` sentinel fills its slot; synthesis skips it).
- * Warns (not errors): the run is not terminating.
- */
-export const MSG_UNIT_FAILED = (skill: string, label: string) => `rpiv: ${skill} unit "${label}" failed (collected)`;
 
 /**
  * A loop produced zero units (push: empty array handled upstream as

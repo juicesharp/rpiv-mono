@@ -25,12 +25,7 @@ import { currentPrimaryArtifact } from "./chain-state.js";
 import { LifecycleDispatcher } from "./events.js";
 import { fs as fsHandle } from "./handle.js";
 import { WorkflowAbortError } from "./internal-utils.js";
-import {
-	FAIL_STAGE_NO_RESPONSE,
-	FAIL_VALIDATION_EXHAUSTED,
-	MSG_STAGE_FAILED,
-	MSG_VALIDATION_RETRY,
-} from "./messages.js";
+import { FAIL_STAGE_NO_RESPONSE, FAIL_VALIDATION_EXHAUSTED, MSG_STAGE_FAILED } from "./messages.js";
 import type { Output } from "./output.js";
 import type { CollectCtx, Outcome } from "./output-spec.js";
 import { runStageSession } from "./sessions/index.js";
@@ -157,7 +152,7 @@ describe("sessions — validation retry loop", () => {
 		rmSync(tmpDir, { recursive: true, force: true });
 	});
 
-	it("passes on first extract — no retry, no MSG_VALIDATION_RETRY notify", async () => {
+	it("passes on first extract — no retry, no fix-request prompt sent", async () => {
 		const chain = createMockSessionChain({
 			cwd: tmpDir,
 			steps: [{ branch: [mockAssistantMessage("done")] }],
@@ -176,7 +171,7 @@ describe("sessions — validation retry loop", () => {
 		);
 
 		expect(onSuccess).toHaveBeenCalledTimes(1);
-		expect(chain.notifications.find((n) => /asking agent to fix/i.test(n.msg))).toBeUndefined();
+		expect(chain.sentMessages.find((m) => m.includes("doesn't satisfy the expected output schema"))).toBeUndefined();
 		expect(readStageRows(tmpDir).some((r) => r.status === "completed")).toBe(true);
 		expect(state.stagesCompleted).toBe(1);
 	});
@@ -204,11 +199,10 @@ describe("sessions — validation retry loop", () => {
 		);
 
 		expect(onSuccess).toHaveBeenCalledTimes(1);
-		// One retry attempt → one MSG_VALIDATION_RETRY notification.
-		const retryNotifies = chain.notifications.filter((n) => n.msg === MSG_VALIDATION_RETRY("test", 1));
-		expect(retryNotifies).toHaveLength(1);
-		// The fix-request prompt MUST appear in sentMessages between initial prompt and success.
-		expect(chain.sentMessages.some((m) => m.includes("doesn't satisfy the expected output schema"))).toBe(true);
+		// One retry attempt → exactly one fix-request prompt sent into the child session
+		// (the fix-request prompt appears in sentMessages between initial prompt and success).
+		const retryPrompts = chain.sentMessages.filter((m) => m.includes("doesn't satisfy the expected output schema"));
+		expect(retryPrompts).toHaveLength(1);
 		expect(state.stagesCompleted).toBe(1);
 	});
 
@@ -269,8 +263,8 @@ describe("sessions — validation retry loop", () => {
 
 		// Initial collect + MAX retries → MAX+1 calls total.
 		expect(outcome.collectSpy).toHaveBeenCalledTimes(MAX_VALIDATION_RETRIES + 1);
-		// One MSG_VALIDATION_RETRY per retry attempt.
-		const retries = chain.notifications.filter((n) => /asking agent to fix/i.test(n.msg));
+		// One fix-request prompt per retry attempt.
+		const retries = chain.sentMessages.filter((m) => m.includes("doesn't satisfy the expected output schema"));
 		expect(retries).toHaveLength(MAX_VALIDATION_RETRIES);
 	});
 
@@ -298,7 +292,7 @@ describe("sessions — validation retry loop", () => {
 		);
 
 		expect(outcome.collectSpy).toHaveBeenCalledTimes(1);
-		expect(chain.notifications.find((n) => /asking agent to fix/i.test(n.msg))).toBeUndefined();
+		expect(chain.sentMessages.find((m) => m.includes("doesn't satisfy the expected output schema"))).toBeUndefined();
 		expect(onFailure).toHaveBeenCalledTimes(1);
 	});
 
@@ -493,7 +487,7 @@ describe("sessions — validation retry loop", () => {
 
 	it("clamps validateTimeoutMs above ceiling", async () => {
 		// Smoke: timeoutMs above ceiling must clamp. We assert the clamp
-		// indirectly via MSG_VALIDATION_RETRY firing without timeout.
+		// indirectly via the retry loop completing without a timeout error.
 		const chain = createMockSessionChain({
 			cwd: tmpDir,
 			steps: [{ branch: [mockAssistantMessage("done")] }],
@@ -1229,7 +1223,9 @@ describe("sessions — contract-sourced output validation", () => {
 		);
 
 		expect(onSuccess).toHaveBeenCalledTimes(1);
-		expect(chain.notifications.filter((n) => n.msg === MSG_VALIDATION_RETRY("test", 1))).toHaveLength(1);
+		expect(chain.sentMessages.filter((m) => m.includes("doesn't satisfy the expected output schema"))).toHaveLength(
+			1,
+		);
 		expect(state.stagesCompleted).toBe(1);
 	});
 
