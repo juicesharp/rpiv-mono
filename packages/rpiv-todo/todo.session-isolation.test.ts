@@ -297,6 +297,33 @@ describe("rpiv-todo — foreground overlay policy (Slice 2)", () => {
 		expect(getState(PARENT).tasks).toEqual([]);
 	});
 
+	it("foreground shutdown still clears the pointer + evicts the slot when dispose() throws (try/finally)", async () => {
+		const { start, shutdown, toolEnd, tool } = setup();
+		const parentCtx = createMockCtx({ hasUI: true, sessionId: PARENT });
+		// dispose()'s first act is setWidget(KEY, undefined); simulate a stale ui
+		// proxy by throwing there (registration passes a factory fn → no throw).
+		widgetSpy(parentCtx).mockImplementation((_key: string, factory: unknown) => {
+			if (factory === undefined) throw new Error("stale ui proxy");
+		});
+
+		await start?.({}, parentCtx);
+		await tool?.execute?.(
+			"tc",
+			{ action: "create", subject: "parent task" } as never,
+			undefined as never,
+			undefined as never,
+			parentCtx as never,
+		);
+		await toolEnd?.({ toolName: "todo", isError: false });
+
+		// The dispose throw propagates (genuine errors are not swallowed), but the
+		// finally guarantees the foreground pointer is cleared and the slot evicted —
+		// so the next hasUI session_start can reclaim a clean foreground.
+		await expect(shutdown?.({}, parentCtx)).rejects.toThrow("stale ui proxy");
+		expect(getActiveRenderSession()).toBe("");
+		expect(getState(PARENT).tasks).toEqual([]);
+	});
+
 	it("a headless launcher (hasUI:false) never constructs an overlay, nor does a headless child", async () => {
 		const { start } = setup();
 		const headlessCtx = createMockCtx({ hasUI: false, sessionId: PARENT });

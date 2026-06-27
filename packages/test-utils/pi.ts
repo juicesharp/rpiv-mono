@@ -202,6 +202,11 @@ export interface MockCtxOptions {
 	maxConcurrency?: number;
 	/** Session id the ctx advertises via `sessionManager.getSessionId()`. Defaults to "test-session". */
 	sessionId?: string;
+	/**
+	 * Session id a `spawnChild`-minted child ctx advertises. Defaults to
+	 * `${sessionId}-child` so parent/child isolation is exercised, not masked.
+	 */
+	childSessionId?: string;
 }
 
 export function createMockCtx(opts: MockCtxOptions = {}): ExtensionContext {
@@ -231,8 +236,11 @@ export function createMockCtx(opts: MockCtxOptions = {}): ExtensionContext {
 export function createMockCommandCtx(opts: MockCtxOptions = {}): MockWorkflowCtx {
 	const base = createMockCtx(opts);
 	const spawnChild = vi.fn(async <T>(options: MockSpawnChildOptions<T>): Promise<T> => {
+		// Mint a DISTINCT child sid so parent/child isolation tests actually exercise
+		// the per-session partition — inheriting the parent's sid would mask it. A
+		// caller that needs an explicit child sid can pass `opts.childSessionId`.
 		const child = {
-			...createMockCtx(opts),
+			...createMockCtx({ ...opts, sessionId: opts.childSessionId ?? `${opts.sessionId ?? "test-session"}-child` }),
 			waitForIdle: vi.fn(async () => {}),
 			maxConcurrency: opts.maxConcurrency ?? 1,
 			sendUserMessage: vi.fn(async () => {}),

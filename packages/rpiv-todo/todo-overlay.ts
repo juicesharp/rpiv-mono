@@ -8,6 +8,7 @@
  *
  * Reads live state via `getRenderState()` (the ctx-less foreground slot) at render
  * time — NEVER `replayFromBranch` from `tool_execution_end` (branch is stale;
+ * `message_end` runs after).
  */
 
 import type { ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
