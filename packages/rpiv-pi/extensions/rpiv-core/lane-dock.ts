@@ -277,7 +277,9 @@ export class LaneDock {
 		const lanes = listLanes();
 		this.syncSpinner(lanes); // start/stop the repaint timer with running-lane presence
 		this.syncHeartbeat(lanes); // start/stop the aging heartbeat with needs-input presence
+		const prevPreviewSession = this.previewSession; // pre-sync, for the force-clear gate below
 		this.syncPreviewSubscription(); // follow the SELECTED lane's live session
+		const previewTargetChanged = this.previewSession !== prevPreviewSession; // re-target, not a shape step
 		if (lanes.length === 0) {
 			// No lanes → the dock hides; there is nothing to navigate, so drop any
 			// stale navigation focus too (e.g. the last lane was evicted while the
@@ -323,10 +325,18 @@ export class LaneDock {
 			// previousLines so the grown frame paints clean. Gated on the shape signature so
 			// spinner ticks (which bypass update() entirely) and stable-shape progress notifies
 			// stay cheap differential renders — only a structural height step pays for a clear.
+			// A SECOND trigger is the active-preview RE-TARGET, which is a SEPARATE signal from
+			// shapeSignature() (it deliberately excludes the preview footprint — see that method's
+			// docstring): a non-fan-out single-unit stage advance keeps the row count at 1 and the
+			// selection at 0 (signature `1:0 → 1:0`, unchanged), yet the selected unit's transcript
+			// swaps session S1 → S2 and the new shorter frame is painted over the taller old one —
+			// the same ghost-block artifact with a STABLE signature. shapeSignature() can't see it,
+			// so update() tracks it separately via the previewSession identity check
+			// (previewTargetChanged); both signals OR into the single force gate here.
 			const sig = this.shapeSignature();
 			const shapeChanged = sig !== this.lastShapeSig;
 			this.lastShapeSig = sig;
-			this.tui?.requestRender(shapeChanged);
+			this.tui?.requestRender(shapeChanged || previewTargetChanged);
 		}
 	}
 
@@ -339,6 +349,10 @@ export class LaneDock {
 	 * re-targets a different lane's transcript tail). Deliberately EXCLUDES the spinner frame and
 	 * the streaming-preview tail length: those change every tick but are absorbed by the
 	 * differential path without artifacts, and forcing a screen-clear on each would flicker.
+	 * NOTE: this does NOT cover an active-preview RE-TARGET that keeps the row count and the
+	 * selection index fixed (a single-unit stage advance: signature `1:0 → 1:0` unchanged while
+	 * the selected unit's currentSession swaps S1 → S2) — that footprint change is tracked
+	 * separately in update() via the previewSession identity check, so the signature stays cheap.
 	 */
 	private shapeSignature(): string {
 		const { active, selection } = getDockState();

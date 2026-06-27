@@ -239,6 +239,42 @@ describe("LaneDock — forced redraw on height-shape change (duplicate-block fix
 		expect(spy).toHaveBeenLastCalledWith(true);
 		overlay.dispose();
 	});
+
+	it("a preview re-target with a stable row shape forces a full redraw", () => {
+		recordRun("run-1", "ship");
+		const s1 = makeSession();
+		setCurrentSession("run-1", SINGLE_UNIT_KEY, s1);
+		const overlay = new LaneDock();
+		const { tui } = mount(overlay, makeCtx());
+		setDockActive(true);
+		setDockSelection(0);
+		overlay.update(); // active → resolve selection → previewSession = s1, lastShapeSig = "1:0"
+		const spy = tui!.requestRender as unknown as ReturnType<typeof vi.fn>;
+		spy.mockClear();
+		const s2 = makeSession(); // distinct identity — same row shape, transcript re-targets S1 → S2
+		setCurrentSession("run-1", SINGLE_UNIT_KEY, s2);
+		overlay.update(); // signature unchanged (1:0 → 1:0 ⇒ shapeChanged=false), previewSession swapped ⇒ force
+		expect(tui!.requestRender).toHaveBeenLastCalledWith(true);
+		overlay.dispose();
+	});
+
+	it("an intra-stage same-session tick does NOT force a full redraw", () => {
+		recordRun("run-1", "ship");
+		const s1 = makeSession();
+		setCurrentSession("run-1", SINGLE_UNIT_KEY, s1);
+		const overlay = new LaneDock();
+		const { tui } = mount(overlay, makeCtx());
+		setDockActive(true);
+		setDockSelection(0);
+		overlay.update(); // seed previewSession = s1, lastShapeSig = "1:0"
+		const spy = tui!.requestRender as unknown as ReturnType<typeof vi.fn>;
+		spy.mockClear();
+		// Stable shape, SAME currentSession identity ⇒ previewTargetChanged stays false (no-flicker).
+		setLaneProgress("run-1", { stageNumber: 2, totalStages: 3, stageName: "design", phase: "running" });
+		overlay.update();
+		expect(tui!.requestRender).toHaveBeenLastCalledWith(false);
+		overlay.dispose();
+	});
 });
 
 describe("LaneDock — rendering", () => {
