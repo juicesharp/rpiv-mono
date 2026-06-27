@@ -504,6 +504,11 @@ export function fanoutUnitAt(e: LoopEntry, index: number, promptSuffix = ""): Ex
 		id: tag,
 		label: u.label,
 		skill: e.skill,
+		// `promptSuffix` is produced by `depArtifactSuffix` (loop-parallel.ts:187) and
+		// appends `<depArtifactFlag> <dep-artifact-path>` for a deps-bearing fanout unit
+		// ("" otherwise). The flag itself is double-gated upstream: `checkedDepArtifactFlag`
+		// at construction (loop-constructors.ts:293) and `loop-dep-flag-invalid` at load
+		// (validate/stage-rules.ts:85, defined validate/issue.ts:121).
 		prompt: `/skill:${e.skill} ${u.prompt}${promptSuffix}`,
 		def: e.def,
 	};

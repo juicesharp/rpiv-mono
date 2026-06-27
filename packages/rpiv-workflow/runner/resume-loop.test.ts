@@ -143,10 +143,34 @@ describe("loop-resume — fanout", () => {
 	const threeUnits: FanoutFn = () =>
 		[1, 2, 3].map((n) => ({ prompt: `phase ${n}`, label: `phase ${n}/3`, id: `phase-${n}` }));
 
+	/** Deterministic 3-unit fanout whose units form a 3-level dependency DAG
+	 *  (phase-1 root → phase-2 mid → phase-3 leaf). Mirrors the LIVE DAG chain at
+	 *  loop.test.ts ("DAG-ordered wave dispatch"); `Unit.deps` order the waves, and the
+	 *  `depArtifactFlag` on `dagFanoutWf` injects each completed dep's artifact path. */
+	const dagUnits: FanoutFn = () => [
+		{ prompt: "phase 1", label: "phase 1/3", id: "phase-1" },
+		{ prompt: "phase 2", label: "phase 2/3", id: "phase-2", deps: ["phase-1"] },
+		{ prompt: "phase 3", label: "phase 3/3", id: "phase-3", deps: ["phase-2"] },
+	];
+
 	const fanoutWf: Workflow = {
 		name: "fanout-wf",
 		start: "impl",
 		stages: { impl: produces({ outcome: transcriptOutcome("plans"), loop: fanout({ units: threeUnits }) }) },
+		edges: { impl: "stop" },
+	} as Workflow;
+
+	/** Same shape as `fanoutWf` but deps-bearing + `depArtifactFlag`-injecting — the
+	 *  resume counterpart of the LIVE DAG suite's `dagWf` (loop.test.ts). */
+	const dagFanoutWf: Workflow = {
+		name: "fanout-wf",
+		start: "impl",
+		stages: {
+			impl: produces({
+				outcome: transcriptOutcome("plans"),
+				loop: fanout({ depArtifactFlag: "--upstream", units: dagUnits }),
+			}),
+		},
 		edges: { impl: "stop" },
 	} as Workflow;
 
@@ -264,6 +288,53 @@ describe("loop-resume — fanout", () => {
 
 		expect(result.success).toBe(true);
 		expect(chain.sentMessages).toEqual(["/skill:impl phase 2", "/skill:impl phase 3"]);
+	});
+
+	it("resume re-wave: gates a dependent behind its dependency's wave (level-2 leaf re-dispatches strictly after level-1 mid; --upstream slot-injection proves wave separation)", async () => {
+		// RESUME counterpart of the LIVE loop.test.ts "gates a dependent behind its
+		// dependency's wave" test. The trail carries ONLY the root/phase-1 row
+		// (slot[0]); the process died mid-wave-1, so mid + leaf never ran.
+		writeRun([unitRow(1, 1, "completed")]); // root/phase-1 only — NO mid/leaf rows
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/plans/p2.md")] }, // mid re-dispatched (wave 1)
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/plans/p3.md")] }, // leaf re-dispatched (wave 2)
+			],
+		});
+
+		const result = await resumeWorkflow(chain.ctx, { workflow: dagFanoutWf, header, ref: "@x" });
+
+		expect(result.success).toBe(true);
+		// Exactly two units re-dispatch — the root is skipped (slot[0] reconstructed from
+		// the trail by the resume fold; `pendingFanoutIndices` excludes the filled index).
+		expect(chain.sentMessages).toHaveLength(2);
+		// Wave order: mid (level 1) dispatched before leaf (level 2).
+		expect(chain.sentMessages[0]).toContain("phase 2");
+		expect(chain.sentMessages[1]).toContain("phase 3");
+		// WAVE-SEPARATION PROOF (c1 core): leaf's prompt carries `--upstream` AND mid's
+		// just-filled artifact path (plans/p2.md) — proving mid's slot was re-filled in
+		// wave 1 BEFORE leaf dispatched in wave 2. A broken flat dispatcher would compute
+		// leaf's suffix against an unfilled slot[1] and emit no `--upstream`.
+		expect(chain.sentMessages[1]).toContain("--upstream");
+		expect(chain.sentMessages[1]).toContain("plans/p2.md");
+		// BONUS (trail→slot reconstruction): mid's prompt carries `--upstream` AND root's
+		// artifact path (plans/p1.md) — proving the resume fold reconstructed slot[0] from
+		// the written completed row and the re-dispatch read it.
+		expect(chain.sentMessages[0]).toContain("--upstream");
+		expect(chain.sentMessages[0]).toContain("plans/p1.md");
+
+		// JSONL: all 3 units completed at their declared indices, in run order, each
+		// carrying the structured unit identity the resume drift guard joins on (id ?? label).
+		const rows = readAllStages(tmpDir, header.runId);
+		const implRows = rows.filter((r) => r.parent === "impl");
+		expect(implRows).toHaveLength(3);
+		expect(implRows.every((r) => r.status === "completed" && r.role === "produce")).toBe(true);
+		expect(implRows.map((r) => ({ unitIndex: r.unitIndex, unitId: r.unitId }))).toEqual([
+			{ unitIndex: 0, unitId: "phase-1" },
+			{ unitIndex: 1, unitId: "phase-2" },
+			{ unitIndex: 2, unitId: "phase-3" },
+		]);
 	});
 
 	it("fully-completed fanout: SILENT no-op route-onward (no re-announce, no per-stage toast)", async () => {

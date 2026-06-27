@@ -193,6 +193,28 @@ describe("fanout() / iterate() / assess() constructors", () => {
 		).toThrow(/max must be an integer >= 1/);
 	});
 
+	it("checkedDepArtifactFlag throws on empty / whitespace / non-string (construction path)", () => {
+		// Empty + whitespace hit the `flag.trim().length === 0` branch.
+		expect(() => fanout({ units: () => [], depArtifactFlag: "" })).toThrow(
+			/depArtifactFlag must be a non-empty string/,
+		);
+		expect(() => fanout({ units: () => [], depArtifactFlag: "   " })).toThrow(
+			/depArtifactFlag must be a non-empty string/,
+		);
+		expect(() => fanout({ units: () => [], depArtifactFlag: "\t\n" })).toThrow(
+			/depArtifactFlag must be a non-empty string/,
+		);
+		// A non-string flag hits the `typeof flag !== "string"` branch.
+		expect(() => fanout({ units: () => [], depArtifactFlag: 123 as never })).toThrow(
+			/depArtifactFlag must be a non-empty string/,
+		);
+	});
+
+	it("fanout() carries an explicit depArtifactFlag (and omits it by default)", () => {
+		expect(fanout({ units: () => [], depArtifactFlag: "--upstream" }).depArtifactFlag).toBe("--upstream");
+		expect(fanout({ units: () => [] }).depArtifactFlag).toBeUndefined();
+	});
+
 	it("assess() throws on a non-function done / feedForward", () => {
 		expect(() =>
 			assess({
