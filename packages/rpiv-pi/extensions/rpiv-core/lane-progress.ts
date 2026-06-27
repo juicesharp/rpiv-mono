@@ -9,7 +9,8 @@
  * clean-install-safe increment — no host plumbing.
  *
  * Each lifecycle event maps to `setLaneProgress(ctx.runId, …)`:
- *   - onStageStart → { stageNumber, totalStages, stageName, phase: "running" }
+ *   - onStageStart → clear the prior stage's fan-out unit sub-rows (every stage kind; it fires
+ *                    before onLoopStart on a loop stage) + { stageNumber, totalStages, stageName, phase: "running" }
  *   - onStageRetry → phase "retry" + attempt           ("⟲ … retry 2/3")
  *   - onStageError → phase "error"                      (brief — the run then evicts)
  *   - onLoopStart  → seed units.total (fanout precomputes its unit list); on a
@@ -112,14 +113,23 @@ export async function registerLaneProgress(): Promise<void> {
 			// `noteVisitedStage` is idempotent per stage name, so calling it from every
 			// per-stage event keeps `visited` (the distinct-nodes-visited fraction
 			// numerator) correct without inflating on a loop-back — see LaneProgress.
-			onStageStart: (stage, ctx) =>
+			// onStageStart fires for EVERY stage kind — a plain sequential stage (the single-stage
+			// entry announcement, run-stage.ts:221) AND every loop stage, where it fires BEFORE
+			// onLoopStart (announceLoopStart, loop.ts:75→78). So retiring the prior stage's fan-out
+			// unit sub-rows HERE closes the c1 gap (fanout → plain sequential stage: the sequential
+			// stage has no onLoopStart to clear them) and the c2 gap (fanout → non-fanout loop: the
+			// loop's onLoopStart only drops the gate, it never cleared the prior generation).
+			// clearUnitLanes is a no-op on an empty map, so the first stage of a run pays nothing.
+			onStageStart: (stage, ctx) => {
+				clearUnitLanes(ctx.runId);
 				setLaneProgress(ctx.runId, {
 					stageNumber: stage.stageNumber,
 					totalStages: ctx.totalStages,
 					visited: noteVisitedStage(ctx.runId, stage.name),
 					stageName: stage.name,
 					phase: "running",
-				}),
+				});
+			},
 			onStageRetry: (stage, attempt, ctx) =>
 				setLaneProgress(ctx.runId, {
 					stageNumber: stage.stageNumber,

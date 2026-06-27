@@ -308,7 +308,7 @@ describe("per-unit sub-rows (Phase 4 — onUnitStart/onUnitEnd lifecycle)", () =
 		expect(getUnit("run-1", 1)).toBeUndefined();
 	});
 
-	it("a fanout generation followed by a non-fanout loop drops the gate (no new sub-rows)", async () => {
+	it("a fanout generation → non-fanout loop stage: the loop stage's onStageStart clears the prior generation; onLoopStart then drops the gate (c2)", async () => {
 		const b = await register();
 		recordRun("run-1", "carve");
 		const ctx = { runId: "run-1", totalStages: 6 };
@@ -316,11 +316,55 @@ describe("per-unit sub-rows (Phase 4 — onUnitStart/onUnitEnd lifecycle)", () =
 		b.onUnitStart?.({ stageNumber: 2, name: "design" }, { index: 0, label: "d0" }, ctx);
 		expect(getUnit("run-1", 0)?.label).toBe("d0");
 
-		// A subsequent iterate loop clears nothing but drops the gate; its units stay off-row.
+		// Mirrors announceLoopStart (loop.ts:75→78): onStageStart fires BEFORE onLoopStart.
 		const seq = { stageNumber: 4, name: "assess" };
-		b.onLoopStart?.(seq, { kind: "assess" }, ctx);
+		b.onStageStart?.(seq, ctx);
+		// The loop stage's onStageStart retires the prior fan-out generation (c2) — the prior
+		// "clears nothing" assertion is reversed to "clears the prior generation."
+		expect(getUnit("run-1", 0)).toBeUndefined();
+		b.onLoopStart?.(seq, { kind: "assess" }, ctx); // gate dropped, no new sub-rows
 		b.onUnitStart?.(seq, { index: 5, label: "round" }, ctx);
 		expect(getUnit("run-1", 5)).toBeUndefined();
+	});
+
+	it("a fanout generation → plain sequential (non-loop) stage: the sequential stage's onStageStart clears the prior generation (no onLoopStart needed) (c1)", async () => {
+		const b = await register();
+		recordRun("run-1", "carve");
+		const ctx = { runId: "run-1", totalStages: 6 };
+		b.onLoopStart?.({ stageNumber: 2, name: "design" }, { kind: "fanout", units: [{}, {}] }, ctx);
+		b.onUnitStart?.({ stageNumber: 2, name: "design" }, { index: 0, label: "p0" }, ctx);
+		b.onUnitStart?.({ stageNumber: 2, name: "design" }, { index: 1, label: "p1" }, ctx);
+		expect(getUnit("run-1", 0)?.label).toBe("p0");
+		expect(getUnit("run-1", 1)?.label).toBe("p1");
+
+		// A plain sequential (non-loop) stage fires ONLY onStageStart (the single-stage entry
+		// announcement, run-stage.ts:221) — no onLoopStart. Its onStageStart retires the prior
+		// fan-out generation, closing the c1 gap (the sequential stage had no clearer before).
+		const seq = { stageNumber: 4, name: "commit" };
+		b.onStageStart?.(seq, ctx);
+		expect(getUnit("run-1", 0)).toBeUndefined();
+		expect(getUnit("run-1", 1)).toBeUndefined();
+	});
+
+	it("a fanout stage's onStageStart clears the prior generation but NOT its own units — they materialize via onUnitStart after the clear (c3)", async () => {
+		const b = await register();
+		recordRun("run-1", "carve");
+		const ctx = { runId: "run-1", totalStages: 6 };
+		// Prior fan-out generation.
+		b.onLoopStart?.({ stageNumber: 1, name: "slice" }, { kind: "fanout", units: [{}] }, ctx);
+		b.onUnitStart?.({ stageNumber: 1, name: "slice" }, { index: 0, label: "prior-0" }, ctx);
+		expect(getUnit("run-1", 0)?.label).toBe("prior-0");
+
+		// A NEW fan-out stage: announceLoopStart order is onStageStart → onLoopStart → onUnitStart.
+		const stage = { stageNumber: 3, name: "design" };
+		b.onStageStart?.(stage, ctx); // retires the PRIOR generation…
+		expect(getUnit("run-1", 0)).toBeUndefined(); // …prior-0 cleared
+		b.onLoopStart?.(stage, { kind: "fanout", units: [{}, {}] }, ctx);
+		b.onUnitStart?.(stage, { index: 0, label: "phase 1/2" }, ctx); // …but THIS stage's unit 0 materializes
+		b.onUnitStart?.(stage, { index: 1, label: "phase 2/2" }, ctx);
+		// The fanout stage's own units survive — onStageStart did NOT reach forward and drop them.
+		expect(getUnit("run-1", 0)?.label).toBe("phase 1/2");
+		expect(getUnit("run-1", 1)?.label).toBe("phase 2/2");
 	});
 
 	it("orphan sweep — a unit that fires onUnitStart with NO onUnitEnd reads terminal after onStageError", async () => {
