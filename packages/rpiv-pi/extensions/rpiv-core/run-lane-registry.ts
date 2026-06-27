@@ -16,6 +16,9 @@
 
 import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 
+import type { LaneUsage } from "./lane-usage.js";
+import { toLaneUsage } from "./lane-usage.js";
+
 /** Lane status taxonomy — mirrors rpiv-workflow's RunTermination.status (types.ts:145-149). */
 export type LaneStatus = "running" | "completed" | "failed" | "aborted" | "cancelled";
 
@@ -44,6 +47,13 @@ export interface LaneSession {
 	 *  surface reading it after each tick shows live thinking without double-rendering the
 	 *  committed turn. Backed by the host's `createLaneSessionView` (lane-streaming.ts). */
 	getStreamingMessage(): unknown;
+	/** Aggregate token usage off the live child — the host's `createLaneSessionView`
+	 *  delegates this to `AgentSession.getSessionStats()`. Typed `unknown` — narrowed
+	 *  to `LaneUsage` at the storage site via `toLaneUsage` — so the registry stays
+	 *  free of an `AgentSession` import, exactly like `getStreamingMessage`/`getBranch`.
+	 *  Captured at teardown WHILE the child is still alive (the usage is permanently
+	 *  lost after `dispose()`), mirroring `getBranch` for `finalBranch`. */
+	getUsage(): unknown;
 	/** Fires on every streaming tick; the viewer re-renders on it. Returns unsub. */
 	subscribe(listener: () => void): () => void;
 }
@@ -105,6 +115,11 @@ export interface UnitLane {
 	/** Tool defs for the tool names present in `finalBranch`, snapshotted at teardown
 	 *  so per-tool rendering survives the dropped live `getToolDefinition`. */
 	finalToolDefs?: Map<string, unknown>;
+	/** Token usage captured at teardown WHILE the child is still alive — the
+	 *  structural twin of `finalBranch`: fail-soft (a throwing/malformed `getUsage`
+	 *  leaves ONLY this undefined, never the transcript), preserved by `retireRun`
+	 *  (KEEP, D5), and readable post-retirement via `getUnit`. */
+	finalUsage?: LaneUsage;
 	/** This unit's most-recent persisted child session file — seeds the per-unit
 	 *  disk-jsonl fallback (`runId::index::lastSessionFile`). */
 	lastSessionFile?: string;
@@ -386,6 +401,15 @@ function captureSnapshotInto(unit: UnitLane, session: LaneSession): void {
 		unit.finalBranch = undefined;
 		unit.finalCwd = undefined;
 		unit.finalToolDefs = undefined;
+	}
+	// Isolated fail-soft usage capture: a throwing/malformed getUsage() (or a
+	// malformed SessionStats) leaves ONLY finalUsage undefined — it never wipes the
+	// transcript snapshot above. Mirrors snapshotToolDefs' per-tool fail-soft
+	// discipline. Own try/catch so a usage failure can't poison finalBranch/cwd/defs.
+	try {
+		unit.finalUsage = toLaneUsage(session.getUsage());
+	} catch {
+		unit.finalUsage = undefined;
 	}
 }
 

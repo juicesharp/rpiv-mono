@@ -6,6 +6,7 @@ import type { TUI } from "@earendil-works/pi-tui";
 import { makeAssistantMessage, makeUserMessage } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ViewerMessage } from "./lane-transcript.js";
+import type { LaneUsage } from "./lane-usage.js";
 import { LaneViewer } from "./lane-viewer.js";
 import {
 	__resetRunLaneRegistry,
@@ -50,6 +51,7 @@ function makeSession(getBranch: BranchFn): LaneSession & {
 		sessionManager: { getBranch, getCwd: () => "/tmp" },
 		getToolDefinition: () => undefined,
 		getStreamingMessage: () => streaming,
+		getUsage: () => undefined,
 		subscribe: (l: () => void) => {
 			listener = l;
 			return unsub;
@@ -528,6 +530,203 @@ describe("LaneViewer — per-unit addressing (fan-out)", () => {
 		v1.handleInput("\r");
 		expect(done1).toHaveBeenCalledWith("answer");
 		v1.dispose();
+	});
+});
+
+describe("LaneViewer — token detail header", () => {
+	/** Retire a fan-out unit at `idx` to terminal state (the realistic moment finalUsage is
+	 *  populated), then inject `finalUsage` directly onto its registry slot. Isolates the
+	 *  header rendering from Phase 1's capture internals without coupling to them. */
+	function setupRetiredUnit(
+		runId: string,
+		idx: number,
+		finalUsage: LaneUsage | undefined,
+		label?: string,
+	): LaneViewer {
+		const session = makeSession(() => [assistantEntry("unit transcript")]);
+		recordRun(runId, "carve");
+		setUnitStarted(runId, idx, label ?? `phase ${idx + 1}/2`);
+		setCurrentSession(runId, idx, session);
+		markUnitDone(runId, idx, "done");
+		const unit = getUnit(runId, idx);
+		if (finalUsage !== undefined && unit) unit.finalUsage = finalUsage;
+		return new LaneViewer(runId, idx, makeTui(), identityTheme, vi.fn());
+	}
+
+	it("renders the full ↑in ↓out R W CH% $cost segment set on a terminated unit's finalUsage", () => {
+		const viewer = setupRetiredUnit("run-full", 0, {
+			input: 1500,
+			output: 800,
+			cacheRead: 500,
+			cacheWrite: 200,
+			cost: 0.05,
+			percent: 45.2,
+			total: 3000,
+		});
+		const header = viewer.render(200)[0];
+		expect(header).toContain("↑1.5k"); // formatTokens(1500) = "1.5k" ([1e3,1e4) bucket)
+		expect(header).toContain("↓800"); // formatTokens(800) = "800" (bare bucket)
+		expect(header).toContain("R500");
+		expect(header).toContain("W200");
+		expect(header).toContain("CH45.2%"); // percent.toFixed(1)
+		expect(header).toContain("$0.050"); // cost.toFixed(3)
+		viewer.dispose();
+	});
+
+	it("omits each token segment when zero (footer.js omit-when-zero)", () => {
+		// cacheWrite:0 → no W; everything else nonzero.
+		const vA = setupRetiredUnit("run-omit-a", 0, {
+			input: 1500,
+			output: 300,
+			cacheRead: 200,
+			cacheWrite: 0,
+			cost: 0.01,
+			percent: 7.0,
+			total: 2000,
+		});
+		const hA = vA.render(200)[0];
+		expect(hA).toContain("↑1.5k");
+		expect(hA).toContain("↓300");
+		expect(hA).toContain("R200");
+		expect(hA).not.toMatch(/W\d/); // cacheWrite omitted
+		vA.dispose();
+
+		// input:0 → no ↑.
+		const vB = setupRetiredUnit("run-omit-b", 0, { input: 0, output: 200, cacheRead: 0, cacheWrite: 0, total: 200 });
+		const hB = vB.render(200)[0];
+		expect(hB).toContain("↓200");
+		expect(hB).not.toContain("↑"); // input omitted
+		vB.dispose();
+
+		// all-zero usage → empty detail, header unchanged (no suffix at all).
+		const vZero = setupRetiredUnit("run-omit-zero", 0, {
+			input: 0,
+			output: 0,
+			cacheRead: 0,
+			cacheWrite: 0,
+			total: 0,
+		});
+		const hZero = vZero.render(200)[0];
+		expect(hZero).toContain("phase 1/2 — done"); // existing header content
+		expect(hZero).not.toContain("↑");
+		expect(hZero).not.toContain("$");
+		vZero.dispose();
+	});
+
+	it("renders CH% for a numeric percent and omits it for null/undefined", () => {
+		// numeric percent (whole number still gets one decimal: 7.0 → CH7.0%)
+		const vNum = setupRetiredUnit("run-ch-num", 0, {
+			input: 10,
+			output: 0,
+			cacheRead: 0,
+			cacheWrite: 0,
+			percent: 7.0,
+			total: 10,
+		});
+		expect(vNum.render(200)[0]).toContain("CH7.0%");
+		vNum.dispose();
+
+		// null percent → omitted
+		const vNull = setupRetiredUnit("run-ch-null", 0, {
+			input: 10,
+			output: 0,
+			cacheRead: 0,
+			cacheWrite: 0,
+			percent: null,
+			total: 10,
+		});
+		expect(vNull.render(200)[0]).not.toContain("CH%");
+		vNull.dispose();
+
+		// undefined percent (field absent) → omitted
+		const vUndef = setupRetiredUnit("run-ch-absent", 0, {
+			input: 10,
+			output: 0,
+			cacheRead: 0,
+			cacheWrite: 0,
+			total: 10,
+		});
+		expect(vUndef.render(200)[0]).not.toContain("CH%");
+		vUndef.dispose();
+	});
+
+	it("renders $cost at toFixed(3) when nonzero, omits when zero/absent", () => {
+		const vCost = setupRetiredUnit("run-cost", 0, {
+			input: 10,
+			output: 0,
+			cacheRead: 0,
+			cacheWrite: 0,
+			cost: 0.05,
+			total: 10,
+		});
+		expect(vCost.render(200)[0]).toContain("$0.050");
+		vCost.dispose();
+
+		// zero cost → omitted
+		const vZero = setupRetiredUnit("run-cost-zero", 0, {
+			input: 10,
+			output: 0,
+			cacheRead: 0,
+			cacheWrite: 0,
+			cost: 0,
+			total: 10,
+		});
+		expect(vZero.render(200)[0]).not.toContain("$");
+		vZero.dispose();
+
+		// absent cost → omitted
+		const vAbsent = setupRetiredUnit("run-cost-absent", 0, {
+			input: 10,
+			output: 0,
+			cacheRead: 0,
+			cacheWrite: 0,
+			total: 10,
+		});
+		expect(vAbsent.render(200)[0]).not.toContain("$");
+		vAbsent.dispose();
+	});
+
+	it("appends no detail when finalUsage is absent (running unit / parent row of a run)", () => {
+		// (a) A retired fan-out unit with no finalUsage captured → existing header, no suffix.
+		const viewer = setupRetiredUnit("run-no-final", 0, undefined);
+		const header = viewer.render(200)[0];
+		expect(header).toContain("phase 1/2 — done"); // existing header content
+		expect(header).not.toContain("↑");
+		expect(header).not.toContain("$");
+		viewer.dispose();
+
+		// (b) The lane (parent) row of a non-fanout run, retired, no finalUsage → existing
+		// header byte-identical, no suffix.
+		const session = makeSession(() => [assistantEntry("run transcript")]);
+		recordRun("run-parent", "ship");
+		setCurrentSession("run-parent", SINGLE_UNIT_KEY, session);
+		retireRun("run-parent", "completed");
+		const parent = new LaneViewer("run-parent", SINGLE_UNIT_KEY, makeTui(), identityTheme, vi.fn());
+		const parentHeader = parent.render(200)[0];
+		expect(parentHeader).toContain("ship");
+		expect(parentHeader).not.toContain("↑");
+		expect(parentHeader).not.toContain("$");
+		parent.dispose();
+	});
+
+	it("rightmost-clips the usage suffix under a narrow width (name survives, never throws)", () => {
+		const viewer = setupRetiredUnit("run-clip", 0, {
+			input: 1500,
+			output: 800,
+			cacheRead: 500,
+			cacheWrite: 200,
+			cost: 0.05,
+			percent: 45.2,
+			total: 3000,
+		});
+		// Narrow width: the left-anchored name + status survive; the usage suffix is what
+		// truncates (rightmost-first), with an ellipsis — never throws.
+		expect(() => viewer.render(30)).not.toThrow();
+		const header = viewer.render(30)[0];
+		expect(header).toContain("phase 1/2"); // name survives (left-anchored)
+		expect(header).toContain("…"); // truncation kicked in
+		expect(header).not.toContain("$0.050"); // rightmost suffix clipped
+		viewer.dispose();
 	});
 });
 

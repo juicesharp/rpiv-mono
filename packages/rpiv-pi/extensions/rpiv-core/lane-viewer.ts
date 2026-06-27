@@ -39,6 +39,7 @@ import {
 	type ViewerMessage,
 } from "./lane-transcript.js";
 import { type DiskBranch, loadBranchFromDisk } from "./lane-transcript-disk.js";
+import { formatTokens, type LaneUsage } from "./lane-usage.js";
 import {
 	getLane,
 	getUnit,
@@ -61,6 +62,34 @@ const TERMINAL_GLYPH: Partial<Record<LaneStatus, string>> = {
 
 /** Header glyph for a finished unit sub-row (mirrors TERMINAL_GLYPH). */
 const UNIT_GLYPH: Record<"done" | "failed", string> = { done: "✓", failed: "✗" };
+
+/**
+ * Full token-detail suffix for the lane-viewer header (Phase 3) — the footer.js
+ * omit-when-zero segment set `↑in ↓out R W CH% $cost`, formatted via Phase 1's
+ * formatTokens. Viewer-local (not exported): the lane DOCK renders a different,
+ * compact tally (Phase 2), so a shared full-detail formatter would be slice-3-only
+ * and is not factored into lane-usage.ts.
+ *
+ *   • "" when usage is undefined (running unit / parent row / not yet captured)
+ *   • each of ↑in ↓out R W pushed only when nonzero (footer.js omit-when-zero)
+ *   • CH% : `CH${percent.toFixed(1)}%` for a numeric percent; omitted for null/undefined
+ *   • $cost: `$${cost.toFixed(3)}` when nonzero; omitted otherwise
+ *   • segment order: ↑in ↓out R W CH% $cost (the slice title's stated order, NOT
+ *     footer.js's line order — there the bare `%` is an always-present dedicated
+ *     line pinned last; here every segment is omit-when-zero with no such anchor)
+ *   • segments joined by a single space (footer.js idiom)
+ */
+function formatUsageDetail(usage: LaneUsage | undefined): string {
+	if (!usage) return "";
+	const parts: string[] = [];
+	if (usage.input) parts.push(`↑${formatTokens(usage.input)}`);
+	if (usage.output) parts.push(`↓${formatTokens(usage.output)}`);
+	if (usage.cacheRead) parts.push(`R${formatTokens(usage.cacheRead)}`);
+	if (usage.cacheWrite) parts.push(`W${formatTokens(usage.cacheWrite)}`);
+	if (usage.percent != null) parts.push(`CH${usage.percent.toFixed(1)}%`);
+	if (usage.cost) parts.push(`$${usage.cost.toFixed(3)}`);
+	return parts.join(" ");
+}
 
 export class LaneViewer implements Component {
 	private scrollOffset = 0;
@@ -208,6 +237,12 @@ export class LaneViewer implements Component {
 						? `${glyph} ${name} — ${lane.status}: ${lane.error}`
 						: `${glyph} ${name} — ${lane.status}`;
 		}
+		// Phase 3: append the focused unit's full token-detail suffix
+		// (↑in ↓out R W CH% $cost) when its captured finalUsage carries one. Two-space
+		// break from the name/status/cause; rightmost-clipped by the truncate below so
+		// the left-anchored name + status always survive under narrow widths.
+		const detail = formatUsageDetail(unit?.finalUsage);
+		if (detail) headText = `${headText}  ${detail}`;
 		const header = truncateToWidth(this.theme.fg("accent", headText), width, "…");
 		// A queued question is answered IN PLACE with ⏎ (switchIntoLane drains only on the
 		// "answer" intent); esc/← back out without draining, so the view verb and the answer

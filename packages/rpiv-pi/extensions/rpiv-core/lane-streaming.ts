@@ -62,6 +62,7 @@ export function createLaneSessionView(session: AgentSession): LaneSessionView {
 		getToolDefinition: (name) => session.getToolDefinition(name),
 		subscribe: (listener) => session.subscribe(listener),
 		getStreamingMessage: () => streaming,
+		getUsage: () => session.getSessionStats(),
 		dispose: () => unsub(),
 	};
 }

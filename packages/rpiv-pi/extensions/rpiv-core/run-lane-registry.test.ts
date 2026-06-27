@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	__resetRunLaneRegistry,
+	captureFinalSnapshot,
 	dequeueInput,
 	enqueueInput,
 	evictRun,
@@ -41,6 +42,7 @@ function makeSession(sessionId: string): LaneSession {
 		sessionManager: { getBranch: () => [], getCwd: () => "/tmp" },
 		getToolDefinition: () => undefined,
 		getStreamingMessage: () => undefined,
+		getUsage: () => undefined,
 		subscribe: () => () => {},
 	};
 }
@@ -249,6 +251,108 @@ describe("run-lane-registry", () => {
 			expect(getLane("run-1")?.status).toBe("aborted"); // first status held
 			expect(getUnit("run-1", SINGLE_UNIT_KEY)?.finalBranch).toBe(branch); // transcript preserved
 			expect(listener).not.toHaveBeenCalled(); // no spurious notify on the no-op
+		});
+	});
+
+	describe("finalUsage capture (per-unit token usage)", () => {
+		it("captures finalUsage from session.getUsage() via captureFinalSnapshot", () => {
+			recordRun("run-1", "ship");
+			const stats = {
+				tokens: { input: 1500, output: 800, cacheRead: 500, cacheWrite: 200, total: 3000 },
+				cost: 0.05,
+				contextUsage: { percent: 45.2 },
+			};
+			const session: LaneSession = {
+				...makeSession("s1"),
+				getUsage: () => stats,
+			};
+			captureFinalSnapshot("run-1", SINGLE_UNIT_KEY, session);
+			expect(getUnit("run-1", SINGLE_UNIT_KEY)?.finalUsage).toEqual({
+				input: 1500,
+				output: 800,
+				cacheRead: 500,
+				cacheWrite: 200,
+				total: 3000,
+				cost: 0.05,
+				percent: 45.2,
+			});
+		});
+
+		it("leaves finalUsage undefined when getUsage() returns undefined (no stats yet)", () => {
+			recordRun("run-1", "ship");
+			captureFinalSnapshot("run-1", SINGLE_UNIT_KEY, makeSession("s1"));
+			expect(getUnit("run-1", SINGLE_UNIT_KEY)?.finalUsage).toBeUndefined();
+		});
+
+		it("fail-soft when getUsage() returns a malformed SessionStats — finalUsage undefined", () => {
+			recordRun("run-1", "ship");
+			const session: LaneSession = {
+				...makeSession("s1"),
+				getUsage: () => ({ tokens: "nope" }),
+			};
+			expect(() => captureFinalSnapshot("run-1", SINGLE_UNIT_KEY, session)).not.toThrow();
+			expect(getUnit("run-1", SINGLE_UNIT_KEY)?.finalUsage).toBeUndefined();
+		});
+
+		it("isolated fail-soft: a THROWING getUsage leaves finalUsage undefined but finalBranch intact", () => {
+			recordRun("run-1", "ship");
+			const branch = [{ type: "message" }];
+			const session: LaneSession = {
+				...makeSession("s1"),
+				sessionManager: { getBranch: () => branch, getCwd: () => "/tmp" },
+				getUsage: () => {
+					throw new Error("session disposed");
+				},
+			};
+			captureFinalSnapshot("run-1", SINGLE_UNIT_KEY, session);
+			const unit = getUnit("run-1", SINGLE_UNIT_KEY);
+			expect(unit?.finalUsage).toBeUndefined(); // usage failed alone
+			expect(unit?.finalBranch).toBe(branch); // transcript survived
+			expect(unit?.finalCwd).toBe("/tmp");
+		});
+
+		it("retireRun preserves finalUsage (KEEP, D5) — still readable post-retirement", () => {
+			recordRun("run-1", "ship");
+			const stats = {
+				tokens: { input: 100, output: 50, cacheRead: 10, cacheWrite: 5, total: 165 },
+				cost: 0.01,
+			};
+			setCurrentSession("run-1", SINGLE_UNIT_KEY, {
+				...makeSession("s1"),
+				sessionManager: { getBranch: () => [{ type: "message" }], getCwd: () => "/tmp" },
+				getUsage: () => stats,
+			});
+			retireRun("run-1", "completed");
+			expect(getUnit("run-1", SINGLE_UNIT_KEY)?.finalUsage).toEqual({
+				input: 100,
+				output: 50,
+				cacheRead: 10,
+				cacheWrite: 5,
+				total: 165,
+				cost: 0.01,
+			});
+		});
+
+		it("the x-cancel fallback path captures partial usage off the still-live currentSession", () => {
+			// retireRun's still-attached fallback calls captureSnapshotInto, so an
+			// optimistically-cancelled lane captures usage off the live session.
+			recordRun("run-1", "ship");
+			const stats = {
+				tokens: { input: 7, output: 3, cacheRead: 0, cacheWrite: 0, total: 10 },
+			};
+			setCurrentSession("run-1", SINGLE_UNIT_KEY, {
+				...makeSession("s1"),
+				sessionManager: { getBranch: () => [{ type: "message" }], getCwd: () => "/tmp" },
+				getUsage: () => stats,
+			});
+			retireRun("run-1", "aborted"); // x-cancel path — session still attached
+			expect(getUnit("run-1", SINGLE_UNIT_KEY)?.finalUsage).toEqual({
+				input: 7,
+				output: 3,
+				cacheRead: 0,
+				cacheWrite: 0,
+				total: 10,
+			});
 		});
 	});
 

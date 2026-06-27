@@ -29,6 +29,7 @@ import {
 	type ViewerMessage,
 } from "./lane-transcript.js";
 import { type DiskBranch, loadBranchFromDisk } from "./lane-transcript-disk.js";
+import { formatTokens, type LaneUsage } from "./lane-usage.js";
 import {
 	type DisplayRow,
 	getDockState,
@@ -153,6 +154,64 @@ function laneDescriptor(lane: LaneEntry): string | undefined {
 	const alias = lane.name !== workflow ? lane.name : undefined;
 	const prompt = lane.input ? lane.input.replace(/\s+/g, " ").trim() : undefined;
 	return alias ?? (prompt || undefined);
+}
+
+/**
+ * Compact dock token tally — `↑{in} ↓{out} R{cacheRead}` via Phase 1's formatTokens,
+ * each segment omitted when its value is 0 and the WHOLE tally omitted (→ "") when usage
+ * is undefined OR all three are zero. footer.js:108-127 omit-when-zero idiom. Deliberately
+ * the 3-segment subset — W (cacheWrite) / CH% (context fill) / $cost are Phase 3's
+ * lane-viewer header, NOT this ambient dock surface.
+ */
+function formatUsageTally(usage: LaneUsage | undefined): string {
+	if (!usage) return "";
+	const segments: string[] = [];
+	if (usage.input > 0) segments.push(`↑${formatTokens(usage.input)}`);
+	if (usage.output > 0) segments.push(`↓${formatTokens(usage.output)}`);
+	if (usage.cacheRead > 0) segments.push(`R${formatTokens(usage.cacheRead)}`);
+	return segments.join(" ");
+}
+
+/**
+ * Run-level token aggregate over a lane's units — sums input/output/cacheRead/cacheWrite
+ * across every unit carrying a finalUsage; RECOMPUTES total = sum of the four (does NOT
+ * trust each child's stored total, which may have been computed under a different window);
+ * accumulates scalar cost (only when at least one contributing unit carries one); OMITS
+ * percent (a context-window fill has no meaningful value summed across siblings with
+ * independent windows). Returns undefined when NO unit carries usage (a fully-running lane
+ * → no tally). A pure synchronous read over the registry, safe under JS run-to-completion.
+ */
+function sumLaneUsage(units: Iterable<UnitLane>): LaneUsage | undefined {
+	let input = 0;
+	let output = 0;
+	let cacheRead = 0;
+	let cacheWrite = 0;
+	let cost = 0;
+	let hasCost = false;
+	let any = false;
+	for (const unit of units) {
+		const u = unit.finalUsage;
+		if (!u) continue;
+		any = true;
+		input += u.input;
+		output += u.output;
+		cacheRead += u.cacheRead;
+		cacheWrite += u.cacheWrite;
+		if (u.cost !== undefined) {
+			cost += u.cost;
+			hasCost = true;
+		}
+	}
+	if (!any) return undefined;
+	const result: LaneUsage = {
+		input,
+		output,
+		cacheRead,
+		cacheWrite,
+		total: input + output + cacheRead + cacheWrite,
+	};
+	if (hasCost) result.cost = cost;
+	return result;
 }
 
 /** Per-status glyph; needs-input overrides it (see renderRow). */
@@ -490,9 +549,11 @@ export class LaneDock {
 		const label = unit.label ?? `unit ${unit.index}`;
 		const labelCell =
 			labelWidth > 0 ? padCol(theme, selected ? "accent" : "text", label, labelWidth, selected) : label;
+		const usageTally = formatUsageTally(unit.finalUsage);
 		const tail = needs
 			? theme.fg("warning", "needs input")
-			: theme.fg("muted", unit.status === "running" ? "live" : unit.status);
+			: theme.fg("muted", unit.status === "running" ? "live" : unit.status) +
+				(usageTally ? theme.fg("muted", ` · ${usageTally}`) : "");
 		return `${gutter}${indent}${theme.fg(glyphColor, glyph)} ${labelCell} ${tail}`;
 	}
 
@@ -557,7 +618,9 @@ export class LaneDock {
 		// `lane.error` (post-retirement) or the live `error`-phase reason (pre-retirement).
 		const reason = shortFailureReason(lane.error ?? (progress?.phase === "error" ? progress.reason : undefined));
 		// Live stage progress (Phase 8): [bar] N/total stageName [· reason] [· units x/y].
-		if (progress) return this.renderProgressRow(theme, prefix, progress, width, reason);
+		// Live stage progress (Phase 8): [bar] N/total stageName [· reason] [· units x/y] [· ↑in ↓out R].
+		if (progress)
+			return this.renderProgressRow(theme, prefix, progress, width, reason, sumLaneUsage(lane.units.values()));
 		// No progress yet: running animates "streaming…"; terminal shows its raw status,
 		// with the failure reason appended (clipped by the row's width truncate).
 		const label = running ? "streaming…" : lane.status;
@@ -580,6 +643,7 @@ export class LaneDock {
 		progress: LaneProgress,
 		width: number,
 		reason?: string,
+		usage?: LaneUsage,
 	): string {
 		// Mini-bar: ALWAYS BAR_MAX_CELLS cells wide (the filled portion is scaled to
 		// progress) so the bar — and every column after it — aligns across rows
@@ -603,6 +667,12 @@ export class LaneDock {
 		// stage, so it reads as "on lap 7 of this 4-stage flow", never as "7 of 4".
 		if (progress.stageNumber > visited) nameRaw += ` · ${LAP_MARK}${progress.stageNumber}`;
 		if (progress.units) nameRaw += ` · units ${progress.units.done}/${progress.units.total}`;
+		// Phase 2 — aggregate token tally as the trailing nameRaw segment, appended WHILE
+		// nameRaw is assembled and BEFORE coreW so the existing reason-chip / includeBar
+		// budget math accounts for the true full name width (no special tally logic); the
+		// row's outer truncate(line, width, "…") remains the final overflow safety net.
+		const usageTally = formatUsageTally(usage);
+		if (usageTally) nameRaw += ` · ${usageTally}`;
 
 		const numCol = padCol(theme, "muted", numRaw, NUM_COL);
 		const coloredName = theme.fg("muted", nameRaw);

@@ -35,6 +35,7 @@ interface FakeSession {
 	// (the viewer's transcript source) — the host registers `session` verbatim.
 	sessionManager: { getBranch: ReturnType<typeof vi.fn>; getCwd: ReturnType<typeof vi.fn> };
 	getToolDefinition: ReturnType<typeof vi.fn>;
+	getSessionStats: ReturnType<typeof vi.fn>;
 	subscribe: ReturnType<typeof vi.fn>;
 	prompt: ReturnType<typeof vi.fn>;
 	sendUserMessage: ReturnType<typeof vi.fn>;
@@ -60,6 +61,10 @@ function makeFakeSession(): FakeSession {
 		messages: [],
 		sessionManager: { getBranch: vi.fn(() => []), getCwd: vi.fn(() => "/work") },
 		getToolDefinition: vi.fn(() => undefined),
+		getSessionStats: vi.fn(() => ({
+			tokens: { input: 1500, output: 800, cacheRead: 500, cacheWrite: 200, total: 3000 },
+			cost: 0.05,
+		})),
 		subscribe: vi.fn(() => () => {}),
 		prompt: vi.fn(async () => {}),
 		sendUserMessage: vi.fn(async () => {}),

@@ -6,6 +6,7 @@ import { LaneDock } from "./lane-dock.js";
 import type { ViewerMessage } from "./lane-transcript.js";
 import {
 	__resetRunLaneRegistry,
+	captureFinalSnapshot,
 	dequeueInput,
 	enqueueInput,
 	evictRun,
@@ -58,10 +59,13 @@ beforeAll(() => {
 	initTheme(); // SDK message components (renderBranch in the preview) read a global theme proxy
 });
 
-function makeSession(
-	getBranch: () => unknown = () => [],
-): LaneSession & { unsub: ReturnType<typeof vi.fn>; setStreaming: (m: ViewerMessage | undefined) => void } {
+function makeSession(getBranch: () => unknown = () => []): LaneSession & {
+	unsub: ReturnType<typeof vi.fn>;
+	setStreaming: (m: ViewerMessage | undefined) => void;
+	setUsage: (stats: Record<string, unknown> | undefined) => void;
+} {
 	let streaming: ViewerMessage | undefined;
+	let usage: Record<string, unknown> | undefined;
 	const unsub = vi.fn();
 	return {
 		sessionId: "sess",
@@ -69,10 +73,31 @@ function makeSession(
 		sessionManager: { getBranch, getCwd: () => "/tmp" },
 		getToolDefinition: () => undefined,
 		getStreamingMessage: () => streaming,
+		getUsage: () => usage,
 		subscribe: vi.fn(() => unsub),
 		unsub,
 		setStreaming: (m) => {
 			streaming = m;
+		},
+		setUsage: (u) => {
+			usage = u;
+		},
+	};
+}
+
+/** A SessionStats-shaped object (agent-session.d.ts:135-153) that Phase 1's toLaneUsage
+ *  narrows into a LaneUsage — tokens.{input,output,cacheRead,cacheWrite} + recomputed
+ *  total. Drives a unit's finalUsage through the real captureFinalSnapshot path. */
+function sessionStats(tokens: {
+	input: number;
+	output: number;
+	cacheRead: number;
+	cacheWrite: number;
+}): Record<string, unknown> {
+	return {
+		tokens: {
+			...tokens,
+			total: tokens.input + tokens.output + tokens.cacheRead + tokens.cacheWrite,
 		},
 	};
 }
@@ -1134,4 +1159,125 @@ describe("LaneDock — fanout unit sub-rows (Phase 6)", () => {
 		expect((widget?.render(120) ?? [])[1]).toContain("Runs (1 active)");
 		overlay.dispose();
 	});
+});
+
+describe("LaneDock — token tally (Slice 2)", () => {
+	it("the lane row shows the SUMMED aggregate tally across completed units", () => {
+		recordRun("run-1", "carve");
+		setUnitStarted("run-1", 0, "u0");
+		setUnitStarted("run-1", 1, "u1");
+		setLaneProgress("run-1", {
+			stageNumber: 3,
+			totalStages: 5,
+			stageName: "implement",
+			phase: "running",
+			units: { done: 2, total: 2 },
+		});
+		const s0 = makeSession();
+		s0.setUsage(sessionStats({ input: 1500, output: 800, cacheRead: 500, cacheWrite: 200 }));
+		const s1 = makeSession();
+		s1.setUsage(sessionStats({ input: 1200, output: 400, cacheRead: 300, cacheWrite: 100 }));
+		captureFinalSnapshot("run-1", 0, s0);
+		captureFinalSnapshot("run-1", 1, s1);
+		markUnitDone("run-1", 0, "done");
+		markUnitDone("run-1", 1, "done");
+		const overlay = new LaneDock();
+		const { widget } = mount(overlay, makeCtx());
+		// The lane (parent) row carries the workflow name; the aggregate is the SUM of both
+		// units: input 2700→"2.7k", output 1200→"1.2k", cacheRead 800→"800".
+		const laneRow = (widget?.render(120) ?? []).find((l) => l.includes("carve")) ?? "";
+		expect(laneRow).toContain("↑2.7k");
+		expect(laneRow).toContain("↓1.2k");
+		expect(laneRow).toContain("R800");
+		overlay.dispose();
+	});
+
+	it("each unit sub-row shows its OWN finalUsage tally (not the aggregate)", () => {
+		recordRun("run-1", "carve");
+		setUnitStarted("run-1", 0, "u0");
+		setUnitStarted("run-1", 1, "u1");
+		setLaneProgress("run-1", {
+			stageNumber: 3,
+			totalStages: 5,
+			stageName: "implement",
+			phase: "running",
+			units: { done: 2, total: 2 },
+		});
+		const s0 = makeSession();
+		s0.setUsage(sessionStats({ input: 1500, output: 800, cacheRead: 500, cacheWrite: 200 }));
+		const s1 = makeSession();
+		s1.setUsage(sessionStats({ input: 1200, output: 400, cacheRead: 300, cacheWrite: 100 }));
+		captureFinalSnapshot("run-1", 0, s0);
+		captureFinalSnapshot("run-1", 1, s1);
+		markUnitDone("run-1", 0, "done");
+		markUnitDone("run-1", 1, "done");
+		const overlay = new LaneDock();
+		const { widget } = mount(overlay, makeCtx());
+		const out = (widget?.render(120) ?? []).join("\n");
+		// Unit 0's own tally (1500→"1.5k", 800, 500) — NOT the 2.7k aggregate.
+		expect(out).toContain("↑1.5k ↓800 R500");
+		// Unit 1's own tally (1200→"1.2k", 400, 300).
+		expect(out).toContain("↑1.2k ↓400 R300");
+		overlay.dispose();
+	});
+
+	it("omits each segment when zero and the whole tally when all-zero", () => {
+		recordRun("run-1", "carve");
+		setUnitStarted("run-1", 0, "u-partial"); // only input nonzero
+		setUnitStarted("run-1", 1, "u-zero"); // all zero
+		setLaneProgress("run-1", {
+			stageNumber: 1,
+			totalStages: 2,
+			stageName: "plan",
+			phase: "running",
+			units: { done: 2, total: 2 },
+		});
+		const sPartial = makeSession();
+		sPartial.setUsage(sessionStats({ input: 1500, output: 0, cacheRead: 0, cacheWrite: 0 }));
+		const sZero = makeSession();
+		sZero.setUsage(sessionStats({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }));
+		captureFinalSnapshot("run-1", 0, sPartial);
+		captureFinalSnapshot("run-1", 1, sZero);
+		markUnitDone("run-1", 0, "done");
+		markUnitDone("run-1", 1, "done");
+		const overlay = new LaneDock();
+		const lines = widgetLines(overlay);
+		const partialRow = lines.find((l) => l.includes("u-partial")) ?? "";
+		const zeroRow = lines.find((l) => l.includes("u-zero")) ?? "";
+		// Per-segment omit: input-only → "↑1.5k" with no ↓ and no R.
+		expect(partialRow).toContain("↑1.5k");
+		expect(partialRow).not.toContain("↓");
+		expect(partialRow).not.toContain("R500");
+		// All-zero → no tally segment at all.
+		expect(zeroRow).not.toContain("↑");
+		expect(zeroRow).not.toContain("↓");
+		overlay.dispose();
+	});
+
+	it("a lane with no captured units renders no aggregate tally and a running unit shows none", () => {
+		recordRun("run-1", "carve");
+		setUnitStarted("run-1", 0, "u-running"); // running, never captured → no finalUsage
+		setLaneProgress("run-1", {
+			stageNumber: 1,
+			totalStages: 3,
+			stageName: "research",
+			phase: "running",
+			units: { done: 0, total: 1 },
+		});
+		const overlay = new LaneDock();
+		const lines = widgetLines(overlay);
+		const laneRow = lines.find((l) => l.includes("carve")) ?? "";
+		const unitRow = lines.find((l) => l.includes("u-running")) ?? "";
+		// No unit has finalUsage → the lane-row aggregate is omitted.
+		expect(laneRow).not.toContain("↑");
+		// A running unit (no teardown capture yet) shows no tally.
+		expect(unitRow).not.toContain("↑");
+		overlay.dispose();
+	});
+
+	/** Render the dock at width 120 and return the lines (mounts the overlay). */
+	function widgetLines(overlay: LaneDock): string[] {
+		const { widget } = mount(overlay, makeCtx());
+		return widget?.render(120) ?? [];
+	}
 });

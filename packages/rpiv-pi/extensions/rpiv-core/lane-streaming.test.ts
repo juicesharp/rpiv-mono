@@ -14,6 +14,10 @@ function makeFake() {
 		isStreaming: true,
 		sessionManager: { getBranch: () => [], getCwd: () => "/tmp" },
 		getToolDefinition: vi.fn((n: string) => ({ name: n })),
+		getSessionStats: vi.fn(() => ({
+			tokens: { input: 1500, output: 800, cacheRead: 500, cacheWrite: 200, total: 3000 },
+			cost: 0.05,
+		})),
 		subscribe: vi.fn((l: (e: AnyEvent) => void) => {
 			listener = l;
 			return unsub;
@@ -66,5 +70,16 @@ describe("createLaneSessionView", () => {
 		const { session, unsub } = makeFake();
 		createLaneSessionView(session).dispose();
 		expect(unsub).toHaveBeenCalledTimes(1);
+	});
+
+	it("delegates getUsage to the raw session's getSessionStats", () => {
+		const { session } = makeFake();
+		const view = createLaneSessionView(session);
+		const usage = view.getUsage();
+		expect(session.getSessionStats).toHaveBeenCalledTimes(1);
+		expect(usage).toMatchObject({
+			tokens: { input: 1500, output: 800, cacheRead: 500, cacheWrite: 200, total: 3000 },
+			cost: 0.05,
+		});
 	});
 });
