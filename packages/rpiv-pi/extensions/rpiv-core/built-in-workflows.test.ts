@@ -1099,6 +1099,61 @@ describe("SLICE_DESIGN_FANOUT (carve design — deps + --upstream)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// PLAN_DIMENSION_FANOUT — the plan gate's grade panel. architecture-fit is the
+// one dimension that needs the research artifact threaded in as --context; every
+// other dimension (and the slice gate's designability) gets the bare flags.
+// ---------------------------------------------------------------------------
+
+describe("carve plan gate grade panel (--context threading)", () => {
+	const planGateLoop = () => {
+		const loop = findWorkflow("carve").stages["plan-gate"]?.loop;
+		if (loop?.kind !== "fanout") throw new Error("carve plan-gate stage has no fanout loop");
+		return loop;
+	};
+	const sliceGateLoop = () => {
+		const loop = findWorkflow("carve").stages["slice-gate"]?.loop;
+		if (loop?.kind !== "fanout") throw new Error("carve slice-gate stage has no fanout loop");
+		return loop;
+	};
+	const out = (rel: string) => ({ artifacts: [{ handle: fsHandle(rel) }], data: undefined, kind: "", meta: {} });
+
+	it("grades architecture-fit and threads the research artifact as --context", async () => {
+		const units = await planGateLoop().units({
+			cwd: "/repo",
+			artifact: undefined,
+			state: {
+				named: {
+					plans: [out(".rpiv/artifacts/plans/p.md")],
+					research: [out(".rpiv/artifacts/research/r.md")],
+				},
+			} as unknown as RunView,
+		});
+		const archFit = units.find((u) => u.label === "architecture-fit");
+		const completeness = units.find((u) => u.label === "completeness");
+		expect(archFit).toBeDefined();
+		expect(archFit?.prompt).toContain("--dimension architecture-fit");
+		expect(archFit?.prompt).toContain("--context");
+		expect(archFit?.prompt).toContain("research/r.md");
+		// Only architecture-fit gets --context.
+		expect(completeness?.prompt).not.toContain("--context");
+	});
+
+	it("never threads --context into the slice gate (designability has no fit dimension)", async () => {
+		const units = await sliceGateLoop().units({
+			cwd: "/repo",
+			artifact: undefined,
+			state: {
+				named: {
+					slices: [out(".rpiv/artifacts/slices/s.md")],
+					research: [out(".rpiv/artifacts/research/r.md")],
+				},
+			} as unknown as RunView,
+		});
+		expect(units.every((u) => !u.prompt.includes("--context"))).toBe(true);
+	});
+});
+
+// ---------------------------------------------------------------------------
 // slice-structure — the deterministic Phase-1 floor under the designability
 // gate: dependency-cycle freedom + brief-coverage conservation (frozen at the
 // first cut). Both are computed from the slice-map text, no LLM.

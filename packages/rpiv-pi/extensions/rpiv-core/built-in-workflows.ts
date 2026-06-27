@@ -599,12 +599,14 @@ const prTriageWorkflow = defineWorkflow({
 });
 
 // ===========================================================================
-// carve — slice → slice-structure (deterministic floor) → slice-gate
+// carve — research → slice → slice-structure (deterministic floor) → slice-gate
 //         (designability, reslice loop) → design (fanout) →
 //         synth-partial (cluster fanout) → synth-root → plan-gate (refine loop) →
 //         elaborate (fanout) → stitch → stitch-gate (re-elaborate loop) →
 //         implement → validate → commit
-//   The sliced, panel-gated heavy path: decompose the brief into independent
+//   The sliced, panel-gated heavy path: research the brief first (so every slice
+//   rests on a real, cited footing and the plan gate can grade architecture-fit),
+//   decompose it into independent
 //   vertical slices, gate that breakdown BEFORE any design so each slice is
 //   chewable by one design-slice pass. The gate is two-phase: a DETERMINISTIC
 //   floor (`slice-structure`) enforces dependency-cycle freedom and brief-coverage
@@ -633,11 +635,18 @@ const prTriageWorkflow = defineWorkflow({
 const SLICE_DIMENSIONS = ["designability"] as const;
 
 /**
- * Quality dimensions the LATER gate grades the synthesized plan against. No
- * `architecture-fit` — that dimension needs a research artifact for its
- * `--context`, and carve is the no-research path.
+ * Quality dimensions the LATER gate grades the synthesized plan against.
+ * Includes `architecture-fit`: carve front-loads a `research` stage, so the
+ * research artifact is always present to feed that dimension's `--context`
+ * (threaded in by `gradePanelFanout` for this one dimension).
  */
-const PLAN_DIMENSIONS = ["completeness", "correctness", "actionability", "pattern-following"] as const;
+const PLAN_DIMENSIONS = [
+	"completeness",
+	"correctness",
+	"actionability",
+	"pattern-following",
+	"architecture-fit",
+] as const;
 
 /** `## Slice N:` headings — the source of truth a slice map's `slices:` array is derived from. */
 const SLICE_HEADING_RE = /^## Slice (\d+):/gm;
@@ -948,6 +957,12 @@ const SYNTH_CLUSTER_FANOUT = fanout({
  * (`--dimension <d> --artifact <path>`); the per-dimension verdicts fold via
  * `allDimensionsPass`. Shared by the slice gate (over `slices`) and the plan
  * gate (over `plans`).
+ *
+ * `architecture-fit` is the one dimension `grade` requires a `--context` for: it
+ * grades the plan against the research the slices rest on. The carve flow always
+ * front-loads a `research` stage, so we thread the latest `research` artifact in
+ * as `--context` for that dimension only; every other dimension (and the slice
+ * gate's `designability`, which never grades fit) gets the bare flags.
  */
 const gradePanelFanout = (channel: string, dimensions: readonly string[]) =>
 	fanout({
@@ -958,8 +973,10 @@ const gradePanelFanout = (channel: string, dimensions: readonly string[]) =>
 			const doc = latestFsArtifact(state, channel);
 			if (doc?.handle.kind !== "fs") return [];
 			const target = handleToString(doc.handle);
+			const research = latestFsArtifact(state, "research");
+			const contextFlag = research?.handle.kind === "fs" ? ` --context ${handleToString(research.handle)}` : "";
 			return dimensions.map((d) => ({
-				prompt: `--dimension ${d} --artifact ${target}`,
+				prompt: `--dimension ${d} --artifact ${target}${d === "architecture-fit" ? contextFlag : ""}`,
 				label: d,
 				id: `${channel}-dim-${d}`,
 			}));
@@ -1019,9 +1036,12 @@ const STITCH_SCRIPT = join(
 const carveWorkflow = defineWorkflow({
 	name: "carve",
 	description:
-		"Ship, sliced: decompose the brief into vertical slices → two-phase slice gate (a deterministic floor — dependency-cycle freedom + brief-coverage conservation so a reslice can't pass by dropping scope — then one LLM designability judgment that each slice is chewable by a single design pass) with a reslice loop → design each slice in parallel → synthesize hierarchically (per-cluster sub-plans → one merged plan) → quality-panel gate (completeness/correctness/actionability/pattern-following) with a refine loop → elaborate code per phase in parallel → stitch → re-grade the code-bearing plan → implement → validate → commit. No research; three gates, before design, before code, and after stitch.",
-	start: "slice",
+		"Ship, sliced: research the brief → decompose it into vertical slices → two-phase slice gate (a deterministic floor — dependency-cycle freedom + brief-coverage conservation so a reslice can't pass by dropping scope — then one LLM designability judgment that each slice is chewable by a single design pass) with a reslice loop → design each slice in parallel → synthesize hierarchically (per-cluster sub-plans → one merged plan) → quality-panel gate (completeness/correctness/actionability/pattern-following/architecture-fit) with a refine loop → elaborate code per phase in parallel → stitch → re-grade the code-bearing plan → implement → validate → commit. Research-led; three gates, before design, before code, and after stitch.",
+	start: "research",
 	stages: {
+		// Front-loaded research grounds every slice's footing and feeds the plan
+		// gate's architecture-fit dimension its --context.
+		research: produces(),
 		slice: produces(),
 		// Phase 1 of the gate: the DETERMINISTIC floor (cycle-freedom + coverage conservation), no LLM.
 		"slice-structure": produces.script({ reads: ["slices"], run: sliceStructureCheck }),
@@ -1057,7 +1077,8 @@ const carveWorkflow = defineWorkflow({
 			skill: "grade",
 			loop: PLAN_DIMENSION_FANOUT,
 			outcome: planVerdictOutcome,
-			reads: ["plans"],
+			// `research` is read so the architecture-fit unit can thread it as --context.
+			reads: ["plans", "research"],
 		}),
 		refine: produces({
 			skill: "refine",
@@ -1087,13 +1108,17 @@ const carveWorkflow = defineWorkflow({
 			skill: "grade",
 			loop: PLAN_DIMENSION_FANOUT,
 			outcome: stitchVerdictOutcome,
-			reads: ["plans"],
+			// `research` is read so the architecture-fit unit can thread it as --context.
+			reads: ["plans", "research"],
 		}),
 		implement: acts({ loop: IMPLEMENT_PHASE_FANOUT, reads: ["plans"] }),
 		validate: produces(),
 		commit: acts({ outcome: gitCommitOutcome }),
 	},
 	edges: {
+		// Research's artifact is auto-fed to slice as its argument (the slice skill's
+		// "Fresh" input is a research path) — mirrors arch's research → design edge.
+		research: "slice",
 		slice: "slice-structure",
 		"slice-structure": "slice-gate",
 		// Designability gate BEFORE any design. Structure + designability pass⇒ design; any fails ⇒

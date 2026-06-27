@@ -307,6 +307,7 @@ describe("equivalence — built-in workflows", () => {
 		"pr-triage::pr-triage": "triage",
 		// carve (derivable produces stages only — the explicit-outcome stages
 		// below are asserted separately)
+		"carve::research": "research",
 		"carve::slice": "slices",
 		"carve::design": "designs",
 		"carve::synth-root": "plans",
@@ -427,7 +428,7 @@ describe("equivalence — built-in workflows", () => {
 		});
 	}
 
-	it("total produces stages across all workflows = 32 (31 derivable + carve's script-stage floor)", () => {
+	it("total produces stages across all workflows = 33 (32 derivable + carve's script-stage floor)", () => {
 		let count = 0;
 		let scriptProduces = 0;
 		for (const w of builtInWorkflows) {
@@ -436,7 +437,7 @@ describe("equivalence — built-in workflows", () => {
 				if (stage.kind === "produces" && stage.run != null) scriptProduces++;
 			}
 		}
-		expect(count).toBe(32);
+		expect(count).toBe(33);
 		expect(scriptProduces).toBe(1); // carve::slice-structure
 	});
 });

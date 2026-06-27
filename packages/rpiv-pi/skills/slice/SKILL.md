@@ -1,7 +1,7 @@
 ---
 name: slice
-description: Decompose a research artifact (or a free-text brief) into independent vertical slices — each a self-contained, separately-designable unit — and write a slice map to .rpiv/artifacts/slices/ with a machine-readable `slices:` frontmatter array. Runs a lightweight codebase research sweep when no research artifact is provided, then confirms the decomposition with you before writing. Also runs in RE-SLICE mode (`--slices <map> --slice-verdicts <v>…`) to STRUCTURALLY re-cut a slice map that failed the designability gate — splitting epics, completing under-cited footings, redistributing frozen coverage units, breaking dependency cycles, renumbering — which a surgical reviser cannot do. Feeds a per-slice design fanout.
-argument-hint: "[research-path | free-text brief]  |  --slices <map> --slice-verdicts <verdict>..."
+description: Decompose a research artifact into independent vertical slices — each a self-contained, separately-designable unit — and write a slice map to .rpiv/artifacts/slices/ with a machine-readable `slices:` frontmatter array. A research artifact is required (it is the cut's grounding); confirms the decomposition with you before writing. Also runs in RE-SLICE mode (`--slices <map> --slice-verdicts <v>…`) to STRUCTURALLY re-cut a slice map that failed the designability gate — splitting epics, completing under-cited footings, redistributing frozen coverage units, breaking dependency cycles, renumbering — which a surgical reviser cannot do. Feeds a per-slice design fanout.
+argument-hint: "<research-path>  |  --slices <map> --slice-verdicts <verdict>..."
 shell-timeout: 10
 contract:
   produces:
@@ -53,14 +53,14 @@ contract:
 
 # Slice
 
-You decompose a feature into **independent vertical slices** and write a slice map. You do **not** design, plan phases, write implementation steps, or self-review — `design-slice` fills each slice in next. When no research artifact is provided, you ground the cut with a quick codebase sweep first; you confirm the decomposition with the developer before writing.
+You decompose a feature into **independent vertical slices** and write a slice map. You do **not** design, plan phases, write implementation steps, or self-review — `design-slice` fills each slice in next. A research artifact grounds the cut (every slice's `Draws on:` cites real `file:line`s from it); you confirm the decomposition with the developer before writing.
 
 ## Input
 
 `$ARGUMENTS` takes two forms:
 
-1. **Fresh** — a path to a `.rpiv/artifacts/research/*.md` artifact, or a free-text brief (no flags). Decompose from scratch via Steps 1–7. If empty, ask the user for it and wait.
-2. **Re-slice** (the re-slice loop) — `--slices <map-path> --slice-verdicts <verdict-path> …` (the `--slice-verdicts` flag repeats). **Re-cut the existing slice map** to clear the failures its verdicts name. Recognize this form by the `--slices` flag and follow **Re-slice mode** below — NOT Steps 2 (research) or 5 (confirm).
+1. **Fresh** — a path to a `.rpiv/artifacts/research/*.md` artifact (no flags). Decompose from scratch via Steps 1–6, grounded in that research. The research artifact is **required**: if the argument is missing, empty, or not a research path, print an error and stop — it's a dispatch error (the workflow runs `research` before `slice`).
+2. **Re-slice** (the re-slice loop) — `--slices <map-path> --slice-verdicts <verdict-path> …` (the `--slice-verdicts` flag repeats). **Re-cut the existing slice map** to clear the failures its verdicts name. Recognize this form by the `--slices` flag and follow **Re-slice mode** below — NOT the fresh Steps (no confirm).
 
 ## Metadata
 
@@ -68,10 +68,6 @@ You decompose a feature into **independent vertical slices** and write a slice m
 node "${SKILL_DIR}/../_shared/now.mjs"
 echo
 node "${SKILL_DIR}/../_shared/git-context.mjs"
-echo
-echo "### recent (read only in case of empty user input)"
-echo "recent research:"
-node "${SKILL_DIR}/../_shared/list-recent.mjs" .rpiv/artifacts/research 4
 ```
 
 Copy values verbatim — do not reformat the timezone offset. `<iso>` is the first tab-separated field on line 1; `<slug>` is the second.
@@ -88,17 +84,16 @@ A vertical slice is a coherent, independently-buildable capability that cuts thr
 
 ## Flow
 
-1. Input → 2. Research (only if none provided) → 3. Decompose → 4. Resolve ambiguity → 5. Confirm → 6. Write → 7. Summary
+1. Input → 2. Decompose → 3. Resolve ambiguity → 4. Confirm → 5. Write → 6. Summary
 
 ## Steps
 
-1. **Input.** Given a research path: read it FULLY (no limit/offset) and read the key source files it cites — these are your grounding. No argument: pick from the `recent research:` listing (ask). Plain free-text: treat it as the topic for Step 2.
-2. **Research — only when no research artifact was provided (parallel agents).** A quick DEPTH sweep, not discovery. Spawn in parallel with the Agent tool: `codebase-pattern-finder` (the shape to model) and `integration-scanner` (wiring + the natural slice seams); add `precedent-locator` for risky surfaces (auth, migrations, schema, hot paths) and `web-search-researcher` for external APIs/SDKs. Read the key files they surface. Wait for ALL agents before proceeding. Skip this step entirely when a research artifact already gave you the grounding.
-3. **Decompose.** Identify the capabilities the work delivers, then group them into independent vertical slices — prefer fewer cohesive slices over many tiny ones. First enumerate the brief's **coverage units** — the distinct observable outcomes it asks for, each with a short stable `id` (`c1`, `c2`, …) and a one-line `brief` — then assign every unit to the slice(s) that deliver it via each slice's `covers:`, so every unit is claimed by at least one slice. Every slice's `Draws on:` cites a real `file:line` from Step 1/2.
-4. **Resolve ambiguity.** Settle from the research/code wherever you can. When a genuine decomposition fork remains (e.g. "combine auth + session into one slice, or split them?"), use `ask_user_question` with 2–4 concrete options — **one at a time**, wait for the answer.
-5. **Confirm the decomposition.** Once, before writing: `ask_user_question` — "{N} slices for {topic}. Slice 1: {name}. Slices 2–N: {brief}. Approve?". Header "Slices". Options: "Approve (Recommended)" (write the map); "Adjust slices" (reorder/merge/split); "Change scope" (add/remove). Apply the answer, then write.
-6. **Write the slice map** (below) with `status: ready`.
-7. **Print the path**, then a one-line summary: `<N> slices: <comma-separated titles>`.
+1. **Input.** Read the research path FULLY (no limit/offset) and read the key source files it cites — these are your grounding. A missing, empty, or non-research argument is a dispatch error: print an error and stop (the workflow runs `research` before `slice`, so a research artifact is always available).
+2. **Decompose.** Identify the capabilities the work delivers, then group them into independent vertical slices — prefer fewer cohesive slices over many tiny ones. First enumerate the brief's **coverage units** — the distinct observable outcomes it asks for, each with a short stable `id` (`c1`, `c2`, …) and a one-line `brief` — then assign every unit to the slice(s) that deliver it via each slice's `covers:`, so every unit is claimed by at least one slice. Every slice's `Draws on:` cites a real `file:line` from the research read in Step 1.
+3. **Resolve ambiguity.** Settle from the research/code wherever you can. When a genuine decomposition fork remains (e.g. "combine auth + session into one slice, or split them?"), use `ask_user_question` with 2–4 concrete options — **one at a time**, wait for the answer.
+4. **Confirm the decomposition.** Once, before writing: `ask_user_question` — "{N} slices for {topic}. Slice 1: {name}. Slices 2–N: {brief}. Approve?". Header "Slices". Options: "Approve (Recommended)" (write the map); "Adjust slices" (reorder/merge/split); "Change scope" (add/remove). Apply the answer, then write.
+5. **Write the slice map** (below) with `status: ready`.
+6. **Print the path**, then a one-line summary: `<N> slices: <comma-separated titles>`.
 
 ## Re-slice mode (`--slices` present)
 
@@ -110,7 +105,7 @@ You are re-cutting an existing slice map from its verdicts. Unlike a surgical re
    - **dependency cycle** → merge the cycle into one slice, or invert an edge so a shared contract has a single owner.
    - **dropped coverage unit** → re-attach its `id` to the `covers:` of whichever slice now delivers it; never resolve this by deleting the unit.
 3. **Rebuild the invariants** — renumber `n` contiguously `1..N`, recompute `slice_count`, fix `deps`, carry `coverage:` forward verbatim and reassign `covers:` so the union still claims every unit, and keep exactly one `## Slice N:` heading per entry.
-4. **Re-emit** the slice map (same Output shape, `status: ready`). **Non-interactive**: the verdict feedback IS the instruction — no research sweep, no confirm step, no `ask_user_question`.
+4. **Re-emit** the slice map (same Output shape, `status: ready`). **Non-interactive**: the verdict feedback IS the instruction — no confirm step, no `ask_user_question`.
 5. **Print** the path, then `re-sliced: <N> slices (was <M>) — addressed <failing dimensions>`.
 
 ## Output document
@@ -159,5 +154,5 @@ tags: [slices]
 - Exactly one `## Slice N:` heading per `slices:` entry; `slice_count` == array length == heading count. Number `n` contiguously `1..N`.
 - Every `coverage:` unit is claimed by ≥1 slice's `covers:`; on a re-slice, conserve the frozen `coverage:` array verbatim — redistribute `covers:`, never drop a unit.
 - **Scope boundaries, not designs.** No architecture decisions, no file maps, no implementation steps — `design-slice` fills each slice in next.
-- **Subagents only for Step 2**, and only when no research artifact was provided; no self-review.
-- **Read input before agents; wait for all agents; confirm the decomposition before writing.**
+- **No subagents, no self-review.** Ground the cut in the supplied research artifact; do not run discovery agents.
+- **Read the research before decomposing; confirm the decomposition before writing.**
