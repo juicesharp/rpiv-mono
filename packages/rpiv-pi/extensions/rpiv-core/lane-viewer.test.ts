@@ -41,9 +41,11 @@ function makeSession(getBranch: BranchFn): LaneSession & {
 	fire: () => void;
 	unsub: ReturnType<typeof vi.fn>;
 	setStreaming: (m: ViewerMessage | undefined) => void;
+	setUsage: (stats: Record<string, unknown> | undefined) => void;
 } {
 	let listener: (() => void) | undefined;
 	let streaming: ViewerMessage | undefined;
+	let usage: Record<string, unknown> | undefined;
 	const unsub = vi.fn();
 	return {
 		sessionId: "sess-1",
@@ -51,7 +53,7 @@ function makeSession(getBranch: BranchFn): LaneSession & {
 		sessionManager: { getBranch, getCwd: () => "/tmp" },
 		getToolDefinition: () => undefined,
 		getStreamingMessage: () => streaming,
-		getUsage: () => undefined,
+		getUsage: () => usage,
 		subscribe: (l: () => void) => {
 			listener = l;
 			return unsub;
@@ -60,6 +62,9 @@ function makeSession(getBranch: BranchFn): LaneSession & {
 		unsub,
 		setStreaming: (m) => {
 			streaming = m;
+		},
+		setUsage: (u) => {
+			usage = u;
 		},
 	};
 }
@@ -726,6 +731,32 @@ describe("LaneViewer — token detail header", () => {
 		expect(header).toContain("phase 1/2"); // name survives (left-anchored)
 		expect(header).toContain("…"); // truncation kicked in
 		expect(header).not.toContain("$0.050"); // rightmost suffix clipped
+		viewer.dispose();
+	});
+
+	it("renders the full token-detail suffix LIVE off a running unit's getUsage() (no teardown)", () => {
+		// A RUNNING unit (no markUnitDone, no captureFinalSnapshot) whose live child's
+		// getUsage() carries tokens + contextUsage.percent + cost. unitUsage reads the live
+		// path (finalUsage is absent) → the header detail populates before teardown.
+		const session = makeSession(() => [assistantEntry("unit transcript")]);
+		session.setUsage({
+			tokens: { input: 1500, output: 800, cacheRead: 500, cacheWrite: 200, total: 3000 },
+			cost: 0.05,
+			contextUsage: { percent: 45.2 },
+		});
+		recordRun("run-live", "carve");
+		setUnitStarted("run-live", 0, "phase 1/2");
+		setCurrentSession("run-live", 0, session);
+		const viewer = new LaneViewer("run-live", 0, makeTui(), identityTheme, vi.fn());
+		const header = viewer.render(200)[0];
+		// The running header is "▶ phase 1/2 — live", then the full LIVE detail suffix.
+		expect(header).toContain("phase 1/2 — live");
+		expect(header).toContain("↑1.5k"); // input 1500 → "1.5k" ([1e3,1e4) bucket)
+		expect(header).toContain("↓800"); // output 800 → bare "800"
+		expect(header).toContain("R500"); // cacheRead
+		expect(header).toContain("W200"); // cacheWrite
+		expect(header).toContain("CH45.2%"); // contextUsage.percent → toFixed(1)
+		expect(header).toContain("$0.050"); // cost → toFixed(3)
 		viewer.dispose();
 	});
 });

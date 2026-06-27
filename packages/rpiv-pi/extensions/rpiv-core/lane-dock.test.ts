@@ -1275,6 +1275,96 @@ describe("LaneDock — token tally (Slice 2)", () => {
 		overlay.dispose();
 	});
 
+	it("a running unit with a LIVE session tallies per-unit AND the lane aggregate (no teardown)", () => {
+		recordRun("run-1", "carve");
+		setUnitStarted("run-1", 0, "u-live");
+		setLaneProgress("run-1", {
+			stageNumber: 1,
+			totalStages: 3,
+			stageName: "research",
+			phase: "running",
+		});
+		// Attach a LIVE child session (NO captureFinalSnapshot → finalUsage stays undefined),
+		// so unitUsage reads the live getUsage() path, not the teardown snapshot.
+		const s = makeSession();
+		s.setUsage(sessionStats({ input: 1500, output: 800, cacheRead: 500, cacheWrite: 0 }));
+		setCurrentSession("run-1", 0, s);
+		const overlay = new LaneDock();
+		const { widget } = mount(overlay, makeCtx());
+		const render = () => widget?.render(120) ?? [];
+		// Per-unit sub-row reads the LIVE usage (1500→"1.5k", 800, 500) with NO teardown.
+		const firstUnit = render().find((l) => l.includes("u-live")) ?? "";
+		expect(firstUnit).toContain("↑1.5k");
+		expect(firstUnit).toContain("↓800");
+		expect(firstUnit).toContain("R500");
+		// The lane-row aggregate now also tallies a RUNNING unit (previously frozen at zero
+		// until teardown) — same live numbers, summed over the single unit.
+		const firstLane = render().find((l) => l.includes("carve")) ?? "";
+		expect(firstLane).toContain("↑1.5k");
+		expect(firstLane).toContain("↓800");
+		// Mutate the live stats and re-render the SAME widget → the tally ticks in real time.
+		s.setUsage(sessionStats({ input: 2500, output: 400, cacheRead: 200, cacheWrite: 0 }));
+		const secondUnit = render().find((l) => l.includes("u-live")) ?? "";
+		expect(secondUnit).toContain("↑2.5k"); // 2500 → "2.5k"
+		expect(secondUnit).not.toContain("↑1.5k"); // stale value cleared
+		overlay.dispose();
+	});
+
+	it("a running unit whose live getUsage() throws renders no tally (fail-soft, never throws)", () => {
+		recordRun("run-1", "carve");
+		setUnitStarted("run-1", 0, "u-throw");
+		setLaneProgress("run-1", {
+			stageNumber: 1,
+			totalStages: 3,
+			stageName: "research",
+			phase: "running",
+		});
+		// A live session whose getUsage() throws — unitUsage must swallow it and return
+		// undefined (never propagate into a render tick), mirroring captureSnapshotInto.
+		const throwing: LaneSession = {
+			...makeSession(),
+			getUsage: () => {
+				throw new Error("stats unavailable");
+			},
+		};
+		setCurrentSession("run-1", 0, throwing);
+		const overlay = new LaneDock();
+		const { widget } = mount(overlay, makeCtx());
+		expect(() => widget?.render(120)).not.toThrow();
+		const unitRow = (widget?.render(120) ?? []).find((l) => l.includes("u-throw")) ?? "";
+		expect(unitRow).not.toContain("↑"); // fail-soft → no tally
+		overlay.dispose();
+	});
+
+	it("unitUsage prefers the teardown snapshot over the live session after retirement", () => {
+		recordRun("run-1", "carve");
+		setUnitStarted("run-1", 0, "u-done");
+		setLaneProgress("run-1", {
+			stageNumber: 3,
+			totalStages: 3,
+			stageName: "implement",
+			phase: "running",
+			units: { done: 1, total: 1 },
+		});
+		const live = makeSession();
+		// Live stats say 9999 — the snapshot (below) must win once captured.
+		live.setUsage(sessionStats({ input: 9999, output: 0, cacheRead: 0, cacheWrite: 0 }));
+		setCurrentSession("run-1", 0, live);
+		// Teardown path: snapshot is captured WHILE the child is still live, THEN the
+		// session is dropped. unitUsage must return the snapshot (1200), not the live 9999.
+		const snapshotSession = makeSession();
+		snapshotSession.setUsage(sessionStats({ input: 1200, output: 400, cacheRead: 300, cacheWrite: 0 }));
+		captureFinalSnapshot("run-1", 0, snapshotSession);
+		setCurrentSession("run-1", 0, undefined);
+		markUnitDone("run-1", 0, "done");
+		const overlay = new LaneDock();
+		const { widget } = mount(overlay, makeCtx());
+		const unitRow = (widget?.render(120) ?? []).find((l) => l.includes("u-done")) ?? "";
+		expect(unitRow).toContain("↑1.2k"); // snapshot 1200 → "1.2k", NOT the live "9.9k"
+		expect(unitRow).not.toContain("↑9.9k");
+		overlay.dispose();
+	});
+
 	/** Render the dock at width 120 and return the lines (mounts the overlay). */
 	function widgetLines(overlay: LaneDock): string[] {
 		const { widget } = mount(overlay, makeCtx());

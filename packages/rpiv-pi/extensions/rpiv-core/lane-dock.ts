@@ -45,6 +45,7 @@ import {
 	setDockActive,
 	type UnitLane,
 	unitNeedsInput,
+	unitUsage,
 } from "./run-lane-registry.js";
 
 const WIDGET_KEY = "rpiv-lanes";
@@ -174,12 +175,15 @@ function formatUsageTally(usage: LaneUsage | undefined): string {
 
 /**
  * Run-level token aggregate over a lane's units — sums input/output/cacheRead/cacheWrite
- * across every unit carrying a finalUsage; RECOMPUTES total = sum of the four (does NOT
- * trust each child's stored total, which may have been computed under a different window);
- * accumulates scalar cost (only when at least one contributing unit carries one); OMITS
- * percent (a context-window fill has no meaningful value summed across siblings with
- * independent windows). Returns undefined when NO unit carries usage (a fully-running lane
- * → no tally). A pure synchronous read over the registry, safe under JS run-to-completion.
+ * across every unit's EFFECTIVE usage (the teardown snapshot `finalUsage` when present,
+ * else the live child's `getUsage()` via `unitUsage` — so a RUNNING lane with attached
+ * live sessions tallies in real time, not frozen at zero until teardown); RECOMPUTES total
+ * = sum of the four (does NOT trust each child's stored total, which may have been computed
+ * under a different window); accumulates scalar cost (only when at least one contributing
+ * unit carries one); OMITS percent (a context-window fill has no meaningful value summed
+ * across siblings with independent windows). Returns undefined when NO unit carries usage
+ * (no snapshot AND no live session). A pure synchronous read over the registry, safe under
+ * JS run-to-completion.
  */
 function sumLaneUsage(units: Iterable<UnitLane>): LaneUsage | undefined {
 	let input = 0;
@@ -190,7 +194,7 @@ function sumLaneUsage(units: Iterable<UnitLane>): LaneUsage | undefined {
 	let hasCost = false;
 	let any = false;
 	for (const unit of units) {
-		const u = unit.finalUsage;
+		const u = unitUsage(unit);
 		if (!u) continue;
 		any = true;
 		input += u.input;
@@ -549,7 +553,7 @@ export class LaneDock {
 		const label = unit.label ?? `unit ${unit.index}`;
 		const labelCell =
 			labelWidth > 0 ? padCol(theme, selected ? "accent" : "text", label, labelWidth, selected) : label;
-		const usageTally = formatUsageTally(unit.finalUsage);
+		const usageTally = formatUsageTally(unitUsage(unit));
 		const tail = needs
 			? theme.fg("warning", "needs input")
 			: theme.fg("muted", unit.status === "running" ? "live" : unit.status) +

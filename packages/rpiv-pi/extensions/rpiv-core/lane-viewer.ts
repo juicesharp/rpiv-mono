@@ -48,6 +48,7 @@ import {
 	subscribeLanes,
 	type UnitLane,
 	unitNeedsInput,
+	unitUsage,
 } from "./run-lane-registry.js";
 
 const MAX_HEIGHT_RATIO = 0.9;
@@ -241,7 +242,7 @@ export class LaneViewer implements Component {
 		// (↑in ↓out R W CH% $cost) when its captured finalUsage carries one. Two-space
 		// break from the name/status/cause; rightmost-clipped by the truncate below so
 		// the left-anchored name + status always survive under narrow widths.
-		const detail = formatUsageDetail(unit?.finalUsage);
+		const detail = formatUsageDetail(unitUsage(unit));
 		if (detail) headText = `${headText}  ${detail}`;
 		const header = truncateToWidth(this.theme.fg("accent", headText), width, "…");
 		// A queued question is answered IN PLACE with ⏎ (switchIntoLane drains only on the

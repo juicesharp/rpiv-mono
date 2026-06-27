@@ -162,10 +162,14 @@ export interface LaneProgress {
 	/** onStageRetry — "retry 2/3". */
 	attempt?: number;
 	/**
-	 * Fanout sub-progress: `onLoopStart` seeds `total`; `onUnitEnd` advances `done`
-	 * by a TRUE completion count (not the declared unit index, which regresses under
-	 * out-of-order parallel completion). No `onUnitStart` handler is registered — the
-	 * bridge only advances `done` on unit completion.
+	 * FANOUT-ONLY sub-progress. `onLoopStart` seeds `total` from the fanout's
+	 * precomputed unit list (and `done: 0`); `onUnitEnd` advances `done` by a TRUE
+	 * completion count (not the declared unit index, which regresses under out-of-order
+	 * parallel completion). Pull loops (iterate/assess/verify) carry NO precomputed
+	 * total, so `onLoopStart` leaves this `undefined` and `onUnitEnd` keeps it
+	 * `undefined` (the `units` advance is gated behind the `fanoutRuns` set) — the dock
+	 * omits the `· units x/y` segment for them. No `onUnitStart` handler touches this
+	 * field — the bridge only advances `done` on unit completion.
 	 */
 	units?: { done: number; total: number };
 }
@@ -682,6 +686,25 @@ export function laneNeedsInput(runId: string): boolean {
 /** True when a SPECIFIC unit sub-row has ≥1 deferred UI request (the per-row ⚑). */
 export function unitNeedsInput(runId: string, index: number): boolean {
 	return (state().lanes.get(runId)?.units.get(index)?.pendingInput.length ?? 0) > 0;
+}
+
+/**
+ * Resolve a unit's EFFECTIVE token usage for rendering: the teardown snapshot
+ * (`finalUsage`, post-retirement) when present, else the live child's usage narrowed
+ * through the shared `toLaneUsage` (during execution). Fail-soft: a throwing or
+ * malformed live `getUsage()` returns undefined (never throws into a render tick),
+ * mirroring `captureSnapshotInto`'s isolated usage try/catch. Returns undefined for a
+ * missing unit or a unit with neither snapshot nor live session.
+ */
+export function unitUsage(unit: UnitLane | undefined): LaneUsage | undefined {
+	if (!unit) return undefined;
+	if (unit.finalUsage) return unit.finalUsage;
+	if (!unit.currentSession) return undefined;
+	try {
+		return toLaneUsage(unit.currentSession.getUsage());
+	} catch {
+		return undefined;
+	}
 }
 
 /** Count of in-flight lanes — the overlay's auto-show/hide gate. */
