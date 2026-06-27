@@ -21,7 +21,7 @@ Let the model ask you structured clarifying questions instead of guessing. `rpiv
 - **Submit tab** - review every answer before submitting; warns about unanswered questions and offers a Submit picker.
 - **Chat row on every tab** - redirect the conversation without leaving the dialog.
 - **Terminal-row-aware overflow scroll** - when the dialog is taller than the terminal, the body scrolls between a sticky heading and sticky hints/border; overflow indicators (↑ / ↓ / ↕) show what's clipped.
-- **"Other" free-text fallback** - type a custom answer when no option fits.
+- **"Other" free-text fallback** - type a custom answer when no option fits; available on every single-select question, even in preview mode (the input expands to the full pane width while typing).
 - **Localized UI** - sentinel rows, hints, submit/cancel labels, review pane, and notes affordance display in the user's chosen language via `@juicesharp/rpiv-i18n`. Ships Deutsch / English / Español / Français / Português (PT) / Português (BR) / Русский / Українська; switch with `/languages` or `pi --locale <code>`. LLM-facing copy (tool description, schemas, errors) stays English by design.
 
 ## Screens
@@ -52,7 +52,7 @@ With the SDK present, locale resolves from `--locale <code>` → `~/.config/rpiv
 
 ## Tool
 
-- **`ask_user_question`** - present one or more structured questions, each with 2+ options, optional `multiSelect`, optional per-option `preview`, and an optional free-text "Other" fallback. Returns the user's selection(s) plus any notes. See the tool's `promptGuidelines` for usage policy.
+- **`ask_user_question`** - present one or more structured questions, each with 2+ options, optional `multiSelect`, optional per-option `preview`, and a free-text "Other" fallback available on every single-select question (even with previews). Returns the user's selection(s) plus any notes. See the tool's `promptGuidelines` for usage policy.
 
 ### Schema
 

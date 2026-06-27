@@ -63,7 +63,7 @@ describe("buildItemsForQuestion", () => {
 		expect(items[1]).toEqual({ kind: "other", label: "Type something." });
 	});
 
-	it("skips the sentinel when any single-select option carries a preview", () => {
+	it("appends the Type-something sentinel even when a single-select option carries a preview", () => {
 		const items = buildItemsForQuestion({
 			question: "Layout?",
 			header: "Layout",
@@ -75,11 +75,12 @@ describe("buildItemsForQuestion", () => {
 		expect(items).toEqual([
 			{ kind: "option", label: "Centered", description: "centered logo" },
 			{ kind: "option", label: "Left", description: "left logo" },
+			{ kind: "other", label: "Type something." },
 		]);
-		expect(items.some((i) => i.kind === "other")).toBe(false);
+		expect(items.some((i) => i.kind === "other")).toBe(true);
 	});
 
-	it("appends the sentinel when single-select options have only empty-string previews", () => {
+	it("appends the Type-something sentinel for single-select regardless of preview content", () => {
 		const items = buildItemsForQuestion({
 			question: "Pick",
 			header: "Pick",
@@ -147,8 +148,9 @@ describe("chatNumberingFor", () => {
 		expect(chatNumberingFor(items)).toEqual({ offset: 4, total: 5 });
 	});
 
-	// Side-by-side preview layout suppresses Type-something, so 3 options → chat is "4.".
-	it("preview-layout single-select (no Type-something): chat number = options.length + 1", () => {
+	// Preview layout no longer suppresses Type-something (Phase 1), so the numbered
+	// "other" row is present: 3 options + "other" → chat reads "5." (offset 4, total 5).
+	it("preview-layout single-select: Type-something is numbered, so chat = options + other + 1", () => {
 		const items = buildItemsForQuestion({
 			question: "Layout?",
 			header: "Layout",
@@ -158,7 +160,7 @@ describe("chatNumberingFor", () => {
 				{ label: "Right", description: "right logo" },
 			],
 		});
-		expect(chatNumberingFor(items)).toEqual({ offset: 3, total: 4 });
+		expect(chatNumberingFor(items)).toEqual({ offset: 4, total: 5 });
 	});
 });
 

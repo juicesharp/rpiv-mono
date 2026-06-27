@@ -53,6 +53,7 @@ export const selectPreviewPaneProps: PerTabSelector<PreviewPaneProps> = (state, 
 	notesVisible: state.notesVisible,
 	selectedIndex: state.optionIndex,
 	focused: ctx.activeView === "options",
+	inputMode: state.inputMode,
 });
 
 export const selectTabBarProps: GlobalSelector<TabBarProps> = (state, ctx) => {

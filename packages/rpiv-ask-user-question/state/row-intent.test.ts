@@ -94,21 +94,16 @@ describe("sentinelsToAppend walker", () => {
 	};
 	const baseMulti: QuestionData = { ...baseSingle, multiSelect: true };
 
-	it("appends `other` for single-select with no preview", () => {
-		expect(sentinelsToAppend(baseSingle, false)).toEqual(["other"]);
-	});
-
-	it("suppresses `other` for single-select WITH preview", () => {
-		expect(sentinelsToAppend(baseSingle, true)).toEqual([]);
+	it("appends `other` for single-select regardless of preview", () => {
+		expect(sentinelsToAppend(baseSingle)).toEqual(["other"]);
 	});
 
 	it("appends `next` for multi-select; suppresses `other`", () => {
-		expect(sentinelsToAppend(baseMulti, false)).toEqual(["next"]);
-		expect(sentinelsToAppend(baseMulti, true)).toEqual(["next"]);
+		expect(sentinelsToAppend(baseMulti)).toEqual(["next"]);
 	});
 
 	it("never appends `chat` (livesInMainList=false)", () => {
-		expect(sentinelsToAppend(baseSingle, false)).not.toContain("chat");
-		expect(sentinelsToAppend(baseMulti, true)).not.toContain("chat");
+		expect(sentinelsToAppend(baseSingle)).not.toContain("chat");
+		expect(sentinelsToAppend(baseMulti)).not.toContain("chat");
 	});
 });

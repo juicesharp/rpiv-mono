@@ -51,9 +51,9 @@ export const SENTINEL_KINDS: readonly SentinelKind[] = ["other", "chat", "next"]
  *   on this row is suppressed. The Next sentinel is the only true.
  * - `autoSubmitsInMulti` — in multiSelect mode, Enter on this row commits
  *   the question (emits `multi_confirm`). The Next sentinel is the only true.
- * - `autoAppendOnSingleSelectNoPreview` — `buildItemsForQuestion` appends
- *   this row when the question is single-select AND no option carries a
- *   `preview`. The "other" sentinel is the only true.
+ * - `autoAppendOnSingleSelect` — `buildItemsForQuestion` appends
+ *   this row when the question is single-select, regardless of whether any
+ *   option carries a `preview`. The "other" sentinel is the only true.
  * - `autoAppendOnMultiSelect` — `buildItemsForQuestion` appends this row
  *   when the question is multi-select. The Next sentinel is the only true.
  */
@@ -65,7 +65,7 @@ export interface RowIntentMeta {
 	activatesInputMode: boolean;
 	blocksMultiToggle: boolean;
 	autoSubmitsInMulti: boolean;
-	autoAppendOnSingleSelectNoPreview: boolean;
+	autoAppendOnSingleSelect: boolean;
 	autoAppendOnMultiSelect: boolean;
 }
 
@@ -78,7 +78,7 @@ export const ROW_INTENT_META: Record<RowKind, RowIntentMeta> = {
 		activatesInputMode: false,
 		blocksMultiToggle: false,
 		autoSubmitsInMulti: false,
-		autoAppendOnSingleSelectNoPreview: false,
+		autoAppendOnSingleSelect: false,
 		autoAppendOnMultiSelect: false,
 	},
 	other: {
@@ -89,7 +89,7 @@ export const ROW_INTENT_META: Record<RowKind, RowIntentMeta> = {
 		activatesInputMode: true,
 		blocksMultiToggle: false,
 		autoSubmitsInMulti: false,
-		autoAppendOnSingleSelectNoPreview: true,
+		autoAppendOnSingleSelect: true,
 		autoAppendOnMultiSelect: false,
 	},
 	chat: {
@@ -100,7 +100,7 @@ export const ROW_INTENT_META: Record<RowKind, RowIntentMeta> = {
 		activatesInputMode: false,
 		blocksMultiToggle: false,
 		autoSubmitsInMulti: false,
-		autoAppendOnSingleSelectNoPreview: false,
+		autoAppendOnSingleSelect: false,
 		autoAppendOnMultiSelect: false,
 	},
 	next: {
@@ -111,7 +111,7 @@ export const ROW_INTENT_META: Record<RowKind, RowIntentMeta> = {
 		activatesInputMode: false,
 		blocksMultiToggle: true,
 		autoSubmitsInMulti: true,
-		autoAppendOnSingleSelectNoPreview: false,
+		autoAppendOnSingleSelect: false,
 		autoAppendOnMultiSelect: true,
 	},
 };
@@ -138,13 +138,13 @@ export const RESERVED_LABEL_SET: ReadonlySet<string> = new Set<string>([
 /**
  * Walk the META table to synthesize sentinel rows for one question. The two
  * append predicates are mutually exclusive in practice (`multiSelect` vs
- * `!multiSelect && !hasAnyPreview`) but the walker doesn't enforce that —
- * adding a third bucket only requires a new META flag.
+ * single-select) but the walker doesn't enforce that — adding a third bucket
+ * only requires a new META flag.
  *
  * Returns sentinel descriptors in declaration order of `SENTINEL_KINDS`. The
  * caller wraps each with the `WrappingSelectItem` shape (kind + label).
  */
-export function sentinelsToAppend(question: QuestionData, hasAnyPreview: boolean): SentinelKind[] {
+export function sentinelsToAppend(question: QuestionData): SentinelKind[] {
 	const out: SentinelKind[] = [];
 	for (const k of SENTINEL_KINDS) {
 		const meta = ROW_INTENT_META[k];
@@ -152,7 +152,7 @@ export function sentinelsToAppend(question: QuestionData, hasAnyPreview: boolean
 		if (question.multiSelect === true) {
 			if (meta.autoAppendOnMultiSelect) out.push(k);
 		} else {
-			if (meta.autoAppendOnSingleSelectNoPreview && !hasAnyPreview) out.push(k);
+			if (meta.autoAppendOnSingleSelect) out.push(k);
 		}
 	}
 	return out;

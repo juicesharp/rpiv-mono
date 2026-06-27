@@ -118,6 +118,7 @@ describe("QuestionnairePropsAdapter.apply", () => {
 			notesVisible: false,
 			selectedIndex: 1,
 			focused: true,
+			inputMode: false,
 		});
 	});
 
