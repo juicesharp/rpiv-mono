@@ -23,6 +23,7 @@ import { __resetSessionCaptureState, registerSessionCapture } from "./session-ca
 
 /** Loose projection of the listener bundle — enough to drive the events under test. */
 interface Bundle {
+	onWorkflowStart?: (ctx: { runId: string; totalStages: number; visited?: readonly string[] }) => void;
 	onStageStart?: (stage: { stageNumber: number; name: string }, ctx: { runId: string; totalStages: number }) => void;
 	onStageRetry?: (
 		stage: { stageNumber: number; name: string },
@@ -208,6 +209,42 @@ describe("lane-progress event mapping", () => {
 			totalStages: 4,
 			stageName: "implement",
 		});
+	});
+
+	it("onWorkflowStart seeds the visited accumulator from a resumed walk so the numerator isn't recounted from zero", async () => {
+		const b = await register();
+		recordRun("run-1", "carve");
+		const ctx = { runId: "run-1", totalStages: 17 };
+		// Resume: the engine reconstructed 10 distinct stages already walked, then kicks
+		// the chain at the resumed `elaborate` stage (a deep path ordinal). Without the
+		// seed the first onStageStart would read visited:1 → the misleading "1/17".
+		b.onWorkflowStart?.({
+			...ctx,
+			visited: [
+				"research",
+				"slice",
+				"slice-structure",
+				"slice-gate",
+				"design",
+				"synth-partial",
+				"synth-root",
+				"plan-gate",
+				"refine",
+				"elaborate",
+			],
+		});
+		b.onStageStart?.({ stageNumber: 22, name: "elaborate" }, ctx);
+		// `elaborate` was already in the seed, so it stays at 10 — not 11, not 1.
+		expect(getLane("run-1")?.progress).toMatchObject({ stageNumber: 22, visited: 10, totalStages: 17 });
+	});
+
+	it("onWorkflowStart with an empty/absent visited list is a no-op (fresh run)", async () => {
+		const b = await register();
+		recordRun("run-1", "carve");
+		const ctx = { runId: "run-1", totalStages: 17 };
+		b.onWorkflowStart?.(ctx); // fresh run — nothing walked yet
+		b.onStageStart?.({ stageNumber: 1, name: "research" }, ctx);
+		expect(getLane("run-1")?.progress?.visited).toBe(1); // counts only the live stage
 	});
 
 	it("onRoute credits bypassed recovery arms into the visited numerator", async () => {

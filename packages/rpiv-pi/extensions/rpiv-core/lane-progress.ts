@@ -43,6 +43,7 @@ import {
 	markUnitDone,
 	noteVisitedStage,
 	retireRun,
+	seedVisitedStages,
 	setLaneProgress,
 	setUnitStarted,
 	sweepRunningUnits,
@@ -110,6 +111,16 @@ export async function registerLaneProgress(): Promise<void> {
 		// loader/DSL/runner graph off startup and avoids the barrel-import race.
 		const { registerLifecycle } = await import("@juicesharp/rpiv-workflow/startup");
 		g.dispose = registerLifecycle({
+			// Fires ONCE per run (new or resumed) BEFORE the chain kicks. On a RESUME the
+			// engine reconstructs its distinct-visited set from the trail and re-enters the
+			// walk at a deep `stageNumber`, but only re-fires per-stage events from that point
+			// forward — so seed the registry's accumulator from `ctx.visited` HERE, otherwise
+			// the bridge recounts from zero and a near-done resume renders a misleading "1/17".
+			// A fresh run carries an empty `visited`, so this no-ops. The numerator surfaces on
+			// the first post-seed `setLaneProgress` (the resumed stage's onStageStart).
+			onWorkflowStart: (ctx) => {
+				if (ctx.visited?.length) seedVisitedStages(ctx.runId, ctx.visited);
+			},
 			// `noteVisitedStage` is idempotent per stage name, so calling it from every
 			// per-stage event keeps `visited` (the distinct-nodes-visited fraction
 			// numerator) correct without inflating on a loop-back — see LaneProgress.

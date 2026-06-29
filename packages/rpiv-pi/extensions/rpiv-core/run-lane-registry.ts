@@ -593,6 +593,25 @@ export function noteVisitedStage(runId: string, stageName: string): number {
 	return visited.size;
 }
 
+/**
+ * Seed the distinct-visited accumulator with stage names the engine already walked
+ * — the reconstructed `RunContext.visited` carried on `onWorkflowStart`'s
+ * `LifecycleContext.visited`. UNIONS into the set (never replaces), so it composes
+ * with `noteVisitedStage`: a fresh run seeds an empty list (no-op), while a RESUMED
+ * run seeds its reconstructed walk so the first post-resume `noteVisitedStage` reads
+ * back the true distinct count instead of recounting from zero (the `1/17`-near-done
+ * bug). Idempotent + best-effort (a missing/evicted run no-ops). Returns the running
+ * size. Does NOT `notify()` — the numerator surfaces on the next `setLaneProgress`.
+ */
+export function seedVisitedStages(runId: string, names: readonly string[]): number {
+	const entry = state().lanes.get(runId);
+	if (!entry) return 0;
+	const visited = entry.visitedStages ?? new Set<string>();
+	for (const name of names) visited.add(name);
+	entry.visitedStages = visited;
+	return visited.size;
+}
+
 /** Enqueue a deferred foreground-stage UI request onto a UNIT's queue (relay).
  *  Stamps the LANE-level needs-input clock on the FIRST enqueue across the
  *  lane that finds it unset (held across a transient drain→refill so the aging
