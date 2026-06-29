@@ -2038,4 +2038,50 @@ describe("resumeWorkflow", () => {
 	});
 
 	// Mid-loop resume dispatch (fanout/iterate/assess) is covered end-to-end in `resume-loop.test.ts`.
+
+	it("onWorkflowStart carries the reconstructed visited set so a resumed run seeds its dock numerator", async () => {
+		// Stage 1 (plan) completed; resume routes onward to build. The reconstructed
+		// `RunContext.visited` must surface on `onWorkflowStart`'s ctx so a status-line
+		// bridge can seed its distinct-visited accumulator from the prior walk instead
+		// of recounting from zero (the near-done-resume `1/17` bug).
+		const art1 = fakeArtifact("plans/p1.md");
+		const out1 = fakeOutput([art1]);
+
+		writeRun(resumeHeader, [
+			{
+				session: null,
+				stageNumber: 1,
+				stage: "plan",
+				skill: "plan",
+				status: "completed",
+				ts: "2026-06-03T07:31:00Z",
+				output: out1,
+			},
+		]);
+
+		writeArtifact(".rpiv/artifacts/builds/b1.md");
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/builds/b1.md")] }],
+		});
+
+		let startVisited: readonly string[] | undefined;
+		const result = await resumeWorkflow(chain.ctx, {
+			workflow: twoStageWf,
+			header: resumeHeader,
+			ref: "@2026-06-03_07-30-00-ab12",
+			lifecycle: {
+				// Capture at fire time — `executeRun` snapshots `[...run.visited]`, so a
+				// later `visited.add` in the chain walk can't retroactively mutate this.
+				onWorkflowStart: (lc) => {
+					startVisited = lc.visited;
+				},
+			},
+		});
+
+		expect(result.success).toBe(true);
+		// The already-completed `plan` stage is the reconstructed walk; `build` has not
+		// run yet at onWorkflowStart, so it is NOT here.
+		expect(startVisited).toEqual(["plan"]);
+	});
 });

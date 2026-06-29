@@ -2459,11 +2459,20 @@ describe("runWorkflow", () => {
 			expect(result.success).toBe(true);
 			const starts = calls.filter(([n]) => n === "onWorkflowStart");
 			expect(starts).toHaveLength(1);
-			const ctx = starts[0]![1][0] as { cwd: string; runId: string; workflow: string; totalStages: number };
+			const ctx = starts[0]![1][0] as {
+				cwd: string;
+				runId: string;
+				workflow: string;
+				totalStages: number;
+				visited: readonly string[];
+			};
 			expect(ctx.cwd).toBe(tmpDir);
 			expect(ctx.runId).toBe(result.runId);
 			expect(ctx.workflow).toBe("tiny");
 			expect(ctx.totalStages).toBe(1);
+			// A fresh run has walked nothing yet — `visited` seeds the dock's accumulator,
+			// so it must be empty here (the resume path is where it carries the prior walk).
+			expect(ctx.visited).toEqual([]);
 			// onWorkflowStart must precede onStageStart.
 			expect(names(calls).indexOf("onWorkflowStart")).toBeLessThan(names(calls).indexOf("onStageStart"));
 		});
