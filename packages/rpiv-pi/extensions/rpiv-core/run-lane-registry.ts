@@ -146,8 +146,12 @@ export interface LaneProgress {
 	/**
 	 * Distinct stage nodes VISITED so far (≤ totalStages) — the one quantity for
 	 * which `visited/totalStages ≤ 1` holds, so it (not `stageNumber`) is the
-	 * progress-fraction numerator. Undefined for snapshots built outside the
-	 * lifecycle bridge; the renderer falls back to `min(stageNumber, totalStages)`.
+	 * progress-fraction numerator. Counts nodes actually entered PLUS the recovery
+	 * arms a gate bypassed for good (carve's reslice/refine, credited via onRoute's
+	 * `bypassed`), so a clean run reaches `totalStages` while its terminal stage
+	 * runs instead of capping below until the onWorkflowEnd snap. Undefined for
+	 * snapshots built outside the lifecycle bridge; the renderer falls back to
+	 * `min(stageNumber, totalStages)`.
 	 */
 	visited?: number;
 	stageName: string;

@@ -34,6 +34,12 @@ interface Bundle {
 		error: string,
 		ctx: { runId: string; totalStages: number },
 	) => void;
+	onRoute?: (
+		from: { name: string },
+		to: string,
+		ctx: { runId: string; totalStages: number },
+		bypassed?: readonly string[],
+	) => void;
 	onLoopStart?: (
 		stage: { stageNumber: number; name: string },
 		info: { kind?: string; units?: unknown[] },
@@ -202,6 +208,54 @@ describe("lane-progress event mapping", () => {
 			totalStages: 4,
 			stageName: "implement",
 		});
+	});
+
+	it("onRoute credits bypassed recovery arms into the visited numerator", async () => {
+		const b = await register();
+		recordRun("run-1", "carve");
+		const ctx = { runId: "run-1", totalStages: 16 };
+		["research", "slice", "slice-structure", "slice-gate"].forEach((n, i) => {
+			b.onStageStart?.({ stageNumber: i + 1, name: n }, ctx);
+		});
+		// slice-gate passes → design; reslice is bypassed for good on this path.
+		b.onRoute?.({ name: "slice-gate" }, "design", ctx, ["reslice"]);
+		expect(getLane("run-1")?.progress?.visited).toBe(5); // 4 entered + reslice credited
+	});
+
+	it("onRoute with an empty bypass list leaves the numerator untouched", async () => {
+		const b = await register();
+		recordRun("run-1", "carve");
+		const ctx = { runId: "run-1", totalStages: 16 };
+		b.onStageStart?.({ stageNumber: 1, name: "research" }, ctx);
+		b.onRoute?.({ name: "research" }, "slice", ctx, []);
+		expect(getLane("run-1")?.progress?.visited).toBe(1);
+	});
+
+	it("carve happy path: commit shows 16/16 WHILE running (bypassed reslice+refine credited at the gates)", async () => {
+		const b = await register();
+		recordRun("run-1", "carve");
+		const ctx = { runId: "run-1", totalStages: 16 };
+		const enter = (n: string, i: number) => b.onStageStart?.({ stageNumber: i, name: n }, ctx);
+		enter("research", 1);
+		enter("slice", 2);
+		enter("slice-structure", 3);
+		enter("slice-gate", 4);
+		b.onRoute?.({ name: "slice-gate" }, "design", ctx, ["reslice"]);
+		enter("design", 5);
+		enter("synth-partial", 6);
+		enter("synth-root", 7);
+		enter("plan-gate", 8);
+		b.onRoute?.({ name: "plan-gate" }, "elaborate", ctx, ["refine"]);
+		enter("elaborate", 9);
+		enter("stitch", 10);
+		enter("stitch-gate", 11);
+		b.onRoute?.({ name: "stitch-gate" }, "implement", ctx, []); // re-elaborate arm already visited
+		enter("implement", 12);
+		enter("validate", 13);
+		enter("commit", 14);
+		// Path ordinal is 14 (actual entries), but distinct-covered is 16 — a full bar
+		// WHILE commit runs, not the old 14/16 that only snapped to 16/16 at completion.
+		expect(getLane("run-1")?.progress).toMatchObject({ visited: 16, totalStages: 16, stageName: "commit" });
 	});
 
 	it("setLaneProgress no-ops on a non-recorded run (non-detached runs cost nothing)", async () => {

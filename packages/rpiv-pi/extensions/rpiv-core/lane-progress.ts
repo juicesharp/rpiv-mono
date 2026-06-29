@@ -156,6 +156,20 @@ export async function registerLaneProgress(): Promise<void> {
 					reason: error,
 				});
 			},
+			// A decision edge took its arm: credit each not-taken RECOVERY arm (a
+			// failure loop the chosen arm skipped for good — carve's reslice/refine)
+			// as visited. This advances the distinct-nodes-visited numerator at the
+			// gate, so the bar reaches `totalStages` WHILE the terminal stage runs
+			// (commit shows 16/16) instead of capping below until the onWorkflowEnd
+			// snap. `noteVisitedStage` is idempotent + the runner already excludes
+			// already-visited / forward arms, so this never inflates past the total.
+			onRoute: (_from, _to, ctx, bypassed) => {
+				if (!bypassed?.length) return;
+				let visited = 0;
+				for (const name of bypassed) visited = noteVisitedStage(ctx.runId, name);
+				const prog = getLane(ctx.runId)?.progress;
+				if (prog) setLaneProgress(ctx.runId, { ...prog, visited });
+			},
 			onLoopStart: (stage, info, ctx) => {
 				// A new fan-out generation REPLACES the prior one's sub-rows (D2) — the engine
 				// resets cursor.slots per loop, so the registry mirrors only the current
@@ -236,12 +250,13 @@ export async function registerLaneProgress(): Promise<void> {
 				// errMsg) — retain it on the lane (Problem 1) for the dock chip + viewer header.
 				const error = result.termination?.error;
 				// A completed run is 100% by definition. The bar's fraction is
-				// distinct-stages-visited / reachable-stages, and a successful path skips
-				// branch-exclusive stages (carve's `reslice`/`refine` only fire on a gate
-				// loop-back), so `visited` caps BELOW `totalStages` — the last live snapshot
-				// would otherwise freeze at e.g. 13/14 under the ✓. Paint the bar full on
-				// clean completion only; `failed`/`aborted` keep their last real snapshot so
-				// the row stays frozen at the stage that died.
+				// distinct-stages-visited / reachable-stages. The onRoute handler now credits
+				// bypassed recovery arms (carve's `reslice`/`refine`) at the gate, so a clean
+				// run usually already reads full here and this snap is a no-op. It REMAINS as a
+				// safety net for any uncredited skip (e.g. a gate passed before a resume point,
+				// whose onRoute never re-fired). Paint the bar full on clean completion only;
+				// `failed`/`aborted` keep their last real snapshot so the row stays frozen at
+				// the stage that died.
 				const prog = lane?.progress;
 				if (status === "completed" && prog && prog.visited !== prog.totalStages) {
 					setLaneProgress(ctx.runId, { ...prog, visited: prog.totalStages });
