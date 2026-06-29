@@ -31,7 +31,7 @@ beforeEach(() => {
 	delete process.env.TAVILY_API_KEY;
 	delete process.env.SERPER_API_KEY;
 	delete process.env.EXA_API_KEY;
-	delete process.env.YOUCOM_API_KEY;
+	delete process.env.YDC_API_KEY;
 	delete process.env.JINA_API_KEY;
 	delete process.env.FIRECRAWL_API_KEY;
 	delete process.env.PERPLEXITY_API_KEY;
@@ -576,7 +576,7 @@ const FETCH_ERROR_MATRIX: ReadonlyArray<{
 	},
 	{
 		provider: "youcom",
-		envVar: "YOUCOM_API_KEY",
+		envVar: "YDC_API_KEY",
 		fetchUrlMatcher: (u) => u.includes("ydc-index.io/v1/contents"),
 		label: "You.com",
 	},
@@ -1969,11 +1969,11 @@ describe("/web-tools command — ollama", () => {
 // You.com has a dedicated test block (like SearXNG/Ollama) for fine-grained assertions.
 describe("web_search.execute — youcom", () => {
 	it("uses env key", async () => {
-		process.env.YOUCOM_API_KEY = "env-key";
+		process.env.YDC_API_KEY = "env-key";
 		writeConfig({ provider: "youcom" });
 		const stub = stubFetch([
 			{
-				match: (u) => u.includes("ydc-index.io/v1/search"),
+				match: (u) => u.includes("api.you.com/v1/agents/search"),
 				response: () =>
 					new Response(
 						JSON.stringify({
@@ -1995,7 +1995,7 @@ describe("web_search.execute — youcom", () => {
 		writeConfig({ provider: "youcom", apiKeys: { youcom: "config-key" } });
 		const stub = stubFetch([
 			{
-				match: (u) => u.includes("ydc-index.io/v1/search"),
+				match: (u) => u.includes("api.you.com/v1/agents/search"),
 				response: () =>
 					new Response(
 						JSON.stringify({
@@ -2020,15 +2020,15 @@ describe("web_search.execute — youcom", () => {
 			captured.tools
 				.get("web_search")
 				?.execute?.("tc", { query: "x" }, undefined as never, undefined as never, createMockCtx()),
-		).rejects.toThrow(/YOUCOM_API_KEY is not set/);
+		).rejects.toThrow(/YDC_API_KEY is not set/);
 	});
 
 	it("returns no-results envelope on empty results", async () => {
-		process.env.YOUCOM_API_KEY = "k";
+		process.env.YDC_API_KEY = "k";
 		writeConfig({ provider: "youcom" });
 		stubFetch([
 			{
-				match: (u) => u.includes("ydc-index.io/v1/search"),
+				match: (u) => u.includes("api.you.com/v1/agents/search"),
 				response: () => new Response(JSON.stringify({ results: {} }), { status: 200 }),
 			},
 		]);
@@ -2040,11 +2040,11 @@ describe("web_search.execute — youcom", () => {
 	});
 
 	it("wraps non-2xx as 'You.com Search API error (status)'", async () => {
-		process.env.YOUCOM_API_KEY = "k";
+		process.env.YDC_API_KEY = "k";
 		writeConfig({ provider: "youcom" });
 		stubFetch([
 			{
-				match: (u) => u.includes("ydc-index.io/v1/search"),
+				match: (u) => u.includes("api.you.com/v1/agents/search"),
 				response: () => new Response("rate limit", { status: 429 }),
 			},
 		]);
@@ -2057,11 +2057,11 @@ describe("web_search.execute — youcom", () => {
 	});
 
 	it("tolerates missing fields in results", async () => {
-		process.env.YOUCOM_API_KEY = "k";
+		process.env.YDC_API_KEY = "k";
 		writeConfig({ provider: "youcom" });
 		stubFetch([
 			{
-				match: (u) => u.includes("ydc-index.io/v1/search"),
+				match: (u) => u.includes("api.you.com/v1/agents/search"),
 				response: () => new Response(JSON.stringify({ results: { web: [{}] } }), { status: 200 }),
 			},
 		]);
@@ -2070,6 +2070,54 @@ describe("web_search.execute — youcom", () => {
 			.get("web_search")
 			?.execute?.("tc", { query: "x" }, undefined as never, undefined as never, createMockCtx());
 		expect(r?.details).toMatchObject({ results: [{ title: "", url: "", snippet: "" }] });
+	});
+
+	it("parses agents API flat-array response format", async () => {
+		process.env.YDC_API_KEY = "k";
+		writeConfig({ provider: "youcom" });
+		stubFetch([
+			{
+				match: (u) => u.includes("api.you.com/v1/agents/search"),
+				response: () =>
+					new Response(
+						JSON.stringify({
+							results: [
+								{ title: "Flat Result", url: "https://flat.example", snippet: "flat snippet" },
+								{ title: "Second", url: "https://second.example", snippet: "second snippet" },
+							],
+						}),
+						{ status: 200 },
+					),
+			},
+		]);
+		const { captured } = registerAndCapture();
+		const r = await captured.tools
+			.get("web_search")
+			?.execute?.("tc", { query: "flat", max_results: 5 }, undefined as never, undefined as never, createMockCtx());
+		expect(r?.details).toMatchObject({
+			results: [
+				{ title: "Flat Result", url: "https://flat.example", snippet: "flat snippet" },
+				{ title: "Second", url: "https://second.example", snippet: "second snippet" },
+			],
+		});
+	});
+
+	it("sends max_results in request body (agents API)", async () => {
+		process.env.YDC_API_KEY = "k";
+		writeConfig({ provider: "youcom" });
+		const stub = stubFetch([
+			{
+				match: (u) => u.includes("api.you.com/v1/agents/search"),
+				response: () => new Response(JSON.stringify({ results: [] }), { status: 200 }),
+			},
+		]);
+		const { captured } = registerAndCapture();
+		await captured.tools
+			.get("web_search")
+			?.execute?.("tc", { query: "x", max_results: 7 }, undefined as never, undefined as never, createMockCtx());
+		const body = JSON.parse(stub.calls[0].init?.body as string);
+		expect(body.max_results).toBe(7);
+		expect(body.query).toBe("x");
 	});
 });
 
