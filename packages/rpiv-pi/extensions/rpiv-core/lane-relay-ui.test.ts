@@ -1,6 +1,6 @@
 /**
  * lane-relay-ui tests — the deferring, leak-proof ExtensionUIContext bound to a
- * floated run's foreground stage (FR5 + Phase 7.1). Verifies the allow-policy:
+ * floated run's foreground stage. Verifies the allow-policy:
  * `custom` defers (enqueue + pending promise, no redundant chat toast), `notify` is
  * focus-gated, ambient-surface mutators are suppressed at root, `onTerminalInput`
  * is a no-op tap, other members forward with `this` bound, the relay is branded,
@@ -125,7 +125,7 @@ describe("lane-relay-ui — custom defers", () => {
 	});
 });
 
-describe("lane-relay-ui — notify is focus-gated (Phase 7.1)", () => {
+describe("lane-relay-ui — notify is focus-gated", () => {
 	it("drops a child notify at root (this lane is NOT focused)", () => {
 		recordRun("run-1", "ship");
 		const { real, notify } = makeRealCtx();
@@ -152,7 +152,7 @@ describe("lane-relay-ui — notify is focus-gated (Phase 7.1)", () => {
 	});
 });
 
-describe("lane-relay-ui — ambient surfaces suppressed (Phase 7.1)", () => {
+describe("lane-relay-ui — ambient surfaces suppressed", () => {
 	it("never forwards setWidget/setStatus/setWorkingMessage/setHiddenThinkingLabel/pasteToEditor", () => {
 		recordRun("run-1", "ship");
 		const ctx = makeRealCtx();
@@ -208,7 +208,7 @@ describe("lane-relay-ui — forwarding (Proxy get trap)", () => {
 	});
 });
 
-describe("lane-relay-ui — brand (Phase 7.2 child detection)", () => {
+describe("lane-relay-ui — brand (child detection)", () => {
 	it("a relay is detectable via isLaneRelayUiContext; a plain ctx is not", () => {
 		const { real } = makeRealCtx();
 		const relay = createLaneRelayUiContext(real, "run-1", UNIT);

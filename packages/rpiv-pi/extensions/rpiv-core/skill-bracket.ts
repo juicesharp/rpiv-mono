@@ -8,12 +8,12 @@
  * rpiv-warp/index.ts:127-176 comment).
  *
  * Contract:
- *  - Filter event.source === "interactive" (Decision 4). Workflow path owns
+ *  - Filter event.source === "interactive". Workflow path owns
  *    source="extension"; rpc is rare and deferred.
  *  - Parse skill name via parseSkillInvocation (both raw `/skill:foo` AND
- *    wrapped `<skill name="…">…</skill>` — Decision 3).
- *  - Arm ONLY on explicit config.skills?.[name] entry (Decision 7 refined —
- *    defaults are not a trigger; only explicit per-skill entries arm).
+ *    wrapped `<skill name="…">…</skill>`).
+ *  - Arm ONLY on explicit config.skills?.[name] entry —
+ *    defaults are not a trigger; only explicit per-skill entries arm.
  *  - All pi mutations wrapped in applyOrSkipIfStale (shared with
  *    session-capture.ts).
  *  - Single nullable arm slot — Pi serializes turns; concurrent input cannot
@@ -36,7 +36,7 @@ const SKILL_PREFIX = "/skill:";
 // `hasModelChange` tracks whether we actually called pi.setModel during arm —
 // at agent_end we skip the restore-setModel when no model change was applied
 // (thinking-only overrides), avoiding an unnecessary write to the on-disk
-// settings file (Plan Review row #concern-D).
+// settings file.
 let armedBaseline: BaselineSnapshot | undefined;
 
 /** Test reset — wired into test/setup.ts beforeEach. */
@@ -48,11 +48,9 @@ export function __resetSkillBracketState(): void {
  * Parse the skill name from an input-event text. Handles BOTH raw
  * `/skill:<name>` (when rpiv-args hasn't transformed yet, or is uninstalled)
  * AND wrapped `<skill name="…" location="…">…</skill>` (post-transform).
- * Decision 3.
  *
  * Tokenizes the raw form on the first whitespace (space/newline/tab) so
- * `/skill:commit\n` yields `name="commit"`, not `"commit\n"` (Plan Review
- * row #concern-A).
+ * `/skill:commit\n` yields `name="commit"`, not `"commit\n"`.
  */
 export function parseSkillInvocation(text: string): { name: string } | undefined {
 	if (text.startsWith(SKILL_PREFIX)) {

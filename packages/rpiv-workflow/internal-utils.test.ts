@@ -2,7 +2,7 @@
  * Parity tests for `applyCompletedStage` — the single authority for
  * "a completed produces stage mutates the rolling artifact state."
  *
- * Covers the four stage-kind cases that were previously duplicated across
+ * Covers the four stage-kind cases in one place (no duplication across
  * `runner/script-stage.ts:advancePrimaryForScript` and
  * `sessions/sessions.ts:maybeAdvancePrimary`:
  *   1. produces-with-artifacts  → primary advances, named appends

@@ -8,8 +8,8 @@
  * fold-replayed `RunState` at the unit boundary + this generation's
  * accumulated outputs. Because the fold replays rows in trail order, at row
  * *i* the state is byte-identical to what the live driver saw — so the fold
- * verifies EVERY unit row against the recomputed expectation (strictly
- * stronger than the old per-primitive half-guards). Drift (or a generator
+ * verifies EVERY unit row against the recomputed expectation. Drift (or a
+ * generator
  * throw) does not refuse outright: the fold finishes applying so state is
  * complete, and returns `drift` — `resumeWorkflow`'s entry thunk records the
  * terminal failure with full lifecycle bracketing and zero dispatch.

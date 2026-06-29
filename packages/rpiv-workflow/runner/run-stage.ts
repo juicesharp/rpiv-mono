@@ -99,8 +99,7 @@ export async function runStageOrRecordFailure(
 
 /**
  * Builds the `/skill:<name> <args>` line sent into the session. The audit
- * label (which used to round-trip through here) is read off `stage.skill`
- * by the caller — single source.
+ * label is read off `stage.skill` by the caller — single source.
  */
 function buildPrompt(skill: string, inputForStage: string): string {
 	return `/skill:${skill} ${inputForStage}`;
@@ -207,8 +206,8 @@ function buildSingleStageSession(
 /**
  * The single-stage entry announcement — `onStageStart`. ONE helper for the
  * live entry (`runSingleStage`) and the session-backed resume re-entry
- * (`resumeWithSessionLadder`), which used to re-spell the fire and keep it
- * aligned by a "Same bracketing as live" comment. Mirrors `announceLoopStart`
+ * (`resumeWithSessionLadder`) — the fire stays aligned by sharing this one
+ * helper. Mirrors `announceLoopStart`
  * (loop.ts) — the loop path's one-helper-for-live-and-resume exemplar.
  */
 function announceSingleStageStart(
@@ -425,8 +424,7 @@ async function runLoopStage(
 
 /**
  * THE loop deps bundle — built identically by the live path and resume
- * (`selectResumeEntry`), so the two can't drift (the old per-primitive
- * bundles were rebuilt by hand in both places).
+ * (`selectResumeEntry`), so the two can't drift.
  */
 export function buildLoopDeps(): LoopDeps {
 	return {

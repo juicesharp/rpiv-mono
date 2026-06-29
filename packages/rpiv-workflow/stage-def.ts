@@ -184,7 +184,7 @@ export function readsAll(read: StageRead): boolean {
 }
 
 // ===========================================================================
-// StageDef — the discriminated union over the dispatch axis (T1)
+// StageDef — the discriminated union over the dispatch axis
 // ===========================================================================
 
 /**
@@ -353,7 +353,7 @@ export interface PromptStage<TIn = unknown, TOut = unknown> extends StageDefBase
 
 /**
  * A stage in the workflow graph — a discriminated union over the DISPATCH
- * axis (T1): skill (`SkillStage`, the default), script (`ScriptStage`,
+ * axis: skill (`SkillStage`, the default), script (`ScriptStage`,
  * `run` present), or raw prompt (`PromptStage`, `prompt` present). The
  * stage's identity is the surrounding `Workflow.stages` record key.
  *
@@ -363,7 +363,7 @@ export interface PromptStage<TIn = unknown, TOut = unknown> extends StageDefBase
  * hand-rolled literals because jiti erases TS types (same posture as the
  * `Judge` union + `judgeShapeIssues`).
  *
- * TYPING MODEL (T2): `<TIn, TOut>` are LOCAL inference helpers — they tie a
+ * TYPING MODEL: `<TIn, TOut>` are LOCAL inference helpers — they tie a
  * factory call's `inputSchema`/`outputSchema`/`run` together, then erase at
  * the `Workflow.stages` boundary (`Record<string, StageDef>`). They do NOT
  * carry types across edges; inter-stage typing is runtime-contract-based
@@ -399,7 +399,7 @@ export function defineWorkflow(spec: Workflow): Workflow {
 }
 
 /**
- * Builder options are PROJECTIONS of the union arms (T13): each interface
+ * Builder options are PROJECTIONS of the union arms: each interface
  * `Pick`s its fields from the arm the factory constructs, and the factory
  * spreads the options over the arm's fixed fields. Adding a knob to an arm
  * is one edit here (extend the `Pick` key list — a stale key no longer on
@@ -466,9 +466,8 @@ interface ActsPromptOptions<TIn = unknown> extends Pick<PromptStage<TIn, void>, 
  * cast is required for the `Partial`-override factories; taming it here means
  * callers don't repeat the concession) + the duplicated
  * `{ kind, sessionPolicy: "fresh", ...overrides }` body. `producesFn`/`actsFn`
- * differed only by the `kind` literal; this helper parameterizes it. The cast's
- * load-bearingness is documented ONCE here, not on each twin (the old
- * `producesFn:466-469` comment had no `actsFn` counterpart).
+ * differ only by the `kind` literal; this helper parameterizes it. The cast's
+ * load-bearingness is documented ONCE here, not on each twin.
  */
 function withDefaults(kind: "produces" | "side-effect", overrides: Partial<StageDef> = {}): StageDef {
 	return { kind, sessionPolicy: "fresh", ...overrides } as StageDef;

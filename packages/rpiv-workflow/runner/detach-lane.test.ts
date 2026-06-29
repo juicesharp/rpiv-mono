@@ -1,5 +1,5 @@
 /**
- * detach-lane.test.ts — Phase 3 detach wiring on the RUN path.
+ * detach-lane.test.ts — detach wiring on the RUN path.
  *
  * Two contracts the lane switcher rides on:
  *   1. `detachExecutor` forwards a lane `name` to `provider.createHost` — the

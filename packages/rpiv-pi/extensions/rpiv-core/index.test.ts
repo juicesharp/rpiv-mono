@@ -95,7 +95,7 @@ describe("createWorkflowExecution — focus-gated abort tap + lane lifecycle", (
 		expect(typeof exec.dispose).toBe("function");
 	});
 
-	it("records the lane at build under its name; dispose unsubscribes the tap and retires a still-running lane (Phase A retention)", () => {
+	it("records the lane at build under its name; dispose unsubscribes the tap and retires a still-running lane", () => {
 		const { ui, unsub } = makeSpyUi();
 		captureSession(ui);
 		const observer = createMockCommandCtx({ hasUI: true });
@@ -108,7 +108,7 @@ describe("createWorkflowExecution — focus-gated abort tap + lane lifecycle", (
 
 		expect(getLane("run-1")?.name).toBe("ship");
 
-		// Phase A: terminal runs are RETAINED, not deleted. The normal retirement path is
+		// Terminal runs are RETAINED, not deleted. The normal retirement path is
 		// onWorkflowEnd; dispose is the fallback for a throw/crash that left the lane
 		// "running" — it retires to "aborted" so a lane is never stranded "running".
 		exec.dispose?.();

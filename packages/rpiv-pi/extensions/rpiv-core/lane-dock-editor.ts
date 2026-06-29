@@ -136,7 +136,7 @@ function classifyKey(data: string): DockKey {
 /**
  * Resolve a display row to a unit address. A lane (parent) row → the reserved
  * single-unit key; a unit sub-row → its own index. The lane is carried for the
- * run-level `x` action (D7 — `x` targets the PARENT run, never a single unit).
+ * run-level `x` action (`x` targets the PARENT run, never a single unit).
  */
 function resolveRow(row: DisplayRow | undefined): { runId: string; unitIndex: number; lane: LaneEntry } | undefined {
 	if (!row) return undefined;
@@ -218,7 +218,7 @@ export class LaneDockEditor extends CustomEditor {
 				return;
 			}
 			case "stop": {
-				// `x` targets the row's PARENT run (D7 — no per-unit abort): abort a running
+				// `x` targets the row's PARENT run (no per-unit abort): abort a running
 				// run, or dismiss a finished/retained one. The dock stays active so the user
 				// can keep acting on the list; selection re-clamps as lanes drop.
 				const t = resolveRow(listLanesForDisplay()[getDockState().selection]);

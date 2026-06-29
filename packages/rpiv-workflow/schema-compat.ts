@@ -20,8 +20,7 @@ import type { JsonSchemaObject } from "./json-schema.js";
  * producer's output schema and a consumer's input schema. Owned by the
  * engine that defines its semantics (this module); the contract domain
  * (`skill-contract.ts`) re-exports it so `CompositionComparator` consumers
- * stay self-contained (G7 — the old direction was a utility→domain
- * inversion).
+ * stay self-contained.
  */
 export interface SchemaCompatResult {
 	ok: boolean;

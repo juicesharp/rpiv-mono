@@ -7,7 +7,7 @@
  * already-active children are aborted by the host (the dispatcher threads
  * `signal` into each `spawnChild`). A fresh `acquire` after abort rejects
  * immediately. `Semaphore(1)` serializes — the cursor/`state.named`
- * representation is then identical to the sequential path (D3).
+ * representation is then identical to the sequential path.
  */
 
 import { WorkflowAbortError, WorkflowConfigError } from "./internal-utils.js";

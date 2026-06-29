@@ -438,7 +438,7 @@ describe("skill-contracts", () => {
 		it("degrades (ok) when no comparator is registered", () => {
 			expect(canCompose("design", "implement", contracts).ok).toBe(true);
 		});
-		it("degrades (ok) when the comparator throws — the advisory query never propagates a defect (C14)", () => {
+		it("degrades (ok) when the comparator throws — the advisory query never propagates a defect", () => {
 			registerCompositionComparator("plans", () => {
 				throw new Error("comparator bug");
 			});
@@ -449,7 +449,7 @@ describe("skill-contracts", () => {
 		});
 	});
 
-	describe("adjudicateChannel — THE shared channel rule (C14)", () => {
+	describe("adjudicateChannel — THE shared channel rule", () => {
 		const planProduces: ProducesSpec = { kind: "produces", meta: { artifactKind: "plan" } };
 		const kindComparator: CompositionComparator = (produces, consumes, ch) => {
 			const want = (consumes.reads?.[ch]?.meta as { artifactKind?: string } | undefined)?.artifactKind;

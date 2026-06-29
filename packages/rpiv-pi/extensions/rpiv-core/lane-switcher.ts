@@ -1,5 +1,5 @@
 /**
- * lane-switcher — composition for the parallel-run lane switcher (FR3/FR4/FR5).
+ * lane-switcher — composition for the parallel-run lane switcher.
  *
  * The launcher (root) owns this: it mounts the always-on lane DOCK below the editor
  * on the captured launcher UI, subscribes it to the run-lane registry so it
@@ -8,7 +8,7 @@
  * (widgets can't take focus; the editor is the only component reliably reached at
  * the idle prompt). `/lanes` and the `^Q` hotkey simply step INTO the dock. When the
  * user opens a run (⏎), switchIntoLane opens the read-only viewer, then drains any
- * queued foreground-stage questions onto the real UI (FR5: context first, then answer).
+ * queued foreground-stage questions onto the real UI (context first, then answer).
  */
 
 import type { ExtensionAPI, ExtensionUIContext, KeybindingsManager } from "@earendil-works/pi-coding-agent";
@@ -37,13 +37,13 @@ import {
  * Default is `ctrl+q` — historically "the one free control key" (Pi's core + editor
  * keymaps claim ctrl+a..z except h/i/j/m/q; h/i/j/m alias Backspace/Tab/LF/Enter).
  * BUT ctrl+q is terminal XOFF flow-control on many setups and can freeze output below
- * Pi's keymap. So the binding is OVERRIDABLE (Phase E): set `RPIV_LANES_HOTKEY` to a
+ * Pi's keymap. So the binding is OVERRIDABLE: set `RPIV_LANES_HOTKEY` to a
  * different KeyId to rebind, or to `off`/`none`/empty to disable the hotkey entirely
  * and rely on the always-safe `/lanes` command. `/lanes` is always available.
  */
 const DEFAULT_HOTKEY = "ctrl+q";
 
-/** Resolve the switcher hotkey from the environment (Phase E); undefined = no hotkey. */
+/** Resolve the switcher hotkey from the environment; undefined = no hotkey. */
 function resolveHotkey(): string | undefined {
 	const raw = process.env.RPIV_LANES_HOTKEY;
 	if (raw === undefined) return DEFAULT_HOTKEY; // back-compat default
@@ -111,7 +111,7 @@ export async function switchIntoLane(ui: ExtensionUIContext, runId: string, unit
 	setFocusedRun(runId);
 	try {
 		const intent = await showLaneViewer(ui, runId, unitIndex); // 1) see live context; esc/← → "back"
-		if (intent === "answer") await drainPendingInput(ui, runId, unitIndex); // 2) ⏎ in the viewer → answer (FR5)
+		if (intent === "answer") await drainPendingInput(ui, runId, unitIndex); // 2) ⏎ in the viewer → answer
 	} finally {
 		setFocusedRun(undefined);
 		switchingLane = false;
@@ -143,7 +143,7 @@ export async function answerLane(ui: ExtensionUIContext, runId: string, unitInde
 }
 
 /**
- * FR5 — replay each of THIS unit's queued foreground-stage questionnaires on the
+ * Replay each of THIS unit's queued foreground-stage questionnaires on the
  * launcher's REAL UI and resolve the child's stalled promise. Sequential
  * (block-while-occupied); a dismissed/error questionnaire still settles the child so it
  * never hangs.
@@ -162,7 +162,7 @@ export function registerLaneSwitcher(pi: ExtensionAPI): void {
 	const hotkey = resolveHotkey();
 
 	pi.on("session_start", async (_event: unknown, ctx: { hasUI?: boolean; ui?: ExtensionUIContext }) => {
-		// Phase 7.2: a detached child re-loads rpiv-core and re-fires this hook with its
+		// A detached child re-loads rpiv-core and re-fires this hook with its
 		// bound relay ui. Skip it — only the ROOT launcher owns the ambient overlay +
 		// registry subscription. A child mounting its own overlay would re-point the
 		// shared singleton at its relay and clobber the launcher's `rpiv-lanes` widget.
@@ -209,7 +209,7 @@ export function registerLaneSwitcher(pi: ExtensionAPI): void {
 	// reach the idle editor). Gated like /lanes: only with a UI, only at root (not
 	// switched into a lane — the viewer owns input there), only when a lane is in-flight.
 	// Skipped entirely when the binding is disabled (RPIV_LANES_HOTKEY=off) — /lanes
-	// still works (Phase E). The DOWN-from-empty-prompt gesture (LaneDockEditor) is a
+	// still works. The DOWN-from-empty-prompt gesture (LaneDockEditor) is a
 	// third, always-available way in.
 	if (hotkey) {
 		// Cast: an env-provided KeyId is validated by Pi at registration; an unknown id

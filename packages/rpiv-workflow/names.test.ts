@@ -118,7 +118,7 @@ describe("releaseName", () => {
 	});
 });
 
-describe("names.json atomic write path (C9)", () => {
+describe("names.json atomic write path", () => {
 	it("claim / release / rebuild leave no temp residue in the runs dir", () => {
 		claimName(tmpDir, "auth", "r1");
 		releaseName(tmpDir, "auth", "r1");

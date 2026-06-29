@@ -228,7 +228,7 @@ describe("lane-switcher — focus lifecycle", () => {
 	});
 });
 
-describe("lane-switcher — drainPendingInput (FR5)", () => {
+describe("lane-switcher — drainPendingInput", () => {
 	it("replays each queued questionnaire on the real UI in FIFO order and resolves each child", async () => {
 		recordRun("run-1", "ship");
 		const factoryA = (() => ({})) as never;
@@ -363,7 +363,7 @@ describe("lane-switcher — answerLane (direct answer, no viewer)", () => {
 	});
 });
 
-describe("lane-switcher — hotkey resolution (Phase E)", () => {
+describe("lane-switcher — hotkey resolution", () => {
 	const ENV = "RPIV_LANES_HOTKEY";
 	let saved: string | undefined;
 	beforeEach(() => {
@@ -452,7 +452,7 @@ describe("lane-switcher — registration / lifecycle", () => {
 		expect(mockSubscribeLanes).not.toHaveBeenCalled();
 	});
 
-	it("session_start is a no-op for a detached child (branded relay ui) — Phase 7.2", async () => {
+	it("session_start is a no-op for a detached child (branded relay ui)", async () => {
 		const { sessionStart } = register();
 		recordRun("run-1", "ship");
 		const realUi = createMockUI() as unknown as ExtensionUIContext;

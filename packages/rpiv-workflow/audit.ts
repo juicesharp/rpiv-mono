@@ -170,8 +170,8 @@ export interface TerminalFailureArgs {
 /**
  * The ONE `(status, notifyLevel)` pairing — notifyLevel is DERIVED from status
  * (failed → error, aborted → warning), so a mismatch is unrepresentable. The
- * overload-resolution body that `failedArgs`/`abortedArgs` used to spell twice
- * lives here once. Modeled after `stopFailureArgs` (parameterize by status).
+ * overload-resolution body for `failedArgs`/`abortedArgs` lives here once.
+ * Modeled after `stopFailureArgs` (parameterize by status).
  */
 function terminalArgsOf(status: "failed" | "aborted", a: FailureText | string, b?: string): TerminalFailureArgs {
 	const f = typeof a === "string" ? { toast: a, error: b as string } : a;

@@ -95,7 +95,7 @@ describe("session-capture", () => {
 			expect(getCapturedUiContext()).toBe(FAKE_UI);
 		});
 
-		it("skips a detached child's session_start (relay ui) — never re-points the capture (Phase 7.2)", async () => {
+		it("skips a detached child's session_start (relay ui) — never re-points the capture", async () => {
 			__resetRunLaneRegistry();
 			recordRun("child-run", "ship");
 			const { pi, sessionStart } = makePi();

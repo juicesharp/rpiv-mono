@@ -47,7 +47,7 @@ describe("unitRowFields", () => {
 });
 
 // ---------------------------------------------------------------------------
-// recordTerminalFailure — the failure row's append is checked (C6): a dropped
+// recordTerminalFailure — the failure row's append is checked: a dropped
 // failure row makes the trail's tail read "completed", so a later resume would
 // route onward past the stage that actually failed.
 // ---------------------------------------------------------------------------
@@ -110,11 +110,11 @@ describe("recordTerminalFailure", () => {
 		expect(readAllStages(tmpDir, "run-1").map((r) => r.status)).toEqual(["failed"]);
 		expect(state.telemetry.droppedFailureRows).toEqual([]);
 		expect(notifications.map((n) => n.msg)).toEqual(["boom"]);
-		// T4: the discriminated outcome lands whole — status + error together.
+		// the discriminated outcome lands whole — status + error together.
 		expect(state.termination).toEqual({ status: "failed", error: "build failed" });
 	});
 
-	it("records user cancellation as a first-class outcome — no error-string sniffing (T4)", () => {
+	it("records user cancellation as a first-class outcome — no error-string sniffing", () => {
 		const { ctx } = makeCtx();
 		const state = freshState();
 
@@ -134,7 +134,7 @@ describe("recordTerminalFailure", () => {
 		expect(readAllStages(tmpDir, "run-1").map((r) => r.status)).toEqual(["skipped"]);
 	});
 
-	it("records an aborted outcome as its own termination status (T4)", async () => {
+	it("records an aborted outcome as its own termination status", async () => {
 		const { ctx } = makeCtx();
 		const state = freshState();
 
@@ -148,7 +148,7 @@ describe("recordTerminalFailure", () => {
 		expect(state.termination).toEqual({ status: "aborted", error: "workflow aborted at build" });
 	});
 
-	it("surfaces a dropped failure-row append: warning notify + telemetry entry (C6)", async () => {
+	it("surfaces a dropped failure-row append: warning notify + telemetry entry", async () => {
 		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 		try {
 			const { ctx, notifications } = makeCtx();
@@ -171,7 +171,7 @@ describe("recordTerminalFailure", () => {
 		}
 	});
 
-	it("recordCancellation surfaces a dropped row (A3) — the guard now fires before terminate", () => {
+	it("recordCancellation surfaces a dropped row — the guard now fires before terminate", () => {
 		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 		try {
 			const { ctx, notifications } = makeCtx();
@@ -179,8 +179,8 @@ describe("recordTerminalFailure", () => {
 
 			recordCancellation(ctx, auditFor("/dev/null/impossible", state));
 
-			// A3: the dropped-row guard now fires for recordCancellation too (it
-			// was the only one of the three writers that skipped it).
+			// The dropped-row guard now fires for recordCancellation too (it was
+			// the only one of the three writers that skipped it).
 			expect(state.telemetry.droppedFailureRows).toEqual(["build"]);
 			expect(notifications).toContainEqual({ msg: MSG_FAILURE_ROW_DROPPED("build"), level: "warning" });
 			// The cancellation outcome still lands — the guard runs BEFORE terminate().

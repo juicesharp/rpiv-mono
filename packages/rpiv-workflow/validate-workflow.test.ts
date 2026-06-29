@@ -464,7 +464,7 @@ describe("validateWorkflow — route-edge schema check", () => {
 		expect(issues.some((i) => i.code === "route-reads-unvalidated-data" && i.stage === "code-review")).toBe(true);
 	});
 
-	it("a SCRIPT stage is not exempted by a contract under its record key (C2)", () => {
+	it("a SCRIPT stage is not exempted by a contract under its record key", () => {
 		// "code-review" carries a covering contract — but the stage runs a script
 		// and never dispatches the skill, so the contract must not exempt it.
 		const contracts: SkillContractMap = new Map([
@@ -567,7 +567,7 @@ describe("validateWorkflow — reads-channel (meta) compatibility", () => {
 		).toEqual([]);
 	});
 
-	it("surfaces a comparator throw as a WARNING instead of silently disabling the gate (C13)", () => {
+	it("surfaces a comparator throw as a WARNING instead of silently disabling the gate", () => {
 		registerCompositionComparator("plans", () => {
 			throw new Error("comparator bug");
 		});
@@ -579,7 +579,7 @@ describe("validateWorkflow — reads-channel (meta) compatibility", () => {
 		expect(issues.filter((i) => i.code === "reads-channel-incompatible")).toEqual([]);
 	});
 
-	it("a SCRIPT consumer named after a signed skill does not inherit its contract (C2)", () => {
+	it("a SCRIPT consumer named after a signed skill does not inherit its contract", () => {
 		registerCompositionComparator("plans", kindComparator);
 		const scriptConsumer: Workflow = {
 			name: "script-consumer",
@@ -599,7 +599,7 @@ describe("validateWorkflow — reads-channel (meta) compatibility", () => {
 		expect(issues.filter((i) => i.severity === "error")).toEqual([]);
 	});
 
-	it("a PROMPT publisher named after a signed skill is not a phantom signed publisher (C2)", () => {
+	it("a PROMPT publisher named after a signed skill is not a phantom signed publisher", () => {
 		registerCompositionComparator("plans", kindComparator);
 		const promptPublisher: Workflow = {
 			name: "prompt-publisher",
@@ -1486,7 +1486,7 @@ describe("validateWorkflow — issue shape", () => {
 		}
 	});
 
-	it("skips reachability when an EdgeFn lacks .targets — gated on the issue CODE (C5)", () => {
+	it("skips reachability when an EdgeFn lacks .targets — gated on the issue CODE", () => {
 		const naked: EdgeFn = () => "ghost";
 		const w: Workflow = {
 			name: "gated",

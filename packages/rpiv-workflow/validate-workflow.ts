@@ -68,8 +68,7 @@ export function validateWorkflow(
 	checkMissingEdges(workflow, r);
 	// Skip reachability when an EdgeFn lacks `.targets` — the BFS would emit
 	// "unreachable from start" cascades whose root cause is the metadata error
-	// already reported. Gated on the issue CODE (machine-readable — the
-	// message-regex this replaced was finding C5).
+	// already reported. Gated on the issue CODE (machine-readable).
 	if (!issues.some((i) => i.code === "edge-fn-no-targets")) checkReachability(workflow, r);
 
 	checkStageSemantics(workflow, r);

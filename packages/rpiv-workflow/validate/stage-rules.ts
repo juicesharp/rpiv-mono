@@ -379,9 +379,9 @@ function checkScriptStageInvariants(stage: StageDef, report: ReportFn): void {
  * judge verdict channels from `loop` (assess) and `verify` — judge sessions
  * run as `produces` and publish to `judge.outcome.name` (`judgeStageDef`). A
  * PANEL slot publishes one channel per member verdict plus the folded verdict
- * (`panelVerdictChannel`). The old produces-only scan missed verdict channels,
- * so a downstream `reads: ["<verdict>"]` falsely errored at load while the
- * runtime `ensureNamedReads` preflight would have passed.
+ * (`panelVerdictChannel`). The scan includes verdict channels, so a downstream
+ * `reads: ["<verdict>"]` doesn't falsely error at load while the runtime
+ * `ensureNamedReads` preflight would pass.
  *
  * Computed ONCE by the orchestrator and threaded to both consumers
  * (`checkReadsReferences`, `checkFanoutSource`).

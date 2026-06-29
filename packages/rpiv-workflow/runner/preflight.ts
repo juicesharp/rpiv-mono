@@ -53,9 +53,8 @@ export function ensureLoopNotContinue(stage: ResolvedStage): void {
 }
 
 /**
- * Loop-stage preflights, run UNIFORMLY for every loop kind (the old
- * shortcuts bypassed them: a ≥1-unit fanout ran none; iterate ran none;
- * assess re-ran two inline):
+ * Loop-stage preflights, run UNIFORMLY for every loop kind — no kind takes a
+ * shortcut:
  *   - ensureNamedReads + ensureSkillRegistered for ALL loops (every loop's
  *     units dispatch `/skill:<skill>`, and generators read declared channels);
  *   - ensureUpstreamArtifact for ASSESS ONLY — the round-0 producer arg is

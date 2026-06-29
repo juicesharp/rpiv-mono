@@ -1,5 +1,5 @@
 /**
- * lane-progress tests — the root-gated lifecycle→registry bridge (Phase 8).
+ * lane-progress tests — the root-gated lifecycle→registry bridge.
  *
  * Mirrors the execution-host provider-hook tests: registration is gated to the
  * ROOT launcher's session_start (a branded relay ui / a non-UI session skip it),
@@ -88,7 +88,7 @@ function bundle(): Bundle {
 }
 
 /** Populate the session_start capture so getCapturedUiContext() returns REAL_UI —
- *  the onWorkflowEnd toast (Phase A) fires on the captured launcher UI. */
+ *  the onWorkflowEnd toast fires on the captured launcher UI. */
 async function captureUi(ui: ExtensionUIContext): Promise<void> {
 	let handler: SessionStartHandler | undefined;
 	const pi = {
@@ -113,7 +113,7 @@ afterEach(() => {
 	vi.restoreAllMocks();
 });
 
-describe("registerLaneProgressHook (Phase 8)", () => {
+describe("registerLaneProgressHook", () => {
 	it("registers the lifecycle bridge on the ROOT launcher's session_start", async () => {
 		const { pi, sessionStart } = makePi();
 		registerLaneProgressHook(pi);
@@ -180,7 +180,7 @@ describe("lane-progress event mapping", () => {
 		expect(getLane("run-1")?.progress?.phase).toBe("error");
 	});
 
-	it("onStageError carries the failure reason onto progress (Problem 1)", async () => {
+	it("onStageError carries the failure reason onto progress", async () => {
 		const b = await register();
 		recordRun("run-1", "ship");
 		b.onStageError?.({ stageNumber: 2, name: "blueprint" }, "blueprint finished without producing a path", {
@@ -359,7 +359,7 @@ describe("pull-loop units.total contract (units field is fanout-only)", () => {
 	});
 });
 
-describe("per-unit sub-rows (Phase 4 — onUnitStart/onUnitEnd lifecycle)", () => {
+describe("per-unit sub-rows — onUnitStart/onUnitEnd lifecycle", () => {
 	async function register(): Promise<Bundle> {
 		const { pi, sessionStart } = makePi();
 		registerLaneProgressHook(pi);
@@ -569,7 +569,7 @@ describe("per-unit sub-rows (Phase 4 — onUnitStart/onUnitEnd lifecycle)", () =
 	});
 });
 
-describe("onWorkflowEnd — terminal retention + completion toast (Phase A)", () => {
+describe("onWorkflowEnd — terminal retention + completion toast", () => {
 	async function register(): Promise<Bundle> {
 		const { pi, sessionStart } = makePi();
 		registerLaneProgressHook(pi);
@@ -630,7 +630,7 @@ describe("onWorkflowEnd — terminal retention + completion toast (Phase A)", ()
 		expect(REAL_UI.notify).toHaveBeenCalledWith(expect.stringContaining("failed"), "error");
 	});
 
-	it("failed → retains termination.error on the lane + injects the short reason into the toast (Problem 1)", async () => {
+	it("failed → retains termination.error on the lane + injects the short reason into the toast", async () => {
 		await captureUi(REAL_UI);
 		const b = await register();
 		recordRun("run-1", "ship");

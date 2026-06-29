@@ -1,5 +1,5 @@
 /**
- * command-run.test.ts — the float boundary (Phase 3 / FR1).
+ * command-run.test.ts — the float boundary.
  *
  * `/wf` and `/wf @<ref>` no longer await the run — they `void` it off the prompt
  * with a `.then(surfacePreflight).catch(toast)` tail so the prompt returns

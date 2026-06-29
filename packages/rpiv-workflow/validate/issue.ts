@@ -7,8 +7,7 @@
  * never drift between two emissions of the same rule) and its message
  * template. Checks report `(code, params)` through an `IssueReporter`; the
  * reporter renders the prose once, here. Consumers filter/assert on `code`
- * — never on message text (the message-regex control flow this replaces was
- * finding C5).
+ * — never on message text.
  *
  * Messages NEVER embed the stage name — `stage` is carried structurally on
  * the issue and display renderers compose the attribution
@@ -299,10 +298,9 @@ type ReportArgs<C extends ValidationIssueCode> = keyof ValidationIssueParamsOf<C
 export type ReportFn = <C extends ValidationIssueCode>(code: C, ...args: ReportArgs<C>) => void;
 
 /**
- * Issue reporter bound to one workflow + one sink — replaces the
- * `(w, name, stage, issues)` four-tuple every check used to thread. Checks
- * hold either the workflow-level `report` or a `forStage(name)` binding;
- * construction (severity lookup + render) happens in exactly one place.
+ * Issue reporter bound to one workflow + one sink. Checks hold either the
+ * workflow-level `report` or a `forStage(name)` binding; construction
+ * (severity lookup + render) happens in exactly one place.
  */
 export interface IssueReporter {
 	/** Workflow-level issue (no stage attribution). */

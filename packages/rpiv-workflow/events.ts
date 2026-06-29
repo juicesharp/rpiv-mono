@@ -324,8 +324,8 @@ export function buildLifecycleContext(args: {
  * structurally so this base-layer module never imports the runtime types).
  * Captured per fire so listeners always see the latest `state` snapshot.
  * THE one RunContext → LifecycleContext projection — the runner, the loop
- * driver, and the resume entries all share it (the old per-module clones
- * were kept aligned only by convention).
+ * driver, and the resume entries all share it; no per-module clones to keep
+ * aligned by convention.
  */
 export function lifecycleCtxFor(run: {
 	cwd: string;

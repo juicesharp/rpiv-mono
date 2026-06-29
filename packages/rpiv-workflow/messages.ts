@@ -14,8 +14,7 @@
  * One structured descriptor per terminal-failure kind — the `toast` (the
  * one-shot `ctx.ui.notify` line) and the `error` (what lands in
  * `state.termination.error` + the JSONL row's `errMsg`) rendered from ONE
- * factory so the two channels can never drift again (the old MSG_/ERR_
- * twin constants had already diverged in content). Halt sites hand the
+ * factory so the two channels can't drift. Halt sites hand the
  * descriptor to `failedArgs`/`abortedArgs` (audit.ts) or spread it into
  * `StagePreflightError`.
  */

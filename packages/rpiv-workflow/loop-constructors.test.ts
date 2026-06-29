@@ -425,7 +425,7 @@ describe("synthesizeVerifyLoop / effectiveLoopOf", () => {
 	});
 });
 
-// === Panel — Phase 2: construction + sugar folds (no execution) ============
+// === Panel — construction + sugar folds (no execution) =======================
 
 /** A minimal member verdict — sugar folds only read what `pred` interprets. */
 const verdict = (ok: boolean) => ({ data: { ok } }) as unknown as Output;
@@ -513,7 +513,7 @@ describe("panelShapeIssues / panel()", () => {
 	});
 });
 
-// === Panel — Phase 4: member-walking at introspection sites ================
+// === Panel — member-walking at introspection sites ===========================
 
 describe("panel introspection (panelSpecOf / judgeSlotSpecOf / loopSpecOf / describeFlow)", () => {
 	const memberSpecs = [

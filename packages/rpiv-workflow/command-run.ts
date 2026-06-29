@@ -111,7 +111,7 @@ export async function handleWorkflowCommand(host: WorkflowHost, args: string, ct
 		return;
 	}
 
-	// Float the run off the prompt (FR1): /wf returns immediately; the run executes
+	// Float the run off the prompt: /wf returns immediately; the run executes
 	// detached and appears as a lane. runWorkflow returns an envelope (never throws on
 	// run failure), but a thrown predicate/invariant could still bubble — .catch keeps
 	// Pi's dispatcher from printing a raw stack AND a floated promise from going
@@ -143,7 +143,7 @@ async function handleResume(host: WorkflowHost, ctx: WorkflowHostContext, ref: s
 		ctx.ui.notify(MSG_RESUME_USAGE, "error");
 		return;
 	}
-	// Float the resume off the prompt (FR1) — identical shape to the run path.
+	// Float the resume off the prompt — identical shape to the run path.
 	void resumeWorkflowByRunId(ctx, ref, { host })
 		.then((result) => {
 			// A failure with no runId is a no-JSONL refusal (run-id didn't resolve,

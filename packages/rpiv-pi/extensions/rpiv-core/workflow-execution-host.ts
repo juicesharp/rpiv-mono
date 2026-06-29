@@ -98,13 +98,13 @@ export function createWorkflowExecution(
 		maxConcurrency: DEFAULT_MAX_CONCURRENCY, // 4 — background-lane cap
 	});
 
-	// FR1: record this run as a switchable lane at launch (appears in the ambient
+	// Record this run as a switchable lane at launch (appears in the ambient
 	// overlay while in-flight). Done unconditionally (headless too) so eviction is symmetric.
 	recordRun(runId, name ?? runId, { workflow, input });
 
 	// Abort tap — FOCUS-GATED (the float fix). Pre-float, /wf awaited and the run
 	// WAS the foreground, so a global ESC/Ctrl-C abort was correct. Once the run
-	// floats (Phase 3), the editor is the foreground and N runs can be in-flight at
+	// floats, the editor is the foreground and N runs can be in-flight at
 	// once — a global tap would (a) steal the editor's ESC/Ctrl-C and (b) abort an
 	// arbitrary one of N runs. So: consume Ctrl-C ONLY when THIS run is the lane the
 	// user has switched into (getFocusedRun() === runId); abort then targets exactly
@@ -122,13 +122,13 @@ export function createWorkflowExecution(
 				return undefined; // pass through (editor / focused overlay / sibling taps)
 			})
 		: undefined;
-	// Phase D — expose this run's abort so the manager can cancel it WITHOUT the user
+	// Expose this run's abort so the manager can cancel it WITHOUT the user
 	// switching in (the Ctrl-C tap above is focus-gated). Headless runs have no tap, so
 	// only wire it with a UI.
 	if (observer.hasUI) setLaneAbort(runId, () => ac.abort());
 
 	// dispose runs in the runner's `finally` when the (floated) run settles — unsubscribe
-	// the keystroke tap. The lane is RETAINED on terminal status (Phase A): `onWorkflowEnd`
+	// the keystroke tap. The lane is RETAINED on terminal status: `onWorkflowEnd`
 	// is the normal retirement path; this is the fallback for a throw/crash that bypassed it
 	// (a still-"running" lane at dispose means no terminal event fired → retire as aborted),
 	// so a lane can never be stranded "running" forever.
@@ -140,7 +140,7 @@ export function createWorkflowExecution(
 }
 
 /**
- * Wire the execution-host provider to the ROOT launcher's session_start (Phase 7.2).
+ * Wire the execution-host provider to the ROOT launcher's session_start.
  *
  * The provider lives in a process-global, last-writer-wins box
  * (rpiv-workflow/execution-host.ts). A detached child re-loads rpiv-core, so if

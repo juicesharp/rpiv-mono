@@ -124,7 +124,7 @@ export async function runFanoutWaves(
  * former single-shot `runFanoutDispatch` ran, MINUS the genAbort lifecycle (the
  * orchestrator owns it across waves) and the terminal disposition (the orchestrator
  * runs the tail once, after the last wave). NEVER throws — an unexpected worker
- * rejection lands a terminal-failure row via `recordWorkerThrow` (D12); allSettled
+ * rejection lands a terminal-failure row via `recordWorkerThrow`; allSettled
  * guarantees every unit settled.
  */
 async function dispatchWave(

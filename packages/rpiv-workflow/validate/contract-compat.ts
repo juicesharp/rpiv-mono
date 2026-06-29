@@ -12,7 +12,7 @@
  *   - linear `data` + `status` → RUNTIME (`ensureContractInputValid`).
  *   - produces self-check → PRODUCE-TIME (`extraction.ts:effectiveOutputSchema`).
  *
- * Per-stage schema fallback (DECIDED, D4): when a stage carries no contract,
+ * Per-stage schema fallback (DECIDED): when a stage carries no contract,
  * `checkEdgeSchemaCompat` falls back to the stage's own
  * `outputSchema`/`inputSchema`. That fallback lives HERE, not in harvest:
  * harvest derives per-SKILL contracts from dispatching stages only
@@ -75,7 +75,7 @@ export function checkPredicateSchemas(
  * (registry-sourced, falling back to the stage's own output/input schema — see
  * the module header for why the fallback lives here). Warns on a definite
  * mismatch; degrades on predicate/STOP edges and opaque schemas via the shared
- * `compareDataChannel` core (same engine `canCompose` consults — D4).
+ * `compareDataChannel` core (same engine `canCompose` consults).
  *
  * Edge-local is correct here — the rolling primary flows along edges. The
  * many-to-one NAMED (`reads`) channel is handled by `checkReadsChannelCompat`.

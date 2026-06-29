@@ -83,7 +83,7 @@ describe("run-lane-registry", () => {
 		});
 
 		it("REACTIVATES a retained terminal lane on re-record (resume reuses the run id)", () => {
-			// A run fails and is retained (Phase A): terminal status + a transcript snapshot.
+			// A run fails and is retained: terminal status + a transcript snapshot.
 			recordRun("run-1", "ship");
 			setLaneProgress("run-1", {
 				stageNumber: 2,
@@ -159,7 +159,7 @@ describe("run-lane-registry", () => {
 		});
 	});
 
-	describe("retireRun (Phase A)", () => {
+	describe("retireRun — retain terminal lanes", () => {
 		it("retains the lane with terminal status, snapshots the branch, clears the session, settles pending", () => {
 			recordRun("run-1", "ship");
 			const branch = [{ type: "message" }];
@@ -180,7 +180,7 @@ describe("run-lane-registry", () => {
 			expect(p.resolve).toHaveBeenCalledWith(undefined); // stalled child never hangs
 		});
 
-		it("snapshots cwd + per-tool definitions for the toolCall names in the branch (Phase 4)", () => {
+		it("snapshots cwd + per-tool definitions for the toolCall names in the branch", () => {
 			recordRun("run-1", "ship");
 			const branch = [
 				{ type: "message", message: { role: "assistant", content: [{ type: "toolCall", name: "bash" }] } },
@@ -311,7 +311,7 @@ describe("run-lane-registry", () => {
 			expect(unit?.finalCwd).toBe("/tmp");
 		});
 
-		it("retireRun preserves finalUsage (KEEP, D5) — still readable post-retirement", () => {
+		it("retireRun preserves finalUsage — still readable post-retirement", () => {
 			recordRun("run-1", "ship");
 			const stats = {
 				tokens: { input: 100, output: 50, cacheRead: 10, cacheWrite: 5, total: 165 },
@@ -356,7 +356,7 @@ describe("run-lane-registry", () => {
 		});
 	});
 
-	describe("listLanesForDisplay (Phase B + D4 flatten)", () => {
+	describe("listLanesForDisplay — priority sort + fan-out flatten", () => {
 		it("stable priority sort: needs-input → running → terminal, insertion order within a bucket", () => {
 			recordRun("done-1", "a");
 			retireRun("done-1", "completed");
@@ -391,7 +391,7 @@ describe("run-lane-registry", () => {
 		});
 	});
 
-	describe("setLaneAbort (Phase D)", () => {
+	describe("setLaneAbort", () => {
 		it("stores an abort handle invoked via getLane().abort()", () => {
 			recordRun("run-1", "ship");
 			const abort = vi.fn();
@@ -405,7 +405,7 @@ describe("run-lane-registry", () => {
 		});
 	});
 
-	describe("needsInputSince (Phase C)", () => {
+	describe("needsInputSince", () => {
 		it("stamps on first enqueue, holds across a second enqueue AND a full drain, clears only at retire", () => {
 			recordRun("run-1", "ship");
 			expect(getLane("run-1")?.needsInputSince).toBeUndefined();
@@ -445,7 +445,7 @@ describe("run-lane-registry", () => {
 		});
 	});
 
-	describe("setLaneSessionFile / lastSessionFile (Problem 2 durable path)", () => {
+	describe("setLaneSessionFile / lastSessionFile — durable disk-fallback path", () => {
 		it("records the durable session-file pointer without notifying", () => {
 			recordRun("run-1", "ship");
 			const listener = vi.fn();
@@ -562,7 +562,7 @@ describe("run-lane-registry", () => {
 		});
 	});
 
-	describe("setLaneProgress (Phase 8)", () => {
+	describe("setLaneProgress", () => {
 		it("sets, updates, and clears progress, notifying each time", () => {
 			recordRun("run-1", "ship");
 			const listener = vi.fn();
@@ -737,7 +737,7 @@ describe("run-lane-registry", () => {
 			expect(getDockState().selection).toBe(0);
 		});
 
-		it("clamp ceiling reaches the last UNIT sub-row of a flattened fan-out lane (D4)", () => {
+		it("clamp ceiling reaches the last UNIT sub-row of a flattened fan-out lane", () => {
 			recordRun("run-1", "ship");
 			// Lane row + 3 unit sub-rows ⇒ 4 flattened display rows (indices 0..3).
 			setUnitStarted("run-1", 0, "phase 1/3");
@@ -808,12 +808,12 @@ describe("run-lane-registry", () => {
 	});
 
 	// -------------------------------------------------------------------------
-	// Phase 7.3: process-global slot. A detached child re-loads rpiv-core and may
+	// Process-global slot. A detached child re-loads rpiv-core and may
 	// get a SEPARATE module instance; the registry must still be ONE shared store
 	// (anchored on globalThis[Symbol.for(...)]) so the launcher and a child see the
 	// same lanes.
 	// -------------------------------------------------------------------------
-	describe("process-global registry (Phase 7.3)", () => {
+	describe("process-global registry", () => {
 		it("a fresh module instance reads the SAME registry (shared global slot)", async () => {
 			recordRun("g-1", "ship");
 			// vi.resetModules() forces the next import to evaluate a FRESH module

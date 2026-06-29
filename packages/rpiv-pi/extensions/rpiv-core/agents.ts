@@ -349,7 +349,7 @@ export function injectModelFrontmatter(content: string, agentFile: string, confi
 	if (!bounds) return content;
 
 	const keysToSet: { key: string; value: string }[] = [];
-	// D9 (post-slash-canonical migration): models.json values are byte-equal to
+	// (post-slash-canonical migration): models.json values are byte-equal to
 	// the agent frontmatter form (both `provider/modelId`). No translation step
 	// — re-injecting produces identical bytes by construction; the idempotency
 	// invariant at injectModelFrontmatter's JSDoc strengthens from "deterministic
@@ -397,7 +397,7 @@ function processSourceEntries(
 			continue;
 		}
 		// Inject configured model/thinking frontmatter BEFORE hashing so the
-		// manifest hash matches what actually lands on disk (D4: hash-after-transform).
+		// manifest hash matches what actually lands on disk (hash-after-transform).
 		// injectModelFrontmatter strips .md from entry for config lookup and is a
 		// no-op when no override is configured.
 		const injected = injectModelFrontmatter(srcContent.toString("utf-8"), entry, config);
@@ -650,8 +650,8 @@ export function cleanupPerCwdAgents(cwd: string): CleanupResult {
 			return result;
 		}
 
-		// Compare against the injected form — the dest holds injected content
-		// (D4), so comparing raw source would falsely flag every configured agent
+		// Compare against the injected form — the dest holds injected content,
+		// so comparing raw source would falsely flag every configured agent
 		// as diverged. injectModelFrontmatter strips .md from name for lookup.
 		const cleanupInjected = injectModelFrontmatter(srcContent.toString("utf-8"), name, cleanupConfig);
 		if (sha256(destContent) !== sha256(cleanupInjected)) {

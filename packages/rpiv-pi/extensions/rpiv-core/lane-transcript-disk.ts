@@ -1,5 +1,5 @@
 /**
- * lane-transcript-disk — the DURABLE transcript fallback (Problem 2).
+ * lane-transcript-disk — the DURABLE transcript fallback.
  *
  * When a retired lane has neither a live session nor an in-memory `finalBranch`
  * snapshot, the full session jsonl still exists on disk under the run dir. This
@@ -53,7 +53,7 @@ function resolveSessionFile(runId: string, lastSessionFile: string | undefined, 
 }
 
 /**
- * Load a run's transcript branch from its on-disk session jsonl (Problem 2). Prefers
+ * Load a run's transcript branch from its on-disk session jsonl. Prefers
  * `lastSessionFile`; falls back to a newest-jsonl glob of the run's session dir
  * (`cwd` defaults to the launcher's working directory). Returns undefined — fail-soft —
  * when the file can't be resolved, opened, or carries no entries.

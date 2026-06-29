@@ -146,10 +146,10 @@ interface DetachedExecutor {
 /**
  * Detach to the executor host — the SHARED detach BOTH entry points run through,
  * so a resumed stage's `spawnChild` / reattach / fork runs against the SAME real
- * executor as a live run. Resume used to skip this and execute on the bare
- * launcher ctx (a `WorkflowLauncherContext` with no `spawnChild`/`maxConcurrency`)
- * — a production gap masked only because resume tests injected a `spawnChild`
- * directly. Building the host HERE for both paths closes it (the L4-01 fix).
+ * executor as a live run. Building the host HERE for both paths keeps resume
+ * off the bare launcher ctx (a `WorkflowLauncherContext` with no
+ * `spawnChild`/`maxConcurrency`) — the only place such a gap could hide is a
+ * test injecting a `spawnChild` directly.
  *
  * Threads the provider's `resolveModel` + abort `signal` too, so resumed children
  * get per-stage models and cooperative cancellation exactly like live. The

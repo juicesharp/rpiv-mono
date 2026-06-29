@@ -8,6 +8,7 @@
 	],
 	"scripts": {
 		"check": "biome check --write --error-on-warnings . && tsc --noEmit -p tsconfig.base.json",
+		"check:decision-codes": "node scripts/check-no-decision-codes.mjs",
 		"build:site": "npm run build --workspace=@juicesharp/rpiv-site",
 		"test": "vitest run",
 		"coverage": "vitest run --coverage",

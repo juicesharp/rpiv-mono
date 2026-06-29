@@ -1,5 +1,5 @@
 /**
- * lane-transcript-disk tests — the durable on-disk transcript fallback (Problem 2).
+ * lane-transcript-disk tests — the durable on-disk transcript fallback.
  *
  * A real session is written through the SDK's own SessionManager (no hand-crafted
  * jsonl), then re-opened via loadBranchFromDisk to prove the round-trip: path

@@ -26,7 +26,7 @@ import type { LayerOutcome, LoadAccumulator } from "./merge.js";
 
 // `isDispatchingStage` lives beside `resolveSkill` in chain-state.ts (the
 // validator and harvest consume it without reaching into load/); re-exported
-// here for existing consumers of the old path.
+// here for existing consumers.
 export { isDispatchingStage } from "../stage-identity.js";
 
 export function aliasSkills(w: Workflow, aliases: Record<string, string>): Workflow {

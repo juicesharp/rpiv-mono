@@ -121,7 +121,7 @@ describe("parseArgs", () => {
 		});
 	});
 
-	it("leaves a MID-INPUT --name in the prompt text untouched and flags it (C11)", () => {
+	it("leaves a MID-INPUT --name in the prompt text untouched and flags it", () => {
 		// `/wf mid fix the --name handling bug` — the flag tokens are the user's
 		// own prompt text; silently claiming "handling" as a run name would
 		// corrupt the input seed.
@@ -293,7 +293,7 @@ describe("/wf — --name flag", () => {
 		expect(vi.mocked(runWorkflow).mock.calls[0]?.[1]?.name).toBe("auth");
 	});
 
-	it("warns on a mid-input --name and keeps it in the workflow input (C11)", async () => {
+	it("warns on a mid-input --name and keeps it in the workflow input", async () => {
 		const { pi, captured } = createMockPi();
 		registerWorkflowCommand(pi);
 		const ctx = createMockCommandCtx({ hasUI: true });

@@ -21,11 +21,10 @@ import { StagePreflightError } from "./errors.js";
 /**
  * Explicit result of one chain-walk step, threaded up through
  * `advanceChain` / `runStage` / `runStageOrRecordFailure`. The walk's halt
- * protocol used to be record-then-quietly-unwind by convention — every halt
- * site had to remember a bare `return` after `recordTerminalFailure`. With a
+ * protocol is record-then-halt, not record-then-quietly-unwind: with a
  * non-void return type, a branch that records a failure but forgets to stop
- * the walk no longer typechecks: every arm must RETURN an outcome, and halts
- * read `return haltChain(...)`.
+ * the walk no longer typechecks — every arm must RETURN an outcome, and
+ * halts read `return haltChain(...)`.
  *
  *  - `"halted"`     — a terminal failure/abort row was recorded; the walk
  *                     stops here and unwinds.

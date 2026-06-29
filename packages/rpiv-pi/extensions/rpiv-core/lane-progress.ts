@@ -1,6 +1,6 @@
 /**
  * lane-progress — bridges rpiv-workflow's lifecycle bus into the run-lane
- * registry so the ambient overlay shows LIVE stage progress (Phase 8).
+ * registry so the ambient overlay shows LIVE stage progress.
  *
  * The base plan deferred "rich progress" on the premise it needed a new
  * runner→host→registry report path. That path already exists: rpiv-workflow
@@ -74,7 +74,7 @@ function guard(): ProgressGuard {
 }
 
 /**
- * Runs whose CURRENT loop generation is a fan-out (D8 gate). `onUnitStart`/`onUnitEnd`
+ * Runs whose CURRENT loop generation is a fan-out. `onUnitStart`/`onUnitEnd`
  * fire for EVERY loop kind, but only concurrent fan-out units become individually-
  * addressable sub-rows — a sequential iterate/assess unit stays on the lane's single
  * slot (the host keys it to the sentinel). Seeded on a fan-out `onLoopStart`, dropped on
@@ -86,7 +86,7 @@ const fanoutRuns = new Set<string>();
 /**
  * Wire the lifecycle→registry bridge to the ROOT launcher's session_start.
  * Skipped for a detached foreground child (branded relay ui) and any non-UI
- * session — the same gate the execution-host provider hook uses (Phase 7.2).
+ * session — the same gate the execution-host provider hook uses.
  */
 export function registerLaneProgressHook(pi: ExtensionAPI): void {
 	pi.on("session_start", async (_event: unknown, ctx: { hasUI?: boolean; ui?: ExtensionUIContext }) => {
@@ -139,7 +139,7 @@ export async function registerLaneProgress(): Promise<void> {
 					phase: "retry",
 					attempt,
 				}),
-			// Carry the stage's failure cause (Problem 1) so the dock row can surface WHY
+			// Carry the stage's failure cause so the dock row can surface WHY
 			// it failed before the run retires — no longer discarded.
 			onStageError: (stage, error, ctx) => {
 				// Orphan sweep (the asymmetric onUnitStart…onUnitEnd bracket): a fail-fast
@@ -171,10 +171,10 @@ export async function registerLaneProgress(): Promise<void> {
 				if (prog) setLaneProgress(ctx.runId, { ...prog, visited });
 			},
 			onLoopStart: (stage, info, ctx) => {
-				// A new fan-out generation REPLACES the prior one's sub-rows (D2) — the engine
+				// A new fan-out generation REPLACES the prior one's sub-rows — the engine
 				// resets cursor.slots per loop, so the registry mirrors only the current
 				// generation. A non-fan-out loop (iterate/assess/verify) drops the gate so its
-				// sequential units never materialize sub-rows (D8).
+				// sequential units never materialize sub-rows.
 				if (info.kind === "fanout") {
 					clearUnitLanes(ctx.runId);
 					fanoutRuns.add(ctx.runId);
@@ -193,7 +193,7 @@ export async function registerLaneProgress(): Promise<void> {
 				});
 			},
 			// NEW — the previously-missing half of the bracket. Materialize a per-unit
-			// sub-row (label + running) for fan-out units ONLY (D8). The host publishes the
+			// sub-row (label + running) for fan-out units ONLY. The host publishes the
 			// live session separately (setCurrentSession at this index); both upsert the
 			// same key in either order. The lifecycle bus is the sole cross-package channel.
 			onUnitStart: (_stage, unit, ctx) => {
@@ -203,7 +203,7 @@ export async function registerLaneProgress(): Promise<void> {
 			// fold skips its sentinel), so it fires neither onStageError (recordUnitHalt skips it)
 			// nor onUnitEnd (the success path). Flip its sub-row ✗ HERE — otherwise it spins until
 			// onWorkflowEnd, where a completed run's sweep paints it ✓ (a failed unit shown as
-			// success). Fan-out only (D8); a missing/unchanged sub-row is a no-op.
+			// success). Fan-out only; a missing/unchanged sub-row is a no-op.
 			onUnitHalt: (_stage, unit, _reason, ctx) => {
 				if (fanoutRuns.has(ctx.runId)) markUnitDone(ctx.runId, unit.index, "failed");
 			},
@@ -237,7 +237,7 @@ export async function registerLaneProgress(): Promise<void> {
 					units,
 				});
 			},
-			// Phase A — the run terminated: RETAIN the lane with its terminal status (so
+			// The run terminated: RETAIN the lane with its terminal status (so
 			// it stays visible + its transcript stays viewable) and PUSH a completion
 			// toast to the launcher (the only signal the user gets if they walked away).
 			// This is the single writer of a terminal LaneStatus.
@@ -247,7 +247,7 @@ export async function registerLaneProgress(): Promise<void> {
 				const lane = getLane(ctx.runId);
 				const name = lane?.name ?? ctx.workflow;
 				// `termination.error` is the readable cause (the same text as the trail's
-				// errMsg) — retain it on the lane (Problem 1) for the dock chip + viewer header.
+				// errMsg) — retain it on the lane for the dock chip + viewer header.
 				const error = result.termination?.error;
 				// A completed run is 100% by definition. The bar's fraction is
 				// distinct-stages-visited / reachable-stages. The onRoute handler now credits

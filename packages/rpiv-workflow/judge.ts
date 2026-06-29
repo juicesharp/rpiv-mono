@@ -119,7 +119,7 @@ export type FoldFn = (verdicts: readonly Output[]) => unknown;
  * `outcome` is the canonical-vs-custom switch: ABSENT ⇒ the built-in
  * `PANEL_VERDICT` shape on the `<stage>-panel` channel (sugar fold); PRESENT ⇒
  * the author's schema + channel (raw fold). The two are kept disjoint by a hard
- * XOR enforced by the `panel()` factory (Phase 2) — never both.
+ * XOR enforced by the `panel()` factory — never both.
  */
 export interface PanelJudge {
 	kind: "panel";

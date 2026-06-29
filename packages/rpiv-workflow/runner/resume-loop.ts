@@ -89,11 +89,11 @@ export async function resumeLoopStage(
 }
 
 /**
- * One refusal recorder — the shared 3-step body the two resume recorders
- * (`recordMissingArtifactFailure` / `recordLoopDriftFailure`) used to spell:
- * resolve the terminal args + build the audit ctx + `recordTerminalFailure`.
- * Each caller supplies its own descriptor — a `FailureText` (missing-artifact)
- * or a `[notifyMsg, errMsg]` tuple (loop drift).
+ * One refusal recorder — the shared 3-step body for the two resume recorders
+ * (`recordMissingArtifactFailure` / `recordLoopDriftFailure`): resolve the
+ * terminal args + build the audit ctx + `recordTerminalFailure`. Each caller
+ * supplies its own descriptor — a `FailureText` (missing-artifact) or a
+ * `[notifyMsg, errMsg]` tuple (loop drift).
  */
 function recordResumeRefusal(
 	ctx: WorkflowHostContext,

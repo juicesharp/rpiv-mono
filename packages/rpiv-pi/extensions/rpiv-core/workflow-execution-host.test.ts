@@ -1,6 +1,6 @@
 /**
- * workflow-execution-host tests — the root-gated provider registration hook
- * (Phase 7.2). The execution-host provider lives in a process-global,
+ * workflow-execution-host tests — the root-gated provider registration hook.
+ * The execution-host provider lives in a process-global,
  * last-writer-wins box; a detached child re-loading rpiv-core must NOT register
  * it (else the next /wf dispatches through the child instance). The hook gates on
  * session_start: ROOT launcher (hasUI + real ui) registers; a foreground child
@@ -40,7 +40,7 @@ afterEach(() => {
 	vi.restoreAllMocks();
 });
 
-describe("registerWorkflowExecutionHostProviderHook (Phase 7.2)", () => {
+describe("registerWorkflowExecutionHostProviderHook", () => {
 	it("registers the provider on the ROOT launcher's session_start", async () => {
 		const { pi, sessionStart } = makePi();
 		registerWorkflowExecutionHostProviderHook(pi);

@@ -5,10 +5,10 @@
  * The launcher (root) owns this registry; detached runs are attached views under
  * it. A lane carries the run identity, a live status, the run's CURRENTLY-LIVE
  * child AgentSession (the viewer's transcript source), and a FIFO queue of
- * deferred UI requests from foreground-contract stages (FR5).
+ * deferred UI requests from foreground-contract stages.
  *
  * Lives in rpiv-pi (NOT rpiv-workflow): rpiv-workflow must not import rpiv-pi
- * (clean-install contract), so retained sessions + the registry + the FR5 relay
+ * (clean-install contract), so retained sessions + the registry + the deferred-UI relay
  * are all rpiv-side, and the "needs input" signal is a direct in-process call —
  * no new cross-package relay channel. Module-level state mirrors session-capture;
  * __resetRunLaneRegistry is wired into test/setup.ts beforeEach.
@@ -64,7 +64,7 @@ type CustomFactory = Parameters<ExtensionUIContext["custom"]>[0];
 type CustomOptions = Parameters<ExtensionUIContext["custom"]>[1];
 
 /**
- * A foreground-contract stage's deferred UI request (FR5). The relay captures the
+ * A foreground-contract stage's deferred UI request. The relay captures the
  * factory + options the child passed to ctx.ui.custom and an unresolved-promise
  * resolver; the manager replays the factory on the launcher's real ctx.ui.custom
  * when the user switches in, then calls resolve with the result — settling the
@@ -86,9 +86,9 @@ export interface PendingInput {
 export const SINGLE_UNIT_KEY = -1;
 
 /**
- * One fan-out unit's switchable sub-lane (Slice 1). Bundles everything that used to
+ * One fan-out unit's switchable sub-lane. Bundles everything that used to
  * live as a single scalar on `LaneEntry` — the live child session, the terminal
- * snapshot (branch/cwd/tool-defs), the durable disk-fallback pointer, and the FR5
+ * snapshot (branch/cwd/tool-defs), the durable disk-fallback pointer, and the
  * deferred-input queue — so each concurrent unit owns its own slot keyed by its
  * declared fan-out `index`. Under fan-out a sibling's teardown can never clobber
  * another's entry (each owns its key), which retires the slot-owner identity guard.
@@ -107,7 +107,7 @@ export interface UnitLane {
 	 *  undefined before the child spawns, between stages, or after teardown. */
 	currentSession: LaneSession | undefined;
 	/** Transcript snapshot captured at teardown WHILE the child is still alive
-	 *  (Problem 2, per unit) — rendered for a finished-but-retained unit. */
+	 *  (per unit) — rendered for a finished-but-retained unit. */
 	finalBranch?: unknown;
 	/** cwd captured alongside `finalBranch` so the snapshot's tool-result renderers
 	 *  resolve relative paths after the live session's `getCwd` is gone. */
@@ -118,18 +118,18 @@ export interface UnitLane {
 	/** Token usage captured at teardown WHILE the child is still alive — the
 	 *  structural twin of `finalBranch`: fail-soft (a throwing/malformed `getUsage`
 	 *  leaves ONLY this undefined, never the transcript), preserved by `retireRun`
-	 *  (KEEP, D5), and readable post-retirement via `getUnit`. */
+	 *  (KEEP), and readable post-retirement via `getUnit`. */
 	finalUsage?: LaneUsage;
 	/** This unit's most-recent persisted child session file — seeds the per-unit
 	 *  disk-jsonl fallback (`runId::index::lastSessionFile`). */
 	lastSessionFile?: string;
-	/** FIFO of THIS unit's deferred foreground-stage UI requests (FR5). The relay
+	/** FIFO of THIS unit's deferred foreground-stage UI requests. The relay
 	 *  enqueues onto the unit it was bound to; the switcher drains only this queue. */
 	readonly pendingInput: PendingInput[];
 }
 
 /**
- * Live stage progress for a lane (Phase 8) — sourced from the workflow lifecycle
+ * Live stage progress for a lane — sourced from the workflow lifecycle
  * bus (lane-progress.ts) and rendered by the overlay in place of the blind
  * `streaming…` label. Absent (undefined) before the first stage starts.
  */
@@ -158,7 +158,7 @@ export interface LaneProgress {
 	/** Glyph selector: running spinner · ⟲ retry · ✗ error. */
 	phase: "running" | "retry" | "error";
 	/**
-	 * Stage failure cause (Problem 1) — set on the `"error"` phase from
+	 * Stage failure cause — set on the `"error"` phase from
 	 * `onStageError`'s `error` param so a failed row can show WHY before the run
 	 * retires. The dock chip trims it via `shortFailureReason`; absent otherwise.
 	 */
@@ -192,14 +192,14 @@ export interface LaneEntry {
 	input?: string;
 	status: LaneStatus;
 	/**
-	 * Per-unit sub-lanes keyed by fan-out index (Slice 1) — the replacement for the
+	 * Per-unit sub-lanes keyed by fan-out index — the replacement for the
 	 * collapsing single-slot session/snapshot scalars. A non-fan-out stage writes the
 	 * `SINGLE_UNIT_KEY` slot; a fan-out generation writes 0..N-1. Cleared at each new
-	 * fan-out generation (`clearUnitLanes`, D2) so the dock shows the CURRENT
-	 * generation only; the final generation's snapshots survive retirement (D5).
+	 * fan-out generation (`clearUnitLanes`) so the dock shows the CURRENT
+	 * generation only; the final generation's snapshots survive retirement.
 	 */
 	readonly units: Map<number, UnitLane>;
-	/** Live stage progress (Phase 8); undefined until the first onStageStart. */
+	/** Live stage progress; undefined until the first onStageStart. */
 	progress: LaneProgress | undefined;
 	/**
 	 * Distinct stage names entered over this run's life — the accumulator behind
@@ -211,7 +211,7 @@ export interface LaneEntry {
 	 */
 	visitedStages?: Set<string>;
 	/**
-	 * Terminal failure cause (Problem 1) — `result.termination.error` captured at
+	 * Terminal failure cause — `result.termination.error` captured at
 	 * `retireRun`, the readable reason a `failed`/`aborted`/`cancelled` run ended.
 	 * The dock chip trims it (`shortFailureReason`); the viewer header shows it in
 	 * full. Absent for a `completed` run (no error) and while still running.
@@ -219,7 +219,7 @@ export interface LaneEntry {
 	error?: string;
 	/**
 	 * When this lane first started waiting on a deferred foreground question
-	 * (Phase C) — `Date.now()` stamped on the FIRST enqueue that finds the clock
+	 * — `Date.now()` stamped on the FIRST enqueue that finds the clock
 	 * unset, and HELD across transient drains so a switch-in drain racing a
 	 * background sibling enqueue never resets the displayed age. Cleared only when
 	 * the lane stops needing input for real: retire/evict/reactivate (`recordRun`).
@@ -228,7 +228,7 @@ export interface LaneEntry {
 	 */
 	needsInputSince?: number;
 	/**
-	 * Abort handle for this run (Phase D) — the per-run `AbortController.abort`
+	 * Abort handle for this run — the per-run `AbortController.abort`
 	 * wired by the execution host. Lets the manager cancel a running lane without
 	 * the user switching in (which the focus-gated Ctrl-C tap would otherwise
 	 * require). Undefined for headless runs (no abort tap).
@@ -239,7 +239,7 @@ export interface LaneEntry {
 type Listener = () => void;
 
 // ---------------------------------------------------------------------------
-// Process-global state (Phase 7.3) — anchored on a `globalThis[Symbol.for(...)]`
+// Process-global state — anchored on a `globalThis[Symbol.for(...)]`
 // slot, NOT plain module-level `let`/`const`. Detached child sessions re-load
 // the rpiv-pi extension (Pi's jiti loader may hand each child a SEPARATE module
 // instance); a module-local Map would give the launcher and a child DIFFERENT
@@ -310,9 +310,9 @@ function notify(): void {
 // ---------------------------------------------------------------------------
 
 /**
- * Record a run at launch (FR1). recordRun is the launch signal for BOTH a fresh run
+ * Record a run at launch. recordRun is the launch signal for BOTH a fresh run
  * and a RESUME — and a resume reuses the original run id. A failed/finished run's
- * lane is RETAINED (Phase A), so on resume that id already exists in a TERMINAL state.
+ * lane is RETAINED, so on resume that id already exists in a TERMINAL state.
  * Re-recording must therefore REACTIVATE it (back to live "running", terminal snapshot
  * + stale progress/needs-input cleared), not merely refresh the name — otherwise the
  * resumed run keeps rendering as the old failed/finished lane and never re-appears as
@@ -346,7 +346,7 @@ export function recordRun(runId: string, name: string, meta?: { workflow?: strin
 }
 
 /**
- * RETIRE a run when it terminates (Phase A) — the run leaves the active set but
+ * RETIRE a run when it terminates — the run leaves the active set but
  * the lane is RETAINED (not deleted) so the user can come back to a finished run,
  * see its terminal status in the overlay, and open its transcript. Captures a
  * final transcript snapshot before the live session is dropped, settles any
@@ -396,7 +396,7 @@ function upsertUnit(entry: LaneEntry, index: number): UnitLane {
  * Fail-soft: a disposed/odd session yields an empty snapshot (the viewer shows
  * "unavailable") rather than throwing. Shared by `retireRun` (still-attached
  * session) and `captureFinalSnapshot` (the host's per-unit teardown, BEFORE the
- * session is dropped — Problem 2's ordering fix, now per unit). `snapshotToolDefs`
+ * session is dropped — now per unit). `snapshotToolDefs`
  * is unchanged (it takes the branch + session).
  */
 function captureSnapshotInto(unit: UnitLane, session: LaneSession): void {
@@ -434,14 +434,14 @@ export function retireRun(runId: string, status: Exclude<LaneStatus, "running">,
 	// "running" via `recordRun`, so this guard never strands a reactivated run.
 	if (entry.status !== "running") return;
 	entry.status = status;
-	if (error !== undefined) entry.error = error; // terminal failure reason (Problem 1)
+	if (error !== undefined) entry.error = error; // terminal failure reason
 	for (const unit of entry.units.values()) {
 		// Snapshot from a STILL-LIVE session if one is attached (the `x` path). In the
 		// normal detached path the host already captured per unit via
 		// `captureFinalSnapshot` and dropped the session, so `currentSession` is
-		// undefined here — DON'T re-snapshot (Problem 2's root cause, now per unit).
+		// undefined here — DON'T re-snapshot (now per unit).
 		if (unit.currentSession) captureSnapshotInto(unit, unit.currentSession);
-		unit.currentSession = undefined; // drop the live session; KEEP finalBranch (D5)
+		unit.currentSession = undefined; // drop the live session; KEEP finalBranch
 		if (unit.status === "running") unit.status = "done"; // a never-ended unit reads terminal
 		for (const p of unit.pendingInput) p.resolve(undefined); // never strand a child's resolver
 		unit.pendingInput.length = 0;
@@ -452,7 +452,7 @@ export function retireRun(runId: string, status: Exclude<LaneStatus, "running">,
 
 /**
  * Capture a run's transcript snapshot WHILE its child session is still alive
- * (Problem 2 fast-path). The detached host calls this from its per-stage `finally`,
+ * (fast-path). The detached host calls this from its per-stage `finally`,
  * BEFORE `setCurrentSession(runId, undefined)` drops the session and `dispose()`
  * invalidates it — so when the runner's `onWorkflowEnd` later calls `retireRun`
  * (with `currentSession` already gone), the snapshot is already in place. Best-effort:
@@ -466,7 +466,7 @@ export function captureFinalSnapshot(runId: string, index: number, session: Lane
 }
 
 /**
- * Record the persisted session file of a run's most-recent child (Problem 2 durable
+ * Record the persisted session file of a run's most-recent child (durable
  * path) — a durable string that outlives the disposed session and seeds the disk-jsonl
  * transcript fallback. Called by the host alongside `setCurrentSession` when a child
  * spawns. Best-effort: a missing lane or absent file is a no-op. No notify — it is
@@ -478,7 +478,7 @@ export function setLaneSessionFile(runId: string, index: number, file: string | 
 	if (entry) upsertUnit(entry, index).lastSessionFile = file;
 }
 
-/** DISMISS a lane — hard-delete from the registry (FR6). The terminal-lane reaper:
+/** DISMISS a lane — hard-delete from the registry. The terminal-lane reaper:
  *  invoked by the manager's `x` on a finished lane and by the test reset. Settles
  *  any still-queued input so a child can never hang on a dangling resolver. */
 export function evictRun(runId: string): void {
@@ -498,7 +498,7 @@ export function setLaneStatus(runId: string, status: LaneStatus): void {
 	notify();
 }
 
-/** Point a unit sub-lane at its currently-live child (Slice 3) — replaces the prior.
+/** Point a unit sub-lane at its currently-live child — replaces the prior.
  *  The clear path (`session === undefined`, the host's teardown) only operates on an
  *  EXISTING unit, so a teardown after `clearUnitLanes` never resurrects a cleared unit. */
 export function setCurrentSession(runId: string, index: number, session: LaneSession | undefined): void {
@@ -553,7 +553,7 @@ export function sweepRunningUnits(runId: string, status: "done" | "failed"): voi
 	if (changed) notify();
 }
 
-/** Clear the per-unit map at a NEW fan-out generation (bridge `onLoopStart`, D2): the
+/** Clear the per-unit map at a NEW fan-out generation (bridge `onLoopStart`): the
  *  engine resets `cursor.slots` per loop, so the registry shows only the CURRENT
  *  generation's units (a run may fan out several times, reusing indices 0..N).
  *  Settles any dangling `pendingInput` so a child never hangs, and resets the lane
@@ -567,7 +567,7 @@ export function clearUnitLanes(runId: string): void {
 	notify();
 }
 
-/** Update a lane's live stage progress (Phase 8; best-effort — a missing/evicted
+/** Update a lane's live stage progress (best-effort — a missing/evicted
  *  run is a no-op, so non-detached runs cost nothing). */
 export function setLaneProgress(runId: string, progress: LaneProgress | undefined): void {
 	const entry = state().lanes.get(runId);
@@ -593,8 +593,8 @@ export function noteVisitedStage(runId: string, stageName: string): number {
 	return visited.size;
 }
 
-/** Enqueue a deferred foreground-stage UI request onto a UNIT's queue (FR5, Slice 3
- *  relay). Stamps the LANE-level needs-input clock on the FIRST enqueue across the
+/** Enqueue a deferred foreground-stage UI request onto a UNIT's queue (relay).
+ *  Stamps the LANE-level needs-input clock on the FIRST enqueue across the
  *  lane that finds it unset (held across a transient drain→refill so the aging
  *  heading never resets mid-wait). A missing run settles immediately so the child
  *  never hangs. */
@@ -609,7 +609,7 @@ export function enqueueInput(runId: string, index: number, pending: PendingInput
 	notify();
 }
 
-/** Pop the oldest pending input for ONE unit (FR5, Slice 7 drain). Does NOT clear the
+/** Pop the oldest pending input for ONE unit (drain). Does NOT clear the
  *  lane clock on drain-to-empty (it's a continuous-wait marker reset only at
  *  retire/evict/reactivate/clear). */
 export function dequeueInput(runId: string, index: number): PendingInput | undefined {
@@ -618,7 +618,7 @@ export function dequeueInput(runId: string, index: number): PendingInput | undef
 	return pending;
 }
 
-/** Wire a run's abort handle (Phase D) so the manager can cancel it without the
+/** Wire a run's abort handle so the manager can cancel it without the
  *  user switching in. Best-effort — a missing lane is a no-op. */
 export function setLaneAbort(runId: string, abort: () => void): void {
 	const entry = state().lanes.get(runId);
@@ -639,7 +639,7 @@ export function listLanes(): LaneEntry[] {
 	return [...state().lanes.values()];
 }
 
-/** One row in the dock's flattened display/selection list (D4): a lane (parent) row
+/** One row in the dock's flattened display/selection list: a lane (parent) row
  *  or a unit sub-row. Selection indexes this list; the four lane-resolving dock
  *  actions dereference a row to `(runId, unitIndex)`. */
 export type DisplayRow =
@@ -647,7 +647,7 @@ export type DisplayRow =
 	| { readonly kind: "unit"; readonly lane: LaneEntry; readonly unit: UnitLane };
 
 /**
- * Rows ordered for DISPLAY (Phase B + D4) — the same STABLE lane priority sort
+ * Rows ordered for DISPLAY — the same STABLE lane priority sort
  * (needs-input → running → terminal, insertion-stable within a bucket) with each
  * lane's CURRENT-generation unit sub-rows flattened directly beneath it, ascending by
  * declared index (the fold's order, so a sibling completing never shifts a selected
@@ -730,7 +730,7 @@ export function subscribeLanes(listener: Listener): () => void {
 }
 
 // ---------------------------------------------------------------------------
-// Focus — the currently switched-into lane (gates the per-run abort tap, Slice 6).
+// Focus — the currently switched-into lane (gates the per-run abort tap).
 // Deliberately OUTSIDE the notify cycle: nothing renders from focus; the abort
 // tap reads it synchronously per keystroke.
 // ---------------------------------------------------------------------------

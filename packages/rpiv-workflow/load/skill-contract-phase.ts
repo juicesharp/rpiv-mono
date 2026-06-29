@@ -8,7 +8,7 @@
  * Extracted from `loadWorkflows` so the orchestrator reads as a
  * sequence of phases. Every issue this phase emits is attributed to
  * `"framework"` — these are failures of provider/deriver machinery, not of
- * any config file (the old `layer: "built-in"` attribution was a lie).
+ * any config file.
  */
 
 import { formatError } from "../internal-utils.js";

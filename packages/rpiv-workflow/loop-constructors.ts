@@ -67,7 +67,7 @@ export type { UnitSelector } from "./api.js";
  * Per-stage control-flow + edge shape, read entirely from attached data — no
  * probing. The control-flow analogue of `legalNextSkills`: what an
  * analyzing/suggesting agent consumes to render or reason about a flow's
- * structure. `control.mode` now covers assess (previously read as "single").
+ * structure. `control.mode` covers assess.
  */
 export interface StageShape {
 	stage: string;
@@ -345,9 +345,8 @@ export function assess(opts: AssessOptions): AssessLoop {
  * Single rule source for the assess shape — mirrors `verifyShapeIssues`. Returns
  * human-readable violations (empty = valid); `assess()` throws on the first via
  * `assertShape`. Takes `unknown` ON PURPOSE (jiti-loaded literals erase TS
- * types). `assess` was previously the only judge-bearing constructor without a
- * rule source (inline `typeof` throws); this restores family uniformity so
- * judge/assess/verify/panel each pair a `*ShapeIssues` source with `assertShape`.
+ * types). Every judge-bearing constructor — judge/assess/verify/panel — pairs
+ * a `*ShapeIssues` source with `assertShape`.
  * NOTE: the load gate (`validate/stage-rules.ts`) keeps its own per-code assess
  * reporting (`assess-judge-shape`/`assess-done-not-function`/`assess-feed-forward-not-function`);
  * it does NOT consume this source — adopting it would change the public issue-code
@@ -681,9 +680,7 @@ export function judgeSlotOf(stage: StageDef): AnyJudge | undefined {
  * THE single judge-publisher walk: `publishedNamesOf` (load reachability —
  * consumes EVERY channel) and `checkReadsChannelCompat`'s publisher index
  * (contract adjudication — consumes only SIGNED channels) both read it, so a
- * panel-member channel can no longer be seen by one and missed by the other. The
- * contract-compat index used to walk only member-0 (via `judgeOf`), silently
- * skipping panel members 1..N-1 and the fold — that gap closes here.
+ * panel-member channel can no longer be seen by one and missed by the other.
  */
 export function forEachJudgeChannel(
 	stage: StageDef,

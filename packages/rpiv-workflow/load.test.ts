@@ -991,10 +991,10 @@ describe("loadWorkflows — skillContracts", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Outcome derivers — per-load stage copies (C3)
+// Outcome derivers — per-load stage copies
 // ---------------------------------------------------------------------------
 
-describe("loadWorkflows — outcome derivers (C3)", () => {
+describe("loadWorkflows — outcome derivers", () => {
 	/**
 	 * A representative deriver (rpiv-pi's shape): mutates `stage.outcome` in
 	 * place on produces stages that lack one, keyed off the contract registry.

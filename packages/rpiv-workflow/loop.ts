@@ -63,8 +63,8 @@ import type { RunContext, WorkflowHostContext } from "./types.js";
  * The loop-entry announcement — `onStageStart` then `onLoopStart` with the
  * presented kind (+ the precomputed unit list when the loop has one). ONE
  * helper for the live entry (`runLoopStage`) and the resume re-entry
- * (`resumeLoopStage`), which used to re-spell the pair and keep the
- * presented-kind expression aligned by convention.
+ * (`resumeLoopStage`) — the pair and the presented-kind expression stay
+ * aligned by sharing this one helper.
  */
 export async function announceLoopStart(
 	curCtx: WorkflowHostContext,

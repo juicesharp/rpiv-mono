@@ -370,7 +370,7 @@ describe("sessions — validation retry loop", () => {
 		expect(state.termination.error).toContain("outcome blew up mid-retry");
 	});
 
-	it("retry/end lifecycle refs and the row share ONE allocator-based stage number (C17/C18)", async () => {
+	it("retry/end lifecycle refs and the row share ONE allocator-based stage number", async () => {
 		const chain = createMockSessionChain({
 			cwd: tmpDir,
 			steps: [{ branch: [mockAssistantMessage("done")] }],
@@ -405,14 +405,14 @@ describe("sessions — validation retry loop", () => {
 			{ event: "end", stageNumber: 6 },
 		]);
 		// The JSONL row and the output envelope carry the same pre-allocated
-		// number — no `lastAllocatedStageNumber + 1` peek skew (C18).
+		// number — no `lastAllocatedStageNumber + 1` peek skew.
 		const rows = readStageRows(tmpDir).filter((r) => typeof r.stageNumber === "number");
 		expect(rows).toHaveLength(1);
 		expect(rows[0]?.stageNumber).toBe(6);
 		expect((rows[0]?.output as { meta?: { stageNumber?: number } })?.meta?.stageNumber).toBe(6);
 	});
 
-	it("a THROWING collector halts with attributed wording, not an escaped machinery throw (C20)", async () => {
+	it("a THROWING collector halts with attributed wording, not an escaped machinery throw", async () => {
 		const chain = createMockSessionChain({
 			cwd: tmpDir,
 			steps: [{ branch: [mockAssistantMessage("done")] }],
@@ -446,7 +446,7 @@ describe("sessions — validation retry loop", () => {
 		expect(chain.notifications.some((n) => n.msg === MSG_STAGE_FAILED("test"))).toBe(true);
 	});
 
-	it("a THROWING parser halts with attributed wording (C20)", async () => {
+	it("a THROWING parser halts with attributed wording", async () => {
 		const chain = createMockSessionChain({
 			cwd: tmpDir,
 			steps: [{ branch: [mockAssistantMessage("done")] }],

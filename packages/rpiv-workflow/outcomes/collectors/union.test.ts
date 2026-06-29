@@ -58,7 +58,7 @@ describe("unionCollectors", () => {
 	});
 
 	// ------------------------------------------------------------------------
-	// Snapshot fanout (C4) — a snapshot-bearing collector inside a union must
+	// Snapshot fanout — a snapshot-bearing collector inside a union must
 	// behave exactly as it would standalone.
 	// ------------------------------------------------------------------------
 
@@ -67,7 +67,7 @@ describe("unionCollectors", () => {
 		expect(union.snapshot).toBeUndefined();
 	});
 
-	it("captures every sub-collector's snapshot and threads snapshots[i] into sub-collector i (C4)", async () => {
+	it("captures every sub-collector's snapshot and threads snapshots[i] into sub-collector i", async () => {
 		const seen: unknown[] = [];
 		const snapshotting = (tag: string): ArtifactCollector => ({
 			snapshot: () => `${tag}-baseline`,

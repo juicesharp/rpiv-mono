@@ -21,7 +21,7 @@
  * Every child binds the DEFERRING relay (`createLaneRelayUiContext`): a stage's
  * `ask_user_question` queues + badges its questionnaire in the lane dock instead
  * of grabbing the (possibly hidden) real UI, and the switcher replays it on
- * switch-in (FR5). `hasUI` is inherited from the live launcher ctx, so a headless
+ * switch-in. `hasUI` is inherited from the live launcher ctx, so a headless
  * launcher (`live.hasUI:false`) still yields `hasUI:false` ⇒ UI-requiring tools
  * degrade instead of blocking; under an interactive launcher every stage can ask
  * via the dock, and a fanout's questions queue and pace by `maxConcurrency`.
@@ -277,13 +277,13 @@ export class SdkWorkflowHost implements WorkflowHostContext {
 			thinkingLevel: options.model?.thinking,
 		});
 
-		// Lane registry (FR1): publish this child as the viewer's transcript source under
+		// Lane registry: publish this child as the viewer's transcript source under
 		// its OWN per-unit slot — a STREAMING VIEW (lane-streaming.ts) so the viewer/dock
 		// read the in-flight partial via getStreamingMessage(). The raw `session` stays
 		// local for abort + teardown + snapshot. No-op until the run is recorded
-		// (createWorkflowExecution, Phase 3).
+		// (createWorkflowExecution).
 		const laneView = createLaneSessionView(session);
-		// D3 — only depth-0 fan-out units are individually addressable; a nested child
+		// Only depth-0 fan-out units are individually addressable; a nested child
 		// (depth>0) collapses onto the reserved single-unit key so its indices never
 		// collide with the top-level cousins'. A non-fan-out single stage has no
 		// `unitIndex` and also lands on the sentinel.
@@ -303,7 +303,7 @@ export class SdkWorkflowHost implements WorkflowHostContext {
 		// runner soft-halts the unit instead of letting a runaway command strand the gate.
 		const watchdog = armBashWatchdog(session);
 		try {
-			// Every child binds the DEFERRING relay (FR5): a floated run's stage queues +
+			// Every child binds the DEFERRING relay: a floated run's stage queues +
 			// badges its questionnaire instead of grabbing the (possibly hidden) real UI;
 			// the switcher replays it on switch-in. When the launcher is headless
 			// (live.hasUI:false) the child reports hasUI:false (see `adapt`), so
@@ -318,8 +318,8 @@ export class SdkWorkflowHost implements WorkflowHostContext {
 			options.signal?.removeEventListener("abort", onAbort);
 			// Each unit owns its own registry key, so a sibling's teardown can NEVER clobber
 			// another's entry — the `currentSession === laneView` slot-owner guard (the
-			// single-slot workaround) is gone (D1). Snapshot the transcript off the live child
-			// WHILE it is still alive (Problem 2): the runner's onWorkflowEnd → retireRun fires
+			// single-slot workaround) is gone. Snapshot the transcript off the live child
+			// WHILE it is still alive: the runner's onWorkflowEnd → retireRun fires
 			// AFTER this teardown, by which point the session is disposed — so capture here,
 			// before dropping + disposing it. Captured through the published VIEW (which shares
 			// the raw session's sessionManager + delegates getToolDefinition); the snapshot is

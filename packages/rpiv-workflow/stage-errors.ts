@@ -5,12 +5,11 @@ import type { FailureText } from "./messages.js";
  * imports; only a type-only `FailureText` pull) so
  * both the engine's loop-primitive layer (`loop-kinds.ts`) and the runner's
  * per-stage pipeline (`runner/{preflight,input-validation,failure}.ts`) can
- * throw it without anyone importing across the `runner/` boundary. It used to
- * live in `runner/errors.ts`, which made `loop-kinds.ts` (a module the runner
- * imports FROM) reach back UP into `runner/` — a layering inversion that the
- * "leaf" property masked but never removed. Homed at the root, the import
- * arrow points strictly downward for every consumer. `runner/errors.ts`
- * re-exports it so the in-`runner/` call sites keep their local spelling.
+ * throw it without anyone importing across the `runner/` boundary. Homed at
+ * the root, the import arrow points strictly downward for every consumer
+ * (`loop-kinds.ts` — a module the runner imports FROM — never reaches back
+ * UP into `runner/`). `runner/errors.ts` re-exports it so the in-`runner/`
+ * call sites keep their local spelling.
  */
 
 /**

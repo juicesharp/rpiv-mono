@@ -538,10 +538,10 @@ describe("listArtifacts", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Deep stage guard + resume-grade strict reader (T9)
+// Deep stage guard + resume-grade strict reader
 // ---------------------------------------------------------------------------
 
-describe("deep stage guard + readAllStagesForResume (T9)", () => {
+describe("deep stage guard + readAllStagesForResume", () => {
 	const runId = "t9-run";
 	const seed = () => {
 		writeHeader(tmpDir, { runId, workflow: "mid", input: "x", ts: "2026" });

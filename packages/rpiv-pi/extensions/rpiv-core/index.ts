@@ -52,14 +52,14 @@ export default function (pi: ExtensionAPI) {
 	// Always-on lane dock (belowEditor) + dock editor + /lanes/^Q entry (launcher owns
 	// the registry). Independent of the rpiv-workflow sibling: the registry is populated
 	// only when a /wf run actually launches, so this is a safe unconditional registration.
-	// Its session_start hook is root-gated (skips detached children — Phase 7.2).
+	// Its session_start hook is root-gated (skips detached children).
 	registerLaneSwitcher(pi);
 	// SDK execution-host provider — registered on the ROOT launcher's session_start
 	// (NOT here / not in the IIFE below) so a detached child re-loading rpiv-core can
-	// never overwrite the process-global provider box (Phase 7.2). The session_start
+	// never overwrite the process-global provider box. The session_start
 	// timing is safe: /wf is interactive-only and only fires after session start.
 	registerWorkflowExecutionHostProviderHook(pi);
-	// Lifecycle→registry bridge for live dock stage progress (Phase 8). Root-gated
+	// Lifecycle→registry bridge for live dock stage progress. Root-gated
 	// + idempotent, same as the provider hook above: registered on the ROOT launcher's
 	// session_start so a re-loading child never double-subscribes, and it dynamically
 	// imports the rpiv-workflow `/startup` entry (degrades when the sibling is absent).
@@ -92,7 +92,7 @@ export default function (pi: ExtensionAPI) {
 	// The SDK execution-host provider is NOT registered here — it is wired to the
 	// root launcher's session_start (registerWorkflowExecutionHostProviderHook above)
 	// so a detached child re-loading rpiv-core cannot overwrite the process-global
-	// provider box (Phase 7.2). Per-child models are resolved through the provider's
+	// provider box. Per-child models are resolved through the provider's
 	// resolveModel and applied at child-session creation, not via a global
 	// pi.setModel() flip. (The session_start capture + /skill: bracket stay.)
 	void (async () => {

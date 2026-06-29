@@ -99,7 +99,7 @@ describe("skill-bracket — input arming", () => {
 		expect(setModel).not.toHaveBeenCalled();
 	});
 
-	it("no-op when defaults exist but skill-specific entry does not (Decision 7 refined)", async () => {
+	it("no-op when defaults exist but skill-specific entry does not", async () => {
 		writeModels({ defaults: "anthropic/opus" });
 		const { handlers, setModel } = await setupBracket();
 		await handlers.input!({ text: "/skill:commit", source: "interactive" });

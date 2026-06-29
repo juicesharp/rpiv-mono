@@ -1,11 +1,11 @@
 /**
  * The neutral text-scan primitive — scan assistant text (reverse) for `pattern`,
  * fatal-on-miss, single `role: "primary"` artifact via `toHandle`. The shared
- * body `transcriptPathCollector` and `urlCollector` used to spell by hand
- * (byte-identical modulo the handle constructor + the "path"/"URL" noun).
- * Build domain-specific collectors by wrapping this + supplying a pattern +
- * handle constructor (`directoryPathCollector` already delegates this way to
- * `transcriptPathCollector`; the three now share one base scanner).
+ * body `transcriptPathCollector` and `urlCollector` share here (byte-identical
+ * modulo the handle constructor + the "path"/"URL" noun). Build
+ * domain-specific collectors by wrapping this + supplying a pattern + handle
+ * constructor (`directoryPathCollector` already delegates this way to
+ * `transcriptPathCollector`).
  *
  * Fatal when no match is found — produces stages that wire this
  * promise an output, and silently returning zero artifacts hides the

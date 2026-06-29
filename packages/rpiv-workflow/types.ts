@@ -122,8 +122,9 @@ export interface RunState {
 	/**
 	 * How the run ended — `"running"` until the single end-of-run write via
 	 * `terminate()` (audit.ts), the ONLY sanctioned mutator. Discriminated so
-	 * every outcome is representable (cancellation used to be smuggled
-	 * through the error string) and so a halt site can't set half the shape.
+	 * every outcome is representable — cancellation is its own status, not
+	 * smuggled through the error string — and so a halt site can't set half
+	 * the shape.
 	 */
 	termination: RunTermination;
 }
@@ -439,7 +440,7 @@ export interface StageSession extends SessionContext {
 	 */
 	collectAll?: boolean;
 	/**
-	 * The per-unit lane key for rpiv-pi's lane dock/viewer (D8) — set ONLY for fan-out
+	 * The per-unit lane key for rpiv-pi's lane dock/viewer — set ONLY for fan-out
 	 * units (`e.loop.kind === "fanout"`), to the unit's declared `index`. Undefined for
 	 * sequential loop units (iterate/assess) and single stages, which collapse onto the
 	 * host's reserved single-unit slot so the lane (parent) row keeps showing the one
@@ -463,8 +464,7 @@ export interface StageSession extends SessionContext {
 	/**
 	 * Receives the stage's VALIDATED Output envelope (not just
 	 * `artifacts[0]`) — loop continuations thread it into `accumulated` /
-	 * `feedForward` directly, removing the `run.state.output!` back-read
-	 * pattern the old drivers carried.
+	 * `feedForward` directly, with no `run.state.output!` back-read.
 	 *
 	 * Return type is `Promise<unknown>` (not `void`) so the chain walk's
 	 * `ChainOutcome`-returning continuations plug in directly; the session

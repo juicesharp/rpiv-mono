@@ -822,7 +822,7 @@ describe("runWorkflow", () => {
 			expect(stage3InputArtifacts).toBe(0);
 
 			// The cleared primary slot is observable only via `ctx.input` and
-			// `result.lastArtifact` — `RunView` (T3) doesn't leak the slot itself.
+			// `result.lastArtifact` — `RunView` doesn't leak the slot itself.
 
 			// Final run.lastArtifact reflects whatever stage 3 produced (nothing
 			// here) — confirms terminal.script's clear isn't sticky once a
@@ -1825,11 +1825,11 @@ describe("runWorkflow", () => {
 				fromStage: "code-review",
 				decision: "commit",
 			});
-			// Matched branch (eq(0) hit) — no fallback, so no note (C12).
+			// Matched branch (eq(0) hit) — no fallback, so no note.
 			expect(routingDecisions[0]!.note).toBeUndefined();
 		});
 
-		it("routing row carries gate's fallback note when no branch matched (C12)", async () => {
+		it("routing row carries gate's fallback note when no branch matched", async () => {
 			writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md");
 			// No severeIssueCount in the frontmatter → Number(undefined) = NaN →
 			// no branch matches → gate takes `otherwise` and attaches the note.
@@ -2359,7 +2359,7 @@ describe("runWorkflow", () => {
 			expect(stages.some((s) => /stale/.test(String(s.errMsg ?? "")))).toBe(false);
 		});
 
-		it("a throwing outcome snapshot warns ONCE per run and the stages still complete (C19)", async () => {
+		it("a throwing outcome snapshot warns ONCE per run and the stages still complete", async () => {
 			// Pre-fix the bare `catch {}` silently disabled diffing for the whole
 			// run with zero diagnostics. The stage must still run (snapshot is
 			// best-effort) but the FIRST failure surfaces a warning.

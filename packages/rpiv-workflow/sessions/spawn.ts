@@ -1,10 +1,8 @@
 /**
  * Session opening — the child-spawn primitives every stage and loop unit runs
- * through. Detachment collapses the old fresh-vs-continue handler table: with
- * every stage isolated in its own child session, "send into an existing
- * session" no longer exists, so the 3-rung stale-ctx fallback ladder, the
- * registry-host fallback param, and both defensive `sendUserMessage` guards
- * are gone.
+ * through. With every stage isolated in its own child session, "send into an
+ * existing session" doesn't exist, so there's no stale-ctx fallback ladder,
+ * no registry-host fallback param, and no defensive `sendUserMessage` guards.
  *
  * Three open modes, all routed through `ctx.spawnChild`:
  *   - FRESH (`spawnChildAndRun`)   — a brand-new child; the host sends the prompt.
@@ -64,8 +62,8 @@ function openChild(
 		prompt: s.prompt, // FRESH: host sends it. REATTACH/FORK: carried for parity; host skips auto-replay.
 		model: s.model,
 		signal: s.signal,
-		// The lane key for a lane-aware host's per-unit slot — set only for fan-out units
-		// (D8). Undefined for sequential loop units / single stages / reattach / fork, all
+		// The lane key for a lane-aware host's per-unit slot — set only for fan-out units.
+		// Undefined for sequential loop units / single stages / reattach / fork, all
 		// of which map to the host's reserved single-unit slot so the lane row keeps
 		// showing the one live session. Inert on a non-lane host.
 		unitIndex: s.laneUnitIndex,
@@ -139,8 +137,7 @@ export function forkChildSession(
 /**
  * Re-prompt an already-open child and wait for it to settle — the
  * validation-retry path (`askAgentToFix`) and the resume reattach nudge.
- * Replaces the old policy-handler send path; the child ctx always exposes
- * `sendUserMessage`, so no guard.
+ * The child ctx always exposes `sendUserMessage`, so no guard.
  *
  * IDLE-BEFORE-REPROMPT INVARIANT: uses `sendUserMessage` (which QUEUES, safe
  * mid-stream), NOT `prompt()` — the SDK THROWS "Agent is already processing" if

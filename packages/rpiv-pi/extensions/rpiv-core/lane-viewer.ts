@@ -1,5 +1,5 @@
 /**
- * lane-viewer — read-only LIVE transcript viewer for a switched-into run (FR2).
+ * lane-viewer — read-only LIVE transcript viewer for a switched-into run.
  *
  * The no-upstream-SDK substitute for native reattach: a focused ctx.ui.custom
  * overlay that RENDERS the lane's currently-live child session's getBranch()
@@ -8,10 +8,10 @@
  * read-only: it never swaps, disposes, or writes any session.
  *
  * It FOLLOWS the lane: as stages advance the registry's currentSession changes,
- * so the viewer re-subscribes to the new child; when the run is evicted (FR6) it
+ * so the viewer re-subscribes to the new child; when the run is evicted it
  * shows a terminal "finished" frame and waits for esc.
  *
- * Input split while this viewer is open (the lane is focused, Slice 6): esc/↑/↓ are
+ * Input split while this viewer is open (the lane is focused): esc/↑/↓ are
  * the viewer's own (esc → back to root, ↑/↓ → scroll); Ctrl-C is consumed by the
  * focus-gated abort tap (which fires ahead of this component) and aborts the run on
  * screen. The viewer therefore deliberately does NOT handle Ctrl-C itself.
@@ -53,7 +53,7 @@ import {
 
 const MAX_HEIGHT_RATIO = 0.9;
 
-/** Header glyph for a retained terminal lane (Phase A) — mirrors the overlay's STATUS_GLYPH. */
+/** Header glyph for a retained terminal lane — mirrors the overlay's STATUS_GLYPH. */
 const TERMINAL_GLYPH: Partial<Record<LaneStatus, string>> = {
 	completed: "✓",
 	failed: "✗",
@@ -65,10 +65,10 @@ const TERMINAL_GLYPH: Partial<Record<LaneStatus, string>> = {
 const UNIT_GLYPH: Record<"done" | "failed", string> = { done: "✓", failed: "✗" };
 
 /**
- * Full token-detail suffix for the lane-viewer header (Phase 3) — the footer.js
- * omit-when-zero segment set `↑in ↓out R W CH% $cost`, formatted via Phase 1's
+ * Full token-detail suffix for the lane-viewer header — the footer.js
+ * omit-when-zero segment set `↑in ↓out R W CH% $cost`, formatted via
  * formatTokens. Viewer-local (not exported): the lane DOCK renders a different,
- * compact tally (Phase 2), so a shared full-detail formatter would be slice-3-only
+ * compact tally, so a shared full-detail formatter would be viewer-only
  * and is not factored into lane-usage.ts.
  *
  *   • "" when usage is undefined (running unit / parent row / not yet captured)
@@ -105,7 +105,7 @@ export class LaneViewer implements Component {
 	 *  returns undefined (turn committed). */
 	private streamingComponent: StreamingHandle | undefined;
 	private readonly registryUnsub: () => void;
-	/** Disk-jsonl fallback (Problem 2) parsed ONCE and cached by file key — render runs
+	/** Disk-jsonl fallback parsed ONCE and cached by file key — render runs
 	 *  synchronously every streaming tick, so the disk read must not repeat per frame. */
 	private diskCache: { key: string; value: DiskBranch | undefined } | undefined;
 
@@ -173,7 +173,7 @@ export class LaneViewer implements Component {
 				};
 			} else {
 				// No live session + no in-memory snapshot — fall through to this unit's on-disk
-				// jsonl (Problem 2 durable path): live → unit.finalBranch → unit disk → none.
+				// jsonl (durable path): live → unit.finalBranch → unit disk → none.
 				const disk = this.loadDiskBranch(unit);
 				if (disk) {
 					entries = disk.entries;
@@ -228,7 +228,7 @@ export class LaneViewer implements Component {
 				unit.status === "running" ? `▶ ${name} — live` : `${UNIT_GLYPH[unit.status]} ${name} — ${unit.status}`;
 		} else {
 			// Live runs read "▶ name — live"; a retained terminal run reflects its outcome,
-			// and a failed/aborted run appends its full cause (Problem 1) — "✗ ship — failed:
+			// and a failed/aborted run appends its full cause — "✗ ship — failed:
 			// <reason>" — truncated to width by the header truncate below.
 			const glyph = lane ? (TERMINAL_GLYPH[lane.status] ?? "•") : "•";
 			headText =
@@ -238,7 +238,7 @@ export class LaneViewer implements Component {
 						? `${glyph} ${name} — ${lane.status}: ${lane.error}`
 						: `${glyph} ${name} — ${lane.status}`;
 		}
-		// Phase 3: append the focused unit's full token-detail suffix
+		// Append the focused unit's full token-detail suffix
 		// (↑in ↓out R W CH% $cost) when its captured finalUsage carries one. Two-space
 		// break from the name/status/cause; rightmost-clipped by the truncate below so
 		// the left-anchored name + status always survive under narrow widths.

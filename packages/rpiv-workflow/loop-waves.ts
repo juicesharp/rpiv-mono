@@ -87,7 +87,7 @@ export function computeWaveLevels(units: readonly Unit[], stage: string): number
  * Live-entry guard (run-stage.ts materialization + resume-loop.ts re-wave). Reports
  * a DANGLING dep (an id matching no unit) and a dependency CYCLE, both as a clean
  * `invariantPreflight` halt attributed to `stage`. Cheap; runs before dispatch so the
- * dispatcher never has to throw (D12). Cycle detection delegates to `computeWaveLevels`.
+ * dispatcher never has to throw. Cycle detection delegates to `computeWaveLevels`.
  */
 export function validateUnitDeps(units: readonly Unit[], stage: string): void {
 	const ids = new Set(units.map(unitTagOf));

@@ -480,7 +480,7 @@ export function buildUnitSession(
 		// would land in `accumulated` AND diverge live/resume (the resume fold skips the
 		// collected:true row). See advanceCursor's "never collect-all" invariant note.
 		collectAll: e.loop.kind === "fanout" && !isFailFast(e.loop),
-		// Only fan-out units become individually-addressable lane sub-rows (D8). A
+		// Only fan-out units become individually-addressable lane sub-rows. A
 		// sequential loop unit (iterate/assess) leaves this undefined, so the host keys
 		// its live session on the single-unit slot — the lane (parent) row keeps showing
 		// it, exactly as the pre-change single slot did. `index` is the unit's declared

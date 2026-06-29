@@ -91,8 +91,7 @@ export function applyStageSuccess(state: RunState, def: StageDef, stageName: str
  * downstream `continue` stage forks it. THE single authority for this slot's
  * write rule — the live success path (`recordStageSuccess`, sessions.ts) and the
  * resume fold (`foldKnownStage`, resume.ts) both call it, so the null-handling
- * can no longer drift between them (it used to: live clobbered to `undefined`,
- * the fold skipped).
+ * can't drift between them.
  *
  * A `null` session (sessionless paths — script + side-effect stages persist
  * `session: null`) LEAVES the slot untouched: those stages are transparent to

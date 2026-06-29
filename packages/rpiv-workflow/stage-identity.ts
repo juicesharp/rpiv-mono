@@ -47,7 +47,7 @@ export function resolveSkill(def: StageDef, stageName: string): string {
  * lookups must all agree, or a script/prompt stage whose record key matches a
  * registered skill inherits that skill's contract by accident.
  *
- * A TYPE GUARD since the StageDef union (T1): a positive narrows to
+ * A TYPE GUARD since the StageDef union: a positive narrows to
  * `SkillStage`, so callers that wire skill-derived data onto the stage
  * (the alias remap, outcome derivers) get the writable arm.
  */

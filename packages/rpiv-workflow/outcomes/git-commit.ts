@@ -32,8 +32,7 @@ import { execFileAsync, GIT_EXEC_TIMEOUT_MS } from "./exec.js";
 
 /**
  * Output data shape produced by `gitCommitParser` — co-located with the
- * outcome that emits it, as is the `GitCommitOutput` narrowing alias below
- * (G6: the core envelope module never enumerates a concrete outcome).
+ * outcome that emits it, as is the `GitCommitOutput` narrowing alias below.
  */
 export interface GitCommitData {
 	sha: string;

@@ -264,7 +264,7 @@ describe("spawnChild — fresh child", () => {
 
 describe("spawnChild — UI binding (deferring relay)", () => {
 	it("binds the DEFERRING relay (its custom enqueues, does not hit the real ctx) and the child inherits hasUI from the live ctx", async () => {
-		// Record the run so the relay's custom can enqueue into a live lane (Slice 7/FR5).
+		// Record the run so the relay's custom can enqueue into a live lane.
 		recordRun("run-abc", "ship");
 		const { deps, uiCustom, uiNotify } = makeDeps();
 		const host = new SdkWorkflowHost(deps);
@@ -668,12 +668,12 @@ describe("ambient-observer manifest marker (L0-04)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// (Slice 2) Retain the run's currently-live child as the viewer's transcript
-// source (FR1): set-on-spawn / clear-on-teardown, plus the fanout ownership
+// Retain the run's currently-live child as the viewer's transcript
+// source: set-on-spawn / clear-on-teardown, plus the fanout ownership
 // guard (a sibling's teardown must not clobber a later-spawned sibling).
 // ---------------------------------------------------------------------------
 
-describe("spawnChild — lane current-session retention (Slice 2)", () => {
+describe("spawnChild — lane current-session retention", () => {
 	it("points the lane at the live child during the stage and clears it on teardown", async () => {
 		recordRun("run-abc", "ship");
 		const { deps } = makeDeps();
@@ -700,7 +700,7 @@ describe("spawnChild — lane current-session retention (Slice 2)", () => {
 		const host = new SdkWorkflowHost(deps);
 
 		// Two concurrent fan-out units at declared indices 0 and 1. Each publishes under
-		// its OWN registry key (D1), so there is no shared slot for a teardown to clobber.
+		// its OWN registry key, so there is no shared slot for a teardown to clobber.
 		// Sequence them deterministically: unit 0 created first (sessions[0]), then unit 1
 		// (sessions[1]); unit 0 tears down while unit 1 is still live.
 		let aReached!: () => void;
@@ -748,7 +748,10 @@ describe("spawnChild — lane current-session retention (Slice 2)", () => {
 		expect(getUnit("run-abc", 1)?.currentSession).toBeUndefined();
 	});
 
-	it("setCurrentSession before the run is recorded is a no-op (Phase 2 may land before Phase 3 records)", async () => {
+	// setCurrentSession may fire before the run is recorded (createWorkflowExecution
+	// records the lane asynchronously after spawnChild begins) — it must stay a no-op
+	// rather than throwing on an unrecorded lane.
+	it("setCurrentSession before the run is recorded is a no-op", async () => {
 		// deps.runId ("run-abc") is intentionally NOT recorded.
 		const { deps } = makeDeps();
 		const host = new SdkWorkflowHost(deps);
@@ -761,13 +764,13 @@ describe("spawnChild — lane current-session retention (Slice 2)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// (Problem 2) The transcript snapshot must be captured WHILE the child session is
+// The transcript snapshot must be captured WHILE the child session is
 // alive — in the per-stage finally, before currentSession is dropped + the session
 // disposed — so the runner's later onWorkflowEnd → retireRun (which sees no live
 // session) keeps a viewable transcript instead of snapshotting undefined.
 // ---------------------------------------------------------------------------
 
-describe("spawnChild — final snapshot + session file (Problem 2)", () => {
+describe("spawnChild — final snapshot + session file", () => {
 	const branch = [{ type: "message", message: { role: "assistant", content: [{ type: "text", text: "DONE" }] } }];
 
 	it("captures finalBranch before teardown; a post-teardown retire preserves it", async () => {
@@ -790,7 +793,7 @@ describe("spawnChild — final snapshot + session file (Problem 2)", () => {
 		expect(unit?.finalCwd).toBe("/work");
 
 		// The runner's terminal onWorkflowEnd fires AFTER teardown, with no live session —
-		// it must NOT clobber the captured snapshot (the original Problem 2 bug).
+		// it must NOT clobber the captured snapshot (the original bug).
 		retireRun("run-abc", "completed");
 		expect(getUnit("run-abc", SINGLE_UNIT_KEY)?.finalBranch).toEqual(branch);
 	});

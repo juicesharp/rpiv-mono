@@ -1,12 +1,12 @@
 /**
  * lane-relay-ui — a deferring, leak-proof ExtensionUIContext for a floated run's
- * foreground-contract stage (FR5).
+ * foreground-contract stage.
  *
  * Under detachment the launcher root is "the foreground"; a floated run's
  * foreground stage must NOT grab the real UI (the user may be elsewhere). The
  * host binds this relay instead of the real ctx. A detached child must produce
  * ZERO visible effect at root unless the user has switched into its lane, so the
- * relay is an explicit allow-policy over the launcher ctx (Phase 7.1):
+ * relay is an explicit allow-policy over the launcher ctx:
  *
  *   - `custom`        → DEFERRED: capture the factory + options + an unresolved
  *                       resolver into the registry and park the child's tool turn
@@ -37,14 +37,14 @@
  * A Proxy (not a hand-written delegate) keeps the relay drift-proof. The relay is
  * BRANDED (LANE_RELAY_BRAND) so the launcher's own session hooks
  * (session-capture, lane-switcher) can detect a detached-child session_start and
- * skip launcher-only work (Phase 7.2, isLaneRelayUiContext).
+ * skip launcher-only work (isLaneRelayUiContext).
  */
 
 import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import { enqueueInput, getFocusedRun } from "./run-lane-registry.js";
 
 /** Brand stamped on a relay so launcher-only session hooks can detect a detached
- *  child's ctx.ui and skip (session-capture / lane-switcher, Phase 7.2). */
+ *  child's ctx.ui and skip (session-capture / lane-switcher). */
 const LANE_RELAY_BRAND = Symbol.for("rpiv:laneRelayUiContext");
 
 /** True when `ui` is a lane relay (a detached child's bound ctx.ui). */

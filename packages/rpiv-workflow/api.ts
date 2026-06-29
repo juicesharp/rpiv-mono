@@ -1,5 +1,5 @@
 /**
- * Public authoring surface for rpiv workflows — a BARREL since the M9 split.
+ * Public authoring surface for rpiv workflows — a BARREL.
  * Users import everything they need (`defineWorkflow`, `produces`, `acts`,
  * `defineRoute`, `gate`, `STOP`, `marksReadsData`, schema adapters, plus the
  * type vocabulary `Workflow` / `StageDef` / `EdgeFn` / `EdgeTarget` /

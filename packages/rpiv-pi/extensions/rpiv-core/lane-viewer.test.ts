@@ -201,7 +201,7 @@ describe("LaneViewer — render", () => {
 		viewer.dispose();
 	});
 
-	it("retired lane renders the finalBranch snapshot + a terminal-status header (Phase A)", () => {
+	it("retired lane renders the finalBranch snapshot + a terminal-status header", () => {
 		const session = makeSession(() => [assistantEntry("final answer from the run")]);
 		recordRun("run-1", "ship");
 		setCurrentSession("run-1", SINGLE_UNIT_KEY, session);
@@ -214,7 +214,7 @@ describe("LaneViewer — render", () => {
 		viewer.dispose();
 	});
 
-	it("retired lane still pairs toolCall + toolResult from the snapshot (Phase 4)", () => {
+	it("retired lane still pairs toolCall + toolResult from the snapshot", () => {
 		const session = makeSession(() => [
 			assistantToolCallEntry("call-1", "bash", { command: "echo hi" }),
 			toolResultMessageEntry("call-1", "SNAPSHOT_TOOL_OUTPUT"),
@@ -229,7 +229,7 @@ describe("LaneViewer — render", () => {
 		viewer.dispose();
 	});
 
-	it("retired failed lane header shows the failure reason in full (Problem 1)", () => {
+	it("retired failed lane header shows the failure reason in full", () => {
 		const session = makeSession(() => [assistantEntry("partial work before the failure")]);
 		recordRun("run-1", "ship");
 		setCurrentSession("run-1", SINGLE_UNIT_KEY, session);
@@ -242,7 +242,7 @@ describe("LaneViewer — render", () => {
 		viewer.dispose();
 	});
 
-	it("disk fallback (Problem 2): a retired lane with no finalBranch renders from the on-disk jsonl", () => {
+	it("disk fallback: a retired lane with no finalBranch renders from the on-disk jsonl", () => {
 		const tmp = mkdtempSync(join(tmpdir(), "rpiv-viewer-disk-"));
 		try {
 			// Persist a real session to disk, then point the lane at it via lastSessionFile.
@@ -541,7 +541,7 @@ describe("LaneViewer — per-unit addressing (fan-out)", () => {
 describe("LaneViewer — token detail header", () => {
 	/** Retire a fan-out unit at `idx` to terminal state (the realistic moment finalUsage is
 	 *  populated), then inject `finalUsage` directly onto its registry slot. Isolates the
-	 *  header rendering from Phase 1's capture internals without coupling to them. */
+	 *  header rendering from the capture internals without coupling to them. */
 	function setupRetiredUnit(
 		runId: string,
 		idx: number,

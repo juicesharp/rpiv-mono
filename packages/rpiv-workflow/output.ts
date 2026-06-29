@@ -51,7 +51,7 @@ export interface Output<K extends string = string, D = unknown> {
 // Tagged-union narrowing convenience for consumers. Only the two
 // framework-native kinds live here; outcome-specific aliases live with
 // their producing outcome (`GitCommitOutput` → outcomes/git-commit.ts) so
-// the core envelope module never enumerates concrete plugins (G6).
+// the core envelope module never enumerates concrete plugins.
 // ---------------------------------------------------------------------------
 
 export type ArtifactsOutput = Output<"artifacts", readonly Artifact[]>;

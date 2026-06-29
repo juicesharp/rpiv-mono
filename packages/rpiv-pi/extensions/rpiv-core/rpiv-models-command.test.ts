@@ -22,7 +22,7 @@ function makePi() {
 	);
 	// Provide a minimal sourceInfo stub on each mock entry so a future read of
 	// `sourceInfo` in skillCommandNames doesn't silently pass tests while
-	// failing production (Plan Review row #concern-G).
+	// failing production.
 	const stubSourceInfo = { path: "/stub/SKILL.md", baseDir: "/stub" };
 	const getCommands = vi.fn(() => [
 		{ name: "skill:commit", description: "Commit changes", source: "skill", sourceInfo: stubSourceInfo },
