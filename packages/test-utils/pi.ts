@@ -279,6 +279,13 @@ export interface MockSessionStep {
 	 */
 	cancelled?: boolean;
 	/**
+	 * When set, the child ctx's `toolTimeout()` reports this reason — simulating a
+	 * watchdog-equipped host that aborted a runaway bash. Pair with a `branch` whose
+	 * last assistant message carries `stopReason:"aborted"` so `postStage` reads the
+	 * abort AND the timeout reason, then routes to the soft-halt gate.
+	 */
+	toolTimeout?: { reason: string };
+	/**
 	 * The on-disk session file this child's `getSessionFile()` reports. Used by
 	 * `sessionPolicy: "continue"` tests: a stage's recorded `SessionRef.file` must
 	 * point at a REAL file so `locateSessionFile` resolves it and the next
@@ -371,7 +378,12 @@ export function createMockSessionChain(opts: MockSessionChainOptions): MockSessi
 		sentMessages.push(typeof content === "string" ? content : JSON.stringify(content));
 	});
 
-	const buildCtx = (kind: "outer" | "child", branch: unknown[], sessionFile?: string): MockWorkflowCtx => {
+	const buildCtx = (
+		kind: "outer" | "child",
+		branch: unknown[],
+		sessionFile?: string,
+		toolTimeout?: { reason: string },
+	): MockWorkflowCtx => {
 		const base = createMockCtx({
 			...opts,
 			// Override branch with the provided parameter — for "outer" kind this is
@@ -410,7 +422,12 @@ export function createMockSessionChain(opts: MockSessionChainOptions): MockSessi
 			// (and, for fork, grows when the body sends the continuation via an
 			// overridden `sendUserMessageFn`). `sessionFile` lets the recorded
 			// `SessionRef.file` point at a real file so a later continue can fork it.
-			const child = buildCtx("child", step.branch ?? [], step.sessionFile) as unknown as WorkflowSessionContext;
+			const child = buildCtx(
+				"child",
+				step.branch ?? [],
+				step.sessionFile,
+				step.toolTimeout,
+			) as unknown as WorkflowSessionContext;
 			return options.withSession(child);
 		});
 
@@ -424,6 +441,9 @@ export function createMockSessionChain(opts: MockSessionChainOptions): MockSessi
 		if (kind === "child") {
 			ctx.sendUserMessage = sendUserMessageFn;
 			ctx.sendMessage = vi.fn(async () => {});
+			// A watchdog-equipped host surfaces its tool-timeout verdict here; default
+			// children leave it unset so every abort stays a plain abort.
+			if (toolTimeout) ctx.toolTimeout = () => toolTimeout;
 			ctx.sessionManager = {
 				...((base as { sessionManager?: object }).sessionManager ?? {}),
 				getBranch: vi.fn(() => branch),

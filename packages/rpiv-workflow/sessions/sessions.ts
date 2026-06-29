@@ -114,7 +114,18 @@ export async function postStage(
 	// "don't re-dispatch" → permanent work loss), (b) the parallel fold's
 	// `isAbortError` branch leaves the slot unfilled, and (c) resume re-dispatches
 	// the unit cleanly.
-	if (s.signal?.aborted || outcome.stop === "aborted") throw new WorkflowAbortError();
+	//
+	// A genuine run/user abort (`s.signal` fired) ALWAYS re-dispatches on resume, so it
+	// takes the throw unconditionally. An `aborted` stop with the signal cold is examined
+	// for a watchdog tool-timeout (`child.toolTimeout`): the host aborted a runaway bash,
+	// which must route to the soft-halt gate (collect-all unit survives; else terminal
+	// fail) — NOT WorkflowAbortError, which would re-run the same runaway command on resume.
+	if (s.signal?.aborted) throw new WorkflowAbortError();
+	if (outcome.stop === "aborted") {
+		const timeout = child.toolTimeout?.();
+		if (timeout) return haltStageOrSoftHalt(obsCtx, s, { kind: "timeout", reason: timeout.reason }, session);
+		throw new WorkflowAbortError();
+	}
 	// Every halt below routes through the single `haltStageOrSoftHalt` gate: a
 	// fanout unit marked `collectAll` records a NON-terminal failed row + a sentinel
 	// slot instead of halting the run; everything else takes the arm's fail-fast
@@ -147,7 +158,11 @@ export async function postStage(
 type HaltReason =
 	| { kind: "stop"; stop: Exclude<StopSignal, "stop"> }
 	| { kind: "extraction"; message: string }
-	| { kind: "validation"; failureSummary: string };
+	| { kind: "validation"; failureSummary: string }
+	// A watchdog aborted a runaway tool call (bash) past its per-command timeout. The
+	// host surfaces it via `WorkflowSessionContext.toolTimeout`; carries the operator-grade
+	// reason string written to the failed row (soft-halt errMsg / terminal errMsg).
+	| { kind: "timeout"; reason: string };
 
 /**
  * The single collect-all fork. A `collectAll` fanout unit soft-halts (a
@@ -174,6 +189,8 @@ function softHaltReason(s: StageSession, reason: HaltReason): string {
 			return reason.message;
 		case "validation":
 			return reason.failureSummary;
+		case "timeout":
+			return reason.reason;
 	}
 }
 
@@ -191,6 +208,10 @@ function failFastHalt(
 			return haltStageWithExtractionError(ctx, s, reason.message, session);
 		case "validation":
 			return haltStageWithValidationFailure(ctx, s, reason.failureSummary, session);
+		case "timeout":
+			// A non-fan-out stage whose bash overran the watchdog: terminal "failed" row whose
+			// errMsg carries the timeout reason (same shape as an extraction-fatal halt).
+			return haltStageWithExtractionError(ctx, s, reason.reason, session);
 	}
 }
 

@@ -176,4 +176,20 @@ export interface WorkflowHostContext {
  */
 export interface WorkflowSessionContext extends WorkflowHostContext {
 	sendUserMessage(content: string): Promise<void>;
+
+	/**
+	 * Set by a watchdog-equipped host (rpiv-pi) when it aborted THIS child because a
+	 * single tool call (bash) overran the per-command wall-clock ceiling; returns the
+	 * failure reason for the recorded row, or `undefined` when no watchdog fired.
+	 *
+	 * The watchdog aborts via `session.abort()`, so the timeout reaches `postStage` as
+	 * a `stopReason:"aborted"` branch — indistinguishable from a run/user abort by the
+	 * transcript alone. This getter is the out-of-band channel that tells the two apart:
+	 * a watchdog timeout routes through the soft-halt gate (a collect-all unit records a
+	 * non-terminal failed row so the fan-out gate still finalizes; a non-fan-out stage
+	 * fails terminally) INSTEAD of throwing `WorkflowAbortError` — which would re-dispatch
+	 * the SAME runaway command on resume and wedge again. Optional: a host without a
+	 * watchdog omits it and every abort stays a plain abort.
+	 */
+	toolTimeout?(): { reason: string } | undefined;
 }

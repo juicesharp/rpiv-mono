@@ -1114,6 +1114,70 @@ describe("sessions — halt routing", () => {
 		expect(existsSync(join(tmpDir, ".rpiv", "workflows", "runs"))).toBe(false);
 	});
 
+	it("watchdog tool-timeout on a collect-all unit → soft-halt (onUnitHalt), NOT WorkflowAbortError", async () => {
+		// A per-command bash watchdog aborts a runaway command: the child resolves with an
+		// `aborted` stop AND the host reports a `toolTimeout` reason. postStage must NOT throw
+		// WorkflowAbortError (that re-runs the same command on resume) — it routes through the
+		// soft-halt gate, so a collect-all fan-out unit records a non-terminal failed row + a
+		// sentinel (onSuccess), the run survives, and the gate can finalize.
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [
+				{
+					branch: [mockAssistantMessage("scanning", "aborted")],
+					toolTimeout: { reason: "bash command exceeded the 180s per-command timeout and was aborted: `find /`" },
+				},
+			],
+		});
+		const state = freshRunState();
+		const onUnitHalt = vi.fn();
+		const onFailure = vi.fn();
+		const onSuccess = vi.fn<(ctx: WorkflowHostContext, output: Output) => Promise<void>>(async () => {});
+
+		await runStageSession(
+			chain.ctx as WorkflowHostContext,
+			stageSession({
+				cwd: tmpDir,
+				state,
+				stageName: "plan-gate (correctness)",
+				skill: "judge",
+				collectAll: true,
+				lifecycle: new LifecycleDispatcher({ onUnitHalt }),
+				unit: { parent: "plan-gate", role: "verify", index: 1, id: "correctness", label: "correctness" },
+				onSuccess,
+				onFailure,
+			}),
+		);
+
+		// Soft-halt: the timeout reason rides onUnitHalt, the fold gets its sentinel via onSuccess,
+		// and no terminal failure fires (the run lives on).
+		expect(onUnitHalt).toHaveBeenCalledTimes(1);
+		expect(onUnitHalt.mock.calls[0]![2]).toContain("per-command timeout");
+		expect(onSuccess).toHaveBeenCalledTimes(1);
+		expect(onFailure).not.toHaveBeenCalled();
+	});
+
+	it("watchdog tool-timeout on a non-fan-out stage → terminal fail carrying the timeout reason", async () => {
+		// Same abort+toolTimeout shape, but a plain (non-collect-all) stage: the soft-halt gate
+		// falls through to a terminal failure whose errMsg is the watchdog reason.
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [
+				{
+					branch: [mockAssistantMessage("scanning", "aborted")],
+					toolTimeout: { reason: "bash command exceeded the 180s per-command timeout and was aborted: `find /`" },
+				},
+			],
+		});
+		const state = freshRunState();
+		const onFailure = vi.fn();
+
+		await runStageSession(chain.ctx as WorkflowHostContext, stageSession({ cwd: tmpDir, state, onFailure }));
+
+		expect(onFailure).toHaveBeenCalledTimes(1);
+		expect(state.termination.error).toContain("per-command timeout");
+	});
+
 	it("outcome fatal (no validation) → MSG_STAGE_FAILED notify + raw outcome message", async () => {
 		const chain = createMockSessionChain({
 			cwd: tmpDir,
