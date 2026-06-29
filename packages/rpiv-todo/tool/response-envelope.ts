@@ -49,6 +49,9 @@ export function formatContent(op: Op, state: TaskState): string {
 			return `Created #${t.id}: ${t.subject} (pending)`;
 		}
 		case "update": {
+			if (!op.changed) {
+				return `No change: #${op.id} already matches the requested values (status: ${op.toStatus})`;
+			}
 			const transition = op.fromStatus !== op.toStatus ? ` (${op.fromStatus} → ${op.toStatus})` : "";
 			return `Updated #${op.id}${transition}`;
 		}
