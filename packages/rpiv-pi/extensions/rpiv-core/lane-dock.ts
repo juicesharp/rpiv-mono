@@ -85,6 +85,17 @@ function formatAge(ms: number): string {
 	return `${Math.floor(m / 60)}h`;
 }
 
+/** Active-preview "live output" banner: a dim, full-width rule carrying a leading label so the
+ *  preview separator is distinguishable by CONTENT from the bare top/bottom framing rules.
+ *  Fail-soft (matches renderPreview's invariant): degrades to a truncated label — never throws —
+ *  when `width` is narrower than the label itself. */
+function renderPreviewBanner(theme: Theme, width: number): string {
+	const label = "── live output ";
+	const remaining = width - visibleWidth(label);
+	if (remaining >= 0) return theme.fg("dim", label + "─".repeat(remaining));
+	return theme.fg("dim", truncateToWidth(label, Math.max(0, width)));
+}
+
 /** Mini stage-progress bar (Phase 8): filled/empty cells, capped + scaled for big workflows. */
 const BAR_FILLED = "▰";
 const BAR_EMPTY = "▱";
@@ -731,7 +742,7 @@ export class LaneDock {
 		unit: UnitLane | undefined,
 		width: number,
 	): string[] {
-		const rule = theme.fg("dim", "─".repeat(Math.max(0, width)));
+		const rule = renderPreviewBanner(theme, width);
 		let entries: ViewerEntry[];
 		let source: RenderSource;
 		try {

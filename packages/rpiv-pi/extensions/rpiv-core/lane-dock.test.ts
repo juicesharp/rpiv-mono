@@ -1036,13 +1036,13 @@ describe("LaneDock — active transcript preview (Slice 6)", () => {
 		setDockSelection(0);
 		const lines = widget?.render(120) ?? [];
 		expect(lines.join("\n")).toContain("PREVIEW_BODY"); // tail of the selected lane
-		// Assert the separator by POSITION, not mere presence: the active dock already emits
-		// its own top + bottom rules (which under identityTheme also equal "─".repeat(120)), so
-		// `lines.some(l => l === rule)` would pass even if the preview rule regressed. Pin the
-		// rule to BETWEEN the lane row and the preview body — only the preview separator lives there.
+		// The preview separator now carries a "live output" label, so it is distinguishable by
+		// CONTENT from the active dock's bare top + bottom framing rules (still "─".repeat(120)
+		// under identityTheme) — not just by position. Keep the BETWEEN-scoping (i > rowIdx &&
+		// i < bodyIdx) to pin it precisely: only the preview separator lives there.
 		const rowIdx = lines.findIndex((l) => l.includes("ship")); // the selected lane row
 		const bodyIdx = lines.findIndex((l) => l.includes("PREVIEW_BODY")); // the preview tail
-		const ruleIdx = lines.findIndex((l, i) => i > rowIdx && i < bodyIdx && l === "─".repeat(120));
+		const ruleIdx = lines.findIndex((l, i) => i > rowIdx && i < bodyIdx && l.includes("live output"));
 		expect(bodyIdx).toBeGreaterThan(rowIdx); // the preview renders after the lane rows
 		expect(ruleIdx).toBeGreaterThan(-1); // a full-width separator introduces the preview block
 		overlay.dispose();
