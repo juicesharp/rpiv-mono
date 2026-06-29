@@ -1054,8 +1054,8 @@ describe("SLICE_DESIGN_FANOUT (carve design — deps + --upstream)", () => {
 	});
 
 	const designLoop = () => {
-		const loop = findWorkflow("carve").stages.design?.loop;
-		if (loop?.kind !== "fanout") throw new Error("carve design stage has no fanout loop");
+		const loop = findWorkflow("carve").stages["slice-design"]?.loop;
+		if (loop?.kind !== "fanout") throw new Error("carve slice-design stage has no fanout loop");
 		return loop;
 	};
 	const writeSlices = (rel: string, body: string) => {
@@ -1101,18 +1101,18 @@ describe("SLICE_DESIGN_FANOUT (carve design — deps + --upstream)", () => {
 // ---------------------------------------------------------------------------
 // PLAN_DIMENSION_FANOUT — the plan gate's grade panel. architecture-fit is the
 // one dimension that needs the research artifact threaded in as --context; every
-// other dimension (and the slice gate's designability) gets the bare flags.
+// other dimension (and the slice gate's design-readiness) gets the bare flags.
 // ---------------------------------------------------------------------------
 
 describe("carve plan gate grade panel (--context threading)", () => {
 	const planGateLoop = () => {
-		const loop = findWorkflow("carve").stages["plan-gate"]?.loop;
-		if (loop?.kind !== "fanout") throw new Error("carve plan-gate stage has no fanout loop");
+		const loop = findWorkflow("carve").stages["plan-grade"]?.loop;
+		if (loop?.kind !== "fanout") throw new Error("carve plan-grade stage has no fanout loop");
 		return loop;
 	};
 	const sliceGateLoop = () => {
-		const loop = findWorkflow("carve").stages["slice-gate"]?.loop;
-		if (loop?.kind !== "fanout") throw new Error("carve slice-gate stage has no fanout loop");
+		const loop = findWorkflow("carve").stages["slice-grade"]?.loop;
+		if (loop?.kind !== "fanout") throw new Error("carve slice-grade stage has no fanout loop");
 		return loop;
 	};
 	const out = (rel: string) => ({ artifacts: [{ handle: fsHandle(rel) }], data: undefined, kind: "", meta: {} });
@@ -1138,7 +1138,7 @@ describe("carve plan gate grade panel (--context threading)", () => {
 		expect(completeness?.prompt).not.toContain("--context");
 	});
 
-	it("never threads --context into the slice gate (designability has no fit dimension)", async () => {
+	it("never threads --context into the slice gate (design-readiness has no fit dimension)", async () => {
 		const units = await sliceGateLoop().units({
 			cwd: "/repo",
 			artifact: undefined,
@@ -1154,12 +1154,12 @@ describe("carve plan gate grade panel (--context threading)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// slice-structure — the deterministic Phase-1 floor under the designability
+// slice-structure — the deterministic Phase-1 floor under the design-readiness
 // gate: dependency-cycle freedom + brief-coverage conservation (frozen at the
 // first cut). Both are computed from the slice-map text, no LLM.
 // ---------------------------------------------------------------------------
 
-describe("carve slice-structure (deterministic floor)", () => {
+describe("carve slice-check (deterministic floor)", () => {
 	let tmpDir: string;
 	beforeEach(() => {
 		tmpDir = mkdtempSync(join(tmpdir(), "rpiv-carve-structure-"));
@@ -1169,8 +1169,8 @@ describe("carve slice-structure (deterministic floor)", () => {
 	});
 
 	const structureRun = () => {
-		const stage = findWorkflow("carve").stages["slice-structure"];
-		if (!stage?.run) throw new Error("carve slice-structure stage has no run function");
+		const stage = findWorkflow("carve").stages["slice-check"];
+		if (!stage?.run) throw new Error("carve slice-check stage has no run function");
 		return stage.run as (ctx: { cwd: string; input?: undefined; state: RunView }) => {
 			data: Record<string, unknown>;
 		};

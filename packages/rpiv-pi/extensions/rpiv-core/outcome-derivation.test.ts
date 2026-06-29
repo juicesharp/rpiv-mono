@@ -309,27 +309,29 @@ describe("equivalence — built-in workflows", () => {
 		// below are asserted separately)
 		"carve::research": "research",
 		"carve::slice": "slices",
-		"carve::design": "designs",
-		"carve::synth-root": "plans",
-		"carve::elaborate": "elaborations",
+		"carve::slice-design": "designs",
+		"carve::plan": "plans",
+		"carve::code": "elaborations",
 		"carve::validate": "validation",
 	};
 
 	/**
 	 * carve's explicit-by-design produces stages — NOT derived (rung 1 wins):
 	 * the two grade gates publish verdicts to DISTINCT channels (derivation maps
-	 * one kind → one bucket, so it can't split them), and the generic `refine`
-	 * skill is reused for both the slice map and the plan (its contract has no
-	 * single artifactKind to derive). These keep explicit outcomes; the test
-	 * asserts those names rather than a derived one.
+	 * one kind → one bucket, so it can't split them), and the generic `amend`
+	 * skill is reused for the slice map, the plan gate's plan, and the stitch
+	 * gate's code-bearing plan (its contract has no single artifactKind to derive).
+	 * These keep explicit outcomes; the test asserts those names rather than a
+	 * derived one.
 	 */
 	const EXPLICIT_OUTCOMES: Record<string, string> = {
-		"carve::slice-gate": "slice-verdicts",
-		"carve::reslice": "slices",
-		"carve::synth-partial": "subplans",
-		"carve::plan-gate": "plan-verdicts",
-		"carve::refine": "plans",
-		"carve::stitch-gate": "stitch-verdicts",
+		"carve::slice-grade": "slice-verdicts",
+		"carve::slice-fix": "slices",
+		"carve::subplan": "subplans",
+		"carve::plan-grade": "plan-verdicts",
+		"carve::plan-fix": "plans",
+		"carve::code-grade": "stitch-verdicts",
+		"carve::code-fix": "plans",
 	};
 
 	/**
@@ -349,7 +351,7 @@ describe("equivalence — built-in workflows", () => {
 		"polish::implement",
 		"carve::commit",
 		"carve::implement",
-		"carve::stitch",
+		"carve::code-splice",
 	]);
 
 	// Need architecture-review contract too
@@ -388,7 +390,7 @@ describe("equivalence — built-in workflows", () => {
 
 				if (stage.kind !== "produces") continue;
 
-				// Script produces stages (e.g. carve's deterministic `slice-structure`
+				// Script produces stages (e.g. carve's deterministic `slice-check`
 				// floor) carry no derivable outcome — the run function IS the envelope, so
 				// deriveOutcomes skips them on `stage.run != null` and they have no EXPECTED
 				// bucket. They publish under their own stage name.
@@ -428,7 +430,7 @@ describe("equivalence — built-in workflows", () => {
 		});
 	}
 
-	it("total produces stages across all workflows = 33 (32 derivable + carve's script-stage floor)", () => {
+	it("total produces stages across all workflows = 34 (33 derivable + carve's script-stage floor)", () => {
 		let count = 0;
 		let scriptProduces = 0;
 		for (const w of builtInWorkflows) {
@@ -437,8 +439,8 @@ describe("equivalence — built-in workflows", () => {
 				if (stage.kind === "produces" && stage.run != null) scriptProduces++;
 			}
 		}
-		expect(count).toBe(33);
-		expect(scriptProduces).toBe(1); // carve::slice-structure
+		expect(count).toBe(34);
+		expect(scriptProduces).toBe(1); // carve::slice-check
 	});
 });
 

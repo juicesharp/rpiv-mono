@@ -244,7 +244,7 @@ describe("bundled skill contracts", () => {
 			"synthesize",
 			"elaborate",
 			"grade",
-			"refine",
+			"amend",
 		]) {
 			expect(declared.has(name)).toBe(true);
 		}
@@ -269,7 +269,7 @@ describe("bundled skill contracts", () => {
 	it("documents the declared-but-not-harvested orthogonal set", () => {
 		// These skills declare a contract but don't appear in any built-in workflow.
 		// The orthogonal set: 7 doc/util + discover + explore + commit = 10 skills.
-		// The entire slice-flow (slice/design-slice/synthesize/grade/refine/elaborate)
+		// The entire slice-flow (slice/design-slice/synthesize/grade/amend/elaborate)
 		// IS now harvested by the `carve` built-in.
 		// (pr-triage IS harvested — it's dispatched by the pr-triage workflow.)
 		const harvested = harvestStageContracts(builtInWorkflows);

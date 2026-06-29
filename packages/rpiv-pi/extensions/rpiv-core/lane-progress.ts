@@ -168,7 +168,7 @@ export async function registerLaneProgress(): Promise<void> {
 				});
 			},
 			// A decision edge took its arm: credit each not-taken RECOVERY arm (a
-			// failure loop the chosen arm skipped for good — carve's reslice/refine)
+			// failure loop the chosen arm skipped for good — carve's slice-fix/plan-fix/code-fix)
 			// as visited. This advances the distinct-nodes-visited numerator at the
 			// gate, so the bar reaches `totalStages` WHILE the terminal stage runs
 			// (commit shows 16/16) instead of capping below until the onWorkflowEnd
@@ -262,7 +262,7 @@ export async function registerLaneProgress(): Promise<void> {
 				const error = result.termination?.error;
 				// A completed run is 100% by definition. The bar's fraction is
 				// distinct-stages-visited / reachable-stages. The onRoute handler now credits
-				// bypassed recovery arms (carve's `reslice`/`refine`) at the gate, so a clean
+				// bypassed recovery arms (carve's `slice-fix`/`plan-fix`/`code-fix`) at the gate, so a clean
 				// run usually already reads full here and this snap is a no-op. It REMAINS as a
 				// safety net for any uncredited skip (e.g. a gate passed before a resume point,
 				// whose onRoute never re-fired). Paint the bar full on clean completion only;

@@ -250,49 +250,49 @@ describe("lane-progress event mapping", () => {
 	it("onRoute credits bypassed recovery arms into the visited numerator", async () => {
 		const b = await register();
 		recordRun("run-1", "carve");
-		const ctx = { runId: "run-1", totalStages: 16 };
-		["research", "slice", "slice-structure", "slice-gate"].forEach((n, i) => {
+		const ctx = { runId: "run-1", totalStages: 17 };
+		["research", "slice", "slice-check", "slice-grade"].forEach((n, i) => {
 			b.onStageStart?.({ stageNumber: i + 1, name: n }, ctx);
 		});
-		// slice-gate passes → design; reslice is bypassed for good on this path.
-		b.onRoute?.({ name: "slice-gate" }, "design", ctx, ["reslice"]);
-		expect(getLane("run-1")?.progress?.visited).toBe(5); // 4 entered + reslice credited
+		// slice-grade passes → slice-design; slice-fix is bypassed for good on this path.
+		b.onRoute?.({ name: "slice-grade" }, "slice-design", ctx, ["slice-fix"]);
+		expect(getLane("run-1")?.progress?.visited).toBe(5); // 4 entered + slice-fix credited
 	});
 
 	it("onRoute with an empty bypass list leaves the numerator untouched", async () => {
 		const b = await register();
 		recordRun("run-1", "carve");
-		const ctx = { runId: "run-1", totalStages: 16 };
+		const ctx = { runId: "run-1", totalStages: 17 };
 		b.onStageStart?.({ stageNumber: 1, name: "research" }, ctx);
 		b.onRoute?.({ name: "research" }, "slice", ctx, []);
 		expect(getLane("run-1")?.progress?.visited).toBe(1);
 	});
 
-	it("carve happy path: commit shows 16/16 WHILE running (bypassed reslice+refine credited at the gates)", async () => {
+	it("carve happy path: commit shows 17/17 WHILE running (bypassed slice-fix+plan-fix+code-fix credited at the gates)", async () => {
 		const b = await register();
 		recordRun("run-1", "carve");
-		const ctx = { runId: "run-1", totalStages: 16 };
+		const ctx = { runId: "run-1", totalStages: 17 };
 		const enter = (n: string, i: number) => b.onStageStart?.({ stageNumber: i, name: n }, ctx);
 		enter("research", 1);
 		enter("slice", 2);
-		enter("slice-structure", 3);
-		enter("slice-gate", 4);
-		b.onRoute?.({ name: "slice-gate" }, "design", ctx, ["reslice"]);
-		enter("design", 5);
-		enter("synth-partial", 6);
-		enter("synth-root", 7);
-		enter("plan-gate", 8);
-		b.onRoute?.({ name: "plan-gate" }, "elaborate", ctx, ["refine"]);
-		enter("elaborate", 9);
-		enter("stitch", 10);
-		enter("stitch-gate", 11);
-		b.onRoute?.({ name: "stitch-gate" }, "implement", ctx, []); // re-elaborate arm already visited
+		enter("slice-check", 3);
+		enter("slice-grade", 4);
+		b.onRoute?.({ name: "slice-grade" }, "slice-design", ctx, ["slice-fix"]);
+		enter("slice-design", 5);
+		enter("subplan", 6);
+		enter("plan", 7);
+		enter("plan-grade", 8);
+		b.onRoute?.({ name: "plan-grade" }, "code", ctx, ["plan-fix"]);
+		enter("code", 9);
+		enter("code-splice", 10);
+		enter("code-grade", 11);
+		b.onRoute?.({ name: "code-grade" }, "implement", ctx, ["code-fix"]); // code-fix → code-grade (visited), credited
 		enter("implement", 12);
 		enter("validate", 13);
 		enter("commit", 14);
-		// Path ordinal is 14 (actual entries), but distinct-covered is 16 — a full bar
-		// WHILE commit runs, not the old 14/16 that only snapped to 16/16 at completion.
-		expect(getLane("run-1")?.progress).toMatchObject({ visited: 16, totalStages: 16, stageName: "commit" });
+		// Path ordinal is 14 (actual entries), but distinct-covered is 17 — a full bar
+		// WHILE commit runs, not the old 14/16 that only snapped to full at completion.
+		expect(getLane("run-1")?.progress).toMatchObject({ visited: 17, totalStages: 17, stageName: "commit" });
 	});
 
 	it("setLaneProgress no-ops on a non-recorded run (non-detached runs cost nothing)", async () => {
@@ -630,7 +630,7 @@ describe("onWorkflowEnd — terminal retention + completion toast", () => {
 		// A successful path that skips a branch-exclusive stage: 3 distinct of 4
 		// visited (the carve 13/14 shape). The last live snapshot caps below 100%.
 		b.onStageStart?.({ stageNumber: 1, name: "slice" }, ctx);
-		b.onStageStart?.({ stageNumber: 2, name: "elaborate" }, ctx);
+		b.onStageStart?.({ stageNumber: 2, name: "code" }, ctx);
 		b.onStageStart?.({ stageNumber: 3, name: "commit" }, ctx);
 		expect(getLane("run-1")?.progress?.visited).toBe(3); // frozen below total pre-end
 
@@ -649,12 +649,12 @@ describe("onWorkflowEnd — terminal retention + completion toast", () => {
 		recordRun("run-1", "carve");
 		const ctx = { runId: "run-1", totalStages: 4 };
 		b.onStageStart?.({ stageNumber: 1, name: "slice" }, ctx);
-		b.onStageError?.({ stageNumber: 2, name: "elaborate" }, "boom", ctx); // visited 2, phase error
+		b.onStageError?.({ stageNumber: 2, name: "code" }, "boom", ctx); // visited 2, phase error
 
 		b.onWorkflowEnd?.({ termination: { status: "failed" } }, { runId: "run-1", workflow: "carve", totalStages: 4 });
 
 		// A failed row stays frozen at the stage that died — NOT bumped to 4/4.
-		expect(getLane("run-1")?.progress).toMatchObject({ visited: 2, phase: "error", stageName: "elaborate" });
+		expect(getLane("run-1")?.progress).toMatchObject({ visited: 2, phase: "error", stageName: "code" });
 		expect(getLane("run-1")?.status).toBe("failed");
 	});
 

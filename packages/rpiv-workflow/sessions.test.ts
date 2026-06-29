@@ -1139,11 +1139,11 @@ describe("sessions — halt routing", () => {
 			stageSession({
 				cwd: tmpDir,
 				state,
-				stageName: "plan-gate (correctness)",
+				stageName: "plan-grade (correctness)",
 				skill: "judge",
 				collectAll: true,
 				lifecycle: new LifecycleDispatcher({ onUnitHalt }),
-				unit: { parent: "plan-gate", role: "verify", index: 1, id: "correctness", label: "correctness" },
+				unit: { parent: "plan-grade", role: "verify", index: 1, id: "correctness", label: "correctness" },
 				onSuccess,
 				onFailure,
 			}),

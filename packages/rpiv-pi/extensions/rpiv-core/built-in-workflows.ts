@@ -599,19 +599,19 @@ const prTriageWorkflow = defineWorkflow({
 });
 
 // ===========================================================================
-// carve — research → slice → slice-structure (deterministic floor) → slice-gate
-//         (designability, reslice loop) → design (fanout) →
-//         synth-partial (cluster fanout) → synth-root → plan-gate (refine loop) →
-//         elaborate (fanout) → stitch → stitch-gate (re-elaborate loop) →
+// carve — research → slice → slice-check (deterministic floor) → slice-grade
+//         (design-readiness, slice-fix loop) → slice-design (fanout) →
+//         subplan (cluster fanout) → plan → plan-grade (plan-fix loop) →
+//         code (fanout) → code-splice → code-grade (code-fix loop) →
 //         implement → validate → commit
 //   The sliced, panel-gated heavy path: research the brief first (so every slice
 //   rests on a real, cited footing and the plan gate can grade architecture-fit),
 //   decompose it into independent
 //   vertical slices, gate that breakdown BEFORE any design so each slice is
 //   chewable by one design-slice pass. The gate is two-phase: a DETERMINISTIC
-//   floor (`slice-structure`) enforces dependency-cycle freedom and brief-coverage
-//   conservation (a reslice may redistribute the brief, never drop scope to pass),
-//   then ONE LLM `designability` judgment reconciles the formerly-opposing
+//   floor (`slice-check`) enforces dependency-cycle freedom and brief-coverage
+//   conservation (a slice-fix may redistribute the brief, never drop scope to pass),
+//   then ONE LLM `design-readiness` judgment reconciles the formerly-opposing
 //   split/merge forces. Then design every slice in parallel, merge hierarchically
 //   (per-cluster sub-plans → one plan) so no pass holds every design, gate the
 //   plan on quality dimensions BEFORE any code, elaborate code per phase and
@@ -621,18 +621,19 @@ const prTriageWorkflow = defineWorkflow({
 
 /**
  * The single LLM dimension the EARLY gate grades the slice map against — before
- * any design. `designability` asks the one question the whole gate exists to
+ * any design. `design-readiness` asks the one question the whole gate exists to
  * answer: is each slice chewable by ONE `design-slice` pass? It subsumes the old
  * four-way panel (right-sizing + vertical-shape + design-readiness + the
- * contract-ownership half of independence) into one holistic judgment, so the
- * formerly-opposing split-pressure (right-sizing) and merge-pressure
+ * contract-ownership half of independence) into one holistic judgment — taking
+ * its own name from that design-readiness member, the dominant sub-aspect — so
+ * the formerly-opposing split-pressure (right-sizing) and merge-pressure
  * (vertical-shape) forces are reconciled by ONE grader instead of two blind
  * panelists that ping-pong the reslice loop. The structural floor that was the
  * other half of independence — dependency-cycle freedom — plus brief-coverage
- * conservation are enforced DETERMINISTICALLY by `slice-structure`, not graded
- * here. Mirrors the `designability` rubric row in the `grade` skill.
+ * conservation are enforced DETERMINISTICALLY by `slice-check`, not graded
+ * here. Mirrors the `design-readiness` rubric row in the `grade` skill.
  */
-const SLICE_DIMENSIONS = ["designability"] as const;
+const SLICE_DIMENSIONS = ["design-readiness"] as const;
 
 /**
  * Quality dimensions the LATER gate grades the synthesized plan against.
@@ -730,7 +731,7 @@ const MAX_CLUSTER_SLICES = 6;
 /**
  * Group slices into clusters = connected components of the `deps` DAG (a slice
  * and everything it transitively depends on / that depends on it land together),
- * so coupled slices reconcile inside ONE synth-partial pass and only cross-cluster
+ * so coupled slices reconcile inside ONE subplan pass and only cross-cluster
  * seams reach the root. Components larger than `MAX_CLUSTER_SLICES` are chunked
  * (by slice number) to bound each pass's context. Returns clusters of slice
  * numbers, each sorted ascending; components ordered by their smallest slice.
@@ -776,7 +777,7 @@ const clusterSliceDag = (records: readonly PhaseRecord[]): number[][] => {
  * A directed dependency cycle in the slice DAG (`A→B→…→A`), returned as the slice
  * numbers on the cycle; empty when acyclic. `clusterSliceDag` groups by the
  * UNDIRECTED connected component, which a directed cycle survives — so the
- * designability gate needs this separate directed check. A cycle is the true
+ * design-readiness gate needs this separate directed check. A cycle is the true
  * independence defect (slices in a cycle cannot be designed independently); the
  * deterministic floor catches it without an LLM coin-flip.
  */
@@ -838,8 +839,8 @@ const sliceCovers = (entry: Record<string, unknown>): string[] => {
 };
 
 /**
- * Deterministic Phase-1 slice-gate check — the un-gameable floor beneath the LLM
- * `designability` panel. It enforces the two invariants a prose grader cannot
+ * Deterministic Phase-1 slice-check — the un-gameable floor beneath the LLM
+ * `design-readiness` panel. It enforces the two invariants a prose grader cannot
  * reliably hold because it grades the slicer's own self-description:
  *   • acyclicity — the `deps` DAG must be cycle-free.
  *   • coverage conservation — every coverage unit FROZEN at the first cut
@@ -849,19 +850,19 @@ const sliceCovers = (entry: Record<string, unknown>): string[] => {
  *     disable the check by deleting the `coverage:` array — the frozen set is
  *     read from round 0.
  * Emits one combined `{ dimension: "structure" }` verdict onto the
- * `slice-structure` channel; the gate route folds it with the LLM verdicts.
+ * `slice-check` channel; the gate route folds it with the LLM verdicts.
  * Deterministic ⇒ idempotent across reslice rounds (no flicker, resume-safe).
  */
 const sliceStructureCheck = ({ state, cwd }: ScriptContext): Omit<Output, "meta"> => {
 	const latest = latestFsArtifact(state, "slices");
 	if (latest?.handle.kind !== "fs") {
 		throw haltPreflight(
-			"slice-structure",
-			"slice-structure: no slice map to check",
-			"slice-structure: no fs artifact on the 'slices' channel — slice must run before the structure check",
+			"slice-check",
+			"slice-check: no slice map to check",
+			"slice-check: no fs artifact on the 'slices' channel — slice must run before the structure check",
 		);
 	}
-	const records = sliceRecords(readArtifactFile(latest.handle.path, cwd), "slice-structure", latest.handle.path);
+	const records = sliceRecords(readArtifactFile(latest.handle.path, cwd), "slice-check", latest.handle.path);
 	const findings: { detail: string; where: string }[] = [];
 
 	const cycle = sliceDepCycle(records);
@@ -921,7 +922,7 @@ const designPathsBySlice = (state: RunView): Map<number, string> => {
 };
 
 /**
- * Fan `synth-partial` out over slice-DAG clusters. Each unit merges ONE cluster's
+ * Fan `subplan` out over slice-DAG clusters. Each unit merges ONE cluster's
  * per-slice designs into a sub-plan (`--as-subplan`), so no single pass holds
  * every design — the context-bounding twin of the flat fan-in `synthesize`.
  */
@@ -962,7 +963,7 @@ const SYNTH_CLUSTER_FANOUT = fanout({
  * grades the plan against the research the slices rest on. The carve flow always
  * front-loads a `research` stage, so we thread the latest `research` artifact in
  * as `--context` for that dimension only; every other dimension (and the slice
- * gate's `designability`, which never grades fit) gets the bare flags.
+ * gate's `design-readiness`, which never grades fit) gets the bare flags.
  */
 const gradePanelFanout = (channel: string, dimensions: readonly string[]) =>
 	fanout({
@@ -988,14 +989,26 @@ const PLAN_DIMENSION_FANOUT = gradePanelFanout("plans", PLAN_DIMENSIONS);
 
 /**
  * Fold the per-dimension verdicts into a gate decision: keep the latest verdict
- * per dimension (verdicts accumulate across refine loops), require all-pass.
+ * per dimension (verdicts accumulate across fix loops), require all-pass.
  * Deterministic ⇒ resume-safe for a `readsData: false` route.
+ *
+ * Severity floor: a verdict whose worst finding is `low`/`none` never blocks the
+ * gate, even when the grader set `pass: false` on a nit. `grade` decides `pass`
+ * by a free judgment against a prose bar (independent of `severity`), so a
+ * marginal dimension can flip pass↔fail across rounds on an unchanged artifact —
+ * that flapping, ANDed over a 5-dimension panel, stalled the carve gate loops
+ * until the backward-jump guard halted them. Flooring on severity reserves a hard
+ * fail for `medium`+ findings (the deterministic `slice-check` check emits
+ * `high` on a real structural break, so it still blocks). A verdict with no
+ * `severity` (an older or replayed grade) falls back to the raw `pass` boolean.
  */
 const allDimensionsPass = (entries: readonly Output[] = []): boolean => {
 	const latest = new Map<string, boolean>();
 	for (const o of entries) {
-		const v = o.data as { dimension?: string; pass?: boolean } | undefined;
-		if (typeof v?.dimension === "string") latest.set(v.dimension, v.pass === true);
+		const v = o.data as { dimension?: string; pass?: boolean; severity?: string } | undefined;
+		if (typeof v?.dimension !== "string") continue;
+		const lowOrNone = v.severity === "low" || v.severity === "none";
+		latest.set(v.dimension, v.pass === true || lowOrNone);
 	}
 	const verdicts = [...latest.values()];
 	return verdicts.length > 0 && verdicts.every(Boolean);
@@ -1006,7 +1019,7 @@ const allDimensionsPass = (entries: readonly Output[] = []): boolean => {
  * use the JSON directory collector + `jsonBodyParser` (NOT the md
  * `rpivBucketOutcome`). The slice gate and plan gate publish to DISTINCT named
  * channels (same dir, different artifact basenames) so their verdicts never
- * collide and `refine` can pick each via the `-verdicts` suffix convention.
+ * collide and `plan-fix`/`code-fix` can pick each via the `-verdicts` suffix convention.
  */
 const verdictOutcome = (name: string) => ({
 	name,
@@ -1036,7 +1049,7 @@ const STITCH_SCRIPT = join(
 const carveWorkflow = defineWorkflow({
 	name: "carve",
 	description:
-		"Ship, sliced: research the brief → decompose it into vertical slices → two-phase slice gate (a deterministic floor — dependency-cycle freedom + brief-coverage conservation so a reslice can't pass by dropping scope — then one LLM designability judgment that each slice is chewable by a single design pass) with a reslice loop → design each slice in parallel → synthesize hierarchically (per-cluster sub-plans → one merged plan) → quality-panel gate (completeness/correctness/actionability/pattern-following/architecture-fit) with a refine loop → elaborate code per phase in parallel → stitch → re-grade the code-bearing plan → implement → validate → commit. Research-led; three gates, before design, before code, and after stitch.",
+		"Ship, sliced: research the brief → decompose it into vertical slices → two-phase slice gate (a deterministic floor — dependency-cycle freedom + brief-coverage conservation so a slice-fix can't pass by dropping scope — then one LLM design-readiness judgment that each slice is chewable by a single design pass) with a slice-fix loop → design each slice in parallel → synthesize hierarchically (per-cluster sub-plans → one merged plan) → quality-panel gate (completeness/correctness/actionability/pattern-following/architecture-fit) with a plan-fix loop → elaborate code per phase in parallel → stitch → re-grade the code-bearing plan → implement → validate → commit. Research-led; three gates, before design, before code, and after stitch.",
 	start: "research",
 	stages: {
 		// Front-loaded research grounds every slice's footing and feeds the plan
@@ -1044,72 +1057,86 @@ const carveWorkflow = defineWorkflow({
 		research: produces(),
 		slice: produces(),
 		// Phase 1 of the gate: the DETERMINISTIC floor (cycle-freedom + coverage conservation), no LLM.
-		"slice-structure": produces.script({ reads: ["slices"], run: sliceStructureCheck }),
-		// Phase 2 of the gate: ONE LLM designability judgment; verdicts on their own channel.
-		"slice-gate": produces({
+		"slice-check": produces.script({ reads: ["slices"], run: sliceStructureCheck }),
+		// Phase 2 of the gate: ONE LLM design-readiness judgment; verdicts on their own channel.
+		"slice-grade": produces({
 			skill: "grade",
 			loop: SLICE_DIMENSION_FANOUT,
 			outcome: sliceVerdictOutcome,
 			reads: ["slices"],
 		}),
 		// Re-cut the slice map from the failing verdicts. Routes through `slice`
-		// (re-slice mode), NOT the surgical `refine`: a `designability` or structural
+		// (re-slice mode), NOT the surgical `amend`: a `design-readiness` or structural
 		// failure needs STRUCTURAL authority — split an epic, break a cycle, renumber —
-		// which a surgical "touch only the cited line" edit cannot do, so `refine`
+		// which a surgical "touch only the cited line" edit cannot do, so `amend`
 		// looped without converging until the backward-jump guard halted the run.
-		reslice: produces({
+		"slice-fix": produces({
 			skill: "slice",
 			outcome: rpivBucketOutcome("slices"),
-			reads: ["slices", fanin("slice-verdicts"), fanin("slice-structure")],
+			reads: ["slices", fanin("slice-verdicts"), fanin("slice-check")],
 		}),
 		// Design every slice in parallel.
-		design: produces({ skill: "design-slice", loop: SLICE_DESIGN_FANOUT }),
+		"slice-design": produces({ skill: "design-slice", loop: SLICE_DESIGN_FANOUT }),
 		// Hierarchical fan-in: merge each slice-DAG cluster into a sub-plan in
 		// parallel (bounded context), then merge the sub-plans into one plan.
-		"synth-partial": produces({
+		subplan: produces({
 			skill: "synthesize",
 			loop: SYNTH_CLUSTER_FANOUT,
 			outcome: rpivBucketOutcome("subplans"),
 		}),
-		"synth-root": produces({ skill: "synthesize", reads: [fanin("subplans")] }),
+		plan: produces({ skill: "synthesize", reads: [fanin("subplans")] }),
 		// Quality gate over the plan; verdicts on their own channel.
-		"plan-gate": produces({
+		"plan-grade": produces({
 			skill: "grade",
 			loop: PLAN_DIMENSION_FANOUT,
 			outcome: planVerdictOutcome,
 			// `research` is read so the architecture-fit unit can thread it as --context.
 			reads: ["plans", "research"],
 		}),
-		refine: produces({
-			skill: "refine",
+		"plan-fix": produces({
+			skill: "amend",
 			outcome: rpivBucketOutcome("plans"),
 			reads: ["plans", fanin("plan-verdicts")],
 		}),
 		// Elaborate implement-ready code into each phase in parallel (fanout),
 		// deterministically splice it back into the plan (stitch), then re-grade
 		// the now code-bearing plan — guarding the blind-splice risk.
-		elaborate: produces({ skill: "elaborate", loop: FRONTMATTER_PHASE_FANOUT, reads: ["plans"] }),
-		stitch: acts.script({
+		code: produces({ skill: "elaborate", loop: FRONTMATTER_PHASE_FANOUT, reads: ["plans"] }),
+		"code-splice": acts.script({
 			reads: ["plans"],
 			run: ({ state, cwd }) => {
 				const plan = latestFsArtifact(state, "plans");
 				if (plan?.handle.kind !== "fs") {
 					throw haltPreflight(
-						"stitch",
-						"stitch: no plan to stitch",
-						"stitch: no fs plan artifact on the 'plans' channel — synthesize must run before elaborate/stitch",
+						"code-splice",
+						"code-splice: no plan to stitch",
+						"code-splice: no fs plan artifact on the 'plans' channel — synthesize must run before elaborate/stitch",
 					);
 				}
 				const planPath = isAbsolute(plan.handle.path) ? plan.handle.path : join(cwd, plan.handle.path);
 				execFileSync("node", [STITCH_SCRIPT, planPath], { cwd });
 			},
 		}),
-		"stitch-gate": produces({
+		"code-grade": produces({
 			skill: "grade",
 			loop: PLAN_DIMENSION_FANOUT,
 			outcome: stitchVerdictOutcome,
 			// `research` is read so the architecture-fit unit can thread it as --context.
 			reads: ["plans", "research"],
+		}),
+		// Repair arm for the stitch gate. Surgical `amend` over the SAME code-bearing
+		// plan from the stitch verdicts — NOT a blind re-elaborate: `elaborate` never
+		// sees the findings and can only rewrite a phase's code body, so it cannot fix
+		// what the gate actually fails on (fabricated edit anchors, drifted line
+		// citations, a cross-phase naming collision) and sometimes regressed a passing
+		// dimension. `amend` reads the verdicts and edits the stitched plan in place
+		// (its embedded code blocks included), then loops straight back to re-grade —
+		// the mirror of the plan gate's `refine` arm, on its own `stitch-verdicts`
+		// channel so the two loops' verdicts never cross.
+		"code-fix": produces({
+			skill: "amend",
+			outcome: rpivBucketOutcome("plans"),
+			reads: ["plans", fanin("stitch-verdicts")],
 		}),
 		implement: acts({ loop: IMPLEMENT_PHASE_FANOUT, reads: ["plans"] }),
 		validate: produces(),
@@ -1119,38 +1146,43 @@ const carveWorkflow = defineWorkflow({
 		// Research's artifact is auto-fed to slice as its argument (the slice skill's
 		// "Fresh" input is a research path) — mirrors arch's research → design edge.
 		research: "slice",
-		slice: "slice-structure",
-		"slice-structure": "slice-gate",
-		// Designability gate BEFORE any design. Structure + designability pass⇒ design; any fails ⇒
-		// reslice and loop back. Bounded by the runner's maxBackwardJumps (default 2).
-		"slice-gate": defineRoute(
-			["design", "reslice"],
+		slice: "slice-check",
+		"slice-check": "slice-grade",
+		// Design-readiness gate BEFORE any design. Structure + design-readiness pass⇒ design; any fails ⇒
+		// slice-fix and loop back. Bounded by the runner's maxBackwardJumps (default 2).
+		"slice-grade": defineRoute(
+			["slice-design", "slice-fix"],
 			({ state }) =>
-				allDimensionsPass(state.named["slice-structure"]) && allDimensionsPass(state.named["slice-verdicts"])
-					? "design"
-					: "reslice",
+				allDimensionsPass(state.named["slice-check"]) && allDimensionsPass(state.named["slice-verdicts"])
+					? "slice-design"
+					: "slice-fix",
 			{ readsData: false },
 		),
-		reslice: "slice-structure",
-		design: "synth-partial",
-		"synth-partial": "synth-root",
-		"synth-root": "plan-gate",
-		// Quality gate BEFORE any code. Pass ⇒ elaborate; any fails ⇒ refine and loop back.
-		"plan-gate": defineRoute(
-			["elaborate", "refine"],
-			({ state }) => (allDimensionsPass(state.named["plan-verdicts"]) ? "elaborate" : "refine"),
+		"slice-fix": "slice-check",
+		"slice-design": "subplan",
+		subplan: "plan",
+		plan: "plan-grade",
+		// Quality gate BEFORE any code. Pass ⇒ code; any fails ⇒ plan-fix and loop back.
+		"plan-grade": defineRoute(
+			["code", "plan-fix"],
+			({ state }) => (allDimensionsPass(state.named["plan-verdicts"]) ? "code" : "plan-fix"),
 			{ readsData: false },
 		),
-		refine: "plan-gate",
-		elaborate: "stitch",
-		stitch: "stitch-gate",
-		// Re-grade the code-bearing plan. Pass ⇒ implement; any fails ⇒ re-elaborate
-		// (and re-stitch, re-grade). Bounded by the runner's maxBackwardJumps.
-		"stitch-gate": defineRoute(
-			["implement", "elaborate"],
-			({ state }) => (allDimensionsPass(state.named["stitch-verdicts"]) ? "implement" : "elaborate"),
+		"plan-fix": "plan-grade",
+		code: "code-splice",
+		"code-splice": "code-grade",
+		// Re-grade the code-bearing plan. Pass ⇒ implement; any fails ⇒ surgically
+		// refine the stitched plan and re-grade. Routes to `code-fix`, NOT back to
+		// `code`: the gate fails on plan-text defects (edit anchors, line
+		// citations, naming) that a per-phase code rewrite cannot reach, so the
+		// surgical arm is the one with authority over them. Bounded by the runner's
+		// maxBackwardJumps.
+		"code-grade": defineRoute(
+			["implement", "code-fix"],
+			({ state }) => (allDimensionsPass(state.named["stitch-verdicts"]) ? "implement" : "code-fix"),
 			{ readsData: false },
 		),
+		"code-fix": "code-grade",
 		implement: "validate",
 		validate: "commit",
 		commit: "stop",

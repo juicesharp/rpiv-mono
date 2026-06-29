@@ -64,7 +64,7 @@ export function edgeIsDecision(workflow: Workflow, current: string): boolean {
  * forward progress.
  *
  * Used by the progress bridge (`rpiv-pi` lane-progress): when a gate takes its
- * pass arm, the failure arm (carve's `reslice` / `refine`) is bypassed for good
+ * pass arm, the failure arm (carve's `slice-fix` / `plan-fix` / `code-fix`) is bypassed for good
  * on this path, so it counts toward "distinct nodes covered" — the bar reaches
  * full WHILE the terminal stage runs instead of freezing one-below until the
  * `onWorkflowEnd` snap. Surfaced as the `onRoute` lifecycle event's `bypassed`

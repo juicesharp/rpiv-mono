@@ -1,6 +1,6 @@
 ---
 name: slice
-description: Decompose a research artifact into independent vertical slices — each a self-contained, separately-designable unit — and write a slice map to .rpiv/artifacts/slices/ with a machine-readable `slices:` frontmatter array. A research artifact is required (it is the cut's grounding); confirms the decomposition with you before writing. Also runs in RE-SLICE mode (`--slices <map> --slice-verdicts <v>…`) to STRUCTURALLY re-cut a slice map that failed the designability gate — splitting epics, completing under-cited footings, redistributing frozen coverage units, breaking dependency cycles, renumbering — which a surgical reviser cannot do. Feeds a per-slice design fanout.
+description: Decompose a research artifact into independent vertical slices — each a self-contained, separately-designable unit — and write a slice map to .rpiv/artifacts/slices/ with a machine-readable `slices:` frontmatter array. A research artifact is required (it is the cut's grounding); confirms the decomposition with you before writing. Also runs in RE-SLICE mode (`--slices <map> --slice-verdicts <v>…`) to STRUCTURALLY re-cut a slice map that failed the design-readiness gate — splitting epics, completing under-cited footings, redistributing frozen coverage units, breaking dependency cycles, renumbering — which a surgical reviser cannot do. Feeds a per-slice design fanout.
 argument-hint: "<research-path>  |  --slices <map> --slice-verdicts <verdict>..."
 shell-timeout: 10
 contract:

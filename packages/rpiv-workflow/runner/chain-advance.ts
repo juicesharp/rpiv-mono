@@ -60,7 +60,7 @@ export async function advanceChain(
 
 	// Recovery arms this decision passed over for good — credited toward progress
 	// "coverage" by the bridge so a clean run's bar isn't frozen one-below until the
-	// end (carve's reslice/refine). Empty for deterministic edges (no alternatives).
+	// end (carve's slice-fix/plan-fix/code-fix). Empty for deterministic edges (no alternatives).
 	const chosen = result.kind === "stop" ? "stop" : result.stage;
 	const bypassed = wasDecision ? bypassedRecoveryArms(run.workflow, currentName, chosen, run.visited) : [];
 
