@@ -85,7 +85,7 @@ function makeSession(getBranch: () => unknown = () => []): LaneSession & {
 	};
 }
 
-/** A SessionStats-shaped object (agent-session.d.ts:135-153) that Phase 1's toLaneUsage
+/** A SessionStats-shaped object (agent-session.d.ts:135-153) that toLaneUsage
  *  narrows into a LaneUsage — tokens.{input,output,cacheRead,cacheWrite} + recomputed
  *  total. Drives a unit's finalUsage through the real captureFinalSnapshot path. */
 function sessionStats(tokens: {
@@ -344,7 +344,7 @@ describe("LaneDock — rendering", () => {
 		overlay.dispose();
 	});
 
-	it("aging heading: shouts the needs-input count and a relative age (Phase C)", () => {
+	it("aging heading: shouts the needs-input count and a relative age", () => {
 		recordRun("run-1", "ship");
 		const overlay = new LaneDock();
 		const { widget } = mount(overlay, makeCtx());
@@ -357,7 +357,7 @@ describe("LaneDock — rendering", () => {
 		expect(heading).toMatch(/1 run needs input · \d+s/);
 	});
 
-	it("aging heading: pluralizes when multiple lanes need input (Phase C)", () => {
+	it("aging heading: pluralizes when multiple lanes need input", () => {
 		recordRun("run-1", "ship");
 		recordRun("run-2", "vet");
 		const overlay = new LaneDock();
@@ -368,7 +368,7 @@ describe("LaneDock — rendering", () => {
 		expect((widget?.render(120) ?? [])[1]).toContain("2 runs need input"); // [0] is the top rule
 	});
 
-	it("needs-input lane is never hidden below the '+N more' fold (Phase B priority sort)", () => {
+	it("needs-input lane is never hidden below the '+N more' fold (priority sort)", () => {
 		// 12 lanes (> the 11-row budget) → collapse; the LAST-launched one needs input.
 		for (let i = 0; i < 12; i++) recordRun(`run-${i}`, `lane${i}`);
 		enqueueInput("run-11", SINGLE_UNIT_KEY, {
@@ -386,34 +386,36 @@ describe("LaneDock — rendering", () => {
 		overlay.dispose();
 	});
 
-	it("renders the workflow tag + truncated prompt as the descriptor (no --name)", () => {
+	it("renders the workflow tag + runId as the descriptor (no --name)", () => {
 		recordRun("run-1", "ship", { workflow: "ship", input: "refactor the auth module end to end" });
 		const overlay = new LaneDock();
 		const { widget } = mount(overlay, makeCtx());
 		const out = (widget?.render(120) ?? []).join("\n");
 		expect(out).toContain("ship:"); // workflow tag with colon
-		expect(out).toContain("refactor"); // truncated prompt descriptor
+		expect(out).toContain("run-1"); // runId descriptor (the run's resume handle)
+		expect(out).not.toContain("refactor"); // the prompt is no longer the descriptor
 		overlay.dispose();
 	});
 
-	it("renders the --name alias as the descriptor when provided (alias wins over prompt)", () => {
+	it("renders the --name alias as the descriptor (alias wins over runId)", () => {
 		recordRun("run-1", "authfix", { workflow: "ship", input: "ignored when alias set" });
 		const overlay = new LaneDock();
 		const { widget } = mount(overlay, makeCtx());
 		const out = (widget?.render(120) ?? []).join("\n");
 		expect(out).toContain("ship:"); // tag
 		expect(out).toContain("authfix"); // alias descriptor
-		expect(out).not.toContain("ignored when alias set"); // alias wins
+		expect(out).not.toContain("ignored when alias set"); // alias wins over the prompt
+		expect(out).not.toContain("run-1"); // alias wins over the runId
 		overlay.dispose();
 	});
 
-	it("renders the bare workflow name (no tag colon) when there is no --name and no input", () => {
+	it("renders the workflow tag + runId even with no --name and no input (descriptor is always present)", () => {
 		recordRun("run-1", "ship", { workflow: "ship" });
 		const overlay = new LaneDock();
 		const { widget } = mount(overlay, makeCtx());
 		const out = (widget?.render(120) ?? []).join("\n");
-		expect(out).toContain("ship");
-		expect(out).not.toContain("ship:"); // no colon — no descriptor follows
+		expect(out).toContain("ship:"); // colon tag — the runId descriptor always follows
+		expect(out).toContain("run-1"); // runId descriptor (no bare-tag fallback)
 		overlay.dispose();
 	});
 
@@ -464,7 +466,7 @@ describe("LaneDock — rendering", () => {
 	});
 });
 
-describe("LaneDock — live stage progress (Phase 8)", () => {
+describe("LaneDock — live stage progress", () => {
 	it("a lane with progress renders N/total + stageName instead of 'streaming…'", () => {
 		recordRun("run-1", "ship");
 		setLaneProgress("run-1", { stageNumber: 3, totalStages: 7, stageName: "plan-layers", phase: "running" });
@@ -585,7 +587,7 @@ describe("LaneDock — live stage progress (Phase 8)", () => {
 	});
 });
 
-describe("LaneDock — failure reason chip (Problem 1)", () => {
+describe("LaneDock — failure reason chip", () => {
 	it("a failed (error-phase) row appends the reason after the stage name, with the ✗ glyph", () => {
 		recordRun("run-1", "ship");
 		setLaneProgress("run-1", {
@@ -695,10 +697,10 @@ describe("LaneDock — spinner animation", () => {
 		expect(tui?.requestRender).not.toHaveBeenCalled();
 	});
 
-	// Phase C — the needs-input heartbeat is INDEPENDENT of the spinner: it must age a
+	// The needs-input heartbeat is INDEPENDENT of the spinner: it must age a
 	// stalled run even when nothing is streaming. Synthetic state (a non-running lane that
 	// still has queued input) isolates the heartbeat from the spinner timer.
-	it("the needs-input heartbeat repaints to age the heading even when no lane is running (Phase C)", () => {
+	it("the needs-input heartbeat repaints to age the heading even when no lane is running", () => {
 		vi.useFakeTimers();
 		recordRun("run-1", "ship");
 		enqueueInput("run-1", SINGLE_UNIT_KEY, {
@@ -867,17 +869,19 @@ describe("LaneDock — active (focused) state", () => {
 		setDockActive(true);
 		setDockSelection(0);
 		const lines = widget.render(60);
-		// The selected row's descriptor is accent+bold; the unselected row's descriptor is plain "text".
-		const selectedRow = lines.find((l) => l.includes("refactor auth")) ?? "";
-		const otherRow = lines.find((l) => l.includes("add tests")) ?? "";
+		// The descriptor is now the runId (no --name aliases here: name === workflow), so
+		// rows are located by runId. The selected row's descriptor is accent+bold; the
+		// unselected row's descriptor is plain "text".
+		const selectedRow = lines.find((l) => l.includes("run-1")) ?? "";
+		const otherRow = lines.find((l) => l.includes("run-2")) ?? "";
 		// No background block on the ROWS — ask_user_question marks row selection with text
 		// style, not a fill. (bg encodes as "[color]"; the title chip's selectedBg is a
 		// separate line and intentionally excluded here.)
 		expect(/\[[a-zA-Z]/.test(selectedRow)).toBe(false);
 		expect(/\[[a-zA-Z]/.test(otherRow)).toBe(false);
-		expect(selectedRow).toContain("accent:*refactor auth*");
-		expect(otherRow).toContain("text:add tests");
-		expect(otherRow).not.toContain("accent:*add tests*");
+		expect(selectedRow).toContain("accent:*run-1*");
+		expect(otherRow).toContain("text:run-2");
+		expect(otherRow).not.toContain("accent:*run-2*");
 		// the workflow tag stays dim on BOTH rows (ask_user_question's always-dim description split)
 		expect(selectedRow).toContain("dim:ship");
 		expect(otherRow).toContain("dim:build");
@@ -940,7 +944,7 @@ describe("LaneDock — active (focused) state", () => {
 	});
 });
 
-describe("LaneDock — preview subscription (Slice 5)", () => {
+describe("LaneDock — preview subscription", () => {
 	it("does not subscribe to any session while ambient (inactive)", () => {
 		recordRun("run-1", "ship");
 		const session = makeSession();
@@ -1004,7 +1008,7 @@ describe("LaneDock — preview subscription (Slice 5)", () => {
 	});
 });
 
-describe("LaneDock — active transcript preview (Slice 6)", () => {
+describe("LaneDock — active transcript preview", () => {
 	const assistantEntry = (text: string) => ({
 		type: "message",
 		message: { role: "assistant", content: [{ type: "text", text }] },
@@ -1113,7 +1117,7 @@ describe("LaneDock — active transcript preview (Slice 6)", () => {
 	});
 });
 
-describe("LaneDock — fanout unit sub-rows (Phase 6)", () => {
+describe("LaneDock — fanout unit sub-rows", () => {
 	const assistantEntry = (text: string) => ({
 		type: "message",
 		message: { role: "assistant", content: [{ type: "text", text }] },
@@ -1197,7 +1201,7 @@ describe("LaneDock — fanout unit sub-rows (Phase 6)", () => {
 	});
 });
 
-describe("LaneDock — token tally (Slice 2)", () => {
+describe("LaneDock — token tally", () => {
 	it("the lane row shows the SUMMED aggregate tally across completed units", () => {
 		recordRun("run-1", "carve");
 		setUnitStarted("run-1", 0, "u0");

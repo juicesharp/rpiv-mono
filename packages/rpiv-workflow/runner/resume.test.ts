@@ -1715,7 +1715,7 @@ describe("resumeWorkflow", () => {
 		expect(chain.sentMessages).toEqual(["/skill:build plans/p1.md"]);
 	});
 
-	it("cleanly finished run: immediate stop no-op (stagesCompleted unchanged)", async () => {
+	it("c2 contract: resuming a completed run is a clean no-op (stagesCompleted unchanged)", async () => {
 		// Both stages completed, edge is "stop". Resuming routes onward from build,
 		// which hits stop → finalizeWorkflow → success. No new stage rows.
 		const art1 = fakeArtifact("plans/p1.md");
@@ -1746,10 +1746,27 @@ describe("resumeWorkflow", () => {
 
 		const chain = createMockSessionChain({ cwd: tmpDir, steps: [] });
 
+		// Lifecycle capture (same pattern as the "stamps resumedFrom in trigger.meta"
+		// test): the clean no-op runs the normal bracket — onWorkflowStart +
+		// onWorkflowEnd fire once each — but dispatches NOTHING in between, so
+		// onStageStart must never fire.
+		const started = { workflow: 0, stage: 0 };
+		let endStatus: string | undefined;
 		const result = await resumeWorkflow(chain.ctx, {
 			workflow: twoStageWf,
 			header: resumeHeader,
 			ref: "@2026-06-03_07-30-00-ab12",
+			lifecycle: {
+				onWorkflowStart: () => {
+					started.workflow++;
+				},
+				onStageStart: () => {
+					started.stage++;
+				},
+				onWorkflowEnd: (res) => {
+					endStatus = res.termination?.status;
+				},
+			},
 		});
 
 		expect(result.success).toBe(true);
@@ -1762,6 +1779,64 @@ describe("resumeWorkflow", () => {
 
 		// No new session was spawned
 		expect(chain.ctx.spawnChild).not.toHaveBeenCalled();
+
+		// Clean no-op bracket: start + end fire exactly once, terminated
+		// "completed", and NO stage session was dispatched in between.
+		expect(started.workflow).toBe(1);
+		expect(started.stage).toBe(0);
+		expect(endStatus).toBe("completed");
+	});
+
+	it("c2 boundary: a failed trailer intentionally re-attempts the stage (NOT a no-op)", async () => {
+		// Boundary counterpart to the completed no-op above. The failed/aborted
+		// trailer branch in resume-entry.ts deliberately re-runs the stage — resume's
+		// retry purpose — so it is OUTSIDE c2's no-op guarantee. The full behavior
+		// (re-run + continuation) lives in the "failed-trailer" test; the completed
+		// onward-continuation lives in "completed-trailer". This test pins only the
+		// boundary contract so the completed-vs-failed contrast sits in one place
+		// and a future reader does not "fix" the intentional retry.
+		const art1 = fakeArtifact("plans/p1.md");
+		const out1 = fakeOutput([art1]);
+
+		writeRun(resumeHeader, [
+			{
+				session: null,
+				stageNumber: 1,
+				stage: "plan",
+				skill: "plan",
+				status: "completed",
+				ts: "2026-06-03T07:31:00Z",
+				output: out1,
+			},
+			{
+				session: null,
+				stageNumber: 2,
+				stage: "build",
+				skill: "build",
+				status: "failed",
+				ts: "2026-06-03T07:35:00Z",
+				errMsg: "Something went wrong",
+			},
+		]);
+
+		writeArtifact(".rpiv/artifacts/builds/b1.md");
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/builds/b1.md")] }],
+		});
+
+		const result = await resumeWorkflow(chain.ctx, {
+			workflow: twoStageWf,
+			header: resumeHeader,
+			ref: "@2026-06-03_07-30-00-ab12",
+		});
+
+		// NOT a no-op: a new stage row IS appended and the failed stage re-runs.
+		expect(result.success).toBe(true);
+		const stages = readRunStages(resumeHeader.runId);
+		expect(stages).toHaveLength(3); // 2 original + 1 re-run
+		expect(stages[2]).toMatchObject({ stage: "build", status: "completed" });
+		expect(chain.sentMessages).toEqual(["/skill:build plans/p1.md"]);
 	});
 
 	it("no-rows refusal: returns error envelope, no self-notify (caller surfaces it)", async () => {

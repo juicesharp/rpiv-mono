@@ -1,5 +1,5 @@
 /**
- * lane-dock — the always-mounted lane dock rendered BELOW the editor (FR4/FR7).
+ * lane-dock — the always-mounted lane dock rendered BELOW the editor.
  *
  * Lifecycle controller for Pi's setWidget contract (placement: "belowEditor"),
  * mirroring TodoOverlay: register-once factory, requestRender() refresh,
@@ -71,12 +71,12 @@ const PREVIEW_LINES = 6;
  *  the `❯` cursor (matching pi's selectors) on the active selection, two spaces otherwise. */
 const CURSOR_SELECTED = "❯ ";
 const CURSOR_UNSELECTED = "  ";
-/** Heartbeat cadence (Phase C) — refresh the aging "needs input · 4m" heading even when
+/** Heartbeat cadence — refresh the aging "needs input · 4m" heading even when
  *  no lane is streaming (the spinner timer is then idle). Minute-granularity needs only
  *  a slow tick; `.unref()` so it never keeps the process alive. */
 const NEEDS_INPUT_TICK_MS = 10_000;
 
-/** Compact relative age (Phase C): "30s" · "4m" · "2h". */
+/** Compact relative age: "30s" · "4m" · "2h". */
 function formatAge(ms: number): string {
 	const s = Math.max(0, Math.floor(ms / 1000));
 	if (s < 60) return `${s}s`;
@@ -96,11 +96,11 @@ function renderPreviewBanner(theme: Theme, width: number): string {
 	return theme.fg("dim", truncateToWidth(label, Math.max(0, width)));
 }
 
-/** Mini stage-progress bar (Phase 8): filled/empty cells, capped + scaled for big workflows. */
+/** Mini stage-progress bar: filled/empty cells, capped + scaled for big workflows. */
 const BAR_FILLED = "▰";
 const BAR_EMPTY = "▱";
 const BAR_MAX_CELLS = 7;
-/** Minimum leftover display columns to bother showing a failure-reason chip (Problem 1).
+/** Minimum leftover display columns to bother showing a failure-reason chip.
  *  Below this the chip would be all separator + ellipsis, so it is dropped entirely. */
 const MIN_REASON_WIDTH = 6;
 /**
@@ -115,7 +115,7 @@ const LAP_MARK = "↻";
 const RETRY_GLYPH = "⟲";
 
 // ---------------------------------------------------------------------------
-// Fixed-width columns (FR7 — column stability). Each leading field is truncated
+// Fixed-width columns (column stability). Each leading field is truncated
 // or right-padded to a constant DISPLAY width so the bar / status region starts
 // at the same column on every row, regardless of workflow name or descriptor.
 // ---------------------------------------------------------------------------
@@ -154,26 +154,27 @@ function padCol(theme: Theme, color: ThemeColor, text: string, width: number, bo
 }
 
 /**
- * The dock descriptor for a lane — the run's `--name` alias (when it differs from the
- * workflow), else the user prompt (whitespace-collapsed so a multi-line input never
- * breaks the single-line row), else undefined (a bare-workflow row). Shared by
- * `renderWidget` (the content-aware label-width computation) AND `renderRow` (the
- * render) so the two never drift. A `--name` that happens to equal the workflow name
- * degrades gracefully — no alias, so the label falls through to the prompt (or bare tag).
+ * The dock descriptor for a lane — the run's resume handle (its `runId`), surfaced so the
+ * user can act on the lane via `@<runId>`. The run's `--name` alias still wins when it
+ * differs from the workflow (both `@<alias>` and `@<runId>` are valid resume tokens);
+ * otherwise the `runId` is the descriptor. The descriptor is ALWAYS defined — there is no
+ * bare-tag fallback — so every lane row carries the `workflow:` colon tag + the descriptor
+ * cell. Shared by `renderWidget` (the content-aware label-width computation) AND `renderRow`
+ * (the render) so the two never drift. A `--name` that happens to equal the workflow name
+ * degrades gracefully — no alias, so the descriptor falls through to the runId.
  */
-function laneDescriptor(lane: LaneEntry): string | undefined {
+function laneDescriptor(lane: LaneEntry): string {
 	const workflow = lane.workflow ?? lane.name;
 	const alias = lane.name !== workflow ? lane.name : undefined;
-	const prompt = lane.input ? lane.input.replace(/\s+/g, " ").trim() : undefined;
-	return alias ?? (prompt || undefined);
+	return alias ?? lane.runId;
 }
 
 /**
- * Compact dock token tally — `↑{in} ↓{out} R{cacheRead}` via Phase 1's formatTokens,
+ * Compact dock token tally — `↑{in} ↓{out} R{cacheRead}` via formatTokens,
  * each segment omitted when its value is 0 and the WHOLE tally omitted (→ "") when usage
  * is undefined OR all three are zero. footer.js:108-127 omit-when-zero idiom. Deliberately
- * the 3-segment subset — W (cacheWrite) / CH% (context fill) / $cost are Phase 3's
- * lane-viewer header, NOT this ambient dock surface.
+ * the 3-segment subset — W (cacheWrite) / CH% (context fill) / $cost are the
+ * lane-viewer header's segments, NOT this ambient dock surface.
  */
 function formatUsageTally(usage: LaneUsage | undefined): string {
 	if (!usage) return "";
@@ -255,7 +256,7 @@ export class LaneDock {
 	private frame = 0;
 	/** Repaint timer — alive ONLY while a lane is running (see syncSpinner). */
 	private spinTimer: ReturnType<typeof setInterval> | undefined;
-	/** Heartbeat timer (Phase C) — alive ONLY while a lane needs input, to age the heading. */
+	/** Heartbeat timer — alive ONLY while a lane needs input, to age the heading. */
 	private needsInputTimer: ReturnType<typeof setInterval> | undefined;
 	/** The selected lane's live child session the preview follows. Identity-
 	 *  guarded so an unrelated registry notify never stacks a second subscription (a leak). */
@@ -266,7 +267,7 @@ export class LaneDock {
 	 *  (syncPreviewSubscription) so a switched-away lane's partial never lingers; nulled on dispose;
 	 *  cleared automatically the tick getStreamingMessage() returns undefined (turn committed). */
 	private streamingComponent: StreamingHandle | undefined;
-	/** Disk-jsonl preview fallback (Problem 2) parsed ONCE and cached by file key — the
+	/** Disk-jsonl preview fallback parsed ONCE and cached by file key — the
 	 *  preview re-renders on every spinner tick, so the disk read must not repeat per frame. */
 	private previewDiskCache: { key: string; value: DiskBranch | undefined } | undefined;
 	/** Last height-shape signature (see shapeSignature) — drives the forced-redraw decision in
@@ -386,7 +387,7 @@ export class LaneDock {
 		}
 	}
 
-	/** Drive a slow repaint heartbeat (Phase C) ONLY while ≥1 lane needs input — so a
+	/** Drive a slow repaint heartbeat ONLY while ≥1 lane needs input — so a
 	 *  stalled run's "needs input · Nm" heading ages visibly even when nothing streams.
 	 *  Independent of the spinner timer (which stops when no lane is running). */
 	private syncHeartbeat(lanes: LaneEntry[]): void {
@@ -439,7 +440,7 @@ export class LaneDock {
 
 	private renderWidget(theme: Theme, width: number): string[] {
 		// Flattened display rows (lane rows + indented unit sub-rows); selection indexes
-		// THIS list. Phase B — display order is a stable priority sort (needs-input →
+		// THIS list. Display order is a stable priority sort (needs-input →
 		// running → terminal), so the lane that needs the user never hides below the fold.
 		const rows = listLanesForDisplay();
 		if (rows.length === 0) return [];
@@ -453,9 +454,9 @@ export class LaneDock {
 		const needsInputLanes = allLanes.filter((l) => laneNeedsInput(l.runId));
 		const anyNeedsInput = needsInputLanes.length > 0;
 		const activeCount = allLanes.filter((l) => l.status === "running").length;
-		// Phase C — when a run is blocked on input, the title SHOUTS it and ages: the
+		// When a run is blocked on input, the title SHOUTS it and ages: the
 		// oldest pending question drives "N run(s) need input · 4m". Otherwise show the
-		// active count (terminal lanes are retained — Phase A — so total ≠ active).
+		// active count (terminal lanes are retained, so total ≠ active).
 		let headText: string;
 		if (anyNeedsInput) {
 			const now = Date.now();
@@ -491,13 +492,18 @@ export class LaneDock {
 		// only swaps spaces for the `❯` cursor — no row ever shifts. sel(i) marks the
 		// active selection (only true while active).
 		const sel = (i: number): boolean => active && i === selection;
-		// Content-aware descriptor-label width — the MAX descriptor width among the LANE
-		// rows (the column the lane row's descriptor occupies), clamped to MAX_LABEL_WIDTH
-		// and the available row width, so the progress region stays column-aligned (FR7).
+		// Content-aware label-column width — the MAX width among BOTH the lane descriptors
+		// (the run's resume handle / --name alias) AND the unit sub-row labels, clamped to
+		// MAX_LABEL_WIDTH and the available row width, so the progress region stays
+		// column-aligned AND a unit label never truncates to the (short) runId descriptor.
 		// Unit sub-rows render under it with their own indent. Constant across rows.
 		const labelWidth = Math.min(
 			MAX_LABEL_WIDTH,
-			allLanes.reduce((m, l) => Math.max(m, visibleWidth(laneDescriptor(l) ?? "")), 0),
+			allLanes.reduce((m, l) => {
+				let w = Math.max(m, visibleWidth(laneDescriptor(l)));
+				for (const u of l.units.values()) w = Math.max(w, visibleWidth(u.label ?? `unit ${u.index}`));
+				return w;
+			}, 0),
 			Math.max(0, width - LABEL_LEADING - PROGRESS_MIN_WIDTH),
 		);
 		const renderAt = (row: DisplayRow, i: number): string =>
@@ -641,13 +647,12 @@ export class LaneDock {
 				? `${padCol(theme, selected ? "accent" : "text", descriptor ?? "", labelWidth, selected)} `
 				: "");
 
-		// needs-input ALWAYS wins the trailing label (overrides live progress, FR7).
+		// needs-input ALWAYS wins the trailing label (overrides live progress).
 		if (needs) return `${prefix}${theme.fg("warning", "needs input")}`;
-		// Failure cause (Problem 1) — the trimmed headline of either the terminal
+		// Failure cause — the trimmed headline of either the terminal
 		// `lane.error` (post-retirement) or the live `error`-phase reason (pre-retirement).
 		const reason = shortFailureReason(lane.error ?? (progress?.phase === "error" ? progress.reason : undefined));
-		// Live stage progress (Phase 8): [bar] N/total stageName [· reason] [· units x/y].
-		// Live stage progress (Phase 8): [bar] N/total stageName [· reason] [· units x/y] [· ↑in ↓out R].
+		// Live stage progress: [bar] N/total stageName [· reason] [· units x/y] [· ↑in ↓out R].
 		if (progress)
 			return this.renderProgressRow(theme, prefix, progress, width, reason, sumLaneUsage(lane.units.values()));
 		// No progress yet: running animates "streaming…"; terminal shows its raw status,
@@ -696,7 +701,7 @@ export class LaneDock {
 		// stage, so it reads as "on lap 7 of this 4-stage flow", never as "7 of 4".
 		if (progress.stageNumber > visited) nameRaw += ` · ${LAP_MARK}${progress.stageNumber}`;
 		if (progress.units) nameRaw += ` · units ${progress.units.done}/${progress.units.total}`;
-		// Phase 2 — aggregate token tally as the trailing nameRaw segment, appended WHILE
+		// Aggregate token tally as the trailing nameRaw segment, appended WHILE
 		// nameRaw is assembled and BEFORE coreW so the existing reason-chip / includeBar
 		// budget math accounts for the true full name width (no special tally logic); the
 		// row's outer truncate(line, width, "…") remains the final overflow safety net.
@@ -758,7 +763,7 @@ export class LaneDock {
 				const defs = unit.finalToolDefs;
 				source = { cwd: unit.finalCwd ?? "", toolDef: (name) => defs?.get(name) as ToolDefArg };
 			} else {
-				// No live child + no snapshot — fall through to the on-disk jsonl (Problem 2)
+				// No live child + no snapshot — fall through to the on-disk jsonl
 				// exactly like the viewer: live → finalBranch → disk → placeholder.
 				const disk = this.loadPreviewDiskBranch(runId, unitIndex, unit);
 				if (disk) {
@@ -799,7 +804,7 @@ export class LaneDock {
 		}
 	}
 
-	/** Disk-jsonl preview fallback (Problem 2), memoized by the PER-UNIT key
+	/** Disk-jsonl preview fallback, memoized by the PER-UNIT key
 	 *  `runId::unitIndex::file` so two units' caches never collide and the per-tick
 	 *  preview render re-reads disk at most once per source. */
 	private loadPreviewDiskBranch(runId: string, unitIndex: number, unit: UnitLane | undefined): DiskBranch | undefined {
