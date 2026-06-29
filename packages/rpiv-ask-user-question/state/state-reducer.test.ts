@@ -288,16 +288,16 @@ describe("reduce — focus_chat / focus_options / submit_nav / ignore", () => {
 });
 
 describe("reduce — toggle_collapsed", () => {
-	it("flips false → true with no effects (rendering shrinks on the next adapter.apply tick)", () => {
+	it("flips false → true and emits set_overlay_hidden(true) so the runtime hides the overlay", () => {
 		const r = reduce(makeState(), { kind: "toggle_collapsed" }, makeCtx());
 		expect(r.state.collapsed).toBe(true);
-		expect(r.effects).toEqual([]);
+		expect(r.effects).toEqual([{ kind: "set_overlay_hidden", hidden: true }]);
 	});
 
-	it("flips true → false (expand round-trip)", () => {
+	it("flips true → false (expand round-trip) and emits set_overlay_hidden(false)", () => {
 		const r = reduce(makeState({ collapsed: true }), { kind: "toggle_collapsed" }, makeCtx());
 		expect(r.state.collapsed).toBe(false);
-		expect(r.effects).toEqual([]);
+		expect(r.effects).toEqual([{ kind: "set_overlay_hidden", hidden: false }]);
 	});
 
 	it("preserves orthogonal fields — collapse is a pure render-mode flip, never touches answers/optionIndex/notes", () => {
@@ -313,5 +313,6 @@ describe("reduce — toggle_collapsed", () => {
 		expect(r.state.notesVisible).toBe(true);
 		expect(r.state.notesDraft).toBe("in-flight");
 		expect(r.state.answers).toBe(answers);
+		expect(r.effects).toEqual([{ kind: "set_overlay_hidden", hidden: true }]);
 	});
 });

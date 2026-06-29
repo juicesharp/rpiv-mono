@@ -36,10 +36,6 @@ export interface QuestionnaireState {
 	collapsed: boolean;
 }
 
-/**
- * Per-tick context the dispatcher needs alongside canonical state. Held separately
- * because `keybindings` / `inputBuffer` must never reach view setProps consumers.
- */
 export interface QuestionnaireRuntime {
 	keybindings: { matches(data: string, name: string): boolean };
 	inputBuffer: string;
@@ -47,4 +43,10 @@ export interface QuestionnaireRuntime {
 	isMulti: boolean;
 	currentItem: WrappingSelectItem | undefined;
 	items: readonly WrappingSelectItem[];
+	/**
+	 * Key spec for the collapse/expand shortcut, e.g. `"ctrl+]"` or `"alt+o"`. Resolved
+	 * from `AskUserQuestionConfig.collapseKey` (or the package default). When `"off"`,
+	 * the collapse shortcut is disabled.
+	 */
+	collapseKey: string;
 }

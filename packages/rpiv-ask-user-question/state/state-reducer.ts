@@ -23,6 +23,14 @@ export type Effect =
 	| { kind: "set_notes_value"; value: string }
 	| { kind: "set_notes_focused"; focused: boolean }
 	| { kind: "forward_notes_keystroke"; data: string }
+	/**
+	 * Tell the session to hide or show its underlying overlay. Emitted by the
+	 * `toggle_collapsed` action so the runtime can call `OverlayHandle.setHidden(...)`,
+	 * which lets other overlay-aware consumers (e.g. `pi-station`) see the questionnaire
+	 * as truly hidden and resume normal chat scroll while the user reads the transcript
+	 * behind the modal.
+	 */
+	| { kind: "set_overlay_hidden"; hidden: boolean }
 	| { kind: "done"; result: QuestionnaireResult };
 
 export interface ApplyResult {
@@ -256,7 +264,7 @@ const notesForwardHandler: Handler<"notes_forward"> = (s, a, _c) => ({
 });
 const toggleCollapsedHandler: Handler<"toggle_collapsed"> = (s, _a, _c) => ({
 	state: { ...s, collapsed: !s.collapsed },
-	effects: [],
+	effects: [{ kind: "set_overlay_hidden", hidden: !s.collapsed }],
 });
 const ignoreHandler: Handler<"ignore"> = (s, _a, _c) => ({ state: s, effects: [] });
 
