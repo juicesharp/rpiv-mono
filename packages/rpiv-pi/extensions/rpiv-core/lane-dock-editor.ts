@@ -177,10 +177,12 @@ export class LaneDockEditor extends CustomEditor {
 
 	handleInput(data: string): void {
 		const dock = getDockState();
-		const action = decideDockAction(classifyKey(data), {
+		const key = classifyKey(data);
+		const editorEmpty = this.getText().trim().length === 0;
+		const action = decideDockAction(key, {
 			dockActive: dock.active,
 			autocompleteOpen: this.isShowingAutocomplete(),
-			editorEmpty: this.getText().trim().length === 0,
+			editorEmpty,
 			rowCount: listLanesForDisplay().length,
 			selection: dock.selection,
 		});
@@ -244,8 +246,21 @@ export class LaneDockEditor extends CustomEditor {
 				setDockActive(false);
 				super.handleInput(data);
 				return;
-			default:
+			default: {
+				// Genuine submit = a non-empty Enter that the inactive dock is letting
+				// through to the editor. Snapshot it BEFORE super.handleInput (which runs
+				// submitValue() and clears this.state), so the snapshot reflects the
+				// pre-submit text rather than the cleared post-submit state. dock.active is
+				// already false here (this is the inactive passthrough branch), but stating
+				// it makes the guard self-documenting and pins it independent of the switch.
+				const wasSubmit = !editorEmpty && !dock.active && key === "enter";
 				super.handleInput(data);
+				// A forced full repaint (force=true) wipes previousLines/width/height and
+				// erases the stale-frame ghost left behind at a genuine submit boundary.
+				// Confined to genuine submits by the three-way guard, so no-op Enters and
+				// ordinary keystrokes never trigger the full-screen-clear flicker.
+				if (wasSubmit) this.tui.requestRender(true);
+			}
 		}
 	}
 }

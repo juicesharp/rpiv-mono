@@ -201,3 +201,65 @@ describe("LaneDockEditor — dedicated answer/transcript dispatch", () => {
 		expect(calls).toEqual([{ runId: "run-1", unitIndex: SINGLE_UNIT_KEY, mode: "view" }]);
 	});
 });
+
+describe("LaneDockEditor — force-clear on genuine submit", () => {
+	const ENTER = "\r"; // Key.enter codepoint 13
+	const TYPE_A = "a"; // an ordinary (non-Enter) keystroke
+
+	/** A render-spy harness: like makeSpyEditor but captures requestRender calls
+	 *  (including the `force` arg), which makeSpyEditor stubs as a no-op. */
+	function makeRenderSpyEditor(): {
+		editor: LaneDockEditor;
+		calls: Array<{ runId: string; unitIndex: number; mode: string }>;
+		renders: Array<{ force: boolean | undefined }>;
+	} {
+		const renders: Array<{ force: boolean | undefined }> = [];
+		const tui = {
+			terminal: { rows: 40 },
+			requestRender: (force?: boolean) => renders.push({ force }),
+		} as unknown as TUI;
+		const theme = { borderColor: (s: string) => s, selectList: {} } as unknown as EditorTheme;
+		const keybindings = { matches: () => false } as unknown as KeybindingsManager;
+		const calls: Array<{ runId: string; unitIndex: number; mode: string }> = [];
+		const editor = new LaneDockEditor(tui, theme, keybindings, (runId, unitIndex, mode) =>
+			calls.push({ runId, unitIndex, mode }),
+		);
+		return { editor, calls, renders };
+	}
+
+	beforeEach(() => __resetRunLaneRegistry());
+	afterEach(() => __resetRunLaneRegistry());
+
+	it("a genuine non-empty Enter (dock inactive) forces a full repaint exactly once (c1)", () => {
+		// No lanes recorded → the dock is inactive and stays inactive; the editor's own
+		// submit path runs via super.handleInput. Seed genuine submit text BEFORE handleInput
+		// so the pre-submit editorEmpty snapshot reflects it (not the cleared post-state).
+		const { editor, calls, renders } = makeRenderSpyEditor();
+		editor.setText("ship it");
+		editor.handleInput(ENTER);
+
+		// The editor's submitValue runs through super.handleInput — the dock adapter
+		// forwards nothing (no lanes → nothing to open).
+		expect(calls).toEqual([]);
+		// Exactly one forced full repaint, fired AFTER super.handleInput.
+		expect(renders).toEqual([{ force: true }]);
+	});
+
+	it("a no-op Enter on an EMPTY editor does NOT force-render (c2)", () => {
+		// editorEmpty short-circuits the guard, so the empty-prompt Enter (a no-op submit)
+		// never triggers the full-screen-clear flicker.
+		const { editor, renders } = makeRenderSpyEditor();
+		editor.handleInput(ENTER);
+
+		expect(renders.filter((r) => r.force === true)).toEqual([]);
+	});
+
+	it("a NON-Enter key on a non-empty editor does NOT force-render (key guard)", () => {
+		// Locks the `key === "enter"` guard so ordinary typing never flickers.
+		const { editor, renders } = makeRenderSpyEditor();
+		editor.setText("ship it");
+		editor.handleInput(TYPE_A);
+
+		expect(renders.filter((r) => r.force === true)).toEqual([]);
+	});
+});
