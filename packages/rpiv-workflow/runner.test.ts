@@ -2434,7 +2434,8 @@ describe("runWorkflow", () => {
 					void calls.push(["onStageRetry", [stage, attempt, ctx]]),
 				onStageError: (stage: unknown, error: unknown, ctx: unknown) =>
 					void calls.push(["onStageError", [stage, error, ctx]]),
-				onRoute: (from: unknown, to: unknown, ctx: unknown) => void calls.push(["onRoute", [from, to, ctx]]),
+				onRoute: (from: unknown, to: unknown, ctx: unknown, bypassed: unknown) =>
+					void calls.push(["onRoute", [from, to, ctx, bypassed]]),
 				onLoopStart: (stage: unknown, info: unknown, ctx: unknown) =>
 					void calls.push(["onLoopStart", [stage, info, ctx]]),
 				onUnitStart: (stage: unknown, unit: unknown, ctx: unknown) =>
@@ -2532,6 +2533,52 @@ describe("runWorkflow", () => {
 			const [from, to] = routes[0]![1] as [{ name: string }, string];
 			expect(from.name).toBe("research");
 			expect(to).toBe("stop");
+		});
+
+		it("onRoute carries bypassed recovery arms when a gate takes its pass arm", async () => {
+			// a → gate-stage → {forward (pass) | recover (loop-back to gate-stage)}.
+			// The gate always passes, so `recover` is bypassed for good: its successor
+			// `gate-stage` is already visited, so taking it would loop back.
+			const chain = createMockSessionChain({
+				cwd: tmpDir,
+				steps: [
+					{ branch: [mockAssistantMessage("done")] },
+					{ branch: [mockAssistantMessage("done")] },
+					{ branch: [mockAssistantMessage("done")] },
+				],
+			});
+			const { calls, lifecycle } = recorder();
+			const result = await runWorkflow(chain.ctx, {
+				workflow: {
+					name: "gate-bypass",
+					start: "a",
+					stages: {
+						a: { kind: "side-effect", sessionPolicy: "fresh" },
+						// inheritsArtifacts:false — side-effect stages downstream of stage 1
+						// otherwise trip the "no upstream artifactPath" preflight.
+						"gate-stage": { kind: "side-effect", sessionPolicy: "fresh", inheritsArtifacts: false },
+						forward: { kind: "side-effect", sessionPolicy: "fresh", inheritsArtifacts: false },
+						recover: { kind: "side-effect", sessionPolicy: "fresh", inheritsArtifacts: false },
+					},
+					edges: {
+						a: "gate-stage",
+						"gate-stage": defineRoute(["forward", "recover"], () => "forward", { readsData: false }),
+						recover: "gate-stage", // loops back into visited territory
+						forward: "stop",
+					},
+				},
+				input: "x",
+				lifecycle,
+			});
+			expect(result.success).toBe(true);
+			const routes = calls.filter(([n]) => n === "onRoute");
+			const gateRoute = routes.find(([, p]) => (p[0] as { name: string }).name === "gate-stage")!;
+			const [, gateTo, , gateBypassed] = gateRoute[1] as [unknown, string, unknown, readonly string[]];
+			expect(gateTo).toBe("forward");
+			expect(gateBypassed).toEqual(["recover"]);
+			// A deterministic string edge carries an empty bypass list.
+			const aRoute = routes.find(([, p]) => (p[0] as { name: string }).name === "a")!;
+			expect((aRoute[1] as unknown[])[3]).toEqual([]);
 		});
 
 		it("onLoopStart + onUnitStart/End fire in correct order for a 3-unit fanout loop", async () => {

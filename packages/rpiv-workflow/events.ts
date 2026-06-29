@@ -168,8 +168,15 @@ export interface LifecycleListeners {
 	/** After the stage's "failed"/"aborted" row lands in JSONL. Terminal for the run. */
 	onStageError?(stage: StageRef, error: string, ctx: LifecycleContext): void | Promise<void>;
 
-	/** After an `EdgeFn` picks and its routing-decision row lands. `to` may be the `STOP` sentinel literal `"stop"`. */
-	onRoute?(from: StageRef, to: string, ctx: LifecycleContext): void | Promise<void>;
+	/**
+	 * After an `EdgeFn` picks and its routing-decision row lands. `to` may be the
+	 * `STOP` sentinel literal `"stop"`. `bypassed` lists the decision edge's
+	 * not-taken RECOVERY arms — failure loops the chosen arm skipped for good (see
+	 * `bypassedRecoveryArms` in routing.ts). A progress listener credits them so
+	 * the bar reaches full while the terminal stage runs; empty for deterministic
+	 * (string) edges and gates with no loop-back alternative.
+	 */
+	onRoute?(from: StageRef, to: string, ctx: LifecycleContext, bypassed?: readonly string[]): void | Promise<void>;
 
 	/** After `onStageStart`, before unit 1's session (after the unit list is computed for fanout). */
 	onLoopStart?(stage: StageRef, info: LoopStartInfo, ctx: LifecycleContext): void | Promise<void>;

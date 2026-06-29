@@ -6,10 +6,10 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { type EdgeContext, gate, marksReadsData, match, STOP, type Workflow } from "./api.js";
+import { defineRoute, type EdgeContext, gate, marksReadsData, match, STOP, type Workflow } from "./api.js";
 import type { Output } from "./output.js";
 import { eq, gt } from "./predicates.js";
-import { edgeIsDecision, nextStage } from "./routing.js";
+import { bypassedRecoveryArms, edgeIsDecision, nextStage } from "./routing.js";
 import { takeRouteNote } from "./routing-dsl.js";
 import type { RunState } from "./types.js";
 
@@ -284,5 +284,58 @@ describe("match", () => {
 
 	it('keeps distinct-typed values apart when deduping (0 ≠ "0" ≠ false)', () => {
 		expect(() => match("f", { a: 0, b: "0", c: false })).not.toThrow();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// bypassedRecoveryArms — which not-taken arm of a gate counts as "covered"
+// ---------------------------------------------------------------------------
+
+describe("bypassedRecoveryArms", () => {
+	// A carve-shaped fragment: `slice-gate` is a decision edge to
+	// {design (forward) | reslice (loop-back)}. `reslice` loops back to
+	// `slice-structure`; `design` proceeds forward to `synth`.
+	const wf: Workflow = {
+		name: "frag",
+		start: "research",
+		stages: {
+			research: stage("research"),
+			slice: stage("slice"),
+			"slice-structure": stage("slice-structure"),
+			"slice-gate": stage("slice-gate"),
+			design: stage("design"),
+			synth: stage("synth"),
+			reslice: stage("reslice"),
+		},
+		edges: {
+			research: "slice",
+			slice: "slice-structure",
+			"slice-structure": "slice-gate",
+			"slice-gate": defineRoute(["design", "reslice"], () => "design", { readsData: false }),
+			reslice: "slice-structure", // loops back into visited territory
+			design: "synth",
+			synth: "stop",
+		},
+	};
+
+	const visited = new Set(["research", "slice", "slice-structure", "slice-gate"]);
+
+	it("credits a not-taken arm whose successor is already visited (loop-back recovery)", () => {
+		// slice-gate passes → design; reslice (→ slice-structure, visited) is bypassed for good.
+		expect(bypassedRecoveryArms(wf, "slice-gate", "design", visited)).toEqual(["reslice"]);
+	});
+
+	it("does NOT credit the forward arm on the fail path (successor not yet visited)", () => {
+		// slice-gate fails → reslice; the not-taken arm `design` (→ synth, unvisited) is
+		// merely DEFERRED, not bypassed — crediting it would run the numerator ahead.
+		expect(bypassedRecoveryArms(wf, "slice-gate", "reslice", visited)).toEqual([]);
+	});
+
+	it("skips a not-taken arm that is already visited (idempotent)", () => {
+		expect(bypassedRecoveryArms(wf, "slice-gate", "design", new Set([...visited, "reslice"]))).toEqual([]);
+	});
+
+	it("returns [] for a deterministic string edge (no alternatives to bypass)", () => {
+		expect(bypassedRecoveryArms(wf, "slice-structure", "slice-gate", visited)).toEqual([]);
 	});
 });
