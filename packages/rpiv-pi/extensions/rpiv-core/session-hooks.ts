@@ -5,8 +5,6 @@
  * Ordering and invariants preserved verbatim from the pre-refactor index.ts.
  */
 
-import { cpSync, existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
-import { join } from "node:path";
 import {
 	type BeforeAgentStartEvent,
 	type ExtensionAPI,
@@ -29,7 +27,7 @@ import {
 	resetInjectedMarker,
 	takeGitContextIfChanged,
 } from "./git-context.js";
-import { ARTIFACTS_SUBDIR, clearInjectionState, handleToolCallGuidance, injectRootGuidance } from "./guidance.js";
+import { clearInjectionState, handleToolCallGuidance, injectRootGuidance } from "./guidance.js";
 import { findMissingSiblings } from "./package-checks.js";
 import { isStaleCtxError } from "./utils.js";
 
@@ -105,7 +103,6 @@ async function onSessionStart(
 ): Promise<void> {
 	resetInjectionState();
 	injectRootGuidance(ctx.cwd, pi);
-	migrateThoughtsToArtifacts(ctx.cwd);
 	await injectGitContext(pi, (msg) => sendGitContextMessage(pi, msg));
 
 	// Injections above run every fire (each stage needs its own guidance + git
@@ -181,45 +178,6 @@ async function onBeforeAgentStart(
 
 function resetInjectionState(): void {
 	clearInjectionState();
-}
-
-function migrateThoughtsToArtifacts(cwd: string): void {
-	const oldShared = join(cwd, "thoughts", "shared");
-	if (!existsSync(oldShared)) return;
-
-	try {
-		const entries = readdirSync(oldShared, { withFileTypes: true });
-		if (entries.length === 0) return; // empty source — nothing to copy, leave on disk
-
-		const newArtifacts = join(cwd, ".rpiv", ARTIFACTS_SUBDIR);
-		mkdirSync(newArtifacts, { recursive: true });
-
-		for (const entry of entries) {
-			const src = join(oldShared, entry.name);
-			const dest = join(newArtifacts, entry.name);
-			cpSync(src, dest, { recursive: true, errorOnExist: false, force: true });
-			if (!existsSync(dest)) {
-				console.warn(`[rpiv-pi] migration: failed to copy ${src} → ${dest}`);
-				return; // abort — don't delete source if copy failed
-			}
-		}
-
-		// All copies verified — safe to remove source
-		rmSync(oldShared, { recursive: true, force: true });
-
-		// Remove thoughts/ root only if empty (preserves thoughts/me/ etc.)
-		const thoughtsRoot = join(cwd, "thoughts");
-		try {
-			if (readdirSync(thoughtsRoot).length === 0) {
-				rmSync(thoughtsRoot, { recursive: true, force: true });
-			}
-		} catch {
-			// thoughts/ already gone or unreadable — not an error
-		}
-	} catch (e) {
-		console.warn(`[rpiv-pi] migration: ${e instanceof Error ? e.message : String(e)}`);
-		// Never crash session_start — migration is best-effort
-	}
 }
 
 async function injectGitContext(pi: ExtensionAPI, send: (msg: string) => void): Promise<void> {
