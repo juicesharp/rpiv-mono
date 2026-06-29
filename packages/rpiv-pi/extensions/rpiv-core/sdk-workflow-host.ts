@@ -49,6 +49,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { parseModelKey } from "@juicesharp/rpiv-config";
 import type { ModelSelection, WorkflowHostContext, WorkflowSessionContext } from "@juicesharp/rpiv-workflow";
+import { armBashWatchdog, type BashWatchdog } from "./bash-timeout.js";
 import { createLaneRelayUiContext } from "./lane-relay-ui.js";
 import { createLaneSessionView } from "./lane-streaming.js";
 import { captureFinalSnapshot, SINGLE_UNIT_KEY, setCurrentSession, setLaneSessionFile } from "./run-lane-registry.js";
@@ -297,6 +298,10 @@ export class SdkWorkflowHost implements WorkflowHostContext {
 		// WorkflowAbortError (the abort signal of record).
 		const onAbort = () => void session.abort();
 		options.signal?.addEventListener("abort", onAbort, { once: true });
+		// Per-command bash watchdog: a single tool call overrunning the wall-clock ceiling
+		// aborts this child and records a reason `adapt` surfaces via `toolTimeout`, so the
+		// runner soft-halts the unit instead of letting a runaway command strand the gate.
+		const watchdog = armBashWatchdog(session);
 		try {
 			// Every child binds the DEFERRING relay (FR5): a floated run's stage queues +
 			// badges its questionnaire instead of grabbing the (possibly hidden) real UI;
@@ -307,8 +312,9 @@ export class SdkWorkflowHost implements WorkflowHostContext {
 				uiContext: createLaneRelayUiContext(this.deps.uiContext, this.deps.runId, unitKey),
 			});
 			await this.dispatchChildPrompt(session, options);
-			return await options.withSession(this.adapt(session, depth));
+			return await options.withSession(this.adapt(session, depth, watchdog));
 		} finally {
+			watchdog.dispose(); // unsubscribe + clear pending timers before the session tears down.
 			options.signal?.removeEventListener("abort", onAbort);
 			// Each unit owns its own registry key, so a sibling's teardown can NEVER clobber
 			// another's entry — the `currentSession === laneView` slot-owner guard (the
@@ -406,7 +412,7 @@ export class SdkWorkflowHost implements WorkflowHostContext {
 	}
 
 	/** A child ctx — the guaranteed-in-session surface the stage machinery holds. */
-	private adapt(session: AgentSession, depth: number): WorkflowSessionContext {
+	private adapt(session: AgentSession, depth: number, watchdog: BashWatchdog): WorkflowSessionContext {
 		return {
 			cwd: this.cwd,
 			hasUI: this.deps.live.hasUI,
@@ -415,6 +421,10 @@ export class SdkWorkflowHost implements WorkflowHostContext {
 			// A child may itself fan out — each level increments the depth, bounded
 			// by MAX_FANOUT_DEPTH (guarded in spawnAtDepth).
 			spawnChild: (opts) => this.spawnAtDepth(depth + 1, opts),
+			// The per-command bash watchdog's verdict: a recorded reason here tells the
+			// runner THIS child's `aborted` stop was a tool-timeout (→ soft-halt), not a
+			// run/user abort. Undefined until/unless the watchdog fires.
+			toolTimeout: () => watchdog.timedOut(),
 			sessionManager: {
 				// The transcript reader (`transcript.ts`) expects the ENVELOPED branch
 				// shape `{ type: "message", message: {...} }` (SessionEntry[]) — the same
