@@ -1,5 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { loadConfig, validateGuidanceFields } from "./config.js";
+import { matchesKey } from "@earendil-works/pi-tui";
+import { loadConfig, resolveCollapseKey, validateGuidanceFields } from "./config.js";
 import { ASK_USER_PROMPT_EVENT, type AskUserPromptEventPayload } from "./events.js";
 import { displayLabel } from "./state/i18n-bridge.js";
 import { sentinelsToAppend } from "./state/row-intent.js";
@@ -104,30 +105,71 @@ Preview content is rendered as markdown in a monospace box. Multi-line text with
 			// Lazy — QuestionnaireSession pulls the ~560ms view/TUI render graph;
 			// load it only when the tool runs, not at extension registration.
 			const { QuestionnaireSession } = await import("./state/questionnaire-session.js");
+			// Resolve the collapse/expand key spec from config. Default is `ctrl+]`; users
+			// with non-US layouts (e.g. Latin American, where `]` is shifted) can override
+			// via the `collapseKey` config field. `resolveCollapseKey` also accepts the
+			// sentinel value `"off"` to disable the shortcut entirely.
+			const collapseKey = resolveCollapseKey(loadConfig());
 
-			const result = await ctx.ui.custom<QuestionnaireResult>(
-				(tui, theme, _kb, done) => {
-					const session = new QuestionnaireSession({
-						tui,
-						theme,
-						params: typed,
-						itemsByTab,
-						done,
-					});
-					return session.component;
-				},
-				{
-					overlay: true,
-					overlayOptions: {
-						anchor: "bottom-center",
-						width: "100%",
-						maxHeight: "100%",
-						margin: { left: 0, right: 0, bottom: 0 },
+			// Capture the overlay handle so the session can call `setHidden()` when the
+			// user toggles collapse, and register a raw terminal input listener for the
+			// same key so the toggle still works while the overlay is hidden (pi-tui does
+			// not route input to a hidden overlay's `component.handleInput`).
+			const sessionRef: {
+				current: import("./state/questionnaire-session.js").QuestionnaireSession | null;
+			} = { current: null };
+			const overlayHandleRef: { current: import("@earendil-works/pi-tui").OverlayHandle | undefined } = {
+				current: undefined,
+			};
+			let hasAnnouncedHide = false;
+			let removeOverlayInputListener: (() => void) | undefined;
+
+			if (collapseKey !== "off" && typeof ctx.ui.onTerminalInput === "function") {
+				removeOverlayInputListener = ctx.ui.onTerminalInput((data) => {
+					if (!overlayHandleRef.current) return undefined;
+					if (!matchesKey(data, collapseKey as Parameters<typeof matchesKey>[1])) return undefined;
+					sessionRef.current?.toggleCollapsedExternal();
+					if (overlayHandleRef.current.isHidden() && !hasAnnouncedHide) {
+						hasAnnouncedHide = true;
+						ctx.ui.notify?.(`ask_user_question hidden — press ${collapseKey} to reopen`, "info");
+					}
+					return { consume: true };
+				});
+			}
+
+			try {
+				const result = await ctx.ui.custom<QuestionnaireResult>(
+					(tui, theme, _kb, done) => {
+						const session = new QuestionnaireSession({
+							tui,
+							theme,
+							params: typed,
+							itemsByTab,
+							done,
+							collapseKey,
+						});
+						sessionRef.current = session;
+						return session.component;
 					},
-				},
-			);
+					{
+						overlay: true,
+						overlayOptions: {
+							anchor: "bottom-center",
+							width: "100%",
+							maxHeight: "100%",
+							margin: { left: 0, right: 0, bottom: 0 },
+						},
+						onHandle: (handle) => {
+							overlayHandleRef.current = handle;
+							sessionRef.current?.setOverlayHandle(handle);
+						},
+					},
+				);
 
-			return buildQuestionnaireResponse(result, typed);
+				return buildQuestionnaireResponse(result, typed);
+			} finally {
+				removeOverlayInputListener?.();
+			}
 		},
 	});
 }
