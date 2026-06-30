@@ -606,6 +606,63 @@ describe("per-unit sub-rows — onUnitStart/onUnitEnd lifecycle", () => {
 	});
 });
 
+describe("onLoopStart pending seed (fanout vs pull loops)", () => {
+	async function register(): Promise<Bundle> {
+		const { pi, sessionStart } = makePi();
+		registerLaneProgressHook(pi);
+		await sessionStart()!({}, { hasUI: true, ui: REAL_UI });
+		return bundle();
+	}
+
+	it("a fanout onLoopStart with info.units seeds a PENDING sub-row per unit", async () => {
+		const b = await register();
+		recordRun("run-1", "ship");
+		const ctx = { runId: "run-1", totalStages: 4 };
+		b.onLoopStart?.({ stageNumber: 2, name: "design" }, { kind: "fanout", units: [{}, {}, {}] }, ctx);
+		expect([0, 1, 2].map((i) => getUnit("run-1", i)?.status)).toEqual(["pending", "pending", "pending"]);
+	});
+
+	it("a pull loop (iterate/assess) with no info.units seeds ZERO pending rows", async () => {
+		const b = await register();
+		recordRun("run-1", "ship");
+		const ctx = { runId: "run-1", totalStages: 4 };
+		b.onLoopStart?.({ stageNumber: 2, name: "iterate" }, { kind: "iterate" }, ctx);
+		b.onLoopStart?.({ stageNumber: 3, name: "assess" }, { kind: "assess" }, ctx);
+		expect(getUnit("run-1", 0)).toBeUndefined();
+		expect(getUnit("run-1", 1)).toBeUndefined();
+	});
+
+	it("seed key matches onUnitStart's index under out-of-order dispatch (no stranded pending row)", async () => {
+		const b = await register();
+		recordRun("run-1", "ship");
+		const ctx = { runId: "run-1", totalStages: 4 };
+		const stage = { stageNumber: 2, name: "design" };
+		b.onLoopStart?.(stage, { kind: "fanout", units: [{}, {}, {}] }, ctx);
+		// Units dispatch OUT of declared order under maxConcurrency > 1 (2, then 0).
+		// Each flips the row seeded from ITS OWN index — no pending row is stranded.
+		b.onUnitStart?.(stage, { index: 2, label: "phase 3/3" }, ctx);
+		b.onUnitStart?.(stage, { index: 0, label: "phase 1/3" }, ctx);
+		expect(getUnit("run-1", 2)?.status).toBe("running");
+		expect(getUnit("run-1", 0)?.status).toBe("running");
+		expect(getUnit("run-1", 1)?.status).toBe("pending"); // not yet dispatched
+		b.onUnitStart?.(stage, { index: 1, label: "phase 2/3" }, ctx);
+		expect(getUnit("run-1", 1)?.status).toBe("running");
+	});
+
+	it("a new fanout generation clears the prior pending seed and reseeds (clear → seed)", async () => {
+		const b = await register();
+		recordRun("run-1", "ship");
+		const ctx = { runId: "run-1", totalStages: 6 };
+		b.onLoopStart?.({ stageNumber: 2, name: "design" }, { kind: "fanout", units: [{}, {}, {}] }, ctx);
+		expect(getUnit("run-1", 2)?.status).toBe("pending");
+		// Second generation — fewer units; the prior seed is cleared and a new one laid down.
+		b.onLoopStart?.({ stageNumber: 5, name: "refine" }, { kind: "fanout", units: [{}, {}] }, ctx);
+		expect(getUnit("run-1", 2)).toBeUndefined(); // prior generation's index 2 gone
+		expect(getUnit("run-1", 0)?.status).toBe("pending");
+		expect(getUnit("run-1", 1)?.status).toBe("pending");
+	});
+});
+
 describe("onWorkflowEnd — terminal retention + completion toast", () => {
 	async function register(): Promise<Bundle> {
 		const { pi, sessionStart } = makePi();

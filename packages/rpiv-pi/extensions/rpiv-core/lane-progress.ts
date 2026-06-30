@@ -43,6 +43,7 @@ import {
 	markUnitDone,
 	noteVisitedStage,
 	retireRun,
+	seedPendingUnits,
 	seedVisitedStages,
 	setLaneProgress,
 	setUnitStarted,
@@ -189,6 +190,16 @@ export async function registerLaneProgress(): Promise<void> {
 				if (info.kind === "fanout") {
 					clearUnitLanes(ctx.runId);
 					fanoutRuns.add(ctx.runId);
+					// Fan out the generation's unit sub-rows as PENDING the instant onLoopStart
+					// fires — BEFORE any onUnitStart. Fanout precomputes its unit list; pull loops
+					// (iterate/assess/verify) carry none, so they seed nothing (the guard mirrors
+					// the `units: info.units ?` seed below). The key is the declared array position,
+					// which matches onUnitStart's unit.index (loop-parallel.ts:222-224).
+					if (info.units)
+						seedPendingUnits(
+							ctx.runId,
+							info.units.map((u, i) => ({ index: i, label: u.label })),
+						);
 				} else {
 					fanoutRuns.delete(ctx.runId);
 				}

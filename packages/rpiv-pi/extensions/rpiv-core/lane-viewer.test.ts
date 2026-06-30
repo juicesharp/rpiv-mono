@@ -17,6 +17,7 @@ import {
 	recordRun,
 	retireRun,
 	SINGLE_UNIT_KEY,
+	seedPendingUnits,
 	setCurrentSession,
 	setLaneSessionFile,
 	setUnitStarted,
@@ -535,6 +536,16 @@ describe("LaneViewer — per-unit addressing (fan-out)", () => {
 		v1.handleInput("\r");
 		expect(done1).toHaveBeenCalledWith("answer");
 		v1.dispose();
+	});
+
+	it("a switched-into pending unit header renders '○ <name> — pending' (never undefined)", () => {
+		recordRun("run-1", "ship");
+		seedPendingUnits("run-1", [{ index: 0, label: "phase 1/3" }]);
+		const viewer = new LaneViewer("run-1", 0, makeTui(), identityTheme, vi.fn());
+		const out = viewer.render(120).join("\n");
+		expect(out).toContain("○ phase 1/3 — pending");
+		expect(out).not.toContain("undefined");
+		viewer.dispose();
 	});
 });
 

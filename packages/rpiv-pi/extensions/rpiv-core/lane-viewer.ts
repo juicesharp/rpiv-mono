@@ -61,8 +61,8 @@ const TERMINAL_GLYPH: Partial<Record<LaneStatus, string>> = {
 	cancelled: "⊘",
 };
 
-/** Header glyph for a finished unit sub-row (mirrors TERMINAL_GLYPH). */
-const UNIT_GLYPH: Record<"done" | "failed", string> = { done: "✓", failed: "✗" };
+/** Header glyph for a unit sub-row (mirrors TERMINAL_GLYPH + the dock's PENDING_UNIT_GLYPH). */
+const UNIT_GLYPH: Record<"done" | "failed" | "pending", string> = { done: "✓", failed: "✗", pending: "○" };
 
 /**
  * Full token-detail suffix for the lane-viewer header — the footer.js

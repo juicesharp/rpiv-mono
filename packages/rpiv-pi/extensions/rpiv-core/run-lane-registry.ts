@@ -101,8 +101,10 @@ export interface UnitLane {
 	 *  until `setUnitStarted` fires — the host may publish a live session first. */
 	label?: string;
 	/** Per-unit lifecycle status — drives the sub-row glyph and the orphan sweep.
-	 *  "running" until `markUnitDone`/`sweepRunningUnits` flips it terminal. */
-	status: "running" | "done" | "failed";
+	 *  "pending" is seeded by `seedPendingUnits` (a fanout `onLoopStart`) and flipped to
+	 *  "running" by `setUnitStarted` (`onUnitStart`); "running" until `markUnitDone`/
+	 *  `sweepRunningUnits`/`retireRun` flips it terminal. */
+	status: "running" | "pending" | "done" | "failed";
 	/** This unit's currently-live child session (the viewer/preview source);
 	 *  undefined before the child spawns, between stages, or after teardown. */
 	currentSession: LaneSession | undefined;
@@ -442,7 +444,9 @@ export function retireRun(runId: string, status: Exclude<LaneStatus, "running">,
 		// undefined here — DON'T re-snapshot (now per unit).
 		if (unit.currentSession) captureSnapshotInto(unit, unit.currentSession);
 		unit.currentSession = undefined; // drop the live session; KEEP finalBranch
-		if (unit.status === "running") unit.status = "done"; // a never-ended unit reads terminal
+		// A never-ended unit reads terminal — including a pending unit that never fired
+		// onUnitStart (a fanout generation that retired before its units dispatched).
+		if (unit.status === "running" || unit.status === "pending") unit.status = "done";
 		for (const p of unit.pendingInput) p.resolve(undefined); // never strand a child's resolver
 		unit.pendingInput.length = 0;
 	}
@@ -545,7 +549,9 @@ export function sweepRunningUnits(runId: string, status: "done" | "failed"): voi
 	if (!entry) return;
 	let changed = false;
 	for (const unit of entry.units.values()) {
-		if (unit.status === "running") {
+		// A pending unit never fired onUnitStart, so it never has a matching onUnitEnd —
+		// sweep it alongside a still-running unit so neither spins forever.
+		if (unit.status === "running" || unit.status === "pending") {
 			unit.status = status;
 			changed = true;
 		}
@@ -564,6 +570,28 @@ export function clearUnitLanes(runId: string): void {
 	for (const unit of entry.units.values()) for (const p of unit.pendingInput) p.resolve(undefined);
 	entry.units.clear();
 	entry.needsInputSince = undefined;
+	notify();
+}
+
+/** Seed the CURRENT fan-out generation's unit sub-rows as PENDING (bridge `onLoopStart`
+ *  for a fanout): each declared unit's sub-lane is created FRESH with `status: "pending"`
+ *  keyed by its declared array `index`, so the dock fans out the generation the instant
+ *  onLoopStart fires — BEFORE any onUnitStart flips a unit running. Does NOT go through
+ *  `upsertUnit` (the host's live-session lifecycle seeds "running"); the pending→running
+ *  flip is the existing `setUnitStarted` (`onUnitStart`), unchanged, on the SAME map key.
+ *  Best-effort: a missing run is a no-op, mirroring every sibling mutator. */
+export function seedPendingUnits(runId: string, units: ReadonlyArray<{ index: number; label: string }>): void {
+	const entry = state().lanes.get(runId);
+	if (!entry) return;
+	for (const u of units) {
+		entry.units.set(u.index, {
+			index: u.index,
+			label: u.label,
+			status: "pending",
+			currentSession: undefined,
+			pendingInput: [],
+		});
+	}
 	notify();
 }
 

@@ -49,8 +49,20 @@ import {
 } from "./run-lane-registry.js";
 
 const WIDGET_KEY = "rpiv-lanes";
-/** Content-row budget (heading + lane rows). The footer + trailing spacer render below it. */
+/** Per-row CAP on the lane region (the scroll-follow window + its +N above/below summaries).
+ *  computeLayout bounds laneCap at MAX_WIDGET_LINES - 1, so a tall terminal grows the
+ *  live-output region rather than an unbounded lane list. (Was the fixed content budget.) */
 const MAX_WIDGET_LINES = 12;
+/** Compact CAP on the dock's TOTAL height — top framing + lane region + live-output region +
+ *  bottom framing. computeLayout clamps totalRows to min(MAX_DOCK_ROWS, terminal.rows): a tiny
+ *  terminal shrinks the dock, a tall one stays compact (NOT floor(rows * 0.9)). Tunable (~18–22). */
+const MAX_DOCK_ROWS = 20;
+/** Lines reserved for the live-output region BEFORE lanes claim the content body — guarantees
+ *  the preview/placeholder survives even when lanes fill the cap. Tunable (1–2). */
+const MIN_PREVIEW_ROWS = 2;
+/** terminal.rows fallback when the TUI hasn't reported a size (pre-mount / headless host).
+ *  Mirrors lane-viewer.ts' `?? 24`. */
+const FALLBACK_ROWS = 24;
 /** Ambient discoverability footer — surfaces how to step in with the two self-explanatory
  *  gestures only: ↓ from an empty prompt, or the always-available /lanes command. The `^Q`
  *  hotkey still steps in (lane-switcher) but is intentionally NOT advertised here — its glyph
@@ -63,9 +75,13 @@ const DEFAULT_FOOTER_TEXT = "↓ step in · /lanes";
  *  unified with the viewer: ←/esc back. */
 const ACTIVE_FOOTER_NEEDS_INPUT = "⏎ answer · → transcript · ↑/↓ navigate · x stop · ←/esc back";
 const ACTIVE_FOOTER_DEFAULT = "→ transcript · ↑/↓ navigate · x stop · ←/esc back";
-/** Active-only preview height cap — the dock shows at most this many lines of the
- *  selected lane's transcript tail. Self-bounded: MAX_WIDGET_LINES governs only the lane
- *  rows, not the preview, so the preview must cap its own footprint. */
+/** Centered live-output placeholder — fills the region when no line is selected (ambient, or
+ *  active with no resolved unit) so the region's height is constant in every dock state. */
+const NO_SELECTION_PLACEHOLDER = "↑/↓ select a line for live output";
+/** CAP on the live-output region's CONTENT (the transcript tail). The region itself is
+ *  `previewBudget` lines (the content-body remainder); no more than min(previewBudget,
+ *  PREVIEW_LINES) of it is ever transcript, and the rest pads blank so the region height is
+ *  constant as the body grows (the ghost-block fix). Self-bounds the content slice. */
 const PREVIEW_LINES = 6;
 /** Selection-gutter cells reserved on every row (so a row never shifts when stepping in):
  *  the `❯` cursor (matching pi's selectors) on the active selection, two spaces otherwise. */
@@ -239,6 +255,9 @@ const STATUS_GLYPH: Record<LaneStatus, string> = {
 	cancelled: "⊘",
 };
 const NEEDS_INPUT_GLYPH = "⚑";
+/** Glyph for a fan-out unit seeded PENDING before its onUnitStart fires (a hollow
+ *  circle reads "queued, not yet running" alongside ✓/✗/⚑/▶). */
+const PENDING_UNIT_GLYPH = "○";
 
 /** Spinner frames for running lanes — rpiv-warp's ambient-activity indicator
  *  (title-spinner.ts SPINNER_FRAMES): a 4-frame braille rotation, deliberately
@@ -311,6 +330,11 @@ export class LaneDock {
 				WIDGET_KEY,
 				(tui, theme) => {
 					this.tui = tui;
+					// Re-seed the shape baseline now that the TUI (and its terminal size) is known.
+					// update() seeds earlier against the FALLBACK_ROWS baseline (this.tui is unset
+					// until the factory runs); without this re-seed the first post-mount update()
+					// would see a termRows change (FALLBACK → real) and force a spurious full redraw.
+					this.lastShapeSig = this.shapeSignature();
 					return {
 						render: (width: number) => this.renderWidget(theme, width),
 						invalidate: () => {
@@ -366,9 +390,83 @@ export class LaneDock {
 	 * the selected unit's currentSession swaps S1 → S2) — that footprint change is tracked
 	 * separately in update() via the previewSession identity check, so the signature stays cheap.
 	 */
+	/** Lazy terminal-row read — `this.tui` is assigned by the widget factory before render, so
+	 *  `terminal.rows` is available; FALLBACK_ROWS covers pre-mount / headless. The erased
+	 *  `terminal` shape is narrowed to `{ rows?: number }` (mirrors lane-viewer.ts). */
+	private getTerminalRows(): number {
+		return (this.tui?.terminal as { rows?: number } | undefined)?.rows ?? FALLBACK_ROWS;
+	}
+
+	/** The top-down frame budget, computed once per render from the terminal size + dock state.
+	 *  `totalRows` is the compact CAP (min(MAX_DOCK_ROWS, terminal.rows)); `overhead` is the
+	 *  constant framing (top block + bottom block + the live-output banner); the content body
+	 *  splits into `laneCap` (lanes take priority, bounded by MAX_WIDGET_LINES - 1, reserving
+	 *  MIN_PREVIEW_ROWS) and `previewBudget` (the REMAINDER). totalRows = overhead + contentBody
+	 *  is invariant for a given state + terminal regardless of the lane count N. */
+	private computeLayout(active: boolean): { totalRows: number; laneCap: number; previewBudget: number } {
+		const termRows = this.getTerminalRows();
+		const overhead = (active ? 5 : 3) + 3 /*bottom: blank + footer + rule*/ + 1 /*live-output banner*/;
+		const totalRows = Math.min(MAX_DOCK_ROWS, termRows);
+		const contentBody = Math.max(0, totalRows - overhead);
+		const laneCap = Math.min(MAX_WIDGET_LINES - 1, Math.max(1, contentBody - MIN_PREVIEW_ROWS));
+		const previewBudget = Math.max(0, contentBody - laneCap);
+		return { totalRows, laneCap, previewBudget };
+	}
+
+	/** Group-aware scroll-follow viewport over the flattened display rows. Returns the visible
+	 *  slice [start, start+window) plus whether rows fold behind a `+N above` / `+N below` summary
+	 *  (both summaries live INSIDE laneCap, so the lane region's height is constant whether or not
+	 *  it is scrolled). The selection (the ❯ cursor) is always inside the window; the window opens
+	 *  at a lane boundary and folds whole lane+unit groups (running AND pending) atomically. */
+	private computeViewport(
+		rows: DisplayRow[],
+		selection: number,
+		laneCap: number,
+	): { start: number; window: number; above: number; below: number } {
+		const n = rows.length;
+		// Everything fits — show it all, no summaries, no scrolling.
+		if (n <= laneCap) return { start: 0, window: n, above: 0, below: 0 };
+
+		// Reserve up to two summary rows inside laneCap; the content window is what remains.
+		const reserve = Math.min(2, laneCap - 1);
+		const window = Math.max(1, laneCap - reserve);
+
+		// Center the content window on the selection, clamped to the scrollable range.
+		let start = selection - Math.floor(window / 2);
+		if (start < 0) start = 0;
+		const maxStart = n - window;
+		if (start > maxStart) start = maxStart;
+
+		// Group-aware START: snap start DOWN to a lane boundary so the window never opens
+		// mid-group — but never below the cursor-visibility floor (the cursor stays visible).
+		const floor = Math.max(0, selection - window + 1);
+		while (start > floor && rows[start].kind === "unit") start--;
+
+		// Group-aware END: if a trailing group is cut at `end`, fold it atomically behind `+N
+		// below` (pull end back to the group's lane boundary) — unless that would hide the cursor
+		// (the cut group contains the selection) or empty the window (a group larger than it).
+		let end = start + window;
+		if (end < n && rows[end].kind === "unit") {
+			let lane = end;
+			while (lane > start && rows[lane].kind === "unit") lane--;
+			if (lane > start && lane > selection) end = lane;
+		}
+
+		return {
+			start,
+			window: end - start,
+			above: start > 0 ? 1 : 0,
+			below: end < n ? 1 : 0,
+		};
+	}
+
 	private shapeSignature(): string {
 		const { active, selection } = getDockState();
-		return `${listLanesForDisplay().length}:${active ? selection : -1}`;
+		// termRows is a HEIGHT dimension (a row resize is a potential height step even when the
+		// lane set is unchanged), prepended so any resize forces a full redraw. Raw termRows (a
+		// superset of the clamped total) — the clamp is render-time only.
+		const termRows = this.getTerminalRows();
+		return `${termRows}:${listLanesForDisplay().length}:${active ? selection : -1}`;
 	}
 
 	/** Drive a repaint timer ONLY while ≥1 lane is running — a finished/idle set
@@ -486,7 +584,11 @@ export class LaneDock {
 		// (blank · HR · blank · title) keeps the rule off the chrome above and gives the
 		// title room to breathe under the rule.
 		const lines: string[] = active ? ["", rule, "", heading, ""] : ["", heading, ""];
-		const budget = MAX_WIDGET_LINES - 1; // rows available after the heading
+		// Top-down frame budget from the terminal size + dock state (computed once per render,
+		// never re-derived from a derived value). laneCap bounds the lane region (the scroll-follow
+		// window + its +N above/below summaries); previewBudget is the live-output REMAINDER.
+		// totalRows (inside computeLayout) is the compact CAP — min(MAX_DOCK_ROWS, terminal.rows).
+		const { laneCap, previewBudget } = this.computeLayout(active);
 
 		// The 2-col selection gutter is ALWAYS reserved (see renderRow) so stepping in
 		// only swaps spaces for the `❯` cursor — no row ever shifts. sel(i) marks the
@@ -512,28 +614,37 @@ export class LaneDock {
 					? this.renderRow(theme, row.lane, width, labelWidth, sel(i))
 					: this.renderUnitRow(theme, row.lane, row.unit, width, labelWidth, sel(i)),
 			);
-		if (rows.length <= budget) {
-			rows.forEach((row, i) => {
-				lines.push(renderAt(row, i));
-			});
-		} else {
-			// Reserve the last row for the "+N more" summary.
-			const shown = rows.slice(0, budget - 1);
-			shown.forEach((row, i) => {
-				lines.push(renderAt(row, i));
-			});
-			const moreCount = rows.length - shown.length;
-			// Same reserved gutter so the summary aligns with the lane rows above.
-			lines.push(truncate(`${CURSOR_UNSELECTED}${theme.fg("dim", `+${moreCount} more`)}`));
+		// Group-aware scroll-follow viewport: when rows exceed laneCap the window centers on
+		// the selection (the ❯ cursor never vanishes into overflow), opens at a lane boundary,
+		// and folds whole lane+unit groups behind +N above / +N below summaries that live
+		// INSIDE laneCap — so the lane region's height is constant whether or not scrolled.
+		const vp = this.computeViewport(rows, selection, laneCap);
+		if (vp.above) {
+			lines.push(truncate(`${CURSOR_UNSELECTED}${theme.fg("dim", `+${vp.start} above`)}`));
 		}
-		// Active-only transcript-tail preview of the SELECTED row's unit: a dim separator
-		// rule then the last PREVIEW_LINES of its transcript, between the rows / "+N more"
-		// fold and the footer. Active-gated so ambient stays byte-for-byte stable.
+		for (let i = vp.start; i < vp.start + vp.window; i++) {
+			lines.push(renderAt(rows[i], i));
+		}
+		if (vp.below) {
+			const hidden = rows.length - (vp.start + vp.window);
+			lines.push(truncate(`${CURSOR_UNSELECTED}${theme.fg("dim", `+${hidden} below`)}`));
+		}
+		// The live-output region is ALWAYS present and exactly 1 + previewBudget lines: a dim
+		// "live output" banner then either the selected lane's transcript tail (active + unit)
+		// or a centered placeholder — both padded so a streaming body changing every tick does
+		// NOT change the dock height (the ghost-block regression). Content is active-gated; the
+		// region itself renders in every state so the total height is stable.
 		const selUnit = this.selectedUnit();
-		if (active && selUnit) {
-			for (const line of this.renderPreview(theme, selUnit.runId, selUnit.unitIndex, selUnit.unit, width))
-				lines.push(truncate(line));
-		}
+		const region: string[] =
+			active && selUnit
+				? this.renderPreview(theme, selUnit.runId, selUnit.unitIndex, selUnit.unit, width, previewBudget)
+				: [
+						renderPreviewBanner(theme, width),
+						...Array.from({ length: previewBudget }, () =>
+							this.centerLine(theme, NO_SELECTION_PLACEHOLDER, width),
+						),
+					];
+		for (const line of region) lines.push(truncate(line));
 		// Footer hint (dim), indented one space — active shows the navigation contract,
 		// ambient the discoverability hint. Preceded by a blank line (rhythm) and followed
 		// by the bottom rule (the separator from Pi's status chrome below).
@@ -571,6 +682,9 @@ export class LaneDock {
 		} else if (unit.status === "running") {
 			glyph = SPINNER_FRAMES[this.frame];
 			glyphColor = "accent";
+		} else if (unit.status === "pending") {
+			glyph = PENDING_UNIT_GLYPH;
+			glyphColor = "dim";
 		} else if (unit.status === "failed") {
 			glyph = STATUS_GLYPH.failed;
 			glyphColor = "warning";
@@ -732,13 +846,35 @@ export class LaneDock {
 		return `${prefix}${coloredBar}  ${numCol} ${coloredName}${reasonStr}`;
 	}
 
+	/** Pad a preview body to `budget` blank lines so the live-output region's height is constant
+	 *  on every render path (the ghost-block fix: a body growing every streaming tick must not
+	 *  change the dock height). The banner is always the first element. */
+	private padPreview(rule: string, body: string[], budget: number): string[] {
+		const padded = body.slice();
+		while (padded.length < budget) padded.push("");
+		return [rule, ...padded];
+	}
+
+	/** Center `text` in a full-width line via symmetric spacing (left = floor(gap/2)), fail-soft
+	 *  to a truncate when `width` is narrower than the copy. No centering helper exists today
+	 *  (`padCol` only right-pads). Operates on raw text (visibleWidth is exact); dims the result. */
+	private centerLine(theme: Theme, text: string, width: number): string {
+		const visible = visibleWidth(text);
+		if (visible >= width) return theme.fg("dim", truncateToWidth(text, Math.max(0, width), "…"));
+		const gap = width - visible;
+		const left = Math.floor(gap / 2);
+		return theme.fg("dim", `${" ".repeat(left)}${text}${" ".repeat(gap - left)}`);
+	}
+
 	/**
 	 * Active-only transcript-tail preview of the selected lane. A dim separator rule
-	 * then the last PREVIEW_LINES of the lane's rendered transcript — sourced from the live
-	 * child session, else the retirement snapshot, exactly like the viewer (lane-viewer.ts).
-	 * Reuses the shared renderBranch; toolsExpanded is always false so the preview stays compact.
-	 * Fail-soft: a disposed/odd session degrades to a dim placeholder, never throws into the widget.
-	 * scrollOffset is deliberately absent — scrolling stays in the focused viewer; this is a fixed tail.
+	 * then the last min(previewBudget, PREVIEW_LINES) of the lane's rendered transcript,
+	 * padded to `previewBudget` so the live-output region's height never changes as the body
+	 * grows (ghost-block fix). Sourced from the live child session, else the retirement
+	 * snapshot, exactly like the viewer (lane-viewer.ts). Reuses the shared renderBranch;
+	 * toolsExpanded is always false so the preview stays compact. Fail-soft: a disposed/odd
+	 * session degrades to a dim placeholder, never throws into the widget. scrollOffset is
+	 * deliberately absent — scrolling stays in the focused viewer; this is a fixed tail.
 	 */
 	private renderPreview(
 		theme: Theme,
@@ -746,6 +882,7 @@ export class LaneDock {
 		unitIndex: number,
 		unit: UnitLane | undefined,
 		width: number,
+		previewBudget: number,
 	): string[] {
 		const rule = renderPreviewBanner(theme, width);
 		let entries: ViewerEntry[];
@@ -770,18 +907,18 @@ export class LaneDock {
 					entries = disk.entries;
 					source = disk.source;
 				} else {
-					return [rule, theme.fg("dim", "  (stage starting…)")];
+					return this.padPreview(rule, [theme.fg("dim", "  (stage starting…)")], previewBudget);
 				}
 			}
 		} catch {
-			return [rule, theme.fg("dim", "  (transcript unavailable)")];
+			return this.padPreview(rule, [theme.fg("dim", "  (transcript unavailable)")], previewBudget);
 		}
-		if (!this.tui) return [rule]; // pre-mount guard (tui is set by the widget factory before render)
+		if (!this.tui) return this.padPreview(rule, [], previewBudget); // pre-mount guard (tui is set by the widget factory before render)
 		const body = renderBranch(entries, width, source, this.tui, theme, false);
 		const live = unit?.currentSession;
 		if (live) {
 			// Live source only (terminal lanes carry no partial): append the in-flight partial's thinking
-			// before the tail-slice so the dock preview's last-PREVIEW_LINES window shows it. Cleared the
+			// before the tail-slice so the dock preview's content window shows it. Cleared the
 			// instant the turn commits (getStreamingMessage → undefined) — no double-render.
 			const { component, lines } = renderStreamingMessage(
 				this.streamingComponent,
@@ -791,7 +928,8 @@ export class LaneDock {
 			this.streamingComponent = component;
 			body.push(...lines);
 		}
-		return [rule, ...body.slice(Math.max(0, body.length - PREVIEW_LINES))];
+		const cap = Math.min(previewBudget, PREVIEW_LINES);
+		return this.padPreview(rule, body.slice(Math.max(0, body.length - cap)), previewBudget);
 	}
 
 	/** Read the selected lane's live in-flight partial, narrowed to ViewerMessage at the call

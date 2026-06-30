@@ -16,6 +16,7 @@ import {
 	recordRun,
 	retireRun,
 	SINGLE_UNIT_KEY,
+	seedPendingUnits,
 	setCurrentSession,
 	setDockActive,
 	setDockSelection,
@@ -35,7 +36,7 @@ const identityTheme = {
 } as unknown as Theme;
 
 type WidgetFactory = (
-	tui: { requestRender: () => void },
+	tui: { terminal?: { rows?: number }; requestRender: () => void },
 	theme: Theme,
 ) => { render: (w: number) => string[]; invalidate: () => void };
 
@@ -50,7 +51,7 @@ function mount(overlay: LaneDock, ui: ExtensionUIContext) {
 	const setWidget = ui.setWidget as unknown as ReturnType<typeof vi.fn>;
 	const factory = setWidget.mock.calls[0]?.[1] as WidgetFactory | undefined;
 	if (!factory) return { setWidget, widget: undefined, tui: undefined };
-	const tui = { requestRender: vi.fn() };
+	const tui = { terminal: { rows: 40 }, requestRender: vi.fn() };
 	const widget = factory(tui, identityTheme);
 	return { setWidget, widget, tui };
 }
@@ -368,7 +369,7 @@ describe("LaneDock — rendering", () => {
 		expect((widget?.render(120) ?? [])[1]).toContain("2 runs need input"); // [0] is the top rule
 	});
 
-	it("needs-input lane is never hidden below the '+N more' fold (priority sort)", () => {
+	it("needs-input lane is never hidden below the '+N below' fold (priority sort)", () => {
 		// 12 lanes (> the 11-row budget) → collapse; the LAST-launched one needs input.
 		for (let i = 0; i < 12; i++) recordRun(`run-${i}`, `lane${i}`);
 		enqueueInput("run-11", SINGLE_UNIT_KEY, {
@@ -379,9 +380,9 @@ describe("LaneDock — rendering", () => {
 		const overlay = new LaneDock();
 		const { widget } = mount(overlay, makeCtx());
 		const out = (widget?.render(200) ?? []).join("\n");
-		expect(out).toContain("+"); // collapse line present
-		expect(out).toContain("more");
-		expect(out).toContain("lane11"); // the needs-input lane sorted above the fold
+		expect(out).toContain("+"); // scroll-follow summary present
+		expect(out).toContain("below"); // was "+N more" — now a "+N below" fold (lanes exceed laneCap)
+		expect(out).toContain("lane11"); // the needs-input lane sorted into the visible window
 		expect(out).toContain("⚑");
 		overlay.dispose();
 	});
@@ -419,7 +420,7 @@ describe("LaneDock — rendering", () => {
 		overlay.dispose();
 	});
 
-	it("beyond MAX_WIDGET_LINES budget the last lane row is '+N more' (footer below it)", () => {
+	it("beyond laneCap the overflow folds behind '+N below' (footer below it)", () => {
 		// budget = MAX_WIDGET_LINES (12) - 1 heading = 11 rows; exceed it.
 		for (let i = 0; i < 20; i++) recordRun(`run-${i}`, `wf-${i}`);
 		const overlay = new LaneDock();
@@ -428,8 +429,8 @@ describe("LaneDock — rendering", () => {
 		// Bottom rule last; no top rule (editor border is the top boundary).
 		expect(lines[lines.length - 1]).toBe("─".repeat(120));
 		expect(lines[0]).toBe(""); // leading blank, not a rule
-		// The "+N more" summary is the last LANE row; the footer sits below it.
-		const moreIdx = lines.findIndex((l) => l.includes("more") && l.includes("+"));
+		// The "+N below" scroll-follow summary is the last LANE row; the footer sits below it.
+		const moreIdx = lines.findIndex((l) => l.includes("below") && l.includes("+"));
 		const footerIdx = lines.findIndex((l) => l.includes("/lanes"));
 		expect(moreIdx).toBeGreaterThan(0);
 		expect(footerIdx).toBeGreaterThan(moreIdx);
@@ -1117,6 +1118,112 @@ describe("LaneDock — active transcript preview", () => {
 	});
 });
 
+describe("LaneDock — fixed-height frame + dynamic split", () => {
+	const assistantEntry = (text: string) => ({
+		type: "message",
+		message: { role: "assistant", content: [{ type: "text", text }] },
+	});
+
+	it("the dock's total height is constant across preview-content changes (ghost-block regression)", () => {
+		recordRun("run-1", "ship");
+		const short = makeSession(() => [assistantEntry("ONLY_LINE")]);
+		setCurrentSession("run-1", SINGLE_UNIT_KEY, short);
+		const overlay = new LaneDock();
+		const { widget } = mount(overlay, makeCtx());
+		setDockActive(true);
+		setDockSelection(0);
+		const before = (widget?.render(120) ?? []).length;
+		// Grow the body from 1 line to 20 — the region is padded to previewBudget, so the
+		// dock height must NOT change tick to tick (the ghost-block regression).
+		const long = makeSession(() => Array.from({ length: 20 }, (_, i) => assistantEntry(`LINE_${i}`)));
+		setCurrentSession("run-1", SINGLE_UNIT_KEY, long);
+		overlay.update(); // re-target the preview session (S → S') — height stays put
+		const after = (widget?.render(120) ?? []).length;
+		expect(after).toBe(before);
+		overlay.dispose();
+	});
+
+	it("a terminal.rows change forces a full redraw (shapeSignature includes termRows)", () => {
+		recordRun("run-1", "ship");
+		const overlay = new LaneDock();
+		const { tui } = mount(overlay, makeCtx());
+		const spy = tui!.requestRender as unknown as ReturnType<typeof vi.fn>;
+		spy.mockClear();
+		// Resize the terminal — the lane set is unchanged, but termRows is a signature
+		// dimension now, so the height-shape flips and update() forces a full redraw.
+		(tui as { terminal: { rows: number } }).terminal.rows = 10;
+		overlay.update();
+		expect(tui!.requestRender).toHaveBeenLastCalledWith(true);
+		overlay.dispose();
+	});
+
+	it("the dock clamps DOWN on a tiny terminal (total ≤ terminal.rows)", () => {
+		recordRun("run-1", "ship");
+		const overlay = new LaneDock();
+		const ui = makeCtx();
+		overlay.setUICtx(ui);
+		overlay.update();
+		const setWidget = ui.setWidget as unknown as ReturnType<typeof vi.fn>;
+		const factory = setWidget.mock.calls[0]?.[1] as WidgetFactory;
+		const widget = factory({ terminal: { rows: 8 }, requestRender: vi.fn() }, identityTheme);
+		const height = (widget.render(80) ?? []).length;
+		expect(height).toBeLessThanOrEqual(8); // clamped DOWN, not floor(rows * 0.9)
+		overlay.dispose();
+	});
+
+	it("the ❯ cursor stays visible when the selection is in overflow (scroll-follow)", () => {
+		// 20 lanes (> laneCap) — select the LAST one; it must render inside the scroll window.
+		for (let i = 0; i < 20; i++) recordRun(`run-${i}`, `wf-${i}`);
+		const overlay = new LaneDock();
+		const { widget } = mount(overlay, makeCtx());
+		setDockActive(true);
+		setDockSelection(19); // the last lane, well past the top window
+		const lines = widget?.render(120) ?? [];
+		const cursor = lines.find((l) => l.includes("❯")) ?? "";
+		expect(cursor).toContain("wf-19"); // selected lane scrolled INTO view, not hidden in overflow
+		expect(lines.some((l) => l.includes("above"))).toBe(true); // lanes fold above the window
+		overlay.dispose();
+	});
+
+	it("the viewport is group-aware: a lane + its unit sub-rows stay together at both edges", () => {
+		// 8 lanes × (1 lane + 2 units) = 24 rows ≫ laneCap → scrolls. Selecting a mid-list
+		// lane lands the window on a group boundary: the lane + BOTH units render together.
+		for (let i = 0; i < 8; i++) {
+			recordRun(`run-${i}`, `wf-${i}`);
+			setUnitStarted(`run-${i}`, 0, `u0-${i}`);
+			setUnitStarted(`run-${i}`, 1, `u1-${i}`);
+		}
+		const overlay = new LaneDock();
+		const { widget } = mount(overlay, makeCtx());
+		setDockActive(true);
+		setDockSelection(12); // lands on wf-4's lane row (groups of 3: 0-2,3-5,6-8,9-11,12…)
+		const lines = widget?.render(120) ?? [];
+		const cursorIdx = lines.findIndex((l) => l.includes("❯"));
+		expect(cursorIdx).toBeGreaterThan(-1);
+		expect(lines[cursorIdx]).toContain("wf-4");
+		expect(lines[cursorIdx + 1]).toContain("u0-4"); // unit 0 directly under its lane
+		expect(lines[cursorIdx + 2]).toContain("u1-4"); // unit 1 directly under unit 0
+		overlay.dispose();
+	});
+
+	it("ambient fills the live-output region with the centered placeholder", () => {
+		recordRun("run-1", "ship");
+		const overlay = new LaneDock();
+		const { widget } = mount(overlay, makeCtx());
+		const lines = widget?.render(80) ?? [];
+		// The region is always present — ambient shows the centered placeholder (not a transcript).
+		const placeholder = lines.find((l) => l.includes("select a line for live output")) ?? "";
+		expect(placeholder).not.toBe("");
+		expect(placeholder.trim()).toBe("↑/↓ select a line for live output");
+		// Symmetric centering: equal leading + trailing space (gap split via floor).
+		const leading = placeholder.length - placeholder.trimStart().length;
+		const trailing = placeholder.trimEnd().length - placeholder.trim().length;
+		expect(leading).toBe(trailing);
+		expect(leading).toBeGreaterThan(0); // not left-aligned
+		overlay.dispose();
+	});
+});
+
 describe("LaneDock — fanout unit sub-rows", () => {
 	const assistantEntry = (text: string) => ({
 		type: "message",
@@ -1197,6 +1304,20 @@ describe("LaneDock — fanout unit sub-rows", () => {
 		const { widget } = mount(overlay, makeCtx());
 		// 1 running lane → heading reads "(1 active)" despite 3 display rows.
 		expect((widget?.render(120) ?? [])[1]).toContain("Runs (1 active)");
+		overlay.dispose();
+	});
+
+	it("a pending unit sub-row renders the ○ glyph + 'pending' tail (not ✓)", () => {
+		recordRun("run-1", "ship");
+		// Seed a pending unit directly (the onLoopStart fan-out seed); no onUnitStart yet.
+		seedPendingUnits("run-1", [{ index: 0, label: "phase 1/3" }]);
+		const overlay = new LaneDock();
+		const { widget } = mount(overlay, makeCtx());
+		const out = (widget?.render(120) ?? []).join("\n");
+		expect(out).toContain("○"); // pending glyph
+		expect(out).toContain("phase 1/3"); // the seeded label
+		expect(out).toContain("pending"); // the tail (status word, no usage suffix)
+		expect(out).not.toContain("✓"); // NOT the terminal "done" glyph
 		overlay.dispose();
 	});
 });

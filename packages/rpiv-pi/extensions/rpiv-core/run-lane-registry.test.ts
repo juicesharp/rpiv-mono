@@ -21,6 +21,7 @@ import {
 	recordRun,
 	retireRun,
 	SINGLE_UNIT_KEY,
+	seedPendingUnits,
 	setCurrentSession,
 	setDockActive,
 	setDockSelection,
@@ -31,6 +32,7 @@ import {
 	setLaneStatus,
 	setUnitStarted,
 	subscribeLanes,
+	sweepRunningUnits,
 	unitNeedsInput,
 } from "./run-lane-registry.js";
 
@@ -558,6 +560,60 @@ describe("run-lane-registry", () => {
 			subscribeLanes(listener);
 			markUnitDone("run-1", 0, "done"); // unchanged
 			markUnitDone("run-1", 9, "done"); // missing
+			expect(listener).not.toHaveBeenCalled();
+		});
+	});
+
+	describe("seedPendingUnits — pending fan-out seed", () => {
+		it("seeds N pending unit sub-rows keyed by declared array position", () => {
+			recordRun("run-1", "ship");
+			seedPendingUnits("run-1", [
+				{ index: 0, label: "phase 1/3" },
+				{ index: 1, label: "phase 2/3" },
+				{ index: 2, label: "phase 3/3" },
+			]);
+			expect([0, 1, 2].map((i) => getUnit("run-1", i)?.status)).toEqual(["pending", "pending", "pending"]);
+			expect(getUnit("run-1", 1)?.label).toBe("phase 2/3");
+		});
+
+		it("a pending unit flips running on setUnitStarted on the SAME key (the declared index)", () => {
+			recordRun("run-1", "ship");
+			seedPendingUnits("run-1", [
+				{ index: 0, label: "phase 1/2" },
+				{ index: 1, label: "phase 2/2" },
+			]);
+			// onUnitStart dispatches out of order (index 1 first) — each flips its OWN seeded row.
+			setUnitStarted("run-1", 1, "phase 2/2");
+			expect(getUnit("run-1", 1)?.status).toBe("running");
+			expect(getUnit("run-1", 0)?.status).toBe("pending"); // sibling still queued
+			setUnitStarted("run-1", 0, "phase 1/2");
+			expect(getUnit("run-1", 0)?.status).toBe("running");
+		});
+
+		it("sweepRunningUnits flips a never-started pending unit terminal (fail/abort-before-start)", () => {
+			recordRun("run-1", "ship");
+			seedPendingUnits("run-1", [
+				{ index: 0, label: "p0" },
+				{ index: 1, label: "p1" },
+			]);
+			setUnitStarted("run-1", 0, "p0"); // unit 0 running; unit 1 never started
+			sweepRunningUnits("run-1", "failed");
+			expect(getUnit("run-1", 0)?.status).toBe("failed");
+			expect(getUnit("run-1", 1)?.status).toBe("failed"); // pending swept too — no spin
+		});
+
+		it("retireRun flips a never-started pending unit terminal (→ done)", () => {
+			recordRun("run-1", "ship");
+			seedPendingUnits("run-1", [{ index: 0, label: "p0" }]);
+			retireRun("run-1", "completed"); // successful run, unit 0 never fired onUnitStart
+			expect(getUnit("run-1", 0)?.status).toBe("done"); // pending → done, not stuck spinning
+		});
+
+		it("is a no-op on a missing run", () => {
+			const listener = vi.fn();
+			subscribeLanes(listener);
+			seedPendingUnits("nope", [{ index: 0, label: "x" }]);
+			expect(getLane("nope")).toBeUndefined();
 			expect(listener).not.toHaveBeenCalled();
 		});
 	});
