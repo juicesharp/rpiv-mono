@@ -99,6 +99,22 @@ Preview content is rendered as markdown in a monospace box. Multi-line text with
 			// Emit event for external listeners (e.g., notification plugins)
 			emitAskUserPromptEvent(pi, typed);
 
+			// RPC fallback (e.g. the VSCode pendant embeds pi via RPC):
+			// ctx.ui.custom() renders a TUI overlay that needs a real terminal;
+			// in RPC mode it returns undefined, which buildQuestionnaireResponse
+			// collapses into DECLINE_MESSAGE ("User declined to answer questions")
+			// without ever showing the user a prompt. ctx.ui.select()/input() ARE
+			// functional in RPC via the extension_ui_request/response sub-protocol,
+			// so walk the questions with those and reuse the shared envelope.
+			// Positive `=== "rpc"` guard: in TUI mode ctx.mode is "tui" (use custom()),
+			// and on pi versions/tests where ctx.mode is unset we stay on the custom()
+			// path rather than mis-routing. See ./rpc-fallback.ts for the rationale.
+			if ((ctx as { mode?: string }).mode === "rpc") {
+				const { runRpcQuestionnaire } = await import("./rpc-fallback.js");
+				const rpcResult = await runRpcQuestionnaire(ctx, typed);
+				return buildQuestionnaireResponse(rpcResult, typed);
+			}
+
 			const itemsByTab: WrappingSelectItem[][] = typed.questions.map((q) => buildItemsForQuestion(q));
 
 			// Lazy — QuestionnaireSession pulls the ~560ms view/TUI render graph;
