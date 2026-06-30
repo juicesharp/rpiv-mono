@@ -2,7 +2,6 @@
   "_meta.notes": "Auto-translated draft. Native-speaker review welcome via PR. TUI symbols (↑/↓, ⚠) and key names (Enter, Esc, Tab, Space, n) are universal CLI conventions and stay untranslated.",
 
   "sentinel.other": "Schreibe etwas.",
-  "sentinel.chat": "Darüber chatten",
   "sentinel.next": "Weiter",
 
   "submit.label": "Antworten senden",
@@ -21,7 +20,5 @@
 
   "preview.no_preview": "Keine Vorschau verfügbar",
   "preview.notes_affordance": "Notizen: drücke n, um Notizen hinzuzufügen",
-
-  "chat.summary": "Benutzer möchte darüber chatten",
   "notes.header": "Notizen:"
 }

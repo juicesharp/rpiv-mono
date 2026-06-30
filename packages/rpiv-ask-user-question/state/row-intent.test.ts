@@ -9,7 +9,7 @@ import {
 	sentinelsToAppend,
 } from "./row-intent.js";
 
-const ALL_KINDS: readonly RowKind[] = ["option", "other", "chat", "next"];
+const ALL_KINDS: readonly RowKind[] = ["option", "other", "next"];
 
 describe("row-intent META exhaustiveness", () => {
 	it("has an entry for every RowKind", () => {
@@ -21,7 +21,6 @@ describe("row-intent META exhaustiveness", () => {
 	it("only `option` has empty label; sentinels carry user-facing labels", () => {
 		expect(ROW_INTENT_META.option.label).toBe("");
 		expect(ROW_INTENT_META.other.label).toBe("Type something.");
-		expect(ROW_INTENT_META.chat.label).toBe("Chat about this");
 		expect(ROW_INTENT_META.next.label).toBe("Next");
 	});
 
@@ -30,23 +29,22 @@ describe("row-intent META exhaustiveness", () => {
 		for (const k of SENTINEL_KINDS) expect(ROW_INTENT_META[k].reserved).toBe(true);
 	});
 
-	it("`chat` is the only kind that does not live in the main list", () => {
-		expect(ROW_INTENT_META.chat.livesInMainList).toBe(false);
+	it("every sentinel lives in the main list", () => {
+		for (const k of SENTINEL_KINDS) {
+			expect(ROW_INTENT_META[k].livesInMainList).toBe(true);
+		}
 		expect(ROW_INTENT_META.option.livesInMainList).toBe(true);
-		expect(ROW_INTENT_META.other.livesInMainList).toBe(true);
-		expect(ROW_INTENT_META.next.livesInMainList).toBe(true);
 	});
 
 	it("`next` is the only kind excluded from numbering", () => {
 		expect(ROW_INTENT_META.next.numbered).toBe(false);
 		expect(ROW_INTENT_META.option.numbered).toBe(true);
 		expect(ROW_INTENT_META.other.numbered).toBe(true);
-		expect(ROW_INTENT_META.chat.numbered).toBe(true);
 	});
 
 	it("`other` is the only kind that activates inputMode", () => {
 		expect(ROW_INTENT_META.other.activatesInputMode).toBe(true);
-		for (const k of ["option", "chat", "next"] as const) {
+		for (const k of ["option", "next"] as const) {
 			expect(ROW_INTENT_META[k].activatesInputMode).toBe(false);
 		}
 	});
@@ -54,7 +52,7 @@ describe("row-intent META exhaustiveness", () => {
 	it("`next` is the only multi-select toggle blocker / auto-submitter", () => {
 		expect(ROW_INTENT_META.next.blocksMultiToggle).toBe(true);
 		expect(ROW_INTENT_META.next.autoSubmitsInMulti).toBe(true);
-		for (const k of ["option", "other", "chat"] as const) {
+		for (const k of ["option", "other"] as const) {
 			expect(ROW_INTENT_META[k].blocksMultiToggle).toBe(false);
 			expect(ROW_INTENT_META[k].autoSubmitsInMulti).toBe(false);
 		}
@@ -64,7 +62,6 @@ describe("row-intent META exhaustiveness", () => {
 describe("LABELS_BY_KIND", () => {
 	it("matches META labels for sentinel kinds only", () => {
 		expect(LABELS_BY_KIND.other).toBe(ROW_INTENT_META.other.label);
-		expect(LABELS_BY_KIND.chat).toBe(ROW_INTENT_META.chat.label);
 		expect(LABELS_BY_KIND.next).toBe(ROW_INTENT_META.next.label);
 	});
 });
@@ -73,7 +70,6 @@ describe("RESERVED_LABEL_SET", () => {
 	it("contains 'Other' plus every reserved sentinel label", () => {
 		expect(RESERVED_LABEL_SET.has("Other")).toBe(true);
 		expect(RESERVED_LABEL_SET.has("Type something.")).toBe(true);
-		expect(RESERVED_LABEL_SET.has("Chat about this")).toBe(true);
 		expect(RESERVED_LABEL_SET.has("Next")).toBe(true);
 	});
 
@@ -98,12 +94,11 @@ describe("sentinelsToAppend walker", () => {
 		expect(sentinelsToAppend(baseSingle)).toEqual(["other"]);
 	});
 
-	it("appends `next` for multi-select; suppresses `other`", () => {
-		expect(sentinelsToAppend(baseMulti)).toEqual(["next"]);
+	it("`other` now appends on multi-select too (autoAppendOnMultiSelect === true)", () => {
+		expect(ROW_INTENT_META.other.autoAppendOnMultiSelect).toBe(true);
 	});
 
-	it("never appends `chat` (livesInMainList=false)", () => {
-		expect(sentinelsToAppend(baseSingle)).not.toContain("chat");
-		expect(sentinelsToAppend(baseMulti)).not.toContain("chat");
+	it("appends `other` + `next` for multi-select (other no longer suppressed)", () => {
+		expect(sentinelsToAppend(baseMulti)).toEqual(["other", "next"]);
 	});
 });

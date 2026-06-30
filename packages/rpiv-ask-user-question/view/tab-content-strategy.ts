@@ -3,7 +3,6 @@ import { type Component, Container, type Input, Spacer, Text, truncateToWidth } 
 import { t } from "../state/i18n-bridge.js";
 import { formatAnswerScalar } from "../tool/format-answer.js";
 import type { QuestionData } from "../tool/types.js";
-import type { ChatRowView } from "./components/chat-row-view.js";
 import type { PreviewPane, PreviewPaneProps } from "./components/preview/preview-pane.js";
 import {
 	type DialogState,
@@ -25,7 +24,7 @@ const NOTES_HEADER = "Notes:";
 
 /**
  * Single-row, width-clipped chrome cell. The footer row count is invariant
- * (`QuestionTabStrategy.footerRowCount = 4`) — pi-tui's `Text` word-wraps when
+ * (`QuestionTabStrategy.footerRowCount = 2`) — pi-tui's `Text` word-wraps when
  * the styled hint exceeds `width`, inflating that row count and desyncing the
  * `bodyHeight + footerRowCount` math in `DialogView.render`. Clipping with
  * `truncateToWidth` (ANSI-aware, matches `multi-select-view.ts` usage) keeps
@@ -83,14 +82,13 @@ export interface QuestionTabStrategyConfig {
 	getPreviewPane: () => StatefulView<PreviewPaneProps>;
 	tabsByIndex: ReadonlyArray<TabComponents>;
 	notesInput: Input;
-	chatRow: ChatRowView;
 	isMulti: boolean;
 	getCurrentBodyHeight: (width: number) => number;
 }
 
 export class QuestionTabStrategy implements TabContentStrategy {
-	/** Spacer(1) + chatRow(1) + Spacer(1) + Text(hint, 1) = 4 rendered rows. */
-	readonly footerRowCount = 4;
+	/** Spacer(1) + OneLineClippedText(hint, 1) = 2 rendered rows. */
+	readonly footerRowCount = 2;
 
 	constructor(private readonly config: QuestionTabStrategyConfig) {}
 
@@ -131,14 +129,11 @@ export class QuestionTabStrategy implements TabContentStrategy {
 
 	footerRows(state: DialogState): Component[] {
 		const question = this.config.questions[state.currentTab];
-		// OneLineClippedText (not pi-tui `Text`) — `buildHintText` now includes the
-		// collapse affordance, pushing the rendered string past 80 columns; `Text` would
-		// wrap and break the strategy's `footerRowCount = 4` invariant. Clipping on
-		// narrow terminals drops the trailing parts (collapse hint first, then cancel)
-		// with `…`.
+		// OneLineClippedText (not pi-tui `Text`) — `buildHintText` includes the collapse
+		// affordance, pushing the rendered string past 80 columns; `Text` would wrap and
+		// break the strategy's `footerRowCount = 2` invariant. Clipping on narrow terminals
+		// drops the trailing parts (collapse hint first, then cancel) with `…`.
 		return [
-			new Spacer(1),
-			this.config.chatRow,
 			new Spacer(1),
 			new OneLineClippedText(this.config.theme.fg("dim", buildHintText(question, this.config.isMulti, state)), 1),
 		];

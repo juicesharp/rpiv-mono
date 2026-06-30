@@ -46,7 +46,7 @@ export interface QuestionnairePropsAdapterConfig {
 /**
  * View fan-out: drives every component setter from the canonical state via
  * two binding registries. `globalBindings` covers the cross-tab components
- * (chatRow, dialog, submitPicker?, tabBar?); `perTabBindings` covers the
+ * (dialog, submitPicker?, tabBar?); `perTabBindings` covers the
  * per-tab kinds (optionList, preview, multiSelect?). The hand-coded fan-out
  * collapses to one global loop + one nested per-tab loop. The inline-Other
  * value is read from the headless `inlineInput` instance per tick into ctx so
@@ -107,7 +107,7 @@ export class QuestionnairePropsAdapter {
 	/**
 	 * Invalidates every owned renderable. Called by the session in place of
 	 * the old `dialog.invalidate()` forwarding chain — DialogView no longer
-	 * reaches into siblings (chatRow, tabBar, notesInput, activePreviewPane).
+	 * reaches into siblings (tabBar, notesInput, activePreviewPane).
 	 * Iterates the same registries used by `apply()` plus
 	 * `extraInvalidatables` for components outside the binding system.
 	 */

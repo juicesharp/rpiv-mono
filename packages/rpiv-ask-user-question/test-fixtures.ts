@@ -38,7 +38,6 @@ export function makeQuestionnaireState(over: Partial<QuestionnaireState> = {}): 
 		optionIndex: over.optionIndex ?? 0,
 		inputMode: over.inputMode ?? false,
 		notesVisible: over.notesVisible ?? false,
-		chatFocused: over.chatFocused ?? false,
 		answers: over.answers ?? new Map(),
 		multiSelectChecked: over.multiSelectChecked ?? new Set(),
 		notesByTab: over.notesByTab ?? new Map(),
@@ -106,6 +105,9 @@ export interface MultiSelectPropsOverrides {
 	checkedIndices?: ReadonlySet<number>;
 	focused?: boolean;
 	nextLabel?: string;
+	inputBuffer?: string;
+	inputCursorOffset?: number | undefined;
+	inputMode?: boolean;
 }
 
 export function makeMultiSelectViewProps(
@@ -115,13 +117,25 @@ export function makeMultiSelectViewProps(
 	const optionIndex = over.optionIndex ?? 0;
 	const checkedIndices = over.checkedIndices ?? new Set<number>();
 	const focused = over.focused ?? true;
+	const inputBuffer = over.inputBuffer ?? "";
 	const rows = question.options.map((_, i) => ({
 		checked: checkedIndices.has(i),
 		active: focused && i === optionIndex,
 	}));
-	const nextActive = focused && optionIndex === question.options.length;
+	const otherActive = focused && optionIndex === question.options.length;
+	const nextActive = focused && optionIndex === question.options.length + 1;
 	const nextLabel = over.nextLabel ?? "Next";
-	return { rows, nextActive, nextLabel };
+	return {
+		rows,
+		other: {
+			active: otherActive,
+			inputMode: (over.inputMode ?? false) && otherActive,
+			inputBuffer,
+			inputCursorOffset: over.inputCursorOffset,
+		},
+		nextActive,
+		nextLabel,
+	};
 }
 
 export function makeMultiSelectPropsFromState(
@@ -133,8 +147,17 @@ export function makeMultiSelectPropsFromState(
 		checked: state.multiSelectChecked.has(i),
 		active: focused && i === state.optionIndex,
 	}));
-	const nextActive = focused && state.optionIndex === question.options.length;
-	return { rows, nextActive, nextLabel: "Next" };
+	return {
+		rows,
+		other: {
+			active: focused && state.optionIndex === question.options.length,
+			inputMode: state.inputMode,
+			inputBuffer: "",
+			inputCursorOffset: undefined,
+		},
+		nextActive: focused && state.optionIndex === question.options.length + 1,
+		nextLabel: "Next",
+	};
 }
 
 export function makeSubmitPickerPropsFromState(state: QuestionnaireState, focused = true): SubmitPickerProps {

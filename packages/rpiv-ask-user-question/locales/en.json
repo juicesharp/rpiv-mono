@@ -1,6 +1,5 @@
 {
   "sentinel.other": "Type something.",
-  "sentinel.chat": "Chat about this",
   "sentinel.next": "Next",
 
   "submit.label": "Submit answers",
@@ -21,7 +20,5 @@
 
   "preview.no_preview": "No preview available",
   "preview.notes_affordance": "Notes: press n to add notes",
-
-  "chat.summary": "User wants to chat about this",
   "notes.header": "Notes:"
 }

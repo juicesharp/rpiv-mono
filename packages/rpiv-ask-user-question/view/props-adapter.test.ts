@@ -2,7 +2,6 @@ import { Input } from "@earendil-works/pi-tui";
 import { describe, expect, it, vi } from "vitest";
 import type { PerTabSelector } from "../state/selectors/contract.js";
 import {
-	selectChatRowProps,
 	selectDialogProps,
 	selectMultiSelectProps,
 	selectOptionListProps,
@@ -20,7 +19,6 @@ import {
 } from "../test-fixtures.js";
 import type { QuestionAnswer, QuestionData } from "../tool/types.js";
 import { type BoundGlobalBinding, type BoundPerTabBinding, globalBinding, perTabBinding } from "./component-binding.js";
-import type { ChatRowViewProps } from "./components/chat-row-view.js";
 import type { OptionListViewProps } from "./components/option-list-view.js";
 import type { SubmitPickerProps } from "./components/submit-picker.js";
 import type { TabBarProps } from "./components/tab-bar.js";
@@ -44,7 +42,6 @@ function makeFixture(overQuestions?: QuestionData[]) {
 		}),
 	);
 
-	const chatRow = makeStatefulView<ChatRowViewProps>();
 	const submitPicker = makeStatefulView<SubmitPickerProps>();
 	const tabBar = makeStatefulView<TabBarProps>();
 	const dialog = makeStatefulView<DialogProps>();
@@ -53,7 +50,6 @@ function makeFixture(overQuestions?: QuestionData[]) {
 
 	const globalBindings: ReadonlyArray<BoundGlobalBinding> = [
 		globalBinding({ component: dialog, select: selectDialogProps }),
-		globalBinding({ component: chatRow, select: selectChatRowProps }),
 		globalBinding({ component: submitPicker, select: selectSubmitPickerProps }),
 		globalBinding({ component: tabBar, select: selectTabBarProps }),
 	];
@@ -83,7 +79,6 @@ function makeFixture(overQuestions?: QuestionData[]) {
 		tui,
 		dialog,
 		tabsByIndex,
-		chatRow,
 		submitPicker,
 		tabBar,
 		questions,
@@ -122,11 +117,9 @@ describe("QuestionnairePropsAdapter.apply", () => {
 		});
 	});
 
-	it("suppresses option focus when notes is visible or chat is focused", () => {
+	it("suppresses option focus when notes is visible", () => {
 		const { adapter, tabsByIndex } = makeFixture();
 		adapter.apply(makeState({ notesVisible: true }));
-		expect(tabsByIndex[0]!.optionList.setProps).toHaveBeenLastCalledWith(expect.objectContaining({ focused: false }));
-		adapter.apply(makeState({ chatFocused: true }));
 		expect(tabsByIndex[0]!.optionList.setProps).toHaveBeenLastCalledWith(expect.objectContaining({ focused: false }));
 	});
 

@@ -224,14 +224,12 @@ describe("ask_user_question — single-question navigation", () => {
 		expect(r?.details.answers[0].answer).toBe("Beta");
 	});
 
-	it("UP from Alpha cycles through chat → Type-something → Gamma", async () => {
+	it("UP from Alpha wraps to Type-something, then UP to Gamma", async () => {
 		const tool = register();
 		const { custom } = driveCustom((c) => {
-			// Items = [Alpha, Beta, Gamma, "Type something."] — chat is the virtual extra row
-			// at the top of the cycle. UP at index 0 wraps INTO chat; UP from chat lands on
-			// items.length-1 (Type something); UP from there decrements to Gamma.
-			c.handleInput(KEY.UP); // Alpha (0) → focus_chat
-			c.handleInput(KEY.UP); // chat → focus_options at index 3 (Type something, inputMode)
+			// Items = [Alpha, Beta, Gamma, "Type something."] (no chat row). UP at index 0
+			// wraps to the last item (Type something, inputMode); UP from there → Gamma.
+			c.handleInput(KEY.UP); // Alpha (0) → wrap to Type something (3, inputMode)
 			c.handleInput(KEY.UP); // Type something (3) → Gamma (2)
 			c.handleInput(KEY.ENTER); // confirm Gamma
 		});
@@ -315,63 +313,7 @@ describe("ask_user_question — 'Type something.' free-text flow", () => {
 	});
 });
 
-describe("ask_user_question — chat focus integration", () => {
-	it("DOWN past last option focuses chat row; ENTER returns kind:'chat'", async () => {
-		const tool = register();
-		const { custom } = driveCustom((c) => {
-			// items = [Alpha, Beta, Gamma, "Type something."] (4 items)
-			c.handleInput(KEY.DOWN); // → Beta
-			c.handleInput(KEY.DOWN); // → Gamma
-			c.handleInput(KEY.DOWN); // → Type something (inputMode=true)
-			c.handleInput(KEY.DOWN); // → focus_chat
-			c.handleInput(KEY.ENTER); // confirm chat
-		});
-		const ctx = { hasUI: true, ui: { custom } } as never;
-		const r = (await tool.execute?.("tc", threeOptionParams as never, undefined as never, undefined as never, ctx)) as
-			| ToolResult
-			| undefined;
-		expect(r?.details.cancelled).toBe(false);
-		expect(r?.details.answers[0]?.kind).toBe("chat");
-		expect(r?.details.answers[0]?.answer).toBe("Chat about this");
-		expect(r?.content[0].text).toContain("Continue the conversation");
-	});
-
-	it("UP-from-chat clears chatFocused; subsequent ENTER returns options answer (not kind:'chat')", async () => {
-		const tool = register();
-		const { custom } = driveCustom((c) => {
-			c.handleInput(KEY.DOWN); // → Beta
-			c.handleInput(KEY.DOWN); // → Gamma
-			c.handleInput(KEY.DOWN); // → Type something (inputMode=true)
-			c.handleInput(KEY.DOWN); // → focus_chat
-			c.handleInput(KEY.UP); // → focus_options (back to Type something)
-			c.handleInput(KEY.ENTER); // confirm via inputMode branch with empty buffer
-		});
-		const ctx = { hasUI: true, ui: { custom } } as never;
-		const r = (await tool.execute?.("tc", threeOptionParams as never, undefined as never, undefined as never, ctx)) as
-			| ToolResult
-			| undefined;
-		expect(r?.details.cancelled).toBe(false);
-		expect(r?.details.answers[0]?.kind).not.toBe("chat");
-		expect(r?.details.answers[0]?.kind).toBe("custom");
-		expect(r?.details.answers[0]?.answer).toBeNull();
-	});
-
-	it("Esc from chat cancels the whole dialog", async () => {
-		const tool = register();
-		const { custom } = driveCustom((c) => {
-			c.handleInput(KEY.DOWN); // → Beta
-			c.handleInput(KEY.DOWN); // → Gamma
-			c.handleInput(KEY.DOWN); // → Type something
-			c.handleInput(KEY.DOWN); // → focus_chat
-			c.handleInput(KEY.ESC); // cancel
-		});
-		const ctx = { hasUI: true, ui: { custom } } as never;
-		const r = (await tool.execute?.("tc", threeOptionParams as never, undefined as never, undefined as never, ctx)) as
-			| ToolResult
-			| undefined;
-		expect(r?.details.cancelled).toBe(true);
-	});
-
+describe("ask_user_question — tab-switch height stability", () => {
 	it("dialog total line count is identical across tab switches (mixed single+multi fixture)", async () => {
 		const tool = register();
 		let lengthTab0 = 0;
@@ -407,6 +349,7 @@ describe("ask_user_question — multi-select flow (single question)", () => {
 			c.handleInput(KEY.DOWN); // → Backend
 			c.handleInput(KEY.SPACE); // toggle Backend ON
 			c.handleInput(KEY.DOWN); // → DevOps (not toggled)
+			c.handleInput(KEY.DOWN); // → "Type something." row
 			c.handleInput(KEY.DOWN); // → Next sentinel
 			c.handleInput(KEY.ENTER); // commit + advance (single question → submit)
 		});
@@ -429,6 +372,7 @@ describe("ask_user_question — multi-select flow (single question)", () => {
 			c.handleInput(KEY.ENTER); // toggle Backend ON via Enter
 			c.handleInput(KEY.ENTER); // toggle Backend OFF via Enter
 			c.handleInput(KEY.DOWN); // → DevOps
+			c.handleInput(KEY.DOWN); // → "Type something." row
 			c.handleInput(KEY.DOWN); // → Next
 			c.handleInput(KEY.ENTER); // commit
 		});
@@ -448,6 +392,7 @@ describe("ask_user_question — multi-select flow (single question)", () => {
 			c.handleInput(KEY.DOWN); // → Backend
 			c.handleInput(KEY.SPACE); // Backend ON
 			c.handleInput(KEY.DOWN); // → DevOps
+			c.handleInput(KEY.DOWN); // → "Type something." row
 			c.handleInput(KEY.DOWN); // → Next
 			c.handleInput(KEY.ENTER);
 		});
@@ -463,6 +408,7 @@ describe("ask_user_question — multi-select flow (single question)", () => {
 		const { custom } = driveCustom((c) => {
 			c.handleInput(KEY.DOWN); // → Backend
 			c.handleInput(KEY.DOWN); // → DevOps
+			c.handleInput(KEY.DOWN); // → "Type something." row
 			c.handleInput(KEY.DOWN); // → Next
 			c.handleInput(KEY.ENTER); // commit with no toggles
 		});
@@ -521,6 +467,7 @@ describe("ask_user_question — multi-select toggle persistence (regression)", (
 			c.handleInput(KEY.DOWN); // optionIndex 1 = BE
 			c.handleInput(KEY.SPACE); // toggle BE ON (should NOT erase FE)
 			c.handleInput(KEY.DOWN); // → DB
+			c.handleInput(KEY.DOWN); // → "Type something." row
 			c.handleInput(KEY.DOWN); // → Next
 			c.handleInput(KEY.ENTER); // commit (auto-advance to Q2)
 			c.handleInput(KEY.ENTER); // Q2: A → Submit
@@ -806,7 +753,8 @@ describe("ask_user_question — mixed single+multi question flow", () => {
 			c.handleInput(KEY.SPACE); // toggle DB ON
 			c.handleInput(KEY.DOWN); // → QA (3)
 			c.handleInput(KEY.DOWN); // → Ops (4)
-			c.handleInput(KEY.DOWN); // → Next sentinel (5)
+			c.handleInput(KEY.DOWN); // → "Type something." row (5)
+			c.handleInput(KEY.DOWN); // → Next sentinel (6)
 			c.handleInput(KEY.ENTER); // commit multi-select → Submit tab
 			c.handleInput(KEY.ENTER); // Submit (all answered)
 		});

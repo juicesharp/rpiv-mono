@@ -22,12 +22,6 @@ export type QuestionnaireAction =
 	| { kind: "notes_exit" }
 	| { kind: "submit" }
 	| { kind: "submit_nav"; nextIndex: 0 | 1 }
-	| { kind: "focus_chat" }
-	/**
-	 * Carries the target index so UP/DOWN form a continuous cycle through
-	 * `[chat, option0, …, optionLast]`.
-	 */
-	| { kind: "focus_options"; optionIndex: number }
 	| { kind: "notes_forward"; data: string }
 	/** Flip `state.collapsed`. Always available, regardless of inner mode (see top intercept in `routeKey`). */
 	| { kind: "toggle_collapsed" }
@@ -64,18 +58,7 @@ function buildSingleSelectAnswer(state: QuestionnaireState, runtime: Questionnai
 	const q = runtime.questions[state.currentTab];
 	if (!q) return null;
 
-	// Chat sentinel takes priority over inputMode: when chatFocused=true, the host overrides
-	// currentItem() to return the chat sentinel even if inputMode is still true (e.g. user
-	// navigated from "Type something." and DOWN focused the chat row).
 	const item = runtime.currentItem;
-	if (item?.kind === "chat") {
-		return {
-			questionIndex: state.currentTab,
-			question: q.question,
-			kind: "chat",
-			answer: item.label,
-		};
-	}
 
 	if (state.inputMode) {
 		const label = runtime.inputBuffer;
@@ -130,19 +113,13 @@ function tabSwitchAction(
 	return null;
 }
 
-// DOWN at the last item emits focus_chat so the cycle [chat, option0, …, optionLast] wraps.
+// DOWN at the last item wraps to the first (cycle through [option0, …, optionLast]).
 function nextNavOnDown(state: QuestionnaireState, runtime: QuestionnaireRuntime): QuestionnaireAction {
-	if (runtime.items.length > 0 && state.optionIndex === runtime.items.length - 1) {
-		return { kind: "focus_chat" };
-	}
 	return { kind: "nav", nextIndex: wrapTab(state.optionIndex + 1, Math.max(1, runtime.items.length)) };
 }
 
-// UP at the top item emits focus_chat (symmetric with nextNavOnDown).
+// UP at the first item wraps to the last (symmetric with nextNavOnDown).
 function prevNavOnUp(state: QuestionnaireState, runtime: QuestionnaireRuntime): QuestionnaireAction {
-	if (runtime.items.length > 0 && state.optionIndex === 0) {
-		return { kind: "focus_chat" };
-	}
 	return { kind: "nav", nextIndex: wrapTab(state.optionIndex - 1, Math.max(1, runtime.items.length)) };
 }
 
@@ -150,7 +127,7 @@ export function routeKey(data: string, state: QuestionnaireState, runtime: Quest
 	const kb = runtime.keybindings;
 
 	// Collapse/expand toggle is a UI-level affordance — intercepted at the top so it
-	// works from every inner state (notes, inputMode, chat, submit tab, multi-select)
+	// works from every inner state (notes, inputMode, submit tab, multi-select)
 	// without reaching any branch that would otherwise consume the keystroke. The
 	// questionnaire stays in pi-tui's overlay stack with focus while collapsed, so the
 	// expand key never falls through to a lower overlay (e.g. `/btw`) — that's why we
@@ -176,29 +153,6 @@ export function routeKey(data: string, state: QuestionnaireState, runtime: Quest
 		if (kb.matches(data, KEYBIND_CANCEL)) return { kind: "notes_exit" };
 		if (kb.matches(data, KEYBIND_CONFIRM)) return { kind: "notes_exit" };
 		return { kind: "notes_forward", data };
-	}
-
-	if (state.chatFocused) {
-		if (kb.matches(data, KEYBIND_CANCEL)) return { kind: "cancel" };
-		if (kb.matches(data, KEYBIND_CONFIRM)) {
-			const answer = buildSingleSelectAnswer(state, runtime);
-			if (!answer) return { kind: "ignore" };
-			return { kind: "confirm", answer, autoAdvanceTab: computeAutoAdvanceTab(state, runtime) };
-		}
-		// Continuous cycle: UP from chat → bottom of options (last navigable row), DOWN from
-		// chat → top of options (option 0). Symmetric with UP-at-top → focus_chat and
-		// DOWN-at-bottom → focus_chat below; together they form one wrapping cycle through
-		// `[chat, option0, …, optionLast]`.
-		if (kb.matches(data, KEYBIND_UP)) {
-			const last = Math.max(0, runtime.items.length - 1);
-			return { kind: "focus_options", optionIndex: last };
-		}
-		if (kb.matches(data, KEYBIND_DOWN)) {
-			return { kind: "focus_options", optionIndex: 0 };
-		}
-		const tab = tabSwitchAction(data, state, runtime);
-		if (tab) return tab;
-		return { kind: "ignore" };
 	}
 
 	if (state.inputMode) {
@@ -256,13 +210,18 @@ export function routeKey(data: string, state: QuestionnaireState, runtime: Quest
 		const focusedKind = runtime.currentItem?.kind;
 		const focusedMeta = focusedKind ? ROW_INTENT_META[focusedKind] : undefined;
 		// Space toggles the focused row's checkbox. Suppressed on rows whose META declares
-		// `blocksMultiToggle` (the Next sentinel) — Next is not a real option and has no
-		// checked/unchecked state.
+		// `blocksMultiToggle` (the Next sentinel) or `activatesInputMode` (the "Type
+		// something." row — it is an inline input, not a checkable option).
 		if (data === SPACE_KEY) {
 			if (focusedMeta?.blocksMultiToggle) return { kind: "ignore" };
+			if (focusedMeta?.activatesInputMode) return { kind: "ignore" };
 			return { kind: "toggle", index: state.optionIndex };
 		}
 		if (kb.matches(data, KEYBIND_CONFIRM)) {
+			// Enter on the "Type something." row is handled by the inputMode block above
+			// (→ confirm kind:"custom"). Defensive: never enter the toggle/multi_confirm
+			// path for an inputMode-activating row.
+			if (focusedMeta?.activatesInputMode) return { kind: "ignore" };
 			// Enter on a regular row toggles (matching Space) — committing the question is now
 			// gated behind explicit focus on a row whose META declares `autoSubmitsInMulti`
 			// (the Next sentinel), so Enter on options is a no-cost way to flip checkboxes

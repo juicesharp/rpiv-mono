@@ -98,7 +98,7 @@ describe("PreviewBlockRenderer.renderBlock", () => {
 		expect(lines.some((l) => l.includes(NOTES_AFFORDANCE_TEXT))).toBe(false);
 	});
 
-	it("hides affordance when focused=false (cursor on chat row)", () => {
+	it("hides affordance when focused=false (cursor elsewhere)", () => {
 		const r = new PreviewBlockRenderer({ question: previewQuestion, theme, markdownTheme });
 		const lines = r.renderBlock(60, 0, "side-by-side", false, false);
 		expect(lines.some((l) => l.includes(NOTES_AFFORDANCE_TEXT))).toBe(false);

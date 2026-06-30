@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { buildItemsForQuestion, buildQuestionnaireResponse, buildToolResult } from "./ask-user-question.js";
-import { chatNumberingFor } from "./state/selectors/derivations.js";
 import type { QuestionnaireResult, QuestionParams } from "./tool/types.js";
 
 describe("buildItemsForQuestion", () => {
@@ -20,7 +19,7 @@ describe("buildItemsForQuestion", () => {
 		]);
 	});
 
-	it("appends the Next sentinel (not Type-something) when multiSelect is true", () => {
+	it("appends 'Type something.' + Next sentinels when multiSelect is true", () => {
 		const items = buildItemsForQuestion({
 			question: "Pick areas",
 			header: "Areas",
@@ -35,9 +34,10 @@ describe("buildItemsForQuestion", () => {
 			{ kind: "option", label: "FE", description: "Frontend" },
 			{ kind: "option", label: "BE", description: "Backend" },
 			{ kind: "option", label: "Tests", description: "Tests" },
+			{ kind: "other", label: "Type something." },
 			{ kind: "next", label: "Next" },
 		]);
-		expect(items.some((i) => i.kind === "other")).toBe(false);
+		expect(items.some((i) => i.kind === "other")).toBe(true);
 	});
 
 	it("appends the sentinel when multiSelect is false", () => {
@@ -93,7 +93,7 @@ describe("buildItemsForQuestion", () => {
 		expect(items[2]).toEqual({ kind: "other", label: "Type something." });
 	});
 
-	it("appends the Next sentinel for multiSelect even if an option has a preview (preview is dropped)", () => {
+	it("appends 'Type something.' + Next for multiSelect even if an option has a preview (preview is dropped)", () => {
 		const items = buildItemsForQuestion({
 			question: "Areas",
 			header: "Areas",
@@ -106,61 +106,9 @@ describe("buildItemsForQuestion", () => {
 		expect(items).toEqual([
 			{ kind: "option", label: "FE", description: "Frontend" },
 			{ kind: "option", label: "BE", description: "Backend" },
+			{ kind: "other", label: "Type something." },
 			{ kind: "next", label: "Next" },
 		]);
-		expect(items.some((i) => i.kind === "other")).toBe(false);
-	});
-});
-
-describe("chatNumberingFor", () => {
-	// Single-select items already include the `Type something.` row, which IS a numbered
-	// (visible-numbered) row in MultiSelectView/WrappingSelect, so the chat row that
-	// follows simply continues the count: 2 options + Type-something = 3 → chat is 4.
-	it("single-select with Type-something: chat number continues past the Type-something row", () => {
-		const items = buildItemsForQuestion({
-			question: "q",
-			header: "H",
-			options: [
-				{ label: "A", description: "a" },
-				{ label: "B", description: "b" },
-			],
-		});
-		expect(chatNumberingFor(items)).toEqual({ offset: 3, total: 4 });
-	});
-
-	// Defect 1: Multi-select tabs render 4 visible-numbered rows (1-4) followed by the
-	// un-numbered Next sentinel. The chat row should therefore display "5." — i.e. the
-	// numbering MUST exclude `kind:'next'` rows so chat continues the *visible* numbered
-	// sequence rather than the raw items.length.
-	it("multi-select: chat number excludes the Next sentinel from the numbered count", () => {
-		const items = buildItemsForQuestion({
-			question: "Pick areas",
-			header: "Areas",
-			multiSelect: true,
-			options: [
-				{ label: "Unit tests", description: "U" },
-				{ label: "Integration tests", description: "I" },
-				{ label: "Contract tests", description: "C" },
-				{ label: "Manual QA", description: "M" },
-			],
-		});
-		// 4 numbered rows + Next sentinel (un-numbered) → chat must read "5.", not "6.".
-		expect(chatNumberingFor(items)).toEqual({ offset: 4, total: 5 });
-	});
-
-	// Preview layout no longer suppresses Type-something (Phase 1), so the numbered
-	// "other" row is present: 3 options + "other" → chat reads "5." (offset 4, total 5).
-	it("preview-layout single-select: Type-something is numbered, so chat = options + other + 1", () => {
-		const items = buildItemsForQuestion({
-			question: "Layout?",
-			header: "Layout",
-			options: [
-				{ label: "Centered", description: "centered logo", preview: "## Centered" },
-				{ label: "Left", description: "left logo" },
-				{ label: "Right", description: "right logo" },
-			],
-		});
-		expect(chatNumberingFor(items)).toEqual({ offset: 4, total: 5 });
 	});
 });
 
@@ -344,27 +292,6 @@ describe("buildQuestionnaireResponse — completed", () => {
 		expect(r.content[0].text).toContain('"Free?"="(no input)"');
 	});
 
-	it("chat answer's <A> is the chat continuation message verbatim", () => {
-		const params: QuestionParams = {
-			questions: [
-				{
-					question: "Help",
-					header: "Help",
-					options: [
-						{ label: "Yes", description: "Y" },
-						{ label: "No", description: "N" },
-					],
-				},
-			],
-		};
-		const result: QuestionnaireResult = {
-			cancelled: false,
-			answers: [{ questionIndex: 0, question: "Help", kind: "chat", answer: "Chat about this" }],
-		};
-		const r = buildQuestionnaireResponse(result, params);
-		expect(r.content[0].text).toContain("Continue the conversation");
-	});
-
 	it("notes are echoed as 'user notes: <text>' AND preserved in details", () => {
 		const params: QuestionParams = {
 			questions: [
@@ -478,14 +405,14 @@ describe("buildQuestionnaireResponse — multi-question mixed types", () => {
 			answers: [
 				{ questionIndex: 0, question: "Q1?", kind: "option", answer: "A" },
 				{ questionIndex: 1, question: "Q2?", kind: "custom", answer: "my own thing" },
-				{ questionIndex: 2, question: "Q3?", kind: "chat", answer: "Chat about this" },
+				{ questionIndex: 2, question: "Q3?", kind: "option", answer: "Y" },
 			],
 		};
 		const r = buildQuestionnaireResponse(result, params);
 		const text = r.content[0].text;
 		expect(text).toContain('"Q1?"="A"');
 		expect(text).toContain('"Q2?"="my own thing"');
-		expect(text).toContain("Continue the conversation");
+		expect(text).toContain('"Q3?"="Y"');
 	});
 
 	it("skips unanswered questions (omits their segment from envelope)", () => {

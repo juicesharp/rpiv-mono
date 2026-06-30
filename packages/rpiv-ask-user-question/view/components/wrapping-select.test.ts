@@ -17,8 +17,8 @@ const identityTheme: WrappingSelectTheme = {
 	scrollInfo: (t) => t,
 };
 
-// Numbering is preserved — rows render as "❯ N. label". The chat row's number is kept
-// continuous with the active tab's options via setNumbering() (driven by ask-user-question.ts).
+// Numbering is preserved — rows render as "❯ N. label". setNumbering() lets the host
+// realign the number column when the underlying item set changes.
 describe("WrappingSelect.setSelectedIndex", () => {
 	it("clamps negative to 0", () => {
 		const s = new WrappingSelect(
@@ -374,7 +374,7 @@ describe("WrappingSelect.render — number column padding", () => {
 		expect(lines[0]).toContain(" 1. ");
 		expect(lines[9]).toContain("10. ");
 	});
-	it("uses numberStartOffset for numbering (so chat row reads as `(N+1). Chat about this`)", () => {
+	it("uses numberStartOffset for numbering (continues a prior list's sequence)", () => {
 		const s = new WrappingSelect([{ kind: "option", label: "chat" }], 1, identityTheme, {
 			numberStartOffset: 5,
 			totalItemsForNumbering: 10,
@@ -625,7 +625,6 @@ describe("WrappingSelectItem.kind contract — exhaustive", () => {
 	const allKinds: WrappingSelectItem[] = [
 		{ kind: "option", label: "opt" },
 		{ kind: "other", label: "Type something." },
-		{ kind: "chat", label: "Chat about this" },
 		{ kind: "next", label: "Next" },
 	];
 

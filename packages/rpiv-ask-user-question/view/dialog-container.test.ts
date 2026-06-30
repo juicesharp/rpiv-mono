@@ -8,13 +8,11 @@ import {
 	makeSubmitPickerPropsFromState as submitPickerPropsFromState,
 } from "../test-fixtures.js";
 import type { QuestionAnswer, QuestionData } from "../tool/types.js";
-import { ChatRowView } from "./components/chat-row-view.js";
 import { MultiSelectView } from "./components/multi-select-view.js";
 import type { OptionListView } from "./components/option-list-view.js";
 import type { PreviewPane } from "./components/preview/preview-pane.js";
 import { CANCEL_LABEL, SUBMIT_LABEL, SubmitPicker } from "./components/submit-picker.js";
 import type { TabBar } from "./components/tab-bar.js";
-import type { WrappingSelectTheme } from "./components/wrapping-select.js";
 import {
 	type DialogConfig,
 	type DialogProps,
@@ -51,11 +49,10 @@ function stubOptionList(): OptionListView {
 	return stubComponent(["<OPTION_LIST>"]) as unknown as OptionListView;
 }
 
-type MakeConfigOverrides = Partial<Omit<DialogConfig, "chatRow" | "tabsByIndex">> & {
+type MakeConfigOverrides = Partial<Omit<DialogConfig, "tabsByIndex">> & {
 	state?: DialogState;
 	previewPane?: PreviewPane;
 	initialProps?: DialogProps;
-	chatList?: DialogConfig["chatRow"];
 	tabsByIndex?: ReadonlyArray<TabComponents>;
 	multiSelectByTab?: ReadonlyArray<MultiSelectView | undefined>;
 };
@@ -91,7 +88,6 @@ function makeConfig(over: MakeConfigOverrides = {}): DialogParts {
 		optionIndex: 0,
 		notesVisible: false,
 		inputMode: false,
-		chatFocused: false,
 		answers: new Map(),
 		multiSelectChecked: new Set(),
 		notesByTab: new Map(),
@@ -114,7 +110,6 @@ function makeConfig(over: MakeConfigOverrides = {}): DialogParts {
 		questions,
 		tabBar: over.tabBar ?? (stubComponent(["<TABBAR>", ""]) as unknown as TabBar),
 		notesInput: over.notesInput ?? (stubComponent(["<NOTES_INPUT>"]) as unknown as Input),
-		chatRow: over.chatList ?? (stubComponent(["<CHAT_ROW>"]) as unknown as DialogConfig["chatRow"]),
 		isMulti: over.isMulti ?? questions.length > 1,
 		tabsByIndex,
 		submitPicker: over.submitPicker,
@@ -160,7 +155,6 @@ describe("makeDialog — single-question mode", () => {
 		const joined = dlg.render(80).join("\n");
 		expect(joined).not.toContain("<TABBAR>");
 		expect(joined).toContain("<PREVIEW>");
-		expect(joined).toContain("<CHAT_ROW>");
 		expect(joined).toContain(HINT_SINGLE);
 	});
 
@@ -186,12 +180,11 @@ describe("makeDialog — single-question mode", () => {
 });
 
 describe("makeDialog — multi-question (question tab)", () => {
-	it("includes TabBar + PreviewPane + chat row + multi hint", () => {
+	it("includes TabBar + PreviewPane + multi hint", () => {
 		const dlg = makeDialog(makeConfig());
 		const joined = dlg.render(80).join("\n");
 		expect(joined).toContain("<TABBAR>");
 		expect(joined).toContain("<PREVIEW>");
-		expect(joined).toContain("<CHAT_ROW>");
 		expect(joined).toContain(HINT_MULTI);
 	});
 
@@ -217,7 +210,6 @@ describe("makeDialog — multi-question (question tab)", () => {
 			optionIndex: 0,
 			notesVisible: false,
 			inputMode: false,
-			chatFocused: false,
 			answers: new Map(),
 			multiSelectChecked: new Set(),
 			notesByTab: new Map(),
@@ -259,7 +251,6 @@ describe("makeDialog — multi-question (question tab)", () => {
 					optionIndex: 0,
 					notesVisible: false,
 					inputMode: false,
-					chatFocused: false,
 					answers: new Map([[0, answer]]),
 					multiSelectChecked: new Set(),
 					notesByTab: new Map(),
@@ -282,7 +273,6 @@ describe("makeDialog — multi-question (question tab)", () => {
 				optionIndex: 0,
 				notesVisible: true,
 				inputMode: false,
-				chatFocused: false,
 				answers: new Map(),
 				multiSelectChecked: new Set(),
 				notesByTab: new Map(),
@@ -313,7 +303,6 @@ describe("makeDialog — multi-question (question tab)", () => {
 			optionIndex: 1,
 			notesVisible: false,
 			inputMode: false,
-			chatFocused: false,
 			answers: new Map(),
 			multiSelectChecked: new Set([0]),
 			notesByTab: new Map(),
@@ -367,7 +356,6 @@ describe("makeDialog — Submit tab", () => {
 			optionIndex: 0,
 			notesVisible: false,
 			inputMode: false,
-			chatFocused: false,
 			answers,
 			multiSelectChecked: new Set(),
 			notesByTab: new Map(),
@@ -578,7 +566,6 @@ describe("makeDialog — width safety", () => {
 							optionIndex: 0,
 							notesVisible: ct === 0,
 							inputMode: false,
-							chatFocused: false,
 							answers: new Map([[0, { questionIndex: 0, question: "q", kind: "option", answer: "A" }]]),
 							multiSelectChecked: new Set(),
 							notesByTab: new Map(),
@@ -606,19 +593,13 @@ describe("makeDialog — body residual padding", () => {
 
 	it("residual rows live AFTER the controls hint (very bottom of the dialog)", () => {
 		// Residual = (getBodyHeight + maxFooterRowCount) - (currentBodyHeight + footerRowCount)
-		//          = (6 + 5) - (1 + 4) = 6
+		//          = (6 + 5) - (1 + 2) = 8  (footerRowCount dropped 4→2 after chat-row removal)
 		const lines = makeDialog(makeConfig({ getBodyHeight: () => 6, getCurrentBodyHeight: () => 1 })).render(80);
-		const chatIdx = lines.findIndex((l) => l.includes("<CHAT_ROW>"));
 		const hintIdx = lines.findIndex((l) => l.includes(HINT_MULTI));
-		expect(chatIdx).toBeGreaterThan(0);
-		expect(hintIdx).toBeGreaterThan(chatIdx);
+		expect(hintIdx).toBeGreaterThan(0);
 		const tail = lines.slice(hintIdx + 1);
-		expect(tail.length).toBe(6);
+		expect(tail.length).toBe(8);
 		expect(tail.every((l) => l.trim() === "")).toBe(true);
-		const previewIdx = lines.findIndex((l) => l.includes("<PREVIEW>"));
-		const between = lines.slice(previewIdx + 1, chatIdx);
-		const blanksBetween = between.filter((l) => l.trim() === "").length;
-		expect(blanksBetween).toBeLessThanOrEqual(2);
 	});
 
 	it("dialog total line count is identical across tab switches with mixed single/multi fixture", () => {
@@ -649,7 +630,6 @@ describe("makeDialog — body residual padding", () => {
 			optionIndex: 0,
 			notesVisible: false,
 			inputMode: false,
-			chatFocused: false,
 			answers: new Map(),
 			multiSelectChecked: new Set(),
 			notesByTab: new Map(),
@@ -664,37 +644,17 @@ describe("makeDialog — body residual padding", () => {
 		const multiSelectByTab: ReadonlyArray<MultiSelectView | undefined> = [undefined, mso];
 		const getBodyHeight = (w: number) => Math.max(1, (mso as unknown as Component).render(w).length);
 
-		const dlgTab0 = makeDialog(makeConfig({ questions, state: stateTab0, multiSelectByTab, getBodyHeight }));
-		const dlgTab1 = makeDialog(makeConfig({ questions, state: stateTab1, multiSelectByTab, getBodyHeight }));
+		// Phase 2 adds a "Type something." row to multi-select tabs (+1 to MultiSelectView
+		// height), pushing this 5-option multi tab's body from 11 → 12 and the full dialog past
+		// the prior 24-row default into the overflow regime (which disables the residual spacer
+		// that equalizes cross-tab height). Give the dialog enough rows that both tabs render
+		// without overflow so the residual spacer stays active and the heights match.
+		const dlgTab0 = makeDialog(
+			makeConfig({ questions, state: stateTab0, multiSelectByTab, getBodyHeight, getTerminalRows: () => 32 }),
+		);
+		const dlgTab1 = makeDialog(
+			makeConfig({ questions, state: stateTab1, multiSelectByTab, getBodyHeight, getTerminalRows: () => 32 }),
+		);
 		expect(dlgTab0.render(120).length).toBe(dlgTab1.render(120).length);
-	});
-});
-
-describe("makeDialog — chatRow focus visual", () => {
-	it("chatRow shows active ❯ pointer when focused: true; inactive when focused: false", () => {
-		const theme: WrappingSelectTheme = {
-			selectedText: (t) => t,
-			description: (t) => t,
-			scrollInfo: (t) => t,
-		};
-		const focusedChat = new ChatRowView({
-			item: { kind: "chat", label: "Chat about this" },
-			theme,
-		});
-		focusedChat.setProps({ focused: true, numbering: { offset: 0, total: 1 } });
-		const focused = makeDialog(makeConfig({ chatList: focusedChat })).render(80);
-		const focusedChatLine = focused.find((l) => l.includes("Chat about this"));
-		expect(focusedChatLine).toBeDefined();
-		expect(focusedChatLine?.includes("❯ ")).toBe(true);
-
-		const blurredChat = new ChatRowView({
-			item: { kind: "chat", label: "Chat about this" },
-			theme,
-		});
-		blurredChat.setProps({ focused: false, numbering: { offset: 0, total: 1 } });
-		const blurred = makeDialog(makeConfig({ chatList: blurredChat })).render(80);
-		const blurredChatLine = blurred.find((l) => l.includes("Chat about this"));
-		expect(blurredChatLine).toBeDefined();
-		expect(blurredChatLine?.includes("❯ ")).toBe(false);
 	});
 });
