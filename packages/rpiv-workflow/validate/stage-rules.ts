@@ -102,6 +102,16 @@ function checkLoopInvariants(stage: StageDef, name: string, report: ReportFn): v
 	// Judge shape — SAME rule sources as the judge()/panel() factories (no
 	// wording drift). The slot is an `AnyJudge`: a panel routes through
 	// `panelShapeIssues`, a single judge through `judgeShapeIssues`.
+	//
+	// This block is the LOAD-GATE half of the (intentionally dual) assess shape
+	// validation — see the rationale of record on `assessShapeIssues` in
+	// `loop-constructors.ts`. The judge/panel shape above is shared verbatim; the
+	// ONLY duplication is the two trivial `done`/`feedForward`
+	// `typeof !== "function"` predicates below, kept here AND in `assessShapeIssues`
+	// by accepted design (unifying would force a fragile string→code mapping or a
+	// silent message change). This block owns the per-code surface the tests pin —
+	// `assess-judge-shape` / `assess-done-not-function` /
+	// `assess-feed-forward-not-function` (`validate-workflow.test.ts:923,928`).
 	const slot = loop.judge;
 	const shapeIssues = slot && isPanel(slot) ? panelShapeIssues(slot) : judgeShapeIssues(slot);
 	for (const issue of shapeIssues) {

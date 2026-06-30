@@ -31,8 +31,10 @@ import { MSG_RESUME_PROMOTED, MSG_RESUME_REATTACHED, REATTACH_PROMPT } from "../
 import { readBranch, readSessionRef } from "../transcript.js";
 import type { StageSession, WorkflowHostContext, WorkflowSessionContext } from "../types.js";
 import { produceAndValidateOutput } from "./extraction.js";
-import { haltStageWithValidationFailure, postStage, recordStageSuccess } from "./sessions.js";
+import { haltStageWithValidationFailure } from "./halt-routing.js";
+import { postStage } from "./sessions.js";
 import { branchOffsetFor, resendIntoChild } from "./spawn.js";
+import { recordStageSuccess } from "./success-persist.js";
 
 // Same two-ctx split as `postStage`: `obsCtx` is the long-lived launcher/observer
 // (user-facing notifications + record + the chain continuation that spawns the

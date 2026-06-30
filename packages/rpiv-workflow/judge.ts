@@ -225,7 +225,7 @@ export function assertShape(ctor: string, issues: string[]): void {
  * Promote a judge literal to a validated `Judge` — identity passthrough that
  * throws on an invalid shape, so a `judge(...)`-authored value is correct by
  * construction (cf. `defineRoute`). Composes into `assess({ judge: judge({...}) })`
- * today and `panel(judge({...}), judge({...}))` in the follow-up.
+ * and `panel(judge({...}), judge({...}))` today.
  */
 export function judge(spec: Judge): Judge {
 	assertShape("judge", judgeShapeIssues(spec));

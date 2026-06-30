@@ -15,7 +15,7 @@
  * one-shot `ctx.ui.notify` line) and the `error` (what lands in
  * `state.termination.error` + the JSONL row's `errMsg`) rendered from ONE
  * factory so the two channels can't drift. Halt sites hand the
- * descriptor to `failedArgs`/`abortedArgs` (audit.ts) or spread it into
+ * descriptor to `failedArgs`/`abortedArgs` (messages.ts) or spread it into
  * `StagePreflightError`.
  */
 export interface FailureText {
@@ -357,3 +357,46 @@ export const MSG_WORKFLOW_NOT_FOUND = (name: string) => `/wf: workflow "${name}"
  */
 export const MSG_NO_WORKFLOWS_REGISTERED =
 	"/wf: no workflows registered — install a sibling that bundles workflows or author one in `.rpiv/workflows/config.ts`";
+
+/**
+ * The toast + JSONL halves of a terminal failure, paired by construction.
+ * Build via `failedArgs` / `abortedArgs` (or `stopFailureArgs`' switch, in
+ * audit.ts) so a halt site can't mismatch status and notify level.
+ */
+export interface TerminalFailureArgs {
+	status: "failed" | "aborted";
+	notifyMsg: string;
+	notifyLevel: "warning" | "error";
+	errMsg: string;
+}
+
+/**
+ * The ONE `(status, notifyLevel)` pairing — notifyLevel is DERIVED from status
+ * (failed → error, aborted → warning), so a mismatch is unrepresentable. The
+ * overload-resolution body for `failedArgs`/`abortedArgs` lives here once.
+ * Modeled after `stopFailureArgs` (parameterize by status).
+ */
+function terminalArgsOf(status: "failed" | "aborted", a: FailureText | string, b?: string): TerminalFailureArgs {
+	const f = typeof a === "string" ? { toast: a, error: b as string } : a;
+	return { status, notifyMsg: f.toast, notifyLevel: status === "failed" ? "error" : "warning", errMsg: f.error };
+}
+
+/**
+ * Argument constructors for `recordTerminalFailure` — the
+ * `{status, notifyMsg, notifyLevel, errMsg}` quadruple every halt site used
+ * to spell by hand. One per terminal status: failures notify at `"error"`,
+ * aborts at `"warning"` (cooperative cancellation is expected, not
+ * exceptional). 1-line facades over `terminalArgsOf` so the status/level
+ * pairing lives once.
+ */
+export function failedArgs(failure: FailureText): TerminalFailureArgs;
+export function failedArgs(notifyMsg: string, errMsg: string): TerminalFailureArgs;
+export function failedArgs(a: FailureText | string, b?: string): TerminalFailureArgs {
+	return terminalArgsOf("failed", a, b);
+}
+
+export function abortedArgs(failure: FailureText): TerminalFailureArgs;
+export function abortedArgs(notifyMsg: string, errMsg: string): TerminalFailureArgs;
+export function abortedArgs(a: FailureText | string, b?: string): TerminalFailureArgs {
+	return terminalArgsOf("aborted", a, b);
+}

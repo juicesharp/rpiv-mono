@@ -5,34 +5,52 @@
  * status-line clear, the notify toast, the `terminate()` state write, and
  * the `onStageError` lifecycle fire.
  *
- * Depends on audit-rows + state + messages + events + handle. Shared by
- * the runner + sessions; neither imports back. Pure row persistence (the
- * allocator, `recordStage`, success persistence) lives in `audit-rows.ts`.
+ * Depends on audit-rows + audit-ctx + state + messages + events + handle.
+ * The pure ctx half (`AuditCtx`, `runIdentityOf`, `auditCtxFor`,
+ * `currentStageRef`) now lives in `audit-ctx.ts`; the terminal-args builders
+ * (`failedArgs`/`abortedArgs`/`TerminalFailureArgs`) live in `messages.ts`.
+ * Both are re-exported below so existing audit-layer consumers keep one
+ * import site; new code may import `audit-ctx.ts` / `messages.ts` directly.
+ * Shared by the runner + sessions; neither imports back. Pure row
+ * persistence (the allocator, `recordStage`, success persistence) lives in
+ * `audit-rows.ts`.
  */
 
+import type { AuditCtx } from "./audit-ctx.js";
 import { recordStage, unitRowFields } from "./audit-rows.js";
 import { lifecycleCtxFromSession, scriptStageRef, skillStageRef } from "./events.js";
 import { handleToString } from "./handle.js";
 import { assertNever, nowIso } from "./internal-utils.js";
 import {
+	abortedArgs,
 	FAIL_AUDIT_WRITE,
 	FAIL_STAGE_ABORTED,
 	FAIL_STAGE_NO_RESPONSE,
 	FAIL_STAGE_TOOL_STALLED,
 	FAIL_STAGE_TRUNCATED,
-	type FailureText,
+	failedArgs,
 	MSG_FAILURE_ROW_DROPPED,
 	MSG_PARTIAL_ARTIFACTS,
 	MSG_STAGE_FAILED,
 	MSG_WORKFLOW_CANCELLED,
+	type TerminalFailureArgs,
 } from "./messages.js";
-import { listArtifacts, type SessionRef } from "./state/index.js";
+import { listArtifacts } from "./state/index.js";
 import type { StopSignal } from "./transcript.js";
-import type { RunContext, RunState, RunTermination, SessionContext, UnitRef, WorkflowHostContext } from "./types.js";
+import type { RunState, RunTermination, WorkflowHostContext } from "./types.js";
 
+// Preserving barrel — the pre-split import surface is unchanged. Consumers
+// (`sessions/`, `runner/`, `loop-kinds`, `loop-parallel`, `internal.ts`,
+// `audit.test.ts`) keep importing `AuditCtx`/`runIdentityOf`/`auditCtxFor`/
+// `currentStageRef`/`failedArgs`/`abortedArgs`/`TerminalFailureArgs` from
+// "./audit.js" with no edit. Symbols now live in their post-split homes:
+export type { AuditCtx } from "./audit-ctx.js";
+export { auditCtxFor, currentStageRef, runIdentityOf } from "./audit-ctx.js";
 // Re-export the persistence half so existing audit-layer consumers keep one
 // import site; new code may import audit-rows.js directly.
 export { allocateStageNumber, decorateStage, recordStage, unitRowFields } from "./audit-rows.js";
+export type { TerminalFailureArgs } from "./messages.js";
+export { abortedArgs, failedArgs } from "./messages.js";
 
 /**
  * THE one `state.termination` mutator. Every terminal path — completion
@@ -61,141 +79,12 @@ export function failAuditWrite(ctx: WorkflowHostContext, state: RunState, subjec
 	terminate(state, { status: "failed", error: failure.error });
 }
 
-/**
- * Minimal bookkeeping ctx. Structurally derived from `SessionContext` so any
- * future field added to the base lands here too — no duplicate
- * maintenance. Every `StageSession` (single stage or loop unit) collapses to this.
- *
- * `isScript` toggles the `onStageError` ref construction in
- * `recordTerminalFailure` from `skillStageRef` to `scriptStageRef` (the
- * script branch carries no `skill` field). Defaulting to `undefined`
- * preserves the skill-path behaviour for every existing caller.
- *
- * `unit` is present iff the failure/cancellation belongs to a loop unit — its
- * identity is spread into the JSONL row so failed trailers carry the
- * structured fields the resume guard consumes.
- *
- * `session` is REQUIRED (`null` = explicitly sessionless) — the compiler
- * forces every audit-row writer to make the provenance decision; the value
- * lands verbatim on the JSONL row (`WorkflowStage.session`), which is what
- * session-backed resume dispatches on.
- */
-export type AuditCtx = Pick<
-	SessionContext,
-	"cwd" | "runId" | "state" | "stageName" | "skill" | "lifecycle" | "runIdentity" | "allocatedStageNumber"
-> & {
-	session: SessionRef | null;
-	isScript?: boolean;
-	unit?: UnitRef;
-};
-
-/**
- * The read-only run identity (`workflow` name + `totalStages` + `trigger`)
- * threaded onto every `SessionContext` and `AuditCtx`. Single source for the
- * `runIdentity` sub-literal that session/audit constructions across the runner
- * would otherwise re-spell by hand.
- */
-export function runIdentityOf(run: RunContext): SessionContext["runIdentity"] {
-	return { workflow: run.workflow.name, totalStages: run.totalStages, trigger: run.trigger };
-}
-
-/**
- * Build the `AuditCtx` `recordTerminalFailure` needs for a stage failure that
- * escaped a session (preflight halts, downstream throws, routing errors,
- * resume-time refusals). One source for the shape so every halt path records
- * a uniform row. `isScript: true` drops the `skill` field from the JSONL row
- * and switches `onStageError` to `scriptStageRef`.
- *
- * `session` is pinned to `null` here BY CONSTRUCTION: every caller of this
- * builder records a failure that escaped (or never reached) a session —
- * preflight halts, seam aborts, entry throws, routing errors, resume drift,
- * script halts. In-session writers build their `AuditCtx` via `auditFor`
- * (sessions/sessions.ts), which threads the captured `SessionRef`.
- */
-export function auditCtxFor(
-	run: RunContext,
-	stageName: string,
-	skill: string,
-	opts?: { isScript?: boolean; unit?: UnitRef; allocatedStageNumber?: number },
-): AuditCtx {
-	return {
-		cwd: run.cwd,
-		runId: run.runId,
-		state: run.state,
-		stageName,
-		skill,
-		session: null,
-		lifecycle: run.lifecycle,
-		runIdentity: runIdentityOf(run),
-		...(opts?.isScript ? { isScript: true } : {}),
-		...(opts?.unit ? { unit: opts.unit } : {}),
-		...(opts?.allocatedStageNumber !== undefined ? { allocatedStageNumber: opts.allocatedStageNumber } : {}),
-	};
-}
-
-/**
- * Lifecycle ref for the CURRENT activation — ONE numbering base (the
- * allocator value) for every event of one execution, so a listener can
- * correlate a retry ref with the end/error ref it belongs to. Valid once the
- * activation allocated its number (`allocatedStageNumber`); falls back to the
- * last allocated number for record-time allocators (failure paths that never
- * reached output production).
- */
-export function currentStageRef(
-	s: Pick<SessionContext, "stageName" | "skill" | "state" | "allocatedStageNumber">,
-): ReturnType<typeof skillStageRef> {
-	return skillStageRef(s.stageName, s.allocatedStageNumber ?? s.state.lastAllocatedStageNumber, s.skill);
-}
-
 /** Surface every artifact recorded so far — recap on stage failure. */
 export function notifyPartialArtifacts(ctx: WorkflowHostContext, cwd: string, runId: string): void {
 	const items = listArtifacts(cwd, runId);
 	if (items.length === 0) return;
 	const artifactList = items.map((i) => `  • ${i.stage}: ${handleToString(i.artifact.handle)}`).join("\n");
 	ctx.ui.notify(MSG_PARTIAL_ARTIFACTS(artifactList), "info");
-}
-
-/**
- * The toast + JSONL halves of a terminal failure, paired by construction.
- * Build via `failedArgs` / `abortedArgs` (or `stopFailureArgs`' switch) so a
- * halt site can't mismatch status and notify level.
- */
-export interface TerminalFailureArgs {
-	status: "failed" | "aborted";
-	notifyMsg: string;
-	notifyLevel: "warning" | "error";
-	errMsg: string;
-}
-
-/**
- * The ONE `(status, notifyLevel)` pairing — notifyLevel is DERIVED from status
- * (failed → error, aborted → warning), so a mismatch is unrepresentable. The
- * overload-resolution body for `failedArgs`/`abortedArgs` lives here once.
- * Modeled after `stopFailureArgs` (parameterize by status).
- */
-function terminalArgsOf(status: "failed" | "aborted", a: FailureText | string, b?: string): TerminalFailureArgs {
-	const f = typeof a === "string" ? { toast: a, error: b as string } : a;
-	return { status, notifyMsg: f.toast, notifyLevel: status === "failed" ? "error" : "warning", errMsg: f.error };
-}
-
-/**
- * Argument constructors for `recordTerminalFailure` — the
- * `{status, notifyMsg, notifyLevel, errMsg}` quadruple every halt site used
- * to spell by hand. One per terminal status: failures notify at `"error"`,
- * aborts at `"warning"` (cooperative cancellation is expected, not
- * exceptional). 1-line facades over `terminalArgsOf` so the status/level
- * pairing lives once.
- */
-export function failedArgs(failure: FailureText): TerminalFailureArgs;
-export function failedArgs(notifyMsg: string, errMsg: string): TerminalFailureArgs;
-export function failedArgs(a: FailureText | string, b?: string): TerminalFailureArgs {
-	return terminalArgsOf("failed", a, b);
-}
-
-export function abortedArgs(failure: FailureText): TerminalFailureArgs;
-export function abortedArgs(notifyMsg: string, errMsg: string): TerminalFailureArgs;
-export function abortedArgs(a: FailureText | string, b?: string): TerminalFailureArgs {
-	return terminalArgsOf("aborted", a, b);
 }
 
 /**
