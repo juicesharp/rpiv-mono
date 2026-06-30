@@ -601,9 +601,9 @@ const prTriageWorkflow = defineWorkflow({
 // ===========================================================================
 // carve — research → slice → slice-check (deterministic floor) → slice-grade
 //         (design-readiness, slice-fix loop) → slice-design (fanout) →
-//         subplan (cluster fanout) → plan → plan-grade (plan-fix loop) →
-//         code (fanout) → code-splice → code-grade (code-fix loop) →
-//         implement → validate → commit
+//         design-review (one human checkpoint) → subplan (cluster fanout) →
+//         plan → plan-grade (plan-fix loop) → code (fanout) → code-splice →
+//         code-grade (code-fix loop) → implement → validate → commit
 //   The sliced, panel-gated heavy path: research the brief first (so every slice
 //   rests on a real, cited footing and the plan gate can grade architecture-fit),
 //   decompose it into independent
@@ -612,7 +612,10 @@ const prTriageWorkflow = defineWorkflow({
 //   floor (`slice-check`) enforces dependency-cycle freedom and brief-coverage
 //   conservation (a slice-fix may redistribute the brief, never drop scope to pass),
 //   then ONE LLM `design-readiness` judgment reconciles the formerly-opposing
-//   split/merge forces. Then design every slice in parallel, merge hierarchically
+//   split/merge forces. Then design every slice in parallel and pause at ONE
+//   consolidated human checkpoint (`design-review`) — the single fan-in seam where
+//   every design exists and nothing parallel runs — to accept or adjust the
+//   proposed interfaces/data types before synthesis. Then merge hierarchically
 //   (per-cluster sub-plans → one plan) so no pass holds every design, gate the
 //   plan on quality dimensions BEFORE any code, elaborate code per phase and
 //   stitch it in, re-grade the code-bearing plan, then implement/validate/commit.
@@ -1049,7 +1052,7 @@ const STITCH_SCRIPT = join(
 const carveWorkflow = defineWorkflow({
 	name: "carve",
 	description:
-		"Ship, sliced: research the brief → decompose it into vertical slices → two-phase slice gate (a deterministic floor — dependency-cycle freedom + brief-coverage conservation so a slice-fix can't pass by dropping scope — then one LLM design-readiness judgment that each slice is chewable by a single design pass) with a slice-fix loop → design each slice in parallel → synthesize hierarchically (per-cluster sub-plans → one merged plan) → quality-panel gate (completeness/correctness/actionability/pattern-following/architecture-fit) with a plan-fix loop → elaborate code per phase in parallel → stitch → re-grade the code-bearing plan → implement → validate → commit. Research-led; three gates, before design, before code, and after stitch.",
+		"Ship, sliced: research the brief → decompose it into vertical slices → two-phase slice gate (a deterministic floor — dependency-cycle freedom + brief-coverage conservation so a slice-fix can't pass by dropping scope — then one LLM design-readiness judgment that each slice is chewable by a single design pass) with a slice-fix loop → design each slice in parallel → one consolidated developer checkpoint (accept or adjust the proposed interfaces/data types, adjustments applied surgically and cascaded to dependents) → synthesize hierarchically (per-cluster sub-plans → one merged plan) → quality-panel gate (completeness/correctness/actionability/pattern-following/architecture-fit) with a plan-fix loop → elaborate code per phase in parallel → stitch → re-grade the code-bearing plan → implement → validate → commit. Research-led; three automated gates plus one human design checkpoint, before design, before code, and after stitch.",
 	start: "research",
 	stages: {
 		// Front-loaded research grounds every slice's footing and feeds the plan
@@ -1077,6 +1080,19 @@ const carveWorkflow = defineWorkflow({
 		}),
 		// Design every slice in parallel.
 		"slice-design": produces({ skill: "design-slice", loop: SLICE_DESIGN_FANOUT }),
+		// One consolidated developer checkpoint over EVERY per-slice design, at the
+		// single fan-in seam where they all exist and nothing parallel is running.
+		// Presents the proposed shape (interfaces, data types, scope) and lets the
+		// developer accept or adjust; an adjustment is applied surgically in place
+		// and cascaded to the changed contract's dependents BEFORE synthesis sees
+		// the designs. Re-emits designs on their channel (latest-wins, same paths),
+		// so `subplan`/`synthesize` read the accepted/edited docs. The interactive
+		// counterpart to the LLM gates — the one human pass on the parallel path.
+		"design-review": produces({
+			skill: "design-review",
+			outcome: rpivBucketOutcome("designs"),
+			reads: [fanin("designs"), "slices"],
+		}),
 		// Hierarchical fan-in: merge each slice-DAG cluster into a sub-plan in
 		// parallel (bounded context), then merge the sub-plans into one plan.
 		subplan: produces({
@@ -1159,7 +1175,9 @@ const carveWorkflow = defineWorkflow({
 			{ readsData: false },
 		),
 		"slice-fix": "slice-check",
-		"slice-design": "subplan",
+		// Design fanout → consolidated human checkpoint → hierarchical synthesis.
+		"slice-design": "design-review",
+		"design-review": "subplan",
 		subplan: "plan",
 		plan: "plan-grade",
 		// Quality gate BEFORE any code. Pass ⇒ code; any fails ⇒ plan-fix and loop back.

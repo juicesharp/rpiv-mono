@@ -327,6 +327,9 @@ describe("equivalence — built-in workflows", () => {
 	const EXPLICIT_OUTCOMES: Record<string, string> = {
 		"carve::slice-grade": "slice-verdicts",
 		"carve::slice-fix": "slices",
+		// design-review re-emits the edited designs in place; explicit outcome
+		// republishes them on the `designs` channel (latest-wins) for synthesize.
+		"carve::design-review": "designs",
 		"carve::subplan": "subplans",
 		"carve::plan-grade": "plan-verdicts",
 		"carve::plan-fix": "plans",
@@ -430,7 +433,7 @@ describe("equivalence — built-in workflows", () => {
 		});
 	}
 
-	it("total produces stages across all workflows = 34 (33 derivable + carve's script-stage floor)", () => {
+	it("total produces stages across all workflows = 35 (33 derivable + carve's design-review + script-stage floor)", () => {
 		let count = 0;
 		let scriptProduces = 0;
 		for (const w of builtInWorkflows) {
@@ -439,7 +442,7 @@ describe("equivalence — built-in workflows", () => {
 				if (stage.kind === "produces" && stage.run != null) scriptProduces++;
 			}
 		}
-		expect(count).toBe(34);
+		expect(count).toBe(35);
 		expect(scriptProduces).toBe(1); // carve::slice-check
 	});
 });
