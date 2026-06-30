@@ -81,7 +81,7 @@ When invoked:
 
 6. **Spawn parallel research agents** to verify implementation:
 
-   Spawn the agents below in parallel using the Agent tool. Wait for ALL agents to complete before proceeding.
+   Spawn the agents below in parallel using the Agent tool — all in a **single assistant message with multiple Agent calls** (concurrent, synchronous). **Never `run_in_background`**: its completion can't re-drive a workflow session, so the skill ends its turn before writing the validation report and the stage fails with no artifact. Wait for ALL agents to complete before proceeding.
 
    **Analyzer agent:**
    - subagent_type: `codebase-analyzer`
