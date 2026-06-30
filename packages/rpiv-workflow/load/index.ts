@@ -54,7 +54,8 @@
  */
 
 import type { Workflow } from "../api.js";
-import { flushBuiltInProviders, getBuiltIns } from "../built-ins.js";
+import { drainBuiltInProviderErrors, flushBuiltInProviders, getBuiltIns } from "../built-ins.js";
+import { formatError } from "../internal-utils.js";
 import type { ConfigLayer } from "../layers.js";
 import type { SkillContractMap } from "../skill-contract.js";
 import { validateWorkflow } from "../validate-workflow.js";
@@ -139,6 +140,19 @@ export async function loadWorkflows(cwd: string): Promise<LoadedWorkflows> {
 		sources: new Map(),
 		sourcePaths: new Map(),
 	};
+	// Built-in provider failures — each provider throw was RECORDED (not
+	// propagated) during `flushBuiltInProviders()`; drain and surface as issues
+	// so the loader keeps its never-throws contract without swallowing the
+	// failure. Runs before `getBuiltIns()` is read, so a provider that throws
+	// before registering contributes its error but (correctly) no workflows.
+	for (const err of drainBuiltInProviderErrors()) {
+		acc.issues.push({
+			kind: "load",
+			layer: "framework",
+			message: `built-in provider failed: ${formatError(err)}`,
+			severity: "warning",
+		});
+	}
 	const layers: ConfigLayer[] = getBuiltIns().length > 0 ? ["built-in"] : [];
 
 	for (const w of getBuiltIns()) {

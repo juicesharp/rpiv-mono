@@ -13,7 +13,7 @@ import { dirname, join } from "node:path";
 import { Type } from "@sinclair/typebox";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { acts, defineWorkflow, produces as producesRaw, type StageDef, type Workflow } from "./api.js";
-import { __resetBuiltIns, registerBuiltIns } from "./built-ins.js";
+import { __resetBuiltIns, registerBuiltIns, registerBuiltInsProvider } from "./built-ins.js";
 import { loadWorkflows, projectOverlayPaths, userOverlayPaths } from "./load/index.js";
 import { noopCollector } from "./outcomes/index.js";
 import type { SkillContract } from "./skill-contract.js";
@@ -1042,5 +1042,56 @@ describe("loadWorkflows — outcome derivers", () => {
 		const secondStage = second.workflows.find((w) => w.name === "derived-wf")?.stages.plan;
 		expect(secondStage?.outcome?.name).toBe("derived-design");
 		expect(bare.stages.plan?.outcome).toBeUndefined();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Built-in providers — record-and-drain failure posture
+// ---------------------------------------------------------------------------
+
+describe("loadWorkflows — built-in providers", () => {
+	it("surfaces built-in provider failures as warning LoadIssues (never throws)", async () => {
+		registerBuiltInsProvider(() => {
+			throw new Error("test built-in provider failure");
+		});
+		// `loadWorkflows` honors its never-throws contract — a throwing provider
+		// degrades to a warning LoadIssue instead of rejecting the call.
+		const loaded = await loadWorkflows(TEST_TMP);
+		const providerIssue = loaded.issues.find(
+			(i) => i.kind === "load" && i.severity === "warning" && /built-in provider failed/.test(i.message),
+		);
+		expect(providerIssue).toBeDefined();
+		expect(providerIssue?.message).toContain("test built-in provider failure");
+	});
+
+	it("surfaces each throwing provider as its own warning Issue (multi-failure visibility)", async () => {
+		registerBuiltInsProvider(() => {
+			throw new Error("first provider failure");
+		});
+		registerBuiltInsProvider(() => {
+			throw new Error("second provider failure");
+		});
+		const loaded = await loadWorkflows(TEST_TMP);
+		const providerIssues = loaded.issues.filter(
+			(i) => i.kind === "load" && i.severity === "warning" && /built-in provider failed/.test(i.message),
+		);
+		expect(providerIssues).toHaveLength(2);
+		expect(providerIssues.some((i) => i.message.includes("first provider failure"))).toBe(true);
+		expect(providerIssues.some((i) => i.message.includes("second provider failure"))).toBe(true);
+	});
+
+	it("does not emit a spurious Issue when a built-in provider succeeds", async () => {
+		const wf = defineWorkflow({
+			name: "provider-supplied-wf",
+			start: "plan",
+			stages: { plan: produces() },
+			edges: { plan: "stop" },
+		});
+		registerBuiltInsProvider(() => {
+			registerBuiltIns([wf]);
+		});
+		const loaded = await loadWorkflows(TEST_TMP);
+		expect(loaded.issues.find((i) => /built-in provider failed/.test(i.message))).toBeUndefined();
+		expect(loaded.workflows.find((w) => w.name === "provider-supplied-wf")).toBeDefined();
 	});
 });

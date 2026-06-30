@@ -24,16 +24,24 @@ import type { Workflow } from "./api.js";
 import { globalSlot, lazyProviderRegistry } from "./internal-utils.js";
 
 const REGISTRY_KEY = Symbol.for("@juicesharp/rpiv-workflow:built-ins");
+const FAILURES_KEY = Symbol.for("@juicesharp/rpiv-workflow:built-in-provider-failures");
 
 const getRegistry = globalSlot(REGISTRY_KEY, () => [] as Workflow[]);
-// Provider lifecycle (register / flush-on-demand; each provider runs once,
-// post-flush registrations run on the next flush — `/reload` re-registration
-// refreshes) via the shared `lazyProviderRegistry` helper — same global-slot
+const getFailures = globalSlot(FAILURES_KEY, () => [] as unknown[]);
+// Provider lifecycle via the shared `lazyProviderRegistry` — same global-slot
 // strategy as the registry, so a duplicate module load shares one
 // process-wide state. Safe to re-flush: `registerBuiltIns` replaces by name.
-// No `onError`: built-in providers are trusted in-process code, a throw
-// propagates to the awaiting `loadWorkflows` caller.
-const providers = lazyProviderRegistry("@juicesharp/rpiv-workflow:built-in-providers");
+// `onError` RECORDS each provider throw (drained by `drainBuiltInProviderErrors`)
+// instead of propagating, so `loadWorkflows` honors its never-throws contract: a
+// throwing provider degrades to a partial/empty registry instead of crashing
+// `/wf`, but the error is NOT swallowed silently — `loadWorkflows` surfaces it as
+// a LoadIssue so a buggy provider is debuggable. Same posture as the
+// skill-contracts registry.
+const providers = lazyProviderRegistry("@juicesharp/rpiv-workflow:built-in-providers", {
+	onError: (err) => {
+		getFailures().push(err);
+	},
+});
 
 /**
  * Register one or more workflows into the `built-in` layer. Idempotent on
@@ -69,6 +77,17 @@ export function flushBuiltInProviders(): Promise<void> {
 	return providers.flush();
 }
 
+/**
+ * Drain (return + clear) the errors recorded by failed built-in providers since
+ * the last drain. `loadWorkflows` calls this right after the flush and maps each
+ * into a `LoadIssue`, so a provider bug surfaces in `loaded.issues` instead of
+ * vanishing. Internal — not on the public barrel (mirrors
+ * `drainSkillContractProviderErrors`).
+ */
+export function drainBuiltInProviderErrors(): unknown[] {
+	return getFailures().splice(0);
+}
+
 /** Read-only view of the registry — consumed by `load.ts`. */
 export function getBuiltIns(): readonly Workflow[] {
 	return getRegistry();
@@ -81,4 +100,5 @@ export function getBuiltIns(): readonly Workflow[] {
 export function __resetBuiltIns(): void {
 	getRegistry().length = 0;
 	providers.reset();
+	getFailures().length = 0;
 }
