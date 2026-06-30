@@ -25,7 +25,33 @@ import {
 	ToolExecutionComponent,
 	UserMessageComponent,
 } from "@earendil-works/pi-coding-agent";
-import { type Component, type TUI, truncateToWidth } from "@earendil-works/pi-tui";
+import { type Component, type TUI, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+
+/**
+ * OSC-133 shell-integration prompt markers (FinalTerm: `ESC ] 133 ; A|B|C|D … BEL/ST`).
+ * The SDK message components emit these so a REAL interactive prompt can mark command
+ * boundaries — but our surfaces replay the branch into an embedded widget/overlay, where the
+ * bytes are consumed by the terminal and leave a stray BLANK line per marker. That doubled the
+ * preview's line count with invisible rows (the live-output region looked oversized + half-empty).
+ * Stripping them is purely cosmetic clean-up of control sequences that have no meaning off the
+ * real prompt; SGR color sequences (`ESC [ … m`) are deliberately NOT touched.
+ */
+const OSC_133 = /\x1b\]133;[^\x07\x1b]*(?:\x07|\x1b\\)/g;
+
+/** Strip OSC-133 markers from rendered lines, DROPPING any line that was nothing but a marker
+ *  (now blank) while preserving genuine blank lines (paragraph spacing) and all colored text. */
+function stripPromptMarkers(lines: string[]): string[] {
+	const out: string[] = [];
+	for (const line of lines) {
+		const stripped = line.replace(OSC_133, "");
+		if (stripped === line) {
+			out.push(line); // no marker — keep verbatim (including intentional blank lines)
+		} else if (visibleWidth(stripped) > 0) {
+			out.push(stripped); // marker + content — keep the content
+		} // else: marker-only line → drop it (it would render as a stray blank row)
+	}
+	return out;
+}
 
 /** Local narrowing of getBranch()'s entry shape (mirrors rpiv-workflow transcript.ts:BranchEntry).
  *  Tool-call blocks (assistant content) and toolResult messages carry the extra fields the
@@ -207,7 +233,7 @@ export function renderBranch(
 			body.push(truncateToWidth(theme.fg("dim", "· (unrenderable)"), width, "…"));
 		}
 	}
-	return body;
+	return stripPromptMarkers(body);
 }
 
 /** Opaque handle for a surface's persistent streaming component. Surfaces hold one across
@@ -234,7 +260,7 @@ export function renderStreamingMessage(
 	const component = prev ?? new AssistantMessageComponent(undefined);
 	try {
 		component.updateContent(partial as unknown as AssistantMessage);
-		return { component, lines: component.render(width) };
+		return { component, lines: stripPromptMarkers(component.render(width)) };
 	} catch {
 		return { component: undefined, lines: [] };
 	}

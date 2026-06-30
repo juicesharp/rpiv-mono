@@ -231,7 +231,7 @@ describe("LaneDock — forced redraw on height-shape change (duplicate-block fix
 		const overlay = new LaneDock();
 		const { tui } = mount(overlay, makeCtx());
 		const spy = tui?.requestRender as unknown as ReturnType<typeof vi.fn>;
-		setDockActive(true); // ambient → active: the preview region + top rule appear (height step)
+		setDockActive(true); // ambient → active: the ❯ cursor appears + the preview re-targets (signature -1 → 0)
 		overlay.update();
 		expect(spy).toHaveBeenLastCalledWith(true);
 		spy.mockClear();
@@ -883,28 +883,32 @@ describe("LaneDock — active (focused) state", () => {
 		expect(selectedRow).toContain("accent:*run-1*");
 		expect(otherRow).toContain("text:run-2");
 		expect(otherRow).not.toContain("accent:*run-2*");
-		// the workflow tag stays dim on BOTH rows (ask_user_question's always-dim description split)
-		expect(selectedRow).toContain("dim:ship");
-		expect(otherRow).toContain("dim:build");
+		// the workflow (preset) tag is muted on BOTH rows — readable secondary content, distinct
+		// from the accent+bold descriptor (ask_user_question's emphasized-name / secondary split)
+		expect(selectedRow).toContain("muted:ship");
+		expect(otherRow).toContain("muted:build");
 		overlay.dispose();
 	});
 
-	it("ambient leaves a blank top (editor border is the boundary); active draws its own top rule", () => {
+	it("uses an IDENTICAL top in both states (blank · title · blank) so stepping in/out never resizes the dock", () => {
 		recordRun("run-1", "ship");
 		const overlay = new LaneDock();
 		const { widget } = mount(overlay, makeCtx());
-		// Ambient: the editor's bottom border above is the top boundary, so line 0 is a
-		// breathing-room blank — NOT a rule.
+		// Ambient: a breathing-room blank, the title, a blank — NO top rule (the editor's border
+		// above is the boundary). The dock no longer draws an active-only rule, so the title sits
+		// at the same row in both states.
 		const ambient = widget?.render(40) ?? [];
 		expect(ambient[0]).toBe("");
-		// Active: the editor hides itself, so the dock frames itself — a leading blank, its
-		// own top rule, a blank, THEN the title (blank · HR · blank · title). Both ends carry a rule.
+		expect(ambient[1]).toContain("Runs"); // title on line 1, not pushed down by a rule
+		expect(ambient[2]).toBe("");
+		// Active: the editor blanks itself (keeping its height), so the dock frames nothing extra
+		// at the top — the title stays on line 1, the whole top block is unchanged.
 		setDockActive(true);
 		const focused = widget?.render(40) ?? [];
-		expect(focused[0]).toBe(""); // leading blank above the rule
-		expect(focused[1]).toBe("─".repeat(40)); // top rule
-		expect(focused[2]).toBe(""); // blank between the rule and the title
-		expect(focused[3]).toContain("Runs"); // title under the blank
+		expect(focused[0]).toBe("");
+		expect(focused[1]).toContain("Runs"); // SAME row as ambient — static height
+		expect(focused[2]).toBe("");
+		expect(focused[1]).not.toBe("─".repeat(40)); // no top rule introduced by stepping in
 		expect(focused[focused.length - 1]).toBe("─".repeat(40)); // bottom rule still present
 		overlay.dispose();
 	});

@@ -126,20 +126,25 @@ describe("LaneDockEditor — input visibility while stepped in", () => {
 		expect(makeEditor().render(80).length).toBeGreaterThan(0);
 	});
 
-	it("hides the input box while the dock holds navigation focus, keeping one blank line", () => {
+	it("blanks the input box while the dock holds navigation focus, keeping its full height", () => {
 		const editor = makeEditor();
+		const idleHeight = editor.render(80).length; // the normal box's line count
 		setDockActive(true);
-		// A single blank line: no border, no cursor — but the editor keeps its height so
-		// the dock below doesn't jump up against Pi's chrome.
-		expect(editor.render(80)).toEqual([""]);
+		const blanked = editor.render(80);
+		// All lines blank — no border, no cursor — but the SAME height as the idle box, so the
+		// dock below stays anchored in the footer instead of jumping up when the user steps in.
+		expect(blanked.length).toBe(idleHeight);
+		expect(blanked.every((l) => l === "")).toBe(true);
 	});
 
 	it("restores the input box when focus returns to the prompt (dock deactivated)", () => {
 		const editor = makeEditor();
 		setDockActive(true);
-		expect(editor.render(80)).toEqual([""]);
+		expect(editor.render(80).every((l) => l === "")).toBe(true);
 		setDockActive(false);
-		expect(editor.render(80).length).toBeGreaterThan(1);
+		const restored = editor.render(80);
+		expect(restored.length).toBeGreaterThan(1);
+		expect(restored.some((l) => l !== "")).toBe(true); // border/content is back
 	});
 });
 

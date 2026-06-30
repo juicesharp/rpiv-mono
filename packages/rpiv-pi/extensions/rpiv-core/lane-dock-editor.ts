@@ -21,10 +21,11 @@
  * resumes seamlessly). ⏎ opens the selected run.
  *
  * The editor stays FOCUSED while stepped in (it has to, to keep proxying keys), so
- * its render() is overridden to HIDE the input box (border + blinking cursor) for
+ * its render() is overridden to BLANK the input box (border + blinking cursor) for
  * the duration — otherwise an empty prompt with a live cursor would sit above the
- * dock you're navigating. It reappears the instant focus returns to the prompt
- * (dock deactivated). The dock draws its own top rule in that state to stay framed.
+ * dock you're navigating. It keeps the box's full HEIGHT (blanked, not collapsed) so
+ * the dock stays anchored in the footer and never shifts as you step in and out. It
+ * reappears the instant focus returns to the prompt (dock deactivated).
  */
 
 import { CustomEditor, type KeybindingsManager } from "@earendil-works/pi-coding-agent";
@@ -162,16 +163,16 @@ export class LaneDockEditor extends CustomEditor {
 	}
 
 	/**
-	 * Hide the input box while the dock holds navigation focus. The editor remains
-	 * focused (so handleInput keeps receiving keystrokes), but rendering a single blank
-	 * line suppresses the empty prompt + reversed-video cursor that would otherwise
-	 * float above the dock — WITHOUT collapsing the editor to zero height (which would
-	 * yank the dock up against Pi's chrome). Falls straight back to the normal editor
-	 * render the moment the dock is deactivated, so the prompt returns when focus comes
-	 * back to the input.
+	 * Hide the input box while the dock holds navigation focus, but keep its FULL height.
+	 * The editor stays focused (so handleInput keeps receiving keystrokes); we render the
+	 * normal box and blank every line, suppressing the empty prompt + reversed-video cursor
+	 * WITHOUT changing the line count. Preserving the height is what keeps the dock below
+	 * anchored in the footer — collapsing to a single line (the old behavior) pulled the dock
+	 * up by several rows every time the user stepped in, and back down on the way out. Falls
+	 * straight back to the normal render the moment the dock is deactivated.
 	 */
 	render(width: number): string[] {
-		if (getDockState().active) return [""];
+		if (getDockState().active) return super.render(width).map(() => "");
 		return super.render(width);
 	}
 

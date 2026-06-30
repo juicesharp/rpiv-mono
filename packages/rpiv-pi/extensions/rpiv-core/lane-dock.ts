@@ -50,13 +50,14 @@ import {
 
 const WIDGET_KEY = "rpiv-lanes";
 /** Per-row CAP on the lane region (the scroll-follow window + its +N above/below summaries).
- *  computeLayout bounds laneCap at MAX_WIDGET_LINES - 1, so a tall terminal grows the
- *  live-output region rather than an unbounded lane list. (Was the fixed content budget.) */
+ *  computeLayout bounds laneCap at MAX_WIDGET_LINES - 1, so the lane list never grows unbounded;
+ *  the live-output region is separately capped at PREVIEW_LINES. (Was the fixed content budget.) */
 const MAX_WIDGET_LINES = 12;
-/** Compact CAP on the dock's TOTAL height — top framing + lane region + live-output region +
- *  bottom framing. computeLayout clamps totalRows to min(MAX_DOCK_ROWS, terminal.rows): a tiny
- *  terminal shrinks the dock, a tall one stays compact (NOT floor(rows * 0.9)). Tunable (~18–22). */
-const MAX_DOCK_ROWS = 20;
+/** Compact CEILING on the dock's TOTAL height — clamps totalRows to min(MAX_DOCK_ROWS,
+ *  terminal.rows). With both the lane region (MAX_WIDGET_LINES) and the live-output region
+ *  (PREVIEW_LINES) separately capped, the dock is content-sized and rarely reaches this; it just
+ *  bounds the worst case (many lanes) and shrinks the dock on a tiny terminal. Tunable. */
+const MAX_DOCK_ROWS = 40;
 /** Lines reserved for the live-output region BEFORE lanes claim the content body — guarantees
  *  the preview/placeholder survives even when lanes fill the cap. Tunable (1–2). */
 const MIN_PREVIEW_ROWS = 2;
@@ -81,8 +82,9 @@ const NO_SELECTION_PLACEHOLDER = "↑/↓ select a line for live output";
 /** CAP on the live-output region's CONTENT (the transcript tail). The region itself is
  *  `previewBudget` lines (the content-body remainder); no more than min(previewBudget,
  *  PREVIEW_LINES) of it is ever transcript, and the rest pads blank so the region height is
- *  constant as the body grows (the ghost-block fix). Self-bounds the content slice. */
-const PREVIEW_LINES = 6;
+ *  constant as the body grows (the ghost-block fix). Self-bounds the content slice AND caps
+ *  previewBudget in computeLayout so the region stays compact on a tall terminal. */
+const PREVIEW_LINES = 8;
 /** Selection-gutter cells reserved on every row (so a row never shifts when stepping in):
  *  the `❯` cursor (matching pi's selectors) on the active selection, two spaces otherwise. */
 const CURSOR_SELECTED = "❯ ";
@@ -135,7 +137,7 @@ const RETRY_GLYPH = "⟲";
 // or right-padded to a constant DISPLAY width so the bar / status region starts
 // at the same column on every row, regardless of workflow name or descriptor.
 // ---------------------------------------------------------------------------
-/** Display width of the workflow-tag column (the dim `ship:` prefix). Workflow names
+/** Display width of the workflow-tag column (the muted `ship:` prefix). Workflow names
  *  are short slugs; longer names truncate with … so the tag never exceeds this width
  *  and the descriptor column always starts at the same offset. */
 const TAG_COL = 12;
@@ -399,17 +401,28 @@ export class LaneDock {
 
 	/** The top-down frame budget, computed once per render from the terminal size + dock state.
 	 *  `totalRows` is the compact CAP (min(MAX_DOCK_ROWS, terminal.rows)); `overhead` is the
-	 *  constant framing (top block + bottom block + the live-output banner); the content body
-	 *  splits into `laneCap` (lanes take priority, bounded by MAX_WIDGET_LINES - 1, reserving
-	 *  MIN_PREVIEW_ROWS) and `previewBudget` (the REMAINDER). totalRows = overhead + contentBody
-	 *  is invariant for a given state + terminal regardless of the lane count N. */
-	private computeLayout(active: boolean): { totalRows: number; laneCap: number; previewBudget: number } {
+	 *  constant framing (top block + bottom block + the live-output banner + divider blanks);
+	 *  the content body splits into `laneCap` (lanes take priority, bounded by MAX_WIDGET_LINES -
+	 *  1, reserving MIN_PREVIEW_ROWS) and `previewBudget` (the remainder, CAPPED at PREVIEW_LINES
+	 *  so it never balloons). The dock is content-sized — a few lanes + a bounded preview — not a
+	 *  fixed fraction of the screen. Overhead is identical in both states (no active-only rule),
+	 *  so stepping in/out never resizes the dock. */
+	private computeLayout(): { totalRows: number; laneCap: number; previewBudget: number } {
 		const termRows = this.getTerminalRows();
-		const overhead = (active ? 5 : 3) + 3 /*bottom: blank + footer + rule*/ + 1 /*live-output banner*/;
+		// Top framing is IDENTICAL in both states now (3 lines: blank · heading · blank) — the
+		// dock no longer grows an active-only top rule, so stepping in/out never resizes it.
+		const overhead =
+			3 /*top: blank + heading + blank*/ +
+			3 /*bottom: blank + footer + rule*/ +
+			1 /*live-output banner*/ +
+			2 /*blank above the banner + blank below it*/;
 		const totalRows = Math.min(MAX_DOCK_ROWS, termRows);
 		const contentBody = Math.max(0, totalRows - overhead);
 		const laneCap = Math.min(MAX_WIDGET_LINES - 1, Math.max(1, contentBody - MIN_PREVIEW_ROWS));
-		const previewBudget = Math.max(0, contentBody - laneCap);
+		// Leftover content body, CAPPED at PREVIEW_LINES so the live-output region stays compact
+		// instead of absorbing the ENTIRE remainder once laneCap hit its own cap (which produced a
+		// huge near-empty box on a tall terminal). Constant for a given terminal — ghost-block safe.
+		const previewBudget = Math.min(PREVIEW_LINES, Math.max(0, contentBody - laneCap));
 		return { totalRows, laneCap, previewBudget };
 	}
 
@@ -573,22 +586,21 @@ export class LaneDock {
 		const heading = truncate(`  ${titleIcon}${theme.bg("selectedBg", ` ${headText} `)}`);
 
 		// A bottom rule separates the dock from Pi's status chrome below. Accent while
-		// focused, dim otherwise. The TOP boundary depends on focus: ambient leaves a
-		// blank because the editor's own border above is the boundary; ACTIVE hides that
-		// editor (LaneDockEditor suppresses its render while stepped in), so the dock
-		// draws its own top rule to stay framed as a panel.
+		// focused, dim otherwise. The TOP needs no rule in either state: ambient keeps the
+		// editor's own border above as the boundary, and ACTIVE now renders the editor as
+		// blank lines of the SAME height (LaneDockEditor) rather than collapsing it — so the
+		// dock never shifts and needs no replacement frame. Identical top framing in both
+		// states is what keeps the overlay static as the user steps in and out.
 		const rule = theme.fg(active ? "accent" : "dim", "─".repeat(Math.max(0, width)));
-		// ask_user_question vertical rhythm. Ambient: a breathing-room blank (the editor
-		// border above is the boundary), the title, a blank, then the rows. ACTIVE: the
-		// editor is hidden, so lead with a blank, the top rule, a blank, THEN the title —
-		// (blank · HR · blank · title) keeps the rule off the chrome above and gives the
-		// title room to breathe under the rule.
-		const lines: string[] = active ? ["", rule, "", heading, ""] : ["", heading, ""];
+		// ask_user_question vertical rhythm, IDENTICAL in both states (static height): a
+		// breathing-room blank, the title chip, a blank, then the rows. The `❯` cursor and the
+		// live-output content are the only things that change between ambient and active.
+		const lines: string[] = ["", heading, ""];
 		// Top-down frame budget from the terminal size + dock state (computed once per render,
 		// never re-derived from a derived value). laneCap bounds the lane region (the scroll-follow
 		// window + its +N above/below summaries); previewBudget is the live-output REMAINDER.
 		// totalRows (inside computeLayout) is the compact CAP — min(MAX_DOCK_ROWS, terminal.rows).
-		const { laneCap, previewBudget } = this.computeLayout(active);
+		const { laneCap, previewBudget } = this.computeLayout();
 
 		// The 2-col selection gutter is ALWAYS reserved (see renderRow) so stepping in
 		// only swaps spaces for the `❯` cursor — no row ever shifts. sel(i) marks the
@@ -635,16 +647,28 @@ export class LaneDock {
 		// NOT change the dock height (the ghost-block regression). Content is active-gated; the
 		// region itself renders in every state so the total height is stable.
 		const selUnit = this.selectedUnit();
+		// Both region paths are [banner, ...previewBudget body lines]. The placeholder body
+		// shows the hint ONCE — vertically centered, the rest blank — so it never repeats down
+		// the region (the doubled-line artifact); the active path renders the transcript tail.
 		const region: string[] =
 			active && selUnit
 				? this.renderPreview(theme, selUnit.runId, selUnit.unitIndex, selUnit.unit, width, previewBudget)
 				: [
 						renderPreviewBanner(theme, width),
-						...Array.from({ length: previewBudget }, () =>
-							this.centerLine(theme, NO_SELECTION_PLACEHOLDER, width),
+						...Array.from({ length: previewBudget }, (_, i) =>
+							i === Math.floor(previewBudget / 2) ? this.centerLine(theme, NO_SELECTION_PLACEHOLDER, width) : "",
 						),
 					];
-		for (const line of region) lines.push(truncate(line));
+		// Frame the live-output divider: a blank line separates it from the last lane above, and
+		// a blank line sits under it before its content. region[0] is always the banner; both
+		// blanks are constant framing accounted for in computeLayout's overhead. They collapse
+		// when previewBudget is 0 (a terminal too short to afford a content region) so the dock
+		// still clamps DOWN to terminal.rows instead of overflowing with decoration.
+		const framed = previewBudget > 0;
+		if (framed) lines.push("");
+		lines.push(truncate(region[0]));
+		if (framed) lines.push("");
+		for (const line of region.slice(1)) lines.push(truncate(line));
 		// Footer hint (dim), indented one space — active shows the navigation contract,
 		// ambient the discoverability hint. Preceded by a blank line (rhythm) and followed
 		// by the bottom rule (the separator from Pi's status chrome below).
@@ -743,7 +767,9 @@ export class LaneDock {
 		}
 
 		// Fixed-width leading columns: cursor-gutter · status-glyph · workflow-tag · descriptor.
-		// The workflow name is a dim tag (always present, so the workflow never disappears);
+		// The workflow (preset) name is a muted tag — readable secondary content, matching the
+		// ambient-overlay palette (status words / token tally), not the "dim" reserved for pure
+		// decoration (rules, +N summaries, placeholder) — always present so it never disappears;
 		// the descriptor is the run's --name alias OR the truncated user prompt, accent+bold
 		// when selected. Tag + descriptor are fixed-width (per render) so the status region
 		// (bar / label) always starts at the same column. Mirrors ask_user_question's
@@ -756,7 +782,7 @@ export class LaneDock {
 		// somewhere). A no-descriptor render has labelWidth 0 → bare tag prefix (old shape),
 		// so a no-descriptor lane never pays dead label space that would squeeze the reason chip.
 		const prefix =
-			`${head}${padCol(theme, "dim", tagRaw, TAG_COL)} ` +
+			`${head}${padCol(theme, "muted", tagRaw, TAG_COL)} ` +
 			(labelWidth > 0
 				? `${padCol(theme, selected ? "accent" : "text", descriptor ?? "", labelWidth, selected)} `
 				: "");

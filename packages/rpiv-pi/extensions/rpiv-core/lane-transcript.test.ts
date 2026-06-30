@@ -89,6 +89,25 @@ describe("renderBranch — shared transcript replay", () => {
 			renderBranch([{ type: "message" } as ViewerEntry], 120, source, makeTui(), identityTheme, false),
 		).not.toThrow();
 	});
+
+	it("strips OSC-133 shell-integration markers so they don't become stray blank lines", () => {
+		// The SDK AssistantMessageComponent emits `ESC]133;A/B/C` prompt markers; off the real
+		// prompt those bytes render as invisible blank rows that doubled the preview's line count
+		// (the live-output region looked oversized + half-empty). renderBranch must scrub them.
+		const body = renderBranch(
+			[assistantEntry("line-a"), assistantEntry("line-b")],
+			120,
+			source,
+			makeTui(),
+			identityTheme,
+			false,
+		);
+		expect(body.join("\n")).not.toMatch(/\x1b\]133;/); // no marker sequences survive
+		// And no marker-only blank rows: every emitted line carries visible content.
+		expect(body.every((l) => l.replace(/\s/g, "").length > 0)).toBe(true);
+		expect(body.join("\n")).toContain("line-a");
+		expect(body.join("\n")).toContain("line-b");
+	});
 });
 
 const thinkingPartial = (thinking: string): ViewerMessage => ({
