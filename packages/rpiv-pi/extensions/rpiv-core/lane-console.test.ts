@@ -278,15 +278,25 @@ describe("LaneConsole — browser navigation (spine)", () => {
 		panel.dispose();
 	});
 
-	it("↑ at the top and ↓ past the end clamp (never back out — that is esc/←)", () => {
+	it("↑ at the top backs out (done resolves)", () => {
 		liveUnit(() => [assistantEntry("first lane body")]);
 		secondLane();
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn());
-		panel.handleInput("\x1b[A"); // ↑ at row 0 stays put
-		expect(selectedRow(panel.render(80))).toContain("ship");
+		const done = vi.fn();
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, done);
+		panel.handleInput("\x1b[A"); // ↑ at row 0 → back out (restored gesture)
+		expect(done).toHaveBeenCalledTimes(1); // finish() resolves the overlay exactly once
+		panel.dispose();
+	});
+
+	it("↓ past the end still clamps", () => {
+		liveUnit(() => [assistantEntry("first lane body")]);
+		secondLane();
+		const done = vi.fn();
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, done);
 		panel.handleInput("\x1b[B");
 		panel.handleInput("\x1b[B"); // ↓ past the last row clamps at run-2
 		expect(selectedRow(panel.render(80))).toContain("build");
+		expect(done).not.toHaveBeenCalled(); // clamp, not back-out
 		panel.dispose();
 	});
 

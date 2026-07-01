@@ -341,7 +341,7 @@ export class LaneConsole implements Component {
 		const toggle = this.toolsExpanded ? "t collapse" : "t expand";
 		const answer = canAnswer ? "⏎ answer · " : "";
 		return truncateToWidth(
-			this.theme.fg("dim", `↑/↓ lanes · ${answer}${scrolled}PgUp/PgDn scroll · ${toggle} · x stop · ←/esc back`),
+			this.theme.fg("dim", `↑/↓ lanes · ${answer}${scrolled}PgUp/PgDn scroll · ${toggle} · x stop · ↑/←/esc back`),
 			width,
 			"…",
 		);
@@ -379,7 +379,9 @@ export class LaneConsole implements Component {
 			return;
 		}
 		if (matchesKey(data, Key.up)) {
-			this.move(-1);
+			if (this.selection === 0)
+				this.finish(); // top row → back out (restored gesture)
+			else this.move(-1); // mid-spine → navigate up, unchanged
 			return;
 		}
 		if (matchesKey(data, Key.down)) {
