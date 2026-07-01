@@ -329,6 +329,9 @@ export function recordRun(runId: string, name: string, meta?: { workflow?: strin
 		existing.workflow = meta?.workflow ?? existing.workflow;
 		existing.input = meta?.input ?? existing.input;
 		existing.status = "running"; // reactivate a retained terminal lane (resume)
+		// Settle any queued input before clearing units — mirrors retireRun/evictRun/
+		// clearUnitLanes so a child can never hang on a dangling resolver across reactivation.
+		for (const unit of existing.units.values()) for (const p of unit.pendingInput) p.resolve(undefined);
 		existing.units.clear(); // drop the prior run's per-unit sessions + terminal snapshots
 		existing.error = undefined; // clear the prior run's terminal failure reason
 		existing.progress = undefined; // clear stale stage progress
@@ -663,6 +666,14 @@ export function dequeueInput(runId: string, index: number): PendingInput | undef
 	const pending = state().lanes.get(runId)?.units.get(index)?.pendingInput.shift();
 	if (pending) notify();
 	return pending;
+}
+
+/** Peek the oldest pending input for ONE unit WITHOUT removing it. The console reads
+ *  the head to render the parked question; the switcher commits with `dequeueInput` +
+ *  resolve ONLY on answer, so a defer/back-out leaves the FIFO and the needs-input
+ *  clock intact (no notify — a read never mutates state). */
+export function peekInput(runId: string, index: number): PendingInput | undefined {
+	return state().lanes.get(runId)?.units.get(index)?.pendingInput[0];
 }
 
 /** Wire a run's abort handle so the manager can cancel it without the

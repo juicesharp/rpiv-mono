@@ -18,6 +18,7 @@ import {
 	moveDockSelection,
 	noteVisitedStage,
 	type PendingInput,
+	peekInput,
 	recordRun,
 	retireRun,
 	SINGLE_UNIT_KEY,
@@ -125,6 +126,41 @@ describe("run-lane-registry", () => {
 			const lane = getLane("run-1");
 			expect(lane?.workflow).toBe("ship");
 			expect(lane?.input).toBe("refactor auth");
+		});
+
+		it("REACTIVATION settles a queued pendingInput with undefined (never strands the child)", () => {
+			// Regression: a lane with a queued pending input reactivates via recordRun,
+			// and the queued resolver MUST be settled before the units map is cleared,
+			// else the child hangs on a dangling resolver across resume. FAILS without the fix.
+			recordRun("run-1", "ship");
+			const pending = makePending();
+			enqueueInput("run-1", SINGLE_UNIT_KEY, pending);
+			expect(unitNeedsInput("run-1", SINGLE_UNIT_KEY)).toBe(true);
+
+			recordRun("run-1", "ship"); // reactivate — resume reuses the run id
+
+			expect(pending.resolve).toHaveBeenCalledTimes(1);
+			expect(pending.resolve).toHaveBeenCalledWith(undefined);
+			// The holding unit is gone after reactivation (units cleared, not rebuilt lazily here).
+			expect(getUnit("run-1", SINGLE_UNIT_KEY)).toBeUndefined();
+		});
+
+		it("the safe path — retireRun settles the queued input, then recordRun reactivation strands nothing", () => {
+			// Guard: pins the terminal-settles-first invariant. In normal operation
+			// retireRun always settles before reactivation, so recordRun finds an empty
+			// queue and the resolver is never double-resolved. Passes both before and
+			// after the defensive fix (documents the real safe path).
+			recordRun("run-1", "ship");
+			const pending = makePending();
+			enqueueInput("run-1", SINGLE_UNIT_KEY, pending);
+			retireRun("run-1", "aborted"); // settles the queued resolver first (queue drained)
+			expect(pending.resolve).toHaveBeenCalledTimes(1);
+
+			recordRun("run-1", "ship"); // reactivate — nothing left to strand
+
+			// Still settled exactly once — no double-resolve from the reactivation loop.
+			expect(pending.resolve).toHaveBeenCalledTimes(1);
+			expect(getUnit("run-1", SINGLE_UNIT_KEY)).toBeUndefined();
 		});
 	});
 
@@ -705,6 +741,34 @@ describe("run-lane-registry", () => {
 			recordRun("run-1", "ship");
 			expect(dequeueInput("run-1", SINGLE_UNIT_KEY)).toBeUndefined();
 			expect(dequeueInput("nope", SINGLE_UNIT_KEY)).toBeUndefined();
+		});
+
+		it("peekInput returns the head without removing it or clearing needs-input", () => {
+			recordRun("run-1", "ship");
+			const a = makePending();
+			const b = makePending();
+			enqueueInput("run-1", SINGLE_UNIT_KEY, a);
+			enqueueInput("run-1", SINGLE_UNIT_KEY, b);
+			expect(peekInput("run-1", SINGLE_UNIT_KEY)).toBe(a); // head
+			expect(peekInput("run-1", SINGLE_UNIT_KEY)).toBe(a); // idempotent — not consumed
+			expect(unitNeedsInput("run-1", SINGLE_UNIT_KEY)).toBe(true); // still queued
+			expect(dequeueInput("run-1", SINGLE_UNIT_KEY)).toBe(a); // dequeue still yields a
+			expect(peekInput("run-1", SINGLE_UNIT_KEY)).toBe(b); // head is now b
+		});
+
+		it("peekInput returns undefined when empty / missing run (no throw)", () => {
+			recordRun("run-1", "ship");
+			expect(peekInput("run-1", SINGLE_UNIT_KEY)).toBeUndefined();
+			expect(peekInput("nope", SINGLE_UNIT_KEY)).toBeUndefined();
+		});
+
+		it("peekInput does not notify (a read never triggers a redraw)", () => {
+			recordRun("run-1", "ship");
+			enqueueInput("run-1", SINGLE_UNIT_KEY, makePending());
+			const listener = vi.fn();
+			subscribeLanes(listener);
+			peekInput("run-1", SINGLE_UNIT_KEY);
+			expect(listener).not.toHaveBeenCalled();
 		});
 	});
 

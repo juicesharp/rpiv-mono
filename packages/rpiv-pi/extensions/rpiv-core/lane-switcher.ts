@@ -7,18 +7,18 @@
  * the input editor that proxies arrow/enter/tab/x keys into the dock's navigation
  * (widgets can't take focus; the editor is the only component reliably reached at
  * the idle prompt). `/lanes` and the `^Q` hotkey simply step INTO the dock. When the
- * user opens a run (⏎), switchIntoLane opens the read-only viewer, then drains any
- * queued foreground-stage questions onto the real UI (context first, then answer).
+ * user opens a run (→ or ⏎), switchIntoLane opens the UNIFIED console on the real UI —
+ * the lane's transcript read-only, with any queued question mounted inline; the console
+ * itself commits/advances the unit's question queue.
  */
 
 import type { ExtensionAPI, ExtensionUIContext, KeybindingsManager } from "@earendil-works/pi-coding-agent";
 import type { EditorTheme, KeyId, TUI } from "@earendil-works/pi-tui";
+import { showLaneConsole } from "./lane-console.js";
 import { LaneDock } from "./lane-dock.js";
 import { LaneDockEditor } from "./lane-dock-editor.js";
 import { isLaneRelayUiContext } from "./lane-relay-ui.js";
-import { showLaneViewer } from "./lane-viewer.js";
 import {
-	dequeueInput,
 	getFocusedRun,
 	laneCount,
 	laneNeedsInput,
@@ -57,8 +57,8 @@ let unsubscribe: (() => void) | undefined;
 /** The launcher UI that owns the dock editor — kept so __resetLaneSwitcher can
  *  restore Pi's default editor. Set once per ctx identity at session_start. */
 let editorCtx: ExtensionUIContext | undefined;
-/** Guard so a second ⏎ never stacks a second viewer (re-entrancy belt-and-braces;
- *  while a viewer is open the editor isn't focused, so this rarely trips). */
+/** Guard so a second ⏎ never stacks a second console (re-entrancy belt-and-braces;
+ *  while a console is open the editor isn't focused, so this rarely trips). */
 let switchingLane = false;
 
 /** Step INTO the dock at the top row — the shared body of `/lanes` and the hotkey. */
@@ -69,8 +69,8 @@ function enterDock(): void {
 }
 
 /**
- * Re-park dock focus after leaving a lane — the shared tail of switchIntoLane's "back"
- * and answerLane. Reads ONLY registry state, so it is throw-safe inside a finally. The
+ * Re-park dock focus after leaving a lane — the tail of switchIntoLane's "back" path.
+ * Reads ONLY registry state, so it is throw-safe inside a finally. The
  * tri-state (the focus-after-verb fix from 8c4a2f4):
  *  - no lanes left → drop to the ambient root prompt;
  *  - some lane still needs input → park row 0 so a run of ⏎ presses walks the queue
@@ -98,63 +98,24 @@ function reparkAfterLane(runId: string, unitIndex: number): void {
 }
 
 /**
- * Switch into a run's UNIT: open the read-only viewer for `(runId, unitIndex)`, then
- * drain THAT unit's queued foreground questions — sequentially, so overlays never stack.
- * Marks the lane focused for the whole switched-in session so THIS run's abort tap (and
- * only it) interprets Ctrl-C; cleared in finally so a viewer/drain throw can't strand
- * focus (which would leave Ctrl-C hijacked at root). Called by the dock editor's `onOpen`
- * on → / ⏎.
+ * Switch into a run's UNIT — ALWAYS the UNIFIED console, whether or not a question is
+ * queued. The console renders the lane's transcript read-only and mounts any queued
+ * question inline (and mounts one that ARRIVES mid-browse, no overlay swap), committing
+ * and advancing the unit's question queue itself. Marks the lane focused for the whole
+ * switched-in session so THIS run's abort tap (and only it) interprets Ctrl-C; cleared in
+ * finally so a console throw can't strand focus (which would leave Ctrl-C hijacked at
+ * root). Called by the dock editor's `onOpen` on → / ⏎.
  */
 export async function switchIntoLane(ui: ExtensionUIContext, runId: string, unitIndex: number): Promise<void> {
-	if (switchingLane) return; // never stack two viewers
+	if (switchingLane) return; // never stack two overlays
 	switchingLane = true;
 	setFocusedRun(runId);
 	try {
-		const intent = await showLaneViewer(ui, runId, unitIndex); // 1) see live context; esc/← → "back"
-		if (intent === "answer") await drainPendingInput(ui, runId, unitIndex); // 2) ⏎ in the viewer → answer
+		await showLaneConsole(ui, runId, unitIndex); // transcript + (any queued) question in ONE overlay
 	} finally {
 		setFocusedRun(undefined);
 		switchingLane = false;
 		reparkAfterLane(runId, unitIndex); // → and ⏎ converge: land back on the originating row, not at root
-	}
-}
-
-/**
- * Answer a needs-input lane WITHOUT opening the transcript viewer (the ⏎ shortcut
- * on a flagged lane): drain its queued foreground questions straight onto the real
- * UI. Shares `switchingLane` so it never stacks with a viewer/another drain. After
- * answering it STAYS stepped into the dock — the user came from the dock and expects
- * to land back on the lane, not the primary prompt. When other lanes still await
- * input they sort to the top, so it parks on row 0 and a run of ⏎ presses walks
- * through them; otherwise it keeps the cursor on the lane just answered. It only
- * drops back to root when no lane remains to step onto.
- */
-export async function answerLane(ui: ExtensionUIContext, runId: string, unitIndex: number): Promise<void> {
-	if (switchingLane) return; // never stack onto a viewer/another drain
-	switchingLane = true;
-	setFocusedRun(runId);
-	try {
-		await drainPendingInput(ui, runId, unitIndex);
-	} finally {
-		setFocusedRun(undefined);
-		switchingLane = false;
-		reparkAfterLane(runId, unitIndex); // same re-park as switchIntoLane's "back" path
-	}
-}
-
-/**
- * Replay each of THIS unit's queued foreground-stage questionnaires on the
- * launcher's REAL UI and resolve the child's stalled promise. Sequential
- * (block-while-occupied); a dismissed/error questionnaire still settles the child so it
- * never hangs.
- */
-async function drainPendingInput(ui: ExtensionUIContext, runId: string, unitIndex: number): Promise<void> {
-	for (let pending = dequeueInput(runId, unitIndex); pending; pending = dequeueInput(runId, unitIndex)) {
-		try {
-			pending.resolve(await ui.custom(pending.factory, pending.options));
-		} catch {
-			pending.resolve(undefined);
-		}
 	}
 }
 
@@ -185,8 +146,7 @@ export function registerLaneSwitcher(pi: ExtensionAPI): void {
 						tui,
 						theme,
 						keybindings,
-						(runId, unitIndex, mode) =>
-							void (mode === "answer" ? answerLane(ui, runId, unitIndex) : switchIntoLane(ui, runId, unitIndex)),
+						(runId, unitIndex) => void switchIntoLane(ui, runId, unitIndex),
 					),
 			);
 		}
@@ -207,7 +167,7 @@ export function registerLaneSwitcher(pi: ExtensionAPI): void {
 	// Root hotkey — the keybinding-API equivalent of /lanes. Fires at the editor prompt
 	// via Pi's shortcut dispatch (NOT a raw onTerminalInput tap, which doesn't reliably
 	// reach the idle editor). Gated like /lanes: only with a UI, only at root (not
-	// switched into a lane — the viewer owns input there), only when a lane is in-flight.
+	// switched into a lane — the console owns input there), only when a lane is in-flight.
 	// Skipped entirely when the binding is disabled (RPIV_LANES_HOTKEY=off) — /lanes
 	// still works. The DOWN-from-empty-prompt gesture (LaneDockEditor) is a
 	// third, always-available way in.

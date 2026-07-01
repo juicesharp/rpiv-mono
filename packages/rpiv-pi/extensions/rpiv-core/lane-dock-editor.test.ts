@@ -154,14 +154,14 @@ describe("LaneDockEditor — dedicated answer/transcript dispatch", () => {
 
 	function makeSpyEditor(): {
 		editor: LaneDockEditor;
-		calls: Array<{ runId: string; unitIndex: number; mode: string }>;
+		calls: Array<{ runId: string; unitIndex: number }>;
 	} {
 		const tui = { terminal: { rows: 40 }, requestRender: () => {} } as unknown as TUI;
 		const theme = { borderColor: (s: string) => s, selectList: {} } as unknown as EditorTheme;
 		const keybindings = { matches: () => false } as unknown as KeybindingsManager;
-		const calls: Array<{ runId: string; unitIndex: number; mode: string }> = [];
-		const editor = new LaneDockEditor(tui, theme, keybindings, (runId, unitIndex, mode) =>
-			calls.push({ runId, unitIndex, mode }),
+		const calls: Array<{ runId: string; unitIndex: number }> = [];
+		const editor = new LaneDockEditor(tui, theme, keybindings, (runId, unitIndex) =>
+			calls.push({ runId, unitIndex }),
 		);
 		return { editor, calls };
 	}
@@ -184,7 +184,7 @@ describe("LaneDockEditor — dedicated answer/transcript dispatch", () => {
 		setDockSelection(0);
 		const { editor, calls } = makeSpyEditor();
 		editor.handleInput(ENTER);
-		expect(calls).toEqual([{ runId: "run-1", unitIndex: SINGLE_UNIT_KEY, mode: "answer" }]);
+		expect(calls).toEqual([{ runId: "run-1", unitIndex: SINGLE_UNIT_KEY }]);
 	});
 
 	it("ENTER is inert on a lane with nothing queued — stays stepped in, opens nothing", () => {
@@ -203,7 +203,7 @@ describe("LaneDockEditor — dedicated answer/transcript dispatch", () => {
 		setDockSelection(0);
 		const { editor, calls } = makeSpyEditor();
 		editor.handleInput(RIGHT);
-		expect(calls).toEqual([{ runId: "run-1", unitIndex: SINGLE_UNIT_KEY, mode: "view" }]);
+		expect(calls).toEqual([{ runId: "run-1", unitIndex: SINGLE_UNIT_KEY }]);
 	});
 });
 
@@ -215,7 +215,7 @@ describe("LaneDockEditor — force-clear on genuine submit", () => {
 	 *  (including the `force` arg), which makeSpyEditor stubs as a no-op. */
 	function makeRenderSpyEditor(): {
 		editor: LaneDockEditor;
-		calls: Array<{ runId: string; unitIndex: number; mode: string }>;
+		calls: Array<{ runId: string; unitIndex: number }>;
 		renders: Array<{ force: boolean | undefined }>;
 	} {
 		const renders: Array<{ force: boolean | undefined }> = [];
@@ -225,9 +225,9 @@ describe("LaneDockEditor — force-clear on genuine submit", () => {
 		} as unknown as TUI;
 		const theme = { borderColor: (s: string) => s, selectList: {} } as unknown as EditorTheme;
 		const keybindings = { matches: () => false } as unknown as KeybindingsManager;
-		const calls: Array<{ runId: string; unitIndex: number; mode: string }> = [];
-		const editor = new LaneDockEditor(tui, theme, keybindings, (runId, unitIndex, mode) =>
-			calls.push({ runId, unitIndex, mode }),
+		const calls: Array<{ runId: string; unitIndex: number }> = [];
+		const editor = new LaneDockEditor(tui, theme, keybindings, (runId, unitIndex) =>
+			calls.push({ runId, unitIndex }),
 		);
 		return { editor, calls, renders };
 	}

@@ -157,7 +157,7 @@ export class LaneDockEditor extends CustomEditor {
 		tui: TUI,
 		theme: EditorTheme,
 		keybindings: KeybindingsManager,
-		private readonly onOpen: (runId: string, unitIndex: number, mode: "view" | "answer") => void,
+		private readonly onOpen: (runId: string, unitIndex: number) => void,
 	) {
 		super(tui, theme, keybindings);
 	}
@@ -204,7 +204,7 @@ export class LaneDockEditor extends CustomEditor {
 				// A unit sub-row opens THAT unit's transcript; a lane row opens the sentinel.
 				const t = resolveRow(listLanesForDisplay()[getDockState().selection]);
 				setDockActive(false);
-				if (t) this.onOpen(t.runId, t.unitIndex, "view");
+				if (t) this.onOpen(t.runId, t.unitIndex);
 				return;
 			}
 			case "answer": {
@@ -214,7 +214,7 @@ export class LaneDockEditor extends CustomEditor {
 				const t = resolveRow(listLanesForDisplay()[getDockState().selection]);
 				if (t && unitNeedsInput(t.runId, t.unitIndex)) {
 					setDockActive(false);
-					this.onOpen(t.runId, t.unitIndex, "answer");
+					this.onOpen(t.runId, t.unitIndex);
 				}
 				return;
 			}

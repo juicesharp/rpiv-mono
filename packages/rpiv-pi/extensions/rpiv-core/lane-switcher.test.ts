@@ -1,9 +1,9 @@
 import type { ExtensionAPI, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import { createMockPi, createMockUI } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { showLaneConsole } from "./lane-console.js";
 import { createLaneRelayUiContext } from "./lane-relay-ui.js";
-import { __resetLaneSwitcher, answerLane, registerLaneSwitcher, switchIntoLane } from "./lane-switcher.js";
-import { showLaneViewer } from "./lane-viewer.js";
+import { __resetLaneSwitcher, registerLaneSwitcher, switchIntoLane } from "./lane-switcher.js";
 import {
 	__resetRunLaneRegistry,
 	enqueueInput,
@@ -18,9 +18,10 @@ import {
 	subscribeLanes,
 } from "./run-lane-registry.js";
 
-// Mock the viewer so we can assert the switch flow without driving the real
-// ctx.ui.custom overlay machinery.
-vi.mock("./lane-viewer.js", () => ({ showLaneViewer: vi.fn() }));
+// Mock the console so we can assert the switch flow without driving the real
+// ctx.ui.custom overlay machinery. The read-only viewer is gone — the unified
+// console is now the sole transcript surface, so mocking it covers the full switch path.
+vi.mock("./lane-console.js", () => ({ showLaneConsole: vi.fn() }));
 // Keep the registry REAL (the dock + switcher both depend on its live behavior) but
 // wrap subscribeLanes so we can count subscriptions and capture the returned unsub.
 vi.mock("./run-lane-registry.js", async (importActual) => {
@@ -31,7 +32,7 @@ vi.mock("./run-lane-registry.js", async (importActual) => {
 	};
 });
 
-const mockShowLaneViewer = vi.mocked(showLaneViewer);
+const mockShowLaneConsole = vi.mocked(showLaneConsole);
 const mockSubscribeLanes = vi.mocked(subscribeLanes);
 
 type LanesCtx = { hasUI: boolean; ui: ExtensionUIContext };
@@ -134,29 +135,29 @@ describe("lane-switcher — Ctrl-Q shortcut", () => {
 });
 
 describe("lane-switcher — switchIntoLane sequencing", () => {
-	it("opens the viewer for the run on the launcher UI identity", async () => {
+	it("opens the console for the run on the launcher UI identity (no pending arg)", async () => {
 		recordRun("run-1", "ship");
-		mockShowLaneViewer.mockResolvedValue("back");
+		mockShowLaneConsole.mockResolvedValue(undefined);
 		const ui = createMockUI() as unknown as ExtensionUIContext;
 		await switchIntoLane(ui, "run-1", SINGLE_UNIT_KEY);
-		expect(mockShowLaneViewer).toHaveBeenCalledTimes(1);
-		expect(mockShowLaneViewer).toHaveBeenCalledWith(ui, "run-1", SINGLE_UNIT_KEY);
+		expect(mockShowLaneConsole).toHaveBeenCalledTimes(1);
+		expect(mockShowLaneConsole).toHaveBeenCalledWith(ui, "run-1", SINGLE_UNIT_KEY); // console owns peek/commit now
 	});
 
-	it("does not stack a second viewer while one is already open", async () => {
+	it("does not stack a second console while one is already open", async () => {
 		recordRun("run-1", "ship");
-		mockShowLaneViewer.mockReturnValue(new Promise<"answer" | "back">(() => {})); // never resolves
+		mockShowLaneConsole.mockReturnValue(new Promise<void>(() => {})); // never resolves
 		const ui = createMockUI() as unknown as ExtensionUIContext;
 		void switchIntoLane(ui, "run-1", SINGLE_UNIT_KEY);
 		await Promise.resolve();
-		void switchIntoLane(ui, "run-1", SINGLE_UNIT_KEY); // second call while viewer open → guarded
+		void switchIntoLane(ui, "run-1", SINGLE_UNIT_KEY); // second call while console open → guarded
 		await Promise.resolve();
-		expect(mockShowLaneViewer).toHaveBeenCalledTimes(1);
+		expect(mockShowLaneConsole).toHaveBeenCalledTimes(1);
 	});
 
-	it("re-parks on the originating lane (not root) when the user backs out of the viewer", async () => {
+	it("re-parks on the originating lane (not root) when the user backs out of the console", async () => {
 		recordRun("run-1", "ship");
-		mockShowLaneViewer.mockResolvedValue("back"); // esc/← → back: no drain, re-park
+		mockShowLaneConsole.mockResolvedValue(undefined); // esc/← → back: re-park
 		setDockActive(true);
 		const ui = createMockUI() as unknown as ExtensionUIContext;
 		await switchIntoLane(ui, "run-1", SINGLE_UNIT_KEY);
@@ -170,131 +171,13 @@ describe("lane-switcher — switchIntoLane sequencing", () => {
 		// Two fan-out unit sub-rows under the lane → flattened rows are [lane, unit0, unit1].
 		setUnitStarted("run-1", 0, "phase 1/2");
 		setUnitStarted("run-1", 1, "phase 2/2");
-		mockShowLaneViewer.mockResolvedValue("back"); // esc/← → back: re-park onto the opened row
+		mockShowLaneConsole.mockResolvedValue(undefined); // esc/← → back: re-park onto the opened row
 		setDockActive(true);
 		const ui = createMockUI() as unknown as ExtensionUIContext;
 		await switchIntoLane(ui, "run-1", 1); // open unit index 1 → its sub-row is the last row
 		// No lane needs input → land back on THAT unit's sub-row (row 2), not the lane row.
 		expect(getDockState()).toEqual({ active: true, selection: 2 });
 		expect(getFocusedRun()).toBeUndefined();
-	});
-
-	it("drops to the root prompt when the lane is evicted before the viewer closes", async () => {
-		recordRun("run-1", "ship");
-		// The run finishes + is dismissed while the viewer is open → nothing left to step onto.
-		mockShowLaneViewer.mockImplementation(async () => {
-			evictRun("run-1");
-			return "back";
-		});
-		setDockActive(true);
-		const ui = createMockUI() as unknown as ExtensionUIContext;
-		await switchIntoLane(ui, "run-1", SINGLE_UNIT_KEY);
-		expect(getDockState().active).toBe(false);
-	});
-
-	it("drains the queued questions only when the viewer reports the 'answer' intent", async () => {
-		recordRun("run-1", "ship");
-		const resolve = vi.fn();
-		enqueueInput("run-1", SINGLE_UNIT_KEY, { factory: (() => ({})) as never, options: undefined as never, resolve });
-		const custom = vi.fn().mockResolvedValue("ans");
-		const ui = createMockUI({ custom }) as unknown as ExtensionUIContext;
-		mockShowLaneViewer.mockResolvedValue("back"); // backed out without answering
-		await switchIntoLane(ui, "run-1", SINGLE_UNIT_KEY);
-		expect(custom).not.toHaveBeenCalled(); // "back" never drains
-		expect(resolve).not.toHaveBeenCalled(); // the queued question survives for next time
-	});
-});
-
-describe("lane-switcher — focus lifecycle", () => {
-	it("sets focus while switched in and clears it in finally (even if the viewer throws)", async () => {
-		recordRun("run-1", "ship");
-		let focusDuringViewer: string | undefined;
-		mockShowLaneViewer.mockImplementation(async () => {
-			focusDuringViewer = getFocusedRun();
-			throw new Error("viewer boom");
-		});
-		const ui = createMockUI() as unknown as ExtensionUIContext;
-		await expect(switchIntoLane(ui, "run-1", SINGLE_UNIT_KEY)).rejects.toThrow("viewer boom");
-		expect(focusDuringViewer).toBe("run-1"); // focused while the viewer was open
-		expect(getFocusedRun()).toBeUndefined(); // cleared in finally despite the throw
-	});
-
-	it("clears focus after a normal switch completes", async () => {
-		recordRun("run-1", "ship");
-		mockShowLaneViewer.mockResolvedValue("back");
-		const ui = createMockUI() as unknown as ExtensionUIContext;
-		await switchIntoLane(ui, "run-1", SINGLE_UNIT_KEY);
-		expect(getFocusedRun()).toBeUndefined();
-	});
-});
-
-describe("lane-switcher — drainPendingInput", () => {
-	it("replays each queued questionnaire on the real UI in FIFO order and resolves each child", async () => {
-		recordRun("run-1", "ship");
-		const factoryA = (() => ({})) as never;
-		const factoryB = (() => ({})) as never;
-		const resolveA = vi.fn();
-		const resolveB = vi.fn();
-		enqueueInput("run-1", SINGLE_UNIT_KEY, { factory: factoryA, options: "optsA" as never, resolve: resolveA });
-		enqueueInput("run-1", SINGLE_UNIT_KEY, { factory: factoryB, options: "optsB" as never, resolve: resolveB });
-
-		const custom = vi.fn().mockResolvedValueOnce("ans-A").mockResolvedValueOnce("ans-B");
-		const ui = createMockUI({ custom }) as unknown as ExtensionUIContext;
-		mockShowLaneViewer.mockResolvedValue("answer");
-
-		await switchIntoLane(ui, "run-1", SINGLE_UNIT_KEY);
-
-		expect(custom).toHaveBeenNthCalledWith(1, factoryA, "optsA");
-		expect(custom).toHaveBeenNthCalledWith(2, factoryB, "optsB");
-		expect(resolveA).toHaveBeenCalledWith("ans-A");
-		expect(resolveB).toHaveBeenCalledWith("ans-B");
-	});
-
-	it("settles the child with undefined when the replayed questionnaire throws / is dismissed", async () => {
-		recordRun("run-1", "ship");
-		const resolve = vi.fn();
-		enqueueInput("run-1", SINGLE_UNIT_KEY, { factory: (() => ({})) as never, options: undefined as never, resolve });
-
-		const custom = vi.fn().mockRejectedValue(new Error("dismissed"));
-		const ui = createMockUI({ custom }) as unknown as ExtensionUIContext;
-		mockShowLaneViewer.mockResolvedValue("answer");
-
-		await switchIntoLane(ui, "run-1", SINGLE_UNIT_KEY);
-		expect(resolve).toHaveBeenCalledWith(undefined); // never strands the child
-	});
-});
-
-describe("lane-switcher — answerLane (direct answer, no viewer)", () => {
-	it("drains queued questionnaires on the real UI WITHOUT opening the viewer", async () => {
-		recordRun("run-1", "ship");
-		const factoryA = (() => ({})) as never;
-		const factoryB = (() => ({})) as never;
-		const resolveA = vi.fn();
-		const resolveB = vi.fn();
-		enqueueInput("run-1", SINGLE_UNIT_KEY, { factory: factoryA, options: "optsA" as never, resolve: resolveA });
-		enqueueInput("run-1", SINGLE_UNIT_KEY, { factory: factoryB, options: "optsB" as never, resolve: resolveB });
-
-		const custom = vi.fn().mockResolvedValueOnce("ans-A").mockResolvedValueOnce("ans-B");
-		const ui = createMockUI({ custom }) as unknown as ExtensionUIContext;
-
-		await answerLane(ui, "run-1", SINGLE_UNIT_KEY);
-
-		expect(mockShowLaneViewer).not.toHaveBeenCalled(); // never opens the transcript
-		expect(custom).toHaveBeenNthCalledWith(1, factoryA, "optsA");
-		expect(custom).toHaveBeenNthCalledWith(2, factoryB, "optsB");
-		expect(resolveA).toHaveBeenCalledWith("ans-A");
-		expect(resolveB).toHaveBeenCalledWith("ans-B");
-	});
-
-	it("settles the child with undefined when the replayed questionnaire throws", async () => {
-		recordRun("run-1", "ship");
-		const resolve = vi.fn();
-		enqueueInput("run-1", SINGLE_UNIT_KEY, { factory: (() => ({})) as never, options: undefined as never, resolve });
-		const custom = vi.fn().mockRejectedValue(new Error("dismissed"));
-		const ui = createMockUI({ custom }) as unknown as ExtensionUIContext;
-
-		await answerLane(ui, "run-1", SINGLE_UNIT_KEY);
-		expect(resolve).toHaveBeenCalledWith(undefined);
 	});
 
 	it("stays stepped in when another lane still needs input", async () => {
@@ -310,55 +193,45 @@ describe("lane-switcher — answerLane (direct answer, no viewer)", () => {
 			options: undefined as never,
 			resolve: vi.fn(),
 		});
-		const custom = vi.fn().mockResolvedValue(undefined);
-		const ui = createMockUI({ custom }) as unknown as ExtensionUIContext;
-
-		await answerLane(ui, "run-1", SINGLE_UNIT_KEY);
-
+		mockShowLaneConsole.mockResolvedValue(undefined);
+		const ui = createMockUI() as unknown as ExtensionUIContext;
+		await switchIntoLane(ui, "run-1", SINGLE_UNIT_KEY);
 		expect(getDockState()).toEqual({ active: true, selection: 0 }); // re-enters for run-2
 		expect(getFocusedRun()).toBeUndefined();
 	});
 
-	it("stays stepped in on the answered lane when no other lane needs input", async () => {
+	it("drops to the root prompt when the lane is evicted before the console closes", async () => {
 		recordRun("run-1", "ship");
-		recordRun("run-2", "build");
-		enqueueInput("run-1", SINGLE_UNIT_KEY, {
-			factory: (() => ({})) as never,
-			options: undefined as never,
-			resolve: vi.fn(),
+		// The run finishes + is dismissed while the console is open → nothing left to step onto.
+		mockShowLaneConsole.mockImplementation(async () => {
+			evictRun("run-1");
 		});
 		setDockActive(true);
-		const custom = vi.fn().mockResolvedValue(undefined);
-		const ui = createMockUI({ custom }) as unknown as ExtensionUIContext;
+		const ui = createMockUI() as unknown as ExtensionUIContext;
+		await switchIntoLane(ui, "run-1", SINGLE_UNIT_KEY);
+		expect(getDockState().active).toBe(false);
+	});
+});
 
-		await answerLane(ui, "run-1", SINGLE_UNIT_KEY);
-
-		// Focus returns to the lane (the dock), not the primary session input. With no
-		// needs-input lanes left, both run as "running" in insertion order, so the
-		// just-answered run-1 sits at row 0.
-		expect(getDockState()).toEqual({ active: true, selection: 0 });
-		expect(getFocusedRun()).toBeUndefined();
+describe("lane-switcher — focus lifecycle", () => {
+	it("sets focus while switched in and clears it in finally (even if the console throws)", async () => {
+		recordRun("run-1", "ship");
+		let focusDuringConsole: string | undefined;
+		mockShowLaneConsole.mockImplementation(async () => {
+			focusDuringConsole = getFocusedRun();
+			throw new Error("console boom");
+		});
+		const ui = createMockUI() as unknown as ExtensionUIContext;
+		await expect(switchIntoLane(ui, "run-1", SINGLE_UNIT_KEY)).rejects.toThrow("console boom");
+		expect(focusDuringConsole).toBe("run-1"); // focused while the console was open
+		expect(getFocusedRun()).toBeUndefined(); // cleared in finally despite the throw
 	});
 
-	it("drops back to the root prompt only when no lane remains after answering", async () => {
+	it("clears focus after a normal switch completes", async () => {
 		recordRun("run-1", "ship");
-		enqueueInput("run-1", SINGLE_UNIT_KEY, {
-			factory: (() => ({})) as never,
-			options: undefined as never,
-			resolve: vi.fn(),
-		});
-		setDockActive(true);
-		// The lane evicts itself while its question is being answered (run finished),
-		// leaving nothing to step onto.
-		const custom = vi.fn().mockImplementation(async () => {
-			evictRun("run-1");
-			return undefined;
-		});
-		const ui = createMockUI({ custom }) as unknown as ExtensionUIContext;
-
-		await answerLane(ui, "run-1", SINGLE_UNIT_KEY);
-
-		expect(getDockState().active).toBe(false);
+		mockShowLaneConsole.mockResolvedValue(undefined);
+		const ui = createMockUI() as unknown as ExtensionUIContext;
+		await switchIntoLane(ui, "run-1", SINGLE_UNIT_KEY);
 		expect(getFocusedRun()).toBeUndefined();
 	});
 });
