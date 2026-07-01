@@ -7,19 +7,17 @@ import askUserQuestionExtension from "@juicesharp/rpiv-ask-user-question";
 import { createMockPi, makeAssistantMessage, makeUserMessage } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { cappedTui, LaneConsole, showLaneConsole } from "./lane-console.js";
+import { renderLaneList } from "./lane-list.js";
 import type { ViewerMessage } from "./lane-transcript.js";
-import type { LaneUsage } from "./lane-usage.js";
 import {
 	__resetRunLaneRegistry,
 	enqueueInput,
 	getUnit,
 	type LaneSession,
-	markUnitDone,
 	peekInput,
 	recordRun,
 	retireRun,
 	SINGLE_UNIT_KEY,
-	seedPendingUnits,
 	setCurrentSession,
 	setLaneSessionFile,
 	setUnitStarted,
@@ -167,27 +165,46 @@ describe("cappedTui", () => {
 	});
 });
 
-describe("LaneConsole — read-only mode", () => {
-	it("renders the transcript + a '←/esc back' footer when no question is queued", () => {
+describe("LaneConsole — live output + bottom-pinned lane block", () => {
+	it("renders a '── live output ──' top border, the transcript, and the shared lane block", () => {
 		liveUnit();
 		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn());
 		const out = panel.render(80);
-		expect(out.join("\n")).toContain("ctx line"); // transcript band
-		expect(out[out.length - 1]).toContain("←/esc back"); // read-only footer advertises BOTH back-out keys
-		expect(out.some((l) => l.includes("─"))).toBe(false); // no divider (read-only)
+		expect(out[0]).toContain("live output"); // the labelled top border of the live-output region
+		expect(out.join("\n")).toContain("ctx line"); // transcript, unfurling below the border
+		expect(out.join("\n")).toContain("ship"); // the SHARED lane row (workflow: tag) at the bottom
+		expect(out.some((l) => l.includes("❯"))).toBe(true); // the selection cursor on the lane block
+		// The footer is the SECOND-to-last line (the lane block's bottom rule is last, matching the dock).
+		expect(out[out.length - 2]).toContain("↑/↓ lanes");
+		expect(out[out.length - 2]).toContain("←/esc back");
 		panel.dispose();
 	});
 
-	it("↑ raises scrollOffset (reveal older), ↓ lowers it clamped ≥ 0", () => {
+	it("the bottom lane row is byte-for-byte the ambient dock row plus the ❯ cursor (static lanes)", () => {
+		liveUnit(() => [assistantEntry("ctx line")]);
+		// The ambient dock row (active=false) and the console's selected row differ ONLY by the gutter.
+		const ambientRow = renderLaneList(identityTheme, 80, { active: false, selection: 0, frame: 0, laneCap: 11 }).find(
+			(l) => l.includes("ship"),
+		);
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn());
+		const consoleRow = panel.render(80).find((l) => l.includes("ship"));
+		expect(ambientRow).toBeDefined();
+		expect(consoleRow).toBeDefined();
+		// Same content, differing only in the 2-col gutter (`  ` ambient vs `❯ ` selected).
+		expect(consoleRow?.replace(/^❯ /, "  ")).toBe(ambientRow);
+		panel.dispose();
+	});
+
+	it("PageUp reveals older transcript, PageDown clamps back to the tail (↑/↓ are lane nav)", () => {
 		const tui = makeTui(24);
 		liveUnit(() => Array.from({ length: 50 }, (_v, i) => assistantEntry(`line-${i}`)));
 		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, tui, identityTheme, {} as never, vi.fn());
 		const tail = panel.render(80).join("\n");
-		panel.handleInput("\x1b[A"); // up
+		panel.handleInput("\x1b[5~"); // PageUp → reveal older
 		expect(panel.render(80).join("\n")).not.toBe(tail);
 		expect(tui.requestRender).toHaveBeenCalled();
-		panel.handleInput("\x1b[B"); // down past zero stays clamped
-		panel.handleInput("\x1b[B");
+		panel.handleInput("\x1b[6~"); // PageDown past the tail stays clamped
+		panel.handleInput("\x1b[6~");
 		expect(() => panel.render(80)).not.toThrow();
 		panel.dispose();
 	});
@@ -231,223 +248,96 @@ describe("LaneConsole — read-only mode", () => {
 	});
 });
 
-describe("LaneConsole — header (migrated from the viewer)", () => {
-	it("a running lane header reads '▶ name — live'", () => {
-		liveUnit(() => [assistantEntry("hi")]);
-		const header = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn()).render(
-			120,
-		)[0];
-		expect(header).toContain("▶ ship — live");
-	});
-
-	it("a retired lane header reflects the terminal status + glyph", () => {
-		liveUnit(() => [assistantEntry("final answer")]);
-		retireRun("run-1", "completed");
-		const out = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn()).render(120);
-		expect(out[0]).toContain("completed");
-		expect(out[0]).toContain("✓");
-		expect(out.join("\n")).toContain("final answer"); // snapshot transcript still renders read-only
-	});
-
-	it("a retired failed lane header shows the failure reason in full", () => {
-		liveUnit(() => [assistantEntry("partial work")]);
-		retireRun("run-1", "failed", "blueprint produced no plan artifact — stopping workflow");
-		const header = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn()).render(
-			200,
-		)[0];
-		expect(header).toContain("failed: blueprint produced no plan artifact — stopping workflow");
-		expect(header).toContain("✗");
-	});
-
-	it("a fan-out unit header reflects ITS OWN label + live verb, not the run name", () => {
-		recordRun("run-1", "carve");
-		setUnitStarted("run-1", 0, "phase 1/3");
+describe("LaneConsole — browser navigation (spine)", () => {
+	/** A second live lane with distinct transcript text — recorded AFTER run-1. */
+	function secondLane(): void {
+		recordRun("run-2", "build");
+		setUnitStarted("run-2", SINGLE_UNIT_KEY, "unit");
 		setCurrentSession(
-			"run-1",
-			0,
-			makeSession(() => [assistantEntry("unit work")]),
+			"run-2",
+			SINGLE_UNIT_KEY,
+			makeSession(() => [assistantEntry("second lane body")]),
 		);
-		const header = new LaneConsole("run-1", 0, makeTui(), identityTheme, {} as never, vi.fn()).render(120)[0];
-		expect(header).toContain("phase 1/3");
-		expect(header).toContain("▶");
-		expect(header).toContain("live");
-		expect(header).not.toContain("carve");
-	});
-
-	it("a finished fan-out unit header shows the unit glyph + status", () => {
-		recordRun("run-1", "carve");
-		setUnitStarted("run-1", 0, "phase 2/3");
-		setCurrentSession(
-			"run-1",
-			0,
-			makeSession(() => [assistantEntry("unit work")]),
-		);
-		markUnitDone("run-1", 0, "done");
-		const header = new LaneConsole("run-1", 0, makeTui(), identityTheme, {} as never, vi.fn()).render(120)[0];
-		expect(header).toContain("✓");
-		expect(header).toContain("phase 2/3 — done");
-	});
-
-	it("a switched-into pending unit header renders '○ <name> — pending' (never undefined)", () => {
-		recordRun("run-1", "ship");
-		seedPendingUnits("run-1", [{ index: 0, label: "phase 1/3" }]);
-		const out = new LaneConsole("run-1", 0, makeTui(), identityTheme, {} as never, vi.fn()).render(120);
-		expect(out[0]).toContain("○ phase 1/3 — pending");
-		expect(out[0]).not.toContain("undefined");
-	});
-});
-
-describe("LaneConsole — token detail header (migrated from the viewer)", () => {
-	/** Retire a fan-out unit at `idx` to terminal state, then inject `finalUsage` directly. */
-	function setupRetiredUnit(runId: string, idx: number, finalUsage: LaneUsage | undefined): LaneConsole {
-		recordRun(runId, "carve");
-		setUnitStarted(runId, idx, `phase ${idx + 1}/2`);
-		setCurrentSession(
-			runId,
-			idx,
-			makeSession(() => [assistantEntry("unit transcript")]),
-		);
-		markUnitDone(runId, idx, "done");
-		const unit = getUnit(runId, idx);
-		if (finalUsage !== undefined && unit) unit.finalUsage = finalUsage;
-		return new LaneConsole(runId, idx, makeTui(), identityTheme, {} as never, vi.fn());
 	}
 
-	it("renders the full ↑in ↓out R W CH% $cost segment set on a terminated unit's finalUsage", () => {
-		const header = setupRetiredUnit("run-full", 0, {
-			input: 1500,
-			output: 800,
-			cacheRead: 500,
-			cacheWrite: 200,
-			cost: 0.05,
-			percent: 45.2,
-			total: 3000,
-		}).render(200)[0];
-		expect(header).toContain("↑1.5k");
-		expect(header).toContain("↓800");
-		expect(header).toContain("R500");
-		expect(header).toContain("W200");
-		expect(header).toContain("CH45.2%");
-		expect(header).toContain("$0.050");
+	/** The lane row currently carrying the ❯ cursor (the selected one). */
+	const selectedRow = (out: string[]): string => out.find((l) => l.includes("❯")) ?? "";
+
+	it("↓ moves the selection and re-targets the transcript to the newly selected lane", () => {
+		liveUnit(() => [assistantEntry("first lane body")]);
+		secondLane();
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn());
+		const before = panel.render(80);
+		expect(before.join("\n")).toContain("first lane body"); // starts on run-1's transcript
+		expect(selectedRow(before)).toContain("ship"); // cursor on run-1's row
+		panel.handleInput("\x1b[B"); // ↓ → select run-2
+		const after = panel.render(80);
+		expect(after.join("\n")).toContain("second lane body"); // transcript re-targeted in place
+		expect(after.join("\n")).not.toContain("first lane body");
+		expect(selectedRow(after)).toContain("build"); // cursor moved to run-2's row
+		panel.dispose();
 	});
 
-	it("omits each token segment when zero (footer.js omit-when-zero)", () => {
-		const hA = setupRetiredUnit("run-omit-a", 0, {
-			input: 1500,
-			output: 300,
-			cacheRead: 200,
-			cacheWrite: 0,
-			cost: 0.01,
-			percent: 7.0,
-			total: 2000,
-		}).render(200)[0];
-		expect(hA).toContain("↑1.5k");
-		expect(hA).toContain("↓300");
-		expect(hA).toContain("R200");
-		expect(hA).not.toMatch(/W\d/); // cacheWrite omitted
-
-		const hZero = setupRetiredUnit("run-omit-zero", 0, {
-			input: 0,
-			output: 0,
-			cacheRead: 0,
-			cacheWrite: 0,
-			total: 0,
-		}).render(200)[0];
-		expect(hZero).toContain("phase 1/2 — done");
-		expect(hZero).not.toContain("↑");
-		expect(hZero).not.toContain("$");
+	it("↑ at the top and ↓ past the end clamp (never back out — that is esc/←)", () => {
+		liveUnit(() => [assistantEntry("first lane body")]);
+		secondLane();
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn());
+		panel.handleInput("\x1b[A"); // ↑ at row 0 stays put
+		expect(selectedRow(panel.render(80))).toContain("ship");
+		panel.handleInput("\x1b[B");
+		panel.handleInput("\x1b[B"); // ↓ past the last row clamps at run-2
+		expect(selectedRow(panel.render(80))).toContain("build");
+		panel.dispose();
 	});
 
-	it("renders CH% for a numeric percent and omits it for null/undefined", () => {
-		expect(
-			setupRetiredUnit("run-ch-num", 0, {
-				input: 10,
-				output: 0,
-				cacheRead: 0,
-				cacheWrite: 0,
-				percent: 7.0,
-				total: 10,
-			}).render(200)[0],
-		).toContain("CH7.0%");
-		expect(
-			setupRetiredUnit("run-ch-null", 0, {
-				input: 10,
-				output: 0,
-				cacheRead: 0,
-				cacheWrite: 0,
-				percent: null,
-				total: 10,
-			}).render(200)[0],
-		).not.toContain("CH%");
-		expect(
-			setupRetiredUnit("run-ch-absent", 0, { input: 10, output: 0, cacheRead: 0, cacheWrite: 0, total: 10 }).render(
-				200,
-			)[0],
-		).not.toContain("CH%");
+	it("x stops the selected running lane (retires it in place)", () => {
+		liveUnit();
+		secondLane();
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn());
+		panel.handleInput("x"); // stop the selected (run-1, running) → cooperative abort + retire
+		expect(panel.render(80).join("\n")).toContain("aborted"); // its spine row reflects the terminal status
+		panel.dispose();
 	});
 
-	it("renders $cost at toFixed(3) when nonzero, omits when zero/absent", () => {
-		expect(
-			setupRetiredUnit("run-cost", 0, {
-				input: 10,
-				output: 0,
-				cacheRead: 0,
-				cacheWrite: 0,
-				cost: 0.05,
-				total: 10,
-			}).render(200)[0],
-		).toContain("$0.050");
-		expect(
-			setupRetiredUnit("run-cost-zero", 0, {
-				input: 10,
-				output: 0,
-				cacheRead: 0,
-				cacheWrite: 0,
-				cost: 0,
-				total: 10,
-			}).render(200)[0],
-		).not.toContain("$");
+	it("disposes the previous lane's question when navigating to another lane", async () => {
+		liveUnit();
+		const innerA = makeInner();
+		enqueueQuestion(innerA.component); // run-1 needs input → sorts to the top (row 0)
+		secondLane(); // run-2 running, no question (row 1)
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn());
+		await Promise.resolve();
+		expect(panel.render(80).join("\n")).toContain("q0"); // run-1's question shown
+		panel.handleInput("\x1b[B"); // ↓ → run-2 (no question)
+		expect(innerA.dispose).toHaveBeenCalled(); // the previous question component is torn down
+		expect(panel.render(80).join("\n")).not.toContain("q0"); // no band on run-2
+		panel.dispose();
 	});
 
-	it("appends no detail when finalUsage is absent (retired unit with no capture)", () => {
-		const header = setupRetiredUnit("run-no-final", 0, undefined).render(200)[0];
-		expect(header).toContain("phase 1/2 — done");
-		expect(header).not.toContain("↑");
-		expect(header).not.toContain("$");
-	});
-
-	it("rightmost-clips the usage suffix under a narrow width (name survives, never throws)", () => {
-		const panel = setupRetiredUnit("run-clip", 0, {
-			input: 1500,
-			output: 800,
-			cacheRead: 500,
-			cacheWrite: 200,
-			cost: 0.05,
-			percent: 45.2,
-			total: 3000,
+	it("keeps a same-unit follow-up ARMED after answering (walks the queue without re-arming)", async () => {
+		liveUnit(() => [assistantEntry("ctx")]);
+		let submitA!: (r: unknown) => void;
+		enqueueInput("run-1", SINGLE_UNIT_KEY, {
+			factory: ((_t: never, _th: never, _k: never, d: (r: unknown) => void) => {
+				submitA = d;
+				return makeInner().component;
+			}) as never,
+			options: undefined as never,
+			resolve: vi.fn(),
 		});
-		expect(() => panel.render(30)).not.toThrow();
-		const header = panel.render(30)[0];
-		expect(header).toContain("phase 1/2"); // name survives (left-anchored)
-		expect(header).toContain("…"); // truncation kicked in
-		expect(header).not.toContain("$0.050"); // rightmost suffix clipped
-	});
-
-	it("renders the full detail LIVE off a running unit's getUsage() (no teardown)", () => {
-		const session = makeSession(() => [assistantEntry("unit transcript")]);
-		session.setUsage({
-			tokens: { input: 1500, output: 800, cacheRead: 500, cacheWrite: 200, total: 3000 },
-			cost: 0.05,
-			contextUsage: { percent: 45.2 },
+		enqueueInput("run-1", SINGLE_UNIT_KEY, {
+			factory: (() => makeInner().component) as never,
+			options: undefined as never,
+			resolve: vi.fn(),
 		});
-		recordRun("run-live", "carve");
-		setUnitStarted("run-live", 0, "phase 1/2");
-		setCurrentSession("run-live", 0, session);
-		const header = new LaneConsole("run-live", 0, makeTui(), identityTheme, {} as never, vi.fn()).render(200)[0];
-		expect(header).toContain("phase 1/2 — live");
-		expect(header).toContain("↑1.5k");
-		expect(header).toContain("CH45.2%");
-		expect(header).toContain("$0.050");
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn());
+		await Promise.resolve(); // A mounts
+		panel.handleInput("\r"); // arm A → question focus
+		expect(panel.render(80).join("\n")).toContain("esc → lanes");
+		submitA({ answers: ["a"] }); // answer A → B is queued for the SAME unit
+		await Promise.resolve(); // B mounts
+		expect(peekInput("run-1", SINGLE_UNIT_KEY)).toBeDefined(); // B still queued
+		expect(panel.render(80).join("\n")).toContain("esc → lanes"); // stays armed on B (no re-⏎ needed)
+		panel.dispose();
 	});
 });
 
@@ -480,39 +370,46 @@ describe("LaneConsole — disk fallback (migrated from the viewer)", () => {
 });
 
 describe("LaneConsole — question mode (reactive, self-draining)", () => {
-	it("mounts the question band inline when a question is queued at construction", async () => {
+	it("renders the queued question inline but INERT (lane focus) the instant it is selected", async () => {
 		liveUnit();
 		enqueueQuestion(makeInner().component);
 		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn());
 		await Promise.resolve(); // let the async mount settle
 		const out = panel.render(80).join("\n");
-		expect(out).toContain("q0"); // question band
-		expect(out).toContain("ctx line"); // transcript still shows above it
-		expect(out).toContain("esc defer"); // header hint flips to question mode
-		expect(panel.render(80).some((l) => l.includes("─"))).toBe(true); // divider
+		expect(out).toContain("q0"); // question band shown immediately on selection…
+		expect(out).toContain("ctx line"); // …with the transcript still above it
+		expect(panel.render(80).join("\n")).toContain("⏎ answer"); // inert: footer arms it
+		expect(panel.render(80).some((l) => l.includes("─"))).toBe(true); // question + spine dividers
 		panel.dispose();
 	});
 
 	it("mounts a question that ARRIVES while the console is open (reactive, no swap)", async () => {
 		liveUnit();
 		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn());
-		expect(panel.render(80).join("\n")).toContain("esc back"); // read-only initially
+		expect(panel.render(80).join("\n")).toContain("←/esc back"); // no question initially
 		enqueueQuestion(makeInner().component);
 		await Promise.resolve();
 		const out = panel.render(80).join("\n");
-		expect(out).toContain("q0"); // mounted inline
-		expect(out).toContain("esc defer");
+		expect(out).toContain("q0"); // mounted inline, reactively
+		expect(out).toContain("⏎ answer"); // footer advertises the arm gesture
 		panel.dispose();
 	});
 
-	it("forwards a printable key to the mounted question", async () => {
+	it("forwards a printable key to the question only AFTER it is armed (⏎ → question focus)", async () => {
 		liveUnit();
 		const inner = makeInner();
 		enqueueQuestion(inner.component);
 		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn());
 		await Promise.resolve();
-		panel.handleInput("a");
+		panel.handleInput("a"); // lane focus: NOT forwarded (arm-then-fire)
+		expect(inner.handled).not.toContain("a");
+		panel.handleInput("\r"); // ⏎ arms the question → question focus
+		expect(panel.render(80).join("\n")).toContain("esc → lanes"); // header flips to question focus
+		panel.handleInput("a"); // now forwarded to the questionnaire
 		expect(inner.handled).toContain("a");
+		panel.handleInput("\x1b"); // esc hands keys back to the spine (question stays deferred)
+		expect(inner.handled).not.toContain("\x1b"); // esc reserved, not forwarded
+		expect(panel.render(80).join("\n")).toContain("↑/↓ lanes"); // back in lane focus
 		panel.dispose();
 	});
 
@@ -560,10 +457,10 @@ describe("LaneConsole — question mode (reactive, self-draining)", () => {
 		panel.dispose();
 	});
 
-	it("commits the LAST queued question and backs out to the lanes view (no follow-up → done resolves)", async () => {
-		// A unit's ask_user_question is a blocking tool call, so its agent can't issue a
-		// follow-up until it generates again — the per-unit queue drains to empty on answer.
-		// Rather than strand the user on the questionless read-only transcript, back out.
+	it("commits the LAST queued question and STAYS OPEN in lane focus (browser is never stranded)", async () => {
+		// Unlike the old single-unit console (which backed out on drain), the browser keeps the
+		// spine + transcript as the surface — answering the last question drops the band and
+		// returns keys to lane navigation, but the overlay stays open (esc/← closes it).
 		liveUnit(() => [assistantEntry("ctx")]);
 		const resolveA = vi.fn();
 		const done = vi.fn();
@@ -578,10 +475,14 @@ describe("LaneConsole — question mode (reactive, self-draining)", () => {
 		});
 		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, done);
 		await Promise.resolve(); // let A's async mount settle
+		panel.handleInput("\r"); // arm the question (question focus)
 		submitA({ answers: ["a"] }); // answer the ONLY queued question
 		expect(resolveA).toHaveBeenCalledWith({ answers: ["a"] }); // committed
 		expect(peekInput("run-1", SINGLE_UNIT_KEY)).toBeUndefined(); // queue drained (no follow-up queued)
-		expect(done).toHaveBeenCalledTimes(1); // drained → overlay backs out to the lanes dock exactly once
+		expect(done).not.toHaveBeenCalled(); // browser stays open — not stranded
+		const out = panel.render(80);
+		expect(out.join("\n")).not.toContain("q0"); // question band dropped
+		expect(out.join("\n")).toContain("↑/↓ lanes"); // returned to lane focus
 		panel.dispose();
 	});
 
@@ -648,48 +549,19 @@ describe("LaneConsole — constant height (ghost-block safety)", () => {
 	});
 });
 
-describe("LaneConsole — tiny-terminal constant height (TRANSCRIPT_MIN floor)", () => {
-	/** Transcript-band floor (mirrors production lane-console.ts TRANSCRIPT_MIN). The question
-	 *  band caps at `available − TRANSCRIPT_MIN`, so a tall question can never squeeze the
-	 *  context below this floor — the invariant that bites on tiny terminals. */
-	const TRANSCRIPT_MIN = 4;
-	/** Read-only = header + available + footer, so the constant-height invariant is
-	 *  total = available + 2 (i.e. available = readonlyHeight − 2). */
-	const available = (readonlyHeight: number) => readonlyHeight - 2;
-	/** Index of the divider row; the question band is everything after it, the transcript
-	 *  band is everything between header and it. The `─` comes only from lane-console's
-	 *  divider() — the transcript view never emits it, so this is unambiguous. */
-	const dividerIndex = (out: string[]) => out.findIndex((l) => l.includes("─"));
-
-	it.each([8, 9, 10])("constant height: read-only ≡ question ≡ available+2 at %d rows", async (rows) => {
+describe("LaneConsole — tiny-terminal constant height", () => {
+	it.each([8, 9, 10])("constant height: lane-only ≡ question-mounted at %d rows", async (rows) => {
 		liveUnit(() => [assistantEntry("ctx")]);
 		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(rows), identityTheme, {} as never, vi.fn());
-		const readonly = panel.render(80).length; // read-only baseline (no mount pending)
-		enqueueQuestion(makeInner(15).component); // a TALL question (caps at available − TRANSCRIPT_MIN)
+		const base = panel.render(80).length; // baseline (no mount pending)
+		enqueueQuestion(makeInner(15).component); // a TALL question
 		await Promise.resolve(); // let the async mountInner settle
 		const question = panel.render(80).length;
-		expect(question).toBe(readonly); // both === available + 2 — holds where it's least-obvious
+		expect(question).toBe(base); // padding keeps the surface a constant maxRows across the mount
 		panel.dispose();
 	});
 
-	it("TRANSCRIPT_MIN floor bites at 8 rows: tall question capped, transcript band floors at TRANSCRIPT_MIN", async () => {
-		liveUnit(() => Array.from({ length: 50 }, (_v, i) => assistantEntry(`line-${i}`))); // long transcript body
-		enqueueQuestion(makeInner(15).component); // tall question — hits the available − TRANSCRIPT_MIN cap
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(8), identityTheme, {} as never, vi.fn());
-		const readonly = panel.render(80).length; // read-only baseline (mount pending)
-		await Promise.resolve(); // let the async mountInner settle
-		const out = panel.render(80);
-		const di = dividerIndex(out);
-		expect(di).toBeGreaterThan(0); // divider present in question mode
-		const transcriptBand = di - 1; // header(0) … divider → transcript rows between them
-		const questionBand = out.length - di - 1; // divider … end → question rows
-		expect(transcriptBand).toBe(TRANSCRIPT_MIN); // the floor that bites
-		expect(questionBand).toBe(available(readonly) - TRANSCRIPT_MIN); // the cap (=== 2 at 8 rows)
-		expect(out.length).toBe(readonly); // padding keeps total height constant
-		panel.dispose();
-	});
-
-	it("no shape change across mount → commit-advance → drain → read-only at 8 rows", async () => {
+	it("no shape change across mount → commit-advance → drain → lane focus at 8 rows", async () => {
 		liveUnit(() => [assistantEntry("ctx")]);
 		const resolveA = vi.fn();
 		const resolveB = vi.fn();
@@ -761,23 +633,36 @@ describe("LaneConsole — real ask_user_question factory (cappedTui self-windowi
 			},
 		],
 	};
-	// At 24 rows: maxRows = floor(24 * 0.9) = 21; available = maxRows − 2 = 19;
-	// question budget = available − TRANSCRIPT_MIN(4) = 15; surface height = available + 2 = 21.
+	// At 32 rows: maxRows = floor(32 * 0.9) = 28; the bottom lane block for one lane is 7 rows
+	// (blank + heading + blank + row + blank + footer + rule); the live-output region above it is
+	// the `── live output ──` border + transcript + [question divider + question]. Question budget
+	// = maxRows − laneBlock(7) − border(1) − questionDivider(1) − TRANSCRIPT_MIN(4) = 15, which is
+	// below the questionnaire's natural 17 rows, so the cap (not shortness) constrains the band.
 	const QUESTION_BUDGET_24 = 15;
-	const SURFACE_HEIGHT_24 = 21;
+	const SURFACE_HEIGHT_24 = 28;
+	/** The question band = the lines between the console's question divider (the FIRST bare
+	 *  full-width rule, below the `── live output ──` border) and the bottom lane block. The lane
+	 *  block for one lane is `["", heading, "", row, "", footer, rule]`, so the row (matched by its
+	 *  `ship:` tag) sits 3 lines into it; the band spans from just after the divider to just before
+	 *  the block's leading blank. */
+	const questionBand = (out: string[]): number => {
+		const qDiv = out.findIndex((l, i) => i > 0 && /^─+$/.test(l));
+		const laneRowIdx = out.findIndex((l) => l.includes("ship:"));
+		return laneRowIdx - qDiv - 4;
+	};
 
 	it("renders real questionnaire chrome a makeInner() stub cannot produce", async () => {
 		const factory = await captureRealFactory(REAL_PARAMS);
 		liveUnit();
 		enqueueRealFactory(factory);
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(24), identityTheme, {} as never, vi.fn());
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(32), identityTheme, {} as never, vi.fn());
 		await Promise.resolve();
 		// The mounted+capped render carries the author option label (real chrome through cappedTui).
 		expect(panel.render(80).join("\n")).toContain("date-fns");
 		// The full standalone render shows the complete chrome a makeInner() stub cannot produce:
 		// every author option label AND the single-select "Type something." sentinel (the 15-row cap
 		// scrolls option 4 out of the mounted band, so the sentinel is asserted on the full render).
-		const standalone = factory(makeTui(24), identityTheme, {} as never, vi.fn())
+		const standalone = factory(makeTui(32), identityTheme, {} as never, vi.fn())
 			.render(80)
 			.join("\n");
 		expect(standalone).toContain("date-fns");
@@ -786,7 +671,7 @@ describe("LaneConsole — real ask_user_question factory (cappedTui self-windowi
 		panel.dispose();
 	});
 
-	it("cappedTui reports the 15-row budget to the embedded questionnaire, not the full 24", async () => {
+	it("cappedTui reports the 8-row budget to the embedded questionnaire, not the full 24", async () => {
 		const factory = await captureRealFactory(REAL_PARAMS);
 		let receivedTui: TUI | undefined;
 		liveUnit();
@@ -794,7 +679,7 @@ describe("LaneConsole — real ask_user_question factory (cappedTui self-windowi
 			receivedTui = tui;
 			return factory(tui, theme, kb, done);
 		});
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(24), identityTheme, {} as never, vi.fn());
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(32), identityTheme, {} as never, vi.fn());
 		await Promise.resolve();
 		panel.render(80); // render sets budgetRef.rows = available − TRANSCRIPT_MIN BEFORE inner.render
 		// cappedTui is a lazy proxy over budgetRef — after render it reports the allocated band, not 24.
@@ -806,12 +691,11 @@ describe("LaneConsole — real ask_user_question factory (cappedTui self-windowi
 		const factory = await captureRealFactory(REAL_PARAMS);
 		liveUnit();
 		enqueueRealFactory(factory);
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(24), identityTheme, {} as never, vi.fn());
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(32), identityTheme, {} as never, vi.fn());
 		await Promise.resolve();
-		const out = panel.render(80);
-		const dividerIdx = out.findIndex((l) => l.includes("─"));
-		expect(dividerIdx).toBeGreaterThan(-1);
-		expect(out.length - dividerIdx - 1).toBeLessThanOrEqual(QUESTION_BUDGET_24); // lines after the divider
+		const band = questionBand(panel.render(80));
+		expect(band).toBeGreaterThan(0);
+		expect(band).toBeLessThanOrEqual(QUESTION_BUDGET_24); // between the question divider and the spine
 		panel.dispose();
 	});
 
@@ -819,48 +703,47 @@ describe("LaneConsole — real ask_user_question factory (cappedTui self-windowi
 		const factory = await captureRealFactory(REAL_PARAMS);
 		liveUnit();
 		enqueueRealFactory(factory);
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(24), identityTheme, {} as never, vi.fn());
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(32), identityTheme, {} as never, vi.fn());
 		await Promise.resolve();
-		const out = panel.render(80);
-		const dividerIdx = out.findIndex((l) => l.includes("─"));
-		const cappedBand = out.length - dividerIdx - 1;
+		const cappedBand = questionBand(panel.render(80));
 		// Standalone at the FULL 24 rows the questionnaire is NOT capped — its natural height (17)
-		// exceeds the 15-row budget, so the cap (not questionnaire shortness) constrained the band.
-		const standalone = factory(makeTui(24), identityTheme, {} as never, vi.fn()).render(80);
+		// exceeds the 8-row budget, so the cap (not questionnaire shortness) constrained the band.
+		const standalone = factory(makeTui(32), identityTheme, {} as never, vi.fn()).render(80);
 		expect(standalone.length).toBeGreaterThan(cappedBand);
 		panel.dispose();
 	});
 
 	it("surface height is identical across read-only ↔ real-question mode (available + 2 = 21)", async () => {
 		liveUnit();
-		const readonlyPanel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(24), identityTheme, {} as never, vi.fn());
+		const readonlyPanel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(32), identityTheme, {} as never, vi.fn());
 		const readonly = readonlyPanel.render(80).length;
 		expect(readonly).toBe(SURFACE_HEIGHT_24); // available + 2 = 19 + 2
 		readonlyPanel.dispose();
 
 		const factory = await captureRealFactory(REAL_PARAMS);
 		enqueueRealFactory(factory);
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(24), identityTheme, {} as never, vi.fn());
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(32), identityTheme, {} as never, vi.fn());
 		await Promise.resolve();
 		expect(panel.render(80).length).toBe(readonly); // padded → identical height across the transition
 		panel.dispose();
 	});
 
-	it("a real mount/commit cycle forces requestRender(true) and Enter-submits the last question → backs out", async () => {
+	it("a real arm → Enter-submit cycle forces requestRender(true), resolves once, and STAYS OPEN", async () => {
 		const factory = await captureRealFactory(REAL_PARAMS);
 		const resolve = vi.fn();
 		const done = vi.fn();
 		liveUnit();
 		enqueueRealFactory(factory, resolve);
-		const tui = makeTui(24);
+		const tui = makeTui(32);
 		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, tui, identityTheme, {} as never, done);
 		await Promise.resolve(); // mount transition
 		const requestRender = tui.requestRender as ReturnType<typeof vi.fn>;
 		const fullRepaints = () => requestRender.mock.calls.filter((c) => c[0] === true).length;
 		expect(fullRepaints()).toBeGreaterThanOrEqual(1); // mount forced a full repaint
 
-		expect(() => panel.handleInput("\r")).not.toThrow(); // Enter on the focused single-select option
-		expect(fullRepaints()).toBeGreaterThan(1); // commit forced another full repaint
+		panel.handleInput("\r"); // ⏎ arms the question (lane focus → question focus)
+		expect(() => panel.handleInput("\r")).not.toThrow(); // Enter on the focused single-select option submits
+		expect(fullRepaints()).toBeGreaterThan(1); // arm + commit each forced a full repaint
 		expect(resolve).toHaveBeenCalledTimes(1); // pendingInput resolved exactly once
 		expect(resolve).toHaveBeenCalledWith(
 			expect.objectContaining({
@@ -869,7 +752,8 @@ describe("LaneConsole — real ask_user_question factory (cappedTui self-windowi
 			}),
 		);
 		expect(peekInput("run-1", SINGLE_UNIT_KEY)).toBeUndefined(); // queue drained — no follow-up possible
-		expect(done).toHaveBeenCalledTimes(1); // last question answered → overlay backs out to the lanes view
+		expect(done).not.toHaveBeenCalled(); // browser stays open on drain (never stranded)
+		expect(panel.render(80).join("\n")).toContain("↑/↓ lanes"); // back in lane focus
 		panel.dispose();
 	});
 });
