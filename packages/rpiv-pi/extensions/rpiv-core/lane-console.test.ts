@@ -168,12 +168,12 @@ describe("cappedTui", () => {
 });
 
 describe("LaneConsole — read-only mode", () => {
-	it("renders the transcript + an 'esc back' footer when no question is queued", () => {
+	it("renders the transcript + a '←/esc back' footer when no question is queued", () => {
 		liveUnit();
 		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn());
 		const out = panel.render(80);
 		expect(out.join("\n")).toContain("ctx line"); // transcript band
-		expect(out[out.length - 1]).toContain("esc back"); // read-only footer hint
+		expect(out[out.length - 1]).toContain("←/esc back"); // read-only footer advertises BOTH back-out keys
 		expect(out.some((l) => l.includes("─"))).toBe(false); // no divider (read-only)
 		panel.dispose();
 	});
@@ -560,6 +560,31 @@ describe("LaneConsole — question mode (reactive, self-draining)", () => {
 		panel.dispose();
 	});
 
+	it("commits the LAST queued question and backs out to the lanes view (no follow-up → done resolves)", async () => {
+		// A unit's ask_user_question is a blocking tool call, so its agent can't issue a
+		// follow-up until it generates again — the per-unit queue drains to empty on answer.
+		// Rather than strand the user on the questionless read-only transcript, back out.
+		liveUnit(() => [assistantEntry("ctx")]);
+		const resolveA = vi.fn();
+		const done = vi.fn();
+		let submitA!: (r: unknown) => void;
+		enqueueInput("run-1", SINGLE_UNIT_KEY, {
+			factory: ((_t: never, _th: never, _k: never, d: (r: unknown) => void) => {
+				submitA = d;
+				return makeInner().component;
+			}) as never,
+			options: undefined as never,
+			resolve: resolveA,
+		});
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, done);
+		await Promise.resolve(); // let A's async mount settle
+		submitA({ answers: ["a"] }); // answer the ONLY queued question
+		expect(resolveA).toHaveBeenCalledWith({ answers: ["a"] }); // committed
+		expect(peekInput("run-1", SINGLE_UNIT_KEY)).toBeUndefined(); // queue drained (no follow-up queued)
+		expect(done).toHaveBeenCalledTimes(1); // drained → overlay backs out to the lanes dock exactly once
+		panel.dispose();
+	});
+
 	it("esc backs out and leaves a mounted question queued (deferred, child not resolved)", async () => {
 		liveUnit();
 		const inner = makeInner();
@@ -821,13 +846,14 @@ describe("LaneConsole — real ask_user_question factory (cappedTui self-windowi
 		panel.dispose();
 	});
 
-	it("a real mount/commit cycle forces requestRender(true) and Enter-submits to read-only in place", async () => {
+	it("a real mount/commit cycle forces requestRender(true) and Enter-submits the last question → backs out", async () => {
 		const factory = await captureRealFactory(REAL_PARAMS);
 		const resolve = vi.fn();
+		const done = vi.fn();
 		liveUnit();
 		enqueueRealFactory(factory, resolve);
 		const tui = makeTui(24);
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, tui, identityTheme, {} as never, vi.fn());
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, tui, identityTheme, {} as never, done);
 		await Promise.resolve(); // mount transition
 		const requestRender = tui.requestRender as ReturnType<typeof vi.fn>;
 		const fullRepaints = () => requestRender.mock.calls.filter((c) => c[0] === true).length;
@@ -842,10 +868,8 @@ describe("LaneConsole — real ask_user_question factory (cappedTui self-windowi
 				answers: expect.arrayContaining([expect.objectContaining({ kind: "option", answer: "date-fns" })]),
 			}),
 		);
-		expect(peekInput("run-1", SINGLE_UNIT_KEY)).toBeUndefined(); // queue drained → read-only
-		const after = panel.render(80).join("\n");
-		expect(after).toContain("esc back"); // dropped to the read-only footer in place
-		expect(after).not.toMatch(/q[01]/); // no stub question chrome — the real questionnaire is gone
+		expect(peekInput("run-1", SINGLE_UNIT_KEY)).toBeUndefined(); // queue drained — no follow-up possible
+		expect(done).toHaveBeenCalledTimes(1); // last question answered → overlay backs out to the lanes view
 		panel.dispose();
 	});
 });

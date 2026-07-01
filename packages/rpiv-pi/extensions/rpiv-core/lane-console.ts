@@ -3,8 +3,10 @@
  * SOLE transcript surface for a switched-into lane unit. It renders the lane's live
  * transcript read-only (full-height band) and, the instant a question is queued for its
  * unit (`peekInput` non-empty), mounts the parked ask_user_question INLINE beneath the
- * transcript — no overlay swap. Answering commits that child and advances to the next
- * queued question in place; `esc`/`←` back out (leaving any still-queued question
+ * transcript — no overlay swap. Answering commits that child; a queued follow-up mounts in
+ * place, but the blocking tool call means a unit's queue drains to empty on answer, so the
+ * common case is drain → back out to the lanes dock (rather than strand the user on the
+ * now-questionless transcript). `esc`/`←` also back out (leaving any still-queued question
  * deferred). This replaces the old read-only transcript viewer + per-question drain loop.
  *
  * The deferred question is a captured `{factory, options, resolve}` (run-lane-registry
@@ -173,12 +175,20 @@ export class LaneConsole implements Component {
 	 *  listeners inline), so our own subscribeLanes→sync() re-enters mid-commit. Unmount FIRST
 	 *  (mountedFor=undefined) so that re-entrant sync() mounts the next head exactly once; the
 	 *  trailing sync() is then a no-op (head === mountedFor). If we dequeued before unmounting,
-	 *  sync() would fire once here AND again below → the next question's factory builds twice. */
+	 *  sync() would fire once here AND again below → the next question's factory builds twice.
+	 *
+	 *  A unit's `ask_user_question` is a BLOCKING tool call, so its agent can't issue a
+	 *  follow-up until the LLM generates again (real wall-clock) — the per-unit queue drains
+	 *  to empty on answer in steady state. Rather than strand the user on the now-questionless
+	 *  read-only transcript, back the overlay out and return to the lanes dock. The `sync()`
+	 *  first re-peeks so a (rare) already-queued follow-up still mounts and we keep answering;
+	 *  only a genuine drain (`!this.inner`) returns to the lanes view. */
 	private commit(result: unknown): void {
 		this.unmountInner(); // mountedFor=undefined BEFORE the dequeue notify re-enters sync()
 		dequeueInput(this.runId, this.unitIndex)?.resolve(result);
 		this.tui.requestRender(true);
 		this.sync(); // peek the next question (or read-only) — no-op if the notify already advanced us
+		if (!this.inner) this.finish(); // queue drained: last question answered → back to the lanes dock
 	}
 
 	/** Resolve the overlay once; force a full repaint because the surface collapses (cdcf3ee). */
@@ -264,7 +274,7 @@ export class LaneConsole implements Component {
 	/** Read-only mode footer — the viewer's scroll/expand/back hint. */
 	private footer(width: number): string {
 		const toggle = this.toolsExpanded ? "t collapse" : "t expand";
-		return truncateToWidth(this.theme.fg("dim", `↑/↓ scroll · ${toggle} · esc back`), width, "…");
+		return truncateToWidth(this.theme.fg("dim", `↑/↓ scroll · ${toggle} · ←/esc back`), width, "…");
 	}
 
 	private divider(width: number): string {
