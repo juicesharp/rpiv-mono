@@ -9,8 +9,6 @@ import {
 	captureFinalSnapshot,
 	dequeueInput,
 	enqueueInput,
-	evictRun,
-	getDockState,
 	type LaneSession,
 	markUnitDone,
 	recordRun,
@@ -18,8 +16,6 @@ import {
 	SINGLE_UNIT_KEY,
 	seedPendingUnits,
 	setCurrentSession,
-	setDockActive,
-	setDockSelection,
 	setLaneProgress,
 	setLaneStatus,
 	setUnitStarted,
@@ -57,7 +53,7 @@ function mount(overlay: LaneDock, ui: ExtensionUIContext) {
 }
 
 beforeAll(() => {
-	initTheme(); // SDK message components (renderBranch in the preview) read a global theme proxy
+	initTheme(); // SDK message/theme proxies read a global theme; seed it for render assertions
 });
 
 function makeSession(getBranch: () => unknown = () => []): LaneSession & {
@@ -225,52 +221,16 @@ describe("LaneDock — forced redraw on height-shape change (duplicate-block fix
 		overlay.dispose();
 	});
 
-	it("stepping in and moving the active selection both force a full redraw", () => {
-		recordRun("run-1", "ship");
-		recordRun("run-2", "build");
-		const overlay = new LaneDock();
-		const { tui } = mount(overlay, makeCtx());
-		const spy = tui?.requestRender as unknown as ReturnType<typeof vi.fn>;
-		setDockActive(true); // ambient → active: the ❯ cursor appears + the preview re-targets (signature -1 → 0)
-		overlay.update();
-		expect(spy).toHaveBeenLastCalledWith(true);
-		spy.mockClear();
-		setDockSelection(1); // active selection moves → the preview re-targets another lane's tail
-		overlay.update();
-		expect(spy).toHaveBeenLastCalledWith(true);
-		overlay.dispose();
-	});
-
-	it("a preview re-target with a stable row shape forces a full redraw", () => {
+	it("a stable-shape progress notify does NOT force a full redraw (cheap differential path)", () => {
 		recordRun("run-1", "ship");
 		const s1 = makeSession();
 		setCurrentSession("run-1", SINGLE_UNIT_KEY, s1);
 		const overlay = new LaneDock();
 		const { tui } = mount(overlay, makeCtx());
-		setDockActive(true);
-		setDockSelection(0);
-		overlay.update(); // active → resolve selection → previewSession = s1, lastShapeSig = "1:0"
+		overlay.update(); // seed lastShapeSig = "…:1"
 		const spy = tui!.requestRender as unknown as ReturnType<typeof vi.fn>;
 		spy.mockClear();
-		const s2 = makeSession(); // distinct identity — same row shape, transcript re-targets S1 → S2
-		setCurrentSession("run-1", SINGLE_UNIT_KEY, s2);
-		overlay.update(); // signature unchanged (1:0 → 1:0 ⇒ shapeChanged=false), previewSession swapped ⇒ force
-		expect(tui!.requestRender).toHaveBeenLastCalledWith(true);
-		overlay.dispose();
-	});
-
-	it("an intra-stage same-session tick does NOT force a full redraw", () => {
-		recordRun("run-1", "ship");
-		const s1 = makeSession();
-		setCurrentSession("run-1", SINGLE_UNIT_KEY, s1);
-		const overlay = new LaneDock();
-		const { tui } = mount(overlay, makeCtx());
-		setDockActive(true);
-		setDockSelection(0);
-		overlay.update(); // seed previewSession = s1, lastShapeSig = "1:0"
-		const spy = tui!.requestRender as unknown as ReturnType<typeof vi.fn>;
-		spy.mockClear();
-		// Stable shape, SAME currentSession identity ⇒ previewTargetChanged stays false (no-flicker).
+		// Stable shape (row count unchanged) ⇒ shapeChanged false ⇒ no forced redraw.
 		setLaneProgress("run-1", { stageNumber: 2, totalStages: 3, stageName: "design", phase: "running" });
 		overlay.update();
 		expect(tui!.requestRender).toHaveBeenLastCalledWith(false);
@@ -738,7 +698,7 @@ describe("LaneDock — spinner animation", () => {
 	});
 });
 
-describe("LaneDock — active (focused) state", () => {
+describe("LaneDock — ambient state", () => {
 	it("ambient state shows no selection cursor and the discoverability footer", () => {
 		recordRun("run-1", "ship");
 		recordRun("run-2", "build");
@@ -751,275 +711,15 @@ describe("LaneDock — active (focused) state", () => {
 		expect(out).not.toContain("transcript"); // no run-action contract in the ambient footer
 		overlay.dispose();
 	});
-
-	it("active state paints the cursor on the selected row and the navigation footer", () => {
-		recordRun("run-1", "ship");
-		recordRun("run-2", "build");
-		const overlay = new LaneDock();
-		const { widget } = mount(overlay, makeCtx());
-		setDockActive(true);
-		setDockSelection(1);
-		const lines = widget?.render(120) ?? [];
-		const out = lines.join("\n");
-		// Exactly one row carries the cursor; the footer flips to the nav contract.
-		expect(lines.filter((l) => l.includes("❯")).length).toBe(1);
-		expect(out).toContain("→ transcript"); // dedicated transcript key (no queued input → no ⏎ answer hint)
-		expect(out).not.toContain("/lanes"); // ambient discoverability hint is replaced by the nav footer
-		overlay.dispose();
-	});
-
-	it("active footer advertises ⏎ answer when the selected lane has a queued question", () => {
-		recordRun("run-1", "ship");
-		enqueueInput("run-1", SINGLE_UNIT_KEY, {
-			factory: (() => ({})) as never,
-			options: undefined as never,
-			resolve: () => {},
-		});
-		const overlay = new LaneDock();
-		const { widget } = mount(overlay, makeCtx());
-		setDockActive(true);
-		setDockSelection(0); // the needs-input lane
-		const out = (widget?.render(120) ?? []).join("\n");
-		expect(out).toContain("⏎ answer");
-		expect(out).toContain("→ transcript");
-		overlay.dispose();
-	});
-
-	it("active footer uses unified back wording (←/esc back), not the old 'esc exit'", () => {
-		recordRun("run-1", "ship");
-		const overlay = new LaneDock();
-		const { widget } = mount(overlay, makeCtx());
-		setDockActive(true);
-		setDockSelection(0);
-		const out = (widget?.render(120) ?? []).join("\n");
-		expect(out).toContain("←/esc back");
-		expect(out).not.toContain("esc exit");
-		overlay.dispose();
-	});
-
-	it("the cursor lands on the row at dockSelection (display order)", () => {
-		recordRun("run-1", "ship");
-		recordRun("run-2", "build");
-		const overlay = new LaneDock();
-		const { widget } = mount(overlay, makeCtx());
-		setDockActive(true);
-		setDockSelection(0);
-		const first = (widget?.render(120) ?? []).find((l) => l.includes("❯")) ?? "";
-		expect(first).toContain("ship");
-		setDockSelection(1);
-		const second = (widget?.render(120) ?? []).find((l) => l.includes("❯")) ?? "";
-		expect(second).toContain("build");
-		overlay.dispose();
-	});
-
-	it("stepping in does NOT shift row content — the selection gutter is reserved in both states", () => {
-		recordRun("run-1", "polish");
-		const overlay = new LaneDock();
-		const { widget } = mount(overlay, makeCtx());
-		const ambientRow = (widget?.render(120) ?? []).find((l) => l.includes("polish")) ?? "";
-		setDockActive(true);
-		setDockSelection(0);
-		const activeRow = (widget?.render(120) ?? []).find((l) => l.includes("polish")) ?? "";
-		// The cursor appears only when active…
-		expect(ambientRow).not.toContain("❯");
-		expect(activeRow).toContain("❯");
-		// …but the lane name sits at the SAME column in both (no layout jump).
-		expect(activeRow.indexOf("polish")).toBe(ambientRow.indexOf("polish"));
-		overlay.dispose();
-	});
-
-	it("active rows stay within width (the selection gutter never overflows)", () => {
-		recordRun("run-1", "a-fairly-long-workflow-name");
-		const overlay = new LaneDock();
-		const { widget } = mount(overlay, makeCtx());
-		setDockActive(true);
-		for (const line of widget?.render(40) ?? []) expect(visibleWidth(line)).toBeLessThanOrEqual(40);
-		overlay.dispose();
-	});
-
-	it("the title is a plain label — no spinner/progress glyph even while a lane runs", () => {
-		vi.useFakeTimers();
-		recordRun("run-1", "ship"); // running → row spins, but the title must not
-		const overlay = new LaneDock();
-		const { widget } = mount(overlay, makeCtx());
-		const title = (widget?.render(120) ?? [])[1] ?? "";
-		const SPINNER_FRAMES = ["⠴", "⠦", "⠖", "⠲"];
-		expect(SPINNER_FRAMES.some((g) => title.includes(g))).toBe(false);
-		expect(title).toContain("Runs (1 active)");
-		overlay.dispose();
-	});
-
-	it("marks the selected row's descriptor with accent+bold and NO background block (ask_user_question style)", () => {
-		recordRun("run-1", "ship", { workflow: "ship", input: "refactor auth" });
-		recordRun("run-2", "build", { workflow: "build", input: "add tests" });
-		const overlay = new LaneDock();
-		const ui = makeCtx();
-		overlay.setUICtx(ui);
-		overlay.update();
-		const setWidget = ui.setWidget as unknown as ReturnType<typeof vi.fn>;
-		const factory = setWidget.mock.calls[0]?.[1] as WidgetFactory;
-		// Encoding theme: fg → "color:text", bold → "*text*", bg → "[color]text" so the
-		// selected-row styling (accent+bold descriptor, no background) is observable.
-		const encTheme = {
-			fg: (c: string, s: string) => `${c}:${s}`,
-			bg: (c: string, s: string) => `[${c}]${s}`,
-			bold: (s: string) => `*${s}*`,
-			strikethrough: (s: string) => s,
-		} as unknown as Theme;
-		const widget = factory({ requestRender: vi.fn() }, encTheme);
-		setDockActive(true);
-		setDockSelection(0);
-		const lines = widget.render(60);
-		// The descriptor is now the runId (no --name aliases here: name === workflow), so
-		// rows are located by runId. The selected row's descriptor is accent+bold; the
-		// unselected row's descriptor is plain "text".
-		const selectedRow = lines.find((l) => l.includes("run-1")) ?? "";
-		const otherRow = lines.find((l) => l.includes("run-2")) ?? "";
-		// No background block on the ROWS — ask_user_question marks row selection with text
-		// style, not a fill. (bg encodes as "[color]"; the title chip's selectedBg is a
-		// separate line and intentionally excluded here.)
-		expect(/\[[a-zA-Z]/.test(selectedRow)).toBe(false);
-		expect(/\[[a-zA-Z]/.test(otherRow)).toBe(false);
-		expect(selectedRow).toContain("accent:*run-1*");
-		expect(otherRow).toContain("text:run-2");
-		expect(otherRow).not.toContain("accent:*run-2*");
-		// the workflow (preset) tag is muted on BOTH rows — readable secondary content, distinct
-		// from the accent+bold descriptor (ask_user_question's emphasized-name / secondary split)
-		expect(selectedRow).toContain("muted:ship");
-		expect(otherRow).toContain("muted:build");
-		overlay.dispose();
-	});
-
-	it("uses an IDENTICAL top in both states (blank · title · blank) so stepping in/out never resizes the dock", () => {
-		recordRun("run-1", "ship");
-		const overlay = new LaneDock();
-		const { widget } = mount(overlay, makeCtx());
-		// Ambient: a breathing-room blank, the title, a blank — NO top rule (the editor's border
-		// above is the boundary). The dock no longer draws an active-only rule, so the title sits
-		// at the same row in both states.
-		const ambient = widget?.render(40) ?? [];
-		expect(ambient[0]).toBe("");
-		expect(ambient[1]).toContain("Runs"); // title on line 1, not pushed down by a rule
-		expect(ambient[2]).toBe("");
-		// Active: the editor blanks itself (keeping its height), so the dock frames nothing extra
-		// at the top — the title stays on line 1, the whole top block is unchanged.
-		setDockActive(true);
-		const focused = widget?.render(40) ?? [];
-		expect(focused[0]).toBe("");
-		expect(focused[1]).toContain("Runs"); // SAME row as ambient — static height
-		expect(focused[2]).toBe("");
-		expect(focused[1]).not.toBe("─".repeat(40)); // no top rule introduced by stepping in
-		expect(focused[focused.length - 1]).toBe("─".repeat(40)); // bottom rule still present
-		overlay.dispose();
-	});
-
-	it("the bottom rule is dim when ambient and accent when focused", () => {
-		recordRun("run-1", "ship");
-		const overlay = new LaneDock();
-		const ui = makeCtx();
-		overlay.setUICtx(ui);
-		overlay.update();
-		const setWidget = ui.setWidget as unknown as ReturnType<typeof vi.fn>;
-		const factory = setWidget.mock.calls[0]?.[1] as WidgetFactory;
-		// Color-encoding theme: fg(color, text) → "color:text", so the rule's color is observable.
-		const colorTheme = {
-			fg: (c: string, s: string) => `${c}:${s}`,
-			bg: (_c: string, s: string) => s,
-			bold: (s: string) => s,
-			strikethrough: (s: string) => s,
-		} as unknown as Theme;
-		const widget = factory({ requestRender: vi.fn() }, colorTheme);
-		const bottomRule = (r: string[]) => r[r.length - 1]; // the last line is the bottom rule
-		expect(bottomRule(widget.render(20)).startsWith("dim:─")).toBe(true); // ambient → dim
-		setDockActive(true);
-		expect(bottomRule(widget.render(20)).startsWith("accent:─")).toBe(true); // focused → accent
-		overlay.dispose();
-	});
-
-	it("dropping to zero lanes clears an active dock (auto-hide deactivates)", () => {
-		recordRun("run-1", "ship");
-		const overlay = new LaneDock();
-		mount(overlay, makeCtx());
-		setDockActive(true);
-		expect(getDockState().active).toBe(true);
-		evictRun("run-1"); // last lane gone
-		overlay.update(); // lanes == 0 → update() calls setDockActive(false)
-		expect(getDockState().active).toBe(false);
-		overlay.dispose();
-	});
 });
 
-describe("LaneDock — preview subscription", () => {
-	it("does not subscribe to any session while ambient (inactive)", () => {
-		recordRun("run-1", "ship");
-		const session = makeSession();
-		setCurrentSession("run-1", SINGLE_UNIT_KEY, session);
-		const overlay = new LaneDock();
-		mount(overlay, makeCtx());
-		overlay.update();
-		expect(session.subscribe).not.toHaveBeenCalled();
-		overlay.dispose();
-	});
-
-	it("subscribes to the selected lane's session while active and identity-guards unrelated notifies", () => {
-		recordRun("run-1", "ship");
-		const session = makeSession();
-		setCurrentSession("run-1", SINGLE_UNIT_KEY, session);
-		const overlay = new LaneDock();
-		mount(overlay, makeCtx());
-		setDockActive(true);
-		setDockSelection(0);
-		overlay.update(); // resolve selection → subscribe once
-		expect(session.subscribe).toHaveBeenCalledTimes(1);
-		// An unrelated registry change must NOT stack a second subscription.
-		setLaneProgress("run-1", { stageNumber: 1, totalStages: 3, stageName: "plan", phase: "running" });
-		overlay.update();
-		expect(session.subscribe).toHaveBeenCalledTimes(1);
-		expect(session.unsub).not.toHaveBeenCalled();
-		overlay.dispose();
-	});
-
-	it("re-points the subscription when the selection moves to another lane", () => {
-		recordRun("run-1", "ship");
-		recordRun("run-2", "build");
-		const s1 = makeSession();
-		const s2 = makeSession();
-		setCurrentSession("run-1", SINGLE_UNIT_KEY, s1);
-		setCurrentSession("run-2", SINGLE_UNIT_KEY, s2);
-		const overlay = new LaneDock();
-		mount(overlay, makeCtx());
-		setDockActive(true);
-		setDockSelection(0);
-		overlay.update(); // subscribe s1
-		expect(s1.subscribe).toHaveBeenCalledTimes(1);
-		setDockSelection(1);
-		overlay.update(); // move to run-2 → unsub s1, subscribe s2
-		expect(s1.unsub).toHaveBeenCalledTimes(1);
-		expect(s2.subscribe).toHaveBeenCalledTimes(1);
-		overlay.dispose();
-	});
-
-	it("dispose tears down the preview subscription", () => {
-		recordRun("run-1", "ship");
-		const session = makeSession();
-		setCurrentSession("run-1", SINGLE_UNIT_KEY, session);
-		const overlay = new LaneDock();
-		mount(overlay, makeCtx());
-		setDockActive(true);
-		setDockSelection(0);
-		overlay.update();
-		overlay.dispose();
-		expect(session.unsub).toHaveBeenCalledTimes(1);
-	});
-});
-
-describe("LaneDock — active transcript preview", () => {
+describe("LaneDock — ambient is a pure lane glance (no transcript)", () => {
 	const assistantEntry = (text: string) => ({
 		type: "message",
 		message: { role: "assistant", content: [{ type: "text", text }] },
 	});
 
-	it("ambient (inactive) shows NO preview — no transcript leaks into the ambient dock", () => {
+	it("never renders a lane's transcript — live output lives in the stepped-in browser, not the dock", () => {
 		recordRun("run-1", "ship");
 		setCurrentSession(
 			"run-1",
@@ -1028,125 +728,22 @@ describe("LaneDock — active transcript preview", () => {
 		);
 		const overlay = new LaneDock();
 		const { widget } = mount(overlay, makeCtx());
-		expect((widget?.render(120) ?? []).join("\n")).not.toContain("PREVIEW_BODY");
+		expect((widget?.render(120) ?? []).join("\n")).not.toContain("PREVIEW_BODY"); // ambient
 		overlay.dispose();
 	});
 
-	it("active dock renders the selected lane's transcript tail beneath a dim separator rule", () => {
+	it("has no live-output placeholder when nothing is selected", () => {
 		recordRun("run-1", "ship");
-		setCurrentSession(
-			"run-1",
-			SINGLE_UNIT_KEY,
-			makeSession(() => [assistantEntry("PREVIEW_BODY")]),
-		);
 		const overlay = new LaneDock();
 		const { widget } = mount(overlay, makeCtx());
-		setDockActive(true);
-		setDockSelection(0);
-		const lines = widget?.render(120) ?? [];
-		expect(lines.join("\n")).toContain("PREVIEW_BODY"); // tail of the selected lane
-		// The preview separator now carries a "live output" label, so it is distinguishable by
-		// CONTENT from the active dock's bare top + bottom framing rules (still "─".repeat(120)
-		// under identityTheme) — not just by position. Keep the BETWEEN-scoping (i > rowIdx &&
-		// i < bodyIdx) to pin it precisely: only the preview separator lives there.
-		const rowIdx = lines.findIndex((l) => l.includes("ship")); // the selected lane row
-		const bodyIdx = lines.findIndex((l) => l.includes("PREVIEW_BODY")); // the preview tail
-		const ruleIdx = lines.findIndex((l, i) => i > rowIdx && i < bodyIdx && l.includes("live output"));
-		expect(bodyIdx).toBeGreaterThan(rowIdx); // the preview renders after the lane rows
-		expect(ruleIdx).toBeGreaterThan(-1); // a full-width separator introduces the preview block
-		overlay.dispose();
-	});
-
-	it("caps the preview at PREVIEW_LINES — only the newest tail survives a long transcript", () => {
-		const many = Array.from({ length: 50 }, (_, i) => assistantEntry(`preview-line-${i}`));
-		recordRun("run-1", "ship");
-		setCurrentSession(
-			"run-1",
-			SINGLE_UNIT_KEY,
-			makeSession(() => many),
-		);
-		const overlay = new LaneDock();
-		const { widget } = mount(overlay, makeCtx());
-		setDockActive(true);
-		setDockSelection(0);
-		const out = (widget?.render(120) ?? []).join("\n");
-		expect(out).toContain("preview-line-49"); // newest line in the tail
-		expect(out).not.toContain("preview-line-0"); // the oldest is sliced off by the cap
-		overlay.dispose();
-	});
-
-	it("stepping in does not shift ambient lane rows (preview is active-gated)", () => {
-		recordRun("run-1", "polish");
-		setCurrentSession(
-			"run-1",
-			SINGLE_UNIT_KEY,
-			makeSession(() => [assistantEntry("body")]),
-		);
-		const overlay = new LaneDock();
-		const { widget } = mount(overlay, makeCtx());
-		const ambientRow = (widget?.render(120) ?? []).find((l) => l.includes("polish")) ?? "";
-		setDockActive(true);
-		setDockSelection(0);
-		const activeRow = (widget?.render(120) ?? []).find((l) => l.includes("polish")) ?? "";
-		expect(activeRow.indexOf("polish")).toBe(ambientRow.indexOf("polish"));
-		overlay.dispose();
-	});
-
-	it("active preview appends the live streaming partial's thinking in the tail", () => {
-		recordRun("run-1", "ship");
-		const session = makeSession(() => [assistantEntry("COMMITTED_BODY")]);
-		session.setStreaming({ role: "assistant", content: [{ type: "thinking", thinking: "STREAMING_THOUGHT" }] });
-		setCurrentSession("run-1", SINGLE_UNIT_KEY, session);
-		const overlay = new LaneDock();
-		const { widget } = mount(overlay, makeCtx());
-		setDockActive(true);
-		setDockSelection(0);
-		expect((widget?.render(120) ?? []).join("\n")).toContain("STREAMING_THOUGHT");
-		overlay.dispose();
-	});
-
-	it("drops the streaming partial once the turn commits (getStreamingMessage → undefined)", () => {
-		recordRun("run-1", "ship");
-		const session = makeSession(() => [assistantEntry("COMMITTED_BODY")]);
-		session.setStreaming({ role: "assistant", content: [{ type: "thinking", thinking: "TRANSIENT" }] });
-		setCurrentSession("run-1", SINGLE_UNIT_KEY, session);
-		const overlay = new LaneDock();
-		const { widget } = mount(overlay, makeCtx());
-		setDockActive(true);
-		setDockSelection(0);
-		expect((widget?.render(120) ?? []).join("\n")).toContain("TRANSIENT");
-		session.setStreaming(undefined);
-		overlay.update(); // re-render after the turn commits
-		expect((widget?.render(120) ?? []).join("\n")).not.toContain("TRANSIENT");
+		const out = (widget?.render(80) ?? []).join("\n");
+		expect(out).not.toContain("select a line for live output"); // the old default region is gone
+		expect(out).not.toContain("live output");
 		overlay.dispose();
 	});
 });
 
-describe("LaneDock — fixed-height frame + dynamic split", () => {
-	const assistantEntry = (text: string) => ({
-		type: "message",
-		message: { role: "assistant", content: [{ type: "text", text }] },
-	});
-
-	it("the dock's total height is constant across preview-content changes (ghost-block regression)", () => {
-		recordRun("run-1", "ship");
-		const short = makeSession(() => [assistantEntry("ONLY_LINE")]);
-		setCurrentSession("run-1", SINGLE_UNIT_KEY, short);
-		const overlay = new LaneDock();
-		const { widget } = mount(overlay, makeCtx());
-		setDockActive(true);
-		setDockSelection(0);
-		const before = (widget?.render(120) ?? []).length;
-		// Grow the body from 1 line to 20 — the region is padded to previewBudget, so the
-		// dock height must NOT change tick to tick (the ghost-block regression).
-		const long = makeSession(() => Array.from({ length: 20 }, (_, i) => assistantEntry(`LINE_${i}`)));
-		setCurrentSession("run-1", SINGLE_UNIT_KEY, long);
-		overlay.update(); // re-target the preview session (S → S') — height stays put
-		const after = (widget?.render(120) ?? []).length;
-		expect(after).toBe(before);
-		overlay.dispose();
-	});
-
+describe("LaneDock — fixed-height frame", () => {
 	it("a terminal.rows change forces a full redraw (shapeSignature includes termRows)", () => {
 		recordRun("run-1", "ship");
 		const overlay = new LaneDock();
@@ -1174,65 +771,9 @@ describe("LaneDock — fixed-height frame + dynamic split", () => {
 		expect(height).toBeLessThanOrEqual(8); // clamped DOWN, not floor(rows * 0.9)
 		overlay.dispose();
 	});
-
-	it("the ❯ cursor stays visible when the selection is in overflow (scroll-follow)", () => {
-		// 20 lanes (> laneCap) — select the LAST one; it must render inside the scroll window.
-		for (let i = 0; i < 20; i++) recordRun(`run-${i}`, `wf-${i}`);
-		const overlay = new LaneDock();
-		const { widget } = mount(overlay, makeCtx());
-		setDockActive(true);
-		setDockSelection(19); // the last lane, well past the top window
-		const lines = widget?.render(120) ?? [];
-		const cursor = lines.find((l) => l.includes("❯")) ?? "";
-		expect(cursor).toContain("wf-19"); // selected lane scrolled INTO view, not hidden in overflow
-		expect(lines.some((l) => l.includes("above"))).toBe(true); // lanes fold above the window
-		overlay.dispose();
-	});
-
-	it("the viewport is group-aware: a lane + its unit sub-rows stay together at both edges", () => {
-		// 8 lanes × (1 lane + 2 units) = 24 rows ≫ laneCap → scrolls. Selecting a mid-list
-		// lane lands the window on a group boundary: the lane + BOTH units render together.
-		for (let i = 0; i < 8; i++) {
-			recordRun(`run-${i}`, `wf-${i}`);
-			setUnitStarted(`run-${i}`, 0, `u0-${i}`);
-			setUnitStarted(`run-${i}`, 1, `u1-${i}`);
-		}
-		const overlay = new LaneDock();
-		const { widget } = mount(overlay, makeCtx());
-		setDockActive(true);
-		setDockSelection(12); // lands on wf-4's lane row (groups of 3: 0-2,3-5,6-8,9-11,12…)
-		const lines = widget?.render(120) ?? [];
-		const cursorIdx = lines.findIndex((l) => l.includes("❯"));
-		expect(cursorIdx).toBeGreaterThan(-1);
-		expect(lines[cursorIdx]).toContain("wf-4");
-		expect(lines[cursorIdx + 1]).toContain("u0-4"); // unit 0 directly under its lane
-		expect(lines[cursorIdx + 2]).toContain("u1-4"); // unit 1 directly under unit 0
-		overlay.dispose();
-	});
-
-	it("ambient fills the live-output region with the centered placeholder", () => {
-		recordRun("run-1", "ship");
-		const overlay = new LaneDock();
-		const { widget } = mount(overlay, makeCtx());
-		const lines = widget?.render(80) ?? [];
-		// The region is always present — ambient shows the centered placeholder (not a transcript).
-		const placeholder = lines.find((l) => l.includes("select a line for live output")) ?? "";
-		expect(placeholder).not.toBe("");
-		expect(placeholder.trim()).toBe("↑/↓ select a line for live output");
-		// Symmetric centering: equal leading + trailing space (gap split via floor).
-		const leading = placeholder.length - placeholder.trimStart().length;
-		const trailing = placeholder.trimEnd().length - placeholder.trim().length;
-		expect(leading).toBe(trailing);
-		expect(leading).toBeGreaterThan(0); // not left-aligned
-		overlay.dispose();
-	});
 });
 
 describe("LaneDock — fanout unit sub-rows", () => {
-	const assistantEntry = (text: string) => ({
-		type: "message",
-		message: { role: "assistant", content: [{ type: "text", text }] },
-	});
 	const pending = () => ({ factory: (() => ({})) as never, options: undefined as never, resolve: () => {} });
 
 	it("flattens a fanout lane into 1 + N rows: the lane row + an indented sub-row per unit", () => {
@@ -1278,25 +819,6 @@ describe("LaneDock — fanout unit sub-rows", () => {
 		expect(rowOf("u-done")).toContain("✓");
 		const SPINNER_FRAMES = ["⠴", "⠦", "⠖", "⠲"];
 		expect(SPINNER_FRAMES.some((g) => rowOf("u-running").includes(g))).toBe(true);
-		overlay.dispose();
-	});
-
-	it("the active preview follows the SELECTED unit sub-row's own session (not the lane's)", () => {
-		recordRun("run-1", "carve");
-		setUnitStarted("run-1", 0, "phase 1");
-		setUnitStarted("run-1", 1, "phase 2");
-		setCurrentSession(
-			"run-1",
-			1,
-			makeSession(() => [assistantEntry("UNIT1_BODY")]),
-		);
-		const overlay = new LaneDock();
-		const { widget } = mount(overlay, makeCtx());
-		setDockActive(true);
-		// flattened rows: 0=lane, 1=unit0, 2=unit1 — select the unit-1 sub-row.
-		setDockSelection(2);
-		const out = (widget?.render(120) ?? []).join("\n");
-		expect(out).toContain("UNIT1_BODY");
 		overlay.dispose();
 	});
 

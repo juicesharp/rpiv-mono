@@ -263,18 +263,6 @@ interface RegistryState {
 	 * read-on-demand state: no notify (no renderer derives from focus).
 	 */
 	focusedRunId: string | undefined;
-	/**
-	 * Whether the always-mounted lane dock currently holds navigation focus (the
-	 * user has "stepped into" the belowEditor dock). Unlike focusedRunId, the dock
-	 * IS rendered from this state — the dock widget paints a selection cursor and an
-	 * active footer when true — so its setters notify(). The editor (LaneDockEditor)
-	 * is the sole writer at the idle prompt; the widget is the sole reader.
-	 */
-	dockActive: boolean;
-	/** Selected row in the dock, an index into listLanesForDisplay() (the order the
-	 *  dock renders). Clamped on every write and on read so a shrinking lane list
-	 *  can never leave it dangling past the last row. */
-	dockSelection: number;
 }
 
 const REGISTRY_SLOT = Symbol.for("@juicesharp/rpiv-pi:runLaneRegistry");
@@ -288,8 +276,6 @@ function state(): RegistryState {
 			lanes: new Map<string, LaneEntry>(),
 			listeners: new Set<Listener>(),
 			focusedRunId: undefined,
-			dockActive: false,
-			dockSelection: 0,
 		};
 		g[REGISTRY_SLOT] = s;
 	}
@@ -804,67 +790,6 @@ export function getFocusedRun(): string | undefined {
 	return state().focusedRunId;
 }
 
-// ---------------------------------------------------------------------------
-// Dock — the always-mounted belowEditor lane dock's navigation state. Unlike
-// focus (above), the dock renders from this, so every setter notify()s. The
-// dock editor writes it from the idle prompt; the dock widget reads it. Selection
-// is clamped against listLanesForDisplay() (the dock's render order) on write and
-// on read so an evicted lane never strands the cursor past the last row.
-// ---------------------------------------------------------------------------
-
-/** Count of flattened display rows (Σ over lanes of 1 lane row + its unit sub-rows,
- *  keys ≥ 0). The clamp ceiling — replacing `lanes.size`, which could never reach a
- *  unit row below the last lane. */
-function displayRowCount(): number {
-	let n = 0;
-	for (const lane of state().lanes.values()) {
-		n += 1; // the lane row
-		for (const k of lane.units.keys()) if (k >= 0) n += 1; // its unit sub-rows
-	}
-	return n;
-}
-
-/** Clamp `index` into the valid selection range for the current FLATTENED display. */
-function clampSelection(index: number): number {
-	const last = displayRowCount() - 1;
-	if (last < 0) return 0;
-	return Math.max(0, Math.min(last, index));
-}
-
-/** Activate or deactivate dock navigation. Deactivating resets the selection to
- *  the top so a fresh entry always starts at the first row. No-op (no notify) when
- *  already in the requested state. */
-export function setDockActive(active: boolean): void {
-	const s = state();
-	if (s.dockActive === active) return;
-	s.dockActive = active;
-	if (!active) s.dockSelection = 0;
-	else s.dockSelection = clampSelection(s.dockSelection);
-	notify();
-}
-
-/** Set the selected dock row (clamped). No-op (no notify) when unchanged. */
-export function setDockSelection(index: number): void {
-	const s = state();
-	const next = clampSelection(index);
-	if (s.dockSelection === next) return;
-	s.dockSelection = next;
-	notify();
-}
-
-/** Move the dock selection by `delta` rows (clamped). */
-export function moveDockSelection(delta: number): void {
-	setDockSelection(state().dockSelection + delta);
-}
-
-/** Read the dock's navigation state. Selection is clamped on read so a caller
- *  indexing listLanesForDisplay() with it is always in bounds even if a lane was
- *  evicted since the last write. */
-export function getDockState(): { active: boolean; selection: number } {
-	const s = state();
-	return { active: s.dockActive, selection: clampSelection(s.dockSelection) };
-}
-
 /** Test reset — wired into test/setup.ts beforeEach. Clears lanes, listeners, focus
  *  IN PLACE so the process-global slot identity is preserved across resets. */
 export function __resetRunLaneRegistry(): void {
@@ -872,6 +797,4 @@ export function __resetRunLaneRegistry(): void {
 	s.lanes.clear();
 	s.listeners.clear();
 	s.focusedRunId = undefined;
-	s.dockActive = false;
-	s.dockSelection = 0;
 }

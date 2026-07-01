@@ -5,7 +5,6 @@ import {
 	dequeueInput,
 	enqueueInput,
 	evictRun,
-	getDockState,
 	getFocusedRun,
 	getLane,
 	getUnit,
@@ -15,7 +14,6 @@ import {
 	listLanes,
 	listLanesForDisplay,
 	markUnitDone,
-	moveDockSelection,
 	noteVisitedStage,
 	type PendingInput,
 	peekInput,
@@ -24,8 +22,6 @@ import {
 	SINGLE_UNIT_KEY,
 	seedPendingUnits,
 	setCurrentSession,
-	setDockActive,
-	setDockSelection,
 	setFocusedRun,
 	setLaneAbort,
 	setLaneProgress,
@@ -815,112 +811,19 @@ describe("run-lane-registry", () => {
 		});
 	});
 
-	describe("dock state", () => {
-		it("getDockState defaults to inactive at the top", () => {
-			expect(getDockState()).toEqual({ active: false, selection: 0 });
-		});
-
-		it("setDockActive toggles and notifies only on a real change", () => {
-			const listener = vi.fn();
-			subscribeLanes(listener);
-			setDockActive(false); // already inactive — no notify
-			expect(listener).not.toHaveBeenCalled();
-			setDockActive(true);
-			expect(getDockState().active).toBe(true);
-			expect(listener).toHaveBeenCalledTimes(1);
-			setDockActive(true); // unchanged — no second notify
-			expect(listener).toHaveBeenCalledTimes(1);
-		});
-
-		it("deactivating resets the selection to the top", () => {
-			recordRun("run-1", "a");
-			recordRun("run-2", "b");
-			recordRun("run-3", "c");
-			setDockActive(true);
-			setDockSelection(2);
-			expect(getDockState().selection).toBe(2);
-			setDockActive(false);
-			expect(getDockState().selection).toBe(0);
-		});
-
-		it("setDockSelection clamps to [0, rows-1] and notifies only on change", () => {
-			recordRun("run-1", "a");
-			recordRun("run-2", "b");
-			const listener = vi.fn();
-			subscribeLanes(listener);
-			setDockSelection(5); // clamps to last row index (1)
-			expect(getDockState().selection).toBe(1);
-			expect(listener).toHaveBeenCalledTimes(1);
-			setDockSelection(5); // already clamped to 1 — no notify
-			expect(listener).toHaveBeenCalledTimes(1);
-			setDockSelection(-3); // clamps to 0
-			expect(getDockState().selection).toBe(0);
-		});
-
-		it("clamp ceiling reaches the last UNIT sub-row of a flattened fan-out lane", () => {
-			recordRun("run-1", "ship");
-			// Lane row + 3 unit sub-rows ⇒ 4 flattened display rows (indices 0..3).
-			setUnitStarted("run-1", 0, "phase 1/3");
-			setUnitStarted("run-1", 1, "phase 2/3");
-			setUnitStarted("run-1", 2, "phase 3/3");
-			expect(listLanesForDisplay()).toHaveLength(4);
-			setDockSelection(3); // the last unit sub-row — unreachable under the old lanes.size ceiling
-			expect(getDockState().selection).toBe(3);
-		});
-
-		it("moveDockSelection steps and clamps at both ends", () => {
-			recordRun("run-1", "a");
-			recordRun("run-2", "b");
-			moveDockSelection(1);
-			expect(getDockState().selection).toBe(1);
-			moveDockSelection(1); // clamp at last
-			expect(getDockState().selection).toBe(1);
-			moveDockSelection(-5); // clamp at first
-			expect(getDockState().selection).toBe(0);
-		});
-
-		it("getDockState clamps a stale selection after a lane is evicted", () => {
-			recordRun("run-1", "a");
-			recordRun("run-2", "b");
-			recordRun("run-3", "c");
-			setDockSelection(2);
-			evictRun("run-3");
-			evictRun("run-2");
-			// Selection was 2; only run-1 remains → read clamps to 0 (never dangles).
-			expect(getDockState().selection).toBe(0);
-		});
-
-		it("evicting a fan-out lane re-clamps a unit-row selection without stranding the cursor", () => {
-			recordRun("run-1", "ship");
-			setUnitStarted("run-1", 0, "phase 1/2");
-			setUnitStarted("run-1", 1, "phase 2/2");
-			setDockSelection(2); // last unit sub-row
-			evictRun("run-1");
-			expect(getDockState().selection).toBe(0);
-		});
-
-		it("selection is 0 when there are no lanes", () => {
-			setDockSelection(3);
-			expect(getDockState().selection).toBe(0);
-		});
-	});
-
 	describe("__resetRunLaneRegistry", () => {
-		it("clears lanes (and their units map), listeners, focus, and dock state", () => {
+		it("clears lanes (and their units map), listeners, and focus", () => {
 			const listener = vi.fn();
 			subscribeLanes(listener);
 			recordRun("run-1", "ship");
 			setUnitStarted("run-1", 0, "phase 1/1"); // populate the units map
 			setFocusedRun("run-1");
-			setDockActive(true);
-			setDockSelection(0);
 			const callsBeforeReset = listener.mock.calls.length;
 			__resetRunLaneRegistry();
 			expect(laneCount()).toBe(0);
 			expect(listLanes()).toEqual([]);
 			expect(getUnit("run-1", 0)).toBeUndefined(); // units map gone with the lane
 			expect(getFocusedRun()).toBeUndefined();
-			expect(getDockState()).toEqual({ active: false, selection: 0 });
 			// listeners cleared: a post-reset mutation must not call the old listener.
 			recordRun("run-2", "build");
 			expect(listener.mock.calls.length).toBe(callsBeforeReset);

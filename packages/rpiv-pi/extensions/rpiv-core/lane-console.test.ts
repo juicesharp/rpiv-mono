@@ -777,3 +777,78 @@ describe("showLaneConsole", () => {
 		await expect(showLaneConsole(ui, "run-1", SINGLE_UNIT_KEY)).resolves.toBeUndefined();
 	});
 });
+
+describe("LaneConsole — dequeue re-entrancy guard (cross-lane re-sort)", () => {
+	it("dequeues the captured questionTarget, not the live selection, when the notify re-sorts mid-commit", async () => {
+		// Two live single-stage lanes, each with one queued question — the forced setup so the
+		// synchronous dequeue notify can re-sort rows[selection] to a DIFFERENT lane mid-commit.
+		recordRun("run-1", "ship");
+		setUnitStarted("run-1", SINGLE_UNIT_KEY, "unit");
+		setCurrentSession(
+			"run-1",
+			SINGLE_UNIT_KEY,
+			makeSession(() => [assistantEntry("ship body")]),
+		);
+		recordRun("run-2", "build");
+		setUnitStarted("run-2", SINGLE_UNIT_KEY, "unit");
+		setCurrentSession(
+			"run-2",
+			SINGLE_UNIT_KEY,
+			makeSession(() => [assistantEntry("build body")]),
+		);
+
+		// run-1: capture the submit callback (the factory-with-done-capture pattern at lane-console.ts:207-220).
+		let submitRun1!: (r: unknown) => void;
+		const resolveRun1 = vi.fn();
+		enqueueInput("run-1", SINGLE_UNIT_KEY, {
+			factory: ((_t: never, _th: never, _k: never, done: (r: unknown) => void) => {
+				submitRun1 = done;
+				return makeInner().component;
+			}) as never,
+			options: undefined as never,
+			resolve: resolveRun1,
+		});
+		// run-2: spy its factory build count (the unmount-first ordering guard — mirrors lane-console.ts:250-251).
+		const factoryRun2 = vi.fn(() => makeInner().component);
+		const resolveRun2 = vi.fn();
+		enqueueInput("run-2", SINGLE_UNIT_KEY, {
+			factory: factoryRun2 as never,
+			options: undefined as never,
+			resolve: resolveRun2,
+		});
+
+		const done = vi.fn();
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, done);
+		// Both need input (bucket 0); insertion-stable → run-1 at row 0 (selected), run-2 at row 1.
+		await Promise.resolve(); // let run-1's async mount settle (this.inner)
+		panel.handleInput("\r"); // ⏎ arm run-1's question (lane focus → question focus)
+
+		// Commit run-1's answer. dequeueInput("run-1") notifies synchronously → sync() re-enters
+		// mid-commit; run-1 drains to running (bucket 1) while run-2 stays needs-input (bucket 0)
+		// and re-sorts to rows[0]. The selection now points at run-2, but commit() dequeued the
+		// CAPTURED run-1.
+		submitRun1({ answers: ["a"] });
+
+		// questionTarget guard: run-1 resolved exactly once with the answer; run-2 NEVER resolved.
+		expect(resolveRun1).toHaveBeenCalledTimes(1);
+		expect(resolveRun1).toHaveBeenCalledWith({ answers: ["a"] });
+		expect(resolveRun2).not.toHaveBeenCalled();
+		// queue state: run-1 drained, run-2 intact.
+		expect(peekInput("run-1", SINGLE_UNIT_KEY)).toBeUndefined();
+		expect(peekInput("run-2", SINGLE_UNIT_KEY)).toBeDefined();
+		// unmount-first ordering: run-2's factory built EXACTLY ONCE (re-entrant sync() mounted it;
+		// the trailing sync() was a no-op — head === mountedFor). The factory is invoked
+		// synchronously inside mountInner, so the build count needs no await.
+		expect(factoryRun2).toHaveBeenCalledTimes(1);
+
+		await Promise.resolve(); // let run-2's async mount settle (this.inner)
+		// selection re-sort + arm-then-fire: cursor lands on run-2, focus returns to the spine
+		// (a fresh lane needs a fresh arm — even though run-1's answer was armed).
+		const out = panel.render(80);
+		expect(out.find((l) => l.includes("❯")) ?? "").toContain("build"); // cursor re-sorted to run-2
+		expect(out.join("\n")).toContain("⏎ answer"); // run-2's question INERT (lane focus, not armed)
+		expect(out.join("\n")).toContain("↑/↓ lanes"); // back in lane navigation focus
+		expect(done).not.toHaveBeenCalled(); // no strand — browser stays open across the commit
+		panel.dispose();
+	});
+});

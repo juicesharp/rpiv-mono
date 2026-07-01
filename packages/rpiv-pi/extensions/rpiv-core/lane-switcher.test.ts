@@ -8,11 +8,9 @@ import {
 	__resetRunLaneRegistry,
 	enqueueInput,
 	evictRun,
-	getDockState,
 	getFocusedRun,
 	recordRun,
 	SINGLE_UNIT_KEY,
-	setDockActive,
 	setFocusedRun,
 	setUnitStarted,
 	subscribeLanes,
@@ -72,7 +70,6 @@ describe("lane-switcher — /lanes command", () => {
 		const ui = createMockUI() as unknown as ExtensionUIContext;
 		await lanes("", { hasUI: true, ui });
 		expect(ui.notify).toHaveBeenCalledWith("No in-flight runs.", "info");
-		expect(getDockState().active).toBe(false);
 	});
 
 	it("is a no-op without a UI (headless command invocation)", async () => {
@@ -81,16 +78,16 @@ describe("lane-switcher — /lanes command", () => {
 		const ui = createMockUI() as unknown as ExtensionUIContext;
 		await lanes("", { hasUI: false, ui });
 		expect(ui.notify).not.toHaveBeenCalled();
-		expect(getDockState().active).toBe(false);
 	});
 
-	it("steps into the dock at the top row when at least one run is in-flight", async () => {
+	it("opens the lane browser on the top display row when at least one run is in-flight", async () => {
 		const { lanes } = register();
 		recordRun("run-1", "ship");
 		recordRun("run-2", "build");
+		mockShowLaneConsole.mockResolvedValue(undefined);
 		const ui = createMockUI() as unknown as ExtensionUIContext;
 		await lanes("", { hasUI: true, ui });
-		expect(getDockState()).toEqual({ active: true, selection: 0 });
+		expect(mockShowLaneConsole).toHaveBeenCalledWith(ui, "run-1", SINGLE_UNIT_KEY); // top row → run-1's lane
 	});
 });
 
@@ -101,12 +98,13 @@ describe("lane-switcher — Ctrl-Q shortcut", () => {
 		expect(typeof shortcut).toBe("function");
 	});
 
-	it("steps into the dock at root when a lane is in-flight", () => {
+	it("opens the lane browser at root when a lane is in-flight", () => {
 		recordRun("run-1", "ship");
+		mockShowLaneConsole.mockResolvedValue(undefined);
 		const ui = createMockUI() as unknown as ExtensionUIContext;
 		const { shortcut } = register();
 		shortcut?.({ hasUI: true, ui });
-		expect(getDockState().active).toBe(true);
+		expect(mockShowLaneConsole).toHaveBeenCalledWith(ui, "run-1", SINGLE_UNIT_KEY);
 	});
 
 	it("is a no-op without a UI", () => {
@@ -114,14 +112,14 @@ describe("lane-switcher — Ctrl-Q shortcut", () => {
 		const ui = createMockUI() as unknown as ExtensionUIContext;
 		const { shortcut } = register();
 		shortcut?.({ hasUI: false, ui });
-		expect(getDockState().active).toBe(false);
+		expect(mockShowLaneConsole).not.toHaveBeenCalled();
 	});
 
 	it("is a no-op when there are no in-flight lanes", () => {
 		const ui = createMockUI() as unknown as ExtensionUIContext;
 		const { shortcut } = register();
 		shortcut?.({ hasUI: true, ui });
-		expect(getDockState().active).toBe(false);
+		expect(mockShowLaneConsole).not.toHaveBeenCalled();
 	});
 
 	it("is a no-op when switched into a lane (focus set — viewer owns input)", () => {
@@ -130,7 +128,7 @@ describe("lane-switcher — Ctrl-Q shortcut", () => {
 		const { shortcut } = register();
 		setFocusedRun("run-1");
 		shortcut?.({ hasUI: true, ui });
-		expect(getDockState().active).toBe(false);
+		expect(mockShowLaneConsole).not.toHaveBeenCalled();
 	});
 });
 
@@ -155,61 +153,52 @@ describe("lane-switcher — switchIntoLane sequencing", () => {
 		expect(mockShowLaneConsole).toHaveBeenCalledTimes(1);
 	});
 
-	it("re-parks on the originating lane (not root) when the user backs out of the console", async () => {
+	it("backs out to the ambient prompt when the user closes the console (no dock re-park)", async () => {
 		recordRun("run-1", "ship");
-		mockShowLaneConsole.mockResolvedValue(undefined); // esc/← → back: re-park
-		setDockActive(true);
+		mockShowLaneConsole.mockResolvedValue(undefined); // esc/← → the browser closes
 		const ui = createMockUI() as unknown as ExtensionUIContext;
 		await switchIntoLane(ui, "run-1", SINGLE_UNIT_KEY);
-		// → and esc converge: focus returns to the lane in the dock, NOT the ambient root.
-		expect(getDockState()).toEqual({ active: true, selection: 0 });
+		// The browser owned all navigation + the answer walk; closing lands at the prompt, not the dock.
 		expect(getFocusedRun()).toBeUndefined();
 	});
 
-	it("re-parks onto the EXACT unit sub-row the user opened (a fan-out unit, not the lane row)", async () => {
+	it("opens the browser on a fan-out unit's sub-row when that row is the step-in target", async () => {
 		recordRun("run-1", "ship");
 		// Two fan-out unit sub-rows under the lane → flattened rows are [lane, unit0, unit1].
 		setUnitStarted("run-1", 0, "phase 1/2");
 		setUnitStarted("run-1", 1, "phase 2/2");
-		mockShowLaneConsole.mockResolvedValue(undefined); // esc/← → back: re-park onto the opened row
-		setDockActive(true);
+		mockShowLaneConsole.mockResolvedValue(undefined);
 		const ui = createMockUI() as unknown as ExtensionUIContext;
-		await switchIntoLane(ui, "run-1", 1); // open unit index 1 → its sub-row is the last row
-		// No lane needs input → land back on THAT unit's sub-row (row 2), not the lane row.
-		expect(getDockState()).toEqual({ active: true, selection: 2 });
-		expect(getFocusedRun()).toBeUndefined();
+		await switchIntoLane(ui, "run-1", 1); // open unit index 1 directly
+		expect(mockShowLaneConsole).toHaveBeenCalledWith(ui, "run-1", 1); // the console lands on that sub-row
 	});
 
-	it("stays stepped in when another lane still needs input", async () => {
+	it("stepIn targets the needs-input lane (priority sort), so a step-in lands where the user is wanted", async () => {
 		recordRun("run-1", "ship");
 		recordRun("run-2", "build");
-		enqueueInput("run-1", SINGLE_UNIT_KEY, {
-			factory: (() => ({})) as never,
-			options: undefined as never,
-			resolve: vi.fn(),
-		});
+		// run-2 needs input → it bucket-sorts above run-1, becoming the top display row.
 		enqueueInput("run-2", SINGLE_UNIT_KEY, {
 			factory: (() => ({})) as never,
 			options: undefined as never,
 			resolve: vi.fn(),
 		});
 		mockShowLaneConsole.mockResolvedValue(undefined);
+		const { lanes } = register();
 		const ui = createMockUI() as unknown as ExtensionUIContext;
-		await switchIntoLane(ui, "run-1", SINGLE_UNIT_KEY);
-		expect(getDockState()).toEqual({ active: true, selection: 0 }); // re-enters for run-2
-		expect(getFocusedRun()).toBeUndefined();
+		await lanes("", { hasUI: true, ui });
+		expect(mockShowLaneConsole).toHaveBeenCalledWith(ui, "run-2", SINGLE_UNIT_KEY);
 	});
 
-	it("drops to the root prompt when the lane is evicted before the console closes", async () => {
+	it("drops to the ambient prompt when the lane is evicted before the console closes", async () => {
 		recordRun("run-1", "ship");
 		// The run finishes + is dismissed while the console is open → nothing left to step onto.
 		mockShowLaneConsole.mockImplementation(async () => {
 			evictRun("run-1");
 		});
-		setDockActive(true);
 		const ui = createMockUI() as unknown as ExtensionUIContext;
 		await switchIntoLane(ui, "run-1", SINGLE_UNIT_KEY);
-		expect(getDockState().active).toBe(false);
+		// Focus is still cleared in finally even when the lane is evicted mid-console.
+		expect(getFocusedRun()).toBeUndefined();
 	});
 });
 

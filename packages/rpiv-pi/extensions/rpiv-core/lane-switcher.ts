@@ -1,15 +1,15 @@
 /**
  * lane-switcher — composition for the parallel-run lane switcher.
  *
- * The launcher (root) owns this: it mounts the always-on lane DOCK below the editor
- * on the captured launcher UI, subscribes it to the run-lane registry so it
- * re-renders as runs start / finish / need input, and installs the LaneDockEditor —
- * the input editor that proxies arrow/enter/tab/x keys into the dock's navigation
- * (widgets can't take focus; the editor is the only component reliably reached at
- * the idle prompt). `/lanes` and the `^Q` hotkey simply step INTO the dock. When the
- * user opens a run (→ or ⏎), switchIntoLane opens the UNIFIED console on the real UI —
- * the lane's transcript read-only, with any queued question mounted inline; the console
- * itself commits/advances the unit's question queue.
+ * The launcher (root) owns this: it mounts the always-on ambient lane DOCK below the
+ * editor on the captured launcher UI (a read-only glance of in-flight runs), subscribes
+ * it to the run-lane registry so it re-renders as runs start / finish / need input, and
+ * installs the LaneDockEditor — the input editor that owns the DOWN-from-empty-prompt
+ * step-in gesture (widgets can't take focus; the editor is the only component reliably
+ * reached at the idle prompt). `/lanes`, the `^Q` hotkey, and that DOWN gesture all call
+ * `stepIn`, which opens the focused lane BROWSER (lane-console) on the top display row.
+ * The browser owns all navigation from there — spine selection, the transcript swap, and
+ * inline question answering — so the belowEditor dock is never itself "activated".
  */
 
 import type { ExtensionAPI, ExtensionUIContext, KeybindingsManager } from "@earendil-works/pi-coding-agent";
@@ -21,11 +21,8 @@ import { isLaneRelayUiContext } from "./lane-relay-ui.js";
 import {
 	getFocusedRun,
 	laneCount,
-	laneNeedsInput,
-	listLanes,
 	listLanesForDisplay,
-	setDockActive,
-	setDockSelection,
+	SINGLE_UNIT_KEY,
 	setFocusedRun,
 	subscribeLanes,
 } from "./run-lane-registry.js";
@@ -61,61 +58,40 @@ let editorCtx: ExtensionUIContext | undefined;
  *  while a console is open the editor isn't focused, so this rarely trips). */
 let switchingLane = false;
 
-/** Step INTO the dock at the top row — the shared body of `/lanes` and the hotkey. */
-function enterDock(): void {
-	if (laneCount() === 0) return;
-	setDockActive(true);
-	setDockSelection(0);
-}
-
 /**
- * Re-park dock focus after leaving a lane — the tail of switchIntoLane's "back" path.
- * Reads ONLY registry state, so it is throw-safe inside a finally. The
- * tri-state (the focus-after-verb fix from 8c4a2f4):
- *  - no lanes left → drop to the ambient root prompt;
- *  - some lane still needs input → park row 0 so a run of ⏎ presses walks the queue
- *    (needs-input lanes bucket-sort to the top, run-lane-registry.ts:422-433);
- *  - otherwise → return to the EXACT display row the user opened (the unit sub-row for a
- *    fan-out unit, else the lane row), so focus returns to it.
+ * Step INTO the lane browser at the top display row — the shared body of `/lanes`, the
+ * `^Q` hotkey, and the DOWN-from-empty-prompt gesture (LaneDockEditor). Opens the focused
+ * console, which owns lane navigation, the transcript swap, and question answering — NOT
+ * the old in-editor dock-active nav. The top row is the needs-input/running/terminal-sorted
+ * first row, so a step-in lands on the lane most likely to want the user. No-op with no
+ * lanes (the caller has already gated on laneCount for its own messaging).
  */
-function reparkAfterLane(runId: string, unitIndex: number): void {
-	if (laneCount() === 0) {
-		setDockActive(false); // nothing left to step onto — back to the ambient prompt
-	} else if (listLanes().some((l) => laneNeedsInput(l.runId))) {
-		setDockActive(true); // another lane awaits — park at the top so the next ⏎ walks to it
-		setDockSelection(0);
-	} else {
-		// No lane needs input: stay stepped in on the originating row, so focus returns
-		// to it rather than the primary session input. ↑/esc steps back out.
-		setDockActive(true);
-		const idx = listLanesForDisplay().findIndex((r) =>
-			unitIndex >= 0
-				? r.kind === "unit" && r.lane.runId === runId && r.unit.index === unitIndex
-				: r.kind === "lane" && r.lane.runId === runId,
-		);
-		setDockSelection(idx >= 0 ? idx : 0);
-	}
+function stepIn(ui: ExtensionUIContext): void {
+	const top = listLanesForDisplay()[0];
+	if (!top) return;
+	const unitIndex = top.kind === "unit" ? top.unit.index : SINGLE_UNIT_KEY;
+	void switchIntoLane(ui, top.lane.runId, unitIndex);
 }
 
 /**
- * Switch into a run's UNIT — ALWAYS the UNIFIED console, whether or not a question is
- * queued. The console renders the lane's transcript read-only and mounts any queued
- * question inline (and mounts one that ARRIVES mid-browse, no overlay swap), committing
- * and advancing the unit's question queue itself. Marks the lane focused for the whole
- * switched-in session so THIS run's abort tap (and only it) interprets Ctrl-C; cleared in
- * finally so a console throw can't strand focus (which would leave Ctrl-C hijacked at
- * root). Called by the dock editor's `onOpen` on → / ⏎.
+ * Switch into a run's UNIT — opens the UNIFIED lane browser starting on `(runId, unitIndex)`.
+ * The console renders that unit's transcript, lets the user navigate the spine to any sibling
+ * lane (re-targeting the transcript in place), and mounts/commits/advances each unit's queued
+ * question inline — the browser stays open across answers (you are never stranded), so there
+ * is no per-answer re-park: backing out (esc/←) returns straight to the prompt. Marks the run
+ * focused so THIS run's abort tap interprets Ctrl-C; cleared in finally so a console throw
+ * can't strand focus (which would leave Ctrl-C hijacked at root). Called by the dock editor's
+ * `onOpen` and by `stepIn`.
  */
 export async function switchIntoLane(ui: ExtensionUIContext, runId: string, unitIndex: number): Promise<void> {
 	if (switchingLane) return; // never stack two overlays
 	switchingLane = true;
 	setFocusedRun(runId);
 	try {
-		await showLaneConsole(ui, runId, unitIndex); // transcript + (any queued) question in ONE overlay
+		await showLaneConsole(ui, runId, unitIndex); // the lane browser: spine + transcript + inline question
 	} finally {
 		setFocusedRun(undefined);
 		switchingLane = false;
-		reparkAfterLane(runId, unitIndex); // → and ⏎ converge: land back on the originating row, not at root
 	}
 }
 
@@ -153,14 +129,14 @@ export function registerLaneSwitcher(pi: ExtensionAPI): void {
 	});
 
 	pi.registerCommand("lanes", {
-		description: "Step into the workflow run lane dock",
+		description: "Open the workflow run lane browser",
 		handler: async (_args, ctx) => {
 			if (!ctx.hasUI) return;
 			if (laneCount() === 0) {
 				ctx.ui.notify("No in-flight runs.", "info");
 				return;
 			}
-			enterDock();
+			stepIn(ctx.ui);
 		},
 	});
 
@@ -175,10 +151,10 @@ export function registerLaneSwitcher(pi: ExtensionAPI): void {
 		// Cast: an env-provided KeyId is validated by Pi at registration; an unknown id
 		// simply never fires (the user still has /lanes).
 		pi.registerShortcut(hotkey as KeyId, {
-			description: "Step into the workflow run lane dock",
+			description: "Open the workflow run lane browser",
 			handler: (ctx) => {
 				if (!ctx.hasUI || getFocusedRun() !== undefined || laneCount() === 0) return;
-				enterDock();
+				stepIn(ctx.ui);
 			},
 		});
 	}
