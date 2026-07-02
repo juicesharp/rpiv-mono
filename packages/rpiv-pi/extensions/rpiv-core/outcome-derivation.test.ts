@@ -433,7 +433,7 @@ describe("equivalence — built-in workflows", () => {
 		});
 	}
 
-	it("total produces stages across all workflows = 35 (33 derivable + carve's design-review + script-stage floor)", () => {
+	it("total produces stages across all workflows = 36 (33 derivable + carve's design-review + script stages)", () => {
 		let count = 0;
 		let scriptProduces = 0;
 		for (const w of builtInWorkflows) {
@@ -442,8 +442,8 @@ describe("equivalence — built-in workflows", () => {
 				if (stage.kind === "produces" && stage.run != null) scriptProduces++;
 			}
 		}
-		expect(count).toBe(35);
-		expect(scriptProduces).toBe(1); // carve::slice-check
+		expect(count).toBe(36);
+		expect(scriptProduces).toBe(2); // carve::slice-check + carve::goal
 	});
 });
 

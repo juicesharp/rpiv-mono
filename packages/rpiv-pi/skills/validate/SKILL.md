@@ -1,7 +1,7 @@
 ---
 name: validate
 description: Verify that an implementation plan was correctly executed by running each phase's success criteria against the working tree and producing a validation report. Use after the implement skill completes, when the user asks to "validate the plan", wants a post-implementation audit, or needs to confirm a feature is fully shipped per its plan.
-argument-hint: "[plan-path]"
+argument-hint: "[plan-path] [--goal <path>]"
 allowed-tools: Read, Bash(git *), Bash(make *), Glob, Grep, Agent
 shell-timeout: 10
 contract:
@@ -29,7 +29,7 @@ You are tasked with validating that an implementation plan was correctly execute
 
 ## Input
 
-`$ARGUMENTS` — optional path to a plan in `.rpiv/artifacts/plans/`. If omitted, branch on the recent-plans list in the Metadata block.
+`$ARGUMENTS` — optional path to a plan in `.rpiv/artifacts/plans/`, optionally followed by `--goal <path>` (the user's original brief, captured verbatim at run start). Peel the `--goal` flag first; what remains is the plan path. If no plan path remains, branch on the recent-plans list in the Metadata block.
 
 ## Metadata
 
@@ -113,6 +113,11 @@ For each phase in the plan:
    - Are there missing validations?
    - Could the implementation break existing functionality?
 
+5. **Check goal conformance** (only when `--goal` was provided):
+   - Read the goal file fully — it is the user's brief in their own words.
+   - Verify the delivered result honors every explicit ask and constraint in it. A goal requirement the plan never carried is still a gap — the plan, not just the implementation, can deviate from the user.
+   - Report shortfalls under **Deviations from Plan**, quoting the goal's actual wording; never infer unstated scope from it.
+
 ### Step 3: Write the Validation Report
 
 1. **Determine metadata** (from the Metadata block at the top of this skill):
@@ -177,6 +182,7 @@ If you were part of the implementation:
 ## Validation Checklist
 
 Always verify:
+- [ ] Goal conformance checked when `--goal` was provided
 - [ ] All phases marked complete are actually done
 - [ ] Automated tests pass
 - [ ] Code follows existing patterns

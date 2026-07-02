@@ -1154,6 +1154,125 @@ describe("carve plan gate grade panel (--context threading)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// carve goal channel — the user's brief captured VERBATIM at run start and
+// threaded into the judgment seams only: the grade panels' completeness/
+// correctness dimensions (--goal) and validate's prompt. Generative stages
+// (slice, design-slice) stay goal-blind by design, and research — displaced
+// from the start slot — must still receive the raw brief via its prompt fn.
+// ---------------------------------------------------------------------------
+
+describe("carve goal channel (verbatim brief threading)", () => {
+	const carve = () => findWorkflow("carve");
+	const out = (rel: string) => ({ artifacts: [{ handle: fsHandle(rel) }], data: undefined, kind: "", meta: {} });
+	const promptFnOf = (stage: string) => {
+		const prompt = carve().stages[stage]?.prompt;
+		if (typeof prompt !== "function") throw new Error(`carve ${stage} stage has no prompt fn`);
+		return prompt;
+	};
+	const gateUnits = (stage: string, named: Record<string, unknown>) => {
+		const loop = carve().stages[stage]?.loop;
+		if (loop?.kind !== "fanout") throw new Error(`carve ${stage} stage has no fanout loop`);
+		return loop.units({ cwd: "/repo", artifact: undefined, state: { named } as unknown as RunView });
+	};
+
+	describe("goal capture stage", () => {
+		let tmpDir: string;
+		beforeEach(() => {
+			tmpDir = mkdtempSync(join(tmpdir(), "rpiv-carve-goal-"));
+		});
+		afterEach(() => {
+			rmSync(tmpDir, { recursive: true, force: true });
+		});
+
+		it("is the start stage and writes the brief byte-for-byte", () => {
+			expect(carve().start).toBe("goal");
+			const stage = carve().stages.goal;
+			if (!stage?.run) throw new Error("carve goal stage has no run function");
+			const run = stage.run as (ctx: { cwd: string; input?: undefined; state: RunView }) => {
+				artifacts: readonly { handle: { kind: string; path: string } }[];
+			};
+			const brief = "add dark mode\n\nconstraints:\n- don't touch auth\n- keep it minimal";
+			const output = run({
+				cwd: tmpDir,
+				input: undefined,
+				state: { originalInput: brief, named: {} } as unknown as RunView,
+			});
+			const handle = output.artifacts[0]?.handle;
+			expect(handle?.kind).toBe("fs");
+			expect(handle?.path).toMatch(/^\.rpiv\/artifacts\/goal\/goal-.+\.md$/);
+			expect(readFileSync(join(tmpDir, handle?.path ?? ""), "utf-8")).toBe(brief);
+		});
+	});
+
+	it("research dispatches the raw brief via prompt (goal displaced it from the start slot)", () => {
+		const dispatch = promptFnOf("research")({
+			cwd: "/repo",
+			input: undefined,
+			state: { originalInput: "add dark mode", named: {} } as unknown as RunView,
+		});
+		expect(dispatch).toBe("/skill:research add dark mode");
+	});
+
+	it("threads --goal into completeness and correctness only, leaving --context untouched", async () => {
+		const units = await gateUnits("plan-grade", {
+			plans: [out(".rpiv/artifacts/plans/p.md")],
+			research: [out(".rpiv/artifacts/research/r.md")],
+			goal: [out(".rpiv/artifacts/goal/goal.md")],
+		});
+		const byLabel = new Map(units.map((u) => [u.label, u.prompt]));
+		expect(byLabel.get("completeness")).toContain("--goal .rpiv/artifacts/goal/goal.md");
+		expect(byLabel.get("correctness")).toContain("--goal .rpiv/artifacts/goal/goal.md");
+		for (const d of ["actionability", "pattern-following", "architecture-fit"]) {
+			expect(byLabel.get(d)).not.toContain("--goal");
+		}
+		expect(byLabel.get("architecture-fit")).toContain("--context .rpiv/artifacts/research/r.md");
+	});
+
+	it("omits --goal when the channel is empty, and the slice gate stays goal-blind", async () => {
+		const bare = await gateUnits("plan-grade", {
+			plans: [out(".rpiv/artifacts/plans/p.md")],
+			research: [out(".rpiv/artifacts/research/r.md")],
+		});
+		expect(bare.every((u) => !u.prompt.includes("--goal"))).toBe(true);
+		const slice = await gateUnits("slice-grade", {
+			slices: [out(".rpiv/artifacts/slices/s.md")],
+			goal: [out(".rpiv/artifacts/goal/goal.md")],
+		});
+		expect(slice.every((u) => !u.prompt.includes("--goal"))).toBe(true);
+	});
+
+	it("both grade gates declare the goal read", () => {
+		expect(carve().stages["plan-grade"]?.reads).toContain("goal");
+		expect(carve().stages["code-grade"]?.reads).toContain("goal");
+	});
+
+	it("validate dispatches the LATEST plan from the named channel plus --goal", () => {
+		// Named-channel sourcing is load-bearing: after the stitch gate the
+		// rolling primary is the last verdict JSON, not the plan.
+		const dispatch = promptFnOf("validate")({
+			cwd: "/repo",
+			input: undefined,
+			state: {
+				named: {
+					plans: [out(".rpiv/artifacts/plans/old.md"), out(".rpiv/artifacts/plans/p.md")],
+					goal: [out(".rpiv/artifacts/goal/goal.md")],
+				},
+			} as unknown as RunView,
+		});
+		expect(dispatch).toBe("/skill:validate .rpiv/artifacts/plans/p.md --goal .rpiv/artifacts/goal/goal.md");
+	});
+
+	it("validate degrades to the bare plan path without a goal artifact", () => {
+		const dispatch = promptFnOf("validate")({
+			cwd: "/repo",
+			input: undefined,
+			state: { named: { plans: [out(".rpiv/artifacts/plans/p.md")] } } as unknown as RunView,
+		});
+		expect(dispatch).toBe("/skill:validate .rpiv/artifacts/plans/p.md");
+	});
+});
+
+// ---------------------------------------------------------------------------
 // slice-structure — the deterministic Phase-1 floor under the design-readiness
 // gate: dependency-cycle freedom + brief-coverage conservation (frozen at the
 // first cut). Both are computed from the slice-map text, no LLM.

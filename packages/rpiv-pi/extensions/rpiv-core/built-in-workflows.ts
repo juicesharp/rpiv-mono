@@ -14,7 +14,7 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
@@ -599,12 +599,16 @@ const prTriageWorkflow = defineWorkflow({
 });
 
 // ===========================================================================
-// carve — research → slice → slice-check (deterministic floor) → slice-grade
-//         (design-readiness, slice-fix loop) → slice-design (fanout) →
-//         design-review (one human checkpoint) → subplan (cluster fanout) →
-//         plan → plan-grade (plan-fix loop) → code (fanout) → code-splice →
-//         code-grade (code-fix loop) → implement → validate → commit
-//   The sliced, panel-gated heavy path: research the brief first (so every slice
+// carve — goal (verbatim-brief capture) → research → slice → slice-check
+//         (deterministic floor) → slice-grade (design-readiness, slice-fix loop)
+//         → slice-design (fanout) → design-review (one human checkpoint) →
+//         subplan (cluster fanout) → plan → plan-grade (plan-fix loop) →
+//         code (fanout) → code-splice → code-grade (code-fix loop) →
+//         implement → validate → commit
+//   The sliced, panel-gated heavy path: capture the user's brief verbatim as the
+//   `goal` channel (the north star the judgment seams — the two grade panels'
+//   completeness/correctness dimensions and validate — anchor against), research
+//   the brief (so every slice
 //   rests on a real, cited footing and the plan gate can grade architecture-fit),
 //   decompose it into independent
 //   vertical slices, gate that breakdown BEFORE any design so each slice is
@@ -651,6 +655,45 @@ const PLAN_DIMENSIONS = [
 	"pattern-following",
 	"architecture-fit",
 ] as const;
+
+/** Bucket directory the goal capture writes into — carve's verbatim-brief channel. */
+const GOAL_DIR = ".rpiv/artifacts/goal";
+
+/**
+ * Capture the user's brief VERBATIM as carve's `goal` channel — the north-star
+ * artifact the judgment seams anchor against (the grade panels'
+ * completeness/correctness dimensions and `validate`). A script stage (no LLM)
+ * so nothing refracts the wording: `research` carries the goal's intent,
+ * grounded and expanded, but explicit user constraints ("keep it minimal",
+ * "don't touch auth") routinely don't survive that refraction — the raw file
+ * is the only artifact that holds them. The body is the brief byte-for-byte;
+ * added frontmatter or headers would pollute "the user's exact words".
+ *
+ * Publishes under its record key (`goal`): a script stage may not carry an
+ * `outcome` (`script-with-outcome` is a load error) and needs none — the
+ * returned envelope IS the output. Timestamped filename so concurrent/repeat
+ * runs never collide; on resume the recorded path replays from the JSONL
+ * trail, so the fanout `units()` closures reading the channel stay
+ * deterministic.
+ */
+const captureGoal = ({ state, cwd }: ScriptContext): Omit<Output, "meta"> => {
+	const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+	const rel = join(GOAL_DIR, `goal-${stamp}.md`);
+	mkdirSync(join(cwd, GOAL_DIR), { recursive: true });
+	writeFileSync(join(cwd, rel), state.originalInput, "utf-8");
+	return { kind: "md", artifacts: [{ handle: { kind: "fs", path: rel } }], data: {} };
+};
+
+/**
+ * `goal` displaces `research` as carve's start stage, and ONLY the start stage
+ * receives `originalInput` as its skill arg (`stageEntryArgs` case 1) — a plain
+ * `produces()` research would silently receive the rolling primary (the goal
+ * FILE PATH) instead of the brief text. A prompt stage owns its whole message,
+ * so this rebuilds research's pre-goal dispatch byte-for-byte; the outcome
+ * deriver still wires the `research` bucket off the record key (the polish
+ * `validate` prompt-stage precedent).
+ */
+const RESEARCH_BRIEF_PROMPT: PromptFn = ({ state }) => `/skill:research ${state.originalInput}`;
 
 /** `## Slice N:` headings — the source of truth a slice map's `slices:` array is derived from. */
 const SLICE_HEADING_RE = /^## Slice (\d+):/gm;
@@ -956,6 +999,16 @@ const SYNTH_CLUSTER_FANOUT = fanout({
 });
 
 /**
+ * The two dimensions the grade panels anchor against the verbatim brief.
+ * "Complete" and "correct" MEAN "against what the user asked" — without the
+ * goal, completeness grades the plan against the plan's own claims. The other
+ * dimensions (and the slice gate's `design-readiness`) deliberately stay
+ * goal-blind: fit/actionability/pattern-following judge the artifact against
+ * the codebase, and an ambient goal at those seams invites scope inflation.
+ */
+const GOAL_DIMENSIONS: ReadonlySet<string> = new Set(["completeness", "correctness"]);
+
+/**
  * A grade panel: one `grade` session per dimension over the latest artifact on
  * `channel`. Each unit's prompt is the `grade` skill's flags
  * (`--dimension <d> --artifact <path>`); the per-dimension verdicts fold via
@@ -965,8 +1018,10 @@ const SYNTH_CLUSTER_FANOUT = fanout({
  * `architecture-fit` is the one dimension `grade` requires a `--context` for: it
  * grades the plan against the research the slices rest on. The carve flow always
  * front-loads a `research` stage, so we thread the latest `research` artifact in
- * as `--context` for that dimension only; every other dimension (and the slice
- * gate's `design-readiness`, which never grades fit) gets the bare flags.
+ * as `--context` for that dimension only; likewise the latest `goal` artifact
+ * threads in as `--goal` for the `GOAL_DIMENSIONS` only. Every other dimension
+ * (and the slice gate's `design-readiness`, which never grades fit or
+ * goal-completeness) gets the bare flags.
  */
 const gradePanelFanout = (channel: string, dimensions: readonly string[]) =>
 	fanout({
@@ -979,8 +1034,10 @@ const gradePanelFanout = (channel: string, dimensions: readonly string[]) =>
 			const target = handleToString(doc.handle);
 			const research = latestFsArtifact(state, "research");
 			const contextFlag = research?.handle.kind === "fs" ? ` --context ${handleToString(research.handle)}` : "";
+			const goal = latestFsArtifact(state, "goal");
+			const goalFlag = goal?.handle.kind === "fs" ? ` --goal ${handleToString(goal.handle)}` : "";
 			return dimensions.map((d) => ({
-				prompt: `--dimension ${d} --artifact ${target}${d === "architecture-fit" ? contextFlag : ""}`,
+				prompt: `--dimension ${d} --artifact ${target}${d === "architecture-fit" ? contextFlag : ""}${GOAL_DIMENSIONS.has(d) ? goalFlag : ""}`,
 				label: d,
 				id: `${channel}-dim-${d}`,
 			}));
@@ -1049,15 +1106,40 @@ const STITCH_SCRIPT = join(
 	"stitch-elaborations.mjs",
 );
 
+/**
+ * Carve's validate dispatch: the latest synthesized plan plus the goal flag.
+ * Sourcing the plan from the NAMED channel (not the rolling primary) is
+ * load-bearing: `code-grade` is a produces-fanout, so after the stitch gate the
+ * rolling primary is the LAST VERDICT JSON (`placeFanoutOutput` advances it per
+ * unit) and `implement` (acts) leaves it there — a plain `produces()` validate
+ * would receive a verdict path as its "plan". A prompt stage owns its whole
+ * message, so the `/skill:validate` prefix is explicit (polish precedent).
+ */
+const VALIDATE_GOAL_PROMPT: PromptFn = ({ state }) => {
+	const parts = ["/skill:validate"];
+	const plan = latestFsArtifact(state, "plans");
+	if (plan?.handle.kind === "fs") parts.push(handleToString(plan.handle));
+	const goal = latestFsArtifact(state, "goal");
+	if (goal?.handle.kind === "fs") parts.push(`--goal ${handleToString(goal.handle)}`);
+	return parts.join(" ");
+};
+
 const carveWorkflow = defineWorkflow({
 	name: "carve",
 	description:
-		"Ship, sliced: research the brief → decompose it into vertical slices → two-phase slice gate (a deterministic floor — dependency-cycle freedom + brief-coverage conservation so a slice-fix can't pass by dropping scope — then one LLM design-readiness judgment that each slice is chewable by a single design pass) with a slice-fix loop → design each slice in parallel → one consolidated developer checkpoint (accept or adjust the proposed interfaces/data types, adjustments applied surgically and cascaded to dependents) → synthesize hierarchically (per-cluster sub-plans → one merged plan) → quality-panel gate (completeness/correctness/actionability/pattern-following/architecture-fit) with a plan-fix loop → elaborate code per phase in parallel → stitch → re-grade the code-bearing plan → implement → validate → commit. Research-led; three automated gates plus one human design checkpoint, before design, before code, and after stitch.",
-	start: "research",
+		"Ship, sliced: capture the verbatim brief as a goal artifact (the north star the quality gates' completeness/correctness dimensions and validate anchor against) → research the brief → decompose it into vertical slices → two-phase slice gate (a deterministic floor — dependency-cycle freedom + brief-coverage conservation so a slice-fix can't pass by dropping scope — then one LLM design-readiness judgment that each slice is chewable by a single design pass) with a slice-fix loop → design each slice in parallel → one consolidated developer checkpoint (accept or adjust the proposed interfaces/data types, adjustments applied surgically and cascaded to dependents) → synthesize hierarchically (per-cluster sub-plans → one merged plan) → quality-panel gate (completeness/correctness/actionability/pattern-following/architecture-fit) with a plan-fix loop → elaborate code per phase in parallel → stitch → re-grade the code-bearing plan → implement → validate → commit. Research-led; three automated gates plus one human design checkpoint, before design, before code, and after stitch.",
+	start: "goal",
 	stages: {
+		// The user's brief, verbatim, on its own channel — the judgment seams
+		// (plan/stitch gates' completeness+correctness, validate) anchor against
+		// it. Deliberately NOT fed to the generative stages (slice, design-slice):
+		// bounded per-slice context is carve's whole point, and an ambient goal
+		// there invites re-litigating settled decompositions.
+		goal: produces.script({ run: captureGoal }),
 		// Front-loaded research grounds every slice's footing and feeds the plan
-		// gate's architecture-fit dimension its --context.
-		research: produces(),
+		// gate's architecture-fit dimension its --context. Prompt-dispatched so it
+		// still receives the raw brief now that `goal` holds the start slot.
+		research: produces({ prompt: RESEARCH_BRIEF_PROMPT }),
 		slice: produces(),
 		// Phase 1 of the gate: the DETERMINISTIC floor (cycle-freedom + coverage conservation), no LLM.
 		"slice-check": produces.script({ reads: ["slices"], run: sliceStructureCheck }),
@@ -1106,8 +1188,9 @@ const carveWorkflow = defineWorkflow({
 			skill: "grade",
 			loop: PLAN_DIMENSION_FANOUT,
 			outcome: planVerdictOutcome,
-			// `research` is read so the architecture-fit unit can thread it as --context.
-			reads: ["plans", "research"],
+			// `research` is read so the architecture-fit unit can thread it as
+			// --context; `goal` so completeness/correctness anchor on the brief.
+			reads: ["plans", "research", "goal"],
 		}),
 		"plan-fix": produces({
 			skill: "amend",
@@ -1137,8 +1220,9 @@ const carveWorkflow = defineWorkflow({
 			skill: "grade",
 			loop: PLAN_DIMENSION_FANOUT,
 			outcome: stitchVerdictOutcome,
-			// `research` is read so the architecture-fit unit can thread it as --context.
-			reads: ["plans", "research"],
+			// `research` is read so the architecture-fit unit can thread it as
+			// --context; `goal` so completeness/correctness anchor on the brief.
+			reads: ["plans", "research", "goal"],
 		}),
 		// Repair arm for the stitch gate. Surgical `amend` over the SAME code-bearing
 		// plan from the stitch verdicts — NOT a blind re-elaborate: `elaborate` never
@@ -1155,10 +1239,11 @@ const carveWorkflow = defineWorkflow({
 			reads: ["plans", fanin("stitch-verdicts")],
 		}),
 		implement: acts({ loop: IMPLEMENT_PHASE_FANOUT, reads: ["plans"] }),
-		validate: produces(),
+		validate: produces({ prompt: VALIDATE_GOAL_PROMPT }),
 		commit: acts({ outcome: gitCommitOutcome }),
 	},
 	edges: {
+		goal: "research",
 		// Research's artifact is auto-fed to slice as its argument (the slice skill's
 		// "Fresh" input is a research path) — mirrors arch's research → design edge.
 		research: "slice",
