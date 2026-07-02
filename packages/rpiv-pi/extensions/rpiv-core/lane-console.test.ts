@@ -566,6 +566,79 @@ describe("LaneConsole — question mode (reactive, self-draining)", () => {
 	});
 });
 
+describe("LaneConsole — parent-row answer jump (fan-out lanes)", () => {
+	/** A fan-out run: two real units (keys ≥ 0); the question queues on unit 0's own key,
+	 *  so the lane PARENT row's ⚑ is an aggregate — its own queue key (single-unit slot)
+	 *  stays empty. */
+	function fanOutRunWithQuestion(inner: Component, resolve = vi.fn()): void {
+		recordRun("run-1", "ship");
+		setUnitStarted("run-1", 0, "unit-a");
+		setUnitStarted("run-1", 1, "unit-b");
+		setCurrentSession(
+			"run-1",
+			0,
+			makeSession(() => [assistantEntry("ctx")]),
+		);
+		setCurrentSession(
+			"run-1",
+			1,
+			makeSession(() => [assistantEntry("ctx")]),
+		);
+		enqueueInput("run-1", 0, { factory: (() => inner) as never, options: undefined as never, resolve });
+	}
+
+	it("⏎ on the flagged lane PARENT row jumps to the flagged unit sub-row and arms its question", async () => {
+		const inner = makeInner();
+		fanOutRunWithQuestion(inner.component);
+		// Step-in lands on the top display row = the lane PARENT row (single-unit key).
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn());
+		await Promise.resolve();
+		expect(panel.render(80).join("\n")).not.toContain("q0"); // nothing mounted on the parent's own key
+		panel.handleInput("\r"); // ⏎ on the aggregated ⚑ → jump + arm (never a dead-end)
+		await Promise.resolve(); // the jumped-to unit's mount settles
+		const armed = panel.render(80).join("\n");
+		expect(armed).toContain("q0"); // the unit's question band paints
+		expect(armed).toContain("esc → lanes"); // question focus
+		panel.dispose();
+	});
+
+	it("the parent row's ⏎-answer footer cue mirrors the aggregate ⚑ (not just its own queue key)", async () => {
+		fanOutRunWithQuestion(makeInner().component);
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn());
+		await Promise.resolve();
+		expect(panel.render(80).join("\n")).toContain("⏎ answer"); // cue on the parent row
+		panel.dispose();
+	});
+
+	it("committing the jumped-to question resolves the UNIT's child (the right queue drains)", async () => {
+		const resolve = vi.fn();
+		let submit!: (r: unknown) => void;
+		recordRun("run-1", "ship");
+		setUnitStarted("run-1", 0, "unit-a");
+		setCurrentSession(
+			"run-1",
+			0,
+			makeSession(() => [assistantEntry("ctx")]),
+		);
+		enqueueInput("run-1", 0, {
+			factory: ((_t: never, _th: never, _k: never, done: (r: unknown) => void) => {
+				submit = done;
+				return makeInner().component;
+			}) as never,
+			options: undefined as never,
+			resolve,
+		});
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn());
+		await Promise.resolve();
+		panel.handleInput("\r"); // jump to unit 0 + arm
+		await Promise.resolve();
+		submit({ answers: ["a"] });
+		expect(resolve).toHaveBeenCalledWith({ answers: ["a"] });
+		expect(peekInput("run-1", 0)).toBeUndefined(); // the unit's FIFO drained
+		panel.dispose();
+	});
+});
+
 describe("LaneConsole — constant height (ghost-block safety)", () => {
 	it("renders exactly maxRows in BOTH read-only and question modes", async () => {
 		liveUnit();
@@ -598,6 +671,27 @@ describe("LaneConsole — tiny-terminal constant height", () => {
 		panel.handleInput("\r"); // arm → the band is painted/capped so the height check is real
 		const question = panel.render(80).length;
 		expect(question).toBe(base); // padding keeps the surface a constant maxRows across the mount
+		panel.dispose();
+	});
+
+	it("a squeezed surface paints the ARMED band by yielding the transcript floor (16 rows)", async () => {
+		liveUnit(() => [assistantEntry("ctx")]);
+		enqueueQuestion(makeInner(3).component);
+		// A second lane grows the lane block enough that the old TRANSCRIPT_MIN reservation
+		// starved the band to zero rows — armed-but-invisible (keys swallowed blind).
+		recordRun("run-2", "audit");
+		setUnitStarted("run-2", SINGLE_UNIT_KEY, "unit");
+		setCurrentSession(
+			"run-2",
+			SINGLE_UNIT_KEY,
+			makeSession(() => [assistantEntry("ctx")]),
+		);
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(16), identityTheme, {} as never, vi.fn());
+		await Promise.resolve();
+		panel.handleInput("\r"); // arm
+		const out = panel.render(80);
+		expect(out.join("\n")).toContain("q0"); // the band paints — the transcript floor gave way
+		expect(out.length).toBe(Math.floor(16 * 0.9)); // constant height still holds
 		panel.dispose();
 	});
 

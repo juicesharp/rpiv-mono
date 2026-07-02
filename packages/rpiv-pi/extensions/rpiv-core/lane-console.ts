@@ -20,7 +20,10 @@
  * render gate holds the band off in lane focus, so the surface is height-identical to
  * read-only and only the `⚑` needs-input badge + the `⏎ answer` footer cue that the selected
  * unit is answerable. Arming (`⏎`/`→`) flips to question focus — the band paints and the
- * questionnaire owns arrows/space/tab/text; `esc` hands keys back to the lanes and RE-HIDES
+ * questionnaire owns arrows/space/tab/text. On a lane (parent) row whose `⚑` aggregates a
+ * fan-out unit's queue, `⏎` first JUMPS the selection to the flagged unit sub-row and arms
+ * there (the parent row's own queue key is the single-unit slot, so nothing mounts on it) —
+ * the flagged lane row never dead-ends. `esc` hands keys back to the lanes and RE-HIDES
  * the band (the question stays deferred, not cancelled). Answering commits the child and
  * advances the unit's FIFO in place; a same-unit follow-up stays armed, but a genuine drain
  * or cross-lane re-sort returns to lane focus with the band hidden (the browser stays open —
@@ -54,6 +57,7 @@ import {
 	type DisplayRow,
 	dequeueInput,
 	evictRun,
+	laneNeedsInput,
 	listLanes,
 	listLanesForDisplay,
 	type PendingInput,
@@ -68,6 +72,10 @@ const MAX_HEIGHT_RATIO = 0.9;
 /** Guaranteed transcript rows — the question band never fully squeezes the context out; also
  *  the PageUp/PageDown page size. */
 const TRANSCRIPT_MIN = 4;
+/** Guaranteed ARMED-question rows. On a squeezed surface (small terminal / tall lane block)
+ *  the TRANSCRIPT_MIN reservation gives way before the band drops below this — an armed
+ *  question that paints zero rows would swallow keystrokes into an invisible questionnaire. */
+const QUESTION_MIN = 4;
 
 /** The (runId, unitIndex) a display row addresses — a lane (parent) row resolves the
  *  reserved single-unit key; a unit sub-row resolves its own index. Mirrors the dock
@@ -304,10 +312,12 @@ export class LaneConsole implements Component {
 		// questionnaire is mounted (ready to arm) but held off, so the surface is height-
 		// identical to read-only — the `⚑` badge + `⏎ answer` footer are the only cue.
 		if (this.inner && target && unitNeedsInput(target.runId, target.unitIndex) && this.focus === "question") {
-			this.budgetRef.rows = Math.max(
-				0,
-				maxRows - laneBlock.length - 1 /*border*/ - 1 /*q divider*/ - TRANSCRIPT_MIN,
-			);
+			const chrome = laneBlock.length + 1 /*border*/ + 1 /*q divider*/;
+			let budget = maxRows - chrome - TRANSCRIPT_MIN;
+			// The armed band outranks the transcript floor: give the transcript's reservation
+			// to the question before letting the band collapse below QUESTION_MIN.
+			if (budget < QUESTION_MIN) budget = maxRows - chrome;
+			this.budgetRef.rows = Math.max(0, budget);
 			qLines = this.inner.render(width);
 			q = Math.min(qLines.length, this.budgetRef.rows);
 		}
@@ -344,7 +354,14 @@ export class LaneConsole implements Component {
 		if (this.focus === "question") {
 			return truncateToWidth(this.theme.fg("dim", "esc → lanes · answer in the question above"), width, "…");
 		}
-		const canAnswer = target && unitNeedsInput(target.runId, target.unitIndex);
+		// A lane (parent) row is answerable when ANY of its units is flagged — ⏎ jumps to the
+		// flagged sub-row (handleInput) — so the cue mirrors the aggregate ⚑, not just the
+		// row's own queue key.
+		const canAnswer =
+			target &&
+			(target.unitIndex === SINGLE_UNIT_KEY
+				? laneNeedsInput(target.runId)
+				: unitNeedsInput(target.runId, target.unitIndex));
 		const scrolled = this.scrollOffset > 0 ? "PgDn newest · " : "";
 		const toggle = this.toolsExpanded ? "t collapse" : "t expand";
 		const answer = canAnswer ? "⏎ answer · " : "";
@@ -410,6 +427,25 @@ export class LaneConsole implements Component {
 			if (this.inner) {
 				this.focus = "question";
 				this.tui.requestRender(true);
+				return;
+			}
+			// A lane (parent) row's ⚑ aggregates its units — the queued question lives on a
+			// unit sub-row (its queue key), so nothing is mounted here. Jump the selection to
+			// the lane's first flagged sub-row and arm it, so ⏎ on the flagged lane row never
+			// dead-ends. Arm AFTER sync(): the mount settles on a microtask and paints then.
+			const rows = listLanesForDisplay();
+			const row = rows[this.selection];
+			if (row?.kind === "lane" && laneNeedsInput(row.lane.runId)) {
+				const idx = rows.findIndex(
+					(r) =>
+						r.kind === "unit" && r.lane.runId === row.lane.runId && unitNeedsInput(r.lane.runId, r.unit.index),
+				);
+				if (idx >= 0) {
+					this.selection = idx;
+					this.sync(); // retarget + mount the flagged unit's question eagerly
+					this.focus = "question";
+					this.tui.requestRender(true);
+				}
 			}
 			return;
 		}
