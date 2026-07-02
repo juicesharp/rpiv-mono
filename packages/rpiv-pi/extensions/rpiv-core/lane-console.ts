@@ -14,13 +14,16 @@
  * re-targets in place, so you see a lane's context the instant you land on it.
  *
  * When the selected unit has a queued `ask_user_question` (`peekInput` non-empty), the
- * parked questionnaire mounts INLINE in the live-output region — rendered immediately (so
- * you SEE the question on selection) but INERT: a two-level focus keeps keys with
- * lane-navigation until you arm the question with `⏎`/`→` (arm-then-fire). In question focus
- * the questionnaire owns arrows/space/tab/text; `esc` hands keys back to the lanes (the
- * question stays deferred, not cancelled). Answering commits the child and advances the
- * unit's FIFO in place; a genuine drain returns to lane focus (the browser stays open — you
- * are never stranded, the lanes + transcript are still there).
+ * questionnaire is mounted INLINE in the live-output region EAGERLY (so `this.inner` is built
+ * and arming is instant — no async settle on the reveal) but NOT PAINTED until armed: the
+ * render gate holds the band off in lane focus, so the surface is height-identical to
+ * read-only and only the `⚑` needs-input badge + the `⏎ answer` footer cue that the selected
+ * unit is answerable. Arming (`⏎`/`→`) flips to question focus — the band paints and the
+ * questionnaire owns arrows/space/tab/text; `esc` hands keys back to the lanes and RE-HIDES
+ * the band (the question stays deferred, not cancelled). Answering commits the child and
+ * advances the unit's FIFO in place; a same-unit follow-up stays armed, but a genuine drain
+ * or cross-lane re-sort returns to lane focus with the band hidden (the browser stays open —
+ * you are never stranded, the lanes + transcript are still there).
  *
  * The deferred question is a captured `{factory, options, resolve}` (run-lane-registry
  * PendingInput). We instantiate `head.factory` against a `cappedTui` whose `terminal.rows`
@@ -111,8 +114,9 @@ export function cappedTui(real: TUI, rows: () => number): TUI {
 export class LaneConsole implements Component {
 	/** Index into listLanesForDisplay() — the ❯-marked spine row (clamped on every read). */
 	private selection = 0;
-	/** Two-level focus: "lanes" (arrows navigate the spine, the question is inert) or
-	 *  "question" (arrows/text drive the mounted questionnaire, esc hands back). */
+	/** Two-level focus: "lanes" (arrows navigate the spine, the question is HIDDEN + inert —
+	 *  the render gate holds the band off; ⏎/→ arms it) or "question" (the band paints and
+	 *  arrows/text drive the mounted questionnaire; esc re-hides it and hands back). */
 	private focus: "lanes" | "question" = "lanes";
 	private scrollOffset = 0;
 	/** `t` toggles tool/summary expansion in the transcript. */
@@ -295,7 +299,10 @@ export class LaneConsole implements Component {
 		const border = renderLiveOutputBorder(this.theme, width);
 		let qLines: string[] = [];
 		let q = 0;
-		if (this.inner && target && unitNeedsInput(target.runId, target.unitIndex)) {
+		// The arm-gate: paint the question band ONLY in question focus. In lane focus the
+		// questionnaire is mounted (ready to arm) but held off, so the surface is height-
+		// identical to read-only — the `⚑` badge + `⏎ answer` footer are the only cue.
+		if (this.inner && target && unitNeedsInput(target.runId, target.unitIndex) && this.focus === "question") {
 			this.budgetRef.rows = Math.max(
 				0,
 				maxRows - laneBlock.length - 1 /*border*/ - 1 /*q divider*/ - TRANSCRIPT_MIN,

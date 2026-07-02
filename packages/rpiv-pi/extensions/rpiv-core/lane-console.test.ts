@@ -316,7 +316,7 @@ describe("LaneConsole — browser navigation (spine)", () => {
 		secondLane(); // run-2 running, no question (row 1)
 		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn());
 		await Promise.resolve();
-		expect(panel.render(80).join("\n")).toContain("q0"); // run-1's question shown
+		expect(panel.render(80).join("\n")).toContain("⏎ answer"); // run-1's question mounted (cue, not band)
 		panel.handleInput("\x1b[B"); // ↓ → run-2 (no question)
 		expect(innerA.dispose).toHaveBeenCalled(); // the previous question component is torn down
 		expect(panel.render(80).join("\n")).not.toContain("q0"); // no band on run-2
@@ -380,28 +380,55 @@ describe("LaneConsole — disk fallback (migrated from the viewer)", () => {
 });
 
 describe("LaneConsole — question mode (reactive, self-draining)", () => {
-	it("renders the queued question inline but INERT (lane focus) the instant it is selected", async () => {
+	it("hides the queued question on selection (lane focus) and reveals it only on arm (⏎)", async () => {
 		liveUnit();
 		enqueueQuestion(makeInner().component);
 		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn());
-		await Promise.resolve(); // let the async mount settle
-		const out = panel.render(80).join("\n");
-		expect(out).toContain("q0"); // question band shown immediately on selection…
-		expect(out).toContain("ctx line"); // …with the transcript still above it
-		expect(panel.render(80).join("\n")).toContain("⏎ answer"); // inert: footer arms it
-		expect(panel.render(80).some((l) => l.includes("─"))).toBe(true); // question + spine dividers
+		await Promise.resolve(); // let the async mount settle (eager — ready to arm)
+		const hidden = panel.render(80).join("\n");
+		expect(hidden).not.toContain("q0"); // band held off in lane focus (arm-gate)…
+		expect(hidden).toContain("ctx line"); // …so the transcript is the full, uncapped height
+		expect(hidden).toContain("⏎ answer"); // the cue: footer advertises the arm gesture
+		panel.handleInput("\r"); // ⏎ arms → question focus, the band paints
+		const armed = panel.render(80).join("\n");
+		expect(armed).toContain("q0"); // revealed on arm (the canonical arm-reveals assertion)
+		expect(armed).toContain("esc → lanes"); // footer flips to the question-focus contract
+		panel.dispose();
+	});
+
+	it("Enter reveals the question band and esc re-hides it (the arm-then-fire render-gate)", async () => {
+		liveUnit();
+		enqueueQuestion(makeInner().component);
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn());
+		await Promise.resolve(); // mount settles eagerly (ready to arm)
+		// Lane focus: the band is HIDDEN — full transcript, footer advertises the arm gesture.
+		expect(panel.render(80).join("\n")).not.toContain("q0");
+		expect(panel.render(80).join("\n")).toContain("⏎ answer");
+		// Enter arms → the band paints, footer flips to the question's esc-to-lanes contract.
+		panel.handleInput("\r");
+		const armed = panel.render(80).join("\n");
+		expect(armed).toContain("q0");
+		expect(armed).toContain("esc → lanes");
+		expect(armed).not.toContain("⏎ answer");
+		// esc disarms → the band re-hides, footer returns to lane nav + the arm cue.
+		panel.handleInput("\x1b");
+		const rehidden = panel.render(80).join("\n");
+		expect(rehidden).not.toContain("q0");
+		expect(rehidden).toContain("↑/↓ lanes");
+		expect(rehidden).toContain("⏎ answer"); // still queued — the cue persists after re-hide
 		panel.dispose();
 	});
 
 	it("mounts a question that ARRIVES while the console is open (reactive, no swap)", async () => {
 		liveUnit();
 		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn());
-		expect(panel.render(80).join("\n")).toContain("←/esc back"); // no question initially
+		expect(panel.render(80).join("\n")).not.toContain("q0"); // no question mounted yet
+		expect(panel.render(80).join("\n")).not.toContain("⏎ answer"); // …so no arm cue
 		enqueueQuestion(makeInner().component);
 		await Promise.resolve();
 		const out = panel.render(80).join("\n");
-		expect(out).toContain("q0"); // mounted inline, reactively
-		expect(out).toContain("⏎ answer"); // footer advertises the arm gesture
+		expect(out).not.toContain("q0"); // mounted but the band is held off (arm-gate)…
+		expect(out).toContain("⏎ answer"); // …arrival surfaces as the footer cue, reactively
 		panel.dispose();
 	});
 
@@ -518,7 +545,8 @@ describe("LaneConsole — question mode (reactive, self-draining)", () => {
 		enqueueQuestion(makeInner().component, resolve);
 		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn());
 		await Promise.resolve();
-		expect(panel.render(80).join("\n")).toContain("q0"); // question mounted
+		panel.handleInput("\r"); // arm → the band paints (so "a question shows" is genuinely true)
+		expect(panel.render(80).join("\n")).toContain("q0"); // question mounted + armed
 		retireRun("run-1", "completed"); // settles child undefined + clears FIFO → sync drops to read-only
 		expect(resolve).toHaveBeenCalledWith(undefined);
 		const out = panel.render(80).join("\n");
@@ -554,6 +582,7 @@ describe("LaneConsole — constant height (ghost-block safety)", () => {
 		enqueueQuestion(makeInner(15).component); // a TALL question
 		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(24), identityTheme, {} as never, vi.fn());
 		await Promise.resolve();
+		panel.handleInput("\r"); // arm → the band paints so the height check reflects the cap
 		expect(panel.render(80).length).toBe(readonly); // padded → identical height across the transition
 		panel.dispose();
 	});
@@ -566,6 +595,7 @@ describe("LaneConsole — tiny-terminal constant height", () => {
 		const base = panel.render(80).length; // baseline (no mount pending)
 		enqueueQuestion(makeInner(15).component); // a TALL question
 		await Promise.resolve(); // let the async mountInner settle
+		panel.handleInput("\r"); // arm → the band is painted/capped so the height check is real
 		const question = panel.render(80).length;
 		expect(question).toBe(base); // padding keeps the surface a constant maxRows across the mount
 		panel.dispose();
@@ -592,10 +622,11 @@ describe("LaneConsole — tiny-terminal constant height", () => {
 		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(8), identityTheme, {} as never, vi.fn());
 		const readonly = panel.render(80).length; // read-only (A's async mount pending)
 		await Promise.resolve(); // let A's async mount settle
-		const mount = panel.render(80).length; // question A mounted
-		submitA({ answers: ["a"] }); // commit A → dequeue notify re-enters sync() → mount B
+		panel.handleInput("\r"); // arm A → the band paints so the height check reflects the cap
+		const mount = panel.render(80).length; // question A mounted + armed
+		submitA({ answers: ["a"] }); // commit A → dequeue notify re-enters sync() → mount B (stays armed)
 		await Promise.resolve(); // let B's async mount settle
-		const commitAdvance = panel.render(80).length; // question B mounted (advanced in place)
+		const commitAdvance = panel.render(80).length; // question B mounted + armed (advanced in place)
 		retireRun("run-1", "completed"); // drain B (settle undefined + clear FIFO) → sync drops to read-only
 		const drain = panel.render(80).length; // read-only again
 		expect([mount, commitAdvance, drain]).toEqual([readonly, readonly, readonly]);
@@ -667,6 +698,7 @@ describe("LaneConsole — real ask_user_question factory (cappedTui self-windowi
 		enqueueRealFactory(factory);
 		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(32), identityTheme, {} as never, vi.fn());
 		await Promise.resolve();
+		panel.handleInput("\r"); // arm → the band paints so the real chrome is on the surface
 		// The mounted+capped render carries the author option label (real chrome through cappedTui).
 		expect(panel.render(80).join("\n")).toContain("date-fns");
 		// The full standalone render shows the complete chrome a makeInner() stub cannot produce:
@@ -691,6 +723,7 @@ describe("LaneConsole — real ask_user_question factory (cappedTui self-windowi
 		});
 		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(32), identityTheme, {} as never, vi.fn());
 		await Promise.resolve();
+		panel.handleInput("\r"); // arm → the render gate sets budgetRef.rows and calls inner.render
 		panel.render(80); // render sets budgetRef.rows = available − TRANSCRIPT_MIN BEFORE inner.render
 		// cappedTui is a lazy proxy over budgetRef — after render it reports the allocated band, not 24.
 		expect((receivedTui!.terminal as { rows: number }).rows).toBe(QUESTION_BUDGET_24);
@@ -703,6 +736,7 @@ describe("LaneConsole — real ask_user_question factory (cappedTui self-windowi
 		enqueueRealFactory(factory);
 		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(32), identityTheme, {} as never, vi.fn());
 		await Promise.resolve();
+		panel.handleInput("\r"); // arm → the band paints so questionBand can locate its divider
 		const band = questionBand(panel.render(80));
 		expect(band).toBeGreaterThan(0);
 		expect(band).toBeLessThanOrEqual(QUESTION_BUDGET_24); // between the question divider and the spine
@@ -715,6 +749,7 @@ describe("LaneConsole — real ask_user_question factory (cappedTui self-windowi
 		enqueueRealFactory(factory);
 		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(32), identityTheme, {} as never, vi.fn());
 		await Promise.resolve();
+		panel.handleInput("\r"); // arm → the band paints so questionBand can locate its divider
 		const cappedBand = questionBand(panel.render(80));
 		// Standalone at the FULL 24 rows the questionnaire is NOT capped — its natural height (17)
 		// exceeds the 8-row budget, so the cap (not questionnaire shortness) constrained the band.
@@ -734,6 +769,7 @@ describe("LaneConsole — real ask_user_question factory (cappedTui self-windowi
 		enqueueRealFactory(factory);
 		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(32), identityTheme, {} as never, vi.fn());
 		await Promise.resolve();
+		panel.handleInput("\r"); // arm → the band paints so the height check reflects the real cap
 		expect(panel.render(80).length).toBe(readonly); // padded → identical height across the transition
 		panel.dispose();
 	});
