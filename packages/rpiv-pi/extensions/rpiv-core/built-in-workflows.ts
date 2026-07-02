@@ -198,101 +198,6 @@ const FRONTMATTER_PHASE_FANOUT = fanout({
 const IMPLEMENT_PHASE_FANOUT = { ...FRONTMATTER_PHASE_FANOUT, concurrency: 1 };
 
 // ===========================================================================
-// ship — blueprint → implement → validate → commit
-// ===========================================================================
-
-const shipWorkflow = defineWorkflow({
-	name: "ship",
-	description:
-		"Fast path with no research or review. Best when the change is small and the approach is obvious. Chain: blueprint → implement → validate → commit.",
-	start: "blueprint",
-	stages: {
-		blueprint: produces(),
-		implement: acts({ loop: IMPLEMENT_PHASE_FANOUT, reads: ["plans"] }),
-		validate: produces(),
-		commit: acts({ outcome: gitCommitOutcome }),
-	},
-	edges: {
-		blueprint: "implement",
-		implement: "validate",
-		validate: "commit",
-		commit: "stop",
-	},
-});
-
-// ===========================================================================
-// build — research → blueprint → implement → validate → code-review →
-//         (revise → implement → loop) | commit
-//         Loops until code-review reports zero blockers, bounded by the
-//         runner's maxBackwardJumps (default 2 → up to 3 review iterations).
-// ===========================================================================
-
-const buildWorkflow = defineWorkflow({
-	name: "build",
-	description:
-		"Research-backed feature work with a review loop. Best for medium changes where you want a second pass before committing. Chain: research → blueprint → implement → validate → code-review → (revise loop) → commit.",
-	start: "research",
-	stages: {
-		research: produces(),
-		blueprint: produces(),
-		implement: acts({ loop: IMPLEMENT_PHASE_FANOUT, reads: ["plans"] }),
-		validate: produces(),
-		"code-review": produces(),
-		revise: produces({ reads: ["plans", "reviews"] }),
-		commit: acts({ outcome: gitCommitOutcome }),
-	},
-	edges: {
-		research: "blueprint",
-		blueprint: "implement",
-		implement: "validate",
-		validate: "code-review",
-		"code-review": gate("blockers_count", { revise: gt(0), commit: eq(0) }, "commit"),
-		// Backward edge: revise → implement re-enters the implement/validate/
-		// code-review cycle. Bounded by the runner's default maxBackwardJumps
-		// (2), permitting at most 3 review iterations before the guard halts.
-		revise: "implement",
-		commit: "stop",
-	},
-});
-
-// ===========================================================================
-// arch — research → design → plan → implement → validate → code-review →
-//        (design → loop) | commit
-//        Loops the full design/plan/implement/validate/review chain until
-//        code-review reports zero blockers, bounded by the runner's
-//        maxBackwardJumps (default 2 → up to 3 review iterations).
-// ===========================================================================
-
-const archWorkflow = defineWorkflow({
-	name: "arch",
-	description:
-		"Design-led pipeline for complex changes touching many files or layers. Best when the approach itself needs to be worked out before planning. Chain: research → design → plan → implement → validate → code-review → (design loop) → commit.",
-	start: "research",
-	stages: {
-		research: produces(),
-		design: produces(),
-		plan: produces(),
-		implement: acts({ loop: IMPLEMENT_PHASE_FANOUT, reads: ["plans"] }),
-		validate: produces(),
-		"code-review": produces(),
-		commit: acts({ outcome: gitCommitOutcome }),
-	},
-	edges: {
-		research: "design",
-		design: "plan",
-		plan: "implement",
-		implement: "validate",
-		validate: "code-review",
-		// Backward edge: code-review → design re-enters the full
-		// design/plan/implement/validate/review cycle. Bounded by the
-		// runner's default maxBackwardJumps (2), permitting at most 3
-		// review iterations before the guard halts.
-		"code-review": gate("blockers_count", { design: gt(0), commit: eq(0) }, "commit"),
-		commit: "stop",
-	},
-});
-
-// ===========================================================================
 // vet — code-review → (blueprint → implement → validate → loop) | commit
 //       Examine existing changes; if not approved, blueprint a fix plan,
 //       implement it, validate, and re-review. Loops until approved.
@@ -543,58 +448,6 @@ const polishWorkflow = defineWorkflow({
 		// runner's default maxBackwardJumps (2 → up to 3 review iterations).
 		"code-review": gate("blockers_count", { blueprint: gt(0), commit: eq(0) }, "commit"),
 		commit: "stop",
-	},
-});
-
-// ===========================================================================
-// pr-triage — pr-triage → security-gate → stop
-//   Read-only front door for an incoming GitHub PR. The `pr-triage` skill
-//   fetches the PR thread, assesses the diff against whatever standard the repo
-//   actually carries, writes a triage artifact, and recommends a triage
-//   disposition (Review / Request changes / Hold / Decline) as a plain next
-//   action. The `security-gate` script stage reads the skill's
-//   `security_flag` and HALTS the run on a BLOCK (≥ 2) via `haltPreflight` — the
-//   "security gate first, before any checkout" posture — while SAFE/REVIEW (< 2)
-//   fall through to `stop` carrying the verdict.
-//
-//   It terminates rather than dispatching a follow-up workflow: triage gates entry
-//   to review, it does not merge. The disposition is a plain action; `vet` (the
-//   review stage) is offered as optional sugar under Review. Only the security gate
-//   is enforced by the graph. A linear guard stage (not a `gate(...)`
-//   edge) keeps the halt off the data-routing path — the throw lives inside the
-//   script, read from the prior stage's output.
-// ===========================================================================
-
-/** BLOCK tier the pr-triage `security_flag` contract field emits (0 SAFE · 1 REVIEW · 2 BLOCK). */
-const PR_TRIAGE_BLOCK = 2;
-
-const prTriageWorkflow = defineWorkflow({
-	name: "pr-triage",
-	description:
-		"Read-only triage of a GitHub PR before any review effort. Fetches the PR thread, assesses the diff against the repo's own standards, writes a triage artifact, and recommends a triage disposition (Review / Request changes / Hold / Decline). A security BLOCK halts the run before any checkout. Best as the entry point for an incoming PR. Chain: pr-triage → security-gate → stop.",
-	start: "pr-triage",
-	stages: {
-		"pr-triage": produces(),
-		// Skillless guard: read the triage skill's `security_flag` from the prior
-		// stage's output and halt on BLOCK. A script stage (not a skill) — no LLM,
-		// no session — so the gate is free. On SAFE/REVIEW it is a no-op side effect
-		// and the chain advances to `stop`.
-		"security-gate": acts.script({
-			run: ({ input }) => {
-				const flag = Number((input?.data as { security_flag?: unknown } | undefined)?.security_flag);
-				if (Number.isNaN(flag) || flag >= PR_TRIAGE_BLOCK) {
-					throw haltPreflight(
-						"pr-triage",
-						"pr-triage: security BLOCK — do not proceed",
-						`pr-triage: security_flag=${flag} (BLOCK) — the PR diff carries a high-confidence security risk. Resolve it before any checkout or review; see the triage artifact for the traced finding.`,
-					);
-				}
-			},
-		}),
-	},
-	edges: {
-		"pr-triage": "security-gate",
-		"security-gate": "stop",
 	},
 });
 
@@ -1127,7 +980,7 @@ const VALIDATE_GOAL_PROMPT: PromptFn = ({ state }) => {
 };
 
 const carveWorkflow = defineWorkflow({
-	name: "carve",
+	name: "build",
 	description:
 		"Ship, sliced: capture the verbatim brief as a goal artifact (the north star the quality gates' completeness/correctness dimensions and validate anchor against) → research the brief → decompose it into vertical slices → two-phase slice gate (a deterministic floor — dependency-cycle freedom + brief-coverage conservation so a slice-fix can't pass by dropping scope — then one LLM design-readiness judgment that each slice is chewable by a single design pass) with a slice-fix loop → design each slice in parallel → one consolidated developer checkpoint (accept or adjust the proposed interfaces/data types, adjustments applied surgically and cascaded to dependents) → synthesize hierarchically (per-cluster sub-plans → one merged plan) → quality-panel gate (completeness/correctness/actionability/pattern-following/architecture-fit) with a plan-fix loop → elaborate code per phase in parallel → splice it into the plan → re-grade the code-bearing plan → implement → validate → commit. Research-led; three automated gates plus one human design checkpoint, before design, before code, and after the splice.",
 	start: "goal",
@@ -1298,12 +1151,4 @@ const carveWorkflow = defineWorkflow({
 // Exports
 // ===========================================================================
 
-export const builtInWorkflows: readonly Workflow[] = [
-	shipWorkflow,
-	buildWorkflow,
-	archWorkflow,
-	vetWorkflow,
-	polishWorkflow,
-	prTriageWorkflow,
-	carveWorkflow,
-];
+export const builtInWorkflows: readonly Workflow[] = [vetWorkflow, polishWorkflow, carveWorkflow];

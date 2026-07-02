@@ -109,7 +109,7 @@ describe("renderLaneList", () => {
 	it("covers a unit sub-row selection, not just a lane row", () => {
 		// A fanout lane flattens to [lane, unit, unit] display rows; selecting the unit
 		// sub-row still differs from ambient by only the gutter.
-		recordRun("run-1", "carve");
+		recordRun("run-1", "build");
 		setUnitStarted("run-1", 0, "phase 1/2");
 		setUnitStarted("run-1", 1, "phase 2/2");
 		// Display rows: 0 = lane, 1 = unit phase 1, 2 = unit phase 2.

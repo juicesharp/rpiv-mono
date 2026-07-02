@@ -275,25 +275,18 @@ describe("equivalence — built-in workflows", () => {
 	];
 
 	/**
-	 * Expected bucket name for each produces stage across all 6 workflows.
+	 * Expected bucket name for each produces stage across all 3 workflows.
 	 * Key: "workflowName::stageName". Value: expected outcome.name.
 	 */
 	const EXPECTED: Record<string, string> = {
-		// ship
-		"ship::blueprint": "plans",
-		"ship::validate": "validation",
-		// build
+		// build (=carve, renamed): derivable produces stages only — the
+		// explicit-outcome stages below are asserted separately.
 		"build::research": "research",
-		"build::blueprint": "plans",
+		"build::slice": "slices",
+		"build::slice-design": "designs",
+		"build::plan": "plans",
+		"build::code": "elaborations",
 		"build::validate": "validation",
-		"build::code-review": "reviews",
-		"build::revise": "plans",
-		// arch
-		"arch::research": "research",
-		"arch::design": "designs",
-		"arch::plan": "plans",
-		"arch::validate": "validation",
-		"arch::code-review": "reviews",
 		// vet
 		"vet::code-review": "reviews",
 		"vet::blueprint": "plans",
@@ -303,16 +296,6 @@ describe("equivalence — built-in workflows", () => {
 		"polish::blueprint": "plans",
 		"polish::validate": "validation",
 		"polish::code-review": "reviews",
-		// pr-triage
-		"pr-triage::pr-triage": "triage",
-		// carve (derivable produces stages only — the explicit-outcome stages
-		// below are asserted separately)
-		"carve::research": "research",
-		"carve::slice": "slices",
-		"carve::slice-design": "designs",
-		"carve::plan": "plans",
-		"carve::code": "elaborations",
-		"carve::validate": "validation",
 	};
 
 	/**
@@ -325,16 +308,16 @@ describe("equivalence — built-in workflows", () => {
 	 * derived one.
 	 */
 	const EXPLICIT_OUTCOMES: Record<string, string> = {
-		"carve::slice-grade": "slice-verdicts",
-		"carve::slice-fix": "slices",
+		"build::slice-grade": "slice-verdicts",
+		"build::slice-fix": "slices",
 		// design-review re-emits the edited designs in place; explicit outcome
 		// republishes them on the `designs` channel (latest-wins) for synthesize.
-		"carve::design-review": "designs",
-		"carve::subplan": "subplans",
-		"carve::plan-grade": "plan-verdicts",
-		"carve::plan-fix": "plans",
-		"carve::code-grade": "code-verdicts",
-		"carve::code-fix": "plans",
+		"build::design-review": "designs",
+		"build::subplan": "subplans",
+		"build::plan-grade": "plan-verdicts",
+		"build::plan-fix": "plans",
+		"build::code-grade": "code-verdicts",
+		"build::code-fix": "plans",
 	};
 
 	/**
@@ -342,19 +325,13 @@ describe("equivalence — built-in workflows", () => {
 	 * (side-effect skills: commit, implement).
 	 */
 	const SKIP_STAGES = new Set([
-		"ship::commit",
-		"ship::implement",
-		"build::commit",
-		"build::implement",
-		"arch::commit",
-		"arch::implement",
 		"vet::commit",
 		"vet::implement",
 		"polish::commit",
 		"polish::implement",
-		"carve::commit",
-		"carve::implement",
-		"carve::code-splice",
+		"build::commit",
+		"build::implement",
+		"build::code-splice",
 	]);
 
 	// Need architecture-review contract too
@@ -433,7 +410,7 @@ describe("equivalence — built-in workflows", () => {
 		});
 	}
 
-	it("total produces stages across all workflows = 36 (33 derivable + carve's design-review + script stages)", () => {
+	it("total produces stages across all workflows = 23 (13 derivable + 8 explicit + 2 script)", () => {
 		let count = 0;
 		let scriptProduces = 0;
 		for (const w of builtInWorkflows) {
@@ -442,8 +419,8 @@ describe("equivalence — built-in workflows", () => {
 				if (stage.kind === "produces" && stage.run != null) scriptProduces++;
 			}
 		}
-		expect(count).toBe(36);
-		expect(scriptProduces).toBe(2); // carve::slice-check + carve::goal
+		expect(count).toBe(23);
+		expect(scriptProduces).toBe(2); // build::slice-check + build::goal
 	});
 });
 

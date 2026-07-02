@@ -777,7 +777,7 @@ describe("LaneDock — fanout unit sub-rows", () => {
 	const pending = () => ({ factory: (() => ({})) as never, options: undefined as never, resolve: () => {} });
 
 	it("flattens a fanout lane into 1 + N rows: the lane row + an indented sub-row per unit", () => {
-		recordRun("run-1", "carve");
+		recordRun("run-1", "build");
 		setUnitStarted("run-1", 0, "phase 1/3");
 		setUnitStarted("run-1", 1, "phase 2/3");
 		setUnitStarted("run-1", 2, "phase 3/3");
@@ -785,7 +785,7 @@ describe("LaneDock — fanout unit sub-rows", () => {
 		const { widget } = mount(overlay, makeCtx());
 		const out = (widget?.render(120) ?? []).join("\n");
 		// the lane (parent) row + one labelled sub-row per fanout unit.
-		expect(out).toContain("carve");
+		expect(out).toContain("build");
 		expect(out).toContain("phase 1/3");
 		expect(out).toContain("phase 2/3");
 		expect(out).toContain("phase 3/3");
@@ -805,7 +805,7 @@ describe("LaneDock — fanout unit sub-rows", () => {
 
 	it("unit sub-row glyph priority: needs-input ⚑ wins; done shows ✓; a still-running unit spins", () => {
 		vi.useFakeTimers();
-		recordRun("run-1", "carve");
+		recordRun("run-1", "build");
 		setUnitStarted("run-1", 0, "u-running");
 		setUnitStarted("run-1", 1, "u-done");
 		markUnitDone("run-1", 1, "done");
@@ -823,7 +823,7 @@ describe("LaneDock — fanout unit sub-rows", () => {
 	});
 
 	it("x on a unit sub-row is the parent run's — the lane heading counts come from the lane set", () => {
-		recordRun("run-1", "carve");
+		recordRun("run-1", "build");
 		setUnitStarted("run-1", 0, "phase 1");
 		setUnitStarted("run-1", 1, "phase 2");
 		const overlay = new LaneDock();
@@ -850,7 +850,7 @@ describe("LaneDock — fanout unit sub-rows", () => {
 
 describe("LaneDock — token tally", () => {
 	it("the lane row shows the SUMMED aggregate tally across completed units", () => {
-		recordRun("run-1", "carve");
+		recordRun("run-1", "build");
 		setUnitStarted("run-1", 0, "u0");
 		setUnitStarted("run-1", 1, "u1");
 		setLaneProgress("run-1", {
@@ -872,7 +872,7 @@ describe("LaneDock — token tally", () => {
 		const { widget } = mount(overlay, makeCtx());
 		// The lane (parent) row carries the workflow name; the aggregate is the SUM of both
 		// units: input 2700→"2.7k", output 1200→"1.2k", cacheRead 800→"800".
-		const laneRow = (widget?.render(120) ?? []).find((l) => l.includes("carve")) ?? "";
+		const laneRow = (widget?.render(120) ?? []).find((l) => l.includes("build")) ?? "";
 		expect(laneRow).toContain("↑2.7k");
 		expect(laneRow).toContain("↓1.2k");
 		expect(laneRow).toContain("R800");
@@ -880,7 +880,7 @@ describe("LaneDock — token tally", () => {
 	});
 
 	it("each unit sub-row shows its OWN finalUsage tally (not the aggregate)", () => {
-		recordRun("run-1", "carve");
+		recordRun("run-1", "build");
 		setUnitStarted("run-1", 0, "u0");
 		setUnitStarted("run-1", 1, "u1");
 		setLaneProgress("run-1", {
@@ -909,7 +909,7 @@ describe("LaneDock — token tally", () => {
 	});
 
 	it("omits each segment when zero and the whole tally when all-zero", () => {
-		recordRun("run-1", "carve");
+		recordRun("run-1", "build");
 		setUnitStarted("run-1", 0, "u-partial"); // only input nonzero
 		setUnitStarted("run-1", 1, "u-zero"); // all zero
 		setLaneProgress("run-1", {
@@ -942,7 +942,7 @@ describe("LaneDock — token tally", () => {
 	});
 
 	it("a lane with no captured units renders no aggregate tally and a running unit shows none", () => {
-		recordRun("run-1", "carve");
+		recordRun("run-1", "build");
 		setUnitStarted("run-1", 0, "u-running"); // running, never captured → no finalUsage
 		setLaneProgress("run-1", {
 			stageNumber: 1,
@@ -953,7 +953,7 @@ describe("LaneDock — token tally", () => {
 		});
 		const overlay = new LaneDock();
 		const lines = widgetLines(overlay);
-		const laneRow = lines.find((l) => l.includes("carve")) ?? "";
+		const laneRow = lines.find((l) => l.includes("build")) ?? "";
 		const unitRow = lines.find((l) => l.includes("u-running")) ?? "";
 		// No unit has finalUsage → the lane-row aggregate is omitted.
 		expect(laneRow).not.toContain("↑");
@@ -963,7 +963,7 @@ describe("LaneDock — token tally", () => {
 	});
 
 	it("a running unit with a LIVE session tallies per-unit AND the lane aggregate (no teardown)", () => {
-		recordRun("run-1", "carve");
+		recordRun("run-1", "build");
 		setUnitStarted("run-1", 0, "u-live");
 		setLaneProgress("run-1", {
 			stageNumber: 1,
@@ -986,7 +986,7 @@ describe("LaneDock — token tally", () => {
 		expect(firstUnit).toContain("R500");
 		// The lane-row aggregate now also tallies a RUNNING unit (previously frozen at zero
 		// until teardown) — same live numbers, summed over the single unit.
-		const firstLane = render().find((l) => l.includes("carve")) ?? "";
+		const firstLane = render().find((l) => l.includes("build")) ?? "";
 		expect(firstLane).toContain("↑1.5k");
 		expect(firstLane).toContain("↓800");
 		// Mutate the live stats and re-render the SAME widget → the tally ticks in real time.
@@ -998,7 +998,7 @@ describe("LaneDock — token tally", () => {
 	});
 
 	it("a running unit whose live getUsage() throws renders no tally (fail-soft, never throws)", () => {
-		recordRun("run-1", "carve");
+		recordRun("run-1", "build");
 		setUnitStarted("run-1", 0, "u-throw");
 		setLaneProgress("run-1", {
 			stageNumber: 1,
@@ -1024,7 +1024,7 @@ describe("LaneDock — token tally", () => {
 	});
 
 	it("unitUsage prefers the teardown snapshot over the live session after retirement", () => {
-		recordRun("run-1", "carve");
+		recordRun("run-1", "build");
 		setUnitStarted("run-1", 0, "u-done");
 		setLaneProgress("run-1", {
 			stageNumber: 3,

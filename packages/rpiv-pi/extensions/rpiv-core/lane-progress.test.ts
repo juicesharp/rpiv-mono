@@ -213,7 +213,7 @@ describe("lane-progress event mapping", () => {
 
 	it("onWorkflowStart seeds the visited accumulator from a resumed walk so the numerator isn't recounted from zero", async () => {
 		const b = await register();
-		recordRun("run-1", "carve");
+		recordRun("run-1", "build");
 		const ctx = { runId: "run-1", totalStages: 17 };
 		// Resume: the engine reconstructed 10 distinct stages already walked, then kicks
 		// the chain at the resumed `elaborate` stage (a deep path ordinal). Without the
@@ -240,7 +240,7 @@ describe("lane-progress event mapping", () => {
 
 	it("onWorkflowStart with an empty/absent visited list is a no-op (fresh run)", async () => {
 		const b = await register();
-		recordRun("run-1", "carve");
+		recordRun("run-1", "build");
 		const ctx = { runId: "run-1", totalStages: 17 };
 		b.onWorkflowStart?.(ctx); // fresh run — nothing walked yet
 		b.onStageStart?.({ stageNumber: 1, name: "research" }, ctx);
@@ -249,7 +249,7 @@ describe("lane-progress event mapping", () => {
 
 	it("onRoute credits bypassed recovery arms into the visited numerator", async () => {
 		const b = await register();
-		recordRun("run-1", "carve");
+		recordRun("run-1", "build");
 		const ctx = { runId: "run-1", totalStages: 17 };
 		["research", "slice", "slice-check", "slice-grade"].forEach((n, i) => {
 			b.onStageStart?.({ stageNumber: i + 1, name: n }, ctx);
@@ -261,16 +261,16 @@ describe("lane-progress event mapping", () => {
 
 	it("onRoute with an empty bypass list leaves the numerator untouched", async () => {
 		const b = await register();
-		recordRun("run-1", "carve");
+		recordRun("run-1", "build");
 		const ctx = { runId: "run-1", totalStages: 17 };
 		b.onStageStart?.({ stageNumber: 1, name: "research" }, ctx);
 		b.onRoute?.({ name: "research" }, "slice", ctx, []);
 		expect(getLane("run-1")?.progress?.visited).toBe(1);
 	});
 
-	it("carve happy path: commit shows 17/17 WHILE running (bypassed slice-fix+plan-fix+code-fix credited at the gates)", async () => {
+	it("build happy path: commit shows 17/17 WHILE running (bypassed slice-fix+plan-fix+code-fix credited at the gates)", async () => {
 		const b = await register();
-		recordRun("run-1", "carve");
+		recordRun("run-1", "build");
 		const ctx = { runId: "run-1", totalStages: 17 };
 		const enter = (n: string, i: number) => b.onStageStart?.({ stageNumber: i, name: n }, ctx);
 		enter("research", 1);
@@ -379,7 +379,7 @@ describe("pull-loop units.total contract (units field is fanout-only)", () => {
 
 	it("fanout (contrast): seeds {done:0,total:N} and advances done monotonically while total stays N", async () => {
 		const b = await register();
-		recordRun("run-1", "carve");
+		recordRun("run-1", "build");
 		const ctx = { runId: "run-1", totalStages: 4 };
 		const stage = { stageNumber: 2, name: "design" };
 		b.onLoopStart?.(stage, { kind: "fanout", units: [{}, {}, {}] }, ctx);
@@ -406,7 +406,7 @@ describe("per-unit sub-rows — onUnitStart/onUnitEnd lifecycle", () => {
 
 	it("onUnitStart materializes a per-unit sub-row (label + running) for fan-out units", async () => {
 		const b = await register();
-		recordRun("run-1", "carve");
+		recordRun("run-1", "build");
 		const ctx = { runId: "run-1", totalStages: 4 };
 		const stage = { stageNumber: 2, name: "design" };
 		b.onLoopStart?.(stage, { kind: "fanout", units: [{}, {}, {}] }, ctx);
@@ -418,7 +418,7 @@ describe("per-unit sub-rows — onUnitStart/onUnitEnd lifecycle", () => {
 
 	it("out-of-order start/end (indices 2,0,1) resolves each unit row independently + climbs done monotonically", async () => {
 		const b = await register();
-		recordRun("run-1", "carve");
+		recordRun("run-1", "build");
 		const ctx = { runId: "run-1", totalStages: 4 };
 		const stage = { stageNumber: 2, name: "design" };
 		b.onLoopStart?.(stage, { kind: "fanout", units: [{}, {}, {}] }, ctx);
@@ -446,7 +446,7 @@ describe("per-unit sub-rows — onUnitStart/onUnitEnd lifecycle", () => {
 
 	it("a second fanout onLoopStart clears the prior generation's unit rows then repopulates 0..N", async () => {
 		const b = await register();
-		recordRun("run-1", "carve");
+		recordRun("run-1", "build");
 		const ctx = { runId: "run-1", totalStages: 6 };
 		const stageA = { stageNumber: 2, name: "design" };
 		b.onLoopStart?.(stageA, { kind: "fanout", units: [{}, {}, {}] }, ctx);
@@ -480,7 +480,7 @@ describe("per-unit sub-rows — onUnitStart/onUnitEnd lifecycle", () => {
 
 	it("a fanout generation → non-fanout loop stage: the loop stage's onStageStart clears the prior generation; onLoopStart then drops the gate (c2)", async () => {
 		const b = await register();
-		recordRun("run-1", "carve");
+		recordRun("run-1", "build");
 		const ctx = { runId: "run-1", totalStages: 6 };
 		b.onLoopStart?.({ stageNumber: 2, name: "design" }, { kind: "fanout", units: [{}] }, ctx);
 		b.onUnitStart?.({ stageNumber: 2, name: "design" }, { index: 0, label: "d0" }, ctx);
@@ -499,7 +499,7 @@ describe("per-unit sub-rows — onUnitStart/onUnitEnd lifecycle", () => {
 
 	it("a fanout generation → plain sequential (non-loop) stage: the sequential stage's onStageStart clears the prior generation (no onLoopStart needed) (c1)", async () => {
 		const b = await register();
-		recordRun("run-1", "carve");
+		recordRun("run-1", "build");
 		const ctx = { runId: "run-1", totalStages: 6 };
 		b.onLoopStart?.({ stageNumber: 2, name: "design" }, { kind: "fanout", units: [{}, {}] }, ctx);
 		b.onUnitStart?.({ stageNumber: 2, name: "design" }, { index: 0, label: "p0" }, ctx);
@@ -518,7 +518,7 @@ describe("per-unit sub-rows — onUnitStart/onUnitEnd lifecycle", () => {
 
 	it("a fanout stage's onStageStart clears the prior generation but NOT its own units — they materialize via onUnitStart after the clear (c3)", async () => {
 		const b = await register();
-		recordRun("run-1", "carve");
+		recordRun("run-1", "build");
 		const ctx = { runId: "run-1", totalStages: 6 };
 		// Prior fan-out generation.
 		b.onLoopStart?.({ stageNumber: 1, name: "slice" }, { kind: "fanout", units: [{}] }, ctx);
@@ -539,7 +539,7 @@ describe("per-unit sub-rows — onUnitStart/onUnitEnd lifecycle", () => {
 
 	it("orphan sweep — a unit that fires onUnitStart with NO onUnitEnd reads terminal after onStageError", async () => {
 		const b = await register();
-		recordRun("run-1", "carve");
+		recordRun("run-1", "build");
 		const ctx = { runId: "run-1", totalStages: 4 };
 		const stage = { stageNumber: 2, name: "design" };
 		b.onLoopStart?.(stage, { kind: "fanout", units: [{}, {}, {}] }, ctx);
@@ -558,8 +558,8 @@ describe("per-unit sub-rows — onUnitStart/onUnitEnd lifecycle", () => {
 
 	it("onUnitHalt — a collect-all soft-halted unit reads ✗ and SURVIVES a completed run's onWorkflowEnd sweep (not painted ✓)", async () => {
 		const b = await register();
-		recordRun("run-1", "carve");
-		const ctx = { runId: "run-1", workflow: "carve", totalStages: 4 };
+		recordRun("run-1", "build");
+		const ctx = { runId: "run-1", workflow: "build", totalStages: 4 };
 		const stage = { stageNumber: 2, name: "design" };
 		b.onLoopStart?.(stage, { kind: "fanout", units: [{}, {}] }, ctx);
 		b.onUnitStart?.(stage, { index: 0, label: "p0" }, ctx);
@@ -591,8 +591,8 @@ describe("per-unit sub-rows — onUnitStart/onUnitEnd lifecycle", () => {
 
 	it("orphan sweep — onWorkflowEnd (abort) flips every still-running sub-row terminal before retiring", async () => {
 		const b = await register();
-		recordRun("run-1", "carve");
-		const ctx = { runId: "run-1", workflow: "carve", totalStages: 4 };
+		recordRun("run-1", "build");
+		const ctx = { runId: "run-1", workflow: "build", totalStages: 4 };
 		const stage = { stageNumber: 2, name: "design" };
 		b.onLoopStart?.(stage, { kind: "fanout", units: [{}, {}] }, ctx);
 		b.onUnitStart?.(stage, { index: 0, label: "p0" }, ctx);
@@ -682,10 +682,10 @@ describe("onWorkflowEnd — terminal retention + completion toast", () => {
 
 	it("completed → paints the bar full (visited = totalStages) so a finished run isn't frozen below 100%", async () => {
 		const b = await register();
-		recordRun("run-1", "carve");
+		recordRun("run-1", "build");
 		const ctx = { runId: "run-1", totalStages: 4 };
 		// A successful path that skips a branch-exclusive stage: 3 distinct of 4
-		// visited (the carve 13/14 shape). The last live snapshot caps below 100%.
+		// visited (the build 13/14 shape). The last live snapshot caps below 100%.
 		b.onStageStart?.({ stageNumber: 1, name: "slice" }, ctx);
 		b.onStageStart?.({ stageNumber: 2, name: "code" }, ctx);
 		b.onStageStart?.({ stageNumber: 3, name: "commit" }, ctx);
@@ -693,7 +693,7 @@ describe("onWorkflowEnd — terminal retention + completion toast", () => {
 
 		b.onWorkflowEnd?.(
 			{ termination: { status: "completed" } },
-			{ runId: "run-1", workflow: "carve", totalStages: 4 },
+			{ runId: "run-1", workflow: "build", totalStages: 4 },
 		);
 
 		// Bar painted full on completion; the terminal stage name is preserved.
@@ -703,12 +703,12 @@ describe("onWorkflowEnd — terminal retention + completion toast", () => {
 
 	it("failed → leaves the last real snapshot frozen (does NOT paint the bar full)", async () => {
 		const b = await register();
-		recordRun("run-1", "carve");
+		recordRun("run-1", "build");
 		const ctx = { runId: "run-1", totalStages: 4 };
 		b.onStageStart?.({ stageNumber: 1, name: "slice" }, ctx);
 		b.onStageError?.({ stageNumber: 2, name: "code" }, "boom", ctx); // visited 2, phase error
 
-		b.onWorkflowEnd?.({ termination: { status: "failed" } }, { runId: "run-1", workflow: "carve", totalStages: 4 });
+		b.onWorkflowEnd?.({ termination: { status: "failed" } }, { runId: "run-1", workflow: "build", totalStages: 4 });
 
 		// A failed row stays frozen at the stage that died — NOT bumped to 4/4.
 		expect(getLane("run-1")?.progress).toMatchObject({ visited: 2, phase: "error", stageName: "code" });

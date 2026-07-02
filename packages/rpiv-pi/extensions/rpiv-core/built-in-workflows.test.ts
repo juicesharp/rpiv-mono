@@ -36,7 +36,7 @@ import {
 	type Workflow,
 } from "@juicesharp/rpiv-workflow";
 import { type RunState, runsDir, stateFilePath } from "@juicesharp/rpiv-workflow/internal";
-import { describeFlow, fs as fsHandle, loopSpecOf } from "@juicesharp/rpiv-workflow/registration";
+import { fs as fsHandle, loopSpecOf } from "@juicesharp/rpiv-workflow/registration";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { rpivArtifactMdOutcome } from "./artifact-collector.js";
 import { builtInWorkflows } from "./built-in-workflows.js";
@@ -91,16 +91,6 @@ const findWorkflow = (name: string): Workflow => {
 // ---------------------------------------------------------------------------
 
 describe("validate → code-review routing in built-in workflows", () => {
-	it("routes validate → code-review in build", () => {
-		const build = findWorkflow("build");
-		expect(build.edges.validate).toBe("code-review");
-	});
-
-	it("routes validate → code-review in arch", () => {
-		const arch = findWorkflow("arch");
-		expect(arch.edges.validate).toBe("code-review");
-	});
-
 	it("every stage in every built-in workflow is reachable from start", () => {
 		for (const wf of builtInWorkflows) {
 			const issues = validateWorkflow(wf);
@@ -109,11 +99,6 @@ describe("validate → code-review routing in built-in workflows", () => {
 				`workflow "${wf.name}" has unreachable stages`,
 			).toEqual([]);
 		}
-	});
-
-	it("revise loops back to implement (backward edge re-enters implement → validate → code-review cycle)", () => {
-		const build = findWorkflow("build");
-		expect(build.edges.revise).toBe("implement");
 	});
 });
 
@@ -163,7 +148,7 @@ describe("code-review routing field is sourced + validated from the contract", (
 	it("no built-in code-review stage carries an inline outputSchema", () => {
 		// Single source of truth: blockers_count lives in the skill contract,
 		// not copy-pasted per workflow. Sourced at runtime by effectiveOutputSchema.
-		for (const name of ["build", "arch", "vet", "polish"]) {
+		for (const name of ["vet", "polish"]) {
 			expect(findWorkflow(name).stages["code-review"]?.outputSchema, `${name} code-review`).toBeUndefined();
 		}
 	});
@@ -889,162 +874,7 @@ describe("design-to-code example (prompt dispatch)", () => {
 	});
 });
 
-// ---------------------------------------------------------------------------
-// ship — fast path: blueprint → implement → validate → commit. implement fans
-// out over the plan's structured `phases:` array (derived by blueprint from its
-// `## Phase N:` headings, title-enriched and verified against those headings).
-// ---------------------------------------------------------------------------
-
-describe("ship workflow", () => {
-	it("chains blueprint → implement → validate → commit", () => {
-		const wf = findWorkflow("ship");
-		expect(wf.start).toBe("blueprint");
-		expect(Object.keys(wf.stages)).toEqual(["blueprint", "implement", "validate", "commit"]);
-		expect(wf.edges.blueprint).toBe("implement");
-		expect(wf.edges.implement).toBe("validate");
-		expect(wf.edges.validate).toBe("commit");
-		expect(wf.edges.commit).toBe("stop");
-	});
-
-	it("blueprint stage carries no inline outputSchema (phases sourced from the skill contract)", () => {
-		expect(findWorkflow("ship").stages.blueprint?.outputSchema).toBeUndefined();
-	});
-
-	it("validates without errors or warnings (contracts threaded in)", () => {
-		const issues = deriveAndValidate(findWorkflow("ship"), { skillContracts: DECLARED_CONTRACTS });
-		expect(issues.filter((i) => i.severity === "error")).toEqual([]);
-		expect(issues.filter((i) => i.severity === "warning")).toEqual([]);
-	});
-
-	describe("FRONTMATTER_PHASE_FANOUT", () => {
-		let tmpDir: string;
-		beforeEach(() => {
-			tmpDir = mkdtempSync(join(tmpdir(), "rpiv-ship-"));
-		});
-		afterEach(() => {
-			rmSync(tmpDir, { recursive: true, force: true });
-		});
-
-		const fanout = () => {
-			const loop = findWorkflow("ship").stages.implement?.loop;
-			if (loop?.kind !== "fanout") throw new Error("ship implement stage has no fanout loop");
-			return loop.units;
-		};
-		const writePlan = (rel: string, body: string) => {
-			const parts = rel.split("/");
-			mkdirSync(join(tmpDir, ...parts.slice(0, -1)), { recursive: true });
-			writeFileSync(join(tmpDir, rel), body);
-		};
-		const runFanout = (rel: string) =>
-			fanout()({
-				cwd: tmpDir,
-				artifact: undefined,
-				state: {
-					named: { plans: [{ artifacts: [{ handle: fsHandle(rel) }], data: undefined, kind: "", meta: {} }] },
-				} as unknown as RunView,
-			});
-
-		it("reads phases from frontmatter and dispatches one title-enriched unit per phase", async () => {
-			const rel = ".rpiv/artifacts/plans/p.md";
-			writePlan(
-				rel,
-				`---\nstatus: ready\nphase_count: 2\nphases:\n  - { n: 1, title: Schema layer }\n  - { n: 2, title: Runtime wiring }\n---\n# Plan\n## Phase 1: Schema layer\n## Phase 2: Runtime wiring\n`,
-			);
-			const units = await runFanout(rel);
-			expect(units.map((u) => u.prompt)).toEqual([`${rel} Phase 1: Schema layer`, `${rel} Phase 2: Runtime wiring`]);
-			expect(units.map((u) => u.label)).toEqual(["phase 1/2", "phase 2/2"]);
-		});
-
-		it("throws when the frontmatter phases disagree with the body headings (stale derive)", () => {
-			const rel = ".rpiv/artifacts/plans/mismatch.md";
-			writePlan(
-				rel,
-				`---\nphases:\n  - { n: 1, title: Only one }\n---\n## Phase 1: a\n## Phase 2: b\n## Phase 3: c\n`,
-			);
-			expect(() => runFanout(rel)).toThrow(/frontmatter phases \(1\) ≠ '## Phase N:' headings \(3\)/);
-		});
-
-		it("returns no units for a plan with neither structured phases nor body headings", async () => {
-			const rel = ".rpiv/artifacts/plans/empty.md";
-			writePlan(rel, `---\nstatus: ready\n---\n# Plan with no phases\n`);
-			expect(await runFanout(rel)).toEqual([]);
-		});
-
-		it('returns [] when no plan is published to the named "plans" channel', async () => {
-			const units = await fanout()({
-				cwd: tmpDir,
-				artifact: undefined,
-				state: { named: {} } as unknown as RunView,
-			});
-			expect(units).toEqual([]);
-		});
-
-		it("throws when phase_count disagrees with the derived phases length", () => {
-			const rel = ".rpiv/artifacts/plans/pc-mismatch.md";
-			writePlan(
-				rel,
-				`---\nstatus: ready\nphase_count: 3\nphases:\n  - { n: 1, title: A }\n  - { n: 2, title: B }\n---\n## Phase 1: A\n## Phase 2: B\n`,
-			);
-			expect(() => runFanout(rel)).toThrow(/phase_count \(3\) ≠ phases length \(2\)/);
-		});
-
-		it("throws when a phased plan omits the required phase_count", () => {
-			const rel = ".rpiv/artifacts/plans/pc-absent.md";
-			writePlan(rel, `---\nstatus: ready\nphases:\n  - { n: 1, title: A }\n---\n## Phase 1: A\n`);
-			expect(() => runFanout(rel)).toThrow(/phase_count \(undefined\) ≠ phases length \(1\)/);
-		});
-	});
-
-	describe("end-to-end via runWorkflow", () => {
-		let tmpDir: string;
-		beforeEach(() => {
-			tmpDir = mkdtempSync(join(tmpdir(), "rpiv-ship-e2e-"));
-		});
-		afterEach(() => {
-			rmSync(tmpDir, { recursive: true, force: true });
-		});
-		const write = (rel: string, body: string) => {
-			const parts = rel.split("/");
-			mkdirSync(join(tmpDir, ...parts.slice(0, -1)), { recursive: true });
-			writeFileSync(join(tmpDir, rel), body);
-		};
-		const step = (m: string) => ({ branch: [mockAssistantMessage(m)] });
-
-		it("drives blueprint → implement (fanned from the derived phases) → validate → commit", async () => {
-			write(
-				".rpiv/artifacts/plans/plan.md",
-				`---\nstatus: ready\nphase_count: 2\nphases:\n  - { n: 1, title: Schema layer }\n  - { n: 2, title: Runtime wiring }\n---\n# Plan\n## Phase 1: Schema layer\n## Phase 2: Runtime wiring\n`,
-			);
-			write(".rpiv/artifacts/validation/val.md", "");
-
-			const chain = createMockSessionChain({
-				cwd: tmpDir,
-				steps: [
-					step("wrote .rpiv/artifacts/plans/plan.md"), // blueprint
-					step("phase done"), // implement — phase 1 unit
-					step("phase done"), // implement — phase 2 unit
-					step("wrote .rpiv/artifacts/validation/val.md"), // validate
-					step("committed"), // commit
-				],
-			});
-
-			const result = await runWorkflow(chain.ctx, {
-				workflow: withDerivedOutcomes(findWorkflow("ship")),
-				input: "add a feature",
-			});
-
-			expect(result.success).toBe(true);
-			// blueprint + implement×2 (one per derived phase) + validate + commit
-			expect(result.stagesCompleted).toBe(5);
-			expect(chain.sentMessages.filter((m) => m.startsWith("/skill:implement"))).toEqual([
-				"/skill:implement .rpiv/artifacts/plans/plan.md Phase 1: Schema layer",
-				"/skill:implement .rpiv/artifacts/plans/plan.md Phase 2: Runtime wiring",
-			]);
-		});
-	});
-});
-
-describe("SLICE_DESIGN_FANOUT (carve design — deps + --upstream)", () => {
+describe("SLICE_DESIGN_FANOUT (build design — deps + --upstream)", () => {
 	let tmpDir: string;
 	beforeEach(() => {
 		tmpDir = mkdtempSync(join(tmpdir(), "rpiv-carve-design-"));
@@ -1054,8 +884,8 @@ describe("SLICE_DESIGN_FANOUT (carve design — deps + --upstream)", () => {
 	});
 
 	const designLoop = () => {
-		const loop = findWorkflow("carve").stages["slice-design"]?.loop;
-		if (loop?.kind !== "fanout") throw new Error("carve slice-design stage has no fanout loop");
+		const loop = findWorkflow("build").stages["slice-design"]?.loop;
+		if (loop?.kind !== "fanout") throw new Error("build slice-design stage has no fanout loop");
 		return loop;
 	};
 	const writeSlices = (rel: string, body: string) => {
@@ -1104,15 +934,15 @@ describe("SLICE_DESIGN_FANOUT (carve design — deps + --upstream)", () => {
 // other dimension (and the slice gate's design-readiness) gets the bare flags.
 // ---------------------------------------------------------------------------
 
-describe("carve plan gate grade panel (--context threading)", () => {
+describe("build plan gate grade panel (--context threading)", () => {
 	const planGateLoop = () => {
-		const loop = findWorkflow("carve").stages["plan-grade"]?.loop;
-		if (loop?.kind !== "fanout") throw new Error("carve plan-grade stage has no fanout loop");
+		const loop = findWorkflow("build").stages["plan-grade"]?.loop;
+		if (loop?.kind !== "fanout") throw new Error("build plan-grade stage has no fanout loop");
 		return loop;
 	};
 	const sliceGateLoop = () => {
-		const loop = findWorkflow("carve").stages["slice-grade"]?.loop;
-		if (loop?.kind !== "fanout") throw new Error("carve slice-grade stage has no fanout loop");
+		const loop = findWorkflow("build").stages["slice-grade"]?.loop;
+		if (loop?.kind !== "fanout") throw new Error("build slice-grade stage has no fanout loop");
 		return loop;
 	};
 	const out = (rel: string) => ({ artifacts: [{ handle: fsHandle(rel) }], data: undefined, kind: "", meta: {} });
@@ -1154,24 +984,24 @@ describe("carve plan gate grade panel (--context threading)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// carve goal channel — the user's brief captured VERBATIM at run start and
+// build goal channel — the user's brief captured VERBATIM at run start and
 // threaded into the judgment seams only: the grade panels' completeness/
 // correctness dimensions (--goal) and validate's prompt. Generative stages
 // (slice, design-slice) stay goal-blind by design, and research — displaced
 // from the start slot — must still receive the raw brief via its prompt fn.
 // ---------------------------------------------------------------------------
 
-describe("carve goal channel (verbatim brief threading)", () => {
-	const carve = () => findWorkflow("carve");
+describe("build goal channel (verbatim brief threading)", () => {
+	const build = () => findWorkflow("build");
 	const out = (rel: string) => ({ artifacts: [{ handle: fsHandle(rel) }], data: undefined, kind: "", meta: {} });
 	const promptFnOf = (stage: string) => {
-		const prompt = carve().stages[stage]?.prompt;
-		if (typeof prompt !== "function") throw new Error(`carve ${stage} stage has no prompt fn`);
+		const prompt = build().stages[stage]?.prompt;
+		if (typeof prompt !== "function") throw new Error(`build ${stage} stage has no prompt fn`);
 		return prompt;
 	};
 	const gateUnits = (stage: string, named: Record<string, unknown>) => {
-		const loop = carve().stages[stage]?.loop;
-		if (loop?.kind !== "fanout") throw new Error(`carve ${stage} stage has no fanout loop`);
+		const loop = build().stages[stage]?.loop;
+		if (loop?.kind !== "fanout") throw new Error(`build ${stage} stage has no fanout loop`);
 		return loop.units({ cwd: "/repo", artifact: undefined, state: { named } as unknown as RunView });
 	};
 
@@ -1185,9 +1015,9 @@ describe("carve goal channel (verbatim brief threading)", () => {
 		});
 
 		it("is the start stage and writes the brief byte-for-byte", () => {
-			expect(carve().start).toBe("goal");
-			const stage = carve().stages.goal;
-			if (!stage?.run) throw new Error("carve goal stage has no run function");
+			expect(build().start).toBe("goal");
+			const stage = build().stages.goal;
+			if (!stage?.run) throw new Error("build goal stage has no run function");
 			const run = stage.run as (ctx: { cwd: string; input?: undefined; state: RunView }) => {
 				artifacts: readonly { handle: { kind: string; path: string } }[];
 			};
@@ -1242,8 +1072,8 @@ describe("carve goal channel (verbatim brief threading)", () => {
 	});
 
 	it("both grade gates declare the goal read", () => {
-		expect(carve().stages["plan-grade"]?.reads).toContain("goal");
-		expect(carve().stages["code-grade"]?.reads).toContain("goal");
+		expect(build().stages["plan-grade"]?.reads).toContain("goal");
+		expect(build().stages["code-grade"]?.reads).toContain("goal");
 	});
 
 	it("validate dispatches the LATEST plan from the named channel plus --goal", () => {
@@ -1278,7 +1108,7 @@ describe("carve goal channel (verbatim brief threading)", () => {
 // first cut). Both are computed from the slice-map text, no LLM.
 // ---------------------------------------------------------------------------
 
-describe("carve slice-check (deterministic floor)", () => {
+describe("build slice-check (deterministic floor)", () => {
 	let tmpDir: string;
 	beforeEach(() => {
 		tmpDir = mkdtempSync(join(tmpdir(), "rpiv-carve-structure-"));
@@ -1288,8 +1118,8 @@ describe("carve slice-check (deterministic floor)", () => {
 	});
 
 	const structureRun = () => {
-		const stage = findWorkflow("carve").stages["slice-check"];
-		if (!stage?.run) throw new Error("carve slice-check stage has no run function");
+		const stage = findWorkflow("build").stages["slice-check"];
+		if (!stage?.run) throw new Error("build slice-check stage has no run function");
 		return stage.run as (ctx: { cwd: string; input?: undefined; state: RunView }) => {
 			data: Record<string, unknown>;
 		};
@@ -1371,39 +1201,6 @@ describe("carve slice-check (deterministic floor)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// pr-triage security-gate — the script-stage guard must fail closed on
-// missing / malformed security_flag (NaN), not silently pass as SAFE.
-// ---------------------------------------------------------------------------
-
-describe("pr-triage security-gate", () => {
-	const gateRun = () => {
-		const stage = findWorkflow("pr-triage").stages["security-gate"];
-		if (!stage?.run) throw new Error("pr-triage security-gate stage has no run function");
-		return stage.run as (ctx: { input?: { data?: unknown } }) => void;
-	};
-
-	it("throws on missing input (undefined)", () => {
-		expect(() => gateRun()({ input: undefined })).toThrow(/BLOCK/);
-	});
-
-	it("throws on non-numeric security_flag (NaN)", () => {
-		expect(() => gateRun()({ input: { data: { security_flag: "not-a-number" } } })).toThrow(/BLOCK/);
-	});
-
-	it("throws on BLOCK (security_flag = 2)", () => {
-		expect(() => gateRun()({ input: { data: { security_flag: 2 } } })).toThrow(/BLOCK/);
-	});
-
-	it("does not throw on SAFE (security_flag = 0)", () => {
-		expect(() => gateRun()({ input: { data: { security_flag: 0 } } })).not.toThrow();
-	});
-
-	it("does not throw on REVIEW (security_flag = 1)", () => {
-		expect(() => gateRun()({ input: { data: { security_flag: 1 } } })).not.toThrow();
-	});
-});
-
-// ---------------------------------------------------------------------------
 // implement reads wiring — every implement stage declares reads: ["plans"]
 // and validates clean with contracts threaded in.
 // ---------------------------------------------------------------------------
@@ -1418,7 +1215,7 @@ describe("implement reads wiring", () => {
 	});
 
 	it("every built-in workflow with an implement stage validates clean (contracts threaded in)", () => {
-		for (const name of ["ship", "build", "arch", "vet", "polish"]) {
+		for (const name of ["build", "vet", "polish"]) {
 			const issues = deriveAndValidate(findWorkflow(name), { skillContracts: DECLARED_CONTRACTS });
 			expect(
 				issues.filter((i) => i.severity === "error"),
@@ -1585,11 +1382,6 @@ describe("contract ownership drift guards", () => {
 });
 
 describe("control-flow specs are introspectable (presets self-describe)", () => {
-	const shapeOf = (workflow: string, stage: string) => {
-		const wf = builtInWorkflows.find((w) => w.name === workflow);
-		if (!wf) throw new Error(`workflow ${workflow} not found`);
-		return describeFlow(wf).find((s) => s.stage === stage);
-	};
 	// `describeFlow` now projects control-flow off the unified `loop` field;
 	// `loopSpecOf(stage.loop)` is the same projection it carries in `control.spec`,
 	// asserted directly here for the source/unit/max detail.
@@ -1613,11 +1405,5 @@ describe("control-flow specs are introspectable (presets self-describe)", () => 
 			kind: "iterate",
 			source: "architecture-reviews",
 		});
-	});
-
-	it("code-review reports a route edge with both branch targets", () => {
-		const cr = shapeOf("build", "code-review");
-		expect(cr?.edge.mode).toBe("route");
-		expect(cr?.edge.targets).toEqual(expect.arrayContaining(["revise", "commit"]));
 	});
 });

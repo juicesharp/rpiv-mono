@@ -7,7 +7,7 @@
  * Tool-owning plugins are siblings (see siblings.ts); install via /rpiv-setup.
  *
  * Workflow runtime + `/wf` command live in `@juicesharp/rpiv-workflow`. We
- * contribute six built-in workflows (ship / build / arch / vet / polish / pr-triage) via the
+ * contribute three built-in workflows (build / vet / polish) via the
  * sibling's `registerBuiltIns` programmatic API so they're available to
  * users running `/wf` without authoring their own.
  */
