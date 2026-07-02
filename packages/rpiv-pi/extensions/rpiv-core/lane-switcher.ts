@@ -49,7 +49,7 @@ function resolveHotkey(): string | undefined {
 	return v;
 }
 
-let overlay: LaneDock | undefined;
+let dock: LaneDock | undefined;
 let unsubscribe: (() => void) | undefined;
 /** The launcher UI that owns the dock editor — kept so __resetLaneSwitcher can
  *  restore Pi's default editor. Set once per ctx identity at session_start. */
@@ -84,12 +84,16 @@ function stepIn(ui: ExtensionUIContext): void {
  * `onOpen` and by `stepIn`.
  */
 export async function switchIntoLane(ui: ExtensionUIContext, runId: string, unitIndex: number): Promise<void> {
-	if (switchingLane) return; // never stack two overlays
+	if (switchingLane) return; // never stack two consoles
 	switchingLane = true;
 	setFocusedRun(runId);
+	// The in-flow browser renders the lane block itself in the editor slot, so the ambient
+	// dock below would duplicate it — hide it for the duration.
+	dock?.setSuppressed(true);
 	try {
 		await showLaneConsole(ui, runId, unitIndex); // the lane browser: spine + transcript + inline question
 	} finally {
+		dock?.setSuppressed(false);
 		setFocusedRun(undefined);
 		switchingLane = false;
 	}
@@ -100,17 +104,17 @@ export function registerLaneSwitcher(pi: ExtensionAPI): void {
 
 	pi.on("session_start", async (_event: unknown, ctx: { hasUI?: boolean; ui?: ExtensionUIContext }) => {
 		// A detached child re-loads rpiv-core and re-fires this hook with its
-		// bound relay ui. Skip it — only the ROOT launcher owns the ambient overlay +
-		// registry subscription. A child mounting its own overlay would re-point the
+		// bound relay ui. Skip it — only the ROOT launcher owns the ambient dock +
+		// registry subscription. A child mounting its own dock would re-point the
 		// shared singleton at its relay and clobber the launcher's `rpiv-lanes` widget.
 		if (!ctx.hasUI || !ctx.ui || isLaneRelayUiContext(ctx.ui)) return;
 		const ui = ctx.ui;
-		overlay ??= new LaneDock();
-		overlay.setUICtx(ui);
-		overlay.update();
+		dock ??= new LaneDock();
+		dock.setUICtx(ui);
+		dock.update();
 		// Subscribe once: re-render the dock on any registry change (run recorded/
 		// evicted, status, current session, needs-input, dock selection).
-		unsubscribe ??= subscribeLanes(() => overlay?.update());
+		unsubscribe ??= subscribeLanes(() => dock?.update());
 		// Install the dock editor once per ctx identity (re-install on /reload). It
 		// proxies dock navigation; ⏎ on a selected lane switches into it. The host
 		// preserves editor text + app keybindings across the swap.
@@ -167,6 +171,6 @@ export function __resetLaneSwitcher(): void {
 	switchingLane = false;
 	editorCtx?.setEditorComponent(undefined); // restore Pi's default editor
 	editorCtx = undefined;
-	overlay?.dispose();
-	overlay = undefined;
+	dock?.dispose();
+	dock = undefined;
 }

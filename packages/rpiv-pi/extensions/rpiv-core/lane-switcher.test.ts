@@ -17,7 +17,7 @@ import {
 } from "./run-lane-registry.js";
 
 // Mock the console so we can assert the switch flow without driving the real
-// ctx.ui.custom overlay machinery. The read-only viewer is gone — the unified
+// ctx.ui.custom machinery. The read-only viewer is gone — the unified
 // console is now the sole transcript surface, so mocking it covers the full switch path.
 vi.mock("./lane-console.js", () => ({ showLaneConsole: vi.fn() }));
 // Keep the registry REAL (the dock + switcher both depend on its live behavior) but

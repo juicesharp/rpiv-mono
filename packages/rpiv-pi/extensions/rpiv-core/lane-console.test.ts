@@ -284,7 +284,7 @@ describe("LaneConsole — browser navigation (spine)", () => {
 		const done = vi.fn();
 		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, done);
 		panel.handleInput("\x1b[A"); // ↑ at row 0 → back out (restored gesture)
-		expect(done).toHaveBeenCalledTimes(1); // finish() resolves the overlay exactly once
+		expect(done).toHaveBeenCalledTimes(1); // finish() resolves the browser exactly once
 		panel.dispose();
 	});
 
@@ -463,7 +463,7 @@ describe("LaneConsole — question mode (reactive, self-draining)", () => {
 		panel.dispose();
 	});
 
-	it("commits an answer and advances to the next queued question in place (no overlay swap)", async () => {
+	it("commits an answer and advances to the next queued question in place (no surface swap)", async () => {
 		liveUnit(() => [assistantEntry("ctx")]);
 		const resolveA = vi.fn();
 		const resolveB = vi.fn();
@@ -497,7 +497,7 @@ describe("LaneConsole — question mode (reactive, self-draining)", () => {
 	it("commits the LAST queued question and STAYS OPEN in lane focus (browser is never stranded)", async () => {
 		// Unlike the old single-unit console (which backed out on drain), the browser keeps the
 		// spine + transcript as the surface — answering the last question drops the band and
-		// returns keys to lane navigation, but the overlay stays open (esc/← closes it).
+		// returns keys to lane navigation, but the browser stays open (esc/← closes it).
 		liveUnit(() => [assistantEntry("ctx")]);
 		const resolveA = vi.fn();
 		const done = vi.fn();
@@ -651,7 +651,7 @@ describe("LaneConsole — tiny-terminal constant height", () => {
 		const beforeEsc = escPanel.render(80).length;
 		escPanel.handleInput("\x1b"); // esc → defer (question stays queued, child not resolved)
 		expect(escPanel.render(80).length).toBe(beforeEsc); // shape unchanged on back-out
-		expect(escDone).toHaveBeenCalledTimes(1); // overlay resolved exactly once
+		expect(escDone).toHaveBeenCalledTimes(1); // browser resolved exactly once
 		escPanel.dispose();
 	});
 });

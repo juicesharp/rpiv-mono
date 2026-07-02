@@ -47,6 +47,10 @@ export class LaneDock {
 	/** Last height-shape signature (see shapeSignature) — drives the forced-redraw decision in
 	 *  update(). undefined until the widget mounts (re-seeded on (re)registration). */
 	private lastShapeSig: string | undefined;
+	/** While true the dock unregisters its widget regardless of lane presence — set around the
+	 *  in-flow lane browser (lane-console), which renders the same lane block itself in the
+	 *  editor slot; an ambient dock below it would be a duplicate. */
+	private suppressed = false;
 
 	setUICtx(ctx: ExtensionUIContext): void {
 		// Identity-compare so repeat session_start handlers are idempotent;
@@ -58,13 +62,20 @@ export class LaneDock {
 		}
 	}
 
+	/** Hide/show the dock around an in-flow lane browser (see `suppressed`). Idempotent. */
+	setSuppressed(suppressed: boolean): void {
+		if (suppressed === this.suppressed) return;
+		this.suppressed = suppressed;
+		this.update();
+	}
+
 	update(): void {
 		if (!this.uiCtx) return;
 		const lanes = listLanes();
 		this.syncSpinner(lanes); // start/stop the repaint timer with running-lane presence
 		this.syncHeartbeat(lanes); // start/stop the aging heartbeat with needs-input presence
-		if (lanes.length === 0) {
-			// No lanes → the dock hides; there is nothing to glance at.
+		if (lanes.length === 0 || this.suppressed) {
+			// No lanes (nothing to glance at) or an in-flow browser owns the lane block → hide.
 			if (this.widgetRegistered) {
 				this.uiCtx.setWidget(WIDGET_KEY, undefined);
 				this.widgetRegistered = false;

@@ -1,5 +1,6 @@
 /**
- * lane-console — the unified, focused lane BROWSER: ONE overlay that is the SOLE
+ * lane-console — the unified, focused lane BROWSER: ONE in-flow surface (it replaces the
+ * editor via a non-overlay `ui.custom`, so the primary footer stays visible) that is the SOLE
  * stepped-in surface for every lane. Stepping in (↓ from an empty prompt, `^Q`, or
  * `/lanes`) opens it; it is not the belowEditor dock's active mode (the dock stays a
  * read-only ambient glance).
@@ -135,7 +136,7 @@ export class LaneConsole implements Component {
 	/** The unit `inner` was mounted for — captured so commit dequeues the RIGHT queue even
 	 *  when the dequeue notify re-sorts the display rows out from under the selection. */
 	private questionTarget: Target | undefined;
-	private resolved = false; // esc/back resolves the overlay once
+	private resolved = false; // esc/back resolves the browser once
 	/** Spinner animation frame for the shared lane rows; advanced by spinTimer while ≥1 lane runs. */
 	private frame = 0;
 	private readonly spinTimer: ReturnType<typeof setInterval>;
@@ -263,7 +264,7 @@ export class LaneConsole implements Component {
 		this.sync(); // peek the next question for the selected unit (or drop the band) — idempotent
 	}
 
-	/** Resolve the overlay once; force a full repaint because the surface collapses (cdcf3ee). */
+	/** Resolve the browser once; force a full repaint because the surface collapses (cdcf3ee). */
 	private finish(): void {
 		if (this.resolved) return;
 		this.resolved = true;
@@ -473,15 +474,13 @@ export class LaneConsole implements Component {
  * in from). Resolves when the user backs out (esc/←) or the last lane is dismissed. The
  * browser navigates lanes, re-targets the transcript, and mounts/commits/advances each
  * unit's question FIFO itself.
+ *
+ * The browser renders IN-FLOW (a non-overlay `ui.custom`): the host swaps it into the
+ * editor slot, so the primary footer keeps rendering below it. A bottom-anchored overlay
+ * would occlude the footer and shift the lane block down by the footer's height (the
+ * step-in jump); the caller (lane-switcher) suppresses the ambient dock for the duration
+ * instead, since the browser renders the lane block itself.
  */
 export function showLaneConsole(ui: ExtensionUIContext, runId: string, unitIndex: number): Promise<void> {
-	return ui.custom<void>((tui, theme, kb, done) => new LaneConsole(runId, unitIndex, tui, theme, kb, () => done()), {
-		overlay: true,
-		overlayOptions: {
-			anchor: "bottom-center",
-			width: "100%",
-			maxHeight: "90%",
-			margin: { left: 0, right: 0, bottom: 0 },
-		},
-	});
+	return ui.custom<void>((tui, theme, kb, done) => new LaneConsole(runId, unitIndex, tui, theme, kb, () => done()));
 }
