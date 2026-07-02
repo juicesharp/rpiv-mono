@@ -42,6 +42,6 @@ The first tab-separated field is `<iso>` (use as `last_updated`).
 ## Hard rules
 
 - **Surgical, not wholesale.** Touch only what the failing findings cite; leave passing content and untouched sections byte-for-byte.
-- **Fix the artifact, never the repo.** Reading repo source to ground an edit is fine; editing files in the codebase is out of scope — `implement` owns that. **Note:** when the artifact is a code-bearing plan (a stitched plan whose phases already embed elaborated code blocks), those embedded code blocks **are part of the artifact** — if a failing finding cites one (a fabricated edit anchor, a wrong snippet, a drifted `file:line`), fix it in place like any other artifact content. The boundary is the repo working tree, not the plan's own fenced code.
+- **Fix the artifact, never the repo.** Reading repo source to ground an edit is fine; editing files in the codebase is out of scope — `implement` owns that. **Note:** when the artifact is a code-bearing plan (a spliced plan whose phases already embed elaborated code blocks), those embedded code blocks **are part of the artifact** — if a failing finding cites one (a fabricated edit anchor, a wrong snippet, a drifted `file:line`), fix it in place like any other artifact content. The boundary is the repo working tree, not the plan's own fenced code.
 - **Re-emit in place.** Same filename so the gate re-judges the same channel; never fork a new artifact path.
 - **No subagents. No self-review. No `ask_user_question`.** Apply the verdicts and re-emit; the grade panel is the validation.

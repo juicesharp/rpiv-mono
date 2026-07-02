@@ -1247,7 +1247,7 @@ describe("carve goal channel (verbatim brief threading)", () => {
 	});
 
 	it("validate dispatches the LATEST plan from the named channel plus --goal", () => {
-		// Named-channel sourcing is load-bearing: after the stitch gate the
+		// Named-channel sourcing is load-bearing: after the code gate the
 		// rolling primary is the last verdict JSON, not the plan.
 		const dispatch = promptFnOf("validate")({
 			cwd: "/repo",

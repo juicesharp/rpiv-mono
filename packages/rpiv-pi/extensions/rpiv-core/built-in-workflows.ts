@@ -622,7 +622,7 @@ const prTriageWorkflow = defineWorkflow({
 //   proposed interfaces/data types before synthesis. Then merge hierarchically
 //   (per-cluster sub-plans → one plan) so no pass holds every design, gate the
 //   plan on quality dimensions BEFORE any code, elaborate code per phase and
-//   stitch it in, re-grade the code-bearing plan, then implement/validate/commit.
+//   splice it in, re-grade the code-bearing plan, then implement/validate/commit.
 //   The parallel generalization of `arch`.
 // ===========================================================================
 
@@ -1088,9 +1088,11 @@ const verdictOutcome = (name: string) => ({
 });
 const sliceVerdictOutcome = verdictOutcome("slice-verdicts");
 const planVerdictOutcome = verdictOutcome("plan-verdicts");
-// The post-stitch gate re-grades the now code-bearing plan on its own channel,
-// so its verdicts never mix with the pre-elaborate plan gate's.
-const stitchVerdictOutcome = verdictOutcome("stitch-verdicts");
+// The post-splice code gate re-grades the now code-bearing plan on its own
+// channel, so its verdicts never mix with the pre-elaborate plan gate's. Named
+// for the object under judgment — the code the gate grades — completing the
+// slice-verdicts / plan-verdicts / code-verdicts parallel.
+const codeVerdictOutcome = verdictOutcome("code-verdicts");
 
 /**
  * Absolute path to rpiv-pi's bundled deterministic stitch script. Resolved off
@@ -1109,7 +1111,7 @@ const STITCH_SCRIPT = join(
 /**
  * Carve's validate dispatch: the latest synthesized plan plus the goal flag.
  * Sourcing the plan from the NAMED channel (not the rolling primary) is
- * load-bearing: `code-grade` is a produces-fanout, so after the stitch gate the
+ * load-bearing: `code-grade` is a produces-fanout, so after the code gate the
  * rolling primary is the LAST VERDICT JSON (`placeFanoutOutput` advances it per
  * unit) and `implement` (acts) leaves it there — a plain `produces()` validate
  * would receive a verdict path as its "plan". A prompt stage owns its whole
@@ -1127,11 +1129,11 @@ const VALIDATE_GOAL_PROMPT: PromptFn = ({ state }) => {
 const carveWorkflow = defineWorkflow({
 	name: "carve",
 	description:
-		"Ship, sliced: capture the verbatim brief as a goal artifact (the north star the quality gates' completeness/correctness dimensions and validate anchor against) → research the brief → decompose it into vertical slices → two-phase slice gate (a deterministic floor — dependency-cycle freedom + brief-coverage conservation so a slice-fix can't pass by dropping scope — then one LLM design-readiness judgment that each slice is chewable by a single design pass) with a slice-fix loop → design each slice in parallel → one consolidated developer checkpoint (accept or adjust the proposed interfaces/data types, adjustments applied surgically and cascaded to dependents) → synthesize hierarchically (per-cluster sub-plans → one merged plan) → quality-panel gate (completeness/correctness/actionability/pattern-following/architecture-fit) with a plan-fix loop → elaborate code per phase in parallel → stitch → re-grade the code-bearing plan → implement → validate → commit. Research-led; three automated gates plus one human design checkpoint, before design, before code, and after stitch.",
+		"Ship, sliced: capture the verbatim brief as a goal artifact (the north star the quality gates' completeness/correctness dimensions and validate anchor against) → research the brief → decompose it into vertical slices → two-phase slice gate (a deterministic floor — dependency-cycle freedom + brief-coverage conservation so a slice-fix can't pass by dropping scope — then one LLM design-readiness judgment that each slice is chewable by a single design pass) with a slice-fix loop → design each slice in parallel → one consolidated developer checkpoint (accept or adjust the proposed interfaces/data types, adjustments applied surgically and cascaded to dependents) → synthesize hierarchically (per-cluster sub-plans → one merged plan) → quality-panel gate (completeness/correctness/actionability/pattern-following/architecture-fit) with a plan-fix loop → elaborate code per phase in parallel → splice it into the plan → re-grade the code-bearing plan → implement → validate → commit. Research-led; three automated gates plus one human design checkpoint, before design, before code, and after the splice.",
 	start: "goal",
 	stages: {
 		// The user's brief, verbatim, on its own channel — the judgment seams
-		// (plan/stitch gates' completeness+correctness, validate) anchor against
+		// (plan/code gates' completeness+correctness, validate) anchor against
 		// it. Deliberately NOT fed to the generative stages (slice, design-slice):
 		// bounded per-slice context is carve's whole point, and an ambient goal
 		// there invites re-litigating settled decompositions.
@@ -1198,8 +1200,8 @@ const carveWorkflow = defineWorkflow({
 			reads: ["plans", fanin("plan-verdicts")],
 		}),
 		// Elaborate implement-ready code into each phase in parallel (fanout),
-		// deterministically splice it back into the plan (stitch), then re-grade
-		// the now code-bearing plan — guarding the blind-splice risk.
+		// deterministically splice it back into the plan (code-splice), then
+		// re-grade the now code-bearing plan — guarding the blind-splice risk.
 		code: produces({ skill: "elaborate", loop: FRONTMATTER_PHASE_FANOUT, reads: ["plans"] }),
 		"code-splice": acts.script({
 			reads: ["plans"],
@@ -1208,8 +1210,8 @@ const carveWorkflow = defineWorkflow({
 				if (plan?.handle.kind !== "fs") {
 					throw haltPreflight(
 						"code-splice",
-						"code-splice: no plan to stitch",
-						"code-splice: no fs plan artifact on the 'plans' channel — synthesize must run before elaborate/stitch",
+						"code-splice: no plan to splice into",
+						"code-splice: no fs plan artifact on the 'plans' channel — synthesize must run before elaborate/code-splice",
 					);
 				}
 				const planPath = isAbsolute(plan.handle.path) ? plan.handle.path : join(cwd, plan.handle.path);
@@ -1219,24 +1221,24 @@ const carveWorkflow = defineWorkflow({
 		"code-grade": produces({
 			skill: "grade",
 			loop: PLAN_DIMENSION_FANOUT,
-			outcome: stitchVerdictOutcome,
+			outcome: codeVerdictOutcome,
 			// `research` is read so the architecture-fit unit can thread it as
 			// --context; `goal` so completeness/correctness anchor on the brief.
 			reads: ["plans", "research", "goal"],
 		}),
-		// Repair arm for the stitch gate. Surgical `amend` over the SAME code-bearing
-		// plan from the stitch verdicts — NOT a blind re-elaborate: `elaborate` never
+		// Repair arm for the code gate. Surgical `amend` over the SAME code-bearing
+		// plan from the code verdicts — NOT a blind re-elaborate: `elaborate` never
 		// sees the findings and can only rewrite a phase's code body, so it cannot fix
 		// what the gate actually fails on (fabricated edit anchors, drifted line
 		// citations, a cross-phase naming collision) and sometimes regressed a passing
-		// dimension. `amend` reads the verdicts and edits the stitched plan in place
+		// dimension. `amend` reads the verdicts and edits the spliced plan in place
 		// (its embedded code blocks included), then loops straight back to re-grade —
-		// the mirror of the plan gate's `refine` arm, on its own `stitch-verdicts`
+		// the mirror of the plan gate's `plan-fix` arm, on its own `code-verdicts`
 		// channel so the two loops' verdicts never cross.
 		"code-fix": produces({
 			skill: "amend",
 			outcome: rpivBucketOutcome("plans"),
-			reads: ["plans", fanin("stitch-verdicts")],
+			reads: ["plans", fanin("code-verdicts")],
 		}),
 		implement: acts({ loop: IMPLEMENT_PHASE_FANOUT, reads: ["plans"] }),
 		validate: produces({ prompt: VALIDATE_GOAL_PROMPT }),
@@ -1275,14 +1277,14 @@ const carveWorkflow = defineWorkflow({
 		code: "code-splice",
 		"code-splice": "code-grade",
 		// Re-grade the code-bearing plan. Pass ⇒ implement; any fails ⇒ surgically
-		// refine the stitched plan and re-grade. Routes to `code-fix`, NOT back to
+		// amend the spliced plan and re-grade. Routes to `code-fix`, NOT back to
 		// `code`: the gate fails on plan-text defects (edit anchors, line
 		// citations, naming) that a per-phase code rewrite cannot reach, so the
 		// surgical arm is the one with authority over them. Bounded by the runner's
 		// maxBackwardJumps.
 		"code-grade": defineRoute(
 			["implement", "code-fix"],
-			({ state }) => (allDimensionsPass(state.named["stitch-verdicts"]) ? "implement" : "code-fix"),
+			({ state }) => (allDimensionsPass(state.named["code-verdicts"]) ? "implement" : "code-fix"),
 			{ readsData: false },
 		),
 		"code-fix": "code-grade",

@@ -319,7 +319,7 @@ describe("equivalence — built-in workflows", () => {
 	 * carve's explicit-by-design produces stages — NOT derived (rung 1 wins):
 	 * the two grade gates publish verdicts to DISTINCT channels (derivation maps
 	 * one kind → one bucket, so it can't split them), and the generic `amend`
-	 * skill is reused for the slice map, the plan gate's plan, and the stitch
+	 * skill is reused for the slice map, the plan gate's plan, and the code
 	 * gate's code-bearing plan (its contract has no single artifactKind to derive).
 	 * These keep explicit outcomes; the test asserts those names rather than a
 	 * derived one.
@@ -333,7 +333,7 @@ describe("equivalence — built-in workflows", () => {
 		"carve::subplan": "subplans",
 		"carve::plan-grade": "plan-verdicts",
 		"carve::plan-fix": "plans",
-		"carve::code-grade": "stitch-verdicts",
+		"carve::code-grade": "code-verdicts",
 		"carve::code-fix": "plans",
 	};
 

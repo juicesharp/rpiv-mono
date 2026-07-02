@@ -21,7 +21,7 @@ contract:
 
 # Elaborate
 
-You write **implement-ready code into one phase** of a synthesized plan, in isolation, and emit it as a per-phase elaboration doc. One pass. You do **not** redesign the phase, write any other phase's code, or self-review — `synthesize` already reconciled the cross-phase seams and the workflow's grade panel judges the stitched result. You turn one phase's contract-level "what to change" into the actual code to apply.
+You write **implement-ready code into one phase** of a synthesized plan, in isolation, and emit it as a per-phase elaboration doc. One pass. You do **not** redesign the phase, write any other phase's code, or self-review — `synthesize` already reconciled the cross-phase seams and the workflow's grade panel judges the spliced result. You turn one phase's contract-level "what to change" into the actual code to apply.
 
 ## Input
 
@@ -51,7 +51,7 @@ Copy values verbatim. `<iso>` is the first tab-separated field (use as `date`); 
 3. **Write the code for this phase only.** For each file in the phase's Changes, emit a concrete, paste-ready code block: the full function/section to add, or the exact edit (enough that `implement` applies it without guessing). Match the surrounding code's conventions. Where the phase depends on a sibling phase's symbol, reference it by the shape the plan/Synthesis Notes already fixed — do not redefine it.
 4. **Carry the success criteria.** Preserve the phase's `### Success Criteria` (Automated + Manual), tightening a check only if your code makes it more concrete. Do not drop or weaken a criterion.
 5. **Resolve ambiguity yourself.** Decide from the plan, the Synthesis Notes, and the real code. This skill is **non-interactive** — if a genuine blocker can't be settled from those inputs, make the most defensible call, record it under `## Notes / Deferred`, and let the grade panel catch a bad call. Do **not** ask the user (N lanes run concurrently).
-6. **Write the elaboration doc** (below), `status: ready`. Its filename pairs to the plan so the stitch can fold it back deterministically — see Output document.
+6. **Write the elaboration doc** (below), `status: ready`. Its filename pairs to the plan so the splice can fold it back deterministically — see Output document.
 7. **Print the path**, then a one-line summary: `Phase N elaborated: <k> files, <m> code blocks`.
 
 ## Output document
@@ -105,6 +105,6 @@ tags: [elaboration]
 
 - **One phase only.** Never write code for a file another phase owns; reference its interfaces by the shape `synthesize` already fixed.
 - **Implement-ready code, grounded in the current tree.** Read the cited files first; emit code blocks, not prose hand-waving ("handle appropriately", "etc.").
-- **Body is exactly one `## Phase N: <title>` section** with the verbatim heading — the deterministic stitch splices it back by phase number. Don't rename the heading or change `N`.
-- **Write the doc, not the code.** You only write your elaboration artifact; reading the codebase to ground the code is required, editing it is out of scope — `implement` applies the code later, after the stitch.
+- **Body is exactly one `## Phase N: <title>` section** with the verbatim heading — the deterministic splice folds it back by phase number. Don't rename the heading or change `N`.
+- **Write the doc, not the code.** You only write your elaboration artifact; reading the codebase to ground the code is required, editing it is out of scope — `implement` applies the code later, after the splice.
 - **No subagents. No self-review. No `ask_user_question`.** Decide, record any deferral in Notes, write — the grade panel is the validation.
