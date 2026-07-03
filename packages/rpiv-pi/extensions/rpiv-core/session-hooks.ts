@@ -29,6 +29,7 @@ import {
 } from "./git-context.js";
 import { clearInjectionState, handleToolCallGuidance, injectRootGuidance } from "./guidance.js";
 import { findMissingSiblings } from "./package-checks.js";
+import { injectPipelinePointer } from "./pipeline-pointer.js";
 import { isStaleCtxError } from "./utils.js";
 
 /**
@@ -103,6 +104,7 @@ async function onSessionStart(
 ): Promise<void> {
 	resetInjectionState();
 	injectRootGuidance(ctx.cwd, pi);
+	injectPipelinePointer(pi);
 	await injectGitContext(pi, (msg) => sendGitContextMessage(pi, msg));
 
 	// Injections above run every fire (each stage needs its own guidance + git
@@ -136,6 +138,7 @@ async function onSessionCompact(_event: unknown, ctx: { cwd: string }, pi: Exten
 	// guidance/git injection and must propagate.
 	try {
 		injectRootGuidance(ctx.cwd, pi);
+		injectPipelinePointer(pi);
 		await injectGitContext(pi, (msg) => sendGitContextMessage(pi, msg));
 	} catch (e) {
 		if (!isStaleCtxError(e)) throw e;

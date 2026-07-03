@@ -4,6 +4,7 @@ description: Verify that an implementation plan was correctly executed by runnin
 argument-hint: "[plan-path] [--goal <path>]"
 allowed-tools: Read, Bash(git *), Bash(make *), Glob, Grep, Agent
 shell-timeout: 10
+disable-model-invocation: true
 contract:
   produces:
     kind: produces

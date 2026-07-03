@@ -4,6 +4,7 @@ description: Grade ONE artifact along ONE named quality dimension and write a ve
 argument-hint: "--dimension <name> --artifact <path> [--context <path>] [--goal <path>]"
 allowed-tools: Read, Grep, Glob, Write
 shell-timeout: 10
+disable-model-invocation: true
 contract:
   produces:
     kind: produces

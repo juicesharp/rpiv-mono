@@ -4,6 +4,7 @@ description: Surgically fix ONE artifact (research, plan, or any doc) to clear t
 argument-hint: "--<channel> <artifact-path> --<channel>-verdicts <verdict-path> [--<channel>-verdicts <verdict-path> ...]"
 allowed-tools: Read, Edit, Write, Grep, Glob
 shell-timeout: 10
+disable-model-invocation: true
 contract:
   produces:
     kind: produces

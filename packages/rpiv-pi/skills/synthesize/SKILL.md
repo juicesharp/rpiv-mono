@@ -4,6 +4,7 @@ description: Merge N independent per-slice designs (plus the research they rest 
 argument-hint: "--designs <path>... [--research <path>] [--as-subplan]  |  --subplans <path>... [--research <path>]"
 allowed-tools: Read, Grep, Glob, Write
 shell-timeout: 10
+disable-model-invocation: true
 contract:
   produces:
     kind: produces

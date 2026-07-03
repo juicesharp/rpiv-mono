@@ -4,6 +4,7 @@ description: One consolidated developer checkpoint over EVERY per-slice design a
 argument-hint: "--designs <design-path> [--designs <design-path> ...] --slices <slices-path>"
 allowed-tools: Read, Edit, Write, Grep, Glob
 shell-timeout: 10
+disable-model-invocation: true
 contract:
   produces:
     kind: produces

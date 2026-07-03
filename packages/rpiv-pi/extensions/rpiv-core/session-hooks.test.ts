@@ -360,6 +360,34 @@ describe("G0: session_start → real syncBundledAgents → notifyAgentSyncDrift"
 	});
 });
 
+describe("pipeline-pointer injection", () => {
+	const pointerCalls = (pi: { sendMessage: unknown }) =>
+		(pi.sendMessage as ReturnType<typeof vi.fn>).mock.calls.filter(
+			([msg]) => (msg as { customType?: string }).customType === "rpiv-pipeline-index",
+		).length;
+
+	it("session_start injects the pipeline pointer", async () => {
+		const { pi, captured } = createMockPi({ exec: stubGitExec({}) as never });
+		registerSessionHooks(pi);
+		await captured.events.get("session_start")?.[0](
+			{ reason: "startup" } as never,
+			createMockCtx({ cwd: projectDir, hasUI: false }) as never,
+		);
+		expect(pointerCalls(pi)).toBe(1);
+	});
+
+	it("session_compact re-injects the pipeline pointer", async () => {
+		const { pi, captured } = createMockPi({ exec: stubGitExec({}) as never });
+		registerSessionHooks(pi);
+		await captured.events.get("session_start")?.[0](
+			{ reason: "startup" } as never,
+			createMockCtx({ cwd: projectDir, hasUI: false }) as never,
+		);
+		await captured.events.get("session_compact")?.[0]({} as never, createMockCtx({ cwd: projectDir }) as never);
+		expect(pointerCalls(pi)).toBe(2);
+	});
+});
+
 describe("session_compact hook", () => {
 	it("re-injects guidance + git-context after compaction (clears caches first)", async () => {
 		const exec = stubGitExec({ branch: "main", commit: "abc", user: "alice" });

@@ -4,6 +4,7 @@ description: Write implement-ready code into ONE phase of a synthesized plan —
 argument-hint: "<plan-path> Phase N: <title>"
 allowed-tools: Read, Grep, Glob, Write
 shell-timeout: 10
+disable-model-invocation: true
 contract:
   produces:
     kind: produces

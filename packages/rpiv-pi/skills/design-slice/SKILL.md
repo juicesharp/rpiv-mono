@@ -4,6 +4,7 @@ description: Design ONE vertical slice from a slice map in isolation — its arc
 argument-hint: "<slices-path> Slice N: <title> [--upstream <design-path>]..."
 allowed-tools: Read, Grep, Glob, Write
 shell-timeout: 10
+disable-model-invocation: true
 contract:
   produces:
     kind: produces

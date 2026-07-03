@@ -3,6 +3,7 @@ name: architecture-review
 description: Conduct a top-down, layer-by-layer architecture review of a software module by reading every file in scope, running a uniform 10-dimension checklist per layer, and triaging each candidate finding through a structured developer checkpoint. Produces a phased polish plan in .rpiv/artifacts/architecture-reviews/ that blueprint can consume per phase. Language-agnostic — works on TypeScript, Java, .NET, Rust, Python, Go, or any other typed module. Use before a 1.0 release, after a major refactor, or when a module has grown enough to warrant a structural audit.
 argument-hint: "[target path: file, directory, or module]"
 shell-timeout: 10
+disable-model-invocation: true
 contract:
   produces:
     kind: produces
