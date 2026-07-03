@@ -16,7 +16,7 @@ const COMMANDS = [
 const TRACE = [
 	{
 		name: "capture",
-		note: "your brief goes to disk byte-for-byte. No LLM touches it. Research then grounds it in your codebase, and ambiguities come back to you as options. Every gate downstream grades against your exact words.",
+		note: "your brief goes to disk byte-for-byte. No LLM touches it. Research then grounds it in your codebase, asking on ambiguity and confirming with you before it writes. Every gate downstream grades against your exact words.",
 		you: "▢ your answers",
 	},
 	{
@@ -32,7 +32,7 @@ const TRACE = [
 	},
 	{
 		name: "review",
-		note: "the one guaranteed pause: every slice's design in one summary. Accept, or adjust interfaces and data types; the edit cascades to dependents before synthesis.",
+		note: "your design gate, the pause that carries real judgment: every slice's design in one summary. Accept, or adjust interfaces and data types; the edit cascades to dependents before synthesis.",
 		you: "■ your design gate",
 	},
 	{
@@ -47,7 +47,7 @@ const TRACE = [
 	},
 	{
 		name: "land",
-		note: "phases implemented in order, the result validated against your brief, committed with your name on the diff.",
+		note: "phases implemented in order, the result validated against your brief. You confirm the commit plan; your name goes on the diff.",
 	},
 ];
 ---

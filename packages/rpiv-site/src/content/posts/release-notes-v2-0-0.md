@@ -7,7 +7,7 @@ tags: ["release", "rpiv-pi", "rpiv-workflow", "rpiv-ask-user-question", "rpiv-we
 draft: true
 ---
 
-Two big moves earn the major version. `build` is redefined from the ground up: a sliced, panel-gated pipeline that captures your brief verbatim, designs slices in parallel, and pauses exactly once, at a consolidated design review. And the runner underneath it learns true parallelism: fanout units now run as simultaneous Pi child sessions, watched from a live lane console. Around them, the `/wf` set slims from six presets to three pipelines.
+Two big moves earn the major version. `build` is redefined from the ground up: a sliced, panel-gated pipeline that captures your brief verbatim, designs slices in parallel, and pauses for one real design decision, at a consolidated design review. And the runner underneath it learns true parallelism: fanout units now run as simultaneous Pi child sessions, watched from a live lane console. Around them, the `/wf` set slims from six presets to three pipelines.
 
 > **Upgrade notes.**
 > 1. **In-flight runs don't survive the upgrade.** The state trail moved from v1 to v2 to hold parallel-fanout completions. A v1 trail is refused at resume with `version-mismatch` rather than mis-replayed. Finish or discard running workflows before upgrading.
@@ -25,7 +25,7 @@ The gates come in two kinds. `slice-check` is a program: dependency-cycle freedo
 
 Between the gates, everything fans out. `design-slice` runs one fresh session per slice, in dependency order. `subplan` merges designs per DAG cluster, then `plan` folds the sub-plans into one. `elaborate` writes implement-ready code per phase. A deterministic splice stitches it back into the plan, and the code gate re-grades the result. `implement` stays serial on purpose: applying one plan to one working tree is a patch series, not a race.
 
-And the run pauses exactly once. `design-review` presents every slice's design in a single summary: approach, key interfaces, data types, file map. You accept, or you adjust. A contract-changing edit cascades to the changed contract's dependents before synthesis ever sees the designs. Elsewhere, questions reach you only when the code can't decide: a research clarification, the slice-cut confirm, a genuine design fork.
+And one pause carries real judgment. `design-review` presents every slice's design in a single summary: approach, key interfaces, data types, file map. You accept, or you adjust. A contract-changing edit cascades to the changed contract's dependents before synthesis ever sees the designs. Elsewhere, questions reach you when the code can't decide (a research clarification, the slice-cut confirm, a genuine design fork), plus quick confirms before research writes its document and before commit lands.
 
 ## Parallel lanes (rpiv-workflow + rpiv-pi)
 
