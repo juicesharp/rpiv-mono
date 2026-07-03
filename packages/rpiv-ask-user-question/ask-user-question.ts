@@ -2,6 +2,9 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { matchesKey } from "@earendil-works/pi-tui";
 import { loadConfig, resolveCollapseKey, validateGuidanceFields } from "./config.js";
 import { ASK_USER_PROMPT_EVENT, type AskUserPromptEventPayload } from "./events.js";
+// Static import is fine — rpc-fallback pulls only types + the i18n bridge,
+// none of the ~560ms TUI render graph that QuestionnaireSession lazy-loads.
+import { hasDialogUI, runRpcQuestionnaire } from "./rpc-fallback.js";
 import { displayLabel } from "./state/i18n-bridge.js";
 import { sentinelsToAppend } from "./state/row-intent.js";
 import { buildQuestionnaireResponse, buildToolResult } from "./tool/response-envelope.js";
@@ -105,20 +108,14 @@ Preview content is rendered as markdown in a monospace box. Multi-line text with
 			// Emit event for external listeners (e.g., notification plugins)
 			emitAskUserPromptEvent(pi, typed);
 
-			// RPC fallback (e.g. the VSCode pendant embeds pi via RPC):
-			// ctx.ui.custom() renders a TUI overlay that needs a real terminal;
-			// in RPC mode it returns undefined, which buildQuestionnaireResponse
-			// collapses into DECLINE_MESSAGE ("User declined to answer questions")
-			// without ever showing the user a prompt. ctx.ui.select()/input() ARE
-			// functional in RPC via the extension_ui_request/response sub-protocol,
-			// so walk the questions with those and reuse the shared envelope.
-			// Positive `=== "rpc"` guard: in TUI mode ctx.mode is "tui" (use custom()),
-			// and on pi versions/tests where ctx.mode is unset we stay on the custom()
-			// path rather than mis-routing. See ./rpc-fallback.ts for the rationale.
-			if ((ctx as { mode?: string }).mode === "rpc") {
-				const { runRpcQuestionnaire } = await import("./rpc-fallback.js");
-				const rpcResult = await runRpcQuestionnaire(ctx, typed);
-				return buildQuestionnaireResponse(rpcResult, typed);
+			// RPC hosts (VSCode pendant, ACP clients like Zed/Paseo — issue #78):
+			// ui.custom() cannot render there, but the select/input dialog
+			// sub-protocol works. Hosts that advertise ctx.mode (pi ≥0.79) route to
+			// the sequential dialog walker up front, skipping the TUI render-graph
+			// import entirely; RPC builds that predate ctx.mode are caught by the
+			// custom()-resolved-undefined backstop below. See ./rpc-fallback.ts.
+			if ((ctx as { mode?: string }).mode === "rpc" && hasDialogUI(ctx.ui)) {
+				return buildQuestionnaireResponse(await runRpcQuestionnaire(ctx.ui, typed), typed);
 			}
 
 			const itemsByTab: WrappingSelectItem[][] = typed.questions.map((q) => buildItemsForQuestion(q));
@@ -193,12 +190,16 @@ Preview content is rendered as markdown in a monospace box. Multi-line text with
 					},
 				);
 
-				// RPC-mode hosts (ACP/Zed/Paseo) report hasUI=true because the dialog
-				// sub-protocol works, but `ui.custom()` resolves `undefined` without ever
-				// rendering. A TUI questionnaire ALWAYS resolves a QuestionnaireResult
-				// (cancel included — state-reducer emits `{ answers, cancelled }`), so
-				// `undefined` uniquely means "host cannot render", never "user declined".
+				// A TUI questionnaire ALWAYS resolves a QuestionnaireResult (cancel
+				// included — state-reducer emits `{ answers, cancelled }`), so
+				// `undefined` uniquely means "host cannot render", never "user
+				// declined". RPC builds that predate ctx.mode land here: run the
+				// dialog walker when the host has the primitives; otherwise tell the
+				// model the user never saw the questions.
 				if (result === undefined) {
+					if (hasDialogUI(ctx.ui)) {
+						return buildQuestionnaireResponse(await runRpcQuestionnaire(ctx.ui, typed), typed);
+					}
 					return buildToolResult(ERROR_NO_CUSTOM_UI, { answers: [], cancelled: true, error: "no_custom_ui" });
 				}
 

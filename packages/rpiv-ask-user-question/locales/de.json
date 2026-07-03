@@ -20,5 +20,8 @@
 
   "preview.no_preview": "Keine Vorschau verfügbar",
   "preview.notes_affordance": "Notizen: drücke n, um Notizen hinzuzufügen",
-  "notes.header": "Notizen:"
+  "notes.header": "Notizen:",
+
+  "rpc.multi_instructions": "Gib die Nummern aller zutreffenden Optionen durch Komma getrennt ein (z. B. \"1,3\") oder tippe eine eigene Antwort als Text.",
+  "rpc.custom_answer_title": "Gib deine Antwort ein:"
 }

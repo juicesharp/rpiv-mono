@@ -20,5 +20,8 @@
 
   "preview.no_preview": "Aucun aperçu disponible",
   "preview.notes_affordance": "Notes : appuyez sur n pour ajouter des notes",
-  "notes.header": "Notes :"
+  "notes.header": "Notes :",
+
+  "rpc.multi_instructions": "Saisissez les numéros de toutes les options applicables, séparés par des virgules (p. ex. « 1,3 »), ou tapez une réponse libre en texte.",
+  "rpc.custom_answer_title": "Tapez votre réponse :"
 }

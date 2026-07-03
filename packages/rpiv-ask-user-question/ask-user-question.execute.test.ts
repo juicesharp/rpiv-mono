@@ -132,14 +132,18 @@ describe("ask_user_question.execute — ctx.ui.custom dispatch", () => {
 });
 
 describe("ask_user_question.execute — undefined result from ctx.ui.custom (RPC/ACP hosts)", () => {
-	// RPC mode reports hasUI: true but ui.custom() resolves undefined without
-	// rendering (issue #78). A TUI questionnaire always resolves a result object
-	// (cancel included), so undefined must surface as "UI unavailable" — NOT as
-	// a user decline the model would act on.
-	it("returns error: no_custom_ui (not a decline) when custom resolves to undefined", async () => {
+	// A TUI questionnaire always resolves a result object (cancel included), so
+	// custom() resolving undefined means "host cannot render" (issue #78). With
+	// select/input available the dialog walker takes over (see
+	// rpc-fallback.test.ts); this error is the last resort for hosts with no
+	// usable primitive at all — and it must never read as a user decline.
+	it("returns error: no_custom_ui (not a decline) when custom resolves undefined and no dialog primitives exist", async () => {
 		const tool = register();
 		const custom = vi.fn(async () => undefined) as unknown as CustomFn;
-		const ctx = createMockCtx({ hasUI: true, ui: { custom } as never });
+		const ctx = createMockCtx({
+			hasUI: true,
+			ui: { custom, select: undefined, input: undefined } as never,
+		});
 		const params = {
 			questions: [{ question: "Q?", header: "H", options: [{ label: "A" }, { label: "B" }] }],
 		};

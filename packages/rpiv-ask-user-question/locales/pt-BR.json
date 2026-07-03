@@ -20,5 +20,8 @@
 
   "preview.no_preview": "Pré-visualização indisponível",
   "preview.notes_affordance": "Notas: pressione n para adicionar notas",
-  "notes.header": "Notas:"
+  "notes.header": "Notas:",
+
+  "rpc.multi_instructions": "Digite os números de todas as opções aplicáveis, separados por vírgula (ex.: \"1,3\") ou digite uma resposta própria em texto.",
+  "rpc.custom_answer_title": "Digite sua resposta:"
 }

@@ -22,5 +22,8 @@
 
   "preview.no_preview": "暂无预览",
   "preview.notes_affordance": "备注：按 n 添加",
-  "notes.header": "备注："
+  "notes.header": "备注：",
+
+  "rpc.multi_instructions": "输入所有适用选项的编号，用逗号分隔（例如 \"1,3\"），或直接输入自定义回答。",
+  "rpc.custom_answer_title": "输入你的回答："
 }

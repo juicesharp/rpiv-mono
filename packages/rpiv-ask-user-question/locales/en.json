@@ -20,5 +20,8 @@
 
   "preview.no_preview": "No preview available",
   "preview.notes_affordance": "Notes: press n to add notes",
-  "notes.header": "Notes:"
+  "notes.header": "Notes:",
+
+  "rpc.multi_instructions": "Enter the numbers of all that apply, comma-separated (e.g. \"1,3\"), or type a custom answer as plain text.",
+  "rpc.custom_answer_title": "Type your answer:"
 }
