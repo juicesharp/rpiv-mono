@@ -9,7 +9,7 @@ draft: false
 
 [Anthropic's 2026 agentic-coding trends report](https://resources.anthropic.com/hubfs/2026%20Agentic%20Coding%20Trends%20Report.pdf) documents the industry's open wound with numbers. Developers use AI in roughly 60% of their work, yet report being able to fully delegate only 0 to 20% of tasks. The report's own name for the finding is the **collaboration paradox**; commentators have dubbed it the **delegation gap**. And the report's Trend 4 draws the consequence: human oversight has to scale intelligently, or it becomes the bottleneck. Everyone can generate. Nobody trusts the result enough to stop watching.
 
-Three product answers to that gap are on the table right now. From a distance they look similar: all of them orchestrate multiple agent sessions toward a goal. But they make opposite bets on the questions that matter. *Who holds the plan? Who checks the work? When do you get asked?*
+Three approaches to that gap are on the table right now. From a distance they look similar: all of them orchestrate multiple agent sessions toward a goal. But they make opposite bets on the questions that matter. *Who holds the plan? Who checks the work? When do you get asked?*
 
 This comparison is scored for one job, the coding problem in its hardest everyday form: shipping a feature into a codebase you have to live with. On other work the table tilts differently, and we will say where.
 
