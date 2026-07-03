@@ -130,12 +130,45 @@ function resolveProviderBaseUrl(meta: ProviderMeta, config: WebToolsConfig): str
 	return meta.defaultBaseUrl ?? "";
 }
 
+// Known provider names — derived once from PROVIDERS so the schema enum,
+// the per-call override validation, and the error messages all stay in sync
+// when a provider is added or removed.
+const KNOWN_PROVIDER_NAMES = PROVIDERS.map((p) => p.name) as readonly string[];
+
+function isKnownProviderName(name: string): boolean {
+	return PROVIDERS.some((p) => p.name === name);
+}
+
 // Centralized instantiation: load active provider name + creds, build via
 // the factory. Called by both registerWebSearchTool and registerWebFetchTool.
-function instantiateActiveProvider(config: WebToolsConfig): {
+//
+// `override` lets a single tool call target a different provider than
+// `config.provider` without mutating persisted state. Resolution:
+//   1. override (if present) — validated against PROVIDERS; unknown names throw
+//      so callers can detect misconfiguration instead of silently falling back.
+//   2. config.provider (the /web-tools-selected default)
+//   3. DEFAULT_PROVIDER_NAME ("brave")
+// Key/baseURL resolution is unchanged — it always reads from env/config under
+// the resolved provider name, so an override still needs its own credentials.
+function instantiateActiveProvider(
+	config: WebToolsConfig,
+	override?: string,
+): {
 	providerName: string;
 	provider: SearchProvider | FullProvider;
 } {
+	if (override !== undefined) {
+		if (!isKnownProviderName(override)) {
+			throw new Error(
+				`Unknown web_search provider: "${override}". Valid providers: ${KNOWN_PROVIDER_NAMES.join(", ")}.`,
+			);
+		}
+		const apiKey = resolveProviderApiKey(override, config);
+		const meta = PROVIDERS.find((p) => p.name === override)!;
+		const baseUrl = meta.baseUrlEnvVar ? resolveProviderBaseUrl(meta, config) : undefined;
+		const provider = createSearchProvider(override, { apiKey: apiKey ?? "", baseUrl });
+		return { providerName: override, provider };
+	}
 	const providerName = config.provider ?? DEFAULT_PROVIDER_NAME;
 	const apiKey = resolveProviderApiKey(providerName, config);
 	const meta = PROVIDERS.find((p) => p.name === providerName);
@@ -275,12 +308,23 @@ export function registerWebSearchTool(pi: ExtensionAPI): void {
 					maximum: MAX_SEARCH_RESULTS,
 				}),
 			),
+			provider: Type.Optional(
+				Type.Union(
+					KNOWN_PROVIDER_NAMES.map((name) => Type.Literal(name)),
+					{
+						description:
+							"Search provider to use for this call only, overriding the active provider set via /web-tools. " +
+							`Valid values: ${KNOWN_PROVIDER_NAMES.join(", ")}. ` +
+							"Omit to use the configured active provider. The named provider must have its API key/URL configured (via env var or /web-tools) or the call throws — there is no silent fallback.",
+					},
+				),
+			),
 		}),
 
 		async execute(_toolCallId, params, signal, onUpdate, _ctx) {
 			const maxResults = clampSearchResultCount(params.max_results);
 			const config = loadConfig();
-			const { providerName, provider } = instantiateActiveProvider(config);
+			const { providerName, provider } = instantiateActiveProvider(config, params.provider);
 
 			onUpdate?.({
 				content: [{ type: "text", text: `Searching ${provider.label} for: "${params.query}"...` }],
@@ -307,6 +351,9 @@ export function registerWebSearchTool(pi: ExtensionAPI): void {
 		renderCall(args, theme, _context) {
 			let text = theme.fg("toolTitle", theme.bold("WebSearch "));
 			text += theme.fg("accent", `"${args.query}"`);
+			if (args.provider) {
+				text += theme.fg("dim", ` via ${args.provider}`);
+			}
 			return new Text(text, 0, 0);
 		},
 

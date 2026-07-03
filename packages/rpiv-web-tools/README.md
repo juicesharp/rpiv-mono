@@ -47,8 +47,7 @@ Then restart your Pi session.
 
 ## Tools
 
-- **`web_search`** - query the active provider's search API and return titled snippets.
-  1–10 results per call.
+- **`web_search`** - query a search provider's API and return titled snippets. Defaults to the active provider set via `/web-tools`; pass `provider` to target a different backend on a single call without switching the persisted default. 1–10 results per call.
 - **`web_fetch`** - read an http/https URL. Lookup order: opt-in URL interceptors
   (see [§GitHub URL interceptor](#github-url-interceptor)), then the active provider's native
   fetch endpoint when it has one (Tavily/Exa/You.com/Jina/Firecrawl/Ollama → vendor extraction;
@@ -61,6 +60,9 @@ Then restart your Pi session.
 web_search({
   query: string,                    // natural-language query
   max_results?: number,             // 1-10, default 5
+  provider?:                        // per-call provider override; see below
+    | "brave" | "tavily" | "serper" | "exa" | "youcom" | "jina"
+    | "firecrawl" | "perplexity" | "searxng" | "ollama",
 })
 ```
 
@@ -78,7 +80,17 @@ Returns:
 }
 ```
 
-Throws when the active provider's API key is unset (e.g. `EXA_API_KEY is not set`) or the provider's API returns a non-2xx response.
+Throws when the resolved provider's API key is unset (e.g. `EXA_API_KEY is not set`), the provider's API returns a non-2xx response, or an explicit `provider` names a provider with no configured credentials (no silent fallback — the caller can detect the misconfiguration).
+
+#### Per-call `provider` override
+
+The optional `provider` parameter routes a single call to a different backend than the active provider set via `/web-tools`, without mutating persisted config or restarting the session. Resolution:
+
+1. `params.provider` (if present) — must be one of the literal provider names listed above. Unknown names throw `Unknown web_search provider: "<name>"`.
+2. `config.provider` (the active provider selected via `/web-tools`).
+3. `brave` (default when `config.provider` is absent).
+
+The named provider must have its own API key / base URL configured (via env var or `/web-tools`); the override does not inherit credentials from the active provider. A request for an unconfigured provider throws the provider's usual `… is not set` error rather than silently falling back, so agents can detect and react. Use this for provider comparison, falling back to a second backend when the active one returns poor results, or any multi-provider workflow that previously required a config switch and session restart.
 
 ### Schema - `web_fetch`
 

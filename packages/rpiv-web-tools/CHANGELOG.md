@@ -7,6 +7,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- `web_search` now accepts an optional `provider` parameter that routes a single call to a different backend than the active provider set via `/web-tools`, without mutating persisted config or restarting the session. Valid values: `brave`, `tavily`, `serper`, `exa`, `youcom`, `jina`, `firecrawl`, `perplexity`, `searxng`, `ollama`. The named provider must have its own API key / base URL configured (env var or `/web-tools`); an unknown name or an unconfigured provider throws instead of silently falling back, so callers can detect misconfiguration. `details.backend` reflects the actually-used provider. Closes #82.
+
 ### Fixed
 - Moved `typebox` from `peerDependencies` to `dependencies` (`^1.1.24`, matching the Pi host's range) so `web_search` / `web_fetch` parameter schemas resolve under installers that don't materialise peer deps. Fixes `ERR_MODULE_NOT_FOUND: typebox` on standalone consumer installs (#79).
 - Test files are no longer published in the npm tarball. `files` packed `providers/**/*.test.ts`, which import the private, unpublished `@juicesharp/rpiv-test-utils` fixture package, so a standalone consumer running the bundled tests hit `ERR_MODULE_NOT_FOUND`. Added a `!**/*.test.ts` exclusion to `files` (#80).
