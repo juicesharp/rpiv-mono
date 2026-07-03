@@ -7,7 +7,7 @@ tags: ["positioning", "workflows", "rpiv-pi"]
 draft: false
 ---
 
-Anthropic's 2026 agentic-coding trends report documents the industry's open wound with numbers. Developers use AI in roughly 60% of their work, yet report being able to fully delegate only 0 to 20% of tasks. The report's own name for the finding is the **collaboration paradox**; commentators have dubbed it the **delegation gap**. And the report's Trend 4 draws the consequence: human oversight has to scale intelligently, or it becomes the bottleneck. Everyone can generate. Nobody trusts the result enough to stop watching.
+[Anthropic's 2026 agentic-coding trends report](https://resources.anthropic.com/hubfs/2026%20Agentic%20Coding%20Trends%20Report.pdf) documents the industry's open wound with numbers. Developers use AI in roughly 60% of their work, yet report being able to fully delegate only 0 to 20% of tasks. The report's own name for the finding is the **collaboration paradox**; commentators have dubbed it the **delegation gap**. And the report's Trend 4 draws the consequence: human oversight has to scale intelligently, or it becomes the bottleneck. Everyone can generate. Nobody trusts the result enough to stop watching.
 
 Three product answers to that gap are on the table right now. From a distance they look similar: all of them orchestrate multiple agent sessions toward a goal. But they make opposite bets on the questions that matter. *Who holds the plan? Who checks the work? When do you get asked?*
 
@@ -15,15 +15,15 @@ This comparison is scored for one job, the coding problem in its hardest everyda
 
 ## Answer one: the model writes the process
 
-Claude Code's dynamic workflows have the model author a fresh orchestration script per run: fan-out, verifier agents that adversarially cross-check findings, grader loops. The script executes in the background. It is genuinely impressive machinery, and its own docs state its human-interaction contract plainly: **no mid-run user input** (only permission prompts can pause a run, and subagents are barred from the question tool). If you want sign-off between stages, you split the work into separate runs. The plan is held by a script the model wrote minutes ago. Verification is models checking models. You are asked at launch, and then not at all.
+[Claude Code's dynamic workflows](https://code.claude.com/docs/en/workflows) have the model author a fresh orchestration script per run: fan-out, verifier agents that adversarially cross-check findings, grader loops. The script executes in the background. It is genuinely impressive machinery, and its own docs state its human-interaction contract plainly: **no mid-run user input** (only permission prompts can pause a run, and [subagents are barred](https://code.claude.com/docs/en/sub-agents) from the question tool). If you want sign-off between stages, you split the work into separate runs. The plan is held by a script the model wrote minutes ago. Verification is models checking models. You are asked at launch, and then not at all.
 
-Anthropic's own write-up is admirably candid about why the machinery exists. Single-context agents suffer agentic laziness, self-preferential bias, and goal drift: "details like edge-case requirements or 'don't do X' constraints can get lost." Note the treatment, though. Goal drift is fought with decomposition, fresh context windows per subagent. But the orchestration script itself is written once, from a lossy read of your prompt. Every subagent inherits whatever the script-writer misread. Fresh contexts downstream of an unguarded translation.
+[Anthropic's own write-up](https://claude.com/blog/a-harness-for-every-task-dynamic-workflows-in-claude-code) is admirably candid about why the machinery exists. Single-context agents suffer agentic laziness, self-preferential bias, and goal drift: "details like edge-case requirements or 'don't do X' constraints can get lost." Note the treatment, though. Goal drift is fought with decomposition, fresh context windows per subagent. But the orchestration script itself is written once, from a lossy read of your prompt. Every subagent inherits whatever the script-writer misread. Fresh contexts downstream of an unguarded translation.
 
 This is the right shape for *breadth* work: exhaustive audits, research sweeps, migrations where volume wins and any individual miss is cheap.
 
 ## Answer two: nobody holds a process
 
-`/goal` sets a completion condition and lets the agent free-run until a fresh evaluator judges the condition met. There is no process at all. That's the appeal. Persistence replaces structure. "Keep going until CI is green" is a perfectly good contract when the end state is measurable and the path doesn't matter.
+[`/goal`](https://code.claude.com/docs/en/goal) sets a completion condition and lets the agent free-run until a fresh evaluator judges the condition met. There is no process at all. That's the appeal. Persistence replaces structure. "Keep going until CI is green" is a perfectly good contract when the end state is measurable and the path doesn't matter.
 
 Note what the goal is here: a stop condition *you paraphrased* from your intent, capped at a few thousand characters, judged against the transcript. It answers "when to stop." It does not answer "did you build what I asked, the way my codebase wants it."
 
