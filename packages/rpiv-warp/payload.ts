@@ -91,7 +91,17 @@ export function extractMessageText(content: UserMessage["content"] | AssistantMe
 export function summarizeSkillBlock(text: string): string {
 	const parsed = parseSkillBlock(text);
 	if (!parsed) return text;
-	return parsed.userMessage ? `/skill:${parsed.name} ${parsed.userMessage}` : `/skill:${parsed.name}`;
+	const args = unwrapSkillInput(parsed.userMessage);
+	return args ? `/skill:${parsed.name} ${args}` : `/skill:${parsed.name}`;
+}
+
+/** rpiv-args' token emit path carries the raw argument string in a
+ *  `Skill input:`-labeled trailer after `</skill>` (args.ts
+ *  appendSkillInput) — Pi's parseSkillBlock surfaces it verbatim as
+ *  userMessage. Strip the label so the toast shows what the human typed. */
+function unwrapSkillInput(userMessage: string | undefined): string | undefined {
+	const m = userMessage?.match(/^Skill input: ([\s\S]*)$/);
+	return m ? m[1] : userMessage;
 }
 
 // ---------------------------------------------------------------------------

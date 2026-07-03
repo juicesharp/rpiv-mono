@@ -29,7 +29,9 @@ You are tasked with validating that an implementation plan was correctly execute
 
 ## Input
 
-`$ARGUMENTS` — optional path to a plan in `.rpiv/artifacts/plans/`, optionally followed by `--goal <path>` (the user's original brief, captured verbatim at run start). Peel the `--goal` flag first; what remains is the plan path. If no plan path remains, branch on the recent-plans list in the Metadata block.
+User input (raw): `$ARGUMENTS`
+
+Expected shape: an optional plan path (usually under `.rpiv/artifacts/plans/`), optionally followed by `--goal <path>` (the user's original brief, captured verbatim at run start). Peel the `--goal` flag first; what remains is the plan path. Only if the user input above is empty, or no plan path remains after peeling, branch on the recent-plans list in the Metadata block.
 
 ## Metadata
 

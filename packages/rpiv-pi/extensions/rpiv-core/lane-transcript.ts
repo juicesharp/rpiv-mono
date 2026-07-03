@@ -104,6 +104,15 @@ interface BashExecMessage {
 	excludeFromContext?: boolean;
 }
 
+/** rpiv-args' token emit path carries the raw argument string in a
+ *  `Skill input:`-labeled trailer after `</skill>` — Pi's parseSkillBlock
+ *  surfaces it verbatim as userMessage. Strip the label so the transcript
+ *  shows what the human typed, not the trailer framing. */
+function unwrapSkillInput(userMessage: string | undefined): string | undefined {
+	const m = userMessage?.match(/^Skill input: ([\s\S]*)$/);
+	return m ? m[1] : userMessage;
+}
+
 /** A single dim fallback line wrapped as a Component so it can sit in the ordered list. */
 export function dimLine(text: string, theme: Theme): Component {
 	return {
@@ -211,7 +220,8 @@ export function renderBranch(
 						const sk = new SkillInvocationMessageComponent(skill);
 						sk.setExpanded(toolsExpanded);
 						components.push(sk);
-						if (skill.userMessage) components.push(new UserMessageComponent(skill.userMessage));
+						const skillArgs = unwrapSkillInput(skill.userMessage);
+						if (skillArgs) components.push(new UserMessageComponent(skillArgs));
 					} else {
 						components.push(new UserMessageComponent(text));
 					}
