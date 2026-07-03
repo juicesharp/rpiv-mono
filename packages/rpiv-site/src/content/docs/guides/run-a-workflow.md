@@ -1,13 +1,13 @@
 ---
 title: "Run a workflow"
-description: "Hand the skill chain to /wf. The six bundled workflows, when to use each, and when hand-driving still wins."
+description: "Hand the skill chain to /wf. The three bundled pipelines, when to use each, and when hand-driving still wins."
 section: "guides"
 order: 5
 ---
 
 The chain is the same whether you invoke skills yourself or hand them to `/wf`. The runner dispatches `/skill:<name>` exactly the way you would, writes the same artifacts under `.rpiv/artifacts/`, and obeys the same fresh-session boundaries. What it adds is the wiring around the chain: typed routing between stages, per-stage output validation with retry, and an audited JSONL trail every run leaves behind.
 
-Two reasons to reach for it. The chain is a graph, not a line, and the runner is what makes the branches real — `code-review` returns blockers, the runner counts them, and the next stage is `revise` or `commit` accordingly. The trail is the other reason: every run lands on disk as JSONL, so a teammate, a stronger model, or `runWorkflow` from cron can replay or resume from any stage.
+Two reasons to reach for it. The chain is a graph, not a line, and the runner is what makes the branches real — `code-review` returns blockers, the runner counts them, and the next stage is `blueprint` (a fix pass) or `commit` accordingly. The trail is the other reason: every run lands on disk as JSONL, so a teammate, a stronger model, or `runWorkflow` from cron can replay or resume from any stage.
 
 `/wf` lives in `@juicesharp/rpiv-workflow`, installed alongside `rpiv-pi`. If `/rpiv-setup` ran cleanly, it's already there.
 
@@ -24,21 +24,21 @@ Preview first. The graph view shows every stage, its skill, the edges out (linea
 
 Resume last. `@<run-id>` is the resume sigil — pass the id of a run that failed or was cut off and the runner reads its JSONL trail back, rebuilds the accumulated state, and re-enters at the first stage that never finished. The id is the `<run-id>` slug in the run's filename (`.rpiv/workflows/runs/<run-id>.jsonl`), also surfaced as `runId` on the rows `listRuns` returns.
 
-## The six bundled workflows
+## The three bundled pipelines
 
-`rpiv-pi` ships six workflows. Each maps to a posture from [Pick your path](/docs/guides/pick-a-path), not 1:1, but close enough to pick by name:
-
-### `/wf ship <input>`
-
-Fast path with no research and no review. `blueprint → implement → validate → commit`. Best when the change is small-to-midsize and the approach is already obvious — the FRD-or-equivalent enumerates the work, there's no need to pull adjacent code into context, and you don't expect `code-review` to surface anything you wouldn't catch yourself. `implement` fans out into one Pi session per `## Phase N:` heading the inherited plan declares (cap 32 phases).
+`rpiv-pi` ships three pipelines. Each maps to a posture from [Pick your path](/docs/guides/pick-a-path), not 1:1, but close enough to pick by name. (`/wf <input>` with no name runs the first registered pipeline — `vet` — unless your config sets a `default`.)
 
 ### `/wf build <input>`
 
-Research-backed feature work with a review loop. `research → blueprint → implement → validate → code-review → revise → implement → loop ... → commit`. The midsize recipe from `pick-a-path`, with the loop wired in: `code-review`'s contract supplies `blockers_count` (a required integer in its `produces.data`) as the routing field, the edge is `gate("blockers_count", { revise: gt(0), commit: eq(0) })`, and `revise` re-enters `implement` rather than `code-review`. The `revise` stage reads both the latest plan and the latest review (via `reads: ["plans", "reviews"]`) so the skill receives both artifacts as labelled flags. Iteration is bounded by the runner's `maxBackwardJumps` guard (default 2 → at most 3 review iterations).
+The flagship: ship a feature from a brief, sliced and gated. Nineteen stages — `goal → research → slice → slice-check → slice-grade (↺ slice-fix) → design-slice ×N → design-review → subplan → plan → plan-grade (↺ plan-fix) → elaborate ×phases → code-splice → code-grade (↺ code-fix) → implement → validate → commit`. The moves that matter:
 
-### `/wf arch <input>`
-
-Design-led pipeline for complex changes. `research → design → plan → implement → validate → code-review → design → loop ... → commit`. The large recipe without a `revise` stage at all — when `code-review` reports blockers, the loop returns to `design` directly and the full design/plan/implement/validate/review cycle runs again. Use when the architecture itself is what's wrong and the plan needs to be rebuilt, not patched. Same `maxBackwardJumps` bound applies.
+- **`goal`** is a script stage (no LLM) that writes your brief to disk byte-for-byte. Every later judgment anchors on that file: the plan and code panels grade completeness and correctness against it, and `validate` receives it as `--goal`.
+- **`slice`** decomposes the brief into independent vertical slices. You confirm the cut once, and that confirmation freezes the coverage units the downstream check conserves.
+- **Three quality gates, each with a fix loop.** `slice-check` is a script gate — dependency-cycle freedom plus coverage conservation, zero LLM calls; a re-slice may redistribute your brief across slices but never drop a piece of it. `slice-grade` adds one fresh-context design-readiness judgment; a failure routes to `slice-fix`, which re-cuts with structural authority (split, merge, renumber). `plan-grade` and `code-grade` are five-dimension panels (completeness, correctness, actionability, pattern-following, architecture-fit) — one fresh session per dimension — with `amend` as their surgical fix arm. Verdicts fold with a severity floor: only a `medium`+ finding blocks the gate.
+- **`design-slice` fans out** one fresh session per slice, dependency-ordered, running simultaneously; a genuine design fork reaches you through the lane console without halting the other lanes.
+- **`design-review`** is the one human gate: every slice's design in a single consolidated summary — accept, or adjust interfaces and data types, and the edit cascades to the changed contract's dependents before synthesis sees the designs.
+- **`subplan → plan`** merge hierarchically (per-cluster sub-plans, then one plan) so no single pass holds every design. **`elaborate`** writes implement-ready code per phase in parallel, and **`code-splice`** — a script — stitches it into the plan before the code gate re-grades the code-bearing plan.
+- **`implement`** runs the plan's phases serially on purpose: applying one plan to one working tree is a patch series, not a race (cap 32 phases).
 
 ### `/wf vet [scope]`
 
@@ -46,15 +46,15 @@ Examine an existing diff for approval, optionally repair it. `code-review → (b
 
 ### `/wf polish <input>`
 
-Architecture-review-driven polish for a review too large to plan in one pass. `architecture-review → blueprint (one pass per review phase) → implement → validate → code-review → (blueprint loop) → commit`. The distinguishing move is the `blueprint` stage's `iterate` — the dual of the `fanout` the other chains run on `implement`. Where `fanout` computes every unit up front and runs them blind to one another, `iterate` runs `blueprint` as a pull-loop — once per `### Phase N — <name>` heading the architecture review declares, each pass handed the plans the earlier passes already wrote so it builds on them instead of duplicating. (Both run sequentially under Pi's single-active-session model; the difference is that `iterate`'s units see each other's output and `fanout`'s don't.) `implement` then fans out over the `## Phase N:` headings of every plan in that latest blueprint pass, and `validate` is handed all of them in one session. The review loop routes on the same `{ blockers_count: integer }` schema as `build`, but the backward edge returns to `blueprint` — a corrective pass re-plans every review phase, folding the latest review's blockers in — under the same `maxBackwardJumps` bound. Reach for it when an architecture review has surfaced dependency-ordered phases that have to be planned in sequence, each on top of the last, rather than enumerated in a single plan.
+Architecture-review-driven polish for a review too large to plan in one pass. `architecture-review → blueprint (one pass per review phase) → implement → validate → code-review → (blueprint loop) → commit`. The distinguishing move is the `blueprint` stage's `iterate` — the dual of the `fanout` the other chains run on `implement`. Where `fanout` computes every unit up front and runs them blind to one another, `iterate` runs `blueprint` as a pull-loop — once per `### Phase N — <name>` heading the architecture review declares, each pass handed the plans the earlier passes already wrote so it builds on them instead of duplicating. (`fanout` units run simultaneously as Pi child sessions; `iterate` stays sequential by design — each pass must see the plans the earlier passes wrote.) `implement` then fans out over the `## Phase N:` headings of every plan in that latest blueprint pass, and `validate` is handed all of them in one session. The review loop routes on the same `{ blockers_count: integer }` schema as `build`, but the backward edge returns to `blueprint` — a corrective pass re-plans every review phase, folding the latest review's blockers in — under the same `maxBackwardJumps` bound. Reach for it when an architecture review has surfaced dependency-ordered phases that have to be planned in sequence, each on top of the last, rather than enumerated in a single plan.
 
-### `/wf pr-triage <pr>`
-
-Read-only triage of an incoming GitHub PR, before any review effort is spent. `pr-triage → security-gate → stop`. The triage skill fetches the PR thread, assesses the diff against the repo's own standards, writes a triage artifact, and recommends a disposition (Review / Request changes / Hold / Decline) plus a security tier (0 SAFE / 1 REVIEW / 2 BLOCK). The distinguishing move is the `security-gate` — a script stage, no LLM, no session, so the gate is free — that reads the contract-emitted `security_flag` and halts the run before any checkout when it reads BLOCK. Nothing in the chain mutates the working tree; when the disposition says the PR earns a full pass, follow up with `/wf vet <branch>`.
+Two standalone skills round out the set without their own pipelines: `/skill:pr-triage` runs a read-only triage of an incoming GitHub PR (disposition + security tier, no checkout) — follow up with `/wf vet <branch>` when it earns a full pass — and `/skill:design` / `/skill:plan` remain hand-drivable for a standalone architecture pass.
 
 ## What `/wf` adds over hand-driving
 
-**Conditional routing with a bounded loop.** The hand-driven chain treats `code-review → commit` as the default and you eyeball the review to decide whether to `revise`. The workflow makes the routing explicit — a `gate(field, branches)` over `output.data`, or a `defineRoute(targets, fn)` for non-numeric discriminators when a chain needs one (every bundled chain that branches — `build`, `arch`, `vet`, `polish` — routes on the numeric `blockers_count`). Backward edges are first-class: a `revise → implement` jump or a `code-review → design` jump is just another edge target, with the runner counting backward jumps and halting at `maxBackwardJumps` (default 2) so a stuck loop can't burn through your tokens forever.
+**Parallel fan-out with a live lane console.** Fanout units run as simultaneous Pi child sessions, in-process. A lanes dock tracks every unit's progress and token spend; step into any lane to watch its output live, and when a lane asks a question it reaches you through the console without halting the others. `iterate` stages stay sequential by contract (each pass builds on the last); `implement` keeps its units serial on purpose (a plan is a patch series).
+
+**Conditional routing with a bounded loop.** The hand-driven chain treats `code-review → commit` as the default and you eyeball the review to decide whether to fix. The workflow makes the routing explicit — a `gate(field, branches)` over `output.data`, or a `defineRoute(targets, fn)` for richer discriminators (`vet` and `polish` route on the numeric `blockers_count`; `build`'s three gates fold per-dimension grade verdicts via `defineRoute`). Backward edges are first-class: a `validate → code-review` jump or a `code-review → blueprint` jump is just another edge target, with the runner counting backward jumps and halting at `maxBackwardJumps` (default 2) so a stuck loop can't burn through your tokens forever.
 
 **An audited trail.** Every run writes one JSONL file under `<cwd>/.rpiv/workflows/runs/<run-id>.jsonl`. The first line is a `WorkflowHeader` carrying the run id, workflow name, original input, timestamp, and trigger (`command`, `programmatic`, or `external` with a source string for webhooks and cron). Subsequent lines are one `WorkflowStage` row per executed stage plus routing-decision rows. `listRuns(cwd)` enumerates headers cheaply (first-line reads only); `readLastStage` and `listArtifacts` open a specific run for inspection. The same trail is what makes a run resumable: `/wf @<run-id>` (or `resumeWorkflowByRunId`) replays those rows to rebuild the accumulated state and re-enters at the first stage that never completed — including a stage that died *mid-`fanout`* or *mid-`iterate`*, where it re-pulls only the unfinished units. It guards the one boundary it can check: if a `FanoutFn`/`IterateFn` recomputes a different unit list than the run recorded, resume refuses rather than run the wrong unit, so a non-deterministic generator fails loudly instead of silently diverging.
 
@@ -125,15 +125,15 @@ Session policy isn't the only per-stage knob. Which model a stage runs and how h
 
 ## When hand-driving still wins
 
-Pick the runner when the shape of the work matches one of the six bundled chains and you've walked that chain enough times to trust it. Otherwise stay in the loop:
+Pick the runner when the shape of the work matches one of the three bundled pipelines and you've walked that chain enough times to trust it. Otherwise stay in the loop:
 
 - **First pass on an unfamiliar codebase.** The artifact-by-artifact pause is where you learn what the model is doing. The runner collapses that into one command — useful later, not now.
 - **Exploratory work where you'll pivot mid-chain.** If you'll likely abandon `blueprint`'s output to re-run `discover` with a different framing, the runner's straight-through execution costs you tokens you didn't need to spend.
-- **Plan-review with a stronger model.** The `pick-a-path` note about handing a `plan` artifact to a smarter model for a second-opinion review is still the right move on architecturally load-bearing work. `/wf arch` doesn't disable that — you can still stop mid-run, hand the plan out, and resume — but the pause is easier to take when you're already hand-driving.
+- **Plan-review with a stronger model.** The `pick-a-path` note about handing a `plan` artifact to a smarter model for a second-opinion review is still the right move on architecturally load-bearing work. `/wf build` doesn't disable that — the design gate is already a built-in pause, and you can still stop mid-run, hand an artifact out, and resume — but ad-hoc pauses are easier to take when you're already hand-driving.
 
 ## Author your own workflow
 
-The six bundled workflows are skill-agnostic in shape — the runner doesn't know `research` or `commit` ship from `rpiv-pi`. Drop a TypeScript file under `.rpiv/workflows/config.ts` in your project (or `~/.config/rpiv-workflow/config.ts` for a user-level default) and chain your own skills:
+The three bundled pipelines are skill-agnostic in shape — the runner doesn't know `research` or `commit` ship from `rpiv-pi`. Drop a TypeScript file under `.rpiv/workflows/config.ts` in your project (or `~/.config/rpiv-workflow/config.ts` for a user-level default) and chain your own skills:
 
 ```ts
 import {
@@ -181,7 +181,7 @@ The `"stop"` literal marks a terminal edge; import `STOP` from the package for a
 
 Two file roles per layer. **Config files** (`config.ts`) are the one TypeScript file you hand-edit per project or per user, and the only place that can set `default` — the workflow `/wf <input>` runs without a name. **Pack files** (`packs/*.ts`) are installable bundles: drop them in, get new workflows, no risk of overwriting your default. This is what makes shared workflow packs safe.
 
-**Reuse a bundled skill everywhere.** Want the bundled `ship`/`build`/`arch`/`vet` chains but with your own commit skill — say one that adds model attribution to the message? Don't fork the workflows. Declare a `skillAliases` map in your `config.ts` and every stage that would dispatch `/skill:commit` dispatches yours instead:
+**Reuse a bundled skill everywhere.** Want the bundled `build`/`vet`/`polish` pipelines but with your own commit skill — say one that adds model attribution to the message? Don't fork the workflows. Declare a `skillAliases` map in your `config.ts` and every stage that would dispatch `/skill:commit` dispatches yours instead:
 
 ```ts
 export default { skillAliases: { commit: "attributed-commit" } };

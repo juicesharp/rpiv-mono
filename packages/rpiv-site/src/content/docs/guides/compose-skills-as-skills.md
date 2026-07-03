@@ -7,7 +7,7 @@ order: 6
 
 The idea behind `/wf` is small: compose skills as skills, on top of an existing coding agent, with each step in a **fresh session**, **scoped tools**, and a **verifiable handoff** to the next. The runtime nails two of those outright — a clean session per stage, and a typed contract between stages the runner checks before it lets the chain advance. Scoped tools sit at the skill layer; the sandbox is the host's job. This guide is about authoring the first two yourself.
 
-[Run a workflow](/docs/guides/run-a-workflow) is the consumer's tour — the six bundled chains and when to reach for each. This is the producer's: how to express your own chain as a typed graph, and the two stage capabilities that landed after the runtime's first cut — raw-text `prompt` dispatch and the sequential `iterate` mode.
+[Run a workflow](/docs/guides/run-a-workflow) is the consumer's tour — the three bundled pipelines and when to reach for each. This is the producer's: how to express your own chain as a typed graph, and the two stage capabilities that landed after the runtime's first cut — raw-text `prompt` dispatch and the sequential `iterate` mode.
 
 ## The graph is the program
 
@@ -251,7 +251,7 @@ The piece worth circling back to is the agent authoring the graph itself. Writin
 
 ## Next steps
 
-- [Run a workflow](/docs/guides/run-a-workflow): the six bundled chains and the runtime surface, from the consumer's side
+- [Run a workflow](/docs/guides/run-a-workflow): the three bundled pipelines and the runtime surface, from the consumer's side
 - [Pick your path](/docs/guides/pick-a-path): the scope map the bundled workflows mirror
 - [Reset between skills](/docs/guides/reset-between-skills): the fresh-context rule the runner enforces for you
 - [Authoring reference](https://github.com/juicesharp/rpiv-mono/blob/main/packages/rpiv-workflow/docs/workflow-authoring.md): every stage factory, the collector and parser catalogs, the full validation rules

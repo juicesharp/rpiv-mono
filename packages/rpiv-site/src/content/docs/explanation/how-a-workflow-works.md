@@ -18,7 +18,7 @@ You define a workflow by calling `defineWorkflow(...)` with four things:
 
 ```ts
 defineWorkflow({
-  name: "ship",
+  name: "quick",
   start: "blueprint",
   stages: {
     blueprint: produces(),
@@ -133,7 +133,7 @@ An edge can be a string, `"stop"`, or a **predicate edge** that routes on the st
 
 Mark a stage `fanout` and the runner splits it into one unit per slice (for example, one unit per `## Phase N:` heading the inherited plan declares), each in its own isolated session, blind to the others. `iterate` is the accumulating counterpart: units are pulled one at a time, each able to see the prior result. You author one stage; the runner handles the spread and the join.
 
-Both run **sequentially** under Pi's single-active-session model, so fanout buys per-unit *isolation and structure*, not wall-clock speed. Its units are independent, though, so they are concurrency-ready: a host that ran sessions in parallel would parallelize them with no change to the workflow. For real concurrency today, run one process per workflow.
+`fanout` units run **simultaneously** — one Pi child session per unit, in-process, waves respecting each unit's declared dependencies — with a live lane console over the run: step into any lane, watch its output, answer its question without halting the others. `iterate` stays **sequential by contract**: each pass must see what the earlier passes wrote, so ordering is the point, not a limitation. A fanout can still opt down to `concurrency: 1` when its units mutate shared state — the bundled `implement` does exactly that, because applying one plan to one working tree is a patch series, not a race.
 
 ## Sessions: fresh or continue
 
@@ -230,4 +230,4 @@ Both the runner and the load-time checks route through these, so a stage is keye
 
 A workflow is a graph of named stages, run by **skills** or **prompts** (AI-driven) or **scripts** (deterministic), handing artifacts forward along a rolling primary slot and **named channels**. Each stage's **outcome** observes its effect and parses it into typed `data`. **Contracts** declare what each skill takes and gives; **comparators** adjudicate the opaque parts you define. **Gates** and bounded loops shape the path; **fanout** and **iterate** spread the work. **Triggers** wake the run from the outside; **listeners** follow it. And two enforcement moments, load-time wiring validation and run-time data validation, ensure the only journeys that run are the ones that can actually work.
 
-Next: [Run a workflow](/docs/guides/run-a-workflow) walks the six bundled workflows and the `/wf` commands. For the narrative version of this same arc, read [The workflow author's tale](/blog/the-workflow-authors-tale).
+Next: [Run a workflow](/docs/guides/run-a-workflow) walks the three bundled pipelines and the `/wf` commands. For the narrative version of this same arc, read [The workflow author's tale](/blog/the-workflow-authors-tale).

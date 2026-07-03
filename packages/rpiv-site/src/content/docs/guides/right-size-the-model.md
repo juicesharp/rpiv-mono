@@ -13,13 +13,13 @@ That's what `/rpiv-models` is for. It overrides two things, independently, at fo
 
 The leverage is uneven, so the controls are too. From the everyday knob to the surgical one:
 
-**Per-skill** (`skills.<name>`) pins a skill wherever it runs: a standalone `/skill:design` you type yourself *and* a `design` stage inside a workflow. This is the one you'll reach for most. "`design` always gets the strong model with high reasoning; `commit` always runs cheap" is two lines, and it follows the skills everywhere. The reasoning-dense skills are where the strong model earns back its cost: `design`, `plan`, `code-review`, and `research`, whose synthesized artifact every later stage builds on. The mechanical ones (`commit`, and script-shaped stages) are where you claw it back.
+**Per-skill** (`skills.<name>`) pins a skill wherever it runs: a standalone `/skill:design` you type yourself *and* a `design-slice` stage inside a pipeline. This is the one you'll reach for most. "`design-slice` always gets the strong model with high reasoning; `commit` always runs cheap" is two lines, and it follows the skills everywhere — including into loop-stage units: each unit of a fanout (a grade panel's dimensions, a design fanout's slices) resolves its model through the same `skills.<name>` cascade. The reasoning-dense skills are where the strong model earns back its cost: `design-slice`, `synthesize`, `grade`, `code-review`, and `research`, whose synthesized artifact every later stage builds on. The mechanical ones (`commit`, and script-shaped stages) are where you claw it back.
 
 **Per-stage** (`stages.<name>`) keys on the workflow *graph position*, not the skill. Reach for it when the same skill should behave differently depending on where it sits in a chain, like a `validate` stage that needs more reasoning in one shape than another. Most of the time per-skill is enough; per-stage is there when the position, not the skill, is what matters.
 
-**Per-preset stage** (`presets.<workflow>.stages.<stage>`) is the surgical one: it scopes an override to a single stage *of a single bundled workflow*. `code-review` runs on a capable model everywhere through the per-skill default, but `vet` exists only to review, so its `code-review` is worth pushing to `xhigh`, past what the same stage gets inside `build` or `arch` where it's one gate among many steps. Same skill, same stage name, one workflow singled out.
+**Per-preset stage** (`presets.<workflow>.stages.<stage>`) is the surgical one: it scopes an override to a single stage *of a single bundled pipeline*. `code-review` runs on a capable model everywhere through the per-skill default, but `vet` exists only to review, so its `code-review` is worth pushing to `xhigh`, past what the same stage gets inside `polish` where it's one gate among many steps. Same skill, same stage name, one pipeline singled out. Two migration notes: overrides under the retired preset keys (`presets.ship`, `presets.arch`, `presets["pr-triage"]`) warn once at session start and stop applying; a `presets.build` entry, by contrast, silently carries over to the redefined 19-stage build — review it if you tuned it for the old 7-stage chain.
 
-**Per-agent** (`agents.<name>`) reaches the subagents skills fan out across, and they aren't uniform, so neither should their models be. The locators (`codebase-locator`, `precedent-locator`) and the row-only auditors (`diff-auditor`, `claim-verifier`) are finders: they grep, rank, and emit evidence rows, barely reasoning, so a cheap default already serves them well and the parallel fan-out makes the savings add up. The analyzers (`codebase-analyzer`, `scope-tracer`) trace data flow and synthesize, so they earn a bump above that floor. Because it's keyed per agent, you can split them exactly that way. Note one boundary: agent overrides are **global**. There is no per-preset agent override, because the schema deliberately rejects one: agents are wired into their definition files long before any workflow context exists (more on that below). An agent runs the same model whether `research` reached it from `build`, from `arch`, or standalone.
+**Per-agent** (`agents.<name>`) reaches the subagents skills fan out across, and they aren't uniform, so neither should their models be. The locators (`codebase-locator`, `precedent-locator`) and the row-only auditors (`diff-auditor`, `claim-verifier`) are finders: they grep, rank, and emit evidence rows, barely reasoning, so a cheap default already serves them well and the parallel fan-out makes the savings add up. The analyzers (`codebase-analyzer`, `scope-tracer`) trace data flow and synthesize, so they earn a bump above that floor. Because it's keyed per agent, you can split them exactly that way. Note one boundary: agent overrides are **global**. There is no per-preset agent override, because the schema deliberately rejects one: agents are wired into their definition files long before any workflow context exists (more on that below). An agent runs the same model whether `research` reached it from `build`, from a custom pipeline, or standalone.
 
 Under all four sits **`defaults`**, the floor. Set a default model and every scope inherits it unless it says otherwise, so you can lift the whole pipeline onto a new model with one key and then carve out the exceptions.
 
@@ -28,7 +28,7 @@ A `models.json` that does all of this at once:
 ```json
 {
   "defaults": {
-    "model": "z-ai/glm-5.1",
+    "model": "z-ai/glm-5.2",
     "thinking": "low"
   },
   "skills": {
@@ -73,7 +73,7 @@ A `models.json` that does all of this at once:
 
 It reads as the philosophy: a cheap, low-effort default drives the bulk of the run; the reasoning-dense skills (`research`, `design`, `plan`, `code-review`) are bumped up; `commit` keeps the cheap default model but switches reasoning off; the one analyzer that earns more than the finder floor gets a bump; and `vet`'s review is pushed all the way to `xhigh`, since reviewing the diff is the only thing `vet` does.
 
-Each leaf is either a bare model string (`"z-ai/glm-5.1"`, which sets the model and lets reasoning inherit) or an object that sets `model`, `thinking`, or both. `commit` above sets only `thinking`, keeping the inherited default model and just switching reasoning off. One note on the keys themselves: they're illustrative. Use the exact `provider/modelId` strings your own `/rpiv-models` picker lists, since those come from the providers you actually have installed.
+Each leaf is either a bare model string (`"z-ai/glm-5.2"`, which sets the model and lets reasoning inherit) or an object that sets `model`, `thinking`, or both. `commit` above sets only `thinking`, keeping the inherited default model and just switching reasoning off. One note on the keys themselves: they're illustrative. Use the exact `provider/modelId` strings your own `/rpiv-models` picker lists, since those come from the providers you actually have installed.
 
 ## Effort is its own dial
 
@@ -92,7 +92,7 @@ The scopes nest, so a single step can match more than one. The most specific win
 presets.<wf>.stages.<stage>   →   stages.<stage>   →   skills.<skill>   →   defaults
 ```
 
-A `code-review` stage running inside `build` checks the preset-stage rule first, then the flat stage rule, then the per-skill rule, then defaults, and stops at the first hit. `defaults` is folded into every entry as it loads, so falling through never loses a field you set there. The layers do not merge with *each other*, though: the first match wins whole. If you set only `thinking` on a preset stage, its model comes from `defaults`, not from the per-skill entry one rung down, which is why the `vet` override above names its model explicitly.
+A `code-review` stage running inside `polish` checks the preset-stage rule first, then the flat stage rule, then the per-skill rule, then defaults, and stops at the first hit. `defaults` is folded into every entry as it loads, so falling through never loses a field you set there. The layers do not merge with *each other*, though: the first match wins whole. If you set only `thinking` on a preset stage, its model comes from `defaults`, not from the per-skill entry one rung down, which is why the `vet` override above names its model explicitly.
 
 ## The one thing that bites
 
@@ -106,7 +106,7 @@ Agents are different. An agent's model and effort live in its **frontmatter on d
 
 The skill and stage lists are live: third-party and user skills show up alongside the bundled ones, and the stage list comes from your actually-loaded workflows. The effort picker offers `inherit (no override)` and `off (disable reasoning)` as distinct choices, matching the two-meanings-of-off distinction above.
 
-Prefer to hand-edit? The file is plain JSON at `~/.config/rpiv-pi/models.json`, and edits take effect on the next session (or the next `/rpiv-update-agents` for agents). One safety net worth knowing: a record-key typo like `skills.committ` or `presets.shipp` passes JSON validation but would silently never apply, so a session-start check warns you once when a configured key matches no real skill, stage, agent, or workflow. If an override isn't taking and you didn't get a warning, the key is right and the cause is elsewhere (usually a forgotten `/rpiv-update-agents`).
+Prefer to hand-edit? The file is plain JSON at `~/.config/rpiv-pi/models.json`, and edits take effect on the next session (or the next `/rpiv-update-agents` for agents). One safety net worth knowing: a record-key typo like `skills.committ` or `presets.vett` passes JSON validation but would silently never apply, so a session-start check warns you once when a configured key matches no real skill, stage, agent, or workflow. If an override isn't taking and you didn't get a warning, the key is right and the cause is elsewhere (usually a forgotten `/rpiv-update-agents`).
 
 ## Next steps
 
