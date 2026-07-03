@@ -7,13 +7,20 @@
 // because that participation is the product.
 import SumiInk from "./SumiInk.astro";
 
+// build's seven-act spine (19 runtime stages — see lib/workflows.ts for the
+// act → stage mapping). Gates at slice/plan/code. Driver marks come in two
+// tiers: hollow hankos where ask_user_question reaches you only when the code
+// can't decide (research answers, the slice-cut confirm that freezes coverage
+// units, per-slice design forks), and the solid seal at review — the one
+// guaranteed pause, your design gate.
 const STAGES = [
-	{ name: "research", driver: "your answers" },
-	{ name: "blueprint", driver: "your checkpoints" },
-	{ name: "implement" },
-	{ name: "validate" },
-	{ name: "code-review" },
-	{ name: "commit" },
+	{ name: "capture", driver: "your answers", ask: true },
+	{ name: "slice", driver: "your cut", ask: true, gate: true },
+	{ name: "design", driver: "your forks", ask: true, fanout: true },
+	{ name: "review", driver: "your design gate", human: true },
+	{ name: "plan", gate: true },
+	{ name: "code", gate: true },
+	{ name: "land" },
 ];
 const N = STAGES.length;
 
@@ -58,7 +65,7 @@ const driverStops = STAGES.map((s, i) => ({ ...s, i })).filter((s) => s.driver);
 
 		<figure
 			class="ahero__flow"
-			aria-label={`One /wf command drives the chain ${STAGES.map((s) => s.name).join(", ")}. Above the rail, the driver line: you write the brief, and the plan pauses at your checkpoints before any code is written.`}
+			aria-label={`One /wf command drives build's seven acts: ${STAGES.map((s) => s.name).join(", ")} — 19 stages in all. Quality gates at slice, plan, and code, each grading and repairing on its own fix loop — never waiting on you. Above the rail, the driver line: your brief enters verbatim; research answers, the slice-cut confirm, and design forks reach you only when the code can't decide; and the run always pauses at review — your design gate.`}
 		>
 			<svg viewBox={`0 0 ${RAIL.vw} ${RAIL.vh}`} class="ahero__flowSvg" preserveAspectRatio="xMidYMid meet" role="presentation">
 				{/* ── driver line — the head label IS the first driver moment: your
@@ -74,15 +81,23 @@ const driverStops = STAGES.map((s, i) => ({ ...s, i })).filter((s) => s.driver);
 						<path d={`M61,${RAIL.y - 17} L64,${RAIL.y - 12} L67,${RAIL.y - 17}`} fill="none" stroke="var(--ochre)" stroke-width="0.7" opacity="0.5" stroke-linecap="round" />
 					</g>
 
-					{/* checkpoint drops — the plan pauses for your call */}
+					{/* driver drops — two tiers. Hollow hankos: ask_user_question reaches
+					    you only when the code can't decide. Solid seal: the review act's
+					    guaranteed pause. Drops above a gate/fanout mark stop short so the
+					    arrow never crosses the torii. */}
 					{driverStops.map((s) => {
 						const x = nodeX(s.i);
+						const dropEnd = s.ask ? RAIL.y - 30 : RAIL.y - 16;
 						return (
 							<g>
-								<rect x={x - 5.5} y={DRIVER_Y - 5.5} width="11" height="11" rx="1" transform={`rotate(8 ${x} ${DRIVER_Y})`} fill="var(--ochre)" opacity="0.92" stroke="var(--kuro)" stroke-width="0.6" />
+								{s.ask ? (
+									<rect x={x - 5.5} y={DRIVER_Y - 5.5} width="11" height="11" rx="1" transform={`rotate(8 ${x} ${DRIVER_Y})`} fill="none" stroke="var(--ochre)" stroke-width="0.9" opacity="0.75" />
+								) : (
+									<rect x={x - 5.5} y={DRIVER_Y - 5.5} width="11" height="11" rx="1" transform={`rotate(8 ${x} ${DRIVER_Y})`} fill="var(--ochre)" opacity="0.92" stroke="var(--kuro)" stroke-width="0.6" />
+								)}
 								<text x={x + 12} y={DRIVER_Y - 9} font-family="var(--font-mono)" font-size="8" fill="var(--text-distant)" letter-spacing="0.06em">{s.driver}</text>
-								<path d={`M${x},${DRIVER_Y + 7} L${x},${RAIL.y - 16}`} stroke="var(--ochre)" stroke-width="0.7" opacity="0.5" stroke-dasharray="1.5 3" stroke-linecap="round" fill="none" />
-								<path d={`M${x - 3},${RAIL.y - 20} L${x},${RAIL.y - 15} L${x + 3},${RAIL.y - 20}`} fill="none" stroke="var(--ochre)" stroke-width="0.7" opacity="0.5" stroke-linecap="round" />
+								<path d={`M${x},${DRIVER_Y + 7} L${x},${dropEnd}`} stroke="var(--ochre)" stroke-width="0.7" opacity={s.ask ? "0.35" : "0.5"} stroke-dasharray="1.5 3" stroke-linecap="round" fill="none" />
+								<path d={`M${x - 3},${dropEnd - 4} L${x},${dropEnd + 1} L${x + 3},${dropEnd - 4}`} fill="none" stroke="var(--ochre)" stroke-width="0.7" opacity={s.ask ? "0.35" : "0.5"} stroke-linecap="round" />
 							</g>
 						);
 					})}
@@ -110,19 +125,59 @@ const driverStops = STAGES.map((s, i) => ({ ...s, i })).filter((s) => s.driver);
 					return <circle cx={mx} cy={RAIL.y} r="2.4" fill="var(--ochre)" opacity="0.75" />;
 				})}
 
-				{/* stage nodes — same vocabulary as the home hero rail */}
+				{/* stage nodes — same vocabulary as the home hero rail. Gates render a
+				    torii mark above the node; the design act renders fanout ghosts; the
+				    review act (the human gate) takes the ochre seal. */}
 				{STAGES.map((s, i) => {
 					const x = nodeX(i);
 					return (
 						<g class="ahero__node" style={`--rail-i: ${i}`}>
-							<circle cx={x} cy={RAIL.y} r="13" fill="none" stroke="var(--sage)" stroke-width="0.7" opacity="0.4" />
-							<circle cx={x} cy={RAIL.y} r="9" fill="var(--ink)" stroke="var(--sage)" stroke-width="1.1" />
-							<circle cx={x} cy={RAIL.y} r="9" fill="var(--sage)" opacity="0.16" />
+							{s.fanout && (
+								<g fill="none" stroke="var(--sage)" stroke-width="0.7" opacity="0.35" stroke-dasharray="2 2">
+									<circle cx={x - 4} cy={RAIL.y - 4} r="11" />
+									<circle cx={x + 4} cy={RAIL.y + 4} r="11" />
+								</g>
+							)}
+							{s.gate && (
+								<g>
+									<g fill="none" stroke="var(--ochre)" stroke-width="1" opacity="0.7" stroke-linecap="round">
+										<path d={`M${x - 4},${RAIL.y - 25} L${x - 4},${RAIL.y - 16}`} />
+										<path d={`M${x + 4},${RAIL.y - 25} L${x + 4},${RAIL.y - 16}`} />
+										<path d={`M${x - 7},${RAIL.y - 23} L${x + 7},${RAIL.y - 23}`} />
+									</g>
+									{/* the gate's fix loop — grade, repair, re-enter; never waits on the driver */}
+									<text x={x + 10} y={RAIL.y - 17} font-family="var(--font-mono)" font-size="8" fill="var(--ochre)" opacity="0.65">↺</text>
+								</g>
+							)}
+							<circle cx={x} cy={RAIL.y} r="13" fill="none" stroke={s.human ? "var(--ochre)" : "var(--sage)"} stroke-width="0.7" opacity="0.4" />
+							<circle cx={x} cy={RAIL.y} r="9" fill="var(--ink)" stroke={s.human ? "var(--ochre)" : "var(--sage)"} stroke-width={s.human ? "1.4" : "1.1"} />
+							<circle cx={x} cy={RAIL.y} r="9" fill={s.human ? "var(--ochre)" : "var(--sage)"} opacity={s.human ? "0.4" : "0.16"} />
 							<text x={x} y={RAIL.y + 30} text-anchor="middle" font-family="var(--font-mono)" font-size="10.5" fill="var(--text-quiet)" letter-spacing="0.02em">{s.name}</text>
 						</g>
 					);
 				})}
 			</svg>
+			<figcaption class="ahero__legend mono">
+				{/* the three-tier autonomy vocabulary: gates loop unattended, asks are
+				    conditional, the design gate always pauses. Marks are tiny inline
+				    SVGs so they match the rail's drawn glyphs exactly. */}
+				<svg class="ahero__legendGlyph" viewBox="0 0 12 12" aria-hidden="true">
+					<g fill="none" stroke="var(--ochre)" stroke-width="1.2" stroke-linecap="round" opacity="0.8">
+						<path d="M4,4 L4,10 M8,4 L8,10 M2,5.5 L10,5.5" />
+					</g>
+				</svg>
+				<span class="ahero__legendMark">↺</span> gates grade &amp; repair on their own
+				<span class="ahero__legendDot" aria-hidden="true">·</span>
+				<svg class="ahero__legendGlyph" viewBox="0 0 12 12" aria-hidden="true">
+					<rect x="2.5" y="2.5" width="7" height="7" rx="1" transform="rotate(8 6 6)" fill="none" stroke="var(--ochre)" stroke-width="1" opacity="0.8" />
+				</svg>
+				asks only when the code can&rsquo;t decide
+				<span class="ahero__legendDot" aria-hidden="true">·</span>
+				<svg class="ahero__legendGlyph" viewBox="0 0 12 12" aria-hidden="true">
+					<rect x="2.5" y="2.5" width="7" height="7" rx="1" transform="rotate(8 6 6)" fill="var(--ochre)" opacity="0.92" />
+				</svg>
+				always pauses — your design gate
+			</figcaption>
 		</figure>
 
 		<p class="ahero__cta">
@@ -187,6 +242,7 @@ const driverStops = STAGES.map((s, i) => ({ ...s, i })).filter((s) => s.driver);
 	.ahero__deck,
 	.ahero__node,
 	.ahero__driver,
+	.ahero__legend,
 	.ahero__cta {
 		opacity: 0;
 		animation: ahero-rise var(--dur-ink) var(--ease-ink) forwards;
@@ -198,6 +254,7 @@ const driverStops = STAGES.map((s, i) => ({ ...s, i })).filter((s) => s.driver);
 	.ahero__deck    { animation-delay: 460ms; }
 	.ahero__node    { animation-delay: calc(680ms + var(--rail-i, 0) * 60ms); }
 	.ahero__driver  { animation-delay: 1100ms; }
+	.ahero__legend  { animation-delay: 1180ms; }
 	.ahero__cta     { animation-delay: 1240ms; }
 
 	@media (prefers-reduced-motion: reduce) {
@@ -206,6 +263,7 @@ const driverStops = STAGES.map((s, i) => ({ ...s, i })).filter((s) => s.driver);
 		.ahero__deck,
 		.ahero__node,
 		.ahero__driver,
+		.ahero__legend,
 		.ahero__cta {
 			opacity: 1;
 			animation: none;
@@ -240,6 +298,21 @@ const driverStops = STAGES.map((s, i) => ({ ...s, i })).filter((s) => s.driver);
 		width: min(900px, 92vw);
 	}
 	.ahero__flowSvg { width: 100%; height: auto; display: block; overflow: visible; }
+	.ahero__legend {
+		font-size: var(--type-tiny);
+		color: var(--text-distant);
+		letter-spacing: 0.04em;
+		margin-top: var(--space-3);
+	}
+	.ahero__legendMark { color: var(--ochre); }
+	.ahero__legendDot { margin: 0 var(--space-2); }
+	.ahero__legendGlyph {
+		width: 11px;
+		height: 11px;
+		display: inline-block;
+		vertical-align: -1px;
+		margin-right: 2px;
+	}
 
 	.ahero__cta {
 		font-family: var(--font-mono);

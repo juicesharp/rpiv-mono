@@ -6,10 +6,11 @@ Keeping an experienced driver in the loop while the work moves at LLM speed. Com
 
 - rpiv-pi skill pipeline — ~20 contract-carrying skills (`discover` → `research`/`design`/`blueprint` → `plan` → `implement` → `validate` → `code-review` → `commit`)
 - 15 named subagents for parallel analysis under fresh context
-- 3 built-in `/wf` workflows — `build`, `vet`, `polish`
+- 3 built-in `/wf` pipelines — `build`, `vet`, `polish`
 - Per-skill / per-stage model + effort control (`/rpiv-models`, `models.json`)
 - rpiv-workflow engine — declarative, validatable, auditable, resumable pipelines with predicate routing
 - Unified loop driver — `fanout` / `iterate` / `assess`
+- True parallel fan-out — units run as simultaneous Pi child sessions (in-process, via the Pi SDK) with a live lane console: step into any lane, watch its output, answer its questions without halting the others
 - First-class judges + per-stage `verify`
 - `panel()` — N judges + vote fold (adversarial verification), with `match()` enum-gate disagreement routing
 - Session-backed, mid-loop resume
@@ -30,4 +31,4 @@ Keeping an experienced driver in the loop while the work moves at LLM speed. Com
 - Non-Pi host embedding
 - Ecosystem / extensibility (third-party skill contracts, user workflow packs)
 - Tournament bracket ranking
-- True parallelism with worktree isolation
+- Worktree isolation — parallelize shared-tree stages (`implement`) safely

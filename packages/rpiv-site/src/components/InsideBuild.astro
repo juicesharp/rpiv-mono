@@ -1,0 +1,378 @@
+---
+// §3.5 — inside build. The anatomy plate: the full 19-stage graph drawn
+// honest, in the box-arrow-gate grammar — deterministic script stages as
+// squares, quality gates as torii the flow passes through, fix arms as ensō
+// loops on the left, the one human moment as the hanko seal. Beside it, four
+// readings of the diagram: the contract, the gates, the parallelism, and the
+// unnamed paradigm positioning ("where this sits").
+//
+// Stage facts mirror rpiv-pi's built-in-workflows.ts (the `build` workflow);
+// keep in sync alongside src/lib/workflows.ts.
+
+interface PlateRow {
+	name: string;
+	note: string;
+	/** Act label rendered above this row with a hairline rule. */
+	act?: string;
+	/** Node shape: deterministic script stages are squares; review is the seal. */
+	node?: "square" | "seal";
+	/** Torii straddling the spine — a quality gate the flow must pass. */
+	gate?: boolean;
+	/** Fanout multiplicity tag — renders three parallel strands into this row. */
+	fanout?: string;
+	/** Fix arm looping back on the left. `up` = rows above the loop returns to (0 = re-enters this gate). */
+	fix?: { name: string; up: number };
+	/** Reaches you via ask_user_question only when the code can't decide — renders the hollow ▢ mark on the name line. */
+	ask?: boolean;
+}
+
+const ROWS: PlateRow[] = [
+	{ act: "capture", name: "goal", note: "script · your brief, byte-for-byte", node: "square" },
+	{ name: "research", note: "grounds the brief in your code · asks you on ambiguity", ask: true },
+	{ act: "slice", name: "slice", note: "independent vertical slices · you confirm the cut", ask: true },
+	{ name: "slice-check", note: "script gate · cycle-free, coverage conserved · 0 LLM calls", node: "square", gate: true },
+	{ name: "slice-grade", note: "design-readiness · one fresh-context judgment", gate: true, fix: { name: "slice-fix", up: 1 } },
+	{ act: "design", name: "design-slice", note: "fresh session per slice, dependency-ordered · forks reach you", fanout: "×N", ask: true },
+	{ act: "review", name: "design-review", note: "every slice's design, one pause · adjustments cascade", node: "seal" },
+	{ act: "plan", name: "subplan", note: "per-cluster merge · no pass holds every design", fanout: "×clusters" },
+	{ name: "plan", note: "one merged plan" },
+	{ name: "plan-grade", note: "panel ×5 · graded against your verbatim brief", gate: true, fix: { name: "plan-fix", up: 0 } },
+	{ act: "code", name: "elaborate", note: "implement-ready code per phase", fanout: "×phases" },
+	{ name: "code-splice", note: "script · deterministic splice into the plan", node: "square" },
+	{ name: "code-grade", note: "panel ×5 · re-grades the code-bearing plan", gate: true, fix: { name: "code-fix", up: 0 } },
+	{ act: "land", name: "implement", note: "phases in order · a patch series, not a race" },
+	{ name: "validate", note: "against your brief · --goal" },
+	{ name: "commit", note: "your name on the diff" },
+];
+
+// Vertical layout — one row per spine stage, extra air where an act begins.
+const X = 96;
+const W = 480;
+/** Label column — right of the spine, clear of the widest fanout strand (X+26 + r). */
+const LX = X + 46;
+const TOP = 36;
+const ROW_H = 46;
+const ACT_GAP = 24;
+let acc = TOP;
+const rows = ROWS.map((r) => {
+	if (r.act) acc += ACT_GAP;
+	const y = acc;
+	acc += ROW_H;
+	return { ...r, y };
+});
+const H = acc + 4;
+
+const STAGE_TOTAL = 19; // 16 spine rows + 3 fix arms
+---
+
+<section id="anatomy">
+	<div class="container">
+		<p class="kicker ib__kicker">§ inside build · {STAGE_TOTAL} stages · 3 gates · 1 design review</p>
+		<h2 class="ib__title">Every stage answers a failure you&rsquo;ve met.</h2>
+		<p class="ib__lede">
+			The full graph, drawn honest — nineteen stages, three fix loops, one
+			seal. Machinery like this would be overhead if it ran in sequence;
+			here, everything between gates runs in parallel.
+		</p>
+
+		<div class="ib__duo">
+			<figure
+				class="ib__plate"
+				aria-label={`The full build graph, top to bottom: ${ROWS.map((r) => r.name).join(", ")} — with fix loops at slice-grade (slice-fix), plan-grade (plan-fix), and code-grade (code-fix). Nineteen stages in all. Deterministic script stages are drawn as squares, quality gates as torii the flow passes through, and the human design review as a seal.`}
+			>
+				<svg viewBox={`0 0 ${W} ${H}`} class="ib__svg" preserveAspectRatio="xMidYMid meet" role="presentation">
+					{/* faint companion stroke — the rail's ink echo */}
+					<path d={`M${X + 4},${rows[0].y + 10} L${X + 4},${rows[rows.length - 1].y - 10}`} stroke="var(--sage-deep)" stroke-width="0.5" opacity="0.15" fill="none" />
+
+					{/* connectors — straight segments, diverging/converging strands around fanout rows */}
+					{rows.map((r, i) => {
+						if (i === 0) return null;
+						const prev = rows[i - 1];
+						const y0 = prev.y;
+						const y1 = r.y;
+						if (r.fanout)
+							return (
+								<g fill="none" stroke="var(--sage-deep)" stroke-width="0.9" opacity="0.55" stroke-linecap="round">
+									<path d={`M${X},${y0 + 8} C${X},${y0 + 26} ${X - 26},${y1 - 24} ${X - 26},${y1 - 7}`} />
+									<path d={`M${X},${y0 + 8} L${X},${y1 - 7}`} />
+									<path d={`M${X},${y0 + 8} C${X},${y0 + 26} ${X + 26},${y1 - 24} ${X + 26},${y1 - 7}`} />
+								</g>
+							);
+						if (prev.fanout)
+							return (
+								<g fill="none" stroke="var(--sage-deep)" stroke-width="0.9" opacity="0.55" stroke-linecap="round">
+									<path d={`M${X - 26},${y0 + 7} C${X - 26},${y0 + 24} ${X},${y1 - 26} ${X},${y1 - 8}`} />
+									<path d={`M${X},${y0 + 7} L${X},${y1 - 8}`} />
+									<path d={`M${X + 26},${y0 + 7} C${X + 26},${y0 + 24} ${X},${y1 - 26} ${X},${y1 - 8}`} />
+								</g>
+							);
+						return <path d={`M${X},${y0 + 8} L${X},${y1 - 8}`} fill="none" stroke="var(--sage-deep)" stroke-width="1" opacity="0.7" stroke-linecap="round" />;
+					})}
+
+					{/* rows */}
+					{rows.map((r, i) => (
+						<g class="ib__row" style={`--ib-i: ${i}`}>
+							{/* act boundary — label + hairline */}
+							{r.act && (
+								<g>
+									<text x="14" y={r.y - 30} font-family="var(--font-mono)" font-size="8" fill="var(--text-distant)" letter-spacing="0.2em" style="text-transform: uppercase">{r.act}</text>
+									<path d={`M14,${r.y - 24} L${W - 14},${r.y - 24}`} stroke="var(--rule)" stroke-width="1" opacity="0.7" fill="none" />
+								</g>
+							)}
+
+							{/* fix arm — ensō loop on the left; grade fails → repair → re-enter */}
+							{r.fix && (() => {
+								const target = rows[i - r.fix.up];
+								const yG = r.y;
+								const yT = target.y;
+								const self = r.fix.up === 0;
+								const midY = (yG + yT) / 2;
+								const nodeX = X - (self ? 40 : 45);
+								return (
+									<g>
+										<path
+											d={self
+												? `M${X - 8},${yG + 5} C${X - 54},${yG + 22} ${X - 54},${yG - 22} ${X - 8},${yG - 5}`
+												: `M${X - 8},${yG + 2} C${X - 60},${yG + 18} ${X - 60},${yT - 14} ${X - 8},${yT - 2}`}
+											fill="none" stroke="var(--ochre)" stroke-width="0.8" opacity="0.55" stroke-dasharray="2.5 3.5" stroke-linecap="round"
+										/>
+										<path
+											d={self
+												? `M${X - 16},${yG - 10} L${X - 9},${yG - 5} L${X - 17},${yG - 3}`
+												: `M${X - 16},${yT - 8} L${X - 9},${yT - 2} L${X - 17},${yT + 1}`}
+											fill="none" stroke="var(--ochre)" stroke-width="0.8" opacity="0.55" stroke-linecap="round"
+										/>
+										<circle cx={nodeX} cy={midY} r="4" fill="var(--ink)" stroke="var(--ochre)" stroke-width="0.9" opacity="0.9" />
+										<text x={nodeX - 8} y={midY + 3} text-anchor="end" font-family="var(--font-mono)" font-size="8" fill="var(--ochre)" opacity="0.75">{r.fix.name}</text>
+									</g>
+								);
+							})()}
+
+							{/* torii — the flow passes through the gate */}
+							{r.gate && (
+								<g fill="none" stroke="var(--ochre)" stroke-width="1" opacity="0.7" stroke-linecap="round">
+									<path d={`M${X - 9},${r.y - 13} L${X - 9},${r.y + 9}`} />
+									<path d={`M${X + 9},${r.y - 13} L${X + 9},${r.y + 9}`} />
+									<path d={`M${X - 13},${r.y - 10} L${X + 13},${r.y - 10}`} />
+								</g>
+							)}
+
+							{/* node — square (script), seal (you), fanout triple, or circle */}
+							{r.fanout ? (
+								<g>
+									{[-26, 0, 26].map((dx) => (
+										<g>
+											<circle cx={X + dx} cy={r.y} r="4.5" fill="var(--ink)" stroke="var(--sage)" stroke-width="1" />
+											<circle cx={X + dx} cy={r.y} r="4.5" fill="var(--sage)" opacity="0.16" />
+										</g>
+									))}
+								</g>
+							) : r.node === "square" ? (
+								<g>
+									<rect x={X - 5} y={r.y - 5} width="10" height="10" fill="var(--ink)" stroke="var(--sage)" stroke-width="1.1" />
+									<rect x={X - 5} y={r.y - 5} width="10" height="10" fill="var(--sage)" opacity="0.16" />
+								</g>
+							) : r.node === "seal" ? (
+								<rect x={X - 6} y={r.y - 6} width="12" height="12" rx="1.5" transform={`rotate(8 ${X} ${r.y})`} fill="var(--ochre)" opacity="0.92" stroke="var(--kuro)" stroke-width="0.6" />
+							) : (
+								<g>
+									<circle cx={X} cy={r.y} r="5.5" fill="var(--ink)" stroke="var(--sage)" stroke-width="1.1" />
+									<circle cx={X} cy={r.y} r="5.5" fill="var(--sage)" opacity="0.16" />
+								</g>
+							)}
+
+							{/* name + annotation — the label column starts at LX so nothing
+							    ever crosses the strands' widest sweep */}
+							<text x={LX} y={r.y + 3} font-family="var(--font-mono)" font-size="10.5" fill={r.node === "seal" ? "var(--ochre)" : "var(--washi-soft)"} letter-spacing="0.02em">
+								{r.name}
+								{r.fanout && <tspan fill="var(--sage)" font-size="9"> {r.fanout}</tspan>}
+								{r.ask && <tspan fill="var(--ochre)" font-size="9"> ▢</tspan>}
+								{r.node === "seal" && <tspan font-size="9"> ◉</tspan>}
+							</text>
+							<text x={LX} y={r.y + 15} font-family="var(--font-mono)" font-size="8.5" fill="var(--text-distant)" letter-spacing="0.02em">{r.note}</text>
+						</g>
+					))}
+				</svg>
+				<figcaption class="ib__legend mono">
+					<span class="ib__legendMark">▢</span> asks only when the code can&rsquo;t decide
+					<span class="ib__legendDot" aria-hidden="true">·</span>
+					<span class="ib__legendMark">◉</span> always pauses — your design gate
+				</figcaption>
+			</figure>
+
+			<aside class="ib__readings">
+				<div class="ib__reading" style="--ib-r: 0">
+					<p class="mono ib__readHead">01 · the contract</p>
+					<p class="ib__readBody">
+						Your brief enters byte-for-byte — a file no model may paraphrase.
+						A re-slice may redistribute it across slices, never drop a piece:
+						coverage is anchored to the first cut you confirmed. The panels
+						grade completeness and correctness against that file, and
+						<span class="mono ib__code">validate --goal</span> closes against
+						it. Your ask cannot quietly shrink.
+					</p>
+				</div>
+				<div class="ib__reading" style="--ib-r: 1">
+					<p class="mono ib__readHead">02 · the gates</p>
+					<p class="ib__readBody">
+						<span class="mono ib__code">slice-check</span> and
+						<span class="mono ib__code">code-splice</span> are programs: they
+						pass or fail with zero LLM calls, and no amount of eloquence moves
+						them. The grade panels judge in fresh context — one session per
+						dimension, blind to the transcript that produced the artifact —
+						before a single line is implemented. A failing dimension routes to
+						a fix arm and re-enters on its own; a gate never waits on you.
+					</p>
+				</div>
+				<div class="ib__reading" style="--ib-r: 2">
+					<p class="mono ib__readHead">03 · the parallelism</p>
+					<p class="ib__readBody">
+						Everything between gates fans out — designs per slice, panel
+						dimensions, code per phase — as simultaneous Pi sessions, each
+						carrying only its slice of the problem. A live lane console keeps
+						every session in reach: step into any lane, watch its output,
+						answer its question without halting the others. Rigor that would
+						crawl in sequence doesn&rsquo;t — and bounded context per session is
+						also the economics: it&rsquo;s
+						<a href="#models">why affordable models hold up</a>.
+					</p>
+				</div>
+				<div class="ib__reading ib__reading--sits" style="--ib-r: 3">
+					<p class="mono ib__readHead ib__readHead--sits">— where this sits</p>
+					<p class="ib__readBody"><em>Who holds the plan?</em> You do — the pipeline is code, versioned, the same graph every run, not a script a model improvised minutes ago.</p>
+					<p class="ib__readBody"><em>Who checks the work?</em> Programs first, fresh-context panels second, you third — not more agents checking agents.</p>
+					<p class="ib__readBody"><em>When are you asked?</em> Only when the code can&rsquo;t decide — and always once, at the design gate.</p>
+				</div>
+			</aside>
+		</div>
+	</div>
+</section>
+
+<script>
+	const section = document.getElementById("anatomy");
+	if (section) {
+		const observer = new IntersectionObserver(
+			(entries) => {
+				for (const entry of entries) {
+					if (entry.isIntersecting) {
+						section.classList.add("ib--visible");
+						observer.disconnect();
+					}
+				}
+			},
+			{ threshold: 0.08 },
+		);
+		observer.observe(section);
+	}
+</script>
+
+<style>
+	/* ── Scroll-triggered entrance — same orchestration vocabulary as the catalog ── */
+	@keyframes ib-rise {
+		from { opacity: 0; transform: translateY(8px); }
+		to   { opacity: 1; transform: translateY(0);   }
+	}
+
+	.ib__kicker,
+	.ib__title,
+	.ib__lede,
+	.ib__plate,
+	.ib__reading {
+		opacity: 0;
+	}
+
+	:global(.ib--visible) .ib__kicker,
+	:global(.ib--visible) .ib__title,
+	:global(.ib--visible) .ib__lede,
+	:global(.ib--visible) .ib__plate,
+	:global(.ib--visible) .ib__reading {
+		animation: ib-rise var(--dur-ink) var(--ease-ink) forwards;
+	}
+
+	:global(.ib--visible) .ib__kicker  { animation-delay: 0ms; }
+	:global(.ib--visible) .ib__title   { animation-delay: 80ms; }
+	:global(.ib--visible) .ib__lede    { animation-delay: 160ms; }
+	:global(.ib--visible) .ib__plate   { animation-delay: 280ms; }
+	:global(.ib--visible) .ib__reading { animation-delay: calc(400ms + var(--ib-r, 0) * 140ms); }
+
+	@media (prefers-reduced-motion: reduce) {
+		.ib__kicker,
+		.ib__title,
+		.ib__lede,
+		.ib__plate,
+		.ib__reading {
+			opacity: 1;
+			animation: none;
+		}
+	}
+
+	.ib__lede {
+		font-family: var(--font-serif);
+		max-width: 58ch;
+		color: var(--text-quiet);
+		font-size: var(--type-lead);
+		line-height: var(--leading-body);
+		margin: var(--space-4) 0 var(--space-7);
+		text-wrap: pretty;
+	}
+
+	.ib__duo {
+		display: grid;
+		grid-template-columns: minmax(320px, 460px) 1fr;
+		gap: var(--space-8);
+		align-items: start;
+	}
+
+	.ib__plate { margin: 0; }
+	.ib__svg { width: 100%; height: auto; display: block; overflow: visible; }
+	.ib__legend {
+		font-size: var(--type-tiny);
+		color: var(--text-distant);
+		letter-spacing: 0.04em;
+		margin-top: var(--space-3);
+	}
+	.ib__legendMark { color: var(--ochre); }
+	.ib__legendDot { margin: 0 var(--space-2); }
+
+	/* ── Readings — the four captioned ways to read the plate ── */
+	.ib__readings {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-6);
+		max-width: 52ch;
+	}
+	.ib__readHead {
+		font-size: var(--type-tiny);
+		text-transform: uppercase;
+		letter-spacing: 0.16em;
+		color: var(--sage);
+		margin: 0 0 var(--space-2);
+		padding-bottom: var(--space-2);
+		border-bottom: 1px solid var(--rule);
+	}
+	.ib__readHead--sits { color: var(--ochre); }
+	.ib__readBody {
+		font-family: var(--font-serif);
+		font-size: var(--type-base);
+		line-height: var(--leading-body);
+		color: var(--text-quiet);
+		margin: 0;
+		text-wrap: pretty;
+	}
+	.ib__readBody + .ib__readBody { margin-top: var(--space-3); }
+	.ib__readBody em { color: var(--washi-soft); }
+	.ib__code {
+		font-size: 0.88em;
+		color: var(--washi-soft);
+	}
+	.ib__reading--sits {
+		border-top: 1px solid var(--rule-strong);
+		padding-top: var(--space-5);
+		margin-top: var(--space-2);
+	}
+
+	@media (max-width: 960px) {
+		.ib__duo { grid-template-columns: 1fr; gap: var(--space-7); }
+		.ib__readings { max-width: 58ch; }
+	}
+</style>

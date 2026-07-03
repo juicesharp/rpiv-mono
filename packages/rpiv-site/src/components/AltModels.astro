@@ -4,7 +4,7 @@
 // only where they earn their keep. The gain/cost ledger states the residual
 // gap honestly — the answer line points at the roadmap, which is exactly the
 // work that closes it.
-const OPEN_MODELS = ["GLM-5.1", "Kimi K2.5", "MiMo-V2-Pro"];
+const OPEN_MODELS = ["GLM-5.2", "Kimi K2.5", "MiMo-V2-Pro"];
 ---
 
 <section id="models">
@@ -26,10 +26,11 @@ const OPEN_MODELS = ["GLM-5.1", "Kimi K2.5", "MiMo-V2-Pro"];
 			<pre class="models__pre"><code>/rpiv-models</code></pre>
 			<p class="models__controlNote">
 				Per-skill and per-stage model + reasoning-effort overrides, cascading
-				from defaults down to a single workflow stage. Run the chain on an
-				affordable model and escalate just the review and judge stages to a
-				frontier one, spending the expensive tokens only where they earn
-				their keep.
+				from defaults down to a single pipeline stage — and into every fanout
+				unit, so each grade dimension and each slice design resolves its own
+				model. Run the chain on an affordable model and escalate just the
+				grade panels to a frontier one, spending the expensive tokens only
+				where they earn their keep.
 			</p>
 		</div>
 
@@ -40,6 +41,7 @@ const OPEN_MODELS = ["GLM-5.1", "Kimi K2.5", "MiMo-V2-Pro"];
 					<li>runs end to end on open-weight models, at roughly a third of frontier output pricing</li>
 					<li>same pipeline, same contracts, same audit at any price point</li>
 					<li>per-stage escalation: frontier judgement without frontier-priced drafting</li>
+					<li>bounded context by construction: every fanned-out session carries one slice, one dimension, or one phase — <a href="#anatomy">the anatomy</a> is why small models hold up</li>
 				</ul>
 			</div>
 			<div class="models-trade__col models-trade__col--cost">

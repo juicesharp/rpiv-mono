@@ -28,7 +28,7 @@ export type SiblingName = (typeof SIBLING_NAMES)[number];
 const ROLES: Record<SiblingName, string> = {
 	"rpiv-advisor": "advisor model",
 	"rpiv-args": "prompt args",
-	"rpiv-ask-user-question": "tui prompt",
+	"rpiv-ask-user-question": "question prompt",
 	"rpiv-btw": "side question",
 	"rpiv-todo": "live overlay",
 	"rpiv-web-tools": "web search",

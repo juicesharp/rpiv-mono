@@ -1,132 +1,149 @@
 ---
-// §2 — the catalog. The reader chooses a flow here. Six workflows grouped by
-// entry condition (start from a brief vs start from a diff) and ordered along a
-// fast→deep spectrum. Each card carries a mini chain rail, the stage sequence,
-// derived trait badges, and the true stage count.
+// §2 — the catalog. The reader chooses a pipeline here. Three pipelines on a
+// fast→deep spectrum with build as the flagship. Each card carries a mini
+// chain rail with gate/fanout/human marks, the act or stage sequence, derived
+// trait badges, and the true stage count.
 import { getWorkflows, type WorkflowEntry } from "../lib/workflows";
 
 const workflows = await getWorkflows();
-const fresh = workflows.filter((w) => w.group === "fresh");
-const diff = workflows.filter((w) => w.group === "diff");
 
 // Trait badges derived from the workflow shape — no extra metadata to drift.
 function traits(w: WorkflowEntry): string[] {
 	const out: string[] = [];
-	if (w.stages.some((s) => s.name === "research")) out.push("research-backed");
-	if (w.stages.some((s) => s.name === "design")) out.push("design-led");
+	if (w.stages.some((s) => s.name === "capture")) out.push("verbatim brief");
+	const gates = gateCount(w);
+	if (gates > 0) out.push(`${gates} quality gates`);
+	if (w.stages.some((s) => s.human)) out.push("design review · yours");
+	if (w.stages.some((s) => s.fanout && s.name === "design")) out.push("parallel design");
+	if (w.stages.some((s) => s.fanout && s.name === "implement")) out.push("phase fanout");
 	if (w.stages.some((s) => s.name === "architecture-review")) out.push("architecture review");
-	if (w.stages.some((s) => s.name === "security-gate")) out.push("security gate");
-	if (w.stages.some((s) => s.fanout)) out.push("phase fanout");
 	if (w.loop) out.push("review loop");
 	return out;
 }
 
-// Mini-rail geometry — a compact dotted spine; labels live in the text line below.
-const MR = { vw: 300, vh: 34, y: 17, x0: 12, x1: 288 } as const;
-const dotX = (i: number, n: number) => (n <= 1 ? MR.x0 : MR.x0 + (i * (MR.x1 - MR.x0)) / (n - 1));
+const gateCount = (w: WorkflowEntry) => w.stages.filter((s) => s.gate).length;
+const hasReview = (w: WorkflowEntry) => w.stages.some((s) => s.human);
 
-const GROUPS = [
-	{ key: "fresh", label: "Starting fresh", hint: "from a one-line brief", items: fresh },
-	{ key: "diff", label: "You already have a diff", hint: "yours, a teammate's, or an incoming PR", items: diff },
-] as const;
+// Mini-rail geometry — a compact dotted spine; labels live in the text line below.
+const MR = { vw: 300, vh: 40, y: 23, x0: 12, x1: 288 } as const;
+const dotX = (i: number, n: number) => (n <= 1 ? MR.x0 : MR.x0 + (i * (MR.x1 - MR.x0)) / (n - 1));
 ---
 
 <section id="catalog">
 	<div class="container">
-		<p class="kicker cat__kicker">§ the six flows · pick one</p>
-		<h2 class="cat__title">Six ways to ship.</h2>
+		<p class="kicker cat__kicker">§ the pipelines · pick one</p>
+		<h2 class="cat__title">Three pipelines. One command.</h2>
 		<p class="cat__lede">
-			Two questions choose your flow: how big is the change, and do you already
-			have a diff? They run shortest to deepest, left to right.
+			Each pipeline is a fixed, code-defined graph of contract-carrying
+			skills — validatable, auditable, resumable. <span class="mono">build</span> ships
+			a brief; <span class="mono">vet</span> reviews a diff you already have;
+			<span class="mono">polish</span> works a big architecture review, phase by phase.
 		</p>
 
-		{GROUPS.map((group, gi) => (
-			<div class="cat__group" style={`--cat-gi: ${gi}`}>
-				<header class="cat__groupHead">
-					<h3 class="mono cat__groupName">{group.label}</h3>
-					<span class="cat__groupHint">{group.hint}</span>
-				</header>
+		<div class="cat__cards" role="list">
+			{workflows.map((w, ci) => {
+				const n = w.stages.length;
+				return (
+					<article
+						class:list={["cat-card", w.showcase && "cat-card--featured"]}
+						role="listitem"
+						style={`--cat-ci: ${ci}`}
+					>
+						<header class="cat-card__head">
+							<span class:list={["chip", w.showcase ? "chip--ochre" : "chip--sage"]}>/wf {w.name}</span>
+							<span class="cat-card__count mono">
+								{w.stageCount} stages{gateCount(w) > 0 && ` · ${gateCount(w)} gates`}{hasReview(w) && " · 1 design review"}
+							</span>
+						</header>
 
-				<div class="cat__cards" role="list">
-					{group.items.map((w, ci) => {
-						const n = w.stages.length;
-						return (
-							<article
-								class:list={["cat-card", w.showcase && "cat-card--featured"]}
-								role="listitem"
-								style={`--cat-ci: ${ci}; --cat-gi: ${gi}`}
-							>
-								<header class="cat-card__head">
-									<span class:list={["chip", w.showcase ? "chip--ochre" : "chip--sage"]}>/wf {w.name}</span>
-									<span class="cat-card__count mono">{w.stageCount} stages</span>
-								</header>
+						<p class="cat-card__when">{w.when}</p>
 
-								<p class="cat-card__when">{w.when}</p>
-
-								<svg viewBox={`0 0 ${MR.vw} ${MR.vh}`} class="cat-card__rail" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
-									{/* ghost rail — subtle depth behind the main line, echoing the Hero */}
-									<g fill="none" stroke="var(--sage-deep)" stroke-linecap="round">
-										<path d={`M${MR.x0 + 8},${MR.y + 4} L${MR.x1 - 8},${MR.y + 4}`} stroke-width="0.5" opacity="0.2" />
-										<path d={`M${MR.x0},${MR.y} L${MR.x1},${MR.y}`} stroke-width="1" opacity="0.65" />
+						<svg viewBox={`0 0 ${MR.vw} ${MR.vh}`} class="cat-card__rail" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+							{/* ghost rail — subtle depth behind the main line, echoing the Hero */}
+							<g fill="none" stroke="var(--sage-deep)" stroke-linecap="round">
+								<path d={`M${MR.x0 + 8},${MR.y + 4} L${MR.x1 - 8},${MR.y + 4}`} stroke-width="0.5" opacity="0.2" />
+								<path d={`M${MR.x0},${MR.y} L${MR.x1},${MR.y}`} stroke-width="1" opacity="0.65" />
+							</g>
+							{w.stages.slice(0, -1).map((_, i) => {
+								const mx = (dotX(i, n) + dotX(i + 1, n)) / 2;
+								return <circle cx={mx} cy={MR.y} r="1.8" fill="var(--ochre)" opacity="0.7" />;
+							})}
+							{w.loop && (() => {
+								const fx = dotX(w.loop.from, n);
+								const tx = dotX(w.loop.to, n);
+								const mid = (fx + tx) / 2;
+								return (
+									<g fill="none" stroke="var(--ochre)" stroke-linecap="round" opacity="0.6">
+										<path d={`M${fx},${MR.y - 6} Q${mid},${MR.y - 15} ${tx},${MR.y - 6}`} stroke-width="0.9" />
+										<path d={`M${fx},${MR.y - 4} Q${mid},${MR.y - 12} ${tx},${MR.y - 4}`} stroke-width="0.4" opacity="0.3" />
+										<path d={`M${tx + 4},${MR.y - 9} L${tx},${MR.y - 6} L${tx + 4},${MR.y - 3}`} stroke-width="0.8" />
 									</g>
-									{w.stages.slice(0, -1).map((_, i) => {
-										const mx = (dotX(i, n) + dotX(i + 1, n)) / 2;
-										return <circle cx={mx} cy={MR.y} r="1.8" fill="var(--ochre)" opacity="0.7" />;
-									})}
-									{w.loop && (() => {
-										const fx = dotX(w.loop.from, n);
-										const tx = dotX(w.loop.to, n);
-										const mid = (fx + tx) / 2;
-										return (
-											<g fill="none" stroke="var(--ochre)" stroke-linecap="round" opacity="0.6">
-												<path d={`M${fx},${MR.y - 6} Q${mid},${MR.y - 15} ${tx},${MR.y - 6}`} stroke-width="0.9" />
-												<path d={`M${fx},${MR.y - 4} Q${mid},${MR.y - 12} ${tx},${MR.y - 4}`} stroke-width="0.4" opacity="0.3" />
-												<path d={`M${tx + 4},${MR.y - 9} L${tx},${MR.y - 6} L${tx + 4},${MR.y - 3}`} stroke-width="0.8" />
+								);
+							})()}
+							{w.stages.map((s, i) => {
+								const x = dotX(i, n);
+								return (
+									<g>
+										{s.fanout && (
+											<g fill="none" stroke="var(--sage)" stroke-width="0.7" opacity="0.3" stroke-dasharray="2 2">
+												<circle cx={x - 2.5} cy={MR.y - 2.5} r="8" />
+												<circle cx={x + 2.5} cy={MR.y + 2.5} r="8" />
 											</g>
-										);
-									})()}
-									{w.stages.map((s, i) => {
-										const x = dotX(i, n);
-										return (
-											<g>
-												{s.fanout && (
-													<g fill="none" stroke="var(--sage)" stroke-width="0.7" opacity="0.3" stroke-dasharray="2 2">
-														<circle cx={x - 2.5} cy={MR.y - 2.5} r="8" />
-														<circle cx={x + 2.5} cy={MR.y + 2.5} r="8" />
-													</g>
-												)}
-												<circle cx={x} cy={MR.y} r="5" fill="var(--ink)" stroke="var(--sage)" stroke-width="1" />
-												<circle cx={x} cy={MR.y} r="5" fill="var(--sage)" opacity="0.16" />
+										)}
+										{s.gate && (
+											/* torii gate mark — the flow must pass under it */
+											<g fill="none" stroke="var(--ochre)" stroke-width="0.9" opacity="0.75" stroke-linecap="round">
+												<path d={`M${x - 3},${MR.y - 14} L${x - 3},${MR.y - 8}`} />
+												<path d={`M${x + 3},${MR.y - 14} L${x + 3},${MR.y - 8}`} />
+												<path d={`M${x - 5.5},${MR.y - 13} L${x + 5.5},${MR.y - 13}`} />
 											</g>
-										);
-									})}
-								</svg>
+										)}
+										{s.fix && (
+											/* the gate's fix loop — repair and re-enter */
+											<text x={x + 8} y={MR.y - 10} font-family="var(--font-mono)" font-size="7" fill="var(--ochre)" opacity="0.7">↺</text>
+										)}
+										<circle cx={x} cy={MR.y} r="5" fill="var(--ink)" stroke={s.human ? "var(--ochre)" : "var(--sage)"} stroke-width={s.human ? "1.4" : "1"} />
+										<circle cx={x} cy={MR.y} r="5" fill={s.human ? "var(--ochre)" : "var(--sage)"} opacity={s.human ? "0.45" : "0.16"} />
+									</g>
+								);
+							})}
+						</svg>
 
-								<p class="cat-card__chain mono">
-									{w.stages.map((s, i) => (
-										<>
-											<span class:list={["cat-card__stage", s.fanout && "cat-card__stage--fanout"]}>{s.name}</span>
-											{i < w.stages.length - 1 && <span class="cat-card__arrow" aria-hidden="true"> → </span>}
-										</>
-									))}
-								</p>
+						<p class="cat-card__chain mono">
+							{w.stages.map((s, i) => (
+								<>
+									<span
+										class:list={[
+											"cat-card__stage",
+											s.fanout && "cat-card__stage--fanout",
+											s.gate && "cat-card__stage--gate",
+											s.human && "cat-card__stage--you",
+										]}
+									>{s.name}{s.human && " ◉"}</span>
+									{i < w.stages.length - 1 && <span class="cat-card__arrow" aria-hidden="true"> → </span>}
+								</>
+							))}
+						</p>
 
-								<ul class="cat-card__traits" aria-label="traits">
-									{traits(w).map((t) => (
-										<li class="cat-card__trait mono">{t}</li>
-									))}
-								</ul>
-							</article>
-						);
-					})}
-				</div>
-			</div>
-		))}
+						<ul class="cat-card__traits" aria-label="traits">
+							{traits(w).map((t) => (
+								<li class="cat-card__trait mono">{t}</li>
+							))}
+						</ul>
+					</article>
+				);
+			})}
+		</div>
 
 		<p class="cat__foot mono">
 			<span class="cat__footArrow">→</span>
-			run <code>/wf</code> to preview every flow, <code>/wf &lt;name&gt;</code> for one&rsquo;s graph,
+			run <code>/wf</code> to preview every pipeline, <code>/wf &lt;name&gt;</code> for one&rsquo;s graph,
 			<code>/wf &lt;name&gt; &ldquo;your task&rdquo;</code> to go.
+		</p>
+		<p class="cat__foot cat__foot--onramp mono">
+			<span class="cat__footArrow">→</span>
+			small change in a big codebase? <code>/skill:discover</code> → <code>/skill:research</code> slices
+			the search space — then finish in chat, or <code>/skill:blueprint</code> when you want a plan first.
 		</p>
 	</div>
 </section>
@@ -154,8 +171,7 @@ const GROUPS = [
 	   Elements start hidden. An IntersectionObserver adds .cat--visible to the
 	   <section> when it enters the viewport, which kicks off the staggered
 	   catalog-rise animation. Uses the system tokens (--ease-ink, --dur-ink) so
-	   motion stays on-vocabulary. --cat-gi and --cat-ci are set via inline style
-	   on each element. */
+	   motion stays on-vocabulary. --cat-ci is set via inline style per card. */
 	@keyframes catalog-rise {
 		from { opacity: 0; transform: translateY(8px); }
 		to   { opacity: 1; transform: translateY(0);   }
@@ -164,7 +180,6 @@ const GROUPS = [
 	.cat__kicker,
 	.cat__title,
 	.cat__lede,
-	.cat__groupHead,
 	.cat-card,
 	.cat__foot {
 		opacity: 0;
@@ -173,7 +188,6 @@ const GROUPS = [
 	:global(.cat--visible) .cat__kicker,
 	:global(.cat--visible) .cat__title,
 	:global(.cat--visible) .cat__lede,
-	:global(.cat--visible) .cat__groupHead,
 	:global(.cat--visible) .cat-card,
 	:global(.cat--visible) .cat__foot {
 		animation: catalog-rise var(--dur-ink) var(--ease-ink) forwards;
@@ -182,15 +196,13 @@ const GROUPS = [
 	:global(.cat--visible) .cat__kicker  { animation-delay: 0ms; }
 	:global(.cat--visible) .cat__title   { animation-delay: 80ms; }
 	:global(.cat--visible) .cat__lede    { animation-delay: 160ms; }
-	:global(.cat--visible) .cat__groupHead { animation-delay: calc(280ms + var(--cat-gi, 0) * 400ms); }
-	:global(.cat--visible) .cat-card     { animation-delay: calc(360ms + var(--cat-gi, 0) * 400ms + var(--cat-ci, 0) * 80ms); }
-	:global(.cat--visible) .cat__foot    { animation-delay: 1000ms; }
+	:global(.cat--visible) .cat-card     { animation-delay: calc(280ms + var(--cat-ci, 0) * 100ms); }
+	:global(.cat--visible) .cat__foot    { animation-delay: 720ms; }
 
 	@media (prefers-reduced-motion: reduce) {
 		.cat__kicker,
 		.cat__title,
 		.cat__lede,
-		.cat__groupHead,
 		.cat-card,
 		.cat__foot {
 			opacity: 1;
@@ -207,28 +219,7 @@ const GROUPS = [
 		margin: var(--space-4) 0 var(--space-7);
 		text-wrap: pretty;
 	}
-
-	.cat__group { margin-bottom: var(--space-8); }
-	.cat__group:last-of-type { margin-bottom: 0; }
-	.cat__groupHead {
-		display: flex;
-		align-items: baseline;
-		gap: var(--space-3);
-		margin-bottom: var(--space-5);
-		padding-bottom: var(--space-2);
-		border-bottom: 1px solid var(--rule-strong);
-	}
-	.cat__groupName {
-		font-size: var(--type-h3);
-		color: var(--text);
-		margin: 0;
-	}
-	.cat__groupHint {
-		font-family: var(--font-serif);
-		font-style: italic;
-		font-size: var(--type-small);
-		color: var(--text-quiet);
-	}
+	.cat__lede .mono { color: var(--washi-soft); }
 
 	.cat__cards {
 		display: grid;
@@ -266,6 +257,7 @@ const GROUPS = [
 		font-size: var(--type-tiny);
 		color: var(--text-distant);
 		letter-spacing: 0.04em;
+		text-align: right;
 	}
 
 	.cat-card__when {
@@ -287,6 +279,8 @@ const GROUPS = [
 	}
 	.cat-card__stage { color: var(--text-quiet); }
 	.cat-card__stage--fanout { color: var(--sage); }
+	.cat-card__stage--gate { color: var(--ochre); }
+	.cat-card__stage--you { color: var(--ochre); }
 	.cat-card__arrow { color: var(--text-distant); }
 
 	.cat-card__traits {
@@ -311,6 +305,7 @@ const GROUPS = [
 		color: var(--text-quiet);
 		margin: var(--space-7) 0 0;
 	}
+	.cat__foot--onramp { margin-top: var(--space-3); }
 	.cat__foot code { color: var(--washi-soft); }
 	.cat__footArrow { color: var(--ochre); }
 

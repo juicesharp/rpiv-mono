@@ -3,9 +3,11 @@
 // correct ≠ aligned, keep the driver in the loop — with install front-loaded
 // so a first-time visitor can start within one scroll.
 // Shape: thesis (AltHero, AltThesis) → start (Install, AltFirstRun) → depth
-// (WorkflowCatalog, AltSurface, SiblingGrid) → economics + direction
-// (AltModels, AltRoadmap) → SetupTrace.
-// The previous mechanism-first landing is archived at /classic.
+// (WorkflowCatalog, InsideBuild — the anatomy plate + paradigm positioning,
+// AltSurface, SiblingGrid) → economics + direction (AltModels, AltRoadmap)
+// → SetupTrace.
+// The previous mechanism-first landing (/classic) was retired with the
+// three-pipeline release; git history keeps it.
 import Base from "../layouts/Base.astro";
 import Nav from "../components/Nav.astro";
 import ScrollIndicator from "../components/ScrollIndicator.astro";
@@ -14,6 +16,7 @@ import AltThesis from "../components/AltThesis.astro";
 import Install from "../components/Install.astro";
 import AltFirstRun from "../components/AltFirstRun.astro";
 import WorkflowCatalog from "../components/WorkflowCatalog.astro";
+import InsideBuild from "../components/InsideBuild.astro";
 import AltSurface from "../components/AltSurface.astro";
 import SiblingGrid from "../components/SiblingGrid.astro";
 import AltModels from "../components/AltModels.astro";
@@ -23,7 +26,7 @@ import SetupTrace from "../components/SetupTrace.astro";
 
 <Base
 	title="rpiv-pi · keep the driver in the loop"
-	description="LLMs produce correct code, not aligned code. rpiv-pi is a pipeline of skills, workflows, and subagents for the Pi coding agent that keeps an experienced driver in the loop at LLM speed."
+	description="LLMs produce correct code, not aligned code. rpiv-pi gives the Pi coding agent pipelines of contract-carrying skills — deterministic gates, one human design review, your brief preserved verbatim — keeping an experienced driver in the loop at LLM speed."
 >
 	<Nav />
 	<ScrollIndicator />
@@ -33,6 +36,7 @@ import SetupTrace from "../components/SetupTrace.astro";
 		<Install />
 		<AltFirstRun />
 		<WorkflowCatalog />
+		<InsideBuild />
 		<AltSurface />
 		<SiblingGrid />
 		<AltModels />

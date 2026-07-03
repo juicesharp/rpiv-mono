@@ -4,38 +4,50 @@
 // trace of what the runner does and — crucially for the thesis — where the
 // driver decides. The "you" hanko ticks mark the human moments.
 const COMMANDS = [
-	{ cmd: "/wf", note: "preview every flow: what each one chains, shortest to deepest." },
-	{ cmd: "/wf build", note: "inspect the graph before committing to it: stages, gate, loop." },
+	{ cmd: "/wf", note: "preview every pipeline: what each one chains, shortest to deepest." },
+	{ cmd: "/wf build", note: "inspect the graph before committing to it: 19 stages, three gates, one design review." },
 	{ cmd: "/wf build “describe your change”", note: "run the whole chain. Your brief is the only required input." },
 ];
 
+// build's seven acts (19 runtime stages). `you` renders the driver badge —
+// hollow ▢ where ask_user_question reaches you only when the code can't
+// decide, solid ■ at the guaranteed design gate; `gate` renders the act's
+// quality-gate badge.
 const TRACE = [
 	{
-		name: "research",
-		note: "subagents fan out under fresh context; grounded questions come back to you before the doc is written.",
-		you: true,
+		name: "capture",
+		note: "your brief written to disk byte-for-byte — no LLM touches it — then research grounds it in your codebase, and ambiguities come back to you as concrete options. Every gate downstream grades against your exact words.",
+		you: "▢ your answers",
 	},
 	{
-		name: "blueprint",
-		note: "the plan pauses at micro-checkpoints. Your call before any code is written.",
-		you: true,
+		name: "slice",
+		note: "the brief cut into independent vertical slices, each chewable by one design pass. You confirm the cut once — freezing the coverage units a script then conserves: cycle-free, no piece of your ask dropped.",
+		you: "▢ your cut",
+		gate: "gate · 0 LLM calls",
 	},
 	{
-		name: "implement",
-		note: "fans out across the plan's phases, each verified against its success criteria.",
+		name: "design",
+		note: "one fresh session per slice, dependency-ordered, running simultaneously — every lane live in the console. A genuine design fork — one the research can't settle — reaches you without halting the others.",
+		you: "▢ your forks",
 	},
 	{
-		name: "validate",
-		note: "the finished work re-checked phase by phase against the plan.",
+		name: "review",
+		note: "the one guaranteed pause: every slice's design in one summary — accept, or adjust interfaces and data types and the edit cascades to its dependents before synthesis.",
+		you: "■ your design gate",
 	},
 	{
-		name: "code-review",
-		note: "gates on a contract-validated blockers_count and loops back until it reads zero.",
-		loop: true,
+		name: "plan",
+		note: "per-cluster sub-plans merge into one plan; a five-dimension panel grades it — completeness and correctness judged against your verbatim brief — before any code exists.",
+		gate: "gate ×5 · ↺ fix",
 	},
 	{
-		name: "commit",
-		note: "grouped logically, message written, your name on the diff.",
+		name: "code",
+		note: "implement-ready code elaborated per phase in parallel, spliced into the plan by a script, and the code-bearing plan re-graded.",
+		gate: "gate · ↺ fix",
+	},
+	{
+		name: "land",
+		note: "phases implemented in order, the result validated against your brief, committed with your name on the diff.",
 	},
 ];
 ---
@@ -73,8 +85,8 @@ const TRACE = [
 							<div class="fr__body">
 								<p class="fr__name mono">
 									{t.name}
-									{t.you && <span class="fr__you mono">■ you</span>}
-									{t.loop && <span class="fr__loop mono">↺ ≤ 3 passes</span>}
+									{t.you && <span class="fr__you mono">{t.you}</span>}
+									{t.gate && <span class="fr__gate mono">{t.gate}</span>}
 								</p>
 								<p class="fr__note">{t.note}</p>
 							</div>
@@ -202,7 +214,7 @@ const TRACE = [
 		color: var(--ochre);
 		letter-spacing: 0.1em;
 	}
-	.fr__loop {
+	.fr__gate {
 		font-size: var(--type-tiny);
 		color: var(--text-distant);
 		letter-spacing: 0.06em;
