@@ -30,11 +30,11 @@ outputs:
 key_steps:
   - title: Read directly-mentioned files first
     rationale: Locks domain knowledge from existing docs into the main context before any subagent runs, so later passes do not contradict what the team already wrote down.
-  - title: Pass 1 — map tree and detect architecture in parallel
-    rationale: Two locator agents — one tree-mapper, one architecture-sniffer — run side by side so layout discovery costs one round-trip instead of two.
+  - title: Pass 1. Map tree and detect architecture in parallel
+    rationale: Two locator agents (one tree-mapper, one architecture-sniffer) run side by side so layout discovery costs one round-trip instead of two.
   - title: Apply guidance-depth rules; propose targets
-    rationale: A two-pass selection (top-level layers, then opt-in decomposition of composite layers) keeps the target list grounded in folder shape rather than guesswork, and is shown to the user for confirmation before any analysis spend.
-  - title: Pass 2 — analyzer + pattern-finder per target (parallel)
+    rationale: A two-pass selection (top-level layers, then opt-in decomposition of composite layers) keeps the target list grounded in folder shape rather than guesswork. The list is shown to the user for confirmation before any analysis spend.
+  - title: Pass 2. Analyzer + pattern-finder per target (parallel)
     rationale: One `codebase-analyzer` answers the "what is this layer for" questions; one `codebase-pattern-finder` extracts idiomatic code shapes. Running both per target in parallel produces the deepest signal per token.
   - title: Developer checkpoint on findings
     rationale: Surfaces deprecated patterns, migrations-in-progress, and cross-layer rules that code reading alone cannot reveal. Asked one question at a time so each answer can steer the next.

@@ -7,7 +7,7 @@ when_to_use:
   - Code-review findings recommend specific plan adjustments.
   - Implementation hit a blocker that requires a phasing change.
   - Scope grew or shrank mid-flight.
-  - The change is to a **plan only** — for design changes, re-run `design`/`blueprint` to produce a fresh plan instead.
+  - The change is to a **plan only**. For design changes, re-run `design`/`blueprint` to produce a fresh plan instead.
 inputs:
   - name: plan path
     required: true
@@ -21,14 +21,14 @@ outputs:
     path: same `.rpiv/artifacts/plans/*.md`
     format: structure preserved, surgical changes applied
 key_steps:
-  - title: Validate inputs — plan path vs. review path
-    rationale: "Common mistake — passing a review artifact instead of the target plan. `revise` detects this and asks for the plan path explicitly so the wrong file is never edited."
+  - title: Validate inputs (plan path vs. review path)
+    rationale: "Common mistake: passing a review artifact instead of the target plan. `revise` detects this and asks for the plan path explicitly so the wrong file is never edited."
   - title: Read the existing plan completely
     rationale: Surgical edits require full context of phases, ordering constraints, and success criteria. Reading without limit/offset prevents partial-view rewrites.
   - title: Categorize the requested change
-    rationale: Each change category — add phase, adjust criteria, trim scope, split phase — maps to a different edit shape. Picking the category first prevents a one-line note from triggering a wholesale rewrite.
+    rationale: Each change category (add phase, adjust criteria, trim scope, split phase) maps to a different edit shape. Picking the category first prevents a one-line note from triggering a wholesale rewrite.
   - title: Ground the change against the live codebase
-    rationale: Even surgical changes get re-checked against current code state — the codebase may have moved since the plan was written.
+    rationale: Even surgical changes get re-checked against current code state. The codebase may have moved since the plan was written.
   - title: Apply via `Edit`, keep untouched sections intact
     rationale: In-place edits via `Edit` preserve byte-for-byte the rest of the file, so diffs are small and reviewable and the plan's identity stays stable.
 related:

@@ -30,7 +30,7 @@ Inside your current session, when you're ready to pause:
 
 **Output**: a handoff document under `.rpiv/artifacts/handoffs/<YYYY-MM-DD_HH-MM-SS>_<topic>.md` (timestamp-prefixed, like every other artifact skill).
 
-`create-handoff` sits to the side of the main chain — only `implement` surfaces it, as an optional next step for session pauses, and no skill *requires* a handoff to continue. You reach for it deliberately: invoke `/skill:create-handoff` yourself, or let the agent surface it when the session is getting large or you ask to wrap up. Pausing is a decision you make, not a step the chain takes on its own.
+`create-handoff` sits to the side of the main chain. Only `implement` surfaces it, as an optional next step for session pauses, and no skill *requires* a handoff to continue. You reach for it deliberately: invoke `/skill:create-handoff` yourself, or let the agent surface it when the session is getting large or you ask to wrap up. Pausing is a decision you make, not a step the chain takes on its own.
 
 ## Resume from a handoff
 

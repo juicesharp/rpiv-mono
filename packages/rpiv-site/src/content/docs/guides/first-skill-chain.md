@@ -11,7 +11,7 @@ This guide walks **the mid-size feature path** on a single example: **adding a p
 
 > **Reset between every step.** Run `/new` (or your harness's equivalent) before each `/skill:*` invocation below. The chain hands off through markdown files in `.rpiv/artifacts/`, not the chat transcript. See [Reset between skills](/docs/guides/reset-between-skills) for why.
 
-> **A note on filenames.** The artifact paths below are shown as `…/password-reset.md` for readability. On disk every skill timestamp-prefixes its output — the real file is `<YYYY-MM-DD_HH-MM-SS>_password-reset.md` — so multiple runs on the same topic never clobber each other.
+> **A note on filenames.** The artifact paths below are shown as `…/password-reset.md` for readability. On disk every skill timestamp-prefixes its output (the real file is `<YYYY-MM-DD_HH-MM-SS>_password-reset.md`), so multiple runs on the same topic never clobber each other.
 
 ## 01 · Discover *(optional)*
 

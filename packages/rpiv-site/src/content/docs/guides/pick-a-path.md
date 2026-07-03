@@ -33,7 +33,7 @@ The recipes below run the same skills in the same order whether you invoke them 
 
 The runner writes artifacts under `.rpiv/artifacts/` exactly as the hand-driven chain does, plus an audited JSONL trail per run under `.rpiv/workflows/runs/<run-id>.jsonl` you can resume from with `/wf @<run-id>`. Routing is typed: `vet` and `polish` route on the `blockers_count` field `code-review`'s contract supplies, and `build`'s three gates fold per-dimension grade verdicts. The runner picks the next stage from the value, no eyeballing required. Fanout stages run their units as simultaneous Pi child sessions with a live lane console. `implement` fans out one unit per `## Phase N:` heading in the inherited plan and runs them serially (a plan is a patch series).
 
-Hand-drive when you want the pause between every artifact — for exploratory work, mid-flow pivots, or your first pass through a codebase. Use `/wf` once the chain's rhythm is muscle memory. → [Run a workflow](/docs/guides/run-a-workflow).
+Hand-drive when you want the pause between every artifact: for exploratory work, mid-flow pivots, or your first pass through a codebase. Use `/wf` once the chain's rhythm is muscle memory. → [Run a workflow](/docs/guides/run-a-workflow).
 
 ## Five paths by scope
 
@@ -79,7 +79,7 @@ For small fixes where research is the actual deliverable (the bug-fix and perf f
 [discover?] → blueprint → implement → validate → commit
 ```
 
-The gap between "fix in chat" and a full research-first chain. When the change is bigger than a single diff you'd apply in conversation but the approach is settled — you already know which files, which patterns, which seams — skip `research` entirely and start at `blueprint`. `blueprint` collapses design and planning into one pass; `implement` does the work; `validate` confirms the deliverable; commit.
+The gap between "fix in chat" and a full research-first chain. When the change is bigger than a single diff you'd apply in conversation but the approach is settled (you already know which files, which patterns, which seams), skip `research` entirely and start at `blueprint`. `blueprint` collapses design and planning into one pass; `implement` does the work; `validate` confirms the deliverable; commit.
 
 No `code-review` either. This shape works precisely because there's nothing for review to surface that you wouldn't catch in `validate` or the diff itself.
 
