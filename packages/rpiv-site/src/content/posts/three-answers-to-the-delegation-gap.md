@@ -11,6 +11,8 @@ Anthropic's 2026 agentic-coding trends report names the industry's open wound pr
 
 Three product answers to that gap are on the table right now. From a distance they look similar: all of them orchestrate multiple agent sessions toward a goal. But they make opposite bets on the questions that matter. *Who holds the plan? Who checks the work? When do you get asked?*
 
+This comparison is scored for one job, the coding problem in its hardest everyday form: shipping a feature into a codebase you have to live with. On other work the table tilts differently, and we will say where.
+
 ## Answer one: the model writes the process
 
 Claude Code's dynamic workflows have the model author a fresh orchestration script per run: fan-out, verifier agents that adversarially cross-check findings, grader loops. The script executes in the background. It is genuinely impressive machinery, and its own docs state its human-interaction contract plainly: **no mid-run user input**. If you want sign-off between stages, you split the work into separate runs. The plan is held by a script the model wrote minutes ago. Verification is models checking models. You are asked at launch, and then not at all.
@@ -36,6 +38,24 @@ rpiv's `build` makes the opposite bet on all three questions.
 **When are you asked?** Only when the code can't decide: a research ambiguity, the slice-cut confirm, a genuine design fork. And always exactly once, at the design review. Every slice's design arrives in one consolidated summary. Adjusting an interface cascades to its dependents before synthesis. One high-leverage decision instead of either extreme: not the approval fatigue of confirming every step, not the blind autonomy of confirming none.
 
 The economics fall out of the same structure. Everything between gates fans out: designs per slice, panel dimensions, code per phase, each in a session that carries only its slice of the problem. The rigor is parallel rather than sequential. And the bounded context per session is precisely why affordable open-weight models hold up in the drafting seats.
+
+## Side by side
+
+Scored for the job named above: a feature landing in a codebase you own.
+
+| | Dynamic workflows | /goal | rpiv build |
+|---|---|---|---|
+| Who writes the process | The model, fresh each run | Nobody; the agent free-runs | You; versioned code, the same graph every run |
+| Who checks the work | Models check models | One evaluator judges a stop condition | Programs, then fresh-context panels, then you |
+| Intent custody | Your prompt, read once by the script-writer | A condition you paraphrased | Your brief, byte-for-byte, conserved and graded against |
+| When you're asked | At launch, then never | Never | On real ambiguity, plus one guaranteed design gate |
+| Repeatability | A new harness every run | No process to repeat | The same nineteen stages every run |
+| Cost profile | High; token use is their own stated caveat | Low overhead, unbounded runtime | Heavy for small changes; parallel and cheap-model-friendly at scale |
+| Best at | Breadth: audits, sweeps, mass migrations | Measurable end states | A feature you must live with |
+
+## What ours costs
+
+Fairness cuts both ways, so here is our side of the ledger. `build` is heavy machinery: nineteen stages and two five-dimension panels are the wrong tool for a two-file fix. That is why the ladder below it exists (chat, `/skill:blueprint`, `/wf vet`), and the honest advice is to stay low on it until decomposition itself is the work. The design gate means the run needs you once; it is not overnight fire-and-forget. There are exactly three shapes. Work that is neither a brief, a diff, nor an architecture review means authoring your own graph, or reaching for their tools. And mass parallel mutation in isolated worktrees, the headline migration story on their side, is theirs today: worktree isolation sits on our roadmap, not in the box.
 
 ## Pick by the work, not the brand
 
