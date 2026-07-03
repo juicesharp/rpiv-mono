@@ -1,5 +1,8 @@
 ## [Unreleased]
 
+### Fixed
+- Moved `typebox` from `peerDependencies` to `dependencies` (`^1.1.24`, matching the Pi host's range). Under installers that don't materialise peer deps (Pi's flat `~/.pi/agent/npm` layout, pnpm strict), `config.ts`'s `import "typebox"` / `import "typebox/value"` failed with `ERR_MODULE_NOT_FOUND`, taking down every consumer extension. Note: `typebox` here is the unscoped `1.x` package the Pi host depends on, not `@sinclair/typebox@0.34.x` (#79).
+
 ## [1.20.0] - 2026-06-15
 
 ## [1.19.1] - 2026-06-10

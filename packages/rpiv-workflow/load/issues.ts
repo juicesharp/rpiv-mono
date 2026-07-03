@@ -1,7 +1,7 @@
 /**
  * The loader's issue vocabulary — a LEAF module so `merge.ts` (and any other
  * pipeline stage) can name the `Issue` shape without importing the
- * orchestrator back (the one back-edge the load pipeline used to have, G4).
+ * orchestrator back.
  *
  * `layer`/`path` attribution lives ONLY here: `validateWorkflow` knows
  * nothing about config layers; the loader is the seam that has both
@@ -16,7 +16,7 @@ import type { WorkflowValidationIssue } from "../validate/issue.js";
  * Where a load issue originated: one of the config layers, or `"framework"`
  * — the loader's own machinery (skill-contract providers, outcome derivers,
  * collision tracking). The framework origin is honest attribution for
- * errors no config file caused; `"built-in"` used to be the dumping ground.
+ * errors no config file caused.
  */
 export type LoadIssueOrigin = ConfigLayer | "framework";
 

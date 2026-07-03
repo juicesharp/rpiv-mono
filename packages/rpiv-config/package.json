@@ -33,7 +33,7 @@
 	"exports": {
 		".": "./index.ts"
 	},
-	"peerDependencies": {
-		"typebox": "*"
+	"dependencies": {
+		"typebox": "^1.1.24"
 	}
 }

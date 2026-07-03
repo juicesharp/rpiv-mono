@@ -7,6 +7,19 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- RPC-mode questionnaire rendering (#100, contributed by @panicarada, adapted to the current answer vocabulary): hosts where `ctx.ui.custom()` cannot render (VSCode pendant, Zed, Paseo — issue #78) now walk the questions one native dialog at a time via `ctx.ui.select()`/`ctx.ui.input()` (`rpc-fallback.ts`), reusing the shared response envelope. Single-select keeps a native dropdown with the "Type something." sentinel appended; previews are folded into the dialog title; multi-select takes comma-separated numbers, treats any non-index input as a typed custom answer (the multi-select "Type something." escape), and an empty submit commits an empty selection. Dismissing any dialog cancels the questionnaire (Esc parity). The fallback triggers two ways: a fast path on `ctx.mode === "rpc"` (pi ≥0.79) that skips the TUI render-graph import, and a capability backstop when `custom()` resolves `undefined` on RPC builds that predate `ctx.mode`. New dialog strings are localized (`rpc.*` keys in `locales/`).
+- Configurable collapse/expand shortcut via the `collapseKey` field in `~/.config/rpiv-ask-user-question/config.json` (#98). Default is `ctrl+]` (unchanged for backward compatibility); users on keyboard layouts where `]` is on the shifted layer — Latin American `es-AR`/`es-MX`, several European layouts, Dvorak — can override to a more reachable key (e.g. `ctrl+}`, `alt+o`, `ctrl+shift+h`). Pass `"off"` to disable the shortcut entirely. The spec format matches pi-coding-agent keybinding ids (`modifier+key`).
+- One-time `ask_user_question hidden — press <key> to reopen` notification when the questionnaire is first hidden, so users remember the toggle key without a permanent on-screen affordance.
+
+### Changed
+- RPC hosts are no longer stripped of `ask_user_question` by the reconciler (partially reverts the #78 handling): with the dialog-walker fallback the tool is functional there, so `ctx.hasUI` is the only strip signal again. The `no_custom_ui` error is now returned only when the host has neither `custom()` rendering nor the select/input dialog primitives.
+- Collapsing the questionnaire overlay now calls `OverlayHandle.setHidden(true)` instead of toggling a visual-only `state.collapsed` flag (#98). The overlay is fully removed from pi-tui's overlay stack, so overlay-aware consumers (e.g. `pi-station`) correctly detect the modal as hidden and resume normal chat scroll while the user reads the transcript. The toggle key is also captured at the raw terminal level via `ctx.ui.onTerminalInput`, so it still works when the overlay is hidden (pi-tui does not deliver input to a hidden overlay's `component.handleInput`). Note the knock-on behaviour changes while hidden: keyboard focus returns to the chat editor (previously the collapsed overlay kept focus and swallowed all keys), Esc no longer cancels the questionnaire (press the collapse key to reopen it first), and the persistent one-line `Ctrl+] to expand` hint row is replaced by the one-shot notification.
+- `collapseKey` specs are validated against pi-tui's actual key grammar (known modifiers + a single character or named special key). Typo'd specs like `ctr+]` fall back to the default instead of degenerating into a bare-`]` match that would swallow every `]` keystroke.
+
+### Fixed
+- Moved `typebox` from `peerDependencies` to `dependencies` (`^1.1.24`, matching the Pi host's range) so the tool's parameter schema resolves under installers that don't materialise peer deps. Fixes `ERR_MODULE_NOT_FOUND: typebox` on standalone consumer installs (#79).
+
 ## [1.20.0] - 2026-06-15
 
 ### Added

@@ -11,10 +11,9 @@
  * `default` that doesn't name an existing workflow records an error and
  * falls through to the next layer.
  *
- * Historic note: this used to fall back to a hard-coded `"mid"` sentinel,
- * which encoded an rpiv-pi-specific bias inside a skill-agnostic package.
- * Siblings that want to ship a preferred default set it via the
- * config-file envelope at their own load time.
+ * This package is skill-agnostic: there is no hard-coded default, so a
+ * `"mid"`-sentinel bias never leaks into it. Siblings that want to ship a
+ * preferred default set it via the config-file envelope at their own load time.
  */
 
 import type { ConfigLayer } from "../layers.js";

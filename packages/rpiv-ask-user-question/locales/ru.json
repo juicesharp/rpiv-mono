@@ -2,7 +2,6 @@
   "_meta.notes": "Auto-translated draft. Native-speaker review welcome via PR. TUI symbols (↑/↓, ⚠) and key names (Enter, Esc, Tab, Space, n) are universal CLI conventions and stay untranslated.",
 
   "sentinel.other": "Введите что-нибудь.",
-  "sentinel.chat": "Обсудить это",
   "sentinel.next": "Далее",
 
   "submit.label": "Отправить ответы",
@@ -21,7 +20,8 @@
 
   "preview.no_preview": "Предпросмотр недоступен",
   "preview.notes_affordance": "Заметки: нажмите n, чтобы добавить заметки",
+  "notes.header": "Заметки:",
 
-  "chat.summary": "Пользователь хочет обсудить это",
-  "notes.header": "Заметки:"
+  "rpc.multi_instructions": "Введите номера всех подходящих вариантов через запятую (например, \"1,3\") или введите свой ответ текстом.",
+  "rpc.custom_answer_title": "Введите свой ответ:"
 }

@@ -2,7 +2,6 @@
   "_meta.notes": "Auto-translated draft. Native-speaker review welcome via PR. TUI symbols (↑/↓, ⚠) and key names (Enter, Esc, Tab, Space, n) are universal CLI conventions and stay untranslated.",
 
   "sentinel.other": "Escribe algo.",
-  "sentinel.chat": "Conversar sobre esto",
   "sentinel.next": "Siguiente",
 
   "submit.label": "Enviar respuestas",
@@ -21,7 +20,8 @@
 
   "preview.no_preview": "Vista previa no disponible",
   "preview.notes_affordance": "Notas: pulsa n para añadir notas",
+  "notes.header": "Notas:",
 
-  "chat.summary": "El usuario quiere conversar sobre esto",
-  "notes.header": "Notas:"
+  "rpc.multi_instructions": "Introduce los números de todas las opciones que apliquen, separados por comas (p. ej. \"1,3\"), o escribe una respuesta propia como texto.",
+  "rpc.custom_answer_title": "Escribe tu respuesta:"
 }

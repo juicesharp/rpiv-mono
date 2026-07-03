@@ -85,7 +85,7 @@ const ModelEntrySchema = Type.Union(
 );
 
 /**
- * Per-preset block: stages-only. Per Decision 4, per-preset agent overrides are
+ * Per-preset block: stages-only. Per-preset agent overrides are
  * a non-goal — the agent-sync seam at `agents.ts:processSourceEntries` has no
  * workflow context at frontmatter-injection time. `additionalProperties: false`
  * rejects per-preset `defaults` or `agents` blocks at validation.
@@ -276,10 +276,10 @@ export function getAgentModelConfig(config: ModelsConfig, agentName: string): Re
 }
 
 /**
- * Per-stage cascade lookup, used by the workflow lifecycle path (Slice 3) and
- * the standalone-skill bracket (Slice 4). Object-arg shape supersedes
- * positional widening as new axes land (positional
- * `(config, stage, workflow?, skill?)` doesn't scale).
+ * Per-stage cascade lookup, used by the workflow lifecycle path and the
+ * standalone-skill bracket. Object-arg shape supersedes positional widening
+ * as new axes land (positional `(config, stage, workflow?, skill?)` doesn't
+ * scale).
  *
  * Cascade (most-specific first):
  *   1. presets[workflow].stages[stage]   — preset-stage authored

@@ -64,7 +64,7 @@ export function selectTaskSubjectById(state: TaskState, id: number): string | un
  * Overlay layout decision. Encapsulates the "drop completed first, then
  * truncate non-completed tail" rule pre-refactor lived in
  * `todo-overlay.ts:144-188`. `budget` is the body-slot count (caller passes
- * `MAX_WIDGET_LINES - 1` to reserve the heading row); on overflow the
+ * `getMaxWidgetLines() - 1` to reserve the heading row); on overflow the
  * selector reserves one more slot internally for the summary row. Returns
  * the visible task slice plus the overflow summary parts.
  */

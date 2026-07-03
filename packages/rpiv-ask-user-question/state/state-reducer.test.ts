@@ -6,7 +6,7 @@ import {
 	makeQuestion,
 	makeQuestionnaireState as makeState,
 } from "../test-fixtures.js";
-import type { QuestionAnswer } from "../tool/types.js";
+import type { QuestionAnswer, QuestionData } from "../tool/types.js";
 import type { QuestionnaireAction } from "./key-router.js";
 import { reduce } from "./state-reducer.js";
 
@@ -46,7 +46,6 @@ describe("reduce — tab_switch", () => {
 		expect(r.state.currentTab).toBe(1);
 		expect(r.state.optionIndex).toBe(0);
 		expect(r.state.notesVisible).toBe(false);
-		expect(r.state.chatFocused).toBe(false);
 		expect(r.effects).toEqual([
 			{ kind: "set_notes_focused", focused: false },
 			{ kind: "set_notes_value", value: "" },
@@ -103,38 +102,6 @@ describe("reduce — confirm", () => {
 		expect(r.state.currentTab).toBe(1);
 		expect(r.effects.some((e) => e.kind === "set_notes_focused")).toBe(true);
 		expect(r.effects.some((e) => e.kind === "done")).toBe(false);
-	});
-
-	it("chat-kind answer emits done immediately, even with autoAdvanceTab set", () => {
-		const action: QuestionnaireAction = {
-			kind: "confirm",
-			answer: { questionIndex: 0, question: "Pick one", kind: "chat", answer: "Chat about this" },
-			autoAdvanceTab: 1,
-		};
-		const ctx = makeCtx({ questions: [makeQuestion(), makeQuestion()], itemsByTab: [itemsRegular, itemsRegular] });
-		const r = reduce(makeState(), action, ctx);
-		expect(r.state.currentTab).toBe(0);
-		expect(r.effects).toEqual([{ kind: "done", result: { answers: [r.state.answers.get(0)!], cancelled: false } }]);
-	});
-
-	it("chat-kind answer preserves prior tabs' answers in the done result", () => {
-		const priorAnswer = { questionIndex: 0, question: "Q1", kind: "option" as const, answer: "A" };
-		const state = makeState({ currentTab: 1, answers: new Map([[0, priorAnswer]]) });
-		const action: QuestionnaireAction = {
-			kind: "confirm",
-			answer: { questionIndex: 1, question: "Q2", kind: "chat", answer: "Chat about this" },
-			autoAdvanceTab: 2,
-		};
-		const ctx = makeCtx({
-			questions: [makeQuestion({ question: "Q1" }), makeQuestion({ question: "Q2" })],
-			itemsByTab: [itemsRegular, itemsRegular],
-		});
-		const r = reduce(state, action, ctx);
-		const doneEffect = r.effects.find((e) => e.kind === "done");
-		expect(doneEffect).toBeDefined();
-		const result = (doneEffect as { kind: "done"; result: { answers: unknown[]; cancelled: boolean } }).result;
-		expect(result.cancelled).toBe(false);
-		expect(result.answers).toHaveLength(2);
 	});
 });
 
@@ -259,20 +226,7 @@ describe("reduce — notes_enter / notes_exit / notes_forward", () => {
 	});
 });
 
-describe("reduce — focus_chat / focus_options / submit_nav / ignore", () => {
-	it("focus_chat sets chatFocused", () => {
-		const r = reduce(makeState(), { kind: "focus_chat" }, makeCtx());
-		expect(r.state.chatFocused).toBe(true);
-		expect(r.effects).toEqual([]);
-	});
-
-	it("focus_options(optionIndex=0) clears chatFocused and emits clear_input_buffer", () => {
-		const r = reduce(makeState({ chatFocused: true }), { kind: "focus_options", optionIndex: 0 }, makeCtx());
-		expect(r.state.chatFocused).toBe(false);
-		expect(r.state.optionIndex).toBe(0);
-		expect(r.effects).toEqual([{ kind: "clear_input_buffer" }]);
-	});
-
+describe("reduce — submit_nav / ignore", () => {
 	it("submit_nav updates submitChoiceIndex with no effects", () => {
 		const r = reduce(makeState(), { kind: "submit_nav", nextIndex: 1 }, makeCtx());
 		expect(r.state.submitChoiceIndex).toBe(1);
@@ -287,17 +241,56 @@ describe("reduce — focus_chat / focus_options / submit_nav / ignore", () => {
 	});
 });
 
-describe("reduce — toggle_collapsed", () => {
-	it("flips false → true with no effects (rendering shrinks on the next adapter.apply tick)", () => {
-		const r = reduce(makeState(), { kind: "toggle_collapsed" }, makeCtx());
-		expect(r.state.collapsed).toBe(true);
-		expect(r.effects).toEqual([]);
+describe("confirmHandler — custom answer clears multiSelectChecked (mutual exclusivity)", () => {
+	const multiQ: QuestionData = {
+		question: "areas?",
+		header: "H",
+		multiSelect: true,
+		options: [
+			{ label: "FE", description: "f" },
+			{ label: "BE", description: "b" },
+		],
+	};
+
+	it("custom confirm on a multi-select tab clears pre-existing checks", () => {
+		const state = makeState({
+			currentTab: 0,
+			multiSelectChecked: new Set([0, 1]),
+		});
+		const ctx = makeCtx({ questions: [multiQ] });
+		const result = reduce(
+			state,
+			{ kind: "confirm", answer: { questionIndex: 0, question: "areas?", kind: "custom", answer: "custom-text" } },
+			ctx,
+		);
+		expect(result.state.multiSelectChecked.size).toBe(0);
+		expect(result.state.answers.get(0)?.kind).toBe("custom");
 	});
 
-	it("flips true → false (expand round-trip)", () => {
+	it("option confirm on a single-select tab leaves multiSelectChecked untouched (no spurious clear)", () => {
+		const singleQ: QuestionData = { question: "pick?", header: "H", options: [{ label: "A", description: "a" }] };
+		const state = makeState({ currentTab: 0, multiSelectChecked: new Set([0]) });
+		const ctx = makeCtx({ questions: [singleQ] });
+		const result = reduce(
+			state,
+			{ kind: "confirm", answer: { questionIndex: 0, question: "pick?", kind: "option", answer: "A" } },
+			ctx,
+		);
+		expect(result.state.multiSelectChecked.size).toBe(1);
+	});
+});
+
+describe("reduce — toggle_collapsed", () => {
+	it("flips false → true and emits set_overlay_hidden(true) so the runtime hides the overlay", () => {
+		const r = reduce(makeState(), { kind: "toggle_collapsed" }, makeCtx());
+		expect(r.state.collapsed).toBe(true);
+		expect(r.effects).toEqual([{ kind: "set_overlay_hidden", hidden: true }]);
+	});
+
+	it("flips true → false (expand round-trip) and emits set_overlay_hidden(false)", () => {
 		const r = reduce(makeState({ collapsed: true }), { kind: "toggle_collapsed" }, makeCtx());
 		expect(r.state.collapsed).toBe(false);
-		expect(r.effects).toEqual([]);
+		expect(r.effects).toEqual([{ kind: "set_overlay_hidden", hidden: false }]);
 	});
 
 	it("preserves orthogonal fields — collapse is a pure render-mode flip, never touches answers/optionIndex/notes", () => {
@@ -313,5 +306,6 @@ describe("reduce — toggle_collapsed", () => {
 		expect(r.state.notesVisible).toBe(true);
 		expect(r.state.notesDraft).toBe("in-flight");
 		expect(r.state.answers).toBe(answers);
+		expect(r.effects).toEqual([{ kind: "set_overlay_hidden", hidden: true }]);
 	});
 });

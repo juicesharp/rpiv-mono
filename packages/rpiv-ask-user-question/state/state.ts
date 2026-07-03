@@ -10,7 +10,6 @@ export interface QuestionnaireState {
 	optionIndex: number;
 	inputMode: boolean;
 	notesVisible: boolean;
-	chatFocused: boolean;
 	answers: ReadonlyMap<number, QuestionAnswer>;
 	multiSelectChecked: ReadonlySet<number>;
 	/**
@@ -47,4 +46,10 @@ export interface QuestionnaireRuntime {
 	isMulti: boolean;
 	currentItem: WrappingSelectItem | undefined;
 	items: readonly WrappingSelectItem[];
+	/**
+	 * Key spec for the collapse/expand shortcut, e.g. `"ctrl+]"` or `"alt+o"`. Resolved
+	 * from `AskUserQuestionConfig.collapseKey` (or the package default). When `"off"`,
+	 * the collapse shortcut is disabled.
+	 */
+	collapseKey: string;
 }

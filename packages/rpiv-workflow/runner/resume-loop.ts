@@ -19,10 +19,11 @@
 
 import { auditCtxFor, failedArgs, recordTerminalFailure } from "../audit.js";
 import { resolveSkill } from "../chain-state.js";
-import { announceLoopStart, type LoopDeps, runLoop } from "../loop.js";
-import { effectiveLoopOf } from "../loop-constructors.js";
-import { type LoopEntry, loopStrategyOf } from "../loop-kinds.js";
-import { FAIL_MISSING_ARTIFACT, MSG_RESUME_LOOP_MISMATCH } from "../messages.js";
+import { announceLoopStart, pendingFanoutIndices, runFanoutResume, runLoop } from "../loop.js";
+import { effectiveLoopOf, freezesEntryArgsOf } from "../loop-constructors.js";
+import { buildLoopEntry, type LoopDeps, sequentialStrategyOf } from "../loop-kinds.js";
+import { validateUnitDeps } from "../loop-waves.js";
+import { FAIL_MISSING_ARTIFACT, type FailureText, MSG_RESUME_LOOP_MISMATCH } from "../messages.js";
 import type { RunContext, WorkflowHostContext } from "../types.js";
 import type { LoopResumePoint } from "./resume.js";
 
@@ -47,7 +48,7 @@ export async function resumeLoopStage(
 	// skill args exist) and the driver re-resolves the stage's own `prompt` at
 	// round-0 dispatch.
 	let entryArgs = "";
-	if (loop.kind === "assess") {
+	if (freezesEntryArgsOf(loop)) {
 		if (point.entryArgs === undefined) {
 			await recordMissingArtifactFailure(ctx, run, point.parent, skill, idx);
 			return;
@@ -55,23 +56,54 @@ export async function resumeLoopStage(
 		entryArgs = point.entryArgs;
 	}
 
-	const entry: LoopEntry = {
-		stageIdx: idx,
-		name: point.parent,
-		skill,
-		def,
-		loop,
-		entryArtifact: point.entryArtifact,
-		entryArgs,
-		entryPair: point.entryPair,
-		units: point.units, // fanout: the fold's recomputed-and-verified list — no second compute
-	};
+	const entry = buildLoopEntry(
+		{ stageIdx: idx, name: point.parent, skill, def, loop },
+		{
+			entryArtifact: point.entryArtifact,
+			entryArgs,
+			entryPair: point.entryPair,
+			units: point.units, // fanout: the fold's recomputed-and-verified list — no second compute
+		},
+	);
 
-	// Pending-work probe (strategy table) gates the announce only — a
-	// finished-loop resume stays a pinned SILENT no-op.
-	if (await loopStrategyOf(loop.kind).hasPending(loop, point, run)) await announceLoopStart(ctx, run, entry);
+	// Fanout resume re-dispatches ONLY the still-unfilled indices in bounded
+	// parallel (folding each at its declared slot) — never a cold whole-loop
+	// re-entry, so already-completed/collected units keep their place. The
+	// announce fires iff at least one unit is pending.
+	if (loop.kind === "fanout") {
+		// Re-validate the recomputed DAG: the id-only drift guard PASSES when a user edits
+		// only a slice's `deps` (ids/titles unchanged), so a newly-introduced cycle would
+		// otherwise reach the dispatcher. guardResumeEntry catches this throw → clean failure.
+		validateUnitDeps(point.units!, point.parent);
+		const pending = pendingFanoutIndices(point.cursor, point.units!.length); // slots === undefined
+		if (pending.length > 0) await announceLoopStart(ctx, run, entry);
+		await runFanoutResume(ctx, entry, point.cursor, run, deps, pending);
+		return;
+	}
+
+	// iterate/assess: pending-work probe (strategy table) gates the announce only —
+	// a finished-loop resume stays a pinned SILENT no-op — then cold re-entry.
+	if (await sequentialStrategyOf(loop.kind).hasPending(loop, point, run)) await announceLoopStart(ctx, run, entry);
 
 	await runLoop(ctx, entry, point.cursor, run, deps);
+}
+
+/**
+ * One refusal recorder — the shared 3-step body for the two resume recorders
+ * (`recordMissingArtifactFailure` / `recordLoopDriftFailure`): resolve the
+ * terminal args + build the audit ctx + `recordTerminalFailure`. Each caller
+ * supplies its own descriptor — a `FailureText` (missing-artifact) or a
+ * `[notifyMsg, errMsg]` tuple (loop drift).
+ */
+function recordResumeRefusal(
+	ctx: WorkflowHostContext,
+	run: RunContext,
+	parent: string,
+	skill: string,
+	descriptor: FailureText | [notifyMsg: string, errMsg: string],
+): Promise<void> {
+	const args = Array.isArray(descriptor) ? failedArgs(descriptor[0], descriptor[1]) : failedArgs(descriptor);
+	return recordTerminalFailure(ctx, auditCtxFor(run, parent, skill), args);
 }
 
 /** Recorded refusal for a corrupted/truncated trail (reuses the forward preflight's messages). */
@@ -82,11 +114,7 @@ function recordMissingArtifactFailure(
 	skill: string,
 	idx: number,
 ): Promise<void> {
-	return recordTerminalFailure(
-		ctx,
-		auditCtxFor(run, parent, skill),
-		failedArgs(FAIL_MISSING_ARTIFACT(skill, idx + 1)),
-	);
+	return recordResumeRefusal(ctx, run, parent, skill, FAIL_MISSING_ARTIFACT(skill, idx + 1));
 }
 
 /**
@@ -102,9 +130,5 @@ export function recordLoopDriftFailure(
 	errMsg: string,
 ): Promise<void> {
 	const skill = resolveSkill(run.workflow.stages[parent]!, parent);
-	return recordTerminalFailure(
-		ctx,
-		auditCtxFor(run, parent, skill),
-		failedArgs(MSG_RESUME_LOOP_MISMATCH(parent), errMsg),
-	);
+	return recordResumeRefusal(ctx, run, parent, skill, [MSG_RESUME_LOOP_MISMATCH(parent), errMsg]);
 }

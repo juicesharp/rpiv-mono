@@ -7,6 +7,13 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Configurable overlay height via the `maxWidgetLines` field in `~/.config/rpiv-todo/config.json`. Defaults to `12`; values below `3` and non-numeric values fall back to the default. Takes effect on the next repaint — no `/reload` required (#101).
+
+### Fixed
+- A no-effect `update` — `status` set to its current value, or any field re-sent unchanged — now reports `No change: #N …` instead of `Updated #N`, so it is no longer indistinguishable from a real mutation. This prevents a model from re-issuing the same no-op update in a loop.
+- Moved `typebox` from `peerDependencies` to `dependencies` (`^1.1.24`, matching the Pi host's range) so the tool's parameter schema resolves under installers that don't materialise peer deps. Fixes `ERR_MODULE_NOT_FOUND: typebox` on standalone consumer installs (#79).
+
 ## [1.20.0] - 2026-06-15
 
 ### Added

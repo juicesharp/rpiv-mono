@@ -17,8 +17,9 @@ import {
 	FAIL_SKILL_NOT_REGISTERED,
 	MSG_STAGE_THREW,
 } from "../messages.js";
+import { readName } from "../stage-def.js";
 import type { RunContext } from "../types.js";
-import { StagePreflightError } from "./errors.js";
+import { haltPreflight, invariantPreflight } from "./errors.js";
 import type { ResolvedStage } from "./resolve-stage.js";
 
 /**
@@ -34,7 +35,6 @@ import type { ResolvedStage } from "./resolve-stage.js";
 export function runSingleStagePreflights(stage: ResolvedStage, run: RunContext): void {
 	ensureUpstreamArtifact(stage, run);
 	ensureNamedReads(stage, run);
-	enforceSessionInvariants(stage, run);
 	ensureSkillRegistered(stage, run);
 }
 
@@ -49,13 +49,12 @@ export function ensureLoopNotContinue(stage: ResolvedStage): void {
 	const reason =
 		`runStage: stage "${stage.name}" cannot combine loop with sessionPolicy "continue" — ` +
 		"each unit requires an isolated session";
-	throw new StagePreflightError("invariant", stage.name, MSG_STAGE_THREW(stage.name, reason), reason, false);
+	throw invariantPreflight(stage.name, MSG_STAGE_THREW(stage.name, reason), reason);
 }
 
 /**
- * Loop-stage preflights, run UNIFORMLY for every loop kind (the old
- * shortcuts bypassed them: a ≥1-unit fanout ran none; iterate ran none;
- * assess re-ran two inline):
+ * Loop-stage preflights, run UNIFORMLY for every loop kind — no kind takes a
+ * shortcut:
  *   - ensureNamedReads + ensureSkillRegistered for ALL loops (every loop's
  *     units dispatch `/skill:<skill>`, and generators read declared channels);
  *   - ensureUpstreamArtifact for ASSESS ONLY — the round-0 producer arg is
@@ -88,7 +87,7 @@ export function ensureJudgeSkillRegistered(judge: AnyJudge, stage: ResolvedStage
 		if (member.skill === undefined) continue;
 		if (run.registeredSkills.has(member.skill)) continue;
 		const f = FAIL_SKILL_NOT_REGISTERED(member.skill, stage.stageNumber);
-		throw new StagePreflightError("halt", member.skill, f.toast, f.error, true);
+		throw haltPreflight(member.skill, f);
 	}
 }
 
@@ -105,9 +104,8 @@ export function ensureJudgeSkillRegistered(judge: AnyJudge, stage: ResolvedStage
  * into a properly-attributed stage halt.
  *
  * Reads the snapshot in `run.registeredSkills` rather than calling
- * `host.getCommands()` mid-run, because Pi marks the `WorkflowHost` handle
- * stale on the first `ctx.newSession()` — the snapshot is built once in
- * `buildRunContext` before any session replaces the outer ctx.
+ * `host.getCommands()` mid-run — the snapshot is built once in
+ * `buildRunContext` at run start, off the launcher's registry-level host.
  *
  * Skipped for non-skill dispatch (a prompt stage sends raw text — there is
  * no skill to verify) and when `registeredSkills` is undefined (hostless
@@ -120,7 +118,7 @@ function ensureSkillRegistered(stage: ResolvedStage, run: RunContext): void {
 	if (run.registeredSkills.has(stage.skill)) return;
 
 	const f = FAIL_SKILL_NOT_REGISTERED(stage.skill, stage.stageNumber);
-	throw new StagePreflightError("halt", stage.skill, f.toast, f.error, true);
+	throw haltPreflight(stage.skill, f);
 }
 
 /**
@@ -145,7 +143,7 @@ function ensureUpstreamArtifact(stage: ResolvedStage, run: RunContext): void {
 	if (stage.dispatch === "prompt") return;
 	if (currentPrimaryArtifact(run.state)) return;
 	const f = FAIL_MISSING_ARTIFACT(stage.skill, stage.stageNumber);
-	throw new StagePreflightError("halt", stage.skill, f.toast, f.error, true);
+	throw haltPreflight(stage.skill, f);
 }
 
 /**
@@ -158,16 +156,14 @@ function ensureUpstreamArtifact(stage: ResolvedStage, run: RunContext): void {
 function ensureNamedReads(stage: ResolvedStage, run: RunContext): void {
 	const reads = stage.def.reads;
 	if (!reads?.length) return;
-	for (const name of reads) {
+	for (const read of reads) {
+		const name = readName(read);
+		// Reads `.length` of a possibly PRE-SIZED produces-fanout channel as
+		// "satisfied". Safe by ordering: this runs at the READING stage's entry,
+		// AFTER the upstream fanout stage's fold completed its channel, so it never
+		// observes a half-filled produces-fanout channel.
 		if (run.state.named[name]?.length) continue;
 		const f = FAIL_MISSING_NAMED_READ(stage.skill, name, stage.stageNumber);
-		throw new StagePreflightError("halt", stage.skill, f.toast, f.error, true);
-	}
-}
-
-function enforceSessionInvariants(stage: ResolvedStage, run: RunContext): void {
-	if (stage.def.sessionPolicy === "continue" && !run.continueHost) {
-		const reason = `runStage: stage "${stage.name}" uses sessionPolicy "continue" but no workflow host was provided to runWorkflow`;
-		throw new StagePreflightError("invariant", stage.name, MSG_STAGE_THREW(stage.name, reason), reason, false);
+		throw haltPreflight(stage.skill, f);
 	}
 }

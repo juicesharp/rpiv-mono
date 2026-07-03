@@ -7,6 +7,7 @@
 
 export { registerBuiltIns, registerBuiltInsProvider } from "./built-ins.js";
 export { registerLifecycle } from "./events.js";
+export { registerWorkflowExecutionHost } from "./execution-host.js";
 export {
 	getBucketKindMappings,
 	registerBucketKindMapping,

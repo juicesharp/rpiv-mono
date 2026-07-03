@@ -10,6 +10,7 @@
  */
 
 export { type DirectoryPathCollectorOpts, directoryPathCollector } from "./directory-path.js";
+export { type TextScanCollectorOpts, textScanCollector } from "./text-scan.js";
 export { type ToolCall, type ToolCallCollectorOpts, toolCallCollector } from "./tool-call.js";
 export { type TranscriptPathCollectorOpts, transcriptPathCollector } from "./transcript-path.js";
 export { unionCollectors } from "./union.js";

@@ -2,6 +2,30 @@
 
 ## [Unreleased]
 
+### State trail schema v1 → v2 (BREAKING — resume)
+
+#### Changed
+- **`STATE_SCHEMA_VERSION` bumped 1 → 2.** Parallel-fanout trails place completion rows by `unitIndex` (not trail order) and carry a `collected:true` discriminator for soft-halted collect-all units — a shape the v1 sequential fold cannot replay. New runs write v2.
+
+#### Breaking
+- **v1 runs are not resumable.** `reconstructState`'s header version gate cleanly refuses a v1 trail (an explicit `v: 1` or an absent `v`) with `version-mismatch` ("start a fresh run") rather than silently mis-replaying it under v2 semantics. There is no in-place migration. The version gate is the corruption interlock that makes this refusal safe at the upgrade boundary — a v1 trail left on disk after upgrade is rejected, never eaten by the v2 fold. (This bump is a second breaking change alongside the `WorkflowHost` port replacement; the detached-execution commit documented only the port.)
+
+### Packaging
+
+#### Fixed
+- **`typebox` moved from `peerDependencies` to `dependencies`** (`^1.1.24`, matching the Pi host's range) so the DSL's schema imports resolve under installers that don't materialise peer deps. Fixes `ERR_MODULE_NOT_FOUND: typebox` on standalone consumer installs (#79).
+- **Test files are no longer published in the npm tarball.** The directory globs in `files` (`load/`, `runner/`, `outcomes/`, `validate/`, …) packed `**/*.test.ts`, which import the private, unpublished `@juicesharp/rpiv-test-utils` fixture package. Added a `!**/*.test.ts` exclusion to `files` (#80).
+
+### Fanout-and-synthesize fan-in — `fanin()` read modifier
+
+#### Fixed
+- **A synthesize stage reading a fanout's channel now sees every unit, not just the last.** `stageEntryArgs` resolved a `reads:` name to `state.named[name].at(-1)` — the LAST accumulated `Output` — so the fan-in half of fanout-and-synthesize silently dropped N−1 of N units. Latest-wins remains the default for a bare-string read; opt into all-entries with `fanin()`.
+
+#### Added
+- **`fanin(name)` read modifier.** A `reads:` entry wrapped in `fanin("channel")` flag-repeats across EVERY accumulated entry of the channel (× each entry's artifacts) — the canonical consumer side of `fanout()`. The `reads:` element type widens to `string | { name; all? }`; bare strings keep latest-wins. Exported from `registration` alongside the `StageRead` type. `readName`/`readsAll` normalize the union for all `reads:` consumers.
+- **`reads-latest-from-fanout` validation warning.** A bare-string read of a channel filled by a (`produces`-kind) `fanout` nudges the author toward `fanin()`. Warns only — latest-only is legal; `fanin()` reads are already opted in and never flagged.
+- **`⇉ <names>` fan-in marker in `/wf` preview** on stages with `fanin()` reads, mirroring the `panel(N, fold)` fan-in surfacing. `describeFlow` gains a `reads` facet (normalized `{ name, all }` per read) backing it.
+
 ## [1.20.0] - 2026-06-15
 
 ### Consumer extension points — bucket-kind mappings + provider refresh

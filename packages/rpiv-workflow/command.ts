@@ -14,7 +14,7 @@
  * `parseArgs` stays here (pure, exported for tests).
  */
 
-import type { WorkflowHost, WorkflowHostContext } from "./host.js";
+import type { WorkflowHost, WorkflowHostContext, WorkflowLauncherContext } from "./host.js";
 
 /** Pi command registry — displayed by Pi's `/?` / command list. */
 export const CMD_DESCRIPTION = "Run a skill workflow: /wf [workflow] [description]";
@@ -39,7 +39,7 @@ export const PREWARM_DELAY_MS = 2000;
 type CommandRunModule = typeof import("./command-run.js");
 
 export interface WfCommandHandler {
-	(args: string, ctx: WorkflowHostContext): Promise<void>;
+	(args: string, ctx: WorkflowLauncherContext): Promise<void>;
 	/** Kick (or join) the memoized command-run import — the pre-warm entry. */
 	prewarm(): Promise<void>;
 }
@@ -71,12 +71,18 @@ export function makeWfHandler(
 		}
 	};
 
-	const handler = async (args: string, ctx: WorkflowHostContext): Promise<void> => {
+	const handler = async (args: string, ctx: WorkflowLauncherContext): Promise<void> => {
 		// `ready`, not `memo`: an in-flight pre-warm still leaves the user
 		// waiting, so the toast covers that window too.
 		if (!ready && ctx.hasUI) ctx.ui.notify(MSG_RUNTIME_LOADING, "info");
 		const mod = await load();
-		return mod.handleWorkflowCommand(host, args, ctx);
+		// The launcher hands us an OBSERVER ctx (Pi's command ctx has no
+		// spawnChild/maxConcurrency). The run-path is typed against the executor
+		// ctx, but it never executes a stage on this ctx directly: with a provider
+		// registered, runWorkflow builds the detached executor; with
+		// none, the test/embedder contract guarantees an executor-capable ctx. So
+		// narrow here at the single Pi→runtime boundary.
+		return mod.handleWorkflowCommand(host, args, ctx as WorkflowHostContext);
 	};
 
 	return Object.assign(handler, {

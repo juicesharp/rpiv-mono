@@ -9,9 +9,10 @@
  */
 
 import type { Workflow } from "../api.js";
-import { isDispatchingStage, resolveSkill } from "../chain-state.js";
 import { extractJsonSchema } from "../json-schema.js";
 import type { ConsumesSpec, ProducesSpec, SkillContract } from "../skill-contract.js";
+import { readName } from "../stage-def.js";
+import { isDispatchingStage, resolveSkill } from "../stage-identity.js";
 import { getSkillContracts } from "./registry.js";
 
 /**
@@ -43,7 +44,7 @@ export function harvestStageContracts(workflows: readonly Workflow[]): Map<strin
 			const skill = resolveSkill(stage, stageName);
 			const producesData = extractJsonSchema(stage.outputSchema);
 			const consumesData = extractJsonSchema(stage.inputSchema);
-			const reads = stage.reads?.length ? Object.fromEntries(stage.reads.map((r) => [r, {}])) : undefined;
+			const reads = stage.reads?.length ? Object.fromEntries(stage.reads.map((r) => [readName(r), {}])) : undefined;
 			const produces: ProducesSpec | undefined =
 				stage.kind === "produces" || producesData
 					? { kind: stage.kind, ...(producesData ? { data: producesData } : {}) } // real StageKind ("produces" | "side-effect")

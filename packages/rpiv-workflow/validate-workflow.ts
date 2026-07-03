@@ -35,9 +35,11 @@ import {
 } from "./validate/graph.js";
 import { issueReporter, type WorkflowValidationIssue } from "./validate/issue.js";
 import {
+	checkFanoutReadHint,
 	checkFanoutSource,
 	checkReadsReferences,
 	checkStageSemantics,
+	fanoutPublishedChannels,
 	publishedNamesOf,
 } from "./validate/stage-rules.js";
 
@@ -66,16 +68,16 @@ export function validateWorkflow(
 	checkMissingEdges(workflow, r);
 	// Skip reachability when an EdgeFn lacks `.targets` — the BFS would emit
 	// "unreachable from start" cascades whose root cause is the metadata error
-	// already reported. Gated on the issue CODE (machine-readable — the
-	// message-regex this replaced was finding C5).
+	// already reported. Gated on the issue CODE (machine-readable).
 	if (!issues.some((i) => i.code === "edge-fn-no-targets")) checkReachability(workflow, r);
 
 	checkStageSemantics(workflow, r);
 
-	// The publisher set is computed ONCE and threaded to both consumers (D10).
+	// The publisher set is computed ONCE and threaded to both consumers.
 	const published = publishedNamesOf(workflow);
 	checkReadsReferences(workflow, published, r);
 	checkFanoutSource(workflow, published, r);
+	checkFanoutReadHint(workflow, fanoutPublishedChannels(workflow), r);
 
 	checkPredicateSchemas(workflow, r, opts?.skillContracts);
 	checkEdgeSchemaCompat(workflow, r, opts?.skillContracts);

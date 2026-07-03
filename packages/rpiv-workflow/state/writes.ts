@@ -5,7 +5,7 @@
  * or checksums touch this file only. This is NOT a full storage-backend
  * seam: `reads.ts`, `raw.ts`, and `names.ts` hit `node:fs` directly, so
  * swapping the backend means touching all of `state/` (a `RunStore` port
- * is a known possible follow-up, deliberately deferred — M13).
+ * is a known possible follow-up, deliberately deferred).
  *
  *   writeHeader              — boolean; the runner refuses the run start on failure.
  *   appendStage              — boolean; allocator gates monotonic counters on it.

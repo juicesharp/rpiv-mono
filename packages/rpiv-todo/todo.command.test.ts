@@ -16,8 +16,9 @@ function setup() {
 }
 
 async function seed(tool: ReturnType<typeof setup>["tool"], actions: Array<Record<string, unknown>>) {
+	const ctx = createMockCtx();
 	for (const p of actions) {
-		await tool.execute?.("tc", p as never, undefined as never, undefined as never, {} as never);
+		await tool.execute?.("tc", p as never, undefined as never, undefined as never, ctx as never);
 	}
 }
 

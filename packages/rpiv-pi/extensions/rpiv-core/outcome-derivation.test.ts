@@ -33,11 +33,16 @@ function contractsFromKinds(entries: Array<[string, string]>): SkillContractMap 
 	return map;
 }
 
-/** Strip `outcome` from every stage in a workflow (non-mutating). */
-function stripOutcomes(w: Workflow): Workflow {
+/**
+ * Strip `outcome` from every stage in a workflow (non-mutating), EXCEPT stages
+ * for which `keep(stageName)` is true — those retain their explicit outcome so
+ * the deriver's rung-1 ("explicit wins") skips them. Used to model carve's
+ * explicit-by-design stages, which are never meant to be derived.
+ */
+function stripOutcomes(w: Workflow, keep: (stageName: string) => boolean = () => false): Workflow {
 	const stages: typeof w.stages = {};
 	for (const [name, stage] of Object.entries(w.stages)) {
-		if (stage.outcome) {
+		if (stage.outcome && !keep(name)) {
 			const { outcome: _, ...rest } = stage;
 			stages[name] = rest;
 		} else {
@@ -52,15 +57,17 @@ function stripOutcomes(w: Workflow): Workflow {
 // ---------------------------------------------------------------------------
 
 describe("BUCKET_BY_KIND", () => {
-	it("contains exactly 10 entries", () => {
-		expect(Object.keys(BUCKET_BY_KIND)).toHaveLength(10);
+	it("contains exactly 12 entries", () => {
+		expect(Object.keys(BUCKET_BY_KIND)).toHaveLength(12);
 	});
 
 	it("covers all artifactKinds used by produces skills", () => {
 		const expectedKinds = [
 			"plan",
 			"research",
+			"slices",
 			"design",
+			"elaboration",
 			"solutions",
 			"review",
 			"validation",
@@ -260,28 +267,26 @@ describe("equivalence — built-in workflows", () => {
 		["code-review", "review"],
 		["revise", "plan"],
 		["pr-triage", "triage"],
+		// carve's derivable produces skills
+		["slice", "slices"],
+		["design-slice", "design"],
+		["synthesize", "plan"],
+		["elaborate", "elaboration"],
 	];
 
 	/**
-	 * Expected bucket name for each produces stage across all 6 workflows.
+	 * Expected bucket name for each produces stage across all 3 workflows.
 	 * Key: "workflowName::stageName". Value: expected outcome.name.
 	 */
 	const EXPECTED: Record<string, string> = {
-		// ship
-		"ship::blueprint": "plans",
-		"ship::validate": "validation",
-		// build
+		// build (=carve, renamed): derivable produces stages only — the
+		// explicit-outcome stages below are asserted separately.
 		"build::research": "research",
-		"build::blueprint": "plans",
+		"build::slice": "slices",
+		"build::slice-design": "designs",
+		"build::plan": "plans",
+		"build::code": "elaborations",
 		"build::validate": "validation",
-		"build::code-review": "reviews",
-		"build::revise": "plans",
-		// arch
-		"arch::research": "research",
-		"arch::design": "designs",
-		"arch::plan": "plans",
-		"arch::validate": "validation",
-		"arch::code-review": "reviews",
 		// vet
 		"vet::code-review": "reviews",
 		"vet::blueprint": "plans",
@@ -291,8 +296,28 @@ describe("equivalence — built-in workflows", () => {
 		"polish::blueprint": "plans",
 		"polish::validate": "validation",
 		"polish::code-review": "reviews",
-		// pr-triage
-		"pr-triage::pr-triage": "triage",
+	};
+
+	/**
+	 * carve's explicit-by-design produces stages — NOT derived (rung 1 wins):
+	 * the two grade gates publish verdicts to DISTINCT channels (derivation maps
+	 * one kind → one bucket, so it can't split them), and the generic `amend`
+	 * skill is reused for the slice map, the plan gate's plan, and the code
+	 * gate's code-bearing plan (its contract has no single artifactKind to derive).
+	 * These keep explicit outcomes; the test asserts those names rather than a
+	 * derived one.
+	 */
+	const EXPLICIT_OUTCOMES: Record<string, string> = {
+		"build::slice-grade": "slice-verdicts",
+		"build::slice-fix": "slices",
+		// design-review re-emits the edited designs in place; explicit outcome
+		// republishes them on the `designs` channel (latest-wins) for synthesize.
+		"build::design-review": "designs",
+		"build::subplan": "subplans",
+		"build::plan-grade": "plan-verdicts",
+		"build::plan-fix": "plans",
+		"build::code-grade": "code-verdicts",
+		"build::code-fix": "plans",
 	};
 
 	/**
@@ -300,16 +325,13 @@ describe("equivalence — built-in workflows", () => {
 	 * (side-effect skills: commit, implement).
 	 */
 	const SKIP_STAGES = new Set([
-		"ship::commit",
-		"ship::implement",
-		"build::commit",
-		"build::implement",
-		"arch::commit",
-		"arch::implement",
 		"vet::commit",
 		"vet::implement",
 		"polish::commit",
 		"polish::implement",
+		"build::commit",
+		"build::implement",
+		"build::code-splice",
 	]);
 
 	// Need architecture-review contract too
@@ -317,7 +339,7 @@ describe("equivalence — built-in workflows", () => {
 
 	for (const w of builtInWorkflows) {
 		describe(`workflow: ${w.name}`, () => {
-			const stripped = stripOutcomes(w);
+			const stripped = stripOutcomes(w, (name) => EXPLICIT_OUTCOMES[`${w.name}::${name}`] !== undefined);
 			const issues: Array<{ message: string; severity: string }> = [];
 
 			deriveOutcomes(
@@ -348,6 +370,26 @@ describe("equivalence — built-in workflows", () => {
 
 				if (stage.kind !== "produces") continue;
 
+				// Script produces stages (e.g. carve's deterministic `slice-check`
+				// floor) carry no derivable outcome — the run function IS the envelope, so
+				// deriveOutcomes skips them on `stage.run != null` and they have no EXPECTED
+				// bucket. They publish under their own stage name.
+				if (stage.run != null) {
+					it(`${stageName}: script produces stage, no outcome derived`, () => {
+						expect(stage.outcome).toBeUndefined();
+					});
+					continue;
+				}
+
+				const explicit = EXPLICIT_OUTCOMES[key];
+				if (explicit) {
+					it(`${stageName}: carries explicit outcome.name = "${explicit}" (not derived)`, () => {
+						expect(stage.outcome).toBeDefined();
+						expect(stage.outcome?.name).toBe(explicit);
+					});
+					continue;
+				}
+
 				const expected = EXPECTED[key];
 				if (!expected) {
 					it(`${stageName}: produces stage with no expected mapping — SKIPPED`, () => {
@@ -368,14 +410,17 @@ describe("equivalence — built-in workflows", () => {
 		});
 	}
 
-	it("total produces stages across all workflows = 20", () => {
+	it("total produces stages across all workflows = 23 (13 derivable + 8 explicit + 2 script)", () => {
 		let count = 0;
+		let scriptProduces = 0;
 		for (const w of builtInWorkflows) {
 			for (const stage of Object.values(w.stages)) {
 				if (stage.kind === "produces") count++;
+				if (stage.kind === "produces" && stage.run != null) scriptProduces++;
 			}
 		}
-		expect(count).toBe(20);
+		expect(count).toBe(23);
+		expect(scriptProduces).toBe(2); // build::slice-check + build::goal
 	});
 });
 

@@ -42,7 +42,9 @@ export interface ShipManifestResult {
  * The check is two-way: `missing` flags on-disk production files the tarball
  * would omit; `stale` flags `files` entries that point at nothing on disk
  * (asset entries like `README.md` count as present — staleness is plain
- * existence, not the production-`.ts` walk).
+ * existence, not the production-`.ts` walk). `!`-prefixed negation patterns
+ * (the npm test-file exclusion glob, for instance) are exclusion rules, not
+ * paths — they are skipped by both checks.
  */
 export function verifyShipManifest(packageDirOrUrl: string): ShipManifestResult {
 	const packageDir = packageDirOrUrl.startsWith("file:") ? dirname(fileURLToPath(packageDirOrUrl)) : packageDirOrUrl;
@@ -52,6 +54,13 @@ export function verifyShipManifest(packageDirOrUrl: string): ShipManifestResult 
 	const exactFiles = new Set<string>();
 	const dirPrefixes: string[] = [];
 	for (const entry of declared) {
+		// `!`-prefixed entries are npm negation/exclusion patterns (the
+		// test-file exclusion glob, for instance), not paths on disk — they
+		// carve files OUT of the tarball rather than declaring inclusion, so
+		// they neither cover an on-disk file nor count toward staleness. The
+		// production-`.ts` walk already omits test files, so the common
+		// test-file exclusion has no effect on the `missing` computation.
+		if (entry.startsWith("!")) continue;
 		// Treat trailing-slash entries AND bare directory names that exist on
 		// disk as recursive directory inclusion — matches npm's own `files`
 		// semantics so the test answers "would npm publish actually include this?"
@@ -65,7 +74,7 @@ export function verifyShipManifest(packageDirOrUrl: string): ShipManifestResult 
 
 	const onDisk = walkProductionTs(packageDir, packageDir);
 	const missing = onDisk.filter((f) => !isCovered(f, exactFiles, dirPrefixes));
-	const stale = declared.filter((entry) => !existsSync(resolve(packageDir, entry)));
+	const stale = declared.filter((entry) => !entry.startsWith("!") && !existsSync(resolve(packageDir, entry)));
 
 	return { declared, onDisk, missing, stale };
 }

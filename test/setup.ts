@@ -64,6 +64,7 @@ beforeEach(async () => {
 	workflowInternal.__resetLoadCache();
 	workflowInternal.__resetLifecycleRegistry();
 	workflowInternal.__resetSkillContracts();
+	workflowInternal.__resetWorkflowExecutionHost();
 
 	const guidance = await import("../packages/rpiv-pi/extensions/rpiv-core/guidance.js");
 	guidance.clearInjectionState();
@@ -72,8 +73,14 @@ beforeEach(async () => {
 	gitContext.resetInjectedMarker();
 	const sessionHooks = await import("../packages/rpiv-pi/extensions/rpiv-core/session-hooks.js");
 	sessionHooks.__resetSessionHooksAnnounced();
-	const modelOverride = await import("../packages/rpiv-pi/extensions/rpiv-core/model-override.js");
-	modelOverride.__resetModelOverrideState();
+	const sessionCapture = await import("../packages/rpiv-pi/extensions/rpiv-core/session-capture.js");
+	sessionCapture.__resetSessionCaptureState();
+	const runLaneRegistry = await import("../packages/rpiv-pi/extensions/rpiv-core/run-lane-registry.js");
+	runLaneRegistry.__resetRunLaneRegistry();
+	const laneSwitcher = await import("../packages/rpiv-pi/extensions/rpiv-core/lane-switcher.js");
+	laneSwitcher.__resetLaneSwitcher();
+	const laneProgress = await import("../packages/rpiv-pi/extensions/rpiv-core/lane-progress.js");
+	laneProgress.__resetLaneProgress();
 	const skillBracket = await import("../packages/rpiv-pi/extensions/rpiv-core/skill-bracket.js");
 	skillBracket.__resetSkillBracketState();
 	const modelsConfigModule = await import("../packages/rpiv-pi/extensions/rpiv-core/models-config.js");

@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import {
 	acts,
 	defineWorkflow,
+	fanin,
 	gate,
 	type Outcome,
 	produces,
@@ -104,6 +105,31 @@ describe("describeFlow", () => {
 		expect(byStage["code-review"]?.edge.targets).toEqual(["blueprint", "commit"]);
 		expect(byStage.commit?.edge).toEqual({ mode: "terminal" });
 	});
+
+	it("exposes a reads facet: bare string → all:false, fanin() → all:true, declared order; omitted when no reads", () => {
+		const w = defineWorkflow({
+			name: "fanin-flow",
+			description: "d",
+			start: "plan",
+			stages: {
+				plan: produces({
+					loop: fanout({ units: () => [{ prompt: "x", label: "1/1" }] }),
+					outcome: { name: "plans", collector: { snapshot: false } } as never,
+				}),
+				rubric: produces({ outcome: { name: "rubric", collector: { snapshot: false } } as never }),
+				synthesize: produces({ reads: [fanin("plans"), "rubric"] }),
+			},
+			edges: { plan: "rubric", rubric: "synthesize", synthesize: "stop" },
+		});
+		const by = Object.fromEntries(describeFlow(w).map((s) => [s.stage, s]));
+		expect(by.synthesize?.reads).toEqual([
+			{ name: "plans", all: true },
+			{ name: "rubric", all: false },
+		]);
+		// A stage with no reads omits the facet entirely.
+		expect(by.plan?.reads).toBeUndefined();
+		expect(by.rubric?.reads).toBeUndefined();
+	});
 });
 
 describe("fanout() / iterate() / assess() constructors", () => {
@@ -142,6 +168,18 @@ describe("fanout() / iterate() / assess() constructors", () => {
 		expect(loop.max).toBe(4);
 	});
 
+	it("fanout() carries an explicit concurrency ceiling (and omits it by default)", () => {
+		expect(fanout({ units: () => [], concurrency: 1 }).concurrency).toBe(1);
+		expect(fanout({ units: () => [], concurrency: 3 }).concurrency).toBe(3);
+		expect(fanout({ units: () => [] }).concurrency).toBeUndefined();
+	});
+
+	it("checkedConcurrency throws on non-integer / < 1", () => {
+		expect(() => fanout({ units: () => [], concurrency: 0 })).toThrow(/concurrency must be an integer >= 1/);
+		expect(() => fanout({ units: () => [], concurrency: 1.5 })).toThrow(/concurrency must be an integer >= 1/);
+		expect(() => fanout({ units: () => [], concurrency: -2 })).toThrow(/concurrency must be an integer >= 1/);
+	});
+
 	it("checkedMax throws on non-integer / < 1", () => {
 		expect(() => fanout({ units: () => [], max: 0 })).toThrow(/max must be an integer >= 1/);
 		expect(() => iterate({ next: () => null, max: 1.5 })).toThrow(/max must be an integer >= 1/);
@@ -153,6 +191,28 @@ describe("fanout() / iterate() / assess() constructors", () => {
 				max: -2,
 			}),
 		).toThrow(/max must be an integer >= 1/);
+	});
+
+	it("checkedDepArtifactFlag throws on empty / whitespace / non-string (construction path)", () => {
+		// Empty + whitespace hit the `flag.trim().length === 0` branch.
+		expect(() => fanout({ units: () => [], depArtifactFlag: "" })).toThrow(
+			/depArtifactFlag must be a non-empty string/,
+		);
+		expect(() => fanout({ units: () => [], depArtifactFlag: "   " })).toThrow(
+			/depArtifactFlag must be a non-empty string/,
+		);
+		expect(() => fanout({ units: () => [], depArtifactFlag: "\t\n" })).toThrow(
+			/depArtifactFlag must be a non-empty string/,
+		);
+		// A non-string flag hits the `typeof flag !== "string"` branch.
+		expect(() => fanout({ units: () => [], depArtifactFlag: 123 as never })).toThrow(
+			/depArtifactFlag must be a non-empty string/,
+		);
+	});
+
+	it("fanout() carries an explicit depArtifactFlag (and omits it by default)", () => {
+		expect(fanout({ units: () => [], depArtifactFlag: "--upstream" }).depArtifactFlag).toBe("--upstream");
+		expect(fanout({ units: () => [] }).depArtifactFlag).toBeUndefined();
 	});
 
 	it("assess() throws on a non-function done / feedForward", () => {
@@ -365,7 +425,7 @@ describe("synthesizeVerifyLoop / effectiveLoopOf", () => {
 	});
 });
 
-// === Panel — Phase 2: construction + sugar folds (no execution) ============
+// === Panel — construction + sugar folds (no execution) =======================
 
 /** A minimal member verdict — sugar folds only read what `pred` interprets. */
 const verdict = (ok: boolean) => ({ data: { ok } }) as unknown as Output;
@@ -453,7 +513,7 @@ describe("panelShapeIssues / panel()", () => {
 	});
 });
 
-// === Panel — Phase 4: member-walking at introspection sites ================
+// === Panel — member-walking at introspection sites ===========================
 
 describe("panel introspection (panelSpecOf / judgeSlotSpecOf / loopSpecOf / describeFlow)", () => {
 	const memberSpecs = [

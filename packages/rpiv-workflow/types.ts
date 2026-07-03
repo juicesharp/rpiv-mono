@@ -2,7 +2,7 @@
  * Runtime types. Three nouns flow through the workflow runtime:
  *
  *  - `RunContext` — per-run carry (cwd, runId, workflow, state, visited,
- *    continueHost, registeredSkills, maxBackwardJumps). Read by every
+ *    registeredSkills, resolveModel, maxBackwardJumps). Read by every
  *    layer; mutated only by the runner.
  *  - `RunState` — mutable bookkeeping (output, counters, telemetry,
  *    termination). Read by every layer; mutated through the chain-state
@@ -26,14 +26,20 @@
 import type { StageDef, Workflow } from "./api.js";
 import type { LifecycleDispatcher, LifecycleListeners } from "./events.js";
 import type { Artifact } from "./handle.js";
-import type { WorkflowHost, WorkflowHostContext } from "./host.js";
+import type { ModelSelection, WorkflowHost, WorkflowHostContext } from "./host.js";
 import type { Output } from "./output.js";
 import type { SkillContractMap } from "./skill-contract.js";
+import type { SessionRef } from "./state/index.js";
 import type { RunTrigger } from "./triggers.js";
 
 // Re-export the host port so runtime layers can pull `RunContext`,
-// `RunState`, and the threaded ctx from this single runtime-types module.
-export type { WorkflowHostContext } from "./host.js";
+// `RunState`, and the threaded ctx + model type from this single
+// runtime-types module.
+export type {
+	ModelSelection,
+	WorkflowHostContext,
+	WorkflowSessionContext,
+} from "./host.js";
 
 /** Mutable per-run bookkeeping threaded through the chain by reference. */
 export interface RunState {
@@ -75,6 +81,19 @@ export interface RunState {
 	stagesCompleted: number;
 	/** Most recently allocated stageNumber. Advances on every recordStage call. */
 	lastAllocatedStageNumber: number;
+	/**
+	 * The `SessionRef` of the most recently completed SINGLE stage — what a
+	 * downstream `sessionPolicy: "continue"` stage forks from (its predecessor's
+	 * persisted child session). Rolls forward like `output`: set on every
+	 * single-stage success (`recordStageSuccess`) and reconstructed by the resume
+	 * fold from the last completed single-stage row. Loop UNITS never touch it
+	 * (they take the unit branch of `recordStageSuccess` and fold via
+	 * `foldUnitRow`), so a `continue` right after a loop forks the last single
+	 * stage — the loop was a fan-out excursion with no single session to continue.
+	 * Undefined at run start or when the predecessor persisted no session (an
+	 * in-memory host); either degrades a `continue` stage to a fresh dispatch.
+	 */
+	lastSession?: SessionRef;
 
 	// ── Telemetry (post-hoc only; not consulted by chain advancement) ──
 	telemetry: {
@@ -103,8 +122,9 @@ export interface RunState {
 	/**
 	 * How the run ended — `"running"` until the single end-of-run write via
 	 * `terminate()` (audit.ts), the ONLY sanctioned mutator. Discriminated so
-	 * every outcome is representable (cancellation used to be smuggled
-	 * through the error string) and so a halt site can't set half the shape.
+	 * every outcome is representable — cancellation is its own status, not
+	 * smuggled through the error string — and so a halt site can't set half
+	 * the shape.
 	 */
 	termination: RunTermination;
 }
@@ -119,7 +139,10 @@ export interface RunState {
  *  - `"failed"`    — a stage/preflight/routing halt; `error` carries the cause.
  *  - `"aborted"`   — cooperative cancellation via `RunWorkflowOptions.signal`,
  *                    or the model aborted the stage.
- *  - `"cancelled"` — the user dismissed the live session mid-stage.
+ *  - `"cancelled"` — the user dismissed the live session mid-stage. Recorded
+ *    on disk as the legacy FROZEN `StageStatus: "skipped"` (state/state.ts),
+ *    written solely by `recordCancellation` (audit.ts); the canonical name
+ *    (`"cancelled"`) and the frozen row value (`"skipped"`) differ by design.
  */
 export type RunTermination =
 	| { status: "running"; error?: undefined }
@@ -141,7 +164,7 @@ export interface RunWorkflowOptions {
 	workflow: Workflow;
 	/** Passed to the start stage as its argument. */
 	input: string;
-	/** Required for "continue"-policy stages (host.sendUserMessage). */
+	/** Registry-level host — enumerated once for the skill-registration snapshot. */
 	host?: WorkflowHost;
 	/** Defaults to MAX_BACKWARD_JUMPS. */
 	maxBackwardJumps?: number;
@@ -171,6 +194,12 @@ export interface RunWorkflowOptions {
 	 */
 	signal?: AbortSignal;
 	/**
+	 * Per-stage model-override resolver, injected by the embedder. Threaded onto
+	 * `RunContext.resolveModel` → every `StageSession.model`; the host applies it
+	 * at child-session creation. Undefined ⇒ host default for every stage.
+	 */
+	resolveModel?: (id: { stage: string; skill: string }) => ModelSelection | undefined;
+	/**
 	 * Human-readable alias for this run. Stored in the JSONL header and the
 	 * sidecar names.json index. Rejected if already in use — the error
 	 * identifies the conflicting runId.
@@ -185,8 +214,8 @@ export interface RunWorkflowResult {
 	 * this to `readLastStage` / `listArtifacts` / future inspect-past-run
 	 * helpers without recomputing the slug.
 	 *
-	 * Undefined ONLY for pre-flight rejections (start stage not declared,
-	 * continue-policy stages without pi) where no JSONL file was created.
+	 * Undefined ONLY for pre-flight rejections (e.g. start stage not declared,
+	 * name collision) where no JSONL file was created.
 	 */
 	runId?: string;
 	stagesCompleted: number;
@@ -237,10 +266,12 @@ export interface RunContext {
 	runId: string;
 	workflow: Workflow;
 	/**
-	 * Upper bound for stage status display — count of stages reachable from
+	 * Upper bound for stage-progress display — count of stages reachable from
 	 * `workflow.start`, computed once at run start. The actual stage count
-	 * is path-dependent (a predicate edge may short-circuit), so this is
-	 * the denominator users see; the numerator is the live stage index.
+	 * is path-dependent (a predicate edge may short-circuit), so this is the
+	 * denominator surfaced through the lifecycle `LifecycleContext.totalStages`
+	 * (e.g. the lane-dock `visited/totalStages` progress bar); the numerator is
+	 * the live stage index.
 	 */
 	totalStages: number;
 	state: RunState;
@@ -281,24 +312,12 @@ export interface RunContext {
 	 */
 	skillContracts?: SkillContractMap;
 	/**
-	 * Pi `ExtensionAPI` handle, retained as the FALLBACK send-path for
-	 * continue-policy stages — used only when the live inner ctx lacks
-	 * `sendUserMessage` (i.e. the workflow's first stage is continue and
-	 * the runtime is still on the outer command ctx). Everywhere else,
-	 * `CONTINUE_HANDLER` prefers `ctx.sendUserMessage` because Pi marks
-	 * this handle stale after the first `ctx.newSession()`. Touching it
-	 * for anything other than the fallback path will throw "extension
-	 * ctx is stale" on every workflow whose first stage is fresh.
-	 *
-	 * Read-only registry needs go through `registeredSkills` (snapshotted
-	 * at workflow start). Continue-policy presence checks
-	 * (`enforceSessionInvariants`) still gate on this field so the
-	 * fallback path has a working host when the start-stage path needs it.
-	 *
-	 * Naming: deliberately NOT called `host`. Future code-readers see the
-	 * field name and know the constraint without reading the JSDoc.
+	 * Resolve a per-stage model override, injected by the embedder (rpiv-pi maps
+	 * each `{ stage, skill }` to its model/effort override). The runner threads
+	 * the result onto every `StageSession.model`; the host applies it at child
+	 * creation (NOT via global mutation). Undefined ⇒ host default.
 	 */
-	continueHost?: WorkflowHost;
+	resolveModel?: (id: { stage: string; skill: string }) => ModelSelection | undefined;
 	maxBackwardJumps: number;
 	/**
 	 * Run-wide safety cap on loop units — clamps the effective cap of EVERY
@@ -401,13 +420,36 @@ export interface StageSession extends SessionContext {
 	/** Pre-stage snapshot value (undefined if the stage's `outcome` has no `snapshot`). */
 	snapshot: unknown;
 	/**
-	 * Pi `ExtensionAPI` handle reserved for the continue-policy handler
-	 * (`spawn.ts`). Required iff `stage.sessionPolicy === "continue"`.
-	 * Same constraint as `RunContext.continueHost`: stale after any prior
-	 * `ctx.newSession()`, so the runner MUST NOT read it for registry
-	 * inspection. See `RunContext.continueHost` JSDoc.
+	 * Resolved per-unit model override (from `RunContext.resolveModel`), applied
+	 * by the host at child-session creation — NOT via global mutation. Undefined
+	 * ⇒ host default.
 	 */
-	continueHost?: WorkflowHost;
+	model?: ModelSelection;
+	/**
+	 * Per-child cooperative-abort signal. Threaded from `RunContext.signal` (the
+	 * fanout dispatcher narrows it to a per-generation controller) so
+	 * an aborted run interrupts an in-flight child, not just the between-stage
+	 * seam.
+	 */
+	signal?: AbortSignal;
+	/**
+	 * When true (a collect-all fanout unit), a unit failure soft-halts THIS unit
+	 * (non-terminal failed-output sentinel handed to `onSuccess`) instead of
+	 * terminating the whole run. Set by `buildUnitSession` for non-fail-fast
+	 * fanout; the soft-halt routing lives in `postStage`.
+	 */
+	collectAll?: boolean;
+	/**
+	 * The per-unit lane key for rpiv-pi's lane dock/viewer — set ONLY for fan-out
+	 * units (`e.loop.kind === "fanout"`), to the unit's declared `index`. Undefined for
+	 * sequential loop units (iterate/assess) and single stages, which collapse onto the
+	 * host's reserved single-unit slot so the lane (parent) row keeps showing the one
+	 * live session. Distinct from `unit.index` (the audit identity threaded for every
+	 * loop unit): this field exists purely so the host can decide which spawns become
+	 * individually-addressable concurrent sub-lanes. `openChild` threads it into
+	 * `spawnChild`'s `unitIndex`; inert on a non-lane host.
+	 */
+	laneUnitIndex?: number;
 	/** Only set for continue stages — branch slice offset. */
 	branchOffset?: number;
 	/**
@@ -422,8 +464,7 @@ export interface StageSession extends SessionContext {
 	/**
 	 * Receives the stage's VALIDATED Output envelope (not just
 	 * `artifacts[0]`) — loop continuations thread it into `accumulated` /
-	 * `feedForward` directly, removing the `run.state.output!` back-read
-	 * pattern the old drivers carried.
+	 * `feedForward` directly, with no `run.state.output!` back-read.
 	 *
 	 * Return type is `Promise<unknown>` (not `void`) so the chain walk's
 	 * `ChainOutcome`-returning continuations plug in directly; the session

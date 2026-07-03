@@ -15,10 +15,9 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { loadConfig, validateGuidanceFields } from "./config.js";
 import { formatStatusLabel, t } from "./state/i18n-bridge.js";
-import { replayFromBranch } from "./state/replay.js";
 import { selectTasksByStatus, selectTodoCounts, selectVisibleTasks } from "./state/selectors.js";
 import { applyTaskMutation } from "./state/state-reducer.js";
-import { commitState, getState, replaceState } from "./state/store.js";
+import { commitState, getRenderState, getState, sid } from "./state/store.js";
 import { buildToolResult } from "./tool/response-envelope.js";
 import {
 	COMMAND_NAME,
@@ -44,19 +43,10 @@ const SECTION_COMPLETED = "── Completed ──";
 
 export { isTransitionValid } from "./state/invariants.js";
 export { applyTaskMutation } from "./state/state-reducer.js";
-export { __resetState, getNextId, getTodos } from "./state/store.js";
+export { __resetState, getNextId, getTodos, setActiveRenderSession, sid } from "./state/store.js";
 export { deriveBlocks, detectCycle } from "./state/task-graph.js";
 export type { Task, TaskAction, TaskDetails, TaskStatus } from "./tool/types.js";
 export { TOOL_NAME } from "./tool/types.js";
-
-/**
- * Backward-compat replay shim. Pre-refactor `reconstructTodoState(ctx)`
- * mutated module state directly; the new replay seam (`state/replay.ts`)
- * returns a `TaskState` and the caller commits via `replaceState`.
- */
-export function reconstructTodoState(ctx: Parameters<typeof replayFromBranch>[0]): void {
-	replaceState(replayFromBranch(ctx));
-}
 
 // ---------------------------------------------------------------------------
 // Tool registration
@@ -84,14 +74,22 @@ export function registerTodoTool(pi: ExtensionAPI): void {
 		promptGuidelines: guidance.promptGuidelines ?? DEFAULT_PROMPT_GUIDELINES,
 		parameters: TodoParamsSchema,
 
-		async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
-			const result = applyTaskMutation(getState(), params.action, params as TaskMutationParams);
-			commitState(result.state);
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			const result = applyTaskMutation(getState(sid(ctx)), params.action, params as TaskMutationParams);
+			commitState(sid(ctx), result.state);
 			return buildToolResult(params.action, params as TaskMutationParams, result.state, result.op);
 		},
 
+		// renderCall reflects the FOREGROUND slot, not the calling session's. Pi's
+		// `ToolRenderContext` carries no session identity (no sessionManager/sessionId),
+		// so this ctx-less hook cannot re-key by caller. For the foreground session's
+		// own transcript that is exactly right. A detached/child call rendered in the
+		// lane-transcript viewer whose task lives only in the child's slot misses the
+		// foreground lookup and falls back to `#<id>` (see renderTodoCall). That is the
+		// safe outcome: per-session ids restart at 1, so searching sibling slots could
+		// surface the WRONG subject — the `#<id>` fallback is intentional, not a gap.
 		renderCall(args, theme, _context) {
-			return renderTodoCall(args as never, theme, getState());
+			return renderTodoCall(args as never, theme, getRenderState());
 		},
 
 		renderResult(result, _opts, theme, _context) {
@@ -112,7 +110,7 @@ export function registerTodosCommand(pi: ExtensionAPI): void {
 				ctx.ui.notify(t("command.requires_interactive", ERR_REQUIRES_INTERACTIVE), "error");
 				return;
 			}
-			const state = getState();
+			const state = getState(sid(ctx));
 			const visible = selectVisibleTasks(state);
 			if (visible.length === 0) {
 				ctx.ui.notify(t("command.no_todos", MSG_NO_TODOS), "info");

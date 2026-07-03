@@ -26,7 +26,7 @@ const getOwners = globalSlot(OWNERS_KEY, () => new Map<string, string>());
 const getCollisions = globalSlot(COLLISIONS_KEY, () => [] as string[]);
 const getFailures = globalSlot(FAILURES_KEY, () => [] as unknown[]);
 
-// Provider lifecycle via the shared `lazyProviderRegistry` (D2). DELIBERATE
+// Provider lifecycle via the shared `lazyProviderRegistry`. DELIBERATE
 // divergence from the built-ins registry: `onError` RECORDS each provider
 // throw (drained by `drainSkillContractProviderErrors`) instead of
 // propagating. Contract providers read the filesystem / parse frontmatter

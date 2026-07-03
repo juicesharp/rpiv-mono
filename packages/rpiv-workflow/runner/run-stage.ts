@@ -21,26 +21,27 @@
  */
 
 import type { StageDef, Unit } from "../api.js";
-import { auditCtxFor, failedArgs, notifyPartialArtifacts, recordCancellation, runIdentityOf } from "../audit.js";
+import { failedArgs, notifyPartialArtifacts, runIdentityOf } from "../audit.js";
 import { currentPrimaryArtifact, resolveStagePrompt, stageEntryArgs } from "../chain-state.js";
 import { lifecycleCtxFor, skillStageRef } from "../events.js";
 import { formatError } from "../internal-utils.js";
-import { announceLoopStart, type LoopDeps, runLoop } from "../loop.js";
-import { freshCursor, type LoopEntry } from "../loop-kinds.js";
+import { announceLoopStart, runLoop } from "../loop.js";
+import { freezesEntryArgsOf } from "../loop-constructors.js";
+import { buildLoopEntry, freshCursor, type LoopDeps, type LoopEntry } from "../loop-kinds.js";
+import { validateUnitDeps } from "../loop-waves.js";
 import {
 	FAIL_LOOP_CAP_HALT,
 	FAIL_VERIFY_FAILED,
+	MSG_CONTINUE_FALLBACK,
 	MSG_RESUME_SESSION_FALLBACK,
 	MSG_SNAPSHOT_FAILED,
-	STATUS_KEY,
-	STATUS_STAGE,
 } from "../messages.js";
-import { locateSessionFile, reattachStageSession, runStageSession } from "../sessions/index.js";
+import { continueStageSession, locateSessionFile, reattachStageSession, runStageSession } from "../sessions/index.js";
+import { forkChildSession, reattachChildSession } from "../sessions/spawn.js";
 import type { WorkflowStage } from "../state/index.js";
-import { readBranch } from "../transcript.js";
 import type { RunContext, StageSession, WorkflowHostContext } from "../types.js";
 import { advanceChain, type ChainDeps } from "./chain-advance.js";
-import { type ChainOutcome, haltChain, recordAbortedAtSeam, recordEntryThrow } from "./failure.js";
+import { type ChainOutcome, haltChain, recordAbortedAtSeam, recordEntryThrow, withStageEntryGuard } from "./failure.js";
 import { ensureContractInputValid, ensureInputValid } from "./input-validation.js";
 import { ensureLoopNotContinue, runLoopPreflights, runSingleStagePreflights } from "./preflight.js";
 import { type ResolvedStage, resolveStage } from "./resolve-stage.js";
@@ -78,13 +79,10 @@ export function advance(
  * Wraps `runStage` so a thrown stage records a JSONL failure row attributed
  * to the stage that actually threw — not to the prior stage in the chain.
  * Used by `runWorkflow` (start stage), `advanceChain` (next stage, via
- * `ChainDeps`), and the resume entries, so there's exactly one place that
- * translates "stage threw" → `state.termination.error` + JSONL row.
- *
- * Also the cooperative-cancellation seam: checked before the start stage and
- * before every routed next stage, so an aborted signal stops the chain at
- * the next stage boundary without interrupting a stage already streaming
- * (Pi owns the live session).
+ * `ChainDeps`), and the resume entries — the walk's single catch site.
+ * Delegates the classify-then-record policy (cooperative-abort seam +
+ * mid-stage `WorkflowAbortError` vs terminal entry-throw) to
+ * `withStageEntryGuard` (failure.ts).
  */
 export async function runStageOrRecordFailure(
 	curCtx: WorkflowHostContext,
@@ -92,12 +90,7 @@ export async function runStageOrRecordFailure(
 	idx: number,
 	run: RunContext,
 ): Promise<ChainOutcome> {
-	if (run.signal?.aborted) return recordAbortedAtSeam(curCtx, name, run);
-	try {
-		return await runStage(curCtx, name, idx, run);
-	} catch (e) {
-		return recordEntryThrow(curCtx, name, run, e);
-	}
+	return withStageEntryGuard(curCtx, name, run, () => runStage(curCtx, name, idx, run));
 }
 
 // ---------------------------------------------------------------------------
@@ -106,8 +99,7 @@ export async function runStageOrRecordFailure(
 
 /**
  * Builds the `/skill:<name> <args>` line sent into the session. The audit
- * label (which used to round-trip through here) is read off `stage.skill`
- * by the caller — single source.
+ * label is read off `stage.skill` by the caller — single source.
  */
 function buildPrompt(skill: string, inputForStage: string): string {
 	return `/skill:${skill} ${inputForStage}`;
@@ -169,7 +161,6 @@ async function prepareSingleStage(
 		stage.dispatch === "prompt"
 			? await resolveStagePrompt(stage.def.prompt!, run.cwd, run.state)
 			: buildPrompt(stage.skill, inputForStage(stage, run));
-	curCtx.ui.setStatus(STATUS_KEY, STATUS_STAGE(stage.stageNumber, run.totalStages, stage.skill));
 
 	await ensureInputValid(stage, run);
 	await ensureContractInputValid(stage, run);
@@ -204,11 +195,32 @@ function buildSingleStageSession(
 		skillContracts: run.skillContracts,
 		stageIndex: idx,
 		snapshot: prep.snapshot,
-		continueHost: run.continueHost,
+		model: run.resolveModel?.({ stage: stage.name, skill: stage.skill }),
+		signal: run.signal,
 		branchOffset,
 		onFailure: (freshCtx) => notifyPartialArtifacts(freshCtx, run.cwd, run.runId),
 		onSuccess: (freshCtx) => advance(freshCtx, stage.name, idx, run),
 	};
+}
+
+/**
+ * The single-stage entry announcement — `onStageStart`. ONE helper for the
+ * live entry (`runSingleStage`) and the session-backed resume re-entry
+ * (`resumeWithSessionLadder`) — the fire stays aligned by sharing this one
+ * helper. Mirrors `announceLoopStart`
+ * (loop.ts) — the loop path's one-helper-for-live-and-resume exemplar.
+ */
+function announceSingleStageStart(
+	curCtx: WorkflowHostContext,
+	run: RunContext,
+	stage: Pick<ResolvedStage, "name" | "stageNumber" | "skill">,
+): Promise<void> {
+	return run.lifecycle.fire(
+		curCtx,
+		"onStageStart",
+		skillStageRef(stage.name, stage.stageNumber, stage.skill),
+		lifecycleCtxFor(run),
+	);
 }
 
 /**
@@ -231,18 +243,38 @@ async function runSingleStage(
 	run: RunContext,
 ): Promise<ChainOutcome> {
 	const prep = await prepareSingleStage(curCtx, stage, idx, run);
-	const branchOffset = computeBranchOffset(curCtx, stage.def);
 
 	// onStageStart fires after preflight, before the Pi session opens.
-	await run.lifecycle.fire(
-		curCtx,
-		"onStageStart",
-		skillStageRef(stage.name, stage.stageNumber, stage.skill),
-		lifecycleCtxFor(run),
-	);
+	await announceSingleStageStart(curCtx, run, stage);
 
-	await runStageSession(curCtx, buildSingleStageSession(stage, idx, run, prep, branchOffset));
+	// `continue` forks the predecessor's persisted session (`run.state.lastSession`)
+	// into a fresh child carrying its transcript; `continueStageSession` re-derives
+	// the branch offset from that forked branch (NOT the launcher's). No predecessor
+	// session — start stage, after a loop, or the file is gone — degrades to a fresh
+	// dispatch, matching the `prompt-continue-at-start` warning. Fresh stages always
+	// pass `branchOffset: undefined`.
+	if (stage.def.sessionPolicy === "continue") {
+		const file = continueForkFile(run);
+		if (file) {
+			const s = buildSingleStageSession(stage, idx, run, prep, undefined);
+			await forkChildSession(curCtx, s, file, (child) => continueStageSession(curCtx, child, s));
+			return "dispatched";
+		}
+		curCtx.ui.notify(MSG_CONTINUE_FALLBACK(stage.skill), "info");
+	}
+
+	await runStageSession(curCtx, buildSingleStageSession(stage, idx, run, prep, undefined));
 	return "dispatched";
+}
+
+/**
+ * The predecessor session a `continue` stage forks from, resolved to an on-disk
+ * file — or `null` to degrade to a fresh dispatch (no prior session recorded, or
+ * its file was cleaned up / moved beyond `locateSessionFile`'s reach).
+ */
+function continueForkFile(run: RunContext): string | null {
+	const ref = run.state.lastSession;
+	return ref ? locateSessionFile(ref, run.runId, run.cwd) : null;
 }
 
 /**
@@ -250,26 +282,12 @@ async function runSingleStage(
  * interrupted session's branch (promotion) or continue it from its leaf
  * (reattach), instead of re-running cold. Selected by `selectResumeEntry`
  * when the failed trailer carries a `session` (the structured dispatch).
- *
- * Owns the FALLBACK LADDER: every precondition miss notifies
- * (`MSG_RESUME_SESSION_FALLBACK`) and degrades to today's cold re-run via
- * `runStageOrRecordFailure` — never a refusal, never a throw:
- *
- *   1. cooperative-abort check (same seam as `runStageOrRecordFailure`);
- *   2. resolved mode must be `prompt`/`skill` (loop trailers never reach
- *      this arm — they carry `parent`; script stages are sessionless);
- *   3. the host must expose `switchSession` (optional port method);
- *   4. `locateSessionFile` must find the file on disk;
- *   5. the same `prepareSingleStage` steps as live (a preflight throw lands
- *      in the same catch as the live entry);
- *   6. `switchSession` adopts the session and `reattachStageSession`
- *      (sessions/reattach.ts) runs promotion → reattach inside it, with the
- *      SAME `StageSession` the live path builds — `branchOffset` taken from
- *      the PERSISTED row (continue-policy stages), `undefined` for fresh.
- *
- * Lifecycle: `onStageStart` fires before `switchSession` (same bracketing
- * as live); promotion then fires `onStageEnd` via `recordStageSuccess` — a
- * fast start→end pair is honest ("the stage's work was adopted").
+ * Delegates the same classify-then-record policy as the live entry
+ * (`runStageOrRecordFailure`) to `withStageEntryGuard` (failure.ts); the
+ * fallback ladder itself lives in `resumeWithSessionLadder` below — the
+ * resume `inner` still wraps it, so a reattached `postStage`
+ * `WorkflowAbortError` or machinery throw is classified (abort vs terminal
+ * entry-throw) by the same authority as the live path.
  */
 export async function resumeStageWithSession(
 	curCtx: WorkflowHostContext,
@@ -277,14 +295,36 @@ export async function resumeStageWithSession(
 	idx: number,
 	run: RunContext,
 ): Promise<ChainOutcome> {
-	if (run.signal?.aborted) return recordAbortedAtSeam(curCtx, last.stage, run);
-	try {
-		return await resumeWithSessionLadder(curCtx, last, idx, run);
-	} catch (e) {
-		return recordEntryThrow(curCtx, last.stage, run, e);
-	}
+	return withStageEntryGuard(curCtx, last.stage, run, () => resumeWithSessionLadder(curCtx, last, idx, run));
 }
 
+/**
+ * THE resume fallback ladder (called by `resumeStageWithSession` via
+ * `withStageEntryGuard`). Every precondition miss notifies
+ * (`MSG_RESUME_SESSION_FALLBACK`) and degrades to today's cold re-run via
+ * `runStageOrRecordFailure` — never a refusal, never a throw:
+ *
+ *   1. resolved mode must be `prompt`/`skill` (loop trailers never reach
+ *      this arm — they carry `parent`; script stages are sessionless);
+ *   2. `locateSessionFile` must find the file on disk;
+ *   3. the same `prepareSingleStage` steps as live (a preflight throw lands
+ *      in the same catch as the live entry);
+ *   4. `reattachChildSession` spawns a child BOUND to the persisted file (the
+ *      host opens it, does NOT replay the prompt) and `reattachStageSession`
+ *      (sessions/reattach.ts) runs promotion → reattach inside it, with the
+ *      SAME `StageSession` the live path builds — `branchOffset` taken from
+ *      the PERSISTED row (continue-policy stages), `undefined` for fresh.
+ *
+ * (The cooperative-abort pre-check — formerly step 1 here — now lives in
+ * `withStageEntryGuard`, which wraps this ladder; a mid-stage
+ * `WorkflowAbortError` thrown inside it is classified there too.)
+ *
+ * Lifecycle: `onStageStart` fires before the child (re)opens (same bracketing
+ * as live); promotion then fires `onStageEnd` via `recordStageSuccess` — a
+ * fast start→end pair is honest ("the stage's work was adopted"). There is no
+ * `{ cancelled }` arm — a detached reattach opens its own child, with no
+ * live-session swap for the user to dismiss.
+ */
 async function resumeWithSessionLadder(
 	curCtx: WorkflowHostContext,
 	last: WorkflowStage,
@@ -304,27 +344,20 @@ async function resumeWithSessionLadder(
 	if (stage.mode !== "prompt" && stage.mode !== "skill") {
 		return runStageOrRecordFailure(curCtx, last.stage, idx, run);
 	}
-	if (!curCtx.switchSession) return fallBackCold("host cannot switch sessions");
-	const file = locateSessionFile(ref);
+	const file = locateSessionFile(ref, run.runId, run.cwd);
 	if (!file) return fallBackCold("session file not found");
 
 	const prep = await prepareSingleStage(curCtx, stage, idx, run);
 	const s = buildSingleStageSession(stage, idx, run, prep, ref.branchOffset);
 
-	// Same bracketing as live: onStageStart before the session (re)opens.
-	await run.lifecycle.fire(
-		curCtx,
-		"onStageStart",
-		skillStageRef(stage.name, stage.stageNumber, stage.skill),
-		lifecycleCtxFor(run),
-	);
+	// Same bracketing as live: onStageStart before the (re)attached child opens.
+	await announceSingleStageStart(curCtx, run, stage);
 
-	const { cancelled } = await curCtx.switchSession(file, {
-		withSession: (sessCtx) => reattachStageSession(sessCtx, s),
-	});
-	// Pre-adopt cancellation (user dismissed the swap) — mirror the live
-	// pre-open cancellation: sessionless skipped row, run cancelled.
-	if (cancelled) recordCancellation(curCtx, auditCtxFor(run, stage.name, stage.skill));
+	// Detached reattach: spawn a child BOUND to the persisted session file (the
+	// host opens it and does NOT replay the prompt); reattachStageSession promotes
+	// from the loaded branch or nudges via resendIntoChild. Replaces the deleted
+	// live-session swap (`curCtx.switchSession`).
+	await reattachChildSession(curCtx, s, file, (child) => reattachStageSession(curCtx, child, s));
 	return "dispatched";
 }
 
@@ -367,21 +400,22 @@ async function runLoopStage(
 	if (loop.kind === "fanout") {
 		units = await loop.units({ cwd: run.cwd, artifact: currentPrimaryArtifact(run.state), state: run.state });
 		if (units.length === 0) return runSingleStage(curCtx, stage, idx, run);
+		// deps cycle / dangling-id → clean halt BEFORE any dispatch (the runtime unit
+		// list is invisible to the static load gate, so this is the only place it runs).
+		validateUnitDeps(units, stage.name);
 	}
 
 	runLoopPreflights(stage, run);
 
-	const entry: LoopEntry = {
-		stageIdx: idx,
-		name: stage.name,
-		skill: stage.skill,
-		def: stage.def,
-		loop,
-		entryArtifact: currentPrimaryArtifact(run.state),
-		entryArgs: loop.kind === "assess" ? inputForStage(stage, run) : "",
-		entryPair: { output: run.state.output, primaryArtifact: run.state.primaryArtifact },
-		units,
-	};
+	const entry = buildLoopEntry(
+		{ stageIdx: idx, name: stage.name, skill: stage.skill, def: stage.def, loop },
+		{
+			entryArtifact: currentPrimaryArtifact(run.state),
+			entryArgs: freezesEntryArgsOf(loop) ? inputForStage(stage, run) : "",
+			entryPair: { output: run.state.output, primaryArtifact: run.state.primaryArtifact },
+			units,
+		},
+	);
 
 	await announceLoopStart(curCtx, run, entry);
 	await runLoop(curCtx, entry, freshCursor(), run, buildLoopDeps());
@@ -390,8 +424,7 @@ async function runLoopStage(
 
 /**
  * THE loop deps bundle — built identically by the live path and resume
- * (`selectResumeEntry`), so the two can't drift (the old per-primitive
- * bundles were rebuilt by hand in both places).
+ * (`selectResumeEntry`), so the two can't drift.
  */
 export function buildLoopDeps(): LoopDeps {
 	return {
@@ -399,6 +432,13 @@ export function buildLoopDeps(): LoopDeps {
 		advanceAfter: (freshCtx, name, completedIdx, ctx) => advance(freshCtx, name, completedIdx, ctx),
 		captureSnapshot: (ctx, name, def, i, r) => captureStageSnapshot(ctx, name, def, i, r),
 		haltLoop,
+		// Mid-flight run abort at the loop seam → FAIL_WORKFLOW_ABORTED.
+		recordAborted: (curCtx, name, run) => recordAbortedAtSeam(curCtx, name, run).then(() => undefined),
+		// Unexpected worker rejection → terminal-failure row, no re-throw. The
+		// unit's identity rides as a STRUCTURED field (`unit`) on the row — `stage`
+		// stays the parent graph identity, not a `name (unit N)` string.
+		recordWorkerThrow: (curCtx, unit, skill, run, err) =>
+			recordEntryThrow(curCtx, unit.parent, run, err, { ref: unit, skill }).then(() => undefined),
 	};
 }
 
@@ -416,12 +456,6 @@ export async function haltLoop(
 ): Promise<void> {
 	const args = e.def.verify ? failedArgs(FAIL_VERIFY_FAILED(e.name, cap)) : failedArgs(FAIL_LOOP_CAP_HALT(count, cap));
 	await haltChain(curCtx, run, e.name, e.name, args);
-}
-
-/** Entries before this index belong to prior stages; only meaningful for continue. */
-function computeBranchOffset(curCtx: WorkflowHostContext, def: StageDef): number | undefined {
-	if (def.sessionPolicy !== "continue") return undefined;
-	return readBranch(curCtx).length;
 }
 
 /** Runs whose snapshot-failure warning already fired — one notify per run, not per stage/unit. */

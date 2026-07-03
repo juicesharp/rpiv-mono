@@ -2,7 +2,6 @@
   "_meta.notes": "Auto-translated draft. Native-speaker review welcome via PR. TUI symbols (↑/↓, ⚠) and key names (Enter, Esc, Tab, Space, n) are universal CLI conventions and stay untranslated.",
 
   "sentinel.other": "Введіть щось.",
-  "sentinel.chat": "Обговорити це",
   "sentinel.next": "Далі",
 
   "submit.label": "Надіслати відповіді",
@@ -21,7 +20,8 @@
 
   "preview.no_preview": "Попередній перегляд недоступний",
   "preview.notes_affordance": "Нотатки: натисніть n, щоб додати нотатки",
+  "notes.header": "Нотатки:",
 
-  "chat.summary": "Користувач хоче обговорити це",
-  "notes.header": "Нотатки:"
+  "rpc.multi_instructions": "Введіть номери всіх відповідних варіантів через кому (наприклад, \"1,3\") або введіть власну відповідь текстом.",
+  "rpc.custom_answer_title": "Введіть свою відповідь:"
 }

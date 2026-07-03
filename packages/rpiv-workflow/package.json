@@ -35,15 +35,20 @@
 		"internal.ts",
 		"api.ts",
 		"stage-def.ts",
+		"stage-identity.ts",
+		"stage-errors.ts",
 		"loop-def.ts",
 		"routing-dsl.ts",
 		"audit.ts",
+		"audit-ctx.ts",
 		"audit-rows.ts",
 		"built-ins.ts",
 		"chain-state.ts",
 		"command.ts",
 		"command-run.ts",
+		"execution-host.ts",
 		"loop-constructors.ts",
+		"loops/",
 		"extension.ts",
 		"registration.ts",
 		"handle.ts",
@@ -56,6 +61,8 @@
 		"events.ts",
 		"loop.ts",
 		"loop-kinds.ts",
+		"loop-parallel.ts",
+		"loop-waves.ts",
 		"load/",
 		"output.ts",
 		"messages.ts",
@@ -67,6 +74,7 @@
 		"skill-contracts/",
 		"routing.ts",
 		"runner/",
+		"semaphore.ts",
 		"startup.ts",
 		"sessions/",
 		"state/",
@@ -75,12 +83,14 @@
 		"typebox-adapter.ts",
 		"types.ts",
 		"validate-output.ts",
+		"validation-bounds.ts",
 		"validate-workflow.ts",
 		"validate/",
 		"docs-protocol.ts",
 		"docs/",
 		"README.md",
-		"LICENSE"
+		"LICENSE",
+		"!**/*.test.ts"
 	],
 	"exports": {
 		".": "./index.ts",
@@ -96,11 +106,11 @@
 	},
 	"dependencies": {
 		"@juicesharp/rpiv-config": "^1.20.0",
-		"jiti": "^2.7.0"
+		"jiti": "^2.7.0",
+		"typebox": "^1.1.24"
 	},
 	"peerDependencies": {
 		"@earendil-works/pi-coding-agent": "*",
-		"@standard-schema/spec": "*",
-		"typebox": "*"
+		"@standard-schema/spec": "*"
 	}
 }

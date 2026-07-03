@@ -7,6 +7,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- Toast summaries strip rpiv-args' new `Skill input:` argument-trailer label back to the raw args, so skill invocations render as `/skill:<name> <args>` instead of leaking the trailer framing.
+
 ## [1.20.0] - 2026-06-15
 
 ## [1.19.1] - 2026-06-10

@@ -13,6 +13,7 @@ import {
 	defineRoute,
 	defineWorkflow,
 	type EdgeFn,
+	fanin,
 	gate,
 	type LoopDef,
 	match,
@@ -463,7 +464,7 @@ describe("validateWorkflow — route-edge schema check", () => {
 		expect(issues.some((i) => i.code === "route-reads-unvalidated-data" && i.stage === "code-review")).toBe(true);
 	});
 
-	it("a SCRIPT stage is not exempted by a contract under its record key (C2)", () => {
+	it("a SCRIPT stage is not exempted by a contract under its record key", () => {
 		// "code-review" carries a covering contract — but the stage runs a script
 		// and never dispatches the skill, so the contract must not exempt it.
 		const contracts: SkillContractMap = new Map([
@@ -566,7 +567,7 @@ describe("validateWorkflow — reads-channel (meta) compatibility", () => {
 		).toEqual([]);
 	});
 
-	it("surfaces a comparator throw as a WARNING instead of silently disabling the gate (C13)", () => {
+	it("surfaces a comparator throw as a WARNING instead of silently disabling the gate", () => {
 		registerCompositionComparator("plans", () => {
 			throw new Error("comparator bug");
 		});
@@ -578,7 +579,7 @@ describe("validateWorkflow — reads-channel (meta) compatibility", () => {
 		expect(issues.filter((i) => i.code === "reads-channel-incompatible")).toEqual([]);
 	});
 
-	it("a SCRIPT consumer named after a signed skill does not inherit its contract (C2)", () => {
+	it("a SCRIPT consumer named after a signed skill does not inherit its contract", () => {
 		registerCompositionComparator("plans", kindComparator);
 		const scriptConsumer: Workflow = {
 			name: "script-consumer",
@@ -598,7 +599,7 @@ describe("validateWorkflow — reads-channel (meta) compatibility", () => {
 		expect(issues.filter((i) => i.severity === "error")).toEqual([]);
 	});
 
-	it("a PROMPT publisher named after a signed skill is not a phantom signed publisher (C2)", () => {
+	it("a PROMPT publisher named after a signed skill is not a phantom signed publisher", () => {
 		registerCompositionComparator("plans", kindComparator);
 		const promptPublisher: Workflow = {
 			name: "prompt-publisher",
@@ -942,6 +943,56 @@ describe("validateWorkflow — assess loop invariants", () => {
 	it.each([0, -1, 1.5])("rejects loop.max: %s (must be an integer >= 1)", (max) => {
 		const e = errors(wf(base({ loop: rawAssessLoop({ max }) })));
 		expect(e.some((i) => i.code === "loop-max-invalid" && i.params.max === max)).toBe(true);
+	});
+
+	it.each([0, -1, 1.5])("rejects fanout concurrency: %s (must be an integer >= 1)", (concurrency) => {
+		const e = errors(
+			wf({
+				kind: "produces",
+				sessionPolicy: "fresh",
+				outcome: { name: "x", collector: noopCollector },
+				loop: { ...fanout({ units: () => [] }), concurrency },
+			} as StageDef),
+		);
+		expect(e.some((i) => i.code === "loop-concurrency-invalid" && i.params.concurrency === concurrency)).toBe(true);
+	});
+
+	it("accepts fanout concurrency: 1", () => {
+		const e = errors(
+			wf({
+				kind: "produces",
+				sessionPolicy: "fresh",
+				outcome: { name: "x", collector: noopCollector },
+				loop: { ...fanout({ units: () => [] }), concurrency: 1 },
+			} as StageDef),
+		);
+		expect(e.some((i) => i.code === "loop-concurrency-invalid")).toBe(false);
+	});
+
+	it.each(["", "   "])("rejects an empty/blank fanout depArtifactFlag: %j", (depArtifactFlag) => {
+		const e = errors(
+			wf({
+				kind: "produces",
+				sessionPolicy: "fresh",
+				outcome: { name: "x", collector: noopCollector },
+				loop: { ...fanout({ units: () => [] }), depArtifactFlag },
+			} as StageDef),
+		);
+		expect(e.some((i) => i.code === "loop-dep-flag-invalid" && i.params.depArtifactFlag === depArtifactFlag)).toBe(
+			true,
+		);
+	});
+
+	it("accepts a non-empty fanout depArtifactFlag", () => {
+		const e = errors(
+			wf({
+				kind: "produces",
+				sessionPolicy: "fresh",
+				outcome: { name: "x", collector: noopCollector },
+				loop: { ...fanout({ units: () => [] }), depArtifactFlag: "--upstream" },
+			} as StageDef),
+		);
+		expect(e.some((i) => i.code === "loop-dep-flag-invalid")).toBe(false);
 	});
 
 	it("accepts loop.max: 1 and an omitted max", () => {
@@ -1435,7 +1486,7 @@ describe("validateWorkflow — issue shape", () => {
 		}
 	});
 
-	it("skips reachability when an EdgeFn lacks .targets — gated on the issue CODE (C5)", () => {
+	it("skips reachability when an EdgeFn lacks .targets — gated on the issue CODE", () => {
 		const naked: EdgeFn = () => "ghost";
 		const w: Workflow = {
 			name: "gated",
@@ -1669,6 +1720,21 @@ describe("checkFanoutSource (control-flow source lint)", () => {
 		expect(errors(w).some((i) => i.code === "reads-unpublished" && i.params.channel === "plans")).toBe(true);
 	});
 
+	it("defers when the source is consumed via fanin() (normalized membership, no spurious warning)", () => {
+		// Array.includes is strict-equality — a fanin() object never equals the
+		// string source, so without normalization this would falsely fire.
+		const w: Workflow = {
+			name: "t",
+			start: "plans",
+			stages: {
+				plans: produces(), // publishes "plans"
+				impl: acts({ loop: fanout({ source: "plans", units: () => [] }), reads: [fanin("plans")] }),
+			},
+			edges: { plans: "impl", impl: "stop" },
+		};
+		expect(loopMsgs(w)).toEqual([]);
+	});
+
 	it("is silent for a loop with no source (degrade)", () => {
 		const w: Workflow = {
 			name: "t",
@@ -1680,5 +1746,80 @@ describe("checkFanoutSource (control-flow source lint)", () => {
 			edges: { start: "impl", impl: "stop" },
 		};
 		expect(loopMsgs(w)).toEqual([]);
+	});
+});
+
+describe("checkFanoutReadHint (reads-latest-from-fanout nudge)", () => {
+	const hintMsgs = (w: Workflow) => warnings(w).filter((i) => i.code === "reads-latest-from-fanout");
+
+	it("warns when a bare-string read targets a collecting-fanout channel", () => {
+		const w: Workflow = {
+			name: "t",
+			start: "gen",
+			stages: {
+				gen: produces({
+					outcome: { name: "plans", collector: noopCollector },
+					loop: fanout({ units: () => [] }),
+				}),
+				synth: produces({ outcome: { name: "report", collector: noopCollector }, reads: ["plans"] }),
+			},
+			edges: { gen: "synth", synth: "stop" },
+		};
+		const msgs = hintMsgs(w);
+		expect(msgs).toHaveLength(1);
+		expect(msgs[0]?.params).toMatchObject({ channel: "plans" });
+	});
+
+	it("is silent once the read is wrapped in fanin() (already opted in)", () => {
+		const w: Workflow = {
+			name: "t",
+			start: "gen",
+			stages: {
+				gen: produces({
+					outcome: { name: "plans", collector: noopCollector },
+					loop: fanout({ units: () => [] }),
+				}),
+				synth: produces({ outcome: { name: "report", collector: noopCollector }, reads: [fanin("plans")] }),
+			},
+			edges: { gen: "synth", synth: "stop" },
+		};
+		expect(hintMsgs(w)).toEqual([]);
+	});
+
+	it("is silent for a bare read of a NON-fanout channel (plain produces / iterate)", () => {
+		const w: Workflow = {
+			name: "t",
+			start: "gen",
+			stages: {
+				gen: produces({ outcome: { name: "plans", collector: noopCollector } }),
+				bp: produces({
+					outcome: { name: "reviews", collector: noopCollector },
+					loop: iterate({ next: () => null }),
+				}),
+				synth: produces({
+					outcome: { name: "report", collector: noopCollector },
+					reads: ["plans", "reviews"],
+				}),
+			},
+			edges: { gen: "bp", bp: "synth", synth: "stop" },
+		};
+		expect(hintMsgs(w)).toEqual([]);
+	});
+
+	it("is silent when the fanout sits on an acts() side-effect stage (the load-bearing produces-kind clause)", () => {
+		// Mirrors rpiv-pi's built-ins: the fanout loop rides an `acts()` implement
+		// stage (kind: side-effect, publishes nothing), while the read channel is
+		// published by a separate produces stage. Relaxing the produces-kind clause
+		// would falsely fire here and break the sibling package's zero-warning gate.
+		const w: Workflow = {
+			name: "t",
+			start: "blueprint",
+			stages: {
+				blueprint: produces({ outcome: { name: "plans", collector: noopCollector } }),
+				implement: acts({ loop: fanout({ source: "plans", units: () => [] }), reads: ["plans"] }),
+			},
+			edges: { blueprint: "implement", implement: "stop" },
+		};
+		expect(hintMsgs(w)).toEqual([]);
 	});
 });

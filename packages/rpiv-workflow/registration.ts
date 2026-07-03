@@ -22,6 +22,7 @@ export {
 	type FanoutFn,
 	type FanoutLoop,
 	type FeedForwardContext,
+	fanin,
 	gate,
 	type IterateContext,
 	type IterateFn,
@@ -49,6 +50,7 @@ export {
 	STOP,
 	type StageDef,
 	type StageKind,
+	type StageRead,
 	type StageSchema,
 	terminal,
 	type Unit,
@@ -80,7 +82,12 @@ export {
 	opaque,
 	url,
 } from "./handle.js";
-export type { WorkflowHost, WorkflowHostContext, WorkflowSessionContext } from "./host.js";
+export type {
+	ModelSelection,
+	WorkflowHost,
+	WorkflowHostContext,
+	WorkflowSessionContext,
+} from "./host.js";
 // Only the contract data types are public — they're referenced by kept public
 // signatures (`JsonSchemaCapable` ← `typeboxSchema`, `JsonSchemaObject` ←
 // `ConsumesSpec`/`ProducesSpec.data`, `SchemaCompatResult` ← `canCompose`). The
@@ -214,9 +221,9 @@ export {
 } from "./state/index.js";
 export { DEFAULT_TRIGGER, type RunTrigger } from "./triggers.js";
 export { typeboxSchema } from "./typebox-adapter.js";
-// `RunState` is deliberately NOT here — it became runner-private when user
-// contexts switched to the deep-readonly `RunView` (T3). Test fixtures that
-// must construct one import it from `@juicesharp/rpiv-workflow/internal`.
+// `RunState` is deliberately NOT here — it is runner-private; user contexts
+// use the deep-readonly `RunView`. Test fixtures that must construct one
+// import it from `@juicesharp/rpiv-workflow/internal`.
 export type { RunTermination } from "./types.js";
 export { type SchemaValidationFailure, validateOutputData } from "./validate-output.js";
 export {

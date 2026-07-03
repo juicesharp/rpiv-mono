@@ -8,6 +8,7 @@
 	],
 	"scripts": {
 		"check": "biome check --write --error-on-warnings . && tsc --noEmit -p tsconfig.base.json",
+		"check:decision-codes": "node scripts/check-no-decision-codes.mjs",
 		"build:site": "npm run build --workspace=@juicesharp/rpiv-site",
 		"test": "vitest run",
 		"coverage": "vitest run --coverage",
@@ -23,7 +24,7 @@
 		"prepare": "husky"
 	},
 	"devDependencies": {
-		"@biomejs/biome": "^2.4.15",
+		"@biomejs/biome": "^2.5.0",
 		"@earendil-works/pi-ai": "^0.74.0",
 		"@earendil-works/pi-coding-agent": "^0.74.0",
 		"@earendil-works/pi-tui": "^0.74.0",

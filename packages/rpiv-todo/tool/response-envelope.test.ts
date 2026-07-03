@@ -19,14 +19,20 @@ describe("formatContent", () => {
 
 	it("update — emits transition tuple when statuses differ", () => {
 		const state = stateWith(t({ id: 1, subject: "x", status: "in_progress" }));
-		const op: Op = { kind: "update", id: 1, fromStatus: "pending", toStatus: "in_progress" };
+		const op: Op = { kind: "update", id: 1, fromStatus: "pending", toStatus: "in_progress", changed: true };
 		expect(formatContent(op, state)).toBe("Updated #1 (pending → in_progress)");
 	});
 
-	it("update — omits transition when from === to (e.g. blockedBy-only update)", () => {
+	it("update — omits transition when from === to but fields changed (e.g. blockedBy-only update)", () => {
 		const state = stateWith(t({ id: 1, subject: "x" }));
-		const op: Op = { kind: "update", id: 1, fromStatus: "pending", toStatus: "pending" };
+		const op: Op = { kind: "update", id: 1, fromStatus: "pending", toStatus: "pending", changed: true };
 		expect(formatContent(op, state)).toBe("Updated #1");
+	});
+
+	it("update — reports 'No change' when changed is false (no-effect update)", () => {
+		const state = stateWith(t({ id: 1, subject: "x" }));
+		const op: Op = { kind: "update", id: 1, fromStatus: "pending", toStatus: "pending", changed: false };
+		expect(formatContent(op, state)).toBe("No change: #1 already matches the requested values (status: pending)");
 	});
 
 	it("delete — 'Deleted #id: subject'", () => {

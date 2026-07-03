@@ -1,6 +1,10 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { loadConfig, validateGuidanceFields } from "./config.js";
+import { matchesKey } from "@earendil-works/pi-tui";
+import { loadConfig, resolveCollapseKey, validateGuidanceFields } from "./config.js";
 import { ASK_USER_PROMPT_EVENT, type AskUserPromptEventPayload } from "./events.js";
+// Static import is fine — rpc-fallback pulls only types + the i18n bridge,
+// none of the ~560ms TUI render graph that QuestionnaireSession lazy-loads.
+import { hasDialogUI, runRpcQuestionnaire } from "./rpc-fallback.js";
 import { displayLabel } from "./state/i18n-bridge.js";
 import { sentinelsToAppend } from "./state/row-intent.js";
 import { buildQuestionnaireResponse, buildToolResult } from "./tool/response-envelope.js";
@@ -32,7 +36,13 @@ function emitAskUserPromptEvent(pi: ExtensionAPI, params: QuestionParams): void 
 	pi.events.emit(ASK_USER_PROMPT_EVENT, payload);
 }
 
+/** Canonical tool name — single source of truth shared with the reconcile module. */
+export const ASK_USER_QUESTION_TOOL_NAME = "ask_user_question";
+
 const ERROR_NO_UI = "Error: UI not available (running in non-interactive mode)";
+
+const ERROR_NO_CUSTOM_UI =
+	"Error: this client cannot render the questionnaire (custom UI is unavailable, e.g. RPC/ACP hosts such as Zed or Paseo). The user never saw the questions — do NOT treat this as a decline. Ask the questions as plain chat text instead, without using this tool.";
 
 export function buildItemsForQuestion(question: QuestionData): WrappingSelectItem[] {
 	const items: WrappingSelectItem[] = question.options.map((o) => ({
@@ -40,8 +50,7 @@ export function buildItemsForQuestion(question: QuestionData): WrappingSelectIte
 		label: o.label,
 		description: o.description,
 	}));
-	const hasAnyPreview = question.options.some((o) => typeof o.preview === "string" && o.preview.length > 0);
-	for (const kind of sentinelsToAppend(question, hasAnyPreview)) {
+	for (const kind of sentinelsToAppend(question)) {
 		items.push({ kind, label: displayLabel(kind) });
 	}
 	return items;
@@ -50,15 +59,15 @@ export function buildItemsForQuestion(question: QuestionData): WrappingSelectIte
 export const DEFAULT_PROMPT_SNIPPET = `Ask the user up to ${MAX_QUESTIONS} structured questions (${MIN_OPTIONS}-${MAX_OPTIONS} options each) when requirements are ambiguous`;
 export const DEFAULT_PROMPT_GUIDELINES: string[] = [
 	`Use ask_user_question whenever the user's request is underspecified and you cannot proceed without concrete decisions — you can ask up to ${MAX_QUESTIONS} questions per invocation.`,
-	`Each question MUST have ${MIN_OPTIONS}-${MAX_OPTIONS} options. Every option requires a concise label (1-5 words) and a description explaining what the choice means or its trade-offs. The user can additionally type a custom answer ("Type something." row is appended automatically to single-select questions) or pick "Chat about this" to abandon the questionnaire.`,
-	`Set multiSelect: true when multiple answers are valid; this suppresses the "Type something." row. Provide an options[].preview markdown string when an option benefits from richer side-by-side context (mockups, code snippets, diagrams, configs) — single-select only. NOTE: any non-empty preview on a single-select question ALSO suppresses the "Type something." row (no room in the side-by-side layout); "Chat about this" remains the escape hatch. If you recommend a specific option, make it the first option and append "(Recommended)" to its label.`,
+	`Each question MUST have ${MIN_OPTIONS}-${MAX_OPTIONS} options. Every option requires a concise label (1-5 words) and a description explaining what the choice means or its trade-offs. The user can additionally type a custom answer ("Type something." row is appended automatically to every question) or press Esc to abandon the questionnaire.`,
+	`Set multiSelect: true when multiple answers are valid. Provide an options[].preview markdown string when an option benefits from richer side-by-side context (mockups, code snippets, diagrams, configs) — single-select only. The "Type something." row is appended to every single-select question regardless of whether any option carries a preview; in preview mode it expands to the full pane width while typing so the custom answer is not cramped into the narrow options column. If you recommend a specific option, make it the first option and append "(Recommended)" to its label.`,
 	"Do not stack multiple ask_user_question calls back-to-back — group all clarifying questions into one invocation.",
 ];
 
 export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
 	const guidance = validateGuidanceFields(loadConfig().guidance);
 	pi.registerTool({
-		name: "ask_user_question",
+		name: ASK_USER_QUESTION_TOOL_NAME,
 		label: "Ask User Question",
 		description: `Ask the user one or more structured questions during execution. Use when you need to:
 1. Gather user preferences or requirements
@@ -67,8 +76,8 @@ export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
 4. Offer choices to the user about what direction to take
 
 Usage notes:
-- Users will always be able to type a custom answer ("Type something." row is appended automatically to every single-select question) or pick "Chat about this" to abandon the questionnaire and continue in free-form conversation. Do NOT author "Other" / "Type something." / "Chat about this" labels yourself — duplicates are rejected at runtime.
-- Use multiSelect: true to allow multiple answers to be selected for a question. The "Type something." row is suppressed on multi-select questions, and is ALSO suppressed on single-select questions where any option carries a \`preview\` (the side-by-side layout has no room for inline custom text — "Chat about this" remains as the free-form escape hatch).
+- Users will always be able to type a custom answer ("Type something." row is appended automatically to every question) or press Esc to abandon the questionnaire. Do NOT author "Other" / "Type something." labels yourself — duplicates are rejected at runtime.
+- Use multiSelect: true to allow multiple answers to be selected for a question. It is always available on every question (even when options carry a \`preview\`), expanding to the full pane width while typing so the custom answer is not cramped into the narrow options column.
 - If you recommend a specific option, make that the first option in the list and add "(Recommended)" at the end of the label.
 
 Preview feature:
@@ -99,35 +108,105 @@ Preview content is rendered as markdown in a monospace box. Multi-line text with
 			// Emit event for external listeners (e.g., notification plugins)
 			emitAskUserPromptEvent(pi, typed);
 
+			// RPC hosts (VSCode pendant, ACP clients like Zed/Paseo — issue #78):
+			// ui.custom() cannot render there, but the select/input dialog
+			// sub-protocol works. Hosts that advertise ctx.mode (pi ≥0.79) route to
+			// the sequential dialog walker up front, skipping the TUI render-graph
+			// import entirely; RPC builds that predate ctx.mode are caught by the
+			// custom()-resolved-undefined backstop below. See ./rpc-fallback.ts.
+			if ((ctx as { mode?: string }).mode === "rpc" && hasDialogUI(ctx.ui)) {
+				return buildQuestionnaireResponse(await runRpcQuestionnaire(ctx.ui, typed), typed);
+			}
+
 			const itemsByTab: WrappingSelectItem[][] = typed.questions.map((q) => buildItemsForQuestion(q));
 
 			// Lazy — QuestionnaireSession pulls the ~560ms view/TUI render graph;
 			// load it only when the tool runs, not at extension registration.
 			const { QuestionnaireSession } = await import("./state/questionnaire-session.js");
+			// Resolve the collapse/expand key spec from config. Default is `ctrl+]`; users
+			// with non-US layouts (e.g. Latin American, where `]` is shifted) can override
+			// via the `collapseKey` config field. `resolveCollapseKey` also accepts the
+			// sentinel value `"off"` to disable the shortcut entirely.
+			const collapseKey = resolveCollapseKey(loadConfig());
 
-			const result = await ctx.ui.custom<QuestionnaireResult>(
-				(tui, theme, _kb, done) => {
-					const session = new QuestionnaireSession({
-						tui,
-						theme,
-						params: typed,
-						itemsByTab,
-						done,
-					});
-					return session.component;
-				},
-				{
-					overlay: true,
-					overlayOptions: {
-						anchor: "bottom-center",
-						width: "100%",
-						maxHeight: "100%",
-						margin: { left: 0, right: 0, bottom: 0 },
+			// Capture the overlay handle so the session can call `setHidden()` when the
+			// user toggles collapse, and register a raw terminal input listener for the
+			// same key so the toggle still works while the overlay is hidden (pi-tui does
+			// not route input to a hidden overlay's `component.handleInput`).
+			const sessionRef: {
+				current: import("./state/questionnaire-session.js").QuestionnaireSession | null;
+			} = { current: null };
+			const overlayHandleRef: { current: import("@earendil-works/pi-tui").OverlayHandle | undefined } = {
+				current: undefined,
+			};
+			let hasAnnouncedHide = false;
+			let removeOverlayInputListener: (() => void) | undefined;
+
+			if (collapseKey !== "off" && typeof ctx.ui.onTerminalInput === "function") {
+				removeOverlayInputListener = ctx.ui.onTerminalInput((data) => {
+					const handle = overlayHandleRef.current;
+					if (!handle) return undefined;
+					// Only act while the questionnaire is hidden (its handleInput is
+					// unreachable) or actually focused. When some other overlay is on
+					// top (e.g. `/btw`), leave the keystroke to that overlay instead of
+					// toggling the questionnaire from underneath it.
+					if (!handle.isHidden() && !handle.isFocused()) return undefined;
+					if (!matchesKey(data, collapseKey as Parameters<typeof matchesKey>[1])) return undefined;
+					sessionRef.current?.toggleCollapsedExternal();
+					if (handle.isHidden() && !hasAnnouncedHide) {
+						hasAnnouncedHide = true;
+						ctx.ui.notify?.(`ask_user_question hidden — press ${collapseKey} to reopen`, "info");
+					}
+					return { consume: true };
+				});
+			}
+
+			try {
+				const result = await ctx.ui.custom<QuestionnaireResult>(
+					(tui, theme, _kb, done) => {
+						const session = new QuestionnaireSession({
+							tui,
+							theme,
+							params: typed,
+							itemsByTab,
+							done,
+							collapseKey,
+						});
+						sessionRef.current = session;
+						return session.component;
 					},
-				},
-			);
+					{
+						overlay: true,
+						overlayOptions: {
+							anchor: "bottom-center",
+							width: "100%",
+							maxHeight: "100%",
+							margin: { left: 0, right: 0, bottom: 0 },
+						},
+						onHandle: (handle) => {
+							overlayHandleRef.current = handle;
+							sessionRef.current?.setOverlayHandle(handle);
+						},
+					},
+				);
 
-			return buildQuestionnaireResponse(result, typed);
+				// A TUI questionnaire ALWAYS resolves a QuestionnaireResult (cancel
+				// included — state-reducer emits `{ answers, cancelled }`), so
+				// `undefined` uniquely means "host cannot render", never "user
+				// declined". RPC builds that predate ctx.mode land here: run the
+				// dialog walker when the host has the primitives; otherwise tell the
+				// model the user never saw the questions.
+				if (result === undefined) {
+					if (hasDialogUI(ctx.ui)) {
+						return buildQuestionnaireResponse(await runRpcQuestionnaire(ctx.ui, typed), typed);
+					}
+					return buildToolResult(ERROR_NO_CUSTOM_UI, { answers: [], cancelled: true, error: "no_custom_ui" });
+				}
+
+				return buildQuestionnaireResponse(result, typed);
+			} finally {
+				removeOverlayInputListener?.();
+			}
 		},
 	});
 }

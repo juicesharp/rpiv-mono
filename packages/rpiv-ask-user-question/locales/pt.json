@@ -2,7 +2,6 @@
   "_meta.notes": "European Portuguese (Portugal). Auto-translated draft. Native-speaker review welcome via PR. Distinct from pt-BR (Brasil): differs in lexicon (utilizador / você), conjugation, and some terms. TUI symbols (↑/↓, ⚠) and key names (Enter, Esc, Tab, Space, n) are universal CLI conventions and stay untranslated.",
 
   "sentinel.other": "Escreva algo.",
-  "sentinel.chat": "Conversar sobre isto",
   "sentinel.next": "Seguinte",
 
   "submit.label": "Enviar respostas",
@@ -21,7 +20,8 @@
 
   "preview.no_preview": "Pré-visualização indisponível",
   "preview.notes_affordance": "Notas: prima n para adicionar notas",
+  "notes.header": "Notas:",
 
-  "chat.summary": "O utilizador quer conversar sobre isto",
-  "notes.header": "Notas:"
+  "rpc.multi_instructions": "Introduza os números de todas as opções aplicáveis, separados por vírgulas (ex.: \"1,3\") ou escreva uma resposta própria em texto.",
+  "rpc.custom_answer_title": "Escreva a sua resposta:"
 }

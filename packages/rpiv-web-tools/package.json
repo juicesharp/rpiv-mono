@@ -51,7 +51,8 @@
 		"web-tools.ts",
 		"providers/",
 		"README.md",
-		"LICENSE"
+		"LICENSE",
+		"!**/*.test.ts"
 	],
 	"pi": {
 		"extensions": [
@@ -59,11 +60,11 @@
 		]
 	},
 	"dependencies": {
-		"@juicesharp/rpiv-config": "^1.20.0"
+		"@juicesharp/rpiv-config": "^1.20.0",
+		"typebox": "^1.1.24"
 	},
 	"peerDependencies": {
 		"@earendil-works/pi-coding-agent": "*",
-		"@earendil-works/pi-tui": "*",
-		"typebox": "*"
+		"@earendil-works/pi-tui": "*"
 	}
 }

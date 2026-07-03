@@ -30,14 +30,21 @@ import { join } from "node:path";
 import { createMockSessionChain, mockAssistantMessage } from "@juicesharp/rpiv-test-utils";
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { acts, type FanoutFn, gate, type IterateFn, produces, type Workflow } from "../api.js";
+import { acts, type FanoutFn, fanin, gate, type IterateFn, produces, type Workflow } from "../api.js";
 import { fs as fsHandle } from "../handle.js";
 import { judge } from "../judge.js";
 import { assess, fanout, iterate, majority, panel, verify } from "../loop-constructors.js";
-import type { Output } from "../output.js";
+import { failedOutput, type Output, outputMeta } from "../output.js";
 import type { Outcome } from "../output-spec.js";
 import { eq, gt } from "../predicates.js";
-import { appendStage, readAllStages, type WorkflowHeader, type WorkflowStage, writeHeader } from "../state/index.js";
+import {
+	appendStage,
+	readAllStages,
+	STATE_SCHEMA_VERSION,
+	type WorkflowHeader,
+	type WorkflowStage,
+	writeHeader,
+} from "../state/index.js";
 import { typeboxSchema } from "../typebox-adapter.js";
 import { resumeWorkflow } from "./runner.js";
 
@@ -129,16 +136,41 @@ describe("loop-resume — fanout", () => {
 		workflow: "fanout-wf",
 		input: "Ship it",
 		ts: "2026-06-03T07:30:00Z",
+		v: STATE_SCHEMA_VERSION,
 	};
 
 	/** Deterministic 3-unit fanout (blind to artifact, stable across re-call). */
 	const threeUnits: FanoutFn = () =>
 		[1, 2, 3].map((n) => ({ prompt: `phase ${n}`, label: `phase ${n}/3`, id: `phase-${n}` }));
 
+	/** Deterministic 3-unit fanout whose units form a 3-level dependency DAG
+	 *  (phase-1 root → phase-2 mid → phase-3 leaf). Mirrors the LIVE DAG chain at
+	 *  loop.test.ts ("DAG-ordered wave dispatch"); `Unit.deps` order the waves, and the
+	 *  `depArtifactFlag` on `dagFanoutWf` injects each completed dep's artifact path. */
+	const dagUnits: FanoutFn = () => [
+		{ prompt: "phase 1", label: "phase 1/3", id: "phase-1" },
+		{ prompt: "phase 2", label: "phase 2/3", id: "phase-2", deps: ["phase-1"] },
+		{ prompt: "phase 3", label: "phase 3/3", id: "phase-3", deps: ["phase-2"] },
+	];
+
 	const fanoutWf: Workflow = {
 		name: "fanout-wf",
 		start: "impl",
 		stages: { impl: produces({ outcome: transcriptOutcome("plans"), loop: fanout({ units: threeUnits }) }) },
+		edges: { impl: "stop" },
+	} as Workflow;
+
+	/** Same shape as `fanoutWf` but deps-bearing + `depArtifactFlag`-injecting — the
+	 *  resume counterpart of the LIVE DAG suite's `dagWf` (loop.test.ts). */
+	const dagFanoutWf: Workflow = {
+		name: "fanout-wf",
+		start: "impl",
+		stages: {
+			impl: produces({
+				outcome: transcriptOutcome("plans"),
+				loop: fanout({ depArtifactFlag: "--upstream", units: dagUnits }),
+			}),
+		},
 		edges: { impl: "stop" },
 	} as Workflow;
 
@@ -187,6 +219,61 @@ describe("loop-resume — fanout", () => {
 		expect(rows[3]).toMatchObject({ stage: "impl (phase-3)", status: "completed", parent: "impl", unitIndex: 2 });
 	});
 
+	it("collected soft-halt row: rebuilds the failedOutput sentinel by index (skipped by fanin), no re-dispatch", async () => {
+		// CONTRAST with the hard-failure case above: a `collected:true` row is a
+		// non-terminal collect-all unit halt. The resume fold rebuilds a failedOutput
+		// sentinel at the unit's declared index — FILLING the slot — so resume does NOT
+		// re-dispatch it; fanin then skips the sentinel. A hard `status:"failed"` row
+		// (no `collected`) leaves the slot unfilled and re-runs (see "mid-fanout failure").
+		const synthWf: Workflow = {
+			name: "fanout-wf",
+			start: "impl",
+			stages: {
+				impl: produces({ outcome: transcriptOutcome("plans"), loop: fanout({ units: threeUnits }) }),
+				synthesize: acts({ reads: [fanin("plans")] }),
+			},
+			edges: { impl: "synthesize", synthesize: "stop" },
+		} as Workflow;
+		writeRun([
+			unitRow(1, 1, "completed"),
+			{ ...unitRow(2, 2, "failed"), collected: true, errMsg: "unit 2 boom" },
+			unitRow(3, 3, "completed"),
+		]);
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [{ branch: [mockAssistantMessage("synthesized")] }],
+		});
+
+		const result = await resumeWorkflow(chain.ctx, { workflow: synthWf, header, ref: "@x" });
+
+		expect(result.success).toBe(true);
+		// No fanout unit re-dispatched — index 1's slot is filled by the rebuilt sentinel,
+		// not left pending. The only dispatch is the synthesize stage, whose fanin read
+		// skips the failed sentinel (p1 + p3, NOT p2).
+		expect(chain.sentMessages).toEqual([
+			"/skill:synthesize --plans .rpiv/artifacts/plans/p1.md --plans .rpiv/artifacts/plans/p3.md",
+		]);
+		// The collected row is NOT re-dispatched, so no new unit rows for impl land.
+		const rows = readAllStages(tmpDir, header.runId);
+		expect(rows.filter((r) => r.parent === "impl")).toHaveLength(3);
+	});
+
+	it("collected soft-halt row: the rebuilt sentinel's meta is byte-identical to a live failedOutput (both via outputMeta)", () => {
+		// The resume fold rebuilds the sentinel through `outputMeta({ ts: row.ts })`;
+		// the live `softHaltUnit` path mints `nowIso()`. Both now route through the
+		// single `outputMeta` assembler, so when fed the same activation fields the
+		// meta is structurally equal — a live-vs-resume divergence is unrepresentable.
+		const rowFields = {
+			stage: "impl (phase-2)",
+			skill: "impl",
+			stageNumber: 2,
+			ts: "t2",
+			runId: header.runId,
+		};
+		const rebuilt = failedOutput(outputMeta({ ...rowFields, ts: rowFields.ts }), "unit 2 boom");
+		expect(rebuilt.meta).toStrictEqual(rowFields);
+	});
+
 	it("process died mid-fanout (no failure row): resumes at the next unit", async () => {
 		writeRun([unitRow(1, 1, "completed")]); // only unit 1 recorded
 		const chain = createMockSessionChain({
@@ -201,6 +288,53 @@ describe("loop-resume — fanout", () => {
 
 		expect(result.success).toBe(true);
 		expect(chain.sentMessages).toEqual(["/skill:impl phase 2", "/skill:impl phase 3"]);
+	});
+
+	it("resume re-wave: gates a dependent behind its dependency's wave (level-2 leaf re-dispatches strictly after level-1 mid; --upstream slot-injection proves wave separation)", async () => {
+		// RESUME counterpart of the LIVE loop.test.ts "gates a dependent behind its
+		// dependency's wave" test. The trail carries ONLY the root/phase-1 row
+		// (slot[0]); the process died mid-wave-1, so mid + leaf never ran.
+		writeRun([unitRow(1, 1, "completed")]); // root/phase-1 only — NO mid/leaf rows
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/plans/p2.md")] }, // mid re-dispatched (wave 1)
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/plans/p3.md")] }, // leaf re-dispatched (wave 2)
+			],
+		});
+
+		const result = await resumeWorkflow(chain.ctx, { workflow: dagFanoutWf, header, ref: "@x" });
+
+		expect(result.success).toBe(true);
+		// Exactly two units re-dispatch — the root is skipped (slot[0] reconstructed from
+		// the trail by the resume fold; `pendingFanoutIndices` excludes the filled index).
+		expect(chain.sentMessages).toHaveLength(2);
+		// Wave order: mid (level 1) dispatched before leaf (level 2).
+		expect(chain.sentMessages[0]).toContain("phase 2");
+		expect(chain.sentMessages[1]).toContain("phase 3");
+		// WAVE-SEPARATION PROOF (c1 core): leaf's prompt carries `--upstream` AND mid's
+		// just-filled artifact path (plans/p2.md) — proving mid's slot was re-filled in
+		// wave 1 BEFORE leaf dispatched in wave 2. A broken flat dispatcher would compute
+		// leaf's suffix against an unfilled slot[1] and emit no `--upstream`.
+		expect(chain.sentMessages[1]).toContain("--upstream");
+		expect(chain.sentMessages[1]).toContain("plans/p2.md");
+		// BONUS (trail→slot reconstruction): mid's prompt carries `--upstream` AND root's
+		// artifact path (plans/p1.md) — proving the resume fold reconstructed slot[0] from
+		// the written completed row and the re-dispatch read it.
+		expect(chain.sentMessages[0]).toContain("--upstream");
+		expect(chain.sentMessages[0]).toContain("plans/p1.md");
+
+		// JSONL: all 3 units completed at their declared indices, in run order, each
+		// carrying the structured unit identity the resume drift guard joins on (id ?? label).
+		const rows = readAllStages(tmpDir, header.runId);
+		const implRows = rows.filter((r) => r.parent === "impl");
+		expect(implRows).toHaveLength(3);
+		expect(implRows.every((r) => r.status === "completed" && r.role === "produce")).toBe(true);
+		expect(implRows.map((r) => ({ unitIndex: r.unitIndex, unitId: r.unitId }))).toEqual([
+			{ unitIndex: 0, unitId: "phase-1" },
+			{ unitIndex: 1, unitId: "phase-2" },
+			{ unitIndex: 2, unitId: "phase-3" },
+		]);
 	});
 
 	it("fully-completed fanout: SILENT no-op route-onward (no re-announce, no per-stage toast)", async () => {
@@ -224,13 +358,13 @@ describe("loop-resume — fanout", () => {
 		});
 
 		expect(result.success).toBe(true);
-		expect(chain.ctx.newSession).not.toHaveBeenCalled();
+		expect(chain.ctx.spawnChild).not.toHaveBeenCalled();
 		expect(readAllStages(tmpDir, header.runId)).toHaveLength(3); // no new rows
 		// The finished loop is NOT re-announced.
 		expect(loopStarts).toEqual([]);
 		expect(stageStarts).toEqual([]);
-		// ...and the only completion toast is the workflow-level one.
-		expect(chain.notifications.filter((n) => n.msg === "✓ impl completed")).toEqual([]);
+		// ...loop completion is silent (no per-stage toast); only the workflow-level notice fires.
+		expect(chain.notifications.filter((n) => n.msg.startsWith("✓"))).toEqual([]);
 		expect(chain.notifications.filter((n) => /workflow complete/.test(n.msg))).toHaveLength(1);
 	});
 
@@ -287,6 +421,41 @@ describe("loop-resume — fanout", () => {
 		expect(rows[rows.length - 1]).toMatchObject({ stage: "impl", status: "failed" });
 		expect(chain.sentMessages).toEqual([]);
 	});
+
+	it("resume mid-fanout then synthesize: the fan-in read sees the full byte-identical array", async () => {
+		// impl (3-unit fanout, publishes "plans") → synthesize (reads fanin("plans")).
+		const synthWf: Workflow = {
+			name: "fanout-wf",
+			start: "impl",
+			stages: {
+				impl: produces({ outcome: transcriptOutcome("plans"), loop: fanout({ units: threeUnits }) }),
+				synthesize: acts({ reads: [fanin("plans")] }),
+			},
+			edges: { impl: "synthesize", synthesize: "stop" },
+		} as Workflow;
+
+		// Process died after unit 1 was recorded; units 2-3 re-run live, then synthesize.
+		writeRun([unitRow(1, 1, "completed")]);
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/plans/p2.md")] },
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/plans/p3.md")] },
+				{ branch: [mockAssistantMessage("synthesized")] },
+			],
+		});
+
+		const result = await resumeWorkflow(chain.ctx, { workflow: synthWf, header, ref: "@x" });
+
+		expect(result.success).toBe(true);
+		// The replayed unit-1 append + the two live appends all land in state.named.plans,
+		// so the synthesize barrier reads all three handles in run order.
+		expect(chain.sentMessages).toEqual([
+			"/skill:impl phase 2",
+			"/skill:impl phase 3",
+			"/skill:synthesize --plans .rpiv/artifacts/plans/p1.md --plans .rpiv/artifacts/plans/p2.md --plans .rpiv/artifacts/plans/p3.md",
+		]);
+	});
 });
 
 // ===========================================================================
@@ -299,6 +468,7 @@ describe("loop-resume — iterate", () => {
 		workflow: "polish",
 		input: "Ship it",
 		ts: "2026-06-03T08:00:00Z",
+		v: STATE_SCHEMA_VERSION,
 	};
 	const REVIEW_3_PHASES = "# Review\n\n### Phase 1 — Alpha\nx\n### Phase 2 — Beta\ny\n### Phase 3 — Gamma\nz\n";
 
@@ -445,6 +615,7 @@ describe("loop-resume — iterate corrective back-edge", () => {
 		workflow: "polish-loop",
 		input: "Ship it",
 		ts: "2026-06-03T09:00:00Z",
+		v: STATE_SCHEMA_VERSION,
 	};
 	const REVIEW_2_PHASES = "# Review\n\n### Phase 1 — A\nx\n### Phase 2 — B\ny\n";
 
@@ -595,6 +766,7 @@ describe("loop-resume — assess", () => {
 		workflow: "decompose",
 		input: "decompose this",
 		ts: "2026-06-03T10:00:00Z",
+		v: STATE_SCHEMA_VERSION,
 	};
 
 	const done = (v: Output) => Boolean((v.data as { done?: boolean }).done);
@@ -855,10 +1027,11 @@ describe("loop-resume — assess × panel", () => {
 		workflow: "decompose",
 		input: "decompose this",
 		ts: "2026-06-03T11:00:00Z",
+		v: STATE_SCHEMA_VERSION,
 	};
 
 	// The SITE's `done` reads the FOLDED verdict's `pass`; each member's `pred`
-	// reads its own `{ done }` — the two predicates are deliberately distinct (§4).
+	// reads its own `{ done }` — the two predicates are deliberately distinct.
 	const panelDone = (v: Output) => Boolean((v.data as { pass?: boolean }).pass);
 	const panelFeed = ({ verdict, round }: { verdict: Output; round: number }) =>
 		`refine round=${round} pass=${(verdict.data as { pass?: boolean }).pass}`;
@@ -1006,6 +1179,7 @@ describe("loop-resume — verify", () => {
 		workflow: "gated",
 		input: "build it",
 		ts: "2026-06-10T22:00:00Z",
+		v: STATE_SCHEMA_VERSION,
 	};
 
 	const pass = (v: Output) => Boolean((v.data as { done?: boolean }).done);
@@ -1246,6 +1420,7 @@ describe("loop-resume — prompt dispatch", () => {
 		workflow: "gated-prompt",
 		input: "build it",
 		ts: "2026-06-10T23:30:00Z",
+		v: STATE_SCHEMA_VERSION,
 	};
 
 	const pass = (v: Output) => Boolean((v.data as { done?: boolean }).done);

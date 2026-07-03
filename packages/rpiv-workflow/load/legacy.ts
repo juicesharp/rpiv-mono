@@ -1,7 +1,7 @@
 /**
  * Legacy-layout migration advisories — the notice strings AND the probes
- * that fire them (moved here from messages.ts + load/index.ts, M8: the
- * migration shell snippets are a loader concern, not UI constants).
+ * that fire them (the migration shell snippets are a loader concern, not
+ * UI constants).
  *
  * Each advisory is a `"warning"` (never blocks the run) probing a distinct
  * stale layout the unified `.rpiv/workflows/` move left behind. Sunset

@@ -68,8 +68,9 @@ export function adaptiveLeftWidth(
  * Cross-tab maximum left-column width. Aggregates `adaptiveLeftWidth` over every tab
  * and returns the widest result, so the options column stays stable on tab switch.
  *
- * Pure function — `tabs.length` MUST equal `itemsByTab.length`. Multi-select tabs
- * use `items.length` for numbering; single-select tabs add 1 for the chat row slot.
+ * Pure function — `tabs.length` MUST equal `itemsByTab.length`. Numbering uses
+ * `items.length` for every tab (the chat row slot that once added +1 on single-select
+ * has been removed).
  * Floor is `MIN_LEFT` so an all-empty input still produces a usable column.
  */
 export function crossTabMaxLeftWidth(
@@ -80,7 +81,7 @@ export function crossTabMaxLeftWidth(
 	let max = MIN_LEFT;
 	for (let i = 0; i < tabs.length; i++) {
 		const items = itemsByTab[i] ?? [];
-		const totalForNumbering = tabs[i]?.multiSelect ? items.length : items.length + 1;
+		const totalForNumbering = items.length;
 		const tabWidth = adaptiveLeftWidth(items, totalForNumbering, paneWidth);
 		if (tabWidth > max) max = tabWidth;
 	}

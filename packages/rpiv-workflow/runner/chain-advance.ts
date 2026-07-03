@@ -17,7 +17,7 @@ import { resolveSkill } from "../chain-state.js";
 import { lifecycleCtxFor, skillStageRef } from "../events.js";
 import { nowIso } from "../internal-utils.js";
 import { FAIL_BACKWARD_JUMP_EXHAUSTED, MSG_CHAIN_ADVANCE_FAILED, MSG_ROUTING_AUDIT_DROPPED } from "../messages.js";
-import { edgeIsDecision, nextStage } from "../routing.js";
+import { bypassedRecoveryArms, edgeIsDecision, nextStage } from "../routing.js";
 import { appendRoutingDecision } from "../state/index.js";
 import type { RunContext, WorkflowHostContext } from "../types.js";
 import { type ChainOutcome, finalizeWorkflow } from "./failure.js";
@@ -58,8 +58,14 @@ export async function advanceChain(
 
 	const fromRef = skillStageRef(currentName, idx + 1, resolveSkill(run.workflow.stages[currentName]!, currentName));
 
+	// Recovery arms this decision passed over for good — credited toward progress
+	// "coverage" by the bridge so a clean run's bar isn't frozen one-below until the
+	// end (carve's slice-fix/plan-fix/code-fix). Empty for deterministic edges (no alternatives).
+	const chosen = result.kind === "stop" ? "stop" : result.stage;
+	const bypassed = wasDecision ? bypassedRecoveryArms(run.workflow, currentName, chosen, run.visited) : [];
+
 	if (result.kind === "stop") {
-		await run.lifecycle.fire(curCtx, "onRoute", fromRef, "stop", lifecycleCtxFor(run));
+		await run.lifecycle.fire(curCtx, "onRoute", fromRef, "stop", lifecycleCtxFor(run), bypassed);
 		return finalizeWorkflow(curCtx, run);
 	}
 
@@ -73,7 +79,7 @@ export async function advanceChain(
 	// Fire onRoute after the routing decision has been audited (when applicable),
 	// before the next stage runs. Deterministic auto-edges still fire so
 	// listeners see every transition.
-	await run.lifecycle.fire(curCtx, "onRoute", fromRef, nextName, lifecycleCtxFor(run));
+	await run.lifecycle.fire(curCtx, "onRoute", fromRef, nextName, lifecycleCtxFor(run), bypassed);
 
 	// deps.runNext owns the catch for throws out of the *next* stage, so the
 	// JSONL row records `nextName` (the stage that actually threw) rather than

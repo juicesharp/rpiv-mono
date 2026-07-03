@@ -6,10 +6,10 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { type EdgeContext, gate, marksReadsData, match, STOP, type Workflow } from "./api.js";
+import { defineRoute, type EdgeContext, gate, marksReadsData, match, STOP, type Workflow } from "./api.js";
 import type { Output } from "./output.js";
 import { eq, gt } from "./predicates.js";
-import { edgeIsDecision, nextStage } from "./routing.js";
+import { bypassedRecoveryArms, edgeIsDecision, nextStage } from "./routing.js";
 import { takeRouteNote } from "./routing-dsl.js";
 import type { RunState } from "./types.js";
 
@@ -284,5 +284,58 @@ describe("match", () => {
 
 	it('keeps distinct-typed values apart when deduping (0 ≠ "0" ≠ false)', () => {
 		expect(() => match("f", { a: 0, b: "0", c: false })).not.toThrow();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// bypassedRecoveryArms — which not-taken arm of a gate counts as "covered"
+// ---------------------------------------------------------------------------
+
+describe("bypassedRecoveryArms", () => {
+	// A carve-shaped fragment: `slice-grade` is a decision edge to
+	// {design (forward) | slice-fix (loop-back)}. `slice-fix` loops back to
+	// `slice-check`; `design` proceeds forward to `synth`.
+	const wf: Workflow = {
+		name: "frag",
+		start: "research",
+		stages: {
+			research: stage("research"),
+			slice: stage("slice"),
+			"slice-check": stage("slice-check"),
+			"slice-grade": stage("slice-grade"),
+			design: stage("design"),
+			synth: stage("synth"),
+			"slice-fix": stage("slice-fix"),
+		},
+		edges: {
+			research: "slice",
+			slice: "slice-check",
+			"slice-check": "slice-grade",
+			"slice-grade": defineRoute(["design", "slice-fix"], () => "design", { readsData: false }),
+			"slice-fix": "slice-check", // loops back into visited territory
+			design: "synth",
+			synth: "stop",
+		},
+	};
+
+	const visited = new Set(["research", "slice", "slice-check", "slice-grade"]);
+
+	it("credits a not-taken arm whose successor is already visited (loop-back recovery)", () => {
+		// slice-grade passes → design; slice-fix (→ slice-check, visited) is bypassed for good.
+		expect(bypassedRecoveryArms(wf, "slice-grade", "design", visited)).toEqual(["slice-fix"]);
+	});
+
+	it("does NOT credit the forward arm on the fail path (successor not yet visited)", () => {
+		// slice-grade fails → slice-fix; the not-taken arm `design` (→ synth, unvisited) is
+		// merely DEFERRED, not bypassed — crediting it would run the numerator ahead.
+		expect(bypassedRecoveryArms(wf, "slice-grade", "slice-fix", visited)).toEqual([]);
+	});
+
+	it("skips a not-taken arm that is already visited (idempotent)", () => {
+		expect(bypassedRecoveryArms(wf, "slice-grade", "design", new Set([...visited, "slice-fix"]))).toEqual([]);
+	});
+
+	it("returns [] for a deterministic string edge (no alternatives to bypass)", () => {
+		expect(bypassedRecoveryArms(wf, "slice-check", "slice-grade", visited)).toEqual([]);
 	});
 });

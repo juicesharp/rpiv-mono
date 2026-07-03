@@ -12,7 +12,7 @@
  *   - linear `data` + `status` → RUNTIME (`ensureContractInputValid`).
  *   - produces self-check → PRODUCE-TIME (`extraction.ts:effectiveOutputSchema`).
  *
- * Per-stage schema fallback (DECIDED, D4): when a stage carries no contract,
+ * Per-stage schema fallback (DECIDED): when a stage carries no contract,
  * `checkEdgeSchemaCompat` falls back to the stage's own
  * `outputSchema`/`inputSchema`. That fallback lives HERE, not in harvest:
  * harvest derives per-SKILL contracts from dispatching stages only
@@ -22,11 +22,12 @@
  */
 
 import { marksReadsData, STOP, type Workflow } from "../api.js";
-import { isDispatchingStage, resolvePublishName, resolveSkill } from "../chain-state.js";
 import { extractJsonSchema } from "../json-schema.js";
-import { judgeOf } from "../loop-constructors.js";
+import { forEachJudgeChannel } from "../loop-constructors.js";
 import type { ProducesSpec, SkillContractMap } from "../skill-contract.js";
 import { adjudicateChannel, compareDataChannel, getCompositionComparators } from "../skill-contracts/index.js";
+import { readName } from "../stage-def.js";
+import { isDispatchingStage, resolvePublishName, resolveSkill } from "../stage-identity.js";
 import type { IssueReporter } from "./issue.js";
 
 /**
@@ -74,7 +75,7 @@ export function checkPredicateSchemas(
  * (registry-sourced, falling back to the stage's own output/input schema — see
  * the module header for why the fallback lives here). Warns on a definite
  * mismatch; degrades on predicate/STOP edges and opaque schemas via the shared
- * `compareDataChannel` core (same engine `canCompose` consults — D4).
+ * `compareDataChannel` core (same engine `canCompose` consults).
  *
  * Edge-local is correct here — the rolling primary flows along edges. The
  * many-to-one NAMED (`reads`) channel is handled by `checkReadsChannelCompat`.
@@ -150,12 +151,15 @@ export function checkReadsChannelCompat(
 			const produces = skillContracts.get(resolveSkill(stage, name))?.produces;
 			if (produces) indexPublisher(resolvePublishName(stage, name), name, produces);
 		}
-		// A skill judge is a publisher of its verdict channel; unsigned judges degrade.
-		const judge = judgeOf(stage);
-		if (judge?.skill && judge.outcome?.name) {
-			const produces = skillContracts.get(judge.skill)?.produces;
-			if (produces) indexPublisher(judge.outcome.name, name, produces);
-		}
+		// Skill judges publish their verdict channel — the SINGLE judge AND every
+		// PANEL member (the shared walk yields all of them; the unsigned fold
+		// channel arrives with `signingSkill === undefined` and is skipped, since a
+		// manufactured verdict has no producer contract to adjudicate against).
+		forEachJudgeChannel(stage, name, (channel, signingSkill) => {
+			if (!signingSkill) return;
+			const produces = skillContracts.get(signingSkill)?.produces;
+			if (produces) indexPublisher(channel, name, produces);
+		});
 	}
 
 	for (const [consumerName, consumer] of Object.entries(w.stages)) {
@@ -167,7 +171,8 @@ export function checkReadsChannelCompat(
 			: undefined;
 		if (!consumes?.reads) continue; // unsigned consumer — degrade
 		const report = r.forStage(consumerName);
-		for (const channel of consumer.reads) {
+		for (const rawRead of consumer.reads) {
+			const channel = readName(rawRead);
 			const publishers = publishersByChannel.get(channel);
 			if (!publishers) continue; // "no publisher at all" is checkReadsReferences's job
 			for (const { stage: producerName, produces } of publishers) {

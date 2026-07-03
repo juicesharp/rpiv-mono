@@ -11,15 +11,14 @@ export interface StatefulView<P> extends Component {
 }
 
 /**
- * Discriminated focus union — encodes the four-cell focus invariant
- * (`notesVisible`, submit-tab, `chatFocused`, options) that was previously
- * structural-only. Dispatcher cascade (`key-router.ts:151-178`) and reducer's
- * defensive clears (`state-reducer.ts:104-126`) enforce mutual exclusion;
+ * Discriminated focus union — encodes the three-cell focus invariant
+ * (`notesVisible`, submit-tab, options). Dispatcher cascade (`key-router.ts`)
+ * and reducer's defensive clears (`state-reducer.ts`) enforce mutual exclusion;
  * this type makes it explicit so per-component `focused: boolean` flags
  * derive from one equality check against this discriminant rather than
- * four parallel boolean reads.
+ * parallel boolean reads.
  *
- * Priority order: notes > submit > chat > options. Matches the dispatcher
+ * Priority order: notes > submit > options. Matches the dispatcher
  * cascade exactly so the union is observably equivalent to today's reads.
  */
-export type ActiveView = "notes" | "chat" | "options" | "submit";
+export type ActiveView = "notes" | "options" | "submit";

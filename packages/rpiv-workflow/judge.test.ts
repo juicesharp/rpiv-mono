@@ -58,7 +58,7 @@ describe("judge()", () => {
 	});
 });
 
-// Phase 1 of panel(): the type layer + the `panelMembers` expander only. No
+// The type layer + the `panelMembers` expander only. No
 // `panel()` factory, brands, or verdict schema yet — a single judge is the
 // panel of one, so every judge site keeps single-judge behavior unchanged.
 describe("panelMembers / isPanel", () => {
@@ -70,7 +70,6 @@ describe("panelMembers / isPanel", () => {
 	it("yields a panel's own members in order", () => {
 		const a = judge({ skill: "a", outcome: { name: "va" } as Judge["outcome"] });
 		const b = judge({ skill: "b", outcome: { name: "vb" } as Judge["outcome"] });
-		// No factory yet — construct the value structurally (Phase 2 adds panel()).
 		const p: PanelJudge = { kind: "panel", members: [a, b], fold: (vs) => vs };
 		expect(panelMembers(p)).toEqual([a, b]);
 	});

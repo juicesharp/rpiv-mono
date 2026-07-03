@@ -23,6 +23,14 @@ export type Effect =
 	| { kind: "set_notes_value"; value: string }
 	| { kind: "set_notes_focused"; focused: boolean }
 	| { kind: "forward_notes_keystroke"; data: string }
+	/**
+	 * Tell the session to hide or show its underlying overlay. Emitted by the
+	 * `toggle_collapsed` action so the runtime can call `OverlayHandle.setHidden(...)`,
+	 * which lets other overlay-aware consumers (e.g. `pi-station`) see the questionnaire
+	 * as truly hidden and resume normal chat scroll while the user reads the transcript
+	 * behind the modal.
+	 */
+	| { kind: "set_overlay_hidden"; hidden: boolean }
 	| { kind: "done"; result: QuestionnaireResult };
 
 export interface ApplyResult {
@@ -96,7 +104,6 @@ function switchTabResult(state: QuestionnaireState, nextTab: number, ctx: ApplyC
 		optionIndex: 0,
 		inputMode: false,
 		notesVisible: false,
-		chatFocused: false,
 		submitChoiceIndex: 0,
 		multiSelectChecked: syncMultiSelectFromAnswers(state.answers, ctx.questions, nextTab),
 		notesDraft: notesValue,
@@ -158,8 +165,15 @@ const confirmHandler: Handler<"confirm"> = (state, action, ctx) => {
 	}
 	const answers = new Map(state.answers);
 	answers.set(answer.questionIndex, answer);
-	const next: QuestionnaireState = { ...state, answers };
-	if (answer.kind === "chat") return doneFor(next, ctx, false);
+	// Custom free-text on a multi-select tab is mutually exclusive with checkbox selections:
+	// clear the checked set immediately so [✔] glyphs vanish on Enter. (A custom answer
+	// carries no `selected` array, so syncMultiSelectFromAnswers keeps it empty on tab-back.)
+	const isCustomMulti = answer.kind === "custom" && ctx.questions[answer.questionIndex]?.multiSelect === true;
+	const next: QuestionnaireState = {
+		...state,
+		answers,
+		...(isCustomMulti ? { multiSelectChecked: new Set<number>() } : {}),
+	};
 	if (action.autoAdvanceTab !== undefined) return switchTabResult(next, action.autoAdvanceTab, ctx);
 	return doneFor(next, ctx, false);
 };
@@ -229,25 +243,10 @@ const notesExitHandler: Handler<"notes_exit"> = (state, _action, _ctx) => {
 	};
 };
 
-const focusOptionsHandler: Handler<"focus_options"> = (state, action, ctx) => {
-	const items = ctx.itemsByTab[state.currentTab] ?? [];
-	const focused = items[action.optionIndex];
-	const inputMode = focused ? ROW_INTENT_META[focused.kind].activatesInputMode : false;
-	const next = withFocusedOptionHasPreview(
-		{ ...state, chatFocused: false, optionIndex: action.optionIndex, inputMode },
-		ctx.questions,
-	);
-	return { state: next, effects: inputMode ? [] : [{ kind: "clear_input_buffer" }] };
-};
-
 const cancelHandler: Handler<"cancel"> = (s, _a, c) => doneFor(s, c, true);
 const submitHandler: Handler<"submit"> = (s, _a, c) => doneFor(s, c, false);
 const submitNavHandler: Handler<"submit_nav"> = (s, a, _c) => ({
 	state: { ...s, submitChoiceIndex: a.nextIndex },
-	effects: [],
-});
-const focusChatHandler: Handler<"focus_chat"> = (s, _a, _c) => ({
-	state: { ...s, chatFocused: true },
 	effects: [],
 });
 const notesForwardHandler: Handler<"notes_forward"> = (s, a, _c) => ({
@@ -256,7 +255,7 @@ const notesForwardHandler: Handler<"notes_forward"> = (s, a, _c) => ({
 });
 const toggleCollapsedHandler: Handler<"toggle_collapsed"> = (s, _a, _c) => ({
 	state: { ...s, collapsed: !s.collapsed },
-	effects: [],
+	effects: [{ kind: "set_overlay_hidden", hidden: !s.collapsed }],
 });
 const ignoreHandler: Handler<"ignore"> = (s, _a, _c) => ({ state: s, effects: [] });
 
@@ -278,8 +277,6 @@ const HANDLERS: { [K in QuestionnaireAction["kind"]]: Handler<K> } = {
 	notes_forward: notesForwardHandler,
 	submit: submitHandler,
 	submit_nav: submitNavHandler,
-	focus_chat: focusChatHandler,
-	focus_options: focusOptionsHandler,
 	toggle_collapsed: toggleCollapsedHandler,
 	ignore: ignoreHandler,
 };

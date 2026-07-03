@@ -1,6 +1,6 @@
 import { Type } from "@sinclair/typebox";
 import { afterEach, describe, expect, it } from "vitest";
-import { acts, defineWorkflow, produces as producesRaw, type StageDef } from "./api.js";
+import { acts, defineWorkflow, fanin, produces as producesRaw, type StageDef } from "./api.js";
 import { noopCollector } from "./outcomes/index.js";
 import type { CompositionComparator, ProducesSpec, SkillContract, SkillContractMap } from "./skill-contract.js";
 import {
@@ -236,6 +236,21 @@ describe("skill-contracts", () => {
 			expect(contract?.consumes?.reads).toEqual({ research: {} });
 		});
 
+		it("harvests a fanin() read keyed by the normalized channel name", () => {
+			const w = defineWorkflow({
+				name: "test",
+				start: "a",
+				stages: {
+					a: producesRaw({ outcome: STUB_OUTCOME, reads: [fanin("research")] }),
+				},
+				edges: { a: "stop" },
+			});
+			const harvested = harvestStageContracts([w]);
+			const contract = harvested.get("a");
+			// Keyed by "research", never "[object Object]".
+			expect(contract?.consumes?.reads).toEqual({ research: {} });
+		});
+
 		it("does not harvest meta (declared-only)", () => {
 			const w = defineWorkflow({
 				name: "test",
@@ -423,7 +438,7 @@ describe("skill-contracts", () => {
 		it("degrades (ok) when no comparator is registered", () => {
 			expect(canCompose("design", "implement", contracts).ok).toBe(true);
 		});
-		it("degrades (ok) when the comparator throws — the advisory query never propagates a defect (C14)", () => {
+		it("degrades (ok) when the comparator throws — the advisory query never propagates a defect", () => {
 			registerCompositionComparator("plans", () => {
 				throw new Error("comparator bug");
 			});
@@ -434,7 +449,7 @@ describe("skill-contracts", () => {
 		});
 	});
 
-	describe("adjudicateChannel — THE shared channel rule (C14)", () => {
+	describe("adjudicateChannel — THE shared channel rule", () => {
 		const planProduces: ProducesSpec = { kind: "produces", meta: { artifactKind: "plan" } };
 		const kindComparator: CompositionComparator = (produces, consumes, ch) => {
 			const want = (consumes.reads?.[ch]?.meta as { artifactKind?: string } | undefined)?.artifactKind;

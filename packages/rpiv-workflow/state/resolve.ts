@@ -1,8 +1,8 @@
 /**
  * Run-reference resolution — the one composer that sits ABOVE both the raw
- * readers (`reads.ts`) and the names index (`names.ts`). Moved out of
- * `reads.ts` (D9): a name-aware resolver doesn't belong in the raw-reads
- * module, and housing it there forced `reads.ts` to import `names.ts`.
+ * readers (`reads.ts`) and the names index (`names.ts`). A name-aware
+ * resolver doesn't belong in the raw-reads module, and housing it there
+ * would force `reads.ts` to import `names.ts`.
  */
 
 import { basename } from "node:path";

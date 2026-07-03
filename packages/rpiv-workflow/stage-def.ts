@@ -59,9 +59,13 @@ export const STAGE_KINDS = ["produces", "side-effect"] as const;
 export type StageKind = (typeof STAGE_KINDS)[number];
 
 /**
- * - `"fresh"` — wraps the stage in `ctx.newSession({ withSession })`.
- * - `"continue"` — reuses the prior session via `host.sendUserMessage()` +
- *   `ctx.waitForIdle()`; branch sliced by `branchOffset`.
+ * - `"fresh"` — the stage runs in a brand-new detached child session.
+ * - `"continue"` — the stage FORKS its predecessor's persisted child session
+ *   (`SessionManager.forkFrom`), so the child carries the prior conversation as
+ *   context; the continuation turn is then sent into it, and its outcome is
+ *   sliced past the inherited prefix by a `branchOffset` re-derived from the
+ *   forked branch. No predecessor session (start stage / after a loop / file
+ *   gone) degrades to a fresh dispatch.
  */
 export const SESSION_POLICIES = ["fresh", "continue"] as const;
 export type SessionPolicy = (typeof SESSION_POLICIES)[number];
@@ -142,7 +146,45 @@ export type ActsScriptFn = (ctx: ScriptContext) => void | Promise<void>;
 export type PromptFn = (ctx: ScriptContext) => string | Promise<string>;
 
 // ===========================================================================
-// StageDef — the discriminated union over the dispatch axis (T1)
+// Channel-read declarations for `reads:` stage fields
+// ===========================================================================
+
+/**
+ * A single `reads:` entry: a bare channel name (latest-wins, the historical
+ * default) or a spec selecting ALL accumulated entries of the channel.
+ * `fanin()` builds the all-entries spec — the consumer-side mirror of
+ * `fanout()`, the fanout-and-synthesize fan-in idiom.
+ */
+export type StageRead = string | { readonly name: string; readonly all?: boolean };
+
+/**
+ * Read EVERY accumulated entry of a channel (run order), not just the latest.
+ * The canonical consumer side of fanout-and-synthesize:
+ *   fanout({ ..., outcome: { name: "plans" } })
+ *   stage({ reads: [fanin("plans")], skill: "synthesize" })
+ * Throws on an empty name, mirroring the value-returning loop/routing builders
+ * (gate()/match()/assess()) — NOT the pure passthrough factories in this file
+ * (produces()/acts()/terminal()), which apply defaults without validating.
+ */
+export function fanin(name: string): { readonly name: string; readonly all: true } {
+	if (typeof name !== "string" || name.length === 0) {
+		throw new Error("fanin(name): name must be a non-empty channel name");
+	}
+	return { name, all: true };
+}
+
+/** The channel name of a read, normalizing bare-string and spec forms. */
+export function readName(read: StageRead): string {
+	return typeof read === "string" ? read : read.name;
+}
+
+/** Whether a read consumes ALL accumulated entries (vs. latest-wins). */
+export function readsAll(read: StageRead): boolean {
+	return typeof read !== "string" && read.all === true;
+}
+
+// ===========================================================================
+// StageDef — the discriminated union over the dispatch axis
 // ===========================================================================
 
 /**
@@ -240,9 +282,13 @@ export interface SkillStage<TIn = unknown, TOut = unknown> extends StageDefBase<
 	 * Names this stage consumes from `state.named` to build its prompt.
 	 * When set, the runner replaces the default single-artifact prompt
 	 * (`/skill:<name> <handle>`) with a labelled-flag form
-	 * (`/skill:<name> --<n1> <h1> --<n2> <h2> …`), reading the most recent
-	 * `Output` each name has accumulated and iterating its `artifacts` list.
-	 * Empty (or unset) → default prompt behaviour preserved.
+	 * (`/skill:<name> --<n1> <h1> --<n2> <h2> …`), reading each name's
+	 * accumulated `Output` and iterating its `artifacts` list.
+	 *
+	 * A bare string reads the channel's LATEST entry (`array.at(-1)`); wrap a
+	 * name in `fanin("name")` to read EVERY accumulated entry — the
+	 * fanout-and-synthesize fan-in idiom. Empty (or unset) → default prompt
+	 * behaviour preserved.
 	 *
 	 * Names address `state.named` slots, which are keyed by
 	 * `stage.outcome?.name ?? stage.<record-key>`. Every name in `reads:`
@@ -250,7 +296,7 @@ export interface SkillStage<TIn = unknown, TOut = unknown> extends StageDefBase<
 	 * at load time by `validateWorkflow`; the `ensureNamedReads` preflight
 	 * catches the "haven't reached the producer yet" case at runtime).
 	 */
-	reads?: ReadonlyArray<string>;
+	reads?: ReadonlyArray<StageRead>;
 	run?: never;
 	prompt?: never;
 }
@@ -270,8 +316,8 @@ export interface SkillStage<TIn = unknown, TOut = unknown> extends StageDefBase<
  */
 export interface ScriptStage<TIn = unknown, TOut = unknown> extends StageDefBase<TIn, TOut> {
 	run: ProducesScriptFn<string, TOut> | ActsScriptFn;
-	/** Same named-channel consumption as a skill stage — `ScriptContext.state.named` still needs the producer gate. */
-	reads?: ReadonlyArray<string>;
+	/** Same named-channel consumption as a skill stage — `ScriptContext.state.named` still needs the producer gate. `fanin()` reads all entries. */
+	reads?: ReadonlyArray<StageRead>;
 	skill?: never;
 	outcome?: never;
 	loop?: never;
@@ -307,7 +353,7 @@ export interface PromptStage<TIn = unknown, TOut = unknown> extends StageDefBase
 
 /**
  * A stage in the workflow graph — a discriminated union over the DISPATCH
- * axis (T1): skill (`SkillStage`, the default), script (`ScriptStage`,
+ * axis: skill (`SkillStage`, the default), script (`ScriptStage`,
  * `run` present), or raw prompt (`PromptStage`, `prompt` present). The
  * stage's identity is the surrounding `Workflow.stages` record key.
  *
@@ -317,7 +363,7 @@ export interface PromptStage<TIn = unknown, TOut = unknown> extends StageDefBase
  * hand-rolled literals because jiti erases TS types (same posture as the
  * `Judge` union + `judgeShapeIssues`).
  *
- * TYPING MODEL (T2): `<TIn, TOut>` are LOCAL inference helpers — they tie a
+ * TYPING MODEL: `<TIn, TOut>` are LOCAL inference helpers — they tie a
  * factory call's `inputSchema`/`outputSchema`/`run` together, then erase at
  * the `Workflow.stages` boundary (`Record<string, StageDef>`). They do NOT
  * carry types across edges; inter-stage typing is runtime-contract-based
@@ -353,7 +399,7 @@ export function defineWorkflow(spec: Workflow): Workflow {
 }
 
 /**
- * Builder options are PROJECTIONS of the union arms (T13): each interface
+ * Builder options are PROJECTIONS of the union arms: each interface
  * `Pick`s its fields from the arm the factory constructs, and the factory
  * spreads the options over the arm's fixed fields. Adding a knob to an arm
  * is one edit here (extend the `Pick` key list — a stale key no longer on
@@ -414,15 +460,21 @@ interface ActsPromptOptions<TIn = unknown> extends Pick<PromptStage<TIn, void>, 
 	sessionPolicy?: SessionPolicy;
 }
 
+/**
+ * THE stage-defaults authority — owns the load-bearing `as StageDef` cast (a
+ * `Partial<StageDef>` union can't be proven to complete a single arm, so the
+ * cast is required for the `Partial`-override factories; taming it here means
+ * callers don't repeat the concession) + the duplicated
+ * `{ kind, sessionPolicy: "fresh", ...overrides }` body. `producesFn`/`actsFn`
+ * differ only by the `kind` literal; this helper parameterizes it. The cast's
+ * load-bearingness is documented ONCE here, not on each twin.
+ */
+function withDefaults(kind: "produces" | "side-effect", overrides: Partial<StageDef> = {}): StageDef {
+	return { kind, sessionPolicy: "fresh", ...overrides } as StageDef;
+}
+
 function producesFn(overrides: Partial<StageDef> = {}): StageDef {
-	// The cast is the factory's one concession: a `Partial` of a union can't be
-	// proven to complete a single arm. Call sites stay arm-checked (an object
-	// literal mixing dispatches fails before it reaches the spread).
-	return {
-		kind: "produces",
-		sessionPolicy: "fresh",
-		...overrides,
-	} as StageDef;
+	return withDefaults("produces", overrides);
 }
 
 function producesScript<TIn = unknown, TOut = unknown>(opts: ProducesScriptOptions<TIn, TOut>): StageDef<TIn, TOut> {
@@ -442,11 +494,7 @@ function producesPrompt<TIn = unknown, TOut = unknown>(opts: ProducesPromptOptio
 }
 
 function actsFn(overrides: Partial<StageDef> = {}): StageDef {
-	return {
-		kind: "side-effect",
-		sessionPolicy: "fresh",
-		...overrides,
-	} as StageDef;
+	return withDefaults("side-effect", overrides);
 }
 
 function actsPrompt<TIn = unknown>(opts: ActsPromptOptions<TIn>): StageDef<TIn, void> {
@@ -465,10 +513,24 @@ function actsScript<TIn = unknown>(opts: ActsScriptOptions<TIn>): StageDef<TIn, 
 	};
 }
 
+// A terminal stage = side-effect + inheritsArtifacts: false (see the `terminal()`
+// public doc). `terminalFn` (Partial path) and `terminalScript` (concrete-opts
+// path below) are the two realizations; both set the same marker.
+//
+// "terminal" SENSE 1 (the factory — this fn + the `terminal` export below): a
+// side-effect stage that does NOT inherit the upstream artifact. Distinct from
+// SENSE 2 (graph sink — `StageShape.edge.mode: "terminal"` in loop-constructors.ts
+// / `{ kind: "stop" }` in routing.ts: no outgoing edge OR explicit `STOP`;
+// orthogonal to this factory — a `terminal()` stage can route onward, and a
+// plain stage can be a sink) and SENSE 3 (run-outcome prose — "terminal
+// failure/outcome" = a halt that ends the run, e.g. audit.ts `writeFailureRow`).
+// See the `terminal` export doc below for the full glossary.
 function terminalFn(overrides: Partial<StageDef> = {}): StageDef {
-	return actsFn({ ...overrides, inheritsArtifacts: false } as Partial<StageDef>);
+	return withDefaults("side-effect", { ...overrides, inheritsArtifacts: false });
 }
 
+// Concrete-opts twin of `terminalFn` above — both realize "side-effect +
+// inheritsArtifacts: false" via their respective paths (script vs Partial).
 function terminalScript<TIn = unknown>(opts: ActsScriptOptions<TIn>): StageDef<TIn, void> {
 	return actsScript({ ...opts, inheritsArtifacts: false });
 }
@@ -523,5 +585,19 @@ export const acts = Object.assign(actsFn, { script: actsScript, prompt: actsProm
  * Desugars to `acts({ ...overrides, inheritsArtifacts: false })`. The
  * skillless variant `terminal.script({ run, ... })` desugars to
  * `acts.script({ ...opts, inheritsArtifacts: false })`.
+ *
+ * ── Glossary: "terminal" has three unrelated senses in this package ──
+ *  1. FACTORY (this export, `terminalFn`/`terminalScript`): a side-effect
+ *     stage that does NOT inherit the upstream artifact (`inheritsArtifacts:
+ *     false`). A `terminal()` stage may still carry a downstream edge.
+ *  2. GRAPH SINK (`StageShape.edge.mode: "terminal"` in loop-constructors.ts;
+ *     `{ kind: "stop" }` in routing.ts `RoutingResult`; rendered "(terminal)"
+ *     by preview.ts `formatEdge`; "implicit terminals" in validate/graph.ts):
+ *     a stage with NO outgoing edge OR an explicit `STOP`. Orthogonal to the
+ *     factory — a `terminal()` stage can route onward, a plain stage can be a
+ *     sink.
+ *  3. RUN OUTCOME ("terminal failure/outcome" prose, e.g. audit.ts
+ *     `writeFailureRow` / `recordTerminalFailure`): a failure/cancellation/
+ *     abort that ends the run.
  */
 export const terminal = Object.assign(terminalFn, { script: terminalScript });

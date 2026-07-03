@@ -1,0 +1,322 @@
+/**
+ * lane-progress — bridges rpiv-workflow's lifecycle bus into the run-lane
+ * registry so the ambient overlay shows LIVE stage progress.
+ *
+ * The base plan deferred "rich progress" on the premise it needed a new
+ * runner→host→registry report path. That path already exists: rpiv-workflow
+ * publicly exports `registerLifecycle`, whose docstring literally describes "a
+ * rpiv-pi widget" marking stage progress by runId. So this bridge is a cheap,
+ * clean-install-safe increment — no host plumbing.
+ *
+ * Each lifecycle event maps to `setLaneProgress(ctx.runId, …)`:
+ *   - onStageStart → clear the prior stage's fan-out unit sub-rows (every stage kind; it fires
+ *                    before onLoopStart on a loop stage) + { stageNumber, totalStages, stageName, phase: "running" }
+ *   - onStageRetry → phase "retry" + attempt           ("⟲ … retry 2/3")
+ *   - onStageError → phase "error"                      (brief — the run then evicts)
+ *   - onLoopStart  → seed units.total (fanout precomputes its unit list); on a
+ *                    fanout generation also clear the prior generation's unit sub-rows.
+ *   - onUnitStart  → materialize a per-unit sub-row (fanout only) via setUnitStarted.
+ *   - onUnitEnd    → flip the unit sub-row terminal + advance units.done by a TRUE
+ *                    completion count ("units x/y"). The aggregate `done` advances on
+ *                    completion, so it stays monotone under out-of-order fanout.
+ * `setLaneProgress` no-ops on a non-recorded run, so non-detached runs cost nothing.
+ *
+ * Clean-install contract: a static top-level VALUE import of the rpiv-workflow
+ * barrel crashes the extension when the sibling is absent. So the listener is
+ * registered via a DYNAMIC `import("@juicesharp/rpiv-workflow/startup")` (the thin
+ * `/startup` entry that also backs the execution-host provider) guarded by
+ * `isModuleNotFound`.
+ *
+ * Root-gated + idempotent: registered only on the ROOT launcher's session_start
+ * (`ctx.hasUI && !isLaneRelayUiContext`, mirroring the provider hook) so a
+ * re-loading child never double-subscribes; a process-global guard slot holds the
+ * disposer so a re-fired session_start (`/reload`) or a child re-load never stacks
+ * a duplicate listener. `__resetLaneProgress` is wired into test/setup.ts beforeEach.
+ */
+
+import type { ExtensionAPI, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
+import { shortFailureReason } from "./lane-failure.js";
+import { isLaneRelayUiContext } from "./lane-relay-ui.js";
+import {
+	clearUnitLanes,
+	getLane,
+	markUnitDone,
+	noteVisitedStage,
+	retireRun,
+	seedPendingUnits,
+	seedVisitedStages,
+	setLaneProgress,
+	setUnitStarted,
+	sweepRunningUnits,
+} from "./run-lane-registry.js";
+import { getCapturedUiContext } from "./session-capture.js";
+import { isModuleNotFound } from "./utils.js";
+
+/**
+ * Process-global guard holding the active `registerLifecycle` disposer. Anchored
+ * on a `globalThis[Symbol.for(...)]` slot (NOT a module-local `let`) for the same
+ * reason the registry is: a `/reload` or a detached child may re-evaluate this
+ * module, and a module-local guard would let a second registration stack onto the
+ * process-global lifecycle registry. One slot → at most one listener, ever.
+ */
+const GUARD_SLOT = Symbol.for("@juicesharp/rpiv-pi:laneProgressGuard");
+
+interface ProgressGuard {
+	dispose: (() => void) | undefined;
+}
+
+function guard(): ProgressGuard {
+	const g = globalThis as Record<symbol, unknown>;
+	let s = g[GUARD_SLOT] as ProgressGuard | undefined;
+	if (s === undefined) {
+		s = { dispose: undefined };
+		g[GUARD_SLOT] = s;
+	}
+	return s;
+}
+
+/**
+ * Runs whose CURRENT loop generation is a fan-out. `onUnitStart`/`onUnitEnd`
+ * fire for EVERY loop kind, but only concurrent fan-out units become individually-
+ * addressable sub-rows — a sequential iterate/assess unit stays on the lane's single
+ * slot (the host keys it to the sentinel). Seeded on a fan-out `onLoopStart`, dropped on
+ * a non-fan-out `onLoopStart` and on the terminal events; cleared wholesale by
+ * `__resetLaneProgress`. Module-local (the bridge runs only at the root launcher).
+ */
+const fanoutRuns = new Set<string>();
+
+/**
+ * Wire the lifecycle→registry bridge to the ROOT launcher's session_start.
+ * Skipped for a detached foreground child (branded relay ui) and any non-UI
+ * session — the same gate the execution-host provider hook uses.
+ */
+export function registerLaneProgressHook(pi: ExtensionAPI): void {
+	pi.on("session_start", async (_event: unknown, ctx: { hasUI?: boolean; ui?: ExtensionUIContext }) => {
+		if (!ctx.hasUI || isLaneRelayUiContext(ctx.ui)) return; // root launcher only
+		await registerLaneProgress().catch((err) =>
+			console.error("[rpiv-core] failed to register lane progress bridge:", err),
+		);
+	});
+}
+
+/**
+ * Register the lifecycle listener ONCE. Idempotent via the process-global guard;
+ * degrades silently when the sibling is absent (the missing-sibling banner +
+ * /rpiv-setup guide the user).
+ */
+export async function registerLaneProgress(): Promise<void> {
+	const g = guard();
+	if (g.dispose) return; // already registered — never stack a duplicate listener
+	try {
+		// Thin `/startup` entry (re-exports registerLifecycle) — keeps the
+		// loader/DSL/runner graph off startup and avoids the barrel-import race.
+		const { registerLifecycle } = await import("@juicesharp/rpiv-workflow/startup");
+		g.dispose = registerLifecycle({
+			// Fires ONCE per run (new or resumed) BEFORE the chain kicks. On a RESUME the
+			// engine reconstructs its distinct-visited set from the trail and re-enters the
+			// walk at a deep `stageNumber`, but only re-fires per-stage events from that point
+			// forward — so seed the registry's accumulator from `ctx.visited` HERE, otherwise
+			// the bridge recounts from zero and a near-done resume renders a misleading "1/17".
+			// A fresh run carries an empty `visited`, so this no-ops. The numerator surfaces on
+			// the first post-seed `setLaneProgress` (the resumed stage's onStageStart).
+			onWorkflowStart: (ctx) => {
+				if (ctx.visited?.length) seedVisitedStages(ctx.runId, ctx.visited);
+			},
+			// `noteVisitedStage` is idempotent per stage name, so calling it from every
+			// per-stage event keeps `visited` (the distinct-nodes-visited fraction
+			// numerator) correct without inflating on a loop-back — see LaneProgress.
+			// onStageStart fires for EVERY stage kind — a plain sequential stage (the single-stage
+			// entry announcement, run-stage.ts:221) AND every loop stage, where it fires BEFORE
+			// onLoopStart (announceLoopStart, loop.ts:75→78). So retiring the prior stage's fan-out
+			// unit sub-rows HERE closes the c1 gap (fanout → plain sequential stage: the sequential
+			// stage has no onLoopStart to clear them) and the c2 gap (fanout → non-fanout loop: the
+			// loop's onLoopStart only drops the gate, it never cleared the prior generation).
+			// clearUnitLanes is a no-op on an empty map, so the first stage of a run pays nothing.
+			onStageStart: (stage, ctx) => {
+				clearUnitLanes(ctx.runId);
+				setLaneProgress(ctx.runId, {
+					stageNumber: stage.stageNumber,
+					totalStages: ctx.totalStages,
+					visited: noteVisitedStage(ctx.runId, stage.name),
+					stageName: stage.name,
+					phase: "running",
+				});
+			},
+			onStageRetry: (stage, attempt, ctx) =>
+				setLaneProgress(ctx.runId, {
+					stageNumber: stage.stageNumber,
+					totalStages: ctx.totalStages,
+					visited: noteVisitedStage(ctx.runId, stage.name),
+					stageName: stage.name,
+					phase: "retry",
+					attempt,
+				}),
+			// Carry the stage's failure cause so the dock row can surface WHY
+			// it failed before the run retires — no longer discarded.
+			onStageError: (stage, error, ctx) => {
+				// Orphan sweep (the asymmetric onUnitStart…onUnitEnd bracket): a fail-fast
+				// halt fired onUnitStart for the halting unit (+ in-flight siblings) with no
+				// onUnitEnd — flip every still-running sub-row to ✗ so none spins forever.
+				sweepRunningUnits(ctx.runId, "failed");
+				fanoutRuns.delete(ctx.runId);
+				setLaneProgress(ctx.runId, {
+					stageNumber: stage.stageNumber,
+					totalStages: ctx.totalStages,
+					visited: noteVisitedStage(ctx.runId, stage.name),
+					stageName: stage.name,
+					phase: "error",
+					reason: error,
+				});
+			},
+			// A decision edge took its arm: credit each not-taken RECOVERY arm (a
+			// failure loop the chosen arm skipped for good — carve's slice-fix/plan-fix/code-fix)
+			// as visited. This advances the distinct-nodes-visited numerator at the
+			// gate, so the bar reaches `totalStages` WHILE the terminal stage runs
+			// (commit shows 16/16) instead of capping below until the onWorkflowEnd
+			// snap. `noteVisitedStage` is idempotent + the runner already excludes
+			// already-visited / forward arms, so this never inflates past the total.
+			onRoute: (_from, _to, ctx, bypassed) => {
+				if (!bypassed?.length) return;
+				let visited = 0;
+				for (const name of bypassed) visited = noteVisitedStage(ctx.runId, name);
+				const prog = getLane(ctx.runId)?.progress;
+				if (prog) setLaneProgress(ctx.runId, { ...prog, visited });
+			},
+			onLoopStart: (stage, info, ctx) => {
+				// A new fan-out generation REPLACES the prior one's sub-rows — the engine
+				// resets cursor.slots per loop, so the registry mirrors only the current
+				// generation. A non-fan-out loop (iterate/assess/verify) drops the gate so its
+				// sequential units never materialize sub-rows.
+				if (info.kind === "fanout") {
+					clearUnitLanes(ctx.runId);
+					fanoutRuns.add(ctx.runId);
+					// Fan out the generation's unit sub-rows as PENDING the instant onLoopStart
+					// fires — BEFORE any onUnitStart. Fanout precomputes its unit list; pull loops
+					// (iterate/assess/verify) carry none, so they seed nothing (the guard mirrors
+					// the `units: info.units ?` seed below). The key is the declared array position,
+					// which matches onUnitStart's unit.index (loop-parallel.ts:222-224).
+					if (info.units)
+						seedPendingUnits(
+							ctx.runId,
+							info.units.map((u, i) => ({ index: i, label: u.label })),
+						);
+				} else {
+					fanoutRuns.delete(ctx.runId);
+				}
+				setLaneProgress(ctx.runId, {
+					stageNumber: stage.stageNumber,
+					totalStages: ctx.totalStages,
+					visited: noteVisitedStage(ctx.runId, stage.name),
+					stageName: stage.name,
+					phase: "running",
+					// Fanout precomputes its unit list; pull loops (iterate/assess) discover
+					// units one at a time, so seed total only when the list is known.
+					units: info.units ? { done: 0, total: info.units.length } : undefined,
+				});
+			},
+			// NEW — the previously-missing half of the bracket. Materialize a per-unit
+			// sub-row (label + running) for fan-out units ONLY. The host publishes the
+			// live session separately (setCurrentSession at this index); both upsert the
+			// same key in either order. The lifecycle bus is the sole cross-package channel.
+			onUnitStart: (_stage, unit, ctx) => {
+				if (fanoutRuns.has(ctx.runId)) setUnitStarted(ctx.runId, unit.index, unit.label);
+			},
+			// A collect-all fanout unit soft-halted: NON-terminal (the run survives, the synthesis
+			// fold skips its sentinel), so it fires neither onStageError (recordUnitHalt skips it)
+			// nor onUnitEnd (the success path). Flip its sub-row ✗ HERE — otherwise it spins until
+			// onWorkflowEnd, where a completed run's sweep paints it ✓ (a failed unit shown as
+			// success). Fan-out only; a missing/unchanged sub-row is a no-op.
+			onUnitHalt: (_stage, unit, _reason, ctx) => {
+				if (fanoutRuns.has(ctx.runId)) markUnitDone(ctx.runId, unit.index, "failed");
+			},
+			onUnitEnd: (stage, unit, _output, ctx) => {
+				// Flip THIS unit's sub-row terminal (fan-out only). The row stays viewable via
+				// its snapshot/disk transcript.
+				const isFanout = fanoutRuns.has(ctx.runId);
+				if (isFanout) markUnitDone(ctx.runId, unit.index, "done");
+				// Advance units.done by a TRUE completion count — FANOUT ONLY. onUnitEnd fires
+				// in COMPLETION order (units finish out of declared order under
+				// maxConcurrency > 1), so keying off `unit.index + 1` jumps and regresses
+				// (e.g. 3/3 → 1/3 → 2/3); setLaneProgress replaces progress wholesale, so
+				// read the prior count back and increment (`?? 0` matches the onLoopStart seed).
+				// Pull loops (iterate/assess/verify) carry NO precomputed total — `onLoopStart`
+				// seeds `units: undefined` for them, so `units` stays undefined here and the
+				// dock omits the `· units x/y` segment (fanout-only sub-progress). The
+				// `prev?.total ?? unit.index + 1` seed is thus unreachable on the pull-loop
+				// path: a pull loop never has a seeded `prev.total`, so the inverted
+				// "1/1 → 2/1 → 3/1" (total frozen at unit.index+1 while done climbed) is gone.
+				let units: { done: number; total: number } | undefined;
+				if (isFanout) {
+					const prev = getLane(ctx.runId)?.progress?.units;
+					units = { done: (prev?.done ?? 0) + 1, total: prev?.total ?? unit.index + 1 };
+				}
+				setLaneProgress(ctx.runId, {
+					stageNumber: stage.stageNumber,
+					totalStages: ctx.totalStages,
+					visited: noteVisitedStage(ctx.runId, stage.name),
+					stageName: stage.name,
+					phase: "running",
+					units,
+				});
+			},
+			// The run terminated: RETAIN the lane with its terminal status (so
+			// it stays visible + its transcript stays viewable) and PUSH a completion
+			// toast to the launcher (the only signal the user gets if they walked away).
+			// This is the single writer of a terminal LaneStatus.
+			onWorkflowEnd: (result, ctx) => {
+				const status = result.termination?.status;
+				if (!status || status === "running") return; // still in-flight — nothing to retire
+				const lane = getLane(ctx.runId);
+				const name = lane?.name ?? ctx.workflow;
+				// `termination.error` is the readable cause (the same text as the trail's
+				// errMsg) — retain it on the lane for the dock chip + viewer header.
+				const error = result.termination?.error;
+				// A completed run is 100% by definition. The bar's fraction is
+				// distinct-stages-visited / reachable-stages. The onRoute handler now credits
+				// bypassed recovery arms (carve's `slice-fix`/`plan-fix`/`code-fix`) at the gate, so a clean
+				// run usually already reads full here and this snap is a no-op. It REMAINS as a
+				// safety net for any uncredited skip (e.g. a gate passed before a resume point,
+				// whose onRoute never re-fired). Paint the bar full on clean completion only;
+				// `failed`/`aborted` keep their last real snapshot so the row stays frozen at
+				// the stage that died.
+				const prog = lane?.progress;
+				if (status === "completed" && prog && prog.visited !== prog.totalStages) {
+					setLaneProgress(ctx.runId, { ...prog, visited: prog.totalStages });
+				}
+				// Sweep any unit that never fired onUnitEnd (abort/throw) to the run's terminal
+				// kind BEFORE retiring, so a failed run's stuck sub-rows read ✗ (retireRun's
+				// running→done fallback then no-ops on them). Drop the gate — the run is over.
+				sweepRunningUnits(ctx.runId, status === "completed" ? "done" : "failed");
+				fanoutRuns.delete(ctx.runId);
+				retireRun(ctx.runId, status, error);
+				const ui = getCapturedUiContext();
+				if (!ui) return;
+				if (status === "completed") ui.notify(`✓ ${name} finished — /lanes to view`, "info");
+				else if (status === "failed") {
+					// Inject the short reason into the toast so the user learns WHY without
+					// opening the lane; falls back to the bare line when no cause is known.
+					const short = shortFailureReason(error);
+					ui.notify(
+						short ? `⚠ ${name} failed: ${short} — /lanes to view` : `⚠ ${name} failed — /lanes to view`,
+						"error",
+					);
+				} else ui.notify(`⊘ ${name} ${status}`, "warning"); // aborted / cancelled
+			},
+		});
+	} catch (err) {
+		if (isModuleNotFound(err)) return; // sibling absent — /rpiv-setup guides the user
+		throw err;
+	}
+}
+
+/**
+ * Test reset — wired into test/setup.ts beforeEach. Disposes the active listener
+ * (defensive; test/setup also clears rpiv-workflow's lifecycle registry) and clears
+ * the guard so the next test's registration proceeds.
+ */
+export function __resetLaneProgress(): void {
+	const g = guard();
+	g.dispose?.();
+	g.dispose = undefined;
+	fanoutRuns.clear();
+}

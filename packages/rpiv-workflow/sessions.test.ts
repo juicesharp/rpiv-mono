@@ -14,25 +14,18 @@
  * mock branch between attempts.
  */
 
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createMockPi, createMockSessionChain, mockAssistantMessage } from "@juicesharp/rpiv-test-utils";
+import { createMockSessionChain, mockAssistantMessage } from "@juicesharp/rpiv-test-utils";
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { StageDef, StageSchema } from "./api.js";
 import { currentPrimaryArtifact } from "./chain-state.js";
 import { LifecycleDispatcher } from "./events.js";
 import { fs as fsHandle } from "./handle.js";
-import {
-	FAIL_STAGE_ABORTED,
-	FAIL_STAGE_NO_RESPONSE,
-	FAIL_VALIDATION_EXHAUSTED,
-	MSG_STAGE_COMPLETE,
-	MSG_STAGE_FAILED,
-	MSG_UNIT_COMPLETE,
-	MSG_VALIDATION_RETRY,
-} from "./messages.js";
+import { WorkflowAbortError } from "./internal-utils.js";
+import { FAIL_STAGE_NO_RESPONSE, FAIL_VALIDATION_EXHAUSTED, MSG_STAGE_FAILED } from "./messages.js";
 import type { Output } from "./output.js";
 import type { CollectCtx, Outcome } from "./output-spec.js";
 import { runStageSession } from "./sessions/index.js";
@@ -159,7 +152,7 @@ describe("sessions — validation retry loop", () => {
 		rmSync(tmpDir, { recursive: true, force: true });
 	});
 
-	it("passes on first extract — no retry, no MSG_VALIDATION_RETRY notify", async () => {
+	it("passes on first extract — no retry, no fix-request prompt sent", async () => {
 		const chain = createMockSessionChain({
 			cwd: tmpDir,
 			steps: [{ branch: [mockAssistantMessage("done")] }],
@@ -178,8 +171,8 @@ describe("sessions — validation retry loop", () => {
 		);
 
 		expect(onSuccess).toHaveBeenCalledTimes(1);
-		expect(chain.notifications.find((n) => /asking agent to fix/i.test(n.msg))).toBeUndefined();
-		expect(chain.notifications.some((n) => n.msg === MSG_STAGE_COMPLETE("test"))).toBe(true);
+		expect(chain.sentMessages.find((m) => m.includes("doesn't satisfy the expected output schema"))).toBeUndefined();
+		expect(readStageRows(tmpDir).some((r) => r.status === "completed")).toBe(true);
 		expect(state.stagesCompleted).toBe(1);
 	});
 
@@ -206,11 +199,10 @@ describe("sessions — validation retry loop", () => {
 		);
 
 		expect(onSuccess).toHaveBeenCalledTimes(1);
-		// One retry attempt → one MSG_VALIDATION_RETRY notification.
-		const retryNotifies = chain.notifications.filter((n) => n.msg === MSG_VALIDATION_RETRY("test", 1));
-		expect(retryNotifies).toHaveLength(1);
-		// The fix-request prompt MUST appear in sentMessages between initial prompt and success.
-		expect(chain.sentMessages.some((m) => m.includes("doesn't satisfy the expected output schema"))).toBe(true);
+		// One retry attempt → exactly one fix-request prompt sent into the child session
+		// (the fix-request prompt appears in sentMessages between initial prompt and success).
+		const retryPrompts = chain.sentMessages.filter((m) => m.includes("doesn't satisfy the expected output schema"));
+		expect(retryPrompts).toHaveLength(1);
 		expect(state.stagesCompleted).toBe(1);
 	});
 
@@ -271,8 +263,8 @@ describe("sessions — validation retry loop", () => {
 
 		// Initial collect + MAX retries → MAX+1 calls total.
 		expect(outcome.collectSpy).toHaveBeenCalledTimes(MAX_VALIDATION_RETRIES + 1);
-		// One MSG_VALIDATION_RETRY per retry attempt.
-		const retries = chain.notifications.filter((n) => /asking agent to fix/i.test(n.msg));
+		// One fix-request prompt per retry attempt.
+		const retries = chain.sentMessages.filter((m) => m.includes("doesn't satisfy the expected output schema"));
 		expect(retries).toHaveLength(MAX_VALIDATION_RETRIES);
 	});
 
@@ -300,7 +292,7 @@ describe("sessions — validation retry loop", () => {
 		);
 
 		expect(outcome.collectSpy).toHaveBeenCalledTimes(1);
-		expect(chain.notifications.find((n) => /asking agent to fix/i.test(n.msg))).toBeUndefined();
+		expect(chain.sentMessages.find((m) => m.includes("doesn't satisfy the expected output schema"))).toBeUndefined();
 		expect(onFailure).toHaveBeenCalledTimes(1);
 	});
 
@@ -313,30 +305,18 @@ describe("sessions — validation retry loop", () => {
 		});
 		const state = freshRunState();
 		const onFailure = vi.fn();
-		// Patch the underlying freshCtx sendUserMessage indirectly: createMockSessionChain
-		// wires every replaced ctx to a single shared `sendUserMessageFn`. Replace it
-		// by intercepting the next newSession call to override sendUserMessage on the
-		// freshCtx Object.
-		const realNewSession = chain.ctx.newSession;
-		(chain.ctx as { newSession: unknown }).newSession = vi.fn(
-			async (opts: { withSession?: (c: unknown) => Promise<void> }) => {
-				return realNewSession({
+		// In the detached model the HOST sends the initial prompt inside spawnChild;
+		// the ONLY sendUserMessage inside withSession is the validation-retry
+		// roundtrip (resendIntoChild). Override it to hang forever so withTimeout
+		// converts the stall into a fatal halt rather than an unhandled rejection.
+		const realSpawnChild = chain.ctx.spawnChild as (o: unknown) => Promise<unknown>;
+		(chain.ctx as { spawnChild: unknown }).spawnChild = vi.fn(
+			async (opts: { prompt: string; withSession?: (c: unknown) => Promise<void> }) => {
+				return realSpawnChild({
+					...opts,
 					withSession: async (freshCtx: unknown) => {
-						// First message (initial prompt) still resolves — we only want the
-						// retry roundtrip to hang. We do that by hooking ONLY after the
-						// initial sendUserMessage by overriding it AFTER `withSession` enters.
-						// But sessions.ts calls sendUserMessage first; we need the FIRST call
-						// to succeed and SUBSEQUENT calls to hang. Use a counter.
-						const original = (freshCtx as { sendUserMessage: (m: string) => Promise<void> }).sendUserMessage;
-						let calls = 0;
-						(freshCtx as { sendUserMessage: (m: string) => Promise<void> }).sendUserMessage = async (
-							m: string,
-						) => {
-							calls++;
-							if (calls === 1) return original(m);
-							// 2nd call (validation retry roundtrip) hangs forever.
-							await new Promise<void>(() => {});
-						};
+						(freshCtx as { sendUserMessage: (m: string) => Promise<void> }).sendUserMessage = () =>
+							new Promise<void>(() => {});
 						if (opts.withSession) await opts.withSession(freshCtx);
 					},
 				});
@@ -390,7 +370,7 @@ describe("sessions — validation retry loop", () => {
 		expect(state.termination.error).toContain("outcome blew up mid-retry");
 	});
 
-	it("retry/end lifecycle refs and the row share ONE allocator-based stage number (C17/C18)", async () => {
+	it("retry/end lifecycle refs and the row share ONE allocator-based stage number", async () => {
 		const chain = createMockSessionChain({
 			cwd: tmpDir,
 			steps: [{ branch: [mockAssistantMessage("done")] }],
@@ -425,14 +405,14 @@ describe("sessions — validation retry loop", () => {
 			{ event: "end", stageNumber: 6 },
 		]);
 		// The JSONL row and the output envelope carry the same pre-allocated
-		// number — no `lastAllocatedStageNumber + 1` peek skew (C18).
+		// number — no `lastAllocatedStageNumber + 1` peek skew.
 		const rows = readStageRows(tmpDir).filter((r) => typeof r.stageNumber === "number");
 		expect(rows).toHaveLength(1);
 		expect(rows[0]?.stageNumber).toBe(6);
 		expect((rows[0]?.output as { meta?: { stageNumber?: number } })?.meta?.stageNumber).toBe(6);
 	});
 
-	it("a THROWING collector halts with attributed wording, not an escaped machinery throw (C20)", async () => {
+	it("a THROWING collector halts with attributed wording, not an escaped machinery throw", async () => {
 		const chain = createMockSessionChain({
 			cwd: tmpDir,
 			steps: [{ branch: [mockAssistantMessage("done")] }],
@@ -466,7 +446,7 @@ describe("sessions — validation retry loop", () => {
 		expect(chain.notifications.some((n) => n.msg === MSG_STAGE_FAILED("test"))).toBe(true);
 	});
 
-	it("a THROWING parser halts with attributed wording (C20)", async () => {
+	it("a THROWING parser halts with attributed wording", async () => {
 		const chain = createMockSessionChain({
 			cwd: tmpDir,
 			steps: [{ branch: [mockAssistantMessage("done")] }],
@@ -507,7 +487,7 @@ describe("sessions — validation retry loop", () => {
 
 	it("clamps validateTimeoutMs above ceiling", async () => {
 		// Smoke: timeoutMs above ceiling must clamp. We assert the clamp
-		// indirectly via MSG_VALIDATION_RETRY firing without timeout.
+		// indirectly via the retry loop completing without a timeout error.
 		const chain = createMockSessionChain({
 			cwd: tmpDir,
 			steps: [{ branch: [mockAssistantMessage("done")] }],
@@ -529,7 +509,7 @@ describe("sessions — validation retry loop", () => {
 
 		// No timeout error surfaced → clamp held.
 		expect(chain.notifications.some((n) => /exceeded/.test(n.msg))).toBe(false);
-		expect(chain.notifications.some((n) => n.msg === MSG_STAGE_COMPLETE("test"))).toBe(true);
+		expect(readStageRows(tmpDir).some((r) => r.status === "completed")).toBe(true);
 	});
 
 	// -----------------------------------------------------------------------
@@ -571,7 +551,7 @@ describe("sessions — validation retry loop", () => {
 
 		expect(onFailure).not.toHaveBeenCalled();
 		expect(onSuccess).toHaveBeenCalledTimes(1);
-		expect(chain.notifications.some((n) => n.msg === MSG_STAGE_COMPLETE("test"))).toBe(true);
+		expect(readStageRows(tmpDir).some((r) => r.status === "completed")).toBe(true);
 	});
 
 	it("async-rejected schema halts the stage via fatal-extraction, not via an escaped throw", async () => {
@@ -697,7 +677,7 @@ describe("sessions — outcome resolution", () => {
 		);
 
 		expect(explicit.collectSpy).toHaveBeenCalledTimes(1);
-		expect(chain.notifications.some((n) => n.msg === MSG_STAGE_COMPLETE("test"))).toBe(true);
+		expect(readStageRows(tmpDir).some((r) => r.status === "completed")).toBe(true);
 	});
 
 	it("produces without outcome throws (load-time validation should reject; runtime is defense-in-depth)", async () => {
@@ -823,17 +803,19 @@ describe("sessions — collector ctx (always-unsliced branch + policy-derived of
 		const captured: CollectCtx[] = [];
 		const recordingOutcome = recordingOutcomeOf([okPayload({})], captured);
 
-		// Outer ctx (continue path) — branch contains prior-stage prefix + current-stage tail.
+		// Child branch (continue path) — contains prior-stage prefix + current-stage tail.
 		const priorPrefix = [mockAssistantMessage("prior stage output")];
 		const currentTail = [mockAssistantMessage("current stage output")];
-		const outerBranch = [...priorPrefix, ...currentTail];
+		const childBranch = [...priorPrefix, ...currentTail];
 
-		const mockPi = createMockPi().pi;
+		// postStage scopes a continue stage's outcome by the offset on its session
+		// (`branchOffsetFor` returns the captured value for continue) — the mechanism
+		// the live continue body re-derives from the forked branch and the resume
+		// path takes from the persisted row. Driven here through `runStageSession`
+		// with an explicit `branchOffset` to test the slicing in isolation.
 		const chain = createMockSessionChain({
 			cwd: tmpDir,
-			steps: [], // continue → no newSession
-			outerBranch,
-			pi: mockPi,
+			steps: [{ branch: childBranch }],
 		});
 
 		await runStageSession(
@@ -843,13 +825,12 @@ describe("sessions — collector ctx (always-unsliced branch + policy-derived of
 				state: freshRunState(),
 				stage: stage({ sessionPolicy: "continue", outcome: recordingOutcome }),
 				branchOffset: priorPrefix.length,
-				continueHost: mockPi,
 			}),
 		);
 
 		expect(captured).toHaveLength(1);
-		// Branch is the FULL unsliced outer branch.
-		expect(captured[0]?.branch).toHaveLength(outerBranch.length);
+		// Branch is the FULL unsliced child branch.
+		expect(captured[0]?.branch).toHaveLength(childBranch.length);
 		// branchOffset carries the captured stage offset so extractArtifactPath
 		// skips the prior-stage prefix on demand.
 		expect(captured[0]?.branchOffset).toBe(priorPrefix.length);
@@ -867,14 +848,11 @@ describe("sessions — collector ctx (always-unsliced branch + policy-derived of
 
 		const priorPrefix = [mockAssistantMessage("prior stage output"), mockAssistantMessage("more prior")];
 		const currentTail = [mockAssistantMessage("current stage output")];
-		const outerBranch = [...priorPrefix, ...currentTail];
+		const childBranch = [...priorPrefix, ...currentTail];
 
-		const mockPi = createMockPi().pi;
 		const chain = createMockSessionChain({
 			cwd: tmpDir,
-			steps: [],
-			outerBranch,
-			pi: mockPi,
+			steps: [{ branch: childBranch }],
 		});
 
 		await runStageSession(
@@ -888,17 +866,16 @@ describe("sessions — collector ctx (always-unsliced branch + policy-derived of
 					outcome: failThenPassOutcome,
 				}),
 				branchOffset: priorPrefix.length,
-				continueHost: mockPi,
 			}),
 		);
 
 		// At least one retry should have fired.
 		expect(captured.length).toBeGreaterThanOrEqual(2);
 		// Initial + retry both see the FULL unsliced branch + captured offset.
-		expect(captured[0]?.branch.length).toBeGreaterThanOrEqual(outerBranch.length);
+		expect(captured[0]?.branch.length).toBeGreaterThanOrEqual(childBranch.length);
 		expect(captured[0]?.branchOffset).toBe(priorPrefix.length);
 		const retryCtx = captured[captured.length - 1]!;
-		expect(retryCtx.branch.length).toBeGreaterThanOrEqual(outerBranch.length);
+		expect(retryCtx.branch.length).toBeGreaterThanOrEqual(childBranch.length);
 		expect(retryCtx.branchOffset).toBe(priorPrefix.length);
 	});
 
@@ -914,9 +891,9 @@ describe("sessions — collector ctx (always-unsliced branch + policy-derived of
 				cwd: tmpDir,
 				state: freshRunState(),
 				stage: stage({ sessionPolicy: "fresh", outcome: recordingOutcome }),
-				// Stage's captured offset is set artificially here; in production
-				// `computeBranchOffset` returns undefined for fresh stages anyway.
-				// The handler short-circuits — fresh ALWAYS emits `undefined`.
+				// Stage's captured offset is set artificially here; a fresh stage's
+				// session is never assigned one in production. `branchOffsetFor`
+				// short-circuits — fresh ALWAYS emits `undefined`.
 				branchOffset: 5,
 			}),
 		);
@@ -941,66 +918,14 @@ describe("sessions — spawn primitive", () => {
 		rmSync(tmpDir, { recursive: true, force: true });
 	});
 
-	it("continue path: skips newSession, uses pi.sendUserMessage + ctx.waitForIdle, body runs on outer ctx", async () => {
-		const mockPi = createMockPi().pi;
+	it("continue policy spawns a detached child like fresh (no host); empty branch → failure row, not skipped", async () => {
+		// Continue collapses to a detached child — it no longer skips spawn or
+		// leans on a registry-host fallback (the old CONTINUE_HANDLER path is
+		// gone). An empty child branch is "noResponse" (recordStopFailure →
+		// onFailure), never a cancellation / skipped row.
 		const chain = createMockSessionChain({
 			cwd: tmpDir,
-			steps: [],
-			outerBranch: [mockAssistantMessage("done")],
-			pi: mockPi,
-		});
-
-		await runStageSession(
-			chain.ctx as WorkflowHostContext,
-			stageSession({
-				cwd: tmpDir,
-				state: freshRunState(),
-				stage: stage({ sessionPolicy: "continue" }),
-				branchOffset: 0,
-				continueHost: mockPi,
-				prompt: "/skill:test continue-prompt",
-			}),
-		);
-
-		expect(chain.ctx.newSession).not.toHaveBeenCalled();
-		expect(chain.ctx.waitForIdle).toHaveBeenCalledTimes(1);
-		expect(mockPi.sendUserMessage).toHaveBeenCalledWith("/skill:test continue-prompt");
-	});
-
-	it("fresh path: opens newSession; cancelled freshly → onCancelled fires, body never runs", async () => {
-		const chain = createMockSessionChain({
-			cwd: tmpDir,
-			steps: [{ cancelled: true }],
-		});
-		const state = freshRunState();
-		const onSuccess = vi.fn(async () => {});
-
-		await runStageSession(
-			chain.ctx as WorkflowHostContext,
-			stageSession({
-				cwd: tmpDir,
-				state,
-				onSuccess,
-			}),
-		);
-
-		expect(chain.ctx.newSession).toHaveBeenCalledTimes(1);
-		expect(onSuccess).not.toHaveBeenCalled();
-		// recordCancellation writes a "skipped" row + sets state.termination.error.
-		expect(state.termination.error).toMatch(/cancelled by user/);
-		const rows = readStageRows(tmpDir);
-		expect(rows[0]?.status).toBe("skipped");
-	});
-
-	it("continue path: never fires onCancelled even if branch is empty (no cancel signal)", async () => {
-		// An empty branch is "noResponse", not cancellation — onCancelled should
-		// remain wired only to the fresh-path early-exit, never to halt paths.
-		const mockPi = createMockPi().pi;
-		const chain = createMockSessionChain({
-			cwd: tmpDir,
-			steps: [],
-			outerBranch: [],
-			pi: mockPi,
+			steps: [{ branch: [] }],
 		});
 		const onFailure = vi.fn();
 
@@ -1011,12 +936,11 @@ describe("sessions — spawn primitive", () => {
 				state: freshRunState(),
 				stage: stage({ sessionPolicy: "continue" }),
 				branchOffset: 0,
-				continueHost: mockPi,
 				onFailure,
 			}),
 		);
 
-		// noResponse → recordStopFailure → onFailure (not onCancelled, not skipped row).
+		expect(chain.ctx.spawnChild).toHaveBeenCalledTimes(1);
 		expect(onFailure).toHaveBeenCalledTimes(1);
 		const rows = readStageRows(tmpDir);
 		expect(rows[0]?.status).not.toBe("skipped");
@@ -1158,7 +1082,14 @@ describe("sessions — halt routing", () => {
 		expect(state.termination.error).toMatch(/no assistant message/);
 	});
 
-	it("aborted → MSG_STAGE_ABORTED notify + aborted row + ESC error string", async () => {
+	it("aborted outcome → postStage throws WorkflowAbortError before any row write", async () => {
+		// `session.abort()` makes the SDK RESOLVE `prompt()` with a
+		// `stopReason:"aborted"` transcript message, so an aborted child runs
+		// straight into postStage. postStage throws `WorkflowAbortError` BEFORE
+		// any halt/row write, so: the run-stage seam classifies it as a
+		// cooperative abort (recordAbortedAtSeam → FAIL_WORKFLOW_ABORTED) and a
+		// collect-all unit's slot stays unfilled (resume re-dispatches). No row is
+		// written here and `onFailure` does not fire.
 		const chain = createMockSessionChain({
 			cwd: tmpDir,
 			steps: [{ branch: [mockAssistantMessage("partial", "aborted")] }],
@@ -1166,20 +1097,85 @@ describe("sessions — halt routing", () => {
 		const state = freshRunState();
 		const onFailure = vi.fn();
 
+		await expect(
+			runStageSession(
+				chain.ctx as WorkflowHostContext,
+				stageSession({
+					cwd: tmpDir,
+					state,
+					onFailure,
+				}),
+			),
+		).rejects.toBeInstanceOf(WorkflowAbortError);
+
+		expect(onFailure).not.toHaveBeenCalled();
+		// No terminal row written: postStage threw before any audit write, so the
+		// run trail directory was never created.
+		expect(existsSync(join(tmpDir, ".rpiv", "workflows", "runs"))).toBe(false);
+	});
+
+	it("watchdog tool-timeout on a collect-all unit → soft-halt (onUnitHalt), NOT WorkflowAbortError", async () => {
+		// A per-command bash watchdog aborts a runaway command: the child resolves with an
+		// `aborted` stop AND the host reports a `toolTimeout` reason. postStage must NOT throw
+		// WorkflowAbortError (that re-runs the same command on resume) — it routes through the
+		// soft-halt gate, so a collect-all fan-out unit records a non-terminal failed row + a
+		// sentinel (onSuccess), the run survives, and the gate can finalize.
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [
+				{
+					branch: [mockAssistantMessage("scanning", "aborted")],
+					toolTimeout: { reason: "bash command exceeded the 180s per-command timeout and was aborted: `find /`" },
+				},
+			],
+		});
+		const state = freshRunState();
+		const onUnitHalt = vi.fn();
+		const onFailure = vi.fn();
+		const onSuccess = vi.fn<(ctx: WorkflowHostContext, output: Output) => Promise<void>>(async () => {});
+
 		await runStageSession(
 			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
 				state,
+				stageName: "plan-grade (correctness)",
+				skill: "judge",
+				collectAll: true,
+				lifecycle: new LifecycleDispatcher({ onUnitHalt }),
+				unit: { parent: "plan-grade", role: "verify", index: 1, id: "correctness", label: "correctness" },
+				onSuccess,
 				onFailure,
 			}),
 		);
 
+		// Soft-halt: the timeout reason rides onUnitHalt, the fold gets its sentinel via onSuccess,
+		// and no terminal failure fires (the run lives on).
+		expect(onUnitHalt).toHaveBeenCalledTimes(1);
+		expect(onUnitHalt.mock.calls[0]![2]).toContain("per-command timeout");
+		expect(onSuccess).toHaveBeenCalledTimes(1);
+		expect(onFailure).not.toHaveBeenCalled();
+	});
+
+	it("watchdog tool-timeout on a non-fan-out stage → terminal fail carrying the timeout reason", async () => {
+		// Same abort+toolTimeout shape, but a plain (non-collect-all) stage: the soft-halt gate
+		// falls through to a terminal failure whose errMsg is the watchdog reason.
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [
+				{
+					branch: [mockAssistantMessage("scanning", "aborted")],
+					toolTimeout: { reason: "bash command exceeded the 180s per-command timeout and was aborted: `find /`" },
+				},
+			],
+		});
+		const state = freshRunState();
+		const onFailure = vi.fn();
+
+		await runStageSession(chain.ctx as WorkflowHostContext, stageSession({ cwd: tmpDir, state, onFailure }));
+
 		expect(onFailure).toHaveBeenCalledTimes(1);
-		expect(chain.notifications.some((n) => n.msg === FAIL_STAGE_ABORTED("test").toast)).toBe(true);
-		expect(state.termination.error).toMatch(/aborted by user/);
-		const rows = readStageRows(tmpDir);
-		expect(rows[0]?.status).toBe("aborted");
+		expect(state.termination.error).toContain("per-command timeout");
 	});
 
 	it("outcome fatal (no validation) → MSG_STAGE_FAILED notify + raw outcome message", async () => {
@@ -1291,7 +1287,9 @@ describe("sessions — contract-sourced output validation", () => {
 		);
 
 		expect(onSuccess).toHaveBeenCalledTimes(1);
-		expect(chain.notifications.filter((n) => n.msg === MSG_VALIDATION_RETRY("test", 1))).toHaveLength(1);
+		expect(chain.sentMessages.filter((m) => m.includes("doesn't satisfy the expected output schema"))).toHaveLength(
+			1,
+		);
 		expect(state.stagesCompleted).toBe(1);
 	});
 
@@ -1370,7 +1368,7 @@ describe("sessions — loop unit session", () => {
 		rmSync(tmpDir, { recursive: true, force: true });
 	});
 
-	it("writes structured row fields, fires onUnitEnd (never onStageEnd), and toasts MSG_UNIT_COMPLETE", async () => {
+	it("writes structured row fields, fires onUnitEnd (never onStageEnd), emits no completion toast", async () => {
 		const chain = createMockSessionChain({
 			cwd: tmpDir,
 			steps: [{ branch: [mockAssistantMessage("done")] }],
@@ -1409,9 +1407,8 @@ describe("sessions — loop unit session", () => {
 		});
 		expect(output.artifacts).toBeDefined();
 
-		// Labeled per-unit toast, not the stage banner.
-		expect(chain.notifications.some((n) => n.msg === MSG_UNIT_COMPLETE("implement", "phase 2/5"))).toBe(true);
-		expect(chain.notifications.some((n) => n.msg === MSG_STAGE_COMPLETE("implement"))).toBe(false);
+		// Completion is silent — neither a per-unit nor a stage banner is emitted.
+		expect(chain.notifications.some((n) => n.msg.startsWith("✓"))).toBe(false);
 
 		// The success row carries the decorated display `stage` + all four structured identity fields.
 		const completed = readStageRows(tmpDir).find((r) => r.status === "completed")!;
@@ -1427,7 +1424,61 @@ describe("sessions — loop unit session", () => {
 		expect(successOutput.artifacts).toEqual((output as Output).artifacts);
 	});
 
-	it("single-stage session stays byte-identical: no structured fields, onStageEnd + MSG_STAGE_COMPLETE", async () => {
+	it("collect-all unit soft-halt fires onUnitHalt (not onUnitEnd/onStageError), survives the run, writes a collected:true row", async () => {
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [{ branch: [mockAssistantMessage("done")] }],
+		});
+		const state = freshRunState();
+		const onUnitHalt = vi.fn();
+		const onUnitEnd = vi.fn();
+		const onStageError = vi.fn();
+		const onSuccess = vi.fn<(ctx: WorkflowHostContext, output: Output) => Promise<void>>(async () => {});
+
+		await runStageSession(
+			chain.ctx as WorkflowHostContext,
+			stageSession({
+				cwd: tmpDir,
+				state,
+				stageName: "design (slice-3)",
+				skill: "design",
+				// collect-all fanout unit: an extraction-fatal halt soft-halts THIS unit instead of
+				// terminating the run (the fold places a failedOutput sentinel by index).
+				collectAll: true,
+				lifecycle: new LifecycleDispatcher({ onUnitHalt, onUnitEnd, onStageError }),
+				stage: stage({ outputSchema: FOO_EQ_2_SCHEMA, outcome: scriptedOutcome([fatalPayload("slice blew up")]) }),
+				unit: { parent: "design", role: "produce", index: 2, id: "slice-3", label: "slice 3/4" },
+				onSuccess,
+			}),
+		);
+
+		// onUnitHalt fires once with the PARENT-named ref + the halt reason; the success-only
+		// onUnitEnd and the terminal onStageError never fire for a soft-halt.
+		expect(onUnitHalt).toHaveBeenCalledTimes(1);
+		expect(onUnitEnd).not.toHaveBeenCalled();
+		expect(onStageError).not.toHaveBeenCalled();
+		const [ref, unitEvent, reason] = onUnitHalt.mock.calls[0]!;
+		expect(ref.name).toBe("design");
+		expect(unitEvent).toMatchObject({
+			role: "produce",
+			index: 2,
+			unitId: "slice-3",
+			label: "slice 3/4",
+			skill: "design",
+		});
+		expect(reason).toContain("slice blew up");
+
+		// The run SURVIVES — onSuccess advances the fold with the failedOutput sentinel; no terminate.
+		expect(onSuccess).toHaveBeenCalledTimes(1);
+		expect(state.termination.status).toBe("running");
+
+		// A NON-terminal collected:true failed row lands (resume reads errMsg to rebuild the sentinel).
+		const failed = readStageRows(tmpDir).find((r) => r.status === "failed")!;
+		expect(failed.collected).toBe(true);
+		expect(failed.unitIndex).toBe(2);
+	});
+
+	it("single-stage session stays byte-identical: no structured fields, onStageEnd, no completion toast", async () => {
 		const chain = createMockSessionChain({
 			cwd: tmpDir,
 			steps: [{ branch: [mockAssistantMessage("done")] }],
@@ -1448,7 +1499,8 @@ describe("sessions — loop unit session", () => {
 
 		expect(onStageEnd).toHaveBeenCalledTimes(1);
 		expect(onUnitEnd).not.toHaveBeenCalled();
-		expect(chain.notifications.some((n) => n.msg === MSG_STAGE_COMPLETE("test"))).toBe(true);
+		// Completion is silent — no toast on the notify channel.
+		expect(chain.notifications.some((n) => n.msg.startsWith("✓"))).toBe(false);
 
 		const completed = readStageRows(tmpDir).find((r) => r.status === "completed")!;
 		expect(completed).not.toHaveProperty("parent");
@@ -1489,12 +1541,9 @@ describe("sessions — session provenance capture", () => {
 	});
 
 	it("continue success row carries the captured branchOffset on the SessionRef", async () => {
-		const mockPi = createMockPi().pi;
 		const chain = createMockSessionChain({
 			cwd: tmpDir,
-			steps: [],
-			outerBranch: [mockAssistantMessage("prior"), mockAssistantMessage("done")],
-			pi: mockPi,
+			steps: [{ branch: [mockAssistantMessage("prior"), mockAssistantMessage("done")] }],
 		});
 
 		await runStageSession(
@@ -1504,7 +1553,6 @@ describe("sessions — session provenance capture", () => {
 				state: freshRunState(),
 				stage: stage({ sessionPolicy: "continue" }),
 				branchOffset: 1,
-				continueHost: mockPi,
 			}),
 		);
 
@@ -1512,10 +1560,14 @@ describe("sessions — session provenance capture", () => {
 		expect(completed.session).toEqual({ ...MOCK_REF, branchOffset: 1 });
 	});
 
-	it("stop-failure row is session-backed too (aborted stage stays resumable)", async () => {
+	it("stop-failure row is session-backed too (failed stage stays resumable)", async () => {
+		// A non-abort halting stop (`error`) still flows through postStage →
+		// haltStage → recordStopFailure, so the terminal "failed" row records the
+		// backing SessionRef. (Abort no longer writes a postStage row — it throws
+		// WorkflowAbortError before any halt; the seam records that case.)
 		const chain = createMockSessionChain({
 			cwd: tmpDir,
-			steps: [{ branch: [mockAssistantMessage("partial", "aborted")] }],
+			steps: [{ branch: [mockAssistantMessage("partial", "error")] }],
 		});
 		const onFailure = vi.fn();
 
@@ -1525,19 +1577,7 @@ describe("sessions — session provenance capture", () => {
 		);
 
 		expect(onFailure).toHaveBeenCalledTimes(1);
-		const failed = readStageRows(tmpDir).find((r) => r.status === "aborted")!;
+		const failed = readStageRows(tmpDir).find((r) => r.status === "failed")!;
 		expect(failed.session).toEqual(MOCK_REF);
-	});
-
-	it("pre-open cancellation row records session: null (no session ever backed it)", async () => {
-		const chain = createMockSessionChain({
-			cwd: tmpDir,
-			steps: [{ cancelled: true }],
-		});
-
-		await runStageSession(chain.ctx as WorkflowHostContext, stageSession({ cwd: tmpDir, state: freshRunState() }));
-
-		const skipped = readStageRows(tmpDir).find((r) => r.status === "skipped")!;
-		expect(skipped.session).toBeNull();
 	});
 });

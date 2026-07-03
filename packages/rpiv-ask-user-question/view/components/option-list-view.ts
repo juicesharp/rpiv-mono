@@ -38,12 +38,9 @@ export class OptionListView implements StatefulView<OptionListViewProps> {
 	private readonly select: WrappingSelect;
 
 	constructor(config: OptionListViewConfig) {
-		// Reserve a slot for the chat row in the WrappingSelect's number-padding so
-		// the column width is identical whether or not the user navigates into chat
-		// (chat row uses items.length + 1).
 		this.select = new WrappingSelect(config.items, Math.min(config.items.length, MAX_VISIBLE_OPTIONS), config.theme, {
 			numberStartOffset: 0,
-			totalItemsForNumbering: config.items.length + 1,
+			totalItemsForNumbering: config.items.length,
 		});
 	}
 

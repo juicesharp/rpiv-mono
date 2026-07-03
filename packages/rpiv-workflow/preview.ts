@@ -132,6 +132,8 @@ function formatStageRow(
 	if (stage.outputSchema) decorations.push("out-schema");
 	if (shape.control.mode !== "single") decorations.push(loopTag(shape.control));
 	if (shape.verify) decorations.push(verifyTag(shape.verify));
+	const fanin = faninTag(shape);
+	if (fanin) decorations.push(fanin);
 
 	const displayName = shape.skill && shape.skill !== stageName ? `${stageName} (skill: ${shape.skill})` : stageName;
 	const arrow = formatEdge(shape.edge, edgeDeclared);
@@ -187,6 +189,17 @@ function judgeSlotTag(spec: AnyJudgeSpec): string {
 }
 
 /**
+ * Decoration for a stage that reads ALL accumulated entries of one or more
+ * channels via `fanin()` — the fanout-and-synthesize fan-in barrier: `⇉ <names>`.
+ * Mirrors the `panel(N, fold)` fan-in surfacing on judge slots — the merge point
+ * shows at a glance. Latest-wins (bare-string) reads are unmarked.
+ */
+function faninTag(shape: StageShape): string | undefined {
+	const allReads = shape.reads?.filter((r) => r.all).map((r) => r.name);
+	return allReads?.length ? `⇉ ${allReads.join(",")}` : undefined;
+}
+
+/**
  * Decoration for a verify-bearing stage: `verify(skill:<name>)` /
  * `verify(prompt)` / `verify(panel(N, fold))`, with the attempt budget appended
  * when retrying (`·attempts=N`); a gate-only verify (the default, max 1) stays
@@ -203,6 +216,11 @@ function verifyTag(v: NonNullable<StageShape["verify"]>): string {
  * explicit `STOP` into one `terminal` mode; the declared-or-not distinction
  * is a one-key lookup the caller supplies (it matters to authors — the
  * validator warns on the undeclared form).
+ *
+ * The "terminal" rendered below is the GRAPH-SINK sense (a stage with no
+ * outgoing edge OR an explicit `STOP`) — NOT the `terminal()` stage factory
+ * (stage-def.ts) and NOT a "terminal failure" run outcome (audit.ts). See the
+ * glossary on `stage-def.ts`'s `terminal` export.
  */
 function formatEdge(edge: StageShape["edge"], declared: boolean): string | undefined {
 	if (edge.mode === "terminal") return declared ? STOP : "(terminal — no edge declared)";

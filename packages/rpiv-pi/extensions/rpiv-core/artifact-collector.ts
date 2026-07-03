@@ -59,8 +59,18 @@ export function rpivBucketCollector(bucket: string): ArtifactCollector {
 
 /**
  * Reads YAML frontmatter from the primary fs artifact. Files without
- * frontmatter produce `data: {}`. Fatals when the announced path
- * doesn't exist on disk (the agent claimed to write but didn't).
+ * frontmatter — or with frontmatter the YAML parser chokes on — produce
+ * `data: {}`. Fatals only when the announced path doesn't exist on disk
+ * (the agent claimed to write but didn't).
+ *
+ * Fail-soft on malformed YAML is deliberate: `parseFrontmatter` throws on
+ * an agent-authored scalar that smuggles in a bare `: ` (e.g.
+ * `target: foo (lane UI: L0–L2)` reads as a nested mapping). Letting that
+ * throw escape converts a single stray colon — in the LAST write of a
+ * multi-hour stage — into a fatal that halts the whole workflow. Degrading
+ * to `{}` keeps the artifact (the real work) and defers any missing-field
+ * judgement to the stage's `outputSchema` validation, exactly as a file
+ * with no frontmatter at all already does.
  */
 export const frontmatterParser: ArtifactParser<undefined, "artifact-md", Record<string, unknown>> = defineParser({
 	parse(ctx: ParseCtx<undefined>) {
@@ -79,7 +89,14 @@ export const frontmatterParser: ArtifactParser<undefined, "artifact-md", Record<
 			};
 		}
 		const content = readFileSync(abs, "utf-8");
-		const { frontmatter } = parseFrontmatter(content);
+		let frontmatter: unknown;
+		try {
+			({ frontmatter } = parseFrontmatter(content));
+		} catch {
+			// Malformed YAML (unquoted `: ` in a scalar, bad indentation, …) →
+			// degrade to no-frontmatter rather than killing the chain.
+			frontmatter = undefined;
+		}
 		return {
 			kind: "ok",
 			payload: {

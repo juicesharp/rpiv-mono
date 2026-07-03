@@ -51,7 +51,7 @@ export interface Output<K extends string = string, D = unknown> {
 // Tagged-union narrowing convenience for consumers. Only the two
 // framework-native kinds live here; outcome-specific aliases live with
 // their producing outcome (`GitCommitOutput` → outcomes/git-commit.ts) so
-// the core envelope module never enumerates concrete plugins (G6).
+// the core envelope module never enumerates concrete plugins.
 // ---------------------------------------------------------------------------
 
 export type ArtifactsOutput = Output<"artifacts", readonly Artifact[]>;
@@ -116,3 +116,61 @@ export function finalizeOutput<K extends string, D>(
 		meta,
 	};
 }
+
+/**
+ * The single construction home for an `OutputMeta` literal. The five former
+ * assembly sites (`sessions/extraction.ts:wrapOutput`, `sessions/sessions.ts:
+ * outputMetaFor`, `loop-parallel.ts:unitOutputMeta`, the `runner/script-stage.ts`
+ * produce hook, and the `runner/resume.ts` soft-halt sentinel) all route through
+ * this — so a structural divergence between the live path's minted meta and the
+ * resume fold's rebuilt sentinel is unrepresentable (modeled on the `audit.ts`
+ * `terminalArgsOf` flat-pairing authority).
+ *
+ * `ts` is a PARAMETER, not an injected `nowIso()`: live call sites pass
+ * `nowIso()`; the resume fold replays the persisted `row.ts`. That is what lets
+ * the two paths share one constructor — resume stays byte-identical to the row
+ * the live path wrote.
+ *
+ * `skill` is conditionally spread (not defaulted) so a call site that omits it
+ * (script-stage rows, and any resume row whose `skill` is absent) produces an
+ * object with NO `skill` key — preserving the script-row "no skill field"
+ * contract (`JSON.stringify` drops `undefined`, so this must stay a key
+ * omission, not `{ skill: undefined }`).
+ */
+export function outputMeta(args: {
+	stage: string;
+	skill?: string;
+	stageNumber: number;
+	ts: string;
+	runId: string;
+}): OutputMeta {
+	return {
+		stage: args.stage,
+		...(args.skill !== undefined ? { skill: args.skill } : {}),
+		stageNumber: args.stageNumber,
+		ts: args.ts,
+		runId: args.runId,
+	};
+}
+
+// ---------------------------------------------------------------------------
+// Failed-unit sentinel (collect-all fanout)
+// ---------------------------------------------------------------------------
+
+/** The data shape of a failed-unit sentinel — collect-all fanout places one of
+ *  these in a unit's declared slot when the unit halts (the run survives). */
+export const FAILED_OUTPUT_KIND = "failed";
+export type FailedOutput = Output<"failed", { reason: string }>;
+
+/**
+ * A failed unit's contribution to a collect-all fanout. A real `Output` with NO
+ * artifacts, so: `applyCompletedStage` leaves the rolling primary alone; the
+ * `fanin` reader contributes no args for it (the `.filter(Boolean)` convention
+ * needs no widening); `advanceCursor` advances the index without making it the
+ * "last" produce; and the resume fold replays it like any produce row.
+ */
+export function failedOutput(meta: OutputMeta, reason: string): FailedOutput {
+	return finalizeOutput({ kind: FAILED_OUTPUT_KIND, artifacts: [], data: { reason } }, meta);
+}
+
+export const isFailedOutput = (o: Output): o is FailedOutput => o.kind === FAILED_OUTPUT_KIND;

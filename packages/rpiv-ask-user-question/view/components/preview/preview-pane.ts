@@ -48,6 +48,13 @@ export interface PreviewPaneProps {
 	notesVisible: boolean;
 	selectedIndex: number;
 	focused: boolean;
+	/**
+	 * True while the "other" (custom-answer) row is focused and accepting input
+	 * (`state.inputMode`, set by the reducer via `ROW_INTENT_META.other.activatesInputMode`).
+	 * Surfaced by `selectPreviewPaneProps` from canonical state; drives the full-width
+	 * early-returns below so the inline input isn't cramped into the narrow left column.
+	 */
+	inputMode: boolean;
 }
 
 export interface PreviewPaneConfig {
@@ -89,7 +96,7 @@ export class PreviewPane implements StatefulView<PreviewPaneProps>, Component {
 		this.getTerminalWidth = config.getTerminalWidth;
 		this.optionListView = config.optionListView;
 		this.previewBlock = config.previewBlock;
-		this.props = { notesVisible: false, selectedIndex: 0, focused: false };
+		this.props = { notesVisible: false, selectedIndex: 0, focused: false, inputMode: false };
 	}
 
 	setGlobalLeftWidth(getter: (paneWidth: number) => number): void {
@@ -115,6 +122,11 @@ export class PreviewPane implements StatefulView<PreviewPaneProps>, Component {
 		if (this.question.multiSelect === true) return this.optionListView.render(width);
 		// Spec: hide the preview pane entirely when no option carries a `preview`.
 		if (!this.previewBlock.hasAnyPreview()) return this.optionListView.render(width);
+		// `inputMode` (typing on the "other" custom-answer row): the preview is irrelevant —
+		// the row sits at index `options.length`, out of bounds for any option's preview — so
+		// render the option list at the full pane width instead of the cramped left column.
+		// Side-by-side + preview block resume verbatim on nav-away (inputMode clears).
+		if (this.props.inputMode) return this.optionListView.render(width);
 
 		const mode = decideLayout(this.getTerminalWidth(), width);
 		if (mode === "side-by-side") return this.renderSideBySide(width, mode);
@@ -136,6 +148,9 @@ export class PreviewPane implements StatefulView<PreviewPaneProps>, Component {
 	focusedItemRowRange(width: number): [number, number] {
 		if (this.question.multiSelect === true) return this.optionListView.focusedItemRowRange(width);
 		if (!this.previewBlock.hasAnyPreview()) return this.optionListView.focusedItemRowRange(width);
+		// `inputMode`: compute the focused row range against the FULL pane width (not the
+		// side-by-side leftWidth), mirroring `render`'s full-width option list.
+		if (this.props.inputMode) return this.optionListView.focusedItemRowRange(width);
 		const mode = decideLayout(this.getTerminalWidth(), width);
 		if (mode === "stacked") return this.optionListView.focusedItemRowRange(width);
 		const adaptiveLeft = this.getAdaptiveLeft(width);
@@ -146,6 +161,9 @@ export class PreviewPane implements StatefulView<PreviewPaneProps>, Component {
 	naturalHeight(width: number): number {
 		if (this.question.multiSelect === true) return this.optionListView.render(width).length;
 		if (!this.previewBlock.hasAnyPreview()) return this.optionListView.render(width).length;
+		// `inputMode`: height is the full-width option list only (no preview block) — preserves
+		// the `naturalHeight === render.length` parity invariant.
+		if (this.props.inputMode) return this.optionListView.render(width).length;
 		const mode = decideLayout(this.getTerminalWidth(), width);
 		const adaptiveLeft = this.getAdaptiveLeft(width);
 		const { optionsWidth, previewWidth } = bodyWidths(width, mode, adaptiveLeft);
@@ -158,6 +176,9 @@ export class PreviewPane implements StatefulView<PreviewPaneProps>, Component {
 	maxNaturalHeight(width: number): number {
 		if (this.question.multiSelect === true) return this.optionListView.render(width).length;
 		if (!this.previewBlock.hasAnyPreview()) return this.optionListView.render(width).length;
+		// `inputMode`: like naturalHeight — full-width option list only, so the
+		// `maxNaturalHeight >= naturalHeight` parity invariant holds (both equal the list height).
+		if (this.props.inputMode) return this.optionListView.render(width).length;
 		const mode = decideLayout(this.getTerminalWidth(), width);
 		const adaptiveLeft = this.getAdaptiveLeft(width);
 		const { optionsWidth, previewWidth } = bodyWidths(width, mode, adaptiveLeft);

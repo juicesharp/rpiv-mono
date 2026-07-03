@@ -31,10 +31,8 @@ import {
 	userMessageText,
 } from "./btw.js";
 
-// The exact phrase pi-core's ExtensionRunner throws from an invalidated proxy.
-const STALE_CTX_MESSAGE =
-	"This extension ctx is stale after session replacement or reload. " +
-	"Do not use a captured pi or command ctx after ctx.newSession().";
+// Pins the substring `isStaleCtxError` matches in pi-core's invalidated-proxy error.
+const STALE_CTX_MESSAGE = "This extension ctx is stale after session replacement or reload.";
 
 function makeCompletionResponse(input: {
 	text?: string;

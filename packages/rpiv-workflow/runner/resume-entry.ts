@@ -56,11 +56,20 @@ export function selectResumeEntry(
 			);
 	}
 	if (last.status === "completed") {
-		// route onward; finished run ⇒ hits stop ⇒ no-op
+		// c2 no-op path: a fully-completed run routes onward from its last stage,
+		// which hits `stop` ⇒ `finalizeWorkflow` ⇒ success. The walk runs the
+		// normal lifecycle bracket (onWorkflowStart/onWorkflowEnd) but dispatches
+		// no stage session — no stage re-run, no child spawned, zero new JSONL
+		// stage rows. This is the safe no-op behind resuming a finished run via
+		// @<runId>.
 		return () => guardResumeEntry(ctx, last.stage, run, () => advance(ctx, last.stage, idx, run));
 	}
-	// failed/aborted trailer — session-backed rows try promotion/reattach,
-	// sessionless rows re-run cold (today's behavior).
+	// failed/aborted trailer — the c2 boundary. Re-attempting this stage is
+	// intentional and the core resume retry use case: session-backed rows try
+	// promotion/reattach (`resumeStageWithSession`), sessionless rows re-run cold
+	// (today's behavior). Deliberately OUTSIDE c2's no-op guarantee — a new stage
+	// row IS appended and the stage re-runs (see the completed-vs-failed boundary
+	// tests in resume.test.ts).
 	return last.session !== null
 		? () => resumeStageWithSession(ctx, last, idx, run)
 		: () => runStageOrRecordFailure(ctx, last.stage, idx, run);

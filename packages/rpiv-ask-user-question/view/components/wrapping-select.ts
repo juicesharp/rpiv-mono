@@ -1,11 +1,6 @@
 import type { Component } from "@earendil-works/pi-tui";
-import { CURSOR_MARKER, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-
-// Grapheme-aware extraction at the cursor: pi-tui's Input advances `cursor` by
-// grapheme-cluster code-unit length, so the cursor can land between code units of
-// one cluster (emoji, ZWJ, combining marks). Single-code-unit slicing would split
-// the cluster across the SGR 7/27 boundary.
-const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+import { visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { renderInlineInputRow } from "./inline-input.js";
 
 /**
  * Row-intent discriminated union. `kind` is the single discriminator —
@@ -16,16 +11,14 @@ const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme
  *
  * Variant semantics:
  * - `option`: a regular author-defined option row.
- * - `other`: the inline free-text input row appended to single-select questions
+ * - `other`: the inline free-text input row appended to every question
  *   (label is "Type something."). Renders as inline `Input` when active.
- * - `chat`: the abandon-questionnaire escape-hatch row (label is "Chat about this").
  * - `next`: the explicit commit-and-advance row appended to multi-select questions
  *   (label is "Next"). Renders without a number / checkbox.
  */
 export type WrappingSelectItem =
 	| { kind: "option"; label: string; description?: string }
 	| { kind: "other"; label: string; description?: string }
-	| { kind: "chat"; label: string; description?: string }
 	| { kind: "next"; label: string; description?: string };
 
 export interface WrappingSelectTheme {
@@ -38,9 +31,8 @@ export interface WrappingSelectTheme {
  * Numbering controls.
  *
  * Use `numberStartOffset` + `totalItemsForNumbering` when a list is logically a slice of a
- * larger numbered sequence — e.g. the chat row lives in its own WrappingSelect but should
- * render as `(N+1).` where N is the previous list's item count, with the column padded as
- * if both lists were one continuous numbered sequence.
+ * larger numbered sequence — e.g. to start numbering at an offset and pad the column as
+ * if the list were part of a longer continuous numbered sequence.
  */
 export interface WrappingSelectOptions {
 	/** Start numbering at this offset + 1 (default 0 → rows labeled 1, 2, 3 …). */
@@ -95,8 +87,7 @@ export class WrappingSelect implements Component {
 
 	/**
 	 * Update the numbering offset + total padding width without rebuilding the component.
-	 * Used by the host to keep the chat-row WrappingSelect's number aligned with the active tab's
-	 * options list when the user switches tabs (each tab can have a different items count).
+	 * Lets the host realign the number column when the underlying item set changes.
 	 */
 	setNumbering(numberStartOffset: number, totalItemsForNumbering: number): void {
 		this.numberStartOffset = numberStartOffset;
@@ -255,51 +246,21 @@ export class WrappingSelect implements Component {
 	}
 
 	/**
-	 * Render the inline input row across one or more lines, wrapping at `contentWidth`
-	 * so long input doesn't run off the right edge or trip the parent renderer's
-	 * width invariant. Mirrors `renderLabelBlock`'s contract: first line carries
-	 * `rowPrefix`, continuation lines carry `continuationPrefix` (spaces), and every
-	 * emitted line passes through `theme.selectedText`.
-	 *
-	 * Cursor visualization follows the standard TUI input-widget pattern (ECMA-48
-	 * SGR 7 reverse-video on the cell *at* the cursor, not an inserted glyph) —
-	 * same approach used by pi-tui Input.render (input.js:411-418), ink-text-input,
-	 * terkelg/prompts, ratatui's user-input example, etc. Split: `before | at | after`
-	 * where `at` is the single character under the cursor (or U+00A0 NBSP at end-of-
-	 * buffer) wrapped in `\x1b[7m…\x1b[27m`. No characters shift; the column under
-	 * the cursor inverts.
-	 *
-	 * pi-tui's zero-width `CURSOR_MARKER` (APC sentinel) is emitted immediately
-	 * before the `at` cell so the TUI framebuffer can position the hardware
-	 * terminal cursor at that column (visible iff pi's `showHardwareCursor`
-	 * setting is on — `pi-coding-agent/main.js:303`). `visibleWidth` strips the
-	 * marker as zero-width (utils.js:187-203), so wrap math is preserved.
-	 *
-	 * NBSP at end-of-buffer (rather than literal space): `wrapTextWithAnsi`
-	 * tokenizes on whitespace, so a literal space inside the reverse-video escape
-	 * pair would cause `wrapTextWithAnsi` to break the line at the cursor. NBSP
-	 * preserves the visible width-1 contribution without registering as a wrap
-	 * break — the conventional workaround documented across ANSI-aware string
-	 * wrappers.
+	 * Render the inline input row across one or more lines, wrapping at `contentWidth`.
+	 * Delegates to the shared `renderInlineInputRow` helper (`./inline-input.ts`) so the
+	 * single-select wrap path and the multi-select single-line path share one cursor-
+	 * building core. The `multiline: true` path is byte-identical to the pre-extraction
+	 * output (cursor rationale lives in `inline-input.ts`).
 	 */
 	private renderInlineInputRow(rowPrefix: string, continuationPrefix: string, contentWidth: number): string[] {
-		const buffer = this.inputBuffer;
-		const requested = this.inputCursorOffset;
-		const offset =
-			requested !== undefined && requested >= 0 && requested <= buffer.length ? requested : buffer.length;
-		const before = buffer.slice(0, offset);
-		const [firstGrapheme] = graphemeSegmenter.segment(buffer.slice(offset));
-		const rawAt = firstGrapheme ? firstGrapheme.segment : "";
-		// Whitespace at cursor (including end-of-buffer fallback) tokenizes as a wrap
-		// break inside `wrapTextWithAnsi`, splitting the line at the cursor. Substitute
-		// U+00A0 (NBSP): visually identical to a space, wrap-safe.
-		const atCursor = rawAt === "" || rawAt === " " ? " " : rawAt;
-		const after = buffer.slice(offset + rawAt.length);
-		const raw = `${before}${CURSOR_MARKER}\x1b[7m${atCursor}\x1b[27m${after}`;
-		const wrapped = wrapTextWithAnsi(raw, contentWidth);
-		return wrapped.map((segment, index) => {
-			const prefix = index === 0 ? rowPrefix : continuationPrefix;
-			return this.theme.selectedText(`${prefix}${segment}`);
+		return renderInlineInputRow({
+			buffer: this.inputBuffer,
+			cursorOffset: this.inputCursorOffset,
+			rowPrefix,
+			continuationPrefix,
+			contentWidth,
+			selectedText: this.theme.selectedText,
+			multiline: true,
 		});
 	}
 

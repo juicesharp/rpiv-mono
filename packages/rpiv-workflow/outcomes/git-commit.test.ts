@@ -3,7 +3,7 @@
  * on the success path, when git isn't on PATH, and when the working
  * tree isn't a git repo.
  *
- * Failure posture (C10): no-baseline (not a git repo at snapshot time) and
+ * Failure posture: no-baseline (not a git repo at snapshot time) and
  * HEAD-unchanged degrade to an honest `noOp: true` payload; git WORKING at
  * snapshot time but FAILING after the stage is `fatal` — fabricating noOp
  * there would let `gate` route on invented data. The parser is pure: it
@@ -145,7 +145,7 @@ describe.runIf(hasGit)("gitCommitOutcome end-to-end", () => {
 		expect(result.payload.data.noOp).toBe(true);
 	});
 
-	it("goes FATAL when git worked at snapshot time but fails after the stage (C10)", async () => {
+	it("goes FATAL when git worked at snapshot time but fails after the stage", async () => {
 		// Synthesize a snapshot with a fake baseline; collect runs in a non-repo
 		// cwd — the environment broke mid-stage. Pre-fix this fabricated a
 		// noOp payload and `gate` routed on invented data.
@@ -199,7 +199,7 @@ describe.runIf(hasGit)("gitCommitCollector emits one meta-complete artifact on n
 	});
 });
 
-describe("gitCommitParser is pure and validates its meta contract (C10)", () => {
+describe("gitCommitParser is pure and validates its meta contract", () => {
 	const parseWith = (artifacts: ParseCtx<GitHeadSnapshot | undefined>["artifacts"]) =>
 		gitCommitParser.parse({ ...collectCtx("/nonexistent", undefined), artifacts });
 

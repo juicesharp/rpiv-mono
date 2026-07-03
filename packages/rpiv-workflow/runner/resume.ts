@@ -8,8 +8,8 @@
  * fold-replayed `RunState` at the unit boundary + this generation's
  * accumulated outputs. Because the fold replays rows in trail order, at row
  * *i* the state is byte-identical to what the live driver saw — so the fold
- * verifies EVERY unit row against the recomputed expectation (strictly
- * stronger than the old per-primitive half-guards). Drift (or a generator
+ * verifies EVERY unit row against the recomputed expectation. Drift (or a
+ * generator
  * throw) does not refuse outright: the fold finishes applying so state is
  * complete, and returns `drift` — `resumeWorkflow`'s entry thunk records the
  * terminal failure with full lifecycle bracketing and zero dispatch.
@@ -25,16 +25,24 @@
  */
 
 import type { LoopDef, StageDef, Unit, Workflow } from "../api.js";
-import { applyStageSuccess } from "../audit-rows.js";
+import { applyStageSuccess, rollLastSession } from "../audit-rows.js";
 import { stageEntryArgs } from "../chain-state.js";
 import type { Artifact } from "../handle.js";
 import { formatError } from "../internal-utils.js";
 import { panelMembers } from "../judge.js";
 import { projectResult, publishPanelVerdict } from "../loop.js";
-import { effectiveLoopOf } from "../loop-constructors.js";
-import { advanceCursor, freshCursor, judgeStageDef, type LoopCursor, loopStrategyOf } from "../loop-kinds.js";
+import { effectiveLoopOf, freezesEntryArgsOf } from "../loop-constructors.js";
+import {
+	advanceCursor,
+	foldFanoutCompletion,
+	freshCursor,
+	judgeStageDef,
+	type LoopCursor,
+	sequentialStrategyOf,
+	unitTagOf,
+} from "../loop-kinds.js";
 import { ERR_RESUME_LOOP_MISMATCH } from "../messages.js";
-import type { Output } from "../output.js";
+import { failedOutput, type Output, outputMeta } from "../output.js";
 import {
 	readAllStagesForResume,
 	STATE_SCHEMA_VERSION,
@@ -107,6 +115,7 @@ export async function reconstructState(
 
 	const acc: FoldAcc = {
 		cwd,
+		runId: header.runId,
 		state: freshRunState(header.input),
 		visited: new Set<string>(),
 		lastStageNumber: 0,
@@ -124,7 +133,7 @@ export async function reconstructState(
 		}
 		closeGeneration(acc);
 		const def = workflow.stages[row.stage];
-		// Unknown key refuses — including LEGACY decorated rows (pre-redesign
+		// Unknown key refuses — including LEGACY decorated rows (older
 		// runs carry no `parent`, so their unit rows land here): stage-gone.
 		if (!def) return { ok: false, reason: "stage-gone", detail: row.stage };
 		noteChainNode(acc, row.stage, row.status !== "completed");
@@ -170,6 +179,9 @@ interface OpenGeneration {
 
 interface FoldAcc {
 	cwd: string;
+	/** Header runId — the rebuilt `failedOutput` sentinel's meta.runId,
+	 *  byte-identical to the live `outputMetaFor`'s `s.runId`. RunState carries no id. */
+	runId: string;
 	state: RunState;
 	visited: Set<string>;
 	lastStageNumber: number;
@@ -202,6 +214,12 @@ function foldKnownStage(acc: FoldAcc, def: StageDef, row: WorkflowStage): void {
 	acc.lastStageNumber = Math.max(acc.lastStageNumber, row.stageNumber);
 	if (row.status !== "completed") return;
 	applyStageSuccess(acc.state, def, row.stage, row.output);
+	// Roll the predecessor session forward through the SAME authority the live
+	// `recordStageSuccess` single-stage branch uses (`rollLastSession`) — so a
+	// post-resume cold dispatch of a `continue` stage forks the same predecessor
+	// the live run would have, and the null-handling can't drift. Single-stage
+	// rows only (unit rows fold via `foldUnitRow`, which never touches this slot).
+	rollLastSession(acc.state, row.session);
 }
 
 /** Close the open generation: project the declared result — the live loop-advance, replayed. */
@@ -238,7 +256,7 @@ async function foldUnitRow(
 			// only safe place to derive the round-0 arg. `reads` projections in
 			// particular must NOT be re-derived post-fold, where the generation's
 			// own appends have moved the `.at(-1)` cursors.
-			entryArgs: loop.kind === "assess" ? stageEntryArgs(def, row.parent!, workflow.start, acc.state) : "",
+			entryArgs: freezesEntryArgsOf(loop) ? stageEntryArgs(def, row.parent!, workflow.start, acc.state) : "",
 			cursor: freshCursor(),
 			units: undefined,
 		};
@@ -258,6 +276,43 @@ async function foldUnitRow(
 	acc.lastStageNumber = Math.max(acc.lastStageNumber, row.stageNumber);
 
 	if (!acc.drift) await guardRow(acc, gen, row);
+
+	// Fanout: place-by-`unitIndex` (NOT trail order) so declared order survives a
+	// completion-ordered / out-of-order trail. A slot is FILLED — and so NOT
+	// re-dispatched on resume — only when the row is a COMPLETED unit or a
+	// COLLECTED soft-halt:
+	//   • completed → `applyStageSuccess` (bookkeeping + state.output, mirroring the
+	//     live `recordStageSuccess`) THEN the channel-owning `foldFanoutCompletion`;
+	//   • collected (`status:"failed"` + `collected:true`) → rebuild the `failedOutput`
+	//     sentinel from `errMsg` and place it via `foldFanoutCompletion` ONLY (the live
+	//     `softHaltUnit` runs no `applyStageSuccess` — the fold owns the single channel
+	//     write). The rebuilt meta is byte-identical to the live sentinel's (see
+	//     `outputMetaFor`): decorated `row.stage`, `row.skill`, `row.stageNumber`.
+	// A hard `status:"failed"` row (no `collected`) or a genuinely pending row — and
+	// an aborted in-flight unit, which wrote NO row at all — leaves the slot
+	// unfilled so resume re-dispatches that unit. `gen.units` is absent only when the
+	// units generator threw at open (already drift); fall through to the produce arm's
+	// `advanceCursor` so the refused fold still applies bookkeeping.
+	if (gen.loop.kind === "fanout" && gen.units) {
+		if (row.status === "completed" && row.output) {
+			applyStageSuccess(acc.state, gen.def, row.stage, row.output);
+			foldFanoutCompletion(acc.state, gen.cursor, gen.def, gen.parent, row.unitIndex!, gen.units.length, row.output);
+		} else if (row.collected && row.errMsg !== undefined) {
+			const sentinel = failedOutput(
+				outputMeta({
+					stage: row.stage,
+					skill: row.skill,
+					stageNumber: row.stageNumber,
+					ts: row.ts,
+					runId: acc.runId,
+				}),
+				row.errMsg,
+			);
+			foldFanoutCompletion(acc.state, gen.cursor, gen.def, gen.parent, row.unitIndex!, gen.units.length, sentinel);
+		}
+		gen.expected = undefined; // consumed
+		return undefined; // pending / hard-failed slots stay unfilled — resume re-dispatches them
+	}
 
 	if (row.status !== "completed") return undefined; // pending unit — cursor stays (resume re-runs it)
 
@@ -299,7 +354,10 @@ async function foldUnitRow(
 		return undefined;
 	}
 
-	// produce row — fanout/iterate units and assess producers alike
+	// produce row — iterate units and assess producers (fanout is placed by index
+	// above; a fanout row only reaches here when `gen.units` is absent because the
+	// units generator threw at open — already drift — so `advanceCursor` keeps the
+	// refused fold applying bookkeeping without a `length`-of-undefined).
 	applyStageSuccess(acc.state, gen.def, row.stage, row.output);
 	if (!row.output) return undefined; // defensive — completed unit rows always carry output
 	advanceCursor(gen.cursor, "produce", row.output, gen.loop);
@@ -316,12 +374,23 @@ async function foldUnitRow(
  * be recorded against complete state.
  */
 async function guardRow(acc: FoldAcc, gen: OpenGeneration, row: WorkflowStage): Promise<void> {
+	// Fanout no longer asserts trail order: parallel completion + resume re-dispatch
+	// produce out-of-order trails, and the fanout cursor tracks `filledCount` (a
+	// count, not a trail position), so a sequential `unitIndex === cursor.index`
+	// check would falsely drift. The `unitId` is a PLACEMENT key — verify it
+	// identifies the unit declared at `row.unitIndex`.
+	if (gen.loop.kind === "fanout") {
+		const i = row.unitIndex ?? -1;
+		const ok = i >= 0 && i < (gen.units?.length ?? 0) && unitTagOf(gen.units![i]!) === row.unitId;
+		if (!ok) setDrift(acc, gen.parent);
+		return;
+	}
 	const judgeRole = gen.def.verify ? "verify" : "judge";
 	const expectRole = gen.loop.kind === "assess" ? (gen.cursor.phase === "judge" ? judgeRole : "produce") : "produce";
 	if (row.role !== expectRole || row.unitIndex !== gen.cursor.index) return setDrift(acc, gen.parent);
 
 	const matches = await guarded(acc, gen.parent, () =>
-		loopStrategyOf(gen.loop.kind).guardExpectation(gen, row, acc.cwd, acc.state),
+		sequentialStrategyOf(gen.loop.kind).guardExpectation(gen, row, acc.cwd, acc.state),
 	);
 	if (acc.drift) return;
 	if (!matches) setDrift(acc, gen.parent);

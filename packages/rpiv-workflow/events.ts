@@ -47,6 +47,21 @@ export interface LifecycleContext {
 	/** What triggered this run; defaulted at `runWorkflow` entry if `options.trigger` was omitted. */
 	trigger: RunTrigger;
 	state: RunView;
+	/**
+	 * Distinct stage names already executed in this run — the engine's
+	 * authoritative `RunContext.visited`, RECONSTRUCTED from the JSONL trail on a
+	 * resume. Populated only on the run-level projection (`lifecycleCtxFor`, which
+	 * backs `onWorkflowStart`/`onWorkflowEnd`, script-stage `onStageStart`, and the
+	 * loop/route fires); UNDEFINED on session-fired events (`lifecycleCtxFromSession`
+	 * carries `runIdentity` only, never the live visited set).
+	 *
+	 * Exists so a status-line bridge can SEED its own distinct-visited accumulator
+	 * at `onWorkflowStart`: a resumed run kicks the chain at its reconstructed walk
+	 * position (a deep `stageNumber`), but only re-fires per-stage events from that
+	 * point forward — without this, the bridge would recount `visited` from zero and
+	 * a near-done resume would render a misleadingly tiny `visited/totalStages`.
+	 */
+	visited?: readonly string[];
 }
 
 /**
@@ -133,6 +148,7 @@ export interface LoopCapInfo {
  *   onLoopStart:     (stage, info)         => console.log(`  ⇉ ${stage.name} [${info.kind}]`),
  *   onUnitStart:     (stage, u)            => console.log(`     → ${u.label} (${u.role})`),
  *   onUnitEnd:       (stage, u)            => console.log(`     · ${stage.name} #${u.index}`),
+ *   onUnitHalt:      (stage, u, reason)    => console.warn(`     ✗ ${stage.name} #${u.index}: ${reason}`),
  *   onLoopCap:       (stage, c)            => console.warn(`  ⚠ ${stage.name} capped at ${c.max}`),
  *   onWorkflowEnd:   (result)              =>
  *     console.log(result.success ? "✓ done" : `✗ ${result.error ?? "halted"}`),
@@ -167,8 +183,15 @@ export interface LifecycleListeners {
 	/** After the stage's "failed"/"aborted" row lands in JSONL. Terminal for the run. */
 	onStageError?(stage: StageRef, error: string, ctx: LifecycleContext): void | Promise<void>;
 
-	/** After an `EdgeFn` picks and its routing-decision row lands. `to` may be the `STOP` sentinel literal `"stop"`. */
-	onRoute?(from: StageRef, to: string, ctx: LifecycleContext): void | Promise<void>;
+	/**
+	 * After an `EdgeFn` picks and its routing-decision row lands. `to` may be the
+	 * `STOP` sentinel literal `"stop"`. `bypassed` lists the decision edge's
+	 * not-taken RECOVERY arms — failure loops the chosen arm skipped for good (see
+	 * `bypassedRecoveryArms` in routing.ts). A progress listener credits them so
+	 * the bar reaches full while the terminal stage runs; empty for deterministic
+	 * (string) edges and gates with no loop-back alternative.
+	 */
+	onRoute?(from: StageRef, to: string, ctx: LifecycleContext, bypassed?: readonly string[]): void | Promise<void>;
 
 	/** After `onStageStart`, before unit 1's session (after the unit list is computed for fanout). */
 	onLoopStart?(stage: StageRef, info: LoopStartInfo, ctx: LifecycleContext): void | Promise<void>;
@@ -183,6 +206,18 @@ export interface LifecycleListeners {
 
 	/** Per unit, after the unit's JSONL row lands. Loop units never fire `onStageEnd`. */
 	onUnitEnd?(stage: StageRef, unit: UnitEvent, output: Output, ctx: LifecycleContext): void | Promise<void>;
+
+	/**
+	 * Per unit, after a collect-all fanout unit's NON-TERMINAL `collected:true`
+	 * failed row lands — the unit halted but the run survives (the synthesis fold
+	 * skips its sentinel slot). Fired ONLY on the soft-halt path; a fail-fast unit
+	 * fires `onStageError` (terminal) instead, and a successful unit fires
+	 * `onUnitEnd`. Distinct from both so a lane surface can flip the unit's sub-row
+	 * ✗ rather than leaving it to spin (then be swept ✓ at `onWorkflowEnd`).
+	 * `reason` is the halt cause — the same text the `collected:true` row's
+	 * `errMsg` carries.
+	 */
+	onUnitHalt?(stage: StageRef, unit: UnitEvent, reason: string, ctx: LifecycleContext): void | Promise<void>;
 
 	/** After an `onCap: "advance"` trip — fired after the `{type:"loop-cap"}` telemetry row append attempt. */
 	onLoopCap?(stage: StageRef, info: LoopCapInfo, ctx: LifecycleContext): void | Promise<void>;
@@ -295,6 +330,7 @@ export function buildLifecycleContext(args: {
 	totalStages: number;
 	trigger: RunTrigger;
 	state: RunView;
+	visited?: readonly string[];
 }): LifecycleContext {
 	return args;
 }
@@ -304,8 +340,8 @@ export function buildLifecycleContext(args: {
  * structurally so this base-layer module never imports the runtime types).
  * Captured per fire so listeners always see the latest `state` snapshot.
  * THE one RunContext → LifecycleContext projection — the runner, the loop
- * driver, and the resume entries all share it (the old per-module clones
- * were kept aligned only by convention).
+ * driver, and the resume entries all share it; no per-module clones to keep
+ * aligned by convention.
  */
 export function lifecycleCtxFor(run: {
 	cwd: string;
@@ -314,6 +350,7 @@ export function lifecycleCtxFor(run: {
 	totalStages: number;
 	trigger: RunTrigger;
 	state: RunView;
+	visited: ReadonlySet<string>;
 }): LifecycleContext {
 	return buildLifecycleContext({
 		cwd: run.cwd,
@@ -322,6 +359,9 @@ export function lifecycleCtxFor(run: {
 		totalStages: run.totalStages,
 		trigger: run.trigger,
 		state: run.state,
+		// Snapshot the live set — listeners must not mutate the engine's accumulator,
+		// and a fired ctx is captured per fire so a later `visited.add` is irrelevant.
+		visited: [...run.visited],
 	});
 }
 
