@@ -135,12 +135,8 @@ function resolveProviderBaseUrl(meta: ProviderMeta, config: WebToolsConfig): str
 // when a provider is added or removed.
 const KNOWN_PROVIDER_NAMES = PROVIDERS.map((p) => p.name) as readonly string[];
 
-function isKnownProviderName(name: string): boolean {
-	return PROVIDERS.some((p) => p.name === name);
-}
-
-// Centralized instantiation: load active provider name + creds, build via
-// the factory. Called by both registerWebSearchTool and registerWebFetchTool.
+// Centralized instantiation: resolve provider name + creds, build via the
+// factory. Called by both registerWebSearchTool and registerWebFetchTool.
 //
 // `override` lets a single tool call target a different provider than
 // `config.provider` without mutating persisted state. Resolution:
@@ -148,28 +144,21 @@ function isKnownProviderName(name: string): boolean {
 //      so callers can detect misconfiguration instead of silently falling back.
 //   2. config.provider (the /web-tools-selected default)
 //   3. DEFAULT_PROVIDER_NAME ("brave")
-// Key/baseURL resolution is unchanged — it always reads from env/config under
-// the resolved provider name, so an override still needs its own credentials.
-function instantiateActiveProvider(
+// Key/baseURL resolution always reads from env/config under the resolved
+// provider name, so an override still needs its own credentials.
+function instantiateProvider(
 	config: WebToolsConfig,
 	override?: string,
 ): {
 	providerName: string;
 	provider: SearchProvider | FullProvider;
 } {
-	if (override !== undefined) {
-		if (!isKnownProviderName(override)) {
-			throw new Error(
-				`Unknown web_search provider: "${override}". Valid providers: ${KNOWN_PROVIDER_NAMES.join(", ")}.`,
-			);
-		}
-		const apiKey = resolveProviderApiKey(override, config);
-		const meta = PROVIDERS.find((p) => p.name === override)!;
-		const baseUrl = meta.baseUrlEnvVar ? resolveProviderBaseUrl(meta, config) : undefined;
-		const provider = createSearchProvider(override, { apiKey: apiKey ?? "", baseUrl });
-		return { providerName: override, provider };
+	if (override !== undefined && !KNOWN_PROVIDER_NAMES.includes(override)) {
+		throw new Error(
+			`Unknown web_search provider: "${override}". Valid providers: ${KNOWN_PROVIDER_NAMES.join(", ")}.`,
+		);
 	}
-	const providerName = config.provider ?? DEFAULT_PROVIDER_NAME;
+	const providerName = override ?? config.provider ?? DEFAULT_PROVIDER_NAME;
 	const apiKey = resolveProviderApiKey(providerName, config);
 	const meta = PROVIDERS.find((p) => p.name === providerName);
 	const baseUrl = meta?.baseUrlEnvVar ? resolveProviderBaseUrl(meta, config) : undefined;
@@ -324,7 +313,7 @@ export function registerWebSearchTool(pi: ExtensionAPI): void {
 		async execute(_toolCallId, params, signal, onUpdate, _ctx) {
 			const maxResults = clampSearchResultCount(params.max_results);
 			const config = loadConfig();
-			const { providerName, provider } = instantiateActiveProvider(config, params.provider);
+			const { providerName, provider } = instantiateProvider(config, params.provider);
 
 			onUpdate?.({
 				content: [{ type: "text", text: `Searching ${provider.label} for: "${params.query}"...` }],
@@ -415,7 +404,7 @@ export function registerWebFetchTool(pi: ExtensionAPI): void {
 			});
 
 			const config = loadConfig();
-			const { provider } = instantiateActiveProvider(config);
+			const { provider } = instantiateProvider(config);
 
 			// Three-way capability dispatch:
 			//   1. URL interceptors (currently just GitHub) — opt-in URL specialists
