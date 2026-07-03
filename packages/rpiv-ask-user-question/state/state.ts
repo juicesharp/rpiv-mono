@@ -35,6 +35,10 @@ export interface QuestionnaireState {
 	collapsed: boolean;
 }
 
+/**
+ * Per-tick context the dispatcher needs alongside canonical state. Held separately
+ * because `keybindings` / `inputBuffer` must never reach view setProps consumers.
+ */
 export interface QuestionnaireRuntime {
 	keybindings: { matches(data: string, name: string): boolean };
 	inputBuffer: string;

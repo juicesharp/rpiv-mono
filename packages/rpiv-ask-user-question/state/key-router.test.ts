@@ -72,7 +72,6 @@ function makeRuntime(over: Partial<QuestionnaireRuntime> = {}): QuestionnaireRun
 		items,
 		collapseKey: "ctrl+]",
 		...over,
-		...over,
 	};
 }
 

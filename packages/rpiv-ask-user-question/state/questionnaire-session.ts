@@ -159,6 +159,11 @@ export class QuestionnaireSession {
 			case "forward_notes_keystroke":
 				this.notesInput.handleInput(effect.data);
 				return;
+			case "set_overlay_hidden":
+				// No-op until `setOverlayHandle` has been called (the handle arrives via
+				// `ctx.ui.custom`'s `onHandle` right after the overlay is shown).
+				this.overlayHandle?.setHidden(effect.hidden);
+				return;
 			case "done":
 				this.done(effect.result);
 				return;
@@ -221,12 +226,11 @@ export class QuestionnaireSession {
 	 * Public toggle used by the raw terminal input listener registered in `execute()`.
 	 * pi-tui does not route input to a hidden overlay's `component.handleInput`, so the
 	 * raw listener (which fires for terminal data regardless of overlay visibility)
-	 * reaches the session through this method instead of the dispatch path.
+	 * reaches the session through this method instead of the dispatch path. Routed
+	 * through `commit` so the transition stays in the reducer and the overlay hide
+	 * happens via the `set_overlay_hidden` effect like every other side effect.
 	 */
 	toggleCollapsedExternal(): void {
-		const next = !this.state.collapsed;
-		this.state = { ...this.state, collapsed: next };
-		this.overlayHandle?.setHidden(next);
-		this.viewAdapter.apply(this.state);
+		this.commit({ kind: "toggle_collapsed" });
 	}
 }

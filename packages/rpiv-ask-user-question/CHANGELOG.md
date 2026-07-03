@@ -12,10 +12,12 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - One-time `ask_user_question hidden — press <key> to reopen` notification when the questionnaire is first hidden, so users remember the toggle key without a permanent on-screen affordance.
 
 ### Changed
-- Collapsing the questionnaire overlay now calls `OverlayHandle.setHidden(true)` instead of toggling a visual-only `state.collapsed` flag (#98). The overlay is fully removed from pi-tui's overlay stack, so overlay-aware consumers (e.g. `pi-station`) correctly detect the modal as hidden and resume normal chat scroll while the user reads the transcript. The toggle key is also captured at the raw terminal level via `ctx.ui.onTerminalInput`, so it still works when the overlay is hidden (pi-tui does not deliver input to a hidden overlay's `component.handleInput`).
+- Collapsing the questionnaire overlay now calls `OverlayHandle.setHidden(true)` instead of toggling a visual-only `state.collapsed` flag (#98). The overlay is fully removed from pi-tui's overlay stack, so overlay-aware consumers (e.g. `pi-station`) correctly detect the modal as hidden and resume normal chat scroll while the user reads the transcript. The toggle key is also captured at the raw terminal level via `ctx.ui.onTerminalInput`, so it still works when the overlay is hidden (pi-tui does not deliver input to a hidden overlay's `component.handleInput`). Note the knock-on behaviour changes while hidden: keyboard focus returns to the chat editor (previously the collapsed overlay kept focus and swallowed all keys), Esc no longer cancels the questionnaire (press the collapse key to reopen it first), and the persistent one-line `Ctrl+] to expand` hint row is replaced by the one-shot notification.
+- `collapseKey` specs are validated against pi-tui's actual key grammar (known modifiers + a single character or named special key). Typo'd specs like `ctr+]` fall back to the default instead of degenerating into a bare-`]` match that would swallow every `]` keystroke.
 
 ### Fixed
 - Moved `typebox` from `peerDependencies` to `dependencies` (`^1.1.24`, matching the Pi host's range) so the tool's parameter schema resolves under installers that don't materialise peer deps. Fixes `ERR_MODULE_NOT_FOUND: typebox` on standalone consumer installs (#79).
+
 ## [1.20.0] - 2026-06-15
 
 ### Added

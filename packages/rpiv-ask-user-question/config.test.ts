@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
 	type AskUserQuestionConfig,
 	COLLAPSE_KEY_OFF,
@@ -37,8 +37,27 @@ describe("resolveCollapseKey", () => {
 		expect(resolveCollapseKey({ collapseKey: "ctrl++" })).toBe(DEFAULT_COLLAPSE_KEY);
 		// The default itself is valid
 		expect(resolveCollapseKey({ collapseKey: "ctrl+]" })).toBe("ctrl+]");
-		// Multi-modifier specs are valid (the regex is permissive on the base char)
+		// Multi-modifier specs are valid
 		expect(resolveCollapseKey({ collapseKey: "ctrl+shift+h" })).toBe("ctrl+shift+h");
+	});
+
+	it("falls back to the default for typo'd modifiers and unknown key names", () => {
+		// `ctr+]` is the dangerous one: pi-tui's parseKeyId takes the LAST `+`-part as
+		// the key and ignores unknown parts, so an unvalidated `ctr+]` would match every
+		// bare `]` keypress and the raw terminal listener would consume them globally.
+		expect(resolveCollapseKey({ collapseKey: "ctr+]" })).toBe(DEFAULT_COLLAPSE_KEY);
+		expect(resolveCollapseKey({ collapseKey: "control+]" })).toBe(DEFAULT_COLLAPSE_KEY);
+		expect(resolveCollapseKey({ collapseKey: "ctrl+nosuchkey" })).toBe(DEFAULT_COLLAPSE_KEY);
+		expect(resolveCollapseKey({ collapseKey: "hello" })).toBe(DEFAULT_COLLAPSE_KEY);
+		// Duplicate modifiers are not part of the KeyId grammar
+		expect(resolveCollapseKey({ collapseKey: "ctrl+ctrl+]" })).toBe(DEFAULT_COLLAPSE_KEY);
+	});
+
+	it("accepts named special keys and bare base keys", () => {
+		expect(resolveCollapseKey({ collapseKey: "ctrl+pageup" })).toBe("ctrl+pageup");
+		expect(resolveCollapseKey({ collapseKey: "Ctrl+PageUp" })).toBe("ctrl+pageup");
+		expect(resolveCollapseKey({ collapseKey: "f5" })).toBe("f5");
+		expect(resolveCollapseKey({ collapseKey: "alt+escape" })).toBe("alt+escape");
 	});
 });
 
@@ -56,6 +75,8 @@ describe("loadConfig", () => {
 		if (existsSync(configPath)) rmSync(configPath);
 	};
 
+	afterEach(removeConfig);
+
 	it("returns an empty config when no file is present", () => {
 		removeConfig();
 		expect(loadConfig().collapseKey).toBeUndefined();
@@ -70,7 +91,5 @@ describe("loadConfig", () => {
 		const c = loadConfig();
 		expect(c.collapseKey).toBe("alt+o");
 		expect(c.guidance?.promptSnippet).toBe("x");
-		removeConfig();
-		vi.restoreAllMocks();
 	});
 });

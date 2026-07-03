@@ -21,14 +21,46 @@ export interface AskUserQuestionConfig {
 	collapseKey?: CollapseKeySpec;
 }
 
+// Named keys accepted by pi-tui's `matchesKey` (keys.js switch on the parsed base key).
+// parseKeyId lowercases the id before matching, so lowercase spellings are canonical.
+const SPECIAL_KEYS = new Set([
+	"escape",
+	"esc",
+	"enter",
+	"return",
+	"tab",
+	"space",
+	"backspace",
+	"delete",
+	"insert",
+	"clear",
+	"home",
+	"end",
+	"pageup",
+	"pagedown",
+	"up",
+	"down",
+	"left",
+	"right",
+	...Array.from({ length: 12 }, (_, i) => `f${i + 1}`),
+]);
+
+const MODIFIERS = new Set(["ctrl", "shift", "alt", "super"]);
+
 function isValidCollapseKeySpec(spec: string): boolean {
-	// Same shape as pi-coding-agent keybinding ids: lowercase modifiers (`ctrl`, `shift`,
-	// `alt`, `super`) joined by `+`, then a base key. We do a light syntactic check;
-	// `matchesKey` does the real matching.
+	// Mirror pi-tui's KeyId grammar strictly: zero or more distinct modifiers, then a
+	// base key that is a single printable character or a named special key. A loose
+	// check is not enough — pi-tui's `parseKeyId` takes the LAST `+`-part as the key
+	// and ignores unknown parts, so a typo like `ctr+]` would silently match every
+	// bare `]` keypress (and the raw terminal listener would consume them globally).
 	if (!spec) return false;
-	if (spec.startsWith("+") || spec.endsWith("+")) return false;
-	if (spec.includes("++")) return false;
-	return /^[a-z0-9+_\-!@#$%^&*()|~`'":;,./<>?[\]{}=\\]+$/i.test(spec);
+	if (spec.startsWith("+") || spec.endsWith("+") || spec.includes("++")) return false;
+	const parts = spec.split("+");
+	const base = parts[parts.length - 1] ?? "";
+	const modifiers = parts.slice(0, -1);
+	if (modifiers.length !== new Set(modifiers).size) return false;
+	if (!modifiers.every((m) => MODIFIERS.has(m))) return false;
+	return base.length === 1 ? /[a-z0-9_\-!@#$%^&*()|~`'":;,./<>?[\]{}=\\]/.test(base) : SPECIAL_KEYS.has(base);
 }
 
 export function resolveCollapseKey(config: Pick<AskUserQuestionConfig, "collapseKey">): CollapseKeySpec {

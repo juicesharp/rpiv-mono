@@ -131,10 +131,16 @@ Preview content is rendered as markdown in a monospace box. Multi-line text with
 
 			if (collapseKey !== "off" && typeof ctx.ui.onTerminalInput === "function") {
 				removeOverlayInputListener = ctx.ui.onTerminalInput((data) => {
-					if (!overlayHandleRef.current) return undefined;
+					const handle = overlayHandleRef.current;
+					if (!handle) return undefined;
+					// Only act while the questionnaire is hidden (its handleInput is
+					// unreachable) or actually focused. When some other overlay is on
+					// top (e.g. `/btw`), leave the keystroke to that overlay instead of
+					// toggling the questionnaire from underneath it.
+					if (!handle.isHidden() && !handle.isFocused()) return undefined;
 					if (!matchesKey(data, collapseKey as Parameters<typeof matchesKey>[1])) return undefined;
 					sessionRef.current?.toggleCollapsedExternal();
-					if (overlayHandleRef.current.isHidden() && !hasAnnouncedHide) {
+					if (handle.isHidden() && !hasAnnouncedHide) {
 						hasAnnouncedHide = true;
 						ctx.ui.notify?.(`ask_user_question hidden — press ${collapseKey} to reopen`, "info");
 					}
