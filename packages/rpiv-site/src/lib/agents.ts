@@ -14,11 +14,14 @@ export type AgentEntry = {
 	copy: CopyEntry["data"] | undefined;
 };
 
-export type CapabilityTier = "locator" | "analyzer" | "external" | "specialist";
+export type CapabilityTier = "locator" | "analyzer" | "external" | "specialist" | "verifier";
 
-/** The 12 named agents that ship as built docs pages. Exported so
- *  `getStaticPaths` (agents/[slug].astro) can filter `agentSpecs` against it,
- *  keeping `artifact-code-reviewer` / `artifact-coverage-reviewer` / `slice-verifier` invisible per FRD Non-Goals. */
+/** The 15 named agents that ship as built docs pages. Exported so
+ *  `getStaticPaths` (agents/[slug].astro) can filter `agentSpecs` against it.
+ *  The verifier tier — adversarial fresh-context checks the planning skills
+ *  (design/blueprint/plan) dispatch over slices and finalized artifacts —
+ *  became visible with the three-pipeline release: the verification story
+ *  needs its named cast (matches the roadmap's "15 named subagents"). */
 export const TIER_BY_NAME: Record<string, CapabilityTier> = {
 	"codebase-locator": "locator",
 	"artifacts-locator": "locator",
@@ -32,6 +35,9 @@ export const TIER_BY_NAME: Record<string, CapabilityTier> = {
 	"claim-verifier": "specialist",
 	"diff-auditor": "specialist",
 	"peer-comparator": "specialist",
+	"slice-verifier": "verifier",
+	"artifact-code-reviewer": "verifier",
+	"artifact-coverage-reviewer": "verifier",
 };
 
 /** Specialists + already-single-sentence locators get the full description. Others trim to first sentence. */
@@ -61,7 +67,7 @@ export function tier(agent: AgentEntry): CapabilityTier {
 	return TIER_BY_NAME[agent.slug] ?? "analyzer";
 }
 
-const TIER_ORDER: CapabilityTier[] = ["locator", "analyzer", "specialist", "external"];
+const TIER_ORDER: CapabilityTier[] = ["locator", "analyzer", "specialist", "verifier", "external"];
 
 function merge(spec: SpecEntry, copies: CopyEntry[]): AgentEntry {
 	const copy = copies.find((c) => c.data.slug === spec.data.name);
