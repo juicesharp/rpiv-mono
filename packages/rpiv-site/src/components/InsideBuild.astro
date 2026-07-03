@@ -70,15 +70,15 @@ const STAGE_TOTAL = 19; // 16 spine rows + 3 fix arms
 		<p class="kicker ib__kicker">§ inside build · {STAGE_TOTAL} stages · 3 gates · 1 design review</p>
 		<h2 class="ib__title">Every stage answers a failure you&rsquo;ve met.</h2>
 		<p class="ib__lede">
-			The full graph, drawn honest — nineteen stages, three fix loops, one
-			seal. Machinery like this would be overhead if it ran in sequence;
-			here, everything between gates runs in parallel.
+			The full graph, drawn honest: nineteen stages, three fix loops, one
+			seal. Machinery like this would be overhead in sequence. Here,
+			everything between gates runs in parallel.
 		</p>
 
 		<div class="ib__duo">
 			<figure
 				class="ib__plate"
-				aria-label={`The full build graph, top to bottom: ${ROWS.map((r) => r.name).join(", ")} — with fix loops at slice-grade (slice-fix), plan-grade (plan-fix), and code-grade (code-fix). Nineteen stages in all. Deterministic script stages are drawn as squares, quality gates as torii the flow passes through, and the human design review as a seal.`}
+				aria-label={`The full build graph, top to bottom: ${ROWS.map((r) => r.name).join(", ")}. Fix loops sit at slice-grade (slice-fix), plan-grade (plan-fix), and code-grade (code-fix). Nineteen stages in all. Deterministic script stages are drawn as squares, quality gates as torii the flow passes through, and the human design review as a seal.`}
 			>
 				<svg viewBox={`0 0 ${W} ${H}`} class="ib__svg" preserveAspectRatio="xMidYMid meet" role="presentation">
 					{/* faint companion stroke — the rail's ink echo */}
@@ -196,7 +196,7 @@ const STAGE_TOTAL = 19; // 16 spine rows + 3 fix arms
 				<figcaption class="ib__legend mono">
 					<span class="ib__legendMark">▢</span> asks only when the code can&rsquo;t decide
 					<span class="ib__legendDot" aria-hidden="true">·</span>
-					<span class="ib__legendMark">◉</span> always pauses — your design gate
+					<span class="ib__legendMark">◉</span> always pauses · your design gate
 				</figcaption>
 			</figure>
 
@@ -204,12 +204,12 @@ const STAGE_TOTAL = 19; // 16 spine rows + 3 fix arms
 				<div class="ib__reading" style="--ib-r: 0">
 					<p class="mono ib__readHead">01 · the contract</p>
 					<p class="ib__readBody">
-						Your brief enters byte-for-byte — a file no model may paraphrase.
-						A re-slice may redistribute it across slices, never drop a piece:
-						coverage is anchored to the first cut you confirmed. The panels
-						grade completeness and correctness against that file, and
-						<span class="mono ib__code">validate --goal</span> closes against
-						it. Your ask cannot quietly shrink.
+						Your brief enters byte-for-byte, as a file no model may
+						paraphrase. A re-slice may redistribute it across slices, never
+						drop a piece: coverage is anchored to the first cut you
+						confirmed. The panels grade completeness and correctness against
+						that file, and <span class="mono ib__code">validate --goal</span>
+						closes against it. Your ask cannot quietly shrink.
 					</p>
 				</div>
 				<div class="ib__reading" style="--ib-r: 1">
@@ -218,30 +218,31 @@ const STAGE_TOTAL = 19; // 16 spine rows + 3 fix arms
 						<span class="mono ib__code">slice-check</span> and
 						<span class="mono ib__code">code-splice</span> are programs: they
 						pass or fail with zero LLM calls, and no amount of eloquence moves
-						them. The grade panels judge in fresh context — one session per
-						dimension, blind to the transcript that produced the artifact —
-						before a single line is implemented. A failing dimension routes to
-						a fix arm and re-enters on its own; a gate never waits on you.
+						them. The grade panels judge in fresh context, one session per
+						dimension, blind to the transcript that produced the artifact.
+						All of it runs before a single line is implemented. A failing
+						dimension routes to a fix arm and re-enters on its own. A gate
+						never waits on you.
 					</p>
 				</div>
 				<div class="ib__reading" style="--ib-r: 2">
 					<p class="mono ib__readHead">03 · the parallelism</p>
 					<p class="ib__readBody">
-						Everything between gates fans out — designs per slice, panel
-						dimensions, code per phase — as simultaneous Pi sessions, each
-						carrying only its slice of the problem. A live lane console keeps
+						Everything between gates fans out: designs per slice, panel
+						dimensions, code per phase. Each runs as its own Pi session and
+						carries only its slice of the problem. A live lane console keeps
 						every session in reach: step into any lane, watch its output,
 						answer its question without halting the others. Rigor that would
-						crawl in sequence doesn&rsquo;t — and bounded context per session is
+						crawl in sequence doesn&rsquo;t. Bounded context per session is
 						also the economics: it&rsquo;s
 						<a href="#models">why affordable models hold up</a>.
 					</p>
 				</div>
 				<div class="ib__reading ib__reading--sits" style="--ib-r: 3">
-					<p class="mono ib__readHead ib__readHead--sits">— where this sits</p>
-					<p class="ib__readBody"><em>Who holds the plan?</em> You do — the pipeline is code, versioned, the same graph every run, not a script a model improvised minutes ago.</p>
-					<p class="ib__readBody"><em>Who checks the work?</em> Programs first, fresh-context panels second, you third — not more agents checking agents.</p>
-					<p class="ib__readBody"><em>When are you asked?</em> Only when the code can&rsquo;t decide — and always once, at the design gate.</p>
+					<p class="mono ib__readHead ib__readHead--sits">04 · where this sits</p>
+					<p class="ib__readBody"><em>Who holds the plan?</em> You do. The pipeline is code: versioned, the same graph every run, not a script a model improvised minutes ago.</p>
+					<p class="ib__readBody"><em>Who checks the work?</em> Programs first, fresh-context panels second, you third. Not more agents checking agents.</p>
+					<p class="ib__readBody"><em>When are you asked?</em> Only when the code can&rsquo;t decide, and always once, at the design gate.</p>
 				</div>
 			</aside>
 		</div>

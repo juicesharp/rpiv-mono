@@ -133,7 +133,7 @@ An edge can be a string, `"stop"`, or a **predicate edge** that routes on the st
 
 Mark a stage `fanout` and the runner splits it into one unit per slice (for example, one unit per `## Phase N:` heading the inherited plan declares), each in its own isolated session, blind to the others. `iterate` is the accumulating counterpart: units are pulled one at a time, each able to see the prior result. You author one stage; the runner handles the spread and the join.
 
-`fanout` units run **simultaneously** — one Pi child session per unit, in-process, waves respecting each unit's declared dependencies — with a live lane console over the run: step into any lane, watch its output, answer its question without halting the others. `iterate` stays **sequential by contract**: each pass must see what the earlier passes wrote, so ordering is the point, not a limitation. A fanout can still opt down to `concurrency: 1` when its units mutate shared state — the bundled `implement` does exactly that, because applying one plan to one working tree is a patch series, not a race.
+`fanout` units run **simultaneously**: one Pi child session per unit, in-process, in waves that respect each unit's declared dependencies. A live lane console rides over the run. Step into any lane, watch its output, answer its question without halting the others. `iterate` stays **sequential by contract**: each pass must see what the earlier passes wrote, so ordering is the point, not a limitation. A fanout can still opt down to `concurrency: 1` when its units mutate shared state. The bundled `implement` does exactly that, because applying one plan to one working tree is a patch series, not a race.
 
 ## Sessions: fresh or continue
 

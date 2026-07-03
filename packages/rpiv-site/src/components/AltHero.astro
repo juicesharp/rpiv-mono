@@ -65,7 +65,7 @@ const driverStops = STAGES.map((s, i) => ({ ...s, i })).filter((s) => s.driver);
 
 		<figure
 			class="ahero__flow"
-			aria-label={`One /wf command drives build's seven acts: ${STAGES.map((s) => s.name).join(", ")} — 19 stages in all. Quality gates at slice, plan, and code, each grading and repairing on its own fix loop — never waiting on you. Above the rail, the driver line: your brief enters verbatim; research answers, the slice-cut confirm, and design forks reach you only when the code can't decide; and the run always pauses at review — your design gate.`}
+			aria-label={`One /wf command drives build's seven acts: ${STAGES.map((s) => s.name).join(", ")}. That is 19 stages in all. Quality gates sit at slice, plan, and code; each grades and repairs on its own fix loop and never waits on you. Above the rail runs the driver line: your brief enters verbatim; research answers, the slice-cut confirm, and design forks reach you only when the code can't decide; the run always pauses at review, your design gate.`}
 		>
 			<svg viewBox={`0 0 ${RAIL.vw} ${RAIL.vh}`} class="ahero__flowSvg" preserveAspectRatio="xMidYMid meet" role="presentation">
 				{/* ── driver line — the head label IS the first driver moment: your
@@ -176,7 +176,7 @@ const driverStops = STAGES.map((s, i) => ({ ...s, i })).filter((s) => s.driver);
 				<svg class="ahero__legendGlyph" viewBox="0 0 12 12" aria-hidden="true">
 					<rect x="2.5" y="2.5" width="7" height="7" rx="1" transform="rotate(8 6 6)" fill="var(--ochre)" opacity="0.92" />
 				</svg>
-				always pauses — your design gate
+				always pauses · your design gate
 			</figcaption>
 		</figure>
 

@@ -85,7 +85,7 @@ const WORKFLOWS: readonly WorkflowEntry[] = [
 	},
 	{
 		name: "vet",
-		when: "A diff already exists — yours or a teammate's. Review it, loop a fix cycle until zero blockers remain.",
+		when: "A diff already exists, yours or a teammate's. Review it, loop a fix cycle until zero blockers remain.",
 		arg: "main..HEAD",
 		stageCount: 5,
 		stages: [

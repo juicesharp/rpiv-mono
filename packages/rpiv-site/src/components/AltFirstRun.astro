@@ -16,28 +16,28 @@ const COMMANDS = [
 const TRACE = [
 	{
 		name: "capture",
-		note: "your brief written to disk byte-for-byte — no LLM touches it — then research grounds it in your codebase, and ambiguities come back to you as concrete options. Every gate downstream grades against your exact words.",
+		note: "your brief goes to disk byte-for-byte. No LLM touches it. Research then grounds it in your codebase, and ambiguities come back to you as options. Every gate downstream grades against your exact words.",
 		you: "▢ your answers",
 	},
 	{
 		name: "slice",
-		note: "the brief cut into independent vertical slices, each chewable by one design pass. You confirm the cut once — freezing the coverage units a script then conserves: cycle-free, no piece of your ask dropped.",
+		note: "the brief is cut into independent vertical slices, each small enough for one design pass. You confirm the cut once. That freezes the coverage units a script then conserves: cycle-free, no piece of your ask dropped.",
 		you: "▢ your cut",
 		gate: "gate · 0 LLM calls",
 	},
 	{
 		name: "design",
-		note: "one fresh session per slice, dependency-ordered, running simultaneously — every lane live in the console. A genuine design fork — one the research can't settle — reaches you without halting the others.",
+		note: "one fresh session per slice, dependency-ordered, all running at once. Every lane is live in the console. A genuine design fork reaches you without halting the others.",
 		you: "▢ your forks",
 	},
 	{
 		name: "review",
-		note: "the one guaranteed pause: every slice's design in one summary — accept, or adjust interfaces and data types and the edit cascades to its dependents before synthesis.",
+		note: "the one guaranteed pause: every slice's design in one summary. Accept, or adjust interfaces and data types; the edit cascades to dependents before synthesis.",
 		you: "■ your design gate",
 	},
 	{
 		name: "plan",
-		note: "per-cluster sub-plans merge into one plan; a five-dimension panel grades it — completeness and correctness judged against your verbatim brief — before any code exists.",
+		note: "per-cluster sub-plans merge into one plan. A five-dimension panel grades it before any code exists; completeness and correctness are judged against your verbatim brief.",
 		gate: "gate ×5 · ↺ fix",
 	},
 	{
