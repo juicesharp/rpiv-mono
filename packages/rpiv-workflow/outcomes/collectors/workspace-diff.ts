@@ -72,7 +72,7 @@ async function collectDiffArtifacts(
 	if (status === undefined) {
 		// git worked at snapshot time and fails now — an environment break,
 		// not "no changes." `ok []` here would route downstream logic on
-		// fabricated nothing-happened data (T10).
+		// fabricated nothing-happened data.
 		return {
 			kind: "fatal",
 			message: `${ctx.skill}: git status worked at snapshot time but failed after the stage — cannot diff the workspace`,

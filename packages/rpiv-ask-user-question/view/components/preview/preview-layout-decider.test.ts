@@ -60,16 +60,12 @@ describe("crossTabMaxLeftWidth", () => {
 		expect(result).toBeLessThanOrEqual(82 - PREVIEW_COLUMN_GAP - MIN_PREVIEW_WIDTH);
 	});
 
-	it("multiSelect tabs use items.length for numbering; single-select adds chat row slot", () => {
-		// Use 9 items with a label long enough to clear MIN_LEFT so the prefix delta is visible:
-		//   multi:  totalForNumbering = 9          → prefixW = 1 + 4 = 5
-		//   single: totalForNumbering = 9 + 1 = 10 → prefixW = 2 + 4 = 6
-		// With a 30-char label, desired exceeds MIN_LEFT(30) under both, so single is exactly 1 col wider.
+	it("single- and multi-select tabs use items.length for numbering (no chat row slot)", () => {
 		const longLabel = "x".repeat(30);
 		const items = Array.from({ length: 9 }, () => opt(longLabel));
 		const multi = crossTabMaxLeftWidth([{ multiSelect: true }], [items], 200);
 		const single = crossTabMaxLeftWidth([{ multiSelect: false }], [items], 200);
-		expect(single - multi).toBe(1);
+		expect(single).toBe(multi);
 	});
 
 	it("idempotent across tab order — max is permutation-invariant", () => {

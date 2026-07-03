@@ -2,7 +2,6 @@ import { DynamicBorder, type Theme } from "@earendil-works/pi-coding-agent";
 import { type Component, Container, type Input, Spacer } from "@earendil-works/pi-tui";
 import type { QuestionnaireState } from "../state/state.js";
 import type { QuestionData } from "../tool/types.js";
-import type { ChatRowView } from "./components/chat-row-view.js";
 import type { PreviewPaneProps } from "./components/preview/preview-pane.js";
 import type { TabBar } from "./components/tab-bar.js";
 import type { StatefulView } from "./stateful-view.js";
@@ -51,7 +50,6 @@ export interface DialogConfig {
 	questions: readonly QuestionData[];
 	tabBar: TabBar | undefined;
 	notesInput: Input;
-	chatRow: ChatRowView;
 	isMulti: boolean;
 	tabsByIndex: ReadonlyArray<TabComponents>;
 	/** Optional so single-question mode and non-submit tests can omit it; SubmitTabStrategy falls back to Spacer rows. */
@@ -88,7 +86,6 @@ export class DialogView implements StatefulView<DialogProps> {
 			getPreviewPane: () => this.liveProps.activePreviewPane,
 			tabsByIndex: config.tabsByIndex,
 			notesInput: config.notesInput,
-			chatRow: config.chatRow,
 			isMulti: config.isMulti,
 			getCurrentBodyHeight: config.getCurrentBodyHeight,
 		});

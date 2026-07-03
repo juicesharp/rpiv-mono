@@ -9,6 +9,12 @@
  * the orchestrator gates `checkReachability` on that code's presence (a BFS
  * over unenumerable edges would emit "unreachable" cascades whose root cause
  * is the metadata error already reported).
+ *
+ * "terminal"/"implicit terminals" throughout this module is the GRAPH-SINK
+ * sense (a stage with no outgoing edge OR an explicit `STOP`) — unrelated to
+ * the `terminal()` stage factory (../stage-def.ts) and to "terminal failure"
+ * run-outcome prose (../audit.ts). See the glossary on `stage-def.ts`'s
+ * `terminal` export.
  */
 
 import { type EdgeTarget, STOP, type Workflow } from "../api.js";
@@ -54,7 +60,10 @@ export function checkEdgeTargets(w: Workflow, r: IssueReporter): void {
 	}
 }
 
-/** Stages with no outgoing edge are implicit terminals — usually a missing connection. */
+/**
+ * Stages with no outgoing edge are implicit terminals — usually a missing
+ * connection. ("terminal" = graph-sink sense; see the module header.)
+ */
 export function checkMissingEdges(w: Workflow, r: IssueReporter): void {
 	for (const name of Object.keys(w.stages)) {
 		if (!(name in w.edges)) {

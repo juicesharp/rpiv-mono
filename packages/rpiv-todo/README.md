@@ -18,7 +18,7 @@ Give the model a todo list it can keep across long sessions. `rpiv-todo` adds th
 - **Survives `/reload` and compaction** - tasks replay from the conversation branch, not disk.
 - **Status states** - pending, in_progress, completed, plus a deleted tombstone for audit.
 - **Dependency tracking** - `blockedBy` with cycle detection, so the model can sequence work.
-- **Smart truncation** - 12-line collapse threshold; completed tasks drop first, pending tasks stay visible last.
+- **Smart truncation** - collapse threshold (default 12, [configurable](#configuration) via `maxWidgetLines`); completed tasks drop first, pending tasks stay visible last.
 
 ## Install
 
@@ -106,12 +106,36 @@ Returns:
 
 - **`/todos`** - print the current todo list grouped by status.
 
+## Configuration
+
+Optional file at `~/.config/rpiv-todo/config.json`:
+
+```json
+{
+  "maxWidgetLines": 8,
+  "guidance": {
+    "promptSnippet": "Use the `todo` tool to track multi-step work before starting it.",
+    "promptGuidelines": [
+      "Create one task per discrete step.",
+      "Mark a task in_progress while working on it; completed when done."
+    ]
+  }
+}
+```
+
+| Key | Default | Meaning |
+|---|---|---|
+| `maxWidgetLines` | `12` | Content-row budget for the overlay (useful on low-height terminals). The heading and, on overflow, the `+N more` summary row count against this budget — only the trailing spacer sits outside it, so `12` renders up to 13 rows total. Floor of `3`: lower values fall back to the default, as do non-numeric values. Applied on the next repaint — no `/reload` required. |
+| `guidance` | _(absent)_ | LLM guidance overrides (`promptSnippet`, `promptGuidelines`) — optional; absent by default. |
+
+Missing or malformed file falls back to defaults - no config required.
+
 ## Overlay
 
 The aboveEditor widget auto-renders whenever any overlay-visible tasks exist.
 Completed tasks stay visible after completion until the next agent response
-starts, then disappear from later overlay renders. 12-line collapse
-threshold; completed tasks still drop first on overflow, pending tasks
+starts, then disappear from later overlay renders. Collapse threshold
+defaults to 12 lines (configurable via `maxWidgetLines` — see [Configuration](#configuration)); completed tasks still drop first on overflow, pending tasks
 truncate last. Auto-hides when the list is empty.
 
 ## Localization

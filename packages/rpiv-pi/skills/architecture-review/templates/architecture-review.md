@@ -5,7 +5,7 @@ author: {`author:` from injected git context}
 commit: {Current commit hash}
 branch: {Current branch name}
 repository: {Repository name}
-target: {repo-relative target path}
+target: {repo-relative target path — a bare path; if you must add prose or span multiple paths, WRAP THE WHOLE VALUE IN DOUBLE QUOTES so an embedded `:` doesn't break YAML}
 target_kind: {module | directory | file}
 layer_count: {N}
 unresolved_finding_count: {U}    # increments on file, decrements on triage; should be 0 before Step 6

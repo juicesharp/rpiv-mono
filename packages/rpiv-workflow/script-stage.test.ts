@@ -243,7 +243,7 @@ describe("runScript", () => {
 		// `ctx.input` for the downstream stage IS the cleanup row's output (kind: "side-effect", artifacts: []).
 		expect(observedArtifactsLen).toBe(0);
 		// The cleared rolling primary is observable only via the inherited
-		// envelope — `RunView` (T3) no longer leaks the `primaryArtifact` slot.
+		// envelope — `RunView` no longer leaks the `primaryArtifact` slot.
 	});
 
 	// 7. Async script function awaited correctly.

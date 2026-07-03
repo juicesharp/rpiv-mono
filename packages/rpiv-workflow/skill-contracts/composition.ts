@@ -21,7 +21,7 @@ import { getCompositionComparators } from "./extension-points.js";
 
 /**
  * THE single data-channel comparison core — shared by `canCompose` and the
- * validator's `checkEdgeSchemaCompat` (D4), so the adviser and the load gate
+ * validator's `checkEdgeSchemaCompat`, so the adviser and the load gate
  * answer the producer→consumer data question through one engine. Conservative:
  * either side absent/opaque → `{ ok: true }` (not provably incompatible);
  * both present → `isSchemaCompatible`.
@@ -77,14 +77,12 @@ export function adjudicateChannel(
  * Conservative (via `isSchemaCompatible`): returns `{ ok: true }` when either
  * schema is absent/opaque (not provably incompatible).
  *
- * `contracts` is REQUIRED (T12): the old zero-arg default silently consulted
- * the GLOBAL registry, which holds only registered (`declared`-source) contracts —
- * NOT the `harvested` ones, which exist solely on
- * `LoadedWorkflows.skillContracts` (built per load, never written back to the
- * global) — so the convenient call was the wrong one for any harvest-only
- * skill. Pass `loaded.skillContracts` for the effective (declared ⊕
- * harvested) view, or `getSkillContracts()` when the registered slice
- * is genuinely what you mean.
+ * `contracts` is REQUIRED: the GLOBAL registry holds only registered
+ * (`declared`-source) contracts — NOT the `harvested` ones, which exist solely
+ * on `LoadedWorkflows.skillContracts` (built per load, never written back to the
+ * global) — so a default would be the wrong call for any harvest-only skill.
+ * Pass `loaded.skillContracts` for the effective (declared ⊕ harvested) view,
+ * or `getSkillContracts()` when the registered slice is genuinely what you mean.
  */
 export function canCompose(
 	producerSkill: string,
@@ -93,7 +91,7 @@ export function canCompose(
 ): SchemaCompatResult {
 	const producerContract = contracts.get(producerSkill);
 	const consumerContract = contracts.get(consumerSkill);
-	// Data channel: a provable data mismatch is decisive (shared core — D4).
+	// Data channel: a provable data mismatch is decisive (shared core).
 	const dataCompat = compareDataChannel(producerContract?.produces?.data, consumerContract?.consumes?.data);
 	if (!dataCompat.ok) return dataCompat;
 	// Named-channel (reads) compat — THE shared `adjudicateChannel` rule (same

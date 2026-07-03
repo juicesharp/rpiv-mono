@@ -6,7 +6,7 @@ Keeping an experienced driver in the loop while the work moves at LLM speed. Com
 
 - rpiv-pi skill pipeline — ~20 contract-carrying skills (`discover` → `research`/`design`/`blueprint` → `plan` → `implement` → `validate` → `code-review` → `commit`)
 - 15 named subagents for parallel analysis under fresh context
-- 6 built-in `/wf` workflows — `ship`, `build`, `arch`, `vet`, `polish`, `pr-triage`
+- 3 built-in `/wf` workflows — `build`, `vet`, `polish`
 - Per-skill / per-stage model + effort control (`/rpiv-models`, `models.json`)
 - rpiv-workflow engine — declarative, validatable, auditable, resumable pipelines with predicate routing
 - Unified loop driver — `fanout` / `iterate` / `assess`

@@ -30,6 +30,40 @@ export function formatError(e: unknown): string {
 export const nowIso = (): string => new Date().toISOString();
 
 /**
+ * The abort marker the detached-execution runtime throws when a child session is
+ * aborted (run-level Ctrl-C or a fail-fast sibling halt). `session.abort()` makes
+ * the SDK `prompt()` RESOLVE with a `stopReason:"aborted"` message (it does NOT
+ * reject), so the runtime detects that stop and
+ * throws THIS before any audit row is written: the fold's `isAbortError` check
+ * then leaves the slot unfilled so resume re-dispatches the unit.
+ *
+ * `name` is "WorkflowAbortError" — deliberately NOT "AbortError" — so it never
+ * collides with the DOM/third-party `AbortError` thrown by unrelated aborts;
+ * `isAbortError` is `instanceof`-based (not name-based) for the same reason.
+ */
+export class WorkflowAbortError extends Error {
+	constructor(message = "aborted") {
+		super(message);
+		this.name = "WorkflowAbortError";
+	}
+}
+
+export const isAbortError = (e: unknown): e is WorkflowAbortError => e instanceof WorkflowAbortError;
+
+/**
+ * Thrown on a programmer-error misconfiguration of a runtime primitive (e.g. a
+ * `Semaphore` constructed with `limit < 1`). A named type — matching the
+ * package convention (`WorkflowAbortError`, `StagePreflightError`) — so a
+ * misconfiguration surfaces a typed error rather than a bare `Error`.
+ */
+export class WorkflowConfigError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = "WorkflowConfigError";
+	}
+}
+
+/**
  * Create a lazily-initialised global-slot getter anchored on a `Symbol.for` key.
  * The returned function reads from `globalThis` on every call, initialising the
  * slot on first access. The indirection through `globalThis` (rather than
@@ -53,10 +87,31 @@ export function globalSlot<T>(key: symbol, init: () => T): () => T {
 }
 
 /**
+ * Read a symbol-keyed property off a function object — the centralised
+ * alternative to sprinkling `obj as unknown as Record<symbol, T>` at every
+ * read site. Returns `undefined` when the symbol is unset. `globalSlot` is the
+ * twin for `globalThis`-anchored slots; this pair is for properties stored on
+ * plain function objects (the `READS_DATA` / `ROUTE_NOTE` / `CANONICAL_FOLD`
+ * family). One cast lives here so the domain modules read intent, not mechanics.
+ */
+export function readSymbol<T>(obj: object, sym: symbol): T | undefined {
+	return (obj as Record<symbol, T | undefined>)[sym];
+}
+
+/**
+ * Write a symbol-keyed property onto a function object — the centralised write
+ * twin of `readSymbol`. The domain modules' sugar constructors / factories call
+ * this instead of inlining the `as unknown as Record<symbol, T>` cast.
+ */
+export function markSymbol<T>(obj: object, sym: symbol, value: T): void {
+	(obj as Record<symbol, T>)[sym] = value;
+}
+
+/**
  * Register-providers / flush-on-demand lifecycle over global slots —
  * the shared structure behind `registerBuiltInsProvider`/`flushBuiltInProviders`
  * and their skill-contract twins, which were implemented twice near
- * line-for-line (D2). The one real divergence — error posture — is the
+ * line-for-line. The one real divergence — error posture — is the
  * `onError` parameter: when given, each provider throw is RECORDED via the
  * callback (the registry stays usable, the caller drains and surfaces);
  * when omitted, a throw rejects the flush promise (trusted in-process
@@ -131,7 +186,7 @@ export function lazyProviderRegistry(key: string, opts?: { onError: (err: unknow
 /**
  * Race a promise against `ms`. The inner promise is NOT cancelled — Pi's
  * `ctx.waitForIdle()` has no abort signal today; the dangling promise becomes
- * inert when the next stage's `newSession` replaces the ctx.
+ * inert once the child session it was waiting on is disposed.
  *
  * When `message` is a string, a plain `Error` is thrown on timeout
  * (backward-compatible). When `message` is an `Error` instance (e.g.

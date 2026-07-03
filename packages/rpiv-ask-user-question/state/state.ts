@@ -10,7 +10,6 @@ export interface QuestionnaireState {
 	optionIndex: number;
 	inputMode: boolean;
 	notesVisible: boolean;
-	chatFocused: boolean;
 	answers: ReadonlyMap<number, QuestionAnswer>;
 	multiSelectChecked: ReadonlySet<number>;
 	/**

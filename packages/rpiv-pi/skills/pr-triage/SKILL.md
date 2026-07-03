@@ -358,9 +358,12 @@ Next step:      {the action: open a review / back to the author / comment the sc
 - **Language/framework-agnostic**: convention and security findings name the *concept*
   the diff violates in the module's own terms. No assumption of TS/Node, a build tool,
   or a directory layout.
-- **`security_flag` is the gate field**: an integer the workflow `gate(...)` reads via
-  `Number()`; a `BLOCK` (2) halts the run. The enums (`risk`, `convention_drift`) and the tally
-  fields are display-only. Keep frontmatter fields verbatim — `artifacts-locator` greps them.
+- **`security_flag` is the gate field**: an integer a downstream `gate(...)` consumer reads via
+  `Number()`; a `BLOCK` (2) halts the run (the skill writes the artifact and stops regardless —
+  it never checks out the tree). No built-in `/wf` workflow consumes it now that the built-in
+  `pr-triage` graph has been removed; the consumer is a user-authored workflow or other downstream
+  reader. The enums (`risk`, `convention_drift`) and the tally fields are display-only. Keep
+  frontmatter fields verbatim — `artifacts-locator` greps them.
 - **Triage gates; it does not review**: no per-line adjudication, no severity reconciliation, no
   verification pass — that's the review stage. Keep this skill cheap: three agents, one
   checkpoint, one write.

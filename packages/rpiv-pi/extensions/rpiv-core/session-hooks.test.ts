@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMockCtx, createMockPi, stubGitExec } from "@juicesharp/rpiv-test-utils";
@@ -33,10 +33,8 @@ import { clearInjectionState } from "./guidance.js";
 import { findMissingSiblings } from "./package-checks.js";
 import { __resetSessionHooksAnnounced, registerSessionHooks } from "./session-hooks.js";
 
-// The exact phrase pi-core's ExtensionRunner throws from an invalidated proxy.
-const STALE_CTX_MESSAGE =
-	"This extension ctx is stale after session replacement or reload. " +
-	"Do not use a captured pi or command ctx after ctx.newSession().";
+// Pins the substring `isStaleCtxError` matches in pi-core's invalidated-proxy error.
+const STALE_CTX_MESSAGE = "This extension ctx is stale after session replacement or reload.";
 
 const emptySync: SyncResult = {
 	added: [],
@@ -62,144 +60,11 @@ afterEach(() => {
 });
 
 describe("registerSessionHooks — event wiring", () => {
-	it("registers 6 events", () => {
+	it("registers 5 events", () => {
 		const { pi, captured } = createMockPi();
 		registerSessionHooks(pi);
-		for (const ev of [
-			"session_start",
-			"session_compact",
-			"session_shutdown",
-			"tool_call",
-			"before_agent_start",
-			"agent_end",
-		]) {
+		for (const ev of ["session_start", "session_compact", "session_shutdown", "tool_call", "before_agent_start"]) {
 			expect(captured.events.has(ev)).toBe(true);
-		}
-	});
-});
-
-describe("session_start hook — migration", () => {
-	it("does NOT create .rpiv/artifacts/ on fresh project (no migration source) — issue #31", async () => {
-		const { pi, captured } = createMockPi({ exec: stubGitExec({}) as never });
-		registerSessionHooks(pi);
-		const handler = captured.events.get("session_start")?.[0];
-		const ctx = createMockCtx({ cwd: projectDir, hasUI: true });
-		await handler?.({ reason: "startup" } as never, ctx as never);
-		expect(existsSync(join(projectDir, ".rpiv", "artifacts"))).toBe(false);
-	});
-
-	it("migrates thoughts/shared/ to .rpiv/artifacts/ with content preservation", async () => {
-		const oldResearch = join(projectDir, "thoughts", "shared", "research");
-		mkdirSync(oldResearch, { recursive: true });
-		writeFileSync(join(oldResearch, "test.md"), "# Test Research");
-
-		const { pi, captured } = createMockPi({ exec: stubGitExec({}) as never });
-		registerSessionHooks(pi);
-		const handler = captured.events.get("session_start")?.[0];
-		const ctx = createMockCtx({ cwd: projectDir, hasUI: true });
-		await handler?.({ reason: "startup" } as never, ctx as never);
-
-		// Content preserved
-		expect(existsSync(join(projectDir, ".rpiv", "artifacts", "research", "test.md"))).toBe(true);
-		// Old dir removed
-		expect(existsSync(join(projectDir, "thoughts", "shared"))).toBe(false);
-		// thoughts/ root removed (was empty after shared/ deleted)
-		expect(existsSync(join(projectDir, "thoughts"))).toBe(false);
-	});
-
-	it("preserves thoughts/ root when non-shared content exists", async () => {
-		const oldResearch = join(projectDir, "thoughts", "shared", "research");
-		mkdirSync(oldResearch, { recursive: true });
-		writeFileSync(join(oldResearch, "test.md"), "content");
-		const meDir = join(projectDir, "thoughts", "me");
-		mkdirSync(meDir, { recursive: true });
-		writeFileSync(join(meDir, "notes.md"), "personal");
-
-		const { pi, captured } = createMockPi({ exec: stubGitExec({}) as never });
-		registerSessionHooks(pi);
-		const handler = captured.events.get("session_start")?.[0];
-		const ctx = createMockCtx({ cwd: projectDir, hasUI: true });
-		await handler?.({ reason: "startup" } as never, ctx as never);
-
-		expect(existsSync(join(projectDir, ".rpiv", "artifacts", "research", "test.md"))).toBe(true);
-		expect(existsSync(join(projectDir, "thoughts", "shared"))).toBe(false);
-		expect(existsSync(join(projectDir, "thoughts", "me", "notes.md"))).toBe(true);
-		expect(existsSync(join(projectDir, "thoughts"))).toBe(true);
-	});
-
-	it("does NOT create .rpiv/artifacts/ when thoughts/shared/ exists but is empty", async () => {
-		// Edge case: thoughts/shared/ pre-exists (created by tool, partial migration, etc.) but holds no entries.
-		// Migration must not leak an empty .rpiv/artifacts/ tree, and must not delete the empty source.
-		mkdirSync(join(projectDir, "thoughts", "shared"), { recursive: true });
-
-		const { pi, captured } = createMockPi({ exec: stubGitExec({}) as never });
-		registerSessionHooks(pi);
-		const handler = captured.events.get("session_start")?.[0];
-		const ctx = createMockCtx({ cwd: projectDir, hasUI: true });
-		await handler?.({ reason: "startup" } as never, ctx as never);
-
-		expect(existsSync(join(projectDir, ".rpiv", "artifacts"))).toBe(false);
-		expect(existsSync(join(projectDir, "thoughts", "shared"))).toBe(true);
-	});
-
-	it("preserves loose files at thoughts/shared/ root (copies them, not just subdirectories)", async () => {
-		// Regression: prior implementation filtered to directories only, dropping loose .md files
-		// at the shared/ root on rmSync. Now cpSync copies both files and directories.
-		const oldShared = join(projectDir, "thoughts", "shared");
-		mkdirSync(oldShared, { recursive: true });
-		writeFileSync(join(oldShared, "loose.md"), "loose content");
-		const oldResearch = join(oldShared, "research");
-		mkdirSync(oldResearch, { recursive: true });
-		writeFileSync(join(oldResearch, "nested.md"), "nested content");
-
-		const { pi, captured } = createMockPi({ exec: stubGitExec({}) as never });
-		registerSessionHooks(pi);
-		const handler = captured.events.get("session_start")?.[0];
-		const ctx = createMockCtx({ cwd: projectDir, hasUI: true });
-		await handler?.({ reason: "startup" } as never, ctx as never);
-
-		expect(existsSync(join(projectDir, ".rpiv", "artifacts", "loose.md"))).toBe(true);
-		expect(existsSync(join(projectDir, ".rpiv", "artifacts", "research", "nested.md"))).toBe(true);
-		expect(existsSync(join(projectDir, "thoughts"))).toBe(false);
-	});
-
-	it("no-ops when thoughts/shared/ does not exist (fresh project)", async () => {
-		const { pi, captured } = createMockPi({ exec: stubGitExec({}) as never });
-		registerSessionHooks(pi);
-		const handler = captured.events.get("session_start")?.[0];
-		const ctx = createMockCtx({ cwd: projectDir, hasUI: true });
-		await handler?.({ reason: "startup" } as never, ctx as never);
-
-		// No migration source → no .rpiv/artifacts/ tree, no thoughts/ tree
-		expect(existsSync(join(projectDir, ".rpiv", "artifacts"))).toBe(false);
-		expect(existsSync(join(projectDir, "thoughts"))).toBe(false);
-	});
-
-	it.skipIf(process.platform === "win32")("never crashes session_start even when migration step fails", async () => {
-		// ESM module namespaces are not configurable under this Vitest config
-		// (see agents.test.ts), so induce the failure at the filesystem layer:
-		// chmod 0o000 on thoughts/shared makes the inner readdirSync throw EACCES,
-		// hitting the migration's catch block.
-		const sharedDir = join(projectDir, "thoughts", "shared");
-		const oldResearch = join(sharedDir, "research");
-		mkdirSync(oldResearch, { recursive: true });
-		writeFileSync(join(oldResearch, "test.md"), "content");
-
-		const originalMode = statSync(sharedDir).mode & 0o777;
-		chmodSync(sharedDir, 0o000);
-		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-
-		try {
-			const { pi, captured } = createMockPi({ exec: stubGitExec({}) as never });
-			registerSessionHooks(pi);
-			const handler = captured.events.get("session_start")?.[0];
-			const ctx = createMockCtx({ cwd: projectDir, hasUI: true });
-			// Must not throw — migration is best-effort
-			await expect(handler?.({ reason: "startup" } as never, ctx as never)).resolves.toBeUndefined();
-			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("migration"));
-		} finally {
-			chmodSync(sharedDir, originalMode);
-			warnSpy.mockRestore();
 		}
 	});
 });
@@ -590,56 +455,5 @@ describe("before_agent_start hook", () => {
 		await handler?.({ prompt: "" } as never, ctx as never);
 		const second = await handler?.({ prompt: "" } as never, ctx as never);
 		expect(second).toBeUndefined();
-	});
-
-	it("sets status to 'rpiv: <name>' when prompt contains an owned rpiv-pi skill block", async () => {
-		const { pi, captured } = createMockPi({
-			exec: stubGitExec({ branch: "main", commit: "abc", user: "alice" }) as never,
-		});
-		registerSessionHooks(pi);
-		const handler = captured.events.get("before_agent_start")?.[0];
-		const ctx = createMockCtx({ cwd: projectDir });
-		const skillPrompt = `<skill name="discover" location="/some/path">\nbody\n</skill>`;
-		await handler?.({ prompt: skillPrompt } as never, ctx as never);
-		expect(ctx.ui.setStatus).toHaveBeenCalledWith("rpiv-skill", "rpiv: discover");
-	});
-
-	it("does not set status for a skill block whose name is not bundled with rpiv-pi", async () => {
-		// Foreign / user-supplied skills must not be branded as rpiv: — only names that
-		// match a directory under packages/rpiv-pi/skills/ get the rpiv-skill status.
-		const { pi, captured } = createMockPi({
-			exec: stubGitExec({ branch: "main", commit: "abc", user: "alice" }) as never,
-		});
-		registerSessionHooks(pi);
-		const handler = captured.events.get("before_agent_start")?.[0];
-		const ctx = createMockCtx({ cwd: projectDir });
-		const skillPrompt = `<skill name="not-an-rpiv-skill" location="/home/u/.pi/skills/not-an-rpiv-skill">\nbody\n</skill>`;
-		await handler?.({ prompt: skillPrompt } as never, ctx as never);
-		const setStatusCalls = (ctx.ui.setStatus as ReturnType<typeof vi.fn>).mock.calls.filter(
-			(c) => c[0] === "rpiv-skill",
-		);
-		expect(setStatusCalls).toHaveLength(0);
-	});
-
-	it("does not set status when prompt has no skill block", async () => {
-		const { pi, captured } = createMockPi({
-			exec: stubGitExec({ branch: "main", commit: "abc", user: "alice" }) as never,
-		});
-		registerSessionHooks(pi);
-		const handler = captured.events.get("before_agent_start")?.[0];
-		const ctx = createMockCtx({ cwd: projectDir });
-		await handler?.({ prompt: "just a normal chat message" } as never, ctx as never);
-		expect(ctx.ui.setStatus).not.toHaveBeenCalled();
-	});
-});
-
-describe("agent_end hook", () => {
-	it("clears the rpiv-skill status", async () => {
-		const { pi, captured } = createMockPi();
-		registerSessionHooks(pi);
-		const handler = captured.events.get("agent_end")?.[0];
-		const ctx = createMockCtx();
-		await handler?.({ messages: [] } as never, ctx as never);
-		expect(ctx.ui.setStatus).toHaveBeenCalledWith("rpiv-skill", undefined);
 	});
 });

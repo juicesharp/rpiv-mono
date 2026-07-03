@@ -1,8 +1,7 @@
 /**
  * Raw file-level primitives shared by the readers (`reads.ts`) and the names
  * index (`names.ts`) — a LEAF under both, so neither re-implements the other
- * to dodge a cycle (D9: `names.ts` used to carry its own header-line parse
- * and dir scan).
+ * to dodge a cycle.
  *
  * Fail-soft like the rest of `state/`: both helpers return empty/undefined
  * on any I/O or parse failure, never throw.
@@ -21,7 +20,7 @@ const FIRST_LINE_MAX = 256 * 1024;
  * (open + chunked `readSync` until the first newline), not a whole-file
  * `readFileSync`. `listRuns` calls this once per run file, so enumerating N
  * past runs costs N small reads regardless of how many stage rows each run
- * accumulated (the perf wart the old whole-file read had).
+ * accumulated.
  *
  * Returns the parsed value (caller shape-checks it), or `undefined` when the
  * file is missing/empty/unparseable. The newline search is byte-level

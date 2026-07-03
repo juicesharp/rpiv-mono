@@ -301,7 +301,7 @@ describe("gate", () => {
 		expect(() => gate("count", {}, "x")).toThrow(/at least one possible return value/);
 	});
 
-	it("throws when `otherwise` is missing or empty — the fallback must be deliberate (C12)", () => {
+	it("throws when `otherwise` is missing or empty — the fallback must be deliberate", () => {
 		// Hand-rolled literals (jiti configs) bypass TS, so the runtime guard matters.
 		expect(() => (gate as unknown as (f: string, b: object) => unknown)("count", { a: gt(0) })).toThrow(
 			/explicit `otherwise`/,
@@ -309,16 +309,16 @@ describe("gate", () => {
 		expect(() => gate("count", { a: gt(0) }, "")).toThrow(/explicit `otherwise`/);
 	});
 
-	it("throws on integer-like branch keys — JS reorders them ahead of declaration order (C12)", () => {
+	it("throws on integer-like branch keys — JS reorders them ahead of declaration order", () => {
 		expect(() => gate("count", { "2": eq(2), other: gt(0) }, "other")).toThrow(/integer-like/);
 	});
 
-	it("includes `otherwise` in .targets when it is not also a branch (C12)", () => {
+	it("includes `otherwise` in .targets when it is not also a branch", () => {
 		const fn = gate("count", { high: gt(10) }, "low");
 		expect(fn.targets).toEqual(["high", "low"]);
 	});
 
-	it("records a fallback note readable via takeRouteNote — and only on no-match (C12)", () => {
+	it("records a fallback note readable via takeRouteNote — and only on no-match", () => {
 		const fn = gate("count", { high: gt(10) }, "low");
 		const ctx = (n: unknown) =>
 			({
@@ -376,7 +376,7 @@ describe("defineRoute", () => {
 		expect(fn.targets).toEqual(["a", "b"]);
 	});
 
-	it("never mutates the caller's function — reusing one predicate keeps each route's targets (C8)", () => {
+	it("never mutates the caller's function — reusing one predicate keeps each route's targets", () => {
 		const predicate = () => "x";
 		const first = defineRoute(["x", "y"], predicate);
 		const second = defineRoute(["x"], predicate);
@@ -386,7 +386,7 @@ describe("defineRoute", () => {
 		expect((predicate as { targets?: readonly string[] }).targets).toBeUndefined();
 	});
 
-	it("readsData: false does not inherit a marker a prior call attached (C8)", () => {
+	it("readsData: false does not inherit a marker a prior call attached", () => {
 		const predicate = () => "a";
 		const marked = defineRoute(["a"], predicate); // default readsData: true
 		const unmarked = defineRoute(["a"], predicate, { readsData: false });
@@ -430,10 +430,10 @@ describe("composition smoke", () => {
 });
 
 // ---------------------------------------------------------------------------
-// StageDef discriminated union (T1) — illegal dispatch combos unrepresentable
+// StageDef discriminated union — illegal dispatch combos unrepresentable
 // ---------------------------------------------------------------------------
 
-describe("StageDef union (T1)", () => {
+describe("StageDef union", () => {
 	const scriptBody: ActsScriptFn = () => {};
 
 	it("legal arms assign cleanly (skill / script / prompt)", () => {

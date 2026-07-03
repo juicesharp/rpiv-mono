@@ -86,7 +86,7 @@ The final artifact feeds design or blueprint.
 
 ### Step 2: Dispatch Analysis Agents
 
-Spawn analysis agents using the Agent tool. All agents run in parallel.
+Spawn analysis agents using the Agent tool — all in a **single assistant message with multiple Agent calls** (concurrent, synchronous). **Never `run_in_background`**: its completion can't re-drive a workflow session, so the skill ends its turn before writing the document and the stage fails with no artifact.
 
 **Default agent**: `codebase-analyzer` for all codebase questions. This agent has Read, Grep, Glob, LS — it can trace code paths, find patterns, and analyze integration points.
 

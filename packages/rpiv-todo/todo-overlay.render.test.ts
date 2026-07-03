@@ -1,7 +1,7 @@
 import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
-import { createMockPi, createMockUI } from "@juicesharp/rpiv-test-utils";
+import { createMockCtx, createMockPi, createMockUI } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { __resetState, registerTodoTool, type TaskAction } from "./todo.js";
+import { __resetState, registerTodoTool, setActiveRenderSession, type TaskAction } from "./todo.js";
 import { TodoOverlay } from "./todo-overlay.js";
 
 const identityTheme = {
@@ -13,11 +13,13 @@ const identityTheme = {
 
 async function setup(actions: Array<{ action: TaskAction; [k: string]: unknown }>) {
 	__resetState();
+	setActiveRenderSession("test-session");
 	const { pi, captured } = createMockPi();
 	registerTodoTool(pi);
 	const tool = captured.tools.get("todo")!;
+	const ctx = createMockCtx();
 	for (const p of actions) {
-		await tool.execute?.("tc", p as never, undefined as never, undefined as never, {} as never);
+		await tool.execute?.("tc", p as never, undefined as never, undefined as never, ctx as never);
 	}
 	const ui = createMockUI() as unknown as ExtensionUIContext;
 	const overlay = new TodoOverlay();
@@ -269,7 +271,7 @@ describe("TodoOverlay — width truncation", () => {
 			{ action: "create", subject: "second" } as never,
 			undefined as never,
 			undefined as never,
-			{} as never,
+			createMockCtx() as never,
 		);
 		const out2 = widget.render(200).join("\n");
 		expect(out2).toContain("first");

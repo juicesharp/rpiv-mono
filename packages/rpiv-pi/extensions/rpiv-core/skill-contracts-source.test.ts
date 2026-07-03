@@ -216,8 +216,8 @@ describe("bundled skill contracts", () => {
 	// dropped, or fails to parse (a malformed block is silently skipped).
 	const declared = new Map(buildSkillContractsFromFrontmatter(BUNDLED_SKILLS_DIR));
 
-	it("declares a contract for the 20 pipeline + orthogonal skills", () => {
-		expect(declared.size).toBe(20);
+	it("declares a contract for the 27 pipeline + orthogonal skills", () => {
+		expect(declared.size).toBe(27);
 		for (const name of [
 			"discover",
 			"research",
@@ -239,6 +239,13 @@ describe("bundled skill contracts", () => {
 			"frontend-design",
 			"migrate-to-guidance",
 			"pr-triage",
+			"slice",
+			"design-slice",
+			"design-review",
+			"synthesize",
+			"elaborate",
+			"grade",
+			"amend",
 		]) {
 			expect(declared.has(name)).toBe(true);
 		}
@@ -262,8 +269,21 @@ describe("bundled skill contracts", () => {
 
 	it("documents the declared-but-not-harvested orthogonal set", () => {
 		// These skills declare a contract but don't appear in any built-in workflow.
-		// The orthogonal set: 7 new + discover + explore + commit = 10 skills.
-		// (pr-triage IS harvested — it's dispatched by the pr-triage workflow.)
+		// With ship/build/arch/pr-triage removed, the harvested set is just the
+		// slice-flow skills dispatched by the (renamed) `build` built-in
+		// (slice/design-slice/synthesize/grade/amend/elaborate/design-review) plus
+		// vet/polish's blueprint/implement/validate/code-review/architecture-review.
+		// Five skills drop out of the harvested set and land here:
+		//   - design, plan, revise: were harvested only by the removed arch/build
+		//     graphs' bare `produces()` stages;
+		//   - pr-triage: was harvested only by the removed pr-triage workflow;
+		//   - research: build's research stage is a prompt stage
+		//     (`produces({ prompt })`), which is NOT dispatching (a stage dispatches
+		//     only when it carries neither `run` nor `prompt`), so nothing harvests
+		//     it now that old-build/arch's bare `research: produces()` is gone.
+		// commit stays listed too: acts({ outcome }) with no reads harvest-skips.
+		// Total: 7 doc/util + discover + explore + commit + design + plan + pr-triage
+		//        + research + revise = 15 skills.
 		const harvested = harvestStageContracts(builtInWorkflows);
 		const notHarvested: string[] = [];
 		for (const [name] of declared) {
@@ -276,16 +296,21 @@ describe("bundled skill contracts", () => {
 				"changelog",
 				"commit",
 				"create-handoff",
+				"design",
 				"discover",
 				"explore",
 				"frontend-design",
 				"migrate-to-guidance",
+				"plan",
+				"pr-triage",
+				"research",
 				"resume-handoff",
+				"revise",
 			].sort(),
 		);
 	});
 
-	it("every declared kind matches the harvested kind for the six built-in workflows", () => {
+	it("every declared kind matches the harvested kind for the three built-in workflows", () => {
 		// Harvest derives each dispatched skill's kind from how the built-ins use
 		// it (produces() → "produces", acts() → "side-effect"). A declared kind
 		// that disagrees would make the rendered graph lie — catch it here.

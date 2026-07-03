@@ -20,7 +20,7 @@
 import { appendFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
-import { createMockPi, createMockSessionChain, mockAssistantMessage } from "@juicesharp/rpiv-test-utils";
+import { createMockSessionChain, mockAssistantMessage } from "@juicesharp/rpiv-test-utils";
 import {
 	acts,
 	defineRoute,
@@ -36,7 +36,7 @@ import {
 	type Workflow,
 } from "@juicesharp/rpiv-workflow";
 import { type RunState, runsDir, stateFilePath } from "@juicesharp/rpiv-workflow/internal";
-import { describeFlow, fs as fsHandle, loopSpecOf } from "@juicesharp/rpiv-workflow/registration";
+import { fs as fsHandle, loopSpecOf } from "@juicesharp/rpiv-workflow/registration";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { rpivArtifactMdOutcome } from "./artifact-collector.js";
 import { builtInWorkflows } from "./built-in-workflows.js";
@@ -91,16 +91,6 @@ const findWorkflow = (name: string): Workflow => {
 // ---------------------------------------------------------------------------
 
 describe("validate → code-review routing in built-in workflows", () => {
-	it("routes validate → code-review in build", () => {
-		const build = findWorkflow("build");
-		expect(build.edges.validate).toBe("code-review");
-	});
-
-	it("routes validate → code-review in arch", () => {
-		const arch = findWorkflow("arch");
-		expect(arch.edges.validate).toBe("code-review");
-	});
-
 	it("every stage in every built-in workflow is reachable from start", () => {
 		for (const wf of builtInWorkflows) {
 			const issues = validateWorkflow(wf);
@@ -109,11 +99,6 @@ describe("validate → code-review routing in built-in workflows", () => {
 				`workflow "${wf.name}" has unreachable stages`,
 			).toEqual([]);
 		}
-	});
-
-	it("revise loops back to implement (backward edge re-enters implement → validate → code-review cycle)", () => {
-		const build = findWorkflow("build");
-		expect(build.edges.revise).toBe("implement");
 	});
 });
 
@@ -163,7 +148,7 @@ describe("code-review routing field is sourced + validated from the contract", (
 	it("no built-in code-review stage carries an inline outputSchema", () => {
 		// Single source of truth: blockers_count lives in the skill contract,
 		// not copy-pasted per workflow. Sourced at runtime by effectiveOutputSchema.
-		for (const name of ["build", "arch", "vet", "polish"]) {
+		for (const name of ["vet", "polish"]) {
 			expect(findWorkflow(name).stages["code-review"]?.outputSchema, `${name} code-review`).toBeUndefined();
 		}
 	});
@@ -850,38 +835,34 @@ describe("design-to-code example (prompt dispatch)", () => {
 		expect(designToCode.stages.implement?.skill).toBeUndefined();
 	});
 
-	it("runs the skill → continue-skill → continue-prompt chain end-to-end in one session", async () => {
+	it("runs the skill → continue-skill → continue-prompt chain end-to-end as detached children", async () => {
 		const tmpDir = mkdtempSync(join(tmpdir(), "rpiv-d2c-"));
 		try {
 			// discover's spec must exist on disk (rpivArtifactMdOutcome reads frontmatter).
 			mkdirSync(join(tmpDir, ".rpiv", "artifacts", "research"), { recursive: true });
 			writeFileSync(join(tmpDir, ".rpiv/artifacts/research/spec.md"), "");
 
-			// Shared mutable branch: discover reads it; each continue send grows it.
-			const sharedBranch: unknown[] = [mockAssistantMessage("wrote .rpiv/artifacts/research/spec.md")];
+			// Detachment: each stage (including continue stages) runs in its OWN
+			// child — one scripted step per stage, each carrying that turn's branch.
 			const chain = createMockSessionChain({
 				cwd: tmpDir,
-				steps: [{ branch: sharedBranch }],
-				pi: createMockPi({ skills: ["discover", "frontend-design"] }).pi,
-			});
-			chain.sendUserMessageFn.mockImplementation((content: unknown) => {
-				const text = typeof content === "string" ? content : JSON.stringify(content);
-				chain.sentMessages.push(text);
-				if (text.startsWith("/skill:frontend-design")) sharedBranch.push(mockAssistantMessage("design reasoning"));
-				else if (text === "Implement the design spec discussed above.")
-					sharedBranch.push(mockAssistantMessage("implemented"));
+				steps: [
+					{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/research/spec.md")] },
+					{ branch: [mockAssistantMessage("design reasoning")] },
+					{ branch: [mockAssistantMessage("implemented")] },
+				],
 			});
 
 			const result = await runWorkflow(chain.ctx, {
 				workflow: designToCode,
 				input: "build a dashboard",
-				host: chain.pi,
 			});
 
 			expect(result.success).toBe(true);
 			// discover (fresh) + design (continue) + implement (continue prompt)
 			expect(result.stagesCompleted).toBe(3);
-			expect(chain.ctx.newSession).toHaveBeenCalledTimes(1);
+			// Every stage spawns its own child off the launcher — no shared session.
+			expect(chain.ctx.spawnChild).toHaveBeenCalledTimes(3);
 			expect(chain.sentMessages).toEqual([
 				"/skill:discover build a dashboard",
 				"/skill:frontend-design .rpiv/artifacts/research/spec.md",
@@ -893,191 +874,329 @@ describe("design-to-code example (prompt dispatch)", () => {
 	});
 });
 
-// ---------------------------------------------------------------------------
-// ship — fast path: blueprint → implement → validate → commit. implement fans
-// out over the plan's structured `phases:` array (derived by blueprint from its
-// `## Phase N:` headings, title-enriched and verified against those headings).
-// ---------------------------------------------------------------------------
-
-describe("ship workflow", () => {
-	it("chains blueprint → implement → validate → commit", () => {
-		const wf = findWorkflow("ship");
-		expect(wf.start).toBe("blueprint");
-		expect(Object.keys(wf.stages)).toEqual(["blueprint", "implement", "validate", "commit"]);
-		expect(wf.edges.blueprint).toBe("implement");
-		expect(wf.edges.implement).toBe("validate");
-		expect(wf.edges.validate).toBe("commit");
-		expect(wf.edges.commit).toBe("stop");
+describe("SLICE_DESIGN_FANOUT (build design — deps + --upstream)", () => {
+	let tmpDir: string;
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "rpiv-carve-design-"));
+	});
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true, force: true });
 	});
 
-	it("blueprint stage carries no inline outputSchema (phases sourced from the skill contract)", () => {
-		expect(findWorkflow("ship").stages.blueprint?.outputSchema).toBeUndefined();
+	const designLoop = () => {
+		const loop = findWorkflow("build").stages["slice-design"]?.loop;
+		if (loop?.kind !== "fanout") throw new Error("build slice-design stage has no fanout loop");
+		return loop;
+	};
+	const writeSlices = (rel: string, body: string) => {
+		const parts = rel.split("/");
+		mkdirSync(join(tmpDir, ...parts.slice(0, -1)), { recursive: true });
+		writeFileSync(join(tmpDir, rel), body);
+	};
+	const runFanout = (rel: string) =>
+		designLoop().units({
+			cwd: tmpDir,
+			artifact: undefined,
+			state: {
+				named: { slices: [{ artifacts: [{ handle: fsHandle(rel) }], data: undefined, kind: "", meta: {} }] },
+			} as unknown as RunView,
+		});
+
+	it("carries the --upstream dep-artifact flag", () => {
+		expect(designLoop().depArtifactFlag).toBe("--upstream");
 	});
 
-	it("validates without errors or warnings (contracts threaded in)", () => {
-		const issues = deriveAndValidate(findWorkflow("ship"), { skillContracts: DECLARED_CONTRACTS });
-		expect(issues.filter((i) => i.severity === "error")).toEqual([]);
-		expect(issues.filter((i) => i.severity === "warning")).toEqual([]);
+	it("maps each slice's frontmatter deps to slice-N unit ids", async () => {
+		const rel = ".rpiv/artifacts/slices/map.md";
+		writeSlices(
+			rel,
+			`---\nstatus: ready\nslice_count: 3\nslices:\n  - { n: 1, title: Types, deps: [] }\n  - { n: 2, title: Logic, deps: [1] }\n  - { n: 3, title: Wiring, deps: [1, 2] }\n---\n## Slice 1: Types\n## Slice 2: Logic\n## Slice 3: Wiring\n`,
+		);
+		const units = await runFanout(rel);
+		expect(units.map((u) => u.id)).toEqual(["slice-1", "slice-2", "slice-3"]);
+		expect(units.map((u) => u.deps)).toEqual([[], ["slice-1"], ["slice-1", "slice-2"]]);
 	});
 
-	describe("FRONTMATTER_PHASE_FANOUT", () => {
-		let tmpDir: string;
-		beforeEach(() => {
-			tmpDir = mkdtempSync(join(tmpdir(), "rpiv-ship-"));
-		});
-		afterEach(() => {
-			rmSync(tmpDir, { recursive: true, force: true });
-		});
-
-		const fanout = () => {
-			const loop = findWorkflow("ship").stages.implement?.loop;
-			if (loop?.kind !== "fanout") throw new Error("ship implement stage has no fanout loop");
-			return loop.units;
-		};
-		const writePlan = (rel: string, body: string) => {
-			const parts = rel.split("/");
-			mkdirSync(join(tmpDir, ...parts.slice(0, -1)), { recursive: true });
-			writeFileSync(join(tmpDir, rel), body);
-		};
-		const runFanout = (rel: string) =>
-			fanout()({
-				cwd: tmpDir,
-				artifact: undefined,
-				state: {
-					named: { plans: [{ artifacts: [{ handle: fsHandle(rel) }], data: undefined, kind: "", meta: {} }] },
-				} as unknown as RunView,
-			});
-
-		it("reads phases from frontmatter and dispatches one title-enriched unit per phase", async () => {
-			const rel = ".rpiv/artifacts/plans/p.md";
-			writePlan(
-				rel,
-				`---\nstatus: ready\nphase_count: 2\nphases:\n  - { n: 1, title: Schema layer }\n  - { n: 2, title: Runtime wiring }\n---\n# Plan\n## Phase 1: Schema layer\n## Phase 2: Runtime wiring\n`,
-			);
-			const units = await runFanout(rel);
-			expect(units.map((u) => u.prompt)).toEqual([`${rel} Phase 1: Schema layer`, `${rel} Phase 2: Runtime wiring`]);
-			expect(units.map((u) => u.label)).toEqual(["phase 1/2", "phase 2/2"]);
-		});
-
-		it("throws when the frontmatter phases disagree with the body headings (stale derive)", () => {
-			const rel = ".rpiv/artifacts/plans/mismatch.md";
-			writePlan(
-				rel,
-				`---\nphases:\n  - { n: 1, title: Only one }\n---\n## Phase 1: a\n## Phase 2: b\n## Phase 3: c\n`,
-			);
-			expect(() => runFanout(rel)).toThrow(/frontmatter phases \(1\) ≠ '## Phase N:' headings \(3\)/);
-		});
-
-		it("returns no units for a plan with neither structured phases nor body headings", async () => {
-			const rel = ".rpiv/artifacts/plans/empty.md";
-			writePlan(rel, `---\nstatus: ready\n---\n# Plan with no phases\n`);
-			expect(await runFanout(rel)).toEqual([]);
-		});
-
-		it('returns [] when no plan is published to the named "plans" channel', async () => {
-			const units = await fanout()({
-				cwd: tmpDir,
-				artifact: undefined,
-				state: { named: {} } as unknown as RunView,
-			});
-			expect(units).toEqual([]);
-		});
-
-		it("throws when phase_count disagrees with the derived phases length", () => {
-			const rel = ".rpiv/artifacts/plans/pc-mismatch.md";
-			writePlan(
-				rel,
-				`---\nstatus: ready\nphase_count: 3\nphases:\n  - { n: 1, title: A }\n  - { n: 2, title: B }\n---\n## Phase 1: A\n## Phase 2: B\n`,
-			);
-			expect(() => runFanout(rel)).toThrow(/phase_count \(3\) ≠ phases length \(2\)/);
-		});
-
-		it("throws when a phased plan omits the required phase_count", () => {
-			const rel = ".rpiv/artifacts/plans/pc-absent.md";
-			writePlan(rel, `---\nstatus: ready\nphases:\n  - { n: 1, title: A }\n---\n## Phase 1: A\n`);
-			expect(() => runFanout(rel)).toThrow(/phase_count \(undefined\) ≠ phases length \(1\)/);
-		});
-	});
-
-	describe("end-to-end via runWorkflow", () => {
-		let tmpDir: string;
-		beforeEach(() => {
-			tmpDir = mkdtempSync(join(tmpdir(), "rpiv-ship-e2e-"));
-		});
-		afterEach(() => {
-			rmSync(tmpDir, { recursive: true, force: true });
-		});
-		const write = (rel: string, body: string) => {
-			const parts = rel.split("/");
-			mkdirSync(join(tmpDir, ...parts.slice(0, -1)), { recursive: true });
-			writeFileSync(join(tmpDir, rel), body);
-		};
-		const step = (m: string) => ({ branch: [mockAssistantMessage(m)] });
-
-		it("drives blueprint → implement (fanned from the derived phases) → validate → commit", async () => {
-			write(
-				".rpiv/artifacts/plans/plan.md",
-				`---\nstatus: ready\nphase_count: 2\nphases:\n  - { n: 1, title: Schema layer }\n  - { n: 2, title: Runtime wiring }\n---\n# Plan\n## Phase 1: Schema layer\n## Phase 2: Runtime wiring\n`,
-			);
-			write(".rpiv/artifacts/validation/val.md", "");
-
-			const chain = createMockSessionChain({
-				cwd: tmpDir,
-				steps: [
-					step("wrote .rpiv/artifacts/plans/plan.md"), // blueprint
-					step("phase done"), // implement — phase 1 unit
-					step("phase done"), // implement — phase 2 unit
-					step("wrote .rpiv/artifacts/validation/val.md"), // validate
-					step("committed"), // commit
-				],
-			});
-
-			const result = await runWorkflow(chain.ctx, {
-				workflow: withDerivedOutcomes(findWorkflow("ship")),
-				input: "add a feature",
-			});
-
-			expect(result.success).toBe(true);
-			// blueprint + implement×2 (one per derived phase) + validate + commit
-			expect(result.stagesCompleted).toBe(5);
-			expect(chain.sentMessages.filter((m) => m.startsWith("/skill:implement"))).toEqual([
-				"/skill:implement .rpiv/artifacts/plans/plan.md Phase 1: Schema layer",
-				"/skill:implement .rpiv/artifacts/plans/plan.md Phase 2: Runtime wiring",
-			]);
-		});
+	it("emits empty deps for a flat (independent) slice map", async () => {
+		const rel = ".rpiv/artifacts/slices/flat.md";
+		writeSlices(
+			rel,
+			`---\nstatus: ready\nslice_count: 2\nslices:\n  - { n: 1, title: A, deps: [] }\n  - { n: 2, title: B, deps: [] }\n---\n## Slice 1: A\n## Slice 2: B\n`,
+		);
+		const units = await runFanout(rel);
+		expect(units.every((u) => u.deps?.length === 0)).toBe(true);
 	});
 });
 
 // ---------------------------------------------------------------------------
-// pr-triage security-gate — the script-stage guard must fail closed on
-// missing / malformed security_flag (NaN), not silently pass as SAFE.
+// PLAN_DIMENSION_FANOUT — the plan gate's grade panel. architecture-fit is the
+// one dimension that needs the research artifact threaded in as --context; every
+// other dimension (and the slice gate's design-readiness) gets the bare flags.
 // ---------------------------------------------------------------------------
 
-describe("pr-triage security-gate", () => {
-	const gateRun = () => {
-		const stage = findWorkflow("pr-triage").stages["security-gate"];
-		if (!stage?.run) throw new Error("pr-triage security-gate stage has no run function");
-		return stage.run as (ctx: { input?: { data?: unknown } }) => void;
+describe("build plan gate grade panel (--context threading)", () => {
+	const planGateLoop = () => {
+		const loop = findWorkflow("build").stages["plan-grade"]?.loop;
+		if (loop?.kind !== "fanout") throw new Error("build plan-grade stage has no fanout loop");
+		return loop;
+	};
+	const sliceGateLoop = () => {
+		const loop = findWorkflow("build").stages["slice-grade"]?.loop;
+		if (loop?.kind !== "fanout") throw new Error("build slice-grade stage has no fanout loop");
+		return loop;
+	};
+	const out = (rel: string) => ({ artifacts: [{ handle: fsHandle(rel) }], data: undefined, kind: "", meta: {} });
+
+	it("grades architecture-fit and threads the research artifact as --context", async () => {
+		const units = await planGateLoop().units({
+			cwd: "/repo",
+			artifact: undefined,
+			state: {
+				named: {
+					plans: [out(".rpiv/artifacts/plans/p.md")],
+					research: [out(".rpiv/artifacts/research/r.md")],
+				},
+			} as unknown as RunView,
+		});
+		const archFit = units.find((u) => u.label === "architecture-fit");
+		const completeness = units.find((u) => u.label === "completeness");
+		expect(archFit).toBeDefined();
+		expect(archFit?.prompt).toContain("--dimension architecture-fit");
+		expect(archFit?.prompt).toContain("--context");
+		expect(archFit?.prompt).toContain("research/r.md");
+		// Only architecture-fit gets --context.
+		expect(completeness?.prompt).not.toContain("--context");
+	});
+
+	it("never threads --context into the slice gate (design-readiness has no fit dimension)", async () => {
+		const units = await sliceGateLoop().units({
+			cwd: "/repo",
+			artifact: undefined,
+			state: {
+				named: {
+					slices: [out(".rpiv/artifacts/slices/s.md")],
+					research: [out(".rpiv/artifacts/research/r.md")],
+				},
+			} as unknown as RunView,
+		});
+		expect(units.every((u) => !u.prompt.includes("--context"))).toBe(true);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// build goal channel — the user's brief captured VERBATIM at run start and
+// threaded into the judgment seams only: the grade panels' completeness/
+// correctness dimensions (--goal) and validate's prompt. Generative stages
+// (slice, design-slice) stay goal-blind by design, and research — displaced
+// from the start slot — must still receive the raw brief via its prompt fn.
+// ---------------------------------------------------------------------------
+
+describe("build goal channel (verbatim brief threading)", () => {
+	const build = () => findWorkflow("build");
+	const out = (rel: string) => ({ artifacts: [{ handle: fsHandle(rel) }], data: undefined, kind: "", meta: {} });
+	const promptFnOf = (stage: string) => {
+		const prompt = build().stages[stage]?.prompt;
+		if (typeof prompt !== "function") throw new Error(`build ${stage} stage has no prompt fn`);
+		return prompt;
+	};
+	const gateUnits = (stage: string, named: Record<string, unknown>) => {
+		const loop = build().stages[stage]?.loop;
+		if (loop?.kind !== "fanout") throw new Error(`build ${stage} stage has no fanout loop`);
+		return loop.units({ cwd: "/repo", artifact: undefined, state: { named } as unknown as RunView });
 	};
 
-	it("throws on missing input (undefined)", () => {
-		expect(() => gateRun()({ input: undefined })).toThrow(/BLOCK/);
+	describe("goal capture stage", () => {
+		let tmpDir: string;
+		beforeEach(() => {
+			tmpDir = mkdtempSync(join(tmpdir(), "rpiv-carve-goal-"));
+		});
+		afterEach(() => {
+			rmSync(tmpDir, { recursive: true, force: true });
+		});
+
+		it("is the start stage and writes the brief byte-for-byte", () => {
+			expect(build().start).toBe("goal");
+			const stage = build().stages.goal;
+			if (!stage?.run) throw new Error("build goal stage has no run function");
+			const run = stage.run as (ctx: { cwd: string; input?: undefined; state: RunView }) => {
+				artifacts: readonly { handle: { kind: string; path: string } }[];
+			};
+			const brief = "add dark mode\n\nconstraints:\n- don't touch auth\n- keep it minimal";
+			const output = run({
+				cwd: tmpDir,
+				input: undefined,
+				state: { originalInput: brief, named: {} } as unknown as RunView,
+			});
+			const handle = output.artifacts[0]?.handle;
+			expect(handle?.kind).toBe("fs");
+			expect(handle?.path).toMatch(/^\.rpiv\/artifacts\/goal\/goal-.+\.md$/);
+			expect(readFileSync(join(tmpDir, handle?.path ?? ""), "utf-8")).toBe(brief);
+		});
 	});
 
-	it("throws on non-numeric security_flag (NaN)", () => {
-		expect(() => gateRun()({ input: { data: { security_flag: "not-a-number" } } })).toThrow(/BLOCK/);
+	it("research dispatches the raw brief via prompt (goal displaced it from the start slot)", () => {
+		const dispatch = promptFnOf("research")({
+			cwd: "/repo",
+			input: undefined,
+			state: { originalInput: "add dark mode", named: {} } as unknown as RunView,
+		});
+		expect(dispatch).toBe("/skill:research add dark mode");
 	});
 
-	it("throws on BLOCK (security_flag = 2)", () => {
-		expect(() => gateRun()({ input: { data: { security_flag: 2 } } })).toThrow(/BLOCK/);
+	it("threads --goal into completeness and correctness only, leaving --context untouched", async () => {
+		const units = await gateUnits("plan-grade", {
+			plans: [out(".rpiv/artifacts/plans/p.md")],
+			research: [out(".rpiv/artifacts/research/r.md")],
+			goal: [out(".rpiv/artifacts/goal/goal.md")],
+		});
+		const byLabel = new Map(units.map((u) => [u.label, u.prompt]));
+		expect(byLabel.get("completeness")).toContain("--goal .rpiv/artifacts/goal/goal.md");
+		expect(byLabel.get("correctness")).toContain("--goal .rpiv/artifacts/goal/goal.md");
+		for (const d of ["actionability", "pattern-following", "architecture-fit"]) {
+			expect(byLabel.get(d)).not.toContain("--goal");
+		}
+		expect(byLabel.get("architecture-fit")).toContain("--context .rpiv/artifacts/research/r.md");
 	});
 
-	it("does not throw on SAFE (security_flag = 0)", () => {
-		expect(() => gateRun()({ input: { data: { security_flag: 0 } } })).not.toThrow();
+	it("omits --goal when the channel is empty, and the slice gate stays goal-blind", async () => {
+		const bare = await gateUnits("plan-grade", {
+			plans: [out(".rpiv/artifacts/plans/p.md")],
+			research: [out(".rpiv/artifacts/research/r.md")],
+		});
+		expect(bare.every((u) => !u.prompt.includes("--goal"))).toBe(true);
+		const slice = await gateUnits("slice-grade", {
+			slices: [out(".rpiv/artifacts/slices/s.md")],
+			goal: [out(".rpiv/artifacts/goal/goal.md")],
+		});
+		expect(slice.every((u) => !u.prompt.includes("--goal"))).toBe(true);
 	});
 
-	it("does not throw on REVIEW (security_flag = 1)", () => {
-		expect(() => gateRun()({ input: { data: { security_flag: 1 } } })).not.toThrow();
+	it("both grade gates declare the goal read", () => {
+		expect(build().stages["plan-grade"]?.reads).toContain("goal");
+		expect(build().stages["code-grade"]?.reads).toContain("goal");
+	});
+
+	it("validate dispatches the LATEST plan from the named channel plus --goal", () => {
+		// Named-channel sourcing is load-bearing: after the code gate the
+		// rolling primary is the last verdict JSON, not the plan.
+		const dispatch = promptFnOf("validate")({
+			cwd: "/repo",
+			input: undefined,
+			state: {
+				named: {
+					plans: [out(".rpiv/artifacts/plans/old.md"), out(".rpiv/artifacts/plans/p.md")],
+					goal: [out(".rpiv/artifacts/goal/goal.md")],
+				},
+			} as unknown as RunView,
+		});
+		expect(dispatch).toBe("/skill:validate .rpiv/artifacts/plans/p.md --goal .rpiv/artifacts/goal/goal.md");
+	});
+
+	it("validate degrades to the bare plan path without a goal artifact", () => {
+		const dispatch = promptFnOf("validate")({
+			cwd: "/repo",
+			input: undefined,
+			state: { named: { plans: [out(".rpiv/artifacts/plans/p.md")] } } as unknown as RunView,
+		});
+		expect(dispatch).toBe("/skill:validate .rpiv/artifacts/plans/p.md");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// slice-structure — the deterministic Phase-1 floor under the design-readiness
+// gate: dependency-cycle freedom + brief-coverage conservation (frozen at the
+// first cut). Both are computed from the slice-map text, no LLM.
+// ---------------------------------------------------------------------------
+
+describe("build slice-check (deterministic floor)", () => {
+	let tmpDir: string;
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "rpiv-carve-structure-"));
+	});
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	const structureRun = () => {
+		const stage = findWorkflow("build").stages["slice-check"];
+		if (!stage?.run) throw new Error("build slice-check stage has no run function");
+		return stage.run as (ctx: { cwd: string; input?: undefined; state: RunView }) => {
+			data: Record<string, unknown>;
+		};
+	};
+	const write = (rel: string, body: string) => {
+		const parts = rel.split("/");
+		mkdirSync(join(tmpDir, ...parts.slice(0, -1)), { recursive: true });
+		writeFileSync(join(tmpDir, rel), body);
+		return { artifacts: [{ handle: fsHandle(rel) }], data: undefined, kind: "", meta: {} };
+	};
+	// state.named.slices = round-0 (frozen coverage source) ... latest (graded).
+	const runOn = (...slices: ReturnType<typeof write>[]) =>
+		structureRun()({ cwd: tmpDir, input: undefined, state: { named: { slices } } as unknown as RunView }).data;
+
+	const map = (opts: { sliceLines: string; coverage?: string; count: number }) =>
+		`---\nstatus: ready\nslice_count: ${opts.count}\n${opts.coverage ?? ""}slices:\n${opts.sliceLines}---\n${Array.from({ length: opts.count }, (_, i) => `## Slice ${i + 1}: S${i + 1}`).join("\n")}\n`;
+
+	const COV = "coverage:\n  - { id: c1, brief: one }\n  - { id: c2, brief: two }\n";
+
+	it("passes an acyclic, fully-covered slice map", () => {
+		const rel = ".rpiv/artifacts/slices/ok.md";
+		const m = write(
+			rel,
+			map({
+				count: 2,
+				coverage: COV,
+				sliceLines:
+					"  - { n: 1, title: A, deps: [], covers: [c1] }\n  - { n: 2, title: B, deps: [1], covers: [c2] }\n",
+			}),
+		);
+		const data = runOn(m);
+		expect(data.dimension).toBe("structure");
+		expect(data.pass).toBe(true);
+		expect(data.findings).toEqual([]);
+	});
+
+	it("fails on a dependency cycle (1->2->1)", () => {
+		const rel = ".rpiv/artifacts/slices/cycle.md";
+		const m = write(
+			rel,
+			map({
+				count: 2,
+				coverage: COV,
+				sliceLines:
+					"  - { n: 1, title: A, deps: [2], covers: [c1] }\n  - { n: 2, title: B, deps: [1], covers: [c2] }\n",
+			}),
+		);
+		const data = runOn(m);
+		expect(data.pass).toBe(false);
+		expect(String(data.feedback)).toMatch(/cycle/i);
+	});
+
+	it("fails when a reslice drops a coverage unit frozen at the first cut", () => {
+		const first = write(
+			".rpiv/artifacts/slices/first.md",
+			map({
+				count: 2,
+				coverage: COV,
+				sliceLines:
+					"  - { n: 1, title: A, deps: [], covers: [c1] }\n  - { n: 2, title: B, deps: [1], covers: [c2] }\n",
+			}),
+		);
+		// Latest reslice covers only c1 — c2 silently dropped. Frozen set is read from `first`.
+		const latest = write(
+			".rpiv/artifacts/slices/latest.md",
+			map({ count: 1, coverage: COV, sliceLines: "  - { n: 1, title: A, deps: [], covers: [c1] }\n" }),
+		);
+		const data = runOn(first, latest);
+		expect(data.pass).toBe(false);
+		expect(String(data.feedback)).toMatch(/c2/);
+	});
+
+	it("is a no-op on coverage when the first cut froze no units", () => {
+		const rel = ".rpiv/artifacts/slices/nocov.md";
+		const m = write(rel, map({ count: 1, sliceLines: "  - { n: 1, title: A, deps: [] }\n" }));
+		const data = runOn(m);
+		expect(data.pass).toBe(true);
 	});
 });
 
@@ -1096,7 +1215,7 @@ describe("implement reads wiring", () => {
 	});
 
 	it("every built-in workflow with an implement stage validates clean (contracts threaded in)", () => {
-		for (const name of ["ship", "build", "arch", "vet", "polish"]) {
+		for (const name of ["build", "vet", "polish"]) {
 			const issues = deriveAndValidate(findWorkflow(name), { skillContracts: DECLARED_CONTRACTS });
 			expect(
 				issues.filter((i) => i.severity === "error"),
@@ -1263,11 +1382,6 @@ describe("contract ownership drift guards", () => {
 });
 
 describe("control-flow specs are introspectable (presets self-describe)", () => {
-	const shapeOf = (workflow: string, stage: string) => {
-		const wf = builtInWorkflows.find((w) => w.name === workflow);
-		if (!wf) throw new Error(`workflow ${workflow} not found`);
-		return describeFlow(wf).find((s) => s.stage === stage);
-	};
 	// `describeFlow` now projects control-flow off the unified `loop` field;
 	// `loopSpecOf(stage.loop)` is the same projection it carries in `control.spec`,
 	// asserted directly here for the source/unit/max detail.
@@ -1291,11 +1405,5 @@ describe("control-flow specs are introspectable (presets self-describe)", () => 
 			kind: "iterate",
 			source: "architecture-reviews",
 		});
-	});
-
-	it("code-review reports a route edge with both branch targets", () => {
-		const cr = shapeOf("build", "code-review");
-		expect(cr?.edge.mode).toBe("route");
-		expect(cr?.edge.targets).toEqual(expect.arrayContaining(["revise", "commit"]));
 	});
 });

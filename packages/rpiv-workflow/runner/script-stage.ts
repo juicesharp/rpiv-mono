@@ -29,20 +29,13 @@
  */
 
 import type { ScriptContext } from "../api.js";
-import { auditCtxFor, failedArgs, recordTerminalFailure, terminate } from "../audit.js";
+import { auditCtxFor, failAuditWrite, failedArgs, recordTerminalFailure } from "../audit.js";
 import { allocateStageNumber, persistStageSuccess } from "../audit-rows.js";
 import { lifecycleCtxFor, scriptStageRef } from "../events.js";
 import type { Artifact } from "../handle.js";
 import { formatError, nowIso } from "../internal-utils.js";
-import {
-	FAIL_AUDIT_WRITE,
-	FAIL_SCRIPT_THREW,
-	FAIL_VALIDATION_EXHAUSTED,
-	MSG_STAGE_COMPLETE,
-	STATUS_KEY,
-	STATUS_STAGE,
-} from "../messages.js";
-import { finalizeOutput, type Output } from "../output.js";
+import { FAIL_SCRIPT_THREW, FAIL_VALIDATION_EXHAUSTED } from "../messages.js";
+import { finalizeOutput, type Output, outputMeta } from "../output.js";
 import type { RunContext, WorkflowHostContext } from "../types.js";
 import {
 	DEFAULT_VALIDATION_RETRIES,
@@ -70,8 +63,6 @@ export async function runScript(
 	run: RunContext,
 	advance: AdvanceFn,
 ): Promise<ChainOutcome> {
-	curCtx.ui.setStatus(STATUS_KEY, STATUS_STAGE(stage.stageNumber, run.totalStages, stage.name));
-
 	const ref = scriptStageRef(stage.name, stage.stageNumber);
 	await run.lifecycle.fire(curCtx, "onStageStart", ref, lifecycleCtxFor(run));
 
@@ -90,36 +81,42 @@ export async function runScript(
 	const result = await runValidationRetryLoop<Output, "recorded">(
 		{
 			maxRetries: stage.def.maxRetries ?? DEFAULT_VALIDATION_RETRIES,
-			haltOnInvalid: (stage.def.onInvalid ?? "retry") === "halt",
+			failFast: (stage.def.onInvalid ?? "retry") === "halt",
 		},
 		{
 			produce: async () => {
 				const invocation = await invokeRun(curCtx, stage, scriptCtx, run, stageNumber);
-				if (!invocation.ok) return { ok: false, halt: "recorded" };
-				const output = finalizeOutput(invocation.raw, {
-					stage: stage.name,
-					stageNumber,
-					ts: nowIso(),
-					runId: run.runId,
-				});
-				return { ok: true, value: output };
+				if (!invocation.ok) return { kind: "aborted", abort: "recorded" };
+				const output = finalizeOutput(
+					invocation.raw,
+					outputMeta({
+						stage: stage.name,
+						stageNumber,
+						ts: nowIso(),
+						runId: run.runId,
+					}),
+				);
+				return { kind: "ok", value: output };
 			},
 			validate: async (output) => {
 				if (!(stage.def.kind === "produces" && stage.def.outputSchema)) {
-					return { ok: true, result: { valid: true, failures: [] } };
+					return { kind: "ok", result: { valid: true, failures: [] } };
 				}
 				// No catch: a throwing author schema propagates to the runner's
 				// single catch site (today's contract).
-				return { ok: true, result: await Promise.resolve(validateOutputData(stage.def.outputSchema, output.data)) };
+				return {
+					kind: "ok",
+					result: await Promise.resolve(validateOutputData(stage.def.outputSchema, output.data)),
+				};
 			},
 			onRetry: async (attempt) => {
 				await run.lifecycle.fire(curCtx, "onStageRetry", ref, attempt, lifecycleCtxFor(run));
-				return { ok: true };
+				return { kind: "ok" };
 			},
 		},
 	);
 
-	if (result.kind === "halt") return "halted";
+	if (result.kind === "aborted") return "halted";
 	if (result.kind === "exhausted") {
 		const failureSummary = result.failures.map(describeFailure).join("; ");
 		await recordTerminalFailure(
@@ -140,12 +137,9 @@ export async function runScript(
 		stage.def,
 	);
 	if (!persisted) {
-		const auditFailure = FAIL_AUDIT_WRITE(stage.name);
-		curCtx.ui.notify(auditFailure.toast, "error");
-		terminate(run.state, { status: "failed", error: auditFailure.error });
+		failAuditWrite(curCtx, run.state, stage.name);
 		return "halted";
 	}
-	curCtx.ui.notify(MSG_STAGE_COMPLETE(stage.name), "info");
 
 	await run.lifecycle.fire(curCtx, "onStageEnd", ref, output, lifecycleCtxFor(run));
 	return advance(curCtx, stage.name, idx, run);

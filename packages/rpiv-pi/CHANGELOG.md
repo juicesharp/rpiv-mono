@@ -7,9 +7,18 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- **`carve` renamed to `build`; `build` redefined.** `/wf build` now runs the sliced, panel-gated carved pipeline — 19 stages (`goal → research → slice → … → commit`) with three automated grade gates (each backed by a fix loop) and one human design checkpoint — superseding the old 7-stage build (`research → blueprint → implement → validate → code-review → revise → commit`). The shipped `/wf` set is now `build`, `vet`, `polish` (previously `ship` / `build` / `arch` / `vet` / `polish` / `pr-triage`, with `carve` as an additional preset). `build` is redefined rather than removed-then-added — the name is continuous — so the old build is folded into this bullet, not listed separately under Removed.
+- **Silent `presets.build` semantic shift.** A `models.json` `presets.build` override tuned for the old 7-stage build will silently apply to the new 19-stage carved pipeline with **no warning**, because `build` remains a valid live-registry key (carve was renamed to `build`). Review or rename your `presets.build` entry. This contrasts with `presets.ship` / `presets.arch` / `presets["pr-triage"]`, which now warn once and stop applying because those keys have left the live registry.
+
 ### Fixed
+- **`validate` no longer misreads a provided plan path as empty input (#89).** The skill's `## Input` line embedded `$ARGUMENTS` in documentation prose with the empty-input fallback in the same sentence, so after rpiv-args substitution the argument read as placeholder text and models branched to the recent-plans list. The input now lands in a dedicated `User input (raw):` slot, and the fallback is explicitly gated on that slot being empty. Lane transcripts also strip rpiv-args' new `Skill input:` argument-trailer label so the viewer shows what the human typed.
 - Moved `typebox` from `peerDependencies` to `dependencies` (`^1.1.24`, matching the Pi host's range) so `models-config.ts`'s schema resolves under installers that don't materialise peer deps. Fixes `ERR_MODULE_NOT_FOUND: typebox` on standalone consumer installs (#79).
 - Test files are no longer published in the npm tarball. The `extensions/`, `skills/`, `agents/`, and `scripts/` globs in `files` packed `**/*.test.ts`, which import the private, unpublished `@juicesharp/rpiv-test-utils` fixture package. Added a `!**/*.test.ts` exclusion to `files` (#80).
+
+### Removed
+- **Legacy `thoughts/shared/` → `.rpiv/artifacts/` auto-migration.** The one-shot migration (`migrateThoughtsToArtifacts`, run on `session_start`) shipped in 1.x to relocate the old artifact store into `.rpiv/artifacts/` has run its course: it no-ops for everyone who has started a session since, and on repos where `thoughts/shared` became a symlink back into `.rpiv/artifacts` it looped every session, emitting `[rpiv-pi] migration: src and dest cannot be the same …`. Stragglers with a real, still-populated `thoughts/shared/` can migrate manually: `cp -r thoughts/shared/* .rpiv/artifacts/ && rm -rf thoughts/shared`.
+- **Removed built-in `/wf` presets `ship`, `arch`, `pr-triage`, and the superseded old 7-stage `build`.** The `pr-triage`, `revise`, `design`, and `plan` skills remain standalone-invokable via `/skill:<name>`; only their `/wf <name>` workflow graphs are gone. (`build` itself is redefined, not removed — see Changed above.)
 
 ## [1.20.0] - 2026-06-15
 

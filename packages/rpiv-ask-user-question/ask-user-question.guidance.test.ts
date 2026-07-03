@@ -17,6 +17,16 @@ beforeEach(() => {
 	// test/setup.ts rmSyncs CONFIG_PATH in shared beforeEach
 });
 
+describe("DEFAULT_PROMPT_GUIDELINES — Phase 2 prompt copy", () => {
+	it("describes the 'Type something.' row as appended to EVERY question (no suppress clause)", () => {
+		const joined = DEFAULT_PROMPT_GUIDELINES.join("\n");
+		expect(joined).toContain("appended automatically to every question");
+		expect(joined).not.toContain('suppresses the "Type something." row');
+		// Phase 1 already swapped the abandon clause to "Esc to abandon".
+		expect(joined).toContain("Esc to abandon");
+	});
+});
+
 describe("registerAskUserQuestionTool — guidance overrides", () => {
 	it("uses built-in defaults when no config file exists", () => {
 		const { pi, captured } = createMockPi();

@@ -1,8 +1,7 @@
 /**
  * User-facing message constants.
- * - `STATUS_*` via `ctx.ui.setStatus` — persists across `newSession`.
  * - `MSG_*` / `ERR_*` via `ctx.ui.notify` — one-shot; may be repainted by
- *   Pi's session transition (the status line is the durable channel).
+ *   Pi's session transition.
  * - `FAIL_*` — structured terminal-failure descriptors (see `FailureText`).
  *
  * Audience split: this module is the UI/runtime constants. The
@@ -11,15 +10,12 @@
  * `/wf` usage strings live in command.ts / preview.ts.
  */
 
-export const STATUS_KEY = "rpiv-workflow";
-
 /**
  * One structured descriptor per terminal-failure kind — the `toast` (the
  * one-shot `ctx.ui.notify` line) and the `error` (what lands in
  * `state.termination.error` + the JSONL row's `errMsg`) rendered from ONE
- * factory so the two channels can never drift again (D5 — the old MSG_/ERR_
- * twin constants had already diverged in content). Halt sites hand the
- * descriptor to `failedArgs`/`abortedArgs` (audit.ts) or spread it into
+ * factory so the two channels can't drift. Halt sites hand the
+ * descriptor to `failedArgs`/`abortedArgs` (messages.ts) or spread it into
  * `StagePreflightError`.
  */
 export interface FailureText {
@@ -27,9 +23,6 @@ export interface FailureText {
 	error: string;
 }
 
-export const STATUS_STAGE = (stage: number, total: number, skill: string) => `rpiv: stage ${stage}/${total} — ${skill}`;
-
-export const MSG_STAGE_COMPLETE = (skill: string) => `✓ ${skill} completed`;
 export const MSG_STAGE_FAILED = (skill: string) => `✗ ${skill} failed — stopping workflow`;
 
 export const FAIL_STAGE_ABORTED = (skill: string): FailureText => ({
@@ -58,8 +51,6 @@ export const FAIL_WORKFLOW_ABORTED = (stage: string): FailureText => ({
 	error: `workflow aborted before stage "${stage}" (signal)`,
 });
 
-export const MSG_VALIDATION_RETRY = (skill: string, attempt: number) =>
-	`rpiv: ${skill} output validation failed — asking agent to fix (attempt ${attempt})`;
 export const FAIL_VALIDATION_EXHAUSTED = (skill: string, failures: string): FailureText => ({
 	toast: `rpiv: ${skill} output validation exhausted retries`,
 	error: `${skill} output validation failed after retries: ${failures}`,
@@ -103,24 +94,6 @@ export const FAIL_BACKWARD_JUMP_EXHAUSTED = (jumps: number, max: number): Failur
 	toast: `rpiv: backward-jump limit exceeded (${jumps}/${max}) — stopping workflow to prevent infinite loop`,
 	error: `Backward-jump limit exceeded: ${jumps} backward jumps (max ${max})`,
 });
-
-/**
- * Status line for one loop unit. `skill` is the unit's dispatched skill body
- * (the judge's skill — or the synthetic `<parent>-judge` label — on a judge
- * unit); `label` is the unit's display tag (`"phase 2/5"`, `"r0·judge"`).
- * One template for all three loop kinds — the retired fanout/iterate
- * templates were byte-identical; assess threads its round/phase cursor as
- * the label.
- */
-export const STATUS_LOOP_UNIT = (stage: number, total: number, skill: string, label: string) =>
-	`rpiv: stage ${stage}/${total} — ${skill} (${label})`;
-
-/**
- * Per-unit completion toast — labeled so eight units of one fanout read as
- * eight distinct completions, not eight copies of the stage banner (the loop
- * end still owns MSG_STAGE_COMPLETE).
- */
-export const MSG_UNIT_COMPLETE = (skill: string, label: string) => `✓ ${skill} (${label})`;
 
 /**
  * A loop produced zero units (push: empty array handled upstream as
@@ -317,6 +290,15 @@ export const MSG_RESUME_SESSION_FALLBACK = (skill: string, why: string) =>
 	`rpiv: ${skill} — ${why}; re-running the stage from scratch`;
 
 /**
+ * One notice when a `sessionPolicy: "continue"` stage has no predecessor session
+ * to fork — the start stage (nothing to continue), a stage right after a loop
+ * with no prior single session, or the predecessor's session file is gone. The
+ * stage degrades to a fresh dispatch rather than refusing.
+ */
+export const MSG_CONTINUE_FALLBACK = (skill: string) =>
+	`rpiv: ${skill} — no prior session to continue; running the stage fresh`;
+
+/**
  * Sent to the AGENT when a stage reattaches to its interrupted session
  * (model-facing prompt text — promotion already missed, so the artifact
  * was not announced or not written).
@@ -375,3 +357,46 @@ export const MSG_WORKFLOW_NOT_FOUND = (name: string) => `/wf: workflow "${name}"
  */
 export const MSG_NO_WORKFLOWS_REGISTERED =
 	"/wf: no workflows registered — install a sibling that bundles workflows or author one in `.rpiv/workflows/config.ts`";
+
+/**
+ * The toast + JSONL halves of a terminal failure, paired by construction.
+ * Build via `failedArgs` / `abortedArgs` (or `stopFailureArgs`' switch, in
+ * audit.ts) so a halt site can't mismatch status and notify level.
+ */
+export interface TerminalFailureArgs {
+	status: "failed" | "aborted";
+	notifyMsg: string;
+	notifyLevel: "warning" | "error";
+	errMsg: string;
+}
+
+/**
+ * The ONE `(status, notifyLevel)` pairing — notifyLevel is DERIVED from status
+ * (failed → error, aborted → warning), so a mismatch is unrepresentable. The
+ * overload-resolution body for `failedArgs`/`abortedArgs` lives here once.
+ * Modeled after `stopFailureArgs` (parameterize by status).
+ */
+function terminalArgsOf(status: "failed" | "aborted", a: FailureText | string, b?: string): TerminalFailureArgs {
+	const f = typeof a === "string" ? { toast: a, error: b as string } : a;
+	return { status, notifyMsg: f.toast, notifyLevel: status === "failed" ? "error" : "warning", errMsg: f.error };
+}
+
+/**
+ * Argument constructors for `recordTerminalFailure` — the
+ * `{status, notifyMsg, notifyLevel, errMsg}` quadruple every halt site used
+ * to spell by hand. One per terminal status: failures notify at `"error"`,
+ * aborts at `"warning"` (cooperative cancellation is expected, not
+ * exceptional). 1-line facades over `terminalArgsOf` so the status/level
+ * pairing lives once.
+ */
+export function failedArgs(failure: FailureText): TerminalFailureArgs;
+export function failedArgs(notifyMsg: string, errMsg: string): TerminalFailureArgs;
+export function failedArgs(a: FailureText | string, b?: string): TerminalFailureArgs {
+	return terminalArgsOf("failed", a, b);
+}
+
+export function abortedArgs(failure: FailureText): TerminalFailureArgs;
+export function abortedArgs(notifyMsg: string, errMsg: string): TerminalFailureArgs;
+export function abortedArgs(a: FailureText | string, b?: string): TerminalFailureArgs {
+	return terminalArgsOf("aborted", a, b);
+}

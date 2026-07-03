@@ -93,7 +93,7 @@ Layers mirror dependency direction. Higher layers consume lower-layer vocabulary
    - Persistence / on-disk format
    - Cross-cutting utilities
 
-2. **For complex targets, dispatch parallel agents** to accelerate categorization:
+2. **For complex targets, dispatch parallel agents** to accelerate categorization — all in a **single assistant message with multiple Agent calls** (concurrent, synchronous). **Never `run_in_background`**: its completion can't re-drive a workflow session, so the skill ends its turn before writing the review and the stage fails with no artifact.
 
    **Agent — codebase-locator:** "Map every source file in {target path} to one responsibility from the standard role buckets (facade, vocabulary, DSL, command, loaders, validation, orchestration, sessions, persistence, utilities). Return a file → responsibility table."
 

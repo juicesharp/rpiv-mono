@@ -75,8 +75,13 @@ describe("summarizeSkillBlock", () => {
 	it("collapses a wrapper with trailing-args suffix to `/skill:<name> <args>`", () => {
 		expect(summarizeSkillBlock(wrap("discover", "body text", "write a file"))).toBe("/skill:discover write a file");
 	});
-	it("collapses a wrapper with no suffix to `/skill:<name>` (token-path emit)", () => {
+	it("collapses a wrapper with no suffix to `/skill:<name>` (token-path emit, empty args)", () => {
 		expect(summarizeSkillBlock(wrap("discover", "body text"))).toBe("/skill:discover");
+	});
+	it("strips the `Skill input:` trailer label down to the raw args (token-path emit)", () => {
+		expect(summarizeSkillBlock(wrap("validate", "body text", "Skill input: @path/to/plan.md --goal g.md"))).toBe(
+			"/skill:validate @path/to/plan.md --goal g.md",
+		);
 	});
 	it("passes non-skill input through verbatim", () => {
 		expect(summarizeSkillBlock("how do I deploy?")).toBe("how do I deploy?");

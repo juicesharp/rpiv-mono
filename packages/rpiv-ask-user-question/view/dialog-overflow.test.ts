@@ -44,11 +44,10 @@ interface DialogParts {
 	initialProps: DialogProps;
 }
 
-type MakeConfigOverrides = Partial<Omit<DialogConfig, "chatRow" | "tabsByIndex">> & {
+type MakeConfigOverrides = Partial<Omit<DialogConfig, "tabsByIndex">> & {
 	state?: DialogState;
 	previewPane?: PreviewPane;
 	initialProps?: DialogProps;
-	chatList?: DialogConfig["chatRow"];
 	tabsByIndex?: ReadonlyArray<TabComponents>;
 	multiSelectByTab?: ReadonlyArray<MultiSelectView | undefined>;
 };
@@ -79,7 +78,6 @@ function makeConfig(over: MakeConfigOverrides = {}): DialogParts {
 		optionIndex: 0,
 		notesVisible: false,
 		inputMode: false,
-		chatFocused: false,
 		answers: new Map(),
 		multiSelectChecked: new Set(),
 		notesByTab: new Map(),
@@ -102,7 +100,6 @@ function makeConfig(over: MakeConfigOverrides = {}): DialogParts {
 		questions,
 		tabBar: over.tabBar ?? (stubComponent(["<TABBAR>", ""]) as unknown as TabBar),
 		notesInput: over.notesInput ?? (stubComponent(["<NOTES_INPUT>"]) as unknown as Input),
-		chatRow: over.chatList ?? (stubComponent(["<CHAT_ROW>"]) as unknown as DialogConfig["chatRow"]),
 		isMulti: over.isMulti ?? questions.length > 1,
 		tabsByIndex,
 		submitPicker: over.submitPicker,
@@ -125,13 +122,11 @@ describe("Dialog overflow — no clipping when terminal is tall enough", () => {
 		);
 		const lines = dlg.render(80);
 		// With termRows=50, dialog fits easily. Residual spacer rows should be present.
-		const chatIdx = lines.findIndex((l) => l.includes("<CHAT_ROW>"));
 		const hintIdx = lines.findIndex((l) => l.includes(HINT_MULTI));
-		expect(chatIdx).toBeGreaterThan(0);
-		expect(hintIdx).toBeGreaterThan(chatIdx);
+		expect(hintIdx).toBeGreaterThan(0);
 		const tail = lines.slice(hintIdx + 1);
-		// Residual spacer = (6 + 5) - (1 + 4) = 6 rows
-		expect(tail.length).toBe(6);
+		// Residual spacer = (6 + 5) - (1 + 2) = 8 rows  (footerRowCount dropped 4→2)
+		expect(tail.length).toBe(8);
 		expect(tail.every((l) => l.trim() === "")).toBe(true);
 	});
 
@@ -140,9 +135,9 @@ describe("Dialog overflow — no clipping when terminal is tall enough", () => {
 			makeConfig({ getTerminalRows: () => 100, getBodyHeight: () => 5, getCurrentBodyHeight: () => 1 }),
 		);
 		const lines = dlg.render(80);
-		// Residual spacer = (5 + 5) - (1 + 4) = 5 rows of trailing blanks
+		// Residual spacer = (5 + 5) - (1 + 2) = 7 rows of trailing blanks  (footerRowCount 4→2)
 		const emptyTail = lines.filter((l) => l.trim() === "").length;
-		expect(emptyTail).toBeGreaterThanOrEqual(5);
+		expect(emptyTail).toBeGreaterThanOrEqual(7);
 	});
 });
 
@@ -188,15 +183,6 @@ describe("Dialog overflow — 3-region partition", () => {
 		expect(joined).toContain(HINT_MULTI);
 	});
 
-	it("chat row visible in sticky bottom when footer fits", () => {
-		const dlg = makeDialog(
-			makeConfig({ getTerminalRows: () => 14, getBodyHeight: () => 20, getCurrentBodyHeight: () => 10 }),
-		);
-		const lines = dlg.render(80);
-		const joined = lines.join("\n");
-		expect(joined).toContain("<CHAT_ROW>");
-	});
-
 	it("single-question mode: no tab bar in output", () => {
 		const dlg = makeDialog(
 			makeConfig({
@@ -237,12 +223,12 @@ describe("Dialog overflow — overflow indicators", () => {
 
 describe("Dialog overflow — minimum terminal", () => {
 	it("shows chrome only at topFixed + bottomFixed height", () => {
-		// Multi-question: topFixed = 1 + 2 + 1 = 4, bottomFixed = 1 + 4 = 5, total chrome = 9
+		// Multi-question: topFixed = 1 + 2 + 1 = 4, bottomFixed = 1 + 2 = 3, total chrome = 7
 		const dlg = makeDialog(
-			makeConfig({ getTerminalRows: () => 9, getBodyHeight: () => 20, getCurrentBodyHeight: () => 10 }),
+			makeConfig({ getTerminalRows: () => 7, getBodyHeight: () => 20, getCurrentBodyHeight: () => 10 }),
 		);
 		const lines = dlg.render(80);
-		expect(lines.length).toBe(9);
+		expect(lines.length).toBe(7);
 		expect(lines[0]).toMatch(/─/);
 		expect(lines.join("\n")).toContain(HINT_MULTI);
 	});
@@ -252,7 +238,8 @@ describe("Dialog overflow — minimum terminal", () => {
 			makeConfig({ getTerminalRows: () => 5, getBodyHeight: () => 20, getCurrentBodyHeight: () => 10 }),
 		);
 		const lines = dlg.render(80);
-		// availableMiddle = max(0, 5 - 4 - 5) = 0 → just chrome, then clipped to termRows
+		// availableMiddle = max(0, 5 - 4 - 3) = 0 → just chrome, then clipped to termRows
+		// (bottomFixed dropped 5→3; still <0 clamp at termRows=5)
 		expect(lines.length).toBeLessThanOrEqual(5);
 	});
 });
@@ -269,7 +256,6 @@ describe("Dialog overflow — submit tab", () => {
 			optionIndex: 0,
 			notesVisible: false,
 			inputMode: false,
-			chatFocused: false,
 			answers,
 			multiSelectChecked: new Set(),
 			notesByTab: new Map(),
@@ -308,19 +294,19 @@ describe("Dialog overflow — submit tab", () => {
 
 describe("Dialog overflow — indicator content", () => {
 	it("shows combined ↕ when availableMiddle === 1 with both overflow directions", () => {
-		// topFixed=4, bottomFixed=5, termRows=10 → availableMiddle=1.
+		// topFixed=4, bottomFixed=3 (footerRowCount 4→2), termRows=8 → availableMiddle=1.
 		// Body=20 rows, focus at [0,1] → focusedRowInMiddle=2, idealStart=2, scrollStart=2.
 		// hasUp=true, hasDown=true, availableMiddle===1 → combined ↕.
 		const dlg = makeDialog(
 			makeConfig({
-				getTerminalRows: () => 10,
+				getTerminalRows: () => 8,
 				getBodyHeight: () => 20,
 				getCurrentBodyHeight: () => 10,
 				previewPane: stubPreviewPane(Array(20).fill("<LINE>")),
 			}),
 		);
 		const lines = dlg.render(80);
-		expect(lines.length).toBeLessThanOrEqual(10);
+		expect(lines.length).toBeLessThanOrEqual(8);
 		// Middle row at index topFixed=4 carries the combined glyph.
 		expect(stripAnsi(lines[4])).toBe("↕");
 		// And no separate ↑/↓ leak through.
@@ -341,9 +327,10 @@ describe("Dialog overflow — indicator content", () => {
 		);
 		const lines = dlg.render(80);
 		expect(lines.length).toBeLessThanOrEqual(14);
-		// Top of middle region (index 4) is ↑, bottom (index 8 = 4+5-1) is ↓.
+		// Top of middle region (index 4) is ↑, bottom (index 10 = 4+7-1) is ↓. At termRows=14
+		// with bottomFixed=3 (footerRowCount 4→2), availableMiddle = 14 - 4 - 3 = 7.
 		expect(stripAnsi(lines[4])).toBe("↑");
-		expect(stripAnsi(lines[8])).toBe("↓");
+		expect(stripAnsi(lines[10])).toBe("↓");
 		// No combined glyph when there's room for two separate indicators.
 		expect(lines.some((l) => stripAnsi(l) === "↕")).toBe(false);
 	});

@@ -105,7 +105,7 @@ describe.runIf(hasGit)("workspaceDiffCollector", () => {
 		expect(result.kind === "ok" && result.artifacts).toEqual([]);
 	});
 
-	it("fatal when git worked at snapshot time but fails after the stage — no fabricated 'no changes' (T10)", async () => {
+	it("fatal when git worked at snapshot time but fails after the stage — no fabricated 'no changes'", async () => {
 		initRepo(tmpDir);
 		const collector = workspaceDiffCollector();
 		const snapshot = await collector.snapshot?.(snapshotCtxOf(tmpDir));

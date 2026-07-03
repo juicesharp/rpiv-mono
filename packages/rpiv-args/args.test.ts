@@ -19,6 +19,7 @@ import {
 	parseCommandArgs,
 	registerArgsHandler,
 	resolveShellTimeoutMs,
+	SKILL_INPUT_LABEL,
 	SKILL_INVOCATION_PROTOCOL,
 	substituteArgs,
 	substituteVariables,
@@ -303,7 +304,7 @@ describe("handleInput — emit paths (byte-exact wrapper)", () => {
 			`extra`;
 		expect(r).toEqual({ action: "transform", text: expected });
 	});
-	it("emits substituted wrapper without trailing args (args consumed by substitution)", async () => {
+	it("emits substituted wrapper plus labeled `Skill input:` trailer (raw args preserved)", async () => {
 		const entries = writeSkillsDir(tmpDir, [{ name: "bar", body: "do $1 then $2" }]);
 		setSkills(entries);
 		const r = await handleInput({ text: "/skill:bar a b" } as InputEvent, ctx, pi);
@@ -311,17 +312,29 @@ describe("handleInput — emit paths (byte-exact wrapper)", () => {
 			`<skill name="bar" location="${entries[0].filePath}">\n` +
 			`References are relative to ${tmpDir}.\n\n` +
 			`do a then b\n` +
-			`</skill>`;
+			`</skill>\n\n` +
+			`Skill input: a b`;
 		expect(r).toEqual({ action: "transform", text: expected });
 	});
-	it("does NOT duplicate args after </skill> when body has tokens (LLM attention fix)", async () => {
+	it("does NOT emit BARE args after </skill> when body has tokens (LLM attention fix + issue #89)", async () => {
 		const entries = writeSkillsDir(tmpDir, [{ name: "discover", body: "Input: $ARGUMENTS" }]);
 		setSkills(entries);
 		const r = await handleInput({ text: "/skill:discover write a file" } as InputEvent, ctx, pi);
 		const text = (r as { text: string }).text;
 		expect(text).toContain("Input: write a file");
+		// The argument is substituted into the body AND carried raw in the
+		// labeled trailer — but never as bare trailing text (which would read
+		// as a standalone imperative).
+		expect(text.endsWith("</skill>\n\nSkill input: write a file")).toBe(true);
+		expect(text.match(/write a file/g)?.length).toBe(2);
+	});
+	it("token path with empty args emits no trailer (empty-input branch keys off absence)", async () => {
+		const entries = writeSkillsDir(tmpDir, [{ name: "discover", body: "Input: $ARGUMENTS" }]);
+		setSkills(entries);
+		const r = await handleInput({ text: "/skill:discover" } as InputEvent, ctx, pi);
+		const text = (r as { text: string }).text;
 		expect(text.endsWith("</skill>")).toBe(true);
-		expect(text.match(/write a file/g)?.length).toBe(1);
+		expect(text).not.toContain("Skill input:");
 	});
 	it("strips frontmatter before substitution", async () => {
 		const entries = writeSkillsDir(tmpDir, [
@@ -359,6 +372,17 @@ describe("handleInput — variable substitution", () => {
 		setSkills(entries);
 		const r = await handleInput({ text: "/skill:v3 foo" } as InputEvent, ctx, pi);
 		expect((r as { text: string }).text).toContain(`foo in ${tmpDir}`);
+	});
+	it("trailer carries the RAW args — the variable/shell passes touch woven occurrences only (FR9 order)", async () => {
+		const entries = writeSkillsDir(tmpDir, [{ name: "v4", body: "Input: $ARGUMENTS" }]);
+		setSkills(entries);
+		const r = await handleInput({ text: "/skill:v4 see ${SKILL_DIR}/notes.md" } as InputEvent, ctx, pi);
+		const text = (r as { text: string }).text;
+		// The occurrence woven into the body IS variable-substituted (args → variables → shell)…
+		expect(text).toContain(`Input: see ${tmpDir}/notes.md`);
+		// …but the trailer is appended AFTER every substitution/shell pass, so
+		// it preserves the user's literal bytes.
+		expect(text.endsWith("Skill input: see ${SKILL_DIR}/notes.md")).toBe(true);
 	});
 });
 
@@ -827,6 +851,9 @@ describe("handleBeforeAgentStart — system-prompt protocol", () => {
 		expect(SKILL_INVOCATION_PROTOCOL).toContain("<skill name=");
 		expect(SKILL_INVOCATION_PROTOCOL).toContain("</skill>");
 		expect(SKILL_INVOCATION_PROTOCOL.toLowerCase()).toContain("argument");
+	});
+	it("protocol defines the `Skill input:` trailer label emitted by the token path (keep in sync)", () => {
+		expect(SKILL_INVOCATION_PROTOCOL).toContain(SKILL_INPUT_LABEL);
 	});
 	it("registered handler returns the prepended systemPrompt when invoked via Pi event bus", () => {
 		const { pi: testPi, captured } = createMockPi();

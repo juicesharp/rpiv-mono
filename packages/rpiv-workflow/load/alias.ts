@@ -21,13 +21,13 @@
  */
 
 import type { Workflow } from "../api.js";
-import { isDispatchingStage, resolveSkill } from "../chain-state.js";
+import { isDispatchingStage, resolveSkill } from "../stage-identity.js";
 import type { LayerOutcome, LoadAccumulator } from "./merge.js";
 
 // `isDispatchingStage` lives beside `resolveSkill` in chain-state.ts (the
 // validator and harvest consume it without reaching into load/); re-exported
-// here for existing consumers of the old path.
-export { isDispatchingStage } from "../chain-state.js";
+// here for existing consumers.
+export { isDispatchingStage } from "../stage-identity.js";
 
 export function aliasSkills(w: Workflow, aliases: Record<string, string>): Workflow {
 	if (!aliases || Object.keys(aliases).length === 0) return w;

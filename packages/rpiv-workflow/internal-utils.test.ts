@@ -2,7 +2,7 @@
  * Parity tests for `applyCompletedStage` — the single authority for
  * "a completed produces stage mutates the rolling artifact state."
  *
- * Covers the four stage-kind cases that were previously duplicated across
+ * Covers the four stage-kind cases in one place (no duplication across
  * `runner/script-stage.ts:advancePrimaryForScript` and
  * `sessions/sessions.ts:maybeAdvancePrimary`:
  *   1. produces-with-artifacts  → primary advances, named appends
@@ -14,12 +14,21 @@
  * calls to the same key).
  */
 
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { StageDef } from "./api.js";
 import { applyCompletedStage, resolveSkill } from "./chain-state.js";
 import type { Artifact } from "./handle.js";
 import { fs as fsHandle } from "./handle.js";
-import { globalSlot, lazyProviderRegistry, withTimeout } from "./internal-utils.js";
+import {
+	deepEqual,
+	globalSlot,
+	lazyProviderRegistry,
+	markSymbol,
+	readSymbol,
+	resolveUnderCwd,
+	withTimeout,
+} from "./internal-utils.js";
 import type { Output } from "./output.js";
 import type { RunState } from "./types.js";
 import { SchemaTimeoutError } from "./validate-output.js";
@@ -230,6 +239,74 @@ describe("resolveSkill", () => {
 	it("returns skill even when it equals the stage name", () => {
 		const def = { kind: "side-effect", sessionPolicy: "fresh", skill: "blueprint" } as StageDef;
 		expect(resolveSkill(def, "blueprint")).toBe("blueprint");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// deepEqual
+// ---------------------------------------------------------------------------
+
+describe("deepEqual", () => {
+	it("primitives: identical values are equal, differing values are not", () => {
+		expect(deepEqual(1, 1)).toBe(true);
+		expect(deepEqual("a", "a")).toBe(true);
+		expect(deepEqual(1, 2)).toBe(false);
+		expect(deepEqual("a", "b")).toBe(false);
+	});
+
+	it("returns false when only one side is non-object / null (type-mismatched shapes)", () => {
+		expect(deepEqual({ a: 1 }, null)).toBe(false);
+		expect(deepEqual(null, { a: 1 })).toBe(false);
+		expect(deepEqual([1], "x")).toBe(false);
+		expect(deepEqual(undefined, {})).toBe(false);
+	});
+
+	it("returns false when one side is an array and the other is a plain object", () => {
+		expect(deepEqual([1], { 0: 1 })).toBe(false);
+		expect(deepEqual({ length: 1 }, [])).toBe(false);
+	});
+
+	it("arrays: equal by element, recursively; unequal length / element fails", () => {
+		expect(deepEqual([1, 2, 3], [1, 2, 3])).toBe(true);
+		expect(deepEqual([1, [2, 3]], [1, [2, 3]])).toBe(true);
+		expect(deepEqual([1, 2], [1, 2, 3])).toBe(false);
+		expect(deepEqual([1, 2], [1, 3])).toBe(false);
+	});
+
+	it("objects: equal regardless of key insertion order; missing/extra keys fail", () => {
+		expect(deepEqual({ a: 1, b: 2 }, { b: 2, a: 1 })).toBe(true);
+		expect(deepEqual({ a: { c: 3 } }, { a: { c: 3 } })).toBe(true);
+		expect(deepEqual({ a: 1 }, { a: 1, b: 2 })).toBe(false);
+		expect(deepEqual({ a: 1, b: 2 }, { a: 1 })).toBe(false);
+		expect(deepEqual({ a: 1 }, { a: 2 })).toBe(false);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// resolveUnderCwd
+// ---------------------------------------------------------------------------
+
+describe("resolveUnderCwd", () => {
+	it("returns an absolute path unchanged", () => {
+		expect(resolveUnderCwd("/cwd", "/abs/path.md")).toBe("/abs/path.md");
+	});
+
+	it("joins a relative path under cwd", () => {
+		expect(resolveUnderCwd("/cwd", "rel/path.md")).toBe(join("/cwd", "rel/path.md"));
+	});
+});
+
+// ---------------------------------------------------------------------------
+// readSymbol / markSymbol
+// ---------------------------------------------------------------------------
+
+describe("readSymbol / markSymbol", () => {
+	it("markSymbol writes a symbol-keyed value readSymbol reads back", () => {
+		const sym = Symbol.for("test:internal-utils-rw");
+		const obj = {} as object;
+		expect(readSymbol(obj, sym)).toBeUndefined();
+		markSymbol(obj, sym, 42);
+		expect(readSymbol<number>(obj, sym)).toBe(42);
 	});
 });
 

@@ -7,8 +7,7 @@
  * never drift between two emissions of the same rule) and its message
  * template. Checks report `(code, params)` through an `IssueReporter`; the
  * reporter renders the prose once, here. Consumers filter/assert on `code`
- * — never on message text (the message-regex control flow this replaces was
- * finding C5).
+ * — never on message text.
  *
  * Messages NEVER embed the stage name — `stage` is carried structurally on
  * the issue and display renderers compose the attribution
@@ -112,6 +111,16 @@ export const ISSUE_DEFS = {
 	"loop-max-invalid": def<{ max: number }>(
 		"error",
 		(p) => `loop.max: ${p.max} — must be an integer >= 1 (run.maxIterations caps the upper bound)`,
+	),
+	"loop-concurrency-invalid": def<{ concurrency: number }>(
+		"error",
+		(p) =>
+			`fanout concurrency: ${p.concurrency} — must be an integer >= 1 (host maxConcurrency caps the upper bound)`,
+	),
+	"loop-dep-flag-invalid": def<{ depArtifactFlag: string }>(
+		"error",
+		(p) =>
+			`fanout depArtifactFlag: ${JSON.stringify(p.depArtifactFlag)} — must be a non-empty string (the flag the dispatcher prefixes each dep artifact path with)`,
 	),
 	"loop-requires-produces": def<{ kind: string }>(
 		"error",
@@ -289,10 +298,9 @@ type ReportArgs<C extends ValidationIssueCode> = keyof ValidationIssueParamsOf<C
 export type ReportFn = <C extends ValidationIssueCode>(code: C, ...args: ReportArgs<C>) => void;
 
 /**
- * Issue reporter bound to one workflow + one sink — replaces the
- * `(w, name, stage, issues)` four-tuple every check used to thread. Checks
- * hold either the workflow-level `report` or a `forStage(name)` binding;
- * construction (severity lookup + render) happens in exactly one place.
+ * Issue reporter bound to one workflow + one sink. Checks hold either the
+ * workflow-level `report` or a `forStage(name)` binding; construction
+ * (severity lookup + render) happens in exactly one place.
  */
 export interface IssueReporter {
 	/** Workflow-level issue (no stage attribution). */

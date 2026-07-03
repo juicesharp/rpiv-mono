@@ -218,10 +218,9 @@ describe("QuestionAnswer — notes + preview field optionality", () => {
 });
 
 describe("QuestionAnswer.kind — discriminated union contract", () => {
-	it("supports all four variant kinds", () => {
+	it("supports all three variant kinds", () => {
 		const optionA: QuestionAnswer = { questionIndex: 0, question: "Q?", kind: "option", answer: "A" };
 		const customA: QuestionAnswer = { questionIndex: 0, question: "Q?", kind: "custom", answer: "free text" };
-		const chatA: QuestionAnswer = { questionIndex: 0, question: "Q?", kind: "chat", answer: "Chat about this" };
 		const multiA: QuestionAnswer = {
 			questionIndex: 0,
 			question: "Q?",
@@ -231,7 +230,6 @@ describe("QuestionAnswer.kind — discriminated union contract", () => {
 		};
 		expect(optionA.kind).toBe("option");
 		expect(customA.kind).toBe("custom");
-		expect(chatA.kind).toBe("chat");
 		expect(multiA.kind).toBe("multi");
 	});
 });
@@ -289,7 +287,7 @@ describe("schema constants + RESERVED_LABELS", () => {
 		expect(MAX_LABEL_LENGTH).toBe(60);
 	});
 
-	it("RESERVED_LABELS includes the four Pi sentinels + CC's 'Other'", () => {
-		expect(RESERVED_LABELS).toEqual(["Other", "Type something.", "Chat about this", "Next"]);
+	it("RESERVED_LABELS includes the Pi sentinels + CC's 'Other'", () => {
+		expect(RESERVED_LABELS).toEqual(["Other", "Type something.", "Next"]);
 	});
 });

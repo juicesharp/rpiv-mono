@@ -108,12 +108,10 @@ describe("isModuleNotFound", () => {
 });
 
 describe("isStaleCtxError", () => {
-	// The exact phrase pi-core's ExtensionRunner throws from an invalidated proxy.
-	// If pi-core changes this wording, THIS TEST MUST FAIL so the regex in
-	// utils.ts gets updated in lockstep (L2-02 phrase-pinning guard).
-	const STALE_CTX_MESSAGE =
-		"This extension ctx is stale after session replacement or reload. " +
-		"Do not use a captured pi or command ctx after ctx.newSession().";
+	// Pins the substring the `isStaleCtxError` regex matches inside pi-core's
+	// invalidated-proxy error. If pi-core changes this wording, THIS TEST MUST
+	// FAIL so the regex in utils.ts gets updated in lockstep (L2-02 guard).
+	const STALE_CTX_MESSAGE = "This extension ctx is stale after session replacement or reload.";
 
 	it("matches the exact pi-core stale-ctx error message", () => {
 		expect(isStaleCtxError(new Error(STALE_CTX_MESSAGE))).toBe(true);

@@ -38,6 +38,7 @@
     "@earendil-works/pi-ai": "*",
     "@earendil-works/pi-coding-agent": "*",
     "@earendil-works/pi-tui": "*",
+    "@juicesharp/rpiv-workflow": "*",
     "typebox": "*",
     "vitest": "*"
   }

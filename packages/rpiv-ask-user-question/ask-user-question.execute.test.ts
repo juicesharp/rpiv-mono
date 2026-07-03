@@ -113,10 +113,30 @@ describe("ask_user_question.execute — ctx.ui.custom dispatch", () => {
 		const r = await tool.execute?.("tc", BASE_PARAMS as never, undefined as never, undefined as never, ctx as never);
 		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining('"Which?"="typed"') });
 	});
+
+	it("multi-select free-text yields kind:'custom' (not 'multi')", async () => {
+		// Focusing 'Type something.', typing, Enter on a multi-select question routes through the
+		// inputMode branch → confirm kind:'custom' (unit-pinned in key-router.test.ts). The execute
+		// path surfaces that answer verbatim and discards prior checkbox selections.
+		const tool = register();
+		const ctx = ctxWithCustom({
+			cancelled: false,
+			answers: [{ questionIndex: 0, question: "Pick?", kind: "custom", answer: "typed" }],
+		});
+		const params = {
+			questions: [{ question: "Pick?", header: "H", multiSelect: true, options: [{ label: "A" }, { label: "B" }] }],
+		};
+		const r = await tool.execute?.("tc", params as never, undefined as never, undefined as never, ctx as never);
+		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining('"Pick?"="typed"') });
+	});
 });
 
-describe("ask_user_question.execute — undefined result from ctx.ui.custom", () => {
-	it("returns decline envelope when custom resolves to undefined", async () => {
+describe("ask_user_question.execute — undefined result from ctx.ui.custom (RPC/ACP hosts)", () => {
+	// RPC mode reports hasUI: true but ui.custom() resolves undefined without
+	// rendering (issue #78). A TUI questionnaire always resolves a result object
+	// (cancel included), so undefined must surface as "UI unavailable" — NOT as
+	// a user decline the model would act on.
+	it("returns error: no_custom_ui (not a decline) when custom resolves to undefined", async () => {
 		const tool = register();
 		const custom = vi.fn(async () => undefined) as unknown as CustomFn;
 		const ctx = createMockCtx({ hasUI: true, ui: { custom } as never });
@@ -124,8 +144,9 @@ describe("ask_user_question.execute — undefined result from ctx.ui.custom", ()
 			questions: [{ question: "Q?", header: "H", options: [{ label: "A" }, { label: "B" }] }],
 		};
 		const r = await tool.execute?.("tc", params as never, undefined as never, undefined as never, ctx as never);
-		expect(r?.details).toMatchObject({ cancelled: true });
-		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("declined") });
+		expect(r?.details).toMatchObject({ answers: [], cancelled: true, error: "no_custom_ui" });
+		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("cannot render the questionnaire") });
+		expect(r?.content[0]).toMatchObject({ text: expect.not.stringContaining("declined") });
 	});
 });
 
@@ -170,7 +191,7 @@ describe("ask_user_question.execute — new runtime guards (CC parity)", () => {
 		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("Option labels must be unique") });
 	});
 
-	it("returns error: reserved_label when an option uses 'Other' / 'Type something.' / 'Chat about this'", async () => {
+	it("returns error: reserved_label when an option uses 'Other' / 'Type something.'", async () => {
 		const tool = register();
 		const ctx = ctxWithCustom(null);
 		const params = {

@@ -64,7 +64,7 @@ export interface CollectCtx<Snapshot = unknown> extends SnapshotCtx {
  *   `kind: "fatal"`                              — collector cannot satisfy its contract;
  *                                                   runner halts with the carried message.
  *
- * THE "NOTHING FOUND" CONVENTION (T10) — what a collector returns when it
+ * THE "NOTHING FOUND" CONVENTION — what a collector returns when it
  * comes up empty depends on WHY it's empty, and the two must never be
  * conflated:
  *

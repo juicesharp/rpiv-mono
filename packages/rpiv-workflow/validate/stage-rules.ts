@@ -12,22 +12,22 @@
  */
 
 import { LOOP_KINDS, ON_INVALID_VALUES, SESSION_POLICIES, STAGE_KINDS, type StageDef, type Workflow } from "../api.js";
-import { resolvePublishName } from "../chain-state.js";
 import { type AnyJudge, isPanel, judgeShapeIssues } from "../judge.js";
 import {
-	judgeSlotOf,
+	forEachJudgeChannel,
 	loopSpecOf,
 	panelShapeIssues,
 	panelVerdictChannel,
 	verifyShapeIssues,
 } from "../loop-constructors.js";
 import { readName } from "../stage-def.js";
+import { resolvePublishName } from "../stage-identity.js";
 import {
 	MAX_VALIDATION_RETRIES,
 	MAX_VALIDATION_RETRY_TIMEOUT_MS,
 	MIN_VALIDATION_RETRIES,
 	MIN_VALIDATION_RETRY_TIMEOUT_MS,
-} from "../validate-output.js";
+} from "../validation-bounds.js";
 import type { IssueReporter, ReportFn } from "./issue.js";
 
 /**
@@ -70,6 +70,20 @@ function checkLoopInvariants(stage: StageDef, name: string, report: ReportFn): v
 	if (loop.max !== undefined && (!Number.isInteger(loop.max) || loop.max < 1)) {
 		report("loop-max-invalid", { max: loop.max });
 	}
+	if (
+		loop.kind === "fanout" &&
+		loop.concurrency !== undefined &&
+		(!Number.isInteger(loop.concurrency) || loop.concurrency < 1)
+	) {
+		report("loop-concurrency-invalid", { concurrency: loop.concurrency });
+	}
+	if (
+		loop.kind === "fanout" &&
+		loop.depArtifactFlag !== undefined &&
+		(typeof loop.depArtifactFlag !== "string" || loop.depArtifactFlag.trim().length === 0)
+	) {
+		report("loop-dep-flag-invalid", { depArtifactFlag: loop.depArtifactFlag });
+	}
 	// Pull loops + assess run the stage's outcome collector per unit.
 	if ((loop.kind === "iterate" || loop.kind === "assess") && stage.kind !== "produces") {
 		report("loop-requires-produces", { kind: loop.kind });
@@ -88,6 +102,16 @@ function checkLoopInvariants(stage: StageDef, name: string, report: ReportFn): v
 	// Judge shape — SAME rule sources as the judge()/panel() factories (no
 	// wording drift). The slot is an `AnyJudge`: a panel routes through
 	// `panelShapeIssues`, a single judge through `judgeShapeIssues`.
+	//
+	// This block is the LOAD-GATE half of the (intentionally dual) assess shape
+	// validation — see the rationale of record on `assessShapeIssues` in
+	// `loop-constructors.ts`. The judge/panel shape above is shared verbatim; the
+	// ONLY duplication is the two trivial `done`/`feedForward`
+	// `typeof !== "function"` predicates below, kept here AND in `assessShapeIssues`
+	// by accepted design (unifying would force a fragile string→code mapping or a
+	// silent message change). This block owns the per-code surface the tests pin —
+	// `assess-judge-shape` / `assess-done-not-function` /
+	// `assess-feed-forward-not-function` (`validate-workflow.test.ts:923,928`).
 	const slot = loop.judge;
 	const shapeIssues = slot && isPanel(slot) ? panelShapeIssues(slot) : judgeShapeIssues(slot);
 	for (const issue of shapeIssues) {
@@ -186,41 +210,58 @@ function checkVerifyInvariants(stage: StageDef, name: string, report: ReportFn):
 	checkVerdictChannels(v.judge, name, stage, "verify-verdict-channel-collision", report);
 }
 
+/**
+ * ONE range probe — collapses `checkRetryBounds`/`checkTimeoutBounds`. Optional-
+ * field early-out → range predicate → `{value, min, max}` report. The bounds
+ * constants already live first-class at each call site, so the probe carries
+ * zero information not expressible as parameters.
+ */
+function checkRange(
+	report: ReportFn,
+	code: "max-retries-out-of-range" | "validate-timeout-out-of-range",
+	value: number | undefined,
+	min: number,
+	max: number,
+): void {
+	if (value === undefined) return;
+	if (value < min || value > max) report(code, { value, min, max });
+}
+
+/**
+ * ONE enum probe — collapses the three same-shape `{value, allowed}` guards in
+ * `checkStageEnums` (onInvalid / kind / sessionPolicy). NOTE: `loop-kind-unknown`
+ * (`checkLoopInvariants`) is intentionally NOT unified — it reports `{kind,
+ * allowed}` (different param key) and carries an early `return` after the report
+ * (kind-specific rules would misfire on an unknown kind); forcing it through this
+ * helper would touch the public issue-param shape for marginal gain.
+ */
+function checkEnum(
+	report: ReportFn,
+	code: "on-invalid-unknown" | "stage-kind-unknown" | "session-policy-unknown",
+	value: string | undefined,
+	allowed: readonly string[],
+): void {
+	if (value !== undefined && !allowed.includes(value)) report(code, { value, allowed: allowed.join(", ") });
+}
+
 function checkRetryBounds(stage: StageDef, report: ReportFn): void {
-	if (stage.maxRetries === undefined) return;
-	if (stage.maxRetries < MIN_VALIDATION_RETRIES || stage.maxRetries > MAX_VALIDATION_RETRIES) {
-		report("max-retries-out-of-range", {
-			value: stage.maxRetries,
-			min: MIN_VALIDATION_RETRIES,
-			max: MAX_VALIDATION_RETRIES,
-		});
-	}
+	checkRange(report, "max-retries-out-of-range", stage.maxRetries, MIN_VALIDATION_RETRIES, MAX_VALIDATION_RETRIES);
 }
 
 function checkTimeoutBounds(stage: StageDef, report: ReportFn): void {
-	if (stage.validateTimeoutMs === undefined) return;
-	if (
-		stage.validateTimeoutMs < MIN_VALIDATION_RETRY_TIMEOUT_MS ||
-		stage.validateTimeoutMs > MAX_VALIDATION_RETRY_TIMEOUT_MS
-	) {
-		report("validate-timeout-out-of-range", {
-			value: stage.validateTimeoutMs,
-			min: MIN_VALIDATION_RETRY_TIMEOUT_MS,
-			max: MAX_VALIDATION_RETRY_TIMEOUT_MS,
-		});
-	}
+	checkRange(
+		report,
+		"validate-timeout-out-of-range",
+		stage.validateTimeoutMs,
+		MIN_VALIDATION_RETRY_TIMEOUT_MS,
+		MAX_VALIDATION_RETRY_TIMEOUT_MS,
+	);
 }
 
 function checkStageEnums(stage: StageDef, report: ReportFn): void {
-	if (stage.onInvalid !== undefined && !(ON_INVALID_VALUES as readonly string[]).includes(stage.onInvalid)) {
-		report("on-invalid-unknown", { value: stage.onInvalid, allowed: ON_INVALID_VALUES.join(", ") });
-	}
-	if (!(STAGE_KINDS as readonly string[]).includes(stage.kind)) {
-		report("stage-kind-unknown", { value: stage.kind, allowed: STAGE_KINDS.join(", ") });
-	}
-	if (!(SESSION_POLICIES as readonly string[]).includes(stage.sessionPolicy)) {
-		report("session-policy-unknown", { value: stage.sessionPolicy, allowed: SESSION_POLICIES.join(", ") });
-	}
+	checkEnum(report, "on-invalid-unknown", stage.onInvalid, ON_INVALID_VALUES);
+	checkEnum(report, "stage-kind-unknown", stage.kind, STAGE_KINDS);
+	checkEnum(report, "session-policy-unknown", stage.sessionPolicy, SESSION_POLICIES);
 	if (stage.kind === "produces" && !stage.outcome && !stage.run) {
 		report("produces-without-outcome");
 	}
@@ -348,9 +389,9 @@ function checkScriptStageInvariants(stage: StageDef, report: ReportFn): void {
  * judge verdict channels from `loop` (assess) and `verify` — judge sessions
  * run as `produces` and publish to `judge.outcome.name` (`judgeStageDef`). A
  * PANEL slot publishes one channel per member verdict plus the folded verdict
- * (`panelVerdictChannel`). The old produces-only scan missed verdict channels,
- * so a downstream `reads: ["<verdict>"]` falsely errored at load while the
- * runtime `ensureNamedReads` preflight would have passed.
+ * (`panelVerdictChannel`). The scan includes verdict channels, so a downstream
+ * `reads: ["<verdict>"]` doesn't falsely error at load while the runtime
+ * `ensureNamedReads` preflight would pass.
  *
  * Computed ONCE by the orchestrator and threaded to both consumers
  * (`checkReadsReferences`, `checkFanoutSource`).
@@ -359,16 +400,9 @@ export function publishedNamesOf(w: Workflow): Set<string> {
 	const published = new Set<string>();
 	for (const [name, stage] of Object.entries(w.stages)) {
 		if (stage.kind === "produces") published.add(resolvePublishName(stage, name));
-		const slot = judgeSlotOf(stage);
-		if (!slot) continue;
-		if (isPanel(slot)) {
-			// A panel publishes one channel per MEMBER verdict plus the folded
-			// verdict (`<stage>-panel` or the author's `outcome.name`).
-			for (const m of slot.members) if (m?.outcome?.name) published.add(m.outcome.name);
-			published.add(panelVerdictChannel(slot, name));
-		} else if (slot.outcome?.name) {
-			published.add(slot.outcome.name);
-		}
+		// Every judge channel (single judge, panel members, AND the folded verdict)
+		// counts for reachability — shared walk with the contract-compat index.
+		forEachJudgeChannel(stage, name, (channel) => published.add(channel));
 	}
 	return published;
 }

@@ -13,7 +13,12 @@
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createMockPi, createMockSessionChain, mockAssistantMessage } from "@juicesharp/rpiv-test-utils";
+import {
+	createFakeConcurrentHost,
+	createMockPi,
+	createMockSessionChain,
+	mockAssistantMessage,
+} from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	acts,
@@ -24,6 +29,7 @@ import {
 	match,
 	produces,
 	type ScriptContext,
+	type Unit,
 	type VerifySpec,
 } from "./api.js";
 import { type LifecycleListeners, registerLifecycle } from "./events.js";
@@ -324,6 +330,395 @@ describe("loop driver — fanout", () => {
 });
 
 // ===========================================================================
+// Parallel fanout dispatch — bounded concurrency via FakeConcurrentHost
+// ===========================================================================
+
+describe("loop driver — parallel fanout dispatch", () => {
+	/** A fanout START stage producing N independent units (no upstream needed). */
+	const parWf = (n: number) => ({
+		name: "par",
+		start: "audit",
+		stages: {
+			audit: produces({
+				outcome: mdOutcome("audits"),
+				loop: fanout({
+					units: () => Array.from({ length: n }, (_v, i) => ({ prompt: `u${i}`, label: `u${i}`, id: `u${i}` })),
+				}),
+			}),
+		},
+		edges: { audit: "stop" } as Record<string, string>,
+	});
+
+	it("dispatches fanout units in parallel up to maxConcurrency, never exceeding the cap", async () => {
+		const host = createFakeConcurrentHost({ cwd: tmpDir, maxConcurrency: 2, gate: true });
+		const p = runWorkflow(host.ctx, { workflow: parWf(5), input: "x" });
+
+		// The Semaphore(2) lets exactly 2 children reach the (gated) host at once;
+		// the other 3 wait in the queue — the cap bounds in-flight dispatch.
+		await host.waitForActive(2);
+		expect(host.active()).toBe(2);
+		expect(host.spawns).toHaveLength(2);
+		expect(host.maxActive).toBe(2);
+
+		host.release(); // drain — current + future spawns proceed (cap still holds)
+		const result = await p;
+
+		expect(result.success).toBe(true);
+		expect(result.stagesCompleted).toBe(5);
+		expect(host.spawns).toHaveLength(5);
+		expect(host.maxActive).toBe(2); // peak never exceeded the cap
+		// The run-level abort signal is threaded into every child (genAbort, not aborted).
+		expect(host.spawns.every((s) => s.signal instanceof AbortSignal)).toBe(true);
+	});
+
+	it("maxConcurrency: 1 serializes fanout (one child in flight at a time)", async () => {
+		const host = createFakeConcurrentHost({ cwd: tmpDir, maxConcurrency: 1, gate: true });
+		const p = runWorkflow(host.ctx, { workflow: parWf(3), input: "x" });
+
+		await host.waitForActive(1);
+		expect(host.active()).toBe(1);
+		expect(host.spawns).toHaveLength(1); // only one dispatched; the rest queued behind the slot
+
+		host.release();
+		const result = await p;
+		expect(result.success).toBe(true);
+		expect(host.maxActive).toBe(1);
+		expect(host.spawns).toHaveLength(3);
+	});
+
+	it("iterate stays sequential even at maxConcurrency 5 (parallelizable: false)", async () => {
+		const seq: IterateFn = ({ index }) =>
+			index < 3 ? { prompt: `it${index}`, label: `it ${index}`, id: `it-${index}` } : null;
+		const host = createFakeConcurrentHost({ cwd: tmpDir, maxConcurrency: 5, gate: true, bucket: "steps" });
+		const wf = {
+			name: "seq",
+			start: "loop",
+			stages: { loop: produces({ outcome: mdOutcome("steps"), loop: iterate({ next: seq }) }) },
+			edges: { loop: "stop" } as Record<string, string>,
+		};
+		const p = runWorkflow(host.ctx, { workflow: wf, input: "x" });
+
+		// iterate pulls one unit at a time through the sequential step() path: the
+		// next unit can't dispatch until the prior one completes, so even at cap 5
+		// only ONE child is ever dispatched at the gate point (a parallel loop would
+		// have fanned out all three). This is THE parallelizable:false proof.
+		await host.waitForActive(1);
+		expect(host.active()).toBe(1);
+		expect(host.spawns).toHaveLength(1);
+
+		host.release();
+		const result = await p;
+		expect(result.success).toBe(true);
+		expect(host.spawns).toHaveLength(3); // all three eventually ran, one after another
+	});
+});
+
+// ===========================================================================
+// Parallel fanout abort + fault tolerance — the no-throw envelope guard,
+// abort classification, and failFast sibling cancellation.
+// ===========================================================================
+
+describe("loop driver — parallel fanout abort + fault tolerance", () => {
+	/** A fanout START stage producing N independent units (collect-all by default). */
+	const parWf = (n: number) => ({
+		name: "par",
+		start: "audit",
+		stages: {
+			audit: produces({
+				outcome: mdOutcome("audits"),
+				loop: fanout({
+					units: () => Array.from({ length: n }, (_v, i) => ({ prompt: `u${i}`, label: `u${i}`, id: `u${i}` })),
+				}),
+			}),
+		},
+		edges: { audit: "stop" } as Record<string, string>,
+	});
+
+	/** Same shape, opting OUT of collect-all so a unit failure hard-halts the run. */
+	const failFastWf = (n: number) => ({
+		name: "par-ff",
+		start: "audit",
+		stages: {
+			audit: produces({
+				outcome: mdOutcome("audits"),
+				loop: fanout({
+					units: () => Array.from({ length: n }, (_v, i) => ({ prompt: `u${i}`, label: `u${i}`, id: `u${i}` })),
+					failFast: true,
+				}),
+			}),
+		},
+		edges: { audit: "stop" } as Record<string, string>,
+	});
+
+	const okUnit = (index: number) => [mockAssistantMessage(`wrote .rpiv/artifacts/audits/unit-${index}.md`)];
+
+	it("no-throw fold: an UNEXPECTED worker rejection records a terminal-failure row, fires onStageError, and still fires onWorkflowEnd", async () => {
+		const stageErrors: string[] = [];
+		let endFired = false;
+		let endSuccess: boolean | undefined;
+		const dispose = registerLifecycle({
+			onStageError: (s, err) => {
+				stageErrors.push(`${s.name}:${err}`);
+			},
+			onWorkflowEnd: (r) => {
+				endFired = true;
+				endSuccess = r.success;
+			},
+		});
+		try {
+			const host = createFakeConcurrentHost({
+				cwd: tmpDir,
+				maxConcurrency: 3,
+				childBranch: (_rec, index) => {
+					if (index === 1) throw new Error("kaboom in unit 1"); // an UNEXPECTED machinery fault, NOT a workflow halt
+					return okUnit(index);
+				},
+			});
+
+			// The fold NEVER throws — runWorkflow RESOLVES even though a worker rejected.
+			const result = await runWorkflow(host.ctx, { workflow: parWf(3), input: "x" });
+
+			expect(result.success).toBe(false);
+			expect(stageErrors).toHaveLength(1); // the rejected worker → recordWorkerThrow → onStageError
+			expect(endFired).toBe(true); // onWorkflowEnd still fired (the envelope always fires)
+			expect(endSuccess).toBe(false);
+			const failed = readRows().filter((r) => r.status === "failed");
+			expect(failed).toHaveLength(1); // exactly one terminal-failure row
+			// L4-02: the unit identity rides as STRUCTURED row fields — `stage` stays
+			// the parent graph identity (never the old `name (unit N)` string).
+			const row = failed[0]!;
+			expect(row.stage).toBe("audit"); // parent graph identity, no "(unit …)" fold
+			expect(String(row.stage)).not.toContain("(unit ");
+			expect(row.parent).toBe("audit");
+			expect(row.role).toBe("produce");
+			expect(row.unitIndex).toBe(1); // the worker that threw was unit index 1
+			expect(row.unitId).toBe("u1"); // author-stable unit identity
+		} finally {
+			dispose();
+		}
+	});
+
+	it("a failFast unit halt terminates state inside its worker and runFanoutParallel returns gracefully (no throw)", async () => {
+		const host = createFakeConcurrentHost({
+			cwd: tmpDir,
+			maxConcurrency: 3,
+			childBranch: (_rec, index) =>
+				index === 0
+					? [mockAssistantMessage("no artifact path here")] // collector-fatal → hard halt (failFast ⇒ not collect-all)
+					: okUnit(index),
+		});
+
+		const result = await runWorkflow(host.ctx, { workflow: failFastWf(3), input: "x" });
+
+		expect(result.success).toBe(false);
+		expect(result.error).toBeTruthy();
+		expect(readRows().filter((r) => r.status === "failed")).toHaveLength(1);
+	});
+
+	it("an aborted run records FAIL_WORKFLOW_ABORTED and leaves not-yet-run unit slots unfilled", async () => {
+		const ac = new AbortController();
+		const host = createFakeConcurrentHost({ cwd: tmpDir, maxConcurrency: 2, gate: true });
+		const p = runWorkflow(host.ctx, { workflow: parWf(5), input: "x", signal: ac.signal });
+
+		// Freeze with the first cap-worth in flight, the other 3 queued behind the Semaphore.
+		await host.waitForActive(2);
+		ac.abort(); // run-level abort — drains the semaphore queue synchronously
+		host.release();
+		const result = await p;
+
+		expect(result.success).toBe(false);
+		expect(result.error).toMatch(/aborted/i);
+		// The 3 queued units never reached spawnChild (the drained semaphore rejected them).
+		expect(host.spawns).toHaveLength(2);
+		// Exactly one FAIL_WORKFLOW_ABORTED terminal row; the in-flight pair threw
+		// WorkflowAbortError in postStage and wrote NO row (unfilled → resume re-dispatches).
+		expect(readRows().filter((r) => r.status === "aborted")).toHaveLength(1);
+		expect(host.notifications.some((n) => /aborted/i.test(n.msg))).toBe(true);
+	});
+
+	it("failFast sibling cancellation: a unit halt fires genAbort across the shared child signal; exactly one terminal-failure row even with concurrent failures", async () => {
+		// Two units are collector-fatal (failFast ⇒ hard halt). The first halt
+		// terminate()s state + fires genAbort, aborting the per-generation signal
+		// handed to every sibling. The recordTerminalFailure first-failure-wins
+		// guard drops the duplicate terminal row + onStageError.
+		const host = createFakeConcurrentHost({
+			cwd: tmpDir,
+			maxConcurrency: 4,
+			childBranch: (_rec, index) => (index < 2 ? [mockAssistantMessage("no artifact path")] : okUnit(index)),
+		});
+
+		const result = await runWorkflow(host.ctx, { workflow: failFastWf(4), input: "x" });
+
+		expect(result.success).toBe(false);
+		// genAbort fired — the shared per-generation signal handed to every child is aborted.
+		expect(host.spawns.some((s) => s.signal?.aborted)).toBe(true);
+		// EXACTLY ONE terminal-failure row despite two concurrent unit failures.
+		expect(readRows().filter((r) => r.status === "failed")).toHaveLength(1);
+	});
+
+	it("in-flight abort classification: a child resolving with stopReason 'aborted' makes postStage throw → unfilled slot, NO row written for that unit", async () => {
+		// The SDK RESOLVES prompt() with a stopReason:"aborted" message on
+		// session.abort(); postStage throws WorkflowAbortError BEFORE any row write.
+		// The fold's isAbortError branch leaves the slot unfilled (resume
+		// re-dispatches) — crucially NO collected/failed row is written for the unit.
+		const host = createFakeConcurrentHost({
+			cwd: tmpDir,
+			maxConcurrency: 3,
+			childBranch: (_rec, index) =>
+				index === 1
+					? [mockAssistantMessage("partial interrupted", "aborted")] // resolved-abort
+					: okUnit(index),
+		});
+
+		await runWorkflow(host.ctx, { workflow: parWf(3), input: "x" });
+
+		const rows = readRows();
+		// The aborted unit wrote NO row at all — neither failed nor aborted nor completed.
+		expect(rows.some((r) => r.status === "failed" || r.status === "aborted")).toBe(false);
+		// The two non-aborted units completed normally.
+		expect(rows.filter((r) => r.status === "completed").length).toBeGreaterThanOrEqual(2);
+	});
+});
+
+// ===========================================================================
+// DAG-ordered wave dispatch — Unit.deps + depArtifactFlag (carve design stage)
+// ===========================================================================
+
+describe("loop driver — DAG-ordered wave dispatch", () => {
+	/** A fanout whose units form a dependency DAG; `depArtifactFlag` injects each
+	 *  completed dep's artifact path into the dependent's prompt. */
+	const dagWf = (units: Unit[], opts: { failFast?: boolean } = {}) => ({
+		name: "dag",
+		start: "design",
+		stages: {
+			design: produces({
+				outcome: mdOutcome("designs"),
+				loop: fanout({
+					depArtifactFlag: "--upstream",
+					units: () => units,
+					...(opts.failFast ? { failFast: true } : {}),
+				}),
+			}),
+		},
+		edges: { design: "stop" } as Record<string, string>,
+	});
+
+	const chain: Unit[] = [
+		{ prompt: "s1", label: "s1", id: "slice-1" },
+		{ prompt: "s2", label: "s2", id: "slice-2", deps: ["slice-1"] },
+		{ prompt: "s3", label: "s3", id: "slice-3", deps: ["slice-2"] },
+	];
+
+	it("gates a dependent behind its dependency's wave (no fan-out with the root)", async () => {
+		const host = createFakeConcurrentHost({ cwd: tmpDir, maxConcurrency: 5, gate: true, bucket: "designs" });
+		const p = runWorkflow(host.ctx, { workflow: dagWf(chain), input: "x" });
+
+		// Wave 0 = {slice-1} only. Even at cap 5 the two dependents do NOT dispatch —
+		// a flat fanout would have fired all three. THE wave-ordering proof.
+		await host.waitForActive(1);
+		expect(host.active()).toBe(1);
+		expect(host.spawns).toHaveLength(1);
+		expect(host.spawns[0]!.prompt).toContain("s1");
+
+		host.release();
+		const result = await p;
+		expect(result.success).toBe(true);
+		expect(host.spawns).toHaveLength(3);
+		expect(host.maxActive).toBe(1); // a linear chain never runs two at once
+	});
+
+	it("dispatches independent same-level units in parallel, then their shared dependent", async () => {
+		const diamond: Unit[] = [
+			{ prompt: "s1", label: "s1", id: "slice-1" },
+			{ prompt: "s2", label: "s2", id: "slice-2" },
+			{ prompt: "s3", label: "s3", id: "slice-3", deps: ["slice-1", "slice-2"] },
+		];
+		const host = createFakeConcurrentHost({ cwd: tmpDir, maxConcurrency: 5, gate: true, bucket: "designs" });
+		const p = runWorkflow(host.ctx, { workflow: dagWf(diamond), input: "x" });
+
+		// Wave 0 = {slice-1, slice-2} dispatched together (two roots).
+		await host.waitForActive(2);
+		expect(host.active()).toBe(2);
+		expect(host.spawns).toHaveLength(2);
+
+		host.release();
+		const result = await p;
+		expect(result.success).toBe(true);
+		expect(host.spawns).toHaveLength(3);
+		// slice-3 dispatched last, in its own wave, after both roots settled.
+		const s3 = host.spawns.find((s) => s.prompt.includes("s3"))!;
+		expect(s3.endOrder).toBeGreaterThan(host.spawns[0]!.endOrder);
+	});
+
+	it("injects --upstream with each completed dependency's artifact path", async () => {
+		const host = createFakeConcurrentHost({ cwd: tmpDir, maxConcurrency: 5, bucket: "designs" });
+		const result = await runWorkflow(host.ctx, { workflow: dagWf(chain), input: "x" });
+		expect(result.success).toBe(true);
+
+		// slice-1 (spawn 0) wrote unit-0.md; slice-2 must read it via --upstream.
+		const s2 = host.spawns.find((s) => s.prompt.includes("s2"))!;
+		expect(s2.prompt).toContain("--upstream");
+		expect(s2.prompt).toContain("designs/unit-0.md");
+		// slice-3 reads slice-2's design (unit-1.md), not slice-1's.
+		const s3 = host.spawns.find((s) => s.prompt.includes("s3"))!;
+		expect(s3.prompt).toContain("--upstream");
+		expect(s3.prompt).toContain("designs/unit-1.md");
+	});
+
+	it("skips a FAILED dependency in the upstream injection (degrades to blind, no crash)", async () => {
+		const host = createFakeConcurrentHost({
+			cwd: tmpDir,
+			maxConcurrency: 5,
+			bucket: "designs",
+			childBranch: (_rec, index) =>
+				index === 0
+					? [mockAssistantMessage("no artifact path here")] // slice-1 collects nothing → failed sentinel slot
+					: [mockAssistantMessage(`wrote .rpiv/artifacts/designs/unit-${index}.md`)],
+		});
+		const result = await runWorkflow(host.ctx, { workflow: dagWf(chain), input: "x" });
+		// collect-all: the failed dep does NOT halt; the dependent still dispatched...
+		expect(host.spawns).toHaveLength(3);
+		// ...but with no path to inject, so no --upstream flag (blind, as today).
+		const s2 = host.spawns.find((s) => s.prompt.includes("s2"))!;
+		expect(s2.prompt).not.toContain("--upstream");
+		void result;
+	});
+
+	it("cross-wave fail-fast: a wave-0 failure prevents the dependent's wave from dispatching", async () => {
+		const host = createFakeConcurrentHost({
+			cwd: tmpDir,
+			maxConcurrency: 5,
+			bucket: "designs",
+			childBranch: (_rec, index) =>
+				index === 0
+					? [mockAssistantMessage("no artifact path here")] // slice-1 hard-halts (failFast ⇒ not collect-all)
+					: [mockAssistantMessage(`wrote .rpiv/artifacts/designs/unit-${index}.md`)],
+		});
+		const result = await runWorkflow(host.ctx, {
+			workflow: dagWf([chain[0]!, chain[1]!], { failFast: true }),
+			input: "x",
+		});
+		expect(result.success).toBe(false);
+		expect(host.spawns).toHaveLength(1); // slice-2's wave never dispatched
+		expect(readRows().filter((r) => r.status === "failed")).toHaveLength(1);
+	});
+
+	it("a deps-free fanout collapses to a single wave (regression: flat dispatch preserved)", async () => {
+		const flat: Unit[] = [
+			{ prompt: "a", label: "a", id: "a" },
+			{ prompt: "b", label: "b", id: "b" },
+			{ prompt: "c", label: "c", id: "c" },
+		];
+		const host = createFakeConcurrentHost({ cwd: tmpDir, maxConcurrency: 3, gate: true, bucket: "designs" });
+		const p = runWorkflow(host.ctx, { workflow: dagWf(flat), input: "x" });
+		await host.waitForActive(3); // all three dispatched at once — one wave
+		expect(host.spawns).toHaveLength(3);
+		host.release();
+		expect((await p).success).toBe(true);
+	});
+});
+
+// ===========================================================================
 // Iterate
 // ===========================================================================
 
@@ -586,7 +981,7 @@ describe("loop driver — assess × panel", () => {
 	// The SITE's `done` reads the FOLDED canonical verdict (`{ pass, votes,
 	// agreement, tie }`), never a member's own `{ done }` schema — the panel's
 	// product is the fold's `pass`. The per-member `pred` (`done`) interprets each
-	// member's own verdict; the two predicates are deliberately distinct (§4).
+	// member's own verdict; the two predicates are deliberately distinct.
 	const panelPass = (v: Output) => Boolean((v.data as { pass?: boolean }).pass);
 	const panelFeed = ({ verdict, round }: { verdict: Output; round: number }) =>
 		`refine round=${round} pass=${(verdict.data as { pass?: boolean }).pass}`;
@@ -1939,7 +2334,7 @@ describe("loop driver — verify × panel", () => {
 });
 
 // ===========================================================================
-// assess × panel (custom fold) — a RAW FoldFn + explicit `outcome` (the §4 custom
+// assess × panel (custom fold) — a RAW FoldFn + explicit `outcome` (the custom
 // path). The fold emits the AUTHOR's schema to the AUTHOR's channel (never the
 // canonical `<stage>-panel`), flows through applyCompletedStage, and a downstream
 // route resolves it.
@@ -1951,7 +2346,7 @@ describe("loop driver — assess × panel (custom fold)", () => {
 		writeFile(".rpiv/verdicts/vb.json", JSON.stringify({ done: false, feedback: "vb" }));
 
 		// RAW fold — counts passing members into a CUSTOM shape (not PANEL_VERDICT).
-		// A raw fold REQUIRES an explicit `outcome` (the §4 raw ⊕ outcome XOR).
+		// A raw fold REQUIRES an explicit `outcome` (the raw ⊕ outcome XOR).
 		const scoreFold = (verdicts: readonly Output[]) => ({
 			passes: verdicts.filter(done).length,
 			total: verdicts.length,
@@ -2006,7 +2401,7 @@ describe("loop driver — assess × panel (custom fold)", () => {
 		// The fold output is the AUTHOR's schema, landed via applyCompletedStage on
 		// the AUTHOR's channel and read back by the downstream route.
 		expect(seen.score).toEqual({ passes: 1, total: 2 });
-		// The canonical `<stage>-panel` channel is NEVER published on the custom path (§4 XOR).
+		// The canonical `<stage>-panel` channel is NEVER published on the custom path (the XOR).
 		expect(seen.canonical).toBeUndefined();
 	});
 });

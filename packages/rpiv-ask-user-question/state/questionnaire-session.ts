@@ -5,7 +5,7 @@ import type { WrappingSelectItem } from "../view/components/wrapping-select.js";
 import { COLLAPSED_HINT } from "../view/dialog-builder.js";
 import type { QuestionnairePropsAdapter } from "../view/props-adapter.js";
 import { buildQuestionnaire } from "./build-questionnaire.js";
-import { displayLabel, t } from "./i18n-bridge.js";
+import { t } from "./i18n-bridge.js";
 import { type QuestionnaireAction, routeKey } from "./key-router.js";
 import { computeFocusedOptionHasPreview } from "./selectors/derivations.js";
 import type { QuestionnaireRuntime, QuestionnaireState } from "./state.js";
@@ -37,7 +37,6 @@ function initialState(): QuestionnaireState {
 		optionIndex: 0,
 		inputMode: false,
 		notesVisible: false,
-		chatFocused: false,
 		answers: new Map(),
 		multiSelectChecked: new Set(),
 		notesByTab: new Map(),
@@ -205,10 +204,8 @@ export class QuestionnaireSession {
 	}
 
 	private currentItem(): WrappingSelectItem | undefined {
-		if (this.state.chatFocused) return { kind: "chat", label: displayLabel("chat") };
 		const arr = this.itemsByTab[this.state.currentTab] ?? [];
-		if (this.state.optionIndex < arr.length) return arr[this.state.optionIndex];
-		return { kind: "chat", label: displayLabel("chat") };
+		return this.state.optionIndex < arr.length ? arr[this.state.optionIndex] : undefined;
 	}
 
 	/**

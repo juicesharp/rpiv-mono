@@ -1,5 +1,5 @@
 /**
- * C7 regression: a failed run-header append refuses the run start. A lost
+ * A failed run-header append refuses the run start. A lost
  * header makes the run unlistable and unresumable while its stage rows land,
  * and the name claim has already burned the name — so `runWorkflow` must
  * reject BEFORE any stage executes and roll the claim back.
@@ -39,7 +39,7 @@ afterEach(() => {
 	rmSync(tmpDir, { recursive: true, force: true });
 });
 
-describe("runWorkflow — header write failure (C7)", () => {
+describe("runWorkflow — header write failure", () => {
 	it("refuses the run start with no runId and zero stages executed", async () => {
 		const chain = createMockSessionChain({ cwd: tmpDir, steps: [] });
 		const result = await runWorkflow(chain.ctx, { workflow: tinyWorkflow, input: "x" });
