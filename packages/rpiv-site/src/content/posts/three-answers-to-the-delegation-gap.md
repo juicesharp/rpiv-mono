@@ -4,7 +4,7 @@ description: "Dynamic workflows, /goal loops, and a gated pipeline are three dif
 pubDate: 2026-07-03T13:00:00Z
 author: juicesharp
 tags: ["positioning", "workflows", "rpiv-pi"]
-draft: true
+draft: false
 ---
 
 Anthropic's 2026 agentic-coding trends report names the industry's open wound precisely. Developers use coding agents constantly and fully delegate almost nothing. The report calls it the **delegation gap**, and it names the cause just as precisely: verification is the bottleneck. Everyone can generate. Nobody trusts the result enough to stop watching.

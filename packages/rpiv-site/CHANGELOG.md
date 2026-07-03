@@ -7,6 +7,23 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- New "Inside build" landing section: the full 19-stage anatomy plate (deterministic script stages as squares, quality gates as torii the flow passes through, fix arms as ensō loops, the design review as a hanko seal) with three captioned readings (the contract, the gates, the parallelism) and a "where this sits" paradigm-positioning passage.
+- Reference copy for the eight build-pipeline skills (slice, grade, amend, design-slice, design-review, elaborate, synthesize, architecture-review) and a new "Artifact verifiers" agent tier (slice-verifier, artifact-code-reviewer, artifact-coverage-reviewer), bringing the visible roster to 15 agents across 5 tiers.
+- Two blog posts: the v2.0 release notes ("rpiv 2.0: three pipelines, one design gate, parallel lanes", draft until release) and the paradigm comparison ("Three answers to the delegation gap").
+
+### Changed
+- Landing reworked around the three-pipeline release. The hero rail walks build's seven acts with two-tier driver marks (hollow hankos where questions reach the driver only on real ambiguity, the solid seal at the design review) plus a gate legend. The catalog is "Three pipelines. One command." with gate/fanout/human marks, derived trait badges, and a discover → research small-change on-ramp. The first-run trace walks the new build with gate badges ("0 LLM calls"). Nav, stats, and meta adopt the "pipelines" vocabulary.
+- Roadmap mirror synced with roadmap.md: `panel()` + `match()` and true parallel fan-out with the live lane console move to shipped; worktree isolation narrows to shared-tree stages.
+- Docs guides swept for the three-pipeline reality: run-a-workflow's catalog and build anatomy, pick-a-path's remapped scope shortcuts, simultaneous fanout replacing the sequential-execution claims, models.json preset migration notes, per-unit model resolution, and vet as the bare-/wf default.
+- Models section names GLM-5.2, documents per-unit model resolution, and links bounded context to the anatomy section as the affordable-model economics.
+- Thesis closes on intent custody; the ask-user-question sibling label is host-neutral ("question prompt").
+- Readability pass across the copy: em dashes removed from rendered text and long sentences split.
+
+### Removed
+- The archived /classic landing: the page, its eight exclusive components (Hero, WhyWorkflow, RunAnatomy, StageSkills, AroundSkills, AgentGrid, Guidance, SkillCard), and the stage-skills/around-skills data mirrors.
+- Orphaned reference pages for removed rpiv-pi content: the outline-test-cases and write-test-cases skills and the test-case-locator agent.
+
 ## [1.20.0] - 2026-06-15
 
 ## [1.19.1] - 2026-06-10
