@@ -66,8 +66,46 @@ describe("applyTaskMutation — update", () => {
 	it("allows completed → deleted transition", () => {
 		const state = stateWith(task({ id: 1, subject: "x", status: "completed" }));
 		const result = applyTaskMutation(state, "update", { id: 1, status: "deleted" });
-		expect(result.op).toEqual({ kind: "update", id: 1, fromStatus: "completed", toStatus: "deleted" });
+		expect(result.op).toEqual({ kind: "update", id: 1, fromStatus: "completed", toStatus: "deleted", changed: true });
 		expect(result.state.tasks[0].status).toBe("deleted");
+	});
+
+	it("flags a no-effect status update (status set to its current value) as changed:false", () => {
+		const state = stateWith(task({ id: 1, subject: "x", status: "pending" }));
+		const result = applyTaskMutation(state, "update", { id: 1, status: "pending" });
+		expect(result.op).toEqual({ kind: "update", id: 1, fromStatus: "pending", toStatus: "pending", changed: false });
+	});
+
+	it("flags a re-sent identical field as changed:false", () => {
+		const state = stateWith(task({ id: 1, subject: "x", description: "d" }));
+		const result = applyTaskMutation(state, "update", { id: 1, subject: "x", description: "d" });
+		expect(result.op).toMatchObject({ kind: "update", changed: false });
+	});
+
+	it("flags a blockedBy-only update as changed:true even when status is unchanged", () => {
+		const state = stateWith(task({ id: 1, subject: "a" }), task({ id: 2, subject: "b" }));
+		const result = applyTaskMutation(state, "update", { id: 1, addBlockedBy: [2] });
+		expect(result.op).toEqual({ kind: "update", id: 1, fromStatus: "pending", toStatus: "pending", changed: true });
+	});
+
+	it("flags a subject-only update on a task with existing deps as changed:true (blockedBy unchanged)", () => {
+		// Equal-length blockedBy on both sides — the changed signal comes from subject,
+		// not the dependency list, which round-trips identically.
+		const state = stateWith(task({ id: 1, subject: "old", blockedBy: [2] }), task({ id: 2, subject: "dep" }));
+		const result = applyTaskMutation(state, "update", { id: 1, subject: "new" });
+		expect(result.op).toEqual({ kind: "update", id: 1, fromStatus: "pending", toStatus: "pending", changed: true });
+		expect(result.state.tasks[0].blockedBy).toEqual([2]);
+	});
+
+	it("flags swapping one dependency for another (same length) as changed:true", () => {
+		const state = stateWith(
+			task({ id: 1, subject: "a", blockedBy: [2] }),
+			task({ id: 2, subject: "b" }),
+			task({ id: 3, subject: "c" }),
+		);
+		const result = applyTaskMutation(state, "update", { id: 1, removeBlockedBy: [2], addBlockedBy: [3] });
+		expect(result.op).toEqual({ kind: "update", id: 1, fromStatus: "pending", toStatus: "pending", changed: true });
+		expect(result.state.tasks[0].blockedBy).toEqual([3]);
 	});
 
 	it("rejects self-block via addBlockedBy", () => {
