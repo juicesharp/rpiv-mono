@@ -15,6 +15,8 @@ Three product answers to that gap are on the table right now. They look similar 
 
 Claude Code's dynamic workflows have the model author a fresh orchestration script per run — fan-out, verifier agents that adversarially cross-check findings, grader loops — and execute it in the background. It is genuinely impressive machinery, and its own docs state its human-interaction contract plainly: **no mid-run user input**. If you want sign-off between stages, you split the work into separate runs. The plan is held by a script the model wrote minutes ago; verification is models checking models; you are asked at launch, and then not at all.
 
+Anthropic's own write-up is admirably candid about why the machinery exists: single-context agents suffer agentic laziness, self-preferential bias, and goal drift — "details like edge-case requirements or 'don't do X' constraints can get lost." Note the treatment, though. Goal drift is fought with decomposition: fresh context windows per subagent. But the orchestration script itself is still written once, from a lossy read of your prompt, and every subagent inherits whatever the script-writer misread. Fresh contexts downstream of an unguarded translation.
+
 This is the right shape for *breadth* work: exhaustive audits, research sweeps, migrations where volume wins and any individual miss is cheap.
 
 ## Answer two: nobody holds a process
@@ -27,7 +29,7 @@ Note what the goal is here: a stop condition *you paraphrased* from your intent,
 
 rpiv's `build` makes the opposite bet on all three questions.
 
-**Who holds the plan?** You do. The pipeline is code — versioned, the same nineteen-stage graph every run, not improvised per run. Its structure encodes accumulated scar tissue: every gate exists because some failure mode earned it.
+**Who holds the plan?** You do. The pipeline is code — versioned, the same nineteen-stage graph every run, not improvised per run. The dynamic-workflow pitch inverts this frame: a fixed workflow is generic, they argue, while a freshly written harness is tailor-made for your task. But fixed isn't generic — it's *specialized for one job, and it learns*. build's graph is accumulated scar tissue: its code gate routes failures to a surgical `amend` rather than a blind re-elaboration, because re-elaboration kept regressing dimensions that had already passed; its coverage check anchors to the first cut you confirmed, because re-slices learned to pass by deleting the evidence. A harness improvised per run relearns none of this. And tailor-made cuts the other way too: a process that changes every run is one you can never certify, never tune stage-by-stage, and never trust on run N because run N−1 went well. Repeatability isn't the compromise — for work you have to live with, it's the feature.
 
 **Who checks the work?** Programs first: the slice gate and the code splice are scripts that pass or fail with zero LLM calls — coverage conservation means a re-slice can redistribute your brief but never quietly drop a piece of it. Fresh-context panels second: one session per quality dimension, blind to the transcript that produced the artifact. You third — and the goal artifact makes "you" enforceable: your brief is captured byte-for-byte before anything runs, and completeness, correctness, and final validation are all graded against that file, not against the plan's own claims. The fix for the verification bottleneck isn't more agents checking agents.
 
