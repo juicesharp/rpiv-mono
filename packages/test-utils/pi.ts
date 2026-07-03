@@ -193,6 +193,8 @@ export function createMockModelRegistry(models: Model<Api>[] = []) {
 
 export interface MockCtxOptions {
 	hasUI?: boolean;
+	/** Host mode the ctx advertises (`"rpc"` for ACP hosts). Pi ≥0.79 field — omitted by default, matching the pinned 0.74 peer types. */
+	mode?: string;
 	cwd?: string;
 	model?: Model<Api>;
 	branch?: SessionEntry[];
@@ -212,6 +214,7 @@ export interface MockCtxOptions {
 export function createMockCtx(opts: MockCtxOptions = {}): ExtensionContext {
 	return {
 		hasUI: opts.hasUI ?? false,
+		mode: opts.mode,
 		cwd: opts.cwd ?? "/tmp/test-cwd",
 		model: opts.model,
 		ui: createMockUI(opts.ui),

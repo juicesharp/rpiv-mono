@@ -131,8 +131,12 @@ describe("ask_user_question.execute — ctx.ui.custom dispatch", () => {
 	});
 });
 
-describe("ask_user_question.execute — undefined result from ctx.ui.custom", () => {
-	it("returns decline envelope when custom resolves to undefined", async () => {
+describe("ask_user_question.execute — undefined result from ctx.ui.custom (RPC/ACP hosts)", () => {
+	// RPC mode reports hasUI: true but ui.custom() resolves undefined without
+	// rendering (issue #78). A TUI questionnaire always resolves a result object
+	// (cancel included), so undefined must surface as "UI unavailable" — NOT as
+	// a user decline the model would act on.
+	it("returns error: no_custom_ui (not a decline) when custom resolves to undefined", async () => {
 		const tool = register();
 		const custom = vi.fn(async () => undefined) as unknown as CustomFn;
 		const ctx = createMockCtx({ hasUI: true, ui: { custom } as never });
@@ -140,8 +144,9 @@ describe("ask_user_question.execute — undefined result from ctx.ui.custom", ()
 			questions: [{ question: "Q?", header: "H", options: [{ label: "A" }, { label: "B" }] }],
 		};
 		const r = await tool.execute?.("tc", params as never, undefined as never, undefined as never, ctx as never);
-		expect(r?.details).toMatchObject({ cancelled: true });
-		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("declined") });
+		expect(r?.details).toMatchObject({ answers: [], cancelled: true, error: "no_custom_ui" });
+		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("cannot render the questionnaire") });
+		expect(r?.content[0]).toMatchObject({ text: expect.not.stringContaining("declined") });
 	});
 });
 

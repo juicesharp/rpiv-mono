@@ -84,6 +84,33 @@ describe("reconcileAskUserQuestionTool", () => {
 		expect(pi.setActiveTools).not.toHaveBeenCalled();
 		expect(pi.getActiveTools()).toEqual([ASK_USER_QUESTION_TOOL_NAME, "other"]);
 	});
+
+	// RPC/ACP hosts (Zed, Paseo) report hasUI: true — the dialog sub-protocol
+	// works — but ui.custom() cannot render, so the tool must be stripped there
+	// too (issue #78).
+	it("strips ask_user_question in RPC mode even though hasUI is true", () => {
+		const { pi } = createMockPi();
+		pi.setActiveTools([ASK_USER_QUESTION_TOOL_NAME, "other"]);
+		vi.mocked(pi.setActiveTools).mockClear();
+		reconcileAskUserQuestionTool(pi, createMockCtx({ hasUI: true, mode: "rpc" }));
+		expect(pi.setActiveTools).toHaveBeenCalledWith(["other"]);
+	});
+
+	it("does not restore ask_user_question in RPC mode when the tool is absent", () => {
+		const { pi } = createMockPi();
+		pi.setActiveTools(["other"]);
+		vi.mocked(pi.setActiveTools).mockClear();
+		reconcileAskUserQuestionTool(pi, createMockCtx({ hasUI: true, mode: "rpc" }));
+		expect(pi.setActiveTools).not.toHaveBeenCalled();
+	});
+
+	it("restores ask_user_question in TUI mode (mode: 'interactive' + hasUI)", () => {
+		const { pi } = createMockPi();
+		pi.setActiveTools(["other"]);
+		vi.mocked(pi.setActiveTools).mockClear();
+		reconcileAskUserQuestionTool(pi, createMockCtx({ hasUI: true, mode: "interactive" }));
+		expect(pi.getActiveTools()).toEqual(["other", ASK_USER_QUESTION_TOOL_NAME]);
+	});
 });
 
 describe("registerAskUserQuestionReconciler", () => {

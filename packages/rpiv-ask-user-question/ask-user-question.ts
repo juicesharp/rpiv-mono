@@ -37,6 +37,9 @@ export const ASK_USER_QUESTION_TOOL_NAME = "ask_user_question";
 
 const ERROR_NO_UI = "Error: UI not available (running in non-interactive mode)";
 
+const ERROR_NO_CUSTOM_UI =
+	"Error: this client cannot render the questionnaire (custom UI is unavailable, e.g. RPC/ACP hosts such as Zed or Paseo). The user never saw the questions — do NOT treat this as a decline. Ask the questions as plain chat text instead, without using this tool.";
+
 export function buildItemsForQuestion(question: QuestionData): WrappingSelectItem[] {
 	const items: WrappingSelectItem[] = question.options.map((o) => ({
 		kind: "option",
@@ -128,6 +131,15 @@ Preview content is rendered as markdown in a monospace box. Multi-line text with
 					},
 				},
 			);
+
+			// RPC-mode hosts (ACP/Zed/Paseo) report hasUI=true because the dialog
+			// sub-protocol works, but `ui.custom()` resolves `undefined` without ever
+			// rendering. A TUI questionnaire ALWAYS resolves a QuestionnaireResult
+			// (cancel included — state-reducer emits `{ answers, cancelled }`), so
+			// `undefined` uniquely means "host cannot render", never "user declined".
+			if (result === undefined) {
+				return buildToolResult(ERROR_NO_CUSTOM_UI, { answers: [], cancelled: true, error: "no_custom_ui" });
+			}
 
 			return buildQuestionnaireResponse(result, typed);
 		},
