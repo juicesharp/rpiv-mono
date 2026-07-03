@@ -7,9 +7,15 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Configurable collapse/expand shortcut via the `collapseKey` field in `~/.config/rpiv-ask-user-question/config.json` (#98). Default is `ctrl+]` (unchanged for backward compatibility); users on keyboard layouts where `]` is on the shifted layer — Latin American `es-AR`/`es-MX`, several European layouts, Dvorak — can override to a more reachable key (e.g. `ctrl+}`, `alt+o`, `ctrl+shift+h`). Pass `"off"` to disable the shortcut entirely. The spec format matches pi-coding-agent keybinding ids (`modifier+key`).
+- One-time `ask_user_question hidden — press <key> to reopen` notification when the questionnaire is first hidden, so users remember the toggle key without a permanent on-screen affordance.
+
+### Changed
+- Collapsing the questionnaire overlay now calls `OverlayHandle.setHidden(true)` instead of toggling a visual-only `state.collapsed` flag (#98). The overlay is fully removed from pi-tui's overlay stack, so overlay-aware consumers (e.g. `pi-station`) correctly detect the modal as hidden and resume normal chat scroll while the user reads the transcript. The toggle key is also captured at the raw terminal level via `ctx.ui.onTerminalInput`, so it still works when the overlay is hidden (pi-tui does not deliver input to a hidden overlay's `component.handleInput`).
+
 ### Fixed
 - Moved `typebox` from `peerDependencies` to `dependencies` (`^1.1.24`, matching the Pi host's range) so the tool's parameter schema resolves under installers that don't materialise peer deps. Fixes `ERR_MODULE_NOT_FOUND: typebox` on standalone consumer installs (#79).
-
 ## [1.20.0] - 2026-06-15
 
 ### Added

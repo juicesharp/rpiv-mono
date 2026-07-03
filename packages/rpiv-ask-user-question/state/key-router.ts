@@ -129,17 +129,22 @@ export function routeKey(data: string, state: QuestionnaireState, runtime: Quest
 	// Collapse/expand toggle is a UI-level affordance — intercepted at the top so it
 	// works from every inner state (notes, inputMode, submit tab, multi-select)
 	// without reaching any branch that would otherwise consume the keystroke. The
-	// questionnaire stays in pi-tui's overlay stack with focus while collapsed, so the
-	// expand key never falls through to a lower overlay (e.g. `/btw`) — that's why we
-	// toggle state instead of calling `OverlayHandle.setHidden(true)`.
+	// questionnaire overlay is fully hidden via `OverlayHandle.setHidden(true)` while
+	// collapsed; pi-tui's overlay stack updates accordingly, so overlay-aware consumers
+	// (e.g. `pi-station`) see no visible modal and chat scroll resumes. The toggle key is
+	// also captured at the raw terminal level via `ctx.ui.onTerminalInput` so it still
+	// routes here when the overlay is hidden (pi-tui does not deliver input to a hidden
+	// overlay's `component.handleInput`).
 	//
-	// Ctrl+] (GS, 0x1d): chosen after Alt+Tab (OS-reserved on macOS), Ctrl+P (collides
-	// with pi-coding-agent "cycle model" + the user's virtual terminal), and F2 (taken
-	// by macOS function-key behavior) were all eliminated. Ctrl+] is free in every
-	// mainstream macOS terminal (Terminal.app, iTerm2, Warp), every multiplexer (tmux,
-	// zellij, screen — none use it as a prefix), and the legacy telnet/ssh escape role
-	// doesn't apply because our overlay runs in-process.
-	if (matchesKey(data, Key.ctrl("]"))) return { kind: "toggle_collapsed" };
+	// The default `ctrl+]` is free in every mainstream macOS terminal (Terminal.app,
+	// iTerm2, Warp), every multiplexer (tmux, zellij, screen — none use it as a prefix),
+	// and the legacy telnet/ssh escape role doesn't apply because our overlay runs
+	// in-process. It is, however, awkward on keyboard layouts where `]` is on the
+	// shifted layer (Latin American `es-AR`/`es-MX` require `Ctrl+Shift+}` for `Ctrl+]`)
+	// — use the `collapseKey` config field to override.
+	if (runtime.collapseKey !== "off" && matchesKey(data, runtime.collapseKey as Parameters<typeof matchesKey>[1])) {
+		return { kind: "toggle_collapsed" };
+	}
 
 	// Collapsed-mode lockout: while collapsed, swallow every keystroke except cancel so
 	// the user can read the now-uncovered transcript without accidentally mutating

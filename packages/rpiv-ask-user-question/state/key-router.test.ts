@@ -70,6 +70,8 @@ function makeRuntime(over: Partial<QuestionnaireRuntime> = {}): QuestionnaireRun
 		isMulti: questions.length > 1,
 		currentItem: items[0],
 		items,
+		collapseKey: "ctrl+]",
+		...over,
 		...over,
 	};
 }
@@ -690,5 +692,29 @@ describe("routeKey — collapse/expand (Ctrl+] toggle + collapsed-mode lockout)"
 				makeRuntime({ questions: [makeQuestion({ multiSelect: true })] }),
 			),
 		).toEqual({ kind: "ignore" });
+	});
+
+	it("uses the runtime's collapseKey for the toggle (default `ctrl+]`, configurable for non-US layouts)", () => {
+		// Latin American keyboards, Dvorak, and several European layouts put `]` on a
+		// shifted layer. Users override via the `collapseKey` config field; the router
+		// matches whatever spec the runtime carries, not a hardcoded literal. Note that
+		// on legacy terminals (no Kitty keyboard protocol), `Ctrl+]` and `Ctrl+}` both
+		// send the same 0x1D control byte and are not distinguishable by the parser
+		// alone — users on such terminals should pick a key whose spec resolves
+		// unambiguously (e.g. `alt+o`, `ctrl+shift+h`).
+		const BYTE_ALT_O = "\x1bo"; // ESC + 'o' — legacy encoding for Alt+O
+		expect(routeKey(BYTE_ALT_O, makeState(), makeRuntime({ collapseKey: "alt+o" }))).toEqual({
+			kind: "toggle_collapsed",
+		});
+		// When the override is `alt+o`, sending the Ctrl+] byte should NOT match
+		expect(routeKey("\x1d", makeState(), makeRuntime({ collapseKey: "alt+o" }))).toEqual({ kind: "ignore" });
+	});
+	it("`collapseKey: 'off'` disables the toggle entirely (the key is never matched)", () => {
+		// Disable the collapse shortcut via config: the key router must not emit
+		// toggle_collapsed for any key. With the toggle disabled, Ctrl+] falls through
+		// to the normal state branches (no-op here, but the same flow as any other
+		// non-handled key).
+		const runtime = makeRuntime({ collapseKey: "off" });
+		expect(routeKey(BYTE_CTRL_RBRACKET, makeState(), runtime)).not.toEqual({ kind: "toggle_collapsed" });
 	});
 });
