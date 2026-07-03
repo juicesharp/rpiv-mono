@@ -11,6 +11,11 @@
 //   staged              — files staged for commit (git diff --cached)
 //   working             — files with unstaged changes only (git diff)
 //   modified            — every tracked file differing from HEAD (git diff HEAD; staged + unstaged, no untracked)
+//   --folder <path>     — review all tracked files in <path> as complete entities (no git history)
+//   --file <paths>      — review one or more specific tracked files as complete entities
+//                         (comma-separate multiple paths; literal commas in paths are not supported)
+//   folder:<path>       — legacy alias for --folder <path>
+//   file:<paths>        — legacy alias for --file <paths>
 //   <hash>              — single commit (~7+ hex chars)
 //   <A>..<B>            — range; A is verified ancestor of B, swapped if reversed
 //   <h1>,<h2>,<h3>      — comma- or whitespace-separated commit list; helper finds endpoints
@@ -19,7 +24,7 @@
 // Output (labeled key/value lines, then `---changed-files---` block):
 //
 //   default_branch: <name>|(unresolved)
-//   strategy:       first-parent|working-tree|explicit-range|unrecognised
+//   strategy:       first-parent|working-tree|explicit-range|tree|unrecognised
 //   oldest:         <hash>|(n/a)
 //   newest:         <hash>|(n/a)
 //   base:           <hash>|(n/a)
@@ -27,6 +32,7 @@
 //   range:          <base>..<tip>|(n/a)
 //   fp_flag:        --first-parent|(empty)
 //   patch_path:     <worktree-safe path for the diff tempfile>
+//   null_tree:      <empty tree hash>   (only when strategy=tree)
 //   note:           <reason>          (only when strategy=unrecognised)
 //   ---changed-files---
 //   <deduplicated file list, capped at 2000 entries OR 40 KB whichever first>
@@ -53,6 +59,7 @@ import { resolve } from "node:path";
 
 const CHANGED_FILES_LINE_CAP = 2000;
 const CHANGED_FILES_BYTE_CAP = 40 * 1024;
+const EMPTY_TREE_HASH = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 
 const safe = (args, fb = "") => {
 	try {
@@ -140,7 +147,22 @@ const result = {
 	changedFiles: "",
 };
 
-const argv = process.argv[2] ?? "";
+const setUnrecognised = (note) => {
+	result.strategy = "unrecognised";
+	result.oldest = "(n/a)";
+	result.newest = "(n/a)";
+	result.base = "(n/a)";
+	result.tip = "(n/a)";
+	result.range = "(n/a)";
+	result.fp_flag = "(empty)";
+	result.note = note;
+	result.changedFiles = "";
+	delete result.tree_path;
+	delete result.files_list;
+	delete result.null_tree;
+};
+
+const argv = process.argv.slice(2).join(" ");
 const scope = stripOuterQuotes(argv);
 const lower = scope.toLowerCase();
 const defaultBranch = result.default_branch;
@@ -176,9 +198,133 @@ const setWorkingTree = (oldest = "(n/a)", newest = "(n/a)") => {
 	result.fp_flag = "(empty)";
 };
 
+const setTree = (path) => {
+	const raw = safe(["ls-files", "--cached", "--", path]);
+	const files = dedupChangedFiles(raw);
+	if (files.length === 0) {
+		setUnrecognised(`folder scope has no tracked files: ${path}`);
+		return;
+	}
+	result.strategy = "tree";
+	result.oldest = "(n/a)";
+	result.newest = "(n/a)";
+	result.base = "(n/a)";
+	result.tip = "(n/a)";
+	result.range = "(n/a)";
+	result.fp_flag = "(empty)";
+	result.tree_path = path;
+	result.null_tree = safe(["hash-object", "-t", "tree", "/dev/null"], EMPTY_TREE_HASH);
+	// Enumerate tracked files only — git ls-files --cached respects .gitignore
+	// and excludes untracked files. The orchestrator diffs the INDEX against
+	// the repository's empty-tree object (git diff --cached <null_tree>), so
+	// the patch covers exactly this file set — including staged-but-uncommitted
+	// files, which a HEAD-based diff would silently drop.
+	result.changedFiles = formatChangedFiles(files);
+};
+
+const parseFileScopePaths = (paths) => {
+	const parts = paths.split(",");
+	return dedupChangedFiles(parts.map((p) => stripOuterQuotes(p.trim())).filter(Boolean).join("\n"));
+};
+
+const setFiles = (paths) => {
+	const pathList = parseFileScopePaths(paths);
+	const tracked = [];
+	const missing = [];
+	const notSingleFiles = [];
+	for (const p of pathList) {
+		const trackedPath = safe(["ls-files", "--cached", "--error-unmatch", "--", p]);
+		const matches = dedupChangedFiles(trackedPath);
+		if (matches.length === 1) {
+			tracked.push(matches[0]);
+		} else if (matches.length > 1) {
+			notSingleFiles.push(p);
+		} else {
+			missing.push(p);
+		}
+	}
+	if (pathList.length === 0) {
+		setUnrecognised("file scope did not include any paths");
+		return;
+	}
+	if (missing.length > 0) {
+		setUnrecognised(`file scope contains untracked path(s): ${missing.join(", ")}`);
+		return;
+	}
+	if (notSingleFiles.length > 0) {
+		setUnrecognised(`file scope path(s) must resolve to exactly one tracked file: ${notSingleFiles.join(", ")}`);
+		return;
+	}
+	result.strategy = "tree";
+	result.oldest = "(n/a)";
+	result.newest = "(n/a)";
+	result.base = "(n/a)";
+	result.tip = "(n/a)";
+	result.range = "(n/a)";
+	result.fp_flag = "(empty)";
+	result.null_tree = safe(["hash-object", "-t", "tree", "/dev/null"], EMPTY_TREE_HASH);
+	result.files_list = tracked.join(",");
+	result.changedFiles = formatChangedFiles(tracked);
+};
+
+const flagValue = (s, flag) => {
+	if (s === flag) return "";
+	if (s.startsWith(`${flag}=`)) return s.slice(flag.length + 1).trim();
+	if (s.startsWith(`${flag} `)) return s.slice(flag.length).trim();
+	return null;
+};
+
+const isFolderScope = (s) => {
+	const flagPath = flagValue(s, "--folder");
+	if (flagPath !== null) {
+		if (flagPath) {
+			setTree(flagPath);
+		} else {
+			setUnrecognised("--folder scope requires a path");
+		}
+		return true;
+	}
+	if (s.startsWith("folder:")) {
+		const path = s.slice(7).trim();
+		if (path) {
+			setTree(path);
+		} else {
+			setUnrecognised("folder scope requires a path");
+		}
+		return true;
+	}
+	return false;
+};
+
+const isFilesScope = (s) => {
+	const flagPaths = flagValue(s, "--file");
+	if (flagPaths !== null) {
+		if (flagPaths) {
+			setFiles(flagPaths);
+		} else {
+			setUnrecognised("--file scope requires at least one path");
+		}
+		return true;
+	}
+	if (s.startsWith("file:")) {
+		const paths = s.slice(5).trim();
+		if (paths) {
+			setFiles(paths);
+		} else {
+			setUnrecognised("file scope requires at least one path");
+		}
+		return true;
+	}
+	return false;
+};
+
 const isHexHash = (s) => /^[0-9a-f]{4,40}$/i.test(s);
 
-if (defaultBranch === "(unresolved)" && (lower === "" || lower === "auto")) {
+if (isFolderScope(scope)) {
+	// folder strategy already set — skip all other branches.
+} else if (isFilesScope(scope)) {
+	// file strategy already set — skip all other branches.
+} else if (defaultBranch === "(unresolved)" && (lower === "" || lower === "auto")) {
 	result.strategy = "unrecognised";
 	result.note = "default branch unresolved — pass an explicit scope or run `git remote set-head origin -a`";
 } else if (lower === "" || lower === "auto") {
@@ -252,6 +398,8 @@ if (result.strategy === "first-parent") {
 		const raw = safe(["diff", "--name-only"]);
 		result.changedFiles = formatChangedFiles(dedupChangedFiles(raw));
 	}
+} else if (result.strategy === "tree") {
+	// ChangedFiles already populated in setTree() / setFiles().
 }
 
 // Worktree-safe tempfile location. In a git worktree (or submodule) `.git` is a
@@ -275,6 +423,15 @@ const lines = [
 	`fp_flag:        ${result.fp_flag}`,
 	`patch_path:     ${patchPath}`,
 ];
+if (result.strategy === "tree") {
+	lines.push(`null_tree:      ${result.null_tree}`);
+	if (result.tree_path) {
+		lines.push(`tree_path:      ${result.tree_path}`);
+	}
+	if (result.files_list) {
+		lines.push(`files_list:     ${result.files_list}`);
+	}
+}
 if (result.strategy === "unrecognised" && result.note) {
 	lines.push(`note:           ${result.note}`);
 }

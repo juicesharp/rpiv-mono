@@ -24,11 +24,11 @@ contract:
 
 # Code Review
 
-Review changes across **Quality**, **Security**, **Dependencies** lenses with optional advisor adjudication. Valid scopes: `commit` | `staged` | `working` | hash | `A..B` | PR branch. **Empty scope defaults to feature-branch-vs-default-branch first-parent review** (default branch auto-detected; see Step 1).
+Review changes across **Quality**, **Security**, **Dependencies** lenses with optional advisor adjudication. Valid scopes: `commit` | `staged` | `working` | `--folder <path>` | `--file <paths>` | hash | `A..B` | PR branch. **Empty scope defaults to feature-branch-vs-default-branch first-parent review** (default branch auto-detected; see Step 1).
 
 ## Input
 
-`$ARGUMENTS` — scope: `commit` | `staged` | `working` | a commit hash | `A..B` range | PR branch name. Empty defaults to feature-branch-vs-default-branch (first-parent).
+`$ARGUMENTS` — scope: `commit` | `staged` | `working` | `--folder <path>` | `--file <paths>` | a commit hash | `A..B` range | PR branch name. Empty defaults to feature-branch-vs-default-branch (first-parent).
 
 ## Metadata
 
@@ -46,7 +46,7 @@ Scope resolution (default branch, range, ChangedFiles) is LLM-invoked at Step 1.
 
 **File-orientation contract**: agents reason about *files* as coherent units. Hunks are evidence *within* a file's analysis, never the unit of analysis. The `-U30` patch (Step 1) inlines function-level context so agents rarely need extra `Read` calls.
 
-Every Wave-2 agent prompt contains EXACTLY: (a) `Known Context:` followed by the Discovery Map verbatim, and (b) the resolved `<patch_path>` value (the helper's `patch_path:` field) as the patch path. Nothing else from Wave-1 outputs — NOT the raw integration-scanner dump, NOT precedent-locator output, NOT Dependencies/CVE output. See "Wave-2 context isolation" in Step 3 for the failure mode when this is violated. Wave-1 agents that do not consume the Discovery Map (precedents, dependencies, CVE) get `ChangedFiles` / manifest-diff only.
+Every Wave-2 agent prompt contains EXACTLY: (a) `Known Context:` followed by the Discovery Map verbatim, and (b) the resolved `<patch_path>` value (the helper's `patch_path:` field) as the patch path. **Exception:** `strategy: tree` direct-read mode passes ChangedFiles for direct file Reads instead of `<patch_path>`. Nothing else from Wave-1 outputs — NOT the raw integration-scanner dump, NOT precedent-locator output, NOT Dependencies/CVE output. See "Wave-2 context isolation" in Step 3 for the failure mode when this is violated. Wave-1 agents that do not consume the Discovery Map (precedents, dependencies, CVE) get `ChangedFiles` / manifest-diff only.
 
 ## Steps
 
@@ -58,7 +58,7 @@ Every Wave-2 agent prompt contains EXACTLY: (a) `Known Context:` followed by the
    node "${SKILL_DIR}/_helpers/review-range.mjs" "<scope-spec>"
    ```
 
-   The helper emits labeled key/value lines (`default_branch:`, `strategy:`, `oldest:`, `newest:`, `base:`, `tip:`, `range:`, `fp_flag:`, `patch_path:`) followed by a `---changed-files---` block. Read those as authoritative for the rest of Step 1. If `strategy: unrecognised` appears, the `note:` field explains why — clarify via `ask_user_question` and re-invoke with a valid spec.
+   The helper emits labeled key/value lines (`default_branch:`, `strategy:`, `oldest:`, `newest:`, `base:`, `tip:`, `range:`, `fp_flag:`, `patch_path:`; plus `null_tree:` for `strategy: tree`) followed by a `---changed-files---` block. Read those as authoritative for the rest of Step 1. If `strategy: unrecognised` appears, the `note:` field explains why — clarify via `ask_user_question` and re-invoke with a valid spec.
 
    `<scope-spec>` translation table — map the user's substituted argument to one of these forms:
 
@@ -70,12 +70,16 @@ Every Wave-2 agent prompt contains EXACTLY: (a) `Known Context:` followed by the
    | `<A>..<B>` (e.g. `HEAD~5..HEAD`, `main..feature`) | the range verbatim |
    | comma- or whitespace-separated hashes (`h1,h2,h3` or `h1 h2 h3`) | the list verbatim |
    | branch name (must be checked out at HEAD locally) | the branch name verbatim |
+   | `--folder <path>` (directory relative to repo root) | `--folder <path>` verbatim |
+   | `--file <path1>,<path2>` (one or more tracked files; comma-separate multiple paths; literal commas in paths are not supported) | `--file <paths>` verbatim |
+   | `folder:<path>` / `file:<paths>` legacy aliases | pass through verbatim |
    | anything else (prose, mixed list, unresolvable ref) | clarify via `ask_user_question`, then re-invoke |
 
 2. **Confirm strategy** from the helper output. The mapping into the rest of the skill:
    - `strategy: first-parent` (`auto` / PR branch / commit list) — use `<range>` AND `<fp_flag>` (which is `--first-parent`) in the subsequent git commands. `<base>` is the parent-of-first-feature-commit (helper computes via `merge-base`), so the range already includes OLDEST's own changes — do NOT add `^` anywhere.
    - `strategy: explicit-range` (single hash / `A..B`) — use `<range>` without `<fp_flag>` (it's empty for this strategy). `<base>` is OLDEST^ (so the range includes OLDEST itself, matching the original "user-inclusive endpoint" intent).
    - `strategy: working-tree` (`commit` / `staged` / `working`) — no `<range>`; use the working-tree commands listed in the next bullet.
+   - `strategy: tree` (`--folder` / `--file`, plus legacy `folder:` / `file:` aliases) — no `<range>`; review tracked files in the specified path(s) as complete entities. The helper emits `null_tree:` plus `tree_path:` (folder) or `files_list:` (file) instead. Use the tree commands listed below. Precedent-locator is **skipped** for this strategy (no creation history to compare); all other Wave-1 agents still follow their normal gates.
 
    `--first-parent` is orthogonal to `--no-merges`: the former prunes second-parent subtrees from reachability, the latter drops merge commits themselves from the log. Both flags are independently controllable below.
 
@@ -85,6 +89,13 @@ Every Wave-2 agent prompt contains EXACTLY: (a) `Known Context:` followed by the
    - `git log "<range>" <fp_flag> --patch --reverse --no-merges -U30 > <patch_path>` → union patches with **30 lines of surrounding context per hunk** (function-level context inline)
    - `git log "<range>" --reverse --format="%H %s%n%n%b%n---"` → commit-message context
    - **Working-tree branch** (`strategy: working-tree`, no `<range>`): for `staged` use `git diff --cached --stat` + `git diff --cached -U30 > <patch_path>`; for `working` use `git diff --stat` + `git diff -U30 > <patch_path>` (unstaged only); for `modified` use `git diff HEAD --stat` + `git diff HEAD -U30 > <patch_path>` (every tracked change vs HEAD — staged + unstaged, no untracked); for `commit` use `git show HEAD --stat` + `git show HEAD -U30 > <patch_path>`. Commit-message context is N/A for `staged` / `working` / `modified`; for `commit` use `git show HEAD --format="%H %s%n%n%b%n---" --no-patch`. ChangedFiles still comes from the helper.
+   - **Tree branch** (`strategy: tree`, no `<range>`): `<paths>` is `tree_path:` (from helper) or the comma-separated `files_list:` entries split on commas only (quote each resulting pathspec; never split `files_list:` on whitespace; literal commas in file paths are not supported); `<null_tree>` is the helper's `null_tree:` value. Emit the size summary separately with `git diff --cached --stat <null_tree> -- <paths>`. Then choose the review input mode **before generating any patch**:
+     - **Direct-read mode** (`len(ChangedFiles) > 10`): do **not** generate a tree patch. Record `TreeInputMode = direct-read`; leave `<patch_path>` unused for Wave-2 and instruct Wave-2 agents to Read files directly from ChangedFiles. This prevents large folder reviews from filling the main context with full-file additions.
+     - **Patch mode** (`len(ChangedFiles) ≤ 10`): generate the patch with fallback chain (each step only if previous produced empty output):
+       1. `git diff --cached -U30 <null_tree> -- <paths> > <patch_path>` — full-file additions: index vs the repository's empty tree, matching the helper's `ls-files --cached` enumeration exactly (a `<null_tree> HEAD` diff would silently drop staged-but-uncommitted files from the patch)
+       2. **Synthetic patch** — for each non-binary file in ChangedFiles, emit a valid unified patch: `diff --git a/<f> b/<f>` / `new file mode 100644` / `--- /dev/null` / `+++ b/<f>` / `@@ -0,0 +1,<line_count> @@` / then prefix every source line with `+` and append to `<patch_path>`. For binary files, emit `Binary files /dev/null and b/<f> differ`.
+       If both steps produce empty output, print `No patchable content in scope. Exiting.` and STOP.
+     Commit-message context is N/A. ChangedFiles comes from the helper.
    - **Patch-size fallback**: `-U30` produces ~2–3× the size of `-U0`. If the resulting patch exceeds ~1MB, drop to `-U10` for this run; never use `-U0` — it defeats the skill's design.
 
 3. **Bail-out**: if `ChangedFiles` is empty, print `No changes in scope {scope}. Exiting.` and STOP. Do not write an artifact.
@@ -94,17 +105,19 @@ Every Wave-2 agent prompt contains EXACTLY: (a) `Known Context:` followed by the
      - strategy=`first-parent` (`auto` / PR branch / commit-list inputs) → `InScopeFiles = ⋃ git diff-tree --no-commit-id --name-only -r <h>` over `git log "<range>" --first-parent --no-merges --pretty=%H` (each feature commit's own file delta; back-merge sidecars drop out even when the merge is on the first-parent line). For commit-list input, iterate over the user-named hashes instead of the first-parent walk to preserve non-contiguous-list intent.
      - strategy=`explicit-range` → `InScopeFiles = ChangedFiles` (user explicitly asked for range semantics; merges in the range are part of the intent).
      - strategy=`working-tree` → `InScopeFiles = ChangedFiles` (no merge surface).
+     - strategy=`tree` → `InScopeFiles = ChangedFiles` (no merge surface; all files are treated as added).
    - **Invariant**: `InScopeFiles ⊆ ChangedFiles`. On back-merged feature branches, `InScopeFiles ⊊ ChangedFiles` is the primary mechanism by which sidecar findings get dropped at Step 6.
    - `ManifestChanged` = ChangedFiles intersects any dependency manifest or lockfile (e.g. `package.json`/lockfile, `Cargo.toml`/`Cargo.lock`, `go.mod`/`go.sum`, `pyproject.toml`/`requirements*.txt`/`poetry.lock`, `Gemfile*`, `*.csproj`, `pom.xml`/`build.gradle*`, `composer.json`, …) OR a peer/optional/dev-dependency field was touched.
    - `LockstepSelfReview` = repository root contains `scripts/sync-versions.js` AND every `packages/*/package.json` shares the same `version:` AND the diff touches `packages/*/package.json`.
    - `HasGatingPredicate` = diff adds or modifies a **status/enum-comparison predicate** (`Status == X`, `Status is X or Y`, `X.Contains(Status)`, pattern-match on a discriminator) OR introduces a new value into an enum referenced by existing gating predicates. NOT merely the presence of `if (!x) return`.
-   - `ReviewType` = one of `commit | pr | staged | working`.
-   - `PeerPairs` = `(new_file, peer_file)` tuples. `new_file` is in `git log "<range>" --diff-filter=A --name-only` (working-tree: `git diff --diff-filter=A --name-only [--cached]`). `peer_file` exists at HEAD (`git ls-tree HEAD`) and matches one heuristic:
+   - `ReviewType` = one of `commit | pr | staged | working | tree`.
+   - `PeerPairs` = `(new_file, peer_file)` tuples. `new_file` is in `git log "<range>" --diff-filter=A --name-only` (working-tree: `git diff --diff-filter=A --name-only [--cached]`; tree: **all ChangedFiles** are treated as additions). `peer_file` exists at HEAD (`git ls-tree HEAD`) and matches one heuristic:
      - **Stem similarity ≥ 60%** of the longer stem (e.g. `PhysicalProductSubscription` ↔ `Subscription`).
      - **Interface/impl pair**: `I<Name>` ↔ `<Name>`, `<Name>` ↔ `<Name>.impl`, `<Name>{Abstract,Base,Protocol}` ↔ `<Name>`.
      - **Shared suffix** from `{Handler, Service, Repository, Aggregate, Reducer, Controller, Resolver, Command, Query, Job, Processor, Strategy, Policy, Event, Listener, Subscriber, Publisher, Exception, Eligibility, Ability, QueryParam, Specification, Factory, Builder}`.
 
      Drop a pair only when the peer doesn't exist at HEAD, no heuristic matches, or both files were added in this diff. Empty list ⇒ skip the peer-mirror agent. Co-modified peers are KEPT — the agent Reads them at HEAD (post-diff tree state), so any invariant present at HEAD counts as peer evidence regardless of whether the peer was edited in this diff.
+   - **Intra-folder peers** (`strategy: tree` only): when `len(ChangedFiles) ≥ 3` and files share a common parent directory, compute `(file_a, file_b)` pairs among ChangedFiles themselves using the same heuristics (stem similarity, shared suffix, interface/impl). This catches pattern divergence within the reviewed folder (e.g., two skills sharing `execute(self, ctx)` but one missing `validation_failed` skip logic). Merge these pairs into `PeerPairs` alongside any cross-repo peers.
 
 ### Step 2: Dispatch Wave-1 — Integration + Precedents + Deps/CVE + Peer-Mirror
 
@@ -114,7 +127,9 @@ Spawn ALL of the following in parallel at T=0 in a **single message with multipl
 - subagent_type: `integration-scanner`
 - Prompt: "Map inbound references, outbound dependencies, and infrastructure wiring for the following changed files: {ChangedFiles, one per line}. Flag any auth-boundary crossings (middleware, guards, interceptors, authorize-style decorators) and config/DI/event registration touching these paths. Do NOT analyse code quality — connections only, in your standard output format."
 
-**Agent — Precedents** (always): use the `precedent-locator` prompt defined in Step 3 below — dispatch it here, not in Wave-2. Input it needs: `ChangedFiles` only.
+**Agent — Precedents** (always, **except `strategy: tree`**): use the `precedent-locator` prompt defined in Step 3 below — dispatch it here, not in Wave-2. Input it needs: `ChangedFiles` only. For `tree` strategy, skip entirely — there is no creation history to compare, and the files *are* the baseline.
+
+**Tree strategy Wave-1 note (load-bearing):** for `strategy: tree`, skip **only** `precedent-locator`. Still dispatch `integration-scanner`; still dispatch Dependencies and CVE / advisory when `ManifestChanged`; still dispatch `peer-comparator` when `len(PeerPairs) > 0`.
 
 **Agent — Dependencies** (only when `ManifestChanged`): use the `codebase-analyzer` Dependencies prompt defined in Step 3 below — dispatch here. Input it needs: touched manifest paths + `LockstepSelfReview` flag.
 
@@ -191,9 +206,9 @@ Peer mirrors: {peer-mirror agent output verbatim — Missing/Diverged rows only;
 
 ### Step 3: Dispatch Wave-2 — Quality + Security Lenses
 
-Spawn Quality + Security in parallel using the Agent tool. Each receives the Discovery Map block inline as `Known Context` above its task, and a pointer to `<patch_path>` for the diff itself. Precedents / Dependencies / CVE are already running from Wave-1 — do NOT re-dispatch them here; the prompts below document what those Wave-1 agents received, they are not re-issued.
+Spawn Quality + Security in parallel using the Agent tool. Each receives the Discovery Map block inline as `Known Context` above its task. For all non-tree-direct-read strategies, also pass the resolved `<patch_path>` value for the diff itself. In tree direct-read mode, do **not** pass or paste `<patch_path>`; pass ChangedFiles and instruct agents to Read each file directly. Precedents / Dependencies / CVE are already running from Wave-1 — do NOT re-dispatch them here; the prompts below document what those Wave-1 agents received, they are not re-issued.
 
-**Wave-2 context isolation (LOAD-BEARING — violations cause silent quality collapse)**: Each Wave-2 agent receives EXACTLY two things, nothing else: (1) the Discovery Map (digested form) and (2) the resolved `<patch_path>` value.
+**Wave-2 context isolation (LOAD-BEARING — violations cause silent quality collapse)**: Each Wave-2 agent receives EXACTLY two things, nothing else: (1) the Discovery Map (digested form) and (2) for non-tree-direct-read strategies, the resolved `<patch_path>` value; for tree direct-read mode, the ChangedFiles direct-read list.
 
 **DO NOT paste into Wave-2 prompts**, under any circumstance, even if the orchestrator has already received them:
 - raw integration-scanner output (the Discovery Map already summarises its auth/ref/wiring findings)
@@ -205,6 +220,10 @@ Spawn Quality + Security in parallel using the Agent tool. Each receives the Dis
 **Why this is load-bearing**: summary context induces *narrativisation* — the agent treats the preamble as "the orchestrator already framed the findings, I just classify them" instead of independently reading the patch file. Observed failure signatures when this is violated: Quality drops from ~40 tool calls / 3M tokens / 500s to ~5-15 tool calls / 300k tokens / 100-200s, and returns hallucinated findings (invented statuses, mis-cited line numbers, claims that files are "missing from patch" when they are in fact present).
 
 **Self-check before dispatching Wave-2**: read your outgoing Agent prompt. If it contains any content from Wave-1 agent RESULTS beyond the Discovery Map you synthesised, strip it. The Discovery Map is the contract; raw outputs are reconciliation-only.
+
+**Tree strategy direct-read mode** (`strategy: tree`): when `len(ChangedFiles) > 10`, the orchestrator should already have skipped patch generation in Step 1. For safety, if a tree patch exists and exceeds ~2MB, ignore it. In either case, skip `<patch_path>` entirely and instruct each Wave-2 agent to **Read each file directly** from ChangedFiles. The agents receive the same Discovery Map + surfaces list, but substitute `Read` calls for patch grep. This avoids context explosion from massive synthetic diffs. For `len(ChangedFiles) ≤ 10`, use the patch as normal.
+
+When in tree direct-read mode, adapt the Quality and Security prompts below by replacing every instruction to inspect `<patch_path>` / diff regions with: "Read each file in ChangedFiles directly and analyse the complete file. Findings must cite actual file lines with verbatim quotes." Do not create, paste, summarize, or attach a synthetic patch for those agents.
 
 **Citation contract** (applies to every Wave-2+ agent, every step): every `file:line` citation MUST be accompanied by the literal line text in backticks — format `file:line — \`<verbatim line>\` — <note>`. Omit findings whose lines you cannot quote verbatim.
 
@@ -353,6 +372,17 @@ Otherwise spawn ONE `codebase-analyzer` in parallel with 4a:
 
 No agent dispatch. Compute inline while 4a / 4b run:
 
+**For `strategy: tree`** (completeness audit — "is everything right?"):
+1. **Symbol inventory** — for each `[code]`/`[boundary]`/`[persistence]`/`[hub]` file in ChangedFiles, extract top-level exported symbols (functions, classes, handlers, entry points). Read the file directly if patch is unavailable.
+2. **Test coverage map** — for each symbol, check whether any `[test]`-tagged file in ChangedFiles (or a sibling `*.test.*` / `*_test.*` / `test_*.*` at HEAD) contains a test referencing that symbol name. Symbols with no test are uncovered.
+3. **Error-path scan** — for each uncovered symbol, check whether it contains `try`/`catch`, `if (!x) return`, or equivalent error handling. Flag symbols with no error path.
+4. **Emit gap findings** — for each uncovered symbol with no error path, emit:
+
+   `G<ordinal> — file:line — \`<verbatim line>\` — {role-tag} — <risk class in 3-6 words>`
+
+   Risk-bearing behavior class: untested export | missing error handling | no precondition guard | public API without documentation. Maximum **5** gap findings; stop once reached. Citation contract applies.
+
+**For all other strategies** (diff-centric):
 1. **Coverage map** — parse Quality + Security outputs; for each finding row extract its `file:line` citation and map `file → {finding-id}`. Files with ≥1 row are covered; files with none are uncovered.
 2. **In-scope filter** — keep files tagged `[boundary]`, `[persistence]`, `[code]`, or `[hub]` AND whose diff delta (sum of added + removed lines) is ≥ 5. Drop `[test]` and `[config]` entirely; drop files with tiny deltas.
 3. **Emit gap findings** — walk uncovered in-scope files in role-tag priority `[boundary]` → `[persistence]` → `[hub]` → `[code]`. For each, open its diff region in `<patch_path>` and pick ONE risk-bearing line (first non-comment `+` line, or the function-declaration header if a whole function was added). Emit:
@@ -361,11 +391,11 @@ No agent dispatch. Compute inline while 4a / 4b run:
 
    Risk-bearing behavior class (diff introduces one of): state mutation | I/O (DB/network/file) | error path | conditional on mutable state | concurrent/shared-state access | public API surface change. Maximum **5** gap findings; stop once reached. Citation contract applies.
 
-**Wait for ALL of 4a / 4b AND the Precedents agent from Wave-1 to complete** before proceeding to Step 5 (Reconciliation). Precedents is a **hard gate** — severity weighting in Step 5 reads its follow-up-within-30-days counts. Dependencies / CVE (when dispatched) also merge in here but are not individually hard-gated; wait for them too unless they clearly exceed the review SLA, in which case omit `## Dependencies` and note it in the artifact. 4c has no wait — it completes synchronously with the orchestrator.
+**Wait for ALL of 4a / 4b AND the Precedents agent from Wave-1 to complete** before proceeding to Step 5 (Reconciliation). Precedents is a **hard gate** — severity weighting in Step 5 reads its follow-up-within-30-days counts. For `strategy: tree`, the Precedents agent is not dispatched — skip this gate and proceed directly. Dependencies / CVE (when dispatched) also merge in here but are not individually hard-gated; wait for them too unless they clearly exceed the review SLA, in which case omit `## Dependencies` and note it in the artifact. 4c has no wait — it completes synchronously with the orchestrator.
 
 ### Step 5: Reconcile Findings
 
-**Barrier**: Step 5 MUST NOT begin until the Precedents agent has returned. Severity weighting depends on historical follow-up counts; starting reconciliation without them produces mis-weighted severities that the verification pass (Step 6) cannot correct.
+**Barrier**: Step 5 MUST NOT begin until the Precedents agent has returned. Severity weighting depends on historical follow-up counts; starting reconciliation without them produces mis-weighted severities that the verification pass (Step 6) cannot correct. For `strategy: tree`, no Precedents agent was dispatched — the barrier is satisfied immediately.
 
 **Resolution integrity check** (load-bearing): when Precedents returns a commit that claims to resolve or supersede a current finding, run `git merge-base --is-ancestor <precedent-hash> <TIP>` before accepting the resolution.
   - Ancestor: the precedent IS in the reviewed branch; mark the finding `resolved-by: <hash>` and demote its severity to 💭 (kept for context).
@@ -379,7 +409,7 @@ No agent dispatch. Compute inline while 4a / 4b run:
    - **Interaction-sweep** — 🔴/🟡 only (no 💭): 🔴 concrete emergent failure across ≥2 files/components; 🟡 multi-component mismatch with bounded blast radius or existing mitigation. **Promotion rule**: when ≥2 lens findings share the same entity/flow and combine into an emergent failure, the aggregate is 🔴 even if each constituent was 🟡/🔵. The interaction IS the defect — don't leave constituents at their original severity and skip the cross-finding bullet.
    - **Gap-finder** — 🟡 uncovered risk-bearing region in a changed file with no lens coverage; 🔵 low-impact gap (style-only or defensive-only region missed). No 🔴 (gap findings are uncertain by nature).
    - **Peer-mirror** — treat every Missing/Diverged row as a finding. Base severity 🔵. **Bump to 🟡** when the missing invariant is a domain-event emission, a precondition guard on a state-mutating method, or a persisted-field invariant. **Bump to 🔴** when the missing invariant intersects a dispatch site the diff touches (switch/map/table/registry enumerating the peer's type alongside the new type — detectable from integration-scanner's `Wiring/config` output and the Discovery Map's `[config]`/`[hub]` files). Rationale: a missing mirror on a dispatched invariant is a silent-stranded-state cascade constituent; on a non-dispatched invariant it is a style issue. Record every peer-mirror bump in `## Reconciliation Notes`.
-   - **Precedents** → compile into `## Precedents` (table: `hash | subject | 30d-follow-ups | note`), composite lessons below. **Severity weighting**: for each current finding, count precedent commits touching the same symbol/file that had ≥1 follow-up fix within 30 days. If count ≥ 2, bump the finding one severity tier (🔵→🟡, 🟡→🔴); cap at 🔴. Record the bump by annotating the finding's title line `[precedent-weighted]` — do NOT emit a separate reconciliation section.
+   - **Precedents** → compile into `## Precedents` (table: `hash | subject | 30d-follow-ups | note`), composite lessons below. **Severity weighting**: for each current finding, count precedent commits touching the same symbol/file that had ≥1 follow-up fix within 30 days. If count ≥ 2, bump the finding one severity tier (🔵→🟡, 🟡→🔴); cap at 🔴. Record the bump by annotating the finding's title line `[precedent-weighted]` — do NOT emit a separate reconciliation section. For `strategy: tree`, no precedents exist — omit `## Precedents` and skip severity weighting.
 
 2. **Probe advisor availability** — attempt a probe by checking whether `advisor` is in the active tool set (main-thread visibility). If yes, proceed to advisor path; otherwise take the inline path.
 
@@ -467,7 +497,7 @@ Before writing the artifact, spawn ONE `claim-verifier` whose sole job is to gro
 - `## 💭 Discussion` — no 💭 findings.
 - `## Pattern Analysis` — no peer-mirror pair existed for this diff.
 - `## Impact` — integration-scanner returned no inbound refs to changed files.
-- `## Precedents` — precedent-locator returned no precedents.
+- `## Precedents` — precedent-locator returned no precedents, OR `strategy: tree` (no creation history to compare).
 
 **What is NOT emitted to the artifact**: verification outcomes in prose (frontmatter `verification` string is the only channel), advisor availability / dispatch path / tool failures (skill trace, not review content), `last_updated` / `last_updated_by` (git mtime + git author carry this for a write-once artifact).
 
@@ -515,23 +545,23 @@ Ask follow-ups, or chain forward.
 - **Frontmatter**: `allowed-tools` is intentionally omitted — the skill inherits `Agent`, `ask_user_question`, `advisor`, `Write`, `web_search`, `todo`. Do NOT re-add the line.
 - **Security-lens precision stance**: prefer false negatives. Evidence must carry `confidence ≥ 8`; 🔴 requires an explicit source→sink trace. Missing hardening without a traced sink is NOT a finding.
 - **Load-bearing ordering**:
-  - Wave-1 fans out at T=0 — integration-scanner, Precedents, (when `ManifestChanged`) Dependencies + CVE, and (when `len(PeerPairs) > 0`) the peer-mirror agent dispatch in a single multi-Agent message. integration-scanner AND peer-mirror gate Wave-2 (both feed the Discovery Map Wave-2 consumes); **Precedents is a hard gate on Step 5** (its follow-up-within-30-days counts drive severity weighting; reconciling without them produces mis-weighted severities the verification pass cannot correct); Dependencies + CVE soft-gate Step 5.
+  - Wave-1 fans out at T=0 — integration-scanner, Precedents (skipped for `strategy: tree`), (when `ManifestChanged`) Dependencies + CVE, and (when `len(PeerPairs) > 0`) the peer-mirror agent dispatch in a single multi-Agent message. integration-scanner AND peer-mirror gate Wave-2 (both feed the Discovery Map Wave-2 consumes); **Precedents is a hard gate on Step 5** (its follow-up-within-30-days counts drive severity weighting; reconciling without them produces mis-weighted severities the verification pass cannot correct); Dependencies + CVE soft-gate Step 5. For `strategy: tree`, the Precedents gate is satisfied immediately (no agent dispatched).
   - Step 4a (Predicate-Trace) and 4b (Interaction Sweep) dispatch in parallel once Wave-2 completes; 4c (Gap-Finder) is orchestrator-side coverage arithmetic — no agent. Interaction Sweep (4b) receives Quality's `Predicate-set coherence` table as its predicate-row source, not 4a's output.
   - When Quality's `Predicate-set coherence` surface returns ≥2 rows with mismatched values on the same enum/type, the 4b sweep MUST evaluate categories 7–9 against those rows.
   - **File orientation is load-bearing**: patches MUST use `-U30` (or `-U10` fallback for >1MB patches), never `-U0`. The Discovery Map's semantic file map (clusters + role tags + symbols-touched hint) is the orientation primitive, not per-hunk line ranges. Lens prompts organise findings per file (`### file/path.ext`), not per hunk. Agents SHOULD NOT issue extra `Read` calls for files already represented in the patch unless specifically needed for a cross-file trace.
-  - **Wave-2 context isolation**: Quality and Security prompts MUST NOT include Wave-1 background-agent output (precedent-locator, Dependencies, CVE) even when those agents have finished before Wave-2 dispatches. Summary context from those agents causes the lens agents to narrativise instead of independently analyse the diff — the observed failure mode is a ~5× speedup coupled with hallucinated findings and mis-cited line numbers. Pass only Discovery Map + patch file path.
+  - **Wave-2 context isolation**: Quality and Security prompts MUST NOT include Wave-1 background-agent output (precedent-locator, Dependencies, CVE) even when those agents have finished before Wave-2 dispatches. Summary context from those agents causes the lens agents to narrativise instead of independently analyse the diff — the observed failure mode is a ~5× speedup coupled with hallucinated findings and mis-cited line numbers. Pass only Discovery Map + patch file path; in tree direct-read mode, pass only Discovery Map + ChangedFiles direct-read instructions.
   - ALWAYS emit `## Pre-Adjudication Findings` to the main branch BEFORE calling `advisor()` — advisor reads `getBranch()` (main-thread-only, `packages/rpiv-advisor/advisor.ts:336`).
   - ALWAYS probe advisor availability before calling it (strip-when-unconfigured at `packages/rpiv-advisor/advisor.ts:463-472`).
   - NEVER call `advisor()` from a sub-agent (branch invisible to advisor).
   - NEVER parse advisor prose — paste verbatim as a blockquote at the top of `## Recommendation`.
-  - ALWAYS wait for 4a / 4b AND the Precedents agent to complete before Step 5 — Wave-3's hard barrier. 4c is synchronous (orchestrator). Dependencies + CVE wait here too when running, but are not individually hard-gated.
+  - ALWAYS wait for 4a / 4b AND the Precedents agent to complete before Step 5 — Wave-3's hard barrier. For `strategy: tree`, the Precedents gate is satisfied immediately. 4c is synchronous (orchestrator). Dependencies + CVE wait here too when running, but are not individually hard-gated.
   - ALWAYS run Step 6 (verification pass) between reconciliation and artifact write. It is the only mechanism that catches lens agents asserting claims they never opened a file to confirm, and the only mechanism that validates `resolved-by` annotations against the actual branch via `git merge-base --is-ancestor`. Skipping Step 6 silently re-admits the failure mode this skill was designed to prevent.
   - PRESERVE severity emoji/naming and frontmatter keys verbatim — `artifacts-locator` / `artifacts-analyzer` grep these.
   - Bundled row-only specialists at narrativisation-prone sites: `diff-auditor` (Wave-2 Q+S), `peer-comparator` (Wave-1 PM), `claim-verifier` (Step 6). See `.rpiv/guidance/agents/architecture.md`.
   - **Scope strategy is load-bearing at both ends**: Step 1 sets `strategy` and `FP_FLAG`; Step 6 pre-filters the reconciled severity map against `InScopeFiles` before `claim-verifier` dispatch. `--first-parent` is orthogonal to `--no-merges` / `-U30` — additive, not a replacement. Agent contracts (`claim-verifier.md:11-30` in particular) stay scope-blind by design; orchestrator owns scope.
 - **Agent roles**:
   - `integration-scanner` (Wave-1) — inbound/outbound refs, auth-boundary crossings.
-  - `precedent-locator` (Wave-1) — git history + `.rpiv/artifacts/`.
+  - `precedent-locator` (Wave-1) — git history + `.rpiv/artifacts/`. Skipped for `strategy: tree` (no creation history to compare).
   - `codebase-analyzer` ×1 (Wave-1, `ManifestChanged`) — dependencies parse.
   - `web-search-researcher` (Wave-1, `ManifestChanged`) — CVE/advisory lookups with LINKS.
   - `peer-comparator` ×1 (Wave-1, gated on `len(PeerPairs) > 0`) — peer-mirror check; tags Mirrored/Missing/Diverged/Intentionally-absent.
