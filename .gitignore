@@ -1,5 +1,7 @@
-node_modules/
-packages/*/node_modules/
+# No trailing slash: also matches a stray node_modules SYMLINK (a dir-only
+# `node_modules/` pattern let one slip into the #76 squash via `git add -A`).
+node_modules
+packages/*/node_modules
 
 *.log
 .DS_Store
