@@ -3,8 +3,9 @@
  *
  * Lifecycle controller for Pi's `setWidget` contract: factory-form
  * registration in widgetContainerAbove, register-once + requestRender()
- * refresh, 12-line collapse-not-scroll (plus a trailing spacer row, so the
- * widget renders up to 13 lines), auto-hide when empty.
+ * refresh, configurable collapse-not-scroll (default 12 content rows via
+ * getMaxWidgetLines(); plus a trailing spacer row so the widget renders up
+ * to 13 lines), auto-hide when empty.
  *
  * Reads live state via `getRenderState()` (the ctx-less foreground slot) at render
  * time — NEVER `replayFromBranch` from `tool_execution_end` (branch is stale;
@@ -13,15 +14,13 @@
 
 import type { ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
 import { type TUI, truncateToWidth } from "@earendil-works/pi-tui";
+import { getMaxWidgetLines } from "./config.js";
 import { formatStatusLabel, t } from "./state/i18n-bridge.js";
 import { selectHasActive, selectOverlayLayout, selectShowTaskIds, selectTodoCounts } from "./state/selectors.js";
 import { getRenderState } from "./state/store.js";
 import { formatOverlayTaskLine } from "./view/format.js";
 
 const WIDGET_KEY = "rpiv-todos";
-// Budget for content rows (heading + tasks/summary). The rendered widget is
-// one line taller — withTrailingSpacer() appends a blank row below the panel.
-const MAX_WIDGET_LINES = 12;
 
 // English fallbacks for localized overlay chrome strings.
 const OVERLAY_HEADING = "Todos";
@@ -138,7 +137,9 @@ export class TodoOverlay {
 		const heading = truncate(`${theme.fg(headingColor, headingIcon)} ${theme.fg(headingColor, headingText)}`);
 
 		const lines: string[] = [heading];
-		const layout = selectOverlayLayout(overlayState, MAX_WIDGET_LINES - 1);
+		// Budget for content rows (heading + tasks/summary). The rendered widget is
+		// one line taller — withTrailingSpacer() appends a blank row below the panel.
+		const layout = selectOverlayLayout(overlayState, getMaxWidgetLines() - 1);
 		for (const task of layout.visible) {
 			lines.push(truncate(`${theme.fg("dim", "├─")} ${formatOverlayTaskLine(task, theme, showIds)}`));
 		}
