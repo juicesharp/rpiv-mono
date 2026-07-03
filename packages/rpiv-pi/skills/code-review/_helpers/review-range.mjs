@@ -215,8 +215,10 @@ const setTree = (path) => {
 	result.tree_path = path;
 	result.null_tree = safe(["hash-object", "-t", "tree", "/dev/null"], EMPTY_TREE_HASH);
 	// Enumerate tracked files only — git ls-files --cached respects .gitignore
-	// and excludes untracked files. The orchestrator diffs HEAD against the
-	// repository's empty-tree object so files appear as complete additions.
+	// and excludes untracked files. The orchestrator diffs the INDEX against
+	// the repository's empty-tree object (git diff --cached <null_tree>), so
+	// the patch covers exactly this file set — including staged-but-uncommitted
+	// files, which a HEAD-based diff would silently drop.
 	result.changedFiles = formatChangedFiles(files);
 };
 

@@ -73,6 +73,25 @@ describe("review-range tree scopes", () => {
 		expect(changedFiles(output)).toEqual(["src/a.ts", "src/nested/b.ts"]);
 	});
 
+	it("includes staged-but-uncommitted files in folder scopes", () => {
+		const repo = createRepo();
+		git(repo, ["config", "user.email", "test@example.com"]);
+		git(repo, ["config", "user.name", "Test User"]);
+		git(repo, ["config", "commit.gpgsign", "false"]);
+		write(repo, "src/committed.ts", "export const committed = 1;\n");
+		git(repo, ["add", "src/committed.ts"]);
+		git(repo, ["commit", "-m", "init"]);
+		write(repo, "src/staged-only.ts", "export const staged = 2;\n");
+		git(repo, ["add", "src/staged-only.ts"]);
+
+		const output = runHelper(repo, "--folder src");
+
+		expect(valueFor(output, "strategy")).toBe("tree");
+		// The index is the single source of truth: the SKILL.md patch command
+		// (git diff --cached <null_tree>) must cover exactly this file set.
+		expect(changedFiles(output)).toEqual(["src/committed.ts", "src/staged-only.ts"]);
+	});
+
 	it("keeps comma-separated file paths with spaces intact", () => {
 		const repo = createRepo();
 		write(repo, "src/name with spaces.ts", "export const spaced = true;\n");
