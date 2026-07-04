@@ -165,8 +165,11 @@ function resolveActiveProviderName(config: WebToolsConfig): {
 //   providerName = override ?? WEB_SEARCH_PROVIDER ?? config.provider ?? DEFAULT_PROVIDER_NAME
 //   1. override (per-call `provider` param) — validated against PROVIDERS;
 //      unknown names throw so callers can detect misconfiguration.
-//   2. WEB_SEARCH_PROVIDER env var — validated like the override; lets an
-//      operator pin a backend without editing config.json.
+//   2. WEB_SEARCH_PROVIDER env var — validated like the override, but ONLY
+//      when it is the resolving tier: an override wins without consulting
+//      (or validating) the env, so a bogus env var cannot defeat a valid
+//      per-call override. Lets an operator pin a backend without editing
+//      config.json.
 //   3. config.provider (the /web-tools-selected default)
 //   4. DEFAULT_PROVIDER_NAME ("brave")
 // Key/baseURL resolution always reads from env/config under the resolved
@@ -178,14 +181,17 @@ function instantiateProvider(
 	providerName: string;
 	provider: SearchProvider | FullProvider;
 } {
+	let providerName: string;
 	if (override !== undefined) {
 		assertKnownProvider(override);
+		providerName = override;
+	} else {
+		// Single env read via the shared resolver (one snapshot — no double
+		// read), validated only when env actually won the resolution.
+		const active = resolveActiveProviderName(config);
+		if (active.source === "env") assertKnownProvider(active.name);
+		providerName = active.name;
 	}
-	const envProvider = process.env.WEB_SEARCH_PROVIDER?.trim();
-	if (envProvider) {
-		assertKnownProvider(envProvider);
-	}
-	const providerName = override ?? resolveActiveProviderName(config).name;
 	const apiKey = resolveProviderApiKey(providerName, config);
 	const meta = PROVIDERS.find((p) => p.name === providerName);
 	const baseUrl = meta?.baseUrlEnvVar ? resolveProviderBaseUrl(meta, config) : undefined;

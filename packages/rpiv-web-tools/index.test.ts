@@ -2434,6 +2434,30 @@ describe("web_search.execute — WEB_SEARCH_PROVIDER precedence", () => {
 		expect((r?.details as { backend: string }).backend).toBe("exa");
 	});
 
+	it("valid per-call override succeeds even when WEB_SEARCH_PROVIDER is bogus", async () => {
+		// The override is the documented per-call escape hatch: when present it
+		// wins without consulting the env tier, so a misconfigured env var must
+		// not abort the call. (Regression guard for the unconditional-validation
+		// interaction — env is validated only when it actually resolves.)
+		process.env.WEB_SEARCH_PROVIDER = "bogus";
+		process.env.EXA_API_KEY = "exa-key";
+		writeConfig({ provider: "brave" });
+		stubFetch([
+			{
+				match: (u) => u.includes("api.exa.ai"),
+				response: () =>
+					new Response(JSON.stringify({ results: [{ title: "T", url: "https://x", text: "snip" }] }), {
+						status: 200,
+					}),
+			},
+		]);
+		const { captured } = registerAndCapture();
+		const r = await captured.tools
+			.get("web_search")
+			?.execute?.("tc", { query: "x", provider: "exa" }, undefined as never, undefined as never, createMockCtx());
+		expect((r?.details as { backend: string }).backend).toBe("exa");
+	});
+
 	it("whitespace-only WEB_SEARCH_PROVIDER is treated as unset (config wins)", async () => {
 		process.env.WEB_SEARCH_PROVIDER = "   ";
 		process.env.BRAVE_SEARCH_API_KEY = "brave-key";
@@ -2511,5 +2535,42 @@ describe("/web-tools picker — WEB_SEARCH_PROVIDER drives ordering", () => {
 		const labels = (ctx.ui.select as ReturnType<typeof vi.fn>).mock.calls[0][1] as string[];
 		expect(labels[0]).toBe("Tavily ✓");
 		expect(labels.filter((l) => l.includes("✓"))).toHaveLength(1);
+	});
+});
+
+// web_fetch has no per-call override, so WEB_SEARCH_PROVIDER is its winning
+// tier whenever set: the env-pinned provider's fetch path is used, and a
+// bogus name throws exactly as it does for web_search.
+describe("web_fetch.execute — WEB_SEARCH_PROVIDER precedence", () => {
+	it("WEB_SEARCH_PROVIDER beats config.provider (env-pinned tavily fetch)", async () => {
+		process.env.WEB_SEARCH_PROVIDER = "tavily";
+		process.env.TAVILY_API_KEY = "k";
+		writeConfig({ provider: "brave" });
+		stubFetch([
+			{
+				match: (u) => u.includes("api.tavily.com/extract"),
+				response: () =>
+					new Response(JSON.stringify({ results: [{ url: "https://x.com", raw_content: "extracted text" }] }), {
+						status: 200,
+					}),
+			},
+		]);
+		const { captured } = registerAndCapture();
+		const r = await captured.tools
+			.get("web_fetch")
+			?.execute?.("tc", { url: "https://x.com" }, undefined as never, undefined as never, createMockCtx());
+		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("extracted text") });
+	});
+
+	it("unknown WEB_SEARCH_PROVIDER name throws (no silent fallback)", async () => {
+		process.env.WEB_SEARCH_PROVIDER = "bogus";
+		process.env.BRAVE_SEARCH_API_KEY = "brave-key";
+		writeConfig({ provider: "brave" });
+		const { captured } = registerAndCapture();
+		await expect(
+			captured.tools
+				.get("web_fetch")
+				?.execute?.("tc", { url: "https://x.com" }, undefined as never, undefined as never, createMockCtx()),
+		).rejects.toThrow(/Unknown web_search provider: "bogus"/);
 	});
 });

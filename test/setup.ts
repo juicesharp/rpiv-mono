@@ -9,6 +9,7 @@ process.env.HOME = TEST_HOME;
 process.env.USERPROFILE = TEST_HOME;
 delete process.env.PI_CODING_AGENT_DIR;
 delete process.env.XDG_CONFIG_HOME;
+delete process.env.WEB_SEARCH_PROVIDER;
 
 vi.mock("@earendil-works/pi-ai", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("@earendil-works/pi-ai")>();
@@ -48,6 +49,7 @@ const VOICE_SYMBOL = Symbol.for("rpiv-voice");
 beforeEach(async () => {
 	delete process.env.PI_CODING_AGENT_DIR;
 	delete process.env.XDG_CONFIG_HOME;
+	delete process.env.WEB_SEARCH_PROVIDER;
 
 	const todo = await import("../packages/rpiv-todo/todo.js");
 	todo.__resetState();
