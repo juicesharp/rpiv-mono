@@ -135,17 +135,42 @@ function resolveProviderBaseUrl(meta: ProviderMeta, config: WebToolsConfig): str
 // when a provider is added or removed.
 const KNOWN_PROVIDER_NAMES = PROVIDERS.map((p) => p.name) as readonly string[];
 
+// Uniform "unknown provider" error for both the per-call override path and the
+// WEB_SEARCH_PROVIDER env path so misconfiguration surfaces the same shape.
+function assertKnownProvider(name: string): void {
+	if (!KNOWN_PROVIDER_NAMES.includes(name)) {
+		throw new Error(`Unknown web_search provider: "${name}". Valid providers: ${KNOWN_PROVIDER_NAMES.join(", ")}.`);
+	}
+}
+
+// Active-provider resolution for display + selection surfaces (env over config
+// over default). Returns the raw name + its source — does NOT validate. A bogus
+// WEB_SEARCH_PROVIDER renders in --show/picker (honest display) and only throws
+// on the next web_search, via instantiateProvider's assertKnownProvider.
+function resolveActiveProviderName(config: WebToolsConfig): {
+	name: string;
+	source: "env" | "config" | "default";
+} {
+	const envProvider = process.env.WEB_SEARCH_PROVIDER?.trim();
+	if (envProvider) return { name: envProvider, source: "env" };
+	if (config.provider) return { name: config.provider, source: "config" };
+	return { name: DEFAULT_PROVIDER_NAME, source: "default" };
+}
+
 // Centralized instantiation: resolve provider name + creds, build via the
 // factory. Called by both registerWebSearchTool and registerWebFetchTool.
 //
-// `override` lets a single tool call target a different provider than
-// `config.provider` without mutating persisted state. Resolution:
-//   1. override (if present) — validated against PROVIDERS; unknown names throw
-//      so callers can detect misconfiguration instead of silently falling back.
-//   2. config.provider (the /web-tools-selected default)
-//   3. DEFAULT_PROVIDER_NAME ("brave")
+// `override` lets a single tool call target a different provider than the
+// active one without mutating persisted state. Resolution (4-tier, first wins):
+//   providerName = override ?? WEB_SEARCH_PROVIDER ?? config.provider ?? DEFAULT_PROVIDER_NAME
+//   1. override (per-call `provider` param) — validated against PROVIDERS;
+//      unknown names throw so callers can detect misconfiguration.
+//   2. WEB_SEARCH_PROVIDER env var — validated like the override; lets an
+//      operator pin a backend without editing config.json.
+//   3. config.provider (the /web-tools-selected default)
+//   4. DEFAULT_PROVIDER_NAME ("brave")
 // Key/baseURL resolution always reads from env/config under the resolved
-// provider name, so an override still needs its own credentials.
+// provider name, so an override/env pin still needs its own credentials.
 function instantiateProvider(
 	config: WebToolsConfig,
 	override?: string,
@@ -153,12 +178,14 @@ function instantiateProvider(
 	providerName: string;
 	provider: SearchProvider | FullProvider;
 } {
-	if (override !== undefined && !KNOWN_PROVIDER_NAMES.includes(override)) {
-		throw new Error(
-			`Unknown web_search provider: "${override}". Valid providers: ${KNOWN_PROVIDER_NAMES.join(", ")}.`,
-		);
+	if (override !== undefined) {
+		assertKnownProvider(override);
 	}
-	const providerName = override ?? config.provider ?? DEFAULT_PROVIDER_NAME;
+	const envProvider = process.env.WEB_SEARCH_PROVIDER?.trim();
+	if (envProvider) {
+		assertKnownProvider(envProvider);
+	}
+	const providerName = override ?? resolveActiveProviderName(config).name;
 	const apiKey = resolveProviderApiKey(providerName, config);
 	const meta = PROVIDERS.find((p) => p.name === providerName);
 	const baseUrl = meta?.baseUrlEnvVar ? resolveProviderBaseUrl(meta, config) : undefined;
@@ -501,8 +528,8 @@ function renderFetchedContentPreview(content: string, theme: Theme): string {
 function formatShowConfigMessage(current: WebToolsConfig): string {
 	const lines = ["Web search config:", `  config file: ${CONFIG_PATH}`];
 
-	const providerName = current.provider ?? DEFAULT_PROVIDER_NAME;
-	lines.push(`  active provider: ${providerName}`);
+	const { name: providerName, source: providerSource } = resolveActiveProviderName(current);
+	lines.push(`  active provider: ${providerName} (source: ${providerSource})`);
 
 	for (const meta of PROVIDERS) {
 		const envKey = meta.envVar ? process.env[meta.envVar]?.trim() : undefined;
@@ -560,7 +587,7 @@ export function registerWebSearchConfigCommand(pi: ExtensionAPI): void {
 				return;
 			}
 
-			const activeProvider = current.provider ?? DEFAULT_PROVIDER_NAME;
+			const activeProvider = resolveActiveProviderName(current).name;
 			const orderedMetas = [
 				...PROVIDERS.filter((p) => p.name === activeProvider),
 				...PROVIDERS.filter((p) => p.name !== activeProvider),

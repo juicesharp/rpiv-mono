@@ -40,6 +40,7 @@ beforeEach(() => {
 	delete process.env.OLLAMA_API_KEY;
 	delete process.env.OLLAMA_HOST;
 	delete process.env.GITHUB_TOKEN;
+	delete process.env.WEB_SEARCH_PROVIDER;
 	rmSync(CONFIG_PATH, { force: true });
 });
 
@@ -2384,5 +2385,131 @@ describe("web_search.execute — per-call provider override", () => {
 			]),
 		);
 		expect(literals).toHaveLength(10);
+	});
+});
+
+// WEB_SEARCH_PROVIDER — middle precedence tier between the per-call override
+// and config.provider. Lets an operator pin a backend via env without editing
+// config.json; validated like the override so a bogus name throws (no silent
+// fallback) rather than degrading to default.
+describe("web_search.execute — WEB_SEARCH_PROVIDER precedence", () => {
+	it("WEB_SEARCH_PROVIDER beats config.provider", async () => {
+		process.env.WEB_SEARCH_PROVIDER = "tavily";
+		process.env.TAVILY_API_KEY = "tavily-key";
+		writeConfig({ provider: "brave" });
+		stubFetch([
+			{
+				match: (u) => u.includes("api.tavily.com"),
+				response: () =>
+					new Response(JSON.stringify({ results: [{ title: "T", url: "https://x", content: "snip" }] }), {
+						status: 200,
+					}),
+			},
+		]);
+		const { captured } = registerAndCapture();
+		const r = await captured.tools
+			.get("web_search")
+			?.execute?.("tc", { query: "x" }, undefined as never, undefined as never, createMockCtx());
+		expect((r?.details as { backend: string }).backend).toBe("tavily");
+	});
+
+	it("per-call provider override beats WEB_SEARCH_PROVIDER", async () => {
+		process.env.WEB_SEARCH_PROVIDER = "tavily";
+		process.env.TAVILY_API_KEY = "tavily-key";
+		process.env.EXA_API_KEY = "exa-key";
+		writeConfig({ provider: "brave" });
+		stubFetch([
+			{
+				match: (u) => u.includes("api.exa.ai"),
+				response: () =>
+					new Response(JSON.stringify({ results: [{ title: "T", url: "https://x", text: "snip" }] }), {
+						status: 200,
+					}),
+			},
+		]);
+		const { captured } = registerAndCapture();
+		const r = await captured.tools
+			.get("web_search")
+			?.execute?.("tc", { query: "x", provider: "exa" }, undefined as never, undefined as never, createMockCtx());
+		expect((r?.details as { backend: string }).backend).toBe("exa");
+	});
+
+	it("whitespace-only WEB_SEARCH_PROVIDER is treated as unset (config wins)", async () => {
+		process.env.WEB_SEARCH_PROVIDER = "   ";
+		process.env.BRAVE_SEARCH_API_KEY = "brave-key";
+		writeConfig({ provider: "brave" });
+		stubFetch([
+			{
+				match: (u) => u.includes("api.search.brave.com"),
+				response: () =>
+					new Response(
+						JSON.stringify({ web: { results: [{ title: "T", url: "https://x", description: "snip" }] } }),
+						{ status: 200 },
+					),
+			},
+		]);
+		const { captured } = registerAndCapture();
+		const r = await captured.tools
+			.get("web_search")
+			?.execute?.("tc", { query: "x" }, undefined as never, undefined as never, createMockCtx());
+		expect((r?.details as { backend: string }).backend).toBe("brave");
+	});
+
+	it("unknown WEB_SEARCH_PROVIDER name throws (no silent fallback)", async () => {
+		process.env.WEB_SEARCH_PROVIDER = "bogus";
+		process.env.BRAVE_SEARCH_API_KEY = "brave-key";
+		writeConfig({ provider: "brave" });
+		const { captured } = registerAndCapture();
+		await expect(
+			captured.tools
+				.get("web_search")
+				?.execute?.("tc", { query: "x" }, undefined as never, undefined as never, createMockCtx()),
+		).rejects.toThrow(/Unknown web_search provider: "bogus"/);
+	});
+});
+
+// --show surfaces the active provider's source so an env pin is discoverable
+// rather than invisible. Mirrors the URL-line `source: env|config|default`
+// pattern already used for self-hosted base URLs.
+describe("/web-tools --show — active provider source", () => {
+	it("reports source: env when WEB_SEARCH_PROVIDER is set", async () => {
+		process.env.WEB_SEARCH_PROVIDER = "tavily";
+		const { captured } = registerAndCapture();
+		const ctx = createMockCtx({ hasUI: true });
+		await captured.commands.get("web-tools")?.handler("--show", ctx as never);
+		const msg = (ctx.ui.notify as ReturnType<typeof vi.fn>).mock.calls[0][0];
+		expect(msg).toContain("active provider: tavily (source: env)");
+	});
+
+	it("reports source: config when config.provider is set and no env", async () => {
+		writeConfig({ provider: "brave" });
+		const { captured } = registerAndCapture();
+		const ctx = createMockCtx({ hasUI: true });
+		await captured.commands.get("web-tools")?.handler("--show", ctx as never);
+		const msg = (ctx.ui.notify as ReturnType<typeof vi.fn>).mock.calls[0][0];
+		expect(msg).toContain("active provider: brave (source: config)");
+	});
+
+	it("reports source: default when neither env nor config is set", async () => {
+		const { captured } = registerAndCapture();
+		const ctx = createMockCtx({ hasUI: true });
+		await captured.commands.get("web-tools")?.handler("--show", ctx as never);
+		const msg = (ctx.ui.notify as ReturnType<typeof vi.fn>).mock.calls[0][0];
+		expect(msg).toContain("active provider: brave (source: default)");
+	});
+});
+
+// Picker honors WEB_SEARCH_PROVIDER: the env-named provider sorts first and is
+// the only one carrying ✓. With no key configured it shows no "(configured)".
+describe("/web-tools picker — WEB_SEARCH_PROVIDER drives ordering", () => {
+	it("lists the env-named provider first and marks only it ✓ when no config", async () => {
+		process.env.WEB_SEARCH_PROVIDER = "tavily";
+		const { captured } = registerAndCapture();
+		const ctx = createMockCtx({ hasUI: true });
+		(ctx.ui.select as ReturnType<typeof vi.fn>).mockResolvedValueOnce(undefined);
+		await captured.commands.get("web-tools")?.handler("", ctx as never);
+		const labels = (ctx.ui.select as ReturnType<typeof vi.fn>).mock.calls[0][1] as string[];
+		expect(labels[0]).toBe("Tavily ✓");
+		expect(labels.filter((l) => l.includes("✓"))).toHaveLength(1);
 	});
 });
