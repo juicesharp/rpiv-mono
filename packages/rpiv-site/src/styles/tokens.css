@@ -55,11 +55,13 @@
 	--font-serif: "Iowan Old Style", "Hoefler Text", "Charter", "Source Serif Pro", Georgia, serif;
 
 	--type-micro: 10px;
-	--type-tiny: 11px;
+	--type-tiny: 12px;
 	--type-kicker: 12px;
-	--type-small: 13px;
+	--type-small: 14px;
 	--type-base: 16px;
-	--type-lead: 17px;
+	/* Lede/statement text — tracks --type-reading from just above,
+	   so ledes outrank body copy at every viewport. */
+	--type-lead: clamp(18px, 17px + 0.35vw, 20px);
 	--type-h3: 20px;
 	--type-h-hero: 30px;
 	--type-h2: clamp(28px, 4vw, 40px);
@@ -68,11 +70,19 @@
 	/* Sectional / docs scale — scanning rhythm, not editorial weight.
 	   --type-h-section: in-section h3 used by landing composers (Guidance et al.),
 	   slightly larger than --type-h3 with fluid step.
-	   --type-h-docs-h2 / -h3: tighter ramp inside `.prose--docs` so reference
-	   pages scan rather than read. h1 inside `.prose--docs` already uses --type-h2. */
+	   --type-h-docs-h2: tighter ramp inside `.prose--docs` so reference
+	   pages scan rather than read; docs h3/h4 track the fluid reading
+	   body via em in prose.css. h1 inside `.prose--docs` uses --type-h2. */
 	--type-h-section: clamp(22px, 2.4vw, 26px);
 	--type-h-docs-h2: 24px;
-	--type-h-docs-h3: 18px;
+
+	/* Reading scale — long-form bodies (.prose: blog posts AND docs
+	   articles) read at 17–19px fluid; --type-base (16px) stays the UI
+	   scale for chrome, cards, and landing composers. --type-post-title
+	   steps the post h1 above --type-h2 so the page title outranks
+	   in-post h2s (both capped at 40px before). */
+	--type-reading: clamp(17px, 16px + 0.35vw, 19px);
+	--type-post-title: clamp(32px, 5vw, 48px);
 
 	--leading-tight: 1.1;
 	--leading-snug: 1.35;

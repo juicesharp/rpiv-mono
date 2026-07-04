@@ -1,11 +1,13 @@
 /* Article typography for blog posts AND docs pages.
    All values reference tokens.css custom properties.
-   .prose          → blog-leaning editorial scale (long-form reading)
-   .prose--docs    → tighter reference scale (scanning, not reading) */
+   .prose          → shared reading scale (fluid 17–19px body; code,
+                     tables, and h3/h4 track it via em)
+   .prose--docs    → tighter heading ramp on top (scanning rhythm)
+   .prose--post    → blog-only extras (code-block breakout) */
 
 .prose {
 	font-family: var(--font-serif);
-	font-size: var(--type-base);
+	font-size: var(--type-reading);
 	line-height: var(--leading-body);
 	color: var(--text);
 	max-width: 64ch;
@@ -31,14 +33,17 @@
 .prose h3 {
 	margin-top: var(--space-7);
 	margin-bottom: var(--space-3);
-	font-size: var(--type-h3);
+	font-size: 1.25em;
 	line-height: var(--leading-snug);
 }
 
 .prose h4 {
 	margin-top: var(--space-6);
 	margin-bottom: var(--space-3);
-	font-size: var(--type-lead);
+	font-size: 1.05em;
+	/* weight 500 loaded in Base.astro — at ~1em, size alone can't
+	   outrank the surrounding serif body */
+	font-weight: 500;
 	line-height: var(--leading-snug);
 }
 
@@ -65,7 +70,7 @@
 }
 .prose li {
 	margin-bottom: var(--space-2);
-	line-height: var(--leading-relaxed);
+	line-height: var(--leading-body);
 }
 .prose li::marker {
 	color: var(--text-distant);
@@ -79,10 +84,10 @@
 	color: var(--text-quiet);
 }
 
-/* Inline code — ink-raised background, mono */
+/* Inline code — ink-raised background, mono, tracks body via em */
 .prose code {
 	font-family: var(--font-mono);
-	font-size: var(--type-small);
+	font-size: 0.875em;
 	background: var(--ink-raised);
 	padding: 2px 6px;
 	border-radius: var(--radius-xs);
@@ -96,8 +101,9 @@
 	font-size: inherit;
 }
 
-/* Code blocks — extends global pre styles */
+/* Code blocks — extends global pre styles; size tracks body */
 .prose pre {
+	font-size: 0.875em;
 	margin-bottom: var(--space-5);
 }
 
@@ -138,7 +144,7 @@
 	width: 100%;
 	border-collapse: collapse;
 	margin-bottom: var(--space-5);
-	font-size: var(--type-small);
+	font-size: 0.8em;
 }
 .prose th,
 .prose td {
@@ -156,6 +162,45 @@
 	font-size: var(--type-tiny);
 	letter-spacing: 0.1em;
 	text-transform: uppercase;
+}
+
+/* Figures / inline-SVG diagrams — the Markdown carries no inline
+   styles; these rules make figures uniform. Figures sit at the text
+   measure (Distill's l-body default) — small diagrams never break
+   out; width belongs to content that needs it. Margins are
+   asymmetric (Distill 1.5em/2.5em, Tufte 3em below): more air after
+   the caption than before the figure. */
+.prose figure {
+	margin: var(--space-6) 0 var(--space-7);
+}
+.prose figure svg {
+	display: block;
+	width: 100%;
+	height: auto;
+}
+.prose figcaption {
+	font-family: var(--font-mono);
+	font-size: var(--type-kicker);
+	letter-spacing: 0.05em;
+	color: var(--text-distant);
+	margin-top: var(--space-3);
+}
+
+/* ───────────────────────────────────────────────────────────────
+   .prose--post — blog-only extras
+   Breakout: code blocks extend symmetrically past the reading
+   measure (Tufte-style fullwidth) so wide code isn't squeezed into
+   the 64ch column. Code only: breakout is earned by content density
+   (wide code, tables, maps — Tufte/Distill/Comeau), never given to
+   small diagrams. Blog only: the docs TOC layout already gives code
+   the full column (.has-toc rules below). Applied when the viewport
+   has room: the column tops out around 610px, so ≥860px leaves
+   ≥56px per side inside the container padding.
+   ─────────────────────────────────────────────────────────────── */
+@media (min-width: 860px) {
+	.prose--post pre {
+		margin-inline: -56px;
+	}
 }
 
 /* ───────────────────────────────────────────────────────────────
@@ -181,12 +226,14 @@
 	margin-bottom: var(--space-3);
 }
 .prose--docs h3 {
-	font-size: var(--type-h-docs-h3);
+	/* em, not px: the body is fluid (17–19px), so fixed heading sizes
+	   would fall below body size at desktop and invert the hierarchy */
+	font-size: 1.1em;
 	margin-top: var(--space-5);
 	margin-bottom: var(--space-2);
 }
 .prose--docs h4 {
-	font-size: var(--type-base);
+	font-size: 1em;
 	margin-top: var(--space-4);
 	margin-bottom: var(--space-2);
 }

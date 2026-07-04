@@ -1,5 +1,7 @@
 ---
 import "@fontsource/jetbrains-mono/400.css";
+/* 500 backs `.prose--post h4` only — not preloaded, lazy via unicode-range. */
+import "@fontsource/jetbrains-mono/500.css";
 import "../styles/global.css";
 import Colophon from "../components/Colophon.astro";
 // Preload the latin subset so the browser fetches it in parallel with the

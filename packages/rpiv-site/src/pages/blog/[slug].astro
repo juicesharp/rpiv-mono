@@ -29,8 +29,9 @@ const { Content } = await render(entry);
 >
 	<Nav />
 	<main>
-		<section>
+		<section class="post-shell">
 			<div class="container">
+				<div class="post-column">
 				<a href="/blog" class="back-link mono">← back to blog</a>
 				<p class="post-meta mono">
 					<time datetime={entry.data.pubDate.toISOString()}>
@@ -53,19 +54,30 @@ const { Content } = await render(entry);
 						))}
 					</div>
 				)}
-				<article class="prose">
+				<article class="prose prose--post">
 					<Content />
 				</article>
+				</div>
 			</div>
 		</section>
 	</main>
 </Base>
 
 <style>
+	/* Center the reading column. font-size must be set here, not just on
+	   .prose--post, so the 64ch cap resolves against the post body size —
+	   otherwise the wrapper measures 64ch of the 16px root and clips the
+	   article narrower than its own measure. */
+	.post-column {
+		font-size: var(--type-reading);
+		max-width: 64ch;
+		margin-inline: auto;
+	}
+
 	.back-link {
 		display: inline-block;
-		font-size: var(--type-tiny);
-		letter-spacing: 0.14em;
+		font-size: var(--type-small);
+		letter-spacing: 0.1em;
 		color: var(--text-distant);
 		border-bottom: none;
 		text-decoration: none;
@@ -81,8 +93,8 @@ const { Content } = await render(entry);
 		flex-wrap: wrap;
 		align-items: baseline;
 		gap: var(--space-2);
-		font-size: var(--type-tiny);
-		letter-spacing: 0.14em;
+		font-size: var(--type-small);
+		letter-spacing: 0.1em;
 		color: var(--text-distant);
 		margin-bottom: var(--space-4);
 	}
@@ -92,7 +104,7 @@ const { Content } = await render(entry);
 	}
 
 	.post-title {
-		font-size: var(--type-h2);
+		font-size: var(--type-post-title);
 		line-height: var(--leading-snug);
 		margin-bottom: var(--space-5);
 	}
@@ -101,6 +113,24 @@ const { Content } = await render(entry);
 		display: flex;
 		flex-wrap: wrap;
 		gap: var(--space-2);
-		margin-bottom: var(--space-7);
+		margin-bottom: 0;
+	}
+
+	/* Header→body band: the article opens 64px below the tags (or the
+	   title when a post has none — adjacent margins collapse to the max,
+	   so the gap is 64px either way). */
+	article.prose {
+		margin-top: var(--space-8);
+	}
+
+	/* Editorial headroom — post pages breathe more than the 64px
+	   `main > section` default; step back down on phones. */
+	.post-shell {
+		padding-top: var(--space-9);
+	}
+	@media (max-width: 720px) {
+		.post-shell {
+			padding-top: var(--space-8);
+		}
 	}
 </style>
