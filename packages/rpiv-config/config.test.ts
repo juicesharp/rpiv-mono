@@ -107,6 +107,11 @@ describe("configPath — XDG_CONFIG_HOME", () => {
 		expect(configPath("rpiv-todo")).toBe(join(homedir(), ".config", "rpiv-todo", "config.json"));
 	});
 
+	it('falls back to ~/.config for a "~user" XDG_CONFIG_HOME (only "~" and "~/" expand)', () => {
+		process.env.XDG_CONFIG_HOME = "~user/xdg";
+		expect(configPath("rpiv-todo")).toBe(join(homedir(), ".config", "rpiv-todo", "config.json"));
+	});
+
 	it("honors a custom filename under a set XDG_CONFIG_HOME", () => {
 		const xdg = join(tmpdir(), "rpiv-xdg-custom");
 		process.env.XDG_CONFIG_HOME = xdg;

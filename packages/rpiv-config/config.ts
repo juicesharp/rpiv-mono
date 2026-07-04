@@ -20,6 +20,10 @@ import { Value } from "typebox/value";
  * Expand a leading `~` to the user's home directory. Mirrors Pi's
  * `expandTildePath`. Uses `join` (not string concatenation) so the path
  * separator is correct on every platform.
+ *
+ * Contract: only bare `~` and `~/…` expand. A `~user` form is returned
+ * unchanged (the XDG spec defines no `~user` expansion), so it fails the
+ * downstream `isAbsolute` check and routes to the default config dir.
  */
 function expandTilde(p: string): string {
 	if (p === "~") return homedir();
@@ -43,6 +47,8 @@ function defaultConfigDir(): string {
  *   - unset / empty-after-trim / whitespace-only → default (`~/.config`)
  *   - relative path → default (XDG mandates absolute)
  *   - `"~"` or `"~/…"` → expand the tilde, then require absolute
+ *   - `"~user…"` → NOT expanded (XDG defines no `~user` form); silently
+ *     routes to the default like any other relative path
  *   - absolute → used verbatim
  */
 function resolveConfigDir(): string {
