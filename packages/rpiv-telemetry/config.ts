@@ -1,4 +1,10 @@
-import { configPath, loadJsonConfig, readEnvVar, saveJsonConfig, validateConfig } from "@juicesharp/rpiv-config";
+import {
+	configPath,
+	loadJsonConfigWithLegacyFallback,
+	readEnvVar,
+	saveJsonConfig,
+	validateConfig,
+} from "@juicesharp/rpiv-config";
 import { type Static, Type } from "typebox";
 import { TELEMETRY_EVENT_KINDS, type TelemetryEventKind } from "./types/events.js";
 
@@ -101,7 +107,7 @@ export interface TelemetryConfig {
 // ---------------------------------------------------------------------------
 
 export function loadTelemetryConfig(): TelemetryConfig {
-	const raw = loadJsonConfig<TelemetryConfigSchema>(CONFIG_PATH);
+	const raw = loadJsonConfigWithLegacyFallback<TelemetryConfigSchema>("rpiv-telemetry");
 	// `additionalProperties: false` on `ProvidersConfigSchema` rejects unknown
 	// provider keys with a precise TypeBox error — no separate warn-and-throw
 	// double-act.

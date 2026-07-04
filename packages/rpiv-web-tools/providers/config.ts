@@ -13,7 +13,12 @@
  * startup."
  */
 
-import { configPath, GuidanceFieldsSchema, loadJsonConfig, saveJsonConfig } from "@juicesharp/rpiv-config";
+import {
+	configPath,
+	GuidanceFieldsSchema,
+	loadJsonConfigWithLegacyFallback,
+	saveJsonConfig,
+} from "@juicesharp/rpiv-config";
 import { type Static, Type } from "typebox";
 import { Value } from "typebox/value";
 
@@ -76,7 +81,7 @@ export function getConfigPath(): string {
 // `Value.Clean` (would strip unknown fields like the released `otherField`
 // pass-through contract).
 export function readConfig(): WebToolsConfig {
-	const raw = loadJsonConfig<unknown>(CONFIG_PATH);
+	const raw = loadJsonConfigWithLegacyFallback<unknown>("rpiv-web-tools");
 	if (!Value.Check(WebToolsConfigSchema, raw)) {
 		return {} as WebToolsConfig;
 	}

@@ -1,10 +1,12 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { Type } from "typebox";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	configPath,
 	loadJsonConfig,
+	loadJsonConfigWithLegacyFallback,
 	modelKey,
 	parseModelKey,
 	readEnvVar,
@@ -54,6 +56,61 @@ describe("configPath", () => {
 	it("supports voice.json", () => {
 		const result = configPath("rpiv-voice", "voice.json");
 		expect(result).toMatch(/\.config[/\\]rpiv-voice[/\\]voice\.json$/);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// configPath — XDG_CONFIG_HOME resolution
+// ---------------------------------------------------------------------------
+
+describe("configPath — XDG_CONFIG_HOME", () => {
+	const ORIG = process.env.XDG_CONFIG_HOME;
+
+	afterEach(() => {
+		if (ORIG === undefined) delete process.env.XDG_CONFIG_HOME;
+		else process.env.XDG_CONFIG_HOME = ORIG;
+	});
+
+	it("falls back to ~/.config when XDG_CONFIG_HOME is unset", () => {
+		delete process.env.XDG_CONFIG_HOME;
+		expect(configPath("rpiv-todo")).toBe(join(homedir(), ".config", "rpiv-todo", "config.json"));
+	});
+
+	it("honors an absolute XDG_CONFIG_HOME", () => {
+		const xdg = join(tmpdir(), "rpiv-xdg-abs");
+		process.env.XDG_CONFIG_HOME = xdg;
+		expect(configPath("rpiv-todo")).toBe(join(xdg, "rpiv-todo", "config.json"));
+	});
+
+	it('expands a "~/"-prefixed XDG_CONFIG_HOME', () => {
+		process.env.XDG_CONFIG_HOME = "~/xdg";
+		expect(configPath("rpiv-todo")).toBe(join(homedir(), "xdg", "rpiv-todo", "config.json"));
+	});
+
+	it('resolves a bare "~" XDG_CONFIG_HOME to homedir()', () => {
+		process.env.XDG_CONFIG_HOME = "~";
+		expect(configPath("rpiv-todo")).toBe(join(homedir(), "rpiv-todo", "config.json"));
+	});
+
+	it('falls back to ~/.config when XDG_CONFIG_HOME is ""', () => {
+		process.env.XDG_CONFIG_HOME = "";
+		expect(configPath("rpiv-todo")).toBe(join(homedir(), ".config", "rpiv-todo", "config.json"));
+	});
+
+	it("falls back to ~/.config when XDG_CONFIG_HOME is whitespace-only", () => {
+		process.env.XDG_CONFIG_HOME = "   ";
+		expect(configPath("rpiv-todo")).toBe(join(homedir(), ".config", "rpiv-todo", "config.json"));
+	});
+
+	it("falls back to ~/.config when XDG_CONFIG_HOME is relative", () => {
+		process.env.XDG_CONFIG_HOME = "relative";
+		expect(configPath("rpiv-todo")).toBe(join(homedir(), ".config", "rpiv-todo", "config.json"));
+	});
+
+	it("honors a custom filename under a set XDG_CONFIG_HOME", () => {
+		const xdg = join(tmpdir(), "rpiv-xdg-custom");
+		process.env.XDG_CONFIG_HOME = xdg;
+		expect(configPath("rpiv-advisor", "advisor.json")).toBe(join(xdg, "rpiv-advisor", "advisor.json"));
 	});
 });
 
@@ -128,6 +185,73 @@ describe("loadJsonConfig", () => {
 		writeTmpConfig(path, [1, 2, 3]);
 		const result = loadJsonConfig(path);
 		expect(result).toEqual({});
+	});
+});
+
+// ---------------------------------------------------------------------------
+// loadJsonConfigWithLegacyFallback
+// ---------------------------------------------------------------------------
+
+describe("loadJsonConfigWithLegacyFallback", () => {
+	const ORIG = process.env.XDG_CONFIG_HOME;
+	const xdgRoot = join(tmpdir(), "rpiv-xdg-fallback");
+	const legacyRoot = join(homedir(), ".config");
+	const NAME = "rpiv-test-fb";
+
+	function xdgConfigPath(file = "config.json"): string {
+		return join(xdgRoot, NAME, file);
+	}
+	function legacyConfigPath(file = "config.json"): string {
+		return join(legacyRoot, NAME, file);
+	}
+
+	beforeEach(() => {
+		process.env.XDG_CONFIG_HOME = xdgRoot;
+		rmSync(xdgRoot, { recursive: true, force: true });
+		rmSync(join(legacyRoot, NAME), { recursive: true, force: true });
+	});
+
+	afterEach(() => {
+		rmSync(xdgRoot, { recursive: true, force: true });
+		rmSync(join(legacyRoot, NAME), { recursive: true, force: true });
+		if (ORIG === undefined) delete process.env.XDG_CONFIG_HOME;
+		else process.env.XDG_CONFIG_HOME = ORIG;
+	});
+
+	it("reads the XDG file when present", () => {
+		const p = xdgConfigPath();
+		mkdirSync(dirname(p), { recursive: true });
+		writeFileSync(p, JSON.stringify({ from: "xdg" }), "utf-8");
+		expect(loadJsonConfigWithLegacyFallback<Record<string, unknown>>(NAME)).toEqual({ from: "xdg" });
+	});
+
+	it("reads the legacy ~/.config file when the XDG path is missing", () => {
+		// XDG root has no file for NAME → falls back to legacy.
+		const legacy = legacyConfigPath();
+		mkdirSync(dirname(legacy), { recursive: true });
+		writeFileSync(legacy, JSON.stringify({ from: "legacy" }), "utf-8");
+		expect(loadJsonConfigWithLegacyFallback<Record<string, unknown>>(NAME)).toEqual({ from: "legacy" });
+	});
+
+	it("returns {} when both XDG and legacy paths are missing", () => {
+		expect(loadJsonConfigWithLegacyFallback<Record<string, unknown>>(NAME)).toEqual({});
+	});
+
+	it("warns + returns {} for a malformed XDG file and does NOT fall back to legacy", () => {
+		const xdg = xdgConfigPath();
+		mkdirSync(dirname(xdg), { recursive: true });
+		writeFileSync(xdg, "not json", "utf-8");
+		// Legacy file is also present — it must NOT be read.
+		const legacy = legacyConfigPath();
+		mkdirSync(dirname(legacy), { recursive: true });
+		writeFileSync(legacy, JSON.stringify({ from: "legacy" }), "utf-8");
+
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+		const result = loadJsonConfigWithLegacyFallback<Record<string, unknown>>(NAME);
+		expect(result).toEqual({});
+		expect(warn).toHaveBeenCalledOnce();
+		expect(warn.mock.calls[0]?.[0]).toMatch(/invalid JSON at .*using default/);
+		warn.mockRestore();
 	});
 });
 

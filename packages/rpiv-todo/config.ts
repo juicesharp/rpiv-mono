@@ -1,7 +1,5 @@
 import type { GuidanceFields } from "@juicesharp/rpiv-config";
-import { configPath, loadJsonConfig, validateGuidanceFields } from "@juicesharp/rpiv-config";
-
-const CONFIG_PATH = configPath("rpiv-todo");
+import { loadJsonConfigWithLegacyFallback, validateGuidanceFields } from "@juicesharp/rpiv-config";
 
 interface TodoConfig {
 	guidance?: GuidanceFields;
@@ -13,7 +11,7 @@ interface TodoConfig {
 export const DEFAULT_MAX_WIDGET_LINES = 12;
 
 export function loadConfig(): TodoConfig {
-	return loadJsonConfig<TodoConfig>(CONFIG_PATH);
+	return loadJsonConfigWithLegacyFallback<TodoConfig>("rpiv-todo");
 }
 
 /** Content-row budget for the overlay, read fresh on every call (per-render —

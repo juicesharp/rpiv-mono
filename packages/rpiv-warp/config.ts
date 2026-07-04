@@ -1,4 +1,4 @@
-import { configPath, loadJsonConfig } from "@juicesharp/rpiv-config";
+import { configPath, loadJsonConfigWithLegacyFallback } from "@juicesharp/rpiv-config";
 
 export const CONFIG_PATH = configPath("rpiv-warp");
 
@@ -11,7 +11,7 @@ export const DEFAULT_BLOCKING_TOOLS: readonly string[] = ["ask_user_question"];
 export const DEFAULT_HEARTBEAT_MS = 15000;
 
 export function loadConfig(): RpivWarpConfig {
-	return loadJsonConfig<RpivWarpConfig>(CONFIG_PATH);
+	return loadJsonConfigWithLegacyFallback<RpivWarpConfig>("rpiv-warp");
 }
 
 export function getHeartbeatMs(): number {

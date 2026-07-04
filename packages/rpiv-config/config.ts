@@ -8,7 +8,7 @@
 
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import { type Static, type TObject, Type } from "typebox";
 import { Value } from "typebox/value";
 
@@ -17,14 +17,66 @@ import { Value } from "typebox/value";
 // ---------------------------------------------------------------------------
 
 /**
- * Resolve a config file path under `~/.config/<name>/`.
+ * Expand a leading `~` to the user's home directory. Mirrors Pi's
+ * `expandTildePath`. Uses `join` (not string concatenation) so the path
+ * separator is correct on every platform.
+ */
+function expandTilde(p: string): string {
+	if (p === "~") return homedir();
+	if (p.startsWith("~/")) return join(homedir(), p.slice(2));
+	return p;
+}
+
+/** Default config directory: `~/.config`. Single source of the `.config` literal. */
+function defaultConfigDir(): string {
+	return join(homedir(), ".config");
+}
+
+/**
+ * Resolve the config directory honoring `XDG_CONFIG_HOME`.
+ *
+ * Boundary: `XDG_CONFIG_HOME` governs the rpiv-* sibling config layer only.
+ * Pi-native paths (`~/.pi/…`, driven by `PI_CODING_AGENT_DIR`) are a separate,
+ * orthogonal concern and are intentionally NOT unified here.
+ *
+ * XDG spec compliance:
+ *   - unset / empty-after-trim / whitespace-only → default (`~/.config`)
+ *   - relative path → default (XDG mandates absolute)
+ *   - `"~"` or `"~/…"` → expand the tilde, then require absolute
+ *   - absolute → used verbatim
+ */
+function resolveConfigDir(): string {
+	const xdg = readEnvVar("XDG_CONFIG_HOME");
+	if (!xdg) return defaultConfigDir();
+	const expanded = expandTilde(xdg);
+	return isAbsolute(expanded) ? expanded : defaultConfigDir();
+}
+
+/**
+ * Always-legacy config path under `~/.config`. Used by the legacy-fallback
+ * reader so a pre-XDG config file is still discovered after an operator sets
+ * `XDG_CONFIG_HOME`. Ignores `XDG_CONFIG_HOME` by design.
+ */
+function legacyConfigPath(name: string, file: string = "config.json"): string {
+	return join(defaultConfigDir(), name, file);
+}
+
+/**
+ * Resolve a config file path under the XDG-aware config directory.
+ *
+ * `<resolveConfigDir()>/<name>/<file>` — defaults to `~/.config/<name>/config.json`
+ * when `XDG_CONFIG_HOME` is unset / empty / whitespace / relative.
+ *
+ * Boundary: `XDG_CONFIG_HOME` governs the rpiv-* sibling config layer only;
+ * Pi-native paths (`~/.pi/…`, via `PI_CODING_AGENT_DIR`) are orthogonal and
+ * not unified here.
  *
  * @param name — package directory name (e.g. "rpiv-todo")
  * @param file — config filename (defaults to "config.json")
  * @returns absolute path to the config file
  */
 export function configPath(name: string, file: string = "config.json"): string {
-	return join(homedir(), ".config", name, file);
+	return join(resolveConfigDir(), name, file);
 }
 
 // ---------------------------------------------------------------------------
@@ -55,6 +107,28 @@ export function loadJsonConfig<T>(path: string): T {
 		console.warn(`rpiv-config: invalid JSON at ${path}, using default ({}) — ${(err as Error).message}`);
 		return {} as T;
 	}
+}
+
+/**
+ * Load a JSON config, preferring the XDG-resolved path and falling back to the
+ * legacy `~/.config/<name>/<file>` location only when the XDG path is missing.
+ *
+ * - XDG file present (valid or malformed) → its parse result wins. A malformed
+ *   XDG file warns and returns `{}` but does NOT silently fall back to legacy —
+ *   corruption is surfaced, not masked.
+ * - XDG file missing → read the legacy path (which returns `{}` if also missing,
+ *   or warns + `{}` if malformed).
+ * - Both missing → `{}`.
+ *
+ * @param name — package directory name (e.g. "rpiv-todo")
+ * @param file — config filename (defaults to "config.json")
+ */
+export function loadJsonConfigWithLegacyFallback<T>(name: string, file: string = "config.json"): T {
+	const xdgPath = configPath(name, file);
+	if (existsSync(xdgPath)) {
+		return loadJsonConfig<T>(xdgPath);
+	}
+	return loadJsonConfig<T>(legacyConfigPath(name, file));
 }
 
 // ---------------------------------------------------------------------------

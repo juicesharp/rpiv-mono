@@ -6,7 +6,7 @@
 
 import type { ThinkingLevel } from "@earendil-works/pi-ai";
 import type { GuidanceFields } from "@juicesharp/rpiv-config";
-import { configPath, loadJsonConfig, saveJsonConfig } from "@juicesharp/rpiv-config";
+import { configPath, loadJsonConfigWithLegacyFallback, saveJsonConfig } from "@juicesharp/rpiv-config";
 import { EFFORT_ORDINAL } from "./messages.js";
 
 const ADVISOR_CONFIG_PATH = configPath("rpiv-advisor", "advisor.json");
@@ -21,7 +21,7 @@ interface AdvisorConfig {
 }
 
 export function loadAdvisorConfig(): AdvisorConfig {
-	return loadJsonConfig<AdvisorConfig>(ADVISOR_CONFIG_PATH);
+	return loadJsonConfigWithLegacyFallback<AdvisorConfig>("rpiv-advisor", "advisor.json");
 }
 
 export function validateDisabledForModels(value: unknown): DisabledForModelsEntry[] {

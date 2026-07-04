@@ -8,6 +8,7 @@ const TEST_HOME = mkdtempSync(join(tmpdir(), "rpiv-test-home-"));
 process.env.HOME = TEST_HOME;
 process.env.USERPROFILE = TEST_HOME;
 delete process.env.PI_CODING_AGENT_DIR;
+delete process.env.XDG_CONFIG_HOME;
 
 vi.mock("@earendil-works/pi-ai", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("@earendil-works/pi-ai")>();
@@ -46,6 +47,7 @@ const VOICE_SYMBOL = Symbol.for("rpiv-voice");
 // per worker; subsequent tests reuse the module cache and beforeEach is fast.
 beforeEach(async () => {
 	delete process.env.PI_CODING_AGENT_DIR;
+	delete process.env.XDG_CONFIG_HOME;
 
 	const todo = await import("../packages/rpiv-todo/todo.js");
 	todo.__resetState();

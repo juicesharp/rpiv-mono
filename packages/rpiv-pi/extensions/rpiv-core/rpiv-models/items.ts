@@ -9,13 +9,8 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import type { SelectItem } from "@earendil-works/pi-tui";
-import { loadJsonConfig, modelKey } from "@juicesharp/rpiv-config";
-import {
-	CONFIG_PATH,
-	type ModelsConfigSchema,
-	THINKING_LEVEL_VALUES,
-	type ThinkingLevelValue,
-} from "../models-config.js";
+import { loadJsonConfigWithLegacyFallback, modelKey } from "@juicesharp/rpiv-config";
+import { type ModelsConfigSchema, THINKING_LEVEL_VALUES, type ThinkingLevelValue } from "../models-config.js";
 import {
 	CHECK,
 	SCOPE_AGENTS,
@@ -103,5 +98,5 @@ export function buildEffortItems(picked: Model<Api>): SelectItem[] {
 }
 
 export function loadRawConfig(): ModelsConfigSchema {
-	return loadJsonConfig<ModelsConfigSchema>(CONFIG_PATH);
+	return loadJsonConfigWithLegacyFallback<ModelsConfigSchema>("rpiv-pi", "models.json");
 }

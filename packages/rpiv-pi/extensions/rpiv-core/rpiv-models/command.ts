@@ -15,7 +15,7 @@
 
 import type { Api, Model } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { loadJsonConfig, modelKey, saveJsonConfig } from "@juicesharp/rpiv-config";
+import { loadJsonConfigWithLegacyFallback, modelKey, saveJsonConfig } from "@juicesharp/rpiv-config";
 import {
 	CONFIG_PATH,
 	invalidateModelsConfigCache,
@@ -337,7 +337,7 @@ async function resetAllOverrides(ctx: ExtensionContext): Promise<void> {
 /** Remove a single scope+keyPath override, reporting honestly when there was none. */
 function resetOverride(ctx: ExtensionContext, scope: string, keyPath: string[]): void {
 	const label = scopeLabel(scope, keyPath);
-	const fresh = loadJsonConfig<ModelsConfigSchema>(CONFIG_PATH);
+	const fresh = loadJsonConfigWithLegacyFallback<ModelsConfigSchema>("rpiv-pi", "models.json");
 	const { next, removed } = removeOverride(fresh, scope, keyPath);
 	if (!removed) {
 		// Nothing to remove — report honestly, skip the no-op write + cache reset.
@@ -355,7 +355,7 @@ function saveOverride(
 	model: string,
 	effort: ModelThinkingLevelValue | undefined,
 ): void {
-	const fresh = loadJsonConfig<ModelsConfigSchema>(CONFIG_PATH);
+	const fresh = loadJsonConfigWithLegacyFallback<ModelsConfigSchema>("rpiv-pi", "models.json");
 	const next = applyOverride(fresh, scope, keyPath, { model, thinking: effort });
 	if (persist(ctx, next)) {
 		ctx.ui.notify(`Saved ${scopeLabel(scope, keyPath)} → ${model}${effort ? ` (${effort})` : ""}`, "info");

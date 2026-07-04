@@ -12,7 +12,7 @@
  * take effect on the next session start or /rpiv-update-agents.
  */
 
-import { configPath, loadJsonConfig, validateConfig } from "@juicesharp/rpiv-config";
+import { configPath, loadJsonConfigWithLegacyFallback, validateConfig } from "@juicesharp/rpiv-config";
 import { type Static, Type } from "typebox";
 
 // ---------------------------------------------------------------------------
@@ -189,7 +189,7 @@ let modelsConfigCache: ModelsConfig | undefined;
 export function loadModelsConfig(): ModelsConfig {
 	if (modelsConfigCache !== undefined) return modelsConfigCache;
 
-	const raw = loadJsonConfig<ModelsConfigSchema>(CONFIG_PATH);
+	const raw = loadJsonConfigWithLegacyFallback<ModelsConfigSchema>("rpiv-pi", "models.json");
 	const validated = validateConfig(ModelsConfigSchema, raw);
 
 	const defaults = resolvedEntry(validated.defaults);

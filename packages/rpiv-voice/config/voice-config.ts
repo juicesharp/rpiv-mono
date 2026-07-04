@@ -11,7 +11,7 @@
  * the return — see `rpiv-config.saveJsonConfig` for the full contract.
  */
 
-import { configPath, loadJsonConfig, saveJsonConfig } from "@juicesharp/rpiv-config";
+import { configPath, loadJsonConfigWithLegacyFallback, saveJsonConfig } from "@juicesharp/rpiv-config";
 
 // ── Filesystem layout ────────────────────────────────────────────────────────
 const CONFIG_PATH = configPath("rpiv-voice", "voice.json");
@@ -42,7 +42,7 @@ export function isEqualizerEnabled(config: { equalizerEnabled?: boolean }): bool
 }
 
 export function loadVoiceConfig(): VoiceConfig {
-	return loadJsonConfig<VoiceConfig>(CONFIG_PATH);
+	return loadJsonConfigWithLegacyFallback<VoiceConfig>("rpiv-voice", "voice.json");
 }
 
 export function saveVoiceConfig(config: VoiceConfig): boolean {

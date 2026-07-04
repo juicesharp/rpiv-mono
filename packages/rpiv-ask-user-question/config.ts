@@ -1,7 +1,5 @@
 import type { GuidanceFields } from "@juicesharp/rpiv-config";
-import { configPath, loadJsonConfig, validateGuidanceFields } from "@juicesharp/rpiv-config";
-
-const CONFIG_PATH = configPath("rpiv-ask-user-question");
+import { loadJsonConfigWithLegacyFallback, validateGuidanceFields } from "@juicesharp/rpiv-config";
 
 /** Key spec for the overlay collapse/expand shortcut, e.g. `"ctrl+]"` or `"alt+o"`. */
 export type CollapseKeySpec = string;
@@ -71,7 +69,7 @@ export function resolveCollapseKey(config: Pick<AskUserQuestionConfig, "collapse
 }
 
 export function loadConfig(): AskUserQuestionConfig {
-	return loadJsonConfig<AskUserQuestionConfig>(CONFIG_PATH);
+	return loadJsonConfigWithLegacyFallback<AskUserQuestionConfig>("rpiv-ask-user-question");
 }
 
 export { validateGuidanceFields };

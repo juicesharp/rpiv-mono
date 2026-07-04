@@ -3,6 +3,7 @@ export {
 	type GuidanceFields,
 	GuidanceFieldsSchema,
 	loadJsonConfig,
+	loadJsonConfigWithLegacyFallback,
 	modelKey,
 	parseModelKey,
 	readEnvVar,
