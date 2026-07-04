@@ -105,9 +105,14 @@ rpiv's `build` makes the opposite bet on all three questions.
     <path d="M329,56 L329,64 M335,56 L335,64 M326.5,57.5 L337.5,57.5" />
     <path d="M402,56 L402,64 M408,56 L408,64 M399.5,57.5 L410.5,57.5" />
   </g>
-  <text x="121" y="58" font-family="var(--font-mono)" font-size="7" fill="var(--ochre)" opacity="0.7">↺</text>
-  <text x="340" y="58" font-family="var(--font-mono)" font-size="7" fill="var(--ochre)" opacity="0.7">↺</text>
-  <text x="413" y="58" font-family="var(--font-mono)" font-size="7" fill="var(--ochre)" opacity="0.7">↺</text>
+  <g fill="none" stroke="var(--ochre)" stroke-width="1.1" opacity="0.85" stroke-linecap="round">
+    <path d="M120,52 A 7,7 0 1 1 121,42" />
+    <path d="M125.5,39 L121,42.5 L126.5,45" />
+    <path d="M339,52 A 7,7 0 1 1 340,42" />
+    <path d="M344.5,39 L340,42.5 L345.5,45" />
+    <path d="M412,52 A 7,7 0 1 1 413,42" />
+    <path d="M417.5,39 L413,42.5 L418.5,45" />
+  </g>
   <g fill="none" stroke="var(--sage)" stroke-width="0.7" opacity="0.35" stroke-dasharray="2 2">
     <circle cx="182" cy="66" r="8" /><circle cx="190" cy="74" r="8" />
   </g>
