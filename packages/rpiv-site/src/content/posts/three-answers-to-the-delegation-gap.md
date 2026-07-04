@@ -17,32 +17,33 @@ This comparison is scored for one job, the coding problem in its hardest everyda
 
 [Claude Code's dynamic workflows](https://code.claude.com/docs/en/workflows) have the model author a fresh orchestration script per run: fan-out, verifier agents that adversarially cross-check findings, grader loops. The script executes in the background. It is genuinely impressive machinery, and its own docs state its human-interaction contract plainly: **no mid-run user input** (only permission prompts can pause a run, and [subagents are barred](https://code.claude.com/docs/en/sub-agents) from the question tool). If you want sign-off between stages, you split the work into separate runs. The plan is held by a script the model wrote minutes ago. Verification is models checking models. You are asked at launch, and then not at all.
 
-<figure style="margin:1.75rem 0">
-<svg viewBox="0 0 520 132" style="width:100%;height:auto;display:block" role="img" aria-label="Dynamic workflows: you approve at launch, then a wall closes. A model-written script fans out agents, other agents verify them, and a result comes back with no human in the loop.">
+<figure>
+<svg viewBox="0 0 520 132" role="img" aria-label="Dynamic workflows: you approve at launch, then a wall closes. A model-written script fans out agents, other agents verify them, and a result comes back with no human in the loop.">
   <rect x="22" y="52" width="13" height="13" rx="1.5" transform="rotate(8 28 58)" fill="var(--ochre)" opacity="0.92" />
-  <text x="28" y="86" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="var(--text-quiet)">you</text>
+  <text x="28" y="86" text-anchor="middle" font-family="var(--font-mono)" font-size="11" fill="var(--text-quiet)">you</text>
   <line x1="62" y1="16" x2="62" y2="116" stroke="var(--text-distant)" stroke-width="1" stroke-dasharray="3 4" opacity="0.6" />
-  <text x="66" y="14" font-family="var(--font-mono)" font-size="7.5" fill="var(--text-distant)" letter-spacing="0.08em">launch · no mid-run input</text>
+  <text x="66" y="14" font-family="var(--font-mono)" font-size="9" fill="var(--text-distant)" letter-spacing="0.08em">launch · no mid-run input</text>
   <line x1="41" y1="58" x2="78" y2="58" stroke="var(--sage-deep)" stroke-width="1" />
   <rect x="82" y="42" width="88" height="32" rx="3" fill="var(--ink-raised)" stroke="var(--sage)" stroke-width="1" stroke-dasharray="4 3" />
-  <text x="126" y="56" text-anchor="middle" font-family="var(--font-mono)" font-size="10" fill="var(--washi-soft)">script</text>
-  <text x="126" y="68" text-anchor="middle" font-family="var(--font-mono)" font-size="7.5" fill="var(--text-distant)">model-written</text>
+  <text x="126" y="56" text-anchor="middle" font-family="var(--font-mono)" font-size="12" fill="var(--washi-soft)">script</text>
+  <text x="126" y="68" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="var(--text-distant)">model-written</text>
   <line x1="170" y1="52" x2="238" y2="26" stroke="var(--sage-deep)" stroke-width="0.9" opacity="0.7" />
   <line x1="170" y1="58" x2="238" y2="58" stroke="var(--sage-deep)" stroke-width="0.9" opacity="0.7" />
   <line x1="170" y1="64" x2="238" y2="90" stroke="var(--sage-deep)" stroke-width="0.9" opacity="0.7" />
   <circle cx="245" cy="26" r="7" fill="var(--ink)" stroke="var(--sage)" stroke-width="1" />
   <circle cx="245" cy="58" r="7" fill="var(--ink)" stroke="var(--sage)" stroke-width="1" />
   <circle cx="245" cy="90" r="7" fill="var(--ink)" stroke="var(--sage)" stroke-width="1" />
-  <text x="245" y="115" text-anchor="middle" font-family="var(--font-mono)" font-size="8.5" fill="var(--text-distant)">agents ×N</text>
+  <text x="245" y="115" text-anchor="middle" font-family="var(--font-mono)" font-size="10" fill="var(--text-distant)">agents ×N</text>
   <line x1="252" y1="28" x2="322" y2="54" stroke="var(--sage-deep)" stroke-width="0.9" opacity="0.7" />
   <line x1="252" y1="58" x2="320" y2="58" stroke="var(--sage-deep)" stroke-width="0.9" opacity="0.7" />
   <line x1="252" y1="88" x2="322" y2="62" stroke="var(--sage-deep)" stroke-width="0.9" opacity="0.7" />
   <circle cx="332" cy="58" r="9" fill="var(--ink)" stroke="var(--sage)" stroke-width="1.1" />
-  <text x="332" y="38" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="var(--ochre)" opacity="0.8">↺</text>
-  <text x="332" y="115" text-anchor="middle" font-family="var(--font-mono)" font-size="8.5" fill="var(--text-distant)">agents judge agents</text>
+  <text x="332" y="38" text-anchor="middle" font-family="var(--font-mono)" font-size="11" fill="var(--ochre)" opacity="0.8">↺</text>
+  <text x="332" y="115" text-anchor="middle" font-family="var(--font-mono)" font-size="10" fill="var(--text-distant)">agents judge</text>
+  <text x="332" y="127" text-anchor="middle" font-family="var(--font-mono)" font-size="10" fill="var(--text-distant)">agents</text>
   <line x1="342" y1="58" x2="428" y2="58" stroke="var(--sage-deep)" stroke-width="1" />
   <path d="M424,54 L430,58 L424,62" fill="none" stroke="var(--sage-deep)" stroke-width="1" />
-  <text x="436" y="61" font-family="var(--font-mono)" font-size="10" fill="var(--washi-soft)">result</text>
+  <text x="436" y="61" font-family="var(--font-mono)" font-size="12" fill="var(--washi-soft)">result</text>
 </svg>
 <figcaption style="font-family:var(--font-mono);font-size:0.72rem;color:var(--text-distant);margin-top:0.6rem">You approve at launch. After the wall, a model-written script runs model-checked work to a result.</figcaption>
 </figure>
@@ -55,29 +56,29 @@ This is the right shape for *breadth* work: exhaustive audits, research sweeps, 
 
 [`/goal`](https://code.claude.com/docs/en/goal) sets a completion condition and lets the agent free-run until a fresh evaluator judges the condition met. There is no process at all. That's the appeal. Persistence replaces structure. "Keep going until CI is green" is a perfectly good contract when the end state is measurable and the path doesn't matter.
 
-<figure style="margin:1.75rem 0">
-<svg viewBox="0 0 520 132" style="width:100%;height:auto;display:block" role="img" aria-label="/goal: you write a condition of up to 4,000 characters, the agent free-runs in a loop, and a fresh evaluator decides when it is met. No human appears after the start.">
+<figure>
+<svg viewBox="0 0 520 132" role="img" aria-label="/goal: you write a condition of up to 4,000 characters, the agent free-runs in a loop, and a fresh evaluator decides when it is met. No human appears after the start.">
   <rect x="22" y="52" width="13" height="13" rx="1.5" transform="rotate(8 28 58)" fill="var(--ochre)" opacity="0.92" />
-  <text x="28" y="86" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="var(--text-quiet)">you</text>
+  <text x="28" y="86" text-anchor="middle" font-family="var(--font-mono)" font-size="11" fill="var(--text-quiet)">you</text>
   <line x1="41" y1="58" x2="78" y2="58" stroke="var(--sage-deep)" stroke-width="1" />
   <rect x="82" y="42" width="96" height="32" rx="3" fill="var(--ink-raised)" stroke="var(--sage)" stroke-width="1" />
-  <text x="130" y="56" text-anchor="middle" font-family="var(--font-mono)" font-size="10" fill="var(--washi-soft)">condition</text>
-  <text x="130" y="68" text-anchor="middle" font-family="var(--font-mono)" font-size="7.5" fill="var(--text-distant)">≤ 4,000 chars</text>
+  <text x="130" y="56" text-anchor="middle" font-family="var(--font-mono)" font-size="12" fill="var(--washi-soft)">condition</text>
+  <text x="130" y="68" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="var(--text-distant)">≤ 4,000 chars</text>
   <line x1="180" y1="58" x2="222" y2="58" stroke="var(--sage-deep)" stroke-width="1" />
   <circle cx="272" cy="58" r="34" fill="none" stroke="var(--sage)" stroke-width="1" stroke-dasharray="5 4" opacity="0.7" />
-  <path d="M300,36 L306,42 L297,45" fill="none" stroke="var(--sage)" stroke-width="1" opacity="0.7" />
-  <text x="272" y="55" text-anchor="middle" font-family="var(--font-mono)" font-size="10" fill="var(--washi-soft)">agent</text>
-  <text x="272" y="68" text-anchor="middle" font-family="var(--font-mono)" font-size="7.5" fill="var(--text-distant)">free-runs</text>
+  <path d="M296,37 L301.5,41 L301,34" fill="none" stroke="var(--sage)" stroke-width="1" opacity="0.7" />
+  <text x="272" y="55" text-anchor="middle" font-family="var(--font-mono)" font-size="12" fill="var(--washi-soft)">agent</text>
+  <text x="272" y="68" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="var(--text-distant)">free-runs</text>
   <line x1="306" y1="58" x2="358" y2="58" stroke="var(--sage-deep)" stroke-width="1" />
   <circle cx="370" cy="58" r="9" fill="var(--ink)" stroke="var(--sage)" stroke-width="1.1" />
-  <text x="370" y="82" text-anchor="middle" font-family="var(--font-mono)" font-size="8.5" fill="var(--text-distant)">met?</text>
-  <text x="370" y="115" text-anchor="middle" font-family="var(--font-mono)" font-size="8.5" fill="var(--text-distant)">fresh evaluator</text>
-  <path d="M366,49 C340,20 300,18 279,26" fill="none" stroke="var(--ochre)" stroke-width="0.8" stroke-dasharray="2.5 3.5" opacity="0.55" />
-  <path d="M287,21 L278,26 L286,31" fill="none" stroke="var(--ochre)" stroke-width="0.8" opacity="0.55" />
-  <text x="322" y="14" text-anchor="middle" font-family="var(--font-mono)" font-size="7.5" fill="var(--text-distant)">not yet ↺</text>
+  <text x="370" y="82" text-anchor="middle" font-family="var(--font-mono)" font-size="10" fill="var(--text-distant)">met?</text>
+  <text x="370" y="115" text-anchor="middle" font-family="var(--font-mono)" font-size="10" fill="var(--text-distant)">fresh evaluator</text>
+  <path d="M366,49 C340,20 300,18 280,24" fill="none" stroke="var(--ochre)" stroke-width="0.8" stroke-dasharray="2.5 3.5" opacity="0.55" />
+  <path d="M287,25 L280,24 L285,19.5" fill="none" stroke="var(--ochre)" stroke-width="0.8" opacity="0.55" />
+  <text x="322" y="14" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="var(--text-distant)">not yet ↺</text>
   <line x1="380" y1="58" x2="438" y2="58" stroke="var(--sage-deep)" stroke-width="1" />
   <path d="M434,54 L440,58 L434,62" fill="none" stroke="var(--sage-deep)" stroke-width="1" />
-  <text x="446" y="61" font-family="var(--font-mono)" font-size="10" fill="var(--washi-soft)">done</text>
+  <text x="446" y="61" font-family="var(--font-mono)" font-size="12" fill="var(--washi-soft)">done</text>
 </svg>
 <figcaption style="font-family:var(--font-mono);font-size:0.72rem;color:var(--text-distant);margin-top:0.6rem">No process: the agent loops until a fresh evaluator calls the condition met. You appear only at the start.</figcaption>
 </figure>
@@ -88,15 +89,15 @@ Note what the goal is here: a stop condition *you paraphrased* from your intent,
 
 rpiv's `build` makes the opposite bet on all three questions.
 
-<figure style="margin:1.75rem 0">
-<svg viewBox="0 0 520 132" style="width:100%;height:auto;display:block" role="img" aria-label="rpiv build: a fixed rail of seven acts. Torii gates at slice, plan, and code repair on their own fix loops. Hollow marks above capture, slice, and design ask you only on real ambiguity. The solid seal at review always pauses. Your marks appear along the whole rail, not just at the start.">
+<figure>
+<svg viewBox="0 0 520 132" role="img" aria-label="rpiv build: a fixed rail of seven acts. Torii gates at slice, plan, and code repair on their own fix loops. Hollow marks above capture, slice, and design ask you only on real ambiguity. The solid seal at review always pauses. Your marks appear along the whole rail, not just at the start.">
   <line x1="40" y1="70" x2="478" y2="70" stroke="var(--sage-deep)" stroke-width="1" opacity="0.8" />
   <circle cx="76" cy="70" r="1.8" fill="var(--ochre)" opacity="0.7" /><circle cx="149" cy="70" r="1.8" fill="var(--ochre)" opacity="0.7" /><circle cx="222" cy="70" r="1.8" fill="var(--ochre)" opacity="0.7" /><circle cx="295" cy="70" r="1.8" fill="var(--ochre)" opacity="0.7" /><circle cx="368" cy="70" r="1.8" fill="var(--ochre)" opacity="0.7" /><circle cx="441" cy="70" r="1.8" fill="var(--ochre)" opacity="0.7" />
   <rect x="35" y="26" width="9" height="9" rx="1" transform="rotate(8 40 30)" fill="none" stroke="var(--ochre)" stroke-width="0.9" opacity="0.75" />
   <rect x="108" y="26" width="9" height="9" rx="1" transform="rotate(8 113 30)" fill="none" stroke="var(--ochre)" stroke-width="0.9" opacity="0.75" />
   <rect x="181" y="26" width="9" height="9" rx="1" transform="rotate(8 186 30)" fill="none" stroke="var(--ochre)" stroke-width="0.9" opacity="0.75" />
   <rect x="254" y="26" width="9" height="9" rx="1" transform="rotate(8 259 30)" fill="var(--ochre)" opacity="0.92" />
-  <line x1="40" y1="38" x2="40" y2="54" stroke="var(--ochre)" stroke-width="0.7" stroke-dasharray="1.5 3" opacity="0.4" />
+  <line x1="40" y1="38" x2="40" y2="58" stroke="var(--ochre)" stroke-width="0.7" stroke-dasharray="1.5 3" opacity="0.4" />
   <line x1="113" y1="38" x2="113" y2="48" stroke="var(--ochre)" stroke-width="0.7" stroke-dasharray="1.5 3" opacity="0.4" />
   <line x1="186" y1="38" x2="186" y2="52" stroke="var(--ochre)" stroke-width="0.7" stroke-dasharray="1.5 3" opacity="0.4" />
   <line x1="259" y1="38" x2="259" y2="58" stroke="var(--ochre)" stroke-width="0.7" stroke-dasharray="1.5 3" opacity="0.55" />
@@ -106,12 +107,12 @@ rpiv's `build` makes the opposite bet on all three questions.
     <path d="M402,56 L402,64 M408,56 L408,64 M399.5,57.5 L410.5,57.5" />
   </g>
   <g fill="none" stroke="var(--ochre)" stroke-width="1.1" opacity="0.85" stroke-linecap="round">
-    <path d="M120,52 A 7,7 0 1 1 121,42" />
-    <path d="M125.5,39 L121,42.5 L126.5,45" />
-    <path d="M339,52 A 7,7 0 1 1 340,42" />
-    <path d="M344.5,39 L340,42.5 L345.5,45" />
-    <path d="M412,52 A 7,7 0 1 1 413,42" />
-    <path d="M417.5,39 L413,42.5 L418.5,45" />
+    <path d="M121.8,47.5 A 6,6 0 1 1 126,50" />
+    <path d="M130.7,48.2 L125.7,50.2 L130.4,52.8" />
+    <path d="M340.8,47.5 A 6,6 0 1 1 345,50" />
+    <path d="M349.7,48.2 L344.7,50.2 L349.4,52.8" />
+    <path d="M413.8,47.5 A 6,6 0 1 1 418,50" />
+    <path d="M422.7,48.2 L417.7,50.2 L422.4,52.8" />
   </g>
   <g fill="none" stroke="var(--sage)" stroke-width="0.7" opacity="0.35" stroke-dasharray="2 2">
     <circle cx="182" cy="66" r="8" /><circle cx="190" cy="74" r="8" />
@@ -123,14 +124,14 @@ rpiv's `build` makes the opposite bet on all three questions.
   <circle cx="332" cy="70" r="5.5" fill="var(--ink)" stroke="var(--sage)" stroke-width="1.1" /><circle cx="332" cy="70" r="5.5" fill="var(--sage)" opacity="0.16" />
   <circle cx="405" cy="70" r="5.5" fill="var(--ink)" stroke="var(--sage)" stroke-width="1.1" /><circle cx="405" cy="70" r="5.5" fill="var(--sage)" opacity="0.16" />
   <circle cx="478" cy="70" r="5.5" fill="var(--ink)" stroke="var(--sage)" stroke-width="1.1" /><circle cx="478" cy="70" r="5.5" fill="var(--sage)" opacity="0.16" />
-  <text x="40" y="96" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="var(--text-quiet)">capture</text>
-  <text x="113" y="96" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="var(--text-quiet)">slice</text>
-  <text x="186" y="96" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="var(--text-quiet)">design ×N</text>
-  <text x="259" y="96" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="var(--ochre)">review</text>
-  <text x="332" y="96" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="var(--text-quiet)">plan</text>
-  <text x="405" y="96" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="var(--text-quiet)">code</text>
-  <text x="478" y="96" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="var(--text-quiet)">land</text>
-  <text x="40" y="118" font-family="var(--font-mono)" font-size="7.5" fill="var(--text-distant)" letter-spacing="0.06em">▢ asks on ambiguity · ◉ always pauses · ⛩↺ gates repair on their own</text>
+  <text x="40" y="96" text-anchor="middle" font-family="var(--font-mono)" font-size="11" fill="var(--text-quiet)">capture</text>
+  <text x="113" y="96" text-anchor="middle" font-family="var(--font-mono)" font-size="11" fill="var(--text-quiet)">slice</text>
+  <text x="186" y="96" text-anchor="middle" font-family="var(--font-mono)" font-size="11" fill="var(--text-quiet)">design ×N</text>
+  <text x="259" y="96" text-anchor="middle" font-family="var(--font-mono)" font-size="11" fill="var(--ochre)">review</text>
+  <text x="332" y="96" text-anchor="middle" font-family="var(--font-mono)" font-size="11" fill="var(--text-quiet)">plan</text>
+  <text x="405" y="96" text-anchor="middle" font-family="var(--font-mono)" font-size="11" fill="var(--text-quiet)">code</text>
+  <text x="478" y="96" text-anchor="middle" font-family="var(--font-mono)" font-size="11" fill="var(--text-quiet)">land</text>
+  <text x="40" y="118" font-family="var(--font-mono)" font-size="9" fill="var(--text-distant)" letter-spacing="0.06em">▢ asks on ambiguity · ■ always pauses · ⛩↺ gates repair on their own</text>
 </svg>
 <figcaption style="font-family:var(--font-mono);font-size:0.72rem;color:var(--text-distant);margin-top:0.6rem">A fixed rail: your marks run along the whole graph. Gates repair without you; the seal at review always waits for you.</figcaption>
 </figure>
