@@ -30,6 +30,14 @@ contract:
             properties:
               n: { type: integer, minimum: 1 }
               title: { type: string }
+        risks:
+          type: array
+          items:
+            type: object
+            required: [id, claim]
+            properties:
+              id: { type: string }
+              claim: { type: string }
   consumes:
     reads:
       designs: {}
@@ -83,6 +91,7 @@ Copy values verbatim. `<iso>` is the first tab-separated field; `<slug>` is the 
    - **Overlap** — when two inputs touch the same file/symbol, merge them into a single coherent change (or split into ordered phases) rather than emitting contradictory edits.
    - **Integration** — wire the seams: an input that depends on another's interface must reference the real shape the other defines. In root mode, this is where each sub-plan's `exports` get connected.
    - **Conflict** — when two inputs make incompatible decisions, resolve to one, and record the resolution in Synthesis Notes (the grade panel's correctness/architecture-fit members will check it).
+   - **Risk flags** — when a design (or your own merge) leaves a decision you are not fully confident is correct — an unverified assumption, a validation/edge case you want a second opinion on, a "this should be checked" — do **not** bury it in prose. Register it as a **structured risk flag**: a `{ id, claim }` entry in the frontmatter `risks:` array (stable `id` like `r1`, `r2`; `claim` = the one-line assertion you want ruled on), and describe it in the `## Risk Flags` section. This is the first-class channel the grade panel and validate are REQUIRED to rule on — a prose aside is not. Flag anything you'd otherwise write "flagging this so the grade panel can weigh in" about.
 3. **Sequence phases** — one phase per slice (flat/partial) or carry the sub-plans' phases through (root), ordered so a phase never precedes one it `depends_on`. Tightly-coupled units may merge into one phase; note any merge.
 4. **Write the output** (below), `status: ready`:
    - **Flat / root** → a standard **plan** in `.rpiv/artifacts/plans/` — phases with concrete changes and Success Criteria that pass through unchanged to `implement`/`validate`.
@@ -118,6 +127,8 @@ phase_count: <N>
 phases:
   - { n: 1, title: "<title>", slice: 1 }
   - { n: 2, title: "<title>", slice: 2 }
+risks:
+  - { id: r1, claim: "<a decision you want the grade panel + validate to rule on>" }
 sources: [<each --designs path>, <--research path>]
 tags: [plan, synthesized]
 ---
@@ -126,6 +137,10 @@ tags: [plan, synthesized]
 
 ## Synthesis Notes
 - <cross-slice overlaps merged, conflicts resolved, integration seams wired — with file refs>
+
+## Risk Flags
+<!-- One entry per `risks:` frontmatter id. Omit the section AND the frontmatter array when there are genuinely no risks. -->
+- **r1** — <the claim, and what a reviewer should verify to rule it pass or fail>
 
 ## Phase 1: <title>
 ### Changes

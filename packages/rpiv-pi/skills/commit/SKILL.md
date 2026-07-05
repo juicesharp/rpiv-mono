@@ -32,6 +32,8 @@ git log --pretty=%s -n 20 2>/dev/null || true
 
 `---recent-subjects---` — up to 20 most recent commit subject lines, used in Step 2 to match the repository's existing commit-message style. Empty on a no-HEAD initial repo.
 
+`---pre-existing (do NOT commit — dirty before this run)---` — present ONLY when a workflow recorded a run-start baseline and some listed files were already dirty before the run began. These are **out of scope**: they are not this run's work. **Never `git add` a path in this section** — a workflow commits only the changes it produced. The `---status---` block already excludes them; they are shown here purely so you know they exist and must be left uncommitted.
+
 ## Context:
 - **In-session**: If there's conversation history, use it to understand what was built/changed
 - **Standalone**: If no context available, rely entirely on git state and file inspection
@@ -61,7 +63,7 @@ git log --pretty=%s -n 20 2>/dev/null || true
    - Use the `ask_user_question` tool to confirm the commit plan. Question: "{N} commit(s) with {M} files. Proceed?". Header: "Commit". Options: "Commit (Recommended)" (Create the commit(s) as planned); "Adjust" (Change the grouping or commit messages); "Review files" (Show me the full diff before committing).
 
 4. **Execute upon confirmation:**
-   - Use `git add` with specific files (never use `-A` or `.`)
+   - Use `git add` with specific files (never use `-A` or `.`) — and stage **only** files from the `---status---` block. Any path under `---pre-existing (do NOT commit …)---` is out of scope: leave it dirty, never stage it.
    - Create commits with your planned messages
    - Show the result with `git log --oneline -n X` (where X = number of commits you just created)
 

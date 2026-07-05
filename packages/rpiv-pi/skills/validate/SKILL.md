@@ -12,6 +12,7 @@ contract:
       artifactKind: validation
     data:
       type: object
+      required: [verdict]
       properties:
         status:
           enum: [in-progress, in-review, ready]
@@ -121,6 +122,11 @@ For each phase in the plan:
    - Verify the delivered result honors every explicit ask and constraint in it. A goal requirement the plan never carried is still a gap — the plan, not just the implementation, can deviate from the user.
    - Report shortfalls under **Deviations from Plan**, quoting the goal's actual wording; never infer unstated scope from it.
 
+6. **Rule every plan risk flag** (when the plan carries a `risks:` frontmatter array):
+   - The plan's `risks:` array (each `{ id, claim }`, described under `## Risk Flags`) is the structured channel of decisions the planner asked to have checked. You are REQUIRED to rule on each one against the actual implementation — not skip it.
+   - For each flag, verify its `claim` against the delivered code (Read/Grep the relevant `file:line`) and record a `risk_rulings: [{ id, pass }]` entry — `pass: true` when the risk is unfounded or handled, `pass: false` when it is real and unaddressed in the shipped code.
+   - **Any `pass: false` ruling forces `verdict: fail`** and is reported under **Potential Issues**, quoting the flag's claim. A flagged risk that shipped unaddressed is exactly the class of defect this gate exists to catch.
+
 ### Step 3: Write the Validation Report
 
 1. **Determine metadata** (from the Metadata block at the top of this skill):
@@ -133,8 +139,9 @@ For each phase in the plan:
    - `topic:` ← `"Validation of <plan topic>"`.
 
 2. **Determine verdict** (`status` is always `ready` — written once):
-   - `verdict: pass` — every phase marked `- [x]` in the plan is verified against the code, every automated command passes, no Deviations from Plan and no Potential Issues require action.
-   - `verdict: fail` — any phase fails verification, any automated command fails, or Deviations / Potential Issues list items that require action.
+   - `verdict: pass` — every phase marked `- [x]` in the plan is verified against the code, every automated command passes, no Deviations from Plan and no Potential Issues require action, and every plan `risks:` flag ruled `pass`.
+   - `verdict: fail` — any phase fails verification, any automated command fails, any Deviations / Potential Issues list items that require action, **or any plan risk flag ruled `pass: false`** (a flagged risk shipped unaddressed).
+   - When the plan carried a `risks:` array, add a `risk_rulings: [{ id, pass }]` field to the report frontmatter — one ruling per flag.
 
 3. **Write the artifact** using the Write tool (no Edit — this skill writes once per run). Read `templates/validation.md`, fill every `{placeholder}` with the values determined above and the observations gathered in Step 2, apply the section-omission rules in the template (omit `#### Pattern Conformance:` and `#### Potential Issues:` entirely when empty; keep all other sections and emit `None — …` literals when empty), and Write the result to the target path.
 

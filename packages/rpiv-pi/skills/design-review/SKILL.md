@@ -65,7 +65,7 @@ The first tab-separated field is `<iso>` (use as `last_updated` when you edit a 
 
    **Escape hatch.** If an adjustment is too deep to reconcile by patch — a dependent needs a fundamentally different approach, not a renamed contract — do **not** fake it. Say so plainly and tell the developer this needs a re-slice (carve's `slice-fix` → re-slice → re-design path), then stop; that structural authority lives upstream, not here.
 
-5. **On Accept** — print each design doc path you read (edited or not), then a one-line summary: `design accepted: {N} slices, {adjusted} adjusted`. The carve workflow routes to `subplan`/`synthesize` next.
+5. **On Accept** — print **every** design doc path you reviewed, each on its own line (edited or not, all N of them — not just the ones you adjusted). The `designs` channel journals what you announce, so a path you omit vanishes from the audit trail and from `synthesize`'s fan-in; every reviewed artifact must be journaled. Then a one-line summary: `design accepted: {N} slices, {adjusted} adjusted`. The carve workflow routes to `subplan`/`synthesize` next.
 
 ## Hard rules
 

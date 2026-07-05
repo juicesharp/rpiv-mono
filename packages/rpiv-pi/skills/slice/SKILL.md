@@ -61,7 +61,7 @@ You decompose a feature into **independent vertical slices** and write a slice m
 `$ARGUMENTS` takes two forms:
 
 1. **Fresh** — a path to a `.rpiv/artifacts/research/*.md` artifact (no flags). Decompose from scratch via Steps 1–6, grounded in that research. The research artifact is **required**: if the argument is missing, empty, or not a research path, print an error and stop — it's a dispatch error (the workflow runs `research` before `slice`).
-2. **Re-slice** (the re-slice loop) — `--slices <map-path> --slice-verdicts <verdict-path> …` (the `--slice-verdicts` flag repeats). **Re-cut the existing slice map** to clear the failures its verdicts name. Recognize this form by the `--slices` flag and follow **Re-slice mode** below — NOT the fresh Steps (no confirm).
+2. **Re-slice** (the re-slice loop) — `--slices <map-path> --slice-verdicts <verdict-path> … [--slice-check <structural-verdict-path> …]` (the `--slice-verdicts` and `--slice-check` flags repeat). **Re-cut the existing slice map** to clear the failures its verdicts name. Recognize this form by the `--slices` flag and follow **Re-slice mode** below — NOT the fresh Steps (no confirm). `--slice-check` carries the **deterministic** structural findings (dependency cycles, dropped coverage units, unbacked `file:line` citations) — treat them exactly like a verdict's findings; they are the un-gameable floor and MUST all be cleared.
 
 ## Metadata
 
@@ -100,11 +100,12 @@ A vertical slice is a coherent, independently-buildable capability that cuts thr
 
 You are re-cutting an existing slice map from its verdicts. Unlike a surgical reviser, you have **full structural authority** — split an epic, merge fragments, renumber, redistribute coverage, rewrite `deps`. A surgical "touch only the cited line" edit cannot split a slice; you can.
 
-1. **Read** the `--slices` map FULLY and every `--slice-verdicts` JSON. The `coverage:` units are **frozen** — copy them verbatim. Treat the failing findings as **joint constraints**: a fix for one must not regress something that was passing. Each verdict's `feedback` names the exact re-cut (e.g. *"Re-cut Slice 1B along the function-vs-placement seam"*).
+1. **Read** the `--slices` map FULLY and every `--slice-verdicts` and `--slice-check` JSON. The `coverage:` units are **frozen** — copy them verbatim. Treat the failing findings as **joint constraints**: a fix for one must not regress something that was passing. Each verdict's `feedback` names the exact re-cut (e.g. *"Re-cut Slice 1B along the function-vs-placement seam"*); each `--slice-check` finding's `detail`/`where` names the exact structural break to repair.
 2. **Apply the re-cut STRUCTURALLY** — find the seam that fixes the finding without trading it for another:
    - **oversized / under-cited / horizontal layer / overreaching fence / >1 owned contract** → re-cut along a *vertical* seam so each piece is one coherent decision on a bounded, fully-cited footing with standalone value. Prefer a seam that doesn't swap one failure for another (a state-vs-view split usually loses standalone value; a function-vs-placement split usually keeps it).
-   - **dependency cycle** → merge the cycle into one slice, or invert an edge so a shared contract has a single owner.
-   - **dropped coverage unit** → re-attach its `id` to the `covers:` of whichever slice now delivers it; never resolve this by deleting the unit.
+   - **dependency cycle** (from `--slice-check`) → merge the cycle into one slice, or invert an edge so a shared contract has a single owner.
+   - **dropped coverage unit** (from `--slice-check`) → re-attach its `id` to the `covers:` of whichever slice now delivers it; never resolve this by deleting the unit.
+   - **unbacked `file:line` citation** (from `--slice-check`) → correct the `Draws on:` reference to a real file and line, or drop the line numbers; never leave a fabricated citation.
 3. **Rebuild the invariants** — renumber `n` contiguously `1..N`, recompute `slice_count`, fix `deps`, carry `coverage:` forward verbatim and reassign `covers:` so the union still claims every unit, and keep exactly one `## Slice N:` heading per entry.
 4. **Re-emit** the slice map (same Output shape, `status: ready`). **Non-interactive**: the verdict feedback IS the instruction — no confirm step, no `ask_user_question`.
 5. **Print** the path, then `re-sliced: <N> slices (was <M>) — addressed <failing dimensions>`.
