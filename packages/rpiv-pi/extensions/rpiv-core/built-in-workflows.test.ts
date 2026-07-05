@@ -36,7 +36,7 @@ import {
 	type Workflow,
 } from "@juicesharp/rpiv-workflow";
 import { type RunState, runsDir, stateFilePath } from "@juicesharp/rpiv-workflow/internal";
-import { fs as fsHandle, loopSpecOf } from "@juicesharp/rpiv-workflow/registration";
+import { fanin, fs as fsHandle, loopSpecOf } from "@juicesharp/rpiv-workflow/registration";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { rpivArtifactMdOutcome } from "./artifact-collector.js";
 import { builtInWorkflows } from "./built-in-workflows.js";
@@ -1197,6 +1197,267 @@ describe("build slice-check (deterministic floor)", () => {
 		const m = write(rel, map({ count: 1, sliceLines: "  - { n: 1, title: A, deps: [] }\n" }));
 		const data = runOn(m);
 		expect(data.pass).toBe(true);
+	});
+
+	// Finding 6 — unbacked precision: a file:line citation the slice map emits must
+	// resolve, or the deterministic floor fails it rather than propagating it to design.
+	it("fails on an unbacked file:line citation (nonexistent file)", () => {
+		const rel = ".rpiv/artifacts/slices/cite.md";
+		const m = write(
+			rel,
+			`---\nstatus: ready\nslice_count: 1\nslices:\n  - { n: 1, title: A, deps: [] }\n---\n## Slice 1: A\n**Draws on:** src/does-not-exist.ts:42\n`,
+		);
+		const data = runOn(m);
+		expect(data.pass).toBe(false);
+		expect(String(data.feedback)).toMatch(/Unbacked citation/);
+		expect(String(data.feedback)).toMatch(/does-not-exist\.ts:42/);
+	});
+
+	it("fails on a file:line citation past end-of-file", () => {
+		mkdirSync(join(tmpDir, "src"), { recursive: true });
+		writeFileSync(join(tmpDir, "src/small.ts"), "line1\nline2\n"); // 3 lines (trailing newline)
+		const rel = ".rpiv/artifacts/slices/cite2.md";
+		const m = write(
+			rel,
+			`---\nstatus: ready\nslice_count: 1\nslices:\n  - { n: 1, title: A, deps: [] }\n---\n## Slice 1: A\n**Draws on:** src/small.ts:900\n`,
+		);
+		const data = runOn(m);
+		expect(data.pass).toBe(false);
+		expect(String(data.feedback)).toMatch(/matches no version of the file/);
+	});
+
+	it("passes a citation that resolves to a real file:line", () => {
+		mkdirSync(join(tmpDir, "src"), { recursive: true });
+		writeFileSync(join(tmpDir, "src/real.ts"), Array.from({ length: 50 }, (_, i) => `line ${i}`).join("\n"));
+		const rel = ".rpiv/artifacts/slices/cite3.md";
+		const m = write(
+			rel,
+			`---\nstatus: ready\nslice_count: 1\nslices:\n  - { n: 1, title: A, deps: [] }\n---\n## Slice 1: A\n**Draws on:** src/real.ts:20\n`,
+		);
+		const data = runOn(m);
+		expect(data.pass).toBe(true);
+	});
+
+	// Finding 3 — the deterministic findings must REACH slice-fix. slice-check now
+	// emits an fs artifact carrying the findings JSON; slice-fix's `reads` fanin over
+	// that channel projects it as `--slice-check <path>` (arg-projection forwards
+	// artifact handles — chain-state.test.ts), so the fix stage sees the findings that
+	// triggered it. Before the fix, slice-check had `artifacts: []` and the fanin
+	// projected nothing.
+	it("slice-check emits an fs artifact carrying the findings (so slice-fix can consume them)", () => {
+		const rel = ".rpiv/artifacts/slices/withfindings.md";
+		const m = write(
+			rel,
+			map({
+				count: 2,
+				coverage: COV,
+				sliceLines:
+					"  - { n: 1, title: A, deps: [2], covers: [c1] }\n  - { n: 2, title: B, deps: [1], covers: [c2] }\n",
+			}),
+		);
+		const stage = findWorkflow("build").stages["slice-check"];
+		if (!stage?.run) throw new Error("build slice-check stage has no run function");
+		const runFn = stage.run as (ctx: { cwd: string; input?: undefined; state: RunView }) => {
+			artifacts: readonly { handle: { kind: string; path: string } }[];
+			data: Record<string, unknown>;
+		};
+		const out = runFn({ cwd: tmpDir, input: undefined, state: { named: { slices: [m] } } as unknown as RunView });
+		const handle = out.artifacts[0]?.handle;
+		expect(handle?.kind).toBe("fs");
+		const written = JSON.parse(readFileSync(join(tmpDir, handle?.path ?? ""), "utf-8"));
+		expect(written.pass).toBe(false);
+		expect(Array.isArray(written.findings)).toBe(true);
+		expect(written.findings.length).toBeGreaterThan(0);
+	});
+
+	it("slice-fix reads the slice-check channel as a fanin (the findings projection)", () => {
+		const sliceFix = findWorkflow("build").stages["slice-fix"];
+		expect(sliceFix?.reads).toContainEqual(fanin("slice-check"));
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Audit-drop regression suite — the gate/routing/identity fixes.
+// ---------------------------------------------------------------------------
+
+describe("build audit-drop fixes", () => {
+	const build = () => findWorkflow("build");
+	const edge = (stage: string): EdgeFn => {
+		const e = build().edges[stage];
+		if (typeof e !== "function") throw new Error(`build ${stage} edge is not a function`);
+		return e as EdgeFn;
+	};
+	const dimVerdict = (dimension: string, pass: boolean, extra: Record<string, unknown> = {}): Output =>
+		({
+			artifacts: [],
+			kind: "json",
+			meta: {},
+			data: { dimension, pass, severity: pass ? "none" : "high", ...extra },
+		}) as unknown as Output;
+
+	// Finding 2 — a failing validate must NOT commit. The unconditional validate→commit
+	// edge shipped a `verdict: fail`. Now the edge routes on the published verdict.
+	describe("validate gate (finding 2)", () => {
+		// validate publishes to the `validation` bucket (its contract artifactKind),
+		// which is the channel the `from`-sourced match must read.
+		const routeVerdict = (verdict: unknown) =>
+			edge("validate")({
+				output: undefined,
+				state: { named: { validation: [{ data: { verdict } }] } } as unknown as RunView,
+			});
+
+		it("commits ONLY on an explicit verdict: pass", () => {
+			expect(routeVerdict("pass")).toBe("commit");
+		});
+		it("routes a verdict: fail to STOP (no commit)", () => {
+			expect(routeVerdict("fail")).toBe("stop");
+		});
+		it("routes a MISSING verdict to STOP (no commit) — safe by construction", () => {
+			expect(routeVerdict(undefined)).toBe("stop");
+		});
+		it("declares only commit and stop as targets", () => {
+			expect([...(edge("validate").targets ?? [])].sort()).toEqual(["commit", "stop"]);
+		});
+		it("routes on the channel validate actually publishes to (validation bucket)", () => {
+			// The `from` the gate reads MUST equal validate's derived publish channel,
+			// or the gate reads an empty channel and STOPs every run. Deriving the
+			// contract outcome and routing on the same-named channel proves the coupling.
+			const derived = withDerivedOutcomes(build());
+			expect(derived.stages.validate?.outcome?.name).toBe("validation");
+		});
+	});
+
+	// Finding 1 — a plan-authored risk flag ruled `fail` by the grade panel must block
+	// the gate even when every quality dimension passes.
+	describe("plan/code gate enforces risk flags (finding 1)", () => {
+		const allDimsPass = [dimVerdict("completeness", true), dimVerdict("correctness", true)];
+
+		it("plan-grade routes to plan-fix when a risk flag is ruled fail, despite all dimensions passing", () => {
+			const verdicts = [
+				...allDimsPass,
+				dimVerdict("correctness", true, { risk_rulings: [{ id: "r1", pass: false }] }),
+			];
+			const next = edge("plan-grade")({
+				output: undefined,
+				state: { named: { "plan-verdicts": verdicts } } as unknown as RunView,
+			});
+			expect(next).toBe("plan-fix");
+		});
+
+		it("plan-grade routes to code when all dimensions AND all risk flags pass", () => {
+			const verdicts = [
+				...allDimsPass,
+				dimVerdict("correctness", true, { risk_rulings: [{ id: "r1", pass: true }] }),
+			];
+			const next = edge("plan-grade")({
+				output: undefined,
+				state: { named: { "plan-verdicts": verdicts } } as unknown as RunView,
+			});
+			expect(next).toBe("code");
+		});
+
+		it("code-grade routes to code-fix when a risk flag is ruled fail", () => {
+			const verdicts = [
+				...allDimsPass,
+				dimVerdict("correctness", true, { risk_rulings: [{ id: "r2", pass: false }] }),
+			];
+			const next = edge("code-grade")({
+				output: undefined,
+				state: { named: { "code-verdicts": verdicts } } as unknown as RunView,
+			});
+			expect(next).toBe("code-fix");
+		});
+	});
+});
+
+// ---------------------------------------------------------------------------
+// SYNTH_CLUSTER_FANOUT — research threading (finding 4) + fail-loud identity
+// resolution (finding 8).
+// ---------------------------------------------------------------------------
+
+describe("build subplan cluster fanout (research threading + fail-loud mapping)", () => {
+	let tmpDir: string;
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "rpiv-carve-subplan-"));
+	});
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	const subplanLoop = () => {
+		const loop = findWorkflow("build").stages.subplan?.loop;
+		if (loop?.kind !== "fanout") throw new Error("build subplan stage has no fanout loop");
+		return loop;
+	};
+	const out = (rel: string) => ({ artifacts: [{ handle: fsHandle(rel) }], data: undefined, kind: "", meta: {} });
+	const writeSlices = (rel: string, body: string) => {
+		const parts = rel.split("/");
+		mkdirSync(join(tmpDir, ...parts.slice(0, -1)), { recursive: true });
+		writeFileSync(join(tmpDir, rel), body);
+	};
+	const sliceMap = ".rpiv/artifacts/slices/m.md";
+	const twoIndependentSlices = () => {
+		writeSlices(
+			sliceMap,
+			`---\nstatus: ready\nslice_count: 2\nslices:\n  - { n: 1, title: A, deps: [] }\n  - { n: 2, title: B, deps: [] }\n---\n## Slice 1: A\n## Slice 2: B\n`,
+		);
+	};
+
+	// Finding 4 — research threads DIRECTLY into each cluster's subplan pass.
+	it("appends --research to every subplan unit when research is present", async () => {
+		twoIndependentSlices();
+		const units = await subplanLoop().units({
+			cwd: tmpDir,
+			artifact: undefined,
+			state: {
+				named: {
+					slices: [out(sliceMap)],
+					designs: [out(".rpiv/artifacts/designs/d_slice-1.md"), out(".rpiv/artifacts/designs/d_slice-2.md")],
+					research: [out(".rpiv/artifacts/research/r.md")],
+				},
+			} as unknown as RunView,
+		});
+		expect(units.length).toBeGreaterThan(0);
+		expect(units.every((u) => u.prompt.includes("--research .rpiv/artifacts/research/r.md"))).toBe(true);
+		expect(units.every((u) => u.prompt.includes("--as-subplan"))).toBe(true);
+	});
+
+	it("build plan stage reads research alongside the subplans fan-in (finding 4)", () => {
+		expect(findWorkflow("build").stages.plan?.reads).toEqual(["research", fanin("subplans")]);
+	});
+
+	// Finding 8 — an artifact whose identity can't be resolved must FAIL LOUD, not
+	// fall back to a positional guess that silently mis-routes and drops slices.
+	it("throws when a design filename carries no slice-<N> token (no positional fallback)", () => {
+		twoIndependentSlices();
+		expect(() =>
+			subplanLoop().units({
+				cwd: tmpDir,
+				artifact: undefined,
+				state: {
+					named: {
+						slices: [out(sliceMap)],
+						designs: [out(".rpiv/artifacts/designs/mystery.md")],
+					},
+				} as unknown as RunView,
+			}),
+		).toThrow(/no 'slice-<N>' token|has no slice number/);
+	});
+
+	it("throws when two designs claim the same slice number (duplicated channel)", () => {
+		twoIndependentSlices();
+		expect(() =>
+			subplanLoop().units({
+				cwd: tmpDir,
+				artifact: undefined,
+				state: {
+					named: {
+						slices: [out(sliceMap)],
+						designs: [out(".rpiv/artifacts/designs/a_slice-1.md"), out(".rpiv/artifacts/designs/b_slice-1.md")],
+					},
+				} as unknown as RunView,
+			}),
+		).toThrow(/two designs claim slice|claimed by both/);
 	});
 });
 

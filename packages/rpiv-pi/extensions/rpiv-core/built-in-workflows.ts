@@ -14,7 +14,7 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
@@ -33,6 +33,7 @@ import {
 	handleToString,
 	iterate,
 	jsonBodyParser,
+	match,
 	type Output,
 	type PromptFn,
 	produces,
@@ -534,7 +535,38 @@ const captureGoal = ({ state, cwd }: ScriptContext): Omit<Output, "meta"> => {
 	const rel = join(GOAL_DIR, `goal-${stamp}.md`);
 	mkdirSync(join(cwd, GOAL_DIR), { recursive: true });
 	writeFileSync(join(cwd, rel), state.originalInput, "utf-8");
+	// Snapshot the paths ALREADY dirty before the run touched anything — the
+	// commit stage must scope to the work the workflow itself produces and never
+	// sweep a pre-existing, unrelated working-tree change into its commit. The
+	// commit skill's `git-changes.mjs` reads this baseline and fences those paths
+	// off. Best-effort: a non-repo / git-unavailable cwd writes an empty baseline,
+	// so the commit path degrades to today's behavior rather than failing the
+	// deterministic goal capture.
+	writeCommitBaseline(cwd);
 	return { kind: "md", artifacts: [{ handle: { kind: "fs", path: rel } }], data: {} };
+};
+
+/** Where the run's pre-existing-dirty snapshot lands for `git-changes.mjs` to read. */
+const COMMIT_BASELINE_REL = ".rpiv/artifacts/commit-baseline.json";
+
+/** Record the paths dirty before the run (best-effort; empty on any git failure). */
+const writeCommitBaseline = (cwd: string): void => {
+	let paths: string[] = [];
+	try {
+		const out = execFileSync("git", ["status", "--short"], { cwd, encoding: "utf-8" });
+		paths = out
+			.split("\n")
+			.filter((l) => l.trim() !== "")
+			.map((l) => {
+				const rest = l.slice(3).trim();
+				const arrow = rest.indexOf(" -> ");
+				return arrow >= 0 ? rest.slice(arrow + 4).trim() : rest;
+			});
+	} catch {
+		paths = [];
+	}
+	mkdirSync(dirname(join(cwd, COMMIT_BASELINE_REL)), { recursive: true });
+	writeFileSync(join(cwd, COMMIT_BASELINE_REL), JSON.stringify({ paths }, null, 2), "utf-8");
 };
 
 /**
@@ -737,9 +769,56 @@ const sliceCovers = (entry: Record<string, unknown>): string[] => {
 	return Array.isArray(raw) ? raw.filter((c): c is string => typeof c === "string") : [];
 };
 
+/** The verdict directory the deterministic checks and the LLM grade panel share. */
+const VERDICT_DIR = ".rpiv/artifacts/verdicts";
+
+/**
+ * A `path:line` (or `path:line-line`) citation in an artifact's prose. Requires a
+ * dotted extension so timestamps (`17:13:27`), ratios, and bare `Slice 2:` labels
+ * never match — only file references with a real extension are verified.
+ */
+const FILE_LINE_CITATION_RE = /([\w][\w./-]*\.[a-zA-Z][a-zA-Z0-9]{0,4}):(\d+)(?:-(\d+))?/g;
+
+/**
+ * Verify every `file:line` citation in `body` resolves against the working tree:
+ * the cited file must exist AND carry at least the cited line (a range's high end).
+ * A citation that names no real file, or points past end-of-file, is UNBACKED
+ * precision — a fabricated reference that must fail the gate rather than propagate
+ * into design. A bare `path` with no `:line` is not checked (the contract is
+ * "verifiable line numbers, or omit them"). Returns one finding per bad citation.
+ */
+const verifyCitations = (body: string, cwd: string): { detail: string; where: string }[] => {
+	const findings: { detail: string; where: string }[] = [];
+	const seen = new Set<string>();
+	for (const m of body.matchAll(FILE_LINE_CITATION_RE)) {
+		const [, path, startStr, endStr] = m;
+		if (!path || !startStr) continue;
+		const key = `${path}:${startStr}${endStr ? `-${endStr}` : ""}`;
+		if (seen.has(key)) continue;
+		seen.add(key);
+		const abs = isAbsolute(path) ? path : join(cwd, path);
+		if (!existsSync(abs) || !statSync(abs).isFile()) {
+			findings.push({
+				detail: `Unbacked citation ${key} — the cited file does not exist at this revision. A file:line citation must resolve, or the line numbers must be omitted. Fix the path or drop the citation.`,
+				where: key,
+			});
+			continue;
+		}
+		const lineCount = readFileSync(abs, "utf-8").split("\n").length;
+		const high = Math.max(Number(startStr), endStr ? Number(endStr) : 0);
+		if (high > lineCount) {
+			findings.push({
+				detail: `Unbacked citation ${key} — ${path} has ${lineCount} lines, so line ${high} matches no version of the file. A file:line citation must be verifiable, or the line numbers must be omitted. Correct the range or drop the line numbers.`,
+				where: key,
+			});
+		}
+	}
+	return findings;
+};
+
 /**
  * Deterministic Phase-1 slice-check — the un-gameable floor beneath the LLM
- * `design-readiness` panel. It enforces the two invariants a prose grader cannot
+ * `design-readiness` panel. It enforces the invariants a prose grader cannot
  * reliably hold because it grades the slicer's own self-description:
  *   • acyclicity — the `deps` DAG must be cycle-free.
  *   • coverage conservation — every coverage unit FROZEN at the first cut
@@ -748,9 +827,18 @@ const sliceCovers = (entry: Record<string, unknown>): string[] => {
  *     scope. Anchored to the FIRST cut (not the latest map) so a reslice cannot
  *     disable the check by deleting the `coverage:` array — the frozen set is
  *     read from round 0.
+ *   • citation backing — every `file:line` the slice map cites (its `Draws on:`
+ *     footing, refracted up from research) must resolve against the tree. An
+ *     unbacked citation is fabricated precision that would otherwise starve or
+ *     mislead the design pass; the deterministic floor stops it here.
  * Emits one combined `{ dimension: "structure" }` verdict onto the
- * `slice-check` channel; the gate route folds it with the LLM verdicts.
- * Deterministic ⇒ idempotent across reslice rounds (no flicker, resume-safe).
+ * `slice-check` channel AND writes it to an fs artifact so the reslice arm's
+ * `reads: [fanin("slice-check")]` projection carries the FINDINGS (not just the
+ * pass/fail) into `slice-fix` — the way `amend` receives `--code-verdicts`. The
+ * gate route folds the channel `data` with the LLM verdicts.
+ * Deterministic ⇒ idempotent across reslice rounds (no flicker, resume-safe): the
+ * verdict basename is keyed on the slice-map basename, so a re-run OVERWRITES its
+ * own slot rather than duplicating it.
  */
 const sliceStructureCheck = ({ state, cwd }: ScriptContext): Omit<Output, "meta"> => {
 	const latest = latestFsArtifact(state, "slices");
@@ -761,7 +849,8 @@ const sliceStructureCheck = ({ state, cwd }: ScriptContext): Omit<Output, "meta"
 			"slice-check: no fs artifact on the 'slices' channel — slice must run before the structure check",
 		);
 	}
-	const records = sliceRecords(readArtifactFile(latest.handle.path, cwd), "slice-check", latest.handle.path);
+	const mapBody = readArtifactFile(latest.handle.path, cwd);
+	const records = sliceRecords(mapBody, "slice-check", latest.handle.path);
 	const findings: { detail: string; where: string }[] = [];
 
 	const cycle = sliceDepCycle(records);
@@ -787,34 +876,72 @@ const sliceStructureCheck = ({ state, cwd }: ScriptContext): Omit<Output, "meta"
 		}
 	}
 
+	// Citation backing — every file:line the map cites must resolve.
+	findings.push(...verifyCitations(mapBody, cwd));
+
 	const pass = findings.length === 0;
+	const data = {
+		dimension: "structure",
+		pass,
+		score: pass ? 100 : 0,
+		severity: pass ? "none" : "high",
+		artifact: handleToString(latest.handle),
+		findings,
+		feedback: pass ? "" : findings.map((f) => f.detail).join(" "),
+	};
+	// Write the verdict to an fs artifact so slice-fix's fanin projection forwards
+	// the findings, not just the rolling pass/fail. Basename-keyed off the slice map
+	// ⇒ idempotent across reslice rounds.
+	const rel = join(VERDICT_DIR, `slice-check__${basename(latest.handle.path, ".md")}.json`);
+	mkdirSync(join(cwd, VERDICT_DIR), { recursive: true });
+	writeFileSync(join(cwd, rel), JSON.stringify(data, null, 2), "utf-8");
 	return {
 		kind: "json",
-		artifacts: [],
-		data: {
-			dimension: "structure",
-			pass,
-			score: pass ? 100 : 0,
-			severity: pass ? "none" : "high",
-			artifact: handleToString(latest.handle),
-			findings,
-			feedback: pass ? "" : findings.map((f) => f.detail).join(" "),
-		},
+		artifacts: [{ handle: { kind: "fs", path: rel } }],
+		data,
 	};
 };
 
 /** A design filename encodes its slice as `…slice-<N>…` — the design-fanout naming convention. */
 const DESIGN_SLICE_RE = /slice-(\d+)/;
 
-/** Map slice number → its design artifact path, from the design fanout's published outputs. */
+/**
+ * Map slice number → its design artifact path, from the design fanout's published
+ * outputs. An identity resolver: it maps an ARTIFACT to a slice NUMBER, and it
+ * FAILS LOUD when it cannot resolve unambiguously rather than fall back to a
+ * positional guess. Two unresolvable shapes throw (halting the run instead of
+ * silently mis-routing — the guardrail that turns a channel anomaly, e.g. the
+ * duplicated `designs` a re-dispatched fanout could leave, into a stop):
+ *   • a design filename that carries no `slice-<N>` token — the naming contract
+ *     the whole mapping rests on is broken, so a positional `idx + 1` guess would
+ *     scramble the cluster→design wiring and drop slices;
+ *   • two designs claiming the SAME slice number — a doubled channel, ambiguous
+ *     by construction; keeping the first silently loses the second.
+ */
 const designPathsBySlice = (state: RunView): Map<number, string> => {
 	const bySlice = new Map<number, string>();
-	(state.named.designs ?? []).forEach((out, idx) => {
+	(state.named.designs ?? []).forEach((out) => {
 		for (const a of out.artifacts) {
 			if (a.handle.kind !== "fs") continue;
-			const match = DESIGN_SLICE_RE.exec(basename(a.handle.path));
-			const n = match ? Number(match[1]) : idx + 1; // fallback: positional (design i ↔ slice i+1)
-			if (!bySlice.has(n)) bySlice.set(n, handleToString(a.handle));
+			const name = basename(a.handle.path);
+			const match = DESIGN_SLICE_RE.exec(name);
+			if (!match) {
+				throw haltPreflight(
+					"designPathsBySlice",
+					`designPathsBySlice: design ${name} has no slice number`,
+					`designPathsBySlice: design artifact ${a.handle.path} carries no 'slice-<N>' token — cannot resolve which slice it designs; a positional guess would mis-route the cluster→design mapping and drop slices`,
+				);
+			}
+			const n = Number(match[1]);
+			const prior = bySlice.get(n);
+			if (prior !== undefined) {
+				throw haltPreflight(
+					"designPathsBySlice",
+					`designPathsBySlice: two designs claim slice ${n}`,
+					`designPathsBySlice: slice ${n} is claimed by both ${prior} and ${handleToString(a.handle)} — a duplicated 'designs' channel is ambiguous; the mapping must not silently keep one and drop the other`,
+				);
+			}
+			bySlice.set(n, handleToString(a.handle));
 		}
 	});
 	return bySlice;
@@ -834,6 +961,13 @@ const SYNTH_CLUSTER_FANOUT = fanout({
 		if (doc?.handle.kind !== "fs") return [];
 		const records = sliceRecords(readArtifactFile(doc.handle.path, cwd), "SYNTH_CLUSTER_FANOUT", doc.handle.path);
 		const designBySlice = designPathsBySlice(state);
+		// Thread the research the slices rest on into every cluster's subplan pass,
+		// so cross-slice constraints and acceptance criteria reach synthesis DIRECTLY
+		// (not only via each design's refraction). `synthesize` accepts `--research`
+		// in partial mode; the flat `synthesize` fan-in already received it, but the
+		// hierarchical cluster fanout dropped it.
+		const research = latestFsArtifact(state, "research");
+		const researchFlag = research?.handle.kind === "fs" ? ` --research ${handleToString(research.handle)}` : "";
 		return clusterSliceDag(records)
 			.map((cluster, i) => {
 				const designs = cluster
@@ -842,7 +976,7 @@ const SYNTH_CLUSTER_FANOUT = fanout({
 					.map((p) => `--designs ${p}`);
 				if (!designs.length) return undefined;
 				return {
-					prompt: `${designs.join(" ")} --as-subplan`,
+					prompt: `${designs.join(" ")}${researchFlag} --as-subplan`,
 					label: `cluster ${i + 1} (slices ${cluster.join(",")})`,
 					id: `cluster-${i + 1}`,
 				};
@@ -925,6 +1059,42 @@ const allDimensionsPass = (entries: readonly Output[] = []): boolean => {
 	}
 	const verdicts = [...latest.values()];
 	return verdicts.length > 0 && verdicts.every(Boolean);
+};
+
+/**
+ * One plan-authored risk flag ruled by a grade panel. The plan declares a
+ * `risks:` frontmatter array (`{ id, claim }`) — the structured, first-class
+ * channel that replaces the old prose-in-a-Notes-section flagging that graders
+ * were free to skip. Each grade verdict that engages a flag emits a ruling here.
+ */
+interface RiskRuling {
+	id: string;
+	pass: boolean;
+}
+
+/** The `risk_rulings` a grade verdict emitted (empty when it ruled on none). */
+const verdictRiskRulings = (o: Output): RiskRuling[] => {
+	const raw = (o.data as { risk_rulings?: unknown } | undefined)?.risk_rulings;
+	if (!Array.isArray(raw)) return [];
+	return raw.flatMap((e) => {
+		const r = (e ?? {}) as Record<string, unknown>;
+		return typeof r.id === "string" ? [{ id: r.id, pass: r.pass === true }] : [];
+	});
+};
+
+/**
+ * Fold the grade panel's per-flag risk rulings into a gate decision: every
+ * plan-authored risk flag the panel ruled on must be ruled PASS (latest ruling
+ * per flag wins, mirroring `allDimensionsPass`). A flag ruled `fail` — the
+ * grader confirmed the risk is real and unaddressed — blocks the gate, so a
+ * self-flagged risk (e.g. the #103 override-vs-env validation bug) can no longer
+ * ride a green conformance pass into commit. An empty panel (no flag engaged)
+ * imposes no constraint; the plan simply declared no risks.
+ */
+const allRiskFlagsPass = (entries: readonly Output[] = []): boolean => {
+	const latest = new Map<string, boolean>();
+	for (const o of entries) for (const r of verdictRiskRulings(o)) latest.set(r.id, r.pass);
+	return [...latest.values()].every(Boolean);
 };
 
 /**
@@ -1037,7 +1207,10 @@ const carveWorkflow = defineWorkflow({
 			loop: SYNTH_CLUSTER_FANOUT,
 			outcome: rpivBucketOutcome("subplans"),
 		}),
-		plan: produces({ skill: "synthesize", reads: [fanin("subplans")] }),
+		// The root merge reads `research` (threaded as `--research` so cross-slice
+		// constraints reach the merge directly, not only via each subplan's
+		// refraction) alongside the cluster sub-plans it fans in.
+		plan: produces({ skill: "synthesize", reads: ["research", fanin("subplans")] }),
 		// Quality gate over the plan; verdicts on their own channel.
 		"plan-grade": produces({
 			skill: "grade",
@@ -1123,7 +1296,10 @@ const carveWorkflow = defineWorkflow({
 		// Quality gate BEFORE any code. Pass ⇒ code; any fails ⇒ plan-fix and loop back.
 		"plan-grade": defineRoute(
 			["code", "plan-fix"],
-			({ state }) => (allDimensionsPass(state.named["plan-verdicts"]) ? "code" : "plan-fix"),
+			({ state }) =>
+				allDimensionsPass(state.named["plan-verdicts"]) && allRiskFlagsPass(state.named["plan-verdicts"])
+					? "code"
+					: "plan-fix",
 			{ readsData: false },
 		),
 		"plan-fix": "plan-grade",
@@ -1137,12 +1313,25 @@ const carveWorkflow = defineWorkflow({
 		// maxBackwardJumps.
 		"code-grade": defineRoute(
 			["implement", "code-fix"],
-			({ state }) => (allDimensionsPass(state.named["code-verdicts"]) ? "implement" : "code-fix"),
+			({ state }) =>
+				allDimensionsPass(state.named["code-verdicts"]) && allRiskFlagsPass(state.named["code-verdicts"])
+					? "implement"
+					: "code-fix",
 			{ readsData: false },
 		),
 		"code-fix": "code-grade",
 		implement: "validate",
-		validate: "commit",
+		// Gate commit on validate's own verdict — an unconditional `validate → commit`
+		// let a `verdict: fail` (incomplete goal coverage) commit anyway. `match` with
+		// no fallback commits ONLY on an explicit `verdict: "pass"`; every other value
+		// (a `fail`, or a missing verdict) routes to STOP — a failed validation halts
+		// WITHOUT committing, leaving the report on disk for the user. Safe by
+		// construction: the sole path to commit is an explicit pass, so un-anticipated
+		// data can never route INTO commit. Sourced from validate's published verdict
+		// channel (`from: "validation"` — the bucket its contract's `artifactKind`
+		// derives) — a prompt stage owns its message and can't inherit its contract's
+		// output schema, so route on the channel, not the raw (un-validated) stage output.
+		validate: match("verdict", { commit: "pass" }, { from: "validation" }),
 		commit: "stop",
 	},
 });
