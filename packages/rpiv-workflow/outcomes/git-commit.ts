@@ -34,12 +34,25 @@ import { execFileAsync, GIT_EXEC_TIMEOUT_MS } from "./exec.js";
  * Output data shape produced by `gitCommitParser` — co-located with the
  * outcome that emits it, as is the `GitCommitOutput` narrowing alias below.
  */
+/** One commit the stage produced, journaled so earlier-phase commits stay visible. */
+export interface GitCommitRecord {
+	sha: string;
+	subject: string;
+}
+
 export interface GitCommitData {
 	sha: string;
 	prevSha: string;
 	subject: string;
 	filesChanged: number;
 	noOp?: boolean;
+	/**
+	 * EVERY commit in `prevSha..sha`, oldest-first — not just the head. A stage
+	 * that lands several commits (an incremental implement pass) journaled only
+	 * the head sha + an aggregate file count, leaving the earlier commits
+	 * invisible in the trail; this preserves each one. Absent on a no-op.
+	 */
+	commits?: readonly GitCommitRecord[];
 }
 
 /** Tagged-union narrowing alias: `output.kind === "git-commit"` ⇒ `data: GitCommitData`. */
@@ -64,6 +77,12 @@ export interface GitCommitArtifactMeta {
 	noOp: boolean;
 	subject: string;
 	filesChanged: number;
+	/**
+	 * Every commit in `baselineSha..headSha`, oldest-first, interrogated at
+	 * collect time while the SHAs still resolve. Optional so a pre-existing
+	 * (pre-`commits`) meta still passes `isGitCommitMeta`; empty/absent on a no-op.
+	 */
+	commits?: readonly GitCommitRecord[];
 }
 
 /** Run a git command from `cwd`, returning trimmed stdout. */
@@ -124,11 +143,12 @@ export const gitCommitCollector: ArtifactCollector<GitHeadSnapshot | undefined> 
 			return ok(noOpMeta(baselineSha, headSha));
 		}
 		try {
-			const [subject, filesChanged] = await Promise.all([
+			const [subject, filesChanged, commits] = await Promise.all([
 				git(ctx.cwd, "log", "-1", "--format=%s", headSha),
 				countFilesChanged(ctx.cwd, baselineSha, headSha),
+				listCommits(ctx.cwd, baselineSha, headSha),
 			]);
-			return ok({ baselineSha, headSha, baselineMissing: false, noOp: false, subject, filesChanged });
+			return ok({ baselineSha, headSha, baselineMissing: false, noOp: false, subject, filesChanged, commits });
 		} catch (e) {
 			// A commit LANDED but its interrogation failed — fabricating noOp
 			// would route `gate` on invented data; halt with the real cause.
@@ -169,6 +189,21 @@ async function countFilesChanged(cwd: string, baselineSha: string, headSha: stri
 	return match ? parseInt(match[1]!, 10) : 0;
 }
 
+/**
+ * Enumerate every commit in `baselineSha..headSha`, oldest-first — the full
+ * list a multi-commit stage produced, so the trail reflects each commit and not
+ * just the head. `%x1f` (unit separator) delimits sha↔subject so a subject
+ * containing spaces or tabs never mis-splits.
+ */
+async function listCommits(cwd: string, baselineSha: string, headSha: string): Promise<GitCommitRecord[]> {
+	const raw = await git(cwd, "log", "--reverse", "--format=%H%x1f%s", `${baselineSha}..${headSha}`);
+	if (!raw) return [];
+	return raw.split("\n").flatMap((line) => {
+		const [sha, subject] = line.split("\x1f");
+		return sha ? [{ sha, subject: subject ?? "" }] : [];
+	});
+}
+
 // ---------------------------------------------------------------------------
 // Parser — PURE projection of the collected meta into typed GitCommitData
 // ---------------------------------------------------------------------------
@@ -182,8 +217,17 @@ function isGitCommitMeta(meta: unknown): meta is GitCommitArtifactMeta {
 		typeof m.baselineMissing === "boolean" &&
 		typeof m.noOp === "boolean" &&
 		typeof m.subject === "string" &&
-		typeof m.filesChanged === "number"
+		typeof m.filesChanged === "number" &&
+		// Optional (back-compat): a pre-`commits` meta omits it; when present it
+		// must be a well-formed record list.
+		(m.commits === undefined || (Array.isArray(m.commits) && m.commits.every(isGitCommitRecord)))
 	);
+}
+
+/** Structural guard for one journaled commit record. */
+function isGitCommitRecord(r: unknown): r is GitCommitRecord {
+	const c = r as Partial<GitCommitRecord> | undefined;
+	return typeof c?.sha === "string" && typeof c.subject === "string";
 }
 
 /**
@@ -207,7 +251,15 @@ export const gitCommitParser: ArtifactParser<GitHeadSnapshot | undefined, "git-c
 		}
 		const data: GitCommitData = meta.noOp
 			? { sha: meta.headSha, prevSha: meta.baselineSha, subject: "", filesChanged: 0, noOp: true }
-			: { sha: meta.headSha, prevSha: meta.baselineSha, subject: meta.subject, filesChanged: meta.filesChanged };
+			: {
+					sha: meta.headSha,
+					prevSha: meta.baselineSha,
+					subject: meta.subject,
+					filesChanged: meta.filesChanged,
+					// Project the per-commit journal through only when the collector
+					// recorded it — a pre-`commits` meta stays byte-identical.
+					...(meta.commits ? { commits: meta.commits } : {}),
+				};
 		return { kind: "ok", payload: { kind: "git-commit", data } };
 	},
 };

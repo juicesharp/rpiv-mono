@@ -128,6 +128,28 @@ describe.runIf(hasGit)("gitCommitOutcome end-to-end", () => {
 		expect(data.noOp).toBeUndefined();
 	});
 
+	it("journals EVERY commit in prevSha..headSha, oldest-first (not just the head)", async () => {
+		initRepo(tmpDir);
+		const snap = await gitHeadSnapshot(snapshotCtx(tmpDir));
+
+		writeFileSync(join(tmpDir, "a.txt"), "a\n");
+		execSync("git add a.txt", { cwd: tmpDir });
+		execSync('git commit -q -m "add a"', { cwd: tmpDir });
+		writeFileSync(join(tmpDir, "b.txt"), "b\n");
+		execSync("git add b.txt", { cwd: tmpDir });
+		execSync('git commit -q -m "add b"', { cwd: tmpDir });
+
+		const result = await runOutcome(tmpDir, snap);
+		expect(result.kind).toBe("ok");
+		if (result.kind !== "ok") return;
+		const data = result.payload.data;
+		// Head fields still describe the LATEST commit (back-compat).
+		expect(data.subject).toBe("add b");
+		// …but every earlier-phase commit is now visible, oldest-first.
+		expect(data.commits?.map((c) => c.subject)).toEqual(["add a", "add b"]);
+		expect(data.commits?.every((c) => /^[0-9a-f]{40}$/.test(c.sha))).toBe(true);
+	});
+
 	it("emits noOp payload when HEAD did not move", async () => {
 		initRepo(tmpDir);
 		const snap = await gitHeadSnapshot(snapshotCtx(tmpDir));

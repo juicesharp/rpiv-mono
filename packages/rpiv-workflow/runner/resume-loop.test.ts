@@ -219,6 +219,38 @@ describe("loop-resume — fanout", () => {
 		expect(rows[3]).toMatchObject({ stage: "impl (phase-3)", status: "completed", parent: "impl", unitIndex: 2 });
 	});
 
+	it("all units completed: resume REPLAYS each from its journaled output — zero re-dispatch, channel byte-identical (finding 7)", async () => {
+		// The audit-drop: a resume of a fanout whose units all completed pre-abort
+		// re-dispatched EVERY unit (the slice-design run designed 8 slices 13 times),
+		// duplicating the channel and collapsing the downstream fan-in. A completed
+		// fanout unit must be REPLAYED from its journaled output, never re-run.
+		const synthWf: Workflow = {
+			name: "fanout-wf",
+			start: "impl",
+			stages: {
+				impl: produces({ outcome: transcriptOutcome("plans"), loop: fanout({ units: threeUnits }) }),
+				synthesize: acts({ reads: [fanin("plans")] }),
+			},
+			edges: { impl: "synthesize", synthesize: "stop" },
+		} as Workflow;
+		writeRun([unitRow(1, 1, "completed"), unitRow(2, 2, "completed"), unitRow(3, 3, "completed")]);
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [{ branch: [mockAssistantMessage("synthesized")] }],
+		});
+
+		const result = await resumeWorkflow(chain.ctx, { workflow: synthWf, header, ref: "@x" });
+
+		expect(result.success).toBe(true);
+		// ZERO impl units re-dispatched — the only dispatch is the downstream synthesize.
+		expect(chain.sentMessages).toEqual([
+			"/skill:synthesize --plans .rpiv/artifacts/plans/p1.md --plans .rpiv/artifacts/plans/p2.md --plans .rpiv/artifacts/plans/p3.md",
+		]);
+		// No new impl rows — the completed run reproduces the SAME channel, never a superset.
+		const rows = readAllStages(tmpDir, header.runId);
+		expect(rows.filter((r) => r.parent === "impl")).toHaveLength(3);
+	});
+
 	it("collected soft-halt row: rebuilds the failedOutput sentinel by index (skipped by fanin), no re-dispatch", async () => {
 		// CONTRAST with the hard-failure case above: a `collected:true` row is a
 		// non-terminal collect-all unit halt. The resume fold rebuilds a failedOutput
