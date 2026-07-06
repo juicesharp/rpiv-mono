@@ -14,7 +14,7 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
@@ -880,17 +880,78 @@ const FILE_LINE_CITATION_RE = /([\w][\w./-]*\.[a-zA-Z][a-zA-Z0-9]{0,4}):(\d+)(?:
  * into design. A bare `path` with no `:line` is not checked (the contract is
  * "verifiable line numbers, or omit them"). Returns one finding per bad citation.
  */
+/** Trees a citation must never resolve INTO — vendored deps, build copies, or
+ * prior pipeline artifacts (a stale artifact copy would back a fabricated line). */
+const CITATION_WALK_SKIP: ReadonlySet<string> = new Set(["node_modules", ".git", "dist", "coverage", ".rpiv"]);
+/** Backstop so a pathological tree can't stall the deterministic cite floor. */
+const CITATION_WALK_FILE_CAP = 50_000;
+
+/**
+ * Index every source file's basename → its absolute path(s) under `cwd`, so a
+ * citation that names a file by BARE basename (no directory prefix) can resolve
+ * to the one tree file that carries that name. The generative producers
+ * (slice/synthesize) routinely cite `built-in-workflows.ts:1431` rather than the
+ * full `packages/…/built-in-workflows.ts` — a mechanical path-prefix omission,
+ * not a fabricated reference. A UNIQUE basename backs the citation; an AMBIGUOUS
+ * one (two files share the name) stays unresolved so the producer must
+ * disambiguate with a real path. Skips vendored/generated trees so a citation
+ * never resolves to a build copy or a prior artifact. Bounded by the file cap.
+ */
+const buildBasenameIndex = (cwd: string): Map<string, string[]> => {
+	// Unreadable dir → empty listing, never a throw from the deterministic floor.
+	const listDir = (dir: string) => {
+		try {
+			return readdirSync(dir, { withFileTypes: true });
+		} catch {
+			return [];
+		}
+	};
+	const index = new Map<string, string[]>();
+	const stack: string[] = [cwd];
+	let seen = 0;
+	while (stack.length > 0) {
+		const dir = stack.pop() as string;
+		for (const e of listDir(dir)) {
+			if (e.isDirectory()) {
+				if (!CITATION_WALK_SKIP.has(e.name)) stack.push(join(dir, e.name));
+				continue;
+			}
+			if (!e.isFile()) continue;
+			if (++seen > CITATION_WALK_FILE_CAP) return index;
+			const abs = join(dir, e.name);
+			const arr = index.get(e.name);
+			if (arr) arr.push(abs);
+			else index.set(e.name, [abs]);
+		}
+	}
+	return index;
+};
+
 const verifyCitations = (body: string, cwd: string): { detail: string; where: string }[] => {
 	const findings: { detail: string; where: string }[] = [];
 	const seen = new Set<string>();
+	// Built lazily and reused across citations — only the first bare-basename miss
+	// pays the tree walk, and only when at least one such citation exists.
+	let basenameIndex: Map<string, string[]> | undefined;
+	const resolveCitation = (path: string): string | undefined => {
+		const direct = isAbsolute(path) ? path : join(cwd, path);
+		if (existsSync(direct) && statSync(direct).isFile()) return direct;
+		// Bare-basename fallback: back the citation iff exactly ONE tree file matches.
+		if (!path.includes("/")) {
+			basenameIndex ??= buildBasenameIndex(cwd);
+			const matches = basenameIndex.get(path);
+			if (matches?.length === 1) return matches[0];
+		}
+		return undefined;
+	};
 	for (const m of body.matchAll(FILE_LINE_CITATION_RE)) {
 		const [, path, startStr, endStr] = m;
 		if (!path || !startStr) continue;
 		const key = `${path}:${startStr}${endStr ? `-${endStr}` : ""}`;
 		if (seen.has(key)) continue;
 		seen.add(key);
-		const abs = isAbsolute(path) ? path : join(cwd, path);
-		if (!existsSync(abs) || !statSync(abs).isFile()) {
+		const abs = resolveCitation(path);
+		if (!abs) {
 			findings.push({
 				detail: `Unbacked citation ${key} — the cited file does not exist at this revision. A file:line citation must resolve, or the line numbers must be omitted. Fix the path or drop the citation.`,
 				where: key,
@@ -1139,7 +1200,61 @@ const GOAL_DIMENSIONS: ReadonlySet<string> = new Set(["completeness", "correctne
  * (and the slice gate's `design-readiness`, which never grades fit or
  * goal-completeness) gets the bare flags.
  */
-const gradePanelFanout = (channel: string, dimensions: readonly string[]) =>
+/**
+ * The subset of `dimensions` a re-grade must actually re-run, given the verdicts
+ * accumulated on `verdictChannel` so far. A dimension needs re-grading when it
+ * has NO prior verdict (first pass ⇒ grade every dimension), when its latest
+ * verdict fails above the severity floor, or when that verdict ruled any plan
+ * risk flag `fail` (the ruling is re-opened by re-grading its owning dimension).
+ * A dimension that already passed — dimension AND its risk rulings — is carried
+ * forward untouched: re-running it after a surgical fix only re-rolls a free LLM
+ * judgment that flaps pass↔fail on an unchanged artifact, manufacturing extra
+ * loops (the observed correctness risk-flag flap). The accumulating verdict
+ * channel + `allDimensionsPass`'s latest-per-dimension fold mean a carried
+ * dimension's prior passing verdict still counts at the gate.
+ */
+const dimensionsToRegrade = (dimensions: readonly string[], entries: readonly Output[] = []): string[] => {
+	const latest = new Map<string, Output>();
+	for (const o of entries) {
+		const dim = (o.data as { dimension?: unknown } | undefined)?.dimension;
+		if (typeof dim === "string") latest.set(dim, o);
+	}
+	return dimensions.filter((d) => {
+		const o = latest.get(d);
+		if (!o) return true; // never graded — must grade at least once
+		const v = o.data as { pass?: boolean; severity?: string } | undefined;
+		const dimPass = v?.pass === true || v?.severity === "low" || v?.severity === "none";
+		if (!dimPass) return true;
+		const raw = (o.data as { risk_rulings?: unknown } | undefined)?.risk_rulings;
+		return Array.isArray(raw) && raw.some((e) => (e as { pass?: unknown })?.pass !== true);
+	});
+};
+
+/**
+ * A grade panel: one `grade` session per dimension over the latest artifact on
+ * `channel`. Each unit's prompt is the `grade` skill's flags
+ * (`--dimension <d> --artifact <path>`); the per-dimension verdicts fold via
+ * `allDimensionsPass`. Shared by the slice gate (over `slices`) and the plan +
+ * code gates (over `plans`), each on its own `verdictChannel`.
+ *
+ * On a re-grade the panel emits ONLY the dimensions `dimensionsToRegrade` says
+ * still need it (the rest carry their prior passing verdict forward) — but never
+ * an EMPTY set: an empty `units()` return falls through to a single dimensionless
+ * `grade` dispatch, so when nothing needs re-grading we fall back to the full
+ * panel. The route into the stage already skips it entirely when the accumulated
+ * verdicts clear the gate (see `plan-cite-check`/`code-cite-check`/`slice-check`
+ * edges), so this fallback only fires in the degenerate case where a fix left the
+ * cite floor red while every dimension passed.
+ *
+ * `architecture-fit` is the one dimension `grade` requires a `--context` for: it
+ * grades the plan against the research the slices rest on. The carve flow always
+ * front-loads a `research` stage, so we thread the latest `research` artifact in
+ * as `--context` for that dimension only; likewise the latest `goal` artifact
+ * threads in as `--goal` for the `GOAL_DIMENSIONS` only. Every other dimension
+ * (and the slice gate's `design-readiness`, which never grades fit or
+ * goal-completeness) gets the bare flags.
+ */
+const gradePanelFanout = (channel: string, dimensions: readonly string[], verdictChannel: string) =>
 	fanout({
 		source: channel,
 		unit: { by: "dimension-list", pattern: "dimensions" },
@@ -1152,7 +1267,10 @@ const gradePanelFanout = (channel: string, dimensions: readonly string[]) =>
 			const contextFlag = research?.handle.kind === "fs" ? ` --context ${handleToString(research.handle)}` : "";
 			const goal = latestFsArtifact(state, "goal");
 			const goalFlag = goal?.handle.kind === "fs" ? ` --goal ${handleToString(goal.handle)}` : "";
-			return dimensions.map((d) => ({
+			const pending = dimensionsToRegrade(dimensions, state.named[verdictChannel]);
+			// Never emit zero units (empty ⇒ single dimensionless grade fall-through).
+			const toGrade = pending.length > 0 ? pending : dimensions;
+			return toGrade.map((d) => ({
 				prompt: `--dimension ${d} --artifact ${target}${d === "architecture-fit" ? contextFlag : ""}${GOAL_DIMENSIONS.has(d) ? goalFlag : ""}`,
 				label: d,
 				id: `${channel}-dim-${d}`,
@@ -1160,8 +1278,12 @@ const gradePanelFanout = (channel: string, dimensions: readonly string[]) =>
 		},
 	});
 
-const SLICE_DIMENSION_FANOUT = gradePanelFanout("slices", SLICE_DIMENSIONS);
-const PLAN_DIMENSION_FANOUT = gradePanelFanout("plans", PLAN_DIMENSIONS);
+const SLICE_DIMENSION_FANOUT = gradePanelFanout("slices", SLICE_DIMENSIONS, "slice-verdicts");
+const PLAN_DIMENSION_FANOUT = gradePanelFanout("plans", PLAN_DIMENSIONS, "plan-verdicts");
+// The post-splice code gate re-grades the SAME `plans` artifact on its own
+// `code-verdicts` channel, so its carry-forward reads the code gate's verdicts,
+// never the pre-elaborate plan gate's.
+const CODE_DIMENSION_FANOUT = gradePanelFanout("plans", PLAN_DIMENSIONS, "code-verdicts");
 
 /**
  * Fold the per-dimension verdicts into a gate decision: keep the latest verdict
@@ -1225,6 +1347,34 @@ const allRiskFlagsPass = (entries: readonly Output[] = []): boolean => {
 	for (const o of entries) for (const r of verdictRiskRulings(o)) latest.set(r.id, r.pass);
 	return [...latest.values()].every(Boolean);
 };
+
+/**
+ * The three gates' pass predicates — the SINGLE authority each gate consults at
+ * BOTH of its seams. A gate is satisfied when its deterministic cite/structure
+ * floor is green AND every quality dimension passes (severity-floored) AND — for
+ * the plan/code gates — every plan-authored risk flag is ruled pass.
+ *
+ * Reading the identical predicate at the cite/structure-check edge (which SKIPS
+ * the re-grade straight to the next stage) and at the grade edge (which gates
+ * forward-vs-fix) makes the skip provably equivalent to "re-grade, then pass",
+ * minus the wasted panel: after a fix that only cleared the deterministic floor,
+ * the accumulated verdicts already clear the gate, so re-running the LLM panel
+ * would at best reproduce them and at worst flap a passing dimension into a
+ * spurious fix loop. On the FIRST pass the verdict channel is empty, so
+ * `allDimensionsPass` returns false and the edge correctly routes INTO the grade
+ * panel. Any regression a fix introduces is still caught downstream: the plan
+ * gate by the full first-time `code-grade`, the code gate by `validate`.
+ */
+const sliceGatePasses = (state: RunView): boolean =>
+	allDimensionsPass(state.named["slice-check"]) && allDimensionsPass(state.named["slice-verdicts"]);
+const planGatePasses = (state: RunView): boolean =>
+	allDimensionsPass(state.named["plan-cite-check"]) &&
+	allDimensionsPass(state.named["plan-verdicts"]) &&
+	allRiskFlagsPass(state.named["plan-verdicts"]);
+const codeGatePasses = (state: RunView): boolean =>
+	allDimensionsPass(state.named["code-cite-check"]) &&
+	allDimensionsPass(state.named["code-verdicts"]) &&
+	allRiskFlagsPass(state.named["code-verdicts"]);
 
 /**
  * Verdict channels — grade writes JSON to `.rpiv/artifacts/verdicts/`, so these
@@ -1381,7 +1531,7 @@ const carveWorkflow = defineWorkflow({
 		"code-cite-check": produces.script({ reads: ["plans"], run: planCitationCheck("code-cite-check") }),
 		"code-grade": produces({
 			skill: "grade",
-			loop: PLAN_DIMENSION_FANOUT,
+			loop: CODE_DIMENSION_FANOUT,
 			outcome: codeVerdictOutcome,
 			// `research` is read so the architecture-fit unit can thread it as
 			// --context; `goal` so completeness/correctness anchor on the brief.
@@ -1411,15 +1561,21 @@ const carveWorkflow = defineWorkflow({
 		// "Fresh" input is a research path) — mirrors arch's research → design edge.
 		research: "slice",
 		slice: "slice-check",
-		"slice-check": "slice-grade",
+		// Skip the design-readiness re-grade when the gate is already satisfied — after
+		// a `slice-fix` that only cleared the deterministic structure floor (the common
+		// case: a bare-basename citation), the accumulated design-readiness verdict
+		// already passes, so re-grading would only re-roll a flappy judgment. First
+		// pass (no verdict yet) ⇒ not satisfied ⇒ into `slice-grade`.
+		"slice-check": defineRoute(
+			["slice-design", "slice-grade"],
+			({ state }) => (sliceGatePasses(state) ? "slice-design" : "slice-grade"),
+			{ readsData: false },
+		),
 		// Design-readiness gate BEFORE any design. Structure + design-readiness pass⇒ design; any fails ⇒
 		// slice-fix and loop back. Bounded by the runner's maxBackwardJumps (default 2).
 		"slice-grade": defineRoute(
 			["slice-design", "slice-fix"],
-			({ state }) =>
-				allDimensionsPass(state.named["slice-check"]) && allDimensionsPass(state.named["slice-verdicts"])
-					? "slice-design"
-					: "slice-fix",
+			({ state }) => (sliceGatePasses(state) ? "slice-design" : "slice-fix"),
 			{ readsData: false },
 		),
 		"slice-fix": "slice-check",
@@ -1428,25 +1584,35 @@ const carveWorkflow = defineWorkflow({
 		"design-review": "subplan",
 		subplan: "plan",
 		plan: "plan-cite-check",
-		"plan-cite-check": "plan-grade",
+		// Skip the quality re-grade straight to `code` when the gate is already
+		// satisfied — a `plan-fix` that only cleared the citation floor leaves every
+		// dimension + risk flag already passing, so re-grading the whole panel would
+		// only re-roll flappy judgments. First pass (empty verdict channel) ⇒ not
+		// satisfied ⇒ into `plan-grade`. If a fix left the cite floor RED, the gate
+		// isn't satisfied and we re-enter `plan-grade` (which re-runs the subset).
+		"plan-cite-check": defineRoute(
+			["code", "plan-grade"],
+			({ state }) => (planGatePasses(state) ? "code" : "plan-grade"),
+			{ readsData: false },
+		),
 		// Quality gate BEFORE any code. Pass ⇒ code; any fails (the LLM verdict OR a
 		// fabricated citation from the deterministic `plan-cite-check` floor) ⇒
 		// plan-fix, looping back THROUGH the citation floor so the amended plan
 		// re-verifies (else a stale failing cite verdict would loop forever).
-		"plan-grade": defineRoute(
-			["code", "plan-fix"],
-			({ state }) =>
-				allDimensionsPass(state.named["plan-cite-check"]) &&
-				allDimensionsPass(state.named["plan-verdicts"]) &&
-				allRiskFlagsPass(state.named["plan-verdicts"])
-					? "code"
-					: "plan-fix",
-			{ readsData: false },
-		),
+		"plan-grade": defineRoute(["code", "plan-fix"], ({ state }) => (planGatePasses(state) ? "code" : "plan-fix"), {
+			readsData: false,
+		}),
 		"plan-fix": "plan-cite-check",
 		code: "code-splice",
 		"code-splice": "code-cite-check",
-		"code-cite-check": "code-grade",
+		// Skip the code re-grade straight to `implement` when the code gate is already
+		// satisfied — a `code-fix` that only cleared the citation floor leaves the
+		// panel already green. First pass (empty channel) ⇒ into `code-grade`.
+		"code-cite-check": defineRoute(
+			["implement", "code-grade"],
+			({ state }) => (codeGatePasses(state) ? "implement" : "code-grade"),
+			{ readsData: false },
+		),
 		// Re-grade the code-bearing plan. Pass ⇒ implement; any fails ⇒ surgically
 		// amend the spliced plan and re-grade. Routes to `code-fix`, NOT back to
 		// `code`: the gate fails on plan-text defects (edit anchors, line
@@ -1455,12 +1621,7 @@ const carveWorkflow = defineWorkflow({
 		// maxBackwardJumps.
 		"code-grade": defineRoute(
 			["implement", "code-fix"],
-			({ state }) =>
-				allDimensionsPass(state.named["code-cite-check"]) &&
-				allDimensionsPass(state.named["code-verdicts"]) &&
-				allRiskFlagsPass(state.named["code-verdicts"])
-					? "implement"
-					: "code-fix",
+			({ state }) => (codeGatePasses(state) ? "implement" : "code-fix"),
 			{ readsData: false },
 		),
 		"code-fix": "code-cite-check",

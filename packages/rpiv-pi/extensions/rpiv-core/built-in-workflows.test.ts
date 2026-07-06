@@ -1485,6 +1485,53 @@ describe("build slice-check (deterministic floor)", () => {
 		expect(data.pass).toBe(true);
 	});
 
+	// P1 — a bare basename (a path-prefix omission the producers routinely emit,
+	// e.g. `built-in-workflows.ts:1431` for a file nested many dirs deep) resolves
+	// to the ONE tree file with that name, rather than failing the floor on a
+	// mechanical omission and forcing an every-run fix loop.
+	it("resolves a bare-basename citation to the unique tree file (path-prefix omission)", () => {
+		mkdirSync(join(tmpDir, "packages/deep/nested"), { recursive: true });
+		writeFileSync(
+			join(tmpDir, "packages/deep/nested/uniquename.ts"),
+			Array.from({ length: 50 }, (_, i) => `line ${i}`).join("\n"),
+		);
+		const rel = ".rpiv/artifacts/slices/cite-bare.md";
+		const m = write(
+			rel,
+			`---\nstatus: ready\nslice_count: 1\nslices:\n  - { n: 1, title: A, deps: [] }\n---\n## Slice 1: A\n**Draws on:** uniquename.ts:20\n`,
+		);
+		const data = runOn(m);
+		expect(data.pass).toBe(true);
+	});
+
+	it("still flags a bare-basename citation past end-of-file after resolving it", () => {
+		mkdirSync(join(tmpDir, "pkg"), { recursive: true });
+		writeFileSync(join(tmpDir, "pkg/solename.ts"), "a\nb\nc\n"); // 4 lines
+		const rel = ".rpiv/artifacts/slices/cite-bare-eof.md";
+		const m = write(
+			rel,
+			`---\nstatus: ready\nslice_count: 1\nslices:\n  - { n: 1, title: A, deps: [] }\n---\n## Slice 1: A\n**Draws on:** solename.ts:900\n`,
+		);
+		const data = runOn(m);
+		expect(data.pass).toBe(false);
+		expect(String(data.feedback)).toMatch(/matches no version of the file/);
+	});
+
+	it("leaves a bare-basename citation unbacked when the basename is ambiguous", () => {
+		mkdirSync(join(tmpDir, "a"), { recursive: true });
+		mkdirSync(join(tmpDir, "b"), { recursive: true });
+		writeFileSync(join(tmpDir, "a/dup.ts"), Array.from({ length: 50 }, (_, i) => `l${i}`).join("\n"));
+		writeFileSync(join(tmpDir, "b/dup.ts"), Array.from({ length: 50 }, (_, i) => `l${i}`).join("\n"));
+		const rel = ".rpiv/artifacts/slices/cite-ambig.md";
+		const m = write(
+			rel,
+			`---\nstatus: ready\nslice_count: 1\nslices:\n  - { n: 1, title: A, deps: [] }\n---\n## Slice 1: A\n**Draws on:** dup.ts:5\n`,
+		);
+		const data = runOn(m);
+		expect(data.pass).toBe(false);
+		expect(String(data.feedback)).toMatch(/Unbacked citation/);
+	});
+
 	// Finding 3 — the deterministic findings must REACH slice-fix. slice-check now
 	// emits an fs artifact carrying the findings JSON; slice-fix's `reads` fanin over
 	// that channel projects it as `--slice-check <path>` (arg-projection forwards
@@ -1646,6 +1693,111 @@ describe("build audit-drop fixes", () => {
 				} as unknown as RunView,
 			});
 			expect(next).toBe("code-fix");
+		});
+	});
+
+	// P2 — the deterministic-floor edges SKIP the re-grade when the accumulated
+	// verdicts already clear the gate, so a fix that only cleared the citation/
+	// structure floor doesn't re-roll a passing (flappy) LLM panel. The predicate
+	// is the SAME the grade edge uses, so "skip" ≡ "grade then pass", minus waste.
+	describe("re-grade skip on the deterministic-floor edge (P2)", () => {
+		const routeFrom = (stage: string, named: Record<string, unknown>) =>
+			edge(stage)({ output: undefined, state: { named } as unknown as RunView });
+
+		it("slice-check skips straight to slice-design when structure + design-readiness already pass", () => {
+			expect(
+				routeFrom("slice-check", {
+					"slice-check": [dimVerdict("structure", true)],
+					"slice-verdicts": [dimVerdict("design-readiness", true)],
+				}),
+			).toBe("slice-design");
+		});
+
+		it("slice-check routes into slice-grade on the first pass (no design-readiness verdict yet)", () => {
+			expect(
+				routeFrom("slice-check", { "slice-check": [dimVerdict("structure", true)], "slice-verdicts": [] }),
+			).toBe("slice-grade");
+		});
+
+		it("slice-check routes into slice-grade while the structure floor is still red", () => {
+			expect(
+				routeFrom("slice-check", {
+					"slice-check": [dimVerdict("structure", false)],
+					"slice-verdicts": [dimVerdict("design-readiness", true)],
+				}),
+			).toBe("slice-grade");
+		});
+
+		it("slice-check declares slice-design and slice-grade as its only targets", () => {
+			expect([...(edge("slice-check").targets ?? [])].sort()).toEqual(["slice-design", "slice-grade"]);
+		});
+
+		it("plan-cite-check skips straight to code when every dimension + risk flag already passes", () => {
+			expect(
+				routeFrom("plan-cite-check", {
+					"plan-cite-check": [dimVerdict("structure", true)],
+					"plan-verdicts": [
+						dimVerdict("completeness", true),
+						dimVerdict("correctness", true, { risk_rulings: [{ id: "r1", pass: true }] }),
+					],
+				}),
+			).toBe("code");
+		});
+
+		it("plan-cite-check routes into plan-grade on the first pass (no verdicts yet)", () => {
+			expect(
+				routeFrom("plan-cite-check", { "plan-cite-check": [dimVerdict("structure", true)], "plan-verdicts": [] }),
+			).toBe("plan-grade");
+		});
+
+		it("plan-cite-check routes into plan-grade when a fix left the cite floor red (degenerate)", () => {
+			expect(
+				routeFrom("plan-cite-check", {
+					"plan-cite-check": [dimVerdict("structure", false)],
+					"plan-verdicts": [dimVerdict("completeness", true), dimVerdict("correctness", true)],
+				}),
+			).toBe("plan-grade");
+		});
+
+		it("plan-cite-check routes into plan-grade when a risk flag is still ruled fail", () => {
+			expect(
+				routeFrom("plan-cite-check", {
+					"plan-cite-check": [dimVerdict("structure", true)],
+					"plan-verdicts": [
+						dimVerdict("completeness", true),
+						dimVerdict("correctness", true, { risk_rulings: [{ id: "r1", pass: false }] }),
+					],
+				}),
+			).toBe("plan-grade");
+		});
+
+		it("plan-cite-check declares code and plan-grade as its only targets", () => {
+			expect([...(edge("plan-cite-check").targets ?? [])].sort()).toEqual(["code", "plan-grade"]);
+		});
+
+		it("code-cite-check skips straight to implement when the code gate already passes", () => {
+			expect(
+				routeFrom("code-cite-check", {
+					"code-cite-check": [dimVerdict("structure", true)],
+					"code-verdicts": [
+						dimVerdict("completeness", true),
+						dimVerdict("correctness", true, { risk_rulings: [{ id: "r1", pass: true }] }),
+					],
+				}),
+			).toBe("implement");
+		});
+
+		it("code-cite-check routes into code-grade while the code cite floor is red", () => {
+			expect(
+				routeFrom("code-cite-check", {
+					"code-cite-check": [dimVerdict("structure", false)],
+					"code-verdicts": [dimVerdict("completeness", true), dimVerdict("correctness", true)],
+				}),
+			).toBe("code-grade");
+		});
+
+		it("code-cite-check declares implement and code-grade as its only targets", () => {
+			expect([...(edge("code-cite-check").targets ?? [])].sort()).toEqual(["code-grade", "implement"]);
 		});
 	});
 });
@@ -1968,5 +2120,102 @@ describe("control-flow specs are introspectable (presets self-describe)", () => 
 			kind: "iterate",
 			source: "architecture-reviews",
 		});
+	});
+});
+
+// ---------------------------------------------------------------------------
+// P2 — the grade panel re-runs ONLY the dimensions that still need grading
+// (carry-forward), reading its OWN verdict channel, and never emits an empty
+// unit set (empty ⇒ single dimensionless grade fall-through).
+// ---------------------------------------------------------------------------
+
+describe("build grade panel re-grades only the pending dimensions (P2)", () => {
+	let tmpDir: string;
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "rpiv-carve-regrade-"));
+	});
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	const PLAN_DIMS = ["completeness", "correctness", "actionability", "pattern-following", "architecture-fit"];
+	const REL = ".rpiv/artifacts/plans/p.md";
+
+	const gradeUnits = (stage: string) => {
+		const loop = findWorkflow("build").stages[stage]?.loop;
+		if (loop?.kind !== "fanout") throw new Error(`build ${stage} stage has no fanout loop`);
+		return loop.units;
+	};
+	const dimV = (dimension: string, pass: boolean, extra: Record<string, unknown> = {}) =>
+		({
+			artifacts: [],
+			kind: "json",
+			meta: {},
+			data: { dimension, pass, severity: pass ? "none" : "high", ...extra },
+		}) as unknown as Output;
+	const writePlan = () => {
+		mkdirSync(join(tmpDir, ".rpiv/artifacts/plans"), { recursive: true });
+		writeFileSync(join(tmpDir, REL), "---\nstatus: ready\n---\n# Plan\n");
+	};
+	const runUnits = (stage: string, verdictChannel: string, verdicts: Output[]) =>
+		gradeUnits(stage)({
+			cwd: tmpDir,
+			artifact: undefined,
+			state: {
+				named: {
+					plans: [{ artifacts: [{ handle: fsHandle(REL) }], data: undefined, kind: "", meta: {} }],
+					[verdictChannel]: verdicts,
+				},
+			} as unknown as RunView,
+		});
+	const labels = async (stage: string, verdictChannel: string, verdicts: Output[]) =>
+		(await runUnits(stage, verdictChannel, verdicts)).map((u) => u.label).sort();
+
+	beforeEach(writePlan);
+
+	it("grades every dimension on the first pass (no prior verdicts)", async () => {
+		expect(await labels("plan-grade", "plan-verdicts", [])).toEqual([...PLAN_DIMS].sort());
+	});
+
+	it("re-grades ONLY the failing dimension, carrying the rest forward", async () => {
+		const verdicts = PLAN_DIMS.map((d) => dimV(d, d !== "correctness"));
+		expect(await labels("plan-grade", "plan-verdicts", verdicts)).toEqual(["correctness"]);
+	});
+
+	it("re-grades a dimension that passed but ruled a risk flag fail", async () => {
+		const verdicts = PLAN_DIMS.map((d) =>
+			d === "correctness" ? dimV(d, true, { risk_rulings: [{ id: "r1", pass: false }] }) : dimV(d, true),
+		);
+		expect(await labels("plan-grade", "plan-verdicts", verdicts)).toEqual(["correctness"]);
+	});
+
+	it("falls back to the FULL panel when nothing needs re-grading (never an empty unit set)", async () => {
+		const verdicts = PLAN_DIMS.map((d) => dimV(d, true, { risk_rulings: [{ id: "r1", pass: true }] }));
+		expect(await labels("plan-grade", "plan-verdicts", verdicts)).toEqual([...PLAN_DIMS].sort());
+	});
+
+	it("carries a low-severity dimension forward even when its raw pass is false", async () => {
+		const verdicts = PLAN_DIMS.map((d) =>
+			d === "actionability" ? dimV(d, false, { severity: "low" }) : dimV(d, true),
+		);
+		// low severity is floored to a pass, so nothing needs re-grading → full-panel fallback.
+		expect(await labels("plan-grade", "plan-verdicts", verdicts)).toEqual([...PLAN_DIMS].sort());
+	});
+
+	it("the code gate reads code-verdicts, not the plan gate's channel", async () => {
+		// plan-verdicts all fail, but code-grade must ignore them and read code-verdicts.
+		const codeVerdicts = PLAN_DIMS.map((d) => dimV(d, d !== "pattern-following"));
+		const units = gradeUnits("code-grade")({
+			cwd: tmpDir,
+			artifact: undefined,
+			state: {
+				named: {
+					plans: [{ artifacts: [{ handle: fsHandle(REL) }], data: undefined, kind: "", meta: {} }],
+					"plan-verdicts": PLAN_DIMS.map((d) => dimV(d, false)),
+					"code-verdicts": codeVerdicts,
+				},
+			} as unknown as RunView,
+		});
+		expect((await units).map((u) => u.label)).toEqual(["pattern-following"]);
 	});
 });

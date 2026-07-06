@@ -145,6 +145,8 @@ tags: [plan, synthesized]
 ## Phase 1: <title>
 ### Changes
 - `path/to/file.ts` — <what to do>
+  <!-- Every `file:line` uses the repo-root-relative path, never a bare basename: the deterministic `plan-cite-check`/`code-cite-check` floor resolves each citation against the repo root, so a path-prefix omission fails the gate and forces a plan-fix loop. -->
+
 ### Success Criteria
 #### Automated Verification:
 - [ ] <command / assertion>
