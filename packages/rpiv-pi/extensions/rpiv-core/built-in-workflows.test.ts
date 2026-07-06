@@ -1477,20 +1477,28 @@ describe("build subplan cluster fanout (research threading + fail-loud mapping)"
 		).toThrow(/no 'slice-<N>' token|has no slice number/);
 	});
 
-	it("throws when two designs claim the same slice number (duplicated channel)", () => {
+	it("takes the LATEST design when a slice is claimed twice (design-review re-emits — latest-wins, no throw)", async () => {
 		twoIndependentSlices();
-		expect(() =>
-			subplanLoop().units({
-				cwd: tmpDir,
-				artifact: undefined,
-				state: {
-					named: {
-						slices: [out(sliceMap)],
-						designs: [out(".rpiv/artifacts/designs/a_slice-1.md"), out(".rpiv/artifacts/designs/b_slice-1.md")],
-					},
-				} as unknown as RunView,
-			}),
-		).toThrow(/two designs claim slice|claimed by both/);
+		// slice 1 claimed twice: slice-design emits `a_slice-1`, then design-review
+		// re-emits it as `b_slice-1` on the same channel (its "latest-wins" contract).
+		// The resolver must take the newest, never halt.
+		const units = await subplanLoop().units({
+			cwd: tmpDir,
+			artifact: undefined,
+			state: {
+				named: {
+					slices: [out(sliceMap)],
+					designs: [
+						out(".rpiv/artifacts/designs/a_slice-1.md"),
+						out(".rpiv/artifacts/designs/b_slice-1.md"),
+						out(".rpiv/artifacts/designs/d_slice-2.md"),
+					],
+				},
+			} as unknown as RunView,
+		});
+		const slice1Unit = units.find((u) => u.prompt.includes("slice-1"));
+		expect(slice1Unit?.prompt).toContain("--designs .rpiv/artifacts/designs/b_slice-1.md");
+		expect(slice1Unit?.prompt).not.toContain("a_slice-1.md");
 	});
 });
 

@@ -980,20 +980,23 @@ const DESIGN_SLICE_RE = /slice-(\d+)/;
 
 /**
  * Map slice number → its design artifact path, from the design fanout's published
- * outputs. An identity resolver: it maps an ARTIFACT to a slice NUMBER, and it
- * FAILS LOUD when it cannot resolve unambiguously rather than fall back to a
- * positional guess. Two unresolvable shapes throw (halting the run instead of
- * silently mis-routing — the guardrail that turns a channel anomaly, e.g. the
- * duplicated `designs` a re-dispatched fanout could leave, into a stop):
- *   • a design filename that carries no `slice-<N>` token — the naming contract
- *     the whole mapping rests on is broken, so a positional `idx + 1` guess would
- *     scramble the cluster→design wiring and drop slices;
- *   • two designs claiming the SAME slice number — a doubled channel, ambiguous
- *     by construction; keeping the first silently loses the second.
+ * outputs. An identity resolver: it maps an ARTIFACT to a slice NUMBER. It FAILS
+ * LOUD only when identity is genuinely UNRESOLVABLE — a design filename that
+ * carries no `slice-<N>` token, where a positional `idx + 1` guess would scramble
+ * the cluster→design wiring and drop slices.
+ *
+ * A slice claimed by MORE THAN ONE output is NOT ambiguous: the `designs` channel
+ * legitimately accumulates several entries per slice — `slice-design` emits it,
+ * then `design-review` re-emits the accepted/edited design on the SAME channel
+ * (its documented "latest-wins, same paths" contract, so `subplan`/`synthesize`
+ * read the accepted docs). So the newest entry wins, deterministically — throwing
+ * on a duplicate would halt every normal run at `subplan`. (The resume re-dispatch
+ * that once left CONFLICTING designs on the channel is fixed at its source —
+ * finding 7 — so there is no corruption left to fail loud on here.)
  */
 const designPathsBySlice = (state: RunView): Map<number, string> => {
 	const bySlice = new Map<number, string>();
-	(state.named.designs ?? []).forEach((out) => {
+	for (const out of state.named.designs ?? []) {
 		for (const a of out.artifacts) {
 			if (a.handle.kind !== "fs") continue;
 			const name = basename(a.handle.path);
@@ -1005,18 +1008,11 @@ const designPathsBySlice = (state: RunView): Map<number, string> => {
 					`designPathsBySlice: design artifact ${a.handle.path} carries no 'slice-<N>' token — cannot resolve which slice it designs; a positional guess would mis-route the cluster→design mapping and drop slices`,
 				);
 			}
-			const n = Number(match[1]);
-			const prior = bySlice.get(n);
-			if (prior !== undefined) {
-				throw haltPreflight(
-					"designPathsBySlice",
-					`designPathsBySlice: two designs claim slice ${n}`,
-					`designPathsBySlice: slice ${n} is claimed by both ${prior} and ${handleToString(a.handle)} — a duplicated 'designs' channel is ambiguous; the mapping must not silently keep one and drop the other`,
-				);
-			}
-			bySlice.set(n, handleToString(a.handle));
+			// Latest design per slice wins — the channel holds multiple entries per
+			// slice by design (design-review re-emits), and the newest is authoritative.
+			bySlice.set(Number(match[1]), handleToString(a.handle));
 		}
-	});
+	}
 	return bySlice;
 };
 
