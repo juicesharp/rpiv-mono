@@ -251,6 +251,59 @@ describe("loop-resume — fanout", () => {
 		expect(rows.filter((r) => r.parent === "impl")).toHaveLength(3);
 	});
 
+	it("aborted MID-FLIGHT fanout: replays the completed units, re-dispatches ONLY the pending one (finding 7 — the aborted-stage path)", async () => {
+		// The ACTUAL v1 failure (the "all completed" case above never occurs on a
+		// real abort): a fanout aborted after SOME units completed writes a
+		// parent-unset `aborted` STAGE row for the parent. The fold closed the open
+		// generation on that row — discarding the reconstructed cursor whose
+		// completed-unit slots were already filled — so resume cold-re-entered
+		// `impl` and re-dispatched EVERY unit (slice-design designed 8 slices 13×,
+		// duplicating the `designs` channel and collapsing the downstream fan-in).
+		// Only the genuinely-pending unit may re-dispatch.
+		const synthWf: Workflow = {
+			name: "fanout-wf",
+			start: "impl",
+			stages: {
+				impl: produces({ outcome: transcriptOutcome("plans"), loop: fanout({ units: threeUnits }) }),
+				synthesize: acts({ reads: [fanin("plans")] }),
+			},
+			edges: { impl: "synthesize", synthesize: "stop" },
+		} as Workflow;
+		// phases 1 & 2 completed pre-abort; phase 3 never ran; then the stage-level abort row.
+		writeRun([
+			unitRow(1, 1, "completed"),
+			unitRow(2, 2, "completed"),
+			{
+				session: null,
+				stageNumber: 3,
+				stage: "impl", // parent-unset — the fanout parent's own abort marker
+				skill: "impl",
+				status: "aborted",
+				ts: "t3",
+				errMsg: "User cancelled",
+			} as WorkflowStage,
+		]);
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [
+				{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/plans/p3.md")] }, // phase 3 — the only pending unit
+				{ branch: [mockAssistantMessage("synthesized")] }, // downstream synthesize
+			],
+		});
+
+		const result = await resumeWorkflow(chain.ctx, { workflow: synthWf, header, ref: "@x" });
+
+		expect(result.success).toBe(true);
+		// Phases 1 & 2 REPLAY from their journaled output — only phase 3 dispatches, then synthesize.
+		expect(chain.sentMessages).toEqual([
+			"/skill:impl phase 3",
+			"/skill:synthesize --plans .rpiv/artifacts/plans/p1.md --plans .rpiv/artifacts/plans/p2.md --plans .rpiv/artifacts/plans/p3.md",
+		]);
+		// The channel is the same 3 units, never a superset — no duplicate impl completions.
+		const rows = readAllStages(tmpDir, header.runId);
+		expect(rows.filter((r) => r.parent === "impl" && r.status === "completed")).toHaveLength(3);
+	});
+
 	it("collected soft-halt row: rebuilds the failedOutput sentinel by index (skipped by fanin), no re-dispatch", async () => {
 		// CONTRAST with the hard-failure case above: a `collected:true` row is a
 		// non-terminal collect-all unit halt. The resume fold rebuilds a failedOutput

@@ -55,6 +55,17 @@ export function selectResumeEntry(
 				resumeLoopStage(ctx, recon.trailing!, idx, run, buildLoopDeps()),
 			);
 	}
+	if (recon.trailing && recon.trailing.parent === last.stage) {
+		// Open FANOUT generation whose trailer is its OWN parent-unset abort/halt
+		// stage row (a mid-flight abort). The fold keeps the generation open for
+		// exactly this case (see resume.ts), so `recon.trailing` carries the
+		// completed-unit slots — re-enter the loop to replay them and dispatch
+		// only the pending units (finding 7). Without this arm the aborted trailer
+		// falls through to the cold stage re-run below and re-dispatches EVERY
+		// unit, duplicating the channel and collapsing the downstream fan-in.
+		return () =>
+			guardResumeEntry(ctx, last.stage, run, () => resumeLoopStage(ctx, recon.trailing!, idx, run, buildLoopDeps()));
+	}
 	if (last.status === "completed") {
 		// c2 no-op path: a fully-completed run routes onward from its last stage,
 		// which hits `stop` ⇒ `finalizeWorkflow` ⇒ success. The walk runs the

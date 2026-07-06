@@ -131,6 +131,23 @@ export async function reconstructState(
 			if (refusal) return refusal;
 			continue;
 		}
+		// A non-completed, parent-unset row for the SAME stage as the open FANOUT
+		// generation is that generation's own halt marker: a mid-flight abort
+		// writes a stage-level `aborted` row (recordAbortedAtSeam) AFTER the
+		// completed unit rows. Closing the generation on it would discard the
+		// reconstructed cursor whose completed-unit slots are already filled,
+		// forcing resume to cold-re-enter the loop and re-dispatch EVERY unit
+		// (finding 7: the aborted-mid-flight fanout re-ran completed units,
+		// duplicating the channel and collapsing the downstream fan-in). Keep the
+		// generation open — `trailing` then carries the filled slots and
+		// `pendingFanoutIndices` dispatches only the genuinely-pending units. A
+		// COMPLETED parent row still closes+advances; a stage with no completed
+		// units never opened a generation, so it falls through and re-runs whole.
+		if (acc.gen?.parent === row.stage && acc.gen.loop.kind === "fanout" && row.status !== "completed") {
+			acc.visited.add(row.stage);
+			acc.lastStageNumber = Math.max(acc.lastStageNumber, row.stageNumber);
+			continue;
+		}
 		closeGeneration(acc);
 		const def = workflow.stages[row.stage];
 		// Unknown key refuses — including LEGACY decorated rows (older
