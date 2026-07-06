@@ -72,6 +72,39 @@ const MAX_PHASES = 32;
 const PLAN_PHASE_RE = /^## Phase (\d+):/gm;
 
 /**
+ * Count lines matching `re` (a `^…` heading pattern) that sit OUTSIDE fenced code
+ * blocks. A `## Phase N:` / `## Slice N:` / `### Phase N —` inside a ``` or ~~~
+ * fence is example/fixture text — a meta-plan (one whose subject is the pipeline)
+ * legitimately embeds the pipeline's own plan/slice fixtures — not a structural
+ * heading. Mirrors the fence-aware boundary scan in
+ * skills/_shared/stitch-elaborations.mjs so the derive-check and the stitch that
+ * produced the body agree on what a heading is (a naive `matchAll` counts fenced
+ * examples and false-throws the derived-array staleness guard).
+ */
+const countHeadingsOutsideFences = (content: string, re: RegExp): number => {
+	const lineRe = new RegExp(re.source); // per-line test; drop g/m so lastIndex can't drift
+	let count = 0;
+	let inFence = false;
+	let fenceLen = 0;
+	for (const line of content.split("\n")) {
+		const fence = /^\s*(`{3,}|~{3,})/.exec(line);
+		if (fence) {
+			const len = fence[1].length;
+			if (!inFence) {
+				inFence = true;
+				fenceLen = len;
+			} else if (len >= fenceLen && line.trim().length === len) {
+				inFence = false;
+				fenceLen = 0;
+			}
+			continue;
+		}
+		if (!inFence && lineRe.test(line)) count++;
+	}
+	return count;
+};
+
+/**
  * One parsed entry of a plan's `phases:` array. `entry` carries the whole raw
  * frontmatter object, so a consumer can read fields beyond `{ n, title }`
  * without this parser knowing about them.
@@ -109,7 +142,7 @@ const planPhaseRecords = (content: string, who: string, path: string): readonly 
 	const fm = frontmatter as Record<string, unknown>;
 	const raw = fm.phases;
 	const phases = Array.isArray(raw) ? raw : [];
-	const headingCount = [...content.matchAll(PLAN_PHASE_RE)].length;
+	const headingCount = countHeadingsOutsideFences(content, PLAN_PHASE_RE);
 	if (phases.length !== headingCount) {
 		throw haltPreflight(
 			who,
@@ -314,7 +347,7 @@ const REVIEW_PHASE_ITERATE = iterate({
 		const phases = Array.isArray(raw) ? raw : [];
 		const i = accumulated.length;
 		if (i === 0) {
-			const headingCount = [...content.matchAll(REVIEW_PHASE_RE)].length;
+			const headingCount = countHeadingsOutsideFences(content, REVIEW_PHASE_RE);
 			if (phases.length !== headingCount) {
 				throw haltPreflight(
 					"REVIEW_PHASE_ITERATE",
@@ -595,7 +628,7 @@ const sliceRecords = (content: string, who: string, path: string): readonly Phas
 	const fm = frontmatter as Record<string, unknown>;
 	const raw = fm.slices;
 	const slices = Array.isArray(raw) ? raw : [];
-	const headingCount = [...content.matchAll(SLICE_HEADING_RE)].length;
+	const headingCount = countHeadingsOutsideFences(content, SLICE_HEADING_RE);
 	if (slices.length !== headingCount) {
 		throw haltPreflight(
 			who,

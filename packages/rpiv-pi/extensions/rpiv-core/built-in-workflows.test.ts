@@ -1594,6 +1594,20 @@ describe("polish — REVIEW_PHASE_ITERATE (frontmatter-driven)", () => {
 		);
 	});
 
+	it("does not count '### Phase N —' headings inside a fenced code block (meta-review body)", async () => {
+		const rel = ".rpiv/artifacts/architecture-reviews/fenced.md";
+		// 1 structured phase + 1 REAL heading; the fenced `### Phase 2 —` is example
+		// text a meta-review (one whose subject is the pipeline) legitimately embeds
+		// and must NOT be counted — else the derive-check false-throws (1 ≠ 2).
+		write(
+			rel,
+			"---\nphases:\n  - { n: 1, title: Only one, depends_on: [], blast_radius: internal, effort: S }\n---\n# Arch Review\n\n### Phase 1 — Only one\nbody\n\n```md\n### Phase 2 — fenced example (must not count)\n```\n",
+		);
+		const { artifact, state } = stateFor(rel);
+		const u = await iterate()({ cwd: tmpDir, artifact, state, accumulated: [], index: 0 });
+		expect(u?.label).toContain("phase 1/1");
+	});
+
 	it("returns null for a review with neither structured phases nor body headings", async () => {
 		const rel = ".rpiv/artifacts/architecture-reviews/empty.md";
 		write(rel, `---\nstatus: ready\n---\n# No phases\n`);
