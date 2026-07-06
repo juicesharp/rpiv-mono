@@ -1339,7 +1339,9 @@ describe("build audit-drop fixes", () => {
 			];
 			const next = edge("plan-grade")({
 				output: undefined,
-				state: { named: { "plan-verdicts": verdicts } } as unknown as RunView,
+				state: {
+					named: { "plan-verdicts": verdicts, "plan-cite-check": [dimVerdict("structure", true)] },
+				} as unknown as RunView,
 			});
 			expect(next).toBe("plan-fix");
 		});
@@ -1351,7 +1353,9 @@ describe("build audit-drop fixes", () => {
 			];
 			const next = edge("plan-grade")({
 				output: undefined,
-				state: { named: { "plan-verdicts": verdicts } } as unknown as RunView,
+				state: {
+					named: { "plan-verdicts": verdicts, "plan-cite-check": [dimVerdict("structure", true)] },
+				} as unknown as RunView,
 			});
 			expect(next).toBe("code");
 		});
@@ -1363,7 +1367,36 @@ describe("build audit-drop fixes", () => {
 			];
 			const next = edge("code-grade")({
 				output: undefined,
-				state: { named: { "code-verdicts": verdicts } } as unknown as RunView,
+				state: {
+					named: { "code-verdicts": verdicts, "code-cite-check": [dimVerdict("structure", true)] },
+				} as unknown as RunView,
+			});
+			expect(next).toBe("code-fix");
+		});
+	});
+
+	// Finding 6 (extended past the slice map) — a fabricated `file:line` in the plan
+	// or code-bearing plan fails the deterministic cite-check floor and routes to the
+	// fix arm, even when every LLM dimension and risk flag passes.
+	describe("plan/code citation floor routes fabrications to the fix arm (finding 6)", () => {
+		const allPass = [dimVerdict("completeness", true), dimVerdict("correctness", true, { risk_rulings: [] })];
+
+		it("plan-grade routes to plan-fix when plan-cite-check fails, despite dimensions + risk flags passing", () => {
+			const next = edge("plan-grade")({
+				output: undefined,
+				state: {
+					named: { "plan-verdicts": allPass, "plan-cite-check": [dimVerdict("structure", false)] },
+				} as unknown as RunView,
+			});
+			expect(next).toBe("plan-fix");
+		});
+
+		it("code-grade routes to code-fix when code-cite-check fails", () => {
+			const next = edge("code-grade")({
+				output: undefined,
+				state: {
+					named: { "code-verdicts": allPass, "code-cite-check": [dimVerdict("structure", false)] },
+				} as unknown as RunView,
 			});
 			expect(next).toBe("code-fix");
 		});

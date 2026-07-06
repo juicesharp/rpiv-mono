@@ -935,6 +935,46 @@ const sliceStructureCheck = ({ state, cwd }: ScriptContext): Omit<Output, "meta"
 	};
 };
 
+/**
+ * Deterministic citation floor for a synthesized/spliced plan — the plan-scope
+ * twin of `sliceStructureCheck`'s citation backing, extending finding 6 past the
+ * slice map to the plan and the code-bearing plan (a fabricated `file:line` in
+ * the plan misdirects `implement`, exactly the #103 class). Verifies every
+ * citation resolves against the working tree and emits a `{ dimension:
+ * "structure" }` verdict on `who`'s channel that the gate route folds via
+ * `allDimensionsPass`; the matching `<fix>` stage reads `fanin(who)` so the
+ * findings DRIVE the amend rather than blind-halt. Reuses `verifyCitations` — no
+ * fuzzy wrong-symbol heuristic. Basename-keyed ⇒ idempotent across fix rounds.
+ */
+const planCitationCheck =
+	(who: string) =>
+	({ state, cwd }: ScriptContext): Omit<Output, "meta"> => {
+		const latest = latestFsArtifact(state, "plans");
+		if (latest?.handle.kind !== "fs") {
+			throw haltPreflight(
+				who,
+				`${who}: no plan to check`,
+				`${who}: no fs artifact on the 'plans' channel — the plan must be produced before the citation check`,
+			);
+		}
+		const body = readArtifactFile(latest.handle.path, cwd);
+		const findings = verifyCitations(body, cwd);
+		const pass = findings.length === 0;
+		const data = {
+			dimension: "structure",
+			pass,
+			score: pass ? 100 : 0,
+			severity: pass ? "none" : "high",
+			artifact: handleToString(latest.handle),
+			findings,
+			feedback: pass ? "" : findings.map((f) => f.detail).join(" "),
+		};
+		const rel = join(VERDICT_DIR, `${who}__${basename(latest.handle.path, ".md")}.json`);
+		mkdirSync(join(cwd, VERDICT_DIR), { recursive: true });
+		writeFileSync(join(cwd, rel), JSON.stringify(data, null, 2), "utf-8");
+		return { kind: "json", artifacts: [{ handle: { kind: "fs", path: rel } }], data };
+	};
+
 /** A design filename encodes its slice as `…slice-<N>…` — the design-fanout naming convention. */
 const DESIGN_SLICE_RE = /slice-(\d+)/;
 
@@ -1244,6 +1284,9 @@ const carveWorkflow = defineWorkflow({
 		// constraints reach the merge directly, not only via each subplan's
 		// refraction) alongside the cluster sub-plans it fans in.
 		plan: produces({ skill: "synthesize", reads: ["research", fanin("subplans")] }),
+		// Deterministic citation floor BEFORE the LLM plan gate (twin of `slice-check`):
+		// a fabricated `file:line` in the plan fails structurally and routes to `plan-fix`.
+		"plan-cite-check": produces.script({ reads: ["plans"], run: planCitationCheck("plan-cite-check") }),
 		// Quality gate over the plan; verdicts on their own channel.
 		"plan-grade": produces({
 			skill: "grade",
@@ -1256,7 +1299,7 @@ const carveWorkflow = defineWorkflow({
 		"plan-fix": produces({
 			skill: "amend",
 			outcome: rpivBucketOutcome("plans"),
-			reads: ["plans", fanin("plan-verdicts")],
+			reads: ["plans", fanin("plan-verdicts"), fanin("plan-cite-check")],
 		}),
 		// Elaborate implement-ready code into each phase in parallel (fanout),
 		// deterministically splice it back into the plan (code-splice), then
@@ -1277,6 +1320,9 @@ const carveWorkflow = defineWorkflow({
 				execFileSync("node", [STITCH_SCRIPT, planPath], { cwd });
 			},
 		}),
+		// Deterministic citation floor over the SPLICED (code-bearing) plan before
+		// the LLM code gate — the code-scope twin of `plan-cite-check`.
+		"code-cite-check": produces.script({ reads: ["plans"], run: planCitationCheck("code-cite-check") }),
 		"code-grade": produces({
 			skill: "grade",
 			loop: PLAN_DIMENSION_FANOUT,
@@ -1297,7 +1343,7 @@ const carveWorkflow = defineWorkflow({
 		"code-fix": produces({
 			skill: "amend",
 			outcome: rpivBucketOutcome("plans"),
-			reads: ["plans", fanin("code-verdicts")],
+			reads: ["plans", fanin("code-verdicts"), fanin("code-cite-check")],
 		}),
 		implement: acts({ loop: IMPLEMENT_PHASE_FANOUT, reads: ["plans"] }),
 		validate: produces({ prompt: VALIDATE_GOAL_PROMPT }),
@@ -1325,19 +1371,26 @@ const carveWorkflow = defineWorkflow({
 		"slice-design": "design-review",
 		"design-review": "subplan",
 		subplan: "plan",
-		plan: "plan-grade",
-		// Quality gate BEFORE any code. Pass ⇒ code; any fails ⇒ plan-fix and loop back.
+		plan: "plan-cite-check",
+		"plan-cite-check": "plan-grade",
+		// Quality gate BEFORE any code. Pass ⇒ code; any fails (the LLM verdict OR a
+		// fabricated citation from the deterministic `plan-cite-check` floor) ⇒
+		// plan-fix, looping back THROUGH the citation floor so the amended plan
+		// re-verifies (else a stale failing cite verdict would loop forever).
 		"plan-grade": defineRoute(
 			["code", "plan-fix"],
 			({ state }) =>
-				allDimensionsPass(state.named["plan-verdicts"]) && allRiskFlagsPass(state.named["plan-verdicts"])
+				allDimensionsPass(state.named["plan-cite-check"]) &&
+				allDimensionsPass(state.named["plan-verdicts"]) &&
+				allRiskFlagsPass(state.named["plan-verdicts"])
 					? "code"
 					: "plan-fix",
 			{ readsData: false },
 		),
-		"plan-fix": "plan-grade",
+		"plan-fix": "plan-cite-check",
 		code: "code-splice",
-		"code-splice": "code-grade",
+		"code-splice": "code-cite-check",
+		"code-cite-check": "code-grade",
 		// Re-grade the code-bearing plan. Pass ⇒ implement; any fails ⇒ surgically
 		// amend the spliced plan and re-grade. Routes to `code-fix`, NOT back to
 		// `code`: the gate fails on plan-text defects (edit anchors, line
@@ -1347,12 +1400,14 @@ const carveWorkflow = defineWorkflow({
 		"code-grade": defineRoute(
 			["implement", "code-fix"],
 			({ state }) =>
-				allDimensionsPass(state.named["code-verdicts"]) && allRiskFlagsPass(state.named["code-verdicts"])
+				allDimensionsPass(state.named["code-cite-check"]) &&
+				allDimensionsPass(state.named["code-verdicts"]) &&
+				allRiskFlagsPass(state.named["code-verdicts"])
 					? "implement"
 					: "code-fix",
 			{ readsData: false },
 		),
-		"code-fix": "code-grade",
+		"code-fix": "code-cite-check",
 		implement: "validate",
 		// Gate commit on validate's own verdict — an unconditional `validate → commit`
 		// let a `verdict: fail` (incomplete goal coverage) commit anyway. `match` with
