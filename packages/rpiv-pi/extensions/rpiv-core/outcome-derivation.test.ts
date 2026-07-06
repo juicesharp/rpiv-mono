@@ -275,7 +275,7 @@ describe("equivalence — built-in workflows", () => {
 	];
 
 	/**
-	 * Expected bucket name for each produces stage across all 3 workflows.
+	 * Expected bucket name for each produces stage across all 5 workflows.
 	 * Key: "workflowName::stageName". Value: expected outcome.name.
 	 */
 	const EXPECTED: Record<string, string> = {
@@ -287,6 +287,15 @@ describe("equivalence — built-in workflows", () => {
 		"build::plan": "plans",
 		"build::code": "elaborations",
 		"build::validate": "validation",
+		// ship — blueprint/validate derive; implement/commit are side-effect (SKIP)
+		"ship::blueprint": "plans",
+		"ship::validate": "validation",
+		// arch
+		"arch::research": "research",
+		"arch::design": "designs",
+		"arch::plan": "plans",
+		"arch::validate": "validation",
+		"arch::code-review": "reviews",
 		// vet
 		"vet::code-review": "reviews",
 		"vet::blueprint": "plans",
@@ -325,6 +334,10 @@ describe("equivalence — built-in workflows", () => {
 	 * (side-effect skills: commit, implement).
 	 */
 	const SKIP_STAGES = new Set([
+		"ship::commit",
+		"ship::implement",
+		"arch::commit",
+		"arch::implement",
 		"vet::commit",
 		"vet::implement",
 		"polish::commit",
@@ -410,7 +423,7 @@ describe("equivalence — built-in workflows", () => {
 		});
 	}
 
-	it("total produces stages across all workflows = 25 (13 derivable + 8 explicit + 4 script)", () => {
+	it("total produces stages across all workflows = 32 (20 derivable + 8 explicit + 4 script)", () => {
 		let count = 0;
 		let scriptProduces = 0;
 		for (const w of builtInWorkflows) {
@@ -419,7 +432,7 @@ describe("equivalence — built-in workflows", () => {
 				if (stage.kind === "produces" && stage.run != null) scriptProduces++;
 			}
 		}
-		expect(count).toBe(25);
+		expect(count).toBe(32);
 		expect(scriptProduces).toBe(4); // build::slice-check + build::goal + build::plan-cite-check + build::code-cite-check
 	});
 });

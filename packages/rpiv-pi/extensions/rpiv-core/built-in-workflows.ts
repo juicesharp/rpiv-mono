@@ -232,6 +232,66 @@ const FRONTMATTER_PHASE_FANOUT = fanout({
 const IMPLEMENT_PHASE_FANOUT = { ...FRONTMATTER_PHASE_FANOUT, concurrency: 1 };
 
 // ===========================================================================
+// ship — blueprint → implement → validate → commit
+// ===========================================================================
+
+const shipWorkflow = defineWorkflow({
+	name: "ship",
+	description:
+		"Fast path with no research or review. Best when the change is small and the approach is obvious. Chain: blueprint → implement → validate → commit.",
+	start: "blueprint",
+	stages: {
+		blueprint: produces(),
+		implement: acts({ loop: IMPLEMENT_PHASE_FANOUT, reads: ["plans"] }),
+		validate: produces(),
+		commit: acts({ outcome: gitCommitOutcome }),
+	},
+	edges: {
+		blueprint: "implement",
+		implement: "validate",
+		validate: "commit",
+		commit: "stop",
+	},
+});
+
+// ===========================================================================
+// arch — research → design → plan → implement → validate → code-review →
+//        (design → loop) | commit
+//        Loops the full design/plan/implement/validate/review chain until
+//        code-review reports zero blockers, bounded by the runner's
+//        maxBackwardJumps (default 2 → up to 3 review iterations).
+// ===========================================================================
+
+const archWorkflow = defineWorkflow({
+	name: "arch",
+	description:
+		"Design-led pipeline for complex changes touching many files or layers. Best when the approach itself needs to be worked out before planning. Chain: research → design → plan → implement → validate → code-review → (design loop) → commit.",
+	start: "research",
+	stages: {
+		research: produces(),
+		design: produces(),
+		plan: produces(),
+		implement: acts({ loop: IMPLEMENT_PHASE_FANOUT, reads: ["plans"] }),
+		validate: produces(),
+		"code-review": produces(),
+		commit: acts({ outcome: gitCommitOutcome }),
+	},
+	edges: {
+		research: "design",
+		design: "plan",
+		plan: "implement",
+		implement: "validate",
+		validate: "code-review",
+		// Backward edge: code-review → design re-enters the full
+		// design/plan/implement/validate/review cycle. Bounded by the
+		// runner's default maxBackwardJumps (2), permitting at most 3
+		// review iterations before the guard halts.
+		"code-review": gate("blockers_count", { design: gt(0), commit: eq(0) }, "commit"),
+		commit: "stop",
+	},
+});
+
+// ===========================================================================
 // vet — code-review → (blueprint → implement → validate → loop) | commit
 //       Examine existing changes; if not approved, blueprint a fix plan,
 //       implement it, validate, and re-review. Loops until approved.
@@ -1424,4 +1484,10 @@ const carveWorkflow = defineWorkflow({
 // Exports
 // ===========================================================================
 
-export const builtInWorkflows: readonly Workflow[] = [vetWorkflow, polishWorkflow, carveWorkflow];
+export const builtInWorkflows: readonly Workflow[] = [
+	shipWorkflow,
+	archWorkflow,
+	vetWorkflow,
+	polishWorkflow,
+	carveWorkflow,
+];
