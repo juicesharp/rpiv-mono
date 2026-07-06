@@ -18,10 +18,13 @@ vi.mock("../config/voice-config.js", async (importOriginal) => {
 	return { ...orig, saveVoiceConfig: vi.fn(() => true) };
 });
 
-const theme = makeTheme({
-	fg: (_c: string, t: string) => t,
-	bold: (t: string) => t,
-}) as unknown as Theme;
+const theme = {
+	...makeTheme({
+		fg: (_c: string, t: string) => t,
+		bold: (t: string) => t,
+	}),
+	boxSharp: { horizontal: "─" },
+} as unknown as Theme;
 
 function makeDeps() {
 	return {

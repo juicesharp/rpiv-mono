@@ -1,8 +1,9 @@
-import { DynamicBorder, type Theme } from "@earendil-works/pi-coding-agent";
+import type { Theme } from "@earendil-works/pi-coding-agent";
 import { getKeybindings } from "@earendil-works/pi-tui";
 import type { VoiceConfig } from "../config/voice-config.js";
 import { saveVoiceConfig } from "../config/voice-config.js";
 import { globalBinding } from "../view/component-binding.js";
+import { AccentDivider } from "../view/components/accent-divider.js";
 import { EqualizerView } from "../view/components/equalizer-view.js";
 import { SettingsFieldView } from "../view/components/settings-field-view.js";
 import { SettingsFormView } from "../view/components/settings-form-view.js";
@@ -68,7 +69,7 @@ export class VoiceSession {
 		this.state = initialVoiceState(draftFromConfig(config.persistedConfig));
 
 		const transcript = new TranscriptView(config.theme);
-		const divider = new DynamicBorder((s) => config.theme.fg("accent", s));
+		const divider = new AccentDivider(config.theme);
 		const equalizer = new EqualizerView(config.theme);
 		const statusBar = new StatusBarView(config.theme);
 		this.statusBar = statusBar;

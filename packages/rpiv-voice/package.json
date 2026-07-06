@@ -57,6 +57,7 @@
 		"state/status-intent.ts",
 		"state/voice-session.ts",
 		"view/component-binding.ts",
+		"view/components/accent-divider.ts",
 		"view/components/equalizer-view.ts",
 		"view/components/settings-field-view.ts",
 		"view/components/settings-form-view.ts",

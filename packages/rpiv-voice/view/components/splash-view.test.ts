@@ -4,9 +4,12 @@ import { describe, expect, it } from "vitest";
 
 import { SplashView } from "./splash-view.js";
 
-const tagged = makeTheme({
-	fg: (color: string, text: string) => `<${color}>${text}</${color}>`,
-}) as unknown as Theme;
+const tagged = {
+	...makeTheme({
+		fg: (color: string, text: string) => `<${color}>${text}</${color}>`,
+	}),
+	boxSharp: { horizontal: "─" },
+} as unknown as Theme;
 const WIDTH = 80;
 
 function renderLast(view: SplashView): string {

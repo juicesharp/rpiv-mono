@@ -1,7 +1,8 @@
-import { DynamicBorder, type Theme } from "@earendil-works/pi-coding-agent";
+import type { Theme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth } from "@earendil-works/pi-tui";
 import { t } from "../../state/i18n-bridge.js";
 import type { StatefulView } from "../stateful-view.js";
+import { AccentDivider } from "./accent-divider.js";
 
 export const SPLASH_FRAMES = ["⠴", "⠦", "⠖", "⠲"] as const;
 export const SPLASH_FRAME_INTERVAL_MS = 160;
@@ -73,11 +74,11 @@ function appendDownloadProgress(
  * the dictation/settings chrome rather than a separate widget.
  */
 export class SplashView implements StatefulView<SplashViewProps> {
-	private readonly divider: DynamicBorder;
+	private readonly divider: AccentDivider;
 	private props: SplashViewProps = { phase: { kind: "loading_engine" }, frame: 0 };
 
 	constructor(private readonly theme: Theme) {
-		this.divider = new DynamicBorder((s) => theme.fg(COLOR_ACCENT, s));
+		this.divider = new AccentDivider(theme);
 	}
 
 	setProps(props: SplashViewProps): void {
