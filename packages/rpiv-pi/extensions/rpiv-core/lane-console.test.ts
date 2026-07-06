@@ -195,17 +195,56 @@ describe("LaneConsole — live output + bottom-pinned lane block", () => {
 		panel.dispose();
 	});
 
-	it("PageUp reveals older transcript, PageDown clamps back to the tail (↑/↓ are lane nav)", () => {
+	it("PageUp freezes on a stable anchor, PageDown walks back and auto-resumes follow (↑/↓ are lane nav)", () => {
 		const tui = makeTui(24);
 		liveUnit(() => Array.from({ length: 50 }, (_v, i) => assistantEntry(`line-${i}`)));
 		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, tui, identityTheme, {} as never, vi.fn());
 		const tail = panel.render(80).join("\n");
-		panel.handleInput("\x1b[5~"); // PageUp → reveal older
-		expect(panel.render(80).join("\n")).not.toBe(tail);
+		panel.handleInput("\x1b[5~"); // PageUp → freeze on an older anchor (follow OFF)
+		const paused = panel.render(80).join("\n");
+		expect(paused).not.toBe(tail);
+		expect(paused).toContain("paused"); // footer cue flips off "following"
 		expect(tui.requestRender).toHaveBeenCalled();
-		panel.handleInput("\x1b[6~"); // PageDown past the tail stays clamped
-		panel.handleInput("\x1b[6~");
-		expect(() => panel.render(80)).not.toThrow();
+		panel.handleInput("\x1b[6~"); // PageDown → walk the anchor toward the tail
+		panel.handleInput("\x1b[6~"); // …reaching the tail auto-resumes follow; a further press is a no-op
+		expect(panel.render(80).join("\n")).toBe(tail); // back at the newest tail, follow ON (window == initial)
+		expect(panel.render(80).join("\n")).toContain("following");
+		panel.dispose();
+	});
+
+	it("follow-mode anchor: following pins the newest tail; PageUp freezes on a stable index (no drift, fail-soft on shrink)", () => {
+		const entries = Array.from({ length: 50 }, (_v, i) => assistantEntry(`line-${i}`));
+		liveUnit(() => entries); // mutable branch — push/length mutate the live body
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(24), identityTheme, {} as never, vi.fn());
+
+		// c1 — follow=ON: growing the body keeps the newest line pinned at the tail.
+		panel.render(80);
+		entries.push(assistantEntry("line-50"));
+		expect(panel.render(80).join("\n")).toContain("line-50"); // newest visible while following
+
+		// c2 — PageUp freezes on a stable anchor; growing the body does NOT drift the window.
+		panel.handleInput("\x1b[5~"); // PageUp → pause on a stable anchor (follow OFF)
+		const frozen = panel.render(80);
+		entries.push(assistantEntry("line-51")); // grow further while paused
+		const after = panel.render(80);
+		expect(after).toEqual(frozen); // paused window is byte-identical (start decoupled from body.length)
+		expect(after.join("\n")).not.toContain("line-51"); // the newly-added tail line is absent
+
+		// Fail-soft — body shrinks below the anchor: start clamps down to maxStart, no negative start.
+		entries.length = 5; // turn-commit-style shrink well below the paused anchorLine
+		const shrunk = panel.render(80);
+		expect(shrunk.length).toBe(after.length); // constant height — start clamped, band padded (no throw, no collapse)
+		panel.dispose();
+	});
+
+	it("footer cue distinguishes following vs paused in lane focus", () => {
+		liveUnit(() => Array.from({ length: 50 }, (_v, i) => assistantEntry(`line-${i}`)));
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(24), identityTheme, {} as never, vi.fn());
+		expect(panel.render(80).join("\n")).toContain("following"); // follow=ON on a fresh console
+		panel.handleInput("\x1b[5~"); // PageUp → paused
+		const paused = panel.render(80).join("\n");
+		expect(paused).toContain("paused");
+		expect(paused).not.toContain("following"); // cue flipped (was "following", now "paused")
 		panel.dispose();
 	});
 
@@ -347,6 +386,21 @@ describe("LaneConsole — browser navigation (spine)", () => {
 		await Promise.resolve(); // B mounts
 		expect(peekInput("run-1", SINGLE_UNIT_KEY)).toBeDefined(); // B still queued
 		expect(panel.render(80).join("\n")).toContain("esc → lanes"); // stays armed on B (no re-⏎ needed)
+		panel.dispose();
+	});
+
+	it("retarget resets scroll to follow=ON — no per-unit scroll memory", () => {
+		liveUnit(() => Array.from({ length: 50 }, (_v, i) => assistantEntry(`line-${i}`)));
+		secondLane(); // run-2 with its own body
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(24), identityTheme, {} as never, vi.fn());
+		panel.render(80); // prime lastMaxStart (cached in render; scroll reads it — see r1)
+		panel.handleInput("\x1b[5~"); // PageUp on run-1 → paused (follow OFF, anchor set)
+		expect(panel.render(80).join("\n")).toContain("paused");
+		panel.handleInput("\x1b[B"); // ↓ → run-2 (retarget resets follow=ON)
+		panel.handleInput("\x1b[A"); // ↑ → back to run-1 (retarget resets follow=ON — no scroll memory)
+		const out = panel.render(80);
+		expect(out.join("\n")).toContain("following"); // follow re-engaged on landing
+		expect(out.join("\n")).toContain("line-49"); // run-1's newest tail — not the old paused position
 		panel.dispose();
 	});
 });
@@ -677,8 +731,8 @@ describe("LaneConsole — tiny-terminal constant height", () => {
 	it("a squeezed surface paints the ARMED band by yielding the transcript floor (16 rows)", async () => {
 		liveUnit(() => [assistantEntry("ctx")]);
 		enqueueQuestion(makeInner(3).component);
-		// A second lane grows the lane block enough that the old TRANSCRIPT_MIN reservation
-		// starved the band to zero rows — armed-but-invisible (keys swallowed blind).
+		// A second lane grows the lane block enough that the unconditional reclaim
+		// (budget = maxRows − chrome) is what keeps the armed band from being squeezed out.
 		recordRun("run-2", "audit");
 		setUnitStarted("run-2", SINGLE_UNIT_KEY, "unit");
 		setCurrentSession(
@@ -770,10 +824,11 @@ describe("LaneConsole — real ask_user_question factory (cappedTui self-windowi
 	};
 	// At 32 rows: maxRows = floor(32 * 0.9) = 28; the bottom lane block for one lane is 7 rows
 	// (blank + heading + blank + row + blank + footer + rule); the live-output region above it is
-	// the `── live output ──` border + transcript + [question divider + question]. Question budget
-	// = maxRows − laneBlock(7) − border(1) − questionDivider(1) − TRANSCRIPT_MIN(4) = 15, which is
-	// below the questionnaire's natural 17 rows, so the cap (not shortness) constrains the band.
-	const QUESTION_BUDGET_24 = 15;
+	// the `── live output ──` border + transcript + [question divider + question]. The armed band
+	// outranks the transcript floor unconditionally, so the question budget =
+	// maxRows − laneBlock(7) − border(1) − questionDivider(1) = 19 ≥ the questionnaire's natural
+	// 17 rows — the band is no longer clipped.
+	const QUESTION_BUDGET_24 = 19;
 	const SURFACE_HEIGHT_24 = 28;
 	/** The question band = the lines between the console's question divider (the FIRST bare
 	 *  full-width rule, below the `── live output ──` border) and the bottom lane block. The lane
@@ -793,21 +848,17 @@ describe("LaneConsole — real ask_user_question factory (cappedTui self-windowi
 		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(32), identityTheme, {} as never, vi.fn());
 		await Promise.resolve();
 		panel.handleInput("\r"); // arm → the band paints so the real chrome is on the surface
-		// The mounted+capped render carries the author option label (real chrome through cappedTui).
-		expect(panel.render(80).join("\n")).toContain("date-fns");
-		// The full standalone render shows the complete chrome a makeInner() stub cannot produce:
-		// every author option label AND the single-select "Type something." sentinel (the 15-row cap
-		// scrolls option 4 out of the mounted band, so the sentinel is asserted on the full render).
-		const standalone = factory(makeTui(32), identityTheme, {} as never, vi.fn())
-			.render(80)
-			.join("\n");
-		expect(standalone).toContain("date-fns");
-		expect(standalone).toContain("Temporal (polyfill)");
-		expect(standalone).toContain("Type something.");
+		// The mounted band now carries ALL the chrome a makeInner() stub cannot produce: every
+		// author option label AND the single-select "Type something." sentinel. The reclaim
+		// (budget 19 ≥ natural 17) ended the old clip, so the standalone-only assertions move here.
+		const mounted = panel.render(80).join("\n");
+		expect(mounted).toContain("date-fns");
+		expect(mounted).toContain("Temporal (polyfill)");
+		expect(mounted).toContain("Type something.");
 		panel.dispose();
 	});
 
-	it("cappedTui reports the 8-row budget to the embedded questionnaire, not the full 24", async () => {
+	it("cappedTui reports the armed band's allocated budget to the embedded questionnaire, not the full surface", async () => {
 		const factory = await captureRealFactory(REAL_PARAMS);
 		let receivedTui: TUI | undefined;
 		liveUnit();
@@ -818,13 +869,13 @@ describe("LaneConsole — real ask_user_question factory (cappedTui self-windowi
 		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(32), identityTheme, {} as never, vi.fn());
 		await Promise.resolve();
 		panel.handleInput("\r"); // arm → the render gate sets budgetRef.rows and calls inner.render
-		panel.render(80); // render sets budgetRef.rows = available − TRANSCRIPT_MIN BEFORE inner.render
+		panel.render(80); // render sets budgetRef.rows = maxRows − chrome BEFORE inner.render
 		// cappedTui is a lazy proxy over budgetRef — after render it reports the allocated band, not 24.
 		expect((receivedTui!.terminal as { rows: number }).rows).toBe(QUESTION_BUDGET_24);
 		panel.dispose();
 	});
 
-	it("the rendered question band is ≤ the 15-row budget", async () => {
+	it("the rendered question band is ≤ the armed band's budget", async () => {
 		const factory = await captureRealFactory(REAL_PARAMS);
 		liveUnit();
 		enqueueRealFactory(factory);
@@ -837,18 +888,19 @@ describe("LaneConsole — real ask_user_question factory (cappedTui self-windowi
 		panel.dispose();
 	});
 
-	it("the same factory rendered standalone at 24 rows yields strictly more lines than the capped band", async () => {
+	it("the armed band is no longer clipped: budget(19) ≥ the questionnaire's natural height(17)", async () => {
 		const factory = await captureRealFactory(REAL_PARAMS);
 		liveUnit();
 		enqueueRealFactory(factory);
 		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(32), identityTheme, {} as never, vi.fn());
 		await Promise.resolve();
-		panel.handleInput("\r"); // arm → the band paints so questionBand can locate its divider
-		const cappedBand = questionBand(panel.render(80));
-		// Standalone at the FULL 24 rows the questionnaire is NOT capped — its natural height (17)
-		// exceeds the 8-row budget, so the cap (not questionnaire shortness) constrained the band.
-		const standalone = factory(makeTui(32), identityTheme, {} as never, vi.fn()).render(80);
-		expect(standalone.length).toBeGreaterThan(cappedBand);
+		panel.handleInput("\r"); // arm → the band paints
+		const surface = panel.render(80).join("\n");
+		// Regression guard for the root-cause clip. budget(19) ≥ natural(17) ⇒ no overflow in
+		// dialog-builder ⇒ nothing clipped. If fixture drift recomputes the natural height to ≥ 20,
+		// the cap re-engages and these fail loudly rather than silently re-clipping.
+		expect(surface).toContain("Temporal (polyfill)"); // the option the old 15-row cap scrolled out
+		expect(surface).toContain("Type something."); // the single-select free-text sentinel
 		panel.dispose();
 	});
 

@@ -69,13 +69,9 @@ import {
 } from "./run-lane-registry.js";
 
 const MAX_HEIGHT_RATIO = 0.9;
-/** Guaranteed transcript rows — the question band never fully squeezes the context out; also
- *  the PageUp/PageDown page size. */
+/** The PageUp/PageDown transcript-scroll page size. (The armed band reclaims the full surface
+ *  up to `maxRows − chrome`, so this no longer floors the transcript region.) */
 const TRANSCRIPT_MIN = 4;
-/** Guaranteed ARMED-question rows. On a squeezed surface (small terminal / tall lane block)
- *  the TRANSCRIPT_MIN reservation gives way before the band drops below this — an armed
- *  question that paints zero rows would swallow keystrokes into an invisible questionnaire. */
-const QUESTION_MIN = 4;
 
 /** The (runId, unitIndex) a display row addresses — a lane (parent) row resolves the
  *  reserved single-unit key; a unit sub-row resolves its own index. Mirrors the dock
@@ -127,7 +123,16 @@ export class LaneConsole implements Component {
 	 *  the render gate holds the band off; ⏎/→ arms it) or "question" (the band paints and
 	 *  arrows/text drive the mounted questionnaire; esc re-hides it and hands back). */
 	private focus: "lanes" | "question" = "lanes";
-	private scrollOffset = 0;
+	/** follow=ON pins the window to the newest tail; OFF freezes it on `anchorLine` so it does
+	 *  NOT drift as body.length grows (the streaming-token anchor). */
+	private follow = true;
+	/** Stable absolute body index pinned to the window's top when `!follow` (PageUp sets it;
+	 *  PageDown walks it; retarget clears it). Decoupled from body.length → no drift. */
+	private anchorLine = 0;
+	/** max(0, body.length - rows) cached every windowTranscript() frame; scroll() reads it
+	 *  because it has no body/rows in scope (r1: may lag the latest token by one frame —
+	 *  self-corrects on the next render, never produces a negative start or a height change). */
+	private lastMaxStart = 0;
 	/** `t` toggles tool/summary expansion in the transcript. */
 	private toolsExpanded = false;
 	/** The transcript view for the currently-selected unit; swapped on re-target. */
@@ -212,7 +217,8 @@ export class LaneConsole implements Component {
 			? new LaneTranscriptView(target.runId, target.unitIndex, this.tui, this.theme)
 			: undefined;
 		this.transcriptTarget = target;
-		this.scrollOffset = 0; // land on the newest tail of the newly-selected unit
+		this.follow = true; // land on the newest tail of the newly-selected unit (no per-unit memory)
+		this.anchorLine = 0;
 		this.tui.requestRender(true);
 	}
 
@@ -313,10 +319,9 @@ export class LaneConsole implements Component {
 		// identical to read-only — the `⚑` badge + `⏎ answer` footer are the only cue.
 		if (this.inner && target && unitNeedsInput(target.runId, target.unitIndex) && this.focus === "question") {
 			const chrome = laneBlock.length + 1 /*border*/ + 1 /*q divider*/;
-			let budget = maxRows - chrome - TRANSCRIPT_MIN;
-			// The armed band outranks the transcript floor: give the transcript's reservation
-			// to the question before letting the band collapse below QUESTION_MIN.
-			if (budget < QUESTION_MIN) budget = maxRows - chrome;
+			// The armed band outranks the transcript floor unconditionally — it reclaims the full
+			// surface up to `maxRows − chrome`, and the transcript flex-region absorbs the shrink.
+			const budget = maxRows - chrome;
 			this.budgetRef.rows = Math.max(0, budget);
 			qLines = this.inner.render(width);
 			q = Math.min(qLines.length, this.budgetRef.rows);
@@ -334,14 +339,16 @@ export class LaneConsole implements Component {
 		return out;
 	}
 
-	/** Bottom-anchored, padded-to-`rows` transcript window. scrollOffset 0 = newest tail;
-	 *  padding keeps total height constant so the surface never changes shape while
-	 *  scrolling or re-targeting (ghost-block avoidance). */
+	/** Bottom-anchored, padded-to-`rows` transcript window. follow = newest tail; paused =
+	 *  frozen on `anchorLine`; padding keeps total height constant so the surface never changes
+	 *  shape while scrolling or re-targeting (ghost-block avoidance). */
 	private windowTranscript(body: string[], rows: number): string[] {
 		if (rows <= 0) return [];
-		const excess = Math.max(0, body.length - rows);
-		if (this.scrollOffset > excess) this.scrollOffset = excess;
-		const start = excess - this.scrollOffset;
+		const maxStart = Math.max(0, body.length - rows);
+		this.lastMaxStart = maxStart; // cache for scroll() (no body/rows in scope there)
+		// follow pins to the newest tail; paused freezes on anchorLine, clamped DOWN to maxStart
+		// if the body shrank below it (fail-soft: start stays >= 0, never negative).
+		const start = this.follow ? maxStart : Math.min(this.anchorLine, maxStart);
 		const window = body.slice(start, start + rows);
 		while (window.length < rows) window.push(""); // pad — constant height
 		return window;
@@ -362,11 +369,11 @@ export class LaneConsole implements Component {
 			(target.unitIndex === SINGLE_UNIT_KEY
 				? laneNeedsInput(target.runId)
 				: unitNeedsInput(target.runId, target.unitIndex));
-		const scrolled = this.scrollOffset > 0 ? "PgDn newest · " : "";
+		const scrollCue = this.follow ? "following · " : "paused · ";
 		const toggle = this.toolsExpanded ? "t collapse" : "t expand";
 		const answer = canAnswer ? "⏎ answer · " : "";
 		return truncateToWidth(
-			this.theme.fg("dim", `↑/↓ lanes · ${answer}${scrolled}PgUp/PgDn scroll · ${toggle} · x stop · ↑/←/esc back`),
+			this.theme.fg("dim", `↑/↓ lanes · ${answer}${scrollCue}PgUp/PgDn scroll · ${toggle} · x stop · ↑/←/esc back`),
 			width,
 			"…",
 		);
@@ -470,8 +477,27 @@ export class LaneConsole implements Component {
 		this.sync(); // retarget + question-reconcile; retarget forces the reflow repaint
 	}
 
+	/** The single follow/anchor chokepoint (both focus branches dispatch PageUp/PageDown here).
+	 *  PageUp (delta>0) freezes on a stable anchor; PageDown (delta<0) walks it toward the tail
+	 *  and auto-resumes follow when it lands there. `cur` is read from the state this call just
+	 *  mutated, so rapid chained PageUp/PageDown accumulate correctly. */
 	private scroll(delta: number): void {
-		this.scrollOffset = Math.max(0, this.scrollOffset + delta);
+		const cur = this.follow ? this.lastMaxStart : this.anchorLine;
+		if (delta > 0) {
+			// PageUp → freeze on a stable anchor. No-op (state only) when the transcript fits the window.
+			if (this.lastMaxStart > 0) {
+				this.follow = false;
+				this.anchorLine = Math.max(0, cur - delta);
+			}
+		} else {
+			// PageDown → walk the anchor toward the tail. No-op (state only) while already following.
+			if (!this.follow) {
+				const next = cur + -delta;
+				if (next >= this.lastMaxStart)
+					this.follow = true; // reached the tail → auto-resume
+				else this.anchorLine = next;
+			}
+		}
 		this.tui.requestRender();
 	}
 
