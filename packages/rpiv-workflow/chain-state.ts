@@ -51,24 +51,18 @@ export async function resolveStagePrompt(prompt: string | PromptFn, cwd: string,
 	return prompt({ cwd, input: state.output, state });
 }
 
+const isPromptStage = (def: StageDef): boolean => def.prompt !== undefined;
+
+const usesOriginalInput = (def: StageDef, stageName: string, startStage: string): boolean =>
+	stageName === startStage || def.inheritsArtifacts === false;
+
+const hasReads = (def: StageDef): def is StageDef & { reads: NonNullable<StageDef["reads"]> } =>
+	def.reads !== undefined && def.reads.length > 0;
+
 /**
  * The single arg-projection authority: the string a stage's
  * `/skill:<name> <args>` prompt carries, derived purely from
- * (def, stageName, startStage, state). Five cases in priority order:
- *   0. A prompt-dispatch stage (`def.prompt` set) owns its WHOLE message —
- *      no skill args exist; returns `""` (never `undefined`: the missing-input
- *      refusal arms below must not fire for a stage that doesn't consume the
- *      rolling primary or named reads). The round-0 producer message of a
- *      prompt-dispatch loop is `resolveStagePrompt`, not this projection.
- *   1. The start stage receives `originalInput` (the user's brief).
- *   2. A stage opting out of inheritance (`inheritsArtifacts: false`,
- *      i.e. authored via `terminal()`) also receives `originalInput`.
- *   3. A stage with `reads: [...]` receives the labelled multi-flag form
- *      `--<name1> <handle1> --<name2> <handle2> …` — a bare-string name
- *      resolves against `state.named[name].at(-1)` (latest-wins); a
- *      `fanin(name)` read flag-repeats across EVERY accumulated entry of the
- *      channel; a multi-artifact entry repeats the flag per artifact.
- *   4. Otherwise: the rolling primary artifact's handle string.
+ * (def, stageName, startStage, state).
  *
  * Returns `undefined` (instead of non-null-asserting) when a required
  * projection input is missing — the rolling primary is unset, or a `reads`
@@ -79,28 +73,15 @@ export async function resolveStagePrompt(prompt: string | PromptFn, cwd: string,
  * live loop entry (THE REPLAY CONTRACT); `undefined` there means a
  * truncated/corrupted trail and becomes a recorded refusal.
  */
-/** The last REAL (filled, non-failed) entry of a channel slot — the latest-wins
- *  source. A produces-fanout channel is pre-sized + positionally filled, so its
- *  tail can be `undefined` (pending) or a failed sentinel; scan backward instead
- *  of asserting `slot[length-1]`. Returns `undefined` for an all-failed/empty slot. */
-function lastReal(slot: readonly (Output | undefined)[]): Output | undefined {
-	for (let i = slot.length - 1; i >= 0; i--) {
-		const o = slot[i];
-		if (o && !isFailedOutput(o)) return o;
-	}
-	return undefined;
-}
-
 export function stageEntryArgs(
 	def: StageDef,
 	stageName: string,
 	startStage: string,
 	state: RunState,
 ): string | undefined {
-	if (def.prompt !== undefined) return "";
-	if (stageName === startStage) return state.originalInput;
-	if (def.inheritsArtifacts === false) return state.originalInput;
-	if (def.reads?.length) {
+	if (isPromptStage(def)) return "";
+	if (usesOriginalInput(def, stageName, startStage)) return state.originalInput;
+	if (hasReads(def)) {
 		const parts: string[] = [];
 		for (const read of def.reads) {
 			const name = readName(read);
@@ -132,6 +113,18 @@ export function stageEntryArgs(
 	}
 	const primary = currentPrimaryArtifact(state);
 	return primary === undefined ? undefined : handleToString(primary.handle);
+}
+
+/** The last REAL (filled, non-failed) entry of a channel slot — the latest-wins
+ *  source. A produces-fanout channel is pre-sized + positionally filled, so its
+ *  tail can be `undefined` (pending) or a failed sentinel; scan backward instead
+ *  of asserting `slot[length-1]`. Returns `undefined` for an all-failed/empty slot. */
+function lastReal(slot: readonly (Output | undefined)[]): Output | undefined {
+	for (let i = slot.length - 1; i >= 0; i--) {
+		const o = slot[i];
+		if (o && !isFailedOutput(o)) return o;
+	}
+	return undefined;
 }
 
 /**

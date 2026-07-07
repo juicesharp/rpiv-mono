@@ -23,10 +23,10 @@ import type { Unit } from "./loop-def.js";
 import { unitTagOf } from "./loop-kinds.js";
 import { invariantPreflight } from "./stage-errors.js";
 
-/** Map each unit's `id ?? label` identity → its declared (slot) index. Built once;
- *  shared by level computation and the dispatcher's dep-artifact resolution so both
- *  resolve a dep id to the SAME index the cursor slots are keyed by. A duplicate
- *  identity keeps the FIRST index (dispatch + fold place by the first occurrence). */
+/** Built once; shared by level computation and the dispatcher's dep-artifact
+ *  resolution so both resolve a dep id to the SAME index the cursor slots are
+ *  keyed by. A duplicate identity keeps the FIRST index (dispatch + fold place
+ *  by the first occurrence). */
 export function unitIdIndex(units: readonly Unit[]): Map<string, number> {
 	const m = new Map<string, number>();
 	units.forEach((u, i) => {
@@ -37,9 +37,7 @@ export function unitIdIndex(units: readonly Unit[]): Map<string, number> {
 }
 
 /**
- * Kahn topological levels over `Unit.deps`, as unit INDICES grouped by level
- * (`levels[k]` = indices whose deepest dep is in level `k-1`). Roots (no deps, or
- * only dangling deps) land in level 0. `level[i]` is the longest-path-from-root
+ * Kahn topological levels over `Unit.deps`. `level[i]` is the longest-path-from-root
  * depth — a pure DAG function independent of iteration order — so the fixpoint loop
  * converges to the SAME level array every time, and indices stay ascending within a
  * level: live dispatch and resume re-wave produce identical waves. A residual
@@ -53,7 +51,6 @@ export function unitIdIndex(units: readonly Unit[]): Map<string, number> {
 export function computeWaveLevels(units: readonly Unit[], stage: string): number[][] {
 	if (units.length === 0) return [];
 	const idToIndex = unitIdIndex(units);
-	// Resolve each unit's deps to indices ONCE; dangling ids drop out (skipped).
 	const depIdx = units.map((u) =>
 		(u.deps ?? []).map((d) => idToIndex.get(d)).filter((x): x is number => x !== undefined),
 	);

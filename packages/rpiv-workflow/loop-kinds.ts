@@ -198,42 +198,60 @@ export const unitTagOf = (u: Unit): string => u.id ?? u.label;
  */
 export function advanceCursor(cursor: LoopCursor, role: UnitRole, output: Output, loop: LoopDef): void {
 	if (role === "produce") {
-		cursor.accumulated.push(output);
-		// A failed sentinel advances the index but is NOT the "last" produce, so
-		// `result:"last"` projects the last SUCCESSFUL output. DEFENSIVE only: ALL
-		// fanout (the sole producer of `failedOutput`) routes through
-		// `foldFanoutCompletion`, never `advanceCursor`, at every concurrency
-		// including 1 and on both live + resume; iterate/assess (which DO use
-		// advanceCursor) never collect-all. Keeps a future collect-all iterate kind
-		// from silently corrupting `lastProduce`.
-		if (!isFailedOutput(output)) cursor.lastProduce = { output, artifact: output.artifacts[0] };
-		if (loop.kind === "assess") cursor.phase = "judge";
-		else cursor.index++;
+		advanceProduce(cursor, output, loop);
 		return;
 	}
+	advanceJudge(cursor, output, loop);
+}
 
-	// judge / verify role — assess loops only (the only kind with a judge phase).
+/**
+ * Produce arm of `advanceCursor`. A failed sentinel advances the index but is
+ * NOT the "last" produce, so `result:"last"` projects the last SUCCESSFUL
+ * output. DEFENSIVE only: ALL fanout (the sole producer of `failedOutput`)
+ * routes through `foldFanoutCompletion`, never `advanceCursor`, at every
+ * concurrency including 1 and on both live + resume; iterate/assess (which DO
+ * use advanceCursor) never collect-all. Keeps a future collect-all iterate kind
+ * from silently corrupting `lastProduce`.
+ */
+function advanceProduce(cursor: LoopCursor, output: Output, loop: LoopDef): void {
+	cursor.accumulated.push(output);
+	if (!isFailedOutput(output)) cursor.lastProduce = { output, artifact: output.artifacts[0] };
+	if (loop.kind === "assess") cursor.phase = "judge";
+	else cursor.index++;
+}
+
+/** Judge/verify arm of `advanceCursor` — assess loops only (the only kind with a judge phase). */
+function advanceJudge(cursor: LoopCursor, output: Output, loop: LoopDef): void {
 	const slot = (loop as AssessLoop).judge;
 	if (isPanel(slot)) {
 		const verdicts = cursor.panel?.verdicts ?? [];
 		verdicts.push(output);
 		const memberIndex = cursor.panel?.memberIndex ?? 0;
 		if (memberIndex + 1 < slot.members.length) {
-			// More members to grade — stay in the judge phase, advance the member,
-			// keep the round (`index`) + `lastVerdict` untouched.
-			cursor.panel = { memberIndex: memberIndex + 1, verdicts };
+			advancePanelMember(cursor, verdicts, memberIndex);
 			return;
 		}
-		// Last member — fold the N verdicts to the panel's decision (pure) and
-		// clear the sub-state. The folded verdict is what the produce phase's
-		// `done` reads, exactly where a single judge's verdict would sit.
-		cursor.lastVerdict = foldPanelVerdict(slot, verdicts, output.meta);
-		cursor.panel = undefined;
+		foldPanelClose(cursor, slot, verdicts, output);
 	} else {
 		cursor.lastVerdict = output;
 	}
 	cursor.phase = "produce";
 	cursor.index++;
+}
+
+/** More members to grade — stay in the judge phase, advance the member, keep the round (`index`) + `lastVerdict` untouched. */
+function advancePanelMember(cursor: LoopCursor, verdicts: Output[], memberIndex: number): void {
+	cursor.panel = { memberIndex: memberIndex + 1, verdicts };
+}
+
+/**
+ * Last panel member — fold the N verdicts to the panel's decision (pure) and
+ * clear the sub-state. The folded verdict is what the produce phase's `done`
+ * reads, exactly where a single judge's verdict would sit.
+ */
+function foldPanelClose(cursor: LoopCursor, slot: PanelJudge, verdicts: readonly Output[], output: Output): void {
+	cursor.lastVerdict = foldPanelVerdict(slot, verdicts, output.meta);
+	cursor.panel = undefined;
 }
 
 /** Manufactured `Output.kind` for a panel's folded verdict — data-only, no artifact. */
@@ -442,6 +460,20 @@ function lastNonFailedSlot(slots: readonly (Output | undefined)[]): LoopCursor["
  *  (`collectAll`) both read, so the narrow can't drift across its read sites. */
 export const isFailFast = (loop: LoopDef): boolean => loop.kind === "fanout" && loop.failFast === true;
 
+/** fanout units collect-all by default (opt out via fanout({ failFast: true }));
+ *  the `kind === "fanout"` guard is LOAD-BEARING: iterate/assess units MUST NOT
+ *  collect-all — they advance the cursor (advanceCursor), so a soft-halt sentinel
+ *  would land in `accumulated` AND diverge live/resume (the resume fold skips the
+ *  collected:true row). See `advanceProduce`'s defensive invariant. */
+const shouldCollectAll = (loop: LoopDef): boolean => loop.kind === "fanout" && !isFailFast(loop);
+
+/** Only fan-out units become individually-addressable lane sub-rows. A
+ *  sequential loop unit (iterate/assess) leaves this undefined, so the host keys
+ *  its live session on the single-unit slot — the lane (parent) row keeps showing
+ *  it, exactly as the pre-change single slot did. `index` is the unit's declared
+ *  fan-out index (the same value `unit.index` carries). */
+const laneIndexFor = (loop: LoopDef, index: number): number | undefined => (loop.kind === "fanout" ? index : undefined);
+
 /** Factored unit StageSession — shared by the sequential `dispatchUnit` (loop.ts)
  *  and the parallel `dispatchUnitDetached` (loop-parallel.ts); differs only in
  *  `onSuccess` and the threaded `signal`. Populates the per-child execution
@@ -474,18 +506,8 @@ export function buildUnitSession(
 		unit: { parent: e.name, role: u.role, index, id: u.id, label: u.label },
 		model: run.resolveModel?.({ stage: e.name, skill: u.skill }),
 		signal,
-		// fanout units collect-all by default (opt out via fanout({ failFast: true }));
-		// the `kind === "fanout"` guard is LOAD-BEARING: iterate/assess units MUST NOT
-		// collect-all — they advance the cursor (advanceCursor), so a soft-halt sentinel
-		// would land in `accumulated` AND diverge live/resume (the resume fold skips the
-		// collected:true row). See advanceCursor's "never collect-all" invariant note.
-		collectAll: e.loop.kind === "fanout" && !isFailFast(e.loop),
-		// Only fan-out units become individually-addressable lane sub-rows. A
-		// sequential loop unit (iterate/assess) leaves this undefined, so the host keys
-		// its live session on the single-unit slot — the lane (parent) row keeps showing
-		// it, exactly as the pre-change single slot did. `index` is the unit's declared
-		// fan-out index (the same value `unit.index` carries).
-		laneUnitIndex: e.loop.kind === "fanout" ? index : undefined,
+		collectAll: shouldCollectAll(e.loop),
+		laneUnitIndex: laneIndexFor(e.loop, index),
 		onFailure: undefined,
 		onSuccess,
 	};

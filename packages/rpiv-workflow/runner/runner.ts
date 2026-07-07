@@ -4,27 +4,9 @@
  * run's JSONL trail and re-enters the chain at the right seam. Per-stage
  * work (sessions, extraction, validation, audit row writes) lives in
  * sessions.ts + audit.ts; this directory owns graph traversal, per-stage
- * prerequisites, and routing.
- *
- * Modules (imports point strictly downward — the walk's mutual recursion is
- * composed by injection in run-stage.ts, never as a module cycle):
- *  - runner.ts          — runWorkflow + resumeWorkflow + executeRun (shared
- *                         tail).
- *  - run-stage.ts — runStage (mode dispatch) + runStageOrRecordFailure
- *                         (single catch site) + the walk composition.
- *  - chain-advance.ts   — advanceChain + routing audit + backward-jump
- *                         guard + halt-on-error (ChainDeps-injected).
- *  - resolve-stage.ts   — ResolvedStage: mode/dispatch derived once.
- *  - preflight.ts       — runtime preflights (throw StagePreflightError).
- *  - input-validation.ts— schema-backed input preflights.
- *  - script-stage.ts    — skillless TS-stage runtime (no session/collector).
- *  - failure.ts         — ChainOutcome + entry-throw → failure-row + finalize.
- *  - run-context.ts     — RunContext/RunState construction + policy caps.
- *  - errors.ts          — StagePreflightError.
- *  - resume.ts          — reconstructState: pure RunState rebuild from a
- *                         past run's JSONL trail (consumed by resumeWorkflow).
- *  - resume-entry.ts    — trail trailer → chain re-entry thunk + refusal text.
- *  - resume-loop.ts     — loop-trailer re-entry + drift refusals.
+ * prerequisites, and routing; imports point strictly downward — the walk's
+ * mutual recursion is composed by injection in run-stage.ts, never as a
+ * module cycle.
  *
  * Ctx lifecycle: the launcher ctx threaded into `runWorkflow`/`resumeWorkflow`
  * STAYS VALID for the whole run — it is never swapped. Every stage runs in its
@@ -117,12 +99,11 @@ async function executeRun(
 }
 
 /**
- * Session ids any persisted row references — the keep-set for the run-end orphan
- * sweep. Read from the durable trail (the complete record of every stage's
- * session, success OR failure — failed/aborted rows that carry a session are
- * reattach targets on resume) unioned with `lastSession` (the live predecessor a
- * resumed `continue` would fork). Anything NOT here is a child-session file no row
- * points at — safe to delete.
+ * The keep-set for the run-end orphan sweep. Failed/aborted rows that carry a
+ * session are reattach targets on resume, so every row's `session.id` is read
+ * from the durable trail (success OR failure) and unioned with `lastSession`
+ * (the live predecessor a resumed `continue` would fork). Anything NOT here is
+ * a child-session file no row points at — safe to delete.
  */
 function referencedSessionIds(run: RunContext): Set<string> {
 	const ids = new Set<string>();

@@ -26,7 +26,6 @@ import { markSymbol, readSymbol } from "./internal-utils.js";
 import type { Output, RunView } from "./output.js";
 import type { Outcome } from "./output-spec.js";
 
-/** Context handed to a dynamic `Judge.prompt`. */
 export interface JudgeContext {
 	cwd: string;
 	/** Latest producer output (also the session's input handle). */
@@ -34,7 +33,6 @@ export interface JudgeContext {
 	/** Frozen stage-entry primary, referenceable; the author embeds it if wanted. */
 	entryArtifact: Artifact | undefined;
 	state: RunView;
-	/** 0-based round index. */
 	round: number;
 }
 
@@ -70,7 +68,6 @@ interface JudgeBase {
 /** Skill dispatch: `/skill:<skill> <producerHandle>` (handle auto-injected). */
 export interface SkillJudge extends JudgeBase {
 	skill: string;
-	/** Structurally absent — skill XOR prompt (both is ambiguous). */
 	prompt?: never;
 }
 
@@ -81,7 +78,6 @@ export interface SkillJudge extends JudgeBase {
  */
 export interface PromptJudge extends JudgeBase {
 	prompt: string | JudgePromptFn;
-	/** Structurally absent — skill XOR prompt (both is ambiguous). */
 	skill?: never;
 }
 

@@ -68,8 +68,7 @@ export async function resumeLoopStage(
 
 	// Fanout resume re-dispatches ONLY the still-unfilled indices in bounded
 	// parallel (folding each at its declared slot) — never a cold whole-loop
-	// re-entry, so already-completed/collected units keep their place. The
-	// announce fires iff at least one unit is pending.
+	// re-entry, so already-completed/collected units keep their place.
 	if (loop.kind === "fanout") {
 		// Re-validate the recomputed DAG: the id-only drift guard PASSES when a user edits
 		// only a slice's `deps` (ids/titles unchanged), so a newly-introduced cycle would
@@ -81,8 +80,6 @@ export async function resumeLoopStage(
 		return;
 	}
 
-	// iterate/assess: pending-work probe (strategy table) gates the announce only —
-	// a finished-loop resume stays a pinned SILENT no-op — then cold re-entry.
 	if (await sequentialStrategyOf(loop.kind).hasPending(loop, point, run)) await announceLoopStart(ctx, run, entry);
 
 	await runLoop(ctx, entry, point.cursor, run, deps);

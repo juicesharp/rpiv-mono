@@ -53,7 +53,7 @@ export type { TerminalFailureArgs } from "./messages.js";
 export { abortedArgs, failedArgs } from "./messages.js";
 
 /**
- * THE one `state.termination` mutator. Every terminal path — completion
+ * `state.termination` mutator. Every terminal path — completion
  * (`finalizeWorkflow`), failure/abort (`recordTerminalFailure`), cancellation
  * (`recordCancellation`), audit-write halts — lands its outcome through here,
  * so the union can never be half-set and a new outcome variant has one
@@ -67,7 +67,7 @@ export function terminate(state: RunState, outcome: Exclude<RunTermination, { st
 /**
  * Terminal halt for "the success row failed to persist." The audit JSONL is the
  * run's system of record, so a dropped append leaves state un-advanced and ends
- * the run. THE single notify+terminate idiom shared by the skill/unit success
+ * the run. Notify+terminate idiom shared by the skill/unit success
  * path (`recordStageSuccess`, sessions.ts) and the script path
  * (`runScript`, script-stage.ts); each caller maps the void return to its own
  * halt token (`false` / `"halted"`). `subject` is the skill (or stage) the
@@ -88,7 +88,7 @@ export function notifyPartialArtifacts(ctx: WorkflowHostContext, cwd: string, ru
 }
 
 /**
- * THE one terminal/halt/cancellation row-write authority. `recordStage` + the
+ * Terminal/halt/cancellation row-write authority. `recordStage` + the
  * dropped-row guard (notify + telemetry) — the side effects the three writers
  * (`recordTerminalFailure` / `recordUnitHalt` / `recordCancellation`) share.
  * Each caller builds its row fields (terminal `args.status`; halt

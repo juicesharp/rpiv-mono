@@ -143,10 +143,8 @@ function formatStageRow(
 }
 
 /**
- * Single tag per stage encoding the outcome shape. Custom outcomes
- * report `custom` (+`snapshot` when the collector declares a snapshot
- * hook, +`parser` when a parser is wired). Stages without an outcome
- * fall through to the framework default: `side-effect` for
+ * Single tag per stage encoding the outcome shape. Stages without an
+ * outcome fall through to the framework default: `side-effect` for
  * side-effect stages (the only kind that has a default); `???` for
  * `produces` (load-time validation rejects this — the tag is for
  * defensive rendering only).
@@ -164,9 +162,7 @@ function outcomeTag(stage: StageDef): string {
 /**
  * Decoration for a loop stage. Assess keeps its exact pre-redesign strings
  * (`assess(judge: skill:<name>)·max=N`, `assess(judge: prompt)·max=N` — the
- * constructor always sets `max`, defaulting to 8). Fanout/iterate gain tags
- * for the first time: `fanout·max=32`, `iterate·max=32`, or the bare kind
- * when no cap is declared (the run-wide maxIterations still backstops).
+ * constructor always sets `max`, defaulting to 8).
  */
 function loopTag(control: StageShape["control"]): string {
 	const spec = control.spec;
@@ -178,33 +174,19 @@ function loopTag(control: StageShape["control"]): string {
 	return spec.max !== undefined ? `${spec.kind}·max=${spec.max}` : spec.kind;
 }
 
-/**
- * Render a judge SLOT for a stage tag: `skill:<name>` / `prompt` for a single
- * judge, or `panel(<N>, <fold>)` for an N-member panel (`fold` is the sugar
- * name or `custom`) — the fan-in surfaces at a glance.
- */
+/** Judge-slot label: skill/prompt/panel. */
 function judgeSlotTag(spec: AnyJudgeSpec): string {
 	if ("panel" in spec) return `panel(${spec.panel.length}, ${spec.fold})`;
 	return spec.skill ? `skill:${spec.skill}` : "prompt";
 }
 
-/**
- * Decoration for a stage that reads ALL accumulated entries of one or more
- * channels via `fanin()` — the fanout-and-synthesize fan-in barrier: `⇉ <names>`.
- * Mirrors the `panel(N, fold)` fan-in surfacing on judge slots — the merge point
- * shows at a glance. Latest-wins (bare-string) reads are unmarked.
- */
+/** Fan-in decoration for `fanin()` all-reads: `⇉ <names>`. */
 function faninTag(shape: StageShape): string | undefined {
 	const allReads = shape.reads?.filter((r) => r.all).map((r) => r.name);
 	return allReads?.length ? `⇉ ${allReads.join(",")}` : undefined;
 }
 
-/**
- * Decoration for a verify-bearing stage: `verify(skill:<name>)` /
- * `verify(prompt)` / `verify(panel(N, fold))`, with the attempt budget appended
- * when retrying (`·attempts=N`); a gate-only verify (the default, max 1) stays
- * compact.
- */
+/** Verify decoration: `verify(<judge>)` + `·attempts=N` when retrying. */
 function verifyTag(v: NonNullable<StageShape["verify"]>): string {
 	const attempts = v.max > 1 ? `·attempts=${v.max}` : "";
 	return `verify(${judgeSlotTag(v)})${attempts}`;
