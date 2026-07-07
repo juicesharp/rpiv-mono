@@ -1,8 +1,8 @@
 ---
 name: commit
 description: Create structured git commits by analyzing staged and unstaged changes and grouping them logically into one or more commits with clear, descriptive messages. Use when the user asks to commit, says "commit this" or "commit my changes", wants help writing a commit message, or has finished a chunk of work that needs committing.
-argument-hint: [message]
-allowed-tools: Bash(git *), Read, Glob, Grep
+argument-hint: "[message] [--baseline <path>]"
+allowed-tools: Bash(git *), Bash(node *), Read, Glob, Grep
 shell-timeout: 10
 contract:
   produces:
@@ -20,7 +20,7 @@ You are tasked with creating git commits for repository changes.
 
 ## Input
 
-`$ARGUMENTS` — optional commit message hint. Empty/literal → infer from history and `git diff`.
+`$ARGUMENTS` — optional commit message hint, optionally with `--baseline <path>` (a workflow's run-start snapshot of paths that were already dirty before the run began). Peel the `--baseline` flag first; the remainder (if any) is the message hint. Empty/literal → infer from history and `git diff`.
 
 ## Metadata
 
@@ -32,7 +32,13 @@ git log --pretty=%s -n 20 2>/dev/null || true
 
 `---recent-subjects---` — up to 20 most recent commit subject lines, used in Step 2 to match the repository's existing commit-message style. Empty on a no-HEAD initial repo.
 
-`---pre-existing (do NOT commit — dirty before this run)---` — present ONLY when a workflow recorded a run-start baseline and some listed files were already dirty before the run began. These are **out of scope**: they are not this run's work. **Never `git add` a path in this section** — a workflow commits only the changes it produced. The `---status---` block already excludes them; they are shown here purely so you know they exist and must be left uncommitted.
+**When `--baseline <path>` was provided**, the Metadata block above was rendered WITHOUT the baseline (render-time substitution cannot capture `$ARGUMENTS` — same reason code-review's scope helper is LLM-invoked). Before anything else, re-run the snapshot with the baseline threaded and use ITS output as the authoritative `---status---` / `---diffstat---` for the rest of this skill:
+
+```
+node "${SKILL_DIR}/../_shared/git-changes.mjs" --baseline <path>
+```
+
+`---pre-existing (do NOT commit — dirty before this run)---` — present in that re-run's output when some listed files were already dirty before the run began. These are **out of scope**: they are not this run's work. **Never `git add` a path in this section** — a workflow commits only the changes it produced. The re-run's `---status---` block already excludes them; they are shown purely so you know they exist and must be left uncommitted.
 
 ## Context:
 - **In-session**: If there's conversation history, use it to understand what was built/changed

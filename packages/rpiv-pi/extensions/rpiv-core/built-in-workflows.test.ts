@@ -1266,7 +1266,7 @@ describe("build goal channel (verbatim brief threading)", () => {
 			const stage = build().stages.goal;
 			if (!stage?.run) throw new Error("build goal stage has no run function");
 			const run = stage.run as (ctx: { cwd: string; input?: undefined; state: RunView }) => {
-				artifacts: readonly { handle: { kind: string; path: string } }[];
+				artifacts: readonly { handle: { kind: string; path: string }; role?: string }[];
 			};
 			const brief = "add dark mode\n\nconstraints:\n- don't touch auth\n- keep it minimal";
 			const output = run({
@@ -1278,6 +1278,13 @@ describe("build goal channel (verbatim brief threading)", () => {
 			expect(handle?.kind).toBe("fs");
 			expect(handle?.path).toMatch(/^\.rpiv\/artifacts\/goal\/goal-.+\.md$/);
 			expect(readFileSync(join(tmpDir, handle?.path ?? ""), "utf-8")).toBe(brief);
+			// The run-start baseline rides SECOND on the same output, under its role —
+			// per-run timestamped (no fixed rendezvous path), empty here (non-repo cwd).
+			const baseline = output.artifacts[1];
+			expect(baseline?.role).toBe("baseline");
+			expect(baseline?.handle.path).toMatch(/^\.rpiv\/artifacts\/goal\/baseline-.+\.json$/);
+			const parsed = JSON.parse(readFileSync(join(tmpDir, baseline?.handle.path ?? ""), "utf-8"));
+			expect(parsed).toEqual({ paths: [] });
 		});
 	});
 
@@ -2434,5 +2441,74 @@ describe("build adaptive gate scaling (tier / roster / freshness / confirm)", ()
 
 	it("build still validates with zero errors (confirm stages wired structurally sound)", () => {
 		expect(deriveAndValidate(build()).filter((i) => i.severity === "error")).toEqual([]);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// build validate dispatch — the run-start baseline threads into validate so
+// working-tree scope criteria judge the run's own delta, not pre-existing
+// dirt (which the commit skill already fences off via the same snapshot).
+// ---------------------------------------------------------------------------
+
+describe("build validate + commit dispatch thread the run-start baseline", () => {
+	const promptOf = (stage: string) => {
+		const prompt = findWorkflow("build").stages[stage]?.prompt;
+		if (typeof prompt !== "function") throw new Error(`build ${stage} stage has no prompt fn`);
+		return prompt;
+	};
+	const out = (artifacts: unknown[]) => ({ artifacts, data: undefined, kind: "", meta: {} });
+	const goalWithBaseline = out([
+		{ handle: fsHandle(".rpiv/artifacts/goal/goal-t.md") },
+		{ handle: fsHandle(".rpiv/artifacts/goal/baseline-t.json"), role: "baseline" },
+	]);
+	const goalAlone = out([{ handle: fsHandle(".rpiv/artifacts/goal/goal-t.md") }]);
+	const plans = [out([{ handle: fsHandle(".rpiv/artifacts/plans/p.md") }])];
+
+	it("validate appends --baseline with the goal channel's recorded snapshot path", async () => {
+		const dispatch = await promptOf("validate")({
+			cwd: "/repo",
+			input: undefined,
+			state: { named: { plans, goal: [goalWithBaseline] } } as unknown as RunView,
+		});
+		expect(dispatch).toBe(
+			"/skill:validate .rpiv/artifacts/plans/p.md --goal .rpiv/artifacts/goal/goal-t.md --baseline .rpiv/artifacts/goal/baseline-t.json",
+		);
+	});
+
+	it("validate omits --baseline when the goal output carries no baseline artifact", async () => {
+		const dispatch = await promptOf("validate")({
+			cwd: "/repo",
+			input: undefined,
+			state: { named: { plans, goal: [goalAlone] } } as unknown as RunView,
+		});
+		expect(dispatch).toBe("/skill:validate .rpiv/artifacts/plans/p.md --goal .rpiv/artifacts/goal/goal-t.md");
+	});
+
+	it("the --goal flag still points at the goal md (baseline rides SECOND on the channel)", async () => {
+		const dispatch = await promptOf("validate")({
+			cwd: "/repo",
+			input: undefined,
+			state: { named: { plans, goal: [goalWithBaseline] } } as unknown as RunView,
+		});
+		expect(dispatch).toContain("--goal .rpiv/artifacts/goal/goal-t.md");
+		expect(dispatch).not.toContain("--goal .rpiv/artifacts/goal/baseline-t.json");
+	});
+
+	it("commit dispatches /skill:commit --baseline with the recorded snapshot path", async () => {
+		const dispatch = await promptOf("commit")({
+			cwd: "/repo",
+			input: undefined,
+			state: { named: { goal: [goalWithBaseline] } } as unknown as RunView,
+		});
+		expect(dispatch).toBe("/skill:commit --baseline .rpiv/artifacts/goal/baseline-t.json");
+	});
+
+	it("commit dispatches bare /skill:commit when no baseline was captured", async () => {
+		const dispatch = await promptOf("commit")({
+			cwd: "/repo",
+			input: undefined,
+			state: { named: { goal: [goalAlone] } } as unknown as RunView,
+		});
+		expect(dispatch).toBe("/skill:commit");
 	});
 });

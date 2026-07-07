@@ -629,21 +629,31 @@ const captureGoal = ({ state, cwd }: ScriptContext): Omit<Output, "meta"> => {
 	mkdirSync(join(cwd, GOAL_DIR), { recursive: true });
 	writeFileSync(join(cwd, rel), state.originalInput, "utf-8");
 	// Snapshot the paths ALREADY dirty before the run touched anything — the
-	// commit stage must scope to the work the workflow itself produces and never
-	// sweep a pre-existing, unrelated working-tree change into its commit. The
-	// commit skill's `git-changes.mjs` reads this baseline and fences those paths
-	// off. Best-effort: a non-repo / git-unavailable cwd writes an empty baseline,
-	// so the commit path degrades to today's behavior rather than failing the
-	// deterministic goal capture.
-	writeCommitBaseline(cwd);
-	return { kind: "md", artifacts: [{ handle: { kind: "fs", path: rel } }], data: {} };
+	// validate stage judges working-tree scope criteria against the run's own
+	// delta, and the commit skill fences these paths off its commit. Timestamped
+	// like the goal file itself (concurrent/repeat runs never read each other's
+	// snapshot — there is NO fixed rendezvous path) and published on the goal
+	// channel with role "baseline", so the JSONL trail carries the exact path to
+	// every consumer and replays it deterministically on resume. Best-effort: a
+	// non-repo / git-unavailable cwd writes an empty snapshot, so consumers
+	// degrade to baseline-less behavior rather than failing the goal capture.
+	const baselineRel = join(GOAL_DIR, `baseline-${stamp}.json`);
+	writeCommitBaseline(cwd, baselineRel);
+	return {
+		kind: "md",
+		// Order is load-bearing: `latestFsArtifact(state, "goal")` takes the FIRST
+		// fs artifact — the goal md stays the channel's face (grade --goal flags,
+		// rolling primary); the baseline rides behind it under its role.
+		artifacts: [
+			{ handle: { kind: "fs", path: rel } },
+			{ handle: { kind: "fs", path: baselineRel }, role: "baseline" },
+		],
+		data: {},
+	};
 };
 
-/** Where the run's pre-existing-dirty snapshot lands for `git-changes.mjs` to read. */
-const COMMIT_BASELINE_REL = ".rpiv/artifacts/commit-baseline.json";
-
-/** Record the paths dirty before the run (best-effort; empty on any git failure). */
-const writeCommitBaseline = (cwd: string): void => {
+/** Record the paths dirty before the run to `rel` (best-effort; empty on any git failure). */
+const writeCommitBaseline = (cwd: string, rel: string): void => {
 	let paths: string[] = [];
 	try {
 		const out = execFileSync("git", ["status", "--short"], { cwd, encoding: "utf-8" });
@@ -658,8 +668,14 @@ const writeCommitBaseline = (cwd: string): void => {
 	} catch {
 		paths = [];
 	}
-	mkdirSync(dirname(join(cwd, COMMIT_BASELINE_REL)), { recursive: true });
-	writeFileSync(join(cwd, COMMIT_BASELINE_REL), JSON.stringify({ paths }, null, 2), "utf-8");
+	mkdirSync(dirname(join(cwd, rel)), { recursive: true });
+	writeFileSync(join(cwd, rel), JSON.stringify({ paths }, null, 2), "utf-8");
+};
+
+/** The run-start pre-existing-dirty snapshot riding the goal channel (role "baseline"). */
+const goalBaselinePath = (state: RunView): string | undefined => {
+	const a = state.named.goal?.at(-1)?.artifacts.find((x) => x.role === "baseline" && x.handle.kind === "fs");
+	return a ? handleToString(a.handle) : undefined;
 };
 
 /**
@@ -1577,13 +1593,21 @@ const STITCH_SCRIPT = join(
 );
 
 /**
- * Carve's validate dispatch: the latest synthesized plan plus the goal flag.
- * Sourcing the plan from the NAMED channel (not the rolling primary) is
- * load-bearing: `code-grade` is a produces-fanout, so after the code gate the
- * rolling primary is the LAST VERDICT JSON (`placeFanoutOutput` advances it per
- * unit) and `implement` (acts) leaves it there — a plain `produces()` validate
- * would receive a verdict path as its "plan". A prompt stage owns its whole
- * message, so the `/skill:validate` prefix is explicit (polish precedent).
+ * Carve's validate dispatch: the latest synthesized plan plus the goal and
+ * run-start-baseline flags. Sourcing the plan from the NAMED channel (not the
+ * rolling primary) is load-bearing: `code-grade` is a produces-fanout, so
+ * after the code gate the rolling primary is the LAST VERDICT JSON
+ * (`placeFanoutOutput` advances it per unit) and `implement` (acts) leaves it
+ * there — a plain `produces()` validate would receive a verdict path as its
+ * "plan". A prompt stage owns its whole message, so the `/skill:validate`
+ * prefix is explicit (polish precedent).
+ *
+ * `--baseline` threads the pre-existing-dirty snapshot `goal` captured at run
+ * start, so validate judges working-tree scope criteria ("only these files
+ * touched") against the RUN'S OWN delta instead of failing on dirt that was
+ * on disk before stage one — the same fence the commit dispatch applies. The
+ * path comes off the goal channel (this run's snapshot, replayed from the
+ * JSONL trail on resume), never a shared file another run could overwrite.
  */
 const VALIDATE_GOAL_PROMPT: PromptFn = ({ state }) => {
 	const parts = ["/skill:validate"];
@@ -1591,13 +1615,29 @@ const VALIDATE_GOAL_PROMPT: PromptFn = ({ state }) => {
 	if (plan?.handle.kind === "fs") parts.push(handleToString(plan.handle));
 	const goal = latestFsArtifact(state, "goal");
 	if (goal?.handle.kind === "fs") parts.push(`--goal ${handleToString(goal.handle)}`);
+	const baseline = goalBaselinePath(state);
+	if (baseline) parts.push(`--baseline ${baseline}`);
 	return parts.join(" ");
+};
+
+/**
+ * Carve's commit dispatch: thread the run-start baseline so the commit skill
+ * fences pre-existing dirt off the commit — `git-changes.mjs` takes the path
+ * as a flag, so there is no fixed rendezvous file for concurrent/repeat runs
+ * to clobber. Prompt-dispatched deliberately: the inherited rolling primary
+ * (the validation report path) was reaching the skill as a meaningless
+ * message-hint argument anyway; owning the message replaces that noise with
+ * the one flag the skill actually consumes.
+ */
+const COMMIT_BASELINE_PROMPT: PromptFn = ({ state }) => {
+	const baseline = goalBaselinePath(state);
+	return baseline ? `/skill:commit --baseline ${baseline}` : "/skill:commit";
 };
 
 const carveWorkflow = defineWorkflow({
 	name: "build",
 	description:
-		"Ship, sliced: capture the verbatim brief as a goal artifact (the north star the quality gates' completeness/correctness dimensions and validate anchor against) → research the brief → decompose it into vertical slices → two-phase slice gate (a deterministic floor — dependency-cycle freedom + brief-coverage conservation so a slice-fix can't pass by dropping scope — then one LLM design-readiness judgment that each slice is chewable by a single design pass) with a slice-fix loop → design each slice in parallel → one consolidated developer checkpoint (accept or adjust the proposed interfaces/data types, adjustments applied surgically and cascaded to dependents) → synthesize hierarchically (per-cluster sub-plans → one merged plan) → quality-panel gate (completeness/correctness/actionability/pattern-following/architecture-fit) with a plan-fix loop → elaborate code per phase in parallel → splice it into the plan → re-grade the code-bearing plan → implement → validate → commit. Research-led; three automated gates plus one human design checkpoint, before design, before code, and after the splice.",
+		"Ship, sliced: capture the verbatim brief as a goal artifact (the north star the quality gates' completeness/correctness dimensions and validate anchor against) → research the brief → decompose it into vertical slices → two-phase slice gate (a deterministic floor — dependency-cycle freedom + brief-coverage conservation so a slice-fix can't pass by dropping scope — then one LLM design-readiness judgment that each slice is chewable by a single design pass) with a slice-fix loop → design each slice in parallel → one consolidated developer checkpoint (accept or adjust the proposed interfaces/data types, adjustments applied surgically and cascaded to dependents) → synthesize hierarchically (per-cluster sub-plans → one merged plan) → tier-scaled quality-panel gate (a one-slice, <=2-phase run grades correctness+completeness only; larger or previously-failing runs grade the full completeness/correctness/actionability/pattern-following/architecture-fit roster) where a dimension's first blocking verdict gets one confirming second judgment before it buys a plan-fix round → elaborate code per phase in parallel → splice it into the plan → re-grade the code-bearing plan (same tier + confirm contract) → implement → validate → commit. Research-led; three automated gates plus one human design checkpoint, before design, before code, and after the splice.",
 	start: "goal",
 	stages: {
 		// The user's brief, verbatim, on its own channel — the judgment seams
@@ -1737,7 +1777,7 @@ const carveWorkflow = defineWorkflow({
 		}),
 		implement: acts({ loop: IMPLEMENT_PHASE_FANOUT, reads: ["plans"] }),
 		validate: produces({ prompt: VALIDATE_GOAL_PROMPT }),
-		commit: acts({ outcome: gitCommitOutcome }),
+		commit: acts({ prompt: COMMIT_BASELINE_PROMPT, outcome: gitCommitOutcome }),
 	},
 	edges: {
 		goal: "research",

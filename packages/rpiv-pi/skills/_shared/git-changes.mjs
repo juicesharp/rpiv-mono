@@ -18,12 +18,15 @@ import { readFileSync } from "node:fs";
 
 const LINE_CAP = 200;
 
-// Where the run's start stage records the paths that were ALREADY dirty before
-// the workflow touched anything. A workflow must commit only the work IT did, so
-// files in this baseline are surfaced under a separate "do NOT commit" section
-// and kept out of the in-scope status — the commit skill never sweeps an
-// unrelated, pre-existing working-tree change into the run's commit.
-const BASELINE_PATH = ".rpiv/artifacts/commit-baseline.json";
+// The run-start snapshot of paths that were ALREADY dirty before the workflow
+// touched anything, passed as `--baseline <path>` by the workflow's commit
+// dispatch (the goal stage writes a per-run timestamped snapshot — there is no
+// fixed rendezvous file, so concurrent/repeat runs never read each other's).
+// A workflow must commit only the work IT did, so files in this baseline are
+// surfaced under a separate "do NOT commit" section and kept out of the
+// in-scope status. Standalone use (no flag) has no baseline and fences nothing.
+const baselineFlagIdx = process.argv.indexOf("--baseline");
+const BASELINE_PATH = baselineFlagIdx >= 0 ? process.argv[baselineFlagIdx + 1] : undefined;
 
 // The path a `git status --short` line refers to. Columns 0-2 are the XY status
 // code + space; a rename/copy renders `old -> new`, whose committed path is the
@@ -34,9 +37,10 @@ const statusPath = (line) => {
 	return arrow >= 0 ? rest.slice(arrow + 4).trim() : rest;
 };
 
-// Pre-existing-dirty paths recorded at run start (empty when no baseline file /
-// unreadable / malformed — the script then behaves exactly as before).
+// Pre-existing-dirty paths recorded at run start (empty when no --baseline flag /
+// unreadable / malformed — the script then behaves exactly as a baseline-less run).
 const readBaseline = () => {
+	if (!BASELINE_PATH) return new Set();
 	try {
 		const parsed = JSON.parse(readFileSync(BASELINE_PATH, "utf-8"));
 		return new Set(Array.isArray(parsed?.paths) ? parsed.paths.filter((p) => typeof p === "string") : []);

@@ -1,7 +1,7 @@
 ---
 name: validate
 description: Verify that an implementation plan was correctly executed by running each phase's success criteria against the working tree and producing a validation report. Use after the implement skill completes, when the user asks to "validate the plan", wants a post-implementation audit, or needs to confirm a feature is fully shipped per its plan.
-argument-hint: "[plan-path] [--goal <path>]"
+argument-hint: "[plan-path] [--goal <path>] [--baseline <path>]"
 allowed-tools: Read, Bash(git *), Bash(make *), Glob, Grep, Agent
 shell-timeout: 10
 disable-model-invocation: true
@@ -33,7 +33,7 @@ You are tasked with validating that an implementation plan was correctly execute
 
 User input (raw): `$ARGUMENTS`
 
-Expected shape: an optional plan path (usually under `.rpiv/artifacts/plans/`), optionally followed by `--goal <path>` (the user's original brief, captured verbatim at run start). Peel the `--goal` flag first; what remains is the plan path. Only if the user input above is empty, or no plan path remains after peeling, branch on the recent-plans list in the Metadata block.
+Expected shape: an optional plan path (usually under `.rpiv/artifacts/plans/`), optionally followed by `--goal <path>` (the user's original brief, captured verbatim at run start) and/or `--baseline <path>` (the run-start snapshot of paths that were ALREADY dirty before the run touched anything — a JSON file with a `paths` array). Peel the `--goal` and `--baseline` flags first; what remains is the plan path. Only if the user input above is empty, or no plan path remains after peeling, branch on the recent-plans list in the Metadata block.
 
 ## Metadata
 
@@ -117,12 +117,18 @@ For each phase in the plan:
    - Are there missing validations?
    - Could the implementation break existing functionality?
 
-5. **Check goal conformance** (only when `--goal` was provided):
+5. **Scope working-tree criteria to the run's own delta** (only when `--baseline` was provided):
+   - Read the baseline file's `paths` array — these paths were dirty BEFORE the run started (recorded by the workflow at run start; the commit skill fences them off the same way).
+   - Any criterion judging what the work touched ("only these files touched", "no unrelated changes", diff-scope checks) is evaluated against the working tree MINUS the baseline paths: subtract every baseline path from the dirty set before comparing to the plan's file list.
+   - Baseline paths are pre-existing, out-of-scope dirt — report them under a short "Pre-existing working-tree changes (baseline)" note for visibility, but NEVER count them as a scope violation or let them force `verdict: fail`.
+   - A missing or unreadable baseline file: fall back to judging the whole tree (today's behavior) and say so in the report.
+
+6. **Check goal conformance** (only when `--goal` was provided):
    - Read the goal file fully — it is the user's brief in their own words.
    - Verify the delivered result honors every explicit ask and constraint in it. A goal requirement the plan never carried is still a gap — the plan, not just the implementation, can deviate from the user.
    - Report shortfalls under **Deviations from Plan**, quoting the goal's actual wording; never infer unstated scope from it.
 
-6. **Rule every plan risk flag** (when the plan carries a `risks:` frontmatter array):
+7. **Rule every plan risk flag** (when the plan carries a `risks:` frontmatter array):
    - The plan's `risks:` array (each `{ id, claim }`, described under `## Risk Flags`) is the structured channel of decisions the planner asked to have checked. You are REQUIRED to rule on each one against the actual implementation — not skip it.
    - For each flag, verify its `claim` against the delivered code (Read/Grep the relevant `file:line`) and record a `risk_rulings: [{ id, pass }]` entry — `pass: true` when the risk is unfounded or handled, `pass: false` when it is real and unaddressed in the shipped code.
    - **Any `pass: false` ruling forces `verdict: fail`** and is reported under **Potential Issues**, quoting the flag's claim. A flagged risk that shipped unaddressed is exactly the class of defect this gate exists to catch.
@@ -193,6 +199,7 @@ If you were part of the implementation:
 
 Always verify:
 - [ ] Goal conformance checked when `--goal` was provided
+- [ ] Working-tree scope criteria judged against tree-minus-baseline when `--baseline` was provided
 - [ ] All phases marked complete are actually done
 - [ ] Automated tests pass
 - [ ] Code follows existing patterns
