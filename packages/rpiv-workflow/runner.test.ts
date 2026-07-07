@@ -2166,11 +2166,55 @@ describe("runWorkflow", () => {
 			expect(result.stagesCompleted).toBe(6);
 		});
 
-		it("resets the counter when a decision escapes the current loop", async () => {
+		it("counts per destination — a cycle crossing TWO decision edges per iteration keeps the full retry budget", async () => {
+			// The built-in gate shape: check →(decide)→ grade →(decide)→ fix
+			// →(string)→ check. Each fix iteration crosses TWO decision edges
+			// to visited stages. Under a shared-streak counter, cap=2 halted
+			// at the THIRD grade entry (streak: grade 1, fix 2, grade 3) —
+			// inserting a deterministic-floor edge silently taxed the fix
+			// budget. Per-destination: grade and fix each own a budget of 2
+			// re-entries, so three full fix iterations complete and the guard
+			// trips on grade's 3rd RE-ENTRY (its would-be 4th run).
+			for (let i = 1; i <= 4; i++) {
+				writeArtifact(tmpDir, `.rpiv/artifacts/check/k${i}.md`);
+				writeArtifact(tmpDir, `.rpiv/artifacts/grade/g${i}.md`);
+				writeArtifact(tmpDir, `.rpiv/artifacts/fix/f${i}.md`);
+			}
+			const steps: Array<{ branch: ReturnType<typeof mockAssistantMessage>[] }> = [];
+			for (let i = 1; i <= 4; i++) {
+				steps.push({ branch: [mockAssistantMessage(`Wrote .rpiv/artifacts/check/k${i}.md`)] });
+				steps.push({ branch: [mockAssistantMessage(`Wrote .rpiv/artifacts/grade/g${i}.md`)] });
+				steps.push({ branch: [mockAssistantMessage(`Wrote .rpiv/artifacts/fix/f${i}.md`)] });
+			}
+			const chain = createMockSessionChain({ cwd: tmpDir, steps });
+
+			const workflow = wf(
+				"gate-shape",
+				["check", "grade", "fix", "done"],
+				{},
+				{
+					// Both edges always retry — the guard is the only bound.
+					check: defineRoute(["grade", "done"], () => "grade", { readsData: false }),
+					grade: defineRoute(["fix", "done"], () => "fix", { readsData: false }),
+					fix: "check",
+				},
+			);
+
+			const result = await runWorkflow(chain.ctx, { workflow, input: "x" });
+
+			expect(result.success).toBe(false);
+			expect(result.error).toMatch(/backward-jump limit exceeded/i);
+			expect(result.error).toMatch(/"grade".*3.*max 2/);
+			// Iterations: (check grade fix) ×3, then check#4 completes and its
+			// decision to grade trips (grade's 3rd re-entry > cap 2) = 10 stages.
+			expect(result.stagesCompleted).toBe(10);
+		});
+
+		it("gives unrelated loops independent budgets (per-destination, no shared pool)", async () => {
 			// Two sequential decision loops: A↔B then C↔D, joined by a
-			// decision-edge escape from B → C. Each loop should get its own
-			// retry budget; without the escape-reset, loop 2's first retry
-			// would inherit loop 1's exhausted counter and trip immediately.
+			// decision-edge escape from B → C. Each destination owns its own
+			// re-entry count, so loop 2's first retry cannot inherit loop 1's
+			// exhausted budget
 			writeArtifact(tmpDir, ".rpiv/artifacts/A/A1.md");
 			writeArtifact(tmpDir, ".rpiv/artifacts/B/B1.md");
 			writeArtifact(tmpDir, ".rpiv/artifacts/A/A2.md");
@@ -2206,9 +2250,9 @@ describe("runWorkflow", () => {
 						bDecisionCount++;
 						return bDecisionCount <= 1 ? "A" : "C";
 					}),
-					// D → C twice, then D → stop. With cap=1 and NO reset, this
-					// trips on the first D→C because B's prior retry already
-					// burned the budget.
+					// D → C once, then D → stop. With cap=1 and a SHARED pool, the
+					// first D→C would trip because B's prior retry already burned the
+					// budget; per-destination it is C's first re-entry
 					D: defineRoute(["C", "stop"], () => {
 						dDecisionCount++;
 						return dDecisionCount <= 1 ? "C" : "stop";
@@ -2218,10 +2262,10 @@ describe("runWorkflow", () => {
 
 			const result = await runWorkflow(chain.ctx, { workflow, input: "x", maxBackwardJumps: 1 });
 
-			// Loop 1: A → B (decide A, retry 1) → A → B (decide C, escape — counter resets to 0)
-			// Loop 2: C → D (decide C, retry 1 — counter started at 0, so within cap) → C → D (decide stop)
-			// All 8 stages complete; run succeeds. Without reset, loop 2's
-			// first retry would be retry 2 > cap=1 → trip.
+			// Loop 1: A → B (decide A — A's 1st re-entry) → A → B (decide C, escape)
+			// Loop 2: C → D (decide C — C's 1st re-entry) → C → D (decide stop)
+			// All 8 stages complete; run succeeds. A and C each spend their own
+			// budget; a shared pool would trip C's first retry at count 2 > cap=1.
 			expect(result.success).toBe(true);
 			expect(result.stagesCompleted).toBe(8);
 		});

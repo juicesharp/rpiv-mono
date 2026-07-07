@@ -272,7 +272,7 @@ export interface ResumeWorkflowOptions {
 	header: WorkflowHeader;
 	/** Registry-level host — enumerated once for the skill-registration snapshot. */
 	host?: WorkflowHost;
-	/** Defaults to MAX_BACKWARD_JUMPS. */
+	/** Per-destination decision-edge re-entry cap. Defaults to MAX_BACKWARD_JUMPS. */
 	maxBackwardJumps?: number;
 	/** Run-wide safety cap on loop units (all kinds). Defaults to MAX_ITERATIONS. */
 	maxIterations?: number;

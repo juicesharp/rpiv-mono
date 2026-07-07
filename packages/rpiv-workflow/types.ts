@@ -97,6 +97,11 @@ export interface RunState {
 
 	// ── Telemetry (post-hoc only; not consulted by chain advancement) ──
 	telemetry: {
+		/**
+		 * Run-wide cumulative count of backward jumps (decision-edge routes to
+		 * an already-visited stage). Never reset. The halt decision reads the
+		 * per-destination `RunContext.revisits` ledger, not this total.
+		 */
 		backwardJumps: number;
 		/**
 		 * Routing rows whose JSONL append failed mid-run. The chain advanced
@@ -166,7 +171,7 @@ export interface RunWorkflowOptions {
 	input: string;
 	/** Registry-level host — enumerated once for the skill-registration snapshot. */
 	host?: WorkflowHost;
-	/** Defaults to MAX_BACKWARD_JUMPS. */
+	/** Per-destination decision-edge re-entry cap. Defaults to MAX_BACKWARD_JUMPS. */
 	maxBackwardJumps?: number;
 	/** Run-wide safety cap on loop units (all kinds). Defaults to MAX_ITERATIONS. */
 	maxIterations?: number;
@@ -276,12 +281,20 @@ export interface RunContext {
 	totalStages: number;
 	state: RunState;
 	/**
-	 * Stage names already executed in this run. The backward-jump guard
-	 * increments `state.telemetry.backwardJumps` on every re-entry; revise →
-	 * implement loops legitimately revisit stages, but unbounded loops trip
-	 * the cap.
+	 * Stage names already executed in this run. A decision edge resolving to
+	 * a visited stage is a backward jump; revise → implement loops
+	 * legitimately revisit stages, but unbounded loops trip the cap.
 	 */
 	visited: Set<string>;
+	/**
+	 * Decision-edge re-entry count per destination stage — the backward-jump
+	 * guard's ledger. Each stage may be re-entered at most `maxBackwardJumps`
+	 * times; counting per destination (not as a shared streak) keeps the
+	 * retry budget invariant to how many decision edges a fix cycle crosses
+	 * per iteration, and gives unrelated loops independent budgets by
+	 * construction.
+	 */
+	revisits: Map<string, number>;
 	/**
 	 * Set of bare skill names registered with Pi at workflow start (e.g.
 	 * "research", "blueprint" — the `skill:` prefix is stripped). Snapshot

@@ -679,8 +679,8 @@ describe("vet workflow", () => {
 
 		it("halts when vet exceeds maxBackwardJumps", async () => {
 			// Pre-write artifacts for each stage pass. With default
-			// maxBackwardJumps=2, the guard halts after the 4th code-review's
-			// decision-edge increments backwardJumps to 3 (>2). The cycle:
+			// maxBackwardJumps=2, the guard halts when the 4th code-review's
+			// decision re-enters blueprint a 3rd time (>2). The cycle:
 			//   cr1→bp1→impl1→v1 → cr2→bp2→impl2→v2 → cr3→bp3→impl3→v3 → cr4(HALT)
 			// Stages completed: 13 (cr×4 + bp×3 + impl×3 + validate×3).
 			writeArtifact(".rpiv/artifacts/code-review/cr1.md");
@@ -743,7 +743,7 @@ describe("vet workflow", () => {
 			expect(result.success).toBe(false);
 			expect(result.error).toMatch(/backward-jump limit exceeded/i);
 			// 13 stages: cr×4 + bp×3 + impl×3 + validate×3. The 4th code-review's
-			// decision increments backwardJumps to 3 (> maxBackwardJumps=2).
+			// decision is blueprint's 3rd re-entry (> maxBackwardJumps=2).
 			expect(result.stagesCompleted).toBe(13);
 		});
 	});

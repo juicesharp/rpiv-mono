@@ -90,9 +90,9 @@ export const FAIL_MISSING_NAMED_READ = (currentSkill: string, name: string, stag
 	error: `Stage ${stageNumber} (${currentSkill}) reads "${name}" but state.named["${name}"] is empty; check that an upstream produces stage publishes this name`,
 });
 
-export const FAIL_BACKWARD_JUMP_EXHAUSTED = (jumps: number, max: number): FailureText => ({
-	toast: `rpiv: backward-jump limit exceeded (${jumps}/${max}) — stopping workflow to prevent infinite loop`,
-	error: `Backward-jump limit exceeded: ${jumps} backward jumps (max ${max})`,
+export const FAIL_BACKWARD_JUMP_EXHAUSTED = (stage: string, revisits: number, max: number): FailureText => ({
+	toast: `rpiv: backward-jump limit exceeded — "${stage}" re-entered ${revisits} times (max ${max}) — stopping workflow to prevent infinite loop`,
+	error: `Backward-jump limit exceeded: stage "${stage}" re-entered ${revisits} times (max ${max})`,
 });
 
 /**

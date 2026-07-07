@@ -18,13 +18,14 @@ import type { RunContext, RunState } from "../types.js";
 // ---------------------------------------------------------------------------
 
 /**
- * Per-loop cap on decision-edge retries. A "backward jump" is a *decision*
- * resolving to an already-visited stage — i.e. the user's predicate chose to
- * retry. Deterministic edges through a cycle (the loop body) are NOT
- * counted; the budget is per retry iteration, not per hop. A decision
- * escaping the loop (target not visited) resets the counter so each
- * independent loop in the workflow gets its own fresh budget. With 2: the
- * loop runs once unconditionally and may retry up to 2 more times.
+ * Per-DESTINATION cap on decision-edge retries. A "backward jump" is a
+ * *decision* resolving to an already-visited stage — i.e. the user's
+ * predicate chose to retry. Deterministic edges through a cycle (the loop
+ * body) are NOT counted, and each destination stage owns its own budget
+ * (`RunContext.revisits`), so the retry allowance is invariant to how many
+ * decision edges the cycle crosses per iteration and unrelated loops never
+ * share a pool. With 2: any given stage runs once unconditionally and may be
+ * re-entered up to 2 more times — at most 3 executions per stage.
  */
 export const MAX_BACKWARD_JUMPS = 2;
 
@@ -93,6 +94,9 @@ export function buildRunContext(
 		totalStages: countReachableStages(workflow),
 		state: identity.state,
 		visited: identity.visited,
+		// Fresh on every entry point: a resume grants each stage a fresh
+		// re-entry budget, exactly as the pre-ledger streak counter did.
+		revisits: new Map(),
 		registeredSkills: options.host ? snapshotRegisteredSkills(options.host) : undefined,
 		// Defensive COPY (not the live global Map) so a later registerSkillContracts
 		// call cannot mutate this run's snapshot mid-run — parity with the fresh-Set

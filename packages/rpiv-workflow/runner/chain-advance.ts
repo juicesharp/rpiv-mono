@@ -127,8 +127,8 @@ function auditRoutingDecision(
 }
 
 /**
- * Per-loop cap on decision-edge retries. Returns `"continue"` when the run
- * may proceed, or the `"halted"` outcome when the cap tripped (and the
+ * Per-DESTINATION cap on decision-edge retries. Returns `"continue"` when the
+ * run may proceed, or the `"halted"` outcome when the cap tripped (and the
  * terminal failure has been recorded).
  *
  * A "backward jump" is a *decision-edge* resolving to an already-visited
@@ -139,10 +139,19 @@ function auditRoutingDecision(
  * mid-loop on any cycle longer than 2 stages, burning the entire budget
  * on a single retry iteration's deterministic hops.
  *
- * Reset-on-escape: a decision resolving to a NOT-visited stage escapes the
- * current cycle (we've moved to fresh territory), so the counter resets.
- * Each independent loop gets its own retry budget instead of a single
- * global pool that drains across unrelated loops.
+ * Each destination owns its budget (`run.revisits`): a stage may be
+ * re-entered via decision edges at most `maxBackwardJumps` times, regardless
+ * of how many OTHER decision edges the cycle crosses on the way. A shared
+ * streak counter would make the effective retry budget a function of the
+ * cycle's hop count — inserting a checking stage into a fix loop (a
+ * deterministic-floor edge, a confirm arm) silently taxed the fix budget.
+ * Per-destination counts are invariant to the cycle's shape, and unrelated
+ * loops are independent by construction (different destinations), which is
+ * what the old reset-on-escape rule existed to approximate.
+ *
+ * `state.telemetry.backwardJumps` stays the run-wide cumulative total of
+ * counted backward jumps (post-hoc telemetry only — never consulted for the
+ * halt decision, never reset).
  *
  * Trip attribution targets `nextName` (the stage the guard refused to
  * re-enter), not the just-completed stage.
@@ -152,17 +161,15 @@ async function checkBackwardJumpGuard(
 	run: RunContext,
 	nextName: string,
 ): Promise<"continue" | ChainOutcome> {
-	const { state } = run;
-	if (!run.visited.has(nextName)) {
-		state.telemetry.backwardJumps = 0;
-		return "continue";
-	}
-	state.telemetry.backwardJumps++;
-	if (state.telemetry.backwardJumps <= run.maxBackwardJumps) return "continue";
+	if (!run.visited.has(nextName)) return "continue";
+	const revisits = (run.revisits.get(nextName) ?? 0) + 1;
+	run.revisits.set(nextName, revisits);
+	run.state.telemetry.backwardJumps++;
+	if (revisits <= run.maxBackwardJumps) return "continue";
 	await recordTerminalFailure(
 		curCtx,
 		auditCtxFor(run, nextName, nextName),
-		failedArgs(FAIL_BACKWARD_JUMP_EXHAUSTED(state.telemetry.backwardJumps, run.maxBackwardJumps)),
+		failedArgs(FAIL_BACKWARD_JUMP_EXHAUSTED(nextName, revisits, run.maxBackwardJumps)),
 	);
 	return "halted";
 }
