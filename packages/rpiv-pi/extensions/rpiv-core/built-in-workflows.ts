@@ -1185,21 +1185,118 @@ const SYNTH_CLUSTER_FANOUT = fanout({
  */
 const GOAL_DIMENSIONS: ReadonlySet<string> = new Set(["completeness", "correctness"]);
 
+// ---------------------------------------------------------------------------
+// Adaptive gate scaling — tier, roster, verdict freshness.
+// ---------------------------------------------------------------------------
+
+/** Latest `data` record published under `name` (undefined when absent/non-record). */
+const latestChannelData = (state: RunView, name: string): Record<string, unknown> | undefined => {
+	const data = state.named[name]?.at(-1)?.data;
+	return data !== null && typeof data === "object" && !Array.isArray(data)
+		? (data as Record<string, unknown>)
+		: undefined;
+};
+
+/** A finite numeric field off the latest `data` on `name` (undefined otherwise). */
+const channelNumber = (state: RunView, name: string, field: string): number | undefined => {
+	const v = latestChannelData(state, name)?.[field];
+	return typeof v === "number" && Number.isFinite(v) ? v : undefined;
+};
+
+/** Repo-relative path of the latest fs artifact on `name` (undefined if none). */
+const latestArtifactPath = (state: RunView, name: string): string | undefined => {
+	const a = latestFsArtifact(state, name);
+	return a?.handle.kind === "fs" ? handleToString(a.handle) : undefined;
+};
+
 /**
- * A grade panel: one `grade` session per dimension over the latest artifact on
- * `channel`. Each unit's prompt is the `grade` skill's flags
- * (`--dimension <d> --artifact <path>`); the per-dimension verdicts fold via
- * `allDimensionsPass`. Shared by the slice gate (over `slices`) and the plan
- * gate (over `plans`).
+ * Gate scrutiny tier, derived ONLY from signals already replayed by the resume
+ * fold (the slices/plans channels' frontmatter data and the gate's own verdict
+ * severities) — deterministic by construction, so routes and fanout units that
+ * consult it stay resume-safe.
  *
- * `architecture-fit` is the one dimension `grade` requires a `--context` for: it
- * grades the plan against the research the slices rest on. The carve flow always
- * front-loads a `research` stage, so we thread the latest `research` artifact in
- * as `--context` for that dimension only; likewise the latest `goal` artifact
- * threads in as `--goal` for the `GOAL_DIMENSIONS` only. Every other dimension
- * (and the slice gate's `design-readiness`, which never grades fit or
- * goal-completeness) gets the bare flags.
+ * `risks:` flags are deliberately NOT a tier signal: `synthesize` declares
+ * them routinely (observed: 1-phase plans shipping 2-3 flags), so counting
+ * them would push every small run out of the light tier. Risk flags are
+ * already force-ruled per dimension via `risk_rulings`, and a blocking
+ * verdict lifts the tier on its own (below).
+ *
+ * A missing signal never yields light, and verdict severities are read over
+ * the FULL channel history (a stale medium/high is still evidence of a risky
+ * run) — ambiguity always resolves toward more scrutiny.
  */
+type GateTier = "light" | "standard" | "strict";
+const TIER_LIGHT_MAX_SLICES = 1;
+const TIER_LIGHT_MAX_PHASES = 2;
+const TIER_STRICT_MIN_SLICES = 5;
+const TIER_STRICT_MIN_PHASES = 6;
+
+/**
+ * The dimensions a light-tier run still grades: correctness and completeness
+ * are the two whose failures ship real defects (and the two that anchor on the
+ * goal); fit/actionability/pattern-following are low-consequence on a
+ * one-slice, <=2-phase diff, and `validate` still runs at every tier.
+ */
+const LIGHT_ROSTER: ReadonlySet<string> = new Set(["correctness", "completeness"]);
+
+const gateTier = (state: RunView, verdictChannel: string): GateTier => {
+	const slices = channelNumber(state, "slices", "slice_count");
+	const phases = channelNumber(state, "plans", "phase_count");
+	const severities = new Set<string>();
+	for (const o of state.named[verdictChannel] ?? []) {
+		const s = (o.data as { severity?: unknown } | undefined)?.severity;
+		if (typeof s === "string") severities.add(s);
+	}
+	if (
+		(slices !== undefined && slices >= TIER_STRICT_MIN_SLICES) ||
+		(phases !== undefined && phases >= TIER_STRICT_MIN_PHASES) ||
+		severities.has("high")
+	) {
+		return "strict";
+	}
+	if (
+		slices !== undefined &&
+		slices <= TIER_LIGHT_MAX_SLICES &&
+		phases !== undefined &&
+		phases <= TIER_LIGHT_MAX_PHASES &&
+		!severities.has("medium")
+	) {
+		return "light";
+	}
+	return "standard";
+};
+
+/**
+ * The subset of `dimensions` the tier actually grades. Never empty: a
+ * dimension list with no light-roster member (the slice gate's lone
+ * `design-readiness`) keeps its full list at every tier.
+ */
+const gateRoster = (tier: GateTier, dimensions: readonly string[]): readonly string[] => {
+	if (tier !== "light") return dimensions;
+	const light = dimensions.filter((d) => LIGHT_ROSTER.has(d));
+	return light.length > 0 ? light : dimensions;
+};
+
+/**
+ * Drop verdicts judged against an artifact the channel has since REPLACED. A
+ * grade verdict embeds the `artifact` path it judged; when a fix REGENERATES
+ * the artifact (`slice-fix` re-slices to a NEW file) a passing verdict on the
+ * old document must not carry forward to a document that was never judged —
+ * the carry-forward would otherwise let a regenerated slice map skip its
+ * design-readiness judgment entirely. An in-place `amend` keeps the path, so
+ * the plan-fix/code-fix carry-forward is unaffected. A verdict without an
+ * `artifact` field (older trails, the deterministic structure checks) is kept:
+ * matching is the compat default.
+ */
+const freshVerdicts = (entries: readonly Output[] = [], currentArtifact?: string): readonly Output[] => {
+	if (!currentArtifact) return entries;
+	const current = basename(currentArtifact);
+	return entries.filter((o) => {
+		const a = (o.data as { artifact?: unknown } | undefined)?.artifact;
+		return typeof a !== "string" || a.length === 0 || basename(a) === current;
+	});
+};
+
 /**
  * The subset of `dimensions` a re-grade must actually re-run, given the verdicts
  * accumulated on `verdictChannel` so far. A dimension needs re-grading when it
@@ -1237,11 +1334,14 @@ const dimensionsToRegrade = (dimensions: readonly string[], entries: readonly Ou
  * `allDimensionsPass`. Shared by the slice gate (over `slices`) and the plan +
  * code gates (over `plans`), each on its own `verdictChannel`.
  *
- * On a re-grade the panel emits ONLY the dimensions `dimensionsToRegrade` says
- * still need it (the rest carry their prior passing verdict forward) — but never
- * an EMPTY set: an empty `units()` return falls through to a single dimensionless
- * `grade` dispatch, so when nothing needs re-grading we fall back to the full
- * panel. The route into the stage already skips it entirely when the accumulated
+ * The panel grades the tier's ROSTER (`gateTier`/`gateRoster`), over verdicts
+ * still FRESH for the current artifact (`freshVerdicts`) — a light run grades
+ * two dimensions, a regenerated artifact re-grades from scratch. On a re-grade
+ * it emits ONLY the dimensions `dimensionsToRegrade` says still need it (the
+ * rest carry their prior passing verdict forward) — but never an EMPTY set: an
+ * empty `units()` return falls through to a single dimensionless `grade`
+ * dispatch, so when nothing needs re-grading we fall back to the full roster.
+ * The route into the stage already skips it entirely when the accumulated
  * verdicts clear the gate (see `plan-cite-check`/`code-cite-check`/`slice-check`
  * edges), so this fallback only fires in the degenerate case where a fix left the
  * cite floor red while every dimension passed.
@@ -1267,9 +1367,11 @@ const gradePanelFanout = (channel: string, dimensions: readonly string[], verdic
 			const contextFlag = research?.handle.kind === "fs" ? ` --context ${handleToString(research.handle)}` : "";
 			const goal = latestFsArtifact(state, "goal");
 			const goalFlag = goal?.handle.kind === "fs" ? ` --goal ${handleToString(goal.handle)}` : "";
-			const pending = dimensionsToRegrade(dimensions, state.named[verdictChannel]);
+			const roster = gateRoster(gateTier(state, verdictChannel), dimensions);
+			const fresh = freshVerdicts(state.named[verdictChannel], target);
+			const pending = dimensionsToRegrade(roster, fresh);
 			// Never emit zero units (empty ⇒ single dimensionless grade fall-through).
-			const toGrade = pending.length > 0 ? pending : dimensions;
+			const toGrade = pending.length > 0 ? pending : roster;
 			return toGrade.map((d) => ({
 				prompt: `--dimension ${d} --artifact ${target}${d === "architecture-fit" ? contextFlag : ""}${GOAL_DIMENSIONS.has(d) ? goalFlag : ""}`,
 				label: d,
@@ -1284,6 +1386,12 @@ const PLAN_DIMENSION_FANOUT = gradePanelFanout("plans", PLAN_DIMENSIONS, "plan-v
 // `code-verdicts` channel, so its carry-forward reads the code gate's verdicts,
 // never the pre-elaborate plan gate's.
 const CODE_DIMENSION_FANOUT = gradePanelFanout("plans", PLAN_DIMENSIONS, "code-verdicts");
+// The confirm stages re-run the SAME panel machinery on the SAME verdict
+// channel: with the failing dimensions the only ones pending, the panel emits
+// exactly the blocking dimensions — one independent second judgment each.
+// Distinct fanout instances (not aliases) so each stage owns its loop object.
+const PLAN_CONFIRM_FANOUT = gradePanelFanout("plans", PLAN_DIMENSIONS, "plan-verdicts");
+const CODE_CONFIRM_FANOUT = gradePanelFanout("plans", PLAN_DIMENSIONS, "code-verdicts");
 
 /**
  * Fold the per-dimension verdicts into a gate decision: keep the latest verdict
@@ -1300,11 +1408,16 @@ const CODE_DIMENSION_FANOUT = gradePanelFanout("plans", PLAN_DIMENSIONS, "code-v
  * `high` on a real structural break, so it still blocks). A verdict with no
  * `severity` (an older or replayed grade) falls back to the raw `pass` boolean.
  */
-const allDimensionsPass = (entries: readonly Output[] = []): boolean => {
+const allDimensionsPass = (entries: readonly Output[] = [], roster?: readonly string[]): boolean => {
+	// Roster-filtered when given: a verdict for a dimension outside the tier's
+	// roster (a wider earlier round, a shrunk re-slice) neither blocks nor passes
+	// a gate it no longer governs.
+	const member = roster ? new Set(roster) : undefined;
 	const latest = new Map<string, boolean>();
 	for (const o of entries) {
 		const v = o.data as { dimension?: string; pass?: boolean; severity?: string } | undefined;
 		if (typeof v?.dimension !== "string") continue;
+		if (member && !member.has(v.dimension)) continue;
 		const lowOrNone = v.severity === "low" || v.severity === "none";
 		latest.set(v.dimension, v.pass === true || lowOrNone);
 	}
@@ -1365,16 +1478,69 @@ const allRiskFlagsPass = (entries: readonly Output[] = []): boolean => {
  * panel. Any regression a fix introduces is still caught downstream: the plan
  * gate by the full first-time `code-grade`, the code gate by `validate`.
  */
-const sliceGatePasses = (state: RunView): boolean =>
-	allDimensionsPass(state.named["slice-check"]) && allDimensionsPass(state.named["slice-verdicts"]);
-const planGatePasses = (state: RunView): boolean =>
-	allDimensionsPass(state.named["plan-cite-check"]) &&
-	allDimensionsPass(state.named["plan-verdicts"]) &&
-	allRiskFlagsPass(state.named["plan-verdicts"]);
-const codeGatePasses = (state: RunView): boolean =>
-	allDimensionsPass(state.named["code-cite-check"]) &&
-	allDimensionsPass(state.named["code-verdicts"]) &&
-	allRiskFlagsPass(state.named["code-verdicts"]);
+// Each predicate folds the verdicts still FRESH for the channel's current
+// artifact, restricted to the tier's roster — the SAME projections the panel's
+// `units()` uses, so "skip the re-grade" stays provably equivalent to
+// "re-grade, then pass". The deterministic cite/structure channels fold
+// unfiltered: they re-run every round and carry no tier.
+const sliceGatePasses = (state: RunView): boolean => {
+	const fresh = freshVerdicts(state.named["slice-verdicts"], latestArtifactPath(state, "slices"));
+	const roster = gateRoster(gateTier(state, "slice-verdicts"), SLICE_DIMENSIONS);
+	return allDimensionsPass(state.named["slice-check"]) && allDimensionsPass(fresh, roster);
+};
+const planGatePasses = (state: RunView): boolean => {
+	const fresh = freshVerdicts(state.named["plan-verdicts"], latestArtifactPath(state, "plans"));
+	const roster = gateRoster(gateTier(state, "plan-verdicts"), PLAN_DIMENSIONS);
+	return (
+		allDimensionsPass(state.named["plan-cite-check"]) && allDimensionsPass(fresh, roster) && allRiskFlagsPass(fresh)
+	);
+};
+const codeGatePasses = (state: RunView): boolean => {
+	const fresh = freshVerdicts(state.named["code-verdicts"], latestArtifactPath(state, "plans"));
+	const roster = gateRoster(gateTier(state, "code-verdicts"), PLAN_DIMENSIONS);
+	return (
+		allDimensionsPass(state.named["code-cite-check"]) && allDimensionsPass(fresh, roster) && allRiskFlagsPass(fresh)
+	);
+};
+
+/**
+ * Confirm-before-block: a dimension's FIRST blocking verdict against the
+ * current artifact gets ONE independent second judgment before it buys a fix
+ * round. Single-judge verdicts observably flap (pass/score/severity disagree
+ * across rolls on a near-unchanged artifact), and a spurious block
+ * manufactures an entire grade→fix cycle. Routing to the confirm stage
+ * re-runs only the pending dimensions on the same verdict channel;
+ * latest-per-dimension wins, so a confirming pass clears the gate and a
+ * confirming fail routes to the fix with two agreeing judgments behind it. A
+ * blocker already judged twice for this artifact routes straight to the fix —
+ * confirmation is one extra opinion, not an unbounded re-roll.
+ *
+ * No tier guard is needed: a blocking verdict is medium+ by the severity
+ * floor, and a medium+ severity already lifts `gateTier` out of light — every
+ * run with a genuine blocker has confirm-level scrutiny by construction.
+ */
+const confirmDue = (
+	state: RunView,
+	channel: string,
+	verdictChannel: string,
+	dimensions: readonly string[],
+): boolean => {
+	const roster = new Set(gateRoster(gateTier(state, verdictChannel), dimensions));
+	const fresh = freshVerdicts(state.named[verdictChannel], latestArtifactPath(state, channel));
+	const byDim = new Map<string, { blocking: boolean; count: number }>();
+	for (const o of fresh) {
+		const v = o.data as { dimension?: string; pass?: boolean; severity?: string } | undefined;
+		if (typeof v?.dimension !== "string" || !roster.has(v.dimension)) continue;
+		const floored = v.pass === true || v.severity === "low" || v.severity === "none";
+		const riskFail = verdictRiskRulings(o).some((r) => !r.pass);
+		byDim.set(v.dimension, {
+			blocking: !floored || riskFail,
+			count: (byDim.get(v.dimension)?.count ?? 0) + 1,
+		});
+	}
+	const blockers = [...byDim.values()].filter((e) => e.blocking);
+	return blockers.length > 0 && blockers.some((e) => e.count < 2);
+};
 
 /**
  * Verdict channels — grade writes JSON to `.rpiv/artifacts/verdicts/`, so these
@@ -1445,9 +1611,9 @@ const carveWorkflow = defineWorkflow({
 		// still receives the raw brief now that `goal` holds the start slot.
 		research: produces({ prompt: RESEARCH_BRIEF_PROMPT }),
 		slice: produces(),
-		// Phase 1 of the gate: the DETERMINISTIC floor (cycle-freedom + coverage conservation), no LLM.
+		// Deterministic floor (no LLM): dependency-cycle freedom + brief-coverage conservation.
 		"slice-check": produces.script({ reads: ["slices"], run: sliceStructureCheck }),
-		// Phase 2 of the gate: ONE LLM design-readiness judgment; verdicts on their own channel.
+		// One LLM design-readiness judgment; verdicts on their own channel.
 		"slice-grade": produces({
 			skill: "grade",
 			loop: SLICE_DIMENSION_FANOUT,
@@ -1502,6 +1668,16 @@ const carveWorkflow = defineWorkflow({
 			// --context; `goal` so completeness/correctness anchor on the brief.
 			reads: ["plans", "research", "goal"],
 		}),
+		// One independent second judgment on the blocking dimensions before they
+		// buy a fix round (see `confirmDue`). Same panel machinery, same verdict
+		// channel — its OWN stage name so a stronger judge model can be pinned to
+		// exactly the verdicts about to block (models.json `stages["plan-confirm"]`).
+		"plan-confirm": produces({
+			skill: "grade",
+			loop: PLAN_CONFIRM_FANOUT,
+			outcome: planVerdictOutcome,
+			reads: ["plans", "research", "goal"],
+		}),
 		"plan-fix": produces({
 			skill: "amend",
 			outcome: rpivBucketOutcome("plans"),
@@ -1546,6 +1722,14 @@ const carveWorkflow = defineWorkflow({
 		// (its embedded code blocks included), then loops straight back to re-grade —
 		// the mirror of the plan gate's `plan-fix` arm, on its own `code-verdicts`
 		// channel so the two loops' verdicts never cross.
+		// The code gate's confirm arm — the mirror of `plan-confirm`, on the
+		// `code-verdicts` channel.
+		"code-confirm": produces({
+			skill: "grade",
+			loop: CODE_CONFIRM_FANOUT,
+			outcome: codeVerdictOutcome,
+			reads: ["plans", "research", "goal"],
+		}),
 		"code-fix": produces({
 			skill: "amend",
 			outcome: rpivBucketOutcome("plans"),
@@ -1595,11 +1779,26 @@ const carveWorkflow = defineWorkflow({
 			({ state }) => (planGatePasses(state) ? "code" : "plan-grade"),
 			{ readsData: false },
 		),
-		// Quality gate BEFORE any code. Pass ⇒ code; any fails (the LLM verdict OR a
-		// fabricated citation from the deterministic `plan-cite-check` floor) ⇒
-		// plan-fix, looping back THROUGH the citation floor so the amended plan
-		// re-verifies (else a stale failing cite verdict would loop forever).
-		"plan-grade": defineRoute(["code", "plan-fix"], ({ state }) => (planGatePasses(state) ? "code" : "plan-fix"), {
+		// Quality gate BEFORE any code. Pass ⇒ code. A dimension's FIRST blocking
+		// verdict ⇒ plan-confirm (one independent second judgment — see
+		// `confirmDue`); a confirmed blocker, or a failure with no dimension
+		// blocking (the citation floor alone is red) ⇒ plan-fix, looping back
+		// THROUGH the citation floor so the amended plan re-verifies (else a stale
+		// failing cite verdict would loop forever).
+		"plan-grade": defineRoute(
+			["code", "plan-confirm", "plan-fix"],
+			({ state }) =>
+				planGatePasses(state)
+					? "code"
+					: confirmDue(state, "plans", "plan-verdicts", PLAN_DIMENSIONS)
+						? "plan-confirm"
+						: "plan-fix",
+			{ readsData: false },
+		),
+		// After the second judgment the gate re-folds on the latest verdicts: a
+		// confirming pass overwrote the flap and clears the gate; a confirming
+		// fail routes to the fix with two agreeing judgments behind it.
+		"plan-confirm": defineRoute(["code", "plan-fix"], ({ state }) => (planGatePasses(state) ? "code" : "plan-fix"), {
 			readsData: false,
 		}),
 		"plan-fix": "plan-cite-check",
@@ -1613,13 +1812,24 @@ const carveWorkflow = defineWorkflow({
 			({ state }) => (codeGatePasses(state) ? "implement" : "code-grade"),
 			{ readsData: false },
 		),
-		// Re-grade the code-bearing plan. Pass ⇒ implement; any fails ⇒ surgically
-		// amend the spliced plan and re-grade. Routes to `code-fix`, NOT back to
-		// `code`: the gate fails on plan-text defects (edit anchors, line
-		// citations, naming) that a per-phase code rewrite cannot reach, so the
-		// surgical arm is the one with authority over them. Bounded by the runner's
-		// maxBackwardJumps.
+		// Re-grade the code-bearing plan. Pass ⇒ implement. A first blocking
+		// verdict ⇒ code-confirm (the plan gate's confirm contract, on the
+		// code-verdicts channel); a confirmed blocker or cite-floor-only failure ⇒
+		// code-fix. Routes to `code-fix`, NOT back to `code`: the gate fails on
+		// plan-text defects (edit anchors, line citations, naming) that a
+		// per-phase code rewrite cannot reach, so the surgical arm is the one with
+		// authority over them. Bounded by the runner's maxBackwardJumps.
 		"code-grade": defineRoute(
+			["implement", "code-confirm", "code-fix"],
+			({ state }) =>
+				codeGatePasses(state)
+					? "implement"
+					: confirmDue(state, "plans", "code-verdicts", PLAN_DIMENSIONS)
+						? "code-confirm"
+						: "code-fix",
+			{ readsData: false },
+		),
+		"code-confirm": defineRoute(
 			["implement", "code-fix"],
 			({ state }) => (codeGatePasses(state) ? "implement" : "code-fix"),
 			{ readsData: false },

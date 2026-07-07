@@ -2219,3 +2219,220 @@ describe("build grade panel re-grades only the pending dimensions (P2)", () => {
 		expect((await units).map((u) => u.label)).toEqual(["pattern-following"]);
 	});
 });
+
+// ---------------------------------------------------------------------------
+// Adaptive gate scaling — the tier decides the roster (a one-slice, <=2-phase
+// run grades correctness+completeness only), verdicts carried across an
+// artifact REGENERATION are invalidated, and a dimension's first blocking
+// verdict routes to a confirm stage for one independent second judgment
+// before it buys a fix round.
+// ---------------------------------------------------------------------------
+
+describe("build adaptive gate scaling (tier / roster / freshness / confirm)", () => {
+	const build = () => findWorkflow("build");
+	const edge = (stage: string): EdgeFn => {
+		const e = build().edges[stage];
+		if (typeof e !== "function") throw new Error(`build ${stage} edge is not a function`);
+		return e as EdgeFn;
+	};
+	const chan = (rel: string, data?: Record<string, unknown>): Output =>
+		({ artifacts: [{ handle: fsHandle(rel) }], data, kind: "", meta: {} }) as unknown as Output;
+	const verdict = (dimension: string, pass: boolean, extra: Record<string, unknown> = {}): Output =>
+		({
+			artifacts: [],
+			kind: "json",
+			meta: {},
+			data: { dimension, pass, severity: pass ? "none" : "medium", ...extra },
+		}) as unknown as Output;
+	const route = (stage: string, named: Record<string, unknown>) =>
+		edge(stage)({ output: undefined, state: { named } as unknown as RunView });
+	const gradeLabels = async (stage: string, named: Record<string, unknown>) => {
+		const loop = build().stages[stage]?.loop;
+		if (loop?.kind !== "fanout") throw new Error(`build ${stage} stage has no fanout loop`);
+		const units = await loop.units({ cwd: "/repo", artifact: undefined, state: { named } as unknown as RunView });
+		return units.map((u) => u.label).sort();
+	};
+
+	const PLAN_DIMS = ["actionability", "architecture-fit", "completeness", "correctness", "pattern-following"];
+	const PLAN = ".rpiv/artifacts/plans/p.md";
+	const lightSignals = {
+		slices: [chan(".rpiv/artifacts/slices/s.md", { slice_count: 1 })],
+		plans: [chan(PLAN, { phase_count: 1 })],
+	};
+
+	describe("tier → roster", () => {
+		it("light tier (1 slice, 1 phase, clean channel) grades correctness+completeness only", async () => {
+			expect(await gradeLabels("plan-grade", { ...lightSignals, "plan-verdicts": [] })).toEqual([
+				"completeness",
+				"correctness",
+			]);
+		});
+
+		it("missing signals never yield light — full roster", async () => {
+			expect(await gradeLabels("plan-grade", { plans: [chan(PLAN)], "plan-verdicts": [] })).toEqual(PLAN_DIMS);
+		});
+
+		it("strict signals (slice_count >= 5) keep the full roster", async () => {
+			expect(
+				await gradeLabels("plan-grade", {
+					slices: [chan(".rpiv/artifacts/slices/s.md", { slice_count: 7 })],
+					plans: [chan(PLAN, { phase_count: 1 })],
+					"plan-verdicts": [],
+				}),
+			).toEqual(PLAN_DIMS);
+		});
+
+		it("a medium verdict on the channel lifts a light run out of the light tier (roster widens)", async () => {
+			const labels = await gradeLabels("plan-grade", {
+				...lightSignals,
+				"plan-verdicts": [verdict("correctness", false)],
+			});
+			expect(labels).toEqual(PLAN_DIMS);
+		});
+
+		it("the slice gate keeps design-readiness at light tier (a roster never empties)", async () => {
+			expect(await gradeLabels("slice-grade", { ...lightSignals, "slice-verdicts": [] })).toEqual([
+				"design-readiness",
+			]);
+		});
+
+		it("the code gate reads its own channel's severities for the tier", async () => {
+			// Light signals + a medium fail on plan-verdicts must NOT lift the CODE
+			// gate's tier — its channel is code-verdicts.
+			expect(
+				await gradeLabels("code-grade", {
+					...lightSignals,
+					"plan-verdicts": [verdict("correctness", false)],
+					"code-verdicts": [],
+				}),
+			).toEqual(["completeness", "correctness"]);
+		});
+	});
+
+	describe("verdict freshness (artifact-identity invalidation)", () => {
+		it("verdicts judged against a REPLACED artifact do not carry — full re-grade", async () => {
+			const stale = PLAN_DIMS.map((d) => verdict(d, true, { artifact: ".rpiv/artifacts/plans/old.md" }));
+			expect(await gradeLabels("plan-grade", { plans: [chan(PLAN)], "plan-verdicts": stale })).toEqual(PLAN_DIMS);
+		});
+
+		it("verdicts judged against the CURRENT artifact carry — only the failing dimension re-grades", async () => {
+			const verdicts = PLAN_DIMS.map((d) => verdict(d, d !== "correctness", { artifact: PLAN }));
+			expect(await gradeLabels("plan-grade", { plans: [chan(PLAN)], "plan-verdicts": verdicts })).toEqual([
+				"correctness",
+			]);
+		});
+
+		it("slice-check does NOT skip the re-grade after a re-slice (stale design-readiness verdict)", () => {
+			expect(
+				route("slice-check", {
+					slices: [chan(".rpiv/artifacts/slices/s2.md", { slice_count: 1 })],
+					"slice-check": [verdict("structure", true)],
+					"slice-verdicts": [verdict("design-readiness", true, { artifact: ".rpiv/artifacts/slices/s1.md" })],
+				}),
+			).toBe("slice-grade");
+		});
+
+		it("slice-check still skips when the passing verdict matches the current slice map", () => {
+			expect(
+				route("slice-check", {
+					slices: [chan(".rpiv/artifacts/slices/s2.md", { slice_count: 1 })],
+					"slice-check": [verdict("structure", true)],
+					"slice-verdicts": [verdict("design-readiness", true, { artifact: ".rpiv/artifacts/slices/s2.md" })],
+				}),
+			).toBe("slice-design");
+		});
+	});
+
+	describe("confirm-before-block", () => {
+		const passRest = PLAN_DIMS.filter((d) => d !== "correctness").map((d) => verdict(d, true));
+
+		it("plan-grade routes a dimension's FIRST blocking verdict to plan-confirm", () => {
+			expect(
+				route("plan-grade", {
+					plans: [chan(PLAN)],
+					"plan-cite-check": [verdict("structure", true)],
+					"plan-verdicts": [...passRest, verdict("correctness", false)],
+				}),
+			).toBe("plan-confirm");
+		});
+
+		it("plan-grade routes to plan-fix once the blocker has two judgments behind it", () => {
+			expect(
+				route("plan-grade", {
+					plans: [chan(PLAN)],
+					"plan-cite-check": [verdict("structure", true)],
+					"plan-verdicts": [...passRest, verdict("correctness", false), verdict("correctness", false)],
+				}),
+			).toBe("plan-fix");
+		});
+
+		it("plan-grade routes to plan-fix when only the citation floor is red (no dimension blocking)", () => {
+			expect(
+				route("plan-grade", {
+					plans: [chan(PLAN)],
+					"plan-cite-check": [verdict("structure", false)],
+					"plan-verdicts": [...passRest, verdict("correctness", true)],
+				}),
+			).toBe("plan-fix");
+		});
+
+		it("plan-confirm clears the gate when the second judgment passes (latest-per-dimension wins)", () => {
+			expect(
+				route("plan-confirm", {
+					plans: [chan(PLAN)],
+					"plan-cite-check": [verdict("structure", true)],
+					"plan-verdicts": [...passRest, verdict("correctness", false), verdict("correctness", true)],
+				}),
+			).toBe("code");
+		});
+
+		it("plan-confirm routes a CONFIRMED blocker to plan-fix", () => {
+			expect(
+				route("plan-confirm", {
+					plans: [chan(PLAN)],
+					"plan-cite-check": [verdict("structure", true)],
+					"plan-verdicts": [...passRest, verdict("correctness", false), verdict("correctness", false)],
+				}),
+			).toBe("plan-fix");
+		});
+
+		it("a first-time risk-flag fail routes to confirm (the ruling gets a second opinion)", () => {
+			expect(
+				route("plan-grade", {
+					plans: [chan(PLAN)],
+					"plan-cite-check": [verdict("structure", true)],
+					"plan-verdicts": [
+						...passRest,
+						verdict("correctness", true, { severity: "none", risk_rulings: [{ id: "r1", pass: false }] }),
+					],
+				}),
+			).toBe("plan-confirm");
+		});
+
+		it("code-grade mirrors the contract on its own channel", () => {
+			expect(
+				route("code-grade", {
+					plans: [chan(PLAN)],
+					"code-cite-check": [verdict("structure", true)],
+					"code-verdicts": [...passRest, verdict("correctness", false)],
+				}),
+			).toBe("code-confirm");
+		});
+
+		it("declares the confirm arms as edge targets", () => {
+			expect([...(edge("plan-grade").targets ?? [])].sort()).toEqual(["code", "plan-confirm", "plan-fix"]);
+			expect([...(edge("plan-confirm").targets ?? [])].sort()).toEqual(["code", "plan-fix"]);
+			expect([...(edge("code-grade").targets ?? [])].sort()).toEqual(["code-confirm", "code-fix", "implement"]);
+			expect([...(edge("code-confirm").targets ?? [])].sort()).toEqual(["code-fix", "implement"]);
+		});
+
+		it("the confirm stages publish to their gates' verdict channels", () => {
+			expect(build().stages["plan-confirm"]?.outcome?.name).toBe("plan-verdicts");
+			expect(build().stages["code-confirm"]?.outcome?.name).toBe("code-verdicts");
+		});
+	});
+
+	it("build still validates with zero errors (confirm stages wired structurally sound)", () => {
+		expect(deriveAndValidate(build()).filter((i) => i.severity === "error")).toEqual([]);
+	});
+});

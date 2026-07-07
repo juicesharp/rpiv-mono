@@ -324,8 +324,11 @@ describe("equivalence — built-in workflows", () => {
 		"build::design-review": "designs",
 		"build::subplan": "subplans",
 		"build::plan-grade": "plan-verdicts",
+		// The confirm arms re-judge on the SAME verdict channel as their gate.
+		"build::plan-confirm": "plan-verdicts",
 		"build::plan-fix": "plans",
 		"build::code-grade": "code-verdicts",
+		"build::code-confirm": "code-verdicts",
 		"build::code-fix": "plans",
 	};
 
@@ -423,7 +426,7 @@ describe("equivalence — built-in workflows", () => {
 		});
 	}
 
-	it("total produces stages across all workflows = 32 (20 derivable + 8 explicit + 4 script)", () => {
+	it("total produces stages across all workflows = 34 (20 derivable + 10 explicit + 4 script)", () => {
 		let count = 0;
 		let scriptProduces = 0;
 		for (const w of builtInWorkflows) {
@@ -432,7 +435,7 @@ describe("equivalence — built-in workflows", () => {
 				if (stage.kind === "produces" && stage.run != null) scriptProduces++;
 			}
 		}
-		expect(count).toBe(32);
+		expect(count).toBe(34);
 		expect(scriptProduces).toBe(4); // build::slice-check + build::goal + build::plan-cite-check + build::code-cite-check
 	});
 });
