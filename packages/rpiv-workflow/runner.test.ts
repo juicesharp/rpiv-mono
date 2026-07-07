@@ -1092,7 +1092,7 @@ describe("runWorkflow", () => {
 	describe("input validation", () => {
 		it("halts chain when prior output fails consumer's inputSchema", async () => {
 			writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md");
-			// Stage 1 (research) produces an artifact. Stage 2 (design) has an
+			// Stage 1 produces an artifact. Stage 2 has an
 			// inputSchema that rejects the output data from stage 1.
 			const chain = createMockSessionChain({
 				cwd: tmpDir,
@@ -2828,7 +2828,7 @@ describe("runWorkflow", () => {
 						workflow: wf("two", ["research", "design"]),
 						input: "x",
 					});
-					// Only stage 2 ("design") should appear — stage 1's onStageStart was the in-flight event.
+					// Only stage 2 should appear — stage 1's onStageStart was the in-flight event.
 					expect(seen).toEqual(["late-saw-design"]);
 				} finally {
 					dispose();

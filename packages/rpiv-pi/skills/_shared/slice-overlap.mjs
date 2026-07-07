@@ -1,14 +1,12 @@
-// slice-overlap.mjs — deterministic, language-agnostic cross-slice overlap partition
-// for the slice-verifier agent.
-//
-// LLM-invoked at blueprint 6.2 / design per-slice verify, BEFORE dispatching the
-// slice-verifier agent:
+// slice-overlap.mjs — deterministic, language-agnostic cross-slice overlap partition.
+// Invoked by the blueprint/design skills BEFORE dispatching the slice-verifier agent,
+// to pre-compute which prior units share a file or symbol with the current slice:
 //
 //   node "${SKILL_DIR}/../_shared/slice-overlap.mjs" "<artifact_path>" "<slice_id>"
 //
-// where <slice_id> is the orchestrator's vocabulary: "Phase N" (blueprint), "Slice N"
-// (design), or any "<Keyword> <N>" — the keyword is read from slice_id at runtime, not
-// hardcoded. It partitions the LOCKED PRIOR units (same-keyword numbered headings
+// where <slice_id> uses the orchestrating skill's slice vocabulary: "Phase N", "Slice N",
+// or any "<Keyword> <N>" — the keyword is read from slice_id at runtime, not hardcoded.
+// It partitions the LOCKED PRIOR units (same-keyword numbered headings
 // preceding the current one) into those that OVERLAP the current unit and those that
 // cannot collide, so the agent deep-walks only the overlapping set and the O(M)
 // classification reasoning leaves the model.

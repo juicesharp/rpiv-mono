@@ -1616,8 +1616,8 @@ describe("resumeWorkflow", () => {
 	}
 
 	it("failed-trailer: re-runs the failed stage and continues to completion", async () => {
-		// Stage 1 (plan) completed, stage 2 (build) failed.
-		// Resume should re-run build and complete.
+		// Stage 1 completed, stage 2 failed.
+		// Resume should re-run stage 2 and complete.
 		const art1 = fakeArtifact("plans/p1.md");
 		const out1 = fakeOutput([art1]);
 
@@ -1675,8 +1675,8 @@ describe("resumeWorkflow", () => {
 	});
 
 	it("completed-trailer: routes onward from the last completed stage", async () => {
-		// Stage 1 (plan) completed. The last row is completed,
-		// so resume should route onward to build.
+		// Stage 1 completed. The last row is completed,
+		// so resume should route onward to stage 2.
 		const art1 = fakeArtifact("plans/p1.md");
 		const out1 = fakeOutput([art1]);
 
@@ -2040,7 +2040,7 @@ describe("resumeWorkflow", () => {
 	// Mid-loop resume dispatch (fanout/iterate/assess) is covered end-to-end in `resume-loop.test.ts`.
 
 	it("onWorkflowStart carries the reconstructed visited set so a resumed run seeds its dock numerator", async () => {
-		// Stage 1 (plan) completed; resume routes onward to build. The reconstructed
+		// Stage 1 completed; resume routes onward to stage 2. The reconstructed
 		// `RunContext.visited` must surface on `onWorkflowStart`'s ctx so a status-line
 		// bridge can seed its distinct-visited accumulator from the prior walk instead
 		// of recounting from zero (the near-done-resume `1/17` bug).

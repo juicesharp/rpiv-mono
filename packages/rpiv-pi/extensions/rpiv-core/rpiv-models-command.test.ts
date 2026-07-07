@@ -500,7 +500,7 @@ describe("/rpiv-models — save failure", () => {
 
 		expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("Failed to save"), "error");
 
-		// Tightened (per slice-verifier WARNING): cache MUST NOT have been reset.
+		// Cache MUST NOT have been reset on save failure.
 		// The seeded sentinel persists — proving invalidateModelsConfigCache was NOT
 		// called (early return on saveJsonConfig=false).
 		const afterFail = loadModelsConfig();

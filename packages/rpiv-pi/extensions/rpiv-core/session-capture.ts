@@ -95,7 +95,7 @@ export function registerSessionCapture(pi: ExtensionAPI): void {
 			_event: unknown,
 			ctx: { modelRegistry?: ModelRegistry; model?: CapturedModel; ui?: ExtensionUIContext },
 		) => {
-			// Phase 7.2: a detached child re-loads rpiv-core and re-fires this hook with
+			// A detached child re-loads rpiv-core and re-fires this hook with
 			// its bound relay ui. Skip it — capturing the relay would re-point the
 			// launcher's captured foreground UI at a child (corrupting every later /wf,
 			// whose foreground children would bind a defunct relay). The launcher's own
