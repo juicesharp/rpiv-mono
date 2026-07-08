@@ -106,6 +106,7 @@ tags: [elaboration]
 
 - **One phase only.** Never write code for a file another phase owns; reference its interfaces by the shape `synthesize` already fixed.
 - **Implement-ready code, grounded in the current tree.** Read the cited files first; emit code blocks, not prose hand-waving ("handle appropriately", "etc.").
+- **Repo-root-relative, verifiable citations.** Every `file:line` your elaboration emits — in prose or in code comments — uses the **repo-root-relative** path (`packages/billing/src/invoice.ts:42`), never a subdirectory-relative form (`src/invoice.ts:42`) or a bare basename, and must be verifiable at the current revision: cite what you actually read; if you can't verify a line number, cite the path alone and omit the `:line`. Your elaboration is spliced into the plan and passes the deterministic `code-cite-check` floor — one unbacked or ambiguous citation fails the gate and buys the whole run a code-fix loop.
 - **Body is exactly one `## Phase N: <title>` section** with the verbatim heading — the deterministic splice folds it back by phase number. Don't rename the heading or change `N`.
 - **Write the doc, not the code.** You only write your elaboration artifact; reading the codebase to ground the code is required, editing it is out of scope — `implement` applies the code later, after the splice.
 - **No subagents. No self-review. No `ask_user_question`.** Decide, record any deferral in Notes, write — the grade panel is the validation.

@@ -15,7 +15,7 @@
 
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { basename, dirname, isAbsolute, join } from "node:path";
+import { basename, dirname, isAbsolute, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
 import {
@@ -885,16 +885,29 @@ const VERDICT_DIR = ".rpiv/artifacts/verdicts";
  * A `path:line` (or `path:line-line`) citation in an artifact's prose. Requires a
  * dotted extension so timestamps (`17:13:27`), ratios, and bare `Slice 2:` labels
  * never match — only file references with a real extension are verified.
+ *
+ * A citation may START with a single dot (`.github/workflows/ci.yml:12`,
+ * `.eslintrc.js:3`) — without it, dot-dirs and dotfiles were captured with the
+ * dot stripped and guaranteed to fail the floor as a mangled path. The leading
+ * dot is taken only when the preceding char is not a word char or another dot
+ * (`(?<![\w.])`), and a dotless start only at a word boundary (`(?<!\w)`), so a
+ * prose ellipsis (`...packages/x.ts:5`) still yields `packages/x.ts`, never
+ * `...packages/x.ts`.
  */
-const FILE_LINE_CITATION_RE = /([\w][\w./-]*\.[a-zA-Z][a-zA-Z0-9]{0,4}):(\d+)(?:-(\d+))?/g;
+const FILE_LINE_CITATION_RE = /((?:(?<![\w.])\.)?(?<!\w)[\w][\w./-]*\.[a-zA-Z][a-zA-Z0-9]{0,4}):(\d+)(?:-(\d+))?/g;
 
 /**
  * Verify every `file:line` citation in `body` resolves against the working tree:
  * the cited file must exist AND carry at least the cited line (a range's high end).
- * A citation that names no real file, or points past end-of-file, is UNBACKED
- * precision — a fabricated reference that must fail the gate rather than propagate
- * into design. A bare `path` with no `:line` is not checked (the contract is
- * "verifiable line numbers, or omit them"). Returns one finding per bad citation.
+ * A path that misses direct (repo-root/absolute) resolution falls back to the
+ * tree file whose path ends with it on whole segments — bare basenames and
+ * package-relative forms both back the citation iff exactly ONE tree file
+ * matches; an ambiguous suffix stays unresolved (the finding names the
+ * candidates so the fix arm can disambiguate). A citation that names no real
+ * file, or points past end-of-file, is UNBACKED precision — a fabricated
+ * reference that must fail the gate rather than propagate into design. A bare
+ * `path` with no `:line` is not checked (the contract is "verifiable line
+ * numbers, or omit them"). Returns one finding per bad citation.
  */
 /** Trees a citation must never resolve INTO — vendored deps, build copies, or
  * prior pipeline artifacts (a stale artifact copy would back a fabricated line). */
@@ -903,17 +916,19 @@ const CITATION_WALK_SKIP: ReadonlySet<string> = new Set(["node_modules", ".git",
 const CITATION_WALK_FILE_CAP = 50_000;
 
 /**
- * Index every source file's basename → its absolute path(s) under `cwd`, so a
- * citation that names a file by BARE basename (no directory prefix) can resolve
- * to the one tree file that carries that name. The generative producers
- * (slice/synthesize) routinely cite `built-in-workflows.ts:1431` rather than the
- * full `packages/…/built-in-workflows.ts` — a mechanical path-prefix omission,
- * not a fabricated reference. A UNIQUE basename backs the citation; an AMBIGUOUS
- * one (two files share the name) stays unresolved so the producer must
- * disambiguate with a real path. Skips vendored/generated trees so a citation
- * never resolves to a build copy or a prior artifact. Bounded by the file cap.
+ * Index every source file's basename → its absolute path(s) under `cwd` — the
+ * candidate pool behind the suffix fallback in `verifyCitations`. The generative
+ * producers (slice/synthesize/elaborate) routinely cite a file by bare basename
+ * (`built-in-workflows.ts:1431`) or by a package-relative suffix
+ * (`validate/stage-rules.ts:70` for `packages/rpiv-workflow/validate/stage-rules.ts`)
+ * — mechanical path-prefix omissions, not fabricated references. The basename
+ * keys the candidates; `verifyCitations` narrows them by whole-segment suffix.
+ * A UNIQUE match backs the citation; an AMBIGUOUS one stays unresolved so the
+ * producer must disambiguate with the repo-root-relative path. Skips
+ * vendored/generated trees so a citation never resolves to a build copy or a
+ * prior artifact. Bounded by the file cap.
  */
-const buildBasenameIndex = (cwd: string): Map<string, string[]> => {
+const buildBasenameIndex = (cwd: string): { index: Map<string, string[]>; truncated: boolean } => {
 	// Unreadable dir → empty listing, never a throw from the deterministic floor.
 	const listDir = (dir: string) => {
 		try {
@@ -933,32 +948,45 @@ const buildBasenameIndex = (cwd: string): Map<string, string[]> => {
 				continue;
 			}
 			if (!e.isFile()) continue;
-			if (++seen > CITATION_WALK_FILE_CAP) return index;
+			// Past the cap the index is INCOMPLETE, so "exactly one match" can no
+			// longer be trusted — mark it truncated and let the caller disable the
+			// fallback (strict direct-resolution only) rather than back a possibly
+			// wrong file off a partial walk.
+			if (++seen > CITATION_WALK_FILE_CAP) return { index, truncated: true };
 			const abs = join(dir, e.name);
 			const arr = index.get(e.name);
 			if (arr) arr.push(abs);
 			else index.set(e.name, [abs]);
 		}
 	}
-	return index;
+	return { index, truncated: false };
 };
 
 const verifyCitations = (body: string, cwd: string): { detail: string; where: string }[] => {
 	const findings: { detail: string; where: string }[] = [];
 	const seen = new Set<string>();
-	// Built lazily and reused across citations — only the first bare-basename miss
-	// pays the tree walk, and only when at least one such citation exists.
-	let basenameIndex: Map<string, string[]> | undefined;
-	const resolveCitation = (path: string): string | undefined => {
-		const direct = isAbsolute(path) ? path : join(cwd, path);
-		if (existsSync(direct) && statSync(direct).isFile()) return direct;
-		// Bare-basename fallback: back the citation iff exactly ONE tree file matches.
-		if (!path.includes("/")) {
-			basenameIndex ??= buildBasenameIndex(cwd);
-			const matches = basenameIndex.get(path);
-			if (matches?.length === 1) return matches[0];
-		}
-		return undefined;
+	// Built lazily and reused across citations — only the first direct-resolution
+	// miss pays the tree walk, and only when at least one such citation exists.
+	let basenameIndex: { index: Map<string, string[]>; truncated: boolean } | undefined;
+	// Tree files whose REPO-RELATIVE path ends with the cited path on WHOLE
+	// segments. A bare basename is the one-segment case; a multi-segment citation
+	// narrows the basename's candidates at a `/` boundary, so `workflow/validate/x.ts`
+	// can never match inside `rpiv-workflow/validate/x.ts`. Compared repo-relative
+	// (never against the absolute path) so the checkout directory's own name can
+	// never back a citation — `src/utils.ts` must not resolve to `<cwd>/utils.ts`
+	// just because the repo happens to be cloned at `/tmp/src`.
+	const suffixMatches = (path: string): string[] => {
+		basenameIndex ??= buildBasenameIndex(cwd);
+		if (basenameIndex.truncated) return []; // partial index ⇒ uniqueness untrustworthy ⇒ strict
+		const candidates = basenameIndex.index.get(basename(path)) ?? [];
+		if (!path.includes("/")) return candidates;
+		const suffix = `/${path}`;
+		return candidates.filter((abs) =>
+			`/${abs
+				.slice(cwd.length + 1)
+				.split(sep)
+				.join("/")}`.endsWith(suffix),
+		);
 	};
 	for (const m of body.matchAll(FILE_LINE_CITATION_RE)) {
 		const [, path, startStr, endStr] = m;
@@ -966,15 +994,43 @@ const verifyCitations = (body: string, cwd: string): { detail: string; where: st
 		const key = `${path}:${startStr}${endStr ? `-${endStr}` : ""}`;
 		if (seen.has(key)) continue;
 		seen.add(key);
-		const abs = resolveCitation(path);
+		const direct = isAbsolute(path) ? path : join(cwd, path);
+		let abs: string | undefined;
+		if (existsSync(direct) && statSync(direct).isFile()) {
+			abs = direct;
+		} else {
+			// Suffix fallback: back the citation iff exactly ONE tree file matches.
+			const matches = suffixMatches(path);
+			if (matches.length === 1) {
+				abs = matches[0];
+			} else if (matches.length > 1) {
+				const shown = matches.slice(0, 3).map((a) => (a.startsWith(cwd + sep) ? a.slice(cwd.length + 1) : a));
+				findings.push({
+					detail: `Unbacked citation ${key} — ${path} matches ${matches.length} tree files (${shown.join(", ")}${matches.length > shown.length ? ", …" : ""}); a citation must name ONE file. Disambiguate with the repo-root-relative path.`,
+					where: key,
+				});
+				continue;
+			}
+		}
 		if (!abs) {
 			findings.push({
-				detail: `Unbacked citation ${key} — the cited file does not exist at this revision. A file:line citation must resolve, or the line numbers must be omitted. Fix the path or drop the citation.`,
+				detail: `Unbacked citation ${key} — the cited file does not exist at this revision. A file:line citation must resolve, or the line numbers must be omitted. Fix the path (repo-root-relative) or drop the citation.`,
 				where: key,
 			});
 			continue;
 		}
-		const lineCount = readFileSync(abs, "utf-8").split("\n").length;
+		// A file that vanishes or turns unreadable between resolution and the read
+		// is an unbacked citation, never a throw out of the deterministic floor.
+		let lineCount: number;
+		try {
+			lineCount = readFileSync(abs, "utf-8").split("\n").length;
+		} catch {
+			findings.push({
+				detail: `Unbacked citation ${key} — ${path} resolved but could not be read at this revision. A file:line citation must be verifiable, or the line numbers must be omitted. Fix the path (repo-root-relative) or drop the citation.`,
+				where: key,
+			});
+			continue;
+		}
 		const high = Math.max(Number(startStr), endStr ? Number(endStr) : 0);
 		if (high > lineCount) {
 			findings.push({

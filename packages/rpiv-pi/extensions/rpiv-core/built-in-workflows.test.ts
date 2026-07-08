@@ -19,7 +19,7 @@
 
 import { appendFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { isAbsolute, join } from "node:path";
+import { basename, isAbsolute, join } from "node:path";
 import { createMockSessionChain, mockAssistantMessage } from "@juicesharp/rpiv-test-utils";
 import {
 	acts,
@@ -1533,6 +1533,136 @@ describe("build slice-check (deterministic floor)", () => {
 		const m = write(
 			rel,
 			`---\nstatus: ready\nslice_count: 1\nslices:\n  - { n: 1, title: A, deps: [] }\n---\n## Slice 1: A\n**Draws on:** dup.ts:5\n`,
+		);
+		const data = runOn(m);
+		expect(data.pass).toBe(false);
+		expect(String(data.feedback)).toMatch(/Unbacked citation/);
+	});
+
+	// The suffix generalization of the bare-basename fallback — producers also cite
+	// PACKAGE-relative paths (`validate/stage-rules.ts:70` for a file under
+	// `packages/rpiv-workflow/`), which are path-prefix omissions of real files, not
+	// fabrications. A unique whole-segment suffix backs the citation; ambiguity or a
+	// mid-segment match stays unbacked.
+	it("resolves a package-relative suffix citation to the unique tree file", () => {
+		mkdirSync(join(tmpDir, "packages/rpiv-workflow/validate"), { recursive: true });
+		writeFileSync(
+			join(tmpDir, "packages/rpiv-workflow/validate/stage-rules.ts"),
+			Array.from({ length: 200 }, (_, i) => `line ${i}`).join("\n"),
+		);
+		const rel = ".rpiv/artifacts/slices/cite-suffix.md";
+		const m = write(
+			rel,
+			`---\nstatus: ready\nslice_count: 1\nslices:\n  - { n: 1, title: A, deps: [] }\n---\n## Slice 1: A\n**Draws on:** validate/stage-rules.ts:70\n`,
+		);
+		const data = runOn(m);
+		expect(data.pass).toBe(true);
+	});
+
+	it("matches a suffix citation only on whole path segments", () => {
+		// `workflow/validate/rules.ts` must NOT match `packages/rpiv-workflow/validate/rules.ts`
+		// (the boundary char is `-`, not `/`) — a mid-segment match would back a wrong file.
+		mkdirSync(join(tmpDir, "packages/rpiv-workflow/validate"), { recursive: true });
+		writeFileSync(
+			join(tmpDir, "packages/rpiv-workflow/validate/rules.ts"),
+			Array.from({ length: 50 }, (_, i) => `l${i}`).join("\n"),
+		);
+		const rel = ".rpiv/artifacts/slices/cite-boundary.md";
+		const m = write(
+			rel,
+			`---\nstatus: ready\nslice_count: 1\nslices:\n  - { n: 1, title: A, deps: [] }\n---\n## Slice 1: A\n**Draws on:** workflow/validate/rules.ts:5\n`,
+		);
+		const data = runOn(m);
+		expect(data.pass).toBe(false);
+		expect(String(data.feedback)).toMatch(/Unbacked citation/);
+	});
+
+	it("leaves an ambiguous suffix citation unbacked and names the candidates", () => {
+		mkdirSync(join(tmpDir, "packages/one/src"), { recursive: true });
+		mkdirSync(join(tmpDir, "packages/two/src"), { recursive: true });
+		writeFileSync(join(tmpDir, "packages/one/src/util.ts"), Array.from({ length: 50 }, (_, i) => `l${i}`).join("\n"));
+		writeFileSync(join(tmpDir, "packages/two/src/util.ts"), Array.from({ length: 50 }, (_, i) => `l${i}`).join("\n"));
+		const rel = ".rpiv/artifacts/slices/cite-suffix-ambig.md";
+		const m = write(
+			rel,
+			`---\nstatus: ready\nslice_count: 1\nslices:\n  - { n: 1, title: A, deps: [] }\n---\n## Slice 1: A\n**Draws on:** src/util.ts:5\n`,
+		);
+		const data = runOn(m);
+		expect(data.pass).toBe(false);
+		expect(String(data.feedback)).toMatch(/Unbacked citation/);
+		expect(String(data.feedback)).toMatch(/matches 2 tree files/);
+		expect(String(data.feedback)).toMatch(/packages\/one\/src\/util\.ts/);
+		expect(String(data.feedback)).toMatch(/packages\/two\/src\/util\.ts/);
+	});
+
+	it("still flags a suffix-resolved citation past end-of-file", () => {
+		mkdirSync(join(tmpDir, "packages/rpiv-workflow/loops"), { recursive: true });
+		writeFileSync(join(tmpDir, "packages/rpiv-workflow/loops/tiny.ts"), "a\nb\nc\n"); // 4 lines
+		const rel = ".rpiv/artifacts/slices/cite-suffix-eof.md";
+		const m = write(
+			rel,
+			`---\nstatus: ready\nslice_count: 1\nslices:\n  - { n: 1, title: A, deps: [] }\n---\n## Slice 1: A\n**Draws on:** loops/tiny.ts:900\n`,
+		);
+		const data = runOn(m);
+		expect(data.pass).toBe(false);
+		expect(String(data.feedback)).toMatch(/matches no version of the file/);
+	});
+
+	// Dot-prefixed paths — before the regex allowed a leading dot, `.github/…` and
+	// `.eslintrc.js` citations were captured with the dot stripped and guaranteed to
+	// fail the floor as a mangled path (a false positive on a real file).
+	it("resolves a dot-directory citation (.github/...) directly", () => {
+		mkdirSync(join(tmpDir, ".github/workflows"), { recursive: true });
+		writeFileSync(
+			join(tmpDir, ".github/workflows/ci.yml"),
+			Array.from({ length: 20 }, (_, i) => `step ${i}`).join("\n"),
+		);
+		const rel = ".rpiv/artifacts/slices/cite-dotdir.md";
+		const m = write(
+			rel,
+			`---\nstatus: ready\nslice_count: 1\nslices:\n  - { n: 1, title: A, deps: [] }\n---\n## Slice 1: A\n**Draws on:** .github/workflows/ci.yml:12\n`,
+		);
+		const data = runOn(m);
+		expect(data.pass).toBe(true);
+	});
+
+	it("resolves a bare dotfile citation via the unique-basename fallback", () => {
+		mkdirSync(join(tmpDir, "pkg"), { recursive: true });
+		writeFileSync(join(tmpDir, "pkg/.eslintrc.js"), "a\nb\nc\n"); // 4 lines
+		const rel = ".rpiv/artifacts/slices/cite-dotfile.md";
+		const m = write(
+			rel,
+			`---\nstatus: ready\nslice_count: 1\nslices:\n  - { n: 1, title: A, deps: [] }\n---\n## Slice 1: A\n**Draws on:** .eslintrc.js:2\n`,
+		);
+		const data = runOn(m);
+		expect(data.pass).toBe(true);
+	});
+
+	it("does not let a prose ellipsis mangle the following citation", () => {
+		// `...packages/x.ts:5` must capture `packages/x.ts`, not `...packages/x.ts` —
+		// the dot-start allowance is guarded so ellipses never join the path.
+		mkdirSync(join(tmpDir, "packages"), { recursive: true });
+		writeFileSync(join(tmpDir, "packages/x.ts"), Array.from({ length: 50 }, (_, i) => `l${i}`).join("\n"));
+		const rel = ".rpiv/artifacts/slices/cite-ellipsis.md";
+		const m = write(
+			rel,
+			`---\nstatus: ready\nslice_count: 1\nslices:\n  - { n: 1, title: A, deps: [] }\n---\n## Slice 1: A\nSee the earlier discussion ...packages/x.ts:5 for details.\n`,
+		);
+		const data = runOn(m);
+		expect(data.pass).toBe(true);
+	});
+
+	it("never anchors a suffix above the repo root (checkout dir name can't back a citation)", () => {
+		// Repo root holds utils.ts; the citation prefixes it with the CHECKOUT
+		// DIRECTORY's own basename. Compared against the absolute path this would
+		// falsely resolve (`/…/<tmpdir-name>/utils.ts` ends with the cited suffix);
+		// the repo-relative comparison must leave it unbacked — otherwise the gate
+		// verdict depends on where the repo happens to be cloned.
+		writeFileSync(join(tmpDir, "utils.ts"), Array.from({ length: 50 }, (_, i) => `l${i}`).join("\n"));
+		const rel = ".rpiv/artifacts/slices/cite-above-root.md";
+		const m = write(
+			rel,
+			`---\nstatus: ready\nslice_count: 1\nslices:\n  - { n: 1, title: A, deps: [] }\n---\n## Slice 1: A\n**Draws on:** ${basename(tmpDir)}/utils.ts:5\n`,
 		);
 		const data = runOn(m);
 		expect(data.pass).toBe(false);

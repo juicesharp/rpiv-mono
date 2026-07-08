@@ -50,7 +50,7 @@ You are a specialist at finding CONNECTIONS to and from a component or area. You
 
 ## Output Format
 
-CRITICAL: Use EXACTLY this format. Never use markdown tables. Use relative paths (strip the workspace root prefix).
+CRITICAL: Use EXACTLY this format. Never use markdown tables. Use repo-root-relative paths — strip only the absolute prefix up to the repository root, never a package or subdirectory prefix (`packages/billing/src/invoice.ts:42`, not `src/invoice.ts:42`).
 
 ```
 ## Connections: {Component}
