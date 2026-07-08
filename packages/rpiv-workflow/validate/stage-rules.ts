@@ -12,11 +12,11 @@
  */
 
 import { LOOP_KINDS, ON_INVALID_VALUES, SESSION_POLICIES, STAGE_KINDS, type StageDef, type Workflow } from "../api.js";
-import { type AnyJudge, isPanel, judgeShapeIssues } from "../judge.js";
+import { type AnyJudge, isPanel } from "../judge.js";
 import {
 	forEachJudgeChannel,
+	judgeSlotShapeIssues,
 	loopSpecOf,
-	panelShapeIssues,
 	panelVerdictChannel,
 	verifyShapeIssues,
 } from "../loop-constructors.js";
@@ -99,9 +99,10 @@ function checkLoopInvariants(stage: StageDef, name: string, report: ReportFn): v
 
 	if (loop.kind !== "assess") return;
 
-	// Judge shape — SAME rule sources as the judge()/panel() factories (no
-	// wording drift). The slot is an `AnyJudge`: a panel routes through
-	// `panelShapeIssues`, a single judge through `judgeShapeIssues`.
+	// Judge shape — SAME rule source as the judge()/panel() factories (no
+	// wording drift). The slot is an `AnyJudge`, routed through the shared
+	// `judgeSlotShapeIssues` (the panel-vs-single dispatch spelled once, here
+	// and in the assess/verify construction paths).
 	//
 	// This block is the LOAD-GATE half of the (intentionally dual) assess shape
 	// validation — see the rationale of record on `assessShapeIssues` in
@@ -113,7 +114,7 @@ function checkLoopInvariants(stage: StageDef, name: string, report: ReportFn): v
 	// `assess-judge-shape` / `assess-done-not-function` /
 	// `assess-feed-forward-not-function` (`validate-workflow.test.ts:923,928`).
 	const slot = loop.judge;
-	const shapeIssues = slot && isPanel(slot) ? panelShapeIssues(slot) : judgeShapeIssues(slot);
+	const shapeIssues = judgeSlotShapeIssues(slot);
 	for (const issue of shapeIssues) {
 		report("assess-judge-shape", { issue });
 	}
@@ -130,12 +131,13 @@ function checkLoopInvariants(stage: StageDef, name: string, report: ReportFn): v
 
 /**
  * Verdict-channel collisions for a judge SLOT (`AnyJudge`) — workflow-level
- * because it needs the producer's publish identity (`stage.outcome?.name ??
- * name`). A single judge owns ONE verdict channel; a PANEL owns one channel per
- * member PLUS the folded-verdict channel, and every one of them must be
- * distinct from the others and from the producer's own slot, or two sessions
- * clobber a single `state.named` entry. The SHAPE is checked separately through
- * the matching rule source; this is purely the channel-namespace rule.
+ * because it needs the producer's publish identity
+ * (`resolvePublishName(stage, name)`). A single judge owns ONE verdict channel;
+ * a PANEL owns one channel per member PLUS the folded-verdict channel, and every
+ * one of them must be distinct from the others and from the producer's own
+ * slot, or two sessions clobber a single `state.named` entry. The SHAPE is
+ * checked separately through the matching rule source; this is purely the
+ * channel-namespace rule.
  *
  * `singleCode` (assess- vs verify-worded) is the only per-site difference; the
  * panel codes are site-independent.
@@ -148,7 +150,7 @@ function checkVerdictChannels(
 	report: ReportFn,
 ): void {
 	if (!slot) return;
-	const producer = stage.outcome?.name ?? name;
+	const producer = resolvePublishName(stage, name);
 	if (!isPanel(slot)) {
 		if (slot.outcome?.name && slot.outcome.name === producer) {
 			report(singleCode, { channel: slot.outcome.name });

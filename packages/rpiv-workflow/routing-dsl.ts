@@ -6,7 +6,7 @@
  * EXECUTION lives in routing.ts — this module is authoring-surface only.
  */
 
-import { markSymbol, readSymbol } from "./internal-utils.js";
+import { markSymbol, readSymbol, requireNonEmptyString, throwInvalid } from "./internal-utils.js";
 import type { Output, RunView } from "./output.js";
 import type { NumericPredicate } from "./predicates.js";
 
@@ -106,7 +106,7 @@ export interface DefineRouteOptions {
  */
 export function defineRoute(targets: readonly string[], fn: EdgePredicate, opts?: DefineRouteOptions): EdgeFn {
 	if (targets.length === 0) {
-		throw new Error("defineRoute: targets must declare at least one possible return value");
+		throwInvalid("defineRoute", "targets must declare at least one possible return value");
 	}
 	// Fresh delegating wrapper — NEVER mutate the caller's function. Reusing
 	// one predicate across two defineRoute calls must not alias their targets
@@ -157,13 +157,13 @@ const INTEGER_LIKE_KEY = /^\d+$/;
  */
 function validateBranchKeys(factory: "gate" | "match", branchTargets: string[], renameHint: string): void {
 	if (branchTargets.length === 0) {
-		throw new Error(`${factory}: branches must declare at least one possible return value`);
+		throwInvalid(factory, "branches must declare at least one possible return value");
 	}
 	for (const key of branchTargets) {
 		if (INTEGER_LIKE_KEY.test(key)) {
-			throw new Error(
-				`${factory}: branch key "${key}" is integer-like — JS reorders such keys ahead of declaration order, ` +
-					`silently changing match priority. ${renameHint}`,
+			throwInvalid(
+				factory,
+				`branch key "${key}" is integer-like — JS reorders such keys ahead of declaration order, silently changing match priority. ${renameHint}`,
 			);
 		}
 	}
@@ -196,9 +196,11 @@ function validateBranchKeys(factory: "gate" | "match", branchTargets: string[], 
 export function gate(field: string, branches: Record<string, NumericPredicate>, otherwise: string): EdgeFn {
 	const branchTargets = Object.keys(branches);
 	validateBranchKeys("gate", branchTargets, "Rename the stage or route to it via `otherwise`.");
-	if (typeof otherwise !== "string" || otherwise.length === 0) {
-		throw new Error("gate: an explicit `otherwise` branch is required — the no-match fallback must be deliberate");
-	}
+	requireNonEmptyString(
+		otherwise,
+		"gate",
+		"an explicit `otherwise` branch is required — the no-match fallback must be deliberate",
+	);
 	const targets = [...new Set([...branchTargets, otherwise])];
 	const route: EdgeFn = defineRoute(targets, ({ output }) => {
 		const value = Number((output?.data as Record<string, unknown> | undefined)?.[field]);
@@ -271,9 +273,9 @@ export function match(field: string, branches: Record<string, MatchValue>, opts?
 		const valueKey = `${typeof value}:${String(value)}`;
 		const prior = claimedBy.get(valueKey);
 		if (prior !== undefined) {
-			throw new Error(
-				`match: value ${JSON.stringify(value)} is claimed by both "${prior}" and "${key}" — ` +
-					`each enum value must map to exactly one stage`,
+			throwInvalid(
+				"match",
+				`value ${JSON.stringify(value)} is claimed by both "${prior}" and "${key}" — each enum value must map to exactly one stage`,
 			);
 		}
 		claimedBy.set(valueKey, key);
@@ -281,7 +283,7 @@ export function match(field: string, branches: Record<string, MatchValue>, opts?
 
 	const fallback = opts?.fallback;
 	if (fallback !== undefined && (typeof fallback !== "string" || fallback.length === 0)) {
-		throw new Error("match: `fallback`, when provided, must be a non-empty stage name");
+		requireNonEmptyString(fallback, "match", "`fallback`, when provided, must be a non-empty stage name");
 	}
 	const noMatch = fallback ?? STOP;
 	const targets = [...new Set([...branchTargets, noMatch])];

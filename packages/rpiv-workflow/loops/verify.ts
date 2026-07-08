@@ -6,9 +6,8 @@
  */
 
 import type { AssessLoop, VerifySpec } from "../api.js";
-import { assertShape, isPanel, judgeShapeIssues } from "../judge.js";
-import { VERIFY_LOOP_DEFAULTS } from "./constructors.js";
-import { panelShapeIssues } from "./panel.js";
+import { assertShape } from "../judge.js";
+import { judgeSlotShapeIssues, VERIFY_LOOP_DEFAULTS } from "./constructors.js";
 
 /**
  * Per-stage post-condition judge: after each attempt of the stage completes,
@@ -40,9 +39,9 @@ export function verify(spec: VerifySpec): VerifySpec {
 export function verifyShapeIssues(candidate: unknown): string[] {
 	if (!candidate || typeof candidate !== "object") return ["a verify object is required"];
 	const v = candidate as Partial<VerifySpec>;
-	// The judge slot is an `AnyJudge` — route a panel through `panelShapeIssues`,
-	// a single judge through `judgeShapeIssues` (one rule source per shape).
-	const judgeIssues = v.judge && isPanel(v.judge) ? panelShapeIssues(v.judge) : judgeShapeIssues(v.judge);
+	// The judge slot is an `AnyJudge` — route the panel-vs-single shape dispatch
+	// through the shared `judgeSlotShapeIssues` (one rule source per shape).
+	const judgeIssues = judgeSlotShapeIssues(v.judge);
 	const issues: string[] = [...judgeIssues];
 	if (typeof v.done !== "function") {
 		issues.push("verify requires `done` to be a function deciding pass/fail from the verdict");

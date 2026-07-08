@@ -29,6 +29,7 @@
  */
 
 import type { Artifact } from "../../handle.js";
+import { throwInvalid } from "../../internal-utils.js";
 import type { ArtifactCollector, CollectResult } from "../../output-spec.js";
 import { defineCollector } from "../../output-spec.js";
 
@@ -37,7 +38,7 @@ export type UnionSnapshot = unknown[] | undefined;
 
 export function unionCollectors(...collectors: ArtifactCollector[]): ArtifactCollector<UnionSnapshot> {
 	if (collectors.length === 0) {
-		throw new Error("unionCollectors: at least one collector is required");
+		throwInvalid("unionCollectors", "at least one collector is required");
 	}
 	const anySnapshots = collectors.some((c) => typeof c.snapshot === "function");
 	return defineCollector<UnionSnapshot>({

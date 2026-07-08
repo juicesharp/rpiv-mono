@@ -1,7 +1,8 @@
 /**
  * Internal utilities shared across the rpiv-workflow package — GENERIC
  * helpers only (error rendering, timeouts, global slots, structural
- * equality). Workflow-domain helpers live in their domain modules:
+ * equality, construction-time throw helpers). Workflow-domain helpers
+ * live in their domain modules:
  * chain/artifact authorities in `chain-state.ts`, audit-row plumbing in
  * `audit-rows.ts`, schema-timeout signalling in `validate-output.ts`.
  *
@@ -15,6 +16,36 @@ import { isAbsolute, join } from "node:path";
 /** Exhaustiveness guard for discriminated-union switches. */
 export function assertNever(value: never): never {
 	throw new Error(`assertNever: unreachable value ${String(value)}`);
+}
+
+/**
+ * Throw an `Error` whose message follows the authoring-surface convention
+ * `${origin}: ${message}` — the ONE spelling of that prefix every
+ * construction-time throw uses (defineRoute / gate / match / fanin /
+ * unionCollectors / …). Same plain `Error` (no named subclass) as the inline
+ * throws it replaces, so error posture and propagation are unchanged.
+ */
+export function throwInvalid(origin: string, message: string): never {
+	throw new Error(`${origin}: ${message}`);
+}
+
+/**
+ * Assert `value` is a non-empty string, else throw via
+ * `throwInvalid(origin, requirement)`. The non-empty-string validation
+ * cluster: construction-time throws that reject a blank/whitespace stage name,
+ * channel name, flag, or fallback. `opts.trim` (default `false`) switches the
+ * empty check from zero-length to trimmed-zero-length — the lone
+ * `{ trim: true }` site is `depArtifactFlag`, where a whitespace-only flag would
+ * inject a bare ` <path>` with no marker.
+ */
+export function requireNonEmptyString(
+	value: unknown,
+	origin: string,
+	requirement: string,
+	opts?: { trim?: boolean },
+): asserts value is string {
+	const empty = typeof value !== "string" || (opts?.trim ? value.trim().length === 0 : value.length === 0);
+	if (empty) throwInvalid(origin, requirement);
 }
 
 /**

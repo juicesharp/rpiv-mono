@@ -21,6 +21,7 @@ import type {
 	ResultProjection,
 	UnitSelector,
 } from "../api.js";
+import { requireNonEmptyString } from "../internal-utils.js";
 import { type AnyJudge, assertShape, isPanel, judgeShapeIssues } from "../judge.js";
 import type { Output } from "../output.js";
 import { panelShapeIssues } from "./panel.js";
@@ -168,10 +169,12 @@ export function fanout(opts: FanoutOptions): FanoutLoop {
 		units: opts.units,
 		source: opts.source,
 		unit: opts.unit,
-		max: checkedMax("fanout", opts.max),
+		max: checkedPositiveInt(opts.max, "fanout(): max"),
 		onCap: firstDefined(opts.onCap, d.onCap),
 		result: firstDefined(opts.result, d.result),
-		...(opts.concurrency !== undefined ? { concurrency: checkedConcurrency(opts.concurrency) } : {}),
+		...(opts.concurrency !== undefined
+			? { concurrency: checkedPositiveInt(opts.concurrency, "fanout(): concurrency") }
+			: {}),
 		...(opts.depArtifactFlag !== undefined ? { depArtifactFlag: checkedDepArtifactFlag(opts.depArtifactFlag) } : {}),
 		...(opts.failFast !== undefined ? { failFast: opts.failFast } : {}),
 	};
@@ -180,9 +183,9 @@ export function fanout(opts: FanoutOptions): FanoutLoop {
 /** A blank/whitespace flag would inject a bare ` <path>` with no marker — reject at construction. */
 function checkedDepArtifactFlag(flag: string | undefined): string | undefined {
 	if (flag === undefined) return undefined;
-	if (typeof flag !== "string" || flag.trim().length === 0) {
-		throw new Error(`fanout(): depArtifactFlag must be a non-empty string (got ${JSON.stringify(flag)})`);
-	}
+	requireNonEmptyString(flag, "fanout()", `depArtifactFlag must be a non-empty string (got ${JSON.stringify(flag)})`, {
+		trim: true,
+	});
 	return flag;
 }
 
@@ -198,7 +201,7 @@ export function iterate(opts: IterateOptions): IterateLoop {
 		next: opts.next,
 		source: opts.source,
 		unit: opts.unit,
-		max: checkedMax("iterate", opts.max),
+		max: checkedPositiveInt(opts.max, "iterate(): max"),
 		onCap: firstDefined(opts.onCap, d.onCap),
 		result: firstDefined(opts.result, d.result),
 	};
@@ -223,10 +226,42 @@ export function assess(opts: AssessOptions): AssessLoop {
 		feedForward: opts.feedForward,
 		source: opts.source,
 		unit: opts.unit,
-		max: checkedMax("assess", opts.max) ?? d.max,
+		max: checkedPositiveInt(opts.max, "assess(): max") ?? d.max,
 		onCap: firstDefined(opts.onCap, d.onCap),
 		result: firstDefined(opts.result, d.result),
 	};
+}
+
+/**
+ * THE panel-vs-single judge-slot shape dispatch — the single place a judge
+ * slot's panel-vs-single branch is decided. Mirrors `judgeSlotSpecOf`
+ * (`loops/introspection.ts`), the introspection-facet twin: both route an
+ * `AnyJudge` slot through one panel-vs-single branch (a panel →
+ * `panelShapeIssues`, a single judge → `judgeShapeIssues`). Consulted by all
+ * three judge-slot shape sites — `assessShapeIssues` (here), `verifyShapeIssues`
+ * (`loops/verify.ts`), and the assess load gate (`validate/stage-rules.ts`
+ * `checkLoopInvariants`) — so the wording can never drift between the
+ * construction and load-gate paths (the same divergence class the
+ * `forEachJudgeChannel` extraction caught).
+ *
+ * `slot` is `unknown` ON PURPOSE — the call sites feed it jiti-loaded literals
+ * whose TS types are erased, NOT a typed `AnyJudge` (cf. `judgeSlotSpecOf`,
+ * whose param IS the typed `AnyJudge` and therefore needs no guard). The
+ * `slot &&` guard is load-bearing: `isPanel` (`judge.ts`) is
+ * `(j) => (j as PanelJudge).kind === "panel"` with NO null guard, so a
+ * hand-rolled assess/verify literal MISSING its `judge` field must fall through
+ * to `judgeShapeIssues(undefined)` = `["a judge object is required"]` rather
+ * than throw a raw `TypeError`. Dropping the guard would regress that clean
+ * message into an uncaught `TypeError`.
+ *
+ * Internal-only posture matching `assessShapeIssues`: module-exported and
+ * barrel-re-exported via `loop-constructors.ts` (so the load gate reaches it
+ * through the existing `../loop-constructors.js` import), but deliberately NOT
+ * added to `registration.ts` — the public judge-slot projection stays
+ * `judgeSlotSpecOf`.
+ */
+export function judgeSlotShapeIssues(slot: unknown): string[] {
+	return slot && isPanel(slot as AnyJudge) ? panelShapeIssues(slot) : judgeShapeIssues(slot);
 }
 
 /**
@@ -263,7 +298,7 @@ export function assess(opts: AssessOptions): AssessLoop {
 export function assessShapeIssues(candidate: unknown): string[] {
 	if (!candidate || typeof candidate !== "object") return ["an assess object is required"];
 	const a = candidate as Partial<AssessOptions>;
-	const judgeIssues = a.judge && isPanel(a.judge) ? panelShapeIssues(a.judge) : judgeShapeIssues(a.judge);
+	const judgeIssues = judgeSlotShapeIssues(a.judge);
 	const issues: string[] = [...judgeIssues];
 	if (typeof a.done !== "function") {
 		issues.push("`done` must be a function deciding termination from the verdict");
@@ -274,19 +309,26 @@ export function assessShapeIssues(candidate: unknown): string[] {
 	return issues;
 }
 
-/** `max < 1` would cap at unit 0 and silently produce nothing — reject at construction. */
-function checkedMax(ctor: string, max: number | undefined): number | undefined {
-	if (max === undefined) return undefined;
-	if (!Number.isInteger(max) || max < 1) {
-		throw new Error(`${ctor}(): max must be an integer >= 1 (got ${max})`);
+/**
+ * Construction-time positive-int gate for `max`/`concurrency` — the single
+ * spelling of the "integer >= 1" check across all three constructors. Throws
+ * at construction (the `defineRoute` pattern); byte-identical to the two
+ * `checkedMax`/`checkedConcurrency` near-twins it collapses.
+ *
+ * Deliberately NOT unified with the load-gate per-code reports
+ * (`validate/stage-rules.ts` `loop-max-invalid`,
+ * `loop-concurrency-invalid`) or the `loops/verify.ts` collect-all probe —
+ * those are a different layer (collect-all + per-code messaging), mirroring the
+ * `assessShapeIssues` DECISION-OF-RECORD posture. Internal-only: module-private,
+ * NOT exported from `registration.ts`.
+ *
+ * The `label` is the full origin+field prefix (e.g. `"fanout(): max"`); the
+ * throw message is `` `${label} must be an integer >= 1 (got ${value})` ``.
+ */
+function checkedPositiveInt(value: number | undefined, label: string): number | undefined {
+	if (value === undefined) return undefined;
+	if (!Number.isInteger(value) || value < 1) {
+		throw new Error(`${label} must be an integer >= 1 (got ${value})`);
 	}
-	return max;
-}
-
-function checkedConcurrency(concurrency: number | undefined): number | undefined {
-	if (concurrency === undefined) return undefined;
-	if (!Number.isInteger(concurrency) || concurrency < 1) {
-		throw new Error(`fanout(): concurrency must be an integer >= 1 (got ${concurrency})`);
-	}
-	return concurrency;
+	return value;
 }

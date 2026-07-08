@@ -11,6 +11,7 @@
  */
 
 import type { StandardSchemaV1 } from "@standard-schema/spec";
+import { requireNonEmptyString } from "./internal-utils.js";
 import type { AssessLoop, LoopDef, VerifySpec } from "./loop-def.js";
 import type { Output, RunView } from "./output.js";
 import type { Outcome } from "./output-spec.js";
@@ -167,9 +168,7 @@ export type StageRead = string | { readonly name: string; readonly all?: boolean
  * (produces()/acts()/terminal()), which apply defaults without validating.
  */
 export function fanin(name: string): { readonly name: string; readonly all: true } {
-	if (typeof name !== "string" || name.length === 0) {
-		throw new Error("fanin(name): name must be a non-empty channel name");
-	}
+	requireNonEmptyString(name, "fanin(name)", "name must be a non-empty channel name");
 	return { name, all: true };
 }
 
@@ -461,16 +460,25 @@ interface ActsPromptOptions<TIn = unknown> extends Pick<PromptStage<TIn, void>, 
 }
 
 /**
- * THE stage-defaults authority — owns the load-bearing `as StageDef` cast (a
- * `Partial<StageDef>` union can't be proven to complete a single arm, so the
- * cast is required for the `Partial`-override factories; taming it here means
- * callers don't repeat the concession) + the duplicated
- * `{ kind, sessionPolicy: "fresh", ...overrides }` body. `producesFn`/`actsFn`
- * differ only by the `kind` literal; this helper parameterizes it. The cast's
- * load-bearingness is documented ONCE here, not on each twin.
+ * THE stage-defaults authority — owns the load-bearing `as StageDef<TIn, TOut>`
+ * cast (a `Partial<StageDef>` union can't be proven to complete a single arm,
+ * so the cast is required for the `Partial`-override factories; taming it here
+ * means callers don't repeat the concession) + the shared
+ * `{ kind, sessionPolicy, ...overrides }` body. Genericized to `<TIn, TOut>` so
+ * the four typed factories (`producesScript`/`producesPrompt`/`actsPrompt`/
+ * `actsScript`) route through it without widening against their
+ * `StageDef<TIn, TOut>` / `StageDef<TIn, void>` return annotations; the two
+ * `Partial`-override factories `producesFn`/`actsFn` call it with the default
+ * `<unknown, unknown>` params. `overrides.sessionPolicy ?? "fresh"` honors the
+ * `"continue"` override the two prompt factories expose (the trailing
+ * `...overrides` spread makes a present `sessionPolicy` win regardless). The
+ * cast's load-bearingness is documented ONCE here, not on each twin.
  */
-function withDefaults(kind: "produces" | "side-effect", overrides: Partial<StageDef> = {}): StageDef {
-	return { kind, sessionPolicy: "fresh", ...overrides } as StageDef;
+function withDefaults<TIn = unknown, TOut = unknown>(
+	kind: "produces" | "side-effect",
+	overrides: Partial<StageDef<TIn, TOut>> & { sessionPolicy?: SessionPolicy } = {},
+): StageDef<TIn, TOut> {
+	return { kind, sessionPolicy: overrides.sessionPolicy ?? "fresh", ...overrides } as StageDef<TIn, TOut>;
 }
 
 function producesFn(overrides: Partial<StageDef> = {}): StageDef {
@@ -478,19 +486,11 @@ function producesFn(overrides: Partial<StageDef> = {}): StageDef {
 }
 
 function producesScript<TIn = unknown, TOut = unknown>(opts: ProducesScriptOptions<TIn, TOut>): StageDef<TIn, TOut> {
-	return {
-		kind: "produces",
-		sessionPolicy: "fresh",
-		...opts,
-	};
+	return withDefaults<TIn, TOut>("produces", opts);
 }
 
 function producesPrompt<TIn = unknown, TOut = unknown>(opts: ProducesPromptOptions<TIn, TOut>): StageDef<TIn, TOut> {
-	return {
-		kind: "produces",
-		...opts,
-		sessionPolicy: opts.sessionPolicy ?? "fresh",
-	};
+	return withDefaults<TIn, TOut>("produces", opts);
 }
 
 function actsFn(overrides: Partial<StageDef> = {}): StageDef {
@@ -498,19 +498,11 @@ function actsFn(overrides: Partial<StageDef> = {}): StageDef {
 }
 
 function actsPrompt<TIn = unknown>(opts: ActsPromptOptions<TIn>): StageDef<TIn, void> {
-	return {
-		kind: "side-effect",
-		...opts,
-		sessionPolicy: opts.sessionPolicy ?? "fresh",
-	};
+	return withDefaults<TIn, void>("side-effect", opts);
 }
 
 function actsScript<TIn = unknown>(opts: ActsScriptOptions<TIn>): StageDef<TIn, void> {
-	return {
-		kind: "side-effect",
-		sessionPolicy: "fresh",
-		...opts,
-	};
+	return withDefaults<TIn, void>("side-effect", opts);
 }
 
 // A terminal stage = side-effect + inheritsArtifacts: false (see the `terminal()`

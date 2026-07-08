@@ -174,13 +174,13 @@ describe("fanout() / iterate() / assess() constructors", () => {
 		expect(fanout({ units: () => [] }).concurrency).toBeUndefined();
 	});
 
-	it("checkedConcurrency throws on non-integer / < 1", () => {
+	it("fanout() rejects non-integer / < 1 concurrency", () => {
 		expect(() => fanout({ units: () => [], concurrency: 0 })).toThrow(/concurrency must be an integer >= 1/);
 		expect(() => fanout({ units: () => [], concurrency: 1.5 })).toThrow(/concurrency must be an integer >= 1/);
 		expect(() => fanout({ units: () => [], concurrency: -2 })).toThrow(/concurrency must be an integer >= 1/);
 	});
 
-	it("checkedMax throws on non-integer / < 1", () => {
+	it("loop max throws on non-integer / < 1", () => {
 		expect(() => fanout({ units: () => [], max: 0 })).toThrow(/max must be an integer >= 1/);
 		expect(() => iterate({ next: () => null, max: 1.5 })).toThrow(/max must be an integer >= 1/);
 		expect(() =>
