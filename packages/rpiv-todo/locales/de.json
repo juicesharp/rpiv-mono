@@ -8,6 +8,8 @@
 
   "overlay.heading": "Todos",
   "overlay.more": "weitere",
+  "overlay.expandHint": "{key} zum Ausklappen",
+  "overlay.collapsed": "eingeklappt",
 
   "command.no_todos": "Noch keine Todos. Bitte den Agenten, welche hinzuzufügen!",
   "command.requires_interactive": "/todos erfordert den interaktiven Modus",

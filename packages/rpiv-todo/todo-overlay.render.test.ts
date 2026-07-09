@@ -327,6 +327,19 @@ describe("TodoOverlay — collapse hint resolves the key from config", () => {
 		const lines = widget.render(200);
 		expect(lines[1]).toContain("ctrl+shift+t to expand");
 	});
+
+	it("renders a static collapsed label — not the sentinel — when the key resolves to off", async () => {
+		// Reachable mid-session: collapse with a bound key, then edit the config to
+		// "off" without /reload. The per-render resolver returns the sentinel; the
+		// hint must not splice it into the {key} placeholder ("off to expand").
+		const { widget, overlay } = await setup([{ action: "create", subject: "a" }]);
+		overlay.toggleCollapse(); // collapse
+		writeConfigFile(JSON.stringify({ collapseKey: "off" }));
+		const lines = widget.render(200);
+		expect(lines[1]).toContain("collapsed");
+		expect(lines[1]).not.toContain("off to expand");
+		expect(lines[1]).not.toContain("{key}");
+	});
 });
 
 describe("TodoOverlay — width truncation", () => {

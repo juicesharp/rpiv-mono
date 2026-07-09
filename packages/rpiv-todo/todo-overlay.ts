@@ -14,7 +14,7 @@
 
 import type { ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
 import { type TUI, truncateToWidth } from "@earendil-works/pi-tui";
-import { getMaxWidgetLines, resolveCollapseKey } from "./config.js";
+import { COLLAPSE_KEY_OFF, getMaxWidgetLines, resolveCollapseKey } from "./config.js";
 import { formatStatusLabel, t } from "./state/i18n-bridge.js";
 import { selectHasActive, selectOverlayLayout, selectShowTaskIds, selectTodoCounts } from "./state/selectors.js";
 import { getRenderState } from "./state/store.js";
@@ -26,6 +26,7 @@ const WIDGET_KEY = "rpiv-todos";
 const OVERLAY_HEADING = "Todos";
 const OVERLAY_MORE = "more";
 const OVERLAY_EXPAND_HINT = "{key} to expand";
+const OVERLAY_COLLAPSED = "collapsed";
 
 export class TodoOverlay {
 	private uiCtx: ExtensionUIContext | undefined;
@@ -155,9 +156,16 @@ export class TodoOverlay {
 		// display tracking — nothing is shown to track, and skipping the tracking
 		// when nothing is rendered is correctness, not optimization. The hint splices
 		// the resolved key into the {key} placeholder (per-render, like the row
-		// budget); a config edit needs /reload to re-bind the actual shortcut.
+		// budget); a config edit needs /reload to re-bind the actual shortcut. The
+		// "off" sentinel is reachable here mid-session (config edited after the
+		// shortcut was bound and the overlay collapsed) — render a static collapsed
+		// label instead of splicing the sentinel into the placeholder.
 		if (this.collapsed) {
-			const hint = t("overlay.expandHint", OVERLAY_EXPAND_HINT).replace("{key}", resolveCollapseKey());
+			const key = resolveCollapseKey();
+			const hint =
+				key === COLLAPSE_KEY_OFF
+					? t("overlay.collapsed", OVERLAY_COLLAPSED)
+					: t("overlay.expandHint", OVERLAY_EXPAND_HINT).replace("{key}", key);
 			return this.withTrailingSpacer([heading, truncate(`${theme.fg("dim", "└─")} ${theme.fg("dim", hint)}`)]);
 		}
 
@@ -216,6 +224,7 @@ export class TodoOverlay {
 		this.widgetRegistered = false;
 		this.tui = undefined;
 		this.uiCtx = undefined;
+		this.collapsed = false;
 		this.resetCompletedDisplayState();
 	}
 }

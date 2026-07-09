@@ -100,6 +100,17 @@ describe("resolveCollapseKey", () => {
 		expect(resolveCollapseKey()).toBe(DEFAULT_COLLAPSE_KEY);
 	});
 
+	it("returns the default for non-string values", () => {
+		writeConfigFile(JSON.stringify({ collapseKey: 123 }));
+		expect(resolveCollapseKey()).toBe(DEFAULT_COLLAPSE_KEY);
+		writeConfigFile(JSON.stringify({ collapseKey: true }));
+		expect(resolveCollapseKey()).toBe(DEFAULT_COLLAPSE_KEY);
+		writeConfigFile(JSON.stringify({ collapseKey: ["alt+o"] }));
+		expect(resolveCollapseKey()).toBe(DEFAULT_COLLAPSE_KEY);
+		writeConfigFile(JSON.stringify({ collapseKey: { key: "alt+o" } }));
+		expect(resolveCollapseKey()).toBe(DEFAULT_COLLAPSE_KEY);
+	});
+
 	it("is arg-less and reads config fresh on every call (no caching, parity with getMaxWidgetLines)", () => {
 		// First call: no config → default.
 		expect(resolveCollapseKey()).toBe(DEFAULT_COLLAPSE_KEY);

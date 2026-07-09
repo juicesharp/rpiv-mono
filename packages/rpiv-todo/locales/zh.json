@@ -8,6 +8,8 @@
 
   "overlay.heading": "任务清单",
   "overlay.more": "更多",
+  "overlay.expandHint": "按 {key} 展开",
+  "overlay.collapsed": "已折叠",
 
   "command.no_todos": "暂无任务。可以让 agent 添加一些！",
   "command.requires_interactive": "/todos 需要交互模式",

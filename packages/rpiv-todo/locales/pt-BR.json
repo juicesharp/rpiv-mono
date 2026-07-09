@@ -8,6 +8,8 @@
 
   "overlay.heading": "Tarefas",
   "overlay.more": "mais",
+  "overlay.expandHint": "{key} para expandir",
+  "overlay.collapsed": "recolhido",
 
   "command.no_todos": "Nenhuma tarefa ainda. Peça ao agente para adicionar algumas!",
   "command.requires_interactive": "/todos requer modo interativo",

@@ -8,6 +8,8 @@
 
   "overlay.heading": "Завдання",
   "overlay.more": "ще",
+  "overlay.expandHint": "{key} — розгорнути",
+  "overlay.collapsed": "згорнуто",
 
   "command.no_todos": "Завдань поки немає. Попросіть агента додати!",
   "command.requires_interactive": "/todos потребує інтерактивного режиму",

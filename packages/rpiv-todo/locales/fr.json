@@ -8,6 +8,8 @@
 
   "overlay.heading": "Tâches",
   "overlay.more": "autres",
+  "overlay.expandHint": "{key} pour développer",
+  "overlay.collapsed": "réduit",
 
   "command.no_todos": "Pas encore de tâches. Demandez à l'agent d'en ajouter !",
   "command.requires_interactive": "/todos nécessite le mode interactif",

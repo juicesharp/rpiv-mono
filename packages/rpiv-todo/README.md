@@ -113,6 +113,7 @@ Optional file at `~/.config/rpiv-todo/config.json`:
 ```json
 {
   "maxWidgetLines": 8,
+  "collapseKey": "alt+t",
   "guidance": {
     "promptSnippet": "Use the `todo` tool to track multi-step work before starting it.",
     "promptGuidelines": [
@@ -126,6 +127,7 @@ Optional file at `~/.config/rpiv-todo/config.json`:
 | Key | Default | Meaning |
 |---|---|---|
 | `maxWidgetLines` | `12` | Content-row budget for the overlay (useful on low-height terminals). The heading and, on overflow, the `+N more` summary row count against this budget — only the trailing spacer sits outside it, so `12` renders up to 13 rows total. Floor of `3`: lower values fall back to the default, as do non-numeric values. Applied on the next repaint — no `/reload` required. |
+| `collapseKey` | `"ctrl+shift+t"` | Shortcut that collapses/expands the overlay, in pi keybinding format (`modifier+key`, e.g. `alt+o`, `ctrl+shift+t`; modifiers: `ctrl`, `shift`, `alt`, `super`). Set to `"off"` to disable the shortcut entirely. Invalid or non-string values fall back to the default. The shortcut binds once at extension load — after changing this value, run `/reload` to re-bind (the collapsed hint text updates on the next repaint, but the old key stays active until `/reload`). |
 | `guidance` | _(absent)_ | LLM guidance overrides (`promptSnippet`, `promptGuidelines`) — optional; absent by default. |
 
 Missing or malformed file falls back to defaults - no config required.
@@ -138,9 +140,13 @@ starts, then disappear from later overlay renders. Collapse threshold
 defaults to 12 lines (configurable via `maxWidgetLines` — see [Configuration](#configuration)); completed tasks still drop first on overflow, pending tasks
 truncate last. Auto-hides when the list is empty.
 
+Press `ctrl+shift+t` (configurable via `collapseKey` — see
+[Configuration](#configuration)) to collapse the overlay down to its heading
+plus a one-line expand hint; press it again to expand.
+
 ## Localization
 
-`rpiv-todo` localizes its TUI chrome (overlay heading, `/todos` section headers, status words) through `@juicesharp/rpiv-i18n` when the SDK is installed. Bundled locales: `de`, `en`, `es`, `fr`, `pt`, `pt-BR`, `ru`, `uk`. LLM-facing output (tool response envelope, reducer errors, schema descriptions) stays English by design.
+`rpiv-todo` localizes its TUI chrome (overlay heading, `/todos` section headers, status words) through `@juicesharp/rpiv-i18n` when the SDK is installed. Bundled locales: `de`, `en`, `es`, `fr`, `pt`, `pt-BR`, `ru`, `uk`, `zh`. LLM-facing output (tool response envelope, reducer errors, schema descriptions) stays English by design.
 
 The SDK is a soft optional peer - `rpiv-todo` loads it via dynamic import at module init. If the SDK isn't installed, every render call site returns its inline English fallback and the extension stays online with English UI; no warning, no crash. See the Install section for adding the SDK after the fact. To contribute or override translations, see the `@juicesharp/rpiv-i18n` README "Contributing translations" section.
 
