@@ -7,6 +7,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- `loadAdvisorConfig()` now reads `advisor.json` through `@juicesharp/rpiv-config`'s XDG-aware `loadJsonConfigWithLegacyFallback()`: the config directory follows `XDG_CONFIG_HOME` when it is set to a usable absolute path, falling back to `~/.config` when unset, empty, whitespace, or relative. The legacy `~/.config/rpiv-advisor/advisor.json` path is still read, but only when no file exists at the resolved XDG location; a malformed file at the XDG location warns and returns defaults rather than silently falling back to the legacy file. Config writes remain XDG-only.
+
 ### Fixed
 - Moved `typebox` from `peerDependencies` to `dependencies` (`^1.1.24`, matching the Pi host's range) so the tool's parameter schema resolves under installers that don't materialise peer deps. Fixes `ERR_MODULE_NOT_FOUND: typebox` on standalone consumer installs (#79).
 

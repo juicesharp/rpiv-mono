@@ -5,6 +5,13 @@ All notable changes to this package will be documented in this file.
 ## [Unreleased]
 
 - `verifyShipManifest` now understands npm `files` negation patterns: a `!`-prefixed entry (e.g. `"!**/*.test.ts"`) is treated as an exclusion rule rather than a path, so it is no longer reported as `stale` and does not cover on-disk files (#80).
+- New `createFakeConcurrentHost` fixture (`concurrent-host.ts`) — a `WorkflowHostContext` double with no Pi import, built to prove the parallel fan-out dispatcher's concurrency behavior end-to-end through `runWorkflow`. Its `spawnChild` records each call (`prompt`, `model`, `signal`, `reattach`, `fork`, `startOrder`/`endOrder`); tracks live in-flight count plus the observed peak (`maxActive`); supports a shared gate (`gate: true` + `release()`) to freeze a run with the first `maxConcurrency` children in flight for inspection; and exposes `waitForActive(n)` to await a given concurrency level being reached.
+- `createMockCtx`/`MockCtxOptions` gains a `sessionId` option, threaded into `createMockSessionManager`, so tests can assert per-session isolation of state keyed off `ctx.sessionManager.getSessionId()`. `createMockCommandCtx`'s `spawnChild`-minted child ctx now defaults to a distinct `${sessionId}-child` session id instead of inheriting the parent's, so parent/child isolation tests actually exercise the partition rather than masking it (override via the new `childSessionId` option).
+- `MockCtxOptions.mode` passthrough on `createMockCtx` — advertises the pi ≥0.79 host `mode` field (e.g. `"rpc"` for ACP hosts) for tests of RPC/ACP-host codepaths; omitted by default to match the pinned 0.74 peer types.
+- `createMockSessionChain`'s `MockSessionStep` gains a `toolTimeout` field: when set, the spawned child ctx's `toolTimeout()` reports the given `{ reason }`, simulating a watchdog-equipped host that aborted a runaway bash tool call, for testing the soft-halt-gate routing.
+- `createMockSessionChain`'s `MockSessionStep` gains a `sessionFile` field, and both it and `createFakeConcurrentHost` gain `fork` support alongside `reattach` — a step's child can report a real on-disk `getSessionFile()` so `sessionPolicy: "continue"` tests can exercise forking a predecessor's session.
+- `createMockPi` now captures `pi.registerShortcut(keyId, opts)` registrations in a new `shortcuts: Map<string, CapturedShortcut>` bucket on `CapturedPi`.
+- `createMockUI` gains a `setEditorComponent` mock, matching the `ExtensionUIContext` surface.
 
 ## [1.20.0] - 2026-06-15
 

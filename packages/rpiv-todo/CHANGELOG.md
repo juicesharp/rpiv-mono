@@ -8,10 +8,13 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Configurable collapse/expand shortcut for the todo overlay. Bound via `pi.registerShortcut` (default `ctrl+shift+t`) so the overlay can be folded down to just its heading to reclaim screen space. The shortcut key is resolved once from the new `collapseKey` config field at extension load and validated against pi-tui's `KeyId` grammar — a config change needs `/reload` to re-bind it; `"off"` disables the shortcut entirely. The collapsed view's hint text, by contrast, re-resolves `collapseKey` on every render, and renders a static localized "collapsed" label (instead of splicing "off" into the hint) when the key resolves to the `"off"` sentinel. A non-string `collapseKey` falls back to the default instead of throwing at extension load. `overlay.expandHint` / `overlay.collapsed` strings added to all 9 bundled locales; documented in the README, including the `/reload` re-bind requirement.
 - Configurable overlay height via the `maxWidgetLines` field in `~/.config/rpiv-todo/config.json`. Defaults to `12`; values below `3` and non-numeric values fall back to the default. Takes effect on the next repaint — no `/reload` required (#101).
 
 ### Fixed
 - A no-effect `update` — `status` set to its current value, or any field re-sent unchanged — now reports `No change: #N …` instead of `Updated #N`, so it is no longer indistinguishable from a real mutation. This prevents a model from re-issuing the same no-op update in a loop.
+- Session shutdown now wraps overlay `dispose()` and the render-pointer clear in try/finally. Previously a throw partway through `dispose()` (e.g. a stale UI proxy racing disposal) could leave the render pointer aimed at the session's already-evicted store slot, causing the overlay to silently render as empty instead of tearing down cleanly.
+- Todo state is now partitioned per session — a `Map<sid, TaskState>` keyed off `ctx.sessionManager.getSessionId()` — so a detached/child session can no longer read or clobber another session's tasks. A creator-ownership render pointer (`activeRenderSession`, claimed by the first UI-bearing session on startup) gates which session's state the shared overlay renders, so a child session can never rebind or refresh it.
 - Moved `typebox` from `peerDependencies` to `dependencies` (`^1.1.24`, matching the Pi host's range) so the tool's parameter schema resolves under installers that don't materialise peer deps. Fixes `ERR_MODULE_NOT_FOUND: typebox` on standalone consumer installs (#79).
 
 ## [1.20.0] - 2026-06-15

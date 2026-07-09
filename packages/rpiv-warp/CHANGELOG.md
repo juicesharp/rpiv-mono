@@ -7,6 +7,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- `package.json` now declares `"ambientObserver": true` under the `pi` key, opting this launcher-only listener out of relaunch when rpiv-workflow spawns detached child sessions (parallel fanout, continue-fork), so those children skip re-registering it.
+
 ### Fixed
 - Toast summaries strip rpiv-args' new `Skill input:` argument-trailer label back to the raw args, so skill invocations render as `/skill:<name> <args>` instead of leaking the trailer framing.
 

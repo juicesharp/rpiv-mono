@@ -7,6 +7,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- `loadLocaleConfig()` now resolves via `rpiv-config`'s `loadJsonConfigWithLegacyFallback("rpiv-i18n", "locale.json")` instead of a fixed `loadJsonConfig(LOCALE_CONFIG_PATH)` call, so the persisted locale honors `XDG_CONFIG_HOME` when set (falling back to the legacy `~/.config/rpiv-i18n/locale.json` only when no XDG file exists). Writes via `saveLocaleConfig` remain XDG-only.
+
 ## [1.20.0] - 2026-06-15
 
 ### Added
