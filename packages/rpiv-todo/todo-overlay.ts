@@ -14,7 +14,7 @@
 
 import type { ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
 import { type TUI, truncateToWidth } from "@earendil-works/pi-tui";
-import { getMaxWidgetLines } from "./config.js";
+import { getMaxWidgetLines, resolveCollapseKey } from "./config.js";
 import { formatStatusLabel, t } from "./state/i18n-bridge.js";
 import { selectHasActive, selectOverlayLayout, selectShowTaskIds, selectTodoCounts } from "./state/selectors.js";
 import { getRenderState } from "./state/store.js";
@@ -25,6 +25,7 @@ const WIDGET_KEY = "rpiv-todos";
 // English fallbacks for localized overlay chrome strings.
 const OVERLAY_HEADING = "Todos";
 const OVERLAY_MORE = "more";
+const OVERLAY_EXPAND_HINT = "{key} to expand";
 
 export class TodoOverlay {
 	private uiCtx: ExtensionUIContext | undefined;
@@ -33,6 +34,7 @@ export class TodoOverlay {
 	private completedTaskIdsPendingHide = new Set<number>();
 	private hiddenCompletedTaskIds = new Set<number>();
 	private lastNextId: number | undefined;
+	private collapsed = false;
 
 	setUICtx(ctx: ExtensionUIContext): void {
 		// Identity-compare so repeat session_start handlers are idempotent;
@@ -94,6 +96,18 @@ export class TodoOverlay {
 		this.tui?.requestRender();
 	}
 
+	toggleCollapse(): void {
+		this.collapsed = !this.collapsed;
+		// Forced full redraw on the collapsed↔expanded height step, mirroring the
+		// lane-dock's requestRender(shapeChanged); distinct from the non-forced
+		// requestRender() refresh paths in update()/hideCompletedTasksFromPreviousTurn().
+		this.tui?.requestRender(true);
+	}
+
+	isRegistered(): boolean {
+		return this.widgetRegistered;
+	}
+
 	private getSnapshot() {
 		const state = getRenderState();
 		if (this.lastNextId !== undefined && state.nextId < this.lastNextId) {
@@ -135,6 +149,17 @@ export class TodoOverlay {
 		const headingIcon = hasActive ? "●" : "○";
 		const headingText = `${t("overlay.heading", OVERLAY_HEADING)} (${counts.completed}/${counts.total})`;
 		const heading = truncate(`${theme.fg(headingColor, headingIcon)} ${theme.fg(headingColor, headingText)}`);
+
+		// Collapsed view: just the heading + a dim "└─" expand hint, then the
+		// trailing spacer. Short-circuit before the budget math and the completed-
+		// display tracking — nothing is shown to track, and skipping the tracking
+		// when nothing is rendered is correctness, not optimization. The hint splices
+		// the resolved key into the {key} placeholder (per-render, like the row
+		// budget); a config edit needs /reload to re-bind the actual shortcut.
+		if (this.collapsed) {
+			const hint = t("overlay.expandHint", OVERLAY_EXPAND_HINT).replace("{key}", resolveCollapseKey());
+			return this.withTrailingSpacer([heading, truncate(`${theme.fg("dim", "└─")} ${theme.fg("dim", hint)}`)]);
+		}
 
 		const lines: string[] = [heading];
 		// Budget for content rows (heading + tasks/summary). The rendered widget is

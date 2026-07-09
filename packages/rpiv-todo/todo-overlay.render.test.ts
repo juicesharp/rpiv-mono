@@ -1,8 +1,20 @@
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import { createMockCtx, createMockPi, createMockUI } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { __resetState, registerTodoTool, setActiveRenderSession, type TaskAction } from "./todo.js";
 import { TodoOverlay } from "./todo-overlay.js";
+
+const CONFIG_PATH = join(process.env.HOME!, ".config", "rpiv-todo", "config.json");
+
+function writeConfigFile(contents: string): void {
+	mkdirSync(dirname(CONFIG_PATH), { recursive: true });
+	writeFileSync(CONFIG_PATH, contents, "utf-8");
+}
+function removeConfigFile(): void {
+	rmSync(CONFIG_PATH, { force: true });
+}
 
 const identityTheme = {
 	fg: (_c: string, s: string) => s,
@@ -36,9 +48,11 @@ async function setup(actions: Array<{ action: TaskAction; [k: string]: unknown }
 
 beforeEach(() => {
 	__resetState();
+	removeConfigFile();
 });
 afterEach(() => {
 	__resetState();
+	removeConfigFile();
 	vi.restoreAllMocks();
 });
 
@@ -233,6 +247,85 @@ describe("TodoOverlay — overflow collapse", () => {
 		expect(lines[lines.length - 1]).toBe("");
 		expect(lines[lines.length - 2]).not.toContain("+");
 		expect(lines[lines.length - 2]).toContain("└─");
+	});
+});
+
+describe("TodoOverlay — collapse/expand render", () => {
+	it("collapsed view returns exactly three lines: heading with (completed/total), expand hint, trailing spacer", async () => {
+		const { widget, overlay } = await setup([
+			{ action: "create", subject: "a" },
+			{ action: "create", subject: "b" },
+			{ action: "update", id: 1, status: "completed" },
+		]);
+		overlay.toggleCollapse(); // collapse
+		const lines = widget.render(200);
+		expect(lines).toHaveLength(3); // heading + hint + trailing spacer
+		expect(lines[0]).toContain("Todos (1/2)");
+		expect(lines[1]).toContain("└─");
+		expect(lines[1]).toContain("ctrl+shift+t to expand");
+		expect(lines[2]).toBe(""); // trailing spacer
+	});
+
+	it("uncollapsed (default) yields the unchanged full render (regression-safe)", async () => {
+		const { widget } = await setup([
+			{ action: "create", subject: "a" },
+			{ action: "create", subject: "b" },
+		]);
+		// Full render: heading + 2 tasks + trailing spacer = 4 lines
+		const lines = widget.render(200);
+		expect(lines).toHaveLength(4);
+		expect(lines.some((l) => l.includes("a"))).toBe(true);
+		expect(lines.some((l) => l.includes("b"))).toBe(true);
+	});
+
+	it("collapsed render short-circuits before completed-display tracking (no task queued for hide while collapsed)", async () => {
+		const { widget, overlay } = await setup([
+			{ action: "create", subject: "done" },
+			{ action: "update", id: 1, status: "completed" },
+		]);
+		overlay.toggleCollapse(); // collapse
+		widget.render(200); // collapsed render — must NOT queue the completed task
+		// Draining the pending-hide set is a no-op because nothing was queued.
+		overlay.hideCompletedTasksFromPreviousTurn();
+		overlay.toggleCollapse(); // expand
+		// The completed task is still visible: the collapsed render never queued it,
+		// so the drain above couldn't hide it.
+		const expanded = widget.render(200).join("\n");
+		expect(expanded).toContain("done");
+		expect(expanded).toContain("✓");
+	});
+});
+
+describe("TodoOverlay — collapse hint resolves the key from config", () => {
+	// resolveCollapseKey() runs at render time (per-render, like the row budget), so
+	// the config MUST be written before widget.render(). setup() itself doesn't read
+	// the collapse key — it constructs the overlay directly.
+
+	it("renders the configured key in the collapsed hint (alt+o)", async () => {
+		writeConfigFile(JSON.stringify({ collapseKey: "alt+o" }));
+		const { widget, overlay } = await setup([{ action: "create", subject: "a" }]);
+		overlay.toggleCollapse(); // collapse
+		const lines = widget.render(200);
+		expect(lines[1]).toContain("alt+o to expand");
+		// The placeholder is always spliced — never leaks the raw {key} token.
+		expect(lines[1]).not.toContain("{key}");
+		expect(lines[1]).not.toContain("ctrl+shift+t");
+	});
+
+	it("renders the default key in the collapsed hint when config is missing", async () => {
+		const { widget, overlay } = await setup([{ action: "create", subject: "a" }]);
+		overlay.toggleCollapse(); // collapse
+		const lines = widget.render(200);
+		expect(lines[1]).toContain("ctrl+shift+t to expand");
+		expect(lines[1]).not.toContain("{key}");
+	});
+
+	it("renders the default key when the configured spec is invalid", async () => {
+		writeConfigFile(JSON.stringify({ collapseKey: "ctr+t" }));
+		const { widget, overlay } = await setup([{ action: "create", subject: "a" }]);
+		overlay.toggleCollapse(); // collapse
+		const lines = widget.render(200);
+		expect(lines[1]).toContain("ctrl+shift+t to expand");
 	});
 });
 

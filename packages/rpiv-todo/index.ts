@@ -20,6 +20,8 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { KeyId } from "@earendil-works/pi-tui";
+import { COLLAPSE_KEY_OFF, resolveCollapseKey } from "./config.js";
 import { I18N_NAMESPACE } from "./state/i18n-bridge.js";
 import { replayFromBranch } from "./state/replay.js";
 import {
@@ -64,6 +66,25 @@ export default function (pi: ExtensionAPI) {
 
 	registerTodoTool(pi);
 	registerTodosCommand(pi);
+
+	// Collapse/expand hotkey for the todo overlay. The key is resolved once at
+	// factory scope from config (register-once contract: a config change needs
+	// `/reload` to re-bind, same as lane-switcher's env hotkey) and the binding is
+	// skipped entirely when collapseKey is "off". The handler closes over the
+	// closure-local `todoOverlay` by reference and re-reads it at fire time, so a
+	// session_start that (re)creates the overlay is picked up. No-op in headless
+	// mode, when the overlay hasn't been created yet, or when the widget isn't
+	// currently registered (auto-hidden on an empty list).
+	const collapseKey = resolveCollapseKey();
+	if (collapseKey !== COLLAPSE_KEY_OFF) {
+		pi.registerShortcut(collapseKey as KeyId, {
+			description: "Collapse or expand the todo overlay",
+			handler: (ctx) => {
+				if (!ctx.hasUI || !todoOverlay?.isRegistered()) return;
+				todoOverlay.toggleCollapse();
+			},
+		});
+	}
 
 	// Re-key a session's slot from its branch, then refresh the overlay only when
 	// the refreshed session IS the foreground. Shared by session_compact and

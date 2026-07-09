@@ -249,3 +249,71 @@ describe("TodoOverlay — lifecycle", () => {
 		expect(ui.setWidget as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
 	});
 });
+
+describe("TodoOverlay — collapse/expand state", () => {
+	async function setupRegistered() {
+		const { captured } = registerTool();
+		await seed(captured, [
+			{ action: "create", subject: "a" },
+			{ action: "create", subject: "b" },
+			{ action: "update", id: 1, status: "completed" },
+		]);
+		const overlay = new TodoOverlay();
+		const ui = makeCtx();
+		overlay.setUICtx(ui);
+		overlay.update();
+		const setWidget = ui.setWidget as ReturnType<typeof vi.fn>;
+		const factory = setWidget.mock.calls[0][1] as (
+			tui: { requestRender: (...args: unknown[]) => void },
+			theme: typeof identityTheme,
+		) => { render: (w: number) => string[]; invalidate: () => void };
+		const requestRender = vi.fn();
+		const widget = factory({ requestRender }, identityTheme);
+		return { overlay, widget, requestRender, tool: captured.tools.get("todo")! };
+	}
+
+	it("a new TodoOverlay starts with collapsed = false (renders the full view, not the 3-line collapsed shape)", async () => {
+		const { widget } = await setupRegistered();
+		// Full render: heading + 1 remaining task + trailing spacer = 3 visible-ish
+		// rows — but crucially NOT the collapsed "└─ ctrl+shift+t to expand" hint.
+		const out = widget.render(200).join("\n");
+		expect(out).not.toContain("ctrl+shift+t to expand");
+	});
+
+	it("toggleCollapse() flips collapsed and calls requestRender(true) (forced, distinct from the non-forced requestRender())", async () => {
+		const { overlay, widget, requestRender } = await setupRegistered();
+		// Collapse → toggles to collapsed and forces a redraw.
+		overlay.toggleCollapse();
+		expect(requestRender).toHaveBeenCalledWith(true);
+		expect(widget.render(200).some((l) => l.includes("ctrl+shift+t to expand"))).toBe(true);
+
+		requestRender.mockClear();
+		// Expand → toggles back to expanded and forces a redraw again.
+		overlay.toggleCollapse();
+		expect(requestRender).toHaveBeenCalledWith(true);
+		expect(widget.render(200).some((l) => l.includes("ctrl+shift+t to expand"))).toBe(false);
+	});
+
+	it("isRegistered() reflects the widget registration state", async () => {
+		const overlay = new TodoOverlay();
+		expect(overlay.isRegistered()).toBe(false);
+		const { captured } = registerTool();
+		await seed(captured, [{ action: "create", subject: "a" }]);
+		const ui = makeCtx();
+		overlay.setUICtx(ui);
+		overlay.update();
+		expect(overlay.isRegistered()).toBe(true);
+		overlay.dispose();
+		expect(overlay.isRegistered()).toBe(false);
+	});
+
+	it("resetCompletedDisplayState() does NOT reset collapsed", async () => {
+		const { overlay, widget } = await setupRegistered();
+		overlay.toggleCollapse(); // collapsed = true
+		expect(widget.render(200).some((l) => l.includes("ctrl+shift+t to expand"))).toBe(true);
+		// resetCompletedDisplayState clears the completed-display bookkeeping but
+		// must leave the ephemeral `collapsed` flag alone (the "respect collapsed" seam).
+		overlay.resetCompletedDisplayState();
+		expect(widget.render(200).some((l) => l.includes("ctrl+shift+t to expand"))).toBe(true);
+	});
+});
