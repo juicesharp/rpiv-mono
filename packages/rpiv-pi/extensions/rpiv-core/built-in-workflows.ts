@@ -1370,8 +1370,23 @@ const freshVerdicts = (entries: readonly Output[] = [], currentArtifact?: string
 };
 
 /**
- * The subset of `dimensions` a re-grade must actually re-run, given the verdicts
- * accumulated on `verdictChannel` so far. A dimension needs re-grading when it
+ * Latest verdict per dimension off an accumulated verdict channel — the shared
+ * fold under `dimensionsToRegrade` (which dimensions still block) and the
+ * confirm panels' `--prior` threading (which verdict file the confirming
+ * grader must adjudicate).
+ */
+const latestVerdictPerDimension = (entries: readonly Output[] = []): Map<string, Output> => {
+	const latest = new Map<string, Output>();
+	for (const o of entries) {
+		const dim = (o.data as { dimension?: unknown } | undefined)?.dimension;
+		if (typeof dim === "string") latest.set(dim, o);
+	}
+	return latest;
+};
+
+/**
+ * The subset of `dimensions` a re-grade must actually re-run, given the latest
+ * verdict per dimension accumulated so far. A dimension needs re-grading when it
  * has NO prior verdict (first pass ⇒ grade every dimension), when its latest
  * verdict fails above the severity floor, or when that verdict ruled any plan
  * risk flag `fail` (the ruling is re-opened by re-grading its owning dimension).
@@ -1382,12 +1397,7 @@ const freshVerdicts = (entries: readonly Output[] = [], currentArtifact?: string
  * channel + `allDimensionsPass`'s latest-per-dimension fold mean a carried
  * dimension's prior passing verdict still counts at the gate.
  */
-const dimensionsToRegrade = (dimensions: readonly string[], entries: readonly Output[] = []): string[] => {
-	const latest = new Map<string, Output>();
-	for (const o of entries) {
-		const dim = (o.data as { dimension?: unknown } | undefined)?.dimension;
-		if (typeof dim === "string") latest.set(dim, o);
-	}
+const dimensionsToRegrade = (dimensions: readonly string[], latest: ReadonlyMap<string, Output>): string[] => {
 	return dimensions.filter((d) => {
 		const o = latest.get(d);
 		if (!o) return true; // never graded — must grade at least once
@@ -1425,8 +1435,22 @@ const dimensionsToRegrade = (dimensions: readonly string[], entries: readonly Ou
  * threads in as `--goal` for the `GOAL_DIMENSIONS` only. Every other dimension
  * (and the slice gate's `design-readiness`, which never grades fit or
  * goal-completeness) gets the bare flags.
+ *
+ * A CONFIRM panel (`confirm: true`) additionally threads each still-blocking
+ * dimension's latest verdict in as `--prior`: the confirming grader must
+ * adjudicate the prior round's findings — uphold or refute each with cited
+ * evidence — instead of silently out-voting them (a blind second opinion once
+ * rationalized past a checkable fact and its pass overwrote a correct fail at
+ * the latest-per-dimension fold). Only PENDING dimensions get the flag: in the
+ * degenerate full-roster fallback a carried passing verdict has nothing to
+ * adjudicate, and a first grade has no prior at all.
  */
-const gradePanelFanout = (channel: string, dimensions: readonly string[], verdictChannel: string) =>
+const gradePanelFanout = (
+	channel: string,
+	dimensions: readonly string[],
+	verdictChannel: string,
+	{ confirm = false }: { confirm?: boolean } = {},
+) =>
 	fanout({
 		source: channel,
 		unit: { by: "dimension-list", pattern: "dimensions" },
@@ -1440,12 +1464,17 @@ const gradePanelFanout = (channel: string, dimensions: readonly string[], verdic
 			const goal = latestFsArtifact(state, "goal");
 			const goalFlag = goal?.handle.kind === "fs" ? ` --goal ${handleToString(goal.handle)}` : "";
 			const roster = gateRoster(gateTier(state, verdictChannel), dimensions);
-			const fresh = freshVerdicts(state.named[verdictChannel], target);
-			const pending = dimensionsToRegrade(roster, fresh);
+			const latest = latestVerdictPerDimension(freshVerdicts(state.named[verdictChannel], target));
+			const pending = dimensionsToRegrade(roster, latest);
+			const priorFlag = (d: string): string => {
+				if (!confirm || !pending.includes(d)) return "";
+				const handle = latest.get(d)?.artifacts.find((a) => a.handle.kind === "fs")?.handle;
+				return handle ? ` --prior ${handleToString(handle)}` : "";
+			};
 			// Never emit zero units (empty ⇒ single dimensionless grade fall-through).
 			const toGrade = pending.length > 0 ? pending : roster;
 			return toGrade.map((d) => ({
-				prompt: `--dimension ${d} --artifact ${target}${d === "architecture-fit" ? contextFlag : ""}${GOAL_DIMENSIONS.has(d) ? goalFlag : ""}`,
+				prompt: `--dimension ${d} --artifact ${target}${d === "architecture-fit" ? contextFlag : ""}${GOAL_DIMENSIONS.has(d) ? goalFlag : ""}${priorFlag(d)}`,
 				label: d,
 				id: `${channel}-dim-${d}`,
 			}));
@@ -1460,10 +1489,14 @@ const PLAN_DIMENSION_FANOUT = gradePanelFanout("plans", PLAN_DIMENSIONS, "plan-v
 const CODE_DIMENSION_FANOUT = gradePanelFanout("plans", PLAN_DIMENSIONS, "code-verdicts");
 // The confirm stages re-run the SAME panel machinery on the SAME verdict
 // channel: with the failing dimensions the only ones pending, the panel emits
-// exactly the blocking dimensions — one independent second judgment each.
+// exactly the blocking dimensions — one second judgment each, in confirm mode:
+// each unit carries the blocking verdict as `--prior`, and the grade skill is
+// contract-bound to rule on every prior finding (uphold, or refute with cited
+// evidence) so a confirming pass records WHY the fail died instead of silently
+// out-voting it at the latest-per-dimension fold.
 // Distinct fanout instances (not aliases) so each stage owns its loop object.
-const PLAN_CONFIRM_FANOUT = gradePanelFanout("plans", PLAN_DIMENSIONS, "plan-verdicts");
-const CODE_CONFIRM_FANOUT = gradePanelFanout("plans", PLAN_DIMENSIONS, "code-verdicts");
+const PLAN_CONFIRM_FANOUT = gradePanelFanout("plans", PLAN_DIMENSIONS, "plan-verdicts", { confirm: true });
+const CODE_CONFIRM_FANOUT = gradePanelFanout("plans", PLAN_DIMENSIONS, "code-verdicts", { confirm: true });
 
 /**
  * Fold the per-dimension verdicts into a gate decision: keep the latest verdict

@@ -1,7 +1,7 @@
 ---
 name: grade
 description: Grade ONE artifact along ONE named quality dimension and write a verdict JSON to .rpiv/artifacts/verdicts/. Single-pass, no subagents, no fixes — it only judges. Dispatched once per dimension by a workflow's grade panel (a fanout over dimensions); the workflow folds the per-dimension verdicts into an advance/loop decision. Use as a panel member, not standalone.
-argument-hint: "--dimension <name> --artifact <path> [--context <path>] [--goal <path>]"
+argument-hint: "--dimension <name> --artifact <path> [--context <path>] [--goal <path>] [--prior <verdict-path>]"
 allowed-tools: Read, Grep, Glob, Write
 shell-timeout: 10
 disable-model-invocation: true
@@ -33,6 +33,15 @@ contract:
             properties:
               id: { type: string }
               pass: { type: boolean }
+        finding_rulings:
+          type: array
+          items:
+            type: object
+            required: [where, ruling]
+            properties:
+              where: { type: string }
+              ruling: { type: string, enum: [upheld, refuted] }
+              evidence: { type: string }
   consumes:
     meta:
       artifactKind: [research, slices, design, plan]
@@ -52,8 +61,16 @@ You grade ONE artifact against ONE quality dimension and emit a verdict JSON. Yo
 - `--artifact <path>` **(required)** — the artifact under review.
 - `--context <path>` *(optional)* — a supporting artifact (e.g. the research doc). **Required for `architecture-fit`.**
 - `--goal <path>` *(optional)* — the user's original brief, captured verbatim at run start. **Read it only for `completeness` and `correctness`** — every other dimension ignores it. Absent, or the file is empty → grade the artifact on its own content as usual.
+- `--prior <path>` *(optional)* — a prior round's verdict JSON for this same `(artifact, dimension)`, passed by a CONFIRM panel. Its presence puts you in **confirm mode** (see "Prior-round adjudication" below). If the path is missing or unreadable, grade normally without it — a stale prior is not a wiring error.
 
 **Plan-authored risk flags (the `correctness` dimension only).** When your `--dimension` is `correctness` and the `--artifact` carries a `risks:` frontmatter array (each `{ id, claim }`, described in the plan's `## Risk Flags` section), you are REQUIRED to rule on every flag — this is a first-class channel, not an optional prose aside. For each flag, verify its `claim` against the real codebase / the plan (Read/Grep the relevant `file:line`) and decide `pass` (the concern is unfounded or already handled) or `fail` (the risk is real and unaddressed). Emit these as a `risk_rulings: [{ id, pass }]` array in your verdict — one ruling per declared flag, none omitted. A `fail` ruling blocks the gate (the workflow folds these across the panel), so an assumption the plan flagged for review cannot ride a green pass into commit. Other dimensions ignore `risks:`.
+
+**Prior-round adjudication (confirm mode, `--prior` present).** You are the second judgment on a dimension whose prior round BLOCKED the gate. You still grade the artifact fresh against your rubric — but you additionally MUST adjudicate the prior verdict: read the `--prior` JSON fully, and for **each** entry in its `findings[]` array, plus each of its `risk_rulings` entries with `pass: false`, verify the claim against the artifact and the real codebase and rule it:
+
+- **`upheld`** — the finding is real. Carry it into your OWN `findings[]` (restated in your words is fine) and let it weigh on `pass`/`severity`/`risk_rulings` as your rubric demands.
+- **`refuted`** — the finding is wrong. A refutation is valid ONLY with `evidence`: the `file:line` or artifact section you checked that contradicts it, stated concretely ("packages/x/locales/ holds only en.json — verified by listing" beats "seems fine"). "Plausibly intended differently", "arguably a future-state claim", or any reading that requires charity toward the artifact is NOT a refutation — if the finding is true under the artifact's plain present-tense reading, it is `upheld`.
+
+Emit the rulings as a `finding_rulings: [{ where, ruling, evidence }]` array in your verdict — one entry per prior finding (`where` copied verbatim from the prior finding so rounds line up) and one per prior failed risk ruling (`where` = the risk id, e.g. `"r2"`), **none omitted**. Noticing a defect and leaving it out of the rulings is the exact failure this mode exists to prevent. Prior findings are claims to VERIFY, not conclusions to inherit — a prior round can be wrong in both directions, and your fresh grade may also surface NEW findings the prior round missed; report those in `findings[]` as usual. Without `--prior`, never emit `finding_rulings`.
 
 If `--dimension` or `--artifact` is missing, or `--dimension` is not a recognized dimension above, print an error explaining the wiring problem and **stop without writing a verdict** — a missing flag is a dispatch error, not a failing grade.
 
@@ -81,9 +98,9 @@ Grade against the row matching `--dimension`. "Pass bar" is the line; meet it �
 ## Steps
 
 1. **Parse + validate flags.** Bail per the Input rules above if malformed.
-2. **Read fully** (no limit/offset): `--artifact`, and `--context` / `--goal` if given (skip `--goal` unless your dimension is `completeness` or `correctness`).
+2. **Read fully** (no limit/offset): `--artifact`, and `--context` / `--goal` / `--prior` if given (skip `--goal` unless your dimension is `completeness` or `correctness`).
 3. **Select the single rubric row** for `--dimension`. Ignore every problem outside it.
-4. **Evaluate.** For `correctness` / `architecture-fit` / `pattern-following` / `design-readiness`, spot-check against the real codebase — resolve references, compare conventions, check boundaries, expand each slice's true touch + dependency fan-out from its cited seeds to gauge whether the footing is bounded AND complete, and check each shared contract has a single owning slice. For `completeness` / `actionability`, judge the artifact's own content. **On `correctness`, also rule every plan-authored risk flag** (see "Plan-authored risk flags" above) — verify each `risks:` claim against the code and record a `risk_rulings` entry. Collect findings — each is `{ detail, where }` (`where` = `path:line` or a section heading; for slice dimensions, cite the offending `## Slice N`). Where a `design-readiness` finding fires, the `feedback` must name the exact re-cut (which slice to split and along which seam, which under-cited grounding to add, or which overlap to separate) so the re-slice can act on it.
+4. **Evaluate.** For `correctness` / `architecture-fit` / `pattern-following` / `design-readiness`, spot-check against the real codebase — resolve references, compare conventions, check boundaries, expand each slice's true touch + dependency fan-out from its cited seeds to gauge whether the footing is bounded AND complete, and check each shared contract has a single owning slice. For `completeness` / `actionability`, judge the artifact's own content. **On `correctness`, also rule every plan-authored risk flag** (see "Plan-authored risk flags" above) — verify each `risks:` claim against the code and record a `risk_rulings` entry. **With `--prior`, also adjudicate every prior finding** (see "Prior-round adjudication" above) — verify each against artifact + code and record a `finding_rulings` entry. Collect findings — each is `{ detail, where }` (`where` = `path:line` or a section heading; for slice dimensions, cite the offending `## Slice N`). Where a `design-readiness` finding fires, the `feedback` must name the exact re-cut (which slice to split and along which seam, which under-cited grounding to add, or which overlap to separate) so the re-slice can act on it.
 5. **Decide** `pass` (against the pass bar), `score` (0–100), `severity` (`none` | `low` | `medium` | `high` = the worst finding), and `feedback`. **`severity` is gate-load-bearing: the workflow treats any verdict whose worst finding is `low`/`none` as passing, even on `pass: false`, and only a `medium`+ finding blocks the gate.** So set `severity` to honestly reflect blocking weight — `low`/`none` for a cosmetic nit (a line-number off by one or two, a stylistic phrasing, a naming quibble that doesn't change behavior), `medium`+ for a finding a downstream stage genuinely cannot proceed past (a reference that won't resolve, a missing step, an executable edit that would fail as written, a boundary violation). Do **not** mark a real blocker `low` to be lenient, and do **not** mark a cosmetic nit `medium`+ to force a re-run — the gate reads `severity`, so mis-rating it either ships a defect or stalls the loop. **Every string you emit (`feedback` and each `findings[].detail` / `where`) MUST be JSON-safe: a single line, no literal newlines or tabs, no backticks or code fences, double-quotes escaped as `\"`. Put `path:line` citations in `findings[].where` — never paste code snippets into `feedback`.**
    - `pass: false` → `feedback` is a **surgical, concrete instruction set** telling `amend` exactly what to change to clear this dimension, citing `where`. This field is the only thing `amend` reads — make it sufficient but concise (≤ ~500 chars; lean on `findings[]` for specifics).
    - `pass: true` → `feedback` is **one short sentence, or empty** — never a multi-sentence essay. A long free-text value on a pass is pure JSON-malform risk with no consumer.
@@ -106,11 +123,14 @@ Grade against the row matching `--dimension`. "Pass bar" is the line; meet it �
   "risk_rulings": [
     { "id": "r1", "pass": true }
   ],
+  "finding_rulings": [
+    { "where": "r2", "ruling": "refuted", "evidence": "packages/x/locales/ holds 9 files (listed); the claim's premise is false" }
+  ],
   "feedback": ""
 }
 ```
 
-Include `risk_rulings` **only** on a `correctness` verdict when the artifact declares `risks:` — one entry per flag. Omit the key entirely on every other dimension and when the artifact declares no risks.
+Include `risk_rulings` **only** on a `correctness` verdict when the artifact declares `risks:` — one entry per flag. Omit the key entirely on every other dimension and when the artifact declares no risks. Include `finding_rulings` **only** when `--prior` was given — one entry per prior finding and per prior failed risk ruling, none omitted (see "Prior-round adjudication"); omit the key entirely otherwise. Every `evidence` string follows the same JSON-safety rules as `feedback`.
 
 ## Hard rules
 

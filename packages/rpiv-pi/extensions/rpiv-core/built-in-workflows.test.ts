@@ -1231,6 +1231,177 @@ describe("build plan gate grade panel (--context threading)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// build confirm panels — the second judgment on a blocking dimension runs in
+// confirm mode: the unit carries the blocking verdict as --prior so the grade
+// skill must adjudicate the prior round's findings (uphold / refute with cited
+// evidence) instead of silently out-voting them at the latest-per-dimension
+// fold. Grade panels never thread --prior; neither does a confirm unit for a
+// dimension with nothing blocking (first grade, stale verdict, carried pass).
+// ---------------------------------------------------------------------------
+
+describe("build confirm panels (--prior adjudication threading)", () => {
+	const loopOf = (stage: string) => {
+		const loop = findWorkflow("build").stages[stage]?.loop;
+		if (loop?.kind !== "fanout") throw new Error(`build ${stage} stage has no fanout loop`);
+		return loop;
+	};
+	const out = (rel: string) => ({ artifacts: [{ handle: fsHandle(rel) }], data: undefined, kind: "", meta: {} });
+	const verdict = (rel: string, data: Record<string, unknown>) => ({
+		artifacts: [{ handle: fsHandle(rel) }],
+		data,
+		kind: "",
+		meta: {},
+	});
+	const passing = (dimension: string) =>
+		verdict(`.rpiv/artifacts/verdicts/p__${dimension}__round-1.json`, {
+			dimension,
+			pass: true,
+			severity: "none",
+			artifact: ".rpiv/artifacts/plans/p.md",
+		});
+	// The observed incident shape: a low-severity fail whose BLOCK comes from the
+	// failed risk ruling, not the score.
+	const failingCorrectness = (rel: string) =>
+		verdict(rel, {
+			dimension: "correctness",
+			pass: false,
+			severity: "low",
+			artifact: ".rpiv/artifacts/plans/p.md",
+			risk_rulings: [{ id: "r2", pass: false }],
+		});
+	const OTHER_DIMS = ["completeness", "actionability", "pattern-following", "architecture-fit"];
+
+	it("plan-confirm emits only the blocking dimension, carrying its latest verdict as --prior", async () => {
+		const units = await loopOf("plan-confirm").units({
+			cwd: "/repo",
+			artifact: undefined,
+			state: {
+				named: {
+					plans: [out(".rpiv/artifacts/plans/p.md")],
+					"plan-verdicts": [
+						...OTHER_DIMS.map(passing),
+						failingCorrectness(".rpiv/artifacts/verdicts/p__correctness__round-1.json"),
+					],
+				},
+			} as unknown as RunView,
+		});
+		expect(units.map((u) => u.label)).toEqual(["correctness"]);
+		expect(units[0]?.prompt).toContain("--dimension correctness");
+		expect(units[0]?.prompt).toContain("--prior .rpiv/artifacts/verdicts/p__correctness__round-1.json");
+	});
+
+	it("--prior points at the LATEST round's verdict when rounds accumulate", async () => {
+		const units = await loopOf("plan-confirm").units({
+			cwd: "/repo",
+			artifact: undefined,
+			state: {
+				named: {
+					plans: [out(".rpiv/artifacts/plans/p.md")],
+					"plan-verdicts": [
+						...OTHER_DIMS.map(passing),
+						failingCorrectness(".rpiv/artifacts/verdicts/p__correctness__round-1.json"),
+						failingCorrectness(".rpiv/artifacts/verdicts/p__correctness__round-2.json"),
+					],
+				},
+			} as unknown as RunView,
+		});
+		expect(units[0]?.prompt).toContain("--prior .rpiv/artifacts/verdicts/p__correctness__round-2.json");
+		expect(units[0]?.prompt).not.toContain("round-1.json");
+	});
+
+	it("--prior composes with --goal on correctness (both flags, one unit)", async () => {
+		const units = await loopOf("plan-confirm").units({
+			cwd: "/repo",
+			artifact: undefined,
+			state: {
+				named: {
+					plans: [out(".rpiv/artifacts/plans/p.md")],
+					goal: [out(".rpiv/artifacts/goal/goal.md")],
+					"plan-verdicts": [
+						...OTHER_DIMS.map(passing),
+						failingCorrectness(".rpiv/artifacts/verdicts/p__correctness__round-1.json"),
+					],
+				},
+			} as unknown as RunView,
+		});
+		expect(units[0]?.prompt).toContain("--goal .rpiv/artifacts/goal/goal.md");
+		expect(units[0]?.prompt).toContain("--prior .rpiv/artifacts/verdicts/p__correctness__round-1.json");
+	});
+
+	it("code-confirm threads --prior off its OWN code-verdicts channel", async () => {
+		const units = await loopOf("code-confirm").units({
+			cwd: "/repo",
+			artifact: undefined,
+			state: {
+				named: {
+					plans: [out(".rpiv/artifacts/plans/p.md")],
+					"code-verdicts": [
+						...OTHER_DIMS.map(passing),
+						failingCorrectness(".rpiv/artifacts/verdicts/p__correctness__code-round-1.json"),
+					],
+				},
+			} as unknown as RunView,
+		});
+		expect(units.map((u) => u.label)).toEqual(["correctness"]);
+		expect(units[0]?.prompt).toContain("--prior .rpiv/artifacts/verdicts/p__correctness__code-round-1.json");
+	});
+
+	it("grade panels never thread --prior, even over the same failing verdicts", async () => {
+		const units = await loopOf("plan-grade").units({
+			cwd: "/repo",
+			artifact: undefined,
+			state: {
+				named: {
+					plans: [out(".rpiv/artifacts/plans/p.md")],
+					"plan-verdicts": [
+						...OTHER_DIMS.map(passing),
+						failingCorrectness(".rpiv/artifacts/verdicts/p__correctness__round-1.json"),
+					],
+				},
+			} as unknown as RunView,
+		});
+		expect(units.every((u) => !u.prompt.includes("--prior"))).toBe(true);
+	});
+
+	it("a stale verdict (regenerated artifact) yields no --prior — nothing fresh to adjudicate", async () => {
+		const stale = verdict(".rpiv/artifacts/verdicts/old__correctness__round-1.json", {
+			dimension: "correctness",
+			pass: false,
+			severity: "low",
+			artifact: ".rpiv/artifacts/plans/old.md",
+			risk_rulings: [{ id: "r2", pass: false }],
+		});
+		const units = await loopOf("plan-confirm").units({
+			cwd: "/repo",
+			artifact: undefined,
+			state: {
+				named: {
+					plans: [out(".rpiv/artifacts/plans/p.md")],
+					"plan-verdicts": [stale],
+				},
+			} as unknown as RunView,
+		});
+		expect(units.length).toBeGreaterThan(0); // every dimension re-grades from scratch...
+		expect(units.every((u) => !u.prompt.includes("--prior"))).toBe(true); // ...with no prior
+	});
+
+	it("the degenerate all-passing fallback re-grades the roster without --prior (a carried pass has nothing to adjudicate)", async () => {
+		const units = await loopOf("plan-confirm").units({
+			cwd: "/repo",
+			artifact: undefined,
+			state: {
+				named: {
+					plans: [out(".rpiv/artifacts/plans/p.md")],
+					"plan-verdicts": [...OTHER_DIMS.map(passing), passing("correctness")],
+				},
+			} as unknown as RunView,
+		});
+		expect(units.length).toBeGreaterThan(0);
+		expect(units.every((u) => !u.prompt.includes("--prior"))).toBe(true);
+	});
+});
+
+// ---------------------------------------------------------------------------
 // build goal channel — the user's brief captured VERBATIM at run start and
 // threaded into the judgment seams only: the grade panels' completeness/
 // correctness dimensions (--goal) and validate's prompt. Generative stages
