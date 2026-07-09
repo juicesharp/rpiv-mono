@@ -1124,7 +1124,7 @@ describe("design-to-code example (prompt dispatch)", () => {
 describe("SLICE_DESIGN_FANOUT (build design — deps + --upstream)", () => {
 	let tmpDir: string;
 	beforeEach(() => {
-		tmpDir = mkdtempSync(join(tmpdir(), "rpiv-carve-design-"));
+		tmpDir = mkdtempSync(join(tmpdir(), "rpiv-build-design-"));
 	});
 	afterEach(() => {
 		rmSync(tmpDir, { recursive: true, force: true });
@@ -1426,7 +1426,7 @@ describe("build goal channel (verbatim brief threading)", () => {
 	describe("goal capture stage", () => {
 		let tmpDir: string;
 		beforeEach(() => {
-			tmpDir = mkdtempSync(join(tmpdir(), "rpiv-carve-goal-"));
+			tmpDir = mkdtempSync(join(tmpdir(), "rpiv-build-goal-"));
 		});
 		afterEach(() => {
 			rmSync(tmpDir, { recursive: true, force: true });
@@ -1536,7 +1536,7 @@ describe("build goal channel (verbatim brief threading)", () => {
 describe("build slice-check (deterministic floor)", () => {
 	let tmpDir: string;
 	beforeEach(() => {
-		tmpDir = mkdtempSync(join(tmpdir(), "rpiv-carve-structure-"));
+		tmpDir = mkdtempSync(join(tmpdir(), "rpiv-build-structure-"));
 	});
 	afterEach(() => {
 		rmSync(tmpDir, { recursive: true, force: true });
@@ -2118,7 +2118,7 @@ describe("build audit-drop fixes", () => {
 describe("build subplan cluster fanout (research threading + fail-loud mapping)", () => {
 	let tmpDir: string;
 	beforeEach(() => {
-		tmpDir = mkdtempSync(join(tmpdir(), "rpiv-carve-subplan-"));
+		tmpDir = mkdtempSync(join(tmpdir(), "rpiv-build-subplan-"));
 	});
 	afterEach(() => {
 		rmSync(tmpDir, { recursive: true, force: true });
@@ -2440,7 +2440,7 @@ describe("control-flow specs are introspectable (presets self-describe)", () => 
 describe("build grade panel re-grades only the pending dimensions (P2)", () => {
 	let tmpDir: string;
 	beforeEach(() => {
-		tmpDir = mkdtempSync(join(tmpdir(), "rpiv-carve-regrade-"));
+		tmpDir = mkdtempSync(join(tmpdir(), "rpiv-build-regrade-"));
 	});
 	afterEach(() => {
 		rmSync(tmpDir, { recursive: true, force: true });

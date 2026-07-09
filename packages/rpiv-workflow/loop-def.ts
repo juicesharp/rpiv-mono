@@ -236,7 +236,7 @@ export interface FanoutLoop extends LoopCommon {
 	 * artifact path into the dependent unit's prompt as `${depArtifactFlag} <path>`
 	 * (one per direct `Unit.deps` entry whose slot is filled with a non-failed
 	 * output). Pairs with `Unit.deps`: deps order the waves, this flag hands the
-	 * dependent the upstream artifact to read (carve `design` sets `"--upstream"`
+	 * dependent the upstream artifact to read (build `design` sets `"--upstream"`
 	 * so a dependent slice reads its dependency's decided Key Interfaces). A
 	 * failed/sentinel dep slot is skipped — the dependent designs blind for that
 	 * dep, exactly as today. Engine-generic: the flag string is data; the engine

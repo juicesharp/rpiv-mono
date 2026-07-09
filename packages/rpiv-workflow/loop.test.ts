@@ -581,7 +581,7 @@ describe("loop driver — parallel fanout abort + fault tolerance", () => {
 });
 
 // ===========================================================================
-// DAG-ordered wave dispatch — Unit.deps + depArtifactFlag (carve design stage)
+// DAG-ordered wave dispatch — Unit.deps + depArtifactFlag (build design stage)
 // ===========================================================================
 
 describe("loop driver — DAG-ordered wave dispatch", () => {

@@ -36,7 +36,7 @@ function contractsFromKinds(entries: Array<[string, string]>): SkillContractMap 
 /**
  * Strip `outcome` from every stage in a workflow (non-mutating), EXCEPT stages
  * for which `keep(stageName)` is true — those retain their explicit outcome so
- * the deriver's rung-1 ("explicit wins") skips them. Used to model carve's
+ * the deriver's rung-1 ("explicit wins") skips them. Used to model build's
  * explicit-by-design stages, which are never meant to be derived.
  */
 function stripOutcomes(w: Workflow, keep: (stageName: string) => boolean = () => false): Workflow {
@@ -267,7 +267,7 @@ describe("equivalence — built-in workflows", () => {
 		["code-review", "review"],
 		["revise", "plan"],
 		["pr-triage", "triage"],
-		// carve's derivable produces skills
+		// build's derivable produces skills
 		["slice", "slices"],
 		["design-slice", "design"],
 		["synthesize", "plan"],
@@ -279,7 +279,7 @@ describe("equivalence — built-in workflows", () => {
 	 * Key: "workflowName::stageName". Value: expected outcome.name.
 	 */
 	const EXPECTED: Record<string, string> = {
-		// build (=carve, renamed): derivable produces stages only — the
+		// build: derivable produces stages only — the
 		// explicit-outcome stages below are asserted separately.
 		"build::research": "research",
 		"build::slice": "slices",
@@ -308,7 +308,7 @@ describe("equivalence — built-in workflows", () => {
 	};
 
 	/**
-	 * carve's explicit-by-design produces stages — NOT derived (rung 1 wins):
+	 * build's explicit-by-design produces stages — NOT derived (rung 1 wins):
 	 * the two grade gates publish verdicts to DISTINCT channels (derivation maps
 	 * one kind → one bucket, so it can't split them), and the generic `amend`
 	 * skill is reused for the slice map, the plan gate's plan, and the code
@@ -386,7 +386,7 @@ describe("equivalence — built-in workflows", () => {
 
 				if (stage.kind !== "produces") continue;
 
-				// Script produces stages (e.g. carve's deterministic `slice-check`
+				// Script produces stages (e.g. build's deterministic `slice-check`
 				// floor) carry no derivable outcome — the run function IS the envelope, so
 				// deriveOutcomes skips them on `stage.run != null` and they have no EXPECTED
 				// bucket. They publish under their own stage name.

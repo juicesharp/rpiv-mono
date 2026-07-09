@@ -546,7 +546,7 @@ const polishWorkflow = defineWorkflow({
 });
 
 // ===========================================================================
-// carve — goal (verbatim-brief capture) → research → slice → slice-check
+// build — goal (verbatim-brief capture) → research → slice → slice-check
 //         (deterministic floor) → slice-grade (design-readiness, slice-fix loop)
 //         → slice-design (fanout) → design-review (one human checkpoint) →
 //         subplan (cluster fanout) → plan → plan-grade (plan-fix loop) →
@@ -591,7 +591,7 @@ const SLICE_DIMENSIONS = ["design-readiness"] as const;
 
 /**
  * Quality dimensions the LATER gate grades the synthesized plan against.
- * Includes `architecture-fit`: carve front-loads a `research` stage, so the
+ * Includes `architecture-fit`: build front-loads a `research` stage, so the
  * research artifact is always present to feed that dimension's `--context`
  * (threaded in by `gradePanelFanout` for this one dimension).
  */
@@ -603,11 +603,11 @@ const PLAN_DIMENSIONS = [
 	"architecture-fit",
 ] as const;
 
-/** Bucket directory the goal capture writes into — carve's verbatim-brief channel. */
+/** Bucket directory the goal capture writes into — build's verbatim-brief channel. */
 const GOAL_DIR = ".rpiv/artifacts/goal";
 
 /**
- * Capture the user's brief VERBATIM as carve's `goal` channel — the north-star
+ * Capture the user's brief VERBATIM as build's `goal` channel — the north-star
  * artifact the judgment seams anchor against (the grade panels'
  * completeness/correctness dimensions and `validate`). A script stage (no LLM)
  * so nothing refracts the wording: `research` carries the goal's intent,
@@ -679,7 +679,7 @@ const goalBaselinePath = (state: RunView): string | undefined => {
 };
 
 /**
- * `goal` displaces `research` as carve's start stage, and ONLY the start stage
+ * `goal` displaces `research` as build's start stage, and ONLY the start stage
  * receives `originalInput` as its skill arg (`stageEntryArgs` case 1) — a plain
  * `produces()` research would silently receive the rolling primary (the goal
  * FILE PATH) instead of the brief text. A prompt stage owns its whole message,
@@ -1429,7 +1429,7 @@ const dimensionsToRegrade = (dimensions: readonly string[], latest: ReadonlyMap<
  * cite floor red while every dimension passed.
  *
  * `architecture-fit` is the one dimension `grade` requires a `--context` for: it
- * grades the plan against the research the slices rest on. The carve flow always
+ * grades the plan against the research the slices rest on. The build flow always
  * front-loads a `research` stage, so we thread the latest `research` artifact in
  * as `--context` for that dimension only; likewise the latest `goal` artifact
  * threads in as `--goal` for the `GOAL_DIMENSIONS` only. Every other dimension
@@ -1507,7 +1507,7 @@ const CODE_CONFIRM_FANOUT = gradePanelFanout("plans", PLAN_DIMENSIONS, "code-ver
  * gate, even when the grader set `pass: false` on a nit. `grade` decides `pass`
  * by a free judgment against a prose bar (independent of `severity`), so a
  * marginal dimension can flip pass↔fail across rounds on an unchanged artifact —
- * that flapping, ANDed over a 5-dimension panel, stalled the carve gate loops
+ * that flapping, ANDed over a 5-dimension panel, stalled the build gate loops
  * until the backward-jump guard halted them. Flooring on severity reserves a hard
  * fail for `medium`+ findings (the deterministic `slice-check` check emits
  * `high` on a real structural break, so it still blocks). A verdict with no
@@ -1682,7 +1682,7 @@ const STITCH_SCRIPT = join(
 );
 
 /**
- * Carve's validate dispatch: the latest synthesized plan plus the goal and
+ * Build's validate dispatch: the latest synthesized plan plus the goal and
  * run-start-baseline flags. Sourcing the plan from the NAMED channel (not the
  * rolling primary) is load-bearing: `code-grade` is a produces-fanout, so
  * after the code gate the rolling primary is the LAST VERDICT JSON
@@ -1710,7 +1710,7 @@ const VALIDATE_GOAL_PROMPT: PromptFn = ({ state }) => {
 };
 
 /**
- * Carve's commit dispatch: thread the run-start baseline so the commit skill
+ * Build's commit dispatch: thread the run-start baseline so the commit skill
  * fences pre-existing dirt off the commit — `git-changes.mjs` takes the path
  * as a flag, so there is no fixed rendezvous file for concurrent/repeat runs
  * to clobber. Prompt-dispatched deliberately: the inherited rolling primary
@@ -1723,7 +1723,7 @@ const COMMIT_BASELINE_PROMPT: PromptFn = ({ state }) => {
 	return baseline ? `/skill:commit --baseline ${baseline}` : "/skill:commit";
 };
 
-const carveWorkflow = defineWorkflow({
+const buildWorkflow = defineWorkflow({
 	name: "build",
 	description:
 		"Ship, sliced: capture the verbatim brief as a goal artifact (the north star the quality gates' completeness/correctness dimensions and validate anchor against) → research the brief → decompose it into vertical slices → two-phase slice gate (a deterministic floor — dependency-cycle freedom + brief-coverage conservation so a slice-fix can't pass by dropping scope — then one LLM design-readiness judgment that each slice is chewable by a single design pass) with a slice-fix loop → design each slice in parallel → one consolidated developer checkpoint (accept or adjust the proposed interfaces/data types, adjustments applied surgically and cascaded to dependents) → synthesize hierarchically (per-cluster sub-plans → one merged plan) → tier-scaled quality-panel gate (a one-slice, <=2-phase run grades correctness+completeness only; larger or previously-failing runs grade the full completeness/correctness/actionability/pattern-following/architecture-fit roster) where a dimension's first blocking verdict gets one confirming second judgment before it buys a plan-fix round → elaborate code per phase in parallel → splice it into the plan → re-grade the code-bearing plan (same tier + confirm contract) → implement → validate → commit. Research-led; three automated gates plus one human design checkpoint, before design, before code, and after the splice.",
@@ -1732,7 +1732,7 @@ const carveWorkflow = defineWorkflow({
 		// The user's brief, verbatim, on its own channel — the judgment seams
 		// (plan/code gates' completeness+correctness, validate) anchor against
 		// it. Deliberately NOT fed to the generative stages (slice, design-slice):
-		// bounded per-slice context is carve's whole point, and an ambient goal
+		// bounded per-slice context is build's whole point, and an ambient goal
 		// there invites re-litigating settled decompositions.
 		goal: produces.script({ run: captureGoal }),
 		// Front-loaded research grounds every slice's footing and feeds the plan
@@ -1989,5 +1989,5 @@ export const builtInWorkflows: readonly Workflow[] = [
 	archWorkflow,
 	vetWorkflow,
 	polishWorkflow,
-	carveWorkflow,
+	buildWorkflow,
 ];

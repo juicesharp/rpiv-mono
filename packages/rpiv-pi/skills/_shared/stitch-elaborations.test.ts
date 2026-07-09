@@ -77,7 +77,7 @@ const elaboration = (n: number, title: string, code: string) =>
 		"",
 	].join("\n");
 
-// An elaboration mirroring the real `elaborate` output that stalled carve: a
+// An elaboration mirroring the real `elaborate` output that stalled the build workflow: a
 // `## ` heading buried inside a Find/Replace code fence (must NOT be read as a
 // section boundary), plus a trailing `## Notes / Deferred` that is an H2 SIBLING
 // of `## Phase N:` (must be owned by the phase, not preserved as an orphan).
@@ -265,7 +265,7 @@ describe("stitch-elaborations.mjs", () => {
 		run(planPath);
 		const second = readFileSync(planPath, "utf-8");
 
-		// Byte-identical: carve's code-grade → code loop re-stitches every
+		// Byte-identical: build's code-grade → code loop re-stitches every
 		// round; a non-idempotent stitch grew the plan (tripled Success-Criteria /
 		// Notes blocks) until the backward-jump guard halted the run.
 		expect(second).toBe(first);

@@ -292,7 +292,7 @@ describe("match", () => {
 // ---------------------------------------------------------------------------
 
 describe("bypassedRecoveryArms", () => {
-	// A carve-shaped fragment: `slice-grade` is a decision edge to
+	// A build-shaped fragment: `slice-grade` is a decision edge to
 	// {design (forward) | slice-fix (loop-back)}. `slice-fix` loops back to
 	// `slice-check`; `design` proceeds forward to `synth`.
 	const wf: Workflow = {
