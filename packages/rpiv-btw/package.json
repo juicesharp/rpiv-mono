@@ -32,6 +32,7 @@
     "index.ts",
     "btw.ts",
     "btw-ui.ts",
+    "pi-compat.ts",
     "prompts/",
     "README.md",
     "LICENSE"

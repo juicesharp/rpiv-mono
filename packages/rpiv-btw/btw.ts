@@ -9,13 +9,7 @@
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import {
-	type AssistantMessage,
-	completeSimple,
-	type Message,
-	type StopReason,
-	type UserMessage,
-} from "@earendil-works/pi-ai";
+import type { AssistantMessage, Message, StopReason, UserMessage } from "@earendil-works/pi-ai";
 import {
 	convertToLlm,
 	type ExtensionAPI,
@@ -24,6 +18,7 @@ import {
 	type SessionEntry,
 } from "@earendil-works/pi-coding-agent";
 import { showBtwOverlay } from "./btw-ui.js";
+import { loadCompleteSimple } from "./pi-compat.js";
 
 // ---------------------------------------------------------------------------
 // Constants — flat named consts, grouped by concern (advisor pattern, b9428e9)
@@ -230,6 +225,7 @@ export async function executeBtw(
 	const systemPrompt = buildSystemPrompt();
 
 	try {
+		const completeSimple = await loadCompleteSimple();
 		const response = await completeSimple(
 			model,
 			{ systemPrompt, messages, tools: [] },

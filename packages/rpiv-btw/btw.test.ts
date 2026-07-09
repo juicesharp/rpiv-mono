@@ -11,12 +11,21 @@ vi.mock("@earendil-works/pi-ai", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("@earendil-works/pi-ai")>();
 	return {
 		...actual,
-		completeSimple: vi.fn(),
 		getSupportedThinkingLevels: vi.fn(() => ["off", "minimal", "low", "medium", "high"]),
 	};
 });
 
-import { type AssistantMessage, completeSimple, type UserMessage } from "@earendil-works/pi-ai";
+// completeSimple lives on /compat since pi 0.80 (see test/setup.ts).
+vi.mock("@earendil-works/pi-ai/compat", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("@earendil-works/pi-ai/compat")>();
+	return {
+		...actual,
+		completeSimple: vi.fn(),
+	};
+});
+
+import type { AssistantMessage, UserMessage } from "@earendil-works/pi-ai";
+import { completeSimple } from "@earendil-works/pi-ai/compat";
 import {
 	assistantMessageText,
 	BTW_STATE_KEY,

@@ -15,6 +15,17 @@ vi.mock("@earendil-works/pi-ai", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("@earendil-works/pi-ai")>();
 	return {
 		...actual,
+		getSupportedThinkingLevels: vi.fn(() => ["off", "minimal", "low", "medium", "high"]),
+	};
+});
+
+// `completeSimple` lives on the /compat entrypoint since pi 0.80; production
+// code resolves it via loadCompleteSimple(), which prefers /compat, so the
+// stub must be registered there for the shim to pick it up.
+vi.mock("@earendil-works/pi-ai/compat", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("@earendil-works/pi-ai/compat")>();
+	return {
+		...actual,
 		completeSimple: vi.fn(),
 		getSupportedThinkingLevels: vi.fn(() => ["off", "minimal", "low", "medium", "high"]),
 	};

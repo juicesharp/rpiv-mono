@@ -6,8 +6,7 @@
  * buildAdvisorResult so the envelope is built in exactly one place.
  */
 
-import type { StopReason, Usage } from "@earendil-works/pi-ai";
-import { completeSimple, type Message, type ThinkingLevel } from "@earendil-works/pi-ai";
+import type { Message, StopReason, ThinkingLevel, Usage } from "@earendil-works/pi-ai";
 import {
 	type AgentToolResult,
 	type AgentToolUpdateCallback,
@@ -32,6 +31,7 @@ import {
 	errNoApiKeyDetail,
 	msgConsulting,
 } from "./messages.js";
+import { loadCompleteSimple } from "./pi-compat.js";
 import { ADVISOR_SYSTEM_PROMPT } from "./prompt.js";
 import { getAdvisorEffort, getAdvisorModel } from "./state.js";
 
@@ -117,6 +117,7 @@ export async function executeAdvisor(
 	});
 
 	try {
+		const completeSimple = await loadCompleteSimple();
 		const response = await completeSimple(
 			advisor,
 			// `tools: []` reaffirms the "never calls tools" contract even when

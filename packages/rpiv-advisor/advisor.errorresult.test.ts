@@ -5,8 +5,16 @@ vi.mock("@earendil-works/pi-ai", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("@earendil-works/pi-ai")>();
 	return {
 		...actual,
-		completeSimple: vi.fn(),
 		getSupportedThinkingLevels: vi.fn(() => ["off", "minimal", "low", "medium", "high"]),
+	};
+});
+
+// completeSimple lives on /compat since pi 0.80 (see test/setup.ts).
+vi.mock("@earendil-works/pi-ai/compat", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("@earendil-works/pi-ai/compat")>();
+	return {
+		...actual,
+		completeSimple: vi.fn(),
 	};
 });
 
