@@ -7,7 +7,9 @@ import {
 	__resetRunLaneRegistry,
 	type LaneSession,
 	recordRun,
+	retireRun,
 	SINGLE_UNIT_KEY,
+	seedPendingUnits,
 	setCurrentSession,
 	setUnitStarted,
 } from "./run-lane-registry.js";
@@ -106,6 +108,45 @@ describe("LaneTranscriptView", () => {
 		recordRun("run-1", "ship");
 		const view = new LaneTranscriptView("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme);
 		expect(view.renderBody(80, false).join("\n")).toContain("stage starting");
+	});
+
+	it("shows a fanned-out placeholder on the lane row during a live fan-out generation", () => {
+		recordRun("run-1", "build");
+		seedPendingUnits("run-1", [
+			{ index: 0, label: "phase 1/2" },
+			{ index: 1, label: "phase 2/2" },
+		]);
+		// The lane (parent) row resolves the scalar slot, which clearUnitLanes wiped —
+		// the disk glob would show an ARBITRARY sibling's transcript, so it must not run.
+		const view = new LaneTranscriptView("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme);
+		expect(view.renderBody(80, false).join("\n")).toContain("fanned out — select a unit row");
+	});
+
+	it("keeps the disk fallback for a RETIRED lane's row (no fanned-out placeholder)", () => {
+		recordRun("run-1", "build");
+		seedPendingUnits("run-1", [{ index: 0, label: "phase 1/1" }]);
+		retireRun("run-1", "completed");
+		const view = new LaneTranscriptView("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme);
+		// No jsonl exists under this cwd, so the disk path degrades to the terminal
+		// placeholder — the point is the fan-out gate did NOT fire on a retired lane.
+		const body = view.renderBody(80, false).join("\n");
+		expect(body).not.toContain("fanned out");
+		expect(body).toContain("no transcript");
+	});
+
+	it("shows a pending placeholder for a seeded-but-unstarted unit sub-row", () => {
+		recordRun("run-1", "build");
+		seedPendingUnits("run-1", [
+			{ index: 0, label: "phase 1/2" },
+			{ index: 1, label: "phase 2/2" },
+		]);
+		const view = new LaneTranscriptView("run-1", 1, makeTui(), identityTheme);
+		expect(view.renderBody(80, false).join("\n")).toContain("unit pending — no transcript yet");
+		// The unit starts and publishes its live session → the placeholder yields to the body.
+		const session = makeSession(() => [assistantEntry("unit one is live")]);
+		setUnitStarted("run-1", 1, "phase 2/2");
+		setCurrentSession("run-1", 1, session);
+		expect(view.renderBody(80, false).join("\n")).toContain("unit one is live");
 	});
 
 	it("re-points to a new child session on a stage transition", () => {

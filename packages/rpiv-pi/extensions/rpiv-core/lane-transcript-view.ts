@@ -21,7 +21,24 @@ import {
 	type ViewerMessage,
 } from "./lane-transcript.js";
 import { type DiskBranch, loadBranchFromDisk } from "./lane-transcript-disk.js";
-import { getLane, getUnit, type LaneSession, subscribeLanes, type UnitLane } from "./run-lane-registry.js";
+import {
+	getLane,
+	getUnit,
+	type LaneEntry,
+	type LaneSession,
+	SINGLE_UNIT_KEY,
+	subscribeLanes,
+	type UnitLane,
+} from "./run-lane-registry.js";
+
+/** True when the lane currently carries real fan-out unit sub-rows (indices ≥ 0 —
+ *  the reserved scalar slot is negative, so it never counts as a generation). */
+function hasFanoutUnits(lane: LaneEntry): boolean {
+	for (const index of lane.units.keys()) {
+		if (index >= 0) return true;
+	}
+	return false;
+}
 
 export class LaneTranscriptView {
 	private currentSession: LaneSession | undefined;
@@ -89,6 +106,23 @@ export class LaneTranscriptView {
 				const defs = unit.finalToolDefs;
 				source = { cwd: unit.finalCwd ?? "", toolDef: (name) => defs?.get(name) as ToolDefArg };
 			} else {
+				// No session and no snapshot for this slot. Two states where the disk glob
+				// below would show the WRONG transcript (the newest-by-mtime child is some
+				// OTHER unit's jsonl, frozen at first render) — surface an honest placeholder
+				// instead:
+				//   - the lane (parent) row during a LIVE fan-out generation: clearUnitLanes
+				//     wiped the scalar slot, and the generation's transcripts live on the
+				//     addressable unit sub-rows. A RETIRED lane keeps the disk fallback (the
+				//     post-mortem replay the glob was built for).
+				//   - a PENDING unit (seeded, never started): it has produced nothing yet, so
+				//     ANY disk content attributed to it is a sibling's. Pending implies a live
+				//     generation (retire/sweep flip pending terminal), so no retired-lane carve-out.
+				if (this.unitIndex === SINGLE_UNIT_KEY && lane.status === "running" && hasFanoutUnits(lane)) {
+					return dimLine("(fanned out — select a unit row)", this.theme).render(width);
+				}
+				if (unit?.status === "pending") {
+					return dimLine("(unit pending — no transcript yet)", this.theme).render(width);
+				}
 				const disk = this.loadDiskBranch(unit);
 				if (disk) {
 					entries = disk.entries;
