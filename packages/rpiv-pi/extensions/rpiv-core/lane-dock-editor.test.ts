@@ -2,7 +2,7 @@ import type { KeybindingsManager } from "@earendil-works/pi-coding-agent";
 import type { EditorTheme, TUI } from "@earendil-works/pi-tui";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type DockDecisionContext, type DockKey, decideDockAction, LaneDockEditor } from "./lane-dock-editor.js";
-import { __resetRunLaneRegistry } from "./run-lane-registry.js";
+import { __resetRunLaneRegistry, listLanes, recordRun, retireRun } from "./run-lane-registry.js";
 
 /** Base context: prompt empty, no autocomplete, two rows. */
 function ctx(overrides: Partial<DockDecisionContext> = {}): DockDecisionContext {
@@ -10,6 +10,7 @@ function ctx(overrides: Partial<DockDecisionContext> = {}): DockDecisionContext 
 		autocompleteOpen: false,
 		editorEmpty: true,
 		rowCount: 2,
+		allTerminal: false,
 		...overrides,
 	};
 }
@@ -42,6 +43,37 @@ describe("decideDockAction — inactive (entry gesture)", () => {
 		"other",
 	])("%s passes through while inactive", (key) => {
 		expect(decideDockAction(key, ctx())).toEqual({ kind: "passthrough" });
+	});
+});
+
+describe("decideDockAction — clear-completed (ESC at empty root prompt)", () => {
+	it("ESC on an empty prompt with all-terminal lanes, no autocomplete → clear-completed", () => {
+		expect(
+			decideDockAction(
+				"escape",
+				ctx({ editorEmpty: true, autocompleteOpen: false, rowCount: 2, allTerminal: true }),
+			),
+		).toEqual({ kind: "clear-completed" });
+	});
+
+	it("ESC is NOT hijacked when the editor has text (typing role preserved)", () => {
+		expect(decideDockAction("escape", ctx({ editorEmpty: false, allTerminal: true }))).toEqual({
+			kind: "passthrough",
+		});
+	});
+
+	it("ESC is NOT hijacked while autocomplete is open (dropdown closes, not clear)", () => {
+		expect(decideDockAction("escape", ctx({ autocompleteOpen: true, allTerminal: true }))).toEqual({
+			kind: "passthrough",
+		});
+	});
+
+	it("ESC does NOT clear when there are no rows (defeats every() vacuous truth)", () => {
+		expect(decideDockAction("escape", ctx({ rowCount: 0, allTerminal: true }))).toEqual({ kind: "passthrough" });
+	});
+
+	it("ESC does NOT clear while a lane is still running (allTerminal false)", () => {
+		expect(decideDockAction("escape", ctx({ rowCount: 1, allTerminal: false }))).toEqual({ kind: "passthrough" });
 	});
 });
 
@@ -103,5 +135,93 @@ describe("LaneDockEditor — force-clear on genuine submit", () => {
 		editor.handleInput(TYPE_A);
 
 		expect(renders.filter((r) => r.force === true)).toEqual([]);
+	});
+});
+
+describe("LaneDockEditor — ESC clears finished lanes at an empty root prompt", () => {
+	const ESC = "\x1b"; // Key.escape codepoint 27 (matches matchesKey(data, Key.escape))
+	const TYPE_A = "a"; // an ordinary keystroke (non-empty prompt)
+
+	function makeRenderSpyEditor(): {
+		editor: LaneDockEditor;
+		calls: Array<{ runId: string; unitIndex: number }>;
+		renders: Array<{ force: boolean | undefined }>;
+	} {
+		const renders: Array<{ force: boolean | undefined }> = [];
+		const tui = {
+			terminal: { rows: 40 },
+			requestRender: (force?: boolean) => renders.push({ force }),
+		} as unknown as TUI;
+		const theme = { borderColor: (s: string) => s, selectList: {} } as unknown as EditorTheme;
+		const keybindings = { matches: () => false } as unknown as KeybindingsManager;
+		const calls: Array<{ runId: string; unitIndex: number }> = [];
+		const editor = new LaneDockEditor(tui, theme, keybindings, (runId, unitIndex) =>
+			calls.push({ runId, unitIndex }),
+		);
+		return { editor, calls, renders };
+	}
+
+	beforeEach(() => __resetRunLaneRegistry());
+	afterEach(() => __resetRunLaneRegistry());
+
+	it("ESC at an empty prompt with all lanes terminal → batch-evicts every lane (dock collapses)", () => {
+		recordRun("run-1", "ship");
+		retireRun("run-1", "completed");
+		recordRun("run-2", "build");
+		retireRun("run-2", "failed", "boom");
+		expect(listLanes().length).toBe(2); // two terminal lanes seeded
+
+		const { editor, calls } = makeRenderSpyEditor();
+		editor.handleInput(ESC); // empty prompt (default), autocomplete closed (default)
+
+		// Every terminal lane evicted from the live registry (evictRun per terminal lane) →
+		// the registry is empty, so LaneDock.update() will unregister the widget (collapse).
+		expect(listLanes()).toEqual([]);
+		// ESC is consumed — no browser step-in (onOpen never called).
+		expect(calls).toEqual([]);
+	});
+
+	it("a single terminal lane is also evicted (N=1 case)", () => {
+		recordRun("run-1", "ship");
+		retireRun("run-1", "completed");
+
+		const { editor } = makeRenderSpyEditor();
+		editor.handleInput(ESC);
+
+		expect(listLanes()).toEqual([]);
+	});
+
+	it("ESC with a running lane present → NOT evicted; the lane survives (passes through)", () => {
+		recordRun("run-1", "ship"); // status: running (no retireRun)
+
+		const { editor } = makeRenderSpyEditor();
+		editor.handleInput(ESC);
+
+		// allTerminal is false → clear-completed gate fails → passthrough. The running lane
+		// is preserved (NOT evicted) and ESC delegates to super.handleInput.
+		expect(listLanes().map((l) => l.runId)).toEqual(["run-1"]);
+		expect(listLanes()[0].status).toBe("running");
+	});
+
+	it("ESC with zero lanes → passes through (not consumed for nothing)", () => {
+		// No lanes recorded → rowCount 0 (defeats every() vacuous truth). ESC must not be
+		// hijacked into a no-op clear; it delegates to the editor.
+		const { editor } = makeRenderSpyEditor();
+		editor.handleInput(ESC);
+
+		expect(listLanes()).toEqual([]);
+	});
+
+	it("ESC while typing (non-empty prompt) → passes through (typing role preserved)", () => {
+		recordRun("run-1", "ship");
+		retireRun("run-1", "completed"); // allTerminal true, but prompt is non-empty
+
+		const { editor } = makeRenderSpyEditor();
+		editor.setText(TYPE_A); // non-empty prompt
+		editor.handleInput(ESC);
+
+		// editorEmpty is false → clear-completed gate fails → passthrough. The terminal lane
+		// is preserved; ESC keeps its editor role.
+		expect(listLanes().map((l) => l.runId)).toEqual(["run-1"]);
 	});
 });

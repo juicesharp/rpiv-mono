@@ -29,7 +29,14 @@
 
 import { CustomEditor, type KeybindingsManager } from "@earendil-works/pi-coding-agent";
 import { type EditorTheme, Key, matchesKey, type TUI } from "@earendil-works/pi-tui";
-import { type DisplayRow, type LaneEntry, listLanesForDisplay, SINGLE_UNIT_KEY } from "./run-lane-registry.js";
+import {
+	type DisplayRow,
+	evictRun,
+	type LaneEntry,
+	listLanes,
+	listLanesForDisplay,
+	SINGLE_UNIT_KEY,
+} from "./run-lane-registry.js";
 
 /** The navigation keys the dock cares about; everything else is "other".
  *  Only "down" is acted on (the entry gesture); the rest are classified for the
@@ -46,6 +53,11 @@ export interface DockDecisionContext {
 	/** Number of flattened DISPLAY ROWS (lane rows + unit sub-rows) — the entry gate
 	 *  (no entry when there is nothing to step into). */
 	readonly rowCount: number;
+	/** Are ALL lanes terminal (none running)? Snapshot of
+	 *  `listLanes().every((l) => l.status !== "running")` — the clear-completed gate so
+	 *  ESC never evicts a running lane. Snapshotted (not recomputed) to keep
+	 *  decideDockAction a pure, side-effect-free function. */
+	readonly allTerminal: boolean;
 }
 
 /** A verb for the adapter to execute. Pure data — no side effects here.
@@ -54,6 +66,7 @@ export interface DockDecisionContext {
  *  passthrough (delegate to the editor) remain. */
 export type DockAction =
 	| { kind: "activate" } // step into the lane browser on the top display row
+	| { kind: "clear-completed" } // ESC at an empty root prompt — batch-evict finished lanes
 	| { kind: "passthrough" }; // not ours — hand to the editor
 
 /**
@@ -65,6 +78,15 @@ export function decideDockAction(key: DockKey, ctx: DockDecisionContext): DockAc
 	// Entry: DOWN from an empty prompt, no autocomplete open, with lanes present.
 	if (key === "down" && ctx.editorEmpty && !ctx.autocompleteOpen && ctx.rowCount > 0) {
 		return { kind: "activate" };
+	}
+	// Clear-completed: ESC at an EMPTY root prompt, no autocomplete open, with lanes
+	// present, AND every lane terminal. Each conjunct is a preservation guarantee:
+	//   - `escape` + `editorEmpty`: ESC's editor role while typing is preserved.
+	//   - `!autocompleteOpen`: the dropdown owns ESC to close itself (close, not clear).
+	//   - `rowCount > 0`: defeats `every()`'s empty-array vacuous truth (no clear-for-nothing).
+	//   - `allTerminal`: a running lane is never evicted by this gesture.
+	if (key === "escape" && ctx.editorEmpty && !ctx.autocompleteOpen && ctx.rowCount > 0 && ctx.allTerminal) {
+		return { kind: "clear-completed" };
 	}
 	return { kind: "passthrough" };
 }
@@ -113,10 +135,15 @@ export class LaneDockEditor extends CustomEditor {
 	handleInput(data: string): void {
 		const key = classifyKey(data);
 		const editorEmpty = this.getText().trim().length === 0;
+		// Snapshot the live registry ONCE for the decision: rowCount (display rows) +
+		// allTerminal (every lane terminal). listLanes() is the insertion-ordered source
+		// for the allTerminal snapshot; listLanesForDisplay() for the row count.
+		const lanes = listLanes();
 		const action = decideDockAction(key, {
 			autocompleteOpen: this.isShowingAutocomplete(),
 			editorEmpty,
 			rowCount: listLanesForDisplay().length,
+			allTerminal: lanes.length > 0 && lanes.every((l) => l.status !== "running"),
 		});
 		if (action.kind === "activate") {
 			// Step in = open the lane BROWSER (the focused console) on the top display row —
@@ -126,6 +153,21 @@ export class LaneDockEditor extends CustomEditor {
 			// "activated".
 			const top = resolveRow(listLanesForDisplay()[0]);
 			if (top) this.onOpen(top.runId, top.unitIndex);
+			return;
+		}
+		if (action.kind === "clear-completed") {
+			// Batch-evict finished lanes: iterate a FRESH listLanes() snapshot and evictRun()
+			// each terminal lane. ESC is consumed (early return — do NOT delegate to
+			// super.handleInput). The last evictRun leaves the registry empty, and its
+			// notify() drives LaneDock.update() (lane-dock.ts:77 `lanes.length === 0`) to
+			// unregister the widget, collapsing the ambient dock. The defensive
+			// `status !== "running"` filter guards against any state read between the
+			// decision snapshot and execution (belt-and-suspenders: the gate already
+			// guaranteed allTerminal and JS is single-threaded). Durable .jsonl transcripts
+			// on disk survive the hard-delete; in-memory overlays do not.
+			for (const lane of listLanes()) {
+				if (lane.status !== "running") evictRun(lane.runId);
+			}
 			return;
 		}
 		// passthrough — delegate to the editor so editing + app keybindings keep working.
