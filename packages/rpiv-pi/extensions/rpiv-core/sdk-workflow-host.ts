@@ -52,6 +52,7 @@ import type { ModelSelection, WorkflowHostContext, WorkflowSessionContext } from
 import { armBashWatchdog, type BashWatchdog } from "./bash-timeout.js";
 import { createLaneRelayUiContext } from "./lane-relay-ui.js";
 import { createLaneSessionView } from "./lane-streaming.js";
+import { harvestToolDefs } from "./lane-tool-defs.js";
 import { captureFinalSnapshot, SINGLE_UNIT_KEY, setCurrentSession, setLaneSessionFile } from "./run-lane-registry.js";
 
 /**
@@ -276,6 +277,13 @@ export class SdkWorkflowHost implements WorkflowHostContext {
 			model: this.resolveModelKey(options.model?.model),
 			thinkingLevel: options.model?.thinking,
 		});
+
+		// Harvest the child's full tool-definition registry (renderers included) into
+		// the shared cache the disk-jsonl transcript fallback resolves per-tool
+		// renderers from (lane-tool-defs.ts). Children load the same extensions as
+		// the launcher, so the defs are process-stable; last spawn wins, which picks
+		// up a `/reload`ed extension. Fail-soft — never blocks the spawn.
+		harvestToolDefs(session);
 
 		// Lane registry: publish this child as the viewer's transcript source under
 		// its OWN per-unit slot — a STREAMING VIEW (lane-streaming.ts) so the viewer/dock

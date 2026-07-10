@@ -13,6 +13,7 @@ import { join } from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { makeAssistantMessage, makeUserMessage } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { __resetLaneToolDefs, harvestToolDefs } from "./lane-tool-defs.js";
 import { loadBranchFromDisk } from "./lane-transcript-disk.js";
 
 let tmp: string;
@@ -43,8 +44,25 @@ describe("loadBranchFromDisk", () => {
 		expect(disk?.entries.length).toBeGreaterThan(0);
 		expect(disk?.source.cwd).toBe(tmp); // cwd from the session header
 		expect(JSON.stringify(disk?.entries)).toContain("DISK_TRANSCRIPT_MARKER");
-		// Tool defs degrade to the built-in fallback (no live session).
+		// Nothing harvested yet → degrade to the component's built-in fallback.
 		expect(disk?.source.toolDef("anything")).toBeUndefined();
+	});
+
+	it("resolves per-tool defs from the harvest cache (extension renderers survive the disk path)", () => {
+		const todoDef = { name: "todo", renderCall: () => undefined };
+		harvestToolDefs({
+			getAllTools: () => [{ name: "todo" }],
+			getToolDefinition: () => todoDef,
+		});
+		try {
+			const file = writeSession(tmp, join(tmp, "sessions"), "DEFS_MARKER");
+			const disk = loadBranchFromDisk("run-x", file, tmp);
+			expect(disk?.source.toolDef("todo")).toBe(todoDef);
+			// An unharvested tool still degrades to the component's own fallback.
+			expect(disk?.source.toolDef("never-harvested")).toBeUndefined();
+		} finally {
+			__resetLaneToolDefs(); // don't leak into sibling tests within this file
+		}
 	});
 
 	it("globs the run's session dir (newest jsonl) when no lastSessionFile is given", () => {

@@ -34,6 +34,7 @@ interface FakeSession {
 	// Present so a FakeSession structurally satisfies the registry's LaneSession
 	// (the viewer's transcript source) — the host registers `session` verbatim.
 	sessionManager: { getBranch: ReturnType<typeof vi.fn>; getCwd: ReturnType<typeof vi.fn> };
+	getAllTools: ReturnType<typeof vi.fn>;
 	getToolDefinition: ReturnType<typeof vi.fn>;
 	getSessionStats: ReturnType<typeof vi.fn>;
 	subscribe: ReturnType<typeof vi.fn>;
@@ -51,6 +52,9 @@ let nextSessionSeq = 0;
 // Toggle for the (B) teardown tests: whether a child's runner reports a
 // `session_shutdown` handler. Reset to true each test in beforeEach.
 let shutdownHandlersPresent = true;
+// The tool registry a fake child resolves — the harvest test seeds this so
+// spawnChild can prove the shared def cache is populated. Reset in beforeEach.
+let fakeToolDefs: Record<string, unknown> = {};
 
 function makeFakeSession(): FakeSession {
 	const seq = nextSessionSeq++;
@@ -60,7 +64,8 @@ function makeFakeSession(): FakeSession {
 		isStreaming: false,
 		messages: [],
 		sessionManager: { getBranch: vi.fn(() => []), getCwd: vi.fn(() => "/work") },
-		getToolDefinition: vi.fn(() => undefined),
+		getAllTools: vi.fn(() => Object.keys(fakeToolDefs).map((name) => ({ name }))),
+		getToolDefinition: vi.fn((name: string) => fakeToolDefs[name]),
 		getSessionStats: vi.fn(() => ({
 			tokens: { input: 1500, output: 800, cacheRead: 500, cacheWrite: 200, total: 3000 },
 			cost: 0.05,
@@ -113,6 +118,7 @@ vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
 	};
 });
 
+import { __resetLaneToolDefs, getCachedToolDef } from "./lane-tool-defs.js";
 import {
 	__resetRunLaneRegistry,
 	getLane,
@@ -187,12 +193,14 @@ beforeEach(() => {
 	sessions.length = 0;
 	nextSessionSeq = 0;
 	shutdownHandlersPresent = true;
+	fakeToolDefs = {};
 	resourceLoaders.length = 0;
 	createAgentSessionMock.mockClear();
 	sessionManagerCreate.mockClear();
 	sessionManagerOpen.mockClear();
 	resourceLoaderReload.mockClear();
 	__resetRunLaneRegistry();
+	__resetLaneToolDefs();
 });
 
 afterEach(() => {
@@ -225,6 +233,23 @@ describe("spawnChild — fresh child", () => {
 		expect(passed.cwd).toBe("/work");
 		expect(sessionManagerCreate).toHaveBeenCalledWith("/work", "/run/sessions");
 		expect(sessionManagerOpen).not.toHaveBeenCalled();
+	});
+
+	it("harvests the child's tool definitions into the shared disk-fallback cache", async () => {
+		const todoDef = { name: "todo", renderCall: () => undefined };
+		fakeToolDefs = { todo: todoDef };
+		const { deps } = makeDeps();
+		const host = new SdkWorkflowHost(deps);
+
+		expect(getCachedToolDef("todo")).toBeUndefined(); // nothing before the spawn
+		await host.spawnChild({
+			prompt: "/skill:blueprint x",
+			withSession: async () => "ok",
+		});
+
+		// The def (renderers included) survives the child's teardown — the disk-jsonl
+		// transcript fallback resolves it via lane-transcript-disk's RenderSource.
+		expect(getCachedToolDef("todo")).toBe(todoDef);
 	});
 
 	it("sends the initial prompt exactly once and returns the withSession result", async () => {

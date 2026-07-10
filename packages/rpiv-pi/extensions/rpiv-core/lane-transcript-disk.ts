@@ -18,6 +18,7 @@
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { getCachedToolDef } from "./lane-tool-defs.js";
 import type { RenderSource, ToolDefArg, ViewerEntry } from "./lane-transcript.js";
 
 /** A branch loaded from disk plus the render source the transcript pipeline needs. */
@@ -58,9 +59,12 @@ function resolveSessionFile(runId: string, lastSessionFile: string | undefined, 
  * (`cwd` defaults to the launcher's working directory). Returns undefined — fail-soft —
  * when the file can't be resolved, opened, or carries no entries.
  *
- * Tool definitions degrade to the built-in fallback renderer (the live `getToolDefinition`
- * is gone once the run ended) — an accepted degrade: text/diffs still render, only
- * per-tool custom renderers fall back. cwd comes from the session header (`getCwd`).
+ * Tool definitions resolve from the shared harvest cache (lane-tool-defs.ts) — the
+ * live `getToolDefinition` is gone once the run ended, but the launcher process has
+ * the same extensions loaded and the host harvests every spawned child's registry.
+ * A never-populated cache (fresh launcher, no child spawned yet) degrades as before:
+ * extension tools fall back to the component's generic renderer, built-ins self-heal.
+ * cwd comes from the session header (`getCwd`).
  */
 export function loadBranchFromDisk(
 	runId: string,
@@ -75,8 +79,10 @@ export function loadBranchFromDisk(
 		if (entries.length === 0) return undefined;
 		const source: RenderSource = {
 			cwd: manager.getCwd(),
-			// No live session → no per-tool defs; the component falls back to its generic renderer.
-			toolDef: (): ToolDefArg => undefined,
+			// No live session — resolve per-tool defs from the harvest cache so extension
+			// tools (todo, ask_user_question, …) keep their custom renderers on the disk
+			// path. An unharvested name yields undefined → the component's own fallback.
+			toolDef: (name: string): ToolDefArg => getCachedToolDef(name) as ToolDefArg,
 		};
 		return { entries, source };
 	} catch {
