@@ -18,6 +18,7 @@ import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 
 import type { LaneUsage } from "./lane-usage.js";
 import { toLaneUsage } from "./lane-usage.js";
+import { emitQuestionAsked, emitQuestionResolved } from "./question-lifecycle.js";
 
 /** Lane status taxonomy — mirrors rpiv-workflow's RunTermination.status (types.ts:145-149). */
 export type LaneStatus = "running" | "completed" | "failed" | "aborted" | "cancelled";
@@ -310,6 +311,9 @@ function notify(): void {
 export function recordRun(runId: string, name: string, meta?: { workflow?: string; input?: string }): void {
 	const { lanes } = state();
 	const existing = lanes.get(runId);
+	// Units with a parked question, captured BEFORE the reactivation settle clears
+	// them so each affected unit is addressable for a `cleared` emit after notify().
+	const cleared: number[] = [];
 	if (existing) {
 		existing.name = name;
 		existing.workflow = meta?.workflow ?? existing.workflow;
@@ -317,7 +321,10 @@ export function recordRun(runId: string, name: string, meta?: { workflow?: strin
 		existing.status = "running"; // reactivate a retained terminal lane (resume)
 		// Settle any queued input before clearing units — mirrors retireRun/evictRun/
 		// clearUnitLanes so a child can never hang on a dangling resolver across reactivation.
-		for (const unit of existing.units.values()) for (const p of unit.pendingInput) p.resolve(undefined);
+		for (const unit of existing.units.values()) {
+			if (unit.pendingInput.length > 0) cleared.push(unit.index);
+			for (const p of unit.pendingInput) p.resolve(undefined);
+		}
 		existing.units.clear(); // drop the prior run's per-unit sessions + terminal snapshots
 		existing.error = undefined; // clear the prior run's terminal failure reason
 		existing.progress = undefined; // clear stale stage progress
@@ -334,6 +341,9 @@ export function recordRun(runId: string, name: string, meta?: { workflow?: strin
 		});
 	}
 	notify();
+	// Emit AFTER notify() — only a reactivation that settled parked questions publishes;
+	// a brand-new run has an empty `cleared` and publishes nothing.
+	for (const idx of cleared) emitQuestionResolved(runId, idx, "cleared");
 }
 
 /**
@@ -426,7 +436,11 @@ export function retireRun(runId: string, status: Exclude<LaneStatus, "running">,
 	if (entry.status !== "running") return;
 	entry.status = status;
 	if (error !== undefined) entry.error = error; // terminal failure reason
+	// Capture units with a parked question BEFORE the settle loop clears pendingInput,
+	// so each affected unit is addressable for a `cleared` emit after notify().
+	const cleared: number[] = [];
 	for (const unit of entry.units.values()) {
+		if (unit.pendingInput.length > 0) cleared.push(unit.index);
 		// Snapshot from a STILL-LIVE session if one is attached (the `x` path). In the
 		// normal detached path the host already captured per unit via
 		// `captureFinalSnapshot` and dropped the session, so `currentSession` is
@@ -441,6 +455,8 @@ export function retireRun(runId: string, status: Exclude<LaneStatus, "running">,
 	}
 	entry.needsInputSince = undefined;
 	notify();
+	// Emit AFTER notify() — only units that HAD pending input publish a `cleared`.
+	for (const idx of cleared) emitQuestionResolved(runId, idx, "cleared");
 }
 
 /**
@@ -478,9 +494,17 @@ export function evictRun(runId: string): void {
 	const { lanes } = state();
 	const entry = lanes.get(runId);
 	if (!entry) return;
+	// Capture units with a parked question BEFORE the settle, so each affected unit is
+	// addressable for a `cleared` emit after notify().
+	const cleared: number[] = [];
+	for (const unit of entry.units.values()) {
+		if (unit.pendingInput.length > 0) cleared.push(unit.index);
+		for (const p of unit.pendingInput) p.resolve(undefined);
+	}
 	lanes.delete(runId);
-	for (const unit of entry.units.values()) for (const p of unit.pendingInput) p.resolve(undefined);
 	notify();
+	// Emit AFTER notify() — only units that HAD pending input publish a `cleared`.
+	for (const idx of cleared) emitQuestionResolved(runId, idx, "cleared");
 }
 
 /** Update a lane's status (best-effort — a missing lane is a no-op). */
@@ -556,10 +580,18 @@ export function sweepRunningUnits(runId: string, status: "done" | "failed"): voi
 export function clearUnitLanes(runId: string): void {
 	const entry = state().lanes.get(runId);
 	if (!entry || entry.units.size === 0) return;
-	for (const unit of entry.units.values()) for (const p of unit.pendingInput) p.resolve(undefined);
+	// Capture units with a parked question BEFORE the settle, so each affected unit is
+	// addressable for a `cleared` emit after notify().
+	const cleared: number[] = [];
+	for (const unit of entry.units.values()) {
+		if (unit.pendingInput.length > 0) cleared.push(unit.index);
+		for (const p of unit.pendingInput) p.resolve(undefined);
+	}
 	entry.units.clear();
 	entry.needsInputSince = undefined;
 	notify();
+	// Emit AFTER notify() — only units that HAD pending input publish a `cleared`.
+	for (const idx of cleared) emitQuestionResolved(runId, idx, "cleared");
 }
 
 /** Seed the CURRENT fan-out generation's unit sub-rows as PENDING (bridge `onLoopStart`
@@ -643,6 +675,9 @@ export function enqueueInput(runId: string, index: number, pending: PendingInput
 	if (entry.needsInputSince === undefined) entry.needsInputSince = Date.now();
 	upsertUnit(entry, index).pendingInput.push(pending);
 	notify();
+	// Emit AFTER notify() so a lifecycle subscriber observes the committed park. The
+	// missing-run early-return above emits nothing (no question was ever parked).
+	emitQuestionAsked(runId, index, entry.name, entry.workflow, entry.input);
 }
 
 /** Pop the oldest pending input for ONE unit (drain). Does NOT clear the
@@ -650,7 +685,11 @@ export function enqueueInput(runId: string, index: number, pending: PendingInput
  *  retire/evict/reactivate/clear). */
 export function dequeueInput(runId: string, index: number): PendingInput | undefined {
 	const pending = state().lanes.get(runId)?.units.get(index)?.pendingInput.shift();
-	if (pending) notify();
+	if (pending) {
+		notify();
+		// Emit AFTER notify() so a lifecycle subscriber observes the committed dequeue.
+		emitQuestionResolved(runId, index, "answered");
+	}
 	return pending;
 }
 

@@ -92,6 +92,8 @@ beforeEach(async () => {
 	sessionCapture.__resetSessionCaptureState();
 	const runLaneRegistry = await import("../packages/rpiv-pi/extensions/rpiv-core/run-lane-registry.js");
 	runLaneRegistry.__resetRunLaneRegistry();
+	const questionLifecycle = await import("../packages/rpiv-pi/extensions/rpiv-core/question-lifecycle.js");
+	questionLifecycle.__resetQuestionLifecycle();
 	const laneSwitcher = await import("../packages/rpiv-pi/extensions/rpiv-core/lane-switcher.js");
 	laneSwitcher.__resetLaneSwitcher();
 	const laneProgress = await import("../packages/rpiv-pi/extensions/rpiv-core/lane-progress.js");
