@@ -95,11 +95,19 @@ export function registerWorkflowQuestionWarpBridgeHook(pi: ExtensionAPI): void {
 export async function registerWorkflowQuestionWarpBridge(cwd: string): Promise<void> {
 	const g = guard();
 	if (g.dispose) return; // already registered — never stack a duplicate listener
+	// Claim the guard with a no-op sentinel BEFORE suspending on the import: the
+	// guard read above and the real disposer assignment below are separated by an
+	// await, and a session_start re-fired inside that window would pass the stale
+	// check and stack a second lifecycle listener. Any import failure releases the
+	// claim so a later session_start can retry (rpiv-warp installed mid-session,
+	// transient load error) instead of bricking the bridge for the process.
+	g.dispose = () => {};
 	let transport: { asked(runId: string): void; resolved(runId: string): void };
 	try {
 		const mod = await import("@juicesharp/rpiv-warp");
 		transport = mod.createWorkflowQuestionTransport(cwd);
 	} catch (err) {
+		g.dispose = undefined; // release the claim — the next session_start may retry
 		if (isModuleNotFound(err)) return; // sibling absent — clean-install no-op
 		throw err;
 	}

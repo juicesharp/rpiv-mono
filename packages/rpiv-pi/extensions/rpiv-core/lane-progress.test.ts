@@ -144,6 +144,27 @@ describe("registerLaneProgressHook", () => {
 		await sessionStart()!({}, { hasUI: true, ui: REAL_UI });
 		expect(registerLifecycle).toHaveBeenCalledTimes(1);
 	});
+
+	it("is idempotent under CONCURRENT session_start fires — an overlap inside the import window does not stack a duplicate listener", async () => {
+		const { pi, sessionStart } = makePi();
+		registerLaneProgressHook(pi);
+		// Fire both WITHOUT awaiting between them: the first suspends at the bridge's
+		// dynamic import with the guard sentinel already claimed; the second must
+		// short-circuit on it. Before the synchronous claim this was a TOCTOU window —
+		// the second fire passed the stale guard read and stacked a second listener.
+		await Promise.all([
+			sessionStart()!({}, { hasUI: true, ui: REAL_UI }),
+			sessionStart()!({}, { hasUI: true, ui: REAL_UI }),
+		]);
+		// Count BOTH seams: two imports racing through vitest's mock layer can
+		// resolve one mocked and one REAL rpiv-workflow/startup module, so a
+		// stacked registration may land in the real Symbol.for lifecycle registry
+		// instead of the `registerLifecycle` mock. Total registrations must be 1.
+		const realRegistry = (globalThis as Record<symbol, unknown>)[Symbol.for("@juicesharp/rpiv-workflow:lifecycle")] as
+			| unknown[]
+			| undefined;
+		expect(registerLifecycle.mock.calls.length + (realRegistry?.length ?? 0)).toBe(1);
+	});
 });
 
 describe("lane-progress event mapping", () => {

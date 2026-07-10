@@ -146,3 +146,12 @@ export function subscribeQuestionLifecycle(listener: QuestionLifecycleListener):
 export function __resetQuestionLifecycle(): void {
 	state().listeners.clear();
 }
+
+/** Test-only visibility — the number of active lifecycle listeners. The
+ *  warp-bridge idempotency tests observe a double-subscribe through THIS count:
+ *  two dynamic imports racing through vitest's mock layer can resolve one
+ *  mocked and one REAL rpiv-warp module, so transport-mock call counts alone
+ *  miss a stacked listener. */
+export function __questionLifecycleListenerCount(): number {
+	return state().listeners.size;
+}

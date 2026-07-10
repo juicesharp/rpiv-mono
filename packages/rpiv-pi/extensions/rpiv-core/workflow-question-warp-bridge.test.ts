@@ -27,6 +27,7 @@ vi.mock("@juicesharp/rpiv-warp", async (importOriginal) => {
 
 import { createLaneRelayUiContext } from "./lane-relay-ui.js";
 import {
+	__questionLifecycleListenerCount,
 	__resetQuestionLifecycle,
 	emitQuestionAsked,
 	emitQuestionResolved,
@@ -115,6 +116,27 @@ describe("registerWorkflowQuestionWarpBridgeHook", () => {
 		// built once and subscribeQuestionLifecycle is called once.
 		expect(createWorkflowQuestionTransport).toHaveBeenCalledTimes(1);
 		// A parked question emits asked exactly once (not doubled).
+		asked("run-1", 0);
+		expect(transportAsked).toHaveBeenCalledTimes(1);
+	});
+
+	it("is idempotent under CONCURRENT session_start fires — an overlap inside the import window does not stack a duplicate listener", async () => {
+		const { pi, sessionStart } = makePi();
+		registerWorkflowQuestionWarpBridgeHook(pi);
+		// Fire both WITHOUT awaiting between them: the first suspends at the bridge's
+		// dynamic import with the guard sentinel already claimed; the second must
+		// short-circuit on it. Before the synchronous claim this was a TOCTOU window —
+		// the second fire passed the stale guard read and stacked a second listener.
+		await Promise.all([
+			sessionStart()!({}, { hasUI: true, ui: REAL_UI, cwd: CWD }),
+			sessionStart()!({}, { hasUI: true, ui: REAL_UI, cwd: CWD }),
+		]);
+		// The LISTENER COUNT is the load-bearing assertion: two imports racing
+		// through vitest's mock layer can resolve one mocked and one REAL rpiv-warp
+		// module, so a stacked listener wrapping the real transport is invisible to
+		// the transport-mock call counts below.
+		expect(__questionLifecycleListenerCount()).toBe(1);
+		expect(createWorkflowQuestionTransport).toHaveBeenCalledTimes(1);
 		asked("run-1", 0);
 		expect(transportAsked).toHaveBeenCalledTimes(1);
 	});

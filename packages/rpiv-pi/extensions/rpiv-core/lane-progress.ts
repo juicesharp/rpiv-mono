@@ -107,6 +107,13 @@ export function registerLaneProgressHook(pi: ExtensionAPI): void {
 export async function registerLaneProgress(): Promise<void> {
 	const g = guard();
 	if (g.dispose) return; // already registered — never stack a duplicate listener
+	// Claim the guard with a no-op sentinel BEFORE suspending on the import: the
+	// guard read above and the real disposer assignment below are separated by an
+	// await, and a session_start re-fired inside that window would pass the stale
+	// check and stack a second lifecycle listener (mirrors
+	// workflow-question-warp-bridge). Any failure releases the claim so a later
+	// session_start can retry instead of bricking the bridge for the process.
+	g.dispose = () => {};
 	try {
 		// Thin `/startup` entry (re-exports registerLifecycle) — keeps the
 		// loader/DSL/runner graph off startup and avoids the barrel-import race.
@@ -304,6 +311,7 @@ export async function registerLaneProgress(): Promise<void> {
 			},
 		});
 	} catch (err) {
+		g.dispose = undefined; // release the claim — the next session_start may retry
 		if (isModuleNotFound(err)) return; // sibling absent — /rpiv-setup guides the user
 		throw err;
 	}
