@@ -28,6 +28,11 @@ export interface ToolDefHarvestSource {
 	getToolDefinition(name: string): unknown;
 }
 
+/** Deliberately a plain module-level Map, NOT a `Symbol.for` global slot like
+ *  question-lifecycle/warp-bridge: the producer (sdk-workflow-host's harvest) and
+ *  the consumer (lane-transcript-disk's read) both run in the launcher's module
+ *  instance, so a child re-load can never split them — and a split copy would
+ *  only degrade to the component's built-in fallback anyway. */
 const cachedDefs = new Map<string, unknown>();
 
 /**
