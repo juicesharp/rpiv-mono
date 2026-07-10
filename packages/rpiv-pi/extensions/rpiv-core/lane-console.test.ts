@@ -287,6 +287,78 @@ describe("LaneConsole — live output + bottom-pinned lane block", () => {
 	});
 });
 
+describe("LaneConsole — auto-return on last-run-finish", () => {
+	/** A second live (running) lane with distinct transcript text — recorded AFTER run-1. */
+	function secondRunningLane(): void {
+		recordRun("run-2", "build");
+		setUnitStarted("run-2", SINGLE_UNIT_KEY, "unit");
+		setCurrentSession(
+			"run-2",
+			SINGLE_UNIT_KEY,
+			makeSession(() => [assistantEntry("second lane body")]),
+		);
+	}
+
+	it("c1: retiring the sole running lane closes the browser exactly once (idempotent)", () => {
+		liveUnit();
+		const done = vi.fn();
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, done);
+		retireRun("run-1", "completed"); // running→terminal → sync() sees the transition → finish()
+		expect(done).toHaveBeenCalledTimes(1); // closed exactly once
+		retireRun("run-1", "completed"); // a second notify/retire is a no-op (finish() guards on resolved)
+		expect(done).toHaveBeenCalledTimes(1);
+		panel.dispose();
+	});
+
+	it("c1 multi-lane / 'very last run': retiring one of two running lanes does NOT close; retiring the second closes once", () => {
+		liveUnit();
+		secondRunningLane(); // run-2 also running
+		const done = vi.fn();
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, done);
+		retireRun("run-1", "completed"); // run-2 still running → anyRunning stays true → no close
+		expect(done).not.toHaveBeenCalled();
+		retireRun("run-2", "completed"); // now NONE running → sawRunning && !anyRunning → finish()
+		expect(done).toHaveBeenCalledTimes(1); // closed on the very last run's transition
+		panel.dispose();
+	});
+
+	it("c2: opening on an already-all-terminal set does NOT close — sawRunning never latches (review stays open)", () => {
+		recordRun("run-1", "ship");
+		retireRun("run-1", "completed"); // terminal BEFORE the browser opens — the c2 precondition
+		const done = vi.fn();
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, done);
+		expect(done).not.toHaveBeenCalled(); // anyRunning=false on construction, sawRunning stayed false → gate did not fire
+		expect(panel.render(80).join("\n")).toContain("ship"); // the finished lane is still browsable
+		panel.dispose();
+	});
+
+	it("c2 open-mid-flight: opening while a lane is running, then all finishing, closes exactly once on the final transition", () => {
+		liveUnit(); // run-1 running → construction sync() latches sawRunning=true
+		secondRunningLane(); // run-2 also running
+		const done = vi.fn();
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, done);
+		expect(done).not.toHaveBeenCalled(); // ≥1 running → no close
+		retireRun("run-2", "completed"); // run-1 still running → no close
+		expect(done).not.toHaveBeenCalled();
+		retireRun("run-1", "completed"); // now none running → closes once
+		expect(done).toHaveBeenCalledTimes(1);
+		panel.dispose();
+	});
+
+	it("a background lane starting while open, then all finishing, closes only when the last one finishes", () => {
+		liveUnit(); // run-1 running
+		const done = vi.fn();
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, done);
+		secondRunningLane(); // run-2 starts via recordRun notify → sync() latches sawRunning and sees 2 running
+		expect(done).not.toHaveBeenCalled();
+		retireRun("run-1", "completed"); // run-2 still running → no close
+		expect(done).not.toHaveBeenCalled();
+		retireRun("run-2", "completed"); // none running → closes once
+		expect(done).toHaveBeenCalledTimes(1);
+		panel.dispose();
+	});
+});
+
 describe("LaneConsole — browser navigation (spine)", () => {
 	/** A second live lane with distinct transcript text — recorded AFTER run-1. */
 	function secondLane(): void {
@@ -593,19 +665,18 @@ describe("LaneConsole — question mode (reactive, self-draining)", () => {
 		panel.dispose();
 	});
 
-	it("retiring the lane while a question shows drains the child (undefined) and drops to read-only", async () => {
+	it("retiring the lane while a question shows drains the child (undefined) and closes the browser (last run finished)", async () => {
 		liveUnit();
 		const resolve = vi.fn();
+		const done = vi.fn();
 		enqueueQuestion(makeInner().component, resolve);
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn());
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, done);
 		await Promise.resolve();
 		panel.handleInput("\r"); // arm → the band paints (so "a question shows" is genuinely true)
 		expect(panel.render(80).join("\n")).toContain("q0"); // question mounted + armed
-		retireRun("run-1", "completed"); // settles child undefined + clears FIFO → sync drops to read-only
-		expect(resolve).toHaveBeenCalledWith(undefined);
-		const out = panel.render(80).join("\n");
-		expect(out).toContain("esc back"); // back to the read-only footer
-		expect(out).not.toContain("q0");
+		retireRun("run-1", "completed"); // settles child undefined + clears FIFO + running→terminal → sync() closes the browser
+		expect(resolve).toHaveBeenCalledWith(undefined); // child drained, never stranded
+		expect(done).toHaveBeenCalledTimes(1); // last running lane finished → browser auto-returns to root
 		panel.dispose();
 	});
 

@@ -150,6 +150,11 @@ export class LaneConsole implements Component {
 	 *  when the dequeue notify re-sorts the display rows out from under the selection. */
 	private questionTarget: Target | undefined;
 	private resolved = false; // esc/back resolves the browser once
+	/** Latched true once ANY lane is observed running during this browser session. The
+	 *  running→terminal transition gate in sync() closes the browser (via finish()) ONLY on the
+	 *  genuine "the last running run just finished" transition — so opening the browser on an
+	 *  already-all-terminal set never latches it, and the browser stays open for review. */
+	private sawRunning = false;
 	/** Spinner animation frame for the shared lane rows; advanced by spinTimer while ≥1 lane runs. */
 	private frame = 0;
 	private readonly spinTimer: ReturnType<typeof setInterval>;
@@ -195,6 +200,19 @@ export class LaneConsole implements Component {
 			this.finish(); // last lane evicted/dismissed — nothing left to browse
 			return;
 		}
+		// Running→terminal transition gate: once a running lane has been observed (sawRunning
+		// latched), closing when NONE are running returns the browser to root on the genuine
+		// "the last running run just finished" transition — the retire-from-`x` and the
+		// workflow-end retire both route here. `listLanes()` is the live registry (NOT
+		// listLanesForDisplay/laneCount, which retain terminal lanes), and `!anyRunning` is the
+		// cross-lane "very last run" predicate. The `return` mirrors the zero-rows branch so no
+		// further reconcile runs on a closing browser.
+		const anyRunning = listLanes().some((l) => l.status === "running");
+		if (this.sawRunning && !anyRunning) {
+			this.finish();
+			return;
+		}
+		this.sawRunning = this.sawRunning || anyRunning; // latches once, never un-latches
 		if (this.selection > rows.length - 1) this.selection = rows.length - 1;
 		const target = resolveRow(rows[this.selection]);
 		this.retarget(target);
