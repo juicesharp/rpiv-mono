@@ -26,6 +26,7 @@ import { registerSkillBracket } from "./skill-bracket.js";
 import { registerSkillContractsSource, registerUserSkillContractsSource } from "./skill-contracts-source.js";
 import { registerUpdateAgentsCommand } from "./update-agents-command.js";
 import { registerWorkflowExecutionHostProviderHook } from "./workflow-execution-host.js";
+import { registerWorkflowQuestionWarpBridgeHook } from "./workflow-question-warp-bridge.js";
 
 export default function (pi: ExtensionAPI) {
 	pi.registerFlag(FLAG_DEBUG, {
@@ -64,6 +65,11 @@ export default function (pi: ExtensionAPI) {
 	// session_start so a re-loading child never double-subscribes, and it dynamically
 	// imports the rpiv-workflow `/startup` entry (degrades when the sibling is absent).
 	registerLaneProgressHook(pi);
+	// Workflow-question → Warp badge bridge. Root-gated + idempotent, same as the
+	// lane-progress hook above: registered on the ROOT launcher's session_start so a
+	// re-loading child never double-subscribes. Dynamically imports the opt-in
+	// rpiv-warp sibling (degrades to a silent no-op when it is absent).
+	registerWorkflowQuestionWarpBridgeHook(pi);
 	// Standalone /skill: model/effort override bracket. MUST register AFTER
 	// registerSessionCapture so the bracket's `getCapturedModel()`
 	// read at input-arm time sees the populated baseline. The bracket's

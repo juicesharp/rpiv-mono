@@ -18,7 +18,7 @@ vi.mock("node:fs", async () => {
 	};
 });
 
-import register, { __resetState } from "./index.js";
+import register, { __resetState, createWorkflowQuestionTransport } from "./index.js";
 import { FRAME_INTERVAL_MS, __resetState as resetSpinner, SPINNER_FRAMES } from "./title-spinner.js";
 
 const WARP_ENV_VARS = ["TERM_PROGRAM", "WARP_CLI_AGENT_PROTOCOL_VERSION", "WARP_CLIENT_VERSION"] as const;
@@ -617,6 +617,64 @@ describe("tool_input preview (Item 6)", () => {
 
 		const toolCompleteWrites = write.mock.calls.filter((c) => String(c[1]).includes("tool_complete"));
 		expect(toolCompleteWrites.length).toBe(0);
+	});
+});
+
+describe("createWorkflowQuestionTransport", () => {
+	function osc777Payloads(write: Mock) {
+		return write.mock.calls
+			.filter((c) => String(c[1]).startsWith("\x1b]777;notify;"))
+			.map((c) => {
+				const json = String(c[1])
+					.replace(/^\x1b\]777;notify;warp:\/\/cli-agent;/, "")
+					.replace(/\x07$/, "");
+				return JSON.parse(json);
+			});
+	}
+
+	it("asked emits session_start then question_asked for the runId", () => {
+		setWorkingWarpEnv();
+		const { write } = primeFs();
+		const transport = createWorkflowQuestionTransport("/tmp/projects/widget");
+		transport.asked("run-xyz");
+		const payloads = osc777Payloads(write);
+		expect(payloads).toHaveLength(2);
+		expect(payloads[0].event).toBe("session_start");
+		expect(payloads[0].session_id).toBe("run-xyz");
+		expect(payloads[0].project).toBe("widget");
+		expect(payloads[1].event).toBe("question_asked");
+		expect(payloads[1].session_id).toBe("run-xyz");
+	});
+
+	it("resolved emits a single tool_complete for the runId", () => {
+		setWorkingWarpEnv();
+		const { write } = primeFs();
+		const transport = createWorkflowQuestionTransport("/tmp/projects/widget");
+		transport.resolved("run-xyz");
+		const payloads = osc777Payloads(write);
+		expect(payloads).toHaveLength(1);
+		expect(payloads[0].event).toBe("tool_complete");
+		expect(payloads[0].session_id).toBe("run-xyz");
+		expect(payloads[0].tool_name).toBe("ask_user_question");
+		expect(payloads[0].tool_input).toBeUndefined();
+	});
+
+	it("writes nothing when supportsStructured is false (outside Warp)", () => {
+		// no Warp env vars set (beforeEach cleared them) → supportsStructured is false
+		const { open } = primeFs();
+		const transport = createWorkflowQuestionTransport("/tmp");
+		transport.asked("run-xyz");
+		transport.resolved("run-xyz");
+		expect(open).not.toHaveBeenCalled();
+	});
+
+	it("writes nothing on a broken Warp build", () => {
+		setBrokenWarpEnv();
+		const { open } = primeFs();
+		const transport = createWorkflowQuestionTransport("/tmp");
+		transport.asked("run-xyz");
+		transport.resolved("run-xyz");
+		expect(open).not.toHaveBeenCalled();
 	});
 });
 

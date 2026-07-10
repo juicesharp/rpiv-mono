@@ -98,6 +98,10 @@ beforeEach(async () => {
 	laneSwitcher.__resetLaneSwitcher();
 	const laneProgress = await import("../packages/rpiv-pi/extensions/rpiv-core/lane-progress.js");
 	laneProgress.__resetLaneProgress();
+	const workflowQuestionWarpBridge = await import(
+		"../packages/rpiv-pi/extensions/rpiv-core/workflow-question-warp-bridge.js"
+	);
+	workflowQuestionWarpBridge.__resetWorkflowQuestionWarpBridge();
 	const skillBracket = await import("../packages/rpiv-pi/extensions/rpiv-core/skill-bracket.js");
 	skillBracket.__resetSkillBracketState();
 	const modelsConfigModule = await import("../packages/rpiv-pi/extensions/rpiv-core/models-config.js");

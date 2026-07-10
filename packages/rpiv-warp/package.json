@@ -27,6 +27,9 @@
 	"publishConfig": {
 		"access": "public"
 	},
+	"exports": {
+		".": "./index.ts"
+	},
 	"scripts": {
 		"test": "vitest run"
 	},

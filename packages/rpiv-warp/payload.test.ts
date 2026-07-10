@@ -8,6 +8,9 @@ import {
 	buildSessionStartPayload,
 	buildStopPayload,
 	buildToolCompletePayload,
+	buildWorkflowQuestionAskedPayload,
+	buildWorkflowQuestionCompletePayload,
+	buildWorkflowSessionStartPayload,
 	extractMessageText,
 	lastAssistantText,
 	lastUserText,
@@ -196,6 +199,59 @@ describe("build*Payload", () => {
 		expect(p.event).toBe("tool_complete");
 		expect(p.tool_name).toBe("bash");
 		expect(p.tool_input).toBeUndefined();
+	});
+});
+
+describe("workflow-question run-keyed builders", () => {
+	it("buildWorkflowSessionStartPayload sets session_id=runId, event=session_start, cwd/project from cwd", () => {
+		const p = buildWorkflowSessionStartPayload("run-abc", "/tmp/projects/widget");
+		expect(p).toEqual({
+			v: PLUGIN_MAX_PROTOCOL_VERSION,
+			agent: AGENT_ID,
+			event: "session_start",
+			session_id: "run-abc",
+			cwd: "/tmp/projects/widget",
+			project: "widget",
+		});
+	});
+	it("buildWorkflowQuestionAskedPayload sets session_id=runId, event=question_asked", () => {
+		const p = buildWorkflowQuestionAskedPayload("run-abc", "/tmp/projects/widget");
+		expect(p).toEqual({
+			v: PLUGIN_MAX_PROTOCOL_VERSION,
+			agent: AGENT_ID,
+			event: "question_asked",
+			session_id: "run-abc",
+			cwd: "/tmp/projects/widget",
+			project: "widget",
+		});
+	});
+	it("buildWorkflowQuestionCompletePayload sets session_id=runId, event=tool_complete, tool_name=ask_user_question", () => {
+		const p = buildWorkflowQuestionCompletePayload("run-abc", "/tmp/projects/widget");
+		expect(p).toEqual({
+			v: PLUGIN_MAX_PROTOCOL_VERSION,
+			agent: AGENT_ID,
+			event: "tool_complete",
+			session_id: "run-abc",
+			cwd: "/tmp/projects/widget",
+			project: "widget",
+			tool_name: "ask_user_question",
+		});
+	});
+	it("buildWorkflowQuestionCompletePayload carries NO tool_input", () => {
+		const p = buildWorkflowQuestionCompletePayload("run-abc", "/tmp");
+		expect(p.tool_input).toBeUndefined();
+	});
+	it("baseEnvelope is unchanged — still reads ctx.sessionManager.getSessionId()", () => {
+		const ctx = createMockCtx({ cwd: "/tmp/projects/widget" });
+		const env = baseEnvelope("session_start", ctx);
+		expect(env).toEqual({
+			v: PLUGIN_MAX_PROTOCOL_VERSION,
+			agent: AGENT_ID,
+			event: "session_start",
+			session_id: "test-session",
+			cwd: "/tmp/projects/widget",
+			project: "widget",
+		});
 	});
 });
 
