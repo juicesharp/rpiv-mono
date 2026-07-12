@@ -171,6 +171,32 @@ describe("reduce — notes_enter / notes_exit / notes_forward", () => {
 		]);
 	});
 
+	it("notes_enter seeds notesDraft from notesByTab when the option is not yet confirmed (regression: reopening cleared the note)", () => {
+		// User typed a note and pressed Enter (notes_exit) BEFORE confirming the option, so the
+		// note lives only in notesByTab — answers has no entry yet. Reopening the editor must
+		// rehydrate from notesByTab, not start empty (which would delete the note on next close).
+		const state = makeState({ notesByTab: new Map([[0, "pending note"]]) });
+		const r = reduce(state, { kind: "notes_enter" }, makeCtx());
+		expect(r.state.notesVisible).toBe(true);
+		expect(r.state.notesDraft).toBe("pending note");
+		expect(r.effects).toEqual([
+			{ kind: "set_notes_value", value: "pending note" },
+			{ kind: "set_notes_focused", focused: true },
+		]);
+	});
+
+	it("notes_enter prefers notesByTab over a committed answer.notes", () => {
+		const answers = new Map<number, QuestionAnswer>([
+			[0, { questionIndex: 0, question: "q", kind: "option", answer: "A", notes: "committed" }],
+		]);
+		const r = reduce(
+			makeState({ answers, notesByTab: new Map([[0, "in-flight edit"]]) }),
+			{ kind: "notes_enter" },
+			makeCtx(),
+		);
+		expect(r.state.notesDraft).toBe("in-flight edit");
+	});
+
 	it("notes_exit with empty notesDraft clears notesByTab + strips answer.notes", () => {
 		const answers = new Map<number, QuestionAnswer>([
 			[0, { questionIndex: 0, question: "q", kind: "option", answer: "A", notes: "old note" }],

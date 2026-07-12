@@ -199,7 +199,11 @@ const multiConfirmHandler: Handler<"multi_confirm"> = (state, action, ctx) => {
 };
 
 const notesEnterHandler: Handler<"notes_enter"> = (state, _action, _ctx) => {
-	const value = state.answers.get(state.currentTab)?.notes ?? "";
+	// Prefer the in-flight side-band note (`notesByTab`) over the committed answer's note.
+	// Before the option is confirmed the note lives ONLY in `notesByTab`, so reading solely
+	// from `answers` made a second open of the editor start empty and silently drop the note
+	// on the next close. Mirrors the precedence already used by `switchTabResult`.
+	const value = state.notesByTab.get(state.currentTab) ?? state.answers.get(state.currentTab)?.notes ?? "";
 	return {
 		state: { ...state, notesVisible: true, notesDraft: value },
 		effects: [
