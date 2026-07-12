@@ -15,7 +15,6 @@ import { saveAdvisorConfig } from "./config.js";
 import { reconcileAdvisorTool } from "./handlers.js";
 import {
 	ADVISOR_TOOL_NAME,
-	BASE_EFFORT_LEVELS,
 	CHECKMARK,
 	DEFAULT_EFFORT,
 	errSelectionNotFound,
@@ -27,7 +26,6 @@ import {
 	NO_ADVISOR_VALUE,
 	OFF_VALUE,
 	RECOMMENDED_EFFORT_SUFFIX,
-	XHIGH_EFFORT_LEVEL,
 } from "./messages.js";
 import { isExecutorBlocked } from "./policy.js";
 import { getAdvisorEffort, getAdvisorModel, setAdvisorEffort, setAdvisorModel } from "./state.js";
@@ -46,9 +44,7 @@ function buildModelItems(availableModels: Model<Api>[], currentKey: string | und
 }
 
 function buildEffortItems(picked: Model<Api>): SelectItem[] {
-	const levels = getSupportedThinkingLevels(picked).includes("xhigh")
-		? [...BASE_EFFORT_LEVELS, XHIGH_EFFORT_LEVEL]
-		: BASE_EFFORT_LEVELS;
+	const levels = getSupportedThinkingLevels(picked).filter((level) => level !== "off");
 	return [
 		{ value: OFF_VALUE, label: "off" },
 		...levels.map((level) => ({

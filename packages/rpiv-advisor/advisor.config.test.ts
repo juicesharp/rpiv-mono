@@ -89,10 +89,12 @@ describe("validateDisabledForModels", () => {
 			validateDisabledForModels([
 				{ model: "anthropic:opus", minEffort: "minimal" },
 				{ model: "anthropic:opus", minEffort: "xhigh" },
+				{ model: "anthropic:opus", minEffort: "max" },
 			]),
 		).toEqual([
 			{ model: "anthropic:opus", minEffort: "minimal" },
 			{ model: "anthropic:opus", minEffort: "xhigh" },
+			{ model: "anthropic:opus", minEffort: "max" },
 		]);
 	});
 
