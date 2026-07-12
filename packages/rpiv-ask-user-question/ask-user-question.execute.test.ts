@@ -286,8 +286,16 @@ describe("ask_user_question.execute — event emission", () => {
 			],
 		});
 
-		// Verify event is emitted BEFORE the dialog is shown
+		expect(mockEmit).toHaveBeenNthCalledWith(2, "herdr:blocked", {
+			active: true,
+			label: "Waiting for user response",
+		});
+		expect(mockEmit).toHaveBeenNthCalledWith(3, "herdr:blocked", { active: false });
+
+		// Both start events are emitted before the dialog; the clear follows it.
 		expect(mockEmit.mock.invocationCallOrder[0]).toBeLessThan(custom.mock.invocationCallOrder[0]);
+		expect(mockEmit.mock.invocationCallOrder[1]).toBeLessThan(custom.mock.invocationCallOrder[0]);
+		expect(mockEmit.mock.invocationCallOrder[2]).toBeGreaterThan(custom.mock.invocationCallOrder[0]);
 	});
 
 	it("does NOT emit event when UI is unavailable", async () => {

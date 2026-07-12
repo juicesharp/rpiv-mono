@@ -211,6 +211,7 @@ Preview content is rendered as markdown in a monospace box. Multi-line text with
 				});
 			}
 
+			pi.events.emit("herdr:blocked", { active: true, label: "Waiting for user response" });
 			try {
 				const result = await ctx.ui.custom<QuestionnaireResult>(
 					(tui, theme, _kb, done) => {
@@ -256,6 +257,7 @@ Preview content is rendered as markdown in a monospace box. Multi-line text with
 				return buildQuestionnaireResponse(result, typed);
 			} finally {
 				removeOverlayInputListener?.();
+				pi.events.emit("herdr:blocked", { active: false });
 			}
 		},
 	});
