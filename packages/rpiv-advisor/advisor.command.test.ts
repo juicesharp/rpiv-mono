@@ -1,4 +1,4 @@
-import type { Api, Model } from "@earendil-works/pi-ai";
+import { type Api, getSupportedThinkingLevels, type Model } from "@earendil-works/pi-ai";
 import { createMockCtx, createMockPi } from "@juicesharp/rpiv-test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -26,6 +26,12 @@ const modelR = {
 	provider: "anthropic",
 	id: "opus-thinking",
 	name: "Opus Thinking",
+	reasoning: true,
+} as unknown as Model<Api>;
+const modelMax = {
+	provider: "openai",
+	id: "gpt-max",
+	name: "GPT Max",
 	reasoning: true,
 } as unknown as Model<Api>;
 const modelBlocked = { provider: "anthropic", id: "sonnet", name: "Sonnet" } as unknown as Model<Api>;
@@ -120,6 +126,19 @@ describe("/advisor — non-reasoning model", () => {
 });
 
 describe("/advisor — reasoning model", () => {
+	it("uses the host model's supported effort levels, including max", async () => {
+		vi.mocked(getSupportedThinkingLevels).mockReturnValueOnce(["off", "low", "medium", "high", "max"]);
+		vi.mocked(showAdvisorPicker).mockResolvedValueOnce("openai/gpt-max");
+		vi.mocked(showEffortPicker).mockResolvedValueOnce(null);
+		const { captured } = register();
+		const ctx = createMockCtx({ hasUI: true, models: [modelMax] });
+
+		await captured.commands.get("advisor")?.handler("", ctx as never);
+
+		const items = vi.mocked(showEffortPicker).mock.calls[0]?.[1];
+		expect(items?.map((item) => item.value)).toEqual(["__off__", "low", "medium", "high", "max"]);
+	});
+
 	it("returns early when effort picker is cancelled", async () => {
 		vi.mocked(showAdvisorPicker).mockResolvedValueOnce("anthropic/opus-thinking");
 		vi.mocked(showEffortPicker).mockResolvedValueOnce(null);

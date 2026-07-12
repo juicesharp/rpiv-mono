@@ -35,6 +35,7 @@ describe("isModelBlocked", () => {
 		expect(isModelBlocked(sonnet)).toBe(true);
 		expect(isModelBlocked(sonnet, "minimal")).toBe(true);
 		expect(isModelBlocked(sonnet, "xhigh")).toBe(true);
+		expect(isModelBlocked(sonnet, "max")).toBe(true);
 	});
 
 	it("returns false on object entry when model key does not match", () => {
@@ -50,6 +51,7 @@ describe("isModelBlocked", () => {
 	it("returns true when executor effort above threshold", () => {
 		setDisabledForModels([{ model: "anthropic:sonnet", minEffort: "high" }]);
 		expect(isModelBlocked(sonnet, "xhigh")).toBe(true);
+		expect(isModelBlocked(sonnet, "max")).toBe(true);
 	});
 
 	it("returns false when executor effort below threshold", () => {
