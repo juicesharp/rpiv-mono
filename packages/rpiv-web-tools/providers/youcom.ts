@@ -1,8 +1,8 @@
 import type { FetchResponse, FullProvider, SearchResponse, SearchResult } from "./types.js";
 
-const YOUCOM_SEARCH_URL = "https://ydc-index.io/v1/search";
-const YOUCOM_CONTENTS_URL = "https://ydc-index.io/v1/contents";
-export const YOUCOM_API_KEY_ENV_VAR = "YOUCOM_API_KEY";
+const YOUCOM_SEARCH_URL = "https://api.you.com/v1/agents/search";
+const YOUCOM_CONTENTS_URL = "https://api.ydc-index.io/v1/contents";
+export const YOUCOM_API_KEY_ENV_VAR = "YDC_API_KEY";
 export const YOUCOM_PROVIDER_META = {
 	name: "youcom",
 	label: "You.com",
@@ -10,6 +10,14 @@ export const YOUCOM_PROVIDER_META = {
 	roles: ["search", "fetch"] as const,
 } as const;
 
+// Agents search endpoint returns a flat array of results.
+interface YouComAgentsResult {
+	title?: string;
+	url?: string;
+	snippet?: string;
+}
+
+// Legacy ydc-index.io search endpoint returns nested { web: [...], news: [...] }.
 interface YouComWebResult {
 	url?: string;
 	title?: string;
@@ -18,9 +26,7 @@ interface YouComWebResult {
 }
 
 interface YouComSearchResponse {
-	results?: {
-		web?: YouComWebResult[];
-	};
+	results?: YouComAgentsResult[] | { web?: YouComWebResult[] };
 }
 
 interface YouComContentsResponseItem {
@@ -29,8 +35,20 @@ interface YouComContentsResponseItem {
 	markdown?: string | null;
 }
 
-function normalizeYouComResults(results: YouComWebResult[]): SearchResult[] {
-	return results.map((r) => ({
+function normalizeYouComResults(raw: YouComSearchResponse["results"]): SearchResult[] {
+	if (!raw) return [];
+
+	// Agents API (api.you.com/v1/agents/search) returns a flat array.
+	if (Array.isArray(raw)) {
+		return raw.map((r) => ({
+			title: r.title ?? "",
+			url: r.url ?? "",
+			snippet: r.snippet ?? "",
+		}));
+	}
+
+	// Legacy ydc-index.io/v1/search returns { web: [...], news: [...] }.
+	return (raw.web ?? []).map((r) => ({
 		title: r.title ?? "",
 		url: r.url ?? "",
 		snippet: r.snippets?.[0] ?? r.description ?? "",
@@ -57,7 +75,7 @@ export class YouComProvider implements FullProvider {
 			},
 			body: JSON.stringify({
 				query,
-				count: maxResults,
+				max_results: maxResults,
 			}),
 			signal,
 		});
@@ -68,7 +86,7 @@ export class YouComProvider implements FullProvider {
 		}
 
 		const raw = (await res.json()) as YouComSearchResponse;
-		return { query, results: normalizeYouComResults(raw.results?.web ?? []) };
+		return { query, results: normalizeYouComResults(raw.results) };
 	}
 
 	async fetch(url: string, _raw: boolean, signal?: AbortSignal): Promise<FetchResponse> {
