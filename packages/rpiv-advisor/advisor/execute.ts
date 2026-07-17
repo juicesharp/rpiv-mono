@@ -31,7 +31,7 @@ import {
 	errNoApiKeyDetail,
 	msgConsulting,
 } from "./messages.js";
-import { loadCompleteSimple } from "./pi-compat.js";
+import { getRuntimeCompleteSimple, loadCompleteSimple } from "./pi-compat.js";
 import { ADVISOR_SYSTEM_PROMPT } from "./prompt.js";
 import { getAdvisorEffort, getAdvisorModel } from "./state.js";
 
@@ -117,13 +117,22 @@ export async function executeAdvisor(
 	});
 
 	try {
-		const completeSimple = await loadCompleteSimple();
+		// Prefer Pi's auth-aware runtime facade. Unlike the global compatibility
+		// function, it runs request preparation and applies credential-derived
+		// fields such as GitHub Copilot's OAuth-specific baseUrl. Do not pass the
+		// preflight key/headers to this path: explicit overrides would bypass that
+		// resolution and reintroduce the endpoint mismatch.
+		const runtimeCompleteSimple = getRuntimeCompleteSimple(ctx.modelRegistry);
+		const completeSimple = runtimeCompleteSimple ?? (await loadCompleteSimple());
+		const requestOptions = runtimeCompleteSimple
+			? { signal, reasoning: effort }
+			: { apiKey: auth.apiKey, headers: auth.headers, signal, reasoning: effort };
 		const response = await completeSimple(
 			advisor,
 			// `tools: []` reaffirms the "never calls tools" contract even when
 			// `messages` contains prior toolCall/toolResult blocks (btw.ts:235).
 			{ systemPrompt: ADVISOR_SYSTEM_PROMPT, messages, tools: [] },
-			{ apiKey: auth.apiKey, headers: auth.headers, signal, reasoning: effort },
+			requestOptions,
 		);
 
 		if (response.stopReason === "aborted") {
