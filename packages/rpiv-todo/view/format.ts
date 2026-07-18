@@ -65,24 +65,25 @@ export function overlayStatusGlyph(status: TaskStatus, theme: Theme): string {
 }
 
 /**
- * Format a single task for the overlay (with theme + glyph + dep suffix).
- * Used by `TodoOverlay.formatTaskLine` post-refactor; behavior is unchanged.
+ * Format a single task row for the persistent overlay. The subject color
+ * reflects task state while IDs and supporting metadata stay visually quiet.
  */
 export function formatOverlayTaskLine(t: Task, theme: Theme, showId: boolean): string {
 	const glyph = overlayStatusGlyph(t.status, theme);
-	const subjectColor = t.status === "completed" || t.status === "deleted" ? "dim" : "text";
+	const subjectColor =
+		t.status === "in_progress" ? "accent" : t.status === "completed" || t.status === "deleted" ? "muted" : "text";
 	let subject = theme.fg(subjectColor, t.subject);
 	if (t.status === "completed" || t.status === "deleted") {
 		subject = theme.strikethrough(subject);
 	}
 	let line = `${glyph}`;
-	if (showId) line += ` ${theme.fg("accent", `#${t.id}`)}`;
+	if (showId) line += ` ${theme.fg("dim", `#${t.id}`)}`;
 	line += ` ${subject}`;
 	if (t.status === "in_progress" && t.activeForm) {
-		line += ` ${theme.fg("dim", `(${t.activeForm})`)}`;
+		line += ` ${theme.fg("muted", `(${t.activeForm})`)}`;
 	}
 	if (t.blockedBy && t.blockedBy.length > 0) {
-		line += ` ${theme.fg("dim", `⛓ ${t.blockedBy.map((id) => `#${id}`).join(",")}`)}`;
+		line += ` ${theme.fg("muted", `⛓ ${t.blockedBy.map((id) => `#${id}`).join(",")}`)}`;
 	}
 	return line;
 }
