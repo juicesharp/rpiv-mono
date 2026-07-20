@@ -19,9 +19,8 @@ Let the model ask you structured clarifying questions instead of guessing. `rpiv
 - **Per-option notes** - press `n` on a previewed option to attach a free-text note that travels back with the answer.
 - **Multi-select questions** - checkboxes with `Space` to toggle, Enter-as-toggle on rows, a `Next` sentinel to advance, and toggles persisted across tab switches.
 - **Submit tab** - review every answer before submitting; warns about unanswered questions and offers a Submit picker.
-- **Chat row on every tab** - redirect the conversation without leaving the dialog.
+- **Custom-answer row** - choose the automatically appended **"Type something."** row to enter a custom answer when no authored option fits; available on every single- and multi-select question, including preview mode.
 - **Terminal-row-aware overflow scroll** - when the dialog is taller than the terminal, the body scrolls between a sticky heading and sticky hints/border; overflow indicators (↑ / ↓ / ↕) show what's clipped.
-- **"Other" free-text fallback** - type a custom answer when no option fits; available on every single-select question, even in preview mode (the input expands to the full pane width while typing).
 - **Localized UI** - sentinel rows, hints, submit/cancel labels, review pane, and notes affordance display in the user's chosen language via `@juicesharp/rpiv-i18n`. Ships Deutsch / English / Español / Français / Português (PT) / Português (BR) / Русский / Українська; switch with `/languages` or `pi --locale <code>`. LLM-facing copy (tool description, schemas, errors) stays English by design.
 
 ## Screens
@@ -42,7 +41,7 @@ Then restart your Pi session.
 
 ### Optional: localization
 
-`rpiv-ask-user-question` works standalone - install only this package and you get the full English UI. Install `@juicesharp/rpiv-i18n` alongside it to flip sentinel labels, dialog hints, review-tab heading, and chat-summary lines to your active locale:
+`rpiv-ask-user-question` works standalone - install only this package and you get the full English UI. Install `@juicesharp/rpiv-i18n` alongside it to flip sentinel labels, dialog hints, and review-tab heading to your active locale:
 
 ```bash
 pi install npm:@juicesharp/rpiv-i18n
@@ -52,7 +51,7 @@ With the SDK present, locale resolves from `--locale <code>` → `~/.config/rpiv
 
 ## Tool
 
-- **`ask_user_question`** - present one or more structured questions, each with 2+ options, optional `multiSelect`, optional per-option `preview`, and a free-text "Other" fallback available on every single-select question (even with previews). Returns the user's selection(s) plus any notes. See the tool's `promptGuidelines` for usage policy.
+- **`ask_user_question`** - present one or more structured questions, each with 2+ options, optional `multiSelect`, optional per-option `preview`, and an automatically appended **"Type something."** custom-answer row on every question. Returns the user's selection(s) plus any notes. See the tool's `promptGuidelines` for usage policy.
 
 ### Schema
 
@@ -77,7 +76,7 @@ ask_user_question({
 })
 ```
 
-Reserved option labels (rejected at validation): `"Other"`, plus the runtime sentinels (`"Type something."`, `"Chat about this"`, `"Next →"`).
+Reserved option labels (rejected at validation): `"Other"` (reserved for compatibility), plus the runtime sentinels (`"Type something."`, `"Next"`).
 
 Returns:
 
@@ -88,15 +87,16 @@ Returns:
     answers: Array<{
       questionIndex: number,
       question: string,
-      kind: "option" | "custom" | "chat" | "multi",
+      kind: "option" | "custom" | "multi",
       answer: string | null,
       selected?: string[],         // present for multi-select
       notes?: string,              // free-text note, when typed
       preview?: string,            // echoed back when option carried a preview
     }>,
     cancelled: boolean,
-    error?: "no_ui" | "no_questions" | "empty_options" | "too_many_questions"
-          | "duplicate_question" | "duplicate_option_label" | "reserved_label",
+    error?: "no_ui" | "no_custom_ui" | "no_questions" | "empty_options" | "too_many_questions"
+          | "duplicate_question" | "duplicate_option_label" | "reserved_label"
+          | "session_load_failed" | "stale_module_cache",
   }
 }
 ```

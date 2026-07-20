@@ -55,7 +55,7 @@ The final artifact is research-compatible — its Decisions block is translated 
 
 2. **Detect input shape** — parse the input:
    - If the argument is an existing file path (resolves to a readable `.md` under `.rpiv/artifacts/`, or any path the user mentions for refinement context), read it FULLY using the Read tool WITHOUT limit/offset. Treat its content as baseline context — the interview surfaces gaps, missing requirements, and unstated assumptions relative to what's already documented.
-   - Otherwise → fresh-feature mode: the entire argument is the free-text feature description.
+   - Plain free-text input → fresh-feature mode: the entire argument is the free-text feature description.
 
 3. **Read any other files mentioned** in the prompt (tickets, docs, related artifacts, explicit `path:line` references) FULLY before proceeding.
 
@@ -71,8 +71,7 @@ Before any codebase probe, ask the foundational intent question. This is purely 
    - Frame: "What problem are you solving and who hits it?" / "What does success look like for the person experiencing this today?" — phrase it for the specific feature.
    - **No `(Recommended)` option.** The developer should generate the framing, not pick from a proposal.
    - **No `file:line` citations** — codebase has nothing to say about intent.
-   - Options should be open shapes (e.g., "End user / maintainer / operator / Other") that route the answer, not solution shapes.
-   - Always offer "Other" so the developer can free-text the real framing.
+   - Options should be open shapes (for example, "End user", "Maintainer", or "Operator") that route the answer, not solution shapes. The automatically appended `Type something.` row lets the developer supply a different framing; do not author an `Other` option.
 
 2. **Capture the answer in the developer's own words.** This text feeds into the FRD's Problem & Intent section verbatim — do not paraphrase into agent prose.
 
@@ -132,7 +131,7 @@ Walk the lazy tree depth-first, parent before child. Expand the next layer (buil
 
 2. **Recommended answer** (`scope` / `shape` / `detail`): derive from intent + Step 3 evidence + project conventions. Every non-intent question carries a recommendation labeled `(Recommended)`.
 
-3. **Ask via `ask_user_question`.** Lead with the recommended option. The "Other" option is automatic and handles open-ended answers.
+3. **Ask via `ask_user_question`.** Lead with the recommended authored option. The automatic `Type something.` custom-answer row handles open-ended answers; do not author an `Other` option.
 
 4. **Critical rules**:
    - Ask ONE question at a time. Wait for the answer before asking the next.
