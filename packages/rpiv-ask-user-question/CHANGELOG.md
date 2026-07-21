@@ -5,7 +5,7 @@ All notable changes to `@juicesharp/rpiv-ask-user-question` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.0.0] - 2026-07-21
 
 ### Added
 - Questionnaires now render in RPC hosts (e.g. the VS Code pendant, Zed) through native select and input dialogs instead of silently reporting a decline.

@@ -1,4 +1,4 @@
-## [Unreleased]
+## [2.0.0] - 2026-07-21
 
 ### Added
 - Add `resolveConfigDir()`, which honors `XDG_CONFIG_HOME` per the XDG spec: unset, empty, whitespace, or relative values fall back to `~/.config`; a leading `~/` is expanded (a `~user` form is not) and the result must be absolute.

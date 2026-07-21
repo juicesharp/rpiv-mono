@@ -5,7 +5,7 @@ All notable changes to `@juicesharp/rpiv-pi` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.0.0] - 2026-07-21
 
 ### Added
 - Detached parallel execution: every `/wf` stage runs in its own child session with bounded parallel fan-out, while the interactive session stays a launcher and observer.

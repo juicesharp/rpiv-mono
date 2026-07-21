@@ -5,7 +5,7 @@ All notable changes to `@juicesharp/rpiv-advisor` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.0.0] - 2026-07-21
 
 ### Added
 - Read configuration from `XDG_CONFIG_HOME` when set, falling back to the legacy `~/.config` location only when no config file exists at the new path.
