@@ -316,7 +316,7 @@ describe("runWorkflow", () => {
 			skill: "research",
 			status: "completed",
 		});
-		expect((stages[0]?.output as { artifacts: Array<{ handle: { path: string } }> }).artifacts[0]?.handle.path).toBe(
+		expect((stages[0]!.output as { artifacts: Array<{ handle: { path: string } }> }).artifacts[0]?.handle.path).toBe(
 			".rpiv/artifacts/research/r.md",
 		);
 	});
@@ -351,7 +351,7 @@ describe("runWorkflow", () => {
 
 		const { stages } = readState(tmpDir);
 		expect(stages.map((s) => s.status)).toEqual(["completed", "completed"]);
-		expect((stages[1]?.output as { artifacts: Array<{ handle: { path: string } }> }).artifacts[0]?.handle.path).toBe(
+		expect((stages[1]!.output as { artifacts: Array<{ handle: { path: string } }> }).artifacts[0]?.handle.path).toBe(
 			".rpiv/artifacts/designs/d.md",
 		);
 	});

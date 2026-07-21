@@ -70,7 +70,7 @@ describe("getInventoryMessage — caching", () => {
 	});
 	it("renders inventory body with sorted stableStringified params", () => {
 		const m = getInventoryMessage([tool({ name: "b", parameters: { b: 1, a: 2 } as never }), tool({ name: "a" })]);
-		const text = (m?.content[0] as { type: "text"; text: string }).text;
+		const text = (m!.content[0] as { type: "text"; text: string }).text;
 		expect(text.indexOf("### a")).toBeLessThan(text.indexOf("### b"));
 		expect(text).toContain('{"a":2,"b":1}');
 	});

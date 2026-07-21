@@ -278,7 +278,7 @@ describe("web_search.execute — provider-independent behavior", () => {
 		const r = await captured.tools
 			.get("web_search")
 			?.execute?.("tc", { query: "x" }, undefined as never, undefined as never, createMockCtx());
-		expect((r?.details as { backend: string }).backend).toBe("brave");
+		expect((r!.details as { backend: string }).backend).toBe("brave");
 		expect(stub.calls[0].url).toContain("api.search.brave.com");
 	});
 
@@ -487,7 +487,7 @@ describe("web_fetch.execute — happy path", () => {
 		const r = await captured.tools
 			.get("web_fetch")
 			?.execute?.("tc", { url: "https://x.com" }, undefined as never, undefined as never, createMockCtx());
-		expect((r?.details as { contentLength: number }).contentLength).toBe(100);
+		expect((r!.details as { contentLength: number }).contentLength).toBe(100);
 	});
 
 	it("falls back to defaults when config file is malformed JSON", async () => {
@@ -503,7 +503,7 @@ describe("web_fetch.execute — happy path", () => {
 		const r = await captured.tools
 			.get("web_fetch")
 			?.execute?.("tc", { url: "https://x.com" }, undefined as never, undefined as never, createMockCtx());
-		expect((r?.content[0] as { text: string }).text).toContain("hi");
+		expect((r!.content[0] as { text: string }).text).toContain("hi");
 	});
 
 	it("decodes numeric HTML entities in text/html bodies", async () => {
@@ -518,7 +518,7 @@ describe("web_fetch.execute — happy path", () => {
 		const r = await captured.tools
 			.get("web_fetch")
 			?.execute?.("tc", { url: "https://x.com" }, undefined as never, undefined as never, createMockCtx());
-		expect((r?.content[0] as { text: string }).text).toContain("ABC");
+		expect((r!.content[0] as { text: string }).text).toContain("ABC");
 	});
 
 	it("spills full body to temp file and appends truncation footer when truncated", async () => {
@@ -534,7 +534,7 @@ describe("web_fetch.execute — happy path", () => {
 			.get("web_fetch")
 			?.execute?.("tc", { url: "https://big.com" }, undefined as never, undefined as never, createMockCtx());
 
-		const text = (r?.content[0] as { text: string }).text;
+		const text = (r!.content[0] as { text: string }).text;
 		expect(text).toContain("Content truncated:");
 		expect(text).toContain("Full content saved to:");
 
@@ -1376,7 +1376,7 @@ describe("web_search.execute — searxng", () => {
 		const r = await captured.tools
 			.get("web_search")
 			?.execute?.("tc", { query: "x", max_results: 3 }, undefined as never, undefined as never, createMockCtx());
-		expect((r?.details as { results: Array<{ title: string; url: string; snippet: string }> }).results).toHaveLength(
+		expect((r!.details as { results: Array<{ title: string; url: string; snippet: string }> }).results).toHaveLength(
 			3,
 		);
 	});
@@ -1822,7 +1822,7 @@ describe("web_search.execute — ollama", () => {
 		const r = await captured.tools
 			.get("web_search")
 			?.execute?.("tc", { query: "x" }, undefined as never, undefined as never, createMockCtx());
-		const result = (r?.details as { results: Array<{ title: string; url: string; snippet: string }> }).results[0];
+		const result = (r!.details as { results: Array<{ title: string; url: string; snippet: string }> }).results[0];
 		expect(result.title).toBe("");
 		expect(result.url).toBe("");
 		expect(result.snippet).toBe("");
@@ -2255,7 +2255,7 @@ describe("web_search.execute — per-call provider override", () => {
 				undefined as never,
 				createMockCtx(),
 			);
-		expect((r?.details as { backend: string }).backend).toBe("tavily");
+		expect((r!.details as { backend: string }).backend).toBe("tavily");
 		expect(stub.calls[0].url).toContain("api.tavily.com");
 		const body = JSON.parse(stub.calls[0].init?.body as string);
 		expect(body.api_key).toBe("tavily-key");
@@ -2276,7 +2276,7 @@ describe("web_search.execute — per-call provider override", () => {
 		const r = await captured.tools
 			.get("web_search")
 			?.execute?.("tc", { query: "x", provider: "exa" }, undefined as never, undefined as never, createMockCtx());
-		expect((r?.details as { backend: string }).backend).toBe("exa");
+		expect((r!.details as { backend: string }).backend).toBe("exa");
 		const headers = stub.calls[0].init?.headers as Record<string, string>;
 		expect(headers["x-api-key"]).toBe("exa-config-key");
 	});
@@ -2308,7 +2308,7 @@ describe("web_search.execute — per-call provider override", () => {
 				undefined as never,
 				createMockCtx(),
 			);
-		expect((r?.details as { backend: string }).backend).toBe("searxng");
+		expect((r!.details as { backend: string }).backend).toBe("searxng");
 		expect(new URL(stub.calls[0].url).host).toBe("override-host:9090");
 	});
 
@@ -2360,7 +2360,7 @@ describe("web_search.execute — per-call provider override", () => {
 		const r = await captured.tools
 			.get("web_search")
 			?.execute?.("tc", { query: "x" }, undefined as never, undefined as never, createMockCtx());
-		expect((r?.details as { backend: string }).backend).toBe("brave");
+		expect((r!.details as { backend: string }).backend).toBe("brave");
 		expect(stub.calls[0].url).toContain("api.search.brave.com");
 	});
 
@@ -2410,7 +2410,7 @@ describe("web_search.execute — WEB_SEARCH_PROVIDER precedence", () => {
 		const r = await captured.tools
 			.get("web_search")
 			?.execute?.("tc", { query: "x" }, undefined as never, undefined as never, createMockCtx());
-		expect((r?.details as { backend: string }).backend).toBe("tavily");
+		expect((r!.details as { backend: string }).backend).toBe("tavily");
 	});
 
 	it("per-call provider override beats WEB_SEARCH_PROVIDER", async () => {
@@ -2431,7 +2431,7 @@ describe("web_search.execute — WEB_SEARCH_PROVIDER precedence", () => {
 		const r = await captured.tools
 			.get("web_search")
 			?.execute?.("tc", { query: "x", provider: "exa" }, undefined as never, undefined as never, createMockCtx());
-		expect((r?.details as { backend: string }).backend).toBe("exa");
+		expect((r!.details as { backend: string }).backend).toBe("exa");
 	});
 
 	it("valid per-call override succeeds even when WEB_SEARCH_PROVIDER is bogus", async () => {
@@ -2455,7 +2455,7 @@ describe("web_search.execute — WEB_SEARCH_PROVIDER precedence", () => {
 		const r = await captured.tools
 			.get("web_search")
 			?.execute?.("tc", { query: "x", provider: "exa" }, undefined as never, undefined as never, createMockCtx());
-		expect((r?.details as { backend: string }).backend).toBe("exa");
+		expect((r!.details as { backend: string }).backend).toBe("exa");
 	});
 
 	it("whitespace-only WEB_SEARCH_PROVIDER is treated as unset (config wins)", async () => {
@@ -2476,7 +2476,7 @@ describe("web_search.execute — WEB_SEARCH_PROVIDER precedence", () => {
 		const r = await captured.tools
 			.get("web_search")
 			?.execute?.("tc", { query: "x" }, undefined as never, undefined as never, createMockCtx());
-		expect((r?.details as { backend: string }).backend).toBe("brave");
+		expect((r!.details as { backend: string }).backend).toBe("brave");
 	});
 
 	it("unknown WEB_SEARCH_PROVIDER name throws (no silent fallback)", async () => {

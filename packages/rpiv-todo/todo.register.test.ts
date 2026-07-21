@@ -51,7 +51,7 @@ describe("registerTodoTool — execute mutates module state", () => {
 	it("create → list returns the seeded row", async () => {
 		const { tool } = setup();
 		const r1 = await call(tool, { action: "create", subject: "first" });
-		expect((r1?.details as TaskDetails).action).toBe("create");
+		expect((r1!.details as TaskDetails).action).toBe("create");
 		const r2 = await call(tool, { action: "list" });
 		expect(r2?.content[0]).toMatchObject({ text: expect.stringContaining("first") });
 	});
