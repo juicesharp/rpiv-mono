@@ -1,7 +1,7 @@
 # scripts/ (release engineering)
 
 ## Responsibility
-Lockstep release pipeline for the rpiv-mono workspace, plus a safety-proof harness. `release.mjs` orchestrates an end-to-end release (preflight → bump → CHANGELOG promote → commit + tag → publish → reinstate `[Unreleased]` → push); `sync-versions.js` enforces the lockstep invariant and rewrites intra-monorepo `dependencies`/`devDependencies` to `^<lockstep-version>`. Together they implement: a release is one atomic, reproducible monorepo-wide action. `check-slice-overlap.mjs` is a standalone proof harness that validates `packages/rpiv-pi/skills/_shared/slice-overlap.mjs` against an independent broader oracle (no release role). `check-no-decision-codes.mjs` is a second non-release guard — a standing prevention check that keeps design-doc decision-codes out of committed `.ts`.
+Lockstep release pipeline for the rpiv-mono workspace, plus a safety-proof harness. `release.mjs` orchestrates an end-to-end release (preflight incl. npm-auth → bump → CHANGELOG promote → commit + tag → publish → reinstate `[Unreleased]` → push); `sync-versions.js` enforces the lockstep invariant and rewrites intra-monorepo `dependencies`/`devDependencies` to `^<lockstep-version>`. Together they implement: a release is one atomic, reproducible monorepo-wide action. `check-slice-overlap.mjs` is a standalone proof harness that validates `packages/rpiv-pi/skills/_shared/slice-overlap.mjs` against an independent broader oracle (no release role). `check-no-decision-codes.mjs` is a second non-release guard — a standing prevention check that keeps design-doc decision-codes out of committed `.ts`.
 
 ## Dependencies
 Node built-ins only — plus one cross-tree workspace import: `check-slice-overlap.mjs` imports `partition` from `packages/rpiv-pi/skills/_shared/slice-overlap.mjs`. Shells out to `git`, `npm`, `npx shx`. Reads `packages/rpiv-pi/package.json` as the canonical version oracle. Zero third-party packages.
@@ -19,6 +19,9 @@ sync-versions.js       — Lockstep invariant + intra-monorepo dep rewrite (idem
 check-slice-overlap.mjs — Safety proof for packages/rpiv-pi/skills/_shared/slice-overlap.mjs; flags under-selection only
 check-no-decision-codes.mjs — Pre-commit guard: no parenthesized decision-code citations in scoped *.ts
 ```
+
+## Fresh-Resolution Hazard (why root devDependencies are pinned EXACT)
+Both release paths delete `package-lock.json` + `node_modules` and reinstall ("lockfile honesty") — so on release day, caret specs re-resolve to whatever npm serves. This broke the v2.0.0 release twice: biome `^2.5.0` → 2.5.5 (new lint errors failed pre-commit) and pi `^0.80.5` → 0.80.10 (`modelRegistry` → `modelRuntime` rename broke tsc). The root `devDependencies` are therefore pinned **exact** (biome, tsc, vitest, coverage, pi-*, typebox, husky, shx) — bump them deliberately in a normal commit, never let a release float them. The `@earendil-works/pi-*` trio stays at 0.80.5 until the `modelRuntime` migration lands. Transitive deps can still drift — the coverage preflight is the backstop.
 
 ## Lockstep Invariant Enforcement
 `sync-versions.js` is **all-or-nothing**: if any two workspace packages have drifted to different versions, it fails the build before writing anything. `peerDependencies` are deliberately **untouched** — the zero-cross-imports contract requires they stay `"*"`.
@@ -47,7 +50,7 @@ Every shell command runs through a single wrapper that **echoes the command and 
 
 <important if="you are cutting a new release">
 ## Cutting a Release
-1. Ensure clean tree (`git status` shows no changes); the script exits 1 otherwise
+1. Ensure clean tree (`git status` shows no changes) AND npm publish auth; the script preflights both (`npm whoami`) and exits 1 otherwise. Publish needs an interactive-OTP session or a granular token with 2FA bypass — a plain `npm login` may pass `whoami` yet still 403 at publish
 2. Pick: `node scripts/release.mjs <patch|minor|major>` (delegates to `npm run version:*`) OR `node scripts/release.mjs <x.y.z>` (must be strictly greater than current)
 3. The script bumps versions across all workspaces (lockstep), promotes every `packages/*/CHANGELOG.md` `[Unreleased]` heading, commits, tags `v<version>`, runs `npm publish -ws --access public`, reinstates `[Unreleased]`, commits, then pushes `main` + tag
 4. On any mid-flight failure, the script `process.exit(1)`s — review state manually before retrying (no automatic rollback)

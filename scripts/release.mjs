@@ -179,6 +179,18 @@ if (status?.trim()) {
 }
 console.log("  Working directory clean\n");
 
+console.log("Checking npm publish auth...");
+const npmUser = run("npm whoami", { silent: true, ignoreError: true });
+if (!npmUser?.trim()) {
+	console.error("Error: not authenticated to the npm registry (npm whoami failed).");
+	console.error("  Publishing requires an interactive OTP session or a granular token with 2FA bypass.");
+	console.error(
+		"  Fix auth now — the publish step runs AFTER commit + tag, so failing there leaves a half-done release.",
+	);
+	process.exit(1);
+}
+console.log(`  Authenticated as ${npmUser.trim()}\n`);
+
 console.log("Checking [Unreleased] sections...");
 if (!hasUnreleasedEntries()) {
 	console.log("  Warning: every package's [Unreleased] section is empty.");
