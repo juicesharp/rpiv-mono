@@ -8,7 +8,7 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Fixed
-- Compatibility with Pi >= 0.80: `completeSimple` moved to the `@earendil-works/pi-ai/compat` entrypoint, which made the side-call crash on import under newer hosts. The function is now resolved at call time through a version-tolerant loader (`pi-compat.ts`) that prefers `/compat` and falls back to the package root, keeping hosts on 0.74 through 0.80+ working.
+- Side-call completions now work on both older and newer Pi hosts (0.80+), and genuine initialization failures surface clearly instead of being masked by the compatibility fallback.
 
 ## [1.20.0] - 2026-06-15
 

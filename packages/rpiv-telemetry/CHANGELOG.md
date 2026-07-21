@@ -7,11 +7,11 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Changed
-- `loadTelemetryConfig()` now reads `config.json` through `@juicesharp/rpiv-config`'s XDG-aware `loadJsonConfigWithLegacyFallback("rpiv-telemetry")` instead of a fixed `loadJsonConfig(CONFIG_PATH)` call, so the config directory follows `XDG_CONFIG_HOME` when it is set to a usable absolute path, falling back to `~/.config` when unset, empty, whitespace, or relative. The legacy `~/.config/rpiv-telemetry/config.json` path is still read, but only when no file exists at the resolved XDG location; a malformed file at the XDG location warns and returns `{}` rather than silently falling back to the legacy file. Config writes remain XDG-only.
+### Added
+- Configuration is now read from the XDG config directory (`XDG_CONFIG_HOME`), falling back to the legacy location when the new path is absent.
 
 ### Fixed
-- Moved `typebox` from `peerDependencies` to `dependencies` (`^1.1.24`, matching the Pi host's range) so the config + EventBus payload schemas resolve under installers that don't materialise peer deps. Consistency with the #79 fix across the family (this package is private/unpublished).
+- Tools register correctly under package managers that do not install peer dependencies.
 
 ## [1.20.0] - 2026-06-15
 

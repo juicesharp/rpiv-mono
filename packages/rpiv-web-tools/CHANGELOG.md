@@ -8,14 +8,14 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
-- `web_search` now accepts an optional `provider` parameter that routes a single call to a different backend than the active provider set via `/web-tools`, without mutating persisted config or restarting the session. Valid values: `brave`, `tavily`, `serper`, `exa`, `youcom`, `jina`, `firecrawl`, `perplexity`, `searxng`, `ollama`. The named provider must have its own API key / base URL configured (env var or `/web-tools`); an unknown name or an unconfigured provider throws instead of silently falling back, so callers can detect misconfiguration. `details.backend` reflects the actually-used provider. Closes #82.
-- `WEB_SEARCH_PROVIDER` env var now pins the active provider as a middle tier in the resolution chain: per-call `provider` override ?? `WEB_SEARCH_PROVIDER` ?? `config.provider` ?? default. A non-empty env value is validated like the override — an unknown name throws on the next `web_search` — but only when it actually wins the resolution, so a bogus `WEB_SEARCH_PROVIDER` no longer defeats a valid per-call override. `/web-tools --show` and the provider picker derive the active provider from a shared resolver that reports its source (env/config/default) without validating, so a typo surfaces honestly in the display and only fails once a search actually runs.
-- `readConfig()` now reads through `@juicesharp/rpiv-config`'s XDG-aware `loadJsonConfigWithLegacyFallback("rpiv-web-tools")` instead of a fixed `loadJsonConfig(CONFIG_PATH)` call, so the config directory follows `XDG_CONFIG_HOME` when set to a usable absolute path, falling back to `~/.config` when unset, empty, whitespace, or relative. The legacy `~/.config/rpiv-web-tools/config.json` path is still read, but only when no file exists at the resolved XDG location; a malformed file at the XDG location warns and returns `{}` rather than silently falling back to the legacy file. Config writes remain XDG-only.
+- Add optional `provider` parameter to `web_search` to target a different search backend for a single call without changing the saved provider.
+- Add `WEB_SEARCH_PROVIDER` environment variable to pin the active search provider; a per-call override still takes precedence, and unknown names fail only when a search actually runs.
+- Read configuration from `XDG_CONFIG_HOME` when set, falling back to the legacy `~/.config` location only when no config file exists at the new path.
 
 ### Fixed
-- Moved `typebox` from `peerDependencies` to `dependencies` (`^1.1.24`, matching the Pi host's range) so `web_search` / `web_fetch` parameter schemas resolve under installers that don't materialise peer deps. Fixes `ERR_MODULE_NOT_FOUND: typebox` on standalone consumer installs (#79).
-- Test files are no longer published in the npm tarball. `files` packed `providers/**/*.test.ts`, which import the private, unpublished `@juicesharp/rpiv-test-utils` fixture package, so a standalone consumer running the bundled tests hit `ERR_MODULE_NOT_FOUND`. Added a `!**/*.test.ts` exclusion to `files` (#80).
-- Raised `EXA_MAX_FETCH_CHARACTERS` from 10,000 (matching Exa's documented OpenAPI schema) to 1,000,000 (matching the live API's actual accepted maximum). At 10k chars, content from Exa's `fetch()` fell below the 50 KiB `DEFAULT_MAX_BYTES` threshold used by `web_fetch`'s `truncateHead()`, so truncation never triggered and no `[Content truncated: ...]` footer or temp-file spill occurred — the model saw silently truncated content with no recovery path. At 1M chars, truncation reliably triggers, appending the footer and spilling the full text to a temp file the model can read (#94).
+- Raise the Exa fetch character limit to match the live API, so `web_fetch` now detects truncation and saves the full content to a recoverable temp file.
+- Register tools correctly under installers that do not materialize peer dependencies.
+- Exclude test files from the published package so standalone installs no longer fail on a missing private test dependency.
 
 ## [1.20.0] - 2026-06-15
 

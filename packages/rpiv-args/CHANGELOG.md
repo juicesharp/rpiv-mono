@@ -8,7 +8,7 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Fixed
-- **Token-path invocations no longer read as "no argument given" (#89).** When a skill body contains `$ARGUMENTS`/`$N` tokens, the argument used to survive only woven into the body — often into documentation-shaped slots (`` `$ARGUMENTS` — optional path to… ``) where models misread it as placeholder text and took the skill's empty-input branch. The token path now also appends the raw argument string after `</skill>` as a `Skill input: <args>` trailer, and the skill-invocation protocol defines the label plus tells the model that substituted in-body occurrences are real user input. A prose label (not an XML wrapper) so Pi's interactive renderer — which shows the trailing text verbatim in a user-message box — displays it cleanly. Empty invocations still emit no trailer, so empty-input branches keep keying off its absence. The no-token path is unchanged (byte-identical to Pi's built-in expansion).
+- Skill arguments are no longer misread as empty when substituted into documentation-shaped slots; invocations now carry the raw input in an explicit `Skill input:` trailer.
 
 ## [1.20.0] - 2026-06-15
 

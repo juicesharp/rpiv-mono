@@ -7,12 +7,12 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Changed
-- `loadAdvisorConfig()` now reads `advisor.json` through `@juicesharp/rpiv-config`'s XDG-aware `loadJsonConfigWithLegacyFallback()`: the config directory follows `XDG_CONFIG_HOME` when it is set to a usable absolute path, falling back to `~/.config` when unset, empty, whitespace, or relative. The legacy `~/.config/rpiv-advisor/advisor.json` path is still read, but only when no file exists at the resolved XDG location; a malformed file at the XDG location warns and returns defaults rather than silently falling back to the legacy file. Config writes remain XDG-only.
+### Added
+- Read configuration from `XDG_CONFIG_HOME` when set, falling back to the legacy `~/.config` location only when no config file exists at the new path.
 
 ### Fixed
-- Compatibility with Pi >= 0.80: `completeSimple` moved to the `@earendil-works/pi-ai/compat` entrypoint, which made the advisor side-call crash on import under newer hosts. The function is now resolved at call time through a version-tolerant loader (`advisor/pi-compat.ts`) that prefers `/compat` and falls back to the package root, keeping hosts on 0.74 through 0.80+ working.
-- Moved `typebox` from `peerDependencies` to `dependencies` (`^1.1.24`, matching the Pi host's range) so the tool's parameter schema resolves under installers that don't materialise peer deps. Fixes `ERR_MODULE_NOT_FOUND: typebox` on standalone consumer installs (#79).
+- Restore advisor model calls under Pi 0.80 and newer hosts while remaining compatible with older hosts, and surface genuine initialization failures instead of masking them.
+- Register tools correctly under installers that do not materialize peer dependencies.
 
 ## [1.20.0] - 2026-06-15
 
