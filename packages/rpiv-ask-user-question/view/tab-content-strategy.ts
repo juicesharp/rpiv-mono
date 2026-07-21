@@ -228,16 +228,17 @@ export class SubmitTabStrategy implements TabContentStrategy {
  * Build the controls hint line. Order:
  *   Enter · ↑/↓ [· Space toggle] [· n notes] [· Tab switch] · Esc · Ctrl+] collapse
  *
- * `HINT_SINGLE` / `HINT_MULTI` are the CORE prefix that must always render — the
- * collapse affordance is appended last so the core stays a contiguous substring even
- * when the trailing part is clipped by `OneLineClippedText` on terminals < ~95 cols.
- * This is the trade we picked over wrapping (which would inflate `footerRowCount`
- * and desync the height math in `DialogView.render`).
+ * `NOTES` is now part of the resting (notes-closed) core — it renders on every
+ * question tab and drops only when `state.notesVisible` flips the editor open. The
+ * collapse affordance is appended last so the resting core stays a contiguous
+ * substring even when the trailing part is clipped by `OneLineClippedText` on
+ * terminals < ~95 cols. This is the trade we picked over wrapping (which would
+ * inflate `footerRowCount` and desync the height math in `DialogView.render`).
  */
 export function buildHintText(question: QuestionData | undefined, isMulti: boolean, state: DialogState): string {
 	const parts: string[] = [t("hint.enter", HINT_PART_ENTER), t("hint.navigate", HINT_PART_NAV)];
 	if (question?.multiSelect === true) parts.push(t("hint.toggle", HINT_PART_TOGGLE));
-	if (question && question.multiSelect !== true && state.focusedOptionHasPreview && !state.notesVisible) {
+	if (question && !state.notesVisible) {
 		parts.push(t("hint.notes", HINT_PART_NOTES));
 	}
 	if (isMulti) parts.push(t("hint.tab", HINT_PART_TAB));

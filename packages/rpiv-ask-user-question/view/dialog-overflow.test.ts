@@ -2,7 +2,10 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { type Component, type Input, visibleWidth } from "@earendil-works/pi-tui";
 import { makeTheme } from "@juicesharp/rpiv-test-utils";
 import { describe, expect, it } from "vitest";
-import { makeSubmitPickerPropsFromState as submitPickerPropsFromState } from "../test-fixtures.js";
+import {
+	makeQuestionnaireState,
+	makeSubmitPickerPropsFromState as submitPickerPropsFromState,
+} from "../test-fixtures.js";
 import type { QuestionAnswer, QuestionData } from "../tool/types.js";
 import type { MultiSelectView } from "./components/multi-select-view.js";
 import type { OptionListView } from "./components/option-list-view.js";
@@ -15,6 +18,9 @@ import {
 	type DialogState,
 	DialogView,
 	HINT_MULTI,
+	HINT_PART_CANCEL,
+	HINT_PART_ENTER,
+	HINT_PART_NOTES,
 	HINT_SINGLE,
 	REVIEW_HEADING,
 } from "./dialog-builder.js";
@@ -33,6 +39,14 @@ function stubPreviewPane(lines: string[], rowRange?: (w: number) => [number, num
 		...stubComponent(lines),
 		focusedItemRowRange: rowRange ?? ((_w: number) => [0, 1] as [number, number]),
 	} as unknown as PreviewPane;
+}
+
+function stubMultiSelect(lines: string[], rowRange?: (w: number) => [number, number]): MultiSelectView {
+	return {
+		...stubComponent(lines),
+		focusedItemRowRange: rowRange ?? ((_w: number) => [0, 0] as [number, number]),
+		naturalHeight: (_w: number) => lines.length,
+	} as unknown as MultiSelectView;
 }
 
 function stubOptionList(): OptionListView {
@@ -81,7 +95,6 @@ function makeConfig(over: MakeConfigOverrides = {}): DialogParts {
 		answers: new Map(),
 		multiSelectChecked: new Set(),
 		notesByTab: new Map(),
-		focusedOptionHasPreview: false,
 		submitChoiceIndex: 0,
 		notesDraft: "",
 		collapsed: false,
@@ -122,7 +135,7 @@ describe("Dialog overflow — no clipping when terminal is tall enough", () => {
 		);
 		const lines = dlg.render(80);
 		// With termRows=50, dialog fits easily. Residual spacer rows should be present.
-		const hintIdx = lines.findIndex((l) => l.includes(HINT_MULTI));
+		const hintIdx = lines.findIndex((l) => l.includes(HINT_PART_ENTER));
 		expect(hintIdx).toBeGreaterThan(0);
 		const tail = lines.slice(hintIdx + 1);
 		// Residual spacer = (6 + 5) - (1 + 2) = 8 rows  (footerRowCount dropped 4→2)
@@ -180,7 +193,7 @@ describe("Dialog overflow — 3-region partition", () => {
 		);
 		const lines = dlg.render(80);
 		const joined = lines.join("\n");
-		expect(joined).toContain(HINT_MULTI);
+		expect(joined).toContain(HINT_PART_NOTES);
 	});
 
 	it("single-question mode: no tab bar in output", () => {
@@ -230,7 +243,7 @@ describe("Dialog overflow — minimum terminal", () => {
 		const lines = dlg.render(80);
 		expect(lines.length).toBe(7);
 		expect(lines[0]).toMatch(/─/);
-		expect(lines.join("\n")).toContain(HINT_MULTI);
+		expect(lines.join("\n")).toContain(HINT_PART_NOTES);
 	});
 
 	it("clips chrome when terminal smaller than topFixed + bottomFixed", () => {
@@ -259,7 +272,6 @@ describe("Dialog overflow — submit tab", () => {
 			answers,
 			multiSelectChecked: new Set(),
 			notesByTab: new Map(),
-			focusedOptionHasPreview: false,
 			submitChoiceIndex: 0,
 			notesDraft: "",
 			collapsed: false,
@@ -400,5 +412,69 @@ describe("Dialog overflow — centering with non-trivial focusedItemRowRange", (
 		);
 		const lines = dlg.render(80);
 		expect(lines.length).toBeLessThanOrEqual(14);
+	});
+});
+
+describe("Dialog overflow — notes open on a multi-select tab (NFR-2)", () => {
+	const multiQ: QuestionData = {
+		question: "Areas",
+		header: "Areas",
+		multiSelect: true,
+		options: [
+			{ label: "FE", description: "f" },
+			{ label: "BE", description: "b" },
+		],
+	};
+
+	it("flipping notesVisible false→true grows render length by exactly 3; trailing residual-spacer tail unchanged", () => {
+		const ms = stubMultiSelect(["<MULTI>"]);
+		const common = {
+			questions: [multiQ],
+			isMulti: false,
+			multiSelectByTab: [ms],
+			getTerminalRows: () => 50,
+			getBodyHeight: () => 8,
+			getCurrentBodyHeight: () => 4,
+		};
+		const closed = makeDialog(makeConfig({ ...common, state: makeQuestionnaireState({ notesVisible: false }) }));
+		const open = makeDialog(makeConfig({ ...common, state: makeQuestionnaireState({ notesVisible: true }) }));
+		const closedLines = closed.render(80);
+		const openLines = open.render(80);
+		expect(closedLines.length).toBeLessThanOrEqual(50);
+		expect(openLines.length).toBeLessThanOrEqual(50);
+		// midRows = Notes header + notesInput + Spacer = 3 rows; everything else is invariant.
+		expect(openLines.length - closedLines.length).toBe(3);
+		// NFR-2: growing midRows never desyncs the spacerRows residual math — the trailing
+		// residual-spacer tail is identical with notes closed vs open.
+		const trailingBlanks = (lines: string[]) => {
+			let n = 0;
+			for (let i = lines.length - 1; i >= 0 && lines[i].trim() === ""; i--) n++;
+			return n;
+		};
+		expect(trailingBlanks(openLines)).toBe(trailingBlanks(closedLines));
+	});
+
+	it("overflow with notes open: output ≤ termRows, top border sticky, HINT_PART_CANCEL sticky (NOT HINT_MULTI)", () => {
+		// On a multi-select tab `buildHintText` interleaves HINT_PART_TOGGLE between NAV and
+		// (post-Phase-1) NOTES, and NOTES drops when notesVisible, so HINT_MULTI
+		// (ENTER·NAV·NOTES·TAB·CANCEL) is never a contiguous substring of this render.
+		// HINT_PART_CANCEL (always the last core part) is the correct sticky-chrome assertion.
+		const ms = stubMultiSelect(Array(10).fill("<MULTI>"));
+		const dlg = makeDialog(
+			makeConfig({
+				questions: [multiQ],
+				isMulti: false,
+				state: makeQuestionnaireState({ notesVisible: true }),
+				multiSelectByTab: [ms],
+				getTerminalRows: () => 10,
+				getBodyHeight: () => 20,
+				getCurrentBodyHeight: () => 20,
+			}),
+		);
+		const lines = dlg.render(80);
+		expect(lines.length).toBeLessThanOrEqual(10);
+		expect(lines[0]).toMatch(/─/);
+		expect(lines.join("\n")).toContain(HINT_PART_CANCEL);
+		expect(lines.join("\n")).not.toContain(HINT_MULTI);
 	});
 });

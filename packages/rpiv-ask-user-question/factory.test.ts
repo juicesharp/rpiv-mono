@@ -788,7 +788,7 @@ describe("ask_user_question — notes pre-answer (Slice 5 notes UX)", () => {
 		const { custom } = driveCustom((c) => {
 			// Items: [Centered (preview), Left, "Type something."]
 			// On startup we're focused on Centered (option 0), which has preview.
-			// Slice 5 gate: focusedOptionHasPreview === true → 'n' triggers notes_enter.
+			// Universal `n` gate: 'n' triggers notes_enter on the preview-bearing focused option.
 			c.handleInput("n"); // enter notes mode
 			c.handleInput("h");
 			c.handleInput("e");
@@ -811,12 +811,19 @@ describe("ask_user_question — notes pre-answer (Slice 5 notes UX)", () => {
 		expect(r?.details.answers[0].notes).toBe("hello");
 	});
 
-	it("'n' keypress is ignored when focused option has no preview (notes scoped to preview-bearing options)", async () => {
+	it("'n' opens the notes editor on a no-preview option and lands the note on the answer (universal `n` gate)", async () => {
 		const tool = register();
 		const { custom } = driveCustom((c) => {
+			// Items: [Centered (preview), Left, "Type something."]
 			c.handleInput(KEY.DOWN); // → option Left (no preview)
-			c.handleInput("n"); // ignored — focusedOptionHasPreview === false
-			c.handleInput(KEY.ENTER); // confirms Left
+			c.handleInput("n"); // universal gate: 'n' triggers notes_enter regardless of preview
+			c.handleInput("h");
+			c.handleInput("e");
+			c.handleInput("l");
+			c.handleInput("l");
+			c.handleInput("o");
+			c.handleInput(KEY.ESC); // exit notes (commits to notesByTab)
+			c.handleInput(KEY.ENTER); // confirm Left → notesByTab merges into answer
 		});
 		const ctx = { hasUI: true, ui: { custom } } as never;
 		const r = (await tool.execute?.(
@@ -828,7 +835,7 @@ describe("ask_user_question — notes pre-answer (Slice 5 notes UX)", () => {
 		)) as ToolResult | undefined;
 		expect(r?.details.cancelled).toBe(false);
 		expect(r?.details.answers[0].answer).toBe("Left");
-		expect(r?.details.answers[0].notes).toBeUndefined();
+		expect(r?.details.answers[0].notes).toBe("hello");
 	});
 });
 
@@ -955,5 +962,43 @@ describe("ask_user_question — bracketed paste + Kitty CSI-u (dictation parity)
 			| undefined;
 		expect(r?.details.answers[0].kind).toBe("custom");
 		expect(r?.details.answers[0].answer).toBe("Hello world");
+	});
+});
+
+const multiNotesParams = {
+	questions: [
+		{
+			question: "Pick areas",
+			header: "Areas",
+			multiSelect: true,
+			options: [{ label: "FE" }, { label: "BE" }],
+		},
+	],
+};
+
+describe("ask_user_question — multi-select notes end-to-end", () => {
+	it("n → type → Esc → Space → Next+Enter lands a multi answer carrying the typed note", async () => {
+		const tool = register();
+		const { custom } = driveCustom((c) => {
+			// Items: [FE (0), BE (1), "Type something." (2), Next (3)]. Startup focuses FE.
+			// Universal `n` gate (Phase 1) opens notes on this multi-select tab.
+			c.handleInput("n"); // enter notes
+			c.handleInput("h");
+			c.handleInput("i"); // type "hi"
+			c.handleInput(KEY.ESC); // exit notes → commits "hi" to notesByTab[0]
+			c.handleInput(KEY.SPACE); // toggle FE ON (persistMultiSelectAnswer merges the note)
+			c.handleInput(KEY.DOWN); // → BE
+			c.handleInput(KEY.DOWN); // → "Type something." (inputMode on, then off via DOWN)
+			c.handleInput(KEY.DOWN); // → Next sentinel
+			c.handleInput(KEY.ENTER); // multi_confirm + done (single question → submit)
+		});
+		const ctx = { hasUI: true, ui: { custom } } as never;
+		const r = (await tool.execute?.("tc", multiNotesParams as never, undefined as never, undefined as never, ctx)) as
+			| ToolResult
+			| undefined;
+		expect(r?.details.cancelled).toBe(false);
+		expect(r?.details.answers[0]).toMatchObject({ kind: "multi" });
+		expect(r?.details.answers[0].selected).toContain("FE");
+		expect(r?.details.answers[0].notes).toBe("hi");
 	});
 });

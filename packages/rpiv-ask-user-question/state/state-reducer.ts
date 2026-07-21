@@ -2,7 +2,6 @@ import type { QuestionAnswer, QuestionData, QuestionnaireResult } from "../tool/
 import type { WrappingSelectItem } from "../view/components/wrapping-select.js";
 import type { QuestionnaireAction } from "./key-router.js";
 import { ROW_INTENT_META } from "./row-intent.js";
-import { computeFocusedOptionHasPreview } from "./selectors/derivations.js";
 import type { QuestionnaireState } from "./state.js";
 
 /** Session-lifetime constants. No live-component reads — peripheral values live on canonical state. */
@@ -45,15 +44,6 @@ function orderedAnswers(state: QuestionnaireState, questions: readonly QuestionD
 		if (a) out.push(a);
 	}
 	return out;
-}
-
-function withFocusedOptionHasPreview(
-	state: QuestionnaireState,
-	questions: readonly QuestionData[],
-): QuestionnaireState {
-	const focusedOptionHasPreview = computeFocusedOptionHasPreview(questions, state.currentTab, state.optionIndex);
-	if (state.focusedOptionHasPreview === focusedOptionHasPreview) return state;
-	return { ...state, focusedOptionHasPreview };
 }
 
 function syncMultiSelectFromAnswers(
@@ -108,9 +98,8 @@ function switchTabResult(state: QuestionnaireState, nextTab: number, ctx: ApplyC
 		multiSelectChecked: syncMultiSelectFromAnswers(state.answers, ctx.questions, nextTab),
 		notesDraft: notesValue,
 	};
-	const finalState = withFocusedOptionHasPreview(transitioned, ctx.questions);
 	return {
-		state: finalState,
+		state: transitioned,
 		effects: [
 			{ kind: "set_notes_focused", focused: false },
 			{ kind: "set_notes_value", value: notesValue },
@@ -137,7 +126,7 @@ const navHandler: Handler<"nav"> = (state, action, ctx) => {
 	const items = ctx.itemsByTab[state.currentTab] ?? [];
 	const item = items[action.nextIndex];
 	const inputMode = item ? ROW_INTENT_META[item.kind].activatesInputMode : false;
-	const next = withFocusedOptionHasPreview({ ...state, optionIndex: action.nextIndex, inputMode }, ctx.questions);
+	const next = { ...state, optionIndex: action.nextIndex, inputMode };
 	if (!inputMode) {
 		return { state: next, effects: [{ kind: "clear_input_buffer" }] };
 	}

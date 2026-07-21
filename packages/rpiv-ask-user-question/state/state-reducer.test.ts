@@ -309,3 +309,57 @@ describe("reduce — toggle_collapsed", () => {
 		expect(r.effects).toEqual([{ kind: "set_overlay_hidden", hidden: true }]);
 	});
 });
+
+describe("reduce — multi-select notes merge (dormant code lit up by universal `n` gate)", () => {
+	it("toggle attaches a pending note onto the multi answer (persistMultiSelectAnswer merge)", () => {
+		const ctx = makeCtx({ questions: [makeQuestion({ multiSelect: true })] });
+		const state = makeState({ notesByTab: new Map([[0, "side note"]]) });
+		const r = reduce(state, { kind: "toggle", index: 0 }, ctx);
+		const answer = r.state.answers.get(0);
+		expect(answer?.kind).toBe("multi");
+		expect(answer?.selected).toEqual(["A"]);
+		expect(answer?.notes).toBe("side note");
+	});
+
+	it("toggle with empty notesByTab persists a multi answer with NO notes field (negative case)", () => {
+		const ctx = makeCtx({ questions: [makeQuestion({ multiSelect: true })] });
+		const r = reduce(makeState(), { kind: "toggle", index: 0 }, ctx);
+		const answer = r.state.answers.get(0);
+		expect(answer?.kind).toBe("multi");
+		expect(answer?.selected).toEqual(["A"]);
+		expect(answer?.notes).toBeUndefined();
+	});
+
+	it("multi_confirm attaches a pending note onto the multi answer (multiConfirmHandler merge)", () => {
+		const ctx = makeCtx({ questions: [makeQuestion({ multiSelect: true })] });
+		const state = makeState({ notesByTab: new Map([[0, "confirm note"]]) });
+		const r = reduce(state, { kind: "multi_confirm", selected: ["A", "B"] }, ctx);
+		const answer = r.state.answers.get(0);
+		expect(answer?.kind).toBe("multi");
+		expect(answer?.selected).toEqual(["A", "B"]);
+		expect(answer?.notes).toBe("confirm note");
+	});
+
+	it("strip round-trip: notes_exit with an empty draft strips notes from a multi answer; a subsequent toggle does not resurrect it", () => {
+		const ctx = makeCtx({ questions: [makeQuestion({ multiSelect: true })] });
+		const answers = new Map<number, QuestionAnswer>([
+			[0, { questionIndex: 0, question: "Pick one", kind: "multi", answer: null, selected: ["A"], notes: "stale" }],
+		]);
+		let state = makeState({
+			answers,
+			notesByTab: new Map([[0, "stale"]]),
+			notesVisible: true,
+			notesDraft: "   ",
+			multiSelectChecked: new Set([0]),
+		});
+		// notes_exit with a whitespace-only draft strips `notes` from the answer AND clears notesByTab.
+		state = reduce(state, { kind: "notes_exit" }, ctx).state;
+		expect(state.answers.get(0)?.notes).toBeUndefined();
+		expect(state.notesByTab.has(0)).toBe(false);
+		// A subsequent toggle persists a multi answer WITHOUT resurrecting notes —
+		// persistMultiSelectAnswer reads the now-empty notesByTab, not the stripped answer.
+		const after = reduce(state, { kind: "toggle", index: 1 }, ctx).state;
+		expect(after.answers.get(0)?.selected).toEqual(["A", "B"]);
+		expect(after.answers.get(0)?.notes).toBeUndefined();
+	});
+});

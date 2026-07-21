@@ -7,7 +7,6 @@ import type { QuestionnairePropsAdapter } from "../view/props-adapter.js";
 import { buildQuestionnaire } from "./build-questionnaire.js";
 import { t } from "./i18n-bridge.js";
 import { type QuestionnaireAction, routeKey } from "./key-router.js";
-import { computeFocusedOptionHasPreview } from "./selectors/derivations.js";
 import type { QuestionnaireRuntime, QuestionnaireState } from "./state.js";
 import { type ApplyContext, type Effect, reduce } from "./state-reducer.js";
 
@@ -40,7 +39,6 @@ function initialState(): QuestionnaireState {
 		answers: new Map(),
 		multiSelectChecked: new Set(),
 		notesByTab: new Map(),
-		focusedOptionHasPreview: false,
 		submitChoiceIndex: 0,
 		notesDraft: "",
 		collapsed: false,
@@ -83,8 +81,6 @@ export class QuestionnaireSession {
 		this.isMulti = this.questions.length > 1;
 		this.itemsByTab = config.itemsByTab;
 		this.collapseKey = config.collapseKey;
-		// Seed from the focused option at start; the reducer keeps it in sync via withFocusedOptionHasPreview.
-		this.state = { ...this.state, focusedOptionHasPreview: computeFocusedOptionHasPreview(this.questions, 0, 0) };
 
 		const built = buildQuestionnaire({
 			tui: this.tui,

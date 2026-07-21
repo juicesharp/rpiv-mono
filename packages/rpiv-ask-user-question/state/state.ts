@@ -18,8 +18,6 @@ export interface QuestionnaireState {
 	 * pass otherwise). Merged into the answer at confirm time.
 	 */
 	notesByTab: ReadonlyMap<number, string>;
-	/** True iff the focused option carries a non-empty `preview` string. Gates `notes_enter` and the "n to add notes" hint chip. */
-	focusedOptionHasPreview: boolean;
 	/** Focused row in the Submit-tab picker (0 = Submit, 1 = Cancel). Reset on tab switch. */
 	submitChoiceIndex: number;
 	/** Canonical mirror of the in-flight notes editor; runtime mirrors after `forward_notes_keystroke`. */

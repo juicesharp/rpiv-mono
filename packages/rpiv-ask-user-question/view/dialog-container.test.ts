@@ -21,6 +21,8 @@ import {
 	HINT_MULTI,
 	HINT_MULTISELECT_SUFFIX,
 	HINT_NOTES_SUFFIX,
+	HINT_PART_ENTER,
+	HINT_PART_NOTES,
 	HINT_SINGLE,
 	INCOMPLETE_WARNING_PREFIX,
 	READY_PROMPT,
@@ -91,7 +93,6 @@ function makeConfig(over: MakeConfigOverrides = {}): DialogParts {
 		answers: new Map(),
 		multiSelectChecked: new Set(),
 		notesByTab: new Map(),
-		focusedOptionHasPreview: false,
 		submitChoiceIndex: 0,
 		notesDraft: "",
 		collapsed: false,
@@ -185,7 +186,7 @@ describe("makeDialog — multi-question (question tab)", () => {
 		const joined = dlg.render(80).join("\n");
 		expect(joined).toContain("<TABBAR>");
 		expect(joined).toContain("<PREVIEW>");
-		expect(joined).toContain(HINT_MULTI);
+		expect(joined).toContain(HINT_PART_NOTES);
 	});
 
 	it("does NOT render the inner header badge inside the dialog body in multi-question mode", () => {
@@ -213,7 +214,6 @@ describe("makeDialog — multi-question (question tab)", () => {
 			answers: new Map(),
 			multiSelectChecked: new Set(),
 			notesByTab: new Map(),
-			focusedOptionHasPreview: false,
 			submitChoiceIndex: 0,
 			notesDraft: "",
 			collapsed: false,
@@ -254,7 +254,6 @@ describe("makeDialog — multi-question (question tab)", () => {
 					answers: new Map([[0, answer]]),
 					multiSelectChecked: new Set(),
 					notesByTab: new Map(),
-					focusedOptionHasPreview: true,
 					submitChoiceIndex: 0,
 					notesDraft: "",
 					collapsed: false,
@@ -276,7 +275,6 @@ describe("makeDialog — multi-question (question tab)", () => {
 				answers: new Map(),
 				multiSelectChecked: new Set(),
 				notesByTab: new Map(),
-				focusedOptionHasPreview: false,
 				submitChoiceIndex: 0,
 				notesDraft: "",
 				collapsed: false,
@@ -306,7 +304,6 @@ describe("makeDialog — multi-question (question tab)", () => {
 			answers: new Map(),
 			multiSelectChecked: new Set([0]),
 			notesByTab: new Map(),
-			focusedOptionHasPreview: false,
 			submitChoiceIndex: 0,
 			notesDraft: "",
 			collapsed: false,
@@ -359,7 +356,6 @@ describe("makeDialog — Submit tab", () => {
 			answers,
 			multiSelectChecked: new Set(),
 			notesByTab: new Map(),
-			focusedOptionHasPreview: false,
 			submitChoiceIndex: 0,
 			notesDraft: "",
 			collapsed: false,
@@ -569,7 +565,6 @@ describe("makeDialog — width safety", () => {
 							answers: new Map([[0, { questionIndex: 0, question: "q", kind: "option", answer: "A" }]]),
 							multiSelectChecked: new Set(),
 							notesByTab: new Map(),
-							focusedOptionHasPreview: false,
 							submitChoiceIndex: 0,
 							notesDraft: "",
 							collapsed: false,
@@ -595,7 +590,7 @@ describe("makeDialog — body residual padding", () => {
 		// Residual = (getBodyHeight + maxFooterRowCount) - (currentBodyHeight + footerRowCount)
 		//          = (6 + 5) - (1 + 2) = 8  (footerRowCount dropped 4→2 after chat-row removal)
 		const lines = makeDialog(makeConfig({ getBodyHeight: () => 6, getCurrentBodyHeight: () => 1 })).render(80);
-		const hintIdx = lines.findIndex((l) => l.includes(HINT_MULTI));
+		const hintIdx = lines.findIndex((l) => l.includes(HINT_PART_ENTER));
 		expect(hintIdx).toBeGreaterThan(0);
 		const tail = lines.slice(hintIdx + 1);
 		expect(tail.length).toBe(8);
@@ -633,7 +628,6 @@ describe("makeDialog — body residual padding", () => {
 			answers: new Map(),
 			multiSelectChecked: new Set(),
 			notesByTab: new Map(),
-			focusedOptionHasPreview: false,
 			submitChoiceIndex: 0,
 			notesDraft: "",
 			collapsed: false,

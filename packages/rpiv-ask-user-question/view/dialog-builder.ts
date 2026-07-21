@@ -17,13 +17,17 @@ export const HINT_PART_CANCEL = "Esc to cancel";
 export const HINT_PART_COLLAPSE = "Ctrl+] to collapse";
 export const HINT_PART_EXPAND = "Ctrl+] to expand";
 /**
- * `HINT_SINGLE` / `HINT_MULTI` describe the CORE hint that must always be visible —
- * the collapse affordance is appended AFTER cancel by `buildHintText` so the core
+ * `HINT_SINGLE` / `HINT_MULTI` describe the resting (notes-closed) core hint.
+ * `NOTES` is part of this core because it applies on every question tab —
+ * `buildHintText` drops it only when `state.notesVisible` flips the editor open.
+ * The collapse affordance is appended AFTER cancel by `buildHintText` so the core
  * stays a contiguous prefix substring of the rendered line. On narrow terminals the
  * collapse tail clips with `…` (`OneLineClippedText`); the core is preserved.
  */
-export const HINT_SINGLE = [HINT_PART_ENTER, HINT_PART_NAV, HINT_PART_CANCEL].join(" · ");
-export const HINT_MULTI = [HINT_PART_ENTER, HINT_PART_NAV, HINT_PART_TAB, HINT_PART_CANCEL].join(" · ");
+export const HINT_SINGLE = [HINT_PART_ENTER, HINT_PART_NAV, HINT_PART_NOTES, HINT_PART_CANCEL].join(" · ");
+export const HINT_MULTI = [HINT_PART_ENTER, HINT_PART_NAV, HINT_PART_NOTES, HINT_PART_TAB, HINT_PART_CANCEL].join(
+	" · ",
+);
 export const HINT_MULTISELECT_SUFFIX = ` · ${HINT_PART_TOGGLE}`;
 export const HINT_NOTES_SUFFIX = ` · ${HINT_PART_NOTES}`;
 /** Single-line footer shown by `QuestionnaireSession` when `state.collapsed === true`. Bypasses `buildHintText`. */
