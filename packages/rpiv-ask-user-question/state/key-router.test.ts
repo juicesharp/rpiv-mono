@@ -559,13 +559,7 @@ describe("routeKey — cancel + submit", () => {
 });
 
 describe("routeKey — notes", () => {
-	it("'n' emits notes_enter", () => {
-		expect(routeKey("n", makeState(), makeRuntime())).toEqual({
-			kind: "notes_enter",
-		});
-	});
-
-	it("'n' when focused option has no preview emits notes_enter (universal gate)", () => {
+	it("'n' emits notes_enter regardless of preview (universal gate)", () => {
 		expect(routeKey("n", makeState(), makeRuntime())).toEqual({
 			kind: "notes_enter",
 		});
@@ -645,6 +639,14 @@ describe("routeKey — inputMode (Type something)", () => {
 
 	it("printable bytes return ignore (dialog forwards to inlineInput.handleInput)", () => {
 		expect(routeKey("x", makeState({ inputMode: true }), makeRuntime({ currentItem: other }))).toEqual({
+			kind: "ignore",
+		});
+	});
+
+	// FR-3: the inputMode block intercepts BEFORE the universal notes gate, so `n`
+	// inserts a literal character into the inline buffer instead of opening notes.
+	it("'n' under inputMode returns ignore (types a literal 'n'), NOT notes_enter", () => {
+		expect(routeKey("n", makeState({ inputMode: true }), makeRuntime({ currentItem: other }))).toEqual({
 			kind: "ignore",
 		});
 	});
