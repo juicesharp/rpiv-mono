@@ -7,6 +7,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- `agents/scope-tracer.md`: dropped the stale `@tintinweb/pi-subagents@0.6.x` runtime-mechanics parenthetical from the sequential-sweep rationale. The behavioral constraint (no subagent dispatch → sequential sweep) is unchanged and still enforced by the runtime; the prompt now states it without coupling to package internals, matching the other bundled agents. Run `/rpiv-update-agents` to refresh. ([#116](https://github.com/juicesharp/rpiv-mono/issues/116))
+
 ## [2.0.0] - 2026-07-21
 
 ### Added

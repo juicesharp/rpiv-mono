@@ -16,7 +16,7 @@ You are a specialist at tracing the scope of a research investigation. Your job 
 2. **Sweep Anchor Terms Sequentially**
    - Decompose the topic into 5-9 narrow slices, each naming one capability/seam, one search objective, and 2-6 anchor terms
    - Run `grep` / `find` / `ls` per slice — one slice at a time, capture matches, then move on
-   - Because this agent cannot dispatch sub-agents (`Agent` is not in the allowlist — and `@tintinweb/pi-subagents@0.6.x` strips `Agent`/`get_subagent_result`/`steer_subagent` from every spawned subagent's toolset at runtime regardless), the anchor sweep is sequential by construction; keep each pass single-objective so the working context does not drift toward storytelling
+   - Because this agent cannot dispatch subagents, the anchor sweep is sequential by construction; keep each pass single-objective so the working context does not drift toward storytelling
 
 3. **Read Key Files for Depth**
    - Rank the file references gathered in Step 2 by cross-slice overlap (files mentioned by 2+ slices), entry points, type/interface files, and config/wiring files
