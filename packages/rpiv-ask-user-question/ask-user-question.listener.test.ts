@@ -20,7 +20,10 @@ const identityTheme = {
 	strikethrough: (s: string) => s,
 };
 
-const CTRL_RBRACKET = "\x1d"; // GS byte — what terminals send for Ctrl+]
+const CTRL_RBRACKET = "\x1d"; // GS byte — what legacy terminals send for Ctrl+]
+const KITTY_CTRL_RBRACKET_PRESS = "\x1b[93;5u";
+const KITTY_CTRL_RBRACKET_REPEAT = "\x1b[93;5:2u";
+const KITTY_CTRL_RBRACKET_RELEASE = "\x1b[93;5:3u";
 const ALT_O = "\x1bo"; // ESC-prefixed 'o' — legacy encoding for Alt+O
 
 const params = {
@@ -140,6 +143,27 @@ describe("ask_user_question — raw terminal collapse listener", () => {
 		await tool.execute?.("tc", params as never, undefined as never, undefined as never, ctx);
 		// execute's finally must tear the raw listener down once the tool resolves.
 		expect(removeListener).toHaveBeenCalledTimes(1);
+	});
+
+	it("toggles once for Kitty keyboard press, repeat, and release events", async () => {
+		const tool = register();
+		const handle = makeHandle();
+		const { ctx, listenerRef } = driveWithListener(handle, (done) => {
+			expect(listenerRef.current?.(KITTY_CTRL_RBRACKET_PRESS)).toEqual({ consume: true });
+			expect(handle.isHidden()).toBe(true);
+
+			// Repeat and release still belong to the collapse binding, so consume them
+			// without toggling or leaking them into the newly focused chat editor.
+			expect(listenerRef.current?.(KITTY_CTRL_RBRACKET_REPEAT)).toEqual({ consume: true });
+			expect(handle.isHidden()).toBe(true);
+			expect(listenerRef.current?.(KITTY_CTRL_RBRACKET_RELEASE)).toEqual({ consume: true });
+			expect(handle.isHidden()).toBe(true);
+
+			expect(listenerRef.current?.(KITTY_CTRL_RBRACKET_PRESS)).toEqual({ consume: true });
+			expect(handle.isHidden()).toBe(false);
+			done({ answers: [], cancelled: true });
+		});
+		await tool.execute?.("tc", params as never, undefined as never, undefined as never, ctx);
 	});
 
 	it("ignores non-matching keys", async () => {
