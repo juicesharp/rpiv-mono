@@ -25,6 +25,18 @@ export interface AskUserPromptEventPayload {
 	questions: ReadonlyArray<AskUserPromptQuestion>;
 }
 
+/**
+ * Emitted while the questionnaire is awaiting user input (TUI `ui.custom` and
+ * RPC dialog walker). Cleared with `{ active: false }` in `finally` so listeners
+ * can distinguish blocked-on-human from working.
+ */
+export const ASK_USER_BLOCKED_EVENT = "rpiv:ask-user:blocked" as const;
+
+export interface AskUserBlockedEventPayload {
+	/** True while input is awaited; false when the wait ends (answer, cancel, or error). */
+	active: boolean;
+}
+
 export interface AskUserPromptQuestion {
 	/** The full question text, exactly as the agent authored it. */
 	question: string;

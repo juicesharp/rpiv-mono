@@ -99,14 +99,11 @@ describe("ask_user_question.execute — RPC dialog walker (ctx.mode === 'rpc')",
 		expect(custom).not.toHaveBeenCalled();
 	});
 
-	it("emits herdr:blocked around the RPC dialog walker and clears it afterward", async () => {
+	it("emits rpiv:ask-user:blocked around the RPC dialog walker and clears it afterward", async () => {
 		const { tool, captured } = registerWithCapture();
 		const select = vi.fn(async (_t: string, options: string[]) => options[0]);
 		await run(tool, SINGLE, ctxRpc({ select }));
-		expect(captured.eventsEmitted.get("herdr:blocked")).toEqual([
-			{ active: true, label: "Waiting for user response" },
-			{ active: false },
-		]);
+		expect(captured.eventsEmitted.get("rpiv:ask-user:blocked")).toEqual([{ active: true }, { active: false }]);
 	});
 
 	it("appends the 'Type something.' sentinel row sourced from ROW_INTENT_META", async () => {

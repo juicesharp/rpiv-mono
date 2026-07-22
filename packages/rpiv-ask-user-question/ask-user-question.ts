@@ -1,7 +1,12 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { matchesKey } from "@earendil-works/pi-tui";
 import { loadConfig, resolveCollapseKey, validateGuidanceFields } from "./config.js";
-import { ASK_USER_PROMPT_EVENT, type AskUserPromptEventPayload } from "./events.js";
+import {
+	ASK_USER_BLOCKED_EVENT,
+	ASK_USER_PROMPT_EVENT,
+	type AskUserBlockedEventPayload,
+	type AskUserPromptEventPayload,
+} from "./events.js";
 // Static import is fine — rpc-fallback pulls only types + the i18n bridge,
 // none of the ~560ms TUI render graph that QuestionnaireSession lazy-loads.
 import { hasDialogUI, runRpcQuestionnaire } from "./rpc-fallback.js";
@@ -35,6 +40,11 @@ function emitAskUserPromptEvent(pi: ExtensionAPI, params: QuestionParams): void 
 		})),
 	};
 	pi.events.emit(ASK_USER_PROMPT_EVENT, payload);
+}
+
+function emitAskUserBlockedEvent(pi: ExtensionAPI, active: boolean): void {
+	const payload: AskUserBlockedEventPayload = { active };
+	pi.events.emit(ASK_USER_BLOCKED_EVENT, payload);
 }
 
 /** Canonical tool name — single source of truth shared with the reconcile module. */
@@ -161,11 +171,11 @@ Preview content is rendered as markdown in a monospace box. Multi-line text with
 			// import entirely; RPC builds that predate ctx.mode are caught by the
 			// custom()-resolved-undefined backstop below. See ./rpc-fallback.ts.
 			if ((ctx as { mode?: string }).mode === "rpc" && hasDialogUI(ctx.ui)) {
-				pi.events.emit("herdr:blocked", { active: true, label: "Waiting for user response" });
+				emitAskUserBlockedEvent(pi, true);
 				try {
 					return buildQuestionnaireResponse(await runRpcQuestionnaire(ctx.ui, typed), typed);
 				} finally {
-					pi.events.emit("herdr:blocked", { active: false });
+					emitAskUserBlockedEvent(pi, false);
 				}
 			}
 
@@ -216,7 +226,7 @@ Preview content is rendered as markdown in a monospace box. Multi-line text with
 				});
 			}
 
-			pi.events.emit("herdr:blocked", { active: true, label: "Waiting for user response" });
+			emitAskUserBlockedEvent(pi, true);
 			try {
 				const result = await ctx.ui.custom<QuestionnaireResult>(
 					(tui, theme, _kb, done) => {
@@ -262,7 +272,7 @@ Preview content is rendered as markdown in a monospace box. Multi-line text with
 				return buildQuestionnaireResponse(result, typed);
 			} finally {
 				removeOverlayInputListener?.();
-				pi.events.emit("herdr:blocked", { active: false });
+				emitAskUserBlockedEvent(pi, false);
 			}
 		},
 	});

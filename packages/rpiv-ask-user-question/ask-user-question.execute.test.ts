@@ -286,11 +286,8 @@ describe("ask_user_question.execute — event emission", () => {
 			],
 		});
 
-		expect(mockEmit).toHaveBeenNthCalledWith(2, "herdr:blocked", {
-			active: true,
-			label: "Waiting for user response",
-		});
-		expect(mockEmit).toHaveBeenNthCalledWith(3, "herdr:blocked", { active: false });
+		expect(mockEmit).toHaveBeenNthCalledWith(2, "rpiv:ask-user:blocked", { active: true });
+		expect(mockEmit).toHaveBeenNthCalledWith(3, "rpiv:ask-user:blocked", { active: false });
 
 		// Both start events are emitted before the dialog; the clear follows it.
 		expect(mockEmit.mock.invocationCallOrder[0]).toBeLessThan(custom.mock.invocationCallOrder[0]);
@@ -298,7 +295,7 @@ describe("ask_user_question.execute — event emission", () => {
 		expect(mockEmit.mock.invocationCallOrder[2]).toBeGreaterThan(custom.mock.invocationCallOrder[0]);
 	});
 
-	it("clears Herdr blocked lifecycle after cancellation and UI rejection", async () => {
+	it("clears ask-user blocked lifecycle after cancellation and UI rejection", async () => {
 		const mockEmit = vi.fn();
 		const { pi, captured } = createMockPi({
 			events: { emit: mockEmit, on: vi.fn(() => () => {}) },
@@ -327,11 +324,11 @@ describe("ask_user_question.execute — event emission", () => {
 			tool.execute?.("tc", validParams() as never, undefined as never, undefined as never, rejected as never),
 		).rejects.toThrow("UI failed");
 
-		expect(mockEmit.mock.calls.filter(([name]) => name === "herdr:blocked")).toEqual([
-			["herdr:blocked", { active: true, label: "Waiting for user response" }],
-			["herdr:blocked", { active: false }],
-			["herdr:blocked", { active: true, label: "Waiting for user response" }],
-			["herdr:blocked", { active: false }],
+		expect(mockEmit.mock.calls.filter(([name]) => name === "rpiv:ask-user:blocked")).toEqual([
+			["rpiv:ask-user:blocked", { active: true }],
+			["rpiv:ask-user:blocked", { active: false }],
+			["rpiv:ask-user:blocked", { active: true }],
+			["rpiv:ask-user:blocked", { active: false }],
 		]);
 	});
 
