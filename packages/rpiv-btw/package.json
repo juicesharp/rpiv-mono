@@ -34,6 +34,10 @@
     "btw-ui.ts",
     "pi-compat.ts",
     "prompts/",
+    "docs/",
+    "!docs/*.png",
+    "!docs/*.jpg",
+    "!docs/*.svg",
     "README.md",
     "LICENSE"
   ],
