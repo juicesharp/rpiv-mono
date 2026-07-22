@@ -41,7 +41,9 @@ disable.
 
 `advisor` takes zero parameters - calling it forwards the full serialized
 conversation branch to the advisor model, which returns guidance (plan,
-correction, or stop signal) that the executor consumes.
+correction, or stop signal) that the executor consumes. Default prompt
+guidelines also tell the executor to surface that guidance in the next
+visible reply, so the user is not left with only a collapsed tool card.
 
 ## Tool
 
