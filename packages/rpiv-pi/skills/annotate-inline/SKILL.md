@@ -138,10 +138,8 @@ You are tasked with generating CLAUDE.md files across a brownfield project. You 
 
    **Choosing question format:**
 
-   - **`ask_user_question` tool** — when your question has 2-4 concrete options from code analysis (pattern conflicts, integration choices, scope boundaries, priority overrides). The user can always pick "Other" for free-text. Example: Use the `ask_user_question` tool with the question "Found 2 mapping approaches — which should new code follow?". Options: "Manual mapping (Recommended)" (Used in OrderService (src/services/OrderService.ts:45) — 8 occurrences); "AutoMapper" (Used in UserService (src/services/UserService.ts:12) — 2 occurrences).
+   - **`ask_user_question` tool** — use `ask_user_question` with 2-4 concrete hypotheses. State observed behavior, `file:line` evidence, impact, and the decision; the automatic `Type something.` row accepts unexpected detail.
 
-   - **Free-text with ❓ Question: prefix** — when the question is open-ended and options can't be predicted (discovery, "what am I missing?", corrections). Example:
-     "❓ Question: Integration scanner found no background job registration for this area. Is that expected, or is there async processing I'm not seeing?"
 
    **Batching**: When you have 2-4 independent questions (answers don't depend on each other), you MAY batch them in a single `ask_user_question` call. Keep dependent questions sequential.
 

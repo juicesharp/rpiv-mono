@@ -62,7 +62,7 @@ When invoked:
    - Otherwise, branch on the `recent plans:` listing in the Metadata block:
      - **Empty** — no plans under `.rpiv/artifacts/plans/`; ask the user for a path in prose.
      - **Exactly one entry** — confirm with `ask_user_question`: "Validate this plan?" with options "Validate `<filename>` (Recommended)" and "Pick a different path".
-     - **Two or more entries** — present the top 4 filenames as `ask_user_question` options (a free-text "Other" row is appended automatically).
+     - **Two or more entries** — present the top 4 filenames as `ask_user_question` options. The tool automatically appends a `Type something.` free-text row; do not list it manually.
 
 3. **Read the implementation plan** completely
 

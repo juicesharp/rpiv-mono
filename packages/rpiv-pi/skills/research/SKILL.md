@@ -144,7 +144,8 @@ Findings go into Precedents & Lessons. Otherwise skip and note "git history unav
 
 2. **Developer checkpoint — grounded questions one at a time:**
 
-   Start with grounded questions referencing real findings with file:line evidence. Ask ONE question at a time, waiting for the answer before the next. Use a **❓ Question:** prefix. Each question must pull NEW information from the developer — not confirm what you already found:
+   - Every ambiguity checkpoint MUST be self-contained: state observed behavior, at least one `file:line` evidence reference, why the decision matters, and 2-4 concrete decision options in the question or option descriptions.
+   Start with grounded questions referencing real findings with `file:line` evidence. Ask ONE question at a time, waiting for the answer before the next. Use a **❓ Question:** prefix. Each question must pull NEW information from the developer — not confirm what you already found:
 
    Every question MUST embed at least one `file:line` reference in the question text — not just in surrounding context. Examples:
 
@@ -162,15 +163,15 @@ Findings go into Precedents & Lessons. Otherwise skip and note "git history unav
    - **Pattern conflict**: "Found 2 implementations of {X} — which is canonical?" with options citing `file:line` + occurrence count
    - **Scope boundary**: "Question {N} references files {A,B,C} but analysis shows {D} is the real integration point. Extend scope?" with yes/no + "describe what I missed"
    - **Priority override**: "Questions Q1 and Q2 have competing implications for {area}. Which is load-bearing?" with options
-   - **Integration ambiguity**: "Found no connection between {X} and {Y}. Is there an indirect path?" — `ask_user_question`, "Other" carries the answer
+   - **Integration ambiguity**: "Found no connection between {X} and {Y} at `file:line`. This leaves {impact}. Should the feature wire through {A} or {B}?" — use `ask_user_question`; the automatically appended `Type something.` row captures unexpected custom input.
 
    **Choosing question format:**
 
-   - **`ask_user_question` tool** — when your question has 2-4 concrete options from code analysis (pattern conflicts, integration choices, scope boundaries, priority overrides). The user can always pick "Other" for free-text. Example:
+   - **`ask_user_question` tool** — when your question has 2-4 concrete options from code analysis (pattern conflicts, integration choices, scope boundaries, priority overrides). The automatically appended `Type something.` row captures custom input. Example:
 
      > Use the `ask_user_question` tool with the following question: "Found 2 patterns for retry logic — which is canonical?". Header: "Pattern". Options: "Event-sourced retry (Recommended)" (`src/events/orders.ts:45-67` — 3 hooks, matches precedent commit `abc123`); "Direct retry loop" (`src/services/OrderService.ts:112` — single use, no event traceability).
 
-   - **Open-ended** (discovery, "what am I missing?", corrections) — still `ask_user_question`; offer your best 1-2 guesses and let "Other" carry the unpredictable answer.
+   - **Open-ended** (discovery, "what am I missing?", corrections) — still use `ask_user_question`; supply 2-4 concrete hypotheses with behavior, `file:line` evidence, impact, and decision context, then let the automatic `Type something.` row capture unanticipated detail.
 
    **Anti-pattern** — do NOT dump a verbose paragraph mixing analysis with a trailing question:
 

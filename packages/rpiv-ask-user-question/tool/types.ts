@@ -27,8 +27,8 @@ export type SentinelLabel = (typeof SENTINEL_LABELS)[SentinelKind];
  * "Other" in CC; we reject it so the runtime sentinel is the single source
  * of truth) and has no runtime kind.
  *
- * Reserved unconditionally — multiSelect questions also reject these labels
- * even though the runtime sentinel is suppressed there.
+ * Reserved unconditionally — every question mode rejects these labels, even
+ * when a given runtime sentinel is not appended in that mode.
  *
  * Order is pinned by `types.test.ts:292` — keep the explicit
  * `["Other", other, next]` literal so consumers using
