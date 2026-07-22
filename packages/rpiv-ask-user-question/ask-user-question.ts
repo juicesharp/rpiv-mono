@@ -161,7 +161,12 @@ Preview content is rendered as markdown in a monospace box. Multi-line text with
 			// import entirely; RPC builds that predate ctx.mode are caught by the
 			// custom()-resolved-undefined backstop below. See ./rpc-fallback.ts.
 			if ((ctx as { mode?: string }).mode === "rpc" && hasDialogUI(ctx.ui)) {
-				return buildQuestionnaireResponse(await runRpcQuestionnaire(ctx.ui, typed), typed);
+				pi.events.emit("herdr:blocked", { active: true, label: "Waiting for user response" });
+				try {
+					return buildQuestionnaireResponse(await runRpcQuestionnaire(ctx.ui, typed), typed);
+				} finally {
+					pi.events.emit("herdr:blocked", { active: false });
+				}
 			}
 
 			const itemsByTab: WrappingSelectItem[][] = typed.questions.map((q) => buildItemsForQuestion(q));
@@ -211,6 +216,7 @@ Preview content is rendered as markdown in a monospace box. Multi-line text with
 				});
 			}
 
+			pi.events.emit("herdr:blocked", { active: true, label: "Waiting for user response" });
 			try {
 				const result = await ctx.ui.custom<QuestionnaireResult>(
 					(tui, theme, _kb, done) => {
@@ -256,6 +262,7 @@ Preview content is rendered as markdown in a monospace box. Multi-line text with
 				return buildQuestionnaireResponse(result, typed);
 			} finally {
 				removeOverlayInputListener?.();
+				pi.events.emit("herdr:blocked", { active: false });
 			}
 		},
 	});

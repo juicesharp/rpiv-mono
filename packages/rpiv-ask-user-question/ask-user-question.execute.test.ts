@@ -286,8 +286,53 @@ describe("ask_user_question.execute — event emission", () => {
 			],
 		});
 
-		// Verify event is emitted BEFORE the dialog is shown
+		expect(mockEmit).toHaveBeenNthCalledWith(2, "herdr:blocked", {
+			active: true,
+			label: "Waiting for user response",
+		});
+		expect(mockEmit).toHaveBeenNthCalledWith(3, "herdr:blocked", { active: false });
+
+		// Both start events are emitted before the dialog; the clear follows it.
 		expect(mockEmit.mock.invocationCallOrder[0]).toBeLessThan(custom.mock.invocationCallOrder[0]);
+		expect(mockEmit.mock.invocationCallOrder[1]).toBeLessThan(custom.mock.invocationCallOrder[0]);
+		expect(mockEmit.mock.invocationCallOrder[2]).toBeGreaterThan(custom.mock.invocationCallOrder[0]);
+	});
+
+	it("clears Herdr blocked lifecycle after cancellation and UI rejection", async () => {
+		const mockEmit = vi.fn();
+		const { pi, captured } = createMockPi({
+			events: { emit: mockEmit, on: vi.fn(() => () => {}) },
+		});
+		registerAskUserQuestionTool(pi);
+		const tool = captured.tools.get("ask_user_question")!;
+
+		const cancelled = await tool.execute?.(
+			"tc",
+			validParams() as never,
+			undefined as never,
+			undefined as never,
+			ctxWithCustom({ answers: [], cancelled: true }) as never,
+		);
+		expect(cancelled?.details).toMatchObject({ cancelled: true });
+
+		const rejected = createMockCtx({
+			hasUI: true,
+			ui: {
+				custom: vi.fn(async () => {
+					throw new Error("UI failed");
+				}),
+			} as never,
+		});
+		await expect(
+			tool.execute?.("tc", validParams() as never, undefined as never, undefined as never, rejected as never),
+		).rejects.toThrow("UI failed");
+
+		expect(mockEmit.mock.calls.filter(([name]) => name === "herdr:blocked")).toEqual([
+			["herdr:blocked", { active: true, label: "Waiting for user response" }],
+			["herdr:blocked", { active: false }],
+			["herdr:blocked", { active: true, label: "Waiting for user response" }],
+			["herdr:blocked", { active: false }],
+		]);
 	});
 
 	it("does NOT emit event when UI is unavailable", async () => {

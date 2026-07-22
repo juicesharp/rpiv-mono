@@ -7,6 +7,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Emit `herdr:blocked` while the questionnaire awaits input (TUI `ui.custom` and RPC dialog walker), and clear it in `finally` so Herdr can show `blocked` / notifications instead of `working`.
+
 ## [2.0.0] - 2026-07-21
 
 ### Added
