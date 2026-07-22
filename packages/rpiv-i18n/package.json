@@ -33,6 +33,9 @@
 		"i18n-ui.ts",
 		"loader.ts",
 		"docs/",
+		"!docs/*.png",
+		"!docs/*.jpg",
+		"!docs/*.svg",
 		"README.md",
 		"LICENSE"
 	],

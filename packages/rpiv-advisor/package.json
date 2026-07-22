@@ -32,6 +32,10 @@
 		"advisor-ui.ts",
 		"fuzzy.ts",
 		"prompts/",
+		"docs/",
+		"!docs/*.png",
+		"!docs/*.jpg",
+		"!docs/*.svg",
 		"README.md",
 		"LICENSE"
 	],

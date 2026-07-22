@@ -88,6 +88,9 @@
 		"validate/",
 		"docs-protocol.ts",
 		"docs/",
+		"!docs/*.png",
+		"!docs/*.jpg",
+		"!docs/*.svg",
 		"README.md",
 		"LICENSE",
 		"!**/*.test.ts"

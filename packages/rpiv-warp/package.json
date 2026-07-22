@@ -40,6 +40,10 @@
 		"title-spinner.ts",
 		"payload.ts",
 		"config.ts",
+		"docs/",
+		"!docs/*.png",
+		"!docs/*.jpg",
+		"!docs/*.svg",
 		"README.md",
 		"CHANGELOG.md",
 		"LICENSE"
