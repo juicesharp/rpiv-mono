@@ -47,6 +47,12 @@ export default defineWorkflow({
 });
 ```
 
+### Typing model
+
+Inter-stage data typing is **runtime-contract-based**. `outputSchema` / `inputSchema` (Standard Schema v1) validate `output.data` when stages run, and skill contracts adjudicate composition at load time.
+
+The `StageDef<TIn, TOut>` type parameters are local inference helpers for a single factory call — they are erased at the `Workflow.stages` boundary (every stage collapses to `StageDef`), so they do **not** propagate types across edges. Don't lean on them for cross-stage safety; lean on schemas and contracts.
+
 ## Stage factories
 
 Three factories for two stage kinds. Each factory returns a `StageDef` — pass overrides as needed.
@@ -57,7 +63,7 @@ Three factories for two stage kinds. Each factory returns a `StageDef` — pass 
 
 ```typescript
 import { produces, typeboxSchema } from "@juicesharp/rpiv-workflow";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 
 // Basic — just declare the outcome
 produces({ outcome: myOutcome })
@@ -92,7 +98,7 @@ produces({
 | `outcome` | (required) | `OutputSpec` — how the runtime collects + parses the artifact. |
 | `outputSchema` | none | Standard Schema v1 validator for `output.data`. Enables gate routing. |
 | `inputSchema` | none | Standard Schema v1 validator for inherited upstream `output.data`. Rejection halts immediately. |
-| `reads` | none | `ReadonlyArray<string>` — names this stage consumes from `state.named`. Switches the prompt to the labelled-flag form. See [Multi-input stages](#multi-input-stages). |
+| `reads` | none | `ReadonlyArray<StageRead>` (`string` \| `fanin(name)`) — names this stage consumes from `state.named`. Switches the prompt to the labelled-flag form. See [Multi-input stages](#multi-input-stages). |
 | `onInvalid` | `"retry"` | `"retry"` (re-invoke up to `maxRetries`) or `"halt"` (fail fast). |
 | `maxRetries` | — | Max retries on schema rejection. |
 | `validateTimeoutMs` | — | Timeout for async schemas. |
@@ -138,7 +144,9 @@ const FRONTMATTER_PHASE_FANOUT = fanout({
 acts({ loop: FRONTMATTER_PHASE_FANOUT, reads: ["plans"] })
 ```
 
-A **`Unit`** is `{ prompt, label, id? }`: `prompt` is the body sent to the skill, `label` is the human display tag woven into the status line / per-unit toast / decorated audit row, and `id` is the stable audit identity (falls back to `label`). Set `id` when `label` may be reworded — the resume drift guard and post-hoc tooling join on `id ?? label`.
+A **`Unit`** is `{ prompt, label, id?, deps? }`: `prompt` is the body sent to the skill, `label` is the human display tag woven into the status line / per-unit toast / decorated audit row, and `id` is the stable audit identity (falls back to `label`). Set `id` when `label` may be reworded — the resume drift guard and post-hoc tooling join on `id ?? label`.
+
+**`deps` (fanout only)** lists the `id ?? label` identities this unit depends on. The wave scheduler assigns Kahn levels over those directed edges and dispatches level by level: a unit starts only once every unit it names has completed. Absent or empty ⇒ a root (wave 0). A dep matching no unit's `id ?? label`, or any cycle, halts the stage at the live entry. The sequential kinds ignore `deps` — `iterate`/`assess` consume the prior unit, so ordering is already implicit.
 
 **`FanoutContext` (what `units()` receives):** `{ cwd, artifact, state }` — `artifact` is the primary inherited from upstream (undefined when the loop stage is the entry point); `state` is the read-only `RunState`. A thrown error halts the stage attributed to it.
 
@@ -214,7 +222,7 @@ A `Judge` names a dispatchable grading session. Author it with `judge({ ... })`,
 - **Dispatch is `skill` XOR `prompt`** (exactly one): `skill` dispatches `/skill:<skill> <producerHandle>` with the latest producer artifact auto-injected as the input handle; `prompt` sends raw text (the author embeds the handle/output themselves). Setting both is ambiguous; setting neither has nothing to dispatch — both throw.
 - **`outcome` is required** — it validates the verdict and names its own dedicated `state.named` channel. That channel's `.name` MUST differ from the producer outcome's name (a workflow-level check, since it needs the producer's identity).
 - **≥1-artifact constraint**: the judge's collector MUST materialize at least one artifact (e.g. a JSON verdict file whose parser yields `{ done, feedback }`). A judge session that collects zero artifacts is a **fatal halt** — no retry, no soft-stop.
-- **Skill label for per-unit consumers**: a `skill` judge's units carry that skill name in `onUnitStart`/`onUnitEnd` and the JSONL rows; a `prompt` judge dispatches under the synthetic label **`<stageName>-judge`**. Per-unit listeners that key on the dispatched skill (e.g. rpiv-pi's `models.json` `skills.<name>` model-override rung) can target a prompt-judge by adding an entry under that synthetic name; with no entry, judge units run on the baseline model.
+- **Skill label for per-unit consumers**: a `skill` judge's units carry that skill name in `onUnitStart`/`onUnitEnd` and the JSONL rows; a `prompt` judge dispatches under a synthetic label — **`<stageName>-judge`** on an `assess` site, **`<stageName>-verify`** on a `verify` site. Per-unit listeners that key on the dispatched skill (e.g. rpiv-pi's `models.json` `skills.<name>` model-override rung) can target a prompt-judge by adding an entry under that synthetic name; with no entry, judge units run on the baseline model.
 
 Keeping the termination predicate OFF `Judge` is what makes it reusable: both `assess()` and the per-stage `verify` field add their own `done(verdict)` predicate over the same opaque verdict `Output` (they share the `JudgedRepetition` vocabulary — `done` + `max`); [`panel()`](#adversarial-verification-panel) composes N judges into one verdict the same `done` reads. A panel therefore slots into any of them with zero per-site code.
 
@@ -230,6 +238,14 @@ Every constructor accepts the shared introspectable facet and policy knobs:
 | `onCap` | fanout/iterate `"halt"` · assess `"advance"` | What happens at the effective cap (`min(max, run.maxIterations)`). `"halt"` — terminal failure (mirrors the backward-jump guard). `"advance"` — soft-stop: warn, land a `{type:"loop-cap"}` telemetry row, fire `onLoopCap`, keep the projected result, advance downstream. |
 | `result` | fanout `"entry"` · iterate/assess `"last"` | What the loop leaves in `{state.output, state.primaryArtifact}` (the pair is governed as one). `"entry"` restores the pair captured at loop entry (reproduces routing-sees-upstream); `"last"` uses the last completed produce unit's pair (zero produce units degrades to entry). |
 
+`fanout()` adds three knobs the sequential kinds have no use for:
+
+| Knob (fanout only) | Default | Meaning |
+|---|---|---|
+| `concurrency` | host cap | Per-fanout in-flight ceiling, applied as `min(concurrency, host maxConcurrency)`. `1` **serializes** the loop — the safe model for units mutating shared state (e.g. applying a plan to one working tree). Integer ≥ 1, validated at construction and load. |
+| `failFast` | absent (collect-all) | Opt out of collect-all: the first failing unit halts the run terminally and cancels in-flight siblings. Cancelled siblings leave unfilled slots, so a later resume re-dispatches them. |
+| `depArtifactFlag` | none | Injects each completed dependency's artifact path into the dependent unit's prompt as `<flag> <path>`, one per direct `deps` entry whose slot holds a non-failed output. Pairs with `Unit.deps` — `deps` orders the waves, this hands the dependent something to read. Failed dep slots are skipped. |
+
 #### The resume contract (all loop kinds)
 
 A unit source must be **deterministic w.r.t. the fold-replayed `RunState` at the unit boundary plus this generation's accumulated outputs**. On resume, the fold re-calls your `units()` / `next()` at every folded boundary and compares each recomputed unit against what the run recorded. If they diverge — a non-deterministic generator recomputed a different unit — resume **refuses** with a terminal failure rather than re-run the wrong units. Set a stable `id` on each unit so the join survives a reworded `label`. The same contract covers the model-judged predicates: `assess`'s and `verify`'s `done` / `feedForward` are recomputed on resume (never persisted), so each must be deterministic w.r.t. the verdict `Output`. Runs recorded before this redesign carry no `parent` field on their unit rows and cannot be resumed (`stage-gone` refusal — no migration).
@@ -241,7 +257,7 @@ Loops are observed through unit-generic lifecycle hooks (register via `registerL
 | Hook | Payload | When |
 |---|---|---|
 | `onLoopStart(stage, info)` | `{ kind, units? }` — `units` only for fanout (push precomputes them) | after `onStageStart`, before unit 1's session |
-| `onUnitStart(stage, unit)` | `UnitEvent` `{ role, index, unitId?, label, skill }` | before each unit's session opens — fired for **produce AND judge** units; the seam a model-override listener flips the model on (units run strictly sequentially, so the flip is race-free) |
+| `onUnitStart(stage, unit)` | `UnitEvent` `{ role, index, unitId?, label, skill }` | before each unit's session opens — fired for **produce AND judge** units; the seam a model-override listener resolves the model on. `iterate`/`assess`/`verify` units run strictly sequentially; **fanout units run in bounded parallel**, so a fanout listener must resolve per-unit from the `UnitEvent` payload rather than flipping global state |
 | `onUnitEnd(stage, unit, output)` | `UnitEvent` + the unit's validated `Output` | after the unit's JSONL row lands (loop units never fire `onStageEnd`) |
 | `onLoopCap(stage, info)` | `LoopCapInfo` `{ kind, count, max, policy }` | after an `onCap: "advance"` trip (after the `{type:"loop-cap"}` row append attempt) |
 
@@ -482,6 +498,10 @@ const notifySlack = terminal.script({
 - `produces.script` may declare `outputSchema`, `maxRetries`, `onInvalid`.
 - `acts.script` / `terminal.script` may declare `inputSchema`.
 
+**Lifecycle parity.** Script stages fire the same lifecycle events as skill stages — `onStageStart` → (`onStageRetry`?) → `onStageEnd` | `onStageError` — with a `StageRef` discriminator of `kind: "script"` (vs `kind: "skill"`). The JSONL audit row carries the stage's record key in `stage` and omits the `skill` field entirely, so post-hoc readers distinguish the two paths by `row.skill === undefined`. A thrown `run()` body records a terminal failure attributed to the stage (`FAIL_SCRIPT_THREW`); the run halts and `onStageError` fires.
+
+The runner stamps `meta` (`stage`, `stageNumber`, `ts`, `runId`) on a `produces.script` envelope — authors fill only `kind` + `artifacts` + `data`. For `acts.script` it synthesises `{ kind: "side-effect", artifacts: [], data: {} }` for the audit row and preserves the rolling primary artifact, so a downstream stage still inherits whatever the upstream `produces` stage set.
+
 ### Prompt stages (raw-text dispatch)
 
 A stage has three **dispatch** options — orthogonal to its `kind`:
@@ -566,7 +586,7 @@ edges: { research: "implement" }
 edges: { commit: "stop" }
 
 // 3. A predicate function (via gate or defineRoute)
-edges: { "code-review": gate("blockers_count", { revise: gt(0), commit: eq(0) }) }
+edges: { "code-review": gate("blockers_count", { revise: gt(0), commit: eq(0) }, "commit") }
 ```
 
 **`STOP`** (or `"stop"`) is the terminal edge sentinel. Every workflow path should eventually reach `"stop"`.
@@ -576,12 +596,12 @@ edges: { "code-review": gate("blockers_count", { revise: gt(0), commit: eq(0) })
 A conditional edge is an **`EdgeFn`**: a `(ctx) => string` predicate carrying a `.targets` array of every stage it can return. `.targets` is required — the validator and reachability BFS enumerate it — so you wrap a TS predicate rather than dropping a bare arrow into `edges`. Two wrappers:
 
 - **`defineRoute(targets, fn)`** — general. Arbitrary TS body, explicit `targets`. Use for strings, enums, multiple fields, ranges — anything.
-- **`gate(field, branches)`** — terse convenience for one **numeric** field with threshold predicates; derives `.targets` from the branch keys. Not more powerful than `defineRoute`, just shorter for the numeric case.
+- **`gate(field, branches, otherwise)`** — terse convenience for one **numeric** field with threshold predicates; derives `.targets` from the branch keys plus `otherwise`. Not more powerful than `defineRoute`, just shorter for the numeric case.
 - **`match(field, branches, opts?)`** — the string/boolean companion to `gate`: classify on a discrete (enum) field by strict `===`. Derives `.targets` from the branch keys; shorter than `defineRoute` for the enum case.
 
 ### gate (numeric field)
 
-Branches evaluated against `Number(output.data[field])` in declaration order; first match wins, last branch is the fallback. Helpers (`gt`/`gte`/`lt`/`lte`/`eq`) take a `number` — non-numeric fields route with `defineRoute` instead.
+Branches evaluated against `Number(output.data[field])` in declaration order; first match wins. The third argument, `otherwise`, is **required** — the no-match fallback must be deliberate, and omitting it throws at construction. Helpers (`gt`/`gte`/`lt`/`lte`/`eq`) take a `number` — non-numeric fields route with `defineRoute` instead.
 
 ```typescript
 import { gate, gt, eq } from "@juicesharp/rpiv-workflow";
@@ -589,10 +609,12 @@ import { gate, gt, eq } from "@juicesharp/rpiv-workflow";
 edges: {
   "code-review": gate("blockers_count", {
     revise: gt(0),   // > 0 → "revise"
-    commit: eq(0),   // = 0 → "commit"; missing/NaN/< 0 falls to last
-  })
+    commit: eq(0),   // = 0 → "commit"
+  }, "commit")       // missing/NaN/< 0 → "commit", with a routing-audit note
 }
 ```
+
+**No-match is explicit, never silent.** A value no branch matches routes to `otherwise` and lands a `note` on the routing-audit row naming the field, the value, and the fallback taken. Branch keys must not be integer-like (`"2"`) — JS object literals hoist array-index keys ahead of declaration order, which would silently reorder match priority, so those are rejected at construction.
 
 ### match (enum field)
 
@@ -951,7 +973,7 @@ acts({
 
 The fresh downstream session now receives the touched files *and* a notes file capturing the rationale.
 
-**What `acts` without an outcome actually does.** The rolling primary slot from the last upstream `produces` is passed through unchanged — downstream still receives that prior artifact, it just learns nothing about what this stage did. If no `produces` stage has run yet upstream, `ensureUpstreamArtifact` halts the next non-terminal stage with `MSG_MISSING_ARTIFACT`. Use `terminal()` for stages that should explicitly carry nothing forward.
+**What `acts` without an outcome actually does.** The rolling primary slot from the last upstream `produces` is passed through unchanged — downstream still receives that prior artifact, it just learns nothing about what this stage did. If no `produces` stage has run yet upstream, `ensureUpstreamArtifact` halts the next non-terminal stage with `FAIL_MISSING_ARTIFACT`. Use `terminal()` for stages that should explicitly carry nothing forward.
 
 ## Validators
 
@@ -961,7 +983,7 @@ The fresh downstream session now receives the touched files *and* a notes file c
 
 ```typescript
 import { typeboxSchema } from "@juicesharp/rpiv-workflow";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 
 outputSchema: typeboxSchema(Type.Object({
   blockers_count: Type.Integer({ minimum: 0 }),
@@ -981,7 +1003,7 @@ import {
   directoryPathCollector, jsonBodyParser, transcriptPathCollector,
   toolCallCollector, fs,
 } from "@juicesharp/rpiv-workflow";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 
 // Custom outcome: detect a markdown file the agent writes to a plans directory
 const planOutcome = {
@@ -1025,7 +1047,7 @@ export default defineWorkflow({
     "code-review": gate("blockers_count", {
       revise: gt(0),
       commit: eq(0),
-    }),
+    }, "commit"),
     revise: "implement-after-revise",
     "implement-after-revise": "commit",
     commit: "stop",

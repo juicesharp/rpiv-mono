@@ -1,142 +1,59 @@
-# rpiv-telemetry
+# @juicesharp/rpiv-telemetry
 
-<div align="center">
-  <a href="https://github.com/juicesharp/rpiv-mono/tree/main/packages/rpiv-telemetry">
-    <picture>
-      <img src="https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-telemetry/docs/cover.png" alt="rpiv-telemetry cover" width="50%">
-    </picture>
-  </a>
-</div>
-
-MLflow observability for [Pi Agent](https://github.com/badlogic/pi-mono). `rpiv-telemetry` auto-instruments Pi lifecycle events and sub-agent activity and dispatches them to one or more configured providers through a bounded async pipeline that never blocks the agent.
-
-## Providers
-
-| Provider | Env vars | Notes |
-|---|---|---|
-| `mlflow` | `MLFLOW_TRACKING_URI`, `MLFLOW_EXPERIMENT_ID`, `MLFLOW_TRACKING_TOKEN` | Bring your own tracking server. Without `MLFLOW_TRACKING_URI` (or `providers.mlflow.trackingUri` in config) the provider registers but silently drops events. See [§Running MLflow locally with Docker](#running-mlflow-locally-with-docker). |
-| `console` | — | Pretty-prints events to stderr. Useful while wiring things up. |
+Records what a [Pi Agent](https://github.com/badlogic/pi-mono) session did — every
+turn, tool call, LLM request, and sub-agent run — as MLflow traces you can inspect
+after the run ends. Internal to this repo: `"private": true`, never published to npm.
 
 ## Install
 
-```bash
-pi install npm:@juicesharp/rpiv-telemetry
+Inside this monorepo Pi loads it through the workspace symlink already. Elsewhere,
+point Pi at the package directory of a checkout where `npm install` has run:
+
+```sh
+pi install ./packages/rpiv-telemetry
 ```
 
-Then restart your Pi session.
+Restart your Pi session.
 
-## Configure
+## Quick start
 
-Env-first, file-second.
-
-1. Environment variables — `MLFLOW_TRACKING_URI`, `MLFLOW_EXPERIMENT_ID`, `MLFLOW_TRACKING_TOKEN`. Set these and you don't need a config file.
-2. `~/.config/rpiv-telemetry/config.json`:
+It stays inert until you write `~/.config/rpiv-telemetry/config.json` (or
+`$XDG_CONFIG_HOME/rpiv-telemetry/config.json`). A provider is constructed only when
+its key is present; with none, every event is dropped. Start with the console sink,
+which needs no server:
 
 ```json
-{
-  "providers": {
-    "mlflow": {
-      "trackingUri": "http://localhost:5001"
-    },
-    "console": {}
-  },
-  "events": "*",
-  "llmPayload": "off",
-  "dispatcher": {
-    "maxQueueSize": 100
-  }
-}
+{ "providers": { "console": {} } }
 ```
 
-### `providers`
+Run a turn: every event pretty-prints to stderr as `[rpiv-telemetry] <ts> <kind> …`.
+Then swap in `"mlflow": { "trackingUri": "http://localhost:5001" }`, which needs an
+MLflow server listening at that URI — nothing does by default, so start one first
+([`docs/mlflow-server-setup.md`](docs/mlflow-server-setup.md) runs it in Docker).
+Env vars override the file's MLflow credentials ([`docs/configuration.md`](docs/configuration.md#environment-variables)).
 
-Only the built-in keys `mlflow` and `console` are accepted. Unknown keys (typos like `mflow`) are rejected at config-load time with a precise schema error — no silent ignore. Custom providers register at runtime via `registerTelemetryProvider`, not through the config file.
+## What it provides
 
-> **Lifecycle contract.** Events emitted before any provider is registered are dropped at the dispatcher boundary (no buffer). The built-in extension flow registers providers inside `initInstrumentation` before attaching Pi handlers, so the drop window is empty. If you call `registerTelemetryProvider` from a host that emits events asynchronously, register first.
+- **A browsable trace tree per turn** — one root `agent-turn` span with nested `tool` and `llm-request` children.
+- **Sub-agent lineage instead of orphans** — the sub-agent type is read from the `<active_agent name="..."/>` tag, and its trace groups under the parent session in MLflow's Session column.
+- **Token counts and cost as filterable fields** — typed dotted attributes like `turn.usage.total_tokens` and `llm.cost.total_usd`, not JSON blobs.
+- **A failure path that never reaches the agent** — provider, init, and flush errors all degrade to drop-and-warn-once, and the bounded queue (default 100) drops oldest under load.
+- **Near-zero cost when unconfigured** — `@mlflow/core` (~325 ms) sits behind a dynamic `import()` fired only when `providers.mlflow` is set.
+- **A zero-setup debug sink** — `"console": {}` pretty-prints every event to stderr with no MLflow server at all.
 
-### `events`
+## Reference
 
-| Value | Behavior |
-|---|---|
-| omitted *(default)* | All events forwarded. |
-| `"*"` | All events forwarded (explicit form). |
-| `[]` | No events forwarded. |
-| `string[]` | Allowlist; entries are validated against the known event kinds — unknown entries are warned and dropped. |
+- [`docs/configuration.md`](docs/configuration.md) — every config key and default, XDG path resolution, env-var precedence, the 20 valid `events` kinds.
+- [`docs/mlflow-server-setup.md`](docs/mlflow-server-setup.md) — a local MLflow in Docker, and the two artifact-root traps that break trace upload.
+- [`docs/mlflow-spans.md`](docs/mlflow-spans.md) — event-to-span mapping and the full span-attribute vocabulary.
 
-### `dispatcher.maxQueueSize`
+## Used by
 
-Maximum number of events buffered before backpressure drops the oldest. Defaults to `100`. Raise for sessions with long sub-agent fan-outs or heavy tool churn when MLflow latency spikes; lower if memory pressure matters more than event completeness.
+Its one sibling dependency is [`rpiv-config`](https://github.com/juicesharp/rpiv-mono/tree/main/packages/rpiv-config), for config load, save, and validation.
+The root Vitest harness calls `teardownTelemetry()` before every test for isolation — a harness coupling, not a runtime one.
 
-`llmPayload` controls how much of the raw `before_provider_request` body is recorded on each `llm-request` span:
+## Conventions
 
-| Mode | Behavior |
-|---|---|
-| `"off"` *(default)* | Span timing + status only. Zero payload bytes recorded. |
-| `"summary"` | Records a small inspectable summary (`model`, `messageCount`, `toolCount`, `systemBytes`, `temperature`, `maxTokens`, `stream`). |
-| `"full"` | Records the unmodified provider request body. Large — can include full conversation history. |
-
-## Running MLflow locally with Docker
-
-The minimal local MLflow that `rpiv-telemetry` can talk to is a single container with **proxied artifacts** and the security middleware in permissive mode for local dev. Works identically on Docker Desktop and OrbStack.
-
-```yaml
-# ~/docker/mlflow/compose.yml
-services:
-  mlflow:
-    image: ghcr.io/mlflow/mlflow:latest
-    container_name: mlflow
-    ports:
-      - "5001:5000"   # macOS AirPlay Receiver squats on :5000 — use 5001
-    volumes:
-      - ./data:/mlflow
-    command: >
-      mlflow server --host 0.0.0.0 --port 5000
-      --backend-store-uri sqlite:////mlflow/mlflow.db
-      --artifacts-destination /mlflow/artifacts
-      --default-artifact-root mlflow-artifacts:/
-      --serve-artifacts
-      --allowed-hosts "*"
-      --cors-allowed-origins "*"
-    restart: unless-stopped
-```
-
-```bash
-mkdir -p ~/docker/mlflow/data && cd ~/docker/mlflow
-docker compose up -d
-
-# Sanity check — HTTP 200 means it's wired correctly
-curl -sf -o /dev/null -w "%{http_code}\n" http://localhost:5001/
-```
-
-Then point rpiv-telemetry at it:
-
-```bash
-export MLFLOW_TRACKING_URI=http://localhost:5001
-```
-
-OrbStack also exposes `http://<container_name>.orb.local` automatically (here: `http://mlflow.orb.local`) — handy when you don't want to remember a port.
-
-### Why `mlflow-artifacts:/` instead of a path
-
-The artifact location each experiment exposes to clients **must be a parseable URL**. A bare filesystem path like `/mlflow/artifacts` makes the Node SDK throw `ERR_INVALID_URL` at `new URL(...)` when it tries to upload trace data. `--default-artifact-root mlflow-artifacts:/` + `--serve-artifacts` tells MLflow to hand clients a `mlflow-artifacts:` URL and proxy bytes to disk via `--artifacts-destination`. Clients never need to know where artifacts physically land.
-
-### Artifact location is stamped per-experiment
-
-MLflow records the artifact location on each experiment row **when the experiment is created**, not at request time. If you ever boot the server with a broken `--default-artifact-root`, every experiment created during that window keeps the broken value forever — changing flags later only affects *new* experiments. Wipe the DB to recover:
-
-```bash
-docker compose down
-rm -rf data/mlflow.db data/artifacts
-docker compose up -d
-
-# Confirm the auto-created default experiment now uses the proxy scheme
-curl -s 'http://localhost:5001/api/2.0/mlflow/experiments/get?experiment_id=0' \
-  | jq -r .experiment.artifact_location
-# → mlflow-artifacts:/0
-```
-
-## License
-
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-
-MIT
+- **The Pi entry is `extension.ts`, not `index.ts`.** The barrel value-re-exports `MlflowProvider`, which pulls `@mlflow/core`; nothing reachable from `extension.ts` may import it transitively.
+- **Telemetry never throws into the host.** Init, dispatch, flush, and shutdown all swallow and warn once.
+- **`providers/mlflow/trace-session-shim.ts` deep-imports `@mlflow/core/dist/core/trace_manager.js`** — an unofficial path pending the upstream `mlflow.tracingContext` API. Re-check it on every `@mlflow/core` bump.

@@ -1,247 +1,123 @@
-# rpiv-args
+# @juicesharp/rpiv-args
+
+[![npm version](https://img.shields.io/npm/v/@juicesharp/rpiv-args.svg)](https://www.npmjs.com/package/@juicesharp/rpiv-args)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 <div align="center">
   <a href="https://github.com/juicesharp/rpiv-mono/tree/main/packages/rpiv-args">
-    <picture>
-      <img src="https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-args/docs/cover.png" alt="rpiv-args cover" width="50%">
-    </picture>
+    <img src="https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-args/docs/cover.png" alt="Two panels: /skill:deploy api production filling $1 and $2 in a skill body, and a /skill:commit body whose !`git status -s` runs and pastes real git output into the prompt" width="50%">
   </a>
 </div>
 
-Pass arguments to your skills like a shell command. `rpiv-args` adds `$1`, `$ARGUMENTS`, `$@`, `${@:N}`, and `${@:N:L}` placeholders to [Pi Agent](https://github.com/badlogic/pi-mono) skills - write `/skill:deploy api production` and your skill body sees `$1` = `api`, `$2` = `production`. Skills without placeholders are untouched, so installing `rpiv-args` is safe for any existing skill collection.
+Pass arguments to a skill the way you pass them to a shell command.
+`rpiv-args` adds `$1`, `$2`, `$ARGUMENTS` and friends to
+[Pi Agent](https://github.com/badlogic/pi-mono) skill bodies, and runs
+`` !`cmd` `` and ```` ```! ```` blocks so real command output is in the prompt
+before the model reads it. It is for anyone who writes Pi skills and wants to
+parameterize them instead of keeping one hard-coded copy per case.
 
 ## Install
 
-```bash
+```sh
 pi install npm:@juicesharp/rpiv-args
 ```
 
-Or run `/rpiv-setup` if you have `@juicesharp/rpiv-pi` installed.
+Restart your Pi session.
 
-## Placeholders
+## Quick start
 
-| Placeholder | Replaced with | Example |
-|---|---|---|
-| `$1`, `$2`, … | Positional argument (1-indexed) | `/skill:foo a b c` → `$1` = `a`, `$2` = `b` |
-| `$ARGUMENTS` | All arguments as a single string | `/skill:foo a b c` → `a b c` |
-| `$@` | Same as `$ARGUMENTS` | `/skill:foo a b c` → `a b c` |
-| `${@:N}` | Arguments from position N onward | `/skill:foo a b c` → `${@:2}` = `b c` |
-| `${@:N:L}` | L arguments starting at position N | `/skill:foo a b c d` → `${@:2:2}` = `b c` |
-
-**Indexing is 1-based** - `$1` is the first argument, `$2` is the second.
-Out-of-range positions resolve to an empty string. For `${@:N[:L]}`, `N` is
-clamped to `≥ 1` and out-of-range slices yield an empty string.
-
-Multi-word values use shell-style quoting:
-
-```
-/skill:deploy "staging server" --force
-```
-
-→ `$1` = `staging server`, `$2` = `--force`, `$ARGUMENTS` = `staging server --force`
-
-## How it works
-
-rpiv-args intercepts the `input` event (fires before Pi's built-in skill
-expansion). When a skill body contains at least one placeholder, the extension:
-
-1. Parses arguments using shell-style quoting
-2. Substitutes all placeholders in the body
-3. Wraps the result in a `<skill>` block byte-identical to Pi's native format
-4. Appends the raw arguments after the block - matches Pi's standard output so any tool that parses `<skill>` blocks continues to work unchanged
-
-When no placeholders are found in the skill body, the output is byte-identical
-to Pi's built-in expansion - zero behavioral change.
-
-## Writing skills with arguments
-
-### `$ARGUMENTS` vs `$1` - which to use
-
-Use **`$ARGUMENTS`** (or `$@`) when the input is freeform text the LLM should
-interpret naturally:
-
-```yaml
----
-name: fix-issue
-description: Fix a GitHub issue by number or description
----
-
-Fix the following issue: $ARGUMENTS
-```
-
-```
-/skill:fix-issue login page crashes on mobile
-```
-
-→ `Fix the following issue: login page crashes on mobile`
-
-Use **`$1`, `$2`** only for skills with a fixed, structured invocation pattern:
-
-```yaml
----
-name: migrate-component
-description: Migrate a component between frameworks
----
-
-Migrate the $1 component from $2 to $3.
-Preserve all existing behavior and tests.
-```
-
-```
-/skill:migrate-component SearchBar React Vue
-```
-
-→ `Migrate the SearchBar component from React to Vue.`
-
-### Why this matters
-
-If a positional skill receives natural language input:
-
-```
-/skill:migrate-component can you migrate the search bar please
-```
-
-→ `Migrate the can component from you to migrate.` - **broken**.
-
-The LLM is good at interpreting `$ARGUMENTS` as a whole, but positional
-placeholders blindly split on spaces. Use `$ARGUMENTS` unless your skill has
-a strict arg structure.
-
-### `argument-hint` frontmatter
-
-Add an `argument-hint` to document what the skill expects:
-
-```yaml
----
-name: fix-issue
-description: Fix a GitHub issue
-argument-hint: [issue-number-or-description]
----
-```
-
-```yaml
----
-name: migrate-component
-description: Migrate a component between frameworks
-argument-hint: [component] [from] [to]
----
-```
-
-rpiv-args ignores this field - substitution is triggered by placeholders in the body, not the hint.
-
-**Note**: Pi currently surfaces `argument-hint` in autocomplete for prompt
-templates (`commands/*.md`) but **not** for skills (`/skill:<name>`). The
-field is read by Pi but not displayed in the `/skill:` autocomplete UI at
-present - treat it as documentation metadata until upstream Pi exposes it.
-
-### Full example
-
-<details>
-<summary>Deploy skill - SKILL.md, invocation, and the exact text the LLM sees</summary>
+Create `.pi/skills/deploy/SKILL.md` in your project (or
+`~/.pi/agent/skills/deploy/SKILL.md` for a personal skill) and put a
+placeholder in the body:
 
 ```yaml
 ---
 name: deploy
 description: Deploy a service to an environment
-argument-hint: [service] [environment]
 ---
 
 Deploy service $1 to $2.
-
-## Steps
-1. Run the test suite for $1
-2. Build the Docker image
-3. Push to the $2 registry
-4. Verify the deployment
+Current branch: !`git branch --show-current`
 ```
+
+Invoke it with arguments:
 
 ```
 /skill:deploy api production
 ```
 
-→ The LLM receives:
+The model receives the body with `$1` as `api`, `$2` as `production`, the real
+branch name in place of the `git` command, and a trailing
+`Skill input: api production` line marking your raw input.
 
-```xml
-<skill name="deploy" location="...">
-Deploy service api to production.
+## What you get
 
-## Steps
-1. Run the test suite for api
-2. Build the Docker image
-3. Push to the production registry
-4. Verify the deployment
-</skill>
+- **Skills take arguments like shell commands** — positionals, `$ARGUMENTS`
+  and `${@:N:L}` slices, split with shell-style quoting, so
+  `/skill:deploy "staging server" --force` puts `staging server` in `$1`.
+- **Command output lands in the prompt, not in a tool call** — inline
+  `` !`git status -s` `` and ```` ```! ```` blocks execute first and the model
+  reads the evidence instead of deciding to go fetch it.
+- **Installing it is a no-op for existing skills** — a body with no
+  placeholder and no shell syntax emits text byte-identical to Pi's built-in
+  expansion, pinned by a regression test.
+- **The model stops reading your argument as a new instruction** — arguments
+  are emitted under an explicit `Skill input:` label and a skill-invocation
+  protocol is prepended to the system prompt every turn.
+- **Runaway commands can't hang the turn or flood the context** — every
+  command is capped at 120 s by default and output is tail-truncated to
+  50 KB / 2000 lines; errors are inlined so the rest of the body still gets
+  through.
+- **Commands run in the order you wrote them** — strictly sequential, never
+  parallel, so `` !`mkdir x` `` then `` !`ls x` `` behaves.
+- **Skill-relative paths keep working** — `${SKILL_DIR}` always resolves to
+  the skill file's own directory, however the skill was installed;
+  `${SESSION_ID}` gives the current session id.
 
-api production
-```
+## Configuration
 
-Note: the raw arguments (`api production`) are also appended after the
-`</skill>` block - this is Pi's standard behavior and is preserved for
-backward compatibility.
+`rpiv-args` reads no config file and no environment variables. The one knob is
+per-skill frontmatter, in the skill's own `SKILL.md`:
 
-</details>
+| Key | What it does | Default |
+| --- | --- | --- |
+| `shell-timeout` | Ceiling in **seconds** for each `` !`cmd` `` / ```` ```! ```` command in that skill. `0` disables the timer. | `120` |
 
-## Backward compatibility
+Shell commands always run in the Pi session's working directory, not the skill
+directory.
 
-- Skills **without** placeholders → output is byte-identical to Pi's built-in expansion
-- Skills **with** placeholders → body gets substitution, raw args still appended after block
-- The `argument-hint` frontmatter field is read but not enforced in v1
+## Reference
 
-## Variables and shell execution
+- [Placeholders and variables](https://github.com/juicesharp/rpiv-mono/blob/main/packages/rpiv-args/docs/placeholders.md)
+  — every placeholder and runtime variable, indexing and slicing rules,
+  quoting, and what substitution deliberately does not do.
+- [Authoring skills](https://github.com/juicesharp/rpiv-mono/blob/main/packages/rpiv-args/docs/authoring-skills.md)
+  — choosing `$ARGUMENTS` over positionals, empty-argument behaviour,
+  frontmatter, and a worked example with the exact text the model receives.
+- [Shell substitution](https://github.com/juicesharp/rpiv-mono/blob/main/packages/rpiv-args/docs/shell-substitution.md)
+  — shell syntax, execution order, timeouts, error strings, output budgets,
+  and Windows / PowerShell authoring.
+- [How it works](https://github.com/juicesharp/rpiv-mono/blob/main/packages/rpiv-args/docs/how-it-works.md)
+  — the three event hooks, the transformation pipeline, both emit paths, the
+  skill index, and the paths that are not covered.
 
-Skills can reference runtime context and inline shell command output. These run on **every** invocation, regardless of whether the skill body uses `$N` / `$ARGUMENTS` tokens.
+## Requirements
 
-| Syntax | Replaced with |
-|---|---|
-| `${SKILL_DIR}` | Absolute path to the skill's source directory (forward-slash normalized on Windows) |
-| `${SESSION_ID}` | The current Pi session id |
-| `` !`command` `` | Single-line shell command output (no newline crossing) |
-| ` ```!\n…\n``` ` | Multi-line shell program output (newlines preserved) |
+- A Pi Agent host. No API key, no model selection, no native modules —
+  nothing here calls a model.
+- **A POSIX shell or PowerShell** for `` !`cmd` `` / ```` ```! ```` blocks.
+  Commands run through `sh -c` on macOS and Linux and `powershell.exe -Command`
+  on Windows, where POSIX-only tools such as `grep`, `sed` and `awk` are not
+  aliased — see
+  [Shell substitution](https://github.com/juicesharp/rpiv-mono/blob/main/packages/rpiv-args/docs/shell-substitution.md).
 
-### Shell execution semantics
+## Related
 
-- **Working directory**: every shell command runs in `process.cwd()` (the Pi session's working directory).
-- **Sequential**: commands within one body run one at a time, in source order. `` !`mkdir x` `` then `` !`ls x` `` is safe.
-- **Output truncation**: combined stdout + stderr capped at 50 KB / 2000 lines (tail-truncated — failures at the end of the output survive).
-- **Errors are inlined** (the rest of the body still reaches the LLM):
-  - Timeout → `[Shell error: timed out after Ns]`
-  - Non-zero exit → `[Shell error: exit code N]\n<stderr>`
-- **`shell-timeout` frontmatter** (seconds, default 120 s):
-
-| Value | Effect |
-|---|---|
-| absent | 120 s (default) |
-| positive number (e.g. `5`, `0.5`) | converted to ms |
-| `0` | timer disabled (no timeout) |
-| any non-finite or negative value (string, `NaN`, `.inf`, `-1`, `true`) | silent fallback to default 120 s |
-
-### Cross-platform skill authoring
-
-On Windows, rpiv-args runs each command via `powershell.exe -Command` (PowerShell 5.1+ ships with every supported Windows version). On macOS / Linux it uses `sh -c`. Most POSIX utilities work on both platforms because PowerShell exposes them as aliases:
-
-| POSIX command | Works on Windows via PowerShell alias |
-|---|---|
-| `ls`, `cat`, `pwd`, `cp`, `mv`, `rm`, `mkdir` | ✅ (aliases of `Get-ChildItem`, `Get-Content`, etc.) |
-| `git`, `npm`, `node`, `python` | ✅ (external binaries on PATH) |
-| `grep`, `sed`, `awk`, `find`, `xargs` | ❌ (not aliased — use PowerShell equivalents like `Select-String`) |
-
-> **POSIX flags are NOT translated.** Aliases match command NAMES only. `` !`rm -rf x` `` will FAIL under PowerShell because `Remove-Item` takes `-Recurse -Force`, not `-rf`. For destructive or flag-heavy commands, prefer external binaries (`git`, `npm`, `node`) or write a portable PowerShell-flavored block (`` ```! ``` ``) instead.
-
-**PowerShell cmdlet exit-code quirk**: external commands propagate their exit code via `$LASTEXITCODE`, which PowerShell reflects in its own exit code (so `` !`git status` `` reports failure correctly). However, **cmdlet errors return exit 0 by default**. If a skill relies on a cmdlet's failure to be visible, prepend `$ErrorActionPreference = "Stop"; ` or use `-ErrorAction Stop` per cmdlet. For maximum portability, prefer external commands (`git`, `npm`) over cmdlets where you care about exit codes.
-
-## Limitations
-
-| Limitation | Detail |
-|---|---|
-| **No type validation** | `$1` expecting a file path receives whatever the user types |
-| **No flag parsing** | `--env=prod` is a single positional token, not a parsed flag |
-| **Literal substitution** | Placeholders are replaced even inside code blocks and inline code |
-| **`steer()`/`followUp()` paths** | `session.steer()` / `session.followUp()` bypass the `input` event (see `agent-session.js:861-887`); placeholders are **not** resolved on those paths. Use the primary prompt path for argument-substituted skills. |
-| **No recursive substitution** | A `$ARGUMENTS` value containing `$1` is not re-expanded |
+- [@juicesharp/rpiv-pi](https://www.npmjs.com/package/@juicesharp/rpiv-pi) —
+  the umbrella package. Its `/rpiv-setup` command installs `rpiv-args` along
+  with the rest of the family, and its lane transcript hides the
+  `Skill input:` line from the displayed conversation.
 
 ## License
 
-[![npm version](https://img.shields.io/npm/v/@juicesharp/rpiv-args.svg)](https://www.npmjs.com/package/@juicesharp/rpiv-args)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-
-MIT
+MIT — see [LICENSE](LICENSE).

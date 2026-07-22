@@ -4,12 +4,50 @@
 [![codecov](https://codecov.io/gh/juicesharp/rpiv-mono/branch/main/graph/badge.svg?v=2)](https://codecov.io/gh/juicesharp/rpiv-mono)
 [![tests](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/juicesharp/rpiv-mono/badges/tests.json)](https://github.com/juicesharp/rpiv-mono/actions/workflows/ci.yml)
 
-Twelve npm packages: one pipeline (rpiv-pi) and the sibling extensions it composes. Kept in one repo so orchestration and tool surfaces evolve together and ship in lockstep.
+Fifteen packages in one npm workspace: the **rpiv-pi** pipeline, the [Pi Agent](https://github.com/badlogic/pi-mono) extensions it composes, and the internal packages holding them up. Twelve publish to npm; three never leave the repo. Kept together so orchestration and tool surfaces evolve and ship in lockstep.
 
-The pipeline needs most of them. **rpiv-args** expands shell-style `$1` and `$ARGUMENTS` placeholders inside skills, **rpiv-ask-user-question** lets the model put a structured questionnaire to the user instead of guessing, **rpiv-todo** keeps a live task overlay that survives `/reload` and compaction, **rpiv-advisor** escalates to a stronger reviewer model before the agent acts, **rpiv-web-tools** gives the model web search and fetch with pluggable providers, and **rpiv-workflow** chains skills into typed multi-stage pipelines (audited JSONL state, predicate routing, per-stage output validation) and ships the `/wf` command Pi calls to run them. A couple exist because I wanted them inside Pi: **rpiv-btw** is a side-conversation pattern I got used to in Claude Code, and **rpiv-warp** integrates Pi with Warp terminal's notification system, because that's where I actually run Pi. **rpiv-i18n** is the one that came from users: it started as localization for ask-user-question and grew into a small SDK. **rpiv-telemetry** wires Pi into MLflow — auto-instruments lifecycle events and sub-agent activity so runs are inspectable after the fact.
+**Where to start:**
+
+- **You want to use it** — `pi install npm:@juicesharp/rpiv-pi`, restart Pi, run `/rpiv-setup`. Full narrative, subagent map, and install walkthrough: [rpiv-pi.com](https://rpiv-pi.com).
+- **You want one piece of it** — every extension below stands alone. Pick a row from [Packages](#packages).
+- **You want to read or hack the code** — [Repo as a repo](#repo-as-a-repo) has the layout, the conventions, and what the git hooks enforce.
+- **You want to know where this is going** — [roadmap.md](./roadmap.md) for the structured view, [Roadmap](#roadmap) for the reasoning behind it.
+
+## Packages
+
+The pipeline needs most of them. **rpiv-args** expands shell-style `$1` and `$ARGUMENTS` placeholders inside skills, **rpiv-ask-user-question** lets the model put a structured questionnaire to the user instead of guessing, **rpiv-todo** keeps a live task overlay that survives `/reload` and compaction, **rpiv-advisor** escalates to a stronger reviewer model before the agent acts, **rpiv-web-tools** gives the model web search and fetch with pluggable providers, and **rpiv-workflow** chains skills into typed multi-stage pipelines (audited JSONL state, predicate routing, per-stage output validation) and ships the `/wf` command Pi calls to run them. A few exist because I wanted them inside Pi: **rpiv-btw** is a side-conversation pattern I got used to in Claude Code, **rpiv-voice** is on-device dictation for when I'd rather talk than type, and **rpiv-warp** integrates Pi with Warp terminal's notification system, because that's where I actually run Pi. **rpiv-i18n** is the one that came from users: it started as localization for ask-user-question and grew into a small SDK. And two are plumbing rather than products: **rpiv-config** is the shared config I/O every sibling depends on, published only so those dependencies resolve, and **rpiv-telemetry** wires Pi into MLflow — auto-instruments lifecycle events and sub-agent activity so runs are inspectable after the fact — but it stays `private: true` and is loaded from a checkout, never the registry.
 
 > [!TIP]
 > **For the full pipeline narrative, the subagent map, and install instructions, visit [rpiv-pi.com](https://rpiv-pi.com).**
+
+### Pi extensions (published)
+
+Each one installs on its own with `pi install npm:@juicesharp/rpiv-<name>`, then a Pi restart. `/rpiv-setup` (shipped by `rpiv-pi`) installs only the siblings the pipeline actually depends on; the rest are opt-in.
+
+| Package | Role | Installed by `/rpiv-setup` | npm |
+| --- | --- | :---: | --- |
+| `rpiv-pi` | Pipeline (skills + subagents) | — *(it ships `/rpiv-setup`)* | [`@juicesharp/rpiv-pi`](https://www.npmjs.com/package/@juicesharp/rpiv-pi) |
+| `rpiv-args` | `$1` / `$ARGUMENTS` placeholders and `` !`cmd` `` substitution in skills | ✓ | [`@juicesharp/rpiv-args`](https://www.npmjs.com/package/@juicesharp/rpiv-args) |
+| `rpiv-ask-user-question` | Structured questionnaire to the user | ✓ | [`@juicesharp/rpiv-ask-user-question`](https://www.npmjs.com/package/@juicesharp/rpiv-ask-user-question) |
+| `rpiv-todo` | Live task overlay surviving `/reload` | ✓ | [`@juicesharp/rpiv-todo`](https://www.npmjs.com/package/@juicesharp/rpiv-todo) |
+| `rpiv-advisor` | Escalate to a stronger reviewer model | ✓ | [`@juicesharp/rpiv-advisor`](https://www.npmjs.com/package/@juicesharp/rpiv-advisor) |
+| `rpiv-web-tools` | Web search + fetch with pluggable providers | ✓ | [`@juicesharp/rpiv-web-tools`](https://www.npmjs.com/package/@juicesharp/rpiv-web-tools) |
+| `rpiv-i18n` | Localization SDK for sibling extensions | ✓ | [`@juicesharp/rpiv-i18n`](https://www.npmjs.com/package/@juicesharp/rpiv-i18n) |
+| `rpiv-workflow` | `/wf` runner — chain skills into typed multi-stage pipelines | ✓ | [`@juicesharp/rpiv-workflow`](https://www.npmjs.com/package/@juicesharp/rpiv-workflow) |
+| `rpiv-btw` | `/btw` side-conversation slash command | — | [`@juicesharp/rpiv-btw`](https://www.npmjs.com/package/@juicesharp/rpiv-btw) |
+| `rpiv-voice` | Local voice dictation (`/voice` overlay, on-device Whisper) | — | [`@juicesharp/rpiv-voice`](https://www.npmjs.com/package/@juicesharp/rpiv-voice) |
+| `rpiv-warp` | Warp terminal notification integration | — | [`@juicesharp/rpiv-warp`](https://www.npmjs.com/package/@juicesharp/rpiv-warp) |
+
+### Everything else in the workspace
+
+Four packages you do not `pi install`. One is on npm as a library; three are `private: true` and resolve only inside a checkout.
+
+| Package | Role | How you get it |
+| --- | --- | --- |
+| [`rpiv-config`](https://github.com/juicesharp/rpiv-mono/tree/main/packages/rpiv-config) | Shared XDG-aware JSON config I/O for the siblings | Published as a library: `npm install @juicesharp/rpiv-config`. Not a Pi extension — it registers nothing, and ten siblings already pull it in as a dependency. [npm](https://www.npmjs.com/package/@juicesharp/rpiv-config) |
+| [`rpiv-telemetry`](https://github.com/juicesharp/rpiv-mono/tree/main/packages/rpiv-telemetry) | MLflow observability — auto-instruments lifecycle + sub-agent activity | **Not published.** Inside this repo Pi loads it through the workspace symlink; elsewhere, point Pi at a checkout: `pi install ./packages/rpiv-telemetry` |
+| [`rpiv-site`](https://github.com/juicesharp/rpiv-mono/tree/main/packages/rpiv-site) | The [rpiv-pi.com](https://rpiv-pi.com) site (static Astro build) | **Not published.** Built from this repo with `npm run build:site`, deployed to GitHub Pages by CI |
+| [`test-utils`](https://github.com/juicesharp/rpiv-mono/tree/main/packages/test-utils) | Shared test fixtures (`@juicesharp/rpiv-test-utils`) | **Not published.** Symlinked by npm workspaces; imported by the test suite only |
 
 ## Roadmap
 
@@ -35,16 +73,17 @@ Find me on X: [@juicesharp](https://x.com/juicesharp).
 
 ## Repo as a repo
 
-npm workspaces monorepo. Clone, `npm install` at the root, that's it.
+npm workspaces monorepo. Clone, `npm install` at the root, that's it. Node 22+ and npm 11+ (the `engines` floor).
 
 A few choices worth naming up front:
 
 - No build step. Packages publish raw `.ts`; Pi loads TypeScript directly. No `dist/`, no per-package tsconfig.
 - One Vitest runner at the root walks every package. No per-package vitest configs.
-- Lockstep versions. All twelve packages share one version, enforced by `sync-versions.js`.
+- Lockstep versions. All fifteen workspace packages share one version, enforced by `scripts/sync-versions.js` — published or not.
 - Releases are local-only by design. `node scripts/release.mjs <patch|minor|major|x.y.z>` cuts a release; no CI publish workflow.
 - Husky gates the work. `pre-commit` runs Biome and `tsc --noEmit` (fast); `pre-push` runs the full test suite with coverage thresholds. Tests don't block commits, they block pushes.
 - Single shared config across the workspace: one `biome.json`, one `tsconfig.base.json`, one `vitest.config.ts`.
+- Every README follows one shape — see [docs/readme-standard.md](./docs/readme-standard.md) before rewriting one.
 
 ### Contributions
 
@@ -61,24 +100,7 @@ Actively maintained as a personal project. Issues triaged on best effort. Cadenc
 ## Pointers
 
 - Site: [rpiv-pi.com](https://rpiv-pi.com)
+- Roadmap: [roadmap.md](./roadmap.md)
+- README standard: [docs/readme-standard.md](./docs/readme-standard.md)
 - License: [MIT](./LICENSE)
 - X: [@juicesharp](https://x.com/juicesharp)
-
-### Packages
-
-Almost every package can be installed directly from npm on its own. `/rpiv-setup` (shipped by `rpiv-pi`) only auto-installs the siblings the pipeline depends on; the rest are opt-in via `pi install npm:@juicesharp/rpiv-<name>`.
-
-| Package | Role | Standalone install | Auto with `rpiv-pi` | npm |
-| --- | --- | :---: | :---: | --- |
-| `rpiv-pi` | Pipeline (skills + subagents) | ✓ | — | [`@juicesharp/rpiv-pi`](https://www.npmjs.com/package/@juicesharp/rpiv-pi) |
-| `rpiv-args` | `$1` / `$ARGUMENTS` placeholders in skills | ✓ | ✓ | [`@juicesharp/rpiv-args`](https://www.npmjs.com/package/@juicesharp/rpiv-args) |
-| `rpiv-ask-user-question` | Structured questionnaire to the user | ✓ | ✓ | [`@juicesharp/rpiv-ask-user-question`](https://www.npmjs.com/package/@juicesharp/rpiv-ask-user-question) |
-| `rpiv-todo` | Live task overlay surviving `/reload` | ✓ | ✓ | [`@juicesharp/rpiv-todo`](https://www.npmjs.com/package/@juicesharp/rpiv-todo) |
-| `rpiv-advisor` | Escalate to a stronger reviewer model | ✓ | ✓ | [`@juicesharp/rpiv-advisor`](https://www.npmjs.com/package/@juicesharp/rpiv-advisor) |
-| `rpiv-web-tools` | Web search + fetch with pluggable providers | ✓ | ✓ | [`@juicesharp/rpiv-web-tools`](https://www.npmjs.com/package/@juicesharp/rpiv-web-tools) |
-| `rpiv-i18n` | Localization SDK for sibling extensions | ✓ | ✓ | [`@juicesharp/rpiv-i18n`](https://www.npmjs.com/package/@juicesharp/rpiv-i18n) |
-| `rpiv-workflow` | `/wf` runner — chain skills into typed multi-stage pipelines | ✓ | ✓ | [`@juicesharp/rpiv-workflow`](https://www.npmjs.com/package/@juicesharp/rpiv-workflow) |
-| `rpiv-btw` | `/btw` side-conversation slash command | ✓ | — | [`@juicesharp/rpiv-btw`](https://www.npmjs.com/package/@juicesharp/rpiv-btw) |
-| `rpiv-voice` | Local voice dictation (`/v` overlay, on-device Whisper) | ✓ | — | [`@juicesharp/rpiv-voice`](https://www.npmjs.com/package/@juicesharp/rpiv-voice) |
-| `rpiv-telemetry` | MLflow observability — auto-instruments lifecycle + sub-agent activity | ✓ | — | [`@juicesharp/rpiv-telemetry`](https://www.npmjs.com/package/@juicesharp/rpiv-telemetry) |
-| `rpiv-warp` | Warp terminal notification integration | ✓ | — | [`@juicesharp/rpiv-warp`](https://www.npmjs.com/package/@juicesharp/rpiv-warp) |
