@@ -19,6 +19,14 @@ function writeConfig(data: Record<string, unknown>): void {
 }
 
 describe("registerAdvisorTool — guidance overrides", () => {
+	it("defaults require surfacing advisor guidance in a visible reply", () => {
+		expect(
+			DEFAULT_PROMPT_GUIDELINES.some(
+				(guideline) => guideline.includes("visible reply") && guideline.includes("collapsed tool results"),
+			),
+		).toBe(true);
+	});
+
 	it("uses built-in defaults when no config file exists", () => {
 		const { pi, captured } = createMockPi();
 		registerAdvisorTool(pi);

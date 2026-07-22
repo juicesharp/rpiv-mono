@@ -34,6 +34,9 @@ Each call assembles the request in this order:
 The reviewer is invoked with the advisor system prompt, `tools: []`, and the
 configured reasoning effort. It never calls tools and never writes to your
 transcript — its answer comes back only as the tool result the executor reads.
+The default prompt guidelines direct the executor to restate the advisor's key
+guidance in its next visible reply, so the guidance is not left only in a
+collapsed tool card.
 
 While the call is in flight the executor streams
 `Consulting advisor (<label>[, <effort>])…`.

@@ -47,7 +47,9 @@ judgment. To turn it back off, run `/advisor` and choose **No advisor**.
 
 - **A second opinion without leaving the session** — the executor calls
   `advisor()` mid-turn, reads the reviewer's answer as the tool result, and
-  resumes. Nothing is injected into your transcript.
+  resumes. Nothing is injected into your transcript, and the default prompt
+  guidelines tell the executor to restate the advisor's key guidance in its
+  next visible reply, so you are not left with only a collapsed tool card.
 - **Nothing to type or paste** — the tool takes zero parameters. The whole
   conversation branch is serialised and forwarded automatically: the task, every
   tool call made, every result seen. That whole branch is billed against the
