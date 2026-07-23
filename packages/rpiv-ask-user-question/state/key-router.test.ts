@@ -742,4 +742,17 @@ describe("routeKey — collapse/expand (Ctrl+] toggle + collapsed-mode lockout)"
 		const runtime = makeRuntime({ collapseKey: "off" });
 		expect(routeKey(BYTE_CTRL_RBRACKET, makeState(), runtime)).not.toEqual({ kind: "toggle_collapsed" });
 	});
+
+	it("treats a missing collapseKey as disabled instead of throwing after an in-process package update", () => {
+		// A Pi process can retain the pre-collapse outer module while a package update
+		// replaces the lazily imported QuestionnaireSession graph on disk. The old
+		// constructor call has no collapseKey field, so runtime receives undefined at
+		// runtime despite the TypeScript contract. Never pass that value to matchesKey:
+		// pi-tui's parseKeyId calls toLowerCase() and would terminate the whole process.
+		const runtime = makeRuntime() as unknown as { collapseKey?: string };
+		delete runtime.collapseKey;
+
+		expect(() => routeKey(BYTE_CTRL_RBRACKET, makeState(), runtime as QuestionnaireRuntime)).not.toThrow();
+		expect(routeKey(BYTE_CTRL_RBRACKET, makeState(), runtime as QuestionnaireRuntime)).toEqual({ kind: "ignore" });
+	});
 });

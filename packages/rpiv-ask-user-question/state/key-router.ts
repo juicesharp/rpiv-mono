@@ -142,7 +142,17 @@ export function routeKey(data: string, state: QuestionnaireState, runtime: Quest
 	// in-process. It is, however, awkward on keyboard layouts where `]` is on the
 	// shifted layer (Latin American `es-AR`/`es-MX` require `Ctrl+Shift+}` for `Ctrl+]`)
 	// — use the `collapseKey` config field to override.
-	if (runtime.collapseKey !== "off" && matchesKey(data, runtime.collapseKey as Parameters<typeof matchesKey>[1])) {
+	// Treat a missing/non-string key as disabled. This can occur at runtime when
+	// a long-lived Pi process retains an older outer module while a package update
+	// replaces the lazily imported QuestionnaireSession graph on disk. Passing
+	// undefined into matchesKey reaches parseKeyId().toLowerCase() and crashes the
+	// entire host process, so keep the runtime boundary defensive even though the
+	// TypeScript contract requires a string.
+	if (
+		typeof runtime.collapseKey === "string" &&
+		runtime.collapseKey !== "off" &&
+		matchesKey(data, runtime.collapseKey as Parameters<typeof matchesKey>[1])
+	) {
 		return { kind: "toggle_collapsed" };
 	}
 
