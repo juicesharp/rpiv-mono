@@ -19,8 +19,8 @@ function removeConfigFile(): void {
 // shortcut registration and handler guard ladder. registerTodo() builds a fresh
 // closure each call, so isolation is automatic given __resetState() clears the
 // store. The shortcut handler closes over the closure-local `todoOverlay` and
-// re-reads it at fire time — the session_start event is what (lazily) constructs
-// that overlay, so driving the event is what makes the toggle path reachable.
+// re-reads it at fire time. A successful mutation lazily constructs the overlay,
+// so driving session_start and tool_execution_end makes the toggle path reachable.
 function setup() {
 	__resetState();
 	const { pi, captured } = createMockPi();
@@ -84,16 +84,16 @@ describe("rpiv-todo — collapse/expand shortcut registration", () => {
 		expect(ctx.ui.setWidget as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
 	});
 
-	it("handler is a no-op when the overlay exists but the widget is not registered (!isRegistered, empty list)", async () => {
+	it("handler is a no-op when an empty session has not loaded the overlay", async () => {
 		const { captured, sessionStart } = setup();
-		// A UI-bearing session_start constructs the overlay, but with no tasks the
-		// widget never registers (auto-hide on empty) → isRegistered() is false.
+		// A UI-bearing empty session records the foreground binding without loading
+		// or registering the overlay.
 		const ctx = createMockCtx({ sessionId: "s1", hasUI: true });
 		await sessionStart?.({} as never, ctx as never);
 		expect(ctx.ui.setWidget as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
 
 		await captured.shortcuts.get("ctrl+shift+t")?.handler?.(ctx as never);
-		// Still unregistered — toggle never fired.
+		// Still unloaded and unregistered — toggle never fired.
 		expect(ctx.ui.setWidget as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
 	});
 
