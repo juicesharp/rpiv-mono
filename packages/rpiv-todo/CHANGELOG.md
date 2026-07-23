@@ -7,6 +7,13 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- README rewritten to follow the documentation standard shared across all packages.
+- npm tarball now includes the versioned `docs/` reference and no longer ships cover or screenshot art.
+
+### Fixed
+- The todo overlay now follows theme changes live instead of keeping colors from the theme active when it was first rendered, and its color semantics are clearer: in-progress subjects are highlighted, task IDs and metadata are dimmed, and completed/deleted tasks are muted.
+
 ## [2.0.0] - 2026-07-21
 
 ### Added

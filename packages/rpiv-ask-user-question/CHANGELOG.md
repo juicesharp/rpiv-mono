@@ -8,11 +8,18 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
-- Emit `rpiv:ask-user:blocked` (`{ active: boolean }`) while the questionnaire awaits input (TUI `ui.custom` and RPC dialog walker), and clear it in `finally` so external listeners (e.g. Herdr, after they subscribe) can show `blocked` instead of `working`.
+- Press `n` to open the notes editor from every question tab — single- or multi-select, with or without option previews — instead of only when the focused option carried a preview. The hint bar now advertises notes on every tab, except while the custom-answer field is capturing typed text.
+- Emit `rpiv:ask-user:blocked` (`{ active: boolean }`) while the questionnaire awaits input, cleared when the questionnaire resolves, so external status listeners can show `blocked` instead of `working`.
+
+### Changed
+- Tool description and prompt guidelines now describe the custom-answer behavior consistently: the "Type something." row is appended to every question, and the reserved labels `Other` / `Type something.` are rejected in every question mode.
+- README rewritten to follow the documentation standard shared across all packages.
+- npm tarball now includes the versioned `docs/` reference and no longer ships cover or screenshot art.
 
 ### Fixed
 - The notes editor no longer discards an in-progress note when it is reopened before the option is confirmed.
 - Collapse toggles now ignore Kitty keyboard repeat and release events, preventing a tap from immediately reopening the questionnaire or a held key from toggling it rapidly in terminals such as cmux/Ghostty.
+- A missing collapse-key value at runtime is treated as disabled instead of crashing the host process (previously possible when a long-lived Pi session spanned a package update).
 
 ## [2.0.0] - 2026-07-21
 

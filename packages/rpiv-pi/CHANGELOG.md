@@ -7,8 +7,14 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- Bundled skills' `ask_user_question` guidance now matches the runtime's custom-answer behavior: the "Type something." row appears on every question and reserved labels are rejected in every mode.
+- Published package description corrected to the current inventory: 27 skills, 15 agents, and five built-in workflows.
+- README rewritten to follow the documentation standard shared across all packages.
+- npm tarball now includes the versioned `docs/` reference and no longer ships cover or screenshot art.
+
 ### Fixed
-- `agents/scope-tracer.md`: dropped the stale `@tintinweb/pi-subagents@0.6.x` runtime-mechanics parenthetical from the sequential-sweep rationale. The behavioral constraint (no subagent dispatch → sequential sweep) is unchanged and still enforced by the runtime; the prompt now states it without coupling to package internals, matching the other bundled agents. Run `/rpiv-update-agents` to refresh. ([#116](https://github.com/juicesharp/rpiv-mono/issues/116))
+- The `scope-tracer` agent prompt no longer cites stale subagent-runtime package internals for its sequential-sweep constraint; the constraint itself is unchanged. Run `/rpiv-update-agents` to refresh installed copies.
 
 ## [2.0.0] - 2026-07-21
 

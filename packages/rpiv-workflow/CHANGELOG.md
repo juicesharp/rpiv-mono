@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+- README rewritten to follow the documentation standard shared across all packages.
+- npm tarball now includes the versioned `docs/` reference and no longer ships cover or screenshot art.
+
 ## [2.0.0] - 2026-07-21
 
 ### Added
