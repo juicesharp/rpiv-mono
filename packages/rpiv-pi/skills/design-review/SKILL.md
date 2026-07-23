@@ -54,7 +54,7 @@ The first tab-separated field is `<iso>` (use as `last_updated` when you edit a 
 
    Lead with the data types and interface surface — that is the contract the developer is signing off on.
 
-3. **Ask the developer to accept or adjust** with the `ask_user_question` tool. Question: "Proposed design across {N} slices ({F} files). Accept, or adjust a slice?". Header: "Design". Options: "Accept (Recommended)" (Proceed to synthesis — merge the per-slice designs into the plan); "Adjust a slice" (Change a slice's approach, interfaces, data types, or scope before synthesis — describe which slice and what). The developer's "Other"/adjust answer names the slice(s) and the change.
+3. **Ask the developer to accept or adjust** with the `ask_user_question` tool. Question: "Proposed design across {N} slices ({F} files). Accept, or adjust a slice?". Header: "Design". Options: "Accept (Recommended)" (Proceed to synthesis — merge the per-slice designs into the plan); "Adjust a slice" (Change a slice's approach, interfaces, data types, or scope before synthesis — describe which slice and what). The developer may use the automatically appended `Type something.` row to provide an unanticipated adjustment; do not author an `Other` option.
 
 4. **On Adjust — apply surgically and cascade, then re-present (loop back to Step 2).** Classify the change:
 

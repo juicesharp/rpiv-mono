@@ -156,13 +156,15 @@ Use the grounded-questions-one-at-a-time pattern. Use a **❓ Question:** prefix
 - Lead with the most architecturally significant ambiguity.
 - Every answer becomes a FIXED decision — no revisiting unless the developer explicitly asks.
 
+- Every ambiguity checkpoint MUST be self-contained: state observed behavior, at least one `file:line` evidence reference, why the decision matters, and 2-4 concrete decision options in the question or option descriptions.
+
 **Choosing question format:**
 
-- **`ask_user_question` tool** — when your question has 2-4 concrete options from code analysis (pattern conflicts, integration choices, scope boundaries, priority overrides). The user can always pick "Other" for free-text. Example:
+- **`ask_user_question` tool** — concrete options include evidence and trade-offs in every description. The user can type a custom answer through the automatically appended `Type something.` row; do not author `Other`. Example:
 
   > Use the `ask_user_question` tool with the following question: "Found 2 mapping approaches — which should new code follow?". Header: "Pattern". Options: "Manual mapping (Recommended)" (Used in OrderService (src/services/OrderService.ts:45) — 8 occurrences); "AutoMapper" (Used in UserService (src/services/UserService.ts:12) — 2 occurrences).
 
-- **Open-ended** (discovery, "what am I missing?", corrections) — still `ask_user_question`; offer your best 1-2 guesses and let "Other" carry the unpredictable answer.
+- **Open-ended** — still use `ask_user_question`; supply 2-4 concrete hypotheses with behavior, `file:line` evidence, impact, and decision context, then let the automatic `Type something.` row capture unanticipated detail.
 
 **Batching**: When you have 2-4 independent questions (answers don't depend on each other), you MAY batch them in a single `ask_user_question` call. Keep dependent questions sequential.
 

@@ -185,11 +185,18 @@ describe("TodoOverlay — lifecycle", () => {
 		expect(setWidget).toHaveBeenCalledTimes(2);
 	});
 
-	it("factory invalidate() forces re-registration on next update()", async () => {
+	it("uses the current UI theme after invalidation without re-registering", async () => {
 		const { captured } = registerTool();
 		await seed(captured, [{ action: "create", subject: "a" }]);
 		const overlay = new TodoOverlay();
-		const ui = makeCtx();
+		const colorTheme = (label: string) => ({
+			...identityTheme,
+			fg: (color: string, text: string) => `<${label}:${color}>${text}</${label}:${color}>`,
+		});
+		const initialTheme = colorTheme("initial");
+		const factoryTheme = colorTheme("factory");
+		const switchedTheme = colorTheme("switched");
+		const ui = createMockUI({ theme: initialTheme }) as unknown as ExtensionUIContext;
 		overlay.setUICtx(ui);
 		overlay.update();
 		const setWidget = ui.setWidget as ReturnType<typeof vi.fn>;
@@ -197,11 +204,20 @@ describe("TodoOverlay — lifecycle", () => {
 			tui: { requestRender: () => void },
 			theme: typeof identityTheme,
 		) => { render: (w: number) => string[]; invalidate: () => void };
-		const widget = factory({ requestRender: vi.fn() }, identityTheme);
+		const requestRender = vi.fn();
+		const widget = factory({ requestRender }, factoryTheme);
+
+		expect(widget.render(200).join("\n")).toContain("<initial:accent>");
+		expect(widget.render(200).join("\n")).not.toContain("<factory:");
+
+		Object.assign(ui, { theme: switchedTheme });
 		widget.invalidate();
+		expect(widget.render(200).join("\n")).toContain("<switched:accent>");
+		expect(overlay.isRegistered()).toBe(true);
+
 		overlay.update();
-		expect(setWidget).toHaveBeenCalledTimes(2);
-		expect(typeof setWidget.mock.calls[1][1]).toBe("function");
+		expect(setWidget).toHaveBeenCalledTimes(1);
+		expect(requestRender).toHaveBeenCalledTimes(1);
 	});
 
 	it("resetCompletedDisplayState() lets replayed completed tasks be shown once again", async () => {

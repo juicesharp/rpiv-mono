@@ -10,9 +10,8 @@ packages/*/node_modules
 
 .pi/
 
-# Local-only (not version-controlled)
-.rpiv/guidance/
-**/.rpiv/guidance/
+# Local-only (not version-controlled). `guidance/` is intentionally tracked —
+# it is hand-curated AI-assistant context, not run state.
 .rpiv/artifacts/
 **/.rpiv/artifacts/
 .rpiv/workflows/

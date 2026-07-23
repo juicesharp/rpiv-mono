@@ -314,6 +314,33 @@ describe("buildQuestionnaireResponse — completed", () => {
 		expect(r.details.answers[0].notes).toBe("because of X");
 	});
 
+	it("multiSelect answer with notes renders 'user notes:' suffix and NO 'selected preview:' suffix (FR-7)", () => {
+		const params: QuestionParams = {
+			questions: [
+				{
+					question: "Areas",
+					header: "Areas",
+					multiSelect: true,
+					options: [
+						{ label: "FE", description: "Frontend" },
+						{ label: "BE", description: "Backend" },
+					],
+				},
+			],
+		};
+		const result: QuestionnaireResult = {
+			cancelled: false,
+			answers: [
+				{ questionIndex: 0, question: "Areas", kind: "multi", answer: null, selected: ["FE", "BE"], notes: "both" },
+			],
+		};
+		const r = buildQuestionnaireResponse(result, params);
+		expect(r.content[0].text).toContain('"Areas"="FE, BE"');
+		expect(r.content[0].text).toContain("user notes: both");
+		expect(r.content[0].text).not.toContain("selected preview:");
+		expect(r.details.answers[0].notes).toBe("both");
+	});
+
 	it("cancelled: false with no matching answers still returns DECLINE_MESSAGE text", () => {
 		const params: QuestionParams = {
 			questions: [

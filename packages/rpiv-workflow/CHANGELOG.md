@@ -2,57 +2,47 @@
 
 ## [Unreleased]
 
-### State trail schema v1 → v2 (BREAKING — resume)
+## [2.0.0] - 2026-07-21
 
-#### Changed
-- **`STATE_SCHEMA_VERSION` bumped 1 → 2.** Parallel-fanout trails place completion rows by `unitIndex` (not trail order) and carry a `collected:true` discriminator for soft-halted collect-all units — a shape the v1 sequential fold cannot replay. New runs write v2.
+### Added
 
-#### Breaking
-- **v1 runs are not resumable.** `reconstructState`'s header version gate cleanly refuses a v1 trail (an explicit `v: 1` or an absent `v`) with `version-mismatch` ("start a fresh run") rather than silently mis-replaying it under v2 semantics. There is no in-place migration. The version gate is the corruption interlock that makes this refusal safe at the upgrade boundary — a v1 trail left on disk after upgrade is rejected, never eaten by the v2 fold. (This bump is a second breaking change alongside the `WorkflowHost` port replacement; the detached-execution commit documented only the port.)
+- Detached execution: every stage runs in its own child session with the interactive session acting as launcher and observer, fan-out units dispatch in bounded parallel, per-skill models apply per child session, and a terminal keystroke aborts the run including in-flight units.
+- A failed collect-all fan-out unit yields a sentinel slot so the run survives and fan-in skips the failure instead of aborting the whole stage.
+- `fanin()` read modifier to consume every accumulated unit of a fan-out channel, with a validation warning nudging authors away from latest-wins reads and a fan-in marker in the workflow preview.
+- `sessionPolicy: "continue"` to fork a stage's session from its predecessor.
+- Dependency-ordered fan-out waves: units may declare dependencies so each dispatches only after its upstream units finish, and `depArtifactFlag` injects each dependency's published artifact path into the dependent unit's prompt.
+- Optional `concurrency` field on fan-out loops to cap in-flight units below the host ceiling; a value of 1 serializes the loop.
+- `onUnitHalt` lifecycle event fired when a collect-all fan-out unit soft-halts, so progress surfaces can mark the unit failed immediately.
+- `onRoute` now receives a `bypassed` argument listing not-taken recovery arms on decision edges, letting progress bridges credit skipped failure loops as covered.
+- Lifecycle contexts on resumed runs expose the reconstructed set of previously visited stages, so progress counters no longer restart from zero after a resume.
+- Watchdog tool timeouts route to the soft-halt gate: a timed-out collect-all unit records a non-terminal failure and the fan-out still finalizes, while a genuine user or run abort still re-dispatches on resume.
 
-### Detached execution — in-process parallel fan-out via the Pi SDK
+### Changed
 
-#### Breaking
-- **`WorkflowHost` port replacement.** `WorkflowHostContext` no longer offers `newSession`/`switchSession`; the interactive Pi ctx becomes a launcher/observer only (`ui`/`sessionManager`/`hasUI`/`waitForIdle`), and every stage now runs in an isolated child `AgentSession` spawned via the new `spawnChild({ prompt, model?, signal?, reattach?, fork?, unitIndex?, withSession })`. `WorkflowHostContext` gains a required `maxConcurrency: number`; the child ctx handed to `withSession` (`WorkflowSessionContext`) always carries `sendUserMessage` and an optional `toolTimeout()` probe. Embedders implementing the old port must move to the new shape; the stale-ctx fallback ladder is deleted.
-- **`ctx.ui` narrowed to `notify`-only.** `setStatus` is removed along with every `STATUS_KEY`/`STATUS_STAGE`/`STATUS_LOOP_UNIT` call site. The per-stage/per-unit completion toasts (`MSG_STAGE_COMPLETE`, `MSG_UNIT_COMPLETE`) and the validation-retry/unit-failed toasts (`MSG_VALIDATION_RETRY`, `MSG_UNIT_FAILED`) are dropped as redundant with already-observable signals (audited JSONL rows, lifecycle hooks, a host-owned live progress surface). Only the live zero-unit warning for an empty pull loop remains.
+- Questions from any stage, including parallel fan-out units, queue through the deferring relay and surface in the lane dock instead of grabbing the live UI; headless runs still degrade UI-requiring tools.
+- Run state trails are recorded under a new schema; resuming a run recorded under the previous schema is refused with a version mismatch instead of being mis-replayed.
 
-#### Added
-- **Bounded in-process parallel fan-out.** A `fanout()` loop now dispatches its units through a `Semaphore(maxConcurrency)` with `Promise.allSettled` + an index-order fold through `advanceCursor`, instead of one unit at a time; `iterate`/`assess` stay sequential (they consume the prior unit). A per-loop `concurrency` field caps in-flight units to `min(concurrency, host maxConcurrency)` (`1` serializes the loop); validated as an integer ≥ 1 at construction and load (`loop-concurrency-invalid`).
-- **`registerWorkflowExecutionHost(provider)` / `WorkflowExecutionProvider` extension seam** (`execution-host.ts`) — the `/wf` launcher + runner stay Pi-agnostic; a registered provider's `createHost(observer, { runId, childSessionsDir, name?, workflow?, input? })` builds the detached executor (`WorkflowExecution { host, signal?, dispose? }`) from the live observer ctx and run identity, and an optional `resolveModel(id)` resolves per-stage models onto `RunContext`. Absent provider degrades to direct live-ctx execution (non-Pi embedders, tests). `workflow` / `input` (the run's original `/wf` prompt) thread through from both the fresh-run and resume paths so a host-side dock can render a descriptive label instead of the bare run id; `unitIndex` on `spawnChild` is the matching per-fan-out-unit hint (purely observational — a non-lane host ignores it).
-- **Cooperative mid-flight abort.** A run's `signal` (wired from the host's terminal-input tap) now aborts every in-flight child session and rejects queued semaphore acquisitions, not just the between-stage seam.
-- **`sessionPolicy: "continue"` forks instead of swapping.** A continuing stage now forks the predecessor's session file into a new child (new id, new file, full prior transcript as context) rather than swapping the live session; the predecessor's file stays intact and the continuation gets its own resumable identity.
-- **Dependency-ordered fanout waves.** `Unit.deps: readonly string[]` topologically orders dispatch — a unit runs only after every unit it lists has its slot filled; cycles/dangling ids halt the stage cleanly (`validateUnitDeps`, checked at both run and resume time, since the runtime unit list is invisible to the static load gate). Pairs with `depArtifactFlag: string` (validated non-empty at construction and load — `loop-dep-flag-invalid`): when set, the dispatcher appends `${flag} <path>` per filled, non-failed direct dependency, handing the dependent unit its upstream's published artifact (a failed/sentinel dep is skipped, same as an unlisted one). Sequential loop kinds ignore `deps`.
-- **`gitCommitOutcome` journals every commit.** `GitCommitData` and the collected artifact meta gain optional `commits: readonly GitCommitRecord[]` — every commit in `prevSha..headSha`, oldest-first — so a multi-commit stage's earlier commits stay visible in the trail instead of collapsing into the head sha + an aggregate file count. Back-compat: the field is omitted when absent from older meta.
+### Removed
 
-#### Fixed
-- **A fanout aborted mid-flight now replays its completed units on resume instead of re-dispatching all of them.** The resume fold previously closed the open generation on the parent's own `aborted` trailer row (written after the completed unit rows), discarding the reconstructed cursor's already-filled slots and cold-re-entering the whole stage — a run that designed 8 slices re-designed all 8, duplicating the channel to 13 artifacts and collapsing the downstream fan-in from 8 units to 5. The generation now stays open on the fanout parent's own abort/halt row, so `trailing` carries the filled slots and only genuinely-pending units re-dispatch; a completed run replayed by id now reproduces the same channel, never a superset.
-- **Backward-jump retry budget is now per re-entered stage, not a shared cycle streak.** The previous shared streak made the effective retry budget a function of a cycle's decision-hop count — adding an extra edge to a gate's cycle could halve the number of real grade rounds it got before hitting `maxBackwardJumps`. Each destination now owns its own re-entry ledger (`RunContext.revisits`): any stage may be re-entered at most `maxBackwardJumps` times regardless of the cycle's shape, unrelated loops are independent by construction, and the exhaustion message names the refused stage. `telemetry.backwardJumps` stays the run-wide cumulative total.
-- **A throwing built-in-workflow provider no longer breaks `loadWorkflows`'s never-throws contract.** The provider's `onError` now records failures to a global slot, drained into `issues` as warnings before `getBuiltIns()` is read — mirroring the skill-contracts registry's record-and-drain pattern.
-- **A `reads:` of a panel-member's verdict channel no longer false-passes load validation.** `forEachJudgeChannel` closes a gap where panel-member verdict channels were invisible to the reads-contract publisher index.
+- The foreground/background stage distinction and the `interaction` skill-contract field, along with the validator that rejected fan-outs over foreground skills.
+- The legacy status line and the per-stage, per-unit, validation-retry, and unit-failed notification toasts; the lane dock is now the live progress surface.
 
-### Lifecycle & routing observability
+### Fixed
 
-#### Added
-- **`onUnitHalt(stage, unit, reason, ctx)` lifecycle hook.** A collect-all fanout unit that soft-halts (`collected: true`, non-terminal — the run survives) previously fired no terminal event: `onStageError` is skipped and the success-only `onUnitEnd` never runs, so a progress listener left the unit spinning until `onWorkflowEnd` painted a completed run as all-success. `onUnitHalt` fires from the soft-halt path once the failed row lands.
-- **`onRoute`'s new `bypassed` argument.** For a DECISION edge, `bypassedRecoveryArms()` (`routing.ts`) computes the not-taken targets that are pure recovery arms — a target whose own out-edge is a string edge back to an already-visited stage. A forward arm (successor not yet visited) is only deferred, not bypassed, so the credited set never inflates the numerator past the reachable total. Lets a progress listener credit bypassed failure loops as covered at the gate.
-- **`LifecycleContext.visited`** — the engine's authoritative reconstructed visited set, populated only on run-level projections (`onWorkflowStart`/`onWorkflowEnd`, script `onStageStart`, loop/route fires); session-fired contexts stay `undefined`. A resumed run re-enters the walk at a deep stage number and only re-fires per-stage events from that point forward, so a status-line bridge that derived its distinct-visited count purely from those events undercounted a near-done resume (e.g. rendering "1/17"); `visited` lets it seed from the prior walk instead. Fresh runs carry an empty list.
-- **Watchdog tool-timeouts route to the soft-halt gate instead of abort-re-dispatch.** `postStage` previously threw `WorkflowAbortError` on any aborted stop, so a watchdog-killed runaway tool call re-dispatched the identical command on resume and wedged again. A host-surfaced timeout (`WorkflowSessionContext.toolTimeout()`) now routes through `haltStageOrSoftHalt`: a collect-all unit records a non-terminal failed row + sentinel so the fan-out gate still finalizes, and a non-fan-out stage fails terminally with the timeout reason. A genuine run/user abort (`signal` fired) still re-dispatches as before.
+- Resuming a fan-out aborted mid-flight replays completed units from their journaled output and re-dispatches only genuinely pending units, instead of re-running every unit and duplicating artifacts.
+- Backward-jump retry budgets are counted per destination stage, so unrelated loops no longer share a streak, multi-hop cycles keep their full budget, and the exhaustion message names the refused stage.
+- A stage that produces multiple commits records every commit in the trail instead of collapsing them to the head commit.
+- Built-in workflow provider failures are reported as load warnings instead of being thrown, honoring the never-throws loading contract.
+- Panel-member verdict channels are now indexed by load-time reads-contract validation instead of being silently missed.
+- The typebox runtime dependency is declared directly, so installs that do not materialize peer dependencies no longer fail to register tools.
+- Published tarballs no longer include test files whose private fixture imports broke standalone consumers.
 
-### Packaging
+### Breaking / Upgrade Notes
 
-#### Fixed
-- **`typebox` moved from `peerDependencies` to `dependencies`** (`^1.1.24`, matching the Pi host's range) so the DSL's schema imports resolve under installers that don't materialise peer deps. Fixes `ERR_MODULE_NOT_FOUND: typebox` on standalone consumer installs (#79).
-- **Test files are no longer published in the npm tarball.** The directory globs in `files` (`load/`, `runner/`, `outcomes/`, `validate/`, …) packed `**/*.test.ts`, which import the private, unpublished `@juicesharp/rpiv-test-utils` fixture package. Added a `!**/*.test.ts` exclusion to `files` (#80).
-
-### Fanout-and-synthesize fan-in — `fanin()` read modifier
-
-#### Fixed
-- **A synthesize stage reading a fanout's channel now sees every unit, not just the last.** `stageEntryArgs` resolved a `reads:` name to `state.named[name].at(-1)` — the LAST accumulated `Output` — so the fan-in half of fanout-and-synthesize silently dropped N−1 of N units. Latest-wins remains the default for a bare-string read; opt into all-entries with `fanin()`.
-
-#### Added
-- **`fanin(name)` read modifier.** A `reads:` entry wrapped in `fanin("channel")` flag-repeats across EVERY accumulated entry of the channel (× each entry's artifacts) — the canonical consumer side of `fanout()`. The `reads:` element type widens to `string | { name; all? }`; bare strings keep latest-wins. Exported from `registration` alongside the `StageRead` type. `readName`/`readsAll` normalize the union for all `reads:` consumers.
-- **`reads-latest-from-fanout` validation warning.** A bare-string read of a channel filled by a (`produces`-kind) `fanout` nudges the author toward `fanin()`. Warns only — latest-only is legal; `fanin()` reads are already opted in and never flagged.
-- **`⇉ <names>` fan-in marker in `/wf` preview** on stages with `fanin()` reads, mirroring the `panel(N, fold)` fan-in surfacing. `describeFlow` gains a `reads` facet (normalized `{ name, all }` per read) backing it.
+- Host implementations must replace the session-swap methods with the child-spawn port and supply a maximum-concurrency value on the host context.
+- Runs recorded under the previous state trail schema cannot be resumed; there is no in-place migration, so finish or discard in-flight runs before upgrading.
+- Remove `interaction` from skill contracts and frontmatter; every stage now runs detached and user questions defer through the relay.
+- The host UI contract is notify-only; drop any status-line implementation from host contexts.
 
 ## [1.20.0] - 2026-06-15
 

@@ -41,7 +41,6 @@ export function makeQuestionnaireState(over: Partial<QuestionnaireState> = {}): 
 		answers: over.answers ?? new Map(),
 		multiSelectChecked: over.multiSelectChecked ?? new Set(),
 		notesByTab: over.notesByTab ?? new Map(),
-		focusedOptionHasPreview: over.focusedOptionHasPreview ?? false,
 		submitChoiceIndex: over.submitChoiceIndex ?? 0,
 		notesDraft: over.notesDraft ?? "",
 		collapsed: over.collapsed ?? false,

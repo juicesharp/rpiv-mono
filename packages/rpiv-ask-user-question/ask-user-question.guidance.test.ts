@@ -17,14 +17,21 @@ beforeEach(() => {
 	// test/setup.ts rmSyncs CONFIG_PATH in shared beforeEach
 });
 
-describe("DEFAULT_PROMPT_GUIDELINES — Phase 2 prompt copy", () => {
-	it("describes the 'Type something.' row as appended to EVERY question (no suppress clause)", () => {
+describe("DEFAULT_PROMPT_GUIDELINES — custom-answer contract", () => {
+	it("describes the Type something row as appended to every question without stale fallback terms", () => {
 		const joined = DEFAULT_PROMPT_GUIDELINES.join("\n");
-		expect(joined).toContain("appended automatically to every question");
-		expect(joined).not.toContain('suppresses the "Type something." row');
-		// Phase 1 already swapped the abandon clause to "Esc to abandon".
+		expect(joined).toContain('automatically appended "Type something." row on every question');
 		expect(joined).toContain("Esc to abandon");
+		expect(joined).not.toContain('"Other" free-text fallback');
+		expect(joined).not.toContain("Chat about this");
 	});
+});
+it("describes the all-question custom-answer contract in the registered tool", () => {
+	const { pi, captured } = createMockPi();
+	registerAskUserQuestionTool(pi);
+	const tool = captured.tools.get(TOOL_NAME)!;
+	expect(tool.description).toContain('automatically appended "Type something." row on every question');
+	expect(tool.description).toContain("reserved labels are rejected at runtime");
 });
 
 describe("registerAskUserQuestionTool — guidance overrides", () => {

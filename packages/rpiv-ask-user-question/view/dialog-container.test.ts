@@ -19,8 +19,9 @@ import {
 	type DialogState,
 	DialogView,
 	HINT_MULTI,
-	HINT_MULTISELECT_SUFFIX,
-	HINT_NOTES_SUFFIX,
+	HINT_PART_ENTER,
+	HINT_PART_NOTES,
+	HINT_PART_TOGGLE,
 	HINT_SINGLE,
 	INCOMPLETE_WARNING_PREFIX,
 	READY_PROMPT,
@@ -91,7 +92,6 @@ function makeConfig(over: MakeConfigOverrides = {}): DialogParts {
 		answers: new Map(),
 		multiSelectChecked: new Set(),
 		notesByTab: new Map(),
-		focusedOptionHasPreview: false,
 		submitChoiceIndex: 0,
 		notesDraft: "",
 		collapsed: false,
@@ -185,7 +185,7 @@ describe("makeDialog — multi-question (question tab)", () => {
 		const joined = dlg.render(80).join("\n");
 		expect(joined).toContain("<TABBAR>");
 		expect(joined).toContain("<PREVIEW>");
-		expect(joined).toContain(HINT_MULTI);
+		expect(joined).toContain(HINT_PART_NOTES);
 	});
 
 	it("does NOT render the inner header badge inside the dialog body in multi-question mode", () => {
@@ -213,7 +213,6 @@ describe("makeDialog — multi-question (question tab)", () => {
 			answers: new Map(),
 			multiSelectChecked: new Set(),
 			notesByTab: new Map(),
-			focusedOptionHasPreview: false,
 			submitChoiceIndex: 0,
 			notesDraft: "",
 			collapsed: false,
@@ -239,10 +238,10 @@ describe("makeDialog — multi-question (question tab)", () => {
 			}),
 		);
 		const joined = dlg.render(120).join("\n");
-		expect(joined).toContain(HINT_MULTISELECT_SUFFIX.trim());
+		expect(joined).toContain(HINT_PART_TOGGLE);
 	});
 
-	it("appends 'n for notes' when focused option carries a preview", () => {
+	it("renders 'n to add notes' in the resting hint (universal — no preview required)", () => {
 		const answer: QuestionAnswer = { questionIndex: 0, question: "Q1?", kind: "option", answer: "A" };
 		const dlg = makeDialog(
 			makeConfig({
@@ -254,7 +253,6 @@ describe("makeDialog — multi-question (question tab)", () => {
 					answers: new Map([[0, answer]]),
 					multiSelectChecked: new Set(),
 					notesByTab: new Map(),
-					focusedOptionHasPreview: true,
 					submitChoiceIndex: 0,
 					notesDraft: "",
 					collapsed: false,
@@ -262,7 +260,29 @@ describe("makeDialog — multi-question (question tab)", () => {
 			}),
 		);
 		const joined = dlg.render(80).join("\n");
-		expect(joined).toContain(HINT_NOTES_SUFFIX.trim());
+		expect(joined).toContain(HINT_PART_NOTES);
+	});
+
+	it("drops 'n to add notes' from the hint while inputMode captures text ('n' would type a literal)", () => {
+		const dlg = makeDialog(
+			makeConfig({
+				state: {
+					currentTab: 0,
+					optionIndex: 0,
+					notesVisible: false,
+					inputMode: true,
+					answers: new Map(),
+					multiSelectChecked: new Set(),
+					notesByTab: new Map(),
+					submitChoiceIndex: 0,
+					notesDraft: "",
+					collapsed: false,
+				},
+			}),
+		);
+		const joined = dlg.render(80).join("\n");
+		expect(joined).toContain(HINT_PART_ENTER);
+		expect(joined).not.toContain(HINT_PART_NOTES);
 	});
 
 	it("notesVisible adds the notes Input below the preview (line count grows)", () => {
@@ -276,7 +296,6 @@ describe("makeDialog — multi-question (question tab)", () => {
 				answers: new Map(),
 				multiSelectChecked: new Set(),
 				notesByTab: new Map(),
-				focusedOptionHasPreview: false,
 				submitChoiceIndex: 0,
 				notesDraft: "",
 				collapsed: false,
@@ -306,7 +325,6 @@ describe("makeDialog — multi-question (question tab)", () => {
 			answers: new Map(),
 			multiSelectChecked: new Set([0]),
 			notesByTab: new Map(),
-			focusedOptionHasPreview: false,
 			submitChoiceIndex: 0,
 			notesDraft: "",
 			collapsed: false,
@@ -359,7 +377,6 @@ describe("makeDialog — Submit tab", () => {
 			answers,
 			multiSelectChecked: new Set(),
 			notesByTab: new Map(),
-			focusedOptionHasPreview: false,
 			submitChoiceIndex: 0,
 			notesDraft: "",
 			collapsed: false,
@@ -569,7 +586,6 @@ describe("makeDialog — width safety", () => {
 							answers: new Map([[0, { questionIndex: 0, question: "q", kind: "option", answer: "A" }]]),
 							multiSelectChecked: new Set(),
 							notesByTab: new Map(),
-							focusedOptionHasPreview: false,
 							submitChoiceIndex: 0,
 							notesDraft: "",
 							collapsed: false,
@@ -595,7 +611,7 @@ describe("makeDialog — body residual padding", () => {
 		// Residual = (getBodyHeight + maxFooterRowCount) - (currentBodyHeight + footerRowCount)
 		//          = (6 + 5) - (1 + 2) = 8  (footerRowCount dropped 4→2 after chat-row removal)
 		const lines = makeDialog(makeConfig({ getBodyHeight: () => 6, getCurrentBodyHeight: () => 1 })).render(80);
-		const hintIdx = lines.findIndex((l) => l.includes(HINT_MULTI));
+		const hintIdx = lines.findIndex((l) => l.includes(HINT_PART_ENTER));
 		expect(hintIdx).toBeGreaterThan(0);
 		const tail = lines.slice(hintIdx + 1);
 		expect(tail.length).toBe(8);
@@ -603,7 +619,7 @@ describe("makeDialog — body residual padding", () => {
 	});
 
 	it("dialog total line count is identical across tab switches with mixed single/multi fixture", () => {
-		// Render at width 120 so HINT_MULTI (+ HINT_MULTISELECT_SUFFIX) doesn't wrap on either tab.
+		// Render at width 120 so the full hint (all HINT_PART_* incl. toggle) doesn't wrap on either tab.
 		const multiQ: QuestionData = {
 			question: "areas?",
 			header: "H2",
@@ -633,7 +649,6 @@ describe("makeDialog — body residual padding", () => {
 			answers: new Map(),
 			multiSelectChecked: new Set(),
 			notesByTab: new Map(),
-			focusedOptionHasPreview: false,
 			submitChoiceIndex: 0,
 			notesDraft: "",
 			collapsed: false,

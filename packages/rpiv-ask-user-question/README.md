@@ -1,109 +1,91 @@
-# rpiv-ask-user-question
-
-<div align="center">
-  <a href="https://github.com/juicesharp/rpiv-mono/tree/main/packages/rpiv-ask-user-question">
-    <picture>
-      <img src="https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-ask-user-question/docs/cover.png" alt="rpiv-ask-user-question cover" width="50%">
-    </picture>
-  </a>
-</div>
-
-Let the model ask you structured clarifying questions instead of guessing. `rpiv-ask-user-question` adds the `ask_user_question` tool to [Pi Agent](https://github.com/badlogic/pi-mono) - a tabbed dialog with single- and multi-select questions, side-by-side previews, per-option notes, and a Submit tab that reviews answers before they go back to the model.
-
-![Side-by-side code preview](https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-ask-user-question/docs/code-preview.jpg)
-
-## Features
-
-- **Multi-question dialogs** - ask several questions in one turn with a tab bar (`Tab` to switch).
-- **Preview pane** - render an ASCII diagram, code snippet, or markdown next to each option, side-by-side or stacked depending on terminal width.
-- **Per-option notes** - press `n` on a previewed option to attach a free-text note that travels back with the answer.
-- **Multi-select questions** - checkboxes with `Space` to toggle, Enter-as-toggle on rows, a `Next` sentinel to advance, and toggles persisted across tab switches.
-- **Submit tab** - review every answer before submitting; warns about unanswered questions and offers a Submit picker.
-- **Chat row on every tab** - redirect the conversation without leaving the dialog.
-- **Terminal-row-aware overflow scroll** - when the dialog is taller than the terminal, the body scrolls between a sticky heading and sticky hints/border; overflow indicators (↑ / ↓ / ↕) show what's clipped.
-- **"Other" free-text fallback** - type a custom answer when no option fits; available on every single-select question, even in preview mode (the input expands to the full pane width while typing).
-- **Localized UI** - sentinel rows, hints, submit/cancel labels, review pane, and notes affordance display in the user's chosen language via `@juicesharp/rpiv-i18n`. Ships Deutsch / English / Español / Français / Português (PT) / Português (BR) / Русский / Українська; switch with `/languages` or `pi --locale <code>`. LLM-facing copy (tool description, schemas, errors) stays English by design.
-
-## Screens
-
-| | |
-|---|---|
-| ![Single-question dialog](https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-ask-user-question/docs/single-question.jpg) | ![Multi-tab + ASCII preview](https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-ask-user-question/docs/multi-tab-preview.jpg) |
-| ![Multi-select with checkboxes](https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-ask-user-question/docs/multi-select.jpg) | ![Submit tab review](https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-ask-user-question/docs/submit-tab.jpg) |
-| ![Localized UI - German](https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-ask-user-question/docs/localized-german-ui.jpg) | |
-
-## Install
-
-```bash
-pi install npm:@juicesharp/rpiv-ask-user-question
-```
-
-Then restart your Pi session.
-
-### Optional: localization
-
-`rpiv-ask-user-question` works standalone - install only this package and you get the full English UI. Install `@juicesharp/rpiv-i18n` alongside it to flip sentinel labels, dialog hints, review-tab heading, and chat-summary lines to your active locale:
-
-```bash
-pi install npm:@juicesharp/rpiv-i18n
-```
-
-With the SDK present, locale resolves from `--locale <code>` → `~/.config/rpiv-i18n/locale.json` → `LANG` / `LC_ALL` → English. The `/languages` interactive picker and `pi --locale <code>` startup flag are also enabled. Without the SDK, the dialog stays online and renders English at every call site - no warning, no crash. Users who installed via `pi install npm:@juicesharp/rpiv-pi` + `/rpiv-setup` get the SDK automatically.
-
-## Tool
-
-- **`ask_user_question`** - present one or more structured questions, each with 2+ options, optional `multiSelect`, optional per-option `preview`, and a free-text "Other" fallback available on every single-select question (even with previews). Returns the user's selection(s) plus any notes. See the tool's `promptGuidelines` for usage policy.
-
-### Schema
-
-```ts
-ask_user_question({
-  questions: [
-    {
-      question: string,            // full question text, ends with "?"
-      header: string,              // chip label, max 16 chars
-      options: [
-        {
-          label: string,           // 1-5 words, max 60 chars
-          description: string,     // explains the choice / its trade-off
-          preview?: string,        // optional markdown shown next to options
-        },
-        // … 2-4 options total
-      ],
-      multiSelect?: boolean,       // default false
-    },
-    // … 1-4 questions total
-  ]
-})
-```
-
-Reserved option labels (rejected at validation): `"Other"`, plus the runtime sentinels (`"Type something."`, `"Chat about this"`, `"Next →"`).
-
-Returns:
-
-```ts
-{
-  content: [{ type: "text", text: string }], // human-readable envelope or DECLINE_MESSAGE
-  details: {
-    answers: Array<{
-      questionIndex: number,
-      question: string,
-      kind: "option" | "custom" | "chat" | "multi",
-      answer: string | null,
-      selected?: string[],         // present for multi-select
-      notes?: string,              // free-text note, when typed
-      preview?: string,            // echoed back when option carried a preview
-    }>,
-    cancelled: boolean,
-    error?: "no_ui" | "no_questions" | "empty_options" | "too_many_questions"
-          | "duplicate_question" | "duplicate_option_label" | "reserved_label",
-  }
-}
-```
-
-## License
+# @juicesharp/rpiv-ask-user-question
 
 [![npm version](https://img.shields.io/npm/v/@juicesharp/rpiv-ask-user-question.svg)](https://www.npmjs.com/package/@juicesharp/rpiv-ask-user-question)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-MIT
+<div align="center">
+  <a href="https://github.com/juicesharp/rpiv-mono/tree/main/packages/rpiv-ask-user-question">
+    <img src="https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-ask-user-question/docs/cover.png" alt="rpiv-ask-user-question cover: a tabbed terminal questionnaire asking Which real development task are we planning right now?, with numbered options — Bug fix, New feature, Refactor — each under a one-line description, and a footer of key hints" width="50%">
+  </a>
+</div>
+
+Let the model ask you instead of guessing. This extension gives [Pi Agent](https://github.com/badlogic/pi-mono) one tool — `ask_user_question` — that opens a terminal dialog of up to four questions with written-out options, and hands your choices back as structured data. Install it if you would rather spend fifteen seconds picking than an hour undoing a wrong assumption.
+
+## Install
+
+```sh
+pi install npm:@juicesharp/rpiv-ask-user-question
+```
+
+Restart your Pi session.
+
+## Quick start
+
+Nothing to set up — the tool is live as soon as Pi restarts. Hand the model a task with a real decision buried in it:
+
+> Add caching to the API client.
+
+Rather than picking a strategy on your behalf, the model calls `ask_user_question` and a dialog takes over the bottom of your terminal. Move with `↑`/`↓`, choose with `Enter`, press `n` to attach a note, or land on the `Type something.` row to answer in your own words. `Esc` abandons the questionnaire entirely.
+
+![Single question in the dialog: the tab strip reads Feature Type, Design Tab, Testing, Release, Submit; the question Which real development task are we planning right now? sits above four numbered options — Bug fix (Recommended), New feature, Refactor, Perf tuning — each with a one-line description, followed by the appended Type something. row](https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-ask-user-question/docs/single-question.jpg)
+
+When the model asks several things at once, `Tab` moves between them and a Submit tab reviews everything before it goes back:
+
+![Submit tab of a four-question dialog: a Review your answers list showing Feature Type set to Bug fix and Testing set to Unit tests plus Integration tests, a warning naming Design Tab and Release as still unanswered, and a picker offering Submit answers or Cancel](https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-ask-user-question/docs/submit-tab.jpg)
+
+## What you get
+
+- **Typed options instead of a wall of prose** — each question carries 2-4 authored choices, and every choice comes with a description of what it means or what it costs you.
+- **You can always answer in your own words** — a `Type something.` row is appended to every question, single- or multi-select, and widens to the full pane while you type.
+- **Compare real artifacts, not just labels** — an option can carry a markdown `preview` (ASCII mockup, code, diagram, config) that renders in a bordered box beside the option list.
+- **One interruption, not five** — up to four questions arrive in a single tabbed dialog, and the Submit tab lists your answers and names anything still blank before you commit.
+- **Notes on any answer** — `n` opens a note editor on any question tab; the note travels back to the model alongside the choice without marking the question answered.
+- **Read the transcript behind the dialog** — `Ctrl+]` collapses the overlay so you can scroll the conversation, then brings it back with your answers intact.
+- **Works outside the terminal too** — in RPC and ACP hosts such as the VS Code pendant or Zed the questionnaire walks through the host's native dialogs, and in non-interactive runs the tool is removed from the model's tool list instead of failing every call.
+
+## Configuration
+
+Optional. Settings live in `~/.config/rpiv-ask-user-question/config.json`; the file is read, never written.
+
+| Setting | What it does | Default |
+| --- | --- | --- |
+| `collapseKey` | Key that collapses and expands the dialog. Accepts Pi keybinding ids such as `alt+o`; `"off"` disables the shortcut. | `"ctrl+]"` |
+| `guidance.promptSnippet` | One-line description of the tool in the system prompt — tune how eagerly the model asks. | built-in snippet |
+| `guidance.promptGuidelines` | Usage guidelines given to the model, as a list of strings. | 4 built-in guidelines |
+
+```json
+{ "collapseKey": "alt+o" }
+```
+
+Malformed JSON falls back to the defaults with a warning; an individual unusable value is silently dropped back to its default. Never an error.
+
+## Reference
+
+- [Tool schema](https://github.com/juicesharp/rpiv-mono/blob/main/packages/rpiv-ask-user-question/docs/tool-schema.md) — parameters, limits, reserved labels, validation errors, the result envelope, and the `rpiv:ask-user:prompt` event.
+- [Keyboard and layout](https://github.com/juicesharp/rpiv-mono/blob/main/packages/rpiv-ask-user-question/docs/keyboard.md) — every key, the rows the dialog appends, notes, collapse mode, and how previews and overflow adapt to terminal size.
+- [Configuration](https://github.com/juicesharp/rpiv-mono/blob/main/packages/rpiv-ask-user-question/docs/configuration.md) — file lookup and `XDG_CONFIG_HOME`, the `collapseKey` grammar, the `guidance.*` prompt overrides, and how invalid values are handled.
+- [Hosts and runtime behavior](https://github.com/juicesharp/rpiv-mono/blob/main/packages/rpiv-ask-user-question/docs/hosts.md) — terminal vs RPC vs non-interactive, what degrades in each, and the load-failure envelopes.
+- [Localization](https://github.com/juicesharp/rpiv-mono/blob/main/packages/rpiv-ask-user-question/docs/localization.md) — the nine shipped languages, how the locale is chosen, and how to add one.
+
+## Requirements
+
+- Node.js 22 or newer.
+- Pi Agent, with an interactive terminal or an RPC/ACP host. Non-interactive runs never see the tool.
+- A terminal at least 100 columns wide for side-by-side previews; narrower terminals stack the preview under the options.
+
+No native dependencies, no compiler, no API keys — the extension makes no model calls of its own.
+
+## Troubleshooting
+
+**The model says the questionnaire UI failed to load and asks its questions as chat text.** The dialog's modules were replaced on disk while Pi was running, usually by a package-manager install touching the store. Repair the install if it is broken, then restart Pi; the failure is not recoverable inside the running process.
+
+**`Ctrl+]` does nothing.** On keyboard layouts where `]` sits on the shifted layer (Latin American among them) the default is unreachable. Set `collapseKey` to something you can type, for example `"alt+o"`.
+
+## Related
+
+- [`@juicesharp/rpiv-i18n`](https://www.npmjs.com/package/@juicesharp/rpiv-i18n) — optional; installing it renders the dialog chrome in your language and adds `/languages`.
+- [`@juicesharp/rpiv-pi`](https://www.npmjs.com/package/@juicesharp/rpiv-pi) — the umbrella package whose workflow skills use `ask_user_question` as their developer checkpoint. `/rpiv-setup` offers to install this extension.
+
+## License
+
+MIT — see [LICENSE](https://github.com/juicesharp/rpiv-mono/blob/main/packages/rpiv-ask-user-question/LICENSE).

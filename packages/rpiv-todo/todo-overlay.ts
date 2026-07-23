@@ -64,13 +64,13 @@ export class TodoOverlay {
 		if (!this.widgetRegistered) {
 			this.uiCtx.setWidget(
 				WIDGET_KEY,
-				(tui, theme) => {
+				(tui, factoryTheme) => {
 					this.tui = tui;
 					return {
-						render: (width: number) => this.renderWidget(theme, width),
+						render: (width: number) => this.renderWidget(this.uiCtx?.theme ?? factoryTheme, width),
 						invalidate: () => {
-							this.widgetRegistered = false;
-							this.tui = undefined;
+							// No rendered strings are cached. Pi invalidates on theme changes;
+							// the next render reads uiCtx.theme.
 						},
 					};
 				},

@@ -1,11 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { QuestionAnswer, QuestionData } from "../tool/types.js";
 import type { WrappingSelectItem } from "../view/components/wrapping-select.js";
-import {
-	computeFocusedOptionHasPreview,
-	selectActivePreviewPaneIndex,
-	selectConfirmedIndicator,
-} from "./selectors/derivations.js";
+import { selectActivePreviewPaneIndex, selectConfirmedIndicator } from "./selectors/derivations.js";
 import { selectActiveView } from "./selectors/focus.js";
 
 function q(over: Partial<QuestionData> = {}): QuestionData {
@@ -95,21 +91,6 @@ describe("selectActiveView", () => {
 	});
 	it("priority order: notes wins over Submit-tab (matches dispatcher cascade)", () => {
 		expect(selectActiveView({ notesVisible: true, currentTab: 2 }, 2)).toBe("notes");
-	});
-});
-
-describe("preexisting selectors retained", () => {
-	it("computeFocusedOptionHasPreview returns true when the focused option carries a preview", () => {
-		const questions = [
-			q({
-				options: [
-					{ label: "A", description: "a", preview: "code" },
-					{ label: "B", description: "b" },
-				],
-			}),
-		];
-		expect(computeFocusedOptionHasPreview(questions, 0, 0)).toBe(true);
-		expect(computeFocusedOptionHasPreview(questions, 0, 1)).toBe(false);
 	});
 });
 

@@ -1,11 +1,13 @@
 ## [Unreleased]
 
+## [2.0.0] - 2026-07-21
+
 ### Added
-- `resolveConfigDir()` — honors `XDG_CONFIG_HOME` per the XDG Base Directory spec: unset / empty-after-trim / whitespace-only / relative all fall back to `~/.config`; a leading `~` or `~/…` is expanded via `expandTilde` (mirroring Pi's `expandTildePath`) and then required to be absolute; absolute values are used verbatim. Contract: only bare `~` and `~/…` expand — a `~user` form is NOT expanded (XDG defines no `~user` expansion), so it fails the `isAbsolute` check and silently routes to the default `~/.config` like any other relative path. `configPath` now resolves through `resolveConfigDir()` instead of a hardcoded `~/.config`.
-- `loadJsonConfigWithLegacyFallback(name, file)` — prefers the XDG-resolved config path and reads the legacy `~/.config/<name>/<file>` only when the XDG file is absent. A malformed XDG file warns and returns `{}` rather than silently masking the corruption with a legacy-path fallback. Write paths (`saveJsonConfig`) remain XDG-only by design — no legacy-write fallback. All 11 rpiv-* config-load sites (rpiv-advisor, rpiv-ask-user-question, rpiv-i18n, rpiv-pi models, rpiv-telemetry, rpiv-todo, rpiv-voice, rpiv-warp, rpiv-web-tools) were migrated to this fallback reader.
+- Add `resolveConfigDir()`, which honors `XDG_CONFIG_HOME` per the XDG spec: unset, empty, whitespace, or relative values fall back to `~/.config`; a leading `~/` is expanded (a `~user` form is not) and the result must be absolute.
+- Add `loadJsonConfigWithLegacyFallback()`, which prefers the XDG config path and reads the legacy `~/.config` file only when the XDG file is absent; a malformed XDG file warns and returns an empty config rather than silently falling back.
 
 ### Fixed
-- Moved `typebox` from `peerDependencies` to `dependencies` (`^1.1.24`, matching the Pi host's range). Under installers that don't materialise peer deps (Pi's flat `~/.pi/agent/npm` layout, pnpm strict), `config.ts`'s `import "typebox"` / `import "typebox/value"` failed with `ERR_MODULE_NOT_FOUND`, taking down every consumer extension. Note: `typebox` here is the unscoped `1.x` package the Pi host depends on, not `@sinclair/typebox@0.34.x` (#79).
+- Load correctly under installers that do not materialize peer dependencies by declaring the schema library as a direct dependency.
 
 ## [1.20.0] - 2026-06-15
 

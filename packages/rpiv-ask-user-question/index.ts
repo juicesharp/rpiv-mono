@@ -1,6 +1,7 @@
 /**
  * rpiv-ask-user-question — Pi extension. Registers the `ask_user_question`
- * tool: a structured option selector with a free-text "Other" fallback.
+ * tool: a structured option selector with an automatically appended
+ * `Type something.` custom-answer row.
  *
  * Sentinel labels and TUI chrome strings localize at render time via the i18n
  * bridge. Strings are registered with rpiv-i18n here, once, at module init —

@@ -345,7 +345,7 @@ describe("bundled skill contracts", () => {
 	});
 
 	it("plan's inline template (no templates/ dir) writes its required produces.data fields", () => {
-		const required = (declared.get("plan")?.produces?.data as { required?: string[] }).required!;
+		const required = (declared.get("plan")!.produces!.data as { required?: string[] }).required!;
 		const body = readFileSync(join(BUNDLED_SKILLS_DIR, "plan", "SKILL.md"), "utf-8");
 		// Scan for ---…--- frontmatter regions (robust to the ```! executable block
 		// at SKILL.md:46 that shifts naive fence-pair parity, and to nested fences
@@ -360,7 +360,7 @@ describe("bundled skill contracts", () => {
 	});
 
 	it("architecture-review template carries the required layer_count field", () => {
-		const required = (declared.get("architecture-review")?.produces?.data as { required?: string[] }).required!;
+		const required = (declared.get("architecture-review")!.produces!.data as { required?: string[] }).required!;
 		expect(required).toContain("layer_count");
 		const dir = join(BUNDLED_SKILLS_DIR, "architecture-review", "templates");
 		const text = readdirSync(dir)

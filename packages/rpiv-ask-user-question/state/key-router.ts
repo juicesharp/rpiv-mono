@@ -142,7 +142,17 @@ export function routeKey(data: string, state: QuestionnaireState, runtime: Quest
 	// in-process. It is, however, awkward on keyboard layouts where `]` is on the
 	// shifted layer (Latin American `es-AR`/`es-MX` require `Ctrl+Shift+}` for `Ctrl+]`)
 	// — use the `collapseKey` config field to override.
-	if (runtime.collapseKey !== "off" && matchesKey(data, runtime.collapseKey as Parameters<typeof matchesKey>[1])) {
+	// Treat a missing/non-string key as disabled. This can occur at runtime when
+	// a long-lived Pi process retains an older outer module while a package update
+	// replaces the lazily imported QuestionnaireSession graph on disk. Passing
+	// undefined into matchesKey reaches parseKeyId().toLowerCase() and crashes the
+	// entire host process, so keep the runtime boundary defensive even though the
+	// TypeScript contract requires a string.
+	if (
+		typeof runtime.collapseKey === "string" &&
+		runtime.collapseKey !== "off" &&
+		matchesKey(data, runtime.collapseKey as Parameters<typeof matchesKey>[1])
+	) {
 		return { kind: "toggle_collapsed" };
 	}
 
@@ -200,7 +210,16 @@ export function routeKey(data: string, state: QuestionnaireState, runtime: Quest
 	const q = runtime.questions[state.currentTab];
 	if (!q) return { kind: "ignore" };
 
-	if (data === NOTES_ACTIVATE_KEY && !q.multiSelect && state.focusedOptionHasPreview) {
+	// Universal `n` activation (FR-1): the notes editor opens on every question tab
+	// (single- or multi-select, preview or no-preview). The blocks above already
+	// swallow `n` when it should NOT reach here — notesVisible forwards to the
+	// notes Input, inputMode forwards to the inline Input, the submit-tab block
+	// ignores it, and tabSwitchAction ignores it — so by the time we reach this
+	// gate, `n` is unambiguously a notes-enter request. Row intent (Next sentinel,
+	// "Type something.") is irrelevant: the gate sits ABOVE the multi-select
+	// toggle block and the Next sentinel never activates inputMode, so `n` is
+	// neither swallowed earlier nor blocked by `blocksMultiToggle`.
+	if (data === NOTES_ACTIVATE_KEY) {
 		return { kind: "notes_enter" };
 	}
 

@@ -2,22 +2,6 @@ import type { QuestionAnswer, QuestionData } from "../../tool/types.js";
 import type { WrappingSelectItem } from "../../view/components/wrapping-select.js";
 
 /**
- * Pure derivation: does the option focused by `(currentTab, optionIndex)` carry a
- * non-empty `preview` string? Mode gates (notes mode, multiSelect) layer
- * on top via dispatch branches; this predicate is intentionally mode-agnostic.
- */
-export function computeFocusedOptionHasPreview(
-	questions: readonly QuestionData[],
-	currentTab: number,
-	optionIndex: number,
-): boolean {
-	const q = questions[currentTab];
-	if (!q) return false;
-	const opt = q.options[optionIndex];
-	return !!opt && typeof opt.preview === "string" && opt.preview.length > 0;
-}
-
-/**
  * Which row in the active tab should be marked as "previously confirmed"? Drives the
  * `WrappingSelect` confirmed-row indicator (label + ` ✔`) when the user navigates back
  * to a question they already answered. Returns `undefined` when no marker should be drawn —

@@ -1,7 +1,7 @@
 {
 	"name": "@juicesharp/rpiv-pi",
-	"version": "1.20.0",
-	"description": "A skill-based development workflow for Pi Agent. Twenty contract-carrying skills (discover → research → design → plan → implement → validate → code-review → commit, and more), the named subagents they dispatch, and three built-in /wf workflows that chain them end to end.",
+	"version": "2.0.0",
+	"description": "A skill-based development workflow for Pi Agent. 27 contract-carrying skills (discover → research → design → plan → implement → validate → code-review → commit, and more), the 15 named subagents they dispatch, and five built-in /wf workflows that chain them end to end in detached parallel runs.",
 	"keywords": [
 		"pi-package",
 		"pi-extension",
@@ -32,6 +32,10 @@
 		"skills/",
 		"agents/",
 		"scripts/",
+		"docs/",
+		"!docs/*.png",
+		"!docs/*.jpg",
+		"!docs/*.svg",
 		"README.md",
 		"LICENSE",
 		"!**/*.test.ts"
@@ -45,7 +49,7 @@
 		]
 	},
 	"dependencies": {
-		"@juicesharp/rpiv-config": "^1.20.0",
+		"@juicesharp/rpiv-config": "^2.0.0",
 		"typebox": "^1.1.24"
 	},
 	"peerDependencies": {

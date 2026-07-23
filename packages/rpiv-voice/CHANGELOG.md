@@ -7,6 +7,11 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-07-21
+
+### Added
+- Configuration is now read from the XDG config directory (`XDG_CONFIG_HOME`), falling back to the legacy location when the new path is absent.
+
 ## [1.20.0] - 2026-06-15
 
 ### Added

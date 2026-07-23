@@ -50,7 +50,6 @@ function makeState(over: Partial<QuestionnaireState> = {}): QuestionnaireState {
 		answers: new Map<number, QuestionAnswer>(),
 		multiSelectChecked: new Set<number>(),
 		notesByTab: new Map<number, string>(),
-		focusedOptionHasPreview: false,
 		submitChoiceIndex: 0,
 		notesDraft: "",
 		collapsed: false,
@@ -560,27 +559,46 @@ describe("routeKey — cancel + submit", () => {
 });
 
 describe("routeKey — notes", () => {
-	it("'n' when focused option has preview emits notes_enter", () => {
-		expect(routeKey("n", makeState({ focusedOptionHasPreview: true }), makeRuntime())).toEqual({
+	it("'n' emits notes_enter regardless of preview (universal gate)", () => {
+		expect(routeKey("n", makeState(), makeRuntime())).toEqual({
 			kind: "notes_enter",
 		});
 	});
 
-	it("'n' when focused option has no preview is ignored", () => {
-		expect(routeKey("n", makeState({ focusedOptionHasPreview: false }), makeRuntime())).toEqual({
-			kind: "ignore",
+	it("'n' emits notes_enter on multiSelect questions even with preview (universal gate)", () => {
+		const multiQ = makeQuestion({ multiSelect: true });
+		expect(routeKey("n", makeState(), makeRuntime({ questions: [multiQ, makeQuestion()] }))).toEqual({
+			kind: "notes_enter",
 		});
 	});
 
-	it("'n' is ignored on multiSelect questions even with preview", () => {
-		const multiQ = makeQuestion({ multiSelect: true });
+	// goal §7 / FR-3: the universal gate is row-agnostic and sits ABOVE the
+	// multi-select toggle block, so `n` reaches notes_enter even when the Next
+	// sentinel row is focused. The Next sentinel does not activate inputMode (only
+	// the "Type something." other row does, per ROW_INTENT_META), so `n` is neither
+	// swallowed by an earlier block nor blocked by `blocksMultiToggle`.
+	it("'n' emits notes_enter when the multi-select Next sentinel row is focused", () => {
+		const multiQ = makeQuestion({
+			multiSelect: true,
+			options: [
+				{ label: "FE", description: "FE" },
+				{ label: "BE", description: "BE" },
+				{ label: "Tests", description: "T" },
+			],
+		});
+		const items: WrappingSelectItem[] = [
+			{ kind: "option", label: "FE" },
+			{ kind: "option", label: "BE" },
+			{ kind: "option", label: "Tests" },
+			{ kind: "next", label: "Next" },
+		];
 		expect(
 			routeKey(
 				"n",
-				makeState({ focusedOptionHasPreview: true }),
-				makeRuntime({ questions: [multiQ, makeQuestion()] }),
+				makeState({ optionIndex: 3 }),
+				makeRuntime({ questions: [multiQ], isMulti: false, items, currentItem: items[3] }),
 			),
-		).toEqual({ kind: "ignore" });
+		).toEqual({ kind: "notes_enter" });
 	});
 
 	it("notesMode: Esc -> notes_exit", () => {
@@ -621,6 +639,14 @@ describe("routeKey — inputMode (Type something)", () => {
 
 	it("printable bytes return ignore (dialog forwards to inlineInput.handleInput)", () => {
 		expect(routeKey("x", makeState({ inputMode: true }), makeRuntime({ currentItem: other }))).toEqual({
+			kind: "ignore",
+		});
+	});
+
+	// FR-3: the inputMode block intercepts BEFORE the universal notes gate, so `n`
+	// inserts a literal character into the inline buffer instead of opening notes.
+	it("'n' under inputMode returns ignore (types a literal 'n'), NOT notes_enter", () => {
+		expect(routeKey("n", makeState({ inputMode: true }), makeRuntime({ currentItem: other }))).toEqual({
 			kind: "ignore",
 		});
 	});
@@ -715,5 +741,18 @@ describe("routeKey — collapse/expand (Ctrl+] toggle + collapsed-mode lockout)"
 		// non-handled key).
 		const runtime = makeRuntime({ collapseKey: "off" });
 		expect(routeKey(BYTE_CTRL_RBRACKET, makeState(), runtime)).not.toEqual({ kind: "toggle_collapsed" });
+	});
+
+	it("treats a missing collapseKey as disabled instead of throwing after an in-process package update", () => {
+		// A Pi process can retain the pre-collapse outer module while a package update
+		// replaces the lazily imported QuestionnaireSession graph on disk. The old
+		// constructor call has no collapseKey field, so runtime receives undefined at
+		// runtime despite the TypeScript contract. Never pass that value to matchesKey:
+		// pi-tui's parseKeyId calls toLowerCase() and would terminate the whole process.
+		const runtime = makeRuntime() as unknown as { collapseKey?: string };
+		delete runtime.collapseKey;
+
+		expect(() => routeKey(BYTE_CTRL_RBRACKET, makeState(), runtime as QuestionnaireRuntime)).not.toThrow();
+		expect(routeKey(BYTE_CTRL_RBRACKET, makeState(), runtime as QuestionnaireRuntime)).toEqual({ kind: "ignore" });
 	});
 });

@@ -7,11 +7,17 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-07-21
+
+### Added
+- Show a Blocked badge when a workflow run parks on a question, with each concurrent run badged independently until its question is answered.
+- Read configuration from `XDG_CONFIG_HOME` when set, falling back to the legacy `~/.config` location only when no config file exists at the new path.
+
 ### Changed
-- `package.json` now declares `"ambientObserver": true` under the `pi` key, opting this launcher-only listener out of relaunch when rpiv-workflow spawns detached child sessions (parallel fanout, continue-fork), so those children skip re-registering it.
+- Detached workflow child sessions no longer load Warp; it observes only from the launching session.
 
 ### Fixed
-- Toast summaries strip rpiv-args' new `Skill input:` argument-trailer label back to the raw args, so skill invocations render as `/skill:<name> <args>` instead of leaking the trailer framing.
+- Render skill invocations in toast summaries as `/skill:<name> <args>` without leaking internal argument labeling.
 
 ## [1.20.0] - 2026-06-15
 

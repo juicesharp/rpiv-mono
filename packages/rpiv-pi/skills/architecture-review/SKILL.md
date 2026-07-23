@@ -68,7 +68,7 @@ The final artifact is blueprint-consumable per phase.
 
 ### Step 1: Identify the Target
 
-1. **Argument is empty:** use the `ask_user_question` tool with the following question: "What are we reviewing?". Header: "Target". Options: "Single module" (one package / project / crate / namespace directory); "Single subdirectory" (a subtree inside a module); "Single file" (deep review of one large file); "Other" (developer specifies path).
+1. **Argument is empty:** use the `ask_user_question` tool with the following question: "What are we reviewing?". Header: "Target". Options: "Single module" (one package / project / crate / namespace directory); "Single subdirectory" (a subtree inside a module); "Single file" (deep review of one large file). The automatic `Type something.` row accepts a custom target.
 
 2. **Validate the target exists**. Use `ls` via the Bash tool on the resolved path. If missing, ask for a corrected path.
 
@@ -235,7 +235,7 @@ Layers mirror dependency direction. Higher layers consume lower-layer vocabulary
    {One paragraph: what unifies these findings, what the theme thread delivers when implemented, what the closing finding is if any.}
    ```
 
-3. **Confirm grouping** via the `ask_user_question` tool: "{N} cross-cutting themes: {T1 — name; T2 — name; ...}. Approve grouping or adjust?". Header: "Themes". Options: "Approve grouping (Recommended)"; "Merge themes" (developer names which); "Split a theme" (developer names which); "Other".
+3. **Confirm grouping** via the `ask_user_question` tool: "{N} cross-cutting themes: {T1 — name; T2 — name; ...}. Approve grouping or adjust?". Header: "Themes". Options: "Approve grouping (Recommended)"; "Merge themes" (developer names which); "Split a theme" (developer names which). The automatic `Type something.` row captures another grouping request.
 
 ### Step 8: Consolidated Polish Plan
 
@@ -275,7 +275,7 @@ Phases are agent-driven: each one will be handed to `blueprint` → `implement`.
        Phase 6 (Public-API)
    ```
 
-6. **Confirm the plan + flip status.** Use the `ask_user_question` tool: "{N} phases ({F} findings across {Files} files). Approve or adjust?". Header: "Plan". Options: "Approve (Recommended)" (**rebuild the `phases:` frontmatter array from the `### Phase N — name` headings** — one `{ n, title, depends_on, blast_radius, effort }` entry per heading, in body order: `depends_on` from the dependency graph (Step 5, earlier phases only), `blast_radius` the phase's widest of `internal`/`public-API`/`on-disk`/`cross-module` (Step 3), `effort` `S`/`M`/`L`; e.g. `phases: [{ n: 1, title: Foundation, depends_on: [], blast_radius: internal, effort: S }, { n: 2, title: Vocabulary, depends_on: [1], blast_radius: internal, effort: M }]`; then Edit frontmatter `status: in-progress` → `status: ready`, proceed to Step 9); "Adjust phase boundaries" (describe); "Resequence phases" (describe); "Other".
+6. **Confirm the plan + flip status.** Use the `ask_user_question` tool: "{N} phases ({F} findings across {Files} files). Approve or adjust?". Header: "Plan". Options: "Approve (Recommended)" (**rebuild the `phases:` frontmatter array from the `### Phase N — name` headings** — one `{ n, title, depends_on, blast_radius, effort }` entry per heading, in body order: `depends_on` from the dependency graph (Step 5, earlier phases only), `blast_radius` the phase's widest of `internal`/`public-API`/`on-disk`/`cross-module` (Step 3), `effort` `S`/`M`/`L`; e.g. `phases: [{ n: 1, title: Foundation, depends_on: [], blast_radius: internal, effort: S }, { n: 2, title: Vocabulary, depends_on: [1], blast_radius: internal, effort: M }]`; then Edit frontmatter `status: in-progress` → `status: ready`, proceed to Step 9); "Adjust phase boundaries" (describe); "Resequence phases" (describe). The automatic `Type something.` row captures another adjustment.
 
 ### Step 9: Present and Chain
 
@@ -332,7 +332,7 @@ Spawn multiple agents in parallel when they're searching for different things. E
 
 ## Important Notes
 
-- **All checkpoints are `ask_user_question`** — no prose "ask the user". The tool always offers free-text via "Other"; don't author free-text prompts.
+- **All checkpoints are `ask_user_question`** — no prose "ask the user". The tool automatically appends the `Type something.` free-text row; do not author `Other` as an option.
 - **Read all in-scope files FULLY** in Step 5.1 — no limit/offset on the Read tool. Selective reads bias findings toward what you happened to load.
 - **Edit the artifact progressively in Step 5.4** — never batch all findings into one final write. The artifact is the durable checkpoint between sessions.
 - **Critical ordering:**

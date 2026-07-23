@@ -32,18 +32,12 @@ describe("decideDockAction — inactive (entry gesture)", () => {
 		expect(decideDockAction("down", ctx({ rowCount: 0 }))).toEqual({ kind: "passthrough" });
 	});
 
-	it.each<DockKey>([
-		"up",
-		"enter",
-		"right",
-		"left",
-		"tab",
-		"escape",
-		"stop",
-		"other",
-	])("%s passes through while inactive", (key) => {
-		expect(decideDockAction(key, ctx())).toEqual({ kind: "passthrough" });
-	});
+	it.each<DockKey>(["up", "enter", "right", "left", "tab", "escape", "stop", "other"])(
+		"%s passes through while inactive",
+		(key) => {
+			expect(decideDockAction(key, ctx())).toEqual({ kind: "passthrough" });
+		},
+	);
 });
 
 describe("decideDockAction — clear-completed (ESC at empty root prompt)", () => {
