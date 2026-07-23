@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { matchesKey } from "@earendil-works/pi-tui";
+import { isKeyRelease, isKeyRepeat, matchesKey } from "@earendil-works/pi-tui";
 import { loadConfig, resolveCollapseKey, validateGuidanceFields } from "./config.js";
 import { ASK_USER_PROMPT_EVENT, type AskUserPromptEventPayload } from "./events.js";
 // Static import is fine — rpc-fallback pulls only types + the i18n bridge,
@@ -202,6 +202,10 @@ Preview content is rendered as markdown in a monospace box. Multi-line text with
 					// toggling the questionnaire from underneath it.
 					if (!handle.isHidden() && !handle.isFocused()) return undefined;
 					if (!matchesKey(data, collapseKey as Parameters<typeof matchesKey>[1])) return undefined;
+					// Kitty-protocol terminals report press, repeat, and release separately.
+					// Toggle only on the initial press so a tap does not immediately reopen
+					// the overlay and a held key does not toggle it repeatedly.
+					if (isKeyRelease(data) || isKeyRepeat(data)) return { consume: true };
 					sessionRef.current?.toggleCollapsedExternal();
 					if (handle.isHidden() && !hasAnnouncedHide) {
 						hasAnnouncedHide = true;

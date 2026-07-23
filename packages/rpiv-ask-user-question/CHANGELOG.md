@@ -7,6 +7,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- Collapse toggles now ignore Kitty keyboard repeat and release events, preventing a tap from immediately reopening the questionnaire or a held key from toggling it rapidly in terminals such as cmux/Ghostty.
+
 ## [2.0.0] - 2026-07-21
 
 ### Added
