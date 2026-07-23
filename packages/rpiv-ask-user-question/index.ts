@@ -40,7 +40,9 @@ try {
 }
 
 export {
+	ASK_USER_BLOCKED_EVENT,
 	ASK_USER_PROMPT_EVENT,
+	type AskUserBlockedEventPayload,
 	type AskUserPromptEventPayload,
 	type AskUserPromptOption,
 	type AskUserPromptQuestion,

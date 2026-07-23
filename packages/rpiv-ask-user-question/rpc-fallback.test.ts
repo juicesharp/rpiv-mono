@@ -12,6 +12,12 @@ function register() {
 	return captured.tools.get("ask_user_question")!;
 }
 
+function registerWithCapture() {
+	const { pi, captured } = createMockPi();
+	registerAskUserQuestionTool(pi);
+	return { tool: captured.tools.get("ask_user_question")!, captured };
+}
+
 /** Mock ctx shaped like a pi ≥0.79 RPC host: `mode: "rpc"` + dialog primitives. */
 function ctxRpc(opts: { select?: SelectFn; input?: InputFn } = {}) {
 	return createMockCtx({
@@ -91,6 +97,13 @@ describe("ask_user_question.execute — RPC dialog walker (ctx.mode === 'rpc')",
 		});
 		await run(tool, SINGLE, ctx);
 		expect(custom).not.toHaveBeenCalled();
+	});
+
+	it("emits rpiv:ask-user:blocked around the RPC dialog walker and clears it afterward", async () => {
+		const { tool, captured } = registerWithCapture();
+		const select = vi.fn(async (_t: string, options: string[]) => options[0]);
+		await run(tool, SINGLE, ctxRpc({ select }));
+		expect(captured.eventsEmitted.get("rpiv:ask-user:blocked")).toEqual([{ active: true }, { active: false }]);
 	});
 
 	it("appends the 'Type something.' sentinel row sourced from ROW_INTENT_META", async () => {
