@@ -86,8 +86,17 @@ function persistMultiSelectAnswer(state: QuestionnaireState, ctx: ApplyContext):
 	return out;
 }
 
+/**
+ * Note text to seed the editor/draft with for a tab. The in-flight side-band store
+ * (`notesByTab`) is authoritative — before an option is confirmed the note lives ONLY
+ * there; `answer.notes` is a mirror written on exit/confirm.
+ */
+function notesValueFor(state: QuestionnaireState, tab: number): string {
+	return state.notesByTab.get(tab) ?? state.answers.get(tab)?.notes ?? "";
+}
+
 function switchTabResult(state: QuestionnaireState, nextTab: number, ctx: ApplyContext): ApplyResult {
-	const notesValue = state.notesByTab.get(nextTab) ?? state.answers.get(nextTab)?.notes ?? "";
+	const notesValue = notesValueFor(state, nextTab);
 	const transitioned: QuestionnaireState = {
 		...state,
 		currentTab: nextTab,
@@ -199,11 +208,7 @@ const multiConfirmHandler: Handler<"multi_confirm"> = (state, action, ctx) => {
 };
 
 const notesEnterHandler: Handler<"notes_enter"> = (state, _action, _ctx) => {
-	// Prefer the in-flight side-band note (`notesByTab`) over the committed answer's note.
-	// Before the option is confirmed the note lives ONLY in `notesByTab`, so reading solely
-	// from `answers` made a second open of the editor start empty and silently drop the note
-	// on the next close. Mirrors the precedence already used by `switchTabResult`.
-	const value = state.notesByTab.get(state.currentTab) ?? state.answers.get(state.currentTab)?.notes ?? "";
+	const value = notesValueFor(state, state.currentTab);
 	return {
 		state: { ...state, notesVisible: true, notesDraft: value },
 		effects: [
