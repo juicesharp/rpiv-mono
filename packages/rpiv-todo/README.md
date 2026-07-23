@@ -1,158 +1,122 @@
-# rpiv-todo
-
-<div align="center">
-  <a href="https://github.com/juicesharp/rpiv-mono/tree/main/packages/rpiv-todo">
-    <picture>
-      <img src="https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-todo/docs/cover.png" alt="rpiv-todo cover" width="50%">
-    </picture>
-  </a>
-</div>
-
-Give the model a todo list it can keep across long sessions. `rpiv-todo` adds the `todo` tool, the `/todos` slash command, and a live overlay above the editor to [Pi Agent](https://github.com/badlogic/pi-mono) - tasks survive `/reload` and conversation compaction, so the model picks up where it left off.
-
-![Todo overlay widget above the Pi editor](https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-todo/docs/overlay.jpg)
-
-## Features
-
-- **Live overlay above the editor** - see the model's plan at all times; completed items stay visible until the next agent response starts, then fall away; auto-hides when empty.
-- **Survives `/reload` and compaction** - tasks replay from the conversation branch, not disk.
-- **Status states** - pending, in_progress, completed, plus a deleted tombstone for audit.
-- **Dependency tracking** - `blockedBy` with cycle detection, so the model can sequence work.
-- **Smart truncation** - collapse threshold (default 12, [configurable](#configuration) via `maxWidgetLines`); completed tasks drop first, pending tasks stay visible last.
-
-## Install
-
-```bash
-pi install npm:@juicesharp/rpiv-todo
-```
-
-Then restart your Pi session.
-
-### Optional: localization
-
-`rpiv-todo` works standalone - install only this package and you get the full English UI. Install `@juicesharp/rpiv-i18n` alongside it to flip the overlay heading, `/todos` section headers, and status words to your active locale:
-
-```bash
-pi install npm:@juicesharp/rpiv-i18n
-```
-
-With the SDK present, locale resolves from `--locale <code>` → `~/.config/rpiv-i18n/locale.json` → `LANG` / `LC_ALL` → English. The `/languages` interactive picker and `pi --locale <code>` startup flag are also enabled. Without the SDK, the extension stays online and renders English at every call site - no warning, no crash. Users who installed via `pi install npm:@juicesharp/rpiv-pi` + `/rpiv-setup` get the SDK automatically.
-
-## Tool
-
-- **`todo`** - create / update / list / get / delete / clear tasks. 4-state
-  machine (pending → in_progress → completed, plus deleted tombstone).
-  Supports `blockedBy` dependency tracking with cycle detection. Tasks persist
-  via branch replay - survive session compact and `/reload`.
-
-### Schema
-
-```ts
-todo({
-  action: "create" | "update" | "list" | "get" | "delete" | "clear",
-
-  // create-only
-  subject?: string,                // required for create
-  blockedBy?: number[],            // initial dependency ids
-
-  // create + update
-  description?: string,
-  activeForm?: string,             // present-continuous label shown while in_progress
-  owner?: string,
-  metadata?: Record<string, unknown>, // pass null per key to delete that key on update
-
-  // update-only
-  addBlockedBy?: number[],         // additive merge into blockedBy
-  removeBlockedBy?: number[],      // additive removal from blockedBy
-
-  // update / get / delete
-  id?: number,                     // task id
-
-  // update (target) or list (filter)
-  status?: "pending" | "in_progress" | "completed" | "deleted",
-
-  // list-only
-  includeDeleted?: boolean,        // default false - hides tombstones
-})
-```
-
-Valid status transitions: `pending ⇄ in_progress`, either → `completed`, any → `deleted` (terminal). `delete` keeps the task as a tombstone so historic `blockedBy` references still resolve.
-
-Returns:
-
-```ts
-{
-  content: [{ type: "text", text: string }], // human-readable summary of the op
-  details: {                                 // full snapshot - replay reads this back
-    action: TaskAction,
-    params: Record<string, unknown>,
-    tasks: Array<{
-      id: number,
-      subject: string,
-      description?: string,
-      activeForm?: string,
-      status: "pending" | "in_progress" | "completed" | "deleted",
-      blockedBy?: number[],
-      owner?: string,
-      metadata?: Record<string, unknown>,
-    }>,
-    nextId: number,
-    error?: string,                          // present only on validation/transition failures
-  }
-}
-```
-
-## Commands
-
-- **`/todos`** - print the current todo list grouped by status.
-
-## Configuration
-
-Optional file at `~/.config/rpiv-todo/config.json`:
-
-```json
-{
-  "maxWidgetLines": 8,
-  "collapseKey": "alt+t",
-  "guidance": {
-    "promptSnippet": "Use the `todo` tool to track multi-step work before starting it.",
-    "promptGuidelines": [
-      "Create one task per discrete step.",
-      "Mark a task in_progress while working on it; completed when done."
-    ]
-  }
-}
-```
-
-| Key | Default | Meaning |
-|---|---|---|
-| `maxWidgetLines` | `12` | Content-row budget for the overlay (useful on low-height terminals). The heading and, on overflow, the `+N more` summary row count against this budget — only the trailing spacer sits outside it, so `12` renders up to 13 rows total. Floor of `3`: lower values fall back to the default, as do non-numeric values. Applied on the next repaint — no `/reload` required. |
-| `collapseKey` | `"ctrl+shift+t"` | Shortcut that collapses/expands the overlay, in pi keybinding format (`modifier+key`, e.g. `alt+o`, `ctrl+shift+t`; modifiers: `ctrl`, `shift`, `alt`, `super`). Set to `"off"` to disable the shortcut entirely. Invalid or non-string values fall back to the default. The shortcut binds once at extension load — after changing this value, run `/reload` to re-bind (the collapsed hint text updates on the next repaint, but the old key stays active until `/reload`). |
-| `guidance` | _(absent)_ | LLM guidance overrides (`promptSnippet`, `promptGuidelines`) — optional; absent by default. |
-
-Missing or malformed file falls back to defaults - no config required.
-
-## Overlay
-
-The aboveEditor widget auto-renders whenever any overlay-visible tasks exist.
-Completed tasks stay visible after completion until the next agent response
-starts, then disappear from later overlay renders. Collapse threshold
-defaults to 12 lines (configurable via `maxWidgetLines` — see [Configuration](#configuration)); completed tasks still drop first on overflow, pending tasks
-truncate last. Auto-hides when the list is empty.
-
-Press `ctrl+shift+t` (configurable via `collapseKey` — see
-[Configuration](#configuration)) to collapse the overlay down to its heading
-plus a one-line expand hint; press it again to expand.
-
-## Localization
-
-`rpiv-todo` localizes its TUI chrome (overlay heading, `/todos` section headers, status words) through `@juicesharp/rpiv-i18n` when the SDK is installed. Bundled locales: `de`, `en`, `es`, `fr`, `pt`, `pt-BR`, `ru`, `uk`, `zh`. LLM-facing output (tool response envelope, reducer errors, schema descriptions) stays English by design.
-
-The SDK is a soft optional peer - `rpiv-todo` loads it via dynamic import at module init. If the SDK isn't installed, every render call site returns its inline English fallback and the extension stays online with English UI; no warning, no crash. See the Install section for adding the SDK after the fact. To contribute or override translations, see the `@juicesharp/rpiv-i18n` README "Contributing translations" section.
-
-## License
+# @juicesharp/rpiv-todo
 
 [![npm version](https://img.shields.io/npm/v/@juicesharp/rpiv-todo.svg)](https://www.npmjs.com/package/@juicesharp/rpiv-todo)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-MIT
+<div align="center">
+  <a href="https://github.com/juicesharp/rpiv-mono/tree/main/packages/rpiv-todo">
+    <img src="https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-todo/docs/cover.png" alt="rpiv-todo — a persistent todo overlay for Pi Agent, showing a task panel with completed, in-progress, and pending rows" width="50%">
+  </a>
+</div>
+
+Give the model a task list you can see. `rpiv-todo` adds a `todo` tool, a
+`/todos` command, and a live panel above the editor to
+[Pi Agent](https://github.com/badlogic/pi-mono), so you always know what the
+agent is doing now, what it finished, and what is queued. The list is rebuilt
+from the conversation itself, so it survives `/reload` and compaction — useful
+on long research → design → implement sessions.
+
+## Install
+
+```sh
+pi install npm:@juicesharp/rpiv-todo
+```
+
+Restart your Pi session.
+
+## Quick start
+
+Run `/todos` after the restart to confirm the extension is loaded. On a fresh
+session it prints:
+
+```
+No todos yet. Ask the agent to add some!
+```
+
+Then ask for something with several steps — "add a repository layer with tests,
+and track it as todos". The model calls `todo` and the panel appears above your
+input box, updating as work moves:
+
+![Todo overlay panel: a Todos (2/7) heading above two struck-through completed rows, one in-progress row with its activity label, and four pending rows](https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-todo/docs/overlay.jpg)
+
+Press `ctrl+shift+t` to collapse the panel to its heading plus a one-line hint,
+and again to expand it. Run `/todos` at any time to print the full list grouped
+by status.
+
+## What you get
+
+- **The plan stays on screen.** A panel above the editor shows every task with a
+  status glyph, the label of whatever is in progress, and a `Todos (done/total)`
+  heading — you never have to ask the agent where it is.
+- **Tasks survive `/reload` and compaction.** Each tool call carries the full
+  post-mutation snapshot, and the list is replayed from the session branch. No
+  disk writes, nothing to lose.
+- **Finished work gets out of the way.** Completed rows stay visible for the rest
+  of the turn, then drop at the start of the next one; the panel disappears
+  entirely when the list empties.
+- **The overlay never eats your terminal.** Past the row budget it drops
+  completed tasks first, truncates unfinished ones last, and tells you what it
+  hid with `+3 more (2 completed, 1 pending)`.
+- **The agent can sequence work, not just list it.** `blockedBy` dependencies are
+  validated before anything is written — dangling ids, deleted dependencies,
+  self-blocks, and cycles are all rejected.
+- **Parallel sessions stay separate.** Task state is keyed by session, so a
+  detached or child session can neither read nor overwrite the foreground list.
+- **Localized UI, no setup required.** Nine locales ship with the package and
+  activate when [`@juicesharp/rpiv-i18n`](https://www.npmjs.com/package/@juicesharp/rpiv-i18n)
+  is installed; without it, everything falls back to English.
+
+## Configuration
+
+Optional. Create `~/.config/rpiv-todo/config.json` (or
+`$XDG_CONFIG_HOME/rpiv-todo/config.json` if you set that variable):
+
+```json
+{
+  "maxWidgetLines": 8,
+  "collapseKey": "alt+t"
+}
+```
+
+| Setting | What it does | Default |
+| --- | --- | --- |
+| `maxWidgetLines` | Content rows the overlay may use, heading included. Minimum `3`. Applies on the next repaint. | `12` |
+| `collapseKey` | Key that collapses and expands the panel, in Pi keybinding form (`alt+o`, `ctrl+shift+t`). Set `"off"` to register no shortcut. Needs `/reload` to rebind. | `"ctrl+shift+t"` |
+| `guidance` | Replaces the built-in instructions the extension gives the model about when and how to use the todo list. Needs `/reload`. | _(built-ins)_ |
+
+A missing or malformed file falls back to these defaults. `rpiv-todo` only reads
+this file — it never writes one. Full semantics:
+[Configuration](https://github.com/juicesharp/rpiv-mono/blob/main/packages/rpiv-todo/docs/configuration.md).
+
+## Reference
+
+- [`todo` tool reference](https://github.com/juicesharp/rpiv-mono/blob/main/packages/rpiv-todo/docs/tool-schema.md)
+  — every `todo` parameter, the status machine, the response envelope, and the
+  exact error strings.
+- [Configuration](https://github.com/juicesharp/rpiv-mono/blob/main/packages/rpiv-todo/docs/configuration.md)
+  — config file resolution, option validation rules, and the accepted keybinding
+  grammar.
+- [Overlay and `/todos`](https://github.com/juicesharp/rpiv-mono/blob/main/packages/rpiv-todo/docs/overlay.md)
+  — overlay lifecycle, glyphs, overflow behavior, `/todos` output, and
+  localization.
+
+## Requirements
+
+- A Pi Agent host. No API key, no model selection, no native dependencies.
+- An interactive session for the panel and `/todos`. Headless runs still get the
+  `todo` tool; nothing is rendered.
+- [`@juicesharp/rpiv-i18n`](https://www.npmjs.com/package/@juicesharp/rpiv-i18n)
+  is an optional peer — install it for a localized UI, skip it for English.
+
+## Related
+
+- [`@juicesharp/rpiv-i18n`](https://www.npmjs.com/package/@juicesharp/rpiv-i18n)
+  ([source](https://github.com/juicesharp/rpiv-mono/tree/main/packages/rpiv-i18n))
+  — localizes this extension's UI chrome and adds a `/languages` picker.
+- [`@juicesharp/rpiv-pi`](https://www.npmjs.com/package/@juicesharp/rpiv-pi)
+  ([source](https://github.com/juicesharp/rpiv-mono/tree/main/packages/rpiv-pi))
+  — the umbrella package that installs this extension alongside its siblings.
+
+## License
+
+MIT — see [LICENSE](https://github.com/juicesharp/rpiv-mono/blob/main/packages/rpiv-todo/LICENSE).

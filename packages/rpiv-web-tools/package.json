@@ -50,6 +50,10 @@
 		"index.ts",
 		"web-tools.ts",
 		"providers/",
+		"docs/",
+		"!docs/*.png",
+		"!docs/*.jpg",
+		"!docs/*.svg",
 		"README.md",
 		"LICENSE",
 		"!**/*.test.ts"

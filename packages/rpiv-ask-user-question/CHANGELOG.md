@@ -10,6 +10,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 - Emit `rpiv:ask-user:blocked` (`{ active: boolean }`) while the questionnaire awaits input (TUI `ui.custom` and RPC dialog walker), and clear it in `finally` so external listeners (e.g. Herdr, after they subscribe) can show `blocked` instead of `working`.
 
+### Fixed
+- Collapse toggles now ignore Kitty keyboard repeat and release events, preventing a tap from immediately reopening the questionnaire or a held key from toggling it rapidly in terminals such as cmux/Ghostty.
+
 ## [2.0.0] - 2026-07-21
 
 ### Added
