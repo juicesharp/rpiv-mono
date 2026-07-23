@@ -204,7 +204,7 @@ describe("registerVoiceCommand", () => {
 });
 
 // ── runPreflight: every error stage maps to its i18n key ────────────────────
-describe("handleVoiceCommand — preflight error mapping", () => {
+describe("startVoiceDictation — preflight error mapping", () => {
 	beforeEach(() => {
 		// Re-establish happy-path defaults each test so per-test overrides are
 		// the only divergence from green.
@@ -296,7 +296,7 @@ describe("handleVoiceCommand — preflight error mapping", () => {
 });
 
 // ── Whisper language hint, driven via getActiveLocale → createSttEngine ─────
-describe("handleVoiceCommand — whisper language hint", () => {
+describe("startVoiceDictation — whisper language hint", () => {
 	beforeEach(() => {
 		isModelDownloaded.mockReturnValue(true);
 		assertModelIntact.mockReset();
@@ -344,7 +344,7 @@ describe("handleVoiceCommand — whisper language hint", () => {
 });
 
 // ── Happy path: commit dispatch → pasteToEditor ─────────────────────────────
-describe("handleVoiceCommand — happy path", () => {
+describe("startVoiceDictation — happy path", () => {
 	beforeEach(() => {
 		isModelDownloaded.mockReturnValue(true);
 		assertModelIntact.mockReset();
