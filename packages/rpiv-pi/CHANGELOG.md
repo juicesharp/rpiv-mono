@@ -5,7 +5,7 @@ All notable changes to `@juicesharp/rpiv-pi` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.1.0] - 2026-07-23
 
 ### Changed
 - Bundled skills' `ask_user_question` guidance now matches the runtime's custom-answer behavior: the "Type something." row appears on every question and reserved labels are rejected in every mode.

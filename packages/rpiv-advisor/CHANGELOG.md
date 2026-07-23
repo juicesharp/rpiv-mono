@@ -5,7 +5,7 @@ All notable changes to `@juicesharp/rpiv-advisor` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.1.0] - 2026-07-23
 
 ### Changed
 - Default prompt guidelines now require the executor to surface the advisor's key guidance in the next visible reply after each `advisor` result, so users (including Cursor bridge sessions) are not left with only a collapsed tool card.

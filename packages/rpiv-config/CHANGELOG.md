@@ -1,4 +1,4 @@
-## [Unreleased]
+## [2.1.0] - 2026-07-23
 
 ### Changed
 - README rewritten to follow the documentation standard shared across all packages.

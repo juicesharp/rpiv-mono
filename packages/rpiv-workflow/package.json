@@ -1,6 +1,6 @@
 {
 	"name": "@juicesharp/rpiv-workflow",
-	"version": "2.0.0",
+	"version": "2.1.0",
 	"description": "Pi extension. Chain skills into typed multi-stage workflows with audited JSONL state, predicate routing, and per-stage output validation. Skill-agnostic — bring your own skills.",
 	"keywords": [
 		"pi-package",
@@ -108,7 +108,7 @@
 		]
 	},
 	"dependencies": {
-		"@juicesharp/rpiv-config": "^2.0.0",
+		"@juicesharp/rpiv-config": "^2.1.0",
 		"jiti": "^2.7.0",
 		"typebox": "^1.1.24"
 	},

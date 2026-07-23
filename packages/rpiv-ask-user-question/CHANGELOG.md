@@ -5,7 +5,7 @@ All notable changes to `@juicesharp/rpiv-ask-user-question` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.1.0] - 2026-07-23
 
 ### Added
 - Press `n` to open the notes editor from every question tab — single- or multi-select, with or without option previews — instead of only when the focused option carried a preview. The hint bar now advertises notes on every tab, except while the custom-answer field is capturing typed text.
