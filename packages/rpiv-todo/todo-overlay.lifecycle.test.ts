@@ -196,7 +196,7 @@ describe("TodoOverlay — lifecycle", () => {
 		const initialTheme = colorTheme("initial");
 		const factoryTheme = colorTheme("factory");
 		const switchedTheme = colorTheme("switched");
-		const ui = createMockUI({ theme: initialTheme as never }) as unknown as ExtensionUIContext;
+		const ui = createMockUI({ theme: initialTheme }) as unknown as ExtensionUIContext;
 		overlay.setUICtx(ui);
 		overlay.update();
 		const setWidget = ui.setWidget as ReturnType<typeof vi.fn>;

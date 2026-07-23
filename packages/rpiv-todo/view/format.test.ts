@@ -1,12 +1,13 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
+import { makeTheme } from "@juicesharp/rpiv-test-utils";
 import { describe, expect, it } from "vitest";
 import type { Task } from "../tool/types.js";
 import { formatOverlayTaskLine } from "./format.js";
 
-const recordingTheme = {
-	fg: (color: string, text: string) => `<${color}>${text}</${color}>`,
-	strikethrough: (text: string) => `<strike>${text}</strike>`,
-} as unknown as Theme;
+const recordingTheme = makeTheme({
+	fg: (color, text) => `<${color}>${text}</${color}>`,
+	strikethrough: (text) => `<strike>${text}</strike>`,
+}) as unknown as Theme;
 
 function task(overrides: Partial<Task> = {}): Task {
 	return {

@@ -6,11 +6,13 @@ import type {
 	ExtensionUIContext,
 	RegisteredCommand,
 	SessionEntry,
+	Theme,
 	ToolDefinition,
 	ToolInfo,
 } from "@earendil-works/pi-coding-agent";
 import type { ModelSelection, WorkflowHostContext, WorkflowSessionContext } from "@juicesharp/rpiv-workflow";
 import { vi } from "vitest";
+import type { MockTheme } from "./theme.js";
 
 /**
  * The mock command ctx satisfies BOTH Pi's `ExtensionCommandContext` (so tests
@@ -154,9 +156,13 @@ export interface MockUI {
 	onTerminalInput: ReturnType<typeof vi.fn>;
 	pasteToEditor: ReturnType<typeof vi.fn>;
 	setEditorComponent: ReturnType<typeof vi.fn>;
+	/** Only present when a test passes one in; overlay renders fall back to the factory theme otherwise. */
+	theme?: Theme | MockTheme;
 }
 
-export function createMockUI(overrides: Partial<ExtensionUIContext> = {}): MockUI {
+export function createMockUI(
+	overrides: Partial<Omit<ExtensionUIContext, "theme">> & { theme?: Theme | MockTheme } = {},
+): MockUI {
 	return {
 		notify: vi.fn(),
 		confirm: vi.fn(async () => true),
