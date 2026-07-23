@@ -10,6 +10,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 - Default prompt guidelines now require the executor to surface the advisor's key guidance in the next visible reply after each `advisor` result, so users (including Cursor bridge sessions) are not left with only a collapsed tool card.
 
+### Fixed
+- Route advisor completions through Pi's auth-aware model runtime when available, preserving credential-derived request base URLs such as GitHub Copilot's OAuth proxy endpoint instead of using the static catalog URL. Older hosts retain the compatibility fallback.
+
 ## [2.0.0] - 2026-07-21
 
 ### Added

@@ -74,6 +74,46 @@ describe("executeAdvisor — 4 StopReason branches", () => {
 		expect(r?.details).toMatchObject({ advisorModel: "a:m" });
 	});
 
+	it("uses Pi's auth-aware runtime completion when the host exposes it", async () => {
+		setAdvisorModel({ provider: "a", id: "m" } as never);
+		const { pi, captured } = createMockPi();
+		registerAdvisorTool(pi);
+		const ctx = createMockCtx();
+		const runtime = {
+			completeSimple: vi.fn(function (this: unknown, ..._args: unknown[]) {
+				expect(this).toBe(runtime);
+				return Promise.resolve(resp({ text: "runtime advice" }));
+			}),
+		};
+		// Pi keeps ModelRuntime behind ModelRegistry's runtime-private slot. Keep
+		// this test non-enumerable to mirror that host shape.
+		Object.defineProperty(ctx.modelRegistry, "runtime", { value: runtime });
+
+		const r = await captured.tools.get("advisor")?.execute?.("tc", {}, undefined as never, undefined as never, ctx);
+		expect(r?.content[0]).toMatchObject({ type: "text", text: "runtime advice" });
+		expect(runtime.completeSimple).toHaveBeenCalledTimes(1);
+		expect(completeSimple).not.toHaveBeenCalled();
+		const options = runtime.completeSimple.mock.calls[0]?.[2] as Record<string, unknown> | undefined;
+		expect(options).toHaveProperty("signal", undefined);
+		expect(options).toHaveProperty("reasoning", undefined);
+		expect(options).not.toHaveProperty("apiKey");
+		expect(options).not.toHaveProperty("headers");
+	});
+
+	it("uses the legacy completion path when the host has no runtime facade", async () => {
+		setAdvisorModel({ provider: "a", id: "m" } as never);
+		vi.mocked(completeSimple).mockResolvedValueOnce(resp({ text: "legacy advice" }) as never);
+		const { pi, captured } = createMockPi();
+		registerAdvisorTool(pi);
+		const ctx = createMockCtx();
+
+		const r = await captured.tools.get("advisor")?.execute?.("tc", {}, undefined as never, undefined as never, ctx);
+		expect(r?.content[0]).toMatchObject({ type: "text", text: "legacy advice" });
+		expect(completeSimple).toHaveBeenCalledTimes(1);
+		const options = vi.mocked(completeSimple).mock.calls[0]?.[2] as Record<string, unknown> | undefined;
+		expect(options).toMatchObject({ apiKey: "test-key", headers: {} });
+	});
+
 	it("uses compacted session context instead of raw branch messages", async () => {
 		setAdvisorModel({ provider: "a", id: "m" } as never);
 		vi.mocked(completeSimple).mockResolvedValueOnce(resp({ text: "advice" }) as never);

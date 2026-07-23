@@ -9,6 +9,30 @@
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { getRuntimeCompleteSimple } from "./pi-compat.js";
+
+describe("getRuntimeCompleteSimple", () => {
+	it("returns a method bound to the host runtime", async () => {
+		const runtime = {
+			completeSimple: vi.fn(function (this: unknown) {
+				expect(this).toBe(runtime);
+				return Promise.resolve(undefined as never);
+			}),
+		};
+		const completeSimple = getRuntimeCompleteSimple({ runtime });
+
+		expect(completeSimple).toBeTypeOf("function");
+		if (!completeSimple) throw new Error("expected runtime completion facade");
+		await completeSimple(undefined as never, undefined as never);
+		expect(runtime.completeSimple).toHaveBeenCalledOnce();
+	});
+
+	it("returns undefined for missing or malformed runtime facades", () => {
+		expect(getRuntimeCompleteSimple(undefined)).toBeUndefined();
+		expect(getRuntimeCompleteSimple({ runtime: null })).toBeUndefined();
+		expect(getRuntimeCompleteSimple({ runtime: { completeSimple: "not-a-function" } })).toBeUndefined();
+	});
+});
 
 describe("loadCompleteSimple", () => {
 	afterEach(() => {
