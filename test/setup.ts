@@ -68,6 +68,7 @@ beforeEach(async () => {
 	const advisor = await import("../packages/rpiv-advisor/advisor/index.js");
 	advisor.setAdvisorModel(undefined);
 	advisor.setAdvisorEffort(undefined);
+	advisor.setAdvisorFallbacks([]);
 	advisor.setDisabledForModels([]);
 	advisor.__resetAdvisorAnnounced();
 

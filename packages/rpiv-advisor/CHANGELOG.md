@@ -7,6 +7,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- `fallbackModels` config key: an ordered list of `"provider/modelId"` reviewers the advisor tries when the primary call fails or the model declines. A classifier refusal reaches the extension as `stopReason: "error"` (pi-ai collapses Anthropic's `"refusal"`), so refusals trigger the fallback along with auth failures, thrown errors, and other errors. Intentional aborts do not consume a fallback; if every model fails the last failure is returned. Result `details` gain `fellBackFrom` (the primary) when a fallback served. Config-file driven and preserved across `/advisor` saves. See rpiv-mono#135.
+
 ## [2.1.0] - 2026-07-23
 
 ### Changed

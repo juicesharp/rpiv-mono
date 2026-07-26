@@ -57,3 +57,7 @@ export const msgAdvisorEnabledInactive = (label: string, effort: ThinkingLevel |
 	`Advisor: ${label}${effort ? `, ${effort}` : ""} (inactive for current executor)`;
 export const msgConsulting = (label: string, effort: ThinkingLevel | undefined) =>
 	`Consulting advisor (${label}${effort ? `, ${effort}` : ""})…`;
+export const msgConsultingFallback = (label: string, effort: ThinkingLevel | undefined) =>
+	`Consulting fallback advisor (${label}${effort ? `, ${effort}` : ""})…`;
+export const msgAdvisorFellBack = (fromLabel: string, toLabel: string) =>
+	`Advisor ${fromLabel} did not answer; falling back to ${toLabel}.`;

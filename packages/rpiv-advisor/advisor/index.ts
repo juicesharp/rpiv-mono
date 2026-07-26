@@ -36,4 +36,11 @@ export { ADVISOR_TOOL_NAME } from "./messages.js";
 export { setDisabledForModels } from "./policy.js";
 export { DEFAULT_PROMPT_GUIDELINES, DEFAULT_PROMPT_SNIPPET, registerAdvisorTool } from "./register.js";
 export { __resetAdvisorAnnounced, registerAdvisorSessionStart, restoreAdvisorState } from "./restore.js";
-export { getAdvisorEffort, getAdvisorModel, setAdvisorEffort, setAdvisorModel } from "./state.js";
+export {
+	getAdvisorEffort,
+	getAdvisorFallbacks,
+	getAdvisorModel,
+	setAdvisorEffort,
+	setAdvisorFallbacks,
+	setAdvisorModel,
+} from "./state.js";
