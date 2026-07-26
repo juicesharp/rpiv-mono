@@ -29,6 +29,31 @@ export function __resetAdvisorAnnounced(): void {
 	restoreAnnounced = false;
 }
 
+/**
+ * Resolve config.fallbackModels (provider/id keys) to Model objects, dropping
+ * entries that don't parse, aren't in the registry, or duplicate the primary.
+ * Dedup happens on the canonical slash key AFTER parsing — parseModelKey also
+ * tolerates the legacy "provider:id" form, so comparing raw config strings
+ * would let a colon-form entry smuggle the primary (or a duplicate) into the
+ * chain. Reloads the config so it can run from any primary-change path:
+ * session restore below and the /advisor enable path (command.ts applyEnable).
+ */
+export function resolveAdvisorFallbacks(ctx: ExtensionContext, primary: Model<Api>): void {
+	const seen = new Set<string>([modelKey(primary)]);
+	const resolved: Model<Api>[] = [];
+	for (const key of validateFallbackModels(loadAdvisorConfig().fallbackModels)) {
+		const p = parseModelKey(key);
+		if (!p) continue;
+		const canonical = modelKey({ provider: p.provider, id: p.modelId });
+		if (seen.has(canonical)) continue;
+		const m = ctx.modelRegistry.find(p.provider, p.modelId);
+		if (!m) continue;
+		seen.add(canonical);
+		resolved.push(m);
+	}
+	setAdvisorFallbacks(resolved);
+}
+
 export function restoreAdvisorState(ctx: ExtensionContext, pi: ExtensionAPI): void {
 	const config = loadAdvisorConfig();
 
@@ -49,24 +74,6 @@ export function restoreAdvisorState(ctx: ExtensionContext, pi: ExtensionAPI): vo
 		setAdvisorEffort(undefined);
 		setAdvisorFallbacks([]);
 		reconcileAdvisorTool(pi, ctx, { blocked: true });
-	};
-
-	// Resolve config.fallbackModels (provider/id keys) to Model objects, dropping
-	// entries that don't parse, aren't in the registry, or duplicate the primary.
-	// Called after the primary model is set so the primary can be excluded.
-	const resolveFallbacks = (primary: Model<Api>): void => {
-		const seen = new Set<string>([modelKey(primary)]);
-		const resolved: Model<Api>[] = [];
-		for (const key of validateFallbackModels(config.fallbackModels)) {
-			if (seen.has(key)) continue;
-			const p = parseModelKey(key);
-			if (!p) continue;
-			const m = ctx.modelRegistry.find(p.provider, p.modelId);
-			if (!m) continue;
-			seen.add(key);
-			resolved.push(m);
-		}
-		setAdvisorFallbacks(resolved);
 	};
 
 	if (!config.modelKey) {
@@ -94,7 +101,7 @@ export function restoreAdvisorState(ctx: ExtensionContext, pi: ExtensionAPI): vo
 	}
 
 	setAdvisorModel(model);
-	resolveFallbacks(model);
+	resolveAdvisorFallbacks(ctx, model);
 	if (config.effort) {
 		setAdvisorEffort(config.effort);
 	}

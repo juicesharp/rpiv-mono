@@ -76,8 +76,9 @@ function buildErrorResult(
 	effort: ThinkingLevel | undefined,
 	userText: string,
 	errorMessage: string,
+	fellBackFrom?: string,
 ): AgentToolResult<AdvisorDetails> {
-	return buildAdvisorResult({ text: userText, effort, advisorLabel, errorMessage });
+	return buildAdvisorResult({ text: userText, effort, advisorLabel, errorMessage, fellBackFrom });
 }
 
 export async function executeAdvisor(
@@ -146,7 +147,13 @@ export async function executeAdvisor(
 
 		const auth = await ctx.modelRegistry.getApiKeyAndHeaders(advisor);
 		if (!auth.ok) {
-			lastFailure = buildErrorResult(advisorLabel, effort, errMisconfigured(advisorLabel, auth.error), auth.error);
+			lastFailure = buildErrorResult(
+				advisorLabel,
+				effort,
+				errMisconfigured(advisorLabel, auth.error),
+				auth.error,
+				fellBackFrom,
+			);
 			if (nextModel) {
 				notifyFellBack();
 				continue;
@@ -159,6 +166,7 @@ export async function executeAdvisor(
 				effort,
 				errNoApiKey(advisorLabel),
 				errNoApiKeyDetail(advisor.provider),
+				fellBackFrom,
 			);
 			if (nextModel) {
 				notifyFellBack();
@@ -247,7 +255,7 @@ export async function executeAdvisor(
 			});
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);
-			lastFailure = buildErrorResult(advisorLabel, effort, errCallThrew(message), message);
+			lastFailure = buildErrorResult(advisorLabel, effort, errCallThrew(message), message, fellBackFrom);
 			if (nextModel) {
 				notifyFellBack();
 				continue;

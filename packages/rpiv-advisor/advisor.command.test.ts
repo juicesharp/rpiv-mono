@@ -10,12 +10,14 @@ vi.mock("./advisor-ui.js", () => ({
 import {
 	ADVISOR_TOOL_NAME,
 	getAdvisorEffort,
+	getAdvisorFallbacks,
 	getAdvisorModel,
 	registerAdvisorBeforeAgentStart,
 	registerAdvisorCommand,
 	registerModelSelectHandler,
 	registerThinkingLevelSelectHandler,
 	restoreAdvisorState,
+	setAdvisorFallbacks,
 	setAdvisorModel,
 	setDisabledForModels,
 } from "./advisor/index.js";
@@ -657,5 +659,37 @@ describe("restoreAdvisorState — effort-aware blocklist", () => {
 		restoreAdvisorState(ctx as never, pi);
 		expect(getAdvisorModel()).toBe(modelA);
 		expect(pi.setActiveTools).toHaveBeenCalledWith(expect.arrayContaining([ADVISOR_TOOL_NAME]));
+	});
+});
+
+describe("/advisor — fallback chain maintenance", () => {
+	async function writeConfig(contents: object) {
+		const { writeFileSync, mkdirSync } = await import("node:fs");
+		const { dirname, join } = await import("node:path");
+		const configPath = join(process.env.HOME!, ".config", "rpiv-advisor", "advisor.json");
+		mkdirSync(dirname(configPath), { recursive: true });
+		writeFileSync(configPath, JSON.stringify(contents));
+	}
+
+	it("re-resolves fallbacks on enable, excluding the new primary", async () => {
+		// The chain resolved at session_start excluded the then-current primary.
+		// Picking a model that is itself listed in fallbackModels must not leave
+		// it in its own chain, and the remaining entries must be re-resolved.
+		await writeConfig({ modelKey: "x/y", fallbackModels: ["anthropic/opus", "anthropic/sonnet"] });
+		vi.mocked(showAdvisorPicker).mockResolvedValueOnce("anthropic/opus");
+		const { captured } = register();
+		const ctx = createMockCtx({ hasUI: true, models: [modelA, modelBlocked] });
+		await captured.commands.get("advisor")?.handler("", ctx as never);
+		expect(getAdvisorModel()).toEqual(modelA);
+		expect(getAdvisorFallbacks()).toEqual([modelBlocked]);
+	});
+
+	it("clears the fallback chain on disable", async () => {
+		setAdvisorFallbacks([modelBlocked] as never);
+		vi.mocked(showAdvisorPicker).mockResolvedValueOnce("__no_advisor__");
+		const { captured } = register();
+		const ctx = createMockCtx({ hasUI: true, models: [modelA] });
+		await captured.commands.get("advisor")?.handler("", ctx as never);
+		expect(getAdvisorFallbacks()).toEqual([]);
 	});
 });

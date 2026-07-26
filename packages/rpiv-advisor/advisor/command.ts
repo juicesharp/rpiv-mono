@@ -30,7 +30,8 @@ import {
 	XHIGH_EFFORT_LEVEL,
 } from "./messages.js";
 import { isExecutorBlocked } from "./policy.js";
-import { getAdvisorEffort, getAdvisorModel, setAdvisorEffort, setAdvisorModel } from "./state.js";
+import { resolveAdvisorFallbacks } from "./restore.js";
+import { getAdvisorEffort, getAdvisorModel, setAdvisorEffort, setAdvisorFallbacks, setAdvisorModel } from "./state.js";
 
 function buildModelItems(availableModels: Model<Api>[], currentKey: string | undefined): SelectItem[] {
 	const items: SelectItem[] = availableModels.map((m) => {
@@ -69,6 +70,10 @@ function applyDisable(pi: ExtensionAPI, ctx: ExtensionContext): void {
 	}
 	setAdvisorModel(undefined);
 	setAdvisorEffort(undefined);
+	// Clear the fallback chain too — mirrors restore.ts deactivate(). Leaving it
+	// stale would hand the next applyEnable a chain resolved against a different
+	// primary.
+	setAdvisorFallbacks([]);
 	const active = pi.getActiveTools();
 	if (active.includes(ADVISOR_TOOL_NAME)) {
 		pi.setActiveTools(active.filter((n) => n !== ADVISOR_TOOL_NAME));
@@ -92,6 +97,12 @@ function applyEnable(
 	}
 	setAdvisorEffort(effort);
 	setAdvisorModel(picked);
+	// Re-resolve the fallback chain against the NEW primary. The chain resolved
+	// at session_start excluded the then-current primary — without this, picking
+	// a model that is itself listed in fallbackModels would put it in its own
+	// chain (retrying the very model that just refused), and the old primary
+	// would stay wrongly excluded until the next session start.
+	resolveAdvisorFallbacks(ctx, picked);
 
 	const blocked = isExecutorBlocked(ctx, pi.getThinkingLevel());
 	reconcileAdvisorTool(pi, ctx, { blocked });

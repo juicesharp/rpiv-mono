@@ -106,15 +106,17 @@ refuses again — you want a different model. `fallbackModels` is an ordered lis
 of reviewers the advisor tries, in order, when the primary call fails or the
 model declines:
 
-- Each entry is resolved to a model at session start; unknown or duplicate
-  entries are skipped.
+- Each entry is resolved to a model at session start, and re-resolved whenever
+  the primary changes through `/advisor`; unknown or duplicate entries
+  (including the primary itself, in either key form) are skipped.
 - The chain advances on a hard failure of an attempt: an auth failure, a thrown
   error, or `stopReason: "error"`. Pi maps an Anthropic refusal to
   `stopReason: "error"`, so refusals trigger the fallback too.
 - An intentional abort (user cancel) stops immediately and does not consume a
   fallback. If every model fails, the last failure is returned.
-- The result's `details.advisorModel` names the model that answered, and
-  `details.fellBackFrom` names the primary when a fallback served.
+- The result's `details.advisorModel` names the model that served the call (on
+  failure, the last one attempted), and `details.fellBackFrom` names the
+  primary whenever a fallback was attempted.
 
 ## Reference
 
