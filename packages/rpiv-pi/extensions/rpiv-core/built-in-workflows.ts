@@ -1301,9 +1301,12 @@ const sliceStructureCheck = ({ state, cwd }: ScriptContext): Omit<Output, "meta"
  * `_<k>` cluster ordinal a partial sub-plan carries in its basename
  * (`<slug>_cluster-<k>.md`), emitted by `synthesize`'s partial mode from the
  * `--cluster <k>` the fanout threads on every cluster unit. The token a
- * `subplan-check` reconciliation keys dispatched sub-plans on.
+ * `subplan-check` reconciliation keys dispatched sub-plans on. Anchored to the
+ * basename TAIL (extension optional — extensionless agent writes happen, see
+ * the implement-scope floor precedent) so a name carrying several `_cluster-`
+ * tokens binds the trailing one deterministically, not the first match.
  */
-const CLUSTER_TOKEN_RE = /_cluster-(\d+)/;
+const CLUSTER_TOKEN_RE = /_cluster-(\d+)(?:\.\w+)?$/;
 
 /**
  * Deterministic subplan cluster-coverage floor — the structural backstop between
@@ -1320,16 +1323,27 @@ const CLUSTER_TOKEN_RE = /_cluster-(\d+)/;
  *     `_cluster-<k>` token; a tokenless name means `synthesize` dropped the
  *     `--cluster <k>` flag and the merge can't attribute it to a cluster.
  *   • duplicate/clobbered ordinal — two dispatched sub-plans sharing the same
- *     `<k>` (a clobber, not a legitimate re-emit: the fanout's produces-channel
- *     slot is REPLACED each round via `placeFanoutOutput`, so within one round
- *     every unit index is a distinct artifact — a shared `<k>` is a real
- *     collision, the lost-cluster bug itself).
+ *     `<k>` (a clobber, not a legitimate re-emit: `placeFanoutOutput` overwrites
+ *     each unit's own index in the channel slot, so within one round every unit
+ *     index is a distinct artifact — a shared `<k>` is a real collision, the
+ *     lost-cluster bug itself).
  *   • sources-coverage — every slice's design must appear in SOME sub-plan's
  *     `sources:` (the fanout threads each `--designs <path>` and `synthesize`
  *     echoes them into `sources:`). Designs follow the `_slice-<N>` convention, so
  *     the covered slice set is read off `sources:` and reconciled against the full
  *     slice map; a slice whose design no sub-plan lists is a slice the merge would
- *     silently drop.
+ *     silently drop. A sub-plan whose frontmatter does not PARSE gets its own
+ *     re-dispatchable finding naming the FILE (never a `FAIL_SCRIPT_THREW` halt —
+ *     the same stray-colon class `artifact-collector` degrades on), and the
+ *     per-slice reconciliation defers until every sub-plan parses, so a parse
+ *     failure is never mis-blamed on the slices it happened to cover.
+ * Preflight: a slice with NO design on the `designs` channel halts LOUD before
+ * any reconciliation — the fanout drops (or under-feeds) its cluster pre-dispatch
+ * (`if (!designs.length) return undefined`), so re-dispatching `subplan` re-drops
+ * it every round until `maxBackwardJumps` exhausts with a diagnostic naming the
+ * refused re-entry instead of the cause. The missing design is upstream
+ * (`slice-design`/`design-review`) and unreachable from this loop's backward
+ * edge; halting here names the actual defect and spends no jump budget.
  * Emits `severity: pass ? "none" : "high"` (load-bearing — the route routes via
  * `allDimensionsPass`/`subplanGatePasses`, whose severity floor silently passes a
  * `pass:false` verdict rated `low`/`none`; a lost cluster MUST rate `high` or it
@@ -1354,16 +1368,33 @@ const subplanCoverageCheck = ({ state, cwd }: ScriptContext): Omit<Output, "meta
 	// post-drop dispatched count. The fanout drops a zero-design cluster
 	// (`if (!designs.length) return undefined` in SYNTH_CLUSTER_FANOUT's units);
 	// design-review catches those upstream, so a healthy run lands here with
-	// pre-filter == dispatched.
+	// pre-filter == dispatched — an invariant the missing-design preflight below
+	// enforces loudly rather than assumes.
 	const expectedK = clusterSliceDag(records).length;
 	const sliceNumbers = new Set(records.map((r) => r.n));
+
+	// A slice with no design cannot be repaired by the backward edge: the fanout
+	// drops a zero-design cluster pre-dispatch, so every `subplan` re-dispatch
+	// reproduces the identical gap until maxBackwardJumps exhausts blaming the
+	// re-entry. Halt loud at the floor instead, naming the upstream cause.
+	const designBySlice = designPathsBySlice(state);
+	const undesigned = [...sliceNumbers].filter((n) => !designBySlice.has(n)).sort((a, b) => a - b);
+	if (undesigned.length > 0) {
+		throw haltPreflight(
+			"subplan-check",
+			`subplan-check: slice(s) ${undesigned.join(", ")} have no design on the 'designs' channel`,
+			`subplan-check: slice(s) ${undesigned.join(", ")} in the slice map have no design artifact on the 'designs' channel, so the cluster fanout dropped (or under-fed) their cluster(s) before dispatch. Re-dispatching 'subplan' cannot repair this — no sub-plan can list a design that was never produced. The missing design(s) come from upstream ('slice-design' emits, 'design-review' re-emits the accepted docs); investigate why they never reached the 'designs' channel.`,
+		);
+	}
 
 	const findings: { detail: string; where: string }[] = [];
 
 	// Dispatched sub-plan basenames + their cluster ordinals. The `subplans` slot
-	// is a produces-fanout channel (REPLACED each round via placeFanoutOutput), so
-	// iterating it reflects ONLY the current dispatch round — no cross-round
-	// accumulation, so a re-dispatch's fresh artifacts re-evaluate cleanly.
+	// is a produces-fanout channel: `placeFanoutOutput` pre-sizes it to the round's
+	// unit total and overwrites each unit's own index, so with a stable unit set
+	// iterating it reflects the latest output per unit — a re-dispatch's fresh
+	// artifacts re-evaluate cleanly. (A unit that FAILS on re-dispatch leaves its
+	// prior-round output at its index; that stale entry re-reads as current here.)
 	const dispatched: { path: string; k: number }[] = [];
 	for (const out of state.named.subplans ?? []) {
 		for (const a of out.artifacts) {
@@ -1412,12 +1443,32 @@ const subplanCoverageCheck = ({ state, cwd }: ScriptContext): Omit<Output, "meta
 	// sources-coverage — every slice's design must appear in SOME sub-plan's
 	// `sources:`. Designs follow the `_slice-<N>` convention, so the covered slice
 	// set is read off `sources:` and reconciled against the full slice map.
+	// `parseFrontmatter` throws on an agent-authored scalar smuggling a bare `: `
+	// — the same class `artifact-collector` degrades on (its collector fed this
+	// very channel by ACCEPTING the file). An escaped throw here would convert
+	// the stray colon into a terminal FAIL_SCRIPT_THREW halt, so degrade it to a
+	// re-dispatchable finding naming the FILE — distinct from a slice genuinely
+	// unlisted in `sources:` — and defer the per-slice reconciliation until every
+	// sub-plan parses (an unreadable sub-plan's coverage is unknowable; blaming
+	// its slices would misdirect the repair).
 	const coveredSlices = new Set<number>();
+	let unparseable = false;
 	for (const out of state.named.subplans ?? []) {
 		for (const a of out.artifacts) {
 			if (a.handle.kind !== "fs") continue;
-			const { frontmatter } = parseFrontmatter(readArtifactFile(handleToString(a.handle), cwd));
-			const sources = (frontmatter as Record<string, unknown>).sources;
+			let frontmatter: unknown;
+			try {
+				({ frontmatter } = parseFrontmatter(readArtifactFile(handleToString(a.handle), cwd)));
+			} catch {
+				unparseable = true;
+				findings.push({
+					detail: `Unparseable frontmatter in sub-plan ${basename(a.handle.path)} — its YAML frontmatter does not parse (typically a bare ': ' inside an unquoted scalar), so its 'sources:' coverage cannot be read. Re-dispatch the cluster and re-write the sub-plan with parseable frontmatter listing every '--designs' path in 'sources:'.`,
+					where: basename(a.handle.path),
+				});
+				continue;
+			}
+			const fm = frontmatter && typeof frontmatter === "object" ? (frontmatter as Record<string, unknown>) : {};
+			const sources = fm.sources;
 			if (!Array.isArray(sources)) continue;
 			for (const s of sources) {
 				if (typeof s !== "string") continue;
@@ -1426,12 +1477,14 @@ const subplanCoverageCheck = ({ state, cwd }: ScriptContext): Omit<Output, "meta
 			}
 		}
 	}
-	for (const n of [...sliceNumbers].sort((a, b) => a - b)) {
-		if (!coveredSlices.has(n)) {
-			findings.push({
-				detail: `Slice ${n} design absent from every sub-plan's 'sources:' — the cluster fanout threads each '--designs <path>' and 'synthesize' echoes them into 'sources:'; a slice whose design no sub-plan lists is one the root merge would silently drop. List every '--designs' path in its sub-plan's 'sources:'.`,
-				where: `sources: slice ${n}`,
-			});
+	if (!unparseable) {
+		for (const n of [...sliceNumbers].sort((a, b) => a - b)) {
+			if (!coveredSlices.has(n)) {
+				findings.push({
+					detail: `Slice ${n} design absent from every sub-plan's 'sources:' — the cluster fanout threads each '--designs <path>' and 'synthesize' echoes them into 'sources:'; a slice whose design no sub-plan lists is one the root merge would silently drop. List every '--designs' path in its sub-plan's 'sources:'.`,
+					where: `sources: slice ${n}`,
+				});
+			}
 		}
 	}
 

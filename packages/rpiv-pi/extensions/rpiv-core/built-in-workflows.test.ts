@@ -2840,6 +2840,15 @@ describe("build subplan-check (deterministic cluster-coverage floor)", () => {
 		);
 	// The slice-map Output envelope — the file is already on disk (twoClusters).
 	const mapOut = () => ({ artifacts: [{ handle: fsHandle(sliceMap) }], data: undefined, kind: "", meta: {} });
+	// Design artifacts for the given slices on the `designs` channel — the fanout's
+	// dispatch precondition the coverage check preflights (a slice with no design
+	// is unrepairable by re-dispatching `subplan`, so the floor halts loud).
+	const designsOut = (slices: number[] = [1, 2]) => ({
+		artifacts: slices.map((n) => ({ handle: fsHandle(`.rpiv/artifacts/designs/d_slice-${n}.md`) })),
+		data: undefined,
+		kind: "",
+		meta: {},
+	});
 	// A sub-plan body: `cluster` is the _cluster-<k> ordinal carried in the BASENAME
 	// by the caller's `rel`, and `sources` is the slice numbers whose designs it lists.
 	const subplanBody = (cluster: number, sources: number[]) =>
@@ -2860,7 +2869,7 @@ describe("build subplan-check (deterministic cluster-coverage floor)", () => {
 		const data = subplanCheckRun()({
 			cwd: tmpDir,
 			input: undefined,
-			state: { named: { slices: [mapOut()], subplans: [a, b] } } as unknown as RunView,
+			state: { named: { slices: [mapOut()], designs: [designsOut()], subplans: [a, b] } } as unknown as RunView,
 		}).data;
 		expect(data.dimension).toBe("structure");
 		expect(data.pass).toBe(true);
@@ -2878,7 +2887,7 @@ describe("build subplan-check (deterministic cluster-coverage floor)", () => {
 		const data = subplanCheckRun()({
 			cwd: tmpDir,
 			input: undefined,
-			state: { named: { slices: [mapOut()], subplans: [a, b] } } as unknown as RunView,
+			state: { named: { slices: [mapOut()], designs: [designsOut()], subplans: [a, b] } } as unknown as RunView,
 		}).data;
 		expect(data.pass).toBe(false);
 		expect(data.severity).toBe("high");
@@ -2894,7 +2903,7 @@ describe("build subplan-check (deterministic cluster-coverage floor)", () => {
 		const data = subplanCheckRun()({
 			cwd: tmpDir,
 			input: undefined,
-			state: { named: { slices: [mapOut()], subplans: [a] } } as unknown as RunView,
+			state: { named: { slices: [mapOut()], designs: [designsOut()], subplans: [a] } } as unknown as RunView,
 		}).data;
 		expect(data.pass).toBe(false);
 		expect(data.severity).toBe("high");
@@ -2910,7 +2919,7 @@ describe("build subplan-check (deterministic cluster-coverage floor)", () => {
 		const data = subplanCheckRun()({
 			cwd: tmpDir,
 			input: undefined,
-			state: { named: { slices: [mapOut()], subplans: [a, b] } } as unknown as RunView,
+			state: { named: { slices: [mapOut()], designs: [designsOut()], subplans: [a, b] } } as unknown as RunView,
 		}).data;
 		expect(data.pass).toBe(false);
 		expect(data.severity).toBe("high");
@@ -2928,12 +2937,68 @@ describe("build subplan-check (deterministic cluster-coverage floor)", () => {
 		const data = subplanCheckRun()({
 			cwd: tmpDir,
 			input: undefined,
-			state: { named: { slices: [mapOut()], subplans: [a, b] } } as unknown as RunView,
+			state: { named: { slices: [mapOut()], designs: [designsOut()], subplans: [a, b] } } as unknown as RunView,
 		}).data;
 		expect(data.pass).toBe(false);
 		expect(data.severity).toBe("high");
 		expect(findingDetails(data)).toMatch(/Slice 2 design absent from every sub-plan's 'sources:'/);
 		expect(findingWheres(data)).toContain("sources: slice 2");
+	});
+
+	it("degrades unparseable sub-plan frontmatter to a re-dispatchable finding (never a script throw) and defers slice coverage", () => {
+		twoClusters();
+		const a = write(".rpiv/artifacts/subplans/t_cluster-1.md", subplanBody(1, [1]));
+		// A bare ': ' inside an unquoted scalar — the stray-colon class
+		// artifact-collector degrades on. parseFrontmatter throws on it; the floor
+		// must catch, not escape as FAIL_SCRIPT_THREW.
+		const b = write(
+			".rpiv/artifacts/subplans/t_cluster-2.md",
+			"---\ntarget: foo (lane UI: L0-L2)\nsources: [.rpiv/artifacts/designs/d_slice-2.md]\n---\n# Sub-plan\n",
+		);
+		const data = subplanCheckRun()({
+			cwd: tmpDir,
+			input: undefined,
+			state: { named: { slices: [mapOut()], designs: [designsOut()], subplans: [a, b] } } as unknown as RunView,
+		}).data;
+		expect(data.pass).toBe(false);
+		expect(data.severity).toBe("high");
+		expect(findingDetails(data)).toMatch(/Unparseable frontmatter in sub-plan t_cluster-2\.md/);
+		expect(findingWheres(data)).toContain("t_cluster-2.md");
+		// Coverage is unknowable while a sub-plan is unreadable — the parse failure
+		// must not be mis-blamed on the slices it happened to cover.
+		expect(findingDetails(data)).not.toMatch(/design absent from every sub-plan's 'sources:'/);
+	});
+
+	it("halts loud (haltPreflight) when a slice has no design on the designs channel, naming the upstream cause", () => {
+		twoClusters();
+		// Both clusters dispatched with full sources coverage — the ONLY defect is
+		// the missing slice-2 design, which no subplan re-dispatch can produce.
+		const a = write(".rpiv/artifacts/subplans/t_cluster-1.md", subplanBody(1, [1]));
+		const b = write(".rpiv/artifacts/subplans/t_cluster-2.md", subplanBody(2, [2]));
+		expect(() =>
+			subplanCheckRun()({
+				cwd: tmpDir,
+				input: undefined,
+				state: {
+					named: { slices: [mapOut()], designs: [designsOut([1])], subplans: [a, b] },
+				} as unknown as RunView,
+			}),
+		).toThrow(/slice\(s\) 2 .* no design/);
+	});
+
+	it("binds the trailing _cluster-<k> token (tail-anchored) and accepts extensionless basenames", () => {
+		twoClusters();
+		// Extensionless write (the implement-scope floor precedent) still binds k=1;
+		// a name carrying two tokens binds the TRAILING one (k=2), not first-match.
+		const a = write(".rpiv/artifacts/subplans/t_cluster-1", subplanBody(1, [1]));
+		const b = write(".rpiv/artifacts/subplans/t_cluster-1_cluster-2.md", subplanBody(2, [2]));
+		const data = subplanCheckRun()({
+			cwd: tmpDir,
+			input: undefined,
+			state: { named: { slices: [mapOut()], designs: [designsOut()], subplans: [a, b] } } as unknown as RunView,
+		}).data;
+		expect(data.pass).toBe(true);
+		expect(data.findings).toEqual([]);
 	});
 
 	it("writes the verdict basename-keyed to VERDICT_DIR as kind:json dimension:structure", () => {
@@ -2943,7 +3008,7 @@ describe("build subplan-check (deterministic cluster-coverage floor)", () => {
 		const res = subplanCheckRun()({
 			cwd: tmpDir,
 			input: undefined,
-			state: { named: { slices: [mapOut()], subplans: [a, b] } } as unknown as RunView,
+			state: { named: { slices: [mapOut()], designs: [designsOut()], subplans: [a, b] } } as unknown as RunView,
 		});
 		expect(res.kind).toBe("json");
 		// Basename-keyed off the slice map ⇒ subplan-check__m.json
@@ -2971,7 +3036,7 @@ describe("build subplan-check (deterministic cluster-coverage floor)", () => {
 		const verdict = subplanCheckRun()({
 			cwd: tmpDir,
 			input: undefined,
-			state: { named: { slices: [mapOut()], subplans: [a] } } as unknown as RunView,
+			state: { named: { slices: [mapOut()], designs: [designsOut()], subplans: [a] } } as unknown as RunView,
 		});
 		expect(verdict.data.pass).toBe(false);
 		expect(verdict.data.severity).toBe("high");
