@@ -1,7 +1,7 @@
 ---
 name: synthesize
 description: Merge N independent per-slice designs (plus the research they rest on) into ONE coherent phased plan in .rpiv/artifacts/plans/ — reconciling cross-slice overlaps, wiring inter-slice integration, and ordering phases by slice dependencies. Single-pass, no subagents, no self-review. The fan-in barrier of a fanout-and-synthesize flow — one phase per slice, plan-compatible so implement/validate consume it unchanged. For large slice maps it also runs hierarchically — as a per-cluster partial (`--as-subplan` turns designs into a subplan) and as the root merge (`--subplans` turns subplans into a plan) — so no single pass must hold every design at once. Use after a per-slice design fanout.
-argument-hint: "--designs <path>... [--research <path>] [--as-subplan]  |  --subplans <path>... [--research <path>]"
+argument-hint: "--designs <path>... [--research <path>] [--as-subplan] [--cluster <k>]  |  --subplans <path>... [--research <path>]"
 allowed-tools: Read, Grep, Glob, Write
 shell-timeout: 10
 disable-model-invocation: true
@@ -57,6 +57,7 @@ You merge several independent per-slice designs into **one coherent phased plan*
 - `--subplans <path>` **(repeats)** — partial sub-plans from a cluster fanout (root mode).
 - `--research <path>` *(optional)* — the research the slices rest on, for cross-slice constraints.
 - `--as-subplan` *(flag)* — emit a **sub-plan** (partial mode) instead of a full plan.
+- `--cluster <k>` *(optional, partial mode)* — the ordinal written into the sub-plan's `_cluster-<k>.md` filename. The cluster fanout supplies it; for manual partial invocation pick an unused `<k>` (scan `.rpiv/artifacts/subplans/` for existing `*_cluster-<k>.md` and take the next unused positive integer) so a re-dispatched pass writes a distinct file and never clobbers a sibling sub-plan.
 
 If neither `--designs` nor `--subplans` is present, print an error and stop.
 
@@ -103,7 +104,7 @@ This skill is **non-interactive**: when a conflict can't be cleanly resolved, ma
 ## Output document
 
 **Flat / root mode** → Path: `.rpiv/artifacts/plans/<slug>_<topic>.md`.
-**Partial mode** (`--as-subplan`) → Path: `.rpiv/artifacts/subplans/<slug>_cluster-<k>.md`, with the same body shape plus a `summary:` scalar and an `exports:` list in frontmatter, e.g.:
+**Partial mode** (`--as-subplan`) → Path: `.rpiv/artifacts/subplans/<slug>_cluster-<k>.md` — `<k>` is the verbatim `--cluster <k>` value (the cluster fanout always supplies it; for manual partial invocation pick an unused `<k>`: scan `.rpiv/artifacts/subplans/` for existing `*_cluster-<k>.md` and take the next unused positive integer, so a re-dispatched pass never clobbers a sibling sub-plan). Same body shape plus a `summary:` scalar and an `exports:` list in frontmatter, e.g.:
 
 ```yaml
 summary: "<one-paragraph what this cluster delivers>"
@@ -165,3 +166,4 @@ tags: [plan, synthesized]
 - **Reconcile, don't redesign.** Preserve each slice's decisions; only resolve where slices collide or must connect.
 - **Plan-compatible output.** Phases + Success Criteria in the standard plan shape so `implement` and `validate` consume it with no changes.
 - **No subagents. No self-review. No questions.** Merge, record open risks in Synthesis Notes, write.
+- **`sources:` lists every `--designs` path.** In partial mode especially (each cluster sub-plan lists its own `--designs` paths), the frontmatter `sources:` array MUST contain every `--designs <path>` the orchestrator threaded in — and the `--research` path when given. Omitting one hides a slice from the `subplan-check` cluster-coverage floor, which reconciles dispatched sub-plans against the slice map by reading `sources:` (a design whose slice appears in no sub-plan's `sources:` routes the whole cluster fanout back to a re-dispatch). Mirror the plan template's `sources: [<each --designs path>, <--research path>]` exactly.

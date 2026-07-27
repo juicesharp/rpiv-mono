@@ -2720,6 +2720,38 @@ describe("build subplan cluster fanout (research threading + fail-loud mapping)"
 		expect(units.every((u) => u.prompt.includes("--as-subplan"))).toBe(true);
 	});
 
+	// Phase 1 — the cluster ordinal threads into each subplan unit's prompt so a
+	// re-dispatched fanout unit writes a distinct `_cluster-<k>.md` (never
+	// clobbering a sibling's same-timestamped file). `<k>` is the unit's ordinal
+	// and MUST match its `id: cluster-<k>`.
+	it("appends --cluster <k> to every subplan unit, <k> matching its id (cluster-<k>)", async () => {
+		twoIndependentSlices();
+		const units = await subplanLoop().units({
+			cwd: tmpDir,
+			artifact: undefined,
+			state: {
+				named: {
+					slices: [out(sliceMap)],
+					designs: [out(".rpiv/artifacts/designs/d_slice-1.md"), out(".rpiv/artifacts/designs/d_slice-2.md")],
+				},
+			} as unknown as RunView,
+		});
+		expect(units.length).toBeGreaterThan(0);
+		const ks = units.map((u) => {
+			const k = u.prompt.match(/--cluster\s+(\d+)/)?.[1];
+			const idK = u.id?.match(/^cluster-(\d+)$/)?.[1];
+			expect(k).toBeDefined();
+			expect(idK).toBeDefined();
+			// `<k>` in the prompt equals the unit's ordinal, surfaced as `id: cluster-<k>`.
+			expect(k).toBe(idK);
+			return k;
+		});
+		// Distinct `<k>` across units — the actual collision fix: no two units share
+		// an ordinal, so two same-timestamped sub-plan files never clobber.
+		expect(new Set(ks).size).toBe(ks.length);
+		expect(units.every((u) => u.prompt.includes("--as-subplan"))).toBe(true);
+	});
+
 	it("build plan stage reads research alongside the subplans fan-in (finding 4)", () => {
 		expect(findWorkflow("build").stages.plan?.reads).toEqual(["research", fanin("subplans")]);
 	});
@@ -2764,6 +2796,219 @@ describe("build subplan cluster fanout (research threading + fail-loud mapping)"
 		const slice1Unit = units.find((u) => u.prompt.includes("slice-1"));
 		expect(slice1Unit?.prompt).toContain("--designs .rpiv/artifacts/designs/b_slice-1.md");
 		expect(slice1Unit?.prompt).not.toContain("a_slice-1.md");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// subplanCoverageCheck — deterministic cluster-coverage floor between the
+// cluster fanout and the root merge (twin of slice-check).
+// ---------------------------------------------------------------------------
+
+describe("build subplan-check (deterministic cluster-coverage floor)", () => {
+	let tmpDir: string;
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "rpiv-build-subplan-check-"));
+	});
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	const subplanCheckRun = () => {
+		const stage = findWorkflow("build").stages["subplan-check"];
+		if (!stage?.run) throw new Error("build subplan-check stage has no run function");
+		return stage.run as (ctx: { cwd: string; input?: undefined; state: RunView }) => {
+			artifacts: readonly { handle: { kind: string; path: string } }[];
+			data: Record<string, unknown>;
+			kind: string;
+		};
+	};
+	// Write a file under tmpDir and return the Output envelope that references it.
+	// The stage resolves the handle path against cwd (tmpDir) and reads the body.
+	const write = (rel: string, body: string) => {
+		const parts = rel.split("/");
+		mkdirSync(join(tmpDir, ...parts.slice(0, -1)), { recursive: true });
+		writeFileSync(join(tmpDir, rel), body);
+		return { artifacts: [{ handle: fsHandle(rel) }], data: undefined, kind: "", meta: {} };
+	};
+	// Two independent slices ⇒ two single-slice clusters (expectedK = 2). Written
+	// to disk so the stage can parse its slices: frontmatter.
+	const sliceMap = ".rpiv/artifacts/slices/m.md";
+	const twoClusters = () =>
+		write(
+			sliceMap,
+			`---\nstatus: ready\nslice_count: 2\nslices:\n  - { n: 1, title: A, deps: [] }\n  - { n: 2, title: B, deps: [] }\n---\n## Slice 1: A\n## Slice 2: B\n`,
+		);
+	// The slice-map Output envelope — the file is already on disk (twoClusters).
+	const mapOut = () => ({ artifacts: [{ handle: fsHandle(sliceMap) }], data: undefined, kind: "", meta: {} });
+	// A sub-plan body: `cluster` is the _cluster-<k> ordinal carried in the BASENAME
+	// by the caller's `rel`, and `sources` is the slice numbers whose designs it lists.
+	const subplanBody = (cluster: number, sources: number[]) =>
+		`---\nstatus: ready\nphase_count: 1\nphases:\n  - { n: 1, title: C${cluster} }${
+			sources.length > 0
+				? `\nsources: [${sources.map((n) => `.rpiv/artifacts/designs/d_slice-${n}.md`).join(", ")}]`
+				: "\nsources: []"
+		}\n---\n# Sub-plan\n## Phase 1: C${cluster}\n`;
+	const findingDetails = (data: Record<string, unknown>) =>
+		((data.findings as { detail: string; where: string }[] | undefined) ?? []).map((f) => f.detail).join(" ");
+	const findingWheres = (data: Record<string, unknown>) =>
+		((data.findings as { detail: string; where: string }[] | undefined) ?? []).map((f) => f.where);
+
+	it("passes when K expected clusters yield K distinct _cluster-<k> sub-plans + full sources coverage", () => {
+		twoClusters();
+		const a = write(".rpiv/artifacts/subplans/t_cluster-1.md", subplanBody(1, [1]));
+		const b = write(".rpiv/artifacts/subplans/t_cluster-2.md", subplanBody(2, [2]));
+		const data = subplanCheckRun()({
+			cwd: tmpDir,
+			input: undefined,
+			state: { named: { slices: [mapOut()], subplans: [a, b] } } as unknown as RunView,
+		}).data;
+		expect(data.dimension).toBe("structure");
+		expect(data.pass).toBe(true);
+		expect(data.severity).toBe("none");
+		expect(data.findings).toEqual([]);
+	});
+
+	it("fails (pass:false, severity:high) on a duplicate/clobbered _cluster-<k>", () => {
+		twoClusters();
+		// Both dispatched sub-plans claim cluster-1 → a clobber collision; the
+		// sources still cover both slices, so only the duplicate (+ the missing
+		// cluster it implies) fires.
+		const a = write(".rpiv/artifacts/subplans/t_cluster-1.md", subplanBody(1, [1]));
+		const b = write(".rpiv/artifacts/subplans/u_cluster-1.md", subplanBody(1, [2]));
+		const data = subplanCheckRun()({
+			cwd: tmpDir,
+			input: undefined,
+			state: { named: { slices: [mapOut()], subplans: [a, b] } } as unknown as RunView,
+		}).data;
+		expect(data.pass).toBe(false);
+		expect(data.severity).toBe("high");
+		expect(findingWheres(data)).toContain("cluster-1");
+		expect(findingDetails(data)).toMatch(/Duplicate\/clobbered cluster-1/);
+	});
+
+	it("fails (pass:false, severity:high) on a missing cluster (expected 2, dispatched 1)", () => {
+		twoClusters();
+		// One cluster dispatched, but its sources cover BOTH slices — isolating the
+		// count check from the sources-coverage check.
+		const a = write(".rpiv/artifacts/subplans/t_cluster-1.md", subplanBody(1, [1, 2]));
+		const data = subplanCheckRun()({
+			cwd: tmpDir,
+			input: undefined,
+			state: { named: { slices: [mapOut()], subplans: [a] } } as unknown as RunView,
+		}).data;
+		expect(data.pass).toBe(false);
+		expect(data.severity).toBe("high");
+		expect(findingDetails(data)).toMatch(/Missing cluster coverage/);
+		expect(findingWheres(data)).toContain("clusters (expected 2, dispatched 1)");
+	});
+
+	it("fails (pass:false, severity:high) on a tokenless sub-plan basename", () => {
+		twoClusters();
+		const a = write(".rpiv/artifacts/subplans/t_cluster-1.md", subplanBody(1, [1]));
+		// Tokenless: no _cluster-<k> token in the basename.
+		const b = write(".rpiv/artifacts/subplans/tokenless.md", subplanBody(2, [2]));
+		const data = subplanCheckRun()({
+			cwd: tmpDir,
+			input: undefined,
+			state: { named: { slices: [mapOut()], subplans: [a, b] } } as unknown as RunView,
+		}).data;
+		expect(data.pass).toBe(false);
+		expect(data.severity).toBe("high");
+		expect(findingDetails(data)).toMatch(/Tokenless sub-plan basename tokenless\.md/);
+		expect(findingWheres(data)).toContain("tokenless.md");
+	});
+
+	it("fails (pass:false, severity:high) when a slice's design is absent from every sources:", () => {
+		twoClusters();
+		// cluster-1 lists slice 1; cluster-2 lists NO sources — so slice 2's design
+		// is absent from every sub-plan's sources:. Counts still match (2 clusters,
+		// 2 distinct tokens), isolating the sources-coverage check.
+		const a = write(".rpiv/artifacts/subplans/t_cluster-1.md", subplanBody(1, [1]));
+		const b = write(".rpiv/artifacts/subplans/t_cluster-2.md", subplanBody(2, []));
+		const data = subplanCheckRun()({
+			cwd: tmpDir,
+			input: undefined,
+			state: { named: { slices: [mapOut()], subplans: [a, b] } } as unknown as RunView,
+		}).data;
+		expect(data.pass).toBe(false);
+		expect(data.severity).toBe("high");
+		expect(findingDetails(data)).toMatch(/Slice 2 design absent from every sub-plan's 'sources:'/);
+		expect(findingWheres(data)).toContain("sources: slice 2");
+	});
+
+	it("writes the verdict basename-keyed to VERDICT_DIR as kind:json dimension:structure", () => {
+		twoClusters();
+		const a = write(".rpiv/artifacts/subplans/t_cluster-1.md", subplanBody(1, [1]));
+		const b = write(".rpiv/artifacts/subplans/t_cluster-2.md", subplanBody(2, [2]));
+		const res = subplanCheckRun()({
+			cwd: tmpDir,
+			input: undefined,
+			state: { named: { slices: [mapOut()], subplans: [a, b] } } as unknown as RunView,
+		});
+		expect(res.kind).toBe("json");
+		// Basename-keyed off the slice map ⇒ subplan-check__m.json
+		expect(res.artifacts[0]?.handle).toEqual({ kind: "fs", path: ".rpiv/artifacts/verdicts/subplan-check__m.json" });
+		const written = JSON.parse(readFileSync(join(tmpDir, ".rpiv/artifacts/verdicts/subplan-check__m.json"), "utf-8"));
+		expect(written.dimension).toBe("structure");
+		expect(written.severity).toBe("none");
+		expect(written.pass).toBe(true);
+	});
+
+	it("haltPreflight throws (not a silent empty verdict) when no fs artifact is on the slices channel", () => {
+		expect(() =>
+			subplanCheckRun()({
+				cwd: tmpDir,
+				input: undefined,
+				state: { named: { slices: [], subplans: [] } } as unknown as RunView,
+			}),
+		).toThrow(/no fs artifact on the 'slices' channel/);
+	});
+
+	it("a fail verdict makes allDimensionsPass(state.named['subplan-check']) return false (gate contract)", () => {
+		twoClusters();
+		// One cluster dispatched where two were expected ⇒ a fail verdict on the channel.
+		const a = write(".rpiv/artifacts/subplans/t_cluster-1.md", subplanBody(1, [1]));
+		const verdict = subplanCheckRun()({
+			cwd: tmpDir,
+			input: undefined,
+			state: { named: { slices: [mapOut()], subplans: [a] } } as unknown as RunView,
+		});
+		expect(verdict.data.pass).toBe(false);
+		expect(verdict.data.severity).toBe("high");
+		// The gate predicate `subplanGatePasses` is module-private, so assert its
+		// contract by reproducing `allDimensionsPass` over the channel the route
+		// reads. severity 'high' is NOT floored away ⇒ the fold returns false ⇒ the
+		// backward edge routes to `subplan`.
+		const fold = (entries: readonly { data: Record<string, unknown> }[]): boolean => {
+			const latest = new Map<string, boolean>();
+			for (const o of entries) {
+				const v = o.data;
+				if (typeof v?.dimension !== "string") continue;
+				const lowOrNone = v.severity === "low" || v.severity === "none";
+				latest.set(v.dimension, v.pass === true || lowOrNone);
+			}
+			const vs = [...latest.values()];
+			return vs.length > 0 && vs.every(Boolean);
+		};
+		expect(fold([verdict])).toBe(false);
+	});
+
+	// Stage / edge / route shape — the structural contract the splice relies on.
+	it("subplan-check is produces.script with reads [fanin(subplans), slices]", () => {
+		const stage = findWorkflow("build").stages["subplan-check"];
+		expect(stage?.kind).toBe("produces");
+		expect(stage?.run).toBeTruthy();
+		expect(stage?.reads).toEqual([fanin("subplans"), "slices"]);
+	});
+
+	it("build edge routes subplan → subplan-check (not straight to plan)", () => {
+		expect(findWorkflow("build").edges.subplan).toBe("subplan-check");
+	});
+
+	it("subplan-check route targets [plan, subplan]", () => {
+		const edge = findWorkflow("build").edges["subplan-check"];
+		if (typeof edge !== "function") throw new Error("subplan-check edge is not an EdgeFn");
+		expect([...(edge.targets ?? [])].sort()).toEqual(["plan", "subplan"]);
 	});
 });
 

@@ -1298,6 +1298,161 @@ const sliceStructureCheck = ({ state, cwd }: ScriptContext): Omit<Output, "meta"
 };
 
 /**
+ * `_<k>` cluster ordinal a partial sub-plan carries in its basename
+ * (`<slug>_cluster-<k>.md`), emitted by `synthesize`'s partial mode from the
+ * `--cluster <k>` the fanout threads on every cluster unit. The token a
+ * `subplan-check` reconciliation keys dispatched sub-plans on.
+ */
+const CLUSTER_TOKEN_RE = /_cluster-(\d+)/;
+
+/**
+ * Deterministic subplan cluster-coverage floor — the structural backstop between
+ * the cluster fanout and the root merge. After `subplan` fans each slice-DAG
+ * cluster out to a partial sub-plan, this reconciles what was DISPATCHED against
+ * what the slice map PROMISED, before the root `plan` merge fans them in:
+ *   • cluster-count conservation — the PRE-FILTER cluster count
+ *     (`clusterSliceDag(sliceRecords(latest slices)).length`) must equal the
+ *     number of distinct `_cluster-<k>` ordinals the fanout emitted. A re-dispatch
+ *     that re-clobbered an ordinal (the pre-fix clobber bug — two clusters
+ *     sharing `<k>`, or a tokenless basename) collapses the distinct count,
+ *     surfacing as a missing cluster here.
+ *   • token conformance — every dispatched sub-plan basename MUST carry a
+ *     `_cluster-<k>` token; a tokenless name means `synthesize` dropped the
+ *     `--cluster <k>` flag and the merge can't attribute it to a cluster.
+ *   • duplicate/clobbered ordinal — two dispatched sub-plans sharing the same
+ *     `<k>` (a clobber, not a legitimate re-emit: the fanout's produces-channel
+ *     slot is REPLACED each round via `placeFanoutOutput`, so within one round
+ *     every unit index is a distinct artifact — a shared `<k>` is a real
+ *     collision, the lost-cluster bug itself).
+ *   • sources-coverage — every slice's design must appear in SOME sub-plan's
+ *     `sources:` (the fanout threads each `--designs <path>` and `synthesize`
+ *     echoes them into `sources:`). Designs follow the `_slice-<N>` convention, so
+ *     the covered slice set is read off `sources:` and reconciled against the full
+ *     slice map; a slice whose design no sub-plan lists is a slice the merge would
+ *     silently drop.
+ * Emits `severity: pass ? "none" : "high"` (load-bearing — the route routes via
+ * `allDimensionsPass`/`subplanGatePasses`, whose severity floor silently passes a
+ * `pass:false` verdict rated `low`/`none`; a lost cluster MUST rate `high` or it
+ * ships). Deliberately NOT the `match("verdict", …)` STOP idiom
+ * `implementScopeCheck` uses — a lost cluster IS repairable by re-dispatch, so the
+ * floor routes the backward edge to `subplan`, bounded by `maxBackwardJumps`.
+ * Deterministic ⇒ idempotent across re-dispatch rounds: the verdict basename is
+ * keyed on the slice-map basename, so a re-run OVERWRITES its own slot.
+ */
+const subplanCoverageCheck = ({ state, cwd }: ScriptContext): Omit<Output, "meta"> => {
+	const latestSliceMap = latestFsArtifact(state, "slices");
+	if (latestSliceMap?.handle.kind !== "fs") {
+		throw haltPreflight(
+			"subplan-check",
+			"subplan-check: no slice map to reconcile against",
+			"subplan-check: no fs artifact on the 'slices' channel — slice must run before the subplan coverage check",
+		);
+	}
+	const mapBody = readArtifactFile(latestSliceMap.handle.path, cwd);
+	const records = sliceRecords(mapBody, "subplan-check", latestSliceMap.handle.path);
+	// PRE-FILTER expected clusters — the count the fanout RECEIVED, not the
+	// post-drop dispatched count. The fanout drops a zero-design cluster
+	// (`if (!designs.length) return undefined` in SYNTH_CLUSTER_FANOUT's units);
+	// design-review catches those upstream, so a healthy run lands here with
+	// pre-filter == dispatched.
+	const expectedK = clusterSliceDag(records).length;
+	const sliceNumbers = new Set(records.map((r) => r.n));
+
+	const findings: { detail: string; where: string }[] = [];
+
+	// Dispatched sub-plan basenames + their cluster ordinals. The `subplans` slot
+	// is a produces-fanout channel (REPLACED each round via placeFanoutOutput), so
+	// iterating it reflects ONLY the current dispatch round — no cross-round
+	// accumulation, so a re-dispatch's fresh artifacts re-evaluate cleanly.
+	const dispatched: { path: string; k: number }[] = [];
+	for (const out of state.named.subplans ?? []) {
+		for (const a of out.artifacts) {
+			if (a.handle.kind !== "fs") continue;
+			const name = basename(a.handle.path);
+			const m = CLUSTER_TOKEN_RE.exec(name);
+			if (!m) {
+				findings.push({
+					detail: `Tokenless sub-plan basename ${name} — it carries no '_cluster-<k>' ordinal, so the root merge cannot attribute it to a slice-DAG cluster. The cluster fanout threads '--cluster <k>' on every unit; a tokenless name means 'synthesize' dropped the flag. Re-dispatch the cluster with its '--cluster <k>' honored in the output filename.`,
+					where: name,
+				});
+				continue;
+			}
+			dispatched.push({ path: handleToString(a.handle), k: Number(m[1]) });
+		}
+	}
+
+	// Duplicate/clobbered ordinal — two dispatched sub-plans claiming the same <k>.
+	// Within one round every unit index is a distinct artifact (the channel is
+	// replaced each round), so a shared <k> is the lost-cluster collision itself.
+	const pathsByK = new Map<number, string[]>();
+	for (const d of dispatched) {
+		const arr = pathsByK.get(d.k);
+		if (arr) arr.push(d.path);
+		else pathsByK.set(d.k, [d.path]);
+	}
+	for (const [k, paths] of pathsByK) {
+		if (paths.length > 1) {
+			findings.push({
+				detail: `Duplicate/clobbered cluster-${k} — ${paths.length} dispatched sub-plans claim the same '_cluster-${k}' ordinal (${paths.map((p) => basename(p)).join(", ")}). Two clusters collided on one filename token, so the root merge would fold one cluster's content over the other and lose a slice-DAG component. Re-dispatch with each cluster's '--cluster <k>' distinct.`,
+				where: `cluster-${k}`,
+			});
+		}
+	}
+
+	// Cluster-count conservation — distinct dispatched ordinals vs the pre-filter
+	// expected count. A clobber or a never-dispatched cluster both surface here.
+	const dispatchedK = pathsByK.size;
+	if (dispatchedK < expectedK) {
+		findings.push({
+			detail: `Missing cluster coverage — the slice map promised ${expectedK} slice-DAG cluster(s) but the fanout dispatched ${dispatchedK} distinct '_cluster-<k>' sub-plan(s). A cluster went undispatched (or two collided on one ordinal — see any duplicate finding above); its slices would be absent from the merged plan. Re-dispatch the missing cluster(s).`,
+			where: `clusters (expected ${expectedK}, dispatched ${dispatchedK})`,
+		});
+	}
+
+	// sources-coverage — every slice's design must appear in SOME sub-plan's
+	// `sources:`. Designs follow the `_slice-<N>` convention, so the covered slice
+	// set is read off `sources:` and reconciled against the full slice map.
+	const coveredSlices = new Set<number>();
+	for (const out of state.named.subplans ?? []) {
+		for (const a of out.artifacts) {
+			if (a.handle.kind !== "fs") continue;
+			const { frontmatter } = parseFrontmatter(readArtifactFile(handleToString(a.handle), cwd));
+			const sources = (frontmatter as Record<string, unknown>).sources;
+			if (!Array.isArray(sources)) continue;
+			for (const s of sources) {
+				if (typeof s !== "string") continue;
+				const sm = DESIGN_SLICE_RE.exec(s);
+				if (sm) coveredSlices.add(Number(sm[1]));
+			}
+		}
+	}
+	for (const n of [...sliceNumbers].sort((a, b) => a - b)) {
+		if (!coveredSlices.has(n)) {
+			findings.push({
+				detail: `Slice ${n} design absent from every sub-plan's 'sources:' — the cluster fanout threads each '--designs <path>' and 'synthesize' echoes them into 'sources:'; a slice whose design no sub-plan lists is one the root merge would silently drop. List every '--designs' path in its sub-plan's 'sources:'.`,
+				where: `sources: slice ${n}`,
+			});
+		}
+	}
+
+	const pass = findings.length === 0;
+	const data = {
+		dimension: "structure",
+		pass,
+		score: pass ? 100 : 0,
+		severity: pass ? "none" : "high",
+		artifact: handleToString(latestSliceMap.handle),
+		findings,
+		feedback: pass ? "" : findings.map((f) => f.detail).join(" "),
+	};
+	// Basename-keyed off the slice map ⇒ idempotent across re-dispatch rounds.
+	const rel = join(VERDICT_DIR, `subplan-check__${basename(latestSliceMap.handle.path, ".md")}.json`);
+	mkdirSync(join(cwd, VERDICT_DIR), { recursive: true });
+	writeFileSync(join(cwd, rel), JSON.stringify(data, null, 2), "utf-8");
+	return { kind: "json", artifacts: [{ handle: { kind: "fs", path: rel } }], data };
+};
+
+/**
  * Slice a plan body into per-phase text keyed by phase number, splitting on
  * `## Phase N:` headings OUTSIDE fenced code blocks (a heading inside a ``` or
  * ~~~ fence is example/fixture text, not a structural phase boundary — mirrors
@@ -1809,7 +1964,10 @@ const SYNTH_CLUSTER_FANOUT = fanout({
 					.map((p) => `--designs ${p}`);
 				if (!designs.length) return undefined;
 				return {
-					prompt: `${designs.join(" ")}${researchFlag} --as-subplan`,
+					// Stamp each cluster's ordinal into its prompt so the partial-mode pass
+					// writes a distinct `_cluster-<k>.md` — a re-dispatched unit must never
+					// reuse a sibling's filename and clobber it. `<k>` matches `id: cluster-<k>`.
+					prompt: `${designs.join(" ")}${researchFlag} --cluster ${i + 1} --as-subplan`,
 					label: `cluster ${i + 1} (slices ${cluster.join(",")})`,
 					id: `cluster-${i + 1}`,
 				};
@@ -2164,6 +2322,10 @@ const sliceGatePasses = (state: RunView): boolean => {
 	const roster = gateRoster(gateTier(state, "slice-verdicts"), SLICE_DIMENSIONS);
 	return allDimensionsPass(state.named["slice-check"]) && allDimensionsPass(fresh, roster);
 };
+// The single authority the new `subplan-check` edge consults — the twin of
+// `sliceGatePasses`, but carrying no LLM-verdict roster or risk flags: the
+// `subplan-check` floor is the sole (deterministic) dimension on its channel.
+const subplanGatePasses = (state: RunView): boolean => allDimensionsPass(state.named["subplan-check"]);
 const planGatePasses = (state: RunView): boolean => {
 	const fresh = freshVerdicts(state.named["plan-verdicts"], latestArtifactPath(state, "plans"));
 	const roster = gateRoster(gateTier(state, "plan-verdicts"), PLAN_DIMENSIONS);
@@ -2427,6 +2589,13 @@ const buildWorkflow = defineWorkflow({
 			loop: SYNTH_CLUSTER_FANOUT,
 			outcome: rpivBucketOutcome("subplans"),
 		}),
+		// Deterministic cluster-coverage floor between the cluster fanout and the
+		// root merge — the subplan twin of `slice-check`. Reconciles dispatched
+		// `_cluster-<k>` sub-plans against the slice map's promised cluster count +
+		// `sources:` design coverage BEFORE the root merge fans them in, so a lost
+		// or clobbered cluster fails structurally and routes back to `subplan`
+		// rather than silently dropping slices from the merged plan.
+		"subplan-check": produces.script({ reads: [fanin("subplans"), "slices"], run: subplanCoverageCheck }),
 		// The root merge reads `research` (threaded as `--research` so cross-slice
 		// constraints reach the merge directly, not only via each subplan's
 		// refraction) alongside the cluster sub-plans it fans in.
@@ -2550,7 +2719,22 @@ const buildWorkflow = defineWorkflow({
 		// Design fanout → consolidated human checkpoint → hierarchical synthesis.
 		"slice-design": "design-review",
 		"design-review": "subplan",
-		subplan: "plan",
+		// Route the cluster fanout through the deterministic coverage floor before
+		// the root merge — the twin of `slice → slice-check`. A pass folds straight
+		// to `plan`; a lost/clobbered cluster routes the backward edge to `subplan`,
+		// bounded by the runner's maxBackwardJumps.
+		subplan: "subplan-check",
+		// Subplan coverage gate. Pass ⇒ root merge. A fail (lost cluster, clobbered
+		// ordinal, tokenless basename, or a slice design absent from every sources:)
+		// routes the backward edge to `subplan` — re-dispatch the cluster fanout,
+		// which re-supplies each cluster's '--cluster <k>'. Bounded by the runner's
+		// maxBackwardJumps. `readsData: false` — the route consults only the
+		// deterministic verdict channel (mirrors the slice-check/plan-cite-check routes).
+		"subplan-check": defineRoute(
+			["plan", "subplan"],
+			({ state }) => (subplanGatePasses(state) ? "plan" : "subplan"),
+			{ readsData: false },
+		),
 		plan: "plan-cite-check",
 		// Skip the quality re-grade straight to `code` when the gate is already
 		// satisfied — a `plan-fix` that only cleared the citation floor leaves every
