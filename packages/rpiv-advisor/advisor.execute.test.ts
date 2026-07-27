@@ -34,7 +34,7 @@ vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
 
 import { completeSimple } from "@earendil-works/pi-ai/compat";
 import { buildSessionContext } from "@earendil-works/pi-coding-agent";
-import { registerAdvisorTool, setAdvisorModel } from "./advisor/index.js";
+import { registerAdvisorTool, setAdvisorFallbacks, setAdvisorModel } from "./advisor/index.js";
 
 function resp(input: { text?: string; stopReason?: "done" | "aborted" | "error" | "toolUse"; errorMessage?: string }) {
 	return {
@@ -230,5 +230,120 @@ describe("executeAdvisor — auth envelopes", () => {
 		const r = await captured.tools.get("advisor")?.execute?.("tc", {}, undefined as never, undefined as never, ctx);
 		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("no API key") });
 		expect(r?.details).toMatchObject({ errorMessage: "no API key for a", advisorModel: "a:m" });
+	});
+});
+
+describe("executeAdvisor — fallback chain", () => {
+	it("falls back to the next model when the primary declines (refusal maps to error)", async () => {
+		setAdvisorModel({ provider: "a", id: "m" } as never);
+		setAdvisorFallbacks([{ provider: "b", id: "n" }] as never);
+		vi.mocked(completeSimple)
+			.mockResolvedValueOnce(resp({ stopReason: "error", errorMessage: "This request was declined" }) as never)
+			.mockResolvedValueOnce(resp({ text: "fallback advice" }) as never);
+		const { pi, captured } = createMockPi();
+		registerAdvisorTool(pi);
+		const ctx = createMockCtx();
+		const r = await captured.tools.get("advisor")?.execute?.("tc", {}, undefined as never, undefined as never, ctx);
+		expect(r?.content[0]).toMatchObject({ type: "text", text: "fallback advice" });
+		expect(r?.details).toMatchObject({ advisorModel: "b:n", fellBackFrom: "a:m" });
+		expect(completeSimple).toHaveBeenCalledTimes(2);
+	});
+
+	it("returns the last failure envelope when every model declines", async () => {
+		setAdvisorModel({ provider: "a", id: "m" } as never);
+		setAdvisorFallbacks([{ provider: "b", id: "n" }] as never);
+		vi.mocked(completeSimple)
+			.mockResolvedValueOnce(resp({ stopReason: "error", errorMessage: "primary refused" }) as never)
+			.mockResolvedValueOnce(resp({ stopReason: "error", errorMessage: "fallback refused" }) as never);
+		const { pi, captured } = createMockPi();
+		registerAdvisorTool(pi);
+		const ctx = createMockCtx();
+		const r = await captured.tools.get("advisor")?.execute?.("tc", {}, undefined as never, undefined as never, ctx);
+		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("fallback refused") });
+		expect(r?.details).toMatchObject({
+			stopReason: "error",
+			errorMessage: "fallback refused",
+			advisorModel: "b:n",
+			fellBackFrom: "a:m",
+		});
+		expect(completeSimple).toHaveBeenCalledTimes(2);
+	});
+
+	it("falls back when the primary throws", async () => {
+		setAdvisorModel({ provider: "a", id: "m" } as never);
+		setAdvisorFallbacks([{ provider: "b", id: "n" }] as never);
+		vi.mocked(completeSimple)
+			.mockRejectedValueOnce(new Error("network boom"))
+			.mockResolvedValueOnce(resp({ text: "recovered" }) as never);
+		const { pi, captured } = createMockPi();
+		registerAdvisorTool(pi);
+		const ctx = createMockCtx();
+		const r = await captured.tools.get("advisor")?.execute?.("tc", {}, undefined as never, undefined as never, ctx);
+		expect(r?.content[0]).toMatchObject({ text: "recovered" });
+		expect(r?.details).toMatchObject({ advisorModel: "b:n", fellBackFrom: "a:m" });
+		expect(completeSimple).toHaveBeenCalledTimes(2);
+	});
+
+	it("does not fall back on an intentional abort", async () => {
+		setAdvisorModel({ provider: "a", id: "m" } as never);
+		setAdvisorFallbacks([{ provider: "b", id: "n" }] as never);
+		vi.mocked(completeSimple).mockResolvedValueOnce(resp({ stopReason: "aborted" }) as never);
+		const { pi, captured } = createMockPi();
+		registerAdvisorTool(pi);
+		const ctx = createMockCtx();
+		const r = await captured.tools.get("advisor")?.execute?.("tc", {}, undefined as never, undefined as never, ctx);
+		expect(r?.details).toMatchObject({ stopReason: "aborted", errorMessage: "aborted" });
+		expect(completeSimple).toHaveBeenCalledTimes(1);
+	});
+
+	it("does not consult fallbacks when the primary succeeds", async () => {
+		setAdvisorModel({ provider: "a", id: "m" } as never);
+		setAdvisorFallbacks([{ provider: "b", id: "n" }] as never);
+		vi.mocked(completeSimple).mockResolvedValueOnce(resp({ text: "primary advice" }) as never);
+		const { pi, captured } = createMockPi();
+		registerAdvisorTool(pi);
+		const ctx = createMockCtx();
+		const r = await captured.tools.get("advisor")?.execute?.("tc", {}, undefined as never, undefined as never, ctx);
+		expect(r?.content[0]).toMatchObject({ text: "primary advice" });
+		expect(r?.details).not.toHaveProperty("fellBackFrom");
+		expect(completeSimple).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe("executeAdvisor — fallback chain, auth failures", () => {
+	it("advances past a primary auth failure to a fallback", async () => {
+		setAdvisorModel({ provider: "a", id: "m" } as never);
+		setAdvisorFallbacks([{ provider: "b", id: "n" }] as never);
+		vi.mocked(completeSimple).mockResolvedValueOnce(resp({ text: "fallback advice" }) as never);
+		const { pi, captured } = createMockPi();
+		registerAdvisorTool(pi);
+		const ctx = createMockCtx();
+		(ctx.modelRegistry.getApiKeyAndHeaders as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+			ok: false,
+			error: "bad config",
+		});
+		const r = await captured.tools.get("advisor")?.execute?.("tc", {}, undefined as never, undefined as never, ctx);
+		expect(r?.content[0]).toMatchObject({ type: "text", text: "fallback advice" });
+		expect(r?.details).toMatchObject({ advisorModel: "b:n", fellBackFrom: "a:m" });
+		expect(completeSimple).toHaveBeenCalledTimes(1);
+	});
+
+	it("returns the fallback's auth failure when every model fails auth", async () => {
+		setAdvisorModel({ provider: "a", id: "m" } as never);
+		setAdvisorFallbacks([{ provider: "b", id: "n" }] as never);
+		const { pi, captured } = createMockPi();
+		registerAdvisorTool(pi);
+		const ctx = createMockCtx();
+		(ctx.modelRegistry.getApiKeyAndHeaders as ReturnType<typeof vi.fn>)
+			.mockResolvedValueOnce({ ok: false, error: "primary bad" })
+			.mockResolvedValueOnce({ ok: true, apiKey: undefined, headers: {} });
+		const r = await captured.tools.get("advisor")?.execute?.("tc", {}, undefined as never, undefined as never, ctx);
+		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("no API key") });
+		expect(r?.details).toMatchObject({
+			errorMessage: "no API key for b",
+			advisorModel: "b:n",
+			fellBackFrom: "a:m",
+		});
+		expect(completeSimple).not.toHaveBeenCalled();
 	});
 });

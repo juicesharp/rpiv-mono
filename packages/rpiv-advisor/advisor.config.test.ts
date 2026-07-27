@@ -1,7 +1,7 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
-import { validateDisabledForModels } from "./advisor/config.js";
+import { validateDisabledForModels, validateFallbackModels } from "./advisor/config.js";
 import { loadAdvisorConfig, saveAdvisorConfig } from "./advisor/index.js";
 
 const CONFIG_PATH = join(process.env.HOME!, ".config", "rpiv-advisor", "advisor.json");
@@ -121,5 +121,22 @@ describe("validateDisabledForModels", () => {
 				"openai:gpt",
 			]),
 		).toEqual(["anthropic:opus", { model: "anthropic:sonnet", minEffort: "high" }, "openai:gpt"]);
+	});
+});
+
+describe("validateFallbackModels", () => {
+	it("returns [] for non-array input", () => {
+		expect(validateFallbackModels(undefined)).toEqual([]);
+		expect(validateFallbackModels(null)).toEqual([]);
+		expect(validateFallbackModels("a/m")).toEqual([]);
+		expect(validateFallbackModels({ 0: "a/m" })).toEqual([]);
+	});
+
+	it("drops empty-string and non-string entries", () => {
+		expect(validateFallbackModels(["", 42, null, undefined, { model: "a/m" }, true])).toEqual([]);
+	});
+
+	it("preserves order of valid entries while dropping invalid", () => {
+		expect(validateFallbackModels(["a/m", "", "b:n", 7, "c/o"])).toEqual(["a/m", "b:n", "c/o"]);
 	});
 });

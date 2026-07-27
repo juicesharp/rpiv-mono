@@ -5,9 +5,11 @@ import { describe, expect, it, vi } from "vitest";
 import {
 	__resetAdvisorAnnounced,
 	getAdvisorEffort,
+	getAdvisorFallbacks,
 	getAdvisorModel,
 	restoreAdvisorState,
 	setAdvisorEffort,
+	setAdvisorFallbacks,
 	setAdvisorModel,
 } from "./advisor/index.js";
 
@@ -219,5 +221,41 @@ describe("restoreAdvisorState", () => {
 
 			expect(notify).toHaveBeenCalledTimes(1);
 		});
+	});
+});
+
+describe("restoreAdvisorState — fallback resolution", () => {
+	const primary = { provider: "a", id: "m", name: "M" } as never;
+	const fallbackB = { provider: "b", id: "n", name: "N" } as never;
+	const fallbackC = { provider: "c", id: "o", name: "O" } as never;
+	const registryModels = [primary, fallbackB, fallbackC] as never[];
+
+	it("resolves fallback keys in order, skipping unknown and unparseable entries", () => {
+		writeConfig({ modelKey: "a/m", fallbackModels: ["b/n", "zz/unknown", "not-a-key", "c/o"] });
+		const { pi } = createMockPi();
+		restoreAdvisorState(createMockCtx({ models: registryModels }), pi);
+		expect(getAdvisorFallbacks()).toEqual([fallbackB, fallbackC]);
+	});
+
+	it("excludes the primary even when listed in the legacy colon form", () => {
+		writeConfig({ modelKey: "a/m", fallbackModels: ["a:m", "b/n"] });
+		const { pi } = createMockPi();
+		restoreAdvisorState(createMockCtx({ models: registryModels }), pi);
+		expect(getAdvisorFallbacks()).toEqual([fallbackB]);
+	});
+
+	it("dedups mixed slash/colon duplicates to a single chain entry", () => {
+		writeConfig({ modelKey: "a/m", fallbackModels: ["b/n", "b:n"] });
+		const { pi } = createMockPi();
+		restoreAdvisorState(createMockCtx({ models: registryModels }), pi);
+		expect(getAdvisorFallbacks()).toEqual([fallbackB]);
+	});
+
+	it("clears fallbacks on deactivate (no usable modelKey)", () => {
+		setAdvisorFallbacks([fallbackB] as never);
+		writeConfig({ effort: "high" });
+		const { pi } = createMockPi();
+		restoreAdvisorState(createMockCtx(), pi);
+		expect(getAdvisorFallbacks()).toEqual([]);
 	});
 });

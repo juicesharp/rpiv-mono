@@ -18,10 +18,20 @@ interface AdvisorConfig {
 	effort?: ThinkingLevel;
 	guidance?: GuidanceFields;
 	disabledForModels?: DisabledForModelsEntry[];
+	// Ordered list of provider/id keys tried when the primary advisor call fails
+	// or the model declines. Resolved to Model objects at session_start
+	// (restore.ts). Config-file driven; preserved across /advisor model changes
+	// because saveAdvisorConfig spreads the existing config.
+	fallbackModels?: string[];
 }
 
 export function loadAdvisorConfig(): AdvisorConfig {
 	return loadJsonConfigWithLegacyFallback<AdvisorConfig>("rpiv-advisor", "advisor.json");
+}
+
+export function validateFallbackModels(value: unknown): string[] {
+	if (!Array.isArray(value)) return [];
+	return value.filter((entry): entry is string => typeof entry === "string" && entry.length > 0);
 }
 
 export function validateDisabledForModels(value: unknown): DisabledForModelsEntry[] {

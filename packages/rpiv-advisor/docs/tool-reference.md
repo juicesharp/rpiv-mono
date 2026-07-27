@@ -39,7 +39,9 @@ guidance in its next visible reply, so the guidance is not left only in a
 collapsed tool card.
 
 While the call is in flight the executor streams
-`Consulting advisor (<label>[, <effort>])…`.
+`Consulting advisor (<label>[, <effort>])…` — or, for a fallback attempt,
+`Consulting fallback advisor (<label>[, <effort>])…`, preceded by
+`Advisor <from> did not answer; falling back to <to>.` when the chain advances.
 
 ## Result envelope
 
@@ -52,6 +54,7 @@ While the call is in flight the executor streams
     usage?: Usage,           // token usage from the side-call
     stopReason?: StopReason, // pi-ai stop reason
     errorMessage?: string,   // populated on the no-model/auth/abort/error/empty paths
+    fellBackFrom?: string,   // primary's label when a fallback model served (or was the last attempted)
   }
 }
 ```

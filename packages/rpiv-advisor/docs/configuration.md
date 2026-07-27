@@ -45,9 +45,11 @@ previous selection and the active tool list are left untouched.
 | `disabledForModels` | `(string \| { model, minEffort? })[]` | `[]` | hand-edited |
 | `guidance.promptSnippet` | `string` | built-in snippet | hand-edited |
 | `guidance.promptGuidelines` | `string[]` | six built-in guidelines | hand-edited |
+| `fallbackModels` | `string[]` — `"provider/modelId"` keys | `[]` | hand-edited |
 
-`/advisor` only ever writes `modelKey` and `effort`; `guidance` and
-`disabledForModels` are preserved across saves, so hand-edits survive.
+`/advisor` only ever writes `modelKey` and `effort`; `guidance`,
+`disabledForModels`, and `fallbackModels` are preserved across saves, so
+hand-edits survive.
 
 ### `modelKey`
 
@@ -65,6 +67,15 @@ deletes the key, and no `reasoning` parameter is sent with the advisor call.
 
 `EFFORT_ORDINAL`, lowest to highest, is `minimal`, `low`, `medium`, `high`,
 `xhigh`. This ordering is what `minEffort` compares against.
+
+### `fallbackModels`
+
+An ordered list of `"provider/modelId"` reviewer keys the advisor tries, in
+order, when the primary call fails or the model declines. Entries are resolved
+against the model registry at session start and re-resolved whenever the
+primary changes through `/advisor`; unknown, unparseable, or duplicate entries
+(including the primary itself, in either key form) are skipped. See the README
+for the full fallback semantics.
 
 ### `disabledForModels`
 
@@ -137,6 +148,8 @@ conflicting evidence with one more `advisor` call rather than silently switching
 | `Previously configured advisor model <key> is no longer available` | the saved model left Pi's registry |
 | `Failed to save advisor selection — selection not persisted` | the write to `advisor.json` failed |
 | `/advisor requires interactive mode` | `/advisor` ran without a TTY |
+| `Consulting fallback advisor (<label>[, <effort>])…` | a fallback model's attempt is in flight |
+| `Advisor <from> did not answer; falling back to <to>.` | an attempt failed and the chain is advancing |
 
 The `Advisor restored: …` announcement fires at most once per process, so
 programmatic session spawns (workflow stages, subagents) do not repeat it.

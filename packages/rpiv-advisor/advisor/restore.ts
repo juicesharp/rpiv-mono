@@ -4,13 +4,14 @@
  * announces once per process. Wired via registerAdvisorSessionStart.
  */
 
+import type { Api, Model } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { modelKey, parseModelKey } from "@juicesharp/rpiv-config";
-import { loadAdvisorConfig, validateDisabledForModels } from "./config.js";
+import { loadAdvisorConfig, validateDisabledForModels, validateFallbackModels } from "./config.js";
 import { reconcileAdvisorTool } from "./handlers.js";
 import { ADVISOR_TOOL_NAME, errModelUnavailable, msgAdvisorRestored, msgAdvisorRestoredInactive } from "./messages.js";
 import { isExecutorBlocked, setDisabledForModels } from "./policy.js";
-import { setAdvisorEffort, setAdvisorModel } from "./state.js";
+import { setAdvisorEffort, setAdvisorFallbacks, setAdvisorModel } from "./state.js";
 
 /**
  * Module-local "already announced" latch. Pi fires `session_start` for every
@@ -26,6 +27,31 @@ let restoreAnnounced = false;
 /** Test reset — wired into test/setup.ts `beforeEach`. */
 export function __resetAdvisorAnnounced(): void {
 	restoreAnnounced = false;
+}
+
+/**
+ * Resolve config.fallbackModels (provider/id keys) to Model objects, dropping
+ * entries that don't parse, aren't in the registry, or duplicate the primary.
+ * Dedup happens on the canonical slash key AFTER parsing — parseModelKey also
+ * tolerates the legacy "provider:id" form, so comparing raw config strings
+ * would let a colon-form entry smuggle the primary (or a duplicate) into the
+ * chain. Reloads the config so it can run from any primary-change path:
+ * session restore below and the /advisor enable path (command.ts applyEnable).
+ */
+export function resolveAdvisorFallbacks(ctx: ExtensionContext, primary: Model<Api>): void {
+	const seen = new Set<string>([modelKey(primary)]);
+	const resolved: Model<Api>[] = [];
+	for (const key of validateFallbackModels(loadAdvisorConfig().fallbackModels)) {
+		const p = parseModelKey(key);
+		if (!p) continue;
+		const canonical = modelKey({ provider: p.provider, id: p.modelId });
+		if (seen.has(canonical)) continue;
+		const m = ctx.modelRegistry.find(p.provider, p.modelId);
+		if (!m) continue;
+		seen.add(canonical);
+		resolved.push(m);
+	}
+	setAdvisorFallbacks(resolved);
 }
 
 export function restoreAdvisorState(ctx: ExtensionContext, pi: ExtensionAPI): void {
@@ -46,6 +72,7 @@ export function restoreAdvisorState(ctx: ExtensionContext, pi: ExtensionAPI): vo
 	const deactivate = (): void => {
 		setAdvisorModel(undefined);
 		setAdvisorEffort(undefined);
+		setAdvisorFallbacks([]);
 		reconcileAdvisorTool(pi, ctx, { blocked: true });
 	};
 
@@ -74,6 +101,7 @@ export function restoreAdvisorState(ctx: ExtensionContext, pi: ExtensionAPI): vo
 	}
 
 	setAdvisorModel(model);
+	resolveAdvisorFallbacks(ctx, model);
 	if (config.effort) {
 		setAdvisorEffort(config.effort);
 	}
