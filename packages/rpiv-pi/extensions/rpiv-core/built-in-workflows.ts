@@ -73,38 +73,74 @@ const MAX_PHASES = 32;
 const PLAN_PHASE_RE = /^## Phase (\d+):/gm;
 
 /**
- * Count lines matching `re` (a `^…` heading pattern) that sit OUTSIDE fenced code
- * blocks. A `## Phase N:` / `## Slice N:` / `### Phase N —` inside a ``` or ~~~
- * fence is example/fixture text — a meta-plan (one whose subject is the pipeline)
- * legitimately embeds the pipeline's own plan/slice fixtures — not a structural
- * heading. Mirrors the fence-aware boundary scan in
- * skills/_shared/stitch-elaborations.mjs so the derive-check and the stitch that
- * produced the body agree on what a heading is (a naive `matchAll` counts fenced
- * examples and false-throws the derived-array staleness guard).
+ * A fence-opening line: optional leading whitespace then 3+ backticks or 3+
+ * tildes (the CommonMark info-string delimiter). Single source of truth every
+ * fence-aware scan shares.
  */
-const countHeadingsOutsideFences = (content: string, re: RegExp): number => {
-	const lineRe = new RegExp(re.source); // per-line test; drop g/m so lastIndex can't drift
-	let count = 0;
+const FENCE_LINE_RE = /^\s*(`{3,}|~{3,})/;
+
+/**
+ * Whether `line` CLOSES the fence whose opener recorded `fenceChar` and
+ * `fenceLen`. CommonMark: a closing fence uses the SAME char (``` ``` ``` does not
+ * close `~~~`) and is at least as long (a 4-backtick opener needs 4+ to close),
+ * with only that char plus optional trailing whitespace on the line. `fence` is
+ * the current line's `RegExpExecArray` match (narrowed from the guarded
+ * `.exec()` result).
+ */
+const closesFence = (line: string, fence: RegExpExecArray, fenceChar: string, fenceLen: number): boolean => {
+	const len = fence[1].length;
+	return fence[1][0] === fenceChar && len >= fenceLen && line.trim().length === len;
+};
+
+/**
+ * Visit every line of `content` that sits OUTSIDE fenced code blocks, calling
+ * `visit(line, index)` with the line text and its 0-based index in
+ * `content.split("\n")`. A `## Phase N:` / `## Slice N:` / `### Phase N —` / a
+ * `#### N. path` inside a ``` or ~~~ fence is example/fixture text — a meta-plan
+ * (one whose subject is the pipeline) legitimately embeds the pipeline's own
+ * plan/slice fixtures — not a structural heading or declared write, so a naive
+ * line scan would false-count it. Mirrors the fence-aware boundary scan in
+ * skills/_shared/stitch-elaborations.mjs. Fence-opener and fence-closer lines
+ * are skipped (never visited); `index` advances once per line (including skipped
+ * fence lines) so it stays aligned with any caller's own `content.split("\n")`
+ * array.
+ */
+const forEachLineOutsideFences = (content: string, visit: (line: string, index: number) => void): void => {
 	let inFence = false;
 	let fenceLen = 0;
 	let fenceChar = "";
+	let index = 0;
 	for (const line of content.split("\n")) {
-		const fence = /^\s*(`{3,}|~{3,})/.exec(line);
+		const fence = FENCE_LINE_RE.exec(line);
 		if (fence) {
-			const len = fence[1].length;
 			if (!inFence) {
 				inFence = true;
-				fenceLen = len;
+				fenceLen = fence[1].length;
 				fenceChar = fence[1][0];
-			} else if (fence[1][0] === fenceChar && len >= fenceLen && line.trim().length === len) {
+			} else if (closesFence(line, fence, fenceChar, fenceLen)) {
 				inFence = false;
 				fenceLen = 0;
 				fenceChar = "";
 			}
-			continue;
+		} else if (!inFence) {
+			visit(line, index);
 		}
-		if (!inFence && lineRe.test(line)) count++;
+		index++;
 	}
+};
+
+/**
+ * Count lines matching `re` (a `^…` heading pattern) that sit OUTSIDE fenced code
+ * blocks. Fence-awareness lives on `forEachLineOutsideFences` (a naive `matchAll`
+ * counts fenced examples and false-throws the derived-array staleness guard);
+ * the per-line `lineRe` drops the source's `g`/`m` flags so `lastIndex` can't drift.
+ */
+const countHeadingsOutsideFences = (content: string, re: RegExp): number => {
+	const lineRe = new RegExp(re.source); // per-line test; drop g/m so lastIndex can't drift
+	let count = 0;
+	forEachLineOutsideFences(content, (line) => {
+		if (lineRe.test(line)) count++;
+	});
 	return count;
 };
 
@@ -222,6 +258,64 @@ const readPlanPhaseRecords = (
 };
 
 /**
+ * An `Artifact` narrowed to its `fs`-handle variant — the plan-path-carrying
+ * shape the scope checks key the verdict path + `artifact` field off. Annotates
+ * a captured artifact ACROSS loop iterations so the `if (a.handle.kind !== "fs")
+ * continue` guard's narrowing carries to the post-loop `latest.handle.path` read
+ * (the file's idiom — `designPathsBySlice` reads `.path` inside its own
+ * same-scope guard; this loop captures the artifact across iterations, so the
+ * narrowed type annotates the capture).
+ */
+type FsArtifact = Artifact & { handle: { kind: "fs"; path: string } };
+
+/**
+ * Union the per-phase `files:` write-set declared across the FULL `plans`
+ * channel history. vet's review-fix loop appends a DISTINCT non-superseding fix
+ * plan per iteration (a `produces` stage APPENDS to its named slot, and backward
+ * jumps don't reset channels), so a path a prior plan legitimately wrote is not
+ * excess against the latest plan — hence the union, not latest-only.
+ *
+ * Reads every fs artifact in every plan via `planPhaseRecords` + `phaseFiles`,
+ * skipping unreadable/unparseable plans (the union stays the sum of the
+ * parseable ones; a plan too malformed to parse is a `plan-cite-check`/
+ * `plan-fix` concern, not scope). `latest` is the FIRST fs artifact of the LAST
+ * plan carrying one (mirrors `latestFsArtifact`'s last-channel-entry / first-fs-
+ * artifact resolution) — it keys the basename-keyed verdict path + `artifact`
+ * field.
+ */
+const unionDeclaredWriteSet = (
+	plans: readonly Output[],
+	cwd: string,
+): { declared: Set<string>; latest: FsArtifact | undefined } => {
+	const declared = new Set<string>();
+	let latest: FsArtifact | undefined;
+	for (const out of plans) {
+		// Per plan, capture its FIRST fs artifact as the `latest` candidate so the
+		// LAST plan with an fs artifact wins (mirrors `latestFsArtifact`'s
+		// `.at(-1)?.artifacts.find(kind==="fs")` — last channel entry, first fs
+		// artifact in it — which keys the verdict path + `artifact` field).
+		let firstFsInPlan: FsArtifact | undefined;
+		for (const a of out.artifacts) {
+			if (a.handle.kind !== "fs") continue; // fs-artifact filter
+			if (!firstFsInPlan) firstFsInPlan = a as FsArtifact;
+			const path = a.handle.path;
+			try {
+				const content = readArtifactFile(path, cwd);
+				for (const r of planPhaseRecords(content, "implement-scope-check", path)) {
+					for (const f of phaseFiles(r.entry)) declared.add(f);
+				}
+			} catch {
+				// Unreadable/unparseable plan: don't widen the declared set on error —
+				// the union stays the sum of the parseable plans. (A plan so malformed
+				// it can't be parsed is a `plan-cite-check`/`plan-fix` concern, not scope.)
+			}
+		}
+		if (firstFsInPlan) latest = firstFsInPlan;
+	}
+	return { declared, latest };
+};
+
+/**
  * Fan `implement` out over the structured `phases:` frontmatter array of the
  * latest plan published to the named `"plans"` channel. Sourcing from the named
  * channel (not the rolling primary) makes the stage's `reads: ["plans"]`
@@ -278,9 +372,8 @@ const IMPLEMENT_PHASE_FANOUT = { ...FRONTMATTER_PHASE_FANOUT, concurrency: 1 };
  *    any cap (one phase per Kahn wave).
  *
  * Returns `phase-<n>` unit ids, sorted ascending. Reads `phaseFiles`
- * and `phaseDeps` (`packages/rpiv-pi/extensions/rpiv-core/built-in-workflows.ts:373`)
- * — both defined later textually, but only inside this runtime closure, so no
- * TDZ (same pattern as `sliceDeps` at `:747`).
+ * and `phaseDeps` — both defined later textually, but only inside this
+ * runtime closure, so no TDZ (same pattern as `sliceDeps`).
  */
 const implementPhaseDeps = (records: readonly PhaseRecord[], self: PhaseRecord): string[] => {
 	const selfFiles = phaseFiles(self.entry);
@@ -310,7 +403,7 @@ const implementPhaseDeps = (records: readonly PhaseRecord[], self: PhaseRecord):
  * `id: \`phase-${r.n}\`` + `deps: implementPhaseDeps(records, r)`. NO
  * `depArtifactFlag` — implement phases feed each other through the working tree
  * (not published artifacts), so `deps` drive ONLY wave ordering. `concurrency: 1`
- * keeps it serial/inert here; Phase 3 deletes it to inherit the host cap.
+ * keeps it serial/inert here; the host cap is not inherited.
  */
 const IMPLEMENT_DAG_FANOUT = {
 	...FRONTMATTER_PHASE_FANOUT,
@@ -769,6 +862,48 @@ const goalBaselinePath = (state: RunView): string | undefined => {
 	return a ? handleToString(a.handle) : undefined;
 };
 
+/**
+ * Read the run-start pre-existing-dirty baseline off the goal channel's
+ * "baseline" artifact: the `{ paths }` JSON the baseline writer records. Best-
+ * effort — `[]` on no path (no `goal` stage), an unreadable file, or a `paths`
+ * value that isn't a string array, so the scope floor degrades to baseline-less
+ * (nothing subtracted) rather than throwing.
+ */
+const readGoalBaseline = (path: string | undefined, cwd: string): string[] => {
+	if (!path) return [];
+	try {
+		const parsed = JSON.parse(readArtifactFile(path, cwd)) as { paths?: unknown };
+		const p = parsed.paths;
+		return Array.isArray(p) ? p.filter((x): x is string => typeof x === "string") : [];
+	} catch {
+		return [];
+	}
+};
+
+/**
+ * Current dirty-path set via `git status --porcelain` (rename targets resolved by
+ * the shared parser). Best-effort — `[]` on a non-repo / git-missing tree (the
+ * scope floor degrades to unguarded rather than failing a non-repo run; the
+ * catch treats that as a supported silent degrade). stdio: stderr is ignored,
+ * otherwise git's "fatal: not a git repository" leaks to the parent's stderr
+ * despite the catch. `-uall` enumerates untracked files individually (a collapsed
+ * `newdir/` entry can never string-match a declared `files:` path) — the
+ * baseline writer and both scope checks MUST share this flag or their path
+ * universes diverge.
+ */
+const gitDirtyPaths = (cwd: string): string[] => {
+	try {
+		const out = execFileSync("git", ["status", "--porcelain", "--untracked-files=all"], {
+			cwd,
+			encoding: "utf-8",
+			stdio: ["ignore", "pipe", "ignore"],
+		});
+		return parseGitStatusPaths(out);
+	} catch {
+		return [];
+	}
+};
+
 /** Paths under these run-bookkeeping trees are NEVER a scope violation — the run
  *  legitimately writes its artifacts/notes/trails here regardless of phase scope. */
 const SCOPE_BOOKKEEPING_DIRS: ReadonlySet<string> = new Set([".rpiv", "thoughts"]);
@@ -1012,6 +1147,10 @@ const sliceCovers = (entry: Record<string, unknown>): string[] => {
 
 /** The verdict directory the deterministic checks and the LLM grade panel share. */
 const VERDICT_DIR = ".rpiv/artifacts/verdicts";
+/** Binary verdict score: a clean pass. The gate keys off `severity`, never this number. */
+const VERDICT_PASS_SCORE = 100;
+/** Binary verdict score: at least one finding. The gate keys off `severity`, never this number. */
+const VERDICT_FAIL_SCORE = 0;
 
 /**
  * A `path:line` (or `path:line-line`) citation in an artifact's prose. Requires a
@@ -1179,15 +1318,14 @@ const fencedSpans = (content: string): [number, number][] => {
 	let offset = 0;
 	for (const line of content.split("\n")) {
 		const lineEnd = offset + line.length + 1; // +1 for the split-consumed \n
-		const fence = /^\s*(`{3,}|~{3,})/.exec(line);
+		const fence = FENCE_LINE_RE.exec(line);
 		if (fence) {
-			const len = fence[1].length;
 			if (!inFence) {
 				inFence = true;
-				fenceLen = len;
+				fenceLen = fence[1].length;
 				fenceChar = fence[1][0];
 				spanStart = offset;
-			} else if (fence[1][0] === fenceChar && len >= fenceLen && line.trim().length === len) {
+			} else if (closesFence(line, fence, fenceChar, fenceLen)) {
 				inFence = false;
 				fenceLen = 0;
 				fenceChar = "";
@@ -1262,6 +1400,53 @@ const verifyCitations = (body: string, cwd: string): { detail: string; where: st
 	return findings;
 };
 
+/** A structure-dimension finding — the shared shape the deterministic verdict
+ * checks emit (`detail` is the actionable message, `where` locates the defect). */
+type StructureFinding = { detail: string; where: string };
+
+/** A dispatched sub-plan basename with its `_cluster-<k>` ordinal resolved. */
+type DispatchedCluster = { path: string; k: number };
+
+/** An `fs` artifact handle (the only handle kind the verdict checks operate on). */
+type FsHandle = { kind: "fs"; path: string };
+
+/**
+ * Write the shared `{ dimension: "structure" }` verdict and publish it on an fs
+ * artifact. The three deterministic structure checks (`sliceStructureCheck`,
+ * `subplanCoverageCheck`, `planCitationCheck`) all emit the SAME verdict shape
+ * and basename-keyed JSON write, so it lives here once. `who` is the channel
+ * prefix folded into the basename (so a re-run OVERWRITES its own slot —
+ * idempotent across fix/reslice/re-dispatch rounds); `handle` is the artifact
+ * the check inspected (serialized into `data.artifact` and basename-keyed).
+ *
+ * The `severity: pass ? "none" : "high"` floor is load-bearing: the gate routes
+ * via `allDimensionsPass`/`subplanGatePasses`, whose severity floor silently
+ * passes a `pass:false` verdict rated `low`/`none`; a structural defect MUST
+ * rate `high` or it ships. The `score` is the binary verdict scale (100 = clean,
+ * 0 = finding; the gate keys off `severity`, never this number).
+ */
+const writeStructureVerdict = (
+	who: string,
+	handle: FsHandle,
+	findings: StructureFinding[],
+	cwd: string,
+): Omit<Output, "meta"> => {
+	const pass = findings.length === 0;
+	const data = {
+		dimension: "structure",
+		pass,
+		score: pass ? VERDICT_PASS_SCORE : VERDICT_FAIL_SCORE,
+		severity: pass ? "none" : "high",
+		artifact: handleToString(handle),
+		findings,
+		feedback: pass ? "" : findings.map((f) => f.detail).join(" "),
+	};
+	const rel = join(VERDICT_DIR, `${who}__${basename(handle.path, ".md")}.json`);
+	mkdirSync(join(cwd, VERDICT_DIR), { recursive: true });
+	writeFileSync(join(cwd, rel), JSON.stringify(data, null, 2), "utf-8");
+	return { kind: "json", artifacts: [{ handle: { kind: "fs", path: rel } }], data };
+};
+
 /**
  * Deterministic Phase-1 slice-check — the un-gameable floor beneath the LLM
  * `design-readiness` panel. It enforces the invariants a prose grader cannot
@@ -1325,27 +1510,7 @@ const sliceStructureCheck = ({ state, cwd }: ScriptContext): Omit<Output, "meta"
 	// Citation backing — every file:line the map cites must resolve.
 	findings.push(...verifyCitations(mapBody, cwd));
 
-	const pass = findings.length === 0;
-	const data = {
-		dimension: "structure",
-		pass,
-		score: pass ? 100 : 0,
-		severity: pass ? "none" : "high",
-		artifact: handleToString(latest.handle),
-		findings,
-		feedback: pass ? "" : findings.map((f) => f.detail).join(" "),
-	};
-	// Write the verdict to an fs artifact so slice-fix's fanin projection forwards
-	// the findings, not just the rolling pass/fail. Basename-keyed off the slice map
-	// ⇒ idempotent across reslice rounds.
-	const rel = join(VERDICT_DIR, `slice-check__${basename(latest.handle.path, ".md")}.json`);
-	mkdirSync(join(cwd, VERDICT_DIR), { recursive: true });
-	writeFileSync(join(cwd, rel), JSON.stringify(data, null, 2), "utf-8");
-	return {
-		kind: "json",
-		artifacts: [{ handle: { kind: "fs", path: rel } }],
-		data,
-	};
+	return writeStructureVerdict("slice-check", latest.handle, findings, cwd);
 };
 
 /**
@@ -1358,6 +1523,121 @@ const sliceStructureCheck = ({ state, cwd }: ScriptContext): Omit<Output, "meta"
  * tokens binds the trailing one deterministically, not the first match.
  */
 const CLUSTER_TOKEN_RE = /_cluster-(\d+)(?:\.\w+)?$/;
+
+/** The pre-filter cluster count the fanout received — the count
+ * `subplanCoverageCheck` reconciles dispatched ordinals against. Delegates to
+ * `clusterSliceDag`. */
+const expectedClusterCount = (records: readonly PhaseRecord[]): number => clusterSliceDag(records).length;
+
+/** Slice numbers that have NO design artifact on the `designs` channel — the gap
+ * the missing-design preflight halts on (a slice with no design is unrepairable
+ * by re-dispatch). */
+const designCoverageGap = (sliceNumbers: Set<number>, designBySlice: Map<number, string>): number[] =>
+	[...sliceNumbers].filter((n) => !designBySlice.has(n)).sort((a, b) => a - b);
+
+/** Collect every dispatched sub-plan's `_cluster-<k>` ordinal from the `subplans`
+ * channel. The `subplans` slot is a produces-fanout channel: `placeFanoutOutput`
+ * pre-sizes it to the round's unit total and overwrites each unit's own index, so
+ * with a stable unit set iterating it reflects the latest output per unit — a
+ * re-dispatch's fresh artifacts re-evaluate cleanly. (A unit that FAILS on
+ * re-dispatch leaves its prior-round output at its index; that stale entry
+ * re-reads as current here.) Returns the resolved ordinals AND a `tokenless`
+ * finding per basename that carries no `_cluster-<k>` token (the root merge
+ * cannot attribute a tokenless sub-plan to a slice-DAG cluster). */
+const dispatchedClusterOrdinals = (
+	state: RunView,
+): { dispatched: DispatchedCluster[]; tokenless: StructureFinding[] } => {
+	const dispatched: DispatchedCluster[] = [];
+	const tokenless: StructureFinding[] = [];
+	for (const out of state.named.subplans ?? []) {
+		for (const a of out.artifacts) {
+			if (a.handle.kind !== "fs") continue;
+			const name = basename(a.handle.path);
+			const m = CLUSTER_TOKEN_RE.exec(name);
+			if (!m) {
+				tokenless.push({
+					detail: `Tokenless sub-plan basename ${name} — it carries no '_cluster-<k>' ordinal, so the root merge cannot attribute it to a slice-DAG cluster. The cluster fanout threads '--cluster <k>' on every unit; a tokenless name means 'synthesize' dropped the flag. Re-dispatch the cluster with its '--cluster <k>' honored in the output filename.`,
+					where: name,
+				});
+				continue;
+			}
+			dispatched.push({ path: handleToString(a.handle), k: Number(m[1]) });
+		}
+	}
+	return { dispatched, tokenless };
+};
+
+/** A finding per `_cluster-<k>` ordinal claimed by MORE THAN ONE dispatched
+ * sub-plan — a clobber (not a legitimate re-emit: within one round every unit
+ * index is a distinct artifact because the channel is replaced each round, so a
+ * shared `<k>` is the lost-cluster collision itself). */
+const clobberedOrdinals = (dispatched: readonly DispatchedCluster[]): StructureFinding[] => {
+	const pathsByK = new Map<number, string[]>();
+	for (const d of dispatched) {
+		const arr = pathsByK.get(d.k);
+		if (arr) arr.push(d.path);
+		else pathsByK.set(d.k, [d.path]);
+	}
+	const findings: StructureFinding[] = [];
+	for (const [k, paths] of pathsByK) {
+		if (paths.length > 1) {
+			findings.push({
+				detail: `Duplicate/clobbered cluster-${k} — ${paths.length} dispatched sub-plans claim the same '_cluster-${k}' ordinal (${paths.map((p) => basename(p)).join(", ")}). Two clusters collided on one filename token, so the root merge would fold one cluster's content over the other and lose a slice-DAG component. Re-dispatch with each cluster's '--cluster <k>' distinct.`,
+				where: `cluster-${k}`,
+			});
+		}
+	}
+	return findings;
+};
+
+/** sources-coverage — every slice's design must appear in SOME sub-plan's
+ * `sources:`. Reads the covered-slice set off each sub-plan's parsed `sources:`
+ * (designs follow the `_slice-<N>` convention) and reconciles it against the full
+ * slice map. A sub-plan whose frontmatter does not PARSE gets its own
+ * re-dispatchable finding naming the FILE (never a terminal halt — the same
+ * stray-colon class `artifact-collector` degrades on); when ANY sub-plan is
+ * unparseable, the per-slice reconciliation DEFERS (an unreadable sub-plan's
+ * coverage is unknowable; blaming its slices would misdirect the repair). */
+const sourcesCoverageGaps = (state: RunView, cwd: string, sliceNumbers: Set<number>): StructureFinding[] => {
+	const findings: StructureFinding[] = [];
+	const coveredSlices = new Set<number>();
+	let unparseable = false;
+	for (const out of state.named.subplans ?? []) {
+		for (const a of out.artifacts) {
+			if (a.handle.kind !== "fs") continue;
+			let frontmatter: unknown;
+			try {
+				({ frontmatter } = parseFrontmatter(readArtifactFile(handleToString(a.handle), cwd)));
+			} catch {
+				unparseable = true;
+				findings.push({
+					detail: `Unparseable frontmatter in sub-plan ${basename(a.handle.path)} — its YAML frontmatter does not parse (typically a bare ': ' inside an unquoted scalar), so its 'sources:' coverage cannot be read. Re-dispatch the cluster and re-write the sub-plan with parseable frontmatter listing every '--designs' path in 'sources:'.`,
+					where: basename(a.handle.path),
+				});
+				continue;
+			}
+			const fm = frontmatter && typeof frontmatter === "object" ? (frontmatter as Record<string, unknown>) : {};
+			const sources = fm.sources;
+			if (!Array.isArray(sources)) continue;
+			for (const s of sources) {
+				if (typeof s !== "string") continue;
+				const sm = DESIGN_SLICE_RE.exec(s);
+				if (sm) coveredSlices.add(Number(sm[1]));
+			}
+		}
+	}
+	if (!unparseable) {
+		for (const n of [...sliceNumbers].sort((a, b) => a - b)) {
+			if (!coveredSlices.has(n)) {
+				findings.push({
+					detail: `Slice ${n} design absent from every sub-plan's 'sources:' — the cluster fanout threads each '--designs <path>' and 'synthesize' echoes them into 'sources:'; a slice whose design no sub-plan lists is one the root merge would silently drop. List every '--designs' path in its sub-plan's 'sources:'.`,
+					where: `sources: slice ${n}`,
+				});
+			}
+		}
+	}
+	return findings;
+};
 
 /**
  * Deterministic subplan cluster-coverage floor — the structural backstop between
@@ -1421,7 +1701,7 @@ const subplanCoverageCheck = ({ state, cwd }: ScriptContext): Omit<Output, "meta
 	// design-review catches those upstream, so a healthy run lands here with
 	// pre-filter == dispatched — an invariant the missing-design preflight below
 	// enforces loudly rather than assumes.
-	const expectedK = clusterSliceDag(records).length;
+	const expectedK = expectedClusterCount(records);
 	const sliceNumbers = new Set(records.map((r) => r.n));
 
 	// A slice with no design cannot be repaired by the backward edge: the fanout
@@ -1429,7 +1709,7 @@ const subplanCoverageCheck = ({ state, cwd }: ScriptContext): Omit<Output, "meta
 	// reproduces the identical gap until maxBackwardJumps exhausts blaming the
 	// re-entry. Halt loud at the floor instead, naming the upstream cause.
 	const designBySlice = designPathsBySlice(state);
-	const undesigned = [...sliceNumbers].filter((n) => !designBySlice.has(n)).sort((a, b) => a - b);
+	const undesigned = designCoverageGap(sliceNumbers, designBySlice);
 	if (undesigned.length > 0) {
 		throw haltPreflight(
 			"subplan-check",
@@ -1438,52 +1718,13 @@ const subplanCoverageCheck = ({ state, cwd }: ScriptContext): Omit<Output, "meta
 		);
 	}
 
-	const findings: { detail: string; where: string }[] = [];
-
-	// Dispatched sub-plan basenames + their cluster ordinals. The `subplans` slot
-	// is a produces-fanout channel: `placeFanoutOutput` pre-sizes it to the round's
-	// unit total and overwrites each unit's own index, so with a stable unit set
-	// iterating it reflects the latest output per unit — a re-dispatch's fresh
-	// artifacts re-evaluate cleanly. (A unit that FAILS on re-dispatch leaves its
-	// prior-round output at its index; that stale entry re-reads as current here.)
-	const dispatched: { path: string; k: number }[] = [];
-	for (const out of state.named.subplans ?? []) {
-		for (const a of out.artifacts) {
-			if (a.handle.kind !== "fs") continue;
-			const name = basename(a.handle.path);
-			const m = CLUSTER_TOKEN_RE.exec(name);
-			if (!m) {
-				findings.push({
-					detail: `Tokenless sub-plan basename ${name} — it carries no '_cluster-<k>' ordinal, so the root merge cannot attribute it to a slice-DAG cluster. The cluster fanout threads '--cluster <k>' on every unit; a tokenless name means 'synthesize' dropped the flag. Re-dispatch the cluster with its '--cluster <k>' honored in the output filename.`,
-					where: name,
-				});
-				continue;
-			}
-			dispatched.push({ path: handleToString(a.handle), k: Number(m[1]) });
-		}
-	}
-
-	// Duplicate/clobbered ordinal — two dispatched sub-plans claiming the same <k>.
-	// Within one round every unit index is a distinct artifact (the channel is
-	// replaced each round), so a shared <k> is the lost-cluster collision itself.
-	const pathsByK = new Map<number, string[]>();
-	for (const d of dispatched) {
-		const arr = pathsByK.get(d.k);
-		if (arr) arr.push(d.path);
-		else pathsByK.set(d.k, [d.path]);
-	}
-	for (const [k, paths] of pathsByK) {
-		if (paths.length > 1) {
-			findings.push({
-				detail: `Duplicate/clobbered cluster-${k} — ${paths.length} dispatched sub-plans claim the same '_cluster-${k}' ordinal (${paths.map((p) => basename(p)).join(", ")}). Two clusters collided on one filename token, so the root merge would fold one cluster's content over the other and lose a slice-DAG component. Re-dispatch with each cluster's '--cluster <k>' distinct.`,
-				where: `cluster-${k}`,
-			});
-		}
-	}
+	const { dispatched, tokenless } = dispatchedClusterOrdinals(state);
+	const findings: StructureFinding[] = [...tokenless];
+	findings.push(...clobberedOrdinals(dispatched));
 
 	// Cluster-count conservation — distinct dispatched ordinals vs the pre-filter
 	// expected count. A clobber or a never-dispatched cluster both surface here.
-	const dispatchedK = pathsByK.size;
+	const dispatchedK = new Set(dispatched.map((d) => d.k)).size;
 	if (dispatchedK < expectedK) {
 		findings.push({
 			detail: `Missing cluster coverage — the slice map promised ${expectedK} slice-DAG cluster(s) but the fanout dispatched ${dispatchedK} distinct '_cluster-<k>' sub-plan(s). A cluster went undispatched (or two collided on one ordinal — see any duplicate finding above); its slices would be absent from the merged plan. Re-dispatch the missing cluster(s).`,
@@ -1491,69 +1732,9 @@ const subplanCoverageCheck = ({ state, cwd }: ScriptContext): Omit<Output, "meta
 		});
 	}
 
-	// sources-coverage — every slice's design must appear in SOME sub-plan's
-	// `sources:`. Designs follow the `_slice-<N>` convention, so the covered slice
-	// set is read off `sources:` and reconciled against the full slice map.
-	// `parseFrontmatter` throws on an agent-authored scalar smuggling a bare `: `
-	// — the same class `artifact-collector` degrades on (its collector fed this
-	// very channel by ACCEPTING the file). An escaped throw here would convert
-	// the stray colon into a terminal FAIL_SCRIPT_THREW halt, so degrade it to a
-	// re-dispatchable finding naming the FILE — distinct from a slice genuinely
-	// unlisted in `sources:` — and defer the per-slice reconciliation until every
-	// sub-plan parses (an unreadable sub-plan's coverage is unknowable; blaming
-	// its slices would misdirect the repair).
-	const coveredSlices = new Set<number>();
-	let unparseable = false;
-	for (const out of state.named.subplans ?? []) {
-		for (const a of out.artifacts) {
-			if (a.handle.kind !== "fs") continue;
-			let frontmatter: unknown;
-			try {
-				({ frontmatter } = parseFrontmatter(readArtifactFile(handleToString(a.handle), cwd)));
-			} catch {
-				unparseable = true;
-				findings.push({
-					detail: `Unparseable frontmatter in sub-plan ${basename(a.handle.path)} — its YAML frontmatter does not parse (typically a bare ': ' inside an unquoted scalar), so its 'sources:' coverage cannot be read. Re-dispatch the cluster and re-write the sub-plan with parseable frontmatter listing every '--designs' path in 'sources:'.`,
-					where: basename(a.handle.path),
-				});
-				continue;
-			}
-			const fm = frontmatter && typeof frontmatter === "object" ? (frontmatter as Record<string, unknown>) : {};
-			const sources = fm.sources;
-			if (!Array.isArray(sources)) continue;
-			for (const s of sources) {
-				if (typeof s !== "string") continue;
-				const sm = DESIGN_SLICE_RE.exec(s);
-				if (sm) coveredSlices.add(Number(sm[1]));
-			}
-		}
-	}
-	if (!unparseable) {
-		for (const n of [...sliceNumbers].sort((a, b) => a - b)) {
-			if (!coveredSlices.has(n)) {
-				findings.push({
-					detail: `Slice ${n} design absent from every sub-plan's 'sources:' — the cluster fanout threads each '--designs <path>' and 'synthesize' echoes them into 'sources:'; a slice whose design no sub-plan lists is one the root merge would silently drop. List every '--designs' path in its sub-plan's 'sources:'.`,
-					where: `sources: slice ${n}`,
-				});
-			}
-		}
-	}
+	findings.push(...sourcesCoverageGaps(state, cwd, sliceNumbers));
 
-	const pass = findings.length === 0;
-	const data = {
-		dimension: "structure",
-		pass,
-		score: pass ? 100 : 0,
-		severity: pass ? "none" : "high",
-		artifact: handleToString(latestSliceMap.handle),
-		findings,
-		feedback: pass ? "" : findings.map((f) => f.detail).join(" "),
-	};
-	// Basename-keyed off the slice map ⇒ idempotent across re-dispatch rounds.
-	const rel = join(VERDICT_DIR, `subplan-check__${basename(latestSliceMap.handle.path, ".md")}.json`);
-	mkdirSync(join(cwd, VERDICT_DIR), { recursive: true });
-	writeFileSync(join(cwd, rel), JSON.stringify(data, null, 2), "utf-8");
-	return { kind: "json", artifacts: [{ handle: { kind: "fs", path: rel } }], data };
+	return writeStructureVerdict("subplan-check", latestSliceMap.handle, findings, cwd);
 };
 
 /**
@@ -1568,31 +1749,11 @@ const subplanCoverageCheck = ({ state, cwd }: ScriptContext): Omit<Output, "meta
 const phaseBodySlices = (content: string): Map<number, string> => {
 	const lineRe = new RegExp(PLAN_PHASE_RE.source); // drop g/m; per-line test, lastIndex can't drift
 	const lines = content.split("\n");
-	let inFence = false;
-	let fenceLen = 0;
-	let fenceChar = "";
 	const openings: { n: number; start: number }[] = [];
-	for (let i = 0; i < lines.length; i++) {
-		const line = lines[i];
-		const fence = /^\s*(`{3,}|~{3,})/.exec(line);
-		if (fence) {
-			const len = fence[1].length;
-			if (!inFence) {
-				inFence = true;
-				fenceLen = len;
-				fenceChar = fence[1][0];
-			} else if (fence[1][0] === fenceChar && len >= fenceLen && line.trim().length === len) {
-				inFence = false;
-				fenceLen = 0;
-				fenceChar = "";
-			}
-			continue;
-		}
-		if (!inFence) {
-			const m = lineRe.exec(line);
-			if (m?.[1]) openings.push({ n: Number(m[1]), start: i });
-		}
-	}
+	forEachLineOutsideFences(content, (line, i) => {
+		const m = lineRe.exec(line);
+		if (m?.[1]) openings.push({ n: Number(m[1]), start: i });
+	});
 	const slices = new Map<number, string>();
 	for (let idx = 0; idx < openings.length; idx++) {
 		const end = idx + 1 < openings.length ? openings[idx + 1].start : lines.length;
@@ -1643,38 +1804,20 @@ const editPathsOfPhase = (phaseBody: string): string[] => {
 		const stripped = stripLineSuffix(raw.replace(/[`*]/g, "").trim());
 		if (stripped && isPathLike(stripped)) files.add(stripped);
 	};
-	let inFence = false;
-	let fenceLen = 0;
-	let fenceChar = "";
-	for (const line of phaseBody.split("\n")) {
-		const fence = /^\s*(`{3,}|~{3,})/.exec(line);
-		if (fence) {
-			const len = fence[1].length;
-			if (!inFence) {
-				inFence = true;
-				fenceLen = len;
-				fenceChar = fence[1][0];
-			} else if (fence[1][0] === fenceChar && len >= fenceLen && line.trim().length === len) {
-				inFence = false;
-				fenceLen = 0;
-				fenceChar = "";
-			}
-			continue;
-		}
-		if (inFence) continue;
+	forEachLineOutsideFences(phaseBody, (line) => {
 		const fm = line.match(/^\*\*Files?\*\*:\s*(.+)$/);
 		if (fm) {
 			for (const tok of fm[1].split(/[,\s]+/)) add(tok);
-			continue;
+			return;
 		}
 		const hm = line.match(/^#{3,4}\s+\d+\.\s+(\S+)/);
 		if (hm) {
 			add(hm[1]);
-			continue;
+			return;
 		}
 		const lm = line.match(/^-\s+`([^`]+)`/);
 		if (lm) add(lm[1]);
-	}
+	});
 	return [...files];
 };
 
@@ -1727,9 +1870,9 @@ const verifyPhaseFilesCoverage = (content: string, who: string, path: string): {
 
 /**
  * Deterministic citation floor for a synthesized/spliced plan — the plan-scope
- * twin of `sliceStructureCheck`'s citation backing, extending finding 6 past the
- * slice map to the plan and the code-bearing plan (a fabricated `file:line` in
- * the plan misdirects `implement`, exactly the #103 class). Verifies every
+ * twin of `sliceStructureCheck`'s citation backing, extending the citation
+ * floor past the slice map to the plan and the code-bearing plan (a fabricated `file:line` in
+ * the plan misdirects `implement`). Verifies every
  * citation resolves against the working tree and emits a `{ dimension:
  * "structure" }` verdict on `who`'s channel that the gate route folds via
  * `allDimensionsPass`; the matching `<fix>` stage reads `fanin(who)` so the
@@ -1757,20 +1900,7 @@ const planCitationCheck =
 		// prose, out-of-scope Biome paths, unparseable span) fails HERE — into the
 		// plan-fix loop — instead of at reconcile, whose fail route is STOP.
 		findings.push(...verifyAvCommandContract(body));
-		const pass = findings.length === 0;
-		const data = {
-			dimension: "structure",
-			pass,
-			score: pass ? 100 : 0,
-			severity: pass ? "none" : "high",
-			artifact: handleToString(latest.handle),
-			findings,
-			feedback: pass ? "" : findings.map((f) => f.detail).join(" "),
-		};
-		const rel = join(VERDICT_DIR, `${who}__${basename(latest.handle.path, ".md")}.json`);
-		mkdirSync(join(cwd, VERDICT_DIR), { recursive: true });
-		writeFileSync(join(cwd, rel), JSON.stringify(data, null, 2), "utf-8");
-		return { kind: "json", artifacts: [{ handle: { kind: "fs", path: rel } }], data };
+		return writeStructureVerdict(who, latest.handle, findings, cwd);
 	};
 
 /**
@@ -1862,37 +1992,10 @@ const implementScopeCheck = ({ state, cwd }: ScriptContext): Omit<Output, "meta"
 	// A `files:`-less plan yields `[]` ⇒ `scopeExcess` returns `[]` ⇒ inert floor.
 	const declared = records.flatMap((r) => phaseFiles(r.entry));
 
-	// Run-start baseline: the pre-existing-dirty snapshot on the goal channel
-	// (same reader VALIDATE_GOAL_PROMPT / COMMIT_BASELINE_PROMPT use). Best-effort:
-	// absent (no goal stage / unreadable) ⇒ empty baseline ⇒ nothing subtracted.
-	const baselinePath = goalBaselinePath(state);
-	let baseline: string[] = [];
-	if (baselinePath) {
-		try {
-			const parsed = JSON.parse(readArtifactFile(baselinePath, cwd)) as { paths?: unknown };
-			const p = parsed.paths;
-			baseline = Array.isArray(p) ? p.filter((x): x is string => typeof x === "string") : [];
-		} catch {
-			baseline = [];
-		}
-	}
-
-	// Current dirty set. Non-repo / git-unavailable ⇒ empty (pass) — never throws.
-	// stdio: stderr ignored — git's "fatal: not a git repository" leaks to the
-	// parent's stderr even though the catch treats it as a supported silent degrade.
-	let dirty: string[] = [];
-	try {
-		// -uall matches the baseline writer: enumerate untracked files individually
-		// (a collapsed `newdir/` entry can never match a declared file path).
-		const out = execFileSync("git", ["status", "--porcelain", "--untracked-files=all"], {
-			cwd,
-			encoding: "utf-8",
-			stdio: ["ignore", "pipe", "ignore"],
-		});
-		dirty = parseGitStatusPaths(out);
-	} catch {
-		dirty = [];
-	}
+	// Run-start baseline (goal channel, role "baseline") + current dirty set —
+	// both best-effort (absent / non-repo ⇒ `[]`); see the two helpers' docs.
+	const baseline = readGoalBaseline(goalBaselinePath(state), cwd);
+	const dirty = gitDirtyPaths(cwd);
 
 	const excess = scopeExcess(dirty, baseline, declared);
 	const findings = excess.map((path) => ({
@@ -1904,7 +2007,7 @@ const implementScopeCheck = ({ state, cwd }: ScriptContext): Omit<Output, "meta"
 		dimension: "scope",
 		pass,
 		verdict: pass ? "pass" : "fail",
-		score: pass ? 100 : 0,
+		score: pass ? VERDICT_PASS_SCORE : VERDICT_FAIL_SCORE,
 		severity: pass ? "none" : "high",
 		artifact: handleToString(latest.handle),
 		findings,
@@ -1950,38 +2053,7 @@ const implementScopeCheckVet = ({ state, cwd }: ScriptContext): Omit<Output, "me
 	// Declared set = UNION of `phaseFiles` over EVERY non-failed plan on the channel.
 	// The fs-artifact filter skips failed/unfilled entries (an Output with no fs
 	// handle contributed no plan to read).
-	const plans = state.named.plans ?? [];
-	const declared = new Set<string>();
-	// Narrowed Artifact whose handle is the `fs` variant, so the loop's
-	// `if (a.handle.kind !== "fs") continue` narrowing carries to the post-loop
-	// `latest.handle.path` read (the file's idiom — `designPathsBySlice` reads
-	// `.path` inside its own same-scope guard; this loop captures the artifact
-	// ACROSS iterations, so the narrowed type annotates the capture).
-	type FsArtifact = Artifact & { handle: { kind: "fs"; path: string } };
-	let latest: FsArtifact | undefined;
-	for (const out of plans) {
-		// Per plan, capture its FIRST fs artifact as the `latest` candidate so the
-		// LAST plan with an fs artifact wins (mirrors `latestFsArtifact`'s
-		// `.at(-1)?.artifacts.find(kind==="fs")` — last channel entry, first fs
-		// artifact in it — which keys the verdict path + `artifact` field).
-		let firstFsInPlan: FsArtifact | undefined;
-		for (const a of out.artifacts) {
-			if (a.handle.kind !== "fs") continue; // fs-artifact filter
-			if (!firstFsInPlan) firstFsInPlan = a as FsArtifact;
-			const path = a.handle.path;
-			try {
-				const content = readArtifactFile(path, cwd);
-				for (const r of planPhaseRecords(content, "implement-scope-check", path)) {
-					for (const f of phaseFiles(r.entry)) declared.add(f);
-				}
-			} catch {
-				// Unreadable/unparseable plan: don't widen the declared set on error —
-				// the union stays the sum of the parseable plans. (A plan so malformed
-				// it can't be parsed is a `plan-cite-check`/`plan-fix` concern, not scope.)
-			}
-		}
-		if (firstFsInPlan) latest = firstFsInPlan;
-	}
+	const { declared, latest } = unionDeclaredWriteSet(state.named.plans ?? [], cwd);
 	if (!latest) {
 		throw haltPreflight(
 			"implement-scope-check",
@@ -1990,39 +2062,12 @@ const implementScopeCheckVet = ({ state, cwd }: ScriptContext): Omit<Output, "me
 		);
 	}
 
-	// Baseline: the run-start pre-existing-dirty snapshot riding the goal channel
-	// (role "baseline"), now published by vet's `goal` stage. Read its { paths } to
-	// subtract paths the run did not touch.
-	const baselinePath = goalBaselinePath(state);
-	let baseline: string[] = [];
-	if (baselinePath) {
-		try {
-			const parsed = JSON.parse(readArtifactFile(baselinePath, cwd)) as { paths?: unknown };
-			baseline = Array.isArray(parsed.paths) ? parsed.paths.filter((p): p is string => typeof p === "string") : [];
-		} catch {
-			baseline = []; // missing/unreadable baseline ⇒ degrade to baseline-less
-		}
-	}
+	// Run-start baseline (goal channel, role "baseline") + current dirty set —
+	// both best-effort (absent / non-repo ⇒ `[]`); see the two helpers' docs.
+	const baseline = readGoalBaseline(goalBaselinePath(state), cwd);
+	const dirty = gitDirtyPaths(cwd);
 
-	// Dirty set via `git status --porcelain` (rename targets resolved by the shared
-	// parser). stdio: stderr ignored — git's "fatal: not a git repository" leaks to
-	// the parent's stderr even though the catch treats it as a supported silent
-	// degrade (best-effort: non-repo / git-missing ⇒ empty dirty ⇒ pass).
-	let dirty: string[] = [];
-	try {
-		// -uall matches the baseline writer: enumerate untracked files individually
-		// (a collapsed `newdir/` entry can never match a declared file path).
-		const out = execFileSync("git", ["status", "--porcelain", "--untracked-files=all"], {
-			cwd,
-			encoding: "utf-8",
-			stdio: ["ignore", "pipe", "ignore"],
-		});
-		dirty = parseGitStatusPaths(out);
-	} catch {
-		dirty = [];
-	}
-
-	// Phase 3's shared core: subtract the run's bookkeeping dirs (`.rpiv/`,
+	// Shared core: subtract the run's bookkeeping dirs (`.rpiv/`,
 	// `thoughts/`) and the run-start baseline; empty-`declared` ⇒ `[]` (degradation
 	// ⇒ inert floor — a fully `files:`-less plan never false-fails).
 	const excess = scopeExcess(dirty, baseline, [...declared]);
@@ -2035,7 +2080,7 @@ const implementScopeCheckVet = ({ state, cwd }: ScriptContext): Omit<Output, "me
 		dimension: "scope",
 		pass,
 		verdict: pass ? "pass" : "fail",
-		score: pass ? 100 : 0,
+		score: pass ? VERDICT_PASS_SCORE : VERDICT_FAIL_SCORE,
 		severity: pass ? "none" : "high",
 		artifact: handleToString(latest.handle),
 		findings,
@@ -2163,8 +2208,8 @@ const planVerificationCommands = (body: string): string[] => planVerificationRec
  * file (`*.test.{ts,tsx,js,jsx}`); any other target is flagged and left untouched
  * (fail-closed: golden masters, fixtures, `*.t.ts`, and production sources are NOT
  * auto-applied). Narrow by design — do not widen it to compensate for a weak
- * directive (risk c1r2: correctness rests on this neither false-failing a legit
- * test edit nor false-allowing a non-test target).
+ * directive (correctness rests on this neither false-failing a legit test edit
+ * nor false-allowing a non-test target).
  */
 const TEST_PATH_RE = /\.test\.[tj]sx?$/;
 const isTestPath = (target: string): boolean => TEST_PATH_RE.test(target);
@@ -2228,7 +2273,7 @@ const AV_GREP_VALUE_FLAGS = new Set([
 ]);
 /** Absence-assertion prose on a grep-family AV line — "success" is grep exit 1,
  *  the exact inverse of the exit-0 contract. Deliberately a short literal list
- *  (the c8fc phrasing class), not a general negation detector. */
+ *  of observed absence phrases, not a general negation detector. */
 const AV_ABSENCE_PROSE_RE = /returns nothing|no matches|no occurrences|is gone|must be gone/i;
 /** Extensions Biome's config COULD scope (biome.json includes *.ts/*.js + site
  *  css/html). Fail-open: flag a Biome runner only when NO forwarded path can be
@@ -2243,9 +2288,9 @@ const AV_BIOME_SCOPED_PATH_RE = /\.(?:ts|tsx|js|jsx|mjs|cjs|css|html|json|jsonc)
  * the sole pass signal — so prose qualifiers around the span never execute.
  * Folded into `planCitationCheck` (both the `plan-cite-check` and
  * `code-cite-check` arms) so a violating AV line fails INTO the plan-fix loop,
- * not at `reconcile` where the route is STOP with no fix arm (run c8fc died
- * there on four AV lines that were correct as prose and unsatisfiable as
- * exit-0 commands). Narrow by design — each rule targets an observed
+ * not at `reconcile` where the route is STOP with no fix arm (an AV line
+ * correct as prose but unsatisfiable as an exit-0 command would halt there).
+ * Narrow by design — each rule targets an observed
  * false-class, fail-open otherwise; do NOT widen into a general shell linter:
  *  1. unparseable command (unterminated quote / empty) — reconcile would flag
  *     it anyway; surfacing it here buys a fix round instead of a halt;
@@ -2325,6 +2370,95 @@ const verifyAvCommandContract = (body: string): { detail: string; where: string 
 };
 
 /**
+ * Apply each `#### Reconciliation` directive, write-restricted to test-expectation
+ * files (`isTestPath` — reconcile writes ONLY test files; a non-test target is a
+ * finding, left untouched, fail-closed). A present `find` is replaced exactly
+ * once (`String.replace`, first match); an absent `find` whose `replace` is ALSO
+ * absent is a finding (reconcile does not guess); an absent `find` whose `replace`
+ * is already present is the idempotent-re-run no-op (a prior successful apply, no
+ * finding, no write). Paths resolve through `cwd` (`isAbsolute` short-circuit else
+ * `join(cwd, target)`). Fail-soft: a read/apply throw degrades to a finding naming
+ * the target, never a terminal throw. Returns findings in DIRECTIVE order and
+ * performs the side-effecting writes itself (`reconcile` spreads the return).
+ */
+const applyReconciliationDirectives = (
+	directives: readonly ReconciliationDirective[],
+	cwd: string,
+): { detail: string; where: string }[] => {
+	const findings: { detail: string; where: string }[] = [];
+	// Apply directives, write-restricted to test-expectation files.
+	for (const d of directives) {
+		if (!isTestPath(d.target)) {
+			findings.push({
+				detail: `reconcile: directive target ${d.target} is not a test-expectation file (*.test.{ts,tsx,js,jsx}) — reconcile writes only test files; record the directive against a test target or apply the edit in the owning phase`,
+				where: d.target,
+			});
+			continue;
+		}
+		try {
+			const abs = isAbsolute(d.target) ? d.target : join(cwd, d.target);
+			const content = readFileSync(abs, "utf-8");
+			if (content.includes(d.find)) {
+				// `String.replace` with a string pattern replaces the FIRST match exactly once.
+				writeFileSync(abs, content.replace(d.find, d.replace), "utf-8");
+			} else if (d.replace !== "" && content.includes(d.replace)) {
+				// Idempotent re-run: the find is gone but the replacement is present ⇒ the
+				// directive was already applied (e.g. a vet review-fix loop re-running
+				// reconcile). Treated as satisfied — reconcile must not fail on its own
+				// prior successful apply.
+			} else {
+				findings.push({
+					detail: `reconcile: directive find substring not present in ${d.target} (and the replacement is absent — not already applied) — the expected text to replace is absent; the directive is stale or the test no longer matches`,
+					where: d.target,
+				});
+			}
+		} catch (err) {
+			findings.push({
+				detail: `reconcile: could not apply directive to ${d.target} — ${err instanceof Error ? err.message : String(err)}`,
+				where: d.target,
+			});
+		}
+	}
+	return findings;
+};
+
+/**
+ * Re-run every per-phase `#### Automated Verification:` command via `execFileSync`
+ * — arg-array (no shell), stdin ignored, exit 0 expected. An unparseable command
+ * (`parseShellCommand` ⇒ null) is a finding naming it; a non-zero exit or throw is
+ * a finding naming it (fail-soft — reconcile never throws on AV failure; a thrown
+ * command degrades to the same non-zero finding). Returns findings in COMMAND
+ * order. `reconcile` spreads the return into its findings array.
+ */
+const rerunAvCommands = (commands: readonly string[], cwd: string): { detail: string; where: string }[] => {
+	const findings: { detail: string; where: string }[] = [];
+	// Re-run every per-phase AV command (fail-soft: non-zero/throw ⇒ a finding).
+	for (const cmd of commands) {
+		const parsed = parseShellCommand(cmd);
+		if (!parsed) {
+			findings.push({
+				detail: `reconcile: Automated Verification command unparseable — \`${cmd}\``,
+				where: cmd,
+			});
+			continue;
+		}
+		try {
+			execFileSync(parsed.exe, parsed.args, {
+				cwd,
+				encoding: "utf-8",
+				stdio: ["ignore", "pipe", "pipe"],
+			});
+		} catch {
+			findings.push({
+				detail: `reconcile: Automated Verification command failed (non-zero) — \`${cmd}\``,
+				where: cmd,
+			});
+		}
+	}
+	return findings;
+};
+
+/**
  * Deterministic post-implement reconciliation — the coherence backstop the
  * parallel implement lane needs. Sibling phases run concurrently in one tree;
  * each phase's own `#### Automated Verification:` passed in isolation, but a
@@ -2397,63 +2531,7 @@ const reconcile = ({ state, cwd }: ScriptContext): Omit<Output, "meta"> => {
 		});
 	}
 
-	// Apply directives, write-restricted to test-expectation files.
-	for (const d of directives) {
-		if (!isTestPath(d.target)) {
-			findings.push({
-				detail: `reconcile: directive target ${d.target} is not a test-expectation file (*.test.{ts,tsx,js,jsx}) — reconcile writes only test files; record the directive against a test target or apply the edit in the owning phase`,
-				where: d.target,
-			});
-			continue;
-		}
-		try {
-			const abs = isAbsolute(d.target) ? d.target : join(cwd, d.target);
-			const content = readFileSync(abs, "utf-8");
-			if (content.includes(d.find)) {
-				// `String.replace` with a string pattern replaces the FIRST match exactly once.
-				writeFileSync(abs, content.replace(d.find, d.replace), "utf-8");
-			} else if (d.replace !== "" && content.includes(d.replace)) {
-				// Idempotent re-run: the find is gone but the replacement is present ⇒ the
-				// directive was already applied (e.g. a vet review-fix loop re-running
-				// reconcile). Treated as satisfied — reconcile must not fail on its own
-				// prior successful apply.
-			} else {
-				findings.push({
-					detail: `reconcile: directive find substring not present in ${d.target} (and the replacement is absent — not already applied) — the expected text to replace is absent; the directive is stale or the test no longer matches`,
-					where: d.target,
-				});
-			}
-		} catch (err) {
-			findings.push({
-				detail: `reconcile: could not apply directive to ${d.target} — ${err instanceof Error ? err.message : String(err)}`,
-				where: d.target,
-			});
-		}
-	}
-
-	// Re-run every per-phase AV command (fail-soft: non-zero/throw ⇒ a finding).
-	for (const cmd of commands) {
-		const parsed = parseShellCommand(cmd);
-		if (!parsed) {
-			findings.push({
-				detail: `reconcile: Automated Verification command unparseable — \`${cmd}\``,
-				where: cmd,
-			});
-			continue;
-		}
-		try {
-			execFileSync(parsed.exe, parsed.args, {
-				cwd,
-				encoding: "utf-8",
-				stdio: ["ignore", "pipe", "pipe"],
-			});
-		} catch {
-			findings.push({
-				detail: `reconcile: Automated Verification command failed (non-zero) — \`${cmd}\``,
-				where: cmd,
-			});
-		}
-	}
+	findings.push(...applyReconciliationDirectives(directives, cwd), ...rerunAvCommands(commands, cwd));
 
 	// Best-effort bookkeeping: append a timestamped log under ## Synthesis Notes.
 	// Non-fatal — a write failure here is silent (the verdict below is the signal).
@@ -2483,7 +2561,7 @@ const reconcile = ({ state, cwd }: ScriptContext): Omit<Output, "meta"> => {
 		dimension: "reconcile",
 		pass,
 		verdict: pass ? "pass" : "fail",
-		score: pass ? 100 : 0,
+		score: pass ? VERDICT_PASS_SCORE : VERDICT_FAIL_SCORE,
 		severity: pass ? "none" : "high",
 		artifact: handleToString(latest.handle),
 		findings,
@@ -2513,8 +2591,8 @@ const DESIGN_SLICE_RE = /slice-(\d+)/;
  * (its documented "latest-wins, same paths" contract, so `subplan`/`synthesize`
  * read the accepted docs). So the newest entry wins, deterministically — throwing
  * on a duplicate would halt every normal run at `subplan`. (The resume re-dispatch
- * that once left CONFLICTING designs on the channel is fixed at its source —
- * finding 7 — so there is no corruption left to fail loud on here.)
+ * that once left CONFLICTING designs on the channel is fixed at its source,
+ * so there is no corruption left to fail loud on here.)
  */
 const designPathsBySlice = (state: RunView): Map<number, string> => {
 	const bySlice = new Map<number, string>();
@@ -3006,7 +3084,7 @@ const gradePanelFanout = (
 			// re-grades the FULL roster — a broad amend may have regressed a passing
 			// dimension the carry-forward would otherwise trust. With NO prior
 			// (round 1 / first re-grade) the carry-forward applies unchanged. See
-			// `isSurgicalFix` for the fail-closed contract (risk c5r3).
+			// `isSurgicalFix` for the fail-closed contract.
 			const surgical =
 				!confirm && priorChannel !== undefined && isSurgicalFix(state, priorChannel, cwd, target, latest, pending);
 			const priorPresent = priorChannel !== undefined && priorArtifact(state, priorChannel) !== undefined;
@@ -3094,7 +3172,7 @@ interface RiskRuling {
 	 * `mechanics` marks a risk whose `pass` asserts a verified mechanism (a
 	 * behavior that holds because code was checked), so a passing ruling MUST
 	 * cite the checked `file:line` in `evidence` — an un-evidenced mechanics
-	 * pass demotes (the a777 honest-lazy confident-falsehood class). Absent on
+	 * pass demotes. Absent on
 	 * an ordinary risk ⇒ no evidence duty.
 	 */
 	claim_type?: string;
@@ -3194,13 +3272,13 @@ const planAuthoredRisks = (state: RunView, channel: string): Map<string, RiskRec
 /**
  * A mechanics-pass ruling's evidence duty: when the plan AUTHORED a
  * `claim_type: "mechanics"` risk for the ruling's id, a `pass` ruling MUST
- * cite the checked `file:line` in `evidence` (forces engagement — a777's panel
- * asserted a mechanism and cited nothing). The trigger is sourced from the
+ * cite the checked `file:line` in `evidence` (forces engagement — a pass with
+ * no evidence is an unverified mechanism). The trigger is sourced from the
  * plan-authored `RiskRecord`, NOT the ruling — so a panel cannot drop the
  * evidence duty by omitting `claim_type` from its ruling (the dropped-duty
  * bypass). Reuses `FILE_LINE_CITATION_RE` via `.match()` — NOT `.test()`: the
- * regex carries the `/g` flag (packages/rpiv-pi/extensions/rpiv-core/built-in-workflows.ts:1021),
- * so `.test()` is stateful across calls (`lastIndex` advances) and would
+ * regex carries the `/g` flag, so `.test()` is stateful across calls
+ * (`lastIndex` advances) and would
  * intermittently miss a present citation. An id with no authored mechanics
  * risk carries no evidence duty ⇒ returns `true`.
  */
@@ -3245,7 +3323,7 @@ const rulingEffectivePass = (r: RiskRuling, authored?: RiskRecord): boolean =>
  * plan-authored risk flag the panel ruled on must be ruled PASS (latest ruling
  * per flag wins, mirroring `allDimensionsPass`). A flag ruled `fail` — the
  * grader confirmed the risk is real and unaddressed — blocks the gate, so a
- * self-flagged risk (e.g. the #103 override-vs-env validation bug) can no longer
+ * self-flagged risk (e.g. an override-vs-env validation mismatch) can no longer
  * ride a green conformance pass into commit. An empty panel (no flag engaged)
  * imposes no constraint; the plan simply declared no risks.
  */
@@ -3465,7 +3543,7 @@ const vetWorkflow = defineWorkflow({
 		goal: produces.script({ run: captureGoal }),
 		"code-review": produces(),
 		blueprint: produces(),
-		// Phase 2's dep-gated DAG variant (unpinned by Phase 3): implement phases now
+		// Dep-gated DAG variant: implement phases now
 		// carry `id: phase-<n>` + `deps` derived from each phase's `files:` overlap /
 		// authored `depends_on`, so the host cap may fan them out in parallel.
 		implement: acts({ loop: IMPLEMENT_DAG_FANOUT, reads: ["plans"] }),
@@ -3496,7 +3574,7 @@ const vetWorkflow = defineWorkflow({
 		blueprint: "implement",
 		// Scope-check inserts BEFORE validate, INSIDE the review-fix loop. Pass →
 		// validate; fail/missing terminates (STOP, no fallback). Byte-for-byte
-		// Phase 3's build route.
+		// build's route.
 		implement: "implement-scope-check",
 		// Scope-check still gates onward, but now into `reconcile` (not validate):
 		// the coherence backstop runs after the write-set is proven. Pass ⇒
