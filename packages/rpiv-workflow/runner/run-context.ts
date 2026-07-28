@@ -25,10 +25,10 @@ import type { RunContext, RunState } from "../types.js";
  * body) are NOT counted, and each destination stage owns its own budget
  * (`RunContext.revisits`), so the retry allowance is invariant to how many
  * decision edges the cycle crosses per iteration and unrelated loops never
- * share a pool. With 2: any given stage runs once unconditionally and may be
- * re-entered up to 2 more times — at most 3 executions per stage.
+ * share a pool. With 3: any given stage runs once unconditionally and may be
+ * re-entered up to 3 more times — at most 4 executions per stage.
  */
-export const MAX_BACKWARD_JUMPS = 2;
+export const MAX_BACKWARD_JUMPS = 3;
 
 /**
  * Run-wide safety cap on loop units — the backstop for any loop kind whose

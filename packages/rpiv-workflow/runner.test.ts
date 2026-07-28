@@ -1914,6 +1914,8 @@ describe("runWorkflow", () => {
 			writeArtifact(tmpDir, ".rpiv/artifacts/b/b2.md");
 			writeArtifact(tmpDir, ".rpiv/artifacts/a/a3.md");
 			writeArtifact(tmpDir, ".rpiv/artifacts/b/b3.md");
+			writeArtifact(tmpDir, ".rpiv/artifacts/a/a4.md");
+			writeArtifact(tmpDir, ".rpiv/artifacts/b/b4.md");
 
 			const chain = createMockSessionChain({
 				cwd: tmpDir,
@@ -1924,6 +1926,8 @@ describe("runWorkflow", () => {
 					{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/b/b2.md")] },
 					{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/a/a3.md")] },
 					{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/b/b3.md")] },
+					{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/a/a4.md")] },
+					{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/b/b4.md")] },
 				],
 			});
 
@@ -1942,20 +1946,20 @@ describe("runWorkflow", () => {
 
 			expect(result.success).toBe(false);
 			expect(result.error).toMatch(/backward-jump limit exceeded/i);
-			expect(result.error).toMatch(/3.*max 2/);
-			// Per-decision counting: each b→a is one decision retry. With cap=2:
+			expect(result.error).toMatch(/4.*max 3/);
+			// Per-decision counting: each b→a is one decision retry. With cap=3:
 			// pass 1 (a→b, no retry yet) → b→a (retry 1) → pass 2 → b→a (retry 2) →
-			// pass 3 → b→a (retry 3 > 2) HALT before re-entering a.
-			// 6 stages completed: a, b, a, b, a, b. Trip fires at b's 3rd
-			// decision attempting to revisit a.
-			expect(result.stagesCompleted).toBe(6);
+			// pass 3 → b→a (retry 3) → pass 4 → b→a (retry 4 > 3) HALT before
+			// re-entering a. 8 stages completed: a, b, a, b, a, b, a, b. Trip
+			// fires at b's 4th decision attempting to revisit a.
+			expect(result.stagesCompleted).toBe(8);
 			expect(chain.remaining()).toBe(0);
 
 			const { stages } = readState(tmpDir);
 			const stageRows = stages.filter((s) => typeof s.stageNumber === "number");
-			// 6 completed + 1 failed row.
-			expect(stageRows).toHaveLength(7);
-			expect(stageRows.filter((s) => s.status === "completed")).toHaveLength(6);
+			// 8 completed + 1 failed row.
+			expect(stageRows).toHaveLength(9);
+			expect(stageRows.filter((s) => s.status === "completed")).toHaveLength(8);
 			expect(stageRows.filter((s) => s.status === "failed")).toHaveLength(1);
 			// Trip attribution: failure row blames `a` (the would-be revisit
 			// target), not `b` (the just-completed stage).
@@ -2169,19 +2173,19 @@ describe("runWorkflow", () => {
 		it("counts per destination — a cycle crossing TWO decision edges per iteration keeps the full retry budget", async () => {
 			// The built-in gate shape: check →(decide)→ grade →(decide)→ fix
 			// →(string)→ check. Each fix iteration crosses TWO decision edges
-			// to visited stages. Under a shared-streak counter, cap=2 halted
-			// at the THIRD grade entry (streak: grade 1, fix 2, grade 3) —
+			// to visited stages. Under a shared-streak counter, the cap halted
+			// at an early grade entry (streak: grade 1, fix 2, grade 3) —
 			// inserting a deterministic-floor edge silently taxed the fix
-			// budget. Per-destination: grade and fix each own a budget of 2
-			// re-entries, so three full fix iterations complete and the guard
-			// trips on grade's 3rd RE-ENTRY (its would-be 4th run).
-			for (let i = 1; i <= 4; i++) {
+			// budget. Per-destination: grade and fix each own a budget of 3
+			// re-entries, so four full fix iterations complete and the guard
+			// trips on grade's 4th RE-ENTRY (its would-be 5th run).
+			for (let i = 1; i <= 5; i++) {
 				writeArtifact(tmpDir, `.rpiv/artifacts/check/k${i}.md`);
 				writeArtifact(tmpDir, `.rpiv/artifacts/grade/g${i}.md`);
 				writeArtifact(tmpDir, `.rpiv/artifacts/fix/f${i}.md`);
 			}
 			const steps: Array<{ branch: ReturnType<typeof mockAssistantMessage>[] }> = [];
-			for (let i = 1; i <= 4; i++) {
+			for (let i = 1; i <= 5; i++) {
 				steps.push({ branch: [mockAssistantMessage(`Wrote .rpiv/artifacts/check/k${i}.md`)] });
 				steps.push({ branch: [mockAssistantMessage(`Wrote .rpiv/artifacts/grade/g${i}.md`)] });
 				steps.push({ branch: [mockAssistantMessage(`Wrote .rpiv/artifacts/fix/f${i}.md`)] });
@@ -2204,10 +2208,10 @@ describe("runWorkflow", () => {
 
 			expect(result.success).toBe(false);
 			expect(result.error).toMatch(/backward-jump limit exceeded/i);
-			expect(result.error).toMatch(/"grade".*3.*max 2/);
-			// Iterations: (check grade fix) ×3, then check#4 completes and its
-			// decision to grade trips (grade's 3rd re-entry > cap 2) = 10 stages.
-			expect(result.stagesCompleted).toBe(10);
+			expect(result.error).toMatch(/"grade".*4.*max 3/);
+			// Iterations: (check grade fix) ×4, then check#5 completes and its
+			// decision to grade trips (grade's 4th re-entry > cap 3) = 13 stages.
+			expect(result.stagesCompleted).toBe(13);
 		});
 
 		it("gives unrelated loops independent budgets (per-destination, no shared pool)", async () => {
