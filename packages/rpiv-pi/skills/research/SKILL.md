@@ -169,6 +169,7 @@ Findings go into Precedents & Lessons. Otherwise skip and note "git history unav
 
    - **`ask_user_question` tool** — when your question has 2-4 concrete options from code analysis (pattern conflicts, integration choices, scope boundaries, priority overrides). The automatically appended `Type something.` row captures custom input. Example:
 
+     > `Header` is capped at ≤16 characters (`MAX_HEADER_LENGTH = 16` — longer values are rejected).
      > Use the `ask_user_question` tool with the following question: "Found 2 patterns for retry logic — which is canonical?". Header: "Pattern". Options: "Event-sourced retry (Recommended)" (`src/events/orders.ts:45-67` — 3 hooks, matches precedent commit `abc123`); "Direct retry loop" (`src/services/OrderService.ts:112` — single use, no event traceability).
 
    - **Open-ended** (discovery, "what am I missing?", corrections) — still use `ask_user_question`; supply 2-4 concrete hypotheses with behavior, `file:line` evidence, impact, and decision context, then let the automatic `Type something.` row capture unanticipated detail.

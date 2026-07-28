@@ -69,6 +69,7 @@ The final artifact is blueprint-consumable per phase.
 ### Step 1: Identify the Target
 
 1. **Argument is empty:** use the `ask_user_question` tool with the following question: "What are we reviewing?". Header: "Target". Options: "Single module" (one package / project / crate / namespace directory); "Single subdirectory" (a subtree inside a module); "Single file" (deep review of one large file). The automatic `Type something.` row accepts a custom target.
+   - `Header` is capped at ≤16 characters (`MAX_HEADER_LENGTH = 16` — longer values are rejected).
 
 2. **Validate the target exists**. Use `ls` via the Bash tool on the resolved path. If missing, ask for a corrected path.
 

@@ -83,6 +83,16 @@ export function stageEntryArgs(
 	if (usesOriginalInput(def, stageName, startStage)) return state.originalInput;
 	if (hasReads(def)) {
 		const parts: string[] = [];
+		// Duplicate-flag dedup: collapse two entries on the SAME channel whose
+		// handles stringify identically (the a777 cite-check symptom — a re-run
+		// fanout channel re-published the same fs path, emitting a duplicate
+		// `--code-cite-check <path>` flag). The key is `${name}\0${handle}`:
+		// the \0 separator avoids a concatenation collision (name "ab" + handle
+		// "cd" vs "a" + "bcd"), and carrying the channel `name` preserves a fanin
+		// repeat whose entries carry DISTINCT paths (e.g. per-cluster subplans) and
+		// a multi-artifact entry whose artifacts differ. The set spans every read
+		// of the call so two reads of the same name+handle also collapse.
+		const seen = new Set<string>();
 		for (const read of def.reads) {
 			const name = readName(read);
 			const slot = state.named[name];
@@ -105,7 +115,11 @@ export function stageEntryArgs(
 			for (const entry of entries) {
 				if (!entry || isFailedOutput(entry)) continue; // unfilled (pending) or failed → no args
 				for (const artifact of entry.artifacts) {
-					parts.push(`--${name}`, handleToString(artifact.handle));
+					const handle = handleToString(artifact.handle);
+					const key = `${name}\0${handle}`;
+					if (seen.has(key)) continue;
+					seen.add(key);
+					parts.push(`--${name}`, handle);
 				}
 			}
 		}

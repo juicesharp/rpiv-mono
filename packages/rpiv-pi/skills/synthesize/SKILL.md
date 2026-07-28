@@ -92,7 +92,10 @@ Copy values verbatim. `<iso>` is the first tab-separated field; `<slug>` is the 
    - **Overlap** — when two inputs touch the same file/symbol, merge them into a single coherent change (or split into ordered phases) rather than emitting contradictory edits.
    - **Integration** — wire the seams: an input that depends on another's interface must reference the real shape the other defines. In root mode, this is where each sub-plan's `exports` get connected.
    - **Conflict** — when two inputs make incompatible decisions, resolve to one, and record the resolution in Synthesis Notes (the grade panel's correctness/architecture-fit members will check it).
-   - **Risk flags** — a decision you're not confident is correct (an unverified assumption, an edge case wanting a second opinion) goes in the frontmatter `risks:` array as a `{ id, claim }` entry (stable `id`; `claim` = the one-line assertion to rule on) plus a `## Risk Flags` line — **never** buried in prose. This is the first-class channel grade and validate are REQUIRED to rule on; flag anything you'd otherwise write "flagging this so the grade panel can weigh in" about.
+   - **Risk flags** — a decision you're not confident is correct (an unverified assumption, an edge case wanting a second opinion) goes in the frontmatter `risks:` array as a `{ id, claim }` entry (stable `id`; `claim` = the one-line assertion to rule on) plus a `## Risk Flags` line — **never** buried in prose. This is the first-class channel grade and validate are REQUIRED to rule on; flag anything you'd otherwise write "flagging this so the grade panel can weigh in" about. Two optional fields tighten what "passing" means, so the gate can refuse a confident-but-ungrounded assertion (the a777 honest-lazy class):
+      - **`claim_type: mechanics`** — the `claim` asserts a verified mechanism (a behavior that holds because code was checked). A grade panel ruling it `pass` MUST cite the checked `file:line` in that ruling's `evidence`, else the gate demotes the pass as un-grounded. Use it for risks like "the revert is byte-identical" or "the helper no-ops on absent fields" where the assertion is checkable against code right now.
+      - **`disposition: verify-at-implement`** — the panel may defer the risk to a later phase rather than rule it in this panel. A deferred pass is accepted ONLY when the flag ALSO carries a concrete **`procedure`** (the named command/test the owner phase runs to discharge it) and an **`owner`** (the phase `n` that runs that step); a bare "verify later" with no procedure demotes. Use it for risks that genuinely need the shipped tree (a real `build` run, a coverage gate) the plan-grade panel cannot run.
+      - Default (no `claim_type`, no `disposition`) stays the ordinary `{ id, claim }` shape — the panel rules it on the artifact as today, with no evidence or procedure duty.
 3. **Sequence phases** — one phase per slice (flat/partial) or carry the sub-plans' phases through (root), ordered so a phase never precedes one it `depends_on`. Tightly-coupled units may merge into one phase; note any merge. Populate each entry's `files:` from that phase's `### Changes` paths (every repo-root-relative path the phase creates or edits) and `depends_on` only for semantic ordering NOT visible in `files:` (a phase that needs an earlier phase to run first despite no shared file) — lower `n` only.
 4. **Write the output** (below), `status: ready`:
    - **Flat / root** → a standard **plan** in `.rpiv/artifacts/plans/` — phases with concrete changes and Success Criteria that pass through unchanged to `implement`/`validate`.
@@ -130,6 +133,8 @@ phases:
   - { n: 2, title: "<title>", slice: 2, files: ["path/to/other.ts"], depends_on: [1] }
 risks:
   - { id: r1, claim: "<a decision you want the grade panel + validate to rule on>" }
+  - { id: r2, claim: "<a checkable mechanism>", claim_type: mechanics }
+  - { id: r3, claim: "<needs the shipped tree to discharge>", disposition: verify-at-implement, procedure: "<named command/test>", owner: <phase n> }
 sources: [<each --designs path>, <--research path>]
 tags: [plan, synthesized]
 ---

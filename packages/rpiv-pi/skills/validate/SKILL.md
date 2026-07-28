@@ -131,6 +131,7 @@ For each phase in the plan:
 7. **Rule every plan risk flag** (when the plan carries a `risks:` frontmatter array):
    - The plan's `risks:` array (each `{ id, claim }`, described under `## Risk Flags`) is the structured channel of decisions the planner asked to have checked. You are REQUIRED to rule on each one against the actual implementation — not skip it.
    - For each flag, verify its `claim` against the delivered code (Read/Grep the relevant `file:line`) and record a `risk_rulings: [{ id, pass }]` entry — `pass: true` when the risk is unfounded or handled, `pass: false` when it is real and unaddressed in the shipped code.
+   - **For a `disposition: verify-at-implement` flag**, do not just Read/Grep — RUN its declared `procedure` (the named command/test the plan's `owner` phase promised) against the shipped code and rule `pass: false` if that procedure fails. This is the phase that discharges the deferral the plan-grade panel accepted on trust; a deferred risk whose procedure now fails is exactly the un-addressed-defect class this gate catches. A mechanics (`claim_type: mechanics`) flag is verified against its shipped `file:line` as above.
    - **Any `pass: false` ruling forces `verdict: fail`** and is reported under **Potential Issues**, quoting the flag's claim. A flagged risk that shipped unaddressed is exactly the class of defect this gate exists to catch.
 
 ### Step 3: Write the Validation Report

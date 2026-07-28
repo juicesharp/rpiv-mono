@@ -878,10 +878,10 @@ describe("vet workflow", () => {
 
 		it("halts when vet exceeds maxBackwardJumps", async () => {
 			// Pre-write artifacts for each stage pass. With default
-			// maxBackwardJumps=2, the guard halts when the 4th code-review's
-			// decision re-enters blueprint a 3rd time (>2). The cycle:
-			//   cr1→bp1→impl1→v1 → cr2→bp2→impl2→v2 → cr3→bp3→impl3→v3 → cr4(HALT)
-			// Stages completed: 13 (cr×4 + bp×3 + impl×3 + validate×3).
+			// maxBackwardJumps=3, the guard halts when the 5th code-review's
+			// decision re-enters blueprint a 4th time (>3). The cycle:
+			//   cr1→bp1→impl1→v1 → … → cr4→bp4→impl4→v4 → cr5(HALT)
+			// Stages completed: 17 (cr×5 + bp×4 + impl×4 + validate×4).
 			writeArtifact(".rpiv/artifacts/code-review/cr1.md");
 			writeArtifact(".rpiv/artifacts/blueprint/bp1.md");
 			writeArtifact(".rpiv/artifacts/implement/impl1.md");
@@ -895,6 +895,10 @@ describe("vet workflow", () => {
 			writeArtifact(".rpiv/artifacts/implement/impl3.md");
 			writeArtifact(".rpiv/artifacts/validate/v3.md");
 			writeArtifact(".rpiv/artifacts/code-review/cr4.md");
+			writeArtifact(".rpiv/artifacts/blueprint/bp4.md");
+			writeArtifact(".rpiv/artifacts/implement/impl4.md");
+			writeArtifact(".rpiv/artifacts/validate/v4.md");
+			writeArtifact(".rpiv/artifacts/code-review/cr5.md");
 
 			const chain = createMockSessionChain({
 				cwd: tmpDir,
@@ -912,6 +916,10 @@ describe("vet workflow", () => {
 					{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/implement/impl3.md")] },
 					{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/validate/v3.md")] },
 					{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/code-review/cr4.md")] },
+					{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/blueprint/bp4.md")] },
+					{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/implement/impl4.md")] },
+					{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/validate/v4.md")] },
+					{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/code-review/cr5.md")] },
 				],
 			});
 
@@ -941,9 +949,9 @@ describe("vet workflow", () => {
 
 			expect(result.success).toBe(false);
 			expect(result.error).toMatch(/backward-jump limit exceeded/i);
-			// 13 stages: cr×4 + bp×3 + impl×3 + validate×3. The 4th code-review's
-			// decision is blueprint's 3rd re-entry (> maxBackwardJumps=2).
-			expect(result.stagesCompleted).toBe(13);
+			// 17 stages: cr×5 + bp×4 + impl×4 + validate×4. The 5th code-review's
+			// decision is blueprint's 4th re-entry (> maxBackwardJumps=3).
+			expect(result.stagesCompleted).toBe(17);
 		});
 	});
 
@@ -959,6 +967,7 @@ describe("vet workflow", () => {
 				"blueprint",
 				"implement",
 				"implement-scope-check",
+				"reconcile",
 				"validate",
 				"commit",
 			]);
@@ -1356,9 +1365,9 @@ describe("polish workflow", () => {
 
 		it("corrective loop: implement consumes only the LATEST blueprint pass, never re-implementing a stale plan", async () => {
 			write(".rpiv/artifacts/architecture-reviews/rev.md", review1);
-			for (const n of [1, 2, 3]) write(`.rpiv/artifacts/plans/plan-${n}.md`, plan());
-			for (const n of [1, 2, 3]) write(`.rpiv/artifacts/validation/val-${n}.md`, "");
-			for (const n of [1, 2, 3]) write(`.rpiv/artifacts/reviews/cr-${n}.md`, cr(1)); // always blockers → loop
+			for (const n of [1, 2, 3, 4]) write(`.rpiv/artifacts/plans/plan-${n}.md`, plan());
+			for (const n of [1, 2, 3, 4]) write(`.rpiv/artifacts/validation/val-${n}.md`, "");
+			for (const n of [1, 2, 3, 4]) write(`.rpiv/artifacts/reviews/cr-${n}.md`, cr(1)); // always blockers → loop
 
 			const chain = createMockSessionChain({
 				cwd: tmpDir,
@@ -1379,7 +1388,12 @@ describe("polish workflow", () => {
 					impl("phase done"),
 					impl("wrote .rpiv/artifacts/validation/val-3.md"),
 					impl("wrote .rpiv/artifacts/reviews/cr-3.md"),
-					// 3rd code-review's gate → blueprint = backward jump 3 > 2 → halt
+					// pass 3 (backward jump 3)
+					impl("wrote .rpiv/artifacts/plans/plan-4.md"),
+					impl("phase done"),
+					impl("wrote .rpiv/artifacts/validation/val-4.md"),
+					impl("wrote .rpiv/artifacts/reviews/cr-4.md"),
+					// 4th code-review's gate → blueprint = backward jump 4 > 3 → halt
 				],
 			});
 
@@ -1396,6 +1410,7 @@ describe("polish workflow", () => {
 				"/skill:implement .rpiv/artifacts/plans/plan-1.md Phase 1: do the thing",
 				"/skill:implement .rpiv/artifacts/plans/plan-2.md Phase 1: do the thing",
 				"/skill:implement .rpiv/artifacts/plans/plan-3.md Phase 1: do the thing",
+				"/skill:implement .rpiv/artifacts/plans/plan-4.md Phase 1: do the thing",
 			]);
 			// validate shares the same latest-pass slice — each round validates only
 			// that pass's plan, never a stale generation.
@@ -1403,6 +1418,7 @@ describe("polish workflow", () => {
 				"/skill:validate .rpiv/artifacts/plans/plan-1.md",
 				"/skill:validate .rpiv/artifacts/plans/plan-2.md",
 				"/skill:validate .rpiv/artifacts/plans/plan-3.md",
+				"/skill:validate .rpiv/artifacts/plans/plan-4.md",
 			]);
 		});
 	});
@@ -2033,6 +2049,66 @@ describe("build slice-check (deterministic floor)", () => {
 		expect(data.pass).toBe(true);
 	});
 
+	// Fence-aware citation floor — a `path:line` shape inside a fenced code block is
+	// example/fixture text, not a citation to verify. The skip is span-scoped: a real
+	// dangling citation in prose still fails.
+	it("skips a fenced path:line-shaped placeholder (citation floor is fence-aware)", () => {
+		const rel = ".rpiv/artifacts/slices/fence-placeholder.md";
+		const m = write(
+			rel,
+			`---\nstatus: ready\nslice_count: 1\nslices:\n  - { n: 1, title: A, deps: [] }\n---\n## Slice 1: A\nExample:\n\n\`\`\`ts\nconst x = load("src/does-not-exist.ts:42");\n\`\`\`\n`,
+		);
+		const data = runOn(m);
+		expect(data.pass).toBe(true);
+		expect(data.findings).toEqual([]);
+	});
+
+	it("still flags a real unresolved path:line citation in slice-map prose (skip is span-scoped)", () => {
+		const rel = ".rpiv/artifacts/slices/fence-prose.md";
+		const m = write(
+			rel,
+			`---\nstatus: ready\nslice_count: 1\nslices:\n  - { n: 1, title: A, deps: [] }\n---\n## Slice 1: A\nSee src/does-not-exist.ts:42 for the footing.\n`,
+		);
+		const data = runOn(m);
+		expect(data.pass).toBe(false);
+		expect(String(data.feedback)).toMatch(/Unbacked citation/);
+		expect(String(data.feedback)).toMatch(/does-not-exist\.ts:42/);
+	});
+
+	it("skips a ~~~ tilde fence and a length-matched (four-backtick) fence identically to ```", () => {
+		const rel = ".rpiv/artifacts/slices/fence-kinds.md";
+		const m = write(
+			rel,
+			`---\nstatus: ready\nslice_count: 1\nslices:\n  - { n: 1, title: A, deps: [] }\n---\n## Slice 1: A\n~~~ts\nconst a = load("src/tilde-fenced.ts:7");\n~~~\n\n\`\`\`\`ts\nconst b = load("src/four-back-fenced.ts:9");\n\`\`\`\`\n`,
+		);
+		const data = runOn(m);
+		expect(data.pass).toBe(true);
+		expect(data.findings).toEqual([]);
+	});
+
+	it("skips a placeholder in an unterminated fence's remainder in a slice map", () => {
+		const rel = ".rpiv/artifacts/slices/fence-unterminated.md";
+		const m = write(
+			rel,
+			`---\nstatus: ready\nslice_count: 1\nslices:\n  - { n: 1, title: A, deps: [] }\n---\n## Slice 1: A\nExample:\n\n\`\`\`ts\nconst x = load("src/unterminated-fenced.ts:5");\n`,
+		);
+		const data = runOn(m);
+		expect(data.pass).toBe(true);
+		expect(data.findings).toEqual([]);
+	});
+
+	it("still verifies a prose citation after a closed fenced block in a slice map (no closed-span leak)", () => {
+		const rel = ".rpiv/artifacts/slices/fence-leak.md";
+		const m = write(
+			rel,
+			`---\nstatus: ready\nslice_count: 1\nslices:\n  - { n: 1, title: A, deps: [] }\n---\n## Slice 1: A\n\`\`\`ts\nconst x = load("src/fenced-placeholder.ts:11");\n\`\`\`\n\nSee src/after-fence.ts:30 for the footing.\n`,
+		);
+		const data = runOn(m);
+		expect(data.pass).toBe(false);
+		expect(String(data.feedback)).toMatch(/after-fence\.ts:30/);
+		expect(String(data.feedback)).not.toMatch(/fenced-placeholder/);
+	});
+
 	// Dependency citations — research/design artifacts legitimately cite installed
 	// dependency source (lockfile-pinned, so line numbers are stable). The citation
 	// regex cannot carry `@`, so a cited `node_modules/@scope/pkg/f.js` parses as
@@ -2367,7 +2443,7 @@ describe("build audit-drop fixes", () => {
 	describe("plan/code gate enforces risk flags (finding 1)", () => {
 		const allDimsPass = [dimVerdict("completeness", true), dimVerdict("correctness", true)];
 
-		it("plan-grade routes to plan-fix when a risk flag is ruled fail, despite all dimensions passing", () => {
+		it("plan-grade routes to plan-snapshot when a risk flag is ruled fail, despite all dimensions passing", () => {
 			const verdicts = [
 				...allDimsPass,
 				dimVerdict("correctness", true, { risk_rulings: [{ id: "r1", pass: false }] }),
@@ -2378,7 +2454,7 @@ describe("build audit-drop fixes", () => {
 					named: { "plan-verdicts": verdicts, "plan-cite-check": [dimVerdict("structure", true)] },
 				} as unknown as RunView,
 			});
-			expect(next).toBe("plan-fix");
+			expect(next).toBe("plan-snapshot");
 		});
 
 		it("plan-grade routes to code when all dimensions AND all risk flags pass", () => {
@@ -2395,7 +2471,7 @@ describe("build audit-drop fixes", () => {
 			expect(next).toBe("code");
 		});
 
-		it("code-grade routes to code-fix when a risk flag is ruled fail", () => {
+		it("code-grade routes to code-snapshot when a risk flag is ruled fail", () => {
 			const verdicts = [
 				...allDimsPass,
 				dimVerdict("correctness", true, { risk_rulings: [{ id: "r2", pass: false }] }),
@@ -2406,7 +2482,7 @@ describe("build audit-drop fixes", () => {
 					named: { "code-verdicts": verdicts, "code-cite-check": [dimVerdict("structure", true)] },
 				} as unknown as RunView,
 			});
-			expect(next).toBe("code-fix");
+			expect(next).toBe("code-snapshot");
 		});
 	});
 
@@ -2416,24 +2492,47 @@ describe("build audit-drop fixes", () => {
 	describe("plan/code citation floor routes fabrications to the fix arm (finding 6)", () => {
 		const allPass = [dimVerdict("completeness", true), dimVerdict("correctness", true, { risk_rulings: [] })];
 
-		it("plan-grade routes to plan-fix when plan-cite-check fails, despite dimensions + risk flags passing", () => {
+		it("plan-grade routes to plan-snapshot when plan-cite-check fails, despite dimensions + risk flags passing", () => {
 			const next = edge("plan-grade")({
 				output: undefined,
 				state: {
 					named: { "plan-verdicts": allPass, "plan-cite-check": [dimVerdict("structure", false)] },
 				} as unknown as RunView,
 			});
-			expect(next).toBe("plan-fix");
+			expect(next).toBe("plan-snapshot");
 		});
 
-		it("code-grade routes to code-fix when code-cite-check fails", () => {
+		it("code-grade routes to code-snapshot when code-cite-check fails", () => {
 			const next = edge("code-grade")({
 				output: undefined,
 				state: {
 					named: { "code-verdicts": allPass, "code-cite-check": [dimVerdict("structure", false)] },
 				} as unknown as RunView,
 			});
-			expect(next).toBe("code-fix");
+			expect(next).toBe("code-snapshot");
+		});
+	});
+
+	// Phase 4 — the fix stages thread their lineage sources so amend repairs
+	// completeness-class findings from the brief/architecture/sub-plans rather than
+	// reconstructing them from verdict prose. Regression guard against a future
+	// narrowing of the reads arrays (and against wrongly adding subplans to code-fix).
+	describe("plan-fix/code-fix read their lineage sources (phase 4)", () => {
+		it("build plan-fix reads goal, research, and subplans alongside the verdict/cite-check channels", () => {
+			expect(findWorkflow("build").stages["plan-fix"]?.reads).toEqual([
+				"plans",
+				fanin("plan-verdicts"),
+				fanin("plan-cite-check"),
+				"goal",
+				"research",
+				fanin("subplans"),
+			]);
+		});
+
+		it("build code-fix reads goal and research, but NOT subplans (completeness settled at the plan gate)", () => {
+			const reads = findWorkflow("build").stages["code-fix"]?.reads;
+			expect(reads).toEqual(["plans", fanin("code-verdicts"), fanin("code-cite-check"), "goal", "research"]);
+			expect(reads).not.toContainEqual(fanin("subplans"));
 		});
 	});
 
@@ -2539,6 +2638,210 @@ describe("build audit-drop fixes", () => {
 
 		it("code-cite-check declares implement and code-grade as its only targets", () => {
 			expect([...(edge("code-cite-check").targets ?? [])].sort()).toEqual(["code-grade", "implement"]);
+		});
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Phase 3 — mechanics evidence duty + verify-at-implement disposition.
+// The risk-fold helpers are module-local, so the duty is exercised through the
+// gate's observable surface: a mechanics pass with no `file:line` evidence
+// demotes (allRiskFlagsPass → planGatePasses blocks), and a verify-at-implement
+// pass with no concrete procedure+owner demotes. A demoted pass re-opens its
+// owning dimension (dimensionsToRegrade clause 3) and counts as blocking for
+// confirm (confirmDue riskFail) — the three folds agree via rulingEffectivePass.
+// ---------------------------------------------------------------------------
+describe("plan/code gate risk-ruling evidence + verify-at-implement duty (phase 3)", () => {
+	const build = () => findWorkflow("build");
+	const edge = (stage: string): EdgeFn => {
+		const e = build().edges[stage];
+		if (typeof e !== "function") throw new Error(`build ${stage} edge is not a function`);
+		return e as EdgeFn;
+	};
+	// dimVerdict mirrors the audit-drop block helper (packages/rpiv-pi/extensions/
+	// rpiv-core/built-in-workflows.test.ts:2325): severity floored on pass.
+	const dimVerdict = (dimension: string, pass: boolean, extra: Record<string, unknown> = {}): Output =>
+		({
+			artifacts: [],
+			kind: "json",
+			meta: {},
+			data: { dimension, pass, severity: pass ? "none" : "high", ...extra },
+		}) as unknown as Output;
+	// chan/verdict/gradeLabels mirror the adaptive-gate-scaling block helpers
+	// (:3414/:3416/:3425) so the re-open-coherence case can drive the fanout's
+	// units() with fresh verdicts.
+	const chan = (rel: string, data?: Record<string, unknown>): Output =>
+		({ artifacts: [{ handle: fsHandle(rel) }], data, kind: "", meta: {} }) as unknown as Output;
+	const verdict = (dimension: string, pass: boolean, extra: Record<string, unknown> = {}): Output =>
+		({
+			artifacts: [],
+			kind: "json",
+			meta: {},
+			data: { dimension, pass, severity: pass ? "none" : "medium", ...extra },
+		}) as unknown as Output;
+	const route = (stage: string, named: Record<string, unknown>) =>
+		edge(stage)({ output: undefined, state: { named } as unknown as RunView });
+	const gradeLabels = async (stage: string, named: Record<string, unknown>) => {
+		const loop = build().stages[stage]?.loop;
+		if (loop?.kind !== "fanout") throw new Error(`build ${stage} stage has no fanout loop`);
+		const units = await loop.units({ cwd: "/repo", artifact: undefined, state: { named } as unknown as RunView });
+		return units.map((u) => u.label).sort();
+	};
+	const PLAN_DIMS = ["actionability", "architecture-fit", "completeness", "correctness", "pattern-following"];
+	const PLAN = ".rpiv/artifacts/plans/p.md";
+	const citeGreen = { "plan-cite-check": [dimVerdict("structure", true)] };
+	// Each case fixes the completeness verdict (always passes) + the ONE
+	// correctness verdict carrying the risk ruling under test. correctness MUST
+	// appear exactly once: confirmDue counts verdicts per dimension, so a stray
+	// second `correctness` (as the audit-drop block's `dimsPass` carries) bumps
+	// the count to 2 and routes a single demoted verdict to plan-FIX instead of
+	// plan-CONFIRM. The risk ruling is the only variable per case.
+	const mkVerdicts = (risk: Record<string, unknown>[]) => [
+		dimVerdict("completeness", true),
+		dimVerdict("correctness", true, { risk_rulings: risk }),
+	];
+
+	describe("mechanics evidence duty (headline a777 regression)", () => {
+		it("a mechanics pass with NO evidence demotes — a single such verdict routes to plan-confirm (does not reach code)", () => {
+			// planGatePasses is false (allRiskFlagsPass demotes the mechanics pass);
+			// confirmDue sees one blocking verdict (count 1 < 2) ⇒ plan-confirm.
+			const next = route("plan-grade", {
+				...citeGreen,
+				"plan-verdicts": mkVerdicts([{ id: "r1", pass: true, claim_type: "mechanics" }]),
+			});
+			expect(next).toBe("plan-confirm");
+		});
+
+		it("two agreeing demoted mechanics-pass verdicts route to plan-snapshot (still blocked, never code)", () => {
+			// count 2 ⇒ confirmDue false ⇒ the confirmed-block path to the snapshot
+			// (which deterministically hops to plan-fix), never code.
+			const next = route("plan-grade", {
+				...citeGreen,
+				"plan-verdicts": [
+					...mkVerdicts([{ id: "r1", pass: true, claim_type: "mechanics" }]),
+					dimVerdict("correctness", true, { risk_rulings: [{ id: "r1", pass: true, claim_type: "mechanics" }] }),
+				],
+			});
+			expect(next).toBe("plan-snapshot");
+		});
+
+		it("the same mechanics pass WITH a file:line-shaped evidence passes — plan-grade reaches code", () => {
+			const next = route("plan-grade", {
+				...citeGreen,
+				"plan-verdicts": mkVerdicts([
+					{
+						id: "r1",
+						pass: true,
+						claim_type: "mechanics",
+						evidence: "built-in-workflows.ts:2347 folds rulingEffectivePass",
+					},
+				]),
+			});
+			expect(next).toBe("code");
+		});
+	});
+
+	describe("evidence must be file:line-shaped", () => {
+		it("a mechanics pass whose evidence is prose (no file:line) demotes — does not reach code", () => {
+			const next = route("plan-grade", {
+				...citeGreen,
+				"plan-verdicts": mkVerdicts([
+					{ id: "r1", pass: true, claim_type: "mechanics", evidence: "the code looks fine to me" },
+				]),
+			});
+			expect(next).not.toBe("code");
+		});
+	});
+
+	describe("duty is mechanics-scoped (ordinary risks carry no evidence duty)", () => {
+		it("a plain {pass:true} risk with no claim_type and no evidence still passes", () => {
+			const next = route("plan-grade", {
+				...citeGreen,
+				"plan-verdicts": mkVerdicts([{ id: "r1", pass: true }]),
+			});
+			expect(next).toBe("code");
+		});
+	});
+
+	describe("verify-at-implement floor", () => {
+		it("a deferred pass with NO procedure demotes — does not reach code", () => {
+			const next = route("plan-grade", {
+				...citeGreen,
+				"plan-verdicts": mkVerdicts([{ id: "r1", pass: true, disposition: "verify-at-implement" }]),
+			});
+			expect(next).not.toBe("code");
+		});
+
+		it("a deferred pass with a non-empty procedure AND a numeric owner passes — reaches code", () => {
+			const next = route("plan-grade", {
+				...citeGreen,
+				"plan-verdicts": mkVerdicts([
+					{
+						id: "r1",
+						pass: true,
+						disposition: "verify-at-implement",
+						procedure: "npx vitest run built-in-workflows.test.ts",
+						owner: 3,
+					},
+				]),
+			});
+			expect(next).toBe("code");
+		});
+
+		it("a bare 'verify later' (disposition with empty procedure) demotes — does not reach code", () => {
+			const next = route("plan-grade", {
+				...citeGreen,
+				"plan-verdicts": mkVerdicts([
+					{ id: "r1", pass: true, disposition: "verify-at-implement", procedure: "", owner: 3 },
+				]),
+			});
+			expect(next).not.toBe("code");
+		});
+	});
+
+	describe("re-open coherence (dimensionsToRegrade clause 3)", () => {
+		it("a demoted mechanics pass on correctness re-opens correctness in the re-grade set", async () => {
+			// full roster (no slices signal ⇒ standard tier); every dimension
+			// passes with a FRESH verdict (artifact: PLAN), only correctness
+			// carries a demoted mechanics pass ⇒ only correctness re-grades.
+			const verdicts = PLAN_DIMS.map((d) =>
+				d === "correctness"
+					? verdict(d, true, { artifact: PLAN, risk_rulings: [{ id: "r1", pass: true, claim_type: "mechanics" }] })
+					: verdict(d, true, { artifact: PLAN }),
+			);
+			expect(await gradeLabels("plan-grade", { plans: [chan(PLAN)], "plan-verdicts": verdicts })).toEqual([
+				"correctness",
+			]);
+		});
+	});
+
+	describe("existing behavior preserved", () => {
+		it("a plain {pass:false} risk still blocks (does not reach code)", () => {
+			const next = route("plan-grade", {
+				...citeGreen,
+				"plan-verdicts": mkVerdicts([{ id: "r1", pass: false }]),
+			});
+			expect(next).not.toBe("code");
+		});
+
+		it("an empty risk-flag channel (no rulings) imposes no constraint — passes when dims pass", () => {
+			const next = route("plan-grade", {
+				...citeGreen,
+				"plan-verdicts": [dimVerdict("completeness", true), dimVerdict("correctness", true, { risk_rulings: [] })],
+			});
+			expect(next).toBe("code");
+		});
+	});
+
+	describe("confirmDue treats a demoted mechanics pass as blocking", () => {
+		it("a single demoted mechanics-pass verdict routes to plan-confirm (the ruling gets a second opinion)", () => {
+			// same verdicts as the headline single-verdict case; restated here to
+			// pin the confirm-arm behavior (riskFail = !rulingEffectivePass ⇒ blocking).
+			const next = route("plan-grade", {
+				...citeGreen,
+				"plan-verdicts": mkVerdicts([{ id: "r1", pass: true, claim_type: "mechanics" }]),
+			});
+			expect(next).toBe("plan-confirm");
 		});
 	});
 });
@@ -2651,6 +2954,72 @@ describe("plan-time coverage floor (verifyPhaseFilesCoverage via plan-cite-check
 		expect(data.findings).toHaveLength(1);
 		expect(findingDetails(data)).toMatch(/src\/foo\.ts/);
 		expect(findingDetails(data)).not.toMatch(/fenced-example/);
+	});
+
+	// Fence-aware citation floor — sibling cases to the verifyPhaseFilesCoverage
+	// fence test above. A `path:line` shape inside a fenced code block is a
+	// placeholder, not a citation to verify; the skip is span-scoped, so a real
+	// dangling citation in prose still fails.
+	it("skips a fenced path:line-shaped placeholder (citation floor is fence-aware)", () => {
+		const rel = ".rpiv/artifacts/plans/fence-placeholder.md";
+		const data = runOn(
+			write(
+				rel,
+				`---\nstatus: ready\nphase_count: 1\nphases:\n  - { n: 1, title: One, files: [] }\n---\n# Plan\n## Phase 1: One\nExample fixture:\n\n\`\`\`ts\nconst x = load("src/does-not-exist.ts:42");\n\`\`\`\n`,
+			),
+		);
+		expect(data.pass).toBe(true);
+		expect(data.findings).toEqual([]);
+	});
+
+	it("still flags a real unresolved path:line citation in plan prose (skip is span-scoped)", () => {
+		const rel = ".rpiv/artifacts/plans/fence-prose.md";
+		const data = runOn(
+			write(
+				rel,
+				`---\nstatus: ready\nphase_count: 1\nphases:\n  - { n: 1, title: One, files: [] }\n---\n# Plan\n## Phase 1: One\nSee src/does-not-exist.ts:42 for the broken example.\n\n\`\`\`ts\nconst x = 1;\n\`\`\`\n`,
+			),
+		);
+		expect(data.pass).toBe(false);
+		expect(findingDetails(data)).toMatch(/Unbacked citation/);
+		expect(findingDetails(data)).toMatch(/does-not-exist\.ts:42/);
+	});
+
+	it("skips a ~~~ tilde fence and a length-matched (four-backtick) fence identically to ```", () => {
+		const rel = ".rpiv/artifacts/plans/fence-kinds.md";
+		const data = runOn(
+			write(
+				rel,
+				`---\nstatus: ready\nphase_count: 1\nphases:\n  - { n: 1, title: One, files: [] }\n---\n# Plan\n## Phase 1: One\n~~~ts\nconst a = load("src/tilde-fenced.ts:7");\n~~~\n\n\`\`\`\`ts\nconst b = load("src/four-back-fenced.ts:9");\n\`\`\`\`\n`,
+			),
+		);
+		expect(data.pass).toBe(true);
+		expect(data.findings).toEqual([]);
+	});
+
+	it("skips a placeholder in an unterminated fence's remainder", () => {
+		const rel = ".rpiv/artifacts/plans/fence-unterminated.md";
+		const data = runOn(
+			write(
+				rel,
+				`---\nstatus: ready\nphase_count: 1\nphases:\n  - { n: 1, title: One, files: [] }\n---\n# Plan\n## Phase 1: One\nExample:\n\n\`\`\`ts\nconst x = load("src/unterminated-fenced.ts:5");\n`,
+			),
+		);
+		expect(data.pass).toBe(true);
+		expect(data.findings).toEqual([]);
+	});
+
+	it("still verifies a prose citation appearing after a closed fenced block (no closed-span leak)", () => {
+		const rel = ".rpiv/artifacts/plans/fence-leak.md";
+		const data = runOn(
+			write(
+				rel,
+				`---\nstatus: ready\nphase_count: 1\nphases:\n  - { n: 1, title: One, files: [] }\n---\n# Plan\n## Phase 1: One\n\`\`\`ts\nconst x = load("src/fenced-placeholder.ts:11");\n\`\`\`\n\nSee src/after-fence.ts:30 for the broken example.\n`,
+			),
+		);
+		expect(data.pass).toBe(false);
+		expect(findingDetails(data)).toMatch(/after-fence\.ts:30/);
+		expect(findingDetails(data)).not.toMatch(/fenced-placeholder/);
 	});
 
 	it("extracts all three conventions: - `path` (synthesize), #### N. path (blueprint), **File**: (plan)", () => {
@@ -3347,6 +3716,57 @@ describe("build grade panel re-grades only the pending dimensions (P2)", () => {
 	const labels = async (stage: string, verdictChannel: string, verdicts: Output[]) =>
 		(await runUnits(stage, verdictChannel, verdicts)).map((u) => u.label).sort();
 
+	// --- Phase 5: delta re-grade fallback guard (surgical-fix guard) ----------
+	const PRIOR_REL = ".rpiv/artifacts/priors/p.md";
+	const passingOthers = () => PLAN_DIMS.filter((d) => d !== "correctness").map((d) => dimV(d, true));
+	const correctnessFailing = (where: string, detail = "correctness defect") =>
+		dimV("correctness", false, { severity: "high", findings: [{ detail, where }] });
+	const fm = () => `---\nstatus: ready\nlast_updated: 2026-07-27T20:00:00-0400\n---\n`;
+	const phase = (n: number, body: string) => `## Phase ${n}: section-${n}\n${body}`;
+	const planFrom = (sections: string[]) => `${fm()}# Plan\n\n${sections.join("\n\n")}\n`;
+	const writePriorAndCurrent = (priorBody: string, currentBody: string) => {
+		mkdirSync(join(tmpDir, ".rpiv/artifacts/priors"), { recursive: true });
+		writeFileSync(join(tmpDir, PRIOR_REL), priorBody);
+		writeFileSync(join(tmpDir, REL), currentBody);
+	};
+	// Run plan-grade with a fabricated `plan-snapshot` channel carrying a prior
+	// sidecar at PRIOR_REL (role "prior"). `priorSidecarWritten` controls whether
+	// the sidecar FILE exists on disk (false ⇒ the entry exists but is unreadable
+	// ⇒ fail-closed to FULL roster, per risk c5r3 case (e)).
+	const runUnitsWithPrior = (
+		verdicts: Output[],
+		priorBody: string,
+		currentBody: string,
+		priorSidecarWritten: boolean,
+	) => {
+		if (priorSidecarWritten) writePriorAndCurrent(priorBody, currentBody);
+		else writeFileSync(join(tmpDir, REL), currentBody);
+		return gradeUnits("plan-grade")({
+			cwd: tmpDir,
+			artifact: undefined,
+			state: {
+				named: {
+					plans: [{ artifacts: [{ handle: fsHandle(REL) }], data: undefined, kind: "", meta: {} }],
+					"plan-verdicts": verdicts,
+					"plan-snapshot": [
+						{
+							artifacts: [{ handle: fsHandle(PRIOR_REL), role: "prior" }],
+							data: undefined,
+							kind: "",
+							meta: {},
+						},
+					],
+				},
+			} as unknown as RunView,
+		});
+	};
+	const labelsWithPrior = async (
+		verdicts: Output[],
+		priorBody: string,
+		currentBody: string,
+		priorSidecarWritten = true,
+	) => (await runUnitsWithPrior(verdicts, priorBody, currentBody, priorSidecarWritten)).map((u) => u.label).sort();
+
 	beforeEach(writePlan);
 
 	it("grades every dimension on the first pass (no prior verdicts)", async () => {
@@ -3393,6 +3813,144 @@ describe("build grade panel re-grades only the pending dimensions (P2)", () => {
 			} as unknown as RunView,
 		});
 		expect((await units).map((u) => u.label)).toEqual(["pattern-following"]);
+	});
+
+	it("surgical amend (only the cited phase touched, ≤ threshold) re-grades ONLY correctness", async () => {
+		// Round 1: only correctness blocks; its finding cites Phase 3.
+		const verdicts = [...passingOthers(), correctnessFailing("Phase 3 > packages/x/y.ts:42")];
+		// The amend changed ONLY Phase 3's body (2 lines del + 2 lines ins = 4 changed).
+		const prior = planFrom([phase(3, "old line A\nold line B"), phase(5, "shared phase 5 content")]);
+		const current = planFrom([phase(3, "new line A\nnew line B"), phase(5, "shared phase 5 content")]);
+		expect(await labelsWithPrior(verdicts, prior, current)).toEqual(["correctness"]);
+	});
+
+	it("out-of-scope amend (an uncited phase also touched) re-grades the FULL roster", async () => {
+		const verdicts = [...passingOthers(), correctnessFailing("Phase 3 > packages/x/y.ts:42")];
+		// The amend touched Phase 3 (cited) AND Phase 5 (NOT cited by any finding).
+		const prior = planFrom([phase(3, "old line A\nold line B"), phase(5, "shared phase 5 content")]);
+		const current = planFrom([phase(3, "new line A\nnew line B"), phase(5, "shared phase 5 content CHANGED")]);
+		expect(await labelsWithPrior(verdicts, prior, current)).toEqual([...PLAN_DIMS].sort());
+	});
+
+	it("over-threshold amend (within cited phase but > 60 changed lines) re-grades the FULL roster", async () => {
+		const verdicts = [...passingOthers(), correctnessFailing("Phase 3 > packages/x/y.ts:42")];
+		const oldBody = Array.from({ length: 70 }, (_, i) => `old ${i}`).join("\n");
+		const newBody = Array.from({ length: 70 }, (_, i) => `new ${i}`).join("\n");
+		const prior = planFrom([phase(3, oldBody), phase(5, "shared phase 5 content")]);
+		const current = planFrom([phase(3, newBody), phase(5, "shared phase 5 content")]);
+		expect(await labelsWithPrior(verdicts, prior, current)).toEqual([...PLAN_DIMS].sort());
+	});
+
+	it("missing prior (round 1) carries forward — re-grades ONLY the failing dimension", async () => {
+		// No `plan-snapshot` channel entry ⇒ hasPrior=false ⇒ carry-forward (the
+		// scenario the existing carry-forward cases already model).
+		const verdicts = [...passingOthers(), correctnessFailing("Phase 3 > packages/x/y.ts:42")];
+		expect(await labels("plan-grade", "plan-verdicts", verdicts)).toEqual(["correctness"]);
+	});
+
+	it("unreadable prior sidecar (entry present, file missing) re-grades the FULL roster", async () => {
+		const verdicts = [...passingOthers(), correctnessFailing("Phase 3 > packages/x/y.ts:42")];
+		// priorSidecarWritten=false: the channel carries a prior entry, but the
+		// sidecar file does not exist on disk ⇒ latestPriorContent throws ⇒
+		// isSurgicalFix=false ⇒ priorPresent=true ⇒ FULL roster.
+		const prior = planFrom([phase(3, "old"), phase(5, "shared")]);
+		const current = planFrom([phase(3, "old"), phase(5, "shared")]);
+		expect(await labelsWithPrior(verdicts, prior, current, false)).toEqual([...PLAN_DIMS].sort());
+	});
+
+	it("no extractable plan-section where (repo path:line only) re-grades the FULL roster", async () => {
+		// The finding's where is a bare repo path:line — citedSections yields {}.
+		const verdicts = [...passingOthers(), correctnessFailing("packages/x/y.ts:42")];
+		const prior = planFrom([phase(3, "old line A\nold line B"), phase(5, "shared phase 5 content")]);
+		const current = planFrom([phase(3, "new line A\nnew line B"), phase(5, "shared phase 5 content")]);
+		// Phase 3 is touched but cited is empty ⇒ subset test fails ⇒ non-surgical.
+		expect(await labelsWithPrior(verdicts, prior, current)).toEqual([...PLAN_DIMS].sort());
+	});
+
+	it("confirm arm is unchanged by the guard — a prior present still re-grades ONLY pending", async () => {
+		// PLAN_CONFIRM_FANOUT carries no priorChannel ⇒ surgical=false, priorPresent
+		// computed from a DIFFERENT (absent) channel ⇒ carry-forward wins. Even with
+		// a plan-snapshot prior on the state, plan-confirm emits ONLY correctness.
+		const verdicts = [...passingOthers(), correctnessFailing("Phase 3 > packages/x/y.ts:42")];
+		const prior = planFrom([phase(3, "old"), phase(5, "shared")]);
+		const current = planFrom([phase(3, "new"), phase(5, "shared")]);
+		writePriorAndCurrent(prior, current);
+		const units = gradeUnits("plan-confirm")({
+			cwd: tmpDir,
+			artifact: undefined,
+			state: {
+				named: {
+					plans: [{ artifacts: [{ handle: fsHandle(REL) }], data: undefined, kind: "", meta: {} }],
+					"plan-verdicts": verdicts,
+					"plan-snapshot": [
+						{
+							artifacts: [{ handle: fsHandle(PRIOR_REL), role: "prior" }],
+							data: undefined,
+							kind: "",
+							meta: {},
+						},
+					],
+				},
+			} as unknown as RunView,
+		});
+		expect((await units).map((u) => u.label)).toEqual(["correctness"]);
+	});
+});
+
+describe("build snapshot stages publish a prior sidecar off the plans channel (delta re-grade guard)", () => {
+	let tmpDir: string;
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "rpiv-build-snapshot-"));
+	});
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	const REL = ".rpiv/artifacts/plans/p.md";
+	const snapshotRun = (stage: string) => {
+		const s = findWorkflow("build").stages[stage];
+		if (!s?.run) throw new Error(`build ${stage} stage has no run function`);
+		return s.run as (ctx: { cwd: string; input?: undefined; state: RunView }) => {
+			artifacts: { handle: { kind: string; path: string }; role?: string }[];
+			data: Record<string, unknown>;
+			kind: string;
+		};
+	};
+
+	it.each([["plan-snapshot"], ["code-snapshot"]])(
+		"%s copies the plan bytes into .rpiv/artifacts/priors/ with role prior",
+		(stage) => {
+			const planBody = "---\nstatus: ready\n---\n# Plan\n\n## Phase 1: x\nbody\n";
+			mkdirSync(join(tmpDir, ".rpiv/artifacts/plans"), { recursive: true });
+			writeFileSync(join(tmpDir, REL), planBody);
+			const out = snapshotRun(stage)({
+				cwd: tmpDir,
+				input: undefined,
+				state: {
+					named: { plans: [{ artifacts: [{ handle: fsHandle(REL) }], data: undefined, kind: "", meta: {} }] },
+				} as unknown as RunView,
+			});
+			// Published on its OWN path under priors/, basename-keyed, role prior.
+			expect(out.kind).toBe("artifact-md");
+			expect(out.artifacts).toHaveLength(1);
+			expect(out.artifacts[0].role).toBe("prior");
+			expect(out.artifacts[0].handle.kind).toBe("fs");
+			expect(out.artifacts[0].handle.path).toBe(".rpiv/artifacts/priors/p.md");
+			expect(out.data.snapshot_of).toBe(REL);
+			// The prior file is a byte copy of the plan — the pre-fix content the
+			// re-grade diffs against.
+			expect(readFileSync(join(tmpDir, ".rpiv/artifacts/priors/p.md"), "utf-8")).toBe(planBody);
+		},
+	);
+
+	it("throws haltPreflight when no plan is published on plans", () => {
+		expect(() =>
+			snapshotRun("plan-snapshot")({
+				cwd: tmpDir,
+				input: undefined,
+				state: { named: {} } as unknown as RunView,
+			}),
+		).toThrow(/no fs artifact on the 'plans' channel/);
 	});
 });
 
@@ -3532,24 +4090,24 @@ describe("build adaptive gate scaling (tier / roster / freshness / confirm)", ()
 			).toBe("plan-confirm");
 		});
 
-		it("plan-grade routes to plan-fix once the blocker has two judgments behind it", () => {
+		it("plan-grade routes to plan-snapshot once the blocker has two judgments behind it", () => {
 			expect(
 				route("plan-grade", {
 					plans: [chan(PLAN)],
 					"plan-cite-check": [verdict("structure", true)],
 					"plan-verdicts": [...passRest, verdict("correctness", false), verdict("correctness", false)],
 				}),
-			).toBe("plan-fix");
+			).toBe("plan-snapshot");
 		});
 
-		it("plan-grade routes to plan-fix when only the citation floor is red (no dimension blocking)", () => {
+		it("plan-grade routes to plan-snapshot when only the citation floor is red (no dimension blocking)", () => {
 			expect(
 				route("plan-grade", {
 					plans: [chan(PLAN)],
 					"plan-cite-check": [verdict("structure", false)],
 					"plan-verdicts": [...passRest, verdict("correctness", true)],
 				}),
-			).toBe("plan-fix");
+			).toBe("plan-snapshot");
 		});
 
 		it("plan-confirm clears the gate when the second judgment passes (latest-per-dimension wins)", () => {
@@ -3562,14 +4120,14 @@ describe("build adaptive gate scaling (tier / roster / freshness / confirm)", ()
 			).toBe("code");
 		});
 
-		it("plan-confirm routes a CONFIRMED blocker to plan-fix", () => {
+		it("plan-confirm routes a CONFIRMED blocker to plan-snapshot", () => {
 			expect(
 				route("plan-confirm", {
 					plans: [chan(PLAN)],
 					"plan-cite-check": [verdict("structure", true)],
 					"plan-verdicts": [...passRest, verdict("correctness", false), verdict("correctness", false)],
 				}),
-			).toBe("plan-fix");
+			).toBe("plan-snapshot");
 		});
 
 		it("a first-time risk-flag fail routes to confirm (the ruling gets a second opinion)", () => {
@@ -3596,10 +4154,10 @@ describe("build adaptive gate scaling (tier / roster / freshness / confirm)", ()
 		});
 
 		it("declares the confirm arms as edge targets", () => {
-			expect([...(edge("plan-grade").targets ?? [])].sort()).toEqual(["code", "plan-confirm", "plan-fix"]);
-			expect([...(edge("plan-confirm").targets ?? [])].sort()).toEqual(["code", "plan-fix"]);
-			expect([...(edge("code-grade").targets ?? [])].sort()).toEqual(["code-confirm", "code-fix", "implement"]);
-			expect([...(edge("code-confirm").targets ?? [])].sort()).toEqual(["code-fix", "implement"]);
+			expect([...(edge("plan-grade").targets ?? [])].sort()).toEqual(["code", "plan-confirm", "plan-snapshot"]);
+			expect([...(edge("plan-confirm").targets ?? [])].sort()).toEqual(["code", "plan-snapshot"]);
+			expect([...(edge("code-grade").targets ?? [])].sort()).toEqual(["code-confirm", "code-snapshot", "implement"]);
+			expect([...(edge("code-confirm").targets ?? [])].sort()).toEqual(["code-snapshot", "implement"]);
 		});
 
 		it("the confirm stages publish to their gates' verdict channels", () => {
@@ -3734,16 +4292,22 @@ describe("build implement-scope-check (lane-level scope floor)", () => {
 		`---\nstatus: ready\nphase_count: ${phaseCount}\nphases:\n${filesLines
 			.map((l) => `  - { n: ${phaseCount}, title: P, files: [${l}] }`)
 			.join("\n")}\n---\n## Phase ${phaseCount}: P\n`;
-	// Make `path` dirty so `git status --porcelain` reports it. `git add` the
-	// written file so git reports it at full-path granularity — a fresh `git init`
-	// collapses a wholly-untracked dir to `?? packages/`, but a real repo has a
-	// tracked `packages/` tree so new files report full path. Path-semantic-neutral
-	// for scopeExcess (it keys on the path string, not staged vs unstaged).
+	// Make `path` dirty so `git status --porcelain` reports it. `git add` keeps
+	// these cases on the tracked-file report path; the untracked-directory shape
+	// (git's default collapse to `?? dir/`, defused by -uall) is exercised by the
+	// dedicated regression cases below via un-added writes.
 	const dirty = (rel: string) => {
 		const parts = rel.split("/");
 		mkdirSync(join(tmpDir, ...parts.slice(0, -1)), { recursive: true });
 		writeFileSync(join(tmpDir, rel), "x\n");
 		execFileSync("git", ["add", "--", rel], { cwd: tmpDir, stdio: "ignore" });
+	};
+	// Write WITHOUT `git add` — the file stays untracked, so without -uall git
+	// collapses its brand-new parent directory to a single `?? dir/` entry.
+	const dirtyUntracked = (rel: string) => {
+		const parts = rel.split("/");
+		mkdirSync(join(tmpDir, ...parts.slice(0, -1)), { recursive: true });
+		writeFileSync(join(tmpDir, rel), "x\n");
 	};
 
 	it("passes when every dirty path is declared in the plan's files: union", () => {
@@ -3774,6 +4338,39 @@ describe("build implement-scope-check (lane-level scope floor)", () => {
 		expect(data.severity).toBe("high");
 		expect(String(data.feedback)).toMatch(/packages\/a\/stray\.ts/);
 		expect(String(data.feedback)).toMatch(/Undeclared write/);
+	});
+
+	// Regression (post-a777 run halt at 2026-07-28T03:12Z): git's default status
+	// collapses a wholly-untracked directory to one `?? dir/` entry, which can
+	// never string-match a declared FILE path — a phase creating exactly its
+	// declared files under a brand-new directory false-failed the floor. The
+	// -uall flag enumerates untracked files individually.
+	it("passes declared files created in a brand-new untracked directory (untracked-dir collapse)", () => {
+		const state = seed(
+			".rpiv/artifacts/plans/p.md",
+			plan(['"pkgs/skills/x/_helpers/check.mjs", "pkgs/skills/x/_helpers/check.test.ts"'], 1),
+			".rpiv/artifacts/goal/baseline-t.json",
+			[],
+		);
+		dirtyUntracked("pkgs/skills/x/_helpers/check.mjs");
+		dirtyUntracked("pkgs/skills/x/_helpers/check.test.ts");
+		const data = scopeRun()({ cwd: tmpDir, input: undefined, state }).data;
+		expect(data.pass).toBe(true);
+		expect(data.findings).toEqual([]);
+	});
+
+	it("fails an UNDECLARED file in a new untracked directory, naming the full path (not the collapsed dir)", () => {
+		const state = seed(
+			".rpiv/artifacts/plans/p.md",
+			plan(['"pkgs/skills/x/_helpers/check.mjs"'], 1),
+			".rpiv/artifacts/goal/baseline-t.json",
+			[],
+		);
+		dirtyUntracked("pkgs/skills/x/_helpers/check.mjs"); // declared
+		dirtyUntracked("pkgs/skills/x/_helpers/stray.mjs"); // undeclared → excess
+		const data = scopeRun()({ cwd: tmpDir, input: undefined, state }).data;
+		expect(data.pass).toBe(false);
+		expect(String(data.feedback)).toMatch(/pkgs\/skills\/x\/_helpers\/stray\.mjs/);
 	});
 
 	it("subtracts run-start baseline paths (pre-existing dirt is not the run's fault)", () => {
@@ -3898,25 +4495,27 @@ describe("build edges — implement-scope-check sits between implement and valid
 		expect(findWorkflow("build").edges.implement).toBe("implement-scope-check");
 	});
 
-	it("build routes implement-scope-check → validate on pass, STOP otherwise (no fallback)", () => {
-		// The `from` form suppresses the READS_DATA lint; a pass verdict routes to
-		// validate, a fail/missing verdict → stop (no fallback). Sourced from the
-		// scope-check's published verdict channel (the stage key for an outcome-less
-		// produces.script, per resolvePublishName).
+	it("build routes implement-scope-check → reconcile on pass, STOP otherwise (no fallback)", () => {
+		// The `from` form suppresses the READS_DATA lint; a pass verdict now routes to
+		// `reconcile` (the coherence backstop), a fail/missing verdict → stop (no
+		// fallback). Sourced from the scope-check's published verdict channel (the
+		// stage key for an outcome-less produces.script, per resolvePublishName).
 		expect(route("implement-scope-check", { "implement-scope-check": [{ data: { verdict: "pass" } }] })).toBe(
-			"validate",
+			"reconcile",
 		);
 		expect(route("implement-scope-check", { "implement-scope-check": [{ data: { verdict: "fail" } }] })).toBe("stop");
 	});
 
-	it("build's stage order lists implement-scope-check between implement and validate", () => {
+	it("build's stage order lists implement → implement-scope-check → reconcile → validate", () => {
 		const keys = Object.keys(findWorkflow("build").stages);
 		const i = keys.indexOf("implement");
 		const s = keys.indexOf("implement-scope-check");
+		const r = keys.indexOf("reconcile");
 		const v = keys.indexOf("validate");
 		expect(i).toBeGreaterThanOrEqual(0);
 		expect(s).toBe(i + 1);
-		expect(v).toBe(s + 1);
+		expect(r).toBe(s + 1);
+		expect(v).toBe(r + 1);
 	});
 
 	it("build's implement references IMPLEMENT_DAG_FANOUT, no longer carries concurrency (unpinned)", () => {
@@ -3942,5 +4541,264 @@ describe("build edges — implement-scope-check sits between implement and valid
 		const issues = deriveAndValidate(findWorkflow("build"), { skillContracts: DECLARED_CONTRACTS });
 		expect(issues.filter((i) => /unreachable/.test(i.message))).toEqual([]);
 		expect(issues.filter((i) => i.severity === "error")).toEqual([]);
+	});
+});
+
+describe("reconcile lane stage", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "rpiv-reconcile-"));
+	});
+
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	const reconcileRun = (wf = "build") => {
+		const stage = findWorkflow(wf).stages.reconcile;
+		if (!stage?.run) throw new Error(`${wf} reconcile stage has no run function`);
+		return stage.run as (ctx: { cwd: string; input?: undefined; state: RunView }) => {
+			data: Record<string, unknown>;
+		};
+	};
+	// Write a file under tmpDir and return a plans-channel entry pointing at it.
+	const write = (rel: string, body: string) => {
+		const parts = rel.split("/");
+		mkdirSync(join(tmpDir, ...parts.slice(0, -1)), { recursive: true });
+		writeFileSync(join(tmpDir, rel), body);
+		return { artifacts: [{ handle: fsHandle(rel) }], data: undefined, kind: "", meta: {} } as unknown as Output;
+	};
+	// A plans entry whose handle points at a path that does NOT exist on disk.
+	const missingPlan = (rel: string) =>
+		({ artifacts: [{ handle: fsHandle(rel) }], data: undefined, kind: "", meta: {} }) as unknown as Output;
+	const runOn = (plan: ReturnType<typeof write>, wf = "build") =>
+		reconcileRun(wf)({
+			cwd: tmpDir,
+			input: undefined,
+			state: { named: { plans: [plan] } } as unknown as RunView,
+		}).data;
+	const details = (data: Record<string, unknown>) =>
+		((data.findings as { detail: string; where: string }[] | undefined) ?? []).map((f) => f.detail).join(" ");
+	const wheres = (data: Record<string, unknown>) =>
+		((data.findings as { where: string }[] | undefined) ?? []).map((f) => f.where).sort();
+
+	// A plan body with optional `#### Reconciliation` directives and an
+	// `#### Automated Verification:` block, plus a `## Synthesis Notes` section.
+	const planBody = (opts: { directives?: string[]; av?: string[]; synthesisNotes?: boolean }) => {
+		const lines = [
+			"---",
+			"status: ready",
+			"phase_count: 1",
+			"phases:",
+			"  - { n: 1, title: Reconcile }",
+			"---",
+			"# Plan",
+			"## Phase 1: Reconcile",
+		];
+		if (opts.directives?.length) {
+			lines.push("#### Reconciliation");
+			lines.push(...opts.directives);
+		}
+		lines.push("### Success Criteria");
+		if (opts.av?.length) {
+			lines.push("#### Automated Verification:");
+			for (const c of opts.av) lines.push(`- [ ] \`${c}\``);
+		}
+		lines.push("#### Manual Verification:", "- [ ] a manual check");
+		if (opts.synthesisNotes) lines.push("## Synthesis Notes", "- a baseline synthesis note");
+		return `${lines.join("\n")}\n`;
+	};
+	const writeTestFile = (rel: string, content: string) => {
+		const parts = rel.split("/");
+		mkdirSync(join(tmpDir, ...parts.slice(0, -1)), { recursive: true });
+		writeFileSync(join(tmpDir, rel), content);
+	};
+
+	it("publishes a pass verdict (dimension: reconcile) with no directives and no AV", () => {
+		const plan = write(".rpiv/artifacts/plans/p.md", planBody({}));
+		const data = runOn(plan);
+		expect(data.dimension).toBe("reconcile");
+		expect(data.pass).toBe(true);
+		expect(data.verdict).toBe("pass");
+		expect(data.severity).toBe("none");
+		expect(data.findings).toEqual([]);
+		expect(String(data.artifact)).toBe(".rpiv/artifacts/plans/p.md");
+	});
+
+	it("writes the basename-keyed verdict file under .rpiv/artifacts/verdicts/", () => {
+		const plan = write(".rpiv/artifacts/plans/p.md", planBody({}));
+		runOn(plan);
+		const verdict = readFileSync(join(tmpDir, ".rpiv/artifacts/verdicts/reconcile__p.json"), "utf-8");
+		expect(JSON.parse(verdict).dimension).toBe("reconcile");
+	});
+
+	it("applies a directive to a *.test.ts target exactly once (find present)", () => {
+		writeTestFile("packages/a/a.test.ts", 'import { r } from ".";\nexpect(r).toBe(3);\n');
+		const plan = write(
+			".rpiv/artifacts/plans/p.md",
+			planBody({
+				directives: [
+					"- `packages/a/a.test.ts`: replace `expect(r).toBe(3)` → `expect(r).toBe(4)` — phase invalidated the expectation",
+				],
+			}),
+		);
+		const data = runOn(plan);
+		expect(data.pass).toBe(true);
+		expect(readFileSync(join(tmpDir, "packages/a/a.test.ts"), "utf-8")).toBe(
+			'import { r } from ".";\nexpect(r).toBe(4);\n',
+		);
+	});
+
+	it("flags a directive whose find substring is absent (and replacement absent) ⇒ verdict fail (no guessing)", () => {
+		writeTestFile("packages/a/a.test.ts", "expect(r).toBe(99);\n");
+		const plan = write(
+			".rpiv/artifacts/plans/p.md",
+			planBody({
+				directives: ["- `packages/a/a.test.ts`: replace `expect(r).toBe(3)` → `expect(r).toBe(4)` — stale"],
+			}),
+		);
+		const data = runOn(plan);
+		expect(data.pass).toBe(false);
+		expect(data.verdict).toBe("fail");
+		expect(wheres(data)).toEqual(["packages/a/a.test.ts"]);
+		// not applied — the file is unchanged
+		expect(readFileSync(join(tmpDir, "packages/a/a.test.ts"), "utf-8")).toBe("expect(r).toBe(99);\n");
+	});
+
+	it("write-restricts to test paths — a non-test target is flagged and NOT applied", () => {
+		writeTestFile("packages/a/a.ts", "export const r = 3;\n");
+		const plan = write(
+			".rpiv/artifacts/plans/p.md",
+			planBody({ directives: ["- `packages/a/a.ts`: replace `r = 3` → `r = 4` — production change"] }),
+		);
+		const data = runOn(plan);
+		expect(data.pass).toBe(false);
+		expect(wheres(data)).toEqual(["packages/a/a.ts"]);
+		expect(details(data)).toMatch(/not a test-expectation file/);
+		// untouched
+		expect(readFileSync(join(tmpDir, "packages/a/a.ts"), "utf-8")).toBe("export const r = 3;\n");
+	});
+
+	it("treats an already-applied directive as satisfied on re-run (idempotent)", () => {
+		// The find is gone but the replacement is present ⇒ already applied, no finding.
+		writeTestFile("packages/a/a.test.ts", "expect(r).toBe(4);\n");
+		const plan = write(
+			".rpiv/artifacts/plans/p.md",
+			planBody({
+				directives: ["- `packages/a/a.test.ts`: replace `expect(r).toBe(3)` → `expect(r).toBe(4)` — re-run"],
+			}),
+		);
+		const data = runOn(plan);
+		expect(data.pass).toBe(true);
+		expect(readFileSync(join(tmpDir, "packages/a/a.test.ts"), "utf-8")).toBe("expect(r).toBe(4);\n");
+	});
+
+	it("runs an AV command that exits 0 ⇒ no finding", () => {
+		const plan = write(".rpiv/artifacts/plans/p.md", planBody({ av: ['node -e "process.exit(0)"'] }));
+		const data = runOn(plan);
+		expect(data.pass).toBe(true);
+	});
+
+	it("runs an AV command that exits non-zero ⇒ a finding naming the command ⇒ verdict fail", () => {
+		const plan = write(".rpiv/artifacts/plans/p.md", planBody({ av: ['node -e "process.exit(1)"'] }));
+		const data = runOn(plan);
+		expect(data.pass).toBe(false);
+		expect(details(data)).toMatch(/Automated Verification command failed/);
+		expect(details(data)).toMatch(/node -e "process.exit\(1\)"/);
+	});
+
+	it("fail-soft: an unreadable plan (missing file) degrades to a finding, never a throw", () => {
+		const data = runOn(missingPlan(".rpiv/artifacts/plans/missing.md"));
+		expect(data.pass).toBe(false);
+		expect(details(data)).toMatch(/could not read or parse the plan/);
+	});
+
+	it("fail-soft: a malformed Reconciliation directive degrades to a finding, never a throw", () => {
+		const plan = write(
+			".rpiv/artifacts/plans/p.md",
+			planBody({ directives: ["- `packages/a/a.test.ts`: replace `expect(r).toBe(3)`"] }), // missing → `replace`
+		);
+		const data = runOn(plan);
+		expect(data.pass).toBe(false);
+		expect(details(data)).toMatch(/malformed Reconciliation directive/);
+	});
+
+	it("fail-soft: an un-runnable AV command degrades to a finding, never a throw", () => {
+		const plan = write(".rpiv/artifacts/plans/p.md", planBody({ av: ["no-such-binary-xyz --flag"] }));
+		const data = runOn(plan);
+		expect(data.pass).toBe(false);
+		expect(details(data)).toMatch(/Automated Verification command failed/);
+		expect(details(data)).toMatch(/no-such-binary-xyz/);
+	});
+
+	it("appends a timestamped ### Reconciliation Log under the plan's ## Synthesis Notes", () => {
+		const rel = ".rpiv/artifacts/plans/p.md";
+		const plan = write(rel, planBody({ synthesisNotes: true }));
+		runOn(plan);
+		const after = readFileSync(join(tmpDir, rel), "utf-8");
+		const notesIdx = after.indexOf("## Synthesis Notes");
+		const logIdx = after.indexOf("### Reconciliation Log (");
+		expect(notesIdx).toBeGreaterThanOrEqual(0);
+		expect(logIdx).toBeGreaterThan(notesIdx); // the log lands under Synthesis Notes
+		// the original baseline note is still present (the append is non-destructive)
+		expect(after).toMatch(/a baseline synthesis note/);
+	});
+
+	describe("edge chain — reconcile gates validate (build + vet)", () => {
+		const edge = (wf: string, stage: string): EdgeFn => {
+			const e = findWorkflow(wf).edges[stage];
+			if (typeof e !== "function") throw new Error(`${wf} ${stage} edge is not a function`);
+			return e as EdgeFn;
+		};
+		const route = (wf: string, stage: string, channel: string, verdict: unknown) =>
+			String(
+				edge(
+					wf,
+					stage,
+				)({
+					output: undefined,
+					state: { named: { [channel]: [{ data: { verdict } }] } } as unknown as RunView,
+				}),
+			);
+
+		for (const wf of ["build", "vet"]) {
+			it(`${wf}: implement-scope-check → reconcile on pass, STOP on fail/missing`, () => {
+				expect(route(wf, "implement-scope-check", "implement-scope-check", "pass")).toBe("reconcile");
+				expect(route(wf, "implement-scope-check", "implement-scope-check", "fail")).toBe("stop");
+				expect(route(wf, "implement-scope-check", "implement-scope-check", undefined)).toBe("stop");
+			});
+
+			it(`${wf}: reconcile → validate on pass, STOP on fail/missing (a synthesized fail does NOT reach validate)`, () => {
+				expect(route(wf, "reconcile", "reconcile", "pass")).toBe("validate");
+				expect(route(wf, "reconcile", "reconcile", "fail")).toBe("stop");
+				expect(route(wf, "reconcile", "reconcile", undefined)).toBe("stop");
+			});
+		}
+	});
+
+	it("build and vet wire the SAME reconcile run function (no vet twin)", () => {
+		const buildRun = findWorkflow("build").stages.reconcile?.run;
+		const vetRun = findWorkflow("vet").stages.reconcile?.run;
+		expect(vetRun).toBeDefined();
+		expect(vetRun).toBe(buildRun); // reference equality — idempotent overwrite across the vet loop
+	});
+
+	it("build and vet each validate clean (zero errors AND zero warnings) with skill contracts threaded", () => {
+		for (const wf of [findWorkflow("build"), findWorkflow("vet")]) {
+			const issues = deriveAndValidate(wf, { skillContracts: DECLARED_CONTRACTS });
+			expect(
+				issues.filter((i) => i.severity === "error"),
+				`${wf.name} errors: ${issues.map((i) => `${i.severity}: ${i.message}`).join("\n")}`,
+			).toEqual([]);
+			expect(
+				issues.filter((i) => i.severity === "warning"),
+				`${wf.name} warnings: ${issues.map((i) => `${i.severity}: ${i.message}`).join("\n")}`,
+			).toEqual([]);
+			expect(
+				validateWorkflow(wf).filter((i) => /unreachable/.test(i.message)),
+				`${wf.name} has unreachable stages`,
+			).toEqual([]);
+		}
 	});
 });

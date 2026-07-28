@@ -215,3 +215,82 @@ describe("stageEntryArgs — fanin over a fanout channel", () => {
 		expect(args).toBe(`--audits ${handleToString(a.handle)} --audits ${handleToString(b.handle)}`);
 	});
 });
+
+// ---------------------------------------------------------------------------
+// stageEntryArgs — duplicate-flag dedup
+// ---------------------------------------------------------------------------
+
+describe("stageEntryArgs — duplicate-flag dedup", () => {
+	it("collapses two entries with the SAME fs path to a single --<channel> flag", () => {
+		const state = freshState();
+		// A re-run fanout channel re-published the same fs path (the a777 symptom).
+		const dup = fakeArtifact("dup.md");
+		state.named.audits = [fakeOutput([dup]), fakeOutput([dup])] as unknown as Output[];
+
+		const args = stageEntryArgs(faninReaderDef(), "synthesize", "scan", state);
+
+		expect(args).toBe(`--audits ${handleToString(dup.handle)}`);
+	});
+
+	it("preserves both flags in declared/index order when entries carry DIFFERENT fs paths", () => {
+		const state = freshState();
+		const a = fakeArtifact("a.md");
+		const b = fakeArtifact("b.md");
+		state.named.audits = [fakeOutput([a]), fakeOutput([b])] as unknown as Output[];
+
+		const args = stageEntryArgs(faninReaderDef(), "synthesize", "scan", state);
+
+		expect(args).toBe(`--audits ${handleToString(a.handle)} --audits ${handleToString(b.handle)}`);
+	});
+
+	it("repeats the flag per artifact when a single entry carries DISTINCT artifacts", () => {
+		const state = freshState();
+		const a = fakeArtifact("a.md");
+		const b = fakeArtifact("b.md");
+		state.named.audits = [fakeOutput([a, b])] as unknown as Output[];
+
+		const args = stageEntryArgs(faninReaderDef(), "synthesize", "scan", state);
+
+		expect(args).toBe(`--audits ${handleToString(a.handle)} --audits ${handleToString(b.handle)}`);
+	});
+
+	it("a latest-wins (bare-string) read is unaffected — emits a single flag", () => {
+		const state = freshState();
+		const a = fakeArtifact("a.md");
+		// Bare-string read = latest-wins: reads only `[lastReal(slot)]`, so dedup
+		// (which spans reads) has nothing to collapse — semantics unchanged.
+		state.named.audits = [fakeOutput([a])] as unknown as Output[];
+
+		const bareReaderDef = { kind: "produces", sessionPolicy: "fresh", reads: ["audits"] } as StageDef;
+		const args = stageEntryArgs(bareReaderDef, "synthesize", "scan", state);
+
+		expect(args).toBe(`--audits ${handleToString(a.handle)}`);
+	});
+
+	it("an all-failed channel still yields a defined empty arg string, never undefined", () => {
+		const state = freshState();
+		state.named.audits = [failedOutput(meta, "f0"), failedOutput(meta, "f1")] as unknown as Output[];
+
+		const args = stageEntryArgs(faninReaderDef(), "synthesize", "scan", state);
+
+		expect(args).toBe("");
+	});
+
+	it("preserves both flags when handles stringify alike under DIFFERENT channel names", () => {
+		const state = freshState();
+		// Same stringified handle under two distinct channel names must NOT collapse
+		// — the dedup key carries `name`, so cross-name collisions are preserved.
+		const shared = fakeArtifact("shared.md");
+		state.named.left = [fakeOutput([shared])] as unknown as Output[];
+		state.named.right = [fakeOutput([shared])] as unknown as Output[];
+
+		const twoChannelDef = {
+			kind: "produces",
+			sessionPolicy: "fresh",
+			reads: [fanin("left"), fanin("right")],
+		} as StageDef;
+		const args = stageEntryArgs(twoChannelDef, "synthesize", "scan", state);
+
+		expect(args).toBe(`--left ${handleToString(shared.handle)} --right ${handleToString(shared.handle)}`);
+	});
+});

@@ -33,6 +33,11 @@ contract:
             properties:
               id: { type: string }
               pass: { type: boolean }
+              evidence: { type: string }
+              claim_type: { type: string }
+              disposition: { type: string }
+              procedure: { type: string }
+              owner: { type: integer, minimum: 1 }
         finding_rulings:
           type: array
           items:
@@ -63,7 +68,15 @@ You grade ONE artifact against ONE quality dimension and emit a verdict JSON. Yo
 - `--goal <path>` *(optional)* — the user's original brief, captured verbatim at run start. **Read it only for `completeness` and `correctness`** — every other dimension ignores it. Absent, or the file is empty → grade the artifact on its own content as usual.
 - `--prior <path>` *(optional)* — a prior round's verdict JSON for this same `(artifact, dimension)`, passed by a CONFIRM panel. Its presence puts you in **confirm mode** (see "Prior-round adjudication" below). If the path is missing or unreadable, grade normally without it — a stale prior is not a wiring error.
 
-**Plan-authored risk flags (the `correctness` dimension only).** When your `--dimension` is `correctness` and the `--artifact` carries a `risks:` frontmatter array (each `{ id, claim }`, described in the plan's `## Risk Flags` section), you are REQUIRED to rule on every flag — this is a first-class channel, not an optional prose aside. For each flag, verify its `claim` against the real codebase / the plan (Read/Grep the relevant `file:line`) and decide `pass` (the concern is unfounded or already handled) or `fail` (the risk is real and unaddressed). Emit these as a `risk_rulings: [{ id, pass }]` array in your verdict — one ruling per declared flag, none omitted. A `fail` ruling blocks the gate (the workflow folds these across the panel), so an assumption the plan flagged for review cannot ride a green pass into commit. Other dimensions ignore `risks:`.
+**Plan-authored risk flags (the `correctness` dimension only).** When your `--dimension` is `correctness` and the `--artifact` carries a `risks:` frontmatter array (each `{ id, claim }`, described in the plan's `## Risk Flags` section), you are REQUIRED to rule on every flag — this is a first-class channel, not an optional prose aside. For each flag, verify its `claim` against the real codebase / the plan (Read/Grep the relevant `file:line`) and decide `pass` (the concern is unfounded or already handled) or `fail` (the risk is real and unaddressed). A `fail` ruling blocks the gate (the workflow folds these across the panel), so an assumption the plan flagged for review cannot ride a green pass into commit. Other dimensions ignore `risks:`.
+
+Two duties tighten what a `pass` means, and the gate enforces both (an un-grounded `pass` is demoted as if it were `fail`):
+
+- **Echo the flag's duty fields verbatim.** Copy `claim_type`, `disposition`, `procedure`, and `owner` from the plan's `risks:` entry into your ruling UNCHANGED — the gate reads them off the ruling, so a ruling that drops them is treated as an ordinary `{ id, pass }` and any duty they would have imposed is lost.
+- **Mechanics evidence duty (`claim_type: mechanics`).** A mechanics risk ruled `pass` MUST cite the `file:line` you actually checked in the ruling's `evidence` (e.g. `"packages/x/y.ts:42 — the helper returns early on undefined"`). A mechanics `pass` with no `evidence`, or whose `evidence` is not `file:line`-shaped, is demoted to `fail` — the gate refuses a confident-but-ungrounded mechanism assertion (the a777 honest-lazy class). Rule `fail` outright if the mechanism does not hold.
+- **Verify-at-implement rule (`disposition: verify-at-implement`).** You may defer a risk to the owner phase instead of ruling it finally here. Rule `pass` ONLY when the flag carries a concrete `procedure` (the named command/test the owner phase runs) AND a numeric `owner` phase AND you judge that phase actually carries that step; otherwise rule `fail` (a bare "verify later" with no procedure does not defer — it fails). When you defer, echo `procedure` and `owner` verbatim so `validate` can run the procedure against the shipped code.
+
+Emit these as a `risk_rulings: [{ id, pass, evidence?, claim_type?, disposition?, procedure?, owner? }]` array in your verdict — one ruling per declared flag, none omitted. `evidence` is REQUIRED on a mechanics `pass` (and must be `file:line`-shaped); `claim_type`/`disposition`/`procedure`/`owner` are echoed whenever the plan flag carries them.
 
 **Prior-round adjudication (confirm mode, `--prior` present).** You are the second judgment on a dimension whose prior round BLOCKED the gate. You still grade the artifact fresh against your rubric — but you additionally MUST adjudicate the prior verdict: read the `--prior` JSON fully, and for **each** entry in its `findings[]` array, plus each of its `risk_rulings` entries with `pass: false`, verify the claim against the artifact and the real codebase and rule it:
 
@@ -121,7 +134,9 @@ Grade against the row matching `--dimension`. "Pass bar" is the line; meet it �
     { "detail": "what is wrong", "where": "path/to/file.ts:42 or '## Section'" }
   ],
   "risk_rulings": [
-    { "id": "r1", "pass": true }
+    { "id": "r1", "pass": true },
+    { "id": "r2", "pass": true, "claim_type": "mechanics", "evidence": "packages/x/y.ts:42 — helper returns early on undefined" },
+    { "id": "r3", "pass": true, "disposition": "verify-at-implement", "procedure": "npm run coverage", "owner": 5 }
   ],
   "finding_rulings": [
     { "where": "r2", "ruling": "refuted", "evidence": "packages/x/locales/ holds 9 files (listed); the claim's premise is false" }

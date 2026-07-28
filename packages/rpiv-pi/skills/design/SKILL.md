@@ -136,6 +136,7 @@ Use the grounded-questions-one-at-a-time pattern. Use a **❓ Question:** prefix
 - Reference real findings with `file:line` evidence
 - Present concrete options (not abstract choices)
 - Pull a DECISION from the developer, not confirm what you already found
+- Keep `Header` ≤16 characters (`MAX_HEADER_LENGTH = 16` — longer values are rejected).
 
 **Directional confirms first.** Before the one-at-a-time questions, clear every **directional** finding from Step 3 in a single batched `ask_user_question` (up to 4 per call). Do not mark the "follow" option Recommended.
 

@@ -34,6 +34,12 @@ Rules:
   - **A genuinely missing prerequisite is a hard error, not a decision.** If a file your phase must read or edit (one an earlier phase owns) is absent, **STOP and fail** with `prerequisite missing: <path> (expected from an earlier phase)`. Do **not** create it, do **not** `ask_user_question` about it, and do **not** defer your own edits — fail loudly so the run surfaces the ordering defect.
   - **Never silently defer your phase's own edits.** Apply every change the named phase owns, or fail. A phase that writes a partial slice and checks off nothing is worse than a clean failure.
   - Do not read, edit, or check off other phases' sections. Stop and print the closing block as soon as the named phase's own success criteria pass.
+  - **Record a `#### Reconciliation` directive for cross-phase test updates you can't apply yourself.** Under build/vet's parallel implement lane, a correct change in YOUR phase can invalidate a test expectation that lives in a SIBLING phase's landed section — and single-phase mode forbids editing another phase's files. Do NOT edit the sibling's file and do NOT silently skip it: record a `#### Reconciliation` directive in your OWN phase's section. The directive is a machine-findable, machine-applicable `find → replace` against a single repo-root-relative test target, so the downstream `reconcile` stage can apply it write-restricted to test-expectation files:
+    ```
+    #### Reconciliation
+    - `path/to/x.test.ts`: replace `expect(r).toBe(3)` → `expect(r).toBe(4)` — <one-line rationale>
+    ```
+    The target MUST be a test file (`*.test.*`); `reconcile` rejects (and reports) a directive against any non-test path. The `find` substring must be present in the target — `reconcile` does not guess, so an absent `find` fails the reconciliation gate. Record directives only for edits you can state concretely; anything needing real restructuring is plan-level work (`/skill:revise`), not a reconciliation directive.
 - If no phase is named → **sequential full-plan mode:** implement every phase in the plan sequentially.
 - If the input is empty or the plan path is missing/literal, ask the user for the plan path before proceeding.
 
@@ -68,6 +74,7 @@ If you encounter a mismatch:
 
   ```
 
+  `Header` is capped at ≤16 characters (`MAX_HEADER_LENGTH = 16` — longer values are rejected).
   Use the `ask_user_question` tool to resolve the mismatch. Question: "{Brief summary of the mismatch}". Header: "Mismatch". Options: "Follow the plan" (Adapt the plan's approach to the current code state); "Skip this change" (Move on without this change — it may not be needed); "Update the plan" (The plan needs to be revised before continuing).
 
 ## Verification Approach
@@ -78,6 +85,7 @@ After implementing a phase:
 - Fix any issues before proceeding
 - Update your progress in both the plan and your todos
 - Check off completed items in the plan file itself using Edit
+  - Anchor each checkbox-flip `Edit` on the **full unique line** — the item's phase-specific tail (the verification command, file path, or criterion text), never just the shared `- [ ]`/`- [x]` prefix. That shared prefix repeats identically across phases, so a prefix-only anchor collides and Pi rejects the whole atomic edit batch with a "Found N occurrences" error (run a777 lost an atomic 9-edit batch this way). A full-line anchor is unique per item.
 - If the input scopes you to a single phase, stop immediately after the named phase's own checks pass — do not advance to other phases
 
 Don't let verification interrupt your flow - batch it at natural stopping points.

@@ -72,6 +72,8 @@ describe("executeAdvisor — 4 StopReason branches", () => {
 		const r = await captured.tools.get("advisor")?.execute?.("tc", {}, undefined as never, undefined as never, ctx);
 		expect(r?.content[0]).toMatchObject({ type: "text", text: "advice" });
 		expect(r?.details).toMatchObject({ advisorModel: "a:m" });
+		// R6.4 guard: a non-empty first attempt does NOT retry.
+		expect(completeSimple).toHaveBeenCalledTimes(1);
 	});
 
 	it("uses Pi's auth-aware runtime completion when the host exposes it", async () => {
@@ -170,16 +172,60 @@ describe("executeAdvisor — 4 StopReason branches", () => {
 		const r = await captured.tools.get("advisor")?.execute?.("tc", {}, undefined as never, undefined as never, ctx);
 		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("502") });
 		expect(r?.details).toMatchObject({ stopReason: "error", errorMessage: "502" });
+		// R6.4 guard: an error stopReason short-circuits — NOT retried.
+		expect(completeSimple).toHaveBeenCalledTimes(1);
 	});
 
-	it("empty-response returns ERR_EMPTY_RESPONSE envelope", async () => {
+	it("empty-response retries once then surfaces ERR_EMPTY_RESPONSE envelope", async () => {
 		setAdvisorModel({ provider: "a", id: "m" } as never);
-		vi.mocked(completeSimple).mockResolvedValueOnce(resp({ text: "   " }) as never);
+		// Two consecutive empty resolutions — the second is what makes the retry
+		// bounded and deterministic (without it the exhausted mock returns
+		// `undefined` and the unit would throw into the catch arm).
+		vi.mocked(completeSimple)
+			.mockResolvedValueOnce(resp({ text: "   " }) as never)
+			.mockResolvedValueOnce(resp({ text: "" }) as never);
 		const { pi, captured } = createMockPi();
 		registerAdvisorTool(pi);
 		const ctx = createMockCtx();
 		const r = await captured.tools.get("advisor")?.execute?.("tc", {}, undefined as never, undefined as never, ctx);
+		expect(completeSimple).toHaveBeenCalledTimes(2);
 		expect(r?.details).toMatchObject({ errorMessage: "empty response" });
+	});
+
+	it("retry succeeds when the second attempt returns advice", async () => {
+		setAdvisorModel({ provider: "a", id: "m" } as never);
+		vi.mocked(completeSimple)
+			.mockResolvedValueOnce(resp({ text: "   " }) as never)
+			.mockResolvedValueOnce(resp({ text: "recovered advice" }) as never);
+		const { pi, captured } = createMockPi();
+		registerAdvisorTool(pi);
+		const ctx = createMockCtx();
+		const r = await captured.tools.get("advisor")?.execute?.("tc", {}, undefined as never, undefined as never, ctx);
+		expect(r?.content[0]).toMatchObject({ type: "text", text: "recovered advice" });
+		expect(completeSimple).toHaveBeenCalledTimes(2);
+	});
+
+	it("retries once on the runtime facade path too", async () => {
+		setAdvisorModel({ provider: "a", id: "m" } as never);
+		const { pi, captured } = createMockPi();
+		registerAdvisorTool(pi);
+		const ctx = createMockCtx();
+		// getRuntimeCompleteSimple() returns completeSimple.bind(runtime), so the
+		// two mockReturnValueOnce resolutions are consumed by the bound method.
+		const runtime = {
+			completeSimple: vi
+				.fn()
+				.mockResolvedValueOnce(resp({ text: "" }) as never)
+				.mockResolvedValueOnce(resp({ text: "runtime recovered" }) as never),
+		};
+		// Pi keeps ModelRuntime behind ModelRegistry's runtime-private slot. Keep
+		// this test non-enumerable to mirror that host shape.
+		Object.defineProperty(ctx.modelRegistry, "runtime", { value: runtime });
+
+		const r = await captured.tools.get("advisor")?.execute?.("tc", {}, undefined as never, undefined as never, ctx);
+		expect(r?.content[0]).toMatchObject({ type: "text", text: "runtime recovered" });
+		expect(runtime.completeSimple).toHaveBeenCalledTimes(2);
+		expect(completeSimple).not.toHaveBeenCalled();
 	});
 
 	it("thrown error is caught and wrapped in details.errorMessage", async () => {

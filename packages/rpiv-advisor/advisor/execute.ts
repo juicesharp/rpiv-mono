@@ -6,7 +6,7 @@
  * buildAdvisorResult so the envelope is built in exactly one place.
  */
 
-import type { Message, StopReason, ThinkingLevel, Usage } from "@earendil-works/pi-ai";
+import type { AssistantMessage, Message, StopReason, TextContent, ThinkingLevel, Usage } from "@earendil-works/pi-ai";
 import {
 	type AgentToolResult,
 	type AgentToolUpdateCallback,
@@ -41,6 +41,18 @@ interface AdvisorDetails {
 	usage?: Usage;
 	stopReason?: StopReason;
 	errorMessage?: string;
+}
+
+// Extract the advisor's text content from a completeSimple response: concatenate
+// every text part, trim. Thinking/toolCall parts are ignored. Returns "" when the
+// model returned no text content — the empty-response class R6.4 retries once
+// before surfacing. Pure so both attempts share one extraction path.
+function advisorTextFromResponse(response: AssistantMessage): string {
+	return response.content
+		.filter((c): c is TextContent => c.type === "text")
+		.map((c) => c.text)
+		.join("\n")
+		.trim();
 }
 
 // Single result-envelope builder — every executeAdvisor branch and the pre-call
@@ -127,51 +139,73 @@ export async function executeAdvisor(
 		const requestOptions = runtimeCompleteSimple
 			? { signal, reasoning: effort }
 			: { apiKey: auth.apiKey, headers: auth.headers, signal, reasoning: effort };
-		const response = await completeSimple(
-			advisor,
-			// `tools: []` reaffirms the "never calls tools" contract even when
-			// `messages` contains prior toolCall/toolResult blocks (btw.ts:235).
-			{ systemPrompt: ADVISOR_SYSTEM_PROMPT, messages, tools: [] },
-			requestOptions,
-		);
 
-		if (response.stopReason === "aborted") {
-			return buildAdvisorResult({
-				text: ERR_CALL_ABORTED,
-				effort,
-				advisorLabel,
-				usage: response.usage,
-				stopReason: response.stopReason,
-				errorMessage: response.errorMessage ?? ERR_ABORTED_DETAIL,
-			});
-		}
+		// Single dispatch point — both attempts reuse the SAME `messages` and
+		// `requestOptions`, so the retry cannot diverge from attempt 1. `tools: []`
+		// reaffirms the "never calls tools" contract even when `messages` contains
+		// prior toolCall/toolResult blocks (btw.ts:235).
+		const callAdvisor = (): Promise<AssistantMessage> =>
+			completeSimple(advisor, { systemPrompt: ADVISOR_SYSTEM_PROMPT, messages, tools: [] }, requestOptions);
 
-		if (response.stopReason === "error") {
-			return buildAdvisorResult({
-				text: errCallFailed(response.errorMessage),
-				effort,
-				advisorLabel,
-				usage: response.usage,
-				stopReason: response.stopReason,
-				errorMessage: response.errorMessage,
-			});
-		}
+		// Build the terminal envelope for an aborted/error stopReason, or return
+		// undefined when the attempt produced a normal stop whose text (or lack of
+		// text) the caller must still resolve. Aborted/error short-circuit and are
+		// NEVER retried — they are not the empty-response class R6.4 targets.
+		const stopReasonEnvelope = (r: AssistantMessage): AgentToolResult<AdvisorDetails> | undefined => {
+			if (r.stopReason === "aborted") {
+				return buildAdvisorResult({
+					text: ERR_CALL_ABORTED,
+					effort,
+					advisorLabel,
+					usage: r.usage,
+					stopReason: r.stopReason,
+					errorMessage: r.errorMessage ?? ERR_ABORTED_DETAIL,
+				});
+			}
+			if (r.stopReason === "error") {
+				return buildAdvisorResult({
+					text: errCallFailed(r.errorMessage),
+					effort,
+					advisorLabel,
+					usage: r.usage,
+					stopReason: r.stopReason,
+					errorMessage: r.errorMessage,
+				});
+			}
+			return undefined;
+		};
 
-		const advisorText = response.content
-			.filter((c): c is { type: "text"; text: string } => c.type === "text")
-			.map((c) => c.text)
-			.join("\n")
-			.trim();
+		let response = await callAdvisor();
 
+		// Aborted/error short-circuit on the first attempt — no retry.
+		const firstTerminal = stopReasonEnvelope(response);
+		if (firstTerminal) return firstTerminal;
+
+		let advisorText = advisorTextFromResponse(response);
+
+		// R6.4: a transient empty advisor response (normal stop, no text) gets
+		// exactly ONE retry with identical inputs before surfacing as a terminal
+		// error. Bounded to a single second call — never a `while`/loop — so a
+		// persistent-empty provider cannot hot-loop. The retry reuses the SAME
+		// pre-computed `messages`/`requestOptions` (no re-derivation that could
+		// diverge from attempt 1), then applies the same three-way route.
 		if (!advisorText) {
-			return buildAdvisorResult({
-				text: ERR_EMPTY_RESPONSE,
-				effort,
-				advisorLabel,
-				usage: response.usage,
-				stopReason: response.stopReason,
-				errorMessage: ERR_EMPTY_RESPONSE_DETAIL,
-			});
+			response = await callAdvisor();
+
+			const retryTerminal = stopReasonEnvelope(response);
+			if (retryTerminal) return retryTerminal;
+
+			advisorText = advisorTextFromResponse(response);
+			if (!advisorText) {
+				return buildAdvisorResult({
+					text: ERR_EMPTY_RESPONSE,
+					effort,
+					advisorLabel,
+					usage: response.usage,
+					stopReason: response.stopReason,
+					errorMessage: ERR_EMPTY_RESPONSE_DETAIL,
+				});
+			}
 		}
 
 		return buildAdvisorResult({

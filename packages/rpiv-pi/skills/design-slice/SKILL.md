@@ -61,6 +61,7 @@ Copy values verbatim. `<iso>` is the first tab-separated field; `<slug>` is the 
    - **Integration points** — where this slice wires into existing code (and into sibling slices it depends on, by file/symbol — referencing the real shapes from the upstream `## Key Interfaces`).
    - **Success criteria** — concrete `- [ ]` checks that prove the slice works.
 5. **Resolve ambiguity:** decide from the slice map, the upstream designs, research, and code wherever you can. Use `ask_user_question` (2–4 concrete options, one at a time) ONLY when you can't settle it from those inputs — either a genuine design fork within this slice, **or** a contract this slice depends on is still an undecided fork in an upstream's `## Notes / Deferred`. Do **not** ask the user to approve the finished design — the grade panel owns that.
+   - `Header` is capped at ≤16 characters (`MAX_HEADER_LENGTH = 16` — longer values are rejected).
 6. **Write the design doc** (below), `status: ready`.
 7. **Print the path**, then a one-line summary: `Slice N design: <k> files, <m> success criteria`.
 

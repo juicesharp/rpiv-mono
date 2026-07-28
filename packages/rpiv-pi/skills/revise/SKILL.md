@@ -155,6 +155,7 @@ I plan to update the plan by:
 Does this align with your intent?
 ```
 
+`Header` is capped at ≤16 characters (`MAX_HEADER_LENGTH = 16` — longer values are rejected).
 Use the `ask_user_question` tool to confirm before editing. Question: "{Summary of planned modifications}. Proceed with these edits?". Header: "Changes". Options: "Proceed (Recommended)" (Apply the planned changes to the existing plan); "Adjust approach" (Modify what will be changed before editing); "Show me first" (Show the exact text changes before applying).
 
 ### Step 4: Update the Plan

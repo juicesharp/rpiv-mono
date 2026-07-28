@@ -67,6 +67,7 @@ node "${SKILL_DIR}/../_shared/git-changes.mjs" --baseline <path>
    - List the files you plan to add for each commit
    - Show the commit message(s) you'll use
    - Use the `ask_user_question` tool to confirm the commit plan. Question: "{N} commit(s) with {M} files. Proceed?". Header: "Commit". Options: "Commit (Recommended)" (Create the commit(s) as planned); "Adjust" (Change the grouping or commit messages); "Review files" (Show me the full diff before committing).
+     - `Header` is capped at ≤16 characters (`MAX_HEADER_LENGTH = 16` — longer values are rejected).
 
 4. **Execute upon confirmation:**
    - Use `git add` with specific files (never use `-A` or `.`) — and stage **only** files from the `---status---` block. Any path under `---pre-existing (do NOT commit …)---` is out of scope: leave it dirty, never stage it.

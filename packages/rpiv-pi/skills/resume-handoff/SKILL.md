@@ -122,6 +122,7 @@ When this command is invoked:
 
    ```
 
+   `Header` is capped at ≤16 characters (`MAX_HEADER_LENGTH = 16` — longer values are rejected).
    Use the `ask_user_question` tool to confirm the approach. Question: "{Summary of recommended next action}. Proceed?". Header: "Resume". Options: "Proceed (Recommended)" (Begin with {recommended action 1}); "Adjust approach" (Change the order or scope of next steps); "Re-analyze" (The codebase has changed — re-verify state first).
 
 ### Step 4: Create Action Plan

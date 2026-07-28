@@ -14,7 +14,7 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
@@ -742,7 +742,12 @@ const writeCommitBaseline = (cwd: string, rel: string): void => {
 		// stdio: stderr ignored — without this, git's "fatal: not a git repository"
 		// leaks to the parent's stderr even though the catch treats it as a
 		// supported silent degrade (best-effort baseline, empty on failure).
-		const out = execFileSync("git", ["status", "--short"], {
+		// -uall: git collapses an untracked directory to one `dir/` entry by
+		// default, so a phase's brand-new files under a new directory would never
+		// string-match their `files:` declarations at the scope floor. Enumerate
+		// every file; the baseline and both scope checks MUST share this flag or
+		// their path universes diverge.
+		const out = execFileSync("git", ["status", "--short", "--untracked-files=all"], {
 			cwd,
 			encoding: "utf-8",
 			stdio: ["ignore", "pipe", "ignore"],
@@ -1156,15 +1161,55 @@ const resolveCitationPath = (
 	return undefined;
 };
 
+/**
+ * Character-offset spans of fenced code blocks (delimiter lines included), an
+ * unterminated fence running to end-of-text. Mirrors the `inFence`/`fenceLen`
+ * toggle `countHeadingsOutsideFences` carries so every fence-aware scan agrees
+ * on the same boundaries.
+ */
+const fencedSpans = (content: string): [number, number][] => {
+	const spans: [number, number][] = [];
+	let inFence = false;
+	let fenceLen = 0;
+	let spanStart = 0;
+	let offset = 0;
+	for (const line of content.split("\n")) {
+		const lineEnd = offset + line.length + 1; // +1 for the split-consumed \n
+		const fence = /^\s*(`{3,}|~{3,})/.exec(line);
+		if (fence) {
+			const len = fence[1].length;
+			if (!inFence) {
+				inFence = true;
+				fenceLen = len;
+				spanStart = offset;
+			} else if (len >= fenceLen && line.trim().length === len) {
+				inFence = false;
+				fenceLen = 0;
+				spans.push([spanStart, lineEnd]);
+			}
+		}
+		offset = lineEnd;
+	}
+	if (inFence) spans.push([spanStart, offset]);
+	return spans;
+};
+
 const verifyCitations = (body: string, cwd: string): { detail: string; where: string }[] => {
 	const findings: { detail: string; where: string }[] = [];
 	const seen = new Set<string>();
+	// Fenced text is example/fixture territory, not prose asserting a real
+	// file:line — a fenced placeholder shaped like a citation must not fail the
+	// floor (it false-failed the very plan that fixes this). Span check, not a
+	// placeholder-pattern skip: a REAL citation that merely looks placeholder-ish
+	// still verifies when it appears in prose.
+	const fenced = fencedSpans(body);
 	// Built lazily and reused across citations — only the first direct-resolution
 	// miss pays the tree walk, and only when at least one such citation exists.
 	const indexHolder: { value: BasenameIndex | undefined } = { value: undefined };
 	for (const m of body.matchAll(FILE_LINE_CITATION_RE)) {
 		const [, path, startStr, endStr] = m;
 		if (!path || !startStr) continue;
+		if (fenced.some(([s, e]) => m.index >= s && m.index < e)) continue;
 		const key = `${path}:${startStr}${endStr ? `-${endStr}` : ""}`;
 		if (seen.has(key)) continue;
 		seen.add(key);
@@ -1712,6 +1757,44 @@ const planCitationCheck =
 	};
 
 /**
+ * Copy the latest graded plan off `plans` into `.rpiv/artifacts/priors/`
+ * basename-keyed, publishing the bytes on the snapshot stage's OWN channel with
+ * role `prior` — one deterministic hop BEFORE the matching fix stage inside the
+ * existing fix loop (plan-grade/plan-confirm → plan-snapshot → plan-fix; code
+ * twin). Overwritten each fix round, so the prior always reflects the
+ * pre-CURRENT-fix content; the re-grade reads it via `latestPriorContent` to
+ * decide whether the amend was surgical. `who` attributes the halt when no plan
+ * is published. `kind: "artifact-md"` is the honest kind — the prior IS a copy
+ * of an artifact-md plan body (the kind plans carry under `rpivBucketOutcome`).
+ */
+const snapshotLatestPlan =
+	(who: string) =>
+	({ state, cwd }: ScriptContext): Omit<Output, "meta"> => {
+		const latest = latestFsArtifact(state, "plans");
+		if (latest?.handle.kind !== "fs") {
+			throw haltPreflight(
+				who,
+				`${who}: no plan to snapshot`,
+				`${who}: no fs artifact on the 'plans' channel — the plan must be graded before the snapshot stage`,
+			);
+		}
+		const src = isAbsolute(latest.handle.path) ? latest.handle.path : join(cwd, latest.handle.path);
+		const priorRel = join(PRIOR_DIR, basename(latest.handle.path));
+		mkdirSync(join(cwd, PRIOR_DIR), { recursive: true });
+		copyFileSync(src, join(cwd, priorRel));
+		return {
+			kind: "artifact-md",
+			artifacts: [{ handle: { kind: "fs", path: priorRel }, role: "prior" }],
+			data: { snapshot_of: handleToString(latest.handle) },
+		};
+	};
+
+/** Snapshot the graded plan before `plan-fix` amends it (plan gate). */
+const planSnapshot = snapshotLatestPlan("plan-snapshot");
+/** Snapshot the graded plan before `code-fix` amends it (code gate). */
+const codeSnapshot = snapshotLatestPlan("code-snapshot");
+
+/**
  * Deterministic lane-level scope floor — the structural backstop beneath the
  * LLM quality gates. After build's `implement` lane runs (now dep-gated and, as
  * of this phase's unpin, concurrent up to the host cap), this checks the working
@@ -1782,7 +1865,9 @@ const implementScopeCheck = ({ state, cwd }: ScriptContext): Omit<Output, "meta"
 	// parent's stderr even though the catch treats it as a supported silent degrade.
 	let dirty: string[] = [];
 	try {
-		const out = execFileSync("git", ["status", "--porcelain"], {
+		// -uall matches the baseline writer: enumerate untracked files individually
+		// (a collapsed `newdir/` entry can never match a declared file path).
+		const out = execFileSync("git", ["status", "--porcelain", "--untracked-files=all"], {
 			cwd,
 			encoding: "utf-8",
 			stdio: ["ignore", "pipe", "ignore"],
@@ -1908,7 +1993,9 @@ const implementScopeCheckVet = ({ state, cwd }: ScriptContext): Omit<Output, "me
 	// degrade (best-effort: non-repo / git-missing ⇒ empty dirty ⇒ pass).
 	let dirty: string[] = [];
 	try {
-		const out = execFileSync("git", ["status", "--porcelain"], {
+		// -uall matches the baseline writer: enumerate untracked files individually
+		// (a collapsed `newdir/` entry can never match a declared file path).
+		const out = execFileSync("git", ["status", "--porcelain", "--untracked-files=all"], {
 			cwd,
 			encoding: "utf-8",
 			stdio: ["ignore", "pipe", "ignore"],
@@ -1942,6 +2029,321 @@ const implementScopeCheckVet = ({ state, cwd }: ScriptContext): Omit<Output, "me
 	// accumulating channel, and on disk only the latest round's scope verdict
 	// matters; round-stamp here if a consumer ever needs the history.
 	const rel = join(VERDICT_DIR, `implement-scope-check__${basename(latest.handle.path, ".md")}.json`);
+	mkdirSync(join(cwd, VERDICT_DIR), { recursive: true });
+	writeFileSync(join(cwd, rel), JSON.stringify(data, null, 2), "utf-8");
+	return { kind: "json", artifacts: [{ handle: { kind: "fs", path: rel } }], data };
+};
+
+/**
+ * One `#### Reconciliation` directive parsed from a plan body: a machine-applicable
+ * `find → replace` against a single test-expectation file. The implement lane records
+ * these in a phase's OWN section when a correct change invalidates a test that lives
+ * in a sibling phase's landed section (which the implementer may NOT edit); `reconcile`
+ * applies them write-restricted to `*.test.*` targets.
+ */
+interface ReconciliationDirective {
+	/** Repo-root-relative test target (`*.test.*`). */
+	target: string;
+	/** Substring to find (replaced exactly once via `String.replace`). */
+	find: string;
+	/** Replacement string. */
+	replace: string;
+}
+
+/** Directive grammar: `` - `<target>`: replace `<find>` → `<replace>` — <rationale> ``.
+ *  The `→` (U+2192) separates find/replace; the em-dash `—` (U+2014) + rationale is
+ *  optional. Find/replace carry no inner backticks (the spans are `[^`]*` / `[^`]+`). */
+const RECONCILE_DIRECTIVE_RE = /^-\s+`([^`]+)`\s*:\s*replace\s+`([^`]*)`\s*→\s*`([^`]*)`\s*(?:—\s+.*)?$/;
+/** A directive ATTEMPT — `- `<target>`:` — that does not match the full grammar. Used
+ *  to surface a malformed directive as a finding rather than silently dropping it. */
+const RECONCILE_DIRECTIVE_ATTEMPT_RE = /^-\s+`[^`]+`\s*:/;
+
+/**
+ * Parse every `#### Reconciliation` directive from a plan body. Returns the
+ * well-formed directives AND the malformed attempts (lines that carry the
+ * `- `<target>`:` shape but not the full `replace … → …` grammar); `reconcile`
+ * turns each malformed attempt into a finding so a broken directive is visible,
+ * never silently dropped. Prose list items are ignored. Pure: no I/O, no throw.
+ * A section opens at a `#### Reconciliation` heading and closes at the next
+ * `#{1,4}` heading (so `### Success Criteria` / `## Phase N:` / a sibling
+ * `#### Automated Verification:` all end it).
+ */
+const reconciliationRecords = (
+	body: string,
+): {
+	directives: ReconciliationDirective[];
+	malformed: string[];
+} => {
+	const directives: ReconciliationDirective[] = [];
+	const malformed: string[] = [];
+	let inSection = false;
+	for (const raw of body.split("\n")) {
+		const line = raw.trimEnd();
+		if (/^####\s+Reconciliation\b/.test(line)) {
+			inSection = true;
+			continue;
+		}
+		// Any other heading ends the section (the open-heading branch above `continue`s,
+		// so this only fires for non-`#### Reconciliation` headings).
+		if (/^#{1,4}\s/.test(line)) {
+			inSection = false;
+			continue;
+		}
+		if (!inSection) continue;
+		const m = RECONCILE_DIRECTIVE_RE.exec(line);
+		if (m) {
+			directives.push({ target: m[1]!.trim(), find: m[2]!, replace: m[3]! });
+		} else if (RECONCILE_DIRECTIVE_ATTEMPT_RE.test(line)) {
+			malformed.push(line.trim());
+		}
+	}
+	return { directives, malformed };
+};
+
+/** Checkbox-AV line: `- [ ] `<command>`` or `- [x] `<command>``. The first
+ *  backtick-wrapped span is the command; prose backticks after it are ignored. */
+const AV_COMMAND_LINE_RE = /^-\s+\[[ xX]\]\s*`([^`]+)`/;
+
+/**
+ * Extract every per-phase `#### Automated Verification:` command string from a plan
+ * body — both `- [ ]` (pending) and `- [x]` (checked) lines. A section opens at a
+ * `#### Automated Verification:` heading and closes at the next `#{1,4}` heading.
+ * Pure: no I/O, no throw. `reconcile` re-runs each via `execFileSync`, fail-soft.
+ */
+const planVerificationCommands = (body: string): string[] => {
+	const commands: string[] = [];
+	let inSection = false;
+	for (const raw of body.split("\n")) {
+		const line = raw.trimEnd();
+		if (/^####\s+Automated Verification\b/.test(line)) {
+			inSection = true;
+			continue;
+		}
+		if (/^#{1,4}\s/.test(line)) {
+			inSection = false;
+			continue;
+		}
+		if (!inSection) continue;
+		const m = AV_COMMAND_LINE_RE.exec(line);
+		if (m) commands.push(m[1]!.trim());
+	}
+	return commands;
+};
+
+/**
+ * The reconcile write-restriction's static allowlist — a conservative test-path
+ * classifier. A directive may apply its `find → replace` ONLY to a co-located test
+ * file (`*.test.{ts,tsx,js,jsx}`); any other target is flagged and left untouched
+ * (fail-closed: golden masters, fixtures, `*.t.ts`, and production sources are NOT
+ * auto-applied). Narrow by design — do not widen it to compensate for a weak
+ * directive (risk c1r2: correctness rests on this neither false-failing a legit
+ * test edit nor false-allowing a non-test target).
+ */
+const TEST_PATH_RE = /\.test\.[tj]sx?$/;
+const isTestPath = (target: string): boolean => TEST_PATH_RE.test(target);
+
+/**
+ * Split an AV command string into `{ exe, args }` for `execFileSync`, honoring
+ * single/double quotes (so `grep -niE "a|b" x` tokenizes with the quotes stripped
+ * and `node -e "process.exit(1)"` keeps `process.exit(1)` as one arg). Returns
+ * `null` for an empty/whitespace command or an unterminated quote (caller flags
+ * it). Minimal — no globbing, env expansion, or shell operators; AV commands are
+ * simple invocations.
+ */
+const parseShellCommand = (cmd: string): { exe: string; args: string[] } | null => {
+	const tokens: string[] = [];
+	let cur = "";
+	let quote: '"' | "'" | null = null;
+	for (let i = 0; i < cmd.length; i++) {
+		const ch = cmd[i]!;
+		if (quote) {
+			if (ch === quote) quote = null;
+			else cur += ch;
+		} else if (ch === '"' || ch === "'") {
+			quote = ch;
+		} else if (/\s/.test(ch)) {
+			if (cur !== "") {
+				tokens.push(cur);
+				cur = "";
+			}
+		} else {
+			cur += ch;
+		}
+	}
+	if (quote) return null; // unterminated quote — unparseable
+	if (cur !== "") tokens.push(cur);
+	const [exe, ...args] = tokens;
+	return exe ? { exe, args } : null;
+};
+
+/**
+ * Deterministic post-implement reconciliation — the coherence backstop the
+ * parallel implement lane needs. Sibling phases run concurrently in one tree;
+ * each phase's own `#### Automated Verification:` passed in isolation, but a
+ * phase's correct change can invalidate a test that lives in a SIBLING phase's
+ * landed section (which the implementer may not edit), and the combined tree can
+ * break in ways no single phase's checks surface. `reconcile` runs after the
+ * scope floor (which proved the write-set) and before `validate`:
+ *
+ *  1. reads the latest plan (`latestFsArtifact(state, "plans")` — latest-wins);
+ *  2. parses every `#### Reconciliation` directive + every per-phase
+ *     `#### Automated Verification:` command — fail-soft (a malformed directive
+ *     / unreadable plan degrades to a finding, never a terminal `FAIL_SCRIPT_THREW`
+ *     halt — a `produces.script` that throws becomes one);
+ *  3. applies each directive write-restricted to test paths (`isTestPath`); a
+ *     present `find` is replaced exactly once (`String.replace`); an absent `find`
+ *     whose replacement is ALSO absent is a finding (reconcile does not guess);
+ *  4. re-runs every AV command via `execFileSync` (fail-soft: non-zero/throw ⇒ a
+ *     finding naming the command);
+ *  5. appends a timestamped `### Reconciliation Log (<iso>)` under the plan's
+ *     `## Synthesis Notes` (best-effort bookkeeping write — non-fatal);
+ *  6. emits one `{ dimension: "reconcile" }` verdict, basename-keyed off the plan
+ *     ⇒ idempotent across fix rounds (the verdict file is overwritten each round).
+ *
+ * The route is the `match("verdict", …, { from: "reconcile" })` gate idiom — pass ⇒
+ * validate, fail/missing ⇒ STOP (no fallback), mirroring `implementScopeCheck`.
+ * Mirrors `implementScopeCheck`'s `ScriptContext` shape, basename-keyed verdict
+ * path, and `dimension`/`pass`/`verdict`/`score`/`severity` data shape. `reads:
+ * ["plans"]` only — reconcile consumes no run-start `goal` baseline (the scope
+ * floor already proved the write-set; reconcile's own writes are directive targets
+ * + the plan bookkeeping). The `from` form suppresses the READS_DATA outputSchema
+ * lint, so no schema is declared (matching `slice-check`/`plan-cite-check`/
+ * `implement-scope-check`).
+ */
+const reconcile = ({ state, cwd }: ScriptContext): Omit<Output, "meta"> => {
+	const latest = latestFsArtifact(state, "plans");
+	if (latest?.handle.kind !== "fs") {
+		throw haltPreflight(
+			"reconcile",
+			"reconcile: no plan to reconcile",
+			"reconcile: no fs artifact on the 'plans' channel — implement / scope-check must run before reconcile",
+		);
+	}
+	const planPath = latest.handle.path;
+	const planAbs = isAbsolute(planPath) ? planPath : join(cwd, planPath);
+	const findings: { detail: string; where: string }[] = [];
+
+	// Fail-soft read + parse: an unreadable plan, malformed directive, or broken AV
+	// section degrades to a finding, never a terminal throw. If the read fails there
+	// is nothing to apply or re-run.
+	let body = "";
+	let directives: ReconciliationDirective[] = [];
+	let malformed: string[] = [];
+	let commands: string[] = [];
+	try {
+		body = readArtifactFile(planPath, cwd);
+		const parsed = reconciliationRecords(body);
+		directives = parsed.directives;
+		malformed = parsed.malformed;
+		commands = planVerificationCommands(body);
+	} catch (err) {
+		findings.push({
+			detail: `reconcile: could not read or parse the plan ${planPath} — ${err instanceof Error ? err.message : String(err)}`,
+			where: planPath,
+		});
+	}
+	for (const m of malformed) {
+		findings.push({
+			detail: `reconcile: malformed Reconciliation directive — expected a line of the form: - \`<target>\`: replace \`<find>\` → \`<replace>\` (target/find/replace each backtick-wrapped) — ${m}`,
+			where: "reconciliation-directive",
+		});
+	}
+
+	// Apply directives, write-restricted to test-expectation files.
+	for (const d of directives) {
+		if (!isTestPath(d.target)) {
+			findings.push({
+				detail: `reconcile: directive target ${d.target} is not a test-expectation file (*.test.{ts,tsx,js,jsx}) — reconcile writes only test files; record the directive against a test target or apply the edit in the owning phase`,
+				where: d.target,
+			});
+			continue;
+		}
+		try {
+			const abs = isAbsolute(d.target) ? d.target : join(cwd, d.target);
+			const content = readFileSync(abs, "utf-8");
+			if (content.includes(d.find)) {
+				// `String.replace` with a string pattern replaces the FIRST match exactly once.
+				writeFileSync(abs, content.replace(d.find, d.replace), "utf-8");
+			} else if (d.replace !== "" && content.includes(d.replace)) {
+				// Idempotent re-run: the find is gone but the replacement is present ⇒ the
+				// directive was already applied (e.g. a vet review-fix loop re-running
+				// reconcile). Treated as satisfied — reconcile must not fail on its own
+				// prior successful apply.
+			} else {
+				findings.push({
+					detail: `reconcile: directive find substring not present in ${d.target} (and the replacement is absent — not already applied) — the expected text to replace is absent; the directive is stale or the test no longer matches`,
+					where: d.target,
+				});
+			}
+		} catch (err) {
+			findings.push({
+				detail: `reconcile: could not apply directive to ${d.target} — ${err instanceof Error ? err.message : String(err)}`,
+				where: d.target,
+			});
+		}
+	}
+
+	// Re-run every per-phase AV command (fail-soft: non-zero/throw ⇒ a finding).
+	for (const cmd of commands) {
+		const parsed = parseShellCommand(cmd);
+		if (!parsed) {
+			findings.push({
+				detail: `reconcile: Automated Verification command unparseable — \`${cmd}\``,
+				where: cmd,
+			});
+			continue;
+		}
+		try {
+			execFileSync(parsed.exe, parsed.args, {
+				cwd,
+				encoding: "utf-8",
+				stdio: ["ignore", "pipe", "pipe"],
+			});
+		} catch {
+			findings.push({
+				detail: `reconcile: Automated Verification command failed (non-zero) — \`${cmd}\``,
+				where: cmd,
+			});
+		}
+	}
+
+	// Best-effort bookkeeping: append a timestamped log under ## Synthesis Notes.
+	// Non-fatal — a write failure here is silent (the verdict below is the signal).
+	if (body) {
+		try {
+			const stamp = new Date().toISOString();
+			const verdict = findings.length === 0 ? "pass" : "fail";
+			const logBlock = `\n### Reconciliation Log (${stamp})\nApplied ${directives.length} directive(s); ${findings.length} finding(s); verdict: ${verdict}.\n`;
+			const heading = "## Synthesis Notes";
+			const idx = body.indexOf(heading);
+			let updated: string;
+			if (idx >= 0) {
+				const lineEnd = body.indexOf("\n", idx);
+				const at = lineEnd >= 0 ? lineEnd + 1 : body.length;
+				updated = body.slice(0, at) + logBlock + body.slice(at);
+			} else {
+				updated = `${body.replace(/\s+$/, "")}\n${logBlock}`;
+			}
+			writeFileSync(planAbs, updated, "utf-8");
+		} catch {
+			// bookkeeping — ignore
+		}
+	}
+
+	const pass = findings.length === 0;
+	const data = {
+		dimension: "reconcile",
+		pass,
+		verdict: pass ? "pass" : "fail",
+		score: pass ? 100 : 0,
+		severity: pass ? "none" : "high",
+		artifact: handleToString(latest.handle),
+		findings,
+		feedback: pass ? "" : findings.map((f) => f.detail).join(" "),
+	};
+	// Basename-keyed off the latest plan ⇒ idempotent across fix rounds (mirrors
+	// implementScopeCheck / planCitationCheck, NOT round-stamped like grade).
+	const rel = join(VERDICT_DIR, `reconcile__${basename(planPath, ".md")}.json`);
 	mkdirSync(join(cwd, VERDICT_DIR), { recursive: true });
 	writeFileSync(join(cwd, rel), JSON.stringify(data, null, 2), "utf-8");
 	return { kind: "json", artifacts: [{ handle: { kind: "fs", path: rel } }], data };
@@ -2186,9 +2588,203 @@ const dimensionsToRegrade = (dimensions: readonly string[], latest: ReadonlyMap<
 		const v = o.data as { pass?: boolean; severity?: string } | undefined;
 		const dimPass = v?.pass === true || v?.severity === "low" || v?.severity === "none";
 		if (!dimPass) return true;
-		const raw = (o.data as { risk_rulings?: unknown } | undefined)?.risk_rulings;
-		return Array.isArray(raw) && raw.some((e) => (e as { pass?: unknown })?.pass !== true);
+		return verdictRiskRulings(o).some((r) => !rulingEffectivePass(r));
 	});
+};
+
+/**
+ * Coarse line-count backstop for the surgical-fix guard. The subset test
+ * (`touchedSections − HOUSEKEEPING ⊆ cited`) is the binding constraint — do
+ * NOT tighten this to compensate for a weak subset test.
+ */
+const NON_SURGICAL_DIFF_LINE_THRESHOLD = 60;
+
+/**
+ * Plan sections amend ALWAYS bumps without the fix touching their meaning —
+ * the pseudo-section `frontmatter` (via the `last_updated` field). Exempt from
+ * the "touched outside cited" test. Starts at `{frontmatter}` only; do not
+ * pre-widen (a genuinely-meaningful bookkeeping section would let a broad amend
+ * pass the subset test by touching it).
+ */
+const HOUSEKEEPING_SECTIONS: ReadonlySet<string> = new Set(["frontmatter"]);
+
+/** Directory the snapshot stages copy the pre-fix plan into (basename-keyed). */
+const PRIOR_DIR = ".rpiv/artifacts/priors";
+
+/**
+ * Map each line index to its plan-section name: the nearest preceding `## `
+ * heading — `## Phase N: …` normalizes to `phase N` (case-insensitive); any
+ * other heading is lowercased by tail — so touched-section keys and cited-section
+ * keys share one space. The frontmatter block (opening `---` through its closing
+ * `---`) is the pseudo-section `frontmatter`. Lines before the first heading and
+ * outside frontmatter map to `""` (which is neither housekeeping nor a `phase N`
+ * cite, so any change there is treated as out-of-scope).
+ */
+const sectionIndexOf = (lines: readonly string[]): string[] => {
+	const idx = new Array<string>(lines.length);
+	let current = "";
+	let inFrontmatter = lines[0]?.trim() === "---";
+	for (let i = 0; i < lines.length; i++) {
+		if (inFrontmatter) {
+			idx[i] = "frontmatter";
+			if (i > 0 && lines[i].trim() === "---") inFrontmatter = false;
+			continue;
+		}
+		const m = /^##\s+(.*)$/.exec(lines[i]);
+		if (m) {
+			const ph = /^Phase\s+(\d+)/i.exec(m[1].trim());
+			current = ph ? `phase ${ph[1]}` : m[1].trim().toLowerCase();
+		}
+		idx[i] = current;
+	}
+	return idx;
+};
+
+/**
+ * Line-level diff of `prior` vs `current` plan bodies, mapped to plan sections.
+ * Each changed line (a deletion from `prior` OR an insertion in `current` under
+ * an LCS match) is attributed to its nearest preceding `## ` heading in its own
+ * document. Returns the union of touched section keys and a coarse changed-line
+ * count (deletions + insertions). Insertion-tolerant: a 1-line insert does not
+ * mark every trailing line changed (the LCS keeps shared context matched).
+ */
+const sectionDiff = (prior: string, current: string): { touchedSections: Set<string>; changedLines: number } => {
+	const a = prior.split("\n");
+	const b = current.split("\n");
+	const sa = sectionIndexOf(a);
+	const sb = sectionIndexOf(b);
+	// LCS length table (bottom-up). Plans are a few hundred lines ⇒ O(n·m) trivial.
+	const dp: number[][] = Array.from({ length: a.length + 1 }, () => new Array<number>(b.length + 1).fill(0));
+	for (let i = a.length - 1; i >= 0; i--) {
+		for (let j = b.length - 1; j >= 0; j--) {
+			dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+		}
+	}
+	const touched = new Set<string>();
+	let changed = 0;
+	let i = 0;
+	let j = 0;
+	while (i < a.length && j < b.length) {
+		if (a[i] === b[j]) {
+			i++;
+			j++;
+		} else if (dp[i + 1][j] >= dp[i][j + 1]) {
+			touched.add(sa[i]); // a[i] deleted (present in prior, absent in current)
+			changed++;
+			i++;
+		} else {
+			touched.add(sb[j]); // b[j] inserted (present in current, absent in prior)
+			changed++;
+			j++;
+		}
+	}
+	while (i < a.length) {
+		touched.add(sa[i]);
+		changed++;
+		i++;
+	}
+	while (j < b.length) {
+		touched.add(sb[j]);
+		changed++;
+		j++;
+	}
+	return { touchedSections: touched, changedLines: changed };
+};
+
+/**
+ * Plan sections cited by the FAILING dimensions' findings — extracted from each
+ * finding's `where` and `detail` (`Phase N` → `phase N`, lowercased). Preferred
+ * `where: "Phase 1 > lane-dock-editor.ts Edit 1"` → `phase 1`; a repo
+ * `path:line`-only `where` (and a detail with no `Phase N`) contributes NO plan
+ * section. Empty when no failing finding carries an extractable plan-section
+ * reference — fail-closed: the caller treats an empty cite set against any
+ * non-housekeeping touched section as out-of-scope (non-surgical).
+ */
+const citedSections = (latest: ReadonlyMap<string, Output>, pending: readonly string[]): Set<string> => {
+	const cited = new Set<string>();
+	for (const d of pending) {
+		const findings = (latest.get(d)?.data as { findings?: unknown } | undefined)?.findings;
+		if (!Array.isArray(findings)) continue;
+		for (const f of findings) {
+			if (f == null || typeof f !== "object") continue;
+			const where = typeof (f as { where?: unknown }).where === "string" ? (f as { where: string }).where : "";
+			const detail = typeof (f as { detail?: unknown }).detail === "string" ? (f as { detail: string }).detail : "";
+			for (const text of [where, detail]) {
+				for (const m of text.matchAll(/Phase\s+(\d+)/gi)) cited.add(`phase ${m[1]}`);
+			}
+		}
+	}
+	return cited;
+};
+
+/**
+ * The prior-role `fs` artifact the snapshot stage published on `priorChannel`
+ * (undefined when the channel carries no prior — round 1 / first re-grade).
+ * Existence of the ENTRY is distinct from readability of the sidecar: an entry
+ * that exists but cannot be read still counts as "prior present" so the caller
+ * fails closed to a FULL roster rather than silently carrying forward.
+ */
+const priorArtifact = (state: RunView, priorChannel: string): Artifact | undefined => {
+	const entry = state.named[priorChannel]?.at(-1);
+	const prior = entry?.artifacts.find((a) => a.handle.kind === "fs" && a.role === "prior");
+	return prior?.handle.kind === "fs" ? prior : undefined;
+};
+
+/**
+ * Read the prior sidecar's bytes off `priorChannel`. Returns `undefined` when
+ * the channel is empty, the prior artifact is not fs, OR the sidecar is
+ * unreadable — the caller treats `undefined` as fail-closed (non-surgical).
+ */
+const latestPriorContent = (state: RunView, priorChannel: string, cwd: string): string | undefined => {
+	const prior = priorArtifact(state, priorChannel);
+	if (prior?.handle.kind !== "fs") return undefined;
+	try {
+		return readArtifactFile(prior.handle.path, cwd);
+	} catch {
+		return undefined;
+	}
+};
+
+/**
+ * True ONLY when a readable prior exists AND the current plan's diff from it
+ * touches ONLY sections a failing finding cited (minus housekeeping) AND the
+ * changed-line count is within the coarse threshold. Every missing signal — no
+ * prior, unreadable sidecar, unreadable current plan, a diff/parse throw, a
+ * touched section no failing finding cited, or an over-threshold diff —
+ * collapses to `false` (fail-closed ⇒ the caller re-grades the full roster
+ * when a prior is present, or carries forward when none is). `pending` is
+ * consumed as-is: whatever `dimensionsToRegrade` ruled still-blocking (after
+ * phase 3's `rulingEffectivePass` clause-3 rewrite) is the set this guard
+ * narrows on.
+ */
+const isSurgicalFix = (
+	state: RunView,
+	priorChannel: string,
+	cwd: string,
+	target: string,
+	latest: ReadonlyMap<string, Output>,
+	pending: readonly string[],
+): boolean => {
+	const prior = latestPriorContent(state, priorChannel, cwd);
+	if (prior === undefined) return false;
+	let current: string;
+	try {
+		current = readArtifactFile(target, cwd);
+	} catch {
+		return false;
+	}
+	let diff: { touchedSections: Set<string>; changedLines: number };
+	try {
+		diff = sectionDiff(prior, current);
+	} catch {
+		return false;
+	}
+	const cited = citedSections(latest, pending);
+	for (const section of diff.touchedSections) {
+		if (HOUSEKEEPING_SECTIONS.has(section)) continue;
+		if (!cited.has(section)) return false;
+	}
+	return diff.changedLines <= NON_SURGICAL_DIFF_LINE_THRESHOLD;
 };
 
 /**
@@ -2231,13 +2827,13 @@ const gradePanelFanout = (
 	channel: string,
 	dimensions: readonly string[],
 	verdictChannel: string,
-	{ confirm = false }: { confirm?: boolean } = {},
+	{ confirm = false, priorChannel }: { confirm?: boolean; priorChannel?: string } = {},
 ) =>
 	fanout({
 		source: channel,
 		unit: { by: "dimension-list", pattern: "dimensions" },
 		max: dimensions.length,
-		units: ({ state }) => {
+		units: ({ state, cwd }) => {
 			const doc = latestFsArtifact(state, channel);
 			if (doc?.handle.kind !== "fs") return [];
 			const target = handleToString(doc.handle);
@@ -2248,13 +2844,29 @@ const gradePanelFanout = (
 			const roster = gateRoster(gateTier(state, verdictChannel), dimensions);
 			const latest = latestVerdictPerDimension(freshVerdicts(state.named[verdictChannel], target));
 			const pending = dimensionsToRegrade(roster, latest);
+			// Delta re-grade fallback guard (plan/code gates only — `priorChannel`
+			// is unset for the slice gate and both confirm panels). When the snapshot
+			// stage published a prior, compare it to the current plan: a SURGICAL
+			// amend (touched only sections a failing finding cited, ≤ threshold
+			// lines) re-grades only the still-pending dimensions; a NON-surgical
+			// amend (broad / out-of-scope / over-threshold / unreadable / unparseable)
+			// re-grades the FULL roster — a broad amend may have regressed a passing
+			// dimension the carry-forward would otherwise trust. With NO prior
+			// (round 1 / first re-grade) the carry-forward applies unchanged. See
+			// `isSurgicalFix` for the fail-closed contract (risk c5r3).
+			const surgical =
+				!confirm && priorChannel !== undefined && isSurgicalFix(state, priorChannel, cwd, target, latest, pending);
+			const priorPresent = priorChannel !== undefined && priorArtifact(state, priorChannel) !== undefined;
 			const priorFlag = (d: string): string => {
 				if (!confirm || !pending.includes(d)) return "";
 				const handle = latest.get(d)?.artifacts.find((a) => a.handle.kind === "fs")?.handle;
 				return handle ? ` --prior ${handleToString(handle)}` : "";
 			};
-			// Never emit zero units (empty ⇒ single dimensionless grade fall-through).
-			const toGrade = pending.length > 0 ? pending : roster;
+			const carryForward = pending.length > 0 ? pending : roster;
+			// A non-surgical result WITH a prior present re-grades the FULL roster;
+			// with NO prior the carry-forward applies (never an empty unit set —
+			// empty ⇒ single dimensionless grade fall-through).
+			const toGrade = surgical ? carryForward : priorPresent ? roster : carryForward;
 			return toGrade.map((d) => ({
 				prompt: `--dimension ${d} --artifact ${target}${d === "architecture-fit" ? contextFlag : ""}${GOAL_DIMENSIONS.has(d) ? goalFlag : ""}${priorFlag(d)}`,
 				label: d,
@@ -2264,11 +2876,15 @@ const gradePanelFanout = (
 	});
 
 const SLICE_DIMENSION_FANOUT = gradePanelFanout("slices", SLICE_DIMENSIONS, "slice-verdicts");
-const PLAN_DIMENSION_FANOUT = gradePanelFanout("plans", PLAN_DIMENSIONS, "plan-verdicts");
+const PLAN_DIMENSION_FANOUT = gradePanelFanout("plans", PLAN_DIMENSIONS, "plan-verdicts", {
+	priorChannel: "plan-snapshot",
+});
 // The post-splice code gate re-grades the SAME `plans` artifact on its own
 // `code-verdicts` channel, so its carry-forward reads the code gate's verdicts,
 // never the pre-elaborate plan gate's.
-const CODE_DIMENSION_FANOUT = gradePanelFanout("plans", PLAN_DIMENSIONS, "code-verdicts");
+const CODE_DIMENSION_FANOUT = gradePanelFanout("plans", PLAN_DIMENSIONS, "code-verdicts", {
+	priorChannel: "code-snapshot",
+});
 // The confirm stages re-run the SAME panel machinery on the SAME verdict
 // channel: with the failing dimensions the only ones pending, the panel emits
 // exactly the blocking dimensions — one second judgment each, in confirm mode:
@@ -2321,6 +2937,26 @@ const allDimensionsPass = (entries: readonly Output[] = [], roster?: readonly st
 interface RiskRuling {
 	id: string;
 	pass: boolean;
+	/**
+	 * `mechanics` marks a risk whose `pass` asserts a verified mechanism (a
+	 * behavior that holds because code was checked), so a passing ruling MUST
+	 * cite the checked `file:line` in `evidence` — an un-evidenced mechanics
+	 * pass demotes (the a777 honest-lazy confident-falsehood class). Absent on
+	 * an ordinary risk ⇒ no evidence duty.
+	 */
+	claim_type?: string;
+	/** The `file:line`-shaped citation a mechanics pass must ground itself on. */
+	evidence?: string;
+	/**
+	 * `verify-at-implement` marks a risk the panel defers: ruled `pass` ONLY when
+	 * a concrete `procedure` + `owner` phase will re-check it at implement/validate
+	 * time. Absent ⇒ the risk is judged in this panel, not deferred.
+	 */
+	disposition?: string;
+	/** Named command/test the owner phase runs to discharge a deferred risk. */
+	procedure?: string;
+	/** The phase (`n`) that owns the deferred verify step. */
+	owner?: number;
 }
 
 /** The `risk_rulings` a grade verdict emitted (empty when it ruled on none). */
@@ -2329,9 +2965,68 @@ const verdictRiskRulings = (o: Output): RiskRuling[] => {
 	if (!Array.isArray(raw)) return [];
 	return raw.flatMap((e) => {
 		const r = (e ?? {}) as Record<string, unknown>;
-		return typeof r.id === "string" ? [{ id: r.id, pass: r.pass === true }] : [];
+		if (typeof r.id !== "string") return [];
+		// Read the duty fields defensively (same typeof-guard idiom as id/pass):
+		// absent on an older/ordinary verdict ⇒ undefined ⇒ the duty helpers no-op.
+		const claim_type = typeof r.claim_type === "string" ? r.claim_type : undefined;
+		const evidence = typeof r.evidence === "string" ? r.evidence : undefined;
+		const disposition = typeof r.disposition === "string" ? r.disposition : undefined;
+		const procedure = typeof r.procedure === "string" ? r.procedure : undefined;
+		const owner = typeof r.owner === "number" ? r.owner : undefined;
+		return [
+			{
+				id: r.id,
+				pass: r.pass === true,
+				...(claim_type !== undefined ? { claim_type } : {}),
+				...(evidence !== undefined ? { evidence } : {}),
+				...(disposition !== undefined ? { disposition } : {}),
+				...(procedure !== undefined ? { procedure } : {}),
+				...(owner !== undefined ? { owner } : {}),
+			},
+		];
 	});
 };
+
+/**
+ * A mechanics-pass ruling's evidence duty: a `claim_type: "mechanics"` risk
+ * ruled `pass` MUST cite the checked `file:line` in `evidence` (forces
+ * engagement — a777's panel asserted a mechanism and cited nothing). Reuses
+ * `FILE_LINE_CITATION_RE` via `.match()` — NOT `.test()`: the regex carries
+ * the `/g` flag (packages/rpiv-pi/extensions/rpiv-core/built-in-workflows.ts:1021),
+ * so `.test()` is stateful across calls (`lastIndex` advances) and would
+ * intermittently miss a present citation. A non-mechanics ruling carries no
+ * evidence duty ⇒ returns `true` (an ordinary risk's pass needs no file:line).
+ */
+const evidenceCitesFileLine = (r: RiskRuling): boolean => {
+	if (r.claim_type !== "mechanics") return true;
+	return typeof r.evidence === "string" && r.evidence.match(FILE_LINE_CITATION_RE) !== null;
+};
+
+/**
+ * A deferred-risk's verify-at-implement duty: a `disposition:
+ * "verify-at-implement"` risk ruled `pass` MUST carry a concrete `procedure`
+ * (the named command/test the owner phase runs) AND a numeric `owner` phase —
+ * a bare "verify later" with no procedure demotes. A risk with no
+ * `disposition` is judged in THIS panel, not deferred ⇒ returns `true`.
+ */
+const procedureSatisfiesDuty = (r: RiskRuling): boolean => {
+	if (r.disposition !== "verify-at-implement") return true;
+	return typeof r.procedure === "string" && r.procedure.length > 0 && typeof r.owner === "number";
+};
+
+/**
+ * The single gate-fold authority: a ruling is effective-pass iff it is a bare
+ * `pass` AND (when mechanics) its evidence cites a `file:line` AND (when
+ * deferred) its procedure+owner discharge the verify duty. `allRiskFlagsPass`,
+ * `dimensionsToRegrade` clause 3, and `confirmDue`'s `riskFail` ALL consult
+ * this — so the three risk folds agree on what "passing" means and a demoted
+ * mechanics/deferred pass blocks the gate AND re-opens its owning dimension
+ * AND counts as blocking for confirm (no incoherent re-grading). For a plain
+ * `{ id, pass }` ruling (no `claim_type`, no `disposition`) every duty no-ops,
+ * so `rulingEffectivePass(r) === r.pass` — prior behavior is preserved.
+ */
+const rulingEffectivePass = (r: RiskRuling): boolean =>
+	r.pass === true && evidenceCitesFileLine(r) && procedureSatisfiesDuty(r);
 
 /**
  * Fold the grade panel's per-flag risk rulings into a gate decision: every
@@ -2344,7 +3039,7 @@ const verdictRiskRulings = (o: Output): RiskRuling[] => {
  */
 const allRiskFlagsPass = (entries: readonly Output[] = []): boolean => {
 	const latest = new Map<string, boolean>();
-	for (const o of entries) for (const r of verdictRiskRulings(o)) latest.set(r.id, r.pass);
+	for (const o of entries) for (const r of verdictRiskRulings(o)) latest.set(r.id, rulingEffectivePass(r));
 	return [...latest.values()].every(Boolean);
 };
 
@@ -2423,7 +3118,7 @@ const confirmDue = (
 		const v = o.data as { dimension?: string; pass?: boolean; severity?: string } | undefined;
 		if (typeof v?.dimension !== "string" || !roster.has(v.dimension)) continue;
 		const floored = v.pass === true || v.severity === "low" || v.severity === "none";
-		const riskFail = verdictRiskRulings(o).some((r) => !r.pass);
+		const riskFail = verdictRiskRulings(o).some((r) => !rulingEffectivePass(r));
 		byDim.set(v.dimension, {
 			blocking: !floored || riskFail,
 			count: (byDim.get(v.dimension)?.count ?? 0) + 1,
@@ -2559,6 +3254,13 @@ const vetWorkflow = defineWorkflow({
 		// `slice-check`/`plan-cite-check`. Pass → validate; fail/missing → STOP
 		// (no fallback), mirroring build's `validate → commit` route.
 		"implement-scope-check": produces.script({ reads: ["plans", "goal"], run: implementScopeCheckVet }),
+		// Deterministic post-implement reconciliation (no LLM) — the SAME `reconcile`
+		// run-function as build (no vet twin): applies every `#### Reconciliation`
+		// directive (write-restricted to test files) + re-runs every per-phase
+		// `#### Automated Verification:` command, fail-soft. Pass ⇒ validate; fail/
+		// missing ⇒ STOP (no fallback). `reads: ["plans"]` only — no run-start goal
+		// baseline. The `from` form suppresses the READS_DATA outputSchema lint.
+		reconcile: produces.script({ reads: ["plans"], run: reconcile }),
 		validate: produces(),
 		commit: acts({ outcome: gitCommitOutcome }),
 	},
@@ -2573,7 +3275,14 @@ const vetWorkflow = defineWorkflow({
 		// validate; fail/missing terminates (STOP, no fallback). Byte-for-byte
 		// Phase 3's build route.
 		implement: "implement-scope-check",
-		"implement-scope-check": match("verdict", { validate: "pass" }, { from: "implement-scope-check" }),
+		// Scope-check still gates onward, but now into `reconcile` (not validate):
+		// the coherence backstop runs after the write-set is proven. Pass ⇒
+		// reconcile; fail/missing ⇒ STOP (no fallback).
+		"implement-scope-check": match("verdict", { reconcile: "pass" }, { from: "implement-scope-check" }),
+		// Reconciliation gate. Pass ⇒ validate; a `fail` (non-test directive target /
+		// absent find / failed AV command) or a missing verdict ⇒ STOP (no fix arm —
+		// a reconciliation failure is plan-vs-tree drift the agent reconciles manually).
+		reconcile: match("verdict", { validate: "pass" }, { from: "reconcile" }),
 		// Backward edge: validate → code-review creates the review-fix loop —
 		// UNCHANGED. The scope-check inserts before validate, so a failing scope
 		// verdict halts before re-review, and a passing one flows into validate and
@@ -2678,8 +3387,23 @@ const buildWorkflow = defineWorkflow({
 		"plan-fix": produces({
 			skill: "amend",
 			outcome: rpivBucketOutcome("plans"),
-			reads: ["plans", fanin("plan-verdicts"), fanin("plan-cite-check")],
+			// Lineage threads for completeness-class repairs: `goal` (verbatim brief),
+			// `research` (architecture/precedent findings), `subplans` (per-cluster
+			// sub-plans). `goal`/`research` mirror `plan-confirm`'s reads; `subplans`
+			// mirrors `plan`'s own `reads: ["research", fanin("subplans")]`. `subplans`
+			// is plan-fix-ONLY — by the code gate the plan's completeness is settled, so
+			// code-fix repairs code-shape defects and threads no subplans.
+			reads: ["plans", fanin("plan-verdicts"), fanin("plan-cite-check"), "goal", "research", fanin("subplans")],
 		}),
+		// Snapshot the graded plan BEFORE plan-fix amends it — one deterministic
+		// hop inside the existing fix loop (plan-grade/plan-confirm → plan-snapshot
+		// → plan-fix). The re-grade reads the prior off the snapshot's OWN channel
+		// (`plan-snapshot`) to decide whether the amend was surgical (re-grade only
+		// the failing dims) or broad (re-grade the full roster). `produces.script`
+		// rides its stage-name channel, so this publishes to `plan-snapshot`, NOT
+		// `plans` — `latestFsArtifact(state, "plans")` still resolves to the real
+		// (amended) plan.
+		"plan-snapshot": produces.script({ reads: ["plans"], run: planSnapshot }),
 		// Elaborate implement-ready code into each phase in parallel (fanout),
 		// deterministically splice it back into the plan (code-splice), then
 		// re-grade the now code-bearing plan — guarding the blind-splice risk.
@@ -2730,8 +3454,17 @@ const buildWorkflow = defineWorkflow({
 		"code-fix": produces({
 			skill: "amend",
 			outcome: rpivBucketOutcome("plans"),
-			reads: ["plans", fanin("code-verdicts"), fanin("code-cite-check")],
+			// Lineage threads for code-shape repairs: `goal`/`research` give amend the
+			// brief + architecture context (mirroring `code-confirm`'s reads). NO
+			// `subplans` — the plan's completeness was settled at the plan gate, so the
+			// code arm only repairs code-shape defects (fabricated edit anchors, drifted
+			// `file:line` citations, cross-phase naming collisions).
+			reads: ["plans", fanin("code-verdicts"), fanin("code-cite-check"), "goal", "research"],
 		}),
+		// Snapshot the graded plan BEFORE code-fix amends it — the code-gate twin
+		// of `plan-snapshot` (code-grade/code-confirm → code-snapshot → code-fix),
+		// publishing the prior on the `code-snapshot` channel.
+		"code-snapshot": produces.script({ reads: ["plans"], run: codeSnapshot }),
 		implement: acts({ loop: IMPLEMENT_DAG_FANOUT, reads: ["plans"] }),
 		// Lane-level scope floor — the structural backstop beneath the quality
 		// gates. After the (now concurrent) implement lane lands, judge the working
@@ -2742,6 +3475,16 @@ const buildWorkflow = defineWorkflow({
 		// (matching slice-check/plan-cite-check). Reads `goal` for the run-start
 		// baseline that subtracts pre-existing dirt.
 		"implement-scope-check": produces.script({ reads: ["plans", "goal"], run: implementScopeCheck }),
+		// Deterministic post-implement reconciliation (no LLM): applies every
+		// `#### Reconciliation` directive (find→replace, write-restricted to test
+		// files) and re-runs every per-phase `#### Automated Verification:`
+		// command, fail-soft — a coherence backstop the parallel implement lane
+		// needs (a phase's correct change can invalidate a sibling's test, and the
+		// combined tree can break in ways no single phase's checks surface). Pass ⇒
+		// validate; fail/missing ⇒ STOP (no fallback). `reads: ["plans"]` only — no
+		// run-start goal baseline (the scope floor already proved the write-set). The
+		// `from` form suppresses the READS_DATA outputSchema lint.
+		reconcile: produces.script({ reads: ["plans"], run: reconcile }),
 		validate: produces({ prompt: VALIDATE_GOAL_PROMPT }),
 		commit: acts({ prompt: COMMIT_BASELINE_PROMPT, outcome: gitCommitOutcome }),
 	},
@@ -2807,21 +3550,26 @@ const buildWorkflow = defineWorkflow({
 		// THROUGH the citation floor so the amended plan re-verifies (else a stale
 		// failing cite verdict would loop forever).
 		"plan-grade": defineRoute(
-			["code", "plan-confirm", "plan-fix"],
+			["code", "plan-confirm", "plan-snapshot"],
 			({ state }) =>
 				planGatePasses(state)
 					? "code"
 					: confirmDue(state, "plans", "plan-verdicts", PLAN_DIMENSIONS)
 						? "plan-confirm"
-						: "plan-fix",
+						: "plan-snapshot",
 			{ readsData: false },
 		),
 		// After the second judgment the gate re-folds on the latest verdicts: a
 		// confirming pass overwrote the flap and clears the gate; a confirming
 		// fail routes to the fix with two agreeing judgments behind it.
-		"plan-confirm": defineRoute(["code", "plan-fix"], ({ state }) => (planGatePasses(state) ? "code" : "plan-fix"), {
-			readsData: false,
-		}),
+		"plan-confirm": defineRoute(
+			["code", "plan-snapshot"],
+			({ state }) => (planGatePasses(state) ? "code" : "plan-snapshot"),
+			{ readsData: false },
+		),
+		// The snapshot is one deterministic hop between the grade/confirm route and
+		// the fix — no new backward edge, inside the existing fix loop.
+		"plan-snapshot": "plan-fix",
 		"plan-fix": "plan-cite-check",
 		code: "code-splice",
 		"code-splice": "code-cite-check",
@@ -2841,33 +3589,40 @@ const buildWorkflow = defineWorkflow({
 		// per-phase code rewrite cannot reach, so the surgical arm is the one with
 		// authority over them. Bounded by the runner's maxBackwardJumps.
 		"code-grade": defineRoute(
-			["implement", "code-confirm", "code-fix"],
+			["implement", "code-confirm", "code-snapshot"],
 			({ state }) =>
 				codeGatePasses(state)
 					? "implement"
 					: confirmDue(state, "plans", "code-verdicts", PLAN_DIMENSIONS)
 						? "code-confirm"
-						: "code-fix",
+						: "code-snapshot",
 			{ readsData: false },
 		),
 		"code-confirm": defineRoute(
-			["implement", "code-fix"],
-			({ state }) => (codeGatePasses(state) ? "implement" : "code-fix"),
+			["implement", "code-snapshot"],
+			({ state }) => (codeGatePasses(state) ? "implement" : "code-snapshot"),
 			{ readsData: false },
 		),
+		// The code-gate twin of `plan-snapshot → plan-fix`.
+		"code-snapshot": "code-fix",
 		"code-fix": "code-cite-check",
 		implement: "implement-scope-check",
-		// Lane-level scope floor gate. Pass ⇒ validate. A `fail` (undeclared write)
-		// or a missing verdict routes to STOP — no fix arm, because a scope violation
-		// is plan-vs-tree drift the agent must reconcile manually (a phase wrote
+		// Lane-level scope floor gate. Pass ⇒ reconcile (the coherence backstop
+		// runs after the write-set is proven). A `fail` (undeclared write) or a
+		// missing verdict routes to STOP — no fix arm, because a scope violation is
+		// plan-vs-tree drift the agent must reconcile manually (a phase wrote
 		// outside its declared set), not a defect an auto-fix loop can repair. Safe
-		// by construction: the sole path onward is an explicit `verdict: "pass"`, so
-		// un-anticipated data can never route INTO validate. Sourced from the
-		// scope-check's published verdict channel via the `from` form (the stage key
-		// for an outcome-less `produces.script`, per `resolvePublishName`), which
-		// suppresses the READS_DATA outputSchema lint — no schema declared (matching
-		// `validate`'s `from: "validation"` route and slice-check/plan-cite-check).
-		"implement-scope-check": match("verdict", { validate: "pass" }, { from: "implement-scope-check" }),
+		// by construction: the sole path onward is an explicit `verdict: "pass"`.
+		// Sourced from the scope-check's published verdict channel via the `from`
+		// form (the stage key for an outcome-less `produces.script`, per
+		// `resolvePublishName`), which suppresses the READS_DATA outputSchema lint.
+		"implement-scope-check": match("verdict", { reconcile: "pass" }, { from: "implement-scope-check" }),
+		// Reconciliation gate. Pass ⇒ validate; a `fail` (non-test directive target
+		// / absent find / failed AV command) or a missing verdict ⇒ STOP (no fix
+		// arm — a reconciliation failure is plan-vs-tree drift the agent reconciles
+		// manually). Safe by construction: the sole path onward is an explicit
+		// `verdict: "pass"`. Sourced from the reconcile channel via the `from` form.
+		reconcile: match("verdict", { validate: "pass" }, { from: "reconcile" }),
 		// Gate commit on validate's own verdict — an unconditional `validate → commit`
 		// let a `verdict: fail` (incomplete goal coverage) commit anyway. `match` with
 		// no fallback commits ONLY on an explicit `verdict: "pass"`; every other value

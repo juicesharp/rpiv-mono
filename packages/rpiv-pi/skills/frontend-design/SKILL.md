@@ -126,6 +126,7 @@ When skipping, record: "Dimension X: [finding from scan] — respecting existing
 ### Dimension 1: Tone & Mood
 
 Ask via `ask_user_question`:
+- `Header` is capped at ≤16 characters (`MAX_HEADER_LENGTH = 16` — longer values are rejected).
 - Question: "Pick a tone and commit. What should this interface FEEL like on first glance?"
 - Header: "Tone"
 - Options (pick 3-4 that fit the project context, always include the first):

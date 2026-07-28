@@ -110,6 +110,7 @@ Present the candidate set and default dimensions to the developer before per-can
    ```
 
 2. **Confirm via the `ask_user_question` tool with the following question:** "{N} candidates, {D} dimensions. Begin per-candidate fit dispatch?". Header: "Candidates". Options: "Proceed (Recommended)" (Begin per-candidate fit dispatch with all {N} candidates and all {D} dimensions); "Adjust candidates or dimensions" (Rename, add, or drop candidates; drop dimensions that don't apply); "Re-generate candidates" (Candidates look wrong — re-run Step 2 with adjusted scope).
+   - `Header` is capped at ≤16 characters (`MAX_HEADER_LENGTH = 16` — longer values are rejected).
 
 3. **Handle developer input:**
 
