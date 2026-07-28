@@ -1752,6 +1752,11 @@ const planCitationCheck =
 		// Plan-time coverage floor: a body edit not declared in its phase's `files:`
 		// fails structurally, same channel/verdict/route as an unbacked citation.
 		findings.push(...verifyPhaseFilesCoverage(body, who, latest.handle.path));
+		// AV exit-0 contract floor: an Automated Verification line reconcile's
+		// deterministic re-run can never honor (stdin-reading grep, absence-assertion
+		// prose, out-of-scope Biome paths, unparseable span) fails HERE — into the
+		// plan-fix loop — instead of at reconcile, whose fail route is STOP.
+		findings.push(...verifyAvCommandContract(body));
 		const pass = findings.length === 0;
 		const data = {
 			dimension: "structure",
@@ -2121,13 +2126,16 @@ const reconciliationRecords = (
 const AV_COMMAND_LINE_RE = /^-\s+\[[ xX]\]\s*`([^`]+)`/;
 
 /**
- * Extract every per-phase `#### Automated Verification:` command string from a plan
- * body — both `- [ ]` (pending) and `- [x]` (checked) lines. A section opens at a
+ * Extract every per-phase `#### Automated Verification:` line from a plan body —
+ * both `- [ ]` (pending) and `- [x]` (checked) — as `{ command, tail }`:
+ * `command` is the first backtick span (the ONLY part `reconcile` executes),
+ * `tail` is the prose after it (never executed — `verifyAvCommandContract`
+ * lints it for semantics the exit-0 re-run cannot honor). A section opens at a
  * `#### Automated Verification:` heading and closes at the next `#{1,4}` heading.
- * Pure: no I/O, no throw. `reconcile` re-runs each via `execFileSync`, fail-soft.
+ * Pure: no I/O, no throw.
  */
-const planVerificationCommands = (body: string): string[] => {
-	const commands: string[] = [];
+const planVerificationRecords = (body: string): { command: string; tail: string }[] => {
+	const records: { command: string; tail: string }[] = [];
 	let inSection = false;
 	for (const raw of body.split("\n")) {
 		const line = raw.trimEnd();
@@ -2141,10 +2149,13 @@ const planVerificationCommands = (body: string): string[] => {
 		}
 		if (!inSection) continue;
 		const m = AV_COMMAND_LINE_RE.exec(line);
-		if (m) commands.push(m[1]!.trim());
+		if (m) records.push({ command: m[1]!.trim(), tail: line.slice(m[0]!.length) });
 	}
-	return commands;
+	return records;
 };
+
+/** The command strings alone — `reconcile` re-runs each via `execFileSync`, fail-soft. */
+const planVerificationCommands = (body: string): string[] => planVerificationRecords(body).map((r) => r.command);
 
 /**
  * The reconcile write-restriction's static allowlist — a conservative test-path
@@ -2190,6 +2201,127 @@ const parseShellCommand = (cmd: string): { exe: string; args: string[] } | null 
 	if (cur !== "") tokens.push(cur);
 	const [exe, ...args] = tokens;
 	return exe ? { exe, args } : null;
+};
+
+/** grep-family executables: exit 1 on zero matches AND read stdin when no file
+ *  operand is given — both directly at odds with reconcile's exit-0/no-stdin
+ *  re-run harness, hence the two grep-specific lint rules below. */
+const AV_GREP_FAMILY = new Set(["grep", "egrep", "fgrep", "ggrep", "rg"]);
+/** grep-family flags that CONSUME the next token (so it is not a file operand). */
+const AV_GREP_VALUE_FLAGS = new Set([
+	"-e",
+	"--regexp",
+	"-f",
+	"--file",
+	"-m",
+	"--max-count",
+	"-A",
+	"-B",
+	"-C",
+	"--include",
+	"--exclude",
+	"--exclude-dir",
+	"-g",
+	"--glob",
+	"-t",
+	"--type",
+]);
+/** Absence-assertion prose on a grep-family AV line — "success" is grep exit 1,
+ *  the exact inverse of the exit-0 contract. Deliberately a short literal list
+ *  (the c8fc phrasing class), not a general negation detector. */
+const AV_ABSENCE_PROSE_RE = /returns nothing|no matches|no occurrences|is gone|must be gone/i;
+/** Extensions Biome's config COULD scope (biome.json includes *.ts/*.js + site
+ *  css/html). Fail-open: flag a Biome runner only when NO forwarded path can be
+ *  in scope (e.g. all-markdown) — "No files were processed" exits 1 under
+ *  `--error-on-warnings` regardless of tree state. */
+const AV_BIOME_SCOPED_PATH_RE = /\.(?:ts|tsx|js|jsx|mjs|cjs|css|html|json|jsonc)$/i;
+
+/**
+ * Plan-time lint of `#### Automated Verification:` lines against `reconcile`'s
+ * execution contract: reconcile re-runs ONLY the first backtick span of each
+ * checkbox line via `execFileSync` — arg-array (no shell), stdin ignored, exit 0
+ * the sole pass signal — so prose qualifiers around the span never execute.
+ * Folded into `planCitationCheck` (both the `plan-cite-check` and
+ * `code-cite-check` arms) so a violating AV line fails INTO the plan-fix loop,
+ * not at `reconcile` where the route is STOP with no fix arm (run c8fc died
+ * there on four AV lines that were correct as prose and unsatisfiable as
+ * exit-0 commands). Narrow by design — each rule targets an observed
+ * false-class, fail-open otherwise; do NOT widen into a general shell linter:
+ *  1. unparseable command (unterminated quote / empty) — reconcile would flag
+ *     it anyway; surfacing it here buys a fix round instead of a halt;
+ *  2. grep-family with no file operand — under reconcile's stdin-ignored
+ *     harness it scans an empty stream and exits 1 regardless of tree state
+ *     (the file argument usually sits in prose OUTSIDE the span);
+ *  3. grep-family whose prose tail asserts absence ("returns nothing") —
+ *     success-by-absence IS grep exit 1, the inverse of the contract;
+ *  4. a Biome runner whose forwarded paths are all outside Biome's possible
+ *     scope — "No files were processed" exits 1 under `--error-on-warnings`.
+ */
+const verifyAvCommandContract = (body: string): { detail: string; where: string }[] => {
+	const findings: { detail: string; where: string }[] = [];
+	for (const { command, tail } of planVerificationRecords(body)) {
+		const parsed = parseShellCommand(command);
+		if (!parsed) {
+			findings.push({
+				detail: `Automated Verification command is unparseable under reconcile's tokenizer (empty or unterminated quote) — \`${command}\`. Reconcile re-runs the first backtick span verbatim via execFileSync; rewrite the span as a single well-quoted command.`,
+				where: command,
+			});
+			continue;
+		}
+		const exe = parsed.exe.split("/").pop() ?? parsed.exe;
+		if (AV_GREP_FAMILY.has(exe)) {
+			// Count file operands: tokens that are not flags and not a value a flag
+			// consumed. With -e/-f the pattern arrives via flag, so EVERY remaining
+			// operand is a file; otherwise the first operand is the pattern.
+			let patternViaFlag = false;
+			const operands: string[] = [];
+			for (let i = 0; i < parsed.args.length; i++) {
+				const a = parsed.args[i]!;
+				if (a === "--") {
+					operands.push(...parsed.args.slice(i + 1));
+					break;
+				}
+				if (a.startsWith("-")) {
+					if (a === "-e" || a === "--regexp" || a === "-f" || a === "--file") patternViaFlag = true;
+					if (AV_GREP_VALUE_FLAGS.has(a)) i++;
+					continue; // `--include=*.ts` style is self-contained
+				}
+				operands.push(a);
+			}
+			const fileOperands = patternViaFlag ? operands.length : operands.length - 1;
+			if (fileOperands < 1) {
+				findings.push({
+					detail: `Automated Verification \`${command}\` names no file operand — reconcile re-runs it with stdin ignored, so it scans an empty stream and exits non-zero regardless of the tree. Put the target path INSIDE the backtick span (prose like "over \`<file>\`" is never executed).`,
+					where: command,
+				});
+			}
+			if (AV_ABSENCE_PROSE_RE.test(tail)) {
+				findings.push({
+					detail: `Automated Verification \`${command}\` asserts absence in prose ("${AV_ABSENCE_PROSE_RE.exec(tail)?.[0]}") — grep exits 1 on zero matches, so this line's success IS a non-zero exit and reconcile will always fail it. Restate it as a command that exits 0 on success (e.g. a \`node -e\` probe) or move it to Manual Verification.`,
+					where: command,
+				});
+			}
+		}
+		// Biome runners: `npm run check:files -- <paths>` / `npx biome check <paths>`.
+		const isCheckFiles = exe === "npm" && parsed.args[0] === "run" && parsed.args[1] === "check:files";
+		const isBiome = (exe === "npx" && parsed.args[0] === "biome") || exe === "biome";
+		if (isCheckFiles || isBiome) {
+			const paths = parsed.args.filter((a) => !a.startsWith("-") && /[\\/.]/.test(a));
+			// Flag ONLY when every forwarded path carries an out-of-scope extension —
+			// a directory operand (no extension) may legitimately scope, so fail open.
+			if (
+				paths.length > 0 &&
+				paths.every((p) => /\.[a-z\d]+$/i.test(p)) &&
+				!paths.some((p) => AV_BIOME_SCOPED_PATH_RE.test(p))
+			) {
+				findings.push({
+					detail: `Automated Verification \`${command}\` passes Biome only paths outside its configured scope (biome.json covers code files, not e.g. markdown) — Biome reports "No files were processed" and exits non-zero under --error-on-warnings, so reconcile will always fail it. Drop the line for doc-only phases or include an in-scope path.`,
+					where: command,
+				});
+			}
+		}
+	}
+	return findings;
 };
 
 /**

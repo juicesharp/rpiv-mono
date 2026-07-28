@@ -4980,3 +4980,143 @@ describe("reconcile lane stage", () => {
 		}
 	});
 });
+
+describe("AV exit-0 contract floor (plan-cite-check / code-cite-check)", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "rpiv-av-contract-"));
+	});
+
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	const citeCheckRun = (stage: "plan-cite-check" | "code-cite-check") => {
+		const s = findWorkflow("build").stages[stage];
+		if (!s?.run) throw new Error(`build ${stage} has no run function`);
+		return s.run as (ctx: { cwd: string; input?: undefined; state: RunView }) => {
+			data: Record<string, unknown>;
+		};
+	};
+	// A minimal plan: no file:line citations (citation floor stays green), no
+	// `files:` key (coverage floor skips), so the AV contract floor is the only
+	// findings source under test.
+	const planWithAv = (avLines: string[]) => {
+		const body = [
+			"---",
+			"status: ready",
+			"---",
+			"# Plan",
+			"## Phase 1: One",
+			"### Success Criteria",
+			"#### Automated Verification:",
+			...avLines,
+			"#### Manual Verification:",
+			"- [ ] a manual check",
+			"",
+		].join("\n");
+		mkdirSync(join(tmpDir, ".rpiv/artifacts/plans"), { recursive: true });
+		writeFileSync(join(tmpDir, ".rpiv/artifacts/plans/p.md"), body);
+		return {
+			artifacts: [{ handle: fsHandle(".rpiv/artifacts/plans/p.md") }],
+			data: undefined,
+			kind: "",
+			meta: {},
+		} as unknown as Output;
+	};
+	const runOn = (
+		plan: ReturnType<typeof planWithAv>,
+		stage: "plan-cite-check" | "code-cite-check" = "plan-cite-check",
+	) =>
+		citeCheckRun(stage)({
+			cwd: tmpDir,
+			input: undefined,
+			state: { named: { plans: [plan] } } as unknown as RunView,
+		}).data;
+	const details = (data: Record<string, unknown>) =>
+		((data.findings as { detail: string }[] | undefined) ?? []).map((f) => f.detail).join(" ");
+
+	it("passes a clean AV block (grep with file operand, scoped Biome, tsc, vitest)", () => {
+		const data = runOn(
+			planWithAv([
+				"- [ ] `grep -c 'let fenceChar' packages/rpiv-pi/extensions/rpiv-core/built-in-workflows.ts` exits 0",
+				"- [ ] `npm run check:files -- packages/rpiv-pi/extensions/rpiv-core/built-in-workflows.ts`",
+				"- [ ] `npx tsc --noEmit -p tsconfig.base.json`",
+				"- [x] `npx vitest run packages/rpiv-pi/extensions/rpiv-core/built-in-workflows.test.ts`",
+			]),
+		);
+		expect(data.pass).toBe(true);
+		expect(data.findings).toEqual([]);
+	});
+
+	it("flags a grep with no file operand (the c8fc stdin-scan class)", () => {
+		const data = runOn(planWithAv(["- [x] `grep -c 'let fenceChar = \"\";'` over `x.ts` returns `4`"]));
+		expect(data.pass).toBe(false);
+		expect(data.dimension).toBe("structure");
+		expect(details(data)).toContain("names no file operand");
+	});
+
+	it("does not flag grep when the pattern arrives via -e and a file operand follows", () => {
+		const data = runOn(
+			planWithAv(["- [ ] `grep -e fenceChar packages/rpiv-pi/extensions/rpiv-core/built-in-workflows.ts`"]),
+		);
+		expect(data.pass).toBe(true);
+	});
+
+	it("flags rg with a pattern but no path (reads the ignored stdin under reconcile)", () => {
+		const data = runOn(planWithAv(["- [ ] `rg fenceChar`"]));
+		expect(data.pass).toBe(false);
+		expect(details(data)).toContain("names no file operand");
+	});
+
+	it("flags an absence assertion in the prose tail of a grep line (the c8fc returns-nothing class)", () => {
+		const data = runOn(
+			planWithAv([
+				"- [x] `grep -n 'broad' packages/rpiv-pi/skills/implement/SKILL.md` returns nothing — the glob is gone",
+			]),
+		);
+		expect(data.pass).toBe(false);
+		expect(details(data)).toContain("asserts absence in prose");
+	});
+
+	it("does not flag absence prose on a non-grep command", () => {
+		const data = runOn(planWithAv(["- [ ] `npx tsc --noEmit -p tsconfig.base.json` returns nothing on success"]));
+		expect(data.pass).toBe(true);
+	});
+
+	it("flags a Biome runner whose forwarded paths are all out of scope (the c8fc markdown class)", () => {
+		const data = runOn(planWithAv(["- [x] `npm run check:files -- packages/rpiv-pi/skills/implement/SKILL.md`"]));
+		expect(data.pass).toBe(false);
+		expect(details(data)).toContain("outside its configured scope");
+	});
+
+	it("does not flag a Biome runner when any forwarded path is in scope or is a directory", () => {
+		const mixed = runOn(
+			planWithAv([
+				"- [ ] `npm run check:files -- a/b.md packages/rpiv-pi/extensions/rpiv-core/built-in-workflows.ts`",
+			]),
+		);
+		expect(mixed.pass).toBe(true);
+		const dir = runOn(planWithAv(["- [ ] `npm run check:files -- packages/rpiv-pi`"]));
+		expect(dir.pass).toBe(true);
+	});
+
+	it("flags an unparseable AV command (unterminated quote) at plan time", () => {
+		const data = runOn(planWithAv(["- [ ] `grep -c 'unterminated packages/x.ts`"]));
+		expect(data.pass).toBe(false);
+		expect(details(data)).toContain("unparseable");
+	});
+
+	it("aggregates one finding per violating line and runs on the code-cite-check arm too", () => {
+		const plan = planWithAv([
+			"- [x] `grep -c 'let fenceChar = \"\";'` over `x.ts` returns `4`",
+			"- [x] `npm run check:files -- docs/readme.md`",
+			"- [ ] `npx tsc --noEmit -p tsconfig.base.json`",
+		]);
+		const data = runOn(plan, "code-cite-check");
+		expect(data.pass).toBe(false);
+		expect((data.findings as unknown[]).length).toBe(2);
+		expect(String(data.severity)).toBe("high");
+	});
+});
