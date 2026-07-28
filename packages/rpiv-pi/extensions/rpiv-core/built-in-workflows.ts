@@ -87,6 +87,7 @@ const countHeadingsOutsideFences = (content: string, re: RegExp): number => {
 	let count = 0;
 	let inFence = false;
 	let fenceLen = 0;
+	let fenceChar = "";
 	for (const line of content.split("\n")) {
 		const fence = /^\s*(`{3,}|~{3,})/.exec(line);
 		if (fence) {
@@ -94,9 +95,11 @@ const countHeadingsOutsideFences = (content: string, re: RegExp): number => {
 			if (!inFence) {
 				inFence = true;
 				fenceLen = len;
-			} else if (len >= fenceLen && line.trim().length === len) {
+				fenceChar = fence[1][0];
+			} else if (fence[1][0] === fenceChar && len >= fenceLen && line.trim().length === len) {
 				inFence = false;
 				fenceLen = 0;
+				fenceChar = "";
 			}
 			continue;
 		}
@@ -1171,6 +1174,7 @@ const fencedSpans = (content: string): [number, number][] => {
 	const spans: [number, number][] = [];
 	let inFence = false;
 	let fenceLen = 0;
+	let fenceChar = "";
 	let spanStart = 0;
 	let offset = 0;
 	for (const line of content.split("\n")) {
@@ -1181,10 +1185,12 @@ const fencedSpans = (content: string): [number, number][] => {
 			if (!inFence) {
 				inFence = true;
 				fenceLen = len;
+				fenceChar = fence[1][0];
 				spanStart = offset;
-			} else if (len >= fenceLen && line.trim().length === len) {
+			} else if (fence[1][0] === fenceChar && len >= fenceLen && line.trim().length === len) {
 				inFence = false;
 				fenceLen = 0;
+				fenceChar = "";
 				spans.push([spanStart, lineEnd]);
 			}
 		}
@@ -1564,6 +1570,7 @@ const phaseBodySlices = (content: string): Map<number, string> => {
 	const lines = content.split("\n");
 	let inFence = false;
 	let fenceLen = 0;
+	let fenceChar = "";
 	const openings: { n: number; start: number }[] = [];
 	for (let i = 0; i < lines.length; i++) {
 		const line = lines[i];
@@ -1573,9 +1580,11 @@ const phaseBodySlices = (content: string): Map<number, string> => {
 			if (!inFence) {
 				inFence = true;
 				fenceLen = len;
-			} else if (len >= fenceLen && line.trim().length === len) {
+				fenceChar = fence[1][0];
+			} else if (fence[1][0] === fenceChar && len >= fenceLen && line.trim().length === len) {
 				inFence = false;
 				fenceLen = 0;
+				fenceChar = "";
 			}
 			continue;
 		}
@@ -1636,6 +1645,7 @@ const editPathsOfPhase = (phaseBody: string): string[] => {
 	};
 	let inFence = false;
 	let fenceLen = 0;
+	let fenceChar = "";
 	for (const line of phaseBody.split("\n")) {
 		const fence = /^\s*(`{3,}|~{3,})/.exec(line);
 		if (fence) {
@@ -1643,9 +1653,11 @@ const editPathsOfPhase = (phaseBody: string): string[] => {
 			if (!inFence) {
 				inFence = true;
 				fenceLen = len;
-			} else if (len >= fenceLen && line.trim().length === len) {
+				fenceChar = fence[1][0];
+			} else if (fence[1][0] === fenceChar && len >= fenceLen && line.trim().length === len) {
 				inFence = false;
 				fenceLen = 0;
+				fenceChar = "";
 			}
 			continue;
 		}
@@ -2052,8 +2064,12 @@ interface ReconciliationDirective {
 
 /** Directive grammar: `` - `<target>`: replace `<find>` → `<replace>` — <rationale> ``.
  *  The `→` (U+2192) separates find/replace; the em-dash `—` (U+2014) + rationale is
- *  optional. Find/replace carry no inner backticks (the spans are `[^`]*` / `[^`]+`). */
-const RECONCILE_DIRECTIVE_RE = /^-\s+`([^`]+)`\s*:\s*replace\s+`([^`]*)`\s*→\s*`([^`]*)`\s*(?:—\s+.*)?$/;
+ *  optional. Find/replace carry no inner backticks. The two spans are intentionally
+ *  asymmetric and MUST NOT be symmetrized: `find` is one-or-more `[^`]+` (an empty
+ *  find has no anchored target and `String.replace("")` prepends the replacement on
+ *  every run, so the parser rejects it at parse time), while `replace` is
+ *  zero-or-more `[^`]*` (an empty replace is a legitimate deletion directive). */
+const RECONCILE_DIRECTIVE_RE = /^-\s+`([^`]+)`\s*:\s*replace\s+`([^`]+)`\s*→\s*`([^`]*)`\s*(?:—\s+.*)?$/;
 /** A directive ATTEMPT — `- `<target>`:` — that does not match the full grammar. Used
  *  to surface a malformed directive as a finding rather than silently dropping it. */
 const RECONCILE_DIRECTIVE_ATTEMPT_RE = /^-\s+`[^`]+`\s*:/;
@@ -2581,14 +2597,18 @@ const latestVerdictPerDimension = (entries: readonly Output[] = []): Map<string,
  * channel + `allDimensionsPass`'s latest-per-dimension fold mean a carried
  * dimension's prior passing verdict still counts at the gate.
  */
-const dimensionsToRegrade = (dimensions: readonly string[], latest: ReadonlyMap<string, Output>): string[] => {
+const dimensionsToRegrade = (
+	dimensions: readonly string[],
+	latest: ReadonlyMap<string, Output>,
+	risks: ReadonlyMap<string, RiskRecord> = new Map(),
+): string[] => {
 	return dimensions.filter((d) => {
 		const o = latest.get(d);
 		if (!o) return true; // never graded — must grade at least once
 		const v = o.data as { pass?: boolean; severity?: string } | undefined;
 		const dimPass = v?.pass === true || v?.severity === "low" || v?.severity === "none";
 		if (!dimPass) return true;
-		return verdictRiskRulings(o).some((r) => !rulingEffectivePass(r));
+		return verdictRiskRulings(o).some((r) => !rulingEffectivePass(r, risks.get(r.id)));
 	});
 };
 
@@ -2843,7 +2863,8 @@ const gradePanelFanout = (
 			const goalFlag = goal?.handle.kind === "fs" ? ` --goal ${handleToString(goal.handle)}` : "";
 			const roster = gateRoster(gateTier(state, verdictChannel), dimensions);
 			const latest = latestVerdictPerDimension(freshVerdicts(state.named[verdictChannel], target));
-			const pending = dimensionsToRegrade(roster, latest);
+			const risks = planAuthoredRisks(state, channel);
+			const pending = dimensionsToRegrade(roster, latest, risks);
 			// Delta re-grade fallback guard (plan/code gates only — `priorChannel`
 			// is unset for the slice gate and both confirm panels). When the snapshot
 			// stage published a prior, compare it to the current plan: a SURGICAL
@@ -2988,45 +3009,104 @@ const verdictRiskRulings = (o: Output): RiskRuling[] => {
 };
 
 /**
- * A mechanics-pass ruling's evidence duty: a `claim_type: "mechanics"` risk
- * ruled `pass` MUST cite the checked `file:line` in `evidence` (forces
- * engagement — a777's panel asserted a mechanism and cited nothing). Reuses
- * `FILE_LINE_CITATION_RE` via `.match()` — NOT `.test()`: the regex carries
- * the `/g` flag (packages/rpiv-pi/extensions/rpiv-core/built-in-workflows.ts:1021),
- * so `.test()` is stateful across calls (`lastIndex` advances) and would
- * intermittently miss a present citation. A non-mechanics ruling carries no
- * evidence duty ⇒ returns `true` (an ordinary risk's pass needs no file:line).
+ * A plan-authored risk flag — the duty shape `synthesize` declares in the plan
+ * frontmatter `risks:` array (`synthesize/SKILL.md:136`: `{ id, claim,
+ * claim_type?, disposition?, procedure?, owner? }`). The prose `claim` is grading
+ * copy, not a duty signal, so it is not carried here. `claim_type: "mechanics"`
+ * and `disposition: "verify-at-implement"` are the two duty TRIGGERS — sourced
+ * from the PLAN (not the ruling) so a panel cannot drop its discharge obligation
+ * by simply omitting the field from its ruling (the dropped-duty bypass).
  */
-const evidenceCitesFileLine = (r: RiskRuling): boolean => {
-	if (r.claim_type !== "mechanics") return true;
+interface RiskRecord {
+	id: string;
+	claim_type?: string;
+	disposition?: string;
+	procedure?: string;
+	owner?: number;
+}
+
+/**
+ * Read the plan-authored risk flags off the latest record on `channel`, keyed
+ * by `id`. The duty triggers live HERE (the plan's `risks:` frontmatter), not on
+ * the grade panel's ruling, so a ruling that drops its discharge field cannot
+ * escape the duty the plan declared (a bare `{ id, pass }` ruling against a
+ * plan-authored `claim_type: "mechanics"` risk still demotes). Reads only
+ * `state.named[channel]` via `latestChannelData` — no `readFileSync`, no
+ * `cwd`, no throw — so the route's `readsData: false` / determinism /
+ * resume-safety contract holds and a resumed run re-evaluates identically.
+ * Degrades to an empty map (fail-open ⇒ no duty ⇒ plain ruling ⇒
+ * `rulingEffectivePass(r) === r.pass`) when `risks:` is absent/non-array/
+ * malformed, mirroring `latestChannelData`'s degrade-to-undefined contract.
+ */
+const planAuthoredRisks = (state: RunView, channel: string): Map<string, RiskRecord> => {
+	const risks = latestChannelData(state, channel)?.risks;
+	const out = new Map<string, RiskRecord>();
+	if (!Array.isArray(risks)) return out;
+	for (const e of risks) {
+		const r = (e ?? {}) as Record<string, unknown>;
+		if (typeof r.id !== "string") continue;
+		const claim_type = typeof r.claim_type === "string" ? r.claim_type : undefined;
+		const disposition = typeof r.disposition === "string" ? r.disposition : undefined;
+		const procedure = typeof r.procedure === "string" ? r.procedure : undefined;
+		const owner = typeof r.owner === "number" ? r.owner : undefined;
+		const rec: RiskRecord = { id: r.id };
+		if (claim_type !== undefined) rec.claim_type = claim_type;
+		if (disposition !== undefined) rec.disposition = disposition;
+		if (procedure !== undefined) rec.procedure = procedure;
+		if (owner !== undefined) rec.owner = owner;
+		out.set(r.id, rec);
+	}
+	return out;
+};
+
+/**
+ * A mechanics-pass ruling's evidence duty: when the plan AUTHORED a
+ * `claim_type: "mechanics"` risk for the ruling's id, a `pass` ruling MUST
+ * cite the checked `file:line` in `evidence` (forces engagement — a777's panel
+ * asserted a mechanism and cited nothing). The trigger is sourced from the
+ * plan-authored `RiskRecord`, NOT the ruling — so a panel cannot drop the
+ * evidence duty by omitting `claim_type` from its ruling (the dropped-duty
+ * bypass). Reuses `FILE_LINE_CITATION_RE` via `.match()` — NOT `.test()`: the
+ * regex carries the `/g` flag (packages/rpiv-pi/extensions/rpiv-core/built-in-workflows.ts:1021),
+ * so `.test()` is stateful across calls (`lastIndex` advances) and would
+ * intermittently miss a present citation. An id with no authored mechanics
+ * risk carries no evidence duty ⇒ returns `true`.
+ */
+const evidenceCitesFileLine = (r: RiskRuling, authored?: RiskRecord): boolean => {
+	if (authored?.claim_type !== "mechanics") return true;
 	return typeof r.evidence === "string" && r.evidence.match(FILE_LINE_CITATION_RE) !== null;
 };
 
 /**
- * A deferred-risk's verify-at-implement duty: a `disposition:
- * "verify-at-implement"` risk ruled `pass` MUST carry a concrete `procedure`
- * (the named command/test the owner phase runs) AND a numeric `owner` phase —
- * a bare "verify later" with no procedure demotes. A risk with no
- * `disposition` is judged in THIS panel, not deferred ⇒ returns `true`.
+ * A deferred-risk's verify-at-implement duty: when the plan AUTHORED a
+ * `disposition: "verify-at-implement"` risk for the ruling's id, a `pass`
+ * ruling MUST carry a concrete `procedure` (the named command/test the owner
+ * phase runs) AND a numeric `owner` phase — a bare "verify later" with no
+ * procedure demotes. The trigger is sourced from the plan-authored
+ * `RiskRecord`, NOT the ruling (the dropped-duty bypass). An id with no
+ * authored verify-at-implement risk is judged in THIS panel, not deferred ⇒
+ * returns `true`.
  */
-const procedureSatisfiesDuty = (r: RiskRuling): boolean => {
-	if (r.disposition !== "verify-at-implement") return true;
+const procedureSatisfiesDuty = (r: RiskRuling, authored?: RiskRecord): boolean => {
+	if (authored?.disposition !== "verify-at-implement") return true;
 	return typeof r.procedure === "string" && r.procedure.length > 0 && typeof r.owner === "number";
 };
 
 /**
  * The single gate-fold authority: a ruling is effective-pass iff it is a bare
- * `pass` AND (when mechanics) its evidence cites a `file:line` AND (when
- * deferred) its procedure+owner discharge the verify duty. `allRiskFlagsPass`,
- * `dimensionsToRegrade` clause 3, and `confirmDue`'s `riskFail` ALL consult
- * this — so the three risk folds agree on what "passing" means and a demoted
+ * `pass` AND (when the plan authored a mechanics risk for its id) its evidence
+ * cites a `file:line` AND (when the plan authored a verify-at-implement risk
+ * for its id) its procedure+owner discharge the verify duty. `allRiskFlagsPass`,
+ * `dimensionsToRegrade` clause 3, and `confirmDue`'s `riskFail` ALL consult this
+ * — so the three risk folds agree on what "passing" means and a demoted
  * mechanics/deferred pass blocks the gate AND re-opens its owning dimension
- * AND counts as blocking for confirm (no incoherent re-grading). For a plain
- * `{ id, pass }` ruling (no `claim_type`, no `disposition`) every duty no-ops,
- * so `rulingEffectivePass(r) === r.pass` — prior behavior is preserved.
+ * AND counts as blocking for confirm (no incoherent re-grading). For a ruling
+ * whose id the plan authored no duty for (no mechanics/verify-at-implement
+ * risk, no `risks:` at all, or no matching id) every duty no-ops, so
+ * `rulingEffectivePass(r, authored) === r.pass` — prior behavior is preserved.
  */
-const rulingEffectivePass = (r: RiskRuling): boolean =>
-	r.pass === true && evidenceCitesFileLine(r) && procedureSatisfiesDuty(r);
+const rulingEffectivePass = (r: RiskRuling, authored?: RiskRecord): boolean =>
+	r.pass === true && evidenceCitesFileLine(r, authored) && procedureSatisfiesDuty(r, authored);
 
 /**
  * Fold the grade panel's per-flag risk rulings into a gate decision: every
@@ -3037,9 +3117,13 @@ const rulingEffectivePass = (r: RiskRuling): boolean =>
  * ride a green conformance pass into commit. An empty panel (no flag engaged)
  * imposes no constraint; the plan simply declared no risks.
  */
-const allRiskFlagsPass = (entries: readonly Output[] = []): boolean => {
+const allRiskFlagsPass = (
+	entries: readonly Output[] = [],
+	risks: ReadonlyMap<string, RiskRecord> = new Map(),
+): boolean => {
 	const latest = new Map<string, boolean>();
-	for (const o of entries) for (const r of verdictRiskRulings(o)) latest.set(r.id, rulingEffectivePass(r));
+	for (const o of entries)
+		for (const r of verdictRiskRulings(o)) latest.set(r.id, rulingEffectivePass(r, risks.get(r.id)));
 	return [...latest.values()].every(Boolean);
 };
 
@@ -3077,15 +3161,21 @@ const subplanGatePasses = (state: RunView): boolean => allDimensionsPass(state.n
 const planGatePasses = (state: RunView): boolean => {
 	const fresh = freshVerdicts(state.named["plan-verdicts"], latestArtifactPath(state, "plans"));
 	const roster = gateRoster(gateTier(state, "plan-verdicts"), PLAN_DIMENSIONS);
+	const risks = planAuthoredRisks(state, "plans");
 	return (
-		allDimensionsPass(state.named["plan-cite-check"]) && allDimensionsPass(fresh, roster) && allRiskFlagsPass(fresh)
+		allDimensionsPass(state.named["plan-cite-check"]) &&
+		allDimensionsPass(fresh, roster) &&
+		allRiskFlagsPass(fresh, risks)
 	);
 };
 const codeGatePasses = (state: RunView): boolean => {
 	const fresh = freshVerdicts(state.named["code-verdicts"], latestArtifactPath(state, "plans"));
 	const roster = gateRoster(gateTier(state, "code-verdicts"), PLAN_DIMENSIONS);
+	const risks = planAuthoredRisks(state, "plans");
 	return (
-		allDimensionsPass(state.named["code-cite-check"]) && allDimensionsPass(fresh, roster) && allRiskFlagsPass(fresh)
+		allDimensionsPass(state.named["code-cite-check"]) &&
+		allDimensionsPass(fresh, roster) &&
+		allRiskFlagsPass(fresh, risks)
 	);
 };
 
@@ -3113,12 +3203,13 @@ const confirmDue = (
 ): boolean => {
 	const roster = new Set(gateRoster(gateTier(state, verdictChannel), dimensions));
 	const fresh = freshVerdicts(state.named[verdictChannel], latestArtifactPath(state, channel));
+	const risks = planAuthoredRisks(state, channel);
 	const byDim = new Map<string, { blocking: boolean; count: number }>();
 	for (const o of fresh) {
 		const v = o.data as { dimension?: string; pass?: boolean; severity?: string } | undefined;
 		if (typeof v?.dimension !== "string" || !roster.has(v.dimension)) continue;
 		const floored = v.pass === true || v.severity === "low" || v.severity === "none";
-		const riskFail = verdictRiskRulings(o).some((r) => !rulingEffectivePass(r));
+		const riskFail = verdictRiskRulings(o).some((r) => !rulingEffectivePass(r, risks.get(r.id)));
 		byDim.set(v.dimension, {
 			blocking: !floored || riskFail,
 			count: (byDim.get(v.dimension)?.count ?? 0) + 1,

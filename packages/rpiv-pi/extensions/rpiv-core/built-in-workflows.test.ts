@@ -2086,6 +2086,21 @@ describe("build slice-check (deterministic floor)", () => {
 		expect(data.findings).toEqual([]);
 	});
 
+	// Cross-character regression (Q6): a bare ~~~ line must NOT close a ``` fence —
+	// the post-~~~ path:line placeholder stays fenced and is not verified. Under the
+	// old length-only close the ~~~ (len 3, trim 3) would close the ``` fence and
+	// expose the placeholder in prose as a dangling citation.
+	it("does not close a backtick fence with a mismatched-character (~~~) line (slice map)", () => {
+		const rel = ".rpiv/artifacts/slices/fence-cross-char.md";
+		const m = write(
+			rel,
+			`---\nstatus: ready\nslice_count: 1\nslices:\n  - { n: 1, title: A, deps: [] }\n---\n## Slice 1: A\n\`\`\`ts\n~~~\nconst x = load("src/cross-char-fenced.ts:42");\n\`\`\`\n`,
+		);
+		const data = runOn(m);
+		expect(data.pass).toBe(true);
+		expect(data.findings).toEqual([]);
+	});
+
 	it("skips a placeholder in an unterminated fence's remainder in a slice map", () => {
 		const rel = ".rpiv/artifacts/slices/fence-unterminated.md";
 		const m = write(
@@ -2690,6 +2705,11 @@ describe("plan/code gate risk-ruling evidence + verify-at-implement duty (phase 
 	const PLAN_DIMS = ["actionability", "architecture-fit", "completeness", "correctness", "pattern-following"];
 	const PLAN = ".rpiv/artifacts/plans/p.md";
 	const citeGreen = { "plan-cite-check": [dimVerdict("structure", true)] };
+	// Phase 1 / I1: the duty trigger is now PLAN-sourced. A demotion case publishes
+	// the plan's `risks:` frontmatter on the `plans` channel (via the block's
+	// existing `chan` helper); the ruling's own `claim_type`/`disposition` are now
+	// non-load-bearing — the duty is read off the authored risk, not the ruling.
+	const authoredRisks = (risks: Record<string, unknown>[]) => ({ plans: [chan(PLAN, { risks })] });
 	// Each case fixes the completeness verdict (always passes) + the ONE
 	// correctness verdict carrying the risk ruling under test. correctness MUST
 	// appear exactly once: confirmDue counts verdicts per dimension, so a stray
@@ -2707,6 +2727,7 @@ describe("plan/code gate risk-ruling evidence + verify-at-implement duty (phase 
 			// confirmDue sees one blocking verdict (count 1 < 2) ⇒ plan-confirm.
 			const next = route("plan-grade", {
 				...citeGreen,
+				...authoredRisks([{ id: "r1", claim_type: "mechanics" }]),
 				"plan-verdicts": mkVerdicts([{ id: "r1", pass: true, claim_type: "mechanics" }]),
 			});
 			expect(next).toBe("plan-confirm");
@@ -2717,6 +2738,7 @@ describe("plan/code gate risk-ruling evidence + verify-at-implement duty (phase 
 			// (which deterministically hops to plan-fix), never code.
 			const next = route("plan-grade", {
 				...citeGreen,
+				...authoredRisks([{ id: "r1", claim_type: "mechanics" }]),
 				"plan-verdicts": [
 					...mkVerdicts([{ id: "r1", pass: true, claim_type: "mechanics" }]),
 					dimVerdict("correctness", true, { risk_rulings: [{ id: "r1", pass: true, claim_type: "mechanics" }] }),
@@ -2728,6 +2750,7 @@ describe("plan/code gate risk-ruling evidence + verify-at-implement duty (phase 
 		it("the same mechanics pass WITH a file:line-shaped evidence passes — plan-grade reaches code", () => {
 			const next = route("plan-grade", {
 				...citeGreen,
+				...authoredRisks([{ id: "r1", claim_type: "mechanics" }]),
 				"plan-verdicts": mkVerdicts([
 					{
 						id: "r1",
@@ -2745,6 +2768,7 @@ describe("plan/code gate risk-ruling evidence + verify-at-implement duty (phase 
 		it("a mechanics pass whose evidence is prose (no file:line) demotes — does not reach code", () => {
 			const next = route("plan-grade", {
 				...citeGreen,
+				...authoredRisks([{ id: "r1", claim_type: "mechanics" }]),
 				"plan-verdicts": mkVerdicts([
 					{ id: "r1", pass: true, claim_type: "mechanics", evidence: "the code looks fine to me" },
 				]),
@@ -2767,6 +2791,7 @@ describe("plan/code gate risk-ruling evidence + verify-at-implement duty (phase 
 		it("a deferred pass with NO procedure demotes — does not reach code", () => {
 			const next = route("plan-grade", {
 				...citeGreen,
+				...authoredRisks([{ id: "r1", disposition: "verify-at-implement" }]),
 				"plan-verdicts": mkVerdicts([{ id: "r1", pass: true, disposition: "verify-at-implement" }]),
 			});
 			expect(next).not.toBe("code");
@@ -2775,6 +2800,7 @@ describe("plan/code gate risk-ruling evidence + verify-at-implement duty (phase 
 		it("a deferred pass with a non-empty procedure AND a numeric owner passes — reaches code", () => {
 			const next = route("plan-grade", {
 				...citeGreen,
+				...authoredRisks([{ id: "r1", disposition: "verify-at-implement" }]),
 				"plan-verdicts": mkVerdicts([
 					{
 						id: "r1",
@@ -2791,6 +2817,7 @@ describe("plan/code gate risk-ruling evidence + verify-at-implement duty (phase 
 		it("a bare 'verify later' (disposition with empty procedure) demotes — does not reach code", () => {
 			const next = route("plan-grade", {
 				...citeGreen,
+				...authoredRisks([{ id: "r1", disposition: "verify-at-implement" }]),
 				"plan-verdicts": mkVerdicts([
 					{ id: "r1", pass: true, disposition: "verify-at-implement", procedure: "", owner: 3 },
 				]),
@@ -2809,9 +2836,12 @@ describe("plan/code gate risk-ruling evidence + verify-at-implement duty (phase 
 					? verdict(d, true, { artifact: PLAN, risk_rulings: [{ id: "r1", pass: true, claim_type: "mechanics" }] })
 					: verdict(d, true, { artifact: PLAN }),
 			);
-			expect(await gradeLabels("plan-grade", { plans: [chan(PLAN)], "plan-verdicts": verdicts })).toEqual([
-				"correctness",
-			]);
+			expect(
+				await gradeLabels("plan-grade", {
+					plans: [chan(PLAN, { risks: [{ id: "r1", claim_type: "mechanics" }] })],
+					"plan-verdicts": verdicts,
+				}),
+			).toEqual(["correctness"]);
 		});
 	});
 
@@ -2833,12 +2863,51 @@ describe("plan/code gate risk-ruling evidence + verify-at-implement duty (phase 
 		});
 	});
 
+	describe("plan-sourced duty — the dropped-duty bypass", () => {
+		it("a ruling that DROPS its claim_type still demotes when the plan authored a mechanics risk", () => {
+			// The headline bypass: the ruling is a bare { id, pass } (no claim_type,
+			// no evidence), yet the PLAN authored claim_type:"mechanics" for r1, so the
+			// duty still fires off the authored risk and the un-evidenced pass demotes.
+			// The old ruling-sourced code could never catch this — it read the ruling's
+			// own claim_type, which the panel can simply omit.
+			const next = route("plan-grade", {
+				...citeGreen,
+				...authoredRisks([{ id: "r1", claim_type: "mechanics" }]),
+				"plan-verdicts": mkVerdicts([{ id: "r1", pass: true }]),
+			});
+			expect(next).toBe("plan-confirm");
+		});
+
+		it("an authored risk with no duty fields does not demote a plain pass (fail-open)", () => {
+			// The plan authored r1 but gave it no claim_type/disposition, so no duty
+			// trigger fires and rulingEffectivePass(r) === r.pass — a plain pass passes.
+			const next = route("plan-grade", {
+				...citeGreen,
+				...authoredRisks([{ id: "r1" }]),
+				"plan-verdicts": mkVerdicts([{ id: "r1", pass: true }]),
+			});
+			expect(next).toBe("code");
+		});
+
+		it("a ruling whose id matches no authored risk fails open (plain pass)", () => {
+			// The plan authored r1 (mechanics) but the ruling is for r2 (unauthored):
+			// risks.get("r2") is undefined, so r2 carries no duty and its plain pass passes.
+			const next = route("plan-grade", {
+				...citeGreen,
+				...authoredRisks([{ id: "r1", claim_type: "mechanics" }]),
+				"plan-verdicts": mkVerdicts([{ id: "r2", pass: true }]),
+			});
+			expect(next).toBe("code");
+		});
+	});
+
 	describe("confirmDue treats a demoted mechanics pass as blocking", () => {
 		it("a single demoted mechanics-pass verdict routes to plan-confirm (the ruling gets a second opinion)", () => {
 			// same verdicts as the headline single-verdict case; restated here to
 			// pin the confirm-arm behavior (riskFail = !rulingEffectivePass ⇒ blocking).
 			const next = route("plan-grade", {
 				...citeGreen,
+				...authoredRisks([{ id: "r1", claim_type: "mechanics" }]),
 				"plan-verdicts": mkVerdicts([{ id: "r1", pass: true, claim_type: "mechanics" }]),
 			});
 			expect(next).toBe("plan-confirm");
@@ -2949,6 +3018,25 @@ describe("plan-time coverage floor (verifyPhaseFilesCoverage via plan-cite-check
 			write(
 				rel,
 				`---\nstatus: ready\nphase_count: 1\nphases:\n  - { n: 1, title: One, files: [] }\n---\n# Plan\n## Phase 1: One\n### Changes\n- \`src/foo.ts\` — add the thing\n\n\`\`\`ts\n// example fixture — its path must NOT read as a declared write\nimport { x } from "src/fenced-example.ts";\n\`\`\`\n`,
+			),
+		);
+		expect(data.findings).toHaveLength(1);
+		expect(findingDetails(data)).toMatch(/src\/foo\.ts/);
+		expect(findingDetails(data)).not.toMatch(/fenced-example/);
+	});
+
+	// Cross-character regression (Q6): a bare ~~~ must NOT close a ``` fence, so a
+	// post-~~~ `- `path`` list item stays fenced and is not surfaced as a declared
+	// write. (editPathsOfPhase extracts the `- `path`` form — NOT import lines — so
+	// this form, not an `import … from`, is what actually exercises the scanner:
+	// under the old length-only close the ~~~ would close the fence and expose the
+	// list item in prose, surfacing `fenced-example` as findings.length === 2.)
+	it("does not surface a fenced edit-path list item appearing after a mismatched-character (~~~) line", () => {
+		const rel = ".rpiv/artifacts/plans/fence-cross-char.md";
+		const data = runOn(
+			write(
+				rel,
+				`---\nstatus: ready\nphase_count: 1\nphases:\n  - { n: 1, title: One, files: [] }\n---\n# Plan\n## Phase 1: One\n### Changes\n- \`src/foo.ts\` — add the thing\n\n\`\`\`ts\n~~~\n- \`src/fenced-example.ts\` — must stay fenced\n\`\`\`\n`,
 			),
 		);
 		expect(data.findings).toHaveLength(1);
@@ -3587,6 +3675,21 @@ describe("polish — REVIEW_PHASE_ITERATE (frontmatter-driven)", () => {
 		write(
 			rel,
 			"---\nphases:\n  - { n: 1, title: Only one, depends_on: [], blast_radius: internal, effort: S }\n---\n# Arch Review\n\n### Phase 1 — Only one\nbody\n\n```md\n### Phase 2 — fenced example (must not count)\n```\n",
+		);
+		const { artifact, state } = stateFor(rel);
+		const u = await iterate()({ cwd: tmpDir, artifact, state, accumulated: [], index: 0 });
+		expect(u?.label).toContain("phase 1/1");
+	});
+
+	// Cross-character regression (Q6): a bare ~~~ must NOT close a ``` fence, so a
+	// fenced `### Phase N —` heading after the ~~~ stays fenced and is not counted
+	// by the derive-check. Under the old length-only close the ~~~ (len 3, trim 3)
+	// would close the fence, expose the heading in prose, and false-throw 1 ≠ 2.
+	it("does not count a '### Phase N —' heading appearing after a mismatched-character (~~~) line inside a ``` fence", async () => {
+		const rel = ".rpiv/artifacts/architecture-reviews/fence-cross-char.md";
+		write(
+			rel,
+			"---\nphases:\n  - { n: 1, title: Only one, depends_on: [], blast_radius: internal, effort: S }\n---\n# Arch Review\n\n### Phase 1 — Only one\nbody\n\n```md\n~~~\n### Phase 2 — fenced example (must not count)\n```\n",
 		);
 		const { artifact, state } = stateFor(rel);
 		const u = await iterate()({ cwd: tmpDir, artifact, state, accumulated: [], index: 0 });
@@ -4722,6 +4825,81 @@ describe("reconcile lane stage", () => {
 		const data = runOn(plan);
 		expect(data.pass).toBe(false);
 		expect(details(data)).toMatch(/malformed Reconciliation directive/);
+	});
+
+	// --- empty-find / empty-replace regressions (find group tightened to `[^`]+` at parse time) ---
+
+	it("rejects an empty-find directive at parse time ⇒ verdict fail + malformed finding, file unchanged (no prepend)", () => {
+		// An empty `` find previously matched the grammar (find group was `([^`]*)` zero-or-more)
+		// and `content.replace("", replace)` prepended the replacement on every run. The tightened
+		// parser now rejects it: the line matches the attempt shape but not the full grammar ⇒ malformed.
+		writeTestFile("packages/a/a.test.ts", 'import { r } from ".";\nexpect(r).toBe(3);\n');
+		const plan = write(
+			".rpiv/artifacts/plans/p.md",
+			planBody({
+				directives: ["- `packages/a/a.test.ts`: replace `` → `expect(r).toBe(4)` — empty find"],
+			}),
+		);
+		const data = runOn(plan);
+		expect(data.pass).toBe(false);
+		expect(data.verdict).toBe("fail");
+		expect(details(data)).toMatch(/malformed Reconciliation directive/);
+		// the offending line is surfaced verbatim so an author can diagnose the empty find
+		expect(details(data)).toMatch(/packages\/a\/a\.test\.ts/);
+		// the empty-find directive is NOT applied — the target file is byte-for-byte unchanged
+		expect(readFileSync(join(tmpDir, "packages/a/a.test.ts"), "utf-8")).toBe(
+			'import { r } from ".";\nexpect(r).toBe(3);\n',
+		);
+	});
+
+	it("empty-find directive is idempotent across re-runs: no cumulative prepend, exactly one malformed finding", () => {
+		writeTestFile("packages/a/a.test.ts", 'import { r } from ".";\nexpect(r).toBe(3);\n');
+		const rel = ".rpiv/artifacts/plans/p.md";
+		const plan = write(
+			rel,
+			planBody({
+				directives: ["- `packages/a/a.test.ts`: replace `` → `expect(r).toBe(4)` — empty find"],
+			}),
+		);
+		// run 1: malformed finding, file untouched
+		const data1 = runOn(plan);
+		expect(wheres(data1)).toEqual(["reconciliation-directive"]);
+		expect(readFileSync(join(tmpDir, "packages/a/a.test.ts"), "utf-8")).toBe(
+			'import { r } from ".";\nexpect(r).toBe(3);\n',
+		);
+		// run 2: reconcile re-evaluates the same plan — the file must NOT accumulate prepends
+		const data2 = runOn(plan);
+		expect(readFileSync(join(tmpDir, "packages/a/a.test.ts"), "utf-8")).toBe(
+			'import { r } from ".";\nexpect(r).toBe(3);\n',
+		);
+		// still exactly one malformed finding across the re-run (no amplification / vet backward-jump)
+		const malformedCount = ((data2.findings as { detail: string }[]) ?? []).filter((f) =>
+			/malformed Reconciliation directive/.test(f.detail),
+		).length;
+		expect(malformedCount).toBe(1);
+	});
+
+	it("an empty-replace deletion directive applies exactly once and does not prepend/loop on re-run (replace stays `[^`]*`)", () => {
+		// empty replace is a LEGITIMATE deletion: find present ⇒ removed. Proves the asymmetry is
+		// intentional (find non-empty, replace optional) — symmetrizing replace to `[^`]+` would break this.
+		writeTestFile("packages/a/a.test.ts", 'import { r } from ".";\nexpect(r).toBe(3)\n');
+		const rel = ".rpiv/artifacts/plans/p.md";
+		const plan = write(
+			rel,
+			planBody({
+				directives: ["- `packages/a/a.test.ts`: replace `expect(r).toBe(3)` → `` — delete the assertion"],
+			}),
+		);
+		// run 1: find present ⇒ deleted (replaced with empty), no finding ⇒ pass
+		const data1 = runOn(plan);
+		expect(data1.pass).toBe(true);
+		expect(readFileSync(join(tmpDir, "packages/a/a.test.ts"), "utf-8")).toBe('import { r } from ".";\n\n');
+		// run 2: find now absent, replace empty (≠ "") ⇒ the "find substring not present" branch
+		// (NOT the idempotent already-applied branch, which requires a non-empty replace). No prepend, no loop.
+		const data2 = runOn(plan);
+		expect(data2.pass).toBe(false);
+		expect(details(data2)).toMatch(/directive find substring not present/);
+		expect(readFileSync(join(tmpDir, "packages/a/a.test.ts"), "utf-8")).toBe('import { r } from ".";\n\n');
 	});
 
 	it("fail-soft: an un-runnable AV command degrades to a finding, never a throw", () => {
