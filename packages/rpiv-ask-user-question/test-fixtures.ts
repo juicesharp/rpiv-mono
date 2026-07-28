@@ -52,6 +52,7 @@ export function makeApplyContext(over: Partial<ApplyContext> = {}): ApplyContext
 	return {
 		questions,
 		itemsByTab: over.itemsByTab ?? questions.map(() => itemsRegular),
+		customDraftsByTab: over.customDraftsByTab ?? new Map(),
 	};
 }
 

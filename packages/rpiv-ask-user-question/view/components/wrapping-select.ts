@@ -216,16 +216,20 @@ export class WrappingSelect implements Component {
 			return this.renderInlineInputRow(rowPrefix, continuationPrefix, contentWidth);
 		}
 
-		// Confirmed row gets a trailing ` ✔` and accent+bold styling; pointer is independent
-		// (still ❯ when active). When `index === confirmedIndex` AND `isActive`, both `❯` and
-		// `✔` appear on the same row — load-bearing for the case where the prior answer was
-		// row 0 (cursor resets to 0 on tab-back, so the confirmed row IS the active row).
-		// Optional `confirmedLabelOverride` replaces the static label (used for `kind: "other"`
-		// + `kind: "custom"` answer); the inline-input branch above still wins for `kind: "other" + isActive`.
-		const isConfirmed = index === this.confirmedIndex;
+		// Keep an in-flight custom draft visible even while the cursor browses another row.
+		// If it differs from a previously confirmed custom answer, omit the confirmation
+		// mark so the pending draft is not presented as committed.
+		const customDraft = item.kind === "other" ? this.inputBuffer : undefined;
+		const customDraftDiffersFromConfirmed =
+			item.kind === "other" &&
+			customDraft !== "" &&
+			index === this.confirmedIndex &&
+			customDraft !== (this.confirmedLabelOverride ?? "");
+		const isConfirmed = index === this.confirmedIndex && !customDraftDiffersFromConfirmed;
+		const baseLabel = customDraft ? customDraft : item.label;
 		const label = isConfirmed
-			? `${this.confirmedLabelOverride ?? item.label}${WrappingSelect.CONFIRMED_MARK}`
-			: item.label;
+			? `${this.confirmedLabelOverride ?? baseLabel}${WrappingSelect.CONFIRMED_MARK}`
+			: baseLabel;
 		const applySelectedStyle = isActive || isConfirmed;
 
 		return [

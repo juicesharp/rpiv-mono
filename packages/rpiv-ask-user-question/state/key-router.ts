@@ -7,12 +7,17 @@ const KEYBIND_UP = "tui.select.up";
 const KEYBIND_DOWN = "tui.select.down";
 const KEYBIND_CONFIRM = "tui.select.confirm";
 const KEYBIND_CANCEL = "tui.select.cancel";
+const KEYBIND_CLEAR = "tui.editor.deleteToLineStart";
+const KEYBIND_EXTERNAL_EDITOR = "app.editor.external";
 
 const NOTES_ACTIVATE_KEY = "n";
 const SPACE_KEY = " ";
 
 export type QuestionnaireAction =
 	| { kind: "nav"; nextIndex: number }
+	| { kind: "input_clear" }
+	| { kind: "input_edit"; value: string }
+	| { kind: "input_replace"; value: string }
 	| { kind: "tab_switch"; nextTab: number }
 	| { kind: "confirm"; answer: QuestionAnswer; autoAdvanceTab?: number }
 	| { kind: "toggle"; index: number }
@@ -176,6 +181,10 @@ export function routeKey(data: string, state: QuestionnaireState, runtime: Quest
 			if (!answer) return { kind: "ignore" };
 			return { kind: "confirm", answer, autoAdvanceTab: computeAutoAdvanceTab(state, runtime) };
 		}
+		// Treat Pi's Ctrl+U line-kill binding as an explicit whole-draft clear in this
+		// single-line custom-answer editor, independent of the current cursor position.
+		if (kb.matches(data, KEYBIND_CLEAR)) return { kind: "input_clear" };
+		if (kb.matches(data, KEYBIND_EXTERNAL_EDITOR)) return { kind: "input_edit", value: runtime.inputBuffer };
 		if (kb.matches(data, KEYBIND_CANCEL)) return { kind: "cancel" };
 		if (kb.matches(data, KEYBIND_UP)) {
 			return prevNavOnUp(state, runtime);

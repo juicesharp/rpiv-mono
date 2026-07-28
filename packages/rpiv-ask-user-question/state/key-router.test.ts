@@ -9,6 +9,8 @@ const KEY = {
 	DOWN: "tui.select.down",
 	CONFIRM: "tui.select.confirm",
 	CANCEL: "tui.select.cancel",
+	CLEAR: "tui.editor.deleteToLineStart",
+	EXTERNAL_EDITOR: "app.editor.external",
 };
 const sentinel = (name: string) => `<KEY:${name}>`;
 const keybindings = { matches: (data: string, name: string) => data === sentinel(name) };
@@ -649,6 +651,22 @@ describe("routeKey — inputMode (Type something)", () => {
 		expect(routeKey("n", makeState({ inputMode: true }), makeRuntime({ currentItem: other }))).toEqual({
 			kind: "ignore",
 		});
+	});
+
+	it("Pi's Ctrl+U line-kill binding clears the whole custom answer", () => {
+		expect(
+			routeKey(sentinel(KEY.CLEAR), makeState({ inputMode: true }), makeRuntime({ currentItem: other })),
+		).toEqual({ kind: "input_clear" });
+	});
+
+	it("the app.editor.external binding opens the editor with the current draft", () => {
+		expect(
+			routeKey(
+				sentinel(KEY.EXTERNAL_EDITOR),
+				makeState({ inputMode: true }),
+				makeRuntime({ currentItem: other, inputBuffer: "draft" }),
+			),
+		).toEqual({ kind: "input_edit", value: "draft" });
 	});
 
 	it("Esc cancels the questionnaire even in inputMode", () => {

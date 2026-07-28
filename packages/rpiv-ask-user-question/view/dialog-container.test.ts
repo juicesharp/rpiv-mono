@@ -19,6 +19,8 @@ import {
 	type DialogState,
 	DialogView,
 	HINT_MULTI,
+	HINT_PART_CLEAR,
+	HINT_PART_COLLAPSE,
 	HINT_PART_ENTER,
 	HINT_PART_NOTES,
 	HINT_PART_TOGGLE,
@@ -263,7 +265,7 @@ describe("makeDialog — multi-question (question tab)", () => {
 		expect(joined).toContain(HINT_PART_NOTES);
 	});
 
-	it("drops 'n to add notes' from the hint while inputMode captures text ('n' would type a literal)", () => {
+	it("shows only the clear control at the far right and drops notes while inputMode captures text", () => {
 		const dlg = makeDialog(
 			makeConfig({
 				state: {
@@ -280,8 +282,11 @@ describe("makeDialog — multi-question (question tab)", () => {
 				},
 			}),
 		);
-		const joined = dlg.render(80).join("\n");
+		const joined = dlg.render(160).join("\n");
 		expect(joined).toContain(HINT_PART_ENTER);
+		expect(joined).toContain(HINT_PART_CLEAR);
+		expect(joined.indexOf(HINT_PART_CLEAR)).toBeGreaterThan(joined.indexOf(HINT_PART_COLLAPSE));
+		expect(joined).not.toContain("Ctrl+G to edit");
 		expect(joined).not.toContain(HINT_PART_NOTES);
 	});
 

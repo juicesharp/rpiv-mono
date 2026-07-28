@@ -8,6 +8,8 @@ import type { QuestionnaireState } from "./state.js";
 export interface ApplyContext {
 	questions: readonly QuestionData[];
 	itemsByTab: ReadonlyArray<readonly WrappingSelectItem[]>;
+	/** In-flight custom answers for inactive question tabs, owned by QuestionnaireSession. */
+	customDraftsByTab: ReadonlyMap<number, string>;
 }
 
 /**
@@ -19,6 +21,7 @@ export interface ApplyContext {
 export type Effect =
 	| { kind: "set_input_buffer"; value: string }
 	| { kind: "clear_input_buffer" }
+	| { kind: "open_input_editor"; value: string }
 	| { kind: "set_notes_value"; value: string }
 	| { kind: "set_notes_focused"; focused: boolean }
 	| { kind: "forward_notes_keystroke"; data: string }
@@ -95,6 +98,13 @@ function notesValueFor(state: QuestionnaireState, tab: number): string {
 	return state.notesByTab.get(tab) ?? state.answers.get(tab)?.notes ?? "";
 }
 
+function customDraftValueFor(state: QuestionnaireState, tab: number, ctx: ApplyContext): string {
+	const draft = ctx.customDraftsByTab.get(tab);
+	if (draft !== undefined) return draft;
+	const answer = state.answers.get(tab);
+	return answer?.kind === "custom" && typeof answer.answer === "string" ? answer.answer : "";
+}
+
 function switchTabResult(state: QuestionnaireState, nextTab: number, ctx: ApplyContext): ApplyResult {
 	const notesValue = notesValueFor(state, nextTab);
 	const transitioned: QuestionnaireState = {
@@ -112,6 +122,7 @@ function switchTabResult(state: QuestionnaireState, nextTab: number, ctx: ApplyC
 		effects: [
 			{ kind: "set_notes_focused", focused: false },
 			{ kind: "set_notes_value", value: notesValue },
+			{ kind: "set_input_buffer", value: customDraftValueFor(state, nextTab, ctx) },
 		],
 	};
 }
@@ -137,14 +148,28 @@ const navHandler: Handler<"nav"> = (state, action, ctx) => {
 	const inputMode = item ? ROW_INTENT_META[item.kind].activatesInputMode : false;
 	const next = { ...state, optionIndex: action.nextIndex, inputMode };
 	if (!inputMode) {
-		return { state: next, effects: [{ kind: "clear_input_buffer" }] };
+		// Keep the active Input cell intact while the user browses other options. The session
+		// snapshots it by tab before this transition so switching questions cannot leak text.
+		return { state: next, effects: [] };
 	}
-	const prior = state.answers.get(state.currentTab);
-	if (prior?.kind === "custom" && typeof prior.answer === "string") {
-		return { state: next, effects: [{ kind: "set_input_buffer", value: prior.answer }] };
-	}
-	return { state: next, effects: [] };
+	return {
+		state: next,
+		effects: [{ kind: "set_input_buffer", value: customDraftValueFor(state, state.currentTab, ctx) }],
+	};
 };
+
+const inputClearHandler: Handler<"input_clear"> = (state, _action, _ctx) => ({
+	state,
+	effects: [{ kind: "clear_input_buffer" }],
+});
+const inputEditHandler: Handler<"input_edit"> = (state, action, _ctx) => ({
+	state,
+	effects: [{ kind: "open_input_editor", value: action.value }],
+});
+const inputReplaceHandler: Handler<"input_replace"> = (state, action, _ctx) => ({
+	state,
+	effects: [{ kind: "set_input_buffer", value: action.value }],
+});
 
 const tabSwitchHandler: Handler<"tab_switch"> = (state, action, ctx) => switchTabResult(state, action.nextTab, ctx);
 
@@ -265,6 +290,9 @@ const ignoreHandler: Handler<"ignore"> = (s, _a, _c) => ({ state: s, effects: []
  */
 const HANDLERS: { [K in QuestionnaireAction["kind"]]: Handler<K> } = {
 	nav: navHandler,
+	input_clear: inputClearHandler,
+	input_edit: inputEditHandler,
+	input_replace: inputReplaceHandler,
 	tab_switch: tabSwitchHandler,
 	confirm: confirmHandler,
 	toggle: toggleHandler,

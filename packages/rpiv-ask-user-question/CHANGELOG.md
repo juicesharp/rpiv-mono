@@ -7,6 +7,12 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- `Ctrl+G` opens Pi's configured external editor for the focused `Type something.` draft, and `Ctrl+U` clears that draft without cancelling the questionnaire. The input-mode hint bar advertises the context-specific clear control at its right edge.
+
+### Fixed
+- Custom-answer drafts now survive browsing other options, remain visible in place of the `Type something.` label while another option has focus, and stay isolated per question instead of being cleared on navigation or leaking across tabs.
+
 ## [2.1.0] - 2026-07-23
 
 ### Added

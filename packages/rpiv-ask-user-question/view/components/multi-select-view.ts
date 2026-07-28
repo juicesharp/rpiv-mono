@@ -96,7 +96,7 @@ export class MultiSelectView implements StatefulView<MultiSelectViewProps> {
 
 		// "Type something." row — numbered N+1, box always [ ] muted UNCHECKED (never checkable).
 		// When focused + inputMode, render the label slot via the shared inline-input helper
-		// (single-line); otherwise a static localized label truncated to contentWidth with `…`.
+		// (single-line). Otherwise keep any draft visible while the cursor browses another row.
 		const other = this.props.other;
 		const otherPointer = other.active ? this.theme.fg("accent", ACTIVE_POINTER) : INACTIVE_POINTER;
 		const otherBox = this.theme.fg("muted", UNCHECKED);
@@ -114,7 +114,7 @@ export class MultiSelectView implements StatefulView<MultiSelectViewProps> {
 			});
 			otherLabel = rendered[0] ?? "";
 		} else {
-			const label = truncateToWidth(displayLabel("other"), contentWidth, "…");
+			const label = truncateToWidth(other.inputBuffer || displayLabel("other"), contentWidth, "…");
 			otherLabel = other.active ? this.theme.fg("accent", this.theme.bold(label)) : label;
 		}
 		lines.push(

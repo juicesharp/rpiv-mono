@@ -20,6 +20,9 @@ export interface QuestionnaireSessionConfig {
 	params: QuestionParams;
 	itemsByTab: WrappingSelectItem[][];
 	done: (result: QuestionnaireResult) => void;
+	keybindings?: QuestionnaireRuntime["keybindings"];
+	/** Opens Pi's configured external editor. Resolve `undefined` on cancel or a reported launch failure. */
+	editInput?: (value: string) => Promise<string | undefined>;
 	/** Key spec for the collapse/expand shortcut, e.g. `"ctrl+]"` or `"alt+o"`. */
 	collapseKey: string;
 }
@@ -60,8 +63,12 @@ export class QuestionnaireSession {
 
 	private readonly notesInput: Input;
 	private readonly inlineInput: Input;
+	private readonly customDraftsByTab = new Map<number, string>();
 	private readonly viewAdapter: QuestionnairePropsAdapter;
+	private readonly keybindings: QuestionnaireRuntime["keybindings"];
+	private readonly editInput: NonNullable<QuestionnaireSessionConfig["editInput"]>;
 	private readonly collapseKey: string;
+	private inputEditorOpen = false;
 
 	/**
 	 * Overlay handle captured by `ctx.ui.custom`'s `onHandle` callback. Lets the session
@@ -80,6 +87,10 @@ export class QuestionnaireSession {
 		this.questions = config.params.questions;
 		this.isMulti = this.questions.length > 1;
 		this.itemsByTab = config.itemsByTab;
+		// Optional fallbacks keep a long-lived Pi process safe if an older outer module
+		// instantiates this freshly replaced lazy session graph after a package update.
+		this.keybindings = config.keybindings ?? getKeybindings();
+		this.editInput = config.editInput ?? (async () => undefined);
 		this.collapseKey = config.collapseKey;
 
 		const built = buildQuestionnaire({
@@ -125,11 +136,23 @@ export class QuestionnaireSession {
 	}
 
 	private commit(action: QuestionnaireAction): void {
+		this.captureCustomDraft(action);
 		const result = reduce(this.state, action, this.applyContext());
 		this.state = result.state;
 		for (const effect of result.effects) this.runEffect(effect);
 		this.state = this.mirrorNotesDraft(this.state);
 		this.viewAdapter.apply(this.state);
+	}
+
+	private captureCustomDraft(action: QuestionnaireAction): void {
+		if (action.kind === "nav" && this.state.inputMode) {
+			this.customDraftsByTab.set(this.state.currentTab, this.inlineInput.getValue());
+		} else if (action.kind === "input_clear") {
+			// Keep an explicit empty draft so an older confirmed custom answer is not rehydrated.
+			this.customDraftsByTab.set(this.state.currentTab, "");
+		} else if (action.kind === "input_replace") {
+			this.customDraftsByTab.set(this.state.currentTab, action.value);
+		}
 	}
 
 	private mirrorNotesDraft(s: QuestionnaireState): QuestionnaireState {
@@ -145,6 +168,20 @@ export class QuestionnaireSession {
 				return;
 			case "clear_input_buffer":
 				this.inlineInput.setValue("");
+				return;
+			case "open_input_editor":
+				if (this.inputEditorOpen) return;
+				this.inputEditorOpen = true;
+				void this.editInput(effect.value).then(
+					(value) => {
+						this.inputEditorOpen = false;
+						if (value !== undefined) this.commit({ kind: "input_replace", value });
+					},
+					() => {
+						// The host callback reports launch errors; retain the draft and restore input handling.
+						this.inputEditorOpen = false;
+					},
+				);
 				return;
 			case "set_notes_value":
 				this.notesInput.setValue(effect.value);
@@ -187,7 +224,7 @@ export class QuestionnaireSession {
 
 	private runtime(): QuestionnaireRuntime {
 		return {
-			keybindings: getKeybindings(),
+			keybindings: this.keybindings,
 			inputBuffer: this.inlineInput.getValue(),
 			questions: this.questions,
 			isMulti: this.isMulti,
@@ -201,6 +238,7 @@ export class QuestionnaireSession {
 		return {
 			questions: this.questions,
 			itemsByTab: this.itemsByTab,
+			customDraftsByTab: this.customDraftsByTab,
 		};
 	}
 

@@ -25,7 +25,7 @@ Nothing to set up — the tool is live as soon as Pi restarts. Hand the model a 
 
 > Add caching to the API client.
 
-Rather than picking a strategy on your behalf, the model calls `ask_user_question` and a dialog takes over the bottom of your terminal. Move with `↑`/`↓`, choose with `Enter`, press `n` to attach a note, or land on the `Type something.` row to answer in your own words. `Esc` abandons the questionnaire entirely.
+Rather than picking a strategy on your behalf, the model calls `ask_user_question` and a dialog takes over the bottom of your terminal. Move with `↑`/`↓`, choose with `Enter`, press `n` to attach a note, or land on the `Type something.` row to answer in your own words. While typing, `Ctrl+G` opens Pi's configured external editor and `Ctrl+U` clears the draft; browsing another option and returning keeps what you wrote. `Esc` abandons the questionnaire entirely.
 
 ![Single question in the dialog: the tab strip reads Feature Type, Design Tab, Testing, Release, Submit; the question Which real development task are we planning right now? sits above four numbered options — Bug fix (Recommended), New feature, Refactor, Perf tuning — each with a one-line description, followed by the appended Type something. row](https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-ask-user-question/docs/single-question.jpg)
 
@@ -36,7 +36,7 @@ When the model asks several things at once, `Tab` moves between them and a Submi
 ## What you get
 
 - **Typed options instead of a wall of prose** — each question carries 2-4 authored choices, and every choice comes with a description of what it means or what it costs you.
-- **You can always answer in your own words** — a `Type something.` row is appended to every question, single- or multi-select, and widens to the full pane while you type.
+- **You can always answer in your own words** — a `Type something.` row is appended to every question, single- or multi-select, widens to the full pane while you type, keeps its draft visible in that row while you browse, and supports Pi's `Ctrl+G` external-editor flow.
 - **Compare real artifacts, not just labels** — an option can carry a markdown `preview` (ASCII mockup, code, diagram, config) that renders in a bordered box beside the option list.
 - **One interruption, not five** — up to four questions arrive in a single tabbed dialog, and the Submit tab lists your answers and names anything still blank before you commit.
 - **Notes on any answer** — `n` opens a note editor on any question tab; the note travels back to the model alongside the choice without marking the question answered.

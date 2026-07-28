@@ -99,13 +99,32 @@ describe("WrappingSelect.render — inline input when kind:'other' + focused", (
 		expect(lines[0]).toContain("hi");
 		expect(lines[0]).toContain(CURSOR_MARKER);
 	});
-	it("renders label (not input) when kind:'other' but NOT focused", () => {
+	it("renders the custom draft (without a cursor) when kind:'other' is not focused", () => {
 		const s = new WrappingSelect([{ kind: "other", label: "pick" }], 1, identityTheme);
 		s.setFocused(false);
-		s.setInputBuffer("buf");
+		s.setInputBuffer("draft");
 		const lines = s.render(40);
-		expect(lines[0]).toContain("pick");
+		expect(lines[0]).toContain("draft");
+		expect(lines[0]).not.toContain("pick");
 		expect(lines[0]).not.toContain(CURSOR_MARKER);
+	});
+
+	it("falls back to the Type something label when the unfocused draft is empty", () => {
+		const s = new WrappingSelect([{ kind: "other", label: "pick" }], 1, identityTheme);
+		s.setFocused(false);
+		s.setInputBuffer("");
+		expect(s.render(40)[0]).toContain("pick");
+	});
+
+	it("shows a changed custom draft without the prior answer's confirmation mark", () => {
+		const s = new WrappingSelect([{ kind: "other", label: "pick" }], 1, identityTheme);
+		s.setFocused(false);
+		s.setConfirmedIndex(0, "confirmed");
+		s.setInputBuffer("new draft");
+		const line = s.render(40)[0] ?? "";
+		expect(line).toContain("new draft");
+		expect(line).not.toContain("confirmed");
+		expect(line).not.toContain("✔");
 	});
 
 	// Regression: pre-fix the inline-input row was hard-truncated to `width`, so long

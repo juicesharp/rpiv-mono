@@ -10,6 +10,7 @@ import { QuestionTabStrategy, SubmitTabStrategy, type TabContentStrategy } from 
 
 export const HINT_PART_ENTER = "Enter to select";
 export const HINT_PART_NAV = "↑/↓ to navigate";
+export const HINT_PART_CLEAR = "Ctrl+U to clear";
 export const HINT_PART_TOGGLE = "Space to toggle";
 export const HINT_PART_NOTES = "n to add notes";
 export const HINT_PART_TAB = "Tab to switch questions";

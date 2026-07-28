@@ -13,6 +13,8 @@ adapts to the size of your terminal.
 | `Tab` / `Shift+Tab` | Next / previous tab, wrapping. `→` / `←` do the same. | Multi-question dialogs only |
 | `Space` | Toggle the focused checkbox. | Multi-select questions |
 | `n` | Open the notes editor for the current question. | Every question tab |
+| `Ctrl+G` | Open Pi's configured external editor with the current custom-answer draft. | `Type something.` input |
+| `Ctrl+U` | Clear the current custom-answer draft. | `Type something.` input |
 | `Ctrl+]` | Collapse or expand the dialog. Configurable via `collapseKey`. | Everywhere, including while collapsed |
 
 In a multi-select question, `Enter` on a regular row toggles its checkbox exactly like
@@ -33,7 +35,10 @@ answer).
 
 Focusing `Type something.` switches the row into an inline text input. In preview mode it
 expands to the full pane width while you type, so a long custom answer is not squeezed
-into the narrow options column. Confirming it produces an answer of `kind: "custom"`.
+into the narrow options column. Its draft replaces the static row label while you browse
+other options and is isolated per question. `Ctrl+G` round-trips it through Pi's configured
+external editor; `Ctrl+U` clears it, while `Esc` remains the explicit way to cancel the
+questionnaire. Confirming it produces an answer of `kind: "custom"`.
 
 Both labels are reserved — the model cannot author an option that collides with them.
 Both localize with the rest of the UI chrome; the reserved-label check always compares
@@ -81,7 +86,8 @@ When the dialog is taller than the terminal, the body scrolls between a sticky h
 a sticky footer, and an overflow indicator shows which direction is clipped: `↑` for
 content above, `↓` for content below, `↕` for both.
 
-The footer hint line adapts to context — it drops the notes hint while the notes editor or
-the inline input has the keyboard, and adds the tab hint only in multi-question dialogs.
-On narrow terminals the collapse hint at the end of the line clips with `…` so the core
-hints survive.
+The footer hint line adapts to context — it drops the notes hint and appends the `Ctrl+U`
+clear hint at the far right while the inline input has the keyboard, hides the notes hint
+while the notes editor is open, and adds the tab hint only in multi-question dialogs.
+`Ctrl+G` remains Pi's global external-editor shortcut and is not repeated there. On narrow
+terminals the right edge clips with `…` so the core hints survive.

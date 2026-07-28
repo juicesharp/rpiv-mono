@@ -361,6 +361,15 @@ describe("MultiSelectView — 'Type something.' row", () => {
 		expect(lines[3]).not.toContain("[✔]");
 	});
 
+	it("keeps the draft visible on the other row while another option has focus", () => {
+		const q = question();
+		const m = makeView(q, makeProps(q, { optionIndex: 0, inputMode: false, inputBuffer: "draft answer" }));
+		const otherLine = m.render(80)[3] ?? "";
+		expect(otherLine).toContain("draft answer");
+		expect(otherLine).not.toContain("Type something.");
+		expect(otherLine).not.toContain("\x1b_pi:c\x07");
+	});
+
 	it("renders the inline cursor (not a static label) when other.active && other.inputMode", () => {
 		const q = question();
 		const m = makeView(q, otherActiveInput(q, "my answer"));

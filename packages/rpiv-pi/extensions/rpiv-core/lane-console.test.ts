@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type ExtensionUIContext, initTheme, SessionManager, type Theme } from "@earendil-works/pi-coding-agent";
-import type { Component, TUI } from "@earendil-works/pi-tui";
+import { type Component, getKeybindings, type TUI } from "@earendil-works/pi-tui";
 import askUserQuestionExtension from "@juicesharp/rpiv-ask-user-question";
 import { createMockPi, makeAssistantMessage, makeUserMessage } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -140,7 +140,13 @@ async function captureRealFactory(params: Record<string, unknown>): Promise<Real
 
 /** Enqueue the real questionnaire factory as a PendingInput (mirrors lane-relay-ui.ts:79). */
 function enqueueRealFactory(factory: RealQuestionFactory, resolve = vi.fn()): void {
-	enqueueInput("run-1", SINGLE_UNIT_KEY, { factory: factory as never, options: undefined as never, resolve });
+	const withKeybindings: RealQuestionFactory = (tui, theme, _keybindings, done) =>
+		factory(tui, theme, getKeybindings(), done);
+	enqueueInput("run-1", SINGLE_UNIT_KEY, {
+		factory: withKeybindings as never,
+		options: undefined as never,
+		resolve,
+	});
 }
 
 beforeAll(() => {
