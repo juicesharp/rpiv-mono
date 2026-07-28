@@ -10,6 +10,8 @@ export interface ExternalEditorTui {
 }
 
 function runEditor(command: string, file: string): Promise<void> {
+	// Keep the command grammar identical to Pi's built-in external-editor flow. A
+	// separate shell or argv parser here would make Ctrl+G behave differently.
 	const [editor, ...args] = command.split(" ");
 	if (!editor) return Promise.reject(new Error("External editor command is empty"));
 
@@ -19,7 +21,7 @@ function runEditor(command: string, file: string): Promise<void> {
 			shell: process.platform === "win32",
 		});
 		child.once("error", reject);
-		child.once("exit", (code, signal) => {
+		child.once("close", (code, signal) => {
 			if (code === 0) {
 				resolve();
 				return;
@@ -47,7 +49,11 @@ export async function editWithExternalEditor(tui: ExternalEditorTui, command: st
 		await runEditor(command, tempFile);
 		return readFileSync(tempFile, "utf8").replace(/\r?\n$/, "");
 	} finally {
-		rmSync(tempDir, { recursive: true, force: true });
+		try {
+			rmSync(tempDir, { recursive: true, force: true });
+		} catch {
+			// Temp cleanup is best effort; never leave the TUI stopped because it failed.
+		}
 		if (tuiStopped) {
 			tui.start();
 			tui.requestRender(true);

@@ -51,6 +51,7 @@ function makeState(over: Partial<QuestionnaireState> = {}): QuestionnaireState {
 		notesVisible: false,
 		answers: new Map<number, QuestionAnswer>(),
 		multiSelectChecked: new Set<number>(),
+		customDraftsByTab: new Map<number, string>(),
 		notesByTab: new Map<number, string>(),
 		submitChoiceIndex: 0,
 		notesDraft: "",
@@ -109,12 +110,14 @@ describe("routeKey — nav", () => {
 		expect(routeKey(sentinel(KEY.UP), makeState({ optionIndex: 2 }), makeRuntime())).toEqual({
 			kind: "nav",
 			nextIndex: 1,
+			inputValue: "",
 		});
 	});
 	it("DOWN advances by 1", () => {
 		expect(routeKey(sentinel(KEY.DOWN), makeState(), makeRuntime())).toEqual({
 			kind: "nav",
 			nextIndex: 1,
+			inputValue: "",
 		});
 	});
 	// With the chat row gone, UP/DOWN wrap within [option0 … optionLast] via wrapTab.
@@ -124,6 +127,7 @@ describe("routeKey — nav", () => {
 		expect(routeKey(sentinel(KEY.DOWN), makeState({ optionIndex: 2 }), makeRuntime())).toEqual({
 			kind: "nav",
 			nextIndex: 0,
+			inputValue: "",
 		});
 	});
 	it("UP at the first item wraps to the last (no chat row, wrapTab clamp)", () => {
@@ -132,6 +136,7 @@ describe("routeKey — nav", () => {
 		expect(routeKey(sentinel(KEY.UP), makeState({ optionIndex: 0 }), runtime)).toEqual({
 			kind: "nav",
 			nextIndex: last,
+			inputValue: "",
 		});
 	});
 });
@@ -451,7 +456,7 @@ describe("routeKey — multiSelect free-text ('Type something.')", () => {
 				makeState({ optionIndex: 2 }),
 				makeRuntime({ questions: [multiQ], isMulti: false, items, currentItem: items[2] }),
 			),
-		).toEqual({ kind: "nav", nextIndex: 3 });
+		).toEqual({ kind: "nav", nextIndex: 3, inputValue: "" });
 	});
 
 	it("DOWN from the other row (index 3) → nav to Next (index 4)", () => {
@@ -461,7 +466,7 @@ describe("routeKey — multiSelect free-text ('Type something.')", () => {
 				makeState({ optionIndex: 3 }),
 				makeRuntime({ questions: [multiQ], isMulti: false, items, currentItem: items[3] }),
 			),
-		).toEqual({ kind: "nav", nextIndex: 4 });
+		).toEqual({ kind: "nav", nextIndex: 4, inputValue: "" });
 	});
 
 	it("UP from Next (index 4) → nav back to the other row (index 3)", () => {
@@ -471,7 +476,7 @@ describe("routeKey — multiSelect free-text ('Type something.')", () => {
 				makeState({ optionIndex: 4 }),
 				makeRuntime({ questions: [multiQ], isMulti: false, items, currentItem: items[4] }),
 			),
-		).toEqual({ kind: "nav", nextIndex: 3 });
+		).toEqual({ kind: "nav", nextIndex: 3, inputValue: "" });
 	});
 });
 

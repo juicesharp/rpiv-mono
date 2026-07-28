@@ -10,7 +10,6 @@ import {
 // Static import is fine — rpc-fallback pulls only types + the i18n bridge,
 // none of the ~560ms TUI render graph that QuestionnaireSession lazy-loads.
 import { hasDialogUI, runRpcQuestionnaire } from "./rpc-fallback.js";
-import { editWithExternalEditor } from "./state/external-editor.js";
 import { displayLabel, t } from "./state/i18n-bridge.js";
 import { sentinelsToAppend } from "./state/row-intent.js";
 import { buildQuestionnaireResponse, buildToolResult } from "./tool/response-envelope.js";
@@ -244,7 +243,10 @@ Preview content is rendered as markdown in a monospace box. Multi-line text with
 							keybindings,
 							editInput: async (value) => {
 								try {
-									const { SettingsManager } = await import("@earendil-works/pi-coding-agent");
+									const [{ SettingsManager }, { editWithExternalEditor }] = await Promise.all([
+										import("@earendil-works/pi-coding-agent"),
+										import("./state/external-editor.js"),
+									]);
 									const editorCommand = SettingsManager.create(ctx.cwd, undefined, {
 										projectTrusted: ctx.isProjectTrusted(),
 									}).getExternalEditorCommand();

@@ -12,7 +12,7 @@ import { reduce } from "./state-reducer.js";
 
 describe("reduce — nav", () => {
 	it("regular nav keeps the active draft buffer intact", () => {
-		const r = reduce(makeState(), { kind: "nav", nextIndex: 1 }, makeCtx());
+		const r = reduce(makeState(), { kind: "nav", nextIndex: 1, inputValue: "" }, makeCtx());
 		expect(r.state.optionIndex).toBe(1);
 		expect(r.state.inputMode).toBe(false);
 		expect(r.effects).toEqual([]);
@@ -23,14 +23,14 @@ describe("reduce — nav", () => {
 			[0, { questionIndex: 0, question: "Pick one", kind: "custom", answer: "Hello" }],
 		]);
 		const ctx = makeCtx({ itemsByTab: [itemsWithOther] });
-		const r = reduce(makeState({ answers }), { kind: "nav", nextIndex: 2 }, ctx);
+		const r = reduce(makeState({ answers }), { kind: "nav", nextIndex: 2, inputValue: "" }, ctx);
 		expect(r.state.inputMode).toBe(true);
 		expect(r.effects).toEqual([{ kind: "set_input_buffer", value: "Hello" }]);
 	});
 
 	it("nav onto kind:'other' row with no draft resets the buffer", () => {
 		const ctx = makeCtx({ itemsByTab: [itemsWithOther] });
-		const r = reduce(makeState(), { kind: "nav", nextIndex: 2 }, ctx);
+		const r = reduce(makeState(), { kind: "nav", nextIndex: 2, inputValue: "" }, ctx);
 		expect(r.state.inputMode).toBe(true);
 		expect(r.effects).toEqual([{ kind: "set_input_buffer", value: "" }]);
 	});
@@ -39,8 +39,9 @@ describe("reduce — nav", () => {
 		const answers = new Map<number, QuestionAnswer>([
 			[0, { questionIndex: 0, question: "Pick one", kind: "custom", answer: "confirmed" }],
 		]);
-		const ctx = makeCtx({ itemsByTab: [itemsWithOther], customDraftsByTab: new Map([[0, "draft"]]) });
-		const r = reduce(makeState({ answers }), { kind: "nav", nextIndex: 2 }, ctx);
+		const ctx = makeCtx({ itemsByTab: [itemsWithOther] });
+		const state = makeState({ answers, customDraftsByTab: new Map([[0, "draft"]]) });
+		const r = reduce(state, { kind: "nav", nextIndex: 2, inputValue: "" }, ctx);
 		expect(r.effects).toEqual([{ kind: "set_input_buffer", value: "draft" }]);
 	});
 
@@ -48,9 +49,17 @@ describe("reduce — nav", () => {
 		const answers = new Map<number, QuestionAnswer>([
 			[0, { questionIndex: 0, question: "Pick one", kind: "custom", answer: "confirmed" }],
 		]);
-		const ctx = makeCtx({ itemsByTab: [itemsWithOther], customDraftsByTab: new Map([[0, ""]]) });
-		const r = reduce(makeState({ answers }), { kind: "nav", nextIndex: 2 }, ctx);
+		const ctx = makeCtx({ itemsByTab: [itemsWithOther] });
+		const state = makeState({ answers, customDraftsByTab: new Map([[0, ""]]) });
+		const r = reduce(state, { kind: "nav", nextIndex: 2, inputValue: "" }, ctx);
 		expect(r.effects).toEqual([{ kind: "set_input_buffer", value: "" }]);
+	});
+
+	it("snapshots the live input value when navigation leaves the custom row", () => {
+		const state = makeState({ optionIndex: 2, inputMode: true });
+		const ctx = makeCtx({ itemsByTab: [itemsWithOther] });
+		const r = reduce(state, { kind: "nav", nextIndex: 1, inputValue: "draft" }, ctx);
+		expect(r.state.customDraftsByTab.get(0)).toBe("draft");
 	});
 });
 
@@ -73,15 +82,14 @@ describe("reduce — tab_switch", () => {
 
 	it("rehydrates the target question's custom draft without leaking the current tab", () => {
 		const questions = [makeQuestion(), makeQuestion()];
-		const ctx = makeCtx({
-			questions,
-			itemsByTab: [itemsRegular, itemsRegular],
+		const ctx = makeCtx({ questions, itemsByTab: [itemsRegular, itemsRegular] });
+		const state = makeState({
 			customDraftsByTab: new Map([
 				[0, "first"],
 				[1, "second"],
 			]),
 		});
-		const r = reduce(makeState(), { kind: "tab_switch", nextTab: 1 }, ctx);
+		const r = reduce(state, { kind: "tab_switch", nextTab: 1 }, ctx);
 		expect(r.effects).toContainEqual({ kind: "set_input_buffer", value: "second" });
 	});
 });
@@ -95,6 +103,17 @@ describe("reduce — confirm", () => {
 		const r = reduce(makeState(), action, makeCtx());
 		expect(r.state.answers.get(0)?.answer).toBe("A");
 		expect(r.effects).toEqual([{ kind: "done", result: { answers: [r.state.answers.get(0)!], cancelled: false } }]);
+	});
+
+	it("makes the confirmed custom answer authoritative by removing its draft", () => {
+		const action: QuestionnaireAction = {
+			kind: "confirm",
+			answer: { questionIndex: 0, question: "Pick one", kind: "custom", answer: "latest" },
+		};
+		const state = makeState({ customDraftsByTab: new Map([[0, "stale"]]) });
+		const r = reduce(state, action, makeCtx());
+		expect(r.state.customDraftsByTab.has(0)).toBe(false);
+		expect(r.state.answers.get(0)?.answer).toBe("latest");
 	});
 
 	it("regular option matching a preview-bearing option augments answer.preview", () => {
@@ -286,8 +305,10 @@ describe("reduce — notes_enter / notes_exit / notes_forward", () => {
 });
 
 describe("reduce — custom-input controls", () => {
-	it("input_clear clears the headless input buffer", () => {
-		const r = reduce(makeState({ inputMode: true }), { kind: "input_clear" }, makeCtx());
+	it("input_clear clears the headless input buffer and records an explicit empty draft", () => {
+		const state = makeState({ inputMode: true, customDraftsByTab: new Map([[0, "draft"]]) });
+		const r = reduce(state, { kind: "input_clear" }, makeCtx());
+		expect(r.state.customDraftsByTab.get(0)).toBe("");
 		expect(r.effects).toEqual([{ kind: "clear_input_buffer" }]);
 	});
 
@@ -296,8 +317,9 @@ describe("reduce — custom-input controls", () => {
 		expect(r.effects).toEqual([{ kind: "open_input_editor", value: "draft" }]);
 	});
 
-	it("input_replace rehydrates the edited value", () => {
+	it("input_replace stores and rehydrates the edited value", () => {
 		const r = reduce(makeState({ inputMode: true }), { kind: "input_replace", value: "edited" }, makeCtx());
+		expect(r.state.customDraftsByTab.get(0)).toBe("edited");
 		expect(r.effects).toEqual([{ kind: "set_input_buffer", value: "edited" }]);
 	});
 });

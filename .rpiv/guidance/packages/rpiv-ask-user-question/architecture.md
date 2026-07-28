@@ -42,7 +42,7 @@ locales/                — JSON translation maps loaded via i18n-bridge at modu
 
 ## State Machine
 
-`QuestionnaireState` is the single canonical shape — both the dispatcher and the view layer read it. The session owns the state cell and the input-buffer cell. `dispatch(data)` is the single entry: routes through `routeKey` (pure) → `reduce` (pure, returns `{state, Effect[]}`) → runtime executes effects → `propsAdapter.apply(state)` fans out to components. The reducer never touches a live component; per-`QuestionnaireAction` kind is dispatched via a `{ [K in Kind]: Handler<K> }` HANDLERS table (compile-time exhaustive); every IO is an `Effect` in a closed union (compiler-enforced exhaustive switch in `runEffect`).
+`QuestionnaireState` is the single canonical shape — both the dispatcher and the view layer read it. The session owns the state cell and the live input-buffer cell; captured per-tab free-text drafts are canonical state in `customDraftsByTab`. `dispatch(data)` is the single entry: routes through `routeKey` (pure) → `reduce` (pure, returns `{state, Effect[]}`) → runtime executes effects → `propsAdapter.apply(state)` fans out to components. The reducer never touches a live component; action payloads carry dispatch-time values such as the input buffer. Per-`QuestionnaireAction` kind is dispatched via a `{ [K in Kind]: Handler<K> }` HANDLERS table (compile-time exhaustive); every IO is an `Effect` in a closed union (compiler-enforced exhaustive switch in `runEffect`).
 
 ## View Fan-Out
 
@@ -69,9 +69,9 @@ The shortcut is configurable via the `collapseKey` config field (default `ctrl+]
 - **NO width math via `string.length`** — always use width-correct helpers (`visibleWidth`, `wrapTextWithAnsi`)
 - **NO inline user-facing strings in execute** — every token is a module-level const or sourced from `ROW_INTENT_META`
 - **NO subclassing or per-kind boolean flags for special rows** — `kind` discriminator + `ROW_INTENT_META` are the single mechanism (enforced by a banned-flags test)
-- **NO live-component reads from the reducer** — dispatch-time component values arrive via `ApplyContext`
+- **NO live-component reads from the reducer** — dispatch-time component values arrive in action payloads; `ApplyContext` contains session-lifetime constants only
 - **Tool-result envelope** always built via the result-envelope helper; the questionnaire error type unifies validator and runtime
-- **Side-band notes** — pre-answer notes live separately from `answers` so they don't make a question read as "answered"; merged at confirm
+- **Side-band drafts** — `notesByTab` and `customDraftsByTab` live separately from `answers`; confirming custom text removes its draft so the answer becomes authoritative
 - **Partial-submit allowed** — Submit always submits; the warning header is the sole signal of incompleteness
 - **State-shape unity** — `QuestionnaireState` is the single canonical shape; runtime context is held separately and never reaches view setProps consumers
 - **Effects as a closed union** — adding an effect requires updating both the `Effect` union AND the runtime's switch (compiler-enforced)

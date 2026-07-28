@@ -1,7 +1,13 @@
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type ExtensionUIContext, initTheme, SessionManager, type Theme } from "@earendil-works/pi-coding-agent";
+import {
+	type ExtensionUIContext,
+	initTheme,
+	type KeybindingsManager,
+	SessionManager,
+	type Theme,
+} from "@earendil-works/pi-coding-agent";
 import { type Component, getKeybindings, type TUI } from "@earendil-works/pi-tui";
 import askUserQuestionExtension from "@juicesharp/rpiv-ask-user-question";
 import { createMockPi, makeAssistantMessage, makeUserMessage } from "@juicesharp/rpiv-test-utils";
@@ -32,6 +38,10 @@ const identityTheme = {
 
 function makeTui(rows = 24) {
 	return { requestRender: vi.fn(), terminal: { rows, columns: 100 } } as unknown as TUI;
+}
+
+function makeInjectedKeybindings(): KeybindingsManager {
+	return getKeybindings() as unknown as KeybindingsManager;
 }
 
 /** A LaneSession stub whose getBranch + subscribe + streaming partial + usage are controllable. */
@@ -140,13 +150,7 @@ async function captureRealFactory(params: Record<string, unknown>): Promise<Real
 
 /** Enqueue the real questionnaire factory as a PendingInput (mirrors lane-relay-ui.ts:79). */
 function enqueueRealFactory(factory: RealQuestionFactory, resolve = vi.fn()): void {
-	const withKeybindings: RealQuestionFactory = (tui, theme, _keybindings, done) =>
-		factory(tui, theme, getKeybindings(), done);
-	enqueueInput("run-1", SINGLE_UNIT_KEY, {
-		factory: withKeybindings as never,
-		options: undefined as never,
-		resolve,
-	});
+	enqueueInput("run-1", SINGLE_UNIT_KEY, { factory: factory as never, options: undefined as never, resolve });
 }
 
 beforeAll(() => {
@@ -907,6 +911,8 @@ describe("LaneConsole — real ask_user_question factory (cappedTui self-windowi
 	// 17 rows — the band is no longer clipped.
 	const QUESTION_BUDGET_24 = 19;
 	const SURFACE_HEIGHT_24 = 28;
+	const makeRealPanel = (tui = makeTui(32), done = vi.fn()) =>
+		new LaneConsole("run-1", SINGLE_UNIT_KEY, tui, identityTheme, makeInjectedKeybindings(), done);
 	/** The question band = the lines between the console's question divider (the FIRST bare
 	 *  full-width rule, below the `── live output ──` border) and the bottom lane block. The lane
 	 *  block for one lane is `["", heading, "", row, "", footer, rule]`, so the row (matched by its
@@ -922,7 +928,7 @@ describe("LaneConsole — real ask_user_question factory (cappedTui self-windowi
 		const factory = await captureRealFactory(REAL_PARAMS);
 		liveUnit();
 		enqueueRealFactory(factory);
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(32), identityTheme, {} as never, vi.fn());
+		const panel = makeRealPanel();
 		await Promise.resolve();
 		panel.handleInput("\r"); // arm → the band paints so the real chrome is on the surface
 		// The mounted band now carries ALL the chrome a makeInner() stub cannot produce: every
@@ -943,7 +949,7 @@ describe("LaneConsole — real ask_user_question factory (cappedTui self-windowi
 			receivedTui = tui;
 			return factory(tui, theme, kb, done);
 		});
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(32), identityTheme, {} as never, vi.fn());
+		const panel = makeRealPanel();
 		await Promise.resolve();
 		panel.handleInput("\r"); // arm → the render gate sets budgetRef.rows and calls inner.render
 		panel.render(80); // render sets budgetRef.rows = maxRows − chrome BEFORE inner.render
@@ -956,7 +962,7 @@ describe("LaneConsole — real ask_user_question factory (cappedTui self-windowi
 		const factory = await captureRealFactory(REAL_PARAMS);
 		liveUnit();
 		enqueueRealFactory(factory);
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(32), identityTheme, {} as never, vi.fn());
+		const panel = makeRealPanel();
 		await Promise.resolve();
 		panel.handleInput("\r"); // arm → the band paints so questionBand can locate its divider
 		const band = questionBand(panel.render(80));
@@ -969,7 +975,7 @@ describe("LaneConsole — real ask_user_question factory (cappedTui self-windowi
 		const factory = await captureRealFactory(REAL_PARAMS);
 		liveUnit();
 		enqueueRealFactory(factory);
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(32), identityTheme, {} as never, vi.fn());
+		const panel = makeRealPanel();
 		await Promise.resolve();
 		panel.handleInput("\r"); // arm → the band paints
 		const surface = panel.render(80).join("\n");
@@ -983,14 +989,14 @@ describe("LaneConsole — real ask_user_question factory (cappedTui self-windowi
 
 	it("surface height is identical across read-only ↔ real-question mode (available + 2 = 21)", async () => {
 		liveUnit();
-		const readonlyPanel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(32), identityTheme, {} as never, vi.fn());
+		const readonlyPanel = makeRealPanel();
 		const readonly = readonlyPanel.render(80).length;
 		expect(readonly).toBe(SURFACE_HEIGHT_24); // available + 2 = 19 + 2
 		readonlyPanel.dispose();
 
 		const factory = await captureRealFactory(REAL_PARAMS);
 		enqueueRealFactory(factory);
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(32), identityTheme, {} as never, vi.fn());
+		const panel = makeRealPanel();
 		await Promise.resolve();
 		panel.handleInput("\r"); // arm → the band paints so the height check reflects the real cap
 		expect(panel.render(80).length).toBe(readonly); // padded → identical height across the transition
@@ -1004,7 +1010,7 @@ describe("LaneConsole — real ask_user_question factory (cappedTui self-windowi
 		liveUnit();
 		enqueueRealFactory(factory, resolve);
 		const tui = makeTui(32);
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, tui, identityTheme, {} as never, done);
+		const panel = makeRealPanel(tui, done);
 		await Promise.resolve(); // mount transition
 		const requestRender = tui.requestRender as ReturnType<typeof vi.fn>;
 		const fullRepaints = () => requestRender.mock.calls.filter((c) => c[0] === true).length;

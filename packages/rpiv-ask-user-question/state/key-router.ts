@@ -14,7 +14,7 @@ const NOTES_ACTIVATE_KEY = "n";
 const SPACE_KEY = " ";
 
 export type QuestionnaireAction =
-	| { kind: "nav"; nextIndex: number }
+	| { kind: "nav"; nextIndex: number; inputValue: string }
 	| { kind: "input_clear" }
 	| { kind: "input_edit"; value: string }
 	| { kind: "input_replace"; value: string }
@@ -120,12 +120,20 @@ function tabSwitchAction(
 
 // DOWN at the last item wraps to the first (cycle through [option0, …, optionLast]).
 function nextNavOnDown(state: QuestionnaireState, runtime: QuestionnaireRuntime): QuestionnaireAction {
-	return { kind: "nav", nextIndex: wrapTab(state.optionIndex + 1, Math.max(1, runtime.items.length)) };
+	return {
+		kind: "nav",
+		nextIndex: wrapTab(state.optionIndex + 1, Math.max(1, runtime.items.length)),
+		inputValue: runtime.inputBuffer,
+	};
 }
 
 // UP at the first item wraps to the last (symmetric with nextNavOnDown).
 function prevNavOnUp(state: QuestionnaireState, runtime: QuestionnaireRuntime): QuestionnaireAction {
-	return { kind: "nav", nextIndex: wrapTab(state.optionIndex - 1, Math.max(1, runtime.items.length)) };
+	return {
+		kind: "nav",
+		nextIndex: wrapTab(state.optionIndex - 1, Math.max(1, runtime.items.length)),
+		inputValue: runtime.inputBuffer,
+	};
 }
 
 export function routeKey(data: string, state: QuestionnaireState, runtime: QuestionnaireRuntime): QuestionnaireAction {

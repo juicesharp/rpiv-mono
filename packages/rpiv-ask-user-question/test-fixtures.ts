@@ -40,6 +40,7 @@ export function makeQuestionnaireState(over: Partial<QuestionnaireState> = {}): 
 		notesVisible: over.notesVisible ?? false,
 		answers: over.answers ?? new Map(),
 		multiSelectChecked: over.multiSelectChecked ?? new Set(),
+		customDraftsByTab: over.customDraftsByTab ?? new Map(),
 		notesByTab: over.notesByTab ?? new Map(),
 		submitChoiceIndex: over.submitChoiceIndex ?? 0,
 		notesDraft: over.notesDraft ?? "",
@@ -52,7 +53,6 @@ export function makeApplyContext(over: Partial<ApplyContext> = {}): ApplyContext
 	return {
 		questions,
 		itemsByTab: over.itemsByTab ?? questions.map(() => itemsRegular),
-		customDraftsByTab: over.customDraftsByTab ?? new Map(),
 	};
 }
 

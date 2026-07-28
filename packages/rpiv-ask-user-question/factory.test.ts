@@ -1,4 +1,4 @@
-import { CURSOR_MARKER } from "@earendil-works/pi-tui";
+import { CURSOR_MARKER, getKeybindings } from "@earendil-works/pi-tui";
 import { createMockPi } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { registerAskUserQuestionTool } from "./ask-user-question.js";
@@ -36,13 +36,13 @@ function driveCustom(script: (c: RenderableComponent, done: (v: unknown) => void
 			const f = factory as (
 				tui: { requestRender: () => void; terminal: { columns: number; rows: number } },
 				theme: typeof identityTheme,
-				kb: undefined,
+				kb: ReturnType<typeof getKeybindings>,
 				done: (v: unknown) => void,
 			) => RenderableComponent;
 			const component = f(
 				{ requestRender, terminal: { columns: 120, rows: 24 } },
 				identityTheme,
-				undefined,
+				getKeybindings(),
 				resolve,
 			);
 			script(component, resolve);
