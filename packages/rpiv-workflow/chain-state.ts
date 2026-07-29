@@ -60,6 +60,17 @@ const hasReads = (def: StageDef): def is StageDef & { reads: NonNullable<StageDe
 	def.reads !== undefined && def.reads.length > 0;
 
 /**
+ * Separator between the channel `name` and the `handle` in the stageEntryArgs
+ * dedup key (`${name}${DEDUP_KEY_SEPARATOR}${handle}`). The NUL byte cannot
+ * occur in either half — handles are inline-artifact strings or file paths,
+ * and names are channel identifiers — so two distinct (name, handle) pairs
+ * ("ab"+"cd" vs "a"+"bcd") can never concatenate into the same key; carrying
+ * `name` additionally preserves a cross-name fan-in repeat whose entries
+ * share a handle.
+ */
+const DEDUP_KEY_SEPARATOR = "\0";
+
+/**
  * The single arg-projection authority: the string a stage's
  * `/skill:<name> <args>` prompt carries, derived purely from
  * (def, stageName, startStage, state).
@@ -86,8 +97,8 @@ export function stageEntryArgs(
 		// Duplicate-flag dedup: collapse two entries on the SAME channel whose
 		// handles stringify identically (the a777 cite-check symptom — a re-run
 		// fanout channel re-published the same fs path, emitting a duplicate
-		// `--code-cite-check <path>` flag). The key is `${name}\0${handle}`:
-		// the \0 separator avoids a concatenation collision (name "ab" + handle
+		// `--code-cite-check <path>` flag). The key is `${name}${DEDUP_KEY_SEPARATOR}${handle}`:
+		// the DEDUP_KEY_SEPARATOR (NUL byte) avoids a concatenation collision (name "ab" + handle
 		// "cd" vs "a" + "bcd"), and carrying the channel `name` preserves a fanin
 		// repeat whose entries carry DISTINCT paths (e.g. per-cluster subplans) and
 		// a multi-artifact entry whose artifacts differ. The set spans every read
@@ -116,7 +127,7 @@ export function stageEntryArgs(
 				if (!entry || isFailedOutput(entry)) continue; // unfilled (pending) or failed → no args
 				for (const artifact of entry.artifacts) {
 					const handle = handleToString(artifact.handle);
-					const key = `${name}\0${handle}`;
+					const key = `${name}${DEDUP_KEY_SEPARATOR}${handle}`;
 					if (seen.has(key)) continue;
 					seen.add(key);
 					parts.push(`--${name}`, handle);

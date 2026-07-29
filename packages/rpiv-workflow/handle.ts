@@ -50,6 +50,21 @@ export const inline = (bytes: Uint8Array, mime?: string): ArtifactHandle =>
 	mime !== undefined ? { kind: "inline", bytes, mime } : { kind: "inline", bytes };
 
 /**
+ * Inline-handle wire format — the lossy placeholder `handleToString`
+ * emits for inline artifact bytes. Inline content is gathered directly
+ * by the collector and is not meaningfully promptable, so the serialised
+ * form reports only its byte length (plus an optional mime suffix).
+ *
+ *   `inline:`        — kind discriminator (mirrors the `kind` literal)
+ *   <byteLength>     — number of bytes the collector gathered
+ *   `b`              — unit marking the preceding number as a byte length
+ *   `;` <mime>       — delimiter + optional mime type, emitted when present
+ */
+const INLINE_HANDLE_PREFIX = "inline:";
+const INLINE_HANDLE_BYTE_UNIT = "b";
+const INLINE_HANDLE_MIME_SEPARATOR = ";";
+
+/**
  * Serialise a handle to a human-readable string — used by the runner
  * when threading the primary artifact into a downstream stage's prompt
  * input (the prompt is plain text; URLs / paths / opaque ids all have a
@@ -65,6 +80,6 @@ export function handleToString(h: ArtifactHandle): string {
 		case "opaque":
 			return h.id;
 		case "inline":
-			return `inline:${h.bytes.byteLength}b${h.mime ? `;${h.mime}` : ""}`;
+			return `${INLINE_HANDLE_PREFIX}${h.bytes.byteLength}${INLINE_HANDLE_BYTE_UNIT}${h.mime ? `${INLINE_HANDLE_MIME_SEPARATOR}${h.mime}` : ""}`;
 	}
 }

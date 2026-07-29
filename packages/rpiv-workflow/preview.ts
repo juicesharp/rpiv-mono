@@ -24,8 +24,15 @@ export const CMD_USAGE_RUN = (name: string) => `Usage: /wf ${name} <description>
 // Public formatters
 // ===========================================================================
 
+/**
+ * Description-truncation cap (characters) for the workflow-list view. Test-pinned
+ * at `preview.test.ts` ("truncates long descriptions at 50 characters with
+ * ellipsis"); the body reserves 3 chars for the trailing "...".
+ */
+const DESC_TRUNCATE_LEN = 50;
+
 /** Truncate a description to `maxLen` characters, appending "..." if truncated. */
-function truncateDescription(desc: string, maxLen = 50): string {
+function truncateDescription(desc: string, maxLen = DESC_TRUNCATE_LEN): string {
 	if (desc.length <= maxLen) return desc;
 	return `${desc.slice(0, maxLen - 3)}...`;
 }
