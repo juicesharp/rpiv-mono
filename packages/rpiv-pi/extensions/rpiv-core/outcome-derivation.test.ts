@@ -426,7 +426,7 @@ describe("equivalence — built-in workflows", () => {
 		});
 	}
 
-	it("total produces stages across all workflows = 42 (20 derivable + 10 explicit + 12 script)", () => {
+	it("total produces stages across all workflows = 44 (20 derivable + 10 explicit + 14 script)", () => {
 		let count = 0;
 		let scriptProduces = 0;
 		for (const w of builtInWorkflows) {
@@ -435,12 +435,13 @@ describe("equivalence — built-in workflows", () => {
 				if (stage.kind === "produces" && stage.run != null) scriptProduces++;
 			}
 		}
-		expect(count).toBe(42);
+		expect(count).toBe(44);
 		// build::slice-check + build::subplan-check + build::goal + build::plan-cite-check
 		// + build::code-cite-check + build::implement-scope-check + build::reconcile
 		// + build::plan-snapshot + build::code-snapshot
+		// + build::plan-demote + build::code-demote
 		// + vet::goal + vet::implement-scope-check + vet::reconcile
-		expect(scriptProduces).toBe(12);
+		expect(scriptProduces).toBe(14);
 	});
 });
 

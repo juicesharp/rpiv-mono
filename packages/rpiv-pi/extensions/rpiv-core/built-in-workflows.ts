@@ -1942,6 +1942,99 @@ const planSnapshot = snapshotLatestPlan("plan-snapshot");
 const codeSnapshot = snapshotLatestPlan("code-snapshot");
 
 /**
+ * A duty demotion stamped onto a verdict's on-disk JSON — the legible record
+ * that a risk ruling the panel marked `pass: true` was demoted to effective-
+ * fail by the evidence or verify-at-implement duty. One entry per FAILING
+ * duty (a ruling authored as BOTH mechanics AND verify-at-implement can carry
+ * two). `reason` is decision-code-free prose (no run/phase ids, no absolute
+ * line numbers) naming the duty that failed, so disk readers (amend, confirm
+ * `--prior`) can tell a grader-side demotion from a genuine `pass: false`.
+ */
+interface RiskDutyDemotion {
+	id: string;
+	duty: "evidence-format" | "procedure-owner";
+	reason: string;
+}
+
+/**
+ * Materialize the duty demotion as legible on-disk data. After a grade round,
+ * each latest-per-dimension verdict whose `pass: true` rulings were demoted by
+ * the evidence or verify-at-implement duty gets a `risk_duty_demotions` array
+ * written onto its on-disk JSON IN PLACE — the one medium amend and confirm's
+ * `--prior` read. The verdict's own `pass` is NEVER flipped (every gate fold —
+ * `allRiskFlagsPass`/`dimensionsToRegrade`/`confirmDue` — consults
+ * `rulingEffectivePass` off in-memory `state.named`, which never re-reads the
+ * rewritten file, so gate outcomes are unchanged); the field is an additive,
+ * read-only signal for the disk readers.
+ *
+ * Modeled on `snapshotLatestPlan(who)` (a `ScriptFn` that side-effects AND
+ * returns an `Output`): it reads the PLAN-sourced duty triggers
+ * (`planAuthoredRisks`), iterates the EXACT verdict set amend keeps + confirm
+ * reads (`latestVerdictPerDimension(freshVerdicts(...))`), and rewrites each
+ * demoted verdict's fs handle in place. Writes ONLY when ≥1 demotion (a clean
+ * grade is a no-op — no needless reformat/mtime churn); each per-file
+ * read/parse/write is wrapped so a single unparseable/stale file is skipped
+ * (never halts the gate). Returns `{ demotions }` echoing `{dimension, id,
+ * duty, verdict}` for journal greppability. `channel` is the plan channel the
+ * risks + current artifact live on; `verdictChannel` is the grade's own
+ * verdict channel (plan-verdicts / code-verdicts).
+ */
+const demoteDuties =
+	(who: string, channel: string, verdictChannel: string) =>
+	({ state, cwd }: ScriptContext): Omit<Output, "meta"> => {
+		const risks = planAuthoredRisks(state, channel);
+		const current = latestArtifactPath(state, channel);
+		const demotions: { dimension: string; id: string; duty: RiskDutyDemotion["duty"]; verdict: string }[] = [];
+		for (const o of latestVerdictPerDimension(freshVerdicts(state.named[verdictChannel] ?? [], current)).values()) {
+			const handle = o.artifacts.find((a) => a.handle.kind === "fs")?.handle;
+			if (handle?.kind !== "fs") continue;
+			const dimRaw = (o.data as { dimension?: unknown } | undefined)?.dimension;
+			const dimension = typeof dimRaw === "string" ? dimRaw : "";
+			const perFile: RiskDutyDemotion[] = [];
+			for (const r of verdictRiskRulings(o)) {
+				const authored = risks.get(r.id);
+				// Only a `pass: true` ruling that rulingEffectivePass demotes — never a
+				// genuine `pass: false` (that is already a fail, not a demoted pass).
+				if (r.pass !== true || rulingEffectivePass(r, authored)) continue;
+				if (!evidenceCitesFileLine(r, authored)) {
+					perFile.push({
+						id: r.id,
+						duty: "evidence-format",
+						reason: "mechanics pass without an adjacent file:line citation in evidence",
+					});
+					demotions.push({ dimension, id: r.id, duty: "evidence-format", verdict: handleToString(handle) });
+				}
+				if (!procedureSatisfiesDuty(r, authored)) {
+					perFile.push({
+						id: r.id,
+						duty: "procedure-owner",
+						reason: "verify-at-implement pass without a concrete procedure and owner phase",
+					});
+					demotions.push({ dimension, id: r.id, duty: "procedure-owner", verdict: handleToString(handle) });
+				}
+			}
+			if (perFile.length === 0) continue;
+			try {
+				const abs = isAbsolute(handle.path) ? handle.path : join(cwd, handle.path);
+				const json = JSON.parse(readFileSync(abs, "utf-8")) as Record<string, unknown>;
+				json.risk_duty_demotions = perFile;
+				writeFileSync(abs, JSON.stringify(json, null, 2));
+			} catch {
+				// skip-on-throw: an unparseable/stale verdict file never halts the gate.
+			}
+		}
+		return { kind: "json", artifacts: [], data: { demotions, stage: who } };
+	};
+
+/**
+ * Stamp duty demotions onto the graded plan's verdicts after `plan-grade`, one
+ * deterministic hop before the gate routes (plan-grade → plan-demote → route).
+ * The code lane re-grades `plans` on `code-verdicts` (mirroring `codeSnapshot`).
+ */
+const planDemote = demoteDuties("plan-demote", "plans", "plan-verdicts");
+const codeDemote = demoteDuties("code-demote", "plans", "code-verdicts");
+
+/**
  * Deterministic lane-level scope floor — the structural backstop beneath the
  * LLM quality gates. After build's `implement` lane runs (now dep-gated and, as
  * of this phase's unpin, concurrent up to the host cap), this checks the working
@@ -3675,6 +3768,15 @@ const buildWorkflow = defineWorkflow({
 			// --context; `goal` so completeness/correctness anchor on the brief.
 			reads: ["plans", "research", "goal"],
 		}),
+		// Stamp the duty demotion onto the graded verdicts as legible on-disk data
+		// (a `risk_duty_demotions` array written in place onto each demoted
+		// verdict JSON) one hop BEFORE the gate routes — the gate's route lives on
+		// `plan-demote` so this write-back lands before confirm/`--prior`/amend
+		// read the verdict. Reads `plans` (the plan-authored risk flags) and fans
+		// in the verdicts it just graded. Gate outcomes are unchanged: every fold
+		// consults in-memory `state.named` via `rulingEffectivePass`, never the
+		// rewritten file (the write-back is an additive, read-only signal).
+		"plan-demote": produces.script({ reads: ["plans", fanin("plan-verdicts")], run: planDemote }),
 		// One independent second judgment on the blocking dimensions before they
 		// buy a fix round (see `confirmDue`). Same panel machinery, same verdict
 		// channel — its OWN stage name so a stronger judge model can be pinned to
@@ -3735,6 +3837,10 @@ const buildWorkflow = defineWorkflow({
 			// --context; `goal` so completeness/correctness anchor on the brief.
 			reads: ["plans", "research", "goal"],
 		}),
+		// The code-gate twin of `plan-demote`: stamp the duty demotion onto the
+		// code-graded verdicts (re-grading `plans` on `code-verdicts`) one hop
+		// before the code gate routes (`code-demote` owns the route body).
+		"code-demote": produces.script({ reads: ["plans", fanin("code-verdicts")], run: codeDemote }),
 		// Repair arm for the code gate. Surgical `amend` over the SAME code-bearing
 		// plan from the code verdicts — NOT a blind re-elaborate: `elaborate` never
 		// sees the findings and can only rewrite a phase's code body, so it cannot fix
@@ -3844,13 +3950,19 @@ const buildWorkflow = defineWorkflow({
 			({ state }) => (planGatePasses(state) ? "code" : "plan-grade"),
 			{ readsData: false },
 		),
-		// Quality gate BEFORE any code. Pass ⇒ code. A dimension's FIRST blocking
-		// verdict ⇒ plan-confirm (one independent second judgment — see
-		// `confirmDue`); a confirmed blocker, or a failure with no dimension
-		// blocking (the citation floor alone is red) ⇒ plan-fix, looping back
-		// THROUGH the citation floor so the amended plan re-verifies (else a stale
-		// failing cite verdict would loop forever).
-		"plan-grade": defineRoute(
+		// Quality gate BEFORE any code. The grade runs at `plan-grade`; the route
+		// lives one hop later on `plan-demote` so the duty-demotion write-back
+		// lands on the verdict JSON BEFORE this fold consults the downstream
+		// readers. `plan-grade` is now a simple always-hop edge to `plan-demote`;
+		// the route body below is the verbatim logic that used to live here.
+		"plan-grade": "plan-demote",
+		// Pass ⇒ code. A dimension's FIRST blocking verdict ⇒ plan-confirm (one
+		// independent second judgment — see `confirmDue`); a confirmed blocker, or
+		// a failure with no dimension blocking (the citation floor alone is red) ⇒
+		// plan-fix, looping back THROUGH the citation floor so the amended plan
+		// re-verifies. Route logic unchanged — merely shifted one hop later so the
+		// demote write-back precedes it.
+		"plan-demote": defineRoute(
 			["code", "plan-confirm", "plan-snapshot"],
 			({ state }) =>
 				planGatePasses(state)
@@ -3882,14 +3994,19 @@ const buildWorkflow = defineWorkflow({
 			({ state }) => (codeGatePasses(state) ? "implement" : "code-grade"),
 			{ readsData: false },
 		),
-		// Re-grade the code-bearing plan. Pass ⇒ implement. A first blocking
-		// verdict ⇒ code-confirm (the plan gate's confirm contract, on the
-		// code-verdicts channel); a confirmed blocker or cite-floor-only failure ⇒
-		// code-fix. Routes to `code-fix`, NOT back to `code`: the gate fails on
-		// plan-text defects (edit anchors, line citations, naming) that a
-		// per-phase code rewrite cannot reach, so the surgical arm is the one with
-		// authority over them. Bounded by the runner's maxBackwardJumps.
-		"code-grade": defineRoute(
+		// Re-grade the code-bearing plan at `code-grade`; the route lives one hop
+		// later on `code-demote` (the twin of the plan gate's split) so the
+		// duty-demotion write-back lands before this fold. `code-grade` is now a
+		// simple always-hop edge to `code-demote`; the route body below is verbatim.
+		"code-grade": "code-demote",
+		// Pass ⇒ implement. A first blocking verdict ⇒ code-confirm (the plan
+		// gate's confirm contract, on the code-verdicts channel); a confirmed
+		// blocker or cite-floor-only failure ⇒ code-fix. Routes to `code-fix`, NOT
+		// back to `code`: the gate fails on plan-text defects (edit anchors, line
+		// citations, naming) that a per-phase code rewrite cannot reach, so the
+		// surgical arm is the one with authority over them. Route logic unchanged —
+		// merely shifted one hop later. Bounded by the runner's maxBackwardJumps.
+		"code-demote": defineRoute(
 			["implement", "code-confirm", "code-snapshot"],
 			({ state }) =>
 				codeGatePasses(state)
