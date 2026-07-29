@@ -15,8 +15,8 @@
  * `resolveGuidance` is pure logic with no ExtensionAPI references
  * (utility-module rule from extensions/rpiv-core/CLAUDE.md). Side
  * effects (sendMessage, in-memory dedup Set) live in
- * `handleToolCallGuidance`, `injectRootGuidance`, and
- * `clearInjectionState`.
+ * `handleToolCallGuidance` (sendMessage only), `resolveAndFormatNewGuidance`
+ * and `injectRootGuidance` (dedup-Set owners), and `clearInjectionState`.
  */
 
 import { existsSync, readFileSync } from "node:fs";
@@ -160,8 +160,37 @@ export function injectRootGuidance(cwd: string, pi: ExtensionAPI): void {
 // ---------------------------------------------------------------------------
 
 /**
- * Handle guidance injection on tool_call events for read/edit/write.
- * Sends hidden messages via pi.sendMessage as a side effect.
+ * Resolve, dedup, mark, and format guidance for a touched file — the "build"
+ * half of tool-call injection (no `ExtensionAPI`, no `sendMessage`). Owns the
+ * `injectedGuidance` Set read+mark so the dedup filter and the mark step stay
+ * in one function: marking before returning content lets the caller send with
+ * idempotence > reliability.
+ *
+ * Returns the `"\n\n---\n\n"`-joined formatted blocks, or `null` when nothing
+ * resolves along the ladder OR every resolved file is already injected (marks
+ * nothing in the null cases).
+ */
+export function resolveAndFormatNewGuidance(filePath: string, cwd: string, toolName: string): string | null {
+	const resolved = resolveGuidance(filePath, cwd);
+	const newFiles = resolved.filter((g) => !injectedGuidance.has(g.relativePath));
+	if (newFiles.length === 0) return null;
+
+	// Mark before send — idempotence > reliability.
+	for (const g of newFiles) {
+		injectedGuidance.add(g.relativePath);
+	}
+
+	const trigger = `auto-loaded because ${toolName} touched ${shortenPath(filePath, cwd)}`;
+	const contextParts = newFiles.map((g) => wrapGuidance(formatLabel(g), g.content, trigger));
+
+	return contextParts.join("\n\n---\n\n");
+}
+
+/**
+ * Handle guidance injection on tool_call events for read/edit/write — a thin
+ * wiring pipeline: filter → extract → delegate → send. Resolve/dedup/mark/format
+ * live in `resolveAndFormatNewGuidance`; this handler adds no direct
+ * `injectedGuidance` reference.
  */
 export function handleToolCallGuidance(
 	event: { toolName: string; input: Record<string, unknown> },
@@ -173,21 +202,8 @@ export function handleToolCallGuidance(
 	const filePath = (event.input as any).file_path ?? (event.input as any).path;
 	if (!filePath) return;
 
-	const resolved = resolveGuidance(filePath, ctx.cwd);
-	if (resolved.length === 0) return;
-
-	const newFiles = resolved.filter((g) => !injectedGuidance.has(g.relativePath));
-	if (newFiles.length === 0) return;
-
-	// Mark before sendMessage — idempotence > reliability.
-	for (const g of newFiles) {
-		injectedGuidance.add(g.relativePath);
-	}
-
-	const trigger = `auto-loaded because ${event.toolName} touched ${shortenPath(filePath, ctx.cwd)}`;
-	const contextParts = newFiles.map((g) => wrapGuidance(formatLabel(g), g.content, trigger));
-
-	sendGuidanceMessage(pi, contextParts.join("\n\n---\n\n"));
+	const content = resolveAndFormatNewGuidance(filePath, ctx.cwd, event.toolName);
+	if (content !== null) sendGuidanceMessage(pi, content);
 }
 
 /**
