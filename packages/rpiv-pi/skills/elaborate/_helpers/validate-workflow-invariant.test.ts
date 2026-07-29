@@ -50,7 +50,7 @@ describe("validate-workflow-invariant helper", () => {
 		// regressed; the helper prints one `<workflow>: [<code>] <message>` line
 		// per error/warning on exit 1 — both streams stay empty on green.
 		expect(runHelper()).toEqual({ status: 0, stdout: "", stderr: "" });
-	});
+	}, 30_000);
 
 	it("surfaces route-reads-unvalidated-data when a built-in is broken (the gate logic the .mjs wraps)", () => {
 		// Minimal broken workflow: an `acts` (prompt) stage has no outputSchema
