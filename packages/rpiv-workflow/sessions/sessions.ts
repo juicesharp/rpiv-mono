@@ -118,20 +118,13 @@ export async function postStage(
 	if (outcome.stop === "aborted") {
 		const timeout = child.toolTimeout?.();
 		if (timeout) {
-			// Strike-based recovery: a watchdog tool-timeout is a recoverable
-			// tool event INSIDE the live (never-failed) child. While strikes remain,
-			// reset the watchdog verdict and re-prompt the SAME child with operator-grade
-			// steering, then tail-recurse postStage (offset threaded verbatim — the exact
-			// shape reattachStageSession uses). Exhaustion (consumeBashStrike false) falls
-			// through to the UNCHANGED soft-halt/terminal seam below — the failure-row
-			// writers hook (the failure memo + death-scene artifact fire for free via the
-			// shared writers). consumeBashStrike appends timeout.reason to the strike history so a
-			// recovering stage accumulates the per-strike reasons the completed row later records.
+			// Strike-based recovery: a watchdog tool-timeout is a recoverable tool
+			// event INSIDE the live child. While strikes remain, the single-caller
+			// helper resets → re-prompts → tail-recurses postStage (offset threaded
+			// verbatim); exhaustion falls through to the UNCHANGED soft-halt/terminal
+			// seam below, where the failure-row writers (memo + death-scene) fire for free.
 			if (consumeBashStrike(s, timeout.reason)) {
-				child.resetToolTimeout?.();
-				const remaining = bashStrikesRemaining(s);
-				await resendIntoChild(child, bashTimeoutSteeringMessage(timeout.reason, remaining, remaining === 0));
-				return postStage(obsCtx, child, s, offset);
+				return retryStageAfterBashStrike(obsCtx, child, s, offset, timeout.reason);
 			}
 			return haltStageOrSoftHalt(obsCtx, s, { kind: "timeout", reason: timeout.reason }, session);
 		}
@@ -155,6 +148,33 @@ export async function postStage(
 	// thread it into accumulated / feedForward without state back-reads. Runs on
 	// obsCtx so the next stage's child is spawned off the launcher.
 	await s.onSuccess(obsCtx, result.output);
+}
+
+// ===========================================================================
+// STRIKE-ARM RECOVERY — single-caller helper for postStage's watchdog arm
+// ===========================================================================
+
+/**
+ * Strike-arm recovery: re-arm the watchdog, re-prompt the SAME child with
+ * operator-grade steering, then tail-recurse `postStage` (offset threaded
+ * verbatim — the exact shape the continue body uses). Called ONLY when
+ * `consumeBashStrike(s, reason)` returned true, so this helper performs the
+ * reset → re-prompt → tail-recurse sequence byte-identically to the inline arm
+ * it replaces; strike exhaustion stays routed by the caller (`postStage`) to
+ * the UNCHANGED `haltStageOrSoftHalt({ kind: "timeout" })` seam, where the
+ * failure-row writers (memo + death-scene artifact) fire for free.
+ */
+async function retryStageAfterBashStrike(
+	obsCtx: WorkflowHostContext,
+	child: WorkflowSessionContext,
+	s: StageSession,
+	offset: number | undefined,
+	reason: string,
+): Promise<void> {
+	child.resetToolTimeout?.();
+	const remaining = bashStrikesRemaining(s);
+	await resendIntoChild(child, bashTimeoutSteeringMessage(reason, remaining, remaining === 0));
+	return postStage(obsCtx, child, s, offset);
 }
 
 // ===========================================================================
