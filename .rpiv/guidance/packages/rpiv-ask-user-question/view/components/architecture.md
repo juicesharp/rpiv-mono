@@ -19,10 +19,10 @@ TUI component library for the questionnaire dialog. Each file is a `StatefulView
 ```
 wrapping-select.ts        — Core primitive: row list with active pointer, numbering, ✔ confirmed mark, inline-input
                             row for `kind: "other"`. Owns the `WrappingSelectItem` discriminator (option | other | next).
-inline-input.ts           — Shared `renderInlineInputRow` core: reverse-video cursor cell; wrap vs one-line modes.
+inline-input.ts           — Shared multiline `renderInlineInputRow` core: wrapping + reverse-video cursor cell.
 option-list-view.ts       — Per-tab options renderer (composes WrappingSelect); owns `MAX_VISIBLE_OPTIONS`.
-multi-select-view.ts      — Multi-select variant: checkbox glyphs, never-checkable `Type something.` row (single-line
-                            inline input), `next` row. Renders rows directly — no WrappingSelect.
+multi-select-view.ts      — Multi-select variant: checkbox glyphs, never-checkable multiline `Type something.` row,
+                            `next` row. Renders rows directly — no WrappingSelect.
 submit-picker.ts          — Submit-tab picker (rows: SUBMIT_LABEL "Submit answers" | CANCEL_LABEL "Cancel").
 tab-bar.ts                — Optional tab strip when ≥2 questions; pure styling (`handleInput` empty). The
                             left/right→`tab_switch` aliasing lives in `key-router.ts` (`tabSwitchAction`), not here.
@@ -72,9 +72,8 @@ lines.push(truncateToWidth(line, width, ""));
 // view/components/inline-input.ts — both consumers share one cursor-building core:
 // grapheme-aware extraction (Intl.Segmenter) of the cell AT the cursor, ECMA-48
 // SGR 7/27 reverse-video, NBSP fallback at end-of-buffer, zero-width CURSOR_MARKER
-// so wrap/truncate math is preserved.
-// multiline: true  → WrappingSelect (single-select): wrap at contentWidth.
-// multiline: false → MultiSelectView: EXACTLY one line — overflow truncates with `…` (see Boundaries).
+// so wrap math is preserved. Explicit newlines and soft wrapping use the same
+// continuation-prefix path in both single- and multi-select views.
 export function renderInlineInputRow(opts: RenderInlineInputOptions): string[] {
 ```
 
@@ -86,7 +85,7 @@ export function renderInlineInputRow(opts: RenderInlineInputOptions): string[] {
 - **Named constants for glyphs** (`❯`, `✔`, `[✔]`) — `private static readonly` (WrappingSelect) or module-level `const` — never inline literals
 - **Row-kind discriminator is the only mechanism** — no boolean per-kind flags, no subclassing of WrappingSelect (banned-flags test enforces this)
 - **Pointer (❯) follows focus, ✔ follows confirmation** — both can co-occur on the same row when prior answer == active row
-- **Multi-select `Type something.` row is always exactly one rendered line** — `renderInlineInputRow` with `multiline: false` truncates on overflow so `MultiSelectView.naturalHeight(width)` stays state-independent
+- **Custom answers are multiline in every question type** — both consumers use `renderInlineInputRow`; `MultiSelectView` shares one width-keyed derived layout across `render`, `naturalHeight`, and `focusedItemRowRange`, so overflow math sees every wrapped line without repeating the wrap work
 
 <important if="you are adding a new view component (e.g. a new dialog body)">
 ## Adding a Component

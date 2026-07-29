@@ -1,5 +1,5 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { type Component, Container, type Input, Spacer, Text, truncateToWidth } from "@earendil-works/pi-tui";
+import { type Component, Container, type Editor, Spacer, Text, truncateToWidth } from "@earendil-works/pi-tui";
 import { t } from "../state/i18n-bridge.js";
 import { formatAnswerScalar } from "../tool/format-answer.js";
 import type { QuestionData } from "../tool/types.js";
@@ -7,9 +7,11 @@ import type { PreviewPane, PreviewPaneProps } from "./components/preview/preview
 import {
 	type DialogState,
 	HINT_PART_CANCEL,
+	HINT_PART_CLEAR,
 	HINT_PART_COLLAPSE,
 	HINT_PART_ENTER,
 	HINT_PART_NAV,
+	HINT_PART_NEW_LINE,
 	HINT_PART_NOTES,
 	HINT_PART_TAB,
 	HINT_PART_TOGGLE,
@@ -81,7 +83,7 @@ export interface QuestionTabStrategyConfig {
 	questions: readonly QuestionData[];
 	getPreviewPane: () => StatefulView<PreviewPaneProps>;
 	tabsByIndex: ReadonlyArray<TabComponents>;
-	notesInput: Input;
+	notesInput: Editor;
 	isMulti: boolean;
 	getCurrentBodyHeight: (width: number) => number;
 }
@@ -227,24 +229,21 @@ export class SubmitTabStrategy implements TabContentStrategy {
 /**
  * Build the controls hint line. Order:
  *   Enter · ↑/↓ [· Space toggle] [· n notes] [· Tab switch] · Esc · Ctrl+] collapse
+ *   [· Shift+Enter newline] [· Ctrl+U clear]
  *
- * `NOTES` is now part of the resting (notes-closed) core — it renders on every
- * question tab and drops when `state.notesVisible` flips the editor open OR while
- * `state.inputMode` has the "Type something." row capturing text (`n` would insert
- * a literal character there, so advertising it would lie). The collapse affordance
- * is appended last so the resting core stays a contiguous substring even when the
- * trailing part is clipped by `OneLineClippedText` on terminals < ~95 cols. This
- * is the trade we picked over wrapping (which would inflate `footerRowCount` and
- * desync the height math in `DialogView.render`).
+ * `NOTES` is part of the resting (notes-closed) core — it drops while the notes
+ * editor or custom-answer input has the keyboard. Ctrl+G is Pi's global external-
+ * editor shortcut and needs no local hint; the context-specific clear shortcut is
+ * appended at the far right while input mode is active.
  */
 export function buildHintText(question: QuestionData | undefined, isMulti: boolean, state: DialogState): string {
 	const parts: string[] = [t("hint.enter", HINT_PART_ENTER), t("hint.navigate", HINT_PART_NAV)];
 	if (question?.multiSelect === true) parts.push(t("hint.toggle", HINT_PART_TOGGLE));
-	if (question && !state.notesVisible && !state.inputMode) {
-		parts.push(t("hint.notes", HINT_PART_NOTES));
-	}
+	if (question && !state.notesVisible && !state.inputMode) parts.push(t("hint.notes", HINT_PART_NOTES));
 	if (isMulti) parts.push(t("hint.tab", HINT_PART_TAB));
 	parts.push(t("hint.cancel", HINT_PART_CANCEL));
 	parts.push(t("hint.collapse", HINT_PART_COLLAPSE));
+	if (state.notesVisible || state.inputMode) parts.push(t("hint.newline", HINT_PART_NEW_LINE));
+	if (state.inputMode) parts.push(t("hint.clear", HINT_PART_CLEAR));
 	return parts.join(" · ");
 }

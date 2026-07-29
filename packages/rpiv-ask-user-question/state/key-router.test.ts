@@ -9,6 +9,11 @@ const KEY = {
 	DOWN: "tui.select.down",
 	CONFIRM: "tui.select.confirm",
 	CANCEL: "tui.select.cancel",
+	NEW_LINE: "tui.input.newLine",
+	EDITOR_UP: "tui.editor.cursorUp",
+	EDITOR_DOWN: "tui.editor.cursorDown",
+	CLEAR: "tui.editor.deleteToLineStart",
+	EXTERNAL_EDITOR: "app.editor.external",
 };
 const sentinel = (name: string) => `<KEY:${name}>`;
 const keybindings = { matches: (data: string, name: string) => data === sentinel(name) };
@@ -49,6 +54,7 @@ function makeState(over: Partial<QuestionnaireState> = {}): QuestionnaireState {
 		notesVisible: false,
 		answers: new Map<number, QuestionAnswer>(),
 		multiSelectChecked: new Set<number>(),
+		customDraftsByTab: new Map<number, string>(),
 		notesByTab: new Map<number, string>(),
 		submitChoiceIndex: 0,
 		notesDraft: "",
@@ -65,6 +71,8 @@ function makeRuntime(over: Partial<QuestionnaireRuntime> = {}): QuestionnaireRun
 	return {
 		keybindings,
 		inputBuffer: "",
+		canMoveInputUp: false,
+		canMoveInputDown: false,
 		questions,
 		isMulti: questions.length > 1,
 		currentItem: items[0],
@@ -107,12 +115,14 @@ describe("routeKey — nav", () => {
 		expect(routeKey(sentinel(KEY.UP), makeState({ optionIndex: 2 }), makeRuntime())).toEqual({
 			kind: "nav",
 			nextIndex: 1,
+			inputValue: "",
 		});
 	});
 	it("DOWN advances by 1", () => {
 		expect(routeKey(sentinel(KEY.DOWN), makeState(), makeRuntime())).toEqual({
 			kind: "nav",
 			nextIndex: 1,
+			inputValue: "",
 		});
 	});
 	// With the chat row gone, UP/DOWN wrap within [option0 … optionLast] via wrapTab.
@@ -122,6 +132,7 @@ describe("routeKey — nav", () => {
 		expect(routeKey(sentinel(KEY.DOWN), makeState({ optionIndex: 2 }), makeRuntime())).toEqual({
 			kind: "nav",
 			nextIndex: 0,
+			inputValue: "",
 		});
 	});
 	it("UP at the first item wraps to the last (no chat row, wrapTab clamp)", () => {
@@ -130,6 +141,7 @@ describe("routeKey — nav", () => {
 		expect(routeKey(sentinel(KEY.UP), makeState({ optionIndex: 0 }), runtime)).toEqual({
 			kind: "nav",
 			nextIndex: last,
+			inputValue: "",
 		});
 	});
 });
@@ -449,7 +461,7 @@ describe("routeKey — multiSelect free-text ('Type something.')", () => {
 				makeState({ optionIndex: 2 }),
 				makeRuntime({ questions: [multiQ], isMulti: false, items, currentItem: items[2] }),
 			),
-		).toEqual({ kind: "nav", nextIndex: 3 });
+		).toEqual({ kind: "nav", nextIndex: 3, inputValue: "" });
 	});
 
 	it("DOWN from the other row (index 3) → nav to Next (index 4)", () => {
@@ -459,7 +471,7 @@ describe("routeKey — multiSelect free-text ('Type something.')", () => {
 				makeState({ optionIndex: 3 }),
 				makeRuntime({ questions: [multiQ], isMulti: false, items, currentItem: items[3] }),
 			),
-		).toEqual({ kind: "nav", nextIndex: 4 });
+		).toEqual({ kind: "nav", nextIndex: 4, inputValue: "" });
 	});
 
 	it("UP from Next (index 4) → nav back to the other row (index 3)", () => {
@@ -469,7 +481,7 @@ describe("routeKey — multiSelect free-text ('Type something.')", () => {
 				makeState({ optionIndex: 4 }),
 				makeRuntime({ questions: [multiQ], isMulti: false, items, currentItem: items[4] }),
 			),
-		).toEqual({ kind: "nav", nextIndex: 3 });
+		).toEqual({ kind: "nav", nextIndex: 3, inputValue: "" });
 	});
 });
 
@@ -626,6 +638,14 @@ describe("routeKey — notes", () => {
 			data: "a",
 		});
 	});
+
+	it("notesMode: configured newline is forwarded instead of closing the editor", () => {
+		const data = sentinel(KEY.NEW_LINE);
+		expect(routeKey(data, makeState({ notesVisible: true }), makeRuntime())).toEqual({
+			kind: "notes_forward",
+			data,
+		});
+	});
 });
 
 describe("routeKey — inputMode (Type something)", () => {
@@ -643,12 +663,52 @@ describe("routeKey — inputMode (Type something)", () => {
 		});
 	});
 
+	it("configured newline is forwarded to the multiline editor", () => {
+		expect(
+			routeKey(sentinel(KEY.NEW_LINE), makeState({ inputMode: true }), makeRuntime({ currentItem: other })),
+		).toEqual({ kind: "ignore" });
+	});
+
+	it("forwards vertical editor movement while the cursor is between logical lines", () => {
+		const editing = makeState({ inputMode: true, optionIndex: 1 });
+		expect(
+			routeKey(
+				sentinel(KEY.EDITOR_UP),
+				editing,
+				makeRuntime({ currentItem: other, canMoveInputUp: true, canMoveInputDown: true }),
+			),
+		).toEqual({ kind: "ignore" });
+		expect(
+			routeKey(
+				sentinel(KEY.EDITOR_DOWN),
+				editing,
+				makeRuntime({ currentItem: other, canMoveInputUp: true, canMoveInputDown: true }),
+			),
+		).toEqual({ kind: "ignore" });
+	});
+
 	// FR-3: the inputMode block intercepts BEFORE the universal notes gate, so `n`
 	// inserts a literal character into the inline buffer instead of opening notes.
 	it("'n' under inputMode returns ignore (types a literal 'n'), NOT notes_enter", () => {
 		expect(routeKey("n", makeState({ inputMode: true }), makeRuntime({ currentItem: other }))).toEqual({
 			kind: "ignore",
 		});
+	});
+
+	it("Pi's Ctrl+U line-kill binding clears the whole custom answer", () => {
+		expect(
+			routeKey(sentinel(KEY.CLEAR), makeState({ inputMode: true }), makeRuntime({ currentItem: other })),
+		).toEqual({ kind: "input_clear" });
+	});
+
+	it("the app.editor.external binding opens the editor with the current draft", () => {
+		expect(
+			routeKey(
+				sentinel(KEY.EXTERNAL_EDITOR),
+				makeState({ inputMode: true }),
+				makeRuntime({ currentItem: other, inputBuffer: "draft" }),
+			),
+		).toEqual({ kind: "input_edit", value: "draft" });
 	});
 
 	it("Esc cancels the questionnaire even in inputMode", () => {

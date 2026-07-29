@@ -23,7 +23,7 @@ interface BindingContext {
     itemsByTab: ReadonlyArray<ReadonlyArray<WrappingSelectItem>>;
     totalQuestions: number;
     activeView: ActiveView;
-    inputBuffer: string;          // live read from inlineInput.getValue() at apply()
+    inputBuffer: string;          // live read from inlineInput.getText() at apply()
     inputCursorOffset: number | undefined;
     activePreviewPane: StatefulView<PreviewPaneProps>;
 }

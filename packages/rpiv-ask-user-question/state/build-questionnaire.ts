@@ -1,5 +1,5 @@
 import { getMarkdownTheme, type Theme } from "@earendil-works/pi-coding-agent";
-import { Input } from "@earendil-works/pi-tui";
+import { Editor, type EditorTheme, type TUI } from "@earendil-works/pi-tui";
 import type { QuestionData } from "../tool/types.js";
 import {
 	type BoundGlobalBinding,
@@ -33,7 +33,7 @@ import {
 import type { QuestionnaireState } from "./state.js";
 
 export interface QuestionnaireBuildConfig {
-	tui: { terminal: { columns: number; rows: number }; requestRender(): void };
+	tui: TUI;
 	theme: Theme;
 	questions: readonly QuestionData[];
 	itemsByTab: ReadonlyArray<readonly WrappingSelectItem[]>;
@@ -44,8 +44,8 @@ export interface QuestionnaireBuildConfig {
 
 export interface QuestionnaireBuilt {
 	adapter: QuestionnairePropsAdapter;
-	notesInput: Input;
-	inlineInput: Input;
+	notesInput: Editor;
+	inlineInput: Editor;
 	render: (width: number) => string[];
 	invalidate: () => void;
 }
@@ -56,10 +56,23 @@ interface HeightComputers {
 }
 
 function previewBodyHeights(pane: PreviewPane): (width: number) => TabBodyHeights {
-	return (width) => ({
-		current: pane.naturalHeight(width),
-		max: pane.maxNaturalHeight(width),
-	});
+	return (width) => {
+		const current = pane.naturalHeight(width);
+		return { current, max: Math.max(current, pane.maxNaturalHeight(width)) };
+	};
+}
+
+function editorTheme(theme: Theme): EditorTheme {
+	return {
+		borderColor: (text) => theme.fg("borderMuted", text),
+		selectList: {
+			selectedPrefix: (text) => theme.bg("selectedBg", theme.fg("accent", text)),
+			selectedText: (text) => theme.bg("selectedBg", theme.bold(text)),
+			description: (text) => theme.fg("muted", text),
+			scrollInfo: (text) => theme.fg("dim", text),
+			noMatch: (text) => theme.fg("warning", text),
+		},
+	};
 }
 
 function multiSelectBodyHeights(view: MultiSelectView): (width: number) => TabBodyHeights {
@@ -74,8 +87,8 @@ const isActiveTab: PerTabSelector<boolean> = (s, ctx) =>
 
 /**
  * Pure factory: assembles every TUI component, the props adapter, and a
- * lifecycle handle. Session-state dependencies arrive via `getCurrentTab` and
- * the `inputBuffer` cell. Initial paint is delegated to
+ * lifecycle handle. Session-state dependencies arrive via `getCurrentTab`; live
+ * custom text stays in the headless Editor. Initial paint is delegated to
  * `adapter.apply(initialState)` (called by the session at construction-end);
  * no selector is invoked here.
  */
@@ -99,8 +112,8 @@ class QuestionnaireBuilder {
 
 	private readonly selectTheme: WrappingSelectTheme;
 	private readonly markdownTheme = getMarkdownTheme();
-	private readonly notesInput = new Input();
-	private readonly inlineInput = new Input();
+	private readonly notesInput: Editor;
+	private readonly inlineInput: Editor;
 	private readonly getTerminalWidth = () => this.tui.terminal.columns;
 	private readonly getTerminalRows = () => this.tui.terminal.rows;
 
@@ -114,6 +127,9 @@ class QuestionnaireBuilder {
 		this.getCurrentTab = config.getCurrentTab;
 
 		this.selectTheme = this.makeSelectTheme();
+		const textEditorTheme = editorTheme(this.theme);
+		this.notesInput = new Editor(this.tui, textEditorTheme);
+		this.inlineInput = new Editor(this.tui, textEditorTheme);
 	}
 
 	build(): QuestionnaireBuilt {

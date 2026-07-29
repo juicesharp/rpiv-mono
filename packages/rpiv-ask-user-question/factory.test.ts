@@ -1,4 +1,4 @@
-import { CURSOR_MARKER } from "@earendil-works/pi-tui";
+import { CURSOR_MARKER, getKeybindings } from "@earendil-works/pi-tui";
 import { createMockPi } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { registerAskUserQuestionTool } from "./ask-user-question.js";
@@ -36,13 +36,13 @@ function driveCustom(script: (c: RenderableComponent, done: (v: unknown) => void
 			const f = factory as (
 				tui: { requestRender: () => void; terminal: { columns: number; rows: number } },
 				theme: typeof identityTheme,
-				kb: undefined,
+				kb: ReturnType<typeof getKeybindings>,
 				done: (v: unknown) => void,
 			) => RenderableComponent;
 			const component = f(
 				{ requestRender, terminal: { columns: 120, rows: 24 } },
 				identityTheme,
-				undefined,
+				getKeybindings(),
 				resolve,
 			);
 			script(component, resolve);
@@ -876,7 +876,7 @@ describe("ask_user_question — bracketed paste + Kitty CSI-u (dictation parity)
 		const { custom } = driveCustom((c) => {
 			c.handleInput(KEY.DOWN);
 			c.handleInput(KEY.DOWN); // inputMode
-			// Stdin chunks the paste — pi-tui's Input.pasteBuffer accumulator handles split chunks.
+			// Stdin chunks the paste — pi-tui's Editor paste accumulator handles split chunks.
 			c.handleInput("\x1b[200~Hel");
 			c.handleInput("lo\x1b[201~");
 			c.handleInput(KEY.ENTER);
@@ -888,9 +888,9 @@ describe("ask_user_question — bracketed paste + Kitty CSI-u (dictation parity)
 		expect(r?.details.answers[0].answer).toBe("Hello");
 	});
 
-	it("bracketed paste strips embedded \\n/\\r and converts \\t to 4 spaces (single-line invariant)", async () => {
-		// Wispr Flow auto-chunks long dictations into multiple bracketed pastes BUT a single
-		// paste may contain literal newlines. handlePaste at input.js:356 cleans them.
+	it("bracketed paste preserves line breaks and expands tabs", async () => {
+		// Multiline paste follows Pi Editor semantics: LF and CR become line breaks,
+		// while tabs expand to spaces.
 		const tool = register();
 		const { custom } = driveCustom((c) => {
 			c.handleInput(KEY.DOWN);
@@ -902,13 +902,12 @@ describe("ask_user_question — bracketed paste + Kitty CSI-u (dictation parity)
 		const r = (await tool.execute?.("tc", freeTextParams as never, undefined as never, undefined as never, ctx)) as
 			| ToolResult
 			| undefined;
-		// \n and \r stripped entirely; \t → 4 spaces.
-		expect(r?.details.answers[0].answer).toBe("Helloworld    withmix");
+		expect(r?.details.answers[0].answer).toBe("Hello\nworld    with\nmix");
 	});
 
 	it("Kitty CSI-u printables (\\x1b[97u …) are decoded and committed", async () => {
 		// On Warp/Ghostty/kitty/WezTerm/modern Alacritty with Kitty flags 1+2+4,
-		// every printable arrives as a CSI-u sequence. Input.handleInput decodes
+		// every printable arrives as a CSI-u sequence. Editor.handleInput decodes
 		// these via decodeKittyPrintable BEFORE the C0 control-char rejection.
 		const tool = register();
 		const { custom } = driveCustom((c) => {

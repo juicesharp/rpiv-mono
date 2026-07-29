@@ -8,11 +8,14 @@ adapts to the size of your terminal.
 | Key | What it does | Where it applies |
 | --- | --- | --- |
 | `↑` / `↓` | Move between rows. Wraps at both ends. | Option list, Submit picker |
-| `Enter` | Confirm the focused option, commit typed text, or activate the focused Submit-picker row. | Everywhere |
+| `Enter` | Confirm the focused option, commit typed text, close notes, or activate the focused Submit-picker row. | Everywhere |
+| `Shift+Enter` | Insert a newline. | `Type something.` input, notes editor |
 | `Esc` | Cancel the whole questionnaire. | Everywhere except the notes editor, where it closes notes |
 | `Tab` / `Shift+Tab` | Next / previous tab, wrapping. `→` / `←` do the same. | Multi-question dialogs only |
 | `Space` | Toggle the focused checkbox. | Multi-select questions |
 | `n` | Open the notes editor for the current question. | Every question tab |
+| `Ctrl+G` | Open Pi's configured external editor with the current custom-answer draft. | `Type something.` input |
+| `Ctrl+U` | Clear the current custom-answer draft. | `Type something.` input |
 | `Ctrl+]` | Collapse or expand the dialog. Configurable via `collapseKey`. | Everywhere, including while collapsed |
 
 In a multi-select question, `Enter` on a regular row toggles its checkbox exactly like
@@ -31,9 +34,14 @@ answer).
 | Custom answer | `Type something.` | Every question — single-select and multi-select, with or without previews |
 | Commit | `Next` | Multi-select questions only |
 
-Focusing `Type something.` switches the row into an inline text input. In preview mode it
-expands to the full pane width while you type, so a long custom answer is not squeezed
-into the narrow options column. Confirming it produces an answer of `kind: "custom"`.
+Focusing `Type something.` switches the row into an inline multiline editor. In preview
+mode it expands to the full pane width while you type, so a long custom answer is not
+squeezed into the narrow options column. `Shift+Enter` inserts a line break; vertical
+arrows move between lines and return to row navigation at the draft's top and bottom.
+The draft replaces the static row label while you browse other options and is isolated
+per question. `Ctrl+G` round-trips it through Pi's configured external editor; `Ctrl+U`
+clears it, while `Esc` remains the explicit way to cancel the questionnaire. Confirming
+it produces an answer of `kind: "custom"`.
 
 Both labels are reserved — the model cannot author an option that collides with them.
 Both localize with the rest of the UI chrome; the reserved-label check always compares
@@ -47,8 +55,8 @@ side-band keyed by tab index, not inside the answer, so writing a note does not 
 question as answered — the Submit tab still lists it as outstanding. The note merges into
 the answer when you confirm it, and reaches the model as `user notes: <text>`.
 
-Inside the editor, `Esc` and `Enter` both close it and every other keystroke goes to the
-text buffer, so `n` types an `n`.
+Inside the editor, `Shift+Enter` inserts a newline, while `Esc` and `Enter` close it; other
+keystrokes edit the buffer, so `n` types an `n`. Pasted line breaks are preserved.
 
 ## Collapse mode
 
@@ -81,7 +89,8 @@ When the dialog is taller than the terminal, the body scrolls between a sticky h
 a sticky footer, and an overflow indicator shows which direction is clipped: `↑` for
 content above, `↓` for content below, `↕` for both.
 
-The footer hint line adapts to context — it drops the notes hint while the notes editor or
-the inline input has the keyboard, and adds the tab hint only in multi-question dialogs.
-On narrow terminals the collapse hint at the end of the line clips with `…` so the core
-hints survive.
+The footer hint line adapts to context — it drops the notes hint and appends the
+`Shift+Enter` newline hint whenever a text editor has the keyboard, with `Ctrl+U` still at
+the far right for custom answers. It adds the tab hint only in multi-question dialogs.
+`Ctrl+G` remains Pi's global external-editor shortcut and is not repeated there. On narrow
+terminals the right edge clips with `…` so the core hints survive.

@@ -7,10 +7,10 @@ Pure state machine for the questionnaire dialog. Owns the canonical shape, the k
 - **`../tool/types.ts`** — `QuestionAnswer`, `QuestionData`, `QuestionParams`, `QuestionnaireResult` (canonical I/O)
 - **`../view/components/wrapping-select.ts`** — `WrappingSelectItem` (the row-kind union; `RowKind = WrappingSelectItem["kind"]`)
 - **`@juicesharp/rpiv-i18n`** — only via `i18n-bridge.ts`
-- **`@earendil-works/pi-tui`** — `Key`/`matchesKey` (`key-router.ts`), `Input`/`OverlayHandle`/`getKeybindings` (session + builder); **`@earendil-works/pi-coding-agent`** — `Theme`, `getMarkdownTheme` (builder). The core files above stay pi-free
+- **`@earendil-works/pi-tui`** — `Key`/`matchesKey` (`key-router.ts`), `Editor`/`OverlayHandle` (session + builder); **`@earendil-works/pi-coding-agent`** — `Theme`, `getMarkdownTheme` (builder). The core files above stay pi-free
 
 ## Consumers
-- **`questionnaire-session.ts`** is the single composer here — owns the state cell, both `Input` cells (`notesInput` + `inlineInput`), and the `OverlayHandle`; entry points are `dispatch(data)`, `toggleCollapsedExternal()` (raw-terminal reopen path), and `setOverlayHandle()`
+- **`questionnaire-session.ts`** is the single composer here — owns the state cell, both multiline `Editor` cells (`notesInput` + `inlineInput`), and the `OverlayHandle`; entry points are `dispatch(data)`, `toggleCollapsedExternal()` (raw-terminal reopen path), and `setOverlayHandle()`
 - **`../view/QuestionnairePropsAdapter`** — reads canonical state via `propsAdapter.apply(state)` from outside the folder
 - **`../ask-user-question.ts`** (tool execute): builds `itemsByTab` via `buildItemsForQuestion` (consumes `sentinelsToAppend`), builds the runtime session, awaits its `done` promise, returns the formatted result envelope
 - **`../rpc-fallback.ts`** — imports `displayLabel`/`t` from `i18n-bridge.ts` and mirrors `ROW_INTENT_META.other.autoAppendOnMultiSelect` for the RPC native-dialog path
@@ -22,7 +22,8 @@ state-reducer.ts           — Pure (state, action, ctx) → { state, Effect[] }
 key-router.ts              — Pure: keystroke → `QuestionnaireAction` (closed union). kb.matches dispatch + top-of-`routeKey` `collapseKey` intercept via `matchesKey`.
 row-intent.ts              — `ROW_INTENT_META: Record<RowKind, RowIntentMeta>` — single source of truth for per-kind behavior.
 build-questionnaire.ts     — Pure factory: components + props adapter. Receives `itemsByTab` via config (built in `../ask-user-question.ts`).
-questionnaire-session.ts   — Holds the live state cell + `notesInput`/`inlineInput` + `OverlayHandle`; entries: `dispatch(data)`, `toggleCollapsedExternal()`, `setOverlayHandle()`.
+questionnaire-session.ts   — Holds the live state cell + multiline `notesInput`/`inlineInput` Editors + `OverlayHandle`; entries: `dispatch(data)`, `toggleCollapsedExternal()`, `setOverlayHandle()`.
+external-editor.ts         — Isolated Pi-compatible temp-file/editor round trip; always restores the TUI.
 i18n-bridge.ts             — locale-aware string lookup (the only rpiv-i18n consumer in this folder).
 selectors/                 — Pure projections (focus discriminant, derivations, per-component prop selectors).
 ```
@@ -32,6 +33,7 @@ selectors/                 — Pure projections (focus discriminant, derivations
 // state/state-reducer.ts — adding an effect requires extending the union AND the runtime's `runEffect` switch (compiler-enforced exhaustive).
 export type Effect =
     | { kind: "set_input_buffer"; value: string } | { kind: "clear_input_buffer" }
+    | { kind: "open_input_editor"; value: string }
     | { kind: "set_notes_value"; value: string }  | { kind: "set_notes_focused"; focused: boolean }
     | { kind: "forward_notes_keystroke"; data: string }
     | { kind: "set_overlay_hidden"; hidden: boolean }  // toggle_collapsed → OverlayHandle.setHidden
@@ -47,7 +49,8 @@ type Handler<K extends QuestionnaireAction["kind"]> =
     (state: QuestionnaireState, action: Extract<QuestionnaireAction, { kind: K }>, ctx: ApplyContext) => ApplyResult;
 
 const HANDLERS: { [K in QuestionnaireAction["kind"]]: Handler<K> } = {
-    nav: navHandler, tab_switch: tabSwitchHandler, confirm: confirmHandler,
+    nav: navHandler, input_clear: inputClearHandler, input_edit: inputEditHandler,
+    input_replace: inputReplaceHandler, tab_switch: tabSwitchHandler, confirm: confirmHandler,
     toggle: toggleHandler, multi_confirm: multiConfirmHandler, cancel: cancelHandler,
     notes_enter: notesEnterHandler, notes_exit: notesExitHandler,
     notes_forward: notesForwardHandler, submit: submitHandler, submit_nav: submitNavHandler,
@@ -73,9 +76,9 @@ export const ROW_INTENT_META: Record<RowKind, RowIntentMeta> = {
 - **HANDLERS is the dispatch surface** — adding a `QuestionnaireAction.kind` fails at compile time until a handler exists
 - **Effects are a closed union** — adding one requires extending both the type AND `runEffect`
 - **`ROW_INTENT_META` is exhaustive over `RowKind`** — single source of truth for per-kind behavior; banned-flags test enforces no boolean drift
-- **`QuestionnaireState` is canonical** — runtime context (keybindings, input buffer, item list, `collapseKey`) lives in `QuestionnaireRuntime` and NEVER reaches view setProps consumers
-- **Side-band notes** — `notesByTab` keeps unconfirmed notes out of `answers`, so the missing-check stays honest
-- **Two dispatch entries, one reducer** — `dispatch(data)` from overlay `handleInput`, plus `toggleCollapsedExternal()` from the raw `ctx.ui.onTerminalInput` listener in `../ask-user-question.ts` (pi-tui delivers no input to a hidden overlay); both funnel through `commit` → `reduce`, so collapse hides the overlay only via the `set_overlay_hidden` effect
+- **`QuestionnaireState` is canonical** — `customDraftsByTab` owns captured per-question free-text drafts; runtime context (keybindings, live input buffer, item list, `collapseKey`) lives in `QuestionnaireRuntime` and NEVER reaches view setProps consumers
+- **Side-band drafts** — `notesByTab` and `customDraftsByTab` keep unconfirmed data out of `answers`; confirm merges notes and removes the custom draft so the answer becomes authoritative
+- **Two dispatch entries, one reducer** — `dispatch(data)` from overlay `handleInput`, plus `toggleCollapsedExternal()` from the raw `ctx.ui.onTerminalInput` listener in `../ask-user-question.ts` (pi-tui delivers no input to a hidden overlay); both funnel through `commit` → `reduce`, so collapse hides the overlay only via the `set_overlay_hidden` effect. Both entries are exclusive while the external editor is open
 - **No chat escape hatch** — the `chat` row kind, `chatFocused`, and `focus_chat`/`focus_options` were removed; Esc is the only way to abandon without answering
 - **Multi-select free text is exclusive** — a `custom` answer on a multi-select tab clears `multiSelectChecked` (`confirmHandler`); Space/Enter never toggles the `activatesInputMode` row, and Enter on regular rows toggles — commit is gated on `autoSubmitsInMulti` (the Next row)
 - **`i18n-bridge.ts` is the ONLY rpiv-i18n consumer** — keep reducer/router/selectors English-pure

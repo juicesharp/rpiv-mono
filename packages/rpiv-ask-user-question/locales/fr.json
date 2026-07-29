@@ -1,5 +1,5 @@
 {
-  "_meta.notes": "Auto-translated draft. Native-speaker review welcome via PR. TUI symbols (↑/↓, ⚠) and key names (Enter, Esc, Tab, Space, n) are universal CLI conventions and stay untranslated.",
+  "_meta.notes": "Auto-translated draft. Native-speaker review welcome via PR. TUI symbols (↑/↓, ⚠) and key names (Enter, Esc, Tab, Space, n, Ctrl+G, Ctrl+U) are universal CLI conventions and stay untranslated.",
 
   "sentinel.other": "Écrivez quelque chose.",
   "sentinel.next": "Suivant",
@@ -9,6 +9,8 @@
 
   "hint.enter": "Entrée pour sélectionner",
   "hint.navigate": "↑/↓ pour naviguer",
+  "hint.newline": "Maj+Entrée pour une nouvelle ligne",
+  "hint.clear": "Ctrl+U pour effacer",
   "hint.toggle": "Espace pour basculer",
   "hint.notes": "n pour ajouter des notes",
   "hint.tab": "Tab pour changer de question",
@@ -21,6 +23,8 @@
   "preview.no_preview": "Aucun aperçu disponible",
   "preview.notes_affordance": "Notes : appuyez sur n pour ajouter des notes",
   "notes.header": "Notes :",
+
+  "editor.failed": "Échec de l’éditeur externe",
 
   "rpc.multi_instructions": "Saisissez les numéros de toutes les options applicables, séparés par des virgules (p. ex. « 1,3 »), ou tapez une réponse libre en texte.",
   "rpc.custom_answer_title": "Tapez votre réponse :"

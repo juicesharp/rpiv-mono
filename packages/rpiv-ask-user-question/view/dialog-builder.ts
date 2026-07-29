@@ -1,5 +1,5 @@
 import { DynamicBorder, type Theme } from "@earendil-works/pi-coding-agent";
-import { type Component, Container, type Input, Spacer } from "@earendil-works/pi-tui";
+import { type Component, Container, type Editor, Spacer } from "@earendil-works/pi-tui";
 import type { QuestionnaireState } from "../state/state.js";
 import type { QuestionData } from "../tool/types.js";
 import type { PreviewPaneProps } from "./components/preview/preview-pane.js";
@@ -10,6 +10,8 @@ import { QuestionTabStrategy, SubmitTabStrategy, type TabContentStrategy } from 
 
 export const HINT_PART_ENTER = "Enter to select";
 export const HINT_PART_NAV = "↑/↓ to navigate";
+export const HINT_PART_NEW_LINE = "Shift+Enter for newline";
+export const HINT_PART_CLEAR = "Ctrl+U to clear";
 export const HINT_PART_TOGGLE = "Space to toggle";
 export const HINT_PART_NOTES = "n to add notes";
 export const HINT_PART_TAB = "Tab to switch questions";
@@ -54,7 +56,7 @@ export interface DialogConfig {
 	theme: Theme;
 	questions: readonly QuestionData[];
 	tabBar: TabBar | undefined;
-	notesInput: Input;
+	notesInput: Editor;
 	isMulti: boolean;
 	tabsByIndex: ReadonlyArray<TabComponents>;
 	/** Optional so single-question mode and non-submit tests can omit it; SubmitTabStrategy falls back to Spacer rows. */

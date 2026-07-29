@@ -1,4 +1,4 @@
-import type { Input } from "@earendil-works/pi-tui";
+import type { Editor } from "@earendil-works/pi-tui";
 import type { BindingContext, PerTabBindingContext } from "../state/selectors/contract.js";
 import { selectActivePreviewPaneIndex } from "../state/selectors/derivations.js";
 import { selectActiveView } from "../state/selectors/focus.js";
@@ -13,18 +13,12 @@ interface Invalidatable {
 	invalidate(): void;
 }
 
-/**
- * Reads pi-tui Input's private `cursor` field via type escape with full runtime validation.
- * Returns `undefined` on any failure → graceful degradation to end-of-buffer cursor.
- * Follow-up: replace with Input.getCursorOffset() when pi-tui exposes a public API.
- */
-function getInputCursorOffset(input: Input): number | undefined {
-	const raw = (input as unknown as { cursor?: unknown }).cursor;
-	if (typeof raw !== "number") return undefined;
-	if (!Number.isSafeInteger(raw)) return undefined;
-	const value = input.getValue();
-	if (raw < 0 || raw > value.length) return undefined;
-	return raw;
+function getInputCursorOffset(input: Editor): number {
+	const lines = input.getLines();
+	const cursor = input.getCursor();
+	let offset = cursor.col;
+	for (let i = 0; i < cursor.line; i++) offset += (lines[i]?.length ?? 0) + 1;
+	return offset;
 }
 
 export interface QuestionnairePropsAdapterConfig {
@@ -32,12 +26,12 @@ export interface QuestionnairePropsAdapterConfig {
 	questions: readonly QuestionData[];
 	itemsByTab: ReadonlyArray<readonly WrappingSelectItem[]>;
 	tabsByIndex: ReadonlyArray<TabComponents>;
-	inlineInput: Input;
+	inlineInput: Editor;
 	globalBindings: ReadonlyArray<BoundGlobalBinding>;
 	perTabBindings: ReadonlyArray<BoundPerTabBinding>;
 	/**
 	 * Renderables not reached by the binding registries (e.g. the notes
-	 * `Input`, which is typed into directly and has no props). Walked by
+	 * `Editor`, which is typed into directly and has no props). Walked by
 	 * `invalidate()` after the binding-driven components.
 	 */
 	extraInvalidatables?: ReadonlyArray<Invalidatable>;
@@ -57,7 +51,7 @@ export class QuestionnairePropsAdapter {
 	private readonly questions: readonly QuestionData[];
 	private readonly itemsByTab: ReadonlyArray<readonly WrappingSelectItem[]>;
 	private readonly tabsByIndex: ReadonlyArray<TabComponents>;
-	private readonly inlineInput: Input;
+	private readonly inlineInput: Editor;
 	private readonly globalBindings: ReadonlyArray<BoundGlobalBinding>;
 	private readonly perTabBindings: ReadonlyArray<BoundPerTabBinding>;
 	private readonly extraInvalidatables: ReadonlyArray<Invalidatable>;
@@ -84,7 +78,7 @@ export class QuestionnairePropsAdapter {
 			itemsByTab: this.itemsByTab,
 			totalQuestions,
 			activeView,
-			inputBuffer: this.inlineInput.getValue(),
+			inputBuffer: this.inlineInput.getText(),
 			inputCursorOffset: getInputCursorOffset(this.inlineInput),
 			activePreviewPane,
 		};

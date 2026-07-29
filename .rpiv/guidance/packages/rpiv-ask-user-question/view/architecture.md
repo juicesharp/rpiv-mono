@@ -4,7 +4,7 @@
 Orchestration shell above leaf widgets: composes pi-tui primitives into a height-stable dialog chrome, defines the `StatefulView<P>` contract every component honours, and fans canonical `QuestionnaireState` out to leaf `setProps` via two binding registries. Never touches reducer or input handling.
 
 ## Dependencies
-- **`@earendil-works/pi-tui`**: `Component`, `Container`, `Input`, `Spacer`, `Text`, `truncateToWidth`
+- **`@earendil-works/pi-tui`**: `Component`, `Container`, `Editor`, `Spacer`, `Text`, `truncateToWidth`
 - **`@earendil-works/pi-coding-agent`**: `Theme`, `DynamicBorder`
 - **`../state/selectors/{contract,derivations,focus}.js`**: read-only selectors and types
 - **`../state/state.js`**, **`../state/i18n-bridge.js`**, **`../tool/{types,format-answer}.js`**
@@ -48,14 +48,14 @@ const perTabBindings = [
 ## PropsAdapter Fan-Out
 ```ts
 apply(state) {
-    const ctx = { activeView, activePreviewPane, inputBuffer: this.inlineInput.getValue(), inputCursorOffset, ... };
+    const ctx = { activeView, activePreviewPane, inputBuffer: this.inlineInput.getText(), inputCursorOffset, ... };
     for (const b of this.globalBindings) b.apply(state, ctx);
     for (let i = 0; i < this.tabsByIndex.length; i++)
         for (const b of this.perTabBindings) b.apply(state, { ...ctx, tab: this.tabsByIndex[i]!, i });
     this.tui.requestRender();
 }
 ```
-`invalidate()` walks the same registries plus per-tab `optionList/preview/multiSelect` plus `extraInvalidatables` (raw `Input` etc. not reached by a binding).
+`invalidate()` walks the same registries plus per-tab `optionList/preview/multiSelect` plus `extraInvalidatables` (the notes `Editor`, which is not reached by a binding).
 
 ## TabContentStrategy (fixed shape)
 ```ts
@@ -96,5 +96,5 @@ Absorbs footer-row-count asymmetry across tabs — total dialog height equals ac
 3. If per-tab: extend `TabComponents` (`tab-components.ts`) with the new field and construct it in the session wiring
 4. Register: `globalBinding({ component: foo, select })` or `perTabBinding({ resolve: t => t.foo, predicate?, select })`
 5. If it sits in chrome, surface it through `DialogConfig` and place in `DialogView.buildContainerFromStrategy` or a strategy's `heading/mid/footerRows`; update that strategy's `footerRowCount` if total changes
-6. If not reached by a registry (raw `Input` etc.), pass it as `extraInvalidatables` to the adapter
+6. If not reached by a registry (raw `Editor` etc.), pass it as `extraInvalidatables` to the adapter
 </important>

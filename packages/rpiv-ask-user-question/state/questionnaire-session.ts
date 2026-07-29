@@ -1,5 +1,5 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { getKeybindings, type Input, type OverlayHandle } from "@earendil-works/pi-tui";
+import type { Editor, OverlayHandle, TUI } from "@earendil-works/pi-tui";
 import type { QuestionData, QuestionnaireResult, QuestionParams } from "../tool/types.js";
 import type { WrappingSelectItem } from "../view/components/wrapping-select.js";
 import { COLLAPSED_HINT } from "../view/dialog-builder.js";
@@ -10,16 +10,15 @@ import { type QuestionnaireAction, routeKey } from "./key-router.js";
 import type { QuestionnaireRuntime, QuestionnaireState } from "./state.js";
 import { type ApplyContext, type Effect, reduce } from "./state-reducer.js";
 
-// Module-level constant; reused for cursor-end mutations after setValue rehydration.
-// Ctrl-E → tui.editor.cursorLineEnd (public path; pi-tui keybindings.js:25-28).
-const CURSOR_END = "\x05";
-
 export interface QuestionnaireSessionConfig {
-	tui: { terminal: { columns: number; rows: number }; requestRender(): void };
+	tui: TUI;
 	theme: Theme;
 	params: QuestionParams;
 	itemsByTab: WrappingSelectItem[][];
 	done: (result: QuestionnaireResult) => void;
+	keybindings: QuestionnaireRuntime["keybindings"];
+	/** Opens Pi's configured external editor. Resolve `undefined` on a reported launch failure. */
+	editInput: (value: string) => Promise<string | undefined>;
 	/** Key spec for the collapse/expand shortcut, e.g. `"ctrl+]"` or `"alt+o"`. */
 	collapseKey: string;
 }
@@ -38,6 +37,7 @@ function initialState(): QuestionnaireState {
 		notesVisible: false,
 		answers: new Map(),
 		multiSelectChecked: new Set(),
+		customDraftsByTab: new Map(),
 		notesByTab: new Map(),
 		submitChoiceIndex: 0,
 		notesDraft: "",
@@ -46,8 +46,8 @@ function initialState(): QuestionnaireState {
 }
 
 /**
- * Slim runtime: owns the canonical state cell, the input-buffer cell, the
- * two-pass `notesVisible` dispatch loop, and the effect runner. State
+ * Slim runtime: owns the canonical state cell, the headless editor cells, the
+ * notes-draft mirror, and the effect runner. State
  * transitions go through the pure `reduce` reducer; UI fan-out goes through
  * the `QuestionnairePropsAdapter` produced by `buildQuestionnaire`.
  */
@@ -58,10 +58,13 @@ export class QuestionnaireSession {
 	private readonly isMulti: boolean;
 	private readonly itemsByTab: WrappingSelectItem[][];
 
-	private readonly notesInput: Input;
-	private readonly inlineInput: Input;
+	private readonly notesInput: Editor;
+	private readonly inlineInput: Editor;
 	private readonly viewAdapter: QuestionnairePropsAdapter;
+	private readonly keybindings: QuestionnaireRuntime["keybindings"];
+	private readonly editInput: QuestionnaireSessionConfig["editInput"];
 	private readonly collapseKey: string;
+	private inputEditorOpen = false;
 
 	/**
 	 * Overlay handle captured by `ctx.ui.custom`'s `onHandle` callback. Lets the session
@@ -80,6 +83,8 @@ export class QuestionnaireSession {
 		this.questions = config.params.questions;
 		this.isMulti = this.questions.length > 1;
 		this.itemsByTab = config.itemsByTab;
+		this.keybindings = config.keybindings;
+		this.editInput = config.editInput;
 		this.collapseKey = config.collapseKey;
 
 		const built = buildQuestionnaire({
@@ -116,6 +121,7 @@ export class QuestionnaireSession {
 	}
 
 	dispatch(data: string): void {
+		if (this.inputEditorOpen) return;
 		const action = routeKey(data, this.state, this.runtime());
 		if (action.kind === "ignore") {
 			this.handleIgnoreInline(data);
@@ -133,21 +139,34 @@ export class QuestionnaireSession {
 	}
 
 	private mirrorNotesDraft(s: QuestionnaireState): QuestionnaireState {
-		const draft = this.notesInput.getValue();
+		const draft = this.notesInput.getText();
 		return s.notesDraft === draft ? s : { ...s, notesDraft: draft };
 	}
 
 	private runEffect(effect: Effect): void {
 		switch (effect.kind) {
 			case "set_input_buffer":
-				this.inlineInput.setValue(effect.value);
-				this.inlineInput.handleInput(CURSOR_END);
+				this.inlineInput.setText(effect.value);
 				return;
 			case "clear_input_buffer":
-				this.inlineInput.setValue("");
+				this.inlineInput.setText("");
+				return;
+			case "open_input_editor":
+				if (this.inputEditorOpen) return;
+				this.inputEditorOpen = true;
+				void this.editInput(effect.value).then(
+					(value) => {
+						this.inputEditorOpen = false;
+						if (value !== undefined) this.commit({ kind: "input_replace", value });
+					},
+					() => {
+						// The host callback reports launch errors; retain the draft and restore input handling.
+						this.inputEditorOpen = false;
+					},
+				);
 				return;
 			case "set_notes_value":
-				this.notesInput.setValue(effect.value);
+				this.notesInput.setText(effect.value);
 				return;
 			case "set_notes_focused":
 				this.notesInput.focused = effect.focused;
@@ -167,17 +186,10 @@ export class QuestionnaireSession {
 	}
 
 	/**
-	 * Per-keystroke `ignore` fast path: delegates to the headless `inlineInput`
-	 * Input so bracketed-paste accumulator (`input.js:33-63`) and Kitty CSI-u
-	 * decode (`input.js:155-163`) take effect. Cursor is NOT force-reset here —
-	 * doing so would corrupt split-chunk pastes (a `\x05` byte mid-paste lands
-	 * verbatim in `pasteBuffer` and survives `handlePaste`'s narrow strip).
-	 * Cursor advances naturally via `insertCharacter` on typing/paste; cursor-
-	 * movement keys (Left/Right/Home/End/word-jumps) are now functional, with
-	 * the always-end visual cursor marker drawn independently by
-	 * `WrappingSelect.renderInlineInputRow`. `viewAdapter.apply` is called
-	 * directly without a reducer round-trip — preserves the D3 fast-path
-	 * latency profile from Phase 11.
+	 * Per-keystroke `ignore` fast path: delegates text editing to Pi's headless
+	 * multiline `Editor`, including paste, undo, cursor movement, and configured
+	 * `tui.input.newLine` handling. `viewAdapter.apply` then projects its public
+	 * text/cursor state without a reducer round-trip.
 	 */
 	private handleIgnoreInline(data: string): void {
 		if (!this.state.inputMode) return;
@@ -186,9 +198,13 @@ export class QuestionnaireSession {
 	}
 
 	private runtime(): QuestionnaireRuntime {
+		const cursor = this.inlineInput.getCursor();
+		const lastLine = this.inlineInput.getLines().length - 1;
 		return {
-			keybindings: getKeybindings(),
-			inputBuffer: this.inlineInput.getValue(),
+			keybindings: this.keybindings,
+			inputBuffer: this.inlineInput.getText(),
+			canMoveInputUp: cursor.line > 0,
+			canMoveInputDown: cursor.line < lastLine,
 			questions: this.questions,
 			isMulti: this.isMulti,
 			currentItem: this.currentItem(),
@@ -227,6 +243,6 @@ export class QuestionnaireSession {
 	 * happens via the `set_overlay_hidden` effect like every other side effect.
 	 */
 	toggleCollapsedExternal(): void {
-		this.commit({ kind: "toggle_collapsed" });
+		if (!this.inputEditorOpen) this.commit({ kind: "toggle_collapsed" });
 	}
 }

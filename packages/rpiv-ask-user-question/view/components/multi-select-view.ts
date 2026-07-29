@@ -38,14 +38,21 @@ export interface MultiSelectViewProps {
  * Renders the multi-select option list (one row per option — pointer + checkbox + label —
  * plus zero or more wrapped continuation lines per description).
  *
- * `naturalHeight(width)` is state-INDEPENDENT (depends only on theme glyph widths,
- * question.options, and width) so the host can compute a stable globalContentHeight
- * without rendering. `naturalHeight(w) === render(w).length` for every props.
+ * `naturalHeight(width)` is the rendered height for the current props. It grows when
+ * the custom-answer editor contains logical or visually wrapped lines, allowing the
+ * dialog to reserve exactly the space the active draft needs.
  *
- * `setProps(props)` is a pure field reassignment — no render, no invalidate side effects.
+ * One width-keyed layout supplies rendering, height, and focused-row measurement;
+ * `setProps` and `invalidate` discard that derived cache.
  */
+interface MultiSelectLayout {
+	lines: string[];
+	focusedRange: [number, number];
+}
+
 export class MultiSelectView implements StatefulView<MultiSelectViewProps> {
 	private props: MultiSelectViewProps;
+	private cachedLayout: { width: number; value: MultiSelectLayout } | undefined;
 
 	constructor(
 		private readonly theme: Theme,
@@ -61,118 +68,97 @@ export class MultiSelectView implements StatefulView<MultiSelectViewProps> {
 
 	setProps(props: MultiSelectViewProps): void {
 		this.props = props;
+		this.cachedLayout = undefined;
 	}
 
 	handleInput(_data: string): void {}
 
-	invalidate(): void {}
+	invalidate(): void {
+		this.cachedLayout = undefined;
+	}
 
 	render(width: number): string[] {
+		return this.layout(width).lines;
+	}
+
+	focusedItemRowRange(width: number): [number, number] {
+		return this.layout(width).focusedRange;
+	}
+
+	naturalHeight(width: number): number {
+		return this.layout(width).lines.length;
+	}
+
+	private layout(width: number): MultiSelectLayout {
+		if (this.cachedLayout?.width === width) return this.cachedLayout.value;
+
 		const lines: string[] = [];
-		const prefixWidth = this.prefixVisibleWidth();
-		const contentWidth = Math.max(1, width - prefixWidth);
+		let focusedRange: [number, number] = [0, 0];
+		const contentWidth = Math.max(1, width - this.prefixVisibleWidth());
 		const numberWidth = String(Math.max(1, this.question.options.length + 1)).length;
 		for (let i = 0; i < this.question.options.length; i++) {
 			const opt = this.question.options[i];
 			const row = this.props.rows[i];
 			if (!opt || !row) continue;
+			const start = lines.length;
 			const pointer = row.active ? this.theme.fg("accent", ACTIVE_POINTER) : INACTIVE_POINTER;
-			// Checked uses the same `accent` hue as the active-row label so checked rows read
-			// as "selected" rather than "success" — matches the visual rhythm of the rest of
-			// the dialog (active pointer, label, picker rows are all accent).
+			// Checked and active rows share the accent hue, matching the dialog's selection rhythm.
 			const box = row.checked ? this.theme.fg("accent", CHECKED) : this.theme.fg("muted", UNCHECKED);
 			const label = truncateToWidth(opt.label, contentWidth, "…");
 			const styledLabel = row.active ? this.theme.fg("accent", this.theme.bold(label)) : label;
-			const num = String(i + 1).padStart(numberWidth, " ");
-			const line = `${pointer}${num}${NUMBER_SEPARATOR}${box}${BOX_LABEL_GAP}${styledLabel}`;
-			lines.push(truncateToWidth(line, width, ""));
+			const number = String(i + 1).padStart(numberWidth, " ");
+			lines.push(
+				truncateToWidth(`${pointer}${number}${NUMBER_SEPARATOR}${box}${BOX_LABEL_GAP}${styledLabel}`, width, ""),
+			);
 			if (opt.description) {
-				const wrapped = wrapTextWithAnsi(opt.description, contentWidth);
-				for (const segment of wrapped) {
+				for (const segment of wrapTextWithAnsi(opt.description, contentWidth)) {
 					lines.push(CONTINUATION_INDENT + this.theme.fg("muted", segment));
 				}
 			}
+			if (row.active) focusedRange = [start, lines.length];
 		}
 
-		// "Type something." row — numbered N+1, box always [ ] muted UNCHECKED (never checkable).
-		// When focused + inputMode, render the label slot via the shared inline-input helper
-		// (single-line); otherwise a static localized label truncated to contentWidth with `…`.
-		const other = this.props.other;
-		const otherPointer = other.active ? this.theme.fg("accent", ACTIVE_POINTER) : INACTIVE_POINTER;
-		const otherBox = this.theme.fg("muted", UNCHECKED);
-		const otherNum = String(this.question.options.length + 1).padStart(numberWidth, " ");
-		let otherLabel: string;
-		if (other.active && other.inputMode) {
-			const rendered = renderInlineInputRow({
-				buffer: other.inputBuffer,
-				cursorOffset: other.inputCursorOffset,
-				rowPrefix: "",
-				continuationPrefix: "",
-				contentWidth,
-				selectedText: (t) => this.theme.fg("accent", this.theme.bold(t)),
-				multiline: false,
-			});
-			otherLabel = rendered[0] ?? "";
-		} else {
-			const label = truncateToWidth(displayLabel("other"), contentWidth, "…");
-			otherLabel = other.active ? this.theme.fg("accent", this.theme.bold(label)) : label;
-		}
-		lines.push(
-			truncateToWidth(
-				`${otherPointer}${otherNum}${NUMBER_SEPARATOR}${otherBox}${BOX_LABEL_GAP}${otherLabel}`,
-				width,
-				"",
-			),
-		);
+		const otherStart = lines.length;
+		lines.push(...this.renderOtherRow(contentWidth, numberWidth));
+		if (this.props.other.active) focusedRange = [otherStart, lines.length];
 
+		const nextStart = lines.length;
 		const nextPointer = this.props.nextActive ? this.theme.fg("accent", ACTIVE_POINTER) : INACTIVE_POINTER;
 		const nextLabel = this.props.nextActive
 			? this.theme.fg("accent", this.theme.bold(this.props.nextLabel))
 			: this.props.nextLabel;
 		lines.push(truncateToWidth(`${nextPointer}${nextLabel}`, width, ""));
-		return lines;
+		if (this.props.nextActive) focusedRange = [nextStart, lines.length];
+
+		const value = { lines, focusedRange };
+		this.cachedLayout = { width, value };
+		return value;
 	}
 
-	/**
-	 * Returns the [startRow, endRow) range of the active (focused) row within
-	 * `render(width)`. Labels are always 1 row (truncated); descriptions wrap.
-	 */
-	focusedItemRowRange(width: number): [number, number] {
-		const prefixWidth = this.prefixVisibleWidth();
-		const contentWidth = Math.max(1, width - prefixWidth);
-		let row = 0;
-		for (let i = 0; i < this.question.options.length; i++) {
-			const opt = this.question.options[i];
-			const r = this.props.rows[i];
-			if (!opt || !r) continue;
-			const itemHeight = 1 + (opt.description ? wrapTextWithAnsi(opt.description, contentWidth).length : 0);
-			if (r.active) {
-				return [row, row + itemHeight];
-			}
-			row += itemHeight;
-		}
-		// "Type something." row is always exactly 1 line (truncated, no description).
-		if (this.props.other.active) {
-			return [row, row + 1];
-		}
-		row += 1;
-		if (this.props.nextActive) {
-			return [row, row + 1];
-		}
-		return [0, 0];
-	}
+	private renderOtherRow(contentWidth: number, numberWidth: number): string[] {
+		const other = this.props.other;
+		const pointer = other.active ? this.theme.fg("accent", ACTIVE_POINTER) : INACTIVE_POINTER;
+		const box = this.theme.fg("muted", UNCHECKED);
+		const number = String(this.question.options.length + 1).padStart(numberWidth, " ");
+		const rowPrefix = `${pointer}${number}${NUMBER_SEPARATOR}${box}${BOX_LABEL_GAP}`;
+		const continuationPrefix = " ".repeat(visibleWidth(rowPrefix));
+		const selectedText = (text: string) => this.theme.fg("accent", this.theme.bold(text));
 
-	naturalHeight(width: number): number {
-		const contentWidth = Math.max(1, width - this.prefixVisibleWidth());
-		let total = 0;
-		for (const opt of this.question.options) {
-			if (!opt) continue;
-			total += 1; // row line
-			if (opt.description) {
-				total += wrapTextWithAnsi(opt.description, contentWidth).length;
-			}
+		if (other.active && other.inputMode) {
+			return renderInlineInputRow({
+				buffer: other.inputBuffer,
+				cursorOffset: other.inputCursorOffset,
+				rowPrefix,
+				continuationPrefix,
+				contentWidth,
+				selectedText,
+			});
 		}
-		return total + 2; // "Type something." row + Next sentinel row (neither wraps).
+
+		return wrapTextWithAnsi(other.inputBuffer || displayLabel("other"), contentWidth).map((segment, index) => {
+			const line = `${index === 0 ? rowPrefix : continuationPrefix}${segment}`;
+			return other.active ? selectedText(line) : line;
+		});
 	}
 
 	private prefixVisibleWidth(): number {

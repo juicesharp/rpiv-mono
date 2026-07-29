@@ -1,5 +1,5 @@
 {
-  "_meta.notes": "Auto-translated draft. Native-speaker review welcome via PR. TUI symbols (↑/↓, ⚠) and key names (Enter, Esc, Tab, Space, n) are universal CLI conventions and stay untranslated.",
+  "_meta.notes": "Auto-translated draft. Native-speaker review welcome via PR. TUI symbols (↑/↓, ⚠) and key names (Enter, Esc, Tab, Space, n, Ctrl+G, Ctrl+U) are universal CLI conventions and stay untranslated.",
 
   "sentinel.other": "Введите что-нибудь.",
   "sentinel.next": "Далее",
@@ -9,6 +9,8 @@
 
   "hint.enter": "Enter — выбрать",
   "hint.navigate": "↑/↓ — навигация",
+  "hint.newline": "Shift+Enter — новая строка",
+  "hint.clear": "Ctrl+U — очистить",
   "hint.toggle": "Space — переключить",
   "hint.notes": "n — добавить заметки",
   "hint.tab": "Tab — следующий вопрос",
@@ -21,6 +23,8 @@
   "preview.no_preview": "Предпросмотр недоступен",
   "preview.notes_affordance": "Заметки: нажмите n, чтобы добавить заметки",
   "notes.header": "Заметки:",
+
+  "editor.failed": "Ошибка внешнего редактора",
 
   "rpc.multi_instructions": "Введите номера всех подходящих вариантов через запятую (например, \"1,3\") или введите свой ответ текстом.",
   "rpc.custom_answer_title": "Введите свой ответ:"

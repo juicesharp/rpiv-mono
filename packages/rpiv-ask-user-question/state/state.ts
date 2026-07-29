@@ -12,6 +12,8 @@ export interface QuestionnaireState {
 	notesVisible: boolean;
 	answers: ReadonlyMap<number, QuestionAnswer>;
 	multiSelectChecked: ReadonlySet<number>;
+	/** In-flight custom answers keyed by tab. A present empty string overrides an older answer. */
+	customDraftsByTab: ReadonlyMap<number, string>;
 	/**
 	 * Pre-answer notes side-band, keyed by tab index. Decoupled from `answers` so adding
 	 * notes does NOT mark a question answered (the Submit-tab missing-check would falsely
@@ -40,6 +42,8 @@ export interface QuestionnaireState {
 export interface QuestionnaireRuntime {
 	keybindings: { matches(data: string, name: string): boolean };
 	inputBuffer: string;
+	canMoveInputUp: boolean;
+	canMoveInputDown: boolean;
 	questions: readonly QuestionData[];
 	isMulti: boolean;
 	currentItem: WrappingSelectItem | undefined;

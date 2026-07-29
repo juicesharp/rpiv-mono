@@ -10,7 +10,7 @@ import {
 // Static import is fine — rpc-fallback pulls only types + the i18n bridge,
 // none of the ~560ms TUI render graph that QuestionnaireSession lazy-loads.
 import { hasDialogUI, runRpcQuestionnaire } from "./rpc-fallback.js";
-import { displayLabel } from "./state/i18n-bridge.js";
+import { displayLabel, t } from "./state/i18n-bridge.js";
 import { sentinelsToAppend } from "./state/row-intent.js";
 import { buildQuestionnaireResponse, buildToolResult } from "./tool/response-envelope.js";
 import {
@@ -233,13 +233,31 @@ Preview content is rendered as markdown in a monospace box. Multi-line text with
 			emitAskUserBlockedEvent(pi, true);
 			try {
 				const result = await ctx.ui.custom<QuestionnaireResult>(
-					(tui, theme, _kb, done) => {
+					(tui, theme, keybindings, done) => {
 						const session = new QuestionnaireSession({
 							tui,
 							theme,
 							params: typed,
 							itemsByTab,
 							done,
+							keybindings,
+							editInput: async (value) => {
+								try {
+									const [{ SettingsManager }, { editWithExternalEditor }] = await Promise.all([
+										import("@earendil-works/pi-coding-agent"),
+										import("./state/external-editor.js"),
+									]);
+									const editorCommand = SettingsManager.create(ctx.cwd, undefined, {
+										projectTrusted: ctx.isProjectTrusted(),
+									}).getExternalEditorCommand();
+									if (!editorCommand) throw new Error("No external editor command is configured");
+									return await editWithExternalEditor(tui, editorCommand, value);
+								} catch (error) {
+									const message = error instanceof Error ? error.message : String(error);
+									ctx.ui.notify(`${t("editor.failed", "External editor failed")}: ${message}`, "error");
+									return undefined;
+								}
+							},
 							collapseKey,
 						});
 						sessionRef.current = session;

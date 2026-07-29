@@ -19,6 +19,7 @@ export interface ApplyContext {
 export type Effect =
 	| { kind: "set_input_buffer"; value: string }
 	| { kind: "clear_input_buffer" }
+	| { kind: "open_input_editor"; value: string }
 	| { kind: "set_notes_value"; value: string }
 	| { kind: "set_notes_focused"; focused: boolean }
 	| { kind: "forward_notes_keystroke"; data: string }
@@ -95,6 +96,26 @@ function notesValueFor(state: QuestionnaireState, tab: number): string {
 	return state.notesByTab.get(tab) ?? state.answers.get(tab)?.notes ?? "";
 }
 
+function customDraftValueFor(state: QuestionnaireState, tab: number): string {
+	const draft = state.customDraftsByTab.get(tab);
+	if (draft !== undefined) return draft;
+	const answer = state.answers.get(tab);
+	return answer?.kind === "custom" && typeof answer.answer === "string" ? answer.answer : "";
+}
+
+function setCustomDraft(state: QuestionnaireState, tab: number, value: string): ReadonlyMap<number, string> {
+	const drafts = new Map(state.customDraftsByTab);
+	drafts.set(tab, value);
+	return drafts;
+}
+
+function withoutCustomDraft(state: QuestionnaireState, tab: number): ReadonlyMap<number, string> {
+	if (!state.customDraftsByTab.has(tab)) return state.customDraftsByTab;
+	const drafts = new Map(state.customDraftsByTab);
+	drafts.delete(tab);
+	return drafts;
+}
+
 function switchTabResult(state: QuestionnaireState, nextTab: number, ctx: ApplyContext): ApplyResult {
 	const notesValue = notesValueFor(state, nextTab);
 	const transitioned: QuestionnaireState = {
@@ -112,6 +133,7 @@ function switchTabResult(state: QuestionnaireState, nextTab: number, ctx: ApplyC
 		effects: [
 			{ kind: "set_notes_focused", focused: false },
 			{ kind: "set_notes_value", value: notesValue },
+			{ kind: "set_input_buffer", value: customDraftValueFor(state, nextTab) },
 		],
 	};
 }
@@ -135,16 +157,29 @@ const navHandler: Handler<"nav"> = (state, action, ctx) => {
 	const items = ctx.itemsByTab[state.currentTab] ?? [];
 	const item = items[action.nextIndex];
 	const inputMode = item ? ROW_INTENT_META[item.kind].activatesInputMode : false;
-	const next = { ...state, optionIndex: action.nextIndex, inputMode };
-	if (!inputMode) {
-		return { state: next, effects: [{ kind: "clear_input_buffer" }] };
-	}
-	const prior = state.answers.get(state.currentTab);
-	if (prior?.kind === "custom" && typeof prior.answer === "string") {
-		return { state: next, effects: [{ kind: "set_input_buffer", value: prior.answer }] };
-	}
-	return { state: next, effects: [] };
+	const customDraftsByTab = state.inputMode
+		? setCustomDraft(state, state.currentTab, action.inputValue)
+		: state.customDraftsByTab;
+	const next: QuestionnaireState = { ...state, optionIndex: action.nextIndex, inputMode, customDraftsByTab };
+	if (!inputMode) return { state: next, effects: [] };
+	return {
+		state: next,
+		effects: [{ kind: "set_input_buffer", value: customDraftValueFor(next, state.currentTab) }],
+	};
 };
+
+const inputClearHandler: Handler<"input_clear"> = (state, _action, _ctx) => ({
+	state: { ...state, customDraftsByTab: setCustomDraft(state, state.currentTab, "") },
+	effects: [{ kind: "clear_input_buffer" }],
+});
+const inputEditHandler: Handler<"input_edit"> = (state, action, _ctx) => ({
+	state,
+	effects: [{ kind: "open_input_editor", value: action.value }],
+});
+const inputReplaceHandler: Handler<"input_replace"> = (state, action, _ctx) => ({
+	state: { ...state, customDraftsByTab: setCustomDraft(state, state.currentTab, action.value) },
+	effects: [{ kind: "set_input_buffer", value: action.value }],
+});
 
 const tabSwitchHandler: Handler<"tab_switch"> = (state, action, ctx) => switchTabResult(state, action.nextTab, ctx);
 
@@ -167,9 +202,12 @@ const confirmHandler: Handler<"confirm"> = (state, action, ctx) => {
 	// clear the checked set immediately so [✔] glyphs vanish on Enter. (A custom answer
 	// carries no `selected` array, so syncMultiSelectFromAnswers keeps it empty on tab-back.)
 	const isCustomMulti = answer.kind === "custom" && ctx.questions[answer.questionIndex]?.multiSelect === true;
+	const customDraftsByTab =
+		answer.kind === "custom" ? withoutCustomDraft(state, answer.questionIndex) : state.customDraftsByTab;
 	const next: QuestionnaireState = {
 		...state,
 		answers,
+		customDraftsByTab,
 		...(isCustomMulti ? { multiSelectChecked: new Set<number>() } : {}),
 	};
 	if (action.autoAdvanceTab !== undefined) return switchTabResult(next, action.autoAdvanceTab, ctx);
@@ -265,6 +303,9 @@ const ignoreHandler: Handler<"ignore"> = (s, _a, _c) => ({ state: s, effects: []
  */
 const HANDLERS: { [K in QuestionnaireAction["kind"]]: Handler<K> } = {
 	nav: navHandler,
+	input_clear: inputClearHandler,
+	input_edit: inputEditHandler,
+	input_replace: inputReplaceHandler,
 	tab_switch: tabSwitchHandler,
 	confirm: confirmHandler,
 	toggle: toggleHandler,

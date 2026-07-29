@@ -12,7 +12,7 @@ import { renderInlineInputRow } from "./inline-input.js";
  * Variant semantics:
  * - `option`: a regular author-defined option row.
  * - `other`: the inline free-text input row appended to every question
- *   (label is "Type something."). Renders as inline `Input` when active.
+ *   (label is "Type something."). Renders the headless multiline editor when active.
  * - `next`: the explicit commit-and-advance row appended to multi-select questions
  *   (label is "Next"). Renders without a number / checkbox.
  */
@@ -216,16 +216,20 @@ export class WrappingSelect implements Component {
 			return this.renderInlineInputRow(rowPrefix, continuationPrefix, contentWidth);
 		}
 
-		// Confirmed row gets a trailing ` ✔` and accent+bold styling; pointer is independent
-		// (still ❯ when active). When `index === confirmedIndex` AND `isActive`, both `❯` and
-		// `✔` appear on the same row — load-bearing for the case where the prior answer was
-		// row 0 (cursor resets to 0 on tab-back, so the confirmed row IS the active row).
-		// Optional `confirmedLabelOverride` replaces the static label (used for `kind: "other"`
-		// + `kind: "custom"` answer); the inline-input branch above still wins for `kind: "other" + isActive`.
-		const isConfirmed = index === this.confirmedIndex;
+		// Keep an in-flight custom draft visible even while the cursor browses another row.
+		// If it differs from a previously confirmed custom answer, omit the confirmation
+		// mark so the pending draft is not presented as committed.
+		const customDraft = item.kind === "other" ? this.inputBuffer : undefined;
+		const customDraftDiffersFromConfirmed =
+			item.kind === "other" &&
+			customDraft !== "" &&
+			index === this.confirmedIndex &&
+			customDraft !== (this.confirmedLabelOverride ?? "");
+		const isConfirmed = index === this.confirmedIndex && !customDraftDiffersFromConfirmed;
+		const baseLabel = customDraft ? customDraft : item.label;
 		const label = isConfirmed
-			? `${this.confirmedLabelOverride ?? item.label}${WrappingSelect.CONFIRMED_MARK}`
-			: item.label;
+			? `${this.confirmedLabelOverride ?? baseLabel}${WrappingSelect.CONFIRMED_MARK}`
+			: baseLabel;
 		const applySelectedStyle = isActive || isConfirmed;
 
 		return [
@@ -245,13 +249,7 @@ export class WrappingSelect implements Component {
 		return item.kind === "other" && isActive;
 	}
 
-	/**
-	 * Render the inline input row across one or more lines, wrapping at `contentWidth`.
-	 * Delegates to the shared `renderInlineInputRow` helper (`./inline-input.ts`) so the
-	 * single-select wrap path and the multi-select single-line path share one cursor-
-	 * building core. The `multiline: true` path is byte-identical to the pre-extraction
-	 * output (cursor rationale lives in `inline-input.ts`).
-	 */
+	/** Render the inline editor across logical and visually wrapped lines. */
 	private renderInlineInputRow(rowPrefix: string, continuationPrefix: string, contentWidth: number): string[] {
 		return renderInlineInputRow({
 			buffer: this.inputBuffer,
@@ -260,7 +258,6 @@ export class WrappingSelect implements Component {
 			continuationPrefix,
 			contentWidth,
 			selectedText: this.theme.selectedText,
-			multiline: true,
 		});
 	}
 
