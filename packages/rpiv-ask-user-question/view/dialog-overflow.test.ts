@@ -1,5 +1,5 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { type Component, type Input, visibleWidth } from "@earendil-works/pi-tui";
+import { type Component, type Editor, visibleWidth } from "@earendil-works/pi-tui";
 import { makeTheme } from "@juicesharp/rpiv-test-utils";
 import { describe, expect, it } from "vitest";
 import {
@@ -113,7 +113,7 @@ function makeConfig(over: MakeConfigOverrides = {}): DialogParts {
 		theme: over.theme ?? theme,
 		questions,
 		tabBar: over.tabBar ?? (stubComponent(["<TABBAR>", ""]) as unknown as TabBar),
-		notesInput: over.notesInput ?? (stubComponent(["<NOTES_INPUT>"]) as unknown as Input),
+		notesInput: over.notesInput ?? (stubComponent(["<NOTES_INPUT>"]) as unknown as Editor),
 		isMulti: over.isMulti ?? questions.length > 1,
 		tabsByIndex,
 		submitPicker: over.submitPicker,

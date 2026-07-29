@@ -7,6 +7,9 @@ const KEYBIND_UP = "tui.select.up";
 const KEYBIND_DOWN = "tui.select.down";
 const KEYBIND_CONFIRM = "tui.select.confirm";
 const KEYBIND_CANCEL = "tui.select.cancel";
+const KEYBIND_NEW_LINE = "tui.input.newLine";
+const KEYBIND_EDITOR_UP = "tui.editor.cursorUp";
+const KEYBIND_EDITOR_DOWN = "tui.editor.cursorDown";
 const KEYBIND_CLEAR = "tui.editor.deleteToLineStart";
 const KEYBIND_EXTERNAL_EDITOR = "app.editor.external";
 
@@ -179,27 +182,31 @@ export function routeKey(data: string, state: QuestionnaireState, runtime: Quest
 
 	if (state.notesVisible) {
 		if (kb.matches(data, KEYBIND_CANCEL)) return { kind: "notes_exit" };
+		if (kb.matches(data, KEYBIND_NEW_LINE)) return { kind: "notes_forward", data };
 		if (kb.matches(data, KEYBIND_CONFIRM)) return { kind: "notes_exit" };
 		return { kind: "notes_forward", data };
 	}
 
 	if (state.inputMode) {
+		// Newline takes precedence over confirmation if a user configuration binds
+		// the same physical key to both semantic actions.
+		if (kb.matches(data, KEYBIND_NEW_LINE)) return { kind: "ignore" };
 		if (kb.matches(data, KEYBIND_CONFIRM)) {
 			const answer = buildSingleSelectAnswer(state, runtime);
 			if (!answer) return { kind: "ignore" };
 			return { kind: "confirm", answer, autoAdvanceTab: computeAutoAdvanceTab(state, runtime) };
 		}
-		// Treat Pi's Ctrl+U line-kill binding as an explicit whole-draft clear in this
-		// single-line custom-answer editor, independent of the current cursor position.
+		// Treat Pi's Ctrl+U line-kill binding as an explicit whole-draft clear,
+		// independent of the current cursor position.
 		if (kb.matches(data, KEYBIND_CLEAR)) return { kind: "input_clear" };
 		if (kb.matches(data, KEYBIND_EXTERNAL_EDITOR)) return { kind: "input_edit", value: runtime.inputBuffer };
 		if (kb.matches(data, KEYBIND_CANCEL)) return { kind: "cancel" };
-		if (kb.matches(data, KEYBIND_UP)) {
-			return prevNavOnUp(state, runtime);
+		if (kb.matches(data, KEYBIND_EDITOR_UP) && runtime.canMoveInputUp) return { kind: "ignore" };
+		if (kb.matches(data, KEYBIND_EDITOR_DOWN) && runtime.canMoveInputDown) {
+			return { kind: "ignore" };
 		}
-		if (kb.matches(data, KEYBIND_DOWN)) {
-			return nextNavOnDown(state, runtime);
-		}
+		if (kb.matches(data, KEYBIND_UP)) return prevNavOnUp(state, runtime);
+		if (kb.matches(data, KEYBIND_DOWN)) return nextNavOnDown(state, runtime);
 		return { kind: "ignore" };
 	}
 

@@ -9,6 +9,7 @@
 
   "hint.enter": "Enter para seleccionar",
   "hint.navigate": "↑/↓ para navegar",
+  "hint.newline": "Mayús+Enter para nueva línea",
   "hint.clear": "Ctrl+U para borrar",
   "hint.toggle": "Espacio para alternar",
   "hint.notes": "n para añadir notas",

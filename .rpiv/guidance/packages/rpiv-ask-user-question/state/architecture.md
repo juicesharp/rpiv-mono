@@ -7,10 +7,10 @@ Pure state machine for the questionnaire dialog. Owns the canonical shape, the k
 - **`../tool/types.ts`** — `QuestionAnswer`, `QuestionData`, `QuestionParams`, `QuestionnaireResult` (canonical I/O)
 - **`../view/components/wrapping-select.ts`** — `WrappingSelectItem` (the row-kind union; `RowKind = WrappingSelectItem["kind"]`)
 - **`@juicesharp/rpiv-i18n`** — only via `i18n-bridge.ts`
-- **`@earendil-works/pi-tui`** — `Key`/`matchesKey` (`key-router.ts`), `Input`/`OverlayHandle` (session + builder); **`@earendil-works/pi-coding-agent`** — `Theme`, `getMarkdownTheme` (builder). The core files above stay pi-free
+- **`@earendil-works/pi-tui`** — `Key`/`matchesKey` (`key-router.ts`), `Editor`/`OverlayHandle` (session + builder); **`@earendil-works/pi-coding-agent`** — `Theme`, `getMarkdownTheme` (builder). The core files above stay pi-free
 
 ## Consumers
-- **`questionnaire-session.ts`** is the single composer here — owns the state cell, both `Input` cells (`notesInput` + `inlineInput`), and the `OverlayHandle`; entry points are `dispatch(data)`, `toggleCollapsedExternal()` (raw-terminal reopen path), and `setOverlayHandle()`
+- **`questionnaire-session.ts`** is the single composer here — owns the state cell, both multiline `Editor` cells (`notesInput` + `inlineInput`), and the `OverlayHandle`; entry points are `dispatch(data)`, `toggleCollapsedExternal()` (raw-terminal reopen path), and `setOverlayHandle()`
 - **`../view/QuestionnairePropsAdapter`** — reads canonical state via `propsAdapter.apply(state)` from outside the folder
 - **`../ask-user-question.ts`** (tool execute): builds `itemsByTab` via `buildItemsForQuestion` (consumes `sentinelsToAppend`), builds the runtime session, awaits its `done` promise, returns the formatted result envelope
 - **`../rpc-fallback.ts`** — imports `displayLabel`/`t` from `i18n-bridge.ts` and mirrors `ROW_INTENT_META.other.autoAppendOnMultiSelect` for the RPC native-dialog path
@@ -22,7 +22,7 @@ state-reducer.ts           — Pure (state, action, ctx) → { state, Effect[] }
 key-router.ts              — Pure: keystroke → `QuestionnaireAction` (closed union). kb.matches dispatch + top-of-`routeKey` `collapseKey` intercept via `matchesKey`.
 row-intent.ts              — `ROW_INTENT_META: Record<RowKind, RowIntentMeta>` — single source of truth for per-kind behavior.
 build-questionnaire.ts     — Pure factory: components + props adapter. Receives `itemsByTab` via config (built in `../ask-user-question.ts`).
-questionnaire-session.ts   — Holds the live state cell + `notesInput`/`inlineInput` + `OverlayHandle`; entries: `dispatch(data)`, `toggleCollapsedExternal()`, `setOverlayHandle()`.
+questionnaire-session.ts   — Holds the live state cell + multiline `notesInput`/`inlineInput` Editors + `OverlayHandle`; entries: `dispatch(data)`, `toggleCollapsedExternal()`, `setOverlayHandle()`.
 external-editor.ts         — Isolated Pi-compatible temp-file/editor round trip; always restores the TUI.
 i18n-bridge.ts             — locale-aware string lookup (the only rpiv-i18n consumer in this folder).
 selectors/                 — Pure projections (focus discriminant, derivations, per-component prop selectors).

@@ -8,7 +8,7 @@ Single-tool extension exposing `ask_user_question` — a TUI option selector wit
 
 ## Dependencies
 - **`@earendil-works/pi-coding-agent`** (peer): theme, markdown, dynamic border
-- **`@earendil-works/pi-tui`** (peer): containers, input, key matching, width-correct text helpers
+- **`@earendil-works/pi-tui`** (peer): containers, multiline editor, key matching, width-correct text helpers
 - **`@juicesharp/rpiv-i18n`** (optional peer): live-locale strings via `state/i18n-bridge.ts`; English-fallback shim when absent
 - **`@juicesharp/rpiv-config`**: `loadJsonConfigWithLegacyFallback` — honors `XDG_CONFIG_HOME` with a one-way legacy `~/.config` fallback
 - **`typebox`**: schema types (regular dependency — was a peer until #79 broke installers that don't materialise peers)
@@ -42,11 +42,11 @@ locales/                — JSON translation maps loaded via i18n-bridge at modu
 
 ## State Machine
 
-`QuestionnaireState` is the single canonical shape — both the dispatcher and the view layer read it. The session owns the state cell and the live input-buffer cell; captured per-tab free-text drafts are canonical state in `customDraftsByTab`. `dispatch(data)` is the single entry: routes through `routeKey` (pure) → `reduce` (pure, returns `{state, Effect[]}`) → runtime executes effects → `propsAdapter.apply(state)` fans out to components. The reducer never touches a live component; action payloads carry dispatch-time values such as the input buffer. Per-`QuestionnaireAction` kind is dispatched via a `{ [K in Kind]: Handler<K> }` HANDLERS table (compile-time exhaustive); every IO is an `Effect` in a closed union (compiler-enforced exhaustive switch in `runEffect`).
+`QuestionnaireState` is the single canonical shape — both the dispatcher and the view layer read it. The session owns the state cell and Pi Editor instances for live custom text and notes; captured per-tab free-text drafts are canonical state in `customDraftsByTab`. `dispatch(data)` is the single entry: routes through `routeKey` (pure) → `reduce` (pure, returns `{state, Effect[]}`) → runtime executes effects → `propsAdapter.apply(state)` fans out to components. The reducer never touches a live component; action payloads carry dispatch-time values such as the input buffer. Per-`QuestionnaireAction` kind is dispatched via a `{ [K in Kind]: Handler<K> }` HANDLERS table (compile-time exhaustive); every IO is an `Effect` in a closed union (compiler-enforced exhaustive switch in `runEffect`).
 
 ## View Fan-Out
 
-`QuestionnairePropsAdapter` drives every component setter from canonical state via two binding registries: `globalBindings` covers cross-tab components (dialog, optional submit picker, optional tab bar); `perTabBindings` covers per-tab kinds (option list, preview, optional multi-select). Each binding is `{ component | resolve, select }` — a pure selector returning props plus the target's `setProps`. Fan-out collapses to one global loop + one nested per-tab loop. The adapter also holds the headless shared `inlineInput`; its value/cursor are read per tick into the binding context so `selectOptionListProps` sees the live value. No component reaches into siblings; no lazy `setState` scattered through builders.
+`QuestionnairePropsAdapter` drives every component setter from canonical state via two binding registries: `globalBindings` covers cross-tab components (dialog, optional submit picker, optional tab bar); `perTabBindings` covers per-tab kinds (option list, preview, optional multi-select). Each binding is `{ component | resolve, select }` — a pure selector returning props plus the target's `setProps`. Fan-out collapses to one global loop + one nested per-tab loop. The adapter also holds the headless shared multiline `inlineInput` Editor; its public text/cursor state is read per tick into the binding context so `selectOptionListProps` sees the live value. No component reaches into siblings; no lazy `setState` scattered through builders.
 
 ## Chrome-Mirror Layout
 

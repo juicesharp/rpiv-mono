@@ -1,5 +1,5 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import type { Component, Input } from "@earendil-works/pi-tui";
+import type { Component, Editor } from "@earendil-works/pi-tui";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { makeTheme } from "@juicesharp/rpiv-test-utils";
 import { describe, expect, it } from "vitest";
@@ -22,6 +22,7 @@ import {
 	HINT_PART_CLEAR,
 	HINT_PART_COLLAPSE,
 	HINT_PART_ENTER,
+	HINT_PART_NEW_LINE,
 	HINT_PART_NOTES,
 	HINT_PART_TOGGLE,
 	HINT_SINGLE,
@@ -112,7 +113,7 @@ function makeConfig(over: MakeConfigOverrides = {}): DialogParts {
 		theme: over.theme ?? theme,
 		questions,
 		tabBar: over.tabBar ?? (stubComponent(["<TABBAR>", ""]) as unknown as TabBar),
-		notesInput: over.notesInput ?? (stubComponent(["<NOTES_INPUT>"]) as unknown as Input),
+		notesInput: over.notesInput ?? (stubComponent(["<NOTES_INPUT>"]) as unknown as Editor),
 		isMulti: over.isMulti ?? questions.length > 1,
 		tabsByIndex,
 		submitPicker: over.submitPicker,
@@ -268,7 +269,7 @@ describe("makeDialog — multi-question (question tab)", () => {
 		expect(joined).toContain(HINT_PART_NOTES);
 	});
 
-	it("shows only the clear control at the far right and drops notes while inputMode captures text", () => {
+	it("shows multiline controls at the right and drops notes while inputMode captures text", () => {
 		const dlg = makeDialog(
 			makeConfig({
 				state: {
@@ -288,14 +289,16 @@ describe("makeDialog — multi-question (question tab)", () => {
 		);
 		const joined = dlg.render(160).join("\n");
 		expect(joined).toContain(HINT_PART_ENTER);
+		expect(joined).toContain(HINT_PART_NEW_LINE);
 		expect(joined).toContain(HINT_PART_CLEAR);
-		expect(joined.indexOf(HINT_PART_CLEAR)).toBeGreaterThan(joined.indexOf(HINT_PART_COLLAPSE));
+		expect(joined.indexOf(HINT_PART_NEW_LINE)).toBeGreaterThan(joined.indexOf(HINT_PART_COLLAPSE));
+		expect(joined.indexOf(HINT_PART_CLEAR)).toBeGreaterThan(joined.indexOf(HINT_PART_NEW_LINE));
 		expect(joined).not.toContain("Ctrl+G to edit");
 		expect(joined).not.toContain(HINT_PART_NOTES);
 	});
 
-	it("notesVisible adds the notes Input below the preview (line count grows)", () => {
-		const hidden = makeDialog(makeConfig()).render(80);
+	it("notesVisible adds the notes editor below the preview (line count grows)", () => {
+		const hidden = makeDialog(makeConfig()).render(160);
 		const visibleCfg = makeConfig({
 			state: {
 				currentTab: 0,
@@ -311,8 +314,9 @@ describe("makeDialog — multi-question (question tab)", () => {
 				collapsed: false,
 			},
 		});
-		const visible = makeDialog(visibleCfg).render(80);
+		const visible = makeDialog(visibleCfg).render(160);
 		expect(visible.length).toBeGreaterThan(hidden.length);
+		expect(visible.join("\n")).toContain(HINT_PART_NEW_LINE);
 		expect(visible.join("\n")).toContain("<NOTES_INPUT>");
 		expect(hidden.join("\n")).not.toContain("<NOTES_INPUT>");
 	});

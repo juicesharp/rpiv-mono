@@ -1,5 +1,5 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { type Component, Container, type Input, Spacer, Text, truncateToWidth } from "@earendil-works/pi-tui";
+import { type Component, Container, type Editor, Spacer, Text, truncateToWidth } from "@earendil-works/pi-tui";
 import { t } from "../state/i18n-bridge.js";
 import { formatAnswerScalar } from "../tool/format-answer.js";
 import type { QuestionData } from "../tool/types.js";
@@ -11,6 +11,7 @@ import {
 	HINT_PART_COLLAPSE,
 	HINT_PART_ENTER,
 	HINT_PART_NAV,
+	HINT_PART_NEW_LINE,
 	HINT_PART_NOTES,
 	HINT_PART_TAB,
 	HINT_PART_TOGGLE,
@@ -82,7 +83,7 @@ export interface QuestionTabStrategyConfig {
 	questions: readonly QuestionData[];
 	getPreviewPane: () => StatefulView<PreviewPaneProps>;
 	tabsByIndex: ReadonlyArray<TabComponents>;
-	notesInput: Input;
+	notesInput: Editor;
 	isMulti: boolean;
 	getCurrentBodyHeight: (width: number) => number;
 }
@@ -228,7 +229,7 @@ export class SubmitTabStrategy implements TabContentStrategy {
 /**
  * Build the controls hint line. Order:
  *   Enter · ↑/↓ [· Space toggle] [· n notes] [· Tab switch] · Esc · Ctrl+] collapse
- *   [· Ctrl+U clear]
+ *   [· Shift+Enter newline] [· Ctrl+U clear]
  *
  * `NOTES` is part of the resting (notes-closed) core — it drops while the notes
  * editor or custom-answer input has the keyboard. Ctrl+G is Pi's global external-
@@ -242,6 +243,7 @@ export function buildHintText(question: QuestionData | undefined, isMulti: boole
 	if (isMulti) parts.push(t("hint.tab", HINT_PART_TAB));
 	parts.push(t("hint.cancel", HINT_PART_CANCEL));
 	parts.push(t("hint.collapse", HINT_PART_COLLAPSE));
+	if (state.notesVisible || state.inputMode) parts.push(t("hint.newline", HINT_PART_NEW_LINE));
 	if (state.inputMode) parts.push(t("hint.clear", HINT_PART_CLEAR));
 	return parts.join(" · ");
 }

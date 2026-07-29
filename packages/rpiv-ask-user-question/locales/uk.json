@@ -9,6 +9,7 @@
 
   "hint.enter": "Enter — обрати",
   "hint.navigate": "↑/↓ — навігація",
+  "hint.newline": "Shift+Enter — новий рядок",
   "hint.clear": "Ctrl+U — очистити",
   "hint.toggle": "Space — перемкнути",
   "hint.notes": "n — додати нотатки",

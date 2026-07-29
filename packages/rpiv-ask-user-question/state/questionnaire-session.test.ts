@@ -1,16 +1,18 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
+import type { TUI } from "@earendil-works/pi-tui";
 import { makeTheme } from "@juicesharp/rpiv-test-utils";
 import { describe, expect, it, vi } from "vitest";
 import type { QuestionnaireResult, QuestionParams } from "../tool/types.js";
 import type { WrappingSelectItem } from "../view/components/wrapping-select.js";
 import { QuestionnaireSession } from "./questionnaire-session.js";
 
-const DOWN = "<DOWN>";
-const UP = "<UP>";
+const DOWN = "\x1b[B";
+const UP = "\x1b[A";
 const ENTER = "<ENTER>";
 const ESC = "\x1b";
 const CTRL_G = "\x07";
 const CTRL_U = "\x15";
+const SHIFT_ENTER = "\x1b\r";
 const TAB = "\t";
 
 const params: QuestionParams = {
@@ -46,6 +48,12 @@ const keybindings = {
 				return data === DOWN;
 			case "tui.select.confirm":
 				return data === ENTER;
+			case "tui.input.newLine":
+				return data === SHIFT_ENTER;
+			case "tui.editor.cursorUp":
+				return data === UP;
+			case "tui.editor.cursorDown":
+				return data === DOWN;
 			case "tui.select.cancel":
 				return data === ESC;
 			case "tui.editor.deleteToLineStart":
@@ -68,7 +76,7 @@ function makeSession(options: SessionTestOptions = {}) {
 	const sessionParams = options.params ?? params;
 	const done = vi.fn<(result: QuestionnaireResult) => void>();
 	const session = new QuestionnaireSession({
-		tui: { terminal: { columns: 120, rows: 40 }, requestRender: vi.fn() },
+		tui: { terminal: { columns: 120, rows: 40 }, requestRender: vi.fn() } as unknown as TUI,
 		theme: makeTheme() as unknown as Theme,
 		params: sessionParams,
 		itemsByTab: options.itemsByTab ?? itemsFor(sessionParams),
@@ -106,6 +114,41 @@ describe("QuestionnaireSession — custom-answer drafts", () => {
 					answer: "draft answer",
 				},
 			],
+			cancelled: false,
+		});
+	});
+
+	it("submits a multiline custom answer composed with Shift+Enter", () => {
+		const { session, done } = makeSession();
+		focusCustomAnswer(session);
+		session.dispatch("first line");
+		session.dispatch(SHIFT_ENTER);
+		session.dispatch("second line");
+		const view = session.component.render(120).join("\n");
+		expect(view).toContain("first line");
+		expect(view).toContain("second line");
+		session.dispatch(ENTER);
+
+		expect(done).toHaveBeenCalledWith({
+			answers: [expect.objectContaining({ kind: "custom", answer: "first line\nsecond line" })],
+			cancelled: false,
+		});
+	});
+
+	it("uses vertical arrows within the draft and returns to row navigation at the boundary", () => {
+		const { session, done } = makeSession();
+		focusCustomAnswer(session);
+		session.dispatch("first");
+		session.dispatch(SHIFT_ENTER);
+		session.dispatch("second");
+		session.dispatch(UP);
+		session.dispatch("!");
+		session.dispatch(UP);
+		session.dispatch(DOWN);
+		session.dispatch(ENTER);
+
+		expect(done).toHaveBeenCalledWith({
+			answers: [expect.objectContaining({ kind: "custom", answer: "first!\nsecond" })],
 			cancelled: false,
 		});
 	});
@@ -162,6 +205,21 @@ describe("QuestionnaireSession — custom-answer drafts", () => {
 
 		expect(done).toHaveBeenCalledWith({
 			answers: [expect.objectContaining({ kind: "custom", answer: "edited" })],
+			cancelled: false,
+		});
+	});
+
+	it("attaches multiline notes composed with Shift+Enter", () => {
+		const { session, done } = makeSession();
+		session.dispatch("n");
+		session.dispatch("first note");
+		session.dispatch(SHIFT_ENTER);
+		session.dispatch("second note");
+		session.dispatch(ENTER);
+		session.dispatch(ENTER);
+
+		expect(done).toHaveBeenCalledWith({
+			answers: [expect.objectContaining({ kind: "option", notes: "first note\nsecond note" })],
 			cancelled: false,
 		});
 	});

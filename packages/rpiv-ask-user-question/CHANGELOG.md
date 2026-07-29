@@ -8,7 +8,8 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
-- `Ctrl+G` opens Pi's configured external editor for the focused `Type something.` draft, and `Ctrl+U` clears that draft without cancelling the questionnaire. The input-mode hint bar advertises the context-specific clear control at its right edge.
+- Custom answers and notes now use Pi's multiline editor semantics: `Shift+Enter` inserts a newline, pasted line breaks are preserved, and vertical arrows move within the draft before returning to row navigation at its boundaries.
+- `Ctrl+G` opens Pi's configured external editor for the focused `Type something.` draft, and `Ctrl+U` clears that draft without cancelling the questionnaire. The input-mode hint bar advertises the context-specific controls at its right edge.
 
 ### Fixed
 - Custom-answer drafts now survive browsing other options, remain visible in place of the `Type something.` label while another option has focus, and stay isolated per question instead of being cleared on navigation or leaking across tabs.

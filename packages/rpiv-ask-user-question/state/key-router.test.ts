@@ -9,6 +9,9 @@ const KEY = {
 	DOWN: "tui.select.down",
 	CONFIRM: "tui.select.confirm",
 	CANCEL: "tui.select.cancel",
+	NEW_LINE: "tui.input.newLine",
+	EDITOR_UP: "tui.editor.cursorUp",
+	EDITOR_DOWN: "tui.editor.cursorDown",
 	CLEAR: "tui.editor.deleteToLineStart",
 	EXTERNAL_EDITOR: "app.editor.external",
 };
@@ -68,6 +71,8 @@ function makeRuntime(over: Partial<QuestionnaireRuntime> = {}): QuestionnaireRun
 	return {
 		keybindings,
 		inputBuffer: "",
+		canMoveInputUp: false,
+		canMoveInputDown: false,
 		questions,
 		isMulti: questions.length > 1,
 		currentItem: items[0],
@@ -633,6 +638,14 @@ describe("routeKey — notes", () => {
 			data: "a",
 		});
 	});
+
+	it("notesMode: configured newline is forwarded instead of closing the editor", () => {
+		const data = sentinel(KEY.NEW_LINE);
+		expect(routeKey(data, makeState({ notesVisible: true }), makeRuntime())).toEqual({
+			kind: "notes_forward",
+			data,
+		});
+	});
 });
 
 describe("routeKey — inputMode (Type something)", () => {
@@ -648,6 +661,30 @@ describe("routeKey — inputMode (Type something)", () => {
 		expect(routeKey("x", makeState({ inputMode: true }), makeRuntime({ currentItem: other }))).toEqual({
 			kind: "ignore",
 		});
+	});
+
+	it("configured newline is forwarded to the multiline editor", () => {
+		expect(
+			routeKey(sentinel(KEY.NEW_LINE), makeState({ inputMode: true }), makeRuntime({ currentItem: other })),
+		).toEqual({ kind: "ignore" });
+	});
+
+	it("forwards vertical editor movement while the cursor is between logical lines", () => {
+		const editing = makeState({ inputMode: true, optionIndex: 1 });
+		expect(
+			routeKey(
+				sentinel(KEY.EDITOR_UP),
+				editing,
+				makeRuntime({ currentItem: other, canMoveInputUp: true, canMoveInputDown: true }),
+			),
+		).toEqual({ kind: "ignore" });
+		expect(
+			routeKey(
+				sentinel(KEY.EDITOR_DOWN),
+				editing,
+				makeRuntime({ currentItem: other, canMoveInputUp: true, canMoveInputDown: true }),
+			),
+		).toEqual({ kind: "ignore" });
 	});
 
 	// FR-3: the inputMode block intercepts BEFORE the universal notes gate, so `n`

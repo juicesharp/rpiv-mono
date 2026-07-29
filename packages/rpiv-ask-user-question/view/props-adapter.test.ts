@@ -1,4 +1,4 @@
-import { Input } from "@earendil-works/pi-tui";
+import { Editor, type EditorTheme, type TUI } from "@earendil-works/pi-tui";
 import { describe, expect, it, vi } from "vitest";
 import type { PerTabSelector } from "../state/selectors/contract.js";
 import {
@@ -45,8 +45,9 @@ function makeFixture(overQuestions?: QuestionData[]) {
 	const submitPicker = makeStatefulView<SubmitPickerProps>();
 	const tabBar = makeStatefulView<TabBarProps>();
 	const dialog = makeStatefulView<DialogProps>();
-	const inlineInput = new Input();
-	const tui = { requestRender: vi.fn() };
+	const tui = { terminal: { columns: 120, rows: 40 }, requestRender: vi.fn() };
+	const editorTheme = { borderColor: (text: string) => text, selectList: {} } as unknown as EditorTheme;
+	const inlineInput = new Editor(tui as unknown as TUI, editorTheme);
 
 	const globalBindings: ReadonlyArray<BoundGlobalBinding> = [
 		globalBinding({ component: dialog, select: selectDialogProps }),
@@ -188,57 +189,13 @@ describe("QuestionnairePropsAdapter.apply", () => {
 		expect(arg.nextLabel).toBe("Next");
 	});
 
-	it("threads inlineInput.getValue() through to OptionListView.setProps", () => {
+	it("projects multiline editor text and its public cursor position", () => {
 		const { adapter, tabsByIndex, inlineInput } = makeFixture();
-		inlineInput.setValue("typed");
+		inlineInput.setText("first\nsecond");
 		adapter.apply(makeState());
 		expect(tabsByIndex[0]!.optionList.setProps).toHaveBeenLastCalledWith(
-			expect.objectContaining({ inputBuffer: "typed" }),
+			expect.objectContaining({ inputBuffer: "first\nsecond", inputCursorOffset: 12 }),
 		);
-	});
-
-	describe("getInputCursorOffset fallback branches", () => {
-		const expectUndefined = () => expect.objectContaining({ inputCursorOffset: undefined });
-
-		it("passes inputCursorOffset undefined when cursor field is absent", () => {
-			const { adapter, tabsByIndex, inlineInput } = makeFixture();
-			inlineInput.setValue("hello");
-			delete (inlineInput as unknown as { cursor?: unknown }).cursor;
-			adapter.apply(makeState());
-			expect(tabsByIndex[0]!.optionList.setProps).toHaveBeenLastCalledWith(expectUndefined());
-		});
-
-		it("passes inputCursorOffset undefined when cursor is not a number", () => {
-			const { adapter, tabsByIndex, inlineInput } = makeFixture();
-			inlineInput.setValue("hello");
-			(inlineInput as unknown as { cursor: unknown }).cursor = "0";
-			adapter.apply(makeState());
-			expect(tabsByIndex[0]!.optionList.setProps).toHaveBeenLastCalledWith(expectUndefined());
-		});
-
-		it("passes inputCursorOffset undefined when cursor is not a safe integer", () => {
-			const { adapter, tabsByIndex, inlineInput } = makeFixture();
-			inlineInput.setValue("hello");
-			(inlineInput as unknown as { cursor: unknown }).cursor = 1.5;
-			adapter.apply(makeState());
-			expect(tabsByIndex[0]!.optionList.setProps).toHaveBeenLastCalledWith(expectUndefined());
-		});
-
-		it("passes inputCursorOffset undefined when cursor is negative", () => {
-			const { adapter, tabsByIndex, inlineInput } = makeFixture();
-			inlineInput.setValue("hello");
-			(inlineInput as unknown as { cursor: unknown }).cursor = -1;
-			adapter.apply(makeState());
-			expect(tabsByIndex[0]!.optionList.setProps).toHaveBeenLastCalledWith(expectUndefined());
-		});
-
-		it("passes inputCursorOffset undefined when cursor exceeds buffer length", () => {
-			const { adapter, tabsByIndex, inlineInput } = makeFixture();
-			inlineInput.setValue("hello");
-			(inlineInput as unknown as { cursor: unknown }).cursor = 6;
-			adapter.apply(makeState());
-			expect(tabsByIndex[0]!.optionList.setProps).toHaveBeenLastCalledWith(expectUndefined());
-		});
 	});
 });
 

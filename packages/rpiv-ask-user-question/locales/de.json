@@ -9,6 +9,7 @@
 
   "hint.enter": "Enter zum Auswählen",
   "hint.navigate": "↑/↓ zur Navigation",
+  "hint.newline": "Umschalt+Enter für neue Zeile",
   "hint.clear": "Ctrl+U zum Leeren",
   "hint.toggle": "Leertaste zum Umschalten",
   "hint.notes": "n für Notizen",

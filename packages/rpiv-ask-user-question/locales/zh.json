@@ -9,6 +9,7 @@
 
   "hint.enter": "回车选择",
   "hint.navigate": "↑/↓ 导航",
+  "hint.newline": "Shift+Enter 换行",
   "hint.clear": "Ctrl+U 清空",
   "hint.toggle": "空格切换",
   "hint.notes": "按 n 添加备注",

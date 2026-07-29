@@ -380,18 +380,25 @@ describe("MultiSelectView — 'Type something.' row", () => {
 		expect(cursorLines[0]).toContain("my answer");
 	});
 
-	it("keeps the other row to ONE line even when the typed buffer is very long (height state-independent)", () => {
+	it("wraps long custom answers and reports their rendered height", () => {
 		const q = question();
 		const m = makeView(q, otherActiveInput(q, "x".repeat(200)));
 		for (const w of [20, 40, 80]) {
 			const lines = m.render(w);
-			// 3 options (1 line each, no desc) + 1 other + 1 Next = 5, regardless of buffer length.
-			expect(lines.length).toBe(5);
+			expect(lines.length).toBeGreaterThan(5);
+			expect(m.naturalHeight(w)).toBe(lines.length);
 			for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(w);
-			// The truncated other line ends with an ellipsis (buffer 200 >> contentWidth at every w).
-			const otherLine = lines[3];
-			expect(otherLine).toContain("…");
 		}
+	});
+
+	it("renders explicit line breaks and expands the focused row range", () => {
+		const q = question();
+		const m = makeView(q, otherActiveInput(q, "first\nsecond"));
+		const lines = m.render(80);
+		expect(lines.some((line) => line.includes("first"))).toBe(true);
+		expect(lines.some((line) => line.includes("second"))).toBe(true);
+		const [start, end] = m.focusedItemRowRange(80);
+		expect(end - start).toBe(2);
 	});
 
 	it("focusedItemRowRange covers the other row ([row, row+1]) then Next", () => {

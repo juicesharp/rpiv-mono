@@ -42,6 +42,8 @@ export interface QuestionnaireState {
 export interface QuestionnaireRuntime {
 	keybindings: { matches(data: string, name: string): boolean };
 	inputBuffer: string;
+	canMoveInputUp: boolean;
+	canMoveInputDown: boolean;
 	questions: readonly QuestionData[];
 	isMulti: boolean;
 	currentItem: WrappingSelectItem | undefined;

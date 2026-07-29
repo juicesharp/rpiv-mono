@@ -12,7 +12,7 @@ import { renderInlineInputRow } from "./inline-input.js";
  * Variant semantics:
  * - `option`: a regular author-defined option row.
  * - `other`: the inline free-text input row appended to every question
- *   (label is "Type something."). Renders as inline `Input` when active.
+ *   (label is "Type something."). Renders the headless multiline editor when active.
  * - `next`: the explicit commit-and-advance row appended to multi-select questions
  *   (label is "Next"). Renders without a number / checkbox.
  */
@@ -249,13 +249,7 @@ export class WrappingSelect implements Component {
 		return item.kind === "other" && isActive;
 	}
 
-	/**
-	 * Render the inline input row across one or more lines, wrapping at `contentWidth`.
-	 * Delegates to the shared `renderInlineInputRow` helper (`./inline-input.ts`) so the
-	 * single-select wrap path and the multi-select single-line path share one cursor-
-	 * building core. The `multiline: true` path is byte-identical to the pre-extraction
-	 * output (cursor rationale lives in `inline-input.ts`).
-	 */
+	/** Render the inline editor across logical and visually wrapped lines. */
 	private renderInlineInputRow(rowPrefix: string, continuationPrefix: string, contentWidth: number): string[] {
 		return renderInlineInputRow({
 			buffer: this.inputBuffer,
@@ -264,7 +258,6 @@ export class WrappingSelect implements Component {
 			continuationPrefix,
 			contentWidth,
 			selectedText: this.theme.selectedText,
-			multiline: true,
 		});
 	}
 

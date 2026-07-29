@@ -1,11 +1,10 @@
-import { CURSOR_MARKER, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { CURSOR_MARKER, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
-// Grapheme-aware extraction at the cursor: pi-tui's Input advances `cursor` by
-// grapheme-cluster code-unit length, so the cursor can land between code units of
-// one cluster (emoji, ZWJ, combining marks). Single-code-unit slicing would split
-// the cluster across the SGR 7/27 boundary. Moved here from wrapping-select.ts so
-// both the single-select (wrap) and multi-select (truncate-to-one-line) inline
-// inputs share one cursor-building core.
+// Grapheme-aware extraction at the cursor: pi-tui's Editor reports UTF-16
+// line/column positions, so the cursor can land between code units of one cluster
+// (emoji, ZWJ, combining marks). Single-code-unit slicing would split the cluster
+// across the SGR 7/27 boundary. Both single- and multi-select views share this
+// cursor-building core.
 const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
 export interface RenderInlineInputOptions {
@@ -21,15 +20,6 @@ export interface RenderInlineInputOptions {
 	contentWidth: number;
 	/** Per-line styling (single-select: `theme.selectedText`; multi-select: accent+bold). */
 	selectedText: (text: string) => string;
-	/**
-	 * `true` (single-select): wrap across lines at `contentWidth` (byte-identical to the
-	 * pre-extraction wrapping-select behavior).
-	 * `false` (multi-select): collapse to ONE line — truncate the plain buffer to
-	 * `contentWidth` with `…` when the cursor-marked content would overflow, keeping the
-	 * dialog height state-independent. The cursor is clipped past the visible window
-	 * (accepted trade): when the cursor-marked content fits it is rendered in full.
-	 */
-	multiline: boolean;
 }
 
 /**
@@ -53,44 +43,24 @@ function buildCursorRaw(buffer: string, offset: number): string {
 	const before = buffer.slice(0, offset);
 	const [firstGrapheme] = graphemeSegmenter.segment(buffer.slice(offset));
 	const rawAt = firstGrapheme ? firstGrapheme.segment : "";
-	// NBSP (U+00A0) fallback: visually identical to a space, wrap-safe.
-	const atCursor = rawAt === "" || rawAt === " " ? "\xa0" : rawAt;
-	const after = buffer.slice(offset + rawAt.length);
+	// A logical newline has no visible cell. Draw the cursor on an NBSP immediately
+	// before it and leave the newline unconsumed so the next logical line still renders.
+	const cursorAtLineEnd = rawAt === "\n";
+	const atCursor = rawAt === "" || rawAt === " " || cursorAtLineEnd ? "\xa0" : rawAt;
+	const after = buffer.slice(offset + (cursorAtLineEnd ? 0 : rawAt.length));
 	return `${before}${CURSOR_MARKER}\x1b[7m${atCursor}\x1b[27m${after}`;
 }
 
 /**
- * Render the inline-input row. `multiline: true` wraps (single-select, byte-identical to
- * the pre-extraction output); `multiline: false` collapses to a single line.
- *
- * Cursor visualization follows the standard TUI input-widget pattern (ECMA-48 SGR 7
- * reverse-video on the cell AT the cursor, not an inserted glyph) — same approach used by
- * pi-tui Input.render, ink-text-input, terkelg/prompts, ratatui's user-input example.
+ * Render the inline editor across logical and visually wrapped lines.
+ * Cursor visualization follows Pi's editor pattern: reverse-video on the cell at
+ * the cursor, with a non-breaking-space cell at end-of-line/end-of-buffer.
  */
 export function renderInlineInputRow(opts: RenderInlineInputOptions): string[] {
-	const { buffer, cursorOffset, rowPrefix, continuationPrefix, contentWidth, selectedText, multiline } = opts;
-	const offset = resolveCursorOffset(buffer, cursorOffset);
-
-	if (multiline) {
-		// Single-select: wrap at contentWidth. Byte-identical to the original
-		// wrapping-select.renderInlineInputRow output (same raw, same wrapTextWithAnsi,
-		// same prefix/selectedText per line).
-		const raw = buildCursorRaw(buffer, offset);
-		const wrapped = wrapTextWithAnsi(raw, contentWidth);
-		return wrapped.map((segment, index) => {
-			const prefix = index === 0 ? rowPrefix : continuationPrefix;
-			return selectedText(`${prefix}${segment}`);
-		});
-	}
-
-	// Multi-select: single line. Build the cursor markup on the full buffer; if it fits
-	// contentWidth, emit it as one line. If it overflows, fall back to truncating the PLAIN
-	// buffer (ANSI-safe — never cut a CURSOR_MARKER/SGR sequence) with `…` and clip the
-	// cursor. This keeps the row at exactly one line so naturalHeight stays state-independent.
-	const cursorRaw = buildCursorRaw(buffer, offset);
-	if (visibleWidth(cursorRaw) <= contentWidth) {
-		return [selectedText(`${rowPrefix}${cursorRaw}`)];
-	}
-	const clipped = truncateToWidth(buffer, contentWidth, "…");
-	return [selectedText(`${rowPrefix}${clipped}`)];
+	const { buffer, cursorOffset, rowPrefix, continuationPrefix, contentWidth, selectedText } = opts;
+	const raw = buildCursorRaw(buffer, resolveCursorOffset(buffer, cursorOffset));
+	return wrapTextWithAnsi(raw, contentWidth).map((segment, index) => {
+		const prefix = index === 0 ? rowPrefix : continuationPrefix;
+		return selectedText(`${prefix}${segment}`);
+	});
 }

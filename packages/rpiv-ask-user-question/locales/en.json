@@ -7,6 +7,7 @@
 
   "hint.enter": "Enter to select",
   "hint.navigate": "↑/↓ to navigate",
+  "hint.newline": "Shift+Enter for newline",
   "hint.clear": "Ctrl+U to clear",
   "hint.toggle": "Space to toggle",
   "hint.notes": "n to add notes",
