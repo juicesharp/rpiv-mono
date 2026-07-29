@@ -89,7 +89,8 @@ export const TodoParamsSchema = Type.Object({
 	),
 	status: Type.Optional(
 		StringEnum(["pending", "in_progress", "completed", "deleted"] as const, {
-			description: "Target status (update) or list filter (list)",
+			description:
+				"Set this task's status (update): one of pending, in_progress, completed, deleted. When action is list, filters returned tasks by this status.",
 		}),
 	),
 	blockedBy: Type.Optional(

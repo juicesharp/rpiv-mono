@@ -51,7 +51,11 @@ describe("applyTaskMutation — update", () => {
 	it("rejects id-only update", () => {
 		const state = stateWith(task({ id: 1, subject: "x" }));
 		const result = applyTaskMutation(state, "update", { id: 1 });
-		expect(result.op).toEqual({ kind: "error", message: "update requires at least one mutable field" });
+		expect(result.op).toEqual({
+			kind: "error",
+			message:
+				"update requires at least one mutable field: subject, description, activeForm, status, owner, metadata, addBlockedBy, or removeBlockedBy",
+		});
 	});
 
 	it("rejects illegal transition completed → in_progress", () => {
