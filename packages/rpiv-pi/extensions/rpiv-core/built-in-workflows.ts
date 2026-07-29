@@ -1338,6 +1338,14 @@ const fencedSpans = (content: string): [number, number][] => {
 	return spans;
 };
 
+/** Example-path namespaces the skill prompts use in illustrative citations
+ *  (`path/to/file.ext:12`, `packages/x/y.ts:42`). Artifacts quote — and models
+ *  imitate — these examples in unfenced prose, where the fence skip cannot
+ *  reach them; a citation under one of these prefixes is documentation shape,
+ *  never a claim about the tree, and prosecuting one buys a full LLM fix round
+ *  for zero risk averted (three of f329's floor failures were this class). */
+const PLACEHOLDER_CITATION_PREFIXES: readonly string[] = ["path/to/", "packages/x/"];
+
 const verifyCitations = (body: string, cwd: string): { detail: string; where: string }[] => {
 	const findings: { detail: string; where: string }[] = [];
 	const seen = new Set<string>();
@@ -1354,6 +1362,7 @@ const verifyCitations = (body: string, cwd: string): { detail: string; where: st
 		const [, path, startStr, endStr] = m;
 		if (!path || !startStr) continue;
 		if (fenced.some(([s, e]) => m.index >= s && m.index < e)) continue;
+		if (PLACEHOLDER_CITATION_PREFIXES.some((p) => path.startsWith(p))) continue;
 		const key = `${path}:${startStr}${endStr ? `-${endStr}` : ""}`;
 		if (seen.has(key)) continue;
 		seen.add(key);

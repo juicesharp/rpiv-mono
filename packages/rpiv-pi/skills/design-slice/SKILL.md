@@ -98,7 +98,7 @@ tags: [design, slice]
 
 ## Integration Points
 - `path:line` — <how this slice wires in; name sibling slices it couples to>
-  <!-- `path` is the repo-root-relative path (`packages/.../foo.ts:42`), never a subdirectory-relative form or a bare basename: the plan's deterministic cite-check floor verifies it, and an ambiguous or unresolvable path fails. -->
+  <!-- `path` is the repo-root-relative path (`packages/.../foo.ts:NN`), never a subdirectory-relative form or a bare basename: the plan's deterministic cite-check floor verifies it, and an ambiguous or unresolvable path fails. -->
 
 ## Success Criteria
 - [ ] <concrete, checkable>

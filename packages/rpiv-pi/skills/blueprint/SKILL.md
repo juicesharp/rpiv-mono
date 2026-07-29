@@ -177,7 +177,7 @@ Use the grounded-questions-one-at-a-time pattern. Use a **❓ Question:** prefix
 
 - **`ask_user_question` tool** — concrete options include evidence and trade-offs in every description. The user can type a custom answer through the automatically appended `Type something.` row; do not author `Other`. Example:
 
-  > Use the `ask_user_question` tool with the following question: "Found 2 mapping approaches — which should new code follow?". Header: "Pattern". Options: "Manual mapping (Recommended)" (Used in OrderService (src/services/OrderService.ts:45) — 8 occurrences); "AutoMapper" (Used in UserService (src/services/UserService.ts:12) — 2 occurrences).
+  > Use the `ask_user_question` tool with the following question: "Found 2 mapping approaches — which should new code follow?". Header: "Pattern". Options: "Manual mapping (Recommended)" (Used in OrderService (src/services/OrderService.ts:NN) — 8 occurrences); "AutoMapper" (Used in UserService (src/services/UserService.ts:NN) — 2 occurrences).
 
 - **Open-ended** — still use `ask_user_question`; supply 2-4 concrete hypotheses with behavior, `file:line` evidence, impact, and decision context, then let the automatic `Type something.` row capture unanticipated detail.
 

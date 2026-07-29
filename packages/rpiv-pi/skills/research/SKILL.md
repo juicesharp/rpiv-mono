@@ -137,7 +137,7 @@ Findings go into Precedents & Lessons. Otherwise skip and note "git history unav
    - Prioritize live codebase findings as primary source of truth
    - Use `.rpiv/artifacts/` findings as supplementary historical context
    - Include specific file paths and line numbers
-   - **Every `file:line` you emit must be VERIFIABLE against the file at this revision.** Before writing a citation, confirm the file exists and the cited line (or range end) is within it — cite what you actually read, never a remembered or guessed range. If you cannot verify a line number, cite the file path alone and omit the `:line`. Write paths **relative to the repo root** (`packages/billing/src/invoice.ts:42` — not the subdirectory-relative `src/invoice.ts:42`, nor the bare `invoice.ts:42`) — downstream artifacts inherit your citation form. A fabricated `file:line` (a range that matches no version of the file) propagates unbacked precision downstream — when the build workflow consumes this research, the slice map that rests on it fails the deterministic citation check at the `slice-check` gate, so an invented citation only bounces the flow.
+   - **Every `file:line` you emit must be VERIFIABLE against the file at this revision.** Before writing a citation, confirm the file exists and the cited line (or range end) is within it — cite what you actually read, never a remembered or guessed range. If you cannot verify a line number, cite the file path alone and omit the `:line`. Write paths **relative to the repo root** (`packages/billing/src/invoice.ts:NN` — not the subdirectory-relative `src/invoice.ts:NN`, nor the bare `invoice.ts:NN`) — downstream artifacts inherit your citation form. A fabricated `file:line` (a range that matches no version of the file) propagates unbacked precision downstream — when the build workflow consumes this research, the slice map that rests on it fails the deterministic citation check at the `slice-check` gate, so an invented citation only bounces the flow.
    - Build Code References as jump-table entries for the planner, not narrative (file:startLine-endLine format)
    - No multi-line code blocks (>3 lines) — use file:line refs + prose. No implementation recipes — facts only.
    - No artifact summaries — link plans/designs in Historical Context, don't summarize their contents. Research describes current codebase state.
@@ -149,9 +149,9 @@ Findings go into Precedents & Lessons. Otherwise skip and note "git history unav
 
    Every question MUST embed at least one `file:line` reference in the question text — not just in surrounding context. Examples:
 
-   - "❓ Question: `src/events/orders.ts:45-67` has 3 event hooks but no error recovery path. Is there a retry mechanism elsewhere I'm not seeing?"
-   - "❓ Question: Pattern-finder found manual mapping at `src/services/OrderService.ts:45` (8 uses) vs AutoMapper at `src/services/UserService.ts:12` (2 uses). Which should new code follow?"
-   - "❓ Question: Precedent commit `abc123` required a follow-up fix at `src/handlers/key.ts:158` for connection leak. Should we account for that pattern in this design?"
+   - "❓ Question: `src/events/orders.ts:NN-NN` has 3 event hooks but no error recovery path. Is there a retry mechanism elsewhere I'm not seeing?"
+   - "❓ Question: Pattern-finder found manual mapping at `src/services/OrderService.ts:NN` (8 uses) vs AutoMapper at `src/services/UserService.ts:NN` (2 uses). Which should new code follow?"
+   - "❓ Question: Precedent commit `abc123` required a follow-up fix at `src/handlers/key.ts:NN` for connection leak. Should we account for that pattern in this design?"
 
    Anti-patterns — NEVER ask these:
    - "Is this research to understand X or prepare for Y?" — confirmatory, pulls zero new information
@@ -170,7 +170,7 @@ Findings go into Precedents & Lessons. Otherwise skip and note "git history unav
    - **`ask_user_question` tool** — when your question has 2-4 concrete options from code analysis (pattern conflicts, integration choices, scope boundaries, priority overrides). The automatically appended `Type something.` row captures custom input. Example:
 
      > `Header` is capped at ≤16 characters (`MAX_HEADER_LENGTH = 16` — longer values are rejected).
-     > Use the `ask_user_question` tool with the following question: "Found 2 patterns for retry logic — which is canonical?". Header: "Pattern". Options: "Event-sourced retry (Recommended)" (`src/events/orders.ts:45-67` — 3 hooks, matches precedent commit `abc123`); "Direct retry loop" (`src/services/OrderService.ts:112` — single use, no event traceability).
+     > Use the `ask_user_question` tool with the following question: "Found 2 patterns for retry logic — which is canonical?". Header: "Pattern". Options: "Event-sourced retry (Recommended)" (`src/events/orders.ts:NN-NN` — 3 hooks, matches precedent commit `abc123`); "Direct retry loop" (`src/services/OrderService.ts:NN` — single use, no event traceability).
 
    - **Open-ended** (discovery, "what am I missing?", corrections) — still use `ask_user_question`; supply 2-4 concrete hypotheses with behavior, `file:line` evidence, impact, and decision context, then let the automatic `Type something.` row capture unanticipated detail.
 
@@ -178,7 +178,7 @@ Findings go into Precedents & Lessons. Otherwise skip and note "git history unav
 
    ❌ "The premise inversion is load-bearing for prioritization — it means Site A is a no-op, and the real bloat only hits general-purpose dispatches. Given this, where is the bloat actually landing? Do your skills dispatch named bundled agents — in which case append-mode is irrelevant — or general-purpose — in which case it IS the dominant source?"
 
-   ✅ Extract the 2 concrete options and call `ask_user_question`: "Where is the prompt bloat landing?". Header: "Bloat source". Options: "Named bundled agents (Recommended)" (Skills dispatch `codebase-analyzer` etc. — `prompt_mode: "replace"`, no parent inheritance); "General-purpose agent" (`default-agents.ts:11-28` — `promptMode: "append"`, inherits full parent prompt).
+   ✅ Extract the 2 concrete options and call `ask_user_question`: "Where is the prompt bloat landing?". Header: "Bloat source". Options: "Named bundled agents (Recommended)" (Skills dispatch `codebase-analyzer` etc. — `prompt_mode: "replace"`, no parent inheritance); "General-purpose agent" (`default-agents.ts:NN-NN` — `promptMode: "append"`, inherits full parent prompt).
 
    **Batching**: When you have 2-4 independent questions (answers don't depend on each other), you MAY batch them in a single `ask_user_question` call. Keep dependent questions sequential.
 
@@ -263,8 +263,8 @@ Findings go into Precedents & Lessons. Otherwise skip and note "git history unav
    ...
 
    ## Code References
-   - `path/to/file.py:123` — Description of what's there
-   - `another/file.ts:45-67` — Description of the code block
+   - `path/to/file.py:NN` — Description of what's there
+   - `another/file.ts:NN-NN` — Description of the code block
 
    ## Integration Points
    {All connections to the researched area. Enumerate each consumer, dependency, and wiring point with file:line. Source from the questions artifact's Discovery Summary + new connections found by analysis agents.}

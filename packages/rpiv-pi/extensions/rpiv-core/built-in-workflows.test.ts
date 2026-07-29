@@ -2063,6 +2063,17 @@ describe("build slice-check (deterministic floor)", () => {
 		expect(data.findings).toEqual([]);
 	});
 
+	it("skips prose citations under the placeholder namespaces (path/to/, packages/x/)", () => {
+		const rel = ".rpiv/artifacts/slices/placeholder-namespace.md";
+		const m = write(
+			rel,
+			`---\nstatus: ready\nslice_count: 1\nslices:\n  - { n: 1, title: A, deps: [] }\n---\n## Slice 1: A\nAn evidence string is shaped like \`packages/x/y.ts:42 — helper returns early\`; templates use path/to/file.ext:12-30.\n`,
+		);
+		const data = runOn(m);
+		expect(data.pass).toBe(true);
+		expect(data.findings).toEqual([]);
+	});
+
 	it("still flags a real unresolved path:line citation in slice-map prose (skip is span-scoped)", () => {
 		const rel = ".rpiv/artifacts/slices/fence-prose.md";
 		const m = write(
@@ -3324,6 +3335,18 @@ describe("plan-time coverage floor (verifyPhaseFilesCoverage via plan-cite-check
 			write(
 				rel,
 				`---\nstatus: ready\nphase_count: 1\nphases:\n  - { n: 1, title: One, files: [] }\n---\n# Plan\n## Phase 1: One\nExample fixture:\n\n\`\`\`ts\nconst x = load("src/does-not-exist.ts:42");\n\`\`\`\n`,
+			),
+		);
+		expect(data.pass).toBe(true);
+		expect(data.findings).toEqual([]);
+	});
+
+	it("skips prose citations under the placeholder namespaces (path/to/, packages/x/)", () => {
+		const rel = ".rpiv/artifacts/plans/placeholder-namespace.md";
+		const data = runOn(
+			write(
+				rel,
+				`---\nstatus: ready\nphase_count: 1\nphases:\n  - { n: 1, title: One, files: [] }\n---\n# Plan\n## Phase 1: One\nAn evidence string is shaped like \`packages/x/y.ts:85 (helper)\`; templates use path/to/file.ext:12-30.\n`,
 			),
 		);
 		expect(data.pass).toBe(true);
