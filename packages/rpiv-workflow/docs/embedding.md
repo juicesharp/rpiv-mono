@@ -280,7 +280,7 @@ The same bundle shape is accepted per-call as `RunWorkflowOptions.lifecycle`.
 | `onStageEnd(stage, output, ctx)` | After the stage's success row lands; `output` is the validated envelope |
 | `onStageRetry(stage, attempt, ctx)` | After an `outputSchema` rejection, before the re-prompt; `attempt` is 1-based |
 | `onStageError(stage, error, ctx)` | After a `"failed"` / `"aborted"` row lands. Terminal for the run |
-| `onRoute(from, to, ctx, bypassed?)` | After an `EdgeFn` picks and its routing row lands. `to` may be the `"stop"` sentinel; `bypassed` lists not-taken recovery arms |
+| `onRoute(from, to, ctx)` | After an `EdgeFn` picks and its routing row lands. `to` may be the `"stop"` sentinel |
 | `onLoopStart(stage, info, ctx)` | After `onStageStart`, before unit 1 (after the unit list is computed for fan-out) |
 | `onUnitStart(stage, unit, ctx)` | Per unit, before the unit's session opens — produce **and** judge units |
 | `onUnitEnd(stage, unit, output, ctx)` | Per unit, after the unit's row lands. Loop units never fire `onStageEnd` |

@@ -47,21 +47,6 @@ export interface LifecycleContext {
 	/** What triggered this run; defaulted at `runWorkflow` entry if `options.trigger` was omitted. */
 	trigger: RunTrigger;
 	state: RunView;
-	/**
-	 * Distinct stage names already executed in this run — the engine's
-	 * authoritative `RunContext.visited`, RECONSTRUCTED from the JSONL trail on a
-	 * resume. Populated only on the run-level projection (`lifecycleCtxFor`, which
-	 * backs `onWorkflowStart`/`onWorkflowEnd`, script-stage `onStageStart`, and the
-	 * loop/route fires); UNDEFINED on session-fired events (`lifecycleCtxFromSession`
-	 * carries `runIdentity` only, never the live visited set).
-	 *
-	 * Exists so a status-line bridge can SEED its own distinct-visited accumulator
-	 * at `onWorkflowStart`: a resumed run kicks the chain at its reconstructed walk
-	 * position (a deep `stageNumber`), but only re-fires per-stage events from that
-	 * point forward — without this, the bridge would recount `visited` from zero and
-	 * a near-done resume would render a misleadingly tiny `visited/totalStages`.
-	 */
-	visited?: readonly string[];
 }
 
 /**
@@ -185,13 +170,9 @@ export interface LifecycleListeners {
 
 	/**
 	 * After an `EdgeFn` picks and its routing-decision row lands. `to` may be the
-	 * `STOP` sentinel literal `"stop"`. `bypassed` lists the decision edge's
-	 * not-taken RECOVERY arms — failure loops the chosen arm skipped for good (see
-	 * `bypassedRecoveryArms` in routing.ts). A progress listener credits them so
-	 * the bar reaches full while the terminal stage runs; empty for deterministic
-	 * (string) edges and gates with no loop-back alternative.
+	 * `STOP` sentinel literal `"stop"`.
 	 */
-	onRoute?(from: StageRef, to: string, ctx: LifecycleContext, bypassed?: readonly string[]): void | Promise<void>;
+	onRoute?(from: StageRef, to: string, ctx: LifecycleContext): void | Promise<void>;
 
 	/** After `onStageStart`, before unit 1's session (after the unit list is computed for fanout). */
 	onLoopStart?(stage: StageRef, info: LoopStartInfo, ctx: LifecycleContext): void | Promise<void>;
@@ -330,7 +311,6 @@ export function buildLifecycleContext(args: {
 	totalStages: number;
 	trigger: RunTrigger;
 	state: RunView;
-	visited?: readonly string[];
 }): LifecycleContext {
 	return args;
 }
@@ -350,7 +330,6 @@ export function lifecycleCtxFor(run: {
 	totalStages: number;
 	trigger: RunTrigger;
 	state: RunView;
-	visited: ReadonlySet<string>;
 }): LifecycleContext {
 	return buildLifecycleContext({
 		cwd: run.cwd,
@@ -359,9 +338,6 @@ export function lifecycleCtxFor(run: {
 		totalStages: run.totalStages,
 		trigger: run.trigger,
 		state: run.state,
-		// Snapshot the live set — listeners must not mutate the engine's accumulator,
-		// and a fired ctx is captured per fire so a later `visited.add` is irrelevant.
-		visited: [...run.visited],
 	});
 }
 
