@@ -55,7 +55,7 @@ Translation covers the chrome you read: the `Type something.` and `Next` sentine
 the footer hint segments (including the collapsed-state line), the Submit picker labels,
 the review-tab heading with its submit-readiness prompt and incomplete-answers warning, the
 preview pane's empty and notes-affordance lines, the notes header, the external-editor
-failure notification, and the two RPC dialog prompts. Twenty-two keys in total, all under the namespace
+failure notification, and the two RPC dialog prompts. Twenty-three keys in total, all under the namespace
 `@juicesharp/rpiv-ask-user-question`.
 
 Everything the *model* reads stays English by design: the tool description, the parameter
