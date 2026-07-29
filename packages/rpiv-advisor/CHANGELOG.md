@@ -5,7 +5,7 @@ All notable changes to `@juicesharp/rpiv-advisor` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.2.0] - 2026-07-29
 
 ### Fixed
 - An empty advisor response (a normal stop that carried no text) is now retried once with identical inputs before surfacing the empty-response error, so a transient provider hiccup no longer fails the call outright. Aborted and errored calls still surface immediately and are never retried.
