@@ -7,6 +7,13 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- The todo overlay is now lazy-loaded, deferring its module cost from session start to first render (#108).
+
+### Fixed
+- A model no longer gets trapped in a failure loop when it omits the `status` field from an `update` call after context compaction: the error message now enumerates the mutable fields, the `status` parameter description leads with its mutation role instead of reading like a list filter, and a prompt guideline carries the literal `update {id, status: 'completed'}` call shape as a durable recipe (#137).
+- A transient overlay-load failure during tool execution no longer surfaces as an extension error: the tool result stands, a `[rpiv-todo]`-prefixed warning is logged, and the overlay retries on the next event. A rejected overlay import is no longer cached for the process lifetime, so a late first load after dependency churn recovers instead of staying broken.
+
 ## [2.1.0] - 2026-07-23
 
 ### Changed
