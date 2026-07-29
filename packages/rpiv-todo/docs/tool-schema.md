@@ -38,7 +38,7 @@ todo({
   // update / get / delete
   id?: number,
 
-  // update (target status) or list (filter)
+  // update (sets this task's status) or list (filters by status)
   status?: "pending" | "in_progress" | "completed" | "deleted",
 
   // list-only
@@ -132,7 +132,7 @@ that it was a no-op instead of a fresh `Updated #N`.
 | `blockedBy: #N is deleted` | `create` naming a tombstoned dependency. |
 | `id required for update` / `get` / `delete` | `id` omitted. |
 | `#N not found` | No task with that id. |
-| `update requires at least one mutable field` | `update` with only an `id`. |
+| `update requires at least one mutable field: subject, description, activeForm, status, owner, metadata, addBlockedBy, or removeBlockedBy` | `update` with only an `id`. |
 | `illegal transition completed → in_progress` | Target status not reachable from the current one. |
 | `cannot block #N on itself` | `addBlockedBy` includes the task's own id. |
 | `addBlockedBy: #N not found` / `is deleted` | Unknown or tombstoned dependency. |
@@ -144,8 +144,9 @@ carries the bare message. Task state is unchanged.
 
 ## Prompt guidance
 
-The tool ships a `promptSnippet` and seven `promptGuidelines` bullets telling the
+The tool ships a `promptSnippet` and eight `promptGuidelines` bullets telling the
 model when to open a list, to keep exactly one task `in_progress`, to mark work
-completed immediately rather than in batches, and never to complete a task with
-failing tests. Both are overridable — see
+completed immediately rather than in batches, never to complete a task with
+failing tests, and the literal `update {id, status}` call shape for changing a
+task's status. Both are overridable — see
 [configuration.md](./configuration.md#guidance).
