@@ -190,7 +190,7 @@ describe("LaneDock — forced redraw on height-shape change (duplicate-block fix
 		setUnitStarted("run-1", 1, "u1");
 		const overlay = new LaneDock();
 		const { tui } = mount(overlay, makeCtx());
-		setLaneProgress("run-1", { stageNumber: 4, totalStages: 15, stageName: "design", phase: "running" });
+		setLaneProgress("run-1", { stageName: "design", phase: "running" });
 		overlay.update();
 		expect(tui?.requestRender).toHaveBeenLastCalledWith(false);
 		overlay.dispose();
@@ -231,7 +231,7 @@ describe("LaneDock — forced redraw on height-shape change (duplicate-block fix
 		const spy = tui!.requestRender as unknown as ReturnType<typeof vi.fn>;
 		spy.mockClear();
 		// Stable shape (row count unchanged) ⇒ shapeChanged false ⇒ no forced redraw.
-		setLaneProgress("run-1", { stageNumber: 2, totalStages: 3, stageName: "design", phase: "running" });
+		setLaneProgress("run-1", { stageName: "design", phase: "running" });
 		overlay.update();
 		expect(tui!.requestRender).toHaveBeenLastCalledWith(false);
 		overlay.dispose();
@@ -428,13 +428,12 @@ describe("LaneDock — rendering", () => {
 });
 
 describe("LaneDock — live stage progress", () => {
-	it("a lane with progress renders N/total + stageName instead of 'streaming…'", () => {
+	it("a lane with progress renders the stageName instead of 'streaming…'", () => {
 		recordRun("run-1", "ship");
-		setLaneProgress("run-1", { stageNumber: 3, totalStages: 7, stageName: "plan-layers", phase: "running" });
+		setLaneProgress("run-1", { stageName: "plan-layers", phase: "running" });
 		const overlay = new LaneDock();
 		const { widget } = mount(overlay, makeCtx());
 		const out = (widget?.render(120) ?? []).join("\n");
-		expect(out).toContain("3/7");
 		expect(out).toContain("plan-layers");
 		expect(out).not.toContain("streaming…");
 		overlay.dispose();
@@ -442,11 +441,9 @@ describe("LaneDock — live stage progress", () => {
 
 	it("a retry shows the retry attempt; a fanout stage shows units x/y", () => {
 		recordRun("run-1", "ship");
-		setLaneProgress("run-1", { stageNumber: 2, totalStages: 7, stageName: "vet", phase: "retry", attempt: 2 });
+		setLaneProgress("run-1", { stageName: "vet", phase: "retry", attempt: 2 });
 		recordRun("run-2", "build");
 		setLaneProgress("run-2", {
-			stageNumber: 5,
-			totalStages: 7,
 			stageName: "synthesize",
 			phase: "running",
 			units: { done: 2, total: 4 },
@@ -459,45 +456,9 @@ describe("LaneDock — live stage progress", () => {
 		overlay.dispose();
 	});
 
-	it("the fraction is distinct-visited/total; a re-entered (looped) stage shows a ↻lap marker, not 'N of fewer'", () => {
-		// Cyclic walk: 7th activation in a 4-stage graph, only 3 distinct nodes visited.
-		recordRun("run-1", "ship");
-		setLaneProgress("run-1", {
-			stageNumber: 7,
-			totalStages: 4,
-			visited: 3,
-			stageName: "implement",
-			phase: "running",
-		});
-		const overlay = new LaneDock();
-		const { widget } = mount(overlay, makeCtx());
-		const out = (widget?.render(120) ?? []).join("\n");
-		expect(out).toContain("3/4"); // fraction never inverts — visited ≤ total
-		expect(out).not.toContain("7/4"); // the old misleading ordinal/graph fraction is gone
-		expect(out).toContain("↻7"); // path ordinal surfaced as a lap marker
-		overlay.dispose();
-	});
-
-	it("an acyclic walk (ordinal == visited) shows a clean fraction with no lap marker", () => {
-		recordRun("run-1", "ship");
-		setLaneProgress("run-1", {
-			stageNumber: 3,
-			totalStages: 4,
-			visited: 3,
-			stageName: "implement",
-			phase: "running",
-		});
-		const overlay = new LaneDock();
-		const { widget } = mount(overlay, makeCtx());
-		const out = (widget?.render(120) ?? []).join("\n");
-		expect(out).toContain("3/4");
-		expect(out).not.toContain("↻"); // no re-entry → no lap noise
-		overlay.dispose();
-	});
-
 	it("needs-input still wins the trailing label over live progress", () => {
 		recordRun("run-1", "ship");
-		setLaneProgress("run-1", { stageNumber: 3, totalStages: 7, stageName: "plan-layers", phase: "running" });
+		setLaneProgress("run-1", { stageName: "plan-layers", phase: "running" });
 		enqueueInput("run-1", SINGLE_UNIT_KEY, {
 			factory: (() => ({})) as never,
 			options: undefined as never,
@@ -511,39 +472,35 @@ describe("LaneDock — live stage progress", () => {
 		overlay.dispose();
 	});
 
-	it("aligns the status column across rows despite differing name, id, and stage counts", () => {
-		// Differing NAME lengths (fixed NAME_COL) AND differing totalStages (fixed-width
-		// bar) must not shift the N/total column — a 6-stage and a 5-stage run align.
+	it("aligns the stage column across rows despite differing name and id lengths", () => {
+		// Differing NAME lengths (fixed NAME_COL) must not shift the stage column.
 		recordRun("r-1", "x");
 		recordRun("r-2", "a-very-long-workflow-name");
-		setLaneProgress("r-1", { stageNumber: 1, totalStages: 6, stageName: "plan", phase: "running" });
-		setLaneProgress("r-2", { stageNumber: 1, totalStages: 5, stageName: "build", phase: "running" });
+		setLaneProgress("r-1", { stageName: "plan", phase: "running" });
+		setLaneProgress("r-2", { stageName: "build", phase: "running" });
 		const overlay = new LaneDock();
 		const { widget } = mount(overlay, makeCtx());
 		// Strip ANSI: truncateToWidth injects reset codes into the truncated long name,
 		// which would skew a raw indexOf — the ON-SCREEN column is what must align.
 		const stripAnsi = (s: string) => s.replace(/\[[0-9;]*m/g, "");
-		const rows = (widget?.render(120) ?? []).map(stripAnsi).filter((l) => l.includes("▰"));
-		expect(rows.length).toBe(2);
-		// Both the bar AND the N/total counter must start at the same on-screen column.
-		expect(rows[0].indexOf("▰")).toBe(rows[1].indexOf("▰"));
-		expect(rows[0].indexOf("1/6")).toBe(rows[1].indexOf("1/5"));
+		const rows = (widget?.render(120) ?? []).map(stripAnsi);
+		const planRow = rows.find((l) => l.includes(" plan")) ?? "";
+		const buildRow = rows.find((l) => l.includes(" build")) ?? "";
+		// Both stage names must start at the same on-screen column (fixed tag + label cols).
+		expect(planRow.indexOf("plan")).toBe(buildRow.indexOf("build"));
 		overlay.dispose();
 	});
 
-	it("drops the bar first under narrow width; every line stays within width", () => {
+	it("every line stays within a narrow width; the stage name survives the squeeze", () => {
 		recordRun("run-1", "polish");
-		setLaneProgress("run-1", { stageNumber: 3, totalStages: 7, stageName: "plan-layers", phase: "running" });
+		setLaneProgress("run-1", { stageName: "plan-layers", phase: "running" });
 		const overlay = new LaneDock();
 		const { widget } = mount(overlay, makeCtx());
 		const narrow = widget?.render(36) ?? [];
 		// Measure DISPLAY width: truncateToWidth injects ANSI reset codes at the cut,
 		// so raw string length overcounts — visibleWidth is the on-screen column count.
 		for (const line of narrow) expect(visibleWidth(line)).toBeLessThanOrEqual(36);
-		// The bar (▰/▱) is dropped first so the N/total label survives the squeeze.
-		const out = narrow.join("\n");
-		expect(out).not.toContain("▰");
-		expect(out).toContain("3/7");
+		expect(narrow.join("\n")).toContain("plan-layers");
 		overlay.dispose();
 	});
 });
@@ -552,8 +509,6 @@ describe("LaneDock — failure reason chip", () => {
 	it("a failed (error-phase) row appends the reason after the stage name, with the ✗ glyph", () => {
 		recordRun("run-1", "ship");
 		setLaneProgress("run-1", {
-			stageNumber: 2,
-			totalStages: 4,
 			stageName: "blueprint",
 			phase: "error",
 			reason: "no plan artifact",
@@ -564,15 +519,12 @@ describe("LaneDock — failure reason chip", () => {
 		expect(out).toContain("✗"); // error-phase glyph
 		expect(out).toContain("blueprint"); // stage name
 		expect(out).toContain("no plan artifact"); // the cause chip
-		expect(out).toContain("▰"); // wide enough → bar AND reason both shown
 		overlay.dispose();
 	});
 
-	it("drops the bar before the reason under width pressure (reason > bar)", () => {
+	it("keeps the reason chip under width pressure", () => {
 		recordRun("run-1", "polish");
 		setLaneProgress("run-1", {
-			stageNumber: 3,
-			totalStages: 7,
 			stageName: "plan",
 			phase: "error",
 			reason: "boom",
@@ -582,15 +534,14 @@ describe("LaneDock — failure reason chip", () => {
 		const narrow = widget?.render(40) ?? [];
 		for (const line of narrow) expect(visibleWidth(line)).toBeLessThanOrEqual(40);
 		const out = narrow.join("\n");
-		expect(out).not.toContain("▰"); // bar sacrificed first
-		expect(out).toContain("3/7"); // the signal survives
+		expect(out).toContain("plan"); // the stage name survives
 		expect(out).toContain("boom"); // the reason survives the squeeze
 		overlay.dispose();
 	});
 
 	it("a retired failed lane surfaces termination.error from lane.error", () => {
 		recordRun("run-1", "ship");
-		setLaneProgress("run-1", { stageNumber: 2, totalStages: 4, stageName: "blueprint", phase: "error" });
+		setLaneProgress("run-1", { stageName: "blueprint", phase: "error" });
 		retireRun("run-1", "failed", "disk write failed — out of space");
 		const overlay = new LaneDock();
 		const { widget } = mount(overlay, makeCtx());
@@ -854,8 +805,6 @@ describe("LaneDock — token tally", () => {
 		setUnitStarted("run-1", 0, "u0");
 		setUnitStarted("run-1", 1, "u1");
 		setLaneProgress("run-1", {
-			stageNumber: 3,
-			totalStages: 5,
 			stageName: "implement",
 			phase: "running",
 			units: { done: 2, total: 2 },
@@ -884,8 +833,6 @@ describe("LaneDock — token tally", () => {
 		setUnitStarted("run-1", 0, "u0");
 		setUnitStarted("run-1", 1, "u1");
 		setLaneProgress("run-1", {
-			stageNumber: 3,
-			totalStages: 5,
 			stageName: "implement",
 			phase: "running",
 			units: { done: 2, total: 2 },
@@ -913,8 +860,6 @@ describe("LaneDock — token tally", () => {
 		setUnitStarted("run-1", 0, "u-partial"); // only input nonzero
 		setUnitStarted("run-1", 1, "u-zero"); // all zero
 		setLaneProgress("run-1", {
-			stageNumber: 1,
-			totalStages: 2,
 			stageName: "plan",
 			phase: "running",
 			units: { done: 2, total: 2 },
@@ -945,8 +890,6 @@ describe("LaneDock — token tally", () => {
 		recordRun("run-1", "build");
 		setUnitStarted("run-1", 0, "u-running"); // running, never captured → no finalUsage
 		setLaneProgress("run-1", {
-			stageNumber: 1,
-			totalStages: 3,
 			stageName: "research",
 			phase: "running",
 			units: { done: 0, total: 1 },
@@ -966,8 +909,6 @@ describe("LaneDock — token tally", () => {
 		recordRun("run-1", "build");
 		setUnitStarted("run-1", 0, "u-live");
 		setLaneProgress("run-1", {
-			stageNumber: 1,
-			totalStages: 3,
 			stageName: "research",
 			phase: "running",
 		});
@@ -1001,8 +942,6 @@ describe("LaneDock — token tally", () => {
 		recordRun("run-1", "build");
 		setUnitStarted("run-1", 0, "u-throw");
 		setLaneProgress("run-1", {
-			stageNumber: 1,
-			totalStages: 3,
 			stageName: "research",
 			phase: "running",
 		});
@@ -1027,8 +966,6 @@ describe("LaneDock — token tally", () => {
 		recordRun("run-1", "build");
 		setUnitStarted("run-1", 0, "u-done");
 		setLaneProgress("run-1", {
-			stageNumber: 3,
-			totalStages: 3,
 			stageName: "implement",
 			phase: "running",
 			units: { done: 1, total: 1 },

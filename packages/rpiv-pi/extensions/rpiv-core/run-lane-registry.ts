@@ -137,26 +137,6 @@ export interface UnitLane {
  * `streaming…` label. Absent (undefined) before the first stage starts.
  */
 export interface LaneProgress {
-	/**
-	 * Path ordinal — the count of stage ACTIVATIONS along the executed walk
-	 * (`idx + 1`), so it climbs on every loop-back / re-entry and is unbounded by
-	 * graph size. This is the "lap" number (`↻7`), NOT a fraction numerator: it is
-	 * incommensurable with `totalStages` (distance travelled vs. map size).
-	 */
-	stageNumber: number;
-	/** Distinct reachable stage NODES in the workflow graph (static, BFS at launch). */
-	totalStages: number;
-	/**
-	 * Distinct stage nodes VISITED so far (≤ totalStages) — the one quantity for
-	 * which `visited/totalStages ≤ 1` holds, so it (not `stageNumber`) is the
-	 * progress-fraction numerator. Counts nodes actually entered PLUS the recovery
-	 * arms a gate bypassed for good (build's slice-fix/plan-fix/code-fix, credited via onRoute's
-	 * `bypassed`), so a clean run reaches `totalStages` while its terminal stage
-	 * runs instead of capping below until the onWorkflowEnd snap. Undefined for
-	 * snapshots built outside the lifecycle bridge; the renderer falls back to
-	 * `min(stageNumber, totalStages)`.
-	 */
-	visited?: number;
 	stageName: string;
 	/** Glyph selector: running spinner · ⟲ retry · ✗ error. */
 	phase: "running" | "retry" | "error";
@@ -204,15 +184,6 @@ export interface LaneEntry {
 	readonly units: Map<number, UnitLane>;
 	/** Live stage progress; undefined until the first onStageStart. */
 	progress: LaneProgress | undefined;
-	/**
-	 * Distinct stage names entered over this run's life — the accumulator behind
-	 * `LaneProgress.visited`. Lives on the entry (not the per-event progress
-	 * snapshot, which the bridge rebuilds wholesale) so a cyclic walk that revisits
-	 * a stage never inflates the count. Retained across a same-session resume
-	 * (those stages WERE visited); only a launcher restart resets it, which resets
-	 * the whole lane anyway. Lazily created by `noteVisitedStage`.
-	 */
-	visitedStages?: Set<string>;
 	/**
 	 * Terminal failure cause — `result.termination.error` captured at
 	 * `retireRun`, the readable reason a `failed`/`aborted`/`cancelled` run ended.
@@ -623,42 +594,6 @@ export function setLaneProgress(runId: string, progress: LaneProgress | undefine
 	if (!entry) return;
 	entry.progress = progress;
 	notify();
-}
-
-/**
- * Record a stage entry and return the running count of DISTINCT stages visited
- * for this run — the `LaneProgress.visited` numerator. Idempotent per stage name
- * (a `Set`), so the bridge can call it from every per-stage event (start, retry,
- * unit-end) and always read back the correct distinct count without inflating it
- * on a loop-back. Returns 0 for a missing/evicted run (best-effort, like
- * `setLaneProgress`). Does NOT `notify()` — the paired `setLaneProgress` does.
- */
-export function noteVisitedStage(runId: string, stageName: string): number {
-	const entry = state().lanes.get(runId);
-	if (!entry) return 0;
-	const visited = entry.visitedStages ?? new Set<string>();
-	visited.add(stageName);
-	entry.visitedStages = visited;
-	return visited.size;
-}
-
-/**
- * Seed the distinct-visited accumulator with stage names the engine already walked
- * — the reconstructed `RunContext.visited` carried on `onWorkflowStart`'s
- * `LifecycleContext.visited`. UNIONS into the set (never replaces), so it composes
- * with `noteVisitedStage`: a fresh run seeds an empty list (no-op), while a RESUMED
- * run seeds its reconstructed walk so the first post-resume `noteVisitedStage` reads
- * back the true distinct count instead of recounting from zero (the `1/17`-near-done
- * bug). Idempotent + best-effort (a missing/evicted run no-ops). Returns the running
- * size. Does NOT `notify()` — the numerator surfaces on the next `setLaneProgress`.
- */
-export function seedVisitedStages(runId: string, names: readonly string[]): number {
-	const entry = state().lanes.get(runId);
-	if (!entry) return 0;
-	const visited = entry.visitedStages ?? new Set<string>();
-	for (const name of names) visited.add(name);
-	entry.visitedStages = visited;
-	return visited.size;
 }
 
 /** Enqueue a deferred foreground-stage UI request onto a UNIT's queue (relay).

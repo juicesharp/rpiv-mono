@@ -14,7 +14,6 @@ import {
 	listLanes,
 	listLanesForDisplay,
 	markUnitDone,
-	noteVisitedStage,
 	type PendingInput,
 	peekInput,
 	recordRun,
@@ -85,8 +84,6 @@ describe("run-lane-registry", () => {
 			// A run fails and is retained: terminal status + a transcript snapshot.
 			recordRun("run-1", "ship");
 			setLaneProgress("run-1", {
-				stageNumber: 2,
-				totalStages: 3,
 				stageName: "build",
 				phase: "running",
 			});
@@ -655,11 +652,11 @@ describe("run-lane-registry", () => {
 			recordRun("run-1", "ship");
 			const listener = vi.fn();
 			subscribeLanes(listener);
-			setLaneProgress("run-1", { stageNumber: 1, totalStages: 7, stageName: "plan", phase: "running" });
-			expect(getLane("run-1")?.progress).toMatchObject({ stageNumber: 1, totalStages: 7, stageName: "plan" });
+			setLaneProgress("run-1", { stageName: "plan", phase: "running" });
+			expect(getLane("run-1")?.progress).toMatchObject({ stageName: "plan" });
 			expect(listener).toHaveBeenCalledTimes(1);
-			setLaneProgress("run-1", { stageNumber: 2, totalStages: 7, stageName: "build", phase: "running" });
-			expect(getLane("run-1")?.progress?.stageNumber).toBe(2);
+			setLaneProgress("run-1", { stageName: "build", phase: "running" });
+			expect(getLane("run-1")?.progress?.stageName).toBe("build");
 			expect(listener).toHaveBeenCalledTimes(2);
 			setLaneProgress("run-1", undefined);
 			expect(getLane("run-1")?.progress).toBeUndefined();
@@ -669,33 +666,9 @@ describe("run-lane-registry", () => {
 		it("is a no-op (no notify) on an unrecorded run", () => {
 			const listener = vi.fn();
 			subscribeLanes(listener);
-			expect(() =>
-				setLaneProgress("nope", { stageNumber: 1, totalStages: 3, stageName: "x", phase: "running" }),
-			).not.toThrow();
+			expect(() => setLaneProgress("nope", { stageName: "x", phase: "running" })).not.toThrow();
 			expect(listener).not.toHaveBeenCalled();
 			expect(getLane("nope")).toBeUndefined();
-		});
-	});
-
-	describe("noteVisitedStage", () => {
-		it("returns the running count of DISTINCT stage names (a repeat does not inflate it)", () => {
-			recordRun("run-1", "ship");
-			expect(noteVisitedStage("run-1", "research")).toBe(1);
-			expect(noteVisitedStage("run-1", "implement")).toBe(2);
-			expect(noteVisitedStage("run-1", "review")).toBe(3);
-			expect(noteVisitedStage("run-1", "implement")).toBe(3); // loop-back — already counted
-		});
-
-		it("does not notify (the paired setLaneProgress owns the redraw)", () => {
-			recordRun("run-1", "ship");
-			const listener = vi.fn();
-			subscribeLanes(listener);
-			noteVisitedStage("run-1", "research");
-			expect(listener).not.toHaveBeenCalled();
-		});
-
-		it("returns 0 for a missing/evicted run", () => {
-			expect(noteVisitedStage("ghost", "x")).toBe(0);
 		});
 	});
 

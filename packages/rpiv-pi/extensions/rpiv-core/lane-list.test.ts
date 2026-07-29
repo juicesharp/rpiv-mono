@@ -87,7 +87,7 @@ describe("renderLaneList", () => {
 		// stamp a Date.now() age into the heading, which could flake a byte-for-byte
 		// comparison across a second boundary). running / completed / failed only.
 		recordRun("run-1", "ship");
-		setLaneProgress("run-1", { stageNumber: 2, totalStages: 5, stageName: "plan", phase: "running" });
+		setLaneProgress("run-1", { stageName: "plan", phase: "running" });
 		recordRun("run-2", "build");
 		setLaneStatus("run-2", "completed");
 		recordRun("run-3", "vet");

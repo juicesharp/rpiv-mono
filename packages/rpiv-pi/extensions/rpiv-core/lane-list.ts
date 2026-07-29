@@ -51,25 +51,17 @@ export const SPIN_INTERVAL_MS = 160;
 const CURSOR_SELECTED = "❯ ";
 const CURSOR_UNSELECTED = "  ";
 
-/** Mini stage-progress bar: filled/empty cells, capped + scaled for big workflows. */
-const BAR_FILLED = "▰";
-const BAR_EMPTY = "▱";
-const BAR_MAX_CELLS = 7;
 /** Minimum leftover display columns to bother showing a failure-reason chip. */
 const MIN_REASON_WIDTH = 6;
-/** Lap marker (`↻7`) for the path ordinal — shown ONLY once the walk has re-entered a stage
- *  (`stageNumber > visited`) so an acyclic run stays a clean `3/4` with no marker. */
-const LAP_MARK = "↻";
 /** Retry glyph (onStageRetry); running uses the spinner, error the failed glyph. */
 const RETRY_GLYPH = "⟲";
 
 // Fixed-width columns (column stability): each leading field is truncated or right-padded to a
-// constant DISPLAY width so the bar / status region starts at the same column on every row.
+// constant DISPLAY width so the status region starts at the same column on every row.
 const TAG_COL = 12;
 const MAX_LABEL_WIDTH = 40;
 const LABEL_LEADING = 4 + TAG_COL + 2;
 const PROGRESS_MIN_WIDTH = 12;
-const NUM_COL = 5;
 
 /** Per-status glyph; needs-input overrides it (see renderLaneRow). */
 const STATUS_GLYPH: Record<LaneStatus, string> = {
@@ -241,8 +233,7 @@ function renderUnitRow(
 
 /**
  * Render a lane row carrying live stage progress. Width priority under pressure: the
- * `N/total stageName` label is always kept; the failure `reason` chip is kept next; the
- * mini-bar (decoration) is dropped FIRST — so a failed row shows its cause before its bar.
+ * `stageName` label is always kept; the failure `reason` chip fills what's left.
  */
 function renderProgressRow(
 	theme: Theme,
@@ -252,40 +243,25 @@ function renderProgressRow(
 	reason?: string,
 	usage?: LaneUsage,
 ): string {
-	const cells = BAR_MAX_CELLS;
-	const visited = progress.visited ?? Math.min(progress.stageNumber, progress.totalStages);
-	const ratio = progress.totalStages > 0 ? visited / progress.totalStages : 0;
-	const filled = Math.max(0, Math.min(cells, Math.round(ratio * cells)));
-	const filledStr = BAR_FILLED.repeat(filled);
-	const emptyStr = BAR_EMPTY.repeat(cells - filled);
-
-	const numRaw = `${visited}/${progress.totalStages}`;
 	let nameRaw = progress.stageName;
 	if (progress.phase === "retry" && progress.attempt !== undefined) nameRaw += ` · retry ${progress.attempt}`;
-	if (progress.stageNumber > visited) nameRaw += ` · ${LAP_MARK}${progress.stageNumber}`;
 	if (progress.units) nameRaw += ` · units ${progress.units.done}/${progress.units.total}`;
 	const usageTally = formatUsageTally(usage);
 	if (usageTally) nameRaw += ` · ${usageTally}`;
 
-	const numCol = padCol(theme, "muted", numRaw, NUM_COL);
 	const coloredName = theme.fg("muted", nameRaw);
-	const coreW = visibleWidth(prefix) + Math.max(NUM_COL, visibleWidth(numRaw)) + 1 + visibleWidth(nameRaw);
+	const coreW = visibleWidth(prefix) + visibleWidth(nameRaw);
 
 	let reasonStr = "";
 	if (reason) {
 		const leftover = width - coreW;
 		if (leftover >= MIN_REASON_WIDTH) reasonStr = theme.fg("warning", truncateToWidth(` — ${reason}`, leftover, "…"));
 	}
-	const reasonW = visibleWidth(reasonStr);
-
-	const includeBar = cells > 0 && coreW + reasonW + cells + 2 <= width;
-	if (!includeBar) return `${prefix}${numCol} ${coloredName}${reasonStr}`;
-	const coloredBar = `${theme.fg("accent", filledStr)}${theme.fg("dim", emptyStr)}`;
-	return `${prefix}${coloredBar}  ${numCol} ${coloredName}${reasonStr}`;
+	return `${prefix}${coloredName}${reasonStr}`;
 }
 
 /** Render a lane (parent) row: cursor-gutter · status-glyph · workflow-tag · descriptor ·
- *  [progress bar / status word]. needs-input wins the glyph + trailing label. */
+ *  [stage progress / status word]. needs-input wins the glyph + trailing label. */
 function renderLaneRow(
 	theme: Theme,
 	lane: LaneEntry,

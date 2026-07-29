@@ -10,7 +10,7 @@
  *
  * Each lifecycle event maps to `setLaneProgress(ctx.runId, …)`:
  *   - onStageStart → clear the prior stage's fan-out unit sub-rows (every stage kind; it fires
- *                    before onLoopStart on a loop stage) + { stageNumber, totalStages, stageName, phase: "running" }
+ *                    before onLoopStart on a loop stage) + { stageName, phase: "running" }
  *   - onStageRetry → phase "retry" + attempt           ("⟲ … retry 2/3")
  *   - onStageError → phase "error"                      (brief — the run then evicts)
  *   - onLoopStart  → seed units.total (fanout precomputes its unit list); on a
@@ -41,10 +41,8 @@ import {
 	clearUnitLanes,
 	getLane,
 	markUnitDone,
-	noteVisitedStage,
 	retireRun,
 	seedPendingUnits,
-	seedVisitedStages,
 	setLaneProgress,
 	setUnitStarted,
 	sweepRunningUnits,
@@ -119,19 +117,6 @@ export async function registerLaneProgress(): Promise<void> {
 		// loader/DSL/runner graph off startup and avoids the barrel-import race.
 		const { registerLifecycle } = await import("@juicesharp/rpiv-workflow/startup");
 		g.dispose = registerLifecycle({
-			// Fires ONCE per run (new or resumed) BEFORE the chain kicks. On a RESUME the
-			// engine reconstructs its distinct-visited set from the trail and re-enters the
-			// walk at a deep `stageNumber`, but only re-fires per-stage events from that point
-			// forward — so seed the registry's accumulator from `ctx.visited` HERE, otherwise
-			// the bridge recounts from zero and a near-done resume renders a misleading "1/17".
-			// A fresh run carries an empty `visited`, so this no-ops. The numerator surfaces on
-			// the first post-seed `setLaneProgress` (the resumed stage's onStageStart).
-			onWorkflowStart: (ctx) => {
-				if (ctx.visited?.length) seedVisitedStages(ctx.runId, ctx.visited);
-			},
-			// `noteVisitedStage` is idempotent per stage name, so calling it from every
-			// per-stage event keeps `visited` (the distinct-nodes-visited fraction
-			// numerator) correct without inflating on a loop-back — see LaneProgress.
 			// onStageStart fires for EVERY stage kind — a plain sequential stage (the single-stage
 			// entry announcement, run-stage.ts:221) AND every loop stage, where it fires BEFORE
 			// onLoopStart (announceLoopStart, loop.ts:75→78). So retiring the prior stage's fan-out
@@ -141,23 +126,10 @@ export async function registerLaneProgress(): Promise<void> {
 			// clearUnitLanes is a no-op on an empty map, so the first stage of a run pays nothing.
 			onStageStart: (stage, ctx) => {
 				clearUnitLanes(ctx.runId);
-				setLaneProgress(ctx.runId, {
-					stageNumber: stage.stageNumber,
-					totalStages: ctx.totalStages,
-					visited: noteVisitedStage(ctx.runId, stage.name),
-					stageName: stage.name,
-					phase: "running",
-				});
+				setLaneProgress(ctx.runId, { stageName: stage.name, phase: "running" });
 			},
 			onStageRetry: (stage, attempt, ctx) =>
-				setLaneProgress(ctx.runId, {
-					stageNumber: stage.stageNumber,
-					totalStages: ctx.totalStages,
-					visited: noteVisitedStage(ctx.runId, stage.name),
-					stageName: stage.name,
-					phase: "retry",
-					attempt,
-				}),
+				setLaneProgress(ctx.runId, { stageName: stage.name, phase: "retry", attempt }),
 			// Carry the stage's failure cause so the dock row can surface WHY
 			// it failed before the run retires — no longer discarded.
 			onStageError: (stage, error, ctx) => {
@@ -166,28 +138,7 @@ export async function registerLaneProgress(): Promise<void> {
 				// onUnitEnd — flip every still-running sub-row to ✗ so none spins forever.
 				sweepRunningUnits(ctx.runId, "failed");
 				fanoutRuns.delete(ctx.runId);
-				setLaneProgress(ctx.runId, {
-					stageNumber: stage.stageNumber,
-					totalStages: ctx.totalStages,
-					visited: noteVisitedStage(ctx.runId, stage.name),
-					stageName: stage.name,
-					phase: "error",
-					reason: error,
-				});
-			},
-			// A decision edge took its arm: credit each not-taken RECOVERY arm (a
-			// failure loop the chosen arm skipped for good — build's slice-fix/plan-fix/code-fix)
-			// as visited. This advances the distinct-nodes-visited numerator at the
-			// gate, so the bar reaches `totalStages` WHILE the terminal stage runs
-			// (commit shows 16/16) instead of capping below until the onWorkflowEnd
-			// snap. `noteVisitedStage` is idempotent + the runner already excludes
-			// already-visited / forward arms, so this never inflates past the total.
-			onRoute: (_from, _to, ctx, bypassed) => {
-				if (!bypassed?.length) return;
-				let visited = 0;
-				for (const name of bypassed) visited = noteVisitedStage(ctx.runId, name);
-				const prog = getLane(ctx.runId)?.progress;
-				if (prog) setLaneProgress(ctx.runId, { ...prog, visited });
+				setLaneProgress(ctx.runId, { stageName: stage.name, phase: "error", reason: error });
 			},
 			onLoopStart: (stage, info, ctx) => {
 				// A new fan-out generation REPLACES the prior one's sub-rows — the engine
@@ -211,9 +162,6 @@ export async function registerLaneProgress(): Promise<void> {
 					fanoutRuns.delete(ctx.runId);
 				}
 				setLaneProgress(ctx.runId, {
-					stageNumber: stage.stageNumber,
-					totalStages: ctx.totalStages,
-					visited: noteVisitedStage(ctx.runId, stage.name),
 					stageName: stage.name,
 					phase: "running",
 					// Fanout precomputes its unit list; pull loops (iterate/assess) discover
@@ -257,14 +205,7 @@ export async function registerLaneProgress(): Promise<void> {
 					const prev = getLane(ctx.runId)?.progress?.units;
 					units = { done: (prev?.done ?? 0) + 1, total: prev?.total ?? unit.index + 1 };
 				}
-				setLaneProgress(ctx.runId, {
-					stageNumber: stage.stageNumber,
-					totalStages: ctx.totalStages,
-					visited: noteVisitedStage(ctx.runId, stage.name),
-					stageName: stage.name,
-					phase: "running",
-					units,
-				});
+				setLaneProgress(ctx.runId, { stageName: stage.name, phase: "running", units });
 			},
 			// The run terminated: RETAIN the lane with its terminal status (so
 			// it stays visible + its transcript stays viewable) and PUSH a completion
@@ -278,18 +219,6 @@ export async function registerLaneProgress(): Promise<void> {
 				// `termination.error` is the readable cause (the same text as the trail's
 				// errMsg) — retain it on the lane for the dock chip + viewer header.
 				const error = result.termination?.error;
-				// A completed run is 100% by definition. The bar's fraction is
-				// distinct-stages-visited / reachable-stages. The onRoute handler now credits
-				// bypassed recovery arms (build's `slice-fix`/`plan-fix`/`code-fix`) at the gate, so a clean
-				// run usually already reads full here and this snap is a no-op. It REMAINS as a
-				// safety net for any uncredited skip (e.g. a gate passed before a resume point,
-				// whose onRoute never re-fired). Paint the bar full on clean completion only;
-				// `failed`/`aborted` keep their last real snapshot so the row stays frozen at
-				// the stage that died.
-				const prog = lane?.progress;
-				if (status === "completed" && prog && prog.visited !== prog.totalStages) {
-					setLaneProgress(ctx.runId, { ...prog, visited: prog.totalStages });
-				}
 				// Sweep any unit that never fired onUnitEnd (abort/throw) to the run's terminal
 				// kind BEFORE retiring, so a failed run's stuck sub-rows read ✗ (retireRun's
 				// running→done fallback then no-ops on them). Drop the gate — the run is over.

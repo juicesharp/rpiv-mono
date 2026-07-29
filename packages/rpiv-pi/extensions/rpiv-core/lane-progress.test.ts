@@ -23,7 +23,6 @@ import { __resetSessionCaptureState, registerSessionCapture } from "./session-ca
 
 /** Loose projection of the listener bundle — enough to drive the events under test. */
 interface Bundle {
-	onWorkflowStart?: (ctx: { runId: string; totalStages: number; visited?: readonly string[] }) => void;
 	onStageStart?: (stage: { stageNumber: number; name: string }, ctx: { runId: string; totalStages: number }) => void;
 	onStageRetry?: (
 		stage: { stageNumber: number; name: string },
@@ -34,12 +33,6 @@ interface Bundle {
 		stage: { stageNumber: number; name: string },
 		error: string,
 		ctx: { runId: string; totalStages: number },
-	) => void;
-	onRoute?: (
-		from: { name: string },
-		to: string,
-		ctx: { runId: string; totalStages: number },
-		bypassed?: readonly string[],
 	) => void;
 	onLoopStart?: (
 		stage: { stageNumber: number; name: string },
@@ -175,14 +168,11 @@ describe("lane-progress event mapping", () => {
 		return bundle();
 	}
 
-	it("onStageStart → setLaneProgress with stageNumber / totalStages / stageName", async () => {
+	it("onStageStart → setLaneProgress with stageName", async () => {
 		const b = await register();
 		recordRun("run-1", "ship");
 		b.onStageStart?.({ stageNumber: 3, name: "plan-layers" }, { runId: "run-1", totalStages: 7 });
 		expect(getLane("run-1")?.progress).toMatchObject({
-			stageNumber: 3,
-			totalStages: 7,
-			visited: 1, // first distinct stage entered on this run
 			stageName: "plan-layers",
 			phase: "running",
 		});
@@ -213,107 +203,6 @@ describe("lane-progress event mapping", () => {
 			phase: "error",
 			reason: "blueprint finished without producing a path",
 		});
-	});
-
-	it("visited counts DISTINCT stages — a loop-back re-enters a stage without inflating the fraction numerator", async () => {
-		const b = await register();
-		recordRun("run-1", "ship");
-		const ctx = { runId: "run-1", totalStages: 4 };
-		// A→B→C then loop back to B: 4 activations, 3 distinct nodes.
-		b.onStageStart?.({ stageNumber: 1, name: "research" }, ctx);
-		b.onStageStart?.({ stageNumber: 2, name: "implement" }, ctx);
-		b.onStageStart?.({ stageNumber: 3, name: "review" }, ctx);
-		b.onStageStart?.({ stageNumber: 4, name: "implement" }, ctx); // re-entry — already visited
-		expect(getLane("run-1")?.progress).toMatchObject({
-			stageNumber: 4, // path ordinal keeps climbing
-			visited: 3, // distinct nodes — does NOT double-count "implement"
-			totalStages: 4,
-			stageName: "implement",
-		});
-	});
-
-	it("onWorkflowStart seeds the visited accumulator from a resumed walk so the numerator isn't recounted from zero", async () => {
-		const b = await register();
-		recordRun("run-1", "build");
-		const ctx = { runId: "run-1", totalStages: 17 };
-		// Resume: the engine reconstructed 10 distinct stages already walked, then kicks
-		// the chain at the resumed `elaborate` stage (a deep path ordinal). Without the
-		// seed the first onStageStart would read visited:1 → the misleading "1/17".
-		b.onWorkflowStart?.({
-			...ctx,
-			visited: [
-				"research",
-				"slice",
-				"slice-structure",
-				"slice-gate",
-				"design",
-				"synth-partial",
-				"synth-root",
-				"plan-gate",
-				"refine",
-				"elaborate",
-			],
-		});
-		b.onStageStart?.({ stageNumber: 22, name: "elaborate" }, ctx);
-		// `elaborate` was already in the seed, so it stays at 10 — not 11, not 1.
-		expect(getLane("run-1")?.progress).toMatchObject({ stageNumber: 22, visited: 10, totalStages: 17 });
-	});
-
-	it("onWorkflowStart with an empty/absent visited list is a no-op (fresh run)", async () => {
-		const b = await register();
-		recordRun("run-1", "build");
-		const ctx = { runId: "run-1", totalStages: 17 };
-		b.onWorkflowStart?.(ctx); // fresh run — nothing walked yet
-		b.onStageStart?.({ stageNumber: 1, name: "research" }, ctx);
-		expect(getLane("run-1")?.progress?.visited).toBe(1); // counts only the live stage
-	});
-
-	it("onRoute credits bypassed recovery arms into the visited numerator", async () => {
-		const b = await register();
-		recordRun("run-1", "build");
-		const ctx = { runId: "run-1", totalStages: 17 };
-		["research", "slice", "slice-check", "slice-grade"].forEach((n, i) => {
-			b.onStageStart?.({ stageNumber: i + 1, name: n }, ctx);
-		});
-		// slice-grade passes → slice-design; slice-fix is bypassed for good on this path.
-		b.onRoute?.({ name: "slice-grade" }, "slice-design", ctx, ["slice-fix"]);
-		expect(getLane("run-1")?.progress?.visited).toBe(5); // 4 entered + slice-fix credited
-	});
-
-	it("onRoute with an empty bypass list leaves the numerator untouched", async () => {
-		const b = await register();
-		recordRun("run-1", "build");
-		const ctx = { runId: "run-1", totalStages: 17 };
-		b.onStageStart?.({ stageNumber: 1, name: "research" }, ctx);
-		b.onRoute?.({ name: "research" }, "slice", ctx, []);
-		expect(getLane("run-1")?.progress?.visited).toBe(1);
-	});
-
-	it("build happy path: commit shows 17/17 WHILE running (bypassed slice-fix+plan-fix+code-fix credited at the gates)", async () => {
-		const b = await register();
-		recordRun("run-1", "build");
-		const ctx = { runId: "run-1", totalStages: 17 };
-		const enter = (n: string, i: number) => b.onStageStart?.({ stageNumber: i, name: n }, ctx);
-		enter("research", 1);
-		enter("slice", 2);
-		enter("slice-check", 3);
-		enter("slice-grade", 4);
-		b.onRoute?.({ name: "slice-grade" }, "slice-design", ctx, ["slice-fix"]);
-		enter("slice-design", 5);
-		enter("subplan", 6);
-		enter("plan", 7);
-		enter("plan-grade", 8);
-		b.onRoute?.({ name: "plan-grade" }, "code", ctx, ["plan-fix"]);
-		enter("code", 9);
-		enter("code-splice", 10);
-		enter("code-grade", 11);
-		b.onRoute?.({ name: "code-grade" }, "implement", ctx, ["code-fix"]); // code-fix → code-grade (visited), credited
-		enter("implement", 12);
-		enter("validate", 13);
-		enter("commit", 14);
-		// Path ordinal is 14 (actual entries), but distinct-covered is 17 — a full bar
-		// WHILE commit runs, not the old 14/16 that only snapped to full at completion.
-		expect(getLane("run-1")?.progress).toMatchObject({ visited: 17, totalStages: 17, stageName: "commit" });
 	});
 
 	it("setLaneProgress no-ops on a non-recorded run (non-detached runs cost nothing)", async () => {
@@ -701,38 +590,33 @@ describe("onWorkflowEnd — terminal retention + completion toast", () => {
 		expect(REAL_UI.notify).toHaveBeenCalledWith(expect.stringContaining("finished"), "info");
 	});
 
-	it("completed → paints the bar full (visited = totalStages) so a finished run isn't frozen below 100%", async () => {
+	it("completed → preserves the terminal stage's last snapshot", async () => {
 		const b = await register();
 		recordRun("run-1", "build");
 		const ctx = { runId: "run-1", totalStages: 4 };
-		// A successful path that skips a branch-exclusive stage: 3 distinct of 4
-		// visited (the build 13/14 shape). The last live snapshot caps below 100%.
 		b.onStageStart?.({ stageNumber: 1, name: "slice" }, ctx);
 		b.onStageStart?.({ stageNumber: 2, name: "code" }, ctx);
 		b.onStageStart?.({ stageNumber: 3, name: "commit" }, ctx);
-		expect(getLane("run-1")?.progress?.visited).toBe(3); // frozen below total pre-end
 
 		b.onWorkflowEnd?.(
 			{ termination: { status: "completed" } },
 			{ runId: "run-1", workflow: "build", totalStages: 4 },
 		);
 
-		// Bar painted full on completion; the terminal stage name is preserved.
-		expect(getLane("run-1")?.progress).toMatchObject({ visited: 4, totalStages: 4, stageName: "commit" });
+		expect(getLane("run-1")?.progress).toMatchObject({ stageName: "commit" });
 		expect(getLane("run-1")?.status).toBe("completed");
 	});
 
-	it("failed → leaves the last real snapshot frozen (does NOT paint the bar full)", async () => {
+	it("failed → leaves the last real snapshot frozen at the stage that died", async () => {
 		const b = await register();
 		recordRun("run-1", "build");
 		const ctx = { runId: "run-1", totalStages: 4 };
 		b.onStageStart?.({ stageNumber: 1, name: "slice" }, ctx);
-		b.onStageError?.({ stageNumber: 2, name: "code" }, "boom", ctx); // visited 2, phase error
+		b.onStageError?.({ stageNumber: 2, name: "code" }, "boom", ctx);
 
 		b.onWorkflowEnd?.({ termination: { status: "failed" } }, { runId: "run-1", workflow: "build", totalStages: 4 });
 
-		// A failed row stays frozen at the stage that died — NOT bumped to 4/4.
-		expect(getLane("run-1")?.progress).toMatchObject({ visited: 2, phase: "error", stageName: "code" });
+		expect(getLane("run-1")?.progress).toMatchObject({ phase: "error", stageName: "code" });
 		expect(getLane("run-1")?.status).toBe("failed");
 	});
 
