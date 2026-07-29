@@ -285,6 +285,47 @@ describe("run-lane-registry", () => {
 		});
 	});
 
+	describe("retireRun — lastArtifact capture", () => {
+		it("captures lastArtifact on a completed retire (runId, status, error?, lastArtifact?)", () => {
+			recordRun("run-1", "ship");
+			retireRun("run-1", "completed", undefined, ".rpiv/artifacts/builds/ship.md");
+			expect(getLane("run-1")?.lastArtifact).toBe(".rpiv/artifacts/builds/ship.md");
+		});
+
+		it("is idempotent — a second retire does NOT overwrite lastArtifact (first-retire-wins)", () => {
+			// Mirrors the finalBranch preservation guard: the second retire is a no-op
+			// (entry.status !== "running"), so a stale onWorkflowEnd can't wipe the path.
+			recordRun("run-1", "ship");
+			retireRun("run-1", "completed", undefined, ".rpiv/artifacts/builds/ship.md");
+			expect(getLane("run-1")?.lastArtifact).toBe(".rpiv/artifacts/builds/ship.md");
+
+			const listener = vi.fn();
+			subscribeLanes(listener);
+			retireRun("run-1", "completed", undefined, ".rpiv/artifacts/builds/OTHER.md");
+			expect(getLane("run-1")?.lastArtifact).toBe(".rpiv/artifacts/builds/ship.md"); // held
+			expect(listener).not.toHaveBeenCalled(); // no spurious notify on the no-op
+		});
+
+		it("leaves lastArtifact undefined when not supplied (side-effect-only / aborted-run callers)", () => {
+			// The aborted-run callers (workflow-execution-host, lane-console) pass ≤3 args,
+			// correctly leaving lastArtifact undefined — a side-effect-only completed run
+			// has result.lastArtifact === undefined too. Either way no path is retained.
+			recordRun("run-1", "ship");
+			retireRun("run-1", "completed"); // no lastArtifact arg
+			expect(getLane("run-1")?.lastArtifact).toBeUndefined();
+		});
+
+		it("recordRun reactivation clears a prior run's lastArtifact (resume never leaks the old path)", () => {
+			recordRun("run-1", "ship");
+			retireRun("run-1", "completed", undefined, ".rpiv/artifacts/builds/ship.md");
+			expect(getLane("run-1")?.lastArtifact).toBe(".rpiv/artifacts/builds/ship.md");
+
+			recordRun("run-1", "ship"); // re-record the SAME id — resume reuses it
+			expect(getLane("run-1")?.status).toBe("running"); // reactivated
+			expect(getLane("run-1")?.lastArtifact).toBeUndefined(); // stale path cleared
+		});
+	});
+
 	describe("finalUsage capture (per-unit token usage)", () => {
 		it("captures finalUsage from session.getUsage() via captureFinalSnapshot", () => {
 			recordRun("run-1", "ship");

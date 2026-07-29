@@ -242,12 +242,19 @@ function renderProgressRow(
 	width: number,
 	reason?: string,
 	usage?: LaneUsage,
+	lastArtifact?: string,
 ): string {
 	let nameRaw = progress.stageName;
 	if (progress.phase === "retry" && progress.attempt !== undefined) nameRaw += ` · retry ${progress.attempt}`;
 	if (progress.units) nameRaw += ` · units ${progress.units.done}/${progress.units.total}`;
 	const usageTally = formatUsageTally(usage);
 	if (usageTally) nameRaw += ` · ${usageTally}`;
+	// The run's primary artifact path (a `produces` stage emitted one) — rendered as a
+	// trailing `→ path` segment AFTER the usage tally so a completed row points at what
+	// it built. Inherits `muted` via the single theme.fg("muted", nameRaw) wrap below,
+	// same as the tally. Omitted entirely when `lastArtifact` is undefined, so a
+	// side-effect-only run renders byte-identical to before this field existed.
+	if (lastArtifact) nameRaw += ` → ${lastArtifact}`;
 
 	const coloredName = theme.fg("muted", nameRaw);
 	const coreW = visibleWidth(prefix) + visibleWidth(nameRaw);
@@ -304,7 +311,16 @@ function renderLaneRow(
 
 	if (needs) return `${prefix}${theme.fg("warning", "needs input")}`;
 	const reason = shortFailureReason(lane.error ?? (progress?.phase === "error" ? progress.reason : undefined));
-	if (progress) return renderProgressRow(theme, prefix, progress, width, reason, sumLaneUsage(lane.units.values()));
+	if (progress)
+		return renderProgressRow(
+			theme,
+			prefix,
+			progress,
+			width,
+			reason,
+			sumLaneUsage(lane.units.values()),
+			lane.lastArtifact,
+		);
 	const label = running ? "streaming…" : lane.status;
 	const tail = reason ? `${theme.fg("muted", label)}${theme.fg("warning", ` — ${reason}`)}` : theme.fg("muted", label);
 	return `${prefix}${tail}`;

@@ -3,6 +3,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { computeLaneLayout, computeViewport, MAX_DOCK_ROWS, MAX_WIDGET_LINES, renderLaneList } from "./lane-list.js";
 import {
 	__resetRunLaneRegistry,
+	captureFinalSnapshot,
 	type DisplayRow,
 	enqueueInput,
 	recordRun,
@@ -179,6 +180,64 @@ describe("renderLaneList", () => {
 		expect(out).toMatch(/1 run needs input · \d+s/); // aging count heading
 		expect(out).toContain("⚑"); // the needs-input row glyph
 		expect(out).toContain("needs input"); // the needs-input row trailing label
+	});
+});
+
+describe("renderLaneList — completed-lane lastArtifact segment", () => {
+	const LANE_CAP = computeLaneLayout(40).laneCap; // 11
+	// Wide enough that the full artifact path renders untruncated — truncation on a
+	// narrow terminal (criterion #3) is a separate concern exercised manually.
+	const W = 200;
+
+	it("renders `→ <path>` as a trailing segment AFTER the usage tally on a completed lane", () => {
+		// A completed lane with live stage progress + usage + lastArtifact renders:
+		//   …commit · ↑134k ↓26k R2.1M → .rpiv/artifacts/builds/ship.md
+		// The artifact segment is the LAST tail segment (after the usage tally).
+		recordRun("run-1", "ship", { workflow: "ship" });
+		setLaneProgress("run-1", { stageName: "commit", phase: "running" });
+		// Seed usage on the lane's single-stage unit via captureFinalSnapshot, then retire
+		// so the lane reads completed + retains the snapshot's finalUsage.
+		captureFinalSnapshot("run-1", SINGLE_UNIT_KEY, {
+			sessionId: "s1",
+			isStreaming: false,
+			sessionManager: { getBranch: () => [{ type: "message" }], getCwd: () => "/tmp" },
+			getToolDefinition: () => undefined,
+			getStreamingMessage: () => undefined,
+			getUsage: () => ({
+				tokens: { input: 134000, output: 26000, cacheRead: 2_100_000, cacheWrite: 0, total: 2260000 },
+			}),
+			subscribe: () => () => {},
+		});
+		retireRun("run-1", "completed", undefined, ".rpiv/artifacts/builds/ship.md");
+		const lines = renderLaneList(identityTheme, W, { active: false, selection: 0, frame: 0, laneCap: LANE_CAP });
+		const row = lines.find((l) => l.includes("commit")) ?? "";
+		expect(row).toContain("↑134k");
+		expect(row).toContain("R2.1M");
+		// The artifact segment is present …
+		expect(row).toContain("→ .rpiv/artifacts/builds/ship.md");
+		// … and trails the usage tally (the `→` comes after the last usage segment).
+		expect(row.lastIndexOf("↑134k")).toBeLessThan(row.indexOf("→ .rpiv/artifacts/builds/ship.md"));
+	});
+
+	it("renders NO `→` segment when lastArtifact is undefined (byte-identical to a side-effect-only run)", () => {
+		// r2: a completed lane with no lastArtifact must append nothing — no `→` segment,
+		// no column shift. A side-effect-only run (no produces stage) hits exactly this path.
+		recordRun("run-1", "ship", { workflow: "ship" });
+		setLaneProgress("run-1", { stageName: "commit", phase: "running" });
+		captureFinalSnapshot("run-1", SINGLE_UNIT_KEY, {
+			sessionId: "s1",
+			isStreaming: false,
+			sessionManager: { getBranch: () => [{ type: "message" }], getCwd: () => "/tmp" },
+			getToolDefinition: () => undefined,
+			getStreamingMessage: () => undefined,
+			getUsage: () => ({ tokens: { input: 100, output: 50, cacheRead: 0, cacheWrite: 0, total: 150 } }),
+			subscribe: () => () => {},
+		});
+		retireRun("run-1", "completed"); // no lastArtifact arg → stays undefined
+		const lines = renderLaneList(identityTheme, W, { active: false, selection: 0, frame: 0, laneCap: LANE_CAP });
+		const row = lines.find((l) => l.includes("commit")) ?? "";
+		expect(row).not.toContain("→"); // no trailing artifact segment at all
+		expect(row).toContain("↑100"); // usage tally still renders
 	});
 });
 

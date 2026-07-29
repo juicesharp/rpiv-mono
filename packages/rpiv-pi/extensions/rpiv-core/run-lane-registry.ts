@@ -192,6 +192,17 @@ export interface LaneEntry {
 	 */
 	error?: string;
 	/**
+	 * Primary artifact path at run termination — `RunWorkflowResult.lastArtifact`
+	 * captured at `retireRun` (the runner's terminal `onWorkflowEnd`), so a completed
+	 * lane row can surface `→ .rpiv/artifacts/<bucket>/<file>.md` as a trailing
+	 * segment. Undefined for a side-effect-only run (no `produces` stage emitted a
+	 * primary artifact) and for aborted/failed runs (the terminal writers pass ≤3
+	 * args). Cleared on resume (`recordRun` reactivation) so a resumed run never
+	 * leaks the prior run's path — mirroring the `error`/`progress`/`needsInputSince`
+	 * clears.
+	 */
+	lastArtifact?: string;
+	/**
 	 * When this lane first started waiting on a deferred foreground question
 	 * — `Date.now()` stamped on the FIRST enqueue that finds the clock
 	 * unset, and HELD across transient drains so a switch-in drain racing a
@@ -298,6 +309,7 @@ export function recordRun(runId: string, name: string, meta?: { workflow?: strin
 		}
 		existing.units.clear(); // drop the prior run's per-unit sessions + terminal snapshots
 		existing.error = undefined; // clear the prior run's terminal failure reason
+		existing.lastArtifact = undefined; // clear the prior run's primary artifact path
 		existing.progress = undefined; // clear stale stage progress
 		existing.needsInputSince = undefined; // clear any stale needs-input clock
 	} else {
@@ -393,7 +405,12 @@ function captureSnapshotInto(unit: UnitLane, session: LaneSession): void {
 	}
 }
 
-export function retireRun(runId: string, status: Exclude<LaneStatus, "running">, error?: string): void {
+export function retireRun(
+	runId: string,
+	status: Exclude<LaneStatus, "running">,
+	error?: string,
+	lastArtifact?: string,
+): void {
 	const entry = state().lanes.get(runId);
 	if (!entry) return;
 	// Idempotent: FIRST retire wins. A lane can be retired by more than one path —
@@ -407,6 +424,7 @@ export function retireRun(runId: string, status: Exclude<LaneStatus, "running">,
 	if (entry.status !== "running") return;
 	entry.status = status;
 	if (error !== undefined) entry.error = error; // terminal failure reason
+	if (lastArtifact !== undefined) entry.lastArtifact = lastArtifact; // primary artifact path (completed runs)
 	// Capture units with a parked question BEFORE the settle loop clears pendingInput,
 	// so each affected unit is addressable for a `cleared` emit after notify().
 	const cleared: number[] = [];

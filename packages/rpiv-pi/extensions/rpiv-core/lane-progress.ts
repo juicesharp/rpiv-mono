@@ -219,12 +219,16 @@ export async function registerLaneProgress(): Promise<void> {
 				// `termination.error` is the readable cause (the same text as the trail's
 				// errMsg) — retain it on the lane for the dock chip + viewer header.
 				const error = result.termination?.error;
+				// `lastArtifact` is the primary artifact's canonical path (a `produces`
+				// stage emitted one) — retained on the lane so a completed row can render
+				// `→ .rpiv/artifacts/<bucket>/<file>.md`. Undefined for side-effect-only runs.
+				const lastArtifact = result.lastArtifact;
 				// Sweep any unit that never fired onUnitEnd (abort/throw) to the run's terminal
 				// kind BEFORE retiring, so a failed run's stuck sub-rows read ✗ (retireRun's
 				// running→done fallback then no-ops on them). Drop the gate — the run is over.
 				sweepRunningUnits(ctx.runId, status === "completed" ? "done" : "failed");
 				fanoutRuns.delete(ctx.runId);
-				retireRun(ctx.runId, status, error);
+				retireRun(ctx.runId, status, error, lastArtifact);
 				const ui = getCapturedUiContext();
 				if (!ui) return;
 				if (status === "completed") ui.notify(`✓ ${name} finished — /lanes to view`, "info");
