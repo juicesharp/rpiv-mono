@@ -178,7 +178,7 @@ describe("cappedTui", () => {
 describe("LaneConsole — live output + bottom-pinned lane block", () => {
 	it("renders a '── live output ──' top border, the transcript, and the shared lane block", () => {
 		liveUnit();
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn());
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn(), vi.fn());
 		const out = panel.render(80);
 		expect(out[0]).toContain("live output"); // the labelled top border of the live-output region
 		expect(out.join("\n")).toContain("ctx line"); // transcript, unfurling below the border
@@ -196,7 +196,7 @@ describe("LaneConsole — live output + bottom-pinned lane block", () => {
 		const ambientRow = renderLaneList(identityTheme, 80, { active: false, selection: 0, frame: 0, laneCap: 11 }).find(
 			(l) => l.includes("ship"),
 		);
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn());
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn(), vi.fn());
 		const consoleRow = panel.render(80).find((l) => l.includes("ship"));
 		expect(ambientRow).toBeDefined();
 		expect(consoleRow).toBeDefined();
@@ -208,24 +208,30 @@ describe("LaneConsole — live output + bottom-pinned lane block", () => {
 	it("PageUp freezes on a stable anchor, PageDown walks back and auto-resumes follow (↑/↓ are lane nav)", () => {
 		const tui = makeTui(24);
 		liveUnit(() => Array.from({ length: 50 }, (_v, i) => assistantEntry(`line-${i}`)));
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, tui, identityTheme, {} as never, vi.fn());
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, tui, identityTheme, {} as never, vi.fn(), vi.fn());
 		const tail = panel.render(80).join("\n");
 		panel.handleInput("\x1b[5~"); // PageUp → freeze on an older anchor (follow OFF)
 		const paused = panel.render(80).join("\n");
 		expect(paused).not.toBe(tail);
-		expect(paused).toContain("paused"); // footer cue flips off "following"
 		expect(tui.requestRender).toHaveBeenCalled();
 		panel.handleInput("\x1b[6~"); // PageDown → walk the anchor toward the tail
 		panel.handleInput("\x1b[6~"); // …reaching the tail auto-resumes follow; a further press is a no-op
 		expect(panel.render(80).join("\n")).toBe(tail); // back at the newest tail, follow ON (window == initial)
-		expect(panel.render(80).join("\n")).toContain("following");
 		panel.dispose();
 	});
 
 	it("follow-mode anchor: following pins the newest tail; PageUp freezes on a stable index (no drift, fail-soft on shrink)", () => {
 		const entries = Array.from({ length: 50 }, (_v, i) => assistantEntry(`line-${i}`));
 		liveUnit(() => entries); // mutable branch — push/length mutate the live body
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(24), identityTheme, {} as never, vi.fn());
+		const panel = new LaneConsole(
+			"run-1",
+			SINGLE_UNIT_KEY,
+			makeTui(24),
+			identityTheme,
+			{} as never,
+			vi.fn(),
+			vi.fn(),
+		);
 
 		// c1 — follow=ON: growing the body keeps the newest line pinned at the tail.
 		panel.render(80);
@@ -247,14 +253,24 @@ describe("LaneConsole — live output + bottom-pinned lane block", () => {
 		panel.dispose();
 	});
 
-	it("footer cue distinguishes following vs paused in lane focus", () => {
+	it("footer shows no following/paused cue in any follow state", () => {
 		liveUnit(() => Array.from({ length: 50 }, (_v, i) => assistantEntry(`line-${i}`)));
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(24), identityTheme, {} as never, vi.fn());
-		expect(panel.render(80).join("\n")).toContain("following"); // follow=ON on a fresh console
-		panel.handleInput("\x1b[5~"); // PageUp → paused
+		const panel = new LaneConsole(
+			"run-1",
+			SINGLE_UNIT_KEY,
+			makeTui(24),
+			identityTheme,
+			{} as never,
+			vi.fn(),
+			vi.fn(),
+		);
+		const following = panel.render(80).join("\n"); // follow=ON on a fresh console
+		expect(following).not.toContain("following");
+		expect(following).not.toContain("paused");
+		panel.handleInput("\x1b[5~"); // PageUp → paused (follow OFF)
 		const paused = panel.render(80).join("\n");
-		expect(paused).toContain("paused");
-		expect(paused).not.toContain("following"); // cue flipped (was "following", now "paused")
+		expect(paused).not.toContain("following");
+		expect(paused).not.toContain("paused");
 		panel.dispose();
 	});
 
@@ -265,7 +281,7 @@ describe("LaneConsole — live output + bottom-pinned lane block", () => {
 				message: { role: "compactionSummary", summary: "EXPANDED_ONLY_SUMMARY", tokensBefore: 1234 },
 			},
 		]);
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn());
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn(), vi.fn());
 		const collapsed = panel.render(120).join("\n");
 		expect(collapsed).toContain("t expand");
 		expect(collapsed).not.toContain("EXPANDED_ONLY_SUMMARY");
@@ -281,7 +297,7 @@ describe("LaneConsole — live output + bottom-pinned lane block", () => {
 	it("esc backs out (done resolves) with nothing queued", () => {
 		liveUnit();
 		const done = vi.fn();
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, done);
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, done, vi.fn());
 		panel.handleInput("\x1b"); // esc
 		expect(done).toHaveBeenCalledTimes(1);
 		panel.dispose();
@@ -290,7 +306,7 @@ describe("LaneConsole — live output + bottom-pinned lane block", () => {
 	it("← backs out in read-only mode (mirrors → opening the console)", () => {
 		liveUnit();
 		const done = vi.fn();
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, done);
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, done, vi.fn());
 		panel.handleInput("\x1b[D"); // Left arrow
 		expect(done).toHaveBeenCalledTimes(1);
 		panel.dispose();
@@ -312,7 +328,7 @@ describe("LaneConsole — auto-return on last-run-finish", () => {
 	it("c1: retiring the sole running lane closes the browser exactly once (idempotent)", () => {
 		liveUnit();
 		const done = vi.fn();
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, done);
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, done, vi.fn());
 		retireRun("run-1", "completed"); // running→terminal → sync() sees the transition → finish()
 		expect(done).toHaveBeenCalledTimes(1); // closed exactly once
 		retireRun("run-1", "completed"); // a second notify/retire is a no-op (finish() guards on resolved)
@@ -324,7 +340,7 @@ describe("LaneConsole — auto-return on last-run-finish", () => {
 		liveUnit();
 		secondRunningLane(); // run-2 also running
 		const done = vi.fn();
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, done);
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, done, vi.fn());
 		retireRun("run-1", "completed"); // run-2 still running → anyRunning stays true → no close
 		expect(done).not.toHaveBeenCalled();
 		retireRun("run-2", "completed"); // now NONE running → sawRunning && !anyRunning → finish()
@@ -336,7 +352,7 @@ describe("LaneConsole — auto-return on last-run-finish", () => {
 		recordRun("run-1", "ship");
 		retireRun("run-1", "completed"); // terminal BEFORE the browser opens — the c2 precondition
 		const done = vi.fn();
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, done);
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, done, vi.fn());
 		expect(done).not.toHaveBeenCalled(); // anyRunning=false on construction, sawRunning stayed false → gate did not fire
 		expect(panel.render(80).join("\n")).toContain("ship"); // the finished lane is still browsable
 		panel.dispose();
@@ -346,7 +362,7 @@ describe("LaneConsole — auto-return on last-run-finish", () => {
 		liveUnit(); // run-1 running → construction sync() latches sawRunning=true
 		secondRunningLane(); // run-2 also running
 		const done = vi.fn();
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, done);
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, done, vi.fn());
 		expect(done).not.toHaveBeenCalled(); // ≥1 running → no close
 		retireRun("run-2", "completed"); // run-1 still running → no close
 		expect(done).not.toHaveBeenCalled();
@@ -358,7 +374,7 @@ describe("LaneConsole — auto-return on last-run-finish", () => {
 	it("a background lane starting while open, then all finishing, closes only when the last one finishes", () => {
 		liveUnit(); // run-1 running
 		const done = vi.fn();
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, done);
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, done, vi.fn());
 		secondRunningLane(); // run-2 starts via recordRun notify → sync() latches sawRunning and sees 2 running
 		expect(done).not.toHaveBeenCalled();
 		retireRun("run-1", "completed"); // run-2 still running → no close
@@ -387,7 +403,7 @@ describe("LaneConsole — browser navigation (spine)", () => {
 	it("↓ moves the selection and re-targets the transcript to the newly selected lane", () => {
 		liveUnit(() => [assistantEntry("first lane body")]);
 		secondLane();
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn());
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn(), vi.fn());
 		const before = panel.render(80);
 		expect(before.join("\n")).toContain("first lane body"); // starts on run-1's transcript
 		expect(selectedRow(before)).toContain("ship"); // cursor on run-1's row
@@ -403,7 +419,7 @@ describe("LaneConsole — browser navigation (spine)", () => {
 		liveUnit(() => [assistantEntry("first lane body")]);
 		secondLane();
 		const done = vi.fn();
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, done);
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, done, vi.fn());
 		panel.handleInput("\x1b[A"); // ↑ at row 0 → back out (restored gesture)
 		expect(done).toHaveBeenCalledTimes(1); // finish() resolves the browser exactly once
 		panel.dispose();
@@ -413,7 +429,7 @@ describe("LaneConsole — browser navigation (spine)", () => {
 		liveUnit(() => [assistantEntry("first lane body")]);
 		secondLane();
 		const done = vi.fn();
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, done);
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, done, vi.fn());
 		panel.handleInput("\x1b[B");
 		panel.handleInput("\x1b[B"); // ↓ past the last row clamps at run-2
 		expect(selectedRow(panel.render(80))).toContain("build");
@@ -424,7 +440,7 @@ describe("LaneConsole — browser navigation (spine)", () => {
 	it("x stops the selected running lane (retires it in place)", () => {
 		liveUnit();
 		secondLane();
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn());
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn(), vi.fn());
 		panel.handleInput("x"); // stop the selected (run-1, running) → cooperative abort + retire
 		expect(panel.render(80).join("\n")).toContain("aborted"); // its spine row reflects the terminal status
 		panel.dispose();
@@ -435,7 +451,7 @@ describe("LaneConsole — browser navigation (spine)", () => {
 		const innerA = makeInner();
 		enqueueQuestion(innerA.component); // run-1 needs input → sorts to the top (row 0)
 		secondLane(); // run-2 running, no question (row 1)
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn());
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn(), vi.fn());
 		await Promise.resolve();
 		expect(panel.render(80).join("\n")).toContain("⏎ answer"); // run-1's question mounted (cue, not band)
 		panel.handleInput("\x1b[B"); // ↓ → run-2 (no question)
@@ -460,7 +476,7 @@ describe("LaneConsole — browser navigation (spine)", () => {
 			options: undefined as never,
 			resolve: vi.fn(),
 		});
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn());
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn(), vi.fn());
 		await Promise.resolve(); // A mounts
 		panel.handleInput("\r"); // arm A → question focus
 		expect(panel.render(80).join("\n")).toContain("esc → lanes");
@@ -474,14 +490,21 @@ describe("LaneConsole — browser navigation (spine)", () => {
 	it("retarget resets scroll to follow=ON — no per-unit scroll memory", () => {
 		liveUnit(() => Array.from({ length: 50 }, (_v, i) => assistantEntry(`line-${i}`)));
 		secondLane(); // run-2 with its own body
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(24), identityTheme, {} as never, vi.fn());
-		panel.render(80); // prime lastMaxStart (cached in render; scroll reads it — see r1)
+		const panel = new LaneConsole(
+			"run-1",
+			SINGLE_UNIT_KEY,
+			makeTui(24),
+			identityTheme,
+			{} as never,
+			vi.fn(),
+			vi.fn(),
+		);
+		const follow = panel.render(80).join("\n"); // prime lastMaxStart (cached in render; scroll reads it — see r1)
 		panel.handleInput("\x1b[5~"); // PageUp on run-1 → paused (follow OFF, anchor set)
-		expect(panel.render(80).join("\n")).toContain("paused");
+		expect(panel.render(80).join("\n")).not.toBe(follow); // anchor moved off the tail — paused (see r2)
 		panel.handleInput("\x1b[B"); // ↓ → run-2 (retarget resets follow=ON)
 		panel.handleInput("\x1b[A"); // ↑ → back to run-1 (retarget resets follow=ON — no scroll memory)
 		const out = panel.render(80);
-		expect(out.join("\n")).toContain("following"); // follow re-engaged on landing
 		expect(out.join("\n")).toContain("line-49"); // run-1's newest tail — not the old paused position
 		panel.dispose();
 	});
@@ -504,9 +527,15 @@ describe("LaneConsole — disk fallback (migrated from the viewer)", () => {
 			setLaneSessionFile("run-1", SINGLE_UNIT_KEY, file);
 			expect(getUnit("run-1", SINGLE_UNIT_KEY)?.finalBranch).toBeUndefined();
 
-			const out = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn()).render(
-				120,
-			);
+			const out = new LaneConsole(
+				"run-1",
+				SINGLE_UNIT_KEY,
+				makeTui(),
+				identityTheme,
+				{} as never,
+				vi.fn(),
+				vi.fn(),
+			).render(120);
 			expect(out.join("\n")).toContain("ON_DISK_TRANSCRIPT");
 			expect(out.join("\n")).not.toContain("(no transcript");
 		} finally {
@@ -519,7 +548,7 @@ describe("LaneConsole — question mode (reactive, self-draining)", () => {
 	it("hides the queued question on selection (lane focus) and reveals it only on arm (⏎)", async () => {
 		liveUnit();
 		enqueueQuestion(makeInner().component);
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn());
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn(), vi.fn());
 		await Promise.resolve(); // let the async mount settle (eager — ready to arm)
 		const hidden = panel.render(80).join("\n");
 		expect(hidden).not.toContain("q0"); // band held off in lane focus (arm-gate)…
@@ -535,7 +564,7 @@ describe("LaneConsole — question mode (reactive, self-draining)", () => {
 	it("Enter reveals the question band and esc re-hides it (the arm-then-fire render-gate)", async () => {
 		liveUnit();
 		enqueueQuestion(makeInner().component);
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn());
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn(), vi.fn());
 		await Promise.resolve(); // mount settles eagerly (ready to arm)
 		// Lane focus: the band is HIDDEN — full transcript, footer advertises the arm gesture.
 		expect(panel.render(80).join("\n")).not.toContain("q0");
@@ -557,7 +586,7 @@ describe("LaneConsole — question mode (reactive, self-draining)", () => {
 
 	it("mounts a question that ARRIVES while the console is open (reactive, no swap)", async () => {
 		liveUnit();
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn());
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn(), vi.fn());
 		expect(panel.render(80).join("\n")).not.toContain("q0"); // no question mounted yet
 		expect(panel.render(80).join("\n")).not.toContain("⏎ answer"); // …so no arm cue
 		enqueueQuestion(makeInner().component);
@@ -572,7 +601,7 @@ describe("LaneConsole — question mode (reactive, self-draining)", () => {
 		liveUnit();
 		const inner = makeInner();
 		enqueueQuestion(inner.component);
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn());
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn(), vi.fn());
 		await Promise.resolve();
 		panel.handleInput("a"); // lane focus: NOT forwarded (arm-then-fire)
 		expect(inner.handled).not.toContain("a");
@@ -591,7 +620,7 @@ describe("LaneConsole — question mode (reactive, self-draining)", () => {
 		const inner = makeInner();
 		const tui = makeTui();
 		enqueueQuestion(inner.component);
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, tui, identityTheme, {} as never, vi.fn());
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, tui, identityTheme, {} as never, vi.fn(), vi.fn());
 		await Promise.resolve();
 		panel.handleInput("\x1b[5~"); // PageUp (CSI 5~)
 		expect(inner.handled).not.toContain("\x1b[5~");
@@ -618,7 +647,7 @@ describe("LaneConsole — question mode (reactive, self-draining)", () => {
 			options: undefined as never,
 			resolve: resolveB,
 		});
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn());
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn(), vi.fn());
 		await Promise.resolve(); // let A's async mount settle
 		submitA({ answers: ["a"] }); // questionnaire A submits
 		expect(resolveA).toHaveBeenCalledWith({ answers: ["a"] }); // committed exactly once
@@ -646,7 +675,7 @@ describe("LaneConsole — question mode (reactive, self-draining)", () => {
 			options: undefined as never,
 			resolve: resolveA,
 		});
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, done);
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, done, vi.fn());
 		await Promise.resolve(); // let A's async mount settle
 		panel.handleInput("\r"); // arm the question (question focus)
 		submitA({ answers: ["a"] }); // answer the ONLY queued question
@@ -665,7 +694,7 @@ describe("LaneConsole — question mode (reactive, self-draining)", () => {
 		const resolve = vi.fn();
 		const done = vi.fn();
 		enqueueQuestion(inner.component, resolve);
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, done);
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, done, vi.fn());
 		await Promise.resolve();
 		panel.handleInput("\x1b"); // esc
 		expect(done).toHaveBeenCalledTimes(1);
@@ -680,7 +709,7 @@ describe("LaneConsole — question mode (reactive, self-draining)", () => {
 		const resolve = vi.fn();
 		const done = vi.fn();
 		enqueueQuestion(makeInner().component, resolve);
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, done);
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, done, vi.fn());
 		await Promise.resolve();
 		panel.handleInput("\r"); // arm → the band paints (so "a question shows" is genuinely true)
 		expect(panel.render(80).join("\n")).toContain("q0"); // question mounted + armed
@@ -694,7 +723,7 @@ describe("LaneConsole — question mode (reactive, self-draining)", () => {
 		liveUnit();
 		const inner = makeInner();
 		enqueueQuestion(inner.component);
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn());
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn(), vi.fn());
 		await Promise.resolve();
 		panel.dispose();
 		expect(inner.dispose).toHaveBeenCalled();
@@ -726,7 +755,7 @@ describe("LaneConsole — parent-row answer jump (fan-out lanes)", () => {
 		const inner = makeInner();
 		fanOutRunWithQuestion(inner.component);
 		// Step-in lands on the top display row = the lane PARENT row (single-unit key).
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn());
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn(), vi.fn());
 		await Promise.resolve();
 		expect(panel.render(80).join("\n")).not.toContain("q0"); // nothing mounted on the parent's own key
 		panel.handleInput("\r"); // ⏎ on the aggregated ⚑ → jump + arm (never a dead-end)
@@ -739,7 +768,7 @@ describe("LaneConsole — parent-row answer jump (fan-out lanes)", () => {
 
 	it("the parent row's ⏎-answer footer cue mirrors the aggregate ⚑ (not just its own queue key)", async () => {
 		fanOutRunWithQuestion(makeInner().component);
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn());
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn(), vi.fn());
 		await Promise.resolve();
 		expect(panel.render(80).join("\n")).toContain("⏎ answer"); // cue on the parent row
 		panel.dispose();
@@ -763,7 +792,7 @@ describe("LaneConsole — parent-row answer jump (fan-out lanes)", () => {
 			options: undefined as never,
 			resolve,
 		});
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn());
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn(), vi.fn());
 		await Promise.resolve();
 		panel.handleInput("\r"); // jump to unit 0 + arm
 		await Promise.resolve();
@@ -784,11 +813,20 @@ describe("LaneConsole — constant height (ghost-block safety)", () => {
 			identityTheme,
 			{} as never,
 			vi.fn(),
+			vi.fn(),
 		).render(80).length;
 		expect(readonly).toBe(Math.floor(24 * 0.9)); // 21
 
 		enqueueQuestion(makeInner(15).component); // a TALL question
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(24), identityTheme, {} as never, vi.fn());
+		const panel = new LaneConsole(
+			"run-1",
+			SINGLE_UNIT_KEY,
+			makeTui(24),
+			identityTheme,
+			{} as never,
+			vi.fn(),
+			vi.fn(),
+		);
 		await Promise.resolve();
 		panel.handleInput("\r"); // arm → the band paints so the height check reflects the cap
 		expect(panel.render(80).length).toBe(readonly); // padded → identical height across the transition
@@ -799,7 +837,15 @@ describe("LaneConsole — constant height (ghost-block safety)", () => {
 describe("LaneConsole — tiny-terminal constant height", () => {
 	it.each([8, 9, 10])("constant height: lane-only ≡ question-mounted at %d rows", async (rows) => {
 		liveUnit(() => [assistantEntry("ctx")]);
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(rows), identityTheme, {} as never, vi.fn());
+		const panel = new LaneConsole(
+			"run-1",
+			SINGLE_UNIT_KEY,
+			makeTui(rows),
+			identityTheme,
+			{} as never,
+			vi.fn(),
+			vi.fn(),
+		);
 		const base = panel.render(80).length; // baseline (no mount pending)
 		enqueueQuestion(makeInner(15).component); // a TALL question
 		await Promise.resolve(); // let the async mountInner settle
@@ -821,7 +867,15 @@ describe("LaneConsole — tiny-terminal constant height", () => {
 			SINGLE_UNIT_KEY,
 			makeSession(() => [assistantEntry("ctx")]),
 		);
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(16), identityTheme, {} as never, vi.fn());
+		const panel = new LaneConsole(
+			"run-1",
+			SINGLE_UNIT_KEY,
+			makeTui(16),
+			identityTheme,
+			{} as never,
+			vi.fn(),
+			vi.fn(),
+		);
 		await Promise.resolve();
 		panel.handleInput("\r"); // arm
 		const out = panel.render(80);
@@ -848,7 +902,7 @@ describe("LaneConsole — tiny-terminal constant height", () => {
 			options: undefined as never,
 			resolve: resolveB,
 		});
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(8), identityTheme, {} as never, vi.fn());
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(8), identityTheme, {} as never, vi.fn(), vi.fn());
 		const readonly = panel.render(80).length; // read-only (A's async mount pending)
 		await Promise.resolve(); // let A's async mount settle
 		panel.handleInput("\r"); // arm A → the band paints so the height check reflects the cap
@@ -875,7 +929,15 @@ describe("LaneConsole — tiny-terminal constant height", () => {
 			options: undefined as never,
 			resolve: vi.fn(),
 		});
-		const escPanel = new LaneConsole("run-2", SINGLE_UNIT_KEY, makeTui(8), identityTheme, {} as never, escDone);
+		const escPanel = new LaneConsole(
+			"run-2",
+			SINGLE_UNIT_KEY,
+			makeTui(8),
+			identityTheme,
+			{} as never,
+			escDone,
+			vi.fn(),
+		);
 		await Promise.resolve(); // let the async mount settle
 		const beforeEsc = escPanel.render(80).length;
 		escPanel.handleInput("\x1b"); // esc → defer (question stays queued, child not resolved)
@@ -912,7 +974,7 @@ describe("LaneConsole — real ask_user_question factory (cappedTui self-windowi
 	const QUESTION_BUDGET_24 = 19;
 	const SURFACE_HEIGHT_24 = 28;
 	const makeRealPanel = (tui = makeTui(32), done = vi.fn()) =>
-		new LaneConsole("run-1", SINGLE_UNIT_KEY, tui, identityTheme, makeInjectedKeybindings(), done);
+		new LaneConsole("run-1", SINGLE_UNIT_KEY, tui, identityTheme, makeInjectedKeybindings(), done, vi.fn());
 	/** The question band = the lines between the console's question divider (the FIRST bare
 	 *  full-width rule, below the `── live output ──` border) and the bottom lane block. The lane
 	 *  block for one lane is `["", heading, "", row, "", footer, rule]`, so the row (matched by its
@@ -1049,7 +1111,7 @@ describe("showLaneConsole", () => {
 				return p;
 			},
 		} as unknown as ExtensionUIContext;
-		await expect(showLaneConsole(ui, "run-1", SINGLE_UNIT_KEY)).resolves.toBeUndefined();
+		await expect(showLaneConsole(ui, "run-1", SINGLE_UNIT_KEY, () => {})).resolves.toBeUndefined();
 	});
 });
 
@@ -1093,7 +1155,7 @@ describe("LaneConsole — dequeue re-entrancy guard (cross-lane re-sort)", () =>
 		});
 
 		const done = vi.fn();
-		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, done);
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, done, vi.fn());
 		// Both need input (bucket 0); insertion-stable → run-1 at row 0 (selected), run-2 at row 1.
 		await Promise.resolve(); // let run-1's async mount settle (this.inner)
 		panel.handleInput("\r"); // ⏎ arm run-1's question (lane focus → question focus)
@@ -1125,5 +1187,62 @@ describe("LaneConsole — dequeue re-entrancy guard (cross-lane re-sort)", () =>
 		expect(out.join("\n")).toContain("↑/↓ lanes"); // back in lane navigation focus
 		expect(done).not.toHaveBeenCalled(); // no strand — browser stays open across the commit
 		panel.dispose();
+	});
+});
+
+describe("LaneConsole — `r` rerun dispatch", () => {
+	it("r dispatches onRerun once with the failed lane's runId (footer advertises r rerun)", () => {
+		recordRun("run-1", "ship");
+		retireRun("run-1", "failed", "boom"); // terminal-failure → retained, resumable
+		const onRerun = vi.fn();
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn(), onRerun);
+		expect(panel.render(80).join("\n")).toContain("r rerun"); // the footer advertises the affordance
+		panel.handleInput("r"); // r on the failed row → dispatch
+		expect(onRerun).toHaveBeenCalledTimes(1);
+		expect(onRerun).toHaveBeenCalledWith("run-1");
+		panel.dispose();
+	});
+
+	it("r is inert on a running lane (no dispatch; the footer omits r rerun)", () => {
+		liveUnit(); // run-1 running
+		const onRerun = vi.fn();
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn(), onRerun);
+		expect(panel.render(80).join("\n")).not.toContain("r rerun"); // running → no affordance
+		panel.handleInput("r"); // r on a running row → inert (use x to stop)
+		expect(onRerun).not.toHaveBeenCalled();
+		panel.dispose();
+	});
+
+	it("r is inert on a completed lane (no dispatch)", () => {
+		recordRun("run-1", "ship");
+		retireRun("run-1", "completed"); // terminal-success → nothing to resume
+		const onRerun = vi.fn();
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn(), onRerun);
+		expect(panel.render(80).join("\n")).not.toContain("r rerun"); // completed → no affordance
+		panel.handleInput("r"); // r on a completed row → inert
+		expect(onRerun).not.toHaveBeenCalled();
+		panel.dispose();
+	});
+
+	it("r dispatches for aborted and cancelled terminal failures too", () => {
+		for (const status of ["aborted", "cancelled"] as const) {
+			__resetRunLaneRegistry();
+			recordRun("run-1", "ship");
+			retireRun("run-1", status);
+			const onRerun = vi.fn();
+			const panel = new LaneConsole(
+				"run-1",
+				SINGLE_UNIT_KEY,
+				makeTui(),
+				identityTheme,
+				{} as never,
+				vi.fn(),
+				onRerun,
+			);
+			panel.handleInput("r");
+			expect(onRerun).toHaveBeenCalledTimes(1);
+			expect(onRerun).toHaveBeenCalledWith("run-1");
+			panel.dispose();
+		}
 	});
 });

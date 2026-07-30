@@ -35,7 +35,7 @@ The browser replays the selected lane's transcript, tool calls included.
 | --- | --- |
 | `↑` / `↓` | Move along the lane spine. `↑` on the top row backs out |
 | `⏎` | Arm the parked question on a flagged lane, inline |
-| `PgUp` / `PgDn` | Scroll the transcript. Scrolling away from the tail switches the footer from `following` to `paused` |
+| `PgUp` / `PgDn` | Scroll the transcript |
 | `t` | Expand or collapse tool output |
 | `x` | Stop the selected run |
 | `esc` / `←` | Back out to the prompt |
@@ -43,7 +43,7 @@ The browser replays the selected lane's transcript, tool calls included.
 The footer states the live contract:
 
 ```
-↑/↓ lanes · ⏎ answer · following · PgUp/PgDn scroll · t expand · x stop · ↑/←/esc back
+↑/↓ lanes · ⏎ answer · PgUp/PgDn scroll · t expand · x stop · ↑/←/esc back
 ```
 
 ## Parked questions

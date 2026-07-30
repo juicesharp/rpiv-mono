@@ -87,7 +87,7 @@ describe("lane-switcher — /lanes command", () => {
 		mockShowLaneConsole.mockResolvedValue(undefined);
 		const ui = createMockUI() as unknown as ExtensionUIContext;
 		await lanes("", { hasUI: true, ui });
-		expect(mockShowLaneConsole).toHaveBeenCalledWith(ui, "run-1", SINGLE_UNIT_KEY); // top row → run-1's lane
+		expect(mockShowLaneConsole).toHaveBeenCalledWith(ui, "run-1", SINGLE_UNIT_KEY, expect.any(Function)); // top row → run-1's lane
 	});
 });
 
@@ -104,7 +104,7 @@ describe("lane-switcher — Ctrl-Q shortcut", () => {
 		const ui = createMockUI() as unknown as ExtensionUIContext;
 		const { shortcut } = register();
 		shortcut?.({ hasUI: true, ui });
-		expect(mockShowLaneConsole).toHaveBeenCalledWith(ui, "run-1", SINGLE_UNIT_KEY);
+		expect(mockShowLaneConsole).toHaveBeenCalledWith(ui, "run-1", SINGLE_UNIT_KEY, expect.any(Function));
 	});
 
 	it("is a no-op without a UI", () => {
@@ -139,7 +139,7 @@ describe("lane-switcher — switchIntoLane sequencing", () => {
 		const ui = createMockUI() as unknown as ExtensionUIContext;
 		await switchIntoLane(ui, "run-1", SINGLE_UNIT_KEY);
 		expect(mockShowLaneConsole).toHaveBeenCalledTimes(1);
-		expect(mockShowLaneConsole).toHaveBeenCalledWith(ui, "run-1", SINGLE_UNIT_KEY); // console owns peek/commit now
+		expect(mockShowLaneConsole).toHaveBeenCalledWith(ui, "run-1", SINGLE_UNIT_KEY, expect.any(Function)); // console owns peek/commit now
 	});
 
 	it("does not stack a second console while one is already open", async () => {
@@ -170,7 +170,7 @@ describe("lane-switcher — switchIntoLane sequencing", () => {
 		mockShowLaneConsole.mockResolvedValue(undefined);
 		const ui = createMockUI() as unknown as ExtensionUIContext;
 		await switchIntoLane(ui, "run-1", 1); // open unit index 1 directly
-		expect(mockShowLaneConsole).toHaveBeenCalledWith(ui, "run-1", 1); // the console lands on that sub-row
+		expect(mockShowLaneConsole).toHaveBeenCalledWith(ui, "run-1", 1, expect.any(Function)); // the console lands on that sub-row
 	});
 
 	it("stepIn targets the needs-input lane (priority sort), so a step-in lands where the user is wanted", async () => {
@@ -186,7 +186,7 @@ describe("lane-switcher — switchIntoLane sequencing", () => {
 		const { lanes } = register();
 		const ui = createMockUI() as unknown as ExtensionUIContext;
 		await lanes("", { hasUI: true, ui });
-		expect(mockShowLaneConsole).toHaveBeenCalledWith(ui, "run-2", SINGLE_UNIT_KEY);
+		expect(mockShowLaneConsole).toHaveBeenCalledWith(ui, "run-2", SINGLE_UNIT_KEY, expect.any(Function));
 	});
 
 	it("drops to the ambient prompt when the lane is evicted before the console closes", async () => {

@@ -58,6 +58,8 @@ import {
 	type DisplayRow,
 	dequeueInput,
 	evictRun,
+	getLane,
+	type LaneStatus,
 	laneNeedsInput,
 	listLanes,
 	listLanesForDisplay,
@@ -92,6 +94,14 @@ function sameTarget(a: Target | undefined, b: Target | undefined): boolean {
 	if (a === b) return true;
 	if (!a || !b) return false;
 	return a.runId === b.runId && a.unitIndex === b.unitIndex;
+}
+
+/** A terminal-failure status the `r` rerun keybinding can resume from (`failed`/`aborted`/
+ *  `cancelled`). `running`/`completed` are NOT resumable — `r` is inert on them (use `x` to
+ *  stop a running run; a completed run has nothing to resume). Backed by LaneStatus
+ *  (run-lane-registry.ts), which mirrors rpiv-workflow's RunTermination.status. */
+function isTerminalFailure(status: LaneStatus | undefined): boolean {
+	return status === "failed" || status === "aborted" || status === "cancelled";
 }
 
 /**
@@ -167,6 +177,7 @@ export class LaneConsole implements Component {
 		private readonly theme: Theme,
 		private readonly kb: KeybindingsManager,
 		private readonly done: () => void,
+		private readonly onRerun: (runId: string) => void,
 	) {
 		// Land on the row the user stepped in from (the dock's top / needs-input row), else 0.
 		const rows = listLanesForDisplay();
@@ -395,11 +406,12 @@ export class LaneConsole implements Component {
 			(target.unitIndex === SINGLE_UNIT_KEY
 				? laneNeedsInput(target.runId)
 				: unitNeedsInput(target.runId, target.unitIndex));
-		const scrollCue = this.follow ? "following · " : "paused · ";
+		const canRerun = target ? isTerminalFailure(getLane(target.runId)?.status) : false;
 		const toggle = this.toolsExpanded ? "t collapse" : "t expand";
 		const answer = canAnswer ? "⏎ answer · " : "";
+		const rerun = canRerun ? "r rerun · " : "";
 		return truncateToWidth(
-			this.theme.fg("dim", `↑/↓ lanes · ${answer}${scrollCue}PgUp/PgDn scroll · ${toggle} · x stop · ↑/←/esc back`),
+			this.theme.fg("dim", `↑/↓ lanes · ${answer}PgUp/PgDn scroll · ${toggle} · ${rerun}x stop · ↑/←/esc back`),
 			width,
 			"…",
 		);
@@ -486,6 +498,10 @@ export class LaneConsole implements Component {
 			this.stopSelected();
 			return;
 		}
+		if (data === "r") {
+			this.rerunSelected();
+			return;
+		}
 		if (data === "t") {
 			this.toolsExpanded = !this.toolsExpanded;
 			this.tui.requestRender();
@@ -545,6 +561,21 @@ export class LaneConsole implements Component {
 		this.tui.requestRender(true);
 	}
 
+	/** `r` resumes a TERMINAL-FAILURE lane (failed/aborted/cancelled) by its run-id — the resume
+	 *  reuses the run-id and appends to the same JSONL trail, so the row flips back to running
+	 *  reactively (the provider's recordRun reactivation fires via the lane lifecycle). Inert on
+	 *  a running/completed row (nothing to resume). The callback is threaded in from the launcher
+	 *  (lane-switcher), which builds the observer-only WorkflowHostContext and dispatches
+	 *  resumeWorkflowByRunId through a guarded dynamic import. requestRender is belt-and-braces
+	 *  during the dynamic-import settle window; the flip itself is subscription-driven. */
+	private rerunSelected(): void {
+		const row = listLanesForDisplay()[this.selection];
+		if (!row) return;
+		if (!isTerminalFailure(row.lane.status)) return; // running/completed — nothing to resume
+		this.onRerun(row.lane.runId);
+		this.tui.requestRender(true);
+	}
+
 	invalidate(): void {
 		this.inner?.invalidate?.();
 	}
@@ -569,6 +600,13 @@ export class LaneConsole implements Component {
  * step-in jump); the caller (lane-switcher) suppresses the ambient dock for the duration
  * instead, since the browser renders the lane block itself.
  */
-export function showLaneConsole(ui: ExtensionUIContext, runId: string, unitIndex: number): Promise<void> {
-	return ui.custom<void>((tui, theme, kb, done) => new LaneConsole(runId, unitIndex, tui, theme, kb, () => done()));
+export function showLaneConsole(
+	ui: ExtensionUIContext,
+	runId: string,
+	unitIndex: number,
+	onRerun: (runId: string) => void,
+): Promise<void> {
+	return ui.custom<void>(
+		(tui, theme, kb, done) => new LaneConsole(runId, unitIndex, tui, theme, kb, () => done(), onRerun),
+	);
 }
