@@ -5357,6 +5357,20 @@ describe("reconcile lane stage", () => {
 		expect(details(data)).toMatch(/node -e "process.exit\(1\)"/);
 	});
 
+	it('unescapes \\" inside a double-quoted AV pattern (the live escaped-quote false-fail)', () => {
+		// Run 2026-07-30_12-25-25-7514 STOPPED here: `grep -n "name: \"goal\"" f.ts`
+		// tokenized to the pattern `name: \goal\` (the `\"` closed the quote instead
+		// of escaping it), so a grep that passes in any real shell exited non-zero.
+		writeTestFile("packages/site/lib/workflows.ts", 'stages: [\n\t{ name: "goal" },\n]\n');
+		const plan = write(
+			".rpiv/artifacts/plans/p.md",
+			planBody({ av: ['grep -n "name: \\"goal\\"" packages/site/lib/workflows.ts'] }),
+		);
+		const data = runOn(plan);
+		expect(data.pass).toBe(true);
+		expect(data.findings).toEqual([]);
+	});
+
 	it("fail-soft: an unreadable plan (missing file) degrades to a finding, never a throw", () => {
 		const data = runOn(missingPlan(".rpiv/artifacts/plans/missing.md"));
 		expect(data.pass).toBe(false);

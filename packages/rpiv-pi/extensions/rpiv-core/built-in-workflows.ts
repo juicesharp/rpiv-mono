@@ -2431,10 +2431,16 @@ const isTestPath = (target: string): boolean => TEST_PATH_RE.test(target);
 /**
  * Split an AV command string into `{ exe, args }` for `execFileSync`, honoring
  * single/double quotes (so `grep -niE "a|b" x` tokenizes with the quotes stripped
- * and `node -e "process.exit(1)"` keeps `process.exit(1)` as one arg). Returns
- * `null` for an empty/whitespace command or an unterminated quote (caller flags
- * it). Minimal — no globbing, env expansion, or shell operators; AV commands are
- * simple invocations.
+ * and `node -e "process.exit(1)"` keeps `process.exit(1)` as one arg) AND
+ * backslash escapes with POSIX semantics: inside double quotes `\` escapes only
+ * `"` `\` `` ` `` `$` (any other `\x` stays a literal backslash + x); outside
+ * quotes `\` escapes the next character; inside single quotes nothing escapes.
+ * The double-quote case is load-bearing — `grep -n "name: \"goal\"" f.ts` must
+ * reach grep as the pattern `name: "goal"`, not `name: \goal\` (a live reconcile
+ * false-failed exactly this way and STOPPED its run). Returns `null` for an
+ * empty/whitespace command or an unterminated quote (caller flags it). Minimal —
+ * no globbing, env expansion, or shell operators; AV commands are simple
+ * invocations.
  */
 const parseShellCommand = (cmd: string): { exe: string; args: string[] } | null => {
 	const tokens: string[] = [];
@@ -2442,9 +2448,15 @@ const parseShellCommand = (cmd: string): { exe: string; args: string[] } | null 
 	let quote: '"' | "'" | null = null;
 	for (let i = 0; i < cmd.length; i++) {
 		const ch = cmd[i]!;
-		if (quote) {
-			if (ch === quote) quote = null;
+		if (quote === "'") {
+			if (ch === "'") quote = null;
 			else cur += ch;
+		} else if (quote === '"') {
+			if (ch === "\\" && i + 1 < cmd.length && '"\\`$'.includes(cmd[i + 1]!)) cur += cmd[++i]!;
+			else if (ch === '"') quote = null;
+			else cur += ch;
+		} else if (ch === "\\" && i + 1 < cmd.length) {
+			cur += cmd[++i]!;
 		} else if (ch === '"' || ch === "'") {
 			quote = ch;
 		} else if (/\s/.test(ch)) {

@@ -7,6 +7,18 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Escaped quotes in Automated Verification commands parse correctly.**
+  `parseShellCommand` (the no-shell tokenizer behind `reconcile`'s AV re-run
+  and the plan gate's AV lint) treated `\"` inside a double-quoted argument as
+  a quote boundary, so `grep -n "name: \"goal\"" f.ts` reached grep as the
+  pattern `name: \goal\` and false-failed — and reconcile's fail route is
+  STOP, so one such command halted an otherwise-green run after implement. The
+  tokenizer now applies POSIX backslash semantics: inside double quotes `\`
+  escapes `"` `` ` `` `$` `\`; outside quotes `\` escapes the next character;
+  single-quoted text stays literal.
+
 ### Added
 
 - **Cite-only discharge on the build slice gate.** A `design-readiness` fail
