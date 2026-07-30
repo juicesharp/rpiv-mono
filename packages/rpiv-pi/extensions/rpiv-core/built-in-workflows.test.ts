@@ -2052,13 +2052,19 @@ describe("build slice-check (deterministic floor)", () => {
 	// Cite-only discharge — a `remedy: "cite"` design-readiness fail whose demands
 	// (add a seed, or refresh a stale `path:line`) landed on a structurally
 	// identical re-cut earns the `citeDischarged` stamp, so the gate can skip the
-	// re-grade panel. A fix that ALSO restructured, or leaves the stale citation
-	// in place, forfeits the stamp and takes the normal re-grade.
+	// re-grade panel. The fix is witnessed by publication order (a re-slice may
+	// edit the map in place, so basenames can't tell), and a revision note's
+	// `old→new` quotations don't count as live citations. A fix that ALSO
+	// restructured, or leaves the stale citation live, forfeits the stamp and
+	// takes the normal re-grade.
+	const T_JUDGED = "2026-01-01T00:01:00.000Z";
+	const T_VERDICT = "2026-01-01T00:02:00.000Z";
+	const T_FIXED = "2026-01-01T00:03:00.000Z";
 	const citeFailVerdict = (finding: Record<string, unknown>) =>
 		({
 			artifacts: [],
 			kind: "json",
-			meta: {},
+			meta: { ts: T_VERDICT },
 			data: {
 				dimension: "design-readiness",
 				pass: false,
@@ -2087,6 +2093,7 @@ describe("build slice-check (deterministic floor)", () => {
 		const judged = {
 			...write(".rpiv/artifacts/slices/round1.md", map({ count: 2, coverage: COV, sliceLines: TWO_SLICES })),
 			data: SHAPE,
+			meta: { ts: T_JUDGED },
 		};
 		const fixed = {
 			...write(
@@ -2094,6 +2101,7 @@ describe("build slice-check (deterministic floor)", () => {
 				`${map({ count: 2, coverage: COV, sliceLines: TWO_SLICES })}**Draws on:** src/seed.ts:20\n`,
 			),
 			data: SHAPE,
+			meta: { ts: T_FIXED },
 		};
 		const data = structureRun()({
 			cwd: tmpDir,
@@ -2112,6 +2120,7 @@ describe("build slice-check (deterministic floor)", () => {
 		const judged = {
 			...write(".rpiv/artifacts/slices/round1.md", map({ count: 2, coverage: COV, sliceLines: TWO_SLICES })),
 			data: SHAPE,
+			meta: { ts: T_JUDGED },
 		};
 		const restructured =
 			"  - { n: 1, title: A, deps: [], covers: [c1] }\n  - { n: 2, title: B, deps: [1], covers: [c2] }\n  - { n: 3, title: C, deps: [], covers: [c1] }\n";
@@ -2121,6 +2130,7 @@ describe("build slice-check (deterministic floor)", () => {
 				`${map({ count: 3, coverage: COV, sliceLines: restructured })}**Draws on:** src/seed.ts:20\n`,
 			),
 			data: { ...SHAPE, slices: [...SHAPE.slices, { n: 3, title: "C", deps: [], covers: ["c1"] }] },
+			meta: { ts: T_FIXED },
 		};
 		const data = structureRun()({
 			cwd: tmpDir,
@@ -2142,6 +2152,7 @@ describe("build slice-check (deterministic floor)", () => {
 				`${map({ count: 2, coverage: COV, sliceLines: TWO_SLICES })}**Draws on:** src/seed.ts:7\n`,
 			),
 			data: SHAPE,
+			meta: { ts: T_JUDGED },
 		};
 		const fixed = {
 			...write(
@@ -2149,6 +2160,7 @@ describe("build slice-check (deterministic floor)", () => {
 				`${map({ count: 2, coverage: COV, sliceLines: TWO_SLICES })}**Draws on:** src/seed.ts:20\n`,
 			),
 			data: SHAPE,
+			meta: { ts: T_FIXED },
 		};
 		const data = structureRun()({
 			cwd: tmpDir,
@@ -2173,6 +2185,7 @@ describe("build slice-check (deterministic floor)", () => {
 				`${map({ count: 2, coverage: COV, sliceLines: TWO_SLICES })}**Draws on:** src/seed.ts:7\n`,
 			),
 			data: SHAPE,
+			meta: { ts: T_JUDGED },
 		};
 		const fixed = {
 			...write(
@@ -2180,6 +2193,7 @@ describe("build slice-check (deterministic floor)", () => {
 				`${map({ count: 2, coverage: COV, sliceLines: TWO_SLICES })}**Draws on:** src/seed.ts:7 and src/seed.ts:20\n`,
 			),
 			data: SHAPE,
+			meta: { ts: T_FIXED },
 		};
 		const data = structureRun()({
 			cwd: tmpDir,
@@ -2189,6 +2203,66 @@ describe("build slice-check (deterministic floor)", () => {
 					slices: [judged, fixed],
 					"slice-verdicts": [citeFailVerdict({ requires: "src/seed.ts:20", stale: "src/seed.ts:7" })],
 				},
+			} as unknown as RunView,
+		}).data;
+		expect(data.pass).toBe(true);
+		expect(data.citeDischarged).toBeUndefined();
+	});
+
+	it("discharges an IN-PLACE refresh whose revision note quotes the old cites as arrow pairs", () => {
+		// The live-run shape: slice-fix edits the SAME file (same basename as the
+		// judged round) and appends a note quoting each refresh as `old→new`. The
+		// note's quotations must not read as live citations, and publication order
+		// (not basename inequality) must witness that the fix happened.
+		mkdirSync(join(tmpDir, "src"), { recursive: true });
+		writeFileSync(join(tmpDir, "src/seed.ts"), Array.from({ length: 50 }, (_, i) => `line ${i}`).join("\n"));
+		const rel = ".rpiv/artifacts/slices/round1.md";
+		const judged = {
+			...write(rel, `${map({ count: 2, coverage: COV, sliceLines: TWO_SLICES })}**Draws on:** src/seed.ts:7\n`),
+			data: SHAPE,
+			meta: { ts: T_JUDGED },
+		};
+		const fixed = {
+			...write(
+				rel,
+				`${map({ count: 2, coverage: COV, sliceLines: TWO_SLICES })}> Re-slice note: refreshed \`src/seed.ts:7→src/seed.ts:20\`.\n**Draws on:** src/seed.ts:20\n`,
+			),
+			data: SHAPE,
+			meta: { ts: T_FIXED },
+		};
+		const data = structureRun()({
+			cwd: tmpDir,
+			input: undefined,
+			state: {
+				named: {
+					slices: [judged, fixed],
+					"slice-verdicts": [citeFailVerdict({ requires: "src/seed.ts:20", stale: "src/seed.ts:7" })],
+				},
+			} as unknown as RunView,
+		}).data;
+		expect(data.pass).toBe(true);
+		expect(data.citeDischarged).toBe("round1.md");
+	});
+
+	it("withholds citeDischarged when no slices round has been published since the verdict", () => {
+		// Even a map whose text happens to satisfy the demands cannot discharge a
+		// verdict that postdates every published round — the grader read this very
+		// content and failed it; only a fix landing AFTER the verdict counts.
+		mkdirSync(join(tmpDir, "src"), { recursive: true });
+		writeFileSync(join(tmpDir, "src/seed.ts"), Array.from({ length: 50 }, (_, i) => `line ${i}`).join("\n"));
+		const only = {
+			...write(
+				".rpiv/artifacts/slices/round1.md",
+				`${map({ count: 2, coverage: COV, sliceLines: TWO_SLICES })}**Draws on:** src/seed.ts:20\n`,
+			),
+			data: SHAPE,
+			meta: { ts: T_JUDGED },
+		};
+		const data = structureRun()({
+			cwd: tmpDir,
+			input: undefined,
+			state: {
+				named: { slices: [only], "slice-verdicts": [citeFailVerdict({ requires: "src/seed.ts:18-25" })] },
 			} as unknown as RunView,
 		}).data;
 		expect(data.pass).toBe(true);

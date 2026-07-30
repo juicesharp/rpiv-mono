@@ -108,7 +108,7 @@ You are re-cutting an existing slice map from its verdicts. Unlike a surgical re
    - **dropped coverage unit** (from `--slice-check`) → re-attach its `id` to the `covers:` of whichever slice now delivers it; never resolve this by deleting the unit.
    - **unbacked `file:line` citation** (from `--slice-check`) → correct the `Draws on:` reference to a real **repo-root-relative** `file:line` (not a bare basename), or drop the line numbers; never leave a fabricated citation.
 3. **Rebuild the invariants** — renumber `n` contiguously `1..N`, recompute `slice_count`, fix `deps`, carry `coverage:` forward verbatim and reassign `covers:` so the union still claims every unit, and keep exactly one `## Slice N:` heading per entry.
-4. **Re-emit** the slice map (same Output shape, `status: ready`). **Non-interactive**: the verdict feedback IS the instruction — no confirm step, no `ask_user_question`.
+4. **Re-emit** the slice map (same Output shape, `status: ready`). **Non-interactive**: the verdict feedback IS the instruction — no confirm step, no `ask_user_question`. If you add a revision note documenting refreshed citations, quote each replaced citation ONLY as an `old→new` arrow pair (e.g. `` `:3699→:3721` ``) or inside a fenced code block — the deterministic cite-discharge treats arrow-adjacent and fenced occurrences as quotation; an old citation quoted bare in prose reads as still-live and forfeits the discharge, costing a full re-grade panel.
 5. **Print** the path, then `re-sliced: <N> slices (was <M>) — addressed <failing dimensions>`.
 
 ## Output document

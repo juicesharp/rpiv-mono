@@ -18,11 +18,15 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   re-cut map must satisfy every finding (seed path present; on a refresh, the
   grader-verified citation present exactly and the stale one gone) with the
   slice structure unchanged (`slices` + `coverage` frontmatter identical to
-  the judged round). The `citeDischarged` stamp is earned only on a green
-  structure floor and honored by `sliceGatePasses` only for the current map's
-  basename — the skip stays provably equivalent to "re-grade, then pass", and
-  a fix that also restructured (or any finding without a concrete `requires`)
-  takes the normal re-grade.
+  the judged round). The fix is witnessed by publication order — the latest
+  `slices` round must postdate the verdict — so an in-place map edit counts,
+  and occurrences inside fenced spans or `old→new` arrow pairs (a re-slice
+  note's quotations; the note format is contracted in the slice skill) do not
+  count as live citations. The `citeDischarged` stamp is earned only on a
+  green structure floor and honored by `sliceGatePasses` only for the current
+  map's basename — the skip stays provably equivalent to "re-grade, then
+  pass", and a fix that also restructured (or any finding without a concrete
+  `requires`) takes the normal re-grade.
 
 ## [2.2.0] - 2026-07-29
 

@@ -1463,41 +1463,60 @@ const writeStructureVerdict = (
 };
 
 /**
+ * A citation string occurs LIVE in the slice-map text — outside fenced spans
+ * and not as half of an `old→new` refresh-note pair. A re-slice's revision
+ * note legitimately QUOTES the citations it refreshed (contract: only as
+ * arrow pairs or inside a fence — see the slice skill's re-slice mode);
+ * treating a quoted old citation as still-live would forfeit every documented
+ * refresh's discharge, and treating a quoted new one as present would credit
+ * a fix that never touched the live `Draws on` lines.
+ */
+const citeOccursLive = (body: string, spans: readonly [number, number][], cite: string): boolean => {
+	for (let i = body.indexOf(cite); i !== -1; i = body.indexOf(cite, i + 1)) {
+		if (spans.some(([s, e]) => i >= s && i < e)) continue;
+		if (body.startsWith("→", i + cite.length)) continue;
+		if (body.endsWith("→", i)) continue;
+		return true;
+	}
+	return false;
+};
+
+/**
  * One cite-remedy finding is satisfied by the slice-map text. Two modes:
  *
- * ADD (no `stale`): the demanded seed's path is present — line suffixes are
+ * ADD (no `stale`): the demanded seed's path occurs live — line suffixes are
  * stripped before matching, because the fix may cite a corrected range and
  * the citation floor (`verifyCitations`) verifies whatever range it actually
- * wrote. `Draws on` and `Out of scope` both satisfy the remedy, so presence
- * anywhere in the map is the contract.
+ * wrote. `Draws on` and `Out of scope` both satisfy the remedy, so a live
+ * occurrence anywhere in the map is the contract.
  *
  * REFRESH (`stale` names the wrong citation, copied verbatim from the judged
- * map): the grader-verified `requires` citation must be present EXACTLY and
- * the `stale` one gone. Path-stripped matching would false-pass here — the
- * stale cite carries the same path — and requires-only matching would let a
- * fix DELETE the stale cite while another slice's citation of the same file
+ * map): the grader-verified `requires` citation must occur live EXACTLY and
+ * the `stale` one must not. Path-stripped matching would false-pass here —
+ * the stale cite carries the same path — and requires-only matching would let
+ * a fix DELETE the stale cite while another slice's citation of the same file
  * keeps the path present, silently un-citing the slice the grader flagged.
  *
  * A finding without a concrete string `requires` is unverifiable ⇒ not satisfied.
  */
-const citeFindingSatisfied = (mapBody: string, f: { requires?: unknown; stale?: unknown }): boolean => {
+const citeFindingSatisfied = (
+	mapBody: string,
+	spans: readonly [number, number][],
+	f: { requires?: unknown; stale?: unknown },
+): boolean => {
 	if (typeof f.requires !== "string" || f.requires.length === 0) return false;
 	if (typeof f.stale === "string" && f.stale.length > 0)
-		return mapBody.includes(f.requires) && !mapBody.includes(f.stale);
-	return mapBody.includes(f.requires.replace(/:\d[-\d,:]*$/, ""));
+		return citeOccursLive(mapBody, spans, f.requires) && !citeOccursLive(mapBody, spans, f.stale);
+	return citeOccursLive(mapBody, spans, f.requires.replace(/:\d[-\d,:]*$/, ""));
 };
 
 /**
  * Structural fingerprint of one slice-map round: the `slices` + `coverage`
- * frontmatter its round published on the `slices` channel, keyed by artifact
- * basename — no file re-read. `undefined` when the round can't be found or
- * carried no `slices` data; a caller must treat that as "cannot compare",
- * never as "unchanged".
+ * frontmatter it published on the `slices` channel — no file re-read.
+ * `undefined` when the round carried no `slices` data; a caller must treat
+ * that as "cannot compare", never as "unchanged".
  */
-const sliceShapeOf = (state: RunView, path: string): string | undefined => {
-	const round = state.named.slices?.find((s) =>
-		s.artifacts.some((a) => a.handle.kind === "fs" && basename(a.handle.path) === basename(path)),
-	);
+const sliceShape = (round: Output | undefined): string | undefined => {
 	const d = round?.data as { slices?: unknown; coverage?: unknown } | undefined;
 	return d?.slices === undefined ? undefined : JSON.stringify({ slices: d.slices, coverage: d.coverage ?? null });
 };
@@ -1506,7 +1525,6 @@ const sliceShapeOf = (state: RunView, path: string): string | undefined => {
 type CiteRemedyVerdict = {
 	pass?: boolean;
 	remedy?: string;
-	artifact?: string;
 	findings?: readonly { requires?: unknown; stale?: unknown }[];
 };
 
@@ -1517,18 +1535,28 @@ type CiteRemedyVerdict = {
  * grader already named the exact citations to add or refresh). A fix that
  * also restructured forfeits the discharge and takes the normal re-grade.
  */
-const citeRemedyDischarged = (state: RunView, mapBody: string, currentPath: string): boolean => {
-	const v = latestVerdictPerDimension(state.named["slice-verdicts"]).get("design-readiness")?.data as
-		| CiteRemedyVerdict
-		| undefined;
+const citeRemedyDischarged = (state: RunView, mapBody: string): boolean => {
+	const verdict = latestVerdictPerDimension(state.named["slice-verdicts"]).get("design-readiness");
+	const v = verdict?.data as CiteRemedyVerdict | undefined;
 	if (v?.pass !== false || v.remedy !== "cite") return false;
-	// A NEW map must exist since the verdict — discharging the judged map itself
-	// would contradict the grader, who read that very map and found the seeds missing.
-	if (typeof v.artifact !== "string" || basename(v.artifact) === basename(currentPath)) return false;
+	// A fix must have LANDED since the verdict — discharging the judged map
+	// unchanged would contradict the grader, who read it and found the cites
+	// wrong. Basename inequality cannot witness the fix (a re-slice may
+	// legitimately edit the map in place); publication order can: the latest
+	// `slices` round must postdate the verdict.
+	const entries = state.named.slices ?? [];
+	const verdictTs = verdict?.meta?.ts;
+	const currentTs = entries.at(-1)?.meta?.ts;
+	if (typeof verdictTs !== "string" || typeof currentTs !== "string" || currentTs <= verdictTs) return false;
 	const findings = Array.isArray(v.findings) ? v.findings : [];
-	if (findings.length === 0 || !findings.every((f) => f != null && citeFindingSatisfied(mapBody, f))) return false;
-	const judged = sliceShapeOf(state, v.artifact);
-	return judged !== undefined && judged === sliceShapeOf(state, currentPath);
+	if (findings.length === 0) return false;
+	const spans = fencedSpans(mapBody);
+	if (!findings.every((f) => f != null && citeFindingSatisfied(mapBody, spans, f))) return false;
+	// Shape must match the round the grader judged — located by publication
+	// order, not filename, for the same in-place reason.
+	const judged = [...entries].reverse().find((s) => typeof s.meta?.ts === "string" && s.meta.ts <= verdictTs);
+	const judgedShape = sliceShape(judged);
+	return judgedShape !== undefined && judgedShape === sliceShape(entries.at(-1));
 };
 
 /**
@@ -1599,7 +1627,7 @@ const sliceStructureCheck = ({ state, cwd }: ScriptContext): Omit<Output, "meta"
 	// exactly what a fresh design-readiness pass on this map would re-establish,
 	// so the `sliceGatePasses` skip stays provably equivalent to "re-grade, then pass".
 	const discharge =
-		findings.length === 0 && citeRemedyDischarged(state, mapBody, latest.handle.path)
+		findings.length === 0 && citeRemedyDischarged(state, mapBody)
 			? { citeDischarged: basename(latest.handle.path) }
 			: undefined;
 	return writeStructureVerdict("slice-check", latest.handle, findings, cwd, discharge);
