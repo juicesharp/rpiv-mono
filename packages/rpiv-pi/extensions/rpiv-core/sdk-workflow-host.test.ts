@@ -127,6 +127,7 @@ import {
 	recordRun,
 	retireRun,
 	SINGLE_UNIT_KEY,
+	setLaneProgress,
 } from "./run-lane-registry.js";
 import {
 	AMBIENT_OBSERVER_MANIFEST_FLAG,
@@ -139,6 +140,7 @@ import {
 	type SdkWorkflowHostDeps,
 	withoutAmbientExtensions,
 } from "./sdk-workflow-host.js";
+import { getSubagentUsageForRun } from "./subagent-usage.js";
 
 // ---------------------------------------------------------------------------
 // Compile-time executor-port tripwire. If the port drifts, this won't
@@ -284,6 +286,75 @@ describe("spawnChild — fresh child", () => {
 		).rejects.toThrow("boom");
 
 		expect(sessions[0].dispose).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe("spawnChild — subagent token capture (per-child eventBus)", () => {
+	/** The captured `DefaultResourceLoader` opts carry the REAL bus the host created
+	 *  (`createEventBus` comes through `...actual` in the module mock), so tests can
+	 *  emit on it exactly as a child's pi-subagents instance would. */
+	type CapturedBus = {
+		on: (channel: string, handler: (data: unknown) => void) => () => void;
+		emit: (channel: string, data: unknown) => void;
+	};
+	const capturedBus = (i = 0): CapturedBus => resourceLoaders[i].opts.eventBus as CapturedBus;
+
+	it("threads a fresh host-created eventBus into each child's resource loader (per-child isolation)", async () => {
+		const { deps } = makeDeps();
+		const host = new SdkWorkflowHost(deps);
+
+		await host.spawnChild({ prompt: "p", withSession: async () => "ok" });
+		await host.spawnChild({ prompt: "p", withSession: async () => "ok" });
+
+		expect(resourceLoaders).toHaveLength(2);
+		expect(typeof capturedBus(0).on).toBe("function");
+		expect(typeof capturedBus(0).emit).toBe("function");
+		// A FRESH bus per child — sharing one would cross-talk pi-subagents' RPC
+		// between concurrent children (the design's rejected alternative).
+		expect(capturedBus(0)).not.toBe(capturedBus(1));
+	});
+
+	it("records subagents:completed AND subagents:failed tokens against the run + current stage", async () => {
+		recordRun("run-abc", "ship");
+		setLaneProgress("run-abc", { stageName: "research", phase: "running" });
+		const { deps } = makeDeps();
+		const host = new SdkWorkflowHost(deps);
+
+		await host.spawnChild({
+			prompt: "p",
+			withSession: async () => {
+				// Emit while the child is live — as pi-subagents does on its `pi.events`.
+				capturedBus().emit("subagents:completed", { tokens: { input: 100, output: 40, total: 140 } });
+				// A failed (error/stopped/aborted) agent's spend still counts — same payload shape.
+				capturedBus().emit("subagents:failed", { tokens: { input: 60, output: 10, total: 70 } });
+				return "ok";
+			},
+		});
+
+		const usage = getSubagentUsageForRun("run-abc");
+		expect(usage?.input).toBe(160); // 100 (completed) + 60 (failed)
+		expect(usage?.output).toBe(50); // 40 + 10
+		expect(usage?.cacheRead).toBe(0); // forced 0 (pi-subagents issue #38)
+	});
+
+	it("stops recording after the child tears down (both listeners disposed in finally)", async () => {
+		recordRun("run-abc", "ship");
+		setLaneProgress("run-abc", { stageName: "research", phase: "running" });
+		const { deps } = makeDeps();
+		const host = new SdkWorkflowHost(deps);
+
+		await host.spawnChild({
+			prompt: "p",
+			withSession: async () => {
+				capturedBus().emit("subagents:completed", { tokens: { input: 100, output: 0, total: 100 } });
+				return "ok";
+			},
+		});
+
+		// The child's finally ran — late emits on its (captured) bus must be inert on BOTH channels.
+		capturedBus().emit("subagents:completed", { tokens: { input: 999, output: 999, total: 1998 } });
+		capturedBus().emit("subagents:failed", { tokens: { input: 999, output: 999, total: 1998 } });
+		expect(getSubagentUsageForRun("run-abc")?.input).toBe(100); // unchanged
 	});
 });
 

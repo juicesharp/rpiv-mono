@@ -39,6 +39,7 @@ import { shortFailureReason } from "./lane-failure.js";
 import { isLaneRelayUiContext } from "./lane-relay-ui.js";
 import {
 	clearUnitLanes,
+	foldStageUsage,
 	getLane,
 	markUnitDone,
 	retireRun,
@@ -125,6 +126,7 @@ export async function registerLaneProgress(): Promise<void> {
 			// loop's onLoopStart only drops the gate, it never cleared the prior generation).
 			// clearUnitLanes is a no-op on an empty map, so the first stage of a run pays nothing.
 			onStageStart: (stage, ctx) => {
+				foldStageUsage(ctx.runId);
 				clearUnitLanes(ctx.runId);
 				setLaneProgress(ctx.runId, { stageName: stage.name, phase: "running" });
 			},
@@ -146,6 +148,7 @@ export async function registerLaneProgress(): Promise<void> {
 				// generation. A non-fan-out loop (iterate/assess/verify) drops the gate so its
 				// sequential units never materialize sub-rows.
 				if (info.kind === "fanout") {
+					foldStageUsage(ctx.runId);
 					clearUnitLanes(ctx.runId);
 					fanoutRuns.add(ctx.runId);
 					// Fan out the generation's unit sub-rows as PENDING the instant onLoopStart

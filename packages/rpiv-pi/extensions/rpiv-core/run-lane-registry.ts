@@ -16,8 +16,7 @@
 
 import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 
-import type { LaneUsage } from "./lane-usage.js";
-import { toLaneUsage } from "./lane-usage.js";
+import { addLaneUsage, type LaneUsage, toLaneUsage } from "./lane-usage.js";
 import { emitQuestionAsked, emitQuestionResolved } from "./question-lifecycle.js";
 
 /** Lane status taxonomy — mirrors rpiv-workflow's RunTermination.status (types.ts:145-149). */
@@ -182,6 +181,14 @@ export interface LaneEntry {
 	 * generation only; the final generation's snapshots survive retirement.
 	 */
 	readonly units: Map<number, UnitLane>;
+	/** Per-stage orchestrator token usage, keyed by stage name in execution (insertion)
+	 *  order. Folded by `foldStageUsage` at each stage transition (BEFORE `clearUnitLanes`
+	 *  empties `units`), so a completed stage's tokens survive even though its units are
+	 *  gone. The CURRENT running stage's tokens are NOT yet folded — they read live off
+	 *  `units` at render time (`renderStageBreakdown`). Survives resume reactivation
+	 *  (`recordRun` clears `units`, not this). Never mixed with subagent tokens
+	 *  (`subagent-usage.ts`) — unified only at render time. */
+	readonly stageUsage: Map<string, LaneUsage>;
 	/** Live stage progress; undefined until the first onStageStart. */
 	progress: LaneProgress | undefined;
 	/**
@@ -320,6 +327,7 @@ export function recordRun(runId: string, name: string, meta?: { workflow?: strin
 			input: meta?.input,
 			status: "running",
 			units: new Map<number, UnitLane>(),
+			stageUsage: new Map<string, LaneUsage>(),
 			progress: undefined,
 		});
 	}
@@ -581,6 +589,32 @@ export function clearUnitLanes(runId: string): void {
 	notify();
 	// Emit AFTER notify() — only units that HAD pending input publish a `cleared`.
 	for (const idx of cleared) emitQuestionResolved(runId, idx, "cleared");
+}
+
+/** Pairwise-accumulate one stage's usage into the `stageUsage` bucket for `runId` +
+ *  `stageName` via `addLaneUsage` (so a re-folded stage SUMS, never overwrites). No-op
+ *  on undefined usage / missing lane / undefined stageName — a pre-first-stage fold, or a
+ *  lane with no live progress, records nothing. Does NOT notify (the paired
+ *  `clearUnitLanes`/`setLaneProgress` that follows in the bridge does). */
+export function addStageUsage(runId: string, stageName: string | undefined, usage: LaneUsage | undefined): void {
+	if (usage === undefined || stageName === undefined) return;
+	const entry = state().lanes.get(runId);
+	if (!entry) return;
+	const existing = entry.stageUsage.get(stageName);
+	entry.stageUsage.set(stageName, existing ? addLaneUsage(existing, usage)! : usage);
+}
+
+/** Fold the CURRENT stage's per-unit orchestrator tokens into its `stageUsage` bucket.
+ *  Reads the OUTGOING stage name off `progress.stageName` (the bridge calls this BEFORE
+ *  `setLaneProgress` flips to the next name and BEFORE `clearUnitLanes` empties `units`),
+ *  then folds each unit's effective `unitUsage` (teardown snapshot else live child) into
+ *  that stage's bucket via `addStageUsage`. No-op when the stage name is unset or `units`
+ *  is empty. Does NOT notify — the paired `clearUnitLanes`/`setLaneProgress` does. */
+export function foldStageUsage(runId: string): void {
+	const lane = state().lanes.get(runId);
+	const stageName = lane?.progress?.stageName;
+	if (!lane || stageName === undefined || lane.units.size === 0) return;
+	for (const unit of lane.units.values()) addStageUsage(runId, stageName, unitUsage(unit));
 }
 
 /** Seed the CURRENT fan-out generation's unit sub-rows as PENDING (bridge `onLoopStart`

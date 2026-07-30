@@ -93,6 +93,8 @@ beforeEach(async () => {
 	sessionCapture.__resetSessionCaptureState();
 	const runLaneRegistry = await import("../packages/rpiv-pi/extensions/rpiv-core/run-lane-registry.js");
 	runLaneRegistry.__resetRunLaneRegistry();
+	const subagentUsage = await import("../packages/rpiv-pi/extensions/rpiv-core/subagent-usage.js");
+	subagentUsage.__resetSubagentUsage();
 	const laneToolDefs = await import("../packages/rpiv-pi/extensions/rpiv-core/lane-tool-defs.js");
 	laneToolDefs.__resetLaneToolDefs();
 	const questionLifecycle = await import("../packages/rpiv-pi/extensions/rpiv-core/question-lifecycle.js");

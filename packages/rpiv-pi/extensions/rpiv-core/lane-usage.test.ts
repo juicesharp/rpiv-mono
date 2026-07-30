@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatTokens, type LaneUsage, toLaneUsage } from "./lane-usage.js";
+import { addLaneUsage, formatTokens, type LaneUsage, toLaneUsage } from "./lane-usage.js";
 
 describe("formatTokens (footer.js thresholds, verbatim)", () => {
 	it.each([
@@ -104,5 +104,54 @@ describe("toLaneUsage", () => {
 		});
 		expect(usage).toBeDefined();
 		expect(usage).not.toHaveProperty("percent");
+	});
+});
+
+describe("addLaneUsage", () => {
+	const u = (input: number, output: number, cacheRead = 0, cacheWrite = 0): LaneUsage => ({
+		input,
+		output,
+		cacheRead,
+		cacheWrite,
+		total: input + output + cacheRead + cacheWrite,
+	});
+
+	it("sums both-defined usages across all four token dims + recomputes total", () => {
+		expect(addLaneUsage(u(10, 20, 1, 2), u(5, 5, 3, 4))).toEqual<LaneUsage>({
+			input: 15,
+			output: 25,
+			cacheRead: 4,
+			cacheWrite: 6,
+			total: 50, // 15 + 25 + 4 + 6 (recomputed, NOT a+b totals)
+		});
+	});
+
+	it("returns the defined side when only `a` is present", () => {
+		expect(addLaneUsage(u(1, 2), undefined)).toEqual<LaneUsage>(u(1, 2));
+	});
+
+	it("returns the defined side when only `b` is present", () => {
+		expect(addLaneUsage(undefined, u(3, 4))).toEqual<LaneUsage>(u(3, 4));
+	});
+
+	it("returns undefined when both are absent (the identity element)", () => {
+		expect(addLaneUsage(undefined, undefined)).toBeUndefined();
+	});
+
+	it("threads scalar cost when either side carries it", () => {
+		// both sides carry cost → summed
+		expect(addLaneUsage({ ...u(1, 1), cost: 0.1 }, { ...u(2, 2), cost: 0.2 })?.cost).toBeCloseTo(0.3);
+		// only a carries cost → preserved
+		expect(addLaneUsage({ ...u(1, 1), cost: 0.5 }, u(2, 2))?.cost).toBe(0.5);
+		// only b carries cost → preserved
+		expect(addLaneUsage(u(1, 1), { ...u(2, 2), cost: 0.7 })?.cost).toBe(0.7);
+		// neither carries cost → omitted (not zero)
+		expect(addLaneUsage(u(1, 1), u(2, 2))).not.toHaveProperty("cost");
+	});
+
+	it("drops percent (never threads it, even when both sides carry it)", () => {
+		const a = { ...u(1, 1), percent: 10 } as LaneUsage;
+		const b = { ...u(2, 2), percent: 20 } as LaneUsage;
+		expect(addLaneUsage(a, b)).not.toHaveProperty("percent");
 	});
 });

@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	__resetRunLaneRegistry,
+	addStageUsage,
 	captureFinalSnapshot,
 	dequeueInput,
 	enqueueInput,
 	evictRun,
+	foldStageUsage,
 	getFocusedRun,
 	getLane,
 	getUnit,
@@ -860,6 +862,154 @@ describe("run-lane-registry", () => {
 			const fresh = await import("./run-lane-registry.js");
 			expect(fresh.getLane("g-1")).toBeDefined();
 			expect(fresh.listLanes().map((l) => l.runId)).toContain("g-1");
+		});
+	});
+
+	describe("stageUsage — per-stage token accumulation", () => {
+		/** A LaneSession whose getUsage returns a fixed token shape — seeds a unit's
+		 *  finalUsage via captureFinalSnapshot so unitUsage() reads it. */
+		function makeUsageSession(
+			sessionId: string,
+			usage: {
+				input: number;
+				output: number;
+				cacheRead: number;
+				cacheWrite: number;
+				total: number;
+				cost?: number;
+			},
+		): LaneSession {
+			return {
+				...makeSession(sessionId),
+				getUsage: () => ({ tokens: usage, cost: usage.cost }),
+			};
+		}
+
+		it("initializes stageUsage on a new lane (empty Map)", () => {
+			recordRun("run-1", "ship");
+			expect(getLane("run-1")?.stageUsage).toBeInstanceOf(Map);
+			expect(getLane("run-1")?.stageUsage.size).toBe(0);
+		});
+
+		it("leaves stageUsage intact on resume reactivation (completed stages survive)", () => {
+			recordRun("run-1", "ship");
+			setLaneProgress("run-1", { stageName: "plan", phase: "running" });
+			captureFinalSnapshot(
+				"run-1",
+				SINGLE_UNIT_KEY,
+				makeUsageSession("s1", {
+					input: 100,
+					output: 50,
+					cacheRead: 0,
+					cacheWrite: 0,
+					total: 150,
+				}),
+			);
+			foldStageUsage("run-1");
+			expect(getLane("run-1")?.stageUsage.get("plan")?.input).toBe(100);
+
+			// Resume re-records the SAME id — units are cleared but stageUsage survives.
+			recordRun("run-1", "ship");
+			expect(getLane("run-1")?.status).toBe("running"); // reactivated
+			expect(getLane("run-1")?.units.size).toBe(0); // prior units dropped
+			expect(getLane("run-1")?.stageUsage.get("plan")?.input).toBe(100); // survived
+		});
+
+		it("stageUsage survives retireRun (folded tokens retained after units are gone)", () => {
+			recordRun("run-1", "ship");
+			setLaneProgress("run-1", { stageName: "plan", phase: "running" });
+			captureFinalSnapshot(
+				"run-1",
+				SINGLE_UNIT_KEY,
+				makeUsageSession("s1", {
+					input: 200,
+					output: 0,
+					cacheRead: 0,
+					cacheWrite: 0,
+					total: 200,
+				}),
+			);
+			foldStageUsage("run-1");
+			expect(getLane("run-1")?.stageUsage.get("plan")?.input).toBe(200);
+
+			// retireRun does NOT clear stageUsage — folded tokens persist.
+			retireRun("run-1", "completed");
+			expect(getLane("run-1")?.stageUsage.get("plan")?.input).toBe(200);
+		});
+
+		it("addStageUsage pairwise-accumulates into a stage bucket (re-fold sums, never overwrites)", () => {
+			recordRun("run-1", "ship");
+			addStageUsage("run-1", "plan", { input: 5, output: 0, cacheRead: 0, cacheWrite: 0, total: 5 });
+			expect(getLane("run-1")?.stageUsage.get("plan")?.input).toBe(5);
+			addStageUsage("run-1", "plan", { input: 3, output: 0, cacheRead: 0, cacheWrite: 0, total: 3 });
+			expect(getLane("run-1")?.stageUsage.get("plan")?.input).toBe(8); // summed, not overwritten
+		});
+
+		it("addStageUsage is a no-op on undefined usage / undefined stageName / missing lane", () => {
+			recordRun("run-1", "ship");
+			const listener = vi.fn();
+			subscribeLanes(listener);
+			addStageUsage("run-1", "plan", undefined); // undefined usage → no-op
+			addStageUsage("run-1", undefined, { input: 1, output: 0, cacheRead: 0, cacheWrite: 0, total: 1 }); // undefined stage
+			addStageUsage("nope", "plan", { input: 1, output: 0, cacheRead: 0, cacheWrite: 0, total: 1 }); // missing lane
+			expect(getLane("run-1")?.stageUsage.size).toBe(0);
+			expect(listener).not.toHaveBeenCalled(); // no notify
+		});
+
+		it("foldStageUsage folds each unit's effective unitUsage into the OUTGOING stage bucket", () => {
+			recordRun("run-1", "ship");
+			setLaneProgress("run-1", { stageName: "plan", phase: "running" });
+			captureFinalSnapshot(
+				"run-1",
+				SINGLE_UNIT_KEY,
+				makeUsageSession("s1", {
+					input: 100,
+					output: 40,
+					cacheRead: 10,
+					cacheWrite: 0,
+					total: 150,
+				}),
+			);
+			foldStageUsage("run-1");
+			expect(getLane("run-1")?.stageUsage.get("plan")).toEqual({
+				input: 100,
+				output: 40,
+				cacheRead: 10,
+				cacheWrite: 0,
+				total: 150,
+			});
+		});
+
+		it("foldStageUsage is a no-op when stageName is unset or units is empty", () => {
+			recordRun("run-1", "ship");
+			// No stageName set (progress undefined) → no-op
+			foldStageUsage("run-1");
+			expect(getLane("run-1")?.stageUsage.size).toBe(0);
+
+			setLaneProgress("run-1", { stageName: "plan", phase: "running" });
+			// stageName set but no units → no-op
+			foldStageUsage("run-1");
+			expect(getLane("run-1")?.stageUsage.size).toBe(0);
+		});
+
+		it("foldStageUsage does NOT notify (the paired clearUnitLanes/setLaneProgress does)", () => {
+			recordRun("run-1", "ship");
+			setLaneProgress("run-1", { stageName: "plan", phase: "running" });
+			captureFinalSnapshot(
+				"run-1",
+				SINGLE_UNIT_KEY,
+				makeUsageSession("s1", {
+					input: 10,
+					output: 0,
+					cacheRead: 0,
+					cacheWrite: 0,
+					total: 10,
+				}),
+			);
+			const listener = vi.fn();
+			subscribeLanes(listener);
+			foldStageUsage("run-1");
+			expect(listener).not.toHaveBeenCalled();
 		});
 	});
 });

@@ -82,6 +82,31 @@ export function toLaneUsage(stats: unknown): LaneUsage | undefined {
 }
 
 /**
+ * Pairwise sum of two `LaneUsage` (or the defined side when one is `undefined`):
+ * sums the 4 token dimensions + recomputes `total` (= sum of all four), threads the
+ * scalar `cost` when EITHER side carries it, and drops `percent` (a context-window
+ * fill ratio is not meaningfully summable). Returns `undefined` only when BOTH are
+ * absent — the identity element of the sum — so folding through it is a no-op.
+ *
+ * Created once here and consumed by every token-accounting consumer —
+ * the single canonical pairwise sum, so the per-row tally, the run grand total, and
+ * the stage breakdown can never diverge. `addLaneUsage(undefined, x) === x`, so it
+ * composes a run/stage/lane roll-up uniformly whether a side carries usage or not.
+ */
+export function addLaneUsage(a?: LaneUsage, b?: LaneUsage): LaneUsage | undefined {
+	if (!a && !b) return undefined;
+	if (!a) return b;
+	if (!b) return a;
+	const input = a.input + b.input;
+	const output = a.output + b.output;
+	const cacheRead = a.cacheRead + b.cacheRead;
+	const cacheWrite = a.cacheWrite + b.cacheWrite;
+	const result: LaneUsage = { input, output, cacheRead, cacheWrite, total: input + output + cacheRead + cacheWrite };
+	if (a.cost !== undefined || b.cost !== undefined) result.cost = (a.cost ?? 0) + (b.cost ?? 0);
+	return result;
+}
+
+/**
  * Format a token count in pi's footer idiom — ported verbatim from the SDK's
  * `footer.js:17-29` (`formatTokens`): `<1e3` bare · `<1e4` `N.Nk` · `<1e6`
  * `round(k)k` · `<1e7` `N.NM` · else `round(M)M`. Both lane surfaces render token

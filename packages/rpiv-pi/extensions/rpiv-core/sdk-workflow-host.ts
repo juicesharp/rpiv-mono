@@ -37,7 +37,9 @@ import type { Model } from "@earendil-works/pi-ai";
 import {
 	type AgentSession,
 	createAgentSession,
+	createEventBus,
 	DefaultResourceLoader,
+	type EventBus,
 	type Extension,
 	type ExtensionUIContext,
 	getAgentDir,
@@ -53,7 +55,14 @@ import { armBashWatchdog, type BashWatchdog } from "./bash-timeout.js";
 import { createLaneRelayUiContext } from "./lane-relay-ui.js";
 import { createLaneSessionView } from "./lane-streaming.js";
 import { harvestToolDefs } from "./lane-tool-defs.js";
-import { captureFinalSnapshot, SINGLE_UNIT_KEY, setCurrentSession, setLaneSessionFile } from "./run-lane-registry.js";
+import {
+	captureFinalSnapshot,
+	getLane,
+	SINGLE_UNIT_KEY,
+	setCurrentSession,
+	setLaneSessionFile,
+} from "./run-lane-registry.js";
+import { recordSubagentCompletion } from "./subagent-usage.js";
 
 /**
  * Launcher-only "ambient observer" extensions: they register session-lifecycle
@@ -265,7 +274,8 @@ export class SdkWorkflowHost implements WorkflowHostContext {
 			throw new FanoutDepthExceededError(depth, MAX_FANOUT_DEPTH);
 		}
 
-		const resourceLoader = await this.buildChildResourceLoader();
+		const childEventBus = createEventBus();
+		const resourceLoader = await this.buildChildResourceLoader(childEventBus);
 		const { session } = await createAgentSession({
 			cwd: this.cwd,
 			// Borrow ONLY the registry; authStorage is still defaulted per child
@@ -310,6 +320,23 @@ export class SdkWorkflowHost implements WorkflowHostContext {
 		// aborts this child and records a reason `adapt` surfaces via `toolTimeout`, so the
 		// runner soft-halts the unit instead of letting a runaway command strand the gate.
 		const watchdog = armBashWatchdog(session);
+		// Subagent token capture: pi-subagents runs each subagent under its own
+		// `SessionManager.inMemory(...)` session, so its tokens NEVER reach the
+		// orchestrator child's `getSessionStats()`. It emits `subagents:completed` —
+		// or `subagents:failed` for error/stopped/aborted agents, SAME payload shape
+		// (carrying `{ tokens: { input, output, total } }`) — on the child's OWN
+		// eventBus (the one threaded into the resource loader above → `api.events`),
+		// so subscribing here attributes each terminal event to this run + the
+		// registry's current `progress.stageName` with zero cross-talk between
+		// concurrent children. BOTH channels are captured: a subagent that burns
+		// tokens and then errors still spent them. Best-effort capture: a
+		// missing/malformed `tokens` is a no-op (handled in
+		// `recordSubagentCompletion`). Disposed in the finally below so a torn-down
+		// child's bus emits no longer mutate the accumulator.
+		const recordSubagentTokens = (data: unknown) =>
+			recordSubagentCompletion(this.deps.runId, getLane(this.deps.runId)?.progress?.stageName, data);
+		const offSubagents = childEventBus.on("subagents:completed", recordSubagentTokens);
+		const offSubagentsFailed = childEventBus.on("subagents:failed", recordSubagentTokens);
 		try {
 			// Every child binds the DEFERRING relay: a floated run's stage queues +
 			// badges its questionnaire instead of grabbing the (possibly hidden) real UI;
@@ -323,6 +350,8 @@ export class SdkWorkflowHost implements WorkflowHostContext {
 			return await options.withSession(this.adapt(session, depth, watchdog));
 		} finally {
 			watchdog.dispose(); // unsubscribe + clear pending timers before the session tears down.
+			offSubagents(); // stop capturing subagent terminal events for this torn-down child's bus…
+			offSubagentsFailed(); // …on BOTH channels (completed + failed).
 			options.signal?.removeEventListener("abort", onAbort);
 			// Each unit owns its own registry key, so a sibling's teardown can NEVER clobber
 			// another's entry — the `currentSession === laneView` slot-owner guard (the
@@ -352,13 +381,20 @@ export class SdkWorkflowHost implements WorkflowHostContext {
 	 * `LoadExtensionsResult` carries a shared `runtime`, so reusing one loader
 	 * across concurrent children would cross-wire their extension runtimes.
 	 */
-	private async buildChildResourceLoader(): Promise<DefaultResourceLoader> {
+	private async buildChildResourceLoader(eventBus: EventBus): Promise<DefaultResourceLoader> {
 		const agentDir = getAgentDir();
 		const resourceLoader = new DefaultResourceLoader({
 			cwd: this.cwd,
 			agentDir,
 			settingsManager: SettingsManager.create(this.cwd, agentDir),
 			extensionsOverride: withoutAmbientExtensions,
+			// A PER-CHILD eventBus: the resource loader stores this (`this.eventBus`),
+			// hands it to every loaded extension factory (`loadExtensionFromFactory(…, eventBus)`
+			// → `createExtensionAPI(…, eventBus)` → `api.events = eventBus`), so a child's
+			// extensions — including pi-subagents — `pi.events.emit`/`on` against THIS bus.
+			// Subscribing on it below attributes each `subagents:completed` to this child's
+			// run + current stage with zero cross-talk between concurrent fan-out children.
+			eventBus,
 		});
 		await resourceLoader.reload();
 		return resourceLoader;

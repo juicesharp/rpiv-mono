@@ -49,6 +49,7 @@ import {
 	computeLaneLayout,
 	renderLaneList,
 	renderLiveOutputBorder,
+	renderStageBreakdown,
 	SPIN_INTERVAL_MS,
 	SPINNER_FRAMES,
 } from "./lane-list.js";
@@ -322,8 +323,15 @@ export class LaneConsole implements Component {
 		// — this is what keeps the lane view static across the step-in.
 		const { laneCap } = computeLaneLayout(realRows);
 		const laneList = renderLaneList(this.theme, width, { active: true, selection, frame: this.frame, laneCap });
+		const stageBlock = target ? renderStageBreakdown(this.theme, width, target.runId) : [];
 		const rule = this.theme.fg("accent", "─".repeat(Math.max(0, width)));
-		const laneBlock = [...laneList, "", this.footer(width, target), rule];
+		const laneBlock = [
+			...laneList,
+			...(stageBlock.length ? ["", ...stageBlock] : []),
+			"",
+			this.footer(width, target),
+			rule,
+		];
 
 		// LIVE OUTPUT region on top: a `── live output ──` labelled border, then the transcript
 		// (the padded flex band that unfurls upward), then the inline question when the selected

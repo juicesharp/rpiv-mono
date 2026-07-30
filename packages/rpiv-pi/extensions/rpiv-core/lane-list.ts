@@ -14,9 +14,10 @@
 import type { Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { shortFailureReason } from "./lane-failure.js";
-import { formatTokens, type LaneUsage } from "./lane-usage.js";
+import { addLaneUsage, formatTokens, type LaneUsage } from "./lane-usage.js";
 import {
 	type DisplayRow,
+	getLane,
 	type LaneEntry,
 	type LaneProgress,
 	type LaneStatus,
@@ -27,6 +28,7 @@ import {
 	unitNeedsInput,
 	unitUsage,
 } from "./run-lane-registry.js";
+import { getSubagentUsageForRun, getSubagentUsageForStage } from "./subagent-usage.js";
 
 /** Per-row CAP on the lane region (the scroll-follow window + its +N above/below summaries).
  *  computeLaneLayout bounds laneCap at MAX_WIDGET_LINES - 1, so the list never grows unbounded. */
@@ -143,6 +145,35 @@ function sumLaneUsage(units: Iterable<UnitLane>): LaneUsage | undefined {
 	const result: LaneUsage = { input, output, cacheRead, cacheWrite, total: input + output + cacheRead + cacheWrite };
 	if (hasCost) result.cost = cost;
 	return result;
+}
+
+/** The single definition of "a lane's tokens" — the run-so-far total, unified at read
+ *  time from the three disjoint token sources:
+ *    1. folded prior-stage orchestrator tokens (`lane.stageUsage` — `foldStageUsage`
+ *       moves a stage's tokens here BEFORE `clearUnitLanes` empties `units`, so the two
+ *       never overlap);
+ *    2. the CURRENT stage's live/retained orchestrator units (`sumLaneUsage(units)`);
+ *    3. the run's recorded subagent contribution (`getSubagentUsageForRun`).
+ *  Shared by the per-row tally (`renderLaneRow`) and the run grand total (`sumRunUsage`
+ *  → `renderHeading`) so the heading and the rows can never disagree — and both agree
+ *  with the sum of `renderStageBreakdown`'s per-stage lines, which read the same three
+ *  sources stage-by-stage. Returns undefined when no source carries usage. */
+function laneUsageTotal(lane: LaneEntry): LaneUsage | undefined {
+	let folded: LaneUsage | undefined;
+	for (const usage of lane.stageUsage.values()) folded = addLaneUsage(folded, usage);
+	return addLaneUsage(addLaneUsage(folded, sumLaneUsage(lane.units.values())), getSubagentUsageForRun(lane.runId));
+}
+
+/** Run-level token aggregate across every lane — folds each lane's `laneUsageTotal`
+ *  (orchestrator units + subagent contribution) through `addLaneUsage`: 4-way sum,
+ *  recomputed `total`, `cost` accumulated when any side carries it, `percent` dropped.
+ *  Returns undefined when no lane carries usage. */
+function sumRunUsage(lanes: Iterable<LaneEntry>): LaneUsage | undefined {
+	let acc: LaneUsage | undefined;
+	for (const lane of lanes) {
+		acc = addLaneUsage(acc, laneUsageTotal(lane));
+	}
+	return acc;
 }
 
 /** The compact CAP + lane-region budget, computed from the terminal size. `totalRows` is
@@ -312,15 +343,7 @@ function renderLaneRow(
 	if (needs) return `${prefix}${theme.fg("warning", "needs input")}`;
 	const reason = shortFailureReason(lane.error ?? (progress?.phase === "error" ? progress.reason : undefined));
 	if (progress)
-		return renderProgressRow(
-			theme,
-			prefix,
-			progress,
-			width,
-			reason,
-			sumLaneUsage(lane.units.values()),
-			lane.lastArtifact,
-		);
+		return renderProgressRow(theme, prefix, progress, width, reason, laneUsageTotal(lane), lane.lastArtifact);
 	const label = running ? "streaming…" : lane.status;
 	const tail = reason ? `${theme.fg("muted", label)}${theme.fg("warning", ` — ${reason}`)}` : theme.fg("muted", label);
 	return `${prefix}${tail}`;
@@ -343,7 +366,10 @@ function renderHeading(theme: Theme, width: number): string {
 		headText = activeCount > 0 ? `Runs (${activeCount} active)` : `Runs (${allLanes.length})`;
 	}
 	const titleIcon = anyNeedsInput ? `${theme.fg("warning", "●")} ` : "";
-	return truncateToWidth(`  ${titleIcon}${theme.bg("selectedBg", ` ${headText} `)}`, width, "…");
+	const chip = theme.bg("selectedBg", ` ${headText} `);
+	const tally = formatUsageTally(sumRunUsage(allLanes));
+	const tallyStr = tally ? theme.fg("muted", `  ${tally}`) : "";
+	return truncateToWidth(`  ${titleIcon}${chip}${tallyStr}`, width, "…");
 }
 
 /**
@@ -403,4 +429,38 @@ export function renderLiveOutputBorder(theme: Theme, width: number): string {
 	const remaining = width - visibleWidth(label);
 	if (remaining >= 0) return theme.fg("dim", label + "─".repeat(remaining));
 	return theme.fg("dim", truncateToWidth(label, Math.max(0, width)));
+}
+
+/**
+ * Render the per-stage token breakdown for ONE lane (console-only — the ambient dock
+ * never calls this, so its capped region is unchanged). Reads the lane LIVE; a missing
+ * or evicted lane yields []. Stages appear in execution order: stageUsage insertion
+ * order (folded prior stages), then the current stage name if not already present.
+ *
+ * Each stage's unified usage folds three sources through addLaneUsage (the token-source
+ * partitioning invariant — orchestrator + subagent are unified ONLY here, never in storage):
+ *   1. the folded stageUsage bucket (prior stages' tokens, retained across clearUnitLanes);
+ *   2. the CURRENT stage's live units (added at read time, since no fold fires for a running
+ *      stage — sumLaneUsage(lane.units.values()) when this stage is the active one, else
+ *      undefined for a completed stage whose units were already folded + cleared);
+ *   3. the stage's subagent contribution (getSubagentUsageForStage).
+ * A stage with zero net usage (empty tally) is omitted; returns [] when no stage carries
+ * usage. Each rendered line reuses the SAME formatUsageTally idiom the lane row uses.
+ */
+export function renderStageBreakdown(theme: Theme, width: number, runId: string): string[] {
+	const lane = getLane(runId);
+	if (!lane) return [];
+	const currentName = lane.progress?.stageName;
+	// Execution order: folded stages in insertion order, then the current stage if new.
+	const stageNames: string[] = [...lane.stageUsage.keys()];
+	if (currentName && !stageNames.includes(currentName)) stageNames.push(currentName);
+	const lines: string[] = [];
+	for (const name of stageNames) {
+		const folded = lane.stageUsage.get(name);
+		const live = name === currentName ? sumLaneUsage(lane.units.values()) : undefined;
+		const total = addLaneUsage(addLaneUsage(folded, live), getSubagentUsageForStage(runId, name));
+		const tally = formatUsageTally(total);
+		if (tally) lines.push(truncateToWidth(`  ${theme.fg("muted", `${name} ${tally}`)}`, width, "…"));
+	}
+	return lines;
 }
