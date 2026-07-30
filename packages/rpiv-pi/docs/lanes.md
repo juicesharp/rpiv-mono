@@ -37,13 +37,14 @@ The browser replays the selected lane's transcript, tool calls included.
 | `⏎` | Arm the parked question on a flagged lane, inline |
 | `PgUp` / `PgDn` | Scroll the transcript |
 | `t` | Expand or collapse tool output |
+| `s` | Show or hide the per-stage token breakdown |
 | `x` | Stop the selected run |
 | `esc` / `←` | Back out to the prompt |
 
 The footer states the live contract:
 
 ```
-↑/↓ lanes · ⏎ answer · PgUp/PgDn scroll · t expand · x stop · ↑/←/esc back
+↑/↓ lanes · ⏎ answer · PgUp/PgDn scroll · t expand · s stages · x stop · ↑/←/esc back
 ```
 
 ## Parked questions

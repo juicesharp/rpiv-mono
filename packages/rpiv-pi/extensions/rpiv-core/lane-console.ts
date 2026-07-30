@@ -146,6 +146,8 @@ export class LaneConsole implements Component {
 	private lastMaxStart = 0;
 	/** `t` toggles tool/summary expansion in the transcript. */
 	private toolsExpanded = false;
+	/** `s` toggles the per-stage token breakdown below the lane block (hidden by default). */
+	private stageBreakdownExpanded = false;
 	/** The transcript view for the currently-selected unit; swapped on re-target. */
 	private transcript: LaneTranscriptView | undefined;
 	private transcriptTarget: Target | undefined;
@@ -334,7 +336,8 @@ export class LaneConsole implements Component {
 		// — this is what keeps the lane view static across the step-in.
 		const { laneCap } = computeLaneLayout(realRows);
 		const laneList = renderLaneList(this.theme, width, { active: true, selection, frame: this.frame, laneCap });
-		const stageBlock = target ? renderStageBreakdown(this.theme, width, target.runId) : [];
+		const stageBlock =
+			target && this.stageBreakdownExpanded ? renderStageBreakdown(this.theme, width, target.runId) : [];
 		const rule = this.theme.fg("accent", "─".repeat(Math.max(0, width)));
 		const laneBlock = [
 			...laneList,
@@ -408,10 +411,14 @@ export class LaneConsole implements Component {
 				: unitNeedsInput(target.runId, target.unitIndex));
 		const canRerun = target ? isTerminalFailure(getLane(target.runId)?.status) : false;
 		const toggle = this.toolsExpanded ? "t collapse" : "t expand";
+		const stages = this.stageBreakdownExpanded ? "s hide stages" : "s stages";
 		const answer = canAnswer ? "⏎ answer · " : "";
 		const rerun = canRerun ? "r rerun · " : "";
 		return truncateToWidth(
-			this.theme.fg("dim", `↑/↓ lanes · ${answer}PgUp/PgDn scroll · ${toggle} · ${rerun}x stop · ↑/←/esc back`),
+			this.theme.fg(
+				"dim",
+				`↑/↓ lanes · ${answer}PgUp/PgDn scroll · ${toggle} · ${stages} · ${rerun}x stop · ↑/←/esc back`,
+			),
 			width,
 			"…",
 		);
@@ -504,6 +511,10 @@ export class LaneConsole implements Component {
 		}
 		if (data === "t") {
 			this.toolsExpanded = !this.toolsExpanded;
+			this.tui.requestRender();
+		}
+		if (data === "s") {
+			this.stageBreakdownExpanded = !this.stageBreakdownExpanded;
 			this.tui.requestRender();
 		}
 	}

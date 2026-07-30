@@ -17,6 +17,7 @@ import { renderLaneList } from "./lane-list.js";
 import type { ViewerMessage } from "./lane-transcript.js";
 import {
 	__resetRunLaneRegistry,
+	captureFinalSnapshot,
 	enqueueInput,
 	getUnit,
 	type LaneSession,
@@ -25,6 +26,7 @@ import {
 	retireRun,
 	SINGLE_UNIT_KEY,
 	setCurrentSession,
+	setLaneProgress,
 	setLaneSessionFile,
 	setUnitStarted,
 } from "./run-lane-registry.js";
@@ -309,6 +311,63 @@ describe("LaneConsole — live output + bottom-pinned lane block", () => {
 		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, done, vi.fn());
 		panel.handleInput("\x1b[D"); // Left arrow
 		expect(done).toHaveBeenCalledTimes(1);
+		panel.dispose();
+	});
+});
+
+describe("LaneConsole — `s` per-stage token breakdown toggle", () => {
+	/** Seed orchestrator usage onto the run's single-unit lane via captureFinalSnapshot (the
+	 *  lane-list.test.ts seeding idiom) so the current stage's tally renders. */
+	function seedStageUsage(runId: string, input: number, output: number): void {
+		captureFinalSnapshot(runId, SINGLE_UNIT_KEY, {
+			sessionId: "s1",
+			isStreaming: false,
+			sessionManager: { getBranch: () => [{ type: "message" }], getCwd: () => "/tmp" },
+			getToolDefinition: () => undefined,
+			getStreamingMessage: () => undefined,
+			getUsage: () => ({ tokens: { input, output, cacheRead: 0, cacheWrite: 0, total: input + output } }),
+			subscribe: () => () => {},
+		});
+	}
+
+	/** A live single-stage lane (transcript "ctx line") whose `plan` stage carries ↑1.0k of
+	 *  orchestrator usage, so `renderStageBreakdown` emits a `plan ↑1.0k` line when revealed. */
+	function liveUnitWithStageUsage(): void {
+		liveUnit(); // recordRun + setUnitStarted + setCurrentSession (the transcript body)
+		setLaneProgress("run-1", { stageName: "plan", phase: "running" });
+		seedStageUsage("run-1", 1000, 0); // captureFinalSnapshot → unit.finalUsage (read as the live current-stage tally)
+	}
+
+	it("hides the breakdown by default; `s` reveals then re-hides it (footer flips, totals + height invariant)", () => {
+		liveUnitWithStageUsage(); // `plan` stage seeded with ↑1.0k so renderStageBreakdown emits a line
+		const panel = new LaneConsole("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme, {} as never, vi.fn(), vi.fn());
+
+		// c1 — hidden by default: no stage-breakdown line; footer advertises `s stages`.
+		const hidden = panel.render(80);
+		expect(hidden.join("\n")).not.toContain("plan ↑1.0k"); // breakdown absent
+		expect(hidden.join("\n")).toContain("s stages"); // footer advertises the reveal verb
+		expect(hidden.join("\n")).not.toContain("s hide stages");
+
+		// c2 — press `s`: breakdown reveals (`plan ↑1.0k`); footer flips to `s hide stages`.
+		panel.handleInput("s");
+		const shown = panel.render(80);
+		expect(shown.join("\n")).toContain("plan ↑1.0k"); // breakdown present
+		expect(shown.join("\n")).toContain("s hide stages"); // footer flips
+		expect(shown.join("\n")).not.toContain("s stages"); // the hidden verb is gone (not a substring of "s hide stages")
+
+		// c4 — constant height: the surface is exactly maxRows in BOTH states (the transcript
+		//      absorbs the stage block's height, so the total never changes — the static-lanes
+		//      + ghost-block invariant).
+		expect(shown.length).toBe(hidden.length);
+
+		// c4 — totals unaffected: the always-rendered lane row (renderLaneList reads the registry
+		//      directly) is byte-for-byte identical across toggle states — toggling `s` only gates
+		//      the stage block, never the data path.
+		expect(shown.find((l) => l.includes("ship"))).toBe(hidden.find((l) => l.includes("ship")));
+
+		// c3 — press `s` again: back to the EXACT hidden state (idempotent toggle, pure render gate).
+		panel.handleInput("s");
+		expect(panel.render(80)).toEqual(hidden);
 		panel.dispose();
 	});
 });
