@@ -365,6 +365,33 @@ describe("IMPLEMENT_DAG_FANOUT (build implement — dep-gated phase units)", () 
 		expect(units[0]?.label).toBe("phase 1/11");
 	});
 
+	it("serializes a phase declaring x.ts against one declaring x.test.ts (twin conflict edge)", async () => {
+		// The production phase's implicit twin write (a signature change drags its
+		// co-located test's assertions along) would race a concurrent sibling that
+		// owns the test explicitly — under the twin-blind fold these two counted as
+		// disjoint and ran concurrently.
+		const rel = ".rpiv/artifacts/plans/twin.md";
+		writePlan(
+			rel,
+			[
+				"---",
+				"status: ready",
+				"phase_count: 2",
+				"phases:",
+				"  - { n: 1, title: P1, files: [packages/a/mod.ts] }",
+				"  - { n: 2, title: P2, files: [packages/a/mod.test.ts] }",
+				"---",
+				"# Plan",
+				"## Phase 1: P1",
+				"## Phase 2: P2",
+				"",
+			].join("\n"),
+		);
+		const units = await runFanout(rel);
+		const depsByPhase = new Map(units.map((u) => [u.id, u.deps ?? []]));
+		expect(depsByPhase.get("phase-2")).toEqual(["phase-1"]);
+	});
+
 	it("degrades to the full chain when every phase omits files (clause B — serial at any cap)", async () => {
 		const rel = ".rpiv/artifacts/plans/no-files.md";
 		writePlan(
@@ -4987,6 +5014,51 @@ describe("build implement-scope-check (lane-level scope floor)", () => {
 		expect(data.severity).toBe("high");
 		expect(String(data.feedback)).toMatch(/packages\/a\/stray\.ts/);
 		expect(String(data.feedback)).toMatch(/Undeclared write/);
+	});
+
+	// Twin expansion (the 5de3 halt class): a declared production file carries its
+	// co-located test twin — a signature change legitimately drags the twin's
+	// assertions along, so the mechanical follow-up edit is not a stray write.
+	it("passes a dirty co-located test twin of a declared production file", () => {
+		const state = seed(
+			".rpiv/artifacts/plans/p.md",
+			plan(['"packages/a/foo.ts"'], 1),
+			".rpiv/artifacts/goal/baseline-t.json",
+			[],
+		);
+		dirty("packages/a/foo.ts"); // declared
+		dirty("packages/a/foo.test.ts"); // twin of declared → within scope
+		const data = scopeRun()({ cwd: tmpDir, input: undefined, state }).data;
+		expect(data.pass).toBe(true);
+		expect(data.findings).toEqual([]);
+	});
+
+	it("twin expansion is asymmetric — declaring x.test.ts does not license writing x.ts", () => {
+		const state = seed(
+			".rpiv/artifacts/plans/p.md",
+			plan(['"packages/a/foo.test.ts"'], 1),
+			".rpiv/artifacts/goal/baseline-t.json",
+			[],
+		);
+		dirty("packages/a/foo.test.ts"); // declared
+		dirty("packages/a/foo.ts"); // production twin NOT licensed → excess
+		const data = scopeRun()({ cwd: tmpDir, input: undefined, state }).data;
+		expect(data.pass).toBe(false);
+		expect(String(data.feedback)).toMatch(/packages\/a\/foo\.ts/);
+	});
+
+	it("a dirty NON-twin test file still fails the floor", () => {
+		const state = seed(
+			".rpiv/artifacts/plans/p.md",
+			plan(['"packages/a/foo.ts"'], 1),
+			".rpiv/artifacts/goal/baseline-t.json",
+			[],
+		);
+		dirty("packages/a/foo.ts"); // declared
+		dirty("packages/a/bar.test.ts"); // not foo's twin → excess
+		const data = scopeRun()({ cwd: tmpDir, input: undefined, state }).data;
+		expect(data.pass).toBe(false);
+		expect(String(data.feedback)).toMatch(/packages\/a\/bar\.test\.ts/);
 	});
 
 	// Regression (post-a777 run halt at 2026-07-28T03:12Z): git's default status

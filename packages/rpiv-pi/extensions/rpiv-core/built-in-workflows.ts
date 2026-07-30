@@ -376,7 +376,10 @@ const IMPLEMENT_PHASE_FANOUT = { ...FRONTMATTER_PHASE_FANOUT, concurrency: 1 };
  * runtime closure, so no TDZ (same pattern as `sliceDeps`).
  */
 const implementPhaseDeps = (records: readonly PhaseRecord[], self: PhaseRecord): string[] => {
-	const selfFiles = phaseFiles(self.entry);
+	// Twin-expanded (`withTestTwins`) so a phase declaring `x.ts` conflicts with
+	// one declaring `x.test.ts` — the production phase's implicit twin write would
+	// otherwise race a concurrent sibling that owns the test explicitly.
+	const selfFiles = withTestTwins(phaseFiles(self.entry));
 	const explicit = phaseDeps(self.entry);
 	const ns = new Set<number>();
 	for (const e of explicit) if (e < self.n) ns.add(e);
@@ -387,7 +390,7 @@ const implementPhaseDeps = (records: readonly PhaseRecord[], self: PhaseRecord):
 		// clause A — overlap on ≥1 declared write path.
 		for (const r of records) {
 			if (r.n >= self.n) continue;
-			const rFiles = phaseFiles(r.entry);
+			const rFiles = withTestTwins(phaseFiles(r.entry));
 			if (rFiles.some((f) => selfFiles.includes(f))) ns.add(r.n);
 		}
 	}
@@ -539,6 +542,33 @@ const phaseDeps = (entry: unknown): number[] => {
 const phaseFiles = (entry: unknown): string[] => {
 	const raw = (entry as { files?: unknown } | undefined)?.files;
 	return Array.isArray(raw) ? raw.filter((f): f is string => typeof f === "string") : [];
+};
+
+/**
+ * Expand a declared write-set with each production file's co-located test twin
+ * (`x.ts → x.test.ts`, likewise tsx/js/jsx). This monorepo's tests are
+ * compile-coupled siblings — widening a declared file's signature forces the
+ * mechanical follow-up edit in its twin — so requiring every plan author,
+ * elaborator, and grader to re-declare the twin is paperwork the convention
+ * already guarantees (a live run STOPPED at the scope floor over exactly this:
+ * a declared `lane-switcher.ts` signature change whose five-assertion twin fix
+ * was undeclared prose). Applied at BOTH consumers of the declared set — the
+ * DAG conflict fold (`implementPhaseDeps`) and the scope floors — so the
+ * planner and the floor can never disagree; on the DAG side it also closes the
+ * latent race where phases declaring `x.ts` and `x.test.ts` counted as
+ * disjoint yet predictably collide. Asymmetric by design: declaring a TEST
+ * file licenses nothing extra — production writes remain the act that must be
+ * declared, and a write to a non-twin test still fails the floor. A file
+ * already matching `TEST_PATH_RE` maps to itself (no `x.test.test.ts`).
+ */
+const withTestTwins = (files: readonly string[]): string[] => {
+	const out = new Set(files);
+	for (const f of files) {
+		if (TEST_PATH_RE.test(f)) continue;
+		const twin = f.replace(/\.([tj]sx?)$/, ".test.$1");
+		if (twin !== f) out.add(twin);
+	}
+	return [...out];
 };
 
 /**
@@ -2160,7 +2190,8 @@ const codeDemote = demoteDuties("code-demote", "plans", "code-verdicts");
  * LLM quality gates. After build's `implement` lane runs (now dep-gated and, as
  * of this phase's unpin, concurrent up to the host cap), this checks the working
  * tree's dirty set against the plan's declared write-set (the union of every
- * phase's `files:`): any dirty path the run wrote that is NOT in `declared`, NOT
+ * phase's `files:`, twin-expanded via `withTestTwins`): any dirty path the run
+ * wrote that is NOT in `declared`, NOT
  * pre-existing at the run-start baseline, and NOT under a bookkeeping tree is a
  * scope violation — a phase escaped the upstream write-scope discipline and
  * rewrote the wider tree, corrupting (or about to corrupt) a concurrent
@@ -2202,9 +2233,11 @@ const implementScopeCheck = ({ state, cwd }: ScriptContext): Omit<Output, "meta"
 	}
 	const body = readArtifactFile(latest.handle.path, cwd);
 	const records = planPhaseRecords(body, "implement-scope-check", latest.handle.path);
-	// Declared write-set = union of every phase's `files:` (via `phaseFiles`).
+	// Declared write-set = union of every phase's `files:` (via `phaseFiles`),
+	// expanded with co-located test twins (`withTestTwins`) — a signature change
+	// in a declared file legitimately drags its twin's assertions along.
 	// A `files:`-less plan yields `[]` ⇒ `scopeExcess` returns `[]` ⇒ inert floor.
-	const declared = records.flatMap((r) => phaseFiles(r.entry));
+	const declared = withTestTwins(records.flatMap((r) => phaseFiles(r.entry)));
 
 	// Run-start baseline (goal channel, role "baseline") + current dirty set —
 	// both best-effort (absent / non-repo ⇒ `[]`); see the two helpers' docs.
@@ -2283,8 +2316,9 @@ const implementScopeCheckVet = ({ state, cwd }: ScriptContext): Omit<Output, "me
 
 	// Shared core: subtract the run's bookkeeping dirs (`.rpiv/`,
 	// `thoughts/`) and the run-start baseline; empty-`declared` ⇒ `[]` (degradation
-	// ⇒ inert floor — a fully `files:`-less plan never false-fails).
-	const excess = scopeExcess(dirty, baseline, [...declared]);
+	// ⇒ inert floor — a fully `files:`-less plan never false-fails). Twin-expanded
+	// like build's floor: a declared file carries its co-located test twin.
+	const excess = scopeExcess(dirty, baseline, withTestTwins([...declared]));
 	const findings = excess.map((p) => ({
 		detail: `${p}: written by the implement lane but not declared in any plan iteration's \`files:\` set. A phase may write only its declared paths (the write-scope rule); declare the path in the owning phase's \`files:\` or drop the write.`,
 		where: p,

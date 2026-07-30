@@ -21,6 +21,18 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Declared write-sets carry their co-located test twins.** A phase declaring
+  `x.ts` in `files:` implicitly covers `x.test.ts` (likewise tsx/js/jsx) at
+  both consumers of the declared set: the implement DAG's conflict fold (so a
+  phase declaring the production file now serializes against one declaring the
+  test — closing a latent race where they counted as disjoint) and the
+  `implement-scope-check` floors (so the mechanical twin follow-up a signature
+  change forces — mock arity, call-site matchers — is no longer an "undeclared
+  write" that STOPs the run; a live run halted one stage short of validate on
+  exactly this). Asymmetric: declaring a test file licenses nothing extra, and
+  a non-twin write still fails the floor. Elaborations no longer need
+  prose scope-addition notes for twin edits.
+
 - **AV lint rule 5: wrap/case-fragile prose greps.** The plan gate's
   Automated-Verification contract floor now flags a grep-family command whose
   positional pattern is a multi-word literal and whose file operands are all
