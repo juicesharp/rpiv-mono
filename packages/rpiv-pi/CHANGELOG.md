@@ -21,6 +21,16 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **AV lint rule 5: wrap/case-fragile prose greps.** The plan gate's
+  Automated-Verification contract floor now flags a grep-family command whose
+  positional pattern is a multi-word literal and whose file operands are all
+  markdown — prose re-wraps under ordinary editing (splitting the phrase
+  across lines, invisible to a line-based grep) and sentence-cases it
+  (defeating a case-sensitive match), so such a line can fail at `reconcile`
+  (whose fail route is STOP) while the asserted text is present. Both classes
+  false-failed a live run. `-e`/`-f` patterns, code-file targets, single
+  tokens, and directory operands fail open, matching the floor's posture.
+
 - **Cite-only discharge on the build slice gate.** A `design-readiness` fail
   whose every finding is pure citation bookkeeping — a missing `Draws on`
   seed, or a `path:line` whose line numbers drifted — no longer buys a second

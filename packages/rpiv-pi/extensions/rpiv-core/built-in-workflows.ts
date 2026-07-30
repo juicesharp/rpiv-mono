@@ -2506,6 +2506,10 @@ const AV_ABSENCE_PROSE_RE = /returns nothing|no matches|no occurrences|is gone|m
  *  in scope (e.g. all-markdown) — "No files were processed" exits 1 under
  *  `--error-on-warnings` regardless of tree state. */
 const AV_BIOME_SCOPED_PATH_RE = /\.(?:ts|tsx|js|jsx|mjs|cjs|css|html|json|jsonc)$/i;
+/** Prose targets re-wrap and sentence-case under ordinary editing — the two
+ *  observed ways a multi-word case-sensitive grep goes stale against markdown
+ *  while the text it asserts is still present (lint rule 5). */
+const AV_PROSE_PATH_RE = /\.mdx?$/i;
 
 /**
  * Plan-time lint of `#### Automated Verification:` lines against `reconcile`'s
@@ -2526,7 +2530,12 @@ const AV_BIOME_SCOPED_PATH_RE = /\.(?:ts|tsx|js|jsx|mjs|cjs|css|html|json|jsonc)
  *  3. grep-family whose prose tail asserts absence ("returns nothing") —
  *     success-by-absence IS grep exit 1, the inverse of the contract;
  *  4. a Biome runner whose forwarded paths are all outside Biome's possible
- *     scope — "No files were processed" exits 1 under `--error-on-warnings`.
+ *     scope — "No files were processed" exits 1 under `--error-on-warnings`;
+ *  5. grep-family with a multi-word literal pattern where every file operand
+ *     is markdown — prose re-wraps (splitting the phrase across lines, which
+ *     a line-based grep cannot match) and sentence-cases (defeating a
+ *     case-sensitive match); both classes false-failed a live reconcile while
+ *     the asserted text was present.
  */
 const verifyAvCommandContract = (body: string): { detail: string; where: string }[] => {
 	const findings: { detail: string; where: string }[] = [];
@@ -2571,6 +2580,17 @@ const verifyAvCommandContract = (body: string): { detail: string; where: string 
 					detail: `Automated Verification \`${command}\` asserts absence in prose ("${AV_ABSENCE_PROSE_RE.exec(tail)?.[0]}") — grep exits 1 on zero matches, so this line's success IS a non-zero exit and reconcile will always fail it. Restate it as a command that exits 0 on success (e.g. a \`node -e\` probe) or move it to Manual Verification.`,
 					where: command,
 				});
+			}
+			// Positional-pattern form only; -e/-f patterns and directory operands
+			// fail open, matching the Biome rule's posture.
+			if (!patternViaFlag && operands.length >= 2) {
+				const pattern = operands[0]!;
+				if (/\s/.test(pattern) && operands.slice(1).every((p) => AV_PROSE_PATH_RE.test(p))) {
+					findings.push({
+						detail: `Automated Verification \`${command}\` greps a multi-word literal against prose — markdown re-wraps under ordinary editing (splitting the phrase across lines, which a line-based grep cannot match) and sentence-cases it (defeating a case-sensitive match), so this line can fail while the asserted text is present. Grep a single unwrappable token, or restate as a \`node -e\` probe matching the words with /\\s+/ between them (and the i flag if casing may vary).`,
+						where: command,
+					});
+				}
 			}
 		}
 		// Biome runners: `npm run check:files -- <paths>` / `npx biome check <paths>`.

@@ -5645,6 +5645,36 @@ describe("AV exit-0 contract floor (plan-cite-check / code-cite-check)", () => {
 		expect(data.pass).toBe(true);
 	});
 
+	it("flags a multi-word literal grep against markdown (the 7514 wrap/case-fragile class)", () => {
+		// The live false-fail: the guide capitalized the phrase ("Three of the
+		// five…") and the guidance doc line-wrapped it — grep failed both while the
+		// asserted text was present, and reconcile's fail route is STOP.
+		const data = runOn(
+			planWithAv([
+				'- [x] `grep -n "three of the five bundled pipelines" packages/rpiv-site/src/content/docs/guides/run-a-workflow.md`',
+			]),
+		);
+		expect(data.pass).toBe(false);
+		expect(details(data)).toContain("multi-word literal against prose");
+	});
+
+	it("does not flag a multi-word grep against a code file (code neither re-wraps nor sentence-cases)", () => {
+		const data = runOn(planWithAv(['- [ ] `grep -n "stageCount: 30" packages/rpiv-site/src/lib/workflows.ts`']));
+		expect(data.pass).toBe(true);
+	});
+
+	it("does not flag a single-token grep against markdown", () => {
+		const data = runOn(
+			planWithAv(['- [ ] `grep -n "30-stage" packages/rpiv-site/src/content/docs/guides/pick-a-path.md`']),
+		);
+		expect(data.pass).toBe(true);
+	});
+
+	it("fails open on a directory operand (no extension to classify as prose)", () => {
+		const data = runOn(planWithAv(['- [ ] `grep -rn "three of five" packages/rpiv-site/src/`']));
+		expect(data.pass).toBe(true);
+	});
+
 	it("flags a Biome runner whose forwarded paths are all out of scope (the c8fc markdown class)", () => {
 		const data = runOn(planWithAv(["- [x] `npm run check:files -- packages/rpiv-pi/skills/implement/SKILL.md`"]));
 		expect(data.pass).toBe(false);
