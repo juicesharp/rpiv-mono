@@ -23,10 +23,10 @@ The chain proper starts at `/skill:research`. How you get there depends on what 
 
 ## Hand-drive, or hand it to `/wf`
 
-The recipes below run the same skills in the same order whether you invoke them yourself or hand them to the workflow runner. `rpiv-workflow` ships three bundled pipelines:
+The recipes below run the same skills in the same order whether you invoke them yourself or hand them to the workflow runner. `rpiv-workflow` showcases three of its five bundled pipelines:
 
-- **`/wf build`**: ships a feature from a brief, sliced and gated. `goal → research → slice → ⛩ → design-slice ×N → design-review → subplan → plan → ⛩ → elaborate ×phases → code-splice → ⛩ → implement → validate → commit` (19 stages). Your brief is captured verbatim, and every quality gate grades against it. Slices are designed in parallel. The run pauses once, at a consolidated design review. Three gates each carry a bounded fix loop. → [Run a workflow](/docs/guides/run-a-workflow) for the full anatomy.
-- **`/wf vet`**: `code-review → (blueprint → implement → validate → loop) → commit`. Orthogonal to scope: point it at an existing diff (yours or a teammate's) for a structured review with an optional fix cycle.
+- **`/wf build`**: ships a feature from a brief, sliced and gated. `goal → research → slice → ⛩ → design-slice ×N → design-review → subplan → plan → ⛩ → elaborate ×phases → code-splice → ⛩ → implement → implement-scope-check → reconcile → validate → commit` (30 stages). Your brief is captured verbatim, and every quality gate grades against it. Slices are designed in parallel. The run pauses once, at a consolidated design review. Three gates each carry a bounded fix loop. → [Run a workflow](/docs/guides/run-a-workflow) for the full anatomy.
+- **`/wf vet`**: `goal → code-review → (blueprint → implement → implement-scope-check → reconcile → validate → loop) → commit`. Orthogonal to scope: point it at an existing diff (yours or a teammate's) for a structured review with an optional fix cycle.
 - **`/wf polish`**: `architecture-review → blueprint → implement → validate → code-review → (blueprint loop) → commit`. Off the scope ladder: for a large architecture review whose phases are dependency-ordered. `blueprint` *iterates*, one plan per review phase, each building on the last, rather than planning everything in one pass. Reach for it when the review itself surfaced the sequence. → [Compose skills as skills](/docs/guides/compose-skills-as-skills).
 
 (`/skill:pr-triage` runs standalone for read-only triage of an incoming GitHub PR: disposition plus security tier, nothing checked out. It feeds `/wf vet <branch>` when the PR earns a full pass.)

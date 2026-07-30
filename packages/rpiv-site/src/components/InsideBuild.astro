@@ -1,10 +1,11 @@
 ---
-// §3.5 — inside build. The anatomy plate: the full 19-stage graph drawn
-// honest, in the box-arrow-gate grammar — deterministic script stages as
-// squares, quality gates as torii the flow passes through, fix arms as ensō
-// loops on the left, the one human moment as the hanko seal. Beside it, four
-// readings of the diagram: the contract, the gates, the parallelism, and the
-// unnamed paradigm positioning ("where this sits").
+// §3.5 — inside build. The anatomy plate: a curated seven-act anatomy of
+// build's 30-stage pipeline (principal stages only), in the box-arrow-gate
+// grammar — deterministic script stages as squares, quality gates as torii
+// the flow passes through, fix arms as ensō loops on the left, the one human
+// moment as the hanko seal. Beside it, four readings of the diagram: the
+// contract, the gates, the parallelism, and the unnamed paradigm positioning
+// ("where this sits").
 //
 // Stage facts mirror rpiv-pi's built-in-workflows.ts (the `build` workflow);
 // keep in sync alongside src/lib/workflows.ts.
@@ -62,7 +63,7 @@ const rows = ROWS.map((r) => {
 });
 const H = acc + 4;
 
-const STAGE_TOTAL = 19; // 16 spine rows + 3 fix arms
+const STAGE_TOTAL = 30; // 30 runtime stages, folded into the seven acts drawn on this plate
 ---
 
 <section id="anatomy">
@@ -70,7 +71,7 @@ const STAGE_TOTAL = 19; // 16 spine rows + 3 fix arms
 		<p class="kicker ib__kicker">§ inside build · {STAGE_TOTAL} stages · 3 gates · 1 design review</p>
 		<h2 class="ib__title">Every stage answers a failure you&rsquo;ve met.</h2>
 		<p class="ib__lede">
-			The full graph, drawn honest: nineteen stages, three fix loops, one
+			Build's thirty stages, drawn as seven acts: three fix loops, one
 			seal. Machinery like this would be overhead in sequence. Here,
 			everything between gates runs in parallel.
 		</p>
@@ -78,7 +79,7 @@ const STAGE_TOTAL = 19; // 16 spine rows + 3 fix arms
 		<div class="ib__duo">
 			<figure
 				class="ib__plate"
-				aria-label={`The full build graph, top to bottom: ${ROWS.map((r) => r.name).join(", ")}. Fix loops sit at slice-grade (slice-fix), plan-grade (plan-fix), and code-grade (code-fix). Nineteen stages in all. Deterministic script stages are drawn as squares, quality gates as torii the flow passes through, and the human design review as a seal.`}
+				aria-label={`The build pipeline's curated anatomy, top to bottom: ${ROWS.map((r) => r.name).join(", ")}. Fix loops sit at slice-grade (slice-fix), plan-grade (plan-fix), and code-grade (code-fix). The plate draws build's seven principal acts, which fold its thirty runtime stages. Deterministic script stages are drawn as squares, quality gates as torii the flow passes through, and the human design review as a seal.`}
 			>
 				<svg viewBox={`0 0 ${W} ${H}`} class="ib__svg" preserveAspectRatio="xMidYMid meet" role="presentation">
 					{/* faint companion stroke — the rail's ink echo */}

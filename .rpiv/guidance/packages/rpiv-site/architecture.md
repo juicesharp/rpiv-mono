@@ -53,11 +53,9 @@ const agents      = defineCollection({ loader: glob({ pattern: "*.md", base: "./
 //   agents across locator/analyzer/external/specialist/verifier),
 //   PIPELINE/SECONDARY/CODE_REVIEW_FLOW tuples + ARTIFACT_WRITE_SITES / PIPELINE_META.
 // workflows.ts — hand-maintained presentation mirror of three of the five built-in
-//   pipelines (build/vet/polish; arch and ship are not surfaced); build's 23 runtime
+//   pipelines (build/vet/polish; arch and ship are not surfaced); build's 30 runtime
 //   stages fold into a curated seven-act spine (capture → slice → design → review →
-//   plan → code → land). NOTE: the file's header comment + `stageCount: 19` predate
-//   the four cite-check/confirm stages — re-sync per the checklist below.
-//   Components consume these typed APIs — never `getCollection()` directly.
+//   plan → code → land). Components consume these typed APIs — never `getCollection()` directly.
 ```
 
 ## Architectural Boundaries

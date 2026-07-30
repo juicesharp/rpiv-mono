@@ -1,12 +1,13 @@
 /**
- * The three pipelines rpiv-pi registers into rpiv-workflow's `built-in` layer
- * (see packages/rpiv-pi/extensions/rpiv-core/built-in-workflows.ts). This is a
+ * Three of the five built-in pipelines rpiv-pi registers into rpiv-workflow's
+ * `built-in` layer (see packages/rpiv-pi/extensions/rpiv-core/built-in-workflows.ts)
+ * — build/vet/polish mirrored here; arch and ship are not surfaced. This is a
  * hand-maintained presentation mirror: the landing renders a curated stage
  * *spine* per pipeline, not the full edge graph.
  *
  * Keep in sync when built-in-workflows.ts changes. `stageCount` is the true
  * `Object.keys(stages).length`; `stages` is the spine drawn on the rail. vet
- * and polish are small enough to draw stage-for-stage; `build` folds its 19
+ * and polish are small enough to draw stage-for-stage; `build` folds its 30
  * runtime stages into seven acts:
  *
  *   capture → goal, research                                    (verbatim brief)
@@ -19,7 +20,7 @@
  *   land    → implement, validate, commit
  *
  * The runtime `default` (no config) cascades to the first registered workflow
- * (`vet`); the landing independently *showcases* `build` because it exercises
+ * (`ship`); the landing independently *showcases* `build` because it exercises
  * the most machinery — verbatim brief capture, parallel design, three quality
  * gates, and the one human design review.
  */
@@ -71,7 +72,7 @@ const WORKFLOWS: readonly WorkflowEntry[] = [
 		name: "build",
 		when: "A feature from a brief. Sliced, designed in parallel, gated before any code.",
 		arg: "“a Pi search extension backed by Ollama”",
-		stageCount: 19,
+		stageCount: 30,
 		stages: [
 			{ name: "capture" },
 			{ name: "slice", gate: true, fix: true },
@@ -87,16 +88,19 @@ const WORKFLOWS: readonly WorkflowEntry[] = [
 		name: "vet",
 		when: "A diff already exists, yours or a teammate's. Review it, loop a fix cycle until zero blockers remain.",
 		arg: "main..HEAD",
-		stageCount: 5,
+		stageCount: 8,
 		stages: [
+			{ name: "goal" },
 			{ name: "code-review" },
 			{ name: "blueprint" },
 			{ name: "implement", fanout: true },
+			{ name: "implement-scope-check" },
+			{ name: "reconcile" },
 			{ name: "validate" },
 			{ name: "commit" },
 		],
 		// validate re-reviews; loops the fix cycle until approved.
-		loop: { from: 3, to: 0, label: "↺ until approved" },
+		loop: { from: 6, to: 1, label: "↺ until approved" },
 	},
 	{
 		name: "polish",
@@ -115,7 +119,7 @@ const WORKFLOWS: readonly WorkflowEntry[] = [
 	},
 ];
 
-/** All three built-in pipelines, showcase entry first-class via `.showcase`. */
+/** All three mirrored pipelines (three of the five built-ins), showcase entry first-class via `.showcase`. */
 export async function getWorkflows(): Promise<WorkflowEntry[]> {
 	return [...WORKFLOWS];
 }

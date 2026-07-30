@@ -1,6 +1,6 @@
 ---
 title: "Run a workflow"
-description: "Hand the skill chain to /wf. The three bundled pipelines, when to use each, and when hand-driving still wins."
+description: "Hand the skill chain to /wf. Three of the five bundled pipelines, when to use each, and when hand-driving still wins."
 section: "guides"
 order: 5
 ---
@@ -24,13 +24,13 @@ Preview first. The graph view shows every stage, its skill, the edges out (linea
 
 Resume last. `@<run-id>` is the resume sigil. Pass the id of a run that failed or was cut off, and the runner reads its JSONL trail back, rebuilds the accumulated state, and re-enters at the first stage that never finished. The id is the `<run-id>` slug in the run's filename (`.rpiv/workflows/runs/<run-id>.jsonl`), also surfaced as `runId` on the rows `listRuns` returns.
 
-## The three bundled pipelines
+## Three of the five bundled pipelines
 
-`rpiv-pi` ships three pipelines. Each maps to a posture from [Pick your path](/docs/guides/pick-a-path), not 1:1, but close enough to pick by name. (`/wf <input>` with no name runs the first registered pipeline, `vet`, unless your config sets a `default`.)
+`rpiv-pi` registers five pipelines and showcases three. Each maps to a posture from [Pick your path](/docs/guides/pick-a-path), not 1:1, but close enough to pick by name. (`/wf <input>` with no name runs the first registered pipeline, `vet`, unless your config sets a `default`.)
 
 ### `/wf build <input>`
 
-The flagship: ship a feature from a brief, sliced and gated. Nineteen stages: `goal → research → slice → slice-check → slice-grade (↺ slice-fix) → design-slice ×N → design-review → subplan → plan → plan-grade (↺ plan-fix) → elaborate ×phases → code-splice → code-grade (↺ code-fix) → implement → validate → commit`. The moves that matter:
+The flagship: ship a feature from a brief, sliced and gated. Thirty stages: `goal → research → slice → slice-check → slice-grade (↺ slice-fix) → design-slice ×N → design-review → subplan → subplan-check → plan → plan-cite-check → plan-grade (↺ plan-fix) → plan-demote → plan-confirm → plan-snapshot → elaborate ×phases → code-splice → code-cite-check → code-grade (↺ code-fix) → code-demote → code-confirm → code-snapshot → implement → implement-scope-check → reconcile → validate → commit`. The moves that matter:
 
 - **`goal`** is a script stage (no LLM) that writes your brief to disk byte-for-byte. Every later judgment anchors on that file: the plan and code panels grade completeness and correctness against it, and `validate` receives it as `--goal`.
 - **`slice`** decomposes the brief into independent vertical slices. You confirm the cut once, and that confirmation freezes the coverage units the downstream check conserves.
@@ -125,7 +125,7 @@ Session policy isn't the only per-stage knob. Which model a stage runs and how h
 
 ## When hand-driving still wins
 
-Pick the runner when the shape of the work matches one of the three bundled pipelines and you've walked that chain enough times to trust it. Otherwise stay in the loop:
+Pick the runner when the shape of the work matches one of the three showcased pipelines and you've walked that chain enough times to trust it. Otherwise stay in the loop:
 
 - **First pass on an unfamiliar codebase.** The artifact-by-artifact pause is where you learn what the model is doing. The runner collapses that into one command: useful later, not now.
 - **Exploratory work where you'll pivot mid-chain.** If you'll likely abandon `blueprint`'s output to re-run `discover` with a different framing, the runner's straight-through execution costs you tokens you didn't need to spend.
@@ -133,7 +133,7 @@ Pick the runner when the shape of the work matches one of the three bundled pipe
 
 ## Author your own workflow
 
-The three bundled pipelines are skill-agnostic in shape: the runner doesn't know `research` or `commit` ship from `rpiv-pi`. Drop a TypeScript file under `.rpiv/workflows/config.ts` in your project (or `~/.config/rpiv-workflow/config.ts` for a user-level default) and chain your own skills:
+These three showcased pipelines are skill-agnostic in shape: the runner doesn't know `research` or `commit` ship from `rpiv-pi`. Drop a TypeScript file under `.rpiv/workflows/config.ts` in your project (or `~/.config/rpiv-workflow/config.ts` for a user-level default) and chain your own skills:
 
 ```ts
 import {

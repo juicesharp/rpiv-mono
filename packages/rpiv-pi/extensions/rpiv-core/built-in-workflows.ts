@@ -351,9 +351,9 @@ const FRONTMATTER_PHASE_FANOUT = fanout({
  * disjoint `files:` run concurrently; a `files:`-less phase conflicts with every
  * lower phase, degrading to the full chain — one phase per wave — so the
  * all-`files:`-less plan stays serial at any cap), and a lane-level scope floor
- * guards the declared set. Used today by ship/arch (vet moves to the DAG variant
- * once it carries `files:`); `IMPLEMENT_DAG_FANOUT`'s `concurrency: 1` is dropped
- * once build's scope floor lands.
+ * guards the declared set. Used today by ship/arch (the serial twin — vet+build
+ * have moved to `IMPLEMENT_DAG_FANOUT`, which sets no `concurrency`, inheriting
+ * the host cap); build's `implement-scope-check` scope floor has landed.
  */
 const IMPLEMENT_PHASE_FANOUT = { ...FRONTMATTER_PHASE_FANOUT, concurrency: 1 };
 
@@ -402,8 +402,9 @@ const implementPhaseDeps = (records: readonly PhaseRecord[], self: PhaseRecord):
  * `units` closure emits the SAME `prompt`/`label` strings AND adds
  * `id: \`phase-${r.n}\`` + `deps: implementPhaseDeps(records, r)`. NO
  * `depArtifactFlag` — implement phases feed each other through the working tree
- * (not published artifacts), so `deps` drive ONLY wave ordering. `concurrency: 1`
- * keeps it serial/inert here; the host cap is not inherited.
+ * (not published artifacts), so `deps` drive ONLY wave ordering. NO
+ * `concurrency` property is set (the spread overrides only `units`), so the loop
+ * inherits the host cap and phases fan out concurrently, bounded by `deps`.
  */
 const IMPLEMENT_DAG_FANOUT = {
 	...FRONTMATTER_PHASE_FANOUT,
@@ -716,7 +717,7 @@ const polishWorkflow = defineWorkflow({
 //         → slice-design (fanout) → design-review (one human checkpoint) →
 //         subplan (cluster fanout) → plan → plan-grade (plan-fix loop) →
 //         code (fanout) → code-splice → code-grade (code-fix loop) →
-//         implement → validate → commit
+//         implement → implement-scope-check → reconcile → validate → commit
 //   The sliced, panel-gated heavy path: capture the user's brief verbatim as the
 //   `goal` channel (the north star the judgment seams — the two grade panels'
 //   completeness/correctness dimensions and validate — anchor against), research
@@ -3746,7 +3747,7 @@ const COMMIT_BASELINE_PROMPT: PromptFn = ({ state }) => {
 const vetWorkflow = defineWorkflow({
 	name: "vet",
 	description:
-		"Examine existing changes for approval; loop a fix cycle if not approved. Best when a diff already exists (yours or a teammate's) and you want a structured review with optional repair. Chain: goal → code-review → (blueprint → implement → implement-scope-check → validate → loop) → commit.",
+		"Examine existing changes for approval; loop a fix cycle if not approved. Best when a diff already exists (yours or a teammate's) and you want a structured review with optional repair. Chain: goal → code-review → (blueprint → implement → implement-scope-check → reconcile → validate → loop) → commit.",
 	start: "goal",
 	stages: {
 		// Capture the user's brief verbatim on its own `goal` channel, and snapshot
@@ -3824,7 +3825,7 @@ const vetWorkflow = defineWorkflow({
 const buildWorkflow = defineWorkflow({
 	name: "build",
 	description:
-		"Ship, sliced: capture the verbatim brief as a goal artifact (the north star the quality gates' completeness/correctness dimensions and validate anchor against) → research the brief → decompose it into vertical slices → two-phase slice gate (a deterministic floor — dependency-cycle freedom + brief-coverage conservation so a slice-fix can't pass by dropping scope — then one LLM design-readiness judgment that each slice is chewable by a single design pass) with a slice-fix loop → design each slice in parallel → one consolidated developer checkpoint (accept or adjust the proposed interfaces/data types, adjustments applied surgically and cascaded to dependents) → synthesize hierarchically (per-cluster sub-plans → one merged plan) → tier-scaled quality-panel gate (a one-slice, <=2-phase run grades correctness+completeness only; larger or previously-failing runs grade the full completeness/correctness/actionability/pattern-following/architecture-fit roster) where a dimension's first blocking verdict gets one confirming second judgment before it buys a plan-fix round → elaborate code per phase in parallel → splice it into the plan → re-grade the code-bearing plan (same tier + confirm contract) → implement → validate → commit. Research-led; three automated gates plus one human design checkpoint, before design, before code, and after the splice.",
+		"Ship, sliced: capture the verbatim brief as a goal artifact (the north star the quality gates' completeness/correctness dimensions and validate anchor against) → research the brief → decompose it into vertical slices → two-phase slice gate (a deterministic floor — dependency-cycle freedom + brief-coverage conservation so a slice-fix can't pass by dropping scope — then one LLM design-readiness judgment that each slice is chewable by a single design pass) with a slice-fix loop → design each slice in parallel → one consolidated developer checkpoint (accept or adjust the proposed interfaces/data types, adjustments applied surgically and cascaded to dependents) → synthesize hierarchically (per-cluster sub-plans → one merged plan) → tier-scaled quality-panel gate (a one-slice, <=2-phase run grades correctness+completeness only; larger or previously-failing runs grade the full completeness/correctness/actionability/pattern-following/architecture-fit roster) where a dimension's first blocking verdict gets one confirming second judgment before it buys a plan-fix round → elaborate code per phase in parallel → splice it into the plan → re-grade the code-bearing plan (same tier + confirm contract) → implement → implement-scope-check → reconcile → validate → commit. Research-led; three automated gates plus one human design checkpoint, before design, before code, and after the splice.",
 	start: "goal",
 	stages: {
 		// The user's brief, verbatim, on its own channel — the judgment seams

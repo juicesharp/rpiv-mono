@@ -4055,7 +4055,9 @@ describe("build subplan-check (deterministic cluster-coverage floor)", () => {
 describe("implement reads wiring", () => {
 	it('every implement stage declares reads: ["plans"]', () => {
 		for (const wf of builtInWorkflows) {
-			// Not every workflow has an implement stage (pr-triage is read-only triage).
+			// Defensive: all five live built-ins (arch/build/ship/vet/polish) currently
+			// carry `implement`, but this guard skips any read-only workflow should one
+			// ever be re-added.
 			if (!wf.stages.implement) continue;
 			expect(wf.stages.implement.reads, `${wf.name}.implement`).toEqual(["plans"]);
 		}

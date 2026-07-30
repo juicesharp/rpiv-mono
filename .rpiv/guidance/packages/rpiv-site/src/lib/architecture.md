@@ -72,7 +72,7 @@ const FLOOR_RE = /pi-coding-agent[`\s]+\^([0-9]+\.[0-9]+\.[0-9]+)/;
 
 ## Workflow Mirror (spine, not full graph)
 - **Keep in sync** with `packages/rpiv-pi/extensions/rpiv-core/built-in-workflows.ts` — `workflows.ts` is a hand-maintained presentation mirror (three of the five built-ins; ship and arch are omitted), never a source import
-- **`stageCount` must equal** the runtime `Object.keys(stages).length` (currently 23/5/6 — the mirror's hardcoded 19 for `build` is stale and needs resync); `stages` is the curated rail spine — `build` folds its 23 runtime stages into seven acts
+- **`stageCount` must equal** the runtime `Object.keys(stages).length` (currently 30/8/6); `stages` is the curated rail spine — `build` folds its 30 runtime stages into seven acts
 - **Stage flags drive rendering** — `fanout` (stacked node), `gate`/`fix` (quality gate + fix loop), `human` (build's design review); optional `loop` draws the backward arc (vet "↺ until approved", polish "↺ until clean")
 - **`showcase` ≠ runtime default** — the landing showcases `build` (it exercises the most machinery); the runtime default (no config) cascades to the first registered workflow, `ship`
 

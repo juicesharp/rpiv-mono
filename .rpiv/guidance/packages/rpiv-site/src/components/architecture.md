@@ -22,7 +22,7 @@ There is **no shared base/layout component** beyond `Base.astro` (one level up);
 ```
 AltHero, AltThesis, AltModels, AltRoadmap           — Thesis/positioning sections (hand-maintained copy)
 Install, AltFirstRun, SetupTrace                    — Install + first-run narrative
-WorkflowCatalog, InsideBuild, AltSurface            — Pipeline depth: catalog, 19-stage anatomy plate, surface counts
+WorkflowCatalog, InsideBuild, AltSurface            — Pipeline depth: catalog, 30-stage anatomy plate, surface counts
 SiblingGrid, Colophon                               — Data-driven grid / global footer (Base.astro)
 SiblingCard, SiblingInfographic, AgentCard          — Presentational atoms (typed `Props`; AgentCard orphaned)
 Nav, ScrollIndicator, SumiInk                       — Chrome / cross-section ornament
