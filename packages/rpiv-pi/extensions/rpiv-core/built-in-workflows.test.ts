@@ -2049,6 +2049,152 @@ describe("build slice-check (deterministic floor)", () => {
 		expect(data.pass).toBe(true);
 	});
 
+	// Cite-only discharge — a `remedy: "cite"` design-readiness fail whose demands
+	// (add a seed, or refresh a stale `path:line`) landed on a structurally
+	// identical re-cut earns the `citeDischarged` stamp, so the gate can skip the
+	// re-grade panel. A fix that ALSO restructured, or leaves the stale citation
+	// in place, forfeits the stamp and takes the normal re-grade.
+	const citeFailVerdict = (finding: Record<string, unknown>) =>
+		({
+			artifacts: [],
+			kind: "json",
+			meta: {},
+			data: {
+				dimension: "design-readiness",
+				pass: false,
+				severity: "medium",
+				remedy: "cite",
+				artifact: ".rpiv/artifacts/slices/round1.md",
+				findings: [{ detail: "under-cited", where: "## Slice 2", ...finding }],
+			},
+		}) as unknown as Output;
+	const SHAPE = {
+		slices: [
+			{ n: 1, title: "A", deps: [], covers: ["c1"] },
+			{ n: 2, title: "B", deps: [1], covers: ["c2"] },
+		],
+		coverage: [
+			{ id: "c1", brief: "one" },
+			{ id: "c2", brief: "two" },
+		],
+	};
+	const TWO_SLICES =
+		"  - { n: 1, title: A, deps: [], covers: [c1] }\n  - { n: 2, title: B, deps: [1], covers: [c2] }\n";
+
+	it("stamps citeDischarged when a cite-only fail's demanded seeds landed on an unchanged shape", () => {
+		mkdirSync(join(tmpDir, "src"), { recursive: true });
+		writeFileSync(join(tmpDir, "src/seed.ts"), Array.from({ length: 50 }, (_, i) => `line ${i}`).join("\n"));
+		const judged = {
+			...write(".rpiv/artifacts/slices/round1.md", map({ count: 2, coverage: COV, sliceLines: TWO_SLICES })),
+			data: SHAPE,
+		};
+		const fixed = {
+			...write(
+				".rpiv/artifacts/slices/round2.md",
+				`${map({ count: 2, coverage: COV, sliceLines: TWO_SLICES })}**Draws on:** src/seed.ts:20\n`,
+			),
+			data: SHAPE,
+		};
+		const data = structureRun()({
+			cwd: tmpDir,
+			input: undefined,
+			state: {
+				named: { slices: [judged, fixed], "slice-verdicts": [citeFailVerdict({ requires: "src/seed.ts:18-25" })] },
+			} as unknown as RunView,
+		}).data;
+		expect(data.pass).toBe(true);
+		expect(data.citeDischarged).toBe("round2.md");
+	});
+
+	it("withholds citeDischarged when the fix also restructured the map", () => {
+		mkdirSync(join(tmpDir, "src"), { recursive: true });
+		writeFileSync(join(tmpDir, "src/seed.ts"), Array.from({ length: 50 }, (_, i) => `line ${i}`).join("\n"));
+		const judged = {
+			...write(".rpiv/artifacts/slices/round1.md", map({ count: 2, coverage: COV, sliceLines: TWO_SLICES })),
+			data: SHAPE,
+		};
+		const restructured =
+			"  - { n: 1, title: A, deps: [], covers: [c1] }\n  - { n: 2, title: B, deps: [1], covers: [c2] }\n  - { n: 3, title: C, deps: [], covers: [c1] }\n";
+		const fixed = {
+			...write(
+				".rpiv/artifacts/slices/round2.md",
+				`${map({ count: 3, coverage: COV, sliceLines: restructured })}**Draws on:** src/seed.ts:20\n`,
+			),
+			data: { ...SHAPE, slices: [...SHAPE.slices, { n: 3, title: "C", deps: [], covers: ["c1"] }] },
+		};
+		const data = structureRun()({
+			cwd: tmpDir,
+			input: undefined,
+			state: {
+				named: { slices: [judged, fixed], "slice-verdicts": [citeFailVerdict({ requires: "src/seed.ts:18-25" })] },
+			} as unknown as RunView,
+		}).data;
+		expect(data.pass).toBe(true);
+		expect(data.citeDischarged).toBeUndefined();
+	});
+
+	it("stamps citeDischarged when a stale line-drift citation was refreshed to the verified lines", () => {
+		mkdirSync(join(tmpDir, "src"), { recursive: true });
+		writeFileSync(join(tmpDir, "src/seed.ts"), Array.from({ length: 50 }, (_, i) => `line ${i}`).join("\n"));
+		const judged = {
+			...write(
+				".rpiv/artifacts/slices/round1.md",
+				`${map({ count: 2, coverage: COV, sliceLines: TWO_SLICES })}**Draws on:** src/seed.ts:7\n`,
+			),
+			data: SHAPE,
+		};
+		const fixed = {
+			...write(
+				".rpiv/artifacts/slices/round2.md",
+				`${map({ count: 2, coverage: COV, sliceLines: TWO_SLICES })}**Draws on:** src/seed.ts:20\n`,
+			),
+			data: SHAPE,
+		};
+		const data = structureRun()({
+			cwd: tmpDir,
+			input: undefined,
+			state: {
+				named: {
+					slices: [judged, fixed],
+					"slice-verdicts": [citeFailVerdict({ requires: "src/seed.ts:20", stale: "src/seed.ts:7" })],
+				},
+			} as unknown as RunView,
+		}).data;
+		expect(data.pass).toBe(true);
+		expect(data.citeDischarged).toBe("round2.md");
+	});
+
+	it("withholds citeDischarged while the stale citation is still present beside the refreshed one", () => {
+		mkdirSync(join(tmpDir, "src"), { recursive: true });
+		writeFileSync(join(tmpDir, "src/seed.ts"), Array.from({ length: 50 }, (_, i) => `line ${i}`).join("\n"));
+		const judged = {
+			...write(
+				".rpiv/artifacts/slices/round1.md",
+				`${map({ count: 2, coverage: COV, sliceLines: TWO_SLICES })}**Draws on:** src/seed.ts:7\n`,
+			),
+			data: SHAPE,
+		};
+		const fixed = {
+			...write(
+				".rpiv/artifacts/slices/round2.md",
+				`${map({ count: 2, coverage: COV, sliceLines: TWO_SLICES })}**Draws on:** src/seed.ts:7 and src/seed.ts:20\n`,
+			),
+			data: SHAPE,
+		};
+		const data = structureRun()({
+			cwd: tmpDir,
+			input: undefined,
+			state: {
+				named: {
+					slices: [judged, fixed],
+					"slice-verdicts": [citeFailVerdict({ requires: "src/seed.ts:20", stale: "src/seed.ts:7" })],
+				},
+			} as unknown as RunView,
+		}).data;
+		expect(data.pass).toBe(true);
+		expect(data.citeDischarged).toBeUndefined();
+	});
+
 	// Fence-aware citation floor — a `path:line` shape inside a fenced code block is
 	// example/fixture text, not a citation to verify. The skip is span-scoped: a real
 	// dangling citation in prose still fails.
@@ -4470,6 +4616,33 @@ describe("build adaptive gate scaling (tier / roster / freshness / confirm)", ()
 					"slice-verdicts": [verdict("design-readiness", true, { artifact: ".rpiv/artifacts/slices/s2.md" })],
 				}),
 			).toBe("slice-design");
+		});
+
+		it("slice-check skips the re-grade when its verdict discharges a cite-only fail for the CURRENT map", () => {
+			// The design-readiness fail is stale (it judged s1, the fix re-sliced to
+			// s2), so the verdict fold can never pass — the citeDischarged stamp is
+			// the only green path, and it must key to the current map's basename.
+			expect(
+				route("slice-check", {
+					slices: [chan(".rpiv/artifacts/slices/s2.md", { slice_count: 1 })],
+					"slice-check": [verdict("structure", true, { citeDischarged: "s2.md" })],
+					"slice-verdicts": [
+						verdict("design-readiness", false, { artifact: ".rpiv/artifacts/slices/s1.md", remedy: "cite" }),
+					],
+				}),
+			).toBe("slice-design");
+		});
+
+		it("a citeDischarged stamp keyed to an OLDER map does not carry to a newer re-slice", () => {
+			expect(
+				route("slice-check", {
+					slices: [chan(".rpiv/artifacts/slices/s3.md", { slice_count: 1 })],
+					"slice-check": [verdict("structure", true, { citeDischarged: "s2.md" })],
+					"slice-verdicts": [
+						verdict("design-readiness", false, { artifact: ".rpiv/artifacts/slices/s1.md", remedy: "cite" }),
+					],
+				}),
+			).toBe("slice-grade");
 		});
 	});
 

@@ -1433,12 +1433,17 @@ type FsHandle = { kind: "fs"; path: string };
  * passes a `pass:false` verdict rated `low`/`none`; a structural defect MUST
  * rate `high` or it ships. The `score` is the binary verdict scale (100 = clean,
  * 0 = finding; the gate keys off `severity`, never this number).
+ *
+ * `extra` lets a caller stamp additional gate-readable fields onto the verdict
+ * data (and the persisted JSON, so the trail records them) — currently only
+ * `sliceStructureCheck`'s `citeDischarged` stamp.
  */
 const writeStructureVerdict = (
 	who: string,
 	handle: FsHandle,
 	findings: StructureFinding[],
 	cwd: string,
+	extra?: Record<string, unknown>,
 ): Omit<Output, "meta"> => {
 	const pass = findings.length === 0;
 	const data = {
@@ -1449,11 +1454,81 @@ const writeStructureVerdict = (
 		artifact: handleToString(handle),
 		findings,
 		feedback: pass ? "" : findings.map((f) => f.detail).join(" "),
+		...extra,
 	};
 	const rel = join(VERDICT_DIR, `${who}__${basename(handle.path, ".md")}.json`);
 	mkdirSync(join(cwd, VERDICT_DIR), { recursive: true });
 	writeFileSync(join(cwd, rel), JSON.stringify(data, null, 2), "utf-8");
 	return { kind: "json", artifacts: [{ handle: { kind: "fs", path: rel } }], data };
+};
+
+/**
+ * One cite-remedy finding is satisfied by the slice-map text. Two modes:
+ *
+ * ADD (no `stale`): the demanded seed's path is present — line suffixes are
+ * stripped before matching, because the fix may cite a corrected range and
+ * the citation floor (`verifyCitations`) verifies whatever range it actually
+ * wrote. `Draws on` and `Out of scope` both satisfy the remedy, so presence
+ * anywhere in the map is the contract.
+ *
+ * REFRESH (`stale` names the wrong citation, copied verbatim from the judged
+ * map): the grader-verified `requires` citation must be present EXACTLY and
+ * the `stale` one gone. Path-stripped matching would false-pass here — the
+ * stale cite carries the same path — and requires-only matching would let a
+ * fix DELETE the stale cite while another slice's citation of the same file
+ * keeps the path present, silently un-citing the slice the grader flagged.
+ *
+ * A finding without a concrete string `requires` is unverifiable ⇒ not satisfied.
+ */
+const citeFindingSatisfied = (mapBody: string, f: { requires?: unknown; stale?: unknown }): boolean => {
+	if (typeof f.requires !== "string" || f.requires.length === 0) return false;
+	if (typeof f.stale === "string" && f.stale.length > 0)
+		return mapBody.includes(f.requires) && !mapBody.includes(f.stale);
+	return mapBody.includes(f.requires.replace(/:\d[-\d,:]*$/, ""));
+};
+
+/**
+ * Structural fingerprint of one slice-map round: the `slices` + `coverage`
+ * frontmatter its round published on the `slices` channel, keyed by artifact
+ * basename — no file re-read. `undefined` when the round can't be found or
+ * carried no `slices` data; a caller must treat that as "cannot compare",
+ * never as "unchanged".
+ */
+const sliceShapeOf = (state: RunView, path: string): string | undefined => {
+	const round = state.named.slices?.find((s) =>
+		s.artifacts.some((a) => a.handle.kind === "fs" && basename(a.handle.path) === basename(path)),
+	);
+	const d = round?.data as { slices?: unknown; coverage?: unknown } | undefined;
+	return d?.slices === undefined ? undefined : JSON.stringify({ slices: d.slices, coverage: d.coverage ?? null });
+};
+
+/** The verdict fields the cite-only discharge consults. */
+type CiteRemedyVerdict = {
+	pass?: boolean;
+	remedy?: string;
+	artifact?: string;
+	findings?: readonly { requires?: unknown; stale?: unknown }[];
+};
+
+/**
+ * Deterministic discharge of a CITE-ONLY `design-readiness` fail — the middle
+ * case between "carry a passing verdict" (impossible on the slice gate: its
+ * lone dimension failed) and "buy a full re-grade panel" (wasteful when the
+ * grader already named the exact citations to add or refresh). A fix that
+ * also restructured forfeits the discharge and takes the normal re-grade.
+ */
+const citeRemedyDischarged = (state: RunView, mapBody: string, currentPath: string): boolean => {
+	const v = latestVerdictPerDimension(state.named["slice-verdicts"]).get("design-readiness")?.data as
+		| CiteRemedyVerdict
+		| undefined;
+	if (v?.pass !== false || v.remedy !== "cite") return false;
+	// A NEW map must exist since the verdict — discharging the judged map itself
+	// would contradict the grader, who read that very map and found the seeds missing.
+	if (typeof v.artifact !== "string" || basename(v.artifact) === basename(currentPath)) return false;
+	const findings = Array.isArray(v.findings) ? v.findings : [];
+	if (findings.length === 0 || !findings.every((f) => f != null && citeFindingSatisfied(mapBody, f))) return false;
+	const judged = sliceShapeOf(state, v.artifact);
+	return judged !== undefined && judged === sliceShapeOf(state, currentPath);
 };
 
 /**
@@ -1519,7 +1594,15 @@ const sliceStructureCheck = ({ state, cwd }: ScriptContext): Omit<Output, "meta"
 	// Citation backing — every file:line the map cites must resolve.
 	findings.push(...verifyCitations(mapBody, cwd));
 
-	return writeStructureVerdict("slice-check", latest.handle, findings, cwd);
+	// Stamp the cite-only discharge ONLY on a green floor: structure clean +
+	// citation backing verified + demanded seeds present + shape unchanged is
+	// exactly what a fresh design-readiness pass on this map would re-establish,
+	// so the `sliceGatePasses` skip stays provably equivalent to "re-grade, then pass".
+	const discharge =
+		findings.length === 0 && citeRemedyDischarged(state, mapBody, latest.handle.path)
+			? { citeDischarged: basename(latest.handle.path) }
+			: undefined;
+	return writeStructureVerdict("slice-check", latest.handle, findings, cwd, discharge);
 };
 
 /**
@@ -3461,10 +3544,24 @@ const allRiskFlagsPass = (
 // `units()` uses, so "skip the re-grade" stays provably equivalent to
 // "re-grade, then pass". The deterministic cite/structure channels fold
 // unfiltered: they re-run every round and carry no tier.
+// The latest structure verdict carries a `citeDischarged` stamp for the
+// CURRENT slice map. After a fix for a `remedy: "cite"` fail, the failing
+// design-readiness verdict is stale (the fix re-sliced to a NEW file) and the
+// gate's lone dimension has no fresh verdict, so the verdict fold can never
+// pass — yet the fix is deterministically verifiable: `sliceStructureCheck`
+// stamps the map basename it verified (demanded seeds present + shape
+// unchanged, see `citeRemedyDischarged`). Honoring the stamp only for the
+// current map means it can never carry across a later re-slice.
+const citeDischargeCoversCurrentMap = (state: RunView): boolean => {
+	const stamp = (state.named["slice-check"]?.at(-1)?.data as { citeDischarged?: unknown } | undefined)?.citeDischarged;
+	const current = latestArtifactPath(state, "slices");
+	return typeof stamp === "string" && current !== undefined && stamp === basename(current);
+};
 const sliceGatePasses = (state: RunView): boolean => {
 	const fresh = freshVerdicts(state.named["slice-verdicts"], latestArtifactPath(state, "slices"));
 	const roster = gateRoster(gateTier(state, "slice-verdicts"), SLICE_DIMENSIONS);
-	return allDimensionsPass(state.named["slice-check"]) && allDimensionsPass(fresh, roster);
+	if (!allDimensionsPass(state.named["slice-check"])) return false;
+	return allDimensionsPass(fresh, roster) || citeDischargeCoversCurrentMap(state);
 };
 // The single authority the new `subplan-check` edge consults — the twin of
 // `sliceGatePasses`, but carrying no LLM-verdict roster or risk flags: the
@@ -3913,8 +4010,11 @@ const buildWorkflow = defineWorkflow({
 		// Skip the design-readiness re-grade when the gate is already satisfied — after
 		// a `slice-fix` that only cleared the deterministic structure floor (the common
 		// case: a bare-basename citation), the accumulated design-readiness verdict
-		// already passes, so re-grading would only re-roll a flappy judgment. First
-		// pass (no verdict yet) ⇒ not satisfied ⇒ into `slice-grade`.
+		// already passes, so re-grading would only re-roll a flappy judgment. Also
+		// skips after a fix for a `remedy: "cite"` fail once `slice-check` has
+		// deterministically verified the demanded seeds landed on a structurally
+		// unchanged map (the `citeDischarged` stamp — see `citeRemedyDischarged`).
+		// First pass (no verdict yet) ⇒ not satisfied ⇒ into `slice-grade`.
 		"slice-check": defineRoute(
 			["slice-design", "slice-grade"],
 			({ state }) => (sliceGatePasses(state) ? "slice-design" : "slice-grade"),

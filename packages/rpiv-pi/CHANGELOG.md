@@ -7,6 +7,23 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Cite-only discharge on the build slice gate.** A `design-readiness` fail
+  whose every finding is pure citation bookkeeping — a missing `Draws on`
+  seed, or a `path:line` whose line numbers drifted — no longer buys a second
+  LLM grade panel. The `grade` skill classifies such a fail `remedy: "cite"`
+  with a per-finding `requires` seed (plus `stale`, copied verbatim, on a
+  line-drift refresh), and `slice-check` discharges it deterministically: the
+  re-cut map must satisfy every finding (seed path present; on a refresh, the
+  grader-verified citation present exactly and the stale one gone) with the
+  slice structure unchanged (`slices` + `coverage` frontmatter identical to
+  the judged round). The `citeDischarged` stamp is earned only on a green
+  structure floor and honored by `sliceGatePasses` only for the current map's
+  basename — the skip stays provably equivalent to "re-grade, then pass", and
+  a fix that also restructured (or any finding without a concrete `requires`)
+  takes the normal re-grade.
+
 ## [2.2.0] - 2026-07-29
 
 ### Added
