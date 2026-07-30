@@ -47,6 +47,26 @@ function makeSession(sessionId: string): LaneSession {
 	};
 }
 
+/** A LaneSession whose getUsage returns a fixed token shape — seeds a unit's
+ *  finalUsage via captureFinalSnapshot so unitUsage() reads it. Hoisted to module
+ *  scope so both the `stageUsage` and `captureFinalSnapshot` describes can reuse it. */
+function makeUsageSession(
+	sessionId: string,
+	usage: {
+		input: number;
+		output: number;
+		cacheRead: number;
+		cacheWrite: number;
+		total: number;
+		cost?: number;
+	},
+): LaneSession {
+	return {
+		...makeSession(sessionId),
+		getUsage: () => ({ tokens: usage, cost: usage.cost }),
+	};
+}
+
 /** A PendingInput whose resolver is observable. */
 function makePending(): PendingInput & { resolve: ReturnType<typeof vi.fn> } {
 	const resolve = vi.fn();
@@ -866,25 +886,6 @@ describe("run-lane-registry", () => {
 	});
 
 	describe("stageUsage — per-stage token accumulation", () => {
-		/** A LaneSession whose getUsage returns a fixed token shape — seeds a unit's
-		 *  finalUsage via captureFinalSnapshot so unitUsage() reads it. */
-		function makeUsageSession(
-			sessionId: string,
-			usage: {
-				input: number;
-				output: number;
-				cacheRead: number;
-				cacheWrite: number;
-				total: number;
-				cost?: number;
-			},
-		): LaneSession {
-			return {
-				...makeSession(sessionId),
-				getUsage: () => ({ tokens: usage, cost: usage.cost }),
-			};
-		}
-
 		it("initializes stageUsage on a new lane (empty Map)", () => {
 			recordRun("run-1", "ship");
 			expect(getLane("run-1")?.stageUsage).toBeInstanceOf(Map);
@@ -1010,6 +1011,146 @@ describe("run-lane-registry", () => {
 			subscribeLanes(listener);
 			foldStageUsage("run-1");
 			expect(listener).not.toHaveBeenCalled();
+		});
+	});
+
+	describe("captureFinalSnapshot — sequential multi-child fold-at-overwrite", () => {
+		it("folds ALL sequential children on SINGLE_UNIT_KEY into the stage bucket (c1/c6)", () => {
+			// Pre-fix this fails: each child overwrites the prior's finalUsage on the shared
+			// SINGLE_UNIT_KEY slot, so only the LAST child survives to be folded at stage-end.
+			recordRun("run-1", "ship");
+			setLaneProgress("run-1", { stageName: "plan", phase: "running" });
+			captureFinalSnapshot(
+				"run-1",
+				SINGLE_UNIT_KEY,
+				makeUsageSession("s1", { input: 100, output: 0, cacheRead: 0, cacheWrite: 0, total: 100 }),
+			);
+			captureFinalSnapshot(
+				"run-1",
+				SINGLE_UNIT_KEY,
+				makeUsageSession("s2", { input: 200, output: 0, cacheRead: 0, cacheWrite: 0, total: 200 }),
+			);
+			captureFinalSnapshot(
+				"run-1",
+				SINGLE_UNIT_KEY,
+				makeUsageSession("s3", { input: 300, output: 0, cacheRead: 0, cacheWrite: 0, total: 300 }),
+			);
+			foldStageUsage("run-1");
+			// ALL three children counted: 100 + 200 + 300 = 600.
+			expect(getLane("run-1")?.stageUsage.get("plan")).toEqual({
+				input: 600,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+				total: 600,
+			});
+		});
+
+		it("outgoing children fold at capture-time, surviving last child at stage-end — no double-count (c2)", () => {
+			// Disjoint-set guarantee: each outgoing child folds once at its overwrite, then
+			// is evicted from the slot so stage-end cannot re-count it; only the surviving
+			// last child folds at stage-end.
+			recordRun("run-1", "ship");
+			setLaneProgress("run-1", { stageName: "plan", phase: "running" });
+			captureFinalSnapshot(
+				"run-1",
+				SINGLE_UNIT_KEY,
+				makeUsageSession("s1", { input: 100, output: 0, cacheRead: 0, cacheWrite: 0, total: 100 }),
+			);
+			captureFinalSnapshot(
+				"run-1",
+				SINGLE_UNIT_KEY,
+				makeUsageSession("s2", { input: 200, output: 0, cacheRead: 0, cacheWrite: 0, total: 200 }),
+			);
+			captureFinalSnapshot(
+				"run-1",
+				SINGLE_UNIT_KEY,
+				makeUsageSession("s3", { input: 300, output: 0, cacheRead: 0, cacheWrite: 0, total: 300 }),
+			);
+			// BEFORE stage-end: only OUTGOING children 1 and 2 folded (100 + 200 = 300).
+			// The surviving last child (300) is NOT yet counted — it folds at stage-end.
+			expect(getLane("run-1")?.stageUsage.get("plan")?.input).toBe(300);
+			// stage-end folds ONLY the surviving last child.
+			foldStageUsage("run-1");
+			expect(getLane("run-1")?.stageUsage.get("plan")?.input).toBe(600); // 300 + 300
+		});
+
+		it("finalBranch is last-writer-wins across sequential captures on the same slot (c3)", () => {
+			// The capture-time fold touches ONLY usage; the transcript snapshot stays
+			// last-writer-wins, so the lane (parent) row still shows the last child.
+			recordRun("run-1", "ship");
+			setLaneProgress("run-1", { stageName: "plan", phase: "running" });
+			const branch1 = [{ type: "message", text: "child-1" }];
+			const branch2 = [{ type: "message", text: "child-2" }];
+			captureFinalSnapshot("run-1", SINGLE_UNIT_KEY, {
+				...makeUsageSession("s1", { input: 100, output: 0, cacheRead: 0, cacheWrite: 0, total: 100 }),
+				sessionManager: { getBranch: () => branch1, getCwd: () => "/tmp" },
+			});
+			captureFinalSnapshot("run-1", SINGLE_UNIT_KEY, {
+				...makeUsageSession("s2", { input: 200, output: 0, cacheRead: 0, cacheWrite: 0, total: 200 }),
+				sessionManager: { getBranch: () => branch2, getCwd: () => "/tmp" },
+			});
+			expect(getUnit("run-1", SINGLE_UNIT_KEY)?.finalBranch).toBe(branch2); // last writer wins
+			expect(getUnit("run-1", SINGLE_UNIT_KEY)?.finalUsage?.input).toBe(200); // last writer wins
+		});
+
+		it("a single capture on a fresh slot fires NO capture-time fold (bucket empty until stage-end) (c4)", () => {
+			recordRun("run-1", "ship");
+			setLaneProgress("run-1", { stageName: "plan", phase: "running" });
+			captureFinalSnapshot(
+				"run-1",
+				SINGLE_UNIT_KEY,
+				makeUsageSession("s1", { input: 100, output: 0, cacheRead: 0, cacheWrite: 0, total: 100 }),
+			);
+			// First capture parks finalUsage but has NO outgoing child to fold → bucket empty.
+			expect(getLane("run-1")?.stageUsage.size).toBe(0);
+			foldStageUsage("run-1");
+			expect(getLane("run-1")?.stageUsage.get("plan")?.input).toBe(100); // folded at stage-end only
+		});
+
+		it("a fanout pair on DISTINCT keys fires NO capture-time fold (each child its own slot) (c5)", () => {
+			recordRun("run-1", "ship");
+			setLaneProgress("run-1", { stageName: "plan", phase: "running" });
+			captureFinalSnapshot(
+				"run-1",
+				0,
+				makeUsageSession("s1", { input: 100, output: 0, cacheRead: 0, cacheWrite: 0, total: 100 }),
+			);
+			captureFinalSnapshot(
+				"run-1",
+				1,
+				makeUsageSession("s2", { input: 200, output: 0, cacheRead: 0, cacheWrite: 0, total: 200 }),
+			);
+			// Distinct slots — each first capture has no outgoing child to fold → bucket empty.
+			expect(getLane("run-1")?.stageUsage.size).toBe(0);
+			foldStageUsage("run-1");
+			expect(getLane("run-1")?.stageUsage.get("plan")?.input).toBe(300); // both folded at stage-end
+		});
+
+		it("a teardown capture trailing an optimistic retire does NOT fold (same-child re-capture) (c7)", () => {
+			// The dock's `x` cancel path: retireRun fires BEFORE the host's teardown
+			// `finally`, and retire's own snapshot parks the SAME still-live child's usage
+			// onto the slot. The trailing captureFinalSnapshot must treat that parked value
+			// as a same-child re-capture (overwrite-only), NOT an outgoing sibling — folding
+			// it would show the child's tokens twice (bucket + retained unit) at render.
+			recordRun("run-1", "ship");
+			setLaneProgress("run-1", { stageName: "plan", phase: "running" });
+			const session = makeUsageSession("s1", {
+				input: 100,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+				total: 100,
+			});
+			setCurrentSession("run-1", SINGLE_UNIT_KEY, session);
+			retireRun("run-1", "aborted"); // parks finalUsage off the live session, drops it
+			expect(getUnit("run-1", SINGLE_UNIT_KEY)?.finalUsage?.input).toBe(100);
+			// The host's teardown capture fires AFTER retire on the `x` path.
+			captureFinalSnapshot("run-1", SINGLE_UNIT_KEY, session);
+			// No capture-time fold on a terminal lane — the bucket stays empty; the unit's
+			// retained finalUsage is the single source the render sums for this stage.
+			expect(getLane("run-1")?.stageUsage.size).toBe(0);
+			expect(getUnit("run-1", SINGLE_UNIT_KEY)?.finalUsage?.input).toBe(100);
 		});
 	});
 });
