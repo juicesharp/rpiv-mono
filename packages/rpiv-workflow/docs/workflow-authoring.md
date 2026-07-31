@@ -628,7 +628,7 @@ edges: {
 }
 ```
 
-**No-match is explicit, never silent.** With `opts.fallback` the unmatched value routes there; without one it terminates (`STOP`). Either way the no-match lands a routing-audit `note`.
+**No-match is explicit, never silent.** With `opts.fallback` the unmatched value routes there; without one it terminates the run as **failed** — the runner records the `stop` routing decision (note included) plus a terminal failure row naming the gate's stage, so the run reads as blocked-awaiting-intervention, never as a completed ✓. Either way the no-match lands a routing-audit `note`.
 
 **Routing on a panel's verdict** — `opts.from` reads the field from a named channel's latest output (`state.named[from].at(-1).data[field]`) instead of the stage's projected `output.data`. This is how `match` branches on a [panel](#adversarial-verification-panel)'s published fold (the fold lands on a channel, never on the stage's projected output):
 

@@ -122,6 +122,19 @@ export const FAIL_BACKWARD_JUMP_EXHAUSTED = (stage: string, revisits: number, ma
 });
 
 /**
+ * A decision edge terminated the chain because no branch matched — `match`
+ * without a fallback saw an unexpected value (typically a failed verdict on a
+ * gate whose only routes are pass arms). The run is blocked awaiting
+ * intervention, not complete; `note` is the edge's own no-match diagnostic
+ * (the ROUTE_NOTE `match` attaches), so the toast names the value that failed
+ * to route. The stage's own output (its verdict) holds the findings.
+ */
+export const FAIL_GATE_STOP = (stage: string, note: string): FailureText => ({
+	toast: `✗ workflow stopped at "${stage}" — its routing gate matched no branch (${note}); see the stage's verdict for findings, then fix and re-run`,
+	error: `Routing gate after "${stage}" matched no branch: ${note}`,
+});
+
+/**
  * A loop produced zero units (push: empty array handled upstream as
  * single-stage fall-through, so this fires only for a pull loop whose FIRST
  * call returned null). Not an error — nothing published, the primary stays at

@@ -16,11 +16,16 @@ import { auditCtxFor, failedArgs, recordFatalFailure } from "../audit.js";
 import { resolveSkill } from "../chain-state.js";
 import { lifecycleCtxFor, skillStageRef } from "../events.js";
 import { nowIso } from "../internal-utils.js";
-import { FAIL_BACKWARD_JUMP_EXHAUSTED, MSG_CHAIN_ADVANCE_FAILED, MSG_ROUTING_AUDIT_DROPPED } from "../messages.js";
+import {
+	FAIL_BACKWARD_JUMP_EXHAUSTED,
+	FAIL_GATE_STOP,
+	MSG_CHAIN_ADVANCE_FAILED,
+	MSG_ROUTING_AUDIT_DROPPED,
+} from "../messages.js";
 import { edgeIsDecision, nextStage } from "../routing.js";
 import { appendRoutingDecision } from "../state/index.js";
 import type { RunContext, WorkflowHostContext } from "../types.js";
-import { type ChainOutcome, finalizeWorkflow } from "./failure.js";
+import { type ChainOutcome, finalizeWorkflow, haltChain } from "./failure.js";
 
 /**
  * The walk continuation injected by the composition site
@@ -56,10 +61,25 @@ export async function advanceChain(
 		return haltOnRoutingError(hostCtx, run, currentName, result.reason);
 	}
 
-	const fromRef = skillStageRef(currentName, idx + 1, resolveSkill(run.workflow.stages[currentName]!, currentName));
+	const skill = resolveSkill(run.workflow.stages[currentName]!, currentName);
+	const fromRef = skillStageRef(currentName, idx + 1, skill);
 
 	if (result.kind === "stop") {
+		// A decision edge stopping the chain is audited like any forward pick,
+		// and a stop carrying a ROUTE_NOTE is `match`'s no-fallback termination:
+		// the gate found no branch for the value it read (typically a failed
+		// verdict on a pass-only gate). That run is BLOCKED awaiting
+		// intervention, not complete — record a terminal failure row so the
+		// trail and the lane show a stopped run instead of a silent ✓. A
+		// noteless decision stop (a custom edge deliberately returning STOP)
+		// and the ordinary end-of-chain stop remain completions.
+		const edge = run.workflow.edges[currentName];
+		const note = wasDecision && typeof edge === "function" ? takeRouteNote(edge) : undefined;
+		if (wasDecision) auditRoutingDecision(hostCtx, run, idx, currentName, "stop", note);
 		await run.lifecycle.fire(hostCtx, "onRoute", fromRef, "stop", lifecycleCtxFor(run));
+		if (note !== undefined) {
+			return haltChain(hostCtx, run, currentName, skill, failedArgs(FAIL_GATE_STOP(currentName, note)));
+		}
 		return finalizeWorkflow(hostCtx, run);
 	}
 
@@ -99,12 +119,16 @@ function auditRoutingDecision(
 	idx: number,
 	currentName: string,
 	nextName: string,
+	noteOverride?: string,
 ): void {
 	// Read-and-clear any note the edge attached to THIS pick (e.g. gate's
 	// fallback-fired diagnostic). Same tick as the invocation — no other
 	// decision can interleave. `undefined` is dropped by JSON.stringify.
+	// The stop branch reads the note BEFORE calling here (it decides
+	// halt-vs-finalize on it) and passes it as `noteOverride` — takeRouteNote
+	// is read-and-clear, so a second read would see nothing.
 	const edge = run.workflow.edges[currentName];
-	const note = typeof edge === "function" ? takeRouteNote(edge) : undefined;
+	const note = noteOverride ?? (typeof edge === "function" ? takeRouteNote(edge) : undefined);
 	const fromStageIndex = idx + 1;
 	const wrote = appendRoutingDecision(run.cwd, run.runId, {
 		type: "routing",

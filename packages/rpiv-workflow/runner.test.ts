@@ -5,7 +5,7 @@ import { createMockPi, createMockSessionChain, mockAssistantMessage } from "@jui
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { EdgeTarget, FanoutFn, ScriptContext, StageDef, StageKind, StageSchema, Workflow } from "./api.js";
-import { defineRoute, defineWorkflow, gate, produces, terminal } from "./api.js";
+import { defineRoute, defineWorkflow, gate, match, produces, terminal } from "./api.js";
 import { registerBuiltIns } from "./built-ins.js";
 import { fs as fsHandle } from "./handle.js";
 import { fanout } from "./loop-constructors.js";
@@ -1867,6 +1867,76 @@ describe("runWorkflow", () => {
 			expect(routingDecisions).toHaveLength(1);
 			expect(routingDecisions[0]).toMatchObject({ decision: "commit" });
 			expect(routingDecisions[0]!.note).toMatch(/no branch matched value NaN.*"commit"/);
+		});
+
+		it("no-fallback match stop fails the run with a routing row + terminal failure row (not a silent ✓)", async () => {
+			writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md");
+			// `verdict: fail` matches no branch of a pass-only gate → match
+			// terminates (STOP) with its no-match note. A live run died exactly
+			// here while its lane showed a completed ✓ — the stop must be a
+			// visible failed termination, not a completion.
+			writeArtifact(tmpDir, ".rpiv/artifacts/code-review/cr.md", "---\nverdict: fail\n---\n\nContent");
+			const chain = createMockSessionChain({
+				cwd: tmpDir,
+				steps: [
+					{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/research/r.md")] },
+					{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/code-review/cr.md")] },
+				],
+			});
+
+			const workflow = wf(
+				"flow",
+				["research", "code-review", "commit"],
+				{},
+				{
+					"code-review": match("verdict", { commit: "pass" }),
+				},
+			);
+
+			const result = await runWorkflow(chain.ctx, { workflow, input: "x" });
+			expect(result.success).toBe(false);
+			expect(result.error).toMatch(/matched no branch/);
+
+			const dir = join(tmpDir, ".rpiv", "workflows", "runs");
+			const runId = readdirSync(dir)[0]!.replace(".jsonl", "");
+			// The stop decision is audited like any forward pick, note included.
+			const routingDecisions = readRoutingDecisions(tmpDir, runId);
+			expect(routingDecisions).toHaveLength(1);
+			expect(routingDecisions[0]).toMatchObject({ fromStage: "code-review", decision: "stop" });
+			expect(routingDecisions[0]!.note).toMatch(/matched no branch — terminated \(no fallback\)/);
+			// The trail ends in a terminal failure row naming the gate's stage —
+			// resume/lane tooling sees a stopped run, not a completed one.
+			const { stages } = readState(tmpDir);
+			const failureRow = stages.find((s) => s.status === "failed");
+			expect(failureRow).toMatchObject({ stage: "code-review", status: "failed" });
+			expect(String(failureRow?.errMsg)).toMatch(/matched no branch/);
+		});
+
+		it("a matched branch reaching the chain's natural end still completes (no spurious failure)", async () => {
+			writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md");
+			writeArtifact(tmpDir, ".rpiv/artifacts/code-review/cr.md", "---\nverdict: pass\n---\n\nContent");
+			const chain = createMockSessionChain({
+				cwd: tmpDir,
+				steps: [
+					{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/research/r.md")] },
+					{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/code-review/cr.md")] },
+					{ branch: [mockAssistantMessage("Committed.")] },
+				],
+			});
+
+			const workflow = wf(
+				"flow",
+				["research", "code-review", "commit"],
+				{},
+				{
+					"code-review": match("verdict", { commit: "pass" }),
+				},
+			);
+
+			const result = await runWorkflow(chain.ctx, { workflow, input: "x" });
+			expect(result.success).toBe(true);
+			const { stages } = readState(tmpDir);
+			expect(stages.some((s) => s.status === "failed")).toBe(false);
 		});
 
 		// -------------------------------------------------------------------
