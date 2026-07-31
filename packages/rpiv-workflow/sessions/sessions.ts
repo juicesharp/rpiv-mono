@@ -24,6 +24,7 @@
  */
 
 import { WorkflowAbortError } from "../internal-utils.js";
+import type { SessionRef } from "../state/index.js";
 import { type BranchEntry, classifyStop, readBranch, readSessionRef, type StopSignal } from "../transcript.js";
 import type { StageSessionContext, WorkflowHostContext, WorkflowSessionContext } from "../types.js";
 import { bashStrikesRemaining, bashTimeoutSteeringMessage, consumeBashStrike } from "./bash-strikes.js";
@@ -100,36 +101,10 @@ export async function postStage(
 ): Promise<void> {
 	const session = readSessionRef(child, offset);
 	const outcome = readSessionOutcome(child, offset);
-	// Abort surfaces as a STOP CLASSIFICATION, not a promise rejection:
-	// `session.abort()` makes the SDK RESOLVE `prompt()` with a
-	// `stopReason:"aborted"` transcript message, so an aborted in-flight child runs
-	// straight into here. Throw BEFORE haltStage/softHaltUnit/any row write so:
-	// (a) no `collected:true` row is written (else the resume fold marks the unit
-	// "don't re-dispatch" → permanent work loss), (b) the parallel fold's
-	// `isAbortError` branch leaves the slot unfilled, and (c) resume re-dispatches
-	// the unit cleanly.
-	//
-	// A genuine run/user abort (`s.signal` fired) ALWAYS re-dispatches on resume, so it
-	// takes the throw unconditionally. An `aborted` stop with the signal cold is examined
-	// for a watchdog tool-timeout (`child.toolTimeout`): the host aborted a runaway bash,
-	// which must route to the soft-halt gate (collect-all unit survives; else terminal
-	// fail) — NOT WorkflowAbortError, which would re-run the same runaway command on resume.
-	if (s.signal?.aborted) throw new WorkflowAbortError();
-	if (outcome.stop === "aborted") {
-		const timeout = child.toolTimeout?.();
-		if (timeout) {
-			// Strike-based recovery: a watchdog tool-timeout is a recoverable tool
-			// event INSIDE the live child. While strikes remain, the single-caller
-			// helper resets → re-prompts → tail-recurses postStage (offset threaded
-			// verbatim); exhaustion falls through to the UNCHANGED soft-halt/terminal
-			// seam below, where the failure-row writers (memo + death-scene) fire for free.
-			if (consumeBashStrike(s, timeout.reason)) {
-				return retryStageAfterBashStrike(observerCtx, child, s, offset, timeout.reason);
-			}
-			return haltStageOrSoftHalt(observerCtx, s, { kind: "timeout", reason: timeout.reason }, session);
-		}
-		throw new WorkflowAbortError();
-	}
+	// Abort classification and strike recovery are owned by a single helper that
+	// returns "continue" when it has handled the turn (strike retry or soft-halt),
+	// so postStage reaches its happy-path switch only for a clean stop.
+	if ((await classifyAndHandleAbort(observerCtx, child, s, outcome, session, offset)) === "continue") return;
 	// Every halt below routes through the single `haltStageOrSoftHalt` gate: a
 	// fanout unit marked `collectAll` records a NON-terminal failed row + a sentinel
 	// slot instead of halting the run; everything else takes the arm's fail-fast
@@ -157,7 +132,66 @@ export async function postStage(
 }
 
 // ===========================================================================
-// STRIKE-ARM RECOVERY — single-caller helper for postStage's watchdog arm
+// ABORT CLASSIFIER — postStage's single abort dispatch + its predicates
+// ===========================================================================
+
+/** An `aborted` stop classification (the SDK resolves `prompt()` with `stopReason:"aborted"`). */
+const isAbortedStop = (outcome: SessionOutcome): boolean => outcome.stop === "aborted";
+
+/**
+ * The watchdog tool-timeout verdict, if any. Read ONCE and returned so the
+ * `reason` threads through without a second read (the strike arm clears the
+ * verdict, so a re-read would see `undefined`).
+ */
+const watchdogTimeoutOf = (child: WorkflowSessionContext): { reason: string } | undefined => child.toolTimeout?.();
+
+/**
+ * Classify and route an abort. Abort surfaces as a STOP CLASSIFICATION, not a
+ * promise rejection: `session.abort()` makes the SDK RESOLVE `prompt()` with a
+ * `stopReason:"aborted"` transcript message, so an aborted in-flight child runs
+ * straight into here. A genuine abort throws BEFORE haltStage/softHaltUnit/any
+ * row write so: (a) no `collected:true` row is written (else the resume fold
+ * marks the unit "don't re-dispatch" → permanent work loss), (b) the parallel
+ * fold's `isAbortError` branch leaves the slot unfilled, and (c) resume
+ * re-dispatches the unit cleanly.
+ *
+ * Returns `"continue"` once the turn is owned (strike retry or soft-halt),
+ * telling the caller to stop; returns `void` (no abort) so the caller proceeds
+ * to the happy-path switch.
+ *
+ * Exported ONLY for the co-located direct tests (`sessions/sessions.test.ts` —
+ * a non-exported member cannot be imported there; the `extraction.ts` retry
+ * hooks set the precedent). Absent from the `sessions/index.ts` barrel, so the
+ * package surface is unchanged.
+ */
+export async function classifyAndHandleAbort(
+	observerCtx: WorkflowHostContext,
+	child: WorkflowSessionContext,
+	s: StageSessionContext,
+	outcome: SessionOutcome,
+	session: SessionRef | null,
+	offset: number | undefined,
+): Promise<"continue" | undefined> {
+	// Level 1 — genuine run/user abort: the signal fired, so always re-dispatch on resume.
+	if (s.signal?.aborted) throw new WorkflowAbortError();
+	// Level 2 — not an abort stop: hand back to the caller's happy-path switch.
+	if (!isAbortedStop(outcome)) return;
+	// Level 3 — examine a watchdog tool-timeout; an aborted stop with the signal cold
+	// and no watchdog is a genuine abort that re-dispatches on resume.
+	const timeout = watchdogTimeoutOf(child);
+	if (!timeout) throw new WorkflowAbortError();
+	// Level 4 — a watchdog tool-timeout is recoverable: consume a strike and retry, or
+	// route exhaustion through the soft-halt gate (collect-all survives; else terminal).
+	if (consumeBashStrike(s, timeout.reason)) {
+		await retryStageAfterBashStrike(observerCtx, child, s, offset, timeout.reason);
+	} else {
+		await haltStageOrSoftHalt(observerCtx, s, { kind: "timeout", reason: timeout.reason }, session);
+	}
+	return "continue";
+}
+
+// ===========================================================================
+// STRIKE-ARM RECOVERY — single-caller helper for the abort classifier's watchdog arm
 // ===========================================================================
 
 /**
@@ -166,7 +200,7 @@ export async function postStage(
  * verbatim — the exact shape the continue body uses). Called ONLY when
  * `consumeBashStrike(s, reason)` returned true, so this helper performs the
  * reset → re-prompt → tail-recurse sequence byte-identically to the inline arm
- * it replaces; strike exhaustion stays routed by the caller (`postStage`) to
+ * it replaces; strike exhaustion stays routed by the caller (`classifyAndHandleAbort`) to
  * the UNCHANGED `haltStageOrSoftHalt({ kind: "timeout" })` seam, where the
  * failure-row writers (memo + death-scene artifact) fire for free.
  */

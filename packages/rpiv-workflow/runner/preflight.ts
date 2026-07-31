@@ -122,22 +122,25 @@ function ensureSkillRegistered(stage: ResolvedStage, run: RunContext): void {
  * The start node consumes the user's brief; subsequent stages MUST inherit
  * an upstream artifactPath. Falling back to originalInput past the start
  * would silently hand a downstream skill the raw feature description.
- *
- * Three opt-outs skip the check:
- *   - `inheritsArtifacts: false` (authored via `terminal()`) — stage consumes
- *     `originalInput` by design.
- *   - `reads: [...]` — stage builds its prompt from the named-publish
- *     registry instead of the rolling primary slot; `ensureNamedReads`
- *     enforces its own coverage rule.
- *   - prompt dispatch — the stage builds its own text and never consumes the
- *     rolling primary as an arg (a continue chat turn typically leans on
- *     session context, not a handle).
  */
+
+/** The start node consumes the user's brief; it has no upstream artifact to inherit. */
+const isStartStage = (stage: ResolvedStage, run: RunContext): boolean => stage.name === run.workflow.start;
+
+/** Authored via `terminal()`: the stage consumes `originalInput` by design. */
+const optsOutOfArtifactInheritance = (stage: ResolvedStage): boolean => stage.def.inheritsArtifacts === false;
+
+/** Builds its prompt from the named-publish registry, not the rolling primary slot. */
+const readsNamedChannels = (stage: ResolvedStage): boolean => !!stage.def.reads?.length;
+
+/** Prompt dispatch builds its own text and never takes the rolling primary as an arg. */
+const isPromptDispatch = (stage: ResolvedStage): boolean => stage.dispatch === "prompt";
+
 function ensureUpstreamArtifact(stage: ResolvedStage, run: RunContext): void {
-	if (stage.name === run.workflow.start) return;
-	if (stage.def.inheritsArtifacts === false) return;
-	if (stage.def.reads?.length) return;
-	if (stage.dispatch === "prompt") return;
+	if (isStartStage(stage, run)) return;
+	if (optsOutOfArtifactInheritance(stage)) return;
+	if (readsNamedChannels(stage)) return;
+	if (isPromptDispatch(stage)) return;
 	if (currentPrimaryArtifact(run.state)) return;
 	const f = FAIL_MISSING_ARTIFACT(stage.skill, stage.stageNumber);
 	throw haltPreflight(stage.skill, f);

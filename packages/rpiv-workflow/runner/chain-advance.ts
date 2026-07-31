@@ -11,7 +11,7 @@
  * spelled as a module cycle.
  */
 
-import { takeRouteNote } from "../api.js";
+import { type EdgeTarget, takeRouteNote } from "../api.js";
 import { auditCtxFor, failedArgs, recordFatalFailure } from "../audit.js";
 import { resolveSkill } from "../chain-state.js";
 import { lifecycleCtxFor, skillStageRef } from "../events.js";
@@ -65,19 +65,10 @@ export async function advanceChain(
 	const fromRef = skillStageRef(currentName, idx + 1, skill);
 
 	if (result.kind === "stop") {
-		// A decision edge stopping the chain is audited like any forward pick,
-		// and a stop carrying a ROUTE_NOTE is `match`'s no-fallback termination:
-		// the gate found no branch for the value it read (typically a failed
-		// verdict on a pass-only gate). That run is BLOCKED awaiting
-		// intervention, not complete — record a terminal failure row so the
-		// trail and the lane show a stopped run instead of a silent ✓. A
-		// noteless decision stop (a custom edge deliberately returning STOP)
-		// and the ordinary end-of-chain stop remain completions.
-		const edge = run.workflow.edges[currentName];
-		const note = wasDecision && typeof edge === "function" ? takeRouteNote(edge) : undefined;
+		const note = stopRouteNote(wasDecision, run.workflow.edges[currentName]);
 		if (wasDecision) auditRoutingDecision(hostCtx, run, idx, currentName, "stop", note);
 		await run.lifecycle.fire(hostCtx, "onRoute", fromRef, "stop", lifecycleCtxFor(run));
-		if (note !== undefined) {
+		if (isBlockedGateStop(note)) {
 			return haltChain(hostCtx, run, currentName, skill, failedArgs(FAIL_GATE_STOP(currentName, note)));
 		}
 		return finalizeWorkflow(hostCtx, run);
@@ -210,3 +201,28 @@ async function haltOnRoutingError(
 	);
 	return "halted";
 }
+
+/**
+ * Read the ROUTE_NOTE a decision EdgeFn attached to its most recent pick,
+ * or undefined when the stop did not come from a decision edge function.
+ *
+ * Returns the note VALUE, not a boolean — `takeRouteNote` reads the
+ * `ROUTE_NOTE` symbol once then clears it (read-and-clear), so a boolean
+ * variant called twice would see undefined on the second read. The single
+ * returned note is threaded to both the audit row and the halt-vs-finalize
+ * decision. Non-decision stops and declarative edges (string / STOP) carry
+ * no note.
+ */
+const stopRouteNote = (wasDecision: boolean, edge: EdgeTarget): string | undefined =>
+	wasDecision && typeof edge === "function" ? takeRouteNote(edge) : undefined;
+
+/**
+ * A decision stop carrying a ROUTE_NOTE is `match`'s no-fallback
+ * termination: the gate found no branch for the value it read (typically
+ * a failed verdict on a pass-only gate). That run is BLOCKED awaiting
+ * intervention, not complete — halt via `haltChain` so the trail and the
+ * lane show a stopped run instead of a silent ✓. A noteless decision stop
+ * (a custom edge deliberately returning STOP) and the ordinary
+ * end-of-chain stop remain completions.
+ */
+const isBlockedGateStop = (note: string | undefined): note is string => note !== undefined;

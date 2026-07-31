@@ -234,10 +234,113 @@ function shouldValidateOutput(s: StageSessionContext, output: Output): boolean {
 	return !!(effectiveOutputSchemaOf(s.stage, s.stageName, s.skillContracts) && output.data !== undefined);
 }
 
-interface RetryDeps {
+export interface RetryDeps {
 	outcome: Outcome;
 	collectCtx: CollectContext;
 	finalize: (parts: { kind: string; artifacts: readonly Artifact[]; data: unknown }) => Output;
+}
+
+/**
+ * Validation-retry mechanism-1 gate: did the worktree stay byte-identical
+ * between the failed validate and the post-fix re-read? An UNCHANGED digest
+ * means the agent's fix touched nothing observable (tracked files OR
+ * gitignored artifacts under `.rpiv/artifacts/`, both hashed by
+ * `computeWorktreeDigest`), so the next `produce` → `validate` cycle would
+ * re-run the same failing validation — fail fast instead of looping.
+ *
+ * An `undefined` baseline (non-repo / git missing — `resolveDigest` degrades
+ * to `undefined`) ALWAYS proceeds: degrade on a missing signal, never skip.
+ */
+export const worktreeUnchangedSince = (baselineDigest: string | undefined, s: StageSessionContext): boolean =>
+	baselineDigest !== undefined && resolveDigest(s.worktreeDigest, s.cwd) === baselineDigest;
+
+/**
+ * The retry-loop `produce` hook: re-production of the stage's output.
+ *
+ * `attempt === 0` is the fast-path — the initial output was already produced
+ * and contract-checked before the retry loop opened (`produceAndValidateOutput`
+ * ran `runOutcome` + `enforceCompletionContract` once), so it returns the
+ * `initial` Output WITHOUT re-collection or re-checking the contract.
+ *
+ * `attempt > 0` re-reads the branch (the agent's fix landed as new messages),
+ * re-runs the collector → parser pipeline (`runOutcome`), and re-checks the
+ * completion contract. A fatal collector/parser/contract result maps onto
+ * the engine's `{ kind: "aborted" }` arm (the loop halts with that message).
+ */
+export async function produceAttempt(
+	ctx: WorkflowSessionContext,
+	s: StageSessionContext,
+	deps: RetryDeps,
+	initial: Output,
+	attempt: number,
+): Promise<{ kind: "ok"; value: Output } | { kind: "aborted"; abort: Fatal }> {
+	if (attempt === 0) return { kind: "ok", value: initial };
+	const retryBranch = readBranch(ctx);
+	const retryCtx: CollectContext = { ...deps.collectCtx, branch: retryBranch };
+	const reRun = await runOutcome(deps.outcome, retryCtx, deps.finalize);
+	if (reRun.kind === "fatal") return { kind: "aborted", abort: reRun };
+	const contract = enforceCompletionContract(s.stage, s.skill, reRun.output);
+	if (contract.kind === "fatal") return { kind: "aborted", abort: contract };
+	return { kind: "ok", value: contract.output };
+}
+
+/**
+ * The retry-loop `validate` hook: run the output schema against the produced
+ * data, guarded by `timeoutMs` (the same `validateTimeoutMs` budget that
+ * bounds `askAgentToFix`). Maps `validateOrFatal`'s `Fatal` outcome (a
+ * thrown/rejected/timed-out schema) onto the engine's `{ kind: "aborted" }`
+ * arm so a schema failure halts the loop instead of re-prompting the agent.
+ */
+export async function validateOutput(
+	schema: StageSchema,
+	skill: string,
+	timeoutMs: number,
+	output: Output,
+): Promise<{ kind: "ok"; result: ValidationResult } | { kind: "aborted"; abort: Fatal }> {
+	const validation = await validateOrFatal(schema, output.data, skill, timeoutMs);
+	if (validation.kind === "fatal") return { kind: "aborted", abort: validation };
+	return { kind: "ok", result: validation.result };
+}
+
+/**
+ * The retry-loop `onRetry` hook: fired between a failed validate and the next
+ * produce (`attempt` is 1-based). Sequence:
+ *   1. Capture the worktree digest AT THE FAILED VALIDATE — nothing mutates
+ *      the tree between `validate` failing and `onRetry` opening, so this
+ *      equals the digest at the failure. Captured per-retry (NOT once before
+ *      the loop): a later retry's "before" state is the tree AFTER the prior
+ *      retry's fix, so a single pre-loop baseline would compare against a
+ *      stale tree and false-abort every later retry.
+ *   2. Fire `onStageRetry` before the agent is re-prompted (the ref shares the
+ *      activation's allocator number via `currentStageRef` so listeners
+ *      correlate retry ↔ end; graph position `stageIndex + 1` diverges past
+ *      any loop).
+ *   3. Re-prompt the agent (`askAgentToFix`); a throw becomes an abort.
+ *   4. Gate on `worktreeUnchangedSince` — if the fix changed nothing
+ *      observable, abort with the unchanged-worktree message instead of
+ *      re-running the same failing validation.
+ */
+export async function handleRetry(
+	ctx: WorkflowSessionContext,
+	s: StageSessionContext,
+	attempt: number,
+	failures: SchemaValidationFailure[],
+	timeoutMs: number,
+): Promise<{ kind: "ok" } | { kind: "aborted"; abort: Fatal }> {
+	const baselineDigest = resolveDigest(s.worktreeDigest, s.cwd);
+	await s.lifecycle.fire(ctx, "onStageRetry", currentStageRef(s), attempt, lifecycleCtxFromSession(s));
+	try {
+		await askAgentToFix(ctx, s, attempt, failures, timeoutMs);
+	} catch (e) {
+		return { kind: "aborted", abort: { kind: "fatal", message: formatError(e) } };
+	}
+	if (worktreeUnchangedSince(baselineDigest, s)) {
+		return {
+			kind: "aborted",
+			abort: { kind: "fatal", message: ERR_VALIDATE_RETRY_UNCHANGED(s.skill) },
+		};
+	}
+	return { kind: "ok" };
 }
 
 async function retryUntilValid(
@@ -260,78 +363,26 @@ async function retryUntilValid(
 		MAX_VALIDATION_RETRY_TIMEOUT_MS,
 	);
 
-	// The retry policy is the SHARED `runValidationRetryLoop` engine
+	// The retry policy delegates to the SHARED `runValidationRetryLoop` engine
 	// (validate-output.ts) — the same produce → validate → retry structure the
-	// script path runs. The four equivalence cases (invalid+failFast → exhausted;
-	// invalid+budget-spent → exhausted; invalid+retryable → retry; any fatal →
-	// Fatal) fall out of the engine's three-arm outcome:
-	//   - `produce(0)` → the already-produced `initial` (produced + contract-
-	//     checked before this loop opened); `produce(n>0)` → re-read the branch,
-	//     re-run the collector/parser, re-check the completion contract.
-	//   - `validate` → `validateOrFatal`, mapping its `Fatal` onto the engine's
-	//     `{ kind: "aborted"; abort: Fatal }` abort arm.
-	//   - `onRetry` → `onStageRetry` + `askAgentToFix`; a throw becomes an abort.
+	// script path runs. The three hooks are short named delegations:
+	//   - `produceAttempt` — `produce(0)` returns the already-produced `initial`;
+	//     `produce(n>0)` re-reads the branch, re-runs the collector/parser, and
+	//     re-checks the completion contract.
+	//   - `validateOutput` — `validateOrFatal`, mapping its `Fatal` onto the
+	//     engine's `{ kind: "aborted" }` abort arm.
+	//   - `handleRetry` — `onStageRetry` + `askAgentToFix`; a throw becomes an
+	//     abort, and the `worktreeUnchangedSince` gate aborts a no-op fix.
 	// `failFast` mirrors the script path's stop-flag polarity —
 	// `(onInvalid ?? "retry") === "halt"` is byte-identical to today's
 	// `onInvalid !== "halt"` loop-continue condition, just expressed as the
 	// engine's stop flag. Total productions stay bounded by `maxRetries + 1`.
 	const outcome = await runValidationRetryLoop<Output, Fatal>(
+		{ maxRetries, failFast: (s.stage.onInvalid ?? "retry") === "halt" },
 		{
-			maxRetries,
-			failFast: (s.stage.onInvalid ?? "retry") === "halt",
-		},
-		{
-			produce: async (attempt) => {
-				// `produce(0)` returns the already-produced initial — no re-collection,
-				// no contract re-check (both ran before the loop opened).
-				if (attempt === 0) return { kind: "ok", value: initial };
-				const retryBranch = readBranch(ctx);
-				const retryCtx: CollectContext = { ...deps.collectCtx, branch: retryBranch };
-				const reRun = await runOutcome(deps.outcome, retryCtx, deps.finalize);
-				if (reRun.kind === "fatal") return { kind: "aborted", abort: reRun };
-				const contract = enforceCompletionContract(s.stage, s.skill, reRun.output);
-				if (contract.kind === "fatal") return { kind: "aborted", abort: contract };
-				return { kind: "ok", value: contract.output };
-			},
-			validate: async (output) => {
-				const validation = await validateOrFatal(schema, output.data, s.skill, timeoutMs);
-				if (validation.kind === "fatal") return { kind: "aborted", abort: validation };
-				return { kind: "ok", result: validation.result };
-			},
-			onRetry: async (attempt, failures) => {
-				// Validation-retry mechanism-1: capture the worktree digest AT THE FAILED
-				// VALIDATE before the agent is re-prompted. Nothing mutates the tree
-				// between `validate` failing and `onRetry` opening, so this equals
-				// the digest at the failure. Captured per-retry (NOT once before the
-				// loop): a later retry's "before" state is the tree AFTER the prior
-				// retry's fix, so a single pre-loop baseline would compare against a
-				// stale tree and false-abort every later retry.
-				const baselineDigest = resolveDigest(s.worktreeDigest, s.cwd);
-				// onStageRetry fires before the agent is re-prompted; `attempt` is 1-based.
-				// Ref shares the activation's ALLOCATOR number (currentStageRef) so
-				// listeners can correlate this retry with the end/error event it
-				// belongs to — graph position (`stageIndex + 1`) diverges past any loop.
-				await s.lifecycle.fire(ctx, "onStageRetry", currentStageRef(s), attempt, lifecycleCtxFromSession(s));
-				try {
-					await askAgentToFix(ctx, s, attempt, failures, timeoutMs);
-				} catch (e) {
-					return { kind: "aborted", abort: { kind: "fatal", message: formatError(e) } };
-				}
-				// The agent was asked to fix but changed nothing observable in the
-				// worktree (tracked files OR gitignored artifacts under
-				// `.rpiv/artifacts/`, both hashed by `computeWorktreeDigest`), so the
-				// `produce(attempt)` re-read + re-validate cycle would just re-run the
-				// same failing validation — fail fast instead of looping. An unchanged
-				// `undefined` digest (non-repo / git missing) ALWAYS proceeds: degrade
-				// on a missing signal, never skip.
-				if (baselineDigest !== undefined && resolveDigest(s.worktreeDigest, s.cwd) === baselineDigest) {
-					return {
-						kind: "aborted",
-						abort: { kind: "fatal", message: ERR_VALIDATE_RETRY_UNCHANGED(s.skill) },
-					};
-				}
-				return { kind: "ok" };
-			},
+			produce: (attempt) => produceAttempt(ctx, s, deps, initial, attempt),
+			validate: (output) => validateOutput(schema, s.skill, timeoutMs, output),
+			onRetry: (attempt, failures) => handleRetry(ctx, s, attempt, failures, timeoutMs),
 		},
 	);
 

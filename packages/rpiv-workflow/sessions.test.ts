@@ -23,17 +23,29 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { StageDef, StageSchema, Workflow } from "./api.js";
 import { currentPrimaryArtifact } from "./chain-state.js";
 import { LifecycleDispatcher } from "./events.js";
-import { fs as fsHandle } from "./handle.js";
+import { type Artifact, fs as fsHandle } from "./handle.js";
 import { WorkflowAbortError } from "./internal-utils.js";
-import { FAIL_STAGE_NO_RESPONSE, FAIL_VALIDATION_EXHAUSTED, MSG_STAGE_FAILED } from "./messages.js";
-import type { Output } from "./output.js";
+import {
+	ERR_VALIDATE_RETRY_UNCHANGED,
+	FAIL_STAGE_NO_RESPONSE,
+	FAIL_VALIDATION_EXHAUSTED,
+	MSG_STAGE_FAILED,
+} from "./messages.js";
+import { finalizeOutput, type Output, outputMeta } from "./output.js";
 import type { CollectContext, Outcome } from "./output-spec.js";
 import { reconstructState } from "./runner/resume.js";
+import {
+	handleRetry,
+	produceAttempt,
+	type RetryDeps,
+	validateOutput,
+	worktreeUnchangedSince,
+} from "./sessions/extraction.js";
 import { executeStageSession } from "./sessions/index.js";
 import { appendHeader, appendStage, STATE_SCHEMA_VERSION, type WorkflowHeader } from "./state/index.js";
 import { DEFAULT_TRIGGER } from "./triggers.js";
 import { typeboxSchema } from "./typebox-adapter.js";
-import type { RunState, StageSessionContext, WorkflowHostContext } from "./types.js";
+import type { RunState, StageSessionContext, WorkflowHostContext, WorkflowSessionContext } from "./types.js";
 
 /** Default test wiring for SessionContext's lifecycle + runIdentity fields. */
 const testLifecycle = () => new LifecycleDispatcher(undefined);
@@ -649,6 +661,271 @@ describe("sessions — validation retry loop", () => {
 		expect(chain.notifications.some((n) => n.msg === MSG_STAGE_FAILED("test"))).toBe(true);
 		expect(state.termination.error).toMatch(/outputSchema validation exceeded 1000ms/);
 	}, 5_000);
+});
+
+// ---------------------------------------------------------------------------
+// Direct unit tests for the extracted retry-loop members
+// (produceAttempt / validateOutput / handleRetry / worktreeUnchangedSince).
+// The behavior-preservation guard above drives the same hooks end-to-end via
+// executeStageSession; these pin each extracted member's contract at the seam.
+// ---------------------------------------------------------------------------
+
+describe("sessions — extracted retry hooks (direct)", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "rpiv-sessions-hooks-"));
+	});
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	/** Minimal Output envelope for a direct-hook call (shape only — no audit write). */
+	const mkOutput = (data: unknown): Output =>
+		finalizeOutput(
+			{ kind: "test", artifacts: [], data },
+			outputMeta({
+				stage: "test",
+				skill: "test",
+				stageNumber: 1,
+				ts: "2026-01-01T00:00:00.000Z",
+				runId: "run-test",
+			}),
+		);
+
+	/** `RetryDeps.finalize` mirror: respects the collector/parser `parts` (kind +
+	 *  data) the way `wrapOutput` does on the live path, so a re-produced value
+	 *  flows into the Output envelope byte-identically. */
+	const testFinalize = (parts: { kind: string; artifacts: readonly Artifact[]; data: unknown }): Output =>
+		finalizeOutput(
+			parts,
+			outputMeta({
+				stage: "test",
+				skill: "test",
+				stageNumber: 1,
+				ts: "2026-01-01T00:00:00.000Z",
+				runId: "run-test",
+			}),
+		);
+
+	/** The predicate reads only `cwd` + `worktreeDigest`; a partial cast is the
+	 *  minimal honest fixture (the other StageSessionContext fields are unused). */
+	const digestSession = (worktreeDigest: () => string | undefined): StageSessionContext =>
+		({ cwd: tmpDir, worktreeDigest }) as unknown as StageSessionContext;
+
+	it("worktreeUnchangedSince: undefined baseline → false (degrade, never skip)", () => {
+		// resolveDigest is NEVER called when the baseline is undefined — short-circuits.
+		expect(
+			worktreeUnchangedSince(
+				undefined,
+				digestSession(() => "fixed-digest"),
+			),
+		).toBe(false);
+	});
+
+	it("worktreeUnchangedSince: equal digest → true", () => {
+		expect(
+			worktreeUnchangedSince(
+				"same",
+				digestSession(() => "same"),
+			),
+		).toBe(true);
+	});
+
+	it("worktreeUnchangedSince: differing digest → false", () => {
+		expect(
+			worktreeUnchangedSince(
+				"before-fix",
+				digestSession(() => "after-fix"),
+			),
+		).toBe(false);
+	});
+
+	it("worktreeUnchangedSince: undefined current (non-repo) with a defined baseline → false (proceed)", () => {
+		// A defined baseline but a missing current signal degrades to proceed.
+		expect(
+			worktreeUnchangedSince(
+				"some-baseline",
+				digestSession(() => undefined),
+			),
+		).toBe(false);
+	});
+
+	it("validateOutput: schema-valid output → { ok, result.valid:true }", async () => {
+		const result = await validateOutput(FOO_EQ_2_SCHEMA, "test", 5_000, mkOutput({ foo: 2 }));
+		expect(result).toEqual({ kind: "ok", result: { valid: true, failures: [] } });
+	});
+
+	it("validateOutput: schema-invalid output → { ok, result.valid:false } (the loop drives the retry)", async () => {
+		const result = await validateOutput(FOO_EQ_2_SCHEMA, "test", 5_000, mkOutput({ foo: 1 }));
+		expect(result.kind).toBe("ok");
+		if (result.kind !== "ok") return;
+		expect(result.result.valid).toBe(false);
+		expect(result.result.failures.length).toBeGreaterThan(0);
+	});
+
+	it("validateOutput: a rejecting schema maps onto the { aborted } arm (fatal, not retried)", async () => {
+		const rejecting: StageSchema<unknown, unknown> = {
+			"~standard": { version: 1, vendor: "test-reject", validate: () => Promise.reject(new Error("boom")) },
+		};
+		const result = await validateOutput(rejecting, "test", 5_000, mkOutput({ foo: 2 }));
+		expect(result.kind).toBe("aborted");
+		if (result.kind !== "aborted") return;
+		expect(result.abort).toEqual({ kind: "fatal", message: expect.stringContaining("boom") });
+	});
+
+	it("produceAttempt: attempt 0 returns the initial Output without re-collection", async () => {
+		const outcome = scriptedOutcome([okPayload({ foo: 1 })]);
+		const deps: RetryDeps = {
+			outcome,
+			collectCtx: {
+				cwd: tmpDir,
+				runId: "run-test",
+				stageIndex: 0,
+				state: freshRunState(),
+				branch: [],
+				branchOffset: undefined,
+				snapshot: undefined,
+				skill: "test",
+			},
+			finalize: testFinalize,
+		};
+		const initial = mkOutput({ foo: 2 });
+
+		// The fast path (`attempt === 0`) returns `initial` WITHOUT touching ctx, so a
+		// bare stub is honest — produceAttempt never reads it on this branch.
+		const result = await produceAttempt(
+			{} as unknown as WorkflowSessionContext,
+			stageSession({ cwd: tmpDir, state: freshRunState() }),
+			deps,
+			initial,
+			0,
+		);
+
+		expect(result).toEqual({ kind: "ok", value: initial });
+		// Fast-path: the collector is NEVER re-run for attempt 0.
+		expect(outcome.collectSpy).not.toHaveBeenCalled();
+	});
+
+	it("produceAttempt: attempt > 0 re-reads the branch, re-runs the outcome, and returns the re-produced value", async () => {
+		// A direct `produceAttempt(attempt=1)` call drives exactly ONE collect (the
+		// initial produce ran outside this hook), so a single-result scripted
+		// outcome is the honest fixture — its first collect returns this payload.
+		const outcome = scriptedOutcome([okPayload({ foo: 2 })]);
+		const deps: RetryDeps = {
+			outcome,
+			collectCtx: {
+				cwd: tmpDir,
+				runId: "run-test",
+				stageIndex: 0,
+				state: freshRunState(),
+				branch: [],
+				branchOffset: undefined,
+				snapshot: undefined,
+				skill: "test",
+			},
+			finalize: testFinalize,
+		};
+		// `attempt > 0` re-reads the branch via `readBranch(ctx)` — the only ctx surface it
+		// touches — so a ctx carrying a scripted sessionManager is the minimal honest fixture.
+		const ctx = {
+			sessionManager: { getBranch: () => [mockAssistantMessage("done")] },
+		} as unknown as WorkflowSessionContext;
+
+		const result = await produceAttempt(
+			ctx,
+			stageSession({ cwd: tmpDir, state: freshRunState() }),
+			deps,
+			mkOutput({ foo: 1 }),
+			1,
+		);
+
+		expect(result.kind).toBe("ok");
+		if (result.kind !== "ok") return;
+		// The retry re-ran the collector once (the direct hook's single produce).
+		expect(outcome.collectSpy).toHaveBeenCalledTimes(1);
+		expect((result.value.data as { foo: number }).foo).toBe(2);
+	});
+
+	it("produceAttempt: attempt > 0 maps a fatal collector result onto the { aborted } arm", async () => {
+		// One collect (the retry produce) returns the fatal payload directly.
+		const outcome = scriptedOutcome([fatalPayload("collector died on retry")]);
+		const deps: RetryDeps = {
+			outcome,
+			collectCtx: {
+				cwd: tmpDir,
+				runId: "run-test",
+				stageIndex: 0,
+				state: freshRunState(),
+				branch: [],
+				branchOffset: undefined,
+				snapshot: undefined,
+				skill: "test",
+			},
+			finalize: testFinalize,
+		};
+		const ctx = {
+			sessionManager: { getBranch: () => [mockAssistantMessage("done")] },
+		} as unknown as WorkflowSessionContext;
+
+		const result = await produceAttempt(
+			ctx,
+			stageSession({ cwd: tmpDir, state: freshRunState() }),
+			deps,
+			mkOutput({ foo: 1 }),
+			1,
+		);
+
+		expect(result).toEqual({ kind: "aborted", abort: { kind: "fatal", message: "collector died on retry" } });
+	});
+
+	/** Minimal child-ctx surface handleRetry touches: `ui.notify` (lifecycle.fire's
+	 *  DispatchHost), `sendUserMessage` + `waitForIdle` (resendIntoChild via askAgentToFix). */
+	const childCtx = (sent: string[]): WorkflowSessionContext =>
+		({
+			ui: { notify: vi.fn() },
+			sendUserMessage: vi.fn(async (m: string) => void sent.push(m)),
+			waitForIdle: vi.fn(async () => {}),
+		}) as unknown as WorkflowSessionContext;
+
+	it("handleRetry: fires onStageRetry, re-prompts the agent, and proceeds when the worktree changed", async () => {
+		const sent: string[] = [];
+		const onStageRetry = vi.fn();
+		// handleRetry reads the digest TWICE: once for the baseline (before the fix),
+		// once inside worktreeUnchangedSince (after). A mutable holder models the
+		// agent's fix landing between the two reads — baseline "before-fix" then
+		// current "after-fix" → tree changed → proceed.
+		let read = 0;
+		const s = stageSession({
+			cwd: tmpDir,
+			state: freshRunState(),
+			lifecycle: new LifecycleDispatcher({ onStageRetry }),
+			worktreeDigest: () => (read++ === 0 ? "before-fix" : "after-fix"),
+		});
+
+		const result = await handleRetry(childCtx(sent), s, 1, [], 5_000);
+
+		expect(onStageRetry).toHaveBeenCalledTimes(1);
+		// A fix-request prompt was sent into the child.
+		expect(sent.some((m) => m.includes("doesn't satisfy the expected output schema"))).toBe(true);
+		expect(result).toEqual({ kind: "ok" });
+	});
+
+	it("handleRetry: an unchanged worktree after the fix → { aborted } with the unchanged-worktree message", async () => {
+		const sent: string[] = [];
+		const s = stageSession({
+			cwd: tmpDir,
+			state: freshRunState(),
+			// baseline === current → the fix changed nothing observable → abort.
+			worktreeDigest: () => "frozen",
+		});
+
+		const result = await handleRetry(childCtx(sent), s, 1, [], 5_000);
+
+		expect(result.kind).toBe("aborted");
+		if (result.kind !== "aborted") return;
+		expect(result.abort).toEqual({ kind: "fatal", message: ERR_VALIDATE_RETRY_UNCHANGED("test") });
+	});
 });
 
 // ---------------------------------------------------------------------------

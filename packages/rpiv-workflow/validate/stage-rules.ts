@@ -11,7 +11,16 @@
  * (different dependency footprint entirely).
  */
 
-import { LOOP_KINDS, ON_INVALID_VALUES, SESSION_POLICIES, STAGE_KINDS, type StageDef, type Workflow } from "../api.js";
+import {
+	type FanoutLoop,
+	LOOP_KINDS,
+	type LoopDef,
+	ON_INVALID_VALUES,
+	SESSION_POLICIES,
+	STAGE_KINDS,
+	type StageDef,
+	type Workflow,
+} from "../api.js";
 import { type AnyJudge, isPanel } from "../judge.js";
 import {
 	forEachJudgeChannel,
@@ -70,30 +79,17 @@ function checkLoopInvariants(stage: StageDef, name: string, report: ReportFn): v
 	if (loop.max !== undefined && (!Number.isInteger(loop.max) || loop.max < 1)) {
 		report("loop-max-invalid", { max: loop.max });
 	}
-	if (
-		loop.kind === "fanout" &&
-		loop.concurrency !== undefined &&
-		(!Number.isInteger(loop.concurrency) || loop.concurrency < 1)
-	) {
+	if (isInvalidConcurrency(loop)) {
 		report("loop-concurrency-invalid", { concurrency: loop.concurrency });
 	}
-	if (
-		loop.kind === "fanout" &&
-		loop.depArtifactFlag !== undefined &&
-		(typeof loop.depArtifactFlag !== "string" || loop.depArtifactFlag.trim().length === 0)
-	) {
+	if (isInvalidDepArtifactFlag(loop)) {
 		report("loop-dep-flag-invalid", { depArtifactFlag: loop.depArtifactFlag });
 	}
 	// Pull loops + assess run the stage's outcome collector per unit.
 	if ((loop.kind === "iterate" || loop.kind === "assess") && stage.kind !== "produces") {
 		report("loop-requires-produces", { kind: loop.kind });
 	}
-	// A stable named slot: iterate and assess always (every unit/round runs the
-	// produces collector), fanout when COLLECTING (produces kind) — the decorated
-	// display string must never split the accumulation slot.
-	const needsName =
-		loop.kind === "iterate" || loop.kind === "assess" || (loop.kind === "fanout" && stage.kind === "produces");
-	if (needsName && !stage.outcome?.name) {
+	if (requiresOutcomeName(loop, stage) && !stage.outcome?.name) {
 		report("loop-outcome-name-required");
 	}
 
@@ -128,6 +124,35 @@ function checkLoopInvariants(stage: StageDef, name: string, report: ReportFn): v
 	// publish identity, which only the stage knows).
 	checkVerdictChannels(slot, name, stage, "assess-verdict-channel-collision", report);
 }
+
+/**
+ * A fanout's `concurrency` ceiling is present and out of range — not an
+ * integer or below 1. The type guard narrows to `FanoutLoop &
+ * { concurrency: number }` so the report call reads the field without a cast
+ * or non-null assertion.
+ */
+const isInvalidConcurrency = (loop: LoopDef): loop is FanoutLoop & { concurrency: number } =>
+	loop.kind === "fanout" &&
+	loop.concurrency !== undefined &&
+	(!Number.isInteger(loop.concurrency) || loop.concurrency < 1);
+
+/**
+ * A fanout's `depArtifactFlag` is present but not a non-empty string. The type
+ * guard narrows to `FanoutLoop & { depArtifactFlag: string }` so the report
+ * call reads the field without a cast or non-null assertion.
+ */
+const isInvalidDepArtifactFlag = (loop: LoopDef): loop is FanoutLoop & { depArtifactFlag: string } =>
+	loop.kind === "fanout" &&
+	loop.depArtifactFlag !== undefined &&
+	(typeof loop.depArtifactFlag !== "string" || loop.depArtifactFlag.trim().length === 0);
+
+/**
+ * A stable named slot: iterate and assess always (every unit/round runs the
+ * produces collector), fanout when COLLECTING (produces kind) — the decorated
+ * display string must never split the accumulation slot.
+ */
+const requiresOutcomeName = (loop: LoopDef, stage: StageDef): boolean =>
+	loop.kind === "iterate" || loop.kind === "assess" || (loop.kind === "fanout" && stage.kind === "produces");
 
 /**
  * Verdict-channel collisions for a judge SLOT (`AnyJudge`) — workflow-level

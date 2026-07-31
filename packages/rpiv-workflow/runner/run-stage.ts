@@ -45,9 +45,10 @@ import {
 	reattachStageSession,
 } from "../sessions/index.js";
 import { forkChildSession, reattachChildSession } from "../sessions/spawn.js";
+import type { SkillContractMap } from "../skill-contract.js";
 import { effectiveOutputSchemaOf } from "../stage-identity.js";
 import type { WorkflowStage } from "../state/index.js";
-import type { RunContext, StageSessionContext, WorkflowHostContext } from "../types.js";
+import type { RunContext, RunState, StageSessionContext, WorkflowHostContext } from "../types.js";
 import { resolveDigest } from "../worktree-digest.js";
 import { advanceChain, type ChainDeps } from "./chain-advance.js";
 import { type ChainOutcome, haltChain, recordAbortedAtSeam, recordEntryThrow, withStageEntryGuard } from "./failure.js";
@@ -234,6 +235,33 @@ function announceSingleStageStart(
 	);
 }
 
+/** A `produces` stage carrying an effective output schema — the gate's
+ *  qualifying predicate. Spelled through the shared `effectiveOutputSchemaOf`
+ *  so the gate and the extraction retry loop agree on "schema-validated". */
+const isSchemaValidatedProducesStage = (stage: ResolvedStage, skillContracts: SkillContractMap | undefined): boolean =>
+	stage.def.kind === "produces" && !!effectiveOutputSchemaOf(stage.def, stage.name, skillContracts);
+
+/** The worktree digest and progress point match the last gated baseline for
+ *  THIS stage — no observable fix ran between the two dispatches. The
+ *  `digest !== undefined` term narrows the digest compare inside the body. */
+const isUnchangedTreeRedispatch = (
+	baseline: { stage: string; digest: string; stagesCompleted: number } | undefined,
+	stage: ResolvedStage,
+	digest: string | undefined,
+	stagesCompleted: number,
+): boolean =>
+	baseline !== undefined &&
+	baseline.stage === stage.name &&
+	digest !== undefined &&
+	digest === baseline.digest &&
+	stagesCompleted === baseline.stagesCompleted;
+
+/** Records this dispatch's worktree digest + progress point as the gate
+ *  baseline, so the NEXT dispatch of this stage compares against it. */
+const recordGatedDispatchBaseline = (state: RunState, stage: ResolvedStage, digest: string): void => {
+	state.lastGatedDispatch = { stage: stage.name, digest, stagesCompleted: state.stagesCompleted };
+};
+
 /**
  * Validation-retry mechanism-2: fail-fast a re-dispatch of a schema-validated
  * produces stage against an UNCHANGED worktree (no observable fix since the last
@@ -261,33 +289,23 @@ export async function gateValidationRedispatch(
 	run: RunContext,
 ): Promise<boolean> {
 	const isOperatorResume = run.trigger.meta?.resumedFrom !== undefined;
-	const qualifies =
-		stage.def.kind === "produces" && !!effectiveOutputSchemaOf(stage.def, stage.name, run.skillContracts);
-	if (!isOperatorResume && qualifies) {
-		const digest = resolveDigest(run.worktreeDigest, run.cwd);
-		const baseline = run.state.lastGatedDispatch;
-		if (
-			baseline &&
-			baseline.stage === stage.name &&
-			digest !== undefined &&
-			digest === baseline.digest &&
-			run.state.stagesCompleted === baseline.stagesCompleted
-		) {
-			await recordFatalFailure(
-				hostCtx,
-				auditCtxFor(run, stage.name, stage.skill),
-				failedArgs(FAIL_VALIDATE_GATE_SKIPPED(stage.skill)),
-			);
-			return true;
-		}
-		// Overwrite the baseline on every qualifying dispatch with a defined
-		// digest, so the NEXT dispatch of this stage compares against the most
-		// recent state (the "tree changed" / "fix ran" proceed arms both land
-		// here after the non-matching halt check above).
-		if (digest !== undefined) {
-			run.state.lastGatedDispatch = { stage: stage.name, digest, stagesCompleted: run.state.stagesCompleted };
-		}
+	// Qualify → read guard → write. An operator-resume run and a stage with no
+	// effective output schema both fall through, leaving `lastGatedDispatch` alone.
+	if (isOperatorResume || !isSchemaValidatedProducesStage(stage, run.skillContracts)) return false;
+	const digest = resolveDigest(run.worktreeDigest, run.cwd);
+	if (isUnchangedTreeRedispatch(run.state.lastGatedDispatch, stage, digest, run.state.stagesCompleted)) {
+		await recordFatalFailure(
+			hostCtx,
+			auditCtxFor(run, stage.name, stage.skill),
+			failedArgs(FAIL_VALIDATE_GATE_SKIPPED(stage.skill)),
+		);
+		return true;
 	}
+	// Overwrite the baseline on every qualifying dispatch with a defined
+	// digest, so the NEXT dispatch of this stage compares against the most
+	// recent state (the "tree changed" / "fix ran" proceed arms both land
+	// here after the non-matching halt check above).
+	if (digest !== undefined) recordGatedDispatchBaseline(run.state, stage, digest);
 	return false;
 }
 

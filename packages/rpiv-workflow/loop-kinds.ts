@@ -607,85 +607,8 @@ const assessStrategy: SequentialStrategy = {
 	// carries no marker, so live and resume can't disagree about flavoring.
 	async pull(e, cursor, cap, run) {
 		const loop = e.loop as AssessLoop;
-		const isVerify = e.def.verify !== undefined;
-		if (cursor.phase === "judge") {
-			const lp = lastProduceOf(cursor, e.name); // a judge step always follows a completed produce
-			// Expand the judge slot to its members and dispatch the member the
-			// panel sub-state points at. A single judge is the panel of one
-			// (`memberIndex` undefined, member 0 the only member), so its transition
-			// is byte-identical to today; a panel walks member 0..N-1 across
-			// successive judge-phase pulls, `advanceCursor` bumping
-			// `cursor.panel.memberIndex` between them.
-			const memberIndex = isPanel(loop.judge) ? (cursor.panel?.memberIndex ?? 0) : undefined;
-			const judge = panelMembers(loop.judge)[memberIndex ?? 0]!;
-			const judgeSkill = judge.skill ?? (isVerify ? `${e.name}-verify` : `${e.name}-judge`);
-			let prompt: string;
-			if (judge.skill !== undefined) {
-				// produces-validation guarantees the producer emitted an artifact —
-				// a miss is the same corrupted-cursor class as a missing produce.
-				if (!lp.artifact) {
-					const msg = MSG_LOOP_CURSOR_CORRUPT(e.name, "judge skill dispatch found no produced artifact");
-					throw invariantPreflight(e.name, msg);
-				}
-				prompt = `/skill:${judge.skill} ${handleToString(lp.artifact.handle)}`;
-			} else {
-				prompt = await resolveJudgePrompt(judge.prompt!, {
-					cwd: run.cwd,
-					output: lp.output,
-					entryArtifact: e.entryArtifact,
-					state: run.state,
-					round: cursor.index,
-				});
-			}
-			const label = judgeUnitLabel(cursor.index, isVerify, memberIndex);
-			return {
-				kind: "unit",
-				role: isVerify ? "verify" : "judge",
-				tag: label,
-				// Panel member rows carry an `id` so they are identity-bearing for the
-				// resume join (`unitId` = the `#{memberIndex}` tag); a single judge keeps
-				// identity `(role, round)` with no `id`, exactly as before.
-				id: memberIndex === undefined ? undefined : label,
-				label,
-				skill: judgeSkill,
-				prompt,
-				def: judgeStageDef(judge),
-			};
-		}
-
-		// produce — done wins over cap (one code path for live + resume fast-advance)
-		if (cursor.lastVerdict !== undefined && loop.done(cursor.lastVerdict)) return { kind: "complete" };
-		if (cursor.index >= cap) return { kind: "cap", count: cursor.index };
-		// Producer dispatch is skill XOR prompt (the judge arm's posture). For
-		// prompt dispatch the message is sent raw: round 0 resolves the stage's own
-		// `prompt` at dispatch time (re-resolved on resume — the PromptFn joins the
-		// loop determinism contract), and retry rounds send feedForward's output as
-		// the COMPLETE message (there is no skill to prefix an arg onto).
-		const isPrompt = e.def.prompt !== undefined;
-		// `lastVerdict` is only set by a completed judge, which also bumps `index` —
-		// so `index - 1 ≥ 0` whenever feedForward runs (round 0 takes entryArgs).
-		const arg =
-			cursor.lastVerdict !== undefined
-				? loop.feedForward({
-						cwd: run.cwd,
-						output: lastProduceOf(cursor, e.name).output,
-						verdict: cursor.lastVerdict,
-						round: cursor.index - 1,
-						state: run.state,
-					})
-				: isPrompt
-					? await resolveStagePrompt(e.def.prompt!, run.cwd, run.state)
-					: e.entryArgs;
-		const label = isVerify ? `a${cursor.index}·attempt` : `r${cursor.index}·produce`;
-		return {
-			kind: "unit",
-			role: "produce",
-			tag: label,
-			label,
-			skill: e.skill,
-			prompt: isPrompt ? arg : `/skill:${e.skill} ${arg}`,
-			def: e.def,
-		};
+		if (cursor.phase === "judge") return dispatchPanelMember(loop, cursor, e, run);
+		return dispatchProduce(loop, cursor, e, cap, run);
 	},
 	// The kind-agnostic (role, unitIndex) arithmetic already matched in the
 	// caller. Full-check extras:
@@ -719,6 +642,126 @@ const assessStrategy: SequentialStrategy = {
 		return !(probe.cursor.lastVerdict !== undefined && (loop as AssessLoop).done(probe.cursor.lastVerdict));
 	},
 };
+
+/**
+ * The produce phase's termination check — a set `lastVerdict` that the loop's
+ * `done` predicate accepts. Named so the done-wins-over-cap ordering in
+ * `dispatchProduce` reads as intent.
+ */
+const isDone = (loop: AssessLoop, cursor: LoopCursor): boolean =>
+	cursor.lastVerdict !== undefined && loop.done(cursor.lastVerdict);
+
+/**
+ * Judge/verify phase dispatch — the panel-member arm of `assessStrategy.pull`.
+ * Expand the judge slot to its members and dispatch the member the panel
+ * sub-state points at. A single judge is the panel of one (`memberIndex`
+ * undefined, member 0 the only member), so its transition is byte-identical to
+ * today; a panel walks member 0..N-1 across successive judge-phase pulls,
+ * `advanceCursor` bumping `cursor.panel.memberIndex` between them.
+ */
+async function dispatchPanelMember(
+	loop: AssessLoop,
+	cursor: LoopCursor,
+	e: LoopEntry,
+	run: RunContext,
+): Promise<NextStep> {
+	const isVerify = e.def.verify !== undefined;
+	const lp = lastProduceOf(cursor, e.name); // a judge step always follows a completed produce
+	const memberIndex = isPanel(loop.judge) ? (cursor.panel?.memberIndex ?? 0) : undefined;
+	const judge = panelMembers(loop.judge)[memberIndex ?? 0]!;
+	const judgeSkill = judge.skill ?? (isVerify ? `${e.name}-verify` : `${e.name}-judge`);
+	let prompt: string;
+	if (judge.skill !== undefined) {
+		// produces-validation guarantees the producer emitted an artifact —
+		// a miss is the same corrupted-cursor class as a missing produce.
+		if (!lp.artifact) {
+			const msg = MSG_LOOP_CURSOR_CORRUPT(e.name, "judge skill dispatch found no produced artifact");
+			throw invariantPreflight(e.name, msg);
+		}
+		prompt = `/skill:${judge.skill} ${handleToString(lp.artifact.handle)}`;
+	} else {
+		prompt = await resolveJudgePrompt(judge.prompt!, {
+			cwd: run.cwd,
+			output: lp.output,
+			entryArtifact: e.entryArtifact,
+			state: run.state,
+			round: cursor.index,
+		});
+	}
+	const label = judgeUnitLabel(cursor.index, isVerify, memberIndex);
+	return {
+		kind: "unit",
+		role: isVerify ? "verify" : "judge",
+		tag: label,
+		// Panel member rows carry an `id` so they are identity-bearing for the
+		// resume join (`unitId` = the `#{memberIndex}` tag); a single judge keeps
+		// identity `(role, round)` with no `id`, exactly as before.
+		id: memberIndex === undefined ? undefined : label,
+		label,
+		skill: judgeSkill,
+		prompt,
+		def: judgeStageDef(judge),
+	};
+}
+
+/**
+ * Produce phase dispatch — the producer arm of `assessStrategy.pull`. Done wins
+ * over cap (one code path for live + resume fast-advance). Producer dispatch is
+ * skill XOR prompt (the judge arm's posture). For prompt dispatch the message is
+ * sent raw: round 0 resolves the stage's own `prompt` at dispatch time
+ * (re-resolved on resume — the PromptFn joins the loop determinism contract),
+ * and retry rounds send feedForward's output as the COMPLETE message (there is no
+ * skill to prefix an arg onto).
+ */
+async function dispatchProduce(
+	loop: AssessLoop,
+	cursor: LoopCursor,
+	e: LoopEntry,
+	cap: number,
+	run: RunContext,
+): Promise<NextStep> {
+	if (isDone(loop, cursor)) return { kind: "complete" };
+	if (cursor.index >= cap) return { kind: "cap", count: cursor.index };
+	const isPrompt = e.def.prompt !== undefined;
+	const arg = await resolveProduceArg(loop, cursor, e, run);
+	const isVerify = e.def.verify !== undefined;
+	const label = isVerify ? `a${cursor.index}·attempt` : `r${cursor.index}·produce`;
+	return {
+		kind: "unit",
+		role: "produce",
+		tag: label,
+		label,
+		skill: e.skill,
+		prompt: isPrompt ? arg : `/skill:${e.skill} ${arg}`,
+		def: e.def,
+	};
+}
+
+/**
+ * The producer's next-round arg — the three-way verdict/retry/init resolution:
+ * a retry round (a completed judge set `lastVerdict`) runs `feedForward`; round 0
+ * of a prompt stage resolves the stage's own `prompt`; round 0 of a skill stage
+ * takes the loop's entryArgs. `lastVerdict` is only set by a completed judge,
+ * which also bumps `index` — so `index - 1 ≥ 0` whenever feedForward runs
+ * (round 0 takes entryArgs). The async wrap preserves the await asymmetry:
+ * `feedForward` is a sync `(ctx) => string` (its bare `return` is wrapped by
+ * this async helper into a resolved promise), while `resolveStagePrompt` is
+ * `Promise<string>` and is awaited.
+ */
+async function resolveProduceArg(loop: AssessLoop, cursor: LoopCursor, e: LoopEntry, run: RunContext): Promise<string> {
+	const isPrompt = e.def.prompt !== undefined;
+	return cursor.lastVerdict !== undefined
+		? loop.feedForward({
+				cwd: run.cwd,
+				output: lastProduceOf(cursor, e.name).output,
+				verdict: cursor.lastVerdict,
+				round: cursor.index - 1,
+				state: run.state,
+			})
+		: isPrompt
+			? await resolveStagePrompt(e.def.prompt!, run.cwd, run.state)
+			: e.entryArgs;
+}
 
 /**
  * One strategy per kind — the `Record` shape turns "added a `LoopDef` arm,

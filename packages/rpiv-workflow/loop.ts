@@ -36,11 +36,11 @@
  * no-op (pinned behavior).
  */
 
-import type { LoopDef } from "./api.js";
+import type { AssessLoop, LoopDef } from "./api.js";
 import { applyCompletedStage } from "./chain-state.js";
 import { lifecycleCtxFor, skillStageRef } from "./events.js";
 import { nowIso } from "./internal-utils.js";
-import { isPanel } from "./judge.js";
+import { type AnyJudge, isPanel, type PanelJudge } from "./judge.js";
 import { panelVerdictChannel, panelVerdictDef } from "./loop-constructors.js";
 import {
 	advanceCursor,
@@ -87,6 +87,23 @@ export async function announceLoopStart(
  *  re-dispatches only the still-pending children. */
 const isPristine = (cursor: LoopCursor): boolean =>
 	cursor.index === 0 && cursor.accumulated.length === 0 && cursor.slots === undefined;
+
+/** Narrows `loop` to AssessLoop — the one bearing a `judge` field; the first
+ *  publishPanelVerdict guard routes through this so `loop.judge` type-checks
+ *  without a cast. */
+const isAssessLoop = (loop: LoopDef): loop is AssessLoop => loop.kind === "assess";
+
+/** The panel-closing transition — fires exactly once per round: the LAST member's
+ *  judge advance clears `cursor.panel` and flips to `produce` with the folded
+ *  verdict already on `lastVerdict`. The positive conjunction of the De Morgan
+ *  dual of the original guard. */
+const isPanelClosingTransition = (judge: AnyJudge, cursor: LoopCursor): judge is PanelJudge =>
+	isPanel(judge) && cursor.panel === undefined && cursor.phase === "produce";
+
+/** A live empty pull (iterate) loop — no units ran this invocation and none
+ *  accumulated — the one shape that earns the zero-unit warning. */
+const isZeroUnitPullLoop = (cursor: LoopCursor, loop: LoopDef): boolean =>
+	cursor.ranThisInvocation === 0 && cursor.accumulated.length === 0 && loop.kind === "iterate";
 
 /** Run (or resume) one loop generation. The caller fired onStageStart/onLoopStart. */
 export async function runLoop(
@@ -248,9 +265,9 @@ export function publishPanelVerdict(
 	cursor: LoopCursor,
 	state: RunContext["state"],
 ): void {
-	if (loop.kind !== "assess") return; // narrows `loop` to AssessLoop — no cast needed below
+	if (!isAssessLoop(loop)) return;
 	const judge = loop.judge;
-	if (!isPanel(judge) || cursor.panel !== undefined || cursor.phase !== "produce") return;
+	if (!isPanelClosingTransition(judge, cursor)) return;
 	if (cursor.lastVerdict === undefined) return; // defensive — the fold always set it
 	applyCompletedStage(
 		state,
@@ -303,7 +320,7 @@ async function finishLoop(
 	deps: LoopDeps,
 ): Promise<void> {
 	projectResult(e.loop, e.entryPair, cursor, run.state);
-	if (cursor.ranThisInvocation === 0 && cursor.accumulated.length === 0 && e.loop.kind === "iterate") {
+	if (isZeroUnitPullLoop(cursor, e.loop)) {
 		hostCtx.ui.notify(MSG_LOOP_ZERO_UNITS(e.skill), "warning");
 	}
 	await deps.advanceAfter(hostCtx, e.name, e.stageIdx, run);
