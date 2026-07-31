@@ -36,7 +36,7 @@ import { isPanel, type Judge, type PanelJudge, panelMembers, resolveJudgePrompt 
 import { MSG_LOOP_CURSOR_CORRUPT } from "./messages.js";
 import { finalizeOutput, isFailedOutput, type Output, type OutputMeta } from "./output.js";
 import { invariantPreflight } from "./stage-errors.js";
-import type { RunContext, RunState, StageSession, UnitRef, WorkflowHostContext } from "./types.js";
+import type { RunContext, RunState, StageSessionContext, UnitRef, WorkflowHostContext } from "./types.js";
 
 // ---------------------------------------------------------------------------
 // Cursor + entry vocabulary (kind-agnostic, shared live + fold)
@@ -96,21 +96,21 @@ export function buildLoopEntry(
  */
 export interface LoopDeps {
 	/** Dispatch one unit through the standard stage-session path. */
-	runStageSession: (ctx: WorkflowHostContext, s: StageSession) => Promise<void>;
+	executeStageSession: (ctx: WorkflowHostContext, s: StageSessionContext) => Promise<void>;
 	/**
 	 * Resume the chain after the loop finishes — receives the loop node's REAL
 	 * name. `Promise<unknown>` so the walk's `ChainOutcome`-returning composed
 	 * advance plugs in directly (the driver only awaits settlement).
 	 */
 	advanceAfter: (
-		curCtx: WorkflowHostContext,
+		hostCtx: WorkflowHostContext,
 		completedName: string,
 		completedIdx: number,
 		run: RunContext,
 	) => Promise<unknown>;
 	/** Re-capture the outcome's pre-stage snapshot per unit (ctx + stage name for the fail-soft warning). */
 	captureSnapshot: (
-		curCtx: WorkflowHostContext,
+		hostCtx: WorkflowHostContext,
 		stageName: string,
 		def: StageDef,
 		idx: number,
@@ -118,7 +118,7 @@ export interface LoopDeps {
 	) => Promise<unknown>;
 	/** Record the terminal failure when `onCap: "halt"` trips — verify-worded for verify stages. */
 	haltLoop: (
-		curCtx: WorkflowHostContext,
+		hostCtx: WorkflowHostContext,
 		run: RunContext,
 		e: Pick<LoopEntry, "name" | "def">,
 		count: number,
@@ -126,14 +126,14 @@ export interface LoopDeps {
 	) => Promise<void>;
 	/** Record a mid-flight run abort at the loop seam (FAIL_WORKFLOW_ABORTED).
 	 *  Keeps the drivers free of engine imports; wired to `recordAbortedAtSeam`. */
-	recordAborted: (curCtx: WorkflowHostContext, name: string, run: RunContext) => Promise<void>;
+	recordAborted: (hostCtx: WorkflowHostContext, name: string, run: RunContext) => Promise<void>;
 	/** Funnel an UNEXPECTED worker rejection (not a workflow halt) to a
 	 *  terminal-failure row + onStageError, terminating state WITHOUT re-throwing,
 	 *  so entry() resolves and onWorkflowEnd still fires. Wraps recordEntryThrow.
 	 *  The unit's identity (`unit` + its `skill`) lands as STRUCTURED row fields —
 	 *  the row's `stage` stays the parent graph identity. */
 	recordWorkerThrow: (
-		curCtx: WorkflowHostContext,
+		hostCtx: WorkflowHostContext,
 		unit: UnitRef,
 		skill: string,
 		run: RunContext,
@@ -353,7 +353,7 @@ export type NextStep =
  * key to `(index, memberIndex)` for assess panels — within one round all member
  * rows share `index`, so the member dimension is what tells them apart.
  */
-export interface GenerationGuardCtx {
+export interface GenerationGuardContext {
 	loop: LoopDef;
 	entryArtifact: Artifact | undefined;
 	cursor: LoopCursor;
@@ -414,7 +414,7 @@ export interface SequentialStrategy extends LoopKindStrategy {
 	 * (role, unitIndex) arithmetic matched. Returns false on drift. May invoke
 	 * user fns — a throw becomes drift in the caller (`guarded`).
 	 */
-	guardExpectation(gen: GenerationGuardCtx, row: UnitRowFacts, cwd: string, state: RunState): Promise<boolean>;
+	guardExpectation(gen: GenerationGuardContext, row: UnitRowFacts, cwd: string, state: RunState): Promise<boolean>;
 	/**
 	 * Resume re-entry pending-work probe — never dispatches; gates the
 	 * announce only. The iterate arm re-pulls `next()` at the cursor (the
@@ -475,7 +475,7 @@ const shouldCollectAll = (loop: LoopDef): boolean => loop.kind === "fanout" && !
  *  fan-out index (the same value `unit.index` carries). */
 const laneIndexFor = (loop: LoopDef, index: number): number | undefined => (loop.kind === "fanout" ? index : undefined);
 
-/** Factored unit StageSession — shared by the sequential `dispatchUnit` (loop.ts)
+/** Factored unit StageSessionContext — shared by the sequential `dispatchUnit` (loop.ts)
  *  and the parallel `dispatchUnitDetached` (loop-parallel.ts); differs only in
  *  `onSuccess` and the threaded `signal`. Populates the per-child execution
  *  controls (lane/model/signal). The sequential path passes `run.signal`
@@ -488,8 +488,8 @@ export function buildUnitSession(
 	run: RunContext,
 	snapshot: unknown,
 	signal: AbortSignal | undefined,
-	onSuccess: StageSession["onSuccess"],
-): StageSession {
+	onSuccess: StageSessionContext["onSuccess"],
+): StageSessionContext {
 	return {
 		cwd: run.cwd,
 		runId: run.runId,

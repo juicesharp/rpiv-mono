@@ -806,7 +806,7 @@ This determines `sessionPolicy`.
 | Nothing, and downstream must not inherit | `terminal()` | — | — |
 | Session memory only | Upstream `acts`, downstream `sessionPolicy: "continue"` | — (no outcome on upstream) | — |
 
-**When to author a custom collector.** The built-in collectors cover transcript scanning, tool-call observation, filesystem diffing, and git state. If the skill's output pattern doesn't map cleanly to any of these — for example, it writes a structured artifact with frontmatter you want to parse, or it produces an identifier embedded in a branch name — author a custom collector via `defineCollector` and an optional `defineParser`. Custom collectors are first-class; they receive the same `CollectCtx` and emit the same artifact shapes as built-ins.
+**When to author a custom collector.** The built-in collectors cover transcript scanning, tool-call observation, filesystem diffing, and git state. If the skill's output pattern doesn't map cleanly to any of these — for example, it writes a structured artifact with frontmatter you want to parse, or it produces an identifier embedded in a branch name — author a custom collector via `defineCollector` and an optional `defineParser`. Custom collectors are first-class; they receive the same `CollectContext` and emit the same artifact shapes as built-ins.
 
 ### Validation decision rules
 

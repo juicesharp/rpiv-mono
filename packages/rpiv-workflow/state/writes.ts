@@ -7,7 +7,7 @@
  * swapping the backend means touching all of `state/` (a `RunStore` port
  * is a known possible follow-up, deliberately deferred).
  *
- *   writeHeader              — boolean; the runner refuses the run start on failure.
+ *   appendHeader              — boolean; the runner refuses the run start on failure.
  *   appendStage              — boolean; allocator gates monotonic counters on it.
  *   appendRoutingDecision    — boolean; telemetry-not-state, dropped rows surface up.
  */
@@ -42,7 +42,7 @@ function tryAppendJsonl(cwd: string, runId: string, row: unknown): boolean {
  * while stage rows still land — so `runWorkflow` refuses the run start on
  * false, before anything has executed.
  */
-export function writeHeader(cwd: string, header: WorkflowHeader): boolean {
+export function appendHeader(cwd: string, header: WorkflowHeader): boolean {
 	return tryAppendJsonl(cwd, header.runId, header);
 }
 

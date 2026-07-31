@@ -14,7 +14,7 @@ import type { FailureText } from "./messages.js";
 
 /**
  * Thrown by a preflight check on failure; carries the recorded-row
- * attribution + notify/err messages so `runStageOrRecordFailure` can land
+ * attribution + notify/err messages so `dispatchStageOrRecordFailure` can land
  * a uniform JSONL row regardless of which slot tripped.
  *
  * `kind` annotates the violation class for diagnostics only — control

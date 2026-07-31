@@ -19,7 +19,7 @@ import type { RunContext, SessionContext, UnitRef } from "./types.js";
 /**
  * Minimal bookkeeping ctx. Structurally derived from `SessionContext` so any
  * future field added to the base lands here too — no duplicate
- * maintenance. Every `StageSession` (single stage or loop unit) collapses to this.
+ * maintenance. Every `StageSessionContext` (single stage or loop unit) collapses to this.
  *
  * `isScript` toggles the `onStageError` ref construction in
  * `recordTerminalFailure` from `skillStageRef` to `scriptStageRef` (the
@@ -35,7 +35,7 @@ import type { RunContext, SessionContext, UnitRef } from "./types.js";
  * lands verbatim on the JSONL row (`WorkflowStage.session`), which is what
  * session-backed resume dispatches on.
  */
-export type AuditCtx = Pick<
+export type AuditContext = Pick<
 	SessionContext,
 	| "cwd"
 	| "runId"
@@ -54,7 +54,7 @@ export type AuditCtx = Pick<
 
 /**
  * The read-only run identity (`workflow` name + `totalStages` + `trigger`)
- * threaded onto every `SessionContext` and `AuditCtx`. Single source for the
+ * threaded onto every `SessionContext` and `AuditContext`. Single source for the
  * `runIdentity` sub-literal that session/audit constructions across the runner
  * would otherwise re-spell by hand.
  */
@@ -63,7 +63,7 @@ export function runIdentityOf(run: RunContext): SessionContext["runIdentity"] {
 }
 
 /**
- * Build the `AuditCtx` `recordTerminalFailure` needs for a stage failure that
+ * Build the `AuditContext` `recordTerminalFailure` needs for a stage failure that
  * escaped a session (preflight halts, downstream throws, routing errors,
  * resume-time refusals). One source for the shape so every halt path records
  * a uniform row. `isScript: true` drops the `skill` field from the JSONL row
@@ -72,7 +72,7 @@ export function runIdentityOf(run: RunContext): SessionContext["runIdentity"] {
  * `session` is pinned to `null` here BY CONSTRUCTION: every caller of this
  * builder records a failure that escaped (or never reached) a session —
  * preflight halts, seam aborts, entry throws, routing errors, resume drift,
- * script halts. In-session writers build their `AuditCtx` via `auditFor`
+ * script halts. In-session writers build their `AuditContext` via `auditFor`
  * (sessions/sessions.ts), which threads the captured `SessionRef`.
  */
 export function auditCtxFor(
@@ -80,7 +80,7 @@ export function auditCtxFor(
 	stageName: string,
 	skill: string,
 	opts?: { isScript?: boolean; unit?: UnitRef; allocatedStageNumber?: number },
-): AuditCtx {
+): AuditContext {
 	return {
 		cwd: run.cwd,
 		runId: run.runId,

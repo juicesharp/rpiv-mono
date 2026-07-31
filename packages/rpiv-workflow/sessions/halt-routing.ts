@@ -15,7 +15,7 @@
  *     lifecycle signal borrows `unitEventOf` from here).
  */
 
-import { type AuditCtx, failedArgs, recordStopFailure, recordTerminalFailure, recordUnitHalt } from "../audit.js";
+import { type AuditContext, failedArgs, recordFatalFailure, recordStopFailure, recordUnitHalt } from "../audit.js";
 import { allocateStageNumber } from "../audit-rows.js";
 import { lifecycleCtxFromSession, skillStageRef } from "../events.js";
 import { nowIso } from "../internal-utils.js";
@@ -23,7 +23,7 @@ import { FAIL_VALIDATION_EXHAUSTED, MSG_STAGE_FAILED } from "../messages.js";
 import { failedOutput, type OutputMeta, outputMeta } from "../output.js";
 import type { SessionRef } from "../state/index.js";
 import type { StopSignal } from "../transcript.js";
-import type { StageSession, WorkflowHostContext } from "../types.js";
+import type { StageSessionContext, WorkflowHostContext } from "../types.js";
 import { unitEventOf } from "./success-persist.js";
 
 /**
@@ -48,7 +48,7 @@ type HaltReason =
  */
 export async function haltStageOrSoftHalt(
 	ctx: WorkflowHostContext,
-	s: StageSession,
+	s: StageSessionContext,
 	reason: HaltReason,
 	session: SessionRef | null,
 ): Promise<void> {
@@ -57,7 +57,7 @@ export async function haltStageOrSoftHalt(
 }
 
 /** Collect-all reason text per arm — byte-identical to the prior inline strings. */
-function softHaltReason(s: StageSession, reason: HaltReason): string {
+function softHaltReason(s: StageSessionContext, reason: HaltReason): string {
 	switch (reason.kind) {
 		case "stop":
 			return `${s.skill} stopped (${reason.stop})`;
@@ -73,7 +73,7 @@ function softHaltReason(s: StageSession, reason: HaltReason): string {
 /** Fail-fast terminal halt per arm — dispatches to the existing helpers, unchanged. */
 function failFastHalt(
 	ctx: WorkflowHostContext,
-	s: StageSession,
+	s: StageSessionContext,
 	reason: HaltReason,
 	session: SessionRef | null,
 ): Promise<void> {
@@ -93,7 +93,7 @@ function failFastHalt(
 
 async function haltStage(
 	ctx: WorkflowHostContext,
-	s: StageSession,
+	s: StageSessionContext,
 	stop: Exclude<StopSignal, "stop">,
 	session: SessionRef | null,
 ): Promise<void> {
@@ -102,11 +102,11 @@ async function haltStage(
 
 async function haltStageWithExtractionError(
 	ctx: WorkflowHostContext,
-	s: StageSession,
+	s: StageSessionContext,
 	message: string,
 	session: SessionRef | null,
 ): Promise<void> {
-	await recordTerminalFailure(
+	await recordFatalFailure(
 		ctx,
 		auditFor(s, session),
 		{ status: "failed", notifyMsg: MSG_STAGE_FAILED(s.skill), notifyLevel: "error", errMsg: message },
@@ -125,7 +125,7 @@ async function haltStageWithExtractionError(
  */
 async function softHaltUnit(
 	ctx: WorkflowHostContext,
-	s: StageSession,
+	s: StageSessionContext,
 	reason: string,
 	session: SessionRef | null,
 ): Promise<void> {
@@ -150,7 +150,7 @@ async function softHaltUnit(
 
 /** OutputMeta for a sentinel — same stage number the failed row carries, so the
  *  live sentinel and the resume-rebuilt one are byte-identical. */
-function outputMetaFor(s: StageSession): OutputMeta {
+function outputMetaFor(s: StageSessionContext): OutputMeta {
 	return outputMeta({
 		stage: s.stageName,
 		skill: s.skill,
@@ -163,11 +163,11 @@ function outputMetaFor(s: StageSession): OutputMeta {
 /** Exported to the `reattach.ts` companion — a promotion's validation-exhausted halt is identical to live. */
 export async function haltStageWithValidationFailure(
 	ctx: WorkflowHostContext,
-	s: StageSession,
+	s: StageSessionContext,
 	failureSummary: string,
 	session: SessionRef | null,
 ): Promise<void> {
-	await recordTerminalFailure(
+	await recordFatalFailure(
 		ctx,
 		auditFor(s, session),
 		failedArgs(FAIL_VALIDATION_EXHAUSTED(s.skill, failureSummary)),
@@ -175,7 +175,7 @@ export async function haltStageWithValidationFailure(
 	);
 }
 
-const auditFor = (s: StageSession, session: SessionRef | null): AuditCtx => ({
+const auditFor = (s: StageSessionContext, session: SessionRef | null): AuditContext => ({
 	cwd: s.cwd,
 	runId: s.runId,
 	state: s.state,
@@ -190,7 +190,7 @@ const auditFor = (s: StageSession, session: SessionRef | null): AuditCtx => ({
 	// began) — a failure row reuses it instead of burning a second number.
 	allocatedStageNumber: s.allocatedStageNumber,
 	// Host-injected persisted-session branch reader — the death-scene artifact
-	// writer reads it off AuditCtx. Absent for programmatic embedders / no
+	// writer reads it off AuditContext. Absent for programmatic embedders / no
 	// provider (the writer degrades silently). Conditional spread keeps the
 	// common case (reader present) byte-clean and the no-provider case undefined.
 	...(s.readSessionBranch ? { readSessionBranch: s.readSessionBranch } : {}),

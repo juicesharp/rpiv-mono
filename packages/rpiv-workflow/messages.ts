@@ -72,10 +72,10 @@ export const ERR_VALIDATE_RETRY_UNCHANGED = (skill: string) =>
  * Validation-retry mechanism-2 — a schema-validated `produces` stage was re-dispatched against
  * a worktree unchanged since its last validation failure at the same progress
  * point (`stagesCompleted` unchanged). A `FailureText` consumed by `failedArgs`
- * (the sessionless `recordTerminalFailure` descriptor, mirroring
- * `checkBackwardJumpGuard` in `packages/rpiv-workflow/runner/chain-advance.ts`).
+ * (the sessionless `recordFatalFailure` descriptor, mirroring
+ * `ensureBackwardJumpGuard` in `packages/rpiv-workflow/runner/chain-advance.ts`).
  * The terminal skip carries the failure memo for free through the shared
- * `recordTerminalFailure` writer hooks at `packages/rpiv-workflow/audit.ts:134`.
+ * `recordFatalFailure` writer hooks at `packages/rpiv-workflow/audit.ts:134`.
  */
 export const FAIL_VALIDATE_GATE_SKIPPED = (skill: string): FailureText => ({
 	toast: `✗ ${skill} re-dispatched with no observable change since its last validation failure — stopping workflow`,
@@ -180,8 +180,8 @@ export const MSG_CHAIN_ADVANCE_FAILED = (fromStage: string, reason: string) =>
 
 /**
  * Stage threw before it could record its own audit row — covers
- * `enforceSessionInvariants` violations, session-machinery errors, and any
- * other path that escapes `runStage` directly. Distinguished from
+ * `ensureLoopNotContinue` violations, session-machinery errors, and any
+ * other path that escapes `dispatchStage` directly. Distinguished from
  * `MSG_CHAIN_ADVANCE_FAILED` (which is about an edge throwing AFTER a stage
  * succeeded) — the user needs to see *which* stage failed, not which one
  * preceded the failure. Wording is deliberately neutral ("failed", not
@@ -389,7 +389,7 @@ export const MSG_NO_WORKFLOWS_REGISTERED =
  * Build via `failedArgs` / `abortedArgs` (or `stopFailureArgs`' switch, in
  * audit.ts) so a halt site can't mismatch status and notify level.
  */
-export interface TerminalFailureArgs {
+export interface FatalFailureArgs {
 	status: "failed" | "aborted";
 	notifyMsg: string;
 	notifyLevel: "warning" | "error";
@@ -402,27 +402,27 @@ export interface TerminalFailureArgs {
  * overload-resolution body for `failedArgs`/`abortedArgs` lives here once.
  * Modeled after `stopFailureArgs` (parameterize by status).
  */
-function terminalArgsOf(status: "failed" | "aborted", a: FailureText | string, b?: string): TerminalFailureArgs {
+function fatalArgsOf(status: "failed" | "aborted", a: FailureText | string, b?: string): FatalFailureArgs {
 	const f = typeof a === "string" ? { toast: a, error: b as string } : a;
 	return { status, notifyMsg: f.toast, notifyLevel: status === "failed" ? "error" : "warning", errMsg: f.error };
 }
 
 /**
- * Argument constructors for `recordTerminalFailure` — the
+ * Argument constructors for `recordFatalFailure` — the
  * `{status, notifyMsg, notifyLevel, errMsg}` quadruple every halt site used
  * to spell by hand. One per terminal status: failures notify at `"error"`,
  * aborts at `"warning"` (cooperative cancellation is expected, not
- * exceptional). 1-line facades over `terminalArgsOf` so the status/level
+ * exceptional). 1-line facades over `fatalArgsOf` so the status/level
  * pairing lives once.
  */
-export function failedArgs(failure: FailureText): TerminalFailureArgs;
-export function failedArgs(notifyMsg: string, errMsg: string): TerminalFailureArgs;
-export function failedArgs(a: FailureText | string, b?: string): TerminalFailureArgs {
-	return terminalArgsOf("failed", a, b);
+export function failedArgs(failure: FailureText): FatalFailureArgs;
+export function failedArgs(notifyMsg: string, errMsg: string): FatalFailureArgs;
+export function failedArgs(a: FailureText | string, b?: string): FatalFailureArgs {
+	return fatalArgsOf("failed", a, b);
 }
 
-export function abortedArgs(failure: FailureText): TerminalFailureArgs;
-export function abortedArgs(notifyMsg: string, errMsg: string): TerminalFailureArgs;
-export function abortedArgs(a: FailureText | string, b?: string): TerminalFailureArgs {
-	return terminalArgsOf("aborted", a, b);
+export function abortedArgs(failure: FailureText): FatalFailureArgs;
+export function abortedArgs(notifyMsg: string, errMsg: string): FatalFailureArgs;
+export function abortedArgs(a: FailureText | string, b?: string): FatalFailureArgs {
+	return fatalArgsOf("aborted", a, b);
 }

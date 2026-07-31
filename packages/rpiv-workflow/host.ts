@@ -157,7 +157,7 @@ export interface WorkflowHostContext {
 		/**
 		 * The fan-out unit index for this spawn, surfaced so a lane-aware host can
 		 * publish the child under a per-unit registry slot (rpiv-pi's lane dock/viewer).
-		 * Set by `openChild` from `StageSession.unit?.index`; undefined for a non-fan-out
+		 * Set by `openChild` from `StageSessionContext.unit?.index`; undefined for a non-fan-out
 		 * single stage (and for reattach/fork), which the host maps to its reserved
 		 * single-unit slot. Purely an observability hint — a non-lane host ignores it and
 		 * it NEVER affects execution.

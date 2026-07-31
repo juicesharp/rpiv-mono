@@ -33,6 +33,7 @@ import {
 } from "../messages.js";
 import { pruneOrphanedChildSessions } from "../sessions/index.js";
 import {
+	appendHeader,
 	type ClaimResult,
 	claimName,
 	generateRunId,
@@ -40,7 +41,6 @@ import {
 	releaseName,
 	STATE_SCHEMA_VERSION,
 	type WorkflowHeader,
-	writeHeader,
 } from "../state/index.js";
 import { childSessionsDir } from "../state/paths.js";
 import type { BranchEntry } from "../transcript.js";
@@ -49,7 +49,7 @@ import type { RunContext, RunWorkflowOptions, RunWorkflowResult } from "../types
 import { reconstructState } from "./resume.js";
 import { resumeRefusalError, selectResumeEntry } from "./resume-entry.js";
 import { buildRunContext, freshRunState } from "./run-context.js";
-import { runStageOrRecordFailure } from "./run-stage.js";
+import { dispatchStageOrRecordFailure } from "./run-stage.js";
 
 // ---------------------------------------------------------------------------
 // Shared tail — executeRun
@@ -232,7 +232,7 @@ export async function runWorkflow(ctx: WorkflowHostContext, options: RunWorkflow
 	// makes the run unlistable and unresumable while its stage rows land, so a
 	// failed append rejects the start and rolls back the name claim (the index
 	// must not point at a run that never existed).
-	const headerWritten = writeHeader(cwd, {
+	const headerWritten = appendHeader(cwd, {
 		runId,
 		workflow: workflow.name,
 		input: options.input,
@@ -269,7 +269,7 @@ export async function runWorkflow(ctx: WorkflowHostContext, options: RunWorkflow
 				trigger,
 			},
 		);
-		return await executeRun(execCtx, run, () => runStageOrRecordFailure(execCtx, workflow.start, 0, run));
+		return await executeRun(execCtx, run, () => dispatchStageOrRecordFailure(execCtx, workflow.start, 0, run));
 	} finally {
 		dispose?.(); // unsubscribe the onTerminalInput tap — leaks accumulate on the TUI otherwise
 	}

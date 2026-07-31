@@ -1,6 +1,6 @@
 /**
  * Stage resolution — derive a stage's dispatch identity ONCE, at the top of
- * `runStage`, so the rest of the pipeline switches on data instead of
+ * `dispatchStage`, so the rest of the pipeline switches on data instead of
  * re-probing the def's optional slots (`loop`/`verify`/`run`/`prompt`). The
  * old probe-the-optionals ladder needed a "slot ordering (load-bearing)"
  * comment; the ordering now lives in exactly one place (`stageModeOf`).
@@ -21,7 +21,7 @@ import type { RunContext } from "../types.js";
  */
 export type StageDispatch = "script" | "prompt" | "skill";
 
-/** The top-level dispatch slot `runStage` switches on. */
+/** The top-level dispatch slot `dispatchStage` switches on. */
 export type StageMode = "loop" | StageDispatch;
 
 export interface ResolvedStage {
@@ -50,7 +50,7 @@ export function resolveStage(currentName: string, idx: number, run: RunContext):
 	const def = run.workflow.stages[currentName];
 	if (!def) {
 		// validateWorkflow should catch this; defensive for tests bypassing validation.
-		throw new Error(`runStage: stage "${currentName}" referenced by edges but missing from workflow.stages`);
+		throw new Error(`dispatchStage: stage "${currentName}" referenced by edges but missing from workflow.stages`);
 	}
 	const loop = effectiveLoopOf(def);
 	const dispatch = dispatchOf(def);

@@ -1,7 +1,7 @@
 /**
  * Cycle guard — asserts ZERO value-import cycles across the package's
  * production modules. Locks in the Phase-3 SCC dissolution: the engine's
- * mutual recursions (runStage ↔ advanceChain, the loop driver) are composed
+ * mutual recursions (dispatchStage ↔ advanceChain, the loop driver) are composed
  * by injection (`ChainDeps` / `LoopDeps` in runner/run-stage.ts), never
  * as module cycles, and a regression here is a structural bug even when ESM
  * hoisting happens to make it run.

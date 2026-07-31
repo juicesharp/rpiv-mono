@@ -7,12 +7,12 @@
  * instead of catching. The injected runner owns the catch for
  * downstream-stage throws — the `ChainDeps` injection (the `LoopDeps`
  * pattern) keeps this module's imports strictly downward: the chain walk's
- * runStage ↔ advanceChain recursion is composed in run-stage.ts, not
+ * dispatchStage ↔ advanceChain recursion is composed in run-stage.ts, not
  * spelled as a module cycle.
  */
 
 import { takeRouteNote } from "../api.js";
-import { auditCtxFor, failedArgs, recordTerminalFailure } from "../audit.js";
+import { auditCtxFor, failedArgs, recordFatalFailure } from "../audit.js";
 import { resolveSkill } from "../chain-state.js";
 import { lifecycleCtxFor, skillStageRef } from "../events.js";
 import { nowIso } from "../internal-utils.js";
@@ -29,16 +29,16 @@ import { type ChainOutcome, finalizeWorkflow } from "./failure.js";
  * the mutual recursion of the chain walk lives in ONE composing module.
  */
 export interface ChainDeps {
-	runNext: (curCtx: WorkflowHostContext, name: string, idx: number, run: RunContext) => Promise<ChainOutcome>;
+	runNext: (hostCtx: WorkflowHostContext, name: string, idx: number, run: RunContext) => Promise<ChainOutcome>;
 }
 
 /**
  * Decomposed into three helpers — `auditRoutingDecision`,
- * `checkBackwardJumpGuard`, `haltOnRoutingError` — each owning one
+ * `ensureBackwardJumpGuard`, `haltOnRoutingError` — each owning one
  * structural concern.
  */
 export async function advanceChain(
-	curCtx: WorkflowHostContext,
+	hostCtx: WorkflowHostContext,
 	currentName: string,
 	idx: number,
 	run: RunContext,
@@ -53,33 +53,33 @@ export async function advanceChain(
 	const result = nextStage(run.workflow, currentName, { output: run.state.output, state: run.state });
 
 	if (result.kind === "err") {
-		return haltOnRoutingError(curCtx, run, currentName, result.reason);
+		return haltOnRoutingError(hostCtx, run, currentName, result.reason);
 	}
 
 	const fromRef = skillStageRef(currentName, idx + 1, resolveSkill(run.workflow.stages[currentName]!, currentName));
 
 	if (result.kind === "stop") {
-		await run.lifecycle.fire(curCtx, "onRoute", fromRef, "stop", lifecycleCtxFor(run));
-		return finalizeWorkflow(curCtx, run);
+		await run.lifecycle.fire(hostCtx, "onRoute", fromRef, "stop", lifecycleCtxFor(run));
+		return finalizeWorkflow(hostCtx, run);
 	}
 
 	const nextName = result.stage;
 	if (wasDecision) {
-		auditRoutingDecision(curCtx, run, idx, currentName, nextName);
-		const guard = await checkBackwardJumpGuard(curCtx, run, nextName);
+		auditRoutingDecision(hostCtx, run, idx, currentName, nextName);
+		const guard = await ensureBackwardJumpGuard(hostCtx, run, nextName);
 		if (guard !== "continue") return guard;
 	}
 
 	// Fire onRoute after the routing decision has been audited (when applicable),
 	// before the next stage runs. Deterministic auto-edges still fire so
 	// listeners see every transition.
-	await run.lifecycle.fire(curCtx, "onRoute", fromRef, nextName, lifecycleCtxFor(run));
+	await run.lifecycle.fire(hostCtx, "onRoute", fromRef, nextName, lifecycleCtxFor(run));
 
 	// deps.runNext owns the catch for throws out of the *next* stage, so the
 	// JSONL row records `nextName` (the stage that actually threw) rather than
 	// `currentName` (which would mis-attribute the failure to the prior stage
 	// that already completed successfully).
-	return deps.runNext(curCtx, nextName, idx + 1, run);
+	return deps.runNext(hostCtx, nextName, idx + 1, run);
 }
 
 /**
@@ -94,7 +94,7 @@ export async function advanceChain(
  * routing rows are pure telemetry).
  */
 function auditRoutingDecision(
-	curCtx: WorkflowHostContext,
+	hostCtx: WorkflowHostContext,
 	run: RunContext,
 	idx: number,
 	currentName: string,
@@ -116,7 +116,7 @@ function auditRoutingDecision(
 	});
 	if (!wrote) {
 		run.state.telemetry.droppedRoutingRows.push({ fromStageIndex, fromStage: currentName, decision: nextName });
-		curCtx.ui.notify(MSG_ROUTING_AUDIT_DROPPED(currentName, nextName), "warning");
+		hostCtx.ui.notify(MSG_ROUTING_AUDIT_DROPPED(currentName, nextName), "warning");
 	}
 }
 
@@ -150,8 +150,8 @@ function auditRoutingDecision(
  * Trip attribution targets `nextName` (the stage the guard refused to
  * re-enter), not the just-completed stage.
  */
-async function checkBackwardJumpGuard(
-	curCtx: WorkflowHostContext,
+async function ensureBackwardJumpGuard(
+	hostCtx: WorkflowHostContext,
 	run: RunContext,
 	nextName: string,
 ): Promise<"continue" | ChainOutcome> {
@@ -160,8 +160,8 @@ async function checkBackwardJumpGuard(
 	run.revisits.set(nextName, revisits);
 	run.state.telemetry.backwardJumps++;
 	if (revisits <= run.maxBackwardJumps) return "continue";
-	await recordTerminalFailure(
-		curCtx,
+	await recordFatalFailure(
+		hostCtx,
 		auditCtxFor(run, nextName, nextName),
 		failedArgs(FAIL_BACKWARD_JUMP_EXHAUSTED(nextName, revisits, run.maxBackwardJumps)),
 	);
@@ -174,13 +174,13 @@ async function checkBackwardJumpGuard(
  * `currentName` (the edge belongs to the just-completed stage).
  */
 async function haltOnRoutingError(
-	curCtx: WorkflowHostContext,
+	hostCtx: WorkflowHostContext,
 	run: RunContext,
 	currentName: string,
 	reason: string,
 ): Promise<ChainOutcome> {
-	await recordTerminalFailure(
-		curCtx,
+	await recordFatalFailure(
+		hostCtx,
 		auditCtxFor(run, currentName, currentName),
 		failedArgs(MSG_CHAIN_ADVANCE_FAILED(currentName, reason), reason),
 	);

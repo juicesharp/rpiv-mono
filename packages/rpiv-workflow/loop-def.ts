@@ -30,7 +30,7 @@ export interface Unit {
 	 * edges: a unit dispatches only after every unit it lists here has completed
 	 * (its slot filled). Absent/empty ⇒ a root (wave 0). A reference that matches
 	 * no unit's `id ?? label`, or any cycle, halts the stage at the live entry
-	 * (`validateUnitDeps`). Ignored by the sequential kinds (iterate/assess
+	 * (`ensureUnitDeps`). Ignored by the sequential kinds (iterate/assess
 	 * consume the prior unit, so ordering is implicit).
 	 */
 	deps?: readonly string[];

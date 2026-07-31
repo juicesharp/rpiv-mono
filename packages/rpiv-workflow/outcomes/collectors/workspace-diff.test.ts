@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { CollectCtx, SnapshotCtx } from "../../output-spec.js";
+import type { CollectContext, SnapshotContext } from "../../output-spec.js";
 import { type WorkspaceDiffSnapshot, workspaceDiffCollector } from "./workspace-diff.js";
 
 const hasGit = (() => {
@@ -22,7 +22,7 @@ const initRepo = (cwd: string): void => {
 	execSync("git commit --allow-empty -q -m initial", { cwd });
 };
 
-const snapshotCtxOf = (cwd: string): SnapshotCtx => ({
+const snapshotCtxOf = (cwd: string): SnapshotContext => ({
 	cwd,
 	runId: "test",
 	stageIndex: 0,
@@ -32,7 +32,7 @@ const snapshotCtxOf = (cwd: string): SnapshotCtx => ({
 const collectCtxOf = (
 	cwd: string,
 	snapshot: WorkspaceDiffSnapshot | undefined,
-): CollectCtx<WorkspaceDiffSnapshot | undefined> => ({
+): CollectContext<WorkspaceDiffSnapshot | undefined> => ({
 	...snapshotCtxOf(cwd),
 	branch: [],
 	branchOffset: undefined,

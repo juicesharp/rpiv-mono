@@ -16,7 +16,7 @@ import type { RunContext, WorkflowHostContext } from "../types.js";
 import { recordEntryThrow } from "./failure.js";
 import type { ReconstructResult } from "./resume.js";
 import { recordLoopDriftFailure, resumeLoopStage } from "./resume-loop.js";
-import { advance, buildLoopDeps, resumeStageWithSession, runStageOrRecordFailure } from "./run-stage.js";
+import { advance, buildLoopDeps, dispatchStageOrRecordFailure, resumeStageWithSession } from "./run-stage.js";
 
 /**
  * Pick the chain re-entry thunk from the trail trailer. Dispatch keys on the
@@ -83,11 +83,11 @@ export function selectResumeEntry(
 	// tests in resume.test.ts).
 	return last.session !== null
 		? () => resumeStageWithSession(ctx, last, idx, run)
-		: () => runStageOrRecordFailure(ctx, last.stage, idx, run);
+		: () => dispatchStageOrRecordFailure(ctx, last.stage, idx, run);
 }
 
 /**
- * Resume-entry counterpart of `runStageOrRecordFailure`'s catch. The live
+ * Resume-entry counterpart of `dispatchStageOrRecordFailure`'s catch. The live
  * chain reaches user fns (loop `next`/`done`/`feedForward`, judge prompts,
  * route predicates) only under that catch; the resume-loop and route-onward
  * entry thunks call the same fns directly, so a throw would otherwise escape
@@ -95,7 +95,7 @@ export function selectResumeEntry(
  * caller loses the result envelope.
  */
 async function guardResumeEntry(
-	curCtx: WorkflowHostContext,
+	hostCtx: WorkflowHostContext,
 	name: string,
 	run: RunContext,
 	entry: () => Promise<unknown>,
@@ -103,7 +103,7 @@ async function guardResumeEntry(
 	try {
 		await entry();
 	} catch (e) {
-		await recordEntryThrow(curCtx, name, run, e);
+		await recordEntryThrow(hostCtx, name, run, e);
 	}
 }
 

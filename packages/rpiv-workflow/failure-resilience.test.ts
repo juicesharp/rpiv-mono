@@ -166,7 +166,7 @@ describe("failure-resilience — FRD §6 incident replay", () => {
 		// --- Host injection: readSessionBranch via the execution provider ---
 		// Parallel to resolveModel (sourced `options.readSessionBranch ??
 		// provider.readSessionBranch` in detachExecutor); the death-scene writer
-		// reads it from AuditCtx at failure time. The provider is auto-reset in
+		// reads it from AuditContext at failure time. The provider is auto-reset in
 		// test/setup.ts beforeEach (__resetWorkflowExecutionHost).
 		const readSessionBranch = vi.fn(() => failedSessionBranch());
 
@@ -220,7 +220,7 @@ describe("failure-resilience — FRD §6 incident replay", () => {
 
 		// Register the provider so detachExecutor builds the executor from the
 		// chain ctx (the registerWorkflowExecutionHost test pattern) AND threads
-		// readSessionBranch onto RunContext → SessionContext → AuditCtx.
+		// readSessionBranch onto RunContext → SessionContext → AuditContext.
 		registerWorkflowExecutionHost({
 			createHost: () => ({ host: chain.ctx }),
 			readSessionBranch,

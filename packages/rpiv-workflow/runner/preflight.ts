@@ -1,7 +1,7 @@
 /**
  * Runtime preflights for the per-stage pipeline — every check that gates a
  * stage BEFORE its body dispatches. Each check throws `StagePreflightError`
- * on failure; `runStageOrRecordFailure` (run-stage.ts) catches and
+ * on failure; `dispatchStageOrRecordFailure` (run-stage.ts) catches and
  * records the JSONL row. Schema-backed input validation (the two POST-prompt
  * checks) lives beside this in `input-validation.ts`.
  *
@@ -26,10 +26,7 @@ import type { ResolvedStage } from "./resolve-stage.js";
  * The skill-path preflight sequence, in its load-bearing order:
  *   1. ensureUpstreamArtifact   — halt: missing inherited artifact.
  *   2. ensureNamedReads         — halt: a `reads:` name has no published entry.
- *   3. enforceSessionInvariants — invariant: authoring-time-knowable throws
- *      (precede the registry check so the structural violation surfaces
- *      regardless of the runtime registry).
- *   4. ensureSkillRegistered    — halt: skill not registered in Pi.
+ *   3. ensureSkillRegistered    — halt: skill not registered in Pi.
  * (Input-schema validation runs after prompt prep — see input-validation.ts.)
  */
 export function runSingleStagePreflights(stage: ResolvedStage, run: RunContext): void {
@@ -47,7 +44,7 @@ export function runSingleStagePreflights(stage: ResolvedStage, run: RunContext):
 export function ensureLoopNotContinue(stage: ResolvedStage): void {
 	if (stage.def.sessionPolicy !== "continue") return;
 	const reason =
-		`runStage: stage "${stage.name}" cannot combine loop with sessionPolicy "continue" — ` +
+		`dispatchStage: stage "${stage.name}" cannot combine loop with sessionPolicy "continue" — ` +
 		"each unit requires an isolated session";
 	throw invariantPreflight(stage.name, MSG_STAGE_THREW(stage.name, reason), reason);
 }

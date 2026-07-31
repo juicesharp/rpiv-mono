@@ -1,13 +1,13 @@
 /**
  * Tests for sessions.ts — the per-stage session orchestrator.
  *
- * Drives the sole public entry (`runStageSession`) against synthetic
- * StageSession objects so internals (retryUntilValid, runOutcome,
+ * Drives the sole public entry (`executeStageSession`) against synthetic
+ * StageSessionContext objects so internals (retryUntilValid, runOutcome,
  * readSessionOutcome, spawnSession, recordStageSuccess, halt helpers) are
  * exercised at a finer grain than runner.test.ts can reach via runWorkflow.
  *
  * Wiring strategy: every test allocates a temp cwd (audit writes JSONL there)
- * and feeds runStageSession either a `createMockSessionChain` ctx (fresh path,
+ * and feeds executeStageSession either a `createMockSessionChain` ctx (fresh path,
  * scripted branch) or a hand-rolled WorkflowHostContext (continue path, outer branch).
  * Stage nodes carry custom `outcome` functions that close over an attempt
  * counter — this is how we drive retry-loop scenarios without mutating the
@@ -27,13 +27,13 @@ import { fs as fsHandle } from "./handle.js";
 import { WorkflowAbortError } from "./internal-utils.js";
 import { FAIL_STAGE_NO_RESPONSE, FAIL_VALIDATION_EXHAUSTED, MSG_STAGE_FAILED } from "./messages.js";
 import type { Output } from "./output.js";
-import type { CollectCtx, Outcome } from "./output-spec.js";
+import type { CollectContext, Outcome } from "./output-spec.js";
 import { reconstructState } from "./runner/resume.js";
-import { runStageSession } from "./sessions/index.js";
-import { appendStage, STATE_SCHEMA_VERSION, type WorkflowHeader, writeHeader } from "./state/index.js";
+import { executeStageSession } from "./sessions/index.js";
+import { appendHeader, appendStage, STATE_SCHEMA_VERSION, type WorkflowHeader } from "./state/index.js";
 import { DEFAULT_TRIGGER } from "./triggers.js";
 import { typeboxSchema } from "./typebox-adapter.js";
-import type { RunState, StageSession, WorkflowHostContext } from "./types.js";
+import type { RunState, StageSessionContext, WorkflowHostContext } from "./types.js";
 
 /** Default test wiring for SessionContext's lifecycle + runIdentity fields. */
 const testLifecycle = () => new LifecycleDispatcher(undefined);
@@ -78,10 +78,12 @@ const stage = (overrides: Partial<StageDef> = {}): StageDef =>
 	}) as StageDef;
 
 /**
- * Build a StageSession with sensible defaults. Caller MUST supply cwd + state
+ * Build a StageSessionContext with sensible defaults. Caller MUST supply cwd + state
  * (shared with the JSONL audit write) and any stage/onSuccess overrides.
  */
-const stageSession = (overrides: Partial<StageSession> & Pick<StageSession, "cwd" | "state">): StageSession => ({
+const stageSession = (
+	overrides: Partial<StageSessionContext> & Pick<StageSessionContext, "cwd" | "state">,
+): StageSessionContext => ({
 	runId: "run-test",
 	prompt: "/skill:test arg",
 	stageName: "test",
@@ -163,7 +165,7 @@ describe("sessions — validation retry loop", () => {
 		const state = freshRunState();
 		const onSuccess = vi.fn(async () => {});
 
-		await runStageSession(
+		await executeStageSession(
 			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
@@ -187,7 +189,7 @@ describe("sessions — validation retry loop", () => {
 		const state = freshRunState();
 		const onSuccess = vi.fn(async () => {});
 
-		await runStageSession(
+		await executeStageSession(
 			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
@@ -218,7 +220,7 @@ describe("sessions — validation retry loop", () => {
 		const onSuccess = vi.fn(async () => {});
 		const onFailure = vi.fn();
 
-		await runStageSession(
+		await executeStageSession(
 			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
@@ -250,7 +252,7 @@ describe("sessions — validation retry loop", () => {
 		});
 		const outcome = scriptedOutcome([okPayload({ foo: 1 })]);
 
-		await runStageSession(
+		await executeStageSession(
 			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
@@ -279,7 +281,7 @@ describe("sessions — validation retry loop", () => {
 		const outcome = scriptedOutcome([okPayload({ foo: 1 })]);
 		const onFailure = vi.fn();
 
-		await runStageSession(
+		await executeStageSession(
 			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
@@ -326,7 +328,7 @@ describe("sessions — validation retry loop", () => {
 			},
 		);
 
-		await runStageSession(
+		await executeStageSession(
 			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
@@ -355,7 +357,7 @@ describe("sessions — validation retry loop", () => {
 		const state = freshRunState();
 		const onFailure = vi.fn();
 
-		await runStageSession(
+		await executeStageSession(
 			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
@@ -388,7 +390,7 @@ describe("sessions — validation retry loop", () => {
 			onStageEnd: (ref) => void refs.push({ event: "end", stageNumber: ref.stageNumber }),
 		});
 
-		await runStageSession(
+		await executeStageSession(
 			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
@@ -423,7 +425,7 @@ describe("sessions — validation retry loop", () => {
 		const state = freshRunState();
 		const onFailure = vi.fn();
 
-		await runStageSession(
+		await executeStageSession(
 			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
@@ -457,7 +459,7 @@ describe("sessions — validation retry loop", () => {
 		const state = freshRunState();
 		const onFailure = vi.fn();
 
-		await runStageSession(
+		await executeStageSession(
 			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
@@ -496,7 +498,7 @@ describe("sessions — validation retry loop", () => {
 			steps: [{ branch: [mockAssistantMessage("done")] }],
 		});
 
-		await runStageSession(
+		await executeStageSession(
 			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
@@ -541,7 +543,7 @@ describe("sessions — validation retry loop", () => {
 			},
 		};
 
-		await runStageSession(
+		await executeStageSession(
 			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
@@ -579,7 +581,7 @@ describe("sessions — validation retry loop", () => {
 			},
 		};
 
-		await runStageSession(
+		await executeStageSession(
 			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
@@ -627,7 +629,7 @@ describe("sessions — validation retry loop", () => {
 			},
 		};
 
-		await runStageSession(
+		await executeStageSession(
 			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
@@ -670,7 +672,7 @@ describe("sessions — outcome resolution", () => {
 		});
 		const explicit = scriptedOutcome([okPayload({ tag: "explicit" })]);
 
-		await runStageSession(
+		await executeStageSession(
 			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
@@ -689,10 +691,10 @@ describe("sessions — outcome resolution", () => {
 			steps: [{ branch: [mockAssistantMessage("done")] }],
 		});
 		// validateWorkflow rejects this at load — but this test goes
-		// straight through runStageSession, bypassing validation. The
+		// straight through executeStageSession, bypassing validation. The
 		// runner's defense-in-depth throw must surface.
 		await expect(
-			runStageSession(
+			executeStageSession(
 				chain.ctx as WorkflowHostContext,
 				stageSession({
 					cwd: tmpDir,
@@ -712,7 +714,7 @@ describe("sessions — outcome resolution", () => {
 		const state = freshRunState({ primaryArtifact: prior });
 		const onSuccess = vi.fn(async () => {});
 
-		await runStageSession(
+		await executeStageSession(
 			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
@@ -740,7 +742,7 @@ describe("sessions — outcome resolution", () => {
 		const state = freshRunState({ primaryArtifact: prior });
 		const onSuccess = vi.fn(async () => {});
 
-		await runStageSession(
+		await executeStageSession(
 			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
@@ -760,9 +762,9 @@ describe("sessions — outcome resolution", () => {
 });
 
 // ---------------------------------------------------------------------------
-// CollectCtx contract (readSessionOutcome + buildCollectCtx)
+// CollectContext contract (readSessionOutcome + buildCollectCtx)
 //
-// CollectCtx.branch is ALWAYS the full unsliced branch; branchOffset is
+// CollectContext.branch is ALWAYS the full unsliced branch; branchOffset is
 // ALWAYS the policy-derived offset (continue → captured stage offset;
 // fresh → undefined). Collectors slice on demand via the `branchOffset`
 // field. The initial production and the retry path emit the same offset
@@ -780,7 +782,7 @@ describe("sessions — collector ctx (always-unsliced branch + policy-derived of
 		rmSync(tmpDir, { recursive: true, force: true });
 	});
 
-	const recordingOutcomeOf = (results: ScriptedResult[], captured: CollectCtx[]): Outcome => {
+	const recordingOutcomeOf = (results: ScriptedResult[], captured: CollectContext[]): Outcome => {
 		let i = 0;
 		return {
 			collector: {
@@ -803,7 +805,7 @@ describe("sessions — collector ctx (always-unsliced branch + policy-derived of
 	};
 
 	it("continue policy: full unsliced branch + branchOffset = captured stage offset", async () => {
-		const captured: CollectCtx[] = [];
+		const captured: CollectContext[] = [];
 		const recordingOutcome = recordingOutcomeOf([okPayload({})], captured);
 
 		// Child branch (continue path) — contains prior-stage prefix + current-stage tail.
@@ -814,14 +816,14 @@ describe("sessions — collector ctx (always-unsliced branch + policy-derived of
 		// postStage scopes a continue stage's outcome by the offset on its session
 		// (`branchOffsetFor` returns the captured value for continue) — the mechanism
 		// the live continue body re-derives from the forked branch and the resume
-		// path takes from the persisted row. Driven here through `runStageSession`
+		// path takes from the persisted row. Driven here through `executeStageSession`
 		// with an explicit `branchOffset` to test the slicing in isolation.
 		const chain = createMockSessionChain({
 			cwd: tmpDir,
 			steps: [{ branch: childBranch }],
 		});
 
-		await runStageSession(
+		await executeStageSession(
 			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
@@ -845,7 +847,7 @@ describe("sessions — collector ctx (always-unsliced branch + policy-derived of
 		// captured offset — an asymmetric pair a future refactor could
 		// regress by touching one path and not the other. Both extractions
 		// now emit identical `(full branch, captured offset)`.
-		const captured: CollectCtx[] = [];
+		const captured: CollectContext[] = [];
 		// First call: schema-invalid → triggers retry. Subsequent: schema-valid.
 		const failThenPassOutcome = recordingOutcomeOf([okPayload({ foo: 0 }), okPayload({ foo: 2 })], captured);
 
@@ -858,7 +860,7 @@ describe("sessions — collector ctx (always-unsliced branch + policy-derived of
 			steps: [{ branch: childBranch }],
 		});
 
-		await runStageSession(
+		await executeStageSession(
 			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
@@ -883,12 +885,12 @@ describe("sessions — collector ctx (always-unsliced branch + policy-derived of
 	});
 
 	it("fresh policy: full branch + branchOffset undefined (handler forces undefined regardless of stage carry)", async () => {
-		const captured: CollectCtx[] = [];
+		const captured: CollectContext[] = [];
 		const recordingOutcome = recordingOutcomeOf([okPayload({})], captured);
 		const branch = [mockAssistantMessage("done")];
 		const chain = createMockSessionChain({ cwd: tmpDir, steps: [{ branch }] });
 
-		await runStageSession(
+		await executeStageSession(
 			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
@@ -932,7 +934,7 @@ describe("sessions — spawn primitive", () => {
 		});
 		const onFailure = vi.fn();
 
-		await runStageSession(
+		await executeStageSession(
 			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
@@ -976,7 +978,7 @@ describe("sessions — success persistence", () => {
 		// undefined because only produces stages advance the chain
 		// input.
 		const recorded = ".rpiv/artifacts/research/from-collector.md";
-		await runStageSession(
+		await executeStageSession(
 			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
@@ -1008,7 +1010,7 @@ describe("sessions — success persistence", () => {
 		const state = freshRunState();
 		const path = ".rpiv/artifacts/research/r.md";
 
-		await runStageSession(
+		await executeStageSession(
 			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
@@ -1038,7 +1040,7 @@ describe("sessions — success persistence", () => {
 		});
 		const state = freshRunState();
 
-		await runStageSession(
+		await executeStageSession(
 			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
@@ -1071,7 +1073,7 @@ describe("sessions — halt routing", () => {
 		const state = freshRunState();
 		const onFailure = vi.fn();
 
-		await runStageSession(
+		await executeStageSession(
 			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
@@ -1101,7 +1103,7 @@ describe("sessions — halt routing", () => {
 		const onFailure = vi.fn();
 
 		await expect(
-			runStageSession(
+			executeStageSession(
 				chain.ctx as WorkflowHostContext,
 				stageSession({
 					cwd: tmpDir,
@@ -1137,7 +1139,7 @@ describe("sessions — halt routing", () => {
 		const onFailure = vi.fn();
 		const onSuccess = vi.fn<(ctx: WorkflowHostContext, output: Output) => Promise<void>>(async () => {});
 
-		await runStageSession(
+		await executeStageSession(
 			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
@@ -1176,7 +1178,7 @@ describe("sessions — halt routing", () => {
 		const state = freshRunState();
 		const onFailure = vi.fn();
 
-		await runStageSession(
+		await executeStageSession(
 			chain.ctx as WorkflowHostContext,
 			stageSession({ cwd: tmpDir, state, onFailure, bashTimeoutStrikes: 0 }),
 		);
@@ -1193,7 +1195,7 @@ describe("sessions — halt routing", () => {
 		const state = freshRunState();
 		const onFailure = vi.fn();
 
-		await runStageSession(
+		await executeStageSession(
 			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
@@ -1229,7 +1231,7 @@ describe("sessions — halt routing", () => {
 		const onFailure = vi.fn();
 		const onSuccess = vi.fn<(ctx: WorkflowHostContext, output: Output) => Promise<void>>(async () => {});
 
-		await runStageSession(
+		await executeStageSession(
 			chain.ctx as WorkflowHostContext,
 			stageSession({ cwd: tmpDir, state, onSuccess, onFailure }),
 		);
@@ -1265,7 +1267,7 @@ describe("sessions — halt routing", () => {
 		const onFailure = vi.fn();
 		const onSuccess = vi.fn<(ctx: WorkflowHostContext, output: Output) => Promise<void>>(async () => {});
 
-		await runStageSession(
+		await executeStageSession(
 			chain.ctx as WorkflowHostContext,
 			stageSession({ cwd: tmpDir, state, bashTimeoutStrikes: 2, onSuccess, onFailure }),
 		);
@@ -1297,7 +1299,7 @@ describe("sessions — halt routing", () => {
 		const state = freshRunState();
 		const onFailure = vi.fn();
 
-		await runStageSession(
+		await executeStageSession(
 			chain.ctx as WorkflowHostContext,
 			stageSession({ cwd: tmpDir, state, onFailure, bashTimeoutStrikes: 2 }),
 		);
@@ -1317,7 +1319,7 @@ describe("sessions — halt routing", () => {
 		});
 		const state = freshRunState();
 
-		await runStageSession(
+		await executeStageSession(
 			chain.ctx as WorkflowHostContext,
 			stageSession({ cwd: tmpDir, state, onSuccess: async () => {} }),
 		);
@@ -1347,7 +1349,7 @@ describe("sessions — halt routing", () => {
 			stages: { test: { kind: "side-effect", sessionPolicy: "fresh" } },
 			edges: { test: "stop" },
 		};
-		writeHeader(tmpDir, header);
+		appendHeader(tmpDir, header);
 		appendStage(tmpDir, header.runId, {
 			stageNumber: 1,
 			stage: "test",
@@ -1401,7 +1403,7 @@ describe("sessions — contract-sourced output validation", () => {
 				},
 			},
 		],
-	]) satisfies StageSession["skillContracts"];
+	]) satisfies StageSessionContext["skillContracts"];
 
 	it("validates output against produces.data when the stage has no outputSchema", async () => {
 		const chain = createMockSessionChain({
@@ -1411,7 +1413,7 @@ describe("sessions — contract-sourced output validation", () => {
 		const state = freshRunState();
 		const onSuccess = vi.fn(async () => {});
 
-		await runStageSession(
+		await executeStageSession(
 			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
@@ -1435,7 +1437,7 @@ describe("sessions — contract-sourced output validation", () => {
 		const state = freshRunState();
 		const onSuccess = vi.fn(async () => {});
 
-		await runStageSession(
+		await executeStageSession(
 			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
@@ -1467,7 +1469,7 @@ describe("sessions — contract-sourced output validation", () => {
 
 		// Stage schema demands foo:2; contract would accept anything else. Output
 		// foo:1 must FAIL — proving the stage schema, not the contract, is used.
-		await runStageSession(
+		await executeStageSession(
 			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
@@ -1480,7 +1482,7 @@ describe("sessions — contract-sourced output validation", () => {
 							produces: { kind: "produces", data: { type: "object", additionalProperties: true } },
 						},
 					],
-				]) satisfies StageSession["skillContracts"],
+				]) satisfies StageSessionContext["skillContracts"],
 				stage: stage({
 					outputSchema: FOO_EQ_2_SCHEMA,
 					maxRetries: 1,
@@ -1503,7 +1505,7 @@ describe("sessions — contract-sourced output validation", () => {
 		const onSuccess = vi.fn(async () => {});
 
 		// No outputSchema, no contracts — output passes through unvalidated.
-		await runStageSession(
+		await executeStageSession(
 			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
@@ -1519,7 +1521,7 @@ describe("sessions — contract-sourced output validation", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Loop-unit session coverage (runStageSession with `unit` set)
+// Loop-unit session coverage (executeStageSession with `unit` set)
 // ---------------------------------------------------------------------------
 
 describe("sessions — loop unit session", () => {
@@ -1542,7 +1544,7 @@ describe("sessions — loop unit session", () => {
 		const onStageEnd = vi.fn();
 		const onSuccess = vi.fn<(ctx: WorkflowHostContext, output: Output) => Promise<void>>(async () => {});
 
-		await runStageSession(
+		await executeStageSession(
 			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
@@ -1599,7 +1601,7 @@ describe("sessions — loop unit session", () => {
 		const onStageError = vi.fn();
 		const onSuccess = vi.fn<(ctx: WorkflowHostContext, output: Output) => Promise<void>>(async () => {});
 
-		await runStageSession(
+		await executeStageSession(
 			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
@@ -1651,7 +1653,7 @@ describe("sessions — loop unit session", () => {
 		const onUnitEnd = vi.fn();
 		const onStageEnd = vi.fn();
 
-		await runStageSession(
+		await executeStageSession(
 			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
@@ -1698,7 +1700,10 @@ describe("sessions — session provenance capture", () => {
 			steps: [{ branch: [mockAssistantMessage("done")] }],
 		});
 
-		await runStageSession(chain.ctx as WorkflowHostContext, stageSession({ cwd: tmpDir, state: freshRunState() }));
+		await executeStageSession(
+			chain.ctx as WorkflowHostContext,
+			stageSession({ cwd: tmpDir, state: freshRunState() }),
+		);
 
 		const completed = readStageRows(tmpDir).find((r) => r.status === "completed")!;
 		expect(completed.session).toEqual(MOCK_REF);
@@ -1710,7 +1715,7 @@ describe("sessions — session provenance capture", () => {
 			steps: [{ branch: [mockAssistantMessage("prior"), mockAssistantMessage("done")] }],
 		});
 
-		await runStageSession(
+		await executeStageSession(
 			chain.ctx as WorkflowHostContext,
 			stageSession({
 				cwd: tmpDir,
@@ -1735,7 +1740,7 @@ describe("sessions — session provenance capture", () => {
 		});
 		const onFailure = vi.fn();
 
-		await runStageSession(
+		await executeStageSession(
 			chain.ctx as WorkflowHostContext,
 			stageSession({ cwd: tmpDir, state: freshRunState(), onFailure }),
 		);

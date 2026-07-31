@@ -27,7 +27,7 @@ import type { LoopCapRow, RoutingDecision, RunSummary, WorkflowHeader, WorkflowS
  * Reads every line, filters by shape (not position). Header has no
  * `stageNumber`; routing rows carry `type: "routing"`; stage rows have
  * `stageNumber: number` and no `type`. Starting at line 0 keeps the first
- * stage row recoverable even if a transient writeHeader failure left the
+ * stage row recoverable even if a transient appendHeader failure left the
  * file without its header.
  *
  * Each line's `JSON.parse` runs in its own try/catch — a truncated trailing

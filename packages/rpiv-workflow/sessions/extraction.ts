@@ -28,10 +28,10 @@ import {
 } from "../messages.js";
 import { sideEffectOutcome } from "../outcomes/index.js";
 import { finalizeOutput, type Output, outputMeta } from "../output.js";
-import type { CollectCtx, Outcome } from "../output-spec.js";
+import type { CollectContext, Outcome } from "../output-spec.js";
 import { effectiveOutputSchemaOf } from "../stage-identity.js";
 import { type BranchEntry, readBranch } from "../transcript.js";
-import type { StageSession, WorkflowSessionContext } from "../types.js";
+import type { StageSessionContext, WorkflowSessionContext } from "../types.js";
 import {
 	DEFAULT_VALIDATION_RETRIES,
 	DEFAULT_VALIDATION_RETRY_TIMEOUT_MS,
@@ -69,7 +69,7 @@ export type OutputProduction =
 /** Retry loop re-produces against the latest branch after each fix request. */
 export async function produceAndValidateOutput(
 	ctx: WorkflowSessionContext,
-	s: StageSession,
+	s: StageSessionContext,
 	branch: BranchEntry[],
 	branchOffset: number | undefined,
 ): Promise<OutputProduction> {
@@ -107,7 +107,7 @@ function resolveOutcome(stage: StageDef, skill: string): Outcome {
 			return sideEffectOutcome;
 		case "produces":
 			throw new Error(
-				`runStage: stage "${skill}" has kind "produces" but no \`outcome\` — ` +
+				`dispatchStage: stage "${skill}" has kind "produces" but no \`outcome\` — ` +
 					"there is no framework default for produces stages (the `.rpiv/artifacts/` layout is " +
 					"an rpiv-pi convention). Either wire `outcome: rpivArtifactMdOutcome` (from @juicesharp/rpiv-pi) " +
 					"or supply your own `{ collector, parser? }`.",
@@ -124,7 +124,11 @@ function resolveOutcome(stage: StageDef, skill: string): Outcome {
  * demand via the `branchOffset` field. Initial production and retry
  * production use the same offset value.
  */
-function buildCollectCtx(s: StageSession, branch: BranchEntry[], branchOffset: number | undefined): CollectCtx {
+function buildCollectCtx(
+	s: StageSessionContext,
+	branch: BranchEntry[],
+	branchOffset: number | undefined,
+): CollectContext {
 	return {
 		cwd: s.cwd,
 		runId: s.runId,
@@ -137,7 +141,10 @@ function buildCollectCtx(s: StageSession, branch: BranchEntry[], branchOffset: n
 	};
 }
 
-function wrapOutput(s: StageSession, parts: { kind: string; artifacts: readonly Artifact[]; data: unknown }): Output {
+function wrapOutput(
+	s: StageSessionContext,
+	parts: { kind: string; artifacts: readonly Artifact[]; data: unknown },
+): Output {
 	return finalizeOutput(
 		parts,
 		outputMeta({
@@ -167,7 +174,7 @@ type RunOutcomeResult = { kind: "ok"; output: Output } | Fatal;
  */
 async function runOutcome(
 	outcome: Outcome,
-	ctx: CollectCtx,
+	ctx: CollectContext,
 	finalize: (parts: { kind: string; artifacts: readonly Artifact[]; data: unknown }) => Output,
 ): Promise<RunOutcomeResult> {
 	let collected: Awaited<ReturnType<typeof outcome.collector.collect>>;
@@ -223,19 +230,19 @@ function enforceCompletionContract(
 	return { kind: "ok", output };
 }
 
-function shouldValidateOutput(s: StageSession, output: Output): boolean {
+function shouldValidateOutput(s: StageSessionContext, output: Output): boolean {
 	return !!(effectiveOutputSchemaOf(s.stage, s.stageName, s.skillContracts) && output.data !== undefined);
 }
 
 interface RetryDeps {
 	outcome: Outcome;
-	collectCtx: CollectCtx;
+	collectCtx: CollectContext;
 	finalize: (parts: { kind: string; artifacts: readonly Artifact[]; data: unknown }) => Output;
 }
 
 async function retryUntilValid(
 	ctx: WorkflowSessionContext,
-	s: StageSession,
+	s: StageSessionContext,
 	deps: RetryDeps,
 	initial: Output,
 ): Promise<OutputProduction> {
@@ -279,7 +286,7 @@ async function retryUntilValid(
 				// no contract re-check (both ran before the loop opened).
 				if (attempt === 0) return { kind: "ok", value: initial };
 				const retryBranch = readBranch(ctx);
-				const retryCtx: CollectCtx = { ...deps.collectCtx, branch: retryBranch };
+				const retryCtx: CollectContext = { ...deps.collectCtx, branch: retryBranch };
 				const reRun = await runOutcome(deps.outcome, retryCtx, deps.finalize);
 				if (reRun.kind === "fatal") return { kind: "aborted", abort: reRun };
 				const contract = enforceCompletionContract(s.stage, s.skill, reRun.output);
@@ -372,7 +379,7 @@ async function validateOrFatal(
 
 async function askAgentToFix(
 	ctx: WorkflowSessionContext,
-	s: StageSession,
+	s: StageSessionContext,
 	attempt: number,
 	failures: SchemaValidationFailure[],
 	timeoutMs: number,

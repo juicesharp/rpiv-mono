@@ -11,7 +11,7 @@
  * a degenerate assess loop; verify-aware code is presentation only
  * (role/label flavoring keyed on `e.def.verify` inside the assess strategy).
  *
- * Every unit runs `runStageSession` with a pre-decorated session: `stageName`
+ * Every unit runs `executeStageSession` with a pre-decorated session: `stageName`
  * carries the DISPLAY decoration (`decorateStage`), `unit` carries the
  * machine identity that lands in the row's `parent`/`role`/`unitId`/`unitIndex`
  * fields and the `onUnitStart`/`onUnitEnd` payloads.
@@ -19,7 +19,7 @@
  * Continuation-style: each unit's `onSuccess` advances the cursor and
  * re-enters `step`. Everything is awaited up the stack, so a throw from a
  * user fn (`units`/`next`/`feedForward`/`done`/judge prompt) propagates to
- * `runStageOrRecordFailure`'s single catch — a thrown `StagePreflightError`
+ * `dispatchStageOrRecordFailure`'s single catch — a thrown `StagePreflightError`
  * (the `haltPreflight` consumer contract) keeps its own attribution.
  *
  * Capture semantics (the post-refactor bug class — pinned):
@@ -67,14 +67,14 @@ import type { RunContext, WorkflowHostContext } from "./types.js";
  * aligned by sharing this one helper.
  */
 export async function announceLoopStart(
-	curCtx: WorkflowHostContext,
+	hostCtx: WorkflowHostContext,
 	run: RunContext,
 	e: Pick<LoopEntry, "stageIdx" | "name" | "skill" | "def" | "loop" | "units">,
 ): Promise<void> {
 	const ref = skillStageRef(e.name, e.stageIdx + 1, e.skill);
-	await run.lifecycle.fire(curCtx, "onStageStart", ref, lifecycleCtxFor(run));
+	await run.lifecycle.fire(hostCtx, "onStageStart", ref, lifecycleCtxFor(run));
 	await run.lifecycle.fire(
-		curCtx,
+		hostCtx,
 		"onLoopStart",
 		ref,
 		{ kind: presentedKindOf(e.def, e.loop), ...(e.units ? { units: e.units } : {}) },
@@ -90,7 +90,7 @@ const isPristine = (cursor: LoopCursor): boolean =>
 
 /** Run (or resume) one loop generation. The caller fired onStageStart/onLoopStart. */
 export async function runLoop(
-	curCtx: WorkflowHostContext,
+	hostCtx: WorkflowHostContext,
 	e: LoopEntry,
 	cursor: LoopCursor,
 	run: RunContext,
@@ -103,9 +103,9 @@ export async function runLoop(
 	// fold. iterate/assess keep the sequential step()/advanceCursor.
 	// (Live entry is always pristine; resume routes to runFanoutResume directly.)
 	if (e.loop.kind === "fanout" && loopStrategyOf(e.loop.kind).parallelizable && isPristine(cursor)) {
-		return runFanoutParallel(curCtx, e, cursor, cap, run, deps);
+		return runFanoutParallel(hostCtx, e, cursor, cap, run, deps);
 	}
-	await step(curCtx, e, cursor, cap, run, deps);
+	await step(hostCtx, e, cursor, cap, run, deps);
 }
 
 /**
@@ -116,7 +116,7 @@ export async function runLoop(
  * parallelizable).
  */
 function runFanoutParallel(
-	curCtx: WorkflowHostContext,
+	hostCtx: WorkflowHostContext,
 	e: LoopEntry,
 	cursor: LoopCursor,
 	cap: number,
@@ -124,8 +124,10 @@ function runFanoutParallel(
 	deps: LoopDeps,
 ): Promise<void> {
 	const active = Array.from({ length: Math.min(e.units!.length, cap) }, (_u, i) => i);
-	return runFanoutGeneration(curCtx, e, cursor, run, deps, active, () =>
-		e.units!.length > cap ? hitCap(curCtx, e, cursor, cap, cap, run, deps) : finishLoop(curCtx, e, cursor, run, deps),
+	return runFanoutGeneration(hostCtx, e, cursor, run, deps, active, () =>
+		e.units!.length > cap
+			? hitCap(hostCtx, e, cursor, cap, cap, run, deps)
+			: finishLoop(hostCtx, e, cursor, run, deps),
 	);
 }
 
@@ -151,14 +153,14 @@ export function pendingFanoutIndices(cursor: LoopCursor, total: number): number[
  *  `locateSessionFile` serve the SINGLE-STAGE session-backed reattach path
  *  (run-stage.ts), not this fanout re-dispatch. */
 export function runFanoutResume(
-	curCtx: WorkflowHostContext,
+	hostCtx: WorkflowHostContext,
 	e: LoopEntry,
 	cursor: LoopCursor,
 	run: RunContext,
 	deps: LoopDeps,
 	pending: readonly number[],
 ): Promise<void> {
-	return runFanoutGeneration(curCtx, e, cursor, run, deps, pending, () => finishLoop(curCtx, e, cursor, run, deps));
+	return runFanoutGeneration(hostCtx, e, cursor, run, deps, pending, () => finishLoop(hostCtx, e, cursor, run, deps));
 }
 
 // ---------------------------------------------------------------------------
@@ -166,7 +168,7 @@ export function runFanoutResume(
 // ---------------------------------------------------------------------------
 
 async function step(
-	curCtx: WorkflowHostContext,
+	hostCtx: WorkflowHostContext,
 	e: LoopEntry,
 	cursor: LoopCursor,
 	cap: number,
@@ -174,14 +176,14 @@ async function step(
 	deps: LoopDeps,
 ): Promise<void> {
 	const next = await sequentialStrategyOf(e.loop.kind).pull(e, cursor, cap, run);
-	if (next.kind === "complete") return finishLoop(curCtx, e, cursor, run, deps);
-	if (next.kind === "cap") return hitCap(curCtx, e, cursor, next.count, cap, run, deps);
-	return dispatchUnit(curCtx, e, cursor, next, cap, run, deps);
+	if (next.kind === "complete") return finishLoop(hostCtx, e, cursor, run, deps);
+	if (next.kind === "cap") return hitCap(hostCtx, e, cursor, next.count, cap, run, deps);
+	return dispatchUnit(hostCtx, e, cursor, next, cap, run, deps);
 }
 
 /** Dispatch one unit session; the onSuccess continuation advances the cursor and re-enters step. */
 async function dispatchUnit(
-	curCtx: WorkflowHostContext,
+	hostCtx: WorkflowHostContext,
 	e: LoopEntry,
 	cursor: LoopCursor,
 	u: Extract<NextStep, { kind: "unit" }>,
@@ -190,17 +192,17 @@ async function dispatchUnit(
 	deps: LoopDeps,
 ): Promise<void> {
 	await run.lifecycle.fire(
-		curCtx,
+		hostCtx,
 		"onUnitStart",
 		skillStageRef(e.name, e.stageIdx + 1, u.skill),
 		{ role: u.role, index: cursor.index, unitId: u.id, label: u.label, skill: u.skill },
 		lifecycleCtxFor(run),
 	);
 
-	const snapshot = await deps.captureSnapshot(curCtx, e.name, u.def, e.stageIdx, run);
+	const snapshot = await deps.captureSnapshot(hostCtx, e.name, u.def, e.stageIdx, run);
 
-	await deps.runStageSession(
-		curCtx,
+	await deps.executeStageSession(
+		hostCtx,
 		buildUnitSession(e, u, cursor.index, run, snapshot, run.signal, (freshCtx, output) => {
 			cursor.ranThisInvocation++;
 			// Fanout owns its channel + cursor through the index-addressed
@@ -294,7 +296,7 @@ export function projectResult(
  * progress channel); a resumed finished loop stays silent too.
  */
 async function finishLoop(
-	curCtx: WorkflowHostContext,
+	hostCtx: WorkflowHostContext,
 	e: LoopEntry,
 	cursor: LoopCursor,
 	run: RunContext,
@@ -302,14 +304,14 @@ async function finishLoop(
 ): Promise<void> {
 	projectResult(e.loop, e.entryPair, cursor, run.state);
 	if (cursor.ranThisInvocation === 0 && cursor.accumulated.length === 0 && e.loop.kind === "iterate") {
-		curCtx.ui.notify(MSG_LOOP_ZERO_UNITS(e.skill), "warning");
+		hostCtx.ui.notify(MSG_LOOP_ZERO_UNITS(e.skill), "warning");
 	}
-	await deps.advanceAfter(curCtx, e.name, e.stageIdx, run);
+	await deps.advanceAfter(hostCtx, e.name, e.stageIdx, run);
 }
 
 /** Cap trip: "halt" → terminal failure; "advance" → durable telemetry + event + projected advance. */
 async function hitCap(
-	curCtx: WorkflowHostContext,
+	hostCtx: WorkflowHostContext,
 	e: LoopEntry,
 	cursor: LoopCursor,
 	count: number,
@@ -317,15 +319,15 @@ async function hitCap(
 	run: RunContext,
 	deps: LoopDeps,
 ): Promise<void> {
-	if (e.loop.onCap === "halt") return deps.haltLoop(curCtx, run, e, count, cap);
+	if (e.loop.onCap === "halt") return deps.haltLoop(hostCtx, run, e, count, cap);
 	appendLoopCap(run.cwd, run.runId, { type: "loop-cap", stage: e.name, count, max: cap, ts: nowIso() });
-	curCtx.ui.notify(MSG_LOOP_CAP_ADVANCE(e.skill, cap), "warning");
+	hostCtx.ui.notify(MSG_LOOP_CAP_ADVANCE(e.skill, cap), "warning");
 	await run.lifecycle.fire(
-		curCtx,
+		hostCtx,
 		"onLoopCap",
 		skillStageRef(e.name, e.stageIdx + 1, e.skill),
 		{ kind: e.loop.kind, count, max: cap, policy: "advance" as const },
 		lifecycleCtxFor(run),
 	);
-	return finishLoop(curCtx, e, cursor, run, deps);
+	return finishLoop(hostCtx, e, cursor, run, deps);
 }

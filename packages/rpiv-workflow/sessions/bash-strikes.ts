@@ -22,7 +22,7 @@
  * (the resume fold's shape-filtered readers ignore it, like errMsg).
  */
 
-import type { StageSession } from "../types.js";
+import type { StageSessionContext } from "../types.js";
 
 const DEFAULT_BASH_TIMEOUT_STRIKES = 2; // one retry of a hung command is the operator-grade default.
 const MIN_BASH_TIMEOUT_STRIKES = 1; // at least one strike before any escalation.
@@ -87,12 +87,12 @@ export function bashTimeoutSteeringMessage(reason: string, strikesRemaining: num
 
 /**
  * Private per-activation strike budget: the mutable accounting (used counter +
- * reasons accumulator) that previously lived as two fields on `StageSession`.
- * Held in a module-level `WeakMap<StageSession, StrikeBudget>` so the budget
+ * reasons accumulator) that previously lived as two fields on `StageSessionContext`.
+ * Held in a module-level `WeakMap<StageSessionContext, StrikeBudget>` so the budget
  * survives `postStage`'s tail-recursive recovery self-call
  * (packages/rpiv-workflow/sessions/sessions.ts:134 — same `s` ⇒ same entry ⇒ the
  * incremented counter is visible on the recursive turn) and is fresh on every
- * new `StageSession` for free (no entry ⇒ zero strikes). `ceiling` is resolved
+ * new `StageSessionContext` for free (no entry ⇒ zero strikes). `ceiling` is resolved
  * ONCE at first consume from the immutable `s.bashTimeoutStrikes ?? BASH_TIMEOUT_STRIKES`
  * override and frozen into the budget.
  */
@@ -104,7 +104,7 @@ interface StrikeBudget {
 
 // `let` (not `const`): `__resetStrikeBudgets()` reassigns this to a fresh map —
 // `WeakMap` exposes no `.clear()`. Keyed by session identity (see StrikeBudget above).
-let strikeBudgets: WeakMap<StageSession, StrikeBudget> = new WeakMap();
+let strikeBudgets: WeakMap<StageSessionContext, StrikeBudget> = new WeakMap();
 
 /**
  * The ONLY creator of a `StrikeBudget`: lazily allocated on the first consume,
@@ -114,7 +114,7 @@ let strikeBudgets: WeakMap<StageSession, StrikeBudget> = new WeakMap();
  * because `bashTimeoutStrikeHistory` runs on every successful stage inside
  * `recordStageSuccess` (packages/rpiv-workflow/sessions/success-persist.ts:49).
  */
-function budgetForConsume(s: StageSession): StrikeBudget {
+function budgetForConsume(s: StageSessionContext): StrikeBudget {
 	let b = strikeBudgets.get(s);
 	if (!b) {
 		b = { ceiling: s.bashTimeoutStrikes ?? BASH_TIMEOUT_STRIKES, used: 0, reasons: [] };
@@ -133,7 +133,7 @@ function budgetForConsume(s: StageSession): StrikeBudget {
  * field-on-session implementation; the `reasons` lazy-init collapses to a plain
  * `push` (the budget initializes `reasons: []`).
  */
-export function consumeBashStrike(s: StageSession, reason: string): boolean {
+export function consumeBashStrike(s: StageSessionContext, reason: string): boolean {
 	const b = budgetForConsume(s);
 	if (b.used >= b.ceiling) return false; // exhausted — mutate nothing; caller escalates.
 	b.used += 1;
@@ -149,7 +149,7 @@ export function consumeBashStrike(s: StageSession, reason: string): boolean {
  * override (the former `bashStrikeCeiling` helper's job — removed — moved into
  * the budget's `ceiling` field + this fallback), allocating nothing.
  */
-export function bashStrikesRemaining(s: StageSession): number {
+export function bashStrikesRemaining(s: StageSessionContext): number {
 	const b = strikeBudgets.get(s);
 	const ceiling = b?.ceiling ?? s.bashTimeoutStrikes ?? BASH_TIMEOUT_STRIKES;
 	return Math.max(0, ceiling - (b?.used ?? 0));
@@ -163,7 +163,7 @@ export function bashStrikesRemaining(s: StageSession): number {
  * construction (invariant 2's 1st layer), not just by the `used <= 0` guard.
  * `reasons` lists each consumed strike's host reason, in consumption order.
  */
-export function bashTimeoutStrikeHistory(s: StageSession): { count: number; reasons: string[] } | undefined {
+export function bashTimeoutStrikeHistory(s: StageSessionContext): { count: number; reasons: string[] } | undefined {
 	const b = strikeBudgets.get(s);
 	if (!b || b.used <= 0) return undefined;
 	return { count: b.used, reasons: b.reasons };

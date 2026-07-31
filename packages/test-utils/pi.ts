@@ -266,7 +266,7 @@ export function createMockCommandCtx(opts: MockCtxOptions = {}): MockWorkflowCtx
 }
 
 // ---------------------------------------------------------------------------
-// Session chain fixture — for tests that drive runWorkflow/runStage/runImplementPhases
+// Session chain fixture — for tests that drive runWorkflow/dispatchStage/runImplementPhases
 // across multiple spawnChild() calls. The outer ctx and every child share a
 // single scripted queue; pop order is the order in which the production code
 // spawns children. The parent ctx STAYS VALID — children never swap it out.

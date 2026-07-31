@@ -3,11 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-	type AuditCtx,
+	type AuditContext,
 	decorateStage,
 	failAuditWrite,
 	recordCancellation,
-	recordTerminalFailure,
+	recordFatalFailure,
 	recordUnitHalt,
 	unitRowFields,
 } from "./audit.js";
@@ -55,12 +55,12 @@ describe("unitRowFields", () => {
 });
 
 // ---------------------------------------------------------------------------
-// recordTerminalFailure — the failure row's append is checked: a dropped
+// recordFatalFailure — the failure row's append is checked: a dropped
 // failure row makes the trail's tail read "completed", so a later resume would
 // route onward past the stage that actually failed.
 // ---------------------------------------------------------------------------
 
-describe("recordTerminalFailure", () => {
+describe("recordFatalFailure", () => {
 	let tmpDir: string;
 
 	beforeEach(() => {
@@ -94,7 +94,7 @@ describe("recordTerminalFailure", () => {
 		return { ctx, notifications };
 	};
 
-	const auditFor = (cwd: string, state: RunState): AuditCtx => ({
+	const auditFor = (cwd: string, state: RunState): AuditContext => ({
 		session: null,
 		cwd,
 		runId: "run-1",
@@ -109,7 +109,7 @@ describe("recordTerminalFailure", () => {
 		const { ctx, notifications } = makeCtx();
 		const state = freshState();
 
-		await recordTerminalFailure(ctx, auditFor(tmpDir, state), {
+		await recordFatalFailure(ctx, auditFor(tmpDir, state), {
 			status: "failed",
 			notifyMsg: "boom",
 			notifyLevel: "error",
@@ -147,7 +147,7 @@ describe("recordTerminalFailure", () => {
 		const { ctx } = makeCtx();
 		const state = freshState();
 
-		await recordTerminalFailure(ctx, auditFor(tmpDir, state), {
+		await recordFatalFailure(ctx, auditFor(tmpDir, state), {
 			status: "aborted",
 			notifyMsg: "stopped",
 			notifyLevel: "warning",
@@ -163,7 +163,7 @@ describe("recordTerminalFailure", () => {
 			const { ctx, notifications } = makeCtx();
 			const state = freshState();
 
-			await recordTerminalFailure(ctx, auditFor("/dev/null/impossible", state), {
+			await recordFatalFailure(ctx, auditFor("/dev/null/impossible", state), {
 				status: "failed",
 				notifyMsg: "boom",
 				notifyLevel: "error",
@@ -238,7 +238,7 @@ describe("failure-memo propagation", () => {
 		return { ctx, notifications };
 	};
 
-	const auditFor = (state: RunState, unit?: UnitRef): AuditCtx => ({
+	const auditFor = (state: RunState, unit?: UnitRef): AuditContext => ({
 		session: null,
 		cwd: tmpDir,
 		runId: "run-1",
@@ -250,11 +250,11 @@ describe("failure-memo propagation", () => {
 		...(unit ? { unit } : {}),
 	});
 
-	it("recordTerminalFailure appends exactly ONE memo whose errMsg matches the row", async () => {
+	it("recordFatalFailure appends exactly ONE memo whose errMsg matches the row", async () => {
 		const { ctx } = makeCtx();
 		const state = freshState();
 
-		await recordTerminalFailure(ctx, auditFor(state), {
+		await recordFatalFailure(ctx, auditFor(state), {
 			status: "failed",
 			notifyMsg: "boom",
 			notifyLevel: "error",
@@ -270,7 +270,7 @@ describe("failure-memo propagation", () => {
 		const state = freshState();
 		const audit = auditFor(state);
 
-		await recordTerminalFailure(ctx, audit, {
+		await recordFatalFailure(ctx, audit, {
 			status: "failed",
 			notifyMsg: "first",
 			notifyLevel: "error",
@@ -278,8 +278,8 @@ describe("failure-memo propagation", () => {
 		});
 		// A second sibling reaches the writer near-simultaneously — termination is
 		// no longer "running", so the first-failure-wins guard returns early BEFORE
-		// writeFailureRow + appendFailureMemo. The memo list stays at one entry.
-		await recordTerminalFailure(ctx, audit, {
+		// recordFailureRow + appendFailureMemo. The memo list stays at one entry.
+		await recordFatalFailure(ctx, audit, {
 			status: "failed",
 			notifyMsg: "second",
 			notifyLevel: "error",

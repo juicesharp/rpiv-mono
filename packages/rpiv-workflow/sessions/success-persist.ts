@@ -14,7 +14,7 @@ import { persistStageSuccess, rollLastSession } from "../audit-rows.js";
 import { lifecycleCtxFromSession, skillStageRef, type UnitEvent } from "../events.js";
 import type { Output } from "../output.js";
 import type { SessionRef } from "../state/index.js";
-import type { StageSession, WorkflowHostContext } from "../types.js";
+import type { StageSessionContext, WorkflowHostContext } from "../types.js";
 import { bashTimeoutStrikeHistory } from "./bash-strikes.js";
 
 /**
@@ -39,7 +39,7 @@ import { bashTimeoutStrikeHistory } from "./bash-strikes.js";
  */
 export async function recordStageSuccess(
 	ctx: WorkflowHostContext,
-	s: StageSession,
+	s: StageSessionContext,
 	output: Output,
 	session: SessionRef | null,
 ): Promise<boolean> {
@@ -89,7 +89,7 @@ export async function recordStageSuccess(
 }
 
 /** Public `UnitEvent` payload from the session's `UnitRef` + dispatched skill. */
-export function unitEventOf(s: StageSession): UnitEvent {
+export function unitEventOf(s: StageSessionContext): UnitEvent {
 	const u = s.unit!;
 	return { role: u.role, index: u.index, unitId: u.id, label: u.label, skill: s.skill };
 }

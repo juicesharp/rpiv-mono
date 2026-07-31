@@ -6,9 +6,9 @@
  * the `onStageError` lifecycle fire.
  *
  * Depends on audit-rows + audit-ctx + state + messages + events + handle.
- * The pure ctx half (`AuditCtx`, `runIdentityOf`, `auditCtxFor`,
+ * The pure ctx half (`AuditContext`, `runIdentityOf`, `auditCtxFor`,
  * `currentStageRef`) now lives in `audit-ctx.ts`; the terminal-args builders
- * (`failedArgs`/`abortedArgs`/`TerminalFailureArgs`) live in `messages.ts`.
+ * (`failedArgs`/`abortedArgs`/`FatalFailureArgs`) live in `messages.ts`.
  * Both are re-exported below so existing audit-layer consumers keep one
  * import site; new code may import `audit-ctx.ts` / `messages.ts` directly.
  * Shared by the runner + sessions; neither imports back. Pure row
@@ -16,7 +16,7 @@
  * `audit-rows.ts`.
  */
 
-import type { AuditCtx } from "./audit-ctx.js";
+import type { AuditContext } from "./audit-ctx.js";
 import { recordStage, unitRowFields } from "./audit-rows.js";
 import { writeDeathSceneArtifact } from "./death-scene.js";
 import { lifecycleCtxFromSession, scriptStageRef, skillStageRef } from "./events.js";
@@ -30,12 +30,12 @@ import {
 	FAIL_STAGE_NO_RESPONSE,
 	FAIL_STAGE_TOOL_STALLED,
 	FAIL_STAGE_TRUNCATED,
+	type FatalFailureArgs,
 	failedArgs,
 	MSG_FAILURE_ROW_DROPPED,
 	MSG_PARTIAL_ARTIFACTS,
 	MSG_STAGE_FAILED,
 	MSG_WORKFLOW_CANCELLED,
-	type TerminalFailureArgs,
 } from "./messages.js";
 import { listArtifacts } from "./state/index.js";
 import type { StopSignal } from "./transcript.js";
@@ -43,20 +43,20 @@ import type { RunState, RunTermination, WorkflowHostContext } from "./types.js";
 
 // Preserving barrel — the pre-split import surface is unchanged. Consumers
 // (`sessions/`, `runner/`, `loop-kinds`, `loop-parallel`, `internal.ts`,
-// `audit.test.ts`) keep importing `AuditCtx`/`runIdentityOf`/`auditCtxFor`/
-// `currentStageRef`/`failedArgs`/`abortedArgs`/`TerminalFailureArgs` from
+// `audit.test.ts`) keep importing `AuditContext`/`runIdentityOf`/`auditCtxFor`/
+// `currentStageRef`/`failedArgs`/`abortedArgs`/`FatalFailureArgs` from
 // "./audit.js" with no edit. Symbols now live in their post-split homes:
-export type { AuditCtx } from "./audit-ctx.js";
+export type { AuditContext } from "./audit-ctx.js";
 export { auditCtxFor, currentStageRef, runIdentityOf } from "./audit-ctx.js";
 // Re-export the persistence half so existing audit-layer consumers keep one
 // import site; new code may import audit-rows.js directly.
 export { allocateStageNumber, decorateStage, recordStage, unitRowFields } from "./audit-rows.js";
-export type { TerminalFailureArgs } from "./messages.js";
+export type { FatalFailureArgs } from "./messages.js";
 export { abortedArgs, failedArgs } from "./messages.js";
 
 /**
  * `state.termination` mutator. Every terminal path — completion
- * (`finalizeWorkflow`), failure/abort (`recordTerminalFailure`), cancellation
+ * (`finalizeWorkflow`), failure/abort (`recordFatalFailure`), cancellation
  * (`recordCancellation`), audit-write halts — lands its outcome through here,
  * so the union can never be half-set and a new outcome variant has one
  * write-site to thread through. Last write wins (a failure recorded after an
@@ -92,7 +92,7 @@ export function notifyPartialArtifacts(ctx: WorkflowHostContext, cwd: string, ru
 /**
  * Terminal/halt/cancellation row-write authority. `recordStage` + the
  * dropped-row guard (notify + telemetry) — the side effects the three writers
- * (`recordTerminalFailure` / `recordUnitHalt` / `recordCancellation`) share.
+ * (`recordFatalFailure` / `recordUnitHalt` / `recordCancellation`) share.
  * Each caller builds its row fields (terminal `args.status`; halt
  * `collected:true`; cancellation `status:"skipped"`) and delegates the write +
  * guard here, so the dropped-failure-row invariant — a dropped row corrupts
@@ -106,9 +106,9 @@ export function notifyPartialArtifacts(ctx: WorkflowHostContext, cwd: string, ru
  * the graph-sink `edge.mode: "terminal"` (loop-constructors.ts). See the
  * glossary on `stage-def.ts`'s `terminal` export.
  */
-function writeFailureRow(
+function recordFailureRow(
 	ctx: WorkflowHostContext,
-	audit: AuditCtx,
+	audit: AuditContext,
 	row: Parameters<typeof recordStage>[2],
 ): number | undefined {
 	const written = recordStage(audit.cwd, audit.runId, row, audit.state, audit.allocatedStageNumber);
@@ -123,8 +123,8 @@ function writeFailureRow(
  * Record the two failure-forensics sidecars for a failed stage/unit — the
  * in-memory failure memo (`appendFailureMemo`) and the death-scene `.md`
  * artifact (`writeDeathSceneArtifact`) — immediately after the failure-row
- * write. Peer helper to `writeFailureRow`; the two terminal writers
- * (`recordTerminalFailure`, `recordUnitHalt`) both delegate here.
+ * write. Peer helper to `recordFailureRow`; the two terminal writers
+ * (`recordFatalFailure`, `recordUnitHalt`) both delegate here.
  *
  * Fail-soft: the death-scene artifact reads the just-failed session's persisted
  * JSONL via the host-injected `audit.readSessionBranch`; skips silently when
@@ -132,15 +132,15 @@ function writeFailureRow(
  * already-persisted failure row is never masked. The memo append is in-memory
  * only and does not throw.
  */
-function recordFailureForensics(ctx: WorkflowHostContext, audit: AuditCtx, errMsg: string): void {
+function recordFailureForensics(ctx: WorkflowHostContext, audit: AuditContext, errMsg: string): void {
 	appendFailureMemo(audit.state, audit, errMsg);
 	writeDeathSceneArtifact(ctx, audit, errMsg);
 }
 
-export async function recordTerminalFailure(
+export async function recordFatalFailure(
 	ctx: WorkflowHostContext,
-	audit: AuditCtx,
-	args: TerminalFailureArgs,
+	audit: AuditContext,
+	args: FatalFailureArgs,
 	onFailure?: (ctx: WorkflowHostContext) => void,
 ): Promise<void> {
 	// First-failure-wins: under parallel fanout dispatch with
@@ -151,7 +151,7 @@ export async function recordTerminalFailure(
 	// Harmless on the sequential path (always `"running"` at the
 	// first and only terminal failure).
 	if (audit.state.termination.status !== "running") return;
-	writeFailureRow(ctx, audit, {
+	recordFailureRow(ctx, audit, {
 		stage: audit.stageName,
 		// Script-stage failure rows omit `skill` (the row split landed in A.0);
 		// skill rows continue to carry it. `undefined` is dropped by JSON.stringify.
@@ -177,15 +177,15 @@ export async function recordTerminalFailure(
 /**
  * Persist a NON-TERMINAL failed unit row (collect-all fanout): the unit halted,
  * but the run survives and the synthesis stage sees a failed slot. Mirrors
- * `recordTerminalFailure`'s `recordStage` write (same unit fields, same
+ * `recordFatalFailure`'s `recordStage` write (same unit fields, same
  * pre-allocated number) WITHOUT `terminate()` (the only state mutation it skips)
  * and WITHOUT the `onStageError` fire (this is not a hard fail). The row carries
  * `collected: true` so the resume fold can tell it apart from a hard
- * `recordTerminalFailure` row (byte-identical otherwise) and rebuild the
+ * `recordFatalFailure` row (byte-identical otherwise) and rebuild the
  * `failedOutput` sentinel by `unitIndex` instead of re-dispatching it.
  */
-export function recordUnitHalt(ctx: WorkflowHostContext, audit: AuditCtx, errMsg: string): void {
-	writeFailureRow(ctx, audit, {
+export function recordUnitHalt(ctx: WorkflowHostContext, audit: AuditContext, errMsg: string): void {
+	recordFailureRow(ctx, audit, {
 		stage: audit.stageName,
 		skill: audit.isScript ? undefined : audit.skill,
 		status: "failed",
@@ -206,15 +206,15 @@ export function recordUnitHalt(ctx: WorkflowHostContext, audit: AuditCtx, errMsg
  */
 export async function recordStopFailure(
 	ctx: WorkflowHostContext,
-	audit: AuditCtx,
+	audit: AuditContext,
 	stop: Exclude<StopSignal, "stop">,
 	errorMessage: string,
 	onFailure?: (ctx: WorkflowHostContext) => void,
 ): Promise<void> {
-	await recordTerminalFailure(ctx, audit, stopFailureArgs(audit.skill, stop, errorMessage), onFailure);
+	await recordFatalFailure(ctx, audit, stopFailureArgs(audit.skill, stop, errorMessage), onFailure);
 }
 
-function stopFailureArgs(skill: string, stop: Exclude<StopSignal, "stop">, errorMessage: string): TerminalFailureArgs {
+function stopFailureArgs(skill: string, stop: Exclude<StopSignal, "stop">, errorMessage: string): FatalFailureArgs {
 	switch (stop) {
 		case "aborted":
 			return abortedArgs(FAIL_STAGE_ABORTED(skill));
@@ -231,16 +231,16 @@ function stopFailureArgs(skill: string, stop: Exclude<StopSignal, "stop">, error
 	}
 }
 
-export function recordCancellation(ctx: WorkflowHostContext, audit: AuditCtx): void {
+export function recordCancellation(ctx: WorkflowHostContext, audit: AuditContext): void {
 	// Cancellation is a first-class termination outcome: the canonical in-memory
 	// name is `RunTermination.status: "cancelled"` (types.ts), but the JSONL row
 	// is written with the FROZEN `StageStatus: "skipped"` (state/state.ts) — a
 	// deliberate split (the row value is a versioned on-disk contract; renaming
 	// it would break resume + every past-run reader). THIS is the sole writer of
 	// a `"skipped"` row. `errMsg` is mirrored into the row so post-mortems work
-	// from the trail alone (same posture as `recordTerminalFailure`).
+	// from the trail alone (same posture as `recordFatalFailure`).
 	const errMsg = `${audit.skill} cancelled by user`;
-	writeFailureRow(ctx, audit, {
+	recordFailureRow(ctx, audit, {
 		stage: audit.stageName,
 		skill: audit.skill,
 		status: "skipped",

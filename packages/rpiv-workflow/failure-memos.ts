@@ -9,11 +9,11 @@
  * is `""` ⇒ byte-identical prompt to a clean run.
  *
  * Leaf module: type-only imports of `RunState`/`FailureMemo` (types.js) and
- * `AuditCtx` (audit-ctx.js), value import of `nowIso` (internal-utils.js).
+ * `AuditContext` (audit-ctx.js), value import of `nowIso` (internal-utils.js).
  * No back-edges — the value-import DAG stays acyclic.
  */
 
-import type { AuditCtx } from "./audit-ctx.js";
+import type { AuditContext } from "./audit-ctx.js";
 import { nowIso } from "./internal-utils.js";
 import type { FailureMemo, RunState } from "./types.js";
 
@@ -40,7 +40,7 @@ export const MAX_FAILURE_MEMO_ERR_LEN = 500;
  * failure and to the audit `stageName` for a non-unit failure. `unitId` is set
  * only for a loop-unit failure (the unit's stable audit id).
  */
-export function appendFailureMemo(state: RunState, audit: AuditCtx, errMsg: string): void {
+export function appendFailureMemo(state: RunState, audit: AuditContext, errMsg: string): void {
 	const memo: FailureMemo = {
 		stage: audit.unit?.parent ?? audit.stageName,
 		...(audit.unit?.id ? { unitId: audit.unit.id } : {}),

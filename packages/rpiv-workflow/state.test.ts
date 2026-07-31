@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+	appendHeader,
 	appendLoopCap,
 	appendStage,
 	generateRunId,
@@ -18,7 +19,6 @@ import {
 	stateFilePath,
 	type WorkflowHeader,
 	type WorkflowStage,
-	writeHeader,
 } from "./state/index.js";
 
 let tmpDir: string;
@@ -67,7 +67,7 @@ describe("runsDir / stateFilePath", () => {
 	});
 });
 
-describe("writeHeader + readAllStages + readLastStage", () => {
+describe("appendHeader + readAllStages + readLastStage", () => {
 	it("writes header and reads it back as not-a-stage", () => {
 		const header: WorkflowHeader = {
 			runId: "2026-05-20_15-30-45",
@@ -75,14 +75,14 @@ describe("writeHeader + readAllStages + readLastStage", () => {
 			input: "Add dark mode",
 			ts: "2026-05-20T15:30:45-0400",
 		};
-		writeHeader(tmpDir, header);
+		appendHeader(tmpDir, header);
 		expect(readAllStages(tmpDir, header.runId)).toEqual([]);
 		expect(readLastStage(tmpDir, header.runId)).toBeUndefined();
 	});
 
 	it("appends stages and reads them back", () => {
 		const runId = "2026-05-20_15-30-45";
-		writeHeader(tmpDir, {
+		appendHeader(tmpDir, {
 			runId,
 			workflow: "mid",
 			input: "test",
@@ -119,7 +119,7 @@ describe("writeHeader + readAllStages + readLastStage", () => {
 
 	it("records failed stage with no artifact", () => {
 		const runId = "2026-05-20_15-30-45";
-		writeHeader(tmpDir, {
+		appendHeader(tmpDir, {
 			runId,
 			workflow: "mid",
 			input: "test",
@@ -145,7 +145,7 @@ describe("writeHeader + readAllStages + readLastStage", () => {
 describe("loop-cap rows + unit-identity fields", () => {
 	it("round-trips a loop-cap row via appendLoopCap → readLoopCaps", () => {
 		const runId = "2026-05-20_15-30-45";
-		writeHeader(tmpDir, { runId, workflow: "mid", input: "x", ts: "2026" });
+		appendHeader(tmpDir, { runId, workflow: "mid", input: "x", ts: "2026" });
 		const row: LoopCapRow = { type: "loop-cap", stage: "breakdown", count: 5, max: 5, ts: "2026" };
 		expect(appendLoopCap(tmpDir, runId, row)).toBe(true);
 		expect(readLoopCaps(tmpDir, runId)).toEqual([row]);
@@ -153,7 +153,7 @@ describe("loop-cap rows + unit-identity fields", () => {
 
 	it("stage readers skip loop-cap rows (shape-discriminated, not positional)", () => {
 		const runId = "skip-loop-cap";
-		writeHeader(tmpDir, { runId, workflow: "mid", input: "x", ts: "2026" });
+		appendHeader(tmpDir, { runId, workflow: "mid", input: "x", ts: "2026" });
 		const stage: WorkflowStage = {
 			session: null,
 			stageNumber: 1,
@@ -176,7 +176,7 @@ describe("loop-cap rows + unit-identity fields", () => {
 
 	it("rows carrying the four unit-identity fields round-trip through readAllStages", () => {
 		const runId = "unit-fields";
-		writeHeader(tmpDir, { runId, workflow: "mid", input: "x", ts: "2026" });
+		appendHeader(tmpDir, { runId, workflow: "mid", input: "x", ts: "2026" });
 		const unitRow: WorkflowStage = {
 			session: null,
 			stageNumber: 4,
@@ -197,7 +197,7 @@ describe("loop-cap rows + unit-identity fields", () => {
 
 	it("preserves unit-identity fields on a failure row", () => {
 		const runId = "unit-failure";
-		writeHeader(tmpDir, { runId, workflow: "mid", input: "x", ts: "2026" });
+		appendHeader(tmpDir, { runId, workflow: "mid", input: "x", ts: "2026" });
 		const failed: WorkflowStage = {
 			session: null,
 			stageNumber: 2,
@@ -225,9 +225,9 @@ describe("fail-soft I/O", () => {
 		expect(readAllStages(tmpDir, "nonexistent")).toEqual([]);
 	});
 
-	it("writeHeader does not throw on impossible path", () => {
+	it("appendHeader does not throw on impossible path", () => {
 		expect(() =>
-			writeHeader("/dev/null/impossible", {
+			appendHeader("/dev/null/impossible", {
 				runId: "test",
 				workflow: "mid",
 				input: "x",
@@ -279,7 +279,7 @@ describe("fail-soft I/O", () => {
 
 	it("readLastStage logs warning on corrupted file", () => {
 		const runId = "corrupt-test";
-		writeHeader(tmpDir, { runId, workflow: "mid", input: "test", ts: "2026" });
+		appendHeader(tmpDir, { runId, workflow: "mid", input: "test", ts: "2026" });
 		appendFileSync(stateFilePath(tmpDir, runId), "NOT-JSON\n", "utf-8");
 
 		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -298,7 +298,7 @@ describe("fail-soft I/O", () => {
 		// []. Every successfully-written prior row vanished from the reader's
 		// view. Now each line parses in its own try/catch.
 		const runId = "partial-write";
-		writeHeader(tmpDir, { runId, workflow: "mid", input: "test", ts: "2026" });
+		appendHeader(tmpDir, { runId, workflow: "mid", input: "test", ts: "2026" });
 		appendStage(tmpDir, runId, {
 			session: null,
 			stageNumber: 1,
@@ -337,7 +337,7 @@ describe("readHeader", () => {
 	it("returns the header for a run whose JSONL file exists", () => {
 		const runId = "header-roundtrip";
 		const header: WorkflowHeader = { runId, workflow: "mid", input: "x", ts: "2026-05-25T10:00:00Z" };
-		writeHeader(tmpDir, header);
+		appendHeader(tmpDir, header);
 		expect(readHeader(tmpDir, runId)).toEqual(header);
 	});
 
@@ -371,7 +371,7 @@ describe("readHeader", () => {
 			},
 		];
 		for (const header of cases) {
-			writeHeader(tmpDir, header);
+			appendHeader(tmpDir, header);
 			expect(readHeader(tmpDir, header.runId)).toEqual(header);
 		}
 	});
@@ -396,7 +396,7 @@ describe("readHeader", () => {
 
 	it("returns undefined when the first line is not a valid header", () => {
 		const runId = "bad-first-line";
-		// Skip writeHeader — append a stage row first so the first line lacks header fields.
+		// Skip appendHeader — append a stage row first so the first line lacks header fields.
 		appendStage(tmpDir, runId, {
 			session: null,
 			stageNumber: 1,
@@ -425,8 +425,8 @@ describe("listRuns", () => {
 			input: "second",
 			ts: "2026-05-25T11:00:00Z",
 		};
-		writeHeader(tmpDir, headerA);
-		writeHeader(tmpDir, headerB);
+		appendHeader(tmpDir, headerA);
+		appendHeader(tmpDir, headerB);
 
 		const runs = listRuns(tmpDir);
 		const byId = Object.fromEntries(runs.map((r) => [r.runId, r]));
@@ -440,7 +440,7 @@ describe("listRuns", () => {
 	});
 
 	it("silently skips files whose first line is not a valid header", () => {
-		writeHeader(tmpDir, { runId: "good", workflow: "mid", input: "ok", ts: "2026" });
+		appendHeader(tmpDir, { runId: "good", workflow: "mid", input: "ok", ts: "2026" });
 		// Manually write a malformed run file alongside the good one.
 		appendFileSync(stateFilePath(tmpDir, "bad"), "NOT-JSON\n", "utf-8");
 		const runs = listRuns(tmpDir);
@@ -448,21 +448,21 @@ describe("listRuns", () => {
 	});
 
 	it("ignores non-.jsonl entries in the workflows directory", () => {
-		writeHeader(tmpDir, { runId: "good", workflow: "mid", input: "ok", ts: "2026" });
+		appendHeader(tmpDir, { runId: "good", workflow: "mid", input: "ok", ts: "2026" });
 		appendFileSync(join(runsDir(tmpDir), "stray.txt"), "ignore me\n", "utf-8");
 		const runs = listRuns(tmpDir);
 		expect(runs.map((r) => r.runId)).toEqual(["good"]);
 	});
 
 	it("projects trigger from header to RunSummary", () => {
-		writeHeader(tmpDir, {
+		appendHeader(tmpDir, {
 			runId: "with-trigger",
 			workflow: "mid",
 			input: "x",
 			ts: "2026",
 			trigger: { kind: "external", source: "cron", ref: "0 9 * * *" },
 		});
-		writeHeader(tmpDir, { runId: "without-trigger", workflow: "mid", input: "x", ts: "2026" });
+		appendHeader(tmpDir, { runId: "without-trigger", workflow: "mid", input: "x", ts: "2026" });
 		const byId = Object.fromEntries(listRuns(tmpDir).map((r) => [r.runId, r]));
 		expect(byId["with-trigger"]?.trigger).toEqual({ kind: "external", source: "cron", ref: "0 9 * * *" });
 		expect(byId["without-trigger"]?.trigger).toBeUndefined();
@@ -479,7 +479,7 @@ describe("listArtifacts", () => {
 
 	it("projects every artifact across stage rows (one entry per artifact, in stage order)", () => {
 		const runId = "artifacts-run";
-		writeHeader(tmpDir, { runId, workflow: "mid", input: "x", ts: "2026" });
+		appendHeader(tmpDir, { runId, workflow: "mid", input: "x", ts: "2026" });
 		appendStage(tmpDir, runId, {
 			session: null,
 			stageNumber: 1,
@@ -524,7 +524,7 @@ describe("listArtifacts", () => {
 
 	it("returns an empty array when no stage row carries an artifact", () => {
 		const runId = "no-artifacts";
-		writeHeader(tmpDir, { runId, workflow: "mid", input: "x", ts: "2026" });
+		appendHeader(tmpDir, { runId, workflow: "mid", input: "x", ts: "2026" });
 		appendStage(tmpDir, runId, {
 			session: null,
 			stageNumber: 1,
@@ -544,7 +544,7 @@ describe("listArtifacts", () => {
 describe("deep stage guard + readAllStagesForResume", () => {
 	const runId = "t9-run";
 	const seed = () => {
-		writeHeader(tmpDir, { runId, workflow: "mid", input: "x", ts: "2026" });
+		appendHeader(tmpDir, { runId, workflow: "mid", input: "x", ts: "2026" });
 		appendStage(tmpDir, runId, {
 			session: null,
 			stageNumber: 1,

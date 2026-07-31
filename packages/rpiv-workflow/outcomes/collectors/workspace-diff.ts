@@ -23,7 +23,7 @@
  */
 
 import { type Artifact, fs as fsHandle } from "../../handle.js";
-import type { ArtifactCollector, CollectCtx, CollectResult, SnapshotCtx } from "../../output-spec.js";
+import type { ArtifactCollector, CollectContext, CollectResult, SnapshotContext } from "../../output-spec.js";
 import { defineCollector } from "../../output-spec.js";
 import { execFileAsync, GIT_EXEC_TIMEOUT_MS } from "../exec.js";
 
@@ -53,14 +53,14 @@ export const workspaceDiffCollector = (
 // Snapshot + diff implementation
 // ---------------------------------------------------------------------------
 
-async function capturePorcelainSnapshot(ctx: SnapshotCtx): Promise<WorkspaceDiffSnapshot | undefined> {
+async function capturePorcelainSnapshot(ctx: SnapshotContext): Promise<WorkspaceDiffSnapshot | undefined> {
 	const status = await runGitStatus(ctx.cwd);
 	if (status === undefined) return undefined;
 	return { statusByPath: parsePorcelain(status) };
 }
 
 async function collectDiffArtifacts(
-	ctx: CollectCtx<WorkspaceDiffSnapshot | undefined>,
+	ctx: CollectContext<WorkspaceDiffSnapshot | undefined>,
 	filter: ((path: string) => boolean) | undefined,
 ): Promise<CollectResult> {
 	const snapshot = ctx.snapshot;

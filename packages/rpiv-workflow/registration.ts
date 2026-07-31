@@ -170,15 +170,15 @@ export type { Output, OutputMeta, RunView, Verdict } from "./output.js";
 export {
 	type ArtifactCollector,
 	type ArtifactParser,
-	type CollectCtx,
+	type CollectContext,
 	type CollectResult,
 	defineCollector,
 	defineParser,
 	type Outcome,
 	type OutputSpec,
-	type ParseCtx,
+	type ParseContext,
 	type ParseResult,
-	type SnapshotCtx,
+	type SnapshotContext,
 } from "./output-spec.js";
 export { eq, gt, gte, lt, lte, type NumericPredicate, type Predicate } from "./predicates.js";
 export type {

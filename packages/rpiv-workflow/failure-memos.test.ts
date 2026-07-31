@@ -4,14 +4,14 @@
  */
 
 import { describe, expect, it } from "vitest";
-import type { AuditCtx } from "./audit-ctx.js";
+import type { AuditContext } from "./audit-ctx.js";
 import { LifecycleDispatcher } from "./events.js";
 import { appendFailureMemo, failureMemoSuffix, MAX_FAILURE_MEMO_ERR_LEN, MAX_FAILURE_MEMOS } from "./failure-memos.js";
 import { freshRunState } from "./runner/run-context.js";
 import type { FailureMemo, RunState, UnitRef } from "./types.js";
 
-/** A sessionless AuditCtx for a non-unit (single-stage) failure, like `auditCtxFor`. */
-const auditFor = (state: RunState, stageName = "build", skill = "build", unit?: UnitRef): AuditCtx => ({
+/** A sessionless AuditContext for a non-unit (single-stage) failure, like `auditCtxFor`. */
+const auditFor = (state: RunState, stageName = "build", skill = "build", unit?: UnitRef): AuditContext => ({
 	session: null,
 	cwd: "/tmp/x",
 	runId: "run-1",
@@ -23,8 +23,8 @@ const auditFor = (state: RunState, stageName = "build", skill = "build", unit?: 
 	...(unit ? { unit } : {}),
 });
 
-/** A loop-unit AuditCtx — `stageName` carries the DISPLAY decoration, `unit` carries machine identity. */
-const unitAuditFor = (state: RunState, unit: UnitRef): AuditCtx =>
+/** A loop-unit AuditContext — `stageName` carries the DISPLAY decoration, `unit` carries machine identity. */
+const unitAuditFor = (state: RunState, unit: UnitRef): AuditContext =>
 	auditFor(state, `${unit.parent} (${unit.label})`, "build", unit);
 
 const unit = (parent: string, id: string, label = id): UnitRef => ({

@@ -29,7 +29,7 @@
  */
 
 import type { ScriptContext } from "../api.js";
-import { auditCtxFor, failAuditWrite, failedArgs, recordTerminalFailure } from "../audit.js";
+import { auditCtxFor, failAuditWrite, failedArgs, recordFatalFailure } from "../audit.js";
 import { allocateStageNumber, persistStageSuccess } from "../audit-rows.js";
 import { lifecycleCtxFor, scriptStageRef } from "../events.js";
 import type { Artifact } from "../handle.js";
@@ -49,22 +49,22 @@ import type { ResolvedStage } from "./resolve-stage.js";
 /**
  * Drive a script stage: lifecycle-fire `onStageStart`, retry-loop the
  * `run` body against `outputSchema`, then either persist + advance or
- * record a terminal failure. Sole entry point — `runStage` branches
+ * record a terminal failure. Sole entry point — `dispatchStage` branches
  * here on `mode === "script"`, passing the composed `advance`.
  *
- * Caller pre-conditions (held by `runStage`):
+ * Caller pre-conditions (held by `dispatchStage`):
  *   - `ensureInputValid` already passed.
  *   - `mode === "script"` (a script stage cannot carry a `loop`).
  */
 export async function runScript(
-	curCtx: WorkflowHostContext,
+	hostCtx: WorkflowHostContext,
 	stage: ResolvedStage,
 	idx: number,
 	run: RunContext,
 	advance: AdvanceFn,
 ): Promise<ChainOutcome> {
 	const ref = scriptStageRef(stage.name, stage.stageNumber);
-	await run.lifecycle.fire(curCtx, "onStageStart", ref, lifecycleCtxFor(run));
+	await run.lifecycle.fire(hostCtx, "onStageStart", ref, lifecycleCtxFor(run));
 
 	const scriptCtx: ScriptContext = {
 		cwd: run.cwd,
@@ -85,7 +85,7 @@ export async function runScript(
 		},
 		{
 			produce: async () => {
-				const invocation = await invokeRun(curCtx, stage, scriptCtx, run, stageNumber);
+				const invocation = await invokeRun(hostCtx, stage, scriptCtx, run, stageNumber);
 				if (!invocation.ok) return { kind: "aborted", abort: "recorded" };
 				const output = finalizeOutput(
 					invocation.raw,
@@ -110,7 +110,7 @@ export async function runScript(
 				};
 			},
 			onRetry: async (attempt) => {
-				await run.lifecycle.fire(curCtx, "onStageRetry", ref, attempt, lifecycleCtxFor(run));
+				await run.lifecycle.fire(hostCtx, "onStageRetry", ref, attempt, lifecycleCtxFor(run));
 				return { kind: "ok" };
 			},
 		},
@@ -119,8 +119,8 @@ export async function runScript(
 	if (result.kind === "aborted") return "halted";
 	if (result.kind === "exhausted") {
 		const failureSummary = result.failures.map(describeFailure).join("; ");
-		await recordTerminalFailure(
-			curCtx,
+		await recordFatalFailure(
+			hostCtx,
 			scriptAuditCtx(run, stage, stageNumber),
 			failedArgs(FAIL_VALIDATION_EXHAUSTED(stage.name, failureSummary)),
 		);
@@ -137,12 +137,12 @@ export async function runScript(
 		stage.def,
 	);
 	if (!persisted) {
-		failAuditWrite(curCtx, run.state, stage.name);
+		failAuditWrite(hostCtx, run.state, stage.name);
 		return "halted";
 	}
 
-	await run.lifecycle.fire(curCtx, "onStageEnd", ref, output, lifecycleCtxFor(run));
-	return advance(curCtx, stage.name, idx, run);
+	await run.lifecycle.fire(hostCtx, "onStageEnd", ref, output, lifecycleCtxFor(run));
+	return advance(hostCtx, stage.name, idx, run);
 }
 
 type ScriptInvocationResult =
@@ -157,7 +157,7 @@ type ScriptInvocationResult =
  * failure attributed via `MSG_SCRIPT_THREW` + `ERR_SCRIPT_THREW`.
  */
 async function invokeRun(
-	curCtx: WorkflowHostContext,
+	hostCtx: WorkflowHostContext,
 	stage: ResolvedStage,
 	scriptCtx: ScriptContext,
 	run: RunContext,
@@ -172,10 +172,10 @@ async function invokeRun(
 		return { ok: true, raw };
 	} catch (e) {
 		const reason = formatError(e);
-		// `recordTerminalFailure` fires `onStageError` itself — the caller must
+		// `recordFatalFailure` fires `onStageError` itself — the caller must
 		// not fire a second time on the `ok: false` return.
-		await recordTerminalFailure(
-			curCtx,
+		await recordFatalFailure(
+			hostCtx,
 			scriptAuditCtx(run, stage, stageNumber),
 			failedArgs(FAIL_SCRIPT_THREW(stage.name, reason)),
 		);
@@ -184,7 +184,7 @@ async function invokeRun(
 }
 
 /**
- * Build the `AuditCtx`-shaped object `recordTerminalFailure` needs for
+ * Build the `AuditContext`-shaped object `recordFatalFailure` needs for
  * a script-stage halt. The `skill` field doubles as the lifecycle
  * `onStageError` ref payload — using `stage.name` keeps the failure
  * attribution aligned with the success row's `stage` identity.

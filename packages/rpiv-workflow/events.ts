@@ -342,7 +342,7 @@ export function lifecycleCtxFor(run: {
 }
 
 /**
- * Build a `LifecycleContext` from any SessionContext/AuditCtx-shaped object
+ * Build a `LifecycleContext` from any SessionContext/AuditContext-shaped object
  * (cwd + runId + the frozen `runIdentity` + live state). The session, audit,
  * and extraction layers all fire through this projection instead of
  * re-spelling the six-field literal.

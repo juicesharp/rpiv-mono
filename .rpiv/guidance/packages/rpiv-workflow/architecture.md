@@ -141,7 +141,7 @@ not at the strike site.
 | Programmatic embedders | `runWorkflow`, `runWorkflowByName`, `resumeWorkflow`, `resumeWorkflowByRunId` (+ their `*Options`), `RunWorkflowResult`, `WorkflowHost`, `WorkflowHostContext`/`WorkflowSessionContext`/`WorkflowLauncherContext`, `ModelSelection` |
 | Loader consumers | `loadWorkflows`, `LoadedWorkflows` (carries a required `skillAliases: Readonly<Record<string, string>>` — `{}` when no layer declared aliases), `Issue`, `LoadIssue`, `ConfigLayer`, `OverlayPaths`, `projectOverlayPaths`, `userOverlayPaths`, `aliasSkills` (siblings apply the same remap to a built-in workflow before handing it to `runWorkflow`) |
 | Sibling packages (via the ~9ms `/startup` entry) | `registerBuiltIns`, `registerBuiltInsProvider`, `registerLifecycle`, `registerWorkflowExecutionHost`, `registerSkillContracts(Provider)` |
-| Custom outcome authors | `Outcome` (`OutputSpec` is its deprecated pre-rename alias), `ArtifactCollector`, `ArtifactParser`, `CollectCtx`/`ParseCtx`/`SnapshotCtx`, `defineCollector`, `defineParser` |
+| Custom outcome authors | `Outcome` (`OutputSpec` is its deprecated pre-rename alias), `ArtifactCollector`, `ArtifactParser`, `CollectContext`/`ParseContext`/`SnapshotContext`, `defineCollector`, `defineParser` |
 | State inspection | `listRuns`, `readHeader`, `readLastStage`, `readLoopCaps`, `resolveRun`, `listArtifacts`, `runFileFor` (the one OPAQUE path projection), `STATE_SCHEMA_VERSION` |
 | Bundled outcomes catalog | `sideEffectOutcome`, `gitCommitOutcome`; collectors `transcriptPathCollector`, `toolCallCollector`, `workspaceDiffCollector`, `gitCommitCollector`, `directoryPathCollector`, `urlCollector`, `unionCollectors`, `noopCollector`; parsers `jsonBodyParser`, `gitCommitParser` |
 

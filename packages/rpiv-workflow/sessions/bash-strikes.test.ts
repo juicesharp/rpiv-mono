@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import type { StageSession } from "../types.js";
+import type { StageSessionContext } from "../types.js";
 import {
 	BASH_TIMEOUT_STRIKES,
 	bashStrikesRemaining,
@@ -14,8 +14,9 @@ import {
 	resolveBashTimeoutStrikes,
 } from "./bash-strikes.js";
 
-/** A bare StageSession carrying only the strike-accounting surface the helpers touch. */
-const strikeSession = (overrides: Partial<StageSession> = {}): StageSession => ({ ...overrides }) as StageSession;
+/** A bare StageSessionContext carrying only the strike-accounting surface the helpers touch. */
+const strikeSession = (overrides: Partial<StageSessionContext> = {}): StageSessionContext =>
+	({ ...overrides }) as StageSessionContext;
 
 describe("resolveBashTimeoutStrikes", () => {
 	it("defaults to 2 when the override is absent or non-numeric or non-positive", () => {
@@ -114,7 +115,7 @@ describe("strike accounting", () => {
 		expect(bashTimeoutStrikeHistory(s)).toEqual({ count: 2, reasons: ["r1", "r2"] });
 	});
 
-	it("🔴 resume-fold: a fresh StageSession (same override) starts at zero strikes after a prior session exhausted its budget (no WeakMap stranding)", () => {
+	it("🔴 resume-fold: a fresh StageSessionContext (same override) starts at zero strikes after a prior session exhausted its budget (no WeakMap stranding)", () => {
 		// A prior session exhausts its 2-strike budget.
 		const prior = strikeSession({ bashTimeoutStrikes: 2 });
 		consumeBashStrike(prior, "r1");
@@ -122,7 +123,7 @@ describe("strike accounting", () => {
 		expect(bashStrikesRemaining(prior)).toBe(0);
 		expect(bashTimeoutStrikeHistory(prior)).toEqual({ count: 2, reasons: ["r1", "r2"] });
 
-		// A FRESH StageSession (simulating a resumed activation) with the same override
+		// A FRESH StageSessionContext (simulating a resumed activation) with the same override
 		// must start at zero strikes — the WeakMap is keyed by identity, so the prior
 		// session's exhausted budget does NOT strand into the new one. This is the
 		// resume-fold safety net (precedent d753e3b5→4bd1979e/72d47cfb).

@@ -14,7 +14,13 @@ import { eq, gt } from "./predicates.js";
 import { runWorkflow, runWorkflowByName } from "./runner/index.js";
 import type { CompositionComparator } from "./skill-contract.js";
 import { registerCompositionComparator, registerSkillContracts } from "./skill-contracts/index.js";
-import { appendRoutingDecision, readHeader, readNamesIndex, readRoutingDecisions, writeHeader } from "./state/index.js";
+import {
+	appendHeader,
+	appendRoutingDecision,
+	readHeader,
+	readNamesIndex,
+	readRoutingDecisions,
+} from "./state/index.js";
 // Deep import: addNameToIndex is deliberately NOT on the state barrels
 // (production code goes through claimName); tests seed collisions directly.
 import { addNameToIndex } from "./state/names.js";
@@ -212,7 +218,7 @@ describe("runWorkflow", () => {
 		// The post-format-change equivalent of "unknown preset": the caller
 		// (command.ts) resolves names to Workflow objects; runWorkflow only
 		// sees the object. A workflow with start ∉ stages is the proximal
-		// invalid-input case — it short-circuits BEFORE writeHeader so a
+		// invalid-input case — it short-circuits BEFORE appendHeader so a
 		// typo doesn't pollute the audit trail.
 		const chain = createMockSessionChain({ cwd: tmpDir, steps: [] });
 		const result = await runWorkflow(chain.ctx, {
@@ -244,7 +250,7 @@ describe("runWorkflow", () => {
 	it("rejects a name already claimed in the index, without starting a session", async () => {
 		// The holder must exist on disk — claimName treats an entry whose run
 		// file is gone as stale (re-claimable), not as a collision.
-		writeHeader(tmpDir, {
+		appendHeader(tmpDir, {
 			runId: "prior-run",
 			workflow: "tiny",
 			input: "x",
@@ -386,7 +392,7 @@ describe("runWorkflow", () => {
 	it("a rejecting spawnChild is recorded as a stage failure — no throw escapes the run", async () => {
 		// The detached replacement for the old `{cancelled}` return: a child that
 		// rejects (e.g. cancelled before any work) propagates to the single catch
-		// site (runStageOrRecordFailure → recordEntryThrow) as a recorded failure
+		// site (dispatchStageOrRecordFailure → recordEntryThrow) as a recorded failure
 		// row, never an uncaught throw out of runWorkflow.
 		const chain = createMockSessionChain({
 			cwd: tmpDir,
@@ -982,7 +988,7 @@ describe("runWorkflow", () => {
 
 		// Invariant throws used to escape runWorkflow uncaught, leaving a
 		// header-only JSONL file invisible to every shape-filtered reader.
-		// runStageOrRecordFailure now translates them into a recorded failure row
+		// dispatchStageOrRecordFailure now translates them into a recorded failure row
 		// + a populated error envelope, so the result describes the failure
 		// rather than the caller having to catch a stack trace.
 		it("records a failure row when fanout node has sessionPolicy continue (no throw escapes)", async () => {
@@ -1015,12 +1021,12 @@ describe("runWorkflow", () => {
 		// When a mid-chain stage throws (here: stage 2 hits the
 		// continue-without-pi invariant), the recorded failure must be
 		// attributed to the *failing* stage, not to the prior stage whose
-		// success triggered advanceChain. Before runStageOrRecordFailure, the
+		// success triggered advanceChain. Before dispatchStageOrRecordFailure, the
 		// advanceChain catch recorded `skill: currentName` (the prior, already-
 		// completed stage), producing two rows for stage 1 (completed +
 		// failed) and zero rows for stage 2.
 		// -------------------------------------------------------------------
-		it("attributes a mid-chain runStage throw to the failing stage, not to the prior one", async () => {
+		it("attributes a mid-chain dispatchStage throw to the failing stage, not to the prior one", async () => {
 			writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md");
 			const mockPi = createMockPi({ skills: ["research", "implement"] });
 			const chain = createMockSessionChain({
@@ -1031,7 +1037,7 @@ describe("runWorkflow", () => {
 
 			// research succeeds (fresh policy). implement opts into fanout and
 			// uses sessionPolicy: continue — a separate invariant (fanout can't
-			// combine with continue) that throws inside enforceSessionInvariants
+			// combine with continue) that throws inside ensureLoopNotContinue
 			// when stage 2 is invoked. pi is provided so the preflight (which
 			// gates only on missing pi) lets the run reach the mid-chain throw.
 			const result = await runWorkflow(chain.ctx, {
@@ -2354,7 +2360,7 @@ describe("runWorkflow", () => {
 			// stale once the first child session opens, so the second call threw
 			// "extension ctx is stale" — a research → blueprint chain halted on
 			// stage 2 with no toast (the throw was caught by
-			// runStageOrRecordFailure and the user-visible error never surfaced).
+			// dispatchStageOrRecordFailure and the user-visible error never surfaced).
 			//
 			// Post-fix, runWorkflow snapshots the registry ONCE before any
 			// session opens and ensureSkillRegistered consults the snapshot.

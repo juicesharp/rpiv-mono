@@ -15,7 +15,7 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { CollectCtx, ParseCtx, SnapshotCtx } from "../output-spec.js";
+import type { CollectContext, ParseContext, SnapshotContext } from "../output-spec.js";
 import {
 	type GitHeadSnapshot,
 	gitCommitCollector,
@@ -40,14 +40,17 @@ const initRepo = (cwd: string): void => {
 	execSync("git commit --allow-empty -q -m initial", { cwd });
 };
 
-const snapshotCtx = (cwd: string): SnapshotCtx => ({
+const snapshotCtx = (cwd: string): SnapshotContext => ({
 	cwd,
 	runId: "test-run",
 	stageIndex: 0,
 	state: { originalInput: "", output: undefined, named: {} },
 });
 
-const collectCtx = (cwd: string, snapshot: GitHeadSnapshot | undefined): CollectCtx<GitHeadSnapshot | undefined> => ({
+const collectCtx = (
+	cwd: string,
+	snapshot: GitHeadSnapshot | undefined,
+): CollectContext<GitHeadSnapshot | undefined> => ({
 	...snapshotCtx(cwd),
 	branch: [],
 	branchOffset: undefined,
@@ -64,7 +67,7 @@ const runOutcome = async (cwd: string, snapshot: GitHeadSnapshot | undefined) =>
 	const ctx = collectCtx(cwd, snapshot);
 	const collected = await gitCommitOutcome.collector.collect(ctx);
 	if (collected.kind === "fatal") return collected;
-	const parseCtx: ParseCtx<GitHeadSnapshot | undefined> = { ...ctx, artifacts: collected.artifacts };
+	const parseCtx: ParseContext<GitHeadSnapshot | undefined> = { ...ctx, artifacts: collected.artifacts };
 	return gitCommitOutcome.parser!.parse(parseCtx);
 };
 
@@ -222,7 +225,7 @@ describe.runIf(hasGit)("gitCommitCollector emits one meta-complete artifact on n
 });
 
 describe("gitCommitParser is pure and validates its meta contract", () => {
-	const parseWith = (artifacts: ParseCtx<GitHeadSnapshot | undefined>["artifacts"]) =>
+	const parseWith = (artifacts: ParseContext<GitHeadSnapshot | undefined>["artifacts"]) =>
 		gitCommitParser.parse({ ...collectCtx("/nonexistent", undefined), artifacts });
 
 	it("goes fatal when handed an artifact with a foreign meta shape", async () => {

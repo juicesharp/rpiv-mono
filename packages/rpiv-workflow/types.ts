@@ -16,7 +16,7 @@
  *
  * Per-stage / per-phase sessions extend a shared `SessionContext` base
  * (cwd, runId, state, prompt, skill). The audit layer pins its dependency
- * on this base structurally via `AuditCtx = Pick<SessionContext, ...>`.
+ * on this base structurally via `AuditContext = Pick<SessionContext, ...>`.
  *
  * Lives apart from runner.ts / sessions.ts so both can reference the same
  * shapes without a runtime import cycle (type-only refs back via this
@@ -239,13 +239,13 @@ export interface RunWorkflowOptions {
 	signal?: AbortSignal;
 	/**
 	 * Per-stage model-override resolver, injected by the embedder. Threaded onto
-	 * `RunContext.resolveModel` → every `StageSession.model`; the host applies it
+	 * `RunContext.resolveModel` → every `StageSessionContext.model`; the host applies it
 	 * at child-session creation. Undefined ⇒ host default for every stage.
 	 */
 	resolveModel?: (id: { stage: string; skill: string }) => ModelSelection | undefined;
 	/**
 	 * Worktree-digest override for the validation-retry gate — threaded
-	 * onto `RunContext.worktreeDigest` → every `StageSession.worktreeDigest`.
+	 * onto `RunContext.worktreeDigest` → every `StageSessionContext.worktreeDigest`.
 	 * Undefined ⇒ the built-in `computeWorktreeDigest` (git + artifacts).
 	 */
 	worktreeDigest?: (cwd: string) => string | undefined;
@@ -361,7 +361,7 @@ export interface RunContext {
 	 *     lacks a stage `inputSchema` (a harvested `consumes.data` is the
 	 *     stage's own `inputSchema` re-derived, already covered by
 	 *     `ensureInputValid`);
-	 *   - `effectiveOutputSchema` (threaded onto `StageSession`) sources a
+	 *   - `effectiveOutputSchema` (threaded onto `StageSessionContext`) sources a
 	 *     declared `produces.data` as the output schema when the stage carries
 	 *     no `outputSchema` of its own.
 	 * Fail-soft: both degrade (no validation, never throw) when absent.
@@ -370,7 +370,7 @@ export interface RunContext {
 	/**
 	 * Resolve a per-stage model override, injected by the embedder (rpiv-pi maps
 	 * each `{ stage, skill }` to its model/effort override). The runner threads
-	 * the result onto every `StageSession.model`; the host applies it at child
+	 * the result onto every `StageSessionContext.model`; the host applies it at child
 	 * creation (NOT via global mutation). Undefined ⇒ host default.
 	 */
 	resolveModel?: (id: { stage: string; skill: string }) => ModelSelection | undefined;
@@ -381,13 +381,13 @@ export interface RunContext {
 	 * writer at failure time (death-scene.ts) — the ONLY reader. Undefined for
 	 * programmatic embedders / no provider, in which case the writer degrades
 	 * silently (no artifact, no warning). Threaded provider → executor →
-	 * `RunContext` → `SessionContext` → `AuditCtx` → `auditFor`.
+	 * `RunContext` → `SessionContext` → `AuditContext` → `auditFor`.
 	 */
 	readSessionBranch?: (file: string) => BranchEntry[] | undefined;
 	/**
 	 * Worktree-digest resolver injected by the embedder (tests / programmatic
 	 * embedders that want to stub the filesystem). Threaded onto every
-	 * `StageSession.worktreeDigest` and read by the validation-retry gate
+	 * `StageSessionContext.worktreeDigest` and read by the validation-retry gate
 	 * (`packages/rpiv-workflow/sessions/extraction.ts` mechanism-1 +
 	 * `packages/rpiv-workflow/runner/run-stage.ts` mechanism-2) via
 	 * `resolveDigest` (`worktree-digest.ts`). Undefined ⇒ the built-in
@@ -409,7 +409,7 @@ export interface RunContext {
 	lifecycle: LifecycleDispatcher;
 	/**
 	 * Optional cooperative-cancellation signal from `RunWorkflowOptions.signal`.
-	 * Checked at the between-stage seam (top of `runStageOrRecordFailure`, before
+	 * Checked at the between-stage seam (top of `dispatchStageOrRecordFailure`, before
 	 * the start stage and before every routed next stage). An aborted signal
 	 * records an `"aborted"` terminal row and unwinds — it does NOT interrupt a
 	 * stage already streaming (Pi owns the live session).
@@ -418,9 +418,9 @@ export interface RunContext {
 }
 
 /**
- * Per-stage / per-unit common base. Extended by `StageSession` (loop units
- * thread their identity through `StageSession.unit`); consumed in pick form by
- * `AuditCtx` (audit.ts) so the audit layer pins its dependency on this shape
+ * Per-stage / per-unit common base. Extended by `StageSessionContext` (loop units
+ * thread their identity through `StageSessionContext.unit`); consumed in pick form by
+ * `AuditContext` (audit.ts) so the audit layer pins its dependency on this shape
  * structurally instead of duplicating the field list.
  *
  * `stageName` is the workflow stage's record key — the value that lands
@@ -464,10 +464,10 @@ export interface SessionContext {
 	/**
 	 * Host-injected persisted-session branch reader, threaded from
 	 * `RunContext.readSessionBranch`. Read by the death-scene artifact writer
-	 * (`writeDeathSceneArtifact`) via `AuditCtx`; absent for programmatic
+	 * (`writeDeathSceneArtifact`) via `AuditContext`; absent for programmatic
 	 * embedders (the writer degrades silently). Travels FURTHER than
-	 * `resolveModel` — into `SessionContext` → `AuditCtx` → `auditFor` —
-	 * because the writer reads it from `AuditCtx` at failure time.
+	 * `resolveModel` — into `SessionContext` → `AuditContext` → `auditFor` —
+	 * because the writer reads it from `AuditContext` at failure time.
 	 */
 	readSessionBranch?: (file: string) => BranchEntry[] | undefined;
 }
@@ -490,7 +490,7 @@ export interface UnitRef {
 	label: string;
 }
 
-export interface StageSession extends SessionContext {
+export interface StageSessionContext extends SessionContext {
 	stage: StageDef;
 	/**
 	 * Registered skill-contract registry, threaded from
@@ -549,7 +549,7 @@ export interface StageSession extends SessionContext {
 	 * `undefined` ⇒ the `BASH_TIMEOUT_STRIKES` module default. Pin to `0` in a
 	 * watchdog-contract test to force immediate exhaustion; pin to `N` to drive
 	 * a multi-strike recovery without mutating env. Now the SOLE strike surface
-	 * on `StageSession`: the mutable accounting (used counter + reasons
+	 * on `StageSessionContext`: the mutable accounting (used counter + reasons
 	 * accumulator) lives in the private `StrikeBudget` value object held in
 	 * `sessions/bash-strikes.ts`, keyed off this session (read once at first
 	 * consume to resolve the budget's ceiling). Immutable per-activation.

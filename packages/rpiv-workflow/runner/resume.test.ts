@@ -35,13 +35,13 @@ import { assess, fanout, iterate, majority, panel, verify } from "../loop-constr
 import { advanceCursor, foldFanoutCompletion, freshCursor } from "../loop-kinds.js";
 import type { Output } from "../output.js";
 import {
+	appendHeader,
 	appendStage,
 	readAllStages,
 	STATE_SCHEMA_VERSION,
 	stateFilePath,
 	type WorkflowHeader,
 	type WorkflowStage,
-	writeHeader,
 } from "../state/index.js";
 import type { RunState } from "../types.js";
 import { reconstructState } from "./resume.js";
@@ -141,7 +141,7 @@ afterEach(() => {
 });
 
 function writeRunStages(stages: WorkflowStage[]): WorkflowHeader {
-	writeHeader(tmpDir, baseHeader);
+	appendHeader(tmpDir, baseHeader);
 	for (const stage of stages) {
 		appendStage(tmpDir, baseHeader.runId, stage);
 	}
@@ -476,7 +476,7 @@ describe("reconstructState", () => {
 
 	it("empty file (no stage rows): returns no-rows refusal", async () => {
 		// Write header only, no stage rows
-		writeHeader(tmpDir, baseHeader);
+		appendHeader(tmpDir, baseHeader);
 
 		const result = await reconstructState(tmpDir, linearWorkflow, baseHeader);
 
@@ -1623,7 +1623,7 @@ const resumeHeader: WorkflowHeader = {
 describe("resumeWorkflow", () => {
 	/** Helper: write header + stages, return the header. */
 	function writeRun(header: WorkflowHeader, stages: WorkflowStage[]): void {
-		writeHeader(tmpDir, header);
+		appendHeader(tmpDir, header);
 		for (const stage of stages) {
 			appendStage(tmpDir, header.runId, stage);
 		}
@@ -1868,7 +1868,7 @@ describe("resumeWorkflow", () => {
 
 	it("no-rows refusal: returns error envelope, no self-notify (caller surfaces it)", async () => {
 		// Header-only file (no stage rows)
-		writeHeader(tmpDir, resumeHeader);
+		appendHeader(tmpDir, resumeHeader);
 
 		const chain = createMockSessionChain({ cwd: tmpDir, steps: [] });
 

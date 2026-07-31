@@ -360,7 +360,7 @@ async function foldUnitRow(
 		// awaits BEFORE `executeRun` brackets the lifecycle — an escape here yields
 		// no JSONL failure row and no `onWorkflowEnd`. The live driver's same
 		// `advanceCursor`+`publishPanelVerdict` pair runs under
-		// `runStageOrRecordFailure`'s catch (loop.ts `dispatchUnit`); this is its
+		// `dispatchStageOrRecordFailure`'s catch (loop.ts `dispatchUnit`); this is its
 		// resume-side error boundary.
 		await guarded(acc, gen.parent, () => {
 			advanceCursor(gen.cursor, role, verdict, gen.loop);

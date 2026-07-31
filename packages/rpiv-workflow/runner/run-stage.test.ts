@@ -16,7 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { StageDef, Workflow } from "../api.js";
 import { LifecycleDispatcher } from "../events.js";
 import { effectiveOutputSchemaOf } from "../stage-identity.js";
-import { readAllStages, STATE_SCHEMA_VERSION, writeHeader } from "../state/index.js";
+import { appendHeader, readAllStages, STATE_SCHEMA_VERSION } from "../state/index.js";
 import type { RunContext, RunState, WorkflowHostContext } from "../types.js";
 import type { ResolvedStage } from "./resolve-stage.js";
 import { gateValidationRedispatch } from "./run-stage.js";
@@ -193,7 +193,7 @@ describe("gateValidationRedispatch", () => {
 
 	beforeEach(() => {
 		cwd = mkdtempSync(join(tmpdir(), "rpiv-gate-"));
-		writeHeader(cwd, { runId, workflow: "gate-wf", input: "x", ts: "t0", v: STATE_SCHEMA_VERSION });
+		appendHeader(cwd, { runId, workflow: "gate-wf", input: "x", ts: "t0", v: STATE_SCHEMA_VERSION });
 	});
 	afterEach(() => rmSync(cwd, { recursive: true, force: true }));
 
@@ -207,10 +207,10 @@ describe("gateValidationRedispatch", () => {
 			stagesCompleted: 3,
 			lastGatedDispatch: { stage: "plan", digest: "digest-1", stagesCompleted: 3 },
 		});
-		const curCtx = mockCtx(notify);
+		const hostCtx = mockCtx(notify);
 		const stage = stageWithOwnSchema(ownSchema);
 
-		const halted = await gateValidationRedispatch(curCtx, stage, run);
+		const halted = await gateValidationRedispatch(hostCtx, stage, run);
 
 		expect(halted).toBe(true);
 		expect(run.state.termination.status).toBe("failed");

@@ -1,11 +1,11 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fs as fsHandle, opaque, type ParseCtx } from "@juicesharp/rpiv-workflow/registration";
+import { fs as fsHandle, opaque, type ParseContext } from "@juicesharp/rpiv-workflow/registration";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { frontmatterParser } from "./artifact-collector.js";
 
-const ctxOf = (cwd: string, artifacts: ParseCtx<undefined>["artifacts"]): ParseCtx<undefined> => ({
+const ctxOf = (cwd: string, artifacts: ParseContext<undefined>["artifacts"]): ParseContext<undefined> => ({
 	cwd,
 	runId: "test",
 	stageIndex: 0,

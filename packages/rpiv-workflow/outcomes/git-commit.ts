@@ -27,7 +27,14 @@
 
 import { type Artifact, opaque } from "../handle.js";
 import type { Output } from "../output.js";
-import type { ArtifactCollector, ArtifactParser, CollectCtx, Outcome, ParseCtx, SnapshotCtx } from "../output-spec.js";
+import type {
+	ArtifactCollector,
+	ArtifactParser,
+	CollectContext,
+	Outcome,
+	ParseContext,
+	SnapshotContext,
+} from "../output-spec.js";
 import { execFileAsync, GIT_EXEC_TIMEOUT_MS } from "./exec.js";
 
 /**
@@ -104,7 +111,7 @@ async function git(cwd: string, ...args: string[]): Promise<string> {
  * `gitCommitCollector` handles `undefined` snapshot gracefully by
  * emitting an artifact carrying a `noOp: true` payload.
  */
-export async function gitHeadSnapshot(ctx: SnapshotCtx): Promise<GitHeadSnapshot | undefined> {
+export async function gitHeadSnapshot(ctx: SnapshotContext): Promise<GitHeadSnapshot | undefined> {
 	try {
 		const sha = await git(ctx.cwd, "rev-parse", "HEAD");
 		return sha ? { baselineSha: sha } : undefined;
@@ -126,7 +133,7 @@ export async function gitHeadSnapshot(ctx: SnapshotCtx): Promise<GitHeadSnapshot
  */
 export const gitCommitCollector: ArtifactCollector<GitHeadSnapshot | undefined> = {
 	snapshot: gitHeadSnapshot,
-	async collect(ctx: CollectCtx<GitHeadSnapshot | undefined>) {
+	async collect(ctx: CollectContext<GitHeadSnapshot | undefined>) {
 		const baselineSha = ctx.snapshot?.baselineSha;
 		if (!baselineSha) {
 			// Deliberate degrade: the stage ran outside a (working) git repo.
@@ -236,7 +243,7 @@ function isGitCommitRecord(r: unknown): r is GitCommitRecord {
  * commit data) and projects it into `GitCommitData`. No I/O.
  */
 export const gitCommitParser: ArtifactParser<GitHeadSnapshot | undefined, "git-commit", GitCommitData> = {
-	parse(ctx: ParseCtx<GitHeadSnapshot | undefined>) {
+	parse(ctx: ParseContext<GitHeadSnapshot | undefined>) {
 		const artifact = ctx.artifacts[0];
 		const meta = artifact?.meta;
 		if (!isGitCommitMeta(meta)) {

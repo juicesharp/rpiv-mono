@@ -29,21 +29,21 @@
 
 import { MSG_RESUME_PROMOTED, MSG_RESUME_REATTACHED, REATTACH_PROMPT } from "../messages.js";
 import { readBranch, readSessionRef } from "../transcript.js";
-import type { StageSession, WorkflowHostContext, WorkflowSessionContext } from "../types.js";
+import type { StageSessionContext, WorkflowHostContext, WorkflowSessionContext } from "../types.js";
 import { produceAndValidateOutput } from "./extraction.js";
 import { haltStageWithValidationFailure } from "./halt-routing.js";
 import { postStage } from "./sessions.js";
 import { branchOffsetFor, resendIntoChild } from "./spawn.js";
 import { recordStageSuccess } from "./success-persist.js";
 
-// Same two-ctx split as `postStage`: `obsCtx` is the long-lived launcher/observer
+// Same two-ctx split as `postStage`: `observerCtx` is the long-lived launcher/observer
 // (user-facing notifications + record + the chain continuation that spawns the
 // next stage); `child` is the reopened persisted session (branch reads + the
 // reattach nudge).
 export async function reattachStageSession(
-	obsCtx: WorkflowHostContext,
+	observerCtx: WorkflowHostContext,
 	child: WorkflowSessionContext,
-	s: StageSession,
+	s: StageSessionContext,
 ): Promise<void> {
 	// Promotion: extraction over the adopted branch, scoped by the SAME
 	// offset the interrupted activation ran under (persisted on its row and
@@ -53,19 +53,19 @@ export async function reattachStageSession(
 	const result = await produceAndValidateOutput(child, s, readBranch(child), offset);
 
 	if (result.kind === "ok") {
-		obsCtx.ui.notify(MSG_RESUME_PROMOTED(s.skill), "info");
-		if (!(await recordStageSuccess(obsCtx, s, result.output, session))) return;
-		await s.onSuccess(obsCtx, result.output);
+		observerCtx.ui.notify(MSG_RESUME_PROMOTED(s.skill), "info");
+		if (!(await recordStageSuccess(observerCtx, s, result.output, session))) return;
+		await s.onSuccess(observerCtx, result.output);
 		return;
 	}
 	if (result.kind === "validation-exhausted") {
-		return haltStageWithValidationFailure(obsCtx, s, result.failureSummary, session);
+		return haltStageWithValidationFailure(observerCtx, s, result.failureSummary, session);
 	}
 
 	// Promotion missed (collector-fatal) — reattach: nudge the session from
 	// its leaf, let the agent finish with full prior context, then run the
 	// standard post-session pipeline.
-	obsCtx.ui.notify(MSG_RESUME_REATTACHED(s.skill), "info");
+	observerCtx.ui.notify(MSG_RESUME_REATTACHED(s.skill), "info");
 	await resendIntoChild(child, REATTACH_PROMPT(s.skill));
-	await postStage(obsCtx, child, s);
+	await postStage(observerCtx, child, s);
 }

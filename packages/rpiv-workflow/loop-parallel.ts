@@ -78,7 +78,7 @@ const fanoutUnitRef = (e: LoopEntry, i: number): UnitRef => {
  * cycle-throw from `computeWaveLevels` can't leak it.
  */
 export async function runFanoutGeneration(
-	curCtx: WorkflowHostContext,
+	hostCtx: WorkflowHostContext,
 	e: LoopEntry,
 	cursor: LoopCursor,
 	run: RunContext,
@@ -111,14 +111,14 @@ export async function runFanoutGeneration(
 	}
 	const detach = () => run.signal?.removeEventListener("abort", onRunAbort);
 
-	await dispatchGeneration(curCtx, e, cursor, run, deps, order, genAbort, idToIndex);
+	await dispatchGeneration(hostCtx, e, cursor, run, deps, order, genAbort, idToIndex);
 	detach(); // generation settled — drop the run-lifetime listener BEFORE the tail
 
 	// The same two gates the wave loop ran between levels, now once at the end: a
 	// fail-fast halt already terminated state inside the worker and aborted its
 	// siblings; a run abort drained the semaphore and rejected every later acquire.
 	if (run.state.termination.status !== "running") return;
-	if (run.signal?.aborted) return deps.recordAborted(curCtx, e.name, run); // mid-flight abort → FAIL_WORKFLOW_ABORTED
+	if (run.signal?.aborted) return deps.recordAborted(hostCtx, e.name, run); // mid-flight abort → FAIL_WORKFLOW_ABORTED
 	return finalTail();
 }
 
@@ -129,7 +129,7 @@ export async function runFanoutGeneration(
  * `recordWorkerThrow`; allSettled guarantees every unit settled.
  */
 async function dispatchGeneration(
-	curCtx: WorkflowHostContext,
+	hostCtx: WorkflowHostContext,
 	e: LoopEntry,
 	cursor: LoopCursor,
 	run: RunContext,
@@ -143,14 +143,14 @@ async function dispatchGeneration(
 	// `concurrency: 1`); floored at 1, never raised above the host cap.
 	const loopCap = e.loop.kind === "fanout" ? e.loop.concurrency : undefined;
 	const sem = new Semaphore(
-		Math.max(1, Math.min(loopCap ?? curCtx.maxConcurrency, curCtx.maxConcurrency)),
+		Math.max(1, Math.min(loopCap ?? hostCtx.maxConcurrency, hostCtx.maxConcurrency)),
 		genAbort.signal,
 	); // drains queued units on either abort
 
 	// One readiness latch per DISPATCHED unit, index-addressed. A dep with no latch is
 	// already settled: either it is outside `ops` (a resume whose prior invocation filled
 	// the slot) or it is dangling (`computeWaveLevels` treats those as satisfied too —
-	// `validateUnitDeps` owns the dangling report).
+	// `ensureUnitDeps` owns the dangling report).
 	const latch = new Array<Promise<void> | undefined>(e.units!.length);
 	const open = new Array<(() => void) | undefined>(e.units!.length);
 	for (const i of ops)
@@ -173,7 +173,7 @@ async function dispatchGeneration(
 				// Resolve `--upstream`-style dep-artifact injection from the slots this
 				// unit's deps just filled. Empty when the loop sets no flag or no deps.
 				const suffix = depArtifactSuffix(e, cursor, i, idToIndex);
-				const out = await sem.run(() => dispatchUnitDetached(curCtx, e, i, run, deps, genAbort.signal, suffix));
+				const out = await sem.run(() => dispatchUnitDetached(hostCtx, e, i, run, deps, genAbort.signal, suffix));
 				// ONE synchronous block, and its order is load-bearing. (1) A fail-fast
 				// unit's worker terminated state via recordTerminalFailure — fire genAbort
 				// so in-flight siblings get session.abort()'d NOW and no dependent released
@@ -187,7 +187,7 @@ async function dispatchGeneration(
 				foldFanoutCompletion(run.state, cursor, e.def, e.name, i, e.units!.length, out);
 			} catch (reason) {
 				// aborted / never-started → unfilled slot (resume re-dispatches)
-				if (!isAbortError(reason)) await deps.recordWorkerThrow(curCtx, fanoutUnitRef(e, i), e.skill, run, reason);
+				if (!isAbortError(reason)) await deps.recordWorkerThrow(hostCtx, fanoutUnitRef(e, i), e.skill, run, reason);
 			} finally {
 				// Dependents proceed even when this unit failed — `depArtifactSuffix` skips
 				// a failed/unfilled slot, so they design blind for it rather than stalling.
@@ -202,7 +202,7 @@ async function dispatchGeneration(
  * dep whose slot is filled with a NON-FAILED output. A failed/sentinel or still-unfilled
  * dep slot is SKIPPED (the dependent designs blind for that dep) — so a failed upstream
  * degrades gracefully instead of injecting a broken path; synthesize stays the backstop.
- * Dangling ids never reach here (`validateUnitDeps` rejected them at the live entry); the
+ * Dangling ids never reach here (`ensureUnitDeps` rejected them at the live entry); the
  * `undefined` guard is defensive.
  */
 function depArtifactSuffix(e: LoopEntry, cursor: LoopCursor, index: number, idToIndex: Map<string, number>): string {
@@ -228,7 +228,7 @@ function depArtifactSuffix(e: LoopEntry, cursor: LoopCursor, index: number, idTo
  *  from the pre-wave dispatcher: collect-all unit failure → sentinel; fail-fast halt →
  *  placement sentinel + graceful return; ABORT → throws WorkflowAbortError → unfilled slot.) */
 async function dispatchUnitDetached(
-	curCtx: WorkflowHostContext,
+	hostCtx: WorkflowHostContext,
 	e: LoopEntry,
 	index: number,
 	run: RunContext,
@@ -239,16 +239,16 @@ async function dispatchUnitDetached(
 	if (signal?.aborted) throw new WorkflowAbortError(); // never open a child after abort; isAbortError → unfilled slot
 	const u = fanoutUnitAt(e, index, promptSuffix);
 	await run.lifecycle.fire(
-		curCtx,
+		hostCtx,
 		"onUnitStart",
 		skillStageRef(e.name, e.stageIdx + 1, u.skill),
 		{ role: u.role, index, unitId: u.id, label: u.label, skill: u.skill },
 		lifecycleCtxFor(run),
 	);
-	const snapshot = await deps.captureSnapshot(curCtx, e.name, u.def, e.stageIdx, run);
+	const snapshot = await deps.captureSnapshot(hostCtx, e.name, u.def, e.stageIdx, run);
 	let captured: Output | undefined;
-	await deps.runStageSession(
-		curCtx,
+	await deps.executeStageSession(
+		hostCtx,
 		buildUnitSession(e, u, index, run, snapshot, signal, (_child, output) => {
 			captured = output;
 			return Promise.resolve();

@@ -5,7 +5,7 @@
  * reject BEFORE any stage executes and roll the claim back.
  *
  * Lives in its own file because `vi.mock` is module-scoped: every test here
- * runs with `writeHeader` forced to fail.
+ * runs with `appendHeader` forced to fail.
  */
 
 import { mkdtempSync, rmSync } from "node:fs";
@@ -19,7 +19,7 @@ import { runWorkflow } from "./runner.js";
 
 vi.mock("../state/writes.js", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("../state/writes.js")>();
-	return { ...actual, writeHeader: vi.fn(() => false) };
+	return { ...actual, appendHeader: vi.fn(() => false) };
 });
 
 const tinyWorkflow: Workflow = {
@@ -57,7 +57,7 @@ describe("runWorkflow — header write failure", () => {
 
 		expect(result.success).toBe(false);
 		expect(result.error).toMatch(/could not write the run header/);
-		// claimName persisted the entry before writeHeader ran; the refusal
+		// claimName persisted the entry before appendHeader ran; the refusal
 		// must have released it.
 		expect(readNamesIndex(tmpDir) ?? {}).toEqual({});
 	});

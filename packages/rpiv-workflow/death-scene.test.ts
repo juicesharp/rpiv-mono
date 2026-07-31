@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AuditCtx } from "./audit-ctx.js";
+import type { AuditContext } from "./audit-ctx.js";
 import {
 	DEATH_SCENE_MAX_TOOL_CALLS,
 	DEATH_SCENE_TOOL_ARG_MAX_CHARS,
@@ -61,7 +61,7 @@ describe("death-scene pure helpers", () => {
 		termination: { status: "running" },
 	});
 
-	const auditFor = (overrides: Partial<AuditCtx> = {}): AuditCtx => ({
+	const auditFor = (overrides: Partial<AuditContext> = {}): AuditContext => ({
 		session: { id: "sess-1" },
 		cwd: "/repo",
 		runId: "run-1",
@@ -212,7 +212,7 @@ describe("writeDeathSceneArtifact", () => {
 		return { ctx, notifications };
 	};
 
-	const auditFor = (overrides: Partial<AuditCtx> = {}): AuditCtx => ({
+	const auditFor = (overrides: Partial<AuditContext> = {}): AuditContext => ({
 		session: { id: "sess-1" },
 		cwd: tmpDir,
 		runId: "run-1",

@@ -6,14 +6,14 @@
  * `recordUnitHalt` in `audit.ts`) call `writeDeathSceneArtifact` immediately
  * after they persist the JSONL failure row. The writer locates the just-failed
  * session's persisted JSONL, re-reads its branch through the host-injected
- * `AuditCtx.readSessionBranch` (NO live-session re-query — the child is already
+ * `AuditContext.readSessionBranch` (NO live-session re-query — the child is already
  * torn down), extracts the forensic scene, and writes a sidecar `.md` under
  * `<cwd>/.rpiv/artifacts/failures/`.
  *
  * Fail-soft throughout and SYNCHRONOUS: the entire body is try/caught, and on
  * ANY failure (locate miss, reader throw, write error) it warns via
  * `ctx.ui.notify(..., "warning")` and
- * continues — the original failure (already persisted by `writeFailureRow`)
+ * continues — the original failure (already persisted by `recordFailureRow`)
  * is never masked. Skips SILENTLY (no throw, no artifact, no warning) when
  * `audit.session === null` (sessionless failures: entry throws, seam aborts
  * via `auditCtxFor`) or `audit.readSessionBranch === undefined` (programmatic
@@ -25,7 +25,7 @@
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { AuditCtx } from "./audit-ctx.js";
+import type { AuditContext } from "./audit-ctx.js";
 import type { WorkflowHostContext } from "./host.js";
 import { locateSessionFile } from "./sessions/locate.js";
 import { type BranchEntry, iterToolUses, lastAssistantText } from "./transcript.js";
@@ -76,7 +76,7 @@ function sanitizeSegment(segment: string): string {
  * (`"phase 2/5"`), which would otherwise nest the artifact in a surprise
  * subdirectory. Pure — no I/O.
  */
-export function deathSceneFilePath(cwd: string, audit: AuditCtx): string {
+export function deathSceneFilePath(cwd: string, audit: AuditContext): string {
 	const stageNumber = audit.allocatedStageNumber ?? audit.state.lastAllocatedStageNumber;
 	// `unit.id` is the stable disambiguator when present (fanout/iterate). Assess-loop units
 	// carry no id (identified by `(role, round)`); append `_u<index>` so filename uniqueness
@@ -112,7 +112,7 @@ function truncateArgs(input: Record<string, unknown>): string {
  * joined text parts (via `lastAssistantText`), omitted when empty.
  */
 export function extractDeathScene(
-	audit: AuditCtx,
+	audit: AuditContext,
 	errMsg: string,
 	branch: BranchEntry[],
 	sessionFile: string,
@@ -190,14 +190,14 @@ export function formatDeathScene(scene: DeathScene): string {
  * WARNS + continues (`ctx.ui.notify(..., "warning")`) when
  * `locateSessionFile` returns null, the reader returns
  * undefined/an empty branch, or any step throws — the original failure, already
- * persisted by `writeFailureRow`, is never masked.
+ * persisted by `recordFailureRow`, is never masked.
  *
  * Synchronous by design: the caller (`recordTerminalFailure` /
  * `recordUnitHalt`) has already persisted the failure row; the artifact is a
  * best-effort sidecar, not a reconstruction input, so it never blocks the run's
  * terminal bookkeeping.
  */
-export function writeDeathSceneArtifact(ctx: WorkflowHostContext, audit: AuditCtx, errMsg: string): void {
+export function writeDeathSceneArtifact(ctx: WorkflowHostContext, audit: AuditContext, errMsg: string): void {
 	// Sessionless failures carry no persisted session — nothing to read, no artifact.
 	if (audit.session === null) return;
 	// No host-injected reader ⇒ degrade silently (programmatic embedder / no provider).

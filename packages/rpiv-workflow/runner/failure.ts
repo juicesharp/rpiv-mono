@@ -10,7 +10,7 @@ import {
 	auditCtxFor,
 	failedArgs,
 	notifyPartialArtifacts,
-	recordTerminalFailure,
+	recordFatalFailure,
 	terminate,
 } from "../audit.js";
 import { formatError, isAbortError } from "../internal-utils.js";
@@ -20,7 +20,7 @@ import { StagePreflightError } from "./errors.js";
 
 /**
  * Explicit result of one chain-walk step, threaded up through
- * `advanceChain` / `runStage` / `runStageOrRecordFailure`. The walk's halt
+ * `advanceChain` / `dispatchStage` / `dispatchStageOrRecordFailure`. The walk's halt
  * protocol is record-then-halt, not record-then-quietly-unwind: with a
  * non-void return type, a branch that records a failure but forgets to stop
  * the walk no longer typechecks — every arm must RETURN an outcome, and
@@ -41,7 +41,7 @@ export type ChainOutcome = "halted" | "completed" | "dispatched";
  * path) so they never import the composition site back.
  */
 export type AdvanceFn = (
-	curCtx: WorkflowHostContext,
+	hostCtx: WorkflowHostContext,
 	completedName: string,
 	completedIdx: number,
 	run: RunContext,
@@ -52,20 +52,15 @@ export type AdvanceFn = (
  * halt idiom for walk arms: `return haltChain(...)`.
  */
 export async function haltChain(
-	curCtx: WorkflowHostContext,
+	hostCtx: WorkflowHostContext,
 	run: RunContext,
 	stageName: string,
 	skill: string,
-	args: Parameters<typeof recordTerminalFailure>[2],
+	args: Parameters<typeof recordFatalFailure>[2],
 	onFailure?: (ctx: WorkflowHostContext) => void,
 	unit?: UnitRef,
 ): Promise<ChainOutcome> {
-	await recordTerminalFailure(
-		curCtx,
-		auditCtxFor(run, stageName, skill, unit ? { unit } : undefined),
-		args,
-		onFailure,
-	);
+	await recordFatalFailure(hostCtx, auditCtxFor(run, stageName, skill, unit ? { unit } : undefined), args, onFailure);
 	return "halted";
 }
 
@@ -84,7 +79,7 @@ export async function haltChain(
  * `skill`, so the unit's identity is NOT folded into the `stage` name string.
  */
 export async function recordEntryThrow(
-	curCtx: WorkflowHostContext,
+	hostCtx: WorkflowHostContext,
 	name: string,
 	run: RunContext,
 	e: unknown,
@@ -92,7 +87,7 @@ export async function recordEntryThrow(
 ): Promise<ChainOutcome> {
 	if (e instanceof StagePreflightError) {
 		return haltChain(
-			curCtx,
+			hostCtx,
 			run,
 			name,
 			e.skill,
@@ -102,7 +97,7 @@ export async function recordEntryThrow(
 	}
 	const reason = formatError(e);
 	return haltChain(
-		curCtx,
+		hostCtx,
 		run,
 		name,
 		unit?.skill ?? name,
@@ -120,8 +115,12 @@ export async function recordEntryThrow(
  * artifacts produced by earlier stages are surfaced so the operator sees them
  * instead of grepping the JSONL. No-op when no artifacts exist.
  */
-export function recordAbortedAtSeam(curCtx: WorkflowHostContext, name: string, run: RunContext): Promise<ChainOutcome> {
-	return haltChain(curCtx, run, name, name, abortedArgs(FAIL_WORKFLOW_ABORTED(name)), (ctx) =>
+export function recordAbortedAtSeam(
+	hostCtx: WorkflowHostContext,
+	name: string,
+	run: RunContext,
+): Promise<ChainOutcome> {
+	return haltChain(hostCtx, run, name, name, abortedArgs(FAIL_WORKFLOW_ABORTED(name)), (ctx) =>
 		notifyPartialArtifacts(ctx, run.cwd, run.runId),
 	);
 }
@@ -133,7 +132,7 @@ export function recordAbortedAtSeam(curCtx: WorkflowHostContext, name: string, r
  * anything else → terminal entry-throw row). Modeled after `advanceCursor`
  * (loop.ts): one shared authority, callers hold their own preconditions.
  *
- * The two call sites (`runStageOrRecordFailure` live, `resumeStageWithSession`
+ * The two call sites (`dispatchStageOrRecordFailure` live, `resumeStageWithSession`
  * resume) cover DISJOINT scopes — the resume catch protects the reattach ladder
  * (`resumeWithSessionLadder`) the live catch cannot reach — so both must exist.
  * This wrapper merges the CLASSIFICATION POLICY (which throw is an abort vs a
@@ -142,22 +141,22 @@ export function recordAbortedAtSeam(curCtx: WorkflowHostContext, name: string, r
  * cancel signal beyond `WorkflowAbortError`) is one edit, here.
  */
 export async function withStageEntryGuard(
-	curCtx: WorkflowHostContext,
+	hostCtx: WorkflowHostContext,
 	name: string,
 	run: RunContext,
 	inner: () => Promise<ChainOutcome>,
 ): Promise<ChainOutcome> {
-	if (run.signal?.aborted) return recordAbortedAtSeam(curCtx, name, run);
+	if (run.signal?.aborted) return recordAbortedAtSeam(hostCtx, name, run);
 	try {
 		return await inner();
 	} catch (e) {
-		if (isAbortError(e)) return recordAbortedAtSeam(curCtx, name, run);
-		return recordEntryThrow(curCtx, name, run, e);
+		if (isAbortError(e)) return recordAbortedAtSeam(hostCtx, name, run);
+		return recordEntryThrow(hostCtx, name, run, e);
 	}
 }
 
-export function finalizeWorkflow(curCtx: WorkflowHostContext, run: RunContext): ChainOutcome {
-	curCtx.ui.notify(MSG_WORKFLOW_COMPLETE(run.state.stagesCompleted), "info");
+export function finalizeWorkflow(hostCtx: WorkflowHostContext, run: RunContext): ChainOutcome {
+	hostCtx.ui.notify(MSG_WORKFLOW_COMPLETE(run.state.stagesCompleted), "info");
 	terminate(run.state, { status: "completed" });
 	return "completed";
 }

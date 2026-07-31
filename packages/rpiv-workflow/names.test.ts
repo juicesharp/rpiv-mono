@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+	appendHeader,
 	claimName,
 	generateRunId,
 	isValidName,
@@ -12,7 +13,6 @@ import {
 	releaseName,
 	resolveRun,
 	stateFilePath,
-	writeHeader,
 } from "./state/index.js";
 // Deep import: addNameToIndex is deliberately NOT on the state barrels
 // (production code goes through claimName); unit tests exercise it directly.
@@ -29,7 +29,7 @@ afterEach(() => {
 });
 
 function seedRun(runId: string, name?: string): void {
-	writeHeader(tmpDir, { runId, workflow: "mid", input: "go", ts: "2026-06-05T00:00:00Z", name });
+	appendHeader(tmpDir, { runId, workflow: "mid", input: "go", ts: "2026-06-05T00:00:00Z", name });
 }
 
 describe("readNamesIndex / addNameToIndex", () => {
@@ -82,7 +82,7 @@ describe("claimName", () => {
 	});
 
 	it("re-claims a name whose holder has no run file (stale entry from a failed releaseName rollback)", () => {
-		// The stranded-entry state: claimName succeeded, writeHeader failed,
+		// The stranded-entry state: claimName succeeded, appendHeader failed,
 		// releaseName's rollback ALSO failed — the index points at a run that
 		// never existed. The name must not be blocked forever.
 		addNameToIndex(tmpDir, "auth", "ghost-run");

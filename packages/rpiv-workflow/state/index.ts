@@ -16,6 +16,7 @@ export type {
 	WorkflowStage,
 } from "./state.js";
 export {
+	appendHeader,
 	appendLoopCap,
 	appendRoutingDecision,
 	appendStage,
@@ -40,5 +41,4 @@ export {
 	STATE_SCHEMA_VERSION,
 	stateFilePath,
 	VALID_NAME,
-	writeHeader,
 } from "./state.js";

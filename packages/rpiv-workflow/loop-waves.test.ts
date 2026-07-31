@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Unit } from "./loop-def.js";
-import { computeWaveLevels, unitIdIndex, validateUnitDeps } from "./loop-waves.js";
+import { computeWaveLevels, ensureUnitDeps, unitIdIndex } from "./loop-waves.js";
 import { StagePreflightError } from "./stage-errors.js";
 
 const u = (id: string, deps?: string[]): Unit => ({ prompt: id, label: id, id, ...(deps ? { deps } : {}) });
@@ -31,7 +31,7 @@ describe("computeWaveLevels", () => {
 		expect(computeWaveLevels(units, "design")).toEqual([[1], [0, 2]]);
 	});
 
-	it("treats a dangling dep as satisfied (validateUnitDeps owns the dangling report)", () => {
+	it("treats a dangling dep as satisfied (ensureUnitDeps owns the dangling report)", () => {
 		expect(computeWaveLevels([u("slice-2", ["slice-1"])], "design")).toEqual([[0]]);
 	});
 
@@ -52,15 +52,15 @@ describe("computeWaveLevels", () => {
 	});
 });
 
-describe("validateUnitDeps", () => {
+describe("ensureUnitDeps", () => {
 	it("passes a valid DAG", () => {
-		expect(() => validateUnitDeps([u("slice-1"), u("slice-2", ["slice-1"])], "design")).not.toThrow();
+		expect(() => ensureUnitDeps([u("slice-1"), u("slice-2", ["slice-1"])], "design")).not.toThrow();
 	});
 
 	it("throws on a dangling dep id", () => {
 		let err: unknown;
 		try {
-			validateUnitDeps([u("slice-2", ["slice-9"])], "design");
+			ensureUnitDeps([u("slice-2", ["slice-9"])], "design");
 		} catch (e) {
 			err = e;
 		}
@@ -69,7 +69,7 @@ describe("validateUnitDeps", () => {
 	});
 
 	it("throws on a cycle", () => {
-		expect(() => validateUnitDeps([u("a", ["b"]), u("b", ["a"])], "design")).toThrow(StagePreflightError);
+		expect(() => ensureUnitDeps([u("a", ["b"]), u("b", ["a"])], "design")).toThrow(StagePreflightError);
 	});
 });
 

@@ -12,7 +12,7 @@
  *
  * Internally split into three modules:
  *   - paths.ts  — runsDir + stateFilePath + generateRunId
- *   - writes.ts — tryAppendJsonl + writeHeader + appendStage +
+ *   - writes.ts — tryAppendJsonl + appendHeader + appendStage +
  *                 appendRoutingDecision
  *   - reads.ts  — readLastStage + readAllStages + readRoutingDecisions +
  *                 listArtifacts + readHeader + listRuns
@@ -258,4 +258,4 @@ export {
 	readRoutingDecisions,
 } from "./reads.js";
 export { resolveRun } from "./resolve.js";
-export { appendLoopCap, appendRoutingDecision, appendStage, writeHeader } from "./writes.js";
+export { appendHeader, appendLoopCap, appendRoutingDecision, appendStage } from "./writes.js";

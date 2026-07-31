@@ -19,7 +19,7 @@
  */
 
 import type { SessionPolicy } from "../api.js";
-import type { StageSession, WorkflowHostContext, WorkflowSessionContext } from "../types.js";
+import type { StageSessionContext, WorkflowHostContext, WorkflowSessionContext } from "../types.js";
 
 /**
  * The per-policy branch offset — fresh ignores the stage-captured value;
@@ -54,7 +54,7 @@ type OpenMode = { reattach: { sessionFile: string } } | { fork: { sessionFile: s
  */
 function openChild(
 	ctx: WorkflowHostContext,
-	s: Pick<StageSession, "prompt" | "model" | "signal" | "laneUnitIndex">,
+	s: Pick<StageSessionContext, "prompt" | "model" | "signal" | "laneUnitIndex">,
 	body: (child: WorkflowSessionContext) => Promise<void>,
 	mode?: OpenMode,
 ): Promise<void> {
@@ -81,7 +81,7 @@ function openChild(
  */
 export function spawnChildAndRun(
 	ctx: WorkflowHostContext,
-	s: Pick<StageSession, "prompt" | "model" | "signal" | "laneUnitIndex">,
+	s: Pick<StageSessionContext, "prompt" | "model" | "signal" | "laneUnitIndex">,
 	body: (child: WorkflowSessionContext) => Promise<void>,
 ): Promise<void> {
 	return openChild(ctx, s, body);
@@ -102,7 +102,7 @@ export function spawnChildAndRun(
  */
 export function reattachChildSession(
 	ctx: WorkflowHostContext,
-	s: Pick<StageSession, "prompt" | "model" | "signal" | "laneUnitIndex">,
+	s: Pick<StageSessionContext, "prompt" | "model" | "signal" | "laneUnitIndex">,
 	sessionFile: string,
 	body: (child: WorkflowSessionContext) => Promise<void>,
 ): Promise<void> {
@@ -127,7 +127,7 @@ export function reattachChildSession(
  */
 export function forkChildSession(
 	ctx: WorkflowHostContext,
-	s: Pick<StageSession, "prompt" | "model" | "signal" | "laneUnitIndex">,
+	s: Pick<StageSessionContext, "prompt" | "model" | "signal" | "laneUnitIndex">,
 	sessionFile: string,
 	body: (child: WorkflowSessionContext) => Promise<void>,
 ): Promise<void> {

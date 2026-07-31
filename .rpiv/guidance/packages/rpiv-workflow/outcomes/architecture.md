@@ -4,7 +4,7 @@
 Framework-shipped catalogue of `ArtifactCollector` / `ArtifactParser` primitives plus composite `Outcome` bundles (`sideEffectOutcome`, `gitCommitOutcome`). Pure leaf consumer of `../output-spec.ts` types + `../handle.ts` / `../transcript.ts` / `../internal-utils.ts` helpers. **Host-agnostic** — knows nothing about Pi tool names, `.rpiv/` paths, schema validation, or rpiv-pi conventions; convention layers live in sibling packages.
 
 ## Dependencies
-- **`../output-spec`**: the `ArtifactCollector` / `ArtifactParser` / `Outcome` / `CollectCtx` / `ParseCtx` / `SnapshotCtx` contract + `defineCollector` / `defineParser` identity helpers (`OutputSpec` is a deprecated alias, ships one release)
+- **`../output-spec`**: the `ArtifactCollector` / `ArtifactParser` / `Outcome` / `CollectContext` / `ParseContext` / `SnapshotContext` contract + `defineCollector` / `defineParser` identity helpers (`OutputSpec` is a deprecated alias, ships one release)
 - **`../handle`**: `Artifact` + handle factories (`fs(path)`, `url(href)`, `opaque(id)`); **`../output`**: `Output` type for the `GitCommitOutput` narrowing alias; **`../internal-utils`**: `throwInvalid` for construction-time throws (`collectors/union.ts`)
 - **`../transcript`**: branch-scanning `iterToolUses`, `lastMatchInBranch` — honour `ctx.branchOffset` for continue-policy slicing; **`node:child_process` + `node:util`**: promisified ONCE in `exec.ts` (`execFileAsync` + 5 s `GIT_EXEC_TIMEOUT_MS`) for the git collectors
 
@@ -25,8 +25,8 @@ parsers/                    — Optional interpreters (jsonBodyParser): read art
 
 ## Three contracts at a glance
 ```ts
-interface ArtifactCollector<Snap = unknown> { snapshot?(ctx: SnapshotCtx): Promise<Snap> | Snap; collect(ctx: CollectCtx<Snap>): Promise<CollectResult> | CollectResult; }  // snapshot runs BEFORE stage body — captures baseline
-interface ArtifactParser<Snap, K extends string, D> { parse(ctx: ParseCtx<Snap>): Promise<ParseResult<K, D>> | ParseResult<K, D>; }  // optional
+interface ArtifactCollector<Snap = unknown> { snapshot?(ctx: SnapshotContext): Promise<Snap> | Snap; collect(ctx: CollectContext<Snap>): Promise<CollectResult> | CollectResult; }  // snapshot runs BEFORE stage body — captures baseline
+interface ArtifactParser<Snap, K extends string, D> { parse(ctx: ParseContext<Snap>): Promise<ParseResult<K, D>> | ParseResult<K, D>; }  // optional
 interface Outcome<Snap, K, D> { name?: string; collector: ArtifactCollector<Snap>; parser?: ArtifactParser<Snap, K, D>; }  // name = default publish slot in state.named
 // Tagged results — never throw across the runner boundary. Parser-less stages get Output { kind: "artifacts", data: artifacts } automatically.
 type CollectResult = { kind: "ok"; artifacts: readonly Artifact[] } | { kind: "fatal"; message: string };

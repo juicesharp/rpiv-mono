@@ -90,7 +90,7 @@ describe("assess strategy — corrupted-cursor guards", () => {
 });
 
 describe("buildUnitSession — collectAll is fanout-only (F1 regression)", () => {
-	// A minimal-but-real RunContext: buildUnitSession assembles a StageSession (no
+	// A minimal-but-real RunContext: buildUnitSession assembles a StageSessionContext (no
 	// I/O) reading these fields via runIdentityOf / resolveModel.
 	const runFull = {
 		cwd: "/tmp",

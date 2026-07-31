@@ -1,7 +1,7 @@
 /**
  * Session execution — one Pi session per workflow stage / loop unit.
- * `runStageSession` is the only public entry (loop units run through it too,
- * threading their identity via `StageSession.unit`).
+ * `executeStageSession` is the only public entry (loop units run through it too,
+ * threading their identity via `StageSessionContext.unit`).
  *
  * Every stage runs in its own detached child session (`spawnChildAndRun`,
  * spawn.ts); the only surviving policy divergence is the branch offset
@@ -25,7 +25,7 @@
 
 import { WorkflowAbortError } from "../internal-utils.js";
 import { type BranchEntry, classifyStop, readBranch, readSessionRef, type StopSignal } from "../transcript.js";
-import type { StageSession, WorkflowHostContext, WorkflowSessionContext } from "../types.js";
+import type { StageSessionContext, WorkflowHostContext, WorkflowSessionContext } from "../types.js";
 import { bashStrikesRemaining, bashTimeoutSteeringMessage, consumeBashStrike } from "./bash-strikes.js";
 import { produceAndValidateOutput } from "./extraction.js";
 import { haltStageOrSoftHalt } from "./halt-routing.js";
@@ -37,7 +37,7 @@ import { recordStageSuccess } from "./success-persist.js";
 // ===========================================================================
 
 /** Execute one DAG stage (or loop unit) in its own detached child session. */
-export async function runStageSession(ctx: WorkflowHostContext, s: StageSession): Promise<void> {
+export async function executeStageSession(ctx: WorkflowHostContext, s: StageSessionContext): Promise<void> {
 	await spawnChildAndRun(ctx, s, (child) => postStage(ctx, child, s));
 }
 
@@ -56,13 +56,13 @@ export async function runStageSession(ctx: WorkflowHostContext, s: StageSession)
  * branch ran under; resume re-applies that persisted value verbatim.
  */
 export async function continueStageSession(
-	obsCtx: WorkflowHostContext,
+	observerCtx: WorkflowHostContext,
 	child: WorkflowSessionContext,
-	s: StageSession,
+	s: StageSessionContext,
 ): Promise<void> {
 	const offset = readBranch(child).length;
 	await resendIntoChild(child, s.prompt);
-	await postStage(obsCtx, child, s, offset);
+	await postStage(observerCtx, child, s, offset);
 }
 
 // ===========================================================================
@@ -74,7 +74,7 @@ export async function continueStageSession(
  * persist → chain. Exported to the `reattach.ts` companion — a reattached
  * session's continuation runs this exact pipeline, byte-identical to live.
  *
- * TWO ctxs (detachment): `obsCtx` is the long-lived LAUNCHER/observer ctx the
+ * TWO ctxs (detachment): `observerCtx` is the long-lived LAUNCHER/observer ctx the
  * walk threads — it stays valid across every stage, so the user-facing recording
  * (success/halt rows + notifications + lifecycle) AND the chain continuation
  * (`onSuccess` → advance/step, which spawns the NEXT stage's child) all run on
@@ -82,7 +82,7 @@ export async function continueStageSession(
  * background lane — and which is disposed when the stage ends). `child` is the
  * in-session ctx: the agent transcript (`readBranch`/`readSessionRef`) and the
  * validation-retry re-prompt (`produceAndValidateOutput` → `resendIntoChild`)
- * read/write through it. Spawning the next stage off `obsCtx` is what keeps the
+ * read/write through it. Spawning the next stage off `observerCtx` is what keeps the
  * launcher the single spawner (no nested-child chain).
  *
  * The backing `SessionRef` is captured ONCE at entry — every row this
@@ -90,9 +90,9 @@ export async function continueStageSession(
  * carries the same provenance value.
  */
 export async function postStage(
-	obsCtx: WorkflowHostContext,
+	observerCtx: WorkflowHostContext,
 	child: WorkflowSessionContext,
-	s: StageSession,
+	s: StageSessionContext,
 	// Defaults to the policy-derived offset (fresh ⇒ undefined; resume continue ⇒
 	// the persisted row's value). The live continue body passes the value it
 	// re-derived from the forked branch, which is authoritative there.
@@ -124,30 +124,36 @@ export async function postStage(
 			// verbatim); exhaustion falls through to the UNCHANGED soft-halt/terminal
 			// seam below, where the failure-row writers (memo + death-scene) fire for free.
 			if (consumeBashStrike(s, timeout.reason)) {
-				return retryStageAfterBashStrike(obsCtx, child, s, offset, timeout.reason);
+				return retryStageAfterBashStrike(observerCtx, child, s, offset, timeout.reason);
 			}
-			return haltStageOrSoftHalt(obsCtx, s, { kind: "timeout", reason: timeout.reason }, session);
+			return haltStageOrSoftHalt(observerCtx, s, { kind: "timeout", reason: timeout.reason }, session);
 		}
 		throw new WorkflowAbortError();
 	}
 	// Every halt below routes through the single `haltStageOrSoftHalt` gate: a
 	// fanout unit marked `collectAll` records a NON-terminal failed row + a sentinel
 	// slot instead of halting the run; everything else takes the arm's fail-fast
-	// halt. Recording + the continuation run on obsCtx (the launcher) — the per-stage
+	// halt. Recording + the continuation run on observerCtx (the launcher) — the per-stage
 	// child is disposed when the stage ends.
-	if (outcome.stop !== "stop") return haltStageOrSoftHalt(obsCtx, s, { kind: "stop", stop: outcome.stop }, session);
+	if (outcome.stop !== "stop")
+		return haltStageOrSoftHalt(observerCtx, s, { kind: "stop", stop: outcome.stop }, session);
 
 	const result = await produceAndValidateOutput(child, s, outcome.branch, offset);
 	if (result.kind === "fatal")
-		return haltStageOrSoftHalt(obsCtx, s, { kind: "extraction", message: result.message }, session);
+		return haltStageOrSoftHalt(observerCtx, s, { kind: "extraction", message: result.message }, session);
 	if (result.kind === "validation-exhausted")
-		return haltStageOrSoftHalt(obsCtx, s, { kind: "validation", failureSummary: result.failureSummary }, session);
+		return haltStageOrSoftHalt(
+			observerCtx,
+			s,
+			{ kind: "validation", failureSummary: result.failureSummary },
+			session,
+		);
 
-	if (!(await recordStageSuccess(obsCtx, s, result.output, session))) return;
+	if (!(await recordStageSuccess(observerCtx, s, result.output, session))) return;
 	// The validated Output goes to the continuation directly — loop drivers
 	// thread it into accumulated / feedForward without state back-reads. Runs on
-	// obsCtx so the next stage's child is spawned off the launcher.
-	await s.onSuccess(obsCtx, result.output);
+	// observerCtx so the next stage's child is spawned off the launcher.
+	await s.onSuccess(observerCtx, result.output);
 }
 
 // ===========================================================================
@@ -165,16 +171,16 @@ export async function postStage(
  * failure-row writers (memo + death-scene artifact) fire for free.
  */
 async function retryStageAfterBashStrike(
-	obsCtx: WorkflowHostContext,
+	observerCtx: WorkflowHostContext,
 	child: WorkflowSessionContext,
-	s: StageSession,
+	s: StageSessionContext,
 	offset: number | undefined,
 	reason: string,
 ): Promise<void> {
 	child.resetToolTimeout?.();
 	const remaining = bashStrikesRemaining(s);
 	await resendIntoChild(child, bashTimeoutSteeringMessage(reason, remaining, remaining === 0));
-	return postStage(obsCtx, child, s, offset);
+	return postStage(observerCtx, child, s, offset);
 }
 
 // ===========================================================================

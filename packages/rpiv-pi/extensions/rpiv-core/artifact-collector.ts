@@ -32,7 +32,7 @@ import {
 	type ArtifactParser,
 	defineParser,
 	type Outcome,
-	type ParseCtx,
+	type ParseContext,
 	transcriptPathCollector,
 	// Runner-free entry — keeps the ~530ms engine off the startup path.
 } from "@juicesharp/rpiv-workflow/registration";
@@ -73,7 +73,7 @@ export function rpivBucketCollector(bucket: string): ArtifactCollector {
  * with no frontmatter at all already does.
  */
 export const frontmatterParser: ArtifactParser<undefined, "artifact-md", Record<string, unknown>> = defineParser({
-	parse(ctx: ParseCtx<undefined>) {
+	parse(ctx: ParseContext<undefined>) {
 		const primary = ctx.artifacts[0];
 		if (primary?.handle.kind !== "fs") {
 			return {

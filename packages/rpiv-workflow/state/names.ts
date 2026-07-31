@@ -5,7 +5,7 @@
  *
  * Internal module — not re-exported from registration.ts. The runner reserves
  * names through `claimName` (the single in-process door: validate →
- * collision-check → persist) BEFORE `writeHeader`. External consumers resolve
+ * collision-check → persist) BEFORE `appendHeader`. External consumers resolve
  * names through `resolveRun`.
  *
  * Durability: every write goes through `writeNamesIndex` — temp file +

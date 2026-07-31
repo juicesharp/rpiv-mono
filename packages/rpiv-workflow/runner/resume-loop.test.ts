@@ -38,12 +38,12 @@ import { failedOutput, type Output, outputMeta } from "../output.js";
 import type { Outcome } from "../output-spec.js";
 import { eq, gt } from "../predicates.js";
 import {
+	appendHeader,
 	appendStage,
 	readAllStages,
 	STATE_SCHEMA_VERSION,
 	type WorkflowHeader,
 	type WorkflowStage,
-	writeHeader,
 } from "../state/index.js";
 import { typeboxSchema } from "../typebox-adapter.js";
 import { resumeWorkflow } from "./runner.js";
@@ -175,7 +175,7 @@ describe("loop-resume — fanout", () => {
 	} as Workflow;
 
 	function writeRun(stages: WorkflowStage[]): void {
-		writeHeader(tmpDir, header);
+		appendHeader(tmpDir, header);
 		for (const s of stages) appendStage(tmpDir, header.runId, s);
 	}
 
@@ -615,7 +615,7 @@ describe("loop-resume — iterate", () => {
 
 	function writeRun(stages: WorkflowStage[]): void {
 		writeFile(".rpiv/artifacts/reviews/rev.md", REVIEW_3_PHASES);
-		writeHeader(tmpDir, header);
+		appendHeader(tmpDir, header);
 		for (const s of stages) appendStage(tmpDir, header.runId, s);
 	}
 
@@ -763,7 +763,7 @@ describe("loop-resume — iterate corrective back-edge", () => {
 	it("resumes the trailing generation only; state.named.plans keeps both generations", async () => {
 		writeFile(".rpiv/artifacts/architecture_reviews/rev.md", REVIEW_2_PHASES);
 
-		writeHeader(tmpDir, header);
+		appendHeader(tmpDir, header);
 		const rows: WorkflowStage[] = [
 			{
 				session: null,
@@ -919,7 +919,7 @@ describe("loop-resume — assess", () => {
 	});
 
 	function writeRun(stages: WorkflowStage[]): void {
-		writeHeader(tmpDir, header);
+		appendHeader(tmpDir, header);
 		for (const s of stages) appendStage(tmpDir, header.runId, s);
 	}
 
@@ -1186,7 +1186,7 @@ describe("loop-resume — assess × panel", () => {
 	});
 
 	function writeRun(stages: WorkflowStage[]): void {
-		writeHeader(tmpDir, header);
+		appendHeader(tmpDir, header);
 		for (const s of stages) appendStage(tmpDir, header.runId, s);
 	}
 
@@ -1340,7 +1340,7 @@ describe("loop-resume — verify", () => {
 	});
 
 	function writeRun(stages: WorkflowStage[]): void {
-		writeHeader(tmpDir, header);
+		appendHeader(tmpDir, header);
 		for (const s of stages) appendStage(tmpDir, header.runId, s);
 	}
 
@@ -1595,7 +1595,7 @@ describe("loop-resume — prompt dispatch", () => {
 	});
 
 	function writeRun(stages: WorkflowStage[]): void {
-		writeHeader(tmpDir, header);
+		appendHeader(tmpDir, header);
 		for (const s of stages) appendStage(tmpDir, header.runId, s);
 	}
 

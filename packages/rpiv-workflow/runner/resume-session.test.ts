@@ -42,15 +42,15 @@ import {
 	MSG_RESUME_SESSION_FALLBACK,
 	REATTACH_PROMPT,
 } from "../messages.js";
-import type { CollectCtx, Outcome } from "../output-spec.js";
+import type { CollectContext, Outcome } from "../output-spec.js";
 import {
+	appendHeader,
 	appendStage,
 	readAllStages,
 	type SessionRef,
 	STATE_SCHEMA_VERSION,
 	type WorkflowHeader,
 	type WorkflowStage,
-	writeHeader,
 } from "../state/index.js";
 import { lastMatchInBranch } from "../transcript.js";
 import { typeboxSchema } from "../typebox-adapter.js";
@@ -79,9 +79,9 @@ const header: WorkflowHeader = {
 };
 
 /** Collector that adopts whatever artifact path the branch announced. */
-const announceOutcome = (collectSpy?: (ctx: CollectCtx) => void): Outcome => ({
+const announceOutcome = (collectSpy?: (ctx: CollectContext) => void): Outcome => ({
 	collector: {
-		collect: (ctx: CollectCtx) => {
+		collect: (ctx: CollectContext) => {
 			collectSpy?.(ctx);
 			const m = lastMatchInBranch(ctx.branch, /\.rpiv\/artifacts\/\S+\.md/g, ctx.branchOffset);
 			return m
@@ -119,7 +119,7 @@ const failedRow = (session: SessionRef | null): WorkflowStage => ({
 });
 
 const writeRun = (rows: WorkflowStage[]): void => {
-	writeHeader(tmpDir, header);
+	appendHeader(tmpDir, header);
 	for (const r of rows) appendStage(tmpDir, header.runId, r);
 };
 

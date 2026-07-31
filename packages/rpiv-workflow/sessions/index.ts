@@ -6,4 +6,4 @@
 
 export { locateSessionFile, pruneOrphanedChildSessions } from "./locate.js";
 export { reattachStageSession } from "./reattach.js";
-export { continueStageSession, runStageSession } from "./sessions.js";
+export { continueStageSession, executeStageSession } from "./sessions.js";

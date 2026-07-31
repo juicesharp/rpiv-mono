@@ -17,12 +17,12 @@
  * probe pull is the documented harmless deterministic double-pull.
  */
 
-import { auditCtxFor, failedArgs, recordTerminalFailure } from "../audit.js";
+import { auditCtxFor, failedArgs, recordFatalFailure } from "../audit.js";
 import { resolveSkill } from "../chain-state.js";
 import { announceLoopStart, pendingFanoutIndices, runFanoutResume, runLoop } from "../loop.js";
 import { effectiveLoopOf, freezesEntryArgsOf } from "../loop-constructors.js";
 import { buildLoopEntry, type LoopDeps, sequentialStrategyOf } from "../loop-kinds.js";
-import { validateUnitDeps } from "../loop-waves.js";
+import { ensureUnitDeps } from "../loop-waves.js";
 import { FAIL_MISSING_ARTIFACT, type FailureText, MSG_RESUME_LOOP_MISMATCH } from "../messages.js";
 import type { RunContext, WorkflowHostContext } from "../types.js";
 import type { LoopResumePoint } from "./resume.js";
@@ -73,7 +73,7 @@ export async function resumeLoopStage(
 		// Re-validate the recomputed DAG: the id-only drift guard PASSES when a user edits
 		// only a slice's `deps` (ids/titles unchanged), so a newly-introduced cycle would
 		// otherwise reach the dispatcher. guardResumeEntry catches this throw → clean failure.
-		validateUnitDeps(point.units!, point.parent);
+		ensureUnitDeps(point.units!, point.parent);
 		const pending = pendingFanoutIndices(point.cursor, point.units!.length); // slots === undefined
 		if (pending.length > 0) await announceLoopStart(ctx, run, entry);
 		await runFanoutResume(ctx, entry, point.cursor, run, deps, pending);
@@ -88,7 +88,7 @@ export async function resumeLoopStage(
 /**
  * One refusal recorder — the shared 3-step body for the two resume recorders
  * (`recordMissingArtifactFailure` / `recordLoopDriftFailure`): resolve the
- * terminal args + build the audit ctx + `recordTerminalFailure`. Each caller
+ * terminal args + build the audit ctx + `recordFatalFailure`. Each caller
  * supplies its own descriptor — a `FailureText` (missing-artifact) or a
  * `[notifyMsg, errMsg]` tuple (loop drift).
  */
@@ -100,7 +100,7 @@ function recordResumeRefusal(
 	descriptor: FailureText | [notifyMsg: string, errMsg: string],
 ): Promise<void> {
 	const args = Array.isArray(descriptor) ? failedArgs(descriptor[0], descriptor[1]) : failedArgs(descriptor);
-	return recordTerminalFailure(ctx, auditCtxFor(run, parent, skill), args);
+	return recordFatalFailure(ctx, auditCtxFor(run, parent, skill), args);
 }
 
 /** Recorded refusal for a corrupted/truncated trail (reuses the forward preflight's messages). */

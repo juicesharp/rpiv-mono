@@ -4,7 +4,7 @@
 Per-stage / per-loop-unit session orchestrator. Every stage and loop unit runs in its own detached child session opened through `ctx.spawnChild` (up to `ctx.maxConcurrency` in flight); the sole surviving policy divergence is the branch offset (`branchOffsetFor`). Two orthogonal concerns: (1) **child-session plumbing** — spawn/fork/reattach primitives + session-backed resume; (2) **fatal-extraction** — folding collector/parser/schema failures into the structured `OutputProduction` outcome the audit layer records. Public surface (barrel): `runStageSession`, `continueStageSession`, `reattachStageSession`, `locateSessionFile`, `pruneOrphanedChildSessions`.
 
 ## Dependencies
-- **`../types`** (type-only; re-exports `../host`): `StageSession`, `WorkflowHostContext`, `WorkflowSessionContext` — abstract Pi's `ExtensionAPI` / `ExtensionCommandContext` structurally; `host.test.ts` carries a compile-time tripwire
+- **`../types`** (type-only; re-exports `../host`): `StageSessionContext`, `WorkflowHostContext`, `WorkflowSessionContext` — abstract Pi's `ExtensionAPI` / `ExtensionCommandContext` structurally; `host.test.ts` carries a compile-time tripwire
 - **`../validate-output`**: `runValidationRetryLoop` (the shared retry engine), `validateOutputData`, MIN/MAX clamps; **`../internal-utils`**: `withTimeout`, `WorkflowAbortError`, `assertNever`
 - **`../output-spec`, `../outcomes`, `../output`**: `Outcome` (the v1.20 rename of `OutputSpec`), `sideEffectOutcome` fallback, `finalizeOutput`, `failedOutput` sentinel
 - **`../audit`, `../audit-rows`, `../events`, `../messages`, `../transcript`**: row writers (`recordStopFailure` / `recordTerminalFailure` / `recordUnitHalt`, `persistStageSuccess`), `onStageEnd` / `onStageRetry` / `onUnitEnd` / `onUnitHalt` lifecycle fires, `MSG_*` / `ERR_*` / `FAIL_*` constants
@@ -30,11 +30,11 @@ reattach.ts        — session-backed resume: promotion → reattach arms reusin
 
 `openChild` (`spawn.ts`) is THE primitive: `ctx.spawnChild({ prompt, model, signal, unitIndex, ...mode, withSession })` opens an isolated child (the parent launcher ctx stays valid), waits for it to settle, then runs the body on the guaranteed-in-session `WorkflowSessionContext`. Three open modes:
 
-- **FRESH** (`spawnChildAndRun`) — brand-new child; the host sends the prompt. The default stage / loop-unit entry (`runStageSession`); fan-out units run through the same entry, threading identity via `StageSession.unit`
+- **FRESH** (`spawnChildAndRun`) — brand-new child; the host sends the prompt. The default stage / loop-unit entry (`runStageSession`); fan-out units run through the same entry, threading identity via `StageSessionContext.unit`
 - **REATTACH** (`reattachChildSession`) — open a persisted file IN PLACE for session-backed resume; the detached replacement for the deleted `ctx.switchSession` swap. Body is `reattachStageSession`: promote from the loaded branch, else nudge via `resendIntoChild`
 - **FORK** (`forkChildSession`) — `sessionPolicy: "continue"`: copy the PREDECESSOR's persisted session (`SessionManager.forkFrom` — source file never mutated, the fork has its own resumable identity), located from `run.state.lastSession` via `locateSessionFile` and gated in `run-stage.ts` (no hit ⇒ fresh-dispatch fallback). Body is `continueStageSession`: re-derive the inherited-prefix offset from the forked branch, send the continuation turn, run `postStage` sliced past the prefix
 
-`postStage` runs on a **two-ctx split**: `obsCtx` (the long-lived launcher/observer) carries recording, lifecycle fires, and the chain continuation (`onSuccess` spawns the NEXT stage's child off the launcher — the single spawner, no nested-child chain); `child` carries transcript reads and retry re-prompts, and is disposed when the stage ends. `StageSession.laneUnitIndex` flows through as `spawnChild`'s `unitIndex` so a lane-aware host publishes each fan-out unit under its own registry slot (observability-only hint).
+`postStage` runs on a **two-ctx split**: `obsCtx` (the long-lived launcher/observer) carries recording, lifecycle fires, and the chain continuation (`onSuccess` spawns the NEXT stage's child off the launcher — the single spawner, no nested-child chain); `child` carries transcript reads and retry re-prompts, and is disposed when the stage ends. `StageSessionContext.laneUnitIndex` flows through as `spawnChild`'s `unitIndex` so a lane-aware host publishes each fan-out unit under its own registry slot (observability-only hint).
 
 ## Fatal vs recoverable: tagged outcome + the soft-halt gate
 

@@ -3,10 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { fs as fsHandle, opaque } from "../../handle.js";
-import type { ParseCtx } from "../../output-spec.js";
+import type { ParseContext } from "../../output-spec.js";
 import { jsonBodyParser } from "./json-body.js";
 
-const ctxOf = (cwd: string, artifacts: ParseCtx["artifacts"]): ParseCtx => ({
+const ctxOf = (cwd: string, artifacts: ParseContext["artifacts"]): ParseContext => ({
 	cwd,
 	runId: "test",
 	stageIndex: 0,

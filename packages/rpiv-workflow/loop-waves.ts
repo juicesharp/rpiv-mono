@@ -44,8 +44,8 @@ export function unitIdIndex(units: readonly Unit[]): Map<string, number> {
  * (unlevellable) node ⇒ a dependency cycle ⇒ `invariantPreflight`.
  *
  * Dangling deps (an id matching no unit) are SKIPPED here (treated as satisfied) so
- * a single missing id can't masquerade as a cycle; `validateUnitDeps` is the one that
- * reports dangling refs. At the live entry `validateUnitDeps` runs first, so a cycle
+ * a single missing id can't masquerade as a cycle; `ensureUnitDeps` is the one that
+ * reports dangling refs. At the live entry `ensureUnitDeps` runs first, so a cycle
  * reaching here is post-validation/defensive; the throw still lands a clean halt.
  */
 export function computeWaveLevels(units: readonly Unit[], stage: string): number[][] {
@@ -86,7 +86,7 @@ export function computeWaveLevels(units: readonly Unit[], stage: string): number
  * `invariantPreflight` halt attributed to `stage`. Cheap; runs before dispatch so the
  * dispatcher never has to throw. Cycle detection delegates to `computeWaveLevels`.
  */
-export function validateUnitDeps(units: readonly Unit[], stage: string): void {
+export function ensureUnitDeps(units: readonly Unit[], stage: string): void {
 	const ids = new Set(units.map(unitTagOf));
 	for (const u of units) {
 		for (const d of u.deps ?? []) {

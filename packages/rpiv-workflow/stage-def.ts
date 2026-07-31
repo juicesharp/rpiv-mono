@@ -515,7 +515,7 @@ function actsScript<TIn = unknown>(opts: ActsScriptOptions<TIn>): StageDef<TIn, 
 // / `{ kind: "stop" }` in routing.ts: no outgoing edge OR explicit `STOP`;
 // orthogonal to this factory — a `terminal()` stage can route onward, and a
 // plain stage can be a sink) and SENSE 3 (run-outcome prose — "terminal
-// failure/outcome" = a halt that ends the run, e.g. audit.ts `writeFailureRow`).
+// failure/outcome" = a halt that ends the run, e.g. audit.ts `recordFailureRow`).
 // See the `terminal` export doc below for the full glossary.
 function terminalFn(overrides: Partial<StageDef> = {}): StageDef {
 	return withDefaults("side-effect", { ...overrides, inheritsArtifacts: false });
@@ -589,7 +589,7 @@ export const acts = Object.assign(actsFn, { script: actsScript, prompt: actsProm
  *     factory — a `terminal()` stage can route onward, a plain stage can be a
  *     sink.
  *  3. RUN OUTCOME ("terminal failure/outcome" prose, e.g. audit.ts
- *     `writeFailureRow` / `recordTerminalFailure`): a failure/cancellation/
+ *     `recordFailureRow` / `recordTerminalFailure`): a failure/cancellation/
  *     abort that ends the run.
  */
 export const terminal = Object.assign(terminalFn, { script: terminalScript });
