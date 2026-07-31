@@ -175,7 +175,7 @@ async function dispatchGeneration(
 				const suffix = depArtifactSuffix(e, cursor, i, idToIndex);
 				const out = await sem.run(() => dispatchUnitDetached(hostCtx, e, i, run, deps, genAbort.signal, suffix));
 				// ONE synchronous block, and its order is load-bearing. (1) A fail-fast
-				// unit's worker terminated state via recordTerminalFailure — fire genAbort
+				// unit's worker terminated state via recordFatalFailure — fire genAbort
 				// so in-flight siblings get session.abort()'d NOW and no dependent released
 				// below can still slip into the semaphore. (2) Fold BEFORE the latch opens:
 				// a dependent's `depArtifactSuffix` reads `cursor.slots`, so an early

@@ -15,7 +15,7 @@
  * `terminal` export. The `kind: "stop"` literal is untouched.
  *
  * Errors are returned, not thrown. The caller (runner) switches on
- * `kind` and routes `"err"` through `recordTerminalFailure` — same as
+ * `kind` and routes `"err"` through `recordFatalFailure` — same as
  * any other halt site.
  */
 

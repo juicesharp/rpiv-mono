@@ -99,7 +99,7 @@ cost instead of cascading across stages:
   row kind, so resume's shape-filtered readers ignore it and
   `STATE_SCHEMA_VERSION` is unchanged).
 - **Remember (additive prompt injection).** A bounded failure memo is appended
-  at the two failure-record writers (`recordTerminalFailure` /
+  at the two failure-record writers (`recordFatalFailure` /
   `recordUnitHalt` in `audit.ts`) and rendered as an additive prompt suffix at
   the two session-construction chokepoints (`buildSingleStageSession` in
   `run-stage.ts`, `buildUnitSession` in `loop-kinds.ts`). The rule is

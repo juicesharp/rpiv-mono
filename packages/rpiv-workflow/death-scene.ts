@@ -2,7 +2,7 @@
  * death-scene.ts — forensic Markdown artifact written on stage/unit failure.
  *
  * On any transition to failed (terminal failure or a collect-all unit soft-halt),
- * the two failure-record writers (`recordTerminalFailure` /
+ * the two failure-record writers (`recordFatalFailure` /
  * `recordUnitHalt` in `audit.ts`) call `writeDeathSceneArtifact` immediately
  * after they persist the JSONL failure row. The writer locates the just-failed
  * session's persisted JSONL, re-reads its branch through the host-injected
@@ -192,7 +192,7 @@ export function formatDeathScene(scene: DeathScene): string {
  * undefined/an empty branch, or any step throws — the original failure, already
  * persisted by `recordFailureRow`, is never masked.
  *
- * Synchronous by design: the caller (`recordTerminalFailure` /
+ * Synchronous by design: the caller (`recordFatalFailure` /
  * `recordUnitHalt`) has already persisted the failure row; the artifact is a
  * best-effort sidecar, not a reconstruction input, so it never blocks the run's
  * terminal bookkeeping.

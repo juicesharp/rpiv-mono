@@ -2,7 +2,7 @@
  * failure-memos.ts — bounded log of stage/unit failures, surfaced as an
  * additive prompt suffix on every subsequently-built stage/unit session.
  *
- * Two writers feed it: `recordTerminalFailure` (the terminal path — first
+ * Two writers feed it: `recordFatalFailure` (the terminal path — first
  * failure wins) and `recordUnitHalt` (a collect-all fanout soft-halt). The
  * suffix is appended at the two session-construction chokepoints
  * (`buildSingleStageSession` + `buildUnitSession`). Zero memos ⇒ the suffix

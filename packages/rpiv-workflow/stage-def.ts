@@ -589,7 +589,7 @@ export const acts = Object.assign(actsFn, { script: actsScript, prompt: actsProm
  *     factory — a `terminal()` stage can route onward, a plain stage can be a
  *     sink.
  *  3. RUN OUTCOME ("terminal failure/outcome" prose, e.g. audit.ts
- *     `recordFailureRow` / `recordTerminalFailure`): a failure/cancellation/
+ *     `recordFailureRow` / `recordFatalFailure`): a failure/cancellation/
  *     abort that ends the run.
  */
 export const terminal = Object.assign(terminalFn, { script: terminalScript });

@@ -22,7 +22,7 @@ import type { RunContext, SessionContext, UnitRef } from "./types.js";
  * maintenance. Every `StageSessionContext` (single stage or loop unit) collapses to this.
  *
  * `isScript` toggles the `onStageError` ref construction in
- * `recordTerminalFailure` from `skillStageRef` to `scriptStageRef` (the
+ * `recordFatalFailure` from `skillStageRef` to `scriptStageRef` (the
  * script branch carries no `skill` field). Defaulting to `undefined`
  * preserves the skill-path behaviour for every existing caller.
  *
@@ -63,7 +63,7 @@ export function runIdentityOf(run: RunContext): SessionContext["runIdentity"] {
 }
 
 /**
- * Build the `AuditContext` `recordTerminalFailure` needs for a stage failure that
+ * Build the `AuditContext` `recordFatalFailure` needs for a stage failure that
  * escaped a session (preflight halts, downstream throws, routing errors,
  * resume-time refusals). One source for the shape so every halt path records
  * a uniform row. `isScript: true` drops the `skill` field from the JSONL row

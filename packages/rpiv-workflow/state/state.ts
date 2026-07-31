@@ -103,7 +103,7 @@ export interface WorkflowStage {
 	output?: Output;
 	/**
 	 * Reason a terminal-failure row was written — mirrors the
-	 * `state.termination.error` set by `recordTerminalFailure`. Present
+	 * `state.termination.error` set by `recordFatalFailure`. Present
 	 * only on `status: "failed" | "aborted"` rows; absent on completed /
 	 * skipped rows. Persisting it here means post-mortems work from
 	 * JSONL alone, without depending on a transient `ctx.ui.notify` toast.
@@ -136,7 +136,7 @@ export interface WorkflowStage {
 	/**
 	 * Marks a NON-terminal collect-all fanout unit halt (`recordUnitHalt`):
 	 * the unit failed but the run survives and a `failedOutput` sentinel fills its
-	 * declared slot. Distinguishes a SOFT halt from a hard `recordTerminalFailure`
+	 * declared slot. Distinguishes a SOFT halt from a hard `recordFatalFailure`
 	 * row (byte-identical otherwise) so the resume fold rebuilds the
 	 * sentinel by `unitIndex` rather than re-dispatching the unit. Absent on every
 	 * other row (`undefined` is dropped by `JSON.stringify`).

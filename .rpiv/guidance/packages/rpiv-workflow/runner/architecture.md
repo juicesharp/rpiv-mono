@@ -5,7 +5,7 @@ Stage-execution heart of `rpiv-workflow`. Owns graph traversal (`start → edges
 
 ## Dependencies
 - **`../api`, `../types`, `../host`**: `Workflow`, `StageDef`, `ScriptContext`, `RunContext`, `RunWorkflowOptions/Result` (now in `../types`), `WorkflowHostContext`; **`../execution-host`**: `getWorkflowExecutionProvider`
-- **`../sessions/index`**: `runStageSession`, `continueStageSession`, `reattachStageSession`, `locateSessionFile`, `pruneOrphanedChildSessions`; **`../sessions/spawn`**: `forkChildSession` / `reattachChildSession` (detached children)
+- **`../sessions/index`**: `executeStageSession`, `continueStageSession`, `reattachStageSession`, `locateSessionFile`, `pruneOrphanedChildSessions`; **`../sessions/spawn`**: `forkChildSession` / `reattachChildSession` (detached children)
 - **`../loop` / `../loop-kinds` / `../loop-waves`**: `runLoop` / `runFanoutResume` / `pendingFanoutIndices` (driver), `LoopDeps` + `buildLoopEntry` / `freshCursor` / `sequentialStrategyOf` / `foldFanoutCompletion` (kind vocabulary + strategies), `validateUnitDeps`
 - **`../state/index`**: `generateRunId`, `writeHeader`, `appendRoutingDecision`, `readAllStagesForResume`, `STATE_SCHEMA_VERSION`; **`../validate-output`**: `validateOutputData` + `runValidationRetryLoop` (shared retry policy); **`../audit` / `../audit-rows`**: terminal-outcome orchestration / pure row persistence + `persistStageSuccess`; **`../chain-state`**: artifact/arg authorities; **`../events`**: `lifecycleCtxFor` + `StageRef` refs
 
@@ -15,7 +15,7 @@ Stage-execution heart of `rpiv-workflow`. Owns graph traversal (`start → edges
 ## Module Structure (imports point strictly DOWNWARD — zero value-import cycles, guarded by `dependency-cycles.test.ts`)
 ```
 index.ts, runner.ts  — Barrel + entries (runWorkflow / resumeWorkflow / detachExecutor / executeRun shared tail)
-run-stage.ts   — runStage (mode switch) + guarded entries (runStageOrRecordFailure, resumeStageWithSession) + THE WALK COMPOSITION: wires ChainDeps/LoopDeps/advance by injection
+run-stage.ts   — dispatchStage (mode switch) + guarded entries (dispatchStageOrRecordFailure, resumeStageWithSession) + THE WALK COMPOSITION: wires ChainDeps/LoopDeps/advance by injection
 chain-advance.ts     — Post-stage routing; decision-edge audit; per-destination jump budgets; onRoute `bypassed` arms
 resolve-stage.ts     — ResolvedStage: mode ("loop"|"script"|"prompt"|"skill") + dispatch derived ONCE
 preflight.ts, input-validation.ts — Runtime + schema-backed preflights (throw StagePreflightError)
@@ -31,12 +31,12 @@ by-name.ts, by-run-id.ts — name/run-id entry points
 
 ```ts
 // resolve-stage.ts: mode = effectiveLoopOf(def) ? "loop" : run ? "script" : prompt ? "prompt" : "skill"
-export async function runStage(curCtx, currentName, idx, run): Promise<ChainOutcome> {  // run-stage.ts
+export async function dispatchStage(hostCtx, currentName, idx, run): Promise<ChainOutcome> {  // run-stage.ts
   const stage = resolveStage(currentName, idx, run);
   switch (stage.mode) {
-    case "loop":   return runLoopStage(curCtx, stage, idx, run);   // empty fanout ⇒ single-stage fall-through; then validateUnitDeps halts dep cycles pre-dispatch
-    case "script": await ensureInputValid(stage, run); return runScript(curCtx, stage, idx, run, advance);
-    case "prompt": case "skill": return runSingleStage(curCtx, stage, idx, run); // preflights → prompt → validate → snapshot → detached child session
+    case "loop":   return runLoopStage(hostCtx, stage, idx, run);   // empty fanout ⇒ single-stage fall-through; then validateUnitDeps halts dep cycles pre-dispatch
+    case "script": await ensureInputValid(stage, run); return runScript(hostCtx, stage, idx, run, advance);
+    case "prompt": case "skill": return runSingleStage(hostCtx, stage, idx, run); // preflights → prompt → validate → snapshot → detached child session
   }
 }
 ```
@@ -46,7 +46,7 @@ export async function runStage(curCtx, currentName, idx, run): Promise<ChainOutc
 ```ts
 // failure.ts: type ChainOutcome = "halted" | "completed" | "dispatched" — every walk arm RETURNS one; halt idiom: `return haltChain(...)`.
 // run-stage.ts — the ONE composition site for the walk's mutual recursion:
-const CHAIN_DEPS: ChainDeps = { runNext: runStageOrRecordFailure };
+const CHAIN_DEPS: ChainDeps = { runNext: dispatchStageOrRecordFailure };
 export function advance(ctx, name, idx, run) { return advanceChain(ctx, name, idx, run, CHAIN_DEPS); }
 // chain-advance takes ChainDeps; script-stage takes AdvanceFn; loop.ts takes LoopDeps — NO engine module imports the composition site back.
 ```
@@ -54,12 +54,12 @@ export function advance(ctx, name, idx, run) { return advanceChain(ctx, name, id
 ## Stage-entry guard (uniform JSONL failure row)
 
 ```ts
-// failure.ts — the ONE classify-then-record policy; both guarded entries (runStageOrRecordFailure live + resumeStageWithSession session-resume — DISJOINT scopes) are one-liners delegating here:
-export async function withStageEntryGuard(curCtx, name, run, inner): Promise<ChainOutcome> {
-  if (run.signal?.aborted) return recordAbortedAtSeam(curCtx, name, run);
+// failure.ts — the ONE classify-then-record policy; both guarded entries (dispatchStageOrRecordFailure live + resumeStageWithSession session-resume — DISJOINT scopes) are one-liners delegating here:
+export async function withStageEntryGuard(hostCtx, name, run, inner): Promise<ChainOutcome> {
+  if (run.signal?.aborted) return recordAbortedAtSeam(hostCtx, name, run);
   try { return await inner(); } catch (e) {
-    if (isAbortError(e)) return recordAbortedAtSeam(curCtx, name, run); // mid-stage WorkflowAbortError ⇒ abort row
-    return recordEntryThrow(curCtx, name, run, e); // StagePreflightError | generic ⇒ terminal failure row
+    if (isAbortError(e)) return recordAbortedAtSeam(hostCtx, name, run); // mid-stage WorkflowAbortError ⇒ abort row
+    return recordEntryThrow(hostCtx, name, run, e); // StagePreflightError | generic ⇒ terminal failure row
   }
 }
 ```
@@ -79,14 +79,14 @@ export async function withStageEntryGuard(curCtx, name, run, inner): Promise<Cha
 - **Zero value-import cycles** — `dependency-cycles.test.ts` (Tarjan over static imports, type-only excluded) locks in the Phase-3 SCC dissolution; new back-edges must use injection (ChainDeps/LoopDeps precedent)
 - **One classification policy** — `withStageEntryGuard` (failure.ts) is the only exception→JSONL translation; both guarded entries (live + session resume) delegate to it
 - **Snapshot is best-effort** — `captureStageSnapshot` warns once per run, never halts; collectors must tolerate `ctx.snapshot === undefined`
-- **Script stages bypass `../sessions/`** — audit rows omit `skill`; `recordTerminalFailure` flagged `isScript: true`
+- **Script stages bypass `../sessions/`** — audit rows omit `skill`; `recordFatalFailure` flagged `isScript: true`
 - **Routing audit rows are telemetry, never fatal** — dropped writes recorded in `state.telemetry.droppedRoutingRows`; dropped FAILURE rows flag `droppedFailureRows` (resume-unsafe). `state.telemetry.backwardJumps` is cumulative telemetry only — the halt decision reads `run.revisits`
 
 <important if="you are adding a new stage kind (e.g. acts.delay, produces.stream)">
 ## Adding a Stage Kind
 1. DSL accessor in `../stage-def.ts` (barrel-re-exported by `../api.ts`) — mirror the `produces` / `acts` / `terminal` factories; emit `StageDef { kind, ... }` (`gate` is a routing-DSL edge combinator, NOT a stage factory)
 2. Validation rule in `../validate/stage-rules.ts` — extend `checkScriptStageInvariants` (or add peer `checkXxxInvariants`; `../validate-workflow.ts` is the thin orchestrator); cover in `validate-workflow.test.ts`
-3. Dispatch: extend `StageDispatch`/`StageMode` + `dispatchOf` in `runner/resolve-stage.ts`, add the `runStage` switch arm in `run-stage.ts`; create `runner/xxx-stage.ts` mirroring `script-stage.ts` (takes the injected `advance`; returns `ChainOutcome`)
+3. Dispatch: extend `StageDispatch`/`StageMode` + `dispatchOf` in `runner/resolve-stage.ts`, add the `dispatchStage` switch arm in `run-stage.ts`; create `runner/xxx-stage.ts` mirroring `script-stage.ts` (takes the injected `advance`; returns `ChainOutcome`)
 4. State record fields — add a `StageRef` arm in `../events.ts`; thread new `Output.meta` discriminators via `finalizeOutput` in `../output.ts`
 5. Tests — clone `script-stage.test.ts` shape: JSONL row shape + lifecycle order + artifact-isolation regression
 </important>

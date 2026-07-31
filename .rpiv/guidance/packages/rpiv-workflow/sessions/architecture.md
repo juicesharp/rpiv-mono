@@ -1,23 +1,23 @@
 # sessions/
 
 ## Responsibility
-Per-stage / per-loop-unit session orchestrator. Every stage and loop unit runs in its own detached child session opened through `ctx.spawnChild` (up to `ctx.maxConcurrency` in flight); the sole surviving policy divergence is the branch offset (`branchOffsetFor`). Two orthogonal concerns: (1) **child-session plumbing** — spawn/fork/reattach primitives + session-backed resume; (2) **fatal-extraction** — folding collector/parser/schema failures into the structured `OutputProduction` outcome the audit layer records. Public surface (barrel): `runStageSession`, `continueStageSession`, `reattachStageSession`, `locateSessionFile`, `pruneOrphanedChildSessions`.
+Per-stage / per-loop-unit session orchestrator. Every stage and loop unit runs in its own detached child session opened through `ctx.spawnChild` (up to `ctx.maxConcurrency` in flight); the sole surviving policy divergence is the branch offset (`branchOffsetFor`). Two orthogonal concerns: (1) **child-session plumbing** — spawn/fork/reattach primitives + session-backed resume; (2) **fatal-extraction** — folding collector/parser/schema failures into the structured `OutputProduction` outcome the audit layer records. Public surface (barrel): `executeStageSession`, `continueStageSession`, `reattachStageSession`, `locateSessionFile`, `pruneOrphanedChildSessions`.
 
 ## Dependencies
 - **`../types`** (type-only; re-exports `../host`): `StageSessionContext`, `WorkflowHostContext`, `WorkflowSessionContext` — abstract Pi's `ExtensionAPI` / `ExtensionCommandContext` structurally; `host.test.ts` carries a compile-time tripwire
 - **`../validate-output`**: `runValidationRetryLoop` (the shared retry engine), `validateOutputData`, MIN/MAX clamps; **`../internal-utils`**: `withTimeout`, `WorkflowAbortError`, `assertNever`
 - **`../output-spec`, `../outcomes`, `../output`**: `Outcome` (the v1.20 rename of `OutputSpec`), `sideEffectOutcome` fallback, `finalizeOutput`, `failedOutput` sentinel
-- **`../audit`, `../audit-rows`, `../events`, `../messages`, `../transcript`**: row writers (`recordStopFailure` / `recordTerminalFailure` / `recordUnitHalt`, `persistStageSuccess`), `onStageEnd` / `onStageRetry` / `onUnitEnd` / `onUnitHalt` lifecycle fires, `MSG_*` / `ERR_*` / `FAIL_*` constants
+- **`../audit`, `../audit-rows`, `../events`, `../messages`, `../transcript`**: row writers (`recordStopFailure` / `recordFatalFailure` / `recordUnitHalt`, `persistStageSuccess`), `onStageEnd` / `onStageRetry` / `onUnitEnd` / `onUnitHalt` lifecycle fires, `MSG_*` / `ERR_*` / `FAIL_*` constants
 - **No direct `@earendil-works/pi-coding-agent` imports anywhere under `sessions/`** — verified by grep
 
 ## Consumers
-- `../runner/run-stage.ts` calls `runStageSession(ctx, s)` and consumes `continueStageSession` / `locateSessionFile` / `reattachStageSession` (plus deep-imports `forkChildSession` / `reattachChildSession` from `spawn.ts`); loop units run through `deps.runStageSession` (`../loop.ts`, `../loop-parallel.ts` — bounded-parallel fan-out); `../runner/runner.ts` sweeps `pruneOrphanedChildSessions` once at run end
+- `../runner/run-stage.ts` calls `executeStageSession(ctx, s)` and consumes `continueStageSession` / `locateSessionFile` / `reattachStageSession` (plus deep-imports `forkChildSession` / `reattachChildSession` from `spawn.ts`); loop units run through `deps.executeStageSession` (`../loop.ts`, `../loop-parallel.ts` — bounded-parallel fan-out); `../runner/runner.ts` sweeps `pruneOrphanedChildSessions` once at run end
 - Entries return `Promise<void>`; outcomes drain through the row writers and the `onSuccess` / `onFailure` callbacks — the runner never inspects a return value
 
 ## Module Structure
 ```
 index.ts           — Barrel: the five public symbols above
-sessions.ts        — runStageSession / continueStageSession entries; postStage pipeline; outcome reader
+sessions.ts        — executeStageSession / continueStageSession entries; postStage pipeline; outcome reader
 spawn.ts           — openChild → spawnChildAndRun / reattachChildSession / forkChildSession; resendIntoChild; branchOffsetFor
 extraction.ts      — produceAndValidateOutput: collector → parser → schema-validate → retry loop; emits OutputProduction
 halt-routing.ts    — haltStageOrSoftHalt gate + per-arm halt helpers + auditFor
@@ -30,7 +30,7 @@ reattach.ts        — session-backed resume: promotion → reattach arms reusin
 
 `openChild` (`spawn.ts`) is THE primitive: `ctx.spawnChild({ prompt, model, signal, unitIndex, ...mode, withSession })` opens an isolated child (the parent launcher ctx stays valid), waits for it to settle, then runs the body on the guaranteed-in-session `WorkflowSessionContext`. Three open modes:
 
-- **FRESH** (`spawnChildAndRun`) — brand-new child; the host sends the prompt. The default stage / loop-unit entry (`runStageSession`); fan-out units run through the same entry, threading identity via `StageSessionContext.unit`
+- **FRESH** (`spawnChildAndRun`) — brand-new child; the host sends the prompt. The default stage / loop-unit entry (`executeStageSession`); fan-out units run through the same entry, threading identity via `StageSessionContext.unit`
 - **REATTACH** (`reattachChildSession`) — open a persisted file IN PLACE for session-backed resume; the detached replacement for the deleted `ctx.switchSession` swap. Body is `reattachStageSession`: promote from the loaded branch, else nudge via `resendIntoChild`
 - **FORK** (`forkChildSession`) — `sessionPolicy: "continue"`: copy the PREDECESSOR's persisted session (`SessionManager.forkFrom` — source file never mutated, the fork has its own resumable identity), located from `run.state.lastSession` via `locateSessionFile` and gated in `run-stage.ts` (no hit ⇒ fresh-dispatch fallback). Body is `continueStageSession`: re-derive the inherited-prefix offset from the forked branch, send the continuation turn, run `postStage` sliced past the prefix
 
