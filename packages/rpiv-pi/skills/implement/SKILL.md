@@ -85,7 +85,7 @@ After implementing a phase:
 - Fix any issues before proceeding
 - Update your progress in both the plan and your todos
 - Check off completed items in the plan file itself using Edit
-  - Anchor each checkbox-flip `Edit` on the **full unique line** — the item's phase-specific tail (the verification command, file path, or criterion text), never just the shared `- [ ]`/`- [x]` prefix. That shared prefix repeats identically across phases, so a prefix-only anchor collides and Pi rejects the whole atomic edit batch with a "Found N occurrences" error (run a777 lost an atomic 9-edit batch this way). A full-line anchor is unique per item.
+  - Anchor each checkbox-flip `Edit` on the **full unique line** — the item's phase-specific tail (the verification command, file path, or criterion text), never just the shared `- [ ]`/`- [x]` prefix. That shared prefix repeats identically across phases, so a prefix-only anchor collides and Pi rejects the whole atomic edit batch with a "Found N occurrences" error (an observed run lost an atomic 9-edit batch this way). A full-line anchor is unique per item.
 - If the input scopes you to a single phase, stop immediately after the named phase's own checks pass — do not advance to other phases
 
 Don't let verification interrupt your flow - batch it at natural stopping points.
