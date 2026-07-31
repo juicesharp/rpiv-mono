@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Preview questionnaires now rebalance after terminal resizing: option descriptions gain useful width without exceeding half the dialog, while content-sized previews align with the right edge.
+
 ## [2.3.1] - 2026-07-31
 
 ## [2.3.0] - 2026-07-31

@@ -220,7 +220,10 @@ export class PreviewPane implements StatefulView<PreviewPaneProps>, Component {
 			this.props.focused,
 			this.props.notesVisible,
 		);
-		const pad = " ".repeat(PREVIEW_PADDING_LEFT);
-		return contentLines.map((l) => (l === "" ? "" : `${pad}${l}`));
+		const boxWidth = Math.max(1, visibleWidth(contentLines[0] ?? ""));
+		const paddingLeft = Math.max(PREVIEW_PADDING_LEFT, colWidth - boxWidth);
+		const pad = " ".repeat(paddingLeft);
+		const available = Math.max(1, colWidth - paddingLeft);
+		return contentLines.map((line) => (line === "" ? "" : `${pad}${truncateToWidth(line, available, "")}`));
 	}
 }
