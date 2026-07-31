@@ -2809,27 +2809,29 @@ const latestVerdictPerDimension = (entries: readonly Output[] = []): Map<string,
 };
 
 /**
- * A finding whose detail is a line-anchor drift nit — "the citation is off by
- * two", "drifted ~4 lines", "line 92 is the JSDoc", ":166 is the `parser?`
- * field". The grade skill's citation-resolution rule forbids emitting these at
- * all; this regex is the deterministic backstop for when a grader emits one
- * anyway. Narrow by design — each alternative matches an observed phrasing from
- * the run history (6 blocking fix rounds contained nothing else); the `line N
- * is`/`:N is` forms require the explicit line prefix so ordinary prose
- * ("slice 2 is a rename") never matches. Do NOT widen into a general
- * nit detector.
+ * Anchor-drift-nit phrasing, two tiers: only phrasings naming drift itself
+ * count standalone; the location shapes (off-by-N, "is at line N", "line N is
+ * the/a") also match REAL defects ("line 42 is a comment that falsely claims
+ * X", "the loop bound is off by one") and count ONLY alongside citing-context
+ * vocabulary — every observed drift nit has it, real-defect phrasings don't.
+ * Do NOT widen, and do NOT promote a location shape to standalone.
  */
-const ANCHOR_NIT_RE =
-	/\boff[- ]by[- ](?:one|two|three|\d+)\b|\bdrifted?\s+~?\d+\s+lines?\b|\bcitation (?:is )?drifted\b|(?::\d+|\bline \d+) is (?:the|a)\b|\bis at line \d+\b/i;
+const ANCHOR_NIT_DRIFT_RE = /\bdrifted?\s+~?\d+\s+lines?\b|\bcitation (?:is )?drifted\b/i;
+const ANCHOR_NIT_LOCATION_RE =
+	/\boff[- ]by[- ](?:one|two|three|\d+)\b|(?::\d+|\bline \d+) is (?:the|a)\b|\bis at line \d+\b/i;
+const ANCHOR_NIT_CITE_CONTEXT_RE = /\bcit(?:es?|ed|ation)\b|\banchor/i;
+
+const isAnchorNitDetail = (detail: string): boolean =>
+	ANCHOR_NIT_DRIFT_RE.test(detail) || (ANCHOR_NIT_LOCATION_RE.test(detail) && ANCHOR_NIT_CITE_CONTEXT_RE.test(detail));
 
 /**
  * TRUE when a verdict carries ≥1 finding and EVERY finding is an anchor-drift
- * nit (`ANCHOR_NIT_RE`). Such a verdict is severity-clamped to non-blocking at
- * the gate fold regardless of the grader's own `severity` — line-number drift
- * was measured at 34% of all grader findings with zero downstream harm, and a
- * mis-rated all-nit `medium` verdict buys a full fix round + re-grade panel
- * that repairs nothing. A verdict mixing a drift nit with ANY other finding is
- * untouched — the other finding may be the real blocker.
+ * nit (`isAnchorNitDetail`). Such a verdict is severity-clamped to non-blocking
+ * at the gate fold regardless of the grader's own `severity` — line-number
+ * drift was measured at 34% of all grader findings with zero downstream harm,
+ * and a mis-rated all-nit `medium` verdict buys a full fix round + re-grade
+ * panel that repairs nothing. A verdict mixing a drift nit with ANY other
+ * finding is untouched — the other finding may be the real blocker.
  */
 const anchorNitsOnly = (v: { findings?: unknown } | undefined): boolean => {
 	const findings = Array.isArray(v?.findings) ? v.findings : [];
@@ -2837,7 +2839,7 @@ const anchorNitsOnly = (v: { findings?: unknown } | undefined): boolean => {
 		findings.length > 0 &&
 		findings.every((f) => {
 			const detail = (f as { detail?: unknown } | undefined)?.detail;
-			return typeof detail === "string" && ANCHOR_NIT_RE.test(detail);
+			return typeof detail === "string" && isAnchorNitDetail(detail);
 		})
 	);
 };
@@ -3480,9 +3482,11 @@ const confirmDue = (
 	const risks = planAuthoredRisks(state, channel);
 	const byDim = new Map<string, { blocking: boolean; count: number }>();
 	for (const o of fresh) {
-		const v = o.data as { dimension?: string; pass?: boolean; severity?: string } | undefined;
+		const v = o.data as { dimension?: string; pass?: boolean; severity?: string; findings?: unknown } | undefined;
 		if (typeof v?.dimension !== "string" || !roster.has(v.dimension)) continue;
-		const floored = v.pass === true || v.severity === "low" || v.severity === "none";
+		// anchorNitsOnly keeps this floor coherent with the other three
+		// severity-fold consumers (gateTier/dimensionsToRegrade/allDimensionsPass).
+		const floored = v.pass === true || v.severity === "low" || v.severity === "none" || anchorNitsOnly(v);
 		const riskFail = verdictRiskRulings(o).some((r) => !rulingEffectivePass(r, risks.get(r.id)));
 		byDim.set(v.dimension, {
 			blocking: !floored || riskFail,

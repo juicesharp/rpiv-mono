@@ -4414,6 +4414,37 @@ describe("build grade panel re-grades only the pending dimensions (P2)", () => {
 		expect(await labels("plan-grade", "plan-verdicts", verdicts)).toEqual(["correctness"]);
 	});
 
+	it("does NOT clamp a shipped-false-claim finding phrased as 'line N is a …' (the I1 reproducer)", async () => {
+		const verdicts = PLAN_DIMS.map((d) =>
+			d === "correctness"
+				? dimV(d, false, {
+						severity: "medium",
+						findings: [
+							{
+								detail: "line 42 is a comment that falsely claims the return value is non-null",
+								where: "src/x.ts:42",
+							},
+						],
+					})
+				: dimV(d, true),
+		);
+		expect(await labels("plan-grade", "plan-verdicts", verdicts)).toEqual(["correctness"]);
+	});
+
+	it("does NOT clamp a real off-by-one bug finding (location shape without citing context)", async () => {
+		const verdicts = PLAN_DIMS.map((d) =>
+			d === "correctness"
+				? dimV(d, false, {
+						severity: "medium",
+						findings: [
+							{ detail: "The loop bound is off by one, so the final element is never processed", where: "s1" },
+						],
+					})
+				: dimV(d, true),
+		);
+		expect(await labels("plan-grade", "plan-verdicts", verdicts)).toEqual(["correctness"]);
+	});
+
 	it("the code gate reads code-verdicts, not the plan gate's channel", async () => {
 		// plan-verdicts all fail, but code-grade must ignore them and read code-verdicts.
 		const codeVerdicts = PLAN_DIMS.map((d) => dimV(d, d !== "pattern-following"));
