@@ -1513,33 +1513,25 @@ const citeOccursLive = (body: string, spans: readonly [number, number][], cite: 
 };
 
 /**
- * One cite-remedy finding is satisfied by the slice-map text. Two modes:
- *
- * ADD (no `stale`): the demanded seed's path occurs live — line suffixes are
- * stripped before matching, because the fix may cite a corrected range and
- * the citation floor (`verifyCitations`) verifies whatever range it actually
- * wrote. `Draws on` and `Out of scope` both satisfy the remedy, so a live
- * occurrence anywhere in the map is the contract.
- *
- * REFRESH (`stale` names the wrong citation, copied verbatim from the judged
- * map): the grader-verified `requires` citation must occur live EXACTLY and
- * the `stale` one must not. Path-stripped matching would false-pass here —
- * the stale cite carries the same path — and requires-only matching would let
- * a fix DELETE the stale cite while another slice's citation of the same file
- * keeps the path present, silently un-citing the slice the grader flagged.
+ * One cite-remedy finding is satisfied by the slice-map text: the demanded
+ * seed's path occurs live — line suffixes are stripped before matching,
+ * because the fix may cite a corrected range and the citation floor
+ * (`verifyCitations`) verifies whatever range it actually wrote. `Draws on`
+ * and `Out of scope` both satisfy the remedy, so a live occurrence anywhere
+ * in the map is the contract. (The former REFRESH mode — a `stale` drifted
+ * line number to replace — was removed with anchor-precision grading: a
+ * drifted line number is no longer a finding, so nothing demands a refresh.)
  *
  * A finding without a concrete string `requires` is unverifiable ⇒ not satisfied.
  */
 const citeFindingSatisfied = (
 	mapBody: string,
 	spans: readonly [number, number][],
-	f: { requires?: unknown; stale?: unknown },
-): boolean => {
-	if (typeof f.requires !== "string" || f.requires.length === 0) return false;
-	if (typeof f.stale === "string" && f.stale.length > 0)
-		return citeOccursLive(mapBody, spans, f.requires) && !citeOccursLive(mapBody, spans, f.stale);
-	return citeOccursLive(mapBody, spans, f.requires.replace(/:\d[-\d,:]*$/, ""));
-};
+	f: { requires?: unknown },
+): boolean =>
+	typeof f.requires === "string" &&
+	f.requires.length > 0 &&
+	citeOccursLive(mapBody, spans, f.requires.replace(/:\d[-\d,:]*$/, ""));
 
 /**
  * Structural fingerprint of one slice-map round: the `slices` + `coverage`
@@ -1556,7 +1548,7 @@ const sliceShape = (round: Output | undefined): string | undefined => {
 type CiteRemedyVerdict = {
 	pass?: boolean;
 	remedy?: string;
-	findings?: readonly { requires?: unknown; stale?: unknown }[];
+	findings?: readonly { requires?: unknown }[];
 };
 
 /**
@@ -2046,11 +2038,6 @@ const planCitationCheck =
 		// Plan-time coverage floor: a body edit not declared in its phase's `files:`
 		// fails structurally, same channel/verdict/route as an unbacked citation.
 		findings.push(...verifyPhaseFilesCoverage(body, who, latest.handle.path));
-		// AV exit-0 contract floor: an Automated Verification line reconcile's
-		// deterministic re-run can never honor (stdin-reading grep, absence-assertion
-		// prose, out-of-scope Biome paths, unparseable span) fails HERE — into the
-		// plan-fix loop — instead of at reconcile, whose fail route is STOP.
-		findings.push(...verifyAvCommandContract(body));
 		return writeStructureVerdict(who, latest.handle, findings, cwd);
 	};
 
@@ -2414,42 +2401,6 @@ const reconciliationRecords = (
 	return { directives, malformed };
 };
 
-/** Checkbox-AV line: `- [ ] `<command>`` or `- [x] `<command>``. The first
- *  backtick-wrapped span is the command; prose backticks after it are ignored. */
-const AV_COMMAND_LINE_RE = /^-\s+\[[ xX]\]\s*`([^`]+)`/;
-
-/**
- * Extract every per-phase `#### Automated Verification:` line from a plan body —
- * both `- [ ]` (pending) and `- [x]` (checked) — as `{ command, tail }`:
- * `command` is the first backtick span (the ONLY part `reconcile` executes),
- * `tail` is the prose after it (never executed — `verifyAvCommandContract`
- * lints it for semantics the exit-0 re-run cannot honor). A section opens at a
- * `#### Automated Verification:` heading and closes at the next `#{1,4}` heading.
- * Pure: no I/O, no throw.
- */
-const planVerificationRecords = (body: string): { command: string; tail: string }[] => {
-	const records: { command: string; tail: string }[] = [];
-	let inSection = false;
-	for (const raw of body.split("\n")) {
-		const line = raw.trimEnd();
-		if (/^####\s+Automated Verification\b/.test(line)) {
-			inSection = true;
-			continue;
-		}
-		if (/^#{1,4}\s/.test(line)) {
-			inSection = false;
-			continue;
-		}
-		if (!inSection) continue;
-		const m = AV_COMMAND_LINE_RE.exec(line);
-		if (m) records.push({ command: m[1]!.trim(), tail: line.slice(m[0]!.length) });
-	}
-	return records;
-};
-
-/** The command strings alone — `reconcile` re-runs each via `execFileSync`, fail-soft. */
-const planVerificationCommands = (body: string): string[] => planVerificationRecords(body).map((r) => r.command);
-
 /**
  * The reconcile write-restriction's static allowlist — a conservative test-path
  * classifier. A directive may apply its `find → replace` ONLY to a co-located test
@@ -2461,193 +2412,6 @@ const planVerificationCommands = (body: string): string[] => planVerificationRec
  */
 const TEST_PATH_RE = /\.test\.[tj]sx?$/;
 const isTestPath = (target: string): boolean => TEST_PATH_RE.test(target);
-
-/**
- * Split an AV command string into `{ exe, args }` for `execFileSync`, honoring
- * single/double quotes (so `grep -niE "a|b" x` tokenizes with the quotes stripped
- * and `node -e "process.exit(1)"` keeps `process.exit(1)` as one arg) AND
- * backslash escapes with POSIX semantics: inside double quotes `\` escapes only
- * `"` `\` `` ` `` `$` (any other `\x` stays a literal backslash + x); outside
- * quotes `\` escapes the next character; inside single quotes nothing escapes.
- * The double-quote case is load-bearing — `grep -n "name: \"goal\"" f.ts` must
- * reach grep as the pattern `name: "goal"`, not `name: \goal\` (a live reconcile
- * false-failed exactly this way and STOPPED its run). Returns `null` for an
- * empty/whitespace command or an unterminated quote (caller flags it). Minimal —
- * no globbing, env expansion, or shell operators; AV commands are simple
- * invocations.
- */
-const parseShellCommand = (cmd: string): { exe: string; args: string[] } | null => {
-	const tokens: string[] = [];
-	let cur = "";
-	let quote: '"' | "'" | null = null;
-	for (let i = 0; i < cmd.length; i++) {
-		const ch = cmd[i]!;
-		if (quote === "'") {
-			if (ch === "'") quote = null;
-			else cur += ch;
-		} else if (quote === '"') {
-			if (ch === "\\" && i + 1 < cmd.length && '"\\`$'.includes(cmd[i + 1]!)) cur += cmd[++i]!;
-			else if (ch === '"') quote = null;
-			else cur += ch;
-		} else if (ch === "\\" && i + 1 < cmd.length) {
-			cur += cmd[++i]!;
-		} else if (ch === '"' || ch === "'") {
-			quote = ch;
-		} else if (/\s/.test(ch)) {
-			if (cur !== "") {
-				tokens.push(cur);
-				cur = "";
-			}
-		} else {
-			cur += ch;
-		}
-	}
-	if (quote) return null; // unterminated quote — unparseable
-	if (cur !== "") tokens.push(cur);
-	const [exe, ...args] = tokens;
-	return exe ? { exe, args } : null;
-};
-
-/** grep-family executables: exit 1 on zero matches AND read stdin when no file
- *  operand is given — both directly at odds with reconcile's exit-0/no-stdin
- *  re-run harness, hence the two grep-specific lint rules below. */
-const AV_GREP_FAMILY = new Set(["grep", "egrep", "fgrep", "ggrep", "rg"]);
-/** grep-family flags that CONSUME the next token (so it is not a file operand). */
-const AV_GREP_VALUE_FLAGS = new Set([
-	"-e",
-	"--regexp",
-	"-f",
-	"--file",
-	"-m",
-	"--max-count",
-	"-A",
-	"-B",
-	"-C",
-	"--include",
-	"--exclude",
-	"--exclude-dir",
-	"-g",
-	"--glob",
-	"-t",
-	"--type",
-]);
-/** Absence-assertion prose on a grep-family AV line — "success" is grep exit 1,
- *  the exact inverse of the exit-0 contract. Deliberately a short literal list
- *  of observed absence phrases, not a general negation detector. */
-const AV_ABSENCE_PROSE_RE = /returns nothing|no matches|no occurrences|is gone|must be gone/i;
-/** Extensions Biome's config COULD scope (biome.json includes *.ts/*.js + site
- *  css/html). Fail-open: flag a Biome runner only when NO forwarded path can be
- *  in scope (e.g. all-markdown) — "No files were processed" exits 1 under
- *  `--error-on-warnings` regardless of tree state. */
-const AV_BIOME_SCOPED_PATH_RE = /\.(?:ts|tsx|js|jsx|mjs|cjs|css|html|json|jsonc)$/i;
-/** Prose targets re-wrap and sentence-case under ordinary editing — the two
- *  observed ways a multi-word case-sensitive grep goes stale against markdown
- *  while the text it asserts is still present (lint rule 5). */
-const AV_PROSE_PATH_RE = /\.mdx?$/i;
-
-/**
- * Plan-time lint of `#### Automated Verification:` lines against `reconcile`'s
- * execution contract: reconcile re-runs ONLY the first backtick span of each
- * checkbox line via `execFileSync` — arg-array (no shell), stdin ignored, exit 0
- * the sole pass signal — so prose qualifiers around the span never execute.
- * Folded into `planCitationCheck` (both the `plan-cite-check` and
- * `code-cite-check` arms) so a violating AV line fails INTO the plan-fix loop,
- * not at `reconcile` where the route is STOP with no fix arm (an AV line
- * correct as prose but unsatisfiable as an exit-0 command would halt there).
- * Narrow by design — each rule targets an observed
- * false-class, fail-open otherwise; do NOT widen into a general shell linter:
- *  1. unparseable command (unterminated quote / empty) — reconcile would flag
- *     it anyway; surfacing it here buys a fix round instead of a halt;
- *  2. grep-family with no file operand — under reconcile's stdin-ignored
- *     harness it scans an empty stream and exits 1 regardless of tree state
- *     (the file argument usually sits in prose OUTSIDE the span);
- *  3. grep-family whose prose tail asserts absence ("returns nothing") —
- *     success-by-absence IS grep exit 1, the inverse of the contract;
- *  4. a Biome runner whose forwarded paths are all outside Biome's possible
- *     scope — "No files were processed" exits 1 under `--error-on-warnings`;
- *  5. grep-family with a multi-word literal pattern where every file operand
- *     is markdown — prose re-wraps (splitting the phrase across lines, which
- *     a line-based grep cannot match) and sentence-cases (defeating a
- *     case-sensitive match); both classes false-failed a live reconcile while
- *     the asserted text was present.
- */
-const verifyAvCommandContract = (body: string): { detail: string; where: string }[] => {
-	const findings: { detail: string; where: string }[] = [];
-	for (const { command, tail } of planVerificationRecords(body)) {
-		const parsed = parseShellCommand(command);
-		if (!parsed) {
-			findings.push({
-				detail: `Automated Verification command is unparseable under reconcile's tokenizer (empty or unterminated quote) — \`${command}\`. Reconcile re-runs the first backtick span verbatim via execFileSync; rewrite the span as a single well-quoted command.`,
-				where: command,
-			});
-			continue;
-		}
-		const exe = parsed.exe.split("/").pop() ?? parsed.exe;
-		if (AV_GREP_FAMILY.has(exe)) {
-			// Count file operands: tokens that are not flags and not a value a flag
-			// consumed. With -e/-f the pattern arrives via flag, so EVERY remaining
-			// operand is a file; otherwise the first operand is the pattern.
-			let patternViaFlag = false;
-			const operands: string[] = [];
-			for (let i = 0; i < parsed.args.length; i++) {
-				const a = parsed.args[i]!;
-				if (a === "--") {
-					operands.push(...parsed.args.slice(i + 1));
-					break;
-				}
-				if (a.startsWith("-")) {
-					if (a === "-e" || a === "--regexp" || a === "-f" || a === "--file") patternViaFlag = true;
-					if (AV_GREP_VALUE_FLAGS.has(a)) i++;
-					continue; // `--include=*.ts` style is self-contained
-				}
-				operands.push(a);
-			}
-			const fileOperands = patternViaFlag ? operands.length : operands.length - 1;
-			if (fileOperands < 1) {
-				findings.push({
-					detail: `Automated Verification \`${command}\` names no file operand — reconcile re-runs it with stdin ignored, so it scans an empty stream and exits non-zero regardless of the tree. Put the target path INSIDE the backtick span (prose like "over \`<file>\`" is never executed).`,
-					where: command,
-				});
-			}
-			if (AV_ABSENCE_PROSE_RE.test(tail)) {
-				findings.push({
-					detail: `Automated Verification \`${command}\` asserts absence in prose ("${AV_ABSENCE_PROSE_RE.exec(tail)?.[0]}") — grep exits 1 on zero matches, so this line's success IS a non-zero exit and reconcile will always fail it. Restate it as a command that exits 0 on success (e.g. a \`node -e\` probe) or move it to Manual Verification.`,
-					where: command,
-				});
-			}
-			// Positional-pattern form only; -e/-f patterns and directory operands
-			// fail open, matching the Biome rule's posture.
-			if (!patternViaFlag && operands.length >= 2) {
-				const pattern = operands[0]!;
-				if (/\s/.test(pattern) && operands.slice(1).every((p) => AV_PROSE_PATH_RE.test(p))) {
-					findings.push({
-						detail: `Automated Verification \`${command}\` greps a multi-word literal against prose — markdown re-wraps under ordinary editing (splitting the phrase across lines, which a line-based grep cannot match) and sentence-cases it (defeating a case-sensitive match), so this line can fail while the asserted text is present. Grep a single unwrappable token, or restate as a \`node -e\` probe matching the words with /\\s+/ between them (and the i flag if casing may vary).`,
-						where: command,
-					});
-				}
-			}
-		}
-		// Biome runners: `npm run check:files -- <paths>` / `npx biome check <paths>`.
-		const isCheckFiles = exe === "npm" && parsed.args[0] === "run" && parsed.args[1] === "check:files";
-		const isBiome = (exe === "npx" && parsed.args[0] === "biome") || exe === "biome";
-		if (isCheckFiles || isBiome) {
-			const paths = parsed.args.filter((a) => !a.startsWith("-") && /[\\/.]/.test(a));
-			// Flag ONLY when every forwarded path carries an out-of-scope extension —
-			// a directory operand (no extension) may legitimately scope, so fail open.
-			if (
-				paths.length > 0 &&
-				paths.every((p) => /\.[a-z\d]+$/i.test(p)) &&
-				!paths.some((p) => AV_BIOME_SCOPED_PATH_RE.test(p))
-			) {
-				findings.push({
-					detail: `Automated Verification \`${command}\` passes Biome only paths outside its configured scope (biome.json covers code files, not e.g. markdown) — Biome reports "No files were processed" and exits non-zero under --error-on-warnings, so reconcile will always fail it. Drop the line for doc-only phases or include an in-scope path.`,
-					where: command,
-				});
-			}
-		}
-	}
-	return findings;
-};
 
 /**
  * Apply each `#### Reconciliation` directive, write-restricted to test-expectation
@@ -2703,42 +2467,6 @@ const applyReconciliationDirectives = (
 };
 
 /**
- * Re-run every per-phase `#### Automated Verification:` command via `execFileSync`
- * — arg-array (no shell), stdin ignored, exit 0 expected. An unparseable command
- * (`parseShellCommand` ⇒ null) is a finding naming it; a non-zero exit or throw is
- * a finding naming it (fail-soft — reconcile never throws on AV failure; a thrown
- * command degrades to the same non-zero finding). Returns findings in COMMAND
- * order. `reconcile` spreads the return into its findings array.
- */
-const rerunAvCommands = (commands: readonly string[], cwd: string): { detail: string; where: string }[] => {
-	const findings: { detail: string; where: string }[] = [];
-	// Re-run every per-phase AV command (fail-soft: non-zero/throw ⇒ a finding).
-	for (const cmd of commands) {
-		const parsed = parseShellCommand(cmd);
-		if (!parsed) {
-			findings.push({
-				detail: `reconcile: Automated Verification command unparseable — \`${cmd}\``,
-				where: cmd,
-			});
-			continue;
-		}
-		try {
-			execFileSync(parsed.exe, parsed.args, {
-				cwd,
-				encoding: "utf-8",
-				stdio: ["ignore", "pipe", "pipe"],
-			});
-		} catch {
-			findings.push({
-				detail: `reconcile: Automated Verification command failed (non-zero) — \`${cmd}\``,
-				where: cmd,
-			});
-		}
-	}
-	return findings;
-};
-
-/**
  * Deterministic post-implement reconciliation — the coherence backstop the
  * parallel implement lane needs. Sibling phases run concurrently in one tree;
  * each phase's own `#### Automated Verification:` passed in isolation, but a
@@ -2748,19 +2476,25 @@ const rerunAvCommands = (commands: readonly string[], cwd: string): { detail: st
  * scope floor (which proved the write-set) and before `validate`:
  *
  *  1. reads the latest plan (`latestFsArtifact(state, "plans")` — latest-wins);
- *  2. parses every `#### Reconciliation` directive + every per-phase
- *     `#### Automated Verification:` command — fail-soft (a malformed directive
- *     / unreadable plan degrades to a finding, never a terminal `FAIL_SCRIPT_THREW`
- *     halt — a `produces.script` that throws becomes one);
+ *  2. parses every `#### Reconciliation` directive — fail-soft (a malformed
+ *     directive / unreadable plan degrades to a finding, never a terminal
+ *     `FAIL_SCRIPT_THREW` halt — a `produces.script` that throws becomes one);
  *  3. applies each directive write-restricted to test paths (`isTestPath`); a
  *     present `find` is replaced exactly once (`String.replace`); an absent `find`
  *     whose replacement is ALSO absent is a finding (reconcile does not guess);
- *  4. re-runs every AV command via `execFileSync` (fail-soft: non-zero/throw ⇒ a
- *     finding naming the command);
- *  5. appends a timestamped `### Reconciliation Log (<iso>)` under the plan's
+ *  4. appends a timestamped `### Reconciliation Log (<iso>)` under the plan's
  *     `## Synthesis Notes` (best-effort bookkeeping write — non-fatal);
- *  6. emits one `{ dimension: "reconcile" }` verdict, basename-keyed off the plan
+ *  5. emits one `{ dimension: "reconcile" }` verdict, basename-keyed off the plan
  *     ⇒ idempotent across fix rounds (the verdict file is overwritten each round).
+ *
+ * Reconcile deliberately does NOT re-execute the plan's `#### Automated
+ * Verification:` commands. That re-run (bare `execFileSync`, no shell, exit-0
+ * contract) was measured across the full run history at zero genuine catches and
+ * a 100% false-positive finding rate — stale cross-phase presence probes, agent-
+ * shell-only binaries (`rg`), prose greps — each halting a finished run at a
+ * fail route with no fix arm. The downstream `validate` stage runs the same AV
+ * commands as an agent, with a real shell and the judgment to tell a legitimate
+ * post-rename mismatch from actual plan-vs-tree drift.
  *
  * The route is the `match("verdict", …, { from: "reconcile" })` gate idiom — pass ⇒
  * validate, fail/missing ⇒ STOP (no fallback), mirroring `implementScopeCheck`.
@@ -2785,19 +2519,17 @@ const reconcile = ({ state, cwd }: ScriptContext): Omit<Output, "meta"> => {
 	const planAbs = isAbsolute(planPath) ? planPath : join(cwd, planPath);
 	const findings: { detail: string; where: string }[] = [];
 
-	// Fail-soft read + parse: an unreadable plan, malformed directive, or broken AV
-	// section degrades to a finding, never a terminal throw. If the read fails there
-	// is nothing to apply or re-run.
+	// Fail-soft read + parse: an unreadable plan or malformed directive degrades
+	// to a finding, never a terminal throw. If the read fails there is nothing to
+	// apply.
 	let body = "";
 	let directives: ReconciliationDirective[] = [];
 	let malformed: string[] = [];
-	let commands: string[] = [];
 	try {
 		body = readArtifactFile(planPath, cwd);
 		const parsed = reconciliationRecords(body);
 		directives = parsed.directives;
 		malformed = parsed.malformed;
-		commands = planVerificationCommands(body);
 	} catch (err) {
 		findings.push({
 			detail: `reconcile: could not read or parse the plan ${planPath} — ${err instanceof Error ? err.message : String(err)}`,
@@ -2811,7 +2543,7 @@ const reconcile = ({ state, cwd }: ScriptContext): Omit<Output, "meta"> => {
 		});
 	}
 
-	findings.push(...applyReconciliationDirectives(directives, cwd), ...rerunAvCommands(commands, cwd));
+	findings.push(...applyReconciliationDirectives(directives, cwd));
 
 	// Best-effort bookkeeping: append a timestamped log under ## Synthesis Notes.
 	// Non-fatal — a write failure here is silent (the verdict below is the signal).
@@ -3006,8 +2738,10 @@ const gateTier = (state: RunView, verdictChannel: string): GateTier => {
 	const phases = channelNumber(state, "plans", "phase_count");
 	const severities = new Set<string>();
 	for (const o of state.named[verdictChannel] ?? []) {
-		const s = (o.data as { severity?: unknown } | undefined)?.severity;
-		if (typeof s === "string") severities.add(s);
+		const v = o.data as { severity?: unknown; findings?: unknown } | undefined;
+		const s = v?.severity;
+		// Anchor-nit clamp: an all-drift-nit verdict must not escalate the tier.
+		if (typeof s === "string") severities.add(anchorNitsOnly(v) ? "low" : s);
 	}
 	if (
 		(slices !== undefined && slices >= TIER_STRICT_MIN_SLICES) ||
@@ -3075,6 +2809,40 @@ const latestVerdictPerDimension = (entries: readonly Output[] = []): Map<string,
 };
 
 /**
+ * A finding whose detail is a line-anchor drift nit — "the citation is off by
+ * two", "drifted ~4 lines", "line 92 is the JSDoc", ":166 is the `parser?`
+ * field". The grade skill's citation-resolution rule forbids emitting these at
+ * all; this regex is the deterministic backstop for when a grader emits one
+ * anyway. Narrow by design — each alternative matches an observed phrasing from
+ * the run history (6 blocking fix rounds contained nothing else); the `line N
+ * is`/`:N is` forms require the explicit line prefix so ordinary prose
+ * ("slice 2 is a rename") never matches. Do NOT widen into a general
+ * nit detector.
+ */
+const ANCHOR_NIT_RE =
+	/\boff[- ]by[- ](?:one|two|three|\d+)\b|\bdrifted?\s+~?\d+\s+lines?\b|\bcitation (?:is )?drifted\b|(?::\d+|\bline \d+) is (?:the|a)\b|\bis at line \d+\b/i;
+
+/**
+ * TRUE when a verdict carries ≥1 finding and EVERY finding is an anchor-drift
+ * nit (`ANCHOR_NIT_RE`). Such a verdict is severity-clamped to non-blocking at
+ * the gate fold regardless of the grader's own `severity` — line-number drift
+ * was measured at 34% of all grader findings with zero downstream harm, and a
+ * mis-rated all-nit `medium` verdict buys a full fix round + re-grade panel
+ * that repairs nothing. A verdict mixing a drift nit with ANY other finding is
+ * untouched — the other finding may be the real blocker.
+ */
+const anchorNitsOnly = (v: { findings?: unknown } | undefined): boolean => {
+	const findings = Array.isArray(v?.findings) ? v.findings : [];
+	return (
+		findings.length > 0 &&
+		findings.every((f) => {
+			const detail = (f as { detail?: unknown } | undefined)?.detail;
+			return typeof detail === "string" && ANCHOR_NIT_RE.test(detail);
+		})
+	);
+};
+
+/**
  * The subset of `dimensions` a re-grade must actually re-run, given the latest
  * verdict per dimension accumulated so far. A dimension needs re-grading when it
  * has NO prior verdict (first pass ⇒ grade every dimension), when its latest
@@ -3095,8 +2863,8 @@ const dimensionsToRegrade = (
 	return dimensions.filter((d) => {
 		const o = latest.get(d);
 		if (!o) return true; // never graded — must grade at least once
-		const v = o.data as { pass?: boolean; severity?: string } | undefined;
-		const dimPass = v?.pass === true || v?.severity === "low" || v?.severity === "none";
+		const v = o.data as { pass?: boolean; severity?: string; findings?: unknown } | undefined;
+		const dimPass = v?.pass === true || v?.severity === "low" || v?.severity === "none" || anchorNitsOnly(v);
 		if (!dimPass) return true;
 		return verdictRiskRulings(o).some((r) => !rulingEffectivePass(r, risks.get(r.id)));
 	});
@@ -3429,10 +3197,12 @@ const allDimensionsPass = (entries: readonly Output[] = [], roster?: readonly st
 	const member = roster ? new Set(roster) : undefined;
 	const latest = new Map<string, boolean>();
 	for (const o of entries) {
-		const v = o.data as { dimension?: string; pass?: boolean; severity?: string } | undefined;
+		const v = o.data as { dimension?: string; pass?: boolean; severity?: string; findings?: unknown } | undefined;
 		if (typeof v?.dimension !== "string") continue;
 		if (member && !member.has(v.dimension)) continue;
-		const lowOrNone = v.severity === "low" || v.severity === "none";
+		// The anchor-nit clamp: an all-drift-nit verdict never blocks, whatever
+		// severity the grader typed (backstop for the citation-resolution rule).
+		const lowOrNone = v.severity === "low" || v.severity === "none" || anchorNitsOnly(v);
 		latest.set(v.dimension, v.pass === true || lowOrNone);
 	}
 	const verdicts = [...latest.values()];

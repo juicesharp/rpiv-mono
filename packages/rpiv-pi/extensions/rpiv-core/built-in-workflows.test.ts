@@ -2077,13 +2077,13 @@ describe("build slice-check (deterministic floor)", () => {
 	});
 
 	// Cite-only discharge — a `remedy: "cite"` design-readiness fail whose demands
-	// (add a seed, or refresh a stale `path:line`) landed on a structurally
-	// identical re-cut earns the `citeDischarged` stamp, so the gate can skip the
-	// re-grade panel. The fix is witnessed by publication order (a re-slice may
-	// edit the map in place, so basenames can't tell), and a revision note's
-	// `old→new` quotations don't count as live citations. A fix that ALSO
-	// restructured, or leaves the stale citation live, forfeits the stamp and
-	// takes the normal re-grade.
+	// (add a named seed) landed on a structurally identical re-cut earns the
+	// `citeDischarged` stamp, so the gate can skip the re-grade panel. The fix is
+	// witnessed by publication order (a re-slice may edit the map in place, so
+	// basenames can't tell), and a revision note's `old→new` quotations don't
+	// count as live citations. A fix that ALSO restructured forfeits the stamp
+	// and takes the normal re-grade. (The former REFRESH mode — a `stale` drifted
+	// line number to replace — was removed with anchor-precision grading.)
 	const T_JUDGED = "2026-01-01T00:01:00.000Z";
 	const T_VERDICT = "2026-01-01T00:02:00.000Z";
 	const T_FIXED = "2026-01-01T00:03:00.000Z";
@@ -2170,73 +2170,7 @@ describe("build slice-check (deterministic floor)", () => {
 		expect(data.citeDischarged).toBeUndefined();
 	});
 
-	it("stamps citeDischarged when a stale line-drift citation was refreshed to the verified lines", () => {
-		mkdirSync(join(tmpDir, "src"), { recursive: true });
-		writeFileSync(join(tmpDir, "src/seed.ts"), Array.from({ length: 50 }, (_, i) => `line ${i}`).join("\n"));
-		const judged = {
-			...write(
-				".rpiv/artifacts/slices/round1.md",
-				`${map({ count: 2, coverage: COV, sliceLines: TWO_SLICES })}**Draws on:** src/seed.ts:7\n`,
-			),
-			data: SHAPE,
-			meta: { ts: T_JUDGED },
-		};
-		const fixed = {
-			...write(
-				".rpiv/artifacts/slices/round2.md",
-				`${map({ count: 2, coverage: COV, sliceLines: TWO_SLICES })}**Draws on:** src/seed.ts:20\n`,
-			),
-			data: SHAPE,
-			meta: { ts: T_FIXED },
-		};
-		const data = structureRun()({
-			cwd: tmpDir,
-			input: undefined,
-			state: {
-				named: {
-					slices: [judged, fixed],
-					"slice-verdicts": [citeFailVerdict({ requires: "src/seed.ts:20", stale: "src/seed.ts:7" })],
-				},
-			} as unknown as RunView,
-		}).data;
-		expect(data.pass).toBe(true);
-		expect(data.citeDischarged).toBe("round2.md");
-	});
-
-	it("withholds citeDischarged while the stale citation is still present beside the refreshed one", () => {
-		mkdirSync(join(tmpDir, "src"), { recursive: true });
-		writeFileSync(join(tmpDir, "src/seed.ts"), Array.from({ length: 50 }, (_, i) => `line ${i}`).join("\n"));
-		const judged = {
-			...write(
-				".rpiv/artifacts/slices/round1.md",
-				`${map({ count: 2, coverage: COV, sliceLines: TWO_SLICES })}**Draws on:** src/seed.ts:7\n`,
-			),
-			data: SHAPE,
-			meta: { ts: T_JUDGED },
-		};
-		const fixed = {
-			...write(
-				".rpiv/artifacts/slices/round2.md",
-				`${map({ count: 2, coverage: COV, sliceLines: TWO_SLICES })}**Draws on:** src/seed.ts:7 and src/seed.ts:20\n`,
-			),
-			data: SHAPE,
-			meta: { ts: T_FIXED },
-		};
-		const data = structureRun()({
-			cwd: tmpDir,
-			input: undefined,
-			state: {
-				named: {
-					slices: [judged, fixed],
-					"slice-verdicts": [citeFailVerdict({ requires: "src/seed.ts:20", stale: "src/seed.ts:7" })],
-				},
-			} as unknown as RunView,
-		}).data;
-		expect(data.pass).toBe(true);
-		expect(data.citeDischarged).toBeUndefined();
-	});
-
-	it("discharges an IN-PLACE refresh whose revision note quotes the old cites as arrow pairs", () => {
+	it("discharges an IN-PLACE fix whose revision note quotes replaced cites as arrow pairs", () => {
 		// The live-run shape: slice-fix edits the SAME file (same basename as the
 		// judged round) and appends a note quoting each refresh as `old→new`. The
 		// note's quotations must not read as live citations, and publication order
@@ -2263,7 +2197,7 @@ describe("build slice-check (deterministic floor)", () => {
 			state: {
 				named: {
 					slices: [judged, fixed],
-					"slice-verdicts": [citeFailVerdict({ requires: "src/seed.ts:20", stale: "src/seed.ts:7" })],
+					"slice-verdicts": [citeFailVerdict({ requires: "src/seed.ts:20" })],
 				},
 			} as unknown as RunView,
 		}).data;
@@ -4443,6 +4377,43 @@ describe("build grade panel re-grades only the pending dimensions (P2)", () => {
 		expect(await labels("plan-grade", "plan-verdicts", verdicts)).toEqual([...PLAN_DIMS].sort());
 	});
 
+	it("clamps an all-anchor-nit MEDIUM fail to non-blocking (mis-rated line-drift findings)", async () => {
+		// The deterministic backstop for the grade skill's citation-resolution rule:
+		// a fail whose EVERY finding is line-number drift never buys a fix round,
+		// whatever severity the grader typed (6 historical fix rounds were exactly this).
+		const verdicts = PLAN_DIMS.map((d) =>
+			d === "correctness"
+				? dimV(d, false, {
+						severity: "medium",
+						findings: [
+							{ detail: "The citation is drifted ~4 lines; the alias declaration sits elsewhere", where: "s2" },
+							{ detail: "loop.ts:92 cites curCtx but the usage is at line 94 in the driver", where: "s3" },
+						],
+					})
+				: dimV(d, true),
+		);
+		// clamped to a pass, so nothing needs re-grading → full-panel fallback.
+		expect(await labels("plan-grade", "plan-verdicts", verdicts)).toEqual([...PLAN_DIMS].sort());
+	});
+
+	it("does NOT clamp when a drift nit sits beside a substantive finding", async () => {
+		const verdicts = PLAN_DIMS.map((d) =>
+			d === "correctness"
+				? dimV(d, false, {
+						severity: "medium",
+						findings: [
+							{ detail: "The citation is drifted ~4 lines", where: "s2" },
+							{
+								detail: "Slice 2 renames three PUBLIC type exports but the framing claims none are exported",
+								where: "s2",
+							},
+						],
+					})
+				: dimV(d, true),
+		);
+		expect(await labels("plan-grade", "plan-verdicts", verdicts)).toEqual(["correctness"]);
+	});
+
 	it("the code gate reads code-verdicts, not the plan gate's channel", async () => {
 		// plan-verdicts all fail, but code-grade must ignore them and read code-verdicts.
 		const codeVerdicts = PLAN_DIMS.map((d) => dimV(d, d !== "pattern-following"));
@@ -5415,29 +5386,12 @@ describe("reconcile lane stage", () => {
 		expect(readFileSync(join(tmpDir, "packages/a/a.test.ts"), "utf-8")).toBe("expect(r).toBe(4);\n");
 	});
 
-	it("runs an AV command that exits 0 ⇒ no finding", () => {
-		const plan = write(".rpiv/artifacts/plans/p.md", planBody({ av: ['node -e "process.exit(0)"'] }));
-		const data = runOn(plan);
-		expect(data.pass).toBe(true);
-	});
-
-	it("runs an AV command that exits non-zero ⇒ a finding naming the command ⇒ verdict fail", () => {
-		const plan = write(".rpiv/artifacts/plans/p.md", planBody({ av: ['node -e "process.exit(1)"'] }));
-		const data = runOn(plan);
-		expect(data.pass).toBe(false);
-		expect(details(data)).toMatch(/Automated Verification command failed/);
-		expect(details(data)).toMatch(/node -e "process.exit\(1\)"/);
-	});
-
-	it('unescapes \\" inside a double-quoted AV pattern (the live escaped-quote false-fail)', () => {
-		// Run 2026-07-30_12-25-25-7514 STOPPED here: `grep -n "name: \"goal\"" f.ts`
-		// tokenized to the pattern `name: \goal\` (the `\"` closed the quote instead
-		// of escaping it), so a grep that passes in any real shell exited non-zero.
-		writeTestFile("packages/site/lib/workflows.ts", 'stages: [\n\t{ name: "goal" },\n]\n');
-		const plan = write(
-			".rpiv/artifacts/plans/p.md",
-			planBody({ av: ['grep -n "name: \\"goal\\"" packages/site/lib/workflows.ts'] }),
-		);
+	it("does NOT execute AV commands — a failing command line yields no finding (validate owns AV)", () => {
+		// The AV re-run was removed: measured across the full run history it produced
+		// zero genuine catches and a 100% false-positive rate (stale cross-phase
+		// probes, agent-shell-only binaries, prose greps), each halting a finished
+		// run at a fail route with no fix arm. `validate` runs AV agent-side instead.
+		const plan = write(".rpiv/artifacts/plans/p.md", planBody({ av: ['node -e "process.exit(1)"', "rg -l x y.ts"] }));
 		const data = runOn(plan);
 		expect(data.pass).toBe(true);
 		expect(data.findings).toEqual([]);
@@ -5534,14 +5488,6 @@ describe("reconcile lane stage", () => {
 		expect(readFileSync(join(tmpDir, "packages/a/a.test.ts"), "utf-8")).toBe('import { r } from ".";\n\n');
 	});
 
-	it("fail-soft: an un-runnable AV command degrades to a finding, never a throw", () => {
-		const plan = write(".rpiv/artifacts/plans/p.md", planBody({ av: ["no-such-binary-xyz --flag"] }));
-		const data = runOn(plan);
-		expect(data.pass).toBe(false);
-		expect(details(data)).toMatch(/Automated Verification command failed/);
-		expect(details(data)).toMatch(/no-such-binary-xyz/);
-	});
-
 	it("appends a timestamped ### Reconciliation Log under the plan's ## Synthesis Notes", () => {
 		const rel = ".rpiv/artifacts/plans/p.md";
 		const plan = write(rel, planBody({ synthesisNotes: true }));
@@ -5610,175 +5556,5 @@ describe("reconcile lane stage", () => {
 				`${wf.name} has unreachable stages`,
 			).toEqual([]);
 		}
-	});
-});
-
-describe("AV exit-0 contract floor (plan-cite-check / code-cite-check)", () => {
-	let tmpDir: string;
-
-	beforeEach(() => {
-		tmpDir = mkdtempSync(join(tmpdir(), "rpiv-av-contract-"));
-	});
-
-	afterEach(() => {
-		rmSync(tmpDir, { recursive: true, force: true });
-	});
-
-	const citeCheckRun = (stage: "plan-cite-check" | "code-cite-check") => {
-		const s = findWorkflow("build").stages[stage];
-		if (!s?.run) throw new Error(`build ${stage} has no run function`);
-		return s.run as (ctx: { cwd: string; input?: undefined; state: RunView }) => {
-			data: Record<string, unknown>;
-		};
-	};
-	// A minimal plan: no file:line citations (citation floor stays green), no
-	// `files:` key (coverage floor skips), so the AV contract floor is the only
-	// findings source under test.
-	const planWithAv = (avLines: string[]) => {
-		const body = [
-			"---",
-			"status: ready",
-			"---",
-			"# Plan",
-			"## Phase 1: One",
-			"### Success Criteria",
-			"#### Automated Verification:",
-			...avLines,
-			"#### Manual Verification:",
-			"- [ ] a manual check",
-			"",
-		].join("\n");
-		mkdirSync(join(tmpDir, ".rpiv/artifacts/plans"), { recursive: true });
-		writeFileSync(join(tmpDir, ".rpiv/artifacts/plans/p.md"), body);
-		return {
-			artifacts: [{ handle: fsHandle(".rpiv/artifacts/plans/p.md") }],
-			data: undefined,
-			kind: "",
-			meta: {},
-		} as unknown as Output;
-	};
-	const runOn = (
-		plan: ReturnType<typeof planWithAv>,
-		stage: "plan-cite-check" | "code-cite-check" = "plan-cite-check",
-	) =>
-		citeCheckRun(stage)({
-			cwd: tmpDir,
-			input: undefined,
-			state: { named: { plans: [plan] } } as unknown as RunView,
-		}).data;
-	const details = (data: Record<string, unknown>) =>
-		((data.findings as { detail: string }[] | undefined) ?? []).map((f) => f.detail).join(" ");
-
-	it("passes a clean AV block (grep with file operand, scoped Biome, tsc, vitest)", () => {
-		const data = runOn(
-			planWithAv([
-				"- [ ] `grep -c 'let fenceChar' packages/rpiv-pi/extensions/rpiv-core/built-in-workflows.ts` exits 0",
-				"- [ ] `npm run check:files -- packages/rpiv-pi/extensions/rpiv-core/built-in-workflows.ts`",
-				"- [ ] `npx tsc --noEmit -p tsconfig.base.json`",
-				"- [x] `npx vitest run packages/rpiv-pi/extensions/rpiv-core/built-in-workflows.test.ts`",
-			]),
-		);
-		expect(data.pass).toBe(true);
-		expect(data.findings).toEqual([]);
-	});
-
-	it("flags a grep with no file operand (the c8fc stdin-scan class)", () => {
-		const data = runOn(planWithAv(["- [x] `grep -c 'let fenceChar = \"\";'` over `x.ts` returns `4`"]));
-		expect(data.pass).toBe(false);
-		expect(data.dimension).toBe("structure");
-		expect(details(data)).toContain("names no file operand");
-	});
-
-	it("does not flag grep when the pattern arrives via -e and a file operand follows", () => {
-		const data = runOn(
-			planWithAv(["- [ ] `grep -e fenceChar packages/rpiv-pi/extensions/rpiv-core/built-in-workflows.ts`"]),
-		);
-		expect(data.pass).toBe(true);
-	});
-
-	it("flags rg with a pattern but no path (reads the ignored stdin under reconcile)", () => {
-		const data = runOn(planWithAv(["- [ ] `rg fenceChar`"]));
-		expect(data.pass).toBe(false);
-		expect(details(data)).toContain("names no file operand");
-	});
-
-	it("flags an absence assertion in the prose tail of a grep line (the c8fc returns-nothing class)", () => {
-		const data = runOn(
-			planWithAv([
-				"- [x] `grep -n 'broad' packages/rpiv-pi/skills/implement/SKILL.md` returns nothing — the glob is gone",
-			]),
-		);
-		expect(data.pass).toBe(false);
-		expect(details(data)).toContain("asserts absence in prose");
-	});
-
-	it("does not flag absence prose on a non-grep command", () => {
-		const data = runOn(planWithAv(["- [ ] `npx tsc --noEmit -p tsconfig.base.json` returns nothing on success"]));
-		expect(data.pass).toBe(true);
-	});
-
-	it("flags a multi-word literal grep against markdown (the 7514 wrap/case-fragile class)", () => {
-		// The live false-fail: the guide capitalized the phrase ("Three of the
-		// five…") and the guidance doc line-wrapped it — grep failed both while the
-		// asserted text was present, and reconcile's fail route is STOP.
-		const data = runOn(
-			planWithAv([
-				'- [x] `grep -n "three of the five bundled pipelines" packages/rpiv-site/src/content/docs/guides/run-a-workflow.md`',
-			]),
-		);
-		expect(data.pass).toBe(false);
-		expect(details(data)).toContain("multi-word literal against prose");
-	});
-
-	it("does not flag a multi-word grep against a code file (code neither re-wraps nor sentence-cases)", () => {
-		const data = runOn(planWithAv(['- [ ] `grep -n "stageCount: 30" packages/rpiv-site/src/lib/workflows.ts`']));
-		expect(data.pass).toBe(true);
-	});
-
-	it("does not flag a single-token grep against markdown", () => {
-		const data = runOn(
-			planWithAv(['- [ ] `grep -n "30-stage" packages/rpiv-site/src/content/docs/guides/pick-a-path.md`']),
-		);
-		expect(data.pass).toBe(true);
-	});
-
-	it("fails open on a directory operand (no extension to classify as prose)", () => {
-		const data = runOn(planWithAv(['- [ ] `grep -rn "three of five" packages/rpiv-site/src/`']));
-		expect(data.pass).toBe(true);
-	});
-
-	it("flags a Biome runner whose forwarded paths are all out of scope (the c8fc markdown class)", () => {
-		const data = runOn(planWithAv(["- [x] `npm run check:files -- packages/rpiv-pi/skills/implement/SKILL.md`"]));
-		expect(data.pass).toBe(false);
-		expect(details(data)).toContain("outside its configured scope");
-	});
-
-	it("does not flag a Biome runner when any forwarded path is in scope or is a directory", () => {
-		const mixed = runOn(
-			planWithAv([
-				"- [ ] `npm run check:files -- a/b.md packages/rpiv-pi/extensions/rpiv-core/built-in-workflows.ts`",
-			]),
-		);
-		expect(mixed.pass).toBe(true);
-		const dir = runOn(planWithAv(["- [ ] `npm run check:files -- packages/rpiv-pi`"]));
-		expect(dir.pass).toBe(true);
-	});
-
-	it("flags an unparseable AV command (unterminated quote) at plan time", () => {
-		const data = runOn(planWithAv(["- [ ] `grep -c 'unterminated packages/x.ts`"]));
-		expect(data.pass).toBe(false);
-		expect(details(data)).toContain("unparseable");
-	});
-
-	it("aggregates one finding per violating line and runs on the code-cite-check arm too", () => {
-		const plan = planWithAv([
-			"- [x] `grep -c 'let fenceChar = \"\";'` over `x.ts` returns `4`",
-			"- [x] `npm run check:files -- docs/readme.md`",
-			"- [ ] `npx tsc --noEmit -p tsconfig.base.json`",
-		]);
-		const data = runOn(plan, "code-cite-check");
-		expect(data.pass).toBe(false);
-		expect((data.findings as unknown[]).length).toBe(2);
-		expect(String(data.severity)).toBe("high");
 	});
 });
