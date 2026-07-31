@@ -7,6 +7,29 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Removed
+
+- **`ship` and `arch` built-in `/wf` workflows removed.** Both were subsets of
+  the now-mature `build` pipeline (`build` is the parallel, panel-gated
+  generalization of `arch`; `ship`'s fast blueprint → implement → validate →
+  commit spine is `build` with the research/slice/design/plan gates skipped),
+  so the curated set is `build` / `vet` / `polish`. The dead `IMPLEMENT_PHASE_FANOUT`
+  const (the serial twin only `ship`/`arch` used) is removed as dead code.
+
+### Changed
+
+- **`build` is now the default `/wf` workflow** when no project/user config sets
+  one (it is first in the `builtInWorkflows` export array, which `resolve-default.ts`
+  reads via `Map.keys().next().value`). `build` is heavier and more interactive
+  than the removed `ship` — research → slice → design-checkpoint → gated plan/code
+  → validate — so bare `/wf "<task>"` now resolves to the full pipeline.
+
+- **`models.json` `presets.ship` / `presets.arch` entries now warn, not error.** The
+  warn-on-miss validator builds its known-workflow set from the live
+  `builtInWorkflows`, so once `ship`/`arch` leave the array an existing
+  `presets.ship`/`presets.arch` entry self-heals to a soft warn-on-miss (unknown
+  workflow) and falls through the cascade rather than failing `/rpiv-models`.
+
 ### Added
 
 - **Declared write-sets carry their co-located test twins.** A phase declaring

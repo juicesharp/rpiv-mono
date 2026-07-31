@@ -50,8 +50,8 @@ import { rpivBucketOutcome } from "./artifact-collector.js";
 // code-review stage sources it from the skill's contract `produces.data`
 // (`blockers_count` required), validated by the runtime output loop via
 // `effectiveOutputSchema`. One source of truth, in the skill, not copy-pasted
-// per workflow. Every workflow — build/arch/polish AND vet — routes on the
-// same numeric gate: `gate("blockers_count", { <fix>: gt(0), commit: eq(0) }, "commit")`.
+// per workflow. Every workflow with a `code-review` stage — polish AND vet —
+// routes on the same numeric gate: `gate("blockers_count", { <fix>: gt(0), commit: eq(0) }, "commit")`.
 
 /**
  * A plan's structured `phases:` frontmatter array — the machine-readable phase
@@ -320,7 +320,7 @@ const unionDeclaredWriteSet = (
  * latest plan published to the named `"plans"` channel. Sourcing from the named
  * channel (not the rolling primary) makes the stage's `reads: ["plans"]`
  * declaration semantically honest. Used by every workflow whose `implement`
- * inherits one plan (ship/build/arch/vet); polish's accumulating multi-plan
+ * inherits one plan (build/vet); polish's accumulating multi-plan
  * variant is `PLANS_PHASE_FANOUT`.
  */
 const FRONTMATTER_PHASE_FANOUT = fanout({
@@ -337,25 +337,6 @@ const FRONTMATTER_PHASE_FANOUT = fanout({
 		}));
 	},
 });
-
-/**
- * `implement`'s serial twin of `FRONTMATTER_PHASE_FANOUT`, for plans that do NOT
- * declare a per-phase write set. `concurrency: 1` serializes the units in the
- * plan's (topological) phase order — the safe model when a fanout's units share a
- * working tree AND their write-sets are unknown (so the scheduler cannot derive
- * dep edges and the lane has no scope floor to guard it). `elaborate` keeps the
- * parallel fanout: it writes ISOLATED per-phase docs.
- *
- * When a plan DOES declare per-phase `files:`, prefer `IMPLEMENT_DAG_FANOUT`:
- * its `implementPhaseDeps` derives dep edges from write-set overlap (units with
- * disjoint `files:` run concurrently; a `files:`-less phase conflicts with every
- * lower phase, degrading to the full chain — one phase per wave — so the
- * all-`files:`-less plan stays serial at any cap), and a lane-level scope floor
- * guards the declared set. Used today by ship/arch (the serial twin — vet+build
- * have moved to `IMPLEMENT_DAG_FANOUT`, which sets no `concurrency`, inheriting
- * the host cap); build's `implement-scope-check` scope floor has landed.
- */
-const IMPLEMENT_PHASE_FANOUT = { ...FRONTMATTER_PHASE_FANOUT, concurrency: 1 };
 
 /**
  * Derive the directed `deps` edges for ONE implement phase under the dep-gated
@@ -423,66 +404,6 @@ const IMPLEMENT_DAG_FANOUT = {
 		}));
 	},
 };
-
-// ===========================================================================
-// ship — blueprint → implement → validate → commit
-// ===========================================================================
-
-const shipWorkflow = defineWorkflow({
-	name: "ship",
-	description:
-		"Fast path with no research or review. Best when the change is small and the approach is obvious. Chain: blueprint → implement → validate → commit.",
-	start: "blueprint",
-	stages: {
-		blueprint: produces(),
-		implement: acts({ loop: IMPLEMENT_PHASE_FANOUT, reads: ["plans"] }),
-		validate: produces(),
-		commit: acts({ outcome: gitCommitOutcome }),
-	},
-	edges: {
-		blueprint: "implement",
-		implement: "validate",
-		validate: "commit",
-		commit: "stop",
-	},
-});
-
-// ===========================================================================
-// arch — research → design → plan → implement → validate → code-review →
-//        (design → loop) | commit
-//        Loops the full design/plan/implement/validate/review chain until
-//        code-review reports zero blockers, bounded by the runner's
-//        maxBackwardJumps (default 2 → up to 3 review iterations).
-// ===========================================================================
-
-const archWorkflow = defineWorkflow({
-	name: "arch",
-	description:
-		"Design-led pipeline for complex changes touching many files or layers. Best when the approach itself needs to be worked out before planning. Chain: research → design → plan → implement → validate → code-review → (design loop) → commit.",
-	start: "research",
-	stages: {
-		research: produces(),
-		design: produces(),
-		plan: produces(),
-		implement: acts({ loop: IMPLEMENT_PHASE_FANOUT, reads: ["plans"] }),
-		validate: produces(),
-		"code-review": produces(),
-		commit: acts({ outcome: gitCommitOutcome }),
-	},
-	edges: {
-		research: "design",
-		design: "plan",
-		plan: "implement",
-		implement: "validate",
-		validate: "code-review",
-		// Backward edge: code-review → design re-enters the full
-		// design/plan/implement/validate/review cycle. Bounded by the
-		// runner's default maxBackwardJumps (2), permitting at most 3
-		// review iterations before the guard halts.
-		"code-review": gate("blockers_count", { design: gt(0), commit: eq(0) }, "commit"),
-		commit: "stop",
-	},
-});
 
 // ===========================================================================
 // polish — architecture-review → blueprint (iterate, per review phase) →
@@ -697,7 +618,7 @@ const PLANS_PHASE_FANOUT = fanout({
 	},
 });
 
-/** `implement`'s serial twin of `PLANS_PHASE_FANOUT` (polish's multi-plan variant) — same serialize-shared-tree rationale as `IMPLEMENT_PHASE_FANOUT`. */
+/** `implement`'s serial twin of `PLANS_PHASE_FANOUT` (polish's multi-plan variant) — serialized (`concurrency: 1`) because the fanout's units share a working tree and their write-sets are unknown, so the scheduler cannot derive dep edges (no scope floor guards it). */
 const IMPLEMENT_PLANS_FANOUT = { ...PLANS_PHASE_FANOUT, concurrency: 1 };
 
 /**
@@ -766,7 +687,6 @@ const polishWorkflow = defineWorkflow({
 //   (per-cluster sub-plans → one plan) so no pass holds every design, gate the
 //   plan on quality dimensions BEFORE any code, elaborate code per phase and
 //   splice it in, re-grade the code-bearing plan, then implement/validate/commit.
-//   The parallel generalization of `arch`.
 // ===========================================================================
 
 /**
@@ -3579,7 +3499,7 @@ const COMMIT_BASELINE_PROMPT: PromptFn = ({ state }) => {
 //       brief as a goal artifact, review, and if not approved blueprint a fix
 //       plan, implement it, scope-check it, validate, and re-review. Loops
 //       until approved. NOTE: defined here (after captureGoal /
-//       implementScopeCheckVet) rather than beside ship/arch because its graph
+//       implementScopeCheckVet) rather than beside polish because its graph
 //       references those later-declared `const`s — the same precedent
 //       buildWorkflow follows (defined after its deps).
 // ===========================================================================
@@ -3597,7 +3517,7 @@ const vetWorkflow = defineWorkflow({
 		// rides the channel face. `goal` as start publishes the goal-md as
 		// `artifacts[0]`; `code-review` is a plain `produces()` SKILL stage (skill
 		// defaults to its stage key "code-review"), so it inherits that goal-md PATH
-		// as its rolling primary — the same pattern arch/polish's code-review uses,
+		// as its rolling primary — the same pattern polish's code-review uses,
 		// and the fallback Risk r1's note conceded "likely tolerates a goal-md-path
 		// arg." The goal-md's CONTENT is the brief (`captureGoal` writes
 		// `state.originalInput` into it), so the skill still reaches it.
@@ -3635,7 +3555,7 @@ const vetWorkflow = defineWorkflow({
 	},
 	edges: {
 		goal: "code-review",
-		// Same numeric gate as build/arch/polish: zero remaining blockers → commit;
+		// Same numeric gate as polish: zero remaining blockers → commit;
 		// any blockers → loop a fix pass through blueprint. The `blockers_count`
 		// field is sourced + validated from the code-review contract.
 		"code-review": gate("blockers_count", { blueprint: gt(0), commit: eq(0) }, "commit"),
@@ -3873,7 +3793,7 @@ const buildWorkflow = defineWorkflow({
 	edges: {
 		goal: "research",
 		// Research's artifact is auto-fed to slice as its argument (the slice skill's
-		// "Fresh" input is a research path) — mirrors arch's research → design edge.
+		// "Fresh" input is a research path).
 		research: "slice",
 		slice: "slice-check",
 		// Skip the design-readiness re-grade when the gate is already satisfied — after
@@ -4038,10 +3958,7 @@ const buildWorkflow = defineWorkflow({
 // Exports
 // ===========================================================================
 
-export const builtInWorkflows: readonly Workflow[] = [
-	shipWorkflow,
-	archWorkflow,
-	vetWorkflow,
-	polishWorkflow,
-	buildWorkflow,
-];
+// Position 0 is load-bearing: `build` is the default `/wf` workflow when no
+// project/user config sets one (resolve-default.ts resolves
+// `Map.keys().next().value`), so it MUST stay first in this array.
+export const builtInWorkflows: readonly Workflow[] = [buildWorkflow, vetWorkflow, polishWorkflow];

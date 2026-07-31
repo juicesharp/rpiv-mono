@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("./models-config-sources.js", () => ({
 	bundledAgentNames: vi.fn(() => ["codebase-analyzer"]),
 	skillCommandNames: vi.fn(() => ["commit"]),
-	loadWorkflowMap: vi.fn(async () => ({ ship: ["research", "plan"] })),
+	loadWorkflowMap: vi.fn(async () => ({ build: ["research", "plan"] })),
 }));
 
 import { loadWorkflowMap } from "./models-config-sources.js";
@@ -30,7 +30,7 @@ function makePi() {
 
 afterEach(() => {
 	vi.mocked(loadWorkflowMap).mockReset();
-	vi.mocked(loadWorkflowMap).mockResolvedValue({ ship: ["research", "plan"] });
+	vi.mocked(loadWorkflowMap).mockResolvedValue({ build: ["research", "plan"] });
 });
 
 describe("models-config-validate — session_start warn-on-miss", () => {
@@ -40,7 +40,7 @@ describe("models-config-validate — session_start warn-on-miss", () => {
 			agents: { "codebase-analzyer": "a/b" },
 			stages: { reserch: "a/b" },
 			skills: { committ: "a/b" },
-			presets: { ship: { stages: { plann: "a/b" } } },
+			presets: { build: { stages: { plann: "a/b" } } },
 		});
 		const { pi, fire } = makePi();
 		registerModelsConfigValidation(pi);
@@ -50,7 +50,7 @@ describe("models-config-validate — session_start warn-on-miss", () => {
 		expect(warned.some((w) => w.includes("agents.codebase-analzyer"))).toBe(true);
 		expect(warned.some((w) => w.includes("stages.reserch"))).toBe(true);
 		expect(warned.some((w) => w.includes("skills.committ"))).toBe(true);
-		expect(warned.some((w) => w.includes("presets.ship.stages.plann"))).toBe(true);
+		expect(warned.some((w) => w.includes("presets.build.stages.plann"))).toBe(true);
 		warn.mockRestore();
 	});
 
@@ -59,7 +59,7 @@ describe("models-config-validate — session_start warn-on-miss", () => {
 		writeModels({
 			agents: { "codebase-analyzer": "a/b" },
 			skills: { commit: "a/b" },
-			presets: { ship: { stages: { plan: "a/b" } } },
+			presets: { build: { stages: { plan: "a/b" } } },
 		});
 		const { pi, fire } = makePi();
 		registerModelsConfigValidation(pi);

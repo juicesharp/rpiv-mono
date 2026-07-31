@@ -7,7 +7,7 @@
  * Tool-owning plugins are siblings (see siblings.ts); install via /rpiv-setup.
  *
  * Workflow runtime + `/wf` command live in `@juicesharp/rpiv-workflow`. We
- * contribute five built-in workflows (arch / build / ship / vet / polish) via the
+ * contribute three built-in workflows (build / polish / vet) via the
  * sibling's `registerBuiltIns` programmatic API so they're available to
  * users running `/wf` without authoring their own.
  */
@@ -42,7 +42,7 @@ export default function (pi: ExtensionAPI) {
 	registerSetupCommand(pi);
 	registerRpivModelsCommand(pi); // /rpiv-models cascade picker
 	// Warn-on-miss: surface models.json record-key typos (skills.committ,
-	// presets.shipp) that pass schema validation but silently never apply.
+	// presets.buildd) that pass schema validation but silently never apply.
 	registerModelsConfigValidation(pi);
 	// Stage model/effort override: the session_start hook captures modelRegistry +
 	// current model + the foreground uiContext UNCONDITIONALLY (independent of

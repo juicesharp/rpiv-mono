@@ -2,7 +2,7 @@
  * models-config-validate — session_start warn-on-miss for models.json keys.
  *
  * Record-key typos (`skills.committ`, `agents.codebase-analzyer`,
- * `presets.shipp`) pass TypeBox validation (records are structurally dynamic)
+ * `presets.buildd`) pass TypeBox validation (records are structurally dynamic)
  * and silently fall through to the defaults cascade — the override the user
  * meant to set just never applies, with no feedback. This hook surfaces them
  * once per process via `console.warn`.

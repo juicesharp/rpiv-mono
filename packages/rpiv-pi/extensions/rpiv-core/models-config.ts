@@ -118,7 +118,7 @@ const PresetSchema = Type.Object(
  * names within that workflow.
  *
  * `Type.Record(Type.String(), …)` wrappers are structurally dynamic and cannot
- * stamp `additionalProperties: false` — record-key typos (`presets.shipp`,
+ * stamp `additionalProperties: false` — record-key typos (`presets.buildd`,
  * `skills.committ`) pass schema validation by design and fall through to the
  * defaults cascade at lookup. `findUnknownModelKeys` (wired into session_start
  * by models-config-validate.ts) is the runtime warn-on-miss safety net.
@@ -374,8 +374,8 @@ export interface KnownModelKeys {
 
 /**
  * Return dotted paths of configured models.json keys that match no known key —
- * e.g. `skills.committ`, `agents.codebase-analzyer`, `presets.shipp`,
- * `presets.ship.stages.plann`. Record-key typos pass TypeBox validation
+ * e.g. `skills.committ`, `agents.codebase-analzyer`, `presets.buildd`,
+ * `presets.build.stages.plann`. Record-key typos pass TypeBox validation
  * (records are structurally dynamic) and silently fall through to the defaults
  * cascade; this surfaces them. Axes with an `undefined` known-list are skipped;
  * an unknown preset workflow short-circuits (its inner stages aren't validated

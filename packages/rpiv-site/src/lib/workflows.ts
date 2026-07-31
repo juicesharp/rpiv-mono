@@ -1,7 +1,7 @@
 /**
- * Three of the five built-in pipelines rpiv-pi registers into rpiv-workflow's
+ * The three built-in pipelines rpiv-pi registers into rpiv-workflow's
  * `built-in` layer (see packages/rpiv-pi/extensions/rpiv-core/built-in-workflows.ts)
- * — build/vet/polish mirrored here; arch and ship are not surfaced. This is a
+ * — build/vet/polish mirrored here. This is a
  * hand-maintained presentation mirror: the landing renders a curated stage
  * *spine* per pipeline, not the full edge graph.
  *
@@ -20,7 +20,7 @@
  *   land    → implement, validate, commit
  *
  * The runtime `default` (no config) cascades to the first registered workflow
- * (`ship`); the landing independently *showcases* `build` because it exercises
+ * (`build`); the landing also *showcases* `build` because it exercises
  * the most machinery — verbatim brief capture, parallel design, three quality
  * gates, and the one human design review.
  */
@@ -119,7 +119,7 @@ const WORKFLOWS: readonly WorkflowEntry[] = [
 	},
 ];
 
-/** All three mirrored pipelines (three of the five built-ins), showcase entry first-class via `.showcase`. */
+/** All three built-in pipelines, the showcase entry selected via `.showcase`. */
 export async function getWorkflows(): Promise<WorkflowEntry[]> {
 	return [...WORKFLOWS];
 }

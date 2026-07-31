@@ -387,9 +387,9 @@ describe("removeOverride (cascade cleanup)", () => {
 
 	it("collapses the whole presets tree when the last stage is removed", () => {
 		const { next, removed } = removeOverride(
-			{ presets: { ship: { stages: { research: "zai/glm-4-7" } } } },
+			{ presets: { build: { stages: { research: "zai/glm-4-7" } } } },
 			"presets",
-			["ship", "research"],
+			["build", "research"],
 		);
 		expect(removed).toBe(true);
 		expect(next.presets).toBeUndefined();
@@ -399,16 +399,16 @@ describe("removeOverride (cascade cleanup)", () => {
 		const { next, removed } = removeOverride(
 			{
 				presets: {
-					ship: { stages: { research: "zai/glm-4-7", plan: "anthropic/opus" } },
+					build: { stages: { research: "zai/glm-4-7", plan: "anthropic/opus" } },
 					polish: { stages: { review: "zai/glm-4-7" } },
 				},
 			},
 			"presets",
-			["ship", "research"],
+			["build", "research"],
 		);
 		expect(removed).toBe(true);
 		expect(next.presets).toEqual({
-			ship: { stages: { plan: "anthropic/opus" } },
+			build: { stages: { plan: "anthropic/opus" } },
 			polish: { stages: { review: "zai/glm-4-7" } },
 		});
 	});
@@ -427,8 +427,8 @@ describe("removeOverride (cascade cleanup)", () => {
 	});
 
 	it("reports removed=false for an absent preset stage", () => {
-		const config = { presets: { ship: { stages: { research: "zai/glm-4-7" } } } };
-		expect(removeOverride(config, "presets", ["ship", "plan"]).removed).toBe(false);
+		const config = { presets: { build: { stages: { research: "zai/glm-4-7" } } } };
+		expect(removeOverride(config, "presets", ["build", "plan"]).removed).toBe(false);
 		expect(removeOverride(config, "presets", ["polish", "review"]).removed).toBe(false);
 	});
 });
@@ -537,19 +537,19 @@ describe("applyOverride", () => {
 	});
 
 	it("adds a preset stage to a new workflow", () => {
-		const result = applyOverride({}, "presets", ["ship", "research"], { model: "zai/glm-4-7" });
-		expect(result.presets).toEqual({ ship: { stages: { research: "zai/glm-4-7" } } });
+		const result = applyOverride({}, "presets", ["build", "research"], { model: "zai/glm-4-7" });
+		expect(result.presets).toEqual({ build: { stages: { research: "zai/glm-4-7" } } });
 	});
 
 	it("adds a preset stage to an existing workflow", () => {
 		const result = applyOverride(
-			{ presets: { ship: { stages: { research: "zai/glm-4-7" } } } },
+			{ presets: { build: { stages: { research: "zai/glm-4-7" } } } },
 			"presets",
-			["ship", "plan"],
+			["build", "plan"],
 			{ model: "openai/gpt-5.5", thinking: "medium" },
 		);
 		expect(result.presets).toEqual({
-			ship: { stages: { research: "zai/glm-4-7", plan: { model: "openai/gpt-5.5", thinking: "medium" } } },
+			build: { stages: { research: "zai/glm-4-7", plan: { model: "openai/gpt-5.5", thinking: "medium" } } },
 		});
 	});
 
@@ -589,9 +589,9 @@ describe("/rpiv-models — loadWorkflowMap error handling", () => {
 		// Workflow step succeeds; the stage step's second load rejects (e.g. the
 		// workflow was deleted between picks).
 		vi.spyOn(sources, "loadWorkflowMap")
-			.mockResolvedValueOnce({ ship: ["plan", "build"] })
+			.mockResolvedValueOnce({ build: ["plan", "research"] })
 			.mockRejectedValueOnce(new Error("load failed"));
-		vi.mocked(showFilterablePicker).mockResolvedValueOnce("presets").mockResolvedValueOnce("ship"); // workflow picked; stage step then aborts before its picker
+		vi.mocked(showFilterablePicker).mockResolvedValueOnce("presets").mockResolvedValueOnce("build"); // workflow picked; stage step then aborts before its picker
 		const { pi, handler } = makePi();
 		registerRpivModelsCommand(pi);
 		const ctx = makeCtx();
@@ -649,15 +649,15 @@ describe("/rpiv-models — ESC navigates one level up", () => {
 	it("ESC at the model picker for presets returns to the STAGE picker (one level), not the workflow", async () => {
 		rmSync(CONFIG_PATH, { force: true });
 		const sources = await import("./models-config-sources.js");
-		vi.spyOn(sources, "loadWorkflowMap").mockResolvedValue({ ship: ["plan", "build"] });
+		vi.spyOn(sources, "loadWorkflowMap").mockResolvedValue({ build: ["plan", "research"] });
 
-		// presets → ship → plan → ESC at model (back to STAGE) → build → model → save.
+		// presets → build → plan → ESC at model (back to STAGE) → research → model → save.
 		vi.mocked(showFilterablePicker)
 			.mockResolvedValueOnce("presets")
-			.mockResolvedValueOnce("ship") // workflow
+			.mockResolvedValueOnce("build") // workflow
 			.mockResolvedValueOnce("plan") // stage
 			.mockResolvedValueOnce(null) // ESC at model → back to stage (NOT workflow)
-			.mockResolvedValueOnce("build") // re-pick stage
+			.mockResolvedValueOnce("research") // re-pick stage
 			.mockResolvedValueOnce("zai/glm-4-7"); // model (non-reasoning) → commit
 		const { pi, handler } = makePi();
 		registerRpivModelsCommand(pi);
@@ -670,8 +670,8 @@ describe("/rpiv-models — ESC navigates one level up", () => {
 		expect(reshownStage.preferredValue).toBe("plan"); // preselects the stage we backed out of
 
 		const stored = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
-		expect(stored.presets.ship.stages.build).toBe("zai/glm-4-7");
-		expect(stored.presets.ship.stages.plan).toBeUndefined(); // only one level up — workflow kept
+		expect(stored.presets.build.stages.research).toBe("zai/glm-4-7");
+		expect(stored.presets.build.stages.plan).toBeUndefined(); // only one level up — workflow kept
 	});
 
 	it("ESC at the first key step returns to the scope picker, where a different scope proceeds", async () => {

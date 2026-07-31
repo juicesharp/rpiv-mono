@@ -269,16 +269,23 @@ describe("bundled skill contracts", () => {
 
 	it("documents the declared-but-not-harvested orthogonal set", () => {
 		// These skills declare a contract but don't appear in any dispatched
-		// built-in workflow stage. With ship/arch restored, arch's bare
-		// `produces()` stages re-harvest research/design/plan, so only two
-		// pipeline skills stay unharvested here:
+		// built-in workflow stage. The three built-ins (build/polish/vet) never
+		// dispatch the pipeline-stage skills — discover/explore/research/design/
+		// plan/frontend-design are gated to explicit `/skill:` invocation and run
+		// as prompt-driven stages (e.g. `research: produces({ prompt: ... })`) or
+		// under a different skill (elaborate, synthesize, design-slice), so all
+		// six stay unharvested here. research/design/plan were previously
+		// harvested only by arch's bare `produces()` stages; with ship/arch gone
+		// they rejoin the unharvested set. Two more lost their only harvester when
+		// their workflows were removed:
 		//   - revise: was harvested only by the removed old-build graph's
 		//     `revise` stage; no restored workflow re-introduces it;
 		//   - pr-triage: was harvested only by the removed pr-triage workflow.
 		// commit stays listed too: acts({ outcome }) with no reads harvest-skips.
 		// Total: 6 doc/util (annotate-guidance/annotate-inline/changelog/
-		//        create-handoff/migrate-to-guidance/resume-handoff) + discover +
-		//        explore + frontend-design + commit + pr-triage + revise = 12.
+		//        create-handoff/migrate-to-guidance/resume-handoff) + 6 pipeline
+		//        skills (discover/explore/research/design/plan/frontend-design) +
+		//        commit + pr-triage + revise = 15.
 		const harvested = harvestStageContracts(builtInWorkflows);
 		const notHarvested: string[] = [];
 		for (const [name] of declared) {
@@ -291,18 +298,21 @@ describe("bundled skill contracts", () => {
 				"changelog",
 				"commit",
 				"create-handoff",
+				"design",
 				"discover",
 				"explore",
 				"frontend-design",
 				"migrate-to-guidance",
+				"plan",
 				"pr-triage",
+				"research",
 				"resume-handoff",
 				"revise",
 			].sort(),
 		);
 	});
 
-	it("every declared kind matches the harvested kind for the five built-in workflows", () => {
+	it("every declared kind matches the harvested kind for the three built-in workflows", () => {
 		// Harvest derives each dispatched skill's kind from how the built-ins use
 		// it (produces() → "produces", acts() → "side-effect"). A declared kind
 		// that disagrees would make the rendered graph lie — catch it here.

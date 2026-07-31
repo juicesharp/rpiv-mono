@@ -1,6 +1,6 @@
 # Workflows and recipes
 
-The five `/wf` pipelines `@juicesharp/rpiv-pi` contributes, and the hand-driven
+The three `/wf` pipelines `@juicesharp/rpiv-pi` contributes, and the hand-driven
 skill chains to reach for when you don't want a whole pipeline.
 
 `/wf` itself ships with [`@juicesharp/rpiv-workflow`](https://www.npmjs.com/package/@juicesharp/rpiv-workflow),
@@ -19,21 +19,7 @@ session start; if the runner is not installed, the built-ins simply do not appea
 A run appears as a lane in the dock under your editor. You keep typing in the main
 session while it works — see [lanes.md](./lanes.md).
 
-## The five built-in workflows
-
-### `ship`
-
-`blueprint → implement → validate → commit`
-
-Fast path with no research and no review. Best when the change is small and the
-approach is already obvious.
-
-### `arch`
-
-`research → design → plan → implement → validate → code-review → (design loop | commit)`
-
-Design-led pipeline for complex changes touching many files or layers. Best when the
-approach itself has to be worked out before planning.
+## The three built-in workflows
 
 ### `vet`
 
@@ -53,7 +39,7 @@ each phase's plan must build on the ones before it.
 
 `goal → research → slice → slice gate (+ fix loop) → design-slice (parallel fanout) → design-review → synthesize → plan gate → elaborate (parallel fanout) → re-grade → implement → validate → commit`
 
-Ship, sliced. It captures your brief verbatim as a goal artifact — the north star the
+Your brief, sliced. It captures your brief verbatim as a goal artifact — the north star the
 quality gates and `validate` anchor against — then decomposes the work into vertical
 slices, designs each in parallel, takes one consolidated developer checkpoint on the
 proposed interfaces, synthesizes hierarchically, and grades the plan before and after
@@ -61,7 +47,7 @@ code is elaborated into it. Three automated gates plus one human checkpoint.
 
 ## Review loops
 
-`arch`, `vet`, and `polish` gate on the numeric `blockers_count` a `code-review`
+`vet` and `polish` gate on the numeric `blockers_count` a `code-review`
 artifact reports: greater than zero routes back into a fix stage, zero routes to
 `commit`. The runner's default backward-jump budget is 2, so a review loop runs at
 most three times before the workflow stops looping.

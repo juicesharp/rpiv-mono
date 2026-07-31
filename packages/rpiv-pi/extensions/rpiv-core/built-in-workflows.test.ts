@@ -103,152 +103,86 @@ describe("validate → code-review routing in built-in workflows", () => {
 	});
 });
 
-describe("ship workflow", () => {
-	it("chains blueprint → implement → validate → commit", () => {
-		const wf = findWorkflow("ship");
-		expect(wf.start).toBe("blueprint");
-		expect(Object.keys(wf.stages)).toEqual(["blueprint", "implement", "validate", "commit"]);
-		expect(wf.edges.blueprint).toBe("implement");
-		expect(wf.edges.implement).toBe("validate");
-		expect(wf.edges.validate).toBe("commit");
-		expect(wf.edges.commit).toBe("stop");
+it("build is the default workflow (builtInWorkflows[0].name === 'build')", () => {
+	// Position 0 is load-bearing: resolve-default.ts picks
+	// `Map.keys().next().value` when no project/user config sets a default, so
+	// build MUST stay first in the builtInWorkflows export array.
+	expect(builtInWorkflows[0]?.name).toBe("build");
+});
+
+describe("FRONTMATTER_PHASE_FANOUT", () => {
+	let tmpDir: string;
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "rpiv-build-frontmatter-fanout-"));
+	});
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true, force: true });
 	});
 
-	it("blueprint stage carries no inline outputSchema (phases sourced from the skill contract)", () => {
-		expect(findWorkflow("ship").stages.blueprint?.outputSchema).toBeUndefined();
+	const fanout = () => {
+		const loop = findWorkflow("build").stages.implement?.loop;
+		if (loop?.kind !== "fanout") throw new Error("build implement stage has no fanout loop");
+		return loop.units;
+	};
+	const writePlan = (rel: string, body: string) => {
+		const parts = rel.split("/");
+		mkdirSync(join(tmpDir, ...parts.slice(0, -1)), { recursive: true });
+		writeFileSync(join(tmpDir, rel), body);
+	};
+	const runFanout = (rel: string) =>
+		fanout()({
+			cwd: tmpDir,
+			artifact: undefined,
+			state: {
+				named: { plans: [{ artifacts: [{ handle: fsHandle(rel) }], data: undefined, kind: "", meta: {} }] },
+			} as unknown as RunView,
+		});
+
+	it("reads phases from frontmatter and dispatches one title-enriched unit per phase", async () => {
+		const rel = ".rpiv/artifacts/plans/p.md";
+		writePlan(
+			rel,
+			`---\nstatus: ready\nphase_count: 2\nphases:\n  - { n: 1, title: Schema layer }\n  - { n: 2, title: Runtime wiring }\n---\n# Plan\n## Phase 1: Schema layer\n## Phase 2: Runtime wiring\n`,
+		);
+		const units = await runFanout(rel);
+		expect(units.map((u) => u.prompt)).toEqual([`${rel} Phase 1: Schema layer`, `${rel} Phase 2: Runtime wiring`]);
+		expect(units.map((u) => u.label)).toEqual(["phase 1/2", "phase 2/2"]);
 	});
 
-	it("validates without errors or warnings (contracts threaded in)", () => {
-		const issues = deriveAndValidate(findWorkflow("ship"), { skillContracts: DECLARED_CONTRACTS });
-		expect(issues.filter((i) => i.severity === "error")).toEqual([]);
-		expect(issues.filter((i) => i.severity === "warning")).toEqual([]);
+	it("throws when the frontmatter phases disagree with the body headings (stale derive)", () => {
+		const rel = ".rpiv/artifacts/plans/mismatch.md";
+		writePlan(rel, `---\nphases:\n  - { n: 1, title: Only one }\n---\n## Phase 1: a\n## Phase 2: b\n## Phase 3: c\n`);
+		expect(() => runFanout(rel)).toThrow(/frontmatter phases \(1\) ≠ '## Phase N:' headings \(3\)/);
 	});
 
-	describe("FRONTMATTER_PHASE_FANOUT", () => {
-		let tmpDir: string;
-		beforeEach(() => {
-			tmpDir = mkdtempSync(join(tmpdir(), "rpiv-ship-"));
-		});
-		afterEach(() => {
-			rmSync(tmpDir, { recursive: true, force: true });
-		});
-
-		const fanout = () => {
-			const loop = findWorkflow("ship").stages.implement?.loop;
-			if (loop?.kind !== "fanout") throw new Error("ship implement stage has no fanout loop");
-			return loop.units;
-		};
-		const writePlan = (rel: string, body: string) => {
-			const parts = rel.split("/");
-			mkdirSync(join(tmpDir, ...parts.slice(0, -1)), { recursive: true });
-			writeFileSync(join(tmpDir, rel), body);
-		};
-		const runFanout = (rel: string) =>
-			fanout()({
-				cwd: tmpDir,
-				artifact: undefined,
-				state: {
-					named: { plans: [{ artifacts: [{ handle: fsHandle(rel) }], data: undefined, kind: "", meta: {} }] },
-				} as unknown as RunView,
-			});
-
-		it("reads phases from frontmatter and dispatches one title-enriched unit per phase", async () => {
-			const rel = ".rpiv/artifacts/plans/p.md";
-			writePlan(
-				rel,
-				`---\nstatus: ready\nphase_count: 2\nphases:\n  - { n: 1, title: Schema layer }\n  - { n: 2, title: Runtime wiring }\n---\n# Plan\n## Phase 1: Schema layer\n## Phase 2: Runtime wiring\n`,
-			);
-			const units = await runFanout(rel);
-			expect(units.map((u) => u.prompt)).toEqual([`${rel} Phase 1: Schema layer`, `${rel} Phase 2: Runtime wiring`]);
-			expect(units.map((u) => u.label)).toEqual(["phase 1/2", "phase 2/2"]);
-		});
-
-		it("throws when the frontmatter phases disagree with the body headings (stale derive)", () => {
-			const rel = ".rpiv/artifacts/plans/mismatch.md";
-			writePlan(
-				rel,
-				`---\nphases:\n  - { n: 1, title: Only one }\n---\n## Phase 1: a\n## Phase 2: b\n## Phase 3: c\n`,
-			);
-			expect(() => runFanout(rel)).toThrow(/frontmatter phases \(1\) ≠ '## Phase N:' headings \(3\)/);
-		});
-
-		it("returns no units for a plan with neither structured phases nor body headings", async () => {
-			const rel = ".rpiv/artifacts/plans/empty.md";
-			writePlan(rel, `---\nstatus: ready\n---\n# Plan with no phases\n`);
-			expect(await runFanout(rel)).toEqual([]);
-		});
-
-		it('returns [] when no plan is published to the named "plans" channel', async () => {
-			const units = await fanout()({
-				cwd: tmpDir,
-				artifact: undefined,
-				state: { named: {} } as unknown as RunView,
-			});
-			expect(units).toEqual([]);
-		});
-
-		it("throws when phase_count disagrees with the derived phases length", () => {
-			const rel = ".rpiv/artifacts/plans/pc-mismatch.md";
-			writePlan(
-				rel,
-				`---\nstatus: ready\nphase_count: 3\nphases:\n  - { n: 1, title: A }\n  - { n: 2, title: B }\n---\n## Phase 1: A\n## Phase 2: B\n`,
-			);
-			expect(() => runFanout(rel)).toThrow(/phase_count \(3\) ≠ phases length \(2\)/);
-		});
-
-		it("throws when a phased plan omits the required phase_count", () => {
-			const rel = ".rpiv/artifacts/plans/pc-absent.md";
-			writePlan(rel, `---\nstatus: ready\nphases:\n  - { n: 1, title: A }\n---\n## Phase 1: A\n`);
-			expect(() => runFanout(rel)).toThrow(/phase_count \(undefined\) ≠ phases length \(1\)/);
-		});
+	it("returns no units for a plan with neither structured phases nor body headings", async () => {
+		const rel = ".rpiv/artifacts/plans/empty.md";
+		writePlan(rel, `---\nstatus: ready\n---\n# Plan with no phases\n`);
+		expect(await runFanout(rel)).toEqual([]);
 	});
 
-	describe("end-to-end via runWorkflow", () => {
-		let tmpDir: string;
-		beforeEach(() => {
-			tmpDir = mkdtempSync(join(tmpdir(), "rpiv-ship-e2e-"));
+	it('returns [] when no plan is published to the named "plans" channel', async () => {
+		const units = await fanout()({
+			cwd: tmpDir,
+			artifact: undefined,
+			state: { named: {} } as unknown as RunView,
 		});
-		afterEach(() => {
-			rmSync(tmpDir, { recursive: true, force: true });
-		});
-		const write = (rel: string, body: string) => {
-			const parts = rel.split("/");
-			mkdirSync(join(tmpDir, ...parts.slice(0, -1)), { recursive: true });
-			writeFileSync(join(tmpDir, rel), body);
-		};
-		const step = (m: string) => ({ branch: [mockAssistantMessage(m)] });
+		expect(units).toEqual([]);
+	});
 
-		it("drives blueprint → implement (fanned from the derived phases) → validate → commit", async () => {
-			write(
-				".rpiv/artifacts/plans/plan.md",
-				`---\nstatus: ready\nphase_count: 2\nphases:\n  - { n: 1, title: Schema layer }\n  - { n: 2, title: Runtime wiring }\n---\n# Plan\n## Phase 1: Schema layer\n## Phase 2: Runtime wiring\n`,
-			);
-			write(".rpiv/artifacts/validation/val.md", "");
+	it("throws when phase_count disagrees with the derived phases length", () => {
+		const rel = ".rpiv/artifacts/plans/pc-mismatch.md";
+		writePlan(
+			rel,
+			`---\nstatus: ready\nphase_count: 3\nphases:\n  - { n: 1, title: A }\n  - { n: 2, title: B }\n---\n## Phase 1: A\n## Phase 2: B\n`,
+		);
+		expect(() => runFanout(rel)).toThrow(/phase_count \(3\) ≠ phases length \(2\)/);
+	});
 
-			const chain = createMockSessionChain({
-				cwd: tmpDir,
-				steps: [
-					step("wrote .rpiv/artifacts/plans/plan.md"), // blueprint
-					step("phase done"), // implement — phase 1 unit
-					step("phase done"), // implement — phase 2 unit
-					step("wrote .rpiv/artifacts/validation/val.md"), // validate
-					step("committed"), // commit
-				],
-			});
-
-			const result = await runWorkflow(chain.ctx, {
-				workflow: withDerivedOutcomes(findWorkflow("ship")),
-				input: "add a feature",
-			});
-
-			expect(result.success).toBe(true);
-			// blueprint + implement×2 (one per derived phase) + validate + commit
-			expect(result.stagesCompleted).toBe(5);
-			expect(chain.sentMessages.filter((m) => m.startsWith("/skill:implement"))).toEqual([
-				"/skill:implement .rpiv/artifacts/plans/plan.md Phase 1: Schema layer",
-				"/skill:implement .rpiv/artifacts/plans/plan.md Phase 2: Runtime wiring",
-			]);
-		});
+	it("throws when a phased plan omits the required phase_count", () => {
+		const rel = ".rpiv/artifacts/plans/pc-absent.md";
+		writePlan(rel, `---\nstatus: ready\nphases:\n  - { n: 1, title: A }\n---\n## Phase 1: A\n`);
+		expect(() => runFanout(rel)).toThrow(/phase_count \(undefined\) ≠ phases length \(1\)/);
 	});
 });
 
@@ -281,18 +215,18 @@ describe("IMPLEMENT_DAG_FANOUT (build implement — dep-gated phase units)", () 
 		});
 
 	it("is a spread of FRONTMATTER_PHASE_FANOUT with a distinct deps-emitting closure (unpinned)", () => {
-		const base = findWorkflow("ship").stages.implement?.loop;
-		if (base?.kind !== "fanout") throw new Error("ship implement stage has no fanout loop");
-		// IMPLEMENT_DAG_FANOUT shares the base's introspectable shape (spread)…
+		// IMPLEMENT_DAG_FANOUT spreads FRONTMATTER_PHASE_FANOUT, so it shares the
+		// base's introspectable shape (kind/source/unit/max) — asserted against the
+		// literal FRONTMATTER values now that no built-in ships the bare const's
+		// units on an implement stage. Its own units closure emits id/deps.
 		expect(dagLoop()).toMatchObject({
 			kind: "fanout",
 			source: "plans",
 			unit: { by: "frontmatter-array", pattern: "phases" },
 			max: 32,
 		});
-		// …but its units closure is distinct, it carries NO depArtifactFlag, and
-		// Phase 3 unpinned it (no `concurrency` ⇒ inherits the host cap).
-		expect(dagLoop().units).not.toBe(base.units);
+		// No depArtifactFlag (implement phases feed each other through the working
+		// tree, not published artifacts), and no `concurrency` ⇒ inherits host cap.
 		expect(dagLoop().depArtifactFlag).toBeUndefined();
 		expect(dagLoop().concurrency).toBeUndefined();
 	});
@@ -442,7 +376,7 @@ describe("IMPLEMENT_DAG_FANOUT (build implement — dep-gated phase units)", () 
 		expect(units[1]?.deps).toEqual(["phase-1"]);
 	});
 
-	it("build implement emits id/deps; ship implement does NOT (still on IMPLEMENT_PHASE_FANOUT)", async () => {
+	it("build implement emits phase-N ids + deps (the dep-gated DAG units)", async () => {
 		const rel = ".rpiv/artifacts/plans/distinct.md";
 		writePlan(
 			rel,
@@ -462,17 +396,6 @@ describe("IMPLEMENT_DAG_FANOUT (build implement — dep-gated phase units)", () 
 		);
 		const buildUnits = await runFanout(rel);
 		expect(buildUnits.every((u) => u.id !== undefined && Array.isArray(u.deps))).toBe(true);
-
-		const shipLoop = findWorkflow("ship").stages.implement?.loop;
-		if (shipLoop?.kind !== "fanout") throw new Error("ship implement stage has no fanout loop");
-		const shipUnits = await shipLoop.units({
-			cwd: tmpDir,
-			artifact: undefined,
-			state: {
-				named: { plans: [{ artifacts: [{ handle: fsHandle(rel) }], data: undefined, kind: "", meta: {} }] },
-			} as unknown as RunView,
-		});
-		expect(shipUnits.every((u) => u.id === undefined && u.deps === undefined)).toBe(true);
 	});
 });
 
@@ -522,7 +445,7 @@ describe("code-review routing field is sourced + validated from the contract", (
 	it("no built-in code-review stage carries an inline outputSchema", () => {
 		// Single source of truth: blockers_count lives in the skill contract,
 		// not copy-pasted per workflow. Sourced at runtime by effectiveOutputSchema.
-		for (const name of ["arch", "polish", "vet"]) {
+		for (const name of ["polish", "vet"]) {
 			expect(findWorkflow(name).stages["code-review"]?.outputSchema, `${name} code-review`).toBeUndefined();
 		}
 	});
@@ -1039,17 +962,6 @@ describe("vet workflow", () => {
 				"vet has unreachable stages",
 			).toEqual([]);
 		});
-
-		it("ship and arch are unchanged — still IMPLEMENT_PHASE_FANOUT, no scope-check stage", () => {
-			for (const name of ["ship", "arch"]) {
-				const wf = findWorkflow(name);
-				expect(wf.start, `${name} start`).not.toBe("goal");
-				expect(Object.keys(wf.stages), `${name} stages`).not.toContain("goal");
-				expect(Object.keys(wf.stages), `${name} stages`).not.toContain("implement-scope-check");
-				// IMPLEMENT_PHASE_FANOUT (built-in-workflows.ts) is NOT deleted.
-				expect(wf.edges.implement, `${name} implement edge`).toBe("validate");
-			}
-		});
 	});
 
 	describe("implement-scope-check declared union (vet review-fix loop)", () => {
@@ -1151,104 +1063,6 @@ describe("vet workflow", () => {
 			const data = runOn([plan]); // tmpDir is NOT a git repo here
 			expect(data.pass).toBe(true);
 			expect(where(data)).toEqual([]);
-		});
-	});
-});
-
-// ---------------------------------------------------------------------------
-// arch workflow — design-led pipeline with a backward code-review → design gate.
-// ---------------------------------------------------------------------------
-
-describe("arch workflow", () => {
-	const findEdge = (): EdgeFn => {
-		const wf = findWorkflow("arch");
-		const edge = wf.edges["code-review"];
-		if (typeof edge !== "function") throw new Error("code-review edge is not an EdgeFn");
-		return edge as EdgeFn;
-	};
-
-	const ctxWithBlockers = (blockers_count: number) =>
-		({
-			output: {
-				kind: "artifact-md",
-				artifacts: [],
-				data: { blockers_count },
-				meta: { stage: "code-review", skill: "code-review", stageNumber: 1, ts: "", runId: "" },
-			},
-			state: {} as RunView,
-		}) as const;
-
-	// --- Unit tests: routing predicate ---
-
-	describe("routing predicate", () => {
-		it("declares targets matching both possible return values", () => {
-			const edge = findEdge();
-			expect(edge.targets).toEqual(["design", "commit"]);
-		});
-
-		it("routes blockers_count: 0 to commit (loop exit)", () => {
-			const edge = findEdge();
-			expect(edge(ctxWithBlockers(0))).toBe("commit");
-		});
-
-		it("routes blockers_count > 0 to design (backward loop, re-entering the full design/plan/implement/validate/review cycle)", () => {
-			const edge = findEdge();
-			expect(edge(ctxWithBlockers(3))).toBe("design");
-			expect(edge(ctxWithBlockers(1))).toBe("design");
-		});
-
-		it("a missing blockers_count falls to the gate's commit fallback — guarded upstream by output validation", () => {
-			// The code-review contract requires blockers_count, so the output loop
-			// rejects a missing field before routing. If it somehow reaches the gate,
-			// Number(undefined)=NaN satisfies neither gt(0) nor eq(0) → fallback (commit).
-			const edge = findEdge();
-			expect(edge({ output: undefined, state: {} as RunView })).toBe("commit");
-		});
-	});
-
-	// --- Structural tests ---
-
-	describe("structural validation", () => {
-		it("code-review stage carries no inline outputSchema (sourced from contract) and gates on blockers_count", () => {
-			const wf = findWorkflow("arch");
-			expect(wf.stages["code-review"]?.outputSchema).toBeUndefined();
-			const edge = wf.edges["code-review"];
-			if (typeof edge !== "function") throw new Error("code-review edge is not an EdgeFn");
-			expect([...(edge.targets ?? [])].sort()).toEqual(["commit", "design"]);
-		});
-
-		it("validate routes to code-review, NOT commit (the review loop is live — I6)", () => {
-			const wf = findWorkflow("arch");
-			expect(wf.edges.validate).toBe("code-review");
-		});
-
-		it("graph shape: research → design → plan → implement → validate → code-review → commit → stop", () => {
-			const wf = findWorkflow("arch");
-			expect(Object.keys(wf.stages)).toEqual([
-				"research",
-				"design",
-				"plan",
-				"implement",
-				"validate",
-				"code-review",
-				"commit",
-			]);
-			expect(wf.start).toBe("research");
-			expect(wf.edges.research).toBe("design");
-			expect(wf.edges.design).toBe("plan");
-			expect(wf.edges.plan).toBe("implement");
-			expect(wf.edges.implement).toBe("validate");
-			expect(wf.edges.validate).toBe("code-review");
-			expect(wf.edges.commit).toBe("stop");
-		});
-
-		it("all stages are reachable from start", () => {
-			const wf = findWorkflow("arch");
-			const issues = validateWorkflow(wf);
-			expect(
-				issues.filter((i) => /unreachable/.test(i.message)),
-				`arch has unreachable stages`,
-			).toEqual([]);
 		});
 	});
 });
@@ -4016,7 +3830,7 @@ describe("build subplan-check (deterministic cluster-coverage floor)", () => {
 describe("implement reads wiring", () => {
 	it('every implement stage declares reads: ["plans"]', () => {
 		for (const wf of builtInWorkflows) {
-			// Defensive: all five live built-ins (arch/build/ship/vet/polish) currently
+			// Defensive: all three live built-ins (build/vet/polish) currently
 			// carry `implement`, but this guard skips any read-only workflow should one
 			// ever be re-added.
 			if (!wf.stages.implement) continue;
@@ -4025,7 +3839,7 @@ describe("implement reads wiring", () => {
 	});
 
 	it("every built-in workflow with an implement stage validates clean (contracts threaded in)", () => {
-		for (const name of ["arch", "build", "ship", "vet", "polish"]) {
+		for (const name of ["build", "vet", "polish"]) {
 			const issues = deriveAndValidate(findWorkflow(name), { skillContracts: DECLARED_CONTRACTS });
 			expect(
 				issues.filter((i) => i.severity === "error"),
@@ -5250,14 +5064,6 @@ describe("build edges — implement-scope-check sits between implement and valid
 		// `concurrency` is the unpin (loop-parallel.ts:146 inherits the host cap).
 		expect(loop?.kind).toBe("fanout");
 		if (loop?.kind === "fanout") expect(loop.concurrency).toBeUndefined();
-	});
-
-	it("ship/arch implement still reference IMPLEMENT_PHASE_FANOUT (carries concurrency:1, untouched — vet moved to IMPLEMENT_DAG_FANOUT in the rollout phase)", () => {
-		for (const name of ["ship", "arch"]) {
-			const loop = findWorkflow(name).stages.implement?.loop;
-			expect(loop?.kind, `${name} implement loop kind`).toBe("fanout");
-			if (loop?.kind === "fanout") expect(loop.concurrency, `${name} still pinned at 1`).toBe(1);
-		}
 	});
 
 	it("build still validates clean with the new stage + route (no unreachable stages)", () => {

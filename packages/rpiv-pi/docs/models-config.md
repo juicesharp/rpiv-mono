@@ -123,8 +123,8 @@ still parses on read for back-compatibility; new saves emit the slash form.
 ### Typo detection
 
 A session-start check reports record keys that pass schema validation but would silently
-never apply — `skills.committ`, `agents.codebase-analzyer`, `presets.shipp`,
-`presets.ship.stages.plann`. It warns once per process with the dotted path. The
+never apply — `skills.committ`, `agents.codebase-analzyer`, `presets.buildd`,
+`presets.build.stages.plann`. It warns once per process with the dotted path. The
 `agents` and `skills` axes are always checked; `stages` and `presets` are checked only
 when the workflow runner can supply the universe of names, so you never get a false
 warning from a workflow it could not see.
@@ -154,22 +154,22 @@ skills inherit the same overrides through the cascade's skill rung.
 {
   "defaults": "anthropic/claude-opus-4-7",
   "presets": {
-    "ship": {
+    "build": {
       "stages": {
         "plan": "openai/gpt-5.5",
-        "design": { "model": "openai/gpt-5.5", "thinking": "high" }
+        "research": { "model": "openai/gpt-5.5", "thinking": "high" }
       }
     },
     "polish": {
       "stages": {
-        "plan": "zai/glm-4-7"
+        "blueprint": "zai/glm-4-7"
       }
     }
   }
 }
 ```
 
-`/wf ship`'s plan and design stages use GPT-5.5, `/wf polish`'s plan stage uses GLM, and
+`/wf build`'s plan and research stages use GPT-5.5, `/wf polish`'s blueprint stage uses GLM, and
 everything else falls through to Opus.
 
 **A subagent on a cheaper model**
