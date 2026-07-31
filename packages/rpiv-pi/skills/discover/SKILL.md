@@ -234,5 +234,5 @@ These reinforce the critical rules from the steps above — listed here so they 
   - ALWAYS terminate on depth signal, not bucket-fill (Step 5)
   - ALWAYS synthesize from the interview log, never from memory of the conversation (Step 6)
   - NEVER skip the developer-facing interview — it's the entire point of this skill
-  - NEVER ask a final "looks good / want to adjust" rubber-stamp question (anti-pattern per `a93e591`)
+  - NEVER ask a final "looks good / want to adjust" rubber-stamp question (anti-pattern per prior regressions)
   - NEVER dispatch agents before Step 2's `intent` question is answered
