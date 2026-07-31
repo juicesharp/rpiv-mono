@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Programming-by-intention readability pass across the package's longest
+  methods and condition-heaviest guards — all decomposed into named predicates
+  and dispatchers, behavior-preserving (the full suite passes unchanged): the
+  resume fold (`foldUnitRow` four-way dispatch + `reconstructState`),
+  `assessStrategy.pull`, the `retryUntilValid` retry hooks, the `postStage`
+  abort cascade (`classifyAndHandleAbort`), `checkLoopInvariants`,
+  `gateValidationRedispatch`, `publishPanelVerdict`/`finishLoop`,
+  `ensureUpstreamArtifact`, and the `advanceChain` stop branch.
+
+### Added
+
+- Direct test group for `classifyAndHandleAbort`'s four abort-disposition arms
+  (fired cooperative signal, aborted stop without a watchdog, strike-backed
+  retry, strike-exhausted timeout halt) in the co-located
+  `sessions/sessions.test.ts` — the signal-abort arm previously had no
+  coverage of any kind.
+
 ## [2.3.0] - 2026-07-31
 
 ## [2.2.0] - 2026-07-29
