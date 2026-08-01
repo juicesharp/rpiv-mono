@@ -10,6 +10,7 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 
 - Preview questionnaires now rebalance after terminal resizing: option descriptions gain useful width without exceeding half the dialog, while content-sized previews align with the right edge.
+- The notes affordance below a right-aligned preview box slides left instead of clipping when a locale string is wider than the box (the French string sits exactly at the box's minimum width).
 
 ## [2.3.1] - 2026-07-31
 

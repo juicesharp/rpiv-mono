@@ -142,10 +142,14 @@ export function crossTabPreviewBudget(questions: readonly QuestionData[], paneWi
  *   4. Return `min(max(labelDriven, slackDonation), ceiling)` where `ceiling` is the
  *      tighter of the preview-width safety limit and `MAX_LEFT_RATIO`
  *
- * Invariants:
- *   - Floor: result ≥ MIN_LEFT (labelDriven ≥ MIN_LEFT)
+ * Invariants (hold at side-by-side widths, paneWidth ≥ PREVIEW_MIN_WIDTH — the only
+ * mode that consumes this value; narrower panes can pull both ceilings under MIN_LEFT):
+ *   - Floor: result ≥ MIN_LEFT (ratioCeiling ≥ 50 once paneWidth ≥ 100)
  *   - Options cap: left column ≤ paneWidth × MAX_LEFT_RATIO
- *   - Preview floor: right column ≥ MIN_PREVIEW_WIDTH (ceiling enforces this)
+ *   - Preview floor: right column ≥ MIN_PREVIEW_WIDTH — enforced transitively by the
+ *     MAX_LEFT_RATIO cap (right column keeps ≥ paneWidth/2 − GAP ≥ 48 cols);
+ *     previewSafetyCeiling is defensive depth that binds only if MAX_LEFT_RATIO
+ *     ever rises above ~0.53
  *   - Cross-tab stability: both reductions are tab-independent
  *   - Determinism: pure of (questions, itemsByTab, paneWidth)
  *
@@ -162,6 +166,9 @@ export function crossTabLeftWidthWithDonation(
 	const labelDriven = crossTabMaxLeftWidth(tabs, itemsByTab, paneWidth);
 	const previewBudget = crossTabPreviewBudget(questions, paneWidth);
 	const slackDonation = paneWidth - PREVIEW_COLUMN_GAP - previewBudget;
+	// At side-by-side widths the ratio ceiling is always the tighter bound
+	// (paneWidth/2 ≤ paneWidth − GAP − MIN_PREVIEW_WIDTH once paneWidth ≥ 94);
+	// previewSafetyCeiling stays as defensive depth should MAX_LEFT_RATIO grow.
 	const previewSafetyCeiling = paneWidth - PREVIEW_COLUMN_GAP - MIN_PREVIEW_WIDTH;
 	const ratioCeiling = Math.floor(paneWidth * MAX_LEFT_RATIO);
 	const ceiling = Math.min(previewSafetyCeiling, ratioCeiling);

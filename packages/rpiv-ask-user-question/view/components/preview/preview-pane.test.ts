@@ -23,6 +23,8 @@ vi.mock("@earendil-works/pi-tui", async (orig) => {
 	return { ...actual, Markdown: FakeMarkdown };
 });
 
+import { applyLocale, registerStrings } from "@juicesharp/rpiv-i18n";
+import { I18N_NAMESPACE } from "../../../state/i18n-bridge.js";
 import type { QuestionData } from "../../../tool/types.js";
 import { OptionListView } from "../option-list-view.js";
 import type { WrappingSelectItem } from "../wrapping-select.js";
@@ -700,6 +702,22 @@ describe("PreviewPane — notes affordance row (Slice 4 height-stable affordance
 		expect(lines.some((l) => l.includes(NOTES_AFFORDANCE_TEXT))).toBe(false);
 		// Sanity: cap value is referenced so the import isn't tree-shaken in CI.
 		expect(MAX_PREVIEW_HEIGHT_SIDE_BY_SIDE).toBe(20);
+	});
+
+	it("an affordance wider than the preview box slides left instead of clipping (long-locale headroom)", () => {
+		// 65 visible cols — wider than the 44-col box floor (BOX_MIN_CONTENT_WIDTH + 4).
+		// The real FR string sits at exactly 44, so growth past the box must not clip.
+		const LONG_AFFORDANCE = "Notes : appuyez longuement sur la touche n pour ajouter des notes";
+		registerStrings(I18N_NAMESPACE, { fr: { "preview.notes_affordance": LONG_AFFORDANCE } });
+		applyLocale("fr");
+		const { pane, optionListView } = makePane(question, () => 120);
+		optionListView.setProps({ selectedIndex: 0, focused: true, inputBuffer: "" });
+		pane.setProps({ notesVisible: false, selectedIndex: 0, focused: true, inputMode: false });
+		const lines = pane.render(120);
+		const affordanceLine = lines.find((l) => l.includes("Notes :"));
+		expect(affordanceLine).toBeDefined();
+		expect(affordanceLine).toContain(LONG_AFFORDANCE);
+		expect(visibleWidth(affordanceLine!)).toBeLessThanOrEqual(120);
 	});
 });
 
