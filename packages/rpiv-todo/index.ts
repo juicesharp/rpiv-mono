@@ -21,7 +21,13 @@
 
 import type { ExtensionAPI, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import type { KeyId } from "@earendil-works/pi-tui";
-import { COLLAPSE_KEY_OFF, resolveCollapseKey, resolveCompletedCollapseKey } from "./config.js";
+import {
+	COLLAPSE_KEY_OFF,
+	getCompletedTaskPresentation,
+	getCompletedTaskVisibility,
+	resolveCollapseKey,
+	resolveCompletedCollapseKey,
+} from "./config.js";
 import { I18N_NAMESPACE } from "./state/i18n-bridge.js";
 import { replayFromBranch } from "./state/replay.js";
 import {
@@ -142,6 +148,7 @@ export default function (pi: ExtensionAPI, importOverlay: TodoOverlayImporter = 
 		if (generation !== lifecycleGeneration || !uiCtx) return;
 
 		todoOverlay ??= new TodoOverlay();
+		todoOverlay.setCompletedRowsShortcutEnabled?.(completedRowsShortcutEnabled);
 		todoOverlay.setUICtx(uiCtx);
 		if (resetCompletedDisplayState) todoOverlay.resetCompletedDisplayState();
 		todoOverlay.update();
@@ -165,7 +172,14 @@ export default function (pi: ExtensionAPI, importOverlay: TodoOverlayImporter = 
 	}
 
 	const completedCollapseKey = resolveCompletedCollapseKey();
-	if (completedCollapseKey !== COLLAPSE_KEY_OFF && completedCollapseKey !== collapseKey) {
+	const sessionVisibilityEnabled = getCompletedTaskVisibility() === "session";
+	const chronologicalPresentationEnabled = getCompletedTaskPresentation() === "chronological";
+	const completedRowsShortcutEnabled =
+		sessionVisibilityEnabled &&
+		chronologicalPresentationEnabled &&
+		completedCollapseKey !== COLLAPSE_KEY_OFF &&
+		completedCollapseKey !== collapseKey;
+	if (completedRowsShortcutEnabled) {
 		pi.registerShortcut(completedCollapseKey as KeyId, {
 			description: "Expand or collapse older completed todos",
 			handler: (ctx) => {
@@ -173,7 +187,12 @@ export default function (pi: ExtensionAPI, importOverlay: TodoOverlayImporter = 
 				todoOverlay.toggleCompletedRows();
 			},
 		});
-	} else if (completedCollapseKey !== COLLAPSE_KEY_OFF && completedCollapseKey === collapseKey) {
+	} else if (
+		sessionVisibilityEnabled &&
+		chronologicalPresentationEnabled &&
+		completedCollapseKey !== COLLAPSE_KEY_OFF &&
+		completedCollapseKey === collapseKey
+	) {
 		console.warn("[rpiv-todo] completedCollapseKey matches collapseKey; older completed todos will remain expanded");
 	}
 	// Re-key a session's slot from its branch, then refresh the overlay only when

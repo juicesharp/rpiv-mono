@@ -52,13 +52,13 @@ by status.
   post-mutation snapshot, and the list is replayed from the session branch. No
   disk writes, nothing to lose.
 - **Finished work stays reviewable.** Completed rows leave at the next agent turn
-  by default. Set `completedTaskVisibility` to `"session"` to keep them in the
-  same chronological list: the newest five stay expanded and older contiguous
-  completed rows fold behind a shortcut until you choose to expand them.
-- **The overlay has a predictable compact mode.** In the default turn mode, the
-  row budget drops completed tasks first and then truncates unfinished work with
-  `+3 more (2 completed, 1 pending)`. Session mode instead keeps every active
-  and pending task visible and only folds an old completed prefix.
+  by default. Set `completedTaskVisibility` to `"session"` to retain them across
+  turns; the default `"priority"` presentation stays within the terminal budget,
+  while `"chronological"` preserves order and folds only old completed rows.
+- **The overlay has a predictable compact mode.** Default `"turn"` mode uses its
+  configured row budget. Session `"priority"` follows Claude-like current-work
+  ordering and a terminal-height summary; session `"chronological"` keeps every
+  active and pending task visible, folding only an old completed prefix.
 - **The agent can sequence work, not just list it.** `blockedBy` dependencies are
   validated before anything is written — dangling ids, deleted dependencies,
   self-blocks, and cycles are all rejected.
@@ -75,21 +75,20 @@ Optional. Create `~/.config/rpiv-todo/config.json` (or
 
 ```json
 {
-  "maxWidgetLines": 8,
   "collapseKey": "alt+t",
   "completedTaskVisibility": "session",
-  "maxVisibleCompleted": 5,
-  "completedCollapseKey": "ctrl+shift+c"
+  "completedTaskPresentation": "priority"
 }
 ```
 
 | Setting | What it does | Default |
 | --- | --- | --- |
-| `maxWidgetLines` | Content rows the overlay may use in the default `"turn"` mode, heading included. Minimum `3`. Applies on the next repaint. | `12` |
+| `maxWidgetLines` | Content-row budget for default `"turn"` mode and priority-mode fallback when terminal height is unavailable. Minimum `3`. | `12` |
 | `collapseKey` | Key that collapses and expands the whole panel, in Pi keybinding form (`alt+o`, `ctrl+shift+t`). Set `"off"` to register no shortcut. Needs `/reload` to rebind. | `"ctrl+shift+t"` |
-| `completedTaskVisibility` | `"turn"` removes displayed completed rows at the next agent turn; `"session"` retains them in the chronological list. Applies on the next agent turn. | `"turn"` |
-| `maxVisibleCompleted` | In session mode, number of newest contiguous completed rows left expanded before older rows fold. | `5` |
-| `completedCollapseKey` | Key that expands or folds the old completed prefix in session mode. Set `"off"` to keep every completed row expanded. Needs `/reload` to rebind. | `"ctrl+shift+c"` |
+| `completedTaskVisibility` | `"turn"` removes displayed completed rows at the next agent turn; `"session"` retains task state across turns. | `"turn"` |
+| `completedTaskPresentation` | Session projection: Claude-like status priority (`"priority"`) or original-order completed-prefix folding (`"chronological"`). | `"priority"` |
+| `maxVisibleCompleted` | In chronological session mode, number of newest contiguous completed rows left expanded before older rows fold. | `5` |
+| `completedCollapseKey` | Key that expands or folds the old completed prefix in chronological session mode. Set `"off"` to keep every completed row expanded. Needs `/reload` to rebind. | `"ctrl+shift+c"` |
 | `guidance` | Replaces the built-in instructions the extension gives the model about when and how to use the todo list. Needs `/reload`. | _(built-ins)_ |
 A missing or malformed file falls back to these defaults. `rpiv-todo` only reads
 this file — it never writes one. Full semantics:

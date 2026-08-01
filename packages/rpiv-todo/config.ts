@@ -16,11 +16,13 @@ interface TodoConfig {
 	 * available for the session. Validation happens in `getCompletedTaskVisibility`.
 	 */
 	completedTaskVisibility?: string;
+	/** Controls how retained session rows are projected into the overlay. */
+	completedTaskPresentation?: string;
 	/** Maximum number of the newest contiguous completed rows kept expanded in
-	 * session mode. Older rows remain available through the fold control. */
+	 * chronological session mode. Older rows remain available through the fold control. */
 	maxVisibleCompleted?: number;
-	/** Key spec for expanding or collapsing folded completed rows in session mode.
-	 * Pass `"off"` to keep every completed row expanded. */
+	/** Key spec for expanding or collapsing folded completed rows in chronological
+	 * session mode. Pass `"off"` to keep every completed row expanded. */
 	completedCollapseKey?: string;
 }
 
@@ -42,6 +44,12 @@ export type CompletedTaskVisibility = "turn" | "session";
 
 /** Preserve the existing behavior unless the user explicitly opts into session visibility. */
 export const DEFAULT_COMPLETED_TASK_VISIBILITY: CompletedTaskVisibility = "turn";
+
+/** Presentation policy for completed rows retained in session mode. */
+export type CompletedTaskPresentation = "priority" | "chronological";
+
+/** Claude-like priority projection is the default session presentation. */
+export const DEFAULT_COMPLETED_TASK_PRESENTATION: CompletedTaskPresentation = "priority";
 
 /** Number of newest contiguous completed rows shown before older rows fold. */
 export const DEFAULT_MAX_VISIBLE_COMPLETED = 5;
@@ -70,9 +78,16 @@ export function getCompletedTaskVisibility(): CompletedTaskVisibility {
 	return visibility === "session" ? "session" : DEFAULT_COMPLETED_TASK_VISIBILITY;
 }
 
-/** Maximum number of newest contiguous completed rows shown in session mode.
- * Invalid values fall back to the default; zero explicitly folds the whole
- * completed prefix while keeping it available through the expansion shortcut. */
+/** Read the retained-session presentation policy fresh on every render. */
+export function getCompletedTaskPresentation(): CompletedTaskPresentation {
+	const presentation = loadConfig().completedTaskPresentation;
+	return presentation === "chronological" ? "chronological" : DEFAULT_COMPLETED_TASK_PRESENTATION;
+}
+
+/** Maximum number of newest contiguous completed rows shown in chronological
+ * session mode. Invalid values fall back to the default; zero explicitly folds
+ * the whole completed prefix while keeping it available through the expansion
+ * shortcut. */
 export function getMaxVisibleCompleted(): number {
 	const value = loadConfig().maxVisibleCompleted;
 	return typeof value === "number" && Number.isSafeInteger(value) && value >= 0

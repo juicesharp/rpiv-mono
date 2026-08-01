@@ -54,11 +54,25 @@ describe("rpiv-todo — collapse/expand shortcut registration", () => {
 		expect(shortcut?.description).toContain("Collapse");
 	});
 
-	it("registers the default completed-row shortcut separately", () => {
+	it("does not register the completed-row shortcut under the default turn policy", () => {
+		const { captured } = setup();
+		expect(captured.shortcuts.has("ctrl+shift+c")).toBe(false);
+	});
+
+	it("registers the completed-row shortcut only for chronological session presentation", () => {
+		writeConfigFile(
+			JSON.stringify({ completedTaskVisibility: "session", completedTaskPresentation: "chronological" }),
+		);
 		const { captured } = setup();
 		const shortcut = captured.shortcuts.get("ctrl+shift+c");
 		expect(shortcut).toBeDefined();
 		expect(shortcut?.description).toContain("completed");
+	});
+
+	it("does not register the completed-row shortcut for default priority session presentation", () => {
+		writeConfigFile(JSON.stringify({ completedTaskVisibility: "session" }));
+		const { captured } = setup();
+		expect(captured.shortcuts.has("ctrl+shift+c")).toBe(false);
 	});
 
 	it("handler is a no-op in headless mode (!ctx.hasUI)", async () => {
@@ -142,7 +156,13 @@ describe("rpiv-todo — collapse/expand shortcut registration", () => {
 	});
 
 	it("completed-row handler expands a folded prefix without collapsing the whole overlay", async () => {
-		writeConfigFile(JSON.stringify({ completedTaskVisibility: "session", maxVisibleCompleted: 0 }));
+		writeConfigFile(
+			JSON.stringify({
+				completedTaskVisibility: "session",
+				completedTaskPresentation: "chronological",
+				maxVisibleCompleted: 0,
+			}),
+		);
 		const { captured, sessionStart, toolEnd, tool } = setup();
 		const ctx = createMockCtx({ sessionId: "s1", hasUI: true });
 		await sessionStart?.({} as never, ctx as never);
@@ -193,14 +213,26 @@ describe("rpiv-todo — collapse/expand shortcut config resolution", () => {
 	});
 
 	it("keeps the completed-row shortcut when the whole-overlay shortcut is off", () => {
-		writeConfigFile(JSON.stringify({ collapseKey: "off" }));
+		writeConfigFile(
+			JSON.stringify({
+				collapseKey: "off",
+				completedTaskVisibility: "session",
+				completedTaskPresentation: "chronological",
+			}),
+		);
 		const { captured } = setup();
 		expect(captured.shortcuts.has("ctrl+shift+t")).toBe(false);
 		expect(captured.shortcuts.has("ctrl+shift+c")).toBe(true);
 	});
 
 	it("skips only the completed-row shortcut when it is off", () => {
-		writeConfigFile(JSON.stringify({ completedCollapseKey: "off" }));
+		writeConfigFile(
+			JSON.stringify({
+				completedTaskVisibility: "session",
+				completedTaskPresentation: "chronological",
+				completedCollapseKey: "off",
+			}),
+		);
 		const { captured } = setup();
 		expect(captured.shortcuts.has("ctrl+shift+t")).toBe(true);
 		expect(captured.shortcuts.has("ctrl+shift+c")).toBe(false);
@@ -218,7 +250,13 @@ describe("rpiv-todo — collapse/expand shortcut config resolution", () => {
 	});
 
 	it("warns and leaves completed rows expanded when both controls use the same key", () => {
-		writeConfigFile(JSON.stringify({ collapseKey: "ctrl+shift+c" }));
+		writeConfigFile(
+			JSON.stringify({
+				completedTaskVisibility: "session",
+				completedTaskPresentation: "chronological",
+				collapseKey: "ctrl+shift+c",
+			}),
+		);
 		const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
 		const { captured } = setup();
 		expect(captured.shortcuts.size).toBe(1);

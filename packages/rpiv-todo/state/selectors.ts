@@ -96,6 +96,52 @@ export function selectOverlayLayout(state: TaskState, budget: number): OverlayLa
 	return { visible, hiddenCompleted: totalCompleted, truncatedTail };
 }
 
+export interface PriorityOverlayLayout {
+	visible: readonly Task[];
+	hiddenInProgress: number;
+	hiddenPending: number;
+	hiddenCompleted: number;
+	get hiddenTotal(): number;
+}
+
+/**
+ * Project the full task state into Claude-like terminal priority order. Freshly
+ * completed tasks are temporarily surfaced, then active work, unblocked pending
+ * work, blocked pending work, and finally older completed tasks. The canonical
+ * state itself remains untouched and in chronological order.
+ */
+export function selectPriorityOverlayLayout(
+	state: TaskState,
+	budget: number,
+	recentlyCompletedTaskIds: ReadonlySet<number>,
+): PriorityOverlayLayout {
+	const tasks = selectVisibleTasks(state);
+	const activeTaskIds = new Set(tasks.filter((task) => task.status !== "completed").map((task) => task.id));
+	const recentlyCompleted = tasks.filter(
+		(task) => task.status === "completed" && recentlyCompletedTaskIds.has(task.id),
+	);
+	const olderCompleted = tasks.filter((task) => task.status === "completed" && !recentlyCompletedTaskIds.has(task.id));
+	const inProgress = tasks.filter((task) => task.status === "in_progress");
+	const pending = tasks.filter((task) => task.status === "pending");
+	const readyPending = pending.filter((task) => !task.blockedBy?.some((id) => activeTaskIds.has(id)));
+	const blockedPending = pending.filter((task) => task.blockedBy?.some((id) => activeTaskIds.has(id)));
+	const ordered = [...recentlyCompleted, ...inProgress, ...readyPending, ...blockedPending, ...olderCompleted];
+	const visible = ordered.slice(0, Math.max(0, budget));
+	const hidden = ordered.slice(visible.length);
+	const hiddenInProgress = hidden.filter((task) => task.status === "in_progress").length;
+	const hiddenPending = hidden.filter((task) => task.status === "pending").length;
+	const hiddenCompleted = hidden.filter((task) => task.status === "completed").length;
+	return {
+		visible,
+		hiddenInProgress,
+		hiddenPending,
+		hiddenCompleted,
+		get hiddenTotal() {
+			return hiddenInProgress + hiddenPending + hiddenCompleted;
+		},
+	};
+}
+
 /**
  * Helper: whether any visible task is `pending` or `in_progress`. The overlay
  * uses this to pick the heading icon (`accent`+`●` vs `dim`+`○`).

@@ -5,9 +5,11 @@ import {
 	COLLAPSE_KEY_OFF,
 	DEFAULT_COLLAPSE_KEY,
 	DEFAULT_COMPLETED_COLLAPSE_KEY,
+	DEFAULT_COMPLETED_TASK_PRESENTATION,
 	DEFAULT_COMPLETED_TASK_VISIBILITY,
 	DEFAULT_MAX_VISIBLE_COMPLETED,
 	DEFAULT_MAX_WIDGET_LINES,
+	getCompletedTaskPresentation,
 	getCompletedTaskVisibility,
 	getMaxVisibleCompleted,
 	getMaxWidgetLines,
@@ -84,6 +86,20 @@ describe("getCompletedTaskVisibility", () => {
 	});
 });
 
+describe("getCompletedTaskPresentation", () => {
+	it("returns priority for missing, invalid, and explicit priority values", () => {
+		expect(getCompletedTaskPresentation()).toBe(DEFAULT_COMPLETED_TASK_PRESENTATION);
+		writeConfigFile(JSON.stringify({ completedTaskPresentation: "unknown" }));
+		expect(getCompletedTaskPresentation()).toBe(DEFAULT_COMPLETED_TASK_PRESENTATION);
+		writeConfigFile(JSON.stringify({ completedTaskPresentation: "priority" }));
+		expect(getCompletedTaskPresentation()).toBe("priority");
+	});
+
+	it("returns chronological when explicitly configured", () => {
+		writeConfigFile(JSON.stringify({ completedTaskPresentation: "chronological" }));
+		expect(getCompletedTaskPresentation()).toBe("chronological");
+	});
+});
 describe("getMaxVisibleCompleted", () => {
 	it("returns the default when config is missing, absent, or invalid", () => {
 		expect(getMaxVisibleCompleted()).toBe(DEFAULT_MAX_VISIBLE_COMPLETED);

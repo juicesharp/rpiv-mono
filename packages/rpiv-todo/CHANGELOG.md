@@ -8,11 +8,12 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
-- `completedTaskVisibility: "session"` retains completed tasks in the chronological overlay list across agent turns.
-- Session mode folds an old contiguous completed prefix after `maxVisibleCompleted` rows (default `5`) and exposes it through `completedCollapseKey` (default `ctrl+shift+c`). Pending and in-progress rows remain individually visible.
+- `completedTaskVisibility: "session"` retains the canonical todo state across agent turns.
+- Session presentation supports Claude-like terminal-budgeted `"priority"` projection by default and original-order `"chronological"` projection as an opt-in.
+- Chronological session mode can fold an old contiguous completed prefix after `maxVisibleCompleted` rows (default `5`) and expose it through `completedCollapseKey` (default `ctrl+shift+c`).
 
 ### Changed
-- The default `completedTaskVisibility: "turn"` behavior remains unchanged.
+- The default `completedTaskVisibility: "turn"` behavior and its existing shortcut remain unchanged.
 ## [2.3.1] - 2026-07-31
 
 ## [2.3.0] - 2026-07-31
