@@ -129,16 +129,21 @@ describe("PreviewPane.render — layout switching", () => {
 		expect(trailing).toBeLessThanOrEqual(MAX_PREVIEW_HEIGHT_STACKED);
 	});
 
-	it("width 99 → stacked, width 100 → side-by-side (threshold boundary)", () => {
-		const narrow = makePane(question, () => 99);
-		narrow.optionListView.setProps({ selectedIndex: 0, focused: true, inputBuffer: "" });
-		const narrowLines = narrow.pane.render(99);
+	it("a resize from width 99 to 100 switches from stacked to right-aligned side-by-side", () => {
+		let terminalWidth = 99;
+		const view = makePane(question, () => terminalWidth);
+		view.pane.setGlobalLeftWidth((w) =>
+			crossTabLeftWidthWithDonation([{ multiSelect: false }], [view.items], [question], w),
+		);
+		view.optionListView.setProps({ selectedIndex: 0, focused: true, inputBuffer: "" });
+		const narrowLines = view.pane.render(99);
 		expect(narrowLines.findIndex((l) => /MD\[\d+\]:/.test(l))).toBeGreaterThan(0);
 
-		const wide = makePane(question, () => PREVIEW_MIN_WIDTH);
-		wide.optionListView.setProps({ selectedIndex: 0, focused: true, inputBuffer: "" });
-		const wideLines = wide.pane.render(PREVIEW_MIN_WIDTH);
+		terminalWidth = PREVIEW_MIN_WIDTH;
+		const wideLines = view.pane.render(PREVIEW_MIN_WIDTH);
 		expect(wideLines.some((l) => /MD\[\d+\]:/.test(l))).toBe(true);
+		const previewTop = wideLines.find((line) => line.includes("┌"));
+		expect(visibleWidth(previewTop!)).toBe(PREVIEW_MIN_WIDTH);
 	});
 });
 
@@ -377,7 +382,7 @@ describe("PreviewPane.maxNaturalHeight", () => {
 	});
 });
 
-describe("PreviewPane — left-aligned preview with top/left padding (side-by-side only)", () => {
+describe("PreviewPane — right-aligned preview with a bounded options column", () => {
 	const question: QuestionData = {
 		question: "pick",
 		header: "pick",
@@ -391,13 +396,11 @@ describe("PreviewPane — left-aligned preview with top/left padding (side-by-si
 		return joined.filter((l) => /MD\[\d+\]:/.test(l));
 	}
 
-	// Spec: preview content is NO LONGER horizontally centered. The MD marker should land at
-	// the same X-column whether the body is short or long — because both leftMargin slabs are
-	// fixed (options column max-width + gap + PREVIEW_PADDING_LEFT).
-	it("side-by-side preview lines have a fixed left-padding offset, NOT a content-dependent center margin", () => {
+	it("content-sized preview boxes share the right edge while retaining their natural widths", () => {
 		const short = makePane(question, () => 120);
 		short.optionListView.setProps({ selectedIndex: 0, focused: true, inputBuffer: "" });
-		const shortMD = extractPreviewColumnLines(short.pane.render(120))[0].indexOf("MD[");
+		const shortLines = short.pane.render(120);
+		const shortMD = extractPreviewColumnLines(shortLines)[0].indexOf("MD[");
 
 		const longQ: QuestionData = {
 			question: "pick",
@@ -409,9 +412,12 @@ describe("PreviewPane — left-aligned preview with top/left padding (side-by-si
 		};
 		const long = makePane(longQ, () => 120);
 		long.optionListView.setProps({ selectedIndex: 0, focused: true, inputBuffer: "" });
-		const longMD = extractPreviewColumnLines(long.pane.render(120))[0].indexOf("MD[");
+		const longLines = long.pane.render(120);
+		const longMD = extractPreviewColumnLines(longLines)[0].indexOf("MD[");
 
-		expect(shortMD).toBe(longMD);
+		expect(visibleWidth(shortLines.find((line) => line.includes("┌"))!)).toBe(120);
+		expect(visibleWidth(longLines.find((line) => line.includes("┌"))!)).toBe(120);
+		expect(shortMD).toBeGreaterThan(longMD);
 	});
 
 	it("side-by-side: adaptive left width adjusts options column based on label content", () => {
@@ -479,13 +485,11 @@ describe("PreviewPane — left-aligned preview with top/left padding (side-by-si
 });
 
 describe("PreviewPane — slack donation to left column", () => {
-	// 26-char label → labelDriven > MIN_LEFT, escapes the compact-content guard so
-	// donation actually engages. Short labels would suppress donation by design (Stage 5).
+	// 26-char label → labelDriven > MIN_LEFT, used where the label-driven path
+	// itself must exceed the floor.
 	const LONG_LABEL = "Verbose Descriptive Option";
 
-	it("short labels (compact-content guard) → no donation, MD at MIN_LEFT-based offset", () => {
-		// npm/yarn-style: 1-char labels signal compact UI. Even with a tiny preview that
-		// could donate huge slack, the compact guard returns labelDriven=MIN_LEFT(30).
+	it("short labels donate slack and move the preview to the right", () => {
 		const compactQ: QuestionData = {
 			question: "pick",
 			header: "pick",
@@ -501,14 +505,12 @@ describe("PreviewPane — slack donation to left column", () => {
 		pane.setGlobalLeftWidth((w) => crossTabLeftWidthWithDonation(tabs, itemsByTab, questions, w));
 		optionListView.setProps({ selectedIndex: 0, focused: true, inputBuffer: "" });
 
-		const result = crossTabLeftWidthWithDonation(tabs, itemsByTab, questions, 200);
-		expect(result).toBe(MIN_LEFT);
+		const donatedLeft = crossTabLeftWidthWithDonation(tabs, itemsByTab, questions, 200);
+		expect(donatedLeft).toBe(Math.floor(200 * MAX_LEFT_RATIO));
 
 		const lines = pane.render(200);
-		const mdLine = lines.find((l) => /MD\[\d+\]:/.test(l));
-		expect(mdLine).toBeDefined();
-		// MD starts at: MIN_LEFT(30) + gap(2) + pad(1) + border(1) + innerPad(1) = 35.
-		expect(mdLine!.indexOf("MD[")).toBe(MIN_LEFT + PREVIEW_COLUMN_GAP + 1 + 2);
+		const previewTop = lines.find((line) => line.includes("┌"));
+		expect(visibleWidth(previewTop!)).toBe(200);
 	});
 
 	it("long labels + narrow previews → donation engaged, MD at wider offset", () => {
@@ -533,14 +535,12 @@ describe("PreviewPane — slack donation to left column", () => {
 		const lines = pane.render(120);
 		const mdLine = lines.find((l) => /MD\[\d+\]:/.test(l));
 		expect(mdLine).toBeDefined();
-		// At width 120, donation widens left column to the ceiling:
-		//   previewBudget = 45 (MIN_PREVIEW_WIDTH floor), slackDonation = 120 − 2 − 45 = 73
-		//   labelDriven = 33 (26 + 5 + 2), result = min(max(33, 73), 73) = 73
-		// Expected MD offset: left(73) + gap(2) + pad(1) + "│"(1) + " "(1) = 78.
+		// Donation wants 73 columns, but the 50% ratio caps the options column at 60.
+		// The narrow preview is then right-aligned inside the remaining column.
 		const donatedLeft = crossTabLeftWidthWithDonation(tabs, itemsByTab, questions, 120);
-		expect(donatedLeft).toBe(73);
-		const expectedIdx = 73 + PREVIEW_COLUMN_GAP + 1 + 2;
-		expect(mdLine!.indexOf("MD[")).toBe(expectedIdx);
+		expect(donatedLeft).toBe(Math.floor(120 * MAX_LEFT_RATIO));
+		const previewTop = lines.find((line) => line.includes("┌"));
+		expect(visibleWidth(previewTop!)).toBe(120);
 	});
 
 	it("long labels + wide previews → donation suppressed, MD at label-driven offset", () => {

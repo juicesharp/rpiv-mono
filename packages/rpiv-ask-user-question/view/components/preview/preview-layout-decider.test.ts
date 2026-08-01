@@ -149,12 +149,9 @@ describe("crossTabPreviewBudget", () => {
 
 describe("crossTabLeftWidthWithDonation", () => {
 	// 26-char label → labelDriven = 26 + 5 (prefix) + 2 (confirmed) = 33 > MIN_LEFT(30).
-	// Required to escape the compact-content guard so the donation path is exercised.
 	const LONG_LABEL = "Verbose Descriptive Option";
 
-	it("short labels (labelDriven ≤ MIN_LEFT) suppress donation — compact-content guard", () => {
-		// npm/yarn-style: short labels signal compact UI. Even with very narrow previews,
-		// donation would inject dead space between options and the box. Skip it.
+	it("short labels still donate newly available width", () => {
 		const tabs = [{ multiSelect: false }];
 		const itemsByTab = [[opt("npm"), opt("yarn")]];
 		const qs = [
@@ -163,22 +160,21 @@ describe("crossTabLeftWidthWithDonation", () => {
 				{ label: "yarn", preview: "yarn install" },
 			]),
 		];
-		const result = crossTabLeftWidthWithDonation(tabs, itemsByTab, qs, 200);
-		expect(result).toBe(MIN_LEFT);
+		const labelDriven = crossTabMaxLeftWidth(tabs, itemsByTab, 200);
+		expect(labelDriven).toBe(MIN_LEFT);
+		expect(crossTabLeftWidthWithDonation(tabs, itemsByTab, qs, 200)).toBe(Math.floor(200 * MAX_LEFT_RATIO));
 	});
 
-	it("no previews + long labels → donation hits ceiling (MIN_PREVIEW_WIDTH floor binds the budget)", () => {
+	it("donation uses the tighter of the ratio and preview-safety ceilings", () => {
 		const tabs = [{ multiSelect: false }];
 		const itemsByTab = [[opt(LONG_LABEL), opt("B")]];
 		const qs = [question([{ label: LONG_LABEL }, { label: "B" }])];
 		const labelDriven = crossTabMaxLeftWidth(tabs, itemsByTab, 120);
 		expect(labelDriven).toBeGreaterThan(MIN_LEFT);
 		const result = crossTabLeftWidthWithDonation(tabs, itemsByTab, qs, 120);
-		// MIN_PREVIEW_WIDTH is the budget floor, so donation still engages —
-		// result is the ceiling (paneWidth − GAP − MIN_PREVIEW_WIDTH).
-		expect(result).toBeGreaterThanOrEqual(labelDriven);
-		const ceiling = 120 - PREVIEW_COLUMN_GAP - MIN_PREVIEW_WIDTH;
-		expect(result).toBe(ceiling);
+		const previewSafetyCeiling = 120 - PREVIEW_COLUMN_GAP - MIN_PREVIEW_WIDTH;
+		const ratioCeiling = Math.floor(120 * MAX_LEFT_RATIO);
+		expect(result).toBe(Math.min(previewSafetyCeiling, ratioCeiling));
 	});
 
 	it("long labels + narrow previews → slack donation engaged", () => {
