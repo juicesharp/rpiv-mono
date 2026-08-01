@@ -13,7 +13,7 @@ A frozen read-only snapshot is also published on a well-known `globalThis` Symbo
 ## Dependencies
 - **`@earendil-works/pi-coding-agent`** (peer): `ExtensionAPI`, `ExtensionContext`, `Theme`, `DynamicBorder`
 - **`@earendil-works/pi-tui`** (peer): `Container`, `SelectList`, `Spacer`, `Text` for the picker UI
-- **`@juicesharp/rpiv-config`** (`^1.20.0`, the only runtime dependency): `configPath`, `loadJsonConfigWithLegacyFallback`, `saveJsonConfig` for locale persistence
+- **`@juicesharp/rpiv-config`** (`^2.3.1`, the only runtime dependency): `configPath`, `loadJsonConfigWithLegacyFallback`, `saveJsonConfig` for locale persistence
 - Node built-ins: only `node:fs` + `node:url` in `loader.ts`; `i18n.ts` imports none
 
 ## Consumers
@@ -52,7 +52,7 @@ Lookups are **overlay-then-base**: the active locale's map is merged on top of t
 2. Author `locales/<code>.json` JSON maps (mirror `rpiv-todo/locales/`); ship them in `package.json` `files`
 3. At module top level (top-level `await`, before the default export — mirror `rpiv-todo/index.ts`), dynamic-`import("@juicesharp/rpiv-i18n/loader")` inside a try/catch (soft peer) and call `registerLocalesFromDir(<pkg-name>, import.meta.url, { label })` ONCE — it iterates `SUPPORTED_LOCALES` and calls `registerStrings` for you. (Low-level `registerStrings(<pkg-name>, byLocale)` remains for callers that build maps in-memory.)
 4. Use `const t = scope("<pkg-name>")` then `t("key", "English fallback")` at every render-time string site — never inline literals where translations exist
-5. If your extension owns module-level singleton i18n state (e.g. an `i18n-bridge.ts` cache), export a `__resetState` and wire it into `test/setup.ts` `beforeEach` — see existing rpiv-todo / rpiv-ask-user-question bridges
+5. If your extension owns module-level singleton i18n state (e.g. an `i18n-bridge.ts` cache), export a `__resetState` and wire it into `test/setup.ts` `beforeEach` — no existing bridge does this: rpiv-todo / rpiv-ask-user-question / rpiv-voice resolve `scope` once at load and expose nothing resettable
 </important>
 
 <important if="you are adding a new supported locale to the picker">

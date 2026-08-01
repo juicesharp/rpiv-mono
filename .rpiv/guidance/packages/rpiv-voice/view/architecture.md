@@ -65,10 +65,10 @@ private renderStrategy(strategy: ScreenContentStrategy, width: number): string[]
 ```
 
 ## Architectural Boundaries
-- **NO `setProps` outside `VoiceOverlayPropsAdapter.apply()`** — bindings are the only ingress to component props
+- **NO overlay `setProps` outside `VoiceOverlayPropsAdapter.apply()`** — bindings are the only ingress to overlay props
 - **Components never read state directly** — they only receive props through `setProps`
 - **Selectors live in `state/selectors/`** and produce typed props; components stay dumb renderers
-- **`requestRender()` invoked exactly once** per state update, after all bindings apply
+- **`requestRender()` invoked once by `apply()`** after all bindings apply
 - **Strategies are pure factories** of `Component[]` — they hold no state and own no inputs
 - **Height equalization is overlay-owned**, not component-owned — leaves don't know about cross-screen layout
 - **`predicate` gates props per binding**; absence of a predicate means always-on

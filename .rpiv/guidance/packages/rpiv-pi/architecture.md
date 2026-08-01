@@ -32,11 +32,11 @@ Sibling-plugin commands are registered by the siblings themselves once installed
 
 # Business Context
 
-rpiv-pi augments Pi with a research → design → implement skill pipeline plus the runtime infrastructure those skills depend on (guidance injection, git-context injection, scaffolding, bundled-agent sync). rpiv-core also contributes five built-in `/wf` workflows (ship/build/arch/vet/polish) to the `@juicesharp/rpiv-workflow` sibling via `registerBuiltInWorkflows`, and a model-management subsystem (`/rpiv-models`, per-skill/preset model + effort overrides, `models.json`). `/wf` stages run in detached child sessions with bounded parallel fan-out (`sdk-workflow-host.ts` — the sole module importing Pi SDK session machinery; the interactive session stays a launcher/observer), monitored via an always-on lane dock below the editor and the `/lanes` browser, with per-lane question parking and an optional Warp question-lifecycle bridge (`workflow-question-warp-bridge.ts`). Tool surfaces live in sibling plugins.
+rpiv-pi augments Pi with a research → design → implement skill pipeline plus the runtime infrastructure those skills depend on (guidance injection, git-context injection, scaffolding, bundled-agent sync). rpiv-core also contributes three built-in `/wf` workflows (build/vet/polish) to the `@juicesharp/rpiv-workflow` sibling via `registerBuiltInWorkflows`, and a model-management subsystem (`/rpiv-models`, per-skill/preset model + effort overrides, `models.json`). `/wf` stages run in detached child sessions with bounded parallel fan-out (`sdk-workflow-host.ts` — the sole module importing Pi SDK session machinery; the interactive session stays a launcher/observer), monitored via an always-on lane dock below the editor and the `/lanes` browser, with per-lane question parking and an optional Warp question-lifecycle bridge (`workflow-question-warp-bridge.ts`). Tool surfaces live in sibling plugins.
 
 ## Failure-Path Resilience (host counterparts)
 
-The detached-execution host (`sdk-workflow-host.ts`) supplies the two host-side
+The detached-execution host modules (`sdk-workflow-host.ts`, `workflow-execution-host.ts`) supply the two host-side
 surfaces the `rpiv-workflow` failure-resilience ladder consumes:
 
 - **`resetToolTimeout` on the workflow-execution host port.** Beside the

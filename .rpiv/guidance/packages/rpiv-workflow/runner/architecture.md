@@ -6,8 +6,8 @@ Stage-execution heart of `rpiv-workflow`. Owns graph traversal (`start → edges
 ## Dependencies
 - **`../api`, `../types`, `../host`**: `Workflow`, `StageDef`, `ScriptContext`, `RunContext`, `RunWorkflowOptions/Result` (now in `../types`), `WorkflowHostContext`; **`../execution-host`**: `getWorkflowExecutionProvider`
 - **`../sessions/index`**: `executeStageSession`, `continueStageSession`, `reattachStageSession`, `locateSessionFile`, `pruneOrphanedChildSessions`; **`../sessions/spawn`**: `forkChildSession` / `reattachChildSession` (detached children)
-- **`../loop` / `../loop-kinds` / `../loop-waves`**: `runLoop` / `runFanoutResume` / `pendingFanoutIndices` (driver), `LoopDeps` + `buildLoopEntry` / `freshCursor` / `sequentialStrategyOf` / `foldFanoutCompletion` (kind vocabulary + strategies), `validateUnitDeps`
-- **`../state/index`**: `generateRunId`, `writeHeader`, `appendRoutingDecision`, `readAllStagesForResume`, `STATE_SCHEMA_VERSION`; **`../validate-output`**: `validateOutputData` + `runValidationRetryLoop` (shared retry policy); **`../audit` / `../audit-rows`**: terminal-outcome orchestration / pure row persistence + `persistStageSuccess`; **`../chain-state`**: artifact/arg authorities; **`../events`**: `lifecycleCtxFor` + `StageRef` refs
+- **`../loop` / `../loop-kinds` / `../loop-waves`**: `runLoop` / `runFanoutResume` / `pendingFanoutIndices` (driver), `LoopDeps` + `buildLoopEntry` / `freshCursor` / `sequentialStrategyOf` / `foldFanoutCompletion` (kind vocabulary + strategies), `ensureUnitDeps`
+- **`../state/index`**: `generateRunId`, `appendHeader`, `appendRoutingDecision`, `readAllStagesForResume`, `STATE_SCHEMA_VERSION`; **`../validate-output`**: `validateOutputData` + `runValidationRetryLoop` (shared retry policy); **`../audit` / `../audit-rows`**: terminal-outcome orchestration / pure row persistence + `persistStageSuccess`; **`../chain-state`**: artifact/arg authorities; **`../events`**: `lifecycleCtxFor` + `StageRef` refs
 
 ## Consumers
 - `runner/index.ts` barrel re-exports `runWorkflow`, `runWorkflowByName`, `resumeWorkflow`, `resumeWorkflowByRunId` (+ their `*Options`), `RunWorkflowResult` (from `../types`), `MAX_BACKWARD_JUMPS` (from `run-context.ts`), `StagePreflightError` (from `errors.ts`). `../command-run.ts` (`/wf`) calls `runWorkflow(...)` and `resumeWorkflowByRunId(...)`
@@ -16,7 +16,7 @@ Stage-execution heart of `rpiv-workflow`. Owns graph traversal (`start → edges
 ```
 index.ts, runner.ts  — Barrel + entries (runWorkflow / resumeWorkflow / detachExecutor / executeRun shared tail)
 run-stage.ts   — dispatchStage (mode switch) + guarded entries (dispatchStageOrRecordFailure, resumeStageWithSession) + THE WALK COMPOSITION: wires ChainDeps/LoopDeps/advance by injection
-chain-advance.ts     — Post-stage routing; decision-edge audit; per-destination jump budgets; onRoute `bypassed` arms
+chain-advance.ts     — Post-stage routing; decision-edge audit; per-destination jump budgets; onRoute `stop`/next arms
 resolve-stage.ts     — ResolvedStage: mode ("loop"|"script"|"prompt"|"skill") + dispatch derived ONCE
 preflight.ts, input-validation.ts — Runtime + schema-backed preflights (throw StagePreflightError)
 script-stage.ts      — Skillless TS-stage runtime; advance injected via AdvanceFn
@@ -34,7 +34,7 @@ by-name.ts, by-run-id.ts — name/run-id entry points
 export async function dispatchStage(hostCtx, currentName, idx, run): Promise<ChainOutcome> {  // run-stage.ts
   const stage = resolveStage(currentName, idx, run);
   switch (stage.mode) {
-    case "loop":   return runLoopStage(hostCtx, stage, idx, run);   // empty fanout ⇒ single-stage fall-through; then validateUnitDeps halts dep cycles pre-dispatch
+    case "loop":   return runLoopStage(hostCtx, stage, idx, run);   // empty fanout ⇒ single-stage fall-through; then ensureUnitDeps halts dep cycles pre-dispatch
     case "script": await ensureInputValid(stage, run); return runScript(hostCtx, stage, idx, run, advance);
     case "prompt": case "skill": return runSingleStage(hostCtx, stage, idx, run); // preflights → prompt → validate → snapshot → detached child session
   }
@@ -69,7 +69,7 @@ export async function withStageEntryGuard(hostCtx, name, run, inner): Promise<Ch
 - **`sessionPolicy: "continue"`** — `runSingleStage` forks the predecessor's persisted session (`run.state.lastSession` → `continueForkFile` → `forkChildSession` + `continueStageSession`, branch offset re-derived from the fork); no predecessor file ⇒ fresh dispatch + `MSG_CONTINUE_FALLBACK` notify
 - **Session-backed resume** — a failed/aborted trailer carrying a structured `session` dispatches `resumeStageWithSession` (resume-entry.ts); `resumeWithSessionLadder` reattaches the persisted child (`reattachChildSession`, promotion → reattach, `branchOffset` from the persisted row); precondition misses degrade to a cold re-run — never a refusal (`MSG_RESUME_SESSION_FALLBACK` notify; the defensive mode-mismatch arm falls back silently)
 - **Resume schema gate** — `reconstructState` refuses `header.v !== STATE_SCHEMA_VERSION` (reason `"version-mismatch"`, rendered via `ERR_RESUME_VERSION_MISMATCH`) instead of mis-replaying an old trail
-- **Fanout resume** — `resumeLoopStage` re-validates the recomputed DAG (`validateUnitDeps`) then re-dispatches ONLY still-pending indices (`runFanoutResume` / `pendingFanoutIndices`); completed units replay from their journaled slots
+- **Fanout resume** — `resumeLoopStage` re-validates the recomputed DAG (`ensureUnitDeps`) then re-dispatches ONLY still-pending indices (`runFanoutResume` / `pendingFanoutIndices`); completed units replay from their journaled slots
 
 ## Success persistence + retry policy are SHARED
 
@@ -93,7 +93,7 @@ export async function withStageEntryGuard(hostCtx, name, run, inner): Promise<Ch
 
 <important if="you are adding a new loop kind (e.g. panel)">
 ## Adding a Loop Kind
-1. Extend the `LoopDef` union + `LOOP_KINDS` in `../loop-def.ts` (re-exported by `../api.ts`); add a constructor in `../loop-constructors.ts`
+1. Extend the `LoopDef` union + `LOOP_KINDS` in `../loop-def.ts` (re-exported by `../api.ts`); add a constructor in `../loops/constructors.ts`
 2. Add the strategy to `LOOP_STRATEGIES` in `../loop-kinds.ts` — base `LoopKindStrategy` carries only `parallelizable`; sequential kinds extend `SequentialStrategy` (`pull` / `guardExpectation` / `hasPending`), while fanout implements only the base and routes through the index-addressed parallel path (`runFanoutParallel` / `runFanoutResume` / `pendingFanoutIndices`). The `satisfies Record` shape makes omission a compile error
 3. Per-kind generation-open bits (entryArgs rule, unit precompute) live at the two open sites: `runLoopStage` (run-stage.ts) and the fold's generation open (resume.ts)
 4. Validator: kind-specific rules in `checkLoopInvariants` (`../validate/stage-rules.ts`; consumes `LOOP_KINDS`)

@@ -46,8 +46,8 @@ export function sid(ctx): string;                // sessionManager.getSessionId(
 export function getState(sessionId): TaskState;  // get-or-fresh slot; the four slot writers
 // (commitState post-reducer / replaceState replay seam / evictSession / __resetState) — see Architectural Boundaries.
 // Foreground render pointer — which slot the ctx-less readers (overlay, renderCall) show:
-// getRenderState() = slotFor(activeRenderSession); setActiveRenderSession(id) claimed once at
-// overlay creation; getActiveRenderSession() read by the index.ts sid-gate; clearActiveRenderSession() on teardown.
+// getRenderState() = slotFor(activeRenderSession); setActiveRenderSession(id) claimed once by
+// first UI start; getActiveRenderSession() read by the index.ts sid-gate; clearActiveRenderSession() on teardown.
 
 // state/replay.ts — pure: walk branch, return fresh TaskState (last-writer-wins).
 export function replayFromBranch(ctx): TaskState;
@@ -55,19 +55,19 @@ export function replayFromBranch(ctx): TaskState;
 
 ## Persistent Widget Mount (Lazy, Idempotent, Auto-hide)
 ```typescript
-// Lazy: the FIRST hasUI session_start constructs it and claims the foreground render pointer (creator-ownership); a child (distinct sid) is sid-gated out of rebinding/disposing it.
+// Lazy: the FIRST hasUI session_start claims the foreground render pointer (creator-ownership); a child (distinct sid) is sid-gated out of rebinding/disposing it.
 let todoOverlay: TodoOverlay | undefined;
 pi.on("session_start", async (_e, ctx) => {
     const id = sid(ctx); replaceState(id, replayFromBranch(ctx));   // each session → its OWN slot
     if (!ctx.hasUI) return;
-    if (todoOverlay === undefined) { todoOverlay = new TodoOverlay(); setActiveRenderSession(id); }
+    if (getActiveRenderSession() === "") setActiveRenderSession(id);   // no eager ctor
     if (id !== getActiveRenderSession()) return;   // child: skip rebind
-    todoOverlay.setUICtx(ctx.ui); todoOverlay.update();
+    uiCtx = ctx.ui; await updateTodoOverlay(true);   // lazy import + task-gated ctor inside
 });
 
 // Register-once factory: setWidget(WIDGET_KEY, (tui, theme) => ({ render, invalidate }),
-// { placement: "aboveEditor" }) — the factory captures `tui`; invalidate() clears
-// widgetRegistered + tui so the next update re-registers; later updates just tui.requestRender().
+// { placement: "aboveEditor" }) — the factory captures `tui`; invalidate() is a
+// no-op (no cached strings); setUICtx change re-registers; later updates just tui.requestRender().
 ```
 
 ## Architectural Boundaries

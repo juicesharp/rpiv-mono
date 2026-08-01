@@ -43,18 +43,15 @@ export type Effect =
 ## HANDLERS Dispatch Table (compile-time exhaustive)
 ```typescript
 // state/state-reducer.ts — per-kind handlers replace the prior single big switch.
-// `Extract<…, { kind: K }>` narrows without `as` casts; the mapped type
-// force-fails compile until every variant has a handler — mirrors `Record<RowKind, …>`.
+// `Extract<…, { kind: K }>` narrows without `as` casts; the mapped type force-fails
+// compile until every variant has a handler — mirrors `Record<RowKind, …>`.
 type Handler<K extends QuestionnaireAction["kind"]> =
     (state: QuestionnaireState, action: Extract<QuestionnaireAction, { kind: K }>, ctx: ApplyContext) => ApplyResult;
 
 const HANDLERS: { [K in QuestionnaireAction["kind"]]: Handler<K> } = {
-    nav: navHandler, input_clear: inputClearHandler, input_edit: inputEditHandler,
-    input_replace: inputReplaceHandler, tab_switch: tabSwitchHandler, confirm: confirmHandler,
-    toggle: toggleHandler, multi_confirm: multiConfirmHandler, cancel: cancelHandler,
-    notes_enter: notesEnterHandler, notes_exit: notesExitHandler,
-    notes_forward: notesForwardHandler, submit: submitHandler, submit_nav: submitNavHandler,
-    toggle_collapsed: toggleCollapsedHandler, ignore: ignoreHandler,
+    nav, input_clear, input_edit, input_replace, tab_switch, confirm, toggle, multi_confirm,
+    cancel, notes_enter, notes_exit, notes_forward, submit, submit_nav, toggle_collapsed,
+    ignore,   // each maps to its `<kind>Handler`
 };
 ```
 

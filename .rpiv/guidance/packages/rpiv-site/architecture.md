@@ -52,8 +52,8 @@ const agents      = defineCollection({ loader: glob({ pattern: "*.md", base: "./
 //   Embed hand-curated tables: TIER_BY_NAME (capability tier per agent — 15 named
 //   agents across locator/analyzer/external/specialist/verifier),
 //   PIPELINE/SECONDARY/CODE_REVIEW_FLOW tuples + ARTIFACT_WRITE_SITES / PIPELINE_META.
-// workflows.ts — hand-maintained presentation mirror of three of the five built-in
-//   pipelines (build/vet/polish; arch and ship are not surfaced); build's 30 runtime
+// workflows.ts — hand-maintained presentation mirror of all three built-in
+//   pipelines (build/vet/polish; nothing is omitted); build's 30 runtime
 //   stages fold into a curated seven-act spine (capture → slice → design → review →
 //   plan → code → land). Components consume these typed APIs — never `getCollection()` directly.
 ```

@@ -7,12 +7,13 @@ how state is stored, and how the package tolerates different Pi host versions.
 
 ```
 rpiv-btw/
-├── index.ts             — extension entry; registers the command + 3 hooks
-├── btw.ts               — state, snapshotting, message threading, the model call
-├── btw-ui.ts            — bottom-anchored overlay component and key handling
-├── pi-compat.ts         — host-version-tolerant loader for pi-ai's completeSimple
-└── prompts/
-    └── btw-system.txt   — system prompt for the side call
+├── index.ts             — entry; registers the command + 3 hooks
+├── btw.ts               — state, snapshots, threading, the model call
+├── btw-budget.ts        — history cap + branch fit
+├── btw-messages.ts      — BtwTurn + message-text extractors
+├── btw-ui.ts            — bottom-anchored overlay and key handling
+├── pi-compat.ts         — host-tolerant pi-ai /compat loaders
+└── prompts/btw-system.txt — system prompt for the side call
 ```
 
 Pi discovers the extension through the manifest block in `package.json`:
@@ -134,7 +135,7 @@ to migrate when it is removed.
 
 ## Messages and errors
 
-Every user-visible string the package can produce:
+Every notify and overlay error string the package can produce:
 
 | String | When |
 | --- | --- |

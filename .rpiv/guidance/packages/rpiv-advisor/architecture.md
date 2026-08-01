@@ -68,9 +68,9 @@ const { messages: sessionMessages } = buildSessionContext(ctx.sessionManager.get
 const branchMessages = ensureUserTailForAdvisor(stripInflightAdvisorCall(convertToLlm(sessionMessages)));
 const inventoryMessage = getInventoryMessage(pi.getAllTools()); // signature-keyed cache on a globalThis Symbol — rebuilds only when the tool-name set changes
 const messages = inventoryMessage ? [inventoryMessage, ...branchMessages] : branchMessages;
-const completeSimple = await loadCompleteSimple(); // first stmt in try — loader failures share errCallThrew
-const response = await completeSimple(advisor, { systemPrompt: ADVISOR_SYSTEM_PROMPT, messages, tools: [] },
-    { apiKey: auth.apiKey, headers: auth.headers, signal, reasoning: effort });
+const runtime = getRuntimeCompleteSimple(ctx.modelRegistry); // first stmt in try — resolver/loader failures share errCallThrew
+const response = await (runtime ?? (await loadCompleteSimple()))(advisor, { systemPrompt: ADVISOR_SYSTEM_PROMPT, messages, tools: [] },
+    runtime ? { signal, reasoning: effort } : { apiKey: auth.apiKey, headers: auth.headers, signal, reasoning: effort }); // NEVER hand preflight auth to the runtime facade — overrides bypass credential-derived baseUrl
 // Branch on response.stopReason: "aborted" | "error" | empty text | success
 ```
 

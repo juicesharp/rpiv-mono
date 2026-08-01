@@ -9,7 +9,7 @@ rpiv-mono/
 ├── packages/
 │   ├── rpiv-pi/                  — Umbrella: extension runtime + skills + agents (zero tools)
 │   ├── rpiv-<feature>/           — One Pi extension per directory; npm name @juicesharp/rpiv-<feature>
-│   ├── rpiv-site/                — Astro 5 marketing site (private). Excluded from root tsconfig + biome `.ts` scope
+│   ├── rpiv-site/                — Astro 5 marketing site (private). Excluded from root tsconfig + coverage scope
 │   ├── rpiv-telemetry/           — Private Pi extension: MLflow observability (private opt-in; not in siblings.ts)
 │   └── test-utils/               — Private workspace package: shared test fixtures (not published)
 ├── test/                         — Repo-wide Vitest setup (homedir stub + env hygiene + pi-ai//compat mocks + beforeEach singleton resets)
@@ -51,8 +51,7 @@ Husky hooks (local-only):
 
 # Conventions
 
-- **Lockstep versions**: every `packages/*/package.json` shares one `version`. Enforced by `sync-versions.js` (exit 1 on drift). `"private": true` packages bump too but are skipped at publish.
-- **Naming**: directory `rpiv-<feature>` ↔ npm `@juicesharp/rpiv-<feature>`.
+- **Lockstep versions**: every `packages/*/package.json` shares one `version`. Enforced by `sync-versions.js` (exit 1 on drift). `"private": true` packages bump too but are skipped at publish. **Naming**: directory `rpiv-<feature>` ↔ npm `@juicesharp/rpiv-<feature>`.
 - **Sibling deps as `peerDependencies: "*"`** — `rpiv-pi` peer-pins every registered sibling (not opt-in ones) and `pi-*` runtime; bundlers never include them.
 - **`files` arrays** explicitly list `.ts` source + asset directories (e.g., `prompts/`); `.rpiv/` is never shipped; directory entries need a `!**/*.test.ts` negation (as in rpiv-pi/rpiv-web-tools/rpiv-workflow) to keep co-located tests out of the tarball.
 - **`type: "module"` everywhere** with Node16 resolution; relative imports use `.js` extensions from `.ts` source. Test files co-locate as `*.test.ts` next to production sources.
@@ -61,13 +60,12 @@ Husky hooks (local-only):
 <important if="you are cutting or planning a release">
 ## Releasing
 - Publishing is local-only — CI (`.github/workflows/ci.yml`) runs check + coverage but never publishes. Use `node scripts/release.mjs` from monorepo root — never `npm version` inside a package.
-- Lockstep means every workspace package gets the same new version. `"private": true` blocks publish but not version bumping.
-- Detailed pipeline: see `.rpiv/guidance/scripts/architecture.md`
+- Lockstep means every workspace package gets the same new version. `"private": true` blocks publish but not version bumping. Detailed pipeline: see `.rpiv/guidance/scripts/architecture.md`
 </important>
 
 <important if="you are adding a new sibling Pi extension package">
 ## Adding a Sibling Package (cross-layer checklist)
-1. Create `packages/rpiv-<name>/` with `package.json` matching the lockstep version, `pi.extensions: ["./index.ts"]`, and the relevant `peerDependencies` (`pi-coding-agent`, `pi-tui`/`pi-ai`/`typebox` as needed)
+1. Create `packages/rpiv-<name>/` with `package.json` matching the lockstep version, `pi.extensions: ["./index.ts"]`, and the relevant `peerDependencies` (`pi-coding-agent`, `pi-tui`/`pi-ai` as needed)
 2. Populate the `files` array with all shipped `.ts` source + any asset directory (e.g. `prompts/`, `locales/`)
 3. Add the sibling to `siblings.ts` — see `.rpiv/guidance/packages/rpiv-pi/extensions/rpiv-core/architecture.md`
 4. Pin in `packages/rpiv-pi/package.json` `peerDependencies` as `"*"`

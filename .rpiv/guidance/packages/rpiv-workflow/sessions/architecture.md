@@ -52,20 +52,7 @@ type HaltReason =
 
 A `collectAll` fanout unit soft-halts (`softHaltUnit`): a NON-terminal `collected:true` row + a `failedOutput` sentinel handed to `onSuccess` so the parallel fold places it by index and the run survives; `onUnitHalt` fires after the row lands (without it the unit emits no terminal lifecycle event and lane bridges mis-render it as success). Everything else fail-fast halts via the per-arm helpers. Aborts throw `WorkflowAbortError` BEFORE any row write (`postStage`) so resume re-dispatches the unit — except a watchdog tool-timeout (`child.toolTimeout()` on an `aborted` stop with the signal cold), which routes to the gate's `timeout` arm instead of re-running the runaway command on resume.
 
-A watchdog tool-timeout is now a RECOVERABLE tool event before it reaches the
-gate's `timeout` arm: inside `postStage`'s `if (outcome.stop === "aborted")`
-branch — strictly after the `s.signal?.aborted` guard that keeps a genuine
-ESC/run-abort routed to `WorkflowAbortError` — a bounded strike ceiling
-(default 2, clamped `[1,5]` via `RPIV_BASH_TIMEOUT_STRIKES`) consumes a strike,
-re-arms the watchdog via `child.resetToolTimeout?.()`, re-prompts the SAME
-child via `resendIntoChild` (steering message), and tail-recurses `postStage`.
-Exhaustion falls through to the UNCHANGED `haltStageOrSoftHalt({ kind:
-"timeout" })` call — byte-identical to a single pre-resilience timeout — so the
-memo (FR3) and death-scene artifact (FR4) attach to it for free via the shared
-failure-record writers in `audit.ts`. A recovered-and-completed stage records
-its consumed strikes as an additive optional `bashTimeoutStrikes?: { count;
-reasons }` field on the completed `WorkflowStage` row (NOT a new row kind —
-resume's shape-filtered readers ignore it, no `STATE_SCHEMA_VERSION` bump).
+A watchdog tool-timeout is RECOVERABLE before it reaches the gate's `timeout` arm: inside `postStage`'s `if (outcome.stop === "aborted")` branch — strictly after the `s.signal?.aborted` guard that keeps a genuine ESC/run-abort routed to `WorkflowAbortError` — a bounded strike ceiling (default 2, clamped `[1,5]` via `RPIV_BASH_TIMEOUT_STRIKES`) consumes a strike, re-arms via `child.resetToolTimeout?.()`, re-prompts the SAME child via `resendIntoChild` (steering message), and tail-recurses `postStage`. Exhaustion falls through to the UNCHANGED `haltStageOrSoftHalt({ kind: "timeout" })` call — byte-identical to a single pre-resilience timeout — so the failure memo and death-scene artifact attach for free via the shared failure-record writers in `audit.ts`. A recovered-and-completed stage records its consumed strikes as an additive optional `bashTimeoutStrikes?: { count; reasons }` field on the completed `WorkflowStage` row (NOT a new row kind — resume's shape-filtered readers ignore it, no `STATE_SCHEMA_VERSION` bump).
 
 ## Host port — `WorkflowHost` abstracts Pi away
 

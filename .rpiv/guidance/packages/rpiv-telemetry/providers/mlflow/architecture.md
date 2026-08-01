@@ -1,10 +1,10 @@
 # providers/mlflow/
 
 ## Responsibility
-Translates the provider-agnostic `TelemetryEvent` stream into an MLflow trace **span-tree** — one root span per agent turn with nested `tool`, `llm-request`, and `subagent` child spans — built on `@mlflow/core`. Owns the full span lifecycle (create on `*_start`, attribute-decorate, end on `*_end`) plus teardown, and isolates the heavy SDK behind a lazy-load boundary so the provider catalog can advertise MLflow without paying the ~325ms cold-start.
+Translates the provider-agnostic `TelemetryEvent` stream into an MLflow trace **span-tree** — one root span per agent turn with nested `tool` and `llm-request` child spans — built on `@mlflow/core`. Owns the full span lifecycle (create on `*_start`, attribute-decorate, end on `*_end`) plus teardown, and isolates the heavy SDK behind a lazy-load boundary so the provider catalog can advertise MLflow without paying the ~325ms cold-start.
 
 ## Dependencies
-- **`@mlflow/core`**: `init`, `flushTraces`, `startSpan`, `SpanType`, `SpanStatusCode`, `LiveSpan` — imported by every file **except `meta.ts`** (see Lazy-Load Boundary). Plus one unofficial deep import in `trace-session-shim.ts`
+- **`@mlflow/core`**: `init`, `flushTraces`, `startSpan`, `SpanType`, `SpanStatusCode`, `LiveSpan` — imported by 7 of the 12 production files, **never `meta.ts`** (see Lazy-Load Boundary). Plus one unofficial deep import in `trace-session-shim.ts`
 - **`../../config`**: `MlflowConfig`, `resolveMlflowConfig`
 - **`../../types/{events,provider}`**: the `TelemetryEvent` union + the `TelemetryProvider` interface this implements
 

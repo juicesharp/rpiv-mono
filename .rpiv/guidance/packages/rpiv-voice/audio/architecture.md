@@ -6,7 +6,7 @@ The only ML/native-binding layer in the monorepo: owns mic capture, Int16↔Floa
 ## Dependencies
 - **`sherpa-onnx-node@1.13.0`** (CJS, no upstream `.d.ts`): synchronous `OfflineRecognizer`. CamelCase TS keys; binding translates to C-struct snake_case
 - **`decibri`** (CJS): Node `EventEmitter`-shaped object; emits `data` (Int16 LE `Buffer`), `speech`/`silence`/`end`/`error`/`close`; built-in Silero VAD
-- **Node stdlib**: `node:fetch` + `node:stream/promises.pipeline` for download, `execFile("tar", …)` for extraction (no JS tar dep)
+- **Node stdlib**: global `fetch` + `node:stream/promises.pipeline` for download, `execFile("tar", …)` for extraction (no JS tar dep)
 
 ## Inbound / Outbound
 - **Outbound**: `decibri`, `sherpa-onnx-node`, `node:*`, `../state/i18n-bridge.js` (only in `model-download.ts`, for splash strings)

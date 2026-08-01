@@ -8,7 +8,7 @@ Append-only JSONL audit store for workflow runs at `<cwd>/.rpiv/workflows/runs/<
 - `../internal-utils.js` — `formatError` (the sole VALUE import from package internals); type-only: `Output`, `RunTrigger`, `Artifact`, `UnitRole`
 
 ## Consumers
-- Writers: `../runner/runner.ts` (`writeHeader`), `../runner/chain-advance.ts` (`appendRoutingDecision`), package-root `../audit-rows.ts` (`appendStage`, via `recordStage`) and `../loop.ts` (`appendLoopCap`)
+- Writers: `../runner/runner.ts` (`appendHeader`), `../runner/chain-advance.ts` (`appendRoutingDecision`), package-root `../audit-rows.ts` (`appendStage`, via `recordStage`) and `../loop.ts` (`appendLoopCap`)
 - Public surface (`../registration.ts`, re-exported by `../index.ts`): `listRuns`, `readHeader`, `readLastStage`, `readLoopCaps`, `resolveRun` (ref → header), `listArtifacts`, `runFileFor` (the ONE opaque path projection), `STATE_SCHEMA_VERSION` + types `SessionRef`/`WorkflowHeader`/`WorkflowStage`/`RunSummary`/`LoopCapRow`. `readAllStages`/`readRoutingDecisions` stay on the internal `state/index.ts` barrel only; `runsDir`/`stateFilePath` live on the test-only `../internal.ts` subpath. `notifyPartialArtifacts` (a runner-side helper) reads via `listArtifacts`
 
 ## Module Structure
@@ -17,7 +17,7 @@ index.ts   — Public barrel (only what other modules consume)
 state.ts   — Row types (WorkflowHeader, WorkflowStage, RoutingDecision) + secondary barrel
 paths.ts   — Pure: generateRunId (YYYY-MM-DD_HH-MM-SS-<4hex>); runsDir; stateFilePath; namesFilePath; runFileFor; childSessionsDir
 raw.ts     — LEAF under reads + names: readFirstJsonlLine (BOUNDED prefix read) + enumerateRunIds (covered by raw.test.ts)
-writes.ts  — tryAppendJsonl primitive + thin wrappers (writeHeader, appendStage, appendRoutingDecision, appendLoopCap)
+writes.ts  — tryAppendJsonl primitive + thin wrappers (appendHeader, appendStage, appendRoutingDecision, appendLoopCap)
 reads.ts   — readJsonlRows primitive + shape predicates + per-row readers + listRuns
 resolve.ts — resolveRun (ref → header): the name-aware composer ABOVE reads + names
 names.ts   — Run-name claim index: claimName/releaseName, readNamesIndex, rebuildIndex, isValidName/VALID_NAME
@@ -34,7 +34,7 @@ function tryAppendJsonl(cwd: string, runId: string, row: unknown): boolean {
     return true;
   } catch (e) { console.warn(`[rpiv-workflow] ...${formatError(e)}`); return false; } // never throw; caller gates on the boolean
 }
-// Wrappers all return the boolean: writeHeader (runWorkflow REFUSES the run start on false — lost header ⇒ unlistable/unresumable), appendStage, appendRoutingDecision, appendLoopCap.
+// Wrappers all return the boolean: appendHeader (runWorkflow REFUSES the run start on false — lost header ⇒ unlistable/unresumable), appendStage, appendRoutingDecision, appendLoopCap.
 ```
 
 Invariants: no row is ever rewritten or deleted; the stage-number allocator advances once per activation REGARDLESS of `appendStage`'s boolean (a lost row's number is never reused) — only `stagesCompleted` and the returned `stageNumber` gate on it; routing-append failures surface as warnings (telemetry, never gate the chain).
@@ -86,7 +86,7 @@ export const generateRunId     = (now = new Date(), suffix = randomBytes(2).toSt
 - **One-way ingest from runner** — runner never reads its own JSONL mid-run; in-memory `state` is the source of truth during a run
 - **Read-only for external inspectors** — past-runs UIs use `listRuns` (header-only) + `readLastStage` / `readLoopCaps` / `listArtifacts`; no write helpers or layout paths exposed (`runFileFor` is the one opaque projection)
 - **Strict layering** — `state/` MUST NOT import `runner/` or `sessions/`; that would invert the dependency and let runtime concerns leak into the audit log
-- **Fail-soft writes** — wrappers return booleans; `writeHeader` gates the run start, `appendStage` failure yields an undefined `stageNumber` (the allocator still advances), routing + loop-cap rows are telemetry (warn, never gate)
+- **Fail-soft writes** — wrappers return booleans; `appendHeader` gates the run start, `appendStage` failure yields an undefined `stageNumber` (the allocator still advances), routing + loop-cap rows are telemetry (warn, never gate)
 - **No `fsync`** — relies on OS buffering; single-row `appendFileSync` is effectively atomic on local FS
 
 <important if="you are adding a new record kind">

@@ -85,7 +85,7 @@ render(width: number): string[] {
 `renderSideBySide` splits via `columnWidths(width, adaptiveLeft)`, renders `optionListView.render(leftWidth)` and `renderPaddedPreviewLines(rightWidth, mode)`, then row-zips: `truncateToWidth(left, leftWidth, "") + spacePad + gap + right`, finally `truncateToWidth(joined, width, "")`. `adaptiveLeft` is injected via `setGlobalLeftWidth` (cross-tab `crossTabLeftWidthWithDonation`) so the seam stays stable on tab switch.
 
 ## Architectural Boundaries
-- **Width measurement via `visibleWidth`/`truncateToWidth`** (8 call sites) — `.length` never *measures width* of user/markdown content; remaining `.length` uses are array lengths, the `raw.length > 0` emptiness check in `markdown-content-cache.ts`, and the hidden-lines indicator (`✂`/`─` are single-width BMP glyphs, so length == visible width there)
+- **Width measurement via `visibleWidth`/`truncateToWidth`** (11 call sites) — `.length` never *measures width* of user/markdown content; remaining `.length` uses are array lengths, the `raw.length > 0` emptiness check in `markdown-content-cache.ts`, and the hidden-lines indicator (`✂`/`─` are single-width BMP glyphs, so length == visible width there)
 - **Render-only** — NO keystroke handling and NO direct state reads; `setProps` from the canonical adapter is the sole input
 - **Pure helpers stay pure** — `decideLayout`, `columnWidths`, `renderBorderedBox`, `computeBoxDimensions` take every input as an argument; no theme or state reach-in
 - **Guard chain is uniform** — `multiSelect` → `hasAnyPreview()` → `inputMode` bypasses are applied identically by all four public members, preserving `naturalHeight === render().length`

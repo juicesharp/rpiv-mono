@@ -91,7 +91,7 @@ export function renderInlineInputRow(opts: RenderInlineInputOptions): string[] {
 ## Adding a Component
 1. Create `view/components/<name>-view.ts` implementing `StatefulView<P>` — extends pi-tui `Component` (`render`, `handleInput`, `invalidate`) plus `setProps`
 2. Define the props interface — selector that produces it lives in `state/selectors/projections.ts`
-3. Register the component in `view/props-adapter.ts` — pick `globalBindings` (cross-tab) or `perTabBindings` (per-tab kind); never call `setProps` from outside
+3. Register the component in `state/build-questionnaire.ts` — pick `globalBindings` (cross-tab) or `perTabBindings` (per-tab kind); never call `setProps` from outside
 4. If the component renders a new sentinel row, add the kind to `WrappingSelectItem["kind"]` AND `ROW_INTENT_META` first — see `state/architecture.md`
 5. Width math: import from `@earendil-works/pi-tui` (`visibleWidth`, `wrapTextWithAnsi`, `truncateToWidth`) — never `string.length`
 6. Glyphs/labels: `private static readonly` on the class, OR module-level const — never inline string literals
