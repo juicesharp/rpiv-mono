@@ -320,6 +320,60 @@ describe("TodoOverlay — session priority presentation", () => {
 		expect(output).toContain("… +2 completed");
 	});
 
+	it("returns an expired recent completion to the older-completed overflow group", async () => {
+		vi.useFakeTimers();
+		try {
+			writeConfigFile(JSON.stringify({ completedTaskVisibility: "session" }));
+			const { widget, tool, tui } = await setup(
+				[
+					{ action: "create", subject: "old-completed" },
+					{ action: "update", id: 1, status: "completed" },
+					{ action: "create", subject: "in-progress" },
+					{ action: "update", id: 2, status: "in_progress" },
+					{ action: "create", subject: "newly-completed" },
+					{ action: "create", subject: "ready" },
+				],
+				16,
+			);
+			widget.render(200); // establish the pre-completion snapshot
+			await tool.execute?.(
+				"tc",
+				{ action: "update", id: 3, status: "completed" } as never,
+				undefined as never,
+				undefined as never,
+				createMockCtx() as never,
+			);
+			let output = widget.render(200).join("\n");
+			expect(output.indexOf("newly-completed")).toBeLessThan(output.indexOf("in-progress"));
+			await vi.advanceTimersByTimeAsync(5_000);
+			expect(tui.requestRender).toHaveBeenCalledWith(true);
+			output = widget.render(200).join("\n");
+			expect(output.indexOf("in-progress")).toBeLessThan(output.indexOf("ready"));
+			expect(output).not.toContain("newly-completed");
+			expect(output).toContain("… +1 completed");
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("keeps original task order when the complete priority list fits the terminal budget", async () => {
+		writeConfigFile(JSON.stringify({ completedTaskVisibility: "session" }));
+		const { widget } = await setup(
+			[
+				{ action: "create", subject: "completed-first" },
+				{ action: "update", id: 1, status: "completed" },
+				{ action: "create", subject: "in-progress-second" },
+				{ action: "update", id: 2, status: "in_progress" },
+				{ action: "create", subject: "pending-third" },
+			],
+			24,
+		);
+		const output = widget.render(200).join("\n");
+		expect(output.indexOf("completed-first")).toBeLessThan(output.indexOf("in-progress-second"));
+		expect(output.indexOf("in-progress-second")).toBeLessThan(output.indexOf("pending-third"));
+		expect(output).not.toContain("… +");
+	});
+
 	it("temporarily surfaces a task completed during the current session", async () => {
 		writeConfigFile(JSON.stringify({ completedTaskVisibility: "session" }));
 		const { widget, tool } = await setup(

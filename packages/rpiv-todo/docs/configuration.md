@@ -56,8 +56,9 @@ terminal rows.
 - No ceiling.
 - Read fresh on every render, so a change takes effect on the next repaint —
   no `/reload`.
-- Session `"priority"` normally derives its three-to-five task budget from the
-  active terminal height. This option is its fallback only when that height is
+- Session `"priority"` derives its three-to-five task budget from an active
+  terminal taller than 10 rows. At 10 rows or fewer it shows only the heading
+  and the overflow summary. This option is the fallback when terminal height is
   unavailable. Chronological session mode does not apply the row budget.
 ## `completedTaskVisibility`
 
@@ -82,11 +83,12 @@ next agent turn starts.
 visibility is `"session"`. A missing, non-string, or unrecognized value falls
 back to `"priority"`. The choice is read at every render.
 
-- `"priority"` follows Claude-like terminal behavior: temporarily recent
-  completion, then in-progress work, unblocked pending work, blocked pending
-  work, and older completion. Items beyond the terminal budget become one
-  `… +N` status-counted summary row. It does not register a completed-row
-  shortcut.
+- `"priority"` follows Claude-like terminal behavior. When the full list fits its
+  terminal budget, it keeps original task order. On overflow it shows temporarily
+  recent completion, then in-progress work, unblocked pending work, blocked
+  pending work, and older completion. Remaining items become one `… +N`
+  status-counted summary row. On terminals with 10 rows or fewer, only that
+  summary is shown. It does not register a completed-row shortcut.
 - `"chronological"` keeps original task order. It shows every pending and
   in-progress row, then folds only an old contiguous completed prefix at the
   top of the list.

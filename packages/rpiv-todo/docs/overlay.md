@@ -58,11 +58,12 @@ the tail is truncated and the last row becomes `+N more (X completed, Y pending)
 
 Session mode retains the complete task state but offers two projections:
 
-- `"priority"` is the default Claude-like projection. It derives a three-to-five
-  task budget from terminal height, then shows recently completed tasks,
-  in-progress tasks, unblocked pending tasks, blocked pending tasks, and older
-  completed tasks in that order. Hidden rows become one `… +N` row with status
-  counts.
+- `"priority"` is the default Claude-like projection. On a terminal taller than
+  10 rows it derives a three-to-five task budget. When all tasks fit, it keeps
+  original order; on overflow it shows recently completed tasks, in-progress
+  tasks, unblocked pending tasks, blocked pending tasks, and older completed
+  tasks in that order. Hidden rows become one `… +N` row with status counts. At
+  10 rows or fewer it renders only the heading and that summary.
 - `"chronological"` preserves original task order, shows every pending and
   in-progress task, and folds only an old contiguous completed prefix after
   `maxVisibleCompleted` rows. Its expanded completed group can grow the widget.
@@ -79,9 +80,10 @@ later renders. Reloading or compacting resets that tracking, so a fresh session
 shows the full list again.
 
 With `completedTaskVisibility: "session"`, tasks remain in canonical session
-state across turns. The default `"priority"` view keeps the terminal focused on
-current work and represents hidden rows with `… +N`. Select `"chronological"`
-when the original execution order matters:
+state across turns. The default `"priority"` view preserves original order while
+everything fits, then keeps the terminal focused on current work with `… +N`
+when it does not. Select `"chronological"` when the original execution order
+must stay visible even for long lists:
 
 ```text
 ● Todos (6/7)
@@ -95,7 +97,6 @@ In chronological mode, `completedCollapseKey` expands the folded rows in place,
 then folds them again. A completed task behind any pending or in-progress task
 retains its original position and is never moved into that fold. Priority mode
 does not register a completed-row shortcut; use `/todos` for the unbounded list.
-expanded until `/reload` binds that shortcut.
 ## Collapsing
 
 Press `ctrl+shift+t` to collapse the whole panel to two lines — the heading plus

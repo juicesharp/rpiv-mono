@@ -105,7 +105,8 @@ export interface PriorityOverlayLayout {
 }
 
 /**
- * Project the full task state into Claude-like terminal priority order. Freshly
+ * Project the full task state into a Claude-like terminal projection. When every
+ * task fits, retain the canonical chronological order. On overflow, freshly
  * completed tasks are temporarily surfaced, then active work, unblocked pending
  * work, blocked pending work, and finally older completed tasks. The canonical
  * state itself remains untouched and in chronological order.
@@ -116,6 +117,18 @@ export function selectPriorityOverlayLayout(
 	recentlyCompletedTaskIds: ReadonlySet<number>,
 ): PriorityOverlayLayout {
 	const tasks = selectVisibleTasks(state);
+	const safeBudget = Math.max(0, budget);
+	if (tasks.length <= safeBudget) {
+		return {
+			visible: tasks,
+			hiddenInProgress: 0,
+			hiddenPending: 0,
+			hiddenCompleted: 0,
+			get hiddenTotal() {
+				return 0;
+			},
+		};
+	}
 	const activeTaskIds = new Set(tasks.filter((task) => task.status !== "completed").map((task) => task.id));
 	const recentlyCompleted = tasks.filter(
 		(task) => task.status === "completed" && recentlyCompletedTaskIds.has(task.id),
@@ -126,7 +139,7 @@ export function selectPriorityOverlayLayout(
 	const readyPending = pending.filter((task) => !task.blockedBy?.some((id) => activeTaskIds.has(id)));
 	const blockedPending = pending.filter((task) => task.blockedBy?.some((id) => activeTaskIds.has(id)));
 	const ordered = [...recentlyCompleted, ...inProgress, ...readyPending, ...blockedPending, ...olderCompleted];
-	const visible = ordered.slice(0, Math.max(0, budget));
+	const visible = ordered.slice(0, safeBudget);
 	const hidden = ordered.slice(visible.length);
 	const hiddenInProgress = hidden.filter((task) => task.status === "in_progress").length;
 	const hiddenPending = hidden.filter((task) => task.status === "pending").length;

@@ -323,9 +323,9 @@ export class TodoOverlay {
 				return this.withTrailingSpacer(lines);
 			}
 
-			// Claude-like projection keeps the session state intact while fitting current
-			// work into the terminal: recent completion, in-progress, ready pending,
-			// blocked pending, then older completion.
+			// Claude-like projection keeps the session state intact. It preserves order
+			// when everything fits; on overflow it prioritizes recent completion,
+			// in-progress work, ready pending, blocked pending, then older completion.
 			const priorityLayout = selectPriorityOverlayLayout(
 				overlayState,
 				this.getPriorityTaskBudget(),
