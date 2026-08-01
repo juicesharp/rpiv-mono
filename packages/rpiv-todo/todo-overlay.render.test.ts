@@ -138,6 +138,114 @@ describe("TodoOverlay — per-task formatting", () => {
 		overlay.hideCompletedTasksFromPreviousTurn();
 		expect(widget.render(200)).toEqual([]);
 	});
+
+	it("keeps completed rows and counts visible across agent turns in session mode", async () => {
+		writeConfigFile(JSON.stringify({ completedTaskVisibility: "session" }));
+		const { widget, overlay } = await setup([
+			{ action: "create", subject: "done" },
+			{ action: "update", id: 1, status: "completed" },
+			{ action: "create", subject: "next" },
+		]);
+		expect(widget.render(200).join("\n")).toContain("Todos (1/2)");
+		overlay.hideCompletedTasksFromPreviousTurn();
+		const nextTurn = widget.render(200).join("\n");
+		expect(nextTurn).toContain("Todos (1/2)");
+		expect(nextTurn).toContain("done");
+		expect(nextTurn).toContain("next");
+	});
+
+	it("applies a session-to-turn policy change at the next agent turn", async () => {
+		writeConfigFile(JSON.stringify({ completedTaskVisibility: "session" }));
+		const { widget, overlay } = await setup([
+			{ action: "create", subject: "done" },
+			{ action: "update", id: 1, status: "completed" },
+			{ action: "create", subject: "next" },
+		]);
+		// Rendering in session mode marks the retained rows. The following agent turn
+		// must apply a switch back to turn mode immediately, not one turn later.
+		expect(widget.render(200).join("\n")).toContain("Todos (1/2)");
+		writeConfigFile(JSON.stringify({ completedTaskVisibility: "turn" }));
+		overlay.hideCompletedTasksFromPreviousTurn();
+		const nextTurn = widget.render(200).join("\n");
+		expect(nextTurn).toContain("Todos (0/1)");
+		expect(nextTurn).not.toContain("done");
+		expect(nextTurn).toContain("next");
+	});
+});
+
+describe("TodoOverlay — session completed-row folding", () => {
+	it("folds only the oldest completed prefix, retains the newest five rows, and expands in place", async () => {
+		writeConfigFile(JSON.stringify({ completedTaskVisibility: "session", maxVisibleCompleted: 5 }));
+		const actions: Array<{ action: TaskAction; [k: string]: unknown }> = [];
+		for (let i = 1; i <= 7; i++) actions.push({ action: "create", subject: `task-${i}` });
+		for (let i = 1; i <= 6; i++) actions.push({ action: "update", id: i, status: "completed" });
+		const { widget, overlay } = await setup(actions);
+		const folded = widget.render(200).join("\n");
+		expect(folded).toContain("Todos (6/7)");
+		expect(folded).toContain("▶ 1 completed");
+		expect(folded).toContain("ctrl+shift+c to expand");
+		expect(folded).not.toContain("task-1");
+		for (let i = 2; i <= 7; i++) expect(folded).toContain(`task-${i}`);
+		expect(folded.indexOf("▶ 1 completed")).toBeLessThan(folded.indexOf("task-2"));
+		overlay.toggleCompletedRows();
+		const expanded = widget.render(200).join("\n");
+		expect(expanded).toContain("▼ 1 completed");
+		expect(expanded).toContain("task-1");
+		expect(expanded.indexOf("task-1")).toBeLessThan(expanded.indexOf("task-2"));
+		overlay.toggleCompletedRows();
+		expect(widget.render(200).join("\n")).not.toContain("task-1");
+	});
+
+	it("keeps all active and pending rows visible beyond maxWidgetLines", async () => {
+		writeConfigFile(JSON.stringify({ completedTaskVisibility: "session", maxWidgetLines: 3 }));
+		const actions: Array<{ action: TaskAction; [k: string]: unknown }> = [];
+		for (let i = 1; i <= 8; i++) actions.push({ action: "create", subject: `open-${i}` });
+		const { widget } = await setup(actions);
+		const lines = widget.render(200);
+		for (let i = 1; i <= 8; i++) expect(lines.join("\n")).toContain(`open-${i}`);
+		expect(lines).toHaveLength(10); // heading + 8 tasks + trailing spacer
+		expect(lines.join("\n")).not.toContain("+5 more");
+	});
+
+	it("does not reorder or fold completed rows behind an unfinished task", async () => {
+		writeConfigFile(JSON.stringify({ completedTaskVisibility: "session", maxVisibleCompleted: 5 }));
+		const actions: Array<{ action: TaskAction; [k: string]: unknown }> = [];
+		for (let i = 1; i <= 8; i++) actions.push({ action: "create", subject: `task-${i}` });
+		actions.push({ action: "update", id: 1, status: "completed" });
+		for (let i = 3; i <= 8; i++) actions.push({ action: "update", id: i, status: "completed" });
+		const { widget } = await setup(actions);
+		const output = widget.render(200).join("\n");
+		expect(output).not.toContain("▶");
+		for (const i of [1, 3, 4, 5, 6, 7, 8]) expect(output).toContain(`task-${i}`);
+		expect(output.indexOf("task-1")).toBeLessThan(output.indexOf("task-2"));
+		expect(output.indexOf("task-2")).toBeLessThan(output.indexOf("task-3"));
+	});
+
+	it("keeps all completed rows expanded when the completed-row shortcut is off", async () => {
+		writeConfigFile(
+			JSON.stringify({ completedTaskVisibility: "session", maxVisibleCompleted: 0, completedCollapseKey: "off" }),
+		);
+		const { widget } = await setup([
+			{ action: "create", subject: "done" },
+			{ action: "update", id: 1, status: "completed" },
+		]);
+		const output = widget.render(200).join("\n");
+		expect(output).toContain("done");
+		expect(output).not.toContain("▶");
+	});
+
+	it("keeps completed rows expanded when the completed-row key collides with the whole-panel key", async () => {
+		writeConfigFile(
+			JSON.stringify({ completedTaskVisibility: "session", maxVisibleCompleted: 0, collapseKey: "ctrl+shift+c" }),
+		);
+		const { widget } = await setup([
+			{ action: "create", subject: "done" },
+			{ action: "update", id: 1, status: "completed" },
+		]);
+		const output = widget.render(200).join("\n");
+		expect(output).toContain("done");
+		expect(output).not.toContain("▶");
+	});
 });
 
 describe("TodoOverlay — showIds gate", () => {

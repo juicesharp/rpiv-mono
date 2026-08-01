@@ -14,7 +14,14 @@
 
 import type { ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
 import { type TUI, truncateToWidth } from "@earendil-works/pi-tui";
-import { COLLAPSE_KEY_OFF, getMaxWidgetLines, resolveCollapseKey } from "./config.js";
+import {
+	COLLAPSE_KEY_OFF,
+	getCompletedTaskVisibility,
+	getMaxVisibleCompleted,
+	getMaxWidgetLines,
+	resolveCollapseKey,
+	resolveCompletedCollapseKey,
+} from "./config.js";
 import { formatStatusLabel, t } from "./state/i18n-bridge.js";
 import { selectHasActive, selectOverlayLayout, selectShowTaskIds, selectTodoCounts } from "./state/selectors.js";
 import { getRenderState } from "./state/store.js";
@@ -34,6 +41,8 @@ export class TodoOverlay {
 	private tui: TUI | undefined;
 	private completedTaskIdsPendingHide = new Set<number>();
 	private hiddenCompletedTaskIds = new Set<number>();
+	private completedRowsExpanded = false;
+	private completedSessionWasActive = false;
 	private lastNextId: number | undefined;
 	private collapsed = false;
 
@@ -85,10 +94,32 @@ export class TodoOverlay {
 	resetCompletedDisplayState(): void {
 		this.completedTaskIdsPendingHide.clear();
 		this.hiddenCompletedTaskIds.clear();
+		this.completedRowsExpanded = false;
+		this.completedSessionWasActive = false;
 		this.lastNextId = undefined;
 	}
 
 	hideCompletedTasksFromPreviousTurn(): void {
+		if (getCompletedTaskVisibility() === "session") {
+			// Session mode keeps completed rows available. Clear only stale state from a
+			// preceding turn-mode render without collapsing a user-expanded fold.
+			this.completedTaskIdsPendingHide.clear();
+			this.hiddenCompletedTaskIds.clear();
+			this.completedSessionWasActive = true;
+			this.tui?.requestRender();
+			return;
+		}
+		if (this.completedSessionWasActive) {
+			// A policy change is applied on this turn boundary: rows retained under
+			// session mode now become subject to the compact turn-mode behavior.
+			for (const task of this.getSnapshot().tasks) {
+				if (task.status === "completed") this.hiddenCompletedTaskIds.add(task.id);
+			}
+			this.completedRowsExpanded = false;
+			this.completedSessionWasActive = false;
+			this.tui?.requestRender();
+			return;
+		}
 		if (this.completedTaskIdsPendingHide.size === 0) return;
 		for (const taskId of this.completedTaskIdsPendingHide) {
 			this.hiddenCompletedTaskIds.add(taskId);
@@ -96,7 +127,6 @@ export class TodoOverlay {
 		this.completedTaskIdsPendingHide.clear();
 		this.tui?.requestRender();
 	}
-
 	toggleCollapse(): void {
 		this.collapsed = !this.collapsed;
 		// Forced full redraw on the collapsed↔expanded height step, mirroring the
@@ -105,6 +135,12 @@ export class TodoOverlay {
 		this.tui?.requestRender(true);
 	}
 
+	toggleCompletedRows(): void {
+		const snapshot = this.getSnapshot();
+		if (this.getFoldedCompletedPrefixCount(this.selectOverlayTasks(snapshot)) === 0) return;
+		this.completedRowsExpanded = !this.completedRowsExpanded;
+		this.tui?.requestRender(true);
+	}
 	isRegistered(): boolean {
 		return this.widgetRegistered;
 	}
@@ -128,13 +164,29 @@ export class TodoOverlay {
 	}
 
 	private selectOverlayTasks(snapshot: ReturnType<TodoOverlay["getSnapshot"]>) {
-		return snapshot.tasks.filter((task) => task.status !== "deleted" && !this.shouldHideCompletedTask(task));
+		const visibility = getCompletedTaskVisibility();
+		return snapshot.tasks.filter(
+			(task) => task.status !== "deleted" && (visibility === "session" || !this.shouldHideCompletedTask(task)),
+		);
+	}
+
+	private getFoldedCompletedPrefixCount(
+		tasks: readonly ReturnType<TodoOverlay["getSnapshot"]>["tasks"][number][],
+	): number {
+		if (getCompletedTaskVisibility() !== "session") return 0;
+		const completedKey = resolveCompletedCollapseKey();
+		if (completedKey === COLLAPSE_KEY_OFF || completedKey === resolveCollapseKey()) return 0;
+		let completedPrefixCount = 0;
+		for (const task of tasks) {
+			if (task.status !== "completed") break;
+			completedPrefixCount++;
+		}
+		return Math.max(0, completedPrefixCount - getMaxVisibleCompleted());
 	}
 
 	private shouldHideCompletedTask(task: ReturnType<TodoOverlay["getSnapshot"]>["tasks"][number]): boolean {
 		return task.status === "completed" && this.hiddenCompletedTaskIds.has(task.id);
 	}
-
 	private renderWidget(theme: Theme, width: number): string[] {
 		const snapshot = this.getSnapshot();
 		const overlayTasks = this.selectOverlayTasks(snapshot);
@@ -170,8 +222,33 @@ export class TodoOverlay {
 		}
 
 		const lines: string[] = [heading];
-		// Budget for content rows (heading + tasks/summary). The rendered widget is
-		// one line taller — withTrailingSpacer() appends a blank row below the panel.
+		const completedVisibility = getCompletedTaskVisibility();
+		if (completedVisibility === "session") this.completedSessionWasActive = true;
+		if (completedVisibility === "session") {
+			// Session mode preserves the chronological list. Only an old completed prefix
+			// folds, leaving all active and pending rows individually visible even beyond
+			// the normal terminal-row budget.
+			const foldedCompletedCount = this.getFoldedCompletedPrefixCount(overlayTasks);
+			const visibleTasks = this.completedRowsExpanded ? overlayTasks : overlayTasks.slice(foldedCompletedCount);
+			if (foldedCompletedCount > 0) {
+				const icon = this.completedRowsExpanded ? "▼" : "▶";
+				const label = `${foldedCompletedCount} ${formatStatusLabel("completed")}`;
+				const key = resolveCompletedCollapseKey();
+				const detail = this.completedRowsExpanded
+					? label
+					: `${label} · ${t("overlay.expandHint", OVERLAY_EXPAND_HINT).replace("{key}", key)}`;
+				lines.push(truncate(`${theme.fg("dim", "├─")} ${theme.fg("dim", `${icon} ${detail}`)}`));
+			}
+			for (const task of visibleTasks) {
+				lines.push(truncate(`${theme.fg("dim", "├─")} ${formatOverlayTaskLine(task, theme, showIds)}`));
+			}
+			const last = lines.length - 1;
+			lines[last] = lines[last].replace("├─", "└─");
+			return this.withTrailingSpacer(lines);
+		}
+
+		// Turn mode retains the upstream compact-overlay behavior, including the
+		// terminal-height budget and next-agent-turn removal of completed rows.
 		const layout = selectOverlayLayout(overlayState, getMaxWidgetLines() - 1);
 		for (const task of layout.visible) {
 			lines.push(truncate(`${theme.fg("dim", "├─")} ${formatOverlayTaskLine(task, theme, showIds)}`));

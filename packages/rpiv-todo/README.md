@@ -51,12 +51,14 @@ by status.
 - **Tasks survive `/reload` and compaction.** Each tool call carries the full
   post-mutation snapshot, and the list is replayed from the session branch. No
   disk writes, nothing to lose.
-- **Finished work gets out of the way.** Completed rows stay visible for the rest
-  of the turn, then drop at the start of the next one; the panel disappears
-  entirely when the list empties.
-- **The overlay never eats your terminal.** Past the row budget it drops
-  completed tasks first, truncates unfinished ones last, and tells you what it
-  hid with `+3 more (2 completed, 1 pending)`.
+- **Finished work stays reviewable.** Completed rows leave at the next agent turn
+  by default. Set `completedTaskVisibility` to `"session"` to keep them in the
+  same chronological list: the newest five stay expanded and older contiguous
+  completed rows fold behind a shortcut until you choose to expand them.
+- **The overlay has a predictable compact mode.** In the default turn mode, the
+  row budget drops completed tasks first and then truncates unfinished work with
+  `+3 more (2 completed, 1 pending)`. Session mode instead keeps every active
+  and pending task visible and only folds an old completed prefix.
 - **The agent can sequence work, not just list it.** `blockedBy` dependencies are
   validated before anything is written — dangling ids, deleted dependencies,
   self-blocks, and cycles are all rejected.
@@ -74,16 +76,21 @@ Optional. Create `~/.config/rpiv-todo/config.json` (or
 ```json
 {
   "maxWidgetLines": 8,
-  "collapseKey": "alt+t"
+  "collapseKey": "alt+t",
+  "completedTaskVisibility": "session",
+  "maxVisibleCompleted": 5,
+  "completedCollapseKey": "ctrl+shift+c"
 }
 ```
 
 | Setting | What it does | Default |
 | --- | --- | --- |
-| `maxWidgetLines` | Content rows the overlay may use, heading included. Minimum `3`. Applies on the next repaint. | `12` |
-| `collapseKey` | Key that collapses and expands the panel, in Pi keybinding form (`alt+o`, `ctrl+shift+t`). Set `"off"` to register no shortcut. Needs `/reload` to rebind. | `"ctrl+shift+t"` |
+| `maxWidgetLines` | Content rows the overlay may use in the default `"turn"` mode, heading included. Minimum `3`. Applies on the next repaint. | `12` |
+| `collapseKey` | Key that collapses and expands the whole panel, in Pi keybinding form (`alt+o`, `ctrl+shift+t`). Set `"off"` to register no shortcut. Needs `/reload` to rebind. | `"ctrl+shift+t"` |
+| `completedTaskVisibility` | `"turn"` removes displayed completed rows at the next agent turn; `"session"` retains them in the chronological list. Applies on the next agent turn. | `"turn"` |
+| `maxVisibleCompleted` | In session mode, number of newest contiguous completed rows left expanded before older rows fold. | `5` |
+| `completedCollapseKey` | Key that expands or folds the old completed prefix in session mode. Set `"off"` to keep every completed row expanded. Needs `/reload` to rebind. | `"ctrl+shift+c"` |
 | `guidance` | Replaces the built-in instructions the extension gives the model about when and how to use the todo list. Needs `/reload`. | _(built-ins)_ |
-
 A missing or malformed file falls back to these defaults. `rpiv-todo` only reads
 this file — it never writes one. Full semantics:
 [Configuration](https://github.com/juicesharp/rpiv-mono/blob/main/packages/rpiv-todo/docs/configuration.md).

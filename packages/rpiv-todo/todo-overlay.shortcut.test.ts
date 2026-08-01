@@ -54,6 +54,13 @@ describe("rpiv-todo — collapse/expand shortcut registration", () => {
 		expect(shortcut?.description).toContain("Collapse");
 	});
 
+	it("registers the default completed-row shortcut separately", () => {
+		const { captured } = setup();
+		const shortcut = captured.shortcuts.get("ctrl+shift+c");
+		expect(shortcut).toBeDefined();
+		expect(shortcut?.description).toContain("completed");
+	});
+
 	it("handler is a no-op in headless mode (!ctx.hasUI)", async () => {
 		const { captured, sessionStart, toolEnd, tool } = setup();
 		const ctx = createMockCtx({ sessionId: "s1", hasUI: true });
@@ -133,6 +140,45 @@ describe("rpiv-todo — collapse/expand shortcut registration", () => {
 		await captured.shortcuts.get("ctrl+shift+t")?.handler?.(ctx as never);
 		expect(widget.render(200).some((l) => l.includes("ctrl+shift+t to expand"))).toBe(false);
 	});
+
+	it("completed-row handler expands a folded prefix without collapsing the whole overlay", async () => {
+		writeConfigFile(JSON.stringify({ completedTaskVisibility: "session", maxVisibleCompleted: 0 }));
+		const { captured, sessionStart, toolEnd, tool } = setup();
+		const ctx = createMockCtx({ sessionId: "s1", hasUI: true });
+		await sessionStart?.({} as never, ctx as never);
+		await tool.execute?.(
+			"tc",
+			{ action: "create", subject: "done" } as never,
+			undefined as never,
+			undefined as never,
+			ctx as never,
+		);
+		await toolEnd?.({ toolName: "todo", isError: false });
+		await tool.execute?.(
+			"tc",
+			{ action: "update", id: 1, status: "completed" } as never,
+			undefined as never,
+			undefined as never,
+			ctx as never,
+		);
+		await toolEnd?.({ toolName: "todo", isError: false });
+		const setWidget = ctx.ui.setWidget as ReturnType<typeof vi.fn>;
+		const factory = setWidget.mock.calls[0][1] as (
+			tui: { requestRender: (...args: unknown[]) => void },
+			theme: { fg: (c: string, s: string) => string },
+		) => { render: (w: number) => string[]; invalidate: () => void };
+		const requestRender = vi.fn();
+		const widget = factory({ requestRender }, {
+			fg: (_c: string, s: string) => s,
+			strikethrough: (s: string) => s,
+		} as { fg: (c: string, s: string) => string; strikethrough: (s: string) => string });
+		expect(widget.render(200).join("\n")).toContain("▶ 1 completed");
+		await captured.shortcuts.get("ctrl+shift+c")?.handler?.(ctx as never);
+		expect(requestRender).toHaveBeenCalledWith(true);
+		const expanded = widget.render(200).join("\n");
+		expect(expanded).toContain("▼ 1 completed");
+		expect(expanded).toContain("done");
+	});
 });
 
 describe("rpiv-todo — collapse/expand shortcut config resolution", () => {
@@ -146,10 +192,18 @@ describe("rpiv-todo — collapse/expand shortcut config resolution", () => {
 		expect(captured.shortcuts.has("ctrl+shift+t")).toBe(false);
 	});
 
-	it("skips registerShortcut entirely when collapseKey is 'off'", () => {
+	it("keeps the completed-row shortcut when the whole-overlay shortcut is off", () => {
 		writeConfigFile(JSON.stringify({ collapseKey: "off" }));
 		const { captured } = setup();
-		expect(captured.shortcuts.size).toBe(0);
+		expect(captured.shortcuts.has("ctrl+shift+t")).toBe(false);
+		expect(captured.shortcuts.has("ctrl+shift+c")).toBe(true);
+	});
+
+	it("skips only the completed-row shortcut when it is off", () => {
+		writeConfigFile(JSON.stringify({ completedCollapseKey: "off" }));
+		const { captured } = setup();
+		expect(captured.shortcuts.has("ctrl+shift+t")).toBe(true);
+		expect(captured.shortcuts.has("ctrl+shift+c")).toBe(false);
 	});
 
 	it("falls back to the default key when collapseKey is invalid", () => {
@@ -161,5 +215,14 @@ describe("rpiv-todo — collapse/expand shortcut config resolution", () => {
 	it("default config registers the default key (ctrl+shift+t)", () => {
 		const { captured } = setup();
 		expect(captured.shortcuts.has("ctrl+shift+t")).toBe(true);
+	});
+
+	it("warns and leaves completed rows expanded when both controls use the same key", () => {
+		writeConfigFile(JSON.stringify({ collapseKey: "ctrl+shift+c" }));
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+		const { captured } = setup();
+		expect(captured.shortcuts.size).toBe(1);
+		expect(captured.shortcuts.has("ctrl+shift+c")).toBe(true);
+		expect(warn).toHaveBeenCalledWith(expect.stringContaining("completedCollapseKey matches collapseKey"));
 	});
 });

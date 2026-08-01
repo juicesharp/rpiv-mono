@@ -7,6 +7,12 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- `completedTaskVisibility: "session"` retains completed tasks in the chronological overlay list across agent turns.
+- Session mode folds an old contiguous completed prefix after `maxVisibleCompleted` rows (default `5`) and exposes it through `completedCollapseKey` (default `ctrl+shift+c`). Pending and in-progress rows remain individually visible.
+
+### Changed
+- The default `completedTaskVisibility: "turn"` behavior remains unchanged.
 ## [2.3.1] - 2026-07-31
 
 ## [2.3.0] - 2026-07-31
