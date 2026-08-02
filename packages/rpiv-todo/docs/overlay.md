@@ -51,38 +51,62 @@ Rows longer than the terminal width are truncated with `…`.
 
 ## Overflow
 
-The content-row budget is `maxWidgetLines` (default `12`), and the heading counts
-against it. When there are more tasks than fit:
+In the default `"turn"` policy, the content-row budget is `maxWidgetLines`
+(default `12`), and the heading counts against it. When there are more tasks
+than fit, completed tasks are dropped first; if unfinished tasks still overflow,
+the tail is truncated and the last row becomes `+N more (X completed, Y pending)`.
 
-1. one row is reserved for the summary line;
-2. completed tasks are dropped first, newest first — the oldest completed rows
-   are the last completed rows to go;
-3. if the unfinished tasks alone still overflow, the tail of that list is
-   truncated;
-4. the last row becomes `+N more (X completed, Y pending)`.
+Session mode retains the complete task state but offers two projections:
 
-Unfinished work is therefore the last thing to disappear. See
-[configuration.md](./configuration.md#maxwidgetlines) for the budget's floor and
-reload semantics.
+- `"priority"` is the default Claude-like projection. On a terminal taller than
+  10 rows it derives a three-to-five task budget. When all tasks fit, it keeps
+  original order; on overflow it shows recently completed tasks, in-progress
+  tasks, unblocked pending tasks, blocked pending tasks, and older completed
+  tasks in that order. Hidden rows become one `… +N` row with status counts. At
+  10 rows or fewer it renders only the heading and that summary.
+- `"chronological"` preserves original task order, shows every pending and
+  in-progress task, and folds only an old contiguous completed prefix after
+  `maxVisibleCompleted` rows. Its expanded completed group can grow the widget.
 
-## Completed tasks fading out
+See [configuration.md](./configuration.md#completedtaskpresentation) for the
+two session-mode policies.
 
-A completed task stays on screen for the remainder of the turn in which it was
-completed. At the start of the next agent turn, every completed row that has
-already been displayed is hidden from later renders. Reloading or compacting the
-session resets that tracking, so a fresh session shows the full list again.
+## Completed tasks
 
+With the default `completedTaskVisibility: "turn"`, a completed task stays on
+screen for the remainder of the turn in which it completed. At the start of the
+next agent turn, every completed row that has been displayed is hidden from
+later renders. Reloading or compacting resets that tracking, so a fresh session
+shows the full list again.
+
+With `completedTaskVisibility: "session"`, tasks remain in canonical session
+state across turns. The default `"priority"` view preserves original order while
+everything fits, then keeps the terminal focused on current work with `… +N`
+when it does not. Select `"chronological"` when the original execution order
+must stay visible even for long lists:
+
+```text
+● Todos (6/7)
+├─ ▶ 1 completed · ctrl+shift+c to expand
+├─ ✓ Most recent completed task
+├─ ◐ Current task
+└─ ○ Next task
+```
+
+In chronological mode, `completedCollapseKey` expands the folded rows in place,
+then folds them again. A completed task behind any pending or in-progress task
+retains its original position and is never moved into that fold. Priority mode
+does not register a completed-row shortcut; use `/todos` for the unbounded list.
 ## Collapsing
 
-Press `ctrl+shift+t` to collapse the panel to two lines — the heading plus a dim
-`└─ ctrl+shift+t to expand` hint — and again to expand it. The hint always shows
-the currently configured key.
+Press `ctrl+shift+t` to collapse the whole panel to two lines — the heading plus
+a dim `└─ ctrl+shift+t to expand` hint — and again to expand it. The hint always
+shows the currently configured `collapseKey`. This works independently of both
+session presentations.
 
-Rebind or disable the shortcut with the `collapseKey` option; see
-[configuration.md](./configuration.md#collapsekey). If the shortcut is set to
-`"off"` while the panel is collapsed, the hint becomes a static `collapsed`
-label rather than advertising an unbindable key.
-
+The separate `completedCollapseKey` applies only to chronological session mode.
+If both keys resolve to the same value, the whole-panel key wins and completed
+rows stay expanded.
 ## `/todos`
 
 `/todos` prints the whole list grouped by status, independent of the overlay's

@@ -14,9 +14,23 @@
 
 import type { ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
 import { type TUI, truncateToWidth } from "@earendil-works/pi-tui";
-import { COLLAPSE_KEY_OFF, getMaxWidgetLines, resolveCollapseKey } from "./config.js";
+import {
+	COLLAPSE_KEY_OFF,
+	getCompletedTaskPresentation,
+	getCompletedTaskVisibility,
+	getMaxVisibleCompleted,
+	getMaxWidgetLines,
+	resolveCollapseKey,
+	resolveCompletedCollapseKey,
+} from "./config.js";
 import { formatStatusLabel, t } from "./state/i18n-bridge.js";
-import { selectHasActive, selectOverlayLayout, selectShowTaskIds, selectTodoCounts } from "./state/selectors.js";
+import {
+	selectHasActive,
+	selectOverlayLayout,
+	selectPriorityOverlayLayout,
+	selectShowTaskIds,
+	selectTodoCounts,
+} from "./state/selectors.js";
 import { getRenderState } from "./state/store.js";
 import { formatOverlayTaskLine } from "./view/format.js";
 
@@ -27,6 +41,7 @@ const OVERLAY_HEADING = "Todos";
 const OVERLAY_MORE = "more";
 const OVERLAY_EXPAND_HINT = "{key} to expand";
 const OVERLAY_COLLAPSED = "collapsed";
+const RECENT_COMPLETION_WINDOW_MS = 5_000;
 
 export class TodoOverlay {
 	private uiCtx: ExtensionUIContext | undefined;
@@ -34,8 +49,21 @@ export class TodoOverlay {
 	private tui: TUI | undefined;
 	private completedTaskIdsPendingHide = new Set<number>();
 	private hiddenCompletedTaskIds = new Set<number>();
+	private completedRowsExpanded = false;
+	// Standalone overlay tests do not exercise extension shortcut registration; the
+	// extension explicitly disables this when session folding is not bound.
+	private completedRowsShortcutEnabled = true;
+	private completedSessionWasActive = false;
+	private observedTaskStatuses = new Map<number, string>();
+	private recentCompletedAt = new Map<number, number>();
+	private recentCompletionTimer: ReturnType<typeof setTimeout> | undefined;
 	private lastNextId: number | undefined;
 	private collapsed = false;
+
+	setCompletedRowsShortcutEnabled(enabled: boolean): void {
+		this.completedRowsShortcutEnabled = enabled;
+		if (!enabled) this.completedRowsExpanded = false;
+	}
 
 	setUICtx(ctx: ExtensionUIContext): void {
 		// Identity-compare so repeat session_start handlers are idempotent;
@@ -85,10 +113,36 @@ export class TodoOverlay {
 	resetCompletedDisplayState(): void {
 		this.completedTaskIdsPendingHide.clear();
 		this.hiddenCompletedTaskIds.clear();
+		this.completedRowsExpanded = false;
+		this.completedSessionWasActive = false;
+		this.observedTaskStatuses.clear();
+		this.recentCompletedAt.clear();
+		if (this.recentCompletionTimer) clearTimeout(this.recentCompletionTimer);
+		this.recentCompletionTimer = undefined;
 		this.lastNextId = undefined;
 	}
 
 	hideCompletedTasksFromPreviousTurn(): void {
+		if (getCompletedTaskVisibility() === "session") {
+			// Session mode keeps completed rows available. Clear only stale state from a
+			// preceding turn-mode render without collapsing a user-expanded fold.
+			this.completedTaskIdsPendingHide.clear();
+			this.hiddenCompletedTaskIds.clear();
+			this.completedSessionWasActive = true;
+			this.tui?.requestRender();
+			return;
+		}
+		if (this.completedSessionWasActive) {
+			// A policy change is applied on this turn boundary: rows retained under
+			// session mode now become subject to the compact turn-mode behavior.
+			for (const task of this.getSnapshot().tasks) {
+				if (task.status === "completed") this.hiddenCompletedTaskIds.add(task.id);
+			}
+			this.completedRowsExpanded = false;
+			this.completedSessionWasActive = false;
+			this.tui?.requestRender();
+			return;
+		}
 		if (this.completedTaskIdsPendingHide.size === 0) return;
 		for (const taskId of this.completedTaskIdsPendingHide) {
 			this.hiddenCompletedTaskIds.add(taskId);
@@ -96,12 +150,18 @@ export class TodoOverlay {
 		this.completedTaskIdsPendingHide.clear();
 		this.tui?.requestRender();
 	}
-
 	toggleCollapse(): void {
 		this.collapsed = !this.collapsed;
 		// Forced full redraw on the collapsed↔expanded height step, mirroring the
 		// lane-dock's requestRender(shapeChanged); distinct from the non-forced
 		// requestRender() refresh paths in update()/hideCompletedTasksFromPreviousTurn().
+		this.tui?.requestRender(true);
+	}
+
+	toggleCompletedRows(): void {
+		const snapshot = this.getSnapshot();
+		if (this.getFoldedCompletedPrefixCount(this.selectOverlayTasks(snapshot)) === 0) return;
+		this.completedRowsExpanded = !this.completedRowsExpanded;
 		this.tui?.requestRender(true);
 	}
 
@@ -115,6 +175,7 @@ export class TodoOverlay {
 			this.resetCompletedDisplayState();
 		}
 		this.lastNextId = state.nextId;
+		this.observeTaskStatusTransitions(state.tasks);
 		const completedTaskIds = new Set(
 			state.tasks.filter((task) => task.status === "completed").map((task) => task.id),
 		);
@@ -127,14 +188,82 @@ export class TodoOverlay {
 		return { tasks: [...state.tasks], nextId: state.nextId };
 	}
 
+	private observeTaskStatusTransitions(
+		tasks: readonly ReturnType<TodoOverlay["getSnapshot"]>["tasks"][number][],
+	): void {
+		const now = Date.now();
+		const currentStatuses = new Map<number, string>();
+		for (const task of tasks) {
+			currentStatuses.set(task.id, task.status);
+			const previousStatus = this.observedTaskStatuses.get(task.id);
+			if (previousStatus !== undefined && previousStatus !== "completed" && task.status === "completed") {
+				this.recentCompletedAt.set(task.id, now);
+			} else if (task.status !== "completed") {
+				this.recentCompletedAt.delete(task.id);
+			}
+		}
+		for (const taskId of this.recentCompletedAt.keys()) {
+			if (!currentStatuses.has(taskId)) this.recentCompletedAt.delete(taskId);
+		}
+		this.observedTaskStatuses = currentStatuses;
+		for (const [taskId, completedAt] of this.recentCompletedAt) {
+			if (now - completedAt >= RECENT_COMPLETION_WINDOW_MS) this.recentCompletedAt.delete(taskId);
+		}
+		this.scheduleRecentCompletionRender();
+	}
+
+	private scheduleRecentCompletionRender(): void {
+		if (this.recentCompletionTimer) clearTimeout(this.recentCompletionTimer);
+		this.recentCompletionTimer = undefined;
+		if (getCompletedTaskVisibility() !== "session" || getCompletedTaskPresentation() !== "priority") return;
+		const now = Date.now();
+		let nextExpiry = Number.POSITIVE_INFINITY;
+		for (const completedAt of this.recentCompletedAt.values()) {
+			nextExpiry = Math.min(nextExpiry, completedAt + RECENT_COMPLETION_WINDOW_MS);
+		}
+		if (!Number.isFinite(nextExpiry)) return;
+		const timer = setTimeout(() => this.tui?.requestRender(true), Math.max(1, nextExpiry - now));
+		timer.unref?.();
+		this.recentCompletionTimer = timer;
+	}
+
+	private getRecentCompletedTaskIds(): ReadonlySet<number> {
+		return new Set(this.recentCompletedAt.keys());
+	}
+
+	private getPriorityTaskBudget(): number {
+		const terminalRows = this.tui?.terminal?.rows;
+		if (typeof terminalRows === "number") {
+			return terminalRows <= 10 ? 0 : Math.min(5, Math.max(3, terminalRows - 14));
+		}
+		return Math.min(5, Math.max(3, getMaxWidgetLines() - 1));
+	}
+
 	private selectOverlayTasks(snapshot: ReturnType<TodoOverlay["getSnapshot"]>) {
-		return snapshot.tasks.filter((task) => task.status !== "deleted" && !this.shouldHideCompletedTask(task));
+		const visibility = getCompletedTaskVisibility();
+		return snapshot.tasks.filter(
+			(task) => task.status !== "deleted" && (visibility === "session" || !this.shouldHideCompletedTask(task)),
+		);
+	}
+
+	private getFoldedCompletedPrefixCount(
+		tasks: readonly ReturnType<TodoOverlay["getSnapshot"]>["tasks"][number][],
+	): number {
+		if (getCompletedTaskVisibility() !== "session") return 0;
+		if (getCompletedTaskPresentation() !== "chronological" || !this.completedRowsShortcutEnabled) return 0;
+		const completedKey = resolveCompletedCollapseKey();
+		if (completedKey === COLLAPSE_KEY_OFF || completedKey === resolveCollapseKey()) return 0;
+		let completedPrefixCount = 0;
+		for (const task of tasks) {
+			if (task.status !== "completed") break;
+			completedPrefixCount++;
+		}
+		return Math.max(0, completedPrefixCount - getMaxVisibleCompleted());
 	}
 
 	private shouldHideCompletedTask(task: ReturnType<TodoOverlay["getSnapshot"]>["tasks"][number]): boolean {
 		return task.status === "completed" && this.hiddenCompletedTaskIds.has(task.id);
 	}
-
 	private renderWidget(theme: Theme, width: number): string[] {
 		const snapshot = this.getSnapshot();
 		const overlayTasks = this.selectOverlayTasks(snapshot);
@@ -170,8 +299,61 @@ export class TodoOverlay {
 		}
 
 		const lines: string[] = [heading];
-		// Budget for content rows (heading + tasks/summary). The rendered widget is
-		// one line taller — withTrailingSpacer() appends a blank row below the panel.
+		const completedVisibility = getCompletedTaskVisibility();
+		if (completedVisibility === "session") this.completedSessionWasActive = true;
+		if (completedVisibility === "session") {
+			if (getCompletedTaskPresentation() === "chronological") {
+				// Preserve chronological order and fold only an old completed prefix.
+				const foldedCompletedCount = this.getFoldedCompletedPrefixCount(overlayTasks);
+				const visibleTasks = this.completedRowsExpanded ? overlayTasks : overlayTasks.slice(foldedCompletedCount);
+				if (foldedCompletedCount > 0) {
+					const icon = this.completedRowsExpanded ? "▼" : "▶";
+					const label = `${foldedCompletedCount} ${formatStatusLabel("completed")}`;
+					const key = resolveCompletedCollapseKey();
+					const detail = this.completedRowsExpanded
+						? label
+						: `${label} · ${t("overlay.expandHint", OVERLAY_EXPAND_HINT).replace("{key}", key)}`;
+					lines.push(truncate(`${theme.fg("dim", "├─")} ${theme.fg("dim", `${icon} ${detail}`)}`));
+				}
+				for (const task of visibleTasks) {
+					lines.push(truncate(`${theme.fg("dim", "├─")} ${formatOverlayTaskLine(task, theme, showIds)}`));
+				}
+				const last = lines.length - 1;
+				lines[last] = lines[last].replace("├─", "└─");
+				return this.withTrailingSpacer(lines);
+			}
+
+			// Claude-like projection keeps the session state intact. It preserves order
+			// when everything fits; on overflow it prioritizes recent completion,
+			// in-progress work, ready pending, blocked pending, then older completion.
+			const priorityLayout = selectPriorityOverlayLayout(
+				overlayState,
+				this.getPriorityTaskBudget(),
+				this.getRecentCompletedTaskIds(),
+			);
+			for (const task of priorityLayout.visible) {
+				lines.push(truncate(`${theme.fg("dim", "├─")} ${formatOverlayTaskLine(task, theme, showIds)}`));
+			}
+			if (priorityLayout.hiddenTotal > 0) {
+				const hiddenParts: string[] = [];
+				if (priorityLayout.hiddenInProgress > 0) {
+					hiddenParts.push(`${priorityLayout.hiddenInProgress} ${formatStatusLabel("in_progress")}`);
+				}
+				if (priorityLayout.hiddenPending > 0) {
+					hiddenParts.push(`${priorityLayout.hiddenPending} ${formatStatusLabel("pending")}`);
+				}
+				if (priorityLayout.hiddenCompleted > 0) {
+					hiddenParts.push(`${priorityLayout.hiddenCompleted} ${formatStatusLabel("completed")}`);
+				}
+				lines.push(truncate(`${theme.fg("dim", "├─")} ${theme.fg("dim", `… +${hiddenParts.join(", ")}`)}`));
+			}
+			const last = lines.length - 1;
+			lines[last] = lines[last].replace("├─", "└─");
+			return this.withTrailingSpacer(lines);
+		}
+
+		// Turn mode retains the upstream compact-overlay behavior, including the
+		// terminal-height budget and next-agent-turn removal of completed rows.
 		const layout = selectOverlayLayout(overlayState, getMaxWidgetLines() - 1);
 		for (const task of layout.visible) {
 			lines.push(truncate(`${theme.fg("dim", "├─")} ${formatOverlayTaskLine(task, theme, showIds)}`));

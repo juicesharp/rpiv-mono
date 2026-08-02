@@ -21,7 +21,13 @@
 
 import type { ExtensionAPI, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import type { KeyId } from "@earendil-works/pi-tui";
-import { COLLAPSE_KEY_OFF, resolveCollapseKey } from "./config.js";
+import {
+	COLLAPSE_KEY_OFF,
+	getCompletedTaskPresentation,
+	getCompletedTaskVisibility,
+	resolveCollapseKey,
+	resolveCompletedCollapseKey,
+} from "./config.js";
 import { I18N_NAMESPACE } from "./state/i18n-bridge.js";
 import { replayFromBranch } from "./state/replay.js";
 import {
@@ -142,6 +148,7 @@ export default function (pi: ExtensionAPI, importOverlay: TodoOverlayImporter = 
 		if (generation !== lifecycleGeneration || !uiCtx) return;
 
 		todoOverlay ??= new TodoOverlay();
+		todoOverlay.setCompletedRowsShortcutEnabled?.(completedRowsShortcutEnabled);
 		todoOverlay.setUICtx(uiCtx);
 		if (resetCompletedDisplayState) todoOverlay.resetCompletedDisplayState();
 		todoOverlay.update();
@@ -150,14 +157,9 @@ export default function (pi: ExtensionAPI, importOverlay: TodoOverlayImporter = 
 	registerTodoTool(pi);
 	registerTodosCommand(pi);
 
-	// Collapse/expand hotkey for the todo overlay. The key is resolved once at
-	// factory scope from config (register-once contract: a config change needs
-	// `/reload` to re-bind, same as lane-switcher's env hotkey) and the binding is
-	// skipped entirely when collapseKey is "off". The handler closes over the
-	// closure-local `todoOverlay` by reference and re-reads it at fire time, so an
-	// overlay loaded after shortcut registration is picked up. No-op in headless
-	// mode, before the overlay has loaded, or when the widget isn't currently
-	// registered (auto-hidden on an empty list).
+	// Collapse/expand hotkeys resolve once at factory scope: `/reload` is required
+	// after a config edit to rebind either key. The completed-row control is kept
+	// separate so it never changes the existing whole-overlay collapse behavior.
 	const collapseKey = resolveCollapseKey();
 	if (collapseKey !== COLLAPSE_KEY_OFF) {
 		pi.registerShortcut(collapseKey as KeyId, {
@@ -169,6 +171,30 @@ export default function (pi: ExtensionAPI, importOverlay: TodoOverlayImporter = 
 		});
 	}
 
+	const completedCollapseKey = resolveCompletedCollapseKey();
+	const sessionVisibilityEnabled = getCompletedTaskVisibility() === "session";
+	const chronologicalPresentationEnabled = getCompletedTaskPresentation() === "chronological";
+	const completedRowsShortcutEnabled =
+		sessionVisibilityEnabled &&
+		chronologicalPresentationEnabled &&
+		completedCollapseKey !== COLLAPSE_KEY_OFF &&
+		completedCollapseKey !== collapseKey;
+	if (completedRowsShortcutEnabled) {
+		pi.registerShortcut(completedCollapseKey as KeyId, {
+			description: "Expand or collapse older completed todos",
+			handler: (ctx) => {
+				if (!ctx.hasUI || !todoOverlay?.isRegistered()) return;
+				todoOverlay.toggleCompletedRows();
+			},
+		});
+	} else if (
+		sessionVisibilityEnabled &&
+		chronologicalPresentationEnabled &&
+		completedCollapseKey !== COLLAPSE_KEY_OFF &&
+		completedCollapseKey === collapseKey
+	) {
+		console.warn("[rpiv-todo] completedCollapseKey matches collapseKey; older completed todos will remain expanded");
+	}
 	// Re-key a session's slot from its branch, then refresh the overlay only when
 	// the refreshed session IS the foreground. Shared by session_compact and
 	// session_tree (verbatim-identical pre-extraction). A stale ctx (auto-compaction

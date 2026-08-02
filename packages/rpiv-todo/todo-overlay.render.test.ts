@@ -23,7 +23,7 @@ const identityTheme = {
 	strikethrough: (s: string) => s,
 };
 
-async function setup(actions: Array<{ action: TaskAction; [k: string]: unknown }>) {
+async function setup(actions: Array<{ action: TaskAction; [k: string]: unknown }>, terminalRows = 24) {
 	__resetState();
 	setActiveRenderSession("test-session");
 	const { pi, captured } = createMockPi();
@@ -42,8 +42,9 @@ async function setup(actions: Array<{ action: TaskAction; [k: string]: unknown }
 		tui: { requestRender: () => void },
 		theme: typeof identityTheme,
 	) => { render: (w: number) => string[]; invalidate: () => void };
-	const widget = factory({ requestRender: vi.fn() }, identityTheme);
-	return { widget, tool, ui, overlay };
+	const tui = { requestRender: vi.fn(), terminal: { rows: terminalRows } };
+	const widget = factory(tui, identityTheme);
+	return { widget, tool, ui, overlay, tui };
 }
 
 beforeEach(() => {
@@ -137,6 +138,267 @@ describe("TodoOverlay — per-task formatting", () => {
 		expect(widget.render(200)[1]).toContain("done");
 		overlay.hideCompletedTasksFromPreviousTurn();
 		expect(widget.render(200)).toEqual([]);
+	});
+
+	it("keeps completed rows and counts visible across agent turns in session mode", async () => {
+		writeConfigFile(JSON.stringify({ completedTaskVisibility: "session" }));
+		const { widget, overlay } = await setup([
+			{ action: "create", subject: "done" },
+			{ action: "update", id: 1, status: "completed" },
+			{ action: "create", subject: "next" },
+		]);
+		expect(widget.render(200).join("\n")).toContain("Todos (1/2)");
+		overlay.hideCompletedTasksFromPreviousTurn();
+		const nextTurn = widget.render(200).join("\n");
+		expect(nextTurn).toContain("Todos (1/2)");
+		expect(nextTurn).toContain("done");
+		expect(nextTurn).toContain("next");
+	});
+
+	it("applies a session-to-turn policy change at the next agent turn", async () => {
+		writeConfigFile(JSON.stringify({ completedTaskVisibility: "session" }));
+		const { widget, overlay } = await setup([
+			{ action: "create", subject: "done" },
+			{ action: "update", id: 1, status: "completed" },
+			{ action: "create", subject: "next" },
+		]);
+		// Rendering in session mode marks the retained rows. The following agent turn
+		// must apply a switch back to turn mode immediately, not one turn later.
+		expect(widget.render(200).join("\n")).toContain("Todos (1/2)");
+		writeConfigFile(JSON.stringify({ completedTaskVisibility: "turn" }));
+		overlay.hideCompletedTasksFromPreviousTurn();
+		const nextTurn = widget.render(200).join("\n");
+		expect(nextTurn).toContain("Todos (0/1)");
+		expect(nextTurn).not.toContain("done");
+		expect(nextTurn).toContain("next");
+	});
+});
+
+describe("TodoOverlay — session completed-row folding", () => {
+	it("folds only the oldest completed prefix, retains the newest five rows, and expands in place", async () => {
+		writeConfigFile(
+			JSON.stringify({
+				completedTaskVisibility: "session",
+				completedTaskPresentation: "chronological",
+				maxVisibleCompleted: 5,
+			}),
+		);
+		const actions: Array<{ action: TaskAction; [k: string]: unknown }> = [];
+		for (let i = 1; i <= 7; i++) actions.push({ action: "create", subject: `task-${i}` });
+		for (let i = 1; i <= 6; i++) actions.push({ action: "update", id: i, status: "completed" });
+		const { widget, overlay } = await setup(actions);
+		const folded = widget.render(200).join("\n");
+		expect(folded).toContain("Todos (6/7)");
+		expect(folded).toContain("▶ 1 completed");
+		expect(folded).toContain("ctrl+shift+c to expand");
+		expect(folded).not.toContain("task-1");
+		for (let i = 2; i <= 7; i++) expect(folded).toContain(`task-${i}`);
+		expect(folded.indexOf("▶ 1 completed")).toBeLessThan(folded.indexOf("task-2"));
+		overlay.toggleCompletedRows();
+		const expanded = widget.render(200).join("\n");
+		expect(expanded).toContain("▼ 1 completed");
+		expect(expanded).toContain("task-1");
+		expect(expanded.indexOf("task-1")).toBeLessThan(expanded.indexOf("task-2"));
+		overlay.toggleCompletedRows();
+		expect(widget.render(200).join("\n")).not.toContain("task-1");
+	});
+
+	it("keeps all active and pending rows visible beyond maxWidgetLines", async () => {
+		writeConfigFile(
+			JSON.stringify({
+				completedTaskVisibility: "session",
+				completedTaskPresentation: "chronological",
+				maxWidgetLines: 3,
+			}),
+		);
+		const actions: Array<{ action: TaskAction; [k: string]: unknown }> = [];
+		for (let i = 1; i <= 8; i++) actions.push({ action: "create", subject: `open-${i}` });
+		const { widget } = await setup(actions);
+		const lines = widget.render(200);
+		for (let i = 1; i <= 8; i++) expect(lines.join("\n")).toContain(`open-${i}`);
+		expect(lines).toHaveLength(10); // heading + 8 tasks + trailing spacer
+		expect(lines.join("\n")).not.toContain("+5 more");
+	});
+
+	it("does not reorder or fold completed rows behind an unfinished task", async () => {
+		writeConfigFile(
+			JSON.stringify({
+				completedTaskVisibility: "session",
+				completedTaskPresentation: "chronological",
+				maxVisibleCompleted: 5,
+			}),
+		);
+		const actions: Array<{ action: TaskAction; [k: string]: unknown }> = [];
+		for (let i = 1; i <= 8; i++) actions.push({ action: "create", subject: `task-${i}` });
+		actions.push({ action: "update", id: 1, status: "completed" });
+		for (let i = 3; i <= 8; i++) actions.push({ action: "update", id: i, status: "completed" });
+		const { widget } = await setup(actions);
+		const output = widget.render(200).join("\n");
+		expect(output).not.toContain("▶");
+		for (const i of [1, 3, 4, 5, 6, 7, 8]) expect(output).toContain(`task-${i}`);
+		expect(output.indexOf("task-1")).toBeLessThan(output.indexOf("task-2"));
+		expect(output.indexOf("task-2")).toBeLessThan(output.indexOf("task-3"));
+	});
+
+	it("keeps all completed rows expanded when the completed-row shortcut is off", async () => {
+		writeConfigFile(
+			JSON.stringify({
+				completedTaskVisibility: "session",
+				completedTaskPresentation: "chronological",
+				maxVisibleCompleted: 0,
+				completedCollapseKey: "off",
+			}),
+		);
+		const { widget } = await setup([
+			{ action: "create", subject: "done" },
+			{ action: "update", id: 1, status: "completed" },
+		]);
+		const output = widget.render(200).join("\n");
+		expect(output).toContain("done");
+		expect(output).not.toContain("▶");
+	});
+
+	it("keeps completed rows expanded until the session shortcut has been bound", async () => {
+		writeConfigFile(
+			JSON.stringify({
+				completedTaskVisibility: "session",
+				completedTaskPresentation: "chronological",
+				maxVisibleCompleted: 0,
+			}),
+		);
+		const { widget, overlay } = await setup([
+			{ action: "create", subject: "done" },
+			{ action: "update", id: 1, status: "completed" },
+		]);
+		overlay.setCompletedRowsShortcutEnabled(false);
+		const output = widget.render(200).join("\n");
+		expect(output).toContain("done");
+		expect(output).not.toContain("▶");
+	});
+
+	it("keeps completed rows expanded when the completed-row key collides with the whole-panel key", async () => {
+		writeConfigFile(
+			JSON.stringify({
+				completedTaskVisibility: "session",
+				completedTaskPresentation: "chronological",
+				maxVisibleCompleted: 0,
+				collapseKey: "ctrl+shift+c",
+			}),
+		);
+		const { widget } = await setup([
+			{ action: "create", subject: "done" },
+			{ action: "update", id: 1, status: "completed" },
+		]);
+		const output = widget.render(200).join("\n");
+		expect(output).toContain("done");
+		expect(output).not.toContain("▶");
+	});
+});
+
+describe("TodoOverlay — session priority presentation", () => {
+	it("uses Claude-like priority order and a status-counted overflow summary by default", async () => {
+		writeConfigFile(JSON.stringify({ completedTaskVisibility: "session" }));
+		const { widget } = await setup(
+			[
+				{ action: "create", subject: "old-completed" },
+				{ action: "update", id: 1, status: "completed" },
+				{ action: "create", subject: "in-progress" },
+				{ action: "update", id: 2, status: "in_progress" },
+				{ action: "create", subject: "ready" },
+				{ action: "create", subject: "blocked", blockedBy: [3] },
+				{ action: "create", subject: "other-completed" },
+				{ action: "update", id: 5, status: "completed" },
+			],
+			16,
+		);
+		const output = widget.render(200).join("\n");
+		expect(output).toContain("Todos (2/5)");
+		expect(output.indexOf("in-progress")).toBeLessThan(output.indexOf("ready"));
+		expect(output.indexOf("ready")).toBeLessThan(output.indexOf("blocked"));
+		expect(output).not.toContain("old-completed");
+		expect(output).not.toContain("other-completed");
+		expect(output).toContain("… +2 completed");
+	});
+
+	it("returns an expired recent completion to the older-completed overflow group", async () => {
+		vi.useFakeTimers();
+		try {
+			writeConfigFile(JSON.stringify({ completedTaskVisibility: "session" }));
+			const { widget, tool, tui } = await setup(
+				[
+					{ action: "create", subject: "old-completed" },
+					{ action: "update", id: 1, status: "completed" },
+					{ action: "create", subject: "in-progress" },
+					{ action: "update", id: 2, status: "in_progress" },
+					{ action: "create", subject: "newly-completed" },
+					{ action: "create", subject: "ready" },
+				],
+				16,
+			);
+			widget.render(200); // establish the pre-completion snapshot
+			await tool.execute?.(
+				"tc",
+				{ action: "update", id: 3, status: "completed" } as never,
+				undefined as never,
+				undefined as never,
+				createMockCtx() as never,
+			);
+			let output = widget.render(200).join("\n");
+			expect(output.indexOf("newly-completed")).toBeLessThan(output.indexOf("in-progress"));
+			await vi.advanceTimersByTimeAsync(5_000);
+			expect(tui.requestRender).toHaveBeenCalledWith(true);
+			output = widget.render(200).join("\n");
+			expect(output.indexOf("in-progress")).toBeLessThan(output.indexOf("ready"));
+			expect(output).not.toContain("newly-completed");
+			expect(output).toContain("… +1 completed");
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("keeps original task order when the complete priority list fits the terminal budget", async () => {
+		writeConfigFile(JSON.stringify({ completedTaskVisibility: "session" }));
+		const { widget } = await setup(
+			[
+				{ action: "create", subject: "completed-first" },
+				{ action: "update", id: 1, status: "completed" },
+				{ action: "create", subject: "in-progress-second" },
+				{ action: "update", id: 2, status: "in_progress" },
+				{ action: "create", subject: "pending-third" },
+			],
+			24,
+		);
+		const output = widget.render(200).join("\n");
+		expect(output.indexOf("completed-first")).toBeLessThan(output.indexOf("in-progress-second"));
+		expect(output.indexOf("in-progress-second")).toBeLessThan(output.indexOf("pending-third"));
+		expect(output).not.toContain("… +");
+	});
+
+	it("temporarily surfaces a task completed during the current session", async () => {
+		writeConfigFile(JSON.stringify({ completedTaskVisibility: "session" }));
+		const { widget, tool } = await setup(
+			[
+				{ action: "create", subject: "old-completed" },
+				{ action: "update", id: 1, status: "completed" },
+				{ action: "create", subject: "in-progress" },
+				{ action: "update", id: 2, status: "in_progress" },
+				{ action: "create", subject: "newly-completed" },
+				{ action: "create", subject: "ready" },
+			],
+			16,
+		);
+		widget.render(200); // establish the pre-completion snapshot
+		await tool.execute?.(
+			"tc",
+			{ action: "update", id: 3, status: "completed" } as never,
+			undefined as never,
+			undefined as never,
+			createMockCtx() as never,
+		);
+		const output = widget.render(200).join("\n");
+		expect(output.indexOf("newly-completed")).toBeLessThan(output.indexOf("in-progress"));
+		expect(output.indexOf("in-progress")).toBeLessThan(output.indexOf("ready"));
+		expect(output).not.toContain("old-completed");
 	});
 });
 

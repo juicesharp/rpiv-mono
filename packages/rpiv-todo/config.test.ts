@@ -4,11 +4,19 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	COLLAPSE_KEY_OFF,
 	DEFAULT_COLLAPSE_KEY,
+	DEFAULT_COMPLETED_COLLAPSE_KEY,
+	DEFAULT_COMPLETED_TASK_PRESENTATION,
+	DEFAULT_COMPLETED_TASK_VISIBILITY,
+	DEFAULT_MAX_VISIBLE_COMPLETED,
 	DEFAULT_MAX_WIDGET_LINES,
+	getCompletedTaskPresentation,
+	getCompletedTaskVisibility,
+	getMaxVisibleCompleted,
 	getMaxWidgetLines,
 	isValidCollapseKeySpec,
 	loadConfig,
 	resolveCollapseKey,
+	resolveCompletedCollapseKey,
 } from "./config.js";
 
 const CONFIG_PATH = join(process.env.HOME!, ".config", "rpiv-todo", "config.json");
@@ -55,7 +63,76 @@ describe("getMaxWidgetLines", () => {
 		expect(getMaxWidgetLines()).toBe(50);
 	});
 });
+describe("getCompletedTaskVisibility", () => {
+	it("returns the turn policy when config is missing, absent, or invalid", () => {
+		expect(getCompletedTaskVisibility()).toBe(DEFAULT_COMPLETED_TASK_VISIBILITY);
+		writeConfigFile(JSON.stringify({}));
+		expect(getCompletedTaskVisibility()).toBe(DEFAULT_COMPLETED_TASK_VISIBILITY);
+		writeConfigFile(JSON.stringify({ completedTaskVisibility: "always" }));
+		expect(getCompletedTaskVisibility()).toBe(DEFAULT_COMPLETED_TASK_VISIBILITY);
+	});
 
+	it("returns session when the user opts in", () => {
+		writeConfigFile(JSON.stringify({ completedTaskVisibility: "session" }));
+		expect(getCompletedTaskVisibility()).toBe("session");
+	});
+
+	it("reads the policy fresh for the next agent turn", () => {
+		expect(getCompletedTaskVisibility()).toBe(DEFAULT_COMPLETED_TASK_VISIBILITY);
+		writeConfigFile(JSON.stringify({ completedTaskVisibility: "session" }));
+		expect(getCompletedTaskVisibility()).toBe("session");
+		writeConfigFile(JSON.stringify({ completedTaskVisibility: "turn" }));
+		expect(getCompletedTaskVisibility()).toBe(DEFAULT_COMPLETED_TASK_VISIBILITY);
+	});
+});
+
+describe("getCompletedTaskPresentation", () => {
+	it("returns priority for missing, invalid, and explicit priority values", () => {
+		expect(getCompletedTaskPresentation()).toBe(DEFAULT_COMPLETED_TASK_PRESENTATION);
+		writeConfigFile(JSON.stringify({ completedTaskPresentation: "unknown" }));
+		expect(getCompletedTaskPresentation()).toBe(DEFAULT_COMPLETED_TASK_PRESENTATION);
+		writeConfigFile(JSON.stringify({ completedTaskPresentation: "priority" }));
+		expect(getCompletedTaskPresentation()).toBe("priority");
+	});
+
+	it("returns chronological when explicitly configured", () => {
+		writeConfigFile(JSON.stringify({ completedTaskPresentation: "chronological" }));
+		expect(getCompletedTaskPresentation()).toBe("chronological");
+	});
+});
+describe("getMaxVisibleCompleted", () => {
+	it("returns the default when config is missing, absent, or invalid", () => {
+		expect(getMaxVisibleCompleted()).toBe(DEFAULT_MAX_VISIBLE_COMPLETED);
+		writeConfigFile(JSON.stringify({}));
+		expect(getMaxVisibleCompleted()).toBe(DEFAULT_MAX_VISIBLE_COMPLETED);
+		writeConfigFile(JSON.stringify({ maxVisibleCompleted: -1 }));
+		expect(getMaxVisibleCompleted()).toBe(DEFAULT_MAX_VISIBLE_COMPLETED);
+		writeConfigFile(JSON.stringify({ maxVisibleCompleted: 1.5 }));
+		expect(getMaxVisibleCompleted()).toBe(DEFAULT_MAX_VISIBLE_COMPLETED);
+	});
+
+	it("accepts zero and non-negative integers", () => {
+		writeConfigFile(JSON.stringify({ maxVisibleCompleted: 0 }));
+		expect(getMaxVisibleCompleted()).toBe(0);
+		writeConfigFile(JSON.stringify({ maxVisibleCompleted: 8 }));
+		expect(getMaxVisibleCompleted()).toBe(8);
+	});
+});
+
+describe("resolveCompletedCollapseKey", () => {
+	it("uses the default when missing or invalid", () => {
+		expect(resolveCompletedCollapseKey()).toBe(DEFAULT_COMPLETED_COLLAPSE_KEY);
+		writeConfigFile(JSON.stringify({ completedCollapseKey: "ctr+c" }));
+		expect(resolveCompletedCollapseKey()).toBe(DEFAULT_COMPLETED_COLLAPSE_KEY);
+	});
+
+	it("accepts off and normalized valid key specs", () => {
+		writeConfigFile(JSON.stringify({ completedCollapseKey: "off" }));
+		expect(resolveCompletedCollapseKey()).toBe(COLLAPSE_KEY_OFF);
+		writeConfigFile(JSON.stringify({ completedCollapseKey: "Alt+C" }));
+		expect(resolveCompletedCollapseKey()).toBe("alt+c");
+	});
+});
 describe("loadConfig — collapseKey", () => {
 	it("surfaces a user-set collapseKey unchanged (validation happens in resolveCollapseKey, not at load)", () => {
 		writeConfigFile(JSON.stringify({ collapseKey: "alt+o" }));

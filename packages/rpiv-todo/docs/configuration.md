@@ -31,8 +31,9 @@ extension only reads it.
 
 ```json
 {
-  "maxWidgetLines": 8,
   "collapseKey": "alt+t",
+  "completedTaskVisibility": "session",
+  "completedTaskPresentation": "priority",
   "guidance": {
     "promptSnippet": "Use the `todo` tool to track multi-step work before starting it.",
     "promptGuidelines": [
@@ -45,18 +46,85 @@ extension only reads it.
 
 ## `maxWidgetLines`
 
-**Default `12`.** The content-row budget for the overlay — the heading row and,
-on overflow, the `+N more` summary row both count against it. Only the trailing
-blank spacer sits outside the budget, so `12` renders up to 13 terminal rows.
+**Default `12`.** The content-row budget for the default `"turn"` overlay. The
+heading and, on overflow, the `+N more` summary row both count against it. Only
+the trailing blank spacer sits outside the budget, so `12` renders up to 13
+terminal rows.
 
 - Floor of `3`. A number below `3` falls back to the default.
 - A non-number falls back to the default.
 - No ceiling.
 - Read fresh on every render, so a change takes effect on the next repaint —
   no `/reload`.
+- Session `"priority"` derives its three-to-five task budget from an active
+  terminal taller than 10 rows. At 10 rows or fewer it shows only the heading
+  and the overflow summary. This option is the fallback when terminal height is
+  unavailable. Chronological session mode does not apply the row budget.
+## `completedTaskVisibility`
+
+**Default `"turn"`.** Controls whether completed rows remain available after the
+next agent turn starts.
+
+- `"turn"` keeps the compact-overlay default: a completed row stays visible for
+  the remainder of the current turn, then drops from later overlay renders.
+- `"session"` retains every task in canonical session state until the session
+  ends, the todo list is cleared, or the task is deleted. Presentation controls
+  only what the overlay projects, never the underlying task state.
+- If a user changes from `"session"` to `"turn"`, the next agent turn hides the
+  retained completed rows. The reverse change restores rows that the turn policy
+  previously hid.
+- A missing, non-string, or unrecognized value falls back to `"turn"`.
+- The policy is read at every agent turn, so a change takes effect on the next
+  turn without `/reload`.
+
+## `completedTaskPresentation`
+
+**Default `"priority"`.** Controls the overlay projection while completed-task
+visibility is `"session"`. A missing, non-string, or unrecognized value falls
+back to `"priority"`. The choice is read at every render.
+
+- `"priority"` follows Claude-like terminal behavior. When the full list fits its
+  terminal budget, it keeps original task order. On overflow it shows temporarily
+  recent completion, then in-progress work, unblocked pending work, blocked
+  pending work, and older completion. Remaining items become one `… +N`
+  status-counted summary row. On terminals with 10 rows or fewer, only that
+  summary is shown. It does not register a completed-row shortcut.
+- `"chronological"` keeps original task order. It shows every pending and
+  in-progress row, then folds only an old contiguous completed prefix at the
+  top of the list.
+
+## `maxVisibleCompleted`
+
+**Default `5`.** In `"chronological"` session mode, the number of newest rows
+kept expanded within the contiguous completed prefix at the top of the todo
+list. When that prefix is longer, the older rows become one expandable
+`▶ N completed` row in the same list position. A completed task after an
+unfinished task never moves or joins that folded prefix.
+
+- `0` folds the whole completed prefix.
+- A negative number, fractional number, non-number, or unsafe integer falls back
+  to the default.
+- The value is read on every render, so a change takes effect on the next repaint
+  without `/reload`.
+- This setting applies only when visibility is `"session"` and presentation is
+  `"chronological"`.
+
+## `completedCollapseKey`
+
+**Default `"ctrl+shift+c"`.** The shortcut that expands and folds the older
+completed prefix in `"chronological"` session mode. The collapsed row shows the
+currently configured key as its expansion hint.
+
+- The value uses the same strict Pi keybinding grammar as `collapseKey`. Missing,
+  blank, non-string, and invalid values fall back to the default.
+- `"off"` disables completed-row folding and leaves every completed row expanded.
+- It must not equal `collapseKey`. A collision registers only the whole-panel
+  shortcut, writes a warning, and leaves every completed row expanded.
+- The binding is resolved once at extension load. Run `/reload` after editing it
+  or after switching presentation to `"chronological"`; priority mode never
+  registers this shortcut.
 
 ## `collapseKey`
-
 **Default `"ctrl+shift+t"`.** The shortcut that collapses and expands the
 overlay.
 
