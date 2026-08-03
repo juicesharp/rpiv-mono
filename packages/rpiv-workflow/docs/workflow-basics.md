@@ -195,7 +195,7 @@ Two backstops bound every run regardless of what a workflow declares:
 | Cap | Default | Effect |
 | --- | --- | --- |
 | `maxIterations` | `32` | Run-wide ceiling on loop units of every kind. The effective loop cap is `min(loop.max, run.maxIterations)` |
-| Backward-jump budget | `2` per destination stage | At most 3 executions of any one stage across decision-edge loop-backs |
+| Backward-jump budget | `3` per destination stage | At most 4 executions of any one stage across decision-edge loop-backs |
 
 ## Trusting overlay files
 

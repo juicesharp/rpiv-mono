@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Docs corrected to the live backward-jump default. `docs/embedding.md`'s
+  `RunWorkflowOptions` table and `docs/workflow-basics.md`'s caps table both
+  still documented `maxBackwardJumps` as `2` per destination stage (and "at
+  most 3 executions"), stale since the budget was raised to `3` in v2.2.0 —
+  they now match `MAX_BACKWARD_JUMPS` in `runner/run-context.ts`, so a stage
+  runs once and may be re-entered up to 3 more times (at most 4 executions).
+  Documentation only; no runtime behavior changed.
+
 ## [2.3.1] - 2026-07-31
 
 ### Changed

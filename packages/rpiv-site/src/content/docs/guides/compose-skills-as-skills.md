@@ -67,7 +67,7 @@ const REVIEW_SCHEMA = typeboxSchema(
 );
 ```
 
-`code-review` emits `blockers_count`, the runner counts it, and the next stage is `revise` or `commit` accordingly. No human eyeballs the review to decide. Backward edges are first-class: `revise → implement` is just another edge target. The runner counts backward jumps and halts at `maxBackwardJumps` (default 2, so at most 3 review iterations), so a stuck loop can't burn tokens forever.
+`code-review` emits `blockers_count`, the runner counts it, and the next stage is `revise` or `commit` accordingly. No human eyeballs the review to decide. Backward edges are first-class: `revise → implement` is just another edge target. The runner counts backward jumps and halts at `maxBackwardJumps` (default 3, so at most 4 review iterations), so a stuck loop can't burn tokens forever.
 
 ## Before you wire: four questions per skill
 

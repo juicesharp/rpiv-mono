@@ -150,7 +150,7 @@ const result = await runWorkflow(ctx, {   // ctx: WorkflowHostContext
 | `input` | `string` | required — passed to the start stage as its argument |
 | `host` | `WorkflowHost` | none; used for the skill-registration preflight snapshot |
 | `maxIterations` | `number` | `32` — run-wide cap on loop units of every kind |
-| `maxBackwardJumps` | `number` | `2` per destination stage |
+| `maxBackwardJumps` | `number` | `3` per destination stage |
 | `trigger` | `RunTrigger` | `{ kind: "programmatic" }` |
 | `lifecycle` | `LifecycleListeners` | none |
 | `signal` | `AbortSignal` | none |

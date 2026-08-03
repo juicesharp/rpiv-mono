@@ -49,8 +49,8 @@ code is elaborated into it. Three automated gates plus one human checkpoint.
 
 `vet` and `polish` gate on the numeric `blockers_count` a `code-review`
 artifact reports: greater than zero routes back into a fix stage, zero routes to
-`commit`. The runner's default backward-jump budget is 2, so a review loop runs at
-most three times before the workflow stops looping.
+`commit`. The runner's default backward-jump budget is 3, so a review loop runs at
+most four times before the workflow stops looping.
 
 ## Hand-driven recipes
 
