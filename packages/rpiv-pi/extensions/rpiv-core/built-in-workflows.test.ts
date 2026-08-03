@@ -2441,14 +2441,14 @@ describe("build audit-drop fixes", () => {
 		it("commits ONLY on an explicit verdict: pass", () => {
 			expect(routeVerdict("pass")).toBe("commit");
 		});
-		it("routes a verdict: fail to STOP (no commit)", () => {
-			expect(routeVerdict("fail")).toBe("stop");
+		it("routes a verdict: fail to validate-fix (the repair arm)", () => {
+			expect(routeVerdict("fail")).toBe("validate-fix");
 		});
 		it("routes a MISSING verdict to STOP (no commit) — safe by construction", () => {
 			expect(routeVerdict(undefined)).toBe("stop");
 		});
-		it("declares only commit and stop as targets", () => {
-			expect([...(edge("validate").targets ?? [])].sort()).toEqual(["commit", "stop"]);
+		it("declares commit, validate-fix, and stop as targets", () => {
+			expect([...(edge("validate").targets ?? [])].sort()).toEqual(["commit", "stop", "validate-fix"]);
 		});
 		it("routes on the channel validate actually publishes to (validation bucket)", () => {
 			// The `from` the gate reads MUST equal validate's derived publish channel,
@@ -2456,6 +2456,22 @@ describe("build audit-drop fixes", () => {
 			// contract outcome and routing on the same-named channel proves the coupling.
 			const derived = withDerivedOutcomes(build());
 			expect(derived.stages.validate?.outcome?.name).toBe("validation");
+		});
+		it("dispatches remediate with reads: [plans, validation] (the repair arm contract)", () => {
+			// The validate-fix stage is `acts()` (side-effect/code-mutation, the tools
+			// twin of implement) dispatching the remediate skill, reading the plan + the
+			// latest failing validation report. `stageEntryArgs` derives
+			// `--plans <plan> --validation <report>` from these reads.
+			const stage = build().stages["validate-fix"];
+			expect(stage?.kind).toBe("side-effect");
+			expect(stage?.skill).toBe("remediate");
+			expect([...(stage?.reads ?? [])]).toEqual(["plans", "validation"]);
+		});
+		it("re-enters at implement-scope-check after the repair arm (deterministic edge)", () => {
+			// The repair arm's edge is deterministic (a plain string, not a gate): after
+			// remediate fixes the tree, the flow re-runs scope-check → reconcile →
+			// validate before the gate re-folds — a fix is re-verified end-to-end.
+			expect(build().edges["validate-fix"]).toBe("implement-scope-check");
 		});
 	});
 
@@ -5317,11 +5333,11 @@ describe("reconcile lane stage", () => {
 		const data1 = runOn(plan);
 		expect(data1.pass).toBe(true);
 		expect(readFileSync(join(tmpDir, "packages/a/a.test.ts"), "utf-8")).toBe('import { r } from ".";\n\n');
-		// run 2: find now absent, replace empty (≠ "") ⇒ the "find substring not present" branch
-		// (NOT the idempotent already-applied branch, which requires a non-empty replace). No prepend, no loop.
+		// run 2: find now absent, replace empty ⇒ find-absent is the deletion's success
+		// condition ⇒ the idempotent already-applied branch (no finding, no write). No prepend, no loop.
 		const data2 = runOn(plan);
-		expect(data2.pass).toBe(false);
-		expect(details(data2)).toMatch(/directive find substring not present/);
+		expect(data2.pass).toBe(true);
+		expect(details(data2)).not.toMatch(/directive find substring not present/);
 		expect(readFileSync(join(tmpDir, "packages/a/a.test.ts"), "utf-8")).toBe('import { r } from ".";\n\n');
 	});
 

@@ -656,7 +656,7 @@ const polishWorkflow = defineWorkflow({
 		validate: "code-review",
 		// Backward edge: code-review → blueprint re-plans (implement needs a plan).
 		// The iterate stage re-runs over every review phase; bounded by the
-		// runner's default maxBackwardJumps (2 → up to 3 review iterations).
+		// runner's default maxBackwardJumps (3 → up to 4 review iterations).
 		"code-review": gate("blockers_count", { blueprint: gt(0), commit: eq(0) }, "commit"),
 		commit: "stop",
 	},
@@ -2337,9 +2337,12 @@ const isTestPath = (target: string): boolean => TEST_PATH_RE.test(target);
  * Apply each `#### Reconciliation` directive, write-restricted to test-expectation
  * files (`isTestPath` — reconcile writes ONLY test files; a non-test target is a
  * finding, left untouched, fail-closed). A present `find` is replaced exactly
- * once (`String.replace`, first match); an absent `find` whose `replace` is ALSO
- * absent is a finding (reconcile does not guess); an absent `find` whose `replace`
- * is already present is the idempotent-re-run no-op (a prior successful apply, no
+ * once (`String.replace`, first match); an absent `find` whose `replace` is empty
+ * is the idempotent-re-run no-op for a deletion (find-absent is the deletion's
+ * success condition — the directive was already applied, no finding, no write); an
+ * absent `find` whose non-empty `replace` is ALSO absent is a finding (reconcile
+ * does not guess); an absent `find` whose non-empty `replace` is already present is
+ * the idempotent-re-run no-op for a substitution (a prior successful apply, no
  * finding, no write). Paths resolve through `cwd` (`isAbsolute` short-circuit else
  * `join(cwd, target)`). Fail-soft: a read/apply throw degrades to a finding naming
  * the target, never a terminal throw. Returns findings in DIRECTIVE order and
@@ -2370,6 +2373,11 @@ const applyReconciliationDirectives = (
 				// directive was already applied (e.g. a vet review-fix loop re-running
 				// reconcile). Treated as satisfied — reconcile must not fail on its own
 				// prior successful apply.
+			} else if (d.replace === "") {
+				// Idempotent re-run of a deletion: the find is gone and the replacement is
+				// empty ⇒ find-absent is the deletion's success condition (a prior successful
+				// apply removed it). Treated as satisfied — reconcile must not fail on its
+				// own prior successful apply (e.g. a validate-fix loop re-running reconcile).
 			} else {
 				findings.push({
 					detail: `reconcile: directive find substring not present in ${d.target} (and the replacement is absent — not already applied) — the expected text to replace is absent; the directive is stale or the test no longer matches`,
@@ -3576,7 +3584,7 @@ const vetWorkflow = defineWorkflow({
 		// UNCHANGED. The scope-check inserts before validate, so a failing scope
 		// verdict halts before re-review, and a passing one flows into validate and
 		// back to code-review exactly as today. Bounded by the runner's default
-		// maxBackwardJumps (2 → at most 3 review iterations).
+		// maxBackwardJumps (3 → at most 4 review iterations).
 		validate: "code-review",
 		commit: "stop",
 	},
@@ -3788,6 +3796,15 @@ const buildWorkflow = defineWorkflow({
 		// `from` form suppresses the READS_DATA outputSchema lint.
 		reconcile: produces.script({ reads: ["plans"], run: reconcile }),
 		validate: produces({ prompt: VALIDATE_GOAL_PROMPT }),
+		// Repair arm the validate gate dispatches on a `verdict: "fail"`. `acts()`
+		// (not `produces()`) because remediate is `side-effect`/`code-mutation` (the
+		// tools twin of `implement`: re-runs verification commands via `Bash(*)` and
+		// edits the working tree) — NOT produced-validating and NOT routed-on (its
+		// edge is deterministic), so it owns no outcome. `reads: ["plans","validation"]`
+		// ⇒ `stageEntryArgs` derives `--plans <plan> --validation <latest-report>`;
+		// `validation` is validate's own publish bucket, so validate-fix always reads
+		// the latest failing report.
+		"validate-fix": acts({ skill: "remediate", reads: ["plans", "validation"] }),
 		commit: acts({ prompt: COMMIT_BASELINE_PROMPT, outcome: gitCommitOutcome }),
 	},
 	edges: {
@@ -3810,7 +3827,7 @@ const buildWorkflow = defineWorkflow({
 			{ readsData: false },
 		),
 		// Design-readiness gate BEFORE any design. Structure + design-readiness pass⇒ design; any fails ⇒
-		// slice-fix and loop back. Bounded by the runner's maxBackwardJumps (default 2).
+		// slice-fix and loop back. Bounded by the runner's maxBackwardJumps (default 3).
 		"slice-grade": defineRoute(
 			["slice-design", "slice-fix"],
 			({ state }) => (sliceGatePasses(state) ? "slice-design" : "slice-fix"),
@@ -3940,16 +3957,28 @@ const buildWorkflow = defineWorkflow({
 		// `verdict: "pass"`. Sourced from the reconcile channel via the `from` form.
 		reconcile: match("verdict", { validate: "pass" }, { from: "reconcile" }),
 		// Gate commit on validate's own verdict — an unconditional `validate → commit`
-		// let a `verdict: fail` (incomplete goal coverage) commit anyway. `match` with
-		// no fallback commits ONLY on an explicit `verdict: "pass"`; every other value
-		// (a `fail`, or a missing verdict) routes to STOP — a failed validation halts
-		// WITHOUT committing, leaving the report on disk for the user. Safe by
-		// construction: the sole path to commit is an explicit pass, so un-anticipated
-		// data can never route INTO commit. Sourced from validate's published verdict
-		// channel (`from: "validation"` — the bucket its contract's `artifactKind`
-		// derives) — a prompt stage owns its message and can't inherit its contract's
-		// output schema, so route on the channel, not the raw (un-validated) stage output.
-		validate: match("verdict", { commit: "pass" }, { from: "validation" }),
+		// let a `verdict: fail` (incomplete goal coverage) commit anyway. Now the
+		// gate splits: `pass` ⇒ commit; `fail` ⇒ validate-fix (the repair arm above,
+		// which re-runs the failing `verify-at-implement` risk-ruling procedures and
+		// surgically fixes the tree, then re-enters at implement-scope-check to
+		// re-reconcile + re-validate — bounded by the per-destination backward-jump
+		// budget). Deliberately NOT a `fallback`: a missing/unexpected verdict stays
+		// terminal STOP, so un-anticipated data can never route INTO commit OR the
+		// repair arm. Safe by construction: the sole path to commit is an explicit
+		// pass. The `match` branch key (`validate-fix`) doubles as the reachability/
+		// stage declaration, so naming it both routes `fail` and declares the stage
+		// reachable. Sourced from validate's published verdict channel
+		// (`from: "validation"` — the bucket its contract's `artifactKind` derives) —
+		// a prompt stage owns its message and can't inherit its contract's output
+		// schema, so route on the channel, not the raw (un-validated) stage output.
+		validate: match("verdict", { commit: "pass", "validate-fix": "fail" }, { from: "validation" }),
+		// Deterministic re-entry after the repair arm: remediate's code-mutation is
+		// followed by a fresh scope check → reconcile → validate pass, so a fix is
+		// re-verified end-to-end before the gate re-folds. A non-counted edge (a
+		// deterministic hop into the loop body), so it never trips a backward-jump
+		// budget on its own — the budget-consuming decision edge is the validate
+		// gate's `validate-fix` branch above.
+		"validate-fix": "implement-scope-check",
 		commit: "stop",
 	},
 });
