@@ -10,16 +10,24 @@ when_to_use:
 inputs:
   - name: plan path
     required: false
-    source: Path to `.rpiv/artifacts/plans/*.md`. When omitted, recent commits are searched for a plan reference
+    source: Path to `.rpiv/artifacts/plans/*.md`. When omitted, the skill lists the 10 most recent files under `.rpiv/artifacts/plans/` and asks which plan to validate
+  - name: --goal
+    required: false
+    source: Path to the user's original brief, captured verbatim at run start
+    notes: Shortfalls are reported under Deviations from Plan, quoting the goal's actual wording; unstated scope is never inferred. A goal requirement the plan never carried still counts as a gap.
+  - name: --baseline
+    required: false
+    source: JSON snapshot (with a `paths` array) of files already dirty before the run started
+    notes: "Baseline paths are subtracted from the dirty set before working-tree scope criteria are judged; they are reported for visibility but never counted as a scope violation and never force `verdict: fail`. A missing or unreadable file falls back to judging the whole tree."
 outputs:
   - artifact: Validation report
-    path: stdout / session message
-    format: structured pass/fail report with drift notes
+    path: .rpiv/artifacts/validation/
+    format: "markdown from `templates/validation.md`; frontmatter carries `verdict: pass | fail` (plus `risk_rulings: [{ id, pass }]` when the plan had `risks:`), body is pass/fail per criterion with drift notes"
 key_steps:
   - title: Discover context (current session OR fresh)
     rationale: Validation works either as an immediate audit (same session) or a cold audit (later run). Detecting the mode picks the right evidence-gathering path (session memory vs git log + diff).
   - title: Spawn parallel verification agents
-    rationale: One `general-purpose` agent verifies code matches the plan; one verifies it follows codebase conventions. Running both catches "implemented but wrong shape" failures that single-axis checks miss.
+    rationale: A `codebase-analyzer` verifies the component implements the plan requirement; a `codebase-pattern-finder` checks the new code against surrounding conventions. Both dispatch in a single message (never `run_in_background`, whose completion cannot re-drive a workflow session), catching "implemented but wrong shape" failures that single-axis checks miss.
   - title: Re-run automated verification commands
     rationale: Every plan command (`make check test`, etc.) is re-run against the working tree, independent of whatever `implement` claimed. The plan's checklist is treated as a contract to be re-verified, not as ground truth.
   - title: Walk each phase and re-check its `- [x]` claims
@@ -28,5 +36,5 @@ key_steps:
     rationale: Output is structured for action. Every failure gets a follow-up note so nothing falls through the cracks between validation and the next pass.
 related:
   upstream: [implement]
-  downstream: []
+  downstream: [code-review, commit]
 ---

@@ -23,7 +23,7 @@ const TRACE = [
 		name: "slice",
 		note: "the brief is cut into independent vertical slices, each small enough for one design pass. You confirm the cut once. That freezes the coverage units a script then conserves: cycle-free, no piece of your ask dropped.",
 		you: "▢ your cut",
-		gate: "gate · 0 LLM calls",
+		gate: "gate · script floor + 1 judgment · ↺ fix",
 	},
 	{
 		name: "design",
@@ -37,8 +37,8 @@ const TRACE = [
 	},
 	{
 		name: "plan",
-		note: "per-cluster sub-plans merge into one plan. A five-dimension panel grades it before any code exists; completeness and correctness are judged against your verbatim brief.",
-		gate: "gate ×5 · ↺ fix",
+		note: "per-cluster sub-plans merge into one plan. A tier-scaled panel grades it before any code exists — correctness and completeness on a clean one-slice, two-phase run, the full five-dimension roster on anything larger; completeness and correctness are judged against your verbatim brief.",
+		gate: "gate · panel · ↺ fix",
 	},
 	{
 		name: "code",
@@ -47,7 +47,7 @@ const TRACE = [
 	},
 	{
 		name: "land",
-		note: "phases implemented in order, the result validated against your brief. You confirm the commit plan; your name goes on the diff.",
+		note: "phases implemented as dependency-gated waves — independent phases run at once, phases sharing a write-set stay ordered — then the result is validated against your brief. You confirm the commit plan; your name goes on the diff.",
 	},
 ];
 ---

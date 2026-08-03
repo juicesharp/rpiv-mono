@@ -24,10 +24,10 @@ key_steps:
   - title: Confirm candidates × dimensions checkpoint
     rationale: Dimensions (approach-shape · precedent-fit · integration-risk · migration-cost · verification-cost · novelty) are confirmed *before* per-candidate fit agents are dispatched. This keeps the analysis budget proportional to the relevant axes.
   - title: Per-candidate fit dispatch in parallel
-    rationale: One agent per candidate, scoring against the locked dimensions. Running concurrently keeps the comparison balanced. No candidate gets stale context from prior reasoning.
+    rationale: Up to two agents per candidate (≤ 2 × N total) — a `codebase-analyzer` for the codebase-anchored dimensions and a `web-search-researcher` for the external-anchored ones, either skipped when no dimension of that anchor type was kept. The hybrid `approach-shape` is scored by the orchestrator once both return. Running concurrently keeps the comparison balanced. No candidate gets stale context from prior reasoning.
   - title: Synthesize a comparison matrix + recommendation
     rationale: A matrix is scannable; a recommendation forces a position. Both produce a clean handoff to `design`/`blueprint`, which expects a chosen shape rather than a menu.
 related:
-  upstream: [discover]
+  upstream: [research]
   downstream: [design, blueprint]
 ---

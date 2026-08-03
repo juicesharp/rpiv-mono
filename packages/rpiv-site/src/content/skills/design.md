@@ -27,12 +27,12 @@ key_steps:
     rationale: "`codebase-pattern-finder`, `codebase-analyzer`, `integration-scanner` and (when commits are available) `precedent-locator` run in parallel. Focuses on HOW things work (not WHERE) because discovery already happened."
   - title: Dimension sweep (triage ambiguities)
     rationale: Findings are filtered through six dimensions (data model · API · integration · scope · verification · performance) that map 1:1 to `plan` sections. This guarantees nothing the planner needs is missing. Simple decisions are recorded with `file:line` evidence; only genuine ambiguities reach the developer.
-  - title: Holistic self-critique
-    rationale: Reviews the combined design for gaps and contradictions before the developer is asked anything. Catches issues that per-finding triage misses.
   - title: Developer checkpoint on genuine ambiguities
     rationale: One question at a time, each grounded in `file:line` evidence. Pulls only NEW information the agents could not find.
   - title: Decompose into vertical slices, then generate slice-by-slice
     rationale: Whole-feature decomposition first, then per-slice code generation with developer micro-checkpoints between slices. Stops architectural drift across slices without paying full-rewrite cost.
+  - title: Verify every slice with `slice-verifier` before the micro-checkpoint
+    rationale: "Mandatory at Step 6.2 for every slice — no skipping, no batching across slices. The agent sees the slice's generated code *and* its Success Criteria together and emits a three-row `Decisions / Cross-slice / Research` summary. A VIOLATION is either fixed and re-dispatched, or surfaced verbatim at the 6.3 micro-checkpoint for developer ratification — never silently dismissed. This is design's only quality gate: the `artifact-code-reviewer` + `artifact-coverage-reviewer` pair runs later, inside `/skill:plan` Step 4."
   - title: Verify cross-slice integration
     rationale: After generation, scan all slices for shared contracts (types, signatures, wiring) and confirm they match, the last step before the artifact is finalized.
 related:

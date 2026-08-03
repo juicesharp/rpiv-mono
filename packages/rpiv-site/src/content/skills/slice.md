@@ -6,7 +6,7 @@ purpose: |
 when_to_use:
   - A `research` artifact exists and the feature needs decomposition before a per-slice design fanout.
   - Dispatched by the build pipeline between `research` and `design-slice`.
-  - Re-slice mode (`--slices … --slice-verdicts …`) when the design-readiness gate failed the map and the fix is structural, not surgical.
+  - Re-slice mode (`--slices … --slice-verdicts … [--slice-check …]`) when the design-readiness gate failed the map and the fix is structural, not surgical.
   - Prefer `design` when decomposition and design can fold into one interactive pass. `slice` deliberately stops at scope boundaries.
 inputs:
   - name: research artifact
@@ -21,6 +21,10 @@ inputs:
     required: false
     source: Verdict JSONs under `.rpiv/artifacts/verdicts/` (repeatable)
     notes: Failing findings are joint constraints. A re-cut for one must not regress a dimension that was passing.
+  - name: --slice-check
+    required: false
+    source: Deterministic structure verdict JSONs under `.rpiv/artifacts/verdicts/` (repeatable)
+    notes: The deterministic structural findings — dependency cycles, dropped coverage units, unbacked `file:line` citations. The un-gameable floor; every finding MUST be cleared, and each has a prescribed repair (merge the cycle into one slice or invert an edge; re-attach the unit's `id` to whichever slice now delivers it, never delete it; correct the citation to a real repo-root-relative `file:line`, or drop the line numbers).
 outputs:
   - artifact: Slice map
     path: .rpiv/artifacts/slices/
@@ -37,7 +41,7 @@ key_steps:
   - title: Confirm the decomposition once, then write
     rationale: A single approve/adjust question before writing is far cheaper than moving a slice boundary after N parallel designs have built on it.
   - title: In re-slice mode, re-cut structurally from the verdicts
-    rationale: Splitting an epic, inverting a dependency edge, or renumbering exceeds what `amend` may touch. So the pipeline re-dispatches `slice` itself, with the verdict `feedback` as the instruction and the `coverage:` array carried forward verbatim.
+    rationale: Splitting an epic, inverting a dependency edge, or renumbering exceeds what `amend` may touch. So the pipeline re-dispatches `slice` itself, with the verdict `feedback` — and each `--slice-check` finding's `detail`/`where` naming the exact structural break — as the instruction, and the `coverage:` array carried forward verbatim.
 related:
   upstream: [research]
   downstream: [grade, design-slice]

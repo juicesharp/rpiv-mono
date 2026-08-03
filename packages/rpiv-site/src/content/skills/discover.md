@@ -31,5 +31,5 @@ key_steps:
     rationale: Each invocation always writes a NEW timestamp-distinct artifact (never appends) so a prior FRD is never silently mutated mid-iteration.
 related:
   upstream: []
-  downstream: [research, explore]
+  downstream: [research]
 ---

@@ -5,7 +5,7 @@ section: "getting-started"
 order: 0
 ---
 
-rpiv-pi is the umbrella package. It ships the skill library and runtime infrastructure, but the **tools the skills call** live in sibling Pi extensions (`rpiv-todo`, `rpiv-ask`, `rpiv-web`, and friends). That's why setup is three steps, not one.
+rpiv-pi is the umbrella package. It ships the skill library and runtime infrastructure, but the **tools the skills call** live in sibling Pi extensions (`rpiv-todo`, `rpiv-ask-user-question`, `rpiv-web-tools`, and friends). That's why setup is three steps, not one.
 
 ## 1. Install the umbrella
 

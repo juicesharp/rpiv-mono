@@ -77,7 +77,7 @@ export const ARTIFACT_WRITE_SITES = {
 	design: ".rpiv/artifacts/designs/",
 	plan: ".rpiv/artifacts/plans/",
 	implement: null,
-	validate: null,
+	validate: ".rpiv/artifacts/validation/",
 	blueprint: ".rpiv/artifacts/plans/",
 	explore: ".rpiv/artifacts/solutions/",
 	"annotate-guidance": ".rpiv/guidance/<sub>/architecture.md",

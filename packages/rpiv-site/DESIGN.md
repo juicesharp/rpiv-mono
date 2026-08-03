@@ -16,7 +16,7 @@ Sumi ink canvas, washi paper accents, sage/moss/ochre minerals. Two voices: Berk
 
 ## Token discipline
 
-Every visual constant lives in `src/styles/tokens.css`. No hex codes, no pixel values, no font-family strings anywhere else in the codebase.
+Every *systemic* visual constant — color, type scale, the 8px spacing rhythm, and motion easing/duration tiers — lives in `src/styles/tokens.css`. Three bans are absolute: no hex codes, no font-family strings, and no raw `cubic-bezier(...)` anywhere else in the codebase; always reference the token. Raw `px`/`ms` literals are not banned outright — hairline borders (`1px solid var(--rule)`), layout metrics (grid tracks, container max-widths, media-query breakpoints), fixed glyph/icon dimensions, and per-component animation stagger delays stay local to the file that owns them. See **Layout** for the 240px docs sidebar and the 1280px cap.
 
 ```css
 /* WRONG — hex literal in a component */
@@ -53,12 +53,12 @@ Headings always use `--font-mono`. Body always uses `--font-serif`. Kickers (`.k
 | Token | Use |
 |---|---|
 | `--type-h1` | Hero — landing only (clamp 48–96px) |
-| `--type-h2` | Page-level `<h1>` on listings + `.prose--docs h1` + capped `.docs-grid__title` (clamp 28–40px) |
+| `--type-h2` | Page-level `<h1>` on listings + `.prose--docs h1` + `.blog-hero__title` (clamp 28–40px) |
 | `--type-h-hero` | Section composer `<h2>` on the landing (30px fixed) |
 | `--type-h-section` | In-section `<h3>` on landing composers (clamp 22–26px) |
 | `--type-h3` | Listing-row titles, tier headers, atom card titles (20px) |
-| `--type-h-docs-h2` / `-h3` | Headings inside `.prose--docs` reference body (24px / 18px) |
-| `--type-lead` | Lede paragraphs (hero, docs hero, `.docs-lede`) — 17px |
+| `--type-h-docs-h2` | `.prose--docs h2` in the reference body (24px). Docs h3/h4 have no token — they track the fluid reading body (`--type-reading`, 17–19px) via `em` in `prose.css` (1.1em / 1em). |
+| `--type-lead` | Lede paragraphs (hero, docs hero, `.docs-lede`) — clamp 18–20px |
 | `--type-base` / `--type-small` / `--type-tiny` / `--type-micro` / `--type-kicker` | Body → chrome → fine-print stack |
 
 ### Kicker variants
@@ -71,7 +71,7 @@ Kickers default to `--text-distant` — a quiet section label. Two modifiers ext
 | `.kicker .kicker--accent` | `--sage` | A label of interest — TOC headers, grid section labels, anywhere the kicker is the wayfinding cue |
 | `.kicker .kicker--action` | `--ochre` | An actionable label — quick-start, install, the one thing the visitor should hit first |
 
-Use sparingly: one `--action` per surface, `--accent` for grouping, default for everything else. The bespoke numbered-step kickers on landing composers (`.bp-kicker--hero`, `.gd-kicker--hero`, `.cr-kicker--hero`) follow the same ochre = primary convention on their local base class.
+Use sparingly: one `--action` per surface, `--accent` for grouping, default for everything else. Landing composers pair the default `.kicker` with a local BEM modifier (`.ahero__kicker`, `.cat__kicker`, `.ib__kicker`) that carries stagger `animation-delay` only — never color — so every landing section label stays at `--text-distant`.
 
 ### Motion tokens — the budget
 
@@ -85,7 +85,7 @@ Use the named durations, not arbitrary milliseconds:
 | `--dur-ink` 600ms | Slow color migrations on large surfaces |
 | `--dur-enter` 1200ms | Hero / page-load signature reveals only |
 
-Always pair durations with `--ease-ink`. Never `ease-in-out`. The `prefers-reduced-motion` override in `tokens.css:91-99` zeros every duration — you get this for free by using the tokens.
+Always pair durations with `--ease-ink`. Never `ease-in-out`. The `@media (prefers-reduced-motion: reduce)` block at the end of `tokens.css` zeros every `--dur-*` token — you get this for free by using the tokens.
 
 ## Component patterns
 
@@ -101,17 +101,17 @@ const { skill, writeSite } = Astro.props;
 </article>
 
 <style>
-  .card { background: var(--washi); border: 1px solid var(--rule); }
+  .card { background: var(--ink-raised); border: 1px solid var(--rule); }
 </style>
 ```
 
 ### Section composer — data-bound
 
-Section composers `await` a typed resolver from `src/lib/` in their frontmatter. **Never call `getCollection()` directly from a component** — the typed adapters in `src/lib/` are the only `astro:content` callers.
+Section composers `await` a typed resolver from `src/lib/` in their frontmatter. **Never call `getCollection()` directly from a component** — nothing under `src/components/` or `src/layouts/` may import `astro:content`; they take typed data as props. Data access lives in the `src/lib/` adapters. The only exceptions are in `src/pages/`, where Astro forces the issue: `getStaticPaths` runs before `Astro.props` exists, so `src/pages/docs/reference/{skills,agents}/[slug].astro` call `getCollection()` there to enumerate routes, `src/pages/docs/index.astro` uses `getEntry()` for the docs root, and page templates call `render()` on an entry a `src/lib/` adapter handed them.
 
 ### Cross-section ornament — SumiInk
 
-Need an SVG accent? Add a variant to `src/components/SumiInk.astro` (`corner` / `divider` / `backdrop`). Don't create a new SVG component for one-off marks.
+Need an SVG accent? Add a variant to `src/components/SumiInk.astro` (`corner` / `divider` / `backdrop` / `rss`). Don't create a new SVG component for one-off marks.
 
 ## Skinning third-party UI (Pagefind pattern)
 
@@ -126,7 +126,7 @@ When a library doesn't expose a variable for a surface (e.g. Pagefind's `<mark>`
 
 ## Layout
 
-- **Docs grid**: 240px sidebar / `minmax(0, 1fr)` content / (optional) 180px TOC. Sticky on desktop, drawer on mobile (≤720px).
+- **Docs grid**: 240px sidebar / `minmax(0, 1fr)` content. When a page has headings, `DocsLayout` adds `.has-toc` and the track becomes `240px minmax(0, 720px) minmax(220px, 1fr)` — content pinned to the reading measure, remaining width to the TOC rail. Sidebar and TOC sticky on desktop; sidebar collapses to a drawer and the grid to a single column on mobile (≤720px).
 - **Single scroll context per visual stack**: when a long region (search results, code block) lives inside an already-scrolling container, bound it with `max-height` and its own `overflow-y: auto`. Never stack two `overflow` regions that compete for the wheel.
 - **No `max-w-7xl mx-auto` centered-stack defaults**. Sections own their max-width. The standard cap on the docs layout is 1280px.
 
@@ -134,11 +134,11 @@ When a library doesn't expose a variable for a surface (e.g. Pagefind's `<mark>`
 
 - Default fonts: Inter, Roboto, Arial, system-ui as display type. Avoid the "distinctive but overused" trap too — Space Grotesk, Geist, Satoshi, Fraunces, Cormorant. They show up in every AI demo.
 - Clichéd color: purple-to-blue gradients, generic SaaS blue (#3B82F6 family), evenly-distributed pastel palettes.
-- Inline visual literals: hex codes, pixel sizes, font names, raw `cubic-bezier(...)` outside `tokens.css`.
+- Inline visual literals: hex codes, font names, raw `cubic-bezier(...)` outside `tokens.css`. Also never re-type a value that already has a token — reach for `var(--space-*)`, `var(--type-*)`, `var(--dur-*)` before writing a number.
 - Tailwind utility classes: `max-w-7xl mx-auto`, `rounded-xl shadow-md`, `flex items-center gap-4`. This codebase is vanilla CSS + tokens — keep it.
 - Generic motion: `transition: all 200ms ease-in-out`, fade-in on every scroll, identical bounces.
 - React/Vue/Svelte islands. The site is pure `.astro` SFCs. No interactive client-side framework.
-- `getCollection()` in components — only `src/lib/` adapters call it.
+- `getCollection()` / `getEntry()` in components or layouts — those live in `src/lib/` adapters, with `getStaticPaths` and the docs-root lookup in `src/pages/` as the only exceptions.
 - Inert interactive surfaces: anything that looks clickable must be a real `<a href>` or `<button>`, not a styled `<div>`.
 
 ## Cross-references

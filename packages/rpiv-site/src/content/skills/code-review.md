@@ -2,7 +2,7 @@
 slug: code-review
 tagline: Reads a diff, branch, or PR through Quality · Security · Dependencies lenses with parallel specialist agents and returns one cited report under `.rpiv/artifacts/reviews/`.
 purpose: |
-  Multi-lens review using parallel specialist agents (integration-scanner, precedent-locator, peer-comparator, codebase-analyzer, web-search-researcher). The most token-hungry skill in the pipeline; drop it into any workflow at any point, not just before commit. Order is interchangeable with `commit`.
+  Multi-lens review using parallel specialist agents (integration-scanner, precedent-locator, peer-comparator, `diff-auditor` ×2 for the Quality and Security lenses, codebase-analyzer, web-search-researcher), followed by a mandatory `claim-verifier` pass that re-grounds every reconciled finding at its cited `file:line` before the artifact is written. The most token-hungry skill in the pipeline; drop it into any workflow at any point, not just before commit. Order is interchangeable with `commit`.
 when_to_use:
   - Changes are ready for review (pending diff, branch, or PR).
   - You want a third opinion on quality, security risk, or dependency churn before landing.
@@ -10,8 +10,8 @@ when_to_use:
 inputs:
   - name: scope
     required: false
-    source: One of `commit` · `staged` · `working` · `<hash>` · `A..B` · PR branch name
-    notes: Empty defaults to feature-branch-vs-default-branch first-parent review.
+    source: One of `commit` · `staged` · `working` · `modified` · `--folder <path>` · `--file <paths>` · `<hash>` · `A..B` · PR branch name
+    notes: Empty defaults to feature-branch-vs-default-branch first-parent review. `--folder` / `--file` (legacy `folder:` / `file:`) switch to the tree strategy — tracked files are reviewed as complete entities and precedent-locator is skipped.
 outputs:
   - artifact: Review document
     path: .rpiv/artifacts/reviews/

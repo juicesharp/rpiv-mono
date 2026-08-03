@@ -24,10 +24,14 @@ inputs:
     required: false
     source: The user's verbatim brief, captured at run start
     notes: Read only for `completeness` and `correctness`; every other dimension ignores it. Goal-based findings must quote the goal's actual wording.
+  - name: --prior
+    required: false
+    source: A prior round's verdict JSON for the same `(artifact, dimension)`, passed by a CONFIRM panel
+    notes: "Its presence switches the grader into confirm mode — grade fresh, then adjudicate the prior verdict, ruling every entry in its `findings[]` and every `risk_rulings` entry with `pass: false` as `upheld` or `refuted` (a refutation is valid only with concrete cited evidence), and emit those as a `finding_rulings` array. A missing or unreadable path is not a wiring error — grade normally without it, and never emit `finding_rulings` without `--prior`."
 outputs:
   - artifact: Verdict
     path: .rpiv/artifacts/verdicts/
-    format: "JSON: { dimension, pass, score, severity, findings[], feedback }"
+    format: "JSON: { dimension, pass, score, severity, graded_at, artifact, findings[], feedback } — plus `risk_rulings[]` on a `correctness` verdict when the artifact declares `risks:`, and `finding_rulings[]` when `--prior` was given"
 key_steps:
   - title: Validate the flags, bail on a dispatch error
     rationale: A missing or unrecognized flag is a wiring problem, not a failing grade. Emitting a verdict for a misdispatch would poison the gate's fold.

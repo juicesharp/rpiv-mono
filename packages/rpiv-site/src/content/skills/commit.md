@@ -11,6 +11,10 @@ inputs:
   - name: $ARGUMENTS (commit hint)
     required: false
     source: Free-text hint or message. Empty falls back to inference from session history + `git diff`
+  - name: "--baseline <path>"
+    required: false
+    source: Workflow-supplied run-start snapshot of paths that were already dirty before the run began
+    notes: Peeled off the arguments before the message hint. Its presence re-runs the `git-changes` snapshot with the baseline threaded and treats that output as authoritative; paths reported as pre-existing are out of scope and are never staged.
 outputs:
   - artifact: One or more git commits
     path: current branch
@@ -25,7 +29,7 @@ key_steps:
   - title: Confirm the plan with the developer before staging
     rationale: "`ask_user_question` shows the planned files and messages first. Catches grouping mistakes cheaply; correcting after a commit means a reset."
   - title: Stage by-name and commit; never `-A` or `.`
-    rationale: Specific `git add` avoids accidental capture of `.env`, build artifacts, or unrelated WIP. Messages are written as if the user wrote them. No Claude attribution, no co-author lines.
+    rationale: Specific `git add` avoids accidental capture of `.env`, build artifacts, or unrelated WIP. Messages are written as if the user wrote them. No Claude attribution, no co-author lines. Under a workflow baseline, paths listed as pre-existing are left dirty and never staged.
 related:
   upstream: [implement, validate]
   downstream: [code-review, changelog]

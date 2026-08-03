@@ -7,7 +7,7 @@ order: 6
 
 The idea behind `/wf` is small: compose skills as skills, on top of an existing coding agent, with each step in a **fresh session**, **scoped tools**, and a **verifiable handoff** to the next. The runtime nails two of those outright: a clean session per stage, and a typed contract between stages the runner checks before it lets the chain advance. Scoped tools sit at the skill layer; the sandbox is the host's job. This guide is about authoring the first two yourself.
 
-[Run a workflow](/docs/guides/run-a-workflow) is the consumer's tour: three of the five bundled pipelines and when to reach for each. This is the producer's: how to express your own chain as a typed graph. It also covers the two stage capabilities that landed after the runtime's first cut, raw-text `prompt` dispatch and the sequential `iterate` mode.
+[Run a workflow](/docs/guides/run-a-workflow) is the consumer's tour: the three bundled pipelines and when to reach for each. This is the producer's: how to express your own chain as a typed graph. It also covers the two stage capabilities that landed after the runtime's first cut, raw-text `prompt` dispatch and the sequential `iterate` mode.
 
 ## The graph is the program
 
@@ -57,7 +57,7 @@ The graph is validated at load time. `validateWorkflow()` rejects a dangling edg
 
 ```ts
 import { typeboxSchema } from "@juicesharp/rpiv-workflow";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 
 const REVIEW_SCHEMA = typeboxSchema(
   Type.Object(
@@ -186,7 +186,7 @@ const polishWorkflow = defineWorkflow({
   stages: {
     "architecture-review": produces(),
     blueprint: produces({ loop: REVIEW_PHASE_ITERATE }),
-    implement: acts({ loop: PLANS_PHASE_FANOUT, reads: ["plans"] }),
+    implement: acts({ loop: IMPLEMENT_PLANS_FANOUT, reads: ["plans"] }),
     validate: produces({ prompt: VALIDATE_PLANS_PROMPT }),
     "code-review": produces(),
     commit: acts({ outcome: gitCommitOutcome }),
@@ -199,7 +199,7 @@ const polishWorkflow = defineWorkflow({
     "code-review": gate("blockers_count", {
       blueprint: gt(0),
       commit: eq(0),
-    }),
+    }, "commit"),
     commit: "stop",
   },
 });
@@ -207,11 +207,11 @@ const polishWorkflow = defineWorkflow({
 
 Notice how little wiring the stages carry. Each `produces` stage's outcome is **derived from the dispatched skill's contract**, not restated on the stage. That covers the bucket it publishes to (`plans`, `reviews`, `validation`) and the schema its data is validated against. So `blueprint` lands in the `plans` channel and `code-review`'s `{ blockers_count }` routing schema both come from their `SKILL.md` contracts. The workflow only names what the contract can't infer (the `iterate`/`fanout` decomposition, the `prompt` override, the `reads`, and `commit`'s `gitCommitOutcome`). Three moves make it work:
 
-- **`blueprint` iterates over the review's phases.** `REVIEW_PHASE_ITERATE` reads the `### Phase N — name` headings from the architecture review and pulls one per call. It hands each pass the paths of the plans the earlier passes already wrote (`Prior phase plans … build on them, don't duplicate`). Where `fanout` would plan every phase blind, `iterate` lets phase 3's plan see phases 1 and 2. On a corrective loop it folds the latest code review's blockers into each pass.
-- **`implement` fans out over every plan.** `PLANS_PHASE_FANOUT` walks the `## Phase N:` headings of *all* the plans the blueprint pass accumulated: push decomposition, because implementing one phase doesn't depend on implementing another.
+- **`blueprint` iterates over the review's phases.** `REVIEW_PHASE_ITERATE` enumerates the architecture review's `phases:` frontmatter array (derive-checked on the first call against the body's `### Phase N — name` headings) and pulls one entry per call. It hands each pass the paths of the plans written by the phases it declares in `depends_on` — or, when a phase declares none, every plan the earlier passes wrote (`Prior phase plans … build on them, don't duplicate`). Where `fanout` would plan every phase blind, `iterate` lets phase 3's plan see phases 1 and 2. On a corrective loop it folds the latest code review's blockers into each pass.
+- **`implement` fans out over every plan.** `IMPLEMENT_PLANS_FANOUT` (the `concurrency: 1` twin of `PLANS_PHASE_FANOUT`) walks the `phases:` frontmatter array — derive-checked against the body's `## Phase N:` headings — of *all* the plans the blueprint pass accumulated: push decomposition, every unit computed up front. Its units run serially, because they share one working tree and their write-sets are undeclared, so the scheduler can't derive dep edges.
 - **`validate` is a `prompt` stage, and it has to be.** This is the subtle one. The default rolling primary (and a plain `reads: ["plans"]`, which only reads `.at(-1)`) would hand `validate` the *last* plan alone, leaving every earlier phase unvalidated. `VALIDATE_PLANS_PROMPT` is a `PromptFn` that reaches into `state.named` for *every* plan in the latest blueprint pass and builds the whole `/skill:validate <p1> <p2> …` message itself. A prompt stage owns its entire message, so it can address the full accumulation a single positional arg can't.
 
-The review loop routes on the same `{ blockers_count }` schema as `build`, but the backward edge returns to `blueprint`. A corrective pass re-plans every review phase, blockers folded in, under the same `maxBackwardJumps` bound. That's the shape: `iterate` to accumulate, `prompt` to address the accumulation, a `gate` to close the loop.
+The review loop routes on the same `{ blockers_count }` gate as the opening `review-and-ship` example (and as the bundled `vet`), but the fix arm is `blueprint` itself rather than a separate `revise` stage. A corrective pass re-plans every review phase, blockers folded in, under the same `maxBackwardJumps` bound. That's the shape: `iterate` to accumulate, `prompt` to address the accumulation, a `gate` to close the loop.
 
 ## Ship it
 
@@ -224,7 +224,7 @@ The runner is skill-agnostic: it doesn't know `research` or `commit` ship from `
 
 ## Reuse a bundled skill everywhere: `skillAliases`
 
-You often want the bundled chains (`ship`, `build`, `arch`, `vet`, `polish`) exactly as shipped, but with one skill swapped for your own. The canonical case: a team that wants **model attribution on commits** authors an `attributed-commit` skill and needs every chain to use it instead of the bundled `commit`. Forking five workflow definitions to change one stage is the wrong move: they'd drift on the next upgrade.
+You often want the bundled chains (`build`, `vet`, `polish`) exactly as shipped, but with one skill swapped for your own. The canonical case: a team that wants **model attribution on commits** authors an `attributed-commit` skill and needs every chain to use it instead of the bundled `commit`. Forking three workflow definitions to change one stage is the wrong move: they'd drift on the next upgrade.
 
 `skillAliases` is the seam for this. A single declarative entry in your `config.ts` remaps a skill name across **every** loaded workflow (built-in, user, and project) at load time:
 
@@ -233,7 +233,7 @@ You often want the bundled chains (`ship`, `build`, `arch`, `vet`, `polish`) exa
 export default { skillAliases: { commit: "attributed-commit" } };
 ```
 
-Now every stage that would dispatch `/skill:commit` (in `ship`, `build`, `arch`, `vet`, and any workflow you authored) dispatches `/skill:attributed-commit`. The bundled definitions stay byte-for-byte untouched and upgrade-safe.
+Now every stage that would dispatch `/skill:commit` (in `vet`, `polish`, and any workflow you authored) dispatches `/skill:attributed-commit`. The bundled definitions stay byte-for-byte untouched and upgrade-safe. One exception is worth knowing up front: `build`'s `commit` stage is prompt-dispatched — it builds its own `/skill:commit --baseline …` message — and `run`/`prompt` stages are skipped by the remap, so an alias never reaches it.
 
 A few properties worth knowing:
 
@@ -251,7 +251,7 @@ The piece worth circling back to is the agent authoring the graph itself. Writin
 
 ## Next steps
 
-- [Run a workflow](/docs/guides/run-a-workflow): three of the five bundled pipelines and the runtime surface, from the consumer's side
+- [Run a workflow](/docs/guides/run-a-workflow): the three bundled pipelines and the runtime surface, from the consumer's side
 - [Pick your path](/docs/guides/pick-a-path): the scope map the bundled workflows mirror
 - [Reset between skills](/docs/guides/reset-between-skills): the fresh-context rule the runner enforces for you
 - [Authoring reference](https://github.com/juicesharp/rpiv-mono/blob/main/packages/rpiv-workflow/docs/workflow-authoring.md): every stage factory, the collector and parser catalogs, the full validation rules

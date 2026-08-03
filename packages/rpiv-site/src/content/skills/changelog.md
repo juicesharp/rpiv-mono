@@ -6,7 +6,7 @@ purpose: |
 when_to_use:
   - Preparing a release and the `[Unreleased]` block is out of date.
   - You want a draft for review before a release script runs.
-  - Skip when no `CHANGELOG.md` exists or no release tag has ever been cut.
+  - Skip when no `CHANGELOG.md` exists. A repo that has never been tagged still works — pass `--since <ref>`; without it the skill asks for one and stops.
 inputs:
   - name: $ARGUMENTS (`--since <ref>`)
     required: false

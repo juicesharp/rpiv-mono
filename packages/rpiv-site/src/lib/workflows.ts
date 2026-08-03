@@ -12,12 +12,18 @@
  *
  *   capture → goal, research                                    (verbatim brief)
  *   slice   → slice, slice-check, slice-grade, slice-fix        (gate + fix loop)
- *   design  → design-slice ×N                                   (parallel fanout)
+ *   design  → slice-design ×N                                   (parallel fanout)
  *   review  → design-review                                     (the human gate)
- *   plan    → subplan ×clusters, plan, plan-grade ×5, plan-fix  (gate + fix loop)
- *   code    → elaborate ×phases, code-splice, code-grade ×5, code-fix
- *                                                               (gate + fix loop)
- *   land    → implement, validate, commit
+ *   plan    → subplan ×clusters, subplan-check, plan,
+ *             plan-cite-check, plan-grade ×2–5, plan-demote,
+ *             plan-confirm, plan-snapshot, plan-fix
+ *                                                  (tier-scaled gate + fix loop)
+ *   code    → code ×phases, code-splice, code-cite-check,
+ *             code-grade ×2–5, code-demote, code-confirm,
+ *             code-snapshot, code-fix
+ *                                                  (tier-scaled gate + fix loop)
+ *   land    → implement, implement-scope-check, reconcile,
+ *             validate, commit
  *
  * The runtime `default` (no config) cascades to the first registered workflow
  * (`build`); the landing also *showcases* `build` because it exercises
@@ -52,10 +58,11 @@ export interface WorkflowEntry {
 	when: string;
 	/**
 	 * The realistic argument shown after the name in the Hero command line — what
-	 * you'd actually type. `build` takes a quoted brief; `vet` takes a flag/range
-	 * (`vet --staged`) and `polish` a layer/module path (`polish src/payments/`).
+	 * you'd actually type. `build` takes a quoted brief; `vet` takes a review
+	 * scope — a bare scope word or a commit range (`vet staged`, `vet main..HEAD`)
+	 * — and `polish` a layer/module path (`polish src/payments/`).
 	 * Curly quotes are baked in for the briefs so they keep their typographic
-	 * form; flags and paths render bare.
+	 * form; scopes and paths render bare.
 	 */
 	arg: string;
 	/** True stage count (`Object.keys(stages).length` in the workflow def). */

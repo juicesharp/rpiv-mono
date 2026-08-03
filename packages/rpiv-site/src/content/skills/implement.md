@@ -17,7 +17,7 @@ inputs:
 outputs:
   - artifact: Code changes
     path: working tree
-    format: edits + commits per phase
+    format: file edits applied per phase (no commits — `commit` owns git)
   - artifact: Plan checkmarks
     path: same plan file
     format: "`- [x]` updates in place"

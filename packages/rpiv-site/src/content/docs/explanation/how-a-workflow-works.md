@@ -48,7 +48,9 @@ A stage makes two independent choices: **what runs it** and **its kind**.
 **Its kind** decides how the result is handled:
 
 - `produces()` emits an artifact and hands it forward (`kind: "produces"`).
-- `acts()` performs a side effect, hands no artifact forward (`kind: "side-effect"`).
+- `acts()` performs a side effect and emits no artifact of its own (`kind: "side-effect"`); it leaves the rolling primary untouched, so the upstream artifact keeps flowing to the next stage.
+
+`terminal()` is not a third kind — it is sugar for `acts({ inheritsArtifacts: false })`, and it is the one stage that hands nothing forward. Its prompt receives the run's `originalInput` instead of an upstream artifact handle, it skips the upstream-artifact preflight, and it clears the rolling primary on success so anything downstream also starts without an inherited handle. (Unrelated to the `"stop"` graph sentinel above: a `terminal()` stage may still carry an outgoing edge.)
 
 The axes compose: a stage can be an AI `produces`, a deterministic `acts`, and so on. You don't restate the skill name when it matches the stage key: `blueprint: produces()` dispatches `/skill:blueprint`. Override with `produces({ skill: "..." })` when they differ.
 
@@ -56,7 +58,7 @@ The axes compose: a stage can be an AI `produces`, a deterministic `acts`, and s
 
 **The rolling primary.** When a `produces` stage finishes, its artifact becomes the *primary artifact*, a single rolling slot the next stage inherits automatically. This is the default linear handoff; no wiring needed.
 
-**Named channels.** Some artifacts deserve a named shelf. A stage with a named outcome publishes onto `state.named["<name>"]`, a **bucket**. Any later stage reads it by name with `reads:`.
+**Named channels.** Every `produces` stage also publishes its full `Output` onto a channel in `state.named` — a **bucket**. The key is the outcome's `name` when it declares one, and the stage's own record key otherwise (`outcome.name ?? <stage key>`). Naming the outcome is how several stages converge on one shared shelf. Any later stage reads a channel by name with `reads:`.
 
 ```ts
 blueprint: produces({ outcome: { name: "plans" } }),
@@ -67,7 +69,7 @@ A reader does not depend on adjacency. It gets whatever was last published to th
 
 ## Inside a stage: the outcome
 
-A stage's **outcome** (`OutputSpec`) turns a worker's messy real-world effect into clean structured `data`. It is a small pairing: a `collector` and an optional `parser` (plus an optional `name` for the bucket it publishes to). Across a stage, the outcome runs as a four-step sequence:
+A stage's **outcome** (`Outcome`) turns a worker's messy real-world effect into clean structured `data`. It is a small pairing: a `collector` and an optional `parser` (plus an optional `name` for the bucket it publishes to). Across a stage, the outcome runs as a four-step sequence:
 
 1. **snapshot.** The collector's optional pre-stage hook records a baseline (for example git `HEAD`).
 2. **collect.** After the stage, the collector gathers what changed (files, a diff, a transcript).
@@ -92,7 +94,9 @@ contract:
       artifactKind: plan
   consumes:
     data:
-      status: { const: ready }
+      type: object
+      properties:
+        status: { const: ready }
     reads:
       plans:
         meta: { artifactKind: plan }
@@ -124,16 +128,34 @@ An edge can be a string, `"stop"`, or a **predicate edge** that routes on the st
 "code-review": gate("blockers_count", {
   revise: gt(0),
   commit: eq(0),
-}),
+}, "commit"),
 ```
 
-`gate(field, routes)` reads a field from the stage's output `data`; `gt`, `eq`, and friends are **predicates**. Point an edge backward (`revise` to `implement`) to make a **loop**, bounded by the runner's `maxBackwardJumps` guard so it can never spin forever. Hand-rolled routing goes through `defineRoute(targets, fn)` so the targets stay enumerable for validation.
+`gate(field, routes, otherwise)` reads a field from the stage's output `data` and evaluates each branch's predicate in declaration order, first match wins; `gt`, `eq`, and friends are **predicates**. The third argument is **required**: when no predicate matches (including a missing or non-numeric field, which coerces to `NaN`) the explicit `otherwise` branch is taken and the routing-audit row carries a note that the fallback fired, so a no-match is a visible event rather than a silent property of declaration order. Point an edge backward (`revise` to `implement`) to make a **loop**, bounded by the runner's `maxBackwardJumps` guard so it can never spin forever. Hand-rolled routing goes through `defineRoute(targets, fn)` so the targets stay enumerable for validation.
 
-## Fanout and iterate: splitting a stage
+`match(field, branches, opts?)` is the enum companion to the numeric `gate` — the string, number, or boolean case `gate` can't express. Each branch maps a target stage to the discrete value that routes to it, compared against `output.data[field]` by strict `===` in declaration order, first match wins:
+
+```ts
+triage: match("severity", { escalate: "p0", fix: "p1", backlog: "p2" }),
+```
+
+No-match handling is explicit, never silent: with `opts.fallback` the unmatched value routes there, and without one the chain terminates (`stop`). Either way the routing audit records a note. `opts.from` sources the field from a **named channel's** latest published data instead of the stage's own output — this is how an edge routes on a panel's published verdict:
+
+```ts
+review: match("tie", { escalate: true }, { fallback: "keep", from: "review-panel" }),
+```
+
+Like `gate`, `match` is built on `defineRoute`, so its `.targets` (the fallback included) stay enumerable for graph validation.
+
+## Loops over a stage: fanout, iterate, assess
 
 Mark a stage `fanout` and the runner splits it into one unit per slice (for example, one unit per `## Phase N:` heading the inherited plan declares), each in its own isolated session, blind to the others. `iterate` is the accumulating counterpart: units are pulled one at a time, each able to see the prior result. You author one stage; the runner handles the spread and the join.
 
-`fanout` units run **simultaneously**: one Pi child session per unit, in-process, in waves that respect each unit's declared dependencies. A live lane console rides over the run. Step into any lane, watch its output, answer its question without halting the others. `iterate` stays **sequential by contract**: each pass must see what the earlier passes wrote, so ordering is the point, not a limitation. A fanout can still opt down to `concurrency: 1` when its units mutate shared state. The bundled `implement` does exactly that, because applying one plan to one working tree is a patch series, not a race.
+`fanout` units run **simultaneously**: one Pi child session per unit, in-process, under one shared concurrency cap, each unit gated on its own declared dependencies, so a dependent opens as soon as the units it names have finished instead of waiting on unrelated siblings. A live lane console rides over the run. Step into any lane, watch its output, answer its question without halting the others. `iterate` stays **sequential by contract**: each pass must see what the earlier passes wrote, so ordering is the point, not a limitation. A fanout can still opt down to `concurrency: 1` when its units mutate shared state and their write-sets are unknown, so the scheduler can't derive dependency edges. `polish`'s `implement` does exactly that: it applies a whole accumulated set of plans to one working tree, and nothing declares which unit touches what. `vet` and `build` instead run `implement` as a dep-gated DAG — each phase's declared write-set (plus any explicit `depends_on`) becomes an edge, so phases fan out concurrently and only overlapping writes get ordered. A phase that declares no write-set conflicts with every earlier phase, which quietly degrades that plan back to serial.
+
+`assess` is the third kind, and the only model-judged one: producer→judge rounds over the same stage. Each round runs the stage's producer, then a judge session grades the artifact it produced; `done(verdict)` decides whether to stop, and `feedForward` builds the next round's prompt from the verdict. `max` caps the rounds (default 8) — and unlike `fanout`/`iterate`, reaching the cap **advances** by default (`onCap: "advance"`) rather than halting. Like `iterate`, it requires a `produces` stage with a named outcome.
+
+`verify({ judge, done, feedForward, max })` is the degenerate form: a per-stage post-condition rather than a loop. It sets the stage's `verify` field (mutually exclusive with `loop`), and the runner desugars it into a single-round assess loop driven by the same machinery. Each attempt is graded, `done(verdict)` gates advancement, and a failure retries with `feedForward` feedback up to `max` attempts — but `max` defaults to **1**, so out of the box `verify` is a gate, not a retry loop. Raise `max` above 1 and `feedForward` becomes required; exhausting the budget halts the run with "verification failed".
 
 ## Sessions: fresh or continue
 
@@ -146,7 +168,7 @@ revise: acts({
 }),
 ```
 
-`continue` needs a host session from a prior stage, and cannot combine with `fanout` (which requires per-unit isolation) or with script stages.
+`continue` forks the predecessor stage's persisted session. With no predecessor to fork — the workflow's start stage, a stage right after a loop, or a missing session file — it degrades to a fresh dispatch rather than failing (a `continue` prompt stage at the start also draws a load-time warning). It cannot combine with any loop kind (`fanout`, `iterate`, `assess` — each unit requires its own isolated session), with `verify`, or with script stages (there is no session to continue); all three are load-time errors that block the run.
 
 ## Prompt stages: raw text instead of a skill
 
@@ -200,7 +222,7 @@ The framework provides the **vocabulary and plumbing**, not a webhook server or 
 
 The inverse of a trigger. A run fires **lifecycle events** any embedder can subscribe to via `LifecycleListeners`:
 
-`onWorkflowStart` and `onWorkflowEnd`, `onStageStart` and `onStageEnd`, `onStageRetry` and `onStageError`, `onRoute`, `onFanoutStart` and `onFanoutUnitEnd`.
+`onWorkflowStart` and `onWorkflowEnd`, `onStageStart` and `onStageEnd`, `onStageRetry` and `onStageError`, `onRoute`, and the loop family `onLoopStart`, `onUnitStart`, `onUnitEnd`, `onUnitHalt`, `onLoopCap`.
 
 Each carries a `LifecycleContext` (run id, workflow, the trigger). Use them to drive a progress UI, update a ticket, or alert on failure, without the workflow knowing who is watching.
 
@@ -228,6 +250,6 @@ Both the runner and the load-time checks route through these, so a stage is keye
 
 ## Putting it together
 
-A workflow is a graph of named stages, run by **skills** or **prompts** (AI-driven) or **scripts** (deterministic), handing artifacts forward along a rolling primary slot and **named channels**. Each stage's **outcome** observes its effect and parses it into typed `data`. **Contracts** declare what each skill takes and gives; **comparators** adjudicate the opaque parts you define. **Gates** and bounded loops shape the path; **fanout** and **iterate** spread the work. **Triggers** wake the run from the outside; **listeners** follow it. And two enforcement moments, load-time wiring validation and run-time data validation, ensure the only journeys that run are the ones that can actually work.
+A workflow is a graph of named stages, run by **skills** or **prompts** (AI-driven) or **scripts** (deterministic), handing artifacts forward along a rolling primary slot and **named channels**. Each stage's **outcome** observes its effect and parses it into typed `data`. **Contracts** declare what each skill takes and gives; **comparators** adjudicate the opaque parts you define. **Gates** and bounded loops shape the path; **fanout**, **iterate**, and **assess** spread and repeat the work. **Triggers** wake the run from the outside; **listeners** follow it. And two enforcement moments, load-time wiring validation and run-time data validation, ensure the only journeys that run are the ones that can actually work.
 
-Next: [Run a workflow](/docs/guides/run-a-workflow) walks three of the five bundled pipelines and the `/wf` commands. For the narrative version of this same arc, read [The workflow author's tale](/blog/the-workflow-authors-tale).
+Next: [Run a workflow](/docs/guides/run-a-workflow) walks the three bundled pipelines and the `/wf` commands. For the narrative version of this same arc, read [The workflow author's tale](/blog/the-workflow-authors-tale).

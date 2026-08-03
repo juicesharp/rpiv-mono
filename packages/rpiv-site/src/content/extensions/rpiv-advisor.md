@@ -1,7 +1,7 @@
 ---
 slug: rpiv-advisor
-tagline: In-session advisory layer that helps Claude pick the right next move from a configurable inventory of options.
-package: rpiv-advisor
+tagline: In-session escalation path — the model hands its whole conversation branch to a stronger reviewer model you pick with /advisor, and gets back a plan, a correction, or a stop signal.
+package: "@juicesharp/rpiv-advisor"
 status: stable
 order: 1
 ---

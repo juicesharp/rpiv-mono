@@ -59,9 +59,9 @@ The chain ends in code, one phase at a time.
 /skill:implement .rpiv/artifacts/plans/password-reset.md Phase 1
 ```
 
-`/skill:implement` runs a **single phase per call**. It applies the phase's changes, runs the success criteria from the plan, and **refuses to mark the phase complete until they pass**. If they fail it stops, surfaces the failure with recovery context, and waits.
+`/skill:implement` runs **one phase per call when you name a phase** — omit the `Phase N` token and it runs every phase in the plan sequentially in a single call. Scoped to a phase, it applies that phase's changes, runs the commands under that phase's `#### Automated Verification:` block, and **refuses to check those criteria off until they pass**. If they fail it stops, surfaces the failure with recovery context, and waits.
 
-Then you review. This is the micro-checkpoint blueprint embedded between phases. Look at the diff. If it's good, run the next phase.
+Then you review. Scoping each call to a single phase is what creates the checkpoint — implement stops as soon as the named phase's own success criteria pass and does not advance to the next phase on its own. Look at the diff. If it's good, run the next phase.
 
 ```
 /skill:implement .rpiv/artifacts/plans/password-reset.md Phase 2
@@ -115,7 +115,7 @@ Reviews surface real flaws. Phases hit obstacles the design didn't anticipate. T
 
 Each command takes the previous step's artifact path. State lives in `.rpiv/artifacts/…`, not in the conversation. That's the whole point. Your next session can pick up the chain mid-flow without losing context, and the agent never has to re-derive earlier decisions.
 
-If you skip a step, the next skill notices and offers to run the missing one. If you revise an artifact mid-flight, downstream skills pick up the new version on the next invocation. The chain is durable, not stateful.
+If you skip a step, the next skill does not run the missing one for you — it falls back. Skills that read an upstream artifact offer the most recent matching files on disk as a pick-list (`blueprint` lists recent research and solutions artifacts; `validate` and `revise` list recent plans) or ask you for the path outright, as `implement` does. With nothing on disk, `blueprint` takes a free-text feature description and runs in standalone mode. If you revise an artifact mid-flight, downstream skills pick up the new version on the next invocation. The chain is durable, not stateful.
 
 ## Next steps
 

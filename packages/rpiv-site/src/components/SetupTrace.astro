@@ -6,7 +6,7 @@ const STEPS = [
 	},
 	{
 		title: "Works out what's needed",
-		body: "Reads your Pi settings and figures out which sibling extensions are missing and which stale entries should go. If settings can't be read, it backs off instead of guessing.",
+		body: "Reads your Pi settings and figures out which sibling extensions are missing and which stale entries should go. If settings can't be read it treats every sibling as missing and proposes the full install set, but it never prunes on a guess.",
 	},
 	{
 		title: "Stops if there's nothing to do",
@@ -18,7 +18,7 @@ const STEPS = [
 	},
 	{
 		title: "Prunes the stale entries",
-		body: "Removes the outdated entries from your settings. A write error is reported, never fatal.",
+		body: "Removes the outdated entries from your settings. A write error is never fatal — the run continues.",
 	},
 	{
 		title: "Installs one at a time",

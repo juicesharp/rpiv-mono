@@ -11,11 +11,20 @@ when_to_use:
 inputs:
   - name: plan path
     required: true
-    source: Path to `.rpiv/artifacts/plans/*.md`
-    notes: A review-artifact path is rejected with a hint pointing back to the plan.
+    source: Manual form — positional path to `.rpiv/artifacts/plans/*.md`
+    notes: A review-artifact path is rejected with a hint pointing back to the plan. If omitted, `revise` offers the recent plans under `.rpiv/artifacts/plans/` as `ask_user_question` options.
   - name: feedback
     required: true
-    source: Free-text describing the specific changes
+    source: Manual form — free-text describing the specific changes
+    notes: Required in the manual form only; in the workflow form the review's findings are the feedback set.
+  - name: --plans
+    required: false
+    source: Workflow form — orchestrator-wired path to the plan to update (repeatable)
+    notes: Recognized by the flag token; selects the workflow form together with `--reviews`.
+  - name: --reviews
+    required: false
+    source: Workflow form — orchestrator-wired review artifact carrying the findings that drive the edits (repeatable)
+    notes: The review is read FULLY and its findings become the feedback set, so no preliminary questions are asked.
 outputs:
   - artifact: Same plan file, in-place edit
     path: same `.rpiv/artifacts/plans/*.md`

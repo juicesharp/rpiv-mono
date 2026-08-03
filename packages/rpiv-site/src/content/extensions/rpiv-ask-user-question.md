@@ -1,7 +1,7 @@
 ---
 slug: rpiv-ask-user-question
-tagline: Lets a skill pause and ask the user a single, well-formed question without breaking flow.
-package: rpiv-ask-user-question
+tagline: A structured questionnaire the model puts to you instead of guessing — up to four tabbed questions, each with 2-4 typed options, answered back as structured data.
+package: "@juicesharp/rpiv-ask-user-question"
 status: stable
 order: 3
 ---

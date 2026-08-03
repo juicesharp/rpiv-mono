@@ -34,5 +34,5 @@ key_steps:
     rationale: Per-phase `blueprint` invocations are the supported chaining pattern, and whole-artifact handoffs are explicitly not. The machine-readable `phases:` array is what drives the polish pipeline's per-phase iteration.
 related:
   upstream: []
-  downstream: [blueprint, plan]
+  downstream: [blueprint]
 ---

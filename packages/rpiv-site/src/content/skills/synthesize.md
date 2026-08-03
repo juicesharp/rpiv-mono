@@ -24,6 +24,10 @@ inputs:
     required: false
     source: Flag from the cluster fanout
     notes: Emits a compact sub-plan (partial mode) instead of a full plan.
+  - name: --cluster
+    required: false
+    source: Ordinal supplied by the cluster fanout (partial mode only)
+    notes: "Written verbatim into the sub-plan's `_cluster-<k>.md` filename. For a manual partial run, scan `.rpiv/artifacts/subplans/` for existing `*_cluster-<k>.md` and take the next unused positive integer — a missing or duplicated ordinal trips the cluster-coverage floor and a re-dispatched pass would clobber a sibling sub-plan."
 outputs:
   - artifact: Phased plan (flat / root mode)
     path: .rpiv/artifacts/plans/

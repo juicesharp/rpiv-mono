@@ -1,6 +1,6 @@
 ---
 title: "Run a workflow"
-description: "Hand the skill chain to /wf. Three of the five bundled pipelines, when to use each, and when hand-driving still wins."
+description: "Hand the skill chain to /wf. The three bundled pipelines, when to use each, and when hand-driving still wins."
 section: "guides"
 order: 5
 ---
@@ -17,32 +17,32 @@ Two reasons to reach for it. The chain is a graph, not a line, and the runner is
 /wf                  Preview every loaded workflow.
 /wf <name>           Preview one workflow's stage graph.
 /wf <name> <input>   Run a workflow, piping <input> to the start stage.
-/wf @<run-id>        Resume a run that died, from its last incomplete stage.
+/wf @<ref>           Resume a run by run-id, --name alias, or .jsonl path.
 ```
 
 Preview first. The graph view shows every stage, its skill, the edges out (linear, `stop`, or a predicate), and where the routing branches land. Run when the graph matches what you'd hand-drive.
 
-Resume last. `@<run-id>` is the resume sigil. Pass the id of a run that failed or was cut off, and the runner reads its JSONL trail back, rebuilds the accumulated state, and re-enters at the first stage that never finished. The id is the `<run-id>` slug in the run's filename (`.rpiv/workflows/runs/<run-id>.jsonl`), also surfaced as `runId` on the rows `listRuns` returns.
+Resume last. `@<ref>` is the resume sigil. Point it at a run that failed or was cut off, and the runner reads its JSONL trail back, rebuilds the accumulated state, and re-enters at the first stage that never finished. The ref resolves three ways: the `<run-id>` slug in the run's filename (`.rpiv/workflows/runs/<run-id>.jsonl`, also surfaced as `runId` on the rows `listRuns` returns), a run's `--name` alias, or a path to the run's JSONL — a trailing `.jsonl` is stripped and any directory prefix dropped, so your editor's `@` file-autosuggestion works as-is. To get an alias, pass `--name <slug>` as the first or last token of the run command (`/wf build <input> --name auth-fix`), then resume with `/wf @auth-fix`. The flag is only recognised in those two positions — a `--name` mid-input stays part of your prompt text and the runner warns — and it's ignored with a warning on `@resume`, where the ref already identifies the run.
 
-## Three of the five bundled pipelines
+## The three bundled pipelines
 
-`rpiv-pi` registers five pipelines and showcases three. Each maps to a posture from [Pick your path](/docs/guides/pick-a-path), not 1:1, but close enough to pick by name. (`/wf <input>` with no name runs the first registered pipeline, `vet`, unless your config sets a `default`.)
+`rpiv-pi` registers three pipelines. Each maps to a posture from [Pick your path](/docs/guides/pick-a-path), not 1:1, but close enough to pick by name. (`/wf <input>` with no name runs the first registered pipeline, `build`, unless your config sets a `default`.)
 
 ### `/wf build <input>`
 
-The flagship: ship a feature from a brief, sliced and gated. Thirty stages: `goal → research → slice → slice-check → slice-grade (↺ slice-fix) → design-slice ×N → design-review → subplan → subplan-check → plan → plan-cite-check → plan-grade (↺ plan-fix) → plan-demote → plan-confirm → plan-snapshot → elaborate ×phases → code-splice → code-cite-check → code-grade (↺ code-fix) → code-demote → code-confirm → code-snapshot → implement → implement-scope-check → reconcile → validate → commit`. The moves that matter:
+The flagship: ship a feature from a brief, sliced and gated. Thirty stages: `goal → research → slice → slice-check → slice-grade (↺ slice-fix) → slice-design ×N → design-review → subplan → subplan-check → plan → plan-cite-check → plan-grade (↺ plan-fix) → plan-demote → plan-confirm → plan-snapshot → code ×phases → code-splice → code-cite-check → code-grade (↺ code-fix) → code-demote → code-confirm → code-snapshot → implement → implement-scope-check → reconcile → validate → commit`. The moves that matter:
 
 - **`goal`** is a script stage (no LLM) that writes your brief to disk byte-for-byte. Every later judgment anchors on that file: the plan and code panels grade completeness and correctness against it, and `validate` receives it as `--goal`.
 - **`slice`** decomposes the brief into independent vertical slices. You confirm the cut once, and that confirmation freezes the coverage units the downstream check conserves.
-- **Three quality gates, each with a fix loop.** `slice-check` is a script gate: dependency-cycle freedom plus coverage conservation, zero LLM calls. A re-slice may redistribute your brief across slices but never drop a piece of it. `slice-grade` adds one fresh-context design-readiness judgment; a failure routes to `slice-fix`, which re-cuts with structural authority (split, merge, renumber). `plan-grade` and `code-grade` are five-dimension panels (completeness, correctness, actionability, pattern-following, architecture-fit), one fresh session per dimension, with `amend` as their surgical fix arm. Verdicts fold with a severity floor: only a `medium`+ finding blocks the gate.
-- **`design-slice` fans out** one fresh session per slice, dependency-ordered, all running at once. A genuine design fork reaches you through the lane console without halting the other lanes.
+- **Three quality gates, each with a fix loop.** `slice-check` is a script gate: dependency-cycle freedom plus coverage conservation, zero LLM calls. A re-slice may redistribute your brief across slices but never drop a piece of it. `slice-grade` adds one fresh-context design-readiness judgment; a failure routes to `slice-fix`, which re-cuts with structural authority (split, merge, renumber). `plan-grade` and `code-grade` are tier-scaled panels, one fresh session per dimension, with `amend` as their surgical fix arm. A small run (≤1 slice, ≤2 phases, no medium-or-higher verdict yet on that gate's channel) grades correctness and completeness only; larger or previously-failing runs grade the full roster — completeness, correctness, actionability, pattern-following, architecture-fit. Verdicts fold with a severity floor: only a `medium`+ finding blocks the gate.
+- **`slice-design` fans out** (the `design-slice` skill) one fresh session per slice, dependency-ordered, all running at once. A genuine design fork reaches you through the lane console without halting the other lanes.
 - **`design-review`** is the pipeline's human stage: every slice's design in a single consolidated summary. Accept, or adjust interfaces and data types; the edit cascades to the changed contract's dependents before synthesis sees the designs.
-- **`subplan → plan`** merge hierarchically (per-cluster sub-plans, then one plan) so no single pass holds every design. **`elaborate`** writes implement-ready code per phase in parallel. **`code-splice`**, a script, stitches it into the plan before the code gate re-grades the code-bearing plan.
-- **`implement`** runs the plan's phases serially on purpose: applying one plan to one working tree is a patch series, not a race (cap 32 phases).
+- **`subplan → plan`** merge hierarchically (per-cluster sub-plans, then one plan) so no single pass holds every design. **`code`** (the `elaborate` skill) writes implement-ready code per phase in parallel. **`code-splice`**, a script, stitches it into the plan before the code gate re-grades the code-bearing plan.
+- **`implement`** fans the plan's phases out concurrently under a dependency gate (cap 32 phases). Each phase declares a `files:` write-set; a phase is ordered after every lower phase whose write-set overlaps its own (test twins expanded, so a phase touching `x.ts` conflicts with one owning `x.test.ts`) or that it names in `depends_on`. Those edges fold into topological waves: independent phases run at once, up to the host's concurrency cap. A phase that declares no write-set conflicts with every lower phase, so a `files:`-less plan degrades to one phase per wave — serial. (polish is the exception: its multi-plan `implement` sets `concurrency: 1`, because plans that accumulate across passes have no derivable write-sets to gate on.)
 
-### `/wf vet [scope]`
+### `/wf vet <scope>`
 
-Examine an existing diff for approval, optionally repair it. `code-review → (blueprint → implement → validate → back to code-review) → commit`. The input piped to the start stage is the review scope `code-review` accepts: `commit` (HEAD), `staged`, `working` (unstaged), a commit hash, an `A..B` range, or a PR branch name. Leave it empty and the scope auto-detects to feature-branch-vs-default-branch (first-parent). Routing is the same numeric gate the other chains use. `code-review`'s contract emits `blockers_count`, and `gate("blockers_count", { blueprint: gt(0), commit: eq(0) })` sends a clean review (`eq(0)`) straight to `commit` and any remaining blockers (`gt(0)`) back through `blueprint` for a fix pass. Orthogonal to the scope axis: point it at your own staged work or a teammate's PR branch when you want a structured second pass with an optional fix cycle.
+Examine an existing diff for approval, optionally repair it. `goal → code-review → (blueprint → implement → implement-scope-check → reconcile → validate → back to code-review) → commit`. The input piped to the start stage is the review scope `code-review` accepts: `commit` (HEAD), `staged`, `working` (unstaged), a commit hash, an `A..B` range, or a PR branch name. The scope is not optional here: `/wf vet` on its own is the preview form — `/wf <name>` prints the stage graph and returns without running — so pass a scope explicitly. The empty-scope auto-detect (feature-branch-vs-default-branch, first-parent) is reachable by hand-driving `/skill:code-review` with no argument. Routing is the same numeric gate the other chains use. `code-review`'s contract emits `blockers_count`, and `gate("blockers_count", { blueprint: gt(0), commit: eq(0) }, "commit")` sends a clean review (`eq(0)`) straight to `commit` and any remaining blockers (`gt(0)`) back through `blueprint` for a fix pass; the trailing `"commit"` is the required explicit `otherwise` branch, taken when the field is missing or non-numeric. Orthogonal to the scope axis: point it at your own staged work or a teammate's PR branch when you want a structured second pass with an optional fix cycle.
 
 ### `/wf polish <input>`
 
@@ -52,9 +52,9 @@ Two standalone skills round out the set without their own pipelines. `/skill:pr-
 
 ## What `/wf` adds over hand-driving
 
-**Parallel fan-out with a live lane console.** Fanout units run as simultaneous Pi child sessions, in-process. A lanes dock tracks every unit's progress and token spend. Step into any lane to watch its output live. When a lane asks a question, it reaches you through the console without halting the others. `iterate` stages stay sequential by contract (each pass builds on the last), and `implement` keeps its units serial on purpose (a plan is a patch series).
+**Parallel fan-out with a live lane console.** Fanout units run as simultaneous Pi child sessions, in-process. A lanes dock tracks every unit's progress and token spend. Step into any lane to watch its output live. When a lane asks a question, it reaches you through the console without halting the others. `iterate` stages stay sequential by contract (each pass builds on the last), and `implement` fans out under a dependency gate: phases are ordered into topological waves by their declared `files:` write-set overlap plus any explicit `depends_on`, so independent phases run together up to the host's concurrency cap. A phase that declares no `files:` conflicts with every lower phase, which keeps a write-set-less plan serial one wave at a time — as is polish's multi-plan `implement`, pinned to `concurrency: 1` because its units' write-sets are unknown.
 
-**Conditional routing with a bounded loop.** The hand-driven chain treats `code-review → commit` as the default and you eyeball the review to decide whether to fix. The workflow makes the routing explicit: a `gate(field, branches)` over `output.data`, or a `defineRoute(targets, fn)` for richer discriminators (`vet` and `polish` route on the numeric `blockers_count`; `build`'s three gates fold per-dimension grade verdicts via `defineRoute`). Backward edges are first-class: a `validate → code-review` jump or a `code-review → blueprint` jump is just another edge target. The runner counts backward jumps and halts at `maxBackwardJumps` (default 2), so a stuck loop can't burn through your tokens forever.
+**Conditional routing with a bounded loop.** The hand-driven chain treats `code-review → commit` as the default and you eyeball the review to decide whether to fix. The workflow makes the routing explicit: a `gate(field, branches, otherwise)` over `output.data` (the `otherwise` no-match fallback is mandatory — it is rejected at construction if omitted), or a `defineRoute(targets, fn)` for richer discriminators (`vet` and `polish` route on the numeric `blockers_count`; `build`'s three gates fold per-dimension grade verdicts via `defineRoute`). Backward edges are first-class: a `validate → code-review` jump or a `code-review → blueprint` jump is just another edge target. The runner counts backward jumps per destination stage and halts at `maxBackwardJumps` (default 3 — a stage runs once, then may be re-entered up to 3 more times, so at most 4 executions), so a stuck loop can't burn through your tokens forever.
 
 **An audited trail.** Every run writes one JSONL file under `<cwd>/.rpiv/workflows/runs/<run-id>.jsonl`. The first line is a `WorkflowHeader` carrying the run id, workflow name, original input, timestamp, and trigger (`command`, `programmatic`, or `external` with a source string for webhooks and cron). Subsequent lines are one `WorkflowStage` row per executed stage plus routing-decision rows. `listRuns(cwd)` enumerates headers cheaply (first-line reads only); `readLastStage` and `listArtifacts` open a specific run for inspection. The same trail is what makes a run resumable: `/wf @<run-id>` (or `resumeWorkflowByRunId`) replays those rows to rebuild the accumulated state and re-enters at the first stage that never completed. That includes a stage that died *mid-`fanout`* or *mid-`iterate`*, where it re-pulls only the unfinished units. It guards the one boundary it can check: if a `FanoutFn`/`IterateFn` recomputes a different unit list than the run recorded, resume refuses rather than run the wrong unit, so a non-deterministic generator fails loudly instead of silently diverging.
 
@@ -119,13 +119,13 @@ When a stage genuinely needs the prior conversation (typically because the reaso
 })
 ```
 
-`continue` reuses the previous stage's session via `host.sendUserMessage()` rather than opening a new one. Two costs: context grows monotonically (every continued stage stacks on top of the last), and `continue` is incompatible with `fanout` and with script stages (load-time validation rejects the combination). Reach for it only when the alternative (materializing reasoning into an artifact the next fresh stage can read) would lose something important.
+`continue` reuses the previous stage's session via `host.sendUserMessage()` rather than opening a new one. Two costs: context grows monotonically (every continued stage stacks on top of the last), and `continue` is incompatible with every loop kind (`fanout`, `iterate`, `assess`), with `verify` stages, and with script stages — load-time validation rejects each combination, because every loop unit and every verify attempt requires its own isolated session, and a script stage has no session to continue. Reach for it only when the alternative (materializing reasoning into an artifact the next fresh stage can read) would lose something important.
 
 Session policy isn't the only per-stage knob. Which model a stage runs and how hard it reasons are configurable per stage too, without touching the workflow definition: pin the strong, high-effort model to `design` or the review stage and let `commit` run cheap. → [Right-size the model](/docs/guides/right-size-the-model).
 
 ## When hand-driving still wins
 
-Pick the runner when the shape of the work matches one of the three showcased pipelines and you've walked that chain enough times to trust it. Otherwise stay in the loop:
+Pick the runner when the shape of the work matches one of the three bundled pipelines and you've walked that chain enough times to trust it. Otherwise stay in the loop:
 
 - **First pass on an unfamiliar codebase.** The artifact-by-artifact pause is where you learn what the model is doing. The runner collapses that into one command: useful later, not now.
 - **Exploratory work where you'll pivot mid-chain.** If you'll likely abandon `blueprint`'s output to re-run `discover` with a different framing, the runner's straight-through execution costs you tokens you didn't need to spend.
@@ -133,7 +133,7 @@ Pick the runner when the shape of the work matches one of the three showcased pi
 
 ## Author your own workflow
 
-These three showcased pipelines are skill-agnostic in shape: the runner doesn't know `research` or `commit` ship from `rpiv-pi`. Drop a TypeScript file under `.rpiv/workflows/config.ts` in your project (or `~/.config/rpiv-workflow/config.ts` for a user-level default) and chain your own skills:
+These three pipelines are skill-agnostic in shape: the runner doesn't know `research` or `commit` ship from `rpiv-pi`. Drop a TypeScript file under `.rpiv/workflows/config.ts` in your project (or `~/.config/rpiv-workflow/config.ts` for a user-level default) and chain your own skills:
 
 ```ts
 import {
@@ -167,10 +167,14 @@ export default defineWorkflow({
   edges: {
     plan: "implement",
     implement: "code-review",
-    "code-review": gate("blockers_count", {
-      revise: gt(0),
-      commit: eq(0),
-    }),
+    "code-review": gate(
+      "blockers_count",
+      {
+        revise: gt(0),
+        commit: eq(0),
+      },
+      "commit",
+    ),
     revise: "implement",
     commit: "stop",
   },
