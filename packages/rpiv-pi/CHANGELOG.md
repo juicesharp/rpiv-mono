@@ -7,6 +7,45 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **A failing `validate` now repairs instead of stopping.** The `build` gate on
+  validate's published `verdict` splits: `pass` ⇒ `commit` (unchanged), `fail` ⇒
+  the new `validate-fix` arm, which re-enters at `implement-scope-check` so a fix
+  flows back through scope-check → reconcile → validate and the gate re-folds on
+  a fresh verdict. Previously a `fail` was terminal STOP, leaving the report on
+  disk for the user to act on by hand. Deliberately still not a `fallback`: a
+  missing or unexpected verdict stays terminal STOP, so un-anticipated data can
+  route neither into `commit` nor into the repair arm, and the sole path to
+  commit remains an explicit `pass`. The re-entry edge is deterministic and
+  non-counted; the budget-consuming edge is the gate's `fail` branch, bounded by
+  the runner's per-destination backward-jump budget.
+
+- **New `remediate` skill — the repair arm's body.** The tools/contract twin of
+  `implement` (`Bash(*)` + `side-effect`/`code-mutation`, so it owns no outcome
+  and emits no artifact) and the body-discipline twin of `amend` (single pass,
+  surgical, no subagents, no self-review, no questions). Reads `--plans` and
+  `--validation`, re-runs each failed `verify-at-implement` risk ruling's own
+  prescribed procedure, applies the minimal localized fix grounded in the
+  failing report, and confirms the procedure passes. It is workflow-dispatched
+  only (`disable-model-invocation: true`) — the workflow loops it straight back
+  to the validate gate, which is the only re-judgement.
+
+### Fixed
+
+- **`reconcile` no longer fails on its own prior successful deletion.** A
+  directive whose `replace` is empty and whose `find` is absent is now the
+  idempotent-re-run no-op for a deletion (find-absent *is* a deletion's success
+  condition), not a stale-directive finding. Without this the `validate-fix`
+  loop could not re-run `reconcile` after a repair pass. An absent `find` whose
+  non-empty `replace` is also absent is still a finding — reconcile does not
+  guess.
+
+- **`remediate` registered where the bundled-skill guards read.** It is now
+  listed among the workflow-internal skills in the pipeline pointer, so the
+  suggestion surface never offers it directly, and it is counted in the bundled
+  skill-contract guard (27 → 28).
+
 ## [2.3.1] - 2026-07-31
 
 ## [2.3.0] - 2026-07-31
