@@ -48,7 +48,8 @@
 		"state/task-graph.ts",
 		"tool/response-envelope.ts",
 		"tool/types.ts",
-		"view/format.ts"
+		"view/format.ts",
+		"view/sanitize.ts"
 	],
 	"pi": {
 		"extensions": [

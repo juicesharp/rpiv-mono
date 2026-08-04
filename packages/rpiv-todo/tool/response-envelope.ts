@@ -1,6 +1,7 @@
 import type { TaskState } from "../state/state.js";
 import type { Op } from "../state/state-reducer.js";
 import { deriveBlocks } from "../state/task-graph.js";
+import { sanitizeTerminalText } from "../view/sanitize.js";
 import type { Task, TaskAction, TaskDetails, TaskMutationParams } from "./types.js";
 
 /**
@@ -10,8 +11,8 @@ import type { Task, TaskAction, TaskDetails, TaskMutationParams } from "./types.
  */
 function formatListLine(t: Task): string {
 	const block = t.blockedBy?.length ? ` ⛓ ${t.blockedBy.map((id) => `#${id}`).join(",")}` : "";
-	const form = t.status === "in_progress" && t.activeForm ? ` (${t.activeForm})` : "";
-	return `[${t.status}] #${t.id} ${t.subject}${form}${block}`;
+	const form = t.status === "in_progress" && t.activeForm ? ` (${sanitizeTerminalText(t.activeForm)})` : "";
+	return `[${t.status}] #${t.id} ${sanitizeTerminalText(t.subject)}${form}${block}`;
 }
 
 /**
@@ -21,9 +22,9 @@ function formatListLine(t: Task): string {
  */
 function formatGetLines(task: Task, state: TaskState): string {
 	const blocks = deriveBlocks(state.tasks).get(task.id) ?? [];
-	const lines = [`#${task.id} [${task.status}] ${task.subject}`];
-	if (task.description) lines.push(`  description: ${task.description}`);
-	if (task.activeForm) lines.push(`  activeForm: ${task.activeForm}`);
+	const lines = [`#${task.id} [${task.status}] ${sanitizeTerminalText(task.subject)}`];
+	if (task.description) lines.push(`  description: ${sanitizeTerminalText(task.description)}`);
+	if (task.activeForm) lines.push(`  activeForm: ${sanitizeTerminalText(task.activeForm)}`);
 	if (task.blockedBy?.length) {
 		lines.push(`  blockedBy: ${task.blockedBy.map((id) => `#${id}`).join(", ")}`);
 	}
@@ -46,7 +47,7 @@ export function formatContent(op: Op, state: TaskState): string {
 			const t = state.tasks.find((x) => x.id === op.taskId);
 			// Defensive — `op.taskId` always resolves on success path.
 			if (!t) return `Created #${op.taskId}`;
-			return `Created #${t.id}: ${t.subject} (pending)`;
+			return `Created #${t.id}: ${sanitizeTerminalText(t.subject)} (pending)`;
 		}
 		case "update": {
 			if (!op.changed) {
@@ -56,7 +57,7 @@ export function formatContent(op: Op, state: TaskState): string {
 			return `Updated #${op.id}${transition}`;
 		}
 		case "delete":
-			return `Deleted #${op.id}: ${op.subject}`;
+			return `Deleted #${op.id}: ${sanitizeTerminalText(op.subject)}`;
 		case "clear":
 			return `Cleared ${op.count} tasks`;
 		case "list": {
