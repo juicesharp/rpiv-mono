@@ -2,6 +2,7 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { formatStatusLabel } from "../state/i18n-bridge.js";
 import { selectTaskSubjectById } from "../state/selectors.js";
+import { sanitizeTerminalText } from "./sanitize.js";
 import type { TaskState } from "../state/state.js";
 import type { Task, TaskAction, TaskDetails, TaskMutationParams, TaskStatus } from "../tool/types.js";
 
@@ -72,7 +73,7 @@ export function formatOverlayTaskLine(t: Task, theme: Theme, showId: boolean): s
 	const glyph = overlayStatusGlyph(t.status, theme);
 	const subjectColor =
 		t.status === "in_progress" ? "accent" : t.status === "completed" || t.status === "deleted" ? "muted" : "text";
-	let subject = theme.fg(subjectColor, t.subject);
+	let subject = theme.fg(subjectColor, sanitizeTerminalText(t.subject));
 	if (t.status === "completed" || t.status === "deleted") {
 		subject = theme.strikethrough(subject);
 	}
@@ -80,7 +81,7 @@ export function formatOverlayTaskLine(t: Task, theme: Theme, showId: boolean): s
 	if (showId) line += ` ${theme.fg("dim", `#${t.id}`)}`;
 	line += ` ${subject}`;
 	if (t.status === "in_progress" && t.activeForm) {
-		line += ` ${theme.fg("muted", `(${t.activeForm})`)}`;
+		line += ` ${theme.fg("muted", `(${sanitizeTerminalText(t.activeForm)})`)}`;
 	}
 	if (t.blockedBy && t.blockedBy.length > 0) {
 		line += ` ${theme.fg("muted", `⛓ ${t.blockedBy.map((id) => `#${id}`).join(",")}`)}`;
@@ -93,9 +94,9 @@ export function formatOverlayTaskLine(t: Task, theme: Theme, showId: boolean): s
  * indented bullet prefix). Pre-refactor `todo.ts:670-674`.
  */
 export function formatCommandTaskLine(t: Task, glyph: string): string {
-	const form = t.status === "in_progress" && t.activeForm ? ` (${t.activeForm})` : "";
+	const form = t.status === "in_progress" && t.activeForm ? ` (${sanitizeTerminalText(t.activeForm)})` : "";
 	const block = t.blockedBy?.length ? `    ⛓ ${t.blockedBy.map((id) => `#${id}`).join(",")}` : "";
-	return `  ${glyph} #${t.id} ${t.subject}${form}${block}`;
+	return `  ${glyph} #${t.id} ${sanitizeTerminalText(t.subject)}${form}${block}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -116,13 +117,13 @@ export function renderTodoCall(
 	let text = theme.fg("toolTitle", theme.bold("todo ")) + theme.fg("muted", glyph);
 
 	if (args.action === "create" && args.subject) {
-		text += ` ${theme.fg("dim", args.subject)}`;
+		text += ` ${theme.fg("dim", sanitizeTerminalText(args.subject))}`;
 	} else if (
 		(args.action === "update" || args.action === "get" || args.action === "delete") &&
 		args.id !== undefined
 	) {
 		const subject = selectTaskSubjectById(state, args.id);
-		text += ` ${theme.fg("accent", subject ?? `#${args.id}`)}`;
+		text += ` ${theme.fg("accent", subject ? sanitizeTerminalText(subject) : `#${args.id}`)}`;
 	} else if (args.action === "list" && args.status) {
 		text += ` ${theme.fg("muted", formatStatusLabel(args.status))}`;
 	}
