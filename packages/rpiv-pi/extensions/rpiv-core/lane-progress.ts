@@ -86,19 +86,16 @@ function guard(): ProgressGuard {
 const fanoutRuns = new Set<string>();
 
 /**
- * runId → the CURRENT run instance's `ctx.state` object (the runner's `run.state`
- * RunView, threaded by reference through `lifecycleCtxFor`). A resume REUSES the
- * runId but starts a FRESH `ctx.state` (`reconstructState` builds new state;
- * `buildRunContext` threads `state: recon.state`), so object identity distinguishes
- * the aborted predecessor from its resumed successor — the basis of the
- * `onWorkflowEnd` instance guard below. Seeded on `onWorkflowStart`, deleted on the
- * terminal-proceed path, cleared wholesale by `__resetLaneProgress`. Module-local
- * (the bridge runs only at the root launcher).
+ * runId → the current run instance's `ctx.state`. A resume reuses the runId but
+ * starts a fresh `ctx.state`, so object identity distinguishes the predecessor
+ * from its resumed successor — the basis of the `onWorkflowEnd` instance guard
+ * below. Seeded on `onWorkflowStart`, deleted on the terminal-proceed path,
+ * cleared wholesale by `__resetLaneProgress`. Module-local (the bridge runs only
+ * at the root launcher).
  *
- * Residual window (microtask-scale, accepted): a predecessor end that lands between
- * the successor's `recordRun` and its `onWorkflowStart` overwriting the seed still
- * matches its own recorded state and slips through — vastly narrower than the
- * unguarded race, which spanned the predecessor run's entire remaining stage.
+ * Residual (microtask-scale, accepted): a predecessor end landing between the
+ * successor's `recordRun` and its `onWorkflowStart` seed-overwrite still slips
+ * through.
  */
 const activeInstances = new Map<string, object>();
 
@@ -242,13 +239,10 @@ export async function registerLaneProgress(): Promise<void> {
 			onWorkflowEnd: (result, ctx) => {
 				const status = result.termination?.status;
 				if (!status || status === "running") return; // still in-flight — nothing to retire
-				// Run-instance guard: drop a superseded predecessor's late terminal event. A resume
-				// REUSES this runId and reactivates the retained lane back to "running" (recordRun),
-				// re-arming retireRun's first-retire-wins gate — without this check the aborted
-				// predecessor's late onWorkflowEnd (cooperative abort settles at the stage seam)
-				// would stamp the resumed lane with the predecessor's outcome + recap. Fail-open
-				// when no instance was recorded. Identity basis + residual window: see
-				// `activeInstances`.
+				// Run-instance guard: drop a superseded predecessor's late terminal event so it can't
+				// re-stamp the resumed lane with the predecessor's outcome + recap (a resume reactivates
+				// the lane to "running", re-arming retireRun's first-retire-wins gate). Fail-open when no
+				// instance was recorded — see `activeInstances` for the identity basis + residual window.
 				const recorded = activeInstances.get(ctx.runId);
 				if (recorded !== undefined && recorded !== ctx.state) return; // stale predecessor end
 				activeInstances.delete(ctx.runId); // keep the map bounded to in-flight runs
@@ -272,11 +266,8 @@ export async function registerLaneProgress(): Promise<void> {
 				// does NOT gate retirement: a run whose recap resolved to undefined still retires.
 				const recap = summarizeRun(ctx.cwd, ctx.runId);
 				retireRun(ctx.runId, status, error, lastArtifact);
-				// setRecap is the SOLE recap writer, deliberately ungated by terminal status:
-				// the x-key `stopSelected` path (lane-console.ts) may have already retired the
-				// lane to "aborted" while the run was in-flight (retireRun then no-ops), and the
-				// recap must still land on the terminal lane. Fail-soft: an undefined recap
-				// (missing/empty trail) stores nothing — renderRecap treats that as a no-op.
+				// Land the recap on the (possibly already-terminal) lane. See `setRecap` for why it's
+				// ungated by status. Fail-soft: an undefined recap stores nothing.
 				if (recap !== undefined) setRecap(ctx.runId, recap);
 				const ui = getCapturedUiContext();
 				if (!ui) return;

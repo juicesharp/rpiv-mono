@@ -233,21 +233,11 @@ function recapOutcomeOf(last: WorkflowStage): RunRecap["outcome"] {
 }
 
 /**
- * Terminal-state projection of one run's JSONL trail — the post-mortem recap
- * a lane renders on end-of-run. One `readAllStages` pass gates the `undefined`
- * return (no stage row ⇒ no terminal row ⇒ outcome unrecoverable from the
- * trail alone) and feeds both the last-row outcome (`recapOutcomeOf` — see it
- * for the collected-halt rule) and the artifact projection
- * (`stagesToArtifacts` → `handleToString`); `readHeader` adds the optional
- * `workflow`. `failureReason` is gated on `outcome !== "completed"` AND a
- * present `last.errMsg`, so a collected halt's errMsg never leaks into a
- * completed recap.
- *
- * Fail-soft by inheritance: every reader it composes runs over the
- * `readParsedRows` try/catch contract, and neither the `.map(...)` projection
- * nor the `recapOutcomeOf`/`STAGE_TO_RECAP_OUTCOME` lookup can throw. A
- * missing/empty/malformed JSONL file yields `undefined` (no stage rows), never
- * throws.
+ * Terminal-state projection of one run's JSONL trail — the post-mortem recap a lane
+ * renders on end-of-run. Returns `undefined` when no stage row exists (no terminal row
+ * ⇒ outcome unrecoverable from the trail). `failureReason` is set only for a
+ * non-completed outcome with a present `last.errMsg`, so a collected halt's errMsg
+ * never leaks into a completed recap. Fail-soft by inheritance — never throws.
  */
 export function summarizeRun(cwd: string, runId: string): RunRecap | undefined {
 	const stages = readAllStages(cwd, runId);

@@ -98,14 +98,13 @@ function padCol(theme: Theme, color: ThemeColor, text: string, width: number, bo
 	return theme.fg(color, content) + " ".repeat(gap);
 }
 
-/** The canonical artifact root every collector-produced path shares — stripped for
- *  DISPLAY only (16 dead columns per row); `<bucket>/<file>` keeps the context. */
+/** Canonical `.rpiv/artifacts/` root every collector path shares — stripped for display to
+ *  reclaim ~16 dead columns; stored values keep the full path. */
 const ARTIFACTS_DISPLAY_PREFIX = ".rpiv/artifacts/";
 
-/** Display form of an artifact path: the constant `.rpiv/artifacts/` root is stripped;
- *  a non-canonical path (url/opaque/inline handles, out-of-tree fs paths) passes through
- *  untouched. Display-only — stored values (`lastArtifact`, `RunRecap.artifacts`) keep
- *  the full path. */
+/** Display form of an artifact path — see `ARTIFACTS_DISPLAY_PREFIX` for the display-only/
+ *  stored-values split. Non-canonical paths (url/opaque/inline handles, out-of-tree fs paths)
+ *  pass through untouched. */
 function displayArtifact(path: string): string {
 	return path.startsWith(ARTIFACTS_DISPLAY_PREFIX) ? path.slice(ARTIFACTS_DISPLAY_PREFIX.length) : path;
 }
@@ -292,12 +291,10 @@ function renderProgressRow(
 	if (progress.units) nameRaw += ` · units ${progress.units.done}/${progress.units.total}`;
 	const usageTally = formatUsageTally(usage);
 	if (usageTally) nameRaw += ` · ${usageTally}`;
-	// The run's primary artifact path (a `produces` stage emitted one) — rendered as a
-	// trailing `→ <bucket>/<file>` segment (displayArtifact strips the canonical
-	// `.rpiv/artifacts/` root) AFTER the usage tally so a completed row points at what
-	// it built. Inherits `muted` via the single theme.fg("muted", nameRaw) wrap below,
-	// same as the tally. Omitted entirely when `lastArtifact` is undefined, so a
-	// side-effect-only run renders byte-identical to before this field existed.
+	// The run's primary artifact path (a `produces` stage emitted one) — rendered as a trailing
+	// `→ <bucket>/<file>` AFTER the usage tally so a completed row points at what it built.
+	// Omitted when `lastArtifact` is undefined, so a side-effect-only run renders byte-identical
+	// to before this field existed.
 	if (lastArtifact) nameRaw += ` → ${displayArtifact(lastArtifact)}`;
 
 	const coloredName = theme.fg("muted", nameRaw);
@@ -448,20 +445,11 @@ export function renderLiveOutputBorder(theme: Theme, width: number): string {
  * Render the end-of-run summary (the post-mortem recap) for ONE lane (console-only —
  * the ambient dock never calls this, mirroring `renderStageBreakdown`). Reads the lane
  * LIVE; a missing/evicted lane or a lane with no `recap` yields []. Auto-shows in the
- * console's laneBlock (no toggle — distinct from the `s`-gated `renderStageBreakdown`).
- *
- * A SINGLE summary line, never a per-artifact report (the lane chip already carries
- * the status glyph + word, a short reason, and the primary `→ lastArtifact`; the
- * recap adds only what the chip cannot): `→ <newest artifact>` (trail-order last —
- * partial artifacts included, no status filter, so a failed run points at how far it
- * got), a `+N more` count when more than one artifact landed, and `⚠ <reason>` ONLY
- * when the outcome is non-completed AND failureReason is set — segments joined with
- * ` · `, each omitted when empty, the whole line truncated to width. Returns [] when
- * NO segment applies (nothing to say beyond the chip), so such a lane renders
- * byte-identical to the pre-recap layout. ≤1 line by construction — the console's
- * constant-height invariant holds trivially. The recap outcome can legitimately
- * diverge from the lane chip (the accepted droppedFailureRows divergence: recap reads
- * "completed" off the trail while the chip shows ✗ failed).
+ * console's laneBlock (no toggle — distinct from the `s`-gated `renderStageBreakdown`),
+ * and ≤1 line by construction so the console's constant-height invariant holds. Its
+ * outcome can legitimately diverge from the lane chip (the accepted
+ * `droppedFailureRows` divergence: recap reads "completed" off the trail while the
+ * chip shows ✗ failed).
  */
 export function renderRecap(theme: Theme, width: number, runId: string): string[] {
 	const recap = getLane(runId)?.recap;
@@ -469,8 +457,6 @@ export function renderRecap(theme: Theme, width: number, runId: string): string[
 	const parts: string[] = [];
 	const n = recap.artifacts.length;
 	if (n > 0) {
-		// Newest artifact = trail-order last (partial artifacts included — no status filter),
-		// shown as `<bucket>/<file>` (displayArtifact strips the canonical root).
 		parts.push(theme.fg("muted", `→ ${displayArtifact(recap.artifacts[n - 1])}`));
 		if (n > 1) parts.push(theme.fg("dim", `+${n - 1} more`));
 	}

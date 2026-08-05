@@ -338,10 +338,10 @@ export class LaneConsole implements Component {
 		const { laneCap } = computeLaneLayout(realRows);
 		const laneList = renderLaneList(this.theme, width, { active: true, selection, frame: this.frame, laneCap });
 		// Recap summary (auto-shows — no toggle): ONE trail-derived end-of-run line for the
-		// selected lane (newest artifact · +N more · ⚠ reason — never a per-artifact report).
-		// Empty when the lane is missing, carries no recap (a running / reactivated lane renders
-		// byte-identical), or the recap adds nothing beyond the lane chip. Spliced AFTER the lane
-		// list and BEFORE the optional stage block; ≤1 line, absorbed by the transcript flex region.
+		// selected lane (newest artifact · +N more · ⚠ reason). Empty when the lane is missing,
+		// carries no recap (a running / reactivated lane renders byte-identical), or the recap
+		// adds nothing beyond the lane chip. Spliced AFTER the lane list and BEFORE the optional
+		// stage block; ≤1 line, absorbed by the transcript flex region.
 		const recapBlock = target ? renderRecap(this.theme, width, target.runId) : [];
 		const stageBlock =
 			target && this.stageBreakdownExpanded ? renderStageBreakdown(this.theme, width, target.runId) : [];
