@@ -338,4 +338,5 @@ Row **writes** are runner-owned. Readers are public:
 | `readHeader(cwd, runId)` | The run's header row |
 | `readLastStage(cwd, runId)` | The most recent stage row |
 | `listArtifacts(cwd, runId)` | Every artifact the run recorded |
+| `summarizeRun(cwd, runId)` | A `RunRecap \| undefined` (terminal `outcome` + display-string `artifacts` + `workflow` projected from the trail; `outcome` is `"completed"` for a `collected:true` collect-all halt) — `undefined` when the run has no stage rows |
 | `runFileFor(cwd, run)` | The absolute path of the run's JSONL file. `run` is anything carrying `runId` — a `RunSummary` or `WorkflowHeader` |

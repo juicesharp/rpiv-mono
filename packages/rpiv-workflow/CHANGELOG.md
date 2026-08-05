@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- A non-terminal `collected:true` collect-all fanout halt no longer reads as
+  the run's terminal `"failed"` outcome. A loop-final run's last stage row can
+  be the halt while the run actually completed; `summarizeRun` now reads such a
+  row as `"completed"` (no `failureReason`) and scans the trail once for the
+  outcome, artifacts, and workflow.
+
 ## [2.4.0] - 2026-08-03
 
 ### Fixed

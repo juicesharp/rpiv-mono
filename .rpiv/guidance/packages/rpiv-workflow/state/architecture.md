@@ -9,7 +9,7 @@ Append-only JSONL audit store for workflow runs at `<cwd>/.rpiv/workflows/runs/<
 
 ## Consumers
 - Writers: `../runner/runner.ts` (`appendHeader`), `../runner/chain-advance.ts` (`appendRoutingDecision`), package-root `../audit-rows.ts` (`appendStage`, via `recordStage`) and `../loop.ts` (`appendLoopCap`)
-- Public surface (`../registration.ts`, re-exported by `../index.ts`): `listRuns`, `readHeader`, `readLastStage`, `readLoopCaps`, `resolveRun` (ref → header), `listArtifacts`, `runFileFor` (the ONE opaque path projection), `STATE_SCHEMA_VERSION` + types `SessionRef`/`WorkflowHeader`/`WorkflowStage`/`RunSummary`/`LoopCapRow`. `readAllStages`/`readRoutingDecisions` stay on the internal `state/index.ts` barrel only; `runsDir`/`stateFilePath` live on the test-only `../internal.ts` subpath. `notifyPartialArtifacts` (a runner-side helper) reads via `listArtifacts`
+- Public surface (`../registration.ts`, re-exported by `../index.ts`): `listRuns`, `readHeader`, `readLastStage`, `readLoopCaps`, `resolveRun` (ref → header), `listArtifacts`, `summarizeRun` (+ `RunRecap`), `runFileFor` (the ONE opaque path projection), `STATE_SCHEMA_VERSION` + types `SessionRef`/`WorkflowHeader`/`WorkflowStage`/`RunSummary`/`LoopCapRow`. `readAllStages`/`readRoutingDecisions` stay on the internal `state/index.ts` barrel only; `runsDir`/`stateFilePath` live on the test-only `../internal.ts` subpath. `notifyPartialArtifacts` (a runner-side helper) reads via `listArtifacts`
 
 ## Module Structure
 ```

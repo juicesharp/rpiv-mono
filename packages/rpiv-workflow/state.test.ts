@@ -824,6 +824,98 @@ describe("summarizeRun", () => {
 		} satisfies RunRecap);
 	});
 
+	it("reads a collected:true halt as completed with no failureReason (non-terminal collect-all)", () => {
+		const runId = "collected-halt";
+		appendHeader(tmpDir, { runId, workflow: "mid", input: "x", ts: "2026" });
+		// An earlier completed unit carrying an artifact — still surfaced in the recap.
+		appendStage(tmpDir, runId, {
+			session: null,
+			stageNumber: 1,
+			stage: "implement (phase-1)",
+			skill: "implement",
+			status: "completed",
+			ts: "t1",
+			parent: "implement",
+			role: "produce",
+			unitId: "phase-1",
+			unitIndex: 0,
+			output: mkOutput([{ kind: "fs", path: ".rpiv/artifacts/implement/p1.md" }]),
+		});
+		// The LAST row is a collected:true halt — byte-identical to a hard
+		// recordFatalFailure row except for the marker. The run survived the
+		// halted unit, so the recap reads "completed" and carries NO
+		// failureReason despite the halt row's errMsg.
+		appendStage(tmpDir, runId, {
+			session: null,
+			stageNumber: 2,
+			stage: "implement (phase-2)",
+			skill: "implement",
+			status: "failed",
+			ts: "t2",
+			errMsg: "unit halted: collect-all soft-stop",
+			parent: "implement",
+			role: "produce",
+			unitId: "phase-2",
+			unitIndex: 1,
+			collected: true,
+		});
+		expect(summarizeRun(tmpDir, runId)).toEqual({
+			outcome: "completed",
+			artifacts: [".rpiv/artifacts/implement/p1.md"],
+			workflow: "mid",
+		} satisfies RunRecap);
+	});
+
+	it("reads multiple trailing collected halts as completed", () => {
+		const runId = "multi-collected-halt";
+		appendHeader(tmpDir, { runId, workflow: "mid", input: "x", ts: "2026" });
+		appendStage(tmpDir, runId, {
+			session: null,
+			stageNumber: 1,
+			stage: "implement (phase-1)",
+			skill: "implement",
+			status: "completed",
+			ts: "t1",
+			parent: "implement",
+			role: "produce",
+			unitId: "phase-1",
+			unitIndex: 0,
+		});
+		appendStage(tmpDir, runId, {
+			session: null,
+			stageNumber: 2,
+			stage: "implement (phase-2)",
+			skill: "implement",
+			status: "failed",
+			ts: "t2",
+			errMsg: "halted",
+			parent: "implement",
+			role: "produce",
+			unitId: "phase-2",
+			unitIndex: 1,
+			collected: true,
+		});
+		appendStage(tmpDir, runId, {
+			session: null,
+			stageNumber: 3,
+			stage: "implement (phase-3)",
+			skill: "implement",
+			status: "failed",
+			ts: "t3",
+			errMsg: "halted",
+			parent: "implement",
+			role: "produce",
+			unitId: "phase-3",
+			unitIndex: 2,
+			collected: true,
+		});
+		expect(summarizeRun(tmpDir, runId)).toEqual({
+			outcome: "completed",
+			artifacts: [],
+			workflow: "mid",
+		} satisfies RunRecap);
+	});
+
 	it("projects an empty artifacts array when no stage carried artifacts", () => {
 		const runId = "no-artifacts-recap";
 		appendHeader(tmpDir, { runId, workflow: "mid", input: "x", ts: "2026" });

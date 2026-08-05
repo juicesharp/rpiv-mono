@@ -179,26 +179,22 @@ export function readLoopCaps(cwd: string, runId: string): LoopCapRow[] {
 	return readJsonlRows(cwd, runId, isLoopCapRow);
 }
 
-/**
- * Project a run's stage rows to the (stage, artifact) pairs that
- * actually carried at least one artifact. One entry per artifact —
- * stages with multi-artifact collectors expand to N entries. Used by
- * `notifyPartialArtifacts` for the failure recap and by past-runs UIs
- * (the `listRuns` API) for run summaries.
- *
- * `stage` is the workflow stage's record key (always present); `skill`
- * is the Pi skill body when this row recorded a skill stage (absent
- * for script stages).
- *
- * Reads from `output.artifacts` (single source); rows without an
- * output, or with an empty artifacts list, contribute nothing.
- */
 export function listArtifacts(
 	cwd: string,
 	runId: string,
 ): Array<{ stage: string; skill?: string; artifact: Artifact }> {
+	return stagesToArtifacts(readAllStages(cwd, runId));
+}
+
+/**
+ * The single stage→artifacts iteration, shared by `listArtifacts` and
+ * `summarizeRun`'s artifact projection. One entry per artifact in trail order;
+ * stages with multi-artifact collectors expand to N entries. Rows without an
+ * `output`, or with an empty artifacts list, contribute nothing.
+ */
+function stagesToArtifacts(stages: WorkflowStage[]): Array<{ stage: string; skill?: string; artifact: Artifact }> {
 	const out: Array<{ stage: string; skill?: string; artifact: Artifact }> = [];
-	for (const s of readAllStages(cwd, runId)) {
+	for (const s of stages) {
 		const artifacts = s.output?.artifacts;
 		if (!artifacts) continue;
 		for (const artifact of artifacts) out.push({ stage: s.stage, skill: s.skill, artifact });
@@ -213,6 +209,9 @@ export function listArtifacts(
  * the canonical in-memory outcome. The other three statuses pass through
  * unchanged. Frozen + exhaustive over `StageStatus`, so a new status breaks
  * the record at compile time.
+ *
+ * Applied AFTER the `collected:true` filter — `recapOutcomeOf` checks that
+ * marker first and short-circuits to `"completed"` (see its doc).
  */
 const STAGE_TO_RECAP_OUTCOME: Readonly<Record<StageStatus, RunRecap["outcome"]>> = {
 	completed: "completed",
@@ -222,29 +221,49 @@ const STAGE_TO_RECAP_OUTCOME: Readonly<Record<StageStatus, RunRecap["outcome"]>>
 };
 
 /**
+ * Terminal outcome for the LAST stage row of a run. A `collected:true` marker
+ * distinguishes a NON-terminal collect-all fanout unit halt: the run survived
+ * the halted unit (its output was rebuilt into a `failedOutput` sentinel), so
+ * the recap reads `"completed"` rather than the halted unit's on-disk terminal
+ * status. Every other row falls through to `STAGE_TO_RECAP_OUTCOME`.
+ */
+function recapOutcomeOf(last: WorkflowStage): RunRecap["outcome"] {
+	if (last.collected === true) return "completed";
+	return STAGE_TO_RECAP_OUTCOME[last.status];
+}
+
+/**
  * Terminal-state projection of one run's JSONL trail — the post-mortem recap
- * a lane renders on end-of-run. Composes three existing fail-soft readers:
- * `readLastStage` (gates the `undefined` return — no stage row ⇒ no terminal
- * row ⇒ outcome unrecoverable from the trail alone), `readHeader` (optional
- * `workflow`), and `listArtifacts` (projected through `handleToString`).
+ * a lane renders on end-of-run. One `readAllStages` pass gates the `undefined`
+ * return (no stage row ⇒ no terminal row ⇒ outcome unrecoverable from the
+ * trail alone) and feeds both the last-row outcome (`recapOutcomeOf`) and the
+ * artifact projection (`stagesToArtifacts` → `handleToString`); `readHeader`
+ * adds the optional `workflow`.
+ *
+ * A `collected:true` marker on the last stage row is a NON-terminal collect-all
+ * halt, read as `"completed"` (see `recapOutcomeOf`) — a loop-final run's last
+ * stage row can be the halt while the run actually completed. `failureReason`
+ * is gated on `outcome !== "completed"` (a completed run, halt or not, carries
+ * no failure) AND a present `last.errMsg`.
  *
  * Fail-soft by inheritance: every reader it composes runs over the
  * `readParsedRows` try/catch contract, and neither the `.map(...)` projection
- * nor the `STAGE_TO_RECAP_OUTCOME` lookup can throw (the former is a plain
- * array map over an exhaustiveness-checked `handleToString`; the latter is a
- * plain object index). A missing/empty/malformed JSONL file yields `undefined`
- * (no stage rows), never throws.
+ * nor the `recapOutcomeOf`/`STAGE_TO_RECAP_OUTCOME` lookup can throw. A
+ * missing/empty/malformed JSONL file yields `undefined` (no stage rows), never
+ * throws.
  */
 export function summarizeRun(cwd: string, runId: string): RunRecap | undefined {
-	const last = readLastStage(cwd, runId);
-	if (last === undefined) return undefined;
+	const stages = readAllStages(cwd, runId);
+	if (stages.length === 0) return undefined;
+	const last = stages[stages.length - 1];
+	const outcome = recapOutcomeOf(last);
 	const header = readHeader(cwd, runId);
 	const recap: RunRecap = {
-		outcome: STAGE_TO_RECAP_OUTCOME[last.status],
-		artifacts: listArtifacts(cwd, runId).map(({ artifact }) => handleToString(artifact.handle)),
+		outcome,
+		artifacts: stagesToArtifacts(stages).map(({ artifact }) => handleToString(artifact.handle)),
 		workflow: header?.workflow,
 	};
-	if (last.errMsg !== undefined) recap.failureReason = last.errMsg;
+	if (outcome !== "completed" && last.errMsg !== undefined) recap.failureReason = last.errMsg;
 	return recap;
 }
 
