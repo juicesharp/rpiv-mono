@@ -45,6 +45,7 @@ import {
 	retireRun,
 	seedPendingUnits,
 	setLaneProgress,
+	setRecap,
 	setUnitStarted,
 	sweepRunningUnits,
 } from "./run-lane-registry.js";
@@ -116,7 +117,7 @@ export async function registerLaneProgress(): Promise<void> {
 	try {
 		// Thin `/startup` entry (re-exports registerLifecycle) — keeps the
 		// loader/DSL/runner graph off startup and avoids the barrel-import race.
-		const { registerLifecycle } = await import("@juicesharp/rpiv-workflow/startup");
+		const { registerLifecycle, summarizeRun } = await import("@juicesharp/rpiv-workflow/startup");
 		g.dispose = registerLifecycle({
 			// onStageStart fires for EVERY stage kind — a plain sequential stage (the single-stage
 			// entry announcement, run-stage.ts:221) AND every loop stage, where it fires BEFORE
@@ -231,7 +232,20 @@ export async function registerLaneProgress(): Promise<void> {
 				// running→done fallback then no-ops on them). Drop the gate — the run is over.
 				sweepRunningUnits(ctx.runId, status === "completed" ? "done" : "failed");
 				fanoutRuns.delete(ctx.runId);
-				retireRun(ctx.runId, status, error, lastArtifact);
+				// End-of-run summary off the on-disk JSONL trail (the post-mortem recap). Computed
+				// for EVERY terminal outcome (completed/failed/cancelled/aborted), not only failures,
+				// and BEFORE retirement so the lane is still live while the trail is read. The recap
+				// does NOT gate retirement: a run whose recap resolved to undefined still retires.
+				const recap = summarizeRun(ctx.cwd, ctx.runId);
+				// 5th-arg recap stores via retireRun's first-retire-wins-gated path (the normal
+				// terminal case). The trailing setRecap is the UNGATED path that closes the abort
+				// gap (r1): the x-key stopSelected path retires the lane to "aborted" while the
+				// run is still in-flight, so when onWorkflowEnd later fires retireRun no-ops on the
+				// already-terminal lane — but setRecap writes entry.recap regardless of status.
+				retireRun(ctx.runId, status, error, lastArtifact, recap);
+				// Ungated write (fail-soft: summarizeRun may return undefined → no recap stored,
+				// which renderRecap treats as a no-op). Runs UNCONDITIONALLY w.r.t. retirement.
+				if (recap !== undefined) setRecap(ctx.runId, recap);
 				const ui = getCapturedUiContext();
 				if (!ui) return;
 				if (status === "completed") ui.notify(`✓ ${name} finished — /lanes to view`, "info");

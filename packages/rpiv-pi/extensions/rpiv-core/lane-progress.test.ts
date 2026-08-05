@@ -14,11 +14,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // without the real lifecycle registry — registerLaneProgress() imports it lazily.
 const lifecycleDispose = vi.fn();
 const registerLifecycle = vi.fn((_listeners: unknown) => lifecycleDispose);
-vi.mock("@juicesharp/rpiv-workflow/startup", () => ({ registerLifecycle }));
+const summarizeRun = vi.fn();
+vi.mock("@juicesharp/rpiv-workflow/startup", () => ({ registerLifecycle, summarizeRun }));
 
 import { __resetLaneProgress, registerLaneProgressHook } from "./lane-progress.js";
 import { createLaneRelayUiContext } from "./lane-relay-ui.js";
-import { __resetRunLaneRegistry, getLane, getUnit, recordRun, SINGLE_UNIT_KEY } from "./run-lane-registry.js";
+import {
+	__resetRunLaneRegistry,
+	getLane,
+	getUnit,
+	recordRun,
+	retireRun,
+	SINGLE_UNIT_KEY,
+} from "./run-lane-registry.js";
 import { __resetSessionCaptureState, registerSessionCapture } from "./session-capture.js";
 
 /** Loose projection of the listener bundle — enough to drive the events under test. */
@@ -58,7 +66,7 @@ interface Bundle {
 	) => void;
 	onWorkflowEnd?: (
 		result: { termination?: { status: string; error?: string } },
-		ctx: { runId: string; workflow: string; totalStages: number },
+		ctx: { runId: string; workflow: string; cwd?: string; totalStages: number },
 	) => void;
 }
 
@@ -97,6 +105,8 @@ async function captureUi(ui: ExtensionUIContext): Promise<void> {
 beforeEach(() => {
 	registerLifecycle.mockClear();
 	lifecycleDispose.mockClear();
+	summarizeRun.mockClear();
+	summarizeRun.mockReturnValue(undefined); // reset to no-recap default each test
 	(REAL_UI.notify as ReturnType<typeof vi.fn>).mockClear();
 	__resetRunLaneRegistry();
 	__resetLaneProgress();
@@ -663,6 +673,76 @@ describe("onWorkflowEnd — terminal retention + completion toast", () => {
 		b.onWorkflowEnd?.({}, { runId: "run-1", workflow: "ship", totalStages: 7 });
 		expect(getLane("run-1")?.status).toBe("running");
 		expect(REAL_UI.notify).not.toHaveBeenCalled();
+	});
+});
+
+describe("onWorkflowEnd — recap threading (summarizeRun → retireRun 5th arg + ungated setRecap)", () => {
+	async function register(): Promise<Bundle> {
+		const { pi, sessionStart } = makePi();
+		registerLaneProgressHook(pi);
+		await sessionStart()!({}, { hasUI: true, ui: REAL_UI });
+		return bundle();
+	}
+
+	it("computes summarizeRun(ctx.cwd, ctx.runId) and threads the recap onto the lane", async () => {
+		const b = await register();
+		recordRun("run-1", "ship");
+		const recap = { outcome: "completed", artifacts: [".rpiv/artifacts/builds/ship.md"] };
+		summarizeRun.mockReturnValue(recap);
+		b.onWorkflowEnd?.(
+			{ termination: { status: "completed" } },
+			{
+				runId: "run-1",
+				workflow: "ship",
+				cwd: "/work",
+				totalStages: 7,
+			},
+		);
+		expect(summarizeRun).toHaveBeenCalledWith("/work", "run-1");
+		expect(getLane("run-1")?.recap).toBe(recap); // stored via retireRun 5th-arg (lane was running)
+	});
+
+	it("retireRun is called UNCONDITIONALLY — a run whose recap resolved to undefined still retires", async () => {
+		const b = await register();
+		recordRun("run-1", "ship");
+		summarizeRun.mockReturnValue(undefined); // fail-soft: missing/empty trail
+		b.onWorkflowEnd?.(
+			{ termination: { status: "completed" } },
+			{
+				runId: "run-1",
+				workflow: "ship",
+				cwd: "/work",
+				totalStages: 7,
+			},
+		);
+		expect(getLane("run-1")?.status).toBe("completed"); // retired despite no recap
+		expect(getLane("run-1")?.recap).toBeUndefined(); // no recap stored (setRecap gated on recap !== undefined)
+	});
+
+	it("abort-first (r1): a lane already retired to 'aborted' still lands its recap via the ungated setRecap", async () => {
+		// The x-key stopSelected path retires the lane to "aborted" at lane-console.ts:567
+		// while the run is still in-flight; when onWorkflowEnd later fires, retireRun's
+		// 5th-arg recap no-ops (first-retire-wins), but the trailing setRecap still writes.
+		const b = await register();
+		recordRun("run-1", "ship");
+		retireRun("run-1", "aborted"); // the x-key path retires first
+		expect(getLane("run-1")?.status).toBe("aborted");
+
+		const recap = { outcome: "aborted", artifacts: [] };
+		summarizeRun.mockReturnValue(recap);
+		b.onWorkflowEnd?.(
+			{ termination: { status: "aborted" } },
+			{
+				runId: "run-1",
+				workflow: "ship",
+				cwd: "/work",
+				totalStages: 7,
+			},
+		);
+		// retireRun no-ops on the already-terminal lane, so its 5th-arg recap cannot have
+		// stored this — the recap landing proves the trailing setRecap wrote it (r1 closed).
+		expect(getLane("run-1")?.status).toBe("aborted"); // first status held
+		expect(getLane("run-1")?.recap).toBe(recap); // setRecap wrote it regardless of terminal status
 	});
 });
 

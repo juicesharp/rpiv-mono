@@ -218,6 +218,51 @@ export interface RunSummary {
 	name?: string;
 }
 
+/**
+ * Terminal-state projection of one run's JSONL trail — the post-mortem recap
+ * a lane renders on end-of-run (computed by `summarizeRun`). Flat (NOT a
+ * discriminated union mirroring `RunTermination`): `failureReason` is optional
+ * because it is sourced from `WorkflowStage.errMsg`, which is optional on the
+ * persisted row and unenforced by `isWorkflowStage` — a union requiring it on
+ * non-completed arms would assert a guarantee legacy/truncated trails do not
+ * make. Does NOT extend `RunSummary` (different projection: terminal state
+ * vs. header/start state).
+ *
+ * `outcome` is the recap outcome set ("completed" / "failed" / "cancelled" /
+ * "aborted") — a subset of a host's lane-status vocabulary with NO "running"
+ * member, since a recap only exists for a terminal run. `summarizeRun` derives
+ * it from the on-disk `StageStatus` via the lone `"skipped"`→`"cancelled"`
+ * translation (see `STAGE_TO_RECAP_OUTCOME`); the other three pass through.
+ */
+export interface RunRecap {
+	outcome: "completed" | "failed" | "cancelled" | "aborted";
+	/**
+	 * One display string per artifact, in trail order, projected through
+	 * `handleToString` (`fs`→path, `url`→href, `opaque`→id, `inline`→byte
+	 * length). Includes artifacts from stages that completed before a later
+	 * failure (NO `status === "completed"` filter — `summarizeRun` projects via
+	 * `listArtifacts`, which reads every stage row). `[]` when no stage carried
+	 * artifacts.
+	 */
+	artifacts: string[];
+	/**
+	 * Reason a non-completed run terminated — sourced from the LAST stage row's
+	 * `errMsg`, which mirrors the in-memory `state.termination.error` set by
+	 * `recordFatalFailure` / `recordCancellation` (present only on
+	 * `"failed" | "aborted" | "skipped"`-translated rows). Optional because
+	 * `errMsg` is optional on the persisted row: a legacy/truncated trail may
+	 * carry no reason even on a terminal row.
+	 */
+	failureReason?: string;
+	/**
+	 * Workflow name (matches `Workflow.name` at run-time) projected from the
+	 * header. `undefined` when the header row is missing or malformed (a
+	 * degraded trail with stage rows still returns a recap; the gap surfaces
+	 * explicitly so a caller renders the outcome without the name).
+	 */
+	workflow?: string;
+}
+
 export interface RoutingDecision {
 	type: "routing";
 	fromStageIndex: number;
@@ -256,6 +301,7 @@ export {
 	readLastStage,
 	readLoopCaps,
 	readRoutingDecisions,
+	summarizeRun,
 } from "./reads.js";
 export { resolveRun } from "./resolve.js";
 export { appendHeader, appendLoopCap, appendRoutingDecision, appendStage } from "./writes.js";

@@ -9,6 +9,7 @@ export type {
 	LoopCapRow,
 	NamesIndex,
 	RoutingDecision,
+	RunRecap,
 	RunSummary,
 	SessionRef,
 	StageStatus,
@@ -40,5 +41,6 @@ export {
 	runsDir,
 	STATE_SCHEMA_VERSION,
 	stateFilePath,
+	summarizeRun,
 	VALID_NAME,
 } from "./state.js";

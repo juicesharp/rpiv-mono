@@ -28,6 +28,7 @@ import {
 	setLaneProgress,
 	setLaneSessionFile,
 	setLaneStatus,
+	setRecap,
 	setUnitStarted,
 	subscribeLanes,
 	sweepRunningUnits,
@@ -345,6 +346,89 @@ describe("run-lane-registry", () => {
 			recordRun("run-1", "ship"); // re-record the SAME id — resume reuses it
 			expect(getLane("run-1")?.status).toBe("running"); // reactivated
 			expect(getLane("run-1")?.lastArtifact).toBeUndefined(); // stale path cleared
+		});
+	});
+
+	describe("retireRun — recap capture", () => {
+		it("captures recap on a completed retire (runId, status, error?, lastArtifact?, recap?)", () => {
+			recordRun("run-1", "ship");
+			const recap = { outcome: "completed" as const, artifacts: [".rpiv/artifacts/builds/ship.md"] };
+			retireRun("run-1", "completed", undefined, ".rpiv/artifacts/builds/ship.md", recap);
+			expect(getLane("run-1")?.recap).toBe(recap);
+		});
+
+		it("is idempotent — a second retire does NOT overwrite recap (first-retire-wins)", () => {
+			// Mirrors the finalBranch / lastArtifact preservation guard: the second retire is
+			// a no-op (entry.status !== "running"), so a stale onWorkflowEnd can't wipe the recap.
+			recordRun("run-1", "ship");
+			const recap = { outcome: "completed" as const, artifacts: [] };
+			retireRun("run-1", "completed", undefined, undefined, recap);
+			expect(getLane("run-1")?.recap).toBe(recap);
+
+			const listener = vi.fn();
+			subscribeLanes(listener);
+			retireRun("run-1", "completed", undefined, undefined, { outcome: "failed", artifacts: [] });
+			expect(getLane("run-1")?.recap).toBe(recap); // held — not overwritten
+			expect(listener).not.toHaveBeenCalled(); // no spurious notify on the no-op
+		});
+
+		it("leaves recap undefined when not supplied (the 5th-arg is optional)", () => {
+			recordRun("run-1", "ship");
+			retireRun("run-1", "completed"); // no recap arg
+			expect(getLane("run-1")?.recap).toBeUndefined();
+		});
+
+		it("recordRun reactivation clears a prior run's recap (resume never leaks the old recap)", () => {
+			recordRun("run-1", "ship");
+			const recap = { outcome: "completed" as const, artifacts: [".rpiv/artifacts/builds/ship.md"] };
+			retireRun("run-1", "completed", undefined, undefined, recap);
+			expect(getLane("run-1")?.recap).toBe(recap);
+
+			recordRun("run-1", "ship"); // re-record the SAME id — resume reuses it
+			expect(getLane("run-1")?.status).toBe("running"); // reactivated
+			expect(getLane("run-1")?.recap).toBeUndefined(); // stale recap cleared
+		});
+	});
+
+	describe("setRecap — ungated recap storage (the abort-path-safe path, r1)", () => {
+		it("stores the recap on a RUNNING lane and notifies", () => {
+			recordRun("run-1", "ship");
+			const listener = vi.fn();
+			subscribeLanes(listener);
+			const recap = { outcome: "completed" as const, artifacts: [] };
+			setRecap("run-1", recap);
+			expect(getLane("run-1")?.recap).toBe(recap);
+			expect(listener).toHaveBeenCalledTimes(1); // notify → console re-renders
+		});
+
+		it("stores the recap on a lane ALREADY retired by an abort path (NOT gated by first-retire-wins)", () => {
+			// The r1 gap: retireRun's 5th-arg recap no-ops on an already-retired lane, so the
+			// x-key stopSelected path (which retires to "aborted" while the run is in-flight)
+			// would never store the recap via retireRun alone. setRecap closes it: it writes
+			// entry.recap regardless of terminal status.
+			recordRun("run-1", "ship");
+			retireRun("run-1", "aborted"); // the x-key path — lane flips to "aborted" first
+			expect(getLane("run-1")?.status).toBe("aborted");
+			expect(getLane("run-1")?.recap).toBeUndefined(); // retireRun's 5th-arg never ran
+
+			// The 5th-arg path no-ops on the already-terminal lane (first-retire-wins) …
+			retireRun("run-1", "completed", undefined, undefined, { outcome: "completed", artifacts: [] });
+			expect(getLane("run-1")?.recap).toBeUndefined(); // … so no recap from retireRun
+			expect(getLane("run-1")?.status).toBe("aborted"); // first status held
+
+			// … but setRecap writes it regardless of terminal status.
+			const recap = { outcome: "aborted" as const, artifacts: [] };
+			setRecap("run-1", recap);
+			expect(getLane("run-1")?.recap).toBe(recap); // stored — abort-path gap closed
+			expect(getLane("run-1")?.status).toBe("aborted"); // status untouched
+		});
+
+		it("is a no-op on a missing lane (fail-soft)", () => {
+			const listener = vi.fn();
+			subscribeLanes(listener);
+			expect(() => setRecap("nope", { outcome: "completed", artifacts: [] })).not.toThrow();
+			expect(listener).not.toHaveBeenCalled();
+			expect(getLane("nope")).toBeUndefined();
 		});
 	});
 

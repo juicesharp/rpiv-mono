@@ -432,6 +432,42 @@ export function renderLiveOutputBorder(theme: Theme, width: number): string {
 }
 
 /**
+ * Render the end-of-run summary (the post-mortem recap) for ONE lane (console-only —
+ * the ambient dock never calls this, mirroring `renderStageBreakdown`). Reads the lane
+ * LIVE; a missing/evicted lane or a lane with no `recap` yields []. Auto-shows in the
+ * console's laneBlock (no toggle — distinct from the `s`-gated `renderStageBreakdown`).
+ *
+ * Layout, in order: a header line (outcome glyph via STATUS_GLYPH[recap.outcome] —
+ * recap.outcome ⊂ LaneStatus, no "running" — + the outcome word + ` · <workflow>`,
+ * the workflow segment omitted when recap.workflow is absent); one `→ <path>` line per
+ * artifact in trail order INCLUDING partial artifacts (no status filter — the recap
+ * surfaces artifacts from stages that completed before a later failure); a `⚠ reason`
+ * line ONLY when the outcome is non-completed AND failureReason is set. Each line
+ * truncated to width. The recap outcome can legitimately diverge from the lane chip
+ * (the accepted droppedFailureRows divergence: recap reads "completed" off the trail
+ * while the chip shows ✗ failed) — shown explicitly so the divergence is visible.
+ */
+export function renderRecap(theme: Theme, width: number, runId: string): string[] {
+	const recap = getLane(runId)?.recap;
+	if (!recap) return [];
+	const lines: string[] = [];
+	// Header: glyph + outcome word (+ ` · workflow` when the header carried a name).
+	const glyph = STATUS_GLYPH[recap.outcome];
+	let header = `${glyph} ${recap.outcome}`;
+	if (recap.workflow) header += ` · ${recap.workflow}`;
+	lines.push(truncateToWidth(theme.fg("dim", header), width, "…"));
+	// Artifacts in trail order (no status filter — partial artifacts included).
+	for (const path of recap.artifacts) {
+		lines.push(truncateToWidth(theme.fg("muted", `→ ${path}`), width, "…"));
+	}
+	// Failure reason only for a non-completed outcome that carries one.
+	if (recap.outcome !== "completed" && recap.failureReason) {
+		lines.push(truncateToWidth(theme.fg("warning", `⚠ ${recap.failureReason}`), width, "…"));
+	}
+	return lines;
+}
+
+/**
  * Render the per-stage token breakdown for ONE lane (console-only — the ambient dock
  * never calls this, so its capped region is unchanged). Reads the lane LIVE; a missing
  * or evicted lane yields []. Stages appear in execution order: stageUsage insertion

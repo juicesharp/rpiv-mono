@@ -10,6 +10,7 @@ import {
 	type LoopCapRow,
 	listArtifacts,
 	listRuns,
+	type RunRecap,
 	readAllStages,
 	readAllStagesForResume,
 	readHeader,
@@ -17,6 +18,7 @@ import {
 	readLoopCaps,
 	runsDir,
 	stateFilePath,
+	summarizeRun,
 	type WorkflowHeader,
 	type WorkflowStage,
 } from "./state/index.js";
@@ -661,5 +663,216 @@ describe("deep stage guard + readAllStagesForResume", () => {
 		if (!strict.ok) return;
 		expect(strict.rows).toEqual(readAllStages(tmpDir, runId));
 		expect(strict.rows).toHaveLength(2);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// summarizeRun — terminal-state projection (post-mortem recap)
+// ---------------------------------------------------------------------------
+
+describe("summarizeRun", () => {
+	const mkOutput = (artifacts: Array<{ kind: "fs"; path: string }>) => ({
+		kind: "artifact-md",
+		artifacts: artifacts.map((handle) => ({ handle })),
+		data: {},
+		meta: { stage: "x", skill: "x", stageNumber: 1, ts: "2026", runId: "x" },
+	});
+
+	it("returns undefined for a missing run file (no stage row ⇒ outcome unrecoverable)", () => {
+		expect(summarizeRun(tmpDir, "nonexistent")).toBeUndefined();
+	});
+
+	it("returns undefined for a header-only trail (no stage rows)", () => {
+		const runId = "header-only";
+		appendHeader(tmpDir, { runId, workflow: "mid", input: "x", ts: "2026" });
+		expect(summarizeRun(tmpDir, runId)).toBeUndefined();
+	});
+
+	it("returns undefined for an empty trail", () => {
+		const runId = "empty-trail";
+		mkdirSync(runsDir(tmpDir), { recursive: true });
+		appendFileSync(stateFilePath(tmpDir, runId), "", "utf-8");
+		expect(summarizeRun(tmpDir, runId)).toBeUndefined();
+	});
+
+	it("projects a completed run: outcome completed, no failureReason, workflow from header", () => {
+		const runId = "completed-run";
+		appendHeader(tmpDir, { runId, workflow: "mid", input: "x", ts: "2026" });
+		appendStage(tmpDir, runId, {
+			session: null,
+			stageNumber: 1,
+			stage: "plan",
+			skill: "plan",
+			status: "completed",
+			ts: "t1",
+		});
+		expect(summarizeRun(tmpDir, runId)).toEqual({
+			outcome: "completed",
+			artifacts: [],
+			workflow: "mid",
+		} satisfies RunRecap);
+	});
+
+	it("translates on-disk status 'skipped' to recap outcome 'cancelled' with its errMsg as failureReason", () => {
+		const runId = "cancelled-run";
+		appendHeader(tmpDir, { runId, workflow: "mid", input: "x", ts: "2026" });
+		appendStage(tmpDir, runId, {
+			session: null,
+			stageNumber: 1,
+			stage: "plan",
+			skill: "plan",
+			status: "skipped",
+			ts: "t1",
+			errMsg: "cancelled by user",
+		});
+		expect(summarizeRun(tmpDir, runId)).toEqual({
+			outcome: "cancelled",
+			artifacts: [],
+			workflow: "mid",
+			failureReason: "cancelled by user",
+		} satisfies RunRecap);
+	});
+
+	it("projects a failed run: outcome failed with the last row's errMsg as failureReason", () => {
+		const runId = "failed-run";
+		appendHeader(tmpDir, { runId, workflow: "mid", input: "x", ts: "2026" });
+		appendStage(tmpDir, runId, {
+			session: null,
+			stageNumber: 1,
+			stage: "plan",
+			skill: "plan",
+			status: "completed",
+			ts: "t1",
+		});
+		appendStage(tmpDir, runId, {
+			session: null,
+			stageNumber: 2,
+			stage: "build",
+			skill: "build",
+			status: "failed",
+			ts: "t2",
+			errMsg: "build exploded",
+		});
+		expect(summarizeRun(tmpDir, runId)).toEqual({
+			outcome: "failed",
+			artifacts: [],
+			workflow: "mid",
+			failureReason: "build exploded",
+		} satisfies RunRecap);
+	});
+
+	it("projects an aborted run: outcome aborted with the last row's errMsg as failureReason", () => {
+		const runId = "aborted-run";
+		appendHeader(tmpDir, { runId, workflow: "mid", input: "x", ts: "2026" });
+		appendStage(tmpDir, runId, {
+			session: null,
+			stageNumber: 1,
+			stage: "build",
+			skill: "build",
+			status: "aborted",
+			ts: "t1",
+			errMsg: "aborted: watchdog",
+		});
+		expect(summarizeRun(tmpDir, runId)).toEqual({
+			outcome: "aborted",
+			artifacts: [],
+			workflow: "mid",
+			failureReason: "aborted: watchdog",
+		} satisfies RunRecap);
+	});
+
+	it("projects artifacts in trail order including artifacts from stages that completed before a later failure", () => {
+		const runId = "artifacts-trail";
+		appendHeader(tmpDir, { runId, workflow: "mid", input: "x", ts: "2026" });
+		appendStage(tmpDir, runId, {
+			session: null,
+			stageNumber: 1,
+			stage: "research",
+			skill: "research",
+			status: "completed",
+			ts: "t1",
+			output: mkOutput([{ kind: "fs", path: ".rpiv/artifacts/research/r.md" }]),
+		});
+		appendStage(tmpDir, runId, {
+			session: null,
+			stageNumber: 2,
+			stage: "design",
+			skill: "design",
+			status: "completed",
+			ts: "t2",
+			output: mkOutput([
+				{ kind: "fs", path: ".rpiv/artifacts/design/d1.md" },
+				{ kind: "fs", path: ".rpiv/artifacts/design/d2.md" },
+			]),
+		});
+		// A later failure — the prior stages' artifacts are still surfaced
+		// (listArtifacts does not filter on status === "completed").
+		appendStage(tmpDir, runId, {
+			session: null,
+			stageNumber: 3,
+			stage: "build",
+			skill: "build",
+			status: "failed",
+			ts: "t3",
+			errMsg: "build failed",
+		});
+		expect(summarizeRun(tmpDir, runId)).toEqual({
+			outcome: "failed",
+			artifacts: [".rpiv/artifacts/research/r.md", ".rpiv/artifacts/design/d1.md", ".rpiv/artifacts/design/d2.md"],
+			workflow: "mid",
+			failureReason: "build failed",
+		} satisfies RunRecap);
+	});
+
+	it("projects an empty artifacts array when no stage carried artifacts", () => {
+		const runId = "no-artifacts-recap";
+		appendHeader(tmpDir, { runId, workflow: "mid", input: "x", ts: "2026" });
+		appendStage(tmpDir, runId, {
+			session: null,
+			stageNumber: 1,
+			stage: "commit",
+			skill: "commit",
+			status: "completed",
+			ts: "t1",
+		});
+		expect(summarizeRun(tmpDir, runId)?.artifacts).toEqual([]);
+	});
+
+	it("returns a degraded recap with workflow undefined when the header row is missing but stage rows exist", () => {
+		const runId = "degraded-trail";
+		// Skip appendHeader — write a stage row first so the first line is not a
+		// header (a malformed/missing-header trail with surviving stage rows).
+		mkdirSync(runsDir(tmpDir), { recursive: true });
+		appendFileSync(
+			stateFilePath(tmpDir, runId),
+			`${JSON.stringify({
+				session: null,
+				stageNumber: 1,
+				stage: "plan",
+				skill: "plan",
+				status: "completed",
+				ts: "t1",
+			})}\n`,
+			"utf-8",
+		);
+		const recap = summarizeRun(tmpDir, runId);
+		expect(recap).toEqual({
+			outcome: "completed",
+			artifacts: [],
+			workflow: undefined,
+		} satisfies RunRecap);
+	});
+
+	it("never throws on a malformed JSONL file", () => {
+		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+		try {
+			const runId = "malformed-file";
+			mkdirSync(runsDir(tmpDir), { recursive: true });
+			appendFileSync(stateFilePath(tmpDir, runId), "NOT-JSON\n", "utf-8");
+			expect(() => summarizeRun(tmpDir, runId)).not.toThrow();
+			expect(summarizeRun(tmpDir, runId)).toBeUndefined();
+		} finally {
+			warnSpy.mockRestore();
+		}
 	});
 });

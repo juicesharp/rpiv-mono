@@ -17,11 +17,19 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
-import type { Artifact } from "../handle.js";
+import { type Artifact, handleToString } from "../handle.js";
 import { formatError } from "../internal-utils.js";
 import { stateFilePath } from "./paths.js";
 import { enumerateRunIds, readFirstJsonlLine } from "./raw.js";
-import type { LoopCapRow, RoutingDecision, RunSummary, WorkflowHeader, WorkflowStage } from "./state.js";
+import type {
+	LoopCapRow,
+	RoutingDecision,
+	RunRecap,
+	RunSummary,
+	StageStatus,
+	WorkflowHeader,
+	WorkflowStage,
+} from "./state.js";
 
 /**
  * Reads every line, filters by shape (not position). Header has no
@@ -196,6 +204,48 @@ export function listArtifacts(
 		for (const artifact of artifacts) out.push({ stage: s.stage, skill: s.skill, artifact });
 	}
 	return out;
+}
+
+/**
+ * On-disk `StageStatus` → recap outcome. The lone translation is
+ * `"skipped"`→`"cancelled"`: `"skipped"` is the FROZEN on-disk marker a
+ * `recordCancellation` row carries (see `StageStatus`), while the recap reads
+ * the canonical in-memory outcome. The other three statuses pass through
+ * unchanged. Frozen + exhaustive over `StageStatus`, so a new status breaks
+ * the record at compile time.
+ */
+const STAGE_TO_RECAP_OUTCOME: Readonly<Record<StageStatus, RunRecap["outcome"]>> = {
+	completed: "completed",
+	failed: "failed",
+	skipped: "cancelled",
+	aborted: "aborted",
+};
+
+/**
+ * Terminal-state projection of one run's JSONL trail — the post-mortem recap
+ * a lane renders on end-of-run. Composes three existing fail-soft readers:
+ * `readLastStage` (gates the `undefined` return — no stage row ⇒ no terminal
+ * row ⇒ outcome unrecoverable from the trail alone), `readHeader` (optional
+ * `workflow`), and `listArtifacts` (projected through `handleToString`).
+ *
+ * Fail-soft by inheritance: every reader it composes runs over the
+ * `readParsedRows` try/catch contract, and neither the `.map(...)` projection
+ * nor the `STAGE_TO_RECAP_OUTCOME` lookup can throw (the former is a plain
+ * array map over an exhaustiveness-checked `handleToString`; the latter is a
+ * plain object index). A missing/empty/malformed JSONL file yields `undefined`
+ * (no stage rows), never throws.
+ */
+export function summarizeRun(cwd: string, runId: string): RunRecap | undefined {
+	const last = readLastStage(cwd, runId);
+	if (last === undefined) return undefined;
+	const header = readHeader(cwd, runId);
+	const recap: RunRecap = {
+		outcome: STAGE_TO_RECAP_OUTCOME[last.status],
+		artifacts: listArtifacts(cwd, runId).map(({ artifact }) => handleToString(artifact.handle)),
+		workflow: header?.workflow,
+	};
+	if (last.errMsg !== undefined) recap.failureReason = last.errMsg;
+	return recap;
 }
 
 // ---------------------------------------------------------------------------

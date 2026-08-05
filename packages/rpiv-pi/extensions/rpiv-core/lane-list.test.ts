@@ -6,6 +6,7 @@ import {
 	MAX_DOCK_ROWS,
 	MAX_WIDGET_LINES,
 	renderLaneList,
+	renderRecap,
 	renderStageBreakdown,
 } from "./lane-list.js";
 import { formatTokens } from "./lane-usage.js";
@@ -21,6 +22,7 @@ import {
 	SINGLE_UNIT_KEY,
 	setLaneProgress,
 	setLaneStatus,
+	setRecap,
 	setUnitStarted,
 } from "./run-lane-registry.js";
 import { __resetSubagentUsage, recordSubagentCompletion } from "./subagent-usage.js";
@@ -512,6 +514,78 @@ describe("renderStageBreakdown — per-stage token breakdown", () => {
 		const planIdx = lines.findIndex((l) => l.includes("plan"));
 		const buildIdx = lines.findIndex((l) => l.includes("build"));
 		expect(planIdx).toBeLessThan(buildIdx);
+	});
+});
+
+describe("renderRecap — end-of-run summary", () => {
+	const W = 120;
+
+	it("returns [] for a missing/evicted lane", () => {
+		expect(renderRecap(identityTheme, W, "nope")).toEqual([]);
+	});
+
+	it("returns [] when the lane has no recap (running / reactivated lane — byte-identical render)", () => {
+		recordRun("run-1", "ship");
+		retireRun("run-1", "completed"); // retired but no recap stored
+		expect(renderRecap(identityTheme, W, "run-1")).toEqual([]);
+	});
+
+	it("renders the header: glyph + outcome + ` · workflow` (workflow segment present when set)", () => {
+		recordRun("run-1", "ship");
+		setRecap("run-1", { outcome: "completed", workflow: "ship", artifacts: [] });
+		const lines = renderRecap(identityTheme, W, "run-1");
+		expect(lines.length).toBe(1);
+		expect(lines[0]).toContain("✓");
+		expect(lines[0]).toContain("completed");
+		expect(lines[0]).toContain("· ship");
+	});
+
+	it("omits the workflow segment when recap.workflow is absent", () => {
+		recordRun("run-1", "ship");
+		setRecap("run-1", { outcome: "completed", artifacts: [] });
+		const lines = renderRecap(identityTheme, W, "run-1");
+		expect(lines[0]).not.toContain("·");
+	});
+
+	it("renders one `→ path` line per artifact in trail order (including partial artifacts)", () => {
+		recordRun("run-1", "ship");
+		setRecap("run-1", {
+			outcome: "completed",
+			artifacts: [".rpiv/artifacts/plans/a.md", ".rpiv/artifacts/builds/b.md"],
+		});
+		const lines = renderRecap(identityTheme, W, "run-1");
+		// header + 2 artifact lines
+		expect(lines.length).toBe(3);
+		expect(lines[1]).toContain("→ .rpiv/artifacts/plans/a.md");
+		expect(lines[2]).toContain("→ .rpiv/artifacts/builds/b.md");
+	});
+
+	it("renders NO `→` line when the recap has no artifacts", () => {
+		recordRun("run-1", "ship");
+		setRecap("run-1", { outcome: "completed", artifacts: [] });
+		const lines = renderRecap(identityTheme, W, "run-1");
+		expect(lines.every((l) => !l.includes("→"))).toBe(true);
+	});
+
+	it("renders the `⚠ reason` line only for a NON-completed outcome that carries a failureReason", () => {
+		recordRun("run-1", "ship");
+		setRecap("run-1", { outcome: "failed", failureReason: "blueprint produced no plan", artifacts: [] });
+		const lines = renderRecap(identityTheme, W, "run-1");
+		expect(lines.some((l) => l.includes("⚠ blueprint produced no plan"))).toBe(true);
+	});
+
+	it("renders NO `⚠` line for a completed outcome (even if a failureReason were present)", () => {
+		recordRun("run-1", "ship");
+		setRecap("run-1", { outcome: "completed", failureReason: "should not show", artifacts: [] });
+		const lines = renderRecap(identityTheme, W, "run-1");
+		expect(lines.every((l) => !l.includes("⚠"))).toBe(true);
+	});
+
+	it("renders NO `⚠` line for a non-completed outcome with no failureReason", () => {
+		recordRun("run-1", "ship");
+		setRecap("run-1", { outcome: "aborted", artifacts: [] });
+		const lines = renderRecap(identityTheme, W, "run-1");
+		expect(lines.every((l) => !l.includes("⚠"))).toBe(true);
 	});
 });
 

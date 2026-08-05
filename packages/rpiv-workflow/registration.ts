@@ -205,6 +205,7 @@ export {
 	type LoopCapRow,
 	listArtifacts,
 	listRuns,
+	type RunRecap,
 	type RunSummary,
 	readHeader,
 	readLastStage,
@@ -216,6 +217,7 @@ export {
 	runFileFor,
 	type SessionRef,
 	STATE_SCHEMA_VERSION,
+	summarizeRun,
 	type WorkflowHeader,
 	type WorkflowStage,
 } from "./state/index.js";
