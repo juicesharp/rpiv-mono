@@ -9,6 +9,14 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Artifact paths on lane rows and the recap line drop the canonical
+  `.rpiv/artifacts/` root.** Every collector-produced artifact shares it, so the
+  16 columns carried no information; the `→` segment now reads
+  `<bucket>/<file>.md` (e.g. `→ validation/2026-08-05_….md`). Display-only —
+  stored values (`lastArtifact`, `RunRecap.artifacts`) keep the full path, and a
+  non-canonical path (url/opaque handles, out-of-tree files) passes through
+  untouched.
+
 - **Recap storage collapsed to a single source of truth.** The redundant
   `retireRun` 5th-arg recap path is removed; `setRecap` is now the sole recap
   writer (no behavior change — the ungated `setRecap` was already the

@@ -98,6 +98,18 @@ function padCol(theme: Theme, color: ThemeColor, text: string, width: number, bo
 	return theme.fg(color, content) + " ".repeat(gap);
 }
 
+/** The canonical artifact root every collector-produced path shares — stripped for
+ *  DISPLAY only (16 dead columns per row); `<bucket>/<file>` keeps the context. */
+const ARTIFACTS_DISPLAY_PREFIX = ".rpiv/artifacts/";
+
+/** Display form of an artifact path: the constant `.rpiv/artifacts/` root is stripped;
+ *  a non-canonical path (url/opaque/inline handles, out-of-tree fs paths) passes through
+ *  untouched. Display-only — stored values (`lastArtifact`, `RunRecap.artifacts`) keep
+ *  the full path. */
+function displayArtifact(path: string): string {
+	return path.startsWith(ARTIFACTS_DISPLAY_PREFIX) ? path.slice(ARTIFACTS_DISPLAY_PREFIX.length) : path;
+}
+
 /** The dock descriptor for a lane — the run's `--name` alias when it differs from the workflow,
  *  else the `runId` (always defined, so every row carries the `workflow:` tag + a descriptor). */
 function laneDescriptor(lane: LaneEntry): string {
@@ -281,11 +293,12 @@ function renderProgressRow(
 	const usageTally = formatUsageTally(usage);
 	if (usageTally) nameRaw += ` · ${usageTally}`;
 	// The run's primary artifact path (a `produces` stage emitted one) — rendered as a
-	// trailing `→ path` segment AFTER the usage tally so a completed row points at what
+	// trailing `→ <bucket>/<file>` segment (displayArtifact strips the canonical
+	// `.rpiv/artifacts/` root) AFTER the usage tally so a completed row points at what
 	// it built. Inherits `muted` via the single theme.fg("muted", nameRaw) wrap below,
 	// same as the tally. Omitted entirely when `lastArtifact` is undefined, so a
 	// side-effect-only run renders byte-identical to before this field existed.
-	if (lastArtifact) nameRaw += ` → ${lastArtifact}`;
+	if (lastArtifact) nameRaw += ` → ${displayArtifact(lastArtifact)}`;
 
 	const coloredName = theme.fg("muted", nameRaw);
 	const coreW = visibleWidth(prefix) + visibleWidth(nameRaw);
@@ -456,8 +469,9 @@ export function renderRecap(theme: Theme, width: number, runId: string): string[
 	const parts: string[] = [];
 	const n = recap.artifacts.length;
 	if (n > 0) {
-		// Newest artifact = trail-order last (partial artifacts included — no status filter).
-		parts.push(theme.fg("muted", `→ ${recap.artifacts[n - 1]}`));
+		// Newest artifact = trail-order last (partial artifacts included — no status filter),
+		// shown as `<bucket>/<file>` (displayArtifact strips the canonical root).
+		parts.push(theme.fg("muted", `→ ${displayArtifact(recap.artifacts[n - 1])}`));
 		if (n > 1) parts.push(theme.fg("dim", `+${n - 1} more`));
 	}
 	// Failure reason only for a non-completed outcome that carries one.

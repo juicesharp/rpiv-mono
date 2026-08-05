@@ -204,10 +204,12 @@ describe("renderLaneList — completed-lane lastArtifact segment", () => {
 	// narrow terminal (criterion #3) is a separate concern exercised manually.
 	const W = 200;
 
-	it("renders `→ <path>` as a trailing segment AFTER the usage tally on a completed lane", () => {
+	it("renders `→ <bucket>/<file>` as a trailing segment AFTER the usage tally on a completed lane", () => {
 		// A completed lane with live stage progress + usage + lastArtifact renders:
-		//   …commit · ↑134k ↓26k R2.1M → .rpiv/artifacts/builds/ship.md
-		// The artifact segment is the LAST tail segment (after the usage tally).
+		//   …commit · ↑134k ↓26k R2.1M → builds/ship.md
+		// (displayArtifact strips the canonical `.rpiv/artifacts/` root — display only,
+		// the stored lastArtifact keeps the full path.) The artifact segment is the LAST
+		// tail segment (after the usage tally).
 		recordRun("run-1", "ship", { workflow: "ship" });
 		setLaneProgress("run-1", { stageName: "commit", phase: "running" });
 		// Seed usage on the lane's single-stage unit via captureFinalSnapshot, then retire
@@ -228,10 +230,11 @@ describe("renderLaneList — completed-lane lastArtifact segment", () => {
 		const row = lines.find((l) => l.includes("commit")) ?? "";
 		expect(row).toContain("↑134k");
 		expect(row).toContain("R2.1M");
-		// The artifact segment is present …
-		expect(row).toContain("→ .rpiv/artifacts/builds/ship.md");
+		// The artifact segment is present, canonical root stripped …
+		expect(row).toContain("→ builds/ship.md");
+		expect(row).not.toContain(".rpiv/artifacts"); // display form only
 		// … and trails the usage tally (the `→` comes after the last usage segment).
-		expect(row.lastIndexOf("↑134k")).toBeLessThan(row.indexOf("→ .rpiv/artifacts/builds/ship.md"));
+		expect(row.lastIndexOf("↑134k")).toBeLessThan(row.indexOf("→ builds/ship.md"));
 	});
 
 	it("renders NO `→` segment when lastArtifact is undefined (byte-identical to a side-effect-only run)", () => {
@@ -549,9 +552,11 @@ describe("renderRecap — end-of-run summary", () => {
 			artifacts: [".rpiv/artifacts/plans/a.md", ".rpiv/artifacts/builds/b.md"],
 		});
 		const lines = renderRecap(identityTheme, W, "run-1");
-		// Single summary line — never a per-artifact report.
+		// Single summary line — never a per-artifact report. displayArtifact strips the
+		// canonical `.rpiv/artifacts/` root (display only — the stored path is full).
 		expect(lines.length).toBe(1);
-		expect(lines[0]).toContain("→ .rpiv/artifacts/builds/b.md"); // newest, not the first
+		expect(lines[0]).toContain("→ builds/b.md"); // newest, not the first
+		expect(lines[0]).not.toContain(".rpiv/artifacts"); // root stripped for display
 		expect(lines[0]).not.toContain("plans/a.md"); // older artifacts fold into the count
 		expect(lines[0]).toContain("+1 more");
 	});
@@ -561,8 +566,15 @@ describe("renderRecap — end-of-run summary", () => {
 		setRecap("run-1", { outcome: "completed", artifacts: [".rpiv/artifacts/builds/b.md"] });
 		const lines = renderRecap(identityTheme, W, "run-1");
 		expect(lines.length).toBe(1);
-		expect(lines[0]).toContain("→ .rpiv/artifacts/builds/b.md");
+		expect(lines[0]).toContain("→ builds/b.md");
 		expect(lines[0]).not.toContain("more");
+	});
+
+	it("passes a non-canonical artifact path through untouched (url/opaque/out-of-tree handles)", () => {
+		recordRun("run-1", "ship");
+		setRecap("run-1", { outcome: "completed", artifacts: ["https://example.com/report"] });
+		const lines = renderRecap(identityTheme, W, "run-1");
+		expect(lines[0]).toContain("→ https://example.com/report");
 	});
 
 	it("stays ONE line regardless of artifact count (the summary never grows with data size)", () => {

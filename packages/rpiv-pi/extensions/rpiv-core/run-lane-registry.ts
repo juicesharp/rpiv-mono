@@ -203,7 +203,7 @@ export interface LaneEntry {
 	/**
 	 * Primary artifact path at run termination — `RunWorkflowResult.lastArtifact`
 	 * captured at `retireRun` (the runner's terminal `onWorkflowEnd`), so a completed
-	 * lane row can surface `→ .rpiv/artifacts/<bucket>/<file>.md` as a trailing
+	 * lane row can surface `→ <bucket>/<file>.md` as a trailing
 	 * segment. Undefined for a side-effect-only run (no `produces` stage emitted a
 	 * primary artifact) and for aborted/failed runs (the terminal writers pass ≤3
 	 * args). Cleared on resume (`recordRun` reactivation) so a resumed run never

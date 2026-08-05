@@ -259,7 +259,7 @@ export async function registerLaneProgress(): Promise<void> {
 				const error = result.termination?.error;
 				// `lastArtifact` is the primary artifact's canonical path (a `produces`
 				// stage emitted one) — retained on the lane so a completed row can render
-				// `→ .rpiv/artifacts/<bucket>/<file>.md`. Undefined for side-effect-only runs.
+				// `→ <bucket>/<file>.md`. Undefined for side-effect-only runs.
 				const lastArtifact = result.lastArtifact;
 				// Sweep any unit that never fired onUnitEnd (abort/throw) to the run's terminal
 				// kind BEFORE retiring, so a failed run's stuck sub-rows read ✗ (retireRun's
