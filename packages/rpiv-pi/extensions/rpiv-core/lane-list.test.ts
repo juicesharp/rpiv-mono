@@ -4,7 +4,6 @@ import {
 	computeLaneLayout,
 	computeViewport,
 	MAX_DOCK_ROWS,
-	MAX_RECAP_ARTIFACTS,
 	MAX_WIDGET_LINES,
 	renderLaneList,
 	renderRecap,
@@ -543,68 +542,68 @@ describe("renderRecap — end-of-run summary", () => {
 		expect(out).not.toContain("· ship");
 	});
 
-	it("renders one `→ path` line per artifact in trail order (including partial artifacts)", () => {
+	it("renders ONE line: the NEWEST artifact (trail-order last) + a `+N more` count", () => {
 		recordRun("run-1", "ship");
 		setRecap("run-1", {
 			outcome: "completed",
 			artifacts: [".rpiv/artifacts/plans/a.md", ".rpiv/artifacts/builds/b.md"],
 		});
 		const lines = renderRecap(identityTheme, W, "run-1");
-		// 2 artifact lines, no header
-		expect(lines.length).toBe(2);
-		expect(lines[0]).toContain("→ .rpiv/artifacts/plans/a.md");
-		expect(lines[1]).toContain("→ .rpiv/artifacts/builds/b.md");
+		// Single summary line — never a per-artifact report.
+		expect(lines.length).toBe(1);
+		expect(lines[0]).toContain("→ .rpiv/artifacts/builds/b.md"); // newest, not the first
+		expect(lines[0]).not.toContain("plans/a.md"); // older artifacts fold into the count
+		expect(lines[0]).toContain("+1 more");
 	});
 
-	it("caps the artifact loop at MAX_RECAP_ARTIFACTS with a single `+N more` fold only when exceeded", () => {
-		// AT the cap (3) ⇒ no `+N more` line, exactly MAX_RECAP_ARTIFACTS `→` lines.
-		recordRun("run-at-cap", "ship");
-		setRecap("run-at-cap", { outcome: "completed", artifacts: ["a", "b", "c"] });
-		const atCap = renderRecap(identityTheme, W, "run-at-cap");
-		expect(atCap.filter((l) => l.includes("→")).length).toBe(MAX_RECAP_ARTIFACTS);
-		expect(atCap.some((l) => l.includes("more"))).toBe(false);
-		expect(atCap.length).toBeLessThanOrEqual(MAX_RECAP_ARTIFACTS + 2);
+	it("omits the `+N more` count for a single-artifact recap", () => {
+		recordRun("run-1", "ship");
+		setRecap("run-1", { outcome: "completed", artifacts: [".rpiv/artifacts/builds/b.md"] });
+		const lines = renderRecap(identityTheme, W, "run-1");
+		expect(lines.length).toBe(1);
+		expect(lines[0]).toContain("→ .rpiv/artifacts/builds/b.md");
+		expect(lines[0]).not.toContain("more");
+	});
 
-		// ABOVE the cap (cap + 3 = 6) ⇒ exactly MAX_RECAP_ARTIFACTS `→` lines + exactly one
-		// `+N more` line (+3 more). Total length ≤ MAX_RECAP_ARTIFACTS + 2 (cap + overflow + reason).
-		recordRun("run-over-cap", "build");
-		setRecap("run-over-cap", {
-			outcome: "completed",
-			artifacts: ["a", "b", "c", "d", "e", "f"],
+	it("stays ONE line regardless of artifact count (the summary never grows with data size)", () => {
+		recordRun("run-1", "ship");
+		setRecap("run-1", {
+			outcome: "failed",
+			failureReason: "build exploded",
+			artifacts: Array.from({ length: 20 }, (_v, i) => `a${i}.md`),
 		});
-		const overCap = renderRecap(identityTheme, W, "run-over-cap");
-		expect(overCap.filter((l) => l.includes("→")).length).toBe(MAX_RECAP_ARTIFACTS);
-		expect(overCap.filter((l) => l.includes("more")).length).toBe(1);
-		expect(overCap.some((l) => l.includes("+3 more"))).toBe(true);
-		expect(overCap.length).toBeLessThanOrEqual(MAX_RECAP_ARTIFACTS + 2);
+		const lines = renderRecap(identityTheme, W, "run-1");
+		expect(lines.length).toBe(1);
+		expect(lines[0]).toContain("→ a19.md"); // newest
+		expect(lines[0]).toContain("+19 more");
+		expect(lines[0]).toContain("⚠ build exploded"); // reason shares the same line
 	});
 
-	it("renders NO `→` line when the recap has no artifacts", () => {
+	it("returns [] for a completed recap with no artifacts (nothing to add beyond the lane chip)", () => {
 		recordRun("run-1", "ship");
 		setRecap("run-1", { outcome: "completed", artifacts: [] });
-		const lines = renderRecap(identityTheme, W, "run-1");
-		expect(lines.every((l) => !l.includes("→"))).toBe(true);
+		expect(renderRecap(identityTheme, W, "run-1")).toEqual([]);
 	});
 
-	it("renders the `⚠ reason` line only for a NON-completed outcome that carries a failureReason", () => {
+	it("renders the `⚠ reason` segment only for a NON-completed outcome that carries a failureReason", () => {
 		recordRun("run-1", "ship");
 		setRecap("run-1", { outcome: "failed", failureReason: "blueprint produced no plan", artifacts: [] });
 		const lines = renderRecap(identityTheme, W, "run-1");
-		expect(lines.some((l) => l.includes("⚠ blueprint produced no plan"))).toBe(true);
+		expect(lines.length).toBe(1); // reason alone still summarizes (untruncated by the chip's short form)
+		expect(lines[0]).toContain("⚠ blueprint produced no plan");
 	});
 
-	it("renders NO `⚠` line for a completed outcome (even if a failureReason were present)", () => {
+	it("renders NO `⚠` segment for a completed outcome (even if a failureReason were present)", () => {
 		recordRun("run-1", "ship");
-		setRecap("run-1", { outcome: "completed", failureReason: "should not show", artifacts: [] });
+		setRecap("run-1", { outcome: "completed", failureReason: "should not show", artifacts: ["a.md"] });
 		const lines = renderRecap(identityTheme, W, "run-1");
 		expect(lines.every((l) => !l.includes("⚠"))).toBe(true);
 	});
 
-	it("renders NO `⚠` line for a non-completed outcome with no failureReason", () => {
+	it("returns [] for a non-completed recap with no failureReason and no artifacts", () => {
 		recordRun("run-1", "ship");
 		setRecap("run-1", { outcome: "aborted", artifacts: [] });
-		const lines = renderRecap(identityTheme, W, "run-1");
-		expect(lines.every((l) => !l.includes("⚠"))).toBe(true);
+		expect(renderRecap(identityTheme, W, "run-1")).toEqual([]);
 	});
 });
 
@@ -678,8 +677,8 @@ describe("renderLaneList — run grand total", () => {
 		expect(heading).not.toContain("↓");
 	});
 
-	it("the renderLaneRow roll-in through laneUsageTotal matches the Phase-1 inline expression on a single-stage run (risk r1)", () => {
-		// For a SINGLE-stage run (stageUsage empty), laneUsageTotal reduces to the Phase-1
+	it("the renderLaneRow roll-in through laneUsageTotal matches the former inline expression on a single-stage run", () => {
+		// For a SINGLE-stage run (stageUsage empty), laneUsageTotal reduces to the former
 		// inline expression addLaneUsage(sumLaneUsage(units), getSubagentUsageForRun(runId)),
 		// so routing the per-row tally through it changes nothing observable here. (Multi-stage
 		// runs intentionally upgrade the row from "current stage" to "run so far" — covered by

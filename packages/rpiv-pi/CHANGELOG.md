@@ -17,15 +17,22 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- **The end-of-run recap block is now height-bounded and its duplicate header
-  removed.** `renderRecap` no longer emits the outcome-glyph + workflow header
-  line (a duplicate of the lane chip's status) and caps its `→ <path>` artifact
-  lines at the new `MAX_RECAP_ARTIFACTS` constant, folding the remainder into a
-  single `+N more` summary. The unbounded recap was a belowEditor ghost-block
-  source: as artifact count grew it pushed the lane block past its budget, so the
-  console's total height grew with it. Bounding the output keeps `laneBlock.length`
-  constant w.r.t. artifact count, so the transcript flex region absorbs the block
-  and the total stays exactly `maxRows` (the static-lanes + ghost-block invariant).
+- **The end-of-run recap is now a single summary line, not a per-artifact
+  report.** `renderRecap` no longer emits the outcome-glyph + workflow header (a
+  duplicate of the lane chip's status) nor one `→ <path>` line per artifact — it
+  renders exactly one line: the NEWEST artifact (trail-order last, partial
+  artifacts included), a `+N more` count when more landed, and the `⚠ <reason>`
+  segment for a non-completed outcome, joined with ` · ` and each omitted when
+  empty (a recap with nothing to add beyond the chip renders nothing at all).
+  The original multi-line block was both redundant — the lane row above it
+  already carries status, short reason, and the primary artifact — and a
+  belowEditor ghost-block source: as artifact count grew it pushed the lane block
+  past its budget, so the console's total height grew with it. A ≤1-line summary
+  keeps `laneBlock.length` constant w.r.t. artifact count by construction, so the
+  transcript flex region absorbs it and the total stays exactly `maxRows` (the
+  static-lanes + ghost-block invariant). The full artifact list remains available
+  in the run's JSONL trail (`summarizeRun` still projects it — the `RunRecap`
+  data shape is unchanged; this is presentation-only).
 
 - **A resumed lane is no longer re-retired and re-capped by its aborted
   predecessor's stale terminal `onWorkflowEnd`.** Resume reuses the `runId` and

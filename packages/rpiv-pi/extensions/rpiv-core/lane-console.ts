@@ -142,7 +142,7 @@ export class LaneConsole implements Component {
 	 *  PageDown walks it; retarget clears it). Decoupled from body.length → no drift. */
 	private anchorLine = 0;
 	/** max(0, body.length - rows) cached every windowTranscript() frame; scroll() reads it
-	 *  because it has no body/rows in scope (r1: may lag the latest token by one frame —
+	 *  because it has no body/rows in scope (may lag the latest token by one frame —
 	 *  self-corrects on the next render, never produces a negative start or a height change). */
 	private lastMaxStart = 0;
 	/** `t` toggles tool/summary expansion in the transcript. */
@@ -337,10 +337,11 @@ export class LaneConsole implements Component {
 		// — this is what keeps the lane view static across the step-in.
 		const { laneCap } = computeLaneLayout(realRows);
 		const laneList = renderLaneList(this.theme, width, { active: true, selection, frame: this.frame, laneCap });
-		// Recap block (auto-shows — no toggle): the trail-derived end-of-run summary for the
-		// selected lane. Empty when the lane is missing or carries no recap (a running /
-		// reactivated lane renders byte-identical). Spliced AFTER the lane list and BEFORE the
-		// optional stage block; the transcriptRows flex region absorbs its height by construction.
+		// Recap summary (auto-shows — no toggle): ONE trail-derived end-of-run line for the
+		// selected lane (newest artifact · +N more · ⚠ reason — never a per-artifact report).
+		// Empty when the lane is missing, carries no recap (a running / reactivated lane renders
+		// byte-identical), or the recap adds nothing beyond the lane chip. Spliced AFTER the lane
+		// list and BEFORE the optional stage block; ≤1 line, absorbed by the transcript flex region.
 		const recapBlock = target ? renderRecap(this.theme, width, target.runId) : [];
 		const stageBlock =
 			target && this.stageBreakdownExpanded ? renderStageBreakdown(this.theme, width, target.runId) : [];

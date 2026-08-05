@@ -13,7 +13,7 @@ import askUserQuestionExtension from "@juicesharp/rpiv-ask-user-question";
 import { createMockPi, makeAssistantMessage, makeUserMessage } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { cappedTui, LaneConsole, showLaneConsole } from "./lane-console.js";
-import { MAX_RECAP_ARTIFACTS, renderLaneList } from "./lane-list.js";
+import { renderLaneList } from "./lane-list.js";
 import type { ViewerMessage } from "./lane-transcript.js";
 import {
 	__resetRunLaneRegistry,
@@ -559,9 +559,9 @@ describe("LaneConsole — browser navigation (spine)", () => {
 			vi.fn(),
 			vi.fn(),
 		);
-		const follow = panel.render(80).join("\n"); // prime lastMaxStart (cached in render; scroll reads it — see r1)
+		const follow = panel.render(80).join("\n"); // prime lastMaxStart (cached in render; scroll reads it)
 		panel.handleInput("\x1b[5~"); // PageUp on run-1 → paused (follow OFF, anchor set)
-		expect(panel.render(80).join("\n")).not.toBe(follow); // anchor moved off the tail — paused (see r2)
+		expect(panel.render(80).join("\n")).not.toBe(follow); // anchor moved off the tail — paused
 		panel.handleInput("\x1b[B"); // ↓ → run-2 (retarget resets follow=ON)
 		panel.handleInput("\x1b[A"); // ↑ → back to run-1 (retarget resets follow=ON — no scroll memory)
 		const out = panel.render(80);
@@ -894,12 +894,12 @@ describe("LaneConsole — constant height (ghost-block safety)", () => {
 	});
 });
 
-describe("LaneConsole — recap-height (bounded block keeps total height constant)", () => {
-	it("renders a constant total console height as artifact count grows past the recap cap", () => {
-		// Two recaps both ABOVE the cap (cap+1 vs cap+5) yield the SAME total console height,
-		// equal to Math.floor(rows * 0.9): the bounded recap keeps laneBlock.length constant
-		// w.r.t. artifact count, so the transcript flex region absorbs it and the total stays
-		// exactly maxRows (the static-lanes + ghost-block invariant).
+describe("LaneConsole — recap-height (one-line summary keeps total height constant)", () => {
+	it("renders a constant total console height regardless of artifact count", () => {
+		// The recap is a SINGLE summary line by construction (newest artifact + `+N more`
+		// fold), so laneBlock.length is constant w.r.t. artifact count — the transcript flex
+		// region absorbs it and the total stays exactly Math.floor(rows * 0.9) = maxRows
+		// (the static-lanes + ghost-block invariant).
 		function renderCompletedRecap(artifactCount: number): number {
 			__resetRunLaneRegistry();
 			recordRun("run-1", "ship");
@@ -922,10 +922,10 @@ describe("LaneConsole — recap-height (bounded block keeps total height constan
 			return height;
 		}
 
-		const capPlus1 = renderCompletedRecap(MAX_RECAP_ARTIFACTS + 1);
-		const capPlus5 = renderCompletedRecap(MAX_RECAP_ARTIFACTS + 5);
-		expect(capPlus1).toBe(Math.floor(24 * 0.9)); // 21 — exactly maxRows
-		expect(capPlus5).toBe(capPlus1); // bounded recap → constant total height as artifacts grow
+		const few = renderCompletedRecap(2);
+		const many = renderCompletedRecap(20);
+		expect(few).toBe(Math.floor(24 * 0.9)); // 21 — exactly maxRows
+		expect(many).toBe(few); // one-line summary → constant total height as artifacts grow
 	});
 });
 

@@ -33,11 +33,6 @@ import { getSubagentUsageForRun, getSubagentUsageForStage } from "./subagent-usa
 /** Per-row CAP on the lane region (the scroll-follow window + its +N above/below summaries).
  *  computeLaneLayout bounds laneCap at MAX_WIDGET_LINES - 1, so the list never grows unbounded. */
 export const MAX_WIDGET_LINES = 12;
-/** CAP on the number of `→ <path>` artifact lines renderRecap emits before folding the
- *  rest into a single `+N more` summary. Bounds the recap block so the console's total height
- *  stays constant as the artifact count grows (the transcript flex region absorbs the bounded
- *  block — the static-lanes + ghost-block invariant). */
-export const MAX_RECAP_ARTIFACTS = 3;
 /** Compact CEILING on the dock's TOTAL height — clamps totalRows to min(MAX_DOCK_ROWS,
  *  terminal.rows). With the lane region capped at MAX_WIDGET_LINES the list is content-sized. */
 export const MAX_DOCK_ROWS = 40;
@@ -442,35 +437,35 @@ export function renderLiveOutputBorder(theme: Theme, width: number): string {
  * LIVE; a missing/evicted lane or a lane with no `recap` yields []. Auto-shows in the
  * console's laneBlock (no toggle — distinct from the `s`-gated `renderStageBreakdown`).
  *
- * Headerless, height-bounded layout (≤ MAX_RECAP_ARTIFACTS + 2 lines): up to
- * MAX_RECAP_ARTIFACTS `→ <path>` lines in trail order INCLUDING partial artifacts (no
- * status filter — the recap surfaces artifacts from stages that completed before a later
- * failure), then exactly one `+N more` summary line ONLY when the artifact count exceeds
- * the cap; a `⚠ reason` line ONLY when the outcome is non-completed AND failureReason is
- * set. Each line truncated to width. Bounding the output keeps the console's total height
- * constant as the artifact count grows (the transcript flex region absorbs the bounded
- * block). The recap outcome can legitimately diverge from the lane chip (the accepted
- * droppedFailureRows divergence: recap reads "completed" off the trail while the chip
- * shows ✗ failed).
+ * A SINGLE summary line, never a per-artifact report (the lane chip already carries
+ * the status glyph + word, a short reason, and the primary `→ lastArtifact`; the
+ * recap adds only what the chip cannot): `→ <newest artifact>` (trail-order last —
+ * partial artifacts included, no status filter, so a failed run points at how far it
+ * got), a `+N more` count when more than one artifact landed, and `⚠ <reason>` ONLY
+ * when the outcome is non-completed AND failureReason is set — segments joined with
+ * ` · `, each omitted when empty, the whole line truncated to width. Returns [] when
+ * NO segment applies (nothing to say beyond the chip), so such a lane renders
+ * byte-identical to the pre-recap layout. ≤1 line by construction — the console's
+ * constant-height invariant holds trivially. The recap outcome can legitimately
+ * diverge from the lane chip (the accepted droppedFailureRows divergence: recap reads
+ * "completed" off the trail while the chip shows ✗ failed).
  */
 export function renderRecap(theme: Theme, width: number, runId: string): string[] {
 	const recap = getLane(runId)?.recap;
 	if (!recap) return [];
-	const lines: string[] = [];
-	// Artifacts in trail order (no status filter — partial artifacts included), capped at
-	// MAX_RECAP_ARTIFACTS with a single `+N more` fold when the count exceeds it (mirrors the
-	// file's `+N above`/`+N below` scroll-follow idiom).
-	for (const path of recap.artifacts.slice(0, MAX_RECAP_ARTIFACTS)) {
-		lines.push(truncateToWidth(theme.fg("muted", `→ ${path}`), width, "…"));
-	}
-	if (recap.artifacts.length > MAX_RECAP_ARTIFACTS) {
-		lines.push(truncateToWidth(theme.fg("dim", `+${recap.artifacts.length - MAX_RECAP_ARTIFACTS} more`), width, "…"));
+	const parts: string[] = [];
+	const n = recap.artifacts.length;
+	if (n > 0) {
+		// Newest artifact = trail-order last (partial artifacts included — no status filter).
+		parts.push(theme.fg("muted", `→ ${recap.artifacts[n - 1]}`));
+		if (n > 1) parts.push(theme.fg("dim", `+${n - 1} more`));
 	}
 	// Failure reason only for a non-completed outcome that carries one.
 	if (recap.outcome !== "completed" && recap.failureReason) {
-		lines.push(truncateToWidth(theme.fg("warning", `⚠ ${recap.failureReason}`), width, "…"));
+		parts.push(theme.fg("warning", `⚠ ${recap.failureReason}`));
 	}
-	return lines;
+	if (parts.length === 0) return [];
+	return [truncateToWidth(parts.join(" · "), width, "…")];
 }
 
 /**
