@@ -470,17 +470,14 @@ export function retireRun(
 }
 
 /**
- * Store a run's end-of-run summary — the SOLE recap writer. Writes `entry.recap`
- * regardless of the lane's terminal status, so when `onWorkflowEnd` fires AFTER a
- * run was already retired by an abort path (the x-key `stopSelected` at
- * packages/rpiv-pi/extensions/rpiv-core/lane-console.ts:574, which flips the lane
- * to "aborted" while the run is still in-flight), the recap `onWorkflowEnd` computes
- * still lands: `retireRun` (a first-retire-wins no-op on the already-retired lane)
- * never stored one — `setRecap` is the single source of truth. The host's
- * hard-teardown dispose fallback
- * (packages/rpiv-pi/extensions/rpiv-core/workflow-execution-host.ts:139, where
- * `onWorkflowEnd` may not fire and no console survives to render) is out of render
- * scope — not addressed here. Best-effort: a missing lane is a no-op.
+ * Store a run's end-of-run summary — the SOLE recap writer, deliberately ungated
+ * by the lane's terminal status: the x-key `stopSelected` path (lane-console.ts)
+ * retires the lane to "aborted" while the run is still in-flight, and the recap
+ * computed at `onWorkflowEnd` must still land on that already-terminal lane
+ * (`retireRun` is a first-retire-wins no-op there and never touches `recap`).
+ * The host's hard-teardown dispose fallback (workflow-execution-host.ts), where
+ * `onWorkflowEnd` may never fire, stores no recap — such a lane reads bare
+ * "aborted". Best-effort: a missing lane is a no-op.
  */
 export function setRecap(runId: string, recap: RunRecap): void {
 	const entry = state().lanes.get(runId);

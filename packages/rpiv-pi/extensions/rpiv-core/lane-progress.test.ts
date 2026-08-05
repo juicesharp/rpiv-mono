@@ -720,12 +720,11 @@ describe("onWorkflowEnd — recap threading (summarizeRun → single-source setR
 		expect(getLane("run-1")?.recap).toBeUndefined(); // no recap stored (setRecap gated on recap !== undefined)
 	});
 
-	it("abort-first (r1): a lane already retired to 'aborted' still lands its recap via the sole setRecap", async () => {
-		// The x-key stopSelected path retires the lane to "aborted" at
-		// packages/rpiv-pi/extensions/rpiv-core/lane-console.ts:574 while the run is still
-		// in-flight; when onWorkflowEnd later fires, retireRun is a first-retire-wins no-op
-		// on the already-terminal lane — so the recap lands solely via the trailing
-		// setRecap, the single recap writer.
+	it("abort-first: a lane already retired to 'aborted' still lands its recap via the sole setRecap", async () => {
+		// The x-key stopSelected path (lane-console.ts) retires the lane to "aborted" while
+		// the run is still in-flight; when onWorkflowEnd later fires, retireRun is a
+		// first-retire-wins no-op on the already-terminal lane — so the recap lands solely
+		// via the trailing setRecap, the single recap writer.
 		const b = await register();
 		recordRun("run-1", "ship");
 		retireRun("run-1", "aborted"); // the x-key path retires first
@@ -742,8 +741,8 @@ describe("onWorkflowEnd — recap threading (summarizeRun → single-source setR
 				totalStages: 7,
 			},
 		);
-		// retireRun no-ops on the already-terminal lane (it never stored a recap — it no
-		// longer carries one), so the recap landing proves setRecap wrote it (r1 closed).
+		// retireRun no-ops on the already-terminal lane (and never touches recap), so the
+		// recap landing proves setRecap wrote it.
 		expect(getLane("run-1")?.status).toBe("aborted"); // first status held
 		expect(getLane("run-1")?.recap).toBe(recap); // setRecap wrote it regardless of terminal status
 	});

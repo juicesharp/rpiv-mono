@@ -236,15 +236,12 @@ function recapOutcomeOf(last: WorkflowStage): RunRecap["outcome"] {
  * Terminal-state projection of one run's JSONL trail — the post-mortem recap
  * a lane renders on end-of-run. One `readAllStages` pass gates the `undefined`
  * return (no stage row ⇒ no terminal row ⇒ outcome unrecoverable from the
- * trail alone) and feeds both the last-row outcome (`recapOutcomeOf`) and the
- * artifact projection (`stagesToArtifacts` → `handleToString`); `readHeader`
- * adds the optional `workflow`.
- *
- * A `collected:true` marker on the last stage row is a NON-terminal collect-all
- * halt, read as `"completed"` (see `recapOutcomeOf`) — a loop-final run's last
- * stage row can be the halt while the run actually completed. `failureReason`
- * is gated on `outcome !== "completed"` (a completed run, halt or not, carries
- * no failure) AND a present `last.errMsg`.
+ * trail alone) and feeds both the last-row outcome (`recapOutcomeOf` — see it
+ * for the collected-halt rule) and the artifact projection
+ * (`stagesToArtifacts` → `handleToString`); `readHeader` adds the optional
+ * `workflow`. `failureReason` is gated on `outcome !== "completed"` AND a
+ * present `last.errMsg`, so a collected halt's errMsg never leaks into a
+ * completed recap.
  *
  * Fail-soft by inheritance: every reader it composes runs over the
  * `readParsedRows` try/catch contract, and neither the `.map(...)` projection
