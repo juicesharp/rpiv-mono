@@ -214,11 +214,11 @@ export interface LaneEntry {
 	/**
 	 * End-of-run summary projected from the on-disk JSONL trail by `summarizeRun`
 	 * (rpiv-workflow) — the lane-console renders it via `renderRecap` for a terminal
-	 * lane that carries one. Stored at `onWorkflowEnd` via BOTH `retireRun`'s 5th
-	 * arg (the first-retire-wins-gated path) AND the ungated `setRecap` mutator (the
-	 * abort-path-safe path). Undefined for a run that never reached `onWorkflowEnd`
-	 * (in-progress / hard-teardown) and cleared on resume (`recordRun` reactivation)
-	 * so a resumed run never leaks the prior recap — mirroring `lastArtifact`.
+	 * lane that carries one. Written SOLELY by the `setRecap` mutator at
+	 * `onWorkflowEnd` (the single recap writer — `retireRun` no longer touches
+	 * recap). Undefined for a run that never reached `onWorkflowEnd` (in-progress /
+	 * hard-teardown) and cleared on resume (`recordRun` reactivation) so a resumed
+	 * run never leaks the prior recap — mirroring `lastArtifact`.
 	 */
 	recap?: RunRecap;
 	/**
@@ -431,7 +431,6 @@ export function retireRun(
 	status: Exclude<LaneStatus, "running">,
 	error?: string,
 	lastArtifact?: string,
-	recap?: RunRecap,
 ): void {
 	const entry = state().lanes.get(runId);
 	if (!entry) return;
@@ -447,7 +446,6 @@ export function retireRun(
 	entry.status = status;
 	if (error !== undefined) entry.error = error; // terminal failure reason
 	if (lastArtifact !== undefined) entry.lastArtifact = lastArtifact; // primary artifact path (completed runs)
-	if (recap !== undefined) entry.recap = recap; // end-of-run summary (onWorkflowEnd)
 	// Capture units with a parked question BEFORE the settle loop clears pendingInput,
 	// so each affected unit is addressable for a `cleared` emit after notify().
 	const cleared: number[] = [];
@@ -472,14 +470,14 @@ export function retireRun(
 }
 
 /**
- * Store a run's end-of-run summary UNCONDITIONALLY — the recap storage path NOT
- * gated by `retireRun`'s first-retire-wins guard. Looks up the entry and writes
- * `entry.recap` regardless of the lane's terminal status, so when `onWorkflowEnd`
- * fires AFTER a run was already retired by an abort path (the x-key `stopSelected`
- * at packages/rpiv-pi/extensions/rpiv-core/lane-console.ts:567, which flips the lane
+ * Store a run's end-of-run summary — the SOLE recap writer. Writes `entry.recap`
+ * regardless of the lane's terminal status, so when `onWorkflowEnd` fires AFTER a
+ * run was already retired by an abort path (the x-key `stopSelected` at
+ * packages/rpiv-pi/extensions/rpiv-core/lane-console.ts:574, which flips the lane
  * to "aborted" while the run is still in-flight), the recap `onWorkflowEnd` computes
- * still lands: `retireRun`'s 5th-arg path no-ops on the already-retired lane, but this
- * standalone mutator does not. The host's hard-teardown dispose fallback
+ * still lands: `retireRun` (a first-retire-wins no-op on the already-retired lane)
+ * never stored one — `setRecap` is the single source of truth. The host's
+ * hard-teardown dispose fallback
  * (packages/rpiv-pi/extensions/rpiv-core/workflow-execution-host.ts:139, where
  * `onWorkflowEnd` may not fire and no console survives to render) is out of render
  * scope — not addressed here. Best-effort: a missing lane is a no-op.

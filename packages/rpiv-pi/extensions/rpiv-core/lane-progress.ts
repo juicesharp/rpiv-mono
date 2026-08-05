@@ -86,6 +86,18 @@ function guard(): ProgressGuard {
 const fanoutRuns = new Set<string>();
 
 /**
+ * runId → the CURRENT run instance's `ctx.state` object (the runner's `run.state`
+ * RunView, threaded by reference through `lifecycleCtxFor`). A resume REUSES the
+ * runId but starts a FRESH `ctx.state` (`reconstructState` builds new state;
+ * `buildRunContext` threads `state: recon.state`), so object identity distinguishes
+ * the aborted predecessor from its resumed successor — the basis of the
+ * `onWorkflowEnd` instance guard below. Seeded on `onWorkflowStart`, deleted on the
+ * terminal-proceed path, cleared wholesale by `__resetLaneProgress`. Module-local
+ * (the bridge runs only at the root launcher).
+ */
+const activeInstances = new Map<string, object>();
+
+/**
  * Wire the lifecycle→registry bridge to the ROOT launcher's session_start.
  * Skipped for a detached foreground child (branded relay ui) and any non-UI
  * session — the same gate the execution-host provider hook uses.
@@ -119,6 +131,13 @@ export async function registerLaneProgress(): Promise<void> {
 		// loader/DSL/runner graph off startup and avoids the barrel-import race.
 		const { registerLifecycle, summarizeRun } = await import("@juicesharp/rpiv-workflow/startup");
 		g.dispose = registerLifecycle({
+			// Seed run-INSTANCE identity keyed by runId. A resume REUSES the runId, so a
+			// runId-only gate is racy — but `reconstructState` hands the resumed successor a
+			// FRESH ctx.state object, so the onWorkflowEnd instance guard compares identities to
+			// drop a stale predecessor's late end (it must not re-retire/re-cap the resumed lane).
+			onWorkflowStart: (ctx) => {
+				activeInstances.set(ctx.runId, ctx.state);
+			},
 			// onStageStart fires for EVERY stage kind — a plain sequential stage (the single-stage
 			// entry announcement, run-stage.ts:221) AND every loop stage, where it fires BEFORE
 			// onLoopStart (announceLoopStart, loop.ts:75→78). So retiring the prior stage's fan-out
@@ -218,6 +237,26 @@ export async function registerLaneProgress(): Promise<void> {
 			onWorkflowEnd: (result, ctx) => {
 				const status = result.termination?.status;
 				if (!status || status === "running") return; // still in-flight — nothing to retire
+				// Run-instance guard: a resume REUSES this runId and reactivates the retained lane
+				// back to "running" via recordRun, which RE-ARMS retireRun's first-retire-wins gate.
+				// The aborted predecessor's late terminal onWorkflowEnd (still on the event loop after
+				// a cooperative abort) would then pass BOTH the status check and retireRun's gate and
+				// stamp the resumed lane with the predecessor's outcome + recap. `reconstructState`
+				// hands the resumed successor a FRESH ctx.state object, so identity comparison
+				// distinguishes the two instances. When the recorded instance for this runId exists
+				// and differs from the current ctx.state, this end belongs to the predecessor — drop
+				// it. Otherwise this is the live instance's own end (or no instance was recorded at
+				// all — fail-open): delete the stale seed and proceed to retire.
+				//
+				// Residual window (microtask-scale): between recordRun (inside detachExecutor)
+				// re-arming retireRun's first-retire-wins gate and this successor's onWorkflowStart
+				// overwriting the recorded instance, a predecessor end that lands in that gap still
+				// matches its own recorded ctx.state and slips through. Accepted: it shrinks the old
+				// race window (which spanned the predecessor run's ENTIRE remaining stage) to
+				// microtask scale.
+				const recorded = activeInstances.get(ctx.runId);
+				if (recorded !== undefined && recorded !== ctx.state) return; // stale predecessor end
+				activeInstances.delete(ctx.runId); // keep the map bounded to in-flight runs
 				const lane = getLane(ctx.runId);
 				const name = lane?.name ?? ctx.workflow;
 				// `termination.error` is the readable cause (the same text as the trail's
@@ -237,14 +276,17 @@ export async function registerLaneProgress(): Promise<void> {
 				// and BEFORE retirement so the lane is still live while the trail is read. The recap
 				// does NOT gate retirement: a run whose recap resolved to undefined still retires.
 				const recap = summarizeRun(ctx.cwd, ctx.runId);
-				// 5th-arg recap stores via retireRun's first-retire-wins-gated path (the normal
-				// terminal case). The trailing setRecap is the UNGATED path that closes the abort
-				// gap (r1): the x-key stopSelected path retires the lane to "aborted" while the
-				// run is still in-flight, so when onWorkflowEnd later fires retireRun no-ops on the
-				// already-terminal lane — but setRecap writes entry.recap regardless of status.
-				retireRun(ctx.runId, status, error, lastArtifact, recap);
-				// Ungated write (fail-soft: summarizeRun may return undefined → no recap stored,
-				// which renderRecap treats as a no-op). Runs UNCONDITIONALLY w.r.t. retirement.
+				// Single source of truth: the recap is written SOLELY via the ungated `setRecap`
+				// below, regardless of retirement status. `retireRun` no longer carries a recap
+				// arg (the redundant first-retire-wins-gated 5th-arg path was removed — it no-ops
+				// on the abort path anyway, where `setRecap` is the load-bearing write).
+				retireRun(ctx.runId, status, error, lastArtifact);
+				// Fail-soft: summarizeRun may return undefined → no recap stored (renderRecap
+				// treats a missing recap as a no-op). Writes entry.recap UNCONDITIONALLY w.r.t.
+				// retirement status — the x-key stopSelected path
+				// (packages/rpiv-pi/extensions/rpiv-core/lane-console.ts:574) may retire the lane
+				// to "aborted" first, and setRecap still lands the recap on the already-terminal
+				// lane (r1).
 				if (recap !== undefined) setRecap(ctx.runId, recap);
 				const ui = getCapturedUiContext();
 				if (!ui) return;
@@ -277,4 +319,5 @@ export function __resetLaneProgress(): void {
 	g.dispose?.();
 	g.dispose = undefined;
 	fanoutRuns.clear();
+	activeInstances.clear();
 }

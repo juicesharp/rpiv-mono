@@ -7,6 +7,44 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Recap storage collapsed to a single source of truth.** The redundant
+  `retireRun` 5th-arg recap path is removed; `setRecap` is now the sole recap
+  writer (no behavior change — the ungated `setRecap` was already the
+  load-bearing write on both the normal and abort paths). `retireRun` returns to
+  a 4-arg shape `(runId, status, error?, lastArtifact?)`.
+
+### Fixed
+
+- **The end-of-run recap block is now height-bounded and its duplicate header
+  removed.** `renderRecap` no longer emits the outcome-glyph + workflow header
+  line (a duplicate of the lane chip's status) and caps its `→ <path>` artifact
+  lines at the new `MAX_RECAP_ARTIFACTS` constant, folding the remainder into a
+  single `+N more` summary. The unbounded recap was a belowEditor ghost-block
+  source: as artifact count grew it pushed the lane block past its budget, so the
+  console's total height grew with it. Bounding the output keeps `laneBlock.length`
+  constant w.r.t. artifact count, so the transcript flex region absorbs the block
+  and the total stays exactly `maxRows` (the static-lanes + ghost-block invariant).
+
+- **A resumed lane is no longer re-retired and re-capped by its aborted
+  predecessor's stale terminal `onWorkflowEnd`.** Resume reuses the `runId` and
+  reactivates the retained lane back to `"running"` via `recordRun`, which re-arms
+  `retireRun`'s first-retire-wins gate — so the aborted predecessor's late terminal
+  `onWorkflowEnd` (still on the event loop after a cooperative abort) passed both
+  the status check and the re-armed gate and stamped the resumed lane with the
+  predecessor's outcome + recap. The lifecycle bridge now registers an
+  `onWorkflowStart` listener that captures `ctx.state` (the runner's `run.state`,
+  threaded by reference) keyed by `runId`, and `onWorkflowEnd` early-returns when
+  the recorded instance exists and differs from the event's `ctx.state` — a resume
+  builds a fresh `state` via `reconstructState`, so object identity distinguishes
+  the two instances. Fail-open by design (no instance recorded → no block), so
+  existing `onWorkflowEnd` paths are unchanged. A microtask-scale residual window
+  (between `recordRun` re-arming the gate and the resumed `onWorkflowStart`
+  overwriting the captured instance) is accepted and documented in the guard — it
+  shrinks the old race window, which spanned the predecessor run's entire remaining
+  stage, to microtask scale.
+
 ## [2.4.0] - 2026-08-03
 
 ### Added

@@ -13,7 +13,7 @@ import askUserQuestionExtension from "@juicesharp/rpiv-ask-user-question";
 import { createMockPi, makeAssistantMessage, makeUserMessage } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { cappedTui, LaneConsole, showLaneConsole } from "./lane-console.js";
-import { renderLaneList } from "./lane-list.js";
+import { MAX_RECAP_ARTIFACTS, renderLaneList } from "./lane-list.js";
 import type { ViewerMessage } from "./lane-transcript.js";
 import {
 	__resetRunLaneRegistry,
@@ -28,6 +28,7 @@ import {
 	setCurrentSession,
 	setLaneProgress,
 	setLaneSessionFile,
+	setRecap,
 	setUnitStarted,
 } from "./run-lane-registry.js";
 
@@ -890,6 +891,41 @@ describe("LaneConsole — constant height (ghost-block safety)", () => {
 		panel.handleInput("\r"); // arm → the band paints so the height check reflects the cap
 		expect(panel.render(80).length).toBe(readonly); // padded → identical height across the transition
 		panel.dispose();
+	});
+});
+
+describe("LaneConsole — recap-height (bounded block keeps total height constant)", () => {
+	it("renders a constant total console height as artifact count grows past the recap cap", () => {
+		// Two recaps both ABOVE the cap (cap+1 vs cap+5) yield the SAME total console height,
+		// equal to Math.floor(rows * 0.9): the bounded recap keeps laneBlock.length constant
+		// w.r.t. artifact count, so the transcript flex region absorbs it and the total stays
+		// exactly maxRows (the static-lanes + ghost-block invariant).
+		function renderCompletedRecap(artifactCount: number): number {
+			__resetRunLaneRegistry();
+			recordRun("run-1", "ship");
+			retireRun("run-1", "completed"); // terminal BEFORE opening → the console stays open
+			setRecap("run-1", {
+				outcome: "completed",
+				artifacts: Array.from({ length: artifactCount }, (_v, i) => `a${i}.md`),
+			});
+			const panel = new LaneConsole(
+				"run-1",
+				SINGLE_UNIT_KEY,
+				makeTui(24),
+				identityTheme,
+				{} as never,
+				vi.fn(),
+				vi.fn(),
+			);
+			const height = panel.render(80).length;
+			panel.dispose();
+			return height;
+		}
+
+		const capPlus1 = renderCompletedRecap(MAX_RECAP_ARTIFACTS + 1);
+		const capPlus5 = renderCompletedRecap(MAX_RECAP_ARTIFACTS + 5);
+		expect(capPlus1).toBe(Math.floor(24 * 0.9)); // 21 — exactly maxRows
+		expect(capPlus5).toBe(capPlus1); // bounded recap → constant total height as artifacts grow
 	});
 });
 

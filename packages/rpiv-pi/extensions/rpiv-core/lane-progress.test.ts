@@ -31,6 +31,7 @@ import { __resetSessionCaptureState, registerSessionCapture } from "./session-ca
 
 /** Loose projection of the listener bundle — enough to drive the events under test. */
 interface Bundle {
+	onWorkflowStart?: (ctx: { runId: string; state?: object; totalStages: number }) => void;
 	onStageStart?: (stage: { stageNumber: number; name: string }, ctx: { runId: string; totalStages: number }) => void;
 	onStageRetry?: (
 		stage: { stageNumber: number; name: string },
@@ -66,7 +67,7 @@ interface Bundle {
 	) => void;
 	onWorkflowEnd?: (
 		result: { termination?: { status: string; error?: string } },
-		ctx: { runId: string; workflow: string; cwd?: string; totalStages: number },
+		ctx: { runId: string; workflow: string; cwd?: string; state?: object; totalStages: number },
 	) => void;
 }
 
@@ -676,7 +677,7 @@ describe("onWorkflowEnd — terminal retention + completion toast", () => {
 	});
 });
 
-describe("onWorkflowEnd — recap threading (summarizeRun → retireRun 5th arg + ungated setRecap)", () => {
+describe("onWorkflowEnd — recap threading (summarizeRun → single-source setRecap)", () => {
 	async function register(): Promise<Bundle> {
 		const { pi, sessionStart } = makePi();
 		registerLaneProgressHook(pi);
@@ -699,7 +700,7 @@ describe("onWorkflowEnd — recap threading (summarizeRun → retireRun 5th arg 
 			},
 		);
 		expect(summarizeRun).toHaveBeenCalledWith("/work", "run-1");
-		expect(getLane("run-1")?.recap).toBe(recap); // stored via retireRun 5th-arg (lane was running)
+		expect(getLane("run-1")?.recap).toBe(recap); // stored via setRecap (the sole writer)
 	});
 
 	it("retireRun is called UNCONDITIONALLY — a run whose recap resolved to undefined still retires", async () => {
@@ -719,10 +720,12 @@ describe("onWorkflowEnd — recap threading (summarizeRun → retireRun 5th arg 
 		expect(getLane("run-1")?.recap).toBeUndefined(); // no recap stored (setRecap gated on recap !== undefined)
 	});
 
-	it("abort-first (r1): a lane already retired to 'aborted' still lands its recap via the ungated setRecap", async () => {
-		// The x-key stopSelected path retires the lane to "aborted" at lane-console.ts:567
-		// while the run is still in-flight; when onWorkflowEnd later fires, retireRun's
-		// 5th-arg recap no-ops (first-retire-wins), but the trailing setRecap still writes.
+	it("abort-first (r1): a lane already retired to 'aborted' still lands its recap via the sole setRecap", async () => {
+		// The x-key stopSelected path retires the lane to "aborted" at
+		// packages/rpiv-pi/extensions/rpiv-core/lane-console.ts:574 while the run is still
+		// in-flight; when onWorkflowEnd later fires, retireRun is a first-retire-wins no-op
+		// on the already-terminal lane — so the recap lands solely via the trailing
+		// setRecap, the single recap writer.
 		const b = await register();
 		recordRun("run-1", "ship");
 		retireRun("run-1", "aborted"); // the x-key path retires first
@@ -739,10 +742,75 @@ describe("onWorkflowEnd — recap threading (summarizeRun → retireRun 5th arg 
 				totalStages: 7,
 			},
 		);
-		// retireRun no-ops on the already-terminal lane, so its 5th-arg recap cannot have
-		// stored this — the recap landing proves the trailing setRecap wrote it (r1 closed).
+		// retireRun no-ops on the already-terminal lane (it never stored a recap — it no
+		// longer carries one), so the recap landing proves setRecap wrote it (r1 closed).
 		expect(getLane("run-1")?.status).toBe("aborted"); // first status held
 		expect(getLane("run-1")?.recap).toBe(recap); // setRecap wrote it regardless of terminal status
+	});
+});
+
+describe("onWorkflowEnd — run-instance guard (resume race)", () => {
+	async function register(): Promise<Bundle> {
+		const { pi, sessionStart } = makePi();
+		registerLaneProgressHook(pi);
+		await sessionStart()!({}, { hasUI: true, ui: REAL_UI });
+		return bundle();
+	}
+
+	it("a stale predecessor onWorkflowEnd does NOT re-retire or re-cap the resumed lane", async () => {
+		const b = await register();
+		recordRun("run-1", "ship");
+		const ctx = { runId: "run-1", workflow: "ship", totalStages: 4 };
+		// Predecessor run starts: its ctx.state (statePred) is captured as the active instance.
+		const statePred = {};
+		b.onWorkflowStart?.({ ...ctx, state: statePred });
+		// Predecessor is aborted via the x-key stopSelected path — retireRun stamps the lane
+		// "aborted" while the run is still in-flight, so its terminal onWorkflowEnd is still
+		// queued on the event loop (it has NOT fired yet).
+		retireRun("run-1", "aborted");
+		expect(getLane("run-1")?.status).toBe("aborted");
+
+		// Resume: recordRun reactivation flips the lane back to "running" and clears its recap,
+		// which RE-ARMS retireRun's first-retire-wins gate (entry.status === "running" again).
+		recordRun("run-1", "ship");
+		expect(getLane("run-1")?.status).toBe("running");
+
+		// Resumed run starts: reconstructState handed it a FRESH ctx.state (stateResumed),
+		// which overwrites the captured instance for this (reused) runId.
+		const stateResumed = {};
+		b.onWorkflowStart?.({ ...ctx, state: stateResumed });
+
+		// The predecessor's LATE terminal onWorkflowEnd finally fires, still carrying its OWN
+		// stale ctx.state (statePred). Pre-guard this passed both the status check and retireRun's
+		// re-armed gate and re-stamped the resumed lane "aborted" + re-capped it. Now the instance
+		// guard sees the recorded instance (stateResumed) differ from the event's ctx.state
+		// (statePred) and drops it.
+		summarizeRun.mockReturnValue({ outcome: "aborted", artifacts: [] });
+		b.onWorkflowEnd?.({ termination: { status: "aborted" } }, { ...ctx, state: statePred });
+		expect(getLane("run-1")?.status).toBe("running"); // NOT re-retired to the predecessor's "aborted"
+		expect(getLane("run-1")?.recap).toBeUndefined(); // NOT re-capped by the stale end
+		// The stale end never reached the recap-write region: summarizeRun was not called.
+		expect(summarizeRun).not.toHaveBeenCalled();
+	});
+
+	it("the resumed run's OWN onWorkflowEnd proceeds (its ctx.state matches the captured instance)", async () => {
+		const b = await register();
+		recordRun("run-1", "ship");
+		const ctx = { runId: "run-1", workflow: "ship", cwd: "/work", totalStages: 4 };
+		const statePred = {};
+		b.onWorkflowStart?.({ ...ctx, state: statePred });
+		retireRun("run-1", "aborted");
+		recordRun("run-1", "ship"); // resume reactivation
+		const stateResumed = {};
+		b.onWorkflowStart?.({ ...ctx, state: stateResumed });
+
+		// The resumed run completes and fires its OWN onWorkflowEnd carrying the SAME ctx.state
+		// its onWorkflowStart captured (stateResumed) — the guard matches and proceeds.
+		const recap = { outcome: "completed", artifacts: [".rpiv/artifacts/builds/ship.md"] };
+		summarizeRun.mockReturnValue(recap);
+		b.onWorkflowEnd?.({ termination: { status: "completed" } }, { ...ctx, state: stateResumed });
+		expect(getLane("run-1")?.status).toBe("completed"); // retired normally
+		expect(getLane("run-1")?.recap).toBe(recap); // recap landed
 	});
 });
 

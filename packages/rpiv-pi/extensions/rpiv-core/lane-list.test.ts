@@ -4,6 +4,7 @@ import {
 	computeLaneLayout,
 	computeViewport,
 	MAX_DOCK_ROWS,
+	MAX_RECAP_ARTIFACTS,
 	MAX_WIDGET_LINES,
 	renderLaneList,
 	renderRecap,
@@ -530,21 +531,16 @@ describe("renderRecap — end-of-run summary", () => {
 		expect(renderRecap(identityTheme, W, "run-1")).toEqual([]);
 	});
 
-	it("renders the header: glyph + outcome + ` · workflow` (workflow segment present when set)", () => {
+	it("emits NO header (no status glyph, no outcome word, no ` · workflow` segment)", () => {
 		recordRun("run-1", "ship");
-		setRecap("run-1", { outcome: "completed", workflow: "ship", artifacts: [] });
+		setRecap("run-1", { outcome: "completed", workflow: "ship", artifacts: ["a.md"] });
 		const lines = renderRecap(identityTheme, W, "run-1");
-		expect(lines.length).toBe(1);
-		expect(lines[0]).toContain("✓");
-		expect(lines[0]).toContain("completed");
-		expect(lines[0]).toContain("· ship");
-	});
-
-	it("omits the workflow segment when recap.workflow is absent", () => {
-		recordRun("run-1", "ship");
-		setRecap("run-1", { outcome: "completed", artifacts: [] });
-		const lines = renderRecap(identityTheme, W, "run-1");
-		expect(lines[0]).not.toContain("·");
+		const out = lines.join("\n");
+		// No status glyph (▶✓✗⊘), no outcome word, no `· workflow` segment — the header was a
+		// duplicate of the lane chip's status and is dropped.
+		expect(out).not.toMatch(/[▶✓✗⊘]/);
+		expect(out).not.toContain("completed");
+		expect(out).not.toContain("· ship");
 	});
 
 	it("renders one `→ path` line per artifact in trail order (including partial artifacts)", () => {
@@ -554,10 +550,33 @@ describe("renderRecap — end-of-run summary", () => {
 			artifacts: [".rpiv/artifacts/plans/a.md", ".rpiv/artifacts/builds/b.md"],
 		});
 		const lines = renderRecap(identityTheme, W, "run-1");
-		// header + 2 artifact lines
-		expect(lines.length).toBe(3);
-		expect(lines[1]).toContain("→ .rpiv/artifacts/plans/a.md");
-		expect(lines[2]).toContain("→ .rpiv/artifacts/builds/b.md");
+		// 2 artifact lines, no header
+		expect(lines.length).toBe(2);
+		expect(lines[0]).toContain("→ .rpiv/artifacts/plans/a.md");
+		expect(lines[1]).toContain("→ .rpiv/artifacts/builds/b.md");
+	});
+
+	it("caps the artifact loop at MAX_RECAP_ARTIFACTS with a single `+N more` fold only when exceeded", () => {
+		// AT the cap (3) ⇒ no `+N more` line, exactly MAX_RECAP_ARTIFACTS `→` lines.
+		recordRun("run-at-cap", "ship");
+		setRecap("run-at-cap", { outcome: "completed", artifacts: ["a", "b", "c"] });
+		const atCap = renderRecap(identityTheme, W, "run-at-cap");
+		expect(atCap.filter((l) => l.includes("→")).length).toBe(MAX_RECAP_ARTIFACTS);
+		expect(atCap.some((l) => l.includes("more"))).toBe(false);
+		expect(atCap.length).toBeLessThanOrEqual(MAX_RECAP_ARTIFACTS + 2);
+
+		// ABOVE the cap (cap + 3 = 6) ⇒ exactly MAX_RECAP_ARTIFACTS `→` lines + exactly one
+		// `+N more` line (+3 more). Total length ≤ MAX_RECAP_ARTIFACTS + 2 (cap + overflow + reason).
+		recordRun("run-over-cap", "build");
+		setRecap("run-over-cap", {
+			outcome: "completed",
+			artifacts: ["a", "b", "c", "d", "e", "f"],
+		});
+		const overCap = renderRecap(identityTheme, W, "run-over-cap");
+		expect(overCap.filter((l) => l.includes("→")).length).toBe(MAX_RECAP_ARTIFACTS);
+		expect(overCap.filter((l) => l.includes("more")).length).toBe(1);
+		expect(overCap.some((l) => l.includes("+3 more"))).toBe(true);
+		expect(overCap.length).toBeLessThanOrEqual(MAX_RECAP_ARTIFACTS + 2);
 	});
 
 	it("renders NO `→` line when the recap has no artifacts", () => {
