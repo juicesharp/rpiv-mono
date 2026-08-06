@@ -16,6 +16,14 @@ beforeEach(() => {
 	// test/setup.ts rmSyncs CONFIG_PATH in shared beforeEach
 });
 
+describe("DEFAULT_PROMPT_GUIDELINES — task tracking scope", () => {
+	it("applies lifecycle instructions only to tracked tasks", () => {
+		const guidance = DEFAULT_PROMPT_GUIDELINES.join("\n");
+		expect(guidance).toContain("When starting any tracked task");
+		expect(guidance).not.toContain("When starting any task");
+	});
+});
+
 describe("registerTodoTool — guidance overrides", () => {
 	it("uses built-in defaults when no config file exists", () => {
 		const { pi, captured } = createMockPi();
