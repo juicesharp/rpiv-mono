@@ -19,6 +19,7 @@ import {
 	type DialogState,
 	DialogView,
 	HINT_MULTI,
+	HINT_PART_CANCEL,
 	HINT_PART_CLEAR,
 	HINT_PART_COLLAPSE,
 	HINT_PART_ENTER,
@@ -117,6 +118,7 @@ function makeConfig(over: MakeConfigOverrides = {}): DialogParts {
 		isMulti: over.isMulti ?? questions.length > 1,
 		tabsByIndex,
 		submitPicker: over.submitPicker,
+		collapseKey: over.collapseKey,
 		getBodyHeight: over.getBodyHeight ?? (() => 1),
 		getCurrentBodyHeight:
 			over.getCurrentBodyHeight ??
@@ -190,6 +192,21 @@ describe("makeDialog — multi-question (question tab)", () => {
 		expect(joined).toContain("<TABBAR>");
 		expect(joined).toContain("<PREVIEW>");
 		expect(joined).toContain(HINT_PART_NOTES);
+	});
+
+	it("interpolates a custom collapseKey into the hint (#72)", () => {
+		const dlg = makeDialog(makeConfig({ collapseKey: "alt+o" }));
+		// Width 120 keeps the full hint on one line (same as the existing hint test at line ~639).
+		const joined = dlg.render(120).join("\n");
+		expect(joined).toContain("Alt+O to collapse");
+		expect(joined).not.toContain("Ctrl+] to collapse");
+	});
+
+	it("omits the collapse affordance from the hint when collapseKey is off", () => {
+		const dlg = makeDialog(makeConfig({ collapseKey: "off" }));
+		const joined = dlg.render(120).join("\n");
+		expect(joined).not.toContain("to collapse");
+		expect(joined).toContain(HINT_PART_CANCEL);
 	});
 
 	it("does NOT render the inner header badge inside the dialog body in multi-question mode", () => {

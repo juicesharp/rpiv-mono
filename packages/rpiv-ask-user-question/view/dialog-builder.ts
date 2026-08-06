@@ -18,6 +18,28 @@ export const HINT_PART_TAB = "Tab to switch questions";
 export const HINT_PART_CANCEL = "Esc to cancel";
 export const HINT_PART_COLLAPSE = "Ctrl+] to collapse";
 export const HINT_PART_EXPAND = "Ctrl+] to expand";
+
+/**
+ * Human-readable display form of a collapse key spec, e.g. `"ctrl+]"` → `"Ctrl+]"`,
+ * `"alt+o"` → `"Alt+O"`. Capitalizes each `+`-separated part so the hint reflects the
+ * key the user actually configured instead of a hardcoded `Ctrl+]`.
+ */
+export function formatCollapseKey(spec: string): string {
+	return spec
+		.split("+")
+		.map((part) => (part.length > 0 ? part[0]!.toUpperCase() + part.slice(1) : part))
+		.join("+");
+}
+
+/** Collapse affordance hint interpolating the configured key, e.g. `"Alt+O to collapse"`. */
+export function collapseHintFor(spec: string): string {
+	return `${formatCollapseKey(spec)} to collapse`;
+}
+
+/** Expand affordance hint interpolating the configured key, e.g. `"Alt+O to expand"`. */
+export function expandHintFor(spec: string): string {
+	return `${formatCollapseKey(spec)} to expand`;
+}
 /**
  * `HINT_SINGLE` / `HINT_MULTI` are the resting core hint for NON-multiSelect
  * question tabs only: `buildHintText` drops `NOTES` while the notes editor is
@@ -35,6 +57,12 @@ export const HINT_MULTI = [HINT_PART_ENTER, HINT_PART_NAV, HINT_PART_NOTES, HINT
 );
 /** Single-line footer shown by `QuestionnaireSession` when `state.collapsed === true`. Bypasses `buildHintText`. */
 export const COLLAPSED_HINT = [HINT_PART_EXPAND, HINT_PART_CANCEL].join(" · ");
+
+/** Collapsed footer for a configured collapse key. Falls back to the `COLLAPSED_HINT` default when `off`. */
+export function collapsedHintFor(spec: string): string {
+	if (spec === "off") return COLLAPSED_HINT;
+	return [expandHintFor(spec), HINT_PART_CANCEL].join(" · ");
+}
 export const REVIEW_HEADING = "Review your answers";
 export const READY_PROMPT = "Ready to submit your answers?";
 export const INCOMPLETE_WARNING_PREFIX = "⚠ Answer remaining questions before submitting:";
@@ -61,6 +89,8 @@ export interface DialogConfig {
 	tabsByIndex: ReadonlyArray<TabComponents>;
 	/** Optional so single-question mode and non-submit tests can omit it; SubmitTabStrategy falls back to Spacer rows. */
 	submitPicker?: Component;
+	/** Key spec for the collapse/expand shortcut, used to interpolate the hint. Defaults to `ctrl+]`. */
+	collapseKey?: string;
 	/** Worst-case body height across all tabs/options. Determines the stable overall dialog footprint. */
 	getBodyHeight: (width: number) => number;
 	/** Body height of the CURRENTLY active tab/option. The chrome subtracts this from `getBodyHeight` to absorb the residual OUTSIDE the bordered region. */
@@ -95,6 +125,7 @@ export class DialogView implements StatefulView<DialogProps> {
 			notesInput: config.notesInput,
 			isMulti: config.isMulti,
 			getCurrentBodyHeight: config.getCurrentBodyHeight,
+			collapseKey: config.collapseKey,
 		});
 		this.submitStrategy = config.isMulti
 			? new SubmitTabStrategy({

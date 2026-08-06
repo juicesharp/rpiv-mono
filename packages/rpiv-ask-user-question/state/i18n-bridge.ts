@@ -46,6 +46,17 @@ try {
 
 export const t: ScopeFn = scopeImpl;
 
+/**
+ * `t` with parameter interpolation: `{name}` placeholders in the resolved string
+ * (localized or fallback) are replaced from `params`. Keeps keys like
+ * `hint.collapse` (`"{key} to collapse"`) translatable while still reflecting
+ * the user-configured `collapseKey` at render time.
+ */
+export function tInterp(key: string, fallback: string, params: Record<string, string>): string {
+	const raw = t(key, fallback);
+	return raw.replace(/\{(\w+)\}/g, (m, name) => (name in params ? params[name]! : m));
+}
+
 export function displayLabel(kind: SentinelKind): string {
 	return t(`sentinel.${kind}`, ROW_INTENT_META[kind].label);
 }

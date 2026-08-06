@@ -266,9 +266,14 @@ Preview content is rendered as markdown in a monospace box. Multi-line text with
 					{
 						overlay: true,
 						overlayOptions: {
-							anchor: "bottom-center",
+							// #72: full-height bottom-anchored overlay hid the most recent chat lines
+							// (the footer of the transcript). `center` + `maxHeight: 80%` leaves a
+							// 10% margin top and bottom so the latest messages stay readable while
+							// answering; the collapse shortcut (ctrl+]) remains the escape hatch
+							// for cramped terminals.
+							anchor: "center",
 							width: "100%",
-							maxHeight: "100%",
+							maxHeight: "80%",
 							margin: { left: 0, right: 0, bottom: 0 },
 						},
 						onHandle: (handle) => {

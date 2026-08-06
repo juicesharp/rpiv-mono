@@ -7,6 +7,14 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- The questionnaire overlay no longer covers the whole terminal: it anchors `center` with
+  `maxHeight: 80%`, keeping the most recent chat lines readable while answering.
+- The footer hint now interpolates the configured `collapseKey` (e.g. `"alt+o"` renders
+  as `Alt+O to collapse`); when the shortcut is `"off"` the collapse affordance is
+  omitted from the hint entirely.
+
 ## [2.4.0] - 2026-08-03
 
 ### Fixed

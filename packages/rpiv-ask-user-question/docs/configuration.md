@@ -87,6 +87,10 @@ One known rough edge: the footer hint line inside the dialog always reads `Ctrl+
 collapse` and does not interpolate a custom `collapseKey`. The one-shot notification you
 get when the dialog first collapses *does* name your configured key.
 
+> **Update**: the footer hint now interpolates your configured `collapseKey` (e.g.
+> `"alt+o"` renders as `Alt+O to collapse`). When the shortcut is `"off"`, the collapse
+> affordance is omitted from the hint entirely.
+
 ### `guidance.promptSnippet` and `guidance.promptGuidelines`
 
 These replace the text Pi puts in the system prompt about when to reach for

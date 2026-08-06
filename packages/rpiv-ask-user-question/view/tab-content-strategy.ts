@@ -1,14 +1,15 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { type Component, Container, type Editor, Spacer, Text, truncateToWidth } from "@earendil-works/pi-tui";
-import { t } from "../state/i18n-bridge.js";
+import { t, tInterp } from "../state/i18n-bridge.js";
 import { formatAnswerScalar } from "../tool/format-answer.js";
 import type { QuestionData } from "../tool/types.js";
 import type { PreviewPane, PreviewPaneProps } from "./components/preview/preview-pane.js";
 import {
+	collapseHintFor,
 	type DialogState,
+	formatCollapseKey,
 	HINT_PART_CANCEL,
 	HINT_PART_CLEAR,
-	HINT_PART_COLLAPSE,
 	HINT_PART_ENTER,
 	HINT_PART_NAV,
 	HINT_PART_NEW_LINE,
@@ -86,6 +87,8 @@ export interface QuestionTabStrategyConfig {
 	notesInput: Editor;
 	isMulti: boolean;
 	getCurrentBodyHeight: (width: number) => number;
+	/** Key spec for the collapse/expand shortcut. Interpolated into the hint. Defaults to `ctrl+]`. */
+	collapseKey?: string;
 }
 
 export class QuestionTabStrategy implements TabContentStrategy {
@@ -137,7 +140,10 @@ export class QuestionTabStrategy implements TabContentStrategy {
 		// drops the trailing parts (collapse hint first, then cancel) with `…`.
 		return [
 			new Spacer(1),
-			new OneLineClippedText(this.config.theme.fg("dim", buildHintText(question, this.config.isMulti, state)), 1),
+			new OneLineClippedText(
+				this.config.theme.fg("dim", buildHintText(question, this.config.isMulti, state, this.config.collapseKey)),
+				1,
+			),
 		];
 	}
 
@@ -228,21 +234,33 @@ export class SubmitTabStrategy implements TabContentStrategy {
 
 /**
  * Build the controls hint line. Order:
- *   Enter · ↑/↓ [· Space toggle] [· n notes] [· Tab switch] · Esc · Ctrl+] collapse
+ *   Enter · ↑/↓ [· Space toggle] [· n notes] [· Tab switch] · Esc · <collapseKey> collapse
  *   [· Shift+Enter newline] [· Ctrl+U clear]
  *
  * `NOTES` is part of the resting (notes-closed) core — it drops while the notes
  * editor or custom-answer input has the keyboard. Ctrl+G is Pi's global external-
  * editor shortcut and needs no local hint; the context-specific clear shortcut is
  * appended at the far right while input mode is active.
+ *
+ * `collapseKey` interpolates the configured collapse shortcut into the hint
+ * (default `ctrl+]` renders as `Ctrl+] to collapse`). `"off"` omits the
+ * affordance entirely — no shortcut is active to advertise.
  */
-export function buildHintText(question: QuestionData | undefined, isMulti: boolean, state: DialogState): string {
+export function buildHintText(
+	question: QuestionData | undefined,
+	isMulti: boolean,
+	state: DialogState,
+	collapseKey?: string,
+): string {
 	const parts: string[] = [t("hint.enter", HINT_PART_ENTER), t("hint.navigate", HINT_PART_NAV)];
 	if (question?.multiSelect === true) parts.push(t("hint.toggle", HINT_PART_TOGGLE));
 	if (question && !state.notesVisible && !state.inputMode) parts.push(t("hint.notes", HINT_PART_NOTES));
 	if (isMulti) parts.push(t("hint.tab", HINT_PART_TAB));
 	parts.push(t("hint.cancel", HINT_PART_CANCEL));
-	parts.push(t("hint.collapse", HINT_PART_COLLAPSE));
+	if (collapseKey !== "off") {
+		const key = collapseKey ?? "ctrl+]";
+		parts.push(tInterp("hint.collapse", collapseHintFor(key), { key: formatCollapseKey(key) }));
+	}
 	if (state.notesVisible || state.inputMode) parts.push(t("hint.newline", HINT_PART_NEW_LINE));
 	if (state.inputMode) parts.push(t("hint.clear", HINT_PART_CLEAR));
 	return parts.join(" · ");

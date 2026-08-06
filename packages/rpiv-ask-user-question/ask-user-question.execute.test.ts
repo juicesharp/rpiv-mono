@@ -83,6 +83,20 @@ describe("ask_user_question.execute — early returns", () => {
 });
 
 describe("ask_user_question.execute — ctx.ui.custom dispatch", () => {
+	it("passes overlay options that keep the chat footer readable (#72)", async () => {
+		const custom = vi.fn(async () => ({ answers: [], cancelled: true }));
+		const ctx = createMockCtx({ hasUI: true, ui: { custom } as never });
+		const tool = register();
+		await tool.execute?.("tc", BASE_PARAMS as never, undefined as never, undefined as never, ctx as never);
+		const [, options] = custom.mock.calls[0] as unknown as [
+			unknown,
+			{ overlay?: boolean; overlayOptions?: Record<string, unknown> },
+		];
+		expect(options.overlay).toBe(true);
+		expect(options.overlayOptions).toMatchObject({ anchor: "center", maxHeight: "80%" });
+		expect(options.overlayOptions).not.toMatchObject({ maxHeight: "100%" });
+	});
+
 	it("User cancels (cancelled: true) → decline envelope", async () => {
 		const tool = register();
 		const ctx = ctxWithCustom({ answers: [], cancelled: true });
