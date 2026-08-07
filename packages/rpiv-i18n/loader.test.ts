@@ -37,13 +37,13 @@ describe("registerLocalesFromDir", () => {
 	});
 
 	it("records an empty map and warns when a locale file is missing — extension stays online", () => {
-		// Only en.json present; the other 7 SUPPORTED_LOCALES files are missing.
+		// Only en.json present; the other 11 SUPPORTED_LOCALES files are missing.
 		writeFileSync(join(pkgDir, "locales", "en.json"), JSON.stringify({ greeting: "Hi" }));
 		const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 
 		registerLocalesFromDir("@test/ns", pkgUrl);
 
-		// 7 warns for the 7 missing files; en still resolves.
+		// 11 warns for the 11 missing files; en still resolves.
 		expect(warn).toHaveBeenCalled();
 		const t = scope("@test/ns");
 		expect(t("greeting", "fallback")).toBe("Hi");

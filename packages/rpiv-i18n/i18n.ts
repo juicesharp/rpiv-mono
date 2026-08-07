@@ -59,11 +59,15 @@ export const SUPPORTED_LOCALES: readonly { code: string; label: string }[] = [
 	{ code: DEFAULT_FALLBACK_LOCALE, label: "English" },
 	{ code: "es", label: "Español" },
 	{ code: "fr", label: "Français" },
+	{ code: "ja", label: "日本語" },
+	{ code: "ko", label: "한국어" },
+	{ code: "lzh", label: "文言（華夏）" },
 	{ code: "pt", label: "Português" },
 	{ code: "pt-BR", label: "Português (Brasil)" },
 	{ code: "ru", label: "Русский" },
 	{ code: "uk", label: "Українська" },
 	{ code: "zh", label: "中文" },
+	{ code: "zh-Hant", label: "繁體中文" },
 ];
 
 // ---------------------------------------------------------------------------
