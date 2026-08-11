@@ -7,6 +7,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- Terminal control characters (ANSI/C1 escape sequences, newlines, bidi overrides) in model-controlled task text — subject, description, activeForm, owner — are now stripped before terminal rendering (#151, #152).
+
 ## [2.4.0] - 2026-08-03
 
 ## [2.3.1] - 2026-07-31
