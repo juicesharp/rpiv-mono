@@ -31,7 +31,7 @@ function formatGetLines(task: Task, state: TaskState): string {
 	if (blocks.length) {
 		lines.push(`  blocks: ${blocks.map((id) => `#${id}`).join(", ")}`);
 	}
-	if (task.owner) lines.push(`  owner: ${task.owner}`);
+	if (task.owner) lines.push(`  owner: ${sanitizeTerminalText(task.owner)}`);
 	return lines.join("\n");
 }
 
