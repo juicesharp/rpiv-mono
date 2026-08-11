@@ -142,3 +142,21 @@ describe("buildToolResult", () => {
 		expect(env.content[0].text).toBe("Error: subject required for create");
 	});
 });
+
+describe("formatContent — control characters in model-controlled fields", () => {
+	it("get — strips escape sequences from subject, description, and owner", () => {
+		const state = stateWith(
+			t({ id: 1, subject: "safe\u001b[2J\u001b[Hsubject", description: "line1\nline2", owner: "who\u009b31mami" }),
+		);
+		const op: Op = { kind: "get", task: state.tasks[0]! };
+		expect(formatContent(op, state)).toBe("#1 [pending] safesubject\n  description: line1 line2\n  owner: whoami");
+	});
+
+	it("create/list — strips escape sequences from the echoed subject and activeForm", () => {
+		const state = stateWith(
+			t({ id: 1, subject: "evil\u001b[31m", status: "in_progress", activeForm: "clear\u001b[2Jing" }),
+		);
+		expect(formatContent({ kind: "create", taskId: 1 }, state)).toBe("Created #1: evil (pending)");
+		expect(formatContent({ kind: "list", includeDeleted: false }, state)).toBe("[in_progress] #1 evil (clearing)");
+	});
+});

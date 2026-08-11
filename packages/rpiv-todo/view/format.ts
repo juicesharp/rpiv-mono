@@ -3,8 +3,8 @@ import { Text } from "@earendil-works/pi-tui";
 import { formatStatusLabel } from "../state/i18n-bridge.js";
 import { selectTaskSubjectById } from "../state/selectors.js";
 import type { TaskState } from "../state/state.js";
+import { sanitizeTerminalText } from "../tool/sanitize.js";
 import type { Task, TaskAction, TaskDetails, TaskMutationParams, TaskStatus } from "../tool/types.js";
-import { sanitizeTerminalText } from "./sanitize.js";
 
 // Re-export so legacy import paths (todo.ts, tests) continue to resolve;
 // the canonical definition lives in the i18n bridge.

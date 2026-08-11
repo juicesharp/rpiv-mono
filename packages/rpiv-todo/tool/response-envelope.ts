@@ -1,7 +1,7 @@
 import type { TaskState } from "../state/state.js";
 import type { Op } from "../state/state-reducer.js";
 import { deriveBlocks } from "../state/task-graph.js";
-import { sanitizeTerminalText } from "../view/sanitize.js";
+import { sanitizeTerminalText } from "./sanitize.js";
 import type { Task, TaskAction, TaskDetails, TaskMutationParams } from "./types.js";
 
 /**

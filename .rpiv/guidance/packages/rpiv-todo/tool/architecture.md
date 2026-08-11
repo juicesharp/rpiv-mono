@@ -9,7 +9,7 @@ The LLM-facing tool contract surface: declares tool identity strings, the TypeBo
 - **Internal**: `../state/state.js` (`TaskState`), `../state/state-reducer.js` (`Op`), `../state/task-graph.js` (`deriveBlocks`)
 
 ## Inbound / Outbound
-- **Imported by** `../todo.ts`: registers the `todo` tool using `TOOL_NAME`, `TodoParamsSchema`, and `buildToolResult`
+- **Imported by** `../todo.ts`: registers the `todo` tool using `TOOL_NAME`, `TodoParamsSchema`, and `buildToolResult`; and by `../view/format.ts` (`sanitizeTerminalText`, alongside its existing type-only import of `types.ts`)
 - **No outbound** to Pi runtime — pure schema + formatter layer
 
 ## Module Structure
@@ -20,6 +20,11 @@ types.ts                — Identity constants (TOOL_NAME, TOOL_LABEL, COMMAND_N
 response-envelope.ts    — Pure formatters (formatListLine, formatGetLines, formatContent) closed-switching over
                            the Op tagged union, plus buildToolResult envelope constructor
 response-envelope.test.ts — Snapshot coverage of every Op branch and the envelope shape
+sanitize.ts             — sanitizeTerminalText: strips CSI/OSC sequences, C0/C1 controls, and bidi overrides
+                           from model-controlled task text (subject/description/activeForm/owner) before it
+                           reaches terminal rendering; lives here (not view/) so the dependency direction
+                           stays view → tool
+sanitize.test.ts        — Unit coverage of the sanitizer's escape-sequence and control-character classes
 ```
 
 ## Response Envelope (dual-channel)

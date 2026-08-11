@@ -24,7 +24,8 @@ Claude-Code-parity task management for Pi. Registers a single multiplexed `todo`
 state/           — Reducer + store cell + replay (compaction-survival) + task-graph + invariants
                    + selectors + i18n-bridge. No Pi imports below the bridge — testable in isolation.
                    Detailed shape: `.rpiv/guidance/packages/rpiv-todo/state/architecture.md`.
-tool/            — Pi tool surface: TypeBox params, response-envelope shape consumed by replay.
+tool/            — Pi tool surface: TypeBox params, response-envelope shape consumed by replay,
+                   terminal-text sanitizer (sanitize.ts, shared with view/).
                    Detailed: `.rpiv/guidance/packages/rpiv-todo/tool/architecture.md`
 view/            — Presentation helpers (line formatting) shared by /todos command + overlay.
 locales/         — JSON maps registered by index.ts (registerLocalesFromDir); i18n-bridge resolves lookups.

@@ -43,3 +43,15 @@ describe("formatOverlayTaskLine — semantic color hierarchy", () => {
 		);
 	});
 });
+
+describe("formatOverlayTaskLine — terminal control characters", () => {
+	it("strips escape sequences from subject and activeForm before theming", () => {
+		expect(
+			formatOverlayTaskLine(
+				task({ status: "in_progress", subject: "quiet\u001b[2Jtask", activeForm: "Work\u009bcing" }),
+				recordingTheme,
+				false,
+			),
+		).toBe("<warning>◐</warning> <accent>quiettask</accent> <muted>(Working)</muted>");
+	});
+});
