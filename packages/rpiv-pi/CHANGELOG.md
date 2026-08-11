@@ -7,6 +7,15 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Each lane now shows an end-of-run recap.** When a run reaches a terminal
+  state, the lane surfaces a one-line summary — the newest artifact, a
+  `+N more` count when more landed, and the `⚠ <reason>` segment for a
+  non-completed outcome — projected from the run's on-disk JSONL trail via
+  rpiv-workflow's new `summarizeRun`. Auto-shown, no toggle; the entries under
+  Changed/Fixed below refine this feature's storage and presentation.
+
 ### Changed
 
 - **Artifact paths on lane rows and the recap line drop the canonical

@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- **`summarizeRun()` + `RunRecap`** — a terminal-state projection of a run's
+  outcome, artifacts, and failure reason, composing
+  `readLastStage`/`readHeader`/`listArtifacts` (fail-soft by inheritance).
+  Exported via `state/index.ts`, `registration.ts`, and the thin `startup.ts`
+  entry; consumed by rpiv-pi's lane recap.
+
 ### Fixed
 
 - A non-terminal `collected:true` collect-all fanout halt no longer reads as
