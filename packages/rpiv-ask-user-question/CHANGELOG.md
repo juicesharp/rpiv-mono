@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `rpiv:ask-user:answer` — an inbound event that resolves the questionnaire currently awaiting input without synthesizing keystrokes, for programs driving Pi from outside (pane supervisors, test harnesses). Answers are all-or-nothing; every attempt is acknowledged on `rpiv:ask-user:answer-result`. Terminal dialog only.
+
 ## [2.10.1] - 2026-09-13
 
 ## [2.10.0] - 2026-09-12
