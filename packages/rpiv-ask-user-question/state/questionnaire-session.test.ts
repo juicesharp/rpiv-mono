@@ -312,3 +312,120 @@ describe("QuestionnaireSession — collapsed row with collapseKey 'off'", () => 
 		expect(collapsed[0]).not.toContain("Off");
 	});
 });
+
+describe("QuestionnaireSession — answerExternal", () => {
+	const multiParams: QuestionParams = {
+		questions: [
+			{
+				question: "Which?",
+				header: "Pick",
+				options: [
+					{ label: "A", description: "a" },
+					{ label: "B", description: "b" },
+				],
+			},
+			{
+				question: "Which ones?",
+				header: "Many",
+				multiSelect: true,
+				options: [
+					{ label: "X", description: "x" },
+					{ label: "Y", description: "y" },
+					{ label: "Z", description: "z" },
+				],
+			},
+		],
+	};
+
+	it("resolves a single-select answer by option index", () => {
+		const { session, done } = makeSession();
+
+		expect(session.answerExternal([{ questionIndex: 0, optionIndexes: [1] }])).toEqual({ ok: true });
+		expect(done).toHaveBeenCalledWith({
+			cancelled: false,
+			answers: [{ questionIndex: 0, question: "Which?", kind: "option", answer: "B" }],
+		});
+	});
+
+	it("resolves multi-select labels and carries notes", () => {
+		const { session, done } = makeSession({ params: multiParams });
+
+		const outcome = session.answerExternal([
+			{ questionIndex: 0, optionIndexes: [0] },
+			{ questionIndex: 1, optionIndexes: [0, 2], notes: "why" },
+		]);
+
+		expect(outcome).toEqual({ ok: true });
+		expect(done).toHaveBeenCalledWith({
+			cancelled: false,
+			answers: [
+				{ questionIndex: 0, question: "Which?", kind: "option", answer: "A" },
+				{
+					questionIndex: 1,
+					question: "Which ones?",
+					kind: "multi",
+					answer: null,
+					selected: ["X", "Z"],
+					notes: "why",
+				},
+			],
+		});
+	});
+
+	it("resolves free text as a custom answer", () => {
+		const { session, done } = makeSession();
+
+		expect(session.answerExternal([{ questionIndex: 0, text: "neither" }])).toEqual({ ok: true });
+		expect(done).toHaveBeenCalledWith({
+			cancelled: false,
+			answers: [{ questionIndex: 0, question: "Which?", kind: "custom", answer: "neither" }],
+		});
+	});
+
+	it("carries the matched option's preview", () => {
+		const withPreview: QuestionParams = {
+			questions: [
+				{
+					question: "Which?",
+					header: "Pick",
+					options: [
+						{ label: "A", description: "a" },
+						{ label: "B", description: "b", preview: "# B" },
+					],
+				},
+			],
+		};
+		const { session, done } = makeSession({ params: withPreview });
+
+		session.answerExternal([{ questionIndex: 0, optionIndexes: [1] }]);
+
+		expect(done).toHaveBeenCalledWith({
+			cancelled: false,
+			answers: [{ questionIndex: 0, question: "Which?", kind: "option", answer: "B", preview: "# B" }],
+		});
+	});
+
+	it.each([
+		["a missing question", [{ questionIndex: 0, optionIndexes: [0] }], /question 1/],
+		["an out-of-range index", [{ questionIndex: 0, optionIndexes: [9] }], /out of range \(0\.\.1\)/],
+		["several options on a single-select", [{ questionIndex: 0, optionIndexes: [0, 1] }], /single-select/],
+		["neither indexes nor text", [{ questionIndex: 0 }], /neither optionIndexes nor text/],
+		["empty custom text", [{ questionIndex: 0, text: "" }], /custom text is empty/],
+	])("rejects %s without resolving", (_label, entries, reason) => {
+		const { session, done } = makeSession({ params: multiParams });
+
+		const outcome = session.answerExternal(entries);
+
+		expect(outcome.ok).toBe(false);
+		expect(outcome.ok === false && outcome.reason).toMatch(reason);
+		expect(done).not.toHaveBeenCalled();
+	});
+
+	it("leaves the questionnaire usable after a rejection", () => {
+		const { session, done } = makeSession();
+
+		expect(session.answerExternal([{ questionIndex: 0, optionIndexes: [9] }]).ok).toBe(false);
+		expect(session.answerExternal([{ questionIndex: 0, optionIndexes: [0] }])).toEqual({ ok: true });
+		expect(done).toHaveBeenCalledTimes(1);
+	});
+});
