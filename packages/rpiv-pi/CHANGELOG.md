@@ -22,6 +22,8 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **`ship`'s plan stage now hands `quick-plan` the verbatim goal, and `quick-plan` must defer narrowed-out asks explicitly.** The stage declares `reads: ["research", "goal"]` (dispatching `--research <path> --goal <path>`) instead of falling to the rolling primary, so the planner anchors on the same verbatim brief the grade panel's completeness dimension judges against — previously it saw only the research doc, whose grounding routinely narrows a broad brief. `quick-plan` gains a matching obligation: an `## Out of Scope` template section plus a "defer explicitly, never silently" rule — every ask the goal names that no phase implements gets a one-line deferral with a reason, the exact form the completeness grade already accepts. Closes the gap where a research-stage narrowing was silently inherited by the plan and then failed ship's stop-on-fail completeness gate (observed on the preset's first run).
+
 - **Artifact paths on lane rows and the recap line drop the canonical
   `.rpiv/artifacts/` root.** Every collector-produced artifact shares it, so the
   16 columns carried no information; the `→` segment now reads

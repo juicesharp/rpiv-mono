@@ -43,8 +43,25 @@ import {
 	type Unit,
 	type Workflow,
 } from "@juicesharp/rpiv-workflow/registration";
-import { StagePreflightError } from "@juicesharp/rpiv-workflow/runner";
 import { rpivBucketOutcome } from "./artifact-collector.js";
+import {
+	countHeadingsOutsideFences,
+	FILE_LINE_CITATION_RE,
+	type FsArtifact,
+	fencedSpans,
+	forEachLineOutsideFences,
+	haltPreflight,
+	latestFsArtifact,
+	MAX_PHASES,
+	type PhaseRecord,
+	readArtifactFile,
+	type StructureFinding,
+	TEST_PATH_RE,
+	VERDICT_DIR,
+	VERDICT_FAIL_SCORE,
+	VERDICT_PASS_SCORE,
+	writeStructureVerdict,
+} from "./built-ins/index.js";
 
 // The code-review stage's output schema is no longer declared here — every
 // code-review stage sources it from the skill's contract `produces.data`
@@ -54,120 +71,11 @@ import { rpivBucketOutcome } from "./artifact-collector.js";
 // routes on the same numeric gate: `gate("blockers_count", { <fix>: gt(0), commit: eq(0) }, "commit")`.
 
 /**
- * A plan's structured `phases:` frontmatter array — the machine-readable phase
- * enumeration a plan-producing skill (`blueprint`, `plan`) derives from its
- * `## Phase N:` body headings — is what drives `implement` fanout. The
- * convention lives here; rpiv-workflow knows nothing about phases.
- *
- * Cap: a plan declaring more than 32 phases throws. The rpiv-pi planning skills
- * cap around 8 phases in practice; 32 leaves headroom for stretch plans without
- * letting a pathological (or hostile) plan drive an unbounded fanout loop.
- */
-const MAX_PHASES = 32;
-
-/**
  * `## Phase N:` headings — the source of truth a plan's `phases:` frontmatter
  * array is derived from. Used to verify that derived array, not to enumerate
  * (enumeration reads the typed `phases:` array).
  */
 const PLAN_PHASE_RE = /^## Phase (\d+):/gm;
-
-/**
- * A fence-opening line: optional leading whitespace then 3+ backticks or 3+
- * tildes (the CommonMark info-string delimiter). Single source of truth every
- * fence-aware scan shares.
- */
-const FENCE_LINE_RE = /^\s*(`{3,}|~{3,})/;
-
-/**
- * Whether `line` CLOSES the fence whose opener recorded `fenceChar` and
- * `fenceLen`. CommonMark: a closing fence uses the SAME char (``` ``` ``` does not
- * close `~~~`) and is at least as long (a 4-backtick opener needs 4+ to close),
- * with only that char plus optional trailing whitespace on the line. `fence` is
- * the current line's `RegExpExecArray` match (narrowed from the guarded
- * `.exec()` result).
- */
-const closesFence = (line: string, fence: RegExpExecArray, fenceChar: string, fenceLen: number): boolean => {
-	const len = fence[1].length;
-	return fence[1][0] === fenceChar && len >= fenceLen && line.trim().length === len;
-};
-
-/**
- * Visit every line of `content` that sits OUTSIDE fenced code blocks, calling
- * `visit(line, index)` with the line text and its 0-based index in
- * `content.split("\n")`. A `## Phase N:` / `## Slice N:` / `### Phase N —` / a
- * `#### N. path` inside a ``` or ~~~ fence is example/fixture text — a meta-plan
- * (one whose subject is the pipeline) legitimately embeds the pipeline's own
- * plan/slice fixtures — not a structural heading or declared write, so a naive
- * line scan would false-count it. Mirrors the fence-aware boundary scan in
- * skills/_shared/stitch-elaborations.mjs. Fence-opener and fence-closer lines
- * are skipped (never visited); `index` advances once per line (including skipped
- * fence lines) so it stays aligned with any caller's own `content.split("\n")`
- * array.
- */
-const forEachLineOutsideFences = (content: string, visit: (line: string, index: number) => void): void => {
-	let inFence = false;
-	let fenceLen = 0;
-	let fenceChar = "";
-	let index = 0;
-	for (const line of content.split("\n")) {
-		const fence = FENCE_LINE_RE.exec(line);
-		if (fence) {
-			if (!inFence) {
-				inFence = true;
-				fenceLen = fence[1].length;
-				fenceChar = fence[1][0];
-			} else if (closesFence(line, fence, fenceChar, fenceLen)) {
-				inFence = false;
-				fenceLen = 0;
-				fenceChar = "";
-			}
-		} else if (!inFence) {
-			visit(line, index);
-		}
-		index++;
-	}
-};
-
-/**
- * Count lines matching `re` (a `^…` heading pattern) that sit OUTSIDE fenced code
- * blocks. Fence-awareness lives on `forEachLineOutsideFences` (a naive `matchAll`
- * counts fenced examples and false-throws the derived-array staleness guard);
- * the per-line `lineRe` drops the source's `g`/`m` flags so `lastIndex` can't drift.
- */
-const countHeadingsOutsideFences = (content: string, re: RegExp): number => {
-	const lineRe = new RegExp(re.source); // per-line test; drop g/m so lastIndex can't drift
-	let count = 0;
-	forEachLineOutsideFences(content, (line) => {
-		if (lineRe.test(line)) count++;
-	});
-	return count;
-};
-
-/**
- * One parsed entry of a plan's `phases:` array. `entry` carries the whole raw
- * frontmatter object, so a consumer can read fields beyond `{ n, title }`
- * without this parser knowing about them.
- */
-interface PhaseRecord {
-	entry: Record<string, unknown>;
-	/** From `entry.n`, falling back to the 1-based array position. */
-	n: number;
-	/** From `entry.title`, or "" when absent. */
-	title: string;
-	/** 0-based position in the array. */
-	index: number;
-	/** Total phases in this plan. */
-	total: number;
-}
-
-/** Read an artifact file, resolving a workflow-relative path against `cwd`. */
-const readArtifactFile = (path: string, cwd: string): string =>
-	readFileSync(isAbsolute(path) ? path : join(cwd, path), "utf-8");
-
-/** Build the halting `StagePreflightError` shape every phase fanout/iterate guard `throw`s. */
-const haltPreflight = (who: string, summary: string, detail: string): StagePreflightError =>
-	new StagePreflightError("halt", who, summary, detail, true);
 
 /**
  * Parse a plan's `phases:` frontmatter into records, derive-checked against the
@@ -214,10 +122,6 @@ const planPhaseRecords = (content: string, who: string, path: string): readonly 
 	});
 };
 
-/** Latest `fs`-handle artifact most recently published under `name` (undefined if none). */
-const latestFsArtifact = (state: RunView, name: string): Artifact | undefined =>
-	state.named[name]?.at(-1)?.artifacts.find((a) => a.handle.kind === "fs");
-
 /**
  * Read the latest plan published to the named `"plans"` channel and parse its
  * `phases:` frontmatter into records — the shared read/halt body both
@@ -256,17 +160,6 @@ const readPlanPhaseRecords = (
 	const promptPath = handleToString(plan.handle);
 	return { records, promptPath };
 };
-
-/**
- * An `Artifact` narrowed to its `fs`-handle variant — the plan-path-carrying
- * shape the scope checks key the verdict path + `artifact` field off. Annotates
- * a captured artifact ACROSS loop iterations so the `if (a.handle.kind !== "fs")
- * continue` guard's narrowing carries to the post-loop `latest.handle.path` read
- * (the file's idiom — `designPathsBySlice` reads `.path` inside its own
- * same-scope guard; this loop captures the artifact across iterations, so the
- * narrowed type annotates the capture).
- */
-type FsArtifact = Artifact & { handle: { kind: "fs"; path: string } };
 
 /**
  * Union the per-phase `files:` write-set declared across the FULL `plans`
@@ -1133,28 +1026,6 @@ const sliceCovers = (entry: Record<string, unknown>): string[] => {
 	return Array.isArray(raw) ? raw.filter((c): c is string => typeof c === "string") : [];
 };
 
-/** The verdict directory the deterministic checks and the LLM grade panel share. */
-const VERDICT_DIR = ".rpiv/artifacts/verdicts";
-/** Binary verdict score: a clean pass. The gate keys off `severity`, never this number. */
-const VERDICT_PASS_SCORE = 100;
-/** Binary verdict score: at least one finding. The gate keys off `severity`, never this number. */
-const VERDICT_FAIL_SCORE = 0;
-
-/**
- * A `path:line` (or `path:line-line`) citation in an artifact's prose. Requires a
- * dotted extension so timestamps (`17:13:27`), ratios, and bare `Slice 2:` labels
- * never match — only file references with a real extension are verified.
- *
- * A citation may START with a single dot (`.github/workflows/ci.yml:12`,
- * `.eslintrc.js:3`) — without it, dot-dirs and dotfiles were captured with the
- * dot stripped and guaranteed to fail the floor as a mangled path. The leading
- * dot is taken only when the preceding char is not a word char or another dot
- * (`(?<![\w.])`), and a dotless start only at a word boundary (`(?<!\w)`), so a
- * prose ellipsis (`...packages/x.ts:5`) still yields `packages/x.ts`, never
- * `...packages/x.ts`.
- */
-const FILE_LINE_CITATION_RE = /((?:(?<![\w.])\.)?(?<!\w)[\w][\w./-]*\.[a-zA-Z][a-zA-Z0-9]{0,4}):(\d+)(?:-(\d+))?/g;
-
 /**
  * Verify every `file:line` citation in `body` resolves against the working tree:
  * the cited file must exist AND carry at least the cited line (a range's high end).
@@ -1291,41 +1162,6 @@ const resolveCitationPath = (
 	return undefined;
 };
 
-/**
- * Character-offset spans of fenced code blocks (delimiter lines included), an
- * unterminated fence running to end-of-text. Mirrors the `inFence`/`fenceLen`
- * toggle `countHeadingsOutsideFences` carries so every fence-aware scan agrees
- * on the same boundaries.
- */
-const fencedSpans = (content: string): [number, number][] => {
-	const spans: [number, number][] = [];
-	let inFence = false;
-	let fenceLen = 0;
-	let fenceChar = "";
-	let spanStart = 0;
-	let offset = 0;
-	for (const line of content.split("\n")) {
-		const lineEnd = offset + line.length + 1; // +1 for the split-consumed \n
-		const fence = FENCE_LINE_RE.exec(line);
-		if (fence) {
-			if (!inFence) {
-				inFence = true;
-				fenceLen = fence[1].length;
-				fenceChar = fence[1][0];
-				spanStart = offset;
-			} else if (closesFence(line, fence, fenceChar, fenceLen)) {
-				inFence = false;
-				fenceLen = 0;
-				fenceChar = "";
-				spans.push([spanStart, lineEnd]);
-			}
-		}
-		offset = lineEnd;
-	}
-	if (inFence) spans.push([spanStart, offset]);
-	return spans;
-};
-
 /** Example-path namespaces the skill prompts use in illustrative citations
  *  (`path/to/file.ext:12`, `packages/x/y.ts:42`). Artifacts quote — and models
  *  imitate — these examples in unfenced prose, where the fence skip cannot
@@ -1397,58 +1233,8 @@ const verifyCitations = (body: string, cwd: string): { detail: string; where: st
 	return findings;
 };
 
-/** A structure-dimension finding — the shared shape the deterministic verdict
- * checks emit (`detail` is the actionable message, `where` locates the defect). */
-type StructureFinding = { detail: string; where: string };
-
 /** A dispatched sub-plan basename with its `_cluster-<k>` ordinal resolved. */
 type DispatchedCluster = { path: string; k: number };
-
-/** An `fs` artifact handle (the only handle kind the verdict checks operate on). */
-type FsHandle = { kind: "fs"; path: string };
-
-/**
- * Write the shared `{ dimension: "structure" }` verdict and publish it on an fs
- * artifact. The three deterministic structure checks (`sliceStructureCheck`,
- * `subplanCoverageCheck`, `planCitationCheck`) all emit the SAME verdict shape
- * and basename-keyed JSON write, so it lives here once. `who` is the channel
- * prefix folded into the basename (so a re-run OVERWRITES its own slot —
- * idempotent across fix/reslice/re-dispatch rounds); `handle` is the artifact
- * the check inspected (serialized into `data.artifact` and basename-keyed).
- *
- * The `severity: pass ? "none" : "high"` floor is load-bearing: the gate routes
- * via `allDimensionsPass`/`subplanGatePasses`, whose severity floor silently
- * passes a `pass:false` verdict rated `low`/`none`; a structural defect MUST
- * rate `high` or it ships. The `score` is the binary verdict scale (100 = clean,
- * 0 = finding; the gate keys off `severity`, never this number).
- *
- * `extra` lets a caller stamp additional gate-readable fields onto the verdict
- * data (and the persisted JSON, so the trail records them) — currently only
- * `sliceStructureCheck`'s `citeDischarged` stamp.
- */
-const writeStructureVerdict = (
-	who: string,
-	handle: FsHandle,
-	findings: StructureFinding[],
-	cwd: string,
-	extra?: Record<string, unknown>,
-): Omit<Output, "meta"> => {
-	const pass = findings.length === 0;
-	const data = {
-		dimension: "structure",
-		pass,
-		score: pass ? VERDICT_PASS_SCORE : VERDICT_FAIL_SCORE,
-		severity: pass ? "none" : "high",
-		artifact: handleToString(handle),
-		findings,
-		feedback: pass ? "" : findings.map((f) => f.detail).join(" "),
-		...extra,
-	};
-	const rel = join(VERDICT_DIR, `${who}__${basename(handle.path, ".md")}.json`);
-	mkdirSync(join(cwd, VERDICT_DIR), { recursive: true });
-	writeFileSync(join(cwd, rel), JSON.stringify(data, null, 2), "utf-8");
-	return { kind: "json", artifacts: [{ handle: { kind: "fs", path: rel } }], data };
-};
 
 /**
  * A citation string occurs LIVE in the slice-map text — outside fenced spans
@@ -2358,16 +2144,6 @@ const reconciliationRecords = (
 	return { directives, malformed };
 };
 
-/**
- * The reconcile write-restriction's static allowlist — a conservative test-path
- * classifier. A directive may apply its `find → replace` ONLY to a co-located test
- * file (`*.test.{ts,tsx,js,jsx}`); any other target is flagged and left untouched
- * (fail-closed: golden masters, fixtures, `*.t.ts`, and production sources are NOT
- * auto-applied). Narrow by design — do not widen it to compensate for a weak
- * directive (correctness rests on this neither false-failing a legit test edit
- * nor false-allowing a non-test target).
- */
-const TEST_PATH_RE = /\.test\.[tj]sx?$/;
 const isTestPath = (target: string): boolean => TEST_PATH_RE.test(target);
 
 /**
@@ -4112,8 +3888,14 @@ const shipWorkflow = defineWorkflow({
 		// The lightweight planner — quick-plan: ONE targeted
 		// codebase-pattern-finder dispatch, one `status: ready` plan, no risks
 		// frontmatter, no multi-slice decomposition. Derives its `plans` outcome
-		// from the quick-plan contract (artifactKind: plan).
-		plan: produces({ skill: "quick-plan" }),
+		// from the quick-plan contract (artifactKind: plan). Reads BOTH channels
+		// explicitly (`--research <path> --goal <path>`) — without `goal` the
+		// stage falls to the rolling primary and the planner sees only the
+		// research doc, whose grounding routinely narrows the brief; the grade
+		// panel's completeness dimension anchors on the VERBATIM goal, so the
+		// planner must anchor on the same artifact to defer narrowed-out asks
+		// explicitly instead of silently inheriting the drop.
+		plan: produces({ skill: "quick-plan", reads: ["research", "goal"] }),
 		// Deterministic citation floor BEFORE the LLM gate — build's verifier
 		// verbatim. A fabricated `file:line` fails structurally and STOPs the run.
 		"plan-cite-check": produces.script({ reads: ["plans"], run: planCitationCheck("plan-cite-check") }),

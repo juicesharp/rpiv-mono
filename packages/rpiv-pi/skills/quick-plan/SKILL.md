@@ -42,8 +42,9 @@ The expected shape is **one phase** (the small-task default). Add a phase only w
 
 ## Input
 
-`$ARGUMENTS` — one of three shapes (the skill is sound however the caller wires it):
+`$ARGUMENTS` — one of four shapes (the skill is sound however the caller wires it):
 
+- **Flags (workflow dispatch)** — `--research <path> --goal <path>`. Read BOTH files FULLY (no limit/offset). The research doc is the grounding; the goal file is the verbatim brief — every ask it names is either implemented by a phase or deferred under `## Out of Scope`.
 - **Research artifact path** — a `.md` path under `.rpiv/artifacts/research/`. Read it FULLY (no limit/offset); it is the grounding for the plan.
 - **Injected research** — when dispatched by a workflow `reads: ["research"]` stage, the research doc is already in context; treat `$ARGUMENTS` as the task description / goal.
 - **Free-text** (standalone small task) — `$ARGUMENTS` is the task description; research is done or the shape is obvious.
@@ -69,8 +70,9 @@ Copy values verbatim. `<iso>` is the first tab-separated field (use as `date:`);
 ### Step 1: Read the input
 
 - If a research artifact path was given, read it FULLY. Extract the task, the Code References (`file:line`), the Integration Points, and any Open Questions already resolved.
+- If a `--goal` file was given, read it FULLY and enumerate every ask it names; each is either implemented by a phase or deferred under `## Out of Scope` with a reason (when the research narrowed the brief, its rationale is the deferral reason).
 - Read the key source files the research points at — the anchors the plan will cite — so the phase's code blocks and `file:line` references are real and current.
-- Determine the goal (the task description, or the research's stated goal).
+- Determine the goal (the `--goal` brief, the task description, or the research's stated goal).
 
 ### Step 2: Optional single targeted research (at most ONE dispatch)
 
@@ -113,6 +115,10 @@ last_updated: {same <iso> as date:}
 
 {1-3 sentences: what this plan implements and why.}
 
+## Out of Scope
+
+{One line per goal ask this plan does not implement — "- {ask} — deferred: {reason}". Omit the section when every named ask is covered.}
+
 ## Phase 1: {Descriptive Title}
 
 ### Overview
@@ -142,6 +148,8 @@ last_updated: {same <iso> as date:}
 
 Populate each `phases[].files:` from that phase's `#### N.` / `**File**:` paths — every repo-root-relative path the phase creates or edits — or the plan-time coverage floor (`planCitationCheck`) flags a gap. Make every `#### Automated Verification:` command write-scoped to its own phase's `files:` set; phases may run concurrently under implement, so an unscoped command that rewrites the wider tree corrupts a sibling phase's edit.
 
+Populate `## Out of Scope` from the Step 1 goal-ask enumeration: one one-line deferral with a reason per goal ask no phase implements.
+
 Then print the path and a one-line summary: `quick-plan written: {N} phase(s), {M} files`.
 
 ## Important Notes
@@ -151,6 +159,7 @@ Then print the path and a one-line summary: `quick-plan written: {N} phase(s), {
 - **One Write, `status: ready` directly.** No skeleton-then-fill, no progressive `Edit`, no 3-state status machine. The artifact is gated externally (the workflow's `grade` + `validate`, or your own review standalone).
 - **At most ONE `codebase-pattern-finder` dispatch.** Never parallel, never `run_in_background` — a background completion cannot re-drive this session and the stage fails with no artifact. Skip the dispatch when research already surfaced the pattern.
 - **Non-interactive.** No `ask_user_question` checkpoint. A checkpoint without blueprint's dimension sweep is pure latency on a fast-path preset whose output is immediately grade-gated. Resolve ambiguity from the research and the real code; if a genuine fork can't be settled, make the most defensible call and let the grade panel catch it.
+- **Defer explicitly, never silently.** Every goal ask no phase implements gets a one-line `## Out of Scope` deferral with a reason — the completeness gate blocks on a named ask that is neither addressed nor deferred.
 - **Ground every citation.** Every `file:line` in prose or code comments uses a repo-root-relative path and is verifiable at the current revision — the plan passes the deterministic `plan-cite-check` floor.
 - **NEVER edit source files.** This skill produces a plan document, not implementation. Source editing is `implement`'s job.
 - **Drops blueprint's ceremony by design:** multi-slice decomposition, skeleton-then-fill, the per-slice `slice-verifier` loop, the dual post-finalization review (`artifact-code-reviewer` + `artifact-coverage-reviewer`), the 6-dimension sweep, and parallel research are all absent here — the workflow's own gates own that confidence.

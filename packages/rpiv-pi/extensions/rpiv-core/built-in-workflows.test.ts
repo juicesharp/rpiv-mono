@@ -4030,6 +4030,15 @@ describe("ship workflow (lightweight /wf preset)", () => {
 		expect(findWorkflow("ship").stages.implement?.reads).toEqual(["plans"]);
 	});
 
+	it('plan reads ["research", "goal"] (planner anchors on the same verbatim goal the completeness grade judges against)', () => {
+		// Without the explicit reads the stage falls to the rolling primary and
+		// quick-plan sees only the research doc — whose grounding may narrow the
+		// brief — while the grade panel's completeness dimension anchors on the
+		// verbatim goal. Same-anchor wiring lets the plan defer narrowed-out
+		// asks explicitly instead of silently inheriting the drop.
+		expect(findWorkflow("ship").stages.plan?.reads).toEqual(["research", "goal"]);
+	});
+
 	it("grade carries a fanout loop, the ship-verdicts outcome, and reads plans/research/goal", () => {
 		const grade = findWorkflow("ship").stages.grade;
 		expect(grade?.loop?.kind).toBe("fanout");
