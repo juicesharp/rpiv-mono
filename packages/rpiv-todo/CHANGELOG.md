@@ -5,7 +5,7 @@ All notable changes to `@juicesharp/rpiv-todo` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.5.0] - 2026-08-13
 
 ### Fixed
 - Terminal control characters (ANSI/C1 escape sequences, newlines, bidi overrides) in model-controlled task text — subject, description, activeForm, owner — are now stripped before terminal rendering (#151, #152).
