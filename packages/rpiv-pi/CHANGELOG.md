@@ -16,6 +16,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   rpiv-workflow's new `summarizeRun`. Auto-shown, no toggle; the entries under
   Changed/Fixed below refine this feature's storage and presentation.
 
+- **The `ship` workflow is back — rebuilt as a lightweight `/wf` preset.** A single forward pass for a small, well-understood task: `goal → research → plan → plan-cite-check → grade → implement → implement-scope-check → reconcile → validate → commit`, stop-on-fail at every gate — no fix loops, confirm panels, snapshots, or code-elaboration lane. Research is front-loaded and trimmed (a custom prompt stage with at most two `codebase-analyzer` dispatches, not a full `/skill:research` pass), the plan comes from the new `quick-plan` skill, and one tier-independent grade (correctness, completeness, architecture-fit) gates it before `implement`. This inverts the removal calculus of 2.3.0's no-research subset: the old `ship` skipped research to save latency and paid for it in grounding; the new one keeps research but trims it to scale.
+
+- **New `quick-plan` skill — the lightweight plan producer `ship` dispatches.** Consumes a `research` artifact and writes one implement-ready `status: ready` plan: at most a single targeted `codebase-pattern-finder` dispatch, then the plan — no slice decomposition, no per-slice verification loop, no risk frontmatter, no interactive checkpoints. Workflow-dispatched only (`disable-model-invocation: true`).
+
 ### Changed
 
 - **Artifact paths on lane rows and the recap line drop the canonical
@@ -31,6 +35,8 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   writer (no behavior change — the ungated `setRecap` was already the
   load-bearing write on both the normal and abort paths). `retireRun` returns to
   a 4-arg shape `(runId, status, error?, lastArtifact?)`.
+
+- **Published skill-count prose corrected: 27 → 29 (and 18 → 20 model-hidden).** `remediate` (2.4.0) already declared a contract the prose never caught up to; `quick-plan` adds one more. Every "27 skills" / "18 of the 27 skills" site across `package.json`, the README, and `docs/` now reads 29 / 20 of the 29, and the published description names four built-in `/wf` workflows. Alongside, `models.json` `presets.ship` is a live key again — the warn-on-miss validator builds its known-workflow set from the live `builtInWorkflows`, so the returning `ship` silently un-warns it (only `presets.arch` and `presets["pr-triage"]` remain stale).
 
 ### Fixed
 

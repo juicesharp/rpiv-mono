@@ -1,6 +1,6 @@
 # Workflows and recipes
 
-The three `/wf` pipelines `@juicesharp/rpiv-pi` contributes, and the hand-driven
+The four `/wf` pipelines `@juicesharp/rpiv-pi` contributes, and the hand-driven
 skill chains to reach for when you don't want a whole pipeline.
 
 `/wf` itself ships with [`@juicesharp/rpiv-workflow`](https://www.npmjs.com/package/@juicesharp/rpiv-workflow),
@@ -19,7 +19,7 @@ session start; if the runner is not installed, the built-ins simply do not appea
 A run appears as a lane in the dock under your editor. You keep typing in the main
 session while it works — see [lanes.md](./lanes.md).
 
-## The three built-in workflows
+## The four built-in workflows
 
 ### `vet`
 
@@ -44,6 +44,12 @@ quality gates and `validate` anchor against — then decomposes the work into ve
 slices, designs each in parallel, takes one consolidated developer checkpoint on the
 proposed interfaces, synthesizes hierarchically, and grades the plan before and after
 code is elaborated into it. Three automated gates plus one human checkpoint.
+
+### `ship`
+
+`goal → research → plan → plan-cite-check → grade → implement → implement-scope-check → reconcile → validate → commit`
+
+Ship a small, well-understood task in one lightweight forward pass. The verbatim brief is the goal artifact; a trimmed research stage (at most two `codebase-analyzer` dispatches — not a full `/skill:research` pass) grounds a single unsliced plan from `quick-plan`; a deterministic citation floor and one tier-independent three-dimension grade (correctness, completeness, architecture-fit — architecture-fit cannot be dropped from a light roster) gate the plan before `implement`. Every gate is stop-on-fail — no fix loops, confirm panels, snapshots, or code-elaboration lane — and a goal-anchored `validate` judges the landing before `commit`. Best for tasks small enough to plan in one pass; prefer `build` for anything needing decomposition.
 
 ## Review loops
 

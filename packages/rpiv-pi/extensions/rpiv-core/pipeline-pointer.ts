@@ -35,7 +35,7 @@ export const PIPELINE_POINTER = [
 	"Other explicit-only commands: /skill:slice, /skill:revise, /skill:elaborate,",
 	"/skill:architecture-review, /skill:frontend-design",
 	"Workflow-internal (dispatched by lanes — never suggest): amend, design-slice,",
-	"design-review, synthesize, grade, remediate",
+	"design-review, synthesize, grade, remediate, quick-plan",
 ].join("\n");
 
 export function injectPipelinePointer(pi: ExtensionAPI): void {

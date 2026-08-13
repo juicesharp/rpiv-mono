@@ -9,7 +9,7 @@ extending the package.
 ```
 rpiv-pi/
 ├── extensions/rpiv-core/   the one extension: hooks, commands, lanes, guidance, model config
-├── skills/                 27 contract-carrying skills, one directory each
+├── skills/                 29 contract-carrying skills, one directory each
 ├── agents/                 15 subagent profiles, copied to ~/.pi/agent/agents/ at runtime
 └── scripts/                deterministic helpers skills shell out to (Node built-ins only)
 ```
@@ -39,7 +39,7 @@ the siblings contribute capability.
 | `/rpiv-models` | always | Interactive only |
 | `/lanes` | always | No-ops with a notice when nothing is running |
 | `ctrl+q` | conditionally | Skipped entirely when `RPIV_LANES_HOTKEY` disables it |
-| `/skill:<name>` × 27 | Pi, from the manifest | |
+| `/skill:<name>` × 29 | Pi, from the manifest | |
 | `--rpiv-debug` flag | always | Reveals the hidden injected messages below |
 
 Session events subscribed: `session_start`, `session_compact`, `session_shutdown`,
@@ -80,7 +80,7 @@ changes. When `git config user.name` is empty, `$USER` is used, then `unknown`.
 
 ## Pipeline pointer
 
-18 of the 27 skills set `disable-model-invocation: true`, which hides them from the
+20 of the 29 skills set `disable-model-invocation: true`, which hides them from the
 model's skill list so it cannot wander into a design pass mid-conversation. To keep them
 discoverable, a roughly 120-token stage index is injected at `session_start` — hidden
 by default, visible under `--rpiv-debug`.

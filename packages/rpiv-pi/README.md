@@ -11,8 +11,8 @@
 
 Turn "build this feature" into a run of named stages — discover → research → design →
 plan → implement → validate → code-review → commit — each one writing a reviewable
-Markdown artifact under `.rpiv/artifacts/` that the next stage consumes. rpiv-pi adds 27
-skills, 15 specialist subagents, and three ready-made `/wf` pipelines to
+Markdown artifact under `.rpiv/artifacts/` that the next stage consumes. rpiv-pi adds 29
+skills, 15 specialist subagents, and four ready-made `/wf` pipelines to
 [Pi Agent](https://github.com/badlogic/pi-mono), and runs every stage in a detached child
 session you watch from a lane dock below your editor. It is for developers who want
 structured, reviewable multi-stage work instead of one very long chat turn.
@@ -76,7 +76,7 @@ Prefer one stage at a time? Every skill also stands alone:
 - **Questions that never get lost** — when a detached stage needs input it parks the
   question on its lane with a badge instead of hijacking your prompt; `⏎` on the flagged
   lane arms it inline.
-- **Three pipelines out of the box** — `build`, `vet`, and `polish`, so
+- **Four pipelines out of the box** — `build`, `vet`, `polish`, and `ship`, so
   you never have to author a workflow to get value.
 - **Cheap models for cheap stages** — `/rpiv-models` sets model and reasoning-effort
   overrides per skill, per stage, per workflow, or per subagent, with a typo-catcher for
@@ -100,9 +100,9 @@ no overrides.
 
 ## Reference
 
-- [docs/skills.md](./docs/skills.md) — all 27 skills: what each consumes, what it writes,
+- [docs/skills.md](./docs/skills.md) — all 29 skills: what each consumes, what it writes,
   and which ones the model may pick on its own.
-- [docs/workflows.md](./docs/workflows.md) — the three `/wf` pipelines stage by stage,
+- [docs/workflows.md](./docs/workflows.md) — the four `/wf` pipelines stage by stage,
   plus hand-driven recipes for when you don't want a whole pipeline.
 - [docs/lanes.md](./docs/lanes.md) — the dock, the lane browser's full key map, parked
   questions, and the lane environment variables.
@@ -120,7 +120,7 @@ no overrides.
 | [Pi Agent](https://github.com/badlogic/pi-mono) | The host. Install it globally so `pi` is on your PATH |
 | A model provider | Pi's own `/login` or `~/.pi/agent/models.json` — see [docs/models-config.md](./docs/models-config.md) |
 | [`@tintinweb/pi-subagents`](https://www.npmjs.com/package/@tintinweb/pi-subagents) | Supplies the `Agent` tool. Without it the parallel-analysis skills cannot dispatch. Installed by `/rpiv-setup` |
-| [`@juicesharp/rpiv-workflow`](https://www.npmjs.com/package/@juicesharp/rpiv-workflow) | Supplies `/wf`. Without it the three built-in workflows do not register. Installed by `/rpiv-setup` |
+| [`@juicesharp/rpiv-workflow`](https://www.npmjs.com/package/@juicesharp/rpiv-workflow) | Supplies `/wf`. Without it the four built-in workflows do not register. Installed by `/rpiv-setup` |
 | `git` *(optional)* | Branch, commit, and user context. If it fails, injection is skipped and nothing else changes |
 | Node.js 22+ | Runtime for Pi and rpiv-pi's bundled scripts |
 

@@ -11,18 +11,18 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { registerBuiltInWorkflows } from "./register-built-in-workflows.js";
 
-// Alphabetical: the three shipped presets.
-const BUILT_IN_NAMES = ["build", "polish", "vet"];
+// Alphabetical: the four shipped presets.
+const BUILT_IN_NAMES = ["build", "polish", "ship", "vet"];
 
 describe("registerBuiltInWorkflows", () => {
-	it("registers all built-in workflows (three presets) when rpiv-workflow is present", async () => {
+	it("registers all built-in workflows (four presets) when rpiv-workflow is present", async () => {
 		const { getBuiltIns, flushBuiltInProviders } = await import("@juicesharp/rpiv-workflow/internal");
 		expect(getBuiltIns()).toEqual([]); // setup.ts beforeEach resets the registry
 
 		await registerBuiltInWorkflows();
 		// registerBuiltInWorkflows now registers a LAZY provider — the registry
 		// stays empty until the first loadWorkflows() flushes it. Flush directly
-		// to assert the provider contributes the three definitions.
+		// to assert the provider contributes the four definitions.
 		expect(getBuiltIns()).toEqual([]);
 		await flushBuiltInProviders();
 

@@ -719,6 +719,19 @@ const PLAN_DIMENSIONS = [
 	"architecture-fit",
 ] as const;
 
+/**
+ * The FIXED three-dimension roster ship's grade panel grades — the bespoke,
+ * tier-independent counterpart of `PLAN_DIMENSIONS`. Ship is a lightweight
+ * preset: it front-loads `research` (so `architecture-fit` always has its
+ * `--context`) and grades a trimmed, always-on set regardless of run shape.
+ * `SHIP_DIMENSION_FANOUT` and `shipGatePasses` bind this roster DIRECTLY — no
+ * `gateRoster(gateTier(...))` wrap — so a single-phase ship run still grades
+ * `architecture-fit`, the dimension a tiered gate would drop in the light
+ * roster. Order mirrors `PLAN_DIMENSIONS` (goal-anchored dimensions first,
+ * fit last) so the emitted units stay stable.
+ */
+export const SHIP_DIMENSIONS = ["completeness", "correctness", "architecture-fit"] as const;
+
 /** Bucket directory the goal capture writes into — build's verbatim-brief channel. */
 const GOAL_DIR = ".rpiv/artifacts/goal";
 
@@ -906,6 +919,30 @@ const scopeExcess = (dirty: readonly string[], baseline: readonly string[], decl
  * `validate` prompt-stage precedent).
  */
 const RESEARCH_BRIEF_PROMPT: PromptFn = ({ state }) => `/skill:research ${state.originalInput}`;
+
+/**
+ * ship's research front-load — a LEANER grounding than build's `/skill:research`
+ * pass. Bypasses the research skill and bounds the agent to at most TWO targeted
+ * `codebase-analyzer` dispatches (sequentially — never parallel, never
+ * `run_in_background`) to map only what a lightweight single-phase plan needs to
+ * be correct: entry points, the relevant module's shape, and the conventions the
+ * implement lane must match. The agent then `Write`s a grounding doc under
+ * `.rpiv/artifacts/research/`, where the research bucket collector harvests it —
+ * the grade panel's architecture-fit dimension threads it as `--context` exactly
+ * as build's research artifact does. A prompt stage (no skill), so the stage
+ * name `research` drives outcome derivation (research contract → `research`
+ * bucket), exactly as build's `RESEARCH_BRIEF_PROMPT` stage does — the prompt
+ * text, not dispatch, is what differs.
+ */
+const SHIP_RESEARCH_PROMPT: PromptFn = ({ state }) =>
+	[
+		"Ground this brief for a lightweight ship plan.",
+		"Do NOT dispatch /skill:research. Instead dispatch at most TWO targeted codebase-analyzer subagents (sequentially — never parallel, never run_in_background) to map only what a single-phase plan needs to be correct: entry points, the relevant module's shape, and the conventions the implement lane must match.",
+		"",
+		`Brief: ${state.originalInput}`,
+		"",
+		"Then Write a grounding doc under .rpiv/artifacts/research/ (timestamped filename) carrying the findings, and stop.",
+	].join("\n");
 
 /** `## Slice N:` headings — the source of truth a slice map's `slices:` array is derived from. */
 const SLICE_HEADING_RE = /^## Slice (\d+):/gm;
@@ -3106,6 +3143,45 @@ const PLAN_CONFIRM_FANOUT = gradePanelFanout("plans", PLAN_DIMENSIONS, "plan-ver
 const CODE_CONFIRM_FANOUT = gradePanelFanout("plans", PLAN_DIMENSIONS, "code-verdicts", { confirm: true });
 
 /**
+ * Ship's grade panel — a bespoke `fanout({...})` mirroring `gradePanelFanout`'s
+ * body but binding the roster to `SHIP_DIMENSIONS` DIRECTLY (no
+ * `gateRoster(gateTier(...))` wrap) and dropping the confirm / `priorChannel`
+ * / surgical-fix machinery ship's single-pass grade does not carry. Kept: the
+ * `latestFsArtifact` guard (no plan → no units), the dimension-keyed
+ * `--context` (architecture-fit only, sourced from the front-loaded `research`
+ * artifact), the `--goal` flag for `GOAL_DIMENSIONS` (completeness/
+ * correctness), and the `freshVerdicts` / `latestVerdictPerDimension` /
+ * `dimensionsToRegrade` carry-forward so a re-grade emits only still-pending
+ * dimensions. Tier-independence is structural: the roster never shrinks, so a
+ * light run still grades `architecture-fit`.
+ */
+export const SHIP_DIMENSION_FANOUT = fanout({
+	source: "plans",
+	unit: { by: "dimension-list", pattern: "dimensions" },
+	max: SHIP_DIMENSIONS.length,
+	units: ({ state }) => {
+		const doc = latestFsArtifact(state, "plans");
+		if (doc?.handle.kind !== "fs") return [];
+		const target = handleToString(doc.handle);
+		const research = latestFsArtifact(state, "research");
+		const contextFlag = research?.handle.kind === "fs" ? ` --context ${handleToString(research.handle)}` : "";
+		const goal = latestFsArtifact(state, "goal");
+		const goalFlag = goal?.handle.kind === "fs" ? ` --goal ${handleToString(goal.handle)}` : "";
+		// Tier-independent roster: SHIP_DIMENSIONS verbatim — never gateRoster(gateTier(...)).
+		const roster = SHIP_DIMENSIONS;
+		const latest = latestVerdictPerDimension(freshVerdicts(state.named["ship-verdicts"], target));
+		const risks = planAuthoredRisks(state, "plans");
+		const pending = dimensionsToRegrade(roster, latest, risks);
+		const carryForward = pending.length > 0 ? pending : roster;
+		return carryForward.map((d) => ({
+			prompt: `--dimension ${d} --artifact ${target}${d === "architecture-fit" ? contextFlag : ""}${GOAL_DIMENSIONS.has(d) ? goalFlag : ""}`,
+			label: d,
+			id: `plans-dim-${d}`,
+		}));
+	},
+});
+
+/**
  * Fold the per-dimension verdicts into a gate decision: keep the latest verdict
  * per dimension (verdicts accumulate across fix loops), require all-pass.
  * Deterministic ⇒ resume-safe for a `readsData: false` route.
@@ -3384,6 +3460,21 @@ const codeGatePasses = (state: RunView): boolean => {
 };
 
 /**
+ * Ship's grade gate — the tier-independent fold over `SHIP_DIMENSIONS` reading
+ * the `ship-verdicts` channel. Satisfied when every ship dimension passes
+ * (severity-floored) AND every plan-authored risk flag is ruled pass. Unlike
+ * `planGatePasses`/`codeGatePasses` it folds NO deterministic cite channel —
+ * ship's `plan-cite-check` gate is routed at its own edge — and binds the
+ * roster to `SHIP_DIMENSIONS` verbatim (never `gateRoster(gateTier(...))`), so
+ * the gate consults the same fixed set the panel graded.
+ */
+export const shipGatePasses = (state: RunView): boolean => {
+	const fresh = freshVerdicts(state.named["ship-verdicts"], latestArtifactPath(state, "plans"));
+	const risks = planAuthoredRisks(state, "plans");
+	return allDimensionsPass(fresh, SHIP_DIMENSIONS) && allRiskFlagsPass(fresh, risks);
+};
+
+/**
  * Confirm-before-block: a dimension's FIRST blocking verdict against the
  * current artifact gets ONE independent second judgment before it buys a fix
  * round. Single-judge verdicts observably flap (pass/score/severity disagree
@@ -3444,6 +3535,12 @@ const planVerdictOutcome = verdictOutcome("plan-verdicts");
 // for the object under judgment — the code the gate grades — completing the
 // slice-verdicts / plan-verdicts / code-verdicts parallel.
 const codeVerdictOutcome = verdictOutcome("code-verdicts");
+
+// Ship's grade panel writes its verdicts to a DISTINCT channel (same
+// directory, different artifact basenames) so they never mix with build's
+// plan/code verdicts — named for the workflow, completing the slice-verdicts
+// / plan-verdicts / code-verdicts / ship-verdicts parallel.
+export const shipVerdictOutcome = verdictOutcome("ship-verdicts");
 
 /**
  * Absolute path to rpiv-pi's bundled deterministic stitch script. Resolved off
@@ -3983,6 +4080,110 @@ const buildWorkflow = defineWorkflow({
 	},
 });
 
+/**
+ * ship — the lightweight `/wf` preset: the no-ceremony path for small-to-
+ * midsize tasks whose approach is obvious. goal → research → plan →
+ * plan-cite-check → grade → implement → implement-scope-check → reconcile →
+ * validate → commit, stop-on-fail at every gate with NO backward edges: a red
+ * gate terminates the run (the agent hand-repairs and re-invokes) instead of
+ * looping a fix cycle. Research stays front-loaded — a ≤2-subagent grounding
+ * pass (SHIP_RESEARCH_PROMPT, not a full `/skill:research` run) — because the
+ * single PRE-implement grade's architecture-fit dimension needs its artifact as
+ * `--context`. That grade is tier-independent: the bespoke SHIP_DIMENSION_FANOUT
+ * always grades the full correctness/completeness/architecture-fit roster (no
+ * gateTier/gateRoster light-tier drop), and SHIP's gate folds risk flags without
+ * re-folding the citation floor (that floor folds at its own edge).
+ */
+const shipWorkflow = defineWorkflow({
+	name: "ship",
+	description:
+		"Ship, unsliced: capture the verbatim brief as a goal artifact → ground it with at most two targeted codebase-analyzer dispatches (no /skill:research) → one lightweight quick-plan pass → deterministic citation floor → single tier-independent quality gate (correctness/completeness/architecture-fit, stop-on-fail) → implement → implement-scope-check → reconcile → validate → commit. Every gate terminates the run on fail; no fix loops.",
+	start: "goal",
+	stages: {
+		// build's verbatim goal capture — the brief on its own channel, plus the
+		// run-start pre-existing-dirty snapshot the scope-check subtracts.
+		goal: produces.script({ run: captureGoal }),
+		// The lean grounding pass — SHIP_RESEARCH_PROMPT (a custom prompt, NOT
+		// /skill:research): ≤2 sequential codebase-analyzer subagents, then one
+		// grounding doc under .rpiv/artifacts/research/. A prompt stage, so the
+		// stage name `research` drives outcome derivation (research contract →
+		// `research` bucket) exactly as build's RESEARCH_BRIEF_PROMPT stage does.
+		research: produces({ prompt: SHIP_RESEARCH_PROMPT }),
+		// The lightweight planner — quick-plan: ONE targeted
+		// codebase-pattern-finder dispatch, one `status: ready` plan, no risks
+		// frontmatter, no multi-slice decomposition. Derives its `plans` outcome
+		// from the quick-plan contract (artifactKind: plan).
+		plan: produces({ skill: "quick-plan" }),
+		// Deterministic citation floor BEFORE the LLM gate — build's verifier
+		// verbatim. A fabricated `file:line` fails structurally and STOPs the run.
+		"plan-cite-check": produces.script({ reads: ["plans"], run: planCitationCheck("plan-cite-check") }),
+		// Single PRE-implement grade over the fixed three-dimension roster
+		// (SHIP_DIMENSION_FANOUT — tier-independent, no confirm/snapshot arms);
+		// verdicts on the `ship-verdicts` channel. `research` is read so the
+		// architecture-fit unit threads it as --context; `goal` so
+		// completeness/correctness anchor on the verbatim brief.
+		grade: produces({
+			skill: "grade",
+			loop: SHIP_DIMENSION_FANOUT,
+			outcome: shipVerdictOutcome,
+			reads: ["plans", "research", "goal"],
+		}),
+		// Dep-gated DAG implement — build's lane verbatim.
+		implement: acts({ loop: IMPLEMENT_DAG_FANOUT, reads: ["plans"] }),
+		// Lane-level scope floor — build's latest-only variant (vet uses the
+		// union variant for its fix loop; ship has no loop, so the latest plan's
+		// declared write-set is the whole contract). Pass ⇒ reconcile; fail ⇒ STOP.
+		"implement-scope-check": produces.script({ reads: ["plans", "goal"], run: implementScopeCheck }),
+		// Deterministic post-implement reconciliation — build's run-function
+		// verbatim. Pass ⇒ validate; fail/missing ⇒ STOP (no fallback).
+		reconcile: produces.script({ reads: ["plans"], run: reconcile }),
+		validate: produces({ prompt: VALIDATE_GOAL_PROMPT }),
+		commit: acts({ prompt: COMMIT_BASELINE_PROMPT, outcome: gitCommitOutcome }),
+	},
+	edges: {
+		goal: "research",
+		research: "plan",
+		plan: "plan-cite-check",
+		// Citation-floor gate. Pass ⇒ grade; fail ⇒ STOP (no fix arm — the
+		// lightweight preset terminates on any red gate). The route folds
+		// `allDimensionsPass` over the stage's OWN published channel, NOT
+		// `match("verdict", …)`: `writeStructureVerdict` (the floor's envelope)
+		// carries no `verdict` field, so a verdict match would misread — this
+		// mirrors build's `planGatePasses` first clause. `readsData: false` — the
+		// route consults the deterministic verdict channel only.
+		"plan-cite-check": defineRoute(
+			["grade", "stop"],
+			({ state }) => (allDimensionsPass(state.named["plan-cite-check"]) ? "grade" : "stop"),
+			{ readsData: false },
+		),
+		// Quality gate PRE-implement. `shipGatePasses` (the bespoke fold over
+		// SHIP_DIMENSIONS + risk flags on the `ship-verdicts` channel) does NOT
+		// re-fold the citation floor; this edge is the sole gate. Pass ⇒
+		// implement; fail ⇒ STOP — no confirm/snapshot/fix loop.
+		grade: defineRoute(["implement", "stop"], ({ state }) => (shipGatePasses(state) ? "implement" : "stop"), {
+			readsData: false,
+		}),
+		implement: "implement-scope-check",
+		// Scope floor gate — build's route verbatim: the sole path onward is an
+		// explicit `verdict: "pass"`; a fail (undeclared write) or a missing
+		// verdict is terminal STOP. Sourced from the stage's own channel via the
+		// `from` form (suppresses the READS_DATA outputSchema lint).
+		"implement-scope-check": match("verdict", { reconcile: "pass" }, { from: "implement-scope-check" }),
+		// Reconciliation gate — build's route verbatim: pass ⇒ validate;
+		// fail/missing ⇒ STOP (plan-vs-tree drift the agent reconciles manually).
+		reconcile: match("verdict", { validate: "pass" }, { from: "reconcile" }),
+		// Validate gate — build's validate edge (match verdict pass⇒commit,
+		// from "validation") minus the `validate-fix` arm: `pass` ⇒ commit; `fail`
+		// or missing ⇒ STOP — deliberately NO validate-fix/remediate repair arm
+		// (the lightweight preset does not loop). NOT vet's tail: vet's validate
+		// routes to code-review, which gates back to blueprint (a bounded backward
+		// loop, not stop-on-fail). Sourced from validate's published verdict
+		// channel (`from: "validation"`).
+		validate: match("verdict", { commit: "pass" }, { from: "validation" }),
+		commit: "stop",
+	},
+});
+
 // ===========================================================================
 // Exports
 // ===========================================================================
@@ -3990,4 +4191,4 @@ const buildWorkflow = defineWorkflow({
 // Position 0 is load-bearing: `build` is the default `/wf` workflow when no
 // project/user config sets one (resolve-default.ts resolves
 // `Map.keys().next().value`), so it MUST stay first in this array.
-export const builtInWorkflows: readonly Workflow[] = [buildWorkflow, vetWorkflow, polishWorkflow];
+export const builtInWorkflows: readonly Workflow[] = [buildWorkflow, vetWorkflow, polishWorkflow, shipWorkflow];

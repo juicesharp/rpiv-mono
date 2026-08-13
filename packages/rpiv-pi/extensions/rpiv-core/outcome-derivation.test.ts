@@ -272,10 +272,12 @@ describe("equivalence — built-in workflows", () => {
 		["design-slice", "design"],
 		["synthesize", "plan"],
 		["elaborate", "elaboration"],
+		// ship's derivable produces skill
+		["quick-plan", "plan"],
 	];
 
 	/**
-	 * Expected bucket name for each produces stage across all 3 workflows.
+	 * Expected bucket name for each produces stage across all 4 workflows.
 	 * Key: "workflowName::stageName". Value: expected outcome.name.
 	 */
 	const EXPECTED: Record<string, string> = {
@@ -296,6 +298,10 @@ describe("equivalence — built-in workflows", () => {
 		"polish::blueprint": "plans",
 		"polish::validate": "validation",
 		"polish::code-review": "reviews",
+		// ship
+		"ship::research": "research",
+		"ship::plan": "plans",
+		"ship::validate": "validation",
 	};
 
 	/**
@@ -321,6 +327,9 @@ describe("equivalence — built-in workflows", () => {
 		"build::code-grade": "code-verdicts",
 		"build::code-confirm": "code-verdicts",
 		"build::code-fix": "plans",
+		// ship's grade publishes verdicts on its own channel (derivation maps one
+		// kind → one bucket, so the ship gate keeps an explicit outcome).
+		"ship::grade": "ship-verdicts",
 	};
 
 	/**
@@ -335,6 +344,8 @@ describe("equivalence — built-in workflows", () => {
 		"build::commit",
 		"build::implement",
 		"build::code-splice",
+		"ship::commit",
+		"ship::implement",
 	]);
 
 	// Need architecture-review contract too
@@ -413,7 +424,7 @@ describe("equivalence — built-in workflows", () => {
 		});
 	}
 
-	it("total produces stages across all workflows = 37 (13 derivable + 10 explicit + 14 script)", () => {
+	it("total produces stages across all workflows = 45 (16 derivable + 11 explicit + 18 script)", () => {
 		let count = 0;
 		let scriptProduces = 0;
 		for (const w of builtInWorkflows) {
@@ -422,13 +433,15 @@ describe("equivalence — built-in workflows", () => {
 				if (stage.kind === "produces" && stage.run != null) scriptProduces++;
 			}
 		}
-		expect(count).toBe(37);
+		expect(count).toBe(45);
 		// build::slice-check + build::subplan-check + build::goal + build::plan-cite-check
 		// + build::code-cite-check + build::implement-scope-check + build::reconcile
 		// + build::plan-snapshot + build::code-snapshot
 		// + build::plan-demote + build::code-demote
 		// + vet::goal + vet::implement-scope-check + vet::reconcile
-		expect(scriptProduces).toBe(14);
+		// + ship::goal + ship::plan-cite-check + ship::implement-scope-check
+		// + ship::reconcile
+		expect(scriptProduces).toBe(18);
 	});
 });
 

@@ -40,7 +40,13 @@ import { type RunState, runsDir, stateFilePath } from "@juicesharp/rpiv-workflow
 import { fanin, fs as fsHandle, loopSpecOf } from "@juicesharp/rpiv-workflow/registration";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { rpivArtifactMdOutcome } from "./artifact-collector.js";
-import { builtInWorkflows } from "./built-in-workflows.js";
+import {
+	builtInWorkflows,
+	SHIP_DIMENSION_FANOUT,
+	SHIP_DIMENSIONS,
+	shipGatePasses,
+	shipVerdictOutcome,
+} from "./built-in-workflows.js";
 import { deriveOutcomes } from "./outcome-derivation.js";
 import { BUNDLED_SKILLS_DIR } from "./paths.js";
 import { buildSkillContractsFromFrontmatter } from "./skill-contracts-source.js";
@@ -1625,6 +1631,138 @@ describe("build confirm panels (--prior adjudication threading)", () => {
 		});
 		expect(units.length).toBeGreaterThan(0);
 		expect(units.every((u) => !u.prompt.includes("--prior"))).toBe(true);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// ship grade panel — the bespoke tier-independent roster. Ship is a lightweight
+// preset: its grade panel binds SHIP_DIMENSIONS verbatim (never
+// gateRoster(gateTier(...))), threads --context (architecture-fit) and --goal
+// (completeness/correctness) with no --prior machinery, and its gate folds ONLY
+// the ship-verdicts channel — no cite channel, no plan/code verdicts.
+// ---------------------------------------------------------------------------
+
+describe("ship grade panel (tier-independent roster bypass)", () => {
+	const out = (rel: string) => ({ artifacts: [{ handle: fsHandle(rel) }], data: undefined, kind: "", meta: {} });
+	// A channel output carrying frontmatter data — `phase_count`/`slice_count`
+	// are what gateTier WOULD read; the ship panel never consults them, so the
+	// values are here only to make the "light-tier shape" it bypasses unambiguous.
+	const dataOut = (rel: string, data: Record<string, unknown> = {}) => ({
+		artifacts: [{ handle: fsHandle(rel) }],
+		data,
+		kind: "",
+		meta: {},
+	});
+	const PLAN = ".rpiv/artifacts/plans/p.md";
+	const verdict = (dimension: string, pass: boolean, extra: Record<string, unknown> = {}) =>
+		({
+			artifacts: [{ handle: fsHandle(`.rpiv/artifacts/verdicts/ship__${dimension}.json`) }],
+			data: { dimension, pass, severity: pass ? "none" : "high", artifact: PLAN, ...extra },
+			kind: "json",
+			meta: {},
+		}) as unknown as Output;
+
+	describe("SHIP_DIMENSION_FANOUT.units()", () => {
+		it("emits the full roster (architecture-fit NOT dropped) on a light-tier-shaped state", async () => {
+			const units = await SHIP_DIMENSION_FANOUT.units({
+				cwd: "/repo",
+				artifact: undefined,
+				state: {
+					named: {
+						// slice_count:1 + phase_count:1 (+ no verdict severities) is the
+						// shape gateTier folds to "light" — a gradePanelFanout over this
+						// state would emit only the LIGHT_ROSTER dims; the bespoke fanout
+						// emits all three because it binds SHIP_DIMENSIONS verbatim.
+						slices: [dataOut(".rpiv/artifacts/slices/s.md", { slice_count: 1 })],
+						plans: [dataOut(PLAN, { phase_count: 1 })],
+						research: [out(".rpiv/artifacts/research/r.md")],
+						goal: [out(".rpiv/artifacts/goal/goal.md")],
+					},
+				} as unknown as RunView,
+			});
+			expect(units.map((u) => u.label)).toEqual([...SHIP_DIMENSIONS]);
+		});
+
+		it("threads --context (architecture-fit) and --goal (goal dims); no unit carries --prior", async () => {
+			const units = await SHIP_DIMENSION_FANOUT.units({
+				cwd: "/repo",
+				artifact: undefined,
+				state: {
+					named: {
+						plans: [dataOut(PLAN, { phase_count: 1 })],
+						research: [out(".rpiv/artifacts/research/r.md")],
+						goal: [out(".rpiv/artifacts/goal/goal.md")],
+					},
+				} as unknown as RunView,
+			});
+			const archFit = units.find((u) => u.label === "architecture-fit");
+			const completeness = units.find((u) => u.label === "completeness");
+			const correctness = units.find((u) => u.label === "correctness");
+			expect(archFit?.prompt).toContain("--context");
+			expect(archFit?.prompt).toContain("research/r.md");
+			// architecture-fit is not goal-anchored: no --goal on that unit.
+			expect(archFit?.prompt).not.toContain("--goal");
+			expect(completeness?.prompt).toContain("--goal");
+			expect(completeness?.prompt).toContain("goal/goal.md");
+			expect(correctness?.prompt).toContain("--goal");
+			expect(units.every((u) => !u.prompt.includes("--prior"))).toBe(true);
+		});
+
+		it("returns [] with no plans artifact (the latestFsArtifact guard)", async () => {
+			const units = await SHIP_DIMENSION_FANOUT.units({
+				cwd: "/repo",
+				artifact: undefined,
+				state: { named: { research: [out(".rpiv/artifacts/research/r.md")] } } as unknown as RunView,
+			});
+			expect(units).toEqual([]);
+		});
+	});
+
+	describe("shipGatePasses", () => {
+		const state = (shipVerdicts: Output[], extra: Record<string, Output[]> = {}) =>
+			({
+				named: { plans: [dataOut(PLAN)], "ship-verdicts": shipVerdicts, ...extra },
+			}) as unknown as RunView;
+
+		it("returns false when architecture-fit fails, even with correctness+completeness passing", () => {
+			// Tier-independence is structural: the roster is SHIP_DIMENSIONS
+			// verbatim, never gateRoster(gateTier(...)) — the fanout's three-unit
+			// emission on a light-tier-shaped state (above) is the observable
+			// counterpart proof.
+			const s = state([
+				verdict("completeness", true),
+				verdict("correctness", true),
+				verdict("architecture-fit", false),
+			]);
+			expect(shipGatePasses(s)).toBe(false);
+		});
+
+		it("returns true when all three dimensions pass", () => {
+			const s = state([
+				verdict("completeness", true),
+				verdict("correctness", true),
+				verdict("architecture-fit", true),
+			]);
+			expect(shipGatePasses(s)).toBe(true);
+		});
+
+		it("ignores plan-verdicts and code-verdicts (folds only the ship-verdicts channel)", () => {
+			// plan-verdicts + code-verdicts carry failing dimensions while
+			// ship-verdicts all pass — a gate reading the wrong channel fails.
+			const failing = (dimension: string) => verdict(dimension, false);
+			const s = state(
+				[verdict("completeness", true), verdict("correctness", true), verdict("architecture-fit", true)],
+				{
+					"plan-verdicts": [failing("completeness"), failing("correctness"), failing("architecture-fit")],
+					"code-verdicts": [failing("completeness"), failing("correctness"), failing("architecture-fit")],
+				},
+			);
+			expect(shipGatePasses(s)).toBe(true);
+		});
+	});
+
+	it("shipVerdictOutcome publishes to the ship-verdicts channel", () => {
+		expect(shipVerdictOutcome.name).toBe("ship-verdicts");
 	});
 });
 
@@ -3839,6 +3977,68 @@ describe("build subplan-check (deterministic cluster-coverage floor)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// ship — the lightweight /wf preset: ten linear stages, stop-on-fail at every
+// gate, no fix/confirm/snapshot/demote arms.
+// ---------------------------------------------------------------------------
+
+describe("ship workflow (lightweight /wf preset)", () => {
+	// The ten stages in linear order — pins that none of build's elaborate
+	// machinery (slice*/subplan/*confirm/*snapshot/*fix/code*/validate-fix/
+	// *demote) leaked into the lightweight preset.
+	const SHIP_STAGES: readonly string[] = [
+		"goal",
+		"research",
+		"plan",
+		"plan-cite-check",
+		"grade",
+		"implement",
+		"implement-scope-check",
+		"reconcile",
+		"validate",
+		"commit",
+	];
+
+	it("has exactly the ten stages in linear order (no slice/subplan/confirm/snapshot/fix/code/demote arms)", () => {
+		expect(Object.keys(findWorkflow("ship").stages)).toEqual([...SHIP_STAGES]);
+	});
+
+	it("gate edges are stop-on-fail with no backward edge", () => {
+		const wf = findWorkflow("ship");
+		const gates: Array<[string, string[]]> = [
+			["plan-cite-check", ["grade", "stop"]],
+			["grade", ["implement", "stop"]],
+			["implement-scope-check", ["reconcile", "stop"]],
+			["reconcile", ["validate", "stop"]],
+			["validate", ["commit", "stop"]],
+		];
+		for (const [src, expected] of gates) {
+			const edge = wf.edges[src];
+			if (typeof edge !== "function") throw new Error(`ship ${src} edge is not an EdgeFn`);
+
+			expect([...(edge.targets ?? [])].sort(), src).toEqual([...expected].sort());
+			// No backward edge: every non-stop target must follow `src` in the
+			// linear order — the preset terminates on fail instead of looping.
+			const from = SHIP_STAGES.indexOf(src);
+			for (const target of edge.targets ?? []) {
+				if (target === "stop") continue;
+				expect(SHIP_STAGES.indexOf(target), `${src} → ${target}`).toBeGreaterThan(from);
+			}
+		}
+	});
+
+	it('implement reads ["plans"]', () => {
+		expect(findWorkflow("ship").stages.implement?.reads).toEqual(["plans"]);
+	});
+
+	it("grade carries a fanout loop, the ship-verdicts outcome, and reads plans/research/goal", () => {
+		const grade = findWorkflow("ship").stages.grade;
+		expect(grade?.loop?.kind).toBe("fanout");
+		expect(grade?.outcome?.name).toBe("ship-verdicts");
+		expect(grade?.reads).toEqual(["plans", "research", "goal"]);
+	});
+});
+
+// ---------------------------------------------------------------------------
 // implement reads wiring — every implement stage declares reads: ["plans"]
 // and validates clean with contracts threaded in.
 // ---------------------------------------------------------------------------
@@ -3855,7 +4055,7 @@ describe("implement reads wiring", () => {
 	});
 
 	it("every built-in workflow with an implement stage validates clean (contracts threaded in)", () => {
-		for (const name of ["build", "vet", "polish"]) {
+		for (const name of ["build", "vet", "polish", "ship"]) {
 			const issues = deriveAndValidate(findWorkflow(name), { skillContracts: DECLARED_CONTRACTS });
 			expect(
 				issues.filter((i) => i.severity === "error"),
