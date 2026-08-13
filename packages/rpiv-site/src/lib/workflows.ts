@@ -1,13 +1,13 @@
 /**
- * The three built-in pipelines rpiv-pi registers into rpiv-workflow's
+ * The four built-in pipelines rpiv-pi registers into rpiv-workflow's
  * `built-in` layer (see packages/rpiv-pi/extensions/rpiv-core/built-in-workflows.ts)
- * — build/vet/polish mirrored here. This is a
+ * — build/vet/polish/ship mirrored here. This is a
  * hand-maintained presentation mirror: the landing renders a curated stage
  * *spine* per pipeline, not the full edge graph.
  *
  * Keep in sync when built-in-workflows.ts changes. `stageCount` is the true
- * `Object.keys(stages).length`; `stages` is the spine drawn on the rail. vet
- * and polish are small enough to draw stage-for-stage; `build` folds its 30
+ * `Object.keys(stages).length`; `stages` is the spine drawn on the rail. vet,
+ * polish, and ship are small enough to draw stage-for-stage; `build` folds its 30
  * runtime stages into seven acts:
  *
  *   capture → goal, research                                    (verbatim brief)
@@ -124,9 +124,27 @@ const WORKFLOWS: readonly WorkflowEntry[] = [
 		],
 		loop: { from: 4, to: 1, label: "↺ until clean" },
 	},
+	{
+		name: "ship",
+		when: "A small, well-understood task. One lightweight forward pass — research up front, a single plan, one grade, stop-on-fail at every gate.",
+		arg: "“add a --json flag to the export command”",
+		stageCount: 10,
+		stages: [
+			{ name: "goal" },
+			{ name: "research" },
+			{ name: "plan" },
+			{ name: "plan-cite-check" },
+			{ name: "grade" },
+			{ name: "implement", fanout: true },
+			{ name: "implement-scope-check" },
+			{ name: "reconcile" },
+			{ name: "validate" },
+			{ name: "commit" },
+		],
+	},
 ];
 
-/** All three built-in pipelines, the showcase entry selected via `.showcase`. */
+/** All four built-in pipelines, the showcase entry selected via `.showcase`. */
 export async function getWorkflows(): Promise<WorkflowEntry[]> {
 	return [...WORKFLOWS];
 }

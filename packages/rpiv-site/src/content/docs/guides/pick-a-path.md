@@ -23,11 +23,12 @@ The chain proper starts at `/skill:research`. How you get there depends on what 
 
 ## Hand-drive, or hand it to `/wf`
 
-The recipes below run the same skills in the same order whether you invoke them yourself or hand them to the workflow runner. `rpiv-workflow` runs the three pipelines `rpiv-pi` bundles:
+The recipes below run the same skills in the same order whether you invoke them yourself or hand them to the workflow runner. `rpiv-workflow` runs the four pipelines `rpiv-pi` bundles:
 
 - **`/wf build`**: ships a feature from a brief, sliced and gated. `goal → research → slice → ⛩ → slice-design ×N → design-review → subplan → plan → ⛩ → code ×phases → code-splice → ⛩ → implement → implement-scope-check → reconcile → validate → commit` (30 stages, abbreviated here — the gate glyphs stand in for their check/grade/fix stages). Two stage keys differ from the skill they dispatch: `slice-design` runs the `design-slice` skill, and `code` runs `elaborate`. Your brief is captured verbatim, and the plan and code gates anchor their completeness and correctness dimensions on it — as does `validate`. The slice gate is deliberately goal-blind. Slices are designed in parallel. The run pauses once, at a consolidated design review. Three gates each carry a bounded fix loop. → [Run a workflow](/docs/guides/run-a-workflow) for the full anatomy.
 - **`/wf vet`**: `goal → code-review → (blueprint → implement → implement-scope-check → reconcile → validate → loop) → commit`. Orthogonal to scope: point it at an existing diff (yours or a teammate's) for a structured review with an optional fix cycle.
 - **`/wf polish`**: `architecture-review → blueprint → implement → validate → code-review → (blueprint loop) → commit`. Off the scope ladder: for a large architecture review whose phases are dependency-ordered. `blueprint` *iterates*, one plan per review phase, each building on the last, rather than planning everything in one pass. Reach for it when the review itself surfaced the sequence. → [Compose skills as skills](/docs/guides/compose-skills-as-skills).
+- **`/wf ship`**: `goal → research → plan → plan-cite-check → grade → implement → implement-scope-check → reconcile → validate → commit` (10 stages). The lightweight preset: a small, well-understood task in one forward pass — trimmed research, a single unsliced plan from `quick-plan`, one three-dimension grade, stop-on-fail at every gate with no fix loops. The opposite end of the spectrum from `build`: no slicing, no parallel design, no confirm panels. → [Run a workflow](/docs/guides/run-a-workflow).
 
 (`/skill:pr-triage` runs standalone for read-only triage of an incoming GitHub PR: disposition plus security tier, nothing checked out. It feeds `/wf vet "<pr-url>"` — the exact command its Review disposition emits — when the PR earns a full pass.)
 
@@ -91,7 +92,7 @@ Good fits:
 - A scheduled job that mirrors an existing one (different cron + different payload, same plumbing)
 - A migration on a model whose shape you understand (add column, backfill, deploy)
 
-**No workflow shortcut here, by design.** This scope is exactly where the pipeline machinery isn't worth its latency: hand-drive `blueprint → implement → validate → commit` with a pause between `blueprint` and `implement` to sanity-check the phases, or make the change in chat and run `/wf vet staged` afterwards when you want a structured second pass.
+**Workflow shortcut: `/wf ship <input>`.** This scope is exactly what the lightweight preset was rebuilt for — one forward pass (`goal → research → plan → plan-cite-check → grade → implement → implement-scope-check → reconcile → validate → commit`) with research trimmed to at most two analyzer dispatches and a single unsliced plan from `quick-plan`. Every gate is stop-on-fail, so the latency is the pass itself, not the machinery around it. Hand-drive `blueprint → implement → validate → commit` when you want the pause between `blueprint` and `implement` to sanity-check the phases — `blueprint` still earns its checkpoint loop on shapes with genuine design forks — or make the change in chat and run `/wf vet staged` afterwards when you want a structured second pass.
 
 ### Mid-size feature
 

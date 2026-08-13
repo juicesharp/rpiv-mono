@@ -1,6 +1,6 @@
 ---
 title: "Run a workflow"
-description: "Hand the skill chain to /wf. The three bundled pipelines, when to use each, and when hand-driving still wins."
+description: "Hand the skill chain to /wf. The four bundled pipelines, when to use each, and when hand-driving still wins."
 section: "guides"
 order: 5
 ---
@@ -24,9 +24,9 @@ Preview first. The graph view shows every stage, its skill, the edges out (linea
 
 Resume last. `@<ref>` is the resume sigil. Point it at a run that failed or was cut off, and the runner reads its JSONL trail back, rebuilds the accumulated state, and re-enters at the first stage that never finished. The ref resolves three ways: the `<run-id>` slug in the run's filename (`.rpiv/workflows/runs/<run-id>.jsonl`, also surfaced as `runId` on the rows `listRuns` returns), a run's `--name` alias, or a path to the run's JSONL — a trailing `.jsonl` is stripped and any directory prefix dropped, so your editor's `@` file-autosuggestion works as-is. To get an alias, pass `--name <slug>` as the first or last token of the run command (`/wf build <input> --name auth-fix`), then resume with `/wf @auth-fix`. The flag is only recognised in those two positions — a `--name` mid-input stays part of your prompt text and the runner warns — and it's ignored with a warning on `@resume`, where the ref already identifies the run.
 
-## The three bundled pipelines
+## The four bundled pipelines
 
-`rpiv-pi` registers three pipelines. Each maps to a posture from [Pick your path](/docs/guides/pick-a-path), not 1:1, but close enough to pick by name. (`/wf <input>` with no name runs the first registered pipeline, `build`, unless your config sets a `default`.)
+`rpiv-pi` registers four pipelines. Each maps to a posture from [Pick your path](/docs/guides/pick-a-path), not 1:1, but close enough to pick by name. (`/wf <input>` with no name runs the first registered pipeline, `build`, unless your config sets a `default`.)
 
 ### `/wf build <input>`
 
@@ -47,6 +47,17 @@ Examine an existing diff for approval, optionally repair it. `goal → code-revi
 ### `/wf polish <input>`
 
 Architecture-review-driven polish for a review too large to plan in one pass. `architecture-review → blueprint (one pass per review phase) → implement → validate → code-review → (blueprint loop) → commit`. The distinguishing move is the `blueprint` stage's `iterate`: the dual of the `fanout` the other chains run on `implement`. Where `fanout` computes every unit up front and runs them blind to one another, `iterate` runs `blueprint` as a pull-loop, once per `### Phase N — <name>` heading the architecture review declares. Each pass is handed the plans the earlier passes already wrote, so it builds on them instead of duplicating. (`fanout` units run simultaneously as Pi child sessions. `iterate` stays sequential by design: each pass must see the plans the earlier passes wrote.) `implement` then fans out over the `## Phase N:` headings of every plan in that latest blueprint pass, and `validate` is handed all of them in one session. The review loop routes on the same `{ blockers_count: integer }` schema as `vet`, but the backward edge returns to `blueprint`. A corrective pass re-plans every review phase, folding the latest review's blockers in, under the same `maxBackwardJumps` bound. Reach for it when an architecture review has surfaced dependency-ordered phases that have to be planned in sequence, each on top of the last, rather than enumerated in a single plan.
+
+### `/wf ship <input>`
+
+The lightweight preset: ship a small, well-understood task in one forward pass. Ten stages: `goal → research → plan → plan-cite-check → grade → implement → implement-scope-check → reconcile → validate → commit`. The moves that matter:
+
+- **`research` is a trimmed custom prompt, not `/skill:research`.** The stage dispatches at most two `codebase-analyzer` agents over the brief's likely footprint and writes a grounding doc under `.rpiv/artifacts/research/` — the same channel a full research pass would feed, at a fraction of the fan-out. A task small enough to ship may need zero dispatches; the stage may just read the files.
+- **`plan` dispatches `quick-plan`**, the lightweight plan producer: at most one `codebase-pattern-finder` dispatch and a single unsliced `status: ready` plan — no slice decomposition, no risk frontmatter, no interactive checkpoints.
+- **Stop-on-fail at every gate.** `plan-cite-check` is the deterministic citation floor (every `file:line` in the plan verifies against the tree); `grade` is a fixed three-dimension panel — correctness, completeness, architecture-fit — one fresh session per dimension, tier-independent by construction so architecture-fit cannot be dropped from a light roster. `implement-scope-check`, `reconcile`, and `validate` fail the same way: there is no fix arm, no confirm panel, no snapshot, no `validate-fix` loop. The one judgment you get is the grade; make it count by feeding the run a brief that is actually small.
+- **`implement` fans the plan's phases out** under the same dependency gate as `build` (declared `files:` write-sets + `depends_on`, topological waves), and `validate` judges the landing against the verbatim goal.
+
+Reach for it when the approach is settled and the task is small enough to plan in one pass — the "Small+ to midsize, approach obvious" lane from [Pick your path](/docs/guides/pick-a-path). Prefer `build` when decomposition itself is work.
 
 Two standalone skills round out the set without their own pipelines. `/skill:pr-triage` runs a read-only triage of an incoming GitHub PR (disposition + security tier, no checkout); follow up with `/wf vet <branch>` when it earns a full pass. And `/skill:design` / `/skill:plan` remain hand-drivable for a standalone architecture pass.
 
@@ -125,7 +136,7 @@ Session policy isn't the only per-stage knob. Which model a stage runs and how h
 
 ## When hand-driving still wins
 
-Pick the runner when the shape of the work matches one of the three bundled pipelines and you've walked that chain enough times to trust it. Otherwise stay in the loop:
+Pick the runner when the shape of the work matches one of the four bundled pipelines and you've walked that chain enough times to trust it. Otherwise stay in the loop:
 
 - **First pass on an unfamiliar codebase.** The artifact-by-artifact pause is where you learn what the model is doing. The runner collapses that into one command: useful later, not now.
 - **Exploratory work where you'll pivot mid-chain.** If you'll likely abandon `blueprint`'s output to re-run `discover` with a different framing, the runner's straight-through execution costs you tokens you didn't need to spend.
@@ -133,7 +144,7 @@ Pick the runner when the shape of the work matches one of the three bundled pipe
 
 ## Author your own workflow
 
-These three pipelines are skill-agnostic in shape: the runner doesn't know `research` or `commit` ship from `rpiv-pi`. Drop a TypeScript file under `.rpiv/workflows/config.ts` in your project (or `~/.config/rpiv-workflow/config.ts` for a user-level default) and chain your own skills:
+These four pipelines are skill-agnostic in shape: the runner doesn't know `research` or `commit` ship from `rpiv-pi`. Drop a TypeScript file under `.rpiv/workflows/config.ts` in your project (or `~/.config/rpiv-workflow/config.ts` for a user-level default) and chain your own skills:
 
 ```ts
 import {
@@ -185,7 +196,7 @@ The `"stop"` literal marks a terminal edge; import `STOP` from the package for a
 
 Two file roles per layer. **Config files** (`config.ts`) are the one TypeScript file you hand-edit per project or per user, and the only place that can set `default`: the workflow `/wf <input>` runs without a name. **Pack files** (`packs/*.ts`) are installable bundles: drop them in, get new workflows, no risk of overwriting your default. This is what makes shared workflow packs safe.
 
-**Reuse a bundled skill everywhere.** Want the bundled `build`/`vet`/`polish` pipelines but with your own commit skill, say one that adds model attribution to the message? Don't fork the workflows. Declare a `skillAliases` map in your `config.ts` and every stage that would dispatch `/skill:commit` dispatches yours instead:
+**Reuse a bundled skill everywhere.** Want the bundled `build`/`vet`/`polish`/`ship` pipelines but with your own commit skill, say one that adds model attribution to the message? Don't fork the workflows. Declare a `skillAliases` map in your `config.ts` and every stage that would dispatch `/skill:commit` dispatches yours instead:
 
 ```ts
 export default { skillAliases: { commit: "attributed-commit" } };
