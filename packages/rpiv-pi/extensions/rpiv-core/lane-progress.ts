@@ -271,8 +271,15 @@ export async function registerLaneProgress(): Promise<void> {
 				if (recap !== undefined) setRecap(ctx.runId, recap);
 				const ui = getCapturedUiContext();
 				if (!ui) return;
-				if (status === "completed") ui.notify(`✓ ${name} finished — /lanes to view`, "info");
-				else if (status === "failed") {
+				if (status === "completed") {
+					// A "completed" termination whose recap reads "stopped" is a
+					// gate-routed stop (a stop-on-fail preset's red gate): the run
+					// halted before its chain's natural end, so a ✓ success toast
+					// would misreport it. Surface the recap's reason instead.
+					if (recap?.outcome === "stopped")
+						ui.notify(`⚠ ${name} ${recap.failureReason ?? "stopped at a gate"} — /lanes to view`, "warning");
+					else ui.notify(`✓ ${name} finished — /lanes to view`, "info");
+				} else if (status === "failed") {
 					// Inject the short reason into the toast so the user learns WHY without
 					// opening the lane; falls back to the bare line when no cause is known.
 					const short = shortFailureReason(error);

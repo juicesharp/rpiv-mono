@@ -36,7 +36,7 @@ import {
 	validateWorkflow,
 	type Workflow,
 } from "@juicesharp/rpiv-workflow";
-import { type RunState, runsDir, stateFilePath } from "@juicesharp/rpiv-workflow/internal";
+import { type RunState, runsDir, stateFilePath, takeRouteNote } from "@juicesharp/rpiv-workflow/internal";
 import { fanin, fs as fsHandle, loopSpecOf } from "@juicesharp/rpiv-workflow/registration";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { rpivArtifactMdOutcome } from "./artifact-collector.js";
@@ -1758,6 +1758,79 @@ describe("ship grade panel (tier-independent roster bypass)", () => {
 				},
 			);
 			expect(shipGatePasses(s)).toBe(true);
+		});
+	});
+
+	describe("stop-pick route notes (the stopped-recap reason)", () => {
+		// The two bespoke defineRoute gates attach a ROUTE_NOTE on their stop
+		// pick — the routing audit persists it and summarizeRun surfaces it as
+		// "stopped at <gate>: <note>". takeRouteNote is read-and-clear, so each
+		// assertion drains what the pick just attached.
+		const edgeOf = (name: string) => {
+			const edge = findWorkflow("ship").edges[name];
+			if (typeof edge !== "function") throw new Error(`ship ${name} edge is not an EdgeFn`);
+			return edge;
+		};
+		const state = (named: Record<string, unknown[]>) => ({ named }) as unknown as RunView;
+
+		it("grade stop names the blocking dimensions with their severity", () => {
+			const edge = edgeOf("grade");
+			const s = state({
+				plans: [dataOut(PLAN)],
+				"ship-verdicts": [
+					verdict("completeness", false, { severity: "medium" }),
+					verdict("correctness", true),
+					verdict("architecture-fit", false),
+				],
+			});
+			expect(edge({ state: s, output: undefined })).toBe("stop");
+			expect(takeRouteNote(edge)).toBe("completeness failed (medium), architecture-fit failed (high)");
+		});
+
+		it("grade stop on an empty verdict channel names the stale-verdict cause", () => {
+			const edge = edgeOf("grade");
+			const s = state({ plans: [dataOut(PLAN)], "ship-verdicts": [] });
+			expect(edge({ state: s, output: undefined })).toBe("stop");
+			expect(takeRouteNote(edge)).toBe("no fresh verdicts for the current plan");
+		});
+
+		it("grade pass attaches no note", () => {
+			const edge = edgeOf("grade");
+			const s = state({
+				plans: [dataOut(PLAN)],
+				"ship-verdicts": [
+					verdict("completeness", true),
+					verdict("correctness", true),
+					verdict("architecture-fit", true),
+				],
+			});
+			expect(edge({ state: s, output: undefined })).toBe("implement");
+			expect(takeRouteNote(edge)).toBeUndefined();
+		});
+
+		it("plan-cite-check stop carries the finding count", () => {
+			const edge = edgeOf("plan-cite-check");
+			const s = state({
+				"plan-cite-check": [
+					{
+						artifacts: [],
+						data: { dimension: "structure", pass: false, severity: "high", findings: [{}, {}] },
+					},
+				],
+			});
+			expect(edge({ state: s, output: undefined })).toBe("stop");
+			expect(takeRouteNote(edge)).toBe("plan citation check failed (2 findings)");
+		});
+
+		it("plan-cite-check pass attaches no note", () => {
+			const edge = edgeOf("plan-cite-check");
+			const s = state({
+				"plan-cite-check": [
+					{ artifacts: [], data: { dimension: "structure", pass: true, severity: "none", findings: [] } },
+				],
+			});
+			expect(edge({ state: s, output: undefined })).toBe("grade");
+			expect(takeRouteNote(edge)).toBeUndefined();
 		});
 	});
 

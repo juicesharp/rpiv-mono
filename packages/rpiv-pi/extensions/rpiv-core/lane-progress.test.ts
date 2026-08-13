@@ -601,6 +601,27 @@ describe("onWorkflowEnd — terminal retention + completion toast", () => {
 		expect(REAL_UI.notify).toHaveBeenCalledWith(expect.stringContaining("finished"), "info");
 	});
 
+	it("completed termination whose recap reads 'stopped' → warning toast with the stop reason, not the ✓ success line", async () => {
+		// A stop-on-fail gate routes to "stop": the runner terminates "completed",
+		// but the recap refines it to "stopped" — the toast must carry the reason
+		// instead of misreporting success.
+		await captureUi(REAL_UI);
+		const b = await register();
+		recordRun("run-1", "ship");
+		summarizeRun.mockReturnValue({
+			outcome: "stopped",
+			artifacts: [],
+			failureReason: "stopped at grade: completeness failed (medium)",
+		});
+		b.onWorkflowEnd?.({ termination: { status: "completed" } }, { runId: "run-1", workflow: "ship", totalStages: 7 });
+		expect(REAL_UI.notify).toHaveBeenCalledWith(
+			expect.stringContaining("stopped at grade: completeness failed (medium)"),
+			"warning",
+		);
+		expect(REAL_UI.notify).not.toHaveBeenCalledWith(expect.stringContaining("finished"), "info");
+		expect(getLane("run-1")?.status).toBe("completed"); // lane status untouched — only the toast + recap refine
+	});
+
 	it("completed → preserves the terminal stage's last snapshot", async () => {
 		const b = await register();
 		recordRun("run-1", "build");

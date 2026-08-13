@@ -52,6 +52,7 @@ export {
 	type StageKind,
 	type StageRead,
 	type StageSchema,
+	setRouteNote,
 	terminal,
 	type Unit,
 	type UnitRole,

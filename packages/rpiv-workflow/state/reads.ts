@@ -233,11 +233,36 @@ function recapOutcomeOf(last: WorkflowStage): RunRecap["outcome"] {
 }
 
 /**
+ * The trail's routed-stop terminator, when present: the LAST well-formed row is
+ * a `RoutingDecision` with `decision: "stop"` (the literal mirrors routing-dsl's
+ * `STOP` — not imported so state/ stays a leaf). Only a routed stop leaves the
+ * routing row as the trail's tail: static string edges never audit, a natural
+ * chain end appends its terminal stage row after any routing row, and a resume
+ * appends new stage rows behind a prior stop. Fail-soft via `readParsedRows`.
+ */
+function trailingRoutingStop(cwd: string, runId: string): RoutingDecision | undefined {
+	const rows = readParsedRows(cwd, runId);
+	const last = rows[rows.length - 1];
+	return isRoutingDecision(last) && last.decision === "stop" ? last : undefined;
+}
+
+/**
  * Terminal-state projection of one run's JSONL trail — the post-mortem recap a lane
  * renders on end-of-run. Returns `undefined` when no stage row exists (no terminal row
  * ⇒ outcome unrecoverable from the trail). `failureReason` is set only for a
  * non-completed outcome with a present `last.errMsg`, so a collected halt's errMsg
  * never leaks into a completed recap. Fail-soft by inheritance — never throws.
+ *
+ * A run whose trail ENDS with a routed `stop` (see `trailingRoutingStop`) is
+ * refined from `"completed"` to `"stopped"`: the runner reports a gate-routed
+ * stop as ordinary completion, but a stop-on-fail gate firing before the
+ * chain's natural end is not a success reading. The reason is the stopping
+ * edge's persisted `note` when it attached one (`gate`/`match` no-match
+ * diagnostics, `setRouteNote` on bespoke gates), else the bare stage name — a
+ * note-less trail still names WHERE the run stopped. The refinement only
+ * applies over a completed last stage row: a failed/aborted/cancelled tail
+ * keeps its own outcome + errMsg (and by write order such a tail follows any
+ * routing row anyway).
  */
 export function summarizeRun(cwd: string, runId: string): RunRecap | undefined {
 	const stages = readAllStages(cwd, runId);
@@ -251,6 +276,14 @@ export function summarizeRun(cwd: string, runId: string): RunRecap | undefined {
 		workflow: header?.workflow,
 	};
 	if (outcome !== "completed" && last.errMsg !== undefined) recap.failureReason = last.errMsg;
+	if (outcome === "completed") {
+		const stop = trailingRoutingStop(cwd, runId);
+		if (stop) {
+			recap.outcome = "stopped";
+			recap.failureReason =
+				stop.note !== undefined ? `stopped at ${stop.fromStage}: ${stop.note}` : `stopped at ${stop.fromStage}`;
+		}
+	}
 	return recap;
 }
 

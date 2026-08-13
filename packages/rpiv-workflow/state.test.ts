@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	appendHeader,
 	appendLoopCap,
+	appendRoutingDecision,
 	appendStage,
 	generateRunId,
 	type LoopCapRow,
@@ -710,6 +711,122 @@ describe("summarizeRun", () => {
 			outcome: "completed",
 			artifacts: [],
 			workflow: "mid",
+		} satisfies RunRecap);
+	});
+
+	it("refines a trail ending in a routed stop to outcome 'stopped' with the routing note as failureReason", () => {
+		// The stop-on-fail shape: the gate's stage row completes, the edge routes
+		// "stop", and the routing row is the trail's LAST row — the runner reports
+		// "completed", but the recap must not read as a success.
+		const runId = "routed-stop-note";
+		appendHeader(tmpDir, { runId, workflow: "ship", input: "x", ts: "2026" });
+		appendStage(tmpDir, runId, {
+			session: null,
+			stageNumber: 5,
+			stage: "grade (plans-dim-completeness)",
+			skill: "grade",
+			status: "completed",
+			ts: "t1",
+		});
+		appendRoutingDecision(tmpDir, runId, {
+			type: "routing",
+			fromStageIndex: 5,
+			fromStage: "grade",
+			decision: "stop",
+			note: "completeness failed (medium)",
+			ts: "t2",
+		});
+		expect(summarizeRun(tmpDir, runId)).toEqual({
+			outcome: "stopped",
+			artifacts: [],
+			workflow: "ship",
+			failureReason: "stopped at grade: completeness failed (medium)",
+		} satisfies RunRecap);
+	});
+
+	it("routed stop without a note still names the stopping stage", () => {
+		const runId = "routed-stop-bare";
+		appendHeader(tmpDir, { runId, workflow: "ship", input: "x", ts: "2026" });
+		appendStage(tmpDir, runId, {
+			session: null,
+			stageNumber: 4,
+			stage: "plan-cite-check",
+			status: "completed",
+			ts: "t1",
+		});
+		appendRoutingDecision(tmpDir, runId, {
+			type: "routing",
+			fromStageIndex: 4,
+			fromStage: "plan-cite-check",
+			decision: "stop",
+			ts: "t2",
+		});
+		expect(summarizeRun(tmpDir, runId)).toEqual({
+			outcome: "stopped",
+			artifacts: [],
+			workflow: "ship",
+			failureReason: "stopped at plan-cite-check",
+		} satisfies RunRecap);
+	});
+
+	it("intermediate routing rows do NOT refine a naturally-completed run", () => {
+		// A pass-through decision ("grade") mid-trail, then the terminal stage row
+		// — the routing row is not the tail, so the outcome stays "completed".
+		const runId = "routing-mid-trail";
+		appendHeader(tmpDir, { runId, workflow: "ship", input: "x", ts: "2026" });
+		appendStage(tmpDir, runId, {
+			session: null,
+			stageNumber: 4,
+			stage: "plan-cite-check",
+			status: "completed",
+			ts: "t1",
+		});
+		appendRoutingDecision(tmpDir, runId, {
+			type: "routing",
+			fromStageIndex: 4,
+			fromStage: "plan-cite-check",
+			decision: "grade",
+			ts: "t2",
+		});
+		appendStage(tmpDir, runId, {
+			session: null,
+			stageNumber: 5,
+			stage: "commit",
+			skill: "commit",
+			status: "completed",
+			ts: "t3",
+		});
+		expect(summarizeRun(tmpDir, runId)).toEqual({
+			outcome: "completed",
+			artifacts: [],
+			workflow: "ship",
+		} satisfies RunRecap);
+	});
+
+	it("a failed stage row after routing rows keeps outcome 'failed' (refinement never touches a non-completed tail)", () => {
+		const runId = "failed-after-routing";
+		appendHeader(tmpDir, { runId, workflow: "ship", input: "x", ts: "2026" });
+		appendRoutingDecision(tmpDir, runId, {
+			type: "routing",
+			fromStageIndex: 4,
+			fromStage: "plan-cite-check",
+			decision: "grade",
+			ts: "t1",
+		});
+		appendStage(tmpDir, runId, {
+			session: null,
+			stageNumber: 5,
+			stage: "grade",
+			skill: "grade",
+			status: "failed",
+			ts: "t2",
+			errMsg: "grade exploded",
+		});
+		expect(summarizeRun(tmpDir, runId)).toEqual({
+			outcome: "failed",
+			artifacts: [],
+			workflow: "ship",
+			failureReason: "grade exploded",
 		} satisfies RunRecap);
 	});
 

@@ -24,6 +24,7 @@ import {
 	defineRoute,
 	defineWorkflow,
 	directoryPathCollector,
+	type EdgeFn,
 	eq,
 	type FanoutContext,
 	fanin,
@@ -40,6 +41,7 @@ import {
 	produces,
 	type RunView,
 	type ScriptContext,
+	setRouteNote,
 	type Unit,
 	type Workflow,
 } from "@juicesharp/rpiv-workflow/registration";
@@ -3857,6 +3859,70 @@ const buildWorkflow = defineWorkflow({
 });
 
 /**
+ * Reason strings for ship's two bespoke stop picks — persisted on the
+ * `RoutingDecision` row via `setRouteNote` so `summarizeRun` can surface
+ * "stopped at <gate>: <why>" in the end-of-run recap and toast. `match`/`gate`
+ * edges attach their own no-match diagnostics; only these two `defineRoute`
+ * gates would otherwise stop silently. Best-effort DIAGNOSTICS, not gates:
+ * `allDimensionsPass`/`shipGatePasses` stay the sole routing authorities, and
+ * these mirror their severity floor only to NAME the blockers.
+ */
+const shipCiteStopNote = (state: RunView): string => {
+	const data = state.named["plan-cite-check"]?.at(-1)?.data as { findings?: unknown } | undefined;
+	const n = Array.isArray(data?.findings) ? data.findings.length : 0;
+	return n > 0 ? `plan citation check failed (${n} finding${n === 1 ? "" : "s"})` : "plan citation check failed";
+};
+const shipGradeStopNote = (state: RunView): string => {
+	const fresh = freshVerdicts(state.named["ship-verdicts"], latestArtifactPath(state, "plans"));
+	if (fresh.length === 0) return "no fresh verdicts for the current plan";
+	const risks = planAuthoredRisks(state, "plans");
+	const latest = latestVerdictPerDimension(fresh);
+	const blockers: string[] = [];
+	for (const d of SHIP_DIMENSIONS) {
+		const o = latest.get(d);
+		if (!o) continue;
+		const v = o.data as { pass?: boolean; severity?: string; findings?: unknown };
+		const floored = v.pass === true || v.severity === "low" || v.severity === "none" || anchorNitsOnly(v);
+		if (!floored) blockers.push(`${d} failed (${v.severity ?? "unrated"})`);
+		else if (verdictRiskRulings(o).some((r) => !rulingEffectivePass(r, risks.get(r.id))))
+			blockers.push(`${d} risk flag failed`);
+	}
+	return blockers.length > 0 ? blockers.join(", ") : "gate failed";
+};
+
+// Named (not inline) so the stop branch can self-reference for setRouteNote —
+// the same closure-over-own-binding pattern gate()/match() use internally.
+// Citation-floor gate. Pass ⇒ grade; fail ⇒ STOP (no fix arm — the lightweight
+// preset terminates on any red gate). The route folds `allDimensionsPass` over
+// the stage's OWN published channel, NOT `match("verdict", …)`:
+// `writeStructureVerdict` (the floor's envelope) carries no `verdict` field, so
+// a verdict match would misread — this mirrors build's `planGatePasses` first
+// clause. `readsData: false` — the route consults the deterministic verdict
+// channel only.
+const shipCiteGate: EdgeFn = defineRoute(
+	["grade", "stop"],
+	({ state }) => {
+		if (allDimensionsPass(state.named["plan-cite-check"])) return "grade";
+		setRouteNote(shipCiteGate, shipCiteStopNote(state));
+		return "stop";
+	},
+	{ readsData: false },
+);
+// Quality gate PRE-implement. `shipGatePasses` (the bespoke fold over
+// SHIP_DIMENSIONS + risk flags on the `ship-verdicts` channel) does NOT re-fold
+// the citation floor; this edge is the sole gate. Pass ⇒ implement; fail ⇒
+// STOP — no confirm/snapshot/fix loop.
+const shipGradeGate: EdgeFn = defineRoute(
+	["implement", "stop"],
+	({ state }) => {
+		if (shipGatePasses(state)) return "implement";
+		setRouteNote(shipGradeGate, shipGradeStopNote(state));
+		return "stop";
+	},
+	{ readsData: false },
+);
+
+/**
  * ship — the lightweight `/wf` preset: the no-ceremony path for small-to-
  * midsize tasks whose approach is obvious. goal → research → plan →
  * plan-cite-check → grade → implement → implement-scope-check → reconcile →
@@ -3926,25 +3992,10 @@ const shipWorkflow = defineWorkflow({
 		goal: "research",
 		research: "plan",
 		plan: "plan-cite-check",
-		// Citation-floor gate. Pass ⇒ grade; fail ⇒ STOP (no fix arm — the
-		// lightweight preset terminates on any red gate). The route folds
-		// `allDimensionsPass` over the stage's OWN published channel, NOT
-		// `match("verdict", …)`: `writeStructureVerdict` (the floor's envelope)
-		// carries no `verdict` field, so a verdict match would misread — this
-		// mirrors build's `planGatePasses` first clause. `readsData: false` — the
-		// route consults the deterministic verdict channel only.
-		"plan-cite-check": defineRoute(
-			["grade", "stop"],
-			({ state }) => (allDimensionsPass(state.named["plan-cite-check"]) ? "grade" : "stop"),
-			{ readsData: false },
-		),
-		// Quality gate PRE-implement. `shipGatePasses` (the bespoke fold over
-		// SHIP_DIMENSIONS + risk flags on the `ship-verdicts` channel) does NOT
-		// re-fold the citation floor; this edge is the sole gate. Pass ⇒
-		// implement; fail ⇒ STOP — no confirm/snapshot/fix loop.
-		grade: defineRoute(["implement", "stop"], ({ state }) => (shipGatePasses(state) ? "implement" : "stop"), {
-			readsData: false,
-		}),
+		// Both gates are the named EdgeFns above — they attach a stop-reason
+		// ROUTE_NOTE the recap surfaces; routing semantics are unchanged.
+		"plan-cite-check": shipCiteGate,
+		grade: shipGradeGate,
 		implement: "implement-scope-check",
 		// Scope floor gate — build's route verbatim: the sole path onward is an
 		// explicit `verdict: "pass"`; a fail (undeclared write) or a missing

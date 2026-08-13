@@ -125,9 +125,10 @@ export function defineRoute(targets: readonly string[], fn: EdgePredicate, opts?
  * the edge (same tick — single-threaded, no other decision can interleave)
  * and persists it on the `RoutingDecision` row's `note`.
  *
- * Framework plumbing, not authoring surface — NOT re-exported from
- * `registration.ts`. `Symbol.for` so it survives import boundaries, matching
- * `READS_DATA`.
+ * The SYMBOL is framework plumbing — NOT re-exported from `registration.ts`;
+ * bespoke `defineRoute` gates attach notes through `setRouteNote` (the
+ * authoring-surface dual of `takeRouteNote`), which IS re-exported. `Symbol.for`
+ * so it survives import boundaries, matching `READS_DATA`.
  */
 export const ROUTE_NOTE: unique symbol = Symbol.for("rpiv.workflow.routeNote");
 
@@ -139,6 +140,20 @@ export function takeRouteNote(fn: EdgeFn): string | undefined {
 	const note = readSymbol<string>(fn, ROUTE_NOTE);
 	if (note !== undefined) markSymbol(fn, ROUTE_NOTE, undefined);
 	return note;
+}
+
+/**
+ * Attach a note to an `EdgeFn`'s CURRENT pick — the authoring-surface dual of
+ * `takeRouteNote`, for bespoke `defineRoute` gates (`gate`/`match` attach their
+ * own no-match diagnostics internally). Call it inside the predicate, on the
+ * route about to be returned from — the routing audit reads-and-clears the note
+ * in the same tick and persists it on the `RoutingDecision` row, where
+ * `summarizeRun` surfaces it as a stopped run's reason. A note set on a pick
+ * the audit never reads (e.g. under a test harness) is simply overwritten by
+ * the next call.
+ */
+export function setRouteNote(fn: EdgeFn, note: string): void {
+	markSymbol(fn, ROUTE_NOTE, note);
 }
 
 /**

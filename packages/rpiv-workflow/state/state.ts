@@ -228,14 +228,21 @@ export interface RunSummary {
  * make. Does NOT extend `RunSummary` (different projection: terminal state
  * vs. header/start state).
  *
- * `outcome` is the recap outcome set ("completed" / "failed" / "cancelled" /
- * "aborted") — a subset of a host's lane-status vocabulary with NO "running"
- * member, since a recap only exists for a terminal run. `summarizeRun` derives
- * it from the on-disk `StageStatus` via the lone `"skipped"`→`"cancelled"`
- * translation (see `STAGE_TO_RECAP_OUTCOME`); the other three pass through.
+ * `outcome` is the recap outcome set ("completed" / "stopped" / "failed" /
+ * "cancelled" / "aborted") — a subset of a host's lane-status vocabulary with
+ * NO "running" member, since a recap only exists for a terminal run.
+ * `summarizeRun` derives it from the on-disk `StageStatus` via the lone
+ * `"skipped"`→`"cancelled"` translation (see `STAGE_TO_RECAP_OUTCOME`); the
+ * other three pass through. `"stopped"` never comes from a stage status: it is
+ * the routed-stop refinement of `"completed"` — the trail's LAST row is a
+ * `RoutingDecision` with `decision: "stop"`, i.e. a gate terminated the run
+ * before its linear chain reached a natural end (a stop-on-fail preset's red
+ * gate). The runner itself reports such a run "completed"; only the recap
+ * distinguishes it, so hosts can surface "stopped at <gate>" instead of a
+ * success reading.
  */
 export interface RunRecap {
-	outcome: "completed" | "failed" | "cancelled" | "aborted";
+	outcome: "completed" | "stopped" | "failed" | "cancelled" | "aborted";
 	/**
 	 * One display string per artifact, in trail order, projected through
 	 * `handleToString` (`fs`→path, `url`→href, `opaque`→id, `inline`→byte
