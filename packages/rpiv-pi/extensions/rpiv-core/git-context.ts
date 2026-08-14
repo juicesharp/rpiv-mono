@@ -1,7 +1,8 @@
 /**
  * Cached branch + short commit. Injected into the transcript once at
- * session_start, re-injected on session_compact (transcript cleared) and
- * only when the cached value changes (e.g. after a mutating git command).
+ * session_start; after session_compact it joins the one deferred next-user-turn
+ * context message; otherwise emitted only when the cached value changes (e.g.
+ * after a mutating git command).
  * Two parallel `git rev-parse` calls — one call can't combine
  * `--abbrev-ref` and `--short` cleanly because the `--abbrev-ref` mode
  * persists to subsequent revs. git itself resolves worktree gitdir
@@ -63,16 +64,36 @@ export function resetInjectedMarker(): void {
 	lastInjectedSig = null;
 }
 
+function signature(g: GitContext): string {
+	return `${g.branch}\n${g.commit}\n${g.user}`;
+}
+
+function formatGitContext(g: GitContext): string {
+	return `## Git Context\n- Branch: ${g.branch}\n- Commit: ${g.commit}\n- User: ${g.user}`;
+}
+
+/**
+ * Force a fresh read for one specifically compacted session. The ordinary cache
+ * and signature are process-global, so a concurrent session could otherwise
+ * consume the reset marker before the compacted session's next user turn.
+ */
+export async function refreshGitContextForInjection(pi: ExtensionAPI): Promise<string | null> {
+	cache = await loadGitContext(pi);
+	if (!cache) return null;
+	lastInjectedSig = signature(cache);
+	return formatGitContext(cache);
+}
+
 // Returns the message content to inject, or null if the transcript is
 // already up-to-date or we're not in a git repo. Updates the marker
 // whenever it returns non-null.
 export async function takeGitContextIfChanged(pi: ExtensionAPI): Promise<string | null> {
 	const g = await getGitContext(pi);
 	if (!g) return null;
-	const sig = `${g.branch}\n${g.commit}\n${g.user}`;
+	const sig = signature(g);
 	if (sig === lastInjectedSig) return null;
 	lastInjectedSig = sig;
-	return `## Git Context\n- Branch: ${g.branch}\n- Commit: ${g.commit}\n- User: ${g.user}`;
+	return formatGitContext(g);
 }
 
 export function isGitMutatingCommand(cmd: string): boolean {

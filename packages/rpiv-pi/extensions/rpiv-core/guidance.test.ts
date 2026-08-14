@@ -9,6 +9,7 @@ import {
 	injectRootGuidance,
 	resolveAndFormatNewGuidance,
 	resolveGuidance,
+	takeRootGuidance,
 } from "./guidance.js";
 
 let projectDir: string;
@@ -90,6 +91,14 @@ describe("injectRootGuidance", () => {
 		clearInjectionState();
 		injectRootGuidance(projectDir, pi);
 		expect(pi.sendMessage).toHaveBeenCalledTimes(2);
+	});
+
+	it("force-takes root guidance after another session marked it injected", () => {
+		writeGuidanceTree(projectDir, { ".rpiv/guidance/architecture.md": "body" });
+		const { pi } = createMockPi();
+		injectRootGuidance(projectDir, pi);
+		expect(takeRootGuidance(projectDir)).toBeNull();
+		expect(takeRootGuidance(projectDir, "post compact", true)).toContain("body");
 	});
 
 	it("no-ops when root architecture.md is missing", () => {
