@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- The questionnaire now honors a remapped `tui.input.submit` key as its confirm action everywhere (notes, custom answers, option rows, multi-select, Submit tab). Previously a Slack-style configuration that folds `enter` into `tui.input.newLine` and moves submit elsewhere (e.g. `ctrl+enter`) left the dialog with no working confirm key, and pressing the submit key silently wiped the typed draft (#156).
+
 ## [2.5.1] - 2026-08-14
 
 ### Fixed

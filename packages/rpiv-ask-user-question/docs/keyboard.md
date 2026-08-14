@@ -18,6 +18,13 @@ adapts to the size of your terminal.
 | `Ctrl+U` | Clear the current custom-answer draft. | `Type something.` input |
 | `Ctrl+]` | Collapse or expand the dialog. Configurable via `collapseKey`. | Everywhere, including while collapsed |
 
+The table names the default keys; the dialog actually follows your Pi keybindings.
+Confirm listens to both `tui.select.confirm` and `tui.input.submit`, and a key bound to
+`tui.input.newLine` always inserts a newline even if it also matches confirm. So a
+Slack-style configuration — `enter` folded into `tui.input.newLine`, submit moved to
+`ctrl+enter` — keeps working: `enter` breaks lines, and your submit key confirms
+everywhere `Enter` does.
+
 In a multi-select question, `Enter` on a regular row toggles its checkbox exactly like
 `Space` — it does not submit. Committing the question means focusing the `Next` row and
 pressing `Enter`. That is deliberate: it makes `Enter` a zero-cost way to flip boxes
