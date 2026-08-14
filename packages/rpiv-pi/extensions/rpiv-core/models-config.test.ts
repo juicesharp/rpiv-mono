@@ -261,6 +261,15 @@ describe("models-config", () => {
 			expect(loadModelsConfig().agents!["test-agent"]).toEqual({ model: "openai/gpt-5.5", thinking: "off" });
 		});
 
+		it("accepts Pi's 'max' thinking level", () => {
+			writeFileSync(
+				configFilePath,
+				JSON.stringify({ agents: { "test-agent": { model: "openai/gpt-5.5", thinking: "max" } } }),
+				"utf-8",
+			);
+			expect(loadModelsConfig().agents!["test-agent"]).toEqual({ model: "openai/gpt-5.5", thinking: "max" });
+		});
+
 		it("cascades defaults.thinking 'off' into a model-only entry", () => {
 			writeFileSync(
 				configFilePath,

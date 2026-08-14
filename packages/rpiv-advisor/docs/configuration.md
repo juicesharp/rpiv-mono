@@ -41,7 +41,7 @@ previous selection and the active tool list are left untouched.
 | Key | Type | Default | Written by |
 | --- | --- | --- | --- |
 | `modelKey` | `string` — `"provider/modelId"` | absent (advisor off) | `/advisor` |
-| `effort` | `"minimal" \| "low" \| "medium" \| "high" \| "xhigh"` | absent (no `reasoning` sent) | `/advisor` effort picker |
+| `effort` | `"minimal" \| "low" \| "medium" \| "high" \| "xhigh" \| "max"` | absent (no `reasoning` sent) | `/advisor` effort picker |
 | `disabledForModels` | `(string \| { model, minEffort? })[]` | `[]` | hand-edited |
 | `guidance.promptSnippet` | `string` | built-in snippet | hand-edited |
 | `guidance.promptGuidelines` | `string[]` | six built-in guidelines | hand-edited |
@@ -59,12 +59,12 @@ form the next time you save through `/advisor`.
 ### `effort`
 
 Offered only for models whose registry entry reports reasoning support. The
-picker lists `off`, `minimal`, `low`, `medium`, `high`, and adds `xhigh` when
-the picked model supports it. `high` is marked `(recommended)`. Choosing `off`
+picker lists `off` plus the levels Pi reports for the selected model, including
+`xhigh` or `max` when supported. `high` is marked `(recommended)`. Choosing `off`
 deletes the key, and no `reasoning` parameter is sent with the advisor call.
 
 `EFFORT_ORDINAL`, lowest to highest, is `minimal`, `low`, `medium`, `high`,
-`xhigh`. This ordering is what `minEffort` compares against.
+`xhigh`, `max`. This ordering is what `minEffort` compares against.
 
 ### `disabledForModels`
 

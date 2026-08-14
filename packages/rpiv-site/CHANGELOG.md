@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Document Pi's model-specific `max` thinking level in the model-sizing guide.
+
 ## [2.5.2] - 2026-08-14
 
 ## [2.5.1] - 2026-08-14
