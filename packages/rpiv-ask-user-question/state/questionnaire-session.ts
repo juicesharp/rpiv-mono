@@ -139,7 +139,9 @@ export class QuestionnaireSession {
 	}
 
 	private mirrorNotesDraft(s: QuestionnaireState): QuestionnaireState {
-		const draft = this.notesInput.getText();
+		// Drafts restore through Editor.setText, which clears the backing paste map —
+		// read expanded so stored drafts never orphan a paste marker.
+		const draft = this.notesInput.getExpandedText?.() ?? this.notesInput.getText();
 		return s.notesDraft === draft ? s : { ...s, notesDraft: draft };
 	}
 
@@ -202,7 +204,7 @@ export class QuestionnaireSession {
 		const lastLine = this.inlineInput.getLines().length - 1;
 		return {
 			keybindings: this.keybindings,
-			inputBuffer: this.inlineInput.getText(),
+			inputBuffer: this.inlineInput.getExpandedText?.() ?? this.inlineInput.getText(),
 			canMoveInputUp: cursor.line > 0,
 			canMoveInputDown: cursor.line < lastLine,
 			questions: this.questions,
