@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Long pasted text in "Type something" answers and notes now reaches the agent as the full pasted content instead of the editor's compact `[paste #N +L lines]` marker, including after tab switches (#160).
+
 ## [2.5.0] - 2026-08-13
 
 ## [2.4.0] - 2026-08-03
