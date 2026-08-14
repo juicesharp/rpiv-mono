@@ -130,6 +130,13 @@ class QuestionnaireBuilder {
 		const textEditorTheme = editorTheme(this.theme);
 		this.notesInput = new Editor(this.tui, textEditorTheme);
 		this.inlineInput = new Editor(this.tui, textEditorTheme);
+		// The key router owns confirm/submit semantics; keys reaching these headless
+		// editors are text-editing only. Without this, a `tui.input.submit` match inside
+		// Editor.handleInput would run submitValue(), which resets the buffer and
+		// silently destroys the draft — no onSubmit is wired here, so the text is
+		// unrecoverable (#156).
+		this.notesInput.disableSubmit = true;
+		this.inlineInput.disableSubmit = true;
 	}
 
 	build(): QuestionnaireBuilt {

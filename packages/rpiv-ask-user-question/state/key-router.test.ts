@@ -8,6 +8,7 @@ const KEY = {
 	UP: "tui.select.up",
 	DOWN: "tui.select.down",
 	CONFIRM: "tui.select.confirm",
+	SUBMIT: "tui.input.submit",
 	CANCEL: "tui.select.cancel",
 	NEW_LINE: "tui.input.newLine",
 	EDITOR_UP: "tui.editor.cursorUp",
@@ -216,6 +217,15 @@ describe("routeKey — confirm (single-select)", () => {
 		if (action.kind === "confirm") {
 			expect(action.autoAdvanceTab).toBeUndefined();
 		}
+	});
+
+	it("a key matching only tui.input.submit confirms (second confirm source)", () => {
+		const action = routeKey(sentinel(KEY.SUBMIT), makeState({ currentTab: 0 }), makeRuntime());
+		expect(action).toMatchObject({
+			kind: "confirm",
+			answer: { questionIndex: 0, answer: "A", kind: "option" },
+			autoAdvanceTab: 1,
+		});
 	});
 
 	it("inline-input mode: Enter confirms with the buffered text + kind:'custom'", () => {
@@ -715,6 +725,108 @@ describe("routeKey — inputMode (Type something)", () => {
 		expect(
 			routeKey(sentinel(KEY.CANCEL), makeState({ inputMode: true }), makeRuntime({ currentItem: other })),
 		).toEqual({ kind: "cancel" });
+	});
+});
+
+describe("routeKey — remapped submit key as the confirm source (#156)", () => {
+	// Models a Slack/Discord-style ~/.pi/agent/keybindings.json:
+	//   { "tui.input.submit": ["ctrl+enter"], "tui.input.newLine": ["enter", ...] }
+	// `tui.select.confirm` keeps its default `enter`, so `enter` matches BOTH the
+	// user's newline override and confirm. The newline checks win that collision by
+	// design; the remapped submit key must therefore act as confirm everywhere, or
+	// notes and custom answers become impossible to commit.
+	const REMAPPED_ENTER = "<REMAPPED:ENTER>";
+	const REMAPPED_CTRL_ENTER = "<REMAPPED:CTRL_ENTER>";
+	const remapped = {
+		matches(data: string, name: string): boolean {
+			switch (name) {
+				case KEY.SUBMIT:
+					return data === REMAPPED_CTRL_ENTER;
+				case KEY.NEW_LINE:
+					return data === REMAPPED_ENTER;
+				case KEY.CONFIRM:
+					// Default binding — the user's config does not touch tui.select.confirm.
+					return data === REMAPPED_ENTER;
+				default:
+					return false;
+			}
+		},
+	};
+	const other: WrappingSelectItem = { kind: "other", label: "Type something." };
+
+	it("inputMode: Enter is consumed as a newline (collision resolves to newline)", () => {
+		expect(
+			routeKey(
+				REMAPPED_ENTER,
+				makeState({ inputMode: true }),
+				makeRuntime({ keybindings: remapped, currentItem: other }),
+			),
+		).toEqual({ kind: "ignore" });
+	});
+
+	it("inputMode: the submit key confirms with the buffered text instead of falling through to the editor", () => {
+		const action = routeKey(
+			REMAPPED_CTRL_ENTER,
+			makeState({ inputMode: true }),
+			makeRuntime({ keybindings: remapped, currentItem: other, inputBuffer: "typed answer" }),
+		);
+		expect(action).toMatchObject({ kind: "confirm", answer: { kind: "custom", answer: "typed answer" } });
+	});
+
+	it("notes: Enter forwards as a newline; the submit key exits the notes editor", () => {
+		expect(
+			routeKey(REMAPPED_ENTER, makeState({ notesVisible: true }), makeRuntime({ keybindings: remapped })),
+		).toEqual({ kind: "notes_forward", data: REMAPPED_ENTER });
+		// Regression: before #156 this fell through to notes_forward, reaching the
+		// headless editor's own tui.input.submit handling and wiping the notes draft.
+		expect(
+			routeKey(REMAPPED_CTRL_ENTER, makeState({ notesVisible: true }), makeRuntime({ keybindings: remapped })),
+		).toEqual({ kind: "notes_exit" });
+	});
+
+	it("single-select option row: the submit key confirms", () => {
+		expect(
+			routeKey(REMAPPED_CTRL_ENTER, makeState({ currentTab: 0 }), makeRuntime({ keybindings: remapped })),
+		).toMatchObject({ kind: "confirm", answer: { answer: "A", kind: "option" } });
+	});
+
+	it("Submit tab: the submit key submits the questionnaire", () => {
+		expect(
+			routeKey(
+				REMAPPED_CTRL_ENTER,
+				makeState({ currentTab: 2, submitChoiceIndex: 0 }),
+				makeRuntime({ keybindings: remapped }),
+			),
+		).toEqual({ kind: "submit" });
+	});
+
+	it("multi-select: the submit key toggles a regular row and commits on the Next sentinel (matches Enter)", () => {
+		const multiQ = makeQuestion({
+			multiSelect: true,
+			options: [
+				{ label: "FE", description: "FE" },
+				{ label: "BE", description: "BE" },
+			],
+		});
+		const items: WrappingSelectItem[] = [
+			{ kind: "option", label: "FE" },
+			{ kind: "option", label: "BE" },
+			{ kind: "next", label: "Next" },
+		];
+		expect(
+			routeKey(
+				REMAPPED_CTRL_ENTER,
+				makeState({ optionIndex: 1 }),
+				makeRuntime({ keybindings: remapped, questions: [multiQ], isMulti: false, items, currentItem: items[1] }),
+			),
+		).toEqual({ kind: "toggle", index: 1 });
+		expect(
+			routeKey(
+				REMAPPED_CTRL_ENTER,
+				makeState({ optionIndex: 2, multiSelectChecked: new Set([0]) }),
+				makeRuntime({ keybindings: remapped, questions: [multiQ], isMulti: false, items, currentItem: items[2] }),
+			),
+		).toEqual({ kind: "multi_confirm", selected: ["FE"], autoAdvanceTab: undefined });
 	});
 });
 

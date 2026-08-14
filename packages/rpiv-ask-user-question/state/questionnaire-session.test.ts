@@ -70,6 +70,7 @@ interface SessionTestOptions {
 	params?: QuestionParams;
 	itemsByTab?: WrappingSelectItem[][];
 	editInput?: (value: string) => Promise<string | undefined>;
+	keybindings?: typeof keybindings;
 }
 
 function makeSession(options: SessionTestOptions = {}) {
@@ -81,7 +82,7 @@ function makeSession(options: SessionTestOptions = {}) {
 		params: sessionParams,
 		itemsByTab: options.itemsByTab ?? itemsFor(sessionParams),
 		done,
-		keybindings,
+		keybindings: options.keybindings ?? keybindings,
 		editInput: options.editInput ?? (async () => undefined),
 		collapseKey: "off",
 	});
@@ -220,6 +221,50 @@ describe("QuestionnaireSession — custom-answer drafts", () => {
 
 		expect(done).toHaveBeenCalledWith({
 			answers: [expect.objectContaining({ kind: "option", notes: "first note\nsecond note" })],
+			cancelled: false,
+		});
+	});
+
+	it("commits the typed draft with a remapped tui.input.submit key (#156)", () => {
+		// Slack-style config: enter is folded into tui.input.newLine (colliding with
+		// the default tui.select.confirm), submit lives on its own key. The submit
+		// key must confirm the custom answer instead of falling through to the
+		// editor, whose own submit handling would wipe the draft.
+		const CTRL_ENTER = "<CTRL_ENTER>";
+		const remapped: typeof keybindings = {
+			matches(data: string, name: string): boolean {
+				if (name === "tui.input.submit") return data === CTRL_ENTER;
+				if (name === "tui.input.newLine") return data === ENTER || data === SHIFT_ENTER;
+				return keybindings.matches(data, name);
+			},
+		};
+		const { session, done } = makeSession({ keybindings: remapped });
+		focusCustomAnswer(session);
+		session.dispatch("first line");
+		session.dispatch(SHIFT_ENTER);
+		session.dispatch("second line");
+		session.dispatch(CTRL_ENTER);
+
+		expect(done).toHaveBeenCalledWith({
+			answers: [expect.objectContaining({ kind: "custom", answer: "first line\nsecond line" })],
+			cancelled: false,
+		});
+	});
+
+	it("a raw Enter byte the router does not match cannot wipe the draft via the editor's own submit (#156)", () => {
+		// The session fake matches only the <ENTER> sentinel, so a raw "\r" reaches
+		// the headless Editor, whose GLOBAL keybindings still bind tui.input.submit
+		// to enter. Without disableSubmit, Editor.submitValue() would reset the
+		// buffer and silently destroy the draft.
+		const { session, done } = makeSession();
+		focusCustomAnswer(session);
+		session.dispatch("precious draft");
+		session.dispatch("\r");
+		expect(session.component.render(120).join("\n")).toContain("precious draft");
+		session.dispatch(ENTER);
+
+		expect(done).toHaveBeenCalledWith({
+			answers: [expect.objectContaining({ kind: "custom", answer: "precious draft" })],
 			cancelled: false,
 		});
 	});
