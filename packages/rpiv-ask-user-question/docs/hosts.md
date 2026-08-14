@@ -11,6 +11,12 @@ render at all.
 | RPC / ACP host (VS Code pendant, Zed, Paseo) | `ask_user_question` in its tool list | A sequence of the host's own native select and input dialogs |
 | Non-interactive run (no UI) | Nothing — the tool is removed | Nothing |
 
+### Terminal attention
+
+After UI availability and questionnaire validation succeed, the package emits exactly one standard terminal BEL (`\x07`) immediately before the interactive wait begins. The signal is sent to `stdout` only when `process.stdout.isTTY` is true, so redirected output and non-TTY RPC streams stay untouched. A TTY-backed RPC dialog walker receives the same signal as the TUI path.
+
+The BEL is best effort: if the synchronous terminal write fails, the questionnaire continues and its existing prompt/blocked lifecycle and result envelope are unchanged. The terminal configuration decides whether the BEL is audible, visual, or ignored. No BEL is emitted for missing UI, invalid questionnaires, or a failed TUI session load.
+
 ### Non-interactive runs
 
 A `before_agent_start` hook reconciles the active tool set against `ctx.hasUI` before every
