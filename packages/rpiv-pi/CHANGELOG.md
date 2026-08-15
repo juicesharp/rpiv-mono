@@ -11,6 +11,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Support Pi's `max` thinking level in `models.json` and the `/rpiv-models` picker when the selected model advertises it.
 
+### Fixed
+
+- **The plan citation floor now disambiguates against the plan's own declared write-set.** An ambiguous bare/suffix citation (`messages.ts:18` matching several tree files) resolves deterministically when exactly one candidate is in the union of the plan's frontmatter `files:` arrays; a tie inside the declared set, or an empty intersection, still fails the floor. Previously such a citation always failed `plan-cite-check`/`code-cite-check` — terminal for the loop-less `ship` preset, which halted a full run over a mechanical path-prefix omission the plan itself had already resolved.
+
 ## [2.5.2] - 2026-08-14
 
 ## [2.5.1] - 2026-08-14

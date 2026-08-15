@@ -1061,8 +1061,10 @@ type BasenameIndex = { index: Map<string, string[]>; truncated: boolean };
  * (`validate/stage-rules.ts:70` for `packages/rpiv-workflow/validate/stage-rules.ts`)
  * — mechanical path-prefix omissions, not fabricated references. The basename
  * keys the candidates; `verifyCitations` narrows them by whole-segment suffix.
- * A UNIQUE match backs the citation; an AMBIGUOUS one stays unresolved so the
- * producer must disambiguate with the repo-root-relative path. Skips
+ * A UNIQUE match backs the citation; an AMBIGUOUS one stays unresolved — unless
+ * the caller's declared-`files:` tiebreak in `verifyCitations` names exactly one
+ * candidate — so the producer must disambiguate with the repo-root-relative
+ * path. Skips
  * vendored/generated trees so a citation never resolves to a build copy or a
  * prior artifact. Bounded by the file cap.
  */
@@ -1172,7 +1174,11 @@ const resolveCitationPath = (
  *  for zero risk averted (three of f329's floor failures were this class). */
 const PLACEHOLDER_CITATION_PREFIXES: readonly string[] = ["path/to/", "packages/x/"];
 
-const verifyCitations = (body: string, cwd: string): { detail: string; where: string }[] => {
+const verifyCitations = (
+	body: string,
+	cwd: string,
+	declared?: ReadonlySet<string>,
+): { detail: string; where: string }[] => {
 	const findings: { detail: string; where: string }[] = [];
 	const seen = new Set<string>();
 	// Fenced text is example/fixture territory, not prose asserting a real
@@ -1192,7 +1198,26 @@ const verifyCitations = (body: string, cwd: string): { detail: string; where: st
 		const key = `${path}:${startStr}${endStr ? `-${endStr}` : ""}`;
 		if (seen.has(key)) continue;
 		seen.add(key);
-		const resolved = resolveCitationPath(path, cwd, indexHolder);
+		let resolved = resolveCitationPath(path, cwd, indexHolder);
+		if (resolved && "ambiguous" in resolved && declared !== undefined) {
+			// Declared-write-set tiebreak: when the caller supplies the artifact's own
+			// declared `files:` union and exactly ONE ambiguous candidate is in it, the
+			// artifact has already named the file it means — resolve there instead of
+			// halting the run over a path-prefix omission. A tie INSIDE the declared
+			// set (two declared `command.ts` files) stays ambiguous: the citation is
+			// then genuinely unreadable even against the artifact's own write-set.
+			const declaredMatches = resolved.ambiguous.filter(
+				(abs) =>
+					abs.startsWith(cwd + sep) &&
+					declared.has(
+						abs
+							.slice(cwd.length + 1)
+							.split(sep)
+							.join("/"),
+					),
+			);
+			if (declaredMatches.length === 1) resolved = { abs: declaredMatches[0] };
+		}
 		if (resolved && "ambiguous" in resolved) {
 			// More than one tree file matches — name the candidates so the fix arm can disambiguate.
 			const shown = resolved.ambiguous
@@ -1757,6 +1782,29 @@ const verifyPhaseFilesCoverage = (content: string, who: string, path: string): {
 };
 
 /**
+ * The union of every phase's declared `files:` across the plan's frontmatter —
+ * the disambiguation pool `planCitationCheck` hands `verifyCitations`. A plan's
+ * write-set is the one place the plan itself names its files repo-root-relative
+ * (the coverage floor enforces exactly that), so it is a deterministic
+ * tiebreaker for the ambiguous-suffix findings that would otherwise STOP a
+ * loop-less preset (ship) over a bare `messages.ts:18` whose owning file the
+ * plan already declares. Degrades to the empty set on malformed frontmatter —
+ * never throws out of the deterministic floor.
+ */
+const declaredPlanFiles = (content: string): ReadonlySet<string> => {
+	let fm: Record<string, unknown>;
+	try {
+		fm = parseFrontmatter(content).frontmatter as Record<string, unknown>;
+	} catch {
+		return new Set();
+	}
+	const phases = Array.isArray(fm.phases) ? fm.phases : [];
+	const declared = new Set<string>();
+	for (const entry of phases) for (const f of phaseFiles(entry)) declared.add(f);
+	return declared;
+};
+
+/**
  * Deterministic citation floor for a synthesized/spliced plan — the plan-scope
  * twin of `sliceStructureCheck`'s citation backing, extending the citation
  * floor past the slice map to the plan and the code-bearing plan (a fabricated `file:line` in
@@ -1765,7 +1813,9 @@ const verifyPhaseFilesCoverage = (content: string, who: string, path: string): {
  * "structure" }` verdict on `who`'s channel that the gate route folds via
  * `allDimensionsPass`; the matching `<fix>` stage reads `fanin(who)` so the
  * findings DRIVE the amend rather than blind-halt. Reuses `verifyCitations` — no
- * fuzzy wrong-symbol heuristic. Basename-keyed ⇒ idempotent across fix rounds.
+ * fuzzy wrong-symbol heuristic — threading the plan's declared `files:` union so
+ * an ambiguous suffix citation resolves when exactly one candidate is in the
+ * plan's own write-set. Basename-keyed ⇒ idempotent across fix rounds.
  */
 const planCitationCheck =
 	(who: string) =>
@@ -1779,7 +1829,7 @@ const planCitationCheck =
 			);
 		}
 		const body = readArtifactFile(latest.handle.path, cwd);
-		const findings = verifyCitations(body, cwd);
+		const findings = verifyCitations(body, cwd, declaredPlanFiles(body));
 		// Plan-time coverage floor: a body edit not declared in its phase's `files:`
 		// fails structurally, same channel/verdict/route as an unbacked citation.
 		findings.push(...verifyPhaseFilesCoverage(body, who, latest.handle.path));
