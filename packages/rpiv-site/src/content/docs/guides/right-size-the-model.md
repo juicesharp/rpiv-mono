@@ -77,7 +77,7 @@ Each leaf is either a bare model string (`"z-ai/glm-5.2"`, which sets the model 
 
 ## Effort is its own dial
 
-Model and reasoning effort are separate axes, and the second one is easy to under-use. There are five graded levels (`minimal`, `low`, `medium`, `high`, `xhigh`) plus a real `off`. The distinction that trips people up:
+Model and reasoning effort are separate axes, and the second one is easy to under-use. There are six graded levels (`minimal`, `low`, `medium`, `high`, `xhigh`, `max`) plus a real `off`; `/rpiv-models` offers only the levels supported by the selected model. The distinction that trips people up:
 
 - **Omit `thinking` entirely** and the step inherits your session's baseline level. This is "I care about the model here, not the effort."
 - **Set `thinking: "off"`** and reasoning is *disabled* for that step. This is a deliberate "don't think, just do it," the right call for a mechanical `commit` or a script-shaped stage, where reasoning tokens are pure latency.

@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Support Pi's `max` thinking level in `models.json` and the `/rpiv-models` picker when the selected model advertises it.
+
 ## [2.5.2] - 2026-08-14
 
 ## [2.5.1] - 2026-08-14

@@ -107,12 +107,12 @@ your current session model stays sovereign for anything you invoke by hand.
 
 ### Reasoning levels
 
-Six values are accepted in `thinking`: `off`, `minimal`, `low`, `medium`, `high`,
-`xhigh`. Omitting the field and setting it to `off` are different: omitting inherits the
+Seven values are accepted in `thinking`: `off`, `minimal`, `low`, `medium`, `high`,
+`xhigh`, `max`. Omitting the field and setting it to `off` are different: omitting inherits the
 session baseline, `off` explicitly disables reasoning. Anything else is warned about:
 
 ```
-[rpiv-pi] models.json: unknown thinking level "<v>" — valid values: off, minimal, low, medium, high, xhigh
+[rpiv-pi] models.json: unknown thinking level "<v>" — valid values: off, minimal, low, medium, high, xhigh, max
 ```
 
 ### Model key form

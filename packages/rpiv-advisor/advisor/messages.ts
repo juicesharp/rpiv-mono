@@ -15,9 +15,7 @@ export const NO_ADVISOR_VALUE = "__no_advisor__";
 export const OFF_VALUE = "__off__";
 
 // Effort levels
-export const BASE_EFFORT_LEVELS: ThinkingLevel[] = ["minimal", "low", "medium", "high"];
-export const XHIGH_EFFORT_LEVEL: ThinkingLevel = "xhigh";
-export const EFFORT_ORDINAL: readonly ThinkingLevel[] = ["minimal", "low", "medium", "high", "xhigh"];
+export const EFFORT_ORDINAL: readonly ThinkingLevel[] = ["minimal", "low", "medium", "high", "xhigh", "max"];
 export const DEFAULT_EFFORT: ThinkingLevel = "high";
 export const RECOMMENDED_EFFORT_SUFFIX = "  (recommended)";
 

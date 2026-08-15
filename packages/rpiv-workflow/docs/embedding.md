@@ -60,7 +60,7 @@ because rpiv-workflow must not import rpiv-pi.
 ```ts
 spawnChild<T>(options: {
   prompt: string;
-  model?: ModelSelection;              // { model?: string; thinking?: "off" | … | "xhigh" }
+  model?: ModelSelection;              // { model?: string; thinking?: "off" | … | "max" }
   signal?: AbortSignal;                // abort THIS child mid-flight
   reattach?: { sessionFile: string };  // open the persisted session in place
   fork?: { sessionFile: string };      // fork it into a new child (sessionPolicy: "continue")
