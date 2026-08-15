@@ -58,7 +58,7 @@ function buildEffortItems(picked: Model<Api>): SelectItem[] {
 	// never offer — hence saveAdvisorConfig can never persist — a level that
 	// minEffort blocklist comparisons don't rank.
 	const levels = getSupportedThinkingLevels(picked).filter((level): level is GradedEffort =>
-		EFFORT_ORDINAL.includes(level as never),
+		EFFORT_ORDINAL.includes(level as GradedEffort),
 	);
 	return [
 		// "off (no reasoning sent)" ≠ /rpiv-models' "off (disable reasoning)":
@@ -151,9 +151,12 @@ export function registerAdvisorCommand(pi: ExtensionAPI): void {
 					DEFAULT_EFFORT,
 				);
 				if (!effortResult) {
-					// Esc at the effort step keeps the model selection (cancelling
-					// one step never discards prior choices — same posture as the
-					// /rpiv-models stepper): enable with no explicit effort.
+					// Esc at the effort step keeps the model selection — cancelling
+					// one step never discards prior choices (the invariant shared
+					// with the /rpiv-models stepper). The divergence is deliberate:
+					// that twin backs up without writing, while here the enable
+					// proceeds and PERSISTS with no explicit effort (model default),
+					// announced by this notify before the write.
 					ctx.ui.notify(MSG_EFFORT_NOT_SET, "info");
 				} else {
 					effortChoice = effortResult === OFF_VALUE ? undefined : (effortResult as GradedEffort);

@@ -17,6 +17,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Esc in the `/advisor` effort picker no longer discards the model selection: the advisor enables with no explicit effort (model default) and notifies, instead of silently aborting the whole flow.
 - The `/advisor` effort picker's `off` row is labeled `off (no reasoning sent)` to distinguish it from `/rpiv-models`' `off (disable reasoning)`, which persists an explicit `thinking: "off"`.
 
+### Fixed
+
+- Session restore now overwrites (never merges) the in-memory effort with the persisted value: a config carrying a model but no `effort` — a state the Esc/off choices persist, possibly from another Pi process sharing `advisor.json` — previously left a stale in-memory effort that was silently sent as `reasoning` on every advisor call. A hand-edited `effort` unknown to the effort ordering is now dropped with a warning instead of restored, and an unknown `minEffort` in `disabledForModels` warns before its entry is dropped.
+
 ## [2.5.2] - 2026-08-14
 
 ## [2.5.1] - 2026-08-14

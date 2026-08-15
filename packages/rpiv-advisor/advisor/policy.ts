@@ -43,6 +43,10 @@ export function isModelBlocked(model: Model<Api> | undefined, thinkingLevel?: st
 			if (canonicalKey(entry.model) !== key) continue;
 			if (entry.minEffort === undefined) return true;
 			const thresholdOrdinal = EFFORT_ORDINAL.indexOf(entry.minEffort);
+			// A threshold unknown to the ordinal cannot rank; skip the entry —
+			// otherwise its indexOf -1 would equal an unknown executor's -1 and
+			// block, breaking the "unknown never blocks" contract above.
+			if (thresholdOrdinal === -1) continue;
 			const executorOrdinal = EFFORT_ORDINAL.indexOf(thinkingLevel as GradedEffort);
 			if (executorOrdinal >= thresholdOrdinal) return true;
 		}

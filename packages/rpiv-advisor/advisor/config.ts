@@ -31,7 +31,14 @@ export function validateDisabledForModels(value: unknown): DisabledForModelsEntr
 		if (typeof entry !== "object" || entry === null) return false;
 		const obj = entry as Record<string, unknown>;
 		if (typeof obj.model !== "string" || obj.model.length === 0) return false;
-		if (obj.minEffort !== undefined && !EFFORT_ORDINAL.includes(obj.minEffort as GradedEffort)) return false;
+		if (obj.minEffort !== undefined && !EFFORT_ORDINAL.includes(obj.minEffort as GradedEffort)) {
+			// Warn before dropping — the entry's model identity is discarded along
+			// with the bad threshold (mirrors models-config's warn-on-miss posture).
+			console.warn(
+				`[rpiv-advisor] advisor.json: unknown minEffort "${String(obj.minEffort)}" — dropping disabledForModels entry for "${obj.model}"`,
+			);
+			return false;
+		}
 		return true;
 	});
 }

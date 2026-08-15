@@ -141,6 +141,28 @@ describe("/advisor — reasoning model", () => {
 		expect(values).not.toContain("off");
 	});
 
+	it("offers the full graded tail (xhigh, max) and labels the off row", async () => {
+		vi.mocked(getSupportedThinkingLevels).mockReturnValueOnce([
+			"off",
+			"minimal",
+			"low",
+			"medium",
+			"high",
+			"xhigh",
+			"max",
+		]);
+		vi.mocked(showAdvisorPicker).mockResolvedValueOnce("openai/gpt-max");
+		vi.mocked(showEffortPicker).mockResolvedValueOnce(null);
+		const { captured } = register();
+		const ctx = createMockCtx({ hasUI: true, models: [modelMax] });
+
+		await captured.commands.get("advisor")?.handler("", ctx as never);
+
+		const items = vi.mocked(showEffortPicker).mock.calls[0]?.[1];
+		expect(items?.map((item) => item.value)).toEqual(["__off__", "minimal", "low", "medium", "high", "xhigh", "max"]);
+		expect(items?.[0]?.label).toBe("off (no reasoning sent)");
+	});
+
 	it("never offers levels outside EFFORT_ORDINAL, even if the model reports them", async () => {
 		vi.mocked(getSupportedThinkingLevels).mockReturnValueOnce(["off", "high", "ultra"] as never);
 		vi.mocked(showAdvisorPicker).mockResolvedValueOnce("openai/gpt-max");
