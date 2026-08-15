@@ -100,7 +100,7 @@ describe("aliasSkills", () => {
 		expect(out.stages.commit?.skill).toBe("attributed-commit");
 	});
 
-	it("is reachable from the package barrel (locks the L2-01 public-surface contract)", async () => {
+	it("is reachable from the package barrel (locks the public-surface contract)", async () => {
 		// Reference identity ratifies (a) the export exists on the main barrel and
 		// (b) it points at the same function as the deep-path import — catches a
 		// future barrel-clean PR that silently drops the export. Workspaces resolve

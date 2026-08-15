@@ -408,8 +408,9 @@ describe("session-backed resume — reattach", () => {
 // ---------------------------------------------------------------------------
 
 describe("session-backed resume — detaches to the provider's executor host", () => {
-	/** A launcher whose `spawnChild` THROWS — any reliance on it (the pre-L4-01
-	 *  behavior) surfaces as a thrown error instead of silently passing. */
+	/** A launcher whose `spawnChild` THROWS — any reliance on it (the old
+	 *  run-on-the-launcher behavior) surfaces as a thrown error instead of
+	 *  silently passing. */
 	const throwingLauncher = (): WorkflowHostContext =>
 		({
 			cwd: tmpDir,
