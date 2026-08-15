@@ -2,7 +2,7 @@
 
 All notable changes to this package will be documented in this file.
 
-## [Unreleased]
+## [2.6.0] - 2026-08-15
 
 ## [2.5.2] - 2026-08-14
 
