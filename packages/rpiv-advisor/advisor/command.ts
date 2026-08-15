@@ -2,11 +2,12 @@
  * command — the /advisor slash command. Reads top-down: interactive guard →
  * model picker (buildModelItems) → no-advisor branch (applyDisable) → model
  * lookup → effort picker (buildEffortItems) → enable (applyEnable). The apply
- * helpers persist before mutating in-memory state (review I2).
+ * helpers persist before mutating in-memory state — a save failure must never
+ * leave memory ahead of disk.
  */
 
 import type { Api, Model } from "@earendil-works/pi-ai";
-import { getSupportedThinkingLevels, type ThinkingLevel } from "@earendil-works/pi-ai";
+import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { SelectItem } from "@earendil-works/pi-tui";
 import { modelKey } from "@juicesharp/rpiv-config";
@@ -19,7 +20,9 @@ import {
 	DEFAULT_EFFORT,
 	EFFORT_ORDINAL,
 	errSelectionNotFound,
+	type GradedEffort,
 	MSG_ADVISOR_DISABLED,
+	MSG_EFFORT_NOT_SET,
 	MSG_PERSIST_FAILED,
 	MSG_REQUIRES_INTERACTIVE,
 	msgAdvisorEnabled,
@@ -31,6 +34,9 @@ import {
 import { isExecutorBlocked } from "./policy.js";
 import { getAdvisorEffort, getAdvisorModel, setAdvisorEffort, setAdvisorModel } from "./state.js";
 
+// Mirror: packages/rpiv-pi/extensions/rpiv-core/rpiv-models/items.ts
+// buildModelItems — structural twin kept in a separate package by the
+// zero-cross-imports contract; evolve model-picker semantics together.
 function buildModelItems(availableModels: Model<Api>[], currentKey: string | undefined): SelectItem[] {
 	const items: SelectItem[] = availableModels.map((m) => {
 		const key = modelKey(m);
@@ -44,15 +50,20 @@ function buildModelItems(availableModels: Model<Api>[], currentKey: string | und
 	return items;
 }
 
+// Mirror: packages/rpiv-pi/extensions/rpiv-core/rpiv-models/items.ts
+// buildEffortItems — same filter-in/map-out shape, different sentinels and
+// persist target; evolve level-picker semantics together.
 function buildEffortItems(picked: Model<Api>): SelectItem[] {
 	// Intersect with EFFORT_ORDINAL (which excludes "off") so the picker can
 	// never offer — hence saveAdvisorConfig can never persist — a level that
 	// minEffort blocklist comparisons don't rank.
-	const levels = getSupportedThinkingLevels(picked).filter((level): level is ThinkingLevel =>
+	const levels = getSupportedThinkingLevels(picked).filter((level): level is GradedEffort =>
 		EFFORT_ORDINAL.includes(level as never),
 	);
 	return [
-		{ value: OFF_VALUE, label: "off" },
+		// "off (no reasoning sent)" ≠ /rpiv-models' "off (disable reasoning)":
+		// this row sends NO reasoning option; /rpiv-models persists thinking:"off".
+		{ value: OFF_VALUE, label: "off (no reasoning sent)" },
 		...levels.map((level) => ({
 			value: level,
 			label: level === DEFAULT_EFFORT ? `${level}${RECOMMENDED_EFFORT_SUFFIX}` : level,
@@ -61,7 +72,7 @@ function buildEffortItems(picked: Model<Api>): SelectItem[] {
 }
 
 // Disable path — persist BEFORE mutating in-memory state so a save failure
-// can't strand "model=undefined + tool still registered" (review I2). The strip
+// can't strand "model=undefined + tool still registered". The strip
 // is unconditional-on-presence (no advisor at all), so it stays inline rather
 // than routing through reconcileAdvisorTool's blocked-conditional path.
 function applyDisable(pi: ExtensionAPI, ctx: ExtensionContext): void {
@@ -78,7 +89,7 @@ function applyDisable(pi: ExtensionAPI, ctx: ExtensionContext): void {
 	ctx.ui.notify(MSG_ADVISOR_DISABLED, "info");
 }
 
-// Enable path — persist first (review I2), set in-memory state, activate via
+// Enable path — persist first, set in-memory state, activate via
 // reconcileAdvisorTool (which re-reads the active-tool list post-effort-picker-
 // await), and notify. Silent reconcile — the enable/inactive notify is the
 // single trailing notify call here.
@@ -86,7 +97,7 @@ function applyEnable(
 	pi: ExtensionAPI,
 	ctx: ExtensionContext,
 	picked: Model<Api>,
-	effort: ThinkingLevel | undefined,
+	effort: GradedEffort | undefined,
 ): void {
 	if (!saveAdvisorConfig(modelKey(picked), effort)) {
 		ctx.ui.notify(MSG_PERSIST_FAILED, "error");
@@ -131,7 +142,7 @@ export function registerAdvisorCommand(pi: ExtensionAPI): void {
 			}
 
 			// Effort picker — only for reasoning-capable models
-			let effortChoice: ThinkingLevel | undefined;
+			let effortChoice: GradedEffort | undefined;
 			if (picked.reasoning) {
 				const effortResult = await showEffortPicker(
 					ctx,
@@ -139,8 +150,14 @@ export function registerAdvisorCommand(pi: ExtensionAPI): void {
 					getAdvisorEffort(),
 					DEFAULT_EFFORT,
 				);
-				if (!effortResult) return;
-				effortChoice = effortResult === OFF_VALUE ? undefined : (effortResult as ThinkingLevel);
+				if (!effortResult) {
+					// Esc at the effort step keeps the model selection (cancelling
+					// one step never discards prior choices — same posture as the
+					// /rpiv-models stepper): enable with no explicit effort.
+					ctx.ui.notify(MSG_EFFORT_NOT_SET, "info");
+				} else {
+					effortChoice = effortResult === OFF_VALUE ? undefined : (effortResult as GradedEffort);
+				}
 			}
 
 			applyEnable(pi, ctx, picked, effortChoice);

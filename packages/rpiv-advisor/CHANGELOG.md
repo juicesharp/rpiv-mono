@@ -14,6 +14,8 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 - The `/advisor` effort picker now derives all levels from the model's capability report intersected with the known effort ordering: base levels a model explicitly disables are hidden (previously `minimal`–`high` were always offered), and levels unknown to this package are never offered or persisted.
+- Esc in the `/advisor` effort picker no longer discards the model selection: the advisor enables with no explicit effort (model default) and notifies, instead of silently aborting the whole flow.
+- The `/advisor` effort picker's `off` row is labeled `off (no reasoning sent)` to distinguish it from `/rpiv-models`' `off (disable reasoning)`, which persists an explicit `thinking: "off"`.
 
 ## [2.5.2] - 2026-08-14
 

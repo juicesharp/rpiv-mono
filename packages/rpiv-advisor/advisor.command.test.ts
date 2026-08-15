@@ -156,14 +156,18 @@ describe("/advisor — reasoning model", () => {
 		expect(values).not.toContain("off");
 	});
 
-	it("returns early when effort picker is cancelled", async () => {
+	it("keeps the model selection when effort picker is cancelled (enable with undefined effort)", async () => {
 		vi.mocked(showAdvisorPicker).mockResolvedValueOnce("anthropic/opus-thinking");
 		vi.mocked(showEffortPicker).mockResolvedValueOnce(null);
 		const { captured } = register();
 		const ctx = createMockCtx({ hasUI: true, models: [modelR] });
 		await captured.commands.get("advisor")?.handler("", ctx as never);
-		expect(getAdvisorModel()).toBeUndefined();
-		expect(ctx.ui.notify).not.toHaveBeenCalled();
+		expect(getAdvisorModel()).toBe(modelR);
+		expect(getAdvisorEffort()).toBeUndefined();
+		const notifyCalls = (ctx.ui.notify as ReturnType<typeof vi.fn>).mock.calls;
+		expect(notifyCalls).toContainEqual(["Effort not set — advisor uses the model default", "info"]);
+		const [msg] = notifyCalls.at(-1) ?? [];
+		expect(msg).toBe("Advisor: anthropic/opus-thinking");
 	});
 
 	it("OFF_VALUE yields effort=undefined", async () => {
@@ -192,7 +196,7 @@ describe("/advisor — reasoning model", () => {
 	});
 });
 
-describe("/advisor — save failure (persist-first ordering, review I2)", () => {
+describe("/advisor — save failure (persist-first ordering)", () => {
 	it("disable path: error notify; in-memory model + active tools unchanged", async () => {
 		if (process.platform === "win32") return;
 		const { mkdirSync, rmSync } = await import("node:fs");
