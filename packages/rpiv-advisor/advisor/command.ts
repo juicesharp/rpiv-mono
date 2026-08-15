@@ -17,6 +17,7 @@ import {
 	ADVISOR_TOOL_NAME,
 	CHECKMARK,
 	DEFAULT_EFFORT,
+	EFFORT_ORDINAL,
 	errSelectionNotFound,
 	MSG_ADVISOR_DISABLED,
 	MSG_PERSIST_FAILED,
@@ -44,7 +45,12 @@ function buildModelItems(availableModels: Model<Api>[], currentKey: string | und
 }
 
 function buildEffortItems(picked: Model<Api>): SelectItem[] {
-	const levels = getSupportedThinkingLevels(picked).filter((level) => level !== "off");
+	// Intersect with EFFORT_ORDINAL (which excludes "off") so the picker can
+	// never offer — hence saveAdvisorConfig can never persist — a level that
+	// minEffort blocklist comparisons don't rank.
+	const levels = getSupportedThinkingLevels(picked).filter((level): level is ThinkingLevel =>
+		EFFORT_ORDINAL.includes(level as never),
+	);
 	return [
 		{ value: OFF_VALUE, label: "off" },
 		...levels.map((level) => ({

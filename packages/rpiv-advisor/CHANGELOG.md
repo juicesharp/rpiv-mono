@@ -11,6 +11,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Offer Pi's `max` thinking level for advisor models that advertise support and recognize it in effort-based blocklist policies.
 
+### Changed
+
+- The `/advisor` effort picker now derives all levels from the model's capability report intersected with the known effort ordering: base levels a model explicitly disables are hidden (previously `minimal`–`high` were always offered), and levels unknown to this package are never offered or persisted.
+
 ## [2.5.2] - 2026-08-14
 
 ## [2.5.1] - 2026-08-14

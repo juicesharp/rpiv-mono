@@ -141,6 +141,21 @@ describe("/advisor — reasoning model", () => {
 		expect(values).not.toContain("off");
 	});
 
+	it("never offers levels outside EFFORT_ORDINAL, even if the model reports them", async () => {
+		vi.mocked(getSupportedThinkingLevels).mockReturnValueOnce(["off", "high", "ultra"] as never);
+		vi.mocked(showAdvisorPicker).mockResolvedValueOnce("openai/gpt-max");
+		vi.mocked(showEffortPicker).mockResolvedValueOnce(null);
+		const { captured } = register();
+		const ctx = createMockCtx({ hasUI: true, models: [modelMax] });
+
+		await captured.commands.get("advisor")?.handler("", ctx as never);
+
+		const values = vi.mocked(showEffortPicker).mock.calls[0]?.[1].map((item) => item.value);
+		expect(values).toContain("high");
+		expect(values).not.toContain("ultra");
+		expect(values).not.toContain("off");
+	});
+
 	it("returns early when effort picker is cancelled", async () => {
 		vi.mocked(showAdvisorPicker).mockResolvedValueOnce("anthropic/opus-thinking");
 		vi.mocked(showEffortPicker).mockResolvedValueOnce(null);
