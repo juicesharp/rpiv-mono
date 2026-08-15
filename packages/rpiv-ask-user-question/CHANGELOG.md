@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- The questionnaire emits one standard terminal BEL (`\x07`) when it starts waiting for input in an interactive TTY — terminal configuration decides whether that is an audible alert, a visual alert, or nothing. Redirected and non-TTY output (including RPC pipes) is untouched (#140).
+
 ## [2.5.2] - 2026-08-14
 
 ### Fixed
