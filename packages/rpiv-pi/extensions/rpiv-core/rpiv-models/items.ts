@@ -2,8 +2,8 @@
  * rpiv-models/items — UI item builders and picker utilities for /rpiv-models.
  *
  * Pure functions that construct SelectItem arrays for the cascade pickers
- * (scope, key, model, effort). String constants and sentinel values live here
- * so the command handler stays a flat story.
+ * (scope, key, model, effort), plus the picker sentinel values. User-facing
+ * string constants live in overrides.ts with the rest of the command prose.
  */
 
 import type { Api, Model } from "@earendil-works/pi-ai";
@@ -34,23 +34,6 @@ const RESET_LABEL = "Reset to default";
 const INHERIT_VALUE = "__inherit__";
 
 // ---------------------------------------------------------------------------
-// String constants
-// ---------------------------------------------------------------------------
-
-export const MSG_REQUIRES_INTERACTIVE = "/rpiv-models requires an interactive UI session.";
-export const MSG_SAVE_FAILED = "Failed to save models.json (disk error or permissions).";
-export const MSG_RESET_ALL = "All model overrides cleared.";
-export const MSG_RESET_ALL_TITLE = "Reset ALL model overrides?";
-export const MSG_RESET_ALL_BODY = [
-	"This clears every override in `~/.config/rpiv-pi/models.json` (defaults,",
-	"agents, stages, skills, presets). This cannot be undone.",
-	"",
-	"Per-agent overrides already written into agent frontmatter revert on the",
-	"next agent sync / session start, not immediately.",
-].join("\n");
-export const MSG_RESET_ALL_CANCELLED = "Reset cancelled.";
-
-// ---------------------------------------------------------------------------
 // Re-exported sentinel values for command.ts
 // ---------------------------------------------------------------------------
 
@@ -71,6 +54,9 @@ export function scopeItems(raw: ModelsConfigSchema): SelectItem[] {
 	];
 }
 
+// Mirror: packages/rpiv-advisor/advisor/command.ts buildModelItems — structural
+// twin kept in a separate package by the zero-cross-imports contract; evolve
+// model-picker semantics together.
 export function buildModelItems(models: Model<Api>[], currentKey?: string): SelectItem[] {
 	const items = models.map((m) => {
 		const key = modelKey(m);
@@ -86,6 +72,9 @@ export function buildModelItems(models: Model<Api>[], currentKey?: string): Sele
 	return items;
 }
 
+// Mirror: packages/rpiv-advisor/advisor/command.ts buildEffortItems — same
+// filter-in/map-out shape, different sentinels and persist target; evolve
+// level-picker semantics together.
 export function buildEffortItems(picked: Model<Api>): SelectItem[] {
 	const supported = getSupportedThinkingLevels(picked);
 	const levels = supported.filter((l): l is ThinkingLevelValue => THINKING_LEVEL_VALUES.includes(l as never));
