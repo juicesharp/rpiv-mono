@@ -61,6 +61,15 @@ const ERROR_SESSION_LOAD_FAILED =
 const ERROR_STALE_MODULE_CACHE =
 	"Error: the questionnaire UI cannot load — the host's module cache went stale after an earlier failed load (typically dependencies replaced on disk mid-session). This is unrecoverable within the current Pi process. The user never saw the questions — do NOT treat this as a decline. Ask the questions as plain chat text instead, and tell the user to restart Pi to restore this tool.";
 
+/** Emit one portable terminal attention signal without touching redirected output. */
+function emitTerminalAttention(): void {
+	try {
+		if (process.stdout.isTTY) process.stdout.write("\x07");
+	} catch {
+		// Terminal attention is best effort; the questionnaire must still proceed.
+	}
+}
+
 /** Delay before the background session-graph pre-warm; mirrors rpiv-workflow's /wf prewarm. */
 export const PREWARM_DELAY_MS = 2000;
 
@@ -173,6 +182,7 @@ Preview content is rendered as markdown in a monospace box. Multi-line text with
 			if ((ctx as { mode?: string }).mode === "rpc" && hasDialogUI(ctx.ui)) {
 				emitAskUserBlockedEvent(pi, true);
 				try {
+					emitTerminalAttention();
 					return buildQuestionnaireResponse(await runRpcQuestionnaire(ctx.ui, typed), typed);
 				} finally {
 					emitAskUserBlockedEvent(pi, false);
@@ -232,6 +242,7 @@ Preview content is rendered as markdown in a monospace box. Multi-line text with
 
 			emitAskUserBlockedEvent(pi, true);
 			try {
+				emitTerminalAttention();
 				const result = await ctx.ui.custom<QuestionnaireResult>(
 					(tui, theme, keybindings, done) => {
 						const session = new QuestionnaireSession({
