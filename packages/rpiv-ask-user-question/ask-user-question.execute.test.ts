@@ -287,12 +287,18 @@ describe("ask_user_question.execute — event emission", () => {
 		});
 
 		expect(mockEmit).toHaveBeenNthCalledWith(2, "rpiv:ask-user:blocked", { active: true });
-		expect(mockEmit).toHaveBeenNthCalledWith(3, "rpiv:ask-user:blocked", { active: false });
+		expect(mockEmit).toHaveBeenNthCalledWith(3, "herdr:blocked", {
+			active: true,
+			label: "Which library?",
+		});
+		expect(mockEmit).toHaveBeenNthCalledWith(4, "rpiv:ask-user:blocked", { active: false });
+		expect(mockEmit).toHaveBeenNthCalledWith(5, "herdr:blocked", { active: false, label: undefined });
 
-		// Both start events are emitted before the dialog; the clear follows it.
+		// Prompt + both blocked-start events fire before the dialog; clears follow it.
 		expect(mockEmit.mock.invocationCallOrder[0]).toBeLessThan(custom.mock.invocationCallOrder[0]);
 		expect(mockEmit.mock.invocationCallOrder[1]).toBeLessThan(custom.mock.invocationCallOrder[0]);
-		expect(mockEmit.mock.invocationCallOrder[2]).toBeGreaterThan(custom.mock.invocationCallOrder[0]);
+		expect(mockEmit.mock.invocationCallOrder[2]).toBeLessThan(custom.mock.invocationCallOrder[0]);
+		expect(mockEmit.mock.invocationCallOrder[3]).toBeGreaterThan(custom.mock.invocationCallOrder[0]);
 	});
 
 	it("clears ask-user blocked lifecycle after cancellation and UI rejection", async () => {
@@ -329,6 +335,12 @@ describe("ask_user_question.execute — event emission", () => {
 			["rpiv:ask-user:blocked", { active: false }],
 			["rpiv:ask-user:blocked", { active: true }],
 			["rpiv:ask-user:blocked", { active: false }],
+		]);
+		expect(mockEmit.mock.calls.filter(([name]) => name === "herdr:blocked")).toEqual([
+			["herdr:blocked", { active: true, label: "Which library?" }],
+			["herdr:blocked", { active: false, label: undefined }],
+			["herdr:blocked", { active: true, label: "Which library?" }],
+			["herdr:blocked", { active: false, label: undefined }],
 		]);
 	});
 

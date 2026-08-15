@@ -119,3 +119,7 @@ process or network boundary stay cheap.
 Stability policy for the `rpiv:*` namespace: channel names are immutable, payload changes
 are append-only and always optional, payloads stay JSON-safe, and any breaking change ships
 as a new channel (e.g. `rpiv:ask-user:prompt.v2`) rather than a version field.
+
+The same wait also dual-emits `herdr:blocked` with `{ active, label }`, where `label` is
+the first question's text while `active` is true. Herdr's official Pi integration listens
+only for that channel; emitting it is a no-op outside Herdr.

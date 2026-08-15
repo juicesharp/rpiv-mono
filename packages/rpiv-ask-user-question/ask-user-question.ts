@@ -42,9 +42,15 @@ function emitAskUserPromptEvent(pi: ExtensionAPI, params: QuestionParams): void 
 	pi.events.emit(ASK_USER_PROMPT_EVENT, payload);
 }
 
-function emitAskUserBlockedEvent(pi: ExtensionAPI, active: boolean): void {
+/** Official Herdr Pi integration (`herdr-agent-state`) listens only for this. */
+const HERDR_BLOCKED_EVENT = "herdr:blocked" as const;
+
+function emitAskUserBlockedEvent(pi: ExtensionAPI, active: boolean, label?: string): void {
 	const payload: AskUserBlockedEventPayload = { active };
 	pi.events.emit(ASK_USER_BLOCKED_EVENT, payload);
+	// Dual-emit: Herdr marks the pane blocked (toast/sound) from this channel.
+	// No-op outside Herdr — the official plugin never registers a listener.
+	pi.events.emit(HERDR_BLOCKED_EVENT, { active, label: active ? label : undefined });
 }
 
 /** Canonical tool name — single source of truth shared with the reconcile module. */
@@ -170,8 +176,10 @@ Preview content is rendered as markdown in a monospace box. Multi-line text with
 			// the sequential dialog walker up front, skipping the TUI render-graph
 			// import entirely; RPC builds that predate ctx.mode are caught by the
 			// custom()-resolved-undefined backstop below. See ./rpc-fallback.ts.
+			const blockLabel = typed.questions[0]?.question;
+
 			if ((ctx as { mode?: string }).mode === "rpc" && hasDialogUI(ctx.ui)) {
-				emitAskUserBlockedEvent(pi, true);
+				emitAskUserBlockedEvent(pi, true, blockLabel);
 				try {
 					return buildQuestionnaireResponse(await runRpcQuestionnaire(ctx.ui, typed), typed);
 				} finally {
@@ -230,7 +238,7 @@ Preview content is rendered as markdown in a monospace box. Multi-line text with
 				});
 			}
 
-			emitAskUserBlockedEvent(pi, true);
+			emitAskUserBlockedEvent(pi, true, blockLabel);
 			try {
 				const result = await ctx.ui.custom<QuestionnaireResult>(
 					(tui, theme, keybindings, done) => {

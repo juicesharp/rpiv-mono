@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Dual-emit `herdr:blocked` (`{ active, label }`) alongside `rpiv:ask-user:blocked` so Herdr's official Pi integration marks the pane blocked — toast, sound, sidebar — while the questionnaire waits.
+
 ## [2.5.2] - 2026-08-14
 
 ### Fixed
