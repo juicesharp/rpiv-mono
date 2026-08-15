@@ -18,6 +18,7 @@
     "fetch.ts",
     "exec.ts",
     "spawn.ts",
+    "stdout.ts",
     "fs.ts",
     "manifest.ts",
     "CHANGELOG.md"
@@ -31,6 +32,7 @@
     "./fetch": "./fetch.js",
     "./exec": "./exec.js",
     "./spawn": "./spawn.js",
+    "./stdout": "./stdout.js",
     "./fs": "./fs.js",
     "./manifest": "./manifest.js"
   },

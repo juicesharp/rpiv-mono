@@ -1,4 +1,4 @@
-import { createMockCtx, createMockPi } from "@juicesharp/rpiv-test-utils";
+import { createMockCtx, createMockPi, mockStdout } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { QuestionnaireResult } from "./tool/types.js";
 
@@ -29,20 +29,6 @@ async function registerFresh() {
 function ctxWithCustom(result: QuestionnaireResult | null) {
 	const custom = vi.fn(async () => result) as unknown as CustomFn;
 	return createMockCtx({ hasUI: true, ui: { custom } as never });
-}
-
-function mockStdout(isTTY: boolean) {
-	const stdoutWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-	const isTtyDescriptor = Object.getOwnPropertyDescriptor(process.stdout, "isTTY");
-	Object.defineProperty(process.stdout, "isTTY", { value: isTTY, configurable: true });
-	return {
-		stdoutWrite,
-		restore: () => {
-			stdoutWrite.mockRestore();
-			if (isTtyDescriptor) Object.defineProperty(process.stdout, "isTTY", isTtyDescriptor);
-			else delete (process.stdout as { isTTY?: boolean }).isTTY;
-		},
-	};
 }
 
 beforeEach(() => {

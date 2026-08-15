@@ -1,6 +1,6 @@
-import { createMockCtx, createMockPi } from "@juicesharp/rpiv-test-utils";
+import { createMockCtx, createMockPi, mockStdout } from "@juicesharp/rpiv-test-utils";
 import { describe, expect, it, vi } from "vitest";
-import { registerAskUserQuestionTool } from "./ask-user-question.js";
+import { BEL, registerAskUserQuestionTool } from "./ask-user-question.js";
 import { MAX_QUESTIONS, type QuestionnaireResult } from "./tool/types.js";
 
 type CustomFn = (...args: unknown[]) => Promise<unknown>;
@@ -25,24 +25,6 @@ const BASE_PARAMS = {
 		},
 	],
 };
-
-function mockStdout(isTTY: boolean | (() => boolean)) {
-	const stdoutWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-	const isTtyDescriptor = Object.getOwnPropertyDescriptor(process.stdout, "isTTY");
-	Object.defineProperty(
-		process.stdout,
-		"isTTY",
-		typeof isTTY === "function" ? { get: isTTY, configurable: true } : { value: isTTY, configurable: true },
-	);
-	return {
-		stdoutWrite,
-		restore: () => {
-			stdoutWrite.mockRestore();
-			if (isTtyDescriptor) Object.defineProperty(process.stdout, "isTTY", isTtyDescriptor);
-			else delete (process.stdout as { isTTY?: boolean }).isTTY;
-		},
-	};
-}
 
 describe("ask_user_question.execute — early returns", () => {
 	it("returns cancelled result + ERROR_NO_UI when !hasUI", async () => {
@@ -116,7 +98,7 @@ describe("ask_user_question.execute — terminal attention", () => {
 			await tool.execute?.("tc", BASE_PARAMS as never, undefined as never, undefined as never, ctx as never);
 
 			expect(stdout.stdoutWrite).toHaveBeenCalledTimes(1);
-			expect(stdout.stdoutWrite).toHaveBeenCalledWith("\x07");
+			expect(stdout.stdoutWrite).toHaveBeenCalledWith(BEL);
 			expect(mockEmit).toHaveBeenNthCalledWith(2, "rpiv:ask-user:blocked", { active: true });
 			expect(mockEmit).toHaveBeenNthCalledWith(3, "rpiv:ask-user:blocked", { active: false });
 			expect(mockEmit.mock.invocationCallOrder[1]).toBeLessThan(stdout.stdoutWrite.mock.invocationCallOrder[0]);
@@ -186,7 +168,7 @@ describe("ask_user_question.execute — terminal attention", () => {
 			);
 
 			expect(result?.details).toMatchObject({ cancelled: false });
-			expect(stdout.stdoutWrite).toHaveBeenCalledWith("\x07");
+			expect(stdout.stdoutWrite).toHaveBeenCalledWith(BEL);
 			expect(mockEmit).toHaveBeenNthCalledWith(2, "rpiv:ask-user:blocked", { active: true });
 			expect(mockEmit).toHaveBeenNthCalledWith(3, "rpiv:ask-user:blocked", { active: false });
 		} finally {

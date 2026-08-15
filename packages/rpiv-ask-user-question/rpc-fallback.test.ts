@@ -1,6 +1,6 @@
-import { createMockCtx, createMockPi } from "@juicesharp/rpiv-test-utils";
+import { createMockCtx, createMockPi, mockStdout } from "@juicesharp/rpiv-test-utils";
 import { describe, expect, it, vi } from "vitest";
-import { registerAskUserQuestionTool } from "./ask-user-question.js";
+import { BEL, registerAskUserQuestionTool } from "./ask-user-question.js";
 import { hasDialogUI } from "./rpc-fallback.js";
 
 type SelectFn = (title: string, options: string[]) => Promise<string | undefined>;
@@ -28,20 +28,6 @@ function ctxRpc(opts: { select?: SelectFn; input?: InputFn } = {}) {
 			input: (opts.input ?? vi.fn(async () => "")) as never,
 		} as never,
 	});
-}
-
-function mockStdout(isTTY: boolean) {
-	const stdoutWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-	const isTtyDescriptor = Object.getOwnPropertyDescriptor(process.stdout, "isTTY");
-	Object.defineProperty(process.stdout, "isTTY", { value: isTTY, configurable: true });
-	return {
-		stdoutWrite,
-		restore: () => {
-			stdoutWrite.mockRestore();
-			if (isTtyDescriptor) Object.defineProperty(process.stdout, "isTTY", isTtyDescriptor);
-			else delete (process.stdout as { isTTY?: boolean }).isTTY;
-		},
-	};
 }
 
 const SINGLE = {
@@ -134,7 +120,7 @@ describe("ask_user_question.execute — RPC dialog walker (ctx.mode === 'rpc')",
 			await run(tool, SINGLE, ctxRpc({ select }));
 
 			expect(stdout.stdoutWrite).toHaveBeenCalledTimes(1);
-			expect(stdout.stdoutWrite).toHaveBeenCalledWith("\x07");
+			expect(stdout.stdoutWrite).toHaveBeenCalledWith(BEL);
 			expect(mockEmit).toHaveBeenNthCalledWith(2, "rpiv:ask-user:blocked", { active: true });
 			expect(mockEmit).toHaveBeenNthCalledWith(3, "rpiv:ask-user:blocked", { active: false });
 			expect(mockEmit.mock.invocationCallOrder[1]).toBeLessThan(stdout.stdoutWrite.mock.invocationCallOrder[0]);
