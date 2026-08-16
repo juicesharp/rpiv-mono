@@ -80,9 +80,7 @@ interface DecibriCtor {
 type MicMode = "silero-passthrough" | "resample-rms";
 
 export async function createMic(): Promise<DecibriLike> {
-	// decibri ships as CJS (`module.exports = Decibri`); under ESM the ctor lands on `.default`.
-	const mod = (await import("decibri")) as { default: DecibriCtor };
-	const Decibri = mod.default;
+	const Decibri = await loadDecibriCtor();
 
 	// Strategy 1: 16 kHz with Silero. If the device accepts 16 kHz capture
 	// (USB headsets, AirPods, most external mics), this is strictly better
@@ -111,6 +109,68 @@ export async function createMic(): Promise<DecibriLike> {
 			}
 		}
 		throw lastError;
+	}
+}
+
+// decibri ships no darwin-x64 (Intel Mac) prebuilt native addon as of this
+// writing. On that one platform, import("decibri") throws at the native-
+// addon-load step. Fall back to a local compatibility shim built on
+// @audio/mic (miniaudio backend, ships a darwin-x64 prebuilt) so darwin-x64
+// users get the same resample-rms fallback quality that built-in-mic users
+// already get today (see issue #46 in juicesharp/rpiv-mono — this reuses
+// that exact code path, unmodified). Every other platform is unaffected:
+// import("decibri") succeeds there and this catch branch never runs.
+//
+// Resolution is memoized at module scope (once per process), not
+// re-attempted on every createMic() call. Observed live: on darwin-x64, the
+// first /voice invocation in a process correctly falls back to the shim and
+// works, but repeated /voice invocations within the SAME long-lived process
+// intermittently produced "Decibri is not a constructor" with no shim
+// fallback log line at all — consistent with import("decibri")'s cached
+// module-evaluation state behaving inconsistently across repeated dynamic
+// import() calls in a long-lived process (a standalone isolated test showed
+// consistent throwing across 5 repeats, but pi's actual extension runtime
+// environment did not reproduce that consistency across the many other
+// operations happening in a real session). Resolving once and reusing the
+// result removes any possibility of that inconsistency recurring. The
+// `typeof … !== "function"` guards are defense-in-depth: they turn a
+// silent malformed-export case into a clear, immediately-thrown diagnostic
+// instead of a cryptic "X is not a constructor" surfacing later inside
+// openMicAtRate's `new Decibri(opts)` call.
+let cachedDecibriCtor: Promise<DecibriCtor> | null = null;
+
+async function loadDecibriCtor(): Promise<DecibriCtor> {
+	if (!cachedDecibriCtor) {
+		cachedDecibriCtor = resolveDecibriCtor().catch((err) => {
+			// Do not memoize a rejection — a transient failure (e.g. the shim's
+			// own dynamic import racing something at startup) shouldn't
+			// permanently poison every later call in the process.
+			cachedDecibriCtor = null;
+			throw err;
+		});
+	}
+	return cachedDecibriCtor;
+}
+
+async function resolveDecibriCtor(): Promise<DecibriCtor> {
+	try {
+		// decibri ships as CJS (`module.exports = Decibri`); under ESM the ctor lands on `.default`.
+		const mod = (await import("decibri")) as { default: DecibriCtor };
+		if (typeof mod.default !== "function") {
+			throw new Error("decibri module loaded but its default export is not a constructor");
+		}
+		return mod.default;
+	} catch (err) {
+		try {
+			const shim = (await import("./decibri-audiomic-shim.js")) as { default: DecibriCtor };
+			if (typeof shim.default !== "function") {
+				throw new Error("decibri-audiomic-shim loaded but its default export is not a constructor");
+			}
+			appendDiagnosticLog("mic.backend", "audiomic-shim (decibri unavailable)");
+			return shim.default;
+		} catch {
+			throw err instanceof Error ? err : new Error(String(err)); // surface the original decibri load failure, not the shim's
+		}
 	}
 }
 
