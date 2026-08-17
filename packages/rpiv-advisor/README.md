@@ -98,7 +98,7 @@ write leaves your previous selection untouched and tells you so.
 To bill the reviewer against a Claude Code subscription instead of a Pi
 registry model, hand-edit `modelKey` to `claude-code/claude-opus-5` or
 `claude-code/claude-fable-5`. That path is not in the `/advisor` picker.
-It needs a logged-in `claude` CLI (`claude auth login --claudeai`) and the
+It needs a logged-in `claude` CLI on PATH (`claude auth login --claudeai`) and the
 optional `@anthropic-ai/claude-agent-sdk` peer. Each `advisor()` call starts
 a fresh isolated query; `/advisor` still only lists authenticated Pi models.
 
@@ -112,8 +112,8 @@ a fresh isolated query; `/advisor` still only lists authenticated Pi models.
 - A [Pi Agent](https://github.com/badlogic/pi-mono) host — the extension loads
   through Pi's extension manifest. No native dependencies.
 - An authenticated provider for the **reviewer** model, resolved through Pi's
-  model registry — or, for a hand-edited `claude-code/*` key, a logged-in
-  Claude Code CLI plus the optional `@anthropic-ai/claude-agent-sdk` peer.
+  model registry — or, for a hand-edited `claude-code/*` key, a `claude` CLI on
+  PATH plus the optional `@anthropic-ai/claude-agent-sdk` peer.
 - An interactive terminal for `/advisor`.
 
 ## Troubleshooting

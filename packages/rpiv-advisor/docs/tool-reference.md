@@ -144,5 +144,6 @@ If neither entrypoint exposes it, the call throws
 A hand-edited `claude-code/*` reviewer skips `completeSimple`. Each `advisor()`
 call starts a fresh `@anthropic-ai/claude-agent-sdk` query with `tools: []`,
 no persisted session, and credentials taken from the local `claude` CLI rather
-than Pi `AuthStorage`. The conversation branch is still assembled the same way
+than Pi `AuthStorage`. The CLI is resolved from PATH. Pi `minimal` effort is
+sent as Agent SDK `low`. The conversation branch is still assembled the same way
 as the registry path (inventory prefix, compacted context, tail massage).

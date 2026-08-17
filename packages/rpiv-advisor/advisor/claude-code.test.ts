@@ -1,3 +1,6 @@
+import { chmod, mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { Message } from "@earendil-works/pi-ai";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -10,6 +13,8 @@ import {
 	consultClaudeCodeAdvisor,
 	formatClaudeCodePrompt,
 	isClaudeCodeAdvisorKey,
+	mapClaudeCodeEffort,
+	resolveClaudeCodeExecutable,
 	validateClaudeCodeRuntime,
 } from "./claude-code.js";
 import { ADVISOR_SYSTEM_PROMPT } from "./prompt.js";
@@ -84,6 +89,30 @@ describe("buildClaudeCodeSdkOptions", () => {
 			restoreEnv("ANTHROPIC_API_KEY", previous.apiKey);
 			restoreEnv("ANTHROPIC_AUTH_TOKEN", previous.authToken);
 			restoreEnv("CLAUDE_CODE_OAUTH_TOKEN", previous.oauthToken);
+		}
+	});
+});
+
+describe("mapClaudeCodeEffort", () => {
+	it("maps Pi minimal onto the lowest Agent SDK effort and leaves unset effort unset", () => {
+		expect(mapClaudeCodeEffort("minimal")).toBe("low");
+		expect(mapClaudeCodeEffort("high")).toBe("high");
+		expect(mapClaudeCodeEffort(undefined)).toBeUndefined();
+	});
+});
+
+describe("resolveClaudeCodeExecutable", () => {
+	it("prefers an executable found on PATH over the ~/.local/bin fallback", async () => {
+		const directory = await mkdtemp(join(tmpdir(), "claude-code-path-"));
+		const executable = join(directory, "claude");
+		await writeFile(executable, "#!/bin/sh\n");
+		await chmod(executable, 0o755);
+		const previousPath = process.env.PATH;
+		process.env.PATH = directory;
+		try {
+			await expect(resolveClaudeCodeExecutable()).resolves.toBe(executable);
+		} finally {
+			restoreEnv("PATH", previousPath);
 		}
 	});
 });
@@ -171,6 +200,111 @@ describe("consultClaudeCodeAdvisor", () => {
 		expect(queryFactory).not.toHaveBeenCalled();
 		expect(result.details.errorMessage).toMatch(/Claude subscription login/);
 		expect(result.content[0]).toMatchObject({ type: "text" });
+	});
+
+	it("sends mapped Agent SDK effort, including Pi minimal as low", async () => {
+		const queryFactory: ClaudeCodeQueryFactory = vi.fn(() => queryFrom([successResult()]));
+		await consultClaudeCodeAdvisor({
+			advisor: claudeCodeAdvisorModel("claude-opus-5"),
+			effort: "minimal",
+			messages: [userMessage],
+			cwd: "/repo",
+			deps: {
+				queryFactory,
+				executable: "/bin/claude",
+				runtimeInspector: async () => ({
+					loggedIn: true,
+					authMethod: "claude.ai",
+					apiProvider: "firstParty",
+					version: "2.1.0",
+				}),
+			},
+		});
+		const options = vi.mocked(queryFactory).mock.calls[0]?.[0].options;
+		expect(options?.effort).toBe("low");
+	});
+
+	it("returns a cancelled envelope only when the caller aborted the signal", async () => {
+		const signal = AbortSignal.abort();
+		const queryFactory = vi.fn(async () => {
+			throw new Error("Advisor SDK process exited unexpectedly");
+		});
+		const result = await consultClaudeCodeAdvisor({
+			advisor: claudeCodeAdvisorModel("claude-opus-5"),
+			effort: "high",
+			messages: [userMessage],
+			cwd: "/repo",
+			signal,
+			deps: {
+				queryFactory,
+				executable: "/bin/claude",
+				runtimeInspector: async () => ({
+					loggedIn: true,
+					authMethod: "claude.ai",
+					apiProvider: "firstParty",
+					version: "2.1.0",
+				}),
+			},
+		});
+		expect(result.details.stopReason).toBe("aborted");
+		expect(result.content[0]).toMatchObject({
+			text: "Advisor call was cancelled before it completed.",
+		});
+	});
+
+	it("does not treat an unrelated aborted error as caller cancellation", async () => {
+		const result = await consultClaudeCodeAdvisor({
+			advisor: claudeCodeAdvisorModel("claude-opus-5"),
+			effort: "high",
+			messages: [userMessage],
+			cwd: "/repo",
+			deps: {
+				queryFactory: async () => {
+					throw new Error("operation aborted by provider");
+				},
+				executable: "/bin/claude",
+				runtimeInspector: async () => ({
+					loggedIn: true,
+					authMethod: "claude.ai",
+					apiProvider: "firstParty",
+					version: "2.1.0",
+				}),
+			},
+		});
+		expect(result.details.stopReason).toBeUndefined();
+		expect(result.details.errorMessage).toBe("operation aborted by provider");
+		expect(result.content[0]).toMatchObject({ text: "Advisor call threw: operation aborted by provider" });
+	});
+
+	it("closes the query and reports a non-success SDK result", async () => {
+		const query = queryFrom([
+			{
+				type: "result",
+				subtype: "error_during_execution",
+				errors: ["model overloaded"],
+			},
+		]);
+		const result = await consultClaudeCodeAdvisor({
+			advisor: claudeCodeAdvisorModel("claude-opus-5"),
+			effort: "high",
+			messages: [userMessage],
+			cwd: "/repo",
+			deps: {
+				queryFactory: () => query,
+				executable: "/bin/claude",
+				runtimeInspector: async () => ({
+					loggedIn: true,
+					authMethod: "claude.ai",
+					apiProvider: "firstParty",
+					version: "2.1.0",
+				}),
+			},
+		});
+		expect(query.close).toHaveBeenCalledTimes(1);
+		expect(result.details).toMatchObject({
+			stopReason: "error",
+			errorMessage: "model overloaded",
+		});
 	});
 
 	it("fails a managed refusal fallback instead of accepting another model", async () => {

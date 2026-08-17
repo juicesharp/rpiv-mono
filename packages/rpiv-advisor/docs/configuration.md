@@ -58,9 +58,10 @@ form the next time you save through `/advisor`.
 
 `claude-code/claude-opus-5` and `claude-code/claude-fable-5` are the only
 keys that skip Pi's model registry. They are restored as a synthetic reviewer
-and billed through the local Claude Code CLI. They are not offered by `/advisor`;
+and billed through the local Claude Code CLI on PATH. They are not offered by `/advisor`;
 choosing a picker model overwrites them. Unknown ids under `claude-code/` still
-look up the registry and disable the tool when the lookup misses.
+look up the registry and disable the tool when the lookup misses. Pi `minimal`
+effort is sent as Agent SDK `low`.
 
 ### `effort`
 

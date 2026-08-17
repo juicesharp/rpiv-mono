@@ -4,12 +4,13 @@
  * A hand-edited modelKey of `claude-code/claude-opus-5` or
  * `claude-code/claude-fable-5` bypasses Pi's model registry and AuthStorage.
  * Each advisor() call starts a fresh Agent SDK query with tools disabled.
- * Continuity, task budgets, and the /advisor picker are unchanged and still
- * belong to the completeSimple path.
+ * The /advisor picker and completeSimple path are unchanged.
  */
 
+import { constants as fsConstants } from "node:fs";
+import { access } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { promisify } from "node:util";
 import type { Api, Message, Model, StopReason, ThinkingLevel, Usage } from "@earendil-works/pi-ai";
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
@@ -25,7 +26,10 @@ export type ClaudeCodeModelId = (typeof CLAUDE_CODE_MODELS)[number];
 
 const CLAUDE_CODE_MODEL_SET = new Set<string>(CLAUDE_CODE_MODELS);
 const SANITIZED_CREDENTIALS = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN"] as const;
-const CLAUDE_EXECUTABLE = join(homedir(), ".local", "bin", "claude");
+const CLAUDE_CODE_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
+const FALLBACK_CLAUDE_EXECUTABLE = join(homedir(), ".local", "bin", "claude");
+
+export type ClaudeCodeEffort = (typeof CLAUDE_CODE_EFFORTS)[number];
 
 export interface ClaudeCodeRuntimeStatus {
 	loggedIn: boolean;
@@ -88,6 +92,31 @@ export interface ClaudeCodeAdvisorDetails {
  */
 export function isClaudeCodeAdvisorKey(provider: string, modelId: string): boolean {
 	return provider === CLAUDE_CODE_PROVIDER && CLAUDE_CODE_MODEL_SET.has(modelId);
+}
+
+/**
+ * Maps a persisted advisor effort onto an Agent SDK effort value.
+ * Pi's `minimal` level has no SDK equivalent, so it becomes `low`.
+ * An unset effort is left unset so Claude Code uses its own default.
+ */
+export function mapClaudeCodeEffort(effort: ThinkingLevel | undefined): ClaudeCodeEffort | undefined {
+	if (effort === undefined) return undefined;
+	if (effort === "minimal") return "low";
+	return effort;
+}
+
+/** Resolves the Claude Code CLI from PATH, then `~/.local/bin/claude`. */
+export async function resolveClaudeCodeExecutable(): Promise<string> {
+	const names = process.platform === "win32" ? ["claude.exe", "claude.cmd", "claude"] : ["claude"];
+	for (const directory of (process.env.PATH ?? "").split(delimiter)) {
+		if (!directory) continue;
+		for (const name of names) {
+			const candidate = join(directory, name);
+			if (await isExecutable(candidate)) return candidate;
+		}
+	}
+	if (await isExecutable(FALLBACK_CLAUDE_EXECUTABLE)) return FALLBACK_CLAUDE_EXECUTABLE;
+	throw new Error("Claude Code advisor requires a `claude` executable on PATH. Install Claude Code and retry.");
 }
 
 /**
@@ -161,7 +190,7 @@ export async function consultClaudeCodeAdvisor(input: {
 		});
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		if (input.signal?.aborted || /aborted/i.test(message)) {
+		if (input.signal?.aborted) {
 			return buildClaudeCodeResult({
 				text: "Advisor call was cancelled before it completed.",
 				effort: input.effort,
@@ -189,7 +218,7 @@ export function buildClaudeCodeSdkOptions(input: {
 	return {
 		abortController: input.abortController,
 		cwd: input.cwd,
-		effort: input.effort,
+		effort: mapClaudeCodeEffort(input.effort),
 		env: sanitizedChildEnvironment(),
 		extraArgs: { "disable-slash-commands": null },
 		model: input.model,
@@ -224,7 +253,7 @@ async function runClaudeCodeQuery(input: {
 	signal?: AbortSignal;
 	deps?: ClaudeCodeConsultDeps;
 }): Promise<ClaudeCodeQueryResult> {
-	const executable = input.deps?.executable ?? CLAUDE_EXECUTABLE;
+	const executable = input.deps?.executable ?? (await resolveClaudeCodeExecutable());
 	const inspect = input.deps?.runtimeInspector ?? inspectClaudeCodeRuntime;
 	const runtime = await inspect(executable);
 	validateClaudeCodeRuntime(runtime);
@@ -234,19 +263,19 @@ async function runClaudeCodeQuery(input: {
 	input.signal?.addEventListener("abort", onAbort, { once: true });
 	if (input.signal?.aborted) abortController.abort();
 
-	const queryFactory = input.deps?.queryFactory ?? defaultClaudeCodeQueryFactory;
-	const query = await queryFactory({
-		prompt: formatClaudeCodePrompt(input.messages),
-		options: buildClaudeCodeSdkOptions({
-			model: input.model,
-			effort: input.effort,
-			cwd: input.cwd,
-			executable,
-			abortController,
-		}),
-	});
-
+	let query: ClaudeCodeQuery | undefined;
 	try {
+		const queryFactory = input.deps?.queryFactory ?? defaultClaudeCodeQueryFactory;
+		query = await queryFactory({
+			prompt: formatClaudeCodePrompt(input.messages),
+			options: buildClaudeCodeSdkOptions({
+				model: input.model,
+				effort: input.effort,
+				cwd: input.cwd,
+				executable,
+				abortController,
+			}),
+		});
 		for await (const message of query) {
 			if (message.type === "system" && message.subtype === "model_refusal_fallback") {
 				throw new Error(
@@ -261,7 +290,7 @@ async function runClaudeCodeQuery(input: {
 		throw new Error("Advisor SDK process exited unexpectedly");
 	} finally {
 		input.signal?.removeEventListener("abort", onAbort);
-		query.close();
+		query?.close();
 		abortController.abort();
 	}
 }
@@ -422,4 +451,13 @@ function buildClaudeCodeResult(opts: {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null;
+}
+
+async function isExecutable(path: string): Promise<boolean> {
+	try {
+		await access(path, fsConstants.X_OK);
+		return true;
+	} catch {
+		return false;
+	}
 }
