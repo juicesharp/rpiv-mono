@@ -86,6 +86,8 @@ set, meaning the executor model cannot see it and its `promptSnippet` /
 1. No advisor model is selected.
 2. `modelKey` is absent, unparseable, or names a model that is no longer in Pi's
    registry at restore time. The stale in-memory selection is cleared too.
+   `claude-code/claude-opus-5` and `claude-code/claude-fable-5` skip the registry
+   lookup and stay active.
 3. The current **executor** model matches a `disabledForModels` entry — see
    [configuration.md](./configuration.md#disabledformodels).
 
@@ -138,3 +140,9 @@ real failure surfaces instead of being masked.
 
 If neither entrypoint exposes it, the call throws
 `pi-ai does not expose completeSimple on /compat or the package root — unsupported host pi-ai version`.
+
+A hand-edited `claude-code/*` reviewer skips `completeSimple`. Each `advisor()`
+call starts a fresh `@anthropic-ai/claude-agent-sdk` query with `tools: []`,
+no persisted session, and credentials taken from the local `claude` CLI rather
+than Pi `AuthStorage`. The conversation branch is still assembled the same way
+as the registry path (inventory prefix, compacted context, tail massage).
