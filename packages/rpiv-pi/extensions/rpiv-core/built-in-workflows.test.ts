@@ -3746,6 +3746,101 @@ describe("declared-files citation tiebreak (verifyCitations via plan-cite-check)
 		expect(data.pass).toBe(true);
 		expect(data.findings).toEqual([]);
 	});
+
+	// -------------------------------------------------------------------------
+	// Proximity tiebreak — a section names its file in full (`**File**: …`)
+	// then cites by bare basename, while the write-set declares BOTH candidates
+	// (so the declared tiebreak ties). The nearest preceding prose mention
+	// resolves the citation; the frontmatter `files:` array and fenced spans
+	// never count as mentions.
+	// -------------------------------------------------------------------------
+
+	it("resolves a write-set tie via the nearest preceding prose mention of the full path", () => {
+		dupFiles();
+		const rel = ".rpiv/artifacts/plans/proximity-file-header.md";
+		const data = runOn(
+			write(
+				rel,
+				`---\nstatus: ready\nphase_count: 1\nphases:\n  - { n: 1, title: One, files: ["a/dup.ts", "b/dup.ts"] }\n---\n# Plan\n## Phase 1: One\n**File**: \`a/dup.ts\`\n**Changes**: retype the constant (\`dup.ts:5\`).\n`,
+			),
+		);
+		expect(data.pass).toBe(true);
+		expect(data.findings).toEqual([]);
+	});
+
+	it("resolves to the NEAREST mention, then verifies the line range against that file", () => {
+		// a/dup.ts has 4 lines, b/dup.ts has 50. Both are mentioned; a/dup.ts is
+		// nearer, so dup.ts:20 must resolve there and fail the range check —
+		// proving proximity (not mention order or the write-set) picked the file.
+		dupFiles(4);
+		const rel = ".rpiv/artifacts/plans/proximity-nearest.md";
+		const data = runOn(
+			write(
+				rel,
+				`---\nstatus: ready\nphase_count: 1\nphases:\n  - { n: 1, title: One, files: [] }\n---\n# Plan\n## Phase 1: One\nMirror \`b/dup.ts\` in the twin.\n**File**: \`a/dup.ts\`\n**Changes**: retype the constant (\`dup.ts:20\`).\n`,
+			),
+		);
+		expect(data.pass).toBe(false);
+		expect(findingDetails(data)).toMatch(/matches no version of the file/);
+	});
+
+	it("resolves with no declared files at all when the prose names one candidate in full", () => {
+		dupFiles(4);
+		const rel = ".rpiv/artifacts/plans/proximity-undeclared.md";
+		const data = runOn(
+			write(
+				rel,
+				`---\nstatus: ready\nphase_count: 1\nphases:\n  - { n: 1, title: One, files: [] }\n---\n# Plan\n## Phase 1: One\nDraws on \`b/dup.ts\` for the pattern (\`dup.ts:20\`).\n`,
+			),
+		);
+		expect(data.pass).toBe(true);
+		expect(data.findings).toEqual([]);
+	});
+
+	it("ignores a mention that only appears AFTER the citation", () => {
+		dupFiles();
+		const rel = ".rpiv/artifacts/plans/proximity-after.md";
+		const data = runOn(
+			write(
+				rel,
+				`---\nstatus: ready\nphase_count: 1\nphases:\n  - { n: 1, title: One, files: [] }\n---\n# Plan\n## Phase 1: One\nRetype the constant (\`dup.ts:5\`), then update \`a/dup.ts\` docs.\n`,
+			),
+		);
+		expect(data.pass).toBe(false);
+		expect(findingDetails(data)).toMatch(/matches 2 tree files/);
+	});
+
+	it("ignores a mention inside a fenced span — fixture paths are not disambiguators", () => {
+		dupFiles();
+		const rel = ".rpiv/artifacts/plans/proximity-fenced.md";
+		const data = runOn(
+			write(
+				rel,
+				`---\nstatus: ready\nphase_count: 1\nphases:\n  - { n: 1, title: One, files: [] }\n---\n# Plan\n## Phase 1: One\n\`\`\`ts\nimport { x } from "a/dup.ts";\n\`\`\`\nRetype the constant (\`dup.ts:5\`).\n`,
+			),
+		);
+		expect(data.pass).toBe(false);
+		expect(findingDetails(data)).toMatch(/matches 2 tree files/);
+	});
+
+	it("does not back-match a candidate inside a longer path mention (token boundary)", () => {
+		// x/a/dup.ts is a THIRD candidate; its mention contains "a/dup.ts" as a
+		// substring, which must not read as a mention of a/dup.ts. The nearest
+		// clean mention is x/a/dup.ts itself (50 lines), so dup.ts:20 passes —
+		// a boundary leak onto a/dup.ts (4 lines) would fail the range check.
+		dupFiles(4);
+		mkdirSync(join(tmpDir, "x/a"), { recursive: true });
+		writeFileSync(join(tmpDir, "x/a/dup.ts"), Array.from({ length: 50 }, (_, i) => `l${i}`).join("\n"));
+		const rel = ".rpiv/artifacts/plans/proximity-boundary.md";
+		const data = runOn(
+			write(
+				rel,
+				`---\nstatus: ready\nphase_count: 1\nphases:\n  - { n: 1, title: One, files: [] }\n---\n# Plan\n## Phase 1: One\nExtend \`x/a/dup.ts\` (\`dup.ts:20\`).\n`,
+			),
+		);
+		expect(data.pass).toBe(true);
+		expect(data.findings).toEqual([]);
+	});
 });
 
 // ---------------------------------------------------------------------------

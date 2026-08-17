@@ -1035,7 +1035,9 @@ const sliceCovers = (entry: Record<string, unknown>): string[] => {
  * tree file whose path ends with it on whole segments — bare basenames and
  * package-relative forms both back the citation iff exactly ONE tree file
  * matches; an ambiguous suffix stays unresolved (the finding names the
- * candidates so the fix arm can disambiguate). A citation that names no real
+ * candidates so the fix arm can disambiguate) unless one of two tiebreaks names
+ * a single candidate: the caller's declared-`files:` union, then the nearest
+ * preceding prose mention of a candidate's full path. A citation that names no real
  * file, or points past end-of-file, is UNBACKED precision — a fabricated
  * reference that must fail the gate rather than propagate into design. A bare
  * `path` with no `:line` is not checked (the contract is "verifiable line
@@ -1062,7 +1064,8 @@ type BasenameIndex = { index: Map<string, string[]>; truncated: boolean };
  * — mechanical path-prefix omissions, not fabricated references. The basename
  * keys the candidates; `verifyCitations` narrows them by whole-segment suffix.
  * A UNIQUE match backs the citation; an AMBIGUOUS one stays unresolved — unless
- * the caller's declared-`files:` tiebreak in `verifyCitations` names exactly one
+ * one of `verifyCitations`' tiebreaks (the caller's declared-`files:` union,
+ * then the nearest preceding prose mention) names exactly one
  * candidate — so the producer must disambiguate with the repo-root-relative
  * path. Skips
  * vendored/generated trees so a citation never resolves to a build copy or a
@@ -1174,6 +1177,55 @@ const resolveCitationPath = (
  *  for zero risk averted (three of f329's floor failures were this class). */
 const PLACEHOLDER_CITATION_PREFIXES: readonly string[] = ["path/to/", "packages/x/"];
 
+/**
+ * Proximity tiebreak for a citation left ambiguous by the declared-`files:`
+ * intersection: resolve to the candidate whose repo-root-relative path has the
+ * nearest PRECEDING prose mention — the common artifact idiom of naming a file
+ * once in full, then citing it by bare basename. Prose only: mentions inside
+ * YAML frontmatter (`files:` ordering carries no authorial intent — a tie there
+ * stays a tie) or fenced spans (example/fixture territory) don't count, and
+ * matches are token-bounded so a candidate never back-matches inside a longer
+ * path mention (`a/dup.ts` inside `x/a/dup.ts`). Returns the winner's absolute
+ * path, or `undefined` — the citation then stays unbacked as before.
+ */
+const nearestProseMention = (
+	body: string,
+	upTo: number,
+	candidates: readonly string[],
+	cwd: string,
+	fenced: readonly [number, number][],
+	proseStart: number,
+): string | undefined => {
+	let bestAbs: string | undefined;
+	let bestIdx = -1;
+	for (const abs of candidates) {
+		if (!abs.startsWith(cwd + sep)) continue;
+		const rel = abs
+			.slice(cwd.length + 1)
+			.split(sep)
+			.join("/");
+		// Walk mentions nearest-first; the first CLEAN one (token-bounded, in
+		// prose, outside fences) is this candidate's best — earlier ones can't win.
+		let from = upTo - rel.length;
+		while (from >= 0) {
+			const i = body.lastIndexOf(rel, from);
+			if (i < 0 || i < proseStart) break;
+			from = i - 1;
+			const prev = i > 0 ? (body[i - 1] as string) : "";
+			const next = body[i + rel.length] ?? "";
+			if (prev !== "" && /[\w.@/-]/.test(prev)) continue;
+			if (next !== "" && /[\w-]/.test(next)) continue;
+			if (fenced.some(([s, e]) => i >= s && i < e)) continue;
+			if (i > bestIdx) {
+				bestIdx = i;
+				bestAbs = abs;
+			}
+			break;
+		}
+	}
+	return bestAbs;
+};
+
 const verifyCitations = (
 	body: string,
 	cwd: string,
@@ -1187,6 +1239,14 @@ const verifyCitations = (
 	// placeholder-pattern skip: a REAL citation that merely looks placeholder-ish
 	// still verifies when it appears in prose.
 	const fenced = fencedSpans(body);
+	// Prose begins past the YAML frontmatter: the proximity tiebreak must not
+	// read the `files:` array as a mention (its ordering carries no intent — a
+	// tie inside the declared set stays a tie).
+	let proseStart = 0;
+	if (body.startsWith("---\n")) {
+		const end = body.indexOf("\n---\n", 3);
+		if (end !== -1) proseStart = end + "\n---\n".length;
+	}
 	// Built lazily and reused across citations — only the first direct-resolution
 	// miss pays the tree walk, and only when at least one such citation exists.
 	const indexHolder: { value: BasenameIndex | undefined } = { value: undefined };
@@ -1217,6 +1277,12 @@ const verifyCitations = (
 					),
 			);
 			if (declaredMatches.length === 1) resolved = { abs: declaredMatches[0] };
+		}
+		if (resolved && "ambiguous" in resolved) {
+			// Proximity tiebreak: the nearest preceding prose mention of a
+			// candidate's full path names the file the author means.
+			const near = nearestProseMention(body, m.index, resolved.ambiguous, cwd, fenced, proseStart);
+			if (near !== undefined) resolved = { abs: near };
 		}
 		if (resolved && "ambiguous" in resolved) {
 			// More than one tree file matches — name the candidates so the fix arm can disambiguate.
