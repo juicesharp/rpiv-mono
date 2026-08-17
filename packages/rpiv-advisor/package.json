@@ -49,8 +49,14 @@
 		"typebox": "^1.1.24"
 	},
 	"peerDependencies": {
+		"@anthropic-ai/claude-agent-sdk": "*",
 		"@earendil-works/pi-ai": "*",
 		"@earendil-works/pi-coding-agent": "*",
 		"@earendil-works/pi-tui": "*"
+	},
+	"peerDependenciesMeta": {
+		"@anthropic-ai/claude-agent-sdk": {
+			"optional": true
+		}
 	}
 }

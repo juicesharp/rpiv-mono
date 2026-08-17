@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Optional Claude Code subscription backend: a hand-edited `modelKey` of `claude-code/claude-opus-5` or `claude-code/claude-fable-5` sends each `advisor()` call through a fresh Agent SDK query. The `/advisor` picker and `completeSimple` path are unchanged. The Claude CLI is resolved from PATH, and Pi `minimal` effort is sent as Agent SDK `low`.
+
 ## [2.6.0] - 2026-08-15
 
 ### Added

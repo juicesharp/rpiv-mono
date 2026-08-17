@@ -15,6 +15,7 @@ import {
 	type ExtensionAPI,
 	type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+import { consultClaudeCodeAdvisor, isClaudeCodeAdvisorKey } from "./claude-code.js";
 import { ensureUserTailForAdvisor, stripInflightAdvisorCall } from "./context.js";
 import { getInventoryMessage } from "./inventory.js";
 import {
@@ -100,13 +101,20 @@ export async function executeAdvisor(
 		return buildErrorResult(undefined, effort, ERR_NO_MODEL, ERR_NO_MODEL_SELECTED);
 	}
 	const advisorLabel = `${advisor.provider}:${advisor.id}`;
+	const claudeCode = isClaudeCodeAdvisorKey(advisor.provider, advisor.id);
 
-	const auth = await ctx.modelRegistry.getApiKeyAndHeaders(advisor);
-	if (!auth.ok) {
-		return buildErrorResult(advisorLabel, effort, errMisconfigured(advisorLabel, auth.error), auth.error);
-	}
-	if (!auth.apiKey) {
-		return buildErrorResult(advisorLabel, effort, errNoApiKey(advisorLabel), errNoApiKeyDetail(advisor.provider));
+	let authApiKey: string | undefined;
+	let authHeaders: Record<string, string> | undefined;
+	if (!claudeCode) {
+		const resolved = await ctx.modelRegistry.getApiKeyAndHeaders(advisor);
+		if (!resolved.ok) {
+			return buildErrorResult(advisorLabel, effort, errMisconfigured(advisorLabel, resolved.error), resolved.error);
+		}
+		if (!resolved.apiKey) {
+			return buildErrorResult(advisorLabel, effort, errNoApiKey(advisorLabel), errNoApiKeyDetail(advisor.provider));
+		}
+		authApiKey = resolved.apiKey;
+		authHeaders = resolved.headers;
 	}
 
 	// Live-read every call — advisor runs mid-turn so any message_end snapshot
@@ -129,6 +137,16 @@ export async function executeAdvisor(
 	});
 
 	try {
+		if (claudeCode) {
+			return await consultClaudeCodeAdvisor({
+				advisor,
+				effort,
+				messages,
+				cwd: ctx.cwd,
+				signal,
+			});
+		}
+
 		// Prefer Pi's auth-aware runtime facade. Unlike the global compatibility
 		// function, it runs request preparation and applies credential-derived
 		// fields such as GitHub Copilot's OAuth-specific baseUrl. Do not pass the
@@ -138,7 +156,7 @@ export async function executeAdvisor(
 		const completeSimple = runtimeCompleteSimple ?? (await loadCompleteSimple());
 		const requestOptions = runtimeCompleteSimple
 			? { signal, reasoning: effort }
-			: { apiKey: auth.apiKey, headers: auth.headers, signal, reasoning: effort };
+			: { apiKey: authApiKey, headers: authHeaders, signal, reasoning: effort };
 
 		// Single dispatch point — both attempts reuse the SAME `messages` and
 		// `requestOptions`, so the retry cannot diverge from attempt 1. `tools: []`

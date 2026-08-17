@@ -95,6 +95,13 @@ write leaves your previous selection untouched and tells you so.
 `/advisor` only rewrites `modelKey` and `effort`, so hand-edited keys —
 `disabledForModels` and the `guidance` overrides — survive every save.
 
+To bill the reviewer against a Claude Code subscription instead of a Pi
+registry model, hand-edit `modelKey` to `claude-code/claude-opus-5` or
+`claude-code/claude-fable-5`. That path is not in the `/advisor` picker.
+It needs a logged-in `claude` CLI on PATH (`claude auth login --claudeai`) and the
+optional `@anthropic-ai/claude-agent-sdk` peer. Each `advisor()` call starts
+a fresh isolated query; `/advisor` still only lists authenticated Pi models.
+
 ## Reference
 
 - [Configuration](https://github.com/juicesharp/rpiv-mono/blob/main/packages/rpiv-advisor/docs/configuration.md) — config file resolution, every key, blocklist matching rules, guidance overrides, and the full notification catalogue.
@@ -105,7 +112,8 @@ write leaves your previous selection untouched and tells you so.
 - A [Pi Agent](https://github.com/badlogic/pi-mono) host — the extension loads
   through Pi's extension manifest. No native dependencies.
 - An authenticated provider for the **reviewer** model, resolved through Pi's
-  model registry.
+  model registry — or, for a hand-edited `claude-code/*` key, a `claude` CLI on
+  PATH plus the optional `@anthropic-ai/claude-agent-sdk` peer.
 - An interactive terminal for `/advisor`.
 
 ## Troubleshooting
@@ -115,6 +123,8 @@ write leaves your previous selection untouched and tells you so.
 | The `/advisor` picker offers only **No advisor** | No provider is authenticated in Pi | Run Pi's `/login` for a provider, then re-run `/advisor` |
 | `Advisor (<model>) has no API key available.` comes back as the tool result | Credentials for the reviewer's provider no longer resolve | Re-authenticate that provider with `/login` |
 | `/advisor requires interactive mode` | Running under `pi --print …` or RPC | Run Pi interactively |
+| `Advisor requires an active Claude subscription login.` | A `claude-code/*` key is set but `claude auth status` is not `claude.ai` / firstParty | Run `claude auth login --claudeai`, then retry |
+| `Claude Code advisor requires the optional @anthropic-ai/claude-agent-sdk dependency.` | The optional peer is not installed | Install `@anthropic-ai/claude-agent-sdk` next to rpiv-advisor |
 
 ## Related
 

@@ -17,12 +17,14 @@
  *   context    — branch-message massaging
  *   prompt     — system-prompt loader
  *   execute    — the advisor side-call
+ *   claude-code — optional Claude Code subscription backend
  *   register   — advisor tool registration
  *   handlers   — mid-session lifecycle handlers
  *   restore    — session_start restoration
  *   command    — /advisor slash command
  */
 
+export { CLAUDE_CODE_MODELS, CLAUDE_CODE_PROVIDER, isClaudeCodeAdvisorKey } from "./claude-code.js";
 export { registerAdvisorCommand } from "./command.js";
 export { loadAdvisorConfig, saveAdvisorConfig } from "./config.js";
 export { ensureUserTailForAdvisor, stripInflightAdvisorCall } from "./context.js";

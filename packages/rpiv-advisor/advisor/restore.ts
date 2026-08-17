@@ -6,6 +6,7 @@
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { modelKey, parseModelKey } from "@juicesharp/rpiv-config";
+import { type ClaudeCodeModelId, claudeCodeAdvisorModel, isClaudeCodeAdvisorKey } from "./claude-code.js";
 import { loadAdvisorConfig, validateDisabledForModels } from "./config.js";
 import { reconcileAdvisorTool } from "./handlers.js";
 import {
@@ -72,7 +73,9 @@ export function restoreAdvisorState(ctx: ExtensionContext, pi: ExtensionAPI): vo
 		restoreAnnounced = true;
 	};
 
-	const model = ctx.modelRegistry.find(parsed.provider, parsed.modelId);
+	const model = isClaudeCodeAdvisorKey(parsed.provider, parsed.modelId)
+		? claudeCodeAdvisorModel(parsed.modelId as ClaudeCodeModelId)
+		: ctx.modelRegistry.find(parsed.provider, parsed.modelId);
 	if (!model) {
 		deactivate();
 		notifyOnce(errModelUnavailable(config.modelKey), "warning");

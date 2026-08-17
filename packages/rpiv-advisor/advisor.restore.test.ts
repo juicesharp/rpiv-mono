@@ -253,3 +253,29 @@ describe("restoreAdvisorState", () => {
 		});
 	});
 });
+
+describe("restoreAdvisorState — claude-code backend", () => {
+	it("restores a hand-edited Claude Code key without consulting the registry", () => {
+		writeConfig({ modelKey: "claude-code/claude-opus-5", effort: "high" });
+		const { pi, captured } = createMockPi();
+		const ctx = createMockCtx({ hasUI: true });
+		const find = vi.fn(() => undefined);
+		ctx.modelRegistry = { ...ctx.modelRegistry, find } as never;
+		restoreAdvisorState(ctx, pi);
+		expect(find).not.toHaveBeenCalled();
+		expect(getAdvisorModel()).toMatchObject({ provider: "claude-code", id: "claude-opus-5" });
+		expect(getAdvisorEffort()).toBe("high");
+		expect(captured.activeTools).toContain("advisor");
+	});
+
+	it("still treats an unknown claude-code id as a missing registry model", () => {
+		writeConfig({ modelKey: "claude-code/claude-sonnet-5" });
+		const { pi, captured } = createMockPi();
+		pi.setActiveTools(["advisor", "other"]);
+		const ctx = createMockCtx({ hasUI: true });
+		ctx.modelRegistry = { ...ctx.modelRegistry, find: vi.fn(() => undefined) } as never;
+		restoreAdvisorState(ctx, pi);
+		expect(getAdvisorModel()).toBeUndefined();
+		expect(captured.activeTools).toEqual(["other"]);
+	});
+});

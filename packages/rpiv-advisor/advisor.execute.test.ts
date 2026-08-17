@@ -34,6 +34,7 @@ vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
 
 import { completeSimple } from "@earendil-works/pi-ai/compat";
 import { buildSessionContext } from "@earendil-works/pi-coding-agent";
+import { claudeCodeAdvisorModel } from "./advisor/claude-code.js";
 import { registerAdvisorTool, setAdvisorModel } from "./advisor/index.js";
 
 function resp(input: { text?: string; stopReason?: "done" | "aborted" | "error" | "toolUse"; errorMessage?: string }) {
@@ -261,6 +262,23 @@ describe("executeAdvisor — auth envelopes", () => {
 		const r = await captured.tools.get("advisor")?.execute?.("tc", {}, undefined as never, undefined as never, ctx);
 		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("bad config") });
 		expect(r?.details).toMatchObject({ errorMessage: "bad config", advisorModel: "a:m" });
+	});
+
+	it("routes a Claude Code assignment around completeSimple and registry auth", async () => {
+		setAdvisorModel(claudeCodeAdvisorModel("claude-opus-5"));
+		const { pi, captured } = createMockPi();
+		registerAdvisorTool(pi);
+		const ctx = createMockCtx();
+		const getApiKeyAndHeaders = ctx.modelRegistry.getApiKeyAndHeaders as ReturnType<typeof vi.fn>;
+
+		const r = await captured.tools.get("advisor")?.execute?.("tc", {}, undefined as never, undefined as never, ctx);
+
+		expect(completeSimple).not.toHaveBeenCalled();
+		expect(getApiKeyAndHeaders).not.toHaveBeenCalled();
+		expect(r?.details).toMatchObject({
+			advisorModel: "claude-code:claude-opus-5",
+			errorMessage: expect.stringMatching(/claude|Claude|ENOENT|subscription/),
+		});
 	});
 
 	it("returns no-api-key envelope when auth.ok but apiKey is missing", async () => {
