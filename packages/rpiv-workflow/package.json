@@ -106,6 +106,7 @@
 		"./internal": "./internal.ts"
 	},
 	"pi": {
+		"image": "https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-workflow/docs/cover.png",
 		"extensions": [
 			"./extension.ts"
 		]

@@ -59,6 +59,7 @@
 		"!**/*.test.ts"
 	],
 	"pi": {
+		"image": "https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-web-tools/docs/cover.png",
 		"extensions": [
 			"./index.ts"
 		]

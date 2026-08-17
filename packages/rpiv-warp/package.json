@@ -49,6 +49,7 @@
 		"LICENSE"
 	],
 	"pi": {
+		"image": "https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-warp/docs/cover.png",
 		"extensions": [
 			"./index.ts"
 		],

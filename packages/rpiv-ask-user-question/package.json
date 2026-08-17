@@ -78,6 +78,7 @@
 		"view/tab-content-strategy.ts"
 	],
 	"pi": {
+		"image": "https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-ask-user-question/docs/cover.png",
 		"extensions": [
 			"./index.ts"
 		]

@@ -44,6 +44,7 @@
 		"./loader": "./loader.ts"
 	},
 	"pi": {
+		"image": "https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-i18n/docs/cover.png",
 		"extensions": [
 			"./index.ts"
 		]

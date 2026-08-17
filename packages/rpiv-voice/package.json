@@ -77,6 +77,7 @@
 		"LICENSE"
 	],
 	"pi": {
+		"image": "https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-voice/docs/cover.png",
 		"extensions": [
 			"./index.ts"
 		]
