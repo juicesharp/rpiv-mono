@@ -25,6 +25,31 @@ const userMessage: Message = {
 	timestamp: Date.now(),
 };
 
+const loggedInRuntime = {
+	loggedIn: true,
+	authMethod: "claude.ai",
+	apiProvider: "firstParty",
+	version: "2.1.0",
+} as const;
+
+function consultDeps(
+	overrides: {
+		queryFactory?: ClaudeCodeQueryFactory;
+		runtimeInspector?: () => Promise<{
+			loggedIn: boolean;
+			authMethod: string;
+			apiProvider: string;
+			version: string;
+		}>;
+	} = {},
+) {
+	return {
+		executable: "/bin/claude",
+		runtimeInspector: async () => loggedInRuntime,
+		...overrides,
+	};
+}
+
 function queryFrom(messages: Array<ClaudeCodeQueryMessage | ClaudeCodeQueryResult>): ClaudeCodeQuery {
 	return {
 		async *[Symbol.asyncIterator]() {
@@ -160,15 +185,7 @@ describe("consultClaudeCodeAdvisor", () => {
 			effort: "high",
 			messages: [userMessage],
 			cwd: "/repo",
-			deps: {
-				queryFactory,
-				runtimeInspector: async () => ({
-					loggedIn: true,
-					authMethod: "claude.ai",
-					apiProvider: "firstParty",
-					version: "2.1.0",
-				}),
-			},
+			deps: consultDeps({ queryFactory }),
 		});
 		expect(queryFactory).toHaveBeenCalledTimes(1);
 		expect(result.content[0]).toMatchObject({ type: "text", text: "ship the smaller change" });
@@ -187,7 +204,7 @@ describe("consultClaudeCodeAdvisor", () => {
 			effort: "high",
 			messages: [userMessage],
 			cwd: "/repo",
-			deps: {
+			deps: consultDeps({
 				queryFactory,
 				runtimeInspector: async () => ({
 					loggedIn: false,
@@ -195,7 +212,7 @@ describe("consultClaudeCodeAdvisor", () => {
 					apiProvider: "",
 					version: "2.1.0",
 				}),
-			},
+			}),
 		});
 		expect(queryFactory).not.toHaveBeenCalled();
 		expect(result.details.errorMessage).toMatch(/Claude subscription login/);
@@ -209,16 +226,7 @@ describe("consultClaudeCodeAdvisor", () => {
 			effort: "minimal",
 			messages: [userMessage],
 			cwd: "/repo",
-			deps: {
-				queryFactory,
-				executable: "/bin/claude",
-				runtimeInspector: async () => ({
-					loggedIn: true,
-					authMethod: "claude.ai",
-					apiProvider: "firstParty",
-					version: "2.1.0",
-				}),
-			},
+			deps: consultDeps({ queryFactory }),
 		});
 		const options = vi.mocked(queryFactory).mock.calls[0]?.[0].options;
 		expect(options?.effort).toBe("low");
@@ -235,16 +243,7 @@ describe("consultClaudeCodeAdvisor", () => {
 			messages: [userMessage],
 			cwd: "/repo",
 			signal,
-			deps: {
-				queryFactory,
-				executable: "/bin/claude",
-				runtimeInspector: async () => ({
-					loggedIn: true,
-					authMethod: "claude.ai",
-					apiProvider: "firstParty",
-					version: "2.1.0",
-				}),
-			},
+			deps: consultDeps({ queryFactory }),
 		});
 		expect(result.details.stopReason).toBe("aborted");
 		expect(result.content[0]).toMatchObject({
@@ -258,18 +257,11 @@ describe("consultClaudeCodeAdvisor", () => {
 			effort: "high",
 			messages: [userMessage],
 			cwd: "/repo",
-			deps: {
+			deps: consultDeps({
 				queryFactory: async () => {
 					throw new Error("operation aborted by provider");
 				},
-				executable: "/bin/claude",
-				runtimeInspector: async () => ({
-					loggedIn: true,
-					authMethod: "claude.ai",
-					apiProvider: "firstParty",
-					version: "2.1.0",
-				}),
-			},
+			}),
 		});
 		expect(result.details.stopReason).toBeUndefined();
 		expect(result.details.errorMessage).toBe("operation aborted by provider");
@@ -289,16 +281,7 @@ describe("consultClaudeCodeAdvisor", () => {
 			effort: "high",
 			messages: [userMessage],
 			cwd: "/repo",
-			deps: {
-				queryFactory: () => query,
-				executable: "/bin/claude",
-				runtimeInspector: async () => ({
-					loggedIn: true,
-					authMethod: "claude.ai",
-					apiProvider: "firstParty",
-					version: "2.1.0",
-				}),
-			},
+			deps: consultDeps({ queryFactory: () => query }),
 		});
 		expect(query.close).toHaveBeenCalledTimes(1);
 		expect(result.details).toMatchObject({
@@ -313,7 +296,7 @@ describe("consultClaudeCodeAdvisor", () => {
 			effort: "high",
 			messages: [userMessage],
 			cwd: "/repo",
-			deps: {
+			deps: consultDeps({
 				queryFactory: () =>
 					queryFrom([
 						{
@@ -323,13 +306,7 @@ describe("consultClaudeCodeAdvisor", () => {
 							fallback_model: "claude-sonnet-5",
 						},
 					]),
-				runtimeInspector: async () => ({
-					loggedIn: true,
-					authMethod: "claude.ai",
-					apiProvider: "firstParty",
-					version: "2.1.0",
-				}),
-			},
+			}),
 		});
 		expect(result.details.errorMessage).toMatch(/model fallback/);
 	});
