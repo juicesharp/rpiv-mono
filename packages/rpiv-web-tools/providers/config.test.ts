@@ -40,9 +40,62 @@ describe("readConfig — fail-soft posture", () => {
 		}
 	});
 
-	it("returns {} when the schema validation fails hard (e.g. provider is a number)", () => {
+	it("drops a wrong-typed field and returns {} when nothing else is present", () => {
 		writeRaw(JSON.stringify({ provider: 123 }));
 		expect(readConfig()).toEqual({});
+	});
+});
+
+describe("readConfig — per-field schema salvage", () => {
+	it("keeps the rest of the config when one top-level field is wrong-typed", () => {
+		writeRaw(JSON.stringify({ provider: 123, apiKeys: { brave: "k" }, otherField: "keep" }));
+		expect(readConfig()).toEqual({ apiKeys: { brave: "k" }, otherField: "keep" });
+	});
+
+	it("drops only the offending guidance leaf (wrong-typed description), keeping its siblings", () => {
+		// The GuidanceFields.description enrollment regression: a wrong-typed
+		// nested leaf must cost that field alone, never the whole config.
+		writeRaw(
+			JSON.stringify({
+				provider: "brave",
+				apiKeys: { brave: "k" },
+				guidance: {
+					web_search: { promptSnippet: "snip", description: 123 },
+					web_fetch: { promptSnippet: "snip2" },
+				},
+			}),
+		);
+		expect(readConfig()).toEqual({
+			provider: "brave",
+			apiKeys: { brave: "k" },
+			guidance: {
+				web_search: { promptSnippet: "snip" },
+				web_fetch: { promptSnippet: "snip2" },
+			},
+		});
+	});
+
+	it("drops a whole array field on one bad element rather than leaving a sparse hole", () => {
+		writeRaw(
+			JSON.stringify({
+				provider: "brave",
+				guidance: { web_search: { promptSnippet: "snip", promptGuidelines: ["a", 5] } },
+			}),
+		);
+		expect(readConfig()).toEqual({
+			provider: "brave",
+			guidance: { web_search: { promptSnippet: "snip" } },
+		});
+	});
+
+	it("drops a wrong-typed interceptors union field, keeping the rest", () => {
+		writeRaw(JSON.stringify({ provider: "brave", interceptors: "nope" }));
+		expect(readConfig()).toEqual({ provider: "brave" });
+	});
+
+	it("drops a single wrong-typed apiKeys record entry, keeping the valid keys", () => {
+		writeRaw(JSON.stringify({ provider: "brave", apiKeys: { brave: "k", broken: 7 } }));
+		expect(readConfig()).toEqual({ provider: "brave", apiKeys: { brave: "k" } });
 	});
 });
 
@@ -101,11 +154,11 @@ describe("readConfig — interceptors.github union", () => {
 		expect(gh).toEqual({ maxRepoSizeMB: 1000, clonePath: "/x" });
 	});
 
-	it("falls back to {} when interceptors.github has a type-incompatible shape", () => {
+	it("drops only the type-incompatible github entry (per-field salvage)", () => {
 		// A number is neither boolean nor a GitHubInterceptorOptions object —
-		// hard schema failure → fail-soft to {}.
-		writeRaw(JSON.stringify({ interceptors: { github: 42 } }));
-		expect(readConfig()).toEqual({});
+		// the offending field alone falls back, not the whole config.
+		writeRaw(JSON.stringify({ provider: "brave", interceptors: { github: 42 } }));
+		expect(readConfig()).toEqual({ provider: "brave", interceptors: {} });
 	});
 });
 

@@ -50,13 +50,14 @@ rewritten to drop fields it does not recognise.
 ## Failure behaviour
 
 The whole file degrades to an empty config rather than crashing the session when
-it is missing, is not valid JSON, is a directory, or violates the schema
-outright.
+it is missing, is not valid JSON, or is a directory. A schema violation degrades
+per field: only the offending paths are dropped for the session (an empty config
+remains the floor when nothing salvageable is left).
 
 Guidance validation is independently fail-soft: an empty string, a wrong type,
-or an empty array in any `promptSnippet` / `promptGuidelines` field silently
-falls back to the built-in default for that field alone. The other fields are
-unaffected.
+or an empty array in any `promptSnippet` / `promptGuidelines` / `description`
+field silently falls back to the built-in default for that field alone. The
+other fields are unaffected.
 
 ## Executor guidance overrides
 
