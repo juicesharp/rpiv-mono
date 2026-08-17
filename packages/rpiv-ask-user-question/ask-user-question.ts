@@ -138,12 +138,7 @@ export const DEFAULT_PROMPT_GUIDELINES: string[] = [
 	"Do not stack multiple ask_user_question calls back-to-back — group all clarifying questions into one invocation.",
 ];
 
-export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
-	const guidance = validateGuidanceFields(loadConfig().guidance);
-	pi.registerTool({
-		name: ASK_USER_QUESTION_TOOL_NAME,
-		label: "Ask User Question",
-		description: `Ask the user one or more structured questions during execution. Use when you need to:
+export const DEFAULT_TOOL_DESCRIPTION = `Ask the user one or more structured questions during execution. Use when you need to:
 1. Gather user preferences or requirements
 2. Clarify ambiguous instructions
 3. Get decisions on implementation choices as you work
@@ -161,7 +156,14 @@ Use the optional \`preview\` field on options when presenting concrete artifacts
 - Diagram variations
 - Configuration examples
 
-Preview content is rendered as markdown in a monospace box. Multi-line text with newlines is supported. When any option has a preview, the UI switches to a side-by-side layout with a vertical option list on the left and preview on the right. Do not use previews for simple preference questions where labels and descriptions suffice. Note: previews are only supported for single-select questions (not multiSelect).`,
+Preview content is rendered as markdown in a monospace box. Multi-line text with newlines is supported. When any option has a preview, the UI switches to a side-by-side layout with a vertical option list on the left and preview on the right. Do not use previews for simple preference questions where labels and descriptions suffice. Note: previews are only supported for single-select questions (not multiSelect).`;
+
+export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
+	const guidance = validateGuidanceFields(loadConfig().guidance);
+	pi.registerTool({
+		name: ASK_USER_QUESTION_TOOL_NAME,
+		label: "Ask User Question",
+		description: guidance.description ?? DEFAULT_TOOL_DESCRIPTION,
 		promptSnippet: guidance.promptSnippet ?? DEFAULT_PROMPT_SNIPPET,
 		promptGuidelines: guidance.promptGuidelines ?? DEFAULT_PROMPT_GUIDELINES,
 		parameters: QuestionParamsSchema,

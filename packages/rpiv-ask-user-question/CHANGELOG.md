@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- New `guidance.description` config field: a non-empty string in `$XDG_CONFIG_HOME/rpiv-ask-user-question/config.json` now replaces the entire built-in `ask_user_question` tool description (no merging); empty or non-string values keep the default. Note: a `description` key that previously sat unused under `guidance` now takes effect.
+
 ## [2.6.0] - 2026-08-15
 
 ### Added

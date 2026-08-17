@@ -19,6 +19,7 @@ A complete example:
 {
   "collapseKey": "alt+o",
   "guidance": {
+    "description": "Ask the user structured questions whenever requirements are ambiguous.",
     "promptSnippet": "Ask me before guessing on anything ambiguous",
     "promptGuidelines": [
       "Batch every clarifying question into one ask_user_question call.",
@@ -58,6 +59,7 @@ type are likewise dropped back to their default without a warning.
 | Setting | What it does | Default |
 | --- | --- | --- |
 | `collapseKey` | Key that collapses and expands the dialog overlay. | `"ctrl+]"` |
+| `guidance.description` | Full text of the tool description the model sees. Replaces the built-in default entirely — no merging. | built-in description |
 | `guidance.promptSnippet` | One-line snippet describing the tool in the system prompt. | built-in snippet |
 | `guidance.promptGuidelines` | List of usage guidelines given to the model. | 4 built-in guidelines |
 
@@ -87,7 +89,13 @@ One known rough edge: the footer hint line inside the dialog always reads `Ctrl+
 collapse` and does not interpolate a custom `collapseKey`. The one-shot notification you
 get when the dialog first collapses *does* name your configured key.
 
-### `guidance.promptSnippet` and `guidance.promptGuidelines`
+### `guidance.description`, `guidance.promptSnippet` and `guidance.promptGuidelines`
+
+`guidance.description` replaces the entire built-in description Pi registers for the
+`ask_user_question` tool — the text the model reads when deciding how to use it. There is
+no merging: a valid value wins wholesale. It is used only when it is a non-empty string;
+anything else falls back to the built-in default. Like the other guidance fields it is read
+once, when the extension registers the tool, so changes take effect on the next Pi restart.
 
 These replace the text Pi puts in the system prompt about when to reach for
 `ask_user_question`. Use them to make the model ask more or less often, or to enforce a

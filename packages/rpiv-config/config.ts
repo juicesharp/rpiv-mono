@@ -181,19 +181,22 @@ export function saveJsonConfig(path: string, data: unknown): boolean {
 export interface GuidanceFields {
 	promptSnippet?: string;
 	promptGuidelines?: string[];
+	description?: string;
 }
 
 // TypeBox form of GuidanceFields. Mirrors the interface 1:1 — same fields,
 // same optionality. `additionalProperties: true` lets consumers compose
 // wrappers that may carry sibling-specific keys without those leaking back
-// into rpiv-config. The runtime invariants (non-empty string, non-empty
-// array of non-empty strings) are still enforced by `validateGuidanceFields`;
-// the schema is a structural type-narrowing aid for callers that bake
-// guidance into a larger TypeBox-validated config object.
+// into rpiv-config. The runtime invariants (string fields must be non-empty,
+// the array field must be non-empty and contain only non-empty strings) are
+// still enforced by `validateGuidanceFields`; the schema is a structural
+// type-narrowing aid for callers that bake guidance into a larger
+// TypeBox-validated config object.
 export const GuidanceFieldsSchema = Type.Object(
 	{
 		promptSnippet: Type.Optional(Type.String()),
 		promptGuidelines: Type.Optional(Type.Array(Type.String())),
+		description: Type.Optional(Type.String()),
 	},
 	{ additionalProperties: true },
 );
@@ -218,6 +221,9 @@ export function validateGuidanceFields(fields: unknown): GuidanceFields {
 		g.promptGuidelines.every((s) => typeof s === "string" && s.length > 0)
 	) {
 		result.promptGuidelines = g.promptGuidelines;
+	}
+	if (typeof g.description === "string" && g.description.length > 0) {
+		result.description = g.description;
 	}
 	return result;
 }

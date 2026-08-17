@@ -334,12 +334,29 @@ describe("validateGuidanceFields", () => {
 		expect(validateGuidanceFields({ promptGuidelines: ["", "a"] })).toEqual({});
 	});
 
-	it("extracts both fields when valid", () => {
+	it("extracts valid description", () => {
+		expect(validateGuidanceFields({ description: "tool description" })).toEqual({ description: "tool description" });
+	});
+
+	it("ignores empty description", () => {
+		expect(validateGuidanceFields({ description: "" })).toEqual({});
+	});
+
+	it("ignores non-string description", () => {
+		expect(validateGuidanceFields({ description: 42 })).toEqual({});
+	});
+
+	it("extracts all fields when valid", () => {
 		const result = validateGuidanceFields({
 			promptSnippet: "snippet",
 			promptGuidelines: ["guide"],
+			description: "tool description",
 		});
-		expect(result).toEqual({ promptSnippet: "snippet", promptGuidelines: ["guide"] });
+		expect(result).toEqual({
+			promptSnippet: "snippet",
+			promptGuidelines: ["guide"],
+			description: "tool description",
+		});
 	});
 });
 

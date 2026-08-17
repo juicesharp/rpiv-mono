@@ -1,5 +1,9 @@
 ## [Unreleased]
 
+### Added
+
+- `GuidanceFields` (interface, `GuidanceFieldsSchema`, `validateGuidanceFields`) now supports an optional `description` field — kept when it is a non-empty string, dropped otherwise. Consumers that ignore it are unaffected.
+
 ## [2.6.0] - 2026-08-15
 
 ## [2.5.2] - 2026-08-14
