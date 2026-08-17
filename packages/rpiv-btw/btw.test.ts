@@ -29,10 +29,17 @@ vi.mock("@earendil-works/pi-ai/compat", async (importOriginal) => {
 // shared completeSimple spy (above) so existing mockResolvedValueOnce chains
 // keep working; loadIsContextOverflow defaults to undefined (legacy host, no
 // retry) and is overridden per-test in the overflow-retry suite.
-vi.mock("./pi-compat.js", () => ({
-	loadCompleteSimple: vi.fn(),
-	loadIsContextOverflow: vi.fn(),
-}));
+// getRuntimeCompleteSimple stays REAL: mock hosts have no `runtime` slot, so
+// tests default to the legacy path, and runtime-facade tests opt in by
+// defining a `runtime` slot on ctx.modelRegistry.
+vi.mock("./pi-compat.js", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("./pi-compat.js")>();
+	return {
+		getRuntimeCompleteSimple: actual.getRuntimeCompleteSimple,
+		loadCompleteSimple: vi.fn(),
+		loadIsContextOverflow: vi.fn(),
+	};
+});
 
 import type { AssistantMessage, UserMessage } from "@earendil-works/pi-ai";
 import { completeSimple } from "@earendil-works/pi-ai/compat";
@@ -199,7 +206,7 @@ describe("executeBtw — error branches", () => {
 		expect(r.error).toContain("misconfigured");
 		expect(r.error).toContain("bad creds");
 	});
-	it("returns error when apiKey absent", async () => {
+	it("returns error when apiKey absent and the host has no runtime facade", async () => {
 		const ctx = createMockCtx();
 		ctx.model = { provider: "a", id: "m" } as never;
 		ctx.modelRegistry = {
@@ -210,6 +217,47 @@ describe("executeBtw — error branches", () => {
 		expect(r.kind).toBe("error");
 		if (r.kind !== "error") throw new Error("unexpected");
 		expect(r.error).toContain("no API key");
+	});
+	it("proceeds via the runtime facade when OAuth auth resolves ok without an apiKey", async () => {
+		const ctx = createMockCtx();
+		ctx.model = { provider: "a", id: "m" } as never;
+		const runtime = {
+			completeSimple: vi.fn((..._args: unknown[]) =>
+				Promise.resolve(makeCompletionResponse({ text: "oauth answer" })),
+			),
+		};
+		// OAuth-backed providers (e.g. kimi-coding) resolve ok with no literal key;
+		// credentials are applied inside Pi's runtime facade. Pi keeps ModelRuntime
+		// behind ModelRegistry's runtime-private slot — keep it non-enumerable to
+		// mirror that host shape.
+		ctx.modelRegistry = {
+			...ctx.modelRegistry,
+			getApiKeyAndHeaders: vi.fn(async () => ({ ok: true })),
+		} as never;
+		Object.defineProperty(ctx.modelRegistry, "runtime", { value: runtime });
+		const r = await executeBtw("q", ctx, new AbortController());
+		expect(r.kind).toBe("success");
+		expect(completeSimple).not.toHaveBeenCalled();
+		expect(runtime.completeSimple).toHaveBeenCalledTimes(1);
+		const options = runtime.completeSimple.mock.calls[0]?.[2] as Record<string, unknown> | undefined;
+		expect(options).not.toHaveProperty("apiKey");
+		expect(options).not.toHaveProperty("headers");
+		expect(options).toHaveProperty("signal");
+	});
+	it("prefers the runtime facade over the legacy path even when an apiKey exists", async () => {
+		const ctx = createMockCtx();
+		ctx.model = { provider: "a", id: "m" } as never;
+		const runtime = {
+			completeSimple: vi.fn((..._args: unknown[]) =>
+				Promise.resolve(makeCompletionResponse({ text: "runtime answer" })),
+			),
+		};
+		Object.defineProperty(ctx.modelRegistry, "runtime", { value: runtime });
+		const r = await executeBtw("q", ctx, new AbortController());
+		expect(r.kind).toBe("success");
+		expect(completeSimple).not.toHaveBeenCalled();
+		const options = runtime.completeSimple.mock.calls[0]?.[2] as Record<string, unknown> | undefined;
+		expect(options).not.toHaveProperty("apiKey");
 	});
 	it("returns aborted when stopReason=aborted", async () => {
 		const ctx = createMockCtx();

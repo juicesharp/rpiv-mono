@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- `/btw` now prefers Pi's auth-aware runtime completion facade when the host exposes one, so OAuth-backed models (e.g. `kimi-coding`) no longer fail with "has no API key available" and credential-derived endpoints (e.g. GitHub Copilot's OAuth `baseUrl`) are preserved. Legacy hosts without the facade keep the explicit key/headers path. ([#166](https://github.com/juicesharp/rpiv-mono/issues/166))
+
 ## [2.6.0] - 2026-08-15
 
 ## [2.5.2] - 2026-08-14
