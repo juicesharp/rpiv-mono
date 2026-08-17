@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Package card cover on pi.dev: `package.json` now declares `pi.image` pointing at the package's `docs/cover.png`.
+
 ### Fixed
 
 - OAuth-backed advisor models (e.g. `kimi-coding`) no longer fail with "has no API key available": a missing literal API key is only an error on legacy hosts without Pi's auth-aware runtime facade, which applies OAuth credentials itself. ([#166](https://github.com/juicesharp/rpiv-mono/issues/166))

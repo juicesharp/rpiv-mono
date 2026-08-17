@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Package card cover on pi.dev: `package.json` now declares `pi.image` pointing at the package's `docs/cover.png`.
+
 ### Changed
 
 - `readConfig` now degrades per field on a schema violation instead of returning an empty config: only the offending paths are dropped (schema-driven via `Value.Errors`), so one wrong-typed leaf — e.g. `guidance.web_search.description` after its enrollment in the shared `GuidanceFieldsSchema` — no longer wipes provider, API keys, base URLs, interceptors and guidance for the session (or on disk via the next `/web-tools` save). An empty config remains the floor when nothing salvageable is left; unknown-key pass-through is unchanged.

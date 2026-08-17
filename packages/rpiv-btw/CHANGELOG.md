@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Package card cover on pi.dev: `package.json` now declares `pi.image` pointing at the package's `docs/cover.png`.
+
 ### Fixed
 
 - `/btw` now prefers Pi's auth-aware runtime completion facade when the host exposes one, so OAuth-backed models (e.g. `kimi-coding`) no longer fail with "has no API key available" and credential-derived endpoints (e.g. GitHub Copilot's OAuth `baseUrl`) are preserved. Legacy hosts without the facade keep the explicit key/headers path. ([#166](https://github.com/juicesharp/rpiv-mono/issues/166))
