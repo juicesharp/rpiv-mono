@@ -39,9 +39,9 @@ Eleven exports, all stateless — no singletons, no caches, no import-time side 
 | `loadJsonConfigWithLegacyFallback(name, file?)` | Reads the XDG path; only when that file is absent does it read the pre-XDG `~/.config/<name>/<file>`. Corruption is surfaced, never masked by the legacy file. |
 | `saveJsonConfig(path, data)` | `mkdir -p`, writes pretty JSON with a trailing newline, then chmods `0600` (best effort). Returns `true`/`false` instead of throwing — guard your "Saved" message on it. |
 | `validateConfig(schema, value)` | Strips unknown keys, layers schema defaults underneath, and returns `{}` on any failure. |
-| `validateGuidanceFields(fields)` | Keeps `promptSnippet` only if it is a non-empty string, and `promptGuidelines` only if it is a non-empty array of non-empty strings. Everything else is dropped. |
-| `GuidanceFieldsSchema` | TypeBox object for the two guidance fields, with `additionalProperties: true` so consumers can nest it in a larger config schema. |
-| `GuidanceFields` | Type for the same shape: `{ promptSnippet?: string; promptGuidelines?: string[] }`. |
+| `validateGuidanceFields(fields)` | Keeps `promptSnippet` and `description` only if each is a non-empty string, and `promptGuidelines` only if it is a non-empty array of non-empty strings. Everything else is dropped. |
+| `GuidanceFieldsSchema` | TypeBox object for the three guidance fields, with `additionalProperties: true` so consumers can nest it in a larger config schema. |
+| `GuidanceFields` | Type for the same shape: `{ promptSnippet?: string; promptGuidelines?: string[]; description?: string }`. |
 | `parseModelKey(key)` | Splits `provider/modelId`, also accepting the legacy `provider:modelId`; slash wins when both are present. Returns `undefined` if there is no separator at index ≥ 1. |
 | `modelKey({ provider, id })` | Emits the canonical `provider/id`. Paired with `parseModelKey`, persisted colon-form keys migrate on the next save. |
 | `readEnvVar(key, fallback?)` | Returns the trimmed variable, or `fallback` when it is unset or empty after trimming. |

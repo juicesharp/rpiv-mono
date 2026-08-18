@@ -2,8 +2,8 @@
  * rpiv-models — Directory barrel for the /rpiv-models cascade picker.
  *
  * Module map:
- *   overrides — ScopeDescriptor table, CRUD convenience functions, UI helpers
- *   items     — SelectItem builders, string constants, loadRawConfig
+ *   overrides — ScopeDescriptor table, CRUD convenience functions, UI helpers, string constants
+ *   items     — SelectItem builders, picker sentinels, loadRawConfig
  *   command   — /rpiv-models command registration
  */
 
@@ -13,12 +13,6 @@ export {
 	buildModelItems,
 	INHERIT_VALUE,
 	loadRawConfig,
-	MSG_REQUIRES_INTERACTIVE,
-	MSG_RESET_ALL,
-	MSG_RESET_ALL_BODY,
-	MSG_RESET_ALL_CANCELLED,
-	MSG_RESET_ALL_TITLE,
-	MSG_SAVE_FAILED,
 	RESET_LABEL,
 	RESET_VALUE,
 	scopeItems,
@@ -28,6 +22,12 @@ export {
 	CHECK,
 	floatChecked,
 	keyItems,
+	MSG_REQUIRES_INTERACTIVE,
+	MSG_RESET_ALL,
+	MSG_RESET_ALL_BODY,
+	MSG_RESET_ALL_CANCELLED,
+	MSG_RESET_ALL_TITLE,
+	MSG_SAVE_FAILED,
 	type OverrideEntry,
 	removeOverride,
 	SCOPE_AGENTS,

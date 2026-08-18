@@ -1,4 +1,5 @@
 import * as fs from "node:fs";
+import { mockStdout } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 
 vi.mock("node:fs", async () => {
@@ -127,50 +128,39 @@ describe("writeOSC777 (Windows)", () => {
 	it("writes the OSC sequence to process.stdout when stdout is a TTY", () => {
 		setPlatform("win32");
 		const { open } = primeFs();
-		const stdoutWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-		const isTtyDescriptor = Object.getOwnPropertyDescriptor(process.stdout, "isTTY");
-		Object.defineProperty(process.stdout, "isTTY", { value: true, configurable: true });
+		const stdout = mockStdout(true);
 		try {
 			writeOSC777("warp://cli-agent", "body");
-			expect(stdoutWrite).toHaveBeenCalledWith("\x1b]777;notify;warp://cli-agent;body\x07");
+			expect(stdout.stdoutWrite).toHaveBeenCalledWith("\x1b]777;notify;warp://cli-agent;body\x07");
 			expect(open).not.toHaveBeenCalled();
 		} finally {
-			stdoutWrite.mockRestore();
-			if (isTtyDescriptor) Object.defineProperty(process.stdout, "isTTY", isTtyDescriptor);
-			else delete (process.stdout as { isTTY?: boolean }).isTTY;
+			stdout.restore();
 		}
 	});
 
 	it("skips emission when stdout is NOT a TTY (piped output)", () => {
 		setPlatform("win32");
 		const { open } = primeFs();
-		const stdoutWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-		const isTtyDescriptor = Object.getOwnPropertyDescriptor(process.stdout, "isTTY");
-		Object.defineProperty(process.stdout, "isTTY", { value: false, configurable: true });
+		const stdout = mockStdout(false);
 		try {
 			writeOSC777("t", "b");
-			expect(stdoutWrite).not.toHaveBeenCalled();
+			expect(stdout.stdoutWrite).not.toHaveBeenCalled();
 			expect(open).not.toHaveBeenCalled();
 		} finally {
-			stdoutWrite.mockRestore();
-			if (isTtyDescriptor) Object.defineProperty(process.stdout, "isTTY", isTtyDescriptor);
-			else delete (process.stdout as { isTTY?: boolean }).isTTY;
+			stdout.restore();
 		}
 	});
 
 	it("silently swallows stdout.write throws (best-effort transport)", () => {
 		setPlatform("win32");
-		const stdoutWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => {
+		const stdout = mockStdout(true);
+		stdout.stdoutWrite.mockImplementation(() => {
 			throw new Error("EPIPE");
 		});
-		const isTtyDescriptor = Object.getOwnPropertyDescriptor(process.stdout, "isTTY");
-		Object.defineProperty(process.stdout, "isTTY", { value: true, configurable: true });
 		try {
 			expect(() => writeOSC777("t", "b")).not.toThrow();
 		} finally {
-			stdoutWrite.mockRestore();
-			if (isTtyDescriptor) Object.defineProperty(process.stdout, "isTTY", isTtyDescriptor);
-			else delete (process.stdout as { isTTY?: boolean }).isTTY;
+			stdout.restore();
 		}
 	});
 });
@@ -182,15 +172,11 @@ describe("writeOSC777 (Windows)", () => {
 describe("writeOSC0 / pushTitleStack / popTitleStack (Windows)", () => {
 	function withTtyStdout(fn: (stdoutWrite: Mock) => void): void {
 		setPlatform("win32");
-		const stdoutWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-		const isTtyDescriptor = Object.getOwnPropertyDescriptor(process.stdout, "isTTY");
-		Object.defineProperty(process.stdout, "isTTY", { value: true, configurable: true });
+		const stdout = mockStdout(true);
 		try {
-			fn(stdoutWrite as unknown as Mock);
+			fn(stdout.stdoutWrite as unknown as Mock);
 		} finally {
-			stdoutWrite.mockRestore();
-			if (isTtyDescriptor) Object.defineProperty(process.stdout, "isTTY", isTtyDescriptor);
-			else delete (process.stdout as { isTTY?: boolean }).isTTY;
+			stdout.restore();
 		}
 	}
 

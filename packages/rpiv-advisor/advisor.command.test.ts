@@ -1,4 +1,4 @@
-import type { Api, Model } from "@earendil-works/pi-ai";
+import { type Api, getSupportedThinkingLevels, type Model } from "@earendil-works/pi-ai";
 import { createMockCtx, createMockPi } from "@juicesharp/rpiv-test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -26,6 +26,12 @@ const modelR = {
 	provider: "anthropic",
 	id: "opus-thinking",
 	name: "Opus Thinking",
+	reasoning: true,
+} as unknown as Model<Api>;
+const modelMax = {
+	provider: "openai",
+	id: "gpt-max",
+	name: "GPT Max",
 	reasoning: true,
 } as unknown as Model<Api>;
 const modelBlocked = { provider: "anthropic", id: "sonnet", name: "Sonnet" } as unknown as Model<Api>;
@@ -120,14 +126,70 @@ describe("/advisor — non-reasoning model", () => {
 });
 
 describe("/advisor — reasoning model", () => {
-	it("returns early when effort picker is cancelled", async () => {
+	it("offers max when the selected model reports support", async () => {
+		vi.mocked(getSupportedThinkingLevels).mockReturnValueOnce(["off", "low", "medium", "high", "max"]);
+		vi.mocked(showAdvisorPicker).mockResolvedValueOnce("openai/gpt-max");
+		vi.mocked(showEffortPicker).mockResolvedValueOnce(null);
+		const { captured } = register();
+		const ctx = createMockCtx({ hasUI: true, models: [modelMax] });
+
+		await captured.commands.get("advisor")?.handler("", ctx as never);
+
+		const values = vi.mocked(showEffortPicker).mock.calls[0]?.[1].map((item) => item.value);
+		expect(values).toContain("max");
+		expect(values?.[0]).toBe("__off__");
+		expect(values).not.toContain("off");
+	});
+
+	it("offers the full graded tail (xhigh, max) and labels the off row", async () => {
+		vi.mocked(getSupportedThinkingLevels).mockReturnValueOnce([
+			"off",
+			"minimal",
+			"low",
+			"medium",
+			"high",
+			"xhigh",
+			"max",
+		]);
+		vi.mocked(showAdvisorPicker).mockResolvedValueOnce("openai/gpt-max");
+		vi.mocked(showEffortPicker).mockResolvedValueOnce(null);
+		const { captured } = register();
+		const ctx = createMockCtx({ hasUI: true, models: [modelMax] });
+
+		await captured.commands.get("advisor")?.handler("", ctx as never);
+
+		const items = vi.mocked(showEffortPicker).mock.calls[0]?.[1];
+		expect(items?.map((item) => item.value)).toEqual(["__off__", "minimal", "low", "medium", "high", "xhigh", "max"]);
+		expect(items?.[0]?.label).toBe("off (no reasoning sent)");
+	});
+
+	it("never offers levels outside EFFORT_ORDINAL, even if the model reports them", async () => {
+		vi.mocked(getSupportedThinkingLevels).mockReturnValueOnce(["off", "high", "ultra"] as never);
+		vi.mocked(showAdvisorPicker).mockResolvedValueOnce("openai/gpt-max");
+		vi.mocked(showEffortPicker).mockResolvedValueOnce(null);
+		const { captured } = register();
+		const ctx = createMockCtx({ hasUI: true, models: [modelMax] });
+
+		await captured.commands.get("advisor")?.handler("", ctx as never);
+
+		const values = vi.mocked(showEffortPicker).mock.calls[0]?.[1].map((item) => item.value);
+		expect(values).toContain("high");
+		expect(values).not.toContain("ultra");
+		expect(values).not.toContain("off");
+	});
+
+	it("keeps the model selection when effort picker is cancelled (enable with undefined effort)", async () => {
 		vi.mocked(showAdvisorPicker).mockResolvedValueOnce("anthropic/opus-thinking");
 		vi.mocked(showEffortPicker).mockResolvedValueOnce(null);
 		const { captured } = register();
 		const ctx = createMockCtx({ hasUI: true, models: [modelR] });
 		await captured.commands.get("advisor")?.handler("", ctx as never);
-		expect(getAdvisorModel()).toBeUndefined();
-		expect(ctx.ui.notify).not.toHaveBeenCalled();
+		expect(getAdvisorModel()).toBe(modelR);
+		expect(getAdvisorEffort()).toBeUndefined();
+		const notifyCalls = (ctx.ui.notify as ReturnType<typeof vi.fn>).mock.calls;
+		expect(notifyCalls).toContainEqual(["Effort not set — advisor uses the model default", "info"]);
+		const [msg] = notifyCalls.at(-1) ?? [];
+		expect(msg).toBe("Advisor: anthropic/opus-thinking");
 	});
 
 	it("OFF_VALUE yields effort=undefined", async () => {
@@ -156,7 +218,7 @@ describe("/advisor — reasoning model", () => {
 	});
 });
 
-describe("/advisor — save failure (persist-first ordering, review I2)", () => {
+describe("/advisor — save failure (persist-first ordering)", () => {
 	it("disable path: error notify; in-memory model + active tools unchanged", async () => {
 		if (process.platform === "win32") return;
 		const { mkdirSync, rmSync } = await import("node:fs");

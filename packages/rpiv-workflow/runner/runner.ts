@@ -328,7 +328,8 @@ export async function resumeWorkflow(
 		return { stagesCompleted: 0, success: false, error: resumeRefusalError(recon, header.workflow) };
 	}
 
-	// Detach to the executor host — the SAME wiring as live (L4-01). After the
+	// Detach to the executor host — the SAME wiring as live (resume-detach
+	// parity). After the
 	// reconstruct refusal so a refused resume builds no host, but BEFORE
 	// `buildRunContext`/`executeRun` so every resumed stage (single-stage reattach,
 	// pending-fanout re-dispatch, or a cold-routed continue fork) runs against the

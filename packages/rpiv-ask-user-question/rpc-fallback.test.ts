@@ -1,6 +1,6 @@
-import { createMockCtx, createMockPi } from "@juicesharp/rpiv-test-utils";
+import { createMockCtx, createMockPi, mockStdout } from "@juicesharp/rpiv-test-utils";
 import { describe, expect, it, vi } from "vitest";
-import { registerAskUserQuestionTool } from "./ask-user-question.js";
+import { BEL, registerAskUserQuestionTool } from "./ask-user-question.js";
 import { hasDialogUI } from "./rpc-fallback.js";
 
 type SelectFn = (title: string, options: string[]) => Promise<string | undefined>;
@@ -104,6 +104,45 @@ describe("ask_user_question.execute — RPC dialog walker (ctx.mode === 'rpc')",
 		const select = vi.fn(async (_t: string, options: string[]) => options[0]);
 		await run(tool, SINGLE, ctxRpc({ select }));
 		expect(captured.eventsEmitted.get("rpiv:ask-user:blocked")).toEqual([{ active: true }, { active: false }]);
+	});
+
+	it("writes exactly one BEL after blocked=true and before the first RPC dialog", async () => {
+		const stdout = mockStdout(true);
+		try {
+			const mockEmit = vi.fn();
+			const { pi, captured } = createMockPi({
+				events: { emit: mockEmit, on: vi.fn(() => () => {}) },
+			});
+			registerAskUserQuestionTool(pi);
+			const tool = captured.tools.get("ask_user_question")!;
+			const select = vi.fn(async (_t: string, options: string[]) => options[0]);
+
+			await run(tool, SINGLE, ctxRpc({ select }));
+
+			expect(stdout.stdoutWrite).toHaveBeenCalledTimes(1);
+			expect(stdout.stdoutWrite).toHaveBeenCalledWith(BEL);
+			expect(mockEmit).toHaveBeenNthCalledWith(2, "rpiv:ask-user:blocked", { active: true });
+			expect(mockEmit).toHaveBeenNthCalledWith(3, "rpiv:ask-user:blocked", { active: false });
+			expect(mockEmit.mock.invocationCallOrder[1]).toBeLessThan(stdout.stdoutWrite.mock.invocationCallOrder[0]);
+			expect(stdout.stdoutWrite.mock.invocationCallOrder[0]).toBeLessThan(select.mock.invocationCallOrder[0]);
+		} finally {
+			stdout.restore();
+		}
+	});
+
+	it("does not write BEL when RPC stdout is not a TTY", async () => {
+		const stdout = mockStdout(false);
+		try {
+			const tool = register();
+			const select = vi.fn(async (_t: string, options: string[]) => options[0]);
+
+			await run(tool, SINGLE, ctxRpc({ select }));
+
+			expect(select).toHaveBeenCalledOnce();
+			expect(stdout.stdoutWrite).not.toHaveBeenCalled();
+		} finally {
+			stdout.restore();
+		}
 	});
 
 	it("appends the 'Type something.' sentinel row sourced from ROW_INTENT_META", async () => {

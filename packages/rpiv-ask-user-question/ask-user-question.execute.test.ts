@@ -1,6 +1,6 @@
-import { createMockCtx, createMockPi } from "@juicesharp/rpiv-test-utils";
+import { createMockCtx, createMockPi, mockStdout } from "@juicesharp/rpiv-test-utils";
 import { describe, expect, it, vi } from "vitest";
-import { registerAskUserQuestionTool } from "./ask-user-question.js";
+import { BEL, registerAskUserQuestionTool } from "./ask-user-question.js";
 import { MAX_QUESTIONS, type QuestionnaireResult } from "./tool/types.js";
 
 type CustomFn = (...args: unknown[]) => Promise<unknown>;
@@ -79,6 +79,119 @@ describe("ask_user_question.execute — early returns", () => {
 		);
 		expect(r?.details).toMatchObject({ cancelled: true, error: "too_many_questions" });
 		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("At most") });
+	});
+});
+
+describe("ask_user_question.execute — terminal attention", () => {
+	it("writes exactly one BEL after blocked=true and immediately before the TUI wait", async () => {
+		const stdout = mockStdout(true);
+		try {
+			const mockEmit = vi.fn();
+			const { pi, captured } = createMockPi({
+				events: { emit: mockEmit, on: vi.fn(() => () => {}) },
+			});
+			registerAskUserQuestionTool(pi);
+			const tool = captured.tools.get("ask_user_question")!;
+			const custom = vi.fn(async () => ({ answers: [], cancelled: true }));
+			const ctx = createMockCtx({ hasUI: true, ui: { custom } as never });
+
+			await tool.execute?.("tc", BASE_PARAMS as never, undefined as never, undefined as never, ctx as never);
+
+			expect(stdout.stdoutWrite).toHaveBeenCalledTimes(1);
+			expect(stdout.stdoutWrite).toHaveBeenCalledWith(BEL);
+			expect(mockEmit).toHaveBeenNthCalledWith(2, "rpiv:ask-user:blocked", { active: true });
+			expect(mockEmit).toHaveBeenNthCalledWith(3, "rpiv:ask-user:blocked", { active: false });
+			expect(mockEmit.mock.invocationCallOrder[1]).toBeLessThan(stdout.stdoutWrite.mock.invocationCallOrder[0]);
+			expect(stdout.stdoutWrite.mock.invocationCallOrder[0]).toBeLessThan(custom.mock.invocationCallOrder[0]);
+		} finally {
+			stdout.restore();
+		}
+	});
+
+	it("does not write BEL for non-TTY, no-UI, or invalid requests", async () => {
+		const tool = register();
+		const ttyStdout = mockStdout(true);
+		try {
+			const noUi = createMockCtx({ hasUI: false });
+			await tool.execute?.("tc", BASE_PARAMS as never, undefined as never, undefined as never, noUi as never);
+
+			const invalid = createMockCtx({ hasUI: true, ui: { custom: vi.fn() } as never });
+			await tool.execute?.(
+				"tc",
+				{ questions: [] } as never,
+				undefined as never,
+				undefined as never,
+				invalid as never,
+			);
+
+			expect(ttyStdout.stdoutWrite).not.toHaveBeenCalled();
+		} finally {
+			ttyStdout.restore();
+		}
+
+		const nonTtyStdout = mockStdout(false);
+		try {
+			const custom = vi.fn(async () => ({ answers: [], cancelled: true }));
+			const nonTty = createMockCtx({ hasUI: true, ui: { custom } as never });
+			await tool.execute?.("tc", BASE_PARAMS as never, undefined as never, undefined as never, nonTty as never);
+
+			expect(nonTtyStdout.stdoutWrite).not.toHaveBeenCalled();
+		} finally {
+			nonTtyStdout.restore();
+		}
+	});
+
+	it("swallows a synchronous write failure and still clears blocked state", async () => {
+		const stdout = mockStdout(true);
+		stdout.stdoutWrite.mockImplementation(() => {
+			throw new Error("EPIPE");
+		});
+		try {
+			const mockEmit = vi.fn();
+			const { pi, captured } = createMockPi({
+				events: { emit: mockEmit, on: vi.fn(() => () => {}) },
+			});
+			registerAskUserQuestionTool(pi);
+			const tool = captured.tools.get("ask_user_question")!;
+			const custom = vi.fn(async () => ({
+				cancelled: false,
+				answers: [{ questionIndex: 0, question: "Which?", kind: "option", answer: "A" }],
+			}));
+			const ctx = createMockCtx({ hasUI: true, ui: { custom } as never });
+
+			const result = await tool.execute?.(
+				"tc",
+				BASE_PARAMS as never,
+				undefined as never,
+				undefined as never,
+				ctx as never,
+			);
+
+			expect(result?.details).toMatchObject({ cancelled: false });
+			expect(stdout.stdoutWrite).toHaveBeenCalledWith(BEL);
+			expect(mockEmit).toHaveBeenNthCalledWith(2, "rpiv:ask-user:blocked", { active: true });
+			expect(mockEmit).toHaveBeenNthCalledWith(3, "rpiv:ask-user:blocked", { active: false });
+		} finally {
+			stdout.restore();
+		}
+	});
+
+	it("swallows a failing TTY lookup and still opens the questionnaire", async () => {
+		const stdout = mockStdout(() => {
+			throw new Error("TTY lookup failed");
+		});
+		try {
+			const tool = register();
+			const custom = vi.fn(async () => ({ answers: [], cancelled: true }));
+			const ctx = createMockCtx({ hasUI: true, ui: { custom } as never });
+
+			await tool.execute?.("tc", BASE_PARAMS as never, undefined as never, undefined as never, ctx as never);
+
+			expect(custom).toHaveBeenCalledOnce();
+			expect(stdout.stdoutWrite).not.toHaveBeenCalled();
+		} finally {
+			stdout.restore();
+		}
 	});
 });
 

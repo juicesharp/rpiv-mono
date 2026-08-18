@@ -61,9 +61,11 @@ against it. When there are more tasks than fit:
    truncated;
 4. the last row becomes `+N more (X completed, Y pending)`.
 
-Unfinished work is therefore the last thing to disappear. See
-[configuration.md](./configuration.md#maxwidgetlines) for the budget's floor and
-reload semantics.
+Use Pi's tool-output expansion shortcut (`ctrl+o` by default) to expand the
+widget and show every task. Collapsing Pi's tool output reapplies the configured
+row budget. Unfinished work is therefore the last thing to disappear in the
+compact view. See [configuration.md](./configuration.md#maxwidgetlines) for the
+budget's floor and reload semantics.
 
 ## Completed tasks fading out
 

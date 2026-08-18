@@ -1,4 +1,4 @@
-import { createMockCtx, createMockPi } from "@juicesharp/rpiv-test-utils";
+import { createMockCtx, createMockPi, mockStdout } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { QuestionnaireResult } from "./tool/types.js";
 
@@ -47,14 +47,26 @@ describe("ask_user_question.execute — lazy session-graph load guards (#107)", 
 		});
 		const tool = await registerFresh();
 		const ctx = ctxWithCustom(null);
-		const r = await tool.execute?.("tc", BASE_PARAMS as never, undefined as never, undefined as never, ctx as never);
-		expect(r?.details).toMatchObject({ answers: [], cancelled: true, error: "session_load_failed" });
-		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("failed to load") });
-		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("restarting Pi") });
-		// Diagnostic suffix carries the underlying loader error. (vitest's mock
-		// layer rewrites the thrown message, so pin the marker, not the text.)
-		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("(cause:") });
-		expect(r?.content[0]).toMatchObject({ text: expect.not.stringContaining("declined") });
+		const stdout = mockStdout(true);
+		try {
+			const r = await tool.execute?.(
+				"tc",
+				BASE_PARAMS as never,
+				undefined as never,
+				undefined as never,
+				ctx as never,
+			);
+			expect(r?.details).toMatchObject({ answers: [], cancelled: true, error: "session_load_failed" });
+			expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("failed to load") });
+			expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("restarting Pi") });
+			// Diagnostic suffix carries the underlying loader error. (vitest's mock
+			// layer rewrites the thrown message, so pin the marker, not the text.)
+			expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("(cause:") });
+			expect(r?.content[0]).toMatchObject({ text: expect.not.stringContaining("declined") });
+			expect(stdout.stdoutWrite).not.toHaveBeenCalled();
+		} finally {
+			stdout.restore();
+		}
 	});
 
 	it("returns error: stale_module_cache when the namespace resolves without a constructable class", async () => {

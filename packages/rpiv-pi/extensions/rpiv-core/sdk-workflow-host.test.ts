@@ -645,7 +645,7 @@ describe("child teardown (B) — session_shutdown before dispose", () => {
 });
 
 // ---------------------------------------------------------------------------
-// (L0-06) Nested fan-out is depth-bounded. A child carries the full executor
+// Nested fan-out is depth-bounded. A child carries the full executor
 // surface, so a skill in a child could recurse fanout → spawnChild forever; the
 // guard caps it and rejects BEFORE a child session is created.
 // ---------------------------------------------------------------------------
@@ -705,12 +705,12 @@ describe("spawnChild — nested fan-out depth guard", () => {
 });
 
 // ---------------------------------------------------------------------------
-// (L0-04) Self-declared ambient-observer manifest marker. A sibling opts itself
+// Self-declared ambient-observer manifest marker. A sibling opts itself
 // out of child loading via `pi.ambientObserver:true` in its package.json, read
 // pre-factory from resolvedPath. The name denylist is a transitional backstop.
 // ---------------------------------------------------------------------------
 
-describe("ambient-observer manifest marker (L0-04)", () => {
+describe("ambient-observer manifest marker", () => {
 	let tmp: string;
 	afterEach(() => {
 		if (tmp) rmSync(tmp, { recursive: true, force: true });

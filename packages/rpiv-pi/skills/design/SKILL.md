@@ -85,7 +85,7 @@ When this command is invoked:
    - **Exactly one entry total** — confirm with `ask_user_question`: "Design from this artifact?" with options "Design from `[<source>] <filename>` (Recommended)" and "Pick a different path".
    - **Two or more entries total** — present up to 4 most-recent across both listings as `ask_user_question` options, each prefixed `[research]` or `[solutions]` to flag source class.
 
-2. **Read any additional files mentioned** — tickets, related designs, existing implementations. Read them FULLY before proceeding.
+3. **Read any additional files mentioned** — tickets, related designs, existing implementations. Read them FULLY before proceeding.
 
 ### Step 2: Targeted Research
 

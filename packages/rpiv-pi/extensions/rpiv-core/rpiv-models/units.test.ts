@@ -4,9 +4,9 @@
  * by rpiv-models-command.test.ts; this file pins the building blocks directly.
  */
 
-import type { Api, Model } from "@earendil-works/pi-ai";
+import { type Api, getSupportedThinkingLevels, type Model } from "@earendil-works/pi-ai";
 import type { SelectItem } from "@earendil-works/pi-tui";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { ModelsConfigSchema } from "../models-config.js";
 import { buildEffortItems, buildModelItems, INHERIT_VALUE, loadRawConfig, scopeItems } from "./items.js";
 import {
@@ -128,6 +128,18 @@ describe("items — builders", () => {
 		expect(items[0].value).toBe(INHERIT_VALUE);
 		// Every offered value is a known sentinel or thinking level (never empty).
 		expect(items.length).toBeGreaterThanOrEqual(1);
+	});
+
+	it("buildEffortItems offers max only when the selected model supports it", () => {
+		const reasoningModel = model("openai", "gpt", "GPT", true);
+
+		vi.mocked(getSupportedThinkingLevels).mockReturnValueOnce(["off", "minimal", "low", "medium", "high", "max"]);
+		const withMax = buildEffortItems(reasoningModel).map((item) => item.value);
+		expect(withMax).toContain("max");
+
+		vi.mocked(getSupportedThinkingLevels).mockReturnValueOnce(["off", "minimal", "low", "medium", "high"]);
+		const withoutMax = buildEffortItems(reasoningModel).map((item) => item.value);
+		expect(withoutMax).not.toContain("max");
 	});
 
 	it("loadRawConfig returns an object (fail-soft to {} when no file exists)", () => {

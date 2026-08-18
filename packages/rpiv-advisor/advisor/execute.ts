@@ -105,7 +105,12 @@ export async function executeAdvisor(
 	if (!auth.ok) {
 		return buildErrorResult(advisorLabel, effort, errMisconfigured(advisorLabel, auth.error), auth.error);
 	}
-	if (!auth.apiKey) {
+	// OAuth-backed providers resolve `{ ok: true }` with no literal apiKey — their
+	// credentials are applied inside Pi's runtime facade. A missing key is only
+	// fatal on legacy hosts without that facade, where the global completion
+	// fallback needs the key passed explicitly.
+	const runtimeCompleteSimple = getRuntimeCompleteSimple(ctx.modelRegistry);
+	if (!auth.apiKey && !runtimeCompleteSimple) {
 		return buildErrorResult(advisorLabel, effort, errNoApiKey(advisorLabel), errNoApiKeyDetail(advisor.provider));
 	}
 
@@ -129,12 +134,12 @@ export async function executeAdvisor(
 	});
 
 	try {
-		// Prefer Pi's auth-aware runtime facade. Unlike the global compatibility
-		// function, it runs request preparation and applies credential-derived
-		// fields such as GitHub Copilot's OAuth-specific baseUrl. Do not pass the
-		// preflight key/headers to this path: explicit overrides would bypass that
-		// resolution and reintroduce the endpoint mismatch.
-		const runtimeCompleteSimple = getRuntimeCompleteSimple(ctx.modelRegistry);
+		// Prefer Pi's auth-aware runtime facade (resolved once above, before the
+		// missing-key guard). Unlike the global compatibility function, it runs
+		// request preparation and applies credential-derived fields such as GitHub
+		// Copilot's OAuth-specific baseUrl. Do not pass the preflight key/headers
+		// to this path: explicit overrides would bypass that resolution and
+		// reintroduce the endpoint mismatch.
 		const completeSimple = runtimeCompleteSimple ?? (await loadCompleteSimple());
 		const requestOptions = runtimeCompleteSimple
 			? { signal, reasoning: effort }

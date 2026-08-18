@@ -41,7 +41,7 @@ previous selection and the active tool list are left untouched.
 | Key | Type | Default | Written by |
 | --- | --- | --- | --- |
 | `modelKey` | `string` — `"provider/modelId"` | absent (advisor off) | `/advisor` |
-| `effort` | `"minimal" \| "low" \| "medium" \| "high" \| "xhigh"` | absent (no `reasoning` sent) | `/advisor` effort picker |
+| `effort` | graded thinking level (`minimal` → `max`) | absent (no `reasoning` sent) | `/advisor` effort picker |
 | `disabledForModels` | `(string \| { model, minEffort? })[]` | `[]` | hand-edited |
 | `guidance.promptSnippet` | `string` | built-in snippet | hand-edited |
 | `guidance.promptGuidelines` | `string[]` | six built-in guidelines | hand-edited |
@@ -59,12 +59,18 @@ form the next time you save through `/advisor`.
 ### `effort`
 
 Offered only for models whose registry entry reports reasoning support. The
-picker lists `off`, `minimal`, `low`, `medium`, `high`, and adds `xhigh` when
-the picked model supports it. `high` is marked `(recommended)`. Choosing `off`
-deletes the key, and no `reasoning` parameter is sent with the advisor call.
+picker lists `off (no reasoning sent)` plus the graded levels Pi reports for the
+selected model. `high` is marked `(recommended)`. Choosing `off` deletes the
+key, and no `reasoning` parameter is sent with the advisor call — distinct from
+`/rpiv-models`' `off (disable reasoning)`, which persists an explicit
+`thinking: "off"`.
 
-`EFFORT_ORDINAL`, lowest to highest, is `minimal`, `low`, `medium`, `high`,
-`xhigh`. This ordering is what `minEffort` compares against.
+`EFFORT_ORDINAL` orders the graded levels lowest → highest; this ordering is what
+`minEffort` compares against.
+
+> **Naming note.** Advisor "effort", Pi's "thinking level", and pi-ai's `reasoning`
+> parameter are the same graded-level concept — the name differs per layer (fixed by
+> on-disk config keys and upstream APIs), but there is no semantic distinction.
 
 ### `disabledForModels`
 

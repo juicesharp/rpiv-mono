@@ -61,6 +61,38 @@ describe("restoreAdvisorState", () => {
 		expect(getAdvisorEffort()).toBe("high");
 		expect(captured.activeTools).toContain("advisor");
 	});
+	// Regression — stale in-memory effort must not survive a restore whose
+	// config carries a model but no effort. "Model present, effort absent" is a
+	// first-class persisted state (the /advisor Esc and off choices both save
+	// it), and another process can remove the field mid-session; restore must
+	// overwrite, never merge.
+	it("clears stale in-memory effort when the config has a model but no effort", () => {
+		setAdvisorModel({ provider: "a", id: "m" } as never);
+		setAdvisorEffort("high");
+		writeConfig({ modelKey: "a:m" });
+		const model = { provider: "a", id: "m", name: "M" } as never;
+		const { pi } = createMockPi();
+		const ctx = createMockCtx();
+		ctx.modelRegistry = { ...ctx.modelRegistry, find: vi.fn(() => model) } as never;
+		restoreAdvisorState(ctx, pi);
+		expect(getAdvisorModel()).toEqual(model);
+		expect(getAdvisorEffort()).toBeUndefined();
+	});
+	it("drops an out-of-ordinal persisted effort instead of restoring it", () => {
+		writeConfig({ modelKey: "a:m", effort: "off" });
+		const model = { provider: "a", id: "m", name: "M" } as never;
+		const { pi } = createMockPi();
+		const ctx = createMockCtx();
+		ctx.modelRegistry = { ...ctx.modelRegistry, find: vi.fn(() => model) } as never;
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+		try {
+			restoreAdvisorState(ctx, pi);
+		} finally {
+			warn.mockRestore();
+		}
+		expect(getAdvisorModel()).toEqual(model);
+		expect(getAdvisorEffort()).toBeUndefined();
+	});
 	it("does NOT push advisor again if already active", () => {
 		writeConfig({ modelKey: "a:m" });
 		const model = { provider: "a", id: "m" } as never;
@@ -115,7 +147,7 @@ describe("restoreAdvisorState", () => {
 			expect(captured.activeTools).toEqual(["other"]);
 		});
 
-		// I1: a no-model exit must also clear the module-level selection. Otherwise
+		// A no-model exit must also clear the module-level selection. Otherwise
 		// a model set by a prior session_start lingers, and the per-turn
 		// before_agent_start strip reads it as truthy and re-adds the tool.
 		it("clears a stale advisor selection when modelKey is later absent", () => {
@@ -131,7 +163,7 @@ describe("restoreAdvisorState", () => {
 			expect(captured.activeTools).toEqual(["other"]);
 		});
 
-		// Q2: the model-found-but-executor-blocked path strips too (model exists,
+		// The model-found-but-executor-blocked path strips too (model exists,
 		// so this branch's setup differs from the no-model paths above).
 		it("strips advisor when a valid model is configured but the executor is blocked", () => {
 			writeConfig({ modelKey: "anthropic:opus", disabledForModels: ["anthropic:sonnet"] });

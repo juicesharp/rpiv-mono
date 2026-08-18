@@ -7,6 +7,21 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.6.2] - 2026-08-18
+
+## [2.6.1] - 2026-08-17
+
+### Added
+
+- New `guidance.description` config field: a non-empty string in `$XDG_CONFIG_HOME/rpiv-ask-user-question/config.json` now replaces the entire built-in `ask_user_question` tool description (no merging); empty or non-string values keep the default. Note: a `description` key that previously sat unused under `guidance` now takes effect.
+- Package card cover on pi.dev: `package.json` now declares `pi.image` pointing at the package's `docs/cover.png`.
+
+## [2.6.0] - 2026-08-15
+
+### Added
+
+- The questionnaire emits one standard terminal BEL (`\x07`) when it starts waiting for input in an interactive TTY — terminal configuration decides whether that is an audible alert, a visual alert, or nothing. Redirected and non-TTY output (including RPC pipes) is untouched (#140).
+
 ## [2.5.2] - 2026-08-14
 
 ### Fixed

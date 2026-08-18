@@ -47,9 +47,20 @@ describe("isModelBlocked", () => {
 		expect(isModelBlocked(sonnet, "high")).toBe(true);
 	});
 
+	// The validated load path can't produce an out-of-ordinal minEffort, but the
+	// contract "unknown never blocks" must hold even for a direct cache set —
+	// without the threshold-side guard, indexOf -1 >= -1 would block here.
+	it("never blocks on an out-of-ordinal minEffort, even with an unknown executor level", () => {
+		setDisabledForModels([{ model: "anthropic:sonnet", minEffort: "ultra" as never }]);
+		expect(isModelBlocked(sonnet, "ultra")).toBe(false);
+		expect(isModelBlocked(sonnet, "max")).toBe(false);
+		expect(isModelBlocked(sonnet)).toBe(false);
+	});
+
 	it("returns true when executor effort above threshold", () => {
 		setDisabledForModels([{ model: "anthropic:sonnet", minEffort: "high" }]);
 		expect(isModelBlocked(sonnet, "xhigh")).toBe(true);
+		expect(isModelBlocked(sonnet, "max")).toBe(true);
 	});
 
 	it("returns false when executor effort below threshold", () => {

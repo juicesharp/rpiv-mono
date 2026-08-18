@@ -398,7 +398,7 @@ describe("session-backed resume — reattach", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Resume-detach parity (L4-01) — resume must build the executor host via the
+// Resume-detach parity — resume must build the executor host via the
 // provider exactly like a live run, instead of executing on the bare launcher
 // ctx (which has no real `spawnChild`). The other suites in this file register
 // NO provider, so `detachExecutor` degrades to the passed ctx and their
@@ -408,8 +408,9 @@ describe("session-backed resume — reattach", () => {
 // ---------------------------------------------------------------------------
 
 describe("session-backed resume — detaches to the provider's executor host", () => {
-	/** A launcher whose `spawnChild` THROWS — any reliance on it (the pre-L4-01
-	 *  behavior) surfaces as a thrown error instead of silently passing. */
+	/** A launcher whose `spawnChild` THROWS — any reliance on it (the old
+	 *  run-on-the-launcher behavior) surfaces as a thrown error instead of
+	 *  silently passing. */
 	const throwingLauncher = (): WorkflowHostContext =>
 		({
 			cwd: tmpDir,

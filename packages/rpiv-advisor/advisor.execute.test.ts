@@ -263,7 +263,7 @@ describe("executeAdvisor — auth envelopes", () => {
 		expect(r?.details).toMatchObject({ errorMessage: "bad config", advisorModel: "a:m" });
 	});
 
-	it("returns no-api-key envelope when auth.ok but apiKey is missing", async () => {
+	it("returns no-api-key envelope when apiKey is missing and the host has no runtime facade", async () => {
 		setAdvisorModel({ provider: "a", id: "m" } as never);
 		const { pi, captured } = createMockPi();
 		registerAdvisorTool(pi);
@@ -276,5 +276,28 @@ describe("executeAdvisor — auth envelopes", () => {
 		const r = await captured.tools.get("advisor")?.execute?.("tc", {}, undefined as never, undefined as never, ctx);
 		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("no API key") });
 		expect(r?.details).toMatchObject({ errorMessage: "no API key for a", advisorModel: "a:m" });
+	});
+
+	it("proceeds via the runtime facade when OAuth auth resolves ok without an apiKey", async () => {
+		setAdvisorModel({ provider: "a", id: "m" } as never);
+		const { pi, captured } = createMockPi();
+		registerAdvisorTool(pi);
+		const ctx = createMockCtx();
+		// OAuth-backed providers (e.g. kimi-coding) resolve ok with no literal key;
+		// credentials are applied inside Pi's runtime facade.
+		(ctx.modelRegistry.getApiKeyAndHeaders as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+			ok: true,
+		});
+		const runtime = {
+			completeSimple: vi.fn((..._args: unknown[]) => Promise.resolve(resp({ text: "oauth advice" }))),
+		};
+		Object.defineProperty(ctx.modelRegistry, "runtime", { value: runtime });
+
+		const r = await captured.tools.get("advisor")?.execute?.("tc", {}, undefined as never, undefined as never, ctx);
+		expect(r?.content[0]).toMatchObject({ type: "text", text: "oauth advice" });
+		expect(completeSimple).not.toHaveBeenCalled();
+		const options = runtime.completeSimple.mock.calls[0]?.[2] as Record<string, unknown> | undefined;
+		expect(options).not.toHaveProperty("apiKey");
+		expect(options).not.toHaveProperty("headers");
 	});
 });

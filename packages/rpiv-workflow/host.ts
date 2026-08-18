@@ -67,7 +67,7 @@ export type WorkflowLauncherContext = Omit<WorkflowHostContext, "spawnChild" | "
  */
 export interface ModelSelection {
 	model?: string;
-	thinking?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+	thinking?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 }
 
 /**

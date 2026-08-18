@@ -2,7 +2,12 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createMockPi } from "@juicesharp/rpiv-test-utils";
 import { beforeEach, describe, expect, it } from "vitest";
-import { DEFAULT_PROMPT_GUIDELINES, DEFAULT_PROMPT_SNIPPET, registerAskUserQuestionTool } from "./ask-user-question.js";
+import {
+	DEFAULT_PROMPT_GUIDELINES,
+	DEFAULT_PROMPT_SNIPPET,
+	DEFAULT_TOOL_DESCRIPTION,
+	registerAskUserQuestionTool,
+} from "./ask-user-question.js";
 
 const TOOL_NAME = "ask_user_question";
 const CONFIG_PATH = join(process.env.HOME!, ".config", "rpiv-ask-user-question", "config.json");
@@ -101,5 +106,37 @@ describe("registerAskUserQuestionTool — guidance overrides", () => {
 		registerAskUserQuestionTool(pi);
 		const tool = captured.tools.get(TOOL_NAME)!;
 		expect((tool.promptGuidelines as string[]).length).toBe(DEFAULT_GUIDELINES_LENGTH);
+	});
+
+	it("overrides tool description with valid value", () => {
+		writeConfig({ guidance: { description: "Custom ask tool description" } });
+		const { pi, captured } = createMockPi();
+		registerAskUserQuestionTool(pi);
+		const tool = captured.tools.get(TOOL_NAME)!;
+		expect(tool.description).toBe("Custom ask tool description");
+		expect(tool.promptSnippet).toBe(DEFAULT_PROMPT_SNIPPET);
+	});
+
+	it("uses the built-in tool description when no config file exists", () => {
+		const { pi, captured } = createMockPi();
+		registerAskUserQuestionTool(pi);
+		const tool = captured.tools.get(TOOL_NAME)!;
+		expect(tool.description).toBe(DEFAULT_TOOL_DESCRIPTION);
+	});
+
+	it("falls back to the built-in tool description on empty description", () => {
+		writeConfig({ guidance: { description: "" } });
+		const { pi, captured } = createMockPi();
+		registerAskUserQuestionTool(pi);
+		const tool = captured.tools.get(TOOL_NAME)!;
+		expect(tool.description).toBe(DEFAULT_TOOL_DESCRIPTION);
+	});
+
+	it("falls back to the built-in tool description on non-string description", () => {
+		writeConfig({ guidance: { description: 123 } });
+		const { pi, captured } = createMockPi();
+		registerAskUserQuestionTool(pi);
+		const tool = captured.tools.get(TOOL_NAME)!;
+		expect(tool.description).toBe(DEFAULT_TOOL_DESCRIPTION);
 	});
 });

@@ -20,7 +20,7 @@ import {
 import { type CappedHistory, capHistory, type FitBranchResult, fitBranch } from "./btw-budget.js";
 import { assistantMessageText, type BtwTurn, userMessageText } from "./btw-messages.js";
 import { showBtwOverlay } from "./btw-ui.js";
-import { loadCompleteSimple, loadIsContextOverflow } from "./pi-compat.js";
+import { getRuntimeCompleteSimple, loadCompleteSimple, loadIsContextOverflow } from "./pi-compat.js";
 
 // ---------------------------------------------------------------------------
 // Constants — flat named consts, grouped by concern (advisor pattern, b9428e9)
@@ -259,7 +259,12 @@ export async function executeBtw(
 	if (!auth.ok) {
 		return { kind: "error", error: errMisconfigured(modelLabel, auth.error) };
 	}
-	if (!auth.apiKey) {
+	// OAuth-backed providers resolve `{ ok: true }` with no literal apiKey — their
+	// credentials are applied inside Pi's runtime facade. A missing key is only
+	// fatal on legacy hosts without that facade, where the global completion
+	// fallback needs the key passed explicitly.
+	const runtimeCompleteSimple = getRuntimeCompleteSimple(ctx.modelRegistry);
+	if (!auth.apiKey && !runtimeCompleteSimple) {
 		return { kind: "error", error: errNoApiKey(modelLabel) };
 	}
 
@@ -274,7 +279,16 @@ export async function executeBtw(
 	let built = buildBtwMessages(ctx, userMessage);
 
 	try {
-		const completeSimple = await loadCompleteSimple();
+		// Prefer Pi's auth-aware runtime facade (resolved once above, before the
+		// missing-key guard). Unlike the global compatibility function, it runs
+		// request preparation and applies credential-derived fields — OAuth
+		// tokens, GitHub Copilot's OAuth-specific baseUrl. Do not pass the
+		// preflight key/headers to that path: explicit overrides would bypass
+		// that resolution.
+		const completeSimple = runtimeCompleteSimple ?? (await loadCompleteSimple());
+		const requestOptions = runtimeCompleteSimple
+			? { signal: controller.signal } // own AbortController, NOT ctx.signal (Decision 8)
+			: { apiKey: auth.apiKey, headers: auth.headers, signal: controller.signal };
 		const overflowFn = await loadIsContextOverflow();
 		let retried = false;
 		const callCompleteSimple = async (
@@ -283,11 +297,7 @@ export async function executeBtw(
 			const response = await completeSimple(
 				model,
 				{ systemPrompt: built.systemPrompt, messages: built.messages, tools: [] },
-				{
-					apiKey: auth.apiKey,
-					headers: auth.headers,
-					signal: controller.signal, // own AbortController, NOT ctx.signal (Decision 8)
-				},
+				requestOptions,
 			);
 			if (response.stopReason === "aborted") {
 				return { kind: "aborted", stopReason: response.stopReason };

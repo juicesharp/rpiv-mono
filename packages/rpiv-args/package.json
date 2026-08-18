@@ -1,6 +1,6 @@
 {
   "name": "@juicesharp/rpiv-args",
-  "version": "2.5.2",
+  "version": "2.6.2",
   "description": "Pi extension. Shell-style $1 / $ARGUMENTS placeholders and !`cmd` / ```! shell substitution, expanded into your Pi skills at invocation.",
   "keywords": [
     "pi-package",
@@ -42,6 +42,7 @@
     "LICENSE"
   ],
   "pi": {
+    "image": "https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-args/docs/cover.png",
     "extensions": [
       "./index.ts"
     ]

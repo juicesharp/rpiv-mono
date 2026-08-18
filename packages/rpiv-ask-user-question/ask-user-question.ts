@@ -61,6 +61,24 @@ const ERROR_SESSION_LOAD_FAILED =
 const ERROR_STALE_MODULE_CACHE =
 	"Error: the questionnaire UI cannot load — the host's module cache went stale after an earlier failed load (typically dependencies replaced on disk mid-session). This is unrecoverable within the current Pi process. The user never saw the questions — do NOT treat this as a decline. Ask the questions as plain chat text instead, and tell the user to restart Pi to restore this tool.";
 
+/** Standard terminal bell — same byte rpiv-warp exports as OSC_TERMINATOR. */
+export const BEL = "\x07";
+
+/**
+ * Emit one portable terminal attention signal without touching redirected output.
+ * Writes to stdout rather than rpiv-warp's `/dev/tty` transport: the `isTTY` gate
+ * both proves an interactive terminal owns the coming wait and keeps the byte out
+ * of piped RPC transports (VS Code pendant, Zed) — a `/dev/tty` write would ring
+ * even when the questionnaire renders in a remote host's own UI.
+ */
+function emitTerminalAttention(): void {
+	try {
+		if (process.stdout.isTTY) process.stdout.write(BEL);
+	} catch {
+		// Terminal attention is best effort; the questionnaire must still proceed.
+	}
+}
+
 /** Delay before the background session-graph pre-warm; mirrors rpiv-workflow's /wf prewarm. */
 export const PREWARM_DELAY_MS = 2000;
 
@@ -120,12 +138,7 @@ export const DEFAULT_PROMPT_GUIDELINES: string[] = [
 	"Do not stack multiple ask_user_question calls back-to-back — group all clarifying questions into one invocation.",
 ];
 
-export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
-	const guidance = validateGuidanceFields(loadConfig().guidance);
-	pi.registerTool({
-		name: ASK_USER_QUESTION_TOOL_NAME,
-		label: "Ask User Question",
-		description: `Ask the user one or more structured questions during execution. Use when you need to:
+export const DEFAULT_TOOL_DESCRIPTION = `Ask the user one or more structured questions during execution. Use when you need to:
 1. Gather user preferences or requirements
 2. Clarify ambiguous instructions
 3. Get decisions on implementation choices as you work
@@ -143,7 +156,14 @@ Use the optional \`preview\` field on options when presenting concrete artifacts
 - Diagram variations
 - Configuration examples
 
-Preview content is rendered as markdown in a monospace box. Multi-line text with newlines is supported. When any option has a preview, the UI switches to a side-by-side layout with a vertical option list on the left and preview on the right. Do not use previews for simple preference questions where labels and descriptions suffice. Note: previews are only supported for single-select questions (not multiSelect).`,
+Preview content is rendered as markdown in a monospace box. Multi-line text with newlines is supported. When any option has a preview, the UI switches to a side-by-side layout with a vertical option list on the left and preview on the right. Do not use previews for simple preference questions where labels and descriptions suffice. Note: previews are only supported for single-select questions (not multiSelect).`;
+
+export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
+	const guidance = validateGuidanceFields(loadConfig().guidance);
+	pi.registerTool({
+		name: ASK_USER_QUESTION_TOOL_NAME,
+		label: "Ask User Question",
+		description: guidance.description ?? DEFAULT_TOOL_DESCRIPTION,
 		promptSnippet: guidance.promptSnippet ?? DEFAULT_PROMPT_SNIPPET,
 		promptGuidelines: guidance.promptGuidelines ?? DEFAULT_PROMPT_GUIDELINES,
 		parameters: QuestionParamsSchema,
@@ -173,6 +193,7 @@ Preview content is rendered as markdown in a monospace box. Multi-line text with
 			if ((ctx as { mode?: string }).mode === "rpc" && hasDialogUI(ctx.ui)) {
 				emitAskUserBlockedEvent(pi, true);
 				try {
+					emitTerminalAttention();
 					return buildQuestionnaireResponse(await runRpcQuestionnaire(ctx.ui, typed), typed);
 				} finally {
 					emitAskUserBlockedEvent(pi, false);
@@ -232,6 +253,7 @@ Preview content is rendered as markdown in a monospace box. Multi-line text with
 
 			emitAskUserBlockedEvent(pi, true);
 			try {
+				emitTerminalAttention();
 				const result = await ctx.ui.custom<QuestionnaireResult>(
 					(tui, theme, keybindings, done) => {
 						const session = new QuestionnaireSession({

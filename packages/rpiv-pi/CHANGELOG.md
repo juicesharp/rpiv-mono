@@ -9,11 +9,29 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- **Standalone iterative design now crosses a hard session boundary after every approved non-final slice.** The exact verified code and Success Criteria are byte-checked in the design artifact, then the run stops with a fresh-session `/skill:design --resume <artifact>` command. Resume mode reads locked slices and the first pending slice from the artifact instead of trusting conversational or compaction summaries. This bounds verifier-heavy slice work to one slice per Pi context.
+- **Standalone iterative design now crosses a hard session boundary after every approved non-final slice.** The exact verified code and Success Criteria are written to the design artifact and re-read to confirm they match the approved payload, then the run stops with a fresh-session `/skill:design --resume <artifact>` command. Resume mode reads locked slices and the first pending slice from the artifact instead of trusting conversational or compaction summaries. This bounds verifier-heavy slice work to one slice per Pi context.
 
 ### Fixed
 
 - **Overflow recovery no longer answers RPIV's hidden pipeline/Git messages instead of resuming the interrupted task.** `session_compact` previously called `pi.sendMessage` separately for root guidance, the pipeline pointer, and Git context. Pi correctly treated them as queued steering items; default one-at-a-time delivery then produced one assistant acknowledgement per control message and displaced the active task. Compaction now only marks the exact SessionManager identity. Overflow retry proceeds directly from the compaction summary, and the session's next real user turn receives one merged hidden context block from `before_agent_start`.
+
+## [2.6.2] - 2026-08-18
+
+## [2.6.1] - 2026-08-17
+
+### Added
+
+- Package card cover on pi.dev: `package.json` now declares `pi.image` pointing at the package's `docs/cover.png`.
+
+## [2.6.0] - 2026-08-15
+
+### Added
+
+- Support Pi's `max` thinking level in `models.json` and the `/rpiv-models` picker when the selected model advertises it.
+
+### Fixed
+
+- **The plan citation floor now disambiguates against the plan's own declared write-set.** An ambiguous bare/suffix citation (`messages.ts:18` matching several tree files) resolves deterministically when exactly one candidate is in the union of the plan's frontmatter `files:` arrays; a tie inside the declared set, or an empty intersection, still fails the floor. Previously such a citation always failed `plan-cite-check`/`code-cite-check` — terminal for the loop-less `ship` preset, which halted a full run over a mechanical path-prefix omission the plan itself had already resolved.
 
 ## [2.5.2] - 2026-08-14
 

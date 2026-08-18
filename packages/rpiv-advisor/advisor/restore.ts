@@ -8,7 +8,13 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { modelKey, parseModelKey } from "@juicesharp/rpiv-config";
 import { loadAdvisorConfig, validateDisabledForModels } from "./config.js";
 import { reconcileAdvisorTool } from "./handlers.js";
-import { ADVISOR_TOOL_NAME, errModelUnavailable, msgAdvisorRestored, msgAdvisorRestoredInactive } from "./messages.js";
+import {
+	ADVISOR_TOOL_NAME,
+	EFFORT_ORDINAL,
+	errModelUnavailable,
+	msgAdvisorRestored,
+	msgAdvisorRestoredInactive,
+} from "./messages.js";
 import { isExecutorBlocked, setDisabledForModels } from "./policy.js";
 import { setAdvisorEffort, setAdvisorModel } from "./state.js";
 
@@ -74,14 +80,26 @@ export function restoreAdvisorState(ctx: ExtensionContext, pi: ExtensionAPI): vo
 	}
 
 	setAdvisorModel(model);
-	if (config.effort) {
-		setAdvisorEffort(config.effort);
+	// Overwrite — never merge — the in-memory effort with the persisted value.
+	// "Model present, effort absent" is a first-class persisted state (the
+	// /advisor Esc and off choices both save it), and another process can
+	// remove the field from the shared advisor.json mid-session; a guarded set
+	// here would leave a stale module-level effort feeding `reasoning` on every
+	// advisor call. A hand-edited value unknown to EFFORT_ORDINAL is dropped
+	// with a warning rather than restored and sent as `reasoning`.
+	let effort = config.effort;
+	if (effort !== undefined && !EFFORT_ORDINAL.includes(effort)) {
+		console.warn(
+			`[rpiv-advisor] advisor.json: unknown effort "${effort}" — ignoring (valid values: ${EFFORT_ORDINAL.join(", ")})`,
+		);
+		effort = undefined;
 	}
+	setAdvisorEffort(effort);
 
 	if (isExecutorBlocked(ctx, pi.getThinkingLevel())) {
 		reconcileAdvisorTool(pi, ctx, { blocked: true });
 		const advisorLabel = modelKey(model);
-		notifyOnce(msgAdvisorRestoredInactive(advisorLabel, config.effort), "info");
+		notifyOnce(msgAdvisorRestoredInactive(advisorLabel, effort), "info");
 		return;
 	}
 
@@ -90,7 +108,7 @@ export function restoreAdvisorState(ctx: ExtensionContext, pi: ExtensionAPI): vo
 		pi.setActiveTools([...active, ADVISOR_TOOL_NAME]);
 	}
 
-	notifyOnce(msgAdvisorRestored(modelKey(model), config.effort), "info");
+	notifyOnce(msgAdvisorRestored(modelKey(model), effort), "info");
 }
 
 export function registerAdvisorSessionStart(pi: ExtensionAPI): void {

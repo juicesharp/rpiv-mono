@@ -2,7 +2,7 @@
 //
 //   node scripts/check-no-decision-codes.mjs
 //
-// Walks the two guarded dirs (recursively, skipping node_modules), reads every *.ts,
+// Walks the guarded dirs (recursively, skipping node_modules), reads every *.ts,
 // and flags any parenthesized, case-sensitive decision-code citation — the transient
 // plan/phase numbering that orphans once its design doc leaves the tree.
 //
@@ -36,13 +36,22 @@ import { join } from "node:path";
 // Matches the research's recommended pre-done grep + the A-family (only live site:
 // audit.test.ts:174 (A3)). Parens + case-sensitivity are what keep it at exactly the
 // contamination shape and reject every plan-fixture false positive (see header).
+// The L<n>-<n> and "review I<n>" alternatives catch architecture-review finding
+// citations — the same transient-numbering class as plan phase codes.
 const DECISION_CODE_RE =
-	/\((C[0-9]+|T[0-9]+|D[0-9]+|G[0-9]+|FR[0-9]+|A[0-9]+|M[0-9]+|Slice [0-9]+|Phase [A-Z0-9.]+|Problem [0-9]+|Decision [0-9]+|concern-[A-Z])/;
+	/\((C[0-9]+|T[0-9]+|D[0-9]+|G[0-9]+|FR[0-9]+|A[0-9]+|M[0-9]+|L[0-9]+-[0-9]+|review I[0-9]+|Slice [0-9]+|Phase [A-Z0-9.]+|Problem [0-9]+|Decision [0-9]+|concern-[A-Z])/;
+
+// Review-citation codes are flagged ANYWHERE inside a parenthesized run, not
+// only immediately after the paren — an article/word prefix ("(the pre-L4-01
+// behavior)", "(locks the L2-01 contract)") must not shelter the citation. The
+// paren + word-boundary + specific L<n>-<n> / "review I<n>" shapes keep this at
+// exactly the review-citation class with no plan-fixture false positives.
+const REVIEW_CODE_IN_PARENS_RE = /\([^)\n]*\b(L[0-9]+-[0-9]+|review I[0-9]+)\b/;
 
 // Whole scoped tree, *.ts only — mirrors `npm run check`'s whole-tree posture (a
 // standing cleanliness invariant that also catches merge-introduced contamination,
 // not just staged files).
-const GUARDED_DIRS = ["packages/rpiv-workflow", "packages/rpiv-pi/extensions/rpiv-core"];
+const GUARDED_DIRS = ["packages/rpiv-workflow", "packages/rpiv-pi/extensions/rpiv-core", "packages/rpiv-advisor"];
 
 function walkTs(dir, out = []) {
 	if (!existsSync(dir)) return out;
@@ -63,7 +72,7 @@ for (const dir of GUARDED_DIRS) {
 		scanned++;
 		const lines = readFileSync(file, "utf8").split("\n");
 		for (let i = 0; i < lines.length; i++) {
-			const m = lines[i].match(DECISION_CODE_RE);
+			const m = lines[i].match(DECISION_CODE_RE) ?? lines[i].match(REVIEW_CODE_IN_PARENS_RE);
 			if (m) violations.push(`${file}:${i + 1}: (${m[1]})`);
 		}
 	}

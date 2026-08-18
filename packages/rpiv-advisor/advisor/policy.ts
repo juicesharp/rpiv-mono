@@ -3,11 +3,11 @@
  * that decide whether the advisor tool is blocked for a given model/effort.
  */
 
-import type { Api, Model, ThinkingLevel } from "@earendil-works/pi-ai";
+import type { Api, Model } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { modelKey, parseModelKey } from "@juicesharp/rpiv-config";
 import type { DisabledForModelsEntry } from "./config.js";
-import { EFFORT_ORDINAL } from "./messages.js";
+import { EFFORT_ORDINAL, type GradedEffort } from "./messages.js";
 
 let disabledForModelsCache: DisabledForModelsEntry[] = [];
 
@@ -27,6 +27,12 @@ function canonicalKey(entry: string): string {
 	return parsed ? `${parsed.provider}/${parsed.modelId}` : entry;
 }
 
+/**
+ * True when `model` is on the disabledForModels blocklist at the executor's
+ * current thinking level. Fail-soft ranking contract: an executor level that
+ * is unset, "off", or unknown to EFFORT_ORDINAL yields indexOf −1, ranking
+ * below every minEffort threshold — such levels never block.
+ */
 export function isModelBlocked(model: Model<Api> | undefined, thinkingLevel?: string): boolean {
 	if (!model) return false;
 	const key = modelKey(model);
@@ -37,7 +43,11 @@ export function isModelBlocked(model: Model<Api> | undefined, thinkingLevel?: st
 			if (canonicalKey(entry.model) !== key) continue;
 			if (entry.minEffort === undefined) return true;
 			const thresholdOrdinal = EFFORT_ORDINAL.indexOf(entry.minEffort);
-			const executorOrdinal = EFFORT_ORDINAL.indexOf(thinkingLevel as ThinkingLevel);
+			// A threshold unknown to the ordinal cannot rank; skip the entry —
+			// otherwise its indexOf -1 would equal an unknown executor's -1 and
+			// block, breaking the "unknown never blocks" contract above.
+			if (thresholdOrdinal === -1) continue;
+			const executorOrdinal = EFFORT_ORDINAL.indexOf(thinkingLevel as GradedEffort);
 			if (executorOrdinal >= thresholdOrdinal) return true;
 		}
 	}

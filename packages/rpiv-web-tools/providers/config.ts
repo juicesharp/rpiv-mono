@@ -8,9 +8,10 @@
  * legacy-apiKey migration depends on.
  *
  * Validation is fail-soft (matching `loadJsonConfig` and `validateConfig` in
- * rpiv-config): malformed JSON, EISDIR, or a hard schema violation all
- * degrade to `{}`. The orchestrator never has to handle "config blew up at
- * startup."
+ * rpiv-config): malformed JSON and EISDIR degrade to `{}`; a schema violation
+ * degrades per field — only the offending paths are dropped, `{}` remains the
+ * floor when nothing salvageable is left. The orchestrator never has to
+ * handle "config blew up at startup."
  */
 
 import {
@@ -75,17 +76,79 @@ export function getConfigPath(): string {
 	return CONFIG_PATH;
 }
 
+/** JSON-pointer segments of a `Value.Errors` `instancePath` (`~1` ⇒ `/`, `~0` ⇒ `~`). */
+const pointerSegments = (instancePath: string): string[] =>
+	instancePath === ""
+		? []
+		: instancePath
+				.split("/")
+				.slice(1)
+				.map((s) => s.replaceAll("~1", "/").replaceAll("~0", "~"));
+
+/**
+ * Delete the value at `segs` from `root`, widening to the nearest containing
+ * FIELD when the path descends into an array (deleting one element would leave
+ * a sparse hole that still fails validation — the whole array field falls back
+ * instead). Returns false when the path is already gone (a prior deletion took
+ * an ancestor).
+ */
+const deleteAtPointer = (root: Record<string, unknown>, segs: string[]): boolean => {
+	let parent: Record<string, unknown> = root;
+	for (let i = 0; i < segs.length - 1; i++) {
+		const next = parent[segs[i] as string];
+		if (next === null || typeof next !== "object") return false;
+		if (Array.isArray(next)) {
+			delete parent[segs[i] as string];
+			return true;
+		}
+		parent = next as Record<string, unknown>;
+	}
+	const leaf = segs[segs.length - 1] as string;
+	if (!(leaf in parent)) return false;
+	delete parent[leaf];
+	return true;
+};
+
+/**
+ * Per-field salvage of a config that fails the whole-schema check: drop
+ * exactly the offending paths `Value.Errors` reports and keep everything else,
+ * so one wrong-typed leaf (e.g. `guidance.web_search.description: 123`) costs
+ * that field alone — not provider, apiKeys, baseUrls, interceptors and both
+ * guidance subtrees for the session, with the `/web-tools` save path then
+ * persisting the wipe. Unknown keys are untouched (`additionalProperties:
+ * true` reports no errors for them), preserving the `otherField` pass-through
+ * contract. Deletions are schema-driven, so a future shared-`GuidanceFields`
+ * field addition cannot re-open the whole-file cliff. The pass loop is belt
+ * and braces for cascading reports (e.g. a union error at the field alongside
+ * its nested cause); a round that deletes nothing, or a config still failing
+ * after the bounded passes, degrades to `{}` exactly as before.
+ */
+const salvageConfig = (raw: object): WebToolsConfig | undefined => {
+	const cfg = structuredClone(raw) as Record<string, unknown>;
+	for (let pass = 0; pass < 5; pass++) {
+		const errors = [...Value.Errors(WebToolsConfigSchema, cfg)];
+		if (errors.length === 0) return cfg as WebToolsConfig;
+		let deleted = false;
+		for (const e of errors) {
+			const segs = pointerSegments(e.instancePath);
+			if (segs.length === 0) return undefined; // root itself invalid — unsalvageable
+			if (deleteAtPointer(cfg, segs)) deleted = true;
+		}
+		if (!deleted) return undefined;
+	}
+	return Value.Check(WebToolsConfigSchema, cfg) ? (cfg as WebToolsConfig) : undefined;
+};
+
 // Tolerant read: loadJsonConfig already swallows JSON parse failures + EISDIR
-// into `{}`; we then run a schema check that — on hard failure — falls back to
-// the same `{}`. Validation uses `Value.Check` (no mutation) rather than
-// `Value.Clean` (would strip unknown fields like the released `otherField`
-// pass-through contract).
+// into `{}`; a schema violation then degrades PER FIELD via `salvageConfig`
+// (whole-file `{}` only when nothing salvageable remains). Validation uses
+// `Value.Check`/`Value.Errors` (no mutation) rather than `Value.Clean` (would
+// strip unknown fields like the released `otherField` pass-through contract).
 export function readConfig(): WebToolsConfig {
 	const raw = loadJsonConfigWithLegacyFallback<unknown>("rpiv-web-tools");
-	if (!Value.Check(WebToolsConfigSchema, raw)) {
-		return {} as WebToolsConfig;
-	}
-	return raw as WebToolsConfig;
+	if (Value.Check(WebToolsConfigSchema, raw)) return raw as WebToolsConfig;
+	if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return {} as WebToolsConfig;
+	return salvageConfig(raw) ?? ({} as WebToolsConfig);
 }
 
 export function writeConfig(c: WebToolsConfig): boolean {

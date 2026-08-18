@@ -20,6 +20,34 @@ type CompleteSimpleFn = typeof import("@earendil-works/pi-ai/compat").completeSi
 type IsContextOverflowFn = typeof import("@earendil-works/pi-ai/compat").isContextOverflow;
 
 /**
+ * Resolve Pi's auth-aware completion facade when the host exposes one.
+ *
+ * Current Pi hosts keep the canonical `ModelRuntime` behind the extension
+ * `ModelRegistry`'s runtime-private `runtime` slot. This structural bridge is
+ * intentionally isolated here: calling that facade is what lets Pi apply
+ * credential-derived request fields — OAuth tokens for keyless providers,
+ * GitHub Copilot's OAuth-specific `baseUrl`. Older hosts, and future hosts
+ * that move the slot, simply fall through to the legacy global completion
+ * path below. Mirrors rpiv-advisor's bridge — duplicated because siblings
+ * never import each other at runtime.
+ *
+ * The returned method is bound because `ModelRuntime.completeSimple()` calls
+ * other runtime methods through `this`.
+ */
+export function getRuntimeCompleteSimple(modelRegistry: unknown): CompleteSimpleFn | undefined {
+	try {
+		if (modelRegistry === null || typeof modelRegistry !== "object") return undefined;
+		const runtime = (modelRegistry as { runtime?: unknown }).runtime;
+		if (runtime === null || typeof runtime !== "object") return undefined;
+		const completeSimple = (runtime as { completeSimple?: unknown }).completeSimple;
+		return typeof completeSimple === "function" ? (completeSimple.bind(runtime) as CompleteSimpleFn) : undefined;
+	} catch {
+		// A malformed/private host shape should retain the version-tolerant fallback.
+		return undefined;
+	}
+}
+
+/**
  * Error codes meaning "the /compat entrypoint is not resolvable on this host":
  *   - `ERR_PACKAGE_PATH_NOT_EXPORTED` — Node's ESM resolver when the installed
  *     pi-ai (<= 0.79.x) resolves but has no "./compat" in its `exports` map —

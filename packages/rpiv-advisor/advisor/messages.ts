@@ -14,11 +14,14 @@ export const TOOL_LABEL = "Advisor";
 export const NO_ADVISOR_VALUE = "__no_advisor__";
 export const OFF_VALUE = "__off__";
 
-// Effort levels
-export const BASE_EFFORT_LEVELS: ThinkingLevel[] = ["minimal", "low", "medium", "high"];
-export const XHIGH_EFFORT_LEVEL: ThinkingLevel = "xhigh";
-export const EFFORT_ORDINAL: readonly ThinkingLevel[] = ["minimal", "low", "medium", "high", "xhigh"];
-export const DEFAULT_EFFORT: ThinkingLevel = "high";
+// Effort levels. GradedEffort is the ordinal's domain: the graded levels only,
+// never "off" — an "off" element would corrupt the indexOf ranking that
+// minEffort thresholds compare against. Today pi-ai's ThinkingLevel already
+// excludes "off" (the Exclude is a defensive no-op); the alias keeps that
+// exclusion structural if the upstream universe ever re-widens.
+export type GradedEffort = Exclude<ThinkingLevel, "off">;
+export const EFFORT_ORDINAL: readonly GradedEffort[] = ["minimal", "low", "medium", "high", "xhigh", "max"];
+export const DEFAULT_EFFORT: GradedEffort = "high";
 export const RECOMMENDED_EFFORT_SUFFIX = "  (recommended)";
 
 // UI — labels used by command flow; panel prose/titles live in advisor-ui.ts
@@ -28,6 +31,7 @@ export const CHECKMARK = " ✓";
 export const MSG_ADVISOR_DISABLED = "Advisor disabled";
 export const MSG_REQUIRES_INTERACTIVE = "/advisor requires interactive mode";
 export const MSG_ADVISOR_NUDGE = "Please advise on the executor's situation above.";
+export const MSG_EFFORT_NOT_SET = "Effort not set — advisor uses the model default";
 export const MSG_PERSIST_FAILED = "Failed to save advisor selection — selection not persisted";
 
 // Errors (static)

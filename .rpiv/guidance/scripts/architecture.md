@@ -9,7 +9,7 @@ Node built-ins only — plus one cross-tree workspace import: `check-slice-overl
 ## Consumers
 - **Developers**: `npm run release:{patch|minor|major}` or `node scripts/release.mjs <x.y.z>`
 - **Root npm scripts**: `version:*` chains call the sync script after `npm version -ws`
-- **CI** (`.github/workflows/ci.yml`): runs `npm run check` + `npm run coverage` on push/PR (Node 22/24) — but publishing stays **local-only by design**: no workflow runs `npm publish`
+- **CI** (`.github/workflows/ci.yml`): runs `npm run check:decision-codes` + `npm run check` + `npm run coverage` on push/PR (Node 22/24) — but publishing stays **local-only by design**: no workflow runs `npm publish`
 - **Husky hooks**: `pre-commit` runs `npm run check:decision-codes` fail-fast, then `npm run check` — gating the clean-tree precondition the release script asserts; `pre-push` (`npm run coverage`) ensures a release-tag push has green tests
 
 ## Module Structure
@@ -37,7 +37,7 @@ Every shell command runs through a single wrapper that **echoes the command and 
 - **Reinstate**: regex-anchored injection of a fresh `[Unreleased]` block above the first version heading — **not** idempotent by itself; the pipeline guarantees exactly-one invocation per release
 
 ## Decision-Code Contamination Guard
-`check-no-decision-codes.mjs` walks `packages/rpiv-workflow` and `packages/rpiv-pi/extensions/rpiv-core` (`*.ts` only, `node_modules` skipped) and exits 1 on any **parenthesized, case-sensitive** decision-code citation — `(C#|T#|D#|G#|FR#|A#|M#|Slice N|Phase X|Problem N|Decision N|concern-X)`. The invariant: design-doc decision-codes live in `.rpiv/artifacts/`, never in committed `.ts`. The parens + uppercase gate and `*.ts`-only scope are deliberate — they self-filter plan fixtures in test data and legit `.md` uses, so there is **no allowlist to maintain**. Wired as `npm run check:decision-codes` (root `package.json`) and the first pre-commit step.
+`check-no-decision-codes.mjs` walks `packages/rpiv-workflow`, `packages/rpiv-pi/extensions/rpiv-core`, and `packages/rpiv-advisor` (`*.ts` only, `node_modules` skipped) and exits 1 on any **parenthesized, case-sensitive** decision-code citation — `(C#|T#|D#|G#|FR#|A#|M#|L#-#|review I#|Slice N|Phase X|Problem N|Decision N|concern-X)`. Review-citation codes (`L#-#`, `review I#`) are additionally flagged anywhere *inside* a parenthesized run, so an article prefix (`(the pre-L4-01 behavior)`) cannot shelter them. The invariant: design-doc decision-codes live in `.rpiv/artifacts/`, never in committed `.ts`. The parens + uppercase gate and `*.ts`-only scope are deliberate — they self-filter plan fixtures in test data and legit `.md` uses, so there is **no allowlist to maintain**. Wired as `npm run check:decision-codes` (root `package.json`), the first pre-commit step, and a CI step before `npm run check`.
 
 ## Architectural Boundaries
 - **NO third-party deps** — Node built-ins + shell-outs only; semver comparison is hand-rolled rather than depending on an npm package

@@ -3,10 +3,11 @@
  * the persisted form lives in config.ts, the blocklist cache in policy.ts.
  */
 
-import type { Api, Model, ThinkingLevel } from "@earendil-works/pi-ai";
+import type { Api, Model } from "@earendil-works/pi-ai";
+import type { GradedEffort } from "./messages.js";
 
 let selectedAdvisor: Model<Api> | undefined;
-let selectedAdvisorEffort: ThinkingLevel | undefined;
+let selectedAdvisorEffort: GradedEffort | undefined;
 
 export function getAdvisorModel(): Model<Api> | undefined {
 	return selectedAdvisor;
@@ -16,10 +17,10 @@ export function setAdvisorModel(model: Model<Api> | undefined): void {
 	selectedAdvisor = model;
 }
 
-export function getAdvisorEffort(): ThinkingLevel | undefined {
+export function getAdvisorEffort(): GradedEffort | undefined {
 	return selectedAdvisorEffort;
 }
 
-export function setAdvisorEffort(effort: ThinkingLevel | undefined): void {
+export function setAdvisorEffort(effort: GradedEffort | undefined): void {
 	selectedAdvisorEffort = effort;
 }

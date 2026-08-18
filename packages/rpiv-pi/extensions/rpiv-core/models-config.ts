@@ -12,6 +12,7 @@
  * take effect on the next session start or /rpiv-update-agents.
  */
 
+import type { ModelThinkingLevel, ThinkingLevel } from "@earendil-works/pi-ai";
 import { configPath, loadJsonConfigWithLegacyFallback, validateConfig } from "@juicesharp/rpiv-config";
 import { type Static, Type } from "typebox";
 
@@ -21,19 +22,37 @@ import { type Static, Type } from "typebox";
 // The host's setThinkingLevel (pi-agent-core ThinkingLevel) AND agent
 // frontmatter both accept "off" — "off" is a first-class level meaning "no
 // reasoning" (it's even the session default). models.json therefore persists
-// all SIX values. Note the distinction from ABSENCE: a missing `thinking`
+// every value. Note the distinction from ABSENCE: a missing `thinking`
 // field means "inherit the session/baseline level"; an explicit "off" means
-// "disable reasoning". THINKING_LEVEL_VALUES (the 5 reasoning levels) is kept
-// for surfaces that list only the graded levels (e.g. the picker).
+// "disable reasoning". THINKING_LEVEL_VALUES (the graded reasoning levels) is
+// kept for surfaces that list only the graded levels (e.g. the picker).
 // ---------------------------------------------------------------------------
 
-/** The 5 graded reasoning levels (excludes "off"). */
-export const THINKING_LEVEL_VALUES = ["minimal", "low", "medium", "high", "xhigh"] as const;
+/** The graded reasoning levels (excludes "off"). */
+export const THINKING_LEVEL_VALUES = ["minimal", "low", "medium", "high", "xhigh", "max"] as const;
 export type ThinkingLevelValue = (typeof THINKING_LEVEL_VALUES)[number];
 
-/** All 6 persistable thinking values, including the explicit "off" (disable reasoning). */
+/** All persistable thinking values, including the explicit "off" (disable reasoning). */
 export const MODEL_THINKING_LEVEL_VALUES = ["off", ...THINKING_LEVEL_VALUES] as const;
 export type ModelThinkingLevelValue = (typeof MODEL_THINKING_LEVEL_VALUES)[number];
+
+// Guards: the local vocabulary must stay in lockstep with pi-ai's thinking-level
+// universe (type-only imports — erased at runtime, no runtime dep). If pi-ai
+// adds or removes a level, the bidirectional extends checks fail and this file
+// won't compile until the arrays follow. They also make casts of
+// pi.getThinkingLevel() to the local types provably safe.
+type _GradedLevelsMatchPiAi = ThinkingLevelValue extends ThinkingLevel
+	? ThinkingLevel extends ThinkingLevelValue
+		? true
+		: never
+	: never;
+const _gradedLevelsMatchPiAi: _GradedLevelsMatchPiAi = true;
+type _PersistableLevelsMatchPiAi = ModelThinkingLevelValue extends ModelThinkingLevel
+	? ModelThinkingLevel extends ModelThinkingLevelValue
+		? true
+		: never
+	: never;
+const _persistableLevelsMatchPiAi: _PersistableLevelsMatchPiAi = true;
 
 /**
  * Background-lane concurrency cap fallback. The fail-soft default applied by
@@ -56,8 +75,9 @@ const ThinkingLevelSchema = Type.Union(
 		Type.Literal("medium"),
 		Type.Literal("high"),
 		Type.Literal("xhigh"),
+		Type.Literal("max"),
 	] as const,
-	{ description: "Effort/thinking level: off | minimal | low | medium | high | xhigh" },
+	{ description: "Effort/thinking level: off | minimal | low | medium | high | xhigh | max" },
 );
 
 // Guard: schema literals must stay in lockstep with MODEL_THINKING_LEVEL_VALUES.
