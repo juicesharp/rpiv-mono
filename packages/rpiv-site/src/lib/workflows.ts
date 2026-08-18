@@ -7,7 +7,7 @@
  *
  * Keep in sync when built-in-workflows.ts changes. `stageCount` is the true
  * `Object.keys(stages).length`; `stages` is the spine drawn on the rail. vet,
- * polish, and ship are small enough to draw stage-for-stage; `build` folds its 30
+ * polish, and ship are small enough to draw stage-for-stage; `build` folds its 31
  * runtime stages into seven acts:
  *
  *   capture → goal, research                                    (verbatim brief)
@@ -23,7 +23,7 @@
  *             code-snapshot, code-fix
  *                                                  (tier-scaled gate + fix loop)
  *   land    → implement, implement-scope-check, reconcile,
- *             validate, commit
+ *             validate, validate-fix, commit
  *
  * The runtime `default` (no config) cascades to the first registered workflow
  * (`build`); the landing also *showcases* `build` because it exercises
@@ -79,7 +79,7 @@ const WORKFLOWS: readonly WorkflowEntry[] = [
 		name: "build",
 		when: "A feature from a brief. Sliced, designed in parallel, gated before any code.",
 		arg: "“a Pi search extension backed by Ollama”",
-		stageCount: 30,
+		stageCount: 31,
 		stages: [
 			{ name: "capture" },
 			{ name: "slice", gate: true, fix: true },
