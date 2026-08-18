@@ -46,14 +46,16 @@ const agents      = defineCollection({ loader: glob({ pattern: "*.md", base: "./
 ```typescript
 // siblings.ts — reads each sibling's package.json directly via readFileSync from
 //   "../../../<name>/package.json"; SIBLING_NAMES is the hand-curated tuple.
-// compat.ts — reads packages/rpiv-pi/CHANGELOG.md and parses
-//   pi-coding-agent ^X.Y.Z out via FLOOR_RE; throws if the regex fails (build-time guard).
+// compat.ts — reads packages/rpiv-pi/package.json (rpiv-pi version) and the monorepo
+//   root package.json devDependencies pin of @earendil-works/pi-coding-agent (the tested
+//   compatibility anchor — every package peer-depends on "*", so there is no published
+//   floor); throws if the devDependency key is missing (build-time guard).
 // agents.ts / skills.ts — Astro content-collection adapters (use `astro:content`).
 //   Embed hand-curated tables: TIER_BY_NAME (capability tier per agent — 15 named
 //   agents across locator/analyzer/external/specialist/verifier),
 //   PIPELINE/SECONDARY/CODE_REVIEW_FLOW tuples + ARTIFACT_WRITE_SITES / PIPELINE_META.
-// workflows.ts — hand-maintained presentation mirror of all three built-in
-//   pipelines (build/vet/polish; nothing is omitted); build's 30 runtime
+// workflows.ts — hand-maintained presentation mirror of all four built-in
+//   pipelines (build/vet/polish/ship; nothing is omitted); build's 31 runtime
 //   stages fold into a curated seven-act spine (capture → slice → design → review →
 //   plan → code → land). Components consume these typed APIs — never `getCollection()` directly.
 ```
@@ -80,5 +82,5 @@ const agents      = defineCollection({ loader: glob({ pattern: "*.md", base: "./
 2. **New agent**: add `src/content/agents/<slug>.md` (tagline + `purpose`/`when_to_use`/`dispatched_by`) and a `TIER_BY_NAME` row in `src/lib/agents.ts`; `agentSpecs` picks the upstream `.md` up automatically.
 3. **New sibling extension**: create `src/content/extensions/<slug>.md` with `package`/`status`/`order` frontmatter. Only add a `SIBLING_NAMES` + `ROLES` entry in `src/lib/siblings.ts` if the sibling should appear in the curated SiblingGrid — `SIBLING_NAMES` is a hand-picked subset, NOT 1:1 with `extensions/`.
 4. **Sibling renamed/removed**: update `SIBLING_NAMES`/`ROLES` if it was listed, AND delete the matching `extensions/<slug>.md`. The build fails loudly if a name in the tuple has no `package.json`.
-5. Bump rpiv-pi `CHANGELOG.md` `[Unreleased]` if the floor `pi-coding-agent ^X.Y.Z` line changes — `src/lib/compat.ts` parses it via `FLOOR_RE` and throws on no-match.
+5. The compat floor shown in the Install section is the root `package.json` devDependencies pin of `@earendil-works/pi-coding-agent` — dependency bumps update it automatically, no manual sync; `src/lib/compat.ts` reads it at build time and throws if the pin is missing or empty.
 </important>

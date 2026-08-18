@@ -5,7 +5,7 @@ Append-only JSONL audit store for workflow runs at `<cwd>/.rpiv/workflows/runs/<
 
 ## Dependencies
 - Node built-ins: `node:crypto` (`paths.ts`), `node:path` (`paths.ts`; `resolve.ts` — `basename`), `node:fs` (`writes.ts`, `reads.ts`, `raw.ts`, `names.ts`)
-- `../internal-utils.js` — `formatError` (the sole VALUE import from package internals); type-only: `Output`, `RunTrigger`, `Artifact`, `UnitRole`
+- `../internal-utils.js` — `formatError`; `../handle.js` — `handleToString` (the only two VALUE imports from package internals); type-only: `Output`, `RunTrigger`, `Artifact`, `UnitRole`
 
 ## Consumers
 - Writers: `../runner/runner.ts` (`appendHeader`), `../runner/chain-advance.ts` (`appendRoutingDecision`), package-root `../audit-rows.ts` (`appendStage`, via `recordStage`) and `../loop.ts` (`appendLoopCap`)

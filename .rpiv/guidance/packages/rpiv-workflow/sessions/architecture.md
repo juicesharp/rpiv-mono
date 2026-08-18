@@ -22,6 +22,7 @@ spawn.ts           — openChild → spawnChildAndRun / reattachChildSession / f
 extraction.ts      — produceAndValidateOutput: collector → parser → schema-validate → retry loop; emits OutputProduction
 halt-routing.ts    — haltStageOrSoftHalt gate + per-arm halt helpers + auditFor
 success-persist.ts — recordStageSuccess + unitEventOf (value-imported by halt-routing — the acyclic direction)
+bash-strikes.ts    — per-session watchdog-strike accounting: BASH_TIMEOUT_STRIKES (RPIV_BASH_TIMEOUT_STRIKES, clamped [1,5], default 2) + consumeBashStrike / bashStrikesRemaining / bashTimeoutSteeringMessage (value-imported by sessions.ts recovery arm) + bashTimeoutStrikeHistory (value-imported by success-persist.ts for the completed-row field)
 locate.ts          — locateSessionFile id→path fallback ladder + pruneOrphanedChildSessions orphan sweep (node:fs only)
 reattach.ts        — session-backed resume: promotion → reattach arms reusing postStage / recordStageSuccess
 ```

@@ -10,13 +10,13 @@ Single-tool extension exposing `ask_user_question` — a TUI option selector wit
 - **`@earendil-works/pi-coding-agent`** (peer): theme, markdown, dynamic border
 - **`@earendil-works/pi-tui`** (peer): containers, multiline editor, key matching, width-correct text helpers
 - **`@juicesharp/rpiv-i18n`** (optional peer): live-locale strings via `state/i18n-bridge.ts`; English-fallback shim when absent
-- **`@juicesharp/rpiv-config`**: `loadJsonConfigWithLegacyFallback` — honors `XDG_CONFIG_HOME` with a one-way legacy `~/.config` fallback
+- **`@juicesharp/rpiv-config`**: `loadJsonConfigWithLegacyFallback` — honors `XDG_CONFIG_HOME` with a one-way legacy `~/.config` fallback; also `GuidanceFields`/`validateGuidanceFields` for the `guidance` config overrides
 - **`typebox`**: schema types (regular dependency — was a peer until #79 broke installers that don't materialise peers)
 
 ## Module Structure
 
 ```
-.                       — Pi entry + tool registration, `config.ts` (collapseKey), `events.ts` ("./events" export), `rpc-fallback.ts` (RPC dialog walker), `reconcile.ts` (tool visibility)
+.                       — Pi entry + tool registration, `config.ts` (collapseKey + optional `guidance` overrides for the tool description / prompt snippet / prompt guidelines, validated via rpiv-config's `validateGuidanceFields`; unset fields fall back to the `DEFAULT_*` consts in `ask-user-question.ts`), `events.ts` ("./events" export), `rpc-fallback.ts` (RPC dialog walker), `reconcile.ts` (tool visibility)
 tool/                   — Tool I/O surface: TypeBox schemas, params validator, result envelope, formatter.
                           Detailed: `.rpiv/guidance/packages/rpiv-ask-user-question/tool/architecture.md`
 state/                  — Canonical state, pure reducer, key router, runtime session, row-intent metadata,
@@ -58,11 +58,11 @@ locales/                — JSON translation maps loaded via i18n-bridge at modu
 
 ## Collapse Mode
 
-The shortcut is configurable via the `collapseKey` config field (default `ctrl+]`; `"off"` disables; malformed specs fall back to the default). It dispatches `toggle_collapsed` (intercepted at the top of `routeKey`, works from every inner state) → flips `state.collapsed` and emits a `set_overlay_hidden` effect, which the session routes to `OverlayHandle.setHidden` — the overlay is fully hidden (chat scrolling and editor focus resume; Esc does not cancel while hidden). Because pi-tui delivers no input to a hidden overlay, `execute()` registers a raw terminal listener for the same key to re-expand — it defers when another overlay is focused. Source: `state/state.ts:35`, `state/key-router.ts:34-35,145-173`, `state/state-reducer.ts:292-295`, `state/questionnaire-session.ts:177-181`, `ask-user-question.ts:195-212`.
+The shortcut is configurable via the `collapseKey` config field (default `ctrl+]`; `"off"` disables; malformed specs fall back to the default). It dispatches `toggle_collapsed` (intercepted at the top of `routeKey`, works from every inner state) → flips `state.collapsed` and emits a `set_overlay_hidden` effect, which the session routes to `OverlayHandle.setHidden` — the overlay is fully hidden (chat scrolling and editor focus resume; Esc does not cancel while hidden). Because pi-tui delivers no input to a hidden overlay, `execute()` registers a raw terminal listener for the same key to re-expand — it defers when another overlay is focused. Source: `state/state.ts:35`, `state/key-router.ts:35-36,178-192`, `state/state-reducer.ts:292-295`, `state/questionnaire-session.ts:179-183`, `ask-user-question.ts:231-252`.
 
 ## Execution Modes & Load Resilience
 
-`execute()` forks at the root: `ctx.mode === "rpc"` + `hasDialogUI` (VS Code pendant, Zed) routes to `runRpcQuestionnaire` (`rpc-fallback.ts`) — a sequential native select/input dialog walker feeding the same `buildQuestionnaireResponse` envelope (no preview pane, no tabs; free-text preserved on both variants). Non-interactive runs never see the tool: `reconcile.ts` (`registerAskUserQuestionReconciler`, wired in `index.ts`) strips/restores it from the active set against `ctx.hasUI`; the in-handler `ERROR_NO_UI` guard (`ask-user-question.ts:53,153`) remains as a backstop telling the model to re-ask in chat. The heavy view graph loads lazily via `loadQuestionnaireSession`, which guards jiti's poisoned graph cache (a failed load is cached unrecoverably; both failure shapes return an envelope naming the restart remedy — #107). `rpc-fallback` is deliberately statically imported: it pulls only types + the i18n bridge.
+`execute()` forks at the root: `ctx.mode === "rpc"` + `hasDialogUI` (VS Code pendant, Zed) routes to `runRpcQuestionnaire` (`rpc-fallback.ts`) — a sequential native select/input dialog walker feeding the same `buildQuestionnaireResponse` envelope (no preview pane, no tabs; free-text preserved on both variants). Non-interactive runs never see the tool: `reconcile.ts` (`registerAskUserQuestionReconciler`, wired in `index.ts`) strips/restores it from the active set against `ctx.hasUI`; the in-handler `ERROR_NO_UI` guard (`ask-user-question.ts:53,173`) remains as a backstop telling the model to re-ask in chat. The heavy view graph loads lazily via `loadQuestionnaireSession`, which guards jiti's poisoned graph cache (a failed load is cached unrecoverably; both failure shapes return an envelope naming the restart remedy — #107). `rpc-fallback` is deliberately statically imported: it pulls only types + the i18n bridge.
 
 ## Architectural Boundaries
 

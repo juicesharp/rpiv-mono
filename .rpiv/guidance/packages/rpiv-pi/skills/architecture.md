@@ -13,7 +13,7 @@ User-invocable AI workflow definitions. Each `SKILL.md` is a structured prompt i
 - **`@juicesharp/rpiv-args`**: substitutes `$N`/`$ARGUMENTS`/`$@`/`${@:N[:L]}` placeholders in skill bodies before they reach the agent loop; on the token path it also emits the raw argument string in a `Skill input:`-labeled trailer after the skill block so supplied input is never misread as empty (issue #89)
 
 ## Consumers
-- **Users**: `/skill:<name>` invokes the matching skill. Most pipeline-stage/fanout skills (18 of 27) declare `disable-model-invocation: true` (`code-review` and `commit` are stage-run yet stay model-visible) — hidden from the model's skill list, they run only on explicit invocation or workflow dispatch; a compact stage-command index injected at session start keeps them discoverable
+- **Users**: `/skill:<name>` invokes the matching skill. Most pipeline-stage/fanout skills (20 of 29) declare `disable-model-invocation: true` (`code-review` and `commit` are stage-run yet stay model-visible) — hidden from the model's skill list, they run only on explicit invocation or workflow dispatch; a compact stage-command index injected at session start keeps them discoverable
 - **Workflows**: chain wiring is framework-enforced — each skill's `contract:` produces/consumes block drives contract-driven routing, stage-compatibility validation, and outcome derivation; only human-facing trigger prose ("Always requires a [upstream] artifact") remains in `description`
 
 ## Module Structure
@@ -38,7 +38,7 @@ description: "What it does. Use when [trigger]."
 argument-hint: "[what the user passes]"
 allowed-tools: Bash(git *), Read, Glob, Grep   # restricts the tool set (may list Agent); omit to inherit everything
 shell-timeout: 10         # seconds, for the body's shell blocks (rpiv-args; default 120s, 0 disables)
-disable-model-invocation: true   # the norm (18/27) — most pipeline-stage/fanout skills; code-review, commit, and utility skills omit it
+disable-model-invocation: true   # the norm (20/29) — most pipeline-stage/fanout skills; code-review, commit, and utility skills omit it
 contract:                 # every skill declares one; produces/consumes drive routing + stage-compat validation
   produces: { kind: produces, meta: { artifactKind: slices }, data: { …JSON schema… } }
   consumes: { meta: { artifactKind: [research, slices] } }

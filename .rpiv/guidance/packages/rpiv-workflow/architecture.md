@@ -11,7 +11,7 @@ Chain Pi skills into typed multi-stage workflows. Owns the `/wf` slash command, 
 - **`typebox`** (dependency): `outputSchema` validation for `produces()` stages — declared directly (not a peer), so installs that don't materialize peers still validate outputs (`typebox-adapter.ts`). **`jiti`** (dependency): loads user `.ts` overlays without a build step. **`@juicesharp/rpiv-config`** (dependency): `configPath` for the user layer
 
 ## Consumers
-- **`@juicesharp/rpiv-pi`** — registers a lazy provider via `registerBuiltInsProvider` from the `/startup` entry (`registerBuiltIns(builtInWorkflows)` = build/vet/polish, built on first `/wf`, not startup); auto-wires bucket-narrowed `rpivBucketOutcome(bucket)` onto contract-backed `produces()` stages at load time via `registerOutcomeDeriver` (`outcome-derivation.ts`); stages with explicit outcomes (e.g. the verdict outcomes in `built-in-workflows.ts`) keep theirs.
+- **`@juicesharp/rpiv-pi`** — registers a lazy provider via `registerBuiltInsProvider` from the `/startup` entry (`registerBuiltIns(builtInWorkflows)` = build/vet/polish/ship, built on first `/wf`, not startup); auto-wires bucket-narrowed `rpivBucketOutcome(bucket)` onto contract-backed `produces()` stages at load time via `registerOutcomeDeriver` (`outcome-derivation.ts`); stages with explicit outcomes (e.g. the verdict outcomes in `built-in-workflows.ts`) keep theirs.
 
 ## Module Structure
 ```
@@ -43,10 +43,12 @@ Chain Pi skills into typed multi-stage workflows. Owns the `/wf` slash command, 
 │        fanout dispatch, Kahn topological wave levels
 ├── events.ts, triggers.ts, routing.ts, audit.ts/audit-ctx.ts/audit-rows.ts, handle.ts,
 │   transcript.ts, chain-state.ts, built-ins.ts, stage-errors.ts, layers.ts, messages.ts,
-│   docs-protocol.ts, internal-utils.ts, types.ts
+│   docs-protocol.ts, internal-utils.ts, types.ts, death-scene.ts, failure-memos.ts,
+│   worktree-digest.ts
 │      — Runtime plumbing: lifecycle hooks, triggers, routing exec, audit layer (ctx/rows
 │        split), chain-state authorities, built-in registry, message constants, docs
-│        system-prompt protocol
+│        system-prompt protocol; failure-path resilience: death-scene artifact writer,
+│        failure-memo store, validation-retry worktree digest
 └── internal.ts — Test-only exports (getBuiltIns, recordStage, runsDir, …) reached via
                   `@juicesharp/rpiv-workflow/internal`
 ```
@@ -64,7 +66,7 @@ Within a layer the config file wins by workflow name. Only the config file may s
 ## Detached Execution
 Every stage runs in an isolated child session the host spawns via `WorkflowHostContext.spawnChild` (up to `maxConcurrency` in flight; `reattach`/`fork` reopen or fork a persisted session for resume and `sessionPolicy: "continue"`). The `/wf` handler receives the observer-only `WorkflowLauncherContext` (`Omit<WorkflowHostContext, "spawnChild" | "maxConcurrency">`) — Pi's `ExtensionCommandContext` satisfies it structurally; the SDK executor (`SdkWorkflowHost`, in rpiv-pi) is looked up through the `execution-host.ts` provider seam. Per-unit `ModelSelection` applies at child-session creation, never via global mutation; the UI contract is notify-only.
 
-Parallel fan-out rides on this: `fanout()` takes an optional `concurrency` ceiling (1 serializes) and `depArtifactFlag` (injects each dependency's artifact path into dependent prompts); units with `deps` dispatch in Kahn waves (`loop-waves.ts`); results fold in DECLARED index order so `fanin` synthesis + resume stay deterministic. Lifecycle: `onUnitHalt` fires on a collect-all soft-halt, `onRoute` receives a `bypassed` recovery-arms list, and `LifecycleContext.visited` is reconstructed from the trail on resume. Watchdog tool timeouts (`toolTimeout()` on the session ctx) route through the soft-halt gate instead of throwing `WorkflowAbortError` — resuming must not re-dispatch the runaway command.
+Parallel fan-out rides on this: `fanout()` takes an optional `concurrency` ceiling (1 serializes) and `depArtifactFlag` (injects each dependency's artifact path into dependent prompts); units with `deps` dispatch in Kahn waves (`loop-waves.ts`); results fold in DECLARED index order so `fanin` synthesis + resume stay deterministic. Lifecycle: `onUnitHalt` fires on a collect-all soft-halt; on resume, the engine-internal `RunContext.visited` (the backward-jump guard's set — not exposed on `LifecycleContext`) is reconstructed from the trail. Watchdog tool timeouts (`toolTimeout()` on the session ctx) route through the soft-halt gate instead of throwing `WorkflowAbortError` — resuming must not re-dispatch the runaway command.
 
 ## Failure-Path Resilience
 Every stage/unit failure flows through a four-rung ladder — **recover → remember → preserve → gate** — that contains a single hung command's cost instead of cascading across stages:

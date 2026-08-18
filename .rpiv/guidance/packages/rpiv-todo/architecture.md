@@ -94,7 +94,7 @@ pi.on("session_start", async (_e, ctx) => {
 <important if="you are customizing the overlay">
 ## Customizing the Overlay
 - **Placement**: change `{ placement: "aboveEditor" }` to `"belowEditor"` in `setWidget`
-- **Line cap**: config field `maxWidgetLines` (default 12, floor of 3), read fresh via `getMaxWidgetLines()` on every render — no `/reload`; overflow math adapts automatically
+- **Line cap**: config field `maxWidgetLines` (default 12, floor of 3), read fresh via `getMaxWidgetLines()` at render time — no `/reload`; overflow math adapts automatically. Exception: when Pi's tool-output expansion mode is on (`uiCtx.getToolsExpanded?.() === true`, optional-chained for hosts predating it), the render bypasses the cap and budgets all visible tasks (`bodyBudget` in todo-overlay.ts) so Pi's expand shortcut also expands this widget
 - **Collapse key**: config field `collapseKey` (default `ctrl+shift+t`, `"off"` disables) — resolved once at factory scope by `resolveCollapseKey()`, so a change needs `/reload` to re-bind; validated strictly against pi-tui's KeyId grammar so a typo like `ctr+]` cannot silently consume bare keypresses; `toggleCollapse()` forces `requestRender(true)` on the height step, and the collapsed view renders a dim expand hint (static label when the key is `"off"` mid-session)
 - **Glyphs / heading**: the status-glyph palette is the only glyph coupling site; the heading-color/icon/text triple lives in `renderWidget`
 - Theme always via `theme.fg(...)` — never raw ANSI; use `truncateToWidth` for every line

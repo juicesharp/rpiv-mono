@@ -1,22 +1,22 @@
 # rpiv-site / src / lib
 
 ## Responsibility
-Thin domain-helper layer that wraps Astro content-collections (`agentSpecs`, `agents`, `skillSpecs`, `skills`, `posts`, `docs`) and reads sibling package.json files across the monorepo, shaping them into typed, sorted, presentation-ready records for `.astro` pages and components. Also hosts the hand-maintained workflow mirror (`workflows.ts`) covering all three built-in workflows (build/vet/polish) rpiv-pi registers into rpiv-workflow's built-in layer, which drives the landing.
+Thin domain-helper layer that wraps Astro content-collections (`agentSpecs`, `agents`, `skillSpecs`, `skills`, `posts`, `docs`) and reads sibling package.json files across the monorepo, shaping them into typed, sorted, presentation-ready records for `.astro` pages and components. Also hosts the hand-maintained workflow mirror (`workflows.ts`) covering all four built-in workflows (build/vet/polish/ship) rpiv-pi registers into rpiv-workflow's built-in layer, which drives the landing.
 
 ## Dependencies
 - **`astro:content`** (virtual module): `getCollection`
 - **`node:fs`** + **`node:url`** for cross-package package.json reads
 - **`vitest`**: only in `posts.test.ts`
-- **Cross-package** (filesystem only, NOT source imports): `compat.ts` reads `../../../rpiv-pi/package.json` and `CHANGELOG.md`; `version.ts` JSON-imports `../../../rpiv-pi/package.json`; `siblings.ts` reads each sibling's `package.json`
+- **Cross-package** (filesystem only, NOT source imports): `compat.ts` reads `../../../rpiv-pi/package.json` and the monorepo root `../../../../package.json`; `version.ts` JSON-imports `../../../rpiv-pi/package.json`; `siblings.ts` reads each sibling's `package.json`
 
 ## Module Structure
 ```
 agents.ts / skills.ts — Merge spec + visitor-copy collections; five CapabilityTiers (verifier tier added with the three-pipeline release — 15-agent TIER_BY_NAME allowlist, verifier before external in TIER_ORDER), fallback taglines, flow groupings (PIPELINE/SECONDARY/CODE_REVIEW_FLOW), ARTIFACT_WRITE_SITES, PIPELINE_META
-workflows.ts     — Hand-maintained mirror of all three built-in workflows (build/vet/polish — the complete set): module-private WORKFLOWS exposed via getWorkflows(); WorkflowStage flags (fanout/gate/fix/human), backward-edge loops, showcase flag
+workflows.ts     — Hand-maintained mirror of all four built-in workflows (build/vet/polish/ship — the complete set): module-private WORKFLOWS exposed via getWorkflows(); WorkflowStage flags (fanout/gate/fix/human), backward-edge loops, showcase flag
 counts.ts        — Build-time landing stat counts (SurfaceCounts, getSurfaceCounts) derived from skillSpecs, the TIER_BY_NAME roster via getAgentsByTier, getWorkflows, and SIBLING_NAMES — a stat and the section it links to can never disagree
 posts.ts / docs.ts / reading-time.ts — Published-content filters (single source of truth for "published"), sorted; `reading-time.ts` is a pure `words / 200` estimator (floor=1) extracted so Vitest can test it without `astro:content`
 siblings.ts      — Sibling catalog: reads each sibling's package.json; `shortPeers` strips `@earendil-works/`/`@juicesharp/` scopes and drops `rpiv-*` peers (external weight only); adds curated role labels
-compat.ts / version.ts — Cross-package version surface: rpiv-pi `version` (JSON import; throws if missing) + CHANGELOG floor scrape via FLOOR_RE
+compat.ts / version.ts — Cross-package version surface: rpiv-pi `version` (JSON import; throws if missing) + tested @earendil-works/pi-coding-agent pin read from root package.json devDependencies (throws if absent/empty)
 inlineMd.ts      — Renders a tiny inline-Markdown subset (`code` + `**bold**`), HTML-escaping the rest, for reference-page frontmatter strings
 ```
 
@@ -63,16 +63,17 @@ function readPkg(name: SiblingName): PkgJson {
 ```
 **Does NOT pull from `rpiv-pi/extensions/rpiv-core/siblings`** — the catalog here is the hardcoded `SIBLING_NAMES` tuple plus each sibling's own `package.json`. This is the build-time spec-loading boundary documented in the site root architecture.
 
-## Compat (regex scrape, build-time guard)
+## Compat (root dev-pin read, build-time guard)
 ```ts
-const FLOOR_RE = /pi-coding-agent[`\s]+\^([0-9]+\.[0-9]+\.[0-9]+)/;
-// Scrapes rpiv-pi/CHANGELOG.md for the floor; pairs with rpiv-pi/package.json's version.
-// Throws if the regex fails — build-time guard against silent floor drift.
+const tested = rootPkg.devDependencies?.["@earendil-works/pi-coding-agent"];
+// loadCompat() reads the monorepo root package.json dev pin (the only real
+// compatibility anchor — every package peer-depends on "*") and pairs it with
+// rpiv-pi/package.json's version. Throws if the pin is not a non-empty string.
 ```
 
 ## Workflow Mirror (spine, not full graph)
-- **Keep in sync** with `packages/rpiv-pi/extensions/rpiv-core/built-in-workflows.ts` — `workflows.ts` is a hand-maintained presentation mirror (all three built-ins — the complete set), never a source import
-- **`stageCount` must equal** the runtime `Object.keys(stages).length` (currently 30/8/6); `stages` is the curated rail spine — `build` folds its 30 runtime stages into seven acts
+- **Keep in sync** with `packages/rpiv-pi/extensions/rpiv-core/built-in-workflows.ts` — `workflows.ts` is a hand-maintained presentation mirror (all four built-ins — the complete set), never a source import
+- **`stageCount` must equal** the runtime `Object.keys(stages).length`; `stages` is the curated rail spine — `build` folds its runtime stages into seven acts
 - **Stage flags drive rendering** — `fanout` (stacked node), `gate`/`fix` (quality gate + fix loop), `human` (build's design review); optional `loop` draws the backward arc (vet "↺ until approved", polish "↺ until clean")
 - **`showcase` = runtime default** — the landing showcases `build` (it exercises the most machinery); the runtime default (no config) cascades to it too, as the first registered built-in
 
@@ -89,6 +90,6 @@ const FLOOR_RE = /pi-coding-agent[`\s]+\^([0-9]+\.[0-9]+\.[0-9]+)/;
 
 ## Architectural Boundaries
 - **NO collection filtering/merging/sorting in components/pages** — components never touch `astro:content`; pages touch it only for `getStaticPaths` enumeration (`getCollection`) and `render`/`getEntry` — all derivation goes through this layer
-- **Cross-package access is filesystem-only** (readFileSync of `package.json` / `CHANGELOG.md`) — never `import` from `../../../rpiv-pi/src/...`
+- **Cross-package access is filesystem-only** (readFileSync of `package.json` files) — never `import` from `../../../rpiv-pi/src/...`
 - **`satisfies Record<KnownSkill, …>`** is the compile-time guard against orphaned skill metadata
-- **`FLOOR_RE` failures throw at build** — silent floor drift between site and CHANGELOG is impossible
+- **`loadCompat` throws at build** if the root `devDependencies` pin for `@earendil-works/pi-coding-agent` is missing — silent compat drift between site and repo is impossible

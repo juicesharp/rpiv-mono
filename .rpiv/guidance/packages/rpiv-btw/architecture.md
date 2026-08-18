@@ -8,7 +8,7 @@ Slash-command-only Pi extension. Spawns a one-off side call to the same primary 
 
 ## Dependencies
 - **`@earendil-works/pi-coding-agent`** (peer): `ExtensionAPI`/`ExtensionContext`, branch-to-LLM converter (`convertToLlm`), `SessionEntry`/`Theme` types
-- **`@earendil-works/pi-ai`** (peer): the side-call entry (`completeSimple` with `tools: []`, resolved lazily via `pi-compat.ts` — never a static import) and message types
+- **`@earendil-works/pi-ai`** (peer): the legacy global `completeSimple` fallback and the overflow detector `isContextOverflow` (both resolved lazily via `pi-compat.ts` against the host's copy — never a static import), plus message types; the PRIMARY side-call entry is the host's `ModelRuntime.completeSimple` facade read structurally off `ctx.modelRegistry` (also via `pi-compat.ts`), with `tools: []` passed on either path
 - **`@earendil-works/pi-tui`** (peer): overlay/component types (`OverlayOptions`, `Component`, `TUI`), key-matching (`matchesKey`), ANSI-safe width/wrap helpers
 
 ## Consumers
@@ -45,7 +45,7 @@ The cached branch clone is dropped on `session_compact` and `session_tree`. With
 - **Single-retry rule** — exactly one overflow retry halves `keepBudget`; the rebuild re-slices the cached snapshot (never re-reads `ctx.sessionManager.getBranch()`). Legacy hosts where `isContextOverflow` is absent degrade gracefully with no retry, and never crash.
 
 ## Version-Tolerant `completeSimple` Resolution
-`executeBtw` awaits `loadCompleteSimple()` from `pi-compat.ts` — never a static import, because pi-ai resolves against the HOST's copy (peer `"*"`). It tries `@earendil-works/pi-ai/compat` first (Pi >= 0.80.1 moved the global dispatch API there), falling back to the package root ONLY on module-resolution failures (`ERR_PACKAGE_PATH_NOT_EXPORTED` / `ERR_MODULE_NOT_FOUND` / `MODULE_NOT_FOUND`, walking the error `cause` chain); any other `/compat` error rethrows so real init failures surface instead of being masked. `/compat` is temporary — when pi's ModelManager migration deletes it, `pi-compat.ts` is the single place to migrate.
+`executeBtw` resolves the call in two tiers. FIRST it tries Pi's auth-aware `ModelRuntime` facade via `getRuntimeCompleteSimple(ctx.modelRegistry)` from `pi-compat.ts` — preferred because Pi applies credential-derived request fields internally (OAuth tokens, GitHub Copilot's OAuth-specific `baseUrl`), so that path passes only `{ signal }` (NEVER explicit `apiKey`/`headers`, which would bypass Pi's credential resolution), and a missing literal API key is not fatal when the facade exists. Only when the host exposes no runtime slot does it fall back to awaiting `loadCompleteSimple()` — never a static import, because pi-ai resolves against the HOST's copy (peer `"*"`). The fallback tries `@earendil-works/pi-ai/compat` first (Pi >= 0.80.1 moved the global dispatch API there), falling back to the package root ONLY on module-resolution failures (`ERR_PACKAGE_PATH_NOT_EXPORTED` / `ERR_MODULE_NOT_FOUND` / `MODULE_NOT_FOUND`, walking the error `cause` chain); any other `/compat` error rethrows so real init failures surface instead of being masked. `/compat` is temporary — when pi's ModelManager migration deletes it, `pi-compat.ts` is the single place to migrate.
 
 ## Architectural Boundaries
 - **NO disk persistence** — `globalThis` only; lost on Pi exit by design

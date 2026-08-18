@@ -37,7 +37,7 @@ No consumer imports plain `loadJsonConfig` anymore — all config-reading siblin
 | `loadJsonConfig<T>(path)` | Read + parse JSON config; `{}` for missing/malformed/non-object |
 | `loadJsonConfigWithLegacyFallback<T>(name, file?)` | Prefer the XDG-resolved path; read the legacy `~/.config/<name>/<file>` only when the XDG file is absent. Preferred load entry point for all consumers |
 | `saveJsonConfig(path, data)` | Write formatted JSON with mkdir + chmod(0o600); returns `boolean` (false on fs failure) — callers MUST guard the success notification on it |
-| `GuidanceFields` | Interface: `{ promptSnippet?: string; promptGuidelines?: string[] }` |
+| `GuidanceFields` | Interface: `{ promptSnippet?: string; promptGuidelines?: string[]; description?: string }` |
 | `GuidanceFieldsSchema` | TypeBox form of `GuidanceFields` (`additionalProperties: true`) for callers baking guidance into a larger validated config |
 | `validateGuidanceFields(fields)` | Extract valid guidance fields from unknown value |
 | `parseModelKey(key)` | Parse `provider/modelId` (or legacy `provider:modelId`) → `{ provider, modelId } \| undefined`; slash preferred |

@@ -9,7 +9,7 @@ The LLM tool contract surface: TypeBox parameter schemas, pure runtime parameter
 
 ## Inbound / Outbound
 - **Imported by** `ask-user-question.ts` (the tool registrar): `QuestionParamsSchema`, `validateQuestionnaire`, `buildQuestionnaireResponse`, `buildToolResult`
-- **Imported by** `rpc-fallback.ts` (RPC/ACP native-dialog walker): `QuestionAnswer`/`QuestionData`/`QuestionnaireResult`/`QuestionParams` types only — its results are funneled through the shared `buildQuestionnaireResponse` envelope (`ask-user-question.ts:176, 289`)
+- **Imported by** `rpc-fallback.ts` (RPC/ACP native-dialog walker): `QuestionAnswer`/`QuestionData`/`QuestionnaireResult`/`QuestionParams` types only — its results are funneled through the shared `buildQuestionnaireResponse` envelope (`ask-user-question.ts:197, 311`)
 - **`validate-questionnaire.ts`** imports purely from `./types.js` — no state/view reach
 - **`response-envelope.ts`** imports `formatAnswerScalar` from `./format-answer.js` + types from `./types.js`
 

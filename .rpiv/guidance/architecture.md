@@ -14,7 +14,7 @@ rpiv-mono/
 │   └── test-utils/               — Private workspace package: shared test fixtures (not published)
 ├── test/                         — Repo-wide Vitest setup (homedir stub + env hygiene + pi-ai//compat mocks + beforeEach singleton resets)
 ├── scripts/                      — Lockstep release pipeline (release.mjs + sync-versions.js) + repo guards (check-no-decision-codes.mjs, check-slice-overlap.mjs)
-├── thoughts/shared/              — Pipeline artifacts: questions/, research/, designs/, plans/, reviews/ (gitignored)
+├── thoughts/shared/              — Pipeline artifacts: questions/, research/, solutions/, designs/, plans/, reviews/ (gitignored)
 ├── vitest.config.ts              — Single Vitest runner; `include: ['packages/*/**/*.test.ts']`, setupFiles `['./test/setup.ts']`
 ├── tsconfig.base.json            — Single shared TS config; no per-package tsconfig.json (rpiv-site has its own — excluded here)
 ├── package.json                  — npm workspaces root
@@ -53,7 +53,7 @@ Husky hooks (local-only):
 
 - **Lockstep versions**: every `packages/*/package.json` shares one `version`. Enforced by `sync-versions.js` (exit 1 on drift). `"private": true` packages bump too but are skipped at publish. **Naming**: directory `rpiv-<feature>` ↔ npm `@juicesharp/rpiv-<feature>`.
 - **Sibling deps as `peerDependencies: "*"`** — `rpiv-pi` peer-pins every registered sibling (not opt-in ones) and `pi-*` runtime; bundlers never include them.
-- **`files` arrays** explicitly list `.ts` source + asset directories (e.g., `prompts/`); `.rpiv/` is never shipped; directory entries need a `!**/*.test.ts` negation (as in rpiv-pi/rpiv-web-tools/rpiv-workflow) to keep co-located tests out of the tarball.
+- **`files` arrays** explicitly list `.ts` source + asset directories (e.g., `prompts/`); `.rpiv/` is never shipped; directory entries need a `!**/*.test.ts` negation (as in rpiv-pi/rpiv-web-tools/rpiv-workflow/rpiv-advisor) to keep co-located tests out of the tarball.
 - **`type: "module"` everywhere** with Node16 resolution; relative imports use `.js` extensions from `.ts` source. Test files co-locate as `*.test.ts` next to production sources.
 - **No decision-code citations in committed `.ts`** — comments state the contract in place, never cite parenthesized plan/phase codes; enforced by `scripts/check-no-decision-codes.mjs` (`npm run check:decision-codes`, the first pre-commit stage).
 
@@ -92,7 +92,7 @@ Husky hooks (local-only):
 <important if="you are touching tool registration, schemas, or session hooks anywhere in the monorepo">
 ## Cross-Package Pi Conventions
 - Tool params via the standalone `typebox` package (`import { Type } from "typebox"`) `Type.Object({...})`; the `description` field doubles as LLM-facing prompt copy. (Two `rpiv-workflow` test files still import `@sinclair/typebox`.)
-- Tool result envelope: `{ content: [{ type: "text", text }], details: <typed object> }` — `details` is what `reconstruct*State()` replays after `session_compact` / `/reload`.
+- Tool result envelope: `{ content: [{ type: "text", text }], details: <typed object> }` — `details` is the persisted replay snapshot: replay handlers walking the session branch (e.g. rpiv-todo's `replayFromBranch()`, wired to `session_start` / `session_compact` / `session_tree`) rebuild module state from it after compaction or `/reload`.
 - pi >= 0.80 hosts export `completeSimple` from pi-ai's `/compat` entrypoint (pre-0.80 hosts: package root, no `/compat`); consumers (`rpiv-advisor`, `rpiv-btw`) call it through a per-package `pi-compat.ts` `loadCompleteSimple()` shim — tries `/compat` first, falls back to the root entrypoint only on module-resolution failures.
 - System prompts loaded once at module init via `readFileSync(fileURLToPath(new URL("./prompts/X.txt", import.meta.url))).trimEnd()` — ESM-safe, cache-stable.
 - Sibling-owned widget pattern: `setWidget(KEY, factory, { placement: "aboveEditor" })` register-once + `tui.requestRender()` on update — see `.rpiv/guidance/packages/rpiv-todo/architecture.md`.

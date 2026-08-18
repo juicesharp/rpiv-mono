@@ -13,7 +13,7 @@ A frozen read-only snapshot is also published on a well-known `globalThis` Symbo
 ## Dependencies
 - **`@earendil-works/pi-coding-agent`** (peer): `ExtensionAPI`, `ExtensionContext`, `Theme`, `DynamicBorder`
 - **`@earendil-works/pi-tui`** (peer): `Container`, `SelectList`, `Spacer`, `Text` for the picker UI
-- **`@juicesharp/rpiv-config`** (`^2.3.1`, the only runtime dependency): `configPath`, `loadJsonConfigWithLegacyFallback`, `saveJsonConfig` for locale persistence
+- **`@juicesharp/rpiv-config`** (the only runtime dependency, lockstep-versioned): `configPath`, `loadJsonConfigWithLegacyFallback`, `saveJsonConfig` for locale persistence
 - Node built-ins: only `node:fs` + `node:url` in `loader.ts`; `i18n.ts` imports none
 
 ## Consumers

@@ -68,7 +68,9 @@ const { messages: sessionMessages } = buildSessionContext(ctx.sessionManager.get
 const branchMessages = ensureUserTailForAdvisor(stripInflightAdvisorCall(convertToLlm(sessionMessages)));
 const inventoryMessage = getInventoryMessage(pi.getAllTools()); // signature-keyed cache on a globalThis Symbol — rebuilds only when the tool-name set changes
 const messages = inventoryMessage ? [inventoryMessage, ...branchMessages] : branchMessages;
-const runtime = getRuntimeCompleteSimple(ctx.modelRegistry); // first stmt in try — resolver/loader failures share errCallThrew
+const runtime = getRuntimeCompleteSimple(ctx.modelRegistry); // resolved BEFORE the try and the missing-key guard — OAuth hosts resolve ok:true with
+// no literal apiKey, so a missing key is fatal only when the facade is also absent (!auth.apiKey && !runtime). The resolver never throws (returns
+// undefined on odd host shapes); inside the try, loadCompleteSimple failures and the call itself share errCallThrew
 const response = await (runtime ?? (await loadCompleteSimple()))(advisor, { systemPrompt: ADVISOR_SYSTEM_PROMPT, messages, tools: [] },
     runtime ? { signal, reasoning: effort } : { apiKey: auth.apiKey, headers: auth.headers, signal, reasoning: effort }); // NEVER hand preflight auth to the runtime facade — overrides bypass credential-derived baseUrl
 // Branch on response.stopReason: "aborted" | "error" | empty text | success

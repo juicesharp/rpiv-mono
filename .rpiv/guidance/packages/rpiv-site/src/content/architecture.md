@@ -80,13 +80,13 @@ related: { upstream: [discover], downstream: [design, plan, blueprint, explore] 
 - **`slug` is the join key** — visitor-copy `slug` MUST match the upstream `name` field; `src/lib/agents.ts` and `src/lib/skills.ts` join on it
 - **Frontmatter carries the doc payload** for visitor-copy entries — structured fields (purpose/when_to_use/…) render the reference pages; the body stays optional/long-form
 - **`posts` / `docs` are the site-owned standalone collections** — no upstream mirror; `extensions` is standalone too but validation-only — the SiblingGrid renders from `loadSiblings()`, never `getCollection`
-- **Schema changes propagate via the build** — `astro check` (or `astro build`) fails if a `.md` file violates the schema; the `FLOOR_RE` parser in `src/lib/compat.ts` is similarly fail-loud
+- **Schema changes propagate via the build** — `astro check` (or `astro build`) fails if a `.md` file violates the schema; the devDependency-pin read in `src/lib/compat.ts` is similarly fail-loud (throws if the root package.json pin is missing)
 
 <important if="you are adding a new visitor-copy entry (new skill or agent in rpiv-pi)">
 ## Adding a Visitor-Copy Entry
 1. Create `src/content/<collection>/<slug>.md` with frontmatter `{ slug, tagline }` plus any structured doc fields (purpose/when_to_use/…); body optional
 2. `slug` MUST match the upstream `name` frontmatter field exactly — the join in `src/lib/` will silently drop unmatched entries
-3. Skills usually need no `src/lib` edit — the reference index renders via `getAllSkills()` and the landing catalog is the hardcoded build/vet/polish `WORKFLOWS` in `src/lib/workflows.ts`; of the flow tables in `src/lib/skills.ts`, only `PIPELINE` still has a consumer (`Colophon.astro`) — `SECONDARY` / `CODE_REVIEW_FLOW` are consumer-less
+3. Skills usually need no `src/lib` edit — the reference index renders via `getAllSkills()` and the landing catalog is the hardcoded build/vet/polish/ship `WORKFLOWS` in `src/lib/workflows.ts`; of the flow tables in `src/lib/skills.ts`, only `PIPELINE` still has a consumer (`Colophon.astro`) — `SECONDARY` / `CODE_REVIEW_FLOW` are consumer-less
 4. Agents MUST be added to `TIER_BY_NAME` in `src/lib/agents.ts` — `getStaticPaths` filters `agentSpecs` against it and `getAgent` throws otherwise; tiers now include `verifier` (slice-verifier / artifact-code-reviewer / artifact-coverage-reviewer), made visible with the three-pipeline release after previously being kept invisible per FRD Non-Goals
 5. No site code edit needed for the entry itself — Astro picks up new `.md` files in collection folders automatically
 </important>

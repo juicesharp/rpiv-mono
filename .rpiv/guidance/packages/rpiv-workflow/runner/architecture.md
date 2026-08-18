@@ -21,7 +21,7 @@ resolve-stage.ts     — ResolvedStage: mode ("loop"|"script"|"prompt"|"skill") 
 preflight.ts, input-validation.ts — Runtime + schema-backed preflights (throw StagePreflightError)
 script-stage.ts      — Skillless TS-stage runtime; advance injected via AdvanceFn
 failure.ts           — ChainOutcome + withStageEntryGuard + recordEntryThrow/recordAbortedAtSeam + finalizeWorkflow (leaf)
-run-context.ts       — buildRunContext (per-run `revisits` Map; reconstructed `visited` reaches lifecycleCtxFor) + freshRunState + caps
+run-context.ts       — buildRunContext (per-run `revisits` Map; `visited` reconstructed on resume drives the backward-jump guard) + freshRunState + caps
 errors.ts            — Re-export shim over ../stage-errors.ts (StagePreflightError moved to the package root so ../loop can throw it)
 resume.ts, resume-entry.ts, resume-loop.ts — reconstructState (pure RunState fold from the JSONL trail); trailer → re-entry thunk (structured `parent`/`session` dispatch) + refusal rendering; loop-trailer re-entry (pending-only fanout re-dispatch; announce probe via loop-kinds strategies)
 by-name.ts, by-run-id.ts — name/run-id entry points

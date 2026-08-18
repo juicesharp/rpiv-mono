@@ -53,3 +53,16 @@ Renders a smoothed audio-level visualization that **freezes when not recording**
 
 ## Testing Pattern (contract-based, not snapshot)
 Component tests assert against the **tagged-theme contract** — they check for presence of theme-key tags and substrings, never byte-for-byte output. This keeps tests stable across theme tweaks, glyph swaps, and width changes while still pinning the rendering contract (what tokens appear, in what order).
+```ts
+// distilled from status-bar-view.test.ts
+const tagged = makeTheme({
+    fg: (color: string, text: string) => `<${color}>${text}</${color}>`,
+}) as unknown as Theme;
+const view = new StatusBarView(tagged);
+view.setProps({ status: "paused", hints: [] });
+const line = view.render(WIDTH)[0];
+expect(line).toContain("<warning>");    // theme-key tag present
+expect(line).not.toContain("<error>");  // wrong key absent
+expect(line).toContain("0:00");         // substring, never full-line equality
+```
+

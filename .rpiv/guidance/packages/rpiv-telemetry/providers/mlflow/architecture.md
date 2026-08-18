@@ -44,7 +44,7 @@ async trackEvent(event): Promise<void> {
   catch (err) { if (!this.failedKinds.has(event.kind)) { this.failedKinds.add(event.kind); console.warn(...); } }
 }
 ```
-`dispatch()` is one exhaustive `switch (event.kind)`: spanned kinds → `on<X>(registry, event)`; child-less kinds collapse to `onAttributeEvent`; sub-agent kinds collapse to `onSubAgentEvent` (no registry).
+`dispatch()` is one `switch (event.kind)`: spanned kinds → `on<X>(registry, event)`; child-less kinds collapse to `onAttributeEvent`; sub-agent kinds collapse to `onSubAgentEvent` (no registry). The switch is NOT exhaustive — `session_start` has no case (a silent no-op; the root span opens on `agent_start`), and there is no `default` or compile-time exhaustiveness check, so a new kind must be manually registered as a `case` or its events drop silently.
 
 ## Span Registry + Paired vs Atomic Builders
 `MlflowSpanRegistry` owns all live spans in four `sessionId`-keyed maps (turn root, plus nested `sessionId→toolCallId` / `sessionId→requestSeq`, and a `latestLlmSpanBySession` side-index). Builders never hold span refs — they set/get/delete through the registry. Two builder shapes:
