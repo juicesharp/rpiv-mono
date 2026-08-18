@@ -23,7 +23,7 @@ Sibling *presence detection* stays filesystem-based (regex over settings); two s
 ## Module Structure
 ```
 index.ts                — Composer; no inline handlers, but encodes ordering invariants: session-capture before skill-bracket; rpiv-workflow-dependent registrars chained strictly in sequence inside an async IIFE (jiti half-initialized-barrel race); provider/bridge hooks wired to the root launcher's session_start, not called directly.
-session-hooks.ts        — Lifecycle wiring + guidance.ts / git-context.ts / agents.ts / pipeline-pointer.ts engines.
+session-hooks.ts        — Lifecycle wiring + guidance.ts / git-context.ts / agents.ts / pipeline-pointer.ts engines; compaction only marks the exact SessionManager and defers one merged context block to its next before_agent_start (never sendMessage inside session_compact).
 sdk-workflow-host.ts    — Sole Pi-SDK importer: child AgentSession per stage/fanout unit, bounded parallel, deferring lane-relay UI.
 run-lane-registry.ts    — Process-global in-memory run/lane/question state; seeds pending fan-out unit lanes at fanout onLoopStart (seedPendingUnits).
 session-capture.ts      — session_start capture of modelRegistry/uiContext/model, borrowed for per-child model resolution (replaced model-override's global pi.setModel flip).
@@ -71,6 +71,7 @@ New tools do not belong in rpiv-core. Add the tool to a sibling plugin instead:
 4. If the hook owns process-global state, root-gate it (`!ctx.hasUI || isLaneRelayUiContext(ctx.ui)` → return) and make it idempotent — every detached child re-loads rpiv-core
 5. If the registrar dynamically imports `rpiv-workflow`, chain it after the others in the composer's sequential IIFE — concurrent imports race jiti's half-initialized barrel
 6. `before_agent_start` can return `{ message: { customType, content, display: false } }` to inject a hidden LLM-only context message
+7. `session_compact` MUST NOT call `pi.sendMessage`: auto-recovery treats those as queued steering items. Store only per-session identity state there, then merge any restored guidance/pointer/Git context into one `before_agent_start` return on the next real user turn
 </important>
 
 <important if="you are adding a new pure utility module to this extension">

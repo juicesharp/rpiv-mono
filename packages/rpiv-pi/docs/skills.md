@@ -31,7 +31,7 @@ whether the model may reach for it on its own.
 
 | Skill | Auto | Consumes | Writes | What it does |
 | --- | :---: | --- | --- | --- |
-| `design` | — | `research` or `solutions` | `designs/` | Decomposes a feature into vertical slices, generates code slice by slice with per-slice `slice-verifier` dispatch, and emits architecture decisions, slice breakdown, and file map. |
+| `design` | — | `research` or `solutions`; `--resume` accepts an in-progress `design` | `designs/` | Decomposes a feature into vertical slices, generates and verifies one slice per session, and emits architecture decisions, slice breakdown, and file map. After each approved non-final slice, its exact payload is written to the artifact and re-read to confirm the match and the skill stops with a fresh-session `--resume` command so conversational compaction never carries approved code. |
 | `design-slice` | — | `slices` (+ upstream `design`) | `designs/` | Designs exactly ONE slice in isolation — decisions, file map, key interfaces, integration points, success criteria. A fanout unit, not standalone. |
 | `design-review` | — | every per-slice `design` + the `slices` map | in-place edits | One consolidated developer checkpoint over a whole design fanout: accept or adjust the proposed shape, adjustments applied surgically and cascaded to dependent slices. |
 | `synthesize` | — | N `designs` (or N `subplans`) | `plans/`, `subplans/` | Merges independent per-slice designs into one coherent phased plan, reconciling overlaps and ordering phases by slice dependency. Runs hierarchically for large slice maps via `--as-subplan`. |

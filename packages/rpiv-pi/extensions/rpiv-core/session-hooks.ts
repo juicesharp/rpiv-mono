@@ -20,16 +20,17 @@ import {
 	syncBundledAgents,
 } from "./agents.js";
 import { renderBanner } from "./banner.js";
-import { FLAG_DEBUG, MSG_TYPE_GIT_CONTEXT } from "./constants.js";
+import { FLAG_DEBUG, MSG_TYPE_GIT_CONTEXT, MSG_TYPE_POST_COMPACT_CONTEXT } from "./constants.js";
 import {
 	clearGitContextCache,
 	isGitMutatingCommand,
+	refreshGitContextForInjection,
 	resetInjectedMarker,
 	takeGitContextIfChanged,
 } from "./git-context.js";
-import { clearInjectionState, handleToolCallGuidance, injectRootGuidance } from "./guidance.js";
+import { clearInjectionState, handleToolCallGuidance, injectRootGuidance, takeRootGuidance } from "./guidance.js";
 import { findMissingSiblings } from "./package-checks.js";
-import { injectPipelinePointer } from "./pipeline-pointer.js";
+import { injectPipelinePointer, PIPELINE_POINTER } from "./pipeline-pointer.js";
 import { isStaleCtxError } from "./utils.js";
 
 /**
@@ -46,9 +47,17 @@ import { isStaleCtxError } from "./utils.js";
  */
 let startupMaintenanceDone = false;
 
+/**
+ * Sessions whose compacted-away RPIV context must be restored on their next
+ * real user turn. Keying by SessionManager identity prevents a detached child
+ * compaction from arming the root launcher (or another concurrent child).
+ */
+let postCompactSessions = new WeakSet<object>();
+
 /** Test reset — wired into test/setup.ts `beforeEach`. */
 export function __resetSessionHooksAnnounced(): void {
 	startupMaintenanceDone = false;
+	postCompactSessions = new WeakSet<object>();
 }
 
 const msgAgentsAdded = (n: number) => `Copied ${n} rpiv-pi agent(s) to ~/.pi/agent/agents/`;
@@ -77,6 +86,20 @@ function buildGitContextMessage(pi: ExtensionAPI, content: string) {
 	return { customType: MSG_TYPE_GIT_CONTEXT, content, display: !!pi.getFlag(FLAG_DEBUG) };
 }
 
+function buildPostCompactContextMessage(pi: ExtensionAPI, rootGuidance: string | null, gitContext: string | null) {
+	const parts = [
+		"[rpiv post-compaction context — reference material, NOT a task. Do not acknowledge this block. Answer the user's current request; when it says to continue, resume from the compaction summary and authoritative artifacts.]",
+		PIPELINE_POINTER,
+		rootGuidance,
+		gitContext,
+	].filter((part): part is string => part !== null);
+	return {
+		customType: MSG_TYPE_POST_COMPACT_CONTEXT,
+		content: parts.join("\n\n---\n\n"),
+		display: !!pi.getFlag(FLAG_DEBUG),
+	};
+}
+
 function sendGitContextMessage(pi: ExtensionAPI, content: string) {
 	pi.sendMessage(buildGitContextMessage(pi, content));
 }
@@ -87,7 +110,7 @@ function sendGitContextMessage(pi: ExtensionAPI, content: string) {
 
 export function registerSessionHooks(pi: ExtensionAPI): void {
 	pi.on("session_start", async (_event, ctx) => onSessionStart(_event, ctx, pi));
-	pi.on("session_compact", async (_event, ctx) => onSessionCompact(_event, ctx, pi));
+	pi.on("session_compact", async (_event, ctx) => onSessionCompact(_event, ctx));
 	pi.on("session_shutdown", async () => onSessionShutdown());
 	pi.on("tool_call", async (event, ctx) => onToolCall(event, ctx, pi));
 	pi.on("before_agent_start", async (event, ctx) => onBeforeAgentStart(event, ctx, pi));
@@ -99,9 +122,10 @@ export function registerSessionHooks(pi: ExtensionAPI): void {
 
 async function onSessionStart(
 	_event: unknown,
-	ctx: { cwd: string; hasUI: boolean; ui: UI },
+	ctx: { cwd: string; hasUI: boolean; ui: UI; sessionManager: object },
 	pi: ExtensionAPI,
 ): Promise<void> {
+	postCompactSessions.delete(ctx.sessionManager);
 	resetInjectionState();
 	injectRootGuidance(ctx.cwd, pi);
 	injectPipelinePointer(pi);
@@ -124,22 +148,23 @@ async function onSessionStart(
 	}
 }
 
-async function onSessionCompact(_event: unknown, ctx: { cwd: string }, pi: ExtensionAPI): Promise<void> {
+async function onSessionCompact(_event: unknown, ctx: { sessionManager: object }): Promise<void> {
 	resetInjectionState();
 	clearGitContextCache();
 	resetInjectedMarker();
-	// Auto-compaction races session disposal: pi-core's AgentSession.dispose()
-	// invalidates the extension runner while _runAutoCompaction is still emitting
-	// session_compact, so both `ctx` and `pi` become dead proxies whose
-	// getters/methods throw the stale error. Guessing a cwd buys nothing — the
-	// very next pi.sendMessage throws the same way — and the compacting session
-	// is being discarded anyway: the replacement session's session_start re-runs
-	// all of this. So on a stale ctx, bail. Any other error is a real bug in
-	// guidance/git injection and must propagate.
+	// NEVER call pi.sendMessage here. Auto-compaction runs before overflow retry
+	// settles, so injected messages become steering queue items. With Pi's default
+	// one-at-a-time delivery each item can consume its own assistant turn and
+	// displace the interrupted task. Mark this exact session instead; its next
+	// user-authored turn receives one merged context block from before_agent_start.
+	// Overflow retry itself proceeds from the compaction summary with no synthetic
+	// last message competing for the model's attention.
+	//
+	// Auto-compaction can also race session disposal. In that path ctx is a stale
+	// proxy and the replacement session's session_start performs normal injection,
+	// so swallowing only the canonical stale error remains correct.
 	try {
-		injectRootGuidance(ctx.cwd, pi);
-		injectPipelinePointer(pi);
-		await injectGitContext(pi, (msg) => sendGitContextMessage(pi, msg));
+		postCompactSessions.add(ctx.sessionManager);
 	} catch (e) {
 		if (!isStaleCtxError(e)) throw e;
 	}
@@ -167,9 +192,20 @@ async function onToolCall(event: ToolCallEvent, ctx: ExtensionContext, pi: Exten
 // `takeGitContextIfChanged` which is its own dedup layer.
 async function onBeforeAgentStart(
 	_event: BeforeAgentStartEvent,
-	_ctx: ExtensionContext,
+	ctx: ExtensionContext,
 	pi: ExtensionAPI,
-): Promise<{ message: ReturnType<typeof buildGitContextMessage> } | undefined> {
+): Promise<
+	| { message: ReturnType<typeof buildGitContextMessage> }
+	| { message: ReturnType<typeof buildPostCompactContextMessage> }
+	| undefined
+> {
+	if (postCompactSessions.has(ctx.sessionManager)) {
+		postCompactSessions.delete(ctx.sessionManager);
+		const rootGuidance = takeRootGuidance(ctx.cwd, "restored on the first user turn after compaction", true);
+		const gitContext = await refreshGitContextForInjection(pi);
+		return { message: buildPostCompactContextMessage(pi, rootGuidance, gitContext) };
+	}
+
 	const content = await takeGitContextIfChanged(pi);
 	if (!content) return undefined;
 	return { message: buildGitContextMessage(pi, content) };

@@ -1,6 +1,12 @@
 import { createMockPi, stubGitExec } from "@juicesharp/rpiv-test-utils";
 import { beforeEach, describe, expect, it } from "vitest";
-import { clearGitContextCache, getGitContext, resetInjectedMarker, takeGitContextIfChanged } from "./git-context.js";
+import {
+	clearGitContextCache,
+	getGitContext,
+	refreshGitContextForInjection,
+	resetInjectedMarker,
+	takeGitContextIfChanged,
+} from "./git-context.js";
 
 beforeEach(() => {
 	clearGitContextCache();
@@ -87,6 +93,15 @@ describe("takeGitContextIfChanged", () => {
 		});
 		await takeGitContextIfChanged(pi);
 		expect(await takeGitContextIfChanged(pi)).toBeNull();
+	});
+
+	it("force-refreshes after another session consumed the signature", async () => {
+		const exec = stubGitExec({ branch: "main", commit: "abc", user: "alice" });
+		const { pi } = createMockPi({ exec: exec as never });
+		await takeGitContextIfChanged(pi);
+		expect(await takeGitContextIfChanged(pi)).toBeNull();
+		expect(await refreshGitContextForInjection(pi)).toContain("- Commit: abc");
+		expect(exec).toHaveBeenCalledTimes(6);
 	});
 
 	it("re-emits after clearGitContextCache + resetInjectedMarker + signature change", async () => {

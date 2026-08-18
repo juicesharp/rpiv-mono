@@ -66,13 +66,21 @@ handles the working directory, but it still checks
 
 Delivery is a hidden message with `customType: "rpiv-guidance"`. An in-process set
 deduplicates it, cleared on `session_start`, `session_compact`, and `session_shutdown`.
-Run `pi --rpiv-debug` to see the messages as they are sent.
+A compaction hook never sends context directly: sending while overflow recovery is active
+creates steering queue items. Instead, the compacted session is marked by identity and
+root guidance is merged with the pipeline pointer and a forced-fresh Git read in one hidden
+`before_agent_start` message on that session's next real user turn. The per-session marker
+and forced reads prevent concurrent detached sessions from consuming its restoration. Overflow retry itself
+resumes from the compaction summary without a synthetic last message. Run
+`pi --rpiv-debug` to see the messages as they are sent.
 
 ## Git context injection
 
-Branch, short commit, and user are injected at `session_start`, re-injected after
-`session_compact`, and on `before_agent_start` only when they changed — a git-mutating
-bash command invalidates the cache. `customType: "rpiv-git-context"`, also revealed by
+Branch, short commit, and user are injected at `session_start`; after
+`session_compact` they join the one deferred next-user-turn context message; otherwise
+`before_agent_start` injects them only when they changed — a git-mutating bash command
+invalidates the cache. Standalone messages use `customType: "rpiv-git-context"`; the
+merged recovery message uses `"rpiv-post-compact-context"`. Both are revealed by
 `--rpiv-debug`.
 
 Git is optional. If the `git` calls fail, the injection is skipped and nothing else
@@ -82,8 +90,9 @@ changes. When `git config user.name` is empty, `$USER` is used, then `unknown`.
 
 20 of the 29 skills set `disable-model-invocation: true`, which hides them from the
 model's skill list so it cannot wander into a design pass mid-conversation. To keep them
-discoverable, a roughly 120-token stage index is injected at `session_start` — hidden
-by default, visible under `--rpiv-debug`.
+discoverable, a roughly 120-token stage index is injected at `session_start` and folded
+into the first real user turn after compaction — hidden by default, visible under
+`--rpiv-debug`.
 
 ## Sibling coupling
 

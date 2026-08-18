@@ -67,7 +67,7 @@ New tools belong in sibling plugins, not here — `rpiv-pi` is pure infrastructu
 
 <important if="you are modifying guidance injection behavior">
 ## Guidance Injection Contract
-Single delivery path inside `extensions/rpiv-core/`. On `tool_call` for read/edit/write, resolves per-depth at most one of `AGENTS.md > CLAUDE.md > .rpiv/guidance/<sub>/architecture.md` (depth 0 skips AGENTS/CLAUDE — Pi's own resource-loader handles `<cwd>` already). Each new file injected via `pi.sendMessage` with `display: !!pi.getFlag(FLAG_DEBUG)` (hidden unless the `rpiv-debug` flag is set); an in-process `Set` dedups across the session; cleared on `session_start`/`session_compact`/`session_shutdown`.
+Single delivery path inside `extensions/rpiv-core/`. On `tool_call` for read/edit/write, resolves per-depth at most one of `AGENTS.md > CLAUDE.md > .rpiv/guidance/<sub>/architecture.md` (depth 0 skips AGENTS/CLAUDE — Pi's own resource-loader handles `<cwd>` already). Each new file injected via `pi.sendMessage` with `display: !!pi.getFlag(FLAG_DEBUG)` (hidden unless the `rpiv-debug` flag is set); an in-process `Set` dedups across the session; cleared on `session_start`/`session_compact`/`session_shutdown`. **Never call `pi.sendMessage` from `session_compact`**: it queues control messages into overflow recovery. Mark the compacted SessionManager by identity and return one merged root-guidance + pipeline-pointer + forced-fresh Git-context message from that session's next `before_agent_start` instead; bypass process-global dedup for that marked restoration so another concurrent child cannot suppress its components.
 </important>
 
 <important if="you are sunsetting an old sibling and replacing it with a new one">

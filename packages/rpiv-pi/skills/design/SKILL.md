@@ -1,7 +1,7 @@
 ---
 name: design
-description: Design complex features by decomposing them into vertical slices, generating code slice-by-slice with per-slice verifier dispatch and post-finalization independent code review, and producing a design artifact (architecture decisions, slice breakdown, file map) in .rpiv/artifacts/designs/. The design feeds the plan or blueprint skill. Use for complex multi-component features touching 6+ files across multiple layers, when the user wants a feature designed before implementation. Requires a research artifact or a solutions artifact (from explore). Prefer design over plan or blueprint when the focus is architecture and decomposition rather than phased execution steps.
-argument-hint: "[research artifact path]"
+description: Design complex features by decomposing them into vertical slices, generating and verifying one slice per session, and producing a resumable design artifact (architecture decisions, slice breakdown, file map) in .rpiv/artifacts/designs/. The design feeds the plan or blueprint skill. Use for complex multi-component features touching 6+ files across multiple layers, when the user wants a feature designed before implementation. Requires a research artifact or a solutions artifact (from explore); resume an in-progress design with --resume. Prefer design over plan or blueprint when the focus is architecture and decomposition rather than phased execution steps.
+argument-hint: "[research artifact path] | --resume <in-progress design path>"
 shell-timeout: 10
 disable-model-invocation: true
 contract:
@@ -30,7 +30,10 @@ You are tasked with designing how code will be shaped for a feature or change. T
 
 ## Input
 
-`$ARGUMENTS` — path to a research artifact (`.rpiv/artifacts/research/*.md`) or a solutions artifact (`.rpiv/artifacts/solutions/*.md`).
+`$ARGUMENTS` takes two forms:
+
+1. **Start** — path to a research artifact (`.rpiv/artifacts/research/*.md`) or a solutions artifact (`.rpiv/artifacts/solutions/*.md`).
+2. **Resume** — `--resume <path-to-.rpiv/artifacts/designs/*.md>`. The design must have `status: in-progress`; the artifact, not a compaction summary, is authoritative for locked slices and the next pending slice.
 
 ## Metadata
 
@@ -61,7 +64,14 @@ The final artifact is plan-compatible: `## Slices` boundaries become phase bound
 
 When this command is invoked:
 
-1. **Read research artifact**:
+1. **Resume mode first** — when `$ARGUMENTS` contains `--resume`:
+   - Parse exactly one design artifact path after the flag. If it is missing, outside `.rpiv/artifacts/designs/`, unreadable, or not `status: in-progress`, print the specific error and stop.
+   - Read the design artifact FULLY. Extract Decisions, Architecture, Slices, Verification Notes, Developer Context, and Design History.
+   - Find the first Design History entry still marked `pending`. Treat every earlier `approved` entry and its persisted code fences/Success Criteria as locked; never reconstruct them from conversation or a compaction summary.
+   - Read the current source files for that pending slice FULLY, plus Architecture entries for files the slice shares with locked predecessors.
+   - Skip Steps 2–5. Enter Step 6 at the pending slice. If no slice is pending, go directly to Step 7.
+
+2. **Read research artifact**:
 
    **Research artifact provided** (argument contains a path to a `.md` file in `.rpiv/artifacts/`):
    - Read the research artifact FULLY using the Read tool WITHOUT limit/offset
@@ -75,7 +85,7 @@ When this command is invoked:
    - **Exactly one entry total** — confirm with `ask_user_question`: "Design from this artifact?" with options "Design from `[<source>] <filename>` (Recommended)" and "Pick a different path".
    - **Two or more entries total** — present up to 4 most-recent across both listings as `ask_user_question` options, each prefixed `[research]` or `[solutions]` to flag source class.
 
-2. **Read any additional files mentioned** — tickets, related designs, existing implementations. Read them FULLY before proceeding.
+3. **Read any additional files mentioned** — tickets, related designs, existing implementations. Read them FULLY before proceeding.
 
 ### Step 2: Targeted Research
 
@@ -319,7 +329,7 @@ If the slice introduces a new abstraction where an existing one would serve, or 
 
 **If the developer asks to see full code**, show it inline — exception, not default.
 
-Use the `ask_user_question` tool to confirm. Question: "Slice {N/M}: {slice name} — {files affected}. {1-line summary}. Approve?". Header: "Slice {N}". Options: "Approve (Recommended)" (Lock this slice, write to artifact, proceed to slice {N+1}); "Revise this slice" (Adjust code before proceeding — describe what to change); "Rethink remaining slices" (This slice reveals a design issue — revisit decomposition); "Revisit a decision" (A Step-4 decision is wrong — return to Step 4 for that decision before continuing).
+Use the `ask_user_question` tool to confirm. Question: "Slice {N/M}: {slice name} — {files affected}. {1-line summary}. Approve?". Header: "Slice {N}". Options: "Approve (Recommended)" (Lock this slice, write it exactly to the artifact, then stop at the session boundary); "Revise this slice" (Adjust code before proceeding — describe what to change); "Rethink remaining slices" (This slice reveals a design issue — revisit decomposition); "Revisit a decision" (A Step-4 decision is wrong — return to Step 4 for that decision before continuing).
 
 **Checkpoint cadence**: One slice per checkpoint. Present each slice individually, regardless of slice count.
 
@@ -329,7 +339,7 @@ Use the `ask_user_question` tool to confirm. Question: "Slice {N/M}: {slice name
 1. For each file in this slice, Edit the skeleton artifact to replace the empty code fence under that file's Architecture heading with the full generated code from 6.1
 2. If a later slice contributes to a file already filled by an earlier slice: **rewrite the entire code fence** with the merged result (do not append alongside existing code)
 3. After merge, verify within Architecture: no duplicate function definitions, imports deduplicated, exports list complete
-4. **Write the slice's `## Slices` entry**: Edit the artifact to add a new `### Slice N: {name}` subsection under the top-level `## Slices` heading, containing:
+4. **Fill the slice's existing `## Slices` entry**: The skeleton already contains exactly one `### Slice N: {name}` subsection. Edit that subsection in place to replace its placeholder verification content with:
 
    ```markdown
    ### Slice N: {slice name}
@@ -346,9 +356,19 @@ Use the `ask_user_question` tool to confirm. Question: "Slice {N/M}: {slice name
    - [ ] Performance acceptable with 1000+ todo items
    ```
 
-   This section is the contract handed to `/skill:plan` — slice boundaries become phase boundaries 1:1, and Success Criteria pass through unchanged. The bullets are the same `- [ ]` shape `implement` flips to `- [x]` and `validate` extracts commands from.
+   This section is the contract handed to `/skill:plan` — slice boundaries become phase boundaries 1:1, and Success Criteria pass through unchanged. The bullets are the same `- [ ]` shape `implement` flips to `- [x]` and `validate` extracts commands from. Never add a second Slice N heading; replace the skeleton subsection so heading count remains 1:1 with the decomposition.
 5. Update the Design History section: `- Slice N: {name} — approved as generated`
-- Proceed to next slice
+6. Re-read the just-written code fences and Success Criteria and verify they byte-match the approved payload. A mismatch keeps the slice in progress; correct it before stopping.
+7. If another slice remains, **STOP THE AGENT RUN**. Do not research, generate, or verify the next slice in this session. Print:
+
+   ```text
+   Slice N locked in `<design-path>`.
+   Start a fresh session with `/new`, then run:
+   `/skill:design --resume <design-path>`
+   ```
+
+   This hard session boundary prevents a sequence of verifier-heavy slices from growing inside one Pi agent run beyond the model context window. The persisted artifact is the handoff; compaction summaries are never exact-code carriers.
+8. Only when this was the final slice, continue to Step 7 in the current session.
 
 **Revise**: Update code per developer feedback. Re-run verify (6.2). Re-present the same slice (6.3). The artifact is NOT touched — only "Approve" writes to the artifact.
 
@@ -450,6 +470,7 @@ Spawn multiple agents in parallel when they're searching for different things. E
   - ALWAYS dispatch slice-verifier at Step 6.2 for every slice before presenting at 6.3; never skip, never batch across slices; slice-verifier sees code AND Success Criteria together
   - NEVER silently dismiss a slice-verifier VIOLATION — either fix and re-dispatch, or surface the verbatim finding to the developer at 6.3 for ratification
   - Post-finalization code + coverage review runs in `/skill:plan` Step 4 (not here); design's quality gate is per-slice via slice-verifier at 6.2
+  - ALWAYS stop after persisting and byte-checking one approved non-final slice; the next slice starts only through `/skill:design --resume <design-path>` in a fresh session. Never carry multiple verifier-heavy slices in one agent run.
   - Design flips `status: in-progress` → `status: ready` directly at Step 7; no `in-review` intermediate (no Step 8 reviewer to wait for)
 - NEVER skip the developer checkpoint — developer input on architectural decisions is the highest-value signal in the design process
 - NEVER edit source files — all code goes into the design document, not the codebase. This skill produces a document, not implementation. Source file editing is implement's job.

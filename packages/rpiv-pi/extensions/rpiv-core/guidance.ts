@@ -125,34 +125,45 @@ export function clearInjectionState() {
 // ---------------------------------------------------------------------------
 
 /**
- * Inject the root `.rpiv/guidance/architecture.md` at session start.
+ * Take the root `.rpiv/guidance/architecture.md` payload without sending it.
  *
- * Called from `session_start` so the root guidance is available before the
- * first agent turn — without waiting for a read/edit/write tool_call.
- * Uses the same `injectedGuidance` Set for dedup, so `handleToolCallGuidance`
- * won't re-inject it later.
+ * The split between take and send lets `before_agent_start` merge deferred
+ * post-compaction context into ONE message. Calling `pi.sendMessage` from
+ * `session_compact` queues a steering turn while overflow recovery is active;
+ * one-at-a-time delivery can otherwise make the model answer injected context
+ * instead of resuming the interrupted user task. `force` bypasses the
+ * process-global dedup marker for a specifically compacted SessionManager, so
+ * another concurrent session cannot suppress that session's restoration.
  */
-export function injectRootGuidance(cwd: string, pi: ExtensionAPI): void {
+export function takeRootGuidance(cwd: string, trigger = "auto-loaded at session start", force = false): string | null {
 	const relativePath = ROOT_GUIDANCE_KEY;
 
-	if (injectedGuidance.has(relativePath)) return;
+	if (!force && injectedGuidance.has(relativePath)) return null;
 
 	const absolutePath = join(cwd, relativePath);
-	if (!existsSync(absolutePath)) return;
+	if (!existsSync(absolutePath)) return null;
 
 	let content: string;
 	try {
 		content = readFileSync(absolutePath, "utf-8");
 	} catch {
-		// Silent failure mirrors handleToolCallGuidance's posture — session_start
-		// runs before any UI is bound, so a permissions/race error here must not
-		// crash the hook. Don't mark as injected so a later tool_call can retry.
-		return;
+		// Silent failure mirrors handleToolCallGuidance's posture. Don't mark as
+		// injected so a later tool_call can retry.
+		return null;
 	}
 	injectedGuidance.add(relativePath);
 
 	const file: GuidanceFile = { relativePath, absolutePath, content, kind: "architecture" };
-	sendGuidanceMessage(pi, wrapGuidance(formatLabel(file), content, "auto-loaded at session start"));
+	return wrapGuidance(formatLabel(file), content, trigger);
+}
+
+/**
+ * Inject root guidance at session start, before the first agent turn.
+ * Uses the same `injectedGuidance` Set as tool-call injection.
+ */
+export function injectRootGuidance(cwd: string, pi: ExtensionAPI): void {
+	const content = takeRootGuidance(cwd);
+	if (content !== null) sendGuidanceMessage(pi, content);
 }
 
 // ---------------------------------------------------------------------------
