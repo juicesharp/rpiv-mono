@@ -11,6 +11,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - The todo overlay now follows Pi's tool-output expansion mode: expanding shows every task instead of retaining the `+N more` summary, while collapsing reapplies `maxWidgetLines`.
 
+### Fixed
+
+- The in_progress prompt guideline now says "a task from the todo list" instead of "any task", so it no longer overrides the "skip it for single trivial tasks" rule in Pi's flat guideline list and pushes the model into one-item todo lists for every request (#154).
+
 ## [2.6.1] - 2026-08-17
 
 ### Added
