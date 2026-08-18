@@ -1,3 +1,4 @@
+import { availableParallelism } from "node:os";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
@@ -10,6 +11,15 @@ export default defineConfig({
 		// exceed vitest's default 10s hookTimeout. Raised so the worker warm-up
 		// completes inside the timer; subsequent tests reuse the module cache.
 		hookTimeout: 30_000,
+		// Subprocess-heavy tests (git operations, jiti resolution, config loading)
+		// die just past vitest's 5s default when all workers are instrumented by
+		// v8 coverage and the CPU is contended. 15s keeps real hangs fatal while
+		// absorbing load-induced slowness.
+		testTimeout: 15_000,
+		// One fork per core saturates the CPU: every worker pays the cold import
+		// of the pi-coding-agent graph under coverage instrumentation, and tests
+		// that spawn subprocesses then compete with all of them. Leave headroom.
+		maxWorkers: Math.max(1, Math.floor(availableParallelism() * 0.6)),
 		unstubGlobals: true,
 		clearMocks: true,
 		restoreMocks: true,
