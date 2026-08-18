@@ -23,7 +23,10 @@ const identityTheme = {
 	strikethrough: (s: string) => s,
 };
 
-async function setup(actions: Array<{ action: TaskAction; [k: string]: unknown }>) {
+async function setup(
+	actions: Array<{ action: TaskAction; [k: string]: unknown }>,
+	uiOverrides: Partial<Omit<ExtensionUIContext, "theme">> = {},
+) {
 	__resetState();
 	setActiveRenderSession("test-session");
 	const { pi, captured } = createMockPi();
@@ -33,7 +36,7 @@ async function setup(actions: Array<{ action: TaskAction; [k: string]: unknown }
 	for (const p of actions) {
 		await tool.execute?.("tc", p as never, undefined as never, undefined as never, ctx as never);
 	}
-	const ui = createMockUI() as unknown as ExtensionUIContext;
+	const ui = createMockUI(uiOverrides) as unknown as ExtensionUIContext;
 	const overlay = new TodoOverlay();
 	overlay.setUICtx(ui);
 	overlay.update();
@@ -247,6 +250,34 @@ describe("TodoOverlay — overflow collapse", () => {
 		expect(lines[lines.length - 1]).toBe("");
 		expect(lines[lines.length - 2]).not.toContain("+");
 		expect(lines[lines.length - 2]).toContain("└─");
+	});
+
+	it("follows Pi's tool-output expansion mode and renders every task", async () => {
+		let toolsExpanded = false;
+		const actions: Array<{ action: TaskAction; [k: string]: unknown }> = [];
+		for (let i = 1; i <= 17; i++) actions.push({ action: "create", subject: `t${i}` });
+		const { widget } = await setup(actions, { getToolsExpanded: () => toolsExpanded });
+
+		const collapsed = widget.render(200).join("\n");
+		expect(collapsed).toContain("+7 more");
+		expect(collapsed).not.toContain("t17");
+
+		toolsExpanded = true;
+		const expanded = widget.render(200);
+		expect(expanded).toHaveLength(19); // heading + 17 tasks + trailing spacer
+		expect(expanded.join("\n")).toContain("t17");
+		expect(expanded.join("\n")).not.toContain(" more");
+		expect(expanded[expanded.length - 2]).toContain("└─");
+
+		toolsExpanded = false;
+		expect(widget.render(200).join("\n")).toContain("+7 more");
+	});
+
+	it("keeps the configured budget when the host has no expansion-state API", async () => {
+		const actions: Array<{ action: TaskAction; [k: string]: unknown }> = [];
+		for (let i = 1; i <= 17; i++) actions.push({ action: "create", subject: `t${i}` });
+		const { widget } = await setup(actions);
+		expect(widget.render(200).join("\n")).toContain("+7 more");
 	});
 });
 
