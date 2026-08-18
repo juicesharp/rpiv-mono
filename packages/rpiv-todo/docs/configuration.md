@@ -54,6 +54,8 @@ blank spacer sits outside the budget, so `12` renders up to 13 terminal rows.
 - No ceiling.
 - Read fresh on every render, so a change takes effect on the next repaint —
   no `/reload`.
+- Pi's tool-output expansion mode (`ctrl+o` by default) temporarily overrides
+  this budget and shows every task; collapsing restores the configured budget.
 
 ## `collapseKey`
 

@@ -5,7 +5,7 @@
  * registration in widgetContainerAbove, register-once + requestRender()
  * refresh, configurable collapse-not-scroll (default 12 content rows via
  * getMaxWidgetLines(); plus a trailing spacer row so the widget renders up
- * to 13 lines), auto-hide when empty.
+ * to 13 lines), Pi tool-output expansion awareness, auto-hide when empty.
  *
  * Reads live state via `getRenderState()` (the ctx-less foreground slot) at render
  * time — NEVER `replayFromBranch` from `tool_execution_end` (branch is stale;
@@ -172,7 +172,11 @@ export class TodoOverlay {
 		const lines: string[] = [heading];
 		// Budget for content rows (heading + tasks/summary). The rendered widget is
 		// one line taller — withTrailingSpacer() appends a blank row below the panel.
-		const layout = selectOverlayLayout(overlayState, getMaxWidgetLines() - 1);
+		// Pi's global tool-output expansion mode is read on every render so its
+		// expand/collapse shortcut also expands this live widget. Optional chaining
+		// preserves compatibility with hosts predating getToolsExpanded().
+		const bodyBudget = this.uiCtx?.getToolsExpanded?.() === true ? overlayTasks.length : getMaxWidgetLines() - 1;
+		const layout = selectOverlayLayout(overlayState, bodyBudget);
 		for (const task of layout.visible) {
 			lines.push(truncate(`${theme.fg("dim", "├─")} ${formatOverlayTaskLine(task, theme, showIds)}`));
 		}

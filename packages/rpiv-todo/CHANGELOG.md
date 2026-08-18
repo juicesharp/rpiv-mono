@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- The todo overlay now follows Pi's tool-output expansion mode: expanding shows every task instead of retaining the `+N more` summary, while collapsing reapplies `maxWidgetLines`.
+
 ## [2.6.1] - 2026-08-17
 
 ### Added
