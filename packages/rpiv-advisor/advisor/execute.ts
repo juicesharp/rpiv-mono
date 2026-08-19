@@ -15,7 +15,21 @@ import {
 	type ExtensionAPI,
 	type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { ensureUserTailForAdvisor, stripInflightAdvisorCall, stripToolDeclarations } from "./context.ts";
+import {
+	applyContextBudget,
+	deriveAdvisorBudget,
+	dropPruneCoveredToolResults,
+	estimateMessageTokens,
+	estimateTokens,
+	repairToolPairing,
+} from "./budget.ts";
+import { getAdvisorContextBudget } from "./config.ts";
+import {
+	ensureUserTailForAdvisor,
+	getPruneCoveredToolCallIds,
+	stripInflightAdvisorCall,
+	stripToolDeclarations,
+} from "./context.ts";
 import { getInventoryMessage } from "./inventory.ts";
 import {
 	ERR_ABORTED_DETAIL,
@@ -29,11 +43,20 @@ import {
 	errMisconfigured,
 	errNoApiKey,
 	errNoApiKeyDetail,
+	MSG_ADVISOR_NUDGE,
 	msgConsulting,
 } from "./messages.ts";
 import { getRuntimeCompleteSimple, loadCompleteSimple } from "./pi-compat.ts";
 import { ADVISOR_SYSTEM_PROMPT } from "./prompt.ts";
 import { getAdvisorEffort, getAdvisorModel } from "./state.ts";
+
+interface AdvisorContextDetails {
+	enabled: boolean;
+	dropped: number;
+	estimatedTokens: number;
+	maxInputTokens: number;
+	pruneCoveredToolResults: number;
+}
 
 interface AdvisorDetails {
 	advisorModel?: string;
@@ -41,6 +64,7 @@ interface AdvisorDetails {
 	usage?: Usage;
 	stopReason?: StopReason;
 	errorMessage?: string;
+	context?: AdvisorContextDetails;
 }
 
 // Extract the advisor's text content from a completeSimple response: concatenate
@@ -67,11 +91,13 @@ function buildAdvisorResult(opts: {
 	usage?: Usage;
 	stopReason?: StopReason;
 	errorMessage?: string;
+	context?: AdvisorContextDetails;
 }): AgentToolResult<AdvisorDetails> {
 	const details: AdvisorDetails = { effort: opts.effort };
 	if (opts.advisorLabel !== undefined) details.advisorModel = opts.advisorLabel;
 	if (opts.usage !== undefined) details.usage = opts.usage;
 	if (opts.stopReason !== undefined) details.stopReason = opts.stopReason;
+	if (opts.context !== undefined) details.context = opts.context;
 	if (opts.errorMessage !== undefined) details.errorMessage = opts.errorMessage;
 	return { content: [{ type: "text", text: opts.text }], details };
 }
@@ -81,8 +107,9 @@ function buildErrorResult(
 	effort: ThinkingLevel | undefined,
 	userText: string,
 	errorMessage: string,
+	context?: AdvisorContextDetails,
 ): AgentToolResult<AdvisorDetails> {
-	return buildAdvisorResult({ text: userText, effort, advisorLabel, errorMessage });
+	return buildAdvisorResult({ text: userText, effort, advisorLabel, errorMessage, context });
 }
 
 export async function executeAdvisor(
@@ -114,21 +141,51 @@ export async function executeAdvisor(
 		return buildErrorResult(advisorLabel, effort, errNoApiKey(advisorLabel), errNoApiKeyDetail(advisor.provider));
 	}
 
-	// Live-read every call — advisor runs mid-turn so any message_end snapshot
-	// is always one turn stale. buildSessionContext() preserves Pi's resolved
-	// LLM context, including compaction summaries and branch summaries, instead
-	// of replaying raw pre-compaction branch messages. convertToLlm is
-	// pass-through for user/assistant/toolResult (messages.js:111-114), so
-	// element refs are stable across calls via the session store.
-	const { messages: sessionMessages } = buildSessionContext(
-		ctx.sessionManager.getEntries(),
-		ctx.sessionManager.getLeafId(),
-	);
-	const branchMessages = ensureUserTailForAdvisor(
-		stripInflightAdvisorCall(stripToolDeclarations(convertToLlm(sessionMessages))),
-	);
+	// Read the active branch and resolved context at call time. Native Pi
+	// compaction and branch summaries are retained; the local budget pass below
+	// additionally removes stale tool output and caps the advisor payload.
+	const entries = ctx.sessionManager.getEntries();
+	const { messages: sessionMessages } = buildSessionContext(entries, ctx.sessionManager.getLeafId());
+	const activeBranchEntries = ctx.sessionManager.getBranch();
 	const inventoryMessage = getInventoryMessage(pi.getAllTools());
+	const rawBranchMessages = stripToolDeclarations(convertToLlm(sessionMessages));
+	const pruneCoveredIds = getPruneCoveredToolCallIds(activeBranchEntries);
+	const strippedBranchMessages = stripInflightAdvisorCall(rawBranchMessages);
+	const pruneAwareMessages = dropPruneCoveredToolResults(strippedBranchMessages, pruneCoveredIds);
+	const contextBudget = getAdvisorContextBudget();
+	const responseReserveTokens =
+		Number.isFinite(advisor.maxTokens) && advisor.maxTokens > 0
+			? Math.min(contextBudget.responseReserveTokens, advisor.maxTokens)
+			: contextBudget.responseReserveTokens;
+	const fixedPromptTokens =
+		estimateTokens(ADVISOR_SYSTEM_PROMPT) +
+		(inventoryMessage ? estimateMessageTokens(inventoryMessage) : 0) +
+		estimateTokens(MSG_ADVISOR_NUDGE);
+	const maxInputTokens = Math.max(
+		0,
+		deriveAdvisorBudget(advisor.contextWindow, responseReserveTokens) - fixedPromptTokens,
+	);
+	const fittedBranch = contextBudget.enabled
+		? applyContextBudget(pruneAwareMessages, {
+				maxInputTokens,
+				keepFirst: contextBudget.keepFirst,
+				keepLast: contextBudget.keepLast,
+				toolResultMaxChars: contextBudget.toolResultMaxChars,
+			})
+		: {
+				messages: pruneAwareMessages,
+				dropped: 0,
+				estimatedTokens: pruneAwareMessages.reduce((total, message) => total + estimateMessageTokens(message), 0),
+			};
+	const branchMessages = ensureUserTailForAdvisor(repairToolPairing(fittedBranch.messages));
 	const messages: Message[] = inventoryMessage ? [inventoryMessage, ...branchMessages] : branchMessages;
+	const contextDetails: AdvisorContextDetails = {
+		enabled: contextBudget.enabled,
+		dropped: fittedBranch.dropped,
+		estimatedTokens: fittedBranch.estimatedTokens,
+		maxInputTokens,
+		pruneCoveredToolResults: pruneCoveredIds.size,
+	};
 
 	onUpdate?.({
 		content: [{ type: "text", text: msgConsulting(advisorLabel, effort) }],
@@ -167,6 +224,7 @@ export async function executeAdvisor(
 					usage: r.usage,
 					stopReason: r.stopReason,
 					errorMessage: r.errorMessage ?? ERR_ABORTED_DETAIL,
+					context: contextDetails,
 				});
 			}
 			if (r.stopReason === "error") {
@@ -177,6 +235,7 @@ export async function executeAdvisor(
 					usage: r.usage,
 					stopReason: r.stopReason,
 					errorMessage: r.errorMessage,
+					context: contextDetails,
 				});
 			}
 			return undefined;
@@ -211,6 +270,7 @@ export async function executeAdvisor(
 					usage: response.usage,
 					stopReason: response.stopReason,
 					errorMessage: ERR_EMPTY_RESPONSE_DETAIL,
+					context: contextDetails,
 				});
 			}
 		}
@@ -221,9 +281,10 @@ export async function executeAdvisor(
 			advisorLabel,
 			usage: response.usage,
 			stopReason: response.stopReason,
+			context: contextDetails,
 		});
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
-		return buildErrorResult(advisorLabel, effort, errCallThrew(message), message);
+		return buildErrorResult(advisorLabel, effort, errCallThrew(message), message, contextDetails);
 	}
 }

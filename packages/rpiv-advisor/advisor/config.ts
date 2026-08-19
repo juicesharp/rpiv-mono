@@ -13,15 +13,71 @@ const ADVISOR_CONFIG_PATH = configPath("rpiv-advisor", "advisor.json");
 
 export type DisabledForModelsEntry = string | { model: string; minEffort?: GradedEffort };
 
+export interface AdvisorContextBudgetConfig {
+	enabled?: boolean;
+	responseReserveTokens?: number;
+	keepFirst?: number;
+	keepLast?: number;
+	toolResultMaxChars?: number;
+}
+
+export interface AdvisorContextBudget {
+	enabled: boolean;
+	responseReserveTokens: number;
+	keepFirst: number;
+	keepLast: number;
+	toolResultMaxChars: number;
+}
+
 interface AdvisorConfig {
 	modelKey?: string;
 	effort?: GradedEffort;
 	guidance?: GuidanceFields;
 	disabledForModels?: DisabledForModelsEntry[];
+	contextBudget?: AdvisorContextBudgetConfig;
 }
+
+const DEFAULT_CONTEXT_BUDGET: AdvisorContextBudget = {
+	enabled: true,
+	responseReserveTokens: 16_384,
+	keepFirst: 4,
+	keepLast: 24,
+	toolResultMaxChars: 12_000,
+};
 
 export function loadAdvisorConfig(): AdvisorConfig {
 	return loadJsonConfigWithLegacyFallback<AdvisorConfig>("rpiv-advisor", "advisor.json");
+}
+
+function boundedInteger(value: unknown, fallback: number, minimum: number, maximum: number): number {
+	if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+	return Math.min(maximum, Math.max(minimum, Math.floor(value)));
+}
+
+export function resolveAdvisorContextBudget(value: unknown): AdvisorContextBudget {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return { ...DEFAULT_CONTEXT_BUDGET };
+	const raw = value as AdvisorContextBudgetConfig;
+	return {
+		enabled: typeof raw.enabled === "boolean" ? raw.enabled : DEFAULT_CONTEXT_BUDGET.enabled,
+		responseReserveTokens: boundedInteger(
+			raw.responseReserveTokens,
+			DEFAULT_CONTEXT_BUDGET.responseReserveTokens,
+			1_024,
+			1_000_000,
+		),
+		keepFirst: boundedInteger(raw.keepFirst, DEFAULT_CONTEXT_BUDGET.keepFirst, 0, 1_000),
+		keepLast: boundedInteger(raw.keepLast, DEFAULT_CONTEXT_BUDGET.keepLast, 1, 1_000),
+		toolResultMaxChars: boundedInteger(
+			raw.toolResultMaxChars,
+			DEFAULT_CONTEXT_BUDGET.toolResultMaxChars,
+			256,
+			1_000_000,
+		),
+	};
+}
+
+export function getAdvisorContextBudget(): AdvisorContextBudget {
+	return resolveAdvisorContextBudget(loadAdvisorConfig().contextBudget);
 }
 
 export function validateDisabledForModels(value: unknown): DisabledForModelsEntry[] {

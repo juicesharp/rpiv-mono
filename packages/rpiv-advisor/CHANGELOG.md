@@ -7,6 +7,11 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Bound advisor requests to the selected reviewer's context window, preserving compaction and prune summaries while capping large tool results and repairing tool-call/result pairing.
+- Added optional `contextBudget` settings with safe defaults for older configuration files.
+
 ## [2.13.9] - 2026-10-17
 
 ### Changed
@@ -33,7 +38,6 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [2.13.1] - 2026-10-11
 
 ## [2.13.0] - 2026-10-11
-
 ## [2.12.0] - 2026-09-30
 
 ### Fixed
