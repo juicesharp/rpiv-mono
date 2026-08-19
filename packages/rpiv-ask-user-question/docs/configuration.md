@@ -85,9 +85,10 @@ strict on purpose: Pi's parser takes the last `+`-separated part as the key and 
 unknown parts, so a typo like `"ctr+]"` would otherwise silently capture every bare `]`
 keypress at the terminal level.
 
-One known rough edge: the footer hint line inside the dialog always reads `Ctrl+] to
-collapse` and does not interpolate a custom `collapseKey`. The one-shot notification you
-get when the dialog first collapses *does* name your configured key.
+The footer hint inside the dialog names whatever key you configure (`Alt+O to collapse`
+for `"alt+o"`), as do the collapsed one-line footer and the one-shot notification shown
+when the dialog is first hidden. With `"off"` the collapse hint is dropped from the
+footer entirely, since no shortcut can fire.
 
 ### `guidance.description`, `guidance.promptSnippet` and `guidance.promptGuidelines`
 

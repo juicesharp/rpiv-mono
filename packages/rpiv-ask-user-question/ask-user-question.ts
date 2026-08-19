@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isKeyRelease, isKeyRepeat, matchesKey } from "@earendil-works/pi-tui";
-import { loadConfig, resolveCollapseKey, validateGuidanceFields } from "./config.js";
+import { formatKeySpecForDisplay, loadConfig, resolveCollapseKey, validateGuidanceFields } from "./config.js";
 import {
 	ASK_USER_BLOCKED_EVENT,
 	ASK_USER_PROMPT_EVENT,
@@ -245,7 +245,10 @@ export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
 					sessionRef.current?.toggleCollapsedExternal();
 					if (handle.isHidden() && !hasAnnouncedHide) {
 						hasAnnouncedHide = true;
-						ctx.ui.notify?.(`ask_user_question hidden — press ${collapseKey} to reopen`, "info");
+						ctx.ui.notify?.(
+							`ask_user_question hidden — press ${formatKeySpecForDisplay(collapseKey)} to reopen`,
+							"info",
+						);
 					}
 					return { consume: true };
 				});

@@ -71,7 +71,7 @@ class QuestionTabStrategy implements TabContentStrategy {
 ```
 
 ## DialogView Chrome Order (always)
-top `DynamicBorder` → (if `isMulti`) `tabBar` → `Spacer(1)` → strategy `headingRows` → `bodyComponent` → `Spacer(1)` → `midRows` → bottom `DynamicBorder` → `footerRows` → inline residual `spacerRows`. `maxFooterRowCount` cached at construction as `max(questionStrategy.footerRowCount, submitStrategy?.footerRowCount ?? 0)`. The footer hint includes the collapse affordance (`HINT_PART_COLLAPSE`); when `state.collapsed`, the session swaps in `COLLAPSED_HINT`.
+top `DynamicBorder` → (if `isMulti`) `tabBar` → `Spacer(1)` → strategy `headingRows` → `bodyComponent` → `Spacer(1)` → `midRows` → bottom `DynamicBorder` → `footerRows` → inline residual `spacerRows`. `maxFooterRowCount` cached at construction as `max(questionStrategy.footerRowCount, submitStrategy?.footerRowCount ?? 0)`. The footer hint interpolates the configured `collapseKey` (`DialogConfig.collapseKey`, construction-time config — not canonical state) into `HINT_PART_COLLAPSE_TEMPLATE` via `{key}`/`KEY_PLACEHOLDER` and omits the collapse part when the key is `"off"`; when `state.collapsed`, the session swaps in `COLLAPSED_HINT_TEMPLATE` interpolated the same way.
 
 ## Residual Spacer (inline in `render()`)
 ```ts

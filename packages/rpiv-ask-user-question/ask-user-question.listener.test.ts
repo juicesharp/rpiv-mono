@@ -62,6 +62,7 @@ function makeHandle(over: { isFocused?: () => boolean } = {}): FakeHandle {
 }
 
 type RawListener = (data: string) => { consume?: boolean } | undefined;
+type SessionComponent = { render(width: number): string[]; handleInput(data: string): void };
 
 function register() {
 	const { pi, captured } = createMockPi();
@@ -78,6 +79,7 @@ function driveWithListener(handle: FakeHandle, script: (done: (v: unknown) => vo
 	const notify = vi.fn();
 	const removeListener = vi.fn();
 	const listenerRef: { current: RawListener | undefined } = { current: undefined };
+	const componentRef: { current: SessionComponent | undefined } = { current: undefined };
 	const onTerminalInput = vi.fn((h: RawListener) => {
 		listenerRef.current = h;
 		return removeListener;
@@ -93,19 +95,19 @@ function driveWithListener(handle: FakeHandle, script: (done: (v: unknown) => vo
 			options?: { onHandle?: (handle: FakeHandle) => void },
 		) => {
 			return new Promise((resolve) => {
-				factory(
+				componentRef.current = factory(
 					{ requestRender: vi.fn(), terminal: { columns: 120, rows: 24 } },
 					identityTheme,
 					undefined,
 					resolve,
-				);
+				) as SessionComponent;
 				options?.onHandle?.(handle);
 				script(resolve);
 			});
 		},
 	);
 	const ctx = { hasUI: true, ui: { custom, onTerminalInput, notify } } as never;
-	return { ctx, notify, onTerminalInput, removeListener, listenerRef };
+	return { ctx, notify, onTerminalInput, removeListener, listenerRef, componentRef };
 }
 
 const home = process.env.HOME ?? "";
@@ -130,7 +132,7 @@ describe("ask_user_question — raw terminal collapse listener", () => {
 			expect(listenerRef.current?.(CTRL_RBRACKET)).toEqual({ consume: true });
 			expect(handle.isHidden()).toBe(true);
 			expect(notify).toHaveBeenCalledTimes(1);
-			expect(notify).toHaveBeenCalledWith(expect.stringContaining("press ctrl+] to reopen"), "info");
+			expect(notify).toHaveBeenCalledWith(expect.stringContaining("press Ctrl+] to reopen"), "info");
 			// Second press: unhide, and the notification stays one-shot.
 			expect(listenerRef.current?.(CTRL_RBRACKET)).toEqual({ consume: true });
 			expect(handle.isHidden()).toBe(false);
@@ -206,11 +208,34 @@ describe("ask_user_question — raw terminal collapse listener", () => {
 		await tool.execute?.("tc", params as never, undefined as never, undefined as never, ctx);
 	});
 
+	it("footer hint and collapsed row name the configured collapseKey (#176)", async () => {
+		writeCollapseKeyConfig("alt+o");
+		const tool = register();
+		const handle = makeHandle();
+		const { ctx, componentRef } = driveWithListener(handle, (done) => {
+			const expanded = componentRef.current!.render(120).join("\n");
+			expect(expanded).toContain("Alt+O to collapse");
+			expect(expanded).not.toContain("Ctrl+]");
+			// Collapse via the component input path — the one-line footer must name
+			// the same key the router actually honours.
+			componentRef.current!.handleInput(ALT_O);
+			const collapsed = componentRef.current!.render(120);
+			expect(collapsed).toHaveLength(1);
+			expect(collapsed[0]).toContain("Alt+O to expand");
+			done({ answers: [], cancelled: true });
+		});
+		await tool.execute?.("tc", params as never, undefined as never, undefined as never, ctx);
+	});
+
 	it("does not register a listener when collapseKey is 'off'", async () => {
 		writeCollapseKeyConfig("off");
 		const tool = register();
 		const handle = makeHandle();
-		const { ctx, onTerminalInput } = driveWithListener(handle, (done) => {
+		const { ctx, onTerminalInput, componentRef } = driveWithListener(handle, (done) => {
+			// The footer must not advertise a collapse shortcut that cannot fire (#176).
+			const rendered = componentRef.current!.render(120).join("\n");
+			expect(rendered).not.toContain("to collapse");
+			expect(rendered).toContain("Esc to cancel");
 			done({ answers: [], cancelled: true });
 		});
 		await tool.execute?.("tc", params as never, undefined as never, undefined as never, ctx);

@@ -71,7 +71,9 @@ No code change is required.
 1. Copy `locales/en.json` to `locales/<code>.json`, where `<code>` is a locale the SDK
    supports.
 2. Translate the values. Keep every key, and keep the placeholders and leading symbols
-   (`↑/↓`, `⚠`) intact.
+   (`↑/↓`, `⚠`) intact. `hint.collapse` and `hint.expand_line` contain a literal `{key}`
+   placeholder that is replaced at render time with the user's configured `collapseKey` —
+   keep it verbatim, positioned wherever your language's word order wants the key name.
 3. Restart Pi and select the language with `/languages`.
 
 The loader iterates the SDK's supported-locale list over this directory at startup, so a

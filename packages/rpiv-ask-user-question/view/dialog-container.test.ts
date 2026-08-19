@@ -128,6 +128,7 @@ function makeConfig(over: MakeConfigOverrides = {}): DialogParts {
 				return (previewPane as unknown as Component).render(w).length;
 			}),
 		getTerminalRows: over.getTerminalRows ?? (() => 24),
+		collapseKey: over.collapseKey ?? "ctrl+]",
 	};
 	const initialProps: DialogProps = over.initialProps ?? { state, activePreviewPane: previewPane };
 	return { config, initialProps };
@@ -267,6 +268,23 @@ describe("makeDialog — multi-question (question tab)", () => {
 		);
 		const joined = dlg.render(80).join("\n");
 		expect(joined).toContain(HINT_PART_NOTES);
+	});
+
+	it("footer hint names the configured collapseKey instead of the default (#176)", () => {
+		const joined = makeDialog(makeConfig({ collapseKey: "alt+o" }))
+			.render(160)
+			.join("\n");
+		expect(joined).toContain("Alt+O to collapse");
+		expect(joined).not.toContain("Ctrl+]");
+	});
+
+	it("footer hint drops the collapse part when collapseKey is 'off' (#176)", () => {
+		const joined = makeDialog(makeConfig({ collapseKey: "off" }))
+			.render(160)
+			.join("\n");
+		expect(joined).not.toContain("to collapse");
+		expect(joined).toContain(HINT_PART_ENTER);
+		expect(joined).toContain("Esc to cancel");
 	});
 
 	it("shows multiline controls at the right and drops notes while inputMode captures text", () => {

@@ -68,6 +68,19 @@ export function resolveCollapseKey(config: Pick<AskUserQuestionConfig, "collapse
 	return isValidCollapseKeySpec(raw) ? raw : DEFAULT_COLLAPSE_KEY;
 }
 
+/**
+ * Pretty-print a resolved key spec for UI copy: each `+`-part gets its first
+ * character uppercased (`"ctrl+]"` → `"Ctrl+]"`, `"alt+o"` → `"Alt+O"`,
+ * `"f9"` → `"F9"`). Display-only — key matching always uses the raw lowercase
+ * spec (`matchesKey` lowercases ids), so never feed the result back into it.
+ */
+export function formatKeySpecForDisplay(spec: CollapseKeySpec): string {
+	return spec
+		.split("+")
+		.map((part) => (part.length <= 1 ? part.toUpperCase() : part.charAt(0).toUpperCase() + part.slice(1)))
+		.join("+");
+}
+
 export function loadConfig(): AskUserQuestionConfig {
 	return loadJsonConfigWithLegacyFallback<AskUserQuestionConfig>("rpiv-ask-user-question");
 }

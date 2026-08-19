@@ -7,6 +7,11 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- The dialog footer hint now names the configured `collapseKey` (e.g. `Alt+O to collapse`) instead of always reading `Ctrl+]`, and is omitted entirely when `collapseKey` is `"off"` — previously the dialog advertised a shortcut that could not fire (#176).
+- The collapsed one-line footer (`… to expand`) and the one-shot hide notification use the same display casing as the footer hint (`Ctrl+]`, `Alt+O`), instead of the raw lowercase config spec.
+
 ## [2.6.2] - 2026-08-18
 
 ## [2.6.1] - 2026-08-17

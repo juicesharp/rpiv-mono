@@ -1,8 +1,9 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { Editor, OverlayHandle, TUI } from "@earendil-works/pi-tui";
+import { formatKeySpecForDisplay } from "../config.js";
 import type { QuestionData, QuestionnaireResult, QuestionParams } from "../tool/types.js";
 import type { WrappingSelectItem } from "../view/components/wrapping-select.js";
-import { COLLAPSED_HINT } from "../view/dialog-builder.js";
+import { COLLAPSED_HINT_TEMPLATE, KEY_PLACEHOLDER } from "../view/dialog-builder.js";
 import type { QuestionnairePropsAdapter } from "../view/props-adapter.js";
 import { buildQuestionnaire } from "./build-questionnaire.js";
 import { t } from "./i18n-bridge.js";
@@ -95,6 +96,7 @@ export class QuestionnaireSession {
 			isMulti: this.isMulti,
 			initialState: this.state,
 			getCurrentTab: () => this.state.currentTab,
+			collapseKey: this.collapseKey,
 		});
 
 		this.notesInput = built.notesInput;
@@ -106,9 +108,14 @@ export class QuestionnaireSession {
 		// the overlay to `min(lines.length, maxHeight)`, so returning one line shrinks
 		// the bottom-anchored overlay from full-height to one row and the transcript
 		// behind it becomes readable (#47). The overlay stays focused and in the
-		// stack, so Ctrl+] still routes here to expand.
+		// stack, so the collapse key still routes here to expand. `t` stays inside the
+		// closure (live locale updates); the key display is static per session.
+		const collapseKeyDisplay = formatKeySpecForDisplay(this.collapseKey);
 		const collapsedRender = (_width: number): string[] => [
-			theme.fg("dim", ` ${t("hint.expand_line", COLLAPSED_HINT)} `),
+			theme.fg(
+				"dim",
+				` ${t("hint.expand_line", COLLAPSED_HINT_TEMPLATE).replace(KEY_PLACEHOLDER, collapseKeyDisplay)} `,
+			),
 		];
 
 		this.component = {

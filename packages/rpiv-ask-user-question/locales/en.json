@@ -12,8 +12,8 @@
   "hint.toggle": "Space to toggle",
   "hint.notes": "n to add notes",
   "hint.tab": "Tab to switch questions",
-  "hint.collapse": "Ctrl+] to collapse",
-  "hint.expand_line": "Ctrl+] to expand · Esc to cancel",
+  "hint.collapse": "{key} to collapse",
+  "hint.expand_line": "{key} to expand · Esc to cancel",
   "hint.cancel": "Esc to cancel",
 
   "review.heading": "Review your answers",

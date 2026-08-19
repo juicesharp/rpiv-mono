@@ -40,6 +40,13 @@ export interface QuestionnaireBuildConfig {
 	isMulti: boolean;
 	initialState: QuestionnaireState;
 	getCurrentTab: () => number;
+	/**
+	 * Resolved collapse key spec (`"ctrl+]"`, `"alt+o"`, or `"off"`). Threaded to
+	 * `DialogConfig` as construction-time config so the footer hint can name the
+	 * real key — deliberately NOT part of `QuestionnaireState`, which stays free
+	 * of runtime context.
+	 */
+	collapseKey: string;
 }
 
 export interface QuestionnaireBuilt {
@@ -109,6 +116,7 @@ class QuestionnaireBuilder {
 	private readonly isMulti: boolean;
 	private readonly initialState: QuestionnaireState;
 	private readonly getCurrentTab: () => number;
+	private readonly collapseKey: string;
 
 	private readonly selectTheme: WrappingSelectTheme;
 	private readonly markdownTheme = getMarkdownTheme();
@@ -125,6 +133,7 @@ class QuestionnaireBuilder {
 		this.isMulti = config.isMulti;
 		this.initialState = config.initialState;
 		this.getCurrentTab = config.getCurrentTab;
+		this.collapseKey = config.collapseKey;
 
 		this.selectTheme = this.makeSelectTheme();
 		const textEditorTheme = editorTheme(this.theme);
@@ -258,6 +267,7 @@ class QuestionnaireBuilder {
 				getBodyHeight: heights.global,
 				getCurrentBodyHeight: heights.current,
 				getTerminalRows: this.getTerminalRows,
+				collapseKey: this.collapseKey,
 			},
 			{ state: this.initialState, activePreviewPane: this.pickInitialActivePreview(tabs) },
 		);

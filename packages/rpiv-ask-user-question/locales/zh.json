@@ -14,8 +14,8 @@
   "hint.toggle": "空格切换",
   "hint.notes": "按 n 添加备注",
   "hint.tab": "Tab 切换问题",
-  "hint.collapse": "Ctrl+] 折叠",
-  "hint.expand_line": "Ctrl+] 展开 · Esc 取消",
+  "hint.collapse": "{key} 折叠",
+  "hint.expand_line": "{key} 展开 · Esc 取消",
   "hint.cancel": "Esc 取消",
 
   "review.heading": "检查你的答案",

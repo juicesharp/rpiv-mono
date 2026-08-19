@@ -1,5 +1,6 @@
 import { DynamicBorder, type Theme } from "@earendil-works/pi-coding-agent";
 import { type Component, Container, type Editor, Spacer } from "@earendil-works/pi-tui";
+import { DEFAULT_COLLAPSE_KEY, formatKeySpecForDisplay } from "../config.js";
 import type { QuestionnaireState } from "../state/state.js";
 import type { QuestionData } from "../tool/types.js";
 import type { PreviewPaneProps } from "./components/preview/preview-pane.js";
@@ -16,8 +17,20 @@ export const HINT_PART_TOGGLE = "Space to toggle";
 export const HINT_PART_NOTES = "n to add notes";
 export const HINT_PART_TAB = "Tab to switch questions";
 export const HINT_PART_CANCEL = "Esc to cancel";
-export const HINT_PART_COLLAPSE = "Ctrl+] to collapse";
-export const HINT_PART_EXPAND = "Ctrl+] to expand";
+/**
+ * Collapse/expand hint copy is templated on `KEY_PLACEHOLDER` because the
+ * shortcut is configurable (`collapseKey`) and `rpiv-i18n`'s `tr` has no
+ * interpolation — locale entries carry the same `{key}` placeholder and call
+ * sites `.replace()` it with `formatKeySpecForDisplay(collapseKey)` after
+ * lookup, so per-locale word order is preserved.
+ */
+export const KEY_PLACEHOLDER = "{key}";
+export const HINT_PART_COLLAPSE_TEMPLATE = `${KEY_PLACEHOLDER} to collapse`;
+export const HINT_PART_EXPAND_TEMPLATE = `${KEY_PLACEHOLDER} to expand`;
+const DEFAULT_KEY_DISPLAY = formatKeySpecForDisplay(DEFAULT_COLLAPSE_KEY);
+/** Default-key (`Ctrl+]`) renderings of the templates, for tests and default-config assertions. */
+export const HINT_PART_COLLAPSE = HINT_PART_COLLAPSE_TEMPLATE.replace(KEY_PLACEHOLDER, DEFAULT_KEY_DISPLAY);
+export const HINT_PART_EXPAND = HINT_PART_EXPAND_TEMPLATE.replace(KEY_PLACEHOLDER, DEFAULT_KEY_DISPLAY);
 /**
  * `HINT_SINGLE` / `HINT_MULTI` are the resting core hint for NON-multiSelect
  * question tabs only: `buildHintText` drops `NOTES` while the notes editor is
@@ -33,7 +46,13 @@ export const HINT_SINGLE = [HINT_PART_ENTER, HINT_PART_NAV, HINT_PART_NOTES, HIN
 export const HINT_MULTI = [HINT_PART_ENTER, HINT_PART_NAV, HINT_PART_NOTES, HINT_PART_TAB, HINT_PART_CANCEL].join(
 	" · ",
 );
-/** Single-line footer shown by `QuestionnaireSession` when `state.collapsed === true`. Bypasses `buildHintText`. */
+/**
+ * Template for the single-line footer shown by `QuestionnaireSession` when
+ * `state.collapsed === true`. Bypasses `buildHintText`; the session replaces
+ * `KEY_PLACEHOLDER` with the configured key's display form.
+ */
+export const COLLAPSED_HINT_TEMPLATE = [HINT_PART_EXPAND_TEMPLATE, HINT_PART_CANCEL].join(" · ");
+/** Default-key rendering of `COLLAPSED_HINT_TEMPLATE`. */
 export const COLLAPSED_HINT = [HINT_PART_EXPAND, HINT_PART_CANCEL].join(" · ");
 export const REVIEW_HEADING = "Review your answers";
 export const READY_PROMPT = "Ready to submit your answers?";
@@ -67,6 +86,13 @@ export interface DialogConfig {
 	getCurrentBodyHeight: (width: number) => number;
 	/** Terminal height getter. Mirrors `getTerminalWidth` — reads `tui.terminal.rows` at render time. */
 	getTerminalRows: () => number;
+	/**
+	 * Resolved collapse/expand key spec (`resolveCollapseKey` output: `"ctrl+]"`,
+	 * `"alt+o"`, or `"off"`). Construction-time config, NOT canonical state —
+	 * `QuestionnaireRuntime.collapseKey` must never reach view setProps consumers.
+	 * The footer hint interpolates it, and drops the collapse part when `"off"`.
+	 */
+	collapseKey: string;
 }
 
 /**
@@ -95,6 +121,7 @@ export class DialogView implements StatefulView<DialogProps> {
 			notesInput: config.notesInput,
 			isMulti: config.isMulti,
 			getCurrentBodyHeight: config.getCurrentBodyHeight,
+			collapseKey: config.collapseKey,
 		});
 		this.submitStrategy = config.isMulti
 			? new SubmitTabStrategy({
