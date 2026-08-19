@@ -1,8 +1,10 @@
+import type { Message } from "@earendil-works/pi-ai";
 import {
 	buildSessionEntries,
 	createMockCtx,
 	createMockPi,
 	makeAssistantMessage,
+	makeToolResult,
 	makeUserMessage,
 } from "@juicesharp/rpiv-test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -151,6 +153,82 @@ describe("executeAdvisor — 4 StopReason branches", () => {
 		expect(serialized).toContain("post-compaction assistant");
 		expect(serialized).not.toContain("OLD RAW PRE-COMPACTION DETAIL");
 		expect(serialized).not.toContain("old raw assistant detail");
+	});
+
+	it("removes prune-covered raw results, preserves the summary, and repairs the tail", async () => {
+		setAdvisorModel({ provider: "a", id: "m", contextWindow: 32_000, maxTokens: 4_096 } as never);
+		vi.mocked(completeSimple).mockResolvedValueOnce(resp({ text: "advice" }) as never);
+		const prunedAssistant = makeAssistantMessage({
+			text: "ran the command",
+			toolCalls: [{ id: "call-pruned", name: "bash", arguments: {} }],
+		});
+		const prunedResult = makeToolResult({
+			toolName: "bash",
+			toolCallId: "call-pruned",
+			text: "RAW TOOL OUTPUT THAT MUST NOT BE FORWARDED",
+		});
+		const pruneSummaryEntry = {
+			type: "custom_message",
+			customType: "context-prune-summary",
+			content: "<context-prune-summary>summary of the raw output</context-prune-summary>",
+			details: { toolCallRefs: [{ shortId: "t1", toolCallId: "call-pruned" }] },
+		} as never;
+		vi.mocked(buildSessionContext).mockReturnValueOnce({
+			messages: [
+				makeUserMessage("task"),
+				prunedAssistant,
+				prunedResult,
+				makeUserMessage("<context-prune-summary>summary of the raw output</context-prune-summary>"),
+				makeAssistantMessage({
+					text: "current work",
+					toolCalls: [{ id: "advisor-inflight", name: "advisor", arguments: {} }],
+				}),
+			],
+			thinkingLevel: "off",
+			model: null,
+		} as ReturnType<typeof buildSessionContext>);
+		const { pi, captured } = createMockPi();
+		const ctx = createMockCtx({
+			branch: [...buildSessionEntries([makeUserMessage("task"), prunedAssistant, prunedResult]), pruneSummaryEntry],
+		});
+		registerAdvisorTool(pi);
+		const result = await captured.tools
+			.get("advisor")
+			?.execute?.("tc", {}, undefined as never, undefined as never, ctx);
+
+		const payload = vi.mocked(completeSimple).mock.calls[0]?.[1] as { messages?: Message[] };
+		const serialized = JSON.stringify(payload.messages);
+		expect(serialized).toContain("summary of the raw output");
+		expect(serialized).not.toContain("RAW TOOL OUTPUT THAT MUST NOT BE FORWARDED");
+		expect(serialized).not.toContain("call-pruned");
+		expect(serialized).not.toContain("advisor-inflight");
+		expect(payload.messages?.at(-1)?.role).toBe("user");
+		expect(result?.details).toMatchObject({ context: { enabled: true, pruneCoveredToolResults: 1 } });
+	});
+
+	it("prepends the tool inventory before the fitted branch", async () => {
+		setAdvisorModel({ provider: "a", id: "m", contextWindow: 32_000, maxTokens: 4_096 } as never);
+		vi.mocked(completeSimple).mockResolvedValueOnce(resp({ text: "advice" }) as never);
+		const { pi, captured } = createMockPi({
+			getAllTools: vi.fn(
+				() =>
+					[
+						{
+							name: "bash",
+							description: "run commands",
+							parameters: { type: "object" },
+							sourceInfo: { path: "/mock/bash" },
+						},
+					] as never,
+			),
+		});
+		registerAdvisorTool(pi);
+		const ctx = createMockCtx({ branch: buildSessionEntries([makeUserMessage("task")]) });
+		await captured.tools.get("advisor")?.execute?.("tc", {}, undefined as never, undefined as never, ctx);
+
+		const payload = vi.mocked(completeSimple).mock.calls[0]?.[1] as { messages?: Message[] };
+		expect(payload.messages?.[0]?.role).toBe("user");
+		expect(JSON.stringify(payload.messages?.[0])).toContain("Available Executor Tools");
 	});
 
 	it("aborted stopReason returns cancel envelope", async () => {
