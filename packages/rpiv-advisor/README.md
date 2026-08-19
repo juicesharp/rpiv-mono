@@ -50,13 +50,14 @@ judgment. To turn it back off, run `/advisor` and choose **No advisor**.
   resumes. Nothing is injected into your transcript, and the default prompt
   guidelines tell the executor to restate the advisor's key guidance in its
   next visible reply, so you are not left with only a collapsed tool card.
-- **Nothing to type or paste** — the tool takes zero parameters. The whole
-  conversation branch is serialised and forwarded automatically: the task, every
-  tool call made, every result seen. That whole branch is billed against the
-  reviewer model on every call, so escalations are not free.
+- **Nothing to type or paste** — the tool takes zero parameters. It reads the
+  conversation branch automatically, then fits it to the reviewer model's context
+  budget. The retained task, tool calls, and results are billed against the reviewer
+  model on every call, so escalations are not free.
 - **The reviewer sees what survived compaction** — the branch is built from Pi's
   resolved LLM context, so compaction and branch summaries are forwarded instead
   of a stale raw replay.
+- **Long branches are bounded before review** — advisor context reserves space for the reviewer's response, caps large tool results, removes tool results covered by `pi-context-prune` summaries, and repairs tool-call/result pairing after trimming. Compaction and prune summaries remain verbatim.
 - **Any model can be the reviewer** — every model you're authenticated for is in
   the `/advisor` picker, found by fuzzy-typing. No provider is privileged.
 - **Pick once, it stays picked** — model and effort persist to `advisor.json`
@@ -80,6 +81,7 @@ write leaves your previous selection untouched and tells you so.
 | `modelKey` | The reviewer model, as `"provider/modelId"`. Written by `/advisor`. | absent — advisor off |
 | `effort` | Reasoning effort for the reviewer: `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. Written by `/advisor`; only levels supported by the selected model are offered. | absent — no reasoning sent |
 | `disabledForModels` | Executor models the advisor is stripped for. Plain strings block at any effort; `{ "model": "…", "minEffort": "…" }` blocks only at or above that effort. | `[]` |
+| `contextBudget` | Optional bounded-context settings: `enabled`, `responseReserveTokens`, `keepFirst`, `keepLast`, and `toolResultMaxChars`. | enabled with safe defaults |
 
 ```json
 {
