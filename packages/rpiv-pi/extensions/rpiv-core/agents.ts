@@ -9,7 +9,7 @@
  * the read-modify-write lost-update problem remains: two sessions both reading
  * the manifest before either writes will race, and the second writer overwrites
  * the first's entries with its own stale snapshot. Advisory locking is a
- * deferred follow-up (see CHANGELOG known-limitations). The path allowlist in
+ * deferred follow-up. The path allowlist in
  * readManifest neutralises the worst-case (arbitrary-path unlink) regardless of
  * concurrency.
  */
@@ -275,7 +275,7 @@ export function isSafeDestructiveOp(opts: { knownHash: string; destHash: string 
 // ---------------------------------------------------------------------------
 
 /**
- * Step 1: Enumerate source .md files from the bundled agents directory.
+ * Enumerate source .md files from the bundled agents directory.
  * Returns null (with error pushed) on failure.
  */
 function enumerateSourceFiles(result: SyncResult): string[] | null {
@@ -362,7 +362,7 @@ export function injectModelFrontmatter(content: string, agentFile: string, confi
 }
 
 /**
- * Step 2: Process each source file — copy new, record unchanged, update or gate.
+ * Process each source file — copy new, record unchanged, update or gate.
  * Returns the new manifest built from source entries.
  */
 function processSourceEntries(
@@ -450,7 +450,7 @@ function processSourceEntries(
 }
 
 /**
- * Step 3A: Classify stale entries (in manifest but absent from source).
+ * Classify stale entries (in manifest but absent from source).
  * Returns entries to unlink; pushes pendingRemove for gated entries.
  */
 function classifyStaleEntries(
@@ -500,7 +500,7 @@ function classifyStaleEntries(
 }
 
 /**
- * Step 3C: Commit unlink operations after the manifest is durable.
+ * Commit unlink operations after the manifest is durable.
  * Re-introduces failed entries into newManifest so a future run retries.
  */
 function commitStaleUnlinks(
@@ -568,23 +568,20 @@ export function syncBundledAgents(apply: boolean): SyncResult {
 		return result;
 	}
 
-	// 1. Enumerate source files
 	const sourceEntries = enumerateSourceFiles(result);
 	if (sourceEntries === null) return result;
 
 	const sourceNames = new Set(sourceEntries);
 	const manifest = readManifest(targetDir);
 
-	// 2. Process each source file
 	const newManifest = processSourceEntries(sourceEntries, targetDir, manifest, apply, result);
 
-	// 3. Stale-removal: Pass A (classify) → Pass B (write manifest) → Pass C (commit unlinks).
 	const toUnlink = classifyStaleEntries(manifest, sourceNames, targetDir, apply, newManifest, result);
 
-	// Pass B — persist manifest before destructive ops.
+	// Persist the manifest before destructive ops.
 	writeManifest(targetDir, newManifest, result);
 
-	// Pass C — commit unlinks after the manifest is durable.
+	// Commit unlinks after the manifest is durable.
 	commitStaleUnlinks(toUnlink, manifest, newManifest, targetDir, result);
 
 	return result;
@@ -608,12 +605,12 @@ export function cleanupPerCwdAgents(cwd: string): CleanupResult {
 	if (!existsSync(perCwdDir)) return result;
 	const manifest = readManifest(perCwdDir);
 	if (Object.keys(manifest).length === 0) {
-		// Edge state 1: no manifest (never synced by us, or hand-managed)
+		// No manifest (never synced by us, or hand-managed)
 		result.skipped.push({ dir: perCwdDir, reason: CLEANUP_SKIP_REASON.UNMANAGED });
 		return result;
 	}
 
-	// Edge state 2: verify all managed files match current source content.
+	// Verify all managed files match current source content.
 	// Hoisted config read (same reasoning as processSourceEntries): one JSON
 	// read for the whole cleanup pass, not one per managed file.
 	const cleanupConfig = loadModelsConfig();
@@ -661,7 +658,7 @@ export function cleanupPerCwdAgents(cwd: string): CleanupResult {
 		}
 	}
 
-	// Edge state 3: check for non-managed files
+	// Check for non-managed files
 	try {
 		const allFiles = readdirSync(perCwdDir);
 		const managedNames = new Set(Object.keys(manifest));

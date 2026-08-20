@@ -167,4 +167,17 @@ describe("bashTimeoutReason", () => {
 		expect(reason).toContain("...");
 		expect(reason.length).toBeLessThan(300);
 	});
+
+	it("echoes a command at the cap untruncated — the cap is inclusive", () => {
+		const reason = bashTimeoutReason("y".repeat(120), 180_000);
+		expect(reason).toContain("y".repeat(120));
+		expect(reason).not.toContain("...");
+	});
+
+	it("truncates a command past the cap to exactly the cap, ending in the ASCII ellipsis", () => {
+		const reason = bashTimeoutReason("z".repeat(121), 180_000);
+		const snippet = reason.slice(reason.indexOf("`") + 1, reason.lastIndexOf("`"));
+		expect(snippet.length).toBe(120);
+		expect(snippet.endsWith("...")).toBe(true);
+	});
 });

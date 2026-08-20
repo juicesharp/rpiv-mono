@@ -62,7 +62,16 @@ const RETRY_GLYPH = "⟲";
 // constant DISPLAY width so the status region starts at the same column on every row.
 const TAG_COL = 12;
 const MAX_LABEL_WIDTH = 40;
-const LABEL_LEADING = 4 + TAG_COL + 2;
+/** Cells the lane-row head `renderLaneRow` builds: the 2-cell selection gutter
+ *  (`CURSOR_SELECTED`/`CURSOR_UNSELECTED`) + the status glyph + its trailing space. */
+const LANE_HEAD_CELLS = 4;
+/** The two single-space inter-column separators following the tag and label columns. */
+const LABEL_SEPARATORS = 2;
+/** The label column's fixed lane-row overhead (head + tag column + separators). The measure
+ *  is lane-row-EXACT but unit-row-APPROXIMATE — `renderUnitRow` leads with 6 cells and no
+ *  tag column — so the `labelWidth` clamp in `renderLaneList` is deliberately approximate;
+ *  do not re-derive it from unit rows. */
+const LABEL_LEADING = LANE_HEAD_CELLS + TAG_COL + LABEL_SEPARATORS;
 const PROGRESS_MIN_WIDTH = 12;
 
 /** Per-status glyph; needs-input overrides it (see renderLaneRow). */

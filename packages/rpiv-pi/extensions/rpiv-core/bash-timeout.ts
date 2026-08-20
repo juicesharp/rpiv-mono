@@ -32,7 +32,7 @@ type WatchableSession = Pick<AgentSession, "subscribe" | "abort">;
 
 const DEFAULT_BASH_TOOL_TIMEOUT_MS = 180_000; // 3 min — tight enough to cut a wedged scan well before it strands a gate.
 const MIN_BASH_TOOL_TIMEOUT_MS = 5_000; // a sub-5s ceiling would scythe ordinary commands.
-const MAX_BASH_TOOL_TIMEOUT_MS = 30 * 60_000; // 30 min — the hard upper bound (mirrors the workflow validation-retry cap).
+const MAX_BASH_TOOL_TIMEOUT_MS = 30 * 60_000; // 30 min — the hard upper bound; mirrors MAX_VALIDATION_RETRY_TIMEOUT_MS in packages/rpiv-workflow/validation-bounds.ts (same 30-min value, separately owned).
 
 /**
  * The resolved per-command ceiling: the 3-minute default, overridable via
@@ -48,10 +48,20 @@ export function resolveBashTimeoutMs(raw: string | undefined): number {
 	return Math.min(Math.max(parsed, MIN_BASH_TOOL_TIMEOUT_MS), MAX_BASH_TOOL_TIMEOUT_MS);
 }
 
+/**
+ * `bashTimeoutReason` echoes the offending command capped at SNIPPET_MAX_LEN chars — the reason is
+ * operator-grade one-line row text, so the command is truncated instead of flooding the row with a
+ * runaway pipeline. The cap INCLUDES the trailing ellipsis; SNIPPET_ELLIPSIS_LEN is that ellipsis's
+ * length — the ASCII three-period form (`...`), never the single-glyph one, for byte-stable row text.
+ */
+const SNIPPET_MAX_LEN = 120;
+const SNIPPET_ELLIPSIS_LEN = 3;
+
 /** Operator-grade row text — names the ceiling and echoes the offending command (truncated). */
 export function bashTimeoutReason(command: string, timeoutMs: number): string {
 	const secs = Math.round(timeoutMs / 1000);
-	const snippet = command.length > 120 ? `${command.slice(0, 117)}...` : command;
+	const snippet =
+		command.length > SNIPPET_MAX_LEN ? `${command.slice(0, SNIPPET_MAX_LEN - SNIPPET_ELLIPSIS_LEN)}...` : command;
 	return `bash command exceeded the ${secs}s per-command timeout and was aborted${snippet ? `: \`${snippet}\`` : ""}`;
 }
 
