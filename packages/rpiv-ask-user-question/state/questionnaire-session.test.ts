@@ -85,6 +85,7 @@ function makeSession(options: SessionTestOptions = {}) {
 		keybindings: options.keybindings ?? keybindings,
 		editInput: options.editInput ?? (async () => undefined),
 		collapseKey: "off",
+		canReopenWhileHidden: false,
 	});
 	return { session, done };
 }

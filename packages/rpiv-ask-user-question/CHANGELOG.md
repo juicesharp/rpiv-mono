@@ -12,6 +12,7 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The dialog footer hint now names the configured `collapseKey` (e.g. `Alt+O to collapse`) instead of always reading `Ctrl+]`, and is omitted entirely when `collapseKey` is `"off"` — previously the dialog advertised a shortcut that could not fire (#176).
 - The collapsed one-line footer (`… to expand`) and the one-shot hide notification use the same display casing as the footer hint (`Ctrl+]`, `Alt+O`), instead of the raw lowercase config spec.
 - Compound named keys display conventionally in hints (`Ctrl+PageDown`, not `Ctrl+Pagedown`).
+- Collapsing no longer hides the overlay on hosts that expose an overlay handle but no raw terminal input — hiding would be irreversible there (pi-tui routes no input to a hidden overlay), so the dialog now falls back to the visible one-line collapsed row, which the same key expands.
 
 ## [2.6.2] - 2026-08-18
 

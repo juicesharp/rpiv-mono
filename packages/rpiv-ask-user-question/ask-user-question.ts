@@ -259,6 +259,10 @@ export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
 					return { consume: true };
 				});
 			}
+			// Hiding the overlay is only reversible through the raw listener above, so
+			// the session may emit `setHidden` only when it was actually registered;
+			// otherwise collapse falls back to the visible one-line row.
+			const canReopenWhileHidden = removeOverlayInputListener !== undefined;
 
 			emitAskUserBlockedEvent(pi, true);
 			try {
@@ -290,6 +294,7 @@ export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
 								}
 							},
 							collapseKey,
+							canReopenWhileHidden,
 						});
 						sessionRef.current = session;
 						return session.component;

@@ -22,6 +22,14 @@ export interface QuestionnaireSessionConfig {
 	editInput: (value: string) => Promise<string | undefined>;
 	/** Key spec for the collapse/expand shortcut, e.g. `"ctrl+]"` or `"alt+o"`. */
 	collapseKey: string;
+	/**
+	 * True iff `execute()` registered the raw `ctx.ui.onTerminalInput` listener — the only
+	 * path that can reach a hidden overlay. Gates the `set_overlay_hidden` effect: a host
+	 * that delivers an `OverlayHandle` but no raw terminal input must fall back to the
+	 * visible one-line collapsed row (which keeps focus and input routing), or collapsing
+	 * would hide the overlay into a state nothing can reopen.
+	 */
+	canReopenWhileHidden: boolean;
 }
 
 export interface QuestionnaireSessionComponent {
@@ -65,6 +73,7 @@ export class QuestionnaireSession {
 	private readonly keybindings: QuestionnaireRuntime["keybindings"];
 	private readonly editInput: QuestionnaireSessionConfig["editInput"];
 	private readonly collapseKey: string;
+	private readonly canReopenWhileHidden: boolean;
 	private inputEditorOpen = false;
 
 	/**
@@ -87,6 +96,7 @@ export class QuestionnaireSession {
 		this.keybindings = config.keybindings;
 		this.editInput = config.editInput;
 		this.collapseKey = config.collapseKey;
+		this.canReopenWhileHidden = config.canReopenWhileHidden;
 
 		const built = buildQuestionnaire({
 			tui: this.tui,
@@ -188,8 +198,11 @@ export class QuestionnaireSession {
 				return;
 			case "set_overlay_hidden":
 				// No-op until `setOverlayHandle` has been called (the handle arrives via
-				// `ctx.ui.custom`'s `onHandle` right after the overlay is shown).
-				this.overlayHandle?.setHidden(effect.hidden);
+				// `ctx.ui.custom`'s `onHandle` right after the overlay is shown), and
+				// suppressed entirely when no raw terminal listener exists — hiding would
+				// then be irreversible (pi-tui routes no input to a hidden overlay), so the
+				// visible one-line collapsed row serves as the fallback rendering instead.
+				if (this.canReopenWhileHidden) this.overlayHandle?.setHidden(effect.hidden);
 				return;
 			case "done":
 				this.done(effect.result);

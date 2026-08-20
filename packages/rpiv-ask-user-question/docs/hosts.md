@@ -64,7 +64,8 @@ Some parts of the dialog exist only under the right conditions:
 | `Type something.` row | Always |
 | Side-by-side preview | An option carries a `preview`, and terminal and pane are both ≥ 100 columns |
 | Preview pane at all | Single-select questions only |
-| Collapse shortcut | `collapseKey` is not `"off"` and the host exposes raw terminal input |
+| Collapse shortcut | `collapseKey` is not `"off"` |
+| Full overlay hide on collapse | The host also exposes raw terminal input (the only path that can reopen a hidden overlay); without it, collapsing shrinks the dialog to a visible one-line row instead |
 | Localized chrome | `@juicesharp/rpiv-i18n` is installed |
 
 ## Loading and startup cost

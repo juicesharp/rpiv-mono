@@ -194,6 +194,48 @@ describe("ask_user_question — raw terminal collapse listener", () => {
 		await tool.execute?.("tc", params as never, undefined as never, undefined as never, ctx);
 	});
 
+	it("host with an overlay handle but no raw input keeps the overlay visible on collapse (fallback row, no trap)", async () => {
+		// A host that delivers onHandle but not onTerminalInput has exactly one input
+		// path: the component's handleInput — which pi-tui does not deliver to a hidden
+		// overlay. If collapsing hid the overlay here, nothing could ever reopen it, so
+		// the session must suppress setHidden and rely on the one-line collapsed row.
+		const tool = register();
+		const handle = makeHandle();
+		const componentRef: { current: SessionComponent | undefined } = { current: undefined };
+		const custom = vi.fn(
+			(
+				factory: (
+					tui: { requestRender: () => void; terminal: { columns: number; rows: number } },
+					theme: typeof identityTheme,
+					kb: undefined,
+					done: (v: unknown) => void,
+				) => unknown,
+				options?: { onHandle?: (handle: FakeHandle) => void },
+			) => {
+				return new Promise((resolve) => {
+					componentRef.current = factory(
+						{ requestRender: vi.fn(), terminal: { columns: 120, rows: 24 } },
+						identityTheme,
+						undefined,
+						resolve,
+					) as SessionComponent;
+					options?.onHandle?.(handle);
+					componentRef.current.handleInput(CTRL_RBRACKET);
+					expect(handle.isHidden()).toBe(false);
+					const collapsed = componentRef.current.render(120);
+					expect(collapsed).toHaveLength(1);
+					expect(collapsed[0]).toContain("Ctrl+] to expand");
+					// The visible row still routes input, so the same key expands it again.
+					componentRef.current.handleInput(CTRL_RBRACKET);
+					expect(componentRef.current.render(120).length).toBeGreaterThan(1);
+					resolve({ answers: [], cancelled: true });
+				});
+			},
+		);
+		const ctx = { hasUI: true, ui: { custom } } as never;
+		await tool.execute?.("tc", params as never, undefined as never, undefined as never, ctx);
+	});
+
 	it("honours a configured collapseKey (alt+o toggles, ctrl+] does not)", async () => {
 		writeCollapseKeyConfig("alt+o");
 		const tool = register();
