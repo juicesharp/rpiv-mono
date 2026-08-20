@@ -103,8 +103,9 @@ content above, `↓` for content below, `↕` for both.
 
 The footer hint line adapts to context — it drops the notes hint and appends the
 `Shift+Enter` newline hint whenever a text editor has the keyboard, with `Ctrl+U` still at
-the far right for custom answers. It adds the tab hint only in multi-question dialogs. On
-the Submit tab it carries a one-line `n to add a note` hint that blanks while the
-global-note editor is open. `Ctrl+G` remains Pi's global external-editor shortcut and is
-not repeated there. On narrow terminals the right edge clips with `…` so the core hints
-survive.
+the far right for custom answers. It adds the tab hint only in multi-question dialogs. The
+Submit tab follows the same idiom: its bottom hint row sits below the picker and carries
+an `n to add a note` part that gives way to the `Shift+Enter` newline hint while the
+global-note editor is open; a committed note shows as a `Note` entry in the review list.
+`Ctrl+G` remains Pi's global external-editor shortcut and is not repeated there. On narrow
+terminals the right edge clips with `…` so the core hints survive.

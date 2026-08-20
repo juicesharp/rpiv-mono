@@ -20,8 +20,10 @@ import {
 	HINT_MULTI,
 	HINT_PART_CANCEL,
 	HINT_PART_ENTER,
+	HINT_PART_NEW_LINE,
 	HINT_PART_NOTES,
 	HINT_SINGLE,
+	READY_PROMPT,
 	REVIEW_HEADING,
 } from "./dialog-builder.js";
 import type { TabComponents } from "./tab-components.js";
@@ -527,9 +529,11 @@ describe("Dialog overflow — notes open on the Submit tab (NFR-2)", () => {
 		expect(openLines.join("\n")).toContain("Global note:");
 		expect(openLines.join("\n")).toContain("<NOTES_INPUT>");
 		expect(closedLines.join("\n")).not.toContain("<NOTES_INPUT>");
-		// The affordance row is always present: `n to add a note` while closed, blank while open.
+		// The bottom hint row is always present: the note part shows while closed and
+		// gives way to the Shift+Enter newline hint while the editor is open.
 		expect(closedLines.join("\n")).toContain("n to add a note");
 		expect(openLines.join("\n")).not.toContain("n to add a note");
+		expect(openLines.join("\n")).toContain(HINT_PART_NEW_LINE);
 		// NFR-2: growing midRows never desyncs the residual-spacer math — the trailing
 		// blank tail is identical with the editor closed vs open (footer stays 5 rows).
 		const trailingBlanks = (lines: string[]) => {
@@ -559,9 +563,39 @@ describe("Dialog overflow — notes open on the Submit tab (NFR-2)", () => {
 		const lengths = new Set(widths.map((w) => makeSubmitDialog(submitState()).render(w).length));
 		expect(lengths.size).toBe(1);
 		// Ultra-narrow: exactly one hint row survives, clipped (never wrapped to two).
+		// The bottom hint opens with HINT_PART_ENTER, so its prefix is the row's signature.
 		const narrow = makeSubmitDialog(submitState()).render(10);
-		const hintRows = narrow.filter((l) => stripAnsi(l).startsWith("n to add"));
+		const hintRows = narrow.filter((l) => stripAnsi(l).startsWith("Enter to"));
 		expect(hintRows.length).toBe(1);
 		expect(visibleWidth(hintRows[0]!)).toBeLessThanOrEqual(10);
+	});
+
+	it("hint sits BELOW the picker; the prompt reads straight into its options", () => {
+		// The #182 review moved the note affordance out of the prompt→picker gap: the
+		// footer order is prompt, picker rows, then the bottom key-hint row (the same
+		// bottom-row idiom as question tabs).
+		const lines = makeSubmitDialog(submitState()).render(80).map(stripAnsi);
+		const promptRow = lines.findIndex((l) => l.includes(READY_PROMPT));
+		const submitRow = lines.findIndex((l) => l.includes(SUBMIT_LABEL));
+		const hintRow = lines.findIndex((l) => l.includes("n to add a note"));
+		expect(promptRow).toBeGreaterThanOrEqual(0);
+		expect(submitRow).toBe(promptRow + 1);
+		expect(hintRow).toBeGreaterThan(submitRow);
+	});
+
+	it("a committed global note renders as a review entry while closed and hides while the editor is open", () => {
+		// The committed note lives at the questions.length pseudo-index (2 questions here).
+		const noted = () => new Map([[2, "Ship behind a feature flag"]]);
+		const closed = makeSubmitDialog(submitState({ notesByTab: noted() }))
+			.render(80)
+			.join("\n");
+		expect(closed).toContain("● Note");
+		expect(closed).toContain("Ship behind a feature flag");
+		// While the editor is open it is the live surface (seeded with this text) — the
+		// review entry hides so the note never appears twice.
+		const open = makeSubmitDialog(submitState({ notesByTab: noted(), notesVisible: true }))
+			.render(80)
+			.join("\n");
+		expect(open).not.toContain("● Note");
 	});
 });
