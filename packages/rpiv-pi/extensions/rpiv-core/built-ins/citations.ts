@@ -5,9 +5,9 @@
  * the shared structure verdict comes only from the plan coverage floor.
  */
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { basename, isAbsolute, join, sep } from "node:path";
+import { basename, join, sep } from "node:path";
 import { fencedSpans } from "./markdown-fence.js";
-import { FILE_LINE_CITATION_RE, type StructureFinding } from "./shared.js";
+import { containedPath, FILE_LINE_CITATION_RE, type StructureFinding } from "./shared.js";
 
 /**
  * Verify every `file:line` citation in `body` resolves against the working tree:
@@ -158,13 +158,18 @@ const resolveCitationPath = (
 			return false;
 		}
 	};
-	// Strategy 1 — direct.
-	const direct = isAbsolute(path) ? path : join(cwd, path);
-	if (isTreeFile(direct)) return { abs: direct };
+	// Strategy 1 — direct. Containment-guarded (`containedPath`): a `..`-escaping
+	// citation must not resolve to a file OUTSIDE the tree — an existing out-of-cwd
+	// target would read as a BACKED citation (and leak its line count into the
+	// verdict). An escaping path falls through to the suffix fallback and lands as
+	// an ordinary unbacked/ambiguous finding.
+	const direct = containedPath(cwd, path);
+	if (direct !== undefined && isTreeFile(direct)) return { abs: direct };
 	// Strategies 2 & 3 — dependency probes (lockfile-pinned dep source; the regex
 	// cannot carry `@`, so `node_modules/@scope/pkg/f.js` is cited as `scope/pkg/f.js`).
-	for (const candidate of [join(cwd, "node_modules", path), join(cwd, "node_modules", `@${path}`)]) {
-		if (isTreeFile(candidate)) return { abs: candidate };
+	for (const candidate of [join("node_modules", path), join("node_modules", `@${path}`)]) {
+		const abs = containedPath(cwd, candidate);
+		if (abs !== undefined && isTreeFile(abs)) return { abs };
 	}
 	// Strategy 4 — suffix fallback: back the citation iff exactly ONE tree file matches.
 	const matches = suffixMatchesFor(path, cwd, indexHolder);

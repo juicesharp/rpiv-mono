@@ -2170,6 +2170,28 @@ describe("build slice-check (deterministic floor)", () => {
 		expect(String(data.feedback)).toMatch(/does-not-exist\.ts:42/);
 	});
 
+	it("a `..`-escaping citation to an EXISTING out-of-tree file is unbacked, not backed", () => {
+		// Containment: direct resolution must not confirm a file outside cwd — an
+		// existing out-of-tree target would read as a backed citation (and leak its
+		// line count). The escape falls through to the suffix fallback, which finds
+		// no tree file ⇒ ordinary unbacked finding. FAILS without the guard.
+		const escapeName = `${basename(tmpDir)}-cite-escape.md`;
+		const outsideFile = join(tmpDir, "..", escapeName); // a tmpDir SIBLING — outside cwd
+		writeFileSync(outsideFile, "line1\nline2\nline3\n");
+		try {
+			const rel = ".rpiv/artifacts/slices/cite-escape.md";
+			const m = write(
+				rel,
+				`---\nstatus: ready\nslice_count: 1\nslices:\n  - { n: 1, title: A, deps: [] }\n---\n## Slice 1: A\n**Draws on:** x/../../${escapeName}:2\n`,
+			);
+			const data = runOn(m);
+			expect(data.pass).toBe(false);
+			expect(String(data.feedback)).toMatch(/Unbacked citation/);
+		} finally {
+			rmSync(outsideFile, { force: true });
+		}
+	});
+
 	it("fails on a file:line citation past end-of-file", () => {
 		mkdirSync(join(tmpDir, "src"), { recursive: true });
 		writeFileSync(join(tmpDir, "src/small.ts"), "line1\nline2\n"); // 3 lines (trailing newline)
@@ -5994,6 +6016,53 @@ describe("reconcile lane stage", () => {
 		expect(details(data)).toMatch(/not a test-expectation file/);
 		// untouched
 		expect(readFileSync(join(tmpDir, "packages/a/a.ts"), "utf-8")).toBe("export const r = 3;\n");
+	});
+
+	it("containment — an ABSOLUTE *.test.ts target outside the tree is flagged and NOT written", () => {
+		// The suffix allowlist alone cannot confine the write: an absolute target
+		// ending .test.ts passes it while bypassing cwd entirely. FAILS without the
+		// resolve-then-contain guard.
+		const outside = mkdtempSync(join(tmpdir(), "rpiv-reconcile-outside-"));
+		try {
+			const target = join(outside, "escape.test.ts");
+			writeFileSync(target, "expect(r).toBe(3);\n");
+			const plan = write(
+				".rpiv/artifacts/plans/p.md",
+				planBody({
+					directives: [`- \`${target}\`: replace \`expect(r).toBe(3)\` → \`expect(r).toBe(4)\` — escape`],
+				}),
+			);
+			const data = runOn(plan);
+			expect(data.pass).toBe(false);
+			expect(details(data)).toMatch(/outside the working tree/);
+			// untouched — the guarded sink never resolved the escape
+			expect(readFileSync(target, "utf-8")).toBe("expect(r).toBe(3);\n");
+		} finally {
+			rmSync(outside, { recursive: true, force: true });
+		}
+	});
+
+	it("containment — a `..`-escaping *.test.ts target is flagged and NOT written", () => {
+		// A relative target that traverses out of cwd satisfies the suffix test on the
+		// raw string; containment is checked on the RESOLVED path. FAILS without the guard.
+		const outside = mkdtempSync(join(tmpdir(), "rpiv-reconcile-outside-"));
+		try {
+			const target = join(outside, "escape.test.ts");
+			writeFileSync(target, "expect(r).toBe(3);\n");
+			const traversal = `../${basename(outside)}/escape.test.ts`; // resolves to a tmpDir SIBLING
+			const plan = write(
+				".rpiv/artifacts/plans/p.md",
+				planBody({
+					directives: [`- \`${traversal}\`: replace \`expect(r).toBe(3)\` → \`expect(r).toBe(4)\` — escape`],
+				}),
+			);
+			const data = runOn(plan);
+			expect(data.pass).toBe(false);
+			expect(details(data)).toMatch(/outside the working tree/);
+			expect(readFileSync(target, "utf-8")).toBe("expect(r).toBe(3);\n");
+		} finally {
+			rmSync(outside, { recursive: true, force: true });
+		}
 	});
 
 	it("treats an already-applied directive as satisfied on re-run (idempotent)", () => {

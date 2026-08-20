@@ -697,11 +697,14 @@ export function setLaneProgress(runId: string, progress: LaneProgress | undefine
 /** Enqueue a deferred foreground-stage UI request onto a UNIT's queue (relay).
  *  Stamps the LANE-level needs-input clock on the FIRST enqueue across the
  *  lane that finds it unset (held across a transient drain→refill so the aging
- *  heading never resets mid-wait). A missing run settles immediately so the child
- *  never hangs. */
+ *  heading never resets mid-wait). A missing run — or a retired (non-"running")
+ *  lane — settles immediately so the child never hangs: the x-key abort races
+ *  the child's relay park, and a park landing AFTER retireRun's settle pass
+ *  would strand forever (first-retire-wins means no later settle runs), pinning
+ *  the needs-input clock and the warp Blocked badge until manual evict/answer. */
 export function enqueueInput(runId: string, index: number, pending: PendingInput): void {
 	const entry = state().lanes.get(runId);
-	if (!entry) {
+	if (entry?.status !== "running") {
 		pending.resolve(undefined);
 		return;
 	}
@@ -709,7 +712,7 @@ export function enqueueInput(runId: string, index: number, pending: PendingInput
 	upsertUnit(entry, index).pendingInput.push(pending);
 	notify();
 	// Emit AFTER notify() so a lifecycle subscriber observes the committed park. The
-	// missing-run early-return above emits nothing (no question was ever parked).
+	// settle-immediately early-return above emits nothing (no question was ever parked).
 	emitQuestionAsked(runId, index, entry.name, entry.workflow, entry.input);
 }
 

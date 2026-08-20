@@ -180,6 +180,28 @@ describe("run-lane-registry", () => {
 			expect(pending.resolve).toHaveBeenCalledTimes(1);
 			expect(getUnit("run-1", SINGLE_UNIT_KEY)).toBeUndefined();
 		});
+
+		it("a LATE park on a retired lane settles immediately instead of stranding (abort races the relay)", () => {
+			// The x-key retires a lane while its run is in-flight; abort propagates
+			// asynchronously, so the child's relay park can land AFTER retireRun's one
+			// settle pass. First-retire-wins means no later settle runs — an accepted
+			// park would strand: needs-input clock stamped, `asked` emitted with no
+			// paired resolution, warp Blocked badge pinned. FAILS without the status gate.
+			const events: string[] = [];
+			const offLifecycle = subscribeQuestionLifecycle((e) => events.push(e.kind));
+			recordRun("run-1", "ship");
+			retireRun("run-1", "aborted"); // x-key optimistic retire, run still in-flight
+
+			const pending = makePending();
+			enqueueInput("run-1", SINGLE_UNIT_KEY, pending); // the child's late relay park
+			offLifecycle();
+
+			expect(pending.resolve).toHaveBeenCalledTimes(1);
+			expect(pending.resolve).toHaveBeenCalledWith(undefined);
+			expect(getLane("run-1")?.needsInputSince).toBeUndefined(); // clock not stamped
+			expect(unitNeedsInput("run-1", SINGLE_UNIT_KEY)).toBe(false); // nothing queued
+			expect(events).toEqual([]); // no `asked` without a park — the badge never pins
+		});
 	});
 
 	describe("evictRun", () => {

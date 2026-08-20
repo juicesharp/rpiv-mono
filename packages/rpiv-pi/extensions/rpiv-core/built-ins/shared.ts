@@ -1,5 +1,5 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, isAbsolute, join } from "node:path";
+import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { type Artifact, handleToString, type Output, type RunView } from "@juicesharp/rpiv-workflow/registration";
 import { StagePreflightError } from "@juicesharp/rpiv-workflow/runner";
 
@@ -146,8 +146,24 @@ const writeStructureVerdict = (
  */
 const TEST_PATH_RE = /\.test\.[tj]sx?$/;
 
+/**
+ * Resolve `target` against `cwd` and require the result to stay INSIDE `cwd`.
+ * Returns the resolved absolute path, or `undefined` when the target escapes
+ * (an absolute path outside `cwd`, or `..` traversal — `resolve` collapses the
+ * dot segments, `relative` exposes an escape as a leading `..` or a different
+ * root). The guard runs on the SAME resolved string the fs sinks operate on,
+ * so a suffix/charset check on the raw directive or citation text can never be
+ * bypassed by an absolute target or a mid-path `..`.
+ */
+const containedPath = (cwd: string, target: string): string | undefined => {
+	const abs = resolve(cwd, target);
+	const rel = relative(cwd, abs);
+	return rel.startsWith("..") || isAbsolute(rel) ? undefined : abs;
+};
+
 export type { FsArtifact, PhaseRecord, StructureFinding };
 export {
+	containedPath,
 	FILE_LINE_CITATION_RE,
 	haltPreflight,
 	latestFsArtifact,

@@ -6,6 +6,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, isAbsolute, join } from "node:path";
 import { handleToString, type Output, type ScriptContext } from "@juicesharp/rpiv-workflow/registration";
 import {
+	containedPath,
 	haltPreflight,
 	latestFsArtifact,
 	readArtifactFile,
@@ -97,8 +98,11 @@ const isTestPath = (target: string): boolean => TEST_PATH_RE.test(target);
  * absent `find` whose non-empty `replace` is ALSO absent is a finding (reconcile
  * does not guess); an absent `find` whose non-empty `replace` is already present is
  * the idempotent-re-run no-op for a substitution (a prior successful apply, no
- * finding, no write). Paths resolve through `cwd` (`isAbsolute` short-circuit else
- * `join(cwd, target)`). Fail-soft: a read/apply throw degrades to a finding naming
+ * finding, no write). Paths resolve through `cwd` and must stay INSIDE it
+ * (`containedPath` — an absolute or `..`-escaping target is a finding, never a
+ * read/write; the suffix allowlist alone cannot confine the sink, so containment
+ * is checked on the SAME resolved path `readFileSync`/`writeFileSync` use).
+ * Fail-soft: a read/apply throw degrades to a finding naming
  * the target, never a terminal throw. Returns findings in DIRECTIVE order and
  * performs the side-effecting writes itself (`reconcile` spreads the return).
  */
@@ -116,8 +120,15 @@ const applyReconciliationDirectives = (
 			});
 			continue;
 		}
+		const abs = containedPath(cwd, d.target);
+		if (abs === undefined) {
+			findings.push({
+				detail: `reconcile: directive target ${d.target} resolves outside the working tree — reconcile reads and writes only inside cwd; record the directive against a repo-root-relative test target`,
+				where: d.target,
+			});
+			continue;
+		}
 		try {
-			const abs = isAbsolute(d.target) ? d.target : join(cwd, d.target);
 			const content = readFileSync(abs, "utf-8");
 			if (content.includes(d.find)) {
 				// `String.replace` with a string pattern replaces the FIRST match exactly once.

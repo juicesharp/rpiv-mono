@@ -10,7 +10,7 @@ import type { LoadedWorkflows } from "./load/index.js";
 import { assess, fanout, iterate, majority, panel, verify } from "./loop-constructors.js";
 import { gitCommitOutcome } from "./outcomes/index.js";
 import { eq, gt } from "./predicates.js";
-import { formatWorkflowDetails, formatWorkflowList } from "./preview.js";
+import { CMD_USAGE_PREVIEW, formatWorkflowDetails, formatWorkflowList } from "./preview.js";
 import type { SkillContract } from "./skill-contract.js";
 
 // ---------------------------------------------------------------------------
@@ -91,6 +91,10 @@ describe("formatWorkflowList", () => {
 		expect(out).toContain("Usage: /wf [workflow] <description>");
 		expect(out).toContain("/wf <workflow>");
 		expect(out).toContain("preview stages");
+	});
+
+	it("pins the exact preview usage hint — the gap width is part of the rendered layout", () => {
+		expect(CMD_USAGE_PREVIEW).toBe("/wf <workflow>             — preview stages");
 	});
 
 	it("renders single-layer banner when only built-in is active", () => {
