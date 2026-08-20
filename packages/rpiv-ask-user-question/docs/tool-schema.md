@@ -83,6 +83,7 @@ code. The `content[0].text` string is written for the model, not for a log.
       preview?: string,            // echoed back when the chosen option carried a preview
     }>,
     cancelled: boolean,
+    globalNote?: string,          // Submit-tab note; present even when cancelled is true
     error?: QuestionnaireError,    // one of the codes above
   }
 }
@@ -92,11 +93,16 @@ code. The `content[0].text` string is written for the model, not for a log.
 
 On success the text reads `User has answered your questions: "<question>"="<answer>". …
 You can now continue with the user's answers in mind.` A chosen option's `preview` is
-appended as `selected preview: <markdown>`, and a note as `user notes: <text>`.
+appended as `selected preview: <markdown>`, a per-question note as `user notes: <text>`,
+and the Submit tab's global note as a trailing `global note: <text>` segment. A global
+note alone still yields the answered envelope — it counts as an answer even when every
+question is blank.
 
-Cancelling, and any result that produces no answer segments, both collapse to the single
-string `User declined to answer questions` so the model sees one canonical signal.
-Partial submission is allowed: unanswered questions simply contribute no segment.
+Cancelling, and any result with neither answer segments nor a global note, both collapse
+to the single string `User declined to answer questions` so the model sees one canonical
+signal. Partial submission is allowed: unanswered questions simply contribute no segment.
+A cancelled result always reads as the decline in text; its note, if any, survives only
+in `details.globalNote`.
 
 ## Event contract
 

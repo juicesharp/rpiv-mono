@@ -211,6 +211,16 @@ function routeSubmitTab(
 		// answers flow through `orderedAnswers()` in the host.
 		return state.submitChoiceIndex === 1 ? { kind: "cancel" } : { kind: "submit" };
 	}
+	// Global note (#182): `n` on the Submit tab opens the notes editor scoped to the whole
+	// questionnaire at the pseudo-index (`questions.length` in notesByTab). Reachable only
+	// with the editor closed — `routeKey` dispatches notesVisible traffic to
+	// `routeNotesMode` before the submit-tab block runs. The branch shadows nothing above
+	// it (cancel, tab switch, submit-nav, confirm): a literal `n` byte matches none of them
+	// under default bindings, and a user who deliberately binds one of those actions to
+	// `n` keeps that mapping because the earlier branch still wins (Enter still submits).
+	if (data === NOTES_ACTIVATE_KEY) {
+		return { kind: "notes_enter" };
+	}
 	return { kind: "ignore" };
 }
 
@@ -321,7 +331,8 @@ export function routeKey(data: string, state: QuestionnaireState, runtime: Quest
 	// (single- or multi-select, preview or no-preview). The blocks above already
 	// swallow `n` when it should NOT reach here — notesVisible forwards to the
 	// notes Input, inputMode forwards to the inline Input, the submit-tab block
-	// ignores it, and tabSwitchAction ignores it — so by the time we reach this
+	// activates it via its own branch (the global note, ahead of its ignore
+	// fall-through), and tabSwitchAction ignores it — so by the time we reach this
 	// gate, `n` is unambiguously a notes-enter request. Row intent (Next sentinel,
 	// "Type something.") is irrelevant: the gate sits ABOVE the multi-select
 	// toggle block and the Next sentinel never activates inputMode, so `n` is

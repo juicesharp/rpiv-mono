@@ -43,6 +43,9 @@ TUI produces. Trade-offs inherent to the native primitives:
 - No side-by-side preview pane. Previews are folded into the dialog title instead,
   truncated at 600 characters each.
 - No tab bar and no Submit review tab — one dialog per question, in order.
+- No notes. Both note kinds — per-question `n` on a question tab and global `n` on the
+  Submit tab — are terminal-only; the host's native `select` and `input` primitives carry
+  no note field.
 - Multi-select is a free-text input: type the option numbers, comma-separated
   (`1,3`). Any token that is not a valid option index is treated as a typed custom answer,
   which is how the `Type something.` escape survives. An empty input commits an empty

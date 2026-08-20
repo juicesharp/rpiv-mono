@@ -13,7 +13,7 @@ adapts to the size of your terminal.
 | `Esc` | Cancel the whole questionnaire. | Everywhere except the notes editor, where it closes notes |
 | `Tab` / `Shift+Tab` | Next / previous tab, wrapping. `→` / `←` do the same. | Multi-question dialogs only |
 | `Space` | Toggle the focused checkbox. | Multi-select questions |
-| `n` | Open the notes editor for the current question. | Every question tab |
+| `n` | Open the notes editor for the focused question — or, on the Submit tab, the global note for the whole questionnaire. | Every question tab; the Submit tab in multi-question dialogs |
 | `Ctrl+G` | Open Pi's configured external editor with the current custom-answer draft. | `Type something.` input |
 | `Ctrl+U` | Clear the current custom-answer draft. | `Type something.` input |
 | `Ctrl+]` | Collapse or expand the dialog. Configurable via `collapseKey`. | Everywhere, including while collapsed |
@@ -62,6 +62,11 @@ side-band keyed by tab index, not inside the answer, so writing a note does not 
 question as answered — the Submit tab still lists it as outstanding. The note merges into
 the answer when you confirm it, and reaches the model as `user notes: <text>`.
 
+On the Submit tab, `n` opens the global note editor instead — one note covering the whole
+questionnaire. It lives outside every answer, so it survives tab switches and never marks
+a question as answered; it reaches the model as `global note: <text>`, and submitting with
+nothing but a global note still returns an answered result rather than a decline.
+
 Inside the editor, `Shift+Enter` inserts a newline, while `Esc` and `Enter` close it; other
 keystrokes edit the buffer, so `n` types an `n`. Pasted line breaks are preserved.
 
@@ -98,6 +103,8 @@ content above, `↓` for content below, `↕` for both.
 
 The footer hint line adapts to context — it drops the notes hint and appends the
 `Shift+Enter` newline hint whenever a text editor has the keyboard, with `Ctrl+U` still at
-the far right for custom answers. It adds the tab hint only in multi-question dialogs.
-`Ctrl+G` remains Pi's global external-editor shortcut and is not repeated there. On narrow
-terminals the right edge clips with `…` so the core hints survive.
+the far right for custom answers. It adds the tab hint only in multi-question dialogs. On
+the Submit tab it carries a one-line `n to add a note` hint that blanks while the
+global-note editor is open. `Ctrl+G` remains Pi's global external-editor shortcut and is
+not repeated there. On narrow terminals the right edge clips with `…` so the core hints
+survive.

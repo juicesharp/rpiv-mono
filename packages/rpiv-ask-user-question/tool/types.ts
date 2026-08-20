@@ -135,6 +135,17 @@ export type QuestionnaireError =
 export interface QuestionnaireResult {
 	answers: QuestionAnswer[];
 	cancelled: boolean;
+	/**
+	 * Global note authored on the Submit tab: `n` opens the shared notes editor there,
+	 * and the committed text lives at the `notesByTab[questions.length]` pseudo-index
+	 * (a slot no question tab can occupy) until `doneFor` lifts it onto the result —
+	 * attached on both submit and cancel, like per-question `answers[].notes`.
+	 * Conditional-spread contract, mirroring `QuestionAnswer.notes`: the key appears
+	 * only via conditional spread of a non-empty string — never assigned `undefined`,
+	 * never kept for an empty/whitespace-only draft — so note-free results stay
+	 * byte-identical (`!("globalNote" in result)` holds).
+	 */
+	globalNote?: string;
 	error?: QuestionnaireError;
 }
 

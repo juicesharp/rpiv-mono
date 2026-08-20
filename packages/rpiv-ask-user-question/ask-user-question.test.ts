@@ -361,6 +361,76 @@ describe("buildQuestionnaireResponse — completed", () => {
 	});
 });
 
+describe("buildQuestionnaireResponse — global note", () => {
+	const params: QuestionParams = {
+		questions: [
+			{
+				question: "Pick?",
+				header: "H",
+				options: [
+					{ label: "A", description: "a" },
+					{ label: "B", description: "b" },
+				],
+			},
+		],
+	};
+
+	it("success + note: exact envelope bytes with the trailing 'global note: <note>.' segment (raw multiline echo)", () => {
+		const result: QuestionnaireResult = {
+			cancelled: false,
+			answers: [{ questionIndex: 0, question: "Pick?", kind: "option", answer: "A" }],
+			globalNote: "ship it\nFriday",
+		};
+		const r = buildQuestionnaireResponse(result, params);
+		expect(r.content[0].text).toBe(
+			'User has answered your questions: "Pick?"="A". global note: ship it\nFriday. You can now continue with the user\'s answers in mind.',
+		);
+		expect(r.details).toBe(result);
+	});
+
+	it("the global-note segment is anchored by the envelope suffix", () => {
+		const result: QuestionnaireResult = {
+			cancelled: false,
+			answers: [{ questionIndex: 0, question: "Pick?", kind: "option", answer: "A" }],
+			globalNote: "ship it Friday",
+		};
+		const r = buildQuestionnaireResponse(result, params);
+		expect(r.content[0].text).toMatch(
+			/global note: ship it Friday\. You can now continue with the user's answers in mind\.$/,
+		);
+	});
+
+	it("zero answers + note is NOT a decline — answered envelope with details by reference", () => {
+		const result: QuestionnaireResult = { cancelled: false, answers: [], globalNote: "note alone" };
+		const r = buildQuestionnaireResponse(result, params);
+		expect(r.content[0].text.startsWith("User has answered your questions:")).toBe(true);
+		expect(r.content[0].text).toContain("global note:");
+		expect(r.details.cancelled).toBe(false);
+		expect(r.details.globalNote).toBe("note alone");
+		expect(r.details).toBe(result);
+	});
+
+	it("cancelled + note: DECLINE_MESSAGE text, answers forwarded AND globalNote preserved in details", () => {
+		const result: QuestionnaireResult = {
+			cancelled: true,
+			answers: [{ questionIndex: 0, question: "Pick?", kind: "option", answer: "A" }],
+			globalNote: "kept for replay",
+		};
+		const r = buildQuestionnaireResponse(result, params);
+		expect(r.content[0].text).toBe("User declined to answer questions");
+		expect(r.details.answers).toEqual(result.answers);
+		expect(r.details.cancelled).toBe(true);
+		expect(r.details.globalNote).toBe("kept for replay");
+	});
+
+	it("zero answers + no note still declines (fresh details literal carries no globalNote key)", () => {
+		const result: QuestionnaireResult = { cancelled: false, answers: [] };
+		const r = buildQuestionnaireResponse(result, params);
+		expect(r.content[0].text).toBe("User declined to answer questions");
+		expect(r.details).toEqual({ answers: [], cancelled: true });
+	});
+});
+
 describe("buildQuestionnaireResponse — multi-question mixed types", () => {
 	it("formats 2 answered questions as comma-period-separated segments inside one envelope", () => {
 		const params: QuestionParams = {

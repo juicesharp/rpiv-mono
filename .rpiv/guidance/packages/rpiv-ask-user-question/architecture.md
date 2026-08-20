@@ -71,8 +71,8 @@ The shortcut is configurable via the `collapseKey` config field (default `ctrl+]
 - **NO subclassing or per-kind boolean flags for special rows** — `kind` discriminator + `ROW_INTENT_META` are the single mechanism (enforced by a banned-flags test)
 - **NO live-component reads from the reducer** — dispatch-time component values arrive in action payloads; `ApplyContext` contains session-lifetime constants only
 - **Tool-result envelope** always built via the result-envelope helper; the questionnaire error type unifies validator and runtime
-- **Side-band drafts** — `notesByTab` and `customDraftsByTab` live separately from `answers`; confirming custom text removes its draft so the answer becomes authoritative
-- **Partial-submit allowed** — Submit always submits; the warning header is the sole signal of incompleteness
+- **Side-band drafts** — `notesByTab` and `customDraftsByTab` live separately from `answers`; confirming custom text removes its draft so the answer becomes authoritative. The Submit tab's global note rides the same side-band at the pseudo-index `notesByTab[questions.length]`; `doneFor` lifts it into `QuestionnaireResult.globalNote` via conditional spread (attach-on-cancel — no `!cancelled` guard)
+- **Partial-submit allowed** — Submit always submits; the warning header is the sole signal of incompleteness — a non-empty global note alone returns an answered result (envelope `global note:` segment) rather than the decline
 - **State-shape unity** — `QuestionnaireState` is the single canonical shape; runtime context is held separately and never reaches view setProps consumers
 - **Effects as a closed union** — adding an effect requires updating both the `Effect` union AND the runtime's switch (compiler-enforced)
 - **Discriminated focus** — `selectActiveView` returns one of `"notes" | "options" | "submit"` from canonical state; replaces parallel boolean focus flags

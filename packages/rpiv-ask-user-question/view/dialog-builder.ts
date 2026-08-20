@@ -168,6 +168,7 @@ export class DialogView implements StatefulView<DialogProps> {
 					theme: config.theme,
 					questions: config.questions,
 					submitPicker: config.submitPicker,
+					notesInput: config.notesInput,
 				})
 			: undefined;
 		this.maxFooterRowCount = Math.max(this.questionStrategy.footerRowCount, this.submitStrategy?.footerRowCount ?? 0);

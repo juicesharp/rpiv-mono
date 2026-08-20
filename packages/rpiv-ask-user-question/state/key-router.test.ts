@@ -658,6 +658,62 @@ describe("routeKey — notes", () => {
 	});
 });
 
+describe("routeKey — global note on the Submit tab", () => {
+	// The Submit tab lives at the pseudo-index currentTab === questions.length (2 for the
+	// default two-question runtime). #182: `n` there opens the notes editor scoped to the
+	// whole questionnaire instead of a single question.
+	const submitTab = (over: Partial<QuestionnaireState> = {}) =>
+		makeState({ currentTab: 2, notesVisible: false, ...over });
+
+	it("'n' with the editor closed emits notes_enter at the pseudo-index", () => {
+		expect(routeKey("n", submitTab(), makeRuntime())).toEqual({ kind: "notes_enter" });
+	});
+
+	it("while open, the Tab byte forwards to the notes editor — NOT tab_switch", () => {
+		expect(routeKey(BYTE_TAB, submitTab({ notesVisible: true }), makeRuntime())).toEqual({
+			kind: "notes_forward",
+			data: BYTE_TAB,
+		});
+	});
+
+	it("while open, a printable byte forwards into the editor (typing captured)", () => {
+		expect(routeKey("z", submitTab({ notesVisible: true }), makeRuntime())).toEqual({
+			kind: "notes_forward",
+			data: "z",
+		});
+	});
+
+	it("while open, a second 'n' forwards as a literal character instead of re-entering notes", () => {
+		expect(routeKey("n", submitTab({ notesVisible: true }), makeRuntime())).toEqual({
+			kind: "notes_forward",
+			data: "n",
+		});
+	});
+
+	it("while open, Esc commits the note (notes_exit)", () => {
+		expect(routeKey(sentinel(KEY.CANCEL), submitTab({ notesVisible: true }), makeRuntime())).toEqual({
+			kind: "notes_exit",
+		});
+	});
+
+	it("while open, Enter commits the note (notes_exit) — it does NOT submit", () => {
+		expect(routeKey(sentinel(KEY.CONFIRM), submitTab({ notesVisible: true }), makeRuntime())).toEqual({
+			kind: "notes_exit",
+		});
+	});
+
+	it("with the editor closed, Enter still submits/cancels per submitChoiceIndex (the n branch shadows nothing)", () => {
+		// D1-revised Enter-submit preserved: the notes branch sits AFTER the confirm branch
+		// inside routeSubmitTab, so Enter keeps its submit/cancel meaning on the Submit tab.
+		expect(routeKey(sentinel(KEY.CONFIRM), submitTab({ submitChoiceIndex: 0 }), makeRuntime())).toEqual({
+			kind: "submit",
+		});
+		expect(routeKey(sentinel(KEY.CONFIRM), submitTab({ submitChoiceIndex: 1 }), makeRuntime())).toEqual({
+			kind: "cancel",
+		});
+	});
+});
+
 describe("routeKey — inputMode (Type something)", () => {
 	const other: WrappingSelectItem = { kind: "other", label: "Type something." };
 

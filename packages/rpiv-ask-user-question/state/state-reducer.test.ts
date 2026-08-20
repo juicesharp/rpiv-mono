@@ -8,7 +8,7 @@ import {
 } from "../test-fixtures.js";
 import type { QuestionAnswer, QuestionData } from "../tool/types.js";
 import type { QuestionnaireAction } from "./key-router.js";
-import { reduce } from "./state-reducer.js";
+import { type Effect, reduce } from "./state-reducer.js";
 
 describe("reduce — nav", () => {
 	it("regular nav keeps the active draft buffer intact", () => {
@@ -206,6 +206,56 @@ describe("reduce — cancel/submit", () => {
 	it("submit emits done with cancelled: false", () => {
 		const r = reduce(makeState(), { kind: "submit" }, makeCtx());
 		expect(r.effects).toEqual([{ kind: "done", result: { answers: [], cancelled: false } }]);
+	});
+});
+
+describe("reduce — global note lift (doneFor)", () => {
+	const twoQuestionCtx = makeCtx({
+		questions: [makeQuestion(), makeQuestion()],
+		itemsByTab: [itemsRegular, itemsRegular],
+	});
+
+	it("submit on the Submit tab lifts notesByTab[questions.length] into result.globalNote (strict toEqual)", () => {
+		const state = makeState({ currentTab: 2, notesByTab: new Map([[2, "ship it Friday"]]) });
+		const r = reduce(state, { kind: "submit" }, twoQuestionCtx);
+		expect(r.effects).toEqual([
+			{ kind: "done", result: { answers: [], cancelled: false, globalNote: "ship it Friday" } },
+		]);
+	});
+
+	it("cancel with a committed note still lifts it (attach-on-cancel — no cancelled guard)", () => {
+		const state = makeState({ currentTab: 2, notesByTab: new Map([[2, "note survives decline"]]) });
+		const r = reduce(state, { kind: "cancel" }, twoQuestionCtx);
+		expect(r.effects).toEqual([
+			{ kind: "done", result: { answers: [], cancelled: true, globalNote: "note survives decline" } },
+		]);
+	});
+
+	it("note-free submit/cancel/confirm produce the key absent (never undefined-assigned)", () => {
+		const submit = reduce(makeState(), { kind: "submit" }, twoQuestionCtx);
+		const cancel = reduce(makeState(), { kind: "cancel" }, twoQuestionCtx);
+		const confirm = reduce(
+			makeState(),
+			{ kind: "confirm", answer: { questionIndex: 0, question: "Pick one", kind: "option", answer: "A" } },
+			twoQuestionCtx,
+		);
+		for (const r of [submit, cancel, confirm]) {
+			const done = r.effects[0] as Extract<Effect, { kind: "done" }>;
+			expect(done.kind).toBe("done");
+			expect("globalNote" in done.result).toBe(false);
+		}
+	});
+
+	it("single-question dialog: a per-question note rides answers[0].notes, never globalNote", () => {
+		const state = makeState({ notesByTab: new Map([[0, "per-question note"]]) });
+		const r = reduce(
+			state,
+			{ kind: "confirm", answer: { questionIndex: 0, question: "Pick one", kind: "option", answer: "A" } },
+			makeCtx(),
+		);
+		const done = r.effects[0] as Extract<Effect, { kind: "done" }>;
+		expect(done.result.answers[0]?.notes).toBe("per-question note");
+		expect("globalNote" in done.result).toBe(false);
 	});
 });
 
@@ -459,5 +509,69 @@ describe("reduce — multi-select notes merge (dormant code lit up by universal 
 		const after = reduce(state, { kind: "toggle", index: 1 }, ctx).state;
 		expect(after.answers.get(0)?.selected).toEqual(["A", "B"]);
 		expect(after.answers.get(0)?.notes).toBeUndefined();
+	});
+});
+
+describe("reduce — global note at the Submit-tab pseudo-index", () => {
+	// questions.length === 2 → the Submit tab (and its global note) live at index 2.
+	const twoQuestionCtx = makeCtx({
+		questions: [makeQuestion(), makeQuestion()],
+		itemsByTab: [itemsRegular, itemsRegular],
+	});
+
+	function submitState(over: Partial<Parameters<typeof makeState>[0]> = {}) {
+		return makeState({ currentTab: 2, ...over });
+	}
+
+	it("notes_enter seeds notesDraft from notesByTab[questions.length]", () => {
+		const r = reduce(
+			submitState({ notesByTab: new Map([[2, "ship it Friday"]]) }),
+			{ kind: "notes_enter" },
+			twoQuestionCtx,
+		);
+		expect(r.state.notesVisible).toBe(true);
+		expect(r.state.notesDraft).toBe("ship it Friday");
+		expect(r.effects).toEqual([
+			{ kind: "set_notes_value", value: "ship it Friday" },
+			{ kind: "set_notes_focused", focused: true },
+		]);
+	});
+
+	it("notes_exit writes the trimmed draft into notesByTab[questions.length], leaving answers untouched", () => {
+		const answers = new Map<number, QuestionAnswer>([
+			[0, { questionIndex: 0, question: "Pick one", kind: "option", answer: "A" }],
+		]);
+		const r = reduce(
+			submitState({ answers, notesVisible: true, notesDraft: "  global  " }),
+			{ kind: "notes_exit" },
+			twoQuestionCtx,
+		);
+		expect(r.state.notesVisible).toBe(false);
+		expect(r.state.notesByTab.get(2)).toBe("global");
+		// Side-band only: the pseudo-index owns no answer, and existing answers are invariant.
+		expect(r.state.answers.get(2)).toBeUndefined();
+		expect([...r.state.answers.entries()]).toEqual([...answers.entries()]);
+	});
+
+	it("notes_exit with an empty draft deletes the pseudo-index key", () => {
+		const r = reduce(
+			submitState({ notesByTab: new Map([[2, "stale"]]), notesVisible: true, notesDraft: "   " }),
+			{ kind: "notes_exit" },
+			twoQuestionCtx,
+		);
+		expect(r.state.notesByTab.has(2)).toBe(false);
+	});
+
+	it("tab away and back reseeds the shared editor via switchTabResult", () => {
+		let s = submitState({ notesByTab: new Map([[2, "keep me"]]) });
+		s = reduce(s, { kind: "tab_switch", nextTab: 0 }, twoQuestionCtx).state;
+		// Leaving the Submit tab closes the editor and seeds tab 0's (empty) note value.
+		expect(s.currentTab).toBe(0);
+		expect(s.notesVisible).toBe(false);
+		expect(s.notesDraft).toBe("");
+		s = reduce(s, { kind: "tab_switch", nextTab: 2 }, twoQuestionCtx).state;
+		// Returning to the Submit tab reseeds the global draft from notesByTab[2].
+		expect(s.currentTab).toBe(2);
+		expect(s.notesDraft).toBe("keep me");
 	});
 });

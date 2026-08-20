@@ -25,6 +25,8 @@ import type { StatefulView } from "./stateful-view.js";
 import type { TabComponents } from "./tab-components.js";
 
 const NOTES_HEADER = "Notes:";
+const GLOBAL_NOTES_HEADER = "Global note:";
+const REVIEW_GLOBAL_HINT = "n to add a note";
 
 /**
  * Single-row, width-clipped chrome cell. The footer row count is invariant
@@ -160,10 +162,12 @@ export interface SubmitTabStrategyConfig {
 	theme: Theme;
 	questions: readonly QuestionData[];
 	submitPicker: Component | undefined;
+	/** Shared notes Editor — mounted into midRows while the global-note editor is open on this tab. */
+	notesInput: Editor;
 }
 
 export class SubmitTabStrategy implements TabContentStrategy {
-	/** Spacer(1) + Text(prompt, 1) + Spacer(1) + submitPicker(2) = 5 rendered rows. Fallback path lands at 5 via 2 trailing Spacer(1)s. */
+	/** Spacer(1) + Text(prompt, 1) + OneLineClippedText(hint, 1) + submitPicker(2) = 5 rendered rows. Fallback path lands at 5 via 2 trailing Spacer(1)s. */
 	readonly footerRowCount = 5;
 
 	constructor(private readonly config: SubmitTabStrategyConfig) {}
@@ -198,8 +202,17 @@ export class SubmitTabStrategy implements TabContentStrategy {
 		return this.bodyComponent(state).render(width).length;
 	}
 
-	midRows(_state: DialogState): Component[] {
-		return [];
+	midRows(state: DialogState): Component[] {
+		// notesVisible-gated mirror of QuestionTabStrategy.midRows: while the global-note
+		// editor is open, the shared notesInput mounts below the answer summary under its
+		// own header. The pseudo-index draft (notesByTab[questions.length]) is reducer-owned
+		// state; the strategy only renders.
+		if (!state.notesVisible) return [];
+		return [
+			new Text(this.config.theme.fg("muted", t("notes.global_header", GLOBAL_NOTES_HEADER)), 1, 0),
+			this.config.notesInput,
+			new Spacer(1),
+		];
 	}
 
 	footerRows(state: DialogState): Component[] {
@@ -217,7 +230,18 @@ export class SubmitTabStrategy implements TabContentStrategy {
 						"warning",
 						`${t("review.incomplete", INCOMPLETE_WARNING_PREFIX)} ${missing.join(", ")}`,
 					);
-		const out: Component[] = [new Spacer(1), new Text(promptText, 1, 0), new Spacer(1)];
+		const out: Component[] = [
+			new Spacer(1),
+			new Text(promptText, 1, 0),
+			// Global-note affordance (#182): one-line, width-clipped hint row. Always present
+			// so footerRowCount stays exactly 5; the text blanks while the editor is open (the
+			// mid-region editor is the affordance then). OneLineClippedText (not pi-tui Text) —
+			// a wrapped hint would inflate the footer past footerRowCount and desync the
+			// chrome's cross-tab height math (same discipline as QuestionTabStrategy's hint).
+			new OneLineClippedText(
+				state.notesVisible ? "" : this.config.theme.fg("dim", t("review.global_hint", REVIEW_GLOBAL_HINT)),
+			),
+		];
 		if (this.config.submitPicker) {
 			out.push(this.config.submitPicker);
 		} else {

@@ -17,7 +17,8 @@ The LLM tool contract surface: TypeBox parameter schemas, pure runtime parameter
 ```
 types.ts                  — TypeBox schemas (OptionSchema, QuestionSchema, QuestionsSchema, QuestionParamsSchema),
                             length/cardinality constants, RESERVED_LABELS, QuestionAnswer discriminated union,
-                            QuestionnaireError codes, QuestionnaireResult + isQuestionnaireResult guard
+                            QuestionnaireError codes, QuestionnaireResult (optional `globalNote` — conditional
+                            spread only, never undefined-assigned) + isQuestionnaireResult guard
 format-answer.ts          — Scalar formatter; multi/custom/option branches (variant param retained but inert)
 response-envelope.ts      — Envelope assembly (buildQuestionnaireResponse), per-answer segment (buildAnswerSegment), buildToolResult
 validate-questionnaire.ts — Pure post-schema runtime guard returning discriminated ValidationResult
@@ -55,7 +56,7 @@ export function formatAnswerScalar(a: QuestionAnswer, _variant: FormatAnswerVari
 }
 ```
 `QuestionAnswer.kind` is a three-variant union (`"option" | "custom" | "multi"`, `types.ts:109`) — the `"chat"` kind left with the escape hatch. `variant` no longer affects any branch (the chat branch was the only consumer); it is retained as `_variant` for signature stability — a deliberate decision documented in `format-answer.ts:13-18`.
-`buildAnswerSegment` wraps as `"Q"="A"` + optional `selected preview:` / `user notes:` suffixes; `buildQuestionnaireResponse` brackets with `ENVELOPE_PREFIX`/`SUFFIX`, falling back to `DECLINE_MESSAGE` on null/cancelled/empty.
+`buildAnswerSegment` wraps as `"Q"="A"` + optional `selected preview:` / `user notes:` suffixes; `buildQuestionnaireResponse` brackets with `ENVELOPE_PREFIX`/`SUFFIX`, falling back to `DECLINE_MESSAGE` on null/cancelled/empty. `result.globalNote` appends a `global note: <text>.` segment after the per-answer loop, before `ENVELOPE_SUFFIX`; because the push precedes the zero-segments decline check, that decline branch is reachable only note-free (a note alone yields the answered envelope). The cancelled branch keeps `DECLINE_MESSAGE` text but conditionally spreads `globalNote` into its `details` — attach-on-cancel, mirroring how per-question `answers[].notes` survive cancellation.
 
 ## Validator Ordering (short-circuit, in order)
 `no_questions` → `too_many_questions` → `duplicate_question` → `empty_options` → **`reserved_label`** → `duplicate_option_label`. Reserved-label MUST short-circuit before duplicate. Four codes are intentionally excluded here — produced only in `ask-user-question.ts`, never by `validateQuestionnaire`: `no_ui` (requires runtime `ctx.hasUI`), `no_custom_ui` (RPC/ACP host has `hasUI` but no dialog sub-protocol), `session_load_failed` and `stale_module_cache` (lazy session import failures, including the plugin-reinstall/jiti poisoned-cache case).

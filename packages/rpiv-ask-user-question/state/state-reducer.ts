@@ -139,7 +139,17 @@ function switchTabResult(state: QuestionnaireState, nextTab: number, ctx: ApplyC
 }
 
 function doneFor(state: QuestionnaireState, ctx: ApplyContext, cancelled: boolean): ApplyResult {
-	const result: QuestionnaireResult = { answers: orderedAnswers(state, ctx.questions), cancelled };
+	// Global note lift: the Submit-tab note lives at the `questions.length` pseudo-index
+	// in `notesByTab` — question tabs only occupy 0..questions.length-1, so this can never
+	// cross-contaminate a per-question note. Attached regardless of `cancelled` (the
+	// reducer is truth; the envelope owns decline presentation), with cancel/submit/confirm
+	// sharing this single lift. Conditional spread keeps note-free results byte-identical.
+	const globalNote = state.notesByTab.get(ctx.questions.length);
+	const result: QuestionnaireResult = {
+		answers: orderedAnswers(state, ctx.questions),
+		cancelled,
+		...(globalNote && globalNote.length > 0 ? { globalNote } : {}),
+	};
 	return { state, effects: [{ kind: "done", result }] };
 }
 

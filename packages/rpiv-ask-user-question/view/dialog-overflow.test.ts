@@ -10,7 +10,7 @@ import type { QuestionAnswer, QuestionData } from "../tool/types.js";
 import type { MultiSelectView } from "./components/multi-select-view.js";
 import type { OptionListView } from "./components/option-list-view.js";
 import type { PreviewPane } from "./components/preview/preview-pane.js";
-import { SubmitPicker } from "./components/submit-picker.js";
+import { SUBMIT_LABEL, SubmitPicker } from "./components/submit-picker.js";
 import type { TabBar } from "./components/tab-bar.js";
 import {
 	type DialogConfig,
@@ -479,5 +479,89 @@ describe("Dialog overflow — notes open on a multi-select tab (NFR-2)", () => {
 		expect(lines[0]).toMatch(/─/);
 		expect(lines.join("\n")).toContain(HINT_PART_CANCEL);
 		expect(lines.join("\n")).not.toContain(HINT_MULTI);
+	});
+});
+
+describe("Dialog overflow — notes open on the Submit tab (NFR-2)", () => {
+	const answers = new Map<number, QuestionAnswer>([
+		[0, { questionIndex: 0, question: "Q1?", kind: "option", answer: "A" }],
+		[1, { questionIndex: 1, question: "Q2?", kind: "option", answer: "X" }],
+	]);
+
+	function submitState(over: Partial<DialogState> = {}): DialogState {
+		return {
+			currentTab: 2,
+			optionIndex: 0,
+			notesVisible: false,
+			inputMode: false,
+			answers,
+			multiSelectChecked: new Set(),
+			customDraftsByTab: new Map(),
+			notesByTab: new Map(),
+			submitChoiceIndex: 0,
+			notesDraft: "",
+			collapsed: false,
+			...over,
+		};
+	}
+
+	function makeSubmitDialog(state: DialogState, over: MakeConfigOverrides = {}): DialogView {
+		const picker = new SubmitPicker(theme);
+		picker.setProps(submitPickerPropsFromState(state, true));
+		return makeDialog(
+			makeConfig({
+				state,
+				submitPicker: picker,
+				getTerminalRows: () => 50,
+				getBodyHeight: () => 8,
+				...over,
+			}),
+		);
+	}
+
+	it("flipping notesVisible false→true grows the render by exactly 3; tail identical; hint blanks while open", () => {
+		const closedLines = makeSubmitDialog(submitState()).render(80);
+		const openLines = makeSubmitDialog(submitState({ notesVisible: true })).render(80);
+		// midRows = Global-note header + notesInput (stubbed to 1 row) + Spacer = 3 rows.
+		expect(openLines.length - closedLines.length).toBe(3);
+		expect(openLines.join("\n")).toContain("Global note:");
+		expect(openLines.join("\n")).toContain("<NOTES_INPUT>");
+		expect(closedLines.join("\n")).not.toContain("<NOTES_INPUT>");
+		// The affordance row is always present: `n to add a note` while closed, blank while open.
+		expect(closedLines.join("\n")).toContain("n to add a note");
+		expect(openLines.join("\n")).not.toContain("n to add a note");
+		// NFR-2: growing midRows never desyncs the residual-spacer math — the trailing
+		// blank tail is identical with the editor closed vs open (footer stays 5 rows).
+		const trailingBlanks = (lines: string[]) => {
+			let n = 0;
+			for (let i = lines.length - 1; i >= 0 && lines[i].trim() === ""; i--) n++;
+			return n;
+		};
+		expect(trailingBlanks(openLines)).toBe(trailingBlanks(closedLines));
+	});
+
+	it("overflow while open: output ≤ termRows, sticky top border, sticky footer (picker visible)", () => {
+		const dlg = makeSubmitDialog(submitState({ notesVisible: true }), {
+			getTerminalRows: () => 12,
+			getBodyHeight: () => 20,
+		});
+		const lines = dlg.render(80);
+		expect(lines.length).toBeLessThanOrEqual(12);
+		expect(lines[0]).toMatch(/─/);
+		expect(lines.join("\n")).toContain(SUBMIT_LABEL);
+	});
+
+	it("width-clip: render length is width-invariant in the one-line regime; hint clips to one row, never wraps", () => {
+		// READY_PROMPT (30 visible cols) is the widest footer string, so the length sweep
+		// starts where every footer row is single-line. A wrapping hint would inflate the
+		// submit footer past footerRowCount=5 and desync the cross-tab height equalizer.
+		const widths = [40, 60, 80, 120];
+		const lengths = new Set(widths.map((w) => makeSubmitDialog(submitState()).render(w).length));
+		expect(lengths.size).toBe(1);
+		// Ultra-narrow: exactly one hint row survives, clipped (never wrapped to two).
+		const narrow = makeSubmitDialog(submitState()).render(10);
+		const hintRows = narrow.filter((l) => stripAnsi(l).startsWith("n to add"));
+		expect(hintRows.length).toBe(1);
+		expect(visibleWidth(hintRows[0]!)).toBeLessThanOrEqual(10);
 	});
 });

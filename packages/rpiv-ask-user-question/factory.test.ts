@@ -562,6 +562,32 @@ describe("ask_user_question — multi-question tab cycling flow", () => {
 		expect(r?.details.answers[0].question).toBe("Q1?");
 	});
 
+	// Global note on the Submit tab: TAB to Submit, `n` opens the shared editor, the
+	// committed note rides the result as details.globalNote and the envelope gains a
+	// `global note:` segment — a note alone turns a zero-answer submit into an answered
+	// result rather than the decline.
+	it("TAB → Submit, n + note + Enter commits, Enter submits → details.globalNote set + 'global note:' in envelope", async () => {
+		const tool = register();
+		const { custom } = driveCustom((c) => {
+			c.handleInput(KEY.TAB); // Q1 → Q2
+			c.handleInput(KEY.TAB); // Q2 → Submit
+			c.handleInput("n"); // Submit tab: open the global-note editor
+			c.handleInput("s");
+			c.handleInput("h");
+			c.handleInput("i");
+			c.handleInput("p"); // type "ship"
+			c.handleInput(KEY.ENTER); // commit the note (notes_exit → notesByTab[questions.length])
+			c.handleInput(KEY.ENTER); // Submit row (default index 0) → submit
+		});
+		const ctx = { hasUI: true, ui: { custom } } as never;
+		const r = (await tool.execute?.("tc", twoParams as never, undefined as never, undefined as never, ctx)) as
+			| ToolResult
+			| undefined;
+		expect(r?.details.cancelled).toBe(false);
+		expect(r?.details.globalNote).toBe("ship");
+		expect(r?.content[0].text).toContain("global note:");
+	});
+
 	it("answer all → Submit tab → DOWN → Enter on Cancel returns cancelled=true with all answers preserved", async () => {
 		const tool = register();
 		const { custom } = driveCustom((c) => {

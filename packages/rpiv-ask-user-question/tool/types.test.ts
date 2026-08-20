@@ -250,6 +250,11 @@ describe("isQuestionnaireResult — type guard", () => {
 		expect(isQuestionnaireResult({ answers: [], cancelled: true, error: "reserved_label" })).toBe(true);
 	});
 
+	it("accepts a result carrying a globalNote (Submit-tab global note)", () => {
+		expect(isQuestionnaireResult({ answers: [], cancelled: false, globalNote: "ship it Friday" })).toBe(true);
+		expect(isQuestionnaireResult({ answers: [], cancelled: true, globalNote: "kept on cancel" })).toBe(true);
+	});
+
 	it("accepts a result with populated answers", () => {
 		expect(
 			isQuestionnaireResult({

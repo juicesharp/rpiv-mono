@@ -9,18 +9,29 @@ export const ENVELOPE_SUFFIX = "You can now continue with the user's answers in 
  * Map a `QuestionnaireResult` (or null/cancelled) to the LLM-facing tool envelope.
  * Pure of `(result, params)`; cancelled and "no segments" both fall to `DECLINE_MESSAGE`
  * so the model sees a single canonical "didn't answer" signal regardless of why.
+ * "No segments" means no answers AND no global note — the `global note:` segment is
+ * pushed before the zero-segments check, so a note-bearing submit with zero answers
+ * still yields the answered envelope.
  */
 export function buildQuestionnaireResponse(result: QuestionnaireResult | null | undefined, params: QuestionParams) {
 	if (!result || result.cancelled) {
+		// Decline text stays canonical even when a global note rides the cancelled result;
+		// the note survives in `details` (like partial `answers`) for replay consumers.
 		return buildToolResult(DECLINE_MESSAGE, {
 			answers: result?.answers ?? [],
 			cancelled: true,
+			...(result?.globalNote && result.globalNote.length > 0 ? { globalNote: result.globalNote } : {}),
 		});
 	}
 	const segments: string[] = [];
 	for (let i = 0; i < params.questions.length; i++) {
 		const a = result.answers.find((x) => x.questionIndex === i);
 		if (a) segments.push(buildAnswerSegment(a));
+	}
+	// Global note rides after the per-question segments: raw multiline echo (no
+	// reformatting), trailing period mirroring `buildAnswerSegment`'s shape.
+	if (result.globalNote && result.globalNote.length > 0) {
+		segments.push(`global note: ${result.globalNote}.`);
 	}
 	if (segments.length === 0) {
 		return buildToolResult(DECLINE_MESSAGE, { answers: result.answers, cancelled: true });
