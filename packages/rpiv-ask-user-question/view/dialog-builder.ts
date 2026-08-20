@@ -61,6 +61,47 @@ const OVERFLOW_UP = "↑";
 const OVERFLOW_DOWN = "↓";
 const OVERFLOW_BOTH = "↕";
 
+/** No-overflow path: append the residual spacer rows after the footer. */
+function renderFitsTerminal(natural: string[], spacerRows: number): string[] {
+	return spacerRows > 0 ? [...natural, ...Array<string>(spacerRows).fill("")] : natural;
+}
+
+/** Terminal too small for any middle content — show just chrome, hard-clamped to termRows. */
+function renderChromeOnly(natural: string[], topFixed: number, bottomFixed: number, termRows: number): string[] {
+	const chromeOnly = [...natural.slice(0, topFixed), ...natural.slice(natural.length - bottomFixed)];
+	return chromeOnly.length > termRows ? chromeOnly.slice(0, termRows) : chromeOnly;
+}
+
+/** Scroll window start, centered on the focused option; top-anchored when there is no interactive focus. */
+function computeScrollStart(
+	bodyRange: [number, number] | undefined,
+	headingCount: number,
+	availableMiddle: number,
+	middleRows: number,
+): number {
+	if (!bodyRange) return 0;
+	const focusedRowInMiddle = headingCount + bodyRange[0];
+	const focusedHeight = bodyRange[1] - bodyRange[0];
+	// Center the focused item vertically in the available middle space.
+	const idealStart = focusedRowInMiddle - Math.floor(Math.max(0, availableMiddle - focusedHeight) / 2);
+	return Math.max(0, Math.min(idealStart, middleRows - availableMiddle));
+}
+
+/** Mark the scroll window edges with overflow arrows; combined ↕ on a single-row middle. */
+function decorateOverflow(scrollableMiddle: string[], hasUp: boolean, hasDown: boolean, theme: Theme): void {
+	if (hasUp && hasDown && scrollableMiddle.length === 1) {
+		// Single-row middle: combined ↕ avoids the prior collision where ↓ overwrote ↑.
+		scrollableMiddle[0] = theme.fg("dim", OVERFLOW_BOTH);
+		return;
+	}
+	if (hasUp && scrollableMiddle.length > 0) {
+		scrollableMiddle[0] = theme.fg("dim", OVERFLOW_UP);
+	}
+	if (hasDown && scrollableMiddle.length > 0) {
+		scrollableMiddle[scrollableMiddle.length - 1] = theme.fg("dim", OVERFLOW_DOWN);
+	}
+}
+
 export type DialogState = QuestionnaireState;
 
 /** Per-tick projection of dialog state. Written by the adapter; read by the strategy thunk. */
@@ -173,48 +214,28 @@ export class DialogView implements StatefulView<DialogProps> {
 		const termRows = this.config.getTerminalRows();
 
 		if (natural.length + spacerRows <= termRows) {
-			// No overflow — add residual spacer rows after footer.
-			return spacerRows > 0 ? [...natural, ...Array<string>(spacerRows).fill("")] : natural;
+			return renderFitsTerminal(natural, spacerRows);
 		}
 
 		// OVERFLOW — apply 3-region partition with scroll-to-focus.
 		const availableMiddle = Math.max(0, termRows - topFixed - bottomFixed);
 		if (availableMiddle === 0) {
-			// Terminal too small for any middle content — show just chrome.
-			const chromeOnly = [...natural.slice(0, topFixed), ...natural.slice(natural.length - bottomFixed)];
-			return chromeOnly.length > termRows ? chromeOnly.slice(0, termRows) : chromeOnly;
+			return renderChromeOnly(natural, topFixed, bottomFixed, termRows);
 		}
 
-		const bodyRange = strategy.focusedItemRowRange(width, state);
-
-		// Compute scroll window centered on the focused option.
-		let scrollStart: number;
-		if (bodyRange) {
-			const focusedRowInMiddle = headingCount + bodyRange[0];
-			const focusedHeight = bodyRange[1] - bodyRange[0];
-			// Center the focused item vertically in the available middle space.
-			const idealStart = focusedRowInMiddle - Math.floor(Math.max(0, availableMiddle - focusedHeight) / 2);
-			scrollStart = Math.max(0, Math.min(idealStart, middleRows - availableMiddle));
-		} else {
-			// No interactive focus (submit tab) — top-anchor the middle.
-			scrollStart = 0;
-		}
-
+		const scrollStart = computeScrollStart(
+			strategy.focusedItemRowRange(width, state),
+			headingCount,
+			availableMiddle,
+			middleRows,
+		);
 		const scrollableMiddle = natural.slice(topFixed + scrollStart, topFixed + scrollStart + availableMiddle);
-
-		const hasUp = scrollStart > 0;
-		const hasDown = scrollStart + availableMiddle < middleRows;
-		if (hasUp && hasDown && scrollableMiddle.length === 1) {
-			// Single-row middle: combined ↕ avoids the prior collision where ↓ overwrote ↑.
-			scrollableMiddle[0] = this.config.theme.fg("dim", OVERFLOW_BOTH);
-		} else {
-			if (hasUp && scrollableMiddle.length > 0) {
-				scrollableMiddle[0] = this.config.theme.fg("dim", OVERFLOW_UP);
-			}
-			if (hasDown && scrollableMiddle.length > 0) {
-				scrollableMiddle[scrollableMiddle.length - 1] = this.config.theme.fg("dim", OVERFLOW_DOWN);
-			}
-		}
+		decorateOverflow(
+			scrollableMiddle,
+			scrollStart > 0,
+			scrollStart + availableMiddle < middleRows,
+			this.config.theme,
+		);
 
 		const result = [
 			...natural.slice(0, topFixed),

@@ -5,7 +5,7 @@ import type { QuestionData, QuestionnaireResult, QuestionParams } from "../tool/
 import type { WrappingSelectItem } from "../view/components/wrapping-select.js";
 import { COLLAPSED_HINT_TEMPLATE, HINT_PART_CANCEL, KEY_PLACEHOLDER } from "../view/dialog-builder.js";
 import type { QuestionnairePropsAdapter } from "../view/props-adapter.js";
-import { buildQuestionnaire } from "./build-questionnaire.js";
+import { buildQuestionnaire, type QuestionnaireBuilt } from "./build-questionnaire.js";
 import { t } from "./i18n-bridge.js";
 import { type QuestionnaireAction, routeKey } from "./key-router.js";
 import type { QuestionnaireRuntime, QuestionnaireState } from "./state.js";
@@ -113,31 +113,38 @@ export class QuestionnaireSession {
 		this.inlineInput = built.inlineInput;
 		this.viewAdapter = built.adapter;
 
-		const theme = config.theme;
-		// Collapsed render: a single dim row at the bottom of the overlay. pi-tui sizes
-		// the overlay to `min(lines.length, maxHeight)`, so returning one line shrinks
-		// the bottom-anchored overlay from full-height to one row and the transcript
-		// behind it becomes readable (#47). The overlay stays focused and in the
-		// stack, so the collapse key still routes here to expand. `t` stays inside the
-		// closure (live locale updates); the key display is static per session.
-		//
-		// With collapseKey "off" the router and raw listener never toggle `collapsed`,
-		// but `toggleCollapsedExternal()` is a public ungated entry — fall back to the
-		// cancel-only line rather than rendering a literal "Off to expand".
+		this.component = this.assembleComponent(built, config.theme);
+		this.viewAdapter.apply(this.state);
+	}
+
+	private assembleComponent(built: QuestionnaireBuilt, theme: Theme): QuestionnaireSessionComponent {
+		const collapsedRender = this.buildCollapsedRender(theme);
+		return {
+			render: (width) => (this.state.collapsed ? collapsedRender(width) : built.render(width)),
+			invalidate: built.invalidate,
+			handleInput: (data) => this.dispatch(data),
+		};
+	}
+
+	/**
+	 * Collapsed render: a single dim row at the bottom of the overlay. pi-tui sizes
+	 * the overlay to `min(lines.length, maxHeight)`, so returning one line shrinks
+	 * the bottom-anchored overlay from full-height to one row and the transcript
+	 * behind it becomes readable (#47). The overlay stays focused and in the
+	 * stack, so the collapse key still routes here to expand. `t` stays inside the
+	 * closure (live locale updates); the key display is static per session.
+	 *
+	 * With collapseKey "off" the router and raw listener never toggle `collapsed`,
+	 * but `toggleCollapsedExternal()` is a public ungated entry — fall back to the
+	 * cancel-only line rather than rendering a literal "Off to expand".
+	 */
+	private buildCollapsedRender(theme: Theme): (width: number) => string[] {
 		const collapseKeyDisplay = formatKeySpecForDisplay(this.collapseKey);
 		const collapsedHintLine = (): string =>
 			this.collapseKey === COLLAPSE_KEY_OFF
 				? t("hint.cancel", HINT_PART_CANCEL)
 				: t("hint.expand_line", COLLAPSED_HINT_TEMPLATE).replace(KEY_PLACEHOLDER, collapseKeyDisplay);
-		const collapsedRender = (_width: number): string[] => [theme.fg("dim", ` ${collapsedHintLine()} `)];
-
-		this.component = {
-			render: (width) => (this.state.collapsed ? collapsedRender(width) : built.render(width)),
-			invalidate: built.invalidate,
-			handleInput: (data) => this.dispatch(data),
-		};
-
-		this.viewAdapter.apply(this.state);
+		return (_width: number): string[] => [theme.fg("dim", ` ${collapsedHintLine()} `)];
 	}
 
 	dispatch(data: string): void {
@@ -174,18 +181,7 @@ export class QuestionnaireSession {
 				this.inlineInput.setText("");
 				return;
 			case "open_input_editor":
-				if (this.inputEditorOpen) return;
-				this.inputEditorOpen = true;
-				void this.editInput(effect.value).then(
-					(value) => {
-						this.inputEditorOpen = false;
-						if (value !== undefined) this.commit({ kind: "input_replace", value });
-					},
-					() => {
-						// The host callback reports launch errors; retain the draft and restore input handling.
-						this.inputEditorOpen = false;
-					},
-				);
+				this.openInputEditorAsync(effect.value);
 				return;
 			case "set_notes_value":
 				this.notesInput.setText(effect.value);
@@ -208,6 +204,22 @@ export class QuestionnaireSession {
 				this.done(effect.result);
 				return;
 		}
+	}
+
+	/** Opens Pi's configured external editor; on success commits the replacement buffer, on reported failure retains the draft. */
+	private openInputEditorAsync(value: string): void {
+		if (this.inputEditorOpen) return;
+		this.inputEditorOpen = true;
+		void this.editInput(value).then(
+			(edited) => {
+				this.inputEditorOpen = false;
+				if (edited !== undefined) this.commit({ kind: "input_replace", value: edited });
+			},
+			() => {
+				// The host callback reports launch errors; retain the draft and restore input handling.
+				this.inputEditorOpen = false;
+			},
+		);
 	}
 
 	/**

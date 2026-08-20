@@ -23,6 +23,17 @@ import type { PreviewLayoutMode } from "./preview-layout-decider.js";
  */
 export const NOTES_AFFORDANCE_TEXT = "Notes: press n to add notes";
 
+/** Content row budget for a layout mode: preview cap minus border + affordance overhead. */
+function contentBudgetFor(mode: PreviewLayoutMode): number {
+	const cap = mode === "side-by-side" ? MAX_PREVIEW_HEIGHT_SIDE_BY_SIDE : MAX_PREVIEW_HEIGHT_STACKED;
+	return Math.max(1, cap - BORDER_VERTICAL_OVERHEAD - NOTES_AFFORDANCE_OVERHEAD);
+}
+
+/** Inner (padding-aware) content width for a total block width. */
+function innerWidthFor(width: number): number {
+	return Math.max(1, width - BORDER_HORIZONTAL_OVERHEAD - 2 * BORDER_INNER_PADDING_HORIZONTAL);
+}
+
 export interface PreviewBlockRendererConfig {
 	question: QuestionData;
 	theme: Theme;
@@ -66,9 +77,8 @@ export class PreviewBlockRenderer {
 	 * — the affordance overhead is constant, not gated by `focused`/`notesVisible`.
 	 */
 	blockHeight(width: number, optionIndex: number, mode: PreviewLayoutMode): number {
-		const cap = mode === "side-by-side" ? MAX_PREVIEW_HEIGHT_SIDE_BY_SIDE : MAX_PREVIEW_HEIGHT_STACKED;
-		const contentBudget = Math.max(1, cap - BORDER_VERTICAL_OVERHEAD - NOTES_AFFORDANCE_OVERHEAD);
-		const innerWidth = Math.max(1, width - BORDER_HORIZONTAL_OVERHEAD - 2 * BORDER_INNER_PADDING_HORIZONTAL);
+		const contentBudget = contentBudgetFor(mode);
+		const innerWidth = innerWidthFor(width);
 		const rawRows = this.cache.bodyFor(optionIndex, innerWidth).length;
 		const contentRows = Math.min(rawRows, contentBudget);
 		return BORDER_VERTICAL_OVERHEAD + contentRows + NOTES_AFFORDANCE_OVERHEAD;
@@ -87,9 +97,8 @@ export class PreviewBlockRenderer {
 		focused: boolean,
 		notesVisible: boolean,
 	): string[] {
-		const cap = mode === "side-by-side" ? MAX_PREVIEW_HEIGHT_SIDE_BY_SIDE : MAX_PREVIEW_HEIGHT_STACKED;
-		const contentBudget = Math.max(1, cap - BORDER_VERTICAL_OVERHEAD - NOTES_AFFORDANCE_OVERHEAD);
-		const maxInnerWidth = Math.max(1, width - BORDER_HORIZONTAL_OVERHEAD - 2 * BORDER_INNER_PADDING_HORIZONTAL);
+		const contentBudget = contentBudgetFor(mode);
+		const maxInnerWidth = innerWidthFor(width);
 
 		const raw = this.cache.bodyFor(optionIndex, maxInnerWidth);
 		const truncated = raw.length > contentBudget;

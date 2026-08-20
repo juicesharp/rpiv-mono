@@ -216,6 +216,20 @@ export class WrappingSelect implements Component {
 			return this.renderInlineInputRow(rowPrefix, continuationPrefix, contentWidth);
 		}
 
+		const { label, isConfirmed } = this.deriveConfirmedState(item, index);
+		const applySelectedStyle = isActive || isConfirmed;
+
+		return [
+			...this.renderLabelBlock(label, rowPrefix, continuationPrefix, contentWidth, applySelectedStyle),
+			...this.renderDescriptionBlock(item.description, continuationPrefix, contentWidth),
+		];
+	}
+
+	/**
+	 * Derive the confirmed-rendering facts for one row: the final label (custom draft
+	 * or confirmed-override aware) and whether the ✔ mark applies.
+	 */
+	private deriveConfirmedState(item: WrappingSelectItem, index: number): { label: string; isConfirmed: boolean } {
 		// Keep an in-flight custom draft visible even while the cursor browses another row.
 		// If it differs from a previously confirmed custom answer, omit the confirmation
 		// mark so the pending draft is not presented as committed.
@@ -230,12 +244,7 @@ export class WrappingSelect implements Component {
 		const label = isConfirmed
 			? `${this.confirmedLabelOverride ?? baseLabel}${WrappingSelect.CONFIRMED_MARK}`
 			: baseLabel;
-		const applySelectedStyle = isActive || isConfirmed;
-
-		return [
-			...this.renderLabelBlock(label, rowPrefix, continuationPrefix, contentWidth, applySelectedStyle),
-			...this.renderDescriptionBlock(item.description, continuationPrefix, contentWidth),
-		];
+		return { label, isConfirmed };
 	}
 
 	private buildRowPrefix(index: number, isActive: boolean, numberWidth: number): string {

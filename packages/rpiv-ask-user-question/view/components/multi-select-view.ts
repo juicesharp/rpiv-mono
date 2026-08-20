@@ -50,6 +50,12 @@ interface MultiSelectLayout {
 	focusedRange: [number, number];
 }
 
+/** Mutable row accumulator threaded through the append helpers during a layout miss. */
+interface MultiSelectBuild {
+	lines: string[];
+	focusedRange: [number, number];
+}
+
 export class MultiSelectView implements StatefulView<MultiSelectViewProps> {
 	private props: MultiSelectViewProps;
 	private cachedLayout: { width: number; value: MultiSelectLayout } | undefined;
@@ -92,47 +98,55 @@ export class MultiSelectView implements StatefulView<MultiSelectViewProps> {
 	private layout(width: number): MultiSelectLayout {
 		if (this.cachedLayout?.width === width) return this.cachedLayout.value;
 
-		const lines: string[] = [];
-		let focusedRange: [number, number] = [0, 0];
+		const build: MultiSelectBuild = { lines: [], focusedRange: [0, 0] };
 		const contentWidth = Math.max(1, width - this.prefixVisibleWidth());
 		const numberWidth = String(Math.max(1, this.question.options.length + 1)).length;
+
+		this.appendOptionRows(build, width, contentWidth, numberWidth);
+
+		const otherStart = build.lines.length;
+		build.lines.push(...this.renderOtherRow(contentWidth, numberWidth));
+		if (this.props.other.active) build.focusedRange = [otherStart, build.lines.length];
+
+		this.appendNextRow(build, width);
+
+		const value = { lines: build.lines, focusedRange: build.focusedRange };
+		this.cachedLayout = { width, value };
+		return value;
+	}
+
+	private appendOptionRows(build: MultiSelectBuild, width: number, contentWidth: number, numberWidth: number): void {
 		for (let i = 0; i < this.question.options.length; i++) {
 			const opt = this.question.options[i];
 			const row = this.props.rows[i];
 			if (!opt || !row) continue;
-			const start = lines.length;
+			const start = build.lines.length;
 			const pointer = row.active ? this.theme.fg("accent", ACTIVE_POINTER) : INACTIVE_POINTER;
 			// Checked and active rows share the accent hue, matching the dialog's selection rhythm.
 			const box = row.checked ? this.theme.fg("accent", CHECKED) : this.theme.fg("muted", UNCHECKED);
 			const label = truncateToWidth(opt.label, contentWidth, "…");
 			const styledLabel = row.active ? this.theme.fg("accent", this.theme.bold(label)) : label;
 			const number = String(i + 1).padStart(numberWidth, " ");
-			lines.push(
+			build.lines.push(
 				truncateToWidth(`${pointer}${number}${NUMBER_SEPARATOR}${box}${BOX_LABEL_GAP}${styledLabel}`, width, ""),
 			);
 			if (opt.description) {
 				for (const segment of wrapTextWithAnsi(opt.description, contentWidth)) {
-					lines.push(CONTINUATION_INDENT + this.theme.fg("muted", segment));
+					build.lines.push(CONTINUATION_INDENT + this.theme.fg("muted", segment));
 				}
 			}
-			if (row.active) focusedRange = [start, lines.length];
+			if (row.active) build.focusedRange = [start, build.lines.length];
 		}
+	}
 
-		const otherStart = lines.length;
-		lines.push(...this.renderOtherRow(contentWidth, numberWidth));
-		if (this.props.other.active) focusedRange = [otherStart, lines.length];
-
-		const nextStart = lines.length;
+	private appendNextRow(build: MultiSelectBuild, width: number): void {
+		const nextStart = build.lines.length;
 		const nextPointer = this.props.nextActive ? this.theme.fg("accent", ACTIVE_POINTER) : INACTIVE_POINTER;
 		const nextLabel = this.props.nextActive
 			? this.theme.fg("accent", this.theme.bold(this.props.nextLabel))
 			: this.props.nextLabel;
-		lines.push(truncateToWidth(`${nextPointer}${nextLabel}`, width, ""));
-		if (this.props.nextActive) focusedRange = [nextStart, lines.length];
-
-		const value = { lines, focusedRange };
-		this.cachedLayout = { width, value };
-		return value;
+		build.lines.push(truncateToWidth(`${nextPointer}${nextLabel}`, width, ""));
+		if (this.props.nextActive) build.focusedRange = [nextStart, build.lines.length];
 	}
 
 	private renderOtherRow(contentWidth: number, numberWidth: number): string[] {

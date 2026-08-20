@@ -5,23 +5,32 @@ import type { SubmitPickerProps } from "../../view/components/submit-picker.js";
 import type { TabBarProps } from "../../view/components/tab-bar.js";
 import type { DialogProps } from "../../view/dialog-builder.js";
 import { displayLabel } from "../i18n-bridge.js";
-import type { GlobalSelector, PerTabSelector } from "./contract.js";
+import type { GlobalSelector, PerTabBindingContext, PerTabSelector } from "./contract.js";
 import { selectConfirmedIndicator } from "./derivations.js";
+
+function emptyMultiSelectProps(ctx: PerTabBindingContext): MultiSelectViewProps {
+	return {
+		rows: [],
+		other: {
+			active: false,
+			inputMode: false,
+			inputBuffer: ctx.inputBuffer,
+			inputCursorOffset: ctx.inputCursorOffset,
+		},
+		nextActive: false,
+		nextLabel: displayLabel("next"),
+	};
+}
+
+function nextLabelFor(ctx: PerTabBindingContext): string {
+	const isLastQuestion = ctx.i === ctx.questions.length - 1;
+	return isLastQuestion ? MULTI_SUBMIT_LABEL : displayLabel("next");
+}
 
 export const selectMultiSelectProps: PerTabSelector<MultiSelectViewProps> = (state, ctx) => {
 	const question = ctx.questions[ctx.i];
 	if (!question) {
-		return {
-			rows: [],
-			other: {
-				active: false,
-				inputMode: false,
-				inputBuffer: ctx.inputBuffer,
-				inputCursorOffset: ctx.inputCursorOffset,
-			},
-			nextActive: false,
-			nextLabel: displayLabel("next"),
-		};
+		return emptyMultiSelectProps(ctx);
 	}
 	const focused = ctx.activeView === "options";
 	const rows: { checked: boolean; active: boolean }[] = [];
@@ -33,8 +42,6 @@ export const selectMultiSelectProps: PerTabSelector<MultiSelectViewProps> = (sta
 	}
 	const otherActive = focused && state.optionIndex === question.options.length;
 	const nextActive = focused && state.optionIndex === question.options.length + 1;
-	const isLastQuestion = ctx.i === ctx.questions.length - 1;
-	const nextLabel = isLastQuestion ? MULTI_SUBMIT_LABEL : displayLabel("next");
 	return {
 		rows,
 		other: {
@@ -44,7 +51,7 @@ export const selectMultiSelectProps: PerTabSelector<MultiSelectViewProps> = (sta
 			inputCursorOffset: ctx.inputCursorOffset,
 		},
 		nextActive,
-		nextLabel,
+		nextLabel: nextLabelFor(ctx),
 	};
 };
 
