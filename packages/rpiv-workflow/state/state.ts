@@ -292,6 +292,7 @@ export {
 	type ClaimResult,
 	claimName,
 	isValidName,
+	MAX_NAME_LENGTH,
 	type NamesIndex,
 	readNamesIndex,
 	rebuildIndex,

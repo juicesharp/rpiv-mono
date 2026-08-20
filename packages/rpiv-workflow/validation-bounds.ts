@@ -16,6 +16,7 @@ export const MAX_VALIDATION_RETRIES = 3;
 export const DEFAULT_VALIDATION_RETRIES = 1;
 
 export const DEFAULT_VALIDATION_RETRY_TIMEOUT_MS = 5 * 60 * 1000;
+/** Hard ceiling for a single validation attempt; mirrors MAX_BASH_TOOL_TIMEOUT_MS in packages/rpiv-pi/extensions/rpiv-core/bash-timeout.ts — same 30-min value, separately owned. */
 export const MAX_VALIDATION_RETRY_TIMEOUT_MS = 30 * 60 * 1000;
 export const MIN_VALIDATION_RETRY_TIMEOUT_MS = 1_000;
 

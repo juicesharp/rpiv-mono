@@ -115,12 +115,12 @@ let strikeBudgets: WeakMap<StageSessionContext, StrikeBudget> = new WeakMap();
  * `recordStageSuccess` (packages/rpiv-workflow/sessions/success-persist.ts:49).
  */
 function budgetForConsume(s: StageSessionContext): StrikeBudget {
-	let b = strikeBudgets.get(s);
-	if (!b) {
-		b = { ceiling: s.bashTimeoutStrikes ?? BASH_TIMEOUT_STRIKES, used: 0, reasons: [] };
-		strikeBudgets.set(s, b);
+	let budget = strikeBudgets.get(s);
+	if (!budget) {
+		budget = { ceiling: s.bashTimeoutStrikes ?? BASH_TIMEOUT_STRIKES, used: 0, reasons: [] };
+		strikeBudgets.set(s, budget);
 	}
-	return b;
+	return budget;
 }
 
 /**
@@ -134,10 +134,10 @@ function budgetForConsume(s: StageSessionContext): StrikeBudget {
  * `push` (the budget initializes `reasons: []`).
  */
 export function consumeBashStrike(s: StageSessionContext, reason: string): boolean {
-	const b = budgetForConsume(s);
-	if (b.used >= b.ceiling) return false; // exhausted — mutate nothing; caller escalates.
-	b.used += 1;
-	b.reasons.push(reason);
+	const budget = budgetForConsume(s);
+	if (budget.used >= budget.ceiling) return false; // exhausted — mutate nothing; caller escalates.
+	budget.used += 1;
+	budget.reasons.push(reason);
 	return true;
 }
 
@@ -150,9 +150,9 @@ export function consumeBashStrike(s: StageSessionContext, reason: string): boole
  * the budget's `ceiling` field + this fallback), allocating nothing.
  */
 export function bashStrikesRemaining(s: StageSessionContext): number {
-	const b = strikeBudgets.get(s);
-	const ceiling = b?.ceiling ?? s.bashTimeoutStrikes ?? BASH_TIMEOUT_STRIKES;
-	return Math.max(0, ceiling - (b?.used ?? 0));
+	const budget = strikeBudgets.get(s);
+	const ceiling = budget?.ceiling ?? s.bashTimeoutStrikes ?? BASH_TIMEOUT_STRIKES;
+	return Math.max(0, ceiling - (budget?.used ?? 0));
 }
 
 /**
@@ -164,9 +164,9 @@ export function bashStrikesRemaining(s: StageSessionContext): number {
  * `reasons` lists each consumed strike's host reason, in consumption order.
  */
 export function bashTimeoutStrikeHistory(s: StageSessionContext): { count: number; reasons: string[] } | undefined {
-	const b = strikeBudgets.get(s);
-	if (!b || b.used <= 0) return undefined;
-	return { count: b.used, reasons: b.reasons };
+	const budget = strikeBudgets.get(s);
+	if (!budget || budget.used <= 0) return undefined;
+	return { count: budget.used, reasons: budget.reasons };
 }
 
 /**

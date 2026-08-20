@@ -105,6 +105,24 @@ async function runGitStatus(cwd: string): Promise<string | undefined> {
 }
 
 /**
+ * `git status --porcelain` line grammar — one record per line:
+ *
+ *   <XY><space><path>
+ *
+ *   <XY>     — two-character status code (either half may be a space;
+ *              ` M` is a worktree-only modification)
+ *   <space>  — the one-space separator after the status code
+ *   <path>   — cwd-relative path; renames render as `old -> new`; the
+ *              path is double-quote wrapped when git cquote-escapes it
+ */
+const PORCELAIN_STATUS_CODE_WIDTH = 2;
+const PORCELAIN_PATH_OFFSET = PORCELAIN_STATUS_CODE_WIDTH + 1;
+const PORCELAIN_MIN_LINE_WIDTH = PORCELAIN_PATH_OFFSET + 1;
+const PORCELAIN_RENAME_ARROW = " -> ";
+const PORCELAIN_RENAME_ARROW_WIDTH = PORCELAIN_RENAME_ARROW.length;
+const PORCELAIN_QUOTE = '"';
+
+/**
  * Parse `git status --porcelain` output: each line is `XY <path>` where
  * XY is the two-character status code. We key by path and keep the
  * full XY so post-stage diff sees status transitions (e.g. ` M` → `MM`).
@@ -113,17 +131,19 @@ async function runGitStatus(cwd: string): Promise<string | undefined> {
  * downstream collectors / parsers don't usually care about the prior
  * name and including both halves doubles the artifact count.
  */
-function parsePorcelain(out: string): Map<string, string> {
+export function parsePorcelain(out: string): Map<string, string> {
 	const map = new Map<string, string>();
 	for (const line of out.split("\n")) {
-		if (line.length < 4) continue;
-		const code = line.slice(0, 2);
-		let path = line.slice(3).trim();
+		if (line.length < PORCELAIN_MIN_LINE_WIDTH) continue;
+		const code = line.slice(0, PORCELAIN_STATUS_CODE_WIDTH);
+		let path = line.slice(PORCELAIN_PATH_OFFSET).trim();
 		// Rename: `R  old -> new` — take the new name.
-		const arrow = path.indexOf(" -> ");
-		if (arrow !== -1) path = path.slice(arrow + 4);
-		// Strip wrapping quotes (paths with whitespace).
-		if (path.startsWith('"') && path.endsWith('"')) path = path.slice(1, -1);
+		const arrow = path.indexOf(PORCELAIN_RENAME_ARROW);
+		if (arrow !== -1) path = path.slice(arrow + PORCELAIN_RENAME_ARROW_WIDTH);
+		// Strip wrapping quotes (paths git cquote-escapes).
+		if (path.startsWith(PORCELAIN_QUOTE) && path.endsWith(PORCELAIN_QUOTE)) {
+			path = path.slice(PORCELAIN_QUOTE.length, -PORCELAIN_QUOTE.length);
+		}
 		map.set(path, code);
 	}
 	return map;

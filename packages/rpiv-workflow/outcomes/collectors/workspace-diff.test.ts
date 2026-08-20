@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { CollectContext, SnapshotContext } from "../../output-spec.js";
-import { type WorkspaceDiffSnapshot, workspaceDiffCollector } from "./workspace-diff.js";
+import { parsePorcelain, type WorkspaceDiffSnapshot, workspaceDiffCollector } from "./workspace-diff.js";
 
 const hasGit = (() => {
 	try {
@@ -38,6 +38,37 @@ const collectCtxOf = (
 	branchOffset: undefined,
 	snapshot,
 	skill: "test",
+});
+
+describe("parsePorcelain", () => {
+	it("keys plain lines by path, keeping the full two-char code including a leading space", () => {
+		const map = parsePorcelain(" M a.txt\nMM b.txt\n?? c.md");
+		expect(map.get("a.txt")).toBe(" M");
+		expect(map.get("b.txt")).toBe("MM");
+		expect(map.get("c.md")).toBe("??");
+	});
+
+	it("normalises rename records to the new path", () => {
+		const map = parsePorcelain("R  old-name.txt -> new-name.txt");
+		expect(map.has("old-name.txt")).toBe(false);
+		expect(map.get("new-name.txt")).toBe("R ");
+	});
+
+	it("strips wrapping quotes from cquote-escaped paths", () => {
+		const map = parsePorcelain('?? "quoted name.txt"');
+		expect(map.get("quoted name.txt")).toBe("??");
+	});
+
+	it("splits the rename arrow before stripping quotes (a quoted rename keys the unquoted new path)", () => {
+		const map = parsePorcelain('R  "old n.txt" -> "new n.txt"');
+		expect(map.get("new n.txt")).toBe("R ");
+	});
+
+	it("skips lines shorter than code + separator + one path char (blank lines; the 3-char boundary)", () => {
+		const map = parsePorcelain("\n\n M ok.txt\n?? \nabc");
+		expect(map.size).toBe(1);
+		expect(map.get("ok.txt")).toBe(" M");
+	});
 });
 
 describe.runIf(hasGit)("workspaceDiffCollector", () => {

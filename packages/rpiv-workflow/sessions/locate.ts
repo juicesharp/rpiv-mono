@@ -16,6 +16,7 @@ import { closeSync, existsSync, openSync, readdirSync, readSync, rmSync, statSyn
 import { dirname, join } from "node:path";
 import type { SessionRef } from "../state/index.js";
 import { childSessionsDir } from "../state/paths.js";
+import { JSONL_PREFIX_READ_BYTES } from "../state/raw.js";
 
 /**
  * id → on-disk session file. Fail-soft: `null` means "fall back to cold
@@ -118,16 +119,17 @@ function isFile(path: string): boolean {
 	}
 }
 
-/** Bounded prefix read — session files run to tens of MB; the header is line one. */
-const HEADER_PREFIX_BYTES = 8192;
-
-/** First-line `id` of a Pi session file, or undefined on any read/parse miss. */
+/**
+ * First-line `id` of a Pi session file, or undefined on any read/parse miss.
+ * One-shot prefix read sized by `JSONL_PREFIX_READ_BYTES` — session files run
+ * to tens of MB; the header is line one.
+ */
 function headerIdOf(path: string): string | undefined {
 	let fd: number | undefined;
 	try {
 		fd = openSync(path, "r");
-		const buf = Buffer.alloc(HEADER_PREFIX_BYTES);
-		const bytes = readSync(fd, buf, 0, HEADER_PREFIX_BYTES, 0);
+		const buf = Buffer.alloc(JSONL_PREFIX_READ_BYTES);
+		const bytes = readSync(fd, buf, 0, JSONL_PREFIX_READ_BYTES, 0);
 		const firstLine = buf.toString("utf-8", 0, bytes).split("\n", 1)[0];
 		if (!firstLine) return undefined;
 		const parsed: unknown = JSON.parse(firstLine);

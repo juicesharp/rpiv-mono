@@ -11,18 +11,15 @@ import type { LoadedWorkflows } from "./load/index.js";
 import { type AnyJudgeSpec, describeFlow, type StageShape } from "./loop-constructors.js";
 import type { SkillContractMap } from "./skill-contract.js";
 
-/** No-args listing footer — generic usage hint. */
-export const CMD_USAGE_LIST = "Usage: /wf [workflow] <description>";
-
-/** No-args listing footer — preview-mode hint paired with CMD_USAGE_LIST. */
-export const CMD_USAGE_PREVIEW = "/wf <workflow>             — preview stages";
-
-/** Per-workflow details footer — narrowed to the workflow the user previewed. */
-export const CMD_USAGE_RUN = (name: string) => `Usage: /wf ${name} <description>`;
-
 // ===========================================================================
-// Public formatters
+// Layout constants — module-local; every column width, gap, and ellipsis the
+// formatters emit flows from here (containment precedent: DESC_TRUNCATE_LEN).
 // ===========================================================================
+
+/** Truncation ellipsis — the ASCII three-period form; the pinned truncation output forbids the single-glyph variant. */
+const TRUNCATION_ELLIPSIS = "...";
+/** Chars the ellipsis occupies inside the truncation cap. */
+const ELLIPSIS_RESERVE = TRUNCATION_ELLIPSIS.length;
 
 /**
  * Description-truncation cap (characters) for the workflow-list view. Test-pinned
@@ -31,10 +28,39 @@ export const CMD_USAGE_RUN = (name: string) => `Usage: /wf ${name} <description>
  */
 const DESC_TRUNCATE_LEN = 50;
 
+/** Stage-index column width in details rows ("1." … "99." keep column alignment). */
+const STAGE_INDEX_WIDTH = 3;
+/**
+ * Stage-kind column width in details rows — layout value carried verbatim (widest
+ * current kind tag is 11 chars); coincidental twin of USAGE_HINT_GAP_WIDTH, never
+ * unified into one shared constant.
+ */
+const STAGE_KIND_WIDTH = 13;
+/** Display-name column width in details rows (stage name plus optional skill attribution). */
+const DISPLAY_NAME_WIDTH = 36;
+/**
+ * Gap between `/wf <workflow>` and the hint text in CMD_USAGE_PREVIEW; coincidental
+ * twin of STAGE_KIND_WIDTH, never unified into one shared constant.
+ */
+const USAGE_HINT_GAP_WIDTH = 13;
+
+/** No-args listing footer — generic usage hint. */
+export const CMD_USAGE_LIST = "Usage: /wf [workflow] <description>";
+
+/** No-args listing footer — preview-mode hint paired with CMD_USAGE_LIST. */
+export const CMD_USAGE_PREVIEW = `/wf <workflow>${" ".repeat(USAGE_HINT_GAP_WIDTH)}— preview stages`;
+
+/** Per-workflow details footer — narrowed to the workflow the user previewed. */
+export const CMD_USAGE_RUN = (name: string) => `Usage: /wf ${name} <description>`;
+
+// ===========================================================================
+// Public formatters
+// ===========================================================================
+
 /** Truncate a description to `maxLen` characters, appending "..." if truncated. */
 function truncateDescription(desc: string, maxLen = DESC_TRUNCATE_LEN): string {
 	if (desc.length <= maxLen) return desc;
-	return `${desc.slice(0, maxLen - 3)}...`;
+	return `${desc.slice(0, maxLen - ELLIPSIS_RESERVE)}${TRUNCATION_ELLIPSIS}`;
 }
 
 /** No-args listing: every loaded workflow, its stage count, and its source. */
@@ -133,8 +159,8 @@ function formatStageRow(
 	shape: StageShape,
 	edgeDeclared: boolean,
 ): string {
-	const num = `${idx}.`.padEnd(3);
-	const decorations = [stage.kind.padEnd(13), stage.sessionPolicy, outcomeTag(stage)];
+	const num = `${idx}.`.padEnd(STAGE_INDEX_WIDTH);
+	const decorations = [stage.kind.padEnd(STAGE_KIND_WIDTH), stage.sessionPolicy, outcomeTag(stage)];
 	if (stage.inputSchema) decorations.push("in-schema");
 	if (stage.outputSchema) decorations.push("out-schema");
 	if (shape.control.mode !== "single") decorations.push(loopTag(shape.control));
@@ -146,7 +172,7 @@ function formatStageRow(
 	const arrow = formatEdge(shape.edge, edgeDeclared);
 	const trailer = arrow ? `  → ${arrow}` : "";
 
-	return `  ${num} ${displayName.padEnd(36)} ${decorations.join(" · ")}${trailer}`;
+	return `  ${num} ${displayName.padEnd(DISPLAY_NAME_WIDTH)} ${decorations.join(" · ")}${trailer}`;
 }
 
 /**

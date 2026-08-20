@@ -99,12 +99,6 @@ export function describeFlow(w: Workflow): StageShape[] {
 // Introspection — one channel for all loop kinds
 // ===========================================================================
 
-/**
- * Pure-data projection of a LoopDef — what `describeFlow`, `preview`, and the
- * `checkFanoutSource` lint consume. `judge` summarises the dispatch without
- * exposing functions: `prompt: true` means a prompt judge (the text/closure
- * itself stays opaque).
- */
 /** Pure-data judge summary — `prompt: true` means a prompt judge (the text/closure stays opaque). */
 export interface JudgeSpec {
 	skill?: string;
@@ -158,6 +152,11 @@ export function judgeSlotSpecOf(slot: AnyJudge): AnyJudgeSpec {
 	return isPanel(slot) ? panelSpecOf(slot) : judgeSpecOf(slot);
 }
 
+/**
+ * Pure-data projection of a LoopDef — what `describeFlow`, `preview`, and the
+ * `checkFanoutSource` lint consume. `judge` summarises the dispatch without
+ * exposing functions.
+ */
 export interface LoopSpec {
 	kind: LoopDef["kind"];
 	source?: string;

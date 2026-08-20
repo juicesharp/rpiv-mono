@@ -26,6 +26,7 @@ export {
 	isValidName,
 	listArtifacts,
 	listRuns,
+	MAX_NAME_LENGTH,
 	namesFilePath,
 	readAllStages,
 	readAllStagesForResume,

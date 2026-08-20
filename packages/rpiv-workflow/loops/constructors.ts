@@ -30,24 +30,8 @@ import { panelShapeIssues } from "./panel.js";
 export const DEFAULT_ASSESS_MAX = 8;
 
 /**
- * Per-loop-kind identity — the construction-facet twin of `LOOP_STRATEGIES`
- * (`loop-kinds.ts`, the per-kind runtime strategy table). Each kind's default
- * `onCap`/`result` (and assess's construction `max`) live HERE, consulted by
- * every constructor, so a new loop kind or a default change is a single-row
- * edit instead of a multi-constructor scatter. Consulted by `effectiveLoopOf`
- * (the derivation-authority exemplar) and `freezesEntryArgsOf` (the round-0-arg
- * rule) — the two derivations that read it; both live in `derivations.ts` after
- * the `loops/` split (they value-import `LOOP_DEFAULTS` from here).
- *
- * `max` fits the table because `satisfies` (NOT a type annotation) preserves
- * the narrow inferred literal type PER KEY (the same property `LOOP_STRATEGIES`
- * relies on): `assess.max` infers as `number` (from `DEFAULT_ASSESS_MAX`), while
- * `fanout.max`/`iterate.max` infer as `undefined`. The assess constructor
- * therefore reads `LOOP_DEFAULTS.assess.max` with NO non-null assertion.
- *
- * WARNING: if a future change annotates this constant with a type declaration
- * instead of `satisfies`, the narrow per-key types are lost and `assess.max`
- * widens to `number | undefined` — re-confirm the `satisfies` form is retained.
+ * The per-kind defaults row shape — the construction facts each loop kind's
+ * row carries in the identity tables (`LOOP_DEFAULTS`, `VERIFY_LOOP_DEFAULTS`).
  */
 interface LoopKindDefaults {
 	/** Construction-default cap policy. fanout/iterate → "halt", assess → "advance". */
@@ -71,9 +55,24 @@ interface LoopKindDefaults {
 
 /**
  * THE per-kind identity table — the single place fanout/iterate/assess default
- * `onCap`/`result`/`max` AND the round-0-arg rule are spelled. Modeled on
- * `LOOP_STRATEGIES` (`satisfies Record<LoopDef["kind"], …>`); a new loop kind
- * added to the union without a row here is a compile error.
+ * `onCap`/`result`/`max` AND the round-0-arg rule are spelled: the
+ * construction-facet twin of `LOOP_STRATEGIES` (`loop-kinds.ts`, the per-kind
+ * runtime strategy table). Consulted by every constructor and by the two
+ * derivations that read it — `effectiveLoopOf` and `freezesEntryArgsOf`, both
+ * in `derivations.ts` (they value-import `LOOP_DEFAULTS` from here) — so a new
+ * loop kind or a default change is a single-row edit instead of a
+ * multi-constructor scatter; a new loop kind added to the union without a row
+ * here is a compile error.
+ *
+ * `satisfies` (NOT a type annotation) preserves the narrow inferred literal
+ * type PER KEY (the same property `LOOP_STRATEGIES` relies on): `assess.max`
+ * infers as `number` (from `DEFAULT_ASSESS_MAX`), while `fanout.max`/
+ * `iterate.max` infer as `undefined`. The assess constructor therefore reads
+ * `LOOP_DEFAULTS.assess.max` with NO non-null assertion.
+ *
+ * WARNING: if a future change annotates this constant with a type declaration
+ * instead of `satisfies`, the narrow per-key types are lost and `assess.max`
+ * widens to `number | undefined` — re-confirm the `satisfies` form is retained.
  */
 export const LOOP_DEFAULTS = {
 	fanout: { onCap: "halt", result: "entry", max: undefined, freezesEntryArgs: false },
@@ -293,7 +292,7 @@ export function judgeSlotShapeIssues(slot: unknown): string[] {
  *
  * This source stays internal-only: its sole consumer is `assess()`, and it is
  * deliberately NOT exported from `registration.ts`, while the load gate owns the
- * per-code surface the tests pin (`validate-workflow.test.ts:923,928`).
+ * per-code surface the tests pin (`validate-workflow.test.ts`).
  */
 export function assessShapeIssues(candidate: unknown): string[] {
 	if (!candidate || typeof candidate !== "object") return ["an assess object is required"];
@@ -312,8 +311,7 @@ export function assessShapeIssues(candidate: unknown): string[] {
 /**
  * Construction-time positive-int gate for `max`/`concurrency` — the single
  * spelling of the "integer >= 1" check across all three constructors. Throws
- * at construction (the `defineRoute` pattern); byte-identical to the two
- * `checkedMax`/`checkedConcurrency` near-twins it collapses.
+ * at construction (the `defineRoute` pattern).
  *
  * Deliberately NOT unified with the load-gate per-code reports
  * (`validate/stage-rules.ts` `loop-max-invalid`,

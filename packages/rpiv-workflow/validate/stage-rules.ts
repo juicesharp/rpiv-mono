@@ -108,7 +108,7 @@ function checkLoopInvariants(stage: StageDef, name: string, report: ReportFn): v
 	// by accepted design (unifying would force a fragile string→code mapping or a
 	// silent message change). This block owns the per-code surface the tests pin —
 	// `assess-judge-shape` / `assess-done-not-function` /
-	// `assess-feed-forward-not-function` (`validate-workflow.test.ts:923,928`).
+	// `assess-feed-forward-not-function` (`validate-workflow.test.ts`).
 	const slot = loop.judge;
 	const shapeIssues = judgeSlotShapeIssues(slot);
 	for (const issue of shapeIssues) {
