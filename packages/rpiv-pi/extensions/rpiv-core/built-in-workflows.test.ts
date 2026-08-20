@@ -3584,6 +3584,59 @@ describe("plan-time coverage floor (verifyPhaseFilesCoverage via plan-cite-check
 		expect(data.findings).toEqual([]);
 	});
 
+	it("ignores a dotted identifier in a Changes bullet — a method name is not a file", () => {
+		// `deps.finalize` cost a live run a blocking coverage finding and a full
+		// code-fix round; the extension bound (1–5 chars) rejects it.
+		const rel = ".rpiv/artifacts/plans/p.md";
+		const data = runOn(
+			write(
+				rel,
+				`---\nstatus: ready\nphase_count: 1\nphases:\n  - { n: 1, title: One, files: [] }\n---\n# Plan\n## Phase 1: One\n### Changes\n- \`deps.finalize\` — call it after the retry fold\n`,
+			),
+		);
+		expect(data.pass).toBe(true);
+		expect(data.findings).toEqual([]);
+	});
+
+	it("ignores a backticked-path bullet outside a Changes section — references are not writes", () => {
+		const rel = ".rpiv/artifacts/plans/p.md";
+		const data = runOn(
+			write(
+				rel,
+				`---\nstatus: ready\nphase_count: 1\nphases:\n  - { n: 1, title: One, files: [] }\n---\n# Plan\n## Phase 1: One\n### Context\n- \`src/foo.ts\` — mirror this pattern\n`,
+			),
+		);
+		expect(data.pass).toBe(true);
+		expect(data.findings).toEqual([]);
+	});
+
+	it("counts a bullet under a **Changes**: field line (blueprint's per-file form)", () => {
+		const rel = ".rpiv/artifacts/plans/p.md";
+		const data = runOn(
+			write(
+				rel,
+				`---\nstatus: ready\nphase_count: 1\nphases:\n  - { n: 1, title: One, files: [] }\n---\n# Plan\n## Phase 1: One\n**Changes**: MODIFY —\n- \`src/foo.ts\` — add the thing\n`,
+			),
+		);
+		expect(data.pass).toBe(false);
+		expect(findingDetails(data)).toMatch(/src\/foo\.ts/);
+	});
+
+	it("covers a bare-basename body form via whole-segment suffix against the declared files:", () => {
+		// `#### 1. config.ts` with files: [packages/x/config.ts] used to be an
+		// unfixable gap (exact-match only) whose remedy text would pollute files:
+		// with the bare name.
+		const rel = ".rpiv/artifacts/plans/p.md";
+		const data = runOn(
+			write(
+				rel,
+				`---\nstatus: ready\nphase_count: 1\nphases:\n  - { n: 1, title: One, files: ["packages/x/config.ts"] }\n---\n# Plan\n## Phase 1: One\n#### 1. config.ts\n**File**: \`config.ts\`\n`,
+			),
+		);
+		expect(data.pass).toBe(true);
+		expect(data.findings).toEqual([]);
+	});
+
 	it("flags an undeclared extensionless write (Makefile) — the extension heuristic must not drop it", () => {
 		const rel = ".rpiv/artifacts/plans/p.md";
 		const data = runOn(
@@ -4000,20 +4053,64 @@ describe("citation-floor severity tier (advisory vs blocking via plan-cite-check
 		expect(findings(data)[0].advisory).toBe(true);
 	});
 
-	it("rates a resolves-to-nothing citation `high` (the fabrication-shaped category still blocks)", () => {
+	it("rates a resolves-to-nothing citation `low` — every citation-resolution finding is advisory", () => {
+		// The run-history audit: the no-match population was garbled-but-real
+		// paths, skipped-tree files, and fixture prose — zero fabrications. The
+		// grade panel adjudicates via --cite-check; the floor records only.
 		const data = runOn(plan(`${fm("")}See src/does-not-exist.ts:42 for the footing.\n`));
 		expect(data.pass).toBe(false);
-		expect(data.severity).toBe("high");
-		expect(findings(data)[0].advisory).toBeUndefined();
+		expect(data.severity).toBe("low");
+		expect(findings(data)[0].advisory).toBe(true);
 	});
 
-	it("rates a mixed verdict `high` — one blocking finding outranks any advisory ones", () => {
+	it("rates a mixed verdict `high` — a coverage gap outranks advisory citation findings", () => {
 		dupFiles();
-		const data = runOn(plan(`${fm("")}Retype the constant (dup.ts:5); see src/does-not-exist.ts:42.\n`));
+		const data = runOn(
+			plan(`${fm("")}Retype the constant (dup.ts:5).\n### Changes\n- \`src/foo.ts\` — add the thing\n`),
+		);
 		expect(data.pass).toBe(false);
 		expect(data.severity).toBe("high");
 		const byTier = new Set(findings(data).map((f) => f.advisory === true));
 		expect(byTier).toEqual(new Set([true, false]));
+	});
+
+	it("resolves a guidance-tree suffix citation (.rpiv/guidance is carved back into the walk)", () => {
+		mkdirSync(join(tmpDir, ".rpiv/guidance/packages/rpiv-workflow/sessions"), { recursive: true });
+		writeFileSync(
+			join(tmpDir, ".rpiv/guidance/packages/rpiv-workflow/sessions/architecture.md"),
+			Array.from({ length: 60 }, (_, i) => `l${i}`).join("\n"),
+		);
+		const data = runOn(plan(`${fm("")}Update the contract note (sessions/architecture.md:33).\n`));
+		expect(data.pass).toBe(true);
+		expect(data.findings).toEqual([]);
+	});
+
+	it("still never resolves into .rpiv/artifacts (stale artifact copies stay invisible)", () => {
+		mkdirSync(join(tmpDir, ".rpiv/artifacts/priors/sub"), { recursive: true });
+		writeFileSync(join(tmpDir, ".rpiv/artifacts/priors/sub/only-here.md"), "a\nb\nc\n");
+		const data = runOn(plan(`${fm("")}See sub/only-here.md:2 for the prior.\n`));
+		expect(data.pass).toBe(false);
+		expect(data.severity).toBe("low");
+		expect(findings(data)[0].detail).toMatch(/does not exist/);
+	});
+
+	it("rescues a no-match citation via a unique declared-files: suffix match and verifies its lines", () => {
+		// The file lives under a skipped tree (coverage/) — invisible to the
+		// suffix walk — but the plan's own files: declares it. dist-file has 4
+		// lines, so a line-20 citation must fail the range check, proving the
+		// rescue resolved to the declared file rather than skipping the citation.
+		mkdirSync(join(tmpDir, "coverage/gen"), { recursive: true });
+		writeFileSync(join(tmpDir, "coverage/gen/report.md"), "a\nb\nc\n");
+		const data = runOn(plan(`${fm('"coverage/gen/report.md"')}Refresh the table (gen/report.md:20).\n`));
+		expect(data.pass).toBe(false);
+		expect(data.severity).toBe("low");
+		expect(findings(data)[0].detail).toMatch(/matches no version of the file/);
+	});
+
+	it("skips a citation to a declared file absent from the tree (forward reference to a planned CREATE)", () => {
+		const data = runOn(plan(`${fm('"src/new-module.ts"')}The new helper lands at new-module.ts:10.\n`));
+		expect(data.pass).toBe(true);
+		expect(data.findings).toEqual([]);
 	});
 
 	it("rates a files: coverage gap `high` (protects the implement fanout's dep derivation)", () => {

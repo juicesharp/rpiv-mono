@@ -1046,14 +1046,11 @@ const sliceCovers = (entry: Record<string, unknown>): string[] => {
  * `allDimensionsPass` severity floor rides through, so citation-resolution
  * findings are recorded on the trail — and handed to the ship grade panel via
  * `--cite-check` for symbol-level adjudication — but never stop a run. The
- * run-history audit forced this: across three months, 71 distinct flagged
- * paths yielded ZERO fabrications — the no-match population was resolver
- * limitations (suffix/dep/skipped-tree gaps), meta-plan fixture prose, and one
- * garbled-but-real path — while the blocking tier cost ~8h of fix rounds, two
- * dead ship runs, and one four-round identical-findings churn loop. Blocking
- * severity on the shared structure verdict comes ONLY from
- * `verifyPhaseFilesCoverage` (an undeclared write corrupts dep derivation —
- * that floor stays load-bearing).
+ * run-history audit forced this: three months of flagged paths held zero
+ * fabrications, while blocking on them cost hours of fix rounds and dead runs
+ * (details in the 2.6.x changelog). Blocking severity on the shared structure
+ * verdict comes ONLY from `verifyPhaseFilesCoverage` (an undeclared write
+ * corrupts dep derivation — that floor stays load-bearing).
  */
 /** Trees a citation must never resolve INTO — vendored deps, build copies, or
  * prior pipeline artifacts (a stale artifact copy would back a fabricated line).
@@ -1104,10 +1101,8 @@ const buildBasenameIndex = (cwd: string): BasenameIndex => {
 		for (const e of listDir(dir)) {
 			if (e.isDirectory()) {
 				if (!CITATION_WALK_SKIP.has(e.name)) stack.push(join(dir, e.name));
-				// `.rpiv` is skipped for its artifact/run trees (a stale artifact
-				// copy must never back a citation), but the guidance shadow tree
-				// under it is a first-class citation target the pipeline itself
-				// edits — carve it back into the walk (missing dir ⇒ empty listing).
+				// The guidance carve-out — see CITATION_WALK_SKIP's note. A missing
+				// guidance dir degrades to an empty listing.
 				else if (e.name === ".rpiv") stack.push(join(dir, e.name, "guidance"));
 				continue;
 			}
@@ -1326,14 +1321,11 @@ const verifyCitations = (body: string, cwd: string, declared?: ReadonlySet<strin
 		let abs = resolved?.abs;
 		if (abs === undefined && declared !== undefined) {
 			// Declared-write-set rescue on a NO-MATCH resolution — the ambiguity
-			// tiebreak's missing twin (observed live: a declared `.rpiv/guidance/**`
-			// file's suffix citation landed here as "does not exist" because the
-			// suffix walk skips that tree, and the declared set was never asked).
-			// A unique whole-segment suffix match inside the plan's own `files:`
-			// names the file the author means: verify against it when it exists on
-			// disk; a declared file ABSENT from the tree is a planned CREATE — the
-			// citation is a forward reference to planned content, unverifiable at
-			// this revision, so it yields no finding.
+			// tiebreak's missing twin. A unique whole-segment suffix match inside
+			// the plan's own `files:` names the file the author means: verify
+			// against it when it exists on disk; a declared file ABSENT from the
+			// tree is a planned CREATE — the citation is a forward reference to
+			// planned content, unverifiable at this revision, so no finding.
 			const matches = [...declared].filter((d) => d === path || `/${d}`.endsWith(`/${path}`));
 			if (matches.length === 1) {
 				const cand = join(cwd, matches[0]);
@@ -1345,10 +1337,8 @@ const verifyCitations = (body: string, cwd: string, declared?: ReadonlySet<strin
 			findings.push({
 				detail: `Unbacked citation ${key} — the cited file does not exist at this revision. A file:line citation must resolve, or the line numbers must be omitted. Fix the path (repo-root-relative, or node_modules/<pkg>/… for an installed dependency file) or drop the citation.`,
 				where: key,
-				// Advisory like every citation-resolution finding: the observed
-				// no-match population was garbled-but-real paths, skipped-tree
-				// files, and fixture prose — the grade panel adjudicates via
-				// `--cite-check` instead of the floor blocking on it.
+				// Advisory like every citation-resolution finding — see the tier
+				// note in the function header.
 				advisory: true,
 			});
 			continue;
@@ -1809,10 +1799,9 @@ const EXTENSIONLESS_FILENAME_RE =
  *  with a `:12-30` range appended — carries a line range the bare form rejects).
  *  Extensionless recognition is allowlist-only (never "any `/`-bearing token"):
  *  prose like `and/or` must not read as a declared write. The extension is
- *  bounded to 1–5 chars starting with a letter (mirroring
- *  FILE_LINE_CITATION_RE) so a dotted IDENTIFIER never reads as a file — a
- *  backticked `deps.finalize` in a phase body cost a live run a blocking
- *  coverage finding and a full code-fix round. */
+ *  bounded to 1–5 chars starting with a letter (mirroring FILE_LINE_CITATION_RE)
+ *  so a dotted IDENTIFIER (`deps.finalize` — an observed false coverage
+ *  finding) never reads as a file. */
 const isPathLike = (s: string): boolean => {
 	if (/\s/.test(s)) return false;
 	if (EXTENSIONLESS_FILENAME_RE.test(s.slice(s.lastIndexOf("/") + 1))) return true;
@@ -1910,9 +1899,8 @@ const verifyPhaseFilesCoverage = (content: string, who: string, path: string): {
 			// Whole-segment suffix tolerance: a body form citing the file by bare
 			// basename or partial path (`#### 2. config.ts` for a declared
 			// `packages/x/config.ts`) is covered by the declaration — exact-match
-			// only made such a heading unfixable except by polluting `files:` with
-			// the bare name (which then corrupts dep derivation and the scope
-			// floor, the very consumers this floor protects).
+			// only was fixable solely by polluting `files:` with the bare name,
+			// corrupting the very dep derivation this floor protects.
 			if ([...declared].some((d) => `/${d}`.endsWith(`/${editPath}`) || `/${editPath}`.endsWith(`/${d}`))) continue;
 			findings.push({
 				detail: `Phase ${n} names edit path ${editPath} in its body but does not declare it in its frontmatter 'files:' array. Every path a phase creates or edits must be listed in 'files:' (repo-root-relative, never a bare basename) so the plan-time coverage floor and the dep-gated implement fanout see the phase's full write set. Add ${editPath} to phase ${n}'s 'files:' array, or drop the body reference if the write belongs to another phase.`,
