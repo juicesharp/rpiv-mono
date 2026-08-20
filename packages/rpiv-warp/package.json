@@ -1,6 +1,6 @@
 {
 	"name": "@juicesharp/rpiv-warp",
-	"version": "2.6.3",
+	"version": "2.6.4",
 	"private": false,
 	"description": "Pi extension. Native Warp terminal notifications, dispatched via OSC 777 on Pi lifecycle events.",
 	"keywords": [
@@ -59,6 +59,6 @@
 		"@earendil-works/pi-coding-agent": "*"
 	},
 	"dependencies": {
-		"@juicesharp/rpiv-config": "^2.6.3"
+		"@juicesharp/rpiv-config": "^2.6.4"
 	}
 }
