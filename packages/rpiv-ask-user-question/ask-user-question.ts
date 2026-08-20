@@ -1,6 +1,12 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isKeyRelease, isKeyRepeat, matchesKey } from "@earendil-works/pi-tui";
-import { formatKeySpecForDisplay, loadConfig, resolveCollapseKey, validateGuidanceFields } from "./config.js";
+import {
+	COLLAPSE_KEY_OFF,
+	formatKeySpecForDisplay,
+	loadConfig,
+	resolveCollapseKey,
+	validateGuidanceFields,
+} from "./config.js";
 import {
 	ASK_USER_BLOCKED_EVENT,
 	ASK_USER_PROMPT_EVENT,
@@ -228,7 +234,7 @@ export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
 			let hasAnnouncedHide = false;
 			let removeOverlayInputListener: (() => void) | undefined;
 
-			if (collapseKey !== "off" && typeof ctx.ui.onTerminalInput === "function") {
+			if (collapseKey !== COLLAPSE_KEY_OFF && typeof ctx.ui.onTerminalInput === "function") {
 				removeOverlayInputListener = ctx.ui.onTerminalInput((data) => {
 					const handle = overlayHandleRef.current;
 					if (!handle) return undefined;

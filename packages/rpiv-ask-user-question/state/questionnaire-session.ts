@@ -1,9 +1,9 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { Editor, OverlayHandle, TUI } from "@earendil-works/pi-tui";
-import { formatKeySpecForDisplay } from "../config.js";
+import { COLLAPSE_KEY_OFF, formatKeySpecForDisplay } from "../config.js";
 import type { QuestionData, QuestionnaireResult, QuestionParams } from "../tool/types.js";
 import type { WrappingSelectItem } from "../view/components/wrapping-select.js";
-import { COLLAPSED_HINT_TEMPLATE, KEY_PLACEHOLDER } from "../view/dialog-builder.js";
+import { COLLAPSED_HINT_TEMPLATE, HINT_PART_CANCEL, KEY_PLACEHOLDER } from "../view/dialog-builder.js";
 import type { QuestionnairePropsAdapter } from "../view/props-adapter.js";
 import { buildQuestionnaire } from "./build-questionnaire.js";
 import { t } from "./i18n-bridge.js";
@@ -110,13 +110,16 @@ export class QuestionnaireSession {
 		// behind it becomes readable (#47). The overlay stays focused and in the
 		// stack, so the collapse key still routes here to expand. `t` stays inside the
 		// closure (live locale updates); the key display is static per session.
+		//
+		// With collapseKey "off" the router and raw listener never toggle `collapsed`,
+		// but `toggleCollapsedExternal()` is a public ungated entry — fall back to the
+		// cancel-only line rather than rendering a literal "Off to expand".
 		const collapseKeyDisplay = formatKeySpecForDisplay(this.collapseKey);
-		const collapsedRender = (_width: number): string[] => [
-			theme.fg(
-				"dim",
-				` ${t("hint.expand_line", COLLAPSED_HINT_TEMPLATE).replace(KEY_PLACEHOLDER, collapseKeyDisplay)} `,
-			),
-		];
+		const collapsedHintLine = (): string =>
+			this.collapseKey === COLLAPSE_KEY_OFF
+				? t("hint.cancel", HINT_PART_CANCEL)
+				: t("hint.expand_line", COLLAPSED_HINT_TEMPLATE).replace(KEY_PLACEHOLDER, collapseKeyDisplay);
+		const collapsedRender = (_width: number): string[] => [theme.fg("dim", ` ${collapsedHintLine()} `)];
 
 		this.component = {
 			render: (width) => (this.state.collapsed ? collapsedRender(width) : built.render(width)),

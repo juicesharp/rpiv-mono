@@ -174,7 +174,9 @@ export function routeKey(data: string, state: QuestionnaireState, runtime: Quest
 	// replaces the lazily imported QuestionnaireSession graph on disk. Passing
 	// undefined into matchesKey reaches parseKeyId().toLowerCase() and crashes the
 	// entire host process, so keep the runtime boundary defensive even though the
-	// TypeScript contract requires a string.
+	// TypeScript contract requires a string. The "off" literal is deliberate:
+	// importing COLLAPSE_KEY_OFF would pull ../config.js (and its rpiv-config
+	// loader graph) into this pure module for a string that cannot change.
 	if (
 		typeof runtime.collapseKey === "string" &&
 		runtime.collapseKey !== "off" &&

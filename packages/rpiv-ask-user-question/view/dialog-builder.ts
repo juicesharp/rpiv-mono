@@ -27,10 +27,11 @@ export const HINT_PART_CANCEL = "Esc to cancel";
 export const KEY_PLACEHOLDER = "{key}";
 export const HINT_PART_COLLAPSE_TEMPLATE = `${KEY_PLACEHOLDER} to collapse`;
 export const HINT_PART_EXPAND_TEMPLATE = `${KEY_PLACEHOLDER} to expand`;
-const DEFAULT_KEY_DISPLAY = formatKeySpecForDisplay(DEFAULT_COLLAPSE_KEY);
-/** Default-key (`Ctrl+]`) renderings of the templates, for tests and default-config assertions. */
-export const HINT_PART_COLLAPSE = HINT_PART_COLLAPSE_TEMPLATE.replace(KEY_PLACEHOLDER, DEFAULT_KEY_DISPLAY);
-export const HINT_PART_EXPAND = HINT_PART_EXPAND_TEMPLATE.replace(KEY_PLACEHOLDER, DEFAULT_KEY_DISPLAY);
+/** Default-key (`Ctrl+]`) rendering of the collapse template, for tests and default-config assertions. */
+export const HINT_PART_COLLAPSE = HINT_PART_COLLAPSE_TEMPLATE.replace(
+	KEY_PLACEHOLDER,
+	formatKeySpecForDisplay(DEFAULT_COLLAPSE_KEY),
+);
 /**
  * `HINT_SINGLE` / `HINT_MULTI` are the resting core hint for NON-multiSelect
  * question tabs only: `buildHintText` drops `NOTES` while the notes editor is
@@ -52,8 +53,6 @@ export const HINT_MULTI = [HINT_PART_ENTER, HINT_PART_NAV, HINT_PART_NOTES, HINT
  * `KEY_PLACEHOLDER` with the configured key's display form.
  */
 export const COLLAPSED_HINT_TEMPLATE = [HINT_PART_EXPAND_TEMPLATE, HINT_PART_CANCEL].join(" · ");
-/** Default-key rendering of `COLLAPSED_HINT_TEMPLATE`. */
-export const COLLAPSED_HINT = [HINT_PART_EXPAND, HINT_PART_CANCEL].join(" · ");
 export const REVIEW_HEADING = "Review your answers";
 export const READY_PROMPT = "Ready to submit your answers?";
 export const INCOMPLETE_WARNING_PREFIX = "⚠ Answer remaining questions before submitting:";

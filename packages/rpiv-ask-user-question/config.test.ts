@@ -23,6 +23,11 @@ describe("formatKeySpecForDisplay", () => {
 		expect(formatKeySpecForDisplay("]")).toBe("]");
 	});
 
+	it("cases compound-word named keys conventionally", () => {
+		expect(formatKeySpecForDisplay("ctrl+pagedown")).toBe("Ctrl+PageDown");
+		expect(formatKeySpecForDisplay("pageup")).toBe("PageUp");
+	});
+
 	it("round-trips the default key to the historical hint casing", () => {
 		expect(formatKeySpecForDisplay(DEFAULT_COLLAPSE_KEY)).toBe("Ctrl+]");
 	});
