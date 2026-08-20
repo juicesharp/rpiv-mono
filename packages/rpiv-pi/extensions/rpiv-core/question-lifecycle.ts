@@ -125,8 +125,8 @@ export function emitQuestionAsked(
 
 /**
  * Emit a `resolved` event — call AFTER the registry's `notify()` so a subscriber
- * observes the committed settle. Called by `dequeueInput` (`"answered"`) and every
- * teardown settle loop (`"cleared"`).
+ * observes the committed settle. Called by `dequeueInput` (`"answered"`) and the
+ * registry's teardown settle helper `settleAndEmitCleared` (`"cleared"`).
  */
 export function emitQuestionResolved(runId: string, unitIndex: number, reason: QuestionResolveReason): void {
 	publish({ kind: "resolved", runId, unitIndex, reason, at: Date.now() });

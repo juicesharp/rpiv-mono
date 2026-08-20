@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { __resetQuestionLifecycle, subscribeQuestionLifecycle } from "./question-lifecycle.js";
 import {
 	__resetRunLaneRegistry,
 	addStageUsage,
 	captureFinalSnapshot,
+	clearUnitLanes,
 	dequeueInput,
 	enqueueInput,
 	evictRun,
@@ -1218,6 +1220,117 @@ describe("run-lane-registry", () => {
 			// retained finalUsage is the single source the render sums for this stage.
 			expect(getLane("run-1")?.stageUsage.size).toBe(0);
 			expect(getUnit("run-1", SINGLE_UNIT_KEY)?.finalUsage?.input).toBe(100);
+		});
+	});
+
+	describe("teardown settle ordering — notify precedes `cleared`; subscribers observe committed state", () => {
+		beforeEach(() => {
+			// The file-level hook resets the registry; lifecycle listeners are this describe's own.
+			__resetQuestionLifecycle();
+		});
+
+		/** Wire both streams into ONE shared sequence — `notify` for lane subscribers,
+		 *  `<reason>:<unitIndex>[<state>]` for lifecycle events. `[<state>]` renders what a
+		 *  lifecycle subscriber observes about the lane AT EMIT TIME (post-mutation): the
+		 *  surviving unit keys, `empty` for a cleared units map, `lane-gone` for an evicted
+		 *  lane. `stop` unwires both so a test's listeners never leak past it. */
+		function trace(): { seq: string[]; stop: () => void } {
+			const seq: string[] = [];
+			const offLanes = subscribeLanes(() => seq.push("notify"));
+			const offLifecycle = subscribeQuestionLifecycle((e) => {
+				if (e.kind === "asked") {
+					seq.push(`asked:${e.unitIndex}`);
+					return;
+				}
+				const lane = getLane(e.runId);
+				const state = lane === undefined ? "lane-gone" : [...lane.units.keys()].join("|") || "empty";
+				seq.push(`${e.reason}:${e.unitIndex}[${state}]`);
+			});
+			return {
+				seq,
+				stop: () => {
+					offLanes();
+					offLifecycle();
+				},
+			};
+		}
+
+		it("recordRun reactivation: notify precedes `cleared` per parked unit in Map insertion order", () => {
+			recordRun("run-1", "ship");
+			const a = makePending();
+			const b = makePending();
+			enqueueInput("run-1", 1, a); // park unit 1 BEFORE unit 0 — emission follows insertion order, not index order
+			enqueueInput("run-1", 0, b);
+			const { seq, stop } = trace();
+			recordRun("run-1", "ship"); // reactivate (a resume reuses the run id)
+			stop();
+			// units map already empty at emit time; emits follow Map insertion order (1, then 0)
+			expect(seq).toEqual(["notify", "cleared:1[empty]", "cleared:0[empty]"]);
+			expect(a.resolve).toHaveBeenCalledTimes(1);
+			expect(a.resolve).toHaveBeenCalledWith(undefined);
+			expect(b.resolve).toHaveBeenCalledTimes(1);
+			expect(b.resolve).toHaveBeenCalledWith(undefined);
+		});
+
+		it("a FRESH recordRun notifies without emitting (nothing was ever parked)", () => {
+			const { seq, stop } = trace();
+			recordRun("run-1", "ship");
+			stop();
+			expect(seq).toEqual(["notify"]); // no `cleared` — no unit had parked input
+		});
+
+		it("retireRun: notify precedes `cleared`; resolvers settle with undefined; unit rows survive", () => {
+			recordRun("run-1", "ship");
+			const pending = makePending();
+			enqueueInput("run-1", 0, pending);
+			const { seq, stop } = trace();
+			retireRun("run-1", "completed");
+			stop();
+			expect(seq).toEqual(["notify", "cleared:0[0]"]); // the unit row is retained post-retirement
+			expect(pending.resolve).toHaveBeenCalledTimes(1);
+			expect(pending.resolve).toHaveBeenCalledWith(undefined);
+			// Idempotent second retire: neither notifies nor emits, and never re-settles.
+			const second: string[] = [];
+			const offLanes = subscribeLanes(() => second.push("notify"));
+			const offLifecycle = subscribeQuestionLifecycle((e) => second.push(e.kind));
+			retireRun("run-1", "failed");
+			offLanes();
+			offLifecycle();
+			expect(second).toEqual([]);
+			expect(pending.resolve).toHaveBeenCalledTimes(1);
+		});
+
+		it("evictRun: notify precedes `cleared`; the lane is already gone when `cleared` fires", () => {
+			recordRun("run-1", "ship");
+			const pending = makePending();
+			enqueueInput("run-1", 0, pending);
+			const { seq, stop } = trace();
+			evictRun("run-1");
+			stop();
+			expect(seq).toEqual(["notify", "cleared:0[lane-gone]"]);
+			expect(pending.resolve).toHaveBeenCalledTimes(1);
+			expect(pending.resolve).toHaveBeenCalledWith(undefined);
+		});
+
+		it("clearUnitLanes: notify precedes `cleared`; the units map is already empty when `cleared` fires", () => {
+			recordRun("run-1", "ship");
+			const pending = makePending();
+			enqueueInput("run-1", 0, pending);
+			const { seq, stop } = trace();
+			clearUnitLanes("run-1");
+			stop();
+			expect(seq).toEqual(["notify", "cleared:0[empty]"]);
+			expect(pending.resolve).toHaveBeenCalledTimes(1);
+			expect(pending.resolve).toHaveBeenCalledWith(undefined);
+			expect(getLane("run-1")?.needsInputSince).toBeUndefined(); // lane clock reset with the generation
+		});
+
+		it("clearUnitLanes on an EMPTY map neither notifies nor emits", () => {
+			recordRun("run-1", "ship");
+			const { seq, stop } = trace();
+			clearUnitLanes("run-1"); // nothing to clear — the guard no-ops
+			stop();
+			expect(seq).toEqual([]);
 		});
 	});
 });
