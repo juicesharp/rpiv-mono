@@ -9,7 +9,7 @@
  * depends on have filled their slots. A deps-free fanout collapses to a single
  * level — byte-identical to the pre-wave flat dispatch.
  *
- * Ordering vs grouping: this is NOT clusterSliceDag (built-in-workflows.ts), which
+ * Ordering vs grouping: this is NOT clusterSliceDag (built-ins/slices.ts), which
  * is undirected union-find producing connected-component GROUPS for synth. Waves
  * need DIRECTED levels — different algorithms over the same edge data.
  *

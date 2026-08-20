@@ -14,7 +14,7 @@
  * which `.gitignore` ignores, and would false-skip the gate):
  *   1. the default git recipe — `git status --porcelain` + `git diff` (the same
  *      `execFileSync("git", [...], { stdio: ["ignore","pipe","ignore"] })`
- *      posture built-in-workflows.ts's `writeCommitBaseline` uses);
+ *      posture built-ins/goal-baseline.ts's `writeCommitBaseline` uses);
  *   2. `hashArtifactsTree(cwd)` — a recursive walk of `<cwd>/.rpiv/artifacts/`
  *      hashing each file's relative path + contents so a gitignored-only
  *      artifact revision DOES change the digest.
@@ -100,7 +100,7 @@ function readdirRecursively(root: string, excludedTopDirs?: ReadonlySet<string>)
 /**
  * Content fingerprint of `cwd`'s working tree — `git status --porcelain` +
  * `git diff` concatenated with `hashArtifactsTree(cwd)`, then SHA-256 hashed.
- * Mirrors built-in-workflows.ts's `writeCommitBaseline` git posture
+ * Mirrors built-ins/goal-baseline.ts's `writeCommitBaseline` git posture
  * (`execFileSync` with stderr ignored so a non-repo cwd degrades silently).
  *
  * Returns `undefined` on ANY failure (non-repo / git missing / unreadable
