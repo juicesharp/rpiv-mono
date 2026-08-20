@@ -45,7 +45,7 @@ contract:                 # every skill declares one; produces/consumes drive ro
 ---
 ```
 
-`allowed-tools` is LLM-facing prompt context — Pi does not parse the field, but the agent reads its own declared allowlist and follows it by convention. **Skills that need the `Agent` tool either list `Agent` explicitly** (`annotate-guidance`, `annotate-inline`, `validate`) **or omit the field entirely** to inherit the full tool surface (`code-review`, `frontend-design`).
+`allowed-tools` is LLM-facing prompt context — Pi does not parse the field, but the agent reads its own declared allowlist and follows it by convention. **Skills that need the `Agent` tool either list `Agent` explicitly** (`annotate-guidance`, `annotate-inline`) **or omit the field entirely** to inherit the full tool surface (`code-review`, `frontend-design`).
 
 ## Agent Dispatch Convention
 
