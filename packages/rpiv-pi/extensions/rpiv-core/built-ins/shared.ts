@@ -78,8 +78,11 @@ const VERDICT_FAIL_SCORE = 0;
 const FILE_LINE_CITATION_RE = /((?:(?<![\w.])\.)?(?<!\w)[\w][\w./-]*\.[a-zA-Z][a-zA-Z0-9]{0,4}):(\d+)(?:-(\d+))?/g;
 
 /** A structure-dimension finding — the shared shape the deterministic verdict
- * checks emit (`detail` is the actionable message, `where` locates the defect). */
-type StructureFinding = { detail: string; where: string };
+ * checks emit (`detail` is the actionable message, `where` locates the defect).
+ * `advisory: true` marks a finding that must be RECORDED but never BLOCK a gate
+ * (citation ambiguity/drift — resolver limitations, not fabrication signal);
+ * absent means blocking. */
+type StructureFinding = { detail: string; where: string; advisory?: true };
 
 /** An `fs` artifact handle (the only handle kind the verdict checks operate on). */
 type FsHandle = { kind: "fs"; path: string };
@@ -93,10 +96,14 @@ type FsHandle = { kind: "fs"; path: string };
  * idempotent across fix/reslice/re-dispatch rounds); `handle` is the artifact
  * the check inspected (serialized into `data.artifact` and basename-keyed).
  *
- * The `severity: pass ? "none" : "high"` floor is load-bearing: the gate routes
- * via `allDimensionsPass`/`subplanGatePasses`, whose severity floor silently
- * passes a `pass:false` verdict rated `low`/`none`; a structural defect MUST
- * rate `high` or it ships. The `score` is the binary verdict scale (100 = clean,
+ * The severity tier is load-bearing: the gate routes via
+ * `allDimensionsPass`/`subplanGatePasses`, whose severity floor silently passes
+ * a `pass:false` verdict rated `low`/`none`. Any BLOCKING finding rates the
+ * verdict `high` (a structural defect MUST rate `high` or it ships); a verdict
+ * whose findings are ALL `advisory` rates `low` — honest (`pass: false`, the
+ * findings persist on the trail and downstream readers see them) but
+ * deliberately below the gate floor, so a resolver limitation never terminates
+ * a loop-less preset. The `score` is the binary verdict scale (100 = clean,
  * 0 = finding; the gate keys off `severity`, never this number).
  *
  * `extra` lets a caller stamp additional gate-readable fields onto the verdict
@@ -111,11 +118,12 @@ const writeStructureVerdict = (
 	extra?: Record<string, unknown>,
 ): Omit<Output, "meta"> => {
 	const pass = findings.length === 0;
+	const blocking = findings.some((f) => f.advisory !== true);
 	const data = {
 		dimension: "structure",
 		pass,
 		score: pass ? VERDICT_PASS_SCORE : VERDICT_FAIL_SCORE,
-		severity: pass ? "none" : "high",
+		severity: pass ? "none" : blocking ? "high" : "low",
 		artifact: handleToString(handle),
 		findings,
 		feedback: pass ? "" : findings.map((f) => f.detail).join(" "),

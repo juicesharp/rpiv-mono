@@ -1716,6 +1716,69 @@ describe("ship grade panel (tier-independent roster bypass)", () => {
 			});
 			expect(units).toEqual([]);
 		});
+
+		// Advisory citation findings reach the correctness grader: the cite gate
+		// upstream passed (a blocking finding STOPs before grade), so a
+		// findings-bearing plan-cite-check verdict here is advisory by
+		// construction and threads as --cite-check on the correctness unit ONLY.
+		it("threads --cite-check to the correctness unit when the cite floor recorded findings", async () => {
+			const CITE = ".rpiv/artifacts/verdicts/plan-cite-check__p.json";
+			const units = await SHIP_DIMENSION_FANOUT.units({
+				cwd: "/repo",
+				artifact: undefined,
+				state: {
+					named: {
+						plans: [dataOut(PLAN, { phase_count: 1 })],
+						research: [out(".rpiv/artifacts/research/r.md")],
+						goal: [out(".rpiv/artifacts/goal/goal.md")],
+						"plan-cite-check": [
+							dataOut(CITE, {
+								dimension: "structure",
+								pass: false,
+								severity: "low",
+								findings: [{ detail: "Unbacked citation dup.ts:5", where: "dup.ts:5", advisory: true }],
+							}),
+						],
+					},
+				} as unknown as RunView,
+			});
+			const correctness = units.find((u) => u.label === "correctness");
+			expect(correctness?.prompt).toContain(`--cite-check ${CITE}`);
+			expect(units.filter((u) => u.label !== "correctness").every((u) => !u.prompt.includes("--cite-check"))).toBe(
+				true,
+			);
+		});
+
+		it("omits --cite-check when the cite floor is clean or the channel is absent", async () => {
+			const base = {
+				plans: [dataOut(PLAN, { phase_count: 1 })],
+				research: [out(".rpiv/artifacts/research/r.md")],
+				goal: [out(".rpiv/artifacts/goal/goal.md")],
+			};
+			const clean = await SHIP_DIMENSION_FANOUT.units({
+				cwd: "/repo",
+				artifact: undefined,
+				state: {
+					named: {
+						...base,
+						"plan-cite-check": [
+							dataOut(".rpiv/artifacts/verdicts/plan-cite-check__p.json", {
+								dimension: "structure",
+								pass: true,
+								severity: "none",
+								findings: [],
+							}),
+						],
+					},
+				} as unknown as RunView,
+			});
+			const absent = await SHIP_DIMENSION_FANOUT.units({
+				cwd: "/repo",
+				artifact: undefined,
+				state: { named: base } as unknown as RunView,
+			});
+			expect([...clean, ...absent].every((u) => !u.prompt.includes("--cite-check"))).toBe(true);
+		});
 	});
 
 	describe("shipGatePasses", () => {
@@ -1831,6 +1894,37 @@ describe("ship grade panel (tier-independent roster bypass)", () => {
 			});
 			expect(edge({ state: s, output: undefined })).toBe("grade");
 			expect(takeRouteNote(edge)).toBeUndefined();
+		});
+
+		it("plan-cite-check advisory-only verdict (severity low) rides through to grade", () => {
+			// The severity tier's ship-side contract: ambiguity/drift rate `low`,
+			// allDimensionsPass floors it, and the run proceeds to grade instead of
+			// terminating over a resolver limitation.
+			const edge = edgeOf("plan-cite-check");
+			const s = state({
+				"plan-cite-check": [
+					{
+						artifacts: [],
+						data: { dimension: "structure", pass: false, severity: "low", findings: [{ advisory: true }] },
+					},
+				],
+			});
+			expect(edge({ state: s, output: undefined })).toBe("grade");
+			expect(takeRouteNote(edge)).toBeUndefined();
+		});
+
+		it("plan-cite-check stop note counts only the blocking findings", () => {
+			const edge = edgeOf("plan-cite-check");
+			const s = state({
+				"plan-cite-check": [
+					{
+						artifacts: [],
+						data: { dimension: "structure", pass: false, severity: "high", findings: [{ advisory: true }, {}] },
+					},
+				],
+			});
+			expect(edge({ state: s, output: undefined })).toBe("stop");
+			expect(takeRouteNote(edge)).toBe("plan citation check failed (1 finding)");
 		});
 	});
 
@@ -3840,6 +3934,101 @@ describe("declared-files citation tiebreak (verifyCitations via plan-cite-check)
 		);
 		expect(data.pass).toBe(true);
 		expect(data.findings).toEqual([]);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Citation-floor severity tier — advisory findings (ambiguity, line drift past
+// EOF) rate the structure verdict `low`, which the gates' allDimensionsPass
+// severity floor rides through, so a loop-less preset RECORDS them without
+// stopping (the run history's terminal cite stops were all advisory shapes,
+// none a fabrication). A citation resolving to NOTHING — the one
+// fabrication-shaped category — still rates `high` and blocks, as does a
+// `files:` coverage gap. Exercised through plan-cite-check.
+// ---------------------------------------------------------------------------
+describe("citation-floor severity tier (advisory vs blocking via plan-cite-check)", () => {
+	let tmpDir: string;
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "rpiv-cite-tier-"));
+	});
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	const citeCheckRun = () => {
+		const stage = findWorkflow("build").stages["plan-cite-check"];
+		if (!stage?.run) throw new Error("build plan-cite-check stage has no run function");
+		return stage.run as (ctx: { cwd: string; input?: undefined; state: RunView }) => {
+			data: Record<string, unknown>;
+		};
+	};
+	const write = (rel: string, body: string) => {
+		const parts = rel.split("/");
+		mkdirSync(join(tmpDir, ...parts.slice(0, -1)), { recursive: true });
+		writeFileSync(join(tmpDir, rel), body);
+		return { artifacts: [{ handle: fsHandle(rel) }], data: undefined, kind: "", meta: {} };
+	};
+	const runOn = (plan: ReturnType<typeof write>) =>
+		citeCheckRun()({ cwd: tmpDir, input: undefined, state: { named: { plans: [plan] } } as unknown as RunView }).data;
+	const findings = (data: Record<string, unknown>) =>
+		(data.findings as { detail: string; where: string; advisory?: boolean }[] | undefined) ?? [];
+	const dupFiles = () => {
+		mkdirSync(join(tmpDir, "a"), { recursive: true });
+		mkdirSync(join(tmpDir, "b"), { recursive: true });
+		writeFileSync(join(tmpDir, "a/dup.ts"), Array.from({ length: 50 }, (_, i) => `l${i}`).join("\n"));
+		writeFileSync(join(tmpDir, "b/dup.ts"), Array.from({ length: 50 }, (_, i) => `l${i}`).join("\n"));
+	};
+	const plan = (body: string) => write(".rpiv/artifacts/plans/p.md", body);
+	const fm = (files: string) =>
+		`---\nstatus: ready\nphase_count: 1\nphases:\n  - { n: 1, title: One, files: [${files}] }\n---\n# Plan\n## Phase 1: One\n`;
+
+	it("rates an ambiguous-only verdict `low` (advisory) — recorded, never gate-blocking", () => {
+		dupFiles();
+		const data = runOn(plan(`${fm("")}Retype the constant (dup.ts:5).\n`));
+		expect(data.pass).toBe(false);
+		expect(data.severity).toBe("low");
+		expect(findings(data)).toHaveLength(1);
+		expect(findings(data)[0].advisory).toBe(true);
+	});
+
+	it("rates a line-past-EOF-only verdict `low` (drift is advisory)", () => {
+		mkdirSync(join(tmpDir, "src"), { recursive: true });
+		writeFileSync(join(tmpDir, "src/tiny.ts"), "a\nb\nc\n"); // 4 lines
+		const data = runOn(plan(`${fm('"src/tiny.ts"')}Retype the constant (src/tiny.ts:900).\n`));
+		expect(data.pass).toBe(false);
+		expect(data.severity).toBe("low");
+		expect(findings(data)[0].advisory).toBe(true);
+	});
+
+	it("rates a resolves-to-nothing citation `high` (the fabrication-shaped category still blocks)", () => {
+		const data = runOn(plan(`${fm("")}See src/does-not-exist.ts:42 for the footing.\n`));
+		expect(data.pass).toBe(false);
+		expect(data.severity).toBe("high");
+		expect(findings(data)[0].advisory).toBeUndefined();
+	});
+
+	it("rates a mixed verdict `high` — one blocking finding outranks any advisory ones", () => {
+		dupFiles();
+		const data = runOn(plan(`${fm("")}Retype the constant (dup.ts:5); see src/does-not-exist.ts:42.\n`));
+		expect(data.pass).toBe(false);
+		expect(data.severity).toBe("high");
+		const byTier = new Set(findings(data).map((f) => f.advisory === true));
+		expect(byTier).toEqual(new Set([true, false]));
+	});
+
+	it("rates a files: coverage gap `high` (protects the implement fanout's dep derivation)", () => {
+		const data = runOn(plan(`${fm("")}### Changes\n- \`src/foo.ts\` — add the thing\n`));
+		expect(data.pass).toBe(false);
+		expect(data.severity).toBe("high");
+		expect(findings(data)[0].advisory).toBeUndefined();
+	});
+
+	it("rates a clean floor `none` (unchanged green path)", () => {
+		mkdirSync(join(tmpDir, "src"), { recursive: true });
+		writeFileSync(join(tmpDir, "src/ok.ts"), Array.from({ length: 50 }, (_, i) => `l${i}`).join("\n"));
+		const data = runOn(plan(`${fm('"src/ok.ts"')}Retype the constant (src/ok.ts:5).\n`));
+		expect(data.pass).toBe(true);
+		expect(data.severity).toBe("none");
 	});
 });
 

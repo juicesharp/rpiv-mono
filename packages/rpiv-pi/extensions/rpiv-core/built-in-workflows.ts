@@ -1037,11 +1037,21 @@ const sliceCovers = (entry: Record<string, unknown>): string[] => {
  * matches; an ambiguous suffix stays unresolved (the finding names the
  * candidates so the fix arm can disambiguate) unless one of two tiebreaks names
  * a single candidate: the caller's declared-`files:` union, then the nearest
- * preceding prose mention of a candidate's full path. A citation that names no real
- * file, or points past end-of-file, is UNBACKED precision — a fabricated
- * reference that must fail the gate rather than propagate into design. A bare
- * `path` with no `:line` is not checked (the contract is "verifiable line
- * numbers, or omit them"). Returns one finding per bad citation.
+ * preceding prose mention of a candidate's full path. A bare `path` with no
+ * `:line` is not checked (the contract is "verifiable line numbers, or omit
+ * them"). Returns one finding per bad citation.
+ *
+ * Findings are TIERED (`StructureFinding.advisory`), and the tier decides the
+ * verdict severity `writeStructureVerdict` emits — which is what the gates'
+ * `allDimensionsPass` severity floor folds:
+ * - BLOCKING (severity `high`): the path resolves to NOTHING by any strategy —
+ *   the one shape with genuine fabrication signal. Fails the gate.
+ * - ADVISORY (severity `low`, gate passes): ambiguity (every candidate is a
+ *   real tree file — a path-prefix omission), post-resolution read failure, and
+ *   line-past-EOF drift (the file exists; ordinates are navigation hints). The
+ *   run history's terminal cite stops were ALL advisory shapes and none was a
+ *   fabrication, so these are recorded on the trail — and handed to the ship
+ *   grade panel via `--cite-check` for adjudication — instead of killing a run.
  */
 /** Trees a citation must never resolve INTO — vendored deps, build copies, or
  * prior pipeline artifacts (a stale artifact copy would back a fabricated line). */
@@ -1226,12 +1236,8 @@ const nearestProseMention = (
 	return bestAbs;
 };
 
-const verifyCitations = (
-	body: string,
-	cwd: string,
-	declared?: ReadonlySet<string>,
-): { detail: string; where: string }[] => {
-	const findings: { detail: string; where: string }[] = [];
+const verifyCitations = (body: string, cwd: string, declared?: ReadonlySet<string>): StructureFinding[] => {
+	const findings: StructureFinding[] = [];
 	const seen = new Set<string>();
 	// Fenced text is example/fixture territory, not prose asserting a real
 	// file:line — a fenced placeholder shaped like a citation must not fail the
@@ -1292,6 +1298,8 @@ const verifyCitations = (
 			findings.push({
 				detail: `Unbacked citation ${key} — ${path} matches ${resolved.ambiguous.length} tree files (${shown.join(", ")}${resolved.ambiguous.length > shown.length ? ", …" : ""}); a citation must name ONE file. Disambiguate with the repo-root-relative path.`,
 				where: key,
+				// Every candidate is a REAL tree file — advisory per the tier above.
+				advisory: true,
 			});
 			continue;
 		}
@@ -1312,6 +1320,8 @@ const verifyCitations = (
 			findings.push({
 				detail: `Unbacked citation ${key} — ${path} resolved but could not be read at this revision. A file:line citation must be verifiable, or the line numbers must be omitted. Fix the path (repo-root-relative) or drop the citation.`,
 				where: key,
+				// The file EXISTS (it resolved) — advisory per the tier above.
+				advisory: true,
 			});
 			continue;
 		}
@@ -1320,6 +1330,8 @@ const verifyCitations = (
 			findings.push({
 				detail: `Unbacked citation ${key} — ${path} has ${lineCount} lines, so line ${high} matches no version of the file. A file:line citation must be verifiable, or the line numbers must be omitted. Correct the range or drop the line numbers.`,
 				where: key,
+				// The file exists; only the ordinate drifted — advisory per the tier above.
+				advisory: true,
 			});
 		}
 	}
@@ -3047,7 +3059,11 @@ const CODE_CONFIRM_FANOUT = gradePanelFanout("plans", PLAN_DIMENSIONS, "code-ver
  * correctness), and the `freshVerdicts` / `latestVerdictPerDimension` /
  * `dimensionsToRegrade` carry-forward so a re-grade emits only still-pending
  * dimensions. Tier-independence is structural: the roster never shrinks, so a
- * light run still grades `architecture-fit`.
+ * light run still grades `architecture-fit`. Ship-only addition: the
+ * correctness unit carries `--cite-check <verdict>` when the deterministic
+ * citation floor recorded findings — advisory by construction here, since a
+ * blocking finding STOPs at the cite gate before grade ever runs — so the
+ * grader adjudicates them rather than leaving them unread.
  */
 export const SHIP_DIMENSION_FANOUT = fanout({
 	source: "plans",
@@ -3061,6 +3077,15 @@ export const SHIP_DIMENSION_FANOUT = fanout({
 		const contextFlag = research?.handle.kind === "fs" ? ` --context ${handleToString(research.handle)}` : "";
 		const goal = latestFsArtifact(state, "goal");
 		const goalFlag = goal?.handle.kind === "fs" ? ` --goal ${handleToString(goal.handle)}` : "";
+		// The floor's findings (advisory by construction — see the fanout doc
+		// above) thread as `--cite-check`; no findings ⇒ no flag.
+		const cite = latestFsArtifact(state, "plan-cite-check");
+		const citeFindings = (state.named["plan-cite-check"]?.at(-1)?.data as { findings?: unknown[] } | undefined)
+			?.findings;
+		const citeFlag =
+			cite?.handle.kind === "fs" && Array.isArray(citeFindings) && citeFindings.length > 0
+				? ` --cite-check ${handleToString(cite.handle)}`
+				: "";
 		// Tier-independent roster: SHIP_DIMENSIONS verbatim — never gateRoster(gateTier(...)).
 		const roster = SHIP_DIMENSIONS;
 		const latest = latestVerdictPerDimension(freshVerdicts(state.named["ship-verdicts"], target));
@@ -3068,7 +3093,7 @@ export const SHIP_DIMENSION_FANOUT = fanout({
 		const pending = dimensionsToRegrade(roster, latest, risks);
 		const carryForward = pending.length > 0 ? pending : roster;
 		return carryForward.map((d) => ({
-			prompt: `--dimension ${d} --artifact ${target}${d === "architecture-fit" ? contextFlag : ""}${GOAL_DIMENSIONS.has(d) ? goalFlag : ""}`,
+			prompt: `--dimension ${d} --artifact ${target}${d === "architecture-fit" ? contextFlag : ""}${GOAL_DIMENSIONS.has(d) ? goalFlag : ""}${d === "correctness" ? citeFlag : ""}`,
 			label: d,
 			id: `plans-dim-${d}`,
 		}));
@@ -3985,7 +4010,11 @@ const buildWorkflow = defineWorkflow({
  */
 const shipCiteStopNote = (state: RunView): string => {
 	const data = state.named["plan-cite-check"]?.at(-1)?.data as { findings?: unknown } | undefined;
-	const n = Array.isArray(data?.findings) ? data.findings.length : 0;
+	// Blocking findings only — the gate passes an advisory-only (severity `low`)
+	// verdict, so when this note renders the blockers are what stopped the run.
+	const n = Array.isArray(data?.findings)
+		? data.findings.filter((f) => (f as { advisory?: boolean } | null)?.advisory !== true).length
+		: 0;
 	return n > 0 ? `plan citation check failed (${n} finding${n === 1 ? "" : "s"})` : "plan citation check failed";
 };
 const shipGradeStopNote = (state: RunView): string => {
@@ -4009,7 +4038,10 @@ const shipGradeStopNote = (state: RunView): string => {
 // Named (not inline) so the stop branch can self-reference for setRouteNote —
 // the same closure-over-own-binding pattern gate()/match() use internally.
 // Citation-floor gate. Pass ⇒ grade; fail ⇒ STOP (no fix arm — the lightweight
-// preset terminates on any red gate). The route folds `allDimensionsPass` over
+// preset terminates on any red gate). Only BLOCKING findings fail here: an
+// advisory-only verdict rates `low` and rides through `allDimensionsPass`'
+// severity floor to grade, where the correctness unit adjudicates it
+// (`--cite-check`). The route folds `allDimensionsPass` over
 // the stage's OWN published channel, NOT `match("verdict", …)`:
 // `writeStructureVerdict` (the floor's envelope) carries no `verdict` field, so
 // a verdict match would misread — this mirrors build's `planGatePasses` first
@@ -4055,7 +4087,7 @@ const shipGradeGate: EdgeFn = defineRoute(
 const shipWorkflow = defineWorkflow({
 	name: "ship",
 	description:
-		"Ship, unsliced: capture the verbatim brief as a goal artifact → ground it with at most two targeted codebase-analyzer dispatches (no /skill:research) → one lightweight quick-plan pass → deterministic citation floor → single tier-independent quality gate (correctness/completeness/architecture-fit, stop-on-fail) → implement → implement-scope-check → reconcile → validate → commit. Every gate terminates the run on fail; no fix loops.",
+		"Ship, unsliced: capture the verbatim brief as a goal artifact → ground it with at most two targeted codebase-analyzer dispatches (no /skill:research) → one lightweight quick-plan pass → deterministic citation floor (fabricated paths and coverage gaps stop; ambiguity and line drift pass as advisory findings the grade panel adjudicates) → single tier-independent quality gate (correctness/completeness/architecture-fit, stop-on-fail) → implement → implement-scope-check → reconcile → validate → commit. Every gate terminates the run on fail; no fix loops.",
 	start: "goal",
 	stages: {
 		// build's verbatim goal capture — the brief on its own channel, plus the
@@ -4079,7 +4111,10 @@ const shipWorkflow = defineWorkflow({
 		// explicitly instead of silently inheriting the drop.
 		plan: produces({ skill: "quick-plan", reads: ["research", "goal"] }),
 		// Deterministic citation floor BEFORE the LLM gate — build's verifier
-		// verbatim. A fabricated `file:line` fails structurally and STOPs the run.
+		// verbatim. A fabricated `file:line` (resolving to NOTHING) or a `files:`
+		// coverage gap fails structurally and STOPs the run; advisory findings
+		// (ambiguity/drift — see verifyCitations' tier) rate `low`, pass the gate,
+		// and reach the grade panel's correctness unit as `--cite-check`.
 		"plan-cite-check": produces.script({ reads: ["plans"], run: planCitationCheck("plan-cite-check") }),
 		// Single PRE-implement grade over the fixed three-dimension roster
 		// (SHIP_DIMENSION_FANOUT — tier-independent, no confirm/snapshot arms);
