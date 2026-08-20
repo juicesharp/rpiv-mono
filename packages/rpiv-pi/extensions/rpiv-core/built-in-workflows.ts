@@ -1041,20 +1041,26 @@ const sliceCovers = (entry: Record<string, unknown>): string[] => {
  * `:line` is not checked (the contract is "verifiable line numbers, or omit
  * them"). Returns one finding per bad citation.
  *
- * Findings are TIERED (`StructureFinding.advisory`), and the tier decides the
- * verdict severity `writeStructureVerdict` emits — which is what the gates'
- * `allDimensionsPass` severity floor folds:
- * - BLOCKING (severity `high`): the path resolves to NOTHING by any strategy —
- *   the one shape with genuine fabrication signal. Fails the gate.
- * - ADVISORY (severity `low`, gate passes): ambiguity (every candidate is a
- *   real tree file — a path-prefix omission), post-resolution read failure, and
- *   line-past-EOF drift (the file exists; ordinates are navigation hints). The
- *   run history's terminal cite stops were ALL advisory shapes and none was a
- *   fabrication, so these are recorded on the trail — and handed to the ship
- *   grade panel via `--cite-check` for adjudication — instead of killing a run.
+ * EVERY finding this verifier emits is ADVISORY (`StructureFinding.advisory`):
+ * an advisory-only structure verdict rates `low`, which the gates'
+ * `allDimensionsPass` severity floor rides through, so citation-resolution
+ * findings are recorded on the trail — and handed to the ship grade panel via
+ * `--cite-check` for symbol-level adjudication — but never stop a run. The
+ * run-history audit forced this: across three months, 71 distinct flagged
+ * paths yielded ZERO fabrications — the no-match population was resolver
+ * limitations (suffix/dep/skipped-tree gaps), meta-plan fixture prose, and one
+ * garbled-but-real path — while the blocking tier cost ~8h of fix rounds, two
+ * dead ship runs, and one four-round identical-findings churn loop. Blocking
+ * severity on the shared structure verdict comes ONLY from
+ * `verifyPhaseFilesCoverage` (an undeclared write corrupts dep derivation —
+ * that floor stays load-bearing).
  */
 /** Trees a citation must never resolve INTO — vendored deps, build copies, or
- * prior pipeline artifacts (a stale artifact copy would back a fabricated line). */
+ * prior pipeline artifacts (a stale artifact copy would back a fabricated line).
+ * `.rpiv` is skipped with one carve-out: the walk re-enters `.rpiv/guidance`
+ * (see `buildBasenameIndex`) — the guidance shadow tree is a legitimate,
+ * routinely-cited and routinely-edited target, and skipping it made every
+ * suffix-form `architecture.md` citation a false "does not exist". */
 const CITATION_WALK_SKIP: ReadonlySet<string> = new Set(["node_modules", ".git", "dist", "coverage", ".rpiv"]);
 /** Backstop so a pathological tree can't stall the deterministic cite floor. */
 const CITATION_WALK_FILE_CAP = 50_000;
@@ -1098,6 +1104,11 @@ const buildBasenameIndex = (cwd: string): BasenameIndex => {
 		for (const e of listDir(dir)) {
 			if (e.isDirectory()) {
 				if (!CITATION_WALK_SKIP.has(e.name)) stack.push(join(dir, e.name));
+				// `.rpiv` is skipped for its artifact/run trees (a stale artifact
+				// copy must never back a citation), but the guidance shadow tree
+				// under it is a first-class citation target the pipeline itself
+				// edits — carve it back into the walk (missing dir ⇒ empty listing).
+				else if (e.name === ".rpiv") stack.push(join(dir, e.name, "guidance"));
 				continue;
 			}
 			if (!e.isFile()) continue;
@@ -1164,13 +1175,22 @@ const resolveCitationPath = (
 	cwd: string,
 	indexHolder: { value: BasenameIndex | undefined },
 ): CitationResolution | undefined => {
+	// existsSync-then-statSync races a concurrent delete into a throw OUT of the
+	// deterministic floor (⇒ FAIL_SCRIPT_THREW) — one guarded probe instead.
+	const isTreeFile = (p: string): boolean => {
+		try {
+			return statSync(p).isFile();
+		} catch {
+			return false;
+		}
+	};
 	// Strategy 1 — direct.
 	const direct = isAbsolute(path) ? path : join(cwd, path);
-	if (existsSync(direct) && statSync(direct).isFile()) return { abs: direct };
+	if (isTreeFile(direct)) return { abs: direct };
 	// Strategies 2 & 3 — dependency probes (lockfile-pinned dep source; the regex
 	// cannot carry `@`, so `node_modules/@scope/pkg/f.js` is cited as `scope/pkg/f.js`).
 	for (const candidate of [join(cwd, "node_modules", path), join(cwd, "node_modules", `@${path}`)]) {
-		if (existsSync(candidate) && statSync(candidate).isFile()) return { abs: candidate };
+		if (isTreeFile(candidate)) return { abs: candidate };
 	}
 	// Strategy 4 — suffix fallback: back the citation iff exactly ONE tree file matches.
 	const matches = suffixMatchesFor(path, cwd, indexHolder);
@@ -1303,11 +1323,33 @@ const verifyCitations = (body: string, cwd: string, declared?: ReadonlySet<strin
 			});
 			continue;
 		}
-		const abs = resolved?.abs;
+		let abs = resolved?.abs;
+		if (abs === undefined && declared !== undefined) {
+			// Declared-write-set rescue on a NO-MATCH resolution — the ambiguity
+			// tiebreak's missing twin (observed live: a declared `.rpiv/guidance/**`
+			// file's suffix citation landed here as "does not exist" because the
+			// suffix walk skips that tree, and the declared set was never asked).
+			// A unique whole-segment suffix match inside the plan's own `files:`
+			// names the file the author means: verify against it when it exists on
+			// disk; a declared file ABSENT from the tree is a planned CREATE — the
+			// citation is a forward reference to planned content, unverifiable at
+			// this revision, so it yields no finding.
+			const matches = [...declared].filter((d) => d === path || `/${d}`.endsWith(`/${path}`));
+			if (matches.length === 1) {
+				const cand = join(cwd, matches[0]);
+				if (!existsSync(cand)) continue;
+				abs = cand;
+			}
+		}
 		if (!abs) {
 			findings.push({
 				detail: `Unbacked citation ${key} — the cited file does not exist at this revision. A file:line citation must resolve, or the line numbers must be omitted. Fix the path (repo-root-relative, or node_modules/<pkg>/… for an installed dependency file) or drop the citation.`,
 				where: key,
+				// Advisory like every citation-resolution finding: the observed
+				// no-match population was garbled-but-real paths, skipped-tree
+				// files, and fixture prose — the grade panel adjudicates via
+				// `--cite-check` instead of the floor blocking on it.
+				advisory: true,
 			});
 			continue;
 		}
@@ -1766,11 +1808,15 @@ const EXTENSIONLESS_FILENAME_RE =
  *  stripping a `:line` suffix (the blueprint MODIFY heading — `#### N. path/to/file.ext`
  *  with a `:12-30` range appended — carries a line range the bare form rejects).
  *  Extensionless recognition is allowlist-only (never "any `/`-bearing token"):
- *  prose like `and/or` must not read as a declared write. */
+ *  prose like `and/or` must not read as a declared write. The extension is
+ *  bounded to 1–5 chars starting with a letter (mirroring
+ *  FILE_LINE_CITATION_RE) so a dotted IDENTIFIER never reads as a file — a
+ *  backticked `deps.finalize` in a phase body cost a live run a blocking
+ *  coverage finding and a full code-fix round. */
 const isPathLike = (s: string): boolean => {
 	if (/\s/.test(s)) return false;
 	if (EXTENSIONLESS_FILENAME_RE.test(s.slice(s.lastIndexOf("/") + 1))) return true;
-	return /\.[A-Za-z0-9]+$/.test(s) && (s.includes("/") || /^[\w.-]+\.[A-Za-z0-9]+$/.test(s));
+	return /\.[A-Za-z][A-Za-z0-9]{0,4}$/.test(s) && (s.includes("/") || /^[\w.-]+\.[A-Za-z][A-Za-z0-9]{0,4}$/.test(s));
 };
 
 /**
