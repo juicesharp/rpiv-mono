@@ -1841,19 +1841,30 @@ const editPathsOfPhase = (phaseBody: string): string[] => {
 		const stripped = stripLineSuffix(raw.replace(/[`*]/g, "").trim());
 		if (stripped && isPathLike(stripped)) files.add(stripped);
 	};
+	// The list-item form is scoped to a Changes section (`### Changes` heading or
+	// a `**Changes**:` field line): a backticked bullet elsewhere in the body is
+	// a REFERENCE ("mirror `x/state.ts`"), not a declared write — unscoped, those
+	// read as coverage gaps and block. Any other heading or `**Field**:` label
+	// exits the scope; `**File(s)**:` lines don't flip it (they're the path form
+	// themselves and legitimately precede `**Changes**:`).
+	let inChanges = false;
 	forEachLineOutsideFences(phaseBody, (line) => {
+		const heading = line.match(/^#{2,5}\s+(.*)$/);
+		if (heading) inChanges = /^changes\b/i.test(heading[1].trim());
 		const fm = line.match(/^\*\*Files?\*\*:\s*(.+)$/);
 		if (fm) {
 			for (const tok of fm[1].split(/[,\s]+/)) add(tok);
 			return;
 		}
+		const label = line.match(/^\*\*([A-Za-z][A-Za-z ]*)\*\*:/);
+		if (label?.[1]) inChanges = /^changes$/i.test(label[1].trim());
 		const hm = line.match(/^#{3,4}\s+\d+\.\s+(\S+)/);
 		if (hm) {
 			add(hm[1]);
 			return;
 		}
 		const lm = line.match(/^-\s+`([^`]+)`/);
-		if (lm) add(lm[1]);
+		if (lm && inChanges) add(lm[1]);
 	});
 	return [...files];
 };
@@ -1896,6 +1907,13 @@ const verifyPhaseFilesCoverage = (content: string, who: string, path: string): {
 		const declared = new Set(phaseFiles(entry));
 		for (const editPath of editPathsOfPhase(body)) {
 			if (declared.has(editPath)) continue;
+			// Whole-segment suffix tolerance: a body form citing the file by bare
+			// basename or partial path (`#### 2. config.ts` for a declared
+			// `packages/x/config.ts`) is covered by the declaration — exact-match
+			// only made such a heading unfixable except by polluting `files:` with
+			// the bare name (which then corrupts dep derivation and the scope
+			// floor, the very consumers this floor protects).
+			if ([...declared].some((d) => `/${d}`.endsWith(`/${editPath}`) || `/${editPath}`.endsWith(`/${d}`))) continue;
 			findings.push({
 				detail: `Phase ${n} names edit path ${editPath} in its body but does not declare it in its frontmatter 'files:' array. Every path a phase creates or edits must be listed in 'files:' (repo-root-relative, never a bare basename) so the plan-time coverage floor and the dep-gated implement fanout see the phase's full write set. Add ${editPath} to phase ${n}'s 'files:' array, or drop the body reference if the write belongs to another phase.`,
 				where: `${who} ${path} phase ${n}: ${editPath}`,
@@ -4133,7 +4151,7 @@ const shipGradeGate: EdgeFn = defineRoute(
 const shipWorkflow = defineWorkflow({
 	name: "ship",
 	description:
-		"Ship, unsliced: capture the verbatim brief as a goal artifact → ground it with at most two targeted codebase-analyzer dispatches (no /skill:research) → one lightweight quick-plan pass → deterministic citation floor (fabricated paths and coverage gaps stop; ambiguity and line drift pass as advisory findings the grade panel adjudicates) → single tier-independent quality gate (correctness/completeness/architecture-fit, stop-on-fail) → implement → implement-scope-check → reconcile → validate → commit. Every gate terminates the run on fail; no fix loops.",
+		"Ship, unsliced: capture the verbatim brief as a goal artifact → ground it with at most two targeted codebase-analyzer dispatches (no /skill:research) → one lightweight quick-plan pass → deterministic citation floor (files: coverage gaps stop; citation-resolution findings are advisory and adjudicated by the grade panel) → single tier-independent quality gate (correctness/completeness/architecture-fit, stop-on-fail) → implement → implement-scope-check → reconcile → validate → commit. Every gate terminates the run on fail; no fix loops.",
 	start: "goal",
 	stages: {
 		// build's verbatim goal capture — the brief on its own channel, plus the
@@ -4157,10 +4175,10 @@ const shipWorkflow = defineWorkflow({
 		// explicitly instead of silently inheriting the drop.
 		plan: produces({ skill: "quick-plan", reads: ["research", "goal"] }),
 		// Deterministic citation floor BEFORE the LLM gate — build's verifier
-		// verbatim. A fabricated `file:line` (resolving to NOTHING) or a `files:`
-		// coverage gap fails structurally and STOPs the run; advisory findings
-		// (ambiguity/drift — see verifyCitations' tier) rate `low`, pass the gate,
-		// and reach the grade panel's correctness unit as `--cite-check`.
+		// verbatim. Only a `files:` coverage gap fails structurally and STOPs the
+		// run; every citation-resolution finding (unresolved path, ambiguity,
+		// drift) is advisory — rates `low`, passes the gate, and reaches the
+		// grade panel's correctness unit as `--cite-check` for adjudication.
 		"plan-cite-check": produces.script({ reads: ["plans"], run: planCitationCheck("plan-cite-check") }),
 		// Single PRE-implement grade over the fixed three-dimension roster
 		// (SHIP_DIMENSION_FANOUT — tier-independent, no confirm/snapshot arms);
