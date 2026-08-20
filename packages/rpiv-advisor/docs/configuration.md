@@ -43,11 +43,42 @@ previous selection and the active tool list are left untouched.
 | `modelKey` | `string` — `"provider/modelId"` | absent (advisor off) | `/advisor` |
 | `effort` | graded thinking level (`minimal` → `max`) | absent (no `reasoning` sent) | `/advisor` effort picker |
 | `disabledForModels` | `(string \| { model, minEffort? })[]` | `[]` | hand-edited |
+| `contextBudget` | object — `enabled`, `responseReserveTokens`, `keepFirst`, `keepLast`, `toolResultMaxChars` | bounded defaults enabled | hand-edited |
 | `guidance.promptSnippet` | `string` | built-in snippet | hand-edited |
 | `guidance.promptGuidelines` | `string[]` | six built-in guidelines | hand-edited |
 
 `/advisor` only ever writes `modelKey` and `effort`; `guidance` and
 `disabledForModels` are preserved across saves, so hand-edits survive.
+
+### `contextBudget`
+
+Advisor context fitting is enabled by default. It runs on a temporary copy of the resolved branch, so it never changes the session transcript.
+
+| Field | Type | Default | Effect |
+| --- | --- | --- | --- |
+| `enabled` | `boolean` | `true` | Disable local fitting while retaining native compaction and prune-summary filtering. |
+| `responseReserveTokens` | positive integer | `16384` | Output room reserved before the input budget is calculated. |
+| `keepFirst` | non-negative integer | `4` | Number of earliest messages retained when the branch exceeds the budget. |
+| `keepLast` | positive integer | `24` | Number of newest messages preferred when the branch exceeds the budget. |
+| `toolResultMaxChars` | positive integer | `12000` | Maximum text retained from each tool result before window fitting. |
+
+The input budget uses the selected advisor model's `contextWindow`, subtracts the response reserve, and leaves a ten-percent tokenizer margin. Compaction, branch, and `pi-context-prune` summaries are retained verbatim. Dropped messages produce an omission marker, and tool-call/result pairing is repaired before the provider request.
+
+Example:
+
+```json
+{
+  "contextBudget": {
+    "enabled": true,
+    "responseReserveTokens": 16384,
+    "keepFirst": 4,
+    "keepLast": 24,
+    "toolResultMaxChars": 12000
+  }
+}
+```
+
+All fields are optional. An older `advisor.json` without `contextBudget` uses these defaults.
 
 ### `modelKey`
 

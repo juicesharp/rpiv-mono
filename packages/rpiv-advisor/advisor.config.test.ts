@@ -1,7 +1,7 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
-import { validateDisabledForModels } from "./advisor/config.js";
+import { resolveAdvisorContextBudget, validateDisabledForModels } from "./advisor/config.js";
 import { loadAdvisorConfig, saveAdvisorConfig } from "./advisor/index.js";
 
 const CONFIG_PATH = join(process.env.HOME!, ".config", "rpiv-advisor", "advisor.json");
@@ -123,5 +123,35 @@ describe("validateDisabledForModels", () => {
 				"openai:gpt",
 			]),
 		).toEqual(["anthropic:opus", { model: "anthropic:sonnet", minEffort: "high" }, "openai:gpt"]);
+	});
+});
+
+describe("resolveAdvisorContextBudget", () => {
+	it("enables bounded context by default for an old config", () => {
+		expect(resolveAdvisorContextBudget(undefined)).toEqual({
+			enabled: true,
+			responseReserveTokens: 16_384,
+			keepFirst: 4,
+			keepLast: 24,
+			toolResultMaxChars: 12_000,
+		});
+	});
+
+	it("clamps invalid numeric values while preserving an explicit disable", () => {
+		expect(
+			resolveAdvisorContextBudget({
+				enabled: false,
+				responseReserveTokens: 1,
+				keepFirst: -1,
+				keepLast: 0,
+				toolResultMaxChars: 1,
+			}),
+		).toEqual({
+			enabled: false,
+			responseReserveTokens: 1_024,
+			keepFirst: 0,
+			keepLast: 1,
+			toolResultMaxChars: 256,
+		});
 	});
 });
