@@ -107,7 +107,9 @@ export async function postStage(
 	if ((await classifyAndHandleAbort(observerCtx, child, s, outcome, session, offset)) === "continue") return;
 	// Every halt below routes through the single `haltStageOrSoftHalt` gate: a
 	// fanout unit marked `collectAll` records a NON-terminal failed row + a sentinel
-	// slot instead of halting the run; everything else takes the arm's fail-fast
+	// slot instead of halting the run — EXCEPT an infra-death stop (error/noResponse/
+	// toolUse), which hard-fails even there so resume re-dispatches the dead unit
+	// (see `isInfraDeath`, halt-routing.ts); everything else takes the arm's fail-fast
 	// halt. Recording + the continuation run on observerCtx (the launcher) — the per-stage
 	// child is disposed when the stage ends.
 	if (outcome.stop !== "stop")

@@ -2,8 +2,10 @@
  * Halt-routing facet — extracted from `sessions.ts`'s HALT HELPERS. Turns a
  * halt reason into the right audit-layer call. `haltStageOrSoftHalt` is the
  * single gate `postStage` dispatches through (a `collectAll` fanout unit
- * soft-halts; everything else fail-fast halts). `haltStageWithValidationFailure`
- * is also exported for the `reattach.ts` companion.
+ * soft-halts SEMANTIC failures; an infra-death stop hard-fails even there —
+ * see `isInfraDeath`; everything else fail-fast halts).
+ * `haltStageWithValidationFailure` is also exported for the `reattach.ts`
+ * companion.
  *
  * `auditFor` lives here (moved from `sessions.ts`) — its only callers are the
  * halt helpers below; relocating it keeps the value-import DAG acyclic (the
@@ -41,10 +43,47 @@ type HaltReason =
 	| { kind: "timeout"; reason: string };
 
 /**
- * The single collect-all fork. A `collectAll` fanout unit soft-halts (a
- * NON-terminal `collected:true` row + a `failedOutput` sentinel the parallel fold
- * places by index); every other stage takes the arm's fail-fast terminal halt.
- * Replaces the `if (s.collectAll)` that was inlined at all three halt sites.
+ * Stop signals that witness an INFRA death — the child session never delivered
+ * a complete agentic pass:
+ *   - `error`      — the SDK/API errored out under the session;
+ *   - `noResponse` — the model never spoke (the child died before producing
+ *                    anything, e.g. killed at spawn);
+ *   - `toolUse`    — the transcript ENDS on a tool request: an agentic loop
+ *                    truncated mid-flight, the signature of a killed child
+ *                    process (the OOM killer's favourite).
+ * `length` is deliberately absent: the model consumed its output budget — a
+ * genuine model-behavior outcome an identical retry would likely reproduce, so
+ * it stays a collected (semantic) failure for the downstream floors to judge.
+ * `aborted` never reaches the stop arm (`classifyAndHandleAbort` owns it and
+ * throws `WorkflowAbortError` — no row, slot unfilled, resume re-dispatches).
+ */
+const INFRA_DEATH_STOPS: ReadonlySet<StopSignal> = new Set(["error", "noResponse", "toolUse"]);
+
+/**
+ * True when the halt reason witnesses infrastructure death rather than a
+ * judged-bad output. The distinction is load-bearing for collect-all fanout
+ * units: a collected soft-halt is a PERMANENT skip — the resume fold rebuilds
+ * its `failedOutput` sentinel by `unitIndex` and never re-dispatches the unit
+ * (runner/resume.ts `foldFanoutRow`), so collecting a transient infra death
+ * turns one OOM'd unit into an unrepairable hole three stages downstream
+ * (the slice-design → subplan-check incident). `extraction`/`validation`/
+ * `timeout` stay collected: there the skill RAN and its output (or runaway
+ * tool call) was judged — an identical retry is not obviously better, and the
+ * deterministic floors downstream are the right judge.
+ */
+const isInfraDeath = (reason: HaltReason): boolean => reason.kind === "stop" && INFRA_DEATH_STOPS.has(reason.stop);
+
+/**
+ * The single collect-all fork. A `collectAll` fanout unit soft-halts a
+ * SEMANTIC failure (a NON-terminal `collected:true` row + a `failedOutput`
+ * sentinel the parallel fold places by index); an infra-death stop takes the
+ * fail-fast terminal halt EVEN for collect-all — the trail then carries an
+ * UNCOLLECTED failed unit row, the resume fold leaves the slot unfilled, and
+ * resume re-dispatches exactly the dead unit. Completed siblings are unharmed:
+ * the parallel dispatcher never sibling-cancels a non-`failFast` fanout, and
+ * `recordStageSuccess` is not status-gated, so their rows land before the
+ * generation settles and the terminated run stops advancing. Every other stage
+ * takes the arm's fail-fast terminal halt, unchanged.
  */
 export async function haltStageOrSoftHalt(
 	ctx: WorkflowHostContext,
@@ -52,7 +91,7 @@ export async function haltStageOrSoftHalt(
 	reason: HaltReason,
 	session: SessionRef | null,
 ): Promise<void> {
-	if (s.collectAll) return softHaltUnit(ctx, s, softHaltReason(s, reason), session);
+	if (s.collectAll && !isInfraDeath(reason)) return softHaltUnit(ctx, s, softHaltReason(s, reason), session);
 	return failFastHalt(ctx, s, reason, session);
 }
 

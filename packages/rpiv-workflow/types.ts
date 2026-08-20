@@ -525,10 +525,14 @@ export interface StageSessionContext extends SessionContext {
 	 */
 	signal?: AbortSignal;
 	/**
-	 * When true (a collect-all fanout unit), a unit failure soft-halts THIS unit
-	 * (non-terminal failed-output sentinel handed to `onSuccess`) instead of
-	 * terminating the whole run. Set by `buildUnitSession` for non-fail-fast
-	 * fanout; the soft-halt routing lives in `postStage`.
+	 * When true (a collect-all fanout unit), a SEMANTIC unit failure
+	 * (extraction/validation/timeout/length) soft-halts THIS unit (non-terminal
+	 * failed-output sentinel handed to `onSuccess`) instead of terminating the
+	 * whole run. An infra-death stop (error/noResponse/toolUse — the session
+	 * never delivered a complete pass) hard-fails even here, so resume
+	 * re-dispatches the dead unit instead of permanently collecting it (see
+	 * `isInfraDeath`, sessions/halt-routing.ts). Set by `buildUnitSession` for
+	 * non-fail-fast fanout; the routing lives in `haltStageOrSoftHalt`.
 	 */
 	collectAll?: boolean;
 	/**
