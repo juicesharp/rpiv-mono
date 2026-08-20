@@ -1,15 +1,18 @@
 /**
  * Direct tests for `classifyAndHandleAbort` — postStage's single abort
- * dispatch (risk 4r2's deferred group). The four disposition arms, each pinned
+ * dispatch (risk 4r2's deferred group). The disposition arms, each pinned
  * against the level that owns it:
  *
  *   Level 1  — fired cooperative signal   → throws WorkflowAbortError
- *   Level 3  — aborted stop, no watchdog  → throws WorkflowAbortError
- *   Level 4a — watchdog + strike remains  → steering resend + postStage tail-recursion
- *   Level 4b — watchdog + strikes spent   → haltStageOrSoftHalt({ kind: "timeout" })
+ *   Level 2  — clean stop                 → no-abort hand-back (verdict never consulted)
+ *   Level 3a — watchdog + strike remains  → steering resend + postStage tail-recursion
+ *              (for ANY non-clean stop — "aborted" AND the mid-tool "error" shape)
+ *   Level 3b — watchdog + strikes spent   → haltStageOrSoftHalt({ kind: "timeout" })
+ *   Level 4  — aborted stop, no watchdog  → throws WorkflowAbortError
  *
- * (Level 2 — a non-aborted stop — is the no-abort hand-back and is pinned too,
- * completing the dispatch table.)
+ * The verdict-before-stop-shape ordering is load-bearing: a watchdog abort landing
+ * mid-tool surfaces as stopReason "error", not "aborted" (run
+ * 2026-08-20_14-54-40-4cc2, implement phase-1), and must still reach the strike arm.
  *
  * Wiring: `createMockSessionChain` scripts the child (branch, watchdog verdict,
  * per-send evolution); a capture spawn hands the fully-wired child ctx to the
@@ -138,7 +141,7 @@ describe("sessions — abort classifier (direct)", () => {
 		expect(existsSync(join(tmpDir, ".rpiv", "workflows", "runs"))).toBe(false);
 	});
 
-	it("Level 2: a non-aborted stop returns undefined — the caller proceeds to its happy-path switch", async () => {
+	it("Level 2: a clean stop returns undefined — the caller proceeds to its happy-path switch", async () => {
 		const chain = createMockSessionChain({
 			cwd: tmpDir,
 			// A watchdog verdict is present but must never be consulted — a clean stop
@@ -164,7 +167,7 @@ describe("sessions — abort classifier (direct)", () => {
 		expect(onFailure).not.toHaveBeenCalled();
 	});
 
-	it("Level 3: an aborted stop with a cold signal and NO watchdog throws WorkflowAbortError before any row write", async () => {
+	it("Level 4: an aborted stop with a cold signal and NO watchdog throws WorkflowAbortError before any row write", async () => {
 		// ESC / session.abort(): the SDK RESOLVES prompt() with stopReason:"aborted"
 		// and no toolTimeout verdict. A genuine abort must throw before any
 		// collected:true row lands, so resume re-dispatches the unit cleanly.
@@ -191,7 +194,7 @@ describe("sessions — abort classifier (direct)", () => {
 		expect(existsSync(join(tmpDir, ".rpiv", "workflows", "runs"))).toBe(false);
 	});
 
-	it("Level 4a: a strike-backed watchdog timeout resets the verdict, resends steering, and tail-recurses postStage", async () => {
+	it("Level 3a: a strike-backed watchdog timeout resets the verdict, resends steering, and tail-recurses postStage", async () => {
 		const chain = createMockSessionChain({
 			cwd: tmpDir,
 			steps: [
@@ -232,7 +235,48 @@ describe("sessions — abort classifier (direct)", () => {
 		expect(onFailure).not.toHaveBeenCalled();
 	});
 
-	it("Level 4b: watchdog timeout with strikes exhausted routes to haltStageOrSoftHalt — terminal fail carrying the reason", async () => {
+	it("Level 3a: a watchdog abort surfaced as an infra-death 'error' stop still reaches the strike arm", async () => {
+		// The mid-tool abort shape (run 2026-08-20_14-54-40-4cc2, implement phase-1):
+		// the killed bash returns an error toolResult and the loop records the
+		// strangled follow-up request as stopReason:"error" — NOT "aborted". The
+		// watchdog verdict must own the turn anyway; gating on the stop shape sent
+		// this to the stop arm, where "error" reads as infra death and hard-fails.
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [
+				{
+					branch: [mockAssistantMessage("", "error")],
+					toolTimeout: { reason: TIMEOUT_REASON },
+					onSend: [{ branch: [mockAssistantMessage("diagnosed; all green")], toolTimeout: undefined }],
+				},
+			],
+		});
+		const child = await captureChild(chain);
+		const state = freshRunState();
+		const onFailure = vi.fn();
+		const onSuccess = vi.fn<(ctx: WorkflowHostContext, output: Output) => Promise<void>>(async () => {});
+		const s = stageSession({ cwd: tmpDir, state, onSuccess, onFailure, bashTimeoutStrikes: 1 });
+
+		await expect(
+			classifyAndHandleAbort(
+				chain.ctx as WorkflowHostContext,
+				child,
+				s,
+				{ branch: [], stop: "error" },
+				null,
+				undefined,
+			),
+		).resolves.toBe("continue");
+
+		// Recovered exactly like the "aborted" shape: strike consumed, steering
+		// resent into the same child, resumed turn recorded as a success.
+		expect(bashStrikesRemaining(s)).toBe(0);
+		expect(chain.sentMessages.some((m) => m.includes("HUNG, not merely slow"))).toBe(true);
+		expect(onSuccess).toHaveBeenCalledTimes(1);
+		expect(onFailure).not.toHaveBeenCalled();
+	});
+
+	it("Level 3b: watchdog timeout with strikes exhausted routes to haltStageOrSoftHalt — terminal fail carrying the reason", async () => {
 		const chain = createMockSessionChain({
 			cwd: tmpDir,
 			steps: [{ branch: [mockAssistantMessage("scanning", "aborted")], toolTimeout: { reason: TIMEOUT_REASON } }],

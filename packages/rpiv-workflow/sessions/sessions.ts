@@ -102,8 +102,10 @@ export async function postStage(
 	const session = readSessionRef(child, offset);
 	const outcome = readSessionOutcome(child, offset);
 	// Abort classification and strike recovery are owned by a single helper that
-	// returns "continue" when it has handled the turn (strike retry or soft-halt),
-	// so postStage reaches its happy-path switch only for a clean stop.
+	// returns "continue" when it has handled the turn (strike retry or soft-halt).
+	// It consults the watchdog verdict for EVERY non-clean stop — a mid-tool abort
+	// surfaces as "error"/"toolUse", not "aborted" — so the stop/halt arms below
+	// only ever see turns with no live watchdog verdict.
 	if ((await classifyAndHandleAbort(observerCtx, child, s, outcome, session, offset)) === "continue") return;
 	// Every halt below routes through the single `haltStageOrSoftHalt` gate: a
 	// fanout unit marked `collectAll` records a NON-terminal failed row + a sentinel
@@ -149,13 +151,22 @@ const watchdogTimeoutOf = (child: WorkflowSessionContext): { reason: string } | 
 
 /**
  * Classify and route an abort. Abort surfaces as a STOP CLASSIFICATION, not a
- * promise rejection: `session.abort()` makes the SDK RESOLVE `prompt()` with a
- * `stopReason:"aborted"` transcript message, so an aborted in-flight child runs
- * straight into here. A genuine abort throws BEFORE haltStage/softHaltUnit/any
- * row write so: (a) no `collected:true` row is written (else the resume fold
- * marks the unit "don't re-dispatch" → permanent work loss), (b) the parallel
- * fold's `isAbortError` branch leaves the slot unfilled, and (c) resume
- * re-dispatches the unit cleanly.
+ * promise rejection — but NOT always as `stopReason:"aborted"`. An abort landing
+ * between turns resolves `prompt()` with an `"aborted"` message; one landing
+ * MID-TOOL instead yields an error toolResult ("Command aborted") followed by an
+ * EMPTY assistant entry with `stopReason:"error"` (the strangled follow-up API
+ * request), or a transcript truncated on the tool request (`"toolUse"`). So the
+ * watchdog VERDICT (`toolTimeout()`), not the stop shape, is the authoritative
+ * witness that the watchdog aborted this child — it is read for every non-clean
+ * stop, BEFORE the aborted-stop shape test. Gating the verdict behind
+ * `stop === "aborted"` sent a mid-`npm test` watchdog abort to the caller's stop
+ * arm, where `"error"` reads as infra death and hard-failed the unit (run
+ * 2026-08-20_14-54-40-4cc2, implement phase-1).
+ *
+ * A genuine abort throws BEFORE haltStage/softHaltUnit/any row write so: (a) no
+ * `collected:true` row is written (else the resume fold marks the unit "don't
+ * re-dispatch" → permanent work loss), (b) the parallel fold's `isAbortError`
+ * branch leaves the slot unfilled, and (c) resume re-dispatches the unit cleanly.
  *
  * Returns `"continue"` once the turn is owned (strike retry or soft-halt),
  * telling the caller to stop; returns `void` (no abort) so the caller proceeds
@@ -176,20 +187,26 @@ export async function classifyAndHandleAbort(
 ): Promise<"continue" | undefined> {
 	// Level 1 — genuine run/user abort: the signal fired, so always re-dispatch on resume.
 	if (s.signal?.aborted) throw new WorkflowAbortError();
-	// Level 2 — not an abort stop: hand back to the caller's happy-path switch.
-	if (!isAbortedStop(outcome)) return;
-	// Level 3 — examine a watchdog tool-timeout; an aborted stop with the signal cold
-	// and no watchdog is a genuine abort that re-dispatches on resume.
+	// Level 2 — clean completion: hand back to the caller's happy-path switch. A delivered
+	// turn outranks any stale watchdog verdict (the abort raced the completion).
+	if (outcome.stop === "stop") return;
+	// Level 3 — the watchdog verdict, read for EVERY non-clean stop (see the header: a
+	// mid-tool abort surfaces as "error"/"toolUse", not "aborted").
 	const timeout = watchdogTimeoutOf(child);
-	if (!timeout) throw new WorkflowAbortError();
-	// Level 4 — a watchdog tool-timeout is recoverable: consume a strike and retry, or
-	// route exhaustion through the soft-halt gate (collect-all survives; else terminal).
-	if (consumeBashStrike(s, timeout.reason)) {
-		await retryStageAfterBashStrike(observerCtx, child, s, offset, timeout.reason);
-	} else {
-		await haltStageOrSoftHalt(observerCtx, s, { kind: "timeout", reason: timeout.reason }, session);
+	if (timeout) {
+		// A watchdog tool-timeout is recoverable: consume a strike and retry, or route
+		// exhaustion through the soft-halt gate (collect-all survives; else terminal).
+		if (consumeBashStrike(s, timeout.reason)) {
+			await retryStageAfterBashStrike(observerCtx, child, s, offset, timeout.reason);
+		} else {
+			await haltStageOrSoftHalt(observerCtx, s, { kind: "timeout", reason: timeout.reason }, session);
+		}
+		return "continue";
 	}
-	return "continue";
+	// Level 4 — an aborted stop with the signal cold and no watchdog is a genuine abort
+	// (e.g. ESC): throw so no row lands and resume re-dispatches the unit cleanly.
+	if (isAbortedStop(outcome)) throw new WorkflowAbortError();
+	// Level 5 — a non-clean, non-abort stop with no verdict: the caller's stop arm owns it.
 }
 
 // ===========================================================================
