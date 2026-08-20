@@ -26,8 +26,8 @@ outputs:
 key_steps:
   - title: Discover context (current session OR fresh)
     rationale: Validation works either as an immediate audit (same session) or a cold audit (later run). Detecting the mode picks the right evidence-gathering path (session memory vs git log + diff).
-  - title: Spawn parallel verification agents
-    rationale: A `codebase-analyzer` verifies the component implements the plan requirement; a `codebase-pattern-finder` checks the new code against surrounding conventions. Both dispatch in a single message (never `run_in_background`, whose completion cannot re-drive a workflow session), catching "implemented but wrong shape" failures that single-axis checks miss.
+  - title: Check pattern conformance and drift
+    rationale: New code is compared against established sibling files (imports, naming, error handling, test structure), and the tree is grepped for drift the change leaves behind — renamed or removed terms lingering in comments, docs, or test descriptions, and documentation the change makes untrue. Catches "implemented but wrong shape" failures single-axis checks miss.
   - title: Re-run automated verification commands
     rationale: Every plan command (`make check test`, etc.) is re-run against the working tree, independent of whatever `implement` claimed. The plan's checklist is treated as a contract to be re-verified, not as ground truth.
   - title: Walk each phase and re-check its `- [x]` claims

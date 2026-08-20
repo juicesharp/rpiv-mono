@@ -2,7 +2,7 @@
 name: validate
 description: Verify that an implementation plan was correctly executed by running each phase's success criteria against the working tree and producing a validation report. Use after the implement skill completes, when the user asks to "validate the plan", wants a post-implementation audit, or needs to confirm a feature is fully shipped per its plan.
 argument-hint: "[plan-path] [--goal <path>] [--baseline <path>]"
-allowed-tools: Read, Bash(git *), Bash(make *), Glob, Grep, Agent
+allowed-tools: Read, Bash(git *), Bash(make *), Glob, Grep
 shell-timeout: 10
 disable-model-invocation: true
 contract:
@@ -83,17 +83,10 @@ When invoked:
    - `git diff <base>..HEAD` — where `<base>` covers the implementation commits (determine from `git log` above). Scope to specific paths if the diff is large.
    - The plan's own `#### Automated Verification:` commands — read them out of the plan and run them as-written. Do NOT hardcode `make` or any project-specific build tool here; the plan encodes the right commands per project (e.g. `npm run check`, `npm test`, `cargo test`, `pytest`).
 
-6. **Spawn parallel research agents** to verify implementation:
-
-   Spawn the agents below in parallel using the Agent tool — all in a **single assistant message with multiple Agent calls** (concurrent, synchronous). **Never `run_in_background`**: its completion can't re-drive a workflow session, so the skill ends its turn before writing the validation report and the stage fails with no artifact. Wait for ALL agents to complete before proceeding.
-
-   **Analyzer agent:**
-   - subagent_type: `codebase-analyzer`
-   - Prompt: "Analyze {component} and verify it implements {plan requirement} correctly."
-
-   **Pattern finder agent:**
-   - subagent_type: `codebase-pattern-finder`
-   - Prompt: "Find patterns similar to {new code} and check if conventions are followed."
+6. **Check pattern conformance and drift**:
+   - For each new or substantially rewritten file, Read an established sibling (same directory or role) and compare shape: imports, naming, error handling, test structure. Record only genuine divergences.
+   - Grep for drift the change leaves behind: renamed or removed terms still appearing in comments, docs, or test descriptions; documentation the change makes untrue.
+   - Report convention notes under `#### Pattern Conformance:`; stale references and invalidated statements under `#### Deviations from Plan:` or `#### Potential Issues:` by severity.
 
 ### Step 2: Systematic Validation
 
@@ -152,7 +145,7 @@ For each phase in the plan:
 
 3. **Write the artifact** using the Write tool (no Edit — this skill writes once per run). Read `templates/validation.md`, fill every `{placeholder}` with the values determined above and the observations gathered in Step 2, apply the section-omission rules in the template (omit `#### Pattern Conformance:` and `#### Potential Issues:` entirely when empty; keep all other sections and emit `None — …` literals when empty), and Write the result to the target path.
 
-**What is NOT emitted to the artifact**: per-agent dispatch logs, raw `git log` output, intermediate reasoning. The Findings subsections capture verified outcomes only — the agent trace stays in the skill run, not the artifact.
+**What is NOT emitted to the artifact**: raw command or `git log` output, intermediate reasoning. The Findings subsections capture verified outcomes only.
 
 ### Step 4: Present Summary
 

@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **The validate skill drops its two subagent dispatches; the pattern check runs inline.** Validate no longer spawns `codebase-analyzer` + `codebase-pattern-finder` (`Agent` leaves its `allowed-tools`). A run-history audit of 64 validate runs (127 dispatches, ~4.8M tokens) found 80% pure rubber stamps and only 2 verdict-affecting catches — both stale references and invalidated statements left in comments and docs. That one earning class is now an inline step: compare new files against established siblings for shape, grep for renamed/removed terms lingering in comments, docs, or test descriptions. Generic checks only — the skill ships to every rpiv-pi project.
+
 ## [2.6.4] - 2026-08-20
 
 ### Changed

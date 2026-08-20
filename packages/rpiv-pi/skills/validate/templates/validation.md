@@ -42,7 +42,7 @@ last_updated: {Same ISO timestamp as date: above}
 
 #### Pattern Conformance:
 
-_Optional subsection — include when codebase-pattern-finder surfaced observations worth recording. Omit the whole `#### Pattern Conformance:` block when there is nothing to say._
+_Optional subsection — include when the pattern-conformance check surfaced observations worth recording. Omit the whole `#### Pattern Conformance:` block when there is nothing to say._
 
 - ✓ {Imports / test structure / naming / mock patterns / etc.} follow established codebase conventions
 - Minor observation: {non-blocking variation worth flagging — explicitly tag as "acceptable variation, not a deviation"}
