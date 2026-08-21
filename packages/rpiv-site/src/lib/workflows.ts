@@ -7,7 +7,7 @@
  *
  * Keep in sync when built-in-workflows.ts changes. `stageCount` is the true
  * `Object.keys(stages).length`; `stages` is the spine drawn on the rail. vet,
- * polish, and ship are small enough to draw stage-for-stage; `build` folds its 31
+ * polish, and ship are small enough to draw stage-for-stage; `build` folds its 32
  * runtime stages into seven acts:
  *
  *   capture → goal, research                                    (verbatim brief)

@@ -53,7 +53,7 @@ export {
 } from "./plan-phases.js";
 export { codeDemote, codeSnapshot, planDemote, planSnapshot } from "./priors.js";
 export { reconcile } from "./reconcile.js";
-export { implementScopeCheck, implementScopeCheckVet, scopeQuarantine } from "./scope-checks.js";
+export { implementScopeCheck, implementScopeCheckVet, ScopeVerdict, scopeQuarantine } from "./scope-checks.js";
 export {
 	FILE_LINE_CITATION_RE,
 	FsArtifact,

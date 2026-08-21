@@ -130,6 +130,12 @@ const writeScopeVerdict = (
  * deterministically-remediable class and ANY tracked path escalates the whole
  * verdict to "excess" (one stomp taints the tree; quarantining the untracked
  * remainder wouldn't make it judgeable-clean).
+ *
+ * Input assumption, pinned: ONLY `??` counts as untracked. A STAGED new file
+ * ("A ") deliberately classifies as tracked excess — the conservative
+ * direction (staged work is adjudicated in place, never quarantined). Nothing
+ * in the lane stages files between the baseline snapshot and this floor today
+ * (the only `git add` is commit's, post-floor); revisit if that changes.
  */
 const foldScopeVerdict = (excess: readonly string[], untracked: ReadonlySet<string>): ScopeVerdict =>
 	excess.length === 0 ? "pass" : excess.every((p) => untracked.has(p)) ? "untracked-only" : "excess";

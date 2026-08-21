@@ -4622,6 +4622,24 @@ describe("ship workflow (lightweight /wf preset)", () => {
 		}
 	});
 
+	// Ship deliberately keeps the pass-only match — the tiered verdicts build
+	// quarantines/adjudicates ("untracked-only"/"excess") are terminal here like
+	// any other red gate (stop-on-fail contract, no quarantine arm).
+	it("ship's scope gate STOPs the tiered non-pass verdicts (no quarantine arm)", () => {
+		const e = findWorkflow("ship").edges["implement-scope-check"];
+		if (typeof e !== "function") throw new Error("ship implement-scope-check edge is not an EdgeFn");
+		const route = (verdict: string) =>
+			String(
+				(e as EdgeFn)({
+					output: undefined,
+					state: { named: { "implement-scope-check": [{ data: { verdict } }] } } as unknown as RunView,
+				}),
+			);
+		expect(route("pass")).toBe("reconcile");
+		expect(route("untracked-only")).toBe("stop");
+		expect(route("excess")).toBe("stop");
+	});
+
 	it('implement reads ["plans"]', () => {
 		expect(findWorkflow("ship").stages.implement?.reads).toEqual(["plans"]);
 	});

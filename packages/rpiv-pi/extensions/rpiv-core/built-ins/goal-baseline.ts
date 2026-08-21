@@ -225,8 +225,10 @@ const scopeExcess = (dirty: readonly string[], baseline: readonly string[], decl
  * `--scope` threads the scope floor's latest verdict JSON so validate
  * ADJUDICATES tracked-excess findings the floor demoted instead of halting on
  * (the `--cite-check` pattern: the deterministic floor produces evidence, the
- * LLM judge rules). Absent when the floor never ran or found nothing — the
- * skill treats a missing flag as no scope findings to rule on.
+ * LLM judge rules). Absent ONLY when the floor never ran — `writeScopeVerdict`
+ * publishes on a clean pass too, so every post-floor dispatch carries the flag
+ * and the skill's adjudication step (verdict read + unconditional
+ * quarantine-manifest check) decides what there is to rule.
  */
 const VALIDATE_GOAL_PROMPT: PromptFn = ({ state }) => {
 	const parts = ["/skill:validate"];
