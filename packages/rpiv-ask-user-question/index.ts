@@ -39,6 +39,7 @@ try {
 	// SDK absent — extension still loads with English-only UI.
 }
 
+export { getActiveAskParams, hasActiveAsk, submitAskUserAnswer } from "./ask-answer.js";
 export {
 	ASK_USER_BLOCKED_EVENT,
 	ASK_USER_PROMPT_EVENT,
