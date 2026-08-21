@@ -41,15 +41,26 @@ import {
 // Collectors — text-scan over assistant transcript
 // ---------------------------------------------------------------------------
 
-const RPIV_ARTIFACT_PATTERN = /\.rpiv\/artifacts\/[\w.-]+\/[\w.-]+\.md/g;
+// A prose ellipsis is a valid `[\w.-]+` string, so an agent's ELIDED reference to
+// a sibling artifact ("`.rpiv/artifacts/elaborations/...__phase-4.md`") placed
+// after its real announcement used to win the last-match scan and fatal the stage
+// on a path that never existed. The tempered class `(?:(?!\.\.)[\w.-])+` refuses
+// ".." anywhere in a segment — the same hazard `FILE_LINE_CITATION_RE` guards with
+// its lookbehinds. Under the documented slug conventions (timestamps, kebab-cased
+// topics, "__phase-N" — prompt-enforced, not code-enforced) no legitimate path
+// carries consecutive dots; a skill that ever emitted one would fail collection
+// LOUDLY (fatal no-match), never silently.
+const RPIV_ARTIFACT_PATTERN = /\.rpiv\/artifacts\/(?:(?!\.\.)[\w.-])+\/(?:(?!\.\.)[\w.-])+\.md/g;
 
 /** Bucket-agnostic — accepts any `.rpiv/artifacts/<bucket>/...md`. */
 export const rpivArtifactCollector: ArtifactCollector = transcriptPathCollector({ pattern: RPIV_ARTIFACT_PATTERN });
 
-/** Bucket-narrowed — accepts only `.rpiv/artifacts/<bucket>/...md`. */
+/** Bucket-narrowed — accepts only `.rpiv/artifacts/<bucket>/...md`. The filename
+ *  segment carries `RPIV_ARTIFACT_PATTERN`'s tempered `..`-rejection, so an
+ *  elided prose path never outranks the real announcement here either. */
 export function rpivBucketCollector(bucket: string): ArtifactCollector {
 	const escaped = bucket.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-	const pattern = new RegExp(`\\.rpiv/artifacts/${escaped}/[\\w.-]+\\.md`, "g");
+	const pattern = new RegExp(`\\.rpiv/artifacts/${escaped}/(?:(?!\\.\\.)[\\w.-])+\\.md`, "g");
 	return transcriptPathCollector({ pattern });
 }
 

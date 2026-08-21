@@ -63,7 +63,7 @@ Copy values verbatim. `<iso>` is the first tab-separated field (use as `date`); 
    - **Guard.** `git status --porcelain` MUST equal the pre-probe snapshot byte-for-byte when you emit. ANY residue (a missed revert, an untracked file, a mode change) is a BLOCKING error: fail the elaboration, emit nothing, and surface the residue.
    - **Fix → re-emit.** From the attributed errors, fix the drafted code blocks in the elaboration; re-probe is optional, but emit ONLY blocks that passed every applicable check above. A clean phase still emits unchanged — the self-check is a no-op pass that reverts byte-identical.
 7. **Write the elaboration doc** (below), `status: ready`. Its filename pairs to the plan so the splice can fold it back deterministically — see Output document.
-8. **Print the path**, then a one-line summary: `Phase N elaborated: <k> files, <m> code blocks`.
+8. **Print the path**, then a one-line summary: `Phase N elaborated: <k> files, <m> code blocks`. **Your path must be the LAST full `.rpiv/artifacts/...` path in your reply** — refer to any other artifact (a sibling phase's elaboration, the plan) by basename only, never by full path. The workflow collector takes the last full artifact path in your final message as YOUR artifact; a full sibling path after yours misattributes the stage's output.
 
 ## Output document
 
