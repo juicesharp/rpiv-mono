@@ -269,16 +269,50 @@ const implementScopeCheckVet = ({ state, cwd }: ScriptContext): Omit<Output, "me
  *  from the floor (`SCOPE_BOOKKEEPING_DIRS`) and outside every plan's write-set. */
 const QUARANTINE_DIR = ".rpiv/tmp/scope-quarantine";
 
+/** One quarantine move record: the path the floor flagged and where it went. */
+type QuarantineMove = { from: string; to: string };
+
+/**
+ * Read a prior round's quarantine manifest — best-effort `{ moved: [] }` on a
+ * missing/corrupt file. The manifest is the CROSS-ROUND record validate's
+ * adjudication reads (its glob finds this basename-keyed file), so each round
+ * MERGES into it rather than replacing: a validate-fix re-entry that
+ * quarantines again must not erase round 1's move records.
+ */
+const readQuarantineManifest = (rel: string, cwd: string): { moved: QuarantineMove[] } => {
+	try {
+		const parsed = JSON.parse(readArtifactFile(rel, cwd)) as { moved?: unknown };
+		const moved = Array.isArray(parsed.moved)
+			? parsed.moved.filter(
+					(m): m is QuarantineMove =>
+						typeof (m as QuarantineMove)?.from === "string" && typeof (m as QuarantineMove)?.to === "string",
+				)
+			: [];
+		return { moved };
+	} catch {
+		return { moved: [] };
+	}
+};
+
 /**
  * Deterministic remedy arm for an "untracked-only" scope verdict: MOVE (never
  * delete) each excess path into `.rpiv/tmp/scope-quarantine/<path>`, preserving
- * relative structure, and publish a manifest. Restorable and audited: nothing
- * is lost, and if a quarantined file was load-bearing, validate fails on the
- * missing file with the manifest naming where it went. The edge back to
- * `implement-scope-check` is a plain string hop (non-counted, mirroring
- * `validate-fix → implement-scope-check`) with guaranteed progress: quarantined
- * paths leave the dirty set, so the re-check either passes or reveals tracked
- * drift — at most one quarantine hop per gate entry, no new loop budget.
+ * relative structure, and record it in the manifest — the ADJUDICATION RECORD
+ * validate reads unconditionally (the post-quarantine re-check threads a clean
+ * `pass` verdict, so the manifest is the only surviving record of what moved
+ * and why). The edge back to `implement-scope-check` is a plain string hop
+ * (non-counted, mirroring `validate-fix → implement-scope-check`) with
+ * guaranteed progress: quarantined paths leave the dirty set, so the re-check
+ * either passes or reveals tracked drift — at most one quarantine hop per gate
+ * entry, no new loop budget.
+ *
+ * Manifest semantics: MERGED across rounds (`moved` accumulates; a re-moved
+ * `from` path supersedes its prior entry), written in a `finally` so a
+ * mid-loop fs throw still lands every completed move on disk before the stage
+ * fails — fail-loud with the files accounted for, never moved-but-unrecorded.
+ * `refused` records this round's declined paths (not untracked at move time,
+ * or cwd-escaping) so a skipped path is observable without re-running the
+ * floor; refusals are per-round observations, not history.
  *
  * Fail-closed: a path that escapes `cwd` is refused via `containedPath` (left
  * in place — the re-check re-judges it), a path no longer untracked at move
@@ -298,24 +332,40 @@ const scopeQuarantine = ({ state, cwd }: ScriptContext): Omit<Output, "meta"> =>
 			.filter((e) => e.xy === "??")
 			.map((e) => e.path),
 	);
-	const moved: { from: string; to: string }[] = [];
-	for (const path of listed) {
-		if (!untracked.has(path)) continue;
-		const abs = containedPath(cwd, path);
-		if (!abs) continue; // escapes cwd — refuse; the re-check surfaces it again
-		const destRel = join(QUARANTINE_DIR, path);
-		mkdirSync(dirname(join(cwd, destRel)), { recursive: true });
-		renameSync(abs, join(cwd, destRel));
-		moved.push({ from: path, to: destRel });
-	}
-	// Manifest basename-keyed off the plan, like the scope verdict — idempotent
-	// per loop round; the trail (and validate's missing-file diagnosis) reads it.
+	// Manifest path + prior rounds resolved BEFORE the move loop, so the finally
+	// below can always write the merged record.
 	const plan = latestFsArtifact(state, "plans");
 	const key = plan?.handle.kind === "fs" ? basename(plan.handle.path, ".md") : "no-plan";
 	const rel = join(VERDICT_DIR, `scope-quarantine__${key}.json`);
-	mkdirSync(join(cwd, VERDICT_DIR), { recursive: true });
-	writeFileSync(join(cwd, rel), JSON.stringify({ moved }, null, 2), "utf-8");
-	return { kind: "json", artifacts: [{ handle: { kind: "fs", path: rel } }], data: { moved } };
+	const prior = readQuarantineManifest(rel, cwd);
+
+	const moved: QuarantineMove[] = [];
+	const refused: { path: string; reason: string }[] = [];
+	try {
+		for (const path of listed) {
+			if (!untracked.has(path)) {
+				refused.push({ path, reason: "not-untracked-at-move-time" });
+				continue;
+			}
+			const abs = containedPath(cwd, path);
+			if (!abs) {
+				refused.push({ path, reason: "escapes-cwd" });
+				continue;
+			}
+			const destRel = join(QUARANTINE_DIR, path);
+			mkdirSync(dirname(join(cwd, destRel)), { recursive: true });
+			renameSync(abs, join(cwd, destRel));
+			moved.push({ from: path, to: destRel });
+		}
+	} finally {
+		// Partial-progress write: on a mid-loop throw, every completed move is on
+		// disk before the failure propagates. Merge: current rounds' moves
+		// supersede a prior entry for the same `from`; everything else survives.
+		const kept = prior.moved.filter((p) => !moved.some((m) => m.from === p.from));
+		mkdirSync(join(cwd, VERDICT_DIR), { recursive: true });
+		writeFileSync(join(cwd, rel), JSON.stringify({ moved: [...kept, ...moved], refused }, null, 2), "utf-8");
+	}
+	return { kind: "json", artifacts: [{ handle: { kind: "fs", path: rel } }], data: { moved, refused } };
 };
 
 export type { ScopeVerdict };

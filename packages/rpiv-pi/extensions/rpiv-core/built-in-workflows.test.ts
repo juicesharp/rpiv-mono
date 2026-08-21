@@ -5900,7 +5900,7 @@ describe("build scope-quarantine (untracked-excess remedy arm)", () => {
 		const stage = findWorkflow("build").stages["scope-quarantine"];
 		if (!stage?.run) throw new Error("build scope-quarantine stage has no run function");
 		return stage.run as unknown as (ctx: { cwd: string; input?: undefined; state: RunView }) => {
-			data: { moved: { from: string; to: string }[] };
+			data: { moved: { from: string; to: string }[]; refused: { path: string; reason: string }[] };
 			artifacts: { handle: { kind: string; path: string } }[];
 		};
 	};
@@ -6002,28 +6002,77 @@ describe("build scope-quarantine (untracked-excess remedy arm)", () => {
 		expect(result.artifacts[0]?.handle.path).toBe(join(".rpiv/artifacts/verdicts", "scope-quarantine__p.json"));
 	});
 
-	it("never touches a listed path that is tracked (or otherwise not untracked) at move time", () => {
+	it("never touches a listed path that is tracked (or otherwise not untracked) at move time — recorded as refused", () => {
 		untrackedFile("packages/a/kept.ts", "v0\n");
 		execFileSync("git", ["add", "--", "packages/a/kept.ts"], { cwd: tmpDir, stdio: "ignore" });
 		const result = quarantineRun()({ cwd: tmpDir, input: undefined, state: stateOf(["packages/a/kept.ts"]) });
 		expect(result.data.moved).toEqual([]);
+		expect(result.data.refused).toEqual([{ path: "packages/a/kept.ts", reason: "not-untracked-at-move-time" }]);
 		expect(readFileSync(join(tmpDir, "packages/a/kept.ts"), "utf-8")).toBe("v0\n");
 	});
 
-	it("refuses a cwd-escaping finding path (containedPath guard) without throwing", () => {
+	it("refuses a cwd-escaping finding path (containedPath guard) without throwing — recorded as refused", () => {
 		// Cannot arise from `git status` (which reports repo-relative paths only) —
-		// belt-and-braces against a corrupt verdict JSON on the channel.
+		// belt-and-braces against a corrupt verdict JSON on the channel. The
+		// escaping path is refused by the untracked check first; either way it
+		// lands in `refused`, observable without re-running the floor.
 		const result = quarantineRun()({ cwd: tmpDir, input: undefined, state: stateOf(["../escape.txt"]) });
 		expect(result.data.moved).toEqual([]);
+		expect((result.data.refused as { path: string }[]).map((r) => r.path)).toEqual(["../escape.txt"]);
 	});
 
-	it("is idempotent — a re-run after the move finds nothing untracked and rewrites an empty manifest", () => {
+	it("is idempotent — a re-run finds nothing untracked, and the manifest KEEPS round 1's moves", () => {
 		untrackedFile(".tmp/scratch.mjs");
 		const state = stateOf([".tmp/scratch.mjs"]);
 		quarantineRun()({ cwd: tmpDir, input: undefined, state });
 		const second = quarantineRun()({ cwd: tmpDir, input: undefined, state });
 		expect(second.data.moved).toEqual([]);
 		expect(readFileSync(join(tmpDir, ".rpiv/tmp/scope-quarantine/.tmp/scratch.mjs"), "utf-8")).toBe("x\n");
+		// Merge-on-write: the re-run's empty round must not erase the recorded move.
+		const manifest = JSON.parse(
+			readFileSync(join(tmpDir, ".rpiv/artifacts/verdicts/scope-quarantine__p.json"), "utf-8"),
+		);
+		expect(manifest.moved).toEqual([
+			{ from: ".tmp/scratch.mjs", to: join(".rpiv/tmp/scope-quarantine", ".tmp/scratch.mjs") },
+		]);
+	});
+
+	// The manifest is validate's cross-round adjudication record: a validate-fix
+	// re-entry that quarantines AGAIN (round 2) must not erase round 1's moves —
+	// a round-2 missing-file diagnosis on a round-1-moved file consults this file.
+	it("merges across rounds — a second quarantine keeps the first round's move records", () => {
+		untrackedFile(".tmp/round-one.mjs");
+		quarantineRun()({ cwd: tmpDir, input: undefined, state: stateOf([".tmp/round-one.mjs"]) });
+		untrackedFile(".tmp/round-two.mjs");
+		quarantineRun()({ cwd: tmpDir, input: undefined, state: stateOf([".tmp/round-two.mjs"]) });
+		const manifest = JSON.parse(
+			readFileSync(join(tmpDir, ".rpiv/artifacts/verdicts/scope-quarantine__p.json"), "utf-8"),
+		);
+		expect(manifest.moved).toEqual([
+			{ from: ".tmp/round-one.mjs", to: join(".rpiv/tmp/scope-quarantine", ".tmp/round-one.mjs") },
+			{ from: ".tmp/round-two.mjs", to: join(".rpiv/tmp/scope-quarantine", ".tmp/round-two.mjs") },
+		]);
+	});
+
+	// Failure injection: the second move's destination directory is blocked by a
+	// pre-created FILE, so its mkdirSync throws mid-loop. The throw must
+	// propagate (fail-loud STOP on a real fs error), but the finally-write must
+	// land the FIRST move in the manifest — never moved-but-unrecorded files.
+	it("a mid-loop move failure still records completed moves in the manifest before failing", () => {
+		untrackedFile("a/one.mjs", "one\n");
+		untrackedFile("b/two.mjs", "two\n");
+		mkdirSync(join(tmpDir, ".rpiv/tmp/scope-quarantine"), { recursive: true });
+		writeFileSync(join(tmpDir, ".rpiv/tmp/scope-quarantine/b"), "blocker"); // file where a dir must go
+		expect(() =>
+			quarantineRun()({ cwd: tmpDir, input: undefined, state: stateOf(["a/one.mjs", "b/two.mjs"]) }),
+		).toThrow();
+		// First move completed and is recorded; second stayed in place.
+		expect(readFileSync(join(tmpDir, ".rpiv/tmp/scope-quarantine/a/one.mjs"), "utf-8")).toBe("one\n");
+		expect(readFileSync(join(tmpDir, "b/two.mjs"), "utf-8")).toBe("two\n");
+		const manifest = JSON.parse(
+			readFileSync(join(tmpDir, ".rpiv/artifacts/verdicts/scope-quarantine__p.json"), "utf-8"),
+		);
+		expect(manifest.moved).toEqual([{ from: "a/one.mjs", to: join(".rpiv/tmp/scope-quarantine", "a/one.mjs") }]);
 	});
 });
 

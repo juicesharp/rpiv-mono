@@ -122,9 +122,9 @@ For each phase in the plan:
    - Any failing finding inside the run's delta keeps normal behavior: the command fails, the verdict fails.
 
 7. **Adjudicate scope-floor findings** (only when `--scope` was provided):
-   - Read the verdict JSON. If `verdict` is `"pass"` or `findings` is empty, nothing to rule — move on.
+   - Read the verdict JSON. If `verdict` is `"pass"` or `findings` is empty, there are no floor findings to rule — but the quarantine-manifest check in the last bullet below **still applies**: a post-quarantine re-check threads a clean `pass` verdict, and the manifest is then the only surviving record of what the run's quarantine arm moved.
    - Each finding names a write outside the plan's declared write-set that the deterministic floor could not classify. Rule each one: an out-of-scope tracked write you can **explain** — a lockfile or generated artifact a declared phase's own commands produce, churn already listed in the `--baseline` paths — is a non-blocking note under `#### Potential Issues:`, quoting the explanation. A write that is **demonstrably the run's own in-goal work** — it implements a named phase's stated change and that phase's verification covers it — is also explained: record it under `#### Deviations from Plan:` as a plan deviation (the owning phase's `files:` is incomplete), non-blocking. An out-of-scope write you **cannot explain forces `verdict: fail`** and is reported as a scope violation (a phase escaped its declared `files:` and may have overwritten sibling work — or the write is not the run's work at all).
-   - Findings that mention quarantine name files the floor moved under `.rpiv/tmp/scope-quarantine/`: if a phase's verification fails on a missing file, check the quarantine manifest (`.rpiv/artifacts/verdicts/scope-quarantine__*.json`) — a load-bearing file landing there means its phase forgot to declare it in `files:`; report that as a plan deviation and rule `verdict: fail`.
+   - **Quarantine manifest — check unconditionally, whatever the verdict says.** Glob `.rpiv/artifacts/verdicts/scope-quarantine__*.json`. If a manifest exists, rule on **every** `moved` entry (the record accumulates across fix-loop rounds): each names a run-created undeclared file moved — never deleted — from `from` to `to` under `.rpiv/tmp/scope-quarantine/`. A moved **scratch** file (probe script, fixture, captured payload) is a non-blocking note. A moved file the **deliverable needs** — anything a phase's change references or a criterion exercises — means its phase forgot to declare it in `files:`: report it under `#### Deviations from Plan:`, name the quarantine path it can be restored from, and rule **`verdict: fail`** (the working tree is missing the file). Treat `refused` entries (paths the arm declined to move) the same way.
 
 8. **Check goal conformance** (only when `--goal` was provided):
    - Read the goal file fully — it is the user's brief in their own words.
@@ -149,8 +149,8 @@ For each phase in the plan:
    - `topic:` ← `"Validation of <plan topic>"`.
 
 2. **Determine verdict** (`status` is always `ready` — written once):
-   - `verdict: pass` — every phase marked `- [x]` in the plan is verified against the code, every automated command passes (excluding whole-plan failures ruled pre-existing/non-blocking per Step 2.6), no Deviations from Plan and no Potential Issues require action, every plan `risks:` flag ruled `pass`, and every scope-floor finding (Step 2.7) is explained.
-   - `verdict: fail` — any phase fails verification, any automated command fails (excluding whole-plan failures ruled pre-existing/non-blocking per Step 2.6), any Deviations / Potential Issues list items that require action, **any plan risk flag ruled `pass: false`** (a flagged risk shipped unaddressed), or **any scope-floor finding you could not explain** (Step 2.7).
+   - `verdict: pass` — every phase marked `- [x]` in the plan is verified against the code, every automated command passes (excluding whole-plan failures ruled pre-existing/non-blocking per Step 2.6), no Deviations from Plan and no Potential Issues require action, every plan `risks:` flag ruled `pass`, and every scope-floor finding and quarantine-manifest entry (Step 2.7) is explained.
+   - `verdict: fail` — any phase fails verification, any automated command fails (excluding whole-plan failures ruled pre-existing/non-blocking per Step 2.6), any Deviations / Potential Issues list items that require action, **any plan risk flag ruled `pass: false`** (a flagged risk shipped unaddressed), or **any scope-floor finding or quarantined/refused file you could not rule benign** (Step 2.7).
    - When the plan carried a `risks:` array, add a `risk_rulings: [{ id, pass }]` field to the report frontmatter — one ruling per flag.
 
 3. **Write the artifact** using the Write tool (no Edit — this skill writes once per run). Read `templates/validation.md`, fill every `{placeholder}` with the values determined above and the observations gathered in Step 2, apply the section-omission rules in the template (omit `#### Pattern Conformance:` and `#### Potential Issues:` entirely when empty; keep all other sections and emit `None — …` literals when empty), and Write the result to the target path.
@@ -205,7 +205,7 @@ If you were part of the implementation:
 Always verify:
 - [ ] Goal conformance checked when `--goal` was provided
 - [ ] Working-tree scope criteria judged against tree-minus-baseline when `--baseline` was provided
-- [ ] Scope-floor findings adjudicated (explained vs. blocking) when `--scope` was provided
+- [ ] Scope-floor findings adjudicated AND the quarantine manifest checked (unconditionally) when `--scope` was provided
 - [ ] Whole-plan command failures attributed (run's delta vs. pre-existing at base) before forcing the verdict
 - [ ] All phases marked complete are actually done
 - [ ] Automated tests pass
