@@ -1215,7 +1215,9 @@ describe("reconstructState", () => {
 // resumeWorkflow — end-to-end resume tests
 // ---------------------------------------------------------------------------
 
-const RPIV_ARTIFACT_PATTERN = /\.rpiv\/artifacts\/[\w.-]+\/[\w.-]+\.md/g;
+// Tempered in lockstep with rpiv-pi's production pattern (2136ef72): the class
+// refuses ".." in any segment so a prose-ellipsis path never collects.
+const RPIV_ARTIFACT_PATTERN = /\.rpiv\/artifacts\/(?:(?!\.\.)[\w.-])+\/(?:(?!\.\.)[\w.-])+\.md/g;
 
 /** Minimal outcome that scans assistant text for .rpiv/artifacts paths. */
 const artifactOutcome: import("../output-spec.js").Outcome<unknown, "artifact-md", Record<string, unknown>> = {

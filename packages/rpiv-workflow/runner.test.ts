@@ -64,7 +64,9 @@ const phaseHeadingsFanout: FanoutFn = ({ artifact, cwd }) => {
 // built by `wf()` below.
 // ---------------------------------------------------------------------------
 
-const RPIV_ARTIFACT_PATTERN = /\.rpiv\/artifacts\/[\w.-]+\/[\w.-]+\.md/g;
+// Tempered in lockstep with rpiv-pi's production pattern (2136ef72): the class
+// refuses ".." in any segment so a prose-ellipsis path never collects.
+const RPIV_ARTIFACT_PATTERN = /\.rpiv\/artifacts\/(?:(?!\.\.)[\w.-])+\/(?:(?!\.\.)[\w.-])+\.md/g;
 
 /** Minimal YAML-frontmatter parser for tests: `key: value` lines between `---` fences, scalar values only. */
 const parseFmTestOnly = (content: string): Record<string, unknown> => {
