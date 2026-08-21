@@ -22,8 +22,8 @@
  *             code-grade ×2–5, code-demote, code-confirm,
  *             code-snapshot, code-fix
  *                                                  (tier-scaled gate + fix loop)
- *   land    → implement, implement-scope-check, reconcile,
- *             validate, validate-fix, commit
+ *   land    → implement, implement-scope-check, scope-quarantine,
+ *             reconcile, validate, validate-fix, commit
  *
  * The runtime `default` (no config) cascades to the first registered workflow
  * (`build`); the landing also *showcases* `build` because it exercises
@@ -79,7 +79,7 @@ const WORKFLOWS: readonly WorkflowEntry[] = [
 		name: "build",
 		when: "A feature from a brief. Sliced, designed in parallel, gated before any code.",
 		arg: "“a Pi search extension backed by Ollama”",
-		stageCount: 31,
+		stageCount: 32,
 		stages: [
 			{ name: "capture" },
 			{ name: "slice", gate: true, fix: true },
@@ -95,19 +95,20 @@ const WORKFLOWS: readonly WorkflowEntry[] = [
 		name: "vet",
 		when: "A diff already exists, yours or a teammate's. Review it, loop a fix cycle until zero blockers remain.",
 		arg: "main..HEAD",
-		stageCount: 8,
+		stageCount: 9,
 		stages: [
 			{ name: "goal" },
 			{ name: "code-review" },
 			{ name: "blueprint" },
 			{ name: "implement", fanout: true },
 			{ name: "implement-scope-check" },
+			{ name: "scope-quarantine" },
 			{ name: "reconcile" },
 			{ name: "validate" },
 			{ name: "commit" },
 		],
 		// validate re-reviews; loops the fix cycle until approved.
-		loop: { from: 6, to: 1, label: "↺ until approved" },
+		loop: { from: 7, to: 1, label: "↺ until approved" },
 	},
 	{
 		name: "polish",

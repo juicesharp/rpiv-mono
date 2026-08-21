@@ -75,6 +75,7 @@ import {
 	SLICE_DESIGN_FANOUT,
 	SLICE_DIMENSION_FANOUT,
 	SYNTH_CLUSTER_FANOUT,
+	scopeQuarantine,
 	shipGatePasses,
 	shipVerdictOutcome,
 	sliceGatePasses,
@@ -248,6 +249,40 @@ const STITCH_SCRIPT = join(
 //       buildWorkflow follows (defined after its deps).
 // ===========================================================================
 
+/**
+ * Scope-floor gate factory — build and vet wire IDENTICAL tiered routes; a
+ * factory (not one shared EdgeFn) so each workflow's route-note symbol never
+ * aliases the other's. Branches on the floor's tiered `ScopeVerdict`:
+ * "pass" AND tracked "excess" continue to `reconcile` — the floor demotes
+ * tracked excess to downstream adjudication (build threads the verdict to
+ * validate via `--scope`; vet's review loop sees the whole diff) instead of
+ * halting, the citation-floor precedent (demote where a remedy or adjudicator
+ * exists). "untracked-only" takes the deterministic `scope-quarantine` arm.
+ * Anything else — a missing or corrupt verdict — terminates ("stop" with a
+ * route note): the integrity clause every de-halting change has preserved.
+ * A `match` cannot send two enum values to one target, hence `defineRoute`;
+ * `readsData: false` — the route consults the stage's published channel, not
+ * its projected output (matching the other deterministic-floor routes).
+ */
+const scopeFloorGate = (): EdgeFn => {
+	const route: EdgeFn = defineRoute(
+		["reconcile", "scope-quarantine", "stop"],
+		({ state }) => {
+			const verdict = (state.named["implement-scope-check"]?.at(-1)?.data as { verdict?: unknown } | undefined)
+				?.verdict;
+			if (verdict === "untracked-only") return "scope-quarantine";
+			if (verdict === "pass" || verdict === "excess") return "reconcile";
+			setRouteNote(
+				route,
+				`implement-scope-check verdict ${JSON.stringify(verdict ?? null)} is not a ScopeVerdict — terminated (integrity stop)`,
+			);
+			return "stop";
+		},
+		{ readsData: false },
+	);
+	return route;
+};
+
 const vetWorkflow = defineWorkflow({
 	name: "vet",
 	description:
@@ -284,9 +319,14 @@ const vetWorkflow = defineWorkflow({
 		// non-superseding fix plans, so the declared set is the UNION over the full
 		// `plans` history — `implementScopeCheckVet`). The `from` form suppresses
 		// the READS_DATA outputSchema lint, so no schema is declared, matching
-		// `slice-check`/`plan-cite-check`. Pass → validate; fail/missing → STOP
-		// (no fallback), mirroring build's `validate → commit` route.
+		// `slice-check`/`plan-cite-check`. Tiered route (scopeFloorGate): pass and
+		// tracked excess → reconcile (the review loop adjudicates the recorded
+		// findings), untracked-only → scope-quarantine, missing verdict → STOP.
 		"implement-scope-check": produces.script({ reads: ["plans", "goal"], run: implementScopeCheckVet }),
+		// Deterministic remedy arm for the untracked-only tier: move (never
+		// delete) run-created untracked excess under .rpiv/tmp/scope-quarantine/
+		// and publish a manifest, then re-enter the floor — see scopeQuarantine.
+		"scope-quarantine": produces.script({ reads: ["implement-scope-check"], run: scopeQuarantine }),
 		// Deterministic post-implement reconciliation (no LLM) — the SAME `reconcile`
 		// run-function as build (no vet twin): applies every `#### Reconciliation`
 		// directive (write-restricted to test files) + re-runs every per-phase
@@ -308,10 +348,17 @@ const vetWorkflow = defineWorkflow({
 		// validate; fail/missing terminates (STOP, no fallback). Byte-for-byte
 		// build's route.
 		implement: "implement-scope-check",
-		// Scope-check still gates onward, but now into `reconcile` (not validate):
-		// the coherence backstop runs after the write-set is proven. Pass ⇒
-		// reconcile; fail/missing ⇒ STOP (no fallback).
-		"implement-scope-check": match("verdict", { reconcile: "pass" }, { from: "implement-scope-check" }),
+		// Scope-check still gates onward into `reconcile` (not validate): the
+		// coherence backstop runs after the write-set is judged. Tiered route —
+		// see scopeFloorGate: pass/excess ⇒ reconcile, untracked-only ⇒ the
+		// quarantine arm, missing/corrupt verdict ⇒ STOP.
+		"implement-scope-check": scopeFloorGate(),
+		// Deterministic re-entry after the quarantine arm: a plain string edge
+		// (non-counted, mirroring build's validate-fix hop) with guaranteed
+		// progress — quarantined paths leave the dirty set, so the re-check
+		// either passes or reveals tracked drift. At most one quarantine hop per
+		// gate entry; no new loop budget.
+		"scope-quarantine": "implement-scope-check",
 		// Reconciliation gate. Pass ⇒ validate; a `fail` (non-test directive target /
 		// absent find / failed AV command) or a missing verdict ⇒ STOP (no fix arm —
 		// a reconciliation failure is plan-vs-tree drift the agent reconciles manually).
@@ -515,12 +562,17 @@ const buildWorkflow = defineWorkflow({
 		// Lane-level scope floor — the structural backstop beneath the quality
 		// gates. After the (now concurrent) implement lane lands, judge the working
 		// tree's dirty set against the plan's declared write-set: any undeclared
-		// write is a phase that escaped the upstream write-scope discipline and
-		// raced on a sibling's in-flight edit. Fail ⇒ STOP (no fix arm). The `from`
-		// form suppresses the READS_DATA outputSchema lint, so no schema is declared
-		// (matching slice-check/plan-cite-check). Reads `goal` for the run-start
-		// baseline that subtracts pre-existing dirt.
+		// write is a phase that escaped the upstream write-scope discipline. Tiered
+		// route (scopeFloorGate): untracked-only excess ⇒ the deterministic
+		// quarantine arm; tracked excess ⇒ recorded and adjudicated by validate
+		// (threaded via --scope); missing verdict ⇒ STOP. No schema is declared
+		// (matching slice-check/plan-cite-check — the route reads the channel).
+		// Reads `goal` for the run-start baseline that subtracts pre-existing dirt.
 		"implement-scope-check": produces.script({ reads: ["plans", "goal"], run: implementScopeCheck }),
+		// Deterministic remedy arm for the untracked-only tier: move (never
+		// delete) run-created untracked excess under .rpiv/tmp/scope-quarantine/
+		// and publish a manifest, then re-enter the floor — see scopeQuarantine.
+		"scope-quarantine": produces.script({ reads: ["implement-scope-check"], run: scopeQuarantine }),
 		// Deterministic post-implement reconciliation (no LLM): applies every
 		// `#### Reconciliation` directive (find→replace, write-restricted to test
 		// files) and re-runs every per-phase `#### Automated Verification:`
@@ -676,16 +728,21 @@ const buildWorkflow = defineWorkflow({
 		"code-snapshot": "code-fix",
 		"code-fix": "code-cite-check",
 		implement: "implement-scope-check",
-		// Lane-level scope floor gate. Pass ⇒ reconcile (the coherence backstop
-		// runs after the write-set is proven). A `fail` (undeclared write) or a
-		// missing verdict routes to STOP — no fix arm, because a scope violation is
-		// plan-vs-tree drift the agent must reconcile manually (a phase wrote
-		// outside its declared set), not a defect an auto-fix loop can repair. Safe
-		// by construction: the sole path onward is an explicit `verdict: "pass"`.
-		// Sourced from the scope-check's published verdict channel via the `from`
-		// form (the stage key for an outcome-less `produces.script`, per
-		// `resolvePublishName`), which suppresses the READS_DATA outputSchema lint.
-		"implement-scope-check": match("verdict", { reconcile: "pass" }, { from: "implement-scope-check" }),
+		// Lane-level scope floor gate — tiered, see scopeFloorGate: pass AND
+		// tracked excess ⇒ reconcile (excess findings ride the verdict channel and
+		// validate adjudicates them via the --scope thread — the citation floor's
+		// demote-and-adjudicate precedent); untracked-only ⇒ the deterministic
+		// scope-quarantine arm; a missing/corrupt verdict ⇒ STOP (integrity
+		// clause). Sourced from the scope-check's published verdict channel (the
+		// stage key for an outcome-less `produces.script`, per
+		// `resolvePublishName`); `readsData: false` suppresses the outputSchema lint.
+		"implement-scope-check": scopeFloorGate(),
+		// Deterministic re-entry after the quarantine arm: a plain string edge
+		// (non-counted, mirroring validate-fix's hop) with guaranteed progress —
+		// quarantined paths leave the dirty set, so the re-check either passes or
+		// reveals tracked drift. At most one quarantine hop per gate entry; no new
+		// loop budget.
+		"scope-quarantine": "implement-scope-check",
 		// Reconciliation gate. Pass ⇒ validate; a `fail` (non-test directive target
 		// / absent find / failed AV command) or a missing verdict ⇒ STOP (no fix
 		// arm — a reconciliation failure is plan-vs-tree drift the agent reconciles
@@ -868,10 +925,14 @@ const shipWorkflow = defineWorkflow({
 		"plan-cite-check": shipCiteGate,
 		grade: shipGradeGate,
 		implement: "implement-scope-check",
-		// Scope floor gate — build's route verbatim: the sole path onward is an
-		// explicit `verdict: "pass"`; a fail (undeclared write) or a missing
-		// verdict is terminal STOP. Sourced from the stage's own channel via the
-		// `from` form (suppresses the READS_DATA outputSchema lint).
+		// Scope floor gate — DELIBERATELY NOT build/vet's tiered scopeFloorGate:
+		// ship's identity is stop-on-fail with no fix loops, so the sole path
+		// onward stays an explicit `verdict: "pass"`. The floor's tiered
+		// "untracked-only"/"excess" verdicts (which build quarantines/adjudicates)
+		// are terminal here like any other red gate — the match's no-branch note
+		// names the value, and the agent hand-repairs and re-invokes. Sourced from
+		// the stage's own channel via the `from` form (suppresses the READS_DATA
+		// outputSchema lint).
 		"implement-scope-check": match("verdict", { reconcile: "pass" }, { from: "implement-scope-check" }),
 		// Reconciliation gate — build's route verbatim: pass ⇒ validate;
 		// fail/missing ⇒ STOP (plan-vs-tree drift the agent reconciles manually).

@@ -1,13 +1,15 @@
 /**
  * The lane scope floors: build's latest-plan variant and vet's full-history
- * union variant, sharing one scope-verdict envelope.
+ * union variant, sharing one scope-verdict envelope — plus the deterministic
+ * `scope-quarantine` remedy arm the untracked-only verdict routes to.
  */
-import { mkdirSync, writeFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { mkdirSync, renameSync, writeFileSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { handleToString, type Output, type ScriptContext } from "@juicesharp/rpiv-workflow/registration";
-import { gitDirtyPaths, goalBaselinePath, readGoalBaseline, scopeExcess } from "./goal-baseline.js";
+import { gitDirtyEntries, goalBaselinePath, readGoalBaseline, scopeExcess } from "./goal-baseline.js";
 import { phaseFiles, planPhaseRecords, withTestTwins } from "./plan-phases.js";
 import {
+	containedPath,
 	type FsArtifact,
 	haltPreflight,
 	latestFsArtifact,
@@ -65,27 +67,52 @@ const unionDeclaredWriteSet = (
 };
 
 /**
+ * The scope floor's routing verdict, tiered by what a deterministic check can
+ * actually know about each excess path (mirroring the citation floor's
+ * advisory tiering — demote where a remedy or adjudicator exists, halt only on
+ * data integrity):
+ *   - "pass"           — no excess. Onward to reconcile.
+ *   - "untracked-only" — EVERY excess path is a run-created untracked file
+ *     (`??`): provably not in the run-start baseline, owned by no phase, and
+ *     movable without losing a byte. Routed to the deterministic
+ *     `scope-quarantine` arm, then re-checked.
+ *   - "excess"         — at least one TRACKED file was modified outside the
+ *     declared write-set. The floor cannot distinguish benign churn (a
+ *     lockfile touched by an install, a regenerated snapshot) from a real
+ *     cross-phase stomp, so it no longer halts: the run continues to
+ *     reconcile/validate and VALIDATE adjudicates the recorded findings (the
+ *     `--scope` thread on `VALIDATE_GOAL_PROMPT` — the `--cite-check`
+ *     pattern), forcing `verdict: fail` on any write it cannot explain.
+ * A missing/unexpected verdict still terminates at the route (STOP) — the
+ * same integrity clause every de-halting change has preserved.
+ */
+type ScopeVerdict = "pass" | "untracked-only" | "excess";
+
+/**
  * Shared scope-verdict envelope for the two lane scope floors: the
- * `{ dimension: "scope" }` data shape (carrying BOTH `pass` and the `verdict`
- * enum the `match("verdict", …)` route reads), the basename-keyed `VERDICT_DIR`
- * write, and the published-output return shape. Basename-keyed, NOT
- * round-stamped (unlike grade's timestamped slug): each fix-loop round
+ * `{ dimension: "scope" }` data shape (carrying BOTH `pass` and the tiered
+ * `verdict` enum the route + validate adjudication read), the basename-keyed
+ * `VERDICT_DIR` write, and the published-output return shape. Basename-keyed,
+ * NOT round-stamped (unlike grade's timestamped slug): each fix-loop round
  * overwrites the file — the route reads the accumulating channel, and on disk
  * only the latest round's scope verdict matters; round-stamp here if a consumer
- * ever needs the history.
+ * ever needs the history. Severity mirrors the tier ("medium" untracked-only,
+ * "high" tracked excess) for TRAIL LEGIBILITY ONLY — no consumer folds it:
+ * routing reads `verdict`, and validate's adjudication reads `findings`.
  */
 const writeScopeVerdict = (
 	artifact: FsArtifact,
 	findings: { detail: string; where: string }[],
-	pass: boolean,
+	verdict: ScopeVerdict,
 	cwd: string,
 ): Omit<Output, "meta"> => {
+	const pass = verdict === "pass";
 	const data = {
 		dimension: "scope",
 		pass,
-		verdict: pass ? "pass" : "fail",
+		verdict,
 		score: pass ? VERDICT_PASS_SCORE : VERDICT_FAIL_SCORE,
-		severity: pass ? "none" : "high",
+		severity: pass ? "none" : verdict === "untracked-only" ? "medium" : "high",
 		artifact: handleToString(artifact.handle),
 		findings,
 		feedback: pass ? "" : findings.map((f) => f.detail).join(" "),
@@ -97,6 +124,29 @@ const writeScopeVerdict = (
 };
 
 /**
+ * Partition the excess set by git's own tracking state and fold it to the
+ * tiered verdict: `??` is the only status code whose content cannot have
+ * overwritten anything a phase owns, so an all-untracked excess is the
+ * deterministically-remediable class and ANY tracked path escalates the whole
+ * verdict to "excess" (one stomp taints the tree; quarantining the untracked
+ * remainder wouldn't make it judgeable-clean).
+ */
+const foldScopeVerdict = (excess: readonly string[], untracked: ReadonlySet<string>): ScopeVerdict =>
+	excess.length === 0 ? "pass" : excess.every((p) => untracked.has(p)) ? "untracked-only" : "excess";
+
+/** Per-path finding for the tiered verdict. The floor is workflow-agnostic, so
+ *  each detail describes the TIER (what the path is and why it was flagged),
+ *  never the route — what happens next (quarantine arm, validate adjudication,
+ *  or a loop-less workflow's terminal stop) is the wiring workflow's edge, and
+ *  baking a route into text persisted on disk would lie under any other wiring. */
+const scopeFinding = (path: string, untracked: boolean): { detail: string; where: string } => ({
+	detail: untracked
+		? `Run-created untracked file ${path} outside the plan's declared write-set (the union of every phase's 'files:'). Untracked excess is the deterministically-remediable tier: a workflow wiring the scope-quarantine arm MOVES it (never deletes) under .rpiv/tmp/scope-quarantine/ with a manifest naming the destination — a load-bearing file landing there means its phase forgot to declare it in 'files:'. In a loop-less workflow this verdict is terminal.`
+		: `Undeclared write ${path} — a TRACKED file is dirty outside the plan's declared write-set (the union of every phase's 'files:'). The implement lane runs sibling phases concurrently in one tree, so a phase that wrote outside its 'files:' may have stepped on a sibling's in-flight edit — or this is benign churn (a lockfile, a regenerated artifact) a declared phase's own commands produced. A deterministic floor cannot tell these apart, so the finding is recorded for the wiring workflow's adjudicator (build threads it to validate via --scope; vet's review loop sees the whole diff); an out-of-scope write the adjudicator cannot explain blocks. In a loop-less workflow this verdict is terminal.`,
+	where: path,
+});
+
+/**
  * Deterministic lane-level scope floor — the structural backstop beneath the
  * LLM quality gates. After build's `implement` lane runs (now dep-gated and, as
  * of this phase's unpin, concurrent up to the host cap), this checks the working
@@ -104,10 +154,11 @@ const writeScopeVerdict = (
  * phase's `files:`, twin-expanded via `withTestTwins`): any dirty path the run
  * wrote that is NOT in `declared`, NOT
  * pre-existing at the run-start baseline, and NOT under a bookkeeping tree is a
- * scope violation — a phase escaped the upstream write-scope discipline and
- * rewrote the wider tree, corrupting (or about to corrupt) a concurrent
- * sibling's in-flight edit. Fail ⇒ STOP (no fix arm): a scope violation is a
- * plan-vs-tree drift the agent must reconcile manually, not an auto-fix loop.
+ * scope violation — a phase escaped the upstream write-scope discipline. The
+ * floor no longer halts on its own findings (see `ScopeVerdict`): untracked
+ * excess routes to the deterministic `scope-quarantine` arm; tracked excess is
+ * recorded and adjudicated downstream by validate. Only a missing/unexpected
+ * verdict remains terminal at the route.
  *
  * Reads the plan with the SAME inline shape `planCitationCheck(who)` uses —
  * `latestFsArtifact(state,"plans")` + `readArtifactFile` + `planPhaseRecords` +
@@ -121,17 +172,17 @@ const writeScopeVerdict = (
  * Emits one `{ dimension: "scope" }` verdict, basename-keyed off the plan ⇒
  * idempotent across the build loop.
  *
- * `data` carries BOTH a `pass` boolean AND a `verdict` enum ("pass" | "fail")
- * that always agree (`verdict: pass ? "pass" : "fail"`). The route is the
- * established `match("verdict", …)` gate idiom (mirrors `validate`'s own route:
- * `match("verdict", { commit: "pass" }, …)` — no-match ⇒ STOP, the same fail
- * behavior). It is deliberately NOT the `defineRoute`/`allDimensionsPass`
- * pattern the citation floors use: `allDimensionsPass` applies a severity floor
- * (pass === true || severity low/none), so a failing scope check rated low
- * severity would silently pass the gate — the exact escape class the lane floor
- * exists to catch. The `from` form suppresses the `READS_DATA` outputSchema lint,
- * so no schema is declared on the script stage (matching `slice-check`/
- * `plan-cite-check`).
+ * `data` carries a `pass` boolean (true only on `verdict: "pass"`) AND the
+ * tiered `verdict` enum (`ScopeVerdict`) the route branches on. The route is a
+ * `defineRoute` over the stage's own channel (a `match` cannot send two enum
+ * values — "pass" and "excess" — to the same `reconcile` target): "pass" and
+ * "excess" continue to reconcile, "untracked-only" takes the quarantine arm,
+ * and anything else (missing/corrupt verdict) returns STOP — the integrity
+ * clause every de-halting change has preserved. It is deliberately NOT the
+ * `allDimensionsPass` severity-floor fold: the tier is explicit in the enum,
+ * never inferred from severity. `readsData: false` (the route consults the
+ * channel, not the projected output), so no schema is declared on the script
+ * stage (matching `slice-check`/`plan-cite-check`).
  */
 const implementScopeCheck = ({ state, cwd }: ScriptContext): Omit<Output, "meta"> => {
 	const latest = latestFsArtifact(state, "plans");
@@ -153,14 +204,16 @@ const implementScopeCheck = ({ state, cwd }: ScriptContext): Omit<Output, "meta"
 	// Run-start baseline (goal channel, role "baseline") + current dirty set —
 	// both best-effort (absent / non-repo ⇒ `[]`); see the two helpers' docs.
 	const baseline = readGoalBaseline(goalBaselinePath(state), cwd);
-	const dirty = gitDirtyPaths(cwd);
+	const entries = gitDirtyEntries(cwd);
 
-	const excess = scopeExcess(dirty, baseline, declared);
-	const findings = excess.map((path) => ({
-		detail: `Undeclared write ${path} — the working tree is dirty outside the plan's declared write-set (the union of every phase's 'files:'). The implement lane runs sibling phases concurrently in one tree, so a phase that wrote outside its 'files:' has stepped on (or is about to step on) a sibling's in-flight edit. Reconcile the phase's 'files:' with what it actually writes, or move the write into the owning phase.`,
-		where: path,
-	}));
-	return writeScopeVerdict(latest as FsArtifact, findings, findings.length === 0, cwd);
+	const excess = scopeExcess(
+		entries.map((e) => e.path),
+		baseline,
+		declared,
+	);
+	const untracked = new Set(entries.filter((e) => e.xy === "??").map((e) => e.path));
+	const findings = excess.map((path) => scopeFinding(path, untracked.has(path)));
+	return writeScopeVerdict(latest as FsArtifact, findings, foldScopeVerdict(excess, untracked), cwd);
 };
 
 /**
@@ -174,9 +227,11 @@ const implementScopeCheck = ({ state, cwd }: ScriptContext): Omit<Output, "meta"
  * a prior iteration's plan legitimately wrote is not excess against the latest
  * plan. The latest plan's handle keys the basename-keyed verdict path
  * (idempotent across fix rounds) and the `artifact` field. Everything else —
- * baseline subtraction, dirty-set read, and the shared `dimension: "scope"`
- * verdict envelope via `writeScopeVerdict` — is build's floor verbatim: pass ⇒
- * reconcile; a `fail` or missing verdict ⇒ STOP (no fix arm).
+ * baseline subtraction, dirty-set read, the tiered `ScopeVerdict` fold, and
+ * the shared `dimension: "scope"` verdict envelope via `writeScopeVerdict` —
+ * is build's floor verbatim: pass/excess ⇒ reconcile (excess adjudicated by
+ * the review loop, which sees the whole diff), untracked-only ⇒ quarantine,
+ * missing verdict ⇒ STOP.
  */
 const implementScopeCheckVet = ({ state, cwd }: ScriptContext): Omit<Output, "meta"> => {
 	// Declared set = UNION of `phaseFiles` over EVERY non-failed plan on the channel.
@@ -194,18 +249,74 @@ const implementScopeCheckVet = ({ state, cwd }: ScriptContext): Omit<Output, "me
 	// Run-start baseline (goal channel, role "baseline") + current dirty set —
 	// both best-effort (absent / non-repo ⇒ `[]`); see the two helpers' docs.
 	const baseline = readGoalBaseline(goalBaselinePath(state), cwd);
-	const dirty = gitDirtyPaths(cwd);
+	const entries = gitDirtyEntries(cwd);
 
 	// Shared core: subtract the run's bookkeeping dirs (`.rpiv/`,
 	// `thoughts/`) and the run-start baseline; empty-`declared` ⇒ `[]` (degradation
 	// ⇒ inert floor — a fully `files:`-less plan never false-fails). Twin-expanded
 	// like build's floor: a declared file carries its co-located test twin.
-	const excess = scopeExcess(dirty, baseline, withTestTwins([...declared]));
-	const findings = excess.map((p) => ({
-		detail: `${p}: written by the implement lane but not declared in any plan iteration's \`files:\` set. A phase may write only its declared paths (the write-scope rule); declare the path in the owning phase's \`files:\` or drop the write.`,
-		where: p,
-	}));
-	return writeScopeVerdict(latest, findings, findings.length === 0, cwd);
+	const excess = scopeExcess(
+		entries.map((e) => e.path),
+		baseline,
+		withTestTwins([...declared]),
+	);
+	const untracked = new Set(entries.filter((e) => e.xy === "??").map((e) => e.path));
+	const findings = excess.map((p) => scopeFinding(p, untracked.has(p)));
+	return writeScopeVerdict(latest, findings, foldScopeVerdict(excess, untracked), cwd);
 };
 
-export { implementScopeCheck, implementScopeCheckVet };
+/** Bookkeeping home for quarantined excess — under `.rpiv/`, so already exempt
+ *  from the floor (`SCOPE_BOOKKEEPING_DIRS`) and outside every plan's write-set. */
+const QUARANTINE_DIR = ".rpiv/tmp/scope-quarantine";
+
+/**
+ * Deterministic remedy arm for an "untracked-only" scope verdict: MOVE (never
+ * delete) each excess path into `.rpiv/tmp/scope-quarantine/<path>`, preserving
+ * relative structure, and publish a manifest. Restorable and audited: nothing
+ * is lost, and if a quarantined file was load-bearing, validate fails on the
+ * missing file with the manifest naming where it went. The edge back to
+ * `implement-scope-check` is a plain string hop (non-counted, mirroring
+ * `validate-fix → implement-scope-check`) with guaranteed progress: quarantined
+ * paths leave the dirty set, so the re-check either passes or reveals tracked
+ * drift — at most one quarantine hop per gate entry, no new loop budget.
+ *
+ * Fail-closed: a path that escapes `cwd` is refused via `containedPath` (left
+ * in place — the re-check re-judges it), a path no longer untracked at move
+ * time is never touched, and a failing rename THROWS (the stage fails, the run
+ * stops with the real fs error) rather than ping-ponging the gate on a stuck
+ * path.
+ */
+const scopeQuarantine = ({ state, cwd }: ScriptContext): Omit<Output, "meta"> => {
+	const verdict = state.named["implement-scope-check"]?.at(-1)?.data as
+		| { findings?: { where?: unknown }[] }
+		| undefined;
+	const listed = (verdict?.findings ?? []).map((f) => f.where).filter((w): w is string => typeof w === "string");
+	// Fresh status read — move ONLY what is untracked RIGHT NOW. A path that got
+	// tracked/settled since the check is never touched (the re-check re-judges it).
+	const untracked = new Set(
+		gitDirtyEntries(cwd)
+			.filter((e) => e.xy === "??")
+			.map((e) => e.path),
+	);
+	const moved: { from: string; to: string }[] = [];
+	for (const path of listed) {
+		if (!untracked.has(path)) continue;
+		const abs = containedPath(cwd, path);
+		if (!abs) continue; // escapes cwd — refuse; the re-check surfaces it again
+		const destRel = join(QUARANTINE_DIR, path);
+		mkdirSync(dirname(join(cwd, destRel)), { recursive: true });
+		renameSync(abs, join(cwd, destRel));
+		moved.push({ from: path, to: destRel });
+	}
+	// Manifest basename-keyed off the plan, like the scope verdict — idempotent
+	// per loop round; the trail (and validate's missing-file diagnosis) reads it.
+	const plan = latestFsArtifact(state, "plans");
+	const key = plan?.handle.kind === "fs" ? basename(plan.handle.path, ".md") : "no-plan";
+	const rel = join(VERDICT_DIR, `scope-quarantine__${key}.json`);
+	mkdirSync(join(cwd, VERDICT_DIR), { recursive: true });
+	writeFileSync(join(cwd, rel), JSON.stringify({ moved }, null, 2), "utf-8");
+	return { kind: "json", artifacts: [{ handle: { kind: "fs", path: rel } }], data: { moved } };
+};
+
+export type { ScopeVerdict };
+export { implementScopeCheck, implementScopeCheckVet, scopeQuarantine };

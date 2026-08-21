@@ -63,19 +63,32 @@ const captureGoal = ({ state, cwd }: ScriptContext): Omit<Output, "meta"> => {
 	};
 };
 
-/** Parse `git status --porcelain`/`--short` output into dirty paths. Strips the
- *  2-char `XY` status prefix and resolves rename targets (`XY old -> new` → `new`),
- *  so the two output forms (`--porcelain`, `--short`) normalize identically. A
- *  porcelain line is always `XY <path>` or `XY <old> -> <new>`; blank lines drop. */
-const parseGitStatusPaths = (out: string): string[] =>
+/** One parsed `git status --porcelain`/`--short` line: the 2-char `XY` status
+ *  code plus the resolved path. `xy === "??"` is the untracked class — the only
+ *  code whose content cannot have overwritten anything a phase owns, which is
+ *  what the scope floor's quarantine partition keys on. */
+interface GitStatusEntry {
+	xy: string;
+	path: string;
+}
+
+/** Parse `git status --porcelain`/`--short` output into `{ xy, path }` entries.
+ *  Keeps the 2-char `XY` status code and resolves rename targets
+ *  (`XY old -> new` → `new`), so the two output forms (`--porcelain`, `--short`)
+ *  normalize identically. A porcelain line is always `XY <path>` or
+ *  `XY <old> -> <new>`; blank lines drop. */
+const parseGitStatusEntries = (out: string): GitStatusEntry[] =>
 	out
 		.split("\n")
 		.filter((l) => l.trim() !== "")
 		.map((l) => {
 			const rest = l.slice(3).trim();
 			const arrow = rest.indexOf(" -> ");
-			return arrow >= 0 ? rest.slice(arrow + 4).trim() : rest;
+			return { xy: l.slice(0, 2), path: arrow >= 0 ? rest.slice(arrow + 4).trim() : rest };
 		});
+
+/** Path-only projection of `parseGitStatusEntries` — the baseline writer's shape. */
+const parseGitStatusPaths = (out: string): string[] => parseGitStatusEntries(out).map((e) => e.path);
 
 /** Record the paths dirty before the run to `rel` (best-effort; empty on any git failure). */
 const writeCommitBaseline = (cwd: string, rel: string): void => {
@@ -127,24 +140,25 @@ const readGoalBaseline = (path: string | undefined, cwd: string): string[] => {
 };
 
 /**
- * Current dirty-path set via `git status --porcelain` (rename targets resolved by
- * the shared parser). Best-effort — `[]` on a non-repo / git-missing tree (the
- * scope floor degrades to unguarded rather than failing a non-repo run; the
- * catch treats that as a supported silent degrade). stdio: stderr is ignored,
- * otherwise git's "fatal: not a git repository" leaks to the parent's stderr
- * despite the catch. `-uall` enumerates untracked files individually (a collapsed
- * `newdir/` entry can never string-match a declared `files:` path) — the
- * baseline writer and both scope checks MUST share this flag or their path
- * universes diverge.
+ * Current dirty set via `git status --porcelain`, as `{ xy, path }` entries
+ * (rename targets resolved by the shared parser) — the scope floors read the
+ * paths AND partition on the `??` untracked code. Best-effort — `[]` on a
+ * non-repo / git-missing tree (the scope floor degrades to unguarded rather
+ * than failing a non-repo run; the catch treats that as a supported silent
+ * degrade). stdio: stderr is ignored, otherwise git's "fatal: not a git
+ * repository" leaks to the parent's stderr despite the catch. `-uall`
+ * enumerates untracked files individually (a collapsed `newdir/` entry can
+ * never string-match a declared `files:` path) — the baseline writer and both
+ * scope checks MUST share this flag or their path universes diverge.
  */
-const gitDirtyPaths = (cwd: string): string[] => {
+const gitDirtyEntries = (cwd: string): GitStatusEntry[] => {
 	try {
 		const out = execFileSync("git", ["status", "--porcelain", "--untracked-files=all"], {
 			cwd,
 			encoding: "utf-8",
 			stdio: ["ignore", "pipe", "ignore"],
 		});
-		return parseGitStatusPaths(out);
+		return parseGitStatusEntries(out);
 	} catch {
 		return [];
 	}
@@ -207,6 +221,12 @@ const scopeExcess = (dirty: readonly string[], baseline: readonly string[], decl
  * on disk before stage one — the same fence the commit dispatch applies. The
  * path comes off the goal channel (this run's snapshot, replayed from the
  * JSONL trail on resume), never a shared file another run could overwrite.
+ *
+ * `--scope` threads the scope floor's latest verdict JSON so validate
+ * ADJUDICATES tracked-excess findings the floor demoted instead of halting on
+ * (the `--cite-check` pattern: the deterministic floor produces evidence, the
+ * LLM judge rules). Absent when the floor never ran or found nothing — the
+ * skill treats a missing flag as no scope findings to rule on.
  */
 const VALIDATE_GOAL_PROMPT: PromptFn = ({ state }) => {
 	const parts = ["/skill:validate"];
@@ -216,6 +236,8 @@ const VALIDATE_GOAL_PROMPT: PromptFn = ({ state }) => {
 	if (goal?.handle.kind === "fs") parts.push(`--goal ${handleToString(goal.handle)}`);
 	const baseline = goalBaselinePath(state);
 	if (baseline) parts.push(`--baseline ${baseline}`);
+	const scope = latestFsArtifact(state, "implement-scope-check");
+	if (scope?.handle.kind === "fs") parts.push(`--scope ${handleToString(scope.handle)}`);
 	return parts.join(" ");
 };
 
@@ -233,10 +255,11 @@ const COMMIT_BASELINE_PROMPT: PromptFn = ({ state }) => {
 	return baseline ? `/skill:commit --baseline ${baseline}` : "/skill:commit";
 };
 
+export type { GitStatusEntry };
 export {
 	COMMIT_BASELINE_PROMPT,
 	captureGoal,
-	gitDirtyPaths,
+	gitDirtyEntries,
 	goalBaselinePath,
 	readGoalBaseline,
 	scopeExcess,

@@ -18,7 +18,16 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { appendFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+	appendFileSync,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { createMockSessionChain, mockAssistantMessage } from "@juicesharp/rpiv-test-utils";
@@ -923,6 +932,7 @@ describe("vet workflow", () => {
 				"blueprint",
 				"implement",
 				"implement-scope-check",
+				"scope-quarantine",
 				"reconcile",
 				"validate",
 				"commit",
@@ -949,9 +959,11 @@ describe("vet workflow", () => {
 			expect(edges.goal).toBe("code-review");
 			expect(edges.blueprint).toBe("implement");
 			expect(edges.implement).toBe("implement-scope-check");
-			// The scope-check route is byte-for-byte Phase 3's build route (the `from`
-			// form suppresses the outputSchema lint → no schema on the script stage).
+			// The scope-check route is the shared tiered scopeFloorGate (readsData:
+			// false suppresses the outputSchema lint → no schema on the script stage).
 			expect(wf.stages["implement-scope-check"]?.outputSchema).toBeUndefined();
+			// Quarantine's re-entry hop is a plain string edge (non-counted).
+			expect(edges["scope-quarantine"]).toBe("implement-scope-check");
 			expect(edges.validate).toBe("code-review"); // backward review-fix loop INTACT
 			expect(edges.commit).toBe("stop");
 		});
@@ -5498,8 +5510,27 @@ describe("build validate + commit dispatch thread the run-start baseline", () =>
 			input: undefined,
 			state: { named: { plans, goal: [goalWithBaseline] } } as unknown as RunView,
 		});
+		// Exact match doubles as the --scope OMISSION proof: no scope channel in
+		// this state, so no --scope flag may appear.
 		expect(dispatch).toBe(
 			"/skill:validate .rpiv/artifacts/plans/p.md --goal .rpiv/artifacts/goal/goal-t.md --baseline .rpiv/artifacts/goal/baseline-t.json",
+		);
+	});
+
+	it("validate appends --scope with the scope floor's recorded verdict path", async () => {
+		// The demote-and-adjudicate tier rests on this thread: a tracked-excess
+		// verdict reaches validate ONLY via --scope, so the flag must ride the
+		// dispatch whenever the floor has published.
+		const scopeVerdict = out([{ handle: fsHandle(".rpiv/artifacts/verdicts/implement-scope-check__p.json") }]);
+		const dispatch = await promptOf("validate")({
+			cwd: "/repo",
+			input: undefined,
+			state: {
+				named: { plans, goal: [goalWithBaseline], "implement-scope-check": [scopeVerdict] },
+			} as unknown as RunView,
+		});
+		expect(dispatch).toBe(
+			"/skill:validate .rpiv/artifacts/plans/p.md --goal .rpiv/artifacts/goal/goal-t.md --baseline .rpiv/artifacts/goal/baseline-t.json --scope .rpiv/artifacts/verdicts/implement-scope-check__p.json",
 		);
 	});
 
@@ -5633,9 +5664,10 @@ describe("build implement-scope-check (lane-level scope floor)", () => {
 			[],
 		);
 		dirty("packages/a/foo.ts"); // declared
-		dirty("packages/a/stray.ts"); // undeclared → excess
+		dirty("packages/a/stray.ts"); // undeclared, staged (tracked) → excess tier
 		const data = scopeRun()({ cwd: tmpDir, input: undefined, state }).data;
 		expect(data.pass).toBe(false);
+		expect(data.verdict).toBe("excess"); // tracked → demoted-and-adjudicated tier
 		expect(data.severity).toBe("high");
 		expect(String(data.feedback)).toMatch(/packages\/a\/stray\.ts/);
 		expect(String(data.feedback)).toMatch(/Undeclared write/);
@@ -5716,7 +5748,32 @@ describe("build implement-scope-check (lane-level scope floor)", () => {
 		dirtyUntracked("pkgs/skills/x/_helpers/stray.mjs"); // undeclared → excess
 		const data = scopeRun()({ cwd: tmpDir, input: undefined, state }).data;
 		expect(data.pass).toBe(false);
+		// All excess is untracked (`??`) → the deterministically-remediable tier.
+		expect(data.verdict).toBe("untracked-only");
+		expect(data.severity).toBe("medium");
 		expect(String(data.feedback)).toMatch(/pkgs\/skills\/x\/_helpers\/stray\.mjs/);
+	});
+
+	// Regression: run 2026-08-20_18-10-39-17e7. A validate-fix round left two
+	// scratch scripts in an untracked `.tmp/` and the floor's terminal fail killed
+	// a functionally green 5-hour run. The tier now routes that shape to the
+	// quarantine arm instead; ANY tracked excess still escalates the whole verdict
+	// (one stomp taints the tree — quarantining the untracked remainder wouldn't
+	// make it judgeable-clean).
+	it("mixed tracked + untracked excess folds to the tracked tier (excess)", () => {
+		const state = seed(
+			".rpiv/artifacts/plans/p.md",
+			plan(['"packages/a/foo.ts"'], 1),
+			".rpiv/artifacts/goal/baseline-t.json",
+			[],
+		);
+		dirty("packages/a/stray.ts"); // tracked excess
+		dirtyUntracked(".tmp/check-c3r2.mjs"); // untracked excess
+		const data = scopeRun()({ cwd: tmpDir, input: undefined, state }).data;
+		expect(data.verdict).toBe("excess");
+		expect(data.severity).toBe("high");
+		const wheres = (data.findings as { where: string }[]).map((f) => f.where).sort();
+		expect(wheres).toEqual([".tmp/check-c3r2.mjs", "packages/a/stray.ts"]);
 	});
 
 	it("subtracts run-start baseline paths (pre-existing dirt is not the run's fault)", () => {
@@ -5823,6 +5880,153 @@ describe("build implement-scope-check (lane-level scope floor)", () => {
 	});
 });
 
+// ---------------------------------------------------------------------------
+// build scope-quarantine — the deterministic remedy arm for an untracked-only
+// scope verdict: MOVE (never delete) run-created untracked excess under
+// .rpiv/tmp/scope-quarantine/ and publish a manifest, then re-enter the floor.
+// ---------------------------------------------------------------------------
+
+describe("build scope-quarantine (untracked-excess remedy arm)", () => {
+	let tmpDir: string;
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "rpiv-build-quarantine-"));
+		execFileSync("git", ["init"], { cwd: tmpDir, stdio: "ignore" });
+	});
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	const quarantineRun = () => {
+		const stage = findWorkflow("build").stages["scope-quarantine"];
+		if (!stage?.run) throw new Error("build scope-quarantine stage has no run function");
+		return stage.run as unknown as (ctx: { cwd: string; input?: undefined; state: RunView }) => {
+			data: { moved: { from: string; to: string }[] };
+			artifacts: { handle: { kind: string; path: string } }[];
+		};
+	};
+	const out = (rel: string) => ({ artifacts: [{ handle: fsHandle(rel) }], data: undefined, kind: "", meta: {} });
+	const verdictEntry = (wheres: string[]) => ({
+		artifacts: [],
+		data: { verdict: "untracked-only", findings: wheres.map((where) => ({ detail: "x", where })) },
+		kind: "json",
+		meta: {},
+	});
+	const stateOf = (wheres: string[]) =>
+		({
+			named: {
+				plans: [out(".rpiv/artifacts/plans/p.md")],
+				"implement-scope-check": [verdictEntry(wheres)],
+			},
+		}) as unknown as RunView;
+	const untrackedFile = (rel: string, content = "x\n") => {
+		const parts = rel.split("/");
+		if (parts.length > 1) mkdirSync(join(tmpDir, ...parts.slice(0, -1)), { recursive: true });
+		writeFileSync(join(tmpDir, rel), content);
+	};
+
+	// Mechanical proof of "at most one quarantine hop per gate entry": after the
+	// move, the re-check's untracked-excess set is empty (the quarantined copies
+	// live under the exempt .rpiv/ tree), so the second verdict can never be
+	// "untracked-only" again — the loop converges to pass (or reveals tracked
+	// drift), never ping-pongs.
+	it("check → quarantine → re-check converges: the second verdict is pass, never untracked-only again", () => {
+		const planRel = ".rpiv/artifacts/plans/p.md";
+		mkdirSync(join(tmpDir, ".rpiv/artifacts/plans"), { recursive: true });
+		writeFileSync(
+			join(tmpDir, planRel),
+			`---\nstatus: ready\nphase_count: 1\nphases:\n  - { n: 1, title: P, files: ["packages/a/foo.ts"] }\n---\n## Phase 1: P\n`,
+		);
+		const baselineRel = ".rpiv/artifacts/goal/baseline-t.json";
+		mkdirSync(join(tmpDir, ".rpiv/artifacts/goal"), { recursive: true });
+		writeFileSync(join(tmpDir, baselineRel), JSON.stringify({ paths: [] }, null, 2));
+		untrackedFile(".tmp/scratch.mjs");
+
+		const checkStage = findWorkflow("build").stages["implement-scope-check"];
+		if (!checkStage?.run) throw new Error("build implement-scope-check stage has no run function");
+		const checkRun = checkStage.run as unknown as (ctx: { cwd: string; input?: undefined; state: RunView }) => {
+			data: Record<string, unknown>;
+		};
+		const checkState = {
+			named: {
+				plans: [out(planRel)],
+				goal: [
+					out(".rpiv/artifacts/goal/goal-t.md"),
+					{
+						artifacts: [{ handle: fsHandle(baselineRel), role: "baseline" }],
+						data: undefined,
+						kind: "",
+						meta: {},
+					},
+				],
+			},
+		} as unknown as RunView;
+
+		const first = checkRun({ cwd: tmpDir, input: undefined, state: checkState });
+		expect(first.data.verdict).toBe("untracked-only");
+
+		const quarantineState = {
+			named: {
+				...(checkState as unknown as { named: Record<string, unknown> }).named,
+				"implement-scope-check": [{ artifacts: [], data: first.data, kind: "json", meta: {} }],
+			},
+		} as unknown as RunView;
+		quarantineRun()({ cwd: tmpDir, input: undefined, state: quarantineState });
+
+		const second = checkRun({ cwd: tmpDir, input: undefined, state: checkState });
+		expect(second.data.verdict).toBe("pass");
+		expect(second.data.findings).toEqual([]);
+	});
+
+	it("moves listed untracked files under .rpiv/tmp/scope-quarantine/ and writes the manifest", () => {
+		untrackedFile(".tmp/check-c3r2.mjs", "console.log(1)\n");
+		untrackedFile(".tmp/check-c4r5.mjs", "console.log(2)\n");
+		const result = quarantineRun()({
+			cwd: tmpDir,
+			input: undefined,
+			state: stateOf([".tmp/check-c3r2.mjs", ".tmp/check-c4r5.mjs"]),
+		});
+		// Moved, not deleted: content survives at the quarantine path, source is gone.
+		expect(existsSync(join(tmpDir, ".tmp/check-c3r2.mjs"))).toBe(false);
+		expect(readFileSync(join(tmpDir, ".rpiv/tmp/scope-quarantine/.tmp/check-c3r2.mjs"), "utf-8")).toBe(
+			"console.log(1)\n",
+		);
+		expect(result.data.moved).toEqual([
+			{ from: ".tmp/check-c3r2.mjs", to: join(".rpiv/tmp/scope-quarantine", ".tmp/check-c3r2.mjs") },
+			{ from: ".tmp/check-c4r5.mjs", to: join(".rpiv/tmp/scope-quarantine", ".tmp/check-c4r5.mjs") },
+		]);
+		// Manifest basename-keyed off the plan, beside the scope verdict.
+		const manifest = JSON.parse(
+			readFileSync(join(tmpDir, ".rpiv/artifacts/verdicts/scope-quarantine__p.json"), "utf-8"),
+		);
+		expect(manifest.moved).toHaveLength(2);
+		expect(result.artifacts[0]?.handle.path).toBe(join(".rpiv/artifacts/verdicts", "scope-quarantine__p.json"));
+	});
+
+	it("never touches a listed path that is tracked (or otherwise not untracked) at move time", () => {
+		untrackedFile("packages/a/kept.ts", "v0\n");
+		execFileSync("git", ["add", "--", "packages/a/kept.ts"], { cwd: tmpDir, stdio: "ignore" });
+		const result = quarantineRun()({ cwd: tmpDir, input: undefined, state: stateOf(["packages/a/kept.ts"]) });
+		expect(result.data.moved).toEqual([]);
+		expect(readFileSync(join(tmpDir, "packages/a/kept.ts"), "utf-8")).toBe("v0\n");
+	});
+
+	it("refuses a cwd-escaping finding path (containedPath guard) without throwing", () => {
+		// Cannot arise from `git status` (which reports repo-relative paths only) —
+		// belt-and-braces against a corrupt verdict JSON on the channel.
+		const result = quarantineRun()({ cwd: tmpDir, input: undefined, state: stateOf(["../escape.txt"]) });
+		expect(result.data.moved).toEqual([]);
+	});
+
+	it("is idempotent — a re-run after the move finds nothing untracked and rewrites an empty manifest", () => {
+		untrackedFile(".tmp/scratch.mjs");
+		const state = stateOf([".tmp/scratch.mjs"]);
+		quarantineRun()({ cwd: tmpDir, input: undefined, state });
+		const second = quarantineRun()({ cwd: tmpDir, input: undefined, state });
+		expect(second.data.moved).toEqual([]);
+		expect(readFileSync(join(tmpDir, ".rpiv/tmp/scope-quarantine/.tmp/scratch.mjs"), "utf-8")).toBe("x\n");
+	});
+});
+
 describe("build edges — implement-scope-check sits between implement and validate", () => {
 	const edge = (stage: string): EdgeFn => {
 		const e = findWorkflow("build").edges[stage];
@@ -5841,26 +6045,42 @@ describe("build edges — implement-scope-check sits between implement and valid
 		expect(findWorkflow("build").edges.implement).toBe("implement-scope-check");
 	});
 
-	it("build routes implement-scope-check → reconcile on pass, STOP otherwise (no fallback)", () => {
-		// The `from` form suppresses the READS_DATA lint; a pass verdict now routes to
-		// `reconcile` (the coherence backstop), a fail/missing verdict → stop (no
-		// fallback). Sourced from the scope-check's published verdict channel (the
-		// stage key for an outcome-less produces.script, per resolvePublishName).
+	it("build routes the tiered scope verdict: pass/excess → reconcile, untracked-only → quarantine, else STOP", () => {
+		// The tiered scopeFloorGate (readsData: false — no outputSchema demanded):
+		// "pass" AND tracked "excess" continue to reconcile (excess is demoted to
+		// validate's adjudication via --scope, the citation-floor precedent);
+		// "untracked-only" takes the deterministic quarantine arm; anything else —
+		// a missing/corrupt/legacy verdict — is the terminal integrity stop.
 		expect(route("implement-scope-check", { "implement-scope-check": [{ data: { verdict: "pass" } }] })).toBe(
 			"reconcile",
 		);
+		expect(route("implement-scope-check", { "implement-scope-check": [{ data: { verdict: "excess" } }] })).toBe(
+			"reconcile",
+		);
+		expect(
+			route("implement-scope-check", { "implement-scope-check": [{ data: { verdict: "untracked-only" } }] }),
+		).toBe("scope-quarantine");
+		// Legacy "fail" (a pre-tiering verdict replayed on resume) and a missing
+		// verdict both hit the integrity stop.
 		expect(route("implement-scope-check", { "implement-scope-check": [{ data: { verdict: "fail" } }] })).toBe("stop");
+		expect(route("implement-scope-check", {})).toBe("stop");
 	});
 
-	it("build's stage order lists implement → implement-scope-check → reconcile → validate", () => {
+	it("build routes scope-quarantine → implement-scope-check (deterministic re-entry hop)", () => {
+		expect(findWorkflow("build").edges["scope-quarantine"]).toBe("implement-scope-check");
+	});
+
+	it("build's stage order lists implement → implement-scope-check → scope-quarantine → reconcile → validate", () => {
 		const keys = Object.keys(findWorkflow("build").stages);
 		const i = keys.indexOf("implement");
 		const s = keys.indexOf("implement-scope-check");
+		const q = keys.indexOf("scope-quarantine");
 		const r = keys.indexOf("reconcile");
 		const v = keys.indexOf("validate");
 		expect(i).toBeGreaterThanOrEqual(0);
 		expect(s).toBe(i + 1);
-		expect(r).toBe(s + 1);
+		expect(q).toBe(s + 1);
+		expect(r).toBe(q + 1);
 		expect(v).toBe(r + 1);
 	});
 
