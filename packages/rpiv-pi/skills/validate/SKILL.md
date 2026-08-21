@@ -1,7 +1,7 @@
 ---
 name: validate
 description: Verify that an implementation plan was correctly executed by running each phase's success criteria against the working tree and producing a validation report. Use after the implement skill completes, when the user asks to "validate the plan", wants a post-implementation audit, or needs to confirm a feature is fully shipped per its plan.
-argument-hint: "[plan-path] [--goal <path>] [--baseline <path>]"
+argument-hint: "[plan-path] [--goal <path>] [--baseline <path>] [--scope <path>]"
 allowed-tools: Read, Bash(git *), Bash(make *), Glob, Grep
 shell-timeout: 10
 disable-model-invocation: true
@@ -33,7 +33,7 @@ You are tasked with validating that an implementation plan was correctly execute
 
 User input (raw): `$ARGUMENTS`
 
-Expected shape: an optional plan path (usually under `.rpiv/artifacts/plans/`), optionally followed by `--goal <path>` (the user's original brief, captured verbatim at run start) and/or `--baseline <path>` (the run-start snapshot of paths that were ALREADY dirty before the run touched anything — a JSON file with a `paths` array). Peel the `--goal` and `--baseline` flags first; what remains is the plan path. Only if the user input above is empty, or no plan path remains after peeling, branch on the recent-plans list in the Metadata block.
+Expected shape: an optional plan path (usually under `.rpiv/artifacts/plans/`), optionally followed by `--goal <path>` (the user's original brief, captured verbatim at run start), `--baseline <path>` (the run-start snapshot of paths that were ALREADY dirty before the run touched anything — a JSON file with a `paths` array), and/or `--scope <path>` (the workflow scope floor's verdict JSON — `{ verdict, findings: [{ detail, where }] }` — recording writes outside the plan's declared write-set for you to adjudicate). Peel the `--goal`, `--baseline`, and `--scope` flags first; what remains is the plan path. Only if the user input above is empty, or no plan path remains after peeling, branch on the recent-plans list in the Metadata block.
 
 ## Metadata
 
@@ -116,12 +116,22 @@ For each phase in the plan:
    - Baseline paths are pre-existing, out-of-scope dirt — report them under a short "Pre-existing working-tree changes (baseline)" note for visibility, but NEVER count them as a scope violation or let them force `verdict: fail`.
    - A missing or unreadable baseline file: fall back to judging the whole tree (today's behavior) and say so in the report.
 
-6. **Check goal conformance** (only when `--goal` was provided):
+6. **Attribute whole-plan command failures before they force the verdict.** When a whole-plan (not per-phase) command fails, attribute each failing finding to its file:
+   - If **every** failing file is outside the run's own delta — in the `--baseline` paths, or byte-identical to the merge base, verified per file with `git diff --quiet <base> -- <file>` — the failure is pre-existing debt: the criterion was authored against an assumed-clean repo and is unachievable as written. Report it under `#### Potential Issues:` as "pre-existing at base — criterion unachievable as written", rule the criterion **not met, non-blocking**, and record it under `#### Deviations from Plan:` as a *plan* deviation (the criterion, not the implementation, deviated). Do NOT let such a failure alone force `verdict: fail`.
+   - The evidence bar is mandatory: no `git diff --quiet` proof for a failing file, no downgrade — the failure blocks as usual.
+   - Any failing finding inside the run's delta keeps normal behavior: the command fails, the verdict fails.
+
+7. **Adjudicate scope-floor findings** (only when `--scope` was provided):
+   - Read the verdict JSON. If `verdict` is `"pass"` or `findings` is empty, nothing to rule — move on.
+   - Each finding names a write outside the plan's declared write-set that the deterministic floor could not classify. Rule each one: an out-of-scope tracked write you can **explain** — a lockfile or generated artifact a declared phase's own commands produce, churn already listed in the `--baseline` paths — is a non-blocking note under `#### Potential Issues:`, quoting the explanation. A write that is **demonstrably the run's own in-goal work** — it implements a named phase's stated change and that phase's verification covers it — is also explained: record it under `#### Deviations from Plan:` as a plan deviation (the owning phase's `files:` is incomplete), non-blocking. An out-of-scope write you **cannot explain forces `verdict: fail`** and is reported as a scope violation (a phase escaped its declared `files:` and may have overwritten sibling work — or the write is not the run's work at all).
+   - Findings that mention quarantine name files the floor moved under `.rpiv/tmp/scope-quarantine/`: if a phase's verification fails on a missing file, check the quarantine manifest (`.rpiv/artifacts/verdicts/scope-quarantine__*.json`) — a load-bearing file landing there means its phase forgot to declare it in `files:`; report that as a plan deviation and rule `verdict: fail`.
+
+8. **Check goal conformance** (only when `--goal` was provided):
    - Read the goal file fully — it is the user's brief in their own words.
    - Verify the delivered result honors every explicit ask and constraint in it. A goal requirement the plan never carried is still a gap — the plan, not just the implementation, can deviate from the user.
    - Report shortfalls under **Deviations from Plan**, quoting the goal's actual wording; never infer unstated scope from it.
 
-7. **Rule every plan risk flag** (when the plan carries a `risks:` frontmatter array):
+9. **Rule every plan risk flag** (when the plan carries a `risks:` frontmatter array):
    - The plan's `risks:` array (each `{ id, claim }`, described under `## Risk Flags`) is the structured channel of decisions the planner asked to have checked. You are REQUIRED to rule on each one against the actual implementation — not skip it.
    - For each flag, verify its `claim` against the delivered code (Read/Grep the relevant `file:line`) and record a `risk_rulings: [{ id, pass }]` entry — `pass: true` when the risk is unfounded or handled, `pass: false` when it is real and unaddressed in the shipped code.
    - **For a `disposition: verify-at-implement` flag**, do not just Read/Grep — RUN its declared `procedure` (the named command/test the plan's `owner` phase promised) against the shipped code and rule `pass: false` if that procedure fails. This is the phase that discharges the deferral the plan-grade panel accepted on trust; a deferred risk whose procedure now fails is exactly the un-addressed-defect class this gate catches. A mechanics (`claim_type: mechanics`) flag is verified against its shipped `file:line` as above.
@@ -139,8 +149,8 @@ For each phase in the plan:
    - `topic:` ← `"Validation of <plan topic>"`.
 
 2. **Determine verdict** (`status` is always `ready` — written once):
-   - `verdict: pass` — every phase marked `- [x]` in the plan is verified against the code, every automated command passes, no Deviations from Plan and no Potential Issues require action, and every plan `risks:` flag ruled `pass`.
-   - `verdict: fail` — any phase fails verification, any automated command fails, any Deviations / Potential Issues list items that require action, **or any plan risk flag ruled `pass: false`** (a flagged risk shipped unaddressed).
+   - `verdict: pass` — every phase marked `- [x]` in the plan is verified against the code, every automated command passes (excluding whole-plan failures ruled pre-existing/non-blocking per Step 2.6), no Deviations from Plan and no Potential Issues require action, every plan `risks:` flag ruled `pass`, and every scope-floor finding (Step 2.7) is explained.
+   - `verdict: fail` — any phase fails verification, any automated command fails (excluding whole-plan failures ruled pre-existing/non-blocking per Step 2.6), any Deviations / Potential Issues list items that require action, **any plan risk flag ruled `pass: false`** (a flagged risk shipped unaddressed), or **any scope-floor finding you could not explain** (Step 2.7).
    - When the plan carried a `risks:` array, add a `risk_rulings: [{ id, pass }]` field to the report frontmatter — one ruling per flag.
 
 3. **Write the artifact** using the Write tool (no Edit — this skill writes once per run). Read `templates/validation.md`, fill every `{placeholder}` with the values determined above and the observations gathered in Step 2, apply the section-omission rules in the template (omit `#### Pattern Conformance:` and `#### Potential Issues:` entirely when empty; keep all other sections and emit `None — …` literals when empty), and Write the result to the target path.
@@ -188,12 +198,15 @@ If you were part of the implementation:
 3. **Document everything** - Both successes and issues
 4. **Think critically** - Question if the implementation truly solves the problem
 5. **Consider maintenance** - Will this be maintainable long-term?
+6. **Repo-located scratch lives under `.rpiv/tmp/`, nowhere else** - Any file you create while running a plan's commands or a risk ruling's `procedure` — a driver script, a fixture, a captured payload — goes under `.rpiv/tmp/` (exempt from the workflow's scope floor) or outside the repo entirely. The floor counts **untracked** files too (`git status -uall`): scratch left anywhere else is an undeclared write the next `implement-scope-check` flags. Delete repo-located scratch when its command is done regardless.
 
 ## Validation Checklist
 
 Always verify:
 - [ ] Goal conformance checked when `--goal` was provided
 - [ ] Working-tree scope criteria judged against tree-minus-baseline when `--baseline` was provided
+- [ ] Scope-floor findings adjudicated (explained vs. blocking) when `--scope` was provided
+- [ ] Whole-plan command failures attributed (run's delta vs. pre-existing at base) before forcing the verdict
 - [ ] All phases marked complete are actually done
 - [ ] Automated tests pass
 - [ ] Code follows existing patterns
