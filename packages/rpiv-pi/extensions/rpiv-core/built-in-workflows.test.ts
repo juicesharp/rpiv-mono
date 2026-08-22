@@ -2767,30 +2767,60 @@ describe("build audit-drop fixes", () => {
 		}) as unknown as Output;
 
 	// Finding 2 — a failing validate must NOT commit. The unconditional validate→commit
-	// edge shipped a `verdict: fail`. Now the edge routes on the published verdict.
+	// edge shipped a `verdict: fail`. The gate routes on the published verdict, and
+	// classifies a fail BEFORE looping: only a fail carrying a remediable handle
+	// (a `pass: false` risk ruling or a `blockers:` entry) reaches the repair arm —
+	// a prose-only fail has nothing remediate may act on, so looping it re-validated
+	// an unchanged tree until the backward-jump guard halted the run.
 	describe("validate gate (finding 2)", () => {
 		// validate publishes to the `validation` bucket (its contract artifactKind),
-		// which is the channel the `from`-sourced match must read.
-		const routeVerdict = (verdict: unknown) =>
+		// which is the channel the gate must read.
+		const routeData = (data: Record<string, unknown>) =>
 			edge("validate")({
 				output: undefined,
-				state: { named: { validation: [{ data: { verdict } }] } } as unknown as RunView,
+				state: { named: { validation: [{ data }] } } as unknown as RunView,
 			});
 
 		it("commits ONLY on an explicit verdict: pass", () => {
-			expect(routeVerdict("pass")).toBe("commit");
+			expect(routeData({ verdict: "pass" })).toBe("commit");
 		});
-		it("routes a verdict: fail to validate-fix (the repair arm)", () => {
-			expect(routeVerdict("fail")).toBe("validate-fix");
+		it("routes a fail WITH a pass:false risk ruling to validate-fix (the repair arm)", () => {
+			expect(
+				routeData({
+					verdict: "fail",
+					risk_rulings: [
+						{ id: "r1", pass: true },
+						{ id: "r2", pass: false },
+					],
+				}),
+			).toBe("validate-fix");
+		});
+		it("routes a fail WITH a blockers entry to validate-fix (whole-plan gate failure, structured)", () => {
+			expect(
+				routeData({
+					verdict: "fail",
+					risk_rulings: [{ id: "r1", pass: true }],
+					blockers: [{ id: "b1", command: "swift test", file: "Sources/A.swift", line: 64 }],
+				}),
+			).toBe("validate-fix");
+		});
+		it("STOPs a fail with NO remediable handle (all rulings pass, no blockers) — the futile-loop regression", () => {
+			// Run 2026-08-22_12-14-12-64eb: verdict fail on whole-plan gates recorded
+			// only in prose; remediate drift-escaped without an edit four times until
+			// the backward-jump guard halted the run at reconcile.
+			expect(routeData({ verdict: "fail", risk_rulings: [{ id: "r1", pass: true }] })).toBe("stop");
+		});
+		it("STOPs a fail with no rulings and no blockers at all", () => {
+			expect(routeData({ verdict: "fail" })).toBe("stop");
 		});
 		it("routes a MISSING verdict to STOP (no commit) — safe by construction", () => {
-			expect(routeVerdict(undefined)).toBe("stop");
+			expect(routeData({})).toBe("stop");
 		});
 		it("declares commit, validate-fix, and stop as targets", () => {
 			expect([...(edge("validate").targets ?? [])].sort()).toEqual(["commit", "stop", "validate-fix"]);
 		});
 		it("routes on the channel validate actually publishes to (validation bucket)", () => {
-			// The `from` the gate reads MUST equal validate's derived publish channel,
+			// The channel the gate reads MUST equal validate's derived publish channel,
 			// or the gate reads an empty channel and STOPs every run. Deriving the
 			// contract outcome and routing on the same-named channel proves the coupling.
 			const derived = withDerivedOutcomes(build());
@@ -2806,11 +2836,36 @@ describe("build audit-drop fixes", () => {
 			expect(stage?.skill).toBe("remediate");
 			expect([...(stage?.reads ?? [])]).toEqual(["plans", "validation"]);
 		});
-		it("re-enters at implement-scope-check after the repair arm (deterministic edge)", () => {
-			// The repair arm's edge is deterministic (a plain string, not a gate): after
-			// remediate fixes the tree, the flow re-runs scope-check → reconcile →
-			// validate before the gate re-folds — a fix is re-verified end-to-end.
-			expect(build().edges["validate-fix"]).toBe("implement-scope-check");
+		it("validate-fix publishes the deterministic digest verdict on the remediation channel", () => {
+			// The explicit outcome (the commit/gitCommitOutcome pattern on an acts
+			// stage) — its `{ changed }` is what the arm's own edge folds.
+			expect(build().stages["validate-fix"]?.outcome?.name).toBe("remediation");
+		});
+		it("re-enters at implement-scope-check when remediation changed the tree", () => {
+			// After a real fix the flow re-runs scope-check → reconcile → validate
+			// before the gate re-folds — a fix is re-verified end-to-end.
+			expect(
+				edge("validate-fix")({
+					output: undefined,
+					state: { named: { remediation: [{ data: { changed: true } }] } } as unknown as RunView,
+				}),
+			).toBe("implement-scope-check");
+		});
+		it("STOPs when remediation left the tree unchanged — re-validating is provably futile", () => {
+			expect(
+				edge("validate-fix")({
+					output: undefined,
+					state: { named: { remediation: [{ data: { changed: false } }] } } as unknown as RunView,
+				}),
+			).toBe("stop");
+		});
+		it("proceeds on a MISSING remediation signal — degrade on no signal, never stop", () => {
+			expect(edge("validate-fix")({ output: undefined, state: { named: {} } as unknown as RunView })).toBe(
+				"implement-scope-check",
+			);
+		});
+		it("validate-fix declares implement-scope-check and stop as targets", () => {
+			expect([...(edge("validate-fix").targets ?? [])].sort()).toEqual(["implement-scope-check", "stop"]);
 		});
 	});
 

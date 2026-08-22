@@ -69,6 +69,7 @@ import {
 	planSnapshot,
 	REVIEW_PHASE_ITERATE,
 	reconcile,
+	remediationOutcome,
 	rulingEffectivePass,
 	SHIP_DIMENSION_FANOUT,
 	SHIP_DIMENSIONS,
@@ -373,6 +374,78 @@ const vetWorkflow = defineWorkflow({
 	},
 });
 
+/**
+ * Build's validate gate — classifies a failing verdict BEFORE routing to the
+ * repair arm. `remediate`'s work-list is contractually the report's `pass:
+ * false` risk rulings plus its structured `blockers:` entries; a `verdict:
+ * fail` carrying NEITHER (run 2026-08-22_12-14-12-64eb: two whole-plan gate
+ * failures recorded only in report prose) has no handle the arm may act on,
+ * so routing it to `validate-fix` buys a provably futile lap — the arm
+ * drift-escapes without an edit and the unchanged tree re-validates to the
+ * identical verdict until the backward-jump guard halts the run. Such a fail
+ * now STOPs at the gate with a route note naming why (the ship-gate
+ * `setRouteNote` pattern; a noted decision stop records as a halt). The
+ * repair-arm authority rule the slice gate learned the same way: a gate may
+ * only loop into an arm whose authority covers the failure class.
+ *
+ * Reads the `validation` channel (validate's contract-derived publish bucket
+ * — a prompt stage owns its message and can't inherit its contract's output
+ * schema, so the gate folds the channel, never the raw stage output). A
+ * missing/unexpected verdict stays terminal STOP, exactly as the `match` it
+ * replaces — un-anticipated data can never route INTO commit OR the repair arm.
+ */
+const validateGate: EdgeFn = defineRoute(
+	["commit", "validate-fix", "stop"],
+	({ state }) => {
+		const latest = state.named.validation?.at(-1);
+		const data = latest?.data as { verdict?: unknown; blockers?: unknown } | undefined;
+		if (data?.verdict === "pass") return "commit";
+		if (data?.verdict !== "fail") {
+			setRouteNote(
+				validateGate,
+				`validate verdict ${JSON.stringify(data?.verdict ?? null)} matched no branch — terminated (no fallback)`,
+			);
+			return "stop";
+		}
+		// Remediable handles: `pass: false` risk rulings (the arm's original
+		// work-list) + structured `blockers:` entries (whole-plan gate failures
+		// the validate skill attributes with a runnable command + in-delta file).
+		const failedRulings = latest ? verdictRiskRulings(latest).filter((r) => !r.pass).length : 0;
+		const blockers = Array.isArray(data.blockers) ? data.blockers.length : 0;
+		if (failedRulings + blockers > 0) return "validate-fix";
+		setRouteNote(
+			validateGate,
+			"validate failed with no remediable handle (no pass:false risk ruling, no blockers entry) — the remediation arm cannot act; fix manually or revise the plan",
+		);
+		return "stop";
+	},
+	{ readsData: false },
+);
+
+/**
+ * Build's repair-arm progress gate — the deterministic no-op backstop. The
+ * `remediation` channel carries `remediationOutcome`'s `{ changed }` (a
+ * git-only tree digest snapshotted around the `validate-fix` stage): an
+ * unchanged tree makes the re-validate lap provably futile (validate's
+ * verdict is a function of the tree), so it STOPs with a note instead of
+ * burning a backward-jump on an identical verdict. Only an explicit
+ * `changed: false` stops — a missing signal (non-repo, git failure, absent
+ * channel) proceeds, the worktree-digest degrade doctrine.
+ */
+const validateFixGate: EdgeFn = defineRoute(
+	["implement-scope-check", "stop"],
+	({ state }) => {
+		const data = state.named.remediation?.at(-1)?.data as { changed?: unknown } | undefined;
+		if (data?.changed !== false) return "implement-scope-check";
+		setRouteNote(
+			validateFixGate,
+			"remediation left the working tree unchanged — re-validating cannot change the verdict; fix manually or revise the plan",
+		);
+		return "stop";
+	},
+	{ readsData: false },
+);
+
 const buildWorkflow = defineWorkflow({
 	name: "build",
 	description:
@@ -584,15 +657,17 @@ const buildWorkflow = defineWorkflow({
 		// `from` form suppresses the READS_DATA outputSchema lint.
 		reconcile: produces.script({ reads: ["plans"], run: reconcile }),
 		validate: produces({ prompt: VALIDATE_GOAL_PROMPT }),
-		// Repair arm the validate gate dispatches on a `verdict: "fail"`. `acts()`
-		// (not `produces()`) because remediate is `side-effect`/`code-mutation` (the
-		// tools twin of `implement`: re-runs verification commands via `Bash(*)` and
-		// edits the working tree) — NOT produced-validating and NOT routed-on (its
-		// edge is deterministic), so it owns no outcome. `reads: ["plans","validation"]`
-		// ⇒ `stageEntryArgs` derives `--plans <plan> --validation <latest-report>`;
+		// Repair arm the validate gate dispatches on a remediable `verdict: "fail"`.
+		// `acts()` (not `produces()`) because remediate is `side-effect`/`code-mutation`
+		// (the tools twin of `implement`: re-runs verification commands via `Bash(*)`
+		// and edits the working tree). `reads: ["plans","validation"]` ⇒
+		// `stageEntryArgs` derives `--plans <plan> --validation <latest-report>`;
 		// `validation` is validate's own publish bucket, so validate-fix always reads
-		// the latest failing report.
-		"validate-fix": acts({ skill: "remediate", reads: ["plans", "validation"] }),
+		// the latest failing report. `remediationOutcome` publishes the deterministic
+		// did-anything-change digest verdict on the `remediation` channel (the
+		// `commit`/`gitCommitOutcome` pattern) — the arm's OWN edge folds it, so a
+		// no-op remediation stops instead of re-validating an unchanged tree.
+		"validate-fix": acts({ skill: "remediate", reads: ["plans", "validation"], outcome: remediationOutcome }),
 		commit: acts({ prompt: COMMIT_BASELINE_PROMPT, outcome: gitCommitOutcome }),
 	},
 	edges: {
@@ -749,29 +824,24 @@ const buildWorkflow = defineWorkflow({
 		// manually). Safe by construction: the sole path onward is an explicit
 		// `verdict: "pass"`. Sourced from the reconcile channel via the `from` form.
 		reconcile: match("verdict", { validate: "pass" }, { from: "reconcile" }),
-		// Gate commit on validate's own verdict — an unconditional `validate → commit`
-		// let a `verdict: fail` (incomplete goal coverage) commit anyway. Now the
-		// gate splits: `pass` ⇒ commit; `fail` ⇒ validate-fix (the repair arm above,
-		// which re-runs the failing `verify-at-implement` risk-ruling procedures and
-		// surgically fixes the tree, then re-enters at implement-scope-check to
-		// re-reconcile + re-validate — bounded by the per-destination backward-jump
-		// budget). Deliberately NOT a `fallback`: a missing/unexpected verdict stays
-		// terminal STOP, so un-anticipated data can never route INTO commit OR the
-		// repair arm. Safe by construction: the sole path to commit is an explicit
-		// pass. The `match` branch key (`validate-fix`) doubles as the reachability/
-		// stage declaration, so naming it both routes `fail` and declares the stage
-		// reachable. Sourced from validate's published verdict channel
-		// (`from: "validation"` — the bucket its contract's `artifactKind` derives) —
-		// a prompt stage owns its message and can't inherit its contract's output
-		// schema, so route on the channel, not the raw (un-validated) stage output.
-		validate: match("verdict", { commit: "pass", "validate-fix": "fail" }, { from: "validation" }),
-		// Deterministic re-entry after the repair arm: remediate's code-mutation is
-		// followed by a fresh scope check → reconcile → validate pass, so a fix is
-		// re-verified end-to-end before the gate re-folds. A non-counted edge (a
-		// deterministic hop into the loop body), so it never trips a backward-jump
-		// budget on its own — the budget-consuming decision edge is the validate
-		// gate's `validate-fix` branch above.
-		"validate-fix": "implement-scope-check",
+		// Gate commit on validate's own verdict — see `validateGate`. `pass` ⇒
+		// commit; a `fail` WITH remediable handles (a `pass: false` risk ruling or a
+		// structured `blockers:` entry) ⇒ validate-fix, which re-enters at
+		// implement-scope-check to re-reconcile + re-validate — bounded by the
+		// per-destination backward-jump budget; a `fail` with NO handle ⇒ STOP with
+		// a route note (the repair arm cannot act on prose-only failures — looping
+		// it re-validated an unchanged tree until the guard halted the run).
+		// A missing/unexpected verdict stays terminal STOP, so un-anticipated data
+		// can never route INTO commit OR the repair arm. Safe by construction: the
+		// sole path to commit is an explicit pass.
+		validate: validateGate,
+		// Re-entry after the repair arm: remediate's code-mutation is followed by a
+		// fresh scope check → reconcile → validate pass, so a fix is re-verified
+		// end-to-end before the gate re-folds. Now a decision edge (`validateFixGate`
+		// folds the `remediation` channel's deterministic digest verdict): a
+		// remediation that changed nothing STOPs here — progress is verified, not
+		// assumed — while a real fix proceeds into the loop body.
+		"validate-fix": validateFixGate,
 		commit: "stop",
 	},
 });

@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Build's validate loop verifies its own progress — three seams close the futile-lap livelock.** Run 2026-08-22_12-14-12-64eb: validate failed on two whole-plan gates recorded only in report prose (all seven risk rulings passed), so the `remediate` arm — contractually restricted to `pass: false` rulings — drift-escaped without an edit, and the unchanged tree re-validated to the identical verdict four times (~27 minutes of full-suite re-runs) until the backward-jump guard halted the run at `reconcile`, misattributed. (1) The validate gate now classifies a fail before routing (`validateGate`, the ship-gate `setRouteNote` pattern): only a fail carrying a remediable handle — a `pass: false` ruling or a structured `blockers:` entry — reaches `validate-fix`; a prose-only fail STOPs at the gate with a note naming why. (2) The validate skill emits whole-plan/automated-command failures it attributes to in-delta files as `blockers: [{ id, command, file, line }]` frontmatter, and remediate's fixable partition accepts them — the failing command is the procedure, same one-fix-attempt discipline — so the loop can now converge on the failure class that livelocked. (3) `validate-fix` carries a `remediationOutcome` (the `commit`/`gitCommitOutcome` shape): a git-only tree digest snapshotted around the stage publishes `{ changed }` on the `remediation` channel, and the arm's edge — now a decision — STOPs on an explicit unchanged tree (re-validating an unchanged tree is provably futile; a missing signal proceeds, the worktree-digest degrade doctrine). The repair-arm authority rule the slice gate learned the same way: a gate may only loop into an arm whose authority covers the failure classes it emits.
+
 ## [2.7.0] - 2026-08-21
 
 ### Added
