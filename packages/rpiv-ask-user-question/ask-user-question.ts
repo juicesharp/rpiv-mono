@@ -1,5 +1,6 @@
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { isKeyRelease, isKeyRepeat, matchesKey, type OverlayHandle, type TUI } from "@earendil-works/pi-tui";
+import { type ActiveAsk, clearActiveAsk, registerActiveAsk } from "./ask-answer.js";
 import {
 	COLLAPSE_KEY_OFF,
 	formatKeySpecForDisplay,
@@ -190,15 +191,21 @@ function makeSessionFactory(config: {
 	collapseKey: string;
 	canReopenWhileHidden: boolean;
 	sessionRef: SessionRef;
+	/** Captures the activeAsk handle the factory's first line registers (ask-answer.ts). */
+	askRef: { current: ActiveAsk | undefined };
 	Session: SessionModule["QuestionnaireSession"];
 }) {
-	const { ctx, typed, itemsByTab, collapseKey, canReopenWhileHidden, sessionRef, Session } = config;
+	const { ctx, typed, itemsByTab, collapseKey, canReopenWhileHidden, sessionRef, askRef, Session } = config;
 	return (
 		tui: TUI,
 		theme: Theme,
 		keybindings: import("./state/questionnaire-session.js").QuestionnaireSessionConfig["keybindings"],
 		done: (result: QuestionnaireResult) => void,
 	): import("./state/questionnaire-session.js").QuestionnaireSessionComponent => {
+		// First line by design: the questionnaire is answerable from the moment
+		// the overlay starts constructing. The handle lands in askRef so the
+		// caller's finally can clear exactly this registration (ask-answer.ts).
+		askRef.current = registerActiveAsk(typed, done);
 		const session = new Session({
 			tui,
 			theme,
@@ -356,6 +363,10 @@ export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
 			// not route input to a hidden overlay's `component.handleInput`).
 			const sessionRef: SessionRef = { current: null };
 			const overlayHandleRef: OverlayHandleRef = { current: undefined };
+			// This call's own activeAsk registration, captured when the factory runs
+			// its first line. Held-identity clearing in the finally keeps a parallel
+			// ask's registration safe from our teardown (ask-answer.ts).
+			const askRef: { current: ActiveAsk | undefined } = { current: undefined };
 			const removeOverlayInputListener = registerCollapseKeyListener(ctx, collapseKey, sessionRef, overlayHandleRef);
 			// Hiding the overlay is only reversible through the raw listener above, so
 			// the session may emit `setHidden` only when it was actually registered;
@@ -373,6 +384,7 @@ export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
 						collapseKey,
 						canReopenWhileHidden,
 						sessionRef,
+						askRef,
 						Session: QuestionnaireSession,
 					}),
 					{
@@ -396,6 +408,7 @@ export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
 
 				return buildQuestionnaireResponse(result, typed);
 			} finally {
+				clearActiveAsk(askRef.current); // clear only our own registration (ask-answer.ts)
 				removeOverlayInputListener?.();
 				emitAskUserBlockedEvent(pi, false);
 			}
