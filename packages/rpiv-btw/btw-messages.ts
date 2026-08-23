@@ -16,7 +16,7 @@
  * plan (see plan risk r6).
  */
 
-import type { AssistantMessage, UserMessage } from "@earendil-works/pi-ai";
+import type { AssistantMessage, Message, UserMessage } from "@earendil-works/pi-ai";
 
 // Real messages — no fabrication. userMessage is built at call time; assistantMessage
 // is the unmodified completeSimple response. Stable object references across calls →
@@ -41,4 +41,22 @@ export function assistantMessageText(msg: AssistantMessage): string {
 		.filter((c): c is { type: "text"; text: string } => c.type === "text")
 		.map((c) => c.text)
 		.join("\n");
+}
+
+// /btw always calls completeSimple with tools: [] — the model has no tools to
+// call in a side question. Drop toolResult messages and toolCall content parts
+// from the cloned branch before sending it, so a branch that has real tool use
+// in it (any normal coding session) never puts a toolUse/toolResult block on
+// the wire without a matching toolConfig. Bedrock's Converse API rejects that
+// combination outright ("The toolConfig field must be defined when using
+// toolUse and toolResult content blocks"), and an orphaned toolCall with no
+// toolResult is invalid on most other providers too.
+export function stripToolTraffic(messages: Message[]): Message[] {
+	return messages.flatMap((m): Message[] => {
+		if (m.role === "toolResult") return [];
+		if (m.role !== "assistant") return [m];
+		const content = m.content.filter((c) => c.type !== "toolCall");
+		if (content.length === m.content.length) return [m];
+		return content.length > 0 ? [{ ...m, content }] : [];
+	});
 }

@@ -7,6 +7,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- Prior tool calls and tool results cloned in from the main conversation are now stripped from the `/btw` request before it's sent. `/btw` always calls with `tools: []`, but Bedrock's Converse API rejects a request that still contains `toolUse`/`toolResult` blocks unless `toolConfig` is also set, so any `/btw` question asked mid-session on a Bedrock-backed model (e.g. Claude via LiteLLM/Bedrock) failed with "The toolConfig field must be defined when using toolUse and toolResult content blocks."
+
 ## [2.7.0] - 2026-08-21
 
 ## [2.6.4] - 2026-08-20

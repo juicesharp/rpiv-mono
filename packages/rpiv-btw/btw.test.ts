@@ -3,6 +3,7 @@ import {
 	createMockCtx,
 	createMockPi,
 	makeAssistantMessage,
+	makeToolResult,
 	makeUserMessage,
 } from "@juicesharp/rpiv-test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -56,6 +57,7 @@ import {
 	registerBtwCommand,
 	registerInvalidationHooks,
 	registerMessageEndSnapshot,
+	stripToolTraffic,
 	userMessageText,
 } from "./btw.js";
 import { loadCompleteSimple, loadIsContextOverflow } from "./pi-compat.js";
@@ -354,6 +356,45 @@ describe("executeBtw — branch threading", () => {
 			return makeCompletionResponse({ text: "ok" });
 		}) as never);
 		await executeBtw("q", ctx, new AbortController());
+	});
+
+	it("strips prior toolCall/toolResult blocks from the branch before sending (Bedrock rejects them without a toolConfig)", async () => {
+		const ctx = createMockCtx({
+			branch: buildSessionEntries([
+				makeUserMessage("read that file"),
+				makeAssistantMessage({ toolCalls: [{ id: "c1", name: "read", arguments: {} }] }),
+				makeToolResult({ toolCallId: "c1", toolName: "read", text: "file contents" }),
+			]),
+		});
+		ctx.model = { provider: "a", id: "m" } as never;
+		vi.mocked(completeSimple).mockImplementationOnce((async (_m: unknown, req: { messages: unknown[] }) => {
+			const text = JSON.stringify(req.messages);
+			expect(text).not.toContain("toolCall");
+			expect(text).not.toContain("toolResult");
+			return makeCompletionResponse({ text: "ok" });
+		}) as never);
+		await executeBtw("q", ctx, new AbortController());
+	});
+});
+
+describe("stripToolTraffic", () => {
+	it("drops toolResult messages", () => {
+		const user = makeUserMessage("hi");
+		const toolResult = makeToolResult({ toolCallId: "c1", toolName: "read", text: "x" });
+		expect(stripToolTraffic([user, toolResult])).toEqual([user]);
+	});
+	it("drops toolCall content parts from an assistant message, keeping any text parts", () => {
+		const msg = makeAssistantMessage({ text: "looking", toolCalls: [{ id: "c1", name: "read", arguments: {} }] });
+		const [out] = stripToolTraffic([msg]);
+		expect(out).toMatchObject({ role: "assistant", content: [{ type: "text", text: "looking" }] });
+	});
+	it("drops an assistant message entirely when its only content was a toolCall", () => {
+		const msg = makeAssistantMessage({ toolCalls: [{ id: "c1", name: "read", arguments: {} }] });
+		expect(stripToolTraffic([msg])).toEqual([]);
+	});
+	it("leaves user/assistant text-only messages untouched", () => {
+		const messages = [makeUserMessage("hi"), makeAssistantMessage({ text: "hello" })];
+		expect(stripToolTraffic(messages)).toEqual(messages);
 	});
 });
 

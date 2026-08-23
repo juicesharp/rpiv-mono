@@ -18,7 +18,7 @@ import {
 	type SessionEntry,
 } from "@earendil-works/pi-coding-agent";
 import { type CappedHistory, capHistory, type FitBranchResult, fitBranch } from "./btw-budget.js";
-import { assistantMessageText, type BtwTurn, userMessageText } from "./btw-messages.js";
+import { assistantMessageText, type BtwTurn, stripToolTraffic, userMessageText } from "./btw-messages.js";
 import { showBtwOverlay } from "./btw-ui.js";
 import { getRuntimeCompleteSimple, loadCompleteSimple, loadIsContextOverflow } from "./pi-compat.js";
 
@@ -60,7 +60,7 @@ export { BTW_CONTEXT_RESERVE, BTW_HISTORY_TOKEN_BUDGET, BTW_NO_ANCHOR_SAFETY_FAC
 // import them from "./btw.js"). Import-then-re-export (not `export … from`) because
 // btw.ts consumes all three internally (userMessageText at :166,
 // assistantMessageText at :341, BtwTurn in BtwState/getSessionHistory/pushSessionTurn).
-export { assistantMessageText, type BtwTurn, userMessageText };
+export { assistantMessageText, type BtwTurn, stripToolTraffic, userMessageText };
 
 // ---------------------------------------------------------------------------
 // Types
@@ -225,11 +225,11 @@ export function buildBtwMessages(
 		capped = capHistory(history);
 		fit = fitBranch({ ...fitInput, admittedEstimate: capped.estimate, keepBudget });
 	}
-	const assembled: Message[] = [
+	const assembled: Message[] = stripToolTraffic([
 		...fit.messages,
 		...capped.admitted.flatMap((t) => [t.userMessage, t.assistantMessage]),
 		userMessage,
-	];
+	]);
 	return {
 		messages: assembled,
 		systemPrompt,
