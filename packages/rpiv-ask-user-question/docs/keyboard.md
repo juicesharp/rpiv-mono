@@ -8,6 +8,7 @@ adapts to the size of your terminal.
 | Key | What it does | Where it applies |
 | --- | --- | --- |
 | `↑` / `↓` | Move between rows. Wraps at both ends. | Option list, Submit picker |
+| `1`–`4` | Select the corresponding authored option. Single-select questions confirm immediately; multi-select questions toggle the option. | Question tabs outside text editors and collapsed mode |
 | `Enter` | Confirm the focused option, commit typed text, close notes, or activate the focused Submit-picker row. | Everywhere |
 | `Shift+Enter` | Insert a newline. | `Type something.` input, notes editor |
 | `Esc` | Cancel the whole questionnaire. | Everywhere except the notes editor, where it closes notes |
@@ -24,6 +25,10 @@ Confirm listens to both `tui.select.confirm` and `tui.input.submit`, and a key b
 Slack-style configuration — `enter` folded into `tui.input.newLine`, submit moved to
 `ctrl+enter` — keeps working: `enter` breaks lines, and your submit key confirms
 everywhere `Enter` does.
+
+A numeric shortcut only acts when that authored option exists. Digits outside the option
+range and digits on the Submit tab do nothing; digits typed in custom answers or notes
+remain text.
 
 In a multi-select question, `Enter` on a regular row toggles its checkbox exactly like
 `Space` — it does not submit. Committing the question means focusing the `Next` row and

@@ -886,6 +886,86 @@ describe("routeKey — remapped submit key as the confirm source (#156)", () => 
 	});
 });
 
+describe("routeKey — numeric option shortcuts", () => {
+	it("confirms the corresponding authored option in a single-select question", () => {
+		const question = makeQuestion({
+			options: [
+				{ label: "One", description: "1" },
+				{ label: "Two", description: "2" },
+				{ label: "Three", description: "3" },
+				{ label: "Four", description: "4" },
+			],
+		});
+		expect(routeKey("4", makeState(), makeRuntime({ questions: [question], isMulti: false }))).toEqual({
+			kind: "confirm",
+			answer: { questionIndex: 0, question: "Pick one", kind: "option", answer: "Four" },
+			autoAdvanceTab: undefined,
+		});
+	});
+
+	it("toggles the corresponding authored option in a multi-select question", () => {
+		const question = makeQuestion({ multiSelect: true });
+		expect(
+			routeKey(
+				"2",
+				makeState({ optionIndex: 4 }),
+				makeRuntime({
+					questions: [question],
+					isMulti: false,
+					currentItem: { kind: "next", label: "Next" },
+				}),
+			),
+		).toEqual({ kind: "toggle", index: 1 });
+	});
+
+	it("keeps single-select auto-advance behavior in multi-question dialogs", () => {
+		expect(routeKey("2", makeState(), makeRuntime())).toMatchObject({
+			kind: "confirm",
+			answer: { questionIndex: 0, kind: "option", answer: "B" },
+			autoAdvanceTab: 1,
+		});
+	});
+
+	it("ignores zero and digits beyond the authored option count", () => {
+		expect(routeKey("0", makeState(), makeRuntime())).toEqual({ kind: "ignore" });
+		expect(routeKey("4", makeState(), makeRuntime())).toEqual({ kind: "ignore" });
+	});
+
+	it("leaves digits to the custom-input editor", () => {
+		expect(
+			routeKey(
+				"2",
+				makeState({ inputMode: true }),
+				makeRuntime({ currentItem: { kind: "other", label: "Type something." } }),
+			),
+		).toEqual({ kind: "ignore" });
+	});
+
+	it("forwards digits to the notes editor", () => {
+		expect(routeKey("2", makeState({ notesVisible: true }), makeRuntime())).toEqual({
+			kind: "notes_forward",
+			data: "2",
+		});
+	});
+
+	it("ignores digits while collapsed", () => {
+		expect(routeKey("2", makeState({ collapsed: true }), makeRuntime())).toEqual({ kind: "ignore" });
+	});
+
+	it("ignores digits on the Submit tab", () => {
+		expect(routeKey("2", makeState({ currentTab: 2 }), makeRuntime())).toEqual({ kind: "ignore" });
+	});
+
+	it("keeps configured navigation precedence over numeric shortcuts", () => {
+		const digitDown = { matches: (data: string, name: string) => data === "2" && name === KEY.DOWN };
+		expect(routeKey("2", makeState(), makeRuntime({ keybindings: digitDown }))).toEqual({
+			kind: "nav",
+			nextIndex: 1,
+			inputValue: "",
+		});
+	});
+});
+
 describe("routeKey — collapse/expand (Ctrl+] toggle + collapsed-mode lockout)", () => {
 	// Raw control byte for Ctrl+] (GS, 0x1d). matchesKey recognises this directly on
 	// every terminal that delivers raw control bytes in TUI mode — macOS Terminal.app,

@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Press `1`–`4` on a question tab to select the corresponding authored option. Single-select questions confirm immediately, while multi-select questions toggle the option; digits remain text in custom answers and notes.
+
 ## [2.7.1] - 2026-08-24
 
 ## [2.7.0] - 2026-08-21
