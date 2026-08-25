@@ -33,6 +33,7 @@
 	},
 	"files": [
 		"index.ts",
+		"audio/decibri-audiomic-shim.ts",
 		"audio/error-log.ts",
 		"audio/hallucination-filter.ts",
 		"audio/mic-source.ts",
@@ -86,6 +87,9 @@
 		"@juicesharp/rpiv-config": "^2.7.1",
 		"sherpa-onnx-node": "^1.13.0",
 		"decibri": "^3.4.0"
+	},
+	"optionalDependencies": {
+		"@audio/mic": "^1.1.1"
 	},
 	"peerDependencies": {
 		"@earendil-works/pi-coding-agent": "*",
