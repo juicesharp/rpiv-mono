@@ -7,6 +7,11 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Stale-todo reminders: when the model goes a configurable number of turns without a successful `todo` call while tasks are `in_progress`, a reminder is injected into a tool result so the model re-reads and reconciles task state (`staleAfterTurns` / `reminderCooldownTurns` in config, both default 12) (#159).
+- Compaction resync: after `session_compact`, the next `before_agent_start` injects a one-shot hint telling the model to re-read the todo list, since the data survives compaction but the model's working memory of it does not (#159).
+
 ## [2.7.1] - 2026-08-24
 
 ## [2.7.0] - 2026-08-21

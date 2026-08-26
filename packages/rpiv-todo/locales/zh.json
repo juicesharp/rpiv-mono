@@ -1,19 +1,18 @@
 {
   "_meta.notes": "中文翻译。欢迎中文母语者通过 PR 审校。",
-
   "status.pending": "待处理",
   "status.in_progress": "进行中",
   "status.completed": "已完成",
   "status.deleted": "已删除",
-
   "overlay.heading": "任务清单",
   "overlay.more": "更多",
   "overlay.expandHint": "按 {key} 展开",
   "overlay.collapsed": "已折叠",
-
   "command.no_todos": "暂无任务。可以让 agent 添加一些！",
   "command.requires_interactive": "/todos 需要交互模式",
   "command.section.pending": "── 待处理 ──",
   "command.section.in_progress": "── 进行中 ──",
-  "command.section.completed": "── 已完成 ──"
+  "command.section.completed": "── 已完成 ──",
+  "reminder.stale": "有任务已连续 {n} 轮未同步 Todo。请先调用 todo list，确认任务是否仍在进行，再根据实际结果更新状态。",
+  "resync.after_compact": "Todo 状态已从 session history 恢复。请调用 todo list 重新读取当前任务，不要假设 compaction 前的任务状态已经在上下文中。"
 }
