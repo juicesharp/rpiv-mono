@@ -9,7 +9,7 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- Press `1`–`4` on a question tab to select the corresponding authored option. Single-select questions confirm immediately, while multi-select questions toggle the option; digits remain text in custom answers and notes.
+- Press `1`–`9` on a question tab to act on the corresponding numbered row. Single-select options confirm immediately, multi-select options toggle, and `Type something.` receives focus; digits remain text in custom answers and notes.
 
 ## [2.7.1] - 2026-08-24
 

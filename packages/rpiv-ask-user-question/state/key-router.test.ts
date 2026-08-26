@@ -926,9 +926,34 @@ describe("routeKey — numeric option shortcuts", () => {
 		});
 	});
 
-	it("ignores zero and digits beyond the authored option count", () => {
+	it("moves focus to the numbered custom-input row", () => {
+		const question = makeQuestion({ options: makeQuestion().options.slice(0, 2) });
+		const items: WrappingSelectItem[] = [
+			...question.options.map((option) => ({ kind: "option" as const, label: option.label })),
+			{ kind: "other", label: "Type something." },
+		];
+		const runtime = makeRuntime({ questions: [question], isMulti: false, items, inputBuffer: "draft" });
+		expect(routeKey("3", makeState(), runtime)).toEqual({ kind: "nav", nextIndex: 2, inputValue: "draft" });
+		expect(
+			routeKey(
+				"3",
+				makeState(),
+				makeRuntime({ questions: [{ ...question, multiSelect: true }], isMulti: false, items }),
+			),
+		).toEqual({ kind: "nav", nextIndex: 2, inputValue: "" });
+	});
+
+	it("recognizes Kitty CSI-u digit input", () => {
+		expect(routeKey("\x1b[50u", makeState(), makeRuntime())).toMatchObject({
+			kind: "confirm",
+			answer: { kind: "option", answer: "B" },
+		});
+	});
+
+	it("ignores pasted digits, zero, and digits beyond the numbered row count", () => {
+		expect(routeKey("123", makeState(), makeRuntime())).toEqual({ kind: "ignore" });
 		expect(routeKey("0", makeState(), makeRuntime())).toEqual({ kind: "ignore" });
-		expect(routeKey("4", makeState(), makeRuntime())).toEqual({ kind: "ignore" });
+		expect(routeKey("5", makeState(), makeRuntime())).toEqual({ kind: "ignore" });
 	});
 
 	it("leaves digits to the custom-input editor", () => {

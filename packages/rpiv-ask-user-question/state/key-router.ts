@@ -1,5 +1,5 @@
 import { Key, matchesKey } from "@earendil-works/pi-tui";
-import { MAX_OPTIONS, type QuestionAnswer } from "../tool/types.js";
+import type { QuestionAnswer } from "../tool/types.js";
 import { ROW_INTENT_META } from "./row-intent.js";
 import type { QuestionnaireRuntime, QuestionnaireState } from "./state.js";
 
@@ -16,7 +16,7 @@ const KEYBIND_EXTERNAL_EDITOR = "app.editor.external";
 
 const NOTES_ACTIVATE_KEY = "n";
 const SPACE_KEY = " ";
-const FIRST_OPTION_SHORTCUT = "1".charCodeAt(0);
+const NUMBERED_ROW_SHORTCUTS = ["1", "2", "3", "4", "5", "6", "7", "8", "9"] as const;
 
 export type QuestionnaireAction =
 	| { kind: "nav"; nextIndex: number; inputValue: string }
@@ -117,10 +117,12 @@ function buildMultiSelected(state: QuestionnaireState, runtime: QuestionnaireRun
 	return out;
 }
 
-function optionShortcutIndex(data: string, optionCount: number): number | null {
-	if (data.length !== 1) return null;
-	const index = data.charCodeAt(0) - FIRST_OPTION_SHORTCUT;
-	return index >= 0 && index < Math.min(optionCount, MAX_OPTIONS) ? index : null;
+function numberedRowShortcutIndex(data: string, numberedRowCount: number): number | null {
+	const count = Math.min(numberedRowCount, NUMBERED_ROW_SHORTCUTS.length);
+	for (let index = 0; index < count; index++) {
+		if (matchesKey(data, NUMBERED_ROW_SHORTCUTS[index]!)) return index;
+	}
+	return null;
 }
 
 function tabSwitchAction(
@@ -268,8 +270,10 @@ function routeMultiSelectTab(
 		};
 	}
 	if (kb.matches(data, KEYBIND_CANCEL)) return { kind: "cancel" };
-	const optionIndex = optionShortcutIndex(data, runtime.questions[state.currentTab]?.options.length ?? 0);
-	if (optionIndex !== null) return { kind: "toggle", index: optionIndex };
+	const optionCount = runtime.questions[state.currentTab]?.options.length ?? 0;
+	const rowIndex = numberedRowShortcutIndex(data, optionCount + 1);
+	if (rowIndex === optionCount) return { kind: "nav", nextIndex: rowIndex, inputValue: runtime.inputBuffer };
+	if (rowIndex !== null) return { kind: "toggle", index: rowIndex };
 	return { kind: "ignore" };
 }
 
@@ -287,15 +291,18 @@ function routeSingleSelectTab(
 	if (kb.matches(data, KEYBIND_CANCEL)) return { kind: "cancel" };
 	const q = runtime.questions[state.currentTab];
 	if (!q) return { kind: "ignore" };
-	const optionIndex = optionShortcutIndex(data, q.options.length);
-	if (optionIndex === null) return { kind: "ignore" };
+	const rowIndex = numberedRowShortcutIndex(data, q.options.length + 1);
+	if (rowIndex === q.options.length) {
+		return { kind: "nav", nextIndex: rowIndex, inputValue: runtime.inputBuffer };
+	}
+	if (rowIndex === null) return { kind: "ignore" };
 	return {
 		kind: "confirm",
 		answer: {
 			questionIndex: state.currentTab,
 			question: q.question,
 			kind: "option",
-			answer: q.options[optionIndex]!.label,
+			answer: q.options[rowIndex]!.label,
 		},
 		autoAdvanceTab: computeAutoAdvanceTab(state, runtime),
 	};
