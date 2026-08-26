@@ -1,19 +1,18 @@
 {
   "_meta.notes": "Auto-translated draft. Native-speaker review welcome via PR. Unicode box-drawing characters (──) stay untranslated.",
-
   "status.pending": "en attente",
   "status.in_progress": "en cours",
   "status.completed": "terminées",
   "status.deleted": "supprimée",
-
   "overlay.heading": "Tâches",
   "overlay.more": "autres",
   "overlay.expandHint": "{key} pour développer",
   "overlay.collapsed": "réduit",
-
   "command.no_todos": "Pas encore de tâches. Demandez à l'agent d'en ajouter !",
   "command.requires_interactive": "/todos nécessite le mode interactif",
   "command.section.pending": "── En attente ──",
   "command.section.in_progress": "── En cours ──",
-  "command.section.completed": "── Terminées ──"
+  "command.section.completed": "── Terminées ──",
+  "reminder.stale": "Des tâches n'ont pas été synchronisées avec todo depuis {n} tours. Appelez `todo list` pour vérifier si elles sont toujours en cours, puis mettez à jour leur statut selon le résultat réel.",
+  "resync.after_compact": "L'état des tâches a été restauré depuis l'historique de la session. Appelez `todo list` pour relire les tâches actuelles ; ne supposez pas que l'état antérieur à la compaction est encore dans le contexte."
 }

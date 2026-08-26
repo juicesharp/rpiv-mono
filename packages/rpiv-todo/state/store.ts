@@ -1,4 +1,5 @@
 import type { Task } from "../tool/types.js";
+import { resetActivityState } from "./activity-tracker.js";
 import { EMPTY_STATE, type TaskState } from "./state.js";
 
 /**
@@ -117,10 +118,12 @@ export function clearActiveRenderSession(): void {
 /**
  * Test-setup reset. Wired into the global `test/setup.ts` `beforeEach` via
  * the existing `__resetState` import path. Signature unchanged ⇒ no
- * `test/setup.ts` edit needed. Clears BOTH the session Map and the render
- * pointer so filesystem/detect resets start from a clean state.
+ * `test/setup.ts` edit needed. Clears the session Map, the render pointer,
+ * AND the per-session runtime activity counters so filesystem/detect resets
+ * start from a clean state.
  */
 export function __resetState(): void {
 	sessions.clear();
 	activeRenderSession = "";
+	resetActivityState();
 }

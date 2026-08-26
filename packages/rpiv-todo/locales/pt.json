@@ -1,19 +1,18 @@
 {
   "_meta.notes": "Auto-translated draft. Native-speaker review welcome via PR. Unicode box-drawing characters (──) stay untranslated.",
-
   "status.pending": "pendentes",
   "status.in_progress": "em curso",
   "status.completed": "concluídas",
   "status.deleted": "eliminada",
-
   "overlay.heading": "Tarefas",
   "overlay.more": "mais",
   "overlay.expandHint": "{key} para expandir",
   "overlay.collapsed": "recolhido",
-
   "command.no_todos": "Sem tarefas ainda. Peça ao agente para adicionar algumas!",
   "command.requires_interactive": "/todos requer modo interativo",
   "command.section.pending": "── Pendentes ──",
   "command.section.in_progress": "── Em curso ──",
-  "command.section.completed": "── Concluídas ──"
+  "command.section.completed": "── Concluídas ──",
+  "reminder.stale": "Tarefas ficaram {n} turnos sem sincronização com o todo. Chame `todo list` para verificar se ainda estão em curso e atualize o estado com base no resultado real.",
+  "resync.after_compact": "O estado das tarefas foi restaurado a partir do histórico da sessão. Chame `todo list` para reler as tarefas atuais; não assuma que o estado anterior à compactação ainda está no contexto."
 }
