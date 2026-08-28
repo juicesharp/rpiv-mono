@@ -8,7 +8,7 @@ whether the model may reach for it on its own.
 - **Invoke** — `/skill:<name>` from inside a Pi session, or as a stage of a `/wf`
   workflow (see [workflows.md](./workflows.md)).
 - **Auto** — ✓ means the model may select the skill by itself from your prompt.
-  20 of the 29 skills set `disable-model-invocation: true` and are marked —;
+  21 of the 30 skills set `disable-model-invocation: true` and are marked —;
   those run *only* on an explicit `/skill:<name>` or a workflow dispatch. A short
   stage index is injected at session start so the model still knows they exist and
   can suggest one.
@@ -42,7 +42,8 @@ whether the model may reach for it on its own.
 | --- | :---: | --- | --- | --- |
 | `plan` | — | a `design` artifact | `plans/` | Converts a design into parallelized atomic phases with explicit success criteria. Prefer it when a straightforward phased breakdown is enough. |
 | `blueprint` | — | `research` or `solutions` (optional) | `plans/` | Fuses design + plan in one pass: vertical-slice decomposition with developer micro-checkpoints between phases, emitting an implement-ready plan. Lighter subagent fan-out than `design` — it trusts the research artifact's integration and precedent sections. |
-| `quick-plan` | — | a `research` artifact (+ the verbatim `goal` brief under `ship`) | `plans/` | One lightweight plan for a small, well-understood task: at most a single targeted `codebase-pattern-finder` dispatch, then a single `status: ready` phased plan — no slice decomposition, no risk flags, no questions; goal asks it doesn't cover are explicitly deferred under `## Out of Scope`. The `ship` pipeline's plan stage. |
+| `acceptance` | — | the verbatim `goal` brief (+ a `research` artifact for evidence grounding) | `acceptance/` | Derives the executable acceptance inventory from the goal — ID'd observable outcomes, each with a runnable evidence command where one can be derived — frozen BEFORE planning so the standard of completion cannot inherit the plan's scope. The completeness grade anchors on it; validate executes it. Dispatched by `ship` and `build` between research and planning. |
+| `quick-plan` | — | a `research` artifact (+ the verbatim `goal` brief and `acceptance` inventory under `ship`) | `plans/` | One lightweight plan for a small, well-understood task: at most a single targeted `codebase-pattern-finder` dispatch, then a single `status: ready` phased plan — no slice decomposition, no risk flags, no questions; goal asks it doesn't cover are explicitly deferred under `## Out of Scope`. The `ship` pipeline's plan stage. |
 | `elaborate` | — | a `plan` artifact | `elaborations/` | Writes implement-ready code into ONE phase of a synthesized plan. A fanout unit; the results are stitched back into the plan. |
 | `revise` | — | a `plan` (+ optional `reviews`) | `plans/` | Surgically updates an existing plan after review feedback, a mid-implement blocker, or a scope change — preserving structure instead of rewriting. |
 | `amend` | — | one artifact + its `grade` verdicts | same artifact | Fixes only the failing dimensions a grade panel flagged and re-emits the artifact in place. Single-pass, no subagents; a gate's revise stage. |

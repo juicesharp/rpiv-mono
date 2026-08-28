@@ -2072,6 +2072,91 @@ describe("build goal channel (verbatim brief threading)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// acceptance channel — the goal-derived executable standard of completion,
+// frozen between research and planning so it cannot inherit the plan's scope.
+// Threading: the completeness grade unit (--acceptance, that dimension only)
+// and validate's prompt (which EXECUTES the items' evidence commands). The
+// generative stages stay acceptance-blind, the bounded-context doctrine that
+// keeps `goal` out of them applied to its derived standard too.
+// ---------------------------------------------------------------------------
+
+describe("acceptance channel (executable standard threading)", () => {
+	const out = (rel: string) => ({ artifacts: [{ handle: fsHandle(rel) }], data: undefined, kind: "", meta: {} });
+	const gateUnits = (wfName: string, stage: string, named: Record<string, unknown>) => {
+		const loop = findWorkflow(wfName).stages[stage]?.loop;
+		if (loop?.kind !== "fanout") throw new Error(`${wfName} ${stage} stage has no fanout loop`);
+		return loop.units({ cwd: "/repo", artifact: undefined, state: { named } as unknown as RunView });
+	};
+
+	it("build derives acceptance between research and slice; slice's research input rides its explicit read", () => {
+		const wf = findWorkflow("build");
+		expect(wf.stages.acceptance?.kind).toBe("produces");
+		expect(wf.stages.acceptance?.reads).toEqual(["goal", "research"]);
+		expect(wf.edges.research).toBe("acceptance");
+		expect(wf.edges.acceptance).toBe("slice");
+		// With acceptance holding the rolling primary at this seam, the explicit
+		// read is what restores the research doc as slice's grounding input.
+		expect(wf.stages.slice?.reads).toEqual(["research"]);
+	});
+
+	it("threads --acceptance into the completeness unit only (build plan gate)", async () => {
+		const units = await gateUnits("build", "plan-grade", {
+			plans: [out(".rpiv/artifacts/plans/p.md")],
+			research: [out(".rpiv/artifacts/research/r.md")],
+			goal: [out(".rpiv/artifacts/goal/goal.md")],
+			acceptance: [out(".rpiv/artifacts/acceptance/a.md")],
+		});
+		const byLabel = new Map(units.map((u) => [u.label, u.prompt]));
+		expect(byLabel.get("completeness")).toContain("--acceptance .rpiv/artifacts/acceptance/a.md");
+		for (const d of ["correctness", "actionability", "pattern-following", "architecture-fit"]) {
+			expect(byLabel.get(d)).not.toContain("--acceptance");
+		}
+	});
+
+	it("threads --acceptance into the completeness unit only (ship grade)", async () => {
+		const units = await gateUnits("ship", "grade", {
+			plans: [out(".rpiv/artifacts/plans/p.md")],
+			research: [out(".rpiv/artifacts/research/r.md")],
+			goal: [out(".rpiv/artifacts/goal/goal.md")],
+			acceptance: [out(".rpiv/artifacts/acceptance/a.md")],
+		});
+		const byLabel = new Map(units.map((u) => [u.label, u.prompt]));
+		expect(byLabel.get("completeness")).toContain("--acceptance .rpiv/artifacts/acceptance/a.md");
+		for (const d of ["correctness", "architecture-fit"]) {
+			expect(byLabel.get(d)).not.toContain("--acceptance");
+		}
+	});
+
+	it("omits --acceptance when the channel is empty (vet/polish and user workflows carry no flag)", async () => {
+		const units = await gateUnits("build", "plan-grade", {
+			plans: [out(".rpiv/artifacts/plans/p.md")],
+			research: [out(".rpiv/artifacts/research/r.md")],
+			goal: [out(".rpiv/artifacts/goal/goal.md")],
+		});
+		expect(units.every((u) => !u.prompt.includes("--acceptance"))).toBe(true);
+	});
+
+	it("validate's dispatch appends --acceptance so the skill executes the inventory", () => {
+		const prompt = findWorkflow("ship").stages.validate?.prompt;
+		if (typeof prompt !== "function") throw new Error("ship validate stage has no prompt fn");
+		const dispatch = prompt({
+			cwd: "/repo",
+			input: undefined,
+			state: {
+				named: {
+					plans: [out(".rpiv/artifacts/plans/p.md")],
+					goal: [out(".rpiv/artifacts/goal/goal.md")],
+					acceptance: [out(".rpiv/artifacts/acceptance/a.md")],
+				},
+			} as unknown as RunView,
+		});
+		expect(dispatch).toBe(
+			"/skill:validate .rpiv/artifacts/plans/p.md --goal .rpiv/artifacts/goal/goal.md --acceptance .rpiv/artifacts/acceptance/a.md",
+		);
+	});
+});
+
+// ---------------------------------------------------------------------------
 // slice-structure — the deterministic Phase-1 floor under the design-readiness
 // gate: dependency-cycle freedom + brief-coverage conservation (frozen at the
 // first cut). Both are computed from the slice-map text, no LLM.
@@ -4633,13 +4718,16 @@ describe("build subplan-check (deterministic cluster-coverage floor)", () => {
 // ---------------------------------------------------------------------------
 
 describe("ship workflow (lightweight /wf preset)", () => {
-	// The eleven stages in linear order — pins that none of build's elaborate
+	// The twelve stages in linear order — pins that none of build's elaborate
 	// machinery (slice*/subplan/*confirm/*snapshot/plan-fix/code*/*demote)
 	// leaked into the lightweight preset. `validate-fix` is the ONE sanctioned
 	// arm: the terminal gate's single bounded remediation hop (maxFixRounds: 1).
+	// `acceptance` is the goal-derived executable standard of completion,
+	// frozen between research and planning.
 	const SHIP_STAGES: readonly string[] = [
 		"goal",
 		"research",
+		"acceptance",
 		"plan",
 		"plan-cite-check",
 		"grade",
@@ -4651,7 +4739,7 @@ describe("ship workflow (lightweight /wf preset)", () => {
 		"commit",
 	];
 
-	it("has exactly the eleven stages in linear order (no slice/subplan/confirm/snapshot/plan-fix/code/demote arms)", () => {
+	it("has exactly the twelve stages in linear order (no slice/subplan/confirm/snapshot/plan-fix/code/demote arms)", () => {
 		expect(Object.keys(findWorkflow("ship").stages)).toEqual([...SHIP_STAGES]);
 	});
 
@@ -4743,20 +4831,33 @@ describe("ship workflow (lightweight /wf preset)", () => {
 		expect(findWorkflow("ship").stages.implement?.reads).toEqual(["plans"]);
 	});
 
-	it('plan reads ["research", "goal"] (planner anchors on the same verbatim goal the completeness grade judges against)', () => {
+	it('plan reads ["research", "goal", "acceptance"] (planner anchors on the same artifacts the completeness grade judges against)', () => {
 		// Without the explicit reads the stage falls to the rolling primary and
 		// quick-plan sees only the research doc — whose grounding may narrow the
 		// brief — while the grade panel's completeness dimension anchors on the
-		// verbatim goal. Same-anchor wiring lets the plan defer narrowed-out
-		// asks explicitly instead of silently inheriting the drop.
-		expect(findWorkflow("ship").stages.plan?.reads).toEqual(["research", "goal"]);
+		// verbatim goal and the acceptance inventory. Same-anchor wiring lets
+		// the plan record a per-item disposition (implemented or deferred)
+		// instead of silently inheriting the drop.
+		expect(findWorkflow("ship").stages.plan?.reads).toEqual(["research", "goal", "acceptance"]);
 	});
 
-	it("grade carries a fanout loop, the ship-verdicts outcome, and reads plans/research/goal", () => {
+	it('acceptance derives between research and plan, reading ["goal", "research"]', () => {
+		// The executable standard of completion is authored BEFORE the plan
+		// exists (goal → items; research → evidence grounding only), so the
+		// standard cannot inherit the plan's scope — items land as --acceptance
+		// on the completeness grade and are EXECUTED by validate.
+		const wf = findWorkflow("ship");
+		expect(wf.stages.acceptance?.kind).toBe("produces");
+		expect(wf.stages.acceptance?.reads).toEqual(["goal", "research"]);
+		expect(wf.edges.research).toBe("acceptance");
+		expect(wf.edges.acceptance).toBe("plan");
+	});
+
+	it("grade carries a fanout loop, the ship-verdicts outcome, and reads plans/research/goal/acceptance", () => {
 		const grade = findWorkflow("ship").stages.grade;
 		expect(grade?.loop?.kind).toBe("fanout");
 		expect(grade?.outcome?.name).toBe("ship-verdicts");
-		expect(grade?.reads).toEqual(["plans", "research", "goal"]);
+		expect(grade?.reads).toEqual(["plans", "research", "goal", "acceptance"]);
 	});
 });
 

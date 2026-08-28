@@ -72,6 +72,14 @@ const gradePanelFanout = (
 			const contextFlag = research?.handle.kind === "fs" ? ` --context ${handleToString(research.handle)}` : "";
 			const goal = latestFsArtifact(state, "goal");
 			const goalFlag = goal?.handle.kind === "fs" ? ` --goal ${handleToString(goal.handle)}` : "";
+			// The goal-derived acceptance inventory threads to the completeness
+			// unit only: completeness anchors on the enumerated items instead of
+			// re-deriving the ask list from goal prose each round. Conditional —
+			// workflows without an acceptance stage (vet/polish, user-authored)
+			// simply emit no flag.
+			const acceptance = latestFsArtifact(state, "acceptance");
+			const acceptanceFlag =
+				acceptance?.handle.kind === "fs" ? ` --acceptance ${handleToString(acceptance.handle)}` : "";
 			const roster = gateRoster(gateTier(state, verdictChannel), dimensions);
 			const latest = latestVerdictPerDimension(freshVerdicts(state.named[verdictChannel], target));
 			const risks = planAuthoredRisks(state, channel);
@@ -100,7 +108,7 @@ const gradePanelFanout = (
 			// empty ⇒ single dimensionless grade fall-through).
 			const toGrade = surgical ? carryForward : priorPresent ? roster : carryForward;
 			return toGrade.map((d) => ({
-				prompt: `--dimension ${d} --artifact ${target}${d === "architecture-fit" ? contextFlag : ""}${GOAL_DIMENSIONS.has(d) ? goalFlag : ""}${priorFlag(d)}`,
+				prompt: `--dimension ${d} --artifact ${target}${d === "architecture-fit" ? contextFlag : ""}${GOAL_DIMENSIONS.has(d) ? goalFlag : ""}${d === "completeness" ? acceptanceFlag : ""}${priorFlag(d)}`,
 				label: d,
 				id: `${channel}-dim-${d}`,
 			}));
@@ -157,6 +165,11 @@ export const SHIP_DIMENSION_FANOUT = fanout({
 		const contextFlag = research?.handle.kind === "fs" ? ` --context ${handleToString(research.handle)}` : "";
 		const goal = latestFsArtifact(state, "goal");
 		const goalFlag = goal?.handle.kind === "fs" ? ` --goal ${handleToString(goal.handle)}` : "";
+		// The acceptance inventory threads to completeness only — the shared
+		// factory's rule, mirrored (see gradePanelFanout).
+		const acceptance = latestFsArtifact(state, "acceptance");
+		const acceptanceFlag =
+			acceptance?.handle.kind === "fs" ? ` --acceptance ${handleToString(acceptance.handle)}` : "";
 		// The floor's findings (advisory by construction — see the fanout doc
 		// above) thread as `--cite-check`; no findings ⇒ no flag.
 		const cite = latestFsArtifact(state, "plan-cite-check");
@@ -173,7 +186,7 @@ export const SHIP_DIMENSION_FANOUT = fanout({
 		const pending = dimensionsToRegrade(roster, latest, risks);
 		const carryForward = pending.length > 0 ? pending : roster;
 		return carryForward.map((d) => ({
-			prompt: `--dimension ${d} --artifact ${target}${d === "architecture-fit" ? contextFlag : ""}${GOAL_DIMENSIONS.has(d) ? goalFlag : ""}${d === "correctness" ? citeFlag : ""}`,
+			prompt: `--dimension ${d} --artifact ${target}${d === "architecture-fit" ? contextFlag : ""}${GOAL_DIMENSIONS.has(d) ? goalFlag : ""}${d === "completeness" ? acceptanceFlag : ""}${d === "correctness" ? citeFlag : ""}`,
 			label: d,
 			id: `plans-dim-${d}`,
 		}));

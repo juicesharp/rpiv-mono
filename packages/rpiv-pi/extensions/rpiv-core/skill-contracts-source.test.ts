@@ -216,11 +216,12 @@ describe("bundled skill contracts", () => {
 	// dropped, or fails to parse (a malformed block is silently skipped).
 	const declared = new Map(buildSkillContractsFromFrontmatter(BUNDLED_SKILLS_DIR));
 
-	it("declares a contract for the 29 pipeline + orthogonal skills", () => {
-		expect(declared.size).toBe(29);
+	it("declares a contract for the 30 pipeline + orthogonal skills", () => {
+		expect(declared.size).toBe(30);
 		for (const name of [
 			"discover",
 			"research",
+			"acceptance",
 			"explore",
 			"design",
 			"plan",

@@ -29,9 +29,19 @@ contract:
             properties:
               n: { type: integer, minimum: 1 }
               title: { type: string }
+        acceptance:
+          type: array
+          items:
+            type: object
+            required: [id, disposition]
+            properties:
+              id: { type: string }
+              disposition: { enum: [implemented, deferred] }
+              phase: { type: integer, minimum: 1 }
+              reason: { type: string }
   consumes:
     meta:
-      artifactKind: [research]
+      artifactKind: [research, acceptance]
 ---
 
 # Quick Plan
@@ -44,7 +54,7 @@ The expected shape is **one phase** (the small-task default). Add a phase only w
 
 `$ARGUMENTS` — one of four shapes (the skill is sound however the caller wires it):
 
-- **Flags (workflow dispatch)** — `--research <path> --goal <path>`. Read BOTH files FULLY (no limit/offset). The research doc is the grounding; the goal file is the verbatim brief — every ask it names is either implemented by a phase or deferred under `## Out of Scope`.
+- **Flags (workflow dispatch)** — `--research <path> --goal <path> [--acceptance <path>]`. Read ALL files FULLY (no limit/offset). The research doc is the grounding; the goal file is the verbatim brief — every ask it names is either implemented by a phase or deferred under `## Out of Scope`. The acceptance file, when given, is the goal-derived inventory (`items:` frontmatter, ids `a1…`): the plan MUST record a per-item `acceptance:` disposition — `implemented` naming the phase, or `deferred` with a reason — every item, no omissions (the completeness gate anchors on the inventory, and validate executes each item's evidence command against the finished tree).
 - **Research artifact path** — a `.md` path under `.rpiv/artifacts/research/`. Read it FULLY (no limit/offset); it is the grounding for the plan.
 - **Injected research** — when dispatched by a workflow `reads: ["research"]` stage, the research doc is already in context; treat `$ARGUMENTS` as the task description / goal.
 - **Free-text** (standalone small task) — `$ARGUMENTS` is the task description; research is done or the shape is obvious.
@@ -71,6 +81,7 @@ Copy values verbatim. `<iso>` is the first tab-separated field (use as `date:`);
 
 - If a research artifact path was given, read it FULLY. Extract the task, the Code References (`file:line`), the Integration Points, and any Open Questions already resolved.
 - If a `--goal` file was given, read it FULLY and enumerate every ask it names; each is either implemented by a phase or deferred under `## Out of Scope` with a reason (when the research narrowed the brief, its rationale is the deferral reason).
+- If an `--acceptance` file was given, read it FULLY and treat its `items:` as the enumeration of record — dispose of every item id (Step 3's `acceptance:` mapping). An item whose evidence command the plan's work would not make pass is either genuinely covered by a phase or deferred with a reason; never quietly reinterpret an item's statement.
 - Read the key source files the research points at — the anchors the plan will cite — so the phase's code blocks and `file:line` references are real and current.
 - Determine the goal (the `--goal` brief, the task description, or the research's stated goal).
 
@@ -106,6 +117,9 @@ status: ready
 phase_count: 1
 phases:
   - { n: 1, title: {Phase 1 title}, files: [{every repo-root-relative path Phase 1 creates/edits}], depends_on: [] }
+acceptance:
+  - { id: a1, disposition: implemented, phase: 1 }
+  - { id: a2, disposition: deferred, reason: "{one-line reason}" }
 last_updated: {same <iso> as date:}
 ---
 
@@ -150,6 +164,8 @@ Populate each `phases[].files:` from that phase's `#### N.` / `**File**:` paths 
 
 Populate `## Out of Scope` from the Step 1 goal-ask enumeration: one one-line deferral with a reason per goal ask no phase implements.
 
+Populate `acceptance:` ONLY when an `--acceptance` file was given (omit the array entirely otherwise): one entry per inventory item, in item order — `disposition: implemented` with the covering `phase:` number, or `disposition: deferred` with a one-line `reason:` (and a matching `## Out of Scope` line). Every item id from the inventory appears exactly once; never invent an id the inventory doesn't carry.
+
 Then print the path and a one-line summary: `quick-plan written: {N} phase(s), {M} files`.
 
 ## Important Notes
@@ -160,6 +176,7 @@ Then print the path and a one-line summary: `quick-plan written: {N} phase(s), {
 - **At most ONE `codebase-pattern-finder` dispatch.** Never parallel, never `run_in_background` — a background completion cannot re-drive this session and the stage fails with no artifact. Skip the dispatch when research already surfaced the pattern.
 - **Non-interactive.** No `ask_user_question` checkpoint. A checkpoint without blueprint's dimension sweep is pure latency on a fast-path preset whose output is immediately grade-gated. Resolve ambiguity from the research and the real code; if a genuine fork can't be settled, make the most defensible call and let the grade panel catch it.
 - **Defer explicitly, never silently.** Every goal ask no phase implements gets a one-line `## Out of Scope` deferral with a reason — the completeness gate blocks on a named ask that is neither addressed nor deferred.
+- **Dispose of every acceptance item.** With `--acceptance` given, the `acceptance:` mapping is the machine-readable form of that same rule: every inventory id, exactly once, `implemented` (with phase) or `deferred` (with reason). The completeness gate reads the inventory directly, so a missing or mislabeled disposition is a blocking gap — and validate will run each item's evidence command regardless of what the plan claims.
 - **Ground every citation.** Every `file:line` in prose or code comments uses a repo-root-relative path and is verifiable at the current revision — the plan passes the deterministic `plan-cite-check` floor.
 - **NEVER edit source files.** This skill produces a plan document, not implementation. Source editing is `implement`'s job.
 - **Drops blueprint's ceremony by design:** multi-slice decomposition, skeleton-then-fill, the per-slice `slice-verifier` loop, the dual post-finalization review (`artifact-code-reviewer` + `artifact-coverage-reviewer`), the 6-dimension sweep, and parallel research are all absent here — the workflow's own gates own that confidence.

@@ -144,7 +144,8 @@ const polishWorkflow = defineWorkflow({
 });
 
 // ===========================================================================
-// build — goal (verbatim-brief capture) → research → slice → slice-check
+// build — goal (verbatim-brief capture) → research → acceptance (the
+//         goal-derived executable standard of completion) → slice → slice-check
 //         (deterministic floor) → slice-grade (design-readiness, slice-fix loop)
 //         → slice-design (fanout) → design-review (one human checkpoint) →
 //         subplan (cluster fanout) → plan → plan-grade (plan-fix loop) →
@@ -479,7 +480,7 @@ const validateFixGate = (): EdgeFn => {
 const buildWorkflow = defineWorkflow({
 	name: "build",
 	description:
-		"Ship, sliced: capture the verbatim brief as a goal artifact (the north star the quality gates' completeness/correctness dimensions and validate anchor against) → research the brief → decompose it into vertical slices → two-phase slice gate (a deterministic floor — dependency-cycle freedom + brief-coverage conservation so a slice-fix can't pass by dropping scope — then one LLM design-readiness judgment that each slice is chewable by a single design pass) with a slice-fix loop → design each slice in parallel → one consolidated developer checkpoint (accept or adjust the proposed interfaces/data types, adjustments applied surgically and cascaded to dependents) → synthesize hierarchically (per-cluster sub-plans → one merged plan) → tier-scaled quality-panel gate (a one-slice, <=2-phase run grades correctness+completeness only; larger or previously-failing runs grade the full completeness/correctness/actionability/pattern-following/architecture-fit roster) where a dimension's first blocking verdict gets one confirming second judgment before it buys a plan-fix round → elaborate code per phase in parallel → splice it into the plan → re-grade the code-bearing plan (same tier + confirm contract) → implement → implement-scope-check → reconcile → validate → commit. Research-led; three automated gates plus one human design checkpoint, before design, before code, and after the splice.",
+		"Ship, sliced: capture the verbatim brief as a goal artifact (the north star the quality gates' completeness/correctness dimensions and validate anchor against) → research the brief → derive a goal-anchored acceptance inventory (the executable standard of completion, frozen before any plan so it cannot inherit the plan's scope; the completeness gates anchor on it and validate executes its evidence commands) → decompose it into vertical slices → two-phase slice gate (a deterministic floor — dependency-cycle freedom + brief-coverage conservation so a slice-fix can't pass by dropping scope — then one LLM design-readiness judgment that each slice is chewable by a single design pass) with a slice-fix loop → design each slice in parallel → one consolidated developer checkpoint (accept or adjust the proposed interfaces/data types, adjustments applied surgically and cascaded to dependents) → synthesize hierarchically (per-cluster sub-plans → one merged plan) → tier-scaled quality-panel gate (a one-slice, <=2-phase run grades correctness+completeness only; larger or previously-failing runs grade the full completeness/correctness/actionability/pattern-following/architecture-fit roster) where a dimension's first blocking verdict gets one confirming second judgment before it buys a plan-fix round → elaborate code per phase in parallel → splice it into the plan → re-grade the code-bearing plan (same tier + confirm contract) → implement → implement-scope-check → reconcile → validate → commit. Research-led; three automated gates plus one human design checkpoint, before design, before code, and after the splice.",
 	start: "goal",
 	stages: {
 		// The user's brief, verbatim, on its own channel — the judgment seams
@@ -492,7 +493,20 @@ const buildWorkflow = defineWorkflow({
 		// gate's architecture-fit dimension its --context. Prompt-dispatched so it
 		// still receives the raw brief now that `goal` holds the start slot.
 		research: produces({ prompt: RESEARCH_BRIEF_PROMPT }),
-		slice: produces(),
+		// The goal-derived acceptance inventory (see ship's twin comment): the
+		// executable standard of completion, frozen before slicing/planning so
+		// it cannot inherit their scope. Threaded to the plan/code gates'
+		// completeness units (--acceptance) and to validate, which executes the
+		// evidence commands. Deliberately NOT fed to slice/design/synthesize —
+		// the bounded-context doctrine that keeps `goal` out of the generative
+		// stages applies to its derived standard too.
+		acceptance: produces({ reads: ["goal", "research"] }),
+		// `reads: ["research"]` (not the rolling primary): `acceptance` now sits
+		// between research and slice, so the rolling primary at this stage is
+		// the acceptance doc — the explicit read restores the research artifact
+		// as slice's grounding input (dispatched as `--research <path>`; the
+		// slice skill accepts the flag form of its fresh input).
+		slice: produces({ reads: ["research"] }),
 		// Deterministic floor (no LLM): dependency-cycle freedom + brief-coverage conservation.
 		"slice-check": produces.script({ reads: ["slices"], run: sliceStructureCheck }),
 		// One LLM design-readiness judgment; verdicts on their own channel.
@@ -555,7 +569,7 @@ const buildWorkflow = defineWorkflow({
 			outcome: planVerdictOutcome,
 			// `research` is read so the architecture-fit unit can thread it as
 			// --context; `goal` so completeness/correctness anchor on the brief.
-			reads: ["plans", "research", "goal"],
+			reads: ["plans", "research", "goal", "acceptance"],
 		}),
 		// Stamp the duty demotion onto the graded verdicts as legible on-disk data
 		// (a `risk_duty_demotions` array written in place onto each demoted
@@ -574,7 +588,7 @@ const buildWorkflow = defineWorkflow({
 			skill: "grade",
 			loop: PLAN_CONFIRM_FANOUT,
 			outcome: planVerdictOutcome,
-			reads: ["plans", "research", "goal"],
+			reads: ["plans", "research", "goal", "acceptance"],
 		}),
 		"plan-fix": produces({
 			skill: "amend",
@@ -624,7 +638,7 @@ const buildWorkflow = defineWorkflow({
 			outcome: codeVerdictOutcome,
 			// `research` is read so the architecture-fit unit can thread it as
 			// --context; `goal` so completeness/correctness anchor on the brief.
-			reads: ["plans", "research", "goal"],
+			reads: ["plans", "research", "goal", "acceptance"],
 		}),
 		// The code-gate twin of `plan-demote`: stamp the duty demotion onto the
 		// code-graded verdicts (re-grading `plans` on `code-verdicts`) one hop
@@ -645,7 +659,7 @@ const buildWorkflow = defineWorkflow({
 			skill: "grade",
 			loop: CODE_CONFIRM_FANOUT,
 			outcome: codeVerdictOutcome,
-			reads: ["plans", "research", "goal"],
+			reads: ["plans", "research", "goal", "acceptance"],
 		}),
 		"code-fix": produces({
 			skill: "amend",
@@ -702,9 +716,12 @@ const buildWorkflow = defineWorkflow({
 	},
 	edges: {
 		goal: "research",
-		// Research's artifact is auto-fed to slice as its argument (the slice skill's
-		// "Fresh" input is a research path).
-		research: "slice",
+		// The acceptance inventory derives between research (which grounds its
+		// evidence commands) and slice (which must never see it — bounded
+		// context). Slice's research input rides its explicit `reads` now that
+		// the rolling primary here is the acceptance doc.
+		research: "acceptance",
+		acceptance: "slice",
 		slice: "slice-check",
 		// Skip the design-readiness re-grade when the gate is already satisfied — after
 		// a `slice-fix` that only cleared the deterministic structure floor (the common
@@ -950,9 +967,9 @@ const shipGradeGate: EdgeFn = defineRoute(
 
 /**
  * ship — the lightweight `/wf` preset: the no-ceremony path for small-to-
- * midsize tasks whose approach is obvious. goal → research → plan →
- * plan-cite-check → grade → implement → implement-scope-check → reconcile →
- * validate → (validate-fix, once) | commit, stop-on-fail at every gate: a red
+ * midsize tasks whose approach is obvious. goal → research → acceptance →
+ * plan → plan-cite-check → grade → implement → implement-scope-check →
+ * reconcile → validate → (validate-fix, once) | commit, stop-on-fail at every gate: a red
  * gate halts the run (the agent hand-repairs and RESUMES — `/wf @<runId>`
  * re-runs the halted gate against the repaired tree, reusing every upstream
  * artifact) instead of looping a fix cycle. The ONE concession to that
@@ -970,7 +987,7 @@ const shipGradeGate: EdgeFn = defineRoute(
 const shipWorkflow = defineWorkflow({
 	name: "ship",
 	description:
-		"Ship, unsliced: capture the verbatim brief as a goal artifact → ground it with at most two targeted codebase-analyzer dispatches (no /skill:research) → one lightweight quick-plan pass → deterministic citation floor (files: coverage gaps stop; citation-resolution findings are advisory and adjudicated by the grade panel) → single tier-independent quality gate (correctness/completeness/architecture-fit, stop-on-fail) → implement → implement-scope-check → reconcile → validate → commit. Every gate halts the run on fail (hand-repair, then resume with /wf @<runId> to re-run the gate) — except a validate fail carrying structured remediable handles, which buys ONE bounded remediation hop before halting.",
+		"Ship, unsliced: capture the verbatim brief as a goal artifact → ground it with at most two targeted codebase-analyzer dispatches (no /skill:research) → derive a goal-anchored acceptance inventory (the executable standard of completion, frozen before planning; quick-plan records a per-item disposition, the completeness gate anchors on it, validate executes its evidence commands) → one lightweight quick-plan pass → deterministic citation floor (files: coverage gaps stop; citation-resolution findings are advisory and adjudicated by the grade panel) → single tier-independent quality gate (correctness/completeness/architecture-fit, stop-on-fail) → implement → implement-scope-check → reconcile → validate → commit. Every gate halts the run on fail (hand-repair, then resume with /wf @<runId> to re-run the gate) — except a validate fail carrying structured remediable handles, which buys ONE bounded remediation hop before halting.",
 	start: "goal",
 	stages: {
 		// build's verbatim goal capture — the brief on its own channel, plus the
@@ -982,17 +999,30 @@ const shipWorkflow = defineWorkflow({
 		// stage name `research` drives outcome derivation (research contract →
 		// `research` bucket) exactly as build's RESEARCH_BRIEF_PROMPT stage does.
 		research: produces({ prompt: SHIP_RESEARCH_PROMPT }),
+		// The goal-derived acceptance inventory — the executable standard of
+		// completion, authored BEFORE any plan exists so it cannot inherit the
+		// plan's scope. Items enumerate the verbatim brief's asks (research
+		// grounds only the evidence commands, never membership — the skill's
+		// hard rule, since research routinely narrows the brief). Downstream:
+		// quick-plan addresses-or-defers each item, the grade panel's
+		// completeness unit anchors on the inventory (--acceptance), and
+		// validate EXECUTES the evidence commands against the finished tree.
+		// Outcome derives from the acceptance contract (artifactKind:
+		// acceptance → `acceptance` bucket).
+		acceptance: produces({ reads: ["goal", "research"] }),
 		// The lightweight planner — quick-plan: ONE targeted
 		// codebase-pattern-finder dispatch, one `status: ready` plan, no risks
 		// frontmatter, no multi-slice decomposition. Derives its `plans` outcome
-		// from the quick-plan contract (artifactKind: plan). Reads BOTH channels
-		// explicitly (`--research <path> --goal <path>`) — without `goal` the
-		// stage falls to the rolling primary and the planner sees only the
-		// research doc, whose grounding routinely narrows the brief; the grade
-		// panel's completeness dimension anchors on the VERBATIM goal, so the
-		// planner must anchor on the same artifact to defer narrowed-out asks
-		// explicitly instead of silently inheriting the drop.
-		plan: produces({ skill: "quick-plan", reads: ["research", "goal"] }),
+		// from the quick-plan contract (artifactKind: plan). Reads all three
+		// channels explicitly (`--research <path> --goal <path>
+		// --acceptance <path>`) — without `goal` the stage falls to the rolling
+		// primary and the planner sees only the research doc, whose grounding
+		// routinely narrows the brief; the grade panel's completeness dimension
+		// anchors on the VERBATIM goal and the acceptance inventory, so the
+		// planner must anchor on the same artifacts and record a per-item
+		// disposition (implemented or deferred) instead of silently inheriting
+		// the drop.
+		plan: produces({ skill: "quick-plan", reads: ["research", "goal", "acceptance"] }),
 		// Deterministic citation floor BEFORE the LLM gate — build's verifier
 		// verbatim. Only a `files:` coverage gap fails structurally and STOPs the
 		// run; every citation-resolution finding (unresolved path, ambiguity,
@@ -1003,12 +1033,14 @@ const shipWorkflow = defineWorkflow({
 		// (SHIP_DIMENSION_FANOUT — tier-independent, no confirm/snapshot arms);
 		// verdicts on the `ship-verdicts` channel. `research` is read so the
 		// architecture-fit unit threads it as --context; `goal` so
-		// completeness/correctness anchor on the verbatim brief.
+		// completeness/correctness anchor on the verbatim brief; `acceptance` so
+		// the completeness unit checks the plan's per-item dispositions against
+		// the frozen inventory (--acceptance).
 		grade: produces({
 			skill: "grade",
 			loop: SHIP_DIMENSION_FANOUT,
 			outcome: shipVerdictOutcome,
-			reads: ["plans", "research", "goal"],
+			reads: ["plans", "research", "goal", "acceptance"],
 		}),
 		// Dep-gated DAG implement — build's lane verbatim.
 		implement: acts({ loop: IMPLEMENT_DAG_FANOUT, reads: ["plans"] }),
@@ -1030,7 +1062,8 @@ const shipWorkflow = defineWorkflow({
 	},
 	edges: {
 		goal: "research",
-		research: "plan",
+		research: "acceptance",
+		acceptance: "plan",
 		plan: "plan-cite-check",
 		// Both gates are the named EdgeFns above — they attach a stop-reason
 		// ROUTE_NOTE the recap surfaces; routing semantics are unchanged.

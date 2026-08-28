@@ -229,6 +229,14 @@ const scopeExcess = (dirty: readonly string[], baseline: readonly string[], decl
  * publishes on a clean pass too, so every post-floor dispatch carries the flag
  * and the skill's adjudication step (verdict read + unconditional
  * quarantine-manifest check) decides what there is to rule.
+ *
+ * `--acceptance` threads the goal-derived acceptance inventory so validate
+ * EXECUTES each item's evidence command against the finished tree — the one
+ * executable standard NOT authored by the plan (the plan's own AV commands
+ * inherit the plan's scope; the inventory was frozen before planning). A
+ * failed executable item lands as a structured `blockers:` entry, so it is
+ * remediable by the validate-fix arm like any other blocker. Conditional —
+ * a graph without an acceptance stage simply carries no flag.
  */
 const VALIDATE_GOAL_PROMPT: PromptFn = ({ state }) => {
 	const parts = ["/skill:validate"];
@@ -240,6 +248,8 @@ const VALIDATE_GOAL_PROMPT: PromptFn = ({ state }) => {
 	if (baseline) parts.push(`--baseline ${baseline}`);
 	const scope = latestFsArtifact(state, "implement-scope-check");
 	if (scope?.handle.kind === "fs") parts.push(`--scope ${handleToString(scope.handle)}`);
+	const acceptance = latestFsArtifact(state, "acceptance");
+	if (acceptance?.handle.kind === "fs") parts.push(`--acceptance ${handleToString(acceptance.handle)}`);
 	return parts.join(" ");
 };
 
