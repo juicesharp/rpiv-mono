@@ -13,7 +13,7 @@ import { detectCycle } from "./task-graph.js";
  * `op.kind === "error"` without a side-channel boolean.
  */
 export type Op =
-	| { kind: "create"; taskId: number }
+	| { kind: "create"; taskIds: number[] }
 	| { kind: "update"; id: number; fromStatus: TaskStatus; toStatus: TaskStatus; changed: boolean }
 	| { kind: "delete"; id: number; subject: string }
 	| { kind: "list"; statusFilter?: TaskStatus; includeDeleted: boolean }
@@ -28,6 +28,42 @@ export interface ApplyResult {
 
 function errorResult(state: TaskState, message: string): ApplyResult {
 	return { state, op: { kind: "error", message } };
+}
+
+function asCreateItem(value: unknown): TaskMutationParams | undefined {
+	if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+	return value as TaskMutationParams;
+}
+
+function buildCreatedTask(id: number, spec: TaskMutationParams, subject: string): Task {
+	const newTask: Task = {
+		id,
+		subject,
+		status: "pending",
+	};
+	if (spec.description) newTask.description = spec.description;
+	if (spec.activeForm) newTask.activeForm = spec.activeForm;
+	if (spec.blockedBy?.length) newTask.blockedBy = [...spec.blockedBy];
+	if (spec.owner) newTask.owner = spec.owner;
+	if (spec.metadata) newTask.metadata = { ...spec.metadata };
+	return newTask;
+}
+
+function validateCreateBlockedBy(
+	state: TaskState,
+	blockedBy: number[] | undefined,
+	siblingIds: ReadonlySet<number>,
+): string | undefined {
+	if (!blockedBy?.length) return undefined;
+	for (const dep of blockedBy) {
+		if (siblingIds.has(dep)) {
+			return `blockedBy: #${dep} is another item in this batch; create the prerequisite first, then the dependent with blockedBy`;
+		}
+		const depTask = state.tasks.find((t) => t.id === dep);
+		if (!depTask) return `blockedBy: #${dep} not found`;
+		if (depTask.status === "deleted") return `blockedBy: #${dep} is deleted`;
+	}
+	return undefined;
 }
 
 function sameNumberList(a: number[] | undefined, b: number[] | undefined): boolean {
@@ -78,31 +114,47 @@ function taskChanged(before: Task, after: Task): boolean {
 export function applyTaskMutation(state: TaskState, action: TaskAction, params: TaskMutationParams): ApplyResult {
 	switch (action) {
 		case "create": {
+			const hasSubject = Boolean(params.subject?.trim());
+			const batch = params.tasks;
+
+			if (Array.isArray(batch) && hasSubject) {
+				return errorResult(state, "create requires subject or tasks[], not both");
+			}
+
+			if (Array.isArray(batch)) {
+				if (batch.length === 0) {
+					return errorResult(state, "tasks[] must be non-empty");
+				}
+				const items: Array<{ spec: TaskMutationParams; subject: string }> = [];
+				for (let i = 0; i < batch.length; i++) {
+					const spec = asCreateItem(batch[i]);
+					const subject = spec?.subject;
+					if (!spec || !subject?.trim()) {
+						return errorResult(state, `tasks[${i}]: subject required for create`);
+					}
+					items.push({ spec, subject });
+				}
+				const siblingIds = new Set(items.map((_, i) => state.nextId + i));
+				for (const item of items) {
+					const blockedError = validateCreateBlockedBy(state, item.spec.blockedBy, siblingIds);
+					if (blockedError) return errorResult(state, blockedError);
+				}
+				const created = items.map((item, i) => buildCreatedTask(state.nextId + i, item.spec, item.subject));
+				return {
+					state: { tasks: [...state.tasks, ...created], nextId: state.nextId + created.length },
+					op: { kind: "create", taskIds: created.map((t) => t.id) },
+				};
+			}
+
 			if (!params.subject?.trim()) {
 				return errorResult(state, "subject required for create");
 			}
-			if (params.blockedBy?.length) {
-				for (const dep of params.blockedBy) {
-					const depTask = state.tasks.find((t) => t.id === dep);
-					if (!depTask) return errorResult(state, `blockedBy: #${dep} not found`);
-					if (depTask.status === "deleted") return errorResult(state, `blockedBy: #${dep} is deleted`);
-				}
-			}
-			const newTask: Task = {
-				id: state.nextId,
-				subject: params.subject,
-				status: "pending",
-			};
-			if (params.description) newTask.description = params.description;
-			if (params.activeForm) newTask.activeForm = params.activeForm;
-			if (params.blockedBy?.length) newTask.blockedBy = [...params.blockedBy];
-			if (params.owner) newTask.owner = params.owner;
-			if (params.metadata) newTask.metadata = { ...params.metadata };
-
-			const newTasks = [...state.tasks, newTask];
+			const blockedError = validateCreateBlockedBy(state, params.blockedBy, new Set());
+			if (blockedError) return errorResult(state, blockedError);
+			const newTask = buildCreatedTask(state.nextId, params, params.subject);
 			return {
-				state: { tasks: newTasks, nextId: state.nextId + 1 },
-				op: { kind: "create", taskId: newTask.id },
+				state: { tasks: [...state.tasks, newTask], nextId: state.nextId + 1 },
+				op: { kind: "create", taskIds: [newTask.id] },
 			};
 		}
 

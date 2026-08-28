@@ -118,6 +118,8 @@ export function renderTodoCall(
 
 	if (args.action === "create" && args.subject) {
 		text += ` ${theme.fg("dim", sanitizeTerminalText(args.subject))}`;
+	} else if (args.action === "create" && Array.isArray(args.tasks)) {
+		text += ` ${theme.fg("dim", `${args.tasks.length} tasks`)}`;
 	} else if (
 		(args.action === "update" || args.action === "get" || args.action === "delete") &&
 		args.id !== undefined

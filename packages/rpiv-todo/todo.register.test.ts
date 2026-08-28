@@ -44,6 +44,7 @@ describe("registerTodoTool — registration shape", () => {
 		for (const action of ["create", "update", "list", "get", "delete", "clear"]) {
 			expect(raw).toContain(action);
 		}
+		expect(raw).toContain("tasks");
 	});
 });
 
@@ -54,6 +55,20 @@ describe("registerTodoTool — execute mutates module state", () => {
 		expect((r1!.details as TaskDetails).action).toBe("create");
 		const r2 = await call(tool, { action: "list" });
 		expect(r2?.content[0]).toMatchObject({ text: expect.stringContaining("first") });
+	});
+
+	it("create with tasks[] seeds every row in one call", async () => {
+		const { tool } = setup();
+		const r = await call(tool, {
+			action: "create",
+			tasks: [{ subject: "Inspect existing implementation" }, { subject: "Add tests for batch create" }],
+		});
+		expect(r?.content[0]).toMatchObject({
+			text: "Created #1: Inspect existing implementation (pending)\nCreated #2: Add tests for batch create (pending)",
+		});
+		const d = r?.details as TaskDetails;
+		expect(d.tasks.map((t) => t.subject)).toEqual(["Inspect existing implementation", "Add tests for batch create"]);
+		expect(d.nextId).toBe(3);
 	});
 
 	it("clear resets module state and nextId", async () => {
@@ -80,6 +95,16 @@ describe("registerTodoTool — renderCall", () => {
 		expect(text).toContain("todo ");
 		expect(text).toContain("+");
 		expect(text).toContain("hello");
+	});
+
+	it("create action with tasks[] renders the batch size", () => {
+		const { tool } = setup();
+		const node = tool.renderCall?.(
+			{ action: "create", tasks: [{ subject: "a" }, { subject: "b" }] } as never,
+			theme,
+			undefined as never,
+		) as unknown as Text;
+		expect((node as unknown as { text: string }).text).toContain("2 tasks");
 	});
 
 	it("update action renders '#id' when the task has not been registered yet", () => {
