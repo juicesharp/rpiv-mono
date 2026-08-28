@@ -25,7 +25,7 @@ export type QuestionnaireAction =
 	| { kind: "tab_switch"; nextTab: number }
 	| { kind: "confirm"; answer: QuestionAnswer; autoAdvanceTab?: number }
 	| { kind: "toggle"; index: number }
-	| { kind: "multi_confirm"; selected: string[]; autoAdvanceTab?: number }
+	| { kind: "multi_confirm"; selected: string[]; answer: string | null; autoAdvanceTab?: number }
 	| { kind: "cancel" }
 	| { kind: "notes_enter" }
 	| { kind: "notes_exit" }
@@ -116,6 +116,15 @@ function buildMultiSelected(state: QuestionnaireState, runtime: QuestionnaireRun
 	return out;
 }
 
+function buildMultiConfirmAction(state: QuestionnaireState, runtime: QuestionnaireRuntime): QuestionnaireAction {
+	return {
+		kind: "multi_confirm",
+		selected: buildMultiSelected(state, runtime),
+		answer: runtime.inputBuffer.trim().length > 0 ? runtime.inputBuffer : null,
+		autoAdvanceTab: computeAutoAdvanceTab(state, runtime),
+	};
+}
+
 function tabSwitchAction(
 	data: string,
 	state: QuestionnaireState,
@@ -175,6 +184,8 @@ function routeInputMode(
 	// the same physical key to both semantic actions.
 	if (kb.matches(data, KEYBIND_NEW_LINE)) return { kind: "ignore" };
 	if (isConfirm(kb, data)) {
+		const q = runtime.questions[state.currentTab];
+		if (q?.multiSelect) return buildMultiConfirmAction(state, runtime);
 		const answer = buildSingleSelectAnswer(state, runtime);
 		if (!answer) return { kind: "ignore" };
 		return { kind: "confirm", answer, autoAdvanceTab: computeAutoAdvanceTab(state, runtime) };
@@ -241,24 +252,15 @@ function routeMultiSelectTab(
 		return { kind: "toggle", index: state.optionIndex };
 	}
 	if (isConfirm(kb, data)) {
-		// Enter on the "Type something." row is handled by the inputMode block above
-		// (→ confirm kind:"custom"). Defensive: never enter the toggle/multi_confirm
-		// path for an inputMode-activating row.
+		// Enter on the "Type something." row is handled by the inputMode block above.
+		// Defensive: never enter the toggle/multi_confirm path for an input-mode row.
 		if (focusedMeta?.activatesInputMode) return { kind: "ignore" };
 		// Enter on a regular row toggles (matching Space) — committing the question is now
 		// gated behind explicit focus on a row whose META declares `autoSubmitsInMulti`
 		// (the Next sentinel), so Enter on options is a no-cost way to flip checkboxes
 		// without leaving the keyboard home row.
 		if (!focusedMeta?.autoSubmitsInMulti) return { kind: "toggle", index: state.optionIndex };
-		// Enter on Next: carry autoAdvanceTab so the host can advance to the next tab in
-		// multi-question mode, OR submit the dialog in single-question mode
-		// (autoAdvanceTab === undefined when !isMulti). Without this, a single multi-select
-		// question would have no way to commit at all.
-		return {
-			kind: "multi_confirm",
-			selected: buildMultiSelected(state, runtime),
-			autoAdvanceTab: computeAutoAdvanceTab(state, runtime),
-		};
+		return buildMultiConfirmAction(state, runtime);
 	}
 	if (kb.matches(data, KEYBIND_CANCEL)) return { kind: "cancel" };
 	return { kind: "ignore" };
