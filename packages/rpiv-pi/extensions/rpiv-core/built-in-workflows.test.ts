@@ -2004,6 +2004,73 @@ describe("build goal channel (verbatim brief threading)", () => {
 			const parsed = JSON.parse(readFileSync(join(tmpDir, baseline?.handle.path ?? ""), "utf-8"));
 			expect(parsed).toEqual({ paths: [] });
 		});
+
+		it("halts a garbage brief (< 12 non-whitespace chars) with the preflight error before any fs side effect", () => {
+			const stage = build().stages.goal;
+			if (!stage?.run) throw new Error("build goal stage has no run function");
+			const run = stage.run as (ctx: { cwd: string; input?: undefined; state: RunView }) => {
+				artifacts: readonly { handle: { kind: string; path: string }; role?: string }[];
+			};
+			// 'do something' = 11 non-whitespace chars — exactly one below the threshold.
+			expect(() =>
+				run({
+					cwd: tmpDir,
+					input: undefined,
+					state: { originalInput: "do something", named: {} } as unknown as RunView,
+				}),
+			).toThrow(/re-invoke with a fuller brief/);
+			// The guard fires before the stamp — nothing was written (no goal dir,
+			// no goal file, no baseline).
+			expect(existsSync(join(tmpDir, ".rpiv/artifacts/goal"))).toBe(false);
+		});
+
+		it("passes a short-but-real brief through to the goal artifact and baseline", () => {
+			const stage = build().stages.goal;
+			if (!stage?.run) throw new Error("build goal stage has no run function");
+			const run = stage.run as (ctx: { cwd: string; input?: undefined; state: RunView }) => {
+				artifacts: readonly { handle: { kind: string; path: string }; role?: string }[];
+			};
+			// 'fix the flaky lane-dock resize test' = 30 non-whitespace chars.
+			const brief = "fix the flaky lane-dock resize test";
+			const output = run({
+				cwd: tmpDir,
+				input: undefined,
+				state: { originalInput: brief, named: {} } as unknown as RunView,
+			});
+			const handle = output.artifacts[0]?.handle;
+			expect(handle?.kind).toBe("fs");
+			expect(handle?.path).toMatch(/^\.rpiv\/artifacts\/goal\/goal-.+\.md$/);
+			expect(readFileSync(join(tmpDir, handle?.path ?? ""), "utf-8")).toBe(brief);
+			const baseline = output.artifacts[1];
+			expect(baseline?.role).toBe("baseline");
+			expect(baseline?.handle.path).toMatch(/^\.rpiv\/artifacts\/goal\/baseline-.+\.json$/);
+			const parsed = JSON.parse(readFileSync(join(tmpDir, baseline?.handle.path ?? ""), "utf-8"));
+			expect(parsed).toEqual({ paths: [] });
+		});
+	});
+
+	it("vet's goal capture passes a bare review-scope token — the garbage floor is build/ship-only", () => {
+		// `/wf vet staged` is a documented invocation whose whole brief is 6
+		// non-whitespace characters. Vet captures via captureReviewScope (no
+		// floor); the strict captureGoal would have halted it.
+		const stage = findWorkflow("vet").stages.goal;
+		if (!stage?.run) throw new Error("vet goal stage has no run function");
+		const run = stage.run as (ctx: { cwd: string; input?: undefined; state: RunView }) => {
+			artifacts: readonly { handle: { kind: string; path: string }; role?: string }[];
+		};
+		const tmp = mkdtempSync(join(tmpdir(), "rpiv-vet-goal-"));
+		try {
+			const output = run({
+				cwd: tmp,
+				input: undefined,
+				state: { originalInput: "staged", named: {} } as unknown as RunView,
+			});
+			const handle = output.artifacts[0]?.handle;
+			expect(handle?.kind).toBe("fs");
+			expect(readFileSync(join(tmp, handle?.path ?? ""), "utf-8")).toBe("staged");
+		} finally {
+			rmSync(tmp, { recursive: true, force: true });
+		}
 	});
 
 	it("research dispatches the raw brief via prompt (goal displaced it from the start slot)", () => {

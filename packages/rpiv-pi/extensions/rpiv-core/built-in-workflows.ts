@@ -44,6 +44,7 @@ import {
 	CODE_DIMENSION_FANOUT,
 	COMMIT_BASELINE_PROMPT,
 	captureGoal,
+	captureReviewScope,
 	codeDemote,
 	codeGatePasses,
 	codeSnapshot,
@@ -292,8 +293,10 @@ const vetWorkflow = defineWorkflow({
 	start: "goal",
 	stages: {
 		// Capture the user's brief verbatim on its own `goal` channel, and snapshot
-		// the run-start pre-existing-dirty paths (role "baseline"). Reuses build's
-		// `captureGoal` verbatim — no new function — so the scope-check's
+		// the run-start pre-existing-dirty paths (role "baseline"). Uses
+		// `captureReviewScope` — build's capture minus the garbage-brief floor,
+		// because vet's input is a review-scope token ("staged", a hash) that is
+		// legitimately shorter than any brief the floor admits — so the scope-check's
 		// `reads: ["plans", "goal"]` resolves a baseline to subtract and the goal md
 		// rides the channel face. `goal` as start publishes the goal-md as
 		// `artifacts[0]`; `code-review` is a plain `produces()` SKILL stage (skill
@@ -309,7 +312,7 @@ const vetWorkflow = defineWorkflow({
 		// attaches its `outputSchema` and the `blockers_count` gate would read
 		// UNVALIDATED data (NaN-route risk, not just a warning). Keeping it a skill
 		// stage keeps `skill="code-review"` → contract schema attaches → validated.
-		goal: produces.script({ run: captureGoal }),
+		goal: produces.script({ run: captureReviewScope }),
 		"code-review": produces(),
 		blueprint: produces(),
 		// Dep-gated DAG variant: implement phases now

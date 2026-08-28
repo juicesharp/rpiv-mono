@@ -25,6 +25,7 @@ export {
 export {
 	COMMIT_BASELINE_PROMPT,
 	captureGoal,
+	captureReviewScope,
 	VALIDATE_GOAL_PROMPT,
 } from "./goal-baseline.js";
 export {

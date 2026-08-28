@@ -12,7 +12,7 @@ import {
 	type RunView,
 	type ScriptContext,
 } from "@juicesharp/rpiv-workflow/registration";
-import { latestFsArtifact, readArtifactFile } from "./shared.js";
+import { haltPreflight, latestFsArtifact, readArtifactFile } from "./shared.js";
 
 /** Bucket directory the goal capture writes into — build's verbatim-brief channel. */
 const GOAL_DIR = ".rpiv/artifacts/goal";
@@ -35,6 +35,37 @@ const GOAL_DIR = ".rpiv/artifacts/goal";
  * deterministic.
  */
 const captureGoal = ({ state, cwd }: ScriptContext): Omit<Output, "meta"> => {
+	// Garbage-brief preflight — a placeholder brief ("do something") can only
+	// ground a GENERATIVE run against nothing, so halt BEFORE any fs side
+	// effect (no goal dir, no goal file, no baseline snapshot). originalInput
+	// arrives frozen and unnormalized, so the guard strips whitespace itself.
+	// The runner wraps every throw from a script run body as a halted stage.
+	// Build/ship ONLY: vet captures via `captureReviewScope` below — its input
+	// is a review-scope token ("staged", "working", a hash), legitimately
+	// shorter than any brief this floor would admit.
+	if (state.originalInput.replace(/\s/g, "").length < 12)
+		throw haltPreflight(
+			"goal",
+			"goal: the brief is too thin to ground a run",
+			"goal: the brief carries fewer than 12 non-whitespace characters — re-invoke with a fuller brief naming the ask, any constraints, and the observable outcome to expect.",
+		);
+	return writeGoalCapture(state, cwd);
+};
+
+/**
+ * Vet's goal capture — the SAME verbatim capture + baseline snapshot, minus
+ * the garbage-brief floor: vet's "brief" is the review scope `code-review`
+ * accepts ("staged", "working", a commit hash, an `A..B` range), and every
+ * documented invocation is shorter than the floor's 12 non-whitespace
+ * characters. Run 2026-08-28_17-06-39-18f1's adopted preflight would have
+ * turned `/wf vet staged` into a halt — the acceptance inventory never
+ * covered vet because the implementing brief never mentioned it (a
+ * goal-derived standard faithfully inherits its brief's blind spots).
+ */
+const captureReviewScope = ({ state, cwd }: ScriptContext): Omit<Output, "meta"> => writeGoalCapture(state, cwd);
+
+/** The shared capture body — the verbatim goal file + run-start baseline. */
+const writeGoalCapture = (state: ScriptContext["state"], cwd: string): Omit<Output, "meta"> => {
 	const stamp = new Date().toISOString().replace(/[:.]/g, "-");
 	const rel = join(GOAL_DIR, `goal-${stamp}.md`);
 	mkdirSync(join(cwd, GOAL_DIR), { recursive: true });
@@ -271,6 +302,7 @@ export type { GitStatusEntry };
 export {
 	COMMIT_BASELINE_PROMPT,
 	captureGoal,
+	captureReviewScope,
 	gitDirtyEntries,
 	goalBaselinePath,
 	readGoalBaseline,
