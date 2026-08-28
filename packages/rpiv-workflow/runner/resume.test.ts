@@ -29,13 +29,24 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMockSessionChain, mockAssistantMessage } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { acts, defineRoute, type FanoutFn, type IterateFn, match, produces, type Workflow } from "../api.js";
+import {
+	acts,
+	defineRoute,
+	type EdgeFn,
+	type FanoutFn,
+	type IterateFn,
+	match,
+	produces,
+	setRouteNote,
+	type Workflow,
+} from "../api.js";
 import { stageEntryArgs } from "../chain-state.js";
 import type { Artifact } from "../handle.js";
-import { fs as fsHandle, handleToString } from "../handle.js";
+import { fs as fsHandle, handleToString, opaque } from "../handle.js";
 import { judge } from "../judge.js";
 import { assess, fanout, iterate, majority, panel, verify } from "../loop-constructors.js";
 import { advanceCursor, foldFanoutCompletion, freshCursor } from "../loop-kinds.js";
+import { FAIL_GATE_STOP } from "../messages.js";
 import type { Output } from "../output.js";
 import {
 	appendHeader,
@@ -43,6 +54,7 @@ import {
 	appendStage,
 	type RoutingDecision,
 	readAllStages,
+	readHeader,
 	STATE_SCHEMA_VERSION,
 	stateFilePath,
 	type WorkflowHeader,
@@ -50,7 +62,7 @@ import {
 } from "../state/index.js";
 import type { RunState } from "../types.js";
 import { reconstructState } from "./resume.js";
-import { resumeWorkflow } from "./runner.js";
+import { resumeWorkflow, runWorkflow } from "./runner.js";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -2351,6 +2363,98 @@ describe("resumeWorkflow — gate-stop halts (the re-measure)", () => {
 		expect(result.success).toBe(false);
 		expect(result.error).toContain("matched no branch");
 		expect(doneSpy).not.toHaveBeenCalled();
+	});
+
+	it("LIVE formation: an unchanged acts digest halts at the arm's own gate, and resume dispatches onward (e2e)", async () => {
+		// End to end through the real runner: the acts stage's NAMED outcome
+		// publishes its digest onto state.named (the side-effect publish rule),
+		// the gate folds it and stops with a note, chain-advance writes the
+		// [stop row, FAIL_GATE_STOP row] pair — and the resume entry then takes
+		// the side-effect arm, dispatching `verify` instead of replaying `fix`.
+		const digestOutcome: import("../output-spec.js").Outcome<unknown, "digest", { changed: boolean }> = {
+			name: "digest",
+			collector: {
+				collect: () => ({ kind: "ok", artifacts: [{ handle: opaque("digest-unchanged"), role: "digest" }] }),
+			},
+			parser: { parse: () => ({ kind: "ok", payload: { kind: "digest", data: { changed: false } } }) },
+		};
+		const fixGate: EdgeFn = defineRoute(
+			["verify", "stop"],
+			({ state }) => {
+				const data = state.named.digest?.at(-1)?.data as { changed?: unknown } | undefined;
+				if (data?.changed !== false) return "verify";
+				setRouteNote(fixGate, "digest unchanged");
+				return "stop";
+			},
+			{ readsData: false },
+		);
+		const verifySpy = vi.fn(() => ({ kind: "artifacts" as const, artifacts: [], data: { verdict: "pass" } }));
+		const wf: Workflow = {
+			name: "test-wf",
+			start: "fix",
+			stages: {
+				fix: acts({ skill: "fix", outcome: digestOutcome }),
+				verify: produces.script({ run: verifySpy }),
+			},
+			edges: { fix: fixGate, verify: "stop" },
+		} as Workflow;
+
+		const live = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [{ branch: [mockAssistantMessage("nothing to change")] }],
+		});
+		const halted = await runWorkflow(live.ctx, { workflow: wf, input: "x" });
+		expect(halted.success).toBe(false);
+		expect(halted.error).toContain("digest unchanged");
+
+		const header = readHeader(tmpDir, halted.runId!);
+		if (!header) throw new Error("halted run wrote no header");
+		const resumed = createMockSessionChain({ cwd: tmpDir, steps: [] });
+		const result = await resumeWorkflow(resumed.ctx, { workflow: wf, header, ref: "@ref" });
+
+		expect(result.success).toBe(true);
+		expect(verifySpy).toHaveBeenCalledTimes(1);
+		expect(resumed.sentMessages.some((m) => m.startsWith("/skill:fix"))).toBe(false);
+	});
+
+	it("the halt toast names the resume remedy with the run id", () => {
+		// The remedy string is what turns "fix and re-run" (read as: start over,
+		// re-paying the whole front-load) into "fix and resume".
+		const toast = FAIL_GATE_STOP("validate", 'value "fail" matched no branch', "2026-06-03_07-30-00-ab12").toast;
+		expect(toast).toContain("resume with /wf @2026-06-03_07-30-00-ab12");
+	});
+
+	it("multi-target side-effect gate: resume re-routes (idempotent re-stop) — never replays the arm", async () => {
+		const fixSpy = vi.fn();
+		const route: EdgeFn = defineRoute(["verify", "alt", "stop"], () => {
+			setRouteNote(route, "still blocked");
+			return "stop";
+		});
+		const wf: Workflow = {
+			name: "test-wf",
+			start: "fix",
+			stages: {
+				fix: acts.script({ run: fixSpy }),
+				verify: produces.script({ run: () => ({ kind: "artifacts", artifacts: [], data: {} }) }),
+				alt: produces.script({ run: () => ({ kind: "artifacts", artifacts: [], data: {} }) }),
+			},
+			edges: { fix: route, verify: "stop", alt: "stop" },
+		} as Workflow;
+
+		writeTrail([
+			{ session: null, stageNumber: 1, stage: "fix", status: "completed", ts: "t1", output: fakeOutput() },
+			stopRow("fix", 1, "still blocked"),
+			gateHaltRow("fix", 2),
+		]);
+
+		const chain = createMockSessionChain({ cwd: tmpDir, steps: [] });
+		const result = await resumeWorkflow(chain.ctx, { workflow: wf, header: baseHeader, ref: "@ref" });
+
+		// The ambiguous onward set re-fires the EDGE, not the arm: the route
+		// re-stops with its note and the run halts again — zero side effects.
+		expect(result.success).toBe(false);
+		expect(result.error).toContain("still blocked");
+		expect(fixSpy).not.toHaveBeenCalled();
 	});
 
 	it("side-effect gate: resume dispatches the sole onward target instead of replaying the arm", async () => {

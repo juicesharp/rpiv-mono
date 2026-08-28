@@ -28,8 +28,8 @@ import { advance, buildLoopDeps, dispatchStageOrRecordFailure, resumeStageWithSe
  *   - trailing unit row → re-enter the loop with the fold's cursor;
  *   - completed normal trailer → route onward (finished run hits stop ⇒ no-op);
  *   - gate-stop halt on a side-effect stage → dispatch the gate's sole
- *     non-stop target (re-measure without replaying side effects — see the
- *     arm's comment);
+ *     non-stop target, or re-route (idempotent re-stop) when the target is
+ *     ambiguous — NEVER replay the arm (see the arm's comment);
  *   - failed/aborted trailer → session-backed rows try promotion/reattach
  *     (`resumeStageWithSession`); sessionless rows re-run cold (today's
  *     behavior). Dispatch keys on the STRUCTURED `session` field, mirroring
@@ -89,14 +89,17 @@ export function selectResumeEntry(
 	// halted it. The re-measure path is the gate's own onward target: dispatch
 	// its sole non-stop target so the fix loop's verification body re-judges
 	// the repaired tree. A gate with several onward targets (none exist today)
-	// falls through to the ordinary re-dispatch below, which for a PRODUCES
-	// gate stage is already the re-measure (the stage re-runs its judgment and
-	// its route re-folds on fresh data).
+	// must NOT fall through to the cold re-dispatch below — that is exactly the
+	// replay this arm exists to prevent — so it re-routes instead: `advance`
+	// re-fires the edge over the replayed channels, which either picks a live
+	// onward branch or re-stops with the same note (an idempotent halt, zero
+	// side effects). Only a PRODUCES gate stage takes the re-dispatch below,
+	// where re-running IS the re-measure (fresh judgment, route re-folds).
 	if (recon.gateStop && run.workflow.stages[last.stage]?.kind === "side-effect") {
 		const onward = soleOnwardTarget(run.workflow, last.stage);
-		if (onward !== undefined) {
-			return () => guardResumeEntry(ctx, onward, run, () => dispatchStageOrRecordFailure(ctx, onward, idx + 1, run));
-		}
+		return onward !== undefined
+			? () => guardResumeEntry(ctx, onward, run, () => dispatchStageOrRecordFailure(ctx, onward, idx + 1, run))
+			: () => guardResumeEntry(ctx, last.stage, run, () => advance(ctx, last.stage, idx, run));
 	}
 	// failed/aborted trailer — the c2 boundary. Re-attempting this stage is
 	// intentional and the core resume retry use case: session-backed rows try

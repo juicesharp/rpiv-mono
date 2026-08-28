@@ -2,7 +2,13 @@
  * The grade panels: the shared tiered panel factory, its build-lane instances,
  * and ship's bespoke tier-independent panel and verdict channel.
  */
-import { directoryPathCollector, fanout, handleToString, jsonBodyParser } from "@juicesharp/rpiv-workflow/registration";
+import {
+	directoryPathCollector,
+	fanout,
+	handleToString,
+	jsonBodyParser,
+	type RunView,
+} from "@juicesharp/rpiv-workflow/registration";
 import {
 	dimensionsToRegrade,
 	freshVerdicts,
@@ -17,6 +23,27 @@ import {
 } from "./gates.js";
 import { isSurgicalFix, priorArtifact } from "./priors.js";
 import { latestFsArtifact } from "./shared.js";
+
+/**
+ * The dimension-scoped artifact flags every panel body composes — ONE
+ * construction site shared by the `gradePanelFanout` factory and ship's
+ * bespoke twin, so the twins' flag spellings can't drift. Each flag is empty
+ * when its channel carries no fs artifact (workflows without that stage
+ * simply emit no flag). Routing: `--context` → architecture-fit only,
+ * `--goal` → GOAL_DIMENSIONS, `--acceptance` → completeness only — the
+ * per-dimension keying stays at the prompt-composition sites.
+ */
+const dimensionArtifactFlags = (state: RunView): { contextFlag: string; goalFlag: string; acceptanceFlag: string } => {
+	const flag = (channel: string, name: string): string => {
+		const doc = latestFsArtifact(state, channel);
+		return doc?.handle.kind === "fs" ? ` --${name} ${handleToString(doc.handle)}` : "";
+	};
+	return {
+		contextFlag: flag("research", "context"),
+		goalFlag: flag("goal", "goal"),
+		acceptanceFlag: flag("acceptance", "acceptance"),
+	};
+};
 
 /**
  * A grade panel: one `grade` session per dimension over the latest artifact on
@@ -68,18 +95,12 @@ const gradePanelFanout = (
 			const doc = latestFsArtifact(state, channel);
 			if (doc?.handle.kind !== "fs") return [];
 			const target = handleToString(doc.handle);
-			const research = latestFsArtifact(state, "research");
-			const contextFlag = research?.handle.kind === "fs" ? ` --context ${handleToString(research.handle)}` : "";
-			const goal = latestFsArtifact(state, "goal");
-			const goalFlag = goal?.handle.kind === "fs" ? ` --goal ${handleToString(goal.handle)}` : "";
 			// The goal-derived acceptance inventory threads to the completeness
 			// unit only: completeness anchors on the enumerated items instead of
 			// re-deriving the ask list from goal prose each round. Conditional —
 			// workflows without an acceptance stage (vet/polish, user-authored)
 			// simply emit no flag.
-			const acceptance = latestFsArtifact(state, "acceptance");
-			const acceptanceFlag =
-				acceptance?.handle.kind === "fs" ? ` --acceptance ${handleToString(acceptance.handle)}` : "";
+			const { contextFlag, goalFlag, acceptanceFlag } = dimensionArtifactFlags(state);
 			const roster = gateRoster(gateTier(state, verdictChannel), dimensions);
 			const latest = latestVerdictPerDimension(freshVerdicts(state.named[verdictChannel], target));
 			const risks = planAuthoredRisks(state, channel);
@@ -161,15 +182,9 @@ export const SHIP_DIMENSION_FANOUT = fanout({
 		const doc = latestFsArtifact(state, "plans");
 		if (doc?.handle.kind !== "fs") return [];
 		const target = handleToString(doc.handle);
-		const research = latestFsArtifact(state, "research");
-		const contextFlag = research?.handle.kind === "fs" ? ` --context ${handleToString(research.handle)}` : "";
-		const goal = latestFsArtifact(state, "goal");
-		const goalFlag = goal?.handle.kind === "fs" ? ` --goal ${handleToString(goal.handle)}` : "";
-		// The acceptance inventory threads to completeness only — the shared
-		// factory's rule, mirrored (see gradePanelFanout).
-		const acceptance = latestFsArtifact(state, "acceptance");
-		const acceptanceFlag =
-			acceptance?.handle.kind === "fs" ? ` --acceptance ${handleToString(acceptance.handle)}` : "";
+		// The shared flag-composition site — the twins compose it rather than
+		// mirroring it (dimension keying below stays ship's own).
+		const { contextFlag, goalFlag, acceptanceFlag } = dimensionArtifactFlags(state);
 		// The floor's findings (advisory by construction — see the fanout doc
 		// above) thread as `--cite-check`; no findings ⇒ no flag.
 		const cite = latestFsArtifact(state, "plan-cite-check");

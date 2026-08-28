@@ -121,6 +121,14 @@ const hasValidSessionRef = (row: object): boolean => {
 const isRoutingDecision = (row: unknown): row is RoutingDecision =>
 	!!row && (row as { type?: unknown }).type === "routing";
 
+/**
+ * The routed-stop decision literal — mirrors routing-dsl's `STOP`, not
+ * imported so state/ stays a leaf. ONE local spelling for both consumers
+ * (the resume reader's separator scan and `trailingRoutingStop`), so the
+ * mirror can't drift within this module.
+ */
+const ROUTED_STOP = "stop";
+
 /** Shape guard for loop-cap telemetry rows. */
 const isLoopCapRow = (r: unknown): r is LoopCapRow => (r as { type?: unknown } | undefined)?.type === "loop-cap";
 
@@ -181,10 +189,9 @@ export function readAllStagesForResume(
 			const label = typeof parsed.stage === "string" ? ` ("${parsed.stage}")` : "";
 			return { ok: false, detail: `stage row ${parsed.stageNumber}${label} failed the shape guard` };
 		}
-		// The literal mirrors routing-dsl's `STOP` (same rationale as
-		// `trailingRoutingStop`). Non-stop routing rows are pure telemetry and
-		// stay invisible to the fold, exactly as before.
-		if (isRoutingDecision(parsed) && parsed.decision === "stop") pendingStop = parsed;
+		// Non-stop routing rows are pure telemetry and stay invisible to the
+		// fold, exactly as before.
+		if (isRoutingDecision(parsed) && parsed.decision === ROUTED_STOP) pendingStop = parsed;
 	}
 	return { ok: true, rows, stopBefore };
 }
@@ -262,7 +269,7 @@ function recapOutcomeOf(last: WorkflowStage): RunRecap["outcome"] {
 function trailingRoutingStop(cwd: string, runId: string): RoutingDecision | undefined {
 	const rows = readParsedRows(cwd, runId);
 	const last = rows[rows.length - 1];
-	return isRoutingDecision(last) && last.decision === "stop" ? last : undefined;
+	return isRoutingDecision(last) && last.decision === ROUTED_STOP ? last : undefined;
 }
 
 /**

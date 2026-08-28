@@ -80,10 +80,11 @@ Everything lands under `.rpiv/artifacts/` in the project you are working in:
 ```
 .rpiv/artifacts/
 ├── goal/                   discover/            research/
-├── solutions/              slices/              designs/
-├── elaborations/           plans/               subplans/
-├── verdicts/               reviews/             validation/
-└── architecture-reviews/   triage/              handoffs/
+├── acceptance/             solutions/           slices/
+├── designs/                elaborations/        plans/
+├── subplans/               verdicts/            reviews/
+├── validation/             architecture-reviews/
+└── triage/                 handoffs/
 ```
 
 The directory is created lazily by the first skill that writes into it.

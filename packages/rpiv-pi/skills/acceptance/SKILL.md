@@ -67,7 +67,7 @@ An acceptance item is one **observable outcome** the goal asks for — behavior 
 - **Goal-traceable** — the `statement` restates one explicit ask (or explicit constraint) from the goal in one line; quote or closely paraphrase the goal's own words. Never invent scope the goal doesn't name (the graders' anti-scope-inflation rule applies here first).
 - **Observable** — phrased as a checkable end state ("`/wf ship` halts at the grade gate with a route note"), never as activity ("implement the gate").
 - **Singular** — one outcome per item; a goal sentence naming two outcomes yields two items.
-- **Right-sized set** — typically 3–12 items; every explicit ask is covered, and nothing is padded. A one-line goal may legitimately yield a single item.
+- **Right-sized set** — typically 3–12 items; every explicit ask is covered, and nothing is padded. A one-line goal may legitimately yield a single item. The schema's hard ceiling is 24 — deliberately tighter than the plan/slice family's 32, because an inventory that large is re-litigating scope, not enumerating a brief; a goal genuinely that broad belongs in `build`'s slice decomposition, with each slice's asks staying items here only at the observable-outcome grain.
 
 Evidence, per item — exactly one of:
 
@@ -114,6 +114,7 @@ Derived from the verbatim goal ({goal path}). Items enumerate the goal's explici
 
 ## Important Notes
 
+- **Consistently counted, always.** `item_count` == `items:` array length == the number of `### aN:` sections — the `phase_count`/`slice_count` discipline, applied here. Ids run `a1…aN` with no gaps or duplicates.
 - **Items from the goal ALONE.** Research grounds evidence, never membership — the whole point of this stage is a standard the later narrowing cannot rewrite. If the goal names an ask the research argues against, the item still exists; the PLAN defers it legibly.
 - **The inventory is frozen.** No downstream stage re-emits on the acceptance channel; deferral happens in the plan (visibly, per item id), never by editing this artifact.
 - **Read-only, self-contained commands.** Validate runs them as written after implement — a command that mutates the tree or depends on external state corrupts the very measurement it exists to make.
