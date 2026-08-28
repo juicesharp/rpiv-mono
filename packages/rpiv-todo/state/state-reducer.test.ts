@@ -43,7 +43,98 @@ describe("applyTaskMutation — create", () => {
 		expect(result.state.tasks[0]).toMatchObject({ id: 1, subject: "write tests", status: "pending" });
 		expect(result.state.nextId).toBe(2);
 		expect(result.state.tasks).not.toBe(state.tasks);
-		expect(result.op).toEqual({ kind: "create", taskId: 1 });
+		expect(result.op).toEqual({ kind: "create", taskIds: [1] });
+	});
+
+	it("rejects subject and tasks[] together", () => {
+		const result = applyTaskMutation(emptyState(), "create", {
+			subject: "one",
+			tasks: [{ subject: "two" }],
+		});
+		expect(result.op).toEqual({ kind: "error", message: "create requires subject or tasks[], not both" });
+		expect(result.state.tasks).toHaveLength(0);
+		expect(result.state.nextId).toBe(1);
+	});
+
+	it("rejects an empty tasks[] batch", () => {
+		const result = applyTaskMutation(emptyState(), "create", { tasks: [] });
+		expect(result.op).toEqual({ kind: "error", message: "tasks[] must be non-empty" });
+		expect(result.state.nextId).toBe(1);
+	});
+
+	it("rejects a blank subject inside tasks[] and creates nothing", () => {
+		const result = applyTaskMutation(emptyState(), "create", {
+			tasks: [{ subject: "ok" }, { subject: "  " }],
+		});
+		expect(result.op).toEqual({ kind: "error", message: "tasks[1]: subject required for create" });
+		expect(result.state.tasks).toHaveLength(0);
+		expect(result.state.nextId).toBe(1);
+	});
+
+	it("creates consecutive ids and preserves per-item fields", () => {
+		const result = applyTaskMutation(emptyState(), "create", {
+			tasks: [
+				{ subject: "Inspect existing implementation" },
+				{
+					subject: "Add tests for batch create",
+					description: "reducer + envelope",
+					owner: "rpiv-todo",
+				},
+			],
+		});
+		expect(result.op).toEqual({ kind: "create", taskIds: [1, 2] });
+		expect(result.state.nextId).toBe(3);
+		expect(result.state.tasks).toEqual([
+			{ id: 1, subject: "Inspect existing implementation", status: "pending" },
+			{
+				id: 2,
+				subject: "Add tests for batch create",
+				status: "pending",
+				description: "reducer + envelope",
+				owner: "rpiv-todo",
+			},
+		]);
+	});
+
+	it("allows batch blockedBy on a task that already exists", () => {
+		const state = stateWith(task({ id: 1, subject: "root" }));
+		const result = applyTaskMutation(state, "create", {
+			tasks: [{ subject: "leaf", blockedBy: [1] }],
+		});
+		expect(result.op).toEqual({ kind: "create", taskIds: [2] });
+		expect(result.state.tasks[1]).toMatchObject({ id: 2, subject: "leaf", blockedBy: [1] });
+	});
+
+	it("rejects sibling blockedBy and leaves state unchanged", () => {
+		const result = applyTaskMutation(emptyState(), "create", {
+			tasks: [{ subject: "first" }, { subject: "second", blockedBy: [1] }],
+		});
+		expect(result.op).toEqual({
+			kind: "error",
+			message:
+				"blockedBy: #1 is another item in this batch; create the prerequisite first, then the dependent with blockedBy",
+		});
+		expect(result.state.tasks).toHaveLength(0);
+		expect(result.state.nextId).toBe(1);
+	});
+
+	it("rejects a dangling blockedBy in a batch and creates nothing", () => {
+		const result = applyTaskMutation(emptyState(), "create", {
+			tasks: [{ subject: "ok" }, { subject: "bad", blockedBy: [99] }],
+		});
+		expect(result.op).toEqual({ kind: "error", message: "blockedBy: #99 not found" });
+		expect(result.state.tasks).toHaveLength(0);
+		expect(result.state.nextId).toBe(1);
+	});
+
+	it("rejects a deleted blockedBy in a batch and creates nothing", () => {
+		const state = stateWith(task({ id: 1, subject: "done", status: "deleted" }));
+		const result = applyTaskMutation(state, "create", {
+			tasks: [{ subject: "ok" }, { subject: "bad", blockedBy: [1] }],
+		});
+		expect(result.op).toEqual({ kind: "error", message: "blockedBy: #1 is deleted" });
+		expect(result.state.tasks).toHaveLength(1);
+		expect(result.state.nextId).toBe(2);
 	});
 });
 

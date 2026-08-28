@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `create` accepts `tasks[]` as a one-of with `subject`, so a plan can land in one call. The batch is all-or-nothing; items cannot `blockedBy` each other (#44).
+
 ## [2.7.1] - 2026-08-24
 
 ## [2.7.0] - 2026-08-21

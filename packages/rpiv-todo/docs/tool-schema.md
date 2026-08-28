@@ -8,7 +8,7 @@ for the `todo` tool registered by
 
 | Action | Required params | What it does |
 | --- | --- | --- |
-| `create` | `subject` | Adds a task in `pending`, assigns the next id. |
+| `create` | `subject` or `tasks[]` (one-of) | Adds one task, or several independent tasks, in `pending`. |
 | `update` | `id` + at least one mutable field | Changes status, fields, or dependencies. |
 | `list` | — | Returns all tasks, optionally filtered by `status`. |
 | `get` | `id` | Returns one task with its `blockedBy` and reverse `blocks` edges. |
@@ -21,9 +21,17 @@ for the `todo` tool registered by
 todo({
   action: "create" | "update" | "list" | "get" | "delete" | "clear",
 
-  // create-only
-  subject?: string,                   // required for create
-  blockedBy?: number[],               // initial dependency ids
+  // create-only (one-of: subject or tasks[])
+  subject?: string,                   // required for single create
+  blockedBy?: number[],               // initial dependency ids (single create)
+  tasks?: Array<{                     // batch create; independent items only
+    subject: string,
+    description?: string,
+    activeForm?: string,
+    blockedBy?: number[],             // existing ids only; no sibling refs
+    owner?: string,
+    metadata?: Record<string, unknown>,
+  }>,
 
   // create + update
   description?: string,               // long-form detail
@@ -45,6 +53,13 @@ todo({
   includeDeleted?: boolean,           // default false — hides tombstones
 })
 ```
+
+`create` takes either `subject` (one task) or `tasks[]` (several independent
+tasks). Passing both is rejected. The batch is validated first and committed
+together: one bad item fails the whole call and leaves the list unchanged.
+Items in `tasks[]` cannot `blockedBy` each other; those ids do not exist until
+the call commits. Create the prerequisite first, then the dependent with
+`blockedBy`. `blockedBy` on a batch item may name a task that already exists.
 
 `update` merges `metadata` key by key into the existing record; passing `null`
 for a key removes it, and emptying the record drops the field entirely.
@@ -111,6 +126,7 @@ survive `/reload` and compaction without any disk writes.
 | Situation | `content[0].text` |
 | --- | --- |
 | Created | `Created #3: Write the parser (pending)` |
+| Created a batch | one `Created #N: … (pending)` line per task, joined by newlines |
 | Updated with a status change | `Updated #3 (pending → in_progress)` |
 | Updated without a status change | `Updated #3` |
 | Update that changed nothing | `No change: #3 already matches the requested values (status: in_progress)` |
@@ -127,9 +143,13 @@ that it was a no-op instead of a fresh `Updated #N`.
 
 | Message | Cause |
 | --- | --- |
-| `subject required for create` | `create` without a non-blank `subject`. |
+| `subject required for create` | `create` without a non-blank `subject` and without `tasks[]`. |
+| `create requires subject or tasks[], not both` | `create` with both `subject` and `tasks[]`. |
+| `tasks[] must be non-empty` | `create` with `tasks: []`. |
+| `tasks[N]: subject required for create` | A batch item with a blank or missing subject. |
 | `blockedBy: #N not found` | `create` naming an unknown dependency. |
 | `blockedBy: #N is deleted` | `create` naming a tombstoned dependency. |
+| `blockedBy: #N is another item in this batch; create the prerequisite first, then the dependent with blockedBy` | A `tasks[]` item naming a sibling that this call would assign. |
 | `id required for update` / `get` / `delete` | `id` omitted. |
 | `#N not found` | No task with that id. |
 | `update requires at least one mutable field: subject, description, activeForm, status, owner, metadata, addBlockedBy, or removeBlockedBy` | `update` with only an `id`. |
@@ -144,9 +164,10 @@ carries the bare message. Task state is unchanged.
 
 ## Prompt guidance
 
-The tool ships a `promptSnippet` and eight `promptGuidelines` bullets telling the
-model when to open a list, to keep exactly one task `in_progress`, to mark work
-completed immediately rather than in batches, never to complete a task with
-failing tests, and the literal `update {id, status}` call shape for changing a
-task's status. Both are overridable — see
+The tool ships a `promptSnippet` and nine `promptGuidelines` bullets telling the
+model when to open a list, to create independent tasks in one `tasks[]` call,
+to keep exactly one task `in_progress`, to mark work completed immediately
+rather than in batches, never to complete a task with failing tests, and the
+literal `update {id, status}` call shape for changing a task's status. Both are
+overridable — see
 [configuration.md](./configuration.md#guidance).
