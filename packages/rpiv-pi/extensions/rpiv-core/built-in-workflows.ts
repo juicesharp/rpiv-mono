@@ -480,7 +480,7 @@ const validateFixGate = (): EdgeFn => {
 const buildWorkflow = defineWorkflow({
 	name: "build",
 	description:
-		"Ship, sliced: capture the verbatim brief as a goal artifact (the north star the quality gates' completeness/correctness dimensions and validate anchor against) → research the brief → derive a goal-anchored acceptance inventory (the executable standard of completion, frozen before any plan so it cannot inherit the plan's scope; the completeness gates anchor on it and validate executes its evidence commands) → decompose it into vertical slices → two-phase slice gate (a deterministic floor — dependency-cycle freedom + brief-coverage conservation so a slice-fix can't pass by dropping scope — then one LLM design-readiness judgment that each slice is chewable by a single design pass) with a slice-fix loop → design each slice in parallel → one consolidated developer checkpoint (accept or adjust the proposed interfaces/data types, adjustments applied surgically and cascaded to dependents) → synthesize hierarchically (per-cluster sub-plans → one merged plan) → tier-scaled quality-panel gate (a one-slice, <=2-phase run grades correctness+completeness only; larger or previously-failing runs grade the full completeness/correctness/actionability/pattern-following/architecture-fit roster) where a dimension's first blocking verdict gets one confirming second judgment before it buys a plan-fix round → elaborate code per phase in parallel → splice it into the plan → re-grade the code-bearing plan (same tier + confirm contract) → implement → implement-scope-check → reconcile → validate → commit. Research-led; three automated gates plus one human design checkpoint, before design, before code, and after the splice.",
+		"Ship, sliced: capture the verbatim brief as a goal artifact (the north star the quality gates' completeness/correctness dimensions and validate anchor against) → research the brief → derive a goal-anchored acceptance inventory (the executable standard of completion, frozen before any plan so it cannot inherit the plan's scope; the completeness gates anchor on it and validate executes its evidence commands) → decompose it into vertical slices → two-phase slice gate (a deterministic floor — dependency-cycle freedom + brief-coverage conservation so a slice-fix can't pass by dropping scope — then one LLM design-readiness judgment that each slice is chewable by a single design pass) with a slice-fix loop → design each slice in parallel → one consolidated developer checkpoint (accept or adjust the proposed interfaces/data types, adjustments applied surgically and cascaded to dependents) → synthesize hierarchically (per-cluster sub-plans → one merged plan) → tier-scaled quality-panel gate (a one-slice, <=2-phase run grades correctness+completeness only; larger or previously-failing runs grade the full completeness/correctness/actionability/pattern-following/architecture-fit roster) where a dimension's fresh HIGH-severity, risk-ruling, or regressed-pass blocking verdict gets one confirming second judgment before it buys a plan-fix round (a first-time medium finding routes straight to the surgical fix) → elaborate code per phase in parallel → splice it into the plan → re-grade the code-bearing plan (same tier + confirm contract) → implement → implement-scope-check → reconcile → validate → commit. Research-led; three automated gates plus one human design checkpoint, before design, before code, and after the splice.",
 	start: "goal",
 	stages: {
 		// The user's brief, verbatim, on its own channel — the judgment seams
@@ -781,8 +781,11 @@ const buildWorkflow = defineWorkflow({
 		// readers. `plan-grade` is now a simple always-hop edge to `plan-demote`;
 		// the route body below is the verbatim logic that used to live here.
 		"plan-grade": "plan-demote",
-		// Pass ⇒ code. A dimension's FIRST blocking verdict ⇒ plan-confirm (one
-		// independent second judgment — see `confirmDue`); a confirmed blocker, or
+		// Pass ⇒ code. A dimension's fresh confirm-worthy blocking verdict — a
+		// HIGH-severity or risk-ruling blocker, or a regressed carried pass — ⇒
+		// plan-confirm (one independent second judgment — see `confirmDue`; a
+		// first-time medium finding skips the confirm and buys the surgical fix
+		// directly); a confirmed blocker, or
 		// a failure with no dimension blocking (the citation floor alone is red) ⇒
 		// plan-fix, looping back THROUGH the citation floor so the amended plan
 		// re-verifies. Route logic unchanged — merely shifted one hop later so the
@@ -824,7 +827,7 @@ const buildWorkflow = defineWorkflow({
 		// duty-demotion write-back lands before this fold. `code-grade` is now a
 		// simple always-hop edge to `code-demote`; the route body below is verbatim.
 		"code-grade": "code-demote",
-		// Pass ⇒ implement. A first blocking verdict ⇒ code-confirm (the plan
+		// Pass ⇒ implement. A fresh confirm-worthy blocking verdict ⇒ code-confirm (the plan
 		// gate's confirm contract, on the code-verdicts channel); a confirmed
 		// blocker or cite-floor-only failure ⇒ code-fix. Routes to `code-fix`, NOT
 		// back to `code`: the gate fails on plan-text defects (edit anchors, line

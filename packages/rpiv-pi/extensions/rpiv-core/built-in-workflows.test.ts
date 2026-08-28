@@ -1761,7 +1761,11 @@ describe("ship grade panel (tier-independent roster bypass)", () => {
 			);
 		});
 
-		it("omits --cite-check when the cite floor is clean or the channel is absent", async () => {
+		it("threads --cite-check on a CLEAN floor verdict too (resolution settled); omits it only when the channel is absent", async () => {
+			// A clean verdict is load-bearing evidence: it settles citation
+			// RESOLUTION, so the correctness grader skips the mechanical
+			// re-resolution and spot-checks semantics only (citeCheckFlag).
+			const CITE = ".rpiv/artifacts/verdicts/plan-cite-check__p.json";
 			const base = {
 				plans: [dataOut(PLAN, { phase_count: 1 })],
 				research: [out(".rpiv/artifacts/research/r.md")],
@@ -1774,22 +1778,21 @@ describe("ship grade panel (tier-independent roster bypass)", () => {
 					named: {
 						...base,
 						"plan-cite-check": [
-							dataOut(".rpiv/artifacts/verdicts/plan-cite-check__p.json", {
-								dimension: "structure",
-								pass: true,
-								severity: "none",
-								findings: [],
-							}),
+							dataOut(CITE, { dimension: "structure", pass: true, severity: "none", findings: [] }),
 						],
 					},
 				} as unknown as RunView,
 			});
+			expect(clean.find((u) => u.label === "correctness")?.prompt).toContain(`--cite-check ${CITE}`);
+			expect(clean.filter((u) => u.label !== "correctness").every((u) => !u.prompt.includes("--cite-check"))).toBe(
+				true,
+			);
 			const absent = await SHIP_DIMENSION_FANOUT.units({
 				cwd: "/repo",
 				artifact: undefined,
 				state: { named: base } as unknown as RunView,
 			});
-			expect([...clean, ...absent].every((u) => !u.prompt.includes("--cite-check"))).toBe(true);
+			expect(absent.every((u) => !u.prompt.includes("--cite-check"))).toBe(true);
 		});
 	});
 
@@ -2153,6 +2156,52 @@ describe("acceptance channel (executable standard threading)", () => {
 		expect(dispatch).toBe(
 			"/skill:validate .rpiv/artifacts/plans/p.md --goal .rpiv/artifacts/goal/goal.md --acceptance .rpiv/artifacts/acceptance/a.md",
 		);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// build cite-check threading — the settled-facts seam: the deterministic
+// citation floor's verdict reaches every correctness unit (plan/code gates +
+// both confirm arms) WHATEVER its result, so the grader skips the mechanical
+// re-resolution the floor already performed (correctness is the panel's most
+// expensive dimension, and citation re-resolution its most expensive part).
+// ---------------------------------------------------------------------------
+
+describe("build cite-check threading (settled-facts seam)", () => {
+	const out = (rel: string) => ({ artifacts: [{ handle: fsHandle(rel) }], data: undefined, kind: "", meta: {} });
+	const CITE = ".rpiv/artifacts/verdicts/plan-cite-check__p.json";
+	const named = {
+		plans: [out(".rpiv/artifacts/plans/p.md")],
+		research: [out(".rpiv/artifacts/research/r.md")],
+		goal: [out(".rpiv/artifacts/goal/goal.md")],
+		"plan-cite-check": [out(CITE)],
+	};
+	const gateUnits = (stage: string, n: Record<string, unknown>) => {
+		const loop = findWorkflow("build").stages[stage]?.loop;
+		if (loop?.kind !== "fanout") throw new Error(`build ${stage} stage has no fanout loop`);
+		return loop.units({ cwd: "/repo", artifact: undefined, state: { named: n } as unknown as RunView });
+	};
+
+	it("plan-grade threads --cite-check to the correctness unit only — a CLEAN verdict included", async () => {
+		const units = await gateUnits("plan-grade", named);
+		const byLabel = new Map(units.map((u) => [u.label, u.prompt]));
+		expect(byLabel.get("correctness")).toContain(`--cite-check ${CITE}`);
+		for (const [label, prompt] of byLabel) {
+			if (label !== "correctness") expect(prompt).not.toContain("--cite-check");
+		}
+	});
+
+	it("code-grade threads its OWN floor's verdict (code-cite-check), never the plan gate's", async () => {
+		const CODE_CITE = ".rpiv/artifacts/verdicts/code-cite-check__p.json";
+		const units = await gateUnits("code-grade", { ...named, "code-cite-check": [out(CODE_CITE)] });
+		expect(units.find((u) => u.label === "correctness")?.prompt).toContain(`--cite-check ${CODE_CITE}`);
+		expect(units.find((u) => u.label === "correctness")?.prompt).not.toContain(CITE);
+	});
+
+	it("omits --cite-check when the floor channel is absent (user workflows without the floor)", async () => {
+		const { "plan-cite-check": _cite, ...bare } = named;
+		const units = await gateUnits("plan-grade", bare);
+		expect(units.every((u) => !u.prompt.includes("--cite-check"))).toBe(true);
 	});
 });
 
@@ -2959,7 +3008,12 @@ describe("build audit-drop fixes", () => {
 	describe("plan/code gate enforces risk flags (finding 1)", () => {
 		const allDimsPass = [dimVerdict("completeness", true), dimVerdict("correctness", true)];
 
-		it("plan-grade routes to plan-snapshot when a risk flag is ruled fail, despite all dimensions passing", () => {
+		it("plan-grade routes a fresh risk-flag fail to plan-confirm, despite all dimensions passing", () => {
+			// The essential claim is unchanged: a failed ruling never reaches
+			// `code`. Under the severity-gated confirm a risk-ruling blocker is
+			// confirm-worthy (the uphold-or-refute-with-evidence contract is the
+			// designed remedy for an un-grounded ruling), so the fresh fail takes
+			// one second judgment before the fix.
 			const verdicts = [
 				...allDimsPass,
 				dimVerdict("correctness", true, { risk_rulings: [{ id: "r1", pass: false }] }),
@@ -2970,7 +3024,7 @@ describe("build audit-drop fixes", () => {
 					named: { "plan-verdicts": verdicts, "plan-cite-check": [dimVerdict("structure", true)] },
 				} as unknown as RunView,
 			});
-			expect(next).toBe("plan-snapshot");
+			expect(next).toBe("plan-confirm");
 		});
 
 		it("plan-grade routes to code when all dimensions AND all risk flags pass", () => {
@@ -2987,7 +3041,7 @@ describe("build audit-drop fixes", () => {
 			expect(next).toBe("code");
 		});
 
-		it("code-grade routes to code-snapshot when a risk flag is ruled fail", () => {
+		it("code-grade routes a fresh risk-flag fail to code-confirm (never code/implement)", () => {
 			const verdicts = [
 				...allDimsPass,
 				dimVerdict("correctness", true, { risk_rulings: [{ id: "r2", pass: false }] }),
@@ -2998,7 +3052,7 @@ describe("build audit-drop fixes", () => {
 					named: { "code-verdicts": verdicts, "code-cite-check": [dimVerdict("structure", true)] },
 				} as unknown as RunView,
 			});
-			expect(next).toBe("code-snapshot");
+			expect(next).toBe("code-confirm");
 		});
 	});
 
@@ -3213,10 +3267,11 @@ describe("plan/code gate risk-ruling evidence + verify-at-implement duty (phase 
 	const authoredRisks = (risks: Record<string, unknown>[]) => ({ plans: [chan(PLAN, { risks })] });
 	// Each case fixes the completeness verdict (always passes) + the ONE
 	// correctness verdict carrying the risk ruling under test. correctness MUST
-	// appear exactly once: confirmDue counts verdicts per dimension, so a stray
-	// second `correctness` (as the audit-drop block's `dimsPass` carries) bumps
-	// the count to 2 and routes a single demoted verdict to plan-FIX instead of
-	// plan-CONFIRM. The risk ruling is the only variable per case.
+	// appear exactly once: confirmDue keys on the dimension's PREVIOUS verdict,
+	// so a stray second blocking `correctness` (as the audit-drop block's
+	// `dimsPass` carries) makes the block REPEATED and routes a demoted verdict
+	// to plan-FIX instead of plan-CONFIRM. The risk ruling is the only variable
+	// per case.
 	const mkVerdicts = (risk: Record<string, unknown>[]) => [
 		dimVerdict("completeness", true),
 		dimVerdict("correctness", true, { risk_rulings: risk }),
@@ -3635,12 +3690,25 @@ describe("plan/code demote route edges (plan-grade → plan-demote simple hop)",
 		expect(build().edges["code-grade"]).toBe("code-demote");
 	});
 
-	it("plan-demote's route reproduces the prior confirm/snapshot/code decisions (single block → plan-confirm)", () => {
+	it("plan-demote's route sends a first-time MEDIUM blocker straight to plan-snapshot (no confirm session)", () => {
+		// The severity-gated confirm: a first-time medium finding-block buys the
+		// surgical fix directly — the confirm's ~90% no-overturn rate priced it
+		// out of the medium class.
 		expect(
 			route("plan-demote", {
 				plans: [chan(PLAN)],
 				"plan-cite-check": [verdict("structure", true)],
 				"plan-verdicts": [...passRest, verdict("correctness", false)],
+			}),
+		).toBe("plan-snapshot");
+	});
+
+	it("plan-demote's route sends a first-time HIGH blocker to plan-confirm (the expensive class keeps its insurance)", () => {
+		expect(
+			route("plan-demote", {
+				plans: [chan(PLAN)],
+				"plan-cite-check": [verdict("structure", true)],
+				"plan-verdicts": [...passRest, verdict("correctness", false, { severity: "high" })],
 			}),
 		).toBe("plan-confirm");
 	});
@@ -3665,14 +3733,14 @@ describe("plan/code demote route edges (plan-grade → plan-demote simple hop)",
 		).toBe("code");
 	});
 
-	it("code-demote's route mirrors the plan gate on code-verdicts (single block → code-confirm)", () => {
+	it("code-demote's route mirrors the plan gate on code-verdicts (first-time MEDIUM block → code-snapshot)", () => {
 		expect(
 			route("code-demote", {
 				plans: [chan(PLAN)],
 				"code-cite-check": [verdict("structure", true)],
 				"code-verdicts": [...passRest, verdict("correctness", false)],
 			}),
-		).toBe("code-confirm");
+		).toBe("code-snapshot");
 	});
 
 	it("code-demote's route: clean code gate → implement", () => {
@@ -5367,6 +5435,53 @@ describe("build grade panel re-grades only the pending dimensions (P2)", () => {
 		expect(await labelsWithPrior(verdicts, prior, current)).toEqual([...PLAN_DIMS].sort());
 	});
 
+	it("a section-heading where cites its section: an Out of Scope amend is surgical", async () => {
+		// citedSections' leading-segment extraction: the where "## Out of Scope >
+		// deferral" cites the plan section "out of scope", so an amend touching
+		// only that section (plus frontmatter) narrows the re-grade. Before the
+		// widening, cited could only ever hold `phase N` keys and this exact
+		// shape was structurally guaranteed broad.
+		const verdicts = [...passingOthers(), correctnessFailing("## Out of Scope > dropped goal ask")];
+		const outOfScope = (body: string) => `## Out of Scope\n${body}`;
+		const prior = planFrom([phase(3, "phase body"), outOfScope("- old deferral")]);
+		const current = planFrom([phase(3, "phase body"), outOfScope("- old deferral\n- new deferral with reason")]);
+		expect(await labelsWithPrior(verdicts, prior, current)).toEqual(["correctness"]);
+	});
+
+	it("a failing risk ruling cites the Risk Flags section (and the owner phase): a ruling repair is surgical", async () => {
+		// The ruling-driven pending case has NO findings, so before the widening
+		// its cite set was empty and every ruling repair was broad by
+		// construction. The ruling now cites `risk flags` + the authored owner
+		// phase; the plans channel carries no risks frontmatter here, so the
+		// owner cite is absent and only the section cite applies.
+		const verdicts = [
+			...passingOthers(),
+			dimV("correctness", true, { severity: "none", risk_rulings: [{ id: "r1", pass: false }] }),
+		];
+		const riskFlags = (body: string) => `## Risk Flags\n${body}`;
+		const prior = planFrom([phase(3, "phase body"), riskFlags("- r1: unverified claim")]);
+		const current = planFrom([
+			phase(3, "phase body"),
+			riskFlags("- r1: verified against names.ts, procedure attached"),
+		]);
+		expect(await labelsWithPrior(verdicts, prior, current)).toEqual(["correctness"]);
+	});
+
+	it("persists the guard's decision beside the prior — reason names the tripped condition", async () => {
+		// The instrumentation the always-broad diagnosis lacked: the plan file is
+		// later mutated by splice/reconcile, so a post-hoc replay cannot say which
+		// fail-closed condition tripped. Every call records its decision.
+		const verdicts = [...passingOthers(), correctnessFailing("Phase 3 > packages/x/y.ts:42")];
+		const prior = planFrom([phase(3, "old line"), phase(5, "shared")]);
+		const current = planFrom([phase(3, "new line"), phase(5, "shared CHANGED")]);
+		await runUnitsWithPrior(verdicts, prior, current, true);
+		const decision = JSON.parse(readFileSync(join(tmpDir, ".rpiv/artifacts/priors/p.md.decision.json"), "utf-8"));
+		expect(decision.surgical).toBe(false);
+		expect(decision.reason).toContain("phase 5");
+		expect(decision.touchedSections).toContain("phase 5");
+		expect(decision.citedSections).toEqual(["phase 3"]);
+	});
+
 	it("confirm arm is unchanged by the guard — a prior present still re-grades ONLY pending", async () => {
 		// PLAN_CONFIRM_FANOUT carries no priorChannel ⇒ surgical=false, priorPresent
 		// computed from a DIFFERENT (absent) channel ⇒ carry-forward wins. Even with
@@ -5607,12 +5722,37 @@ describe("build adaptive gate scaling (tier / roster / freshness / confirm)", ()
 	describe("confirm-before-block", () => {
 		const passRest = PLAN_DIMS.filter((d) => d !== "correctness").map((d) => verdict(d, true));
 
-		it("plan-grade routes a dimension's FIRST blocking verdict to plan-confirm", () => {
+		it("plan-grade sends a first-time MEDIUM blocker straight to plan-snapshot (severity-gated confirm)", () => {
+			// Run telemetry priced the confirm out of the medium class (~13:1
+			// onward-to-fix vs overturn): amend is surgical and cheap, and the
+			// delta re-grade guard keeps the re-judgment narrow.
 			expect(
 				route("plan-demote", {
 					plans: [chan(PLAN)],
 					"plan-cite-check": [verdict("structure", true)],
 					"plan-verdicts": [...passRest, verdict("correctness", false)],
+				}),
+			).toBe("plan-snapshot");
+		});
+
+		it("plan-grade routes a dimension's first HIGH blocking verdict to plan-confirm", () => {
+			expect(
+				route("plan-demote", {
+					plans: [chan(PLAN)],
+					"plan-cite-check": [verdict("structure", true)],
+					"plan-verdicts": [...passRest, verdict("correctness", false, { severity: "high" })],
+				}),
+			).toBe("plan-confirm");
+		});
+
+		it("plan-grade routes a FLAP (a carried pass regressing to a block) to plan-confirm, whatever the severity", () => {
+			// The dimension previously passed and now blocks on the same artifact —
+			// the exact single-judge instability the confirm exists to adjudicate.
+			expect(
+				route("plan-demote", {
+					plans: [chan(PLAN)],
+					"plan-cite-check": [verdict("structure", true)],
+					"plan-verdicts": [...passRest, verdict("correctness", true), verdict("correctness", false)],
 				}),
 			).toBe("plan-confirm");
 		});
@@ -5670,14 +5810,21 @@ describe("build adaptive gate scaling (tier / roster / freshness / confirm)", ()
 			).toBe("plan-confirm");
 		});
 
-		it("code-grade mirrors the contract on its own channel", () => {
+		it("code-grade mirrors the contract on its own channel (HIGH confirms, medium goes to the fix)", () => {
+			expect(
+				route("code-demote", {
+					plans: [chan(PLAN)],
+					"code-cite-check": [verdict("structure", true)],
+					"code-verdicts": [...passRest, verdict("correctness", false, { severity: "high" })],
+				}),
+			).toBe("code-confirm");
 			expect(
 				route("code-demote", {
 					plans: [chan(PLAN)],
 					"code-cite-check": [verdict("structure", true)],
 					"code-verdicts": [...passRest, verdict("correctness", false)],
 				}),
-			).toBe("code-confirm");
+			).toBe("code-snapshot");
 		});
 
 		it("declares the confirm arms as edge targets", () => {
