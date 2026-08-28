@@ -130,9 +130,14 @@ export const FAIL_BACKWARD_JUMP_EXHAUSTED = (stage: string, revisits: number, ma
  * intervention, not complete; `note` is the edge's own no-match diagnostic
  * (the ROUTE_NOTE `match` attaches), so the toast names the value that failed
  * to route. The stage's own output (its verdict) holds the findings.
+ *
+ * The toast names `/wf @<runId>` — resume re-runs the halted gate against
+ * the repaired tree and continues on a pass, reusing every upstream
+ * artifact; a bare "re-run" reads as "start over" and re-pays the whole
+ * front-load (observed: full re-runs of research+plan for a one-line fix).
  */
-export const FAIL_GATE_STOP = (stage: string, note: string): FailureText => ({
-	toast: `✗ workflow stopped at "${stage}" — its routing gate matched no branch (${note}); see the stage's verdict for findings, then fix and re-run`,
+export const FAIL_GATE_STOP = (stage: string, note: string, runId: string): FailureText => ({
+	toast: `✗ workflow stopped at "${stage}" — its routing gate matched no branch (${note}); see the stage's verdict for findings, then fix and resume with /wf @${runId}`,
 	error: `Routing gate after "${stage}" matched no branch: ${note}`,
 });
 

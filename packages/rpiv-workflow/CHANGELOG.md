@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Resuming a gate-halted run now re-measures instead of replaying a stale verdict.** Real-run analysis (2026-08-13 → 2026-08-20 corpus) showed a red gate's biggest cost is recovery: after a halt, users re-ran the whole workflow from scratch — full re-runs of research+plan for a one-line citation fix, and one run stranded ~50 minutes of verified implementation behind a terminal validate nit. Three seams close this. (1) The resume fold now treats a routed-stop `RoutingDecision` as a GENERATION SEPARATOR (`readAllStagesForResume` returns `stopBefore`): the halted fanout generation closes and projects at the stop, exactly as the live driver had before its route fired — so resuming a halted fanout gate (a grade panel) cold re-dispatches the whole loop for a fresh judgment instead of re-folding the stale verdicts into a second identical halt, and a post-resume trail with two same-parent generations replays without drift. (2) A gate-stop halt on a SIDE-EFFECT stage (a remediation arm whose own progress gate stopped it) resumes at the gate's sole non-stop onward target rather than replaying the arm — re-running remediate against a hand-fixed tree no-ops and re-trips the very unchanged-tree gate that halted it, a permanent livelock; the onward dispatch re-verifies the repaired tree end-to-end instead. A produces gate stage keeps today's behavior deliberately: its halt row is sessionless by construction, so the failed-trailer arm already re-runs the gate cold — the re-measure. (3) The `FAIL_GATE_STOP` toast now names the remedy: "fix and resume with `/wf @<runId>`" — the old "fix and re-run" read as "start over", which is exactly what users did.
+
 ## [2.7.1] - 2026-08-24
 
 ## [2.7.0] - 2026-08-21

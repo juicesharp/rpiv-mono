@@ -151,14 +151,29 @@ export function readAllStages(cwd: string, runId: string): WorkflowStage[] {
  * replays the trail as its system of record, and silently dropping a row
  * would replay a hole ("this stage never ran") — e.g. route onward past a
  * stage whose failure row lost its `status`.
+ *
+ * `stopBefore` maps a stage-row index to the routed-stop `RoutingDecision`
+ * that immediately precedes it in the trail — the fold's GENERATION
+ * SEPARATOR. A gate-stop halt writes [routing stop, failed stage row], and a
+ * later resume appends fresh rows behind that pair; when the halted gate is a
+ * fanout parent, its old and new unit rows would otherwise sit contiguous in
+ * this stage-only projection and mis-fold as ONE generation. Only stops
+ * FOLLOWED by a stage row are recorded: a trailing stop (the noteless-stop
+ * completion) stays invisible here, preserving the finished-run no-op resume.
  */
 export function readAllStagesForResume(
 	cwd: string,
 	runId: string,
-): { ok: true; rows: WorkflowStage[] } | { ok: false; detail: string } {
+): { ok: true; rows: WorkflowStage[]; stopBefore: Map<number, RoutingDecision> } | { ok: false; detail: string } {
 	const rows: WorkflowStage[] = [];
+	const stopBefore = new Map<number, RoutingDecision>();
+	let pendingStop: RoutingDecision | undefined;
 	for (const parsed of readParsedRows(cwd, runId)) {
 		if (isWorkflowStage(parsed) && hasValidSessionRef(parsed)) {
+			if (pendingStop) {
+				stopBefore.set(rows.length, pendingStop);
+				pendingStop = undefined;
+			}
 			rows.push(parsed);
 			continue;
 		}
@@ -166,8 +181,12 @@ export function readAllStagesForResume(
 			const label = typeof parsed.stage === "string" ? ` ("${parsed.stage}")` : "";
 			return { ok: false, detail: `stage row ${parsed.stageNumber}${label} failed the shape guard` };
 		}
+		// The literal mirrors routing-dsl's `STOP` (same rationale as
+		// `trailingRoutingStop`). Non-stop routing rows are pure telemetry and
+		// stay invisible to the fold, exactly as before.
+		if (isRoutingDecision(parsed) && parsed.decision === "stop") pendingStop = parsed;
 	}
-	return { ok: true, rows };
+	return { ok: true, rows, stopBefore };
 }
 
 export function readRoutingDecisions(cwd: string, runId: string): RoutingDecision[] {

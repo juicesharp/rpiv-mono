@@ -69,7 +69,7 @@ export async function advanceChain(
 		if (wasDecision) auditRoutingDecision(hostCtx, run, idx, currentName, "stop", note);
 		await run.lifecycle.fire(hostCtx, "onRoute", fromRef, "stop", lifecycleCtxFor(run));
 		if (isBlockedGateStop(note)) {
-			return haltChain(hostCtx, run, currentName, skill, failedArgs(FAIL_GATE_STOP(currentName, note)));
+			return haltChain(hostCtx, run, currentName, skill, failedArgs(FAIL_GATE_STOP(currentName, note, run.runId)));
 		}
 		return finalizeWorkflow(hostCtx, run);
 	}

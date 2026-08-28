@@ -593,6 +593,45 @@ describe("deep stage guard + readAllStagesForResume", () => {
 		expect(strict.ok).toBe(true);
 		if (!strict.ok) return;
 		expect(strict.rows.map((s) => s.stage)).toEqual(["plan"]);
+		// A non-stop routing row is pure telemetry — never a separator.
+		expect(strict.stopBefore.size).toBe(0);
+	});
+
+	it("stopBefore maps a routed stop to the FOLLOWING stage row's index; a trailing stop stays unmapped", () => {
+		seed();
+		appendRoutingDecision(tmpDir, runId, {
+			type: "routing",
+			fromStageIndex: 1,
+			fromStage: "plan",
+			decision: "stop",
+			note: "gate failed",
+			ts: "t2",
+		});
+		// The halt row a gate stop appends behind its routing row (rows[1]).
+		appendStage(tmpDir, runId, {
+			session: null,
+			stageNumber: 2,
+			stage: "plan",
+			status: "failed",
+			ts: "t3",
+			errMsg: "gate failed",
+		});
+		// A trailing stop with no stage row behind it (the noteless-stop
+		// completion) must NOT be recorded — the finished-run resume stays a no-op.
+		appendRoutingDecision(tmpDir, runId, {
+			type: "routing",
+			fromStageIndex: 2,
+			fromStage: "plan",
+			decision: "stop",
+			ts: "t4",
+		});
+
+		const strict = readAllStagesForResume(tmpDir, runId);
+		expect(strict.ok).toBe(true);
+		if (!strict.ok) return;
+		expect(strict.rows).toHaveLength(2);
+		expect([...strict.stopBefore.keys()]).toEqual([1]);
+		expect(strict.stopBefore.get(1)?.note).toBe("gate failed");
 	});
 
 	it("REFUSES a pre-feature row missing the session key; readAllStages stays lenient", () => {
