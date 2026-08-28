@@ -26,6 +26,6 @@
 
   "editor.failed": "Échec de l’éditeur externe",
 
-  "rpc.multi_instructions": "Saisissez les numéros de toutes les options applicables, séparés par des virgules (p. ex. « 1,3 »), ou tapez une réponse libre en texte.",
+  "rpc.multi_instructions": "Saisissez les numéros de toutes les options applicables, séparés par des virgules (p. ex. « 1,3 »). Ajoutez « ; réponse libre » pour inclure votre propre texte, ou saisissez uniquement ce texte.",
   "rpc.custom_answer_title": "Tapez votre réponse :"
 }

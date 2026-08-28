@@ -315,7 +315,7 @@ describe("routeKey — multiSelect", () => {
 		).toEqual({ kind: "ignore" });
 	});
 
-	it("Enter on Next emits multi_confirm with selected labels in option order", () => {
+	it("Enter on Next emits selected labels and custom text together", () => {
 		expect(
 			routeKey(
 				sentinel(KEY.CONFIRM),
@@ -323,6 +323,7 @@ describe("routeKey — multiSelect", () => {
 				makeRuntime({
 					questions: [multiQ],
 					isMulti: false,
+					inputBuffer: "custom detail",
 					items: [
 						{ kind: "option", label: "FE" },
 						{ kind: "option", label: "BE" },
@@ -335,6 +336,7 @@ describe("routeKey — multiSelect", () => {
 		).toEqual({
 			kind: "multi_confirm",
 			selected: ["FE", "Tests"],
+			answer: "custom detail",
 			autoAdvanceTab: undefined,
 		});
 	});
@@ -425,10 +427,10 @@ describe("routeKey — multiSelect free-text ('Type something.')", () => {
 		{ kind: "next", label: "Next" },
 	];
 
-	it("Enter on the 'Type something.' row (inputMode) → confirm kind:'custom' with the buffer", () => {
+	it("Enter on the 'Type something.' row commits checked options with the custom text", () => {
 		const action = routeKey(
 			sentinel(KEY.CONFIRM),
-			makeState({ optionIndex: 3, inputMode: true }),
+			makeState({ optionIndex: 3, inputMode: true, multiSelectChecked: new Set([0, 2]) }),
 			makeRuntime({
 				questions: [multiQ],
 				isMulti: false,
@@ -437,11 +439,11 @@ describe("routeKey — multiSelect free-text ('Type something.')", () => {
 				inputBuffer: "typed answer",
 			}),
 		);
-		expect(action.kind).toBe("confirm");
-		if (action.kind === "confirm") {
-			expect(action.answer.kind).toBe("custom");
-			expect(action.answer.answer).toBe("typed answer");
-		}
+		expect(action).toMatchObject({
+			kind: "multi_confirm",
+			selected: ["FE", "Tests"],
+			answer: "typed answer",
+		});
 	});
 
 	it("Space on the 'Type something.' row (defensive, !inputMode) → ignore (no phantom toggle)", () => {
@@ -882,7 +884,7 @@ describe("routeKey — remapped submit key as the confirm source (#156)", () => 
 				makeState({ optionIndex: 2, multiSelectChecked: new Set([0]) }),
 				makeRuntime({ keybindings: remapped, questions: [multiQ], isMulti: false, items, currentItem: items[2] }),
 			),
-		).toEqual({ kind: "multi_confirm", selected: ["FE"], autoAdvanceTab: undefined });
+		).toEqual({ kind: "multi_confirm", selected: ["FE"], answer: null, autoAdvanceTab: undefined });
 	});
 });
 

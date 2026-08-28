@@ -227,20 +227,19 @@ describe("ask_user_question.execute — ctx.ui.custom dispatch", () => {
 		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining('"Which?"="typed"') });
 	});
 
-	it("multi-select free-text yields kind:'custom' (not 'multi')", async () => {
-		// Focusing 'Type something.', typing, Enter on a multi-select question routes through the
-		// inputMode branch → confirm kind:'custom' (unit-pinned in key-router.test.ts). The execute
-		// path surfaces that answer verbatim and discards prior checkbox selections.
+	it("multi-select envelope includes selected labels and custom text", async () => {
+		// The TUI and RPC paths both return kind:"multi" with selected labels in
+		// `selected` and optional custom text in `answer`.
 		const tool = register();
 		const ctx = ctxWithCustom({
 			cancelled: false,
-			answers: [{ questionIndex: 0, question: "Pick?", kind: "custom", answer: "typed" }],
+			answers: [{ questionIndex: 0, question: "Pick?", kind: "multi", selected: ["A"], answer: "typed" }],
 		});
 		const params = {
 			questions: [{ question: "Pick?", header: "H", multiSelect: true, options: [{ label: "A" }, { label: "B" }] }],
 		};
 		const r = await tool.execute?.("tc", params as never, undefined as never, undefined as never, ctx as never);
-		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining('"Pick?"="typed"') });
+		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining('"Pick?"="A, typed"') });
 	});
 });
 

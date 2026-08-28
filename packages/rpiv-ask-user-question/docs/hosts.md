@@ -46,10 +46,10 @@ TUI produces. Trade-offs inherent to the native primitives:
 - No notes. Both note kinds — per-question `n` on a question tab and global `n` on the
   Submit tab — are terminal-only; the host's native `select` and `input` primitives carry
   no note field.
-- Multi-select is a free-text input: type the option numbers, comma-separated
-  (`1,3`). Any token that is not a valid option index is treated as a typed custom answer,
-  which is how the `Type something.` escape survives. An empty input commits an empty
-  selection, matching `Next` with nothing toggled.
+- Multi-select is a free-text input. Type option numbers separated by commas (`1,3`).
+  Add a semicolon and custom text to return both (`1,3; another color`). Plain text still
+  returns a custom-only multi-select answer. An empty input commits an empty selection,
+  matching `Next` with nothing selected.
 - Dismissing any dialog cancels the whole questionnaire, mirroring `Esc` in the TUI.
 
 If the host can render neither custom UI nor dialogs, the call returns
