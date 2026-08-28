@@ -375,18 +375,27 @@ const vetWorkflow = defineWorkflow({
 });
 
 /**
- * Build's validate gate — classifies a failing verdict BEFORE routing to the
- * repair arm. `remediate`'s work-list is contractually the report's `pass:
- * false` risk rulings plus its structured `blockers:` entries; a `verdict:
- * fail` carrying NEITHER (run 2026-08-22_12-14-12-64eb: two whole-plan gate
- * failures recorded only in report prose) has no handle the arm may act on,
- * so routing it to `validate-fix` buys a provably futile lap — the arm
- * drift-escapes without an edit and the unchanged tree re-validates to the
- * identical verdict until the backward-jump guard halts the run. Such a fail
- * now STOPs at the gate with a route note naming why (the ship-gate
+ * The classifying validate gate — classifies a failing verdict BEFORE routing
+ * to the repair arm. `remediate`'s work-list is contractually the report's
+ * `pass: false` risk rulings plus its structured `blockers:` entries; a
+ * `verdict: fail` carrying NEITHER (run 2026-08-22_12-14-12-64eb: two
+ * whole-plan gate failures recorded only in report prose) has no handle the
+ * arm may act on, so routing it to `validate-fix` buys a provably futile lap
+ * — the arm drift-escapes without an edit and the unchanged tree re-validates
+ * to the identical verdict until the backward-jump guard halts the run. Such
+ * a fail STOPs at the gate with a route note naming why (the ship-gate
  * `setRouteNote` pattern; a noted decision stop records as a halt). The
  * repair-arm authority rule the slice gate learned the same way: a gate may
  * only loop into an arm whose authority covers the failure class.
+ *
+ * A factory (not one shared EdgeFn) for the scopeFloorGate reason — each
+ * workflow's route-note symbol must never alias the other's. `maxFixRounds`
+ * caps the remediation hops a remediable fail may buy: each `validate-fix`
+ * pass publishes exactly one digest on the `remediation` channel, so the
+ * channel length IS the rounds already spent. Build passes no cap (the
+ * runner's backward-jump guard is its budget); ship caps at ONE — the single
+ * bounded hop its stop-on-fail identity concedes (run 7299: a docs-gap
+ * `fail` at the last stage stranded ~50 min of verified implementation).
  *
  * Reads the `validation` channel (validate's contract-derived publish bucket
  * — a prompt stage owns its message and can't inherit its contract's output
@@ -394,57 +403,78 @@ const vetWorkflow = defineWorkflow({
  * missing/unexpected verdict stays terminal STOP, exactly as the `match` it
  * replaces — un-anticipated data can never route INTO commit OR the repair arm.
  */
-const validateGate: EdgeFn = defineRoute(
-	["commit", "validate-fix", "stop"],
-	({ state }) => {
-		const latest = state.named.validation?.at(-1);
-		const data = latest?.data as { verdict?: unknown; blockers?: unknown } | undefined;
-		if (data?.verdict === "pass") return "commit";
-		if (data?.verdict !== "fail") {
-			setRouteNote(
-				validateGate,
-				`validate verdict ${JSON.stringify(data?.verdict ?? null)} matched no branch — terminated (no fallback)`,
-			);
-			return "stop";
-		}
-		// Remediable handles: `pass: false` risk rulings (the arm's original
-		// work-list) + structured `blockers:` entries (whole-plan gate failures
-		// the validate skill attributes with a runnable command + in-delta file).
-		const failedRulings = latest ? verdictRiskRulings(latest).filter((r) => !r.pass).length : 0;
-		const blockers = Array.isArray(data.blockers) ? data.blockers.length : 0;
-		if (failedRulings + blockers > 0) return "validate-fix";
-		setRouteNote(
-			validateGate,
-			"validate failed with no remediable handle (no pass:false risk ruling, no blockers entry) — the remediation arm cannot act; fix manually or revise the plan",
-		);
-		return "stop";
-	},
-	{ readsData: false },
-);
+const validateGate = (opts?: { maxFixRounds?: number }): EdgeFn => {
+	const maxFixRounds = opts?.maxFixRounds ?? Number.POSITIVE_INFINITY;
+	const route: EdgeFn = defineRoute(
+		["commit", "validate-fix", "stop"],
+		({ state }) => {
+			const latest = state.named.validation?.at(-1);
+			const data = latest?.data as { verdict?: unknown; blockers?: unknown } | undefined;
+			if (data?.verdict === "pass") return "commit";
+			if (data?.verdict !== "fail") {
+				setRouteNote(
+					route,
+					`validate verdict ${JSON.stringify(data?.verdict ?? null)} matched no branch — terminated (no fallback)`,
+				);
+				return "stop";
+			}
+			// Remediable handles: `pass: false` risk rulings (the arm's original
+			// work-list) + structured `blockers:` entries (whole-plan gate failures
+			// the validate skill attributes with a runnable command + in-delta file).
+			const failedRulings = latest ? verdictRiskRulings(latest).filter((r) => !r.pass).length : 0;
+			const blockers = Array.isArray(data.blockers) ? data.blockers.length : 0;
+			if (failedRulings + blockers === 0) {
+				setRouteNote(
+					route,
+					"validate failed with no remediable handle (no pass:false risk ruling, no blockers entry) — the remediation arm cannot act; fix manually or revise the plan",
+				);
+				return "stop";
+			}
+			if ((state.named.remediation?.length ?? 0) >= maxFixRounds) {
+				setRouteNote(
+					route,
+					`validate still fails after ${maxFixRounds} remediation round${maxFixRounds === 1 ? "" : "s"} — fix manually, then resume to re-validate`,
+				);
+				return "stop";
+			}
+			return "validate-fix";
+		},
+		{ readsData: false },
+	);
+	return route;
+};
 
 /**
- * Build's repair-arm progress gate — the deterministic no-op backstop. The
+ * The repair-arm progress gate — the deterministic no-op backstop. The
  * `remediation` channel carries `remediationOutcome`'s `{ changed }` (a
  * git-only tree digest snapshotted around the `validate-fix` stage): an
  * unchanged tree makes the re-validate lap provably futile (validate's
  * verdict is a function of the tree), so it STOPs with a note instead of
  * burning a backward-jump on an identical verdict. Only an explicit
  * `changed: false` stops — a missing signal (non-repo, git failure, absent
- * channel) proceeds, the worktree-digest degrade doctrine.
+ * channel) proceeds, the worktree-digest degrade doctrine. A factory for the
+ * same note-symbol-aliasing reason as `validateGate`. NOTE the resume
+ * asymmetry this stop relies on: the runner never re-dispatches a halted
+ * SIDE-EFFECT gate stage — resume re-enters at this gate's onward target
+ * (implement-scope-check), so a hand-fix after this stop re-verifies
+ * end-to-end instead of replaying a remediation that would no-op again.
  */
-const validateFixGate: EdgeFn = defineRoute(
-	["implement-scope-check", "stop"],
-	({ state }) => {
-		const data = state.named.remediation?.at(-1)?.data as { changed?: unknown } | undefined;
-		if (data?.changed !== false) return "implement-scope-check";
-		setRouteNote(
-			validateFixGate,
-			"remediation left the working tree unchanged — re-validating cannot change the verdict; fix manually or revise the plan",
-		);
-		return "stop";
-	},
-	{ readsData: false },
-);
+const validateFixGate = (): EdgeFn => {
+	const route: EdgeFn = defineRoute(
+		["implement-scope-check", "stop"],
+		({ state }) => {
+			const data = state.named.remediation?.at(-1)?.data as { changed?: unknown } | undefined;
+			if (data?.changed !== false) return "implement-scope-check";
+			setRouteNote(
+				route,
+				"remediation left the working tree unchanged — re-validating cannot change the verdict; fix manually or revise the plan",
+			);
+			return "stop";
+		},
+		{ readsData: false },
+	);
+	return route;
+};
 
 const buildWorkflow = defineWorkflow({
 	name: "build",
@@ -833,15 +863,16 @@ const buildWorkflow = defineWorkflow({
 		// it re-validated an unchanged tree until the guard halted the run).
 		// A missing/unexpected verdict stays terminal STOP, so un-anticipated data
 		// can never route INTO commit OR the repair arm. Safe by construction: the
-		// sole path to commit is an explicit pass.
-		validate: validateGate,
+		// sole path to commit is an explicit pass. No fix-round cap — the runner's
+		// backward-jump guard is build's remediation budget.
+		validate: validateGate(),
 		// Re-entry after the repair arm: remediate's code-mutation is followed by a
 		// fresh scope check → reconcile → validate pass, so a fix is re-verified
 		// end-to-end before the gate re-folds. Now a decision edge (`validateFixGate`
 		// folds the `remediation` channel's deterministic digest verdict): a
 		// remediation that changed nothing STOPs here — progress is verified, not
 		// assumed — while a real fix proceeds into the loop body.
-		"validate-fix": validateFixGate,
+		"validate-fix": validateFixGate(),
 		commit: "stop",
 	},
 });
@@ -921,20 +952,25 @@ const shipGradeGate: EdgeFn = defineRoute(
  * ship — the lightweight `/wf` preset: the no-ceremony path for small-to-
  * midsize tasks whose approach is obvious. goal → research → plan →
  * plan-cite-check → grade → implement → implement-scope-check → reconcile →
- * validate → commit, stop-on-fail at every gate with NO backward edges: a red
- * gate terminates the run (the agent hand-repairs and re-invokes) instead of
- * looping a fix cycle. Research stays front-loaded — a ≤2-subagent grounding
- * pass (SHIP_RESEARCH_PROMPT, not a full `/skill:research` run) — because the
- * single PRE-implement grade's architecture-fit dimension needs its artifact as
- * `--context`. That grade is tier-independent: the bespoke SHIP_DIMENSION_FANOUT
- * always grades the full correctness/completeness/architecture-fit roster (no
- * gateTier/gateRoster light-tier drop), and SHIP's gate folds risk flags without
- * re-folding the citation floor (that floor folds at its own edge).
+ * validate → (validate-fix, once) | commit, stop-on-fail at every gate: a red
+ * gate halts the run (the agent hand-repairs and RESUMES — `/wf @<runId>`
+ * re-runs the halted gate against the repaired tree, reusing every upstream
+ * artifact) instead of looping a fix cycle. The ONE concession to that
+ * identity is validate's single bounded remediation hop (run 7299: a
+ * remediable docs-gap `fail` at the last stage stranded ~50 min of verified
+ * implementation behind a terminal stop). Research stays front-loaded — a
+ * ≤2-subagent grounding pass (SHIP_RESEARCH_PROMPT, not a full
+ * `/skill:research` run) — because the single PRE-implement grade's
+ * architecture-fit dimension needs its artifact as `--context`. That grade is
+ * tier-independent: the bespoke SHIP_DIMENSION_FANOUT always grades the full
+ * correctness/completeness/architecture-fit roster (no gateTier/gateRoster
+ * light-tier drop), and SHIP's gate folds risk flags without re-folding the
+ * citation floor (that floor folds at its own edge).
  */
 const shipWorkflow = defineWorkflow({
 	name: "ship",
 	description:
-		"Ship, unsliced: capture the verbatim brief as a goal artifact → ground it with at most two targeted codebase-analyzer dispatches (no /skill:research) → one lightweight quick-plan pass → deterministic citation floor (files: coverage gaps stop; citation-resolution findings are advisory and adjudicated by the grade panel) → single tier-independent quality gate (correctness/completeness/architecture-fit, stop-on-fail) → implement → implement-scope-check → reconcile → validate → commit. Every gate terminates the run on fail; no fix loops.",
+		"Ship, unsliced: capture the verbatim brief as a goal artifact → ground it with at most two targeted codebase-analyzer dispatches (no /skill:research) → one lightweight quick-plan pass → deterministic citation floor (files: coverage gaps stop; citation-resolution findings are advisory and adjudicated by the grade panel) → single tier-independent quality gate (correctness/completeness/architecture-fit, stop-on-fail) → implement → implement-scope-check → reconcile → validate → commit. Every gate halts the run on fail (hand-repair, then resume with /wf @<runId> to re-run the gate) — except a validate fail carrying structured remediable handles, which buys ONE bounded remediation hop before halting.",
 	start: "goal",
 	stages: {
 		// build's verbatim goal capture — the brief on its own channel, plus the
@@ -984,6 +1020,12 @@ const shipWorkflow = defineWorkflow({
 		// verbatim. Pass ⇒ validate; fail/missing ⇒ STOP (no fallback).
 		reconcile: produces.script({ reads: ["plans"], run: reconcile }),
 		validate: produces({ prompt: VALIDATE_GOAL_PROMPT }),
+		// Repair arm — build's stage verbatim; ship's validate gate dispatches it
+		// at most ONCE (maxFixRounds: 1). Kept because the terminal gate is where
+		// a red verdict strands the most verified work over the least defect: the
+		// arm acts only on the report's structured handles, and its own progress
+		// gate stops a no-op remediation instead of re-validating an unchanged tree.
+		"validate-fix": acts({ skill: "remediate", reads: ["plans", "validation"], outcome: remediationOutcome }),
 		commit: acts({ prompt: COMMIT_BASELINE_PROMPT, outcome: gitCommitOutcome }),
 	},
 	edges: {
@@ -1007,14 +1049,21 @@ const shipWorkflow = defineWorkflow({
 		// Reconciliation gate — build's route verbatim: pass ⇒ validate;
 		// fail/missing ⇒ STOP (plan-vs-tree drift the agent reconciles manually).
 		reconcile: match("verdict", { validate: "pass" }, { from: "reconcile" }),
-		// Validate gate — build's validate edge (match verdict pass⇒commit,
-		// from "validation") minus the `validate-fix` arm: `pass` ⇒ commit; `fail`
-		// or missing ⇒ STOP — deliberately NO validate-fix/remediate repair arm
-		// (the lightweight preset does not loop). NOT vet's tail: vet's validate
-		// routes to code-review, which gates back to blueprint (a bounded backward
-		// loop, not stop-on-fail). Sourced from validate's published verdict
-		// channel (`from: "validation"`).
-		validate: match("verdict", { commit: "pass" }, { from: "validation" }),
+		// Validate gate — build's classifying gate, capped at ONE remediation
+		// round: `pass` ⇒ commit; a `fail` WITH structured remediable handles and
+		// no remediation spent ⇒ validate-fix; every other fail (prose-only, or
+		// the one round already used) ⇒ STOP with a route note. The cap is what
+		// keeps ship's stop-on-fail identity: the arm is a single bounded hop,
+		// not a loop — the runner's `remediation`-channel length enforces it
+		// deterministically. NOT vet's tail: vet's validate routes to
+		// code-review, which gates back to blueprint (a bounded backward loop).
+		validate: validateGate({ maxFixRounds: 1 }),
+		// Re-entry after the repair arm — build's edge: a remediation that
+		// changed nothing STOPs (progress is verified, not assumed); a real fix
+		// re-enters at implement-scope-check so it is re-verified end-to-end
+		// (scope floor → reconcile → validate) before the gate re-folds — where
+		// the spent round now stops any remaining fail.
+		"validate-fix": validateFixGate(),
 		commit: "stop",
 	},
 });

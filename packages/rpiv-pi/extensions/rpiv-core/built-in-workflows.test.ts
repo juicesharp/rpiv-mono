@@ -4633,9 +4633,10 @@ describe("build subplan-check (deterministic cluster-coverage floor)", () => {
 // ---------------------------------------------------------------------------
 
 describe("ship workflow (lightweight /wf preset)", () => {
-	// The ten stages in linear order — pins that none of build's elaborate
-	// machinery (slice*/subplan/*confirm/*snapshot/*fix/code*/validate-fix/
-	// *demote) leaked into the lightweight preset.
+	// The eleven stages in linear order — pins that none of build's elaborate
+	// machinery (slice*/subplan/*confirm/*snapshot/plan-fix/code*/*demote)
+	// leaked into the lightweight preset. `validate-fix` is the ONE sanctioned
+	// arm: the terminal gate's single bounded remediation hop (maxFixRounds: 1).
 	const SHIP_STAGES: readonly string[] = [
 		"goal",
 		"research",
@@ -4646,35 +4647,78 @@ describe("ship workflow (lightweight /wf preset)", () => {
 		"implement-scope-check",
 		"reconcile",
 		"validate",
+		"validate-fix",
 		"commit",
 	];
 
-	it("has exactly the ten stages in linear order (no slice/subplan/confirm/snapshot/fix/code/demote arms)", () => {
+	it("has exactly the eleven stages in linear order (no slice/subplan/confirm/snapshot/plan-fix/code/demote arms)", () => {
 		expect(Object.keys(findWorkflow("ship").stages)).toEqual([...SHIP_STAGES]);
 	});
 
-	it("gate edges are stop-on-fail with no backward edge", () => {
+	it("gate edges are stop-on-fail; the sole backward path is the sanctioned validate-fix re-entry", () => {
 		const wf = findWorkflow("ship");
 		const gates: Array<[string, string[]]> = [
 			["plan-cite-check", ["grade", "stop"]],
 			["grade", ["implement", "stop"]],
 			["implement-scope-check", ["reconcile", "stop"]],
 			["reconcile", ["validate", "stop"]],
-			["validate", ["commit", "stop"]],
+			["validate", ["commit", "stop", "validate-fix"]],
+			// The re-entry: a real fix is re-verified end-to-end (scope floor →
+			// reconcile → validate) before the gate re-folds — the one backward
+			// edge ship's identity concedes, bounded by the gate's fix-round cap.
+			["validate-fix", ["implement-scope-check", "stop"]],
 		];
 		for (const [src, expected] of gates) {
 			const edge = wf.edges[src];
 			if (typeof edge !== "function") throw new Error(`ship ${src} edge is not an EdgeFn`);
 
 			expect([...(edge.targets ?? [])].sort(), src).toEqual([...expected].sort());
-			// No backward edge: every non-stop target must follow `src` in the
-			// linear order — the preset terminates on fail instead of looping.
+			// No backward edge otherwise: every non-stop target must follow `src`
+			// in the linear order — the preset halts on fail instead of looping.
+			if (src === "validate-fix") continue;
 			const from = SHIP_STAGES.indexOf(src);
 			for (const target of edge.targets ?? []) {
 				if (target === "stop") continue;
 				expect(SHIP_STAGES.indexOf(target), `${src} → ${target}`).toBeGreaterThan(from);
 			}
 		}
+	});
+
+	// The terminal gate's single bounded remediation hop — the `remediation`
+	// channel length IS the rounds spent (each validate-fix pass publishes
+	// exactly one digest), so the cap is deterministic and needs no counter.
+	describe("ship validate gate (classifying, maxFixRounds: 1)", () => {
+		const route = (named: Record<string, unknown[]>) => {
+			const e = findWorkflow("ship").edges.validate;
+			if (typeof e !== "function") throw new Error("ship validate edge is not an EdgeFn");
+			return (e as EdgeFn)({ output: undefined, state: { named } as unknown as RunView });
+		};
+		const fail = { data: { verdict: "fail", blockers: [{ id: "b1", command: "npx vitest run", file: "a.ts" }] } };
+
+		it("commits ONLY on an explicit verdict: pass", () => {
+			expect(route({ validation: [{ data: { verdict: "pass" } }] })).toBe("commit");
+		});
+		it("a remediable fail with no remediation spent buys the one hop", () => {
+			expect(route({ validation: [fail] })).toBe("validate-fix");
+		});
+		it("a remediable fail AFTER the spent round stops (the cap)", () => {
+			expect(route({ validation: [fail], remediation: [{ data: { changed: true } }] })).toBe("stop");
+		});
+		it("a prose-only fail stops without buying the hop", () => {
+			expect(route({ validation: [{ data: { verdict: "fail" } }] })).toBe("stop");
+		});
+		it("a missing/unexpected verdict stays terminal", () => {
+			expect(route({})).toBe("stop");
+			expect(route({ validation: [{ data: { verdict: "meh" } }] })).toBe("stop");
+		});
+	});
+
+	it("ship's validate-fix is build's remediate arm verbatim (acts, plans+validation reads, remediation digest)", () => {
+		const stage = findWorkflow("ship").stages["validate-fix"];
+		expect(stage?.kind).toBe("side-effect");
+		expect(stage?.skill).toBe("remediate");
+		expect(stage?.reads).toEqual(["plans", "validation"]);
+		expect(stage?.outcome?.name).toBe("remediation");
 	});
 
 	// Ship deliberately keeps the pass-only match — the tiered verdicts build
