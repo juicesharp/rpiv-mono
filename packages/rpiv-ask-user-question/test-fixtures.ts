@@ -108,7 +108,6 @@ export interface MultiSelectPropsOverrides {
 	inputBuffer?: string;
 	inputCursorOffset?: number | undefined;
 	inputMode?: boolean;
-	confirmed?: boolean;
 }
 
 export function makeMultiSelectViewProps(
@@ -134,7 +133,6 @@ export function makeMultiSelectViewProps(
 			inputMode: (over.inputMode ?? false) && otherActive,
 			inputBuffer,
 			inputCursorOffset: over.inputCursorOffset,
-			confirmed: over.confirmed,
 		},
 		nextActive,
 		nextLabel,
