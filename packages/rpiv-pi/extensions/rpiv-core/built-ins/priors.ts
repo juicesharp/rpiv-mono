@@ -187,16 +187,31 @@ const sectionIndexOf = (lines: readonly string[]): string[] => {
 	const idx = new Array<string>(lines.length);
 	let current = "";
 	let inFrontmatter = lines[0]?.trim() === "---";
+	let inFence = false;
 	for (let i = 0; i < lines.length; i++) {
 		if (inFrontmatter) {
 			idx[i] = "frontmatter";
 			if (i > 0 && lines[i].trim() === "---") inFrontmatter = false;
 			continue;
 		}
-		const m = /^##\s+(.*)$/.exec(lines[i]);
-		if (m) {
-			const ph = /^Phase\s+(\d+)/i.exec(m[1].trim());
-			current = ph ? `phase ${ph[1]}` : m[1].trim().toLowerCase();
+		// Fence-aware: a `## ` line INSIDE a fenced code block is content, not a
+		// heading — build plans routinely embed markdown edits (a CHANGELOG
+		// snippet's `## [Unreleased]`), and keying those as sections
+		// manufactured phantom touched keys no finding could ever cite
+		// (observed live: run b307's code-fix went broad on the phantom
+		// `[unreleased]` from an embedded changelog block). Fenced lines
+		// attribute to the enclosing section.
+		if (/^\s*```/.test(lines[i])) {
+			inFence = !inFence;
+			idx[i] = current;
+			continue;
+		}
+		if (!inFence) {
+			const m = /^##\s+(.*)$/.exec(lines[i]);
+			if (m) {
+				const ph = /^Phase\s+(\d+)/i.exec(m[1].trim());
+				current = ph ? `phase ${ph[1]}` : m[1].trim().toLowerCase();
+			}
 		}
 		idx[i] = current;
 	}

@@ -5571,6 +5571,20 @@ describe("build grade panel re-grades only the pending dimensions (P2)", () => {
 		expect(await labelsWithPrior(verdicts, prior, current)).toEqual([...PLAN_DIMS].sort());
 	});
 
+	it("a ## line inside a fenced code block never becomes a section — the embedded-changelog phantom", async () => {
+		// Observed live (run b307): a plan phase embedding a CHANGELOG snippet
+		// carries "## [Unreleased]" inside a fence; keying it as a section
+		// manufactured a phantom touched key no finding could ever cite, forcing
+		// broad on every amend touching the embedded block. Fenced lines
+		// attribute to the enclosing phase.
+		const verdicts = [...passingOthers(), correctnessFailing("Phase 3 > packages/x/CHANGELOG.md")];
+		const fenced = (entry: string) =>
+			"intro line\n```markdown\n## [Unreleased]\n\n### Added\n\n- " + entry + "\n```\ntail line";
+		const prior = planFrom([phase(3, fenced("old changelog entry")), phase(5, "shared phase 5 content")]);
+		const current = planFrom([phase(3, fenced("NEW changelog entry")), phase(5, "shared phase 5 content")]);
+		expect(await labelsWithPrior(verdicts, prior, current)).toEqual(["correctness"]);
+	});
+
 	it("persists the guard's decision beside the prior — reason names the tripped condition", async () => {
 		// The instrumentation the always-broad diagnosis lacked: the plan file is
 		// later mutated by splice/reconcile, so a post-hoc replay cannot say which
