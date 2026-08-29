@@ -359,6 +359,85 @@ describe("loop-resume — fanout", () => {
 		expect(rebuilt.meta).toStrictEqual(rowFields);
 	});
 
+	it("haltWhenAllFailed trail: all-sentinel cursor + parent halt row → ZERO re-dispatch, one fresh halt row, ends failed", async () => {
+		// The halt row is parent-attributed (no collected/parent/unitIndex fields), so
+		// the fold's halt-marker predicate (isOpenFanoutHaltMarker) keeps the generation
+		// open; the rebuilt all-sentinel cursor leaves pending=[] and the early tail
+		// (runFanoutGeneration's order.length === 0) re-fires the finishLoop check — one
+		// fresh parent halt row per resume invocation, zero new dispatch, no loop.
+		const haltWf: Workflow = {
+			name: "fanout-wf",
+			start: "impl",
+			stages: {
+				impl: produces({
+					outcome: transcriptOutcome("plans"),
+					loop: fanout({ units: threeUnits, haltWhenAllFailed: true }),
+				}),
+			},
+			edges: { impl: "stop" },
+		} as Workflow;
+		writeRun([
+			{ ...unitRow(1, 1, "failed"), collected: true, errMsg: "unit 1 boom" },
+			{ ...unitRow(2, 2, "failed"), collected: true, errMsg: "unit 2 boom" },
+			{ ...unitRow(3, 3, "failed"), collected: true, errMsg: "unit 3 boom" },
+			{
+				session: null,
+				stageNumber: 4,
+				stage: "impl", // parent-unset — the all-failed generation-close halt marker
+				skill: "impl",
+				status: "failed",
+				ts: "t4",
+				errMsg: 'Fanout all-failed at stage "impl" (3/3 units failed)',
+			} as WorkflowStage,
+		]);
+		const chain = createMockSessionChain({ cwd: tmpDir, steps: [] });
+
+		const result = await resumeWorkflow(chain.ctx, { workflow: haltWf, header, ref: "@x" });
+
+		expect(result.success).toBe(false);
+		expect(chain.sentMessages).toEqual([]); // ZERO re-dispatch — every slot filled by a rebuilt sentinel
+		const rows = readAllStages(tmpDir, header.runId);
+		const halts = rows.filter((r) => r.stage === "impl" && r.parent === undefined && r.status === "failed");
+		expect(halts).toHaveLength(2); // the trail's original halt + exactly ONE fresh re-derived row
+		expect(String(halts[1]!.errMsg)).toContain("Fanout all-failed");
+	});
+
+	it("haltWhenAllFailed trail: partial-collected cursor re-dispatches ONLY the pending unit, then halts at the close when all fail", async () => {
+		// Units 1-2 collected-failed before the process died; unit 3 never ran (no
+		// parent halt row — the trailer is a unit row). Resume re-dispatches ONLY
+		// phase 3; its soft-halt fills the last slot, and the close sees all three
+		// failed → the halt fires with one parent-attributed row.
+		const haltWf: Workflow = {
+			name: "fanout-wf",
+			start: "impl",
+			stages: {
+				impl: produces({
+					outcome: transcriptOutcome("plans"),
+					loop: fanout({ units: threeUnits, haltWhenAllFailed: true }),
+				}),
+			},
+			edges: { impl: "stop" },
+		} as Workflow;
+		writeRun([
+			{ ...unitRow(1, 1, "failed"), collected: true, errMsg: "unit 1 boom" },
+			{ ...unitRow(2, 2, "failed"), collected: true, errMsg: "unit 2 boom" },
+		]);
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [{ branch: [mockAssistantMessage("no artifact path here")] }], // phase 3 also fails (soft)
+		});
+
+		const result = await resumeWorkflow(chain.ctx, { workflow: haltWf, header, ref: "@x" });
+
+		expect(result.success).toBe(false);
+		expect(chain.sentMessages).toEqual(["/skill:impl phase 3"]); // ONLY the pending unit re-dispatched
+		const rows = readAllStages(tmpDir, header.runId);
+		expect(rows.filter((r) => r.parent === "impl" && r.collected === true)).toHaveLength(3);
+		const halts = rows.filter((r) => r.stage === "impl" && r.parent === undefined && r.status === "failed");
+		expect(halts).toHaveLength(1);
+		expect(String(halts[0]!.errMsg)).toContain("Fanout all-failed");
+	});
+
 	it("process died mid-fanout (no failure row): resumes at the next unit", async () => {
 		writeRun([unitRow(1, 1, "completed")]); // only unit 1 recorded
 		const chain = createMockSessionChain({

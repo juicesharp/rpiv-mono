@@ -160,6 +160,20 @@ export const FAIL_LOOP_CAP_HALT = (count: number, max: number): FailureText => (
 });
 
 /**
+ * A `haltWhenAllFailed` fanout generation closed with EVERY declared slot a
+ * failed sentinel (strict all-filled-all-failed) — the run halts terminally at
+ * the loop stage instead of advancing into a fan-in over an empty channel.
+ * `failed`/`total` are the closing generation's failed and total slot counts;
+ * the `error` string's fanout-stage attribution becomes the recap
+ * `failureReason`. Tests pin substrings (`Fanout all-failed`), not full
+ * sentences.
+ */
+export const FAIL_FANOUT_ALL_FAILED = (skill: string, failed: number, total: number): FailureText => ({
+	toast: `rpiv: ${skill} fanout failed in full (${failed}/${total} units) — stopping workflow`,
+	error: `Fanout all-failed at stage "${skill}" (${failed}/${total} units failed)`,
+});
+
+/**
  * A loop hit its effective cap under `onCap: "advance"` — soft-stop: warn,
  * land the {type:"loop-cap"} telemetry row, keep the projected result,
  * advance. Deliberately no ERR_ twin (not a failure).

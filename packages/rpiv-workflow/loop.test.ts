@@ -36,6 +36,7 @@ import { type LifecycleListeners, registerLifecycle } from "./events.js";
 import { fs as fsHandle, handleToString } from "./handle.js";
 import { judge } from "./judge.js";
 import { all, any, assess, fanout, iterate, majority, panel, verify } from "./loop-constructors.js";
+import { FAIL_FANOUT_ALL_FAILED } from "./messages.js";
 import type { Output } from "./output.js";
 import type { Outcome } from "./output-spec.js";
 import { runWorkflow } from "./runner/index.js";
@@ -785,6 +786,107 @@ describe("loop driver — DAG-ordered wave dispatch", () => {
 		expect((await runWorkflow(host.ctx, { workflow: serialWf, input: "x" })).success).toBe(true);
 		expect(host.maxActive).toBe(1);
 		expect(host.spawns.map((s) => s.prompt.match(/s\d/)![0])).toEqual(["s1", "s2", "s3"]);
+	});
+});
+
+// ===========================================================================
+// haltWhenAllFailed — the all-failed generation-close halt
+// ===========================================================================
+
+describe("loop driver — haltWhenAllFailed generation-close halt", () => {
+	/** Fanout + downstream fan-in consumer. The all-failed halt rides the loop
+	 *  unless `flagless`; `max` caps the generation with `onCap: "advance"` for
+	 *  the over-cap pins. */
+	const hafWf = (n: number, opts: { flagless?: boolean; max?: number } = {}) => ({
+		name: "par-haf",
+		start: "audit",
+		stages: {
+			audit: produces({
+				outcome: mdOutcome("audits"),
+				loop: fanout({
+					units: () => Array.from({ length: n }, (_v, i) => ({ prompt: `u${i}`, label: `u${i}`, id: `u${i}` })),
+					max: opts.max,
+					onCap: opts.max !== undefined ? ("advance" as const) : undefined,
+					...(opts.flagless ? {} : { haltWhenAllFailed: true }),
+				}),
+			}),
+			synthesize: acts({ reads: [fanin("audits")] }),
+		},
+		edges: { audit: "synthesize", synthesize: "stop" } as Record<string, string>,
+	});
+
+	const failUnit = () => [mockAssistantMessage("no artifact path here")]; // collector-fatal → sentinel
+
+	it("all-failed generation halts at close: one parent-attributed terminal row, collected rows preserved, fan-in NEVER dispatched", async () => {
+		const host = createFakeConcurrentHost({ cwd: tmpDir, maxConcurrency: 3, childBranch: failUnit });
+
+		const result = await runWorkflow(host.ctx, { workflow: hafWf(3), input: "x" });
+
+		expect(result.success).toBe(false);
+		// Every unit dispatched and ran to its own soft halt — haltWhenAllFailed is a
+		// CLOSE check, so no genAbort sibling cancellation ever fires (failFast's machinery).
+		expect(host.spawns).toHaveLength(3);
+		expect(host.spawns.every((s) => !s.signal?.aborted)).toBe(true);
+		expect(host.spawns.some((s) => s.prompt.includes("synthesize"))).toBe(false); // fan-in never dispatched
+		const rows = readRows();
+		// Per-unit collect-all soft-halt rows preserved — the collection is unchanged.
+		expect(rows.filter((r) => r.status === "failed" && r.collected === true)).toHaveLength(3);
+		// EXACTLY ONE parent-attributed terminal halt row — parent-unset, unit-field-free.
+		const halts = rows.filter((r) => r.status === "failed" && r.collected === undefined && r.stage === "audit");
+		expect(halts).toHaveLength(1);
+		expect(halts[0]!.parent).toBeUndefined();
+		expect(halts[0]!.unitIndex).toBeUndefined();
+		expect(String(halts[0]!.errMsg)).toContain("Fanout all-failed");
+		expect(String(halts[0]!.errMsg)).toBe(FAIL_FANOUT_ALL_FAILED("audit", 3, 3).error);
+	});
+
+	it("one survivor proceeds: the close sees a non-failed slot, no halt, the fan-in reads the survivors", async () => {
+		const host = createFakeConcurrentHost({
+			cwd: tmpDir,
+			maxConcurrency: 3,
+			childBranch: (_rec, index) =>
+				index === 1
+					? [mockAssistantMessage("no artifact path here")] // unit 1 soft-halts → sentinel
+					: [mockAssistantMessage(`wrote .rpiv/artifacts/audits/unit-${index}.md`)],
+		});
+
+		const result = await runWorkflow(host.ctx, { workflow: hafWf(3), input: "x" });
+
+		expect(result.success).toBe(true);
+		expect(host.spawns).toHaveLength(4); // 3 units + the downstream synthesize
+		const synth = host.spawns[3]!;
+		expect(synth.prompt).toContain("synthesize");
+		expect(synth.prompt).toContain("audits/unit-0.md"); // both survivors reached the fan-in
+		expect(synth.prompt).toContain("audits/unit-2.md");
+		expect(synth.prompt).not.toContain("audits/unit-1.md"); // the failed sentinel skipped
+		expect(readRows().some((r) => r.status === "failed" && r.collected === undefined)).toBe(false); // no halt row
+	});
+
+	it("over-cap never qualifies: a flag-set onCap:'advance' generation whose every dispatched unit failed still advances", async () => {
+		const host = createFakeConcurrentHost({ cwd: tmpDir, maxConcurrency: 3, childBranch: failUnit });
+
+		const result = await runWorkflow(host.ctx, { workflow: hafWf(3, { max: 1 }), input: "x" });
+
+		// Only the first cap-worth dispatched; its sole slot failed but slots 1-2 stay
+		// undefined, so filledCount (1) < slots.length (3) and the halt never fires —
+		// the generation ADVANCED into the fan-in consumer.
+		expect(result.success).toBe(true);
+		expect(host.spawns).toHaveLength(2); // the one dispatched unit + the advanced-into synthesize
+		expect(host.spawns[1]!.prompt).toContain("synthesize");
+		expect(host.notifications.some((n) => /cap/i.test(n.msg))).toBe(true); // the advance toast fired
+		expect(readRows().some((r) => r.status === "failed" && r.collected === undefined)).toBe(false);
+	});
+
+	it("flagless contrast: the SAME all-failed generation collects and advances into the fan-in (today's contract)", async () => {
+		const host = createFakeConcurrentHost({ cwd: tmpDir, maxConcurrency: 3, childBranch: failUnit });
+
+		const result = await runWorkflow(host.ctx, { workflow: hafWf(3, { flagless: true }), input: "x" });
+
+		expect(result.success).toBe(true);
+		const rows = readRows();
+		expect(rows.filter((r) => r.status === "failed" && r.collected === true)).toHaveLength(3);
+		expect(rows.some((r) => r.status === "failed" && r.collected === undefined)).toBe(false);
+		expect(host.spawns.some((s) => s.prompt.includes("synthesize"))).toBe(true); // collect-all advanced
 	});
 });
 

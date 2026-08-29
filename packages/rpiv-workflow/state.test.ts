@@ -1072,6 +1072,60 @@ describe("summarizeRun", () => {
 		} satisfies RunRecap);
 	});
 
+	it("reads a trailing PARENT-attributed failed row (no collected) as failed with its failureReason (the haltWhenAllFailed halt shape)", () => {
+		const runId = "halt-when-all-failed";
+		appendHeader(tmpDir, { runId, workflow: "mid", input: "x", ts: "2026" });
+		// Earlier collected soft-halt unit rows — non-terminal; the run survived them.
+		appendStage(tmpDir, runId, {
+			session: null,
+			stageNumber: 1,
+			stage: "design (slice-1)",
+			skill: "design",
+			status: "failed",
+			ts: "t1",
+			errMsg: "unit halted: collect-all soft-stop",
+			parent: "design",
+			role: "produce",
+			unitId: "slice-1",
+			unitIndex: 0,
+			collected: true,
+		});
+		appendStage(tmpDir, runId, {
+			session: null,
+			stageNumber: 2,
+			stage: "design (slice-2)",
+			skill: "design",
+			status: "failed",
+			ts: "t2",
+			errMsg: "unit halted: collect-all soft-stop",
+			parent: "design",
+			role: "produce",
+			unitId: "slice-2",
+			unitIndex: 1,
+			collected: true,
+		});
+		// The LAST row is the generation-close halt — parent-attributed, sessionless,
+		// no `collected` marker, no unit fields (the recordFatalFailure shape the
+		// haltLoopWhenAllFailed engine writes). CONTRAST with the collected-halt pins
+		// above: this row IS terminal, so the recap reads "failed" and the halt's
+		// errMsg becomes the failureReason (recapOutcomeOf's fall-through arm).
+		appendStage(tmpDir, runId, {
+			session: null,
+			stageNumber: 3,
+			stage: "design",
+			skill: "design",
+			status: "failed",
+			ts: "t3",
+			errMsg: 'Fanout all-failed at stage "design" (2/2 units failed)',
+		});
+		expect(summarizeRun(tmpDir, runId)).toEqual({
+			outcome: "failed",
+			artifacts: [],
+			workflow: "mid",
+			failureReason: 'Fanout all-failed at stage "design" (2/2 units failed)',
+		} satisfies RunRecap);
+	});
+
 	it("projects an empty artifacts array when no stage carried artifacts", () => {
 		const runId = "no-artifacts-recap";
 		appendHeader(tmpDir, { runId, workflow: "mid", input: "x", ts: "2026" });
