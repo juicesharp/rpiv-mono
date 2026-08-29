@@ -5534,6 +5534,43 @@ describe("build grade panel re-grades only the pending dimensions (P2)", () => {
 		expect(await labelsWithPrior(verdicts, prior, current)).toEqual(["correctness"]);
 	});
 
+	it("a suffixed section where covers the bare heading (and a suffixed heading is covered by a bare cite)", async () => {
+		// Both directions observed in opendots run d5a9: the where "## Synthesis
+		// Notes — 'Adopted rider' bullet" must cover the touched key "synthesis
+		// notes", and a bare cite must cover a heading that carries its own
+		// suffix. Word-boundary prefix matching, phase keys exact-only.
+		const verdicts = [
+			...passingOthers(),
+			correctnessFailing("## Synthesis Notes — 'Adopted rider' bullet and 'Grep-scope' bullet"),
+		];
+		const notes = (body: string) => `## Synthesis Notes\n${body}`;
+		const prior = planFrom([phase(3, "phase body"), notes("- old bullet")]);
+		const current = planFrom([phase(3, "phase body"), notes("- corrected bullet")]);
+		expect(await labelsWithPrior(verdicts, prior, current)).toEqual(["correctness"]);
+	});
+
+	it("a ## heading mention inside the finding text cites that section (the created-section case)", async () => {
+		// Run d5a9's completeness finding named the missing section only in a
+		// parenthetical — "(missing ## Whole-Plan Verification section)" — and
+		// the amend CREATED it; that creation must count as cited.
+		const verdicts = [
+			...passingOthers(),
+			correctnessFailing("## Synthesis Notes / 'Adopted rider' bullet (missing ## Whole-Plan Verification section)"),
+		];
+		const notes = (body: string) => `## Synthesis Notes\n${body}`;
+		const wpv = (body: string) => `## Whole-Plan Verification (owned by validate)\n${body}`;
+		const prior = planFrom([phase(3, "phase body"), notes("- old bullet")]);
+		const current = planFrom([phase(3, "phase body"), notes("- corrected bullet"), wpv("- [ ] npm test")]);
+		expect(await labelsWithPrior(verdicts, prior, current)).toEqual(["correctness"]);
+	});
+
+	it("phase keys never prefix-match: a phase 1 cite does not cover a touched phase 10", async () => {
+		const verdicts = [...passingOthers(), correctnessFailing("Phase 1 > packages/x/y.ts:42")];
+		const prior = planFrom([phase(1, "old line"), phase(10, "shared phase 10 content")]);
+		const current = planFrom([phase(1, "new line"), phase(10, "shared phase 10 content CHANGED")]);
+		expect(await labelsWithPrior(verdicts, prior, current)).toEqual([...PLAN_DIMS].sort());
+	});
+
 	it("persists the guard's decision beside the prior — reason names the tripped condition", async () => {
 		// The instrumentation the always-broad diagnosis lacked: the plan file is
 		// later mutated by splice/reconcile, so a post-hoc replay cannot say which

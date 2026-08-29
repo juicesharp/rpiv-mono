@@ -292,8 +292,11 @@ const citedSections = (
 			cited.add(`phase ${ph[1]}`);
 			return;
 		}
-		if (cleaned.includes("/") || /\.\w+:\d+/.test(cleaned)) return; // a code cite, not a section
-		cited.add(cleaned.toLowerCase());
+		// A code cite, not a section: a tight path segment (`a/b`) or an
+		// `ext:NN` tail. A SPACED slash is prose punctuation ("Synthesis Notes
+		// / 'Adopted rider' bullet" — run d5a9), not a path.
+		if (/\S\/\S/.test(cleaned) || /\.\w+:\d+/.test(cleaned)) return;
+		cited.add(headingCore(cleaned).toLowerCase());
 	};
 	for (const d of pending) {
 		const o = latest.get(d);
@@ -306,6 +309,13 @@ const citedSections = (
 					typeof (f as { detail?: unknown }).detail === "string" ? (f as { detail: string }).detail : "";
 				for (const text of [where, detail]) {
 					for (const m of text.matchAll(/Phase\s+(\d+)/gi)) cited.add(`phase ${m[1]}`);
+					// A `## Heading` mention ANYWHERE in the finding cites that
+					// section — the observed shape (opendots run d5a9) is a
+					// completeness finding whose remedy is CREATING a section,
+					// named only in a parenthetical ("... (missing ## Whole-Plan
+					// Verification section)"): the amend's creation of that very
+					// section must count as cited.
+					for (const m of text.matchAll(/##\s+([A-Za-z][^#>\n]*)/g)) addHeading(m[1]);
 				}
 				addHeading(where.split(">")[0] ?? "");
 			}
@@ -347,6 +357,43 @@ const latestPriorContent = (state: RunView, priorChannel: string, cwd: string): 
 	} catch {
 		return undefined;
 	}
+};
+
+/**
+ * The heading CORE of a section reference — the text before the first
+ * descriptor separator (an em/en-dash clause, a spaced slash, a
+ * parenthetical). Real headings and finding wheres both carry descriptor
+ * suffixes ("Whole-Plan Verification (owned by validate — not any phase)",
+ * "Synthesis Notes — 'Adopted rider' bullet"); the core is the comparable
+ * identity.
+ */
+const headingCore = (s: string): string => s.split(/ \(|\s+—\s+|\s+–\s+|\s+\/\s+/)[0]?.trim() ?? s;
+
+/**
+ * True when a touched section is covered by the cite set. `phase N` keys
+ * match EXACTLY (prefix matching would let "phase 1" cover "phase 10").
+ * Non-phase keys match on a word-boundary PREFIX in EITHER direction —
+ * observed both ways in run d5a9: a cited where carries a descriptor suffix
+ * ("synthesis notes — 'adopted rider' bullet") that must cover the bare
+ * touched heading key ("synthesis notes"), and a real heading carries its own
+ * suffix ("whole-plan verification (owned by validate — not any phase)") that
+ * a bare cite ("whole-plan verification") must cover. The boundary check
+ * (the next character must not be alphanumeric) keeps "notes" from covering
+ * "notes-extra".
+ */
+const sectionCovered = (section: string, cited: ReadonlySet<string>): boolean => {
+	if (cited.has(section)) return true;
+	if (/^phase \d+$/.test(section)) return false; // phase keys are exact-only
+	const core = headingCore(section);
+	const boundary = (long: string, short: string): boolean =>
+		short.length > 0 &&
+		long.startsWith(short) &&
+		(long.length === short.length || !/[a-z0-9]/i.test(long[short.length] ?? ""));
+	for (const c of cited) {
+		if (/^phase \d+$/.test(c)) continue;
+		if (boundary(c, section) || boundary(section, c) || boundary(c, core) || boundary(core, c)) return true;
+	}
+	return false;
 };
 
 /** The surgical-fix guard's decision, with the condition that decided it. */
@@ -414,7 +461,7 @@ const decideSurgicalFix = (
 	};
 	for (const section of diff.touchedSections) {
 		if (HOUSEKEEPING_SECTIONS.has(section)) continue;
-		if (!cited.has(section)) {
+		if (!sectionCovered(section, cited)) {
 			return { surgical: false, reason: `touched section no failing verdict cited: ${section}`, ...base };
 		}
 	}
