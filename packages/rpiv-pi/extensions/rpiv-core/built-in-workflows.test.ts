@@ -118,6 +118,71 @@ describe("validate → code-review routing in built-in workflows", () => {
 	});
 });
 
+// ---------------------------------------------------------------------------
+// haltWhenAllFailed wiring — the flagged fanout inventory, swept across every
+// built-in workflow. Flagging a fanout is a deliberate halt-semantics decision
+// (collect-all is the default posture), so the flagged set is pinned exactly:
+// build's design fanout, all five build grade/confirm panels, and ship's
+// grade. Any future flagging (e.g. SYNTH_CLUSTER_FANOUT) must extend the
+// expectation consciously.
+// ---------------------------------------------------------------------------
+
+describe("haltWhenAllFailed wiring (flagged fanout inventory)", () => {
+	const fanoutLoopOf = (wf: Workflow, stage: string) => {
+		const loop = wf.stages[stage]?.loop;
+		if (loop?.kind !== "fanout") throw new Error(`${wf.name} ${stage} stage has no fanout loop`);
+		return loop;
+	};
+
+	it("flags exactly build's design fanout + five panels + ship's grade; every other fanout stays flagless", () => {
+		const fanoutStages: string[] = [];
+		const flagged: string[] = [];
+		for (const wf of builtInWorkflows) {
+			for (const [stage, def] of Object.entries(wf.stages)) {
+				const loop = def?.loop;
+				if (loop?.kind !== "fanout") continue;
+				fanoutStages.push(`${wf.name}:${stage}`);
+				if (loop.haltWhenAllFailed === true) flagged.push(`${wf.name}:${stage}`);
+			}
+		}
+		// The full fanout inventory is pinned too — a new (or renamed) fanout
+		// stage forces a conscious decision here: flag it and extend the
+		// expected set below, or leave it flagless.
+		expect([...fanoutStages].sort()).toEqual([
+			"build:code",
+			"build:code-confirm",
+			"build:code-grade",
+			"build:implement",
+			"build:plan-confirm",
+			"build:plan-grade",
+			"build:slice-design",
+			"build:slice-grade",
+			"build:subplan",
+			"polish:implement",
+			"ship:grade",
+			"ship:implement",
+			"vet:implement",
+		]);
+		expect(flagged.sort()).toEqual([
+			"build:code-confirm",
+			"build:code-grade",
+			"build:plan-confirm",
+			"build:plan-grade",
+			"build:slice-design",
+			"build:slice-grade",
+			"ship:grade",
+		]);
+		// Belt-and-braces through the narrow helper: the leak-discipline stages
+		// (the plan-phases spread bases and SYNTH_CLUSTER_FANOUT) read undefined.
+		expect(fanoutLoopOf(findWorkflow("vet"), "implement").haltWhenAllFailed).toBeUndefined();
+		expect(fanoutLoopOf(findWorkflow("polish"), "implement").haltWhenAllFailed).toBeUndefined();
+		expect(fanoutLoopOf(findWorkflow("ship"), "implement").haltWhenAllFailed).toBeUndefined();
+		expect(fanoutLoopOf(findWorkflow("build"), "implement").haltWhenAllFailed).toBeUndefined();
+		expect(fanoutLoopOf(findWorkflow("build"), "code").haltWhenAllFailed).toBeUndefined();
+		expect(fanoutLoopOf(findWorkflow("build"), "subplan").haltWhenAllFailed).toBeUndefined();
+	});
+});
+
 it("build is the default workflow (builtInWorkflows[0].name === 'build')", () => {
 	// Position 0 is load-bearing: resolve-default.ts picks
 	// `Map.keys().next().value` when no project/user config sets a default, so
@@ -953,6 +1018,12 @@ describe("vet workflow", () => {
 			// tests (the DAG-specific behavior is shared across build + vet).
 		});
 
+		it("implement stays flagless — a failed phase never halts its siblings (collect-all contract)", () => {
+			const loop = findWorkflow("vet").stages.implement?.loop;
+			if (loop?.kind !== "fanout") throw new Error("vet implement stage has no fanout loop");
+			expect(loop.haltWhenAllFailed).toBeUndefined();
+		});
+
 		it("rewires the implement edge through the scope-check into validate, backward loop intact", () => {
 			const wf = findWorkflow("vet");
 			const edges = wf.edges;
@@ -1108,6 +1179,12 @@ describe("polish workflow", () => {
 			expect(wf.stages.blueprint?.loop?.kind).toBe("iterate");
 			expect(wf.stages.blueprint?.kind).toBe("produces");
 			expect(wf.stages.implement?.loop?.kind).toBe("fanout");
+		});
+
+		it("implement stays flagless — the per-phase implement lane keeps the collect-all contract", () => {
+			const loop = findWorkflow("polish").stages.implement?.loop;
+			if (loop?.kind !== "fanout") throw new Error("polish implement stage has no fanout loop");
+			expect(loop.haltWhenAllFailed).toBeUndefined();
 		});
 
 		it("code-review sources its schema from the contract (no inline outputSchema) and gates to commit | blueprint", () => {
@@ -1398,6 +1475,10 @@ describe("SLICE_DESIGN_FANOUT (build design — deps + --upstream)", () => {
 		expect(designLoop().depArtifactFlag).toBe("--upstream");
 	});
 
+	it("halts the run when every design unit of a generation fails (haltWhenAllFailed)", () => {
+		expect(designLoop().haltWhenAllFailed).toBe(true);
+	});
+
 	it("maps each slice's frontmatter deps to slice-N unit ids", async () => {
 		const rel = ".rpiv/artifacts/slices/map.md";
 		writeSlices(
@@ -1472,6 +1553,16 @@ describe("build plan gate grade panel (--context threading)", () => {
 			} as unknown as RunView,
 		});
 		expect(units.every((u) => !u.prompt.includes("--context"))).toBe(true);
+	});
+
+	it("every grade/confirm panel halts when an entire generation fails (haltWhenAllFailed via the shared factory)", () => {
+		for (const stage of ["slice-grade", "plan-grade", "plan-confirm", "code-grade", "code-confirm"]) {
+			const loop = findWorkflow("build").stages[stage]?.loop;
+			if (loop?.kind !== "fanout") throw new Error(`build ${stage} stage has no fanout loop`);
+			// One flag at the shared fanout({ ... }) in gradePanelFanout — all five
+			// panel instances inherit by construction.
+			expect(loop.haltWhenAllFailed, stage).toBe(true);
+		}
 	});
 });
 
@@ -1793,6 +1884,10 @@ describe("ship grade panel (tier-independent roster bypass)", () => {
 				state: { named: base } as unknown as RunView,
 			});
 			expect(absent.every((u) => !u.prompt.includes("--cite-check"))).toBe(true);
+		});
+
+		it("halts the run when every dimension unit of a generation fails (haltWhenAllFailed)", () => {
+			expect(SHIP_DIMENSION_FANOUT.haltWhenAllFailed).toBe(true);
 		});
 	});
 

@@ -98,6 +98,11 @@ const citeCheckFlag = (state: RunView, citeChannel: string | undefined): string 
  * the latest-per-dimension fold). Only PENDING dimensions get the flag: in the
  * degenerate full-roster fallback a carried passing verdict has nothing to
  * adjudicate, and a first grade has no prior at all.
+ *
+ * Every panel wires `haltWhenAllFailed: true`: a generation in which EVERY
+ * dispatched dimension unit failed is a dead panel — nothing was collected, so
+ * there are no verdicts to fold — and the run halts at the panel's own close
+ * instead of routing the gate machinery over an empty verdict channel.
  */
 const gradePanelFanout = (
 	channel: string,
@@ -113,6 +118,7 @@ const gradePanelFanout = (
 		source: channel,
 		unit: { by: "dimension-list", pattern: "dimensions" },
 		max: dimensions.length,
+		haltWhenAllFailed: true,
 		units: ({ state, cwd }) => {
 			const doc = latestFsArtifact(state, channel);
 			if (doc?.handle.kind !== "fs") return [];
@@ -208,11 +214,17 @@ const CODE_CONFIRM_FANOUT = gradePanelFanout("plans", PLAN_DIMENSIONS, "code-ver
  * construction here, since a blocking finding STOPs at the cite gate before
  * grade ever runs, and the grader adjudicates the leads rather than leaving
  * them unread).
+ *
+ * `haltWhenAllFailed: true` mirrors the factory panels: an all-failed
+ * generation (every dimension session dead, nothing collected) halts the run
+ * at the panel's own close — one hop earlier than `shipGradeGate`, which was
+ * previously the first point to face the empty fold.
  */
 export const SHIP_DIMENSION_FANOUT = fanout({
 	source: "plans",
 	unit: { by: "dimension-list", pattern: "dimensions" },
 	max: SHIP_DIMENSIONS.length,
+	haltWhenAllFailed: true,
 	units: ({ state }) => {
 		const doc = latestFsArtifact(state, "plans");
 		if (doc?.handle.kind !== "fs") return [];
