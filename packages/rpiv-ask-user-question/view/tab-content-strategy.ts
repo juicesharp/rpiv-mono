@@ -24,7 +24,7 @@ import {
 import type { StatefulView } from "./stateful-view.js";
 import type { TabComponents } from "./tab-components.js";
 
-const NOTES_HEADER = "Notes:";
+const NOTES_HEADER = "Note for this answer:";
 const GLOBAL_NOTES_HEADER = "Global note:";
 const REVIEW_GLOBAL_HINT = "n to add a note";
 const REVIEW_NOTE_LABEL = "Note";
@@ -128,12 +128,17 @@ export class QuestionTabStrategy implements TabContentStrategy {
 	}
 
 	midRows(state: DialogState): Component[] {
-		if (!state.notesVisible) return [];
-		return [
-			new Text(this.config.theme.fg("muted", t("notes.header", NOTES_HEADER)), 1, 0),
-			this.config.notesInput,
-			new Spacer(1),
-		];
+		if (state.notesVisible) {
+			return [
+				new Text(this.config.theme.fg("muted", t("notes.header", NOTES_HEADER)), 1, 0),
+				this.config.notesInput,
+				new Spacer(1),
+			];
+		}
+		const note = state.notesByTab.get(state.currentTab) ?? state.answers.get(state.currentTab)?.notes;
+		return note && note.length > 0
+			? [new Text(this.config.theme.fg("dim", `Note for this answer: ${note}`), 1, 0)]
+			: [];
 	}
 
 	footerRows(state: DialogState): Component[] {
