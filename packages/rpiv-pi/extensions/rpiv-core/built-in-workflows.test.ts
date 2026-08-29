@@ -5089,6 +5089,174 @@ describe("ship workflow (lightweight /wf preset)", () => {
 		expect(grade?.outcome?.name).toBe("ship-verdicts");
 		expect(grade?.reads).toEqual(["plans", "research", "goal", "acceptance"]);
 	});
+
+	// The tiered grounding prompt — pre-chewed briefs (root cause, files, or
+	// fix named in the brief itself) VERIFY instead of re-deriving; symptom-only
+	// briefs keep the lean two-dispatch mapping pass. Both tiers end at the same
+	// Write: a directory-only research path (never a full example path — the
+	// collector's pre-write path-echo hazard), announced in the final message.
+	describe("SHIP_RESEARCH_PROMPT (tiered to the brief's pre-chewedness)", () => {
+		const shipPromptOf = (stage: string) => {
+			const prompt = findWorkflow("ship").stages[stage]?.prompt;
+			if (typeof prompt !== "function") throw new Error(`ship ${stage} stage has no prompt fn`);
+			return prompt;
+		};
+		const render = (brief: string) =>
+			String(
+				shipPromptOf("research")({
+					cwd: "/repo",
+					input: undefined,
+					state: { originalInput: brief, named: {} } as unknown as RunView,
+				}),
+			);
+		const tierLine = (prompt: string, tier: "- Tier A" | "- Tier B") => {
+			const line = prompt.split("\n").find((l) => l.startsWith(tier));
+			if (!line) throw new Error(`prompt has no ${JSON.stringify(tier)} line`);
+			return line;
+		};
+
+		it("classifies the brief first and names both tiers under the no-/skill:research prohibition", () => {
+			const brief = "fix the double-toast on lane switch";
+			const prompt = render(brief);
+			expect(prompt).toContain("Do NOT dispatch /skill:research");
+			expect(prompt).toContain("Classify the brief first, then follow ONLY the matching tier:");
+			expect(prompt).toContain(`Brief: ${brief}`);
+			expect(tierLine(prompt, "- Tier A")).toContain("pre-chewed");
+			expect(tierLine(prompt, "- Tier B")).toContain("symptom only");
+		});
+
+		it("Tier A verifies instead of re-deriving: ONE verify-only cap, drift with corrected file:line, zero-dispatch Read/Grep escape", () => {
+			// The goal's motivating shape — diagnosis and fix named, no files —
+			// is Tier A under the OR trigger (any one of the three suffices).
+			const tierA = tierLine(render("diagnosis and fix named, no files"), "- Tier A");
+			expect(tierA).toContain("the brief names the root cause, the files to touch, or the fix");
+			expect(tierA).toContain("at most ONE codebase-analyzer subagent");
+			expect(tierA).toContain("verify-only");
+			expect(tierA).toContain("confirming or denying each named anchor");
+			expect(tierA).toContain("reporting drift with the corrected file:line");
+			expect(tierA).toContain("dispatch nothing — Read/Grep them yourself");
+		});
+
+		it("Tier B keeps the two-dispatch mapping sentence body byte-verbatim", () => {
+			const tierB = tierLine(render("a symptom-only brief"), "- Tier B");
+			expect(tierB).toContain(
+				"dispatch at most TWO targeted codebase-analyzer subagents (sequentially — never parallel, never run_in_background) to map only what a single-phase plan needs to be correct: entry points, the relevant module's shape, and the conventions the implement lane must match.",
+			);
+		});
+
+		it("the sequential discipline appears exactly once per tier and nowhere else", () => {
+			const prompt = render("brief");
+			expect((prompt.match(/never parallel, never run_in_background/g) ?? []).length).toBe(2);
+		});
+
+		it("writes to the research directory only (never a full example path), bounded to under 150 lines, announcing the path, and stops", () => {
+			const prompt = render("brief");
+			expect(prompt).toContain(".rpiv/artifacts/research/");
+			expect(prompt).not.toMatch(/\.rpiv\/artifacts\/research\/\S+\.md/);
+			expect((prompt.match(/under 150 lines/g) ?? []).length).toBe(1);
+			expect(prompt).toContain("announce the written file's path in your final message");
+			expect(prompt.trimEnd().endsWith("and stop.")).toBe(true);
+		});
+
+		it("carries the progress-marker protocol between the Tier B bullet and the Brief line: classified first line, dispatch echo with tier ceiling, zero-dispatch escape, transcript-only discipline", () => {
+			const prompt = render("a brief for the marker protocol");
+			const lines = prompt.split("\n");
+			const tierB = lines.findIndex((l) => l.startsWith("- Tier B"));
+			const marker = lines.findIndex((l) => l.startsWith("Progress markers"));
+			const brief = lines.findIndex((l) => l.startsWith("Brief:"));
+			expect(tierB).toBeGreaterThan(-1);
+			expect(marker).toBeGreaterThan(tierB);
+			expect(brief).toBeGreaterThan(marker);
+			expect(prompt).toContain("[Classified]: Tier A — verify-only");
+			expect(prompt).toContain("[Classified]: Tier B — map ground truth");
+			expect(prompt).toContain("first line of your reply");
+			expect(prompt).toContain("[Dispatch N/M]:");
+			expect(prompt).toContain("[Dispatch N/M returned]:");
+			expect(prompt).toContain("1 for Tier A, 2 for Tier B");
+			expect(prompt).toContain("[Dispatch]: none — reading the named anchors directly.");
+			expect(prompt).toContain("never artifact content");
+			// The tier pins hold on the MERGED render — splicing the marker element
+			// in must not disturb the Tier B body, the `and stop.` tail, or the
+			// no-full-example-path guarantee (which now covers the marker element).
+			expect(prompt).toContain(
+				"dispatch at most TWO targeted codebase-analyzer subagents (sequentially — never parallel, never run_in_background) to map only what a single-phase plan needs to be correct: entry points, the relevant module's shape, and the conventions the implement lane must match.",
+			);
+			expect(prompt.trimEnd().endsWith("and stop.")).toBe(true);
+			expect(prompt).not.toMatch(/\.rpiv\/artifacts\/research\/\S+\.md/);
+		});
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Research skill progress markers — the bundled research skill narrates the
+// silent agent-batch window with one-line [Label]: transcript markers, so the
+// lane console's live tail (and any post-mortem transcript) shows where a run
+// stood when it died. Prose guard over the skill body: the markers exist in
+// questions → dispatch → wait → synthesize order, the one-message dispatch shape stays
+// intact, and no marker template names an artifacts path — a marker must
+// never outrank the real artifact announcement in the collector's scan.
+// ---------------------------------------------------------------------------
+
+describe("research skill progress markers (prose guard)", () => {
+	const body = readFileSync(join(BUNDLED_SKILLS_DIR, "research", "SKILL.md"), "utf-8");
+
+	it("keeps the frontmatter, the dispatch shape, and the existing path-safe lines intact", () => {
+		expect(body).toContain("name: research");
+		expect(body).toContain("disable-model-invocation: true");
+		expect(body).toContain("**single assistant message with multiple Agent calls**");
+		expect(body).toContain("[Scoped]:");
+		expect(body).toContain("Research document written to:");
+	});
+
+	it("carries the four markers in questions → dispatch → wait → synthesize order", () => {
+		const step1 = body.indexOf("### Step 1: Input Handling");
+		const step2 = body.indexOf("### Step 2: Dispatch Analysis Agents");
+		const step3 = body.indexOf("### Step 3: Synthesize and Checkpoint");
+		expect(step1).toBeGreaterThan(-1);
+		expect(step2).toBeGreaterThan(step1);
+		expect(step3).toBeGreaterThan(step2);
+		// Questions fires at Step 1's parse point, before any dispatch — the
+		// goal's first marker moment; item 7's [Scoped] report stays the
+		// separate grouped-status summary it already is.
+		const questions = body.indexOf("[Questions]:");
+		expect(questions).toBeGreaterThan(step1);
+		expect(questions).toBeLessThan(step2);
+		expect(body).toContain(
+			"[Questions]: {N} research questions formulated. Reading shared files and grouping before dispatch.",
+		);
+		const dispatched = body.indexOf("[Dispatched]:");
+		expect(dispatched).toBeGreaterThan(step2);
+		expect(dispatched).toBeLessThan(step3);
+		expect(body).toContain(
+			"[Dispatched]: {N} analysis agents in one batch{ + precedent sweep}. Waiting for returns.",
+		);
+		expect(body).toContain("[Returned]: {N}/{N} agents returned. Proceeding to synthesis.");
+		expect(body).toContain("[Synthesizing]: compiling {N} agent reports.");
+		// Returned fires only after the wait barrier closes the batch; the
+		// synthesizing marker follows at Step 3.
+		const wait = body.indexOf("**Wait for ALL agents to complete**");
+		const returned = body.indexOf("[Returned]:");
+		const synthesizing = body.indexOf("[Synthesizing]:");
+		expect(wait).toBeGreaterThan(-1);
+		expect(returned).toBeGreaterThan(wait);
+		expect(synthesizing).toBeGreaterThan(returned);
+	});
+
+	it("keeps every marker line path-free and pins the transcript-only discipline bullet", () => {
+		for (const line of body.split("\n")) {
+			if (
+				line.includes("[Questions]:") ||
+				line.includes("[Dispatched]:") ||
+				line.includes("[Returned]:") ||
+				line.includes("[Synthesizing]:")
+			) {
+				expect(line).not.toContain(".rpiv/artifacts/");
+			}
+		}
+		const notes = body.slice(body.indexOf("## Important Notes"));
+		expect(notes).toContain("never artifact content");
+		expect(notes).toContain("before the file is written");
+	});
 });
 
 // ---------------------------------------------------------------------------

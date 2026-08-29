@@ -185,26 +185,41 @@ const RESEARCH_BRIEF_PROMPT: PromptFn = ({ state }) => `/skill:research ${state.
 
 /**
  * ship's research front-load — a LEANER grounding than build's `/skill:research`
- * pass. Bypasses the research skill and bounds the agent to at most TWO targeted
- * `codebase-analyzer` dispatches (sequentially — never parallel, never
- * `run_in_background`) to map only what a lightweight single-phase plan needs to
- * be correct: entry points, the relevant module's shape, and the conventions the
- * implement lane must match. The agent then `Write`s a grounding doc under
- * `.rpiv/artifacts/research/`, where the research bucket collector harvests it —
- * the grade panel's architecture-fit dimension threads it as `--context` exactly
- * as build's research artifact does. A prompt stage (no skill), so the stage
- * name `research` drives outcome derivation (research contract → `research`
+ * pass, tiered to the brief's pre-chewedness. Bypasses the research skill: a
+ * pre-chewed brief (root cause, files to touch, or fix already named) gets
+ * VERIFICATION, not re-derivation — at most ONE verify-only `codebase-analyzer`
+ * dispatch confirming each named anchor, or none at all when the anchors are
+ * plain file paths the stage child reads itself; a symptom-only brief keeps at
+ * most TWO targeted `codebase-analyzer` dispatches (sequentially — never
+ * parallel, never `run_in_background`) mapping only what a lightweight
+ * single-phase plan needs to be correct. The agent then `Write`s a grounding
+ * doc under `.rpiv/artifacts/research/` (the prompt names the directory only —
+ * a full example path would prime the collector's pre-write path-echo hazard),
+ * where the research bucket collector harvests it — the grade panel's
+ * architecture-fit dimension threads it as `--context` exactly as build's
+ * research artifact does. A prompt stage (no skill), so the stage name
+ * `research` drives outcome derivation (research contract → `research`
  * bucket), exactly as build's `RESEARCH_BRIEF_PROMPT` stage does — the prompt
- * text, not dispatch, is what differs.
+ * text, not dispatch, is what differs. The prompt also pins a progress-marker
+ * protocol — a `[Classified]:` first line naming the chosen tier,
+ * `[Dispatch N/M]:` / `[Dispatch N/M returned]:` echo lines around each
+ * grounding dispatch (plus the `[Dispatch]: none` zero-dispatch escape) — so
+ * the lane console's live tail narrates the otherwise-silent batch window;
+ * markers are transcript text only and never carry an artifacts path before
+ * the write.
  */
 const SHIP_RESEARCH_PROMPT: PromptFn = ({ state }) =>
 	[
 		"Ground this brief for a lightweight ship plan.",
-		"Do NOT dispatch /skill:research. Instead dispatch at most TWO targeted codebase-analyzer subagents (sequentially — never parallel, never run_in_background) to map only what a single-phase plan needs to be correct: entry points, the relevant module's shape, and the conventions the implement lane must match.",
+		"Do NOT dispatch /skill:research — size the grounding to what the brief already carries.",
+		"Classify the brief first, then follow ONLY the matching tier:",
+		"- Tier A (pre-chewed — the brief names the root cause, the files to touch, or the fix): VERIFY, don't re-derive. Dispatch at most ONE codebase-analyzer subagent (sequentially — never parallel, never run_in_background) in verify-only mode, confirming or denying each named anchor against the actual code and reporting drift with the corrected file:line. If the anchors are plain file paths, dispatch nothing — Read/Grep them yourself.",
+		"- Tier B (symptom only — the brief names none of the three: no root cause, no files, no fix): dispatch at most TWO targeted codebase-analyzer subagents (sequentially — never parallel, never run_in_background) to map only what a single-phase plan needs to be correct: entry points, the relevant module's shape, and the conventions the implement lane must match.",
+		"Progress markers — echo your status as you go: the first line of your reply, before anything else, is [Classified]: Tier A — verify-only or [Classified]: Tier B — map ground truth (the tier you classified the brief into). Before each dispatch, emit [Dispatch N/M]: <purpose phrase>; once it lands, emit [Dispatch N/M returned]: <outcome phrase> (M is the tier's dispatch ceiling: 1 for Tier A, 2 for Tier B). For Tier A's zero-dispatch escape, emit [Dispatch]: none — reading the named anchors directly. Markers are transcript text only, never artifact content, and must NEVER contain a .rpiv/artifacts/ path before the file is written.",
 		"",
 		`Brief: ${state.originalInput}`,
 		"",
-		"Then Write a grounding doc under .rpiv/artifacts/research/ (timestamped filename) carrying the findings, and stop.",
+		"Then Write the grounding doc under .rpiv/artifacts/research/ (timestamped filename, under 150 lines) carrying the findings with verifiable file:line citations — Code References, Integration Points, the relevant module's shape, and the conventions the implement lane must match — announce the written file's path in your final message, and stop.",
 	].join("\n");
 
 /**
@@ -982,28 +997,34 @@ const shipGradeGate: EdgeFn = defineRoute(
  * identity is validate's single bounded remediation hop (run 7299: a
  * remediable docs-gap `fail` at the last stage stranded ~50 min of verified
  * implementation behind a terminal stop). Research stays front-loaded — a
- * ≤2-subagent grounding pass (SHIP_RESEARCH_PROMPT, not a full
- * `/skill:research` run) — because the single PRE-implement grade's
- * architecture-fit dimension needs its artifact as `--context`. That grade is
- * tier-independent: the bespoke SHIP_DIMENSION_FANOUT always grades the full
- * correctness/completeness/architecture-fit roster (no gateTier/gateRoster
- * light-tier drop), and SHIP's gate folds risk flags without re-folding the
- * citation floor (that floor folds at its own edge).
+ * brief-sized grounding pass (SHIP_RESEARCH_PROMPT, not a full
+ * `/skill:research` run: at most one verify-only dispatch when the brief names
+ * root cause, files, or fix — none when its anchors are plain file paths; at
+ * most two targeted dispatches otherwise) — because the single PRE-implement
+ * grade's architecture-fit dimension needs its artifact as `--context`. That
+ * grade is tier-independent: the bespoke SHIP_DIMENSION_FANOUT always grades
+ * the full correctness/completeness/architecture-fit roster (no
+ * gateTier/gateRoster light-tier drop), and SHIP's gate folds risk flags
+ * without re-folding the citation floor (that floor folds at its own edge).
  */
 const shipWorkflow = defineWorkflow({
 	name: "ship",
 	description:
-		"Ship, unsliced: capture the verbatim brief as a goal artifact → ground it with at most two targeted codebase-analyzer dispatches (no /skill:research) → derive a goal-anchored acceptance inventory (the executable standard of completion, frozen before planning; quick-plan records a per-item disposition, the completeness gate anchors on it, validate executes its evidence commands) → one lightweight quick-plan pass → deterministic citation floor (files: coverage gaps stop; citation-resolution findings are advisory and adjudicated by the grade panel) → single tier-independent quality gate (correctness/completeness/architecture-fit, stop-on-fail) → implement → implement-scope-check → reconcile → validate → commit. Every gate halts the run on fail (hand-repair, then resume with /wf @<runId> to re-run the gate) — except a validate fail carrying structured remediable handles, which buys ONE bounded remediation hop before halting.",
+		"Ship, unsliced: capture the verbatim brief as a goal artifact → ground it with a brief-sized research pass (none or one verify-only codebase-analyzer dispatch when the brief names root cause, files, or fix; at most two targeted dispatches otherwise — no /skill:research) → derive a goal-anchored acceptance inventory (the executable standard of completion, frozen before planning; quick-plan records a per-item disposition, the completeness gate anchors on it, validate executes its evidence commands) → one lightweight quick-plan pass → deterministic citation floor (files: coverage gaps stop; citation-resolution findings are advisory and adjudicated by the grade panel) → single tier-independent quality gate (correctness/completeness/architecture-fit, stop-on-fail) → implement → implement-scope-check → reconcile → validate → commit. Every gate halts the run on fail (hand-repair, then resume with /wf @<runId> to re-run the gate) — except a validate fail carrying structured remediable handles, which buys ONE bounded remediation hop before halting.",
 	start: "goal",
 	stages: {
 		// build's verbatim goal capture — the brief on its own channel, plus the
 		// run-start pre-existing-dirty snapshot the scope-check subtracts.
 		goal: produces.script({ run: captureGoal }),
 		// The lean grounding pass — SHIP_RESEARCH_PROMPT (a custom prompt, NOT
-		// /skill:research): ≤2 sequential codebase-analyzer subagents, then one
-		// grounding doc under .rpiv/artifacts/research/. A prompt stage, so the
-		// stage name `research` drives outcome derivation (research contract →
-		// `research` bucket) exactly as build's RESEARCH_BRIEF_PROMPT stage does.
+		// /skill:research), sized to the brief's pre-chewedness: at most one
+		// verify-only codebase-analyzer dispatch when the brief names root
+		// cause, files, or fix (none when its anchors are plain file paths);
+		// at most two targeted dispatches when it names only a symptom; then
+		// one grounding doc under .rpiv/artifacts/research/. A prompt stage,
+		// so the stage name `research` drives outcome derivation (research
+		// contract → `research` bucket) exactly as build's
+		// RESEARCH_BRIEF_PROMPT stage does.
 		research: produces({ prompt: SHIP_RESEARCH_PROMPT }),
 		// The goal-derived acceptance inventory — the executable standard of
 		// completion, authored BEFORE any plan exists so it cannot inherit the

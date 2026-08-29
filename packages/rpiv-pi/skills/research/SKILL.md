@@ -71,6 +71,12 @@ The final artifact feeds design or blueprint.
 
 4. **Parse the agent's final message** as the questions artifact body. Extract: Discovery Summary (3-5 sentence file-landscape overview), Questions (numbered dense 3-6 sentence paragraphs).
 
+   Questions formulated — emit:
+
+   ```
+   [Questions]: {N} research questions formulated. Reading shared files and grouping before dispatch.
+   ```
+
 5. **Read key shared files** referenced across multiple questions into main context — especially shared utilities, type definitions, and integration points that multiple questions mention.
 
 6. **Analyze question overlap for grouping:**
@@ -88,6 +94,14 @@ The final artifact feeds design or blueprint.
 ### Step 2: Dispatch Analysis Agents
 
 Spawn analysis agents using the Agent tool — all in a **single assistant message with multiple Agent calls** (concurrent, synchronous). **Never `run_in_background`**: its completion can't re-drive a workflow session, so the skill ends its turn before writing the document and the stage fails with no artifact.
+
+**Launch marker** — in that SAME assistant message, as its text block (it adds no turn, so the one-message parallel dispatch shape stays intact), emit:
+
+```
+[Dispatched]: {N} analysis agents in one batch{ + precedent sweep}. Waiting for returns.
+```
+
+N counts every dispatched agent, including the git-gated precedent-locator when it joins; the ` + precedent sweep` suffix appears only when it does.
 
 **Default agent**: `codebase-analyzer` for all codebase questions. This agent has Read, Grep, Glob, LS — it can trace code paths, find patterns, and analyze integration points.
 
@@ -129,7 +143,19 @@ Findings go into Precedents & Lessons. Otherwise skip and note "git history unav
 
 **Wait for ALL agents to complete** before proceeding.
 
+Once every agent has returned, emit:
+
+```
+[Returned]: {N}/{N} agents returned. Proceeding to synthesis.
+```
+
 ### Step 3: Synthesize and Checkpoint
+
+Before compiling, emit:
+
+```
+[Synthesizing]: compiling {N} agent reports.
+```
 
 1. **Compile findings:**
    - Match each agent's response to the question(s) it answered
@@ -359,3 +385,4 @@ Please review and let me know if you have follow-up questions.
   - ALWAYS gather metadata before writing (Step 4)
   - NEVER write the document with placeholder values
 - **Frontmatter consistency**: Always include frontmatter, use snake_case fields
+- **Progress markers are transcript text only**: the `[Questions]:` / `[Dispatched]:` / `[Returned]:` / `[Synthesizing]:` lines are one-line status for the lane console's live tail — never artifact content — and NEVER quote the research document's path in a marker, or anywhere else, before the file is written.
