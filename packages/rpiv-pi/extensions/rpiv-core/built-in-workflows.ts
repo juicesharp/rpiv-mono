@@ -301,6 +301,82 @@ const scopeFloorGate = (): EdgeFn => {
 	return route;
 };
 
+/**
+ * The reconciliation gate — pass ⇒ validate; fail ⇒ the `reconcile-fix` repair
+ * arm; missing/corrupt verdict ⇒ STOP (integrity clause, exactly the `match` it
+ * replaces). The arm exists because every reconcile failure class — a malformed
+ * directive, a stale `find`, a non-test target — is a defect in the PLAN's
+ * directive text, which is `amend`'s exact authority ("fix the artifact, never
+ * the repo"); the old no-arm route stopped the run on a fail that hand-repairing
+ * the TREE could never clear (run 2026-08-31_15-21-14-57d0: a multi-line
+ * directive re-failed every resume because the defect lived in the plan
+ * artifact, which nothing in the pipeline could edit). Reconcile itself stays
+ * the sole test-file writer — the arm only repairs directives; the loop
+ * re-enters reconcile to apply them.
+ *
+ * A factory for the validateGate/scopeFloorGate reason — each workflow's
+ * route-note symbol must never alias the other's. `maxFixRounds` caps the
+ * amend hops a fail may buy: the `reconcile` channel gains exactly one entry
+ * per reconcile execution, so entries beyond the first ARE the rounds already
+ * spent (resume-safe — a resumed run's replayed entries count, so a run that
+ * already failed post-fix stops for hand-repair instead of burning another
+ * LLM round). Build/vet pass no cap (the runner's per-destination
+ * backward-jump budget on `reconcile-fix` is theirs, the plan-fix precedent);
+ * ship caps at ONE — the same single bounded hop its stop-on-fail identity
+ * concedes at the validate gate.
+ */
+const reconcileGate = (opts?: { maxFixRounds?: number }): EdgeFn => {
+	const maxFixRounds = opts?.maxFixRounds ?? Number.POSITIVE_INFINITY;
+	const route: EdgeFn = defineRoute(
+		["validate", "reconcile-fix", "stop"],
+		({ state }) => {
+			const entries = state.named.reconcile;
+			const verdict = (entries?.at(-1)?.data as { verdict?: unknown } | undefined)?.verdict;
+			if (verdict === "pass") return "validate";
+			if (verdict !== "fail") {
+				setRouteNote(
+					route,
+					`reconcile verdict ${JSON.stringify(verdict ?? null)} matched no branch — terminated (no fallback)`,
+				);
+				return "stop";
+			}
+			const roundsSpent = Math.max(0, (entries?.length ?? 0) - 1);
+			if (roundsSpent >= maxFixRounds) {
+				setRouteNote(
+					route,
+					`reconcile still fails after ${maxFixRounds} fix round${maxFixRounds === 1 ? "" : "s"} — repair the #### Reconciliation directives in the PLAN artifact by hand (the failure lives in the plan text, not the tree), then resume`,
+				);
+				return "stop";
+			}
+			return "reconcile-fix";
+		},
+		{ readsData: false },
+	);
+	return route;
+};
+
+/**
+ * The `reconcile-fix` arm's dispatch — `/skill:amend` over the latest plan and
+ * the reconcile verdict. A PROMPT stage (owning its whole message, the
+ * VALIDATE_PLANS_PROMPT precedent) because amend's generic flag parser keys
+ * verdict inputs on the `-verdicts` name suffix, and reconcile's script stage
+ * publishes on its stage-key channel `reconcile` — a `reads: ["reconcile"]`
+ * skill stage would thread `--reconcile <path>`, which amend reads as a SECOND
+ * artifact flag and refuses. The explicit `--reconcile-verdicts` spelling
+ * parses as exactly one artifact (`--plans`) + one verdicts flag. The gate only
+ * dispatches this arm on a fail verdict, so both channel reads are present by
+ * construction; a torn state degrades to amend's own front-door refusal
+ * (exactly-one-artifact + at-least-one-verdicts), never a silent guess.
+ */
+const RECONCILE_FIX_PROMPT: PromptFn = ({ state }) => {
+	const parts = ["/skill:amend"];
+	const plan = latestFsArtifact(state, "plans");
+	if (plan) parts.push("--plans", handleToString(plan.handle));
+	const verdict = state.named.reconcile?.at(-1)?.artifacts.find((a) => a.handle.kind === "fs");
+	if (verdict) parts.push("--reconcile-verdicts", handleToString(verdict.handle));
+	return parts.join(" ");
+};
+
 const vetWorkflow = defineWorkflow({
 	name: "vet",
 	description:
@@ -349,11 +425,16 @@ const vetWorkflow = defineWorkflow({
 		"scope-quarantine": produces.script({ reads: ["implement-scope-check"], run: scopeQuarantine }),
 		// Deterministic post-implement reconciliation (no LLM) — the SAME `reconcile`
 		// run-function as build (no vet twin): applies every `#### Reconciliation`
-		// directive (write-restricted to test files) + re-runs every per-phase
-		// `#### Automated Verification:` command, fail-soft. Pass ⇒ validate; fail/
-		// missing ⇒ STOP (no fallback). `reads: ["plans"]` only — no run-start goal
-		// baseline. The `from` form suppresses the READS_DATA outputSchema lint.
+		// directive (write-restricted to test files), fail-soft. Pass ⇒ validate;
+		// fail ⇒ the reconcile-fix arm (see reconcileGate); missing ⇒ STOP.
+		// `reads: ["plans"]` only — no run-start goal baseline.
 		reconcile: produces.script({ reads: ["plans"], run: reconcile }),
+		// Repair arm for the reconciliation gate: /skill:amend over the plan's
+		// directives from the reconcile verdict (a prompt stage — see
+		// RECONCILE_FIX_PROMPT), re-emitting the plan latest-wins, then back
+		// through reconcile to apply. Bounded by the runner's per-destination
+		// backward-jump budget (the plan-fix precedent).
+		"reconcile-fix": produces.prompt({ prompt: RECONCILE_FIX_PROMPT, outcome: rpivBucketOutcome("plans") }),
 		validate: produces(),
 		commit: acts({ outcome: gitCommitOutcome }),
 	},
@@ -379,10 +460,14 @@ const vetWorkflow = defineWorkflow({
 		// either passes or reveals tracked drift. At most one quarantine hop per
 		// gate entry; no new loop budget.
 		"scope-quarantine": "implement-scope-check",
-		// Reconciliation gate. Pass ⇒ validate; a `fail` (non-test directive target /
-		// absent find / failed AV command) or a missing verdict ⇒ STOP (no fix arm —
-		// a reconciliation failure is plan-vs-tree drift the agent reconciles manually).
-		reconcile: match("verdict", { validate: "pass" }, { from: "reconcile" }),
+		// Reconciliation gate. Pass ⇒ validate; a `fail` (malformed directive /
+		// absent find / non-test target — all plan-TEXT defects) ⇒ the
+		// reconcile-fix amend arm; a missing verdict ⇒ STOP (integrity clause).
+		reconcile: reconcileGate(),
+		// Deterministic re-entry after the amend arm: reconcile re-parses the
+		// repaired directives and applies them (a plain string edge — the
+		// counted decision is the gate's reconcile-fix pick).
+		"reconcile-fix": "reconcile",
 		// Backward edge: validate → code-review creates the review-fix loop —
 		// UNCHANGED. The scope-check inserts before validate, so a failing scope
 		// verdict halts before re-review, and a passing one flows into validate and
@@ -710,14 +795,19 @@ const buildWorkflow = defineWorkflow({
 		"scope-quarantine": produces.script({ reads: ["implement-scope-check"], run: scopeQuarantine }),
 		// Deterministic post-implement reconciliation (no LLM): applies every
 		// `#### Reconciliation` directive (find→replace, write-restricted to test
-		// files) and re-runs every per-phase `#### Automated Verification:`
-		// command, fail-soft — a coherence backstop the parallel implement lane
+		// files), fail-soft — a coherence backstop the parallel implement lane
 		// needs (a phase's correct change can invalidate a sibling's test, and the
 		// combined tree can break in ways no single phase's checks surface). Pass ⇒
-		// validate; fail/missing ⇒ STOP (no fallback). `reads: ["plans"]` only — no
-		// run-start goal baseline (the scope floor already proved the write-set). The
-		// `from` form suppresses the READS_DATA outputSchema lint.
+		// validate; fail ⇒ the reconcile-fix arm (see reconcileGate); missing ⇒
+		// STOP. `reads: ["plans"]` only — no run-start goal baseline (the scope
+		// floor already proved the write-set).
 		reconcile: produces.script({ reads: ["plans"], run: reconcile }),
+		// Repair arm for the reconciliation gate: /skill:amend over the plan's
+		// directives from the reconcile verdict (a prompt stage — see
+		// RECONCILE_FIX_PROMPT), re-emitting the plan latest-wins, then back
+		// through reconcile to apply. Bounded by the runner's per-destination
+		// backward-jump budget (the plan-fix precedent).
+		"reconcile-fix": produces.prompt({ prompt: RECONCILE_FIX_PROMPT, outcome: rpivBucketOutcome("plans") }),
 		validate: produces({ prompt: VALIDATE_GOAL_PROMPT }),
 		// Repair arm the validate gate dispatches on a remediable `verdict: "fail"`.
 		// `acts()` (not `produces()`) because remediate is `side-effect`/`code-mutation`
@@ -886,12 +976,16 @@ const buildWorkflow = defineWorkflow({
 		// reveals tracked drift. At most one quarantine hop per gate entry; no new
 		// loop budget.
 		"scope-quarantine": "implement-scope-check",
-		// Reconciliation gate. Pass ⇒ validate; a `fail` (non-test directive target
-		// / absent find / failed AV command) or a missing verdict ⇒ STOP (no fix
-		// arm — a reconciliation failure is plan-vs-tree drift the agent reconciles
-		// manually). Safe by construction: the sole path onward is an explicit
-		// `verdict: "pass"`. Sourced from the reconcile channel via the `from` form.
-		reconcile: match("verdict", { validate: "pass" }, { from: "reconcile" }),
+		// Reconciliation gate. Pass ⇒ validate; a `fail` (malformed directive /
+		// absent find / non-test target — all plan-TEXT defects) ⇒ the
+		// reconcile-fix amend arm; a missing verdict ⇒ STOP (integrity clause).
+		// Safe by construction: the sole path onward to validate is an explicit
+		// `verdict: "pass"`.
+		reconcile: reconcileGate(),
+		// Deterministic re-entry after the amend arm: reconcile re-parses the
+		// repaired directives and applies them (a plain string edge — the
+		// counted decision is the gate's reconcile-fix pick).
+		"reconcile-fix": "reconcile",
 		// Gate commit on validate's own verdict — see `validateGate`. `pass` ⇒
 		// commit; a `fail` WITH remediable handles (a `pass: false` risk ruling or a
 		// structured `blockers:` entry) ⇒ validate-fix, which re-enters at
@@ -1010,7 +1104,7 @@ const shipGradeGate: EdgeFn = defineRoute(
 const shipWorkflow = defineWorkflow({
 	name: "ship",
 	description:
-		"Ship, unsliced: capture the verbatim brief as a goal artifact → ground it with a brief-sized research pass (none or one verify-only codebase-analyzer dispatch when the brief names root cause, files, or fix; at most two targeted dispatches otherwise — no /skill:research) → derive a goal-anchored acceptance inventory (the executable standard of completion, frozen before planning; quick-plan records a per-item disposition, the completeness gate anchors on it, validate executes its evidence commands) → one lightweight quick-plan pass → deterministic citation floor (files: coverage gaps stop; citation-resolution findings are advisory and adjudicated by the grade panel) → single tier-independent quality gate (correctness/completeness/architecture-fit, stop-on-fail) → implement → implement-scope-check → reconcile → validate → commit. Every gate halts the run on fail (hand-repair, then resume with /wf @<runId> to re-run the gate) — except a validate fail carrying structured remediable handles, which buys ONE bounded remediation hop before halting.",
+		"Ship, unsliced: capture the verbatim brief as a goal artifact → ground it with a brief-sized research pass (none or one verify-only codebase-analyzer dispatch when the brief names root cause, files, or fix; at most two targeted dispatches otherwise — no /skill:research) → derive a goal-anchored acceptance inventory (the executable standard of completion, frozen before planning; quick-plan records a per-item disposition, the completeness gate anchors on it, validate executes its evidence commands) → one lightweight quick-plan pass → deterministic citation floor (files: coverage gaps stop; citation-resolution findings are advisory and adjudicated by the grade panel) → single tier-independent quality gate (correctness/completeness/architecture-fit, stop-on-fail) → implement → implement-scope-check → reconcile → validate → commit. Every gate halts the run on fail (hand-repair, then resume with /wf @<runId> to re-run the gate) — except a reconcile fail (a plan-text directive defect), which buys ONE bounded amend hop over the plan's directives, and a validate fail carrying structured remediable handles, which buys ONE bounded remediation hop before halting.",
 	start: "goal",
 	stages: {
 		// build's verbatim goal capture — the brief on its own channel, plus the
@@ -1076,8 +1170,15 @@ const shipWorkflow = defineWorkflow({
 		// declared write-set is the whole contract). Pass ⇒ reconcile; fail ⇒ STOP.
 		"implement-scope-check": produces.script({ reads: ["plans", "goal"], run: implementScopeCheck }),
 		// Deterministic post-implement reconciliation — build's run-function
-		// verbatim. Pass ⇒ validate; fail/missing ⇒ STOP (no fallback).
+		// verbatim. Pass ⇒ validate; fail ⇒ ONE bounded reconcile-fix hop
+		// (maxFixRounds: 1 — the validate-gate concession's twin); missing ⇒ STOP.
 		reconcile: produces.script({ reads: ["plans"], run: reconcile }),
+		// Repair arm — build's prompt stage verbatim; ship's reconcile gate
+		// dispatches it at most ONCE. Kept despite the stop-on-fail identity for
+		// the same reason as validate-fix: a reconcile fail is a plan-TEXT defect
+		// a hand-repair of the TREE can never clear, so the terminal stop was
+		// unresumable without hand-editing the plan artifact.
+		"reconcile-fix": produces.prompt({ prompt: RECONCILE_FIX_PROMPT, outcome: rpivBucketOutcome("plans") }),
 		validate: produces({ prompt: VALIDATE_GOAL_PROMPT }),
 		// Repair arm — build's stage verbatim; ship's validate gate dispatches it
 		// at most ONCE (maxFixRounds: 1). Kept because the terminal gate is where
@@ -1106,9 +1207,15 @@ const shipWorkflow = defineWorkflow({
 		// the stage's own channel via the `from` form (suppresses the READS_DATA
 		// outputSchema lint).
 		"implement-scope-check": match("verdict", { reconcile: "pass" }, { from: "implement-scope-check" }),
-		// Reconciliation gate — build's route verbatim: pass ⇒ validate;
-		// fail/missing ⇒ STOP (plan-vs-tree drift the agent reconciles manually).
-		reconcile: match("verdict", { validate: "pass" }, { from: "reconcile" }),
+		// Reconciliation gate — build's route, capped at ONE amend round (the
+		// reconcile channel's entry count IS the rounds spent): pass ⇒ validate;
+		// first fail ⇒ reconcile-fix; a fail after the spent round, or a missing
+		// verdict ⇒ STOP with a route note naming the plan artifact as the
+		// repair site.
+		reconcile: reconcileGate({ maxFixRounds: 1 }),
+		// Re-entry after the amend arm — reconcile re-parses and applies the
+		// repaired directives; the spent round now stops any remaining fail.
+		"reconcile-fix": "reconcile",
 		// Validate gate — build's classifying gate, capped at ONE remediation
 		// round: `pass` ⇒ commit; a `fail` WITH structured remediable handles and
 		// no remediation spent ⇒ validate-fix; every other fail (prose-only, or

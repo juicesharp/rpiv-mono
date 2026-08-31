@@ -5,6 +5,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, isAbsolute, join } from "node:path";
 import { handleToString, type Output, type ScriptContext } from "@juicesharp/rpiv-workflow/registration";
+import { closesFence, FENCE_LINE_RE } from "./markdown-fence.js";
 import {
 	containedPath,
 	haltPreflight,
@@ -32,27 +33,113 @@ interface ReconciliationDirective {
 	replace: string;
 }
 
-/** Directive grammar: `` - `<target>`: replace `<find>` → `<replace>` — <rationale> ``.
- *  The `→` (U+2192) separates find/replace; the em-dash `—` (U+2014) + rationale is
- *  optional. Find/replace carry no inner backticks. The two spans are intentionally
- *  asymmetric and MUST NOT be symmetrized: `find` is one-or-more `[^`]+` (an empty
- *  find has no anchored target and `String.replace("")` prepends the replacement on
- *  every run, so the parser rejects it at parse time), while `replace` is
- *  zero-or-more `[^`]*` (an empty replace is a legitimate deletion directive). */
-const RECONCILE_DIRECTIVE_RE = /^-\s+`([^`]+)`\s*:\s*replace\s+`([^`]+)`\s*→\s*`([^`]*)`\s*(?:—\s+.*)?$/;
-/** A directive ATTEMPT — `- `<target>`:` — that does not match the full grammar. Used
- *  to surface a malformed directive as a finding rather than silently dropping it. */
+/** Directive grammar (inline form), matched against a whole LIST ITEM (which
+ *  may span lines — `[^`]` matches `\n`, so a multi-line find/replace snippet
+ *  parses as long as it carries no inner backticks; the run-halting deviation
+ *  class was the old line-by-line split, not the spans):
+ *  `` - `<target>`: replace `<find>` → `<replace>` — <rationale> ``.
+ *  The arrow is `→` (U+2192) or the ASCII `->`; the em-dash `—` (U+2014) +
+ *  rationale is optional and may span lines. Find/replace carry no inner
+ *  backticks (content WITH backticks needs the fenced form below). The two
+ *  spans are intentionally asymmetric and MUST NOT be symmetrized: `find` is
+ *  one-or-more `[^`]+` (an empty find has no anchored target and
+ *  `String.replace("")` prepends the replacement on every run, so the parser
+ *  rejects it at parse time), while `replace` is zero-or-more `[^`]*` (an
+ *  empty replace is a legitimate deletion directive). */
+const RECONCILE_DIRECTIVE_RE = /^-\s+`([^`]+)`\s*:\s*replace\s+`([^`]+)`\s*(?:→|->)\s*`([^`]*)`\s*(?:—[\s\S]*)?$/;
+/** The fenced form's HEADER line — `- `<target>`: replace` with NO inline
+ *  spans (an optional `— rationale` tail): the find/replace live in labeled
+ *  fenced blocks on the item's continuation lines. The escape hatch for
+ *  content a backtick grammar cannot express (inner backticks, template
+ *  literals, markdown-in-tests). */
+const RECONCILE_BLOCK_HEADER_RE = /^-\s+`([^`]+)`\s*:\s*replace\s*(?:—.*)?$/;
+/** A directive ATTEMPT — `- `<target>`:` — that does not match either grammar.
+ *  Used to surface a malformed directive as a finding rather than silently
+ *  dropping it. */
 const RECONCILE_DIRECTIVE_ATTEMPT_RE = /^-\s+`[^`]+`\s*:/;
 
 /**
+ * Parse the fenced-form continuation lines of one directive item: a `find:`
+ * label line, a fenced code block, a `replace:` label line, a second fenced
+ * block. Fence chars/lengths follow CommonMark (`closesFence`); content is
+ * dedented by the opening fence line's own indentation so a list-nested block
+ * captures the target file's exact bytes. Returns `undefined` when the
+ * structure does not complete — the caller degrades to a malformed finding.
+ */
+const parseFencedSpans = (lines: readonly string[]): { find: string; replace: string } | undefined => {
+	const spans: string[] = [];
+	let i = 0;
+	for (const label of ["find:", "replace:"]) {
+		while (i < lines.length && lines[i]!.trim() === "") i++;
+		if (lines[i]?.trim() !== label) return undefined;
+		i++;
+		const open = lines[i] !== undefined ? FENCE_LINE_RE.exec(lines[i]!) : null;
+		if (!open) return undefined;
+		const indent = /^[ \t]*/.exec(lines[i]!)?.[0] ?? "";
+		const fenceChar = open[1]![0]!;
+		const fenceLen = open[1]!.length;
+		i++;
+		const content: string[] = [];
+		let closed = false;
+		for (; i < lines.length; i++) {
+			const close = FENCE_LINE_RE.exec(lines[i]!);
+			if (close && closesFence(lines[i]!, close, fenceChar, fenceLen)) {
+				closed = true;
+				i++;
+				break;
+			}
+			content.push(lines[i]!.startsWith(indent) ? lines[i]!.slice(indent.length) : lines[i]!);
+		}
+		if (!closed) return undefined;
+		spans.push(content.join("\n"));
+	}
+	// An empty find is rejected for the same anchorless-`String.replace("")`
+	// reason as the inline grammar; an empty replace is a legitimate deletion.
+	if (spans[0] === "") return undefined;
+	return { find: spans[0]!, replace: spans[1]! };
+};
+
+/** Classify one collected list item (header + continuation lines) as a
+ *  directive, a malformed attempt (the header line, surfaced), or prose (ignored). */
+const classifyItem = (
+	lines: readonly string[],
+	out: { directives: ReconciliationDirective[]; malformed: string[] },
+): void => {
+	const header = lines[0]!.trimEnd();
+	const blockHeader = RECONCILE_BLOCK_HEADER_RE.exec(header);
+	if (blockHeader) {
+		const spans = parseFencedSpans(lines.slice(1));
+		if (spans) {
+			out.directives.push({ target: blockHeader[1]!.trim(), find: spans.find, replace: spans.replace });
+		} else {
+			out.malformed.push(header.trim());
+		}
+		return;
+	}
+	const m = RECONCILE_DIRECTIVE_RE.exec(lines.map((l) => l.trimEnd()).join("\n"));
+	if (m) {
+		out.directives.push({ target: m[1]!.trim(), find: m[2]!, replace: m[3]! });
+	} else if (RECONCILE_DIRECTIVE_ATTEMPT_RE.test(header)) {
+		out.malformed.push(header.trim());
+	}
+};
+
+/**
  * Parse every `#### Reconciliation` directive from a plan body. Returns the
- * well-formed directives AND the malformed attempts (lines that carry the
- * `- `<target>`:` shape but not the full `replace … → …` grammar); `reconcile`
- * turns each malformed attempt into a finding so a broken directive is visible,
- * never silently dropped. Prose list items are ignored. Pure: no I/O, no throw.
- * A section opens at a `#### Reconciliation` heading and closes at the next
- * `#{1,4}` heading (so `### Success Criteria` / `## Phase N:` / a sibling
- * `#### Automated Verification:` all end it).
+ * well-formed directives AND the malformed attempts (items that carry the
+ * `- `<target>`:` shape but neither the inline `replace … → …` grammar nor a
+ * complete fenced find:/replace: pair); `reconcile` turns each malformed
+ * attempt into a finding so a broken directive is visible, never silently
+ * dropped. Prose list items are ignored. Pure: no I/O, no throw.
+ *
+ * Structure: a section opens at a `#### Reconciliation` heading and closes at
+ * the next `#{1,4}` heading (so `### Success Criteria` / `## Phase N:` / a
+ * sibling `#### Automated Verification:` all end it) — headings are only
+ * recognized OUTSIDE fenced code blocks, so fenced find/replace content that
+ * happens to carry `#`-leading lines cannot truncate the section. Within a
+ * section, a `- ` line outside a fence starts a new list item; every following
+ * line until the next item / section end is that item's continuation (this is
+ * what lets a multi-line inline directive parse as one unit).
  */
 const reconciliationRecords = (
 	body: string,
@@ -60,30 +147,57 @@ const reconciliationRecords = (
 	directives: ReconciliationDirective[];
 	malformed: string[];
 } => {
-	const directives: ReconciliationDirective[] = [];
-	const malformed: string[] = [];
+	const out = { directives: [] as ReconciliationDirective[], malformed: [] as string[] };
 	let inSection = false;
+	let item: string[] | undefined;
+	let fenceChar = "";
+	let fenceLen = 0;
+	const flush = () => {
+		if (item) classifyItem(item, out);
+		item = undefined;
+	};
 	for (const raw of body.split("\n")) {
 		const line = raw.trimEnd();
+		if (fenceLen > 0) {
+			// Inside a fenced block: only a matching closer changes state; every
+			// line (closer included) rides the current item verbatim.
+			const close = FENCE_LINE_RE.exec(line);
+			if (close && closesFence(line, close, fenceChar, fenceLen)) {
+				fenceChar = "";
+				fenceLen = 0;
+			}
+			item?.push(raw);
+			continue;
+		}
+		const open = FENCE_LINE_RE.exec(line);
+		if (open) {
+			fenceChar = open[1]![0]!;
+			fenceLen = open[1]!.length;
+			item?.push(raw);
+			continue;
+		}
 		if (/^####\s+Reconciliation\b/.test(line)) {
+			flush();
 			inSection = true;
 			continue;
 		}
 		// Any other heading ends the section (the open-heading branch above `continue`s,
 		// so this only fires for non-`#### Reconciliation` headings).
 		if (/^#{1,4}\s/.test(line)) {
+			flush();
 			inSection = false;
 			continue;
 		}
 		if (!inSection) continue;
-		const m = RECONCILE_DIRECTIVE_RE.exec(line);
-		if (m) {
-			directives.push({ target: m[1]!.trim(), find: m[2]!, replace: m[3]! });
-		} else if (RECONCILE_DIRECTIVE_ATTEMPT_RE.test(line)) {
-			malformed.push(line.trim());
+		if (/^-\s/.test(line)) {
+			flush();
+			item = [raw];
+		} else {
+			item?.push(raw);
 		}
 	}
-	return { directives, malformed };
+	flush();
+	return out;
 };
 
 const isTestPath = (target: string): boolean => TEST_PATH_RE.test(target);
@@ -145,7 +259,7 @@ const applyReconciliationDirectives = (
 				// own prior successful apply (e.g. a validate-fix loop re-running reconcile).
 			} else {
 				findings.push({
-					detail: `reconcile: directive find substring not present in ${d.target} (and the replacement is absent — not already applied) — the expected text to replace is absent; the directive is stale or the test no longer matches`,
+					detail: `reconcile: directive find substring not present in ${d.target} (and the replacement is absent — not already applied) — the expected text to replace is absent; the directive is stale or the test no longer matches. Repair IN THE PLAN: update the directive's find text to match the target file's current content (Read the file to ground it), or delete the directive if it no longer applies`,
 					where: d.target,
 				});
 			}
@@ -189,8 +303,12 @@ const applyReconciliationDirectives = (
  * commands as an agent, with a real shell and the judgment to tell a legitimate
  * post-rename mismatch from actual plan-vs-tree drift.
  *
- * The route is the `match("verdict", …, { from: "reconcile" })` gate idiom — pass ⇒
- * validate, fail/missing ⇒ STOP (no fallback), mirroring `implementScopeCheck`.
+ * The route is `reconcileGate` (built-in-workflows.ts) — pass ⇒ validate; fail ⇒
+ * the `reconcile-fix` arm (`/skill:amend` over the plan's directives from this
+ * verdict — every reconcile failure class is a plan-TEXT defect, so the plan
+ * reviser has authority over all of them; amend never edits test files, this
+ * stage stays the sole applier), looping back here; a missing/corrupt verdict ⇒
+ * STOP (integrity clause).
  * Mirrors `implementScopeCheck`'s `ScriptContext` shape, basename-keyed verdict
  * path, and `dimension`/`pass`/`verdict`/`score`/`severity` data shape. `reads:
  * ["plans"]` only — reconcile consumes no run-start `goal` baseline (the scope
@@ -231,7 +349,13 @@ const reconcile = ({ state, cwd }: ScriptContext): Omit<Output, "meta"> => {
 	}
 	for (const m of malformed) {
 		findings.push({
-			detail: `reconcile: malformed Reconciliation directive — expected a line of the form: - \`<target>\`: replace \`<find>\` → \`<replace>\` (target/find/replace each backtick-wrapped) — ${m}`,
+			detail:
+				"reconcile: malformed Reconciliation directive — rewrite the directive IN THE PLAN as either " +
+				"(a) one list item: - `<target>`: replace `<find>` → `<replace>` — <rationale> " +
+				"(find/replace may span lines but must carry no inner backticks), or " +
+				"(b) the fenced form for content with backticks: - `<target>`: replace — <rationale>, then a " +
+				"`find:` line followed by a fenced code block, then a `replace:` line followed by a fenced code " +
+				`block — offending item: ${m}`,
 			where: "reconciliation-directive",
 		});
 	}

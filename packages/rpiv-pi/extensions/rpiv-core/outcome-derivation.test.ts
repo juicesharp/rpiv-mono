@@ -334,6 +334,13 @@ describe("equivalence — built-in workflows", () => {
 		// ship's grade publishes verdicts on its own channel (derivation maps one
 		// kind → one bucket, so the ship gate keeps an explicit outcome).
 		"ship::grade": "ship-verdicts",
+		// The reconcile-fix amend arms are PROMPT stages (no skill contract to
+		// derive from — the /skill:amend dispatch lives in the prompt text), so
+		// each carries an explicit plans outcome: amend re-emits the plan in
+		// place and the channel updates latest-wins for the reconcile re-entry.
+		"build::reconcile-fix": "plans",
+		"vet::reconcile-fix": "plans",
+		"ship::reconcile-fix": "plans",
 	};
 
 	/**
@@ -428,7 +435,7 @@ describe("equivalence — built-in workflows", () => {
 		});
 	}
 
-	it("total produces stages across all workflows = 49 (18 derivable + 11 explicit + 20 script)", () => {
+	it("total produces stages across all workflows = 52 (18 derivable + 14 explicit + 20 script)", () => {
 		let count = 0;
 		let scriptProduces = 0;
 		for (const w of builtInWorkflows) {
@@ -437,7 +444,7 @@ describe("equivalence — built-in workflows", () => {
 				if (stage.kind === "produces" && stage.run != null) scriptProduces++;
 			}
 		}
-		expect(count).toBe(49);
+		expect(count).toBe(52);
 		// build::slice-check + build::subplan-check + build::goal + build::plan-cite-check
 		// + build::code-cite-check + build::implement-scope-check + build::scope-quarantine
 		// + build::reconcile

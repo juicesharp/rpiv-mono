@@ -40,7 +40,20 @@ Rules:
     #### Reconciliation
     - `path/to/x.test.ts`: replace `expect(r).toBe(3)` → `expect(r).toBe(4)` — <one-line rationale>
     ```
-    The target MUST be a co-located test file (`*.test.{ts,tsx,js,jsx}`) — exactly the four extensions `reconcile`'s `isTestPath`/`TEST_PATH_RE` accepts; `reconcile` rejects (and reports) a directive against any other path, so golden masters / fixtures / snapshots such as `.test.json`/`.test.snap` are NOT auto-applied (route those updates to the owning phase). The `find` substring must be present in the target — `reconcile` does not guess, so an absent `find` fails the reconciliation gate. Record directives only for edits you can state concretely; anything needing real restructuring is plan-level work (`/skill:revise`), not a reconciliation directive.
+    The `find`/`replace` spans may span multiple lines, but must carry **no inner backticks** — the spans are backtick-delimited, so a snippet containing a backtick (a template literal, markdown-in-a-test) is inexpressible in this form. For such content use the **fenced form**: the same `- `<target>`: replace — <rationale>` header with NO inline spans, followed by a `find:` line + a fenced code block, then a `replace:` line + a fenced code block (indent the blocks under the list item; the fence line's own indentation is stripped from the captured content):
+    ````
+    #### Reconciliation
+    - `path/to/x.test.ts`: replace — <one-line rationale>
+      find:
+      ```
+      const s = `a ${b} c`;
+      ```
+      replace:
+      ```
+      const s = `a ${b} c d`;
+      ```
+    ````
+    The target MUST be a co-located test file (`*.test.{ts,tsx,js,jsx}`) — exactly the four extensions `reconcile`'s `isTestPath`/`TEST_PATH_RE` accepts; `reconcile` rejects (and reports) a directive against any other path, so golden masters / fixtures / snapshots such as `.test.json`/`.test.snap` are NOT auto-applied (route those updates to the owning phase). The `find` substring must be present in the target — `reconcile` does not guess, so an absent `find` fails the reconciliation gate (the gate's amend arm then repairs the directive, burning a fix round — copy the find text verbatim from the file to avoid it). Record directives only for edits you can state concretely; anything needing real restructuring is plan-level work (`/skill:revise`), not a reconciliation directive.
 - If no phase is named → **sequential full-plan mode:** implement every phase in the plan sequentially.
 - If the input is empty or the plan path is missing/literal, ask the user for the plan path before proceeding.
 

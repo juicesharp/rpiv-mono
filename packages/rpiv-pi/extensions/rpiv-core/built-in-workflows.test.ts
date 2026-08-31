@@ -999,6 +999,7 @@ describe("vet workflow", () => {
 				"implement-scope-check",
 				"scope-quarantine",
 				"reconcile",
+				"reconcile-fix",
 				"validate",
 				"commit",
 			]);
@@ -4948,12 +4949,15 @@ describe("build subplan-check (deterministic cluster-coverage floor)", () => {
 // ---------------------------------------------------------------------------
 
 describe("ship workflow (lightweight /wf preset)", () => {
-	// The twelve stages in linear order — pins that none of build's elaborate
+	// The thirteen stages in linear order — pins that none of build's elaborate
 	// machinery (slice*/subplan/*confirm/*snapshot/plan-fix/code*/*demote)
-	// leaked into the lightweight preset. `validate-fix` is the ONE sanctioned
-	// arm: the terminal gate's single bounded remediation hop (maxFixRounds: 1).
-	// `acceptance` is the goal-derived executable standard of completion,
-	// frozen between research and planning.
+	// leaked into the lightweight preset. `validate-fix` and `reconcile-fix`
+	// are the TWO sanctioned arms: each is a single bounded hop
+	// (maxFixRounds: 1) at a gate whose fail would otherwise strand verified
+	// work — validate's remediation, and reconcile's plan-text directive
+	// repair (a fail no TREE hand-repair can clear). `acceptance` is the
+	// goal-derived executable standard of completion, frozen between research
+	// and planning.
 	const SHIP_STAGES: readonly string[] = [
 		"goal",
 		"research",
@@ -4964,26 +4968,28 @@ describe("ship workflow (lightweight /wf preset)", () => {
 		"implement",
 		"implement-scope-check",
 		"reconcile",
+		"reconcile-fix",
 		"validate",
 		"validate-fix",
 		"commit",
 	];
 
-	it("has exactly the twelve stages in linear order (no slice/subplan/confirm/snapshot/plan-fix/code/demote arms)", () => {
+	it("has exactly the thirteen stages in linear order (no slice/subplan/confirm/snapshot/plan-fix/code/demote arms)", () => {
 		expect(Object.keys(findWorkflow("ship").stages)).toEqual([...SHIP_STAGES]);
 	});
 
-	it("gate edges are stop-on-fail; the sole backward path is the sanctioned validate-fix re-entry", () => {
+	it("gate edges are stop-on-fail; the backward paths are the two sanctioned fix re-entries", () => {
 		const wf = findWorkflow("ship");
 		const gates: Array<[string, string[]]> = [
 			["plan-cite-check", ["grade", "stop"]],
 			["grade", ["implement", "stop"]],
 			["implement-scope-check", ["reconcile", "stop"]],
-			["reconcile", ["validate", "stop"]],
+			["reconcile", ["validate", "reconcile-fix", "stop"]],
 			["validate", ["commit", "stop", "validate-fix"]],
 			// The re-entry: a real fix is re-verified end-to-end (scope floor →
-			// reconcile → validate) before the gate re-folds — the one backward
-			// edge ship's identity concedes, bounded by the gate's fix-round cap.
+			// reconcile → validate) before the gate re-folds — bounded by the
+			// gate's fix-round cap. (reconcile-fix's own re-entry is a plain
+			// string edge back to reconcile, asserted separately below.)
 			["validate-fix", ["implement-scope-check", "stop"]],
 		];
 		for (const [src, expected] of gates) {
@@ -5000,6 +5006,9 @@ describe("ship workflow (lightweight /wf preset)", () => {
 				expect(SHIP_STAGES.indexOf(target), `${src} → ${target}`).toBeGreaterThan(from);
 			}
 		}
+		// The reconcile-fix re-entry: a plain string edge — the counted decision
+		// is the gate's reconcile-fix pick, capped at one round.
+		expect(wf.edges["reconcile-fix"]).toBe("reconcile");
 	});
 
 	// The terminal gate's single bounded remediation hop — the `remediation`
@@ -6865,18 +6874,20 @@ describe("build edges — implement-scope-check sits between implement and valid
 		expect(findWorkflow("build").edges["scope-quarantine"]).toBe("implement-scope-check");
 	});
 
-	it("build's stage order lists implement → implement-scope-check → scope-quarantine → reconcile → validate", () => {
+	it("build's stage order lists implement → implement-scope-check → scope-quarantine → reconcile → reconcile-fix → validate", () => {
 		const keys = Object.keys(findWorkflow("build").stages);
 		const i = keys.indexOf("implement");
 		const s = keys.indexOf("implement-scope-check");
 		const q = keys.indexOf("scope-quarantine");
 		const r = keys.indexOf("reconcile");
+		const f = keys.indexOf("reconcile-fix");
 		const v = keys.indexOf("validate");
 		expect(i).toBeGreaterThanOrEqual(0);
 		expect(s).toBe(i + 1);
 		expect(q).toBe(s + 1);
 		expect(r).toBe(q + 1);
-		expect(v).toBe(r + 1);
+		expect(f).toBe(r + 1);
+		expect(v).toBe(f + 1);
 	});
 
 	it("build's implement references IMPLEMENT_DAG_FANOUT, no longer carries concurrency (unpinned)", () => {
@@ -7094,6 +7105,120 @@ describe("reconcile lane stage", () => {
 		expect(readFileSync(join(tmpDir, "packages/a/a.test.ts"), "utf-8")).toBe("expect(r).toBe(4);\n");
 	});
 
+	// --- relaxed grammar: multi-line inline items + the fenced form ---
+
+	it("applies a MULTI-LINE inline directive — spans may carry newlines (run 57d0's halting shape)", () => {
+		// Run 2026-08-31_15-21-14-57d0: the implementer wrote a biome-formatted
+		// multi-line replacement; the old line-by-line split flagged it malformed
+		// and the no-arm gate made every resume re-fail. Items now parse as list
+		// ITEMS, so the natural multi-line output is legal.
+		writeTestFile("packages/a/a.test.ts", 'vi.mock("./p.js", () => ({ a: 1 }));\nrest();\n');
+		const plan = write(
+			".rpiv/artifacts/plans/p.md",
+			planBody({
+				directives: [
+					'- `packages/a/a.test.ts`: replace `vi.mock("./p.js", () => ({ a: 1 }));` → `vi.mock("./p.js", () => ({',
+					"\ta: 1,",
+					"\tb: 2,",
+					"}));` — Phase 8's `agents.ts` now calls `findInstalledSiblings()` (rationale backticks ride the tail)",
+				],
+			}),
+		);
+		const data = runOn(plan);
+		expect(data.pass).toBe(true);
+		expect(readFileSync(join(tmpDir, "packages/a/a.test.ts"), "utf-8")).toBe(
+			'vi.mock("./p.js", () => ({\n\ta: 1,\n\tb: 2,\n}));\nrest();\n',
+		);
+	});
+
+	it("accepts the ASCII -> arrow as the find/replace separator", () => {
+		writeTestFile("packages/a/a.test.ts", "expect(r).toBe(3);\n");
+		const plan = write(
+			".rpiv/artifacts/plans/p.md",
+			planBody({
+				directives: ["- `packages/a/a.test.ts`: replace `expect(r).toBe(3)` -> `expect(r).toBe(4)` — ascii arrow"],
+			}),
+		);
+		const data = runOn(plan);
+		expect(data.pass).toBe(true);
+		expect(readFileSync(join(tmpDir, "packages/a/a.test.ts"), "utf-8")).toBe("expect(r).toBe(4);\n");
+	});
+
+	it("applies a fenced-form directive whose content carries backticks (inexpressible inline)", () => {
+		writeTestFile("packages/a/a.test.ts", "const s = `a b`;\nrest();\n");
+		const plan = write(
+			".rpiv/artifacts/plans/p.md",
+			planBody({
+				directives: [
+					"- `packages/a/a.test.ts`: replace — template literal update",
+					"  find:",
+					"  ```",
+					"  const s = `a b`;",
+					"  ```",
+					"  replace:",
+					"  ```",
+					"  const s = `a b c`;",
+					"  ```",
+				],
+			}),
+		);
+		const data = runOn(plan);
+		expect(data.pass).toBe(true);
+		expect(readFileSync(join(tmpDir, "packages/a/a.test.ts"), "utf-8")).toBe("const s = `a b c`;\nrest();\n");
+	});
+
+	it("fenced form: an empty find block is rejected as malformed (anchorless), an empty replace block deletes", () => {
+		writeTestFile("packages/a/a.test.ts", "keep();\ndrop();\n");
+		const plan = write(
+			".rpiv/artifacts/plans/p.md",
+			planBody({
+				directives: [
+					"- `packages/a/a.test.ts`: replace — delete the call",
+					"  find:",
+					"  ```",
+					"  drop();",
+					"  ```",
+					"  replace:",
+					"  ```",
+					"  ```",
+					"- `packages/a/a.test.ts`: replace — empty find",
+					"  find:",
+					"  ```",
+					"  ```",
+					"  replace:",
+					"  ```",
+					"  x();",
+					"  ```",
+				],
+			}),
+		);
+		const data = runOn(plan);
+		expect(data.pass).toBe(false); // the empty-find item is the one finding
+		expect(details(data)).toMatch(/malformed Reconciliation directive/);
+		// the deletion directive still applied; the empty-find one did not prepend
+		expect(readFileSync(join(tmpDir, "packages/a/a.test.ts"), "utf-8")).toBe("keep();\n\n");
+	});
+
+	it("fenced form: an incomplete structure (missing replace block) degrades to a malformed finding", () => {
+		writeTestFile("packages/a/a.test.ts", "expect(r).toBe(3);\n");
+		const plan = write(
+			".rpiv/artifacts/plans/p.md",
+			planBody({
+				directives: [
+					"- `packages/a/a.test.ts`: replace — truncated",
+					"  find:",
+					"  ```",
+					"  expect(r).toBe(3);",
+					"  ```",
+				],
+			}),
+		);
+		const data = runOn(plan);
+		expect(data.pass).toBe(false);
+		expect(details(data)).toMatch(/malformed Reconciliation directive/);
+		expect(readFileSync(join(tmpDir, "packages/a/a.test.ts"), "utf-8")).toBe("expect(r).toBe(3);\n");
+	});
+
 	it("does NOT execute AV commands — a failing command line yields no finding (validate owns AV)", () => {
 		// The AV re-run was removed: measured across the full run history it produced
 		// zero genuine catches and a 100% false-positive rate (stale cross-phase
@@ -7233,11 +7358,66 @@ describe("reconcile lane stage", () => {
 				expect(route(wf, "implement-scope-check", "implement-scope-check", undefined)).toBe("stop");
 			});
 
-			it(`${wf}: reconcile → validate on pass, STOP on fail/missing (a synthesized fail does NOT reach validate)`, () => {
+			it(`${wf}: reconcile → validate on pass, reconcile-fix on fail, STOP on missing (a synthesized fail does NOT reach validate)`, () => {
 				expect(route(wf, "reconcile", "reconcile", "pass")).toBe("validate");
-				expect(route(wf, "reconcile", "reconcile", "fail")).toBe("stop");
+				expect(route(wf, "reconcile", "reconcile", "fail")).toBe("reconcile-fix");
 				expect(route(wf, "reconcile", "reconcile", undefined)).toBe("stop");
 			});
+
+			it(`${wf}: reconcile-fix re-enters reconcile (plain string edge — the counted decision is the gate's pick)`, () => {
+				expect(findWorkflow(wf).edges["reconcile-fix"]).toBe("reconcile");
+			});
+		}
+	});
+
+	describe("reconcile gate — fix-arm routing + ship's one-round cap", () => {
+		const gateRoute = (wf: string, entries: unknown[]) => {
+			const e = findWorkflow(wf).edges.reconcile;
+			if (typeof e !== "function") throw new Error(`${wf} reconcile edge is not an EdgeFn`);
+			return String(
+				(e as EdgeFn)({ output: undefined, state: { named: { reconcile: entries } } as unknown as RunView }),
+			);
+		};
+		const fail = { data: { verdict: "fail" } };
+		const pass = { data: { verdict: "pass" } };
+
+		it("ship: the first fail buys the one amend hop", () => {
+			expect(gateRoute("ship", [fail])).toBe("reconcile-fix");
+		});
+		it("ship: a fail AFTER the spent round stops (the reconcile channel's entry count IS the rounds)", () => {
+			expect(gateRoute("ship", [fail, fail])).toBe("stop");
+		});
+		it("ship: pass routes to validate regardless of spent rounds", () => {
+			expect(gateRoute("ship", [fail, pass])).toBe("validate");
+		});
+		it("build/vet: uncapped — a repeat fail still routes to the arm (the backward-jump budget is the bound)", () => {
+			for (const wf of ["build", "vet"]) {
+				expect(gateRoute(wf, [fail, fail, fail]), wf).toBe("reconcile-fix");
+			}
+		});
+	});
+
+	it("reconcile-fix dispatches /skill:amend with --plans + --reconcile-verdicts, publishing plans (all three workflows)", async () => {
+		const entry = (path: string) =>
+			({ artifacts: [{ handle: fsHandle(path) }], data: undefined, kind: "", meta: {} }) as unknown as Output;
+		const state = {
+			named: {
+				plans: [entry(".rpiv/artifacts/plans/p.md")],
+				reconcile: [entry(".rpiv/artifacts/verdicts/reconcile__p.json")],
+			},
+		} as unknown as RunView;
+		for (const wf of ["build", "vet", "ship"]) {
+			const stage = findWorkflow(wf).stages["reconcile-fix"];
+			expect(stage?.kind, wf).toBe("produces");
+			expect(stage?.outcome?.name, wf).toBe("plans");
+			if (typeof stage?.prompt !== "function") throw new Error(`${wf} reconcile-fix has no PromptFn`);
+			const prompt = await stage.prompt({ cwd: "/x", input: undefined, state });
+			// amend's generic parser: exactly one artifact flag (--plans) + one
+			// `-verdicts`-suffixed flag — the reason this is a prompt stage (a
+			// `reads: ["reconcile"]` skill stage would thread a second artifact flag).
+			expect(prompt, wf).toBe(
+				"/skill:amend --plans .rpiv/artifacts/plans/p.md --reconcile-verdicts .rpiv/artifacts/verdicts/reconcile__p.json",
+			);
 		}
 	});
 
