@@ -4,7 +4,10 @@ import { join } from "node:path";
 import { createMockCtx, createMockPi, stubGitExec, writeGuidanceTree } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("./package-checks.js", () => ({ findMissingSiblings: vi.fn(() => []) }));
+vi.mock("./package-checks.js", () => ({
+	findMissingSiblings: vi.fn(() => []),
+	findInstalledSiblings: vi.fn(() => []),
+}));
 vi.mock("./agents.js", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("./agents.js")>();
 	return {

@@ -106,6 +106,18 @@ const ModelEntrySchema = Type.Union(
 					}),
 				),
 				thinking: Type.Optional(ThinkingLevelSchema),
+				extensions: Type.Optional(
+					Type.Array(Type.String(), {
+						description:
+							"Sibling extension names the agent may load when installed (per-agent axis only — ignored in defaults)",
+					}),
+				),
+				tools: Type.Optional(
+					Type.Array(Type.String(), {
+						description:
+							"Tool selectors appended to the agent's tools frontmatter (per-agent axis only — ignored in defaults)",
+					}),
+				),
 			},
 			{ additionalProperties: false },
 		),
@@ -172,6 +184,10 @@ export interface ResolvedModelConfig {
 	model?: string;
 	/** Explicit level incl. "off" (disable). Absent ⇒ inherit session/baseline. */
 	thinking?: ModelThinkingLevelValue;
+	/** Sibling extensions the agent may load when installed (per-agent axis only). */
+	extensions?: string[];
+	/** Tool selectors appended to the agent's tools frontmatter (per-agent axis only). */
+	tools?: string[];
 }
 
 /** The resolved config shape returned by loadModelsConfig. */
@@ -188,6 +204,24 @@ export interface ModelsConfig {
 // ---------------------------------------------------------------------------
 // Helper — resolve a ModelEntry (string or object) to ResolvedModelConfig.
 // ---------------------------------------------------------------------------
+
+/**
+ * String-filter salvage for the agent-axis arrays, hardened against
+ * frontmatter-line injection: keeps strings, drops non-strings silently (the
+ * standing salvage contract), and drops any string carrying `\n`/`\r` with a
+ * console.warn naming the field — such an entry would smuggle extra physical
+ * lines into a synced agent's frontmatter (see the call-site comment).
+ */
+function filterFrontmatterSafeStrings(values: readonly unknown[], field: "tools" | "extensions"): string[] {
+	const strings = values.filter((v): v is string => typeof v === "string");
+	const safe = strings.filter((v) => !/[\r\n]/.test(v));
+	if (safe.length !== strings.length) {
+		console.warn(
+			`[rpiv-pi] models.json: dropped ${strings.length - safe.length} \`${field}\` entr${strings.length - safe.length === 1 ? "y" : "ies"} containing newline characters — a multi-line entry would inject frontmatter lines into synced agent definitions`,
+		);
+	}
+	return safe;
+}
 
 /** Resolve a raw ModelEntry value to a ResolvedModelConfig. */
 function resolveModelEntry(entry: unknown): ResolvedModelConfig {
@@ -208,6 +242,21 @@ function resolveModelEntry(entry: unknown): ResolvedModelConfig {
 					`[rpiv-pi] models.json: unknown thinking level "${obj.thinking}" — valid values: ${MODEL_THINKING_LEVEL_VALUES.join(", ")}`,
 				);
 			}
+		}
+		// Agent-axis fields: per-field string-filter salvage — an array value
+		// survives with non-string elements dropped (an explicit [] is meaningful:
+		// it suppresses the map default downstream); a non-array value drops the
+		// field entirely (falls back to map defaults). Entries carrying \n/\r are
+		// dropped LOUDLY: these strings land on one logical frontmatter line of
+		// ~/.pi/agent/agents/*.md, where an interior newline becomes a physical
+		// line the Pi runtime reads as agent capability config — a copy-paste
+		// artifact like "x\nisolated: false" would silently un-isolate an agent
+		// (review 2026-08-31 S1).
+		if (Array.isArray(obj.tools)) {
+			result.tools = filterFrontmatterSafeStrings(obj.tools, "tools");
+		}
+		if (Array.isArray(obj.extensions)) {
+			result.extensions = filterFrontmatterSafeStrings(obj.extensions, "extensions");
 		}
 		return result;
 	}
@@ -231,6 +280,15 @@ export function loadModelsConfig(): ModelsConfig {
 	const validated = validateConfig(ModelsConfigSchema, raw);
 
 	const defaults = resolvedEntry(validated.defaults);
+	// Agent-axis-only fields never cascade: strip them from `defaults` (one
+	// warn) so the {...defaults, ...resolved} cascade and the
+	// getAgentModelConfig defaults fallback cannot leak enablement to every
+	// configured agent.
+	if (defaults && (defaults.extensions !== undefined || defaults.tools !== undefined)) {
+		console.warn("[rpiv-pi] models.json: `extensions`/`tools` in `defaults` are ignored — they are per-agent fields");
+		delete defaults.extensions;
+		delete defaults.tools;
+	}
 	const agents: Record<string, ResolvedModelConfig> = {};
 	const stages: Record<string, ResolvedModelConfig> = {};
 	const skills: Record<string, ResolvedModelConfig> = {};

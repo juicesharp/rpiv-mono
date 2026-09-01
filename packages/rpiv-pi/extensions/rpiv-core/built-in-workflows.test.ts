@@ -7131,6 +7131,49 @@ describe("reconcile lane stage", () => {
 		);
 	});
 
+	it("multi-line inline spans match file bytes carrying interior-line trailing whitespace (I4 regression)", () => {
+		// The old per-line trimEnd stripped interior trailing whitespace from the
+		// captured spans while the applier matches raw file bytes — a span whose
+		// file text carries line-trailing whitespace could never match, and the
+		// amend arm's "ground the find in file content" repair was permanently
+		// unsatisfiable (review 2026-08-31 I4). Spans now capture raw bytes.
+		writeTestFile("packages/a/a.test.ts", 'vi.mock("./p.js", () => ({ \n\ta: 1, \n}));\nrest();\n');
+		const plan = write(
+			".rpiv/artifacts/plans/p.md",
+			planBody({
+				directives: [
+					'- `packages/a/a.test.ts`: replace `vi.mock("./p.js", () => ({ ',
+					"\ta: 1, ",
+					'}));` → `vi.mock("./p.js", () => ({ b: 2 }));` — trailing-whitespace bytes preserved',
+				],
+			}),
+		);
+		const data = runOn(plan);
+		expect(data.pass).toBe(true);
+		expect(readFileSync(join(tmpDir, "packages/a/a.test.ts"), "utf-8")).toBe(
+			'vi.mock("./p.js", () => ({ b: 2 }));\nrest();\n',
+		);
+	});
+
+	it("an inline item whose spans start on a continuation line parses inline, not as a phantom malformed (Q2 regression)", () => {
+		// Header ends at `replace`; the spans follow on the next line. The old
+		// fenced-header-first routing sent this to the fenced parser and surfaced
+		// a malformed finding for a well-formed inline directive.
+		writeTestFile("packages/a/a.test.ts", "expect(r).toBe(3);\n");
+		const plan = write(
+			".rpiv/artifacts/plans/p.md",
+			planBody({
+				directives: [
+					"- `packages/a/a.test.ts`: replace",
+					"  `expect(r).toBe(3)` → `expect(r).toBe(4)` — wrapped header",
+				],
+			}),
+		);
+		const data = runOn(plan);
+		expect(data.pass).toBe(true);
+		expect(readFileSync(join(tmpDir, "packages/a/a.test.ts"), "utf-8")).toBe("expect(r).toBe(4);\n");
+	});
+
 	it("accepts the ASCII -> arrow as the find/replace separator", () => {
 		writeTestFile("packages/a/a.test.ts", "expect(r).toBe(3);\n");
 		const plan = write(
@@ -7371,28 +7414,39 @@ describe("reconcile lane stage", () => {
 	});
 
 	describe("reconcile gate — fix-arm routing + ship's one-round cap", () => {
-		const gateRoute = (wf: string, entries: unknown[]) => {
+		// The cap reads the `reconcile-fix` channel — the channel ONLY the arm
+		// writes — never reconcile-entry counts (review 2026-08-31 I1: ship's
+		// validate-fix loop re-enters through implement-scope-check → reconcile,
+		// appending reconcile entries that spend no amend hop; an entry-count
+		// budget let that loop exhaust the arm's one round before the arm ran).
+		const gateRoute = (wf: string, named: Record<string, unknown[]>) => {
 			const e = findWorkflow(wf).edges.reconcile;
 			if (typeof e !== "function") throw new Error(`${wf} reconcile edge is not an EdgeFn`);
-			return String(
-				(e as EdgeFn)({ output: undefined, state: { named: { reconcile: entries } } as unknown as RunView }),
-			);
+			return String((e as EdgeFn)({ output: undefined, state: { named } as unknown as RunView }));
 		};
 		const fail = { data: { verdict: "fail" } };
 		const pass = { data: { verdict: "pass" } };
+		const armHop = { data: undefined };
 
 		it("ship: the first fail buys the one amend hop", () => {
-			expect(gateRoute("ship", [fail])).toBe("reconcile-fix");
+			expect(gateRoute("ship", { reconcile: [fail] })).toBe("reconcile-fix");
 		});
-		it("ship: a fail AFTER the spent round stops (the reconcile channel's entry count IS the rounds)", () => {
-			expect(gateRoute("ship", [fail, fail])).toBe("stop");
+		it("ship: a fail AFTER the spent amend round stops (the reconcile-fix channel IS the rounds)", () => {
+			expect(gateRoute("ship", { reconcile: [fail, fail], "reconcile-fix": [armHop] })).toBe("stop");
+		});
+		it("ship: validate-fix-loop reconcile re-entries do NOT spend the amend budget (I1 regression)", () => {
+			// Three reconcile executions (initial + validate-fix loop re-entries),
+			// zero amend hops — the arm must still be reachable.
+			expect(gateRoute("ship", { reconcile: [pass, pass, fail] })).toBe("reconcile-fix");
 		});
 		it("ship: pass routes to validate regardless of spent rounds", () => {
-			expect(gateRoute("ship", [fail, pass])).toBe("validate");
+			expect(gateRoute("ship", { reconcile: [fail, pass], "reconcile-fix": [armHop] })).toBe("validate");
 		});
 		it("build/vet: uncapped — a repeat fail still routes to the arm (the backward-jump budget is the bound)", () => {
 			for (const wf of ["build", "vet"]) {
-				expect(gateRoute(wf, [fail, fail, fail]), wf).toBe("reconcile-fix");
+				expect(gateRoute(wf, { reconcile: [fail, fail, fail], "reconcile-fix": [armHop, armHop] }), wf).toBe(
+					"reconcile-fix",
+				);
 			}
 		});
 	});
@@ -7409,7 +7463,9 @@ describe("reconcile lane stage", () => {
 		for (const wf of ["build", "vet", "ship"]) {
 			const stage = findWorkflow(wf).stages["reconcile-fix"];
 			expect(stage?.kind, wf).toBe("produces");
-			expect(stage?.outcome?.name, wf).toBe("plans");
+			// The arm publishes on its OWN channel (the gate's round counter);
+			// amend re-emits the plan in place, so `plans` needs no republish.
+			expect(stage?.outcome?.name, wf).toBe("reconcile-fix");
 			if (typeof stage?.prompt !== "function") throw new Error(`${wf} reconcile-fix has no PromptFn`);
 			const prompt = await stage.prompt({ cwd: "/x", input: undefined, state });
 			// amend's generic parser: exactly one artifact flag (--plans) + one

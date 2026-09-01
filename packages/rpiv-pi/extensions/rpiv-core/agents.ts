@@ -27,8 +27,15 @@ import {
 } from "node:fs";
 import { isAbsolute, join, resolve, sep } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import { parseFrontmatterBounds } from "./frontmatter.js";
+import {
+	installedExtensionNames,
+	mergeCsvAdditions,
+	mergeFlowSeqAdditions,
+	resolveAgentEnablement,
+} from "./agent-enablement.js";
+import { parseFrontmatterBounds, readFrontmatterKey } from "./frontmatter.js";
 import { getAgentModelConfig, loadModelsConfig, type ModelsConfig } from "./models-config.js";
+import { findInstalledSiblings } from "./package-checks.js";
 import { BUNDLED_AGENTS_DIR } from "./paths.js";
 import { isPlainObject, toErrorMessage } from "./utils.js";
 
@@ -324,23 +331,48 @@ function applyKeyUpdates(
 }
 
 /**
- * Inject model/thinking frontmatter into agent .md content.
+ * Install-gate context for conditional frontmatter injection.
  *
- * Idempotent: re-injecting produces identical bytes. The function finds
- * the closing `---` of the YAML frontmatter block and inserts or replaces
- * `model:` and `thinking:` lines deterministically.
+ * `installedExtensions` is the set of installed sibling extension names,
+ * derived from ONE settings read per sync pass. An absent context closes
+ * the enablement gate entirely — today's model/thinking-only behavior,
+ * byte-for-byte.
+ */
+export interface AgentInjectionContext {
+	readonly installedExtensions: ReadonlySet<string>;
+}
+
+/**
+ * Inject model/thinking + conditional enablement frontmatter into agent .md content.
  *
- * If no override is configured for this agent, returns content unchanged.
+ * Idempotent: re-injecting produces identical bytes, with the gate open or
+ * closed. The function finds the closing `---` of the YAML frontmatter
+ * block and deterministically inserts or replaces keys.
+ *
+ * Enablement (fourth arg): when the context names every sibling provider an
+ * agent's enablement requires as installed, the agent additionally gains
+ * the merged `tools` CSV, an `extensions: [...]` flow sequence, and — only
+ * when the shipped file carries `isolated: true` — the `isolated: false` +
+ * `skills: false` pair. No override and no active enablement ⇒ content
+ * unchanged.
  *
  * Exported so the idempotency invariant can be unit-tested directly:
  * `inject(inject(x)) === inject(x)` (see Verification Notes).
  */
-export function injectModelFrontmatter(content: string, agentFile: string, config: ModelsConfig): string {
+export function injectModelFrontmatter(
+	content: string,
+	agentFile: string,
+	config: ModelsConfig,
+	injection?: AgentInjectionContext,
+): string {
 	// Strip .md extension — source entries are filenames like "codebase-analyzer.md"
 	// but models.json keys are agent names like "codebase-analyzer".
 	const agentKey = agentFile.replace(/\.md$/, "");
 	const override = getAgentModelConfig(config, agentKey);
-	if (!override || (override.model === undefined && override.thinking === undefined)) {
+	const enablement = resolveAgentEnablement(agentKey, override, injection?.installedExtensions);
+	// Tools-only entries must not be skipped: enablement alone proceeds.
+	const hasModelKeys = override?.model !== undefined || override?.thinking !== undefined;
+	if (!hasModelKeys && enablement === undefined) {
 		return content;
 	}
 
@@ -354,8 +386,29 @@ export function injectModelFrontmatter(content: string, agentFile: string, confi
 	// — re-injecting produces identical bytes by construction; the idempotency
 	// invariant at injectModelFrontmatter's JSDoc strengthens from "deterministic
 	// translation" to "byte pass-through".
-	if (override.model !== undefined) keysToSet.push({ key: "model", value: override.model });
-	if (override.thinking !== undefined) keysToSet.push({ key: "thinking", value: override.thinking });
+	if (override?.model !== undefined) keysToSet.push({ key: "model", value: override.model });
+	if (override?.thinking !== undefined) keysToSet.push({ key: "thinking", value: override.thinking });
+
+	if (enablement !== undefined) {
+		// Fixed order [model?, thinking?, tools, extensions, isolated?, skills?]:
+		// in-place replacements keep their shipped position; absent keys append
+		// before the closing fence in this order.
+		const mergedTools = mergeCsvAdditions(readFrontmatterKey(lines, bounds, "tools"), enablement.tools);
+		if (mergedTools !== undefined) keysToSet.push({ key: "tools", value: mergedTools });
+		const mergedExtensions = mergeFlowSeqAdditions(
+			readFrontmatterKey(lines, bounds, "extensions"),
+			enablement.extensions,
+		);
+		if (mergedExtensions !== undefined) keysToSet.push({ key: "extensions", value: mergedExtensions });
+		// Flipping isolation is the point of enablement (`ext:` selectors are
+		// dropped while isolated) — but derive the pair only when the source
+		// declares `isolated: true`: re-injecting an already-injected form pushes
+		// neither key (idempotency), and non-isolated agents stay untouched.
+		if (readFrontmatterKey(lines, bounds, "isolated")?.toLowerCase() === "true") {
+			keysToSet.push({ key: "isolated", value: "false" });
+			keysToSet.push({ key: "skills", value: "false" });
+		}
+	}
 
 	const updated = applyKeyUpdates(lines, bounds, keysToSet);
 	return updated.join("\n");
@@ -377,6 +430,14 @@ function processSourceEntries(
 	// Hoisted above the loop: loadModelsConfig() reads+parses JSON, so calling it
 	// per-entry would re-read the file once per agent (~15×) every session_start.
 	const config = loadModelsConfig();
+	// One settings read per sync pass for the enablement gate. The SAME
+	// context must flow into every injectModelFrontmatter call in this pass —
+	// the manifest records hash-after-transform, so a gate that flipped
+	// mid-pass would tear the recorded hashes and falsely flag agents
+	// diverged.
+	const injection: AgentInjectionContext = {
+		installedExtensions: installedExtensionNames(findInstalledSiblings().map((s) => s.pkg)),
+	};
 
 	for (const entry of sourceEntries) {
 		const src = join(BUNDLED_AGENTS_DIR, entry);
@@ -400,7 +461,7 @@ function processSourceEntries(
 		// manifest hash matches what actually lands on disk (hash-after-transform).
 		// injectModelFrontmatter strips .md from entry for config lookup and is a
 		// no-op when no override is configured.
-		const injected = injectModelFrontmatter(srcContent.toString("utf-8"), entry, config);
+		const injected = injectModelFrontmatter(srcContent.toString("utf-8"), entry, config, injection);
 		const srcHash = sha256(injected);
 
 		if (!existsSync(dest)) {
@@ -614,6 +675,12 @@ export function cleanupPerCwdAgents(cwd: string): CleanupResult {
 	// Hoisted config read (same reasoning as processSourceEntries): one JSON
 	// read for the whole cleanup pass, not one per managed file.
 	const cleanupConfig = loadModelsConfig();
+	// Same shared-gate rule as processSourceEntries: the legacy-dir comparison
+	// must use one settings read for the whole pass — the identical gate a
+	// sync pass with the same settings would have used.
+	const cleanupInjection: AgentInjectionContext = {
+		installedExtensions: installedExtensionNames(findInstalledSiblings().map((s) => s.pkg)),
+	};
 	for (const [name] of Object.entries(manifest)) {
 		const srcPath = safeJoin(BUNDLED_AGENTS_DIR, name);
 		const destPath = safeJoin(perCwdDir, name);
@@ -650,7 +717,12 @@ export function cleanupPerCwdAgents(cwd: string): CleanupResult {
 		// Compare against the injected form — the dest holds injected content,
 		// so comparing raw source would falsely flag every configured agent
 		// as diverged. injectModelFrontmatter strips .md from name for lookup.
-		const cleanupInjected = injectModelFrontmatter(srcContent.toString("utf-8"), name, cleanupConfig);
+		const cleanupInjected = injectModelFrontmatter(
+			srcContent.toString("utf-8"),
+			name,
+			cleanupConfig,
+			cleanupInjection,
+		);
 		if (sha256(destContent) !== sha256(cleanupInjected)) {
 			// User edited this file — conservative gate.
 			result.skipped.push({ dir: perCwdDir, reason: CLEANUP_SKIP_REASON.DIVERGED });

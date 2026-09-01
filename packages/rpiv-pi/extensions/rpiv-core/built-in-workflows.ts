@@ -316,22 +316,26 @@ const scopeFloorGate = (): EdgeFn => {
  *
  * A factory for the validateGate/scopeFloorGate reason — each workflow's
  * route-note symbol must never alias the other's. `maxFixRounds` caps the
- * amend hops a fail may buy: the `reconcile` channel gains exactly one entry
- * per reconcile execution, so entries beyond the first ARE the rounds already
- * spent (resume-safe — a resumed run's replayed entries count, so a run that
- * already failed post-fix stops for hand-repair instead of burning another
- * LLM round). Build/vet pass no cap (the runner's per-destination
- * backward-jump budget on `reconcile-fix` is theirs, the plan-fix precedent);
- * ship caps at ONE — the same single bounded hop its stop-on-fail identity
- * concedes at the validate gate.
+ * amend hops a fail may buy, counted from the `reconcile-fix` channel — the
+ * channel ONLY the arm itself writes (its outcome publishes there, not on
+ * `plans`), mirroring validateGate's `remediation`-channel cap. It must NOT
+ * count reconcile-channel entries: reconcile re-executes on paths that spend
+ * no amend hop — ship's validate-fix loop re-enters through
+ * implement-scope-check → reconcile, and a resume replays entries — so an
+ * entry-count budget let the validate-fix loop spend the arm's only round
+ * before the arm ever ran, with a stop-note claiming a fix round that never
+ * happened (review 2026-08-31 I1; the fourth instance of the cap-must-read-a-
+ * channel-the-arm-writes lesson). Build/vet pass no cap (the runner's
+ * per-destination backward-jump budget on `reconcile-fix` is theirs, the
+ * plan-fix precedent); ship caps at ONE — the same single bounded hop its
+ * stop-on-fail identity concedes at the validate gate.
  */
 const reconcileGate = (opts?: { maxFixRounds?: number }): EdgeFn => {
 	const maxFixRounds = opts?.maxFixRounds ?? Number.POSITIVE_INFINITY;
 	const route: EdgeFn = defineRoute(
 		["validate", "reconcile-fix", "stop"],
 		({ state }) => {
-			const entries = state.named.reconcile;
-			const verdict = (entries?.at(-1)?.data as { verdict?: unknown } | undefined)?.verdict;
+			const verdict = (state.named.reconcile?.at(-1)?.data as { verdict?: unknown } | undefined)?.verdict;
 			if (verdict === "pass") return "validate";
 			if (verdict !== "fail") {
 				setRouteNote(
@@ -340,11 +344,11 @@ const reconcileGate = (opts?: { maxFixRounds?: number }): EdgeFn => {
 				);
 				return "stop";
 			}
-			const roundsSpent = Math.max(0, (entries?.length ?? 0) - 1);
+			const roundsSpent = state.named["reconcile-fix"]?.length ?? 0;
 			if (roundsSpent >= maxFixRounds) {
 				setRouteNote(
 					route,
-					`reconcile still fails after ${maxFixRounds} fix round${maxFixRounds === 1 ? "" : "s"} — repair the #### Reconciliation directives in the PLAN artifact by hand (the failure lives in the plan text, not the tree), then resume`,
+					`reconcile still fails after ${roundsSpent} amend round${roundsSpent === 1 ? "" : "s"} — repair the #### Reconciliation directives in the PLAN artifact by hand (the failure lives in the plan text, not the tree), then resume`,
 				);
 				return "stop";
 			}
@@ -376,6 +380,17 @@ const RECONCILE_FIX_PROMPT: PromptFn = ({ state }) => {
 	if (verdict) parts.push("--reconcile-verdicts", handleToString(verdict.handle));
 	return parts.join(" ");
 };
+
+/**
+ * The arm's outcome — the plans-bucket collector publishing on the arm's OWN
+ * `reconcile-fix` channel. Amend re-emits the plan IN PLACE (same path, its
+ * hard rule), so the `plans` channel's latest entry stays correct without a
+ * republish; what the channel choice buys is the round counter ONLY the arm
+ * increments, which `reconcileGate`'s cap reads (the validateGate/
+ * `remediation` pattern — see the gate doc for why counting reconcile
+ * executions instead let the validate-fix loop spend the budget).
+ */
+const RECONCILE_FIX_OUTCOME = { ...rpivBucketOutcome("plans"), name: "reconcile-fix" };
 
 const vetWorkflow = defineWorkflow({
 	name: "vet",
@@ -434,7 +449,7 @@ const vetWorkflow = defineWorkflow({
 		// RECONCILE_FIX_PROMPT), re-emitting the plan latest-wins, then back
 		// through reconcile to apply. Bounded by the runner's per-destination
 		// backward-jump budget (the plan-fix precedent).
-		"reconcile-fix": produces.prompt({ prompt: RECONCILE_FIX_PROMPT, outcome: rpivBucketOutcome("plans") }),
+		"reconcile-fix": produces.prompt({ prompt: RECONCILE_FIX_PROMPT, outcome: RECONCILE_FIX_OUTCOME }),
 		validate: produces(),
 		commit: acts({ outcome: gitCommitOutcome }),
 	},
@@ -807,7 +822,7 @@ const buildWorkflow = defineWorkflow({
 		// RECONCILE_FIX_PROMPT), re-emitting the plan latest-wins, then back
 		// through reconcile to apply. Bounded by the runner's per-destination
 		// backward-jump budget (the plan-fix precedent).
-		"reconcile-fix": produces.prompt({ prompt: RECONCILE_FIX_PROMPT, outcome: rpivBucketOutcome("plans") }),
+		"reconcile-fix": produces.prompt({ prompt: RECONCILE_FIX_PROMPT, outcome: RECONCILE_FIX_OUTCOME }),
 		validate: produces({ prompt: VALIDATE_GOAL_PROMPT }),
 		// Repair arm the validate gate dispatches on a remediable `verdict: "fail"`.
 		// `acts()` (not `produces()`) because remediate is `side-effect`/`code-mutation`
@@ -1178,7 +1193,7 @@ const shipWorkflow = defineWorkflow({
 		// the same reason as validate-fix: a reconcile fail is a plan-TEXT defect
 		// a hand-repair of the TREE can never clear, so the terminal stop was
 		// unresumable without hand-editing the plan artifact.
-		"reconcile-fix": produces.prompt({ prompt: RECONCILE_FIX_PROMPT, outcome: rpivBucketOutcome("plans") }),
+		"reconcile-fix": produces.prompt({ prompt: RECONCILE_FIX_PROMPT, outcome: RECONCILE_FIX_OUTCOME }),
 		validate: produces({ prompt: VALIDATE_GOAL_PROMPT }),
 		// Repair arm — build's stage verbatim; ship's validate gate dispatches it
 		// at most ONCE (maxFixRounds: 1). Kept because the terminal gate is where

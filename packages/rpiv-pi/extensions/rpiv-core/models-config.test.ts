@@ -317,6 +317,121 @@ describe("models-config", () => {
 		});
 	});
 
+	describe("agent-axis fields (extensions/tools)", () => {
+		const configDir = join(TEST_HOME, ".config", "rpiv-pi");
+		const configFilePath = join(configDir, "models.json");
+
+		beforeEach(() => {
+			mkdirSync(configDir, { recursive: true });
+		});
+
+		it("loads per-agent extensions/tools as string arrays", () => {
+			writeFileSync(
+				configFilePath,
+				JSON.stringify({
+					agents: {
+						"integration-scanner": {
+							model: "openai/o3-pro",
+							tools: ["ext:rpiv-web-tools/tool_a"],
+							extensions: ["rpiv-web-tools"],
+						},
+					},
+				}),
+				"utf-8",
+			);
+			expect(loadModelsConfig().agents!["integration-scanner"]).toEqual({
+				model: "openai/o3-pro",
+				tools: ["ext:rpiv-web-tools/tool_a"],
+				extensions: ["rpiv-web-tools"],
+			});
+		});
+
+		it("drops tools/extensions entries carrying newlines with a warn (S1: frontmatter-line injection)", () => {
+			// These strings land on one logical frontmatter line of a synced
+			// agent .md — an interior newline becomes a physical line the Pi
+			// runtime reads as capability config ("x\nisolated: false" would
+			// silently un-isolate an agent).
+			const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+			writeFileSync(
+				configFilePath,
+				JSON.stringify({
+					agents: {
+						"integration-scanner": {
+							tools: ["grep", "x\nisolated: false"],
+							extensions: ["rpiv-web-tools", "bad\rentry"],
+						},
+					},
+				}),
+				"utf-8",
+			);
+			invalidateModelsConfigCache();
+			expect(loadModelsConfig().agents?.["integration-scanner"]).toEqual({
+				tools: ["grep"],
+				extensions: ["rpiv-web-tools"],
+			});
+			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("newline"));
+			warnSpy.mockRestore();
+		});
+
+		it("preserves an empty tools array ([] suppresses map additions downstream)", () => {
+			writeFileSync(configFilePath, JSON.stringify({ agents: { "integration-scanner": { tools: [] } } }), "utf-8");
+			expect(loadModelsConfig().agents!["integration-scanner"]).toEqual({ tools: [] });
+		});
+
+		it("filters non-string elements per-field without zeroing the entry", () => {
+			writeFileSync(
+				configFilePath,
+				JSON.stringify({
+					agents: {
+						"integration-scanner": {
+							model: "openai/gpt-5.5",
+							tools: ["ext:rpiv-web-tools/tool_a", 5, null],
+							extensions: [true],
+						},
+					},
+				}),
+				"utf-8",
+			);
+			expect(loadModelsConfig().agents!["integration-scanner"]).toEqual({
+				model: "openai/gpt-5.5",
+				tools: ["ext:rpiv-web-tools/tool_a"],
+				extensions: [],
+			});
+		});
+
+		it("drops non-array values for the fields (falls back to map defaults downstream)", () => {
+			writeFileSync(
+				configFilePath,
+				JSON.stringify({ agents: { "integration-scanner": { tools: "grep", extensions: 7 } } }),
+				"utf-8",
+			);
+			expect(loadModelsConfig().agents!["integration-scanner"]).toEqual({});
+		});
+
+		it("ignores extensions/tools in defaults with exactly one warn and no cascade leak", () => {
+			const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+			writeFileSync(
+				configFilePath,
+				JSON.stringify({
+					defaults: {
+						model: "openai/gpt-5.5",
+						tools: ["ext:rpiv-web-tools/tool_a"],
+						extensions: ["rpiv-web-tools"],
+					},
+					agents: { "codebase-analyzer": { thinking: "high" } },
+				}),
+				"utf-8",
+			);
+			const config = loadModelsConfig();
+			expect(config.defaults).toEqual({ model: "openai/gpt-5.5" });
+			// No cascade: the agent entry inherits only model/thinking.
+			expect(config.agents!["codebase-analyzer"]).toEqual({ model: "openai/gpt-5.5", thinking: "high" });
+			expect(warnSpy).toHaveBeenCalledTimes(1);
+			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("defaults"));
+			warnSpy.mockRestore();
+		});
+	});
+
 	describe("getAgentModelConfig", () => {
 		it("returns agent-specific config when present", () => {
 			const config: ModelsConfig = {

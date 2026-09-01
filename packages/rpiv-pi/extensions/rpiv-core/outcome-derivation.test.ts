@@ -336,11 +336,12 @@ describe("equivalence — built-in workflows", () => {
 		"ship::grade": "ship-verdicts",
 		// The reconcile-fix amend arms are PROMPT stages (no skill contract to
 		// derive from — the /skill:amend dispatch lives in the prompt text), so
-		// each carries an explicit plans outcome: amend re-emits the plan in
-		// place and the channel updates latest-wins for the reconcile re-entry.
-		"build::reconcile-fix": "plans",
-		"vet::reconcile-fix": "plans",
-		"ship::reconcile-fix": "plans",
+		// each carries an explicit outcome on the arm's OWN channel — the round
+		// counter reconcileGate's cap reads (amend re-emits the plan in place,
+		// so the plans channel needs no republish).
+		"build::reconcile-fix": "reconcile-fix",
+		"vet::reconcile-fix": "reconcile-fix",
+		"ship::reconcile-fix": "reconcile-fix",
 	};
 
 	/**

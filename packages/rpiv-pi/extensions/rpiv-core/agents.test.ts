@@ -13,7 +13,9 @@ import {
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { installedExtensionNames } from "./agent-enablement.js";
 import {
+	type AgentInjectionContext,
 	CLEANUP_SKIP_REASON,
 	cleanupPerCwdAgents,
 	injectModelFrontmatter,
@@ -22,7 +24,8 @@ import {
 	summarizeCleanupSkips,
 	syncBundledAgents,
 } from "./agents.js";
-import type { ModelsConfig } from "./models-config.js";
+import { loadModelsConfig, type ModelsConfig } from "./models-config.js";
+import { findInstalledSiblings } from "./package-checks.js";
 import { BUNDLED_AGENTS_DIR } from "./paths.js";
 
 const sha256 = (s: string | Buffer) => createHash("sha256").update(s).digest("hex");
@@ -778,5 +781,205 @@ describe("agent frontmatter injection", () => {
 
 		// Dest content must equal the raw bundled source — no frontmatter injected.
 		expect(destContent(REAL_AGENT)).toBe(bundledContent(REAL_AGENT));
+	});
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Agent enablement injection (install-gated, conditional frontmatter)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("agent enablement injection (install-gated, config-driven)", () => {
+	// The shipped AGENT_ENABLEMENT_GRANTS map is empty (the rpiv-lsp experiment
+	// that populated it lives on backup/lsp-experiment); enablement now flows
+	// through models.json agent entries. These tests exercise the SAME
+	// injection machinery — merge forms, idempotency, the install gate, the
+	// e2e sync + cleanup paths — with config-sourced grants against the
+	// rpiv-web-tools sibling (a real registry entry, so the settings-driven
+	// gate opens for it).
+	const GATE_ON: AgentInjectionContext = { installedExtensions: new Set(["rpiv-web-tools"]) };
+	const GATE_OFF: AgentInjectionContext = { installedExtensions: new Set<string>() };
+	const SCANNER = "integration-scanner.md";
+	const ANALYZER = "codebase-analyzer.md";
+	const ENABLE_CFG: ModelsConfig = {
+		agents: {
+			"integration-scanner": { tools: ["ext:rpiv-web-tools/tool_a"], extensions: ["rpiv-web-tools"] },
+			"codebase-analyzer": {
+				tools: ["ext:rpiv-web-tools/tool_b", "ext:rpiv-web-tools/tool_c"],
+				extensions: ["rpiv-web-tools"],
+			},
+		},
+	};
+
+	const writeSettings = (packages: unknown[]) => {
+		const dir = join(homedir(), ".pi", "agent");
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(join(dir, "settings.json"), JSON.stringify({ packages }), "utf-8");
+	};
+	const writeModels = (config: unknown) => {
+		const dir = join(homedir(), ".config", "rpiv-pi");
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(join(dir, "models.json"), JSON.stringify(config), "utf-8");
+	};
+	const dest = (name: string) => readFileSync(join(homedir(), ".pi", "agent", "agents", name), "utf-8");
+	// Rebuild the exact context the sync engine builds from one settings read.
+	const syncContext = (): AgentInjectionContext => ({
+		installedExtensions: installedExtensionNames(findInstalledSiblings().map((s) => s.pkg)),
+	});
+
+	// --- Pure transform: gate off ---
+
+	it("gate off (no injection arg): every bundled agent byte-identical", () => {
+		for (const name of bundledNames()) {
+			expect(injectModelFrontmatter(bundledContent(name), name, {})).toBe(bundledContent(name));
+		}
+	});
+
+	it("gate off (empty installed set): config-sourced enablement stays inactive, bytes identical", () => {
+		for (const name of bundledNames()) {
+			expect(injectModelFrontmatter(bundledContent(name), name, ENABLE_CFG, GATE_OFF)).toBe(bundledContent(name));
+		}
+	});
+
+	// --- Pure transform: gate on, injected forms ---
+
+	it("gate on: integration-scanner gains the four-key enablement set from config", () => {
+		const out = injectModelFrontmatter(bundledContent(SCANNER), SCANNER, ENABLE_CFG, GATE_ON);
+		const lines = out.split("\n");
+		expect(lines).toContain("tools: grep, find, ls, ext:rpiv-web-tools/tool_a");
+		expect(lines).toContain("extensions: [rpiv-web-tools]");
+		expect(lines).toContain("isolated: false");
+		expect(lines).toContain("skills: false");
+		// Single declarations only — replaced in place, never duplicated.
+		expect(out.match(/^tools:/gm)?.length).toBe(1);
+		expect(out.match(/^isolated:/gm)?.length).toBe(1);
+		expect(out.match(/^skills:/gm)?.length).toBe(1);
+	});
+
+	it("gate on: codebase-analyzer preserves base-tool order and appends additions", () => {
+		const out = injectModelFrontmatter(bundledContent(ANALYZER), ANALYZER, ENABLE_CFG, GATE_ON);
+		const lines = out.split("\n");
+		expect(lines).toContain("tools: read, grep, find, ls, ext:rpiv-web-tools/tool_b, ext:rpiv-web-tools/tool_c");
+		expect(lines).toContain("extensions: [rpiv-web-tools]");
+		expect(lines).toContain("isolated: false");
+		expect(lines).toContain("skills: false");
+	});
+
+	it("gate on: agents without a config grant are untouched", () => {
+		for (const name of bundledNames()) {
+			if (name === SCANNER || name === ANALYZER) continue;
+			expect(injectModelFrontmatter(bundledContent(name), name, ENABLE_CFG, GATE_ON)).toBe(bundledContent(name));
+		}
+	});
+
+	it("double-inject fixed point with gate on", () => {
+		for (const name of [SCANNER, ANALYZER]) {
+			const once = injectModelFrontmatter(bundledContent(name), name, ENABLE_CFG, GATE_ON);
+			expect(injectModelFrontmatter(once, name, ENABLE_CFG, GATE_ON)).toBe(once);
+		}
+	});
+
+	it("model + enablement coexist: appended keys land in fixed order and re-inject is a fixed point", () => {
+		const cfg: ModelsConfig = {
+			agents: {
+				"integration-scanner": {
+					model: "openai/o3-pro",
+					thinking: "high",
+					tools: ["ext:rpiv-web-tools/tool_a"],
+					extensions: ["rpiv-web-tools"],
+				},
+			},
+		};
+		const once = injectModelFrontmatter(bundledContent(SCANNER), SCANNER, cfg, GATE_ON);
+		const idx = (key: string) => once.split("\n").findIndex((l) => l.startsWith(`${key}: `));
+		expect(idx("model")).toBeLessThan(idx("thinking"));
+		expect(idx("thinking")).toBeLessThan(idx("extensions"));
+		expect(idx("extensions")).toBeLessThan(idx("skills"));
+		expect(injectModelFrontmatter(once, SCANNER, cfg, GATE_ON)).toBe(once);
+	});
+
+	it("tools-only config entry injects without model/thinking keys", () => {
+		const cfg: ModelsConfig = { agents: { "integration-scanner": { tools: ["ext:rpiv-web-tools/tool_a"] } } };
+		const out = injectModelFrontmatter(bundledContent(SCANNER), SCANNER, cfg, GATE_ON);
+		expect(out.split("\n")).toContain("tools: grep, find, ls, ext:rpiv-web-tools/tool_a");
+		expect(out.split("\n").find((l) => l.startsWith("model:"))).toBeUndefined();
+	});
+
+	it("an empty tools array with configured extensions injects the remaining keys only", () => {
+		const cfg: ModelsConfig = {
+			agents: { "integration-scanner": { tools: [], extensions: ["rpiv-web-tools"] } },
+		};
+		const out = injectModelFrontmatter(bundledContent(SCANNER), SCANNER, cfg, GATE_ON);
+		const lines = out.split("\n");
+		expect(lines).toContain("tools: grep, find, ls");
+		expect(out).not.toContain("ext:rpiv-web-tools/");
+		expect(lines).toContain("extensions: [rpiv-web-tools]");
+		expect(lines).toContain("isolated: false");
+	});
+
+	// --- E2E through the sync engine (real settings + models.json reads) ---
+
+	it("e2e gate on: sync injects, re-sync reports unchanged, manifest records hash-after-transform", () => {
+		writeSettings(["npm:@juicesharp/rpiv-web-tools"]);
+		writeModels(ENABLE_CFG);
+
+		const r1 = syncBundledAgents(true);
+		expect([...r1.added, ...r1.updated, ...r1.unchanged]).toContain(SCANNER);
+		expect(dest(SCANNER)).toContain("tools: grep, find, ls, ext:rpiv-web-tools/tool_a");
+		expect(dest(ANALYZER)).toContain("ext:rpiv-web-tools/tool_b");
+
+		const r2 = syncBundledAgents(false);
+		expect(r2.unchanged).toContain(SCANNER);
+		expect(r2.unchanged).toContain(ANALYZER);
+		expect(r2.pendingUpdate).not.toContain(SCANNER);
+
+		const manifest = JSON.parse(readFileSync(manifestPath, "utf-8"));
+		const expected = injectModelFrontmatter(bundledContent(SCANNER), SCANNER, loadModelsConfig(), syncContext());
+		expect(manifest["integration-scanner.md"]).toBe(sha256(expected));
+	});
+
+	it("e2e gate flip: un-edited dests auto-update back to the raw source form", () => {
+		writeSettings(["npm:@juicesharp/rpiv-web-tools"]);
+		writeModels(ENABLE_CFG);
+		syncBundledAgents(true);
+		expect(dest(SCANNER)).toContain("ext:rpiv-web-tools/");
+
+		writeSettings([]); // uninstall
+		const r = syncBundledAgents(false);
+		expect(r.updated).toContain(SCANNER);
+		expect(r.updated).toContain(ANALYZER);
+		expect(r.pendingUpdate).not.toContain(SCANNER);
+		expect(dest(SCANNER)).toBe(bundledContent(SCANNER));
+	});
+
+	// --- Legacy per-cwd cleanup shares the gate ---
+
+	it("cleanupPerCwdAgents: gate-on legacy content cleans up; a flipped gate skips it DIVERGED", () => {
+		const perCwdAgentsDir = join(cwd, ".pi", "agents");
+		const buildLegacyInstall = (ctx: AgentInjectionContext) => {
+			mkdirSync(perCwdAgentsDir, { recursive: true });
+			const manifest: Record<string, string> = {};
+			for (const name of bundledNames()) {
+				const injected = injectModelFrontmatter(bundledContent(name), name, loadModelsConfig(), ctx);
+				writeFileSync(join(perCwdAgentsDir, name), injected, "utf-8");
+				manifest[name] = sha256(injected);
+			}
+			writeFileSync(join(perCwdAgentsDir, ".rpiv-managed.json"), JSON.stringify(manifest), "utf-8");
+		};
+
+		// Gate on: files hold exactly the expected transformed form → cleaned.
+		writeSettings(["npm:@juicesharp/rpiv-web-tools"]);
+		writeModels(ENABLE_CFG);
+		buildLegacyInstall(syncContext());
+		const cleaned = cleanupPerCwdAgents(cwd);
+		expect(cleaned.cleanedUp).toEqual([perCwdAgentsDir]);
+		expect(cleaned.skipped).toEqual([]);
+
+		// Gate flipped off: identical on-disk bytes no longer match the raw
+		// expectation — conservative skip (DIVERGED), never falsely cleaned.
+		writeSettings([]);
+		buildLegacyInstall(GATE_ON);
+		const after = cleanupPerCwdAgents(cwd);
+		expect(after.cleanedUp).toEqual([]);
+		expect(after.skipped).toEqual([{ dir: perCwdAgentsDir, reason: CLEANUP_SKIP_REASON.DIVERGED }]);
 	});
 });

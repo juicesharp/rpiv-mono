@@ -100,12 +100,30 @@ const parseFencedSpans = (lines: readonly string[]): { find: string; replace: st
 };
 
 /** Classify one collected list item (header + continuation lines) as a
- *  directive, a malformed attempt (the header line, surfaced), or prose (ignored). */
+ *  directive, a malformed attempt (the header line, surfaced), or prose (ignored).
+ *
+ *  Order and byte discipline are both load-bearing (review 2026-08-31 I4/Q2):
+ *  the INLINE grammar runs first, over the RAW joined item — a per-line
+ *  `trimEnd` stripped interior-line trailing whitespace from the captured
+ *  spans while `applyReconciliationDirectives` matches raw file bytes, so a
+ *  span whose file text carries line-trailing whitespace could never match
+ *  and the amend arm's "ground the find in file content" repair was
+ *  permanently unsatisfiable (only the whole-item tail is trimmed, for the
+ *  `$` anchor). Fenced-header second — trying it first mis-routed an inline
+ *  item whose spans start on a continuation line (header ending at `replace`)
+ *  into the fenced parser and surfaced a phantom malformed finding; the
+ *  reverse mis-route cannot happen because a fenced item's `find:` label (or
+ *  `— rationale` tail) sits where the inline grammar demands a backtick. */
 const classifyItem = (
 	lines: readonly string[],
 	out: { directives: ReconciliationDirective[]; malformed: string[] },
 ): void => {
 	const header = lines[0]!.trimEnd();
+	const m = RECONCILE_DIRECTIVE_RE.exec(lines.join("\n").trimEnd());
+	if (m) {
+		out.directives.push({ target: m[1]!.trim(), find: m[2]!, replace: m[3]! });
+		return;
+	}
 	const blockHeader = RECONCILE_BLOCK_HEADER_RE.exec(header);
 	if (blockHeader) {
 		const spans = parseFencedSpans(lines.slice(1));
@@ -116,10 +134,7 @@ const classifyItem = (
 		}
 		return;
 	}
-	const m = RECONCILE_DIRECTIVE_RE.exec(lines.map((l) => l.trimEnd()).join("\n"));
-	if (m) {
-		out.directives.push({ target: m[1]!.trim(), find: m[2]!, replace: m[3]! });
-	} else if (RECONCILE_DIRECTIVE_ATTEMPT_RE.test(header)) {
+	if (RECONCILE_DIRECTIVE_ATTEMPT_RE.test(header)) {
 		out.malformed.push(header.trim());
 	}
 };
@@ -259,7 +274,7 @@ const applyReconciliationDirectives = (
 				// own prior successful apply (e.g. a validate-fix loop re-running reconcile).
 			} else {
 				findings.push({
-					detail: `reconcile: directive find substring not present in ${d.target} (and the replacement is absent — not already applied) — the expected text to replace is absent; the directive is stale or the test no longer matches. Repair IN THE PLAN: update the directive's find text to match the target file's current content (Read the file to ground it), or delete the directive if it no longer applies`,
+					detail: `reconcile: directive find substring not present in ${d.target} (and the replacement is absent — not already applied) — the expected text to replace is absent; the directive is stale or the test no longer matches. Repair IN THE PLAN: update the directive's find text to match the target file's current content byte-for-byte (Read the file to ground it; if the text carries backticks, rewrite the directive in the fenced find:/replace: form, which preserves bytes exactly), or delete the directive if it no longer applies`,
 					where: d.target,
 				});
 			}
