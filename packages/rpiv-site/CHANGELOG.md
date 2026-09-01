@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- "v2.1 to v2.9: teaching the pipeline to finish" blog post: version-by-version release notes for the arc since v2.0, framed around the six lines every change follows, each item with its rationale.
+
 ## [2.9.0] - 2026-09-01
 
 ## [2.8.0] - 2026-08-29
