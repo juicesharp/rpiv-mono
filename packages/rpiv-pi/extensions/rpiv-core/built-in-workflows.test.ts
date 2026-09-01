@@ -6949,13 +6949,16 @@ describe("reconcile lane stage", () => {
 
 	// A plan body with optional `#### Reconciliation` directives and an
 	// `#### Automated Verification:` block, plus a `## Synthesis Notes` section.
-	const planBody = (opts: { directives?: string[]; av?: string[]; synthesisNotes?: boolean }) => {
+	// `files` populates the phase's declared write-set (the plan-derived
+	// authority reconcile applies against); defaults to the common test target.
+	const planBody = (opts: { directives?: string[]; av?: string[]; synthesisNotes?: boolean; files?: string[] }) => {
+		const files = opts.files ?? ["packages/a/a.test.ts"];
 		const lines = [
 			"---",
 			"status: ready",
 			"phase_count: 1",
 			"phases:",
-			"  - { n: 1, title: Reconcile }",
+			`  - { n: 1, title: Reconcile, files: [${files.map((f) => JSON.stringify(f)).join(", ")}] }`,
 			"---",
 			"# Plan",
 			"## Phase 1: Reconcile",
@@ -7030,18 +7033,65 @@ describe("reconcile lane stage", () => {
 		expect(readFileSync(join(tmpDir, "packages/a/a.test.ts"), "utf-8")).toBe("expect(r).toBe(99);\n");
 	});
 
-	it("write-restricts to test paths — a non-test target is flagged and NOT applied", () => {
+	it("write-restricts to the declared write-set — an undeclared target is flagged and NOT applied", () => {
 		writeTestFile("packages/a/a.ts", "export const r = 3;\n");
 		const plan = write(
 			".rpiv/artifacts/plans/p.md",
-			planBody({ directives: ["- `packages/a/a.ts`: replace `r = 3` → `r = 4` — production change"] }),
+			planBody({ directives: ["- `packages/a/a.ts`: replace `r = 3` → `r = 4` — undeclared target"] }),
 		);
 		const data = runOn(plan);
 		expect(data.pass).toBe(false);
 		expect(wheres(data)).toEqual(["packages/a/a.ts"]);
-		expect(details(data)).toMatch(/not a test-expectation file/);
+		expect(details(data)).toMatch(/not in the plan's declared write-set/);
 		// untouched
 		expect(readFileSync(join(tmpDir, "packages/a/a.ts"), "utf-8")).toBe("export const r = 3;\n");
+	});
+
+	it("applies a directive to a DECLARED non-JS target — eligibility is plan-derived, not a filename convention", () => {
+		writeTestFile("tests/test_app.py", "assert r == 3\n");
+		const plan = write(
+			".rpiv/artifacts/plans/p.md",
+			planBody({
+				files: ["tests/test_app.py"],
+				directives: [
+					"- `tests/test_app.py`: replace `assert r == 3` → `assert r == 4` — phase invalidated the expectation",
+				],
+			}),
+		);
+		const data = runOn(plan);
+		expect(data.pass).toBe(true);
+		expect(readFileSync(join(tmpDir, "tests/test_app.py"), "utf-8")).toBe("assert r == 4\n");
+	});
+
+	it("twin expansion licenses a declared production file's co-located test twin", () => {
+		writeTestFile("packages/a/a.test.ts", "expect(r).toBe(3);\n");
+		const plan = write(
+			".rpiv/artifacts/plans/p.md",
+			planBody({
+				files: ["packages/a/a.ts"], // declares only the production file; the .test.ts twin rides along
+				directives: ["- `packages/a/a.test.ts`: replace `expect(r).toBe(3)` → `expect(r).toBe(4)` — twin update"],
+			}),
+		);
+		const data = runOn(plan);
+		expect(data.pass).toBe(true);
+		expect(readFileSync(join(tmpDir, "packages/a/a.test.ts"), "utf-8")).toBe("expect(r).toBe(4);\n");
+	});
+
+	it("a `files:`-less plan declares nothing — every directive is rejected fail-closed", () => {
+		writeTestFile("packages/a/a.test.ts", "expect(r).toBe(3);\n");
+		const plan = write(
+			".rpiv/artifacts/plans/p.md",
+			planBody({
+				files: [],
+				directives: [
+					"- `packages/a/a.test.ts`: replace `expect(r).toBe(3)` → `expect(r).toBe(4)` — no declarations",
+				],
+			}),
+		);
+		const data = runOn(plan);
+		expect(data.pass).toBe(false);
+		expect(details(data)).toMatch(/not in the plan's declared write-set/);
+		expect(readFileSync(join(tmpDir, "packages/a/a.test.ts"), "utf-8")).toBe("expect(r).toBe(3);\n");
 	});
 
 	it("containment — an ABSOLUTE *.test.ts target outside the tree is flagged and NOT written", () => {

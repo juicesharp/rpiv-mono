@@ -440,7 +440,7 @@ const vetWorkflow = defineWorkflow({
 		"scope-quarantine": produces.script({ reads: ["implement-scope-check"], run: scopeQuarantine }),
 		// Deterministic post-implement reconciliation (no LLM) — the SAME `reconcile`
 		// run-function as build (no vet twin): applies every `#### Reconciliation`
-		// directive (write-restricted to test files), fail-soft. Pass ⇒ validate;
+		// directive (write-restricted to the plan's declared write-set), fail-soft. Pass ⇒ validate;
 		// fail ⇒ the reconcile-fix arm (see reconcileGate); missing ⇒ STOP.
 		// `reads: ["plans"]` only — no run-start goal baseline.
 		reconcile: produces.script({ reads: ["plans"], run: reconcile }),
@@ -809,9 +809,9 @@ const buildWorkflow = defineWorkflow({
 		// and publish a manifest, then re-enter the floor — see scopeQuarantine.
 		"scope-quarantine": produces.script({ reads: ["implement-scope-check"], run: scopeQuarantine }),
 		// Deterministic post-implement reconciliation (no LLM): applies every
-		// `#### Reconciliation` directive (find→replace, write-restricted to test
-		// files), fail-soft — a coherence backstop the parallel implement lane
-		// needs (a phase's correct change can invalidate a sibling's test, and the
+		// `#### Reconciliation` directive (find→replace, write-restricted to the
+		// plan's declared write-set), fail-soft — a coherence backstop the parallel
+		// implement lane needs (a phase's correct change can invalidate a sibling's test, and the
 		// combined tree can break in ways no single phase's checks surface). Pass ⇒
 		// validate; fail ⇒ the reconcile-fix arm (see reconcileGate); missing ⇒
 		// STOP. `reads: ["plans"]` only — no run-start goal baseline (the scope

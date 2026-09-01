@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Reconcile write authority is plan-derived — the JS/TS-only test-path restriction is retired, and the gate's parser doubles as a pre-flight lint.** The directive eligibility rule was a filename convention (`*.test.{ts,tsx,js,jsx}`), which made the whole reconcile channel inert in a project of any other language (`test_*.py`, `*_test.go`, `*_spec.rb` — all rejected) and left golden masters undeliverable even when a phase declared them. Eligibility now derives from the plan's own contract: a directive may target any file in the declared write-set — the union of every phase's `files:`, twin-expanded (`withTestTwins`) — the SAME authority the scope floor enforces, so reconcile can never write a path the floor would flag, works identically in any language, and a `files:`-less plan rejects every directive fail-closed. Containment stays checked first on the resolved path (the declared-set membership check alone cannot confine the sink). The grammar and apply-classification moved to a loader-free ESM module (`built-ins/reconcile-directives.mjs`, typed via `.d.mts`) that the gate imports — and so does the new `skills/_shared/reconcile-lint.mjs` pre-flight CLI (skill layer depends on the extension module, never the reverse): the implement skill, after recording a directive, runs the gate's exact parser in check-only mode (`--phase <N>` scopes to its own section; grammar, containment, declared-set eligibility via a best-effort frontmatter scan, find-presence with the already-applied/deletion-satisfied tolerances) — every finding caught locally is one `/skill:amend` repair session plus a gate re-entry that never happens (run 2026-08-31_15-21-14-57d0 lost 42 minutes to exactly this class). The implement SKILL.md directive rules are correspondingly lean: copy the `find` bytes from the live file (never from memory), backticks force the fenced form, then lint — nothing added to the no-directive happy path.
+
 ## [2.8.0] - 2026-08-29
 
 ### Added
