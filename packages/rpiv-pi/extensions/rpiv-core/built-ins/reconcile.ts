@@ -259,14 +259,30 @@ const applyReconciliationDirectives = (
 		}
 		try {
 			const content = readFileSync(abs, "utf-8");
-			if (content.includes(d.find)) {
+			// The ALREADY-APPLIED check runs BEFORE the apply branch (review
+			// 2026-08-31 I1): for a containment-shaped directive — `replace`
+			// carrying `find` as a substring ("expect(x).toBe(1)" → "expect(x)
+			// .toBe(1); // aligned") — the find stays present INSIDE the applied
+			// replacement, so the old apply-first ordering re-substituted at the
+			// same site on every reconcile re-execution (reconcile-fix and
+			// validate-fix loop re-entries are normal), compounding "…; //
+			// aligned; // aligned" drift. Applied ⇔ the replacement is present
+			// AND (the find is gone, or the find only survives because the
+			// replacement contains it). The non-containment both-present case
+			// still applies (a coincidental pre-existing copy of the replacement
+			// elsewhere must not mask a first apply); the containment
+			// both-present case skips — a skipped apply degrades to a validate
+			// catch, a re-apply is silent corruption.
+			const applied =
+				d.replace !== "" &&
+				content.includes(d.replace) &&
+				(!content.includes(d.find) || d.replace.includes(d.find));
+			if (applied) {
+				// Idempotent re-run: treated as satisfied — reconcile must not fail
+				// (or re-write) on its own prior successful apply.
+			} else if (content.includes(d.find)) {
 				// `String.replace` with a string pattern replaces the FIRST match exactly once.
 				writeFileSync(abs, content.replace(d.find, d.replace), "utf-8");
-			} else if (d.replace !== "" && content.includes(d.replace)) {
-				// Idempotent re-run: the find is gone but the replacement is present ⇒ the
-				// directive was already applied (e.g. a vet review-fix loop re-running
-				// reconcile). Treated as satisfied — reconcile must not fail on its own
-				// prior successful apply.
 			} else if (d.replace === "") {
 				// Idempotent re-run of a deletion: the find is gone and the replacement is
 				// empty ⇒ find-absent is the deletion's success condition (a prior successful

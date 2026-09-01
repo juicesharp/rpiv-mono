@@ -289,6 +289,20 @@ export function loadModelsConfig(): ModelsConfig {
 		delete defaults.extensions;
 		delete defaults.tools;
 	}
+	// The SAME strip on every other non-agents axis (review 2026-08-31 I3):
+	// the shared ModelEntrySchema admits `tools`/`extensions` everywhere, but
+	// only the agents-axis lookup consumes them — a stages/skills/preset entry
+	// carrying them passed validation and silently granted nothing. One warn
+	// per load, naming the offending axes.
+	const strippedAxes = new Set<string>();
+	const stripAgentAxisFields = (entry: ResolvedModelConfig, axis: string): ResolvedModelConfig => {
+		if (entry.extensions !== undefined || entry.tools !== undefined) {
+			strippedAxes.add(axis);
+			delete entry.extensions;
+			delete entry.tools;
+		}
+		return entry;
+	};
 	const agents: Record<string, ResolvedModelConfig> = {};
 	const stages: Record<string, ResolvedModelConfig> = {};
 	const skills: Record<string, ResolvedModelConfig> = {};
@@ -302,13 +316,13 @@ export function loadModelsConfig(): ModelsConfig {
 
 	if (validated.stages && typeof validated.stages === "object") {
 		for (const [name, entry] of Object.entries(validated.stages)) {
-			stages[name] = resolvedEntryWithCascade(entry, defaults);
+			stages[name] = stripAgentAxisFields(resolvedEntryWithCascade(entry, defaults), "stages");
 		}
 	}
 
 	if (validated.skills && typeof validated.skills === "object") {
 		for (const [name, entry] of Object.entries(validated.skills)) {
-			skills[name] = resolvedEntryWithCascade(entry, defaults);
+			skills[name] = stripAgentAxisFields(resolvedEntryWithCascade(entry, defaults), "skills");
 		}
 	}
 
@@ -318,13 +332,19 @@ export function loadModelsConfig(): ModelsConfig {
 			const presetStages: Record<string, ResolvedModelConfig> = {};
 			if (presetBlock.stages && typeof presetBlock.stages === "object") {
 				for (const [stageName, entry] of Object.entries(presetBlock.stages)) {
-					presetStages[stageName] = resolvedEntryWithCascade(entry, defaults);
+					presetStages[stageName] = stripAgentAxisFields(resolvedEntryWithCascade(entry, defaults), "presets");
 				}
 			}
 			if (Object.keys(presetStages).length > 0) {
 				presets[wf] = { stages: presetStages };
 			}
 		}
+	}
+
+	if (strippedAxes.size > 0) {
+		console.warn(
+			`[rpiv-pi] models.json: \`extensions\`/\`tools\` in ${[...strippedAxes].sort().join("/")} entries are ignored — they are per-agent fields (only \`agents.<name>\` consumes them)`,
+		);
 	}
 
 	const result: ModelsConfig = {

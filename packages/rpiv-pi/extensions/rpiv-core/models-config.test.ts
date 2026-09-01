@@ -373,6 +373,27 @@ describe("models-config", () => {
 			warnSpy.mockRestore();
 		});
 
+		it("strips tools/extensions on stages/skills/preset axes with one warn naming them (I3)", () => {
+			// Only the agents-axis lookup consumes the agent-axis fields; an entry
+			// carrying them on any other axis passed validation and silently
+			// granted nothing.
+			const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+			writeFileSync(
+				configFilePath,
+				JSON.stringify({
+					stages: { "reconcile-fix": { model: "openai/o3-pro", tools: ["ext:rpiv-web-tools/tool_a"] } },
+					skills: { grade: { extensions: ["rpiv-web-tools"] } },
+				}),
+				"utf-8",
+			);
+			invalidateModelsConfigCache();
+			const cfg = loadModelsConfig();
+			expect(cfg.stages?.["reconcile-fix"]).toEqual({ model: "openai/o3-pro" });
+			expect(cfg.skills?.grade).toEqual({});
+			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("skills/stages"));
+			warnSpy.mockRestore();
+		});
+
 		it("preserves an empty tools array ([] suppresses map additions downstream)", () => {
 			writeFileSync(configFilePath, JSON.stringify({ agents: { "integration-scanner": { tools: [] } } }), "utf-8");
 			expect(loadModelsConfig().agents!["integration-scanner"]).toEqual({ tools: [] });

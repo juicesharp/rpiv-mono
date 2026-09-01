@@ -7091,6 +7091,81 @@ describe("reconcile lane stage", () => {
 		}
 	});
 
+	it("containment-shaped directive (replace ⊇ find) applies once and is a no-op on re-run (I1 regression)", () => {
+		// The replacement carries the find as a substring, so post-apply the find
+		// is still PRESENT inside the substituted text. The old apply-first
+		// ordering re-substituted on every reconcile re-execution (reconcile-fix
+		// / validate-fix loop re-entries), compounding "; // aligned; // aligned"
+		// drift that validate then failed on. Verified reproducer from review
+		// 2026-08-31 I1.
+		writeTestFile("packages/a/a.test.ts", "expect(x).toBe(1);\nrest();\n");
+		const plan = write(
+			".rpiv/artifacts/plans/p.md",
+			planBody({
+				directives: [
+					"- `packages/a/a.test.ts`: replace `expect(x).toBe(1);` → `expect(x).toBe(1); // aligned` — annotate",
+				],
+			}),
+		);
+		const first = runOn(plan);
+		expect(first.pass).toBe(true);
+		expect(readFileSync(join(tmpDir, "packages/a/a.test.ts"), "utf-8")).toBe(
+			"expect(x).toBe(1); // aligned\nrest();\n",
+		);
+		// Re-entries are normal loop behavior: the file must be byte-stable.
+		const second = runOn(plan);
+		expect(second.pass).toBe(true);
+		const third = runOn(plan);
+		expect(third.pass).toBe(true);
+		expect(readFileSync(join(tmpDir, "packages/a/a.test.ts"), "utf-8")).toBe(
+			"expect(x).toBe(1); // aligned\nrest();\n",
+		);
+	});
+
+	it("a coincidental pre-existing copy of the replacement does not mask a first apply (non-containment)", () => {
+		// Both find and replace present, replace does NOT contain find: this is
+		// the first-run case where the replacement text exists elsewhere by
+		// coincidence — the apply must still run.
+		writeTestFile("packages/a/a.test.ts", "expect(r).toBe(4);\nexpect(r).toBe(3);\n");
+		const plan = write(
+			".rpiv/artifacts/plans/p.md",
+			planBody({
+				directives: ["- `packages/a/a.test.ts`: replace `expect(r).toBe(3)` → `expect(r).toBe(4)` — align"],
+			}),
+		);
+		const data = runOn(plan);
+		expect(data.pass).toBe(true);
+		expect(readFileSync(join(tmpDir, "packages/a/a.test.ts"), "utf-8")).toBe(
+			"expect(r).toBe(4);\nexpect(r).toBe(4);\n",
+		);
+	});
+
+	it("fenced form: a content line indented less than the opening fence is captured verbatim (no dedent)", () => {
+		// The dedent strips the fence-open line's own indentation prefix ONLY
+		// when a content line actually starts with it — an under-indented line
+		// passes through byte-for-byte (review 2026-08-31 Q9 coverage gap).
+		writeTestFile("packages/a/a.test.ts", "keep();\nflush();\n");
+		const plan = write(
+			".rpiv/artifacts/plans/p.md",
+			planBody({
+				directives: [
+					"- `packages/a/a.test.ts`: replace — under-indented content",
+					"  find:",
+					"  ```",
+					"flush();",
+					"  ```",
+					"  replace:",
+					"  ```",
+					"flushed();",
+					"  ```",
+				],
+			}),
+		);
+		const data = runOn(plan);
+		expect(data.pass).toBe(true);
+		expect(readFileSync(join(tmpDir, "packages/a/a.test.ts"), "utf-8")).toBe("keep();\nflushed();\n");
+	});
+
 	it("treats an already-applied directive as satisfied on re-run (idempotent)", () => {
 		// The find is gone but the replacement is present ⇒ already applied, no finding.
 		writeTestFile("packages/a/a.test.ts", "expect(r).toBe(4);\n");

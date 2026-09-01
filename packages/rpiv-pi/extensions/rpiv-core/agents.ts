@@ -394,19 +394,33 @@ export function injectModelFrontmatter(
 		// in-place replacements keep their shipped position; absent keys append
 		// before the closing fence in this order.
 		const mergedTools = mergeCsvAdditions(readFrontmatterKey(lines, bounds, "tools"), enablement.tools);
-		if (mergedTools !== undefined) keysToSet.push({ key: "tools", value: mergedTools });
 		const mergedExtensions = mergeFlowSeqAdditions(
 			readFrontmatterKey(lines, bounds, "extensions"),
 			enablement.extensions,
 		);
-		if (mergedExtensions !== undefined) keysToSet.push({ key: "extensions", value: mergedExtensions });
-		// Flipping isolation is the point of enablement (`ext:` selectors are
-		// dropped while isolated) — but derive the pair only when the source
-		// declares `isolated: true`: re-injecting an already-injected form pushes
-		// neither key (idempotency), and non-isolated agents stay untouched.
-		if (readFrontmatterKey(lines, bounds, "isolated")?.toLowerCase() === "true") {
-			keysToSet.push({ key: "isolated", value: "false" });
-			keysToSet.push({ key: "skills", value: "false" });
+		// ATOMIC transform (review 2026-08-31 I2): a merge that fail-soft-skips
+		// an unmergeable frontmatter form (block-sequence, sentinel) while its
+		// additions are non-empty means the grant CANNOT land — applying the
+		// remaining keys anyway would flip `isolated`/`skills` off while
+		// granting nothing, silently un-scoping the agent on every sync. Skip
+		// the whole enablement key set and warn loudly instead.
+		const toolsMergeFailed = enablement.tools.length > 0 && mergedTools === undefined;
+		const extensionsMergeFailed = enablement.extensions.length > 0 && mergedExtensions === undefined;
+		if (toolsMergeFailed || extensionsMergeFailed) {
+			console.warn(
+				`[rpiv-pi] agent enablement skipped for ${agentFile}: the ${toolsMergeFailed ? "tools" : "extensions"} frontmatter form is not mergeable (block sequence or sentinel value) — rewrite it as a ${toolsMergeFailed ? "single-line CSV scalar" : "flow sequence"} to receive the grant`,
+			);
+		} else {
+			if (mergedTools !== undefined) keysToSet.push({ key: "tools", value: mergedTools });
+			if (mergedExtensions !== undefined) keysToSet.push({ key: "extensions", value: mergedExtensions });
+			// Flipping isolation is the point of enablement (`ext:` selectors are
+			// dropped while isolated) — but derive the pair only when the source
+			// declares `isolated: true`: re-injecting an already-injected form pushes
+			// neither key (idempotency), and non-isolated agents stay untouched.
+			if (readFrontmatterKey(lines, bounds, "isolated")?.toLowerCase() === "true") {
+				keysToSet.push({ key: "isolated", value: "false" });
+				keysToSet.push({ key: "skills", value: "false" });
+			}
 		}
 	}
 

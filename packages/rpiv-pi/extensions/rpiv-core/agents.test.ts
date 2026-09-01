@@ -871,6 +871,33 @@ describe("agent enablement injection (install-gated, config-driven)", () => {
 		}
 	});
 
+	it("atomic enablement: an unmergeable tools form skips the WHOLE grant — no isolation flip, one loud warn (I2)", () => {
+		// Block-sequence tools cannot receive the CSV merge; the old transform
+		// still flipped isolated/skills off — un-scoping the agent while granting
+		// nothing, re-materialized silently every sync. The transform is atomic
+		// now: unmergeable form ⇒ byte-identical output + console.warn.
+		const blockSrc = [
+			"---",
+			"name: block-agent",
+			"tools:",
+			"  - grep",
+			"  - find",
+			"isolated: true",
+			"---",
+			"",
+			"Body.",
+			"",
+		].join("\n");
+		const cfg: ModelsConfig = {
+			agents: { "block-agent": { tools: ["ext:rpiv-web-tools/tool_a"], extensions: ["rpiv-web-tools"] } },
+		};
+		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+		const out = injectModelFrontmatter(blockSrc, "block-agent.md", cfg, GATE_ON);
+		expect(out).toBe(blockSrc);
+		expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("not mergeable"));
+		warnSpy.mockRestore();
+	});
+
 	it("double-inject fixed point with gate on", () => {
 		for (const name of [SCANNER, ANALYZER]) {
 			const once = injectModelFrontmatter(bundledContent(name), name, ENABLE_CFG, GATE_ON);
