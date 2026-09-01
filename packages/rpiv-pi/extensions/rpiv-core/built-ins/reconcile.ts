@@ -1,153 +1,92 @@
 /**
  * The post-implement reconciliation backstop: `#### Reconciliation` directive
- * parsing and write-restricted application.
+ * application, write-restricted to the plan's declared write-set.
+ *
+ * The directive grammar and parser live in the sibling
+ * reconcile-directives.mjs — the SAME module the skills/_shared/
+ * reconcile-lint.mjs pre-flight CLI (run by the implement skill before it
+ * finishes a phase) imports, so a directive that lints clean locally parses
+ * identically here.
  */
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, isAbsolute, join } from "node:path";
 import { handleToString, type Output, type ScriptContext } from "@juicesharp/rpiv-workflow/registration";
+import { phaseFiles, planPhaseRecords, withTestTwins } from "./plan-phases.js";
+import { classifyApplication, type ReconciliationDirective, reconciliationRecords } from "./reconcile-directives.mjs";
 import {
 	containedPath,
 	haltPreflight,
 	latestFsArtifact,
 	readArtifactFile,
-	TEST_PATH_RE,
 	VERDICT_DIR,
 	VERDICT_FAIL_SCORE,
 	VERDICT_PASS_SCORE,
 } from "./shared.js";
 
 /**
- * One `#### Reconciliation` directive parsed from a plan body: a machine-applicable
- * `find → replace` against a single test-expectation file. The implement lane records
- * these in a phase's OWN section when a correct change invalidates a test that lives
- * in a sibling phase's landed section (which the implementer may NOT edit); `reconcile`
- * applies them write-restricted to `*.test.*` targets.
- */
-interface ReconciliationDirective {
-	/** Repo-root-relative test target (`*.test.*`). */
-	target: string;
-	/** Substring to find (replaced exactly once via `String.replace`). */
-	find: string;
-	/** Replacement string. */
-	replace: string;
-}
-
-/** Directive grammar: `` - `<target>`: replace `<find>` → `<replace>` — <rationale> ``.
- *  The `→` (U+2192) separates find/replace; the em-dash `—` (U+2014) + rationale is
- *  optional. Find/replace carry no inner backticks. The two spans are intentionally
- *  asymmetric and MUST NOT be symmetrized: `find` is one-or-more `[^`]+` (an empty
- *  find has no anchored target and `String.replace("")` prepends the replacement on
- *  every run, so the parser rejects it at parse time), while `replace` is
- *  zero-or-more `[^`]*` (an empty replace is a legitimate deletion directive). */
-const RECONCILE_DIRECTIVE_RE = /^-\s+`([^`]+)`\s*:\s*replace\s+`([^`]+)`\s*→\s*`([^`]*)`\s*(?:—\s+.*)?$/;
-/** A directive ATTEMPT — `- `<target>`:` — that does not match the full grammar. Used
- *  to surface a malformed directive as a finding rather than silently dropping it. */
-const RECONCILE_DIRECTIVE_ATTEMPT_RE = /^-\s+`[^`]+`\s*:/;
-
-/**
- * Parse every `#### Reconciliation` directive from a plan body. Returns the
- * well-formed directives AND the malformed attempts (lines that carry the
- * `- `<target>`:` shape but not the full `replace … → …` grammar); `reconcile`
- * turns each malformed attempt into a finding so a broken directive is visible,
- * never silently dropped. Prose list items are ignored. Pure: no I/O, no throw.
- * A section opens at a `#### Reconciliation` heading and closes at the next
- * `#{1,4}` heading (so `### Success Criteria` / `## Phase N:` / a sibling
- * `#### Automated Verification:` all end it).
- */
-const reconciliationRecords = (
-	body: string,
-): {
-	directives: ReconciliationDirective[];
-	malformed: string[];
-} => {
-	const directives: ReconciliationDirective[] = [];
-	const malformed: string[] = [];
-	let inSection = false;
-	for (const raw of body.split("\n")) {
-		const line = raw.trimEnd();
-		if (/^####\s+Reconciliation\b/.test(line)) {
-			inSection = true;
-			continue;
-		}
-		// Any other heading ends the section (the open-heading branch above `continue`s,
-		// so this only fires for non-`#### Reconciliation` headings).
-		if (/^#{1,4}\s/.test(line)) {
-			inSection = false;
-			continue;
-		}
-		if (!inSection) continue;
-		const m = RECONCILE_DIRECTIVE_RE.exec(line);
-		if (m) {
-			directives.push({ target: m[1]!.trim(), find: m[2]!, replace: m[3]! });
-		} else if (RECONCILE_DIRECTIVE_ATTEMPT_RE.test(line)) {
-			malformed.push(line.trim());
-		}
-	}
-	return { directives, malformed };
-};
-
-const isTestPath = (target: string): boolean => TEST_PATH_RE.test(target);
-
-/**
- * Apply each `#### Reconciliation` directive, write-restricted to test-expectation
- * files (`isTestPath` — reconcile writes ONLY test files; a non-test target is a
- * finding, left untouched, fail-closed). A present `find` is replaced exactly
- * once (`String.replace`, first match); an absent `find` whose `replace` is empty
- * is the idempotent-re-run no-op for a deletion (find-absent is the deletion's
- * success condition — the directive was already applied, no finding, no write); an
- * absent `find` whose non-empty `replace` is ALSO absent is a finding (reconcile
- * does not guess); an absent `find` whose non-empty `replace` is already present is
- * the idempotent-re-run no-op for a substitution (a prior successful apply, no
- * finding, no write). Paths resolve through `cwd` and must stay INSIDE it
- * (`containedPath` — an absolute or `..`-escaping target is a finding, never a
- * read/write; the suffix allowlist alone cannot confine the sink, so containment
- * is checked on the SAME resolved path `readFileSync`/`writeFileSync` use).
- * Fail-soft: a read/apply throw degrades to a finding naming
- * the target, never a terminal throw. Returns findings in DIRECTIVE order and
- * performs the side-effecting writes itself (`reconcile` spreads the return).
+ * Apply each `#### Reconciliation` directive, write-restricted to the plan's
+ * declared write-set — the union of every phase's `files:`, twin-expanded
+ * (`withTestTwins`), the SAME authority the scope floor enforces, so reconcile
+ * can never write a path the floor would flag. Eligibility derives from the
+ * plan's own declarations, never from a filename convention, so the gate works
+ * identically in a project of any language; an undeclared target is a finding,
+ * left untouched, fail-closed (a `files:`-less plan declares nothing and
+ * rejects every directive).
+ *
+ * The apply decision per directive is `classifyApplication` (shared with the
+ * lint): `already-applied` / `deletion-satisfied` are the idempotent-re-run
+ * no-ops (reconcile-fix and validate-fix loop re-entries are normal — see the
+ * containment-shaped-directive rationale on `classifyApplication`); `apply`
+ * substitutes the FIRST match exactly once (`String.replace`); `missing` is a
+ * finding (reconcile does not guess). Paths resolve through `cwd` and must
+ * stay INSIDE it (`containedPath` — an absolute or `..`-escaping target is a
+ * finding, never a read/write; the declared-set membership check alone cannot
+ * confine the sink, so containment is checked on the SAME resolved path
+ * `readFileSync`/`writeFileSync` use). Fail-soft: a read/apply throw degrades
+ * to a finding naming the target, never a terminal throw. Returns findings in
+ * DIRECTIVE order and performs the side-effecting writes itself (`reconcile`
+ * spreads the return).
  */
 const applyReconciliationDirectives = (
 	directives: readonly ReconciliationDirective[],
+	declared: ReadonlySet<string>,
 	cwd: string,
 ): { detail: string; where: string }[] => {
 	const findings: { detail: string; where: string }[] = [];
-	// Apply directives, write-restricted to test-expectation files.
 	for (const d of directives) {
-		if (!isTestPath(d.target)) {
+		const abs = containedPath(cwd, d.target);
+		if (abs === undefined) {
 			findings.push({
-				detail: `reconcile: directive target ${d.target} is not a test-expectation file (*.test.{ts,tsx,js,jsx}) — reconcile writes only test files; record the directive against a test target or apply the edit in the owning phase`,
+				detail: `reconcile: directive target ${d.target} resolves outside the working tree — reconcile reads and writes only inside cwd; record the directive against a repo-root-relative target`,
 				where: d.target,
 			});
 			continue;
 		}
-		const abs = containedPath(cwd, d.target);
-		if (abs === undefined) {
+		if (!declared.has(d.target)) {
 			findings.push({
-				detail: `reconcile: directive target ${d.target} resolves outside the working tree — reconcile reads and writes only inside cwd; record the directive against a repo-root-relative test target`,
+				detail: `reconcile: directive target ${d.target} is not in the plan's declared write-set (the union of every phase's 'files:', twin-expanded) — reconcile writes only what the plan declares, the same authority the scope floor enforces; declare the file in the owning phase's 'files:', or route the edit through validate's remediation arm`,
 				where: d.target,
 			});
 			continue;
 		}
 		try {
 			const content = readFileSync(abs, "utf-8");
-			if (content.includes(d.find)) {
-				// `String.replace` with a string pattern replaces the FIRST match exactly once.
-				writeFileSync(abs, content.replace(d.find, d.replace), "utf-8");
-			} else if (d.replace !== "" && content.includes(d.replace)) {
-				// Idempotent re-run: the find is gone but the replacement is present ⇒ the
-				// directive was already applied (e.g. a vet review-fix loop re-running
-				// reconcile). Treated as satisfied — reconcile must not fail on its own
-				// prior successful apply.
-			} else if (d.replace === "") {
-				// Idempotent re-run of a deletion: the find is gone and the replacement is
-				// empty ⇒ find-absent is the deletion's success condition (a prior successful
-				// apply removed it). Treated as satisfied — reconcile must not fail on its
-				// own prior successful apply (e.g. a validate-fix loop re-running reconcile).
-			} else {
-				findings.push({
-					detail: `reconcile: directive find substring not present in ${d.target} (and the replacement is absent — not already applied) — the expected text to replace is absent; the directive is stale or the test no longer matches`,
-					where: d.target,
-				});
+			switch (classifyApplication(d, content)) {
+				case "already-applied":
+				case "deletion-satisfied":
+					// Idempotent re-run: treated as satisfied — reconcile must not fail
+					// (or re-write) on its own prior successful apply.
+					break;
+				case "apply":
+					// `String.replace` with a string pattern replaces the FIRST match exactly once.
+					writeFileSync(abs, content.replace(d.find, d.replace), "utf-8");
+					break;
+				case "missing":
+					findings.push({
+						detail: `reconcile: directive find substring not present in ${d.target} (and the replacement is absent — not already applied) — the expected text to replace is absent; the directive is stale or the target no longer matches. Repair IN THE PLAN: update the directive's find text to match the target file's current content byte-for-byte (Read the file to ground it; if the text carries backticks, rewrite the directive in the fenced find:/replace: form, which preserves bytes exactly), or delete the directive if it no longer applies`,
+						where: d.target,
+					});
+					break;
 			}
 		} catch (err) {
 			findings.push({
@@ -163,17 +102,19 @@ const applyReconciliationDirectives = (
  * Deterministic post-implement reconciliation — the coherence backstop the
  * parallel implement lane needs. Sibling phases run concurrently in one tree;
  * each phase's own `#### Automated Verification:` passed in isolation, but a
- * phase's correct change can invalidate a test that lives in a SIBLING phase's
- * landed section (which the implementer may not edit), and the combined tree can
- * break in ways no single phase's checks surface. `reconcile` runs after the
- * scope floor (which proved the write-set) and before `validate`:
+ * phase's correct change can invalidate an expectation that lives in a SIBLING
+ * phase's landed section (which the implementer may not edit), and the combined
+ * tree can break in ways no single phase's checks surface. `reconcile` runs
+ * after the scope floor (which proved the write-set) and before `validate`:
  *
  *  1. reads the latest plan (`latestFsArtifact(state, "plans")` — latest-wins);
- *  2. parses every `#### Reconciliation` directive — fail-soft (a malformed
- *     directive / unreadable plan degrades to a finding, never a terminal
- *     `FAIL_SCRIPT_THREW` halt — a `produces.script` that throws becomes one);
- *  3. applies each directive write-restricted to test paths (`isTestPath`); a
- *     present `find` is replaced exactly once (`String.replace`); an absent `find`
+ *  2. parses every `#### Reconciliation` directive (shared parser) and derives
+ *     the plan's declared write-set (`planPhaseRecords` + `phaseFiles`, twin-
+ *     expanded) — fail-soft (a malformed directive / unreadable or unparseable
+ *     plan degrades to a finding, never a terminal `FAIL_SCRIPT_THREW` halt —
+ *     a `produces.script` that throws becomes one);
+ *  3. applies each directive write-restricted to the declared set; a present
+ *     `find` is replaced exactly once (`String.replace`); an absent `find`
  *     whose replacement is ALSO absent is a finding (reconcile does not guess);
  *  4. appends a timestamped `### Reconciliation Log (<iso>)` under the plan's
  *     `## Synthesis Notes` (best-effort bookkeeping write — non-fatal);
@@ -189,8 +130,12 @@ const applyReconciliationDirectives = (
  * commands as an agent, with a real shell and the judgment to tell a legitimate
  * post-rename mismatch from actual plan-vs-tree drift.
  *
- * The route is the `match("verdict", …, { from: "reconcile" })` gate idiom — pass ⇒
- * validate, fail/missing ⇒ STOP (no fallback), mirroring `implementScopeCheck`.
+ * The route is `reconcileGate` (built-in-workflows.ts) — pass ⇒ validate; fail ⇒
+ * the `reconcile-fix` arm (`/skill:amend` over the plan's directives from this
+ * verdict — every reconcile failure class is a plan-TEXT defect, so the plan
+ * reviser has authority over all of them; amend never edits directive targets,
+ * this stage stays the sole applier), looping back here; a missing/corrupt
+ * verdict ⇒ STOP (integrity clause).
  * Mirrors `implementScopeCheck`'s `ScriptContext` shape, basename-keyed verdict
  * path, and `dimension`/`pass`/`verdict`/`score`/`severity` data shape. `reads:
  * ["plans"]` only — reconcile consumes no run-start `goal` baseline (the scope
@@ -212,15 +157,22 @@ const reconcile = ({ state, cwd }: ScriptContext): Omit<Output, "meta"> => {
 	const planAbs = isAbsolute(planPath) ? planPath : join(cwd, planPath);
 	const findings: { detail: string; where: string }[] = [];
 
-	// Fail-soft read + parse: an unreadable plan or malformed directive degrades
-	// to a finding, never a terminal throw. If the read fails there is nothing to
-	// apply.
+	// Fail-soft read + parse: an unreadable plan, unparseable phase frontmatter,
+	// or malformed directive degrades to a finding, never a terminal throw. If
+	// the read fails there is nothing to apply. Assignment order is load-bearing:
+	// `directives` lands only after the declared set derived, so a
+	// phase-frontmatter defect yields ONE parse finding, never a cascade of
+	// per-directive not-declared findings against an empty set.
 	let body = "";
 	let directives: ReconciliationDirective[] = [];
 	let malformed: string[] = [];
+	let declared: ReadonlySet<string> = new Set<string>();
 	try {
 		body = readArtifactFile(planPath, cwd);
 		const parsed = reconciliationRecords(body);
+		declared = new Set(
+			withTestTwins(planPhaseRecords(body, "reconcile", planPath).flatMap((r) => phaseFiles(r.entry))),
+		);
 		directives = parsed.directives;
 		malformed = parsed.malformed;
 	} catch (err) {
@@ -231,12 +183,18 @@ const reconcile = ({ state, cwd }: ScriptContext): Omit<Output, "meta"> => {
 	}
 	for (const m of malformed) {
 		findings.push({
-			detail: `reconcile: malformed Reconciliation directive — expected a line of the form: - \`<target>\`: replace \`<find>\` → \`<replace>\` (target/find/replace each backtick-wrapped) — ${m}`,
+			detail:
+				"reconcile: malformed Reconciliation directive — rewrite the directive IN THE PLAN as either " +
+				"(a) one list item: - `<target>`: replace `<find>` → `<replace>` — <rationale> " +
+				"(find/replace may span lines but must carry no inner backticks), or " +
+				"(b) the fenced form for content with backticks: - `<target>`: replace — <rationale>, then a " +
+				"`find:` line followed by a fenced code block, then a `replace:` line followed by a fenced code " +
+				`block — offending item: ${m}`,
 			where: "reconciliation-directive",
 		});
 	}
 
-	findings.push(...applyReconciliationDirectives(directives, cwd));
+	findings.push(...applyReconciliationDirectives(directives, declared, cwd));
 
 	// Best-effort bookkeeping: append a timestamped log under ## Synthesis Notes.
 	// Non-fatal — a write failure here is silent (the verdict below is the signal).

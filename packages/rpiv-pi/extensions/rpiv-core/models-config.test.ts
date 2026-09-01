@@ -2,6 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+	DEFAULT_MAX_CONCURRENCY,
 	findUnknownModelKeys,
 	getAgentModelConfig,
 	invalidateModelsConfigCache,
@@ -317,6 +318,142 @@ describe("models-config", () => {
 		});
 	});
 
+	describe("agent-axis fields (extensions/tools)", () => {
+		const configDir = join(TEST_HOME, ".config", "rpiv-pi");
+		const configFilePath = join(configDir, "models.json");
+
+		beforeEach(() => {
+			mkdirSync(configDir, { recursive: true });
+		});
+
+		it("loads per-agent extensions/tools as string arrays", () => {
+			writeFileSync(
+				configFilePath,
+				JSON.stringify({
+					agents: {
+						"integration-scanner": {
+							model: "openai/o3-pro",
+							tools: ["ext:rpiv-web-tools/tool_a"],
+							extensions: ["rpiv-web-tools"],
+						},
+					},
+				}),
+				"utf-8",
+			);
+			expect(loadModelsConfig().agents!["integration-scanner"]).toEqual({
+				model: "openai/o3-pro",
+				tools: ["ext:rpiv-web-tools/tool_a"],
+				extensions: ["rpiv-web-tools"],
+			});
+		});
+
+		it("drops tools/extensions entries carrying newlines with a warn (S1: frontmatter-line injection)", () => {
+			// These strings land on one logical frontmatter line of a synced
+			// agent .md — an interior newline becomes a physical line the Pi
+			// runtime reads as capability config ("x\nisolated: false" would
+			// silently un-isolate an agent).
+			const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+			writeFileSync(
+				configFilePath,
+				JSON.stringify({
+					agents: {
+						"integration-scanner": {
+							tools: ["grep", "x\nisolated: false"],
+							extensions: ["rpiv-web-tools", "bad\rentry"],
+						},
+					},
+				}),
+				"utf-8",
+			);
+			invalidateModelsConfigCache();
+			expect(loadModelsConfig().agents?.["integration-scanner"]).toEqual({
+				tools: ["grep"],
+				extensions: ["rpiv-web-tools"],
+			});
+			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("newline"));
+			warnSpy.mockRestore();
+		});
+
+		it("strips tools/extensions on stages/skills/preset axes with one warn naming them (I3)", () => {
+			// Only the agents-axis lookup consumes the agent-axis fields; an entry
+			// carrying them on any other axis passed validation and silently
+			// granted nothing.
+			const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+			writeFileSync(
+				configFilePath,
+				JSON.stringify({
+					stages: { "reconcile-fix": { model: "openai/o3-pro", tools: ["ext:rpiv-web-tools/tool_a"] } },
+					skills: { grade: { extensions: ["rpiv-web-tools"] } },
+				}),
+				"utf-8",
+			);
+			invalidateModelsConfigCache();
+			const cfg = loadModelsConfig();
+			expect(cfg.stages?.["reconcile-fix"]).toEqual({ model: "openai/o3-pro" });
+			expect(cfg.skills?.grade).toEqual({});
+			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("skills/stages"));
+			warnSpy.mockRestore();
+		});
+
+		it("preserves an empty tools array ([] suppresses map additions downstream)", () => {
+			writeFileSync(configFilePath, JSON.stringify({ agents: { "integration-scanner": { tools: [] } } }), "utf-8");
+			expect(loadModelsConfig().agents!["integration-scanner"]).toEqual({ tools: [] });
+		});
+
+		it("filters non-string elements per-field without zeroing the entry", () => {
+			writeFileSync(
+				configFilePath,
+				JSON.stringify({
+					agents: {
+						"integration-scanner": {
+							model: "openai/gpt-5.5",
+							tools: ["ext:rpiv-web-tools/tool_a", 5, null],
+							extensions: [true],
+						},
+					},
+				}),
+				"utf-8",
+			);
+			expect(loadModelsConfig().agents!["integration-scanner"]).toEqual({
+				model: "openai/gpt-5.5",
+				tools: ["ext:rpiv-web-tools/tool_a"],
+				extensions: [],
+			});
+		});
+
+		it("drops non-array values for the fields (falls back to map defaults downstream)", () => {
+			writeFileSync(
+				configFilePath,
+				JSON.stringify({ agents: { "integration-scanner": { tools: "grep", extensions: 7 } } }),
+				"utf-8",
+			);
+			expect(loadModelsConfig().agents!["integration-scanner"]).toEqual({});
+		});
+
+		it("ignores extensions/tools in defaults with exactly one warn and no cascade leak", () => {
+			const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+			writeFileSync(
+				configFilePath,
+				JSON.stringify({
+					defaults: {
+						model: "openai/gpt-5.5",
+						tools: ["ext:rpiv-web-tools/tool_a"],
+						extensions: ["rpiv-web-tools"],
+					},
+					agents: { "codebase-analyzer": { thinking: "high" } },
+				}),
+				"utf-8",
+			);
+			const config = loadModelsConfig();
+			expect(config.defaults).toEqual({ model: "openai/gpt-5.5" });
+			// No cascade: the agent entry inherits only model/thinking.
+			expect(config.agents!["codebase-analyzer"]).toEqual({ model: "openai/gpt-5.5", thinking: "high" });
+			expect(warnSpy).toHaveBeenCalledTimes(1);
+			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("defaults"));
+			warnSpy.mockRestore();
+		});
+	});
+
 	describe("getAgentModelConfig", () => {
 		it("returns agent-specific config when present", () => {
 			const config: ModelsConfig = {
@@ -423,12 +560,14 @@ describe("models-config", () => {
 	});
 
 	describe("resolveMaxConcurrency", () => {
-		it("returns the default (4) when maxConcurrency is absent", () => {
-			expect(resolveMaxConcurrency({})).toBe(4);
+		it("returns the default when maxConcurrency is absent", () => {
+			expect(resolveMaxConcurrency({})).toBe(DEFAULT_MAX_CONCURRENCY);
 		});
 
-		it("returns the default (4) when maxConcurrency is null", () => {
-			expect(resolveMaxConcurrency({ maxConcurrency: null } as unknown as ModelsConfig)).toBe(4);
+		it("returns the default when maxConcurrency is null", () => {
+			expect(resolveMaxConcurrency({ maxConcurrency: null } as unknown as ModelsConfig)).toBe(
+				DEFAULT_MAX_CONCURRENCY,
+			);
 		});
 
 		it("passes through a valid positive integer", () => {
@@ -440,19 +579,21 @@ describe("models-config", () => {
 		});
 
 		it("falls back to default for 0 (fails the >= 1 guard)", () => {
-			expect(resolveMaxConcurrency({ maxConcurrency: 0 })).toBe(4);
+			expect(resolveMaxConcurrency({ maxConcurrency: 0 })).toBe(DEFAULT_MAX_CONCURRENCY);
 		});
 
 		it("falls back to default for negative integers", () => {
-			expect(resolveMaxConcurrency({ maxConcurrency: -1 })).toBe(4);
+			expect(resolveMaxConcurrency({ maxConcurrency: -1 })).toBe(DEFAULT_MAX_CONCURRENCY);
 		});
 
 		it("falls back to default for non-integer numbers", () => {
-			expect(resolveMaxConcurrency({ maxConcurrency: 4.5 })).toBe(4);
+			expect(resolveMaxConcurrency({ maxConcurrency: 4.5 })).toBe(DEFAULT_MAX_CONCURRENCY);
 		});
 
 		it("falls back to default for a numeric string (Value.Clean does not coerce)", () => {
-			expect(resolveMaxConcurrency({ maxConcurrency: "4" } as unknown as ModelsConfig)).toBe(4);
+			expect(resolveMaxConcurrency({ maxConcurrency: "4" } as unknown as ModelsConfig)).toBe(
+				DEFAULT_MAX_CONCURRENCY,
+			);
 		});
 	});
 

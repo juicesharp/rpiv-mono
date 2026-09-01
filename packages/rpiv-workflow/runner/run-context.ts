@@ -89,7 +89,7 @@ export function buildRunContext(
 		maxIterations?: number;
 		lifecycle?: LifecycleListeners;
 		signal?: AbortSignal;
-		resolveModel?: (id: { stage: string; skill: string }) => ModelSelection | undefined;
+		resolveModel?: (id: { workflow: string; stage: string; skill: string }) => ModelSelection | undefined;
 		readSessionBranch?: (file: string) => BranchEntry[] | undefined;
 		worktreeDigest?: (cwd: string) => string | undefined;
 	},

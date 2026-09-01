@@ -242,7 +242,7 @@ export interface RunWorkflowOptions {
 	 * `RunContext.resolveModel` → every `StageSessionContext.model`; the host applies it
 	 * at child-session creation. Undefined ⇒ host default for every stage.
 	 */
-	resolveModel?: (id: { stage: string; skill: string }) => ModelSelection | undefined;
+	resolveModel?: (id: { workflow: string; stage: string; skill: string }) => ModelSelection | undefined;
 	/**
 	 * Worktree-digest override for the validation-retry gate — threaded
 	 * onto `RunContext.worktreeDigest` → every `StageSessionContext.worktreeDigest`.
@@ -373,7 +373,7 @@ export interface RunContext {
 	 * the result onto every `StageSessionContext.model`; the host applies it at child
 	 * creation (NOT via global mutation). Undefined ⇒ host default.
 	 */
-	resolveModel?: (id: { stage: string; skill: string }) => ModelSelection | undefined;
+	resolveModel?: (id: { workflow: string; stage: string; skill: string }) => ModelSelection | undefined;
 	/**
 	 * Host-injected reader that re-opens a persisted child-session JSONL and
 	 * returns its branch (`SessionManager.open(file).getBranch()` on the rpiv-pi

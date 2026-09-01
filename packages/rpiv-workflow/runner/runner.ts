@@ -120,7 +120,7 @@ function referencedSessionIds(run: RunContext): Set<string> {
  *  teardown the caller invokes in `finally`. */
 interface DetachedExecutor {
 	execCtx: WorkflowHostContext;
-	resolveModel?: (id: { stage: string; skill: string }) => ModelSelection | undefined;
+	resolveModel?: (id: { workflow: string; stage: string; skill: string }) => ModelSelection | undefined;
 	readSessionBranch?: (file: string) => BranchEntry[] | undefined;
 	signal?: AbortSignal;
 	dispose?: () => void;
@@ -149,7 +149,7 @@ async function detachExecutor(
 	cwd: string,
 	runId: string,
 	options: {
-		resolveModel?: (id: { stage: string; skill: string }) => ModelSelection | undefined;
+		resolveModel?: (id: { workflow: string; stage: string; skill: string }) => ModelSelection | undefined;
 		readSessionBranch?: (file: string) => BranchEntry[] | undefined;
 		signal?: AbortSignal;
 		name?: string; // lane display name (run --name ?? workflow name)
@@ -299,7 +299,7 @@ export interface ResumeWorkflowOptions {
 	 * Pi launcher still honors per-skill overrides without the caller re-threading
 	 * it). Undefined + no provider ⇒ host default for every resumed stage.
 	 */
-	resolveModel?: (id: { stage: string; skill: string }) => ModelSelection | undefined;
+	resolveModel?: (id: { workflow: string; stage: string; skill: string }) => ModelSelection | undefined;
 }
 
 /**

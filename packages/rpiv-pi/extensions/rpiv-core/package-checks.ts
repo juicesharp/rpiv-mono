@@ -17,3 +17,16 @@ export function findMissingSiblings(): SiblingPlugin[] {
 	const installed = result.packages.filter((e): e is string => typeof e === "string");
 	return SIBLINGS.filter((s) => !installed.some((entry) => s.matches.test(entry)));
 }
+
+/**
+ * Return the SIBLINGS currently installed — the exact complement of
+ * findMissingSiblings over the same readPiAgentSettings() read. No settings
+ * file (or a packages array that isn't one) ⇒ [] — mirroring
+ * findMissingSiblings' all-missing fallback in the opposite direction.
+ */
+export function findInstalledSiblings(): SiblingPlugin[] {
+	const result = readPiAgentSettings();
+	if (!result) return [];
+	const installed = result.packages.filter((e): e is string => typeof e === "string");
+	return SIBLINGS.filter((s) => installed.some((entry) => s.matches.test(entry)));
+}

@@ -30,3 +30,25 @@ export function parseFrontmatterBounds(lines: string[]): { start: number; end: n
 
 	return null; // unclosed frontmatter
 }
+
+/**
+ * Read the raw scalar value of `key` within the frontmatter bounds.
+ *
+ * Returns the trimmed text after `${key}:` on the key's own line, or
+ * `undefined` when the key is absent from the block. Single-line scalars
+ * only — a key whose value lives on following lines (block sequence) reads
+ * as "", and callers treat that as an unmergeable form. The read
+ * counterpart to applyKeyUpdates in agents.ts.
+ */
+export function readFrontmatterKey(
+	lines: string[],
+	bounds: { start: number; end: number },
+	key: string,
+): string | undefined {
+	for (let i = bounds.start + 1; i < bounds.end; i++) {
+		const line = lines[i];
+		if (!line.startsWith(`${key}:`)) continue;
+		return line.slice(key.length + 1).trim();
+	}
+	return undefined;
+}
