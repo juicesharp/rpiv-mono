@@ -539,7 +539,7 @@ export function buildUnitSession(
 		snapshot,
 		branchOffset: undefined,
 		unit: { parent: e.name, role: u.role, index, id: u.id, label: u.label },
-		model: run.resolveModel?.({ stage: e.name, skill: u.skill }),
+		model: run.resolveModel?.({ workflow: run.workflow.name, stage: e.name, skill: u.skill }),
 		signal,
 		readSessionBranch: run.readSessionBranch,
 		worktreeDigest: run.worktreeDigest,

@@ -227,26 +227,34 @@ describe("toModelSelection", () => {
 
 describe("registerWorkflowExecutionHostProvider", () => {
 	it("registers a provider whose createHost is the executor factory and whose resolveModel reads models.json", async () => {
-		writeModels({ stages: { plan: { model: "anthropic/opus", thinking: "high" } } });
+		writeModels({
+			presets: { build: { stages: { plan: { model: "anthropic/sonnet" } } } },
+			stages: { plan: { model: "anthropic/opus", thinking: "high" } },
+		});
 
 		await registerWorkflowExecutionHostProvider();
 
 		expect(registerWorkflowExecutionHost).toHaveBeenCalledTimes(1);
 		const provider = vi.mocked(registerWorkflowExecutionHost).mock.calls[0][0];
 		expect(provider.createHost).toBe(createWorkflowExecution);
-		// resolveModel threads the stage/skill cascade through to a ModelSelection.
-		expect(provider.resolveModel?.({ stage: "plan", skill: "build" })).toEqual({
+		// resolveModel threads the workflow/stage/skill cascade through to a
+		// ModelSelection — the presets.<workflow>.stages rung wins for its workflow…
+		expect(provider.resolveModel?.({ workflow: "build", stage: "plan", skill: "synthesize" })).toEqual({
+			model: "anthropic/sonnet",
+		});
+		// …and any other workflow falls through to the flat stages rung.
+		expect(provider.resolveModel?.({ workflow: "ship", stage: "plan", skill: "synthesize" })).toEqual({
 			model: "anthropic/opus",
 			thinking: "high",
 		});
 		// An unconfigured stage with no defaults resolves to no override.
-		expect(provider.resolveModel?.({ stage: "unknown", skill: "build" })).toBeUndefined();
+		expect(provider.resolveModel?.({ workflow: "build", stage: "unknown", skill: "build" })).toBeUndefined();
 	});
 });
 
 describe("default-concurrency cap", () => {
-	it("defaults the background-lane cap to 4", () => {
-		expect(DEFAULT_MAX_CONCURRENCY).toBe(4);
+	it("defaults the background-lane cap to 6", () => {
+		expect(DEFAULT_MAX_CONCURRENCY).toBe(6);
 	});
 });
 

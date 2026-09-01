@@ -2,6 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+	DEFAULT_MAX_CONCURRENCY,
 	findUnknownModelKeys,
 	getAgentModelConfig,
 	invalidateModelsConfigCache,
@@ -559,12 +560,14 @@ describe("models-config", () => {
 	});
 
 	describe("resolveMaxConcurrency", () => {
-		it("returns the default (4) when maxConcurrency is absent", () => {
-			expect(resolveMaxConcurrency({})).toBe(4);
+		it("returns the default when maxConcurrency is absent", () => {
+			expect(resolveMaxConcurrency({})).toBe(DEFAULT_MAX_CONCURRENCY);
 		});
 
-		it("returns the default (4) when maxConcurrency is null", () => {
-			expect(resolveMaxConcurrency({ maxConcurrency: null } as unknown as ModelsConfig)).toBe(4);
+		it("returns the default when maxConcurrency is null", () => {
+			expect(resolveMaxConcurrency({ maxConcurrency: null } as unknown as ModelsConfig)).toBe(
+				DEFAULT_MAX_CONCURRENCY,
+			);
 		});
 
 		it("passes through a valid positive integer", () => {
@@ -576,19 +579,21 @@ describe("models-config", () => {
 		});
 
 		it("falls back to default for 0 (fails the >= 1 guard)", () => {
-			expect(resolveMaxConcurrency({ maxConcurrency: 0 })).toBe(4);
+			expect(resolveMaxConcurrency({ maxConcurrency: 0 })).toBe(DEFAULT_MAX_CONCURRENCY);
 		});
 
 		it("falls back to default for negative integers", () => {
-			expect(resolveMaxConcurrency({ maxConcurrency: -1 })).toBe(4);
+			expect(resolveMaxConcurrency({ maxConcurrency: -1 })).toBe(DEFAULT_MAX_CONCURRENCY);
 		});
 
 		it("falls back to default for non-integer numbers", () => {
-			expect(resolveMaxConcurrency({ maxConcurrency: 4.5 })).toBe(4);
+			expect(resolveMaxConcurrency({ maxConcurrency: 4.5 })).toBe(DEFAULT_MAX_CONCURRENCY);
 		});
 
 		it("falls back to default for a numeric string (Value.Clean does not coerce)", () => {
-			expect(resolveMaxConcurrency({ maxConcurrency: "4" } as unknown as ModelsConfig)).toBe(4);
+			expect(resolveMaxConcurrency({ maxConcurrency: "4" } as unknown as ModelsConfig)).toBe(
+				DEFAULT_MAX_CONCURRENCY,
+			);
 		});
 	});
 

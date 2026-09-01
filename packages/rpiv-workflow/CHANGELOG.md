@@ -2,7 +2,9 @@
 
 ## [Unreleased]
 
-## [2.8.0] - 2026-08-29
+### Fixed
+
+- **`resolveModel` now receives the workflow name — the per-preset model-tiering rung is reachable from the run path.** The seam (`WorkflowExecutionProvider.resolveModel`, `RunContext.resolveModel`, and the runner/loop dispatch sites) passed only `{ stage, skill }`, so an embedder cascade keyed on the workflow — rpiv-pi's documented `presets.<workflow>.stages.<stage>` rung — could never match and silently fell through to the flat rungs. The id is now `{ workflow, stage, skill }` (required — the runner always knows `run.workflow.name`, and an optional field would invite the same silent-omission bug back), threaded at both dispatch sites (`run-stage`, the fanout unit path) and through resume.
 
 ### Added
 

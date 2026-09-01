@@ -42,7 +42,7 @@ export interface WorkflowExecutionProvider {
 	): WorkflowExecution | Promise<WorkflowExecution>;
 	/** Per-stage model resolution (rpiv-pi's resolveStageModel) — threaded onto
 	 *  RunContext.resolveModel so the dispatcher fills each child's ModelSelection. */
-	resolveModel?(id: { stage: string; skill: string }): ModelSelection | undefined;
+	resolveModel?(id: { workflow: string; stage: string; skill: string }): ModelSelection | undefined;
 	/** Re-open a persisted child-session JSONL and return its branch
 	 *  (`SessionManager.open(file).getBranch()` on the rpiv-pi side), narrowed
 	 *  to `BranchEntry[]`. Threaded onto `RunContext.readSessionBranch` so the

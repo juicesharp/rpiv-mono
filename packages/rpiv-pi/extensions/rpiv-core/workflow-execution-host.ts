@@ -97,7 +97,7 @@ export function createWorkflowExecution(
 		cwd: observer.cwd,
 		runId,
 		childSessionsDir, // resolved by the runner; rpiv-pi does not synthesize the path
-		maxConcurrency: resolveMaxConcurrency(loadModelsConfig()), // config-driven background-lane cap (default 4)
+		maxConcurrency: resolveMaxConcurrency(loadModelsConfig()), // config-driven background-lane cap (default 6)
 	});
 
 	// Record this run as a switchable lane at launch (appears in the ambient
@@ -177,7 +177,8 @@ export async function registerWorkflowExecutionHostProvider(): Promise<void> {
 		const { registerWorkflowExecutionHost } = await import("@juicesharp/rpiv-workflow/startup");
 		registerWorkflowExecutionHost({
 			createHost: createWorkflowExecution,
-			resolveModel: ({ stage, skill }) => toModelSelection(resolveStageModel(loadModelsConfig(), { stage, skill })),
+			resolveModel: ({ workflow, stage, skill }) =>
+				toModelSelection(resolveStageModel(loadModelsConfig(), { workflow, stage, skill })),
 			// Death-scene reader — re-open the just-failed session's persisted JSONL
 			// and return its branch, narrowed to the workflow-owned BranchEntry shape
 			// (the SDK's SessionEntry union carries private discriminators — the

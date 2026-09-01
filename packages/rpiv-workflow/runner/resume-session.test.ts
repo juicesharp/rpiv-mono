@@ -482,7 +482,7 @@ describe("session-backed resume — detaches to the provider's executor host", (
 		// The resumed stage resolved its per-child model through the provider — proving
 		// resolveModel is threaded onto resumed stages, not just live ones.
 		expect(result.success).toBe(true);
-		expect(resolveModel).toHaveBeenCalledWith({ stage: "build", skill: "build" });
+		expect(resolveModel).toHaveBeenCalledWith({ workflow: "wf", stage: "build", skill: "build" });
 	});
 
 	it("threads the lane name to createHost — header.workflow when the run carried no --name alias", async () => {

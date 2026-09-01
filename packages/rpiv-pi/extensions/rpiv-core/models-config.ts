@@ -58,10 +58,12 @@ const _persistableLevelsMatchPiAi: _PersistableLevelsMatchPiAi = true;
  * Background-lane concurrency cap fallback. The fail-soft default applied by
  * `resolveMaxConcurrency` when `~/.config/rpiv-pi/models.json` is absent or
  * carries no valid `maxConcurrency`. Rate limits, not CPU, are the real cap —
- * 4 background lanes is the safe default. Re-exported from
+ * 6 lanes clears the widest built-in fanout batch (the 5-dimension grade
+ * panel, which a cap of 4 split into a 4+1 second batch on every panel) with
+ * one lane of headroom; no rate-limit events were observed at 4. Re-exported from
  * packages/rpiv-pi/extensions/rpiv-core/workflow-execution-host.ts to preserve the tested public surface.
  */
-export const DEFAULT_MAX_CONCURRENCY = 4;
+export const DEFAULT_MAX_CONCURRENCY = 6;
 
 // ---------------------------------------------------------------------------
 // TypeBox schemas
@@ -437,7 +439,7 @@ export function resolveStageModel(
 
 /**
  * Resolve the background-lane concurrency cap from `~/.config/rpiv-pi/models.json`.
- * Returns `DEFAULT_MAX_CONCURRENCY` (4) when the key is absent OR holds an invalid
+ * Returns `DEFAULT_MAX_CONCURRENCY` (6) when the key is absent OR holds an invalid
  * value (non-integer, < 1).
  *
  * NOTE: `Value.Clean` (typebox@1.3.6) does NOT strip invalid scalars — it only

@@ -206,7 +206,7 @@ function buildSingleStageSession(
 		skillContracts: run.skillContracts,
 		stageIndex: idx,
 		snapshot: prep.snapshot,
-		model: run.resolveModel?.({ stage: stage.name, skill: stage.skill }),
+		model: run.resolveModel?.({ workflow: run.workflow.name, stage: stage.name, skill: stage.skill }),
 		signal: run.signal,
 		readSessionBranch: run.readSessionBranch,
 		worktreeDigest: run.worktreeDigest,
