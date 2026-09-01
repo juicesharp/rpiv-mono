@@ -1,6 +1,6 @@
 # @juicesharp/rpiv-workflow
 
-## [Unreleased]
+## [2.9.0] - 2026-09-01
 
 ### Fixed
 
