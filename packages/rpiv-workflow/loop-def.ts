@@ -236,6 +236,19 @@ export interface FanoutLoop extends LoopCommon {
 	 *  `run.signal`), so the same machinery serves both. */
 	failFast?: boolean;
 	/**
+	 * Opt-in halt at generation CLOSE: when a closing generation's every declared
+	 * slot is filled and every one is a failed sentinel (the strict
+	 * all-filled-all-failed condition), the run halts terminally at the loop
+	 * stage with a parent-attributed `FAIL_FANOUT_ALL_FAILED` row instead of
+	 * advancing into a fan-in over an empty channel. An over-cap generation
+	 * under `onCap: "advance"` NEVER qualifies (beyond-cap slots stay
+	 * unfilled, so `filledCount < slots.length`). `failFast` wins when both
+	 * are set — it halts at the FIRST unit failure, before any close. Absent ⇒
+	 * the collect-all contract is unchanged (failed slots become sentinel
+	 * outputs; the chain advances).
+	 */
+	haltWhenAllFailed?: boolean;
+	/**
 	 * When set, the dispatcher injects each completed dependency's published
 	 * artifact path into the dependent unit's prompt as `${depArtifactFlag} <path>`
 	 * (one per direct `Unit.deps` entry whose slot is filled with a non-failed

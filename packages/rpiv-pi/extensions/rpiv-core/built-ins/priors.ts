@@ -18,6 +18,7 @@ import {
 	latestVerdictPerDimension,
 	planAuthoredRisks,
 	procedureSatisfiesDuty,
+	type RiskRecord,
 	rulingEffectivePass,
 	verdictRiskRulings,
 } from "./gates.js";
@@ -186,16 +187,31 @@ const sectionIndexOf = (lines: readonly string[]): string[] => {
 	const idx = new Array<string>(lines.length);
 	let current = "";
 	let inFrontmatter = lines[0]?.trim() === "---";
+	let inFence = false;
 	for (let i = 0; i < lines.length; i++) {
 		if (inFrontmatter) {
 			idx[i] = "frontmatter";
 			if (i > 0 && lines[i].trim() === "---") inFrontmatter = false;
 			continue;
 		}
-		const m = /^##\s+(.*)$/.exec(lines[i]);
-		if (m) {
-			const ph = /^Phase\s+(\d+)/i.exec(m[1].trim());
-			current = ph ? `phase ${ph[1]}` : m[1].trim().toLowerCase();
+		// Fence-aware: a `## ` line INSIDE a fenced code block is content, not a
+		// heading — build plans routinely embed markdown edits (a CHANGELOG
+		// snippet's `## [Unreleased]`), and keying those as sections
+		// manufactured phantom touched keys no finding could ever cite
+		// (observed live: run b307's code-fix went broad on the phantom
+		// `[unreleased]` from an embedded changelog block). Fenced lines
+		// attribute to the enclosing section.
+		if (/^\s*```/.test(lines[i])) {
+			inFence = !inFence;
+			idx[i] = current;
+			continue;
+		}
+		if (!inFence) {
+			const m = /^##\s+(.*)$/.exec(lines[i]);
+			if (m) {
+				const ph = /^Phase\s+(\d+)/i.exec(m[1].trim());
+				current = ph ? `phase ${ph[1]}` : m[1].trim().toLowerCase();
+			}
 		}
 		idx[i] = current;
 	}
@@ -254,26 +270,77 @@ const sectionDiff = (prior: string, current: string): { touchedSections: Set<str
 };
 
 /**
- * Plan sections cited by the FAILING dimensions' findings — extracted from each
- * finding's `where` and `detail` (`Phase N` → `phase N`, lowercased). Preferred
- * `where: "Phase 1 > lane-dock-editor.ts Edit 1"` → `phase 1`; a repo
- * `path:line`-only `where` (and a detail with no `Phase N`) contributes NO plan
- * section. Empty when no failing finding carries an extractable plan-section
- * reference — fail-closed: the caller treats an empty cite set against any
- * non-housekeeping touched section as out-of-scope (non-surgical).
+ * Plan sections cited by the FAILING dimensions' verdicts, from THREE sources:
+ *
+ *   1. `Phase N` mentions anywhere in a finding's `where` or `detail`
+ *      (`phase N`, the original extraction).
+ *   2. The `where`'s LEADING SEGMENT as a section heading: the grade skill's
+ *      `where` convention is "`path:line` or a section heading", and panel
+ *      wheres read "## Phase 1 > Success Criteria > …" — the text before the
+ *      first `>` names the plan section, normalized exactly as
+ *      `sectionIndexOf` keys it (leading `#`s stripped, `Phase N …` →
+ *      `phase N`, else lowercased). A repo path (a `/` or a `.ext:NN` tail)
+ *      is a code cite, never a plan section. Before this, `citedSections`
+ *      could ONLY emit `phase N` keys while `touchedSections` emits every
+ *      heading key — so a finding citing "Out of Scope" or "Risk Flags"
+ *      contributed nothing and any amend touching those sections was
+ *      structurally guaranteed non-surgical (the observed always-broad).
+ *   3. Failing risk RULINGS (the reason correctness re-grades when findings
+ *      are empty): a ruling's repair edits the plan's `## Risk Flags` entry
+ *      and, for a `verify-at-implement` deferral, the owner phase — cite
+ *      both, so a risk-driven fix loop is not broad by construction.
+ *
+ * Still fail-closed: an empty cite set against any non-housekeeping touched
+ * section stays out-of-scope (non-surgical).
  */
-const citedSections = (latest: ReadonlyMap<string, Output>, pending: readonly string[]): Set<string> => {
+const citedSections = (
+	latest: ReadonlyMap<string, Output>,
+	pending: readonly string[],
+	risks: ReadonlyMap<string, RiskRecord>,
+): Set<string> => {
 	const cited = new Set<string>();
+	const addHeading = (raw: string): void => {
+		const cleaned = raw.replace(/^#+\s*/, "").trim();
+		if (cleaned.length === 0) return;
+		const ph = /^Phase\s+(\d+)/i.exec(cleaned);
+		if (ph) {
+			cited.add(`phase ${ph[1]}`);
+			return;
+		}
+		// A code cite, not a section: a tight path segment (`a/b`) or an
+		// `ext:NN` tail. A SPACED slash is prose punctuation ("Synthesis Notes
+		// / 'Adopted rider' bullet" — run d5a9), not a path.
+		if (/\S\/\S/.test(cleaned) || /\.\w+:\d+/.test(cleaned)) return;
+		cited.add(headingCore(cleaned).toLowerCase());
+	};
 	for (const d of pending) {
-		const findings = (latest.get(d)?.data as { findings?: unknown } | undefined)?.findings;
-		if (!Array.isArray(findings)) continue;
-		for (const f of findings) {
-			if (f == null || typeof f !== "object") continue;
-			const where = typeof (f as { where?: unknown }).where === "string" ? (f as { where: string }).where : "";
-			const detail = typeof (f as { detail?: unknown }).detail === "string" ? (f as { detail: string }).detail : "";
-			for (const text of [where, detail]) {
-				for (const m of text.matchAll(/Phase\s+(\d+)/gi)) cited.add(`phase ${m[1]}`);
+		const o = latest.get(d);
+		const findings = (o?.data as { findings?: unknown } | undefined)?.findings;
+		if (Array.isArray(findings)) {
+			for (const f of findings) {
+				if (f == null || typeof f !== "object") continue;
+				const where = typeof (f as { where?: unknown }).where === "string" ? (f as { where: string }).where : "";
+				const detail =
+					typeof (f as { detail?: unknown }).detail === "string" ? (f as { detail: string }).detail : "";
+				for (const text of [where, detail]) {
+					for (const m of text.matchAll(/Phase\s+(\d+)/gi)) cited.add(`phase ${m[1]}`);
+					// A `## Heading` mention ANYWHERE in the finding cites that
+					// section — the observed shape (opendots run d5a9) is a
+					// completeness finding whose remedy is CREATING a section,
+					// named only in a parenthetical ("... (missing ## Whole-Plan
+					// Verification section)"): the amend's creation of that very
+					// section must count as cited.
+					for (const m of text.matchAll(/##\s+([A-Za-z][^#>\n]*)/g)) addHeading(m[1]);
+				}
+				addHeading(where.split(">")[0] ?? "");
 			}
+		}
+		if (!o) continue;
+		for (const r of verdictRiskRulings(o)) {
+			if (rulingEffectivePass(r, risks.get(r.id))) continue;
+			cited.add("risk flags");
+			const owner = risks.get(r.id)?.owner;
+			if (typeof owner === "number") cited.add(`phase ${owner}`);
 		}
 	}
 	return cited;
@@ -308,16 +375,135 @@ const latestPriorContent = (state: RunView, priorChannel: string, cwd: string): 
 };
 
 /**
+ * The heading CORE of a section reference — the text before the first
+ * descriptor separator (an em/en-dash clause, a spaced slash, a
+ * parenthetical). Real headings and finding wheres both carry descriptor
+ * suffixes ("Whole-Plan Verification (owned by validate — not any phase)",
+ * "Synthesis Notes — 'Adopted rider' bullet"); the core is the comparable
+ * identity.
+ */
+const headingCore = (s: string): string => s.split(/ \(|\s+—\s+|\s+–\s+|\s+\/\s+/)[0]?.trim() ?? s;
+
+/**
+ * True when a touched section is covered by the cite set. `phase N` keys
+ * match EXACTLY (prefix matching would let "phase 1" cover "phase 10").
+ * Non-phase keys match on a word-boundary PREFIX in EITHER direction —
+ * observed both ways in run d5a9: a cited where carries a descriptor suffix
+ * ("synthesis notes — 'adopted rider' bullet") that must cover the bare
+ * touched heading key ("synthesis notes"), and a real heading carries its own
+ * suffix ("whole-plan verification (owned by validate — not any phase)") that
+ * a bare cite ("whole-plan verification") must cover. The boundary check
+ * (the next character must not be alphanumeric) keeps "notes" from covering
+ * "notes-extra".
+ */
+const sectionCovered = (section: string, cited: ReadonlySet<string>): boolean => {
+	if (cited.has(section)) return true;
+	if (/^phase \d+$/.test(section)) return false; // phase keys are exact-only
+	const core = headingCore(section);
+	const boundary = (long: string, short: string): boolean =>
+		short.length > 0 &&
+		long.startsWith(short) &&
+		(long.length === short.length || !/[a-z0-9]/i.test(long[short.length] ?? ""));
+	for (const c of cited) {
+		if (/^phase \d+$/.test(c)) continue;
+		if (boundary(c, section) || boundary(section, c) || boundary(c, core) || boundary(core, c)) return true;
+	}
+	return false;
+};
+
+/** The surgical-fix guard's decision, with the condition that decided it. */
+interface SurgicalDecision {
+	surgical: boolean;
+	/** Prose naming the deciding condition — the instrumentation channel. */
+	reason: string;
+	changedLines?: number;
+	touchedSections?: string[];
+	citedSections?: string[];
+}
+
+/**
+ * Persist the guard's decision beside the prior sidecar as
+ * `<plan-basename>.decision.json` — the instrumentation the always-broad
+ * diagnosis lacked: real runs showed every observed fix loop re-grading the
+ * full roster, and the surviving artifacts could not say WHICH fail-closed
+ * condition tripped (the plan file is later mutated by splice/reconcile, so
+ * the decision is unreplayable post-hoc). Best-effort and idempotent: the
+ * guard is called from a fanout `units()` fn, which the resume fold re-runs
+ * under THE REPLAY CONTRACT — same replayed inputs ⇒ same bytes ⇒ the rewrite
+ * is a no-op; a write failure never affects the decision.
+ */
+const recordDecision = (cwd: string, target: string, decision: SurgicalDecision): void => {
+	try {
+		mkdirSync(join(cwd, PRIOR_DIR), { recursive: true });
+		writeFileSync(join(cwd, PRIOR_DIR, `${basename(target)}.decision.json`), JSON.stringify(decision, null, 2));
+	} catch {
+		// instrumentation only — never let a write failure change the routing
+	}
+};
+
+/**
+ * The guard body — every missing signal collapses to non-surgical with a
+ * `reason` naming the condition (see `isSurgicalFix` for the contract).
+ */
+const decideSurgicalFix = (
+	state: RunView,
+	priorChannel: string,
+	cwd: string,
+	target: string,
+	latest: ReadonlyMap<string, Output>,
+	pending: readonly string[],
+	risks: ReadonlyMap<string, RiskRecord>,
+): SurgicalDecision => {
+	const prior = latestPriorContent(state, priorChannel, cwd);
+	if (prior === undefined) return { surgical: false, reason: "no readable prior sidecar" };
+	let current: string;
+	try {
+		current = readArtifactFile(target, cwd);
+	} catch {
+		return { surgical: false, reason: "current plan unreadable" };
+	}
+	let diff: { touchedSections: Set<string>; changedLines: number };
+	try {
+		diff = sectionDiff(prior, current);
+	} catch {
+		return { surgical: false, reason: "section diff threw" };
+	}
+	const cited = citedSections(latest, pending, risks);
+	const base = {
+		changedLines: diff.changedLines,
+		touchedSections: [...diff.touchedSections].sort(),
+		citedSections: [...cited].sort(),
+	};
+	for (const section of diff.touchedSections) {
+		if (HOUSEKEEPING_SECTIONS.has(section)) continue;
+		if (!sectionCovered(section, cited)) {
+			return { surgical: false, reason: `touched section no failing verdict cited: ${section}`, ...base };
+		}
+	}
+	if (diff.changedLines > NON_SURGICAL_DIFF_LINE_THRESHOLD) {
+		return {
+			surgical: false,
+			reason: `changed lines ${diff.changedLines} over threshold ${NON_SURGICAL_DIFF_LINE_THRESHOLD}`,
+			...base,
+		};
+	}
+	return { surgical: true, reason: "touched sections all cited, within threshold", ...base };
+};
+
+/**
  * True ONLY when a readable prior exists AND the current plan's diff from it
- * touches ONLY sections a failing finding cited (minus housekeeping) AND the
+ * touches ONLY sections a failing verdict cited (minus housekeeping) AND the
  * changed-line count is within the coarse threshold. Every missing signal — no
  * prior, unreadable sidecar, unreadable current plan, a diff/parse throw, a
- * touched section no failing finding cited, or an over-threshold diff —
+ * touched section no failing verdict cited, or an over-threshold diff —
  * collapses to `false` (fail-closed ⇒ the caller re-grades the full roster
  * when a prior is present, or carries forward when none is). `pending` is
  * consumed as-is: whatever `dimensionsToRegrade` ruled still-blocking (after
  * phase 3's `rulingEffectivePass` clause-3 rewrite) is the set this guard
- * narrows on.
+ * narrows on. `risks` is the plan-authored flag map — ruling-derived cites
+ * (see `citedSections`) need the owner phases. Every call persists its
+ * decision + tripped condition beside the prior (`recordDecision`), so a
+ * future always-broad report names the condition instead of guessing.
  */
 const isSurgicalFix = (
 	state: RunView,
@@ -326,27 +512,11 @@ const isSurgicalFix = (
 	target: string,
 	latest: ReadonlyMap<string, Output>,
 	pending: readonly string[],
+	risks: ReadonlyMap<string, RiskRecord>,
 ): boolean => {
-	const prior = latestPriorContent(state, priorChannel, cwd);
-	if (prior === undefined) return false;
-	let current: string;
-	try {
-		current = readArtifactFile(target, cwd);
-	} catch {
-		return false;
-	}
-	let diff: { touchedSections: Set<string>; changedLines: number };
-	try {
-		diff = sectionDiff(prior, current);
-	} catch {
-		return false;
-	}
-	const cited = citedSections(latest, pending);
-	for (const section of diff.touchedSections) {
-		if (HOUSEKEEPING_SECTIONS.has(section)) continue;
-		if (!cited.has(section)) return false;
-	}
-	return diff.changedLines <= NON_SURGICAL_DIFF_LINE_THRESHOLD;
+	const decision = decideSurgicalFix(state, priorChannel, cwd, target, latest, pending, risks);
+	recordDecision(cwd, target, decision);
+	return decision.surgical;
 };
 
 export { codeDemote, codeSnapshot, isSurgicalFix, planDemote, planSnapshot, priorArtifact };

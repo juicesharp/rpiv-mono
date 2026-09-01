@@ -130,9 +130,14 @@ export const FAIL_BACKWARD_JUMP_EXHAUSTED = (stage: string, revisits: number, ma
  * intervention, not complete; `note` is the edge's own no-match diagnostic
  * (the ROUTE_NOTE `match` attaches), so the toast names the value that failed
  * to route. The stage's own output (its verdict) holds the findings.
+ *
+ * The toast names `/wf @<runId>` — resume re-runs the halted gate against
+ * the repaired tree and continues on a pass, reusing every upstream
+ * artifact; a bare "re-run" reads as "start over" and re-pays the whole
+ * front-load (observed: full re-runs of research+plan for a one-line fix).
  */
-export const FAIL_GATE_STOP = (stage: string, note: string): FailureText => ({
-	toast: `✗ workflow stopped at "${stage}" — its routing gate matched no branch (${note}); see the stage's verdict for findings, then fix and re-run`,
+export const FAIL_GATE_STOP = (stage: string, note: string, runId: string): FailureText => ({
+	toast: `✗ workflow stopped at "${stage}" — its routing gate matched no branch (${note}); see the stage's verdict for findings, then fix and resume with /wf @${runId}`,
 	error: `Routing gate after "${stage}" matched no branch: ${note}`,
 });
 
@@ -152,6 +157,20 @@ export const MSG_LOOP_ZERO_UNITS = (skill: string) =>
 export const FAIL_LOOP_CAP_HALT = (count: number, max: number): FailureText => ({
 	toast: `rpiv: loop cap exceeded (${count}/${max}) — stopping workflow to prevent an unbounded loop`,
 	error: `Loop cap exceeded: ${count} units (max ${max})`,
+});
+
+/**
+ * A `haltWhenAllFailed` fanout generation closed with EVERY declared slot a
+ * failed sentinel (strict all-filled-all-failed) — the run halts terminally at
+ * the loop stage instead of advancing into a fan-in over an empty channel.
+ * `failed`/`total` are the closing generation's failed and total slot counts;
+ * the `error` string's fanout-stage attribution becomes the recap
+ * `failureReason`. Tests pin substrings (`Fanout all-failed`), not full
+ * sentences.
+ */
+export const FAIL_FANOUT_ALL_FAILED = (skill: string, failed: number, total: number): FailureText => ({
+	toast: `rpiv: ${skill} fanout failed in full (${failed}/${total} units) — stopping workflow`,
+	error: `Fanout all-failed at stage "${skill}" (${failed}/${total} units failed)`,
 });
 
 /**

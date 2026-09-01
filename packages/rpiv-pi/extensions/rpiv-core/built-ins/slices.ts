@@ -60,12 +60,16 @@ const sliceDeps = (entry: Record<string, unknown>): number[] => {
 /** Fan `design-slice` out over the latest slice map's `slices:` array — one design
  *  session per slice, dependency-ordered. `deps` (slice-N unit ids) drive the wave
  *  scheduler; `depArtifactFlag` injects each completed dependency's design path as
- *  `--upstream <path>` so a dependent slice reads its dependency's decided Key Interfaces. */
+ *  `--upstream <path>` so a dependent slice reads its dependency's decided Key
+ *  Interfaces. `haltWhenAllFailed` closes the observed dead-generation shape: when
+ *  every design unit of a generation fails, the run halts at this stage instead of
+ *  falling through to `design-review` over an empty `designs` channel. */
 const SLICE_DESIGN_FANOUT = fanout({
 	source: "slices",
 	unit: { by: "frontmatter-array", pattern: "slices" },
 	max: MAX_PHASES,
 	depArtifactFlag: "--upstream",
+	haltWhenAllFailed: true,
 	units: ({ state, cwd }) => {
 		const doc = latestFsArtifact(state, "slices");
 		if (doc?.handle.kind !== "fs") return [];

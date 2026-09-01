@@ -215,6 +215,11 @@ describe("fanout() / iterate() / assess() constructors", () => {
 		expect(fanout({ units: () => [] }).depArtifactFlag).toBeUndefined();
 	});
 
+	it("fanout() carries haltWhenAllFailed (and omits it by default)", () => {
+		expect(fanout({ units: () => [], haltWhenAllFailed: true }).haltWhenAllFailed).toBe(true);
+		expect(fanout({ units: () => [] }).haltWhenAllFailed).toBeUndefined();
+	});
+
 	it("assess() throws on a non-function done / feedForward", () => {
 		expect(() =>
 			assess({

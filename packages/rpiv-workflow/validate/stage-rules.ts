@@ -30,7 +30,7 @@ import {
 	verifyShapeIssues,
 } from "../loop-constructors.js";
 import { readName } from "../stage-def.js";
-import { resolvePublishName } from "../stage-identity.js";
+import { actsPublishName, resolvePublishName } from "../stage-identity.js";
 import {
 	MAX_VALIDATION_RETRIES,
 	MAX_VALIDATION_RETRY_TIMEOUT_MS,
@@ -427,6 +427,11 @@ export function publishedNamesOf(w: Workflow): Set<string> {
 	const published = new Set<string>();
 	for (const [name, stage] of Object.entries(w.stages)) {
 		if (stage.kind === "produces") published.add(resolvePublishName(stage, name));
+		// Acts stages with an EXPLICITLY NAMED outcome publish too (the runtime
+		// write rule in `applyCompletedStage`) — the scan must match it so a
+		// downstream `reads: ["<acts-outcome>"]` doesn't falsely error at load.
+		const actsKey = actsPublishName(stage);
+		if (actsKey !== undefined) published.add(actsKey);
 		// Every judge channel (single judge, panel members, AND the folded verdict)
 		// counts for reachability — shared walk with the contract-compat index.
 		forEachJudgeChannel(stage, name, (channel) => published.add(channel));

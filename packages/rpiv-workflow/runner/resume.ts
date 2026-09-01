@@ -44,6 +44,7 @@ import {
 import { ERR_RESUME_LOOP_MISMATCH } from "../messages.js";
 import { failedOutput, type Output, outputMeta } from "../output.js";
 import {
+	type RoutingDecision,
 	readAllStagesForResume,
 	STATE_SCHEMA_VERSION,
 	type WorkflowHeader,
@@ -89,6 +90,15 @@ export type ReconstructResult =
 			trailing?: LoopResumePoint;
 			/** Guard tripped mid-fold — the resume entry records this as a terminal failure. */
 			drift?: { parent: string; errMsg: string };
+			/**
+			 * The trail's terminal failed row is a GATE-STOP HALT: it sits
+			 * immediately behind a routed-stop `RoutingDecision` from the same
+			 * stage (the [stop row, `FAIL_GATE_STOP` row] pair chain-advance
+			 * writes for a noted decision stop). The entry selector uses it to
+			 * pick the re-measure path for a side-effect gate stage — an ordinary
+			 * stage failure (no stop row behind it) never sets this.
+			 */
+			gateStop?: RoutingDecision;
 	  }
 	| { ok: false; reason: "no-rows" | "stage-gone" | "malformed-row" | "version-mismatch"; detail: string };
 
@@ -125,7 +135,15 @@ export async function reconstructState(
 		drift: undefined,
 	};
 
-	for (const row of rows) {
+	for (const [i, row] of rows.entries()) {
+		// A routed-stop separator closes (and projects) the open generation
+		// BEFORE this row folds — the live driver had already projected the loop
+		// when its route fired, so the replayed state at a post-stop re-dispatch
+		// stays byte-identical to what the live resume saw (THE REPLAY
+		// CONTRACT). This also stops a gate-stop halt row from masquerading as a
+		// mid-flight abort marker below, and splits the halted generation from
+		// the fresh one a stop-resume re-dispatch appends for the same parent.
+		if (read.stopBefore.has(i)) closeGeneration(acc);
 		if (isUnitRow(row)) {
 			const refusal = await foldUnitRow(acc, workflow, row);
 			if (refusal) return refusal;
@@ -147,6 +165,14 @@ export async function reconstructState(
 
 	acc.state.lastAllocatedStageNumber = acc.lastStageNumber; // allocator continues monotonically
 
+	// Gate-stop halt trailer: the last row is the failed `FAIL_GATE_STOP` row
+	// chain-advance appended right behind its routed-stop routing row (same
+	// stage by construction — both are written from `currentName`; the equality
+	// check is the shape guard against a foreign interleaving).
+	const last = rows[rows.length - 1]!;
+	const stopAtLast = read.stopBefore.get(rows.length - 1);
+	const gateStop = last.status === "failed" && stopAtLast?.fromStage === last.stage ? stopAtLast : undefined;
+
 	return {
 		ok: true,
 		state: acc.state,
@@ -156,6 +182,7 @@ export async function reconstructState(
 		rows,
 		trailing: acc.gen ? toPoint(acc.gen) : undefined,
 		drift: acc.drift,
+		gateStop,
 	};
 }
 

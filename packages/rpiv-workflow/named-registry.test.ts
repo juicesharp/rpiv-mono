@@ -13,8 +13,18 @@ import { join } from "node:path";
 import { createMockSessionChain, mockAssistantMessage } from "@juicesharp/rpiv-test-utils";
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { acts, defineWorkflow, fanin, gate, produces, type StageDef, type Workflow } from "./api.js";
-import { fs as fsHandle } from "./handle.js";
+import {
+	acts,
+	defineRoute,
+	defineWorkflow,
+	type EdgeFn,
+	fanin,
+	gate,
+	produces,
+	type StageDef,
+	type Workflow,
+} from "./api.js";
+import { fs as fsHandle, opaque } from "./handle.js";
 import type { Outcome } from "./output-spec.js";
 import { eq, gt } from "./predicates.js";
 import { runWorkflow } from "./runner/index.js";
@@ -625,5 +635,76 @@ describe("reads: runtime preflight halts when slot is empty", () => {
 		expect(result.success).toBe(false);
 		expect(result.error).toMatch(/reads "produce"/);
 		expect(result.error).toMatch(/state.named\["produce"\] is empty/);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Side-effect outcome publishing — an acts stage with a NAMED outcome writes
+// its channel too (the Outcome.name contract), so a gate can fold an acts
+// arm's digest: the remediation fix-round cap and the unchanged-tree stop both
+// read `state.named.<name>`, which the produces-only write gate previously
+// left unwritten for the very stage kind that carries them.
+// ---------------------------------------------------------------------------
+
+describe("state.named — side-effect outcome publishing (the remediation-digest seam)", () => {
+	let tmpDir: string;
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "rpiv-named-acts-"));
+	});
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	/** An acts outcome shaped like `remediationOutcome`: opaque artifact + parsed `{ changed }` data. */
+	const digestOutcome = (changed: boolean): Outcome<unknown, "digest", { changed: boolean }> => ({
+		name: "digest",
+		collector: {
+			collect: () => ({
+				kind: "ok",
+				artifacts: [{ handle: opaque(changed ? "digest-changed" : "digest-unchanged"), role: "digest" }],
+			}),
+		},
+		parser: { parse: () => ({ kind: "ok", payload: { kind: "digest", data: { changed } } }) },
+	});
+
+	it("a channel-length cap over an acts outcome stops the fix loop after exactly ONE round (e2e, real runner)", async () => {
+		// The ship-preset cap shape end to end: a judge that always fails, a fix
+		// arm publishing one digest per round, and a gate whose budget IS the
+		// digest channel's length. Round 1: no digest yet → fix. Round 2: one
+		// digest → the cap trips and the run stops. Without the acts publish the
+		// channel stays empty forever and only the backward-jump guard ends the
+		// loop — the exact inert-cap defect this seam regressed into.
+		const capGate: EdgeFn = defineRoute(
+			["fix", "stop"],
+			({ state }) => ((state.named.digest?.length ?? 0) >= 1 ? "stop" : "fix"),
+			{ readsData: false },
+		);
+		const workflow = defineWorkflow({
+			name: "wf",
+			start: "judge",
+			stages: {
+				judge: produces.script({
+					run: () => ({
+						kind: "artifacts",
+						artifacts: [{ handle: fsHandle(".rpiv/artifacts/validation/report.md"), role: "primary" }],
+						data: { verdict: "fail" },
+					}),
+				}),
+				fix: acts({ skill: "fix", outcome: digestOutcome(true) }),
+			},
+			edges: { judge: capGate, fix: "judge" },
+		});
+		writeArtifact(tmpDir, ".rpiv/artifacts/validation/report.md");
+
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [{ branch: [mockAssistantMessage("applied one localized fix")] }],
+		});
+
+		const result = await runWorkflow(chain.ctx, { workflow, input: "x" });
+		// The cap's stop is a noteless decision stop — a deliberate completion.
+		expect(result.error).toBeUndefined();
+		expect(result.success).toBe(true);
+		expect(chain.sentMessages.filter((m) => m.startsWith("/skill:fix"))).toHaveLength(1);
 	});
 });

@@ -118,6 +118,71 @@ describe("validate → code-review routing in built-in workflows", () => {
 	});
 });
 
+// ---------------------------------------------------------------------------
+// haltWhenAllFailed wiring — the flagged fanout inventory, swept across every
+// built-in workflow. Flagging a fanout is a deliberate halt-semantics decision
+// (collect-all is the default posture), so the flagged set is pinned exactly:
+// build's design fanout, all five build grade/confirm panels, and ship's
+// grade. Any future flagging (e.g. SYNTH_CLUSTER_FANOUT) must extend the
+// expectation consciously.
+// ---------------------------------------------------------------------------
+
+describe("haltWhenAllFailed wiring (flagged fanout inventory)", () => {
+	const fanoutLoopOf = (wf: Workflow, stage: string) => {
+		const loop = wf.stages[stage]?.loop;
+		if (loop?.kind !== "fanout") throw new Error(`${wf.name} ${stage} stage has no fanout loop`);
+		return loop;
+	};
+
+	it("flags exactly build's design fanout + five panels + ship's grade; every other fanout stays flagless", () => {
+		const fanoutStages: string[] = [];
+		const flagged: string[] = [];
+		for (const wf of builtInWorkflows) {
+			for (const [stage, def] of Object.entries(wf.stages)) {
+				const loop = def?.loop;
+				if (loop?.kind !== "fanout") continue;
+				fanoutStages.push(`${wf.name}:${stage}`);
+				if (loop.haltWhenAllFailed === true) flagged.push(`${wf.name}:${stage}`);
+			}
+		}
+		// The full fanout inventory is pinned too — a new (or renamed) fanout
+		// stage forces a conscious decision here: flag it and extend the
+		// expected set below, or leave it flagless.
+		expect([...fanoutStages].sort()).toEqual([
+			"build:code",
+			"build:code-confirm",
+			"build:code-grade",
+			"build:implement",
+			"build:plan-confirm",
+			"build:plan-grade",
+			"build:slice-design",
+			"build:slice-grade",
+			"build:subplan",
+			"polish:implement",
+			"ship:grade",
+			"ship:implement",
+			"vet:implement",
+		]);
+		expect(flagged.sort()).toEqual([
+			"build:code-confirm",
+			"build:code-grade",
+			"build:plan-confirm",
+			"build:plan-grade",
+			"build:slice-design",
+			"build:slice-grade",
+			"ship:grade",
+		]);
+		// Belt-and-braces through the narrow helper: the leak-discipline stages
+		// (the plan-phases spread bases and SYNTH_CLUSTER_FANOUT) read undefined.
+		expect(fanoutLoopOf(findWorkflow("vet"), "implement").haltWhenAllFailed).toBeUndefined();
+		expect(fanoutLoopOf(findWorkflow("polish"), "implement").haltWhenAllFailed).toBeUndefined();
+		expect(fanoutLoopOf(findWorkflow("ship"), "implement").haltWhenAllFailed).toBeUndefined();
+		expect(fanoutLoopOf(findWorkflow("build"), "implement").haltWhenAllFailed).toBeUndefined();
+		expect(fanoutLoopOf(findWorkflow("build"), "code").haltWhenAllFailed).toBeUndefined();
+		expect(fanoutLoopOf(findWorkflow("build"), "subplan").haltWhenAllFailed).toBeUndefined();
+	});
+});
+
 it("build is the default workflow (builtInWorkflows[0].name === 'build')", () => {
 	// Position 0 is load-bearing: resolve-default.ts picks
 	// `Map.keys().next().value` when no project/user config sets a default, so
@@ -953,6 +1018,12 @@ describe("vet workflow", () => {
 			// tests (the DAG-specific behavior is shared across build + vet).
 		});
 
+		it("implement stays flagless — a failed phase never halts its siblings (collect-all contract)", () => {
+			const loop = findWorkflow("vet").stages.implement?.loop;
+			if (loop?.kind !== "fanout") throw new Error("vet implement stage has no fanout loop");
+			expect(loop.haltWhenAllFailed).toBeUndefined();
+		});
+
 		it("rewires the implement edge through the scope-check into validate, backward loop intact", () => {
 			const wf = findWorkflow("vet");
 			const edges = wf.edges;
@@ -1108,6 +1179,12 @@ describe("polish workflow", () => {
 			expect(wf.stages.blueprint?.loop?.kind).toBe("iterate");
 			expect(wf.stages.blueprint?.kind).toBe("produces");
 			expect(wf.stages.implement?.loop?.kind).toBe("fanout");
+		});
+
+		it("implement stays flagless — the per-phase implement lane keeps the collect-all contract", () => {
+			const loop = findWorkflow("polish").stages.implement?.loop;
+			if (loop?.kind !== "fanout") throw new Error("polish implement stage has no fanout loop");
+			expect(loop.haltWhenAllFailed).toBeUndefined();
 		});
 
 		it("code-review sources its schema from the contract (no inline outputSchema) and gates to commit | blueprint", () => {
@@ -1398,6 +1475,10 @@ describe("SLICE_DESIGN_FANOUT (build design — deps + --upstream)", () => {
 		expect(designLoop().depArtifactFlag).toBe("--upstream");
 	});
 
+	it("halts the run when every design unit of a generation fails (haltWhenAllFailed)", () => {
+		expect(designLoop().haltWhenAllFailed).toBe(true);
+	});
+
 	it("maps each slice's frontmatter deps to slice-N unit ids", async () => {
 		const rel = ".rpiv/artifacts/slices/map.md";
 		writeSlices(
@@ -1472,6 +1553,16 @@ describe("build plan gate grade panel (--context threading)", () => {
 			} as unknown as RunView,
 		});
 		expect(units.every((u) => !u.prompt.includes("--context"))).toBe(true);
+	});
+
+	it("every grade/confirm panel halts when an entire generation fails (haltWhenAllFailed via the shared factory)", () => {
+		for (const stage of ["slice-grade", "plan-grade", "plan-confirm", "code-grade", "code-confirm"]) {
+			const loop = findWorkflow("build").stages[stage]?.loop;
+			if (loop?.kind !== "fanout") throw new Error(`build ${stage} stage has no fanout loop`);
+			// One flag at the shared fanout({ ... }) in gradePanelFanout — all five
+			// panel instances inherit by construction.
+			expect(loop.haltWhenAllFailed, stage).toBe(true);
+		}
 	});
 });
 
@@ -1761,7 +1852,11 @@ describe("ship grade panel (tier-independent roster bypass)", () => {
 			);
 		});
 
-		it("omits --cite-check when the cite floor is clean or the channel is absent", async () => {
+		it("threads --cite-check on a CLEAN floor verdict too (resolution settled); omits it only when the channel is absent", async () => {
+			// A clean verdict is load-bearing evidence: it settles citation
+			// RESOLUTION, so the correctness grader skips the mechanical
+			// re-resolution and spot-checks semantics only (citeCheckFlag).
+			const CITE = ".rpiv/artifacts/verdicts/plan-cite-check__p.json";
 			const base = {
 				plans: [dataOut(PLAN, { phase_count: 1 })],
 				research: [out(".rpiv/artifacts/research/r.md")],
@@ -1774,22 +1869,25 @@ describe("ship grade panel (tier-independent roster bypass)", () => {
 					named: {
 						...base,
 						"plan-cite-check": [
-							dataOut(".rpiv/artifacts/verdicts/plan-cite-check__p.json", {
-								dimension: "structure",
-								pass: true,
-								severity: "none",
-								findings: [],
-							}),
+							dataOut(CITE, { dimension: "structure", pass: true, severity: "none", findings: [] }),
 						],
 					},
 				} as unknown as RunView,
 			});
+			expect(clean.find((u) => u.label === "correctness")?.prompt).toContain(`--cite-check ${CITE}`);
+			expect(clean.filter((u) => u.label !== "correctness").every((u) => !u.prompt.includes("--cite-check"))).toBe(
+				true,
+			);
 			const absent = await SHIP_DIMENSION_FANOUT.units({
 				cwd: "/repo",
 				artifact: undefined,
 				state: { named: base } as unknown as RunView,
 			});
-			expect([...clean, ...absent].every((u) => !u.prompt.includes("--cite-check"))).toBe(true);
+			expect(absent.every((u) => !u.prompt.includes("--cite-check"))).toBe(true);
+		});
+
+		it("halts the run when every dimension unit of a generation fails (haltWhenAllFailed)", () => {
+			expect(SHIP_DIMENSION_FANOUT.haltWhenAllFailed).toBe(true);
 		});
 	});
 
@@ -2001,6 +2099,73 @@ describe("build goal channel (verbatim brief threading)", () => {
 			const parsed = JSON.parse(readFileSync(join(tmpDir, baseline?.handle.path ?? ""), "utf-8"));
 			expect(parsed).toEqual({ paths: [] });
 		});
+
+		it("halts a garbage brief (< 12 non-whitespace chars) with the preflight error before any fs side effect", () => {
+			const stage = build().stages.goal;
+			if (!stage?.run) throw new Error("build goal stage has no run function");
+			const run = stage.run as (ctx: { cwd: string; input?: undefined; state: RunView }) => {
+				artifacts: readonly { handle: { kind: string; path: string }; role?: string }[];
+			};
+			// 'do something' = 11 non-whitespace chars — exactly one below the threshold.
+			expect(() =>
+				run({
+					cwd: tmpDir,
+					input: undefined,
+					state: { originalInput: "do something", named: {} } as unknown as RunView,
+				}),
+			).toThrow(/re-invoke with a fuller brief/);
+			// The guard fires before the stamp — nothing was written (no goal dir,
+			// no goal file, no baseline).
+			expect(existsSync(join(tmpDir, ".rpiv/artifacts/goal"))).toBe(false);
+		});
+
+		it("passes a short-but-real brief through to the goal artifact and baseline", () => {
+			const stage = build().stages.goal;
+			if (!stage?.run) throw new Error("build goal stage has no run function");
+			const run = stage.run as (ctx: { cwd: string; input?: undefined; state: RunView }) => {
+				artifacts: readonly { handle: { kind: string; path: string }; role?: string }[];
+			};
+			// 'fix the flaky lane-dock resize test' = 30 non-whitespace chars.
+			const brief = "fix the flaky lane-dock resize test";
+			const output = run({
+				cwd: tmpDir,
+				input: undefined,
+				state: { originalInput: brief, named: {} } as unknown as RunView,
+			});
+			const handle = output.artifacts[0]?.handle;
+			expect(handle?.kind).toBe("fs");
+			expect(handle?.path).toMatch(/^\.rpiv\/artifacts\/goal\/goal-.+\.md$/);
+			expect(readFileSync(join(tmpDir, handle?.path ?? ""), "utf-8")).toBe(brief);
+			const baseline = output.artifacts[1];
+			expect(baseline?.role).toBe("baseline");
+			expect(baseline?.handle.path).toMatch(/^\.rpiv\/artifacts\/goal\/baseline-.+\.json$/);
+			const parsed = JSON.parse(readFileSync(join(tmpDir, baseline?.handle.path ?? ""), "utf-8"));
+			expect(parsed).toEqual({ paths: [] });
+		});
+	});
+
+	it("vet's goal capture passes a bare review-scope token — the garbage floor is build/ship-only", () => {
+		// `/wf vet staged` is a documented invocation whose whole brief is 6
+		// non-whitespace characters. Vet captures via captureReviewScope (no
+		// floor); the strict captureGoal would have halted it.
+		const stage = findWorkflow("vet").stages.goal;
+		if (!stage?.run) throw new Error("vet goal stage has no run function");
+		const run = stage.run as (ctx: { cwd: string; input?: undefined; state: RunView }) => {
+			artifacts: readonly { handle: { kind: string; path: string }; role?: string }[];
+		};
+		const tmp = mkdtempSync(join(tmpdir(), "rpiv-vet-goal-"));
+		try {
+			const output = run({
+				cwd: tmp,
+				input: undefined,
+				state: { originalInput: "staged", named: {} } as unknown as RunView,
+			});
+			const handle = output.artifacts[0]?.handle;
+			expect(handle?.kind).toBe("fs");
+			expect(readFileSync(join(tmp, handle?.path ?? ""), "utf-8")).toBe("staged");
+		} finally {
+			rmSync(tmp, { recursive: true, force: true });
+		}
 	});
 
 	it("research dispatches the raw brief via prompt (goal displaced it from the start slot)", () => {
@@ -2068,6 +2233,137 @@ describe("build goal channel (verbatim brief threading)", () => {
 			state: { named: { plans: [out(".rpiv/artifacts/plans/p.md")] } } as unknown as RunView,
 		});
 		expect(dispatch).toBe("/skill:validate .rpiv/artifacts/plans/p.md");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// acceptance channel — the goal-derived executable standard of completion,
+// frozen between research and planning so it cannot inherit the plan's scope.
+// Threading: the completeness grade unit (--acceptance, that dimension only)
+// and validate's prompt (which EXECUTES the items' evidence commands). The
+// generative stages stay acceptance-blind, the bounded-context doctrine that
+// keeps `goal` out of them applied to its derived standard too.
+// ---------------------------------------------------------------------------
+
+describe("acceptance channel (executable standard threading)", () => {
+	const out = (rel: string) => ({ artifacts: [{ handle: fsHandle(rel) }], data: undefined, kind: "", meta: {} });
+	const gateUnits = (wfName: string, stage: string, named: Record<string, unknown>) => {
+		const loop = findWorkflow(wfName).stages[stage]?.loop;
+		if (loop?.kind !== "fanout") throw new Error(`${wfName} ${stage} stage has no fanout loop`);
+		return loop.units({ cwd: "/repo", artifact: undefined, state: { named } as unknown as RunView });
+	};
+
+	it("build derives acceptance between research and slice; slice's research input rides its explicit read", () => {
+		const wf = findWorkflow("build");
+		expect(wf.stages.acceptance?.kind).toBe("produces");
+		expect(wf.stages.acceptance?.reads).toEqual(["goal", "research"]);
+		expect(wf.edges.research).toBe("acceptance");
+		expect(wf.edges.acceptance).toBe("slice");
+		// With acceptance holding the rolling primary at this seam, the explicit
+		// read is what restores the research doc as slice's grounding input.
+		expect(wf.stages.slice?.reads).toEqual(["research"]);
+	});
+
+	it("threads --acceptance into the completeness unit only (build plan gate)", async () => {
+		const units = await gateUnits("build", "plan-grade", {
+			plans: [out(".rpiv/artifacts/plans/p.md")],
+			research: [out(".rpiv/artifacts/research/r.md")],
+			goal: [out(".rpiv/artifacts/goal/goal.md")],
+			acceptance: [out(".rpiv/artifacts/acceptance/a.md")],
+		});
+		const byLabel = new Map(units.map((u) => [u.label, u.prompt]));
+		expect(byLabel.get("completeness")).toContain("--acceptance .rpiv/artifacts/acceptance/a.md");
+		for (const d of ["correctness", "actionability", "pattern-following", "architecture-fit"]) {
+			expect(byLabel.get(d)).not.toContain("--acceptance");
+		}
+	});
+
+	it("threads --acceptance into the completeness unit only (ship grade)", async () => {
+		const units = await gateUnits("ship", "grade", {
+			plans: [out(".rpiv/artifacts/plans/p.md")],
+			research: [out(".rpiv/artifacts/research/r.md")],
+			goal: [out(".rpiv/artifacts/goal/goal.md")],
+			acceptance: [out(".rpiv/artifacts/acceptance/a.md")],
+		});
+		const byLabel = new Map(units.map((u) => [u.label, u.prompt]));
+		expect(byLabel.get("completeness")).toContain("--acceptance .rpiv/artifacts/acceptance/a.md");
+		for (const d of ["correctness", "architecture-fit"]) {
+			expect(byLabel.get(d)).not.toContain("--acceptance");
+		}
+	});
+
+	it("omits --acceptance when the channel is empty (vet/polish and user workflows carry no flag)", async () => {
+		const units = await gateUnits("build", "plan-grade", {
+			plans: [out(".rpiv/artifacts/plans/p.md")],
+			research: [out(".rpiv/artifacts/research/r.md")],
+			goal: [out(".rpiv/artifacts/goal/goal.md")],
+		});
+		expect(units.every((u) => !u.prompt.includes("--acceptance"))).toBe(true);
+	});
+
+	it("validate's dispatch appends --acceptance so the skill executes the inventory", () => {
+		const prompt = findWorkflow("ship").stages.validate?.prompt;
+		if (typeof prompt !== "function") throw new Error("ship validate stage has no prompt fn");
+		const dispatch = prompt({
+			cwd: "/repo",
+			input: undefined,
+			state: {
+				named: {
+					plans: [out(".rpiv/artifacts/plans/p.md")],
+					goal: [out(".rpiv/artifacts/goal/goal.md")],
+					acceptance: [out(".rpiv/artifacts/acceptance/a.md")],
+				},
+			} as unknown as RunView,
+		});
+		expect(dispatch).toBe(
+			"/skill:validate .rpiv/artifacts/plans/p.md --goal .rpiv/artifacts/goal/goal.md --acceptance .rpiv/artifacts/acceptance/a.md",
+		);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// build cite-check threading — the settled-facts seam: the deterministic
+// citation floor's verdict reaches every correctness unit (plan/code gates +
+// both confirm arms) WHATEVER its result, so the grader skips the mechanical
+// re-resolution the floor already performed (correctness is the panel's most
+// expensive dimension, and citation re-resolution its most expensive part).
+// ---------------------------------------------------------------------------
+
+describe("build cite-check threading (settled-facts seam)", () => {
+	const out = (rel: string) => ({ artifacts: [{ handle: fsHandle(rel) }], data: undefined, kind: "", meta: {} });
+	const CITE = ".rpiv/artifacts/verdicts/plan-cite-check__p.json";
+	const named = {
+		plans: [out(".rpiv/artifacts/plans/p.md")],
+		research: [out(".rpiv/artifacts/research/r.md")],
+		goal: [out(".rpiv/artifacts/goal/goal.md")],
+		"plan-cite-check": [out(CITE)],
+	};
+	const gateUnits = (stage: string, n: Record<string, unknown>) => {
+		const loop = findWorkflow("build").stages[stage]?.loop;
+		if (loop?.kind !== "fanout") throw new Error(`build ${stage} stage has no fanout loop`);
+		return loop.units({ cwd: "/repo", artifact: undefined, state: { named: n } as unknown as RunView });
+	};
+
+	it("plan-grade threads --cite-check to the correctness unit only — a CLEAN verdict included", async () => {
+		const units = await gateUnits("plan-grade", named);
+		const byLabel = new Map(units.map((u) => [u.label, u.prompt]));
+		expect(byLabel.get("correctness")).toContain(`--cite-check ${CITE}`);
+		for (const [label, prompt] of byLabel) {
+			if (label !== "correctness") expect(prompt).not.toContain("--cite-check");
+		}
+	});
+
+	it("code-grade threads its OWN floor's verdict (code-cite-check), never the plan gate's", async () => {
+		const CODE_CITE = ".rpiv/artifacts/verdicts/code-cite-check__p.json";
+		const units = await gateUnits("code-grade", { ...named, "code-cite-check": [out(CODE_CITE)] });
+		expect(units.find((u) => u.label === "correctness")?.prompt).toContain(`--cite-check ${CODE_CITE}`);
+		expect(units.find((u) => u.label === "correctness")?.prompt).not.toContain(CITE);
+	});
+
+	it("omits --cite-check when the floor channel is absent (user workflows without the floor)", async () => {
+		const { "plan-cite-check": _cite, ...bare } = named;
+		const units = await gateUnits("plan-grade", bare);
+		expect(units.every((u) => !u.prompt.includes("--cite-check"))).toBe(true);
 	});
 });
 
@@ -2874,7 +3170,12 @@ describe("build audit-drop fixes", () => {
 	describe("plan/code gate enforces risk flags (finding 1)", () => {
 		const allDimsPass = [dimVerdict("completeness", true), dimVerdict("correctness", true)];
 
-		it("plan-grade routes to plan-snapshot when a risk flag is ruled fail, despite all dimensions passing", () => {
+		it("plan-grade routes a fresh risk-flag fail to plan-confirm, despite all dimensions passing", () => {
+			// The essential claim is unchanged: a failed ruling never reaches
+			// `code`. Under the severity-gated confirm a risk-ruling blocker is
+			// confirm-worthy (the uphold-or-refute-with-evidence contract is the
+			// designed remedy for an un-grounded ruling), so the fresh fail takes
+			// one second judgment before the fix.
 			const verdicts = [
 				...allDimsPass,
 				dimVerdict("correctness", true, { risk_rulings: [{ id: "r1", pass: false }] }),
@@ -2885,7 +3186,7 @@ describe("build audit-drop fixes", () => {
 					named: { "plan-verdicts": verdicts, "plan-cite-check": [dimVerdict("structure", true)] },
 				} as unknown as RunView,
 			});
-			expect(next).toBe("plan-snapshot");
+			expect(next).toBe("plan-confirm");
 		});
 
 		it("plan-grade routes to code when all dimensions AND all risk flags pass", () => {
@@ -2902,7 +3203,7 @@ describe("build audit-drop fixes", () => {
 			expect(next).toBe("code");
 		});
 
-		it("code-grade routes to code-snapshot when a risk flag is ruled fail", () => {
+		it("code-grade routes a fresh risk-flag fail to code-confirm (never code/implement)", () => {
 			const verdicts = [
 				...allDimsPass,
 				dimVerdict("correctness", true, { risk_rulings: [{ id: "r2", pass: false }] }),
@@ -2913,7 +3214,7 @@ describe("build audit-drop fixes", () => {
 					named: { "code-verdicts": verdicts, "code-cite-check": [dimVerdict("structure", true)] },
 				} as unknown as RunView,
 			});
-			expect(next).toBe("code-snapshot");
+			expect(next).toBe("code-confirm");
 		});
 	});
 
@@ -3128,10 +3429,11 @@ describe("plan/code gate risk-ruling evidence + verify-at-implement duty (phase 
 	const authoredRisks = (risks: Record<string, unknown>[]) => ({ plans: [chan(PLAN, { risks })] });
 	// Each case fixes the completeness verdict (always passes) + the ONE
 	// correctness verdict carrying the risk ruling under test. correctness MUST
-	// appear exactly once: confirmDue counts verdicts per dimension, so a stray
-	// second `correctness` (as the audit-drop block's `dimsPass` carries) bumps
-	// the count to 2 and routes a single demoted verdict to plan-FIX instead of
-	// plan-CONFIRM. The risk ruling is the only variable per case.
+	// appear exactly once: confirmDue keys on the dimension's PREVIOUS verdict,
+	// so a stray second blocking `correctness` (as the audit-drop block's
+	// `dimsPass` carries) makes the block REPEATED and routes a demoted verdict
+	// to plan-FIX instead of plan-CONFIRM. The risk ruling is the only variable
+	// per case.
 	const mkVerdicts = (risk: Record<string, unknown>[]) => [
 		dimVerdict("completeness", true),
 		dimVerdict("correctness", true, { risk_rulings: risk }),
@@ -3550,12 +3852,25 @@ describe("plan/code demote route edges (plan-grade → plan-demote simple hop)",
 		expect(build().edges["code-grade"]).toBe("code-demote");
 	});
 
-	it("plan-demote's route reproduces the prior confirm/snapshot/code decisions (single block → plan-confirm)", () => {
+	it("plan-demote's route sends a first-time MEDIUM blocker straight to plan-snapshot (no confirm session)", () => {
+		// The severity-gated confirm: a first-time medium finding-block buys the
+		// surgical fix directly — the confirm's ~90% no-overturn rate priced it
+		// out of the medium class.
 		expect(
 			route("plan-demote", {
 				plans: [chan(PLAN)],
 				"plan-cite-check": [verdict("structure", true)],
 				"plan-verdicts": [...passRest, verdict("correctness", false)],
+			}),
+		).toBe("plan-snapshot");
+	});
+
+	it("plan-demote's route sends a first-time HIGH blocker to plan-confirm (the expensive class keeps its insurance)", () => {
+		expect(
+			route("plan-demote", {
+				plans: [chan(PLAN)],
+				"plan-cite-check": [verdict("structure", true)],
+				"plan-verdicts": [...passRest, verdict("correctness", false, { severity: "high" })],
 			}),
 		).toBe("plan-confirm");
 	});
@@ -3580,14 +3895,14 @@ describe("plan/code demote route edges (plan-grade → plan-demote simple hop)",
 		).toBe("code");
 	});
 
-	it("code-demote's route mirrors the plan gate on code-verdicts (single block → code-confirm)", () => {
+	it("code-demote's route mirrors the plan gate on code-verdicts (first-time MEDIUM block → code-snapshot)", () => {
 		expect(
 			route("code-demote", {
 				plans: [chan(PLAN)],
 				"code-cite-check": [verdict("structure", true)],
 				"code-verdicts": [...passRest, verdict("correctness", false)],
 			}),
-		).toBe("code-confirm");
+		).toBe("code-snapshot");
 	});
 
 	it("code-demote's route: clean code gate → implement", () => {
@@ -4633,12 +4948,16 @@ describe("build subplan-check (deterministic cluster-coverage floor)", () => {
 // ---------------------------------------------------------------------------
 
 describe("ship workflow (lightweight /wf preset)", () => {
-	// The ten stages in linear order — pins that none of build's elaborate
-	// machinery (slice*/subplan/*confirm/*snapshot/*fix/code*/validate-fix/
-	// *demote) leaked into the lightweight preset.
+	// The twelve stages in linear order — pins that none of build's elaborate
+	// machinery (slice*/subplan/*confirm/*snapshot/plan-fix/code*/*demote)
+	// leaked into the lightweight preset. `validate-fix` is the ONE sanctioned
+	// arm: the terminal gate's single bounded remediation hop (maxFixRounds: 1).
+	// `acceptance` is the goal-derived executable standard of completion,
+	// frozen between research and planning.
 	const SHIP_STAGES: readonly string[] = [
 		"goal",
 		"research",
+		"acceptance",
 		"plan",
 		"plan-cite-check",
 		"grade",
@@ -4646,35 +4965,78 @@ describe("ship workflow (lightweight /wf preset)", () => {
 		"implement-scope-check",
 		"reconcile",
 		"validate",
+		"validate-fix",
 		"commit",
 	];
 
-	it("has exactly the ten stages in linear order (no slice/subplan/confirm/snapshot/fix/code/demote arms)", () => {
+	it("has exactly the twelve stages in linear order (no slice/subplan/confirm/snapshot/plan-fix/code/demote arms)", () => {
 		expect(Object.keys(findWorkflow("ship").stages)).toEqual([...SHIP_STAGES]);
 	});
 
-	it("gate edges are stop-on-fail with no backward edge", () => {
+	it("gate edges are stop-on-fail; the sole backward path is the sanctioned validate-fix re-entry", () => {
 		const wf = findWorkflow("ship");
 		const gates: Array<[string, string[]]> = [
 			["plan-cite-check", ["grade", "stop"]],
 			["grade", ["implement", "stop"]],
 			["implement-scope-check", ["reconcile", "stop"]],
 			["reconcile", ["validate", "stop"]],
-			["validate", ["commit", "stop"]],
+			["validate", ["commit", "stop", "validate-fix"]],
+			// The re-entry: a real fix is re-verified end-to-end (scope floor →
+			// reconcile → validate) before the gate re-folds — the one backward
+			// edge ship's identity concedes, bounded by the gate's fix-round cap.
+			["validate-fix", ["implement-scope-check", "stop"]],
 		];
 		for (const [src, expected] of gates) {
 			const edge = wf.edges[src];
 			if (typeof edge !== "function") throw new Error(`ship ${src} edge is not an EdgeFn`);
 
 			expect([...(edge.targets ?? [])].sort(), src).toEqual([...expected].sort());
-			// No backward edge: every non-stop target must follow `src` in the
-			// linear order — the preset terminates on fail instead of looping.
+			// No backward edge otherwise: every non-stop target must follow `src`
+			// in the linear order — the preset halts on fail instead of looping.
+			if (src === "validate-fix") continue;
 			const from = SHIP_STAGES.indexOf(src);
 			for (const target of edge.targets ?? []) {
 				if (target === "stop") continue;
 				expect(SHIP_STAGES.indexOf(target), `${src} → ${target}`).toBeGreaterThan(from);
 			}
 		}
+	});
+
+	// The terminal gate's single bounded remediation hop — the `remediation`
+	// channel length IS the rounds spent (each validate-fix pass publishes
+	// exactly one digest), so the cap is deterministic and needs no counter.
+	describe("ship validate gate (classifying, maxFixRounds: 1)", () => {
+		const route = (named: Record<string, unknown[]>) => {
+			const e = findWorkflow("ship").edges.validate;
+			if (typeof e !== "function") throw new Error("ship validate edge is not an EdgeFn");
+			return (e as EdgeFn)({ output: undefined, state: { named } as unknown as RunView });
+		};
+		const fail = { data: { verdict: "fail", blockers: [{ id: "b1", command: "npx vitest run", file: "a.ts" }] } };
+
+		it("commits ONLY on an explicit verdict: pass", () => {
+			expect(route({ validation: [{ data: { verdict: "pass" } }] })).toBe("commit");
+		});
+		it("a remediable fail with no remediation spent buys the one hop", () => {
+			expect(route({ validation: [fail] })).toBe("validate-fix");
+		});
+		it("a remediable fail AFTER the spent round stops (the cap)", () => {
+			expect(route({ validation: [fail], remediation: [{ data: { changed: true } }] })).toBe("stop");
+		});
+		it("a prose-only fail stops without buying the hop", () => {
+			expect(route({ validation: [{ data: { verdict: "fail" } }] })).toBe("stop");
+		});
+		it("a missing/unexpected verdict stays terminal", () => {
+			expect(route({})).toBe("stop");
+			expect(route({ validation: [{ data: { verdict: "meh" } }] })).toBe("stop");
+		});
+	});
+
+	it("ship's validate-fix is build's remediate arm verbatim (acts, plans+validation reads, remediation digest)", () => {
+		const stage = findWorkflow("ship").stages["validate-fix"];
+		expect(stage?.kind).toBe("side-effect");
+		expect(stage?.skill).toBe("remediate");
+		expect(stage?.reads).toEqual(["plans", "validation"]);
+		expect(stage?.outcome?.name).toBe("remediation");
 	});
 
 	// Ship deliberately keeps the pass-only match — the tiered verdicts build
@@ -4699,20 +5061,201 @@ describe("ship workflow (lightweight /wf preset)", () => {
 		expect(findWorkflow("ship").stages.implement?.reads).toEqual(["plans"]);
 	});
 
-	it('plan reads ["research", "goal"] (planner anchors on the same verbatim goal the completeness grade judges against)', () => {
+	it('plan reads ["research", "goal", "acceptance"] (planner anchors on the same artifacts the completeness grade judges against)', () => {
 		// Without the explicit reads the stage falls to the rolling primary and
 		// quick-plan sees only the research doc — whose grounding may narrow the
 		// brief — while the grade panel's completeness dimension anchors on the
-		// verbatim goal. Same-anchor wiring lets the plan defer narrowed-out
-		// asks explicitly instead of silently inheriting the drop.
-		expect(findWorkflow("ship").stages.plan?.reads).toEqual(["research", "goal"]);
+		// verbatim goal and the acceptance inventory. Same-anchor wiring lets
+		// the plan record a per-item disposition (implemented or deferred)
+		// instead of silently inheriting the drop.
+		expect(findWorkflow("ship").stages.plan?.reads).toEqual(["research", "goal", "acceptance"]);
 	});
 
-	it("grade carries a fanout loop, the ship-verdicts outcome, and reads plans/research/goal", () => {
+	it('acceptance derives between research and plan, reading ["goal", "research"]', () => {
+		// The executable standard of completion is authored BEFORE the plan
+		// exists (goal → items; research → evidence grounding only), so the
+		// standard cannot inherit the plan's scope — items land as --acceptance
+		// on the completeness grade and are EXECUTED by validate.
+		const wf = findWorkflow("ship");
+		expect(wf.stages.acceptance?.kind).toBe("produces");
+		expect(wf.stages.acceptance?.reads).toEqual(["goal", "research"]);
+		expect(wf.edges.research).toBe("acceptance");
+		expect(wf.edges.acceptance).toBe("plan");
+	});
+
+	it("grade carries a fanout loop, the ship-verdicts outcome, and reads plans/research/goal/acceptance", () => {
 		const grade = findWorkflow("ship").stages.grade;
 		expect(grade?.loop?.kind).toBe("fanout");
 		expect(grade?.outcome?.name).toBe("ship-verdicts");
-		expect(grade?.reads).toEqual(["plans", "research", "goal"]);
+		expect(grade?.reads).toEqual(["plans", "research", "goal", "acceptance"]);
+	});
+
+	// The tiered grounding prompt — pre-chewed briefs (root cause, files, or
+	// fix named in the brief itself) VERIFY instead of re-deriving; symptom-only
+	// briefs keep the lean two-dispatch mapping pass. Both tiers end at the same
+	// Write: a directory-only research path (never a full example path — the
+	// collector's pre-write path-echo hazard), announced in the final message.
+	describe("SHIP_RESEARCH_PROMPT (tiered to the brief's pre-chewedness)", () => {
+		const shipPromptOf = (stage: string) => {
+			const prompt = findWorkflow("ship").stages[stage]?.prompt;
+			if (typeof prompt !== "function") throw new Error(`ship ${stage} stage has no prompt fn`);
+			return prompt;
+		};
+		const render = (brief: string) =>
+			String(
+				shipPromptOf("research")({
+					cwd: "/repo",
+					input: undefined,
+					state: { originalInput: brief, named: {} } as unknown as RunView,
+				}),
+			);
+		const tierLine = (prompt: string, tier: "- Tier A" | "- Tier B") => {
+			const line = prompt.split("\n").find((l) => l.startsWith(tier));
+			if (!line) throw new Error(`prompt has no ${JSON.stringify(tier)} line`);
+			return line;
+		};
+
+		it("classifies the brief first and names both tiers under the no-/skill:research prohibition", () => {
+			const brief = "fix the double-toast on lane switch";
+			const prompt = render(brief);
+			expect(prompt).toContain("Do NOT dispatch /skill:research");
+			expect(prompt).toContain("Classify the brief first, then follow ONLY the matching tier:");
+			expect(prompt).toContain(`Brief: ${brief}`);
+			expect(tierLine(prompt, "- Tier A")).toContain("pre-chewed");
+			expect(tierLine(prompt, "- Tier B")).toContain("symptom only");
+		});
+
+		it("Tier A verifies instead of re-deriving: ONE verify-only cap, drift with corrected file:line, zero-dispatch Read/Grep escape", () => {
+			// The goal's motivating shape — diagnosis and fix named, no files —
+			// is Tier A under the OR trigger (any one of the three suffices).
+			const tierA = tierLine(render("diagnosis and fix named, no files"), "- Tier A");
+			expect(tierA).toContain("the brief names the root cause, the files to touch, or the fix");
+			expect(tierA).toContain("at most ONE codebase-analyzer subagent");
+			expect(tierA).toContain("verify-only");
+			expect(tierA).toContain("confirming or denying each named anchor");
+			expect(tierA).toContain("reporting drift with the corrected file:line");
+			expect(tierA).toContain("dispatch nothing — Read/Grep them yourself");
+		});
+
+		it("Tier B keeps the two-dispatch mapping sentence body byte-verbatim", () => {
+			const tierB = tierLine(render("a symptom-only brief"), "- Tier B");
+			expect(tierB).toContain(
+				"dispatch at most TWO targeted codebase-analyzer subagents (sequentially — never parallel, never run_in_background) to map only what a single-phase plan needs to be correct: entry points, the relevant module's shape, and the conventions the implement lane must match.",
+			);
+		});
+
+		it("the sequential discipline appears exactly once per tier and nowhere else", () => {
+			const prompt = render("brief");
+			expect((prompt.match(/never parallel, never run_in_background/g) ?? []).length).toBe(2);
+		});
+
+		it("writes to the research directory only (never a full example path), bounded to under 150 lines, announcing the path, and stops", () => {
+			const prompt = render("brief");
+			expect(prompt).toContain(".rpiv/artifacts/research/");
+			expect(prompt).not.toMatch(/\.rpiv\/artifacts\/research\/\S+\.md/);
+			expect((prompt.match(/under 150 lines/g) ?? []).length).toBe(1);
+			expect(prompt).toContain("announce the written file's path in your final message");
+			expect(prompt.trimEnd().endsWith("and stop.")).toBe(true);
+		});
+
+		it("carries the progress-marker protocol between the Tier B bullet and the Brief line: classified first line, dispatch echo with tier ceiling, zero-dispatch escape, transcript-only discipline", () => {
+			const prompt = render("a brief for the marker protocol");
+			const lines = prompt.split("\n");
+			const tierB = lines.findIndex((l) => l.startsWith("- Tier B"));
+			const marker = lines.findIndex((l) => l.startsWith("Progress markers"));
+			const brief = lines.findIndex((l) => l.startsWith("Brief:"));
+			expect(tierB).toBeGreaterThan(-1);
+			expect(marker).toBeGreaterThan(tierB);
+			expect(brief).toBeGreaterThan(marker);
+			expect(prompt).toContain("[Classified]: Tier A — verify-only");
+			expect(prompt).toContain("[Classified]: Tier B — map ground truth");
+			expect(prompt).toContain("first line of your reply");
+			expect(prompt).toContain("[Dispatch N/M]:");
+			expect(prompt).toContain("[Dispatch N/M returned]:");
+			expect(prompt).toContain("1 for Tier A, 2 for Tier B");
+			expect(prompt).toContain("[Dispatch]: none — reading the named anchors directly.");
+			expect(prompt).toContain("never artifact content");
+			// The tier pins hold on the MERGED render — splicing the marker element
+			// in must not disturb the Tier B body, the `and stop.` tail, or the
+			// no-full-example-path guarantee (which now covers the marker element).
+			expect(prompt).toContain(
+				"dispatch at most TWO targeted codebase-analyzer subagents (sequentially — never parallel, never run_in_background) to map only what a single-phase plan needs to be correct: entry points, the relevant module's shape, and the conventions the implement lane must match.",
+			);
+			expect(prompt.trimEnd().endsWith("and stop.")).toBe(true);
+			expect(prompt).not.toMatch(/\.rpiv\/artifacts\/research\/\S+\.md/);
+		});
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Research skill progress markers — the bundled research skill narrates the
+// silent agent-batch window with one-line [Label]: transcript markers, so the
+// lane console's live tail (and any post-mortem transcript) shows where a run
+// stood when it died. Prose guard over the skill body: the markers exist in
+// questions → dispatch → wait → synthesize order, the one-message dispatch shape stays
+// intact, and no marker template names an artifacts path — a marker must
+// never outrank the real artifact announcement in the collector's scan.
+// ---------------------------------------------------------------------------
+
+describe("research skill progress markers (prose guard)", () => {
+	const body = readFileSync(join(BUNDLED_SKILLS_DIR, "research", "SKILL.md"), "utf-8");
+
+	it("keeps the frontmatter, the dispatch shape, and the existing path-safe lines intact", () => {
+		expect(body).toContain("name: research");
+		expect(body).toContain("disable-model-invocation: true");
+		expect(body).toContain("**single assistant message with multiple Agent calls**");
+		expect(body).toContain("[Scoped]:");
+		expect(body).toContain("Research document written to:");
+	});
+
+	it("carries the four markers in questions → dispatch → wait → synthesize order", () => {
+		const step1 = body.indexOf("### Step 1: Input Handling");
+		const step2 = body.indexOf("### Step 2: Dispatch Analysis Agents");
+		const step3 = body.indexOf("### Step 3: Synthesize and Checkpoint");
+		expect(step1).toBeGreaterThan(-1);
+		expect(step2).toBeGreaterThan(step1);
+		expect(step3).toBeGreaterThan(step2);
+		// Questions fires at Step 1's parse point, before any dispatch — the
+		// goal's first marker moment; item 7's [Scoped] report stays the
+		// separate grouped-status summary it already is.
+		const questions = body.indexOf("[Questions]:");
+		expect(questions).toBeGreaterThan(step1);
+		expect(questions).toBeLessThan(step2);
+		expect(body).toContain(
+			"[Questions]: {N} research questions formulated. Reading shared files and grouping before dispatch.",
+		);
+		const dispatched = body.indexOf("[Dispatched]:");
+		expect(dispatched).toBeGreaterThan(step2);
+		expect(dispatched).toBeLessThan(step3);
+		expect(body).toContain(
+			"[Dispatched]: {N} analysis agents in one batch{ + precedent sweep}. Waiting for returns.",
+		);
+		expect(body).toContain("[Returned]: {N}/{N} agents returned. Proceeding to synthesis.");
+		expect(body).toContain("[Synthesizing]: compiling {N} agent reports.");
+		// Returned fires only after the wait barrier closes the batch; the
+		// synthesizing marker follows at Step 3.
+		const wait = body.indexOf("**Wait for ALL agents to complete**");
+		const returned = body.indexOf("[Returned]:");
+		const synthesizing = body.indexOf("[Synthesizing]:");
+		expect(wait).toBeGreaterThan(-1);
+		expect(returned).toBeGreaterThan(wait);
+		expect(synthesizing).toBeGreaterThan(returned);
+	});
+
+	it("keeps every marker line path-free and pins the transcript-only discipline bullet", () => {
+		for (const line of body.split("\n")) {
+			if (
+				line.includes("[Questions]:") ||
+				line.includes("[Dispatched]:") ||
+				line.includes("[Returned]:") ||
+				line.includes("[Synthesizing]:")
+			) {
+				expect(line).not.toContain(".rpiv/artifacts/");
+			}
+		}
+		const notes = body.slice(body.indexOf("## Important Notes"));
+		expect(notes).toContain("never artifact content");
+		expect(notes).toContain("before the file is written");
 	});
 });
 
@@ -5222,6 +5765,104 @@ describe("build grade panel re-grades only the pending dimensions (P2)", () => {
 		expect(await labelsWithPrior(verdicts, prior, current)).toEqual([...PLAN_DIMS].sort());
 	});
 
+	it("a section-heading where cites its section: an Out of Scope amend is surgical", async () => {
+		// citedSections' leading-segment extraction: the where "## Out of Scope >
+		// deferral" cites the plan section "out of scope", so an amend touching
+		// only that section (plus frontmatter) narrows the re-grade. Before the
+		// widening, cited could only ever hold `phase N` keys and this exact
+		// shape was structurally guaranteed broad.
+		const verdicts = [...passingOthers(), correctnessFailing("## Out of Scope > dropped goal ask")];
+		const outOfScope = (body: string) => `## Out of Scope\n${body}`;
+		const prior = planFrom([phase(3, "phase body"), outOfScope("- old deferral")]);
+		const current = planFrom([phase(3, "phase body"), outOfScope("- old deferral\n- new deferral with reason")]);
+		expect(await labelsWithPrior(verdicts, prior, current)).toEqual(["correctness"]);
+	});
+
+	it("a failing risk ruling cites the Risk Flags section (and the owner phase): a ruling repair is surgical", async () => {
+		// The ruling-driven pending case has NO findings, so before the widening
+		// its cite set was empty and every ruling repair was broad by
+		// construction. The ruling now cites `risk flags` + the authored owner
+		// phase; the plans channel carries no risks frontmatter here, so the
+		// owner cite is absent and only the section cite applies.
+		const verdicts = [
+			...passingOthers(),
+			dimV("correctness", true, { severity: "none", risk_rulings: [{ id: "r1", pass: false }] }),
+		];
+		const riskFlags = (body: string) => `## Risk Flags\n${body}`;
+		const prior = planFrom([phase(3, "phase body"), riskFlags("- r1: unverified claim")]);
+		const current = planFrom([
+			phase(3, "phase body"),
+			riskFlags("- r1: verified against names.ts, procedure attached"),
+		]);
+		expect(await labelsWithPrior(verdicts, prior, current)).toEqual(["correctness"]);
+	});
+
+	it("a suffixed section where covers the bare heading (and a suffixed heading is covered by a bare cite)", async () => {
+		// Both directions observed in opendots run d5a9: the where "## Synthesis
+		// Notes — 'Adopted rider' bullet" must cover the touched key "synthesis
+		// notes", and a bare cite must cover a heading that carries its own
+		// suffix. Word-boundary prefix matching, phase keys exact-only.
+		const verdicts = [
+			...passingOthers(),
+			correctnessFailing("## Synthesis Notes — 'Adopted rider' bullet and 'Grep-scope' bullet"),
+		];
+		const notes = (body: string) => `## Synthesis Notes\n${body}`;
+		const prior = planFrom([phase(3, "phase body"), notes("- old bullet")]);
+		const current = planFrom([phase(3, "phase body"), notes("- corrected bullet")]);
+		expect(await labelsWithPrior(verdicts, prior, current)).toEqual(["correctness"]);
+	});
+
+	it("a ## heading mention inside the finding text cites that section (the created-section case)", async () => {
+		// Run d5a9's completeness finding named the missing section only in a
+		// parenthetical — "(missing ## Whole-Plan Verification section)" — and
+		// the amend CREATED it; that creation must count as cited.
+		const verdicts = [
+			...passingOthers(),
+			correctnessFailing("## Synthesis Notes / 'Adopted rider' bullet (missing ## Whole-Plan Verification section)"),
+		];
+		const notes = (body: string) => `## Synthesis Notes\n${body}`;
+		const wpv = (body: string) => `## Whole-Plan Verification (owned by validate)\n${body}`;
+		const prior = planFrom([phase(3, "phase body"), notes("- old bullet")]);
+		const current = planFrom([phase(3, "phase body"), notes("- corrected bullet"), wpv("- [ ] npm test")]);
+		expect(await labelsWithPrior(verdicts, prior, current)).toEqual(["correctness"]);
+	});
+
+	it("phase keys never prefix-match: a phase 1 cite does not cover a touched phase 10", async () => {
+		const verdicts = [...passingOthers(), correctnessFailing("Phase 1 > packages/x/y.ts:42")];
+		const prior = planFrom([phase(1, "old line"), phase(10, "shared phase 10 content")]);
+		const current = planFrom([phase(1, "new line"), phase(10, "shared phase 10 content CHANGED")]);
+		expect(await labelsWithPrior(verdicts, prior, current)).toEqual([...PLAN_DIMS].sort());
+	});
+
+	it("a ## line inside a fenced code block never becomes a section — the embedded-changelog phantom", async () => {
+		// Observed live (run b307): a plan phase embedding a CHANGELOG snippet
+		// carries "## [Unreleased]" inside a fence; keying it as a section
+		// manufactured a phantom touched key no finding could ever cite, forcing
+		// broad on every amend touching the embedded block. Fenced lines
+		// attribute to the enclosing phase.
+		const verdicts = [...passingOthers(), correctnessFailing("Phase 3 > packages/x/CHANGELOG.md")];
+		const fenced = (entry: string) =>
+			"intro line\n```markdown\n## [Unreleased]\n\n### Added\n\n- " + entry + "\n```\ntail line";
+		const prior = planFrom([phase(3, fenced("old changelog entry")), phase(5, "shared phase 5 content")]);
+		const current = planFrom([phase(3, fenced("NEW changelog entry")), phase(5, "shared phase 5 content")]);
+		expect(await labelsWithPrior(verdicts, prior, current)).toEqual(["correctness"]);
+	});
+
+	it("persists the guard's decision beside the prior — reason names the tripped condition", async () => {
+		// The instrumentation the always-broad diagnosis lacked: the plan file is
+		// later mutated by splice/reconcile, so a post-hoc replay cannot say which
+		// fail-closed condition tripped. Every call records its decision.
+		const verdicts = [...passingOthers(), correctnessFailing("Phase 3 > packages/x/y.ts:42")];
+		const prior = planFrom([phase(3, "old line"), phase(5, "shared")]);
+		const current = planFrom([phase(3, "new line"), phase(5, "shared CHANGED")]);
+		await runUnitsWithPrior(verdicts, prior, current, true);
+		const decision = JSON.parse(readFileSync(join(tmpDir, ".rpiv/artifacts/priors/p.md.decision.json"), "utf-8"));
+		expect(decision.surgical).toBe(false);
+		expect(decision.reason).toContain("phase 5");
+		expect(decision.touchedSections).toContain("phase 5");
+		expect(decision.citedSections).toEqual(["phase 3"]);
+	});
+
 	it("confirm arm is unchanged by the guard — a prior present still re-grades ONLY pending", async () => {
 		// PLAN_CONFIRM_FANOUT carries no priorChannel ⇒ surgical=false, priorPresent
 		// computed from a DIFFERENT (absent) channel ⇒ carry-forward wins. Even with
@@ -5462,12 +6103,37 @@ describe("build adaptive gate scaling (tier / roster / freshness / confirm)", ()
 	describe("confirm-before-block", () => {
 		const passRest = PLAN_DIMS.filter((d) => d !== "correctness").map((d) => verdict(d, true));
 
-		it("plan-grade routes a dimension's FIRST blocking verdict to plan-confirm", () => {
+		it("plan-grade sends a first-time MEDIUM blocker straight to plan-snapshot (severity-gated confirm)", () => {
+			// Run telemetry priced the confirm out of the medium class (~13:1
+			// onward-to-fix vs overturn): amend is surgical and cheap, and the
+			// delta re-grade guard keeps the re-judgment narrow.
 			expect(
 				route("plan-demote", {
 					plans: [chan(PLAN)],
 					"plan-cite-check": [verdict("structure", true)],
 					"plan-verdicts": [...passRest, verdict("correctness", false)],
+				}),
+			).toBe("plan-snapshot");
+		});
+
+		it("plan-grade routes a dimension's first HIGH blocking verdict to plan-confirm", () => {
+			expect(
+				route("plan-demote", {
+					plans: [chan(PLAN)],
+					"plan-cite-check": [verdict("structure", true)],
+					"plan-verdicts": [...passRest, verdict("correctness", false, { severity: "high" })],
+				}),
+			).toBe("plan-confirm");
+		});
+
+		it("plan-grade routes a FLAP (a carried pass regressing to a block) to plan-confirm, whatever the severity", () => {
+			// The dimension previously passed and now blocks on the same artifact —
+			// the exact single-judge instability the confirm exists to adjudicate.
+			expect(
+				route("plan-demote", {
+					plans: [chan(PLAN)],
+					"plan-cite-check": [verdict("structure", true)],
+					"plan-verdicts": [...passRest, verdict("correctness", true), verdict("correctness", false)],
 				}),
 			).toBe("plan-confirm");
 		});
@@ -5525,14 +6191,21 @@ describe("build adaptive gate scaling (tier / roster / freshness / confirm)", ()
 			).toBe("plan-confirm");
 		});
 
-		it("code-grade mirrors the contract on its own channel", () => {
+		it("code-grade mirrors the contract on its own channel (HIGH confirms, medium goes to the fix)", () => {
+			expect(
+				route("code-demote", {
+					plans: [chan(PLAN)],
+					"code-cite-check": [verdict("structure", true)],
+					"code-verdicts": [...passRest, verdict("correctness", false, { severity: "high" })],
+				}),
+			).toBe("code-confirm");
 			expect(
 				route("code-demote", {
 					plans: [chan(PLAN)],
 					"code-cite-check": [verdict("structure", true)],
 					"code-verdicts": [...passRest, verdict("correctness", false)],
 				}),
-			).toBe("code-confirm");
+			).toBe("code-snapshot");
 		});
 
 		it("declares the confirm arms as edge targets", () => {

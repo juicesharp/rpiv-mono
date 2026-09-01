@@ -136,6 +136,10 @@ describe("buildUnitSession — collectAll is fanout-only (F1 regression)", () =>
 		expect(collectAllFor({ kind: "fanout", failFast: true } as unknown as LoopDef)).toBe(false);
 	});
 
+	it("fanout({ haltWhenAllFailed: true }) still collects all (the flag narrows the close, not the collection)", () => {
+		expect(collectAllFor({ kind: "fanout", haltWhenAllFailed: true } as unknown as LoopDef)).toBe(true);
+	});
+
 	it("threads the run's worktreeDigest override onto the unit session (parity with single stages)", () => {
 		const digest = (): string => "fixed-digest";
 		const run = { ...runFull, worktreeDigest: digest } as unknown as RunContext;

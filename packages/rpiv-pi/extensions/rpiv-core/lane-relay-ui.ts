@@ -37,7 +37,10 @@
  * A Proxy (not a hand-written delegate) keeps the relay drift-proof. The relay is
  * BRANDED (LANE_RELAY_BRAND) so the launcher's own session hooks
  * (session-capture, lane-switcher) can detect a detached-child session_start and
- * skip launcher-only work (isLaneRelayUiContext).
+ * skip launcher-only work (isLaneRelayUiContext). The brand is reported as an own
+ * enumerable key (ownKeys/getOwnPropertyDescriptor traps), so it SURVIVES a host
+ * that re-wraps ctx.ui by spread — pi ≥0.84.4's wrapUIPromptContext does exactly
+ * that, and a get-trap-only brand would silently un-gate every child.
  */
 
 import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
@@ -96,6 +99,27 @@ export function createLaneRelayUiContext(
 			if (typeof prop === "string" && SUPPRESSED_AT_ROOT.has(prop)) return noop;
 			const value = Reflect.get(target, prop, target);
 			return typeof value === "function" ? value.bind(target) : value;
+		},
+		// Spread survival — pi ≥0.84.4 wraps every extension's ctx.ui via `{...ui}`
+		// (wrapUIPromptContext, the ui_prompt_start/end feature; upstream #8829). A
+		// spread enumerates OWN keys, so a brand served only by the `get` trap would
+		// vanish from the copy, `isLaneRelayUiContext` would return false in every
+		// detached child, and the launcher-only session hooks (lane-switcher,
+		// session-capture) would run against the child's relay — hijacking the dock
+		// editor and foreground capture. Reporting the brand as an own ENUMERABLE key
+		// makes `{...relayProxy}` carry `[LANE_RELAY_BRAND]: true`; the relay's
+		// behavioral overrides need no help (the spread `get`s them through the proxy).
+		ownKeys(target) {
+			const keys = Reflect.ownKeys(target);
+			// A duplicate entry in an ownKeys result is a TypeError — guard the
+			// (never-expected) case of an already-branded target.
+			return keys.includes(LANE_RELAY_BRAND) ? keys : [...keys, LANE_RELAY_BRAND];
+		},
+		getOwnPropertyDescriptor(target, prop) {
+			// `configurable: true` is REQUIRED by the Proxy invariant for a key the
+			// target does not itself own.
+			if (prop === LANE_RELAY_BRAND) return { value: true, writable: false, enumerable: true, configurable: true };
+			return Reflect.getOwnPropertyDescriptor(target, prop);
 		},
 	});
 }

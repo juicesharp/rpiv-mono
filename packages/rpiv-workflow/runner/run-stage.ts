@@ -31,6 +31,7 @@ import { freezesEntryArgsOf } from "../loop-constructors.js";
 import { buildLoopEntry, freshCursor, type LoopDeps, type LoopEntry } from "../loop-kinds.js";
 import { ensureUnitDeps } from "../loop-waves.js";
 import {
+	FAIL_FANOUT_ALL_FAILED,
 	FAIL_LOOP_CAP_HALT,
 	FAIL_VALIDATE_GATE_SKIPPED,
 	FAIL_VERIFY_FAILED,
@@ -524,6 +525,7 @@ export function buildLoopDeps(): LoopDeps {
 		advanceAfter: (freshCtx, name, completedIdx, ctx) => advance(freshCtx, name, completedIdx, ctx),
 		captureSnapshot: (ctx, name, def, i, r) => captureStageSnapshot(ctx, name, def, i, r),
 		haltLoop,
+		haltLoopWhenAllFailed,
 		// Mid-flight run abort at the loop seam → FAIL_WORKFLOW_ABORTED.
 		recordAborted: (hostCtx, name, run) => recordAbortedAtSeam(hostCtx, name, run).then(() => undefined),
 		// Unexpected worker rejection → terminal-failure row, no re-throw. The
@@ -548,6 +550,27 @@ export async function haltLoop(
 ): Promise<void> {
 	const args = e.def.verify ? failedArgs(FAIL_VERIFY_FAILED(e.name, cap)) : failedArgs(FAIL_LOOP_CAP_HALT(count, cap));
 	await haltChain(hostCtx, run, e.name, e.name, args);
+}
+
+/**
+ * Terminal failure when a `haltWhenAllFailed` fanout generation closes with
+ * every declared slot a failed sentinel (strict all-filled-all-failed). Fired
+ * ONCE at the generation close — `finishLoop`'s single spelling (loop.ts),
+ * never per-unit. Parent-attributed, sessionless, unit-field-free — the exact
+ * `haltLoop` recording shape, so the resume fold's halt-marker predicate
+ * (`isOpenFanoutHaltMarker`) keeps the generation open and a later resume
+ * re-derives the halt deterministically with zero new resume code.
+ * `recordFatalFailure`'s first-failure-wins guard makes it safe beside
+ * concurrent sibling collect-all soft-halt rows.
+ */
+export async function haltLoopWhenAllFailed(
+	hostCtx: WorkflowHostContext,
+	run: RunContext,
+	e: Pick<LoopEntry, "name" | "skill">,
+	failed: number,
+	total: number,
+): Promise<void> {
+	await haltChain(hostCtx, run, e.name, e.name, failedArgs(FAIL_FANOUT_ALL_FAILED(e.skill, failed, total)));
 }
 
 /** Runs whose snapshot-failure warning already fired — one notify per run, not per stage/unit. */

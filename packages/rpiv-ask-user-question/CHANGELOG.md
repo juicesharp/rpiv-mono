@@ -11,6 +11,8 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Press `1`–`9` on a question tab to act on the corresponding numbered row. Single-select options confirm immediately, multi-select options toggle, and `Type something.` receives focus; digits remain text in custom answers and notes.
 
+## [2.8.0] - 2026-08-29
+
 ## [2.7.1] - 2026-08-24
 
 ## [2.7.0] - 2026-08-21

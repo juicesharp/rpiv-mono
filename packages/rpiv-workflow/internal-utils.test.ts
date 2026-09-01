@@ -138,6 +138,41 @@ describe("applyCompletedStage", () => {
 		expect(state.named).toEqual({ "prior-stage": [expect.any(Object)] });
 	});
 
+	it("side-effect stage with a NAMED outcome publishes onto that channel; primary still untouched", () => {
+		// The Outcome.name contract ("any stage wired with this outcome") — the
+		// produces-only write gate previously left an acts outcome's channel
+		// silently unwritten, so a gate folding it (validate-fix's `remediation`
+		// digest: the fix-round count and the unchanged-tree stop) read a channel
+		// no code path ever wrote.
+		const existing = fakeArtifact("old.md");
+		const state = freshState();
+		state.primaryArtifact = existing;
+
+		const def = actsDef({
+			outcome: { name: "remediation", collector: { collect: () => ({ kind: "ok", artifacts: [] }) } },
+		} as Partial<StageDef>);
+		const output = fakeOutput();
+
+		applyCompletedStage(state, def, "validate-fix", output);
+
+		expect(state.named.remediation).toEqual([output]);
+		// Never the record-key fallback — an unnamed acts outcome stays silent.
+		expect(state.named["validate-fix"]).toBeUndefined();
+		expect(state.primaryArtifact).toBe(existing);
+	});
+
+	it("side-effect stage with a named outcome accumulates across rounds (the fix-round count)", () => {
+		const state = freshState();
+		const def = actsDef({
+			outcome: { name: "remediation", collector: { collect: () => ({ kind: "ok", artifacts: [] }) } },
+		} as Partial<StageDef>);
+
+		applyCompletedStage(state, def, "validate-fix", fakeOutput());
+		applyCompletedStage(state, def, "validate-fix", fakeOutput());
+
+		expect(state.named.remediation).toHaveLength(2);
+	});
+
 	it("terminal stage (inheritsArtifacts: false): clears primary, named untouched", () => {
 		const existing = fakeArtifact("old.md");
 		const state = freshState();

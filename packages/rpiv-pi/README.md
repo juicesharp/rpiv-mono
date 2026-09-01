@@ -11,7 +11,7 @@
 
 Turn "build this feature" into a run of named stages — discover → research → design →
 plan → implement → validate → code-review → commit — each one writing a reviewable
-Markdown artifact under `.rpiv/artifacts/` that the next stage consumes. rpiv-pi adds 29
+Markdown artifact under `.rpiv/artifacts/` that the next stage consumes. rpiv-pi adds 30
 skills, 15 specialist subagents, and four ready-made `/wf` pipelines to
 [Pi Agent](https://github.com/badlogic/pi-mono), and runs every stage in a detached child
 session you watch from a lane dock below your editor. It is for developers who want
@@ -100,7 +100,7 @@ no overrides.
 
 ## Reference
 
-- [docs/skills.md](./docs/skills.md) — all 29 skills: what each consumes, what it writes,
+- [docs/skills.md](./docs/skills.md) — all 30 skills: what each consumes, what it writes,
   and which ones the model may pick on its own.
 - [docs/workflows.md](./docs/workflows.md) — the four `/wf` pipelines stage by stage,
   plus hand-driven recipes for when you don't want a whole pipeline.

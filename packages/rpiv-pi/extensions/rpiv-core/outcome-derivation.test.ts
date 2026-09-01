@@ -57,14 +57,15 @@ function stripOutcomes(w: Workflow, keep: (stageName: string) => boolean = () =>
 // ---------------------------------------------------------------------------
 
 describe("BUCKET_BY_KIND", () => {
-	it("contains exactly 12 entries", () => {
-		expect(Object.keys(BUCKET_BY_KIND)).toHaveLength(12);
+	it("contains exactly 13 entries", () => {
+		expect(Object.keys(BUCKET_BY_KIND)).toHaveLength(13);
 	});
 
 	it("covers all artifactKinds used by produces skills", () => {
 		const expectedKinds = [
 			"plan",
 			"research",
+			"acceptance",
 			"slices",
 			"design",
 			"elaboration",
@@ -260,6 +261,7 @@ describe("equivalence — built-in workflows", () => {
 	 */
 	const BUILTIN_CONTRACTS: Array<[string, string]> = [
 		["research", "research"],
+		["acceptance", "acceptance"],
 		["blueprint", "plan"],
 		["design", "design"],
 		["plan", "plan"],
@@ -284,6 +286,7 @@ describe("equivalence — built-in workflows", () => {
 		// build: derivable produces stages only — the
 		// explicit-outcome stages below are asserted separately.
 		"build::research": "research",
+		"build::acceptance": "acceptance",
 		"build::slice": "slices",
 		"build::slice-design": "designs",
 		"build::plan": "plans",
@@ -300,6 +303,7 @@ describe("equivalence — built-in workflows", () => {
 		"polish::code-review": "reviews",
 		// ship
 		"ship::research": "research",
+		"ship::acceptance": "acceptance",
 		"ship::plan": "plans",
 		"ship::validate": "validation",
 	};
@@ -424,7 +428,7 @@ describe("equivalence — built-in workflows", () => {
 		});
 	}
 
-	it("total produces stages across all workflows = 47 (16 derivable + 11 explicit + 20 script)", () => {
+	it("total produces stages across all workflows = 49 (18 derivable + 11 explicit + 20 script)", () => {
 		let count = 0;
 		let scriptProduces = 0;
 		for (const w of builtInWorkflows) {
@@ -433,7 +437,7 @@ describe("equivalence — built-in workflows", () => {
 				if (stage.kind === "produces" && stage.run != null) scriptProduces++;
 			}
 		}
-		expect(count).toBe(47);
+		expect(count).toBe(49);
 		// build::slice-check + build::subplan-check + build::goal + build::plan-cite-check
 		// + build::code-cite-check + build::implement-scope-check + build::scope-quarantine
 		// + build::reconcile

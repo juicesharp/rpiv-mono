@@ -15,29 +15,46 @@
  *      cursor, assess channel separation + transient judge roll, full-row
  *      drift guard, and the legacy-row (`parent`-less) stage-gone refusal
  *   8. Named-slot append-order (array history preserved across repeated calls)
+ *   9. Gate-stop halts — the routed-stop separator (generation close before
+ *      the halt row), the `gateStop` trailer, and the re-measure resume
+ *      entries (produces gate re-runs; side-effect gate dispatches onward)
  *
  * End-to-end loop-resume DISPATCH (re-run failed+remaining units, finished
  * no-op silence, the assess pending paths, back-edge generation reset) lives
  * in `resume-loop.test.ts`.
  */
 
-import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMockSessionChain, mockAssistantMessage } from "@juicesharp/rpiv-test-utils";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { type FanoutFn, type IterateFn, produces, type Workflow } from "../api.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+	acts,
+	defineRoute,
+	type EdgeFn,
+	type FanoutFn,
+	type IterateFn,
+	match,
+	produces,
+	setRouteNote,
+	type Workflow,
+} from "../api.js";
 import { stageEntryArgs } from "../chain-state.js";
 import type { Artifact } from "../handle.js";
-import { fs as fsHandle, handleToString } from "../handle.js";
+import { fs as fsHandle, handleToString, opaque } from "../handle.js";
 import { judge } from "../judge.js";
 import { assess, fanout, iterate, majority, panel, verify } from "../loop-constructors.js";
 import { advanceCursor, foldFanoutCompletion, freshCursor } from "../loop-kinds.js";
+import { FAIL_GATE_STOP } from "../messages.js";
 import type { Output } from "../output.js";
 import {
 	appendHeader,
+	appendRoutingDecision,
 	appendStage,
+	type RoutingDecision,
 	readAllStages,
+	readHeader,
 	STATE_SCHEMA_VERSION,
 	stateFilePath,
 	type WorkflowHeader,
@@ -45,7 +62,7 @@ import {
 } from "../state/index.js";
 import type { RunState } from "../types.js";
 import { reconstructState } from "./resume.js";
-import { resumeWorkflow } from "./runner.js";
+import { resumeWorkflow, runWorkflow } from "./runner.js";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -2067,4 +2084,412 @@ describe("resumeWorkflow", () => {
 	});
 
 	// Mid-loop resume dispatch (fanout/iterate/assess) is covered end-to-end in `resume-loop.test.ts`.
+});
+
+// ---------------------------------------------------------------------------
+// Gate-stop halts — the [routed stop row, FAIL_GATE_STOP row] pair a noted
+// decision stop leaves at the trail's tail, and the resume paths over it.
+// ---------------------------------------------------------------------------
+
+/** A routed-stop RoutingDecision row (`chain-advance`'s stop-branch audit shape). */
+const stopRow = (fromStage: string, fromStageIndex: number, note?: string): RoutingDecision => ({
+	type: "routing",
+	fromStageIndex,
+	fromStage,
+	decision: "stop",
+	...(note !== undefined ? { note } : {}),
+	ts: `t${fromStageIndex}`,
+});
+
+/** The sessionless terminal failure row `haltChain` appends behind the stop row. */
+const gateHaltRow = (stage: string, num: number): WorkflowStage => ({
+	session: null,
+	stageNumber: num,
+	stage,
+	status: "failed",
+	ts: `t${num}`,
+	errMsg: `Routing gate after "${stage}" matched no branch: gate failed`,
+});
+
+/** Write header + rows in trail order, routing rows interleaved verbatim. */
+function writeTrail(rows: Array<WorkflowStage | RoutingDecision>): WorkflowHeader {
+	appendHeader(tmpDir, baseHeader);
+	for (const row of rows) {
+		if ("type" in row && row.type === "routing") appendRoutingDecision(tmpDir, baseHeader.runId, row);
+		else appendStage(tmpDir, baseHeader.runId, row as WorkflowStage);
+	}
+	return baseHeader;
+}
+
+describe("reconstructState — gate-stop halts", () => {
+	const completedRow = (stage: string, num: number, output: Output): WorkflowStage => ({
+		session: null,
+		stageNumber: num,
+		stage,
+		skill: stage,
+		status: "completed",
+		ts: `t${num}`,
+		output,
+	});
+
+	it("gateStop trailer: a failed row behind a routed stop from the same stage sets gateStop; an ordinary failure does not", async () => {
+		const wf: Workflow = {
+			name: "test-wf",
+			start: "plan",
+			stages: {
+				plan: { kind: "produces", sessionPolicy: "fresh" },
+				check: { kind: "produces", sessionPolicy: "fresh" },
+			},
+			edges: { plan: "check", check: "stop" },
+		} as Workflow;
+
+		writeTrail([
+			completedRow("plan", 1, fakeOutput([fakeArtifact("plans/p1.md")])),
+			completedRow("check", 2, fakeOutput()),
+			stopRow("check", 2, 'value "fail" matched no branch'),
+			gateHaltRow("check", 3),
+		]);
+
+		const result = await reconstructState(tmpDir, wf, baseHeader);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.gateStop?.fromStage).toBe("check");
+		expect(result.gateStop?.note).toBe('value "fail" matched no branch');
+		expect(result.drift).toBeUndefined();
+	});
+
+	it("no false positive: a failed trailer with no stop row behind it leaves gateStop unset", async () => {
+		const wf: Workflow = {
+			name: "test-wf",
+			start: "plan",
+			stages: {
+				plan: { kind: "produces", sessionPolicy: "fresh" },
+				build: { kind: "produces", sessionPolicy: "fresh" },
+			},
+			edges: { plan: "build", build: "stop" },
+		} as Workflow;
+
+		writeTrail([
+			completedRow("plan", 1, fakeOutput([fakeArtifact("plans/p1.md")])),
+			{ session: null, stageNumber: 2, stage: "build", status: "failed", ts: "t2", errMsg: "boom" },
+		]);
+
+		const result = await reconstructState(tmpDir, wf, baseHeader);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.gateStop).toBeUndefined();
+	});
+
+	it("fanout gate-stop: the stop separator closes+projects the generation, so the halt row is not an abort marker", async () => {
+		const planArt = fakeArtifact("plans/p1.md");
+		const u1 = fakeArtifact("verdicts/v1.json");
+		const u2 = fakeArtifact("verdicts/v2.json");
+		const units: FanoutFn = () => [
+			{ prompt: "d1", label: "dim 1/2", id: "dim-1" },
+			{ prompt: "d2", label: "dim 2/2", id: "dim-2" },
+		];
+		const wf: Workflow = {
+			name: "test-wf",
+			start: "plan",
+			stages: {
+				plan: { kind: "produces", sessionPolicy: "fresh" },
+				grade: produces({ outcome: makeOutcome("verdicts"), loop: fanout({ units }) }),
+			},
+			edges: { plan: "grade", grade: "stop" },
+		} as Workflow;
+
+		writeTrail([
+			completedRow("plan", 1, fakeOutput([planArt])),
+			fanoutUnitRow("grade", "dim-1", 0, 2, fakeOutput([u1])),
+			fanoutUnitRow("grade", "dim-2", 1, 3, fakeOutput([u2])),
+			stopRow("grade", 3, "completeness failed (medium)"),
+			gateHaltRow("grade", 4),
+		]);
+
+		const result = await reconstructState(tmpDir, wf, baseHeader);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		// The generation closed AT the separator — projection restored the entry
+		// primary (the live driver had projected before its route fired) — so no
+		// trailing open generation survives for the entry selector to re-enter.
+		expect(result.trailing).toBeUndefined();
+		expect(result.state.primaryArtifact).toStrictEqual(planArt);
+		expect(result.state.named.verdicts?.map((o) => o.artifacts[0])).toEqual([u1, u2]);
+		expect(result.gateStop?.fromStage).toBe("grade");
+		expect(result.drift).toBeUndefined();
+	});
+
+	it("post-resume trail: two same-parent generations split only by the stop pair fold separately, without drift", async () => {
+		const planArt = fakeArtifact("plans/p1.md");
+		const outs = [1, 2, 3, 4].map((n) => fakeArtifact(`verdicts/v${n}.json`));
+		const units: FanoutFn = () => [
+			{ prompt: "d1", label: "dim 1/2", id: "dim-1" },
+			{ prompt: "d2", label: "dim 2/2", id: "dim-2" },
+		];
+		const wf: Workflow = {
+			name: "test-wf",
+			start: "plan",
+			stages: {
+				plan: { kind: "produces", sessionPolicy: "fresh" },
+				grade: produces({ outcome: makeOutcome("verdicts"), loop: fanout({ units }) }),
+			},
+			edges: { plan: "grade", grade: "stop" },
+		} as Workflow;
+
+		writeTrail([
+			completedRow("plan", 1, fakeOutput([planArt])),
+			// Generation 1 (halted by the gate), the stop pair, then the fresh
+			// generation a stop-resume re-dispatch appended for the SAME parent.
+			// Without the separator these four unit rows would mis-fold as one
+			// generation (repeated unitIndex 0 → drift).
+			fanoutUnitRow("grade", "dim-1", 0, 2, fakeOutput([outs[0]!])),
+			fanoutUnitRow("grade", "dim-2", 1, 3, fakeOutput([outs[1]!])),
+			stopRow("grade", 3, "completeness failed (medium)"),
+			gateHaltRow("grade", 4),
+			fanoutUnitRow("grade", "dim-1", 0, 5, fakeOutput([outs[2]!])),
+			fanoutUnitRow("grade", "dim-2", 1, 6, fakeOutput([outs[3]!])),
+		]);
+
+		const result = await reconstructState(tmpDir, wf, baseHeader);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.drift).toBeUndefined();
+		// The fresh generation replaced the halted one on the channel — the live
+		// `placeFanoutOutput` semantics (index-addressed, latest generation wins).
+		expect(result.state.named.verdicts?.map((o) => o.artifacts[0])).toEqual([outs[2], outs[3]]);
+		// The SECOND generation is the trailing open one (its route never fired).
+		expect(result.trailing?.parent).toBe("grade");
+		// A completed unit-row trailer is not a gate-stop halt.
+		expect(result.gateStop).toBeUndefined();
+	});
+});
+
+describe("resumeWorkflow — gate-stop halts (the re-measure)", () => {
+	it("produces gate: resume re-runs the halted gate against the repaired tree and continues on pass", async () => {
+		const doneSpy = vi.fn();
+		// The gate's judgment is a function of the tree — the flag file stands in
+		// for the hand-repair the halt toast asks for.
+		const wf: Workflow = {
+			name: "test-wf",
+			start: "plan",
+			stages: {
+				plan: { kind: "produces", sessionPolicy: "fresh" },
+				check: produces.script({
+					run: ({ cwd }) => ({
+						kind: "artifacts",
+						artifacts: [],
+						data: { verdict: existsSync(join(cwd, "fixed.flag")) ? "pass" : "fail" },
+					}),
+				}),
+				done: acts.script({ run: doneSpy }),
+			},
+			edges: {
+				plan: "check",
+				check: match("verdict", { done: "pass" }, { from: "check" }),
+				done: "stop",
+			},
+		} as Workflow;
+
+		writeTrail([
+			{
+				session: null,
+				stageNumber: 1,
+				stage: "plan",
+				skill: "plan",
+				status: "completed",
+				ts: "t1",
+				output: fakeOutput([fakeArtifact("plans/p1.md")]),
+			},
+			{
+				session: null,
+				stageNumber: 2,
+				stage: "check",
+				status: "completed",
+				ts: "t2",
+				output: { ...fakeOutput(), data: { verdict: "fail" } },
+			},
+			stopRow("check", 2, 'value "fail" matched no branch'),
+			gateHaltRow("check", 3),
+		]);
+
+		writeFileSync(join(tmpDir, "fixed.flag"), ""); // the hand-repair
+		const chain = createMockSessionChain({ cwd: tmpDir, steps: [] });
+		const result = await resumeWorkflow(chain.ctx, { workflow: wf, header: baseHeader, ref: "@ref" });
+
+		expect(result.success).toBe(true);
+		expect(doneSpy).toHaveBeenCalledTimes(1);
+		const stages = readAllStages(tmpDir, baseHeader.runId);
+		const appended = stages.slice(3);
+		expect(appended.map((s) => [s.stage, s.status])).toEqual([
+			["check", "completed"],
+			["done", "completed"],
+		]);
+	});
+
+	it("produces gate, nothing repaired: resume re-measures and halts again (idempotent stop, no stale pass)", async () => {
+		const doneSpy = vi.fn();
+		const wf: Workflow = {
+			name: "test-wf",
+			start: "check",
+			stages: {
+				check: produces.script({
+					run: ({ cwd }) => ({
+						kind: "artifacts",
+						artifacts: [],
+						data: { verdict: existsSync(join(cwd, "fixed.flag")) ? "pass" : "fail" },
+					}),
+				}),
+				done: acts.script({ run: doneSpy }),
+			},
+			edges: { check: match("verdict", { done: "pass" }, { from: "check" }), done: "stop" },
+		} as Workflow;
+
+		writeTrail([
+			{
+				session: null,
+				stageNumber: 1,
+				stage: "check",
+				status: "completed",
+				ts: "t1",
+				output: { ...fakeOutput(), data: { verdict: "fail" } },
+			},
+			stopRow("check", 1, 'value "fail" matched no branch'),
+			gateHaltRow("check", 2),
+		]);
+
+		const chain = createMockSessionChain({ cwd: tmpDir, steps: [] });
+		const result = await resumeWorkflow(chain.ctx, { workflow: wf, header: baseHeader, ref: "@ref" });
+
+		expect(result.success).toBe(false);
+		expect(result.error).toContain("matched no branch");
+		expect(doneSpy).not.toHaveBeenCalled();
+	});
+
+	it("LIVE formation: an unchanged acts digest halts at the arm's own gate, and resume dispatches onward (e2e)", async () => {
+		// End to end through the real runner: the acts stage's NAMED outcome
+		// publishes its digest onto state.named (the side-effect publish rule),
+		// the gate folds it and stops with a note, chain-advance writes the
+		// [stop row, FAIL_GATE_STOP row] pair — and the resume entry then takes
+		// the side-effect arm, dispatching `verify` instead of replaying `fix`.
+		const digestOutcome: import("../output-spec.js").Outcome<unknown, "digest", { changed: boolean }> = {
+			name: "digest",
+			collector: {
+				collect: () => ({ kind: "ok", artifacts: [{ handle: opaque("digest-unchanged"), role: "digest" }] }),
+			},
+			parser: { parse: () => ({ kind: "ok", payload: { kind: "digest", data: { changed: false } } }) },
+		};
+		const fixGate: EdgeFn = defineRoute(
+			["verify", "stop"],
+			({ state }) => {
+				const data = state.named.digest?.at(-1)?.data as { changed?: unknown } | undefined;
+				if (data?.changed !== false) return "verify";
+				setRouteNote(fixGate, "digest unchanged");
+				return "stop";
+			},
+			{ readsData: false },
+		);
+		const verifySpy = vi.fn(() => ({ kind: "artifacts" as const, artifacts: [], data: { verdict: "pass" } }));
+		const wf: Workflow = {
+			name: "test-wf",
+			start: "fix",
+			stages: {
+				fix: acts({ skill: "fix", outcome: digestOutcome }),
+				verify: produces.script({ run: verifySpy }),
+			},
+			edges: { fix: fixGate, verify: "stop" },
+		} as Workflow;
+
+		const live = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [{ branch: [mockAssistantMessage("nothing to change")] }],
+		});
+		const halted = await runWorkflow(live.ctx, { workflow: wf, input: "x" });
+		expect(halted.success).toBe(false);
+		expect(halted.error).toContain("digest unchanged");
+
+		const header = readHeader(tmpDir, halted.runId!);
+		if (!header) throw new Error("halted run wrote no header");
+		const resumed = createMockSessionChain({ cwd: tmpDir, steps: [] });
+		const result = await resumeWorkflow(resumed.ctx, { workflow: wf, header, ref: "@ref" });
+
+		expect(result.success).toBe(true);
+		expect(verifySpy).toHaveBeenCalledTimes(1);
+		expect(resumed.sentMessages.some((m) => m.startsWith("/skill:fix"))).toBe(false);
+	});
+
+	it("the halt toast names the resume remedy with the run id", () => {
+		// The remedy string is what turns "fix and re-run" (read as: start over,
+		// re-paying the whole front-load) into "fix and resume".
+		const toast = FAIL_GATE_STOP("validate", 'value "fail" matched no branch', "2026-06-03_07-30-00-ab12").toast;
+		expect(toast).toContain("resume with /wf @2026-06-03_07-30-00-ab12");
+	});
+
+	it("multi-target side-effect gate: resume re-routes (idempotent re-stop) — never replays the arm", async () => {
+		const fixSpy = vi.fn();
+		const route: EdgeFn = defineRoute(["verify", "alt", "stop"], () => {
+			setRouteNote(route, "still blocked");
+			return "stop";
+		});
+		const wf: Workflow = {
+			name: "test-wf",
+			start: "fix",
+			stages: {
+				fix: acts.script({ run: fixSpy }),
+				verify: produces.script({ run: () => ({ kind: "artifacts", artifacts: [], data: {} }) }),
+				alt: produces.script({ run: () => ({ kind: "artifacts", artifacts: [], data: {} }) }),
+			},
+			edges: { fix: route, verify: "stop", alt: "stop" },
+		} as Workflow;
+
+		writeTrail([
+			{ session: null, stageNumber: 1, stage: "fix", status: "completed", ts: "t1", output: fakeOutput() },
+			stopRow("fix", 1, "still blocked"),
+			gateHaltRow("fix", 2),
+		]);
+
+		const chain = createMockSessionChain({ cwd: tmpDir, steps: [] });
+		const result = await resumeWorkflow(chain.ctx, { workflow: wf, header: baseHeader, ref: "@ref" });
+
+		// The ambiguous onward set re-fires the EDGE, not the arm: the route
+		// re-stops with its note and the run halts again — zero side effects.
+		expect(result.success).toBe(false);
+		expect(result.error).toContain("still blocked");
+		expect(fixSpy).not.toHaveBeenCalled();
+	});
+
+	it("side-effect gate: resume dispatches the sole onward target instead of replaying the arm", async () => {
+		const fixSpy = vi.fn();
+		const verifySpy = vi.fn(() => ({ kind: "artifacts" as const, artifacts: [], data: { verdict: "pass" } }));
+		const wf: Workflow = {
+			name: "test-wf",
+			start: "fix",
+			stages: {
+				fix: acts.script({ run: fixSpy }),
+				verify: produces.script({ run: verifySpy }),
+			},
+			edges: {
+				// The unchanged-tree shape: the arm ran, changed nothing, and its
+				// own edge stopped the run. Re-running the arm on resume would
+				// no-op again and re-trip the same gate — the livelock this entry
+				// exists to break.
+				fix: defineRoute(["verify", "stop"], () => "stop"),
+				verify: "stop",
+			},
+		} as Workflow;
+
+		writeTrail([
+			{ session: null, stageNumber: 1, stage: "fix", status: "completed", ts: "t1", output: fakeOutput() },
+			stopRow("fix", 1, "remediation left the working tree unchanged"),
+			gateHaltRow("fix", 2),
+		]);
+
+		const chain = createMockSessionChain({ cwd: tmpDir, steps: [] });
+		const result = await resumeWorkflow(chain.ctx, { workflow: wf, header: baseHeader, ref: "@ref" });
+
+		expect(result.success).toBe(true);
+		expect(fixSpy).not.toHaveBeenCalled();
+		expect(verifySpy).toHaveBeenCalledTimes(1);
+		const stages = readAllStages(tmpDir, baseHeader.runId);
+		expect(stages.slice(2).map((s) => [s.stage, s.status])).toEqual([["verify", "completed"]]);
+	});
 });

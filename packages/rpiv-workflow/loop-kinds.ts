@@ -124,6 +124,19 @@ export interface LoopDeps {
 		count: number,
 		cap: number,
 	) => Promise<void>;
+	/** Record the terminal all-failed generation-close halt
+	 *  (FAIL_FANOUT_ALL_FAILED) — parent-attributed, sessionless, unit-field-free
+	 *  (the `haltLoop` recording shape), so the resume fold's halt-marker
+	 *  predicate keeps the generation open and a later resume re-derives the
+	 *  halt with zero new resume code. Fired from `finishLoop`'s single halt
+	 *  spelling across all four closing paths. */
+	haltLoopWhenAllFailed: (
+		hostCtx: WorkflowHostContext,
+		run: RunContext,
+		e: Pick<LoopEntry, "name" | "skill">,
+		failed: number,
+		total: number,
+	) => Promise<void>;
 	/** Record a mid-flight run abort at the loop seam (FAIL_WORKFLOW_ABORTED).
 	 *  Keeps the drivers free of engine imports; wired to `recordAbortedAtSeam`. */
 	recordAborted: (hostCtx: WorkflowHostContext, name: string, run: RunContext) => Promise<void>;
@@ -455,11 +468,32 @@ function lastNonFailedSlot(slots: readonly (Output | undefined)[]): LoopCursor["
 	return undefined;
 }
 
+/** THE strict all-failed generation-close predicate — `true` when every declared
+ *  slot is filled and every one is a failed sentinel (the fan-in would read an
+ *  empty channel). Reuses `lastNonFailedSlot`: `undefined` is exactly the
+ *  "no non-failed slot" verdict, so the conjunction is filled + all-failed. An
+ *  over-cap-advancing generation NEVER satisfies it (beyond-cap slots stay
+ *  `undefined`, so `filledCount < slots.length`). Consumed by `finishLoop`'s
+ *  single halt spelling (loop.ts) across all four closing paths. */
+export const allFanoutSlotsFailed = (cursor: LoopCursor): boolean =>
+	cursor.slots !== undefined &&
+	cursor.filledCount === cursor.slots.length &&
+	lastNonFailedSlot(cursor.slots) === undefined;
+
 /** THE fanout fail-fast narrow — `true` when a fanout loop opted out of the
  *  default collect-all via `fanout({ failFast: true })`. The ONE spelling of the
  *  kind+field guard the dispatcher (sibling-cancel) and `buildUnitSession`
  *  (`collectAll`) both read, so the narrow can't drift across its read sites. */
 export const isFailFast = (loop: LoopDef): boolean => loop.kind === "fanout" && loop.failFast === true;
+
+/** THE haltWhenAllFailed narrow — `true` when a fanout loop opted into the
+ *  all-failed generation-close halt via `fanout({ haltWhenAllFailed: true })`.
+ *  The ONE spelling of the kind+field guard `finishLoop` reads (loop.ts),
+ *  mirroring `isFailFast` above so the two fanout flags can't drift across
+ *  their read sites. The `=== true` keeps the flag boolean-safe for
+ *  jiti-loaded literals. */
+export const isHaltWhenAllFailed = (loop: LoopDef): boolean =>
+	loop.kind === "fanout" && loop.haltWhenAllFailed === true;
 
 /** fanout units collect-all by default (opt out via fanout({ failFast: true }));
  *  the `kind === "fanout"` guard is LOAD-BEARING: iterate/assess units MUST NOT

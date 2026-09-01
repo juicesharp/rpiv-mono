@@ -547,16 +547,34 @@ export const shipGatePasses = (state: RunView): boolean => {
 };
 
 /**
- * Confirm-before-block: a dimension's FIRST blocking verdict against the
- * current artifact gets ONE independent second judgment before it buys a fix
- * round. Single-judge verdicts observably flap (pass/score/severity disagree
- * across rolls on a near-unchanged artifact), and a spurious block
- * manufactures an entire grade→fix cycle. Routing to the confirm stage
- * re-runs only the pending dimensions on the same verdict channel;
- * latest-per-dimension wins, so a confirming pass clears the gate and a
- * confirming fail routes to the fix with two agreeing judgments behind it. A
- * blocker already judged twice for this artifact routes straight to the fix —
- * confirmation is one extra opinion, not an unbounded re-roll.
+ * Confirm-before-block, severity-gated: a dimension's FRESH blocking verdict
+ * against the current artifact gets ONE independent second judgment before it
+ * buys a fix round — but only when the second opinion is worth its price. Run
+ * telemetry over the whole runs corpus measured the confirm arms at ~13:1 and
+ * ~10:1 onward-to-fix vs overturn: ~90% of confirms added 4–7 minutes and an
+ * extra grade session before the fix that was going to happen anyway. So a
+ * fresh blocker (the dimension's previous fresh verdict, if any, did not
+ * block — a repeated block routes straight to the fix: confirmation is one
+ * extra opinion, not an unbounded re-roll) confirms only in the three shapes
+ * where the insurance has real expected value:
+ *
+ *   - a HIGH-severity blocker — the expensive class: its fix round is the
+ *     broadest, so a spurious high deserves one adversarial check before it
+ *     buys that;
+ *   - a RISK-ruling blocker (a `pass: false` ruling or a duty-demoted pass) —
+ *     the confirm's uphold-or-refute-with-evidence contract is the designed
+ *     remedy for an un-grounded ruling, and `amend` legitimately re-emits
+ *     UNCHANGED for a demotions-only verdict, so routing that class to the
+ *     fix instead would lap an unchanged plan against an unchanged lazy
+ *     judgment until the backward-jump guard halted it;
+ *   - a FLAP — the dimension previously passed and now blocks on the same
+ *     artifact (a broad re-grade regressing a carried pass), i.e. the exact
+ *     single-judge instability the confirm exists to adjudicate.
+ *
+ * A first-time MEDIUM finding-driven blocker routes straight to the fix:
+ * amend is surgical and cheap (observed under a minute), and the delta
+ * re-grade guard keeps the re-judgment narrow — a wrong medium now costs one
+ * lean fix lap instead of every medium costing a confirm session.
  *
  * No tier guard is needed: a blocking verdict is medium+ by the severity
  * floor, and a medium+ severity already lifts `gateTier` out of light — every
@@ -571,7 +589,7 @@ const confirmDue = (
 	const roster = new Set(gateRoster(gateTier(state, verdictChannel), dimensions));
 	const fresh = freshVerdicts(state.named[verdictChannel], latestArtifactPath(state, channel));
 	const risks = planAuthoredRisks(state, channel);
-	const byDim = new Map<string, { blocking: boolean; count: number }>();
+	const byDim = new Map<string, { blocking: boolean; confirmWorthy: boolean; prevBlocking?: boolean }>();
 	for (const o of fresh) {
 		const v = o.data as { dimension?: string; pass?: boolean; severity?: string; findings?: unknown } | undefined;
 		if (typeof v?.dimension !== "string" || !roster.has(v.dimension)) continue;
@@ -579,13 +597,17 @@ const confirmDue = (
 		// severity-fold consumers (gateTier/dimensionsToRegrade/allDimensionsPass).
 		const floored = v.pass === true || v.severity === "low" || v.severity === "none" || anchorNitsOnly(v);
 		const riskFail = verdictRiskRulings(o).some((r) => !rulingEffectivePass(r, risks.get(r.id)));
+		const blocking = !floored || riskFail;
+		const prev = byDim.get(v.dimension);
 		byDim.set(v.dimension, {
-			blocking: !floored || riskFail,
-			count: (byDim.get(v.dimension)?.count ?? 0) + 1,
+			blocking, // the latest verdict decides whether the dimension currently blocks
+			confirmWorthy: blocking && (v.severity === "high" || riskFail),
+			prevBlocking: prev?.blocking,
 		});
 	}
-	const blockers = [...byDim.values()].filter((e) => e.blocking);
-	return blockers.length > 0 && blockers.some((e) => e.count < 2);
+	return [...byDim.values()].some(
+		(e) => e.blocking && e.prevBlocking !== true && (e.confirmWorthy || e.prevBlocking === false),
+	);
 };
 
 export {
@@ -605,6 +627,7 @@ export {
 	planAuthoredRisks,
 	planGatePasses,
 	procedureSatisfiesDuty,
+	type RiskRecord,
 	rulingEffectivePass,
 	SLICE_DIMENSIONS,
 	sliceGatePasses,

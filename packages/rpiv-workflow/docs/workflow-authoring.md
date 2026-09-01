@@ -238,12 +238,13 @@ Every constructor accepts the shared introspectable facet and policy knobs:
 | `onCap` | fanout/iterate `"halt"` · assess `"advance"` | What happens at the effective cap (`min(max, run.maxIterations)`). `"halt"` — terminal failure (mirrors the backward-jump guard). `"advance"` — soft-stop: warn, land a `{type:"loop-cap"}` telemetry row, fire `onLoopCap`, keep the projected result, advance downstream. |
 | `result` | fanout `"entry"` · iterate/assess `"last"` | What the loop leaves in `{state.output, state.primaryArtifact}` (the pair is governed as one). `"entry"` restores the pair captured at loop entry (reproduces routing-sees-upstream); `"last"` uses the last completed produce unit's pair (zero produce units degrades to entry). |
 
-`fanout()` adds three knobs the sequential kinds have no use for:
+`fanout()` adds four knobs the sequential kinds have no use for:
 
 | Knob (fanout only) | Default | Meaning |
 |---|---|---|
 | `concurrency` | host cap | Per-fanout in-flight ceiling, applied as `min(concurrency, host maxConcurrency)`. `1` **serializes** the loop — the safe model for units mutating shared state (e.g. applying a plan to one working tree). Integer ≥ 1, validated at construction and load. |
 | `failFast` | absent (collect-all) | Opt out of collect-all: the first failing unit halts the run terminally and cancels in-flight siblings. Cancelled siblings leave unfilled slots, so a later resume re-dispatches them. |
+| `haltWhenAllFailed` | absent | Opt-in halt at generation close: when every declared slot of a closing generation is filled and every one is a failed sentinel (strict all-filled-all-failed), the run halts terminally at the loop stage (parent-attributed `FAIL_FANOUT_ALL_FAILED` row) instead of advancing into a fan-in over an empty channel. Collection is unchanged — per-unit collect-all soft-halt rows keep flowing, so resume still rebuilds sentinels rather than re-running dead units. An over-cap `"advance"` generation never qualifies (beyond-cap slots stay unfilled). `failFast` wins when both are set. |
 | `depArtifactFlag` | none | Injects each completed dependency's artifact path into the dependent unit's prompt as `<flag> <path>`, one per direct `deps` entry whose slot holds a non-failed output. Pairs with `Unit.deps` — `deps` orders the waves, this hands the dependent something to read. Failed dep slots are skipped. |
 
 #### The resume contract (all loop kinds)

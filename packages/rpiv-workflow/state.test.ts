@@ -593,6 +593,45 @@ describe("deep stage guard + readAllStagesForResume", () => {
 		expect(strict.ok).toBe(true);
 		if (!strict.ok) return;
 		expect(strict.rows.map((s) => s.stage)).toEqual(["plan"]);
+		// A non-stop routing row is pure telemetry — never a separator.
+		expect(strict.stopBefore.size).toBe(0);
+	});
+
+	it("stopBefore maps a routed stop to the FOLLOWING stage row's index; a trailing stop stays unmapped", () => {
+		seed();
+		appendRoutingDecision(tmpDir, runId, {
+			type: "routing",
+			fromStageIndex: 1,
+			fromStage: "plan",
+			decision: "stop",
+			note: "gate failed",
+			ts: "t2",
+		});
+		// The halt row a gate stop appends behind its routing row (rows[1]).
+		appendStage(tmpDir, runId, {
+			session: null,
+			stageNumber: 2,
+			stage: "plan",
+			status: "failed",
+			ts: "t3",
+			errMsg: "gate failed",
+		});
+		// A trailing stop with no stage row behind it (the noteless-stop
+		// completion) must NOT be recorded — the finished-run resume stays a no-op.
+		appendRoutingDecision(tmpDir, runId, {
+			type: "routing",
+			fromStageIndex: 2,
+			fromStage: "plan",
+			decision: "stop",
+			ts: "t4",
+		});
+
+		const strict = readAllStagesForResume(tmpDir, runId);
+		expect(strict.ok).toBe(true);
+		if (!strict.ok) return;
+		expect(strict.rows).toHaveLength(2);
+		expect([...strict.stopBefore.keys()]).toEqual([1]);
+		expect(strict.stopBefore.get(1)?.note).toBe("gate failed");
 	});
 
 	it("REFUSES a pre-feature row missing the session key; readAllStages stays lenient", () => {
@@ -1030,6 +1069,60 @@ describe("summarizeRun", () => {
 			outcome: "completed",
 			artifacts: [],
 			workflow: "mid",
+		} satisfies RunRecap);
+	});
+
+	it("reads a trailing PARENT-attributed failed row (no collected) as failed with its failureReason (the haltWhenAllFailed halt shape)", () => {
+		const runId = "halt-when-all-failed";
+		appendHeader(tmpDir, { runId, workflow: "mid", input: "x", ts: "2026" });
+		// Earlier collected soft-halt unit rows — non-terminal; the run survived them.
+		appendStage(tmpDir, runId, {
+			session: null,
+			stageNumber: 1,
+			stage: "design (slice-1)",
+			skill: "design",
+			status: "failed",
+			ts: "t1",
+			errMsg: "unit halted: collect-all soft-stop",
+			parent: "design",
+			role: "produce",
+			unitId: "slice-1",
+			unitIndex: 0,
+			collected: true,
+		});
+		appendStage(tmpDir, runId, {
+			session: null,
+			stageNumber: 2,
+			stage: "design (slice-2)",
+			skill: "design",
+			status: "failed",
+			ts: "t2",
+			errMsg: "unit halted: collect-all soft-stop",
+			parent: "design",
+			role: "produce",
+			unitId: "slice-2",
+			unitIndex: 1,
+			collected: true,
+		});
+		// The LAST row is the generation-close halt — parent-attributed, sessionless,
+		// no `collected` marker, no unit fields (the recordFatalFailure shape the
+		// haltLoopWhenAllFailed engine writes). CONTRAST with the collected-halt pins
+		// above: this row IS terminal, so the recap reads "failed" and the halt's
+		// errMsg becomes the failureReason (recapOutcomeOf's fall-through arm).
+		appendStage(tmpDir, runId, {
+			session: null,
+			stageNumber: 3,
+			stage: "design",
+			skill: "design",
+			status: "failed",
+			ts: "t3",
+			errMsg: 'Fanout all-failed at stage "design" (2/2 units failed)',
+		});
+		expect(summarizeRun(tmpDir, runId)).toEqual({
+			outcome: "failed",
+			artifacts: [],
+			workflow: "mid",
+			failureReason: 'Fanout all-failed at stage "design" (2/2 units failed)',
 		} satisfies RunRecap);
 	});
 

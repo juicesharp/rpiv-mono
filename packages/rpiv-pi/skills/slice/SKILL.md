@@ -1,7 +1,7 @@
 ---
 name: slice
 description: Decompose a research artifact into independent vertical slices — each a self-contained, separately-designable unit — and write a slice map to .rpiv/artifacts/slices/ with a machine-readable `slices:` frontmatter array. A research artifact is required (it is the cut's grounding); confirms the decomposition with you before writing. Also runs in RE-SLICE mode (`--slices <map> --slice-verdicts <v>…`) to STRUCTURALLY re-cut a slice map that failed the design-readiness gate — splitting epics, completing under-cited footings, redistributing frozen coverage units, breaking dependency cycles, renumbering — which a surgical reviser cannot do. Feeds a per-slice design fanout.
-argument-hint: "<research-path>  |  --slices <map> --slice-verdicts <verdict>..."
+argument-hint: "<research-path> | --research <path>  |  --slices <map> --slice-verdicts <verdict>..."
 shell-timeout: 10
 disable-model-invocation: true
 contract:
@@ -60,7 +60,7 @@ You decompose a feature into **independent vertical slices** and write a slice m
 
 `$ARGUMENTS` takes two forms:
 
-1. **Fresh** — a path to a `.rpiv/artifacts/research/*.md` artifact (no flags). Decompose from scratch via Steps 1–6, grounded in that research. The research artifact is **required**: if the argument is missing, empty, or not a research path, print an error and stop — it's a dispatch error (the workflow runs `research` before `slice`).
+1. **Fresh** — a path to a `.rpiv/artifacts/research/*.md` artifact, positional or as `--research <path>` (the flag form is how the build workflow dispatches it — equivalent, same input). Decompose from scratch via Steps 1–6, grounded in that research. The research artifact is **required**: if the argument is missing, empty, or not a research path, print an error and stop — it's a dispatch error (the workflow runs `research` before `slice`).
 2. **Re-slice** (the re-slice loop) — `--slices <map-path> --slice-verdicts <verdict-path> … [--slice-check <structural-verdict-path> …]` (the `--slice-verdicts` and `--slice-check` flags repeat). **Re-cut the existing slice map** to clear the failures its verdicts name. Recognize this form by the `--slices` flag and follow **Re-slice mode** below — NOT the fresh Steps (no confirm). `--slice-check` carries the **deterministic** structural findings (dependency cycles, dropped coverage units, unbacked `file:line` citations) — treat them exactly like a verdict's findings; they are the un-gameable floor and MUST all be cleared.
 
 ## Metadata
