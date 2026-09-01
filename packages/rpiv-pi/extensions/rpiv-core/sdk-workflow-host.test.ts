@@ -157,22 +157,19 @@ void _executorOk;
 
 function makeDeps(overrides: Partial<SdkWorkflowHostDeps> = {}): {
 	deps: SdkWorkflowHostDeps;
-	notify: ReturnType<typeof vi.fn>;
 	uiCustom: ReturnType<typeof vi.fn>;
 	uiNotify: ReturnType<typeof vi.fn>;
 	find: ReturnType<typeof vi.fn>;
 } {
-	const notify = vi.fn();
 	const uiCustom = vi.fn(async () => ({ answers: [], cancelled: false }));
-	// The launcher uiContext (every child binds it via the relay) — its
-	// notify is what the relay toasts through on a deferred questionnaire.
+	// The launcher uiContext — the replacement-proof raw object every toast
+	// routes through (host + child relayUi, and the deferred-questionnaire badge).
 	const uiNotify = vi.fn();
 	const find = vi.fn((provider: string, modelId: string) => ({ provider, id: modelId, _fake: true }));
 
 	const deps = {
 		live: {
 			hasUI: true,
-			ui: { notify },
 			sessionManager: {
 				getBranch: () => [],
 				getSessionId: () => "live-session",
@@ -188,7 +185,7 @@ function makeDeps(overrides: Partial<SdkWorkflowHostDeps> = {}): {
 		...overrides,
 	} as SdkWorkflowHostDeps;
 
-	return { deps, notify, uiCustom, uiNotify, find };
+	return { deps, uiCustom, uiNotify, find };
 }
 
 beforeEach(() => {
@@ -510,11 +507,31 @@ describe("concurrency + observer relay", () => {
 		expect(host.maxConcurrency).toBe(4);
 	});
 
-	it("ui relays notify to the live observer", () => {
-		const { deps, notify } = makeDeps();
+	it("ui notifies through the session_start-captured uiContext — the replacement-proof channel", () => {
+		const { deps, uiNotify } = makeDeps();
 		const host = new SdkWorkflowHost(deps);
 		host.ui.notify("hello", "warning");
-		expect(notify).toHaveBeenCalledWith("hello", "warning");
+		expect(uiNotify).toHaveBeenCalledWith("hello", "warning");
+	});
+
+	// Regression: the stale-ctx uncaughtException. Every `live` member is a pi
+	// getter that throws once the launcher session is replaced mid-run; a
+	// floated run's progress/completion toast must not read one. Simulate a
+	// post-replacement launcher whose every getter throws stale — notify must
+	// still land on the captured uiContext.
+	it("toasts survive launcher session replacement (stale live ctx)", () => {
+		const { deps, uiNotify } = makeDeps();
+		const stale = () => {
+			throw new Error("This extension ctx is stale after session replacement or reload.");
+		};
+		const staleLive = {} as SdkWorkflowHostDeps["live"];
+		Object.defineProperty(staleLive, "hasUI", { get: stale });
+		Object.defineProperty(staleLive, "sessionManager", { get: stale });
+		const host = new SdkWorkflowHost(deps);
+		// Replacement happens AFTER construction — swap live's getters to stale.
+		Object.assign(deps, { live: staleLive });
+		host.ui.notify("run complete", "info");
+		expect(uiNotify).toHaveBeenCalledWith("run complete", "info");
 	});
 });
 

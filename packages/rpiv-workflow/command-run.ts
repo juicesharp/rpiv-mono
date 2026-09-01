@@ -115,7 +115,10 @@ export async function handleWorkflowCommand(host: WorkflowHost, args: string, ct
 	// detached and appears as a lane. runWorkflow returns an envelope (never throws on
 	// run failure), but a thrown predicate/invariant could still bubble — .catch keeps
 	// Pi's dispatcher from printing a raw stack AND a floated promise from going
-	// unhandled (NFR).
+	// unhandled (NFR). Both tails settle on the ctx captured HERE, possibly long
+	// after pi replaced the launcher session — notify via notifyOrDropIfStale so a
+	// stale ctx drops the toast instead of throwing out of the tail (which would
+	// be an unhandled rejection → uncaughtException → pi exits).
 	void runWorkflow(ctx, {
 		workflow,
 		input,
@@ -126,11 +129,11 @@ export async function handleWorkflowCommand(host: WorkflowHost, args: string, ct
 		.then((result) => {
 			// Surface pre-flight rejections (collision, etc.) — no runId means no JSONL on disk.
 			if (!result.success && result.runId === undefined && result.error) {
-				ctx.ui.notify(result.error, "error");
+				notifyOrDropIfStale(ctx, result.error, "error");
 			}
 		})
 		.catch((e) => {
-			ctx.ui.notify(MSG_WORKFLOW_THREW(formatError(e)), "error");
+			notifyOrDropIfStale(ctx, MSG_WORKFLOW_THREW(formatError(e)), "error");
 		});
 }
 
@@ -143,7 +146,8 @@ async function handleResume(host: WorkflowHost, ctx: WorkflowHostContext, ref: s
 		ctx.ui.notify(MSG_RESUME_USAGE, "error");
 		return;
 	}
-	// Float the resume off the prompt — identical shape to the run path.
+	// Float the resume off the prompt — identical shape to the run path,
+	// including the stale-safe settle tails.
 	void resumeWorkflowByRunId(ctx, ref, { host })
 		.then((result) => {
 			// A failure with no runId is a no-JSONL refusal (run-id didn't resolve,
@@ -152,17 +156,42 @@ async function handleResume(host: WorkflowHost, ctx: WorkflowHostContext, ref: s
 			// already notified by the stage machinery via its JSONL failure row;
 			// re-notifying would double up.
 			if (!result.success && result.runId === undefined && result.error) {
-				ctx.ui.notify(result.error, "error");
+				notifyOrDropIfStale(ctx, result.error, "error");
 			}
 		})
 		.catch((e) => {
-			ctx.ui.notify(MSG_WORKFLOW_THREW(formatError(e)), "error");
+			notifyOrDropIfStale(ctx, MSG_WORKFLOW_THREW(formatError(e)), "error");
 		});
 }
 
 // ---------------------------------------------------------------------------
 // Private helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Notify on the /wf command ctx captured at float time, swallowing ONLY the
+ * stale-ctx error pi-core throws once the launcher session has been replaced
+ * or disposed (/new, resume, fork, /reload, quit, auto-compaction — any of
+ * which can happen while a detached run is in flight). The toast is
+ * best-effort — the lane dock + JSONL trail already carry the outcome — but a
+ * throw from a settle tail escapes the .catch and kills pi as an
+ * uncaughtException. Any other error is a real bug and must propagate.
+ */
+function notifyOrDropIfStale(ctx: WorkflowHostContext, message: string, level: "warning" | "error"): void {
+	try {
+		ctx.ui.notify(message, level);
+	} catch (e) {
+		if (!isStaleCtxError(e)) throw e;
+	}
+}
+
+// pi-core's ExtensionRunner throws this exact phrase from an invalidated ctx
+// after session replacement/reload. Match the stable substring — the
+// per-package twin of the rpiv-core/rpiv-btw/rpiv-todo copies (siblings never
+// import each other at runtime).
+function isStaleCtxError(e: unknown): boolean {
+	return /stale after session replacement/.test(String(e));
+}
 
 /** Surface every load + validation issue as a notify, prefixed by severity. */
 function surfaceIssues(ctx: WorkflowHostContext, issues: readonly Issue[]): void {

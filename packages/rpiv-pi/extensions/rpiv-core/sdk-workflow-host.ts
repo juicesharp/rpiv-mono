@@ -159,8 +159,13 @@ export function withoutAmbientExtensions(base: LoadExtensionsResult): LoadExtens
  * the dir from cwd+runId and hands rpiv-pi the concrete path.
  */
 export interface SdkWorkflowHostDeps {
-	/** The interactive ctx — observer (ui/sessionManager) + the hasUI source. */
-	live: Pick<WorkflowHostContext, "ui" | "sessionManager" | "hasUI">;
+	/**
+	 * The interactive ctx — observer (sessionManager reads) + the hasUI source.
+	 * Deliberately NOT the toast channel: every `live` member is a pi getter that
+	 * throws stale once the launcher session is replaced/disposed mid-run, so
+	 * toasts route through the raw `uiContext` below instead (see `relayUi`).
+	 */
+	live: Pick<WorkflowHostContext, "sessionManager" | "hasUI">;
 	/** Borrowed at session_start (carries auth/OAuth state). */
 	modelRegistry: ModelRegistry;
 	/** The real launcher UI the deferring relay forwards to (captured at session_start). */
@@ -459,7 +464,9 @@ export class SdkWorkflowHost implements WorkflowHostContext {
 	private adapt(session: AgentSession, depth: number, watchdog: BashWatchdog): WorkflowSessionContext {
 		return {
 			cwd: this.cwd,
-			hasUI: this.deps.live.hasUI,
+			// Constructor snapshot, not a fresh `live.hasUI` getter read — adapt
+			// runs mid-run, when the launcher ctx may already be stale.
+			hasUI: this.hasUI,
 			ui: this.relayUi(),
 			maxConcurrency: this.maxConcurrency,
 			// A child may itself fan out — each level increments the depth, bounded
@@ -513,9 +520,18 @@ export class SdkWorkflowHost implements WorkflowHostContext {
 			: undefined;
 	}
 
+	/**
+	 * Toasts go through the session_start-captured RAW uiContext, never a
+	 * guarded `live.ui` getter read: the stage machinery and audit paths notify
+	 * mid-run — long after `/wf` returned — and pi invalidates every ctx getter
+	 * of the old generation on launcher session replacement (/new, resume,
+	 * /reload, auto-compaction). The raw object survives replacement and still
+	 * points at the persistent TUI, so a floated run's progress/completion
+	 * toasts can't throw the stale-ctx error out of the runner.
+	 */
 	private relayUi() {
 		return {
-			notify: (message: string, level?: "info" | "warning" | "error") => this.deps.live.ui.notify(message, level),
+			notify: (message: string, level?: "info" | "warning" | "error") => this.deps.uiContext.notify(message, level),
 		};
 	}
 }

@@ -191,3 +191,88 @@ describe("handleWorkflowCommand — resume float", () => {
 		expect(resumeWorkflowByRunId).not.toHaveBeenCalled();
 	});
 });
+
+// The settle tails fire on the ctx captured at /wf time, which pi invalidates
+// on any launcher session replacement (/new, resume, /reload, auto-compaction)
+// — every ctx getter then throws the stale error. Pre-guard, that throw
+// escaped the .catch tail as an unhandled rejection → uncaughtException → pi
+// exited (frequent with parallel runs: one replacement poisons every floated
+// promise at once). The pinned message is pi-core's exact phrase.
+describe("float tails on a stale launcher ctx", () => {
+	const STALE_CTX_MESSAGE = "This extension ctx is stale after session replacement or reload.";
+
+	it("drops the failure toast when the ctx went stale while the run floated — no unhandled rejection", async () => {
+		const ctx = makeCtx();
+		vi.mocked(ctx.ui.notify).mockImplementation(() => {
+			throw new Error(STALE_CTX_MESSAGE);
+		});
+		vi.mocked(runWorkflow).mockRejectedValue(new Error("boom"));
+		const unhandled = vi.fn();
+		process.once("unhandledRejection", unhandled);
+
+		await handleWorkflowCommand(HOST, "ship do the thing", ctx);
+		await flush();
+
+		// The toast was attempted, threw stale, and was dropped — pi survives.
+		expect(ctx.ui.notify).toHaveBeenCalledTimes(1);
+		expect(unhandled).not.toHaveBeenCalled();
+		process.removeListener("unhandledRejection", unhandled);
+	});
+
+	it("drops the resume-tail toast on a stale ctx — no unhandled rejection", async () => {
+		const ctx = makeCtx();
+		vi.mocked(ctx.ui.notify).mockImplementation(() => {
+			throw new Error(STALE_CTX_MESSAGE);
+		});
+		vi.mocked(resumeWorkflowByRunId).mockRejectedValue(new Error("resume boom"));
+		const unhandled = vi.fn();
+		process.once("unhandledRejection", unhandled);
+
+		await handleWorkflowCommand(HOST, "@my-run", ctx);
+		await flush();
+
+		expect(ctx.ui.notify).toHaveBeenCalledTimes(1);
+		expect(unhandled).not.toHaveBeenCalled();
+		process.removeListener("unhandledRejection", unhandled);
+	});
+
+	it("drops a stale pre-flight toast in the .then tail without cascading into the .catch", async () => {
+		const ctx = makeCtx();
+		vi.mocked(ctx.ui.notify).mockImplementationOnce(() => {
+			throw new Error(STALE_CTX_MESSAGE);
+		});
+		vi.mocked(runWorkflow).mockResolvedValue({
+			stagesCompleted: 0,
+			success: false,
+			runId: undefined,
+			error: "name collision",
+		});
+
+		await handleWorkflowCommand(HOST, "ship do the thing", ctx);
+		await flush();
+
+		// Swallowed in the .then tail — the .catch never fires a second notify.
+		expect(ctx.ui.notify).toHaveBeenCalledTimes(1);
+	});
+
+	it("a non-stale notify throw still propagates (the .then tail's throw reaches the .catch)", async () => {
+		const ctx = makeCtx();
+		const err = new Error("tui exploded");
+		vi.mocked(ctx.ui.notify).mockImplementationOnce(() => {
+			throw err;
+		});
+		vi.mocked(runWorkflow).mockResolvedValue({
+			stagesCompleted: 0,
+			success: false,
+			runId: undefined,
+			error: "name collision",
+		});
+
+		await handleWorkflowCommand(HOST, "ship do the thing", ctx);
+		await flush();
+
+		// The genuine error escaped the guard and surfaced through the .catch tail.
+		expect(ctx.ui.notify).toHaveBeenCalledTimes(2);
+		expect(ctx.ui.notify).toHaveBeenLastCalledWith(MSG_WORKFLOW_THREW(formatError(err)), "error");
+	});
+});
