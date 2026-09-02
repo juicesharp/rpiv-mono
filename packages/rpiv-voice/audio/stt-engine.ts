@@ -23,9 +23,17 @@
  * and froze the UI under load). Construction is asynchronous too
  * (`OfflineRecognizer.createAsync`) — loading the engine no longer blocks
  * the splash render.
+ *
+ * Serialization: `recognize` calls are FIFO-queued per engine. sherpa's
+ * `decodeAsync` holds no JS-side lock, and the native layer's tolerance for
+ * concurrent decodes on one recognizer handle is undocumented — the old
+ * synchronous decode was serialized for free by the event loop, and callers
+ * (the rolling-partial path vs the finals chain) still assume that. A queued
+ * caller waits at most one decode; it never queues behind a whole chain.
  */
 
 import type { Config } from "sherpa-onnx-node";
+import { DEFAULT_NUM_THREADS } from "../config/voice-config.js";
 
 // ── Whisper fixed input contract ─────────────────────────────────────────────
 // 16 kHz mono PCM. featureDim 80 matches the model's mel-spectrogram output.
@@ -33,11 +41,8 @@ const WHISPER_SAMPLE_RATE = 16000;
 const WHISPER_FEATURE_DIM = 80;
 
 // ── Defaults ─────────────────────────────────────────────────────────────────
-// 4 threads is the sweet spot for Whisper base.en on a modern multi-core CPU
-// per upstream tuning guidance (whisper.cpp benchmarks; the sherpa-onnx ORT
-// thread pool follows the same pattern). More than 4 shows diminishing
-// returns and can starve other Pi work on smaller machines.
-const DEFAULT_NUM_THREADS = 4;
+// DEFAULT_NUM_THREADS is imported from voice-config — the single source shared
+// with the settings-row fallback, so the two cannot silently diverge.
 const DEFAULT_PROVIDER = "cpu";
 // `tailPaddings` is the only decoder-adjacent knob sherpa-onnx exposes for
 // Whisper. Per maintainer guidance in k2-fsa/sherpa-onnx#2787, audio under
@@ -69,13 +74,28 @@ export async function createSttEngine(config: SttEngineConfig): Promise<SttEngin
 	const ns = await loadSherpaNamespace();
 	const recognizer = await ns.OfflineRecognizer.createAsync(buildRecognizerConfig(config));
 
+	// FIFO decode queue — see the "Serialization" note in the module doc. Each
+	// call awaits the previous call's release before touching the shared
+	// native handle; the finally guarantees release even on a decode failure.
+	let decodeQueue: Promise<void> = Promise.resolve();
+
 	return {
 		async recognize(samples: Float32Array, sampleRate: number): Promise<string> {
 			if (samples.length === 0) return "";
-			const stream = recognizer.createStream();
-			stream.acceptWaveform({ samples, sampleRate });
-			const result = await recognizer.decodeAsync(stream);
-			return result.text.trim();
+			const previous = decodeQueue;
+			let release!: () => void;
+			decodeQueue = new Promise<void>((resolve) => {
+				release = resolve;
+			});
+			await previous;
+			try {
+				const stream = recognizer.createStream();
+				stream.acceptWaveform({ samples, sampleRate });
+				const result = await recognizer.decodeAsync(stream);
+				return result.text.trim();
+			} finally {
+				release();
+			}
 		},
 		release(): void {
 			// sherpa-onnx-node@1.13.0 exposes no destructor; the native handle is

@@ -1,7 +1,7 @@
 import { DynamicBorder, type Theme } from "@earendil-works/pi-coding-agent";
 import { getKeybindings } from "@earendil-works/pi-tui";
 import type { VoiceConfig } from "../config/voice-config.js";
-import { resolveNumThreads, saveVoiceConfig } from "../config/voice-config.js";
+import { loadVoiceConfig, resolveNumThreads, saveVoiceConfig } from "../config/voice-config.js";
 import { globalBinding } from "../view/component-binding.js";
 import { EqualizerView } from "../view/components/equalizer-view.js";
 import { SettingsFieldView } from "../view/components/settings-field-view.js";
@@ -51,7 +51,6 @@ export interface VoiceSessionComponent {
 
 export class VoiceSession {
 	private state: VoiceState;
-	private readonly persistedConfig: VoiceConfig;
 	private readonly adapter: VoiceOverlayPropsAdapter;
 	private readonly overlay: OverlayView;
 	private readonly tui: VoiceSessionConfig["tui"];
@@ -65,7 +64,6 @@ export class VoiceSession {
 		this.tui = config.tui;
 		this.deps = config.deps;
 		this.done = config.done;
-		this.persistedConfig = config.persistedConfig;
 		this.state = initialVoiceState(
 			draftFromConfig(config.persistedConfig),
 			resolveNumThreads(config.persistedConfig),
@@ -191,6 +189,11 @@ export class VoiceSession {
 	}
 
 	private applyContext(): ApplyContext {
-		return { persistedConfig: this.persistedConfig };
+		// A re-reader, not the constructor snapshot: save handlers must merge
+		// the draft against voice.json as it is at save time, so a mid-session
+		// hand edit of a JSON-only key round-trips instead of being reverted.
+		// Only the save handlers invoke it, so the hot dispatch path (one
+		// audio_chunk per mic frame) never touches disk.
+		return { readPersistedConfig: loadVoiceConfig };
 	}
 }

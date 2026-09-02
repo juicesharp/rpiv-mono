@@ -297,6 +297,53 @@ describe("startDictationPipeline — branch coverage", () => {
 		expect(stopSpy).toHaveBeenCalled();
 	});
 
+	it("resolves the drain when the mic emits close without end/error — third terminal event (review I1)", async () => {
+		const recognize = vi.fn<SttEngine["recognize"]>().mockResolvedValue("hello");
+		const { mic, handle } = startWithRecognize(recognize);
+
+		mic.emit("data", loudChunk());
+		mic.emit("silence");
+		await yieldToFlush();
+		await yieldToFlush();
+
+		// A Readable destroyed without a clean end emits only `close`; the
+		// drain must not park on it.
+		mic.emit("close");
+		await expect(handle.finalTranscriptPromise).resolves.toBe("hello");
+	});
+
+	it("drains exactly once when end and close arrive in sequence", async () => {
+		const recognize = vi.fn<SttEngine["recognize"]>().mockResolvedValue("hello");
+		const { mic, dispatched, handle } = startWithRecognize(recognize);
+
+		mic.emit("data", loudChunk());
+		mic.emit("silence");
+		await yieldToFlush();
+		await yieldToFlush();
+
+		mic.emit("end");
+		mic.emit("close"); // a Readable emits close after end — must not double-drain
+		await expect(handle.finalTranscriptPromise).resolves.toBe("hello");
+		const appends = dispatched.filter((a) => a.kind === "audio_transcript_appended");
+		expect(appends.length).toBe(1);
+	});
+
+	it("cancel-abort short-circuits the drain flush: buffered audio is never final-decoded (review Q6)", async () => {
+		const recognize = vi.fn<SttEngine["recognize"]>().mockResolvedValue("preview");
+		const { mic, dispatched, handle } = startWithRecognize(recognize);
+
+		mic.emit("data", loudChunk()); // buffered; also kicks off partial #0
+		await yieldToFlush();
+		expect(recognize).toHaveBeenCalledTimes(1);
+
+		abort.abort(); // cancel: mic stop → end → drain flush over the buffer
+		await expect(handle.finalTranscriptPromise).resolves.toBe("");
+		// The flush skipped the decode — no second recognize, no final
+		// dispatched into the torn-down session.
+		expect(recognize).toHaveBeenCalledTimes(1);
+		expect(dispatched.some((a) => a.kind === "audio_transcript_appended")).toBe(false);
+	});
+
 	it("cap-flush splits a long utterance and commits the head", async () => {
 		// MAX_SEGMENT_SAMPLES = 16000 * 12 = 192000 → 121 × 100 ms chunks crosses it.
 		// findLowestEnergyCutIndex picks the lowest-RMS chunk in the trailing 800 ms;
@@ -430,8 +477,8 @@ describe("startDictationPipeline — async invariants under genuine overlap", ()
 		await expect(handle.finalTranscriptPromise).resolves.toBe("committed");
 	});
 
-	it("drain waits on a held final across abort, then settles with the accumulated text", async () => {
-		const { mic, deferreds, handle } = startWithDeferredRecognize();
+	it("waits on a held final across cancel-abort, then discards its result — the drain settles with pre-abort text only", async () => {
+		const { mic, dispatched, deferreds, handle } = startWithDeferredRecognize();
 
 		mic.emit("data", loudChunk()); // partial #0, held
 		mic.emit("silence"); // final #1, held
@@ -446,8 +493,30 @@ describe("startDictationPipeline — async invariants under genuine overlap", ()
 		await new Promise<void>((r) => setImmediate(r));
 		expect(settled).toBe(false);
 
-		deferreds[1].resolve("drained text");
-		await expect(handle.finalTranscriptPromise).resolves.toBe("drained text");
+		deferreds[1].resolve("canceled text");
+		// The decode is still awaited (no dangling native work), but its result
+		// is discarded: cancel strands the accumulator and the session is done.
+		await expect(handle.finalTranscriptPromise).resolves.toBe("");
+		expect(dispatched.some((a) => a.kind === "audio_transcript_appended")).toBe(false);
+	});
+
+	it("logs a drain-time final decode failure — the commit drain runs pre-abort and is never suppressed (review I2)", async () => {
+		const { mic, dispatched, deferreds, handle } = startWithDeferredRecognize();
+
+		mic.emit("data", loudChunk()); // partial #0, held
+		mic.emit("silence"); // final #1, held
+		await yieldToFlush();
+
+		mic.emit("end"); // commit-shaped shutdown: the signal stays live
+		deferreds[1].reject(new Error("drain-time decode failure"));
+		await expect(handle.finalTranscriptPromise).resolves.toBe("");
+
+		// The one failure whose outcome the user consumes leaves a breadcrumb.
+		const content = readFileSync(getErrorLogPath(), "utf-8");
+		expect(content).toMatch(/\[stt\.recognize\].*drain-time decode failure/);
+		// And the empty-append still fires so the reducer clears the partial.
+		expect(dispatched.some((a) => a.kind === "audio_transcript_appended" && a.text === "")).toBe(true);
+		deferreds[0].resolve("late preview"); // release the held partial
 	});
 
 	it("logs one stt.decode breadcrumb per completed decode; RMS-gated segments log nothing", async () => {
@@ -479,22 +548,22 @@ describe("startDictationPipeline — async invariants under genuine overlap", ()
 		expect(content).toMatch(/\[stt\.decode\] final \d+ms \d+ samples/);
 	});
 
-	it("suppresses error breadcrumbs for rejections landing after abort — the reducer dispatch stays ungated", async () => {
+	it("cancel teardown is fully silent: post-abort rejections neither log breadcrumbs nor dispatch into the done session", async () => {
 		const { mic, dispatched, deferreds, handle } = startWithDeferredRecognize();
 
 		mic.emit("data", loudChunk()); // partial #0, held
 		mic.emit("silence"); // final #1, held
 		await yieldToFlush();
 
-		abort.abort();
-		deferreds[1].reject(new Error("late final failure")); // drain-time decode error
+		abort.abort(); // cancel: only this path suppresses — commit drains pre-abort
+		deferreds[1].reject(new Error("late final failure"));
 		deferreds[0].reject(new Error("late partial failure"));
 		await expect(handle.finalTranscriptPromise).resolves.toBe(""); // transcript never got text
 
 		const content = existsSync(getErrorLogPath()) ? readFileSync(getErrorLogPath(), "utf-8") : "";
 		expect(content).not.toMatch(/\[stt\.recognize\]/);
 		expect(content).not.toMatch(/\[stt\.recognize\.partial\]/);
-		// Suppression is logging-only: the empty-append still dispatches.
-		expect(dispatched.some((a) => a.kind === "audio_transcript_appended" && a.text === "")).toBe(true);
+		// The session is torn down — nothing is dispatched at it either.
+		expect(dispatched.some((a) => a.kind === "audio_transcript_appended")).toBe(false);
 	});
 });

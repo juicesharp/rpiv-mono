@@ -104,6 +104,8 @@ That path is hardcoded — unlike `voice.json`, it does **not** move when you se
 | --- | --- |
 | `stt.recognize` | A final segment failed to decode. The transcript skips it |
 | `stt.recognize.partial` | A rolling partial decode failed. Harmless — the next one retries |
+| `stt.decode` | Latency breadcrumb: one line per completed decode (final or partial) with its wall-clock duration and sample count. Informational |
+| `stt.drain` | The commit drain timed out; the pasted text fell back to the on-screen merge |
 | `mic.path` | Which capture strategy won at startup, and why the first one was refused |
 
 Writes to this log are best-effort and never throw. The dictation pipeline cannot write

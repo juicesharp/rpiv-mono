@@ -119,6 +119,11 @@ describe("createSttEngine", () => {
 		const config = mockCreateAsync.mock.calls[0][0];
 		expect(config.modelConfig.whisper).not.toHaveProperty("language");
 	});
+
+	it("propagates a createAsync rejection to the caller (preflight 'engine' stage path)", async () => {
+		mockCreateAsync.mockRejectedValue(new Error("native load failed"));
+		await expect(createSttEngine(BASE_CONFIG)).rejects.toThrow("native load failed");
+	});
 });
 
 describe("SttEngine.recognize", () => {
@@ -239,6 +244,45 @@ describe("async gating — native work awaits instead of blocking the event loop
 		const engine = await pendingEngine;
 		expect(engine).toHaveProperty("recognize");
 		expect(engine).toHaveProperty("release");
+	});
+});
+
+describe("decode serialization — one native decode at a time per engine", () => {
+	beforeEach(armDefaultMocks);
+
+	it("queues an overlapping recognize: the second decode touches the shared handle only after the first settles", async () => {
+		const engine = await createSttEngine(BASE_CONFIG);
+		let releaseFirst!: () => void;
+		const firstGate = new Promise<void>((resolve) => {
+			releaseFirst = resolve;
+		});
+		mockDecodeAsync
+			.mockReturnValueOnce(firstGate.then(() => ({ text: "first", tokens: [], timestamps: [] })))
+			.mockResolvedValueOnce({ text: "second", tokens: [], timestamps: [] });
+
+		const first = engine.recognize(loudSamples(1600), 16000);
+		const second = engine.recognize(loudSamples(1600), 16000);
+
+		await new Promise((r) => setTimeout(r, 0));
+		// While decode #1 is held, the queued call must not have opened a
+		// stream or started a decode on the shared native handle.
+		expect(mockCreateStream).toHaveBeenCalledTimes(1);
+		expect(mockDecodeAsync).toHaveBeenCalledTimes(1);
+
+		releaseFirst();
+		await expect(first).resolves.toBe("first");
+		await expect(second).resolves.toBe("second");
+		expect(mockDecodeAsync).toHaveBeenCalledTimes(2);
+	});
+
+	it("re-opens the queue after a decode failure — the next recognize still runs", async () => {
+		const engine = await createSttEngine(BASE_CONFIG);
+		mockDecodeAsync
+			.mockRejectedValueOnce(new Error("decode boom"))
+			.mockResolvedValueOnce({ text: "recovered", tokens: [], timestamps: [] });
+
+		await expect(engine.recognize(loudSamples(1600), 16000)).rejects.toThrow("decode boom");
+		await expect(engine.recognize(loudSamples(1600), 16000)).resolves.toBe("recovered");
 	});
 });
 

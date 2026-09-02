@@ -4,7 +4,7 @@ import { initialVoiceState } from "./state.js";
 import { type ApplyContext, configFromDraft, draftFromConfig, reduce } from "./state-reducer.js";
 import { STATUS_META } from "./status-intent.js";
 
-const ctx: ApplyContext = { persistedConfig: {} };
+const ctx: ApplyContext = { readPersistedConfig: () => ({}) };
 
 function freshState() {
 	return initialVoiceState(draftFromConfig({}));
@@ -188,7 +188,11 @@ describe("reduce", () => {
 
 	it("close_settings round-trips non-owned persisted keys (numThreads survives the silent Esc-save)", () => {
 		const s = { ...freshState(), currentScreen: "settings" as const };
-		const r = reduce(s, { kind: "close_settings" }, { persistedConfig: { numThreads: 8 } as VoiceConfig });
+		const r = reduce(
+			s,
+			{ kind: "close_settings" },
+			{ readPersistedConfig: () => ({ numThreads: 8 }) as VoiceConfig },
+		);
 		expect(r.effects).toContainEqual(
 			expect.objectContaining({ kind: "save_config", config: expect.objectContaining({ numThreads: 8 }) }),
 		);
@@ -196,9 +200,27 @@ describe("reduce", () => {
 
 	it("settings_save round-trips non-owned persisted keys (numThreads survives Ctrl-S)", () => {
 		const s = freshState();
-		const r = reduce(s, { kind: "settings_save" }, { persistedConfig: { numThreads: 8 } as VoiceConfig });
+		const r = reduce(s, { kind: "settings_save" }, { readPersistedConfig: () => ({ numThreads: 8 }) as VoiceConfig });
 		expect(r.effects).toContainEqual(
 			expect.objectContaining({ kind: "save_config", config: expect.objectContaining({ numThreads: 8 }) }),
+		);
+	});
+
+	it("save handlers merge against the config AS OF SAVE TIME, not a session-start snapshot (review I4)", () => {
+		// Simulate a hand edit landing between two saves: the re-reader returns
+		// a different file content on each call.
+		const reads: VoiceConfig[] = [{ numThreads: 8 }, { numThreads: 12 }];
+		const liveCtx: ApplyContext = { readPersistedConfig: () => reads.shift() ?? {} };
+		const s = freshState();
+
+		const first = reduce(s, { kind: "settings_save" }, liveCtx);
+		expect(first.effects).toContainEqual(
+			expect.objectContaining({ kind: "save_config", config: expect.objectContaining({ numThreads: 8 }) }),
+		);
+
+		const second = reduce(s, { kind: "settings_save" }, liveCtx);
+		expect(second.effects).toContainEqual(
+			expect.objectContaining({ kind: "save_config", config: expect.objectContaining({ numThreads: 12 }) }),
 		);
 	});
 });

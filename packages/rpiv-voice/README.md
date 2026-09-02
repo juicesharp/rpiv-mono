@@ -75,7 +75,7 @@ it read-only, so hand-edit the file and re-run `/voice` to apply a change:
 | --- | --- | --- |
 | `hallucinationFilterEnabled` | `true` | Drops Whisper's silence artifacts and repetition loops |
 | `equalizerEnabled` | `false` | Renders the live audio waveform under the transcript |
-| `numThreads` | `4` | Decode threads for the Whisper recognizer — integer `1`–`16`, JSON-only, applied on the next `/voice` run |
+| `numThreads` | `4` | Decode threads for the Whisper recognizer — integer `1`–`16`; below `1` (or any invalid value) falls back to the default `4`, above `16` clamps to `16`. JSON-only, applied on the next `/voice` run |
 
 The file is written with mode `0600`.
 

@@ -497,14 +497,17 @@ describe("handleVoiceCommand — commit drain & teardown ordering", () => {
 	});
 
 	// Per-test drain control: override the pipeline mock for exactly one call.
-	function overrideDrain(promise: Promise<string>): void {
-		startDictationPipeline.mockImplementationOnce(() => ({
+	// Returns the handle so tests can assert on stop() ordering.
+	function overrideDrain(promise: Promise<string>) {
+		const handle = {
 			finalTranscriptPromise: promise,
-			isPaused: () => false,
+			isPaused: () => false as const,
 			setPaused: vi.fn(),
 			setHallucinationFilterEnabled: vi.fn(),
 			stop: vi.fn(),
-		}));
+		};
+		startDictationPipeline.mockImplementationOnce(() => handle);
+		return handle;
 	}
 
 	async function startRun() {
@@ -558,6 +561,38 @@ describe("handleVoiceCommand — commit drain & teardown ordering", () => {
 		]);
 		expect(pasteToEditor).not.toHaveBeenCalled();
 		expect(sttEngineRelease).toHaveBeenCalledOnce(); // immediate release, no drain await
+	});
+
+	it("stops the mic while the commit drain is still pending (drain-then-abort ordering — review I2)", async () => {
+		const drain = makeDrain<string>();
+		const handle = overrideDrain(drain.promise);
+		const { run } = await startRun();
+		sessionState.done?.({ intent: "commit", transcript: "merge" });
+
+		// stop() must fire to end the mic BEFORE the drain settles — it is what
+		// triggers the drain; the abort now comes only after.
+		await new Promise<void>((r) => setImmediate(r));
+		expect(handle.stop).toHaveBeenCalledOnce();
+
+		drain.resolve("merge");
+		await run;
+	});
+
+	it("bounds the commit drain: a hung drain falls back to the reducer merge (review I1)", async () => {
+		vi.useFakeTimers({ toFake: ["setTimeout"] });
+		try {
+			const drain = makeDrain<string>(); // never resolved — simulated park
+			overrideDrain(drain.promise);
+			const { pasteToEditor, run } = await startRun();
+			sessionState.done?.({ intent: "commit", transcript: "merge text" });
+
+			await vi.advanceTimersByTimeAsync(10_000);
+			await run;
+			expect(pasteToEditor).toHaveBeenCalledWith("merge text");
+			expect(sttEngineRelease).toHaveBeenCalledOnce();
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it("releases the engine only after the commit drain settles (invocationCallOrder)", async () => {

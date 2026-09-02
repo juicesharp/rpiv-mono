@@ -49,9 +49,13 @@ export function isEqualizerEnabled(config: { equalizerEnabled?: boolean }): bool
 }
 
 /**
- * Decode-thread default. Mirrors the engine-side fallback constant in
- * `packages/rpiv-voice/audio/stt-engine.ts` — the engine applies the same
- * default when `numThreads` is absent from its constructor config.
+ * Decode-thread default — the single source. The engine
+ * (`audio/stt-engine.ts`) imports it as its constructor fallback and the
+ * settings row shows it, so the two surfaces cannot diverge. 4 threads is the
+ * sweet spot for Whisper base on a modern multi-core CPU per upstream tuning
+ * guidance (whisper.cpp benchmarks; the sherpa-onnx ORT thread pool follows
+ * the same pattern) — more shows diminishing returns and can starve other Pi
+ * work on smaller machines.
  */
 export const DEFAULT_NUM_THREADS = 4;
 

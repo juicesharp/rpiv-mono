@@ -5,7 +5,13 @@ import { SETTINGS_FIELD_ORDER, type SettingsDraft, type SettingsFieldKey, type V
 import { STATUS_META } from "./status-intent.js";
 
 export interface ApplyContext {
-	persistedConfig: VoiceConfig;
+	/**
+	 * Fresh read of voice.json. Save handlers call it AT SAVE TIME so
+	 * pass-through keys round-trip from the file as it is now — a mid-session
+	 * hand edit of a JSON-only key (numThreads) must survive a settings save,
+	 * not get reverted from the session-start snapshot.
+	 */
+	readPersistedConfig: () => VoiceConfig;
 }
 
 export type Effect =
@@ -106,7 +112,7 @@ const openSettings: Handler<"open_settings"> = (state, _action, _ctx) => ({
 const closeSettings: Handler<"close_settings"> = (state, _action, ctx) => ({
 	state: { ...state, currentScreen: "dictation" },
 	effects: [
-		{ kind: "save_config", config: configFromDraft(state.settingsDraft, ctx.persistedConfig) },
+		{ kind: "save_config", config: configFromDraft(state.settingsDraft, ctx.readPersistedConfig()) },
 		{ kind: "request_render" },
 	],
 });
@@ -154,7 +160,7 @@ function stepFocus(current: SettingsFieldKey, delta: 1 | -1): SettingsFieldKey {
 // failure because `return` inside runEffect()'s switch case exits the method,
 // not the outer effect loop — review I1 caught this.
 const settingsSave: Handler<"settings_save"> = (state, _action, ctx) => {
-	const config = configFromDraft(state.settingsDraft, ctx.persistedConfig);
+	const config = configFromDraft(state.settingsDraft, ctx.readPersistedConfig());
 	return {
 		state,
 		effects: [

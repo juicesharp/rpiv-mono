@@ -13,10 +13,12 @@ vi.mock("@earendil-works/pi-tui", async (importOriginal) => {
 
 // Mock saveVoiceConfig to avoid filesystem writes. Default-return `true` to
 // match the real success path; per-test overrides can return `false` to drive
-// the save-failure notify branch.
+// the save-failure notify branch. loadVoiceConfig is mocked too: the shell
+// re-reads it at save time (review I4), so tests control "the file as it is
+// now" through this mock rather than the constructor snapshot.
 vi.mock("../config/voice-config.js", async (importOriginal) => {
 	const orig = await importOriginal<typeof import("../config/voice-config.js")>();
-	return { ...orig, saveVoiceConfig: vi.fn(() => true) };
+	return { ...orig, saveVoiceConfig: vi.fn(() => true), loadVoiceConfig: vi.fn(() => ({})) };
 });
 
 const theme = makeTheme({
@@ -242,9 +244,10 @@ describe("VoiceSession", () => {
 	});
 
 	describe("config round-trip durability", () => {
-		it("settings_save keeps numThreads from the persisted config (Ctrl-S path)", async () => {
-			const { saveVoiceConfig } = await import("../config/voice-config.js");
+		it("settings_save keeps numThreads from the on-disk config (Ctrl-S path)", async () => {
+			const { loadVoiceConfig, saveVoiceConfig } = await import("../config/voice-config.js");
 			vi.mocked(saveVoiceConfig).mockClear();
+			vi.mocked(loadVoiceConfig).mockReturnValue({ numThreads: 8, equalizerEnabled: true } as VoiceConfig);
 			const deps = makeDeps();
 			const config = makeSessionConfig(deps, { numThreads: 8, equalizerEnabled: true } as VoiceConfig);
 			const session = new VoiceSession(config);
@@ -254,9 +257,10 @@ describe("VoiceSession", () => {
 			expect(saveVoiceConfig).toHaveBeenCalledWith(expect.objectContaining({ numThreads: 8 }));
 		});
 
-		it("close_settings keeps numThreads from the persisted config (silent Esc path)", async () => {
-			const { saveVoiceConfig } = await import("../config/voice-config.js");
+		it("close_settings keeps numThreads from the on-disk config (silent Esc path)", async () => {
+			const { loadVoiceConfig, saveVoiceConfig } = await import("../config/voice-config.js");
 			vi.mocked(saveVoiceConfig).mockClear();
+			vi.mocked(loadVoiceConfig).mockReturnValue({ numThreads: 8, equalizerEnabled: true } as VoiceConfig);
 			const deps = makeDeps();
 			const config = makeSessionConfig(deps, { numThreads: 8, equalizerEnabled: true } as VoiceConfig);
 			const session = new VoiceSession(config);
@@ -266,9 +270,26 @@ describe("VoiceSession", () => {
 			expect(saveVoiceConfig).toHaveBeenCalledWith(expect.objectContaining({ numThreads: 8 }));
 		});
 
-		it("default draft over an empty persisted config still saves {} (voice.json stays minimal)", async () => {
-			const { saveVoiceConfig } = await import("../config/voice-config.js");
+		it("a mid-session hand edit of a JSON-only key survives a save — merge reads disk, not the session-start snapshot (review I4)", async () => {
+			const { loadVoiceConfig, saveVoiceConfig } = await import("../config/voice-config.js");
 			vi.mocked(saveVoiceConfig).mockClear();
+			// Session started with no numThreads on disk…
+			vi.mocked(loadVoiceConfig).mockReturnValue({});
+			const deps = makeDeps();
+			const config = makeSessionConfig(deps, {});
+			const session = new VoiceSession(config);
+
+			// …then the user hand-edits voice.json while the overlay is open.
+			vi.mocked(loadVoiceConfig).mockReturnValue({ numThreads: 12 } as VoiceConfig);
+			session.dispatchAction({ kind: "settings_save" });
+
+			expect(saveVoiceConfig).toHaveBeenCalledWith(expect.objectContaining({ numThreads: 12 }));
+		});
+
+		it("default draft over an empty persisted config still saves {} (voice.json stays minimal)", async () => {
+			const { loadVoiceConfig, saveVoiceConfig } = await import("../config/voice-config.js");
+			vi.mocked(saveVoiceConfig).mockClear();
+			vi.mocked(loadVoiceConfig).mockReturnValue({});
 			const deps = makeDeps();
 			const config = makeSessionConfig(deps, {});
 			const session = new VoiceSession(config);
