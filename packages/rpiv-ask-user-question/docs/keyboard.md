@@ -12,7 +12,7 @@ adapts to the size of your terminal.
 | `Shift+Enter` | Insert a newline. | `Type something.` input, notes editor |
 | `Esc` | Cancel the whole questionnaire. | Everywhere except the notes editor, where it closes notes |
 | `Tab` / `Shift+Tab` | Next / previous tab, wrapping. `→` / `←` do the same. | Multi-question dialogs only |
-| `Space` | Toggle the focused checkbox. | Multi-select questions |
+| `Space` | Toggle the focused authored option. In `Type something.`, Space inserts text. | Multi-select questions |
 | `n` | Open the notes editor for the focused question — or, on the Submit tab, the global note for the whole questionnaire. | Every question tab; the Submit tab in multi-question dialogs |
 | `Ctrl+G` | Open Pi's configured external editor with the current custom-answer draft. | `Type something.` input |
 | `Ctrl+U` | Clear the current custom-answer draft. | `Type something.` input |
@@ -26,13 +26,11 @@ Slack-style configuration — `enter` folded into `tui.input.newLine`, submit mo
 everywhere `Enter` does.
 
 In a multi-select question, `Enter` on a regular row toggles its checkbox exactly like
-`Space` — it does not submit. Committing the question means focusing the `Next` row and
-pressing `Enter`. That is deliberate: it makes `Enter` a zero-cost way to flip boxes
-without leaving the home row.
+`Space`. It does not submit. Focus `Next` and press `Enter` to commit the question.
 
-`Space` is suppressed on two rows: `Next` (it is a command, not a choice) and
-`Type something.` (it is an inline text input, so the space character belongs to your
-answer).
+`Type something.` is an inline input, so Space inserts a space. Its checkbox changes to
+`[✔]` when the input contains text. Press `Enter` in the input or use `Next` to submit
+both the checked options and the custom text.
 
 ## The rows the dialog adds
 
@@ -43,12 +41,15 @@ answer).
 
 Focusing `Type something.` switches the row into an inline multiline editor. In preview
 mode it expands to the full pane width while you type, so a long custom answer is not
-squeezed into the narrow options column. `Shift+Enter` inserts a line break; vertical
+squeezed into the narrow options column. `Shift+Enter` inserts a line break. Vertical
 arrows move between lines and return to row navigation at the draft's top and bottom.
 The draft replaces the static row label while you browse other options and is isolated
-per question. `Ctrl+G` round-trips it through Pi's configured external editor; `Ctrl+U`
-clears it, while `Esc` remains the explicit way to cancel the questionnaire. Confirming
-it produces an answer of `kind: "custom"`.
+per question. `Ctrl+G` sends it through Pi's configured external editor. `Ctrl+U` clears
+it, while `Esc` cancels the questionnaire.
+
+On a single-select question, confirming the input produces `kind: "custom"`. On a
+multi-select question, the result uses `kind: "multi"`: `selected` contains checked
+labels, and `answer` contains the custom text.
 
 Both labels are reserved — the model cannot author an option that collides with them.
 Both localize with the rest of the UI chrome; the reserved-label check always compares
