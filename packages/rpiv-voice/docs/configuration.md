@@ -32,13 +32,15 @@ Writes only ever go to the XDG-resolved path.
 | --- | --- | --- | --- |
 | `hallucinationFilterEnabled` | boolean | `true` | Drops Whisper's silence artifacts and repetition loops. Turn it off when you are dictating single words the filter might mistake for noise |
 | `equalizerEnabled` | boolean | `false` | Renders the live audio waveform lattice under the transcript |
+| `numThreads` | integer | `4` | Decode threads for the sherpa-onnx recognizer. JSON-only — the settings screen shows it read-only; re-run `/voice` to apply a change |
 
 There are no other keys. A hand-written file looks like this:
 
 ```json
 {
   "hallucinationFilterEnabled": false,
-  "equalizerEnabled": true
+  "equalizerEnabled": true,
+  "numThreads": 8
 }
 ```
 
@@ -46,9 +48,14 @@ Only non-default values are persisted — the filter key lands on disk only when
 `false`, the equalizer key only when it is `true`. A default-settings install therefore
 writes `{}`, and an absent key always means "the default", never "unset".
 
+`numThreads` is the exception in how it gets on disk: the settings screen never writes
+it (the row is read-only), so a hand-added value stays until you remove it. Every
+settings save merges around it — your hand edit survives toggling and saving from the
+overlay — and it takes effect the next time you run `/voice`.
+
 ## The settings screen
 
-`Tab` from dictation opens a four-row panel:
+`Tab` from dictation opens a five-row panel:
 
 | Row | Kind | Value |
 | --- | --- | --- |
@@ -56,6 +63,7 @@ writes `{}`, and an absent key always means "the default", never "unset".
 | Language | read-only | the endonym of your active locale (`Deutsch`, `Русский`, `中文`, …) or `Auto-detect`. Hint: `Run /languages to change.` |
 | Filter Whisper noise | toggle | `[ on ]` / `[ off ]` — writes `hallucinationFilterEnabled` |
 | Equalizer | toggle | `[ on ]` / `[ off ]` — writes `equalizerEnabled` |
+| Threads | read-only | the decode thread count baked at `/voice` start. Hint: `Set numThreads in voice.json; re-run /voice to apply.` |
 
 Only the two toggles take focus. `Ctrl-S` saves and confirms; `Esc` and `Tab` save
 silently on the way out. See [keybindings.md](./keybindings.md) for the full key table.
@@ -112,6 +120,9 @@ trail — check it first when a phrase silently fails to transcribe.
   `/voice` starts, and is fixed for that session — see below.
 - **Command flags.** `/voice` ignores any arguments you type after it.
 
+Decode threads are the counter-example to this list: they *are* the tunable knob. Set
+`numThreads` in `voice.json` (see [Keys](#keys)) and re-run `/voice`.
+
 ## How the recognition language is chosen
 
 When `@juicesharp/rpiv-i18n` is installed and your active locale's base code is one of
@@ -123,3 +134,20 @@ and run `/voice` again.
 
 With no locale active, or a locale outside that list, the engine falls back to Whisper's
 built-in per-utterance auto-detect across the full multilingual model.
+
+## How the decode thread count is chosen
+
+`numThreads` sets how many threads sherpa-onnx may use to decode audio. The value is
+resolved once, when `/voice` starts, and baked into the recognizer for the whole session —
+editing `voice.json` mid-session does nothing until the next run.
+
+The rules are applied silently — no warning is printed for a rejected value:
+
+- an integer `1`–`16` is used as-is;
+- an integer above `16` is clamped down to `16`;
+- anything else — missing, not a number (`"8"`, `null`), not an integer (`8.5`), or below
+  `1` (`0`, negative) — falls back to `4`.
+
+The default of `4` mirrors the engine's built-in fallback. `16` is the ceiling because it
+covers the measured best datapoint while bounding ORT intra-op oversubscription on
+smaller machines.

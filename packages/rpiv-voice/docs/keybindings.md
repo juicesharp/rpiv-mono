@@ -36,7 +36,7 @@ Any other keystroke is ignored — there is no text input on this screen.
 Footer: `↑↓ to select · Enter to toggle · Ctrl-S to save · Esc to go back`.
 
 Focus starts on **Filter Whisper noise** and cycles between it and **Equalizer**. The
-**Microphone** and **Language** rows are read-only and are skipped by focus.
+**Microphone**, **Language**, and **Threads** rows are read-only and are skipped by focus.
 
 `Esc` and `Tab` persist your changes silently on the way out, so a
 toggle-then-leave flow never loses the change. `Ctrl-S` is the explicit path that also

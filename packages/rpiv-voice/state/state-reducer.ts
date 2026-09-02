@@ -103,9 +103,12 @@ const openSettings: Handler<"open_settings"> = (state, _action, _ctx) => ({
 // Leaving the settings screen silently persists the draft. Ctrl-S remains the
 // explicit save path (with a confirmation notify); this just makes the common
 // "toggle then Esc/Tab" flow not lose changes.
-const closeSettings: Handler<"close_settings"> = (state, _action, _ctx) => ({
+const closeSettings: Handler<"close_settings"> = (state, _action, ctx) => ({
 	state: { ...state, currentScreen: "dictation" },
-	effects: [{ kind: "save_config", config: configFromDraft(state.settingsDraft) }, { kind: "request_render" }],
+	effects: [
+		{ kind: "save_config", config: configFromDraft(state.settingsDraft, ctx.persistedConfig) },
+		{ kind: "request_render" },
+	],
 });
 
 const toggleFocusedSetting: Handler<"toggle_focused_setting"> = (state, _action, _ctx) => {
@@ -150,8 +153,8 @@ function stepFocus(current: SettingsFieldKey, delta: 1 | -1): SettingsFieldKey {
 // succeeds. A plain two-effect list ran both notifies unconditionally on
 // failure because `return` inside runEffect()'s switch case exits the method,
 // not the outer effect loop — review I1 caught this.
-const settingsSave: Handler<"settings_save"> = (state, _action, _ctx) => {
-	const config = configFromDraft(state.settingsDraft);
+const settingsSave: Handler<"settings_save"> = (state, _action, ctx) => {
+	const config = configFromDraft(state.settingsDraft, ctx.persistedConfig);
 	return {
 		state,
 		effects: [
@@ -187,8 +190,25 @@ export function reduce(state: VoiceState, action: VoiceAction, ctx: ApplyContext
 	return handler(state, action as never, ctx);
 }
 
-export function configFromDraft(draft: SettingsDraft): VoiceConfig {
-	const out: { -readonly [K in keyof VoiceConfig]: VoiceConfig[K] } = {};
+// Keys whose value the settings screen re-derives from the draft on every
+// save — the draft is authoritative for these, so any persisted value is
+// replaced by the draft-derived one (or dropped at default). Every other
+// persisted key (numThreads, language, and any future JSON-only key) is
+// pass-through: a settings save must never drop config the screen cannot edit.
+export const DRAFT_OWNED_CONFIG_KEYS: ReadonlySet<string> = new Set(["hallucinationFilterEnabled", "equalizerEnabled"]);
+
+export function configFromDraft(draft: SettingsDraft, persisted: VoiceConfig): VoiceConfig {
+	// Widened accumulator: pass-through keys may fall outside VoiceConfig's
+	// known shape (a hand-edited voice.json), so writes go through a string
+	// index signature on top of the mapped known keys.
+	const out: { -readonly [K in keyof VoiceConfig]: VoiceConfig[K] } & Record<string, unknown> = {};
+	for (const [key, value] of Object.entries(persisted)) {
+		// `__proto__` is skipped: a computed assignment on a plain accumulator
+		// would invoke Object.prototype's setter — replacing the prototype —
+		// instead of round-tripping the key as an own property.
+		if (key === "__proto__" || DRAFT_OWNED_CONFIG_KEYS.has(key)) continue;
+		out[key] = value;
+	}
 	// Only persist the non-default state. Hallucination filter defaults ON, so
 	// only the off-state lands on disk; equalizer defaults OFF, so only the
 	// on-state does. Both rules keep voice.json minimal and forward-compatible.

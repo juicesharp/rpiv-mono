@@ -1,7 +1,7 @@
 import { DynamicBorder, type Theme } from "@earendil-works/pi-coding-agent";
 import { getKeybindings } from "@earendil-works/pi-tui";
 import type { VoiceConfig } from "../config/voice-config.js";
-import { saveVoiceConfig } from "../config/voice-config.js";
+import { resolveNumThreads, saveVoiceConfig } from "../config/voice-config.js";
 import { globalBinding } from "../view/component-binding.js";
 import { EqualizerView } from "../view/components/equalizer-view.js";
 import { SettingsFieldView } from "../view/components/settings-field-view.js";
@@ -19,6 +19,7 @@ import {
 	selectHallucinationFilterFieldProps,
 	selectLanguageReadonlyFieldProps,
 	selectMicReadonlyFieldProps,
+	selectNumThreadsReadonlyFieldProps,
 	selectStatusBarProps,
 	selectTranscriptProps,
 } from "./selectors/projections.js";
@@ -65,7 +66,10 @@ export class VoiceSession {
 		this.deps = config.deps;
 		this.done = config.done;
 		this.persistedConfig = config.persistedConfig;
-		this.state = initialVoiceState(draftFromConfig(config.persistedConfig));
+		this.state = initialVoiceState(
+			draftFromConfig(config.persistedConfig),
+			resolveNumThreads(config.persistedConfig),
+		);
 
 		const transcript = new TranscriptView(config.theme);
 		const divider = new DynamicBorder((s) => config.theme.fg("accent", s));
@@ -76,8 +80,9 @@ export class VoiceSession {
 		const languageField = new SettingsFieldView(config.theme);
 		const hallucinationField = new SettingsFieldView(config.theme);
 		const equalizerField = new SettingsFieldView(config.theme);
+		const numThreadsField = new SettingsFieldView(config.theme);
 		const settingsForm = new SettingsFormView({
-			fields: [micField, languageField, hallucinationField, equalizerField],
+			fields: [micField, languageField, hallucinationField, equalizerField, numThreadsField],
 		});
 
 		const dictation = new DictationScreenStrategy({ transcript, divider, equalizer, statusBar });
@@ -99,6 +104,7 @@ export class VoiceSession {
 			globalBinding({ component: languageField, select: selectLanguageReadonlyFieldProps }),
 			globalBinding({ component: hallucinationField, select: selectHallucinationFilterFieldProps }),
 			globalBinding({ component: equalizerField, select: selectEqualizerFieldProps }),
+			globalBinding({ component: numThreadsField, select: selectNumThreadsReadonlyFieldProps }),
 			globalBinding({ component: this.overlay, select: (state) => ({ state }) }),
 		];
 

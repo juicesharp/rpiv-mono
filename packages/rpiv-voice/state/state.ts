@@ -1,3 +1,5 @@
+import { DEFAULT_NUM_THREADS } from "../config/voice-config.js";
+
 export type RecordingStatus = "recording" | "paused";
 export type ScreenKind = "dictation" | "settings";
 
@@ -27,6 +29,10 @@ export interface VoiceState {
 	/** Which interactive settings field is currently focused. Up/Down arrows
 	 *  cycle through `SETTINGS_FIELD_ORDER`; Enter toggles the focused one. */
 	settingsFocus: SettingsFieldKey;
+	/** Decode thread count baked in when the session started — display-only
+	 *  (the settings Threads row). The running recognizer keeps the count it
+	 *  was constructed with; changes apply on the next `/voice` run. */
+	numThreads: number;
 }
 
 export const SETTINGS_FIELD_ORDER: readonly SettingsFieldKey[] = ["hallucination", "equalizer"];
@@ -35,7 +41,7 @@ export interface VoiceRuntime {
 	keybindings: { matches(data: string, name: string): boolean };
 }
 
-export function initialVoiceState(draft: SettingsDraft): VoiceState {
+export function initialVoiceState(draft: SettingsDraft, numThreads = DEFAULT_NUM_THREADS): VoiceState {
 	return {
 		currentScreen: "dictation",
 		status: "recording",
@@ -44,5 +50,6 @@ export function initialVoiceState(draft: SettingsDraft): VoiceState {
 		audioLevel: 0,
 		settingsDraft: draft,
 		settingsFocus: SETTINGS_FIELD_ORDER[0]!,
+		numThreads,
 	};
 }

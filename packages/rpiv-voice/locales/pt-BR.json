@@ -35,5 +35,8 @@
   "settings.language_value_auto": "Detecção automática",
   "settings.language_hint": "Execute /languages para mudar.",
   "settings.hallucination_filter_label": "Filtrar ruído do Whisper",
-  "settings.hallucination_filter_hint": "Descarta artefatos de silêncio. Desligue ao ditar palavras isoladas."
+  "settings.hallucination_filter_hint": "Descarta artefatos de silêncio. Desligue ao ditar palavras isoladas.",
+
+  "settings.threads_label": "Threads",
+  "settings.threads_hint": "Configure numThreads em voice.json; execute /voice novamente para aplicar."
 }

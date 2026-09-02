@@ -110,3 +110,13 @@ export const selectLanguageReadonlyFieldProps: GlobalSelector<SettingsFieldViewP
 		hint: t("settings.language_hint", "Run /languages to change."),
 	};
 };
+
+// Decode threads are session-baked (VoiceState.numThreads) — display-only.
+// The value is the raw count as a string; the hint points at voice.json
+// because the settings screen cannot edit the key (JSON-only, restart-to-apply).
+export const selectNumThreadsReadonlyFieldProps: GlobalSelector<SettingsFieldViewProps> = (state, _ctx) => ({
+	label: t("settings.threads_label", "Threads"),
+	active: false,
+	field: { kind: "readonly", value: String(state.numThreads) },
+	hint: t("settings.threads_hint", "Set numThreads in voice.json; re-run /voice to apply."),
+});

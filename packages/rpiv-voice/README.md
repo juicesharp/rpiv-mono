@@ -66,14 +66,16 @@ If you have remapped Pi's confirm/cancel keys, the overlay follows your remap.
 
 ## Configuration
 
-`/voice` needs no config file. Both settings are editable on the settings screen (`Tab`
+`/voice` needs no config file. The two toggles are editable on the settings screen (`Tab`
 from dictation, `Ctrl-S` to save, `Esc` to save silently and go back) and persist to
-`~/.config/rpiv-voice/voice.json`:
+`~/.config/rpiv-voice/voice.json`; `numThreads` is JSON-only — the settings screen shows
+it read-only, so hand-edit the file and re-run `/voice` to apply a change:
 
 | Key | Default | Effect |
 | --- | --- | --- |
 | `hallucinationFilterEnabled` | `true` | Drops Whisper's silence artifacts and repetition loops |
 | `equalizerEnabled` | `false` | Renders the live audio waveform under the transcript |
+| `numThreads` | `4` | Decode threads for the Whisper recognizer — integer `1`–`16`, JSON-only, applied on the next `/voice` run |
 
 The file is written with mode `0600`.
 

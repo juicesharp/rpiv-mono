@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { VoiceConfig } from "../config/voice-config.js";
 import { initialVoiceState } from "./state.js";
 import { type ApplyContext, configFromDraft, draftFromConfig, reduce } from "./state-reducer.js";
 import { STATUS_META } from "./status-intent.js";
@@ -184,6 +185,22 @@ describe("reduce", () => {
 		expect(save).toBeDefined();
 		expect((save as { successMessage?: string }).successMessage).toBeUndefined();
 	});
+
+	it("close_settings round-trips non-owned persisted keys (numThreads survives the silent Esc-save)", () => {
+		const s = { ...freshState(), currentScreen: "settings" as const };
+		const r = reduce(s, { kind: "close_settings" }, { persistedConfig: { numThreads: 8 } as VoiceConfig });
+		expect(r.effects).toContainEqual(
+			expect.objectContaining({ kind: "save_config", config: expect.objectContaining({ numThreads: 8 }) }),
+		);
+	});
+
+	it("settings_save round-trips non-owned persisted keys (numThreads survives Ctrl-S)", () => {
+		const s = freshState();
+		const r = reduce(s, { kind: "settings_save" }, { persistedConfig: { numThreads: 8 } as VoiceConfig });
+		expect(r.effects).toContainEqual(
+			expect.objectContaining({ kind: "save_config", config: expect.objectContaining({ numThreads: 8 }) }),
+		);
+	});
 });
 
 describe("configFromDraft / draftFromConfig", () => {
@@ -199,19 +216,58 @@ describe("configFromDraft / draftFromConfig", () => {
 	});
 
 	it("configFromDraft drops both default flags", () => {
-		expect(configFromDraft({ hallucinationFilterEnabled: true, equalizerEnabled: false })).toEqual({});
+		expect(configFromDraft({ hallucinationFilterEnabled: true, equalizerEnabled: false }, {})).toEqual({});
 	});
 
 	it("configFromDraft persists the off-state of the filter", () => {
-		expect(configFromDraft({ hallucinationFilterEnabled: false, equalizerEnabled: false })).toEqual({
+		expect(configFromDraft({ hallucinationFilterEnabled: false, equalizerEnabled: false }, {})).toEqual({
 			hallucinationFilterEnabled: false,
 		});
 	});
 
 	it("configFromDraft persists the on-state of the equalizer", () => {
-		expect(configFromDraft({ hallucinationFilterEnabled: true, equalizerEnabled: true })).toEqual({
+		expect(configFromDraft({ hallucinationFilterEnabled: true, equalizerEnabled: true }, {})).toEqual({
 			equalizerEnabled: true,
 		});
+	});
+
+	it("configFromDraft passes non-owned keys through untouched (numThreads, language, future keys)", () => {
+		const draft = { hallucinationFilterEnabled: true, equalizerEnabled: false };
+		expect(configFromDraft(draft, { numThreads: 8, language: "uk" } as VoiceConfig)).toEqual({
+			numThreads: 8,
+			language: "uk",
+		});
+	});
+
+	it("configFromDraft is draft-authoritative for owned keys — a default draft drops persisted owned non-defaults", () => {
+		const draft = { hallucinationFilterEnabled: true, equalizerEnabled: false };
+		expect(
+			configFromDraft(draft, {
+				hallucinationFilterEnabled: false,
+				equalizerEnabled: true,
+				numThreads: 8,
+			} as VoiceConfig),
+		).toEqual({ numThreads: 8 });
+	});
+
+	it("configFromDraft merges pass-through keys with draft-derived owned keys", () => {
+		const draft = { hallucinationFilterEnabled: false, equalizerEnabled: false };
+		expect(configFromDraft(draft, { numThreads: 8, language: "uk" } as VoiceConfig)).toEqual({
+			numThreads: 8,
+			language: "uk",
+			hallucinationFilterEnabled: false,
+		});
+	});
+
+	it("configFromDraft skips a hand-edited __proto__ key instead of tripping the prototype setter", () => {
+		const draft = { hallucinationFilterEnabled: true, equalizerEnabled: false };
+		// JSON.parse surfaces __proto__ as an own-enumerable key; a computed
+		// assignment would replace the accumulator's prototype rather than
+		// round-trip the key.
+		const persisted = JSON.parse('{"__proto__":{"polluted":true},"numThreads":8}') as VoiceConfig;
+		const out = configFromDraft(draft, persisted);
+		expect(out).toEqual({ numThreads: 8 });
+		expect(Object.getPrototypeOf(out)).toBe(Object.prototype);
 	});
 
 	it("draftFromConfig hydrates the equalizer flag from persisted on-state", () => {

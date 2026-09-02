@@ -1,4 +1,4 @@
-import { appendErrorLog } from "../audio/error-log.js";
+import { appendDiagnosticLog, appendErrorLog } from "../audio/error-log.js";
 import { isHallucination } from "../audio/hallucination-filter.js";
 import type { DecibriLike } from "../audio/mic-source.js";
 import { TARGET_SAMPLE_RATE } from "../audio/mic-source.js";
@@ -72,6 +72,13 @@ export function startDictationPipeline(
 	// painting stale text after the final commit.
 	let utteranceEpoch = 0;
 
+	// Decode-latency breadcrumbs: one stt.decode line per completed recognize
+	// call (kind + wall-clock duration + sample count) so a freeze report shows
+	// how long each final/partial decode actually took.
+	const logDecode = (kind: "final" | "partial", sampleCount: number, startedAt: number): void => {
+		appendDiagnosticLog("stt.decode", `${kind} ${Date.now() - startedAt}ms ${sampleCount} samples`);
+	};
+
 	const recognizeFinal = async (chunks: Buffer[]): Promise<void> => {
 		if (chunks.length === 0) return;
 		const samples = bufferToFloat32(Buffer.concat(chunks));
@@ -82,7 +89,9 @@ export function startDictationPipeline(
 			return;
 		}
 		try {
+			const decodeStartedAt = Date.now();
 			const text = await sttEngine.recognize(samples, TARGET_SAMPLE_RATE);
+			logDecode("final", samples.length, decodeStartedAt);
 			if (!text || (hallucinationFilterEnabled && isHallucination(text))) {
 				session.dispatchAction({ kind: "audio_transcript_appended", text: "" });
 				return;
@@ -94,7 +103,9 @@ export function startDictationPipeline(
 			// corrupts the active render, and `notify` would churn the chat for
 			// every dropped segment. Instead, append a breadcrumb to a file the
 			// user can `cat` later when investigating transcript gaps.
-			appendErrorLog("stt.recognize", err);
+			// Post-abort rejections are expected teardown noise — only log
+			// failures that happened while the session was live.
+			if (!signal.aborted) appendErrorLog("stt.recognize", err);
 			session.dispatchAction({ kind: "audio_transcript_appended", text: "" });
 		}
 	};
@@ -139,12 +150,14 @@ export function startDictationPipeline(
 			try {
 				const samples = bufferToFloat32(Buffer.concat(snapshot));
 				if (computeRmsFloat32(samples) < MIN_SEGMENT_RMS) return;
+				const decodeStartedAt = Date.now();
 				const text = await sttEngine.recognize(samples, TARGET_SAMPLE_RATE);
+				logDecode("partial", samples.length, decodeStartedAt);
 				if (snapshotEpoch !== utteranceEpoch) return;
 				if (hallucinationFilterEnabled && isHallucination(text)) return;
 				session.dispatchAction({ kind: "audio_partial_transcript_set", text });
 			} catch (err) {
-				appendErrorLog("stt.recognize.partial", err);
+				if (!signal.aborted) appendErrorLog("stt.recognize.partial", err);
 			} finally {
 				partialInFlight = false;
 			}

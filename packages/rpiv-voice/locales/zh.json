@@ -43,5 +43,8 @@
   "settings.hallucination_filter_hint": "丢弃静音段伪影。单词语音转写时可关闭。",
 
   "settings.equalizer_label": "均衡器",
-  "settings.equalizer_hint": "在转录文本下方显示实时音频波形。默认关闭。"
+  "settings.equalizer_hint": "在转录文本下方显示实时音频波形。默认关闭。",
+
+  "settings.threads_label": "线程",
+  "settings.threads_hint": "在 voice.json 中设置 numThreads；重新运行 /voice 后生效。"
 }

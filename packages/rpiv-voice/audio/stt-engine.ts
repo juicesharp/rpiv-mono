@@ -17,8 +17,12 @@
  * undefined, the multilingual model's built-in auto-detect runs — the
  * historical default behavior.
  *
- * Decode path: SYNCHRONOUS `recognizer.decode(stream)` + `getResult(stream)`,
- * same as upstream's example.
+ * Decode path: ASYNCHRONOUS `recognizer.decodeAsync(stream)` — the binding
+ * runs the decode as napi async work off the shared event loop, so the loop
+ * stays responsive while Whisper infers (the synchronous decode blocked it
+ * and froze the UI under load). Construction is asynchronous too
+ * (`OfflineRecognizer.createAsync`) — loading the engine no longer blocks
+ * the splash render.
  */
 
 import type { Config } from "sherpa-onnx-node";
@@ -63,15 +67,15 @@ export interface SttEngine {
 
 export async function createSttEngine(config: SttEngineConfig): Promise<SttEngine> {
 	const ns = await loadSherpaNamespace();
-	const recognizer = new ns.OfflineRecognizer(buildRecognizerConfig(config));
+	const recognizer = await ns.OfflineRecognizer.createAsync(buildRecognizerConfig(config));
 
 	return {
 		async recognize(samples: Float32Array, sampleRate: number): Promise<string> {
 			if (samples.length === 0) return "";
 			const stream = recognizer.createStream();
 			stream.acceptWaveform({ samples, sampleRate });
-			recognizer.decode(stream);
-			return recognizer.getResult(stream).text.trim();
+			const result = await recognizer.decodeAsync(stream);
+			return result.text.trim();
 		},
 		release(): void {
 			// sherpa-onnx-node@1.13.0 exposes no destructor; the native handle is

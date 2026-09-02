@@ -35,5 +35,8 @@
   "settings.language_value_auto": "Automatisch erkennen",
   "settings.language_hint": "Mit /languages ändern.",
   "settings.hallucination_filter_label": "Whisper-Rauschen filtern",
-  "settings.hallucination_filter_hint": "Entfernt Stille-Artefakte. Bei Einzelwort-Diktat ausschalten."
+  "settings.hallucination_filter_hint": "Entfernt Stille-Artefakte. Bei Einzelwort-Diktat ausschalten.",
+
+  "settings.threads_label": "Threads",
+  "settings.threads_hint": "numThreads in voice.json festlegen; /voice erneut ausführen, um die Änderung zu übernehmen."
 }

@@ -2,6 +2,7 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { makeTheme, makeTui } from "@juicesharp/rpiv-test-utils";
 import { describe, expect, it, vi } from "vitest";
 
+import type { VoiceConfig } from "../config/voice-config.js";
 import { VoiceSession, type VoiceSessionConfig, type VoiceSessionDeps } from "./voice-session.js";
 
 // Mock getKeybindings so the runtime() method doesn't need real pi-tui context.
@@ -34,11 +35,14 @@ function makeDeps() {
 	} satisfies VoiceSessionDeps;
 }
 
-function makeSessionConfig(deps: ReturnType<typeof makeDeps>): VoiceSessionConfig {
+function makeSessionConfig(
+	deps: ReturnType<typeof makeDeps>,
+	persistedConfig: VoiceConfig = { hallucinationFilterEnabled: true },
+): VoiceSessionConfig {
 	return {
 		tui: { ...makeTui(), terminal: { columns: 80, rows: 24 } } as VoiceSessionConfig["tui"],
 		theme,
-		persistedConfig: { hallucinationFilterEnabled: true },
+		persistedConfig,
 		deps,
 		done: vi.fn(),
 	};
@@ -200,6 +204,78 @@ describe("VoiceSession", () => {
 			// We verify by dispatching close_settings directly
 			session.dispatchAction({ kind: "close_settings" });
 			expect(() => session.component.render(80)).not.toThrow();
+		});
+	});
+
+	describe("settings screen threads row", () => {
+		it("renders the Threads label and a hand-configured thread count", () => {
+			const deps = makeDeps();
+			const config: VoiceSessionConfig = {
+				...makeSessionConfig(deps),
+				persistedConfig: { numThreads: 8 } as VoiceSessionConfig["persistedConfig"],
+			};
+			const session = new VoiceSession(config);
+
+			session.dispatchAction({ kind: "open_settings" });
+			const lines = session.component.render(80);
+			// The row line is `  Threads: 8` — the hint line mentions numThreads
+			// too, so assert on the label+value pairing, not the bare label.
+			expect(lines.some((l) => l.includes("Threads: 8"))).toBe(true);
+			// Fifth row: after the Equalizer row, before the footer chrome.
+			const equalizerIdx = lines.findIndex((l) => l.includes("Equalizer:"));
+			const threadsIdx = lines.findIndex((l) => l.includes("Threads: 8"));
+			expect(threadsIdx).toBeGreaterThan(equalizerIdx);
+		});
+
+		it("renders the resolved default 4 for a default config (real decoder via the spread mock)", () => {
+			const deps = makeDeps();
+			const config: VoiceSessionConfig = {
+				...makeSessionConfig(deps),
+				persistedConfig: {} as VoiceSessionConfig["persistedConfig"],
+			};
+			const session = new VoiceSession(config);
+
+			session.dispatchAction({ kind: "open_settings" });
+			const lines = session.component.render(80);
+			expect(lines.some((l) => l.includes("Threads: 4"))).toBe(true);
+		});
+	});
+
+	describe("config round-trip durability", () => {
+		it("settings_save keeps numThreads from the persisted config (Ctrl-S path)", async () => {
+			const { saveVoiceConfig } = await import("../config/voice-config.js");
+			vi.mocked(saveVoiceConfig).mockClear();
+			const deps = makeDeps();
+			const config = makeSessionConfig(deps, { numThreads: 8, equalizerEnabled: true } as VoiceConfig);
+			const session = new VoiceSession(config);
+
+			session.dispatchAction({ kind: "settings_save" });
+
+			expect(saveVoiceConfig).toHaveBeenCalledWith(expect.objectContaining({ numThreads: 8 }));
+		});
+
+		it("close_settings keeps numThreads from the persisted config (silent Esc path)", async () => {
+			const { saveVoiceConfig } = await import("../config/voice-config.js");
+			vi.mocked(saveVoiceConfig).mockClear();
+			const deps = makeDeps();
+			const config = makeSessionConfig(deps, { numThreads: 8, equalizerEnabled: true } as VoiceConfig);
+			const session = new VoiceSession(config);
+
+			session.dispatchAction({ kind: "close_settings" });
+
+			expect(saveVoiceConfig).toHaveBeenCalledWith(expect.objectContaining({ numThreads: 8 }));
+		});
+
+		it("default draft over an empty persisted config still saves {} (voice.json stays minimal)", async () => {
+			const { saveVoiceConfig } = await import("../config/voice-config.js");
+			vi.mocked(saveVoiceConfig).mockClear();
+			const deps = makeDeps();
+			const config = makeSessionConfig(deps, {});
+			const session = new VoiceSession(config);
+
+			session.dispatchAction({ kind: "settings_save" });
+
+			expect(saveVoiceConfig).toHaveBeenCalledWith({});
 		});
 	});
 

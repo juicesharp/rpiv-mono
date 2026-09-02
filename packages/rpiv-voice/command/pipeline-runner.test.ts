@@ -56,6 +56,35 @@ function makeSession(): CapturedSession {
 	return { session, dispatched };
 }
 
+interface Deferred<T> {
+	promise: Promise<T>;
+	resolve: (value: T) => void;
+	reject: (error: unknown) => void;
+}
+
+function makeDeferred<T>(): Deferred<T> {
+	let resolve!: (value: T) => void;
+	let reject!: (error: unknown) => void;
+	const promise = new Promise<T>((res, rej) => {
+		resolve = res;
+		reject = rej;
+	});
+	return { promise, resolve, reject };
+}
+
+// Deferred-per-call recognize mock: every call returns a controllably-settled
+// promise and records its deferred in call order, so tests can hold decodes
+// at arbitrary overlap points and release them in any order.
+function makeDeferredRecognize(): { recognize: SttEngine["recognize"]; deferreds: Deferred<string>[] } {
+	const deferreds: Deferred<string>[] = [];
+	const recognize: SttEngine["recognize"] = () => {
+		const deferred = makeDeferred<string>();
+		deferreds.push(deferred);
+		return deferred.promise;
+	};
+	return { recognize, deferreds };
+}
+
 describe("startDictationPipeline — STT recognize failure", () => {
 	let abort: AbortController;
 
@@ -289,5 +318,183 @@ describe("startDictationPipeline — branch coverage", () => {
 		// At minimum: one commit from the cap-flush head + a tail commit on mic end.
 		expect(recognize).toHaveBeenCalled();
 		expect(finalTranscript.length).toBeGreaterThan(0);
+	});
+});
+
+describe("startDictationPipeline — async invariants under genuine overlap", () => {
+	let abort: AbortController;
+
+	beforeEach(() => {
+		abort = new AbortController();
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+		if (!abort.signal.aborted) abort.abort();
+	});
+
+	function startWithDeferredRecognize() {
+		const mic = new FakeMic();
+		const { session, dispatched } = makeSession();
+		const { recognize, deferreds } = makeDeferredRecognize();
+		const sttEngine: SttEngine = { recognize, release: () => {} };
+		const handle = startDictationPipeline(mic, sttEngine, session, abort.signal);
+		return { mic, dispatched, deferreds, handle };
+	}
+
+	it("keeps dispatching audio_chunk while a decode is held — decodes never block the event loop", async () => {
+		const { mic, dispatched, deferreds, handle } = startWithDeferredRecognize();
+
+		mic.emit("data", loudChunk()); // schedules partial decode #0 (held)
+		expect(deferreds.length).toBe(1);
+
+		// With the decode pending, further mic data must keep flowing — chunk
+		// dispatch is synchronous and never awaits a decode.
+		for (let i = 0; i < 5; i++) mic.emit("data", loudChunk());
+		expect(dispatched.filter((a) => a.kind === "audio_chunk").length).toBe(6);
+
+		deferreds[0].resolve("preview");
+		mic.emit("end"); // final decode over the buffered chunks
+		await yieldToFlush();
+		deferreds[1].resolve("tail");
+		await expect(handle.finalTranscriptPromise).resolves.toBe("tail");
+	});
+
+	it("schedules no second partial while one is in flight (single-flight gate)", async () => {
+		// Fake only Date: the partial throttle is a pure Date.now() comparison
+		// (no timers involved), so advancing the clock past the interval
+		// isolates the in-flight gate without a wall-clock sleep. setImmediate
+		// stays real, so microtask/macrotask yielding is unaffected.
+		vi.useFakeTimers({ toFake: ["Date"] });
+		vi.setSystemTime(100_000);
+
+		const { mic, deferreds, handle } = startWithDeferredRecognize();
+
+		mic.emit("data", loudChunk()); // partial #0 (held)
+		expect(deferreds.length).toBe(1);
+
+		vi.setSystemTime(101_200); // interval elapsed; decode still pending
+		mic.emit("data", loudChunk());
+		expect(deferreds.length).toBe(1); // only the in-flight gate blocked it
+
+		deferreds[0].resolve("preview"); // finally clause re-opens the gate
+		await yieldToFlush();
+		mic.emit("data", loudChunk());
+		expect(deferreds.length).toBe(2);
+
+		deferreds[1].resolve("preview 2");
+		mic.emit("end");
+		await yieldToFlush();
+		deferreds[2].resolve("final");
+		await expect(handle.finalTranscriptPromise).resolves.toBe("final");
+	});
+
+	it("drops a stale partial resolving after a flush — the overlapping final still appends", async () => {
+		const { mic, dispatched, deferreds, handle } = startWithDeferredRecognize();
+
+		mic.emit("data", loudChunk()); // partial #0 (snapshotEpoch 0), held
+		mic.emit("silence"); // flush bumps the epoch; final #1 chained, held
+		await yieldToFlush();
+		expect(deferreds.length).toBe(2);
+
+		// Final completes while the partial is still pending → appended.
+		deferreds[1].resolve("committed");
+		await yieldToFlush();
+		// The stale partial resolves late → must not paint.
+		deferreds[0].resolve("stale preview");
+		await yieldToFlush();
+
+		expect(dispatched.some((a) => a.kind === "audio_partial_transcript_set")).toBe(false);
+		expect(dispatched.some((a) => a.kind === "audio_transcript_appended" && a.text === "committed")).toBe(true);
+
+		mic.emit("end");
+		await expect(handle.finalTranscriptPromise).resolves.toBe("committed");
+	});
+
+	it("overlap order is irrelevant: the stale partial resolving first still never paints", async () => {
+		const { mic, dispatched, deferreds, handle } = startWithDeferredRecognize();
+
+		mic.emit("data", loudChunk()); // partial #0, held
+		mic.emit("silence"); // epoch bump; final #1 chained, held
+		await yieldToFlush();
+
+		deferreds[0].resolve("stale preview"); // resolves BEFORE the final
+		await yieldToFlush();
+		expect(dispatched.some((a) => a.kind === "audio_partial_transcript_set")).toBe(false);
+
+		deferreds[1].resolve("committed");
+		await yieldToFlush();
+		expect(dispatched.some((a) => a.kind === "audio_transcript_appended" && a.text === "committed")).toBe(true);
+
+		mic.emit("end");
+		await expect(handle.finalTranscriptPromise).resolves.toBe("committed");
+	});
+
+	it("drain waits on a held final across abort, then settles with the accumulated text", async () => {
+		const { mic, deferreds, handle } = startWithDeferredRecognize();
+
+		mic.emit("data", loudChunk()); // partial #0, held
+		mic.emit("silence"); // final #1, held
+		await yieldToFlush();
+
+		abort.abort(); // mic stop → end → the drain parks on the held final
+		let settled = false;
+		void handle.finalTranscriptPromise.then(() => {
+			settled = true;
+		});
+		// A full macrotask turn proves it did not settle early (no fake timers).
+		await new Promise<void>((r) => setImmediate(r));
+		expect(settled).toBe(false);
+
+		deferreds[1].resolve("drained text");
+		await expect(handle.finalTranscriptPromise).resolves.toBe("drained text");
+	});
+
+	it("logs one stt.decode breadcrumb per completed decode; RMS-gated segments log nothing", async () => {
+		const { mic, deferreds, handle } = startWithDeferredRecognize();
+
+		mic.emit("data", loudChunk()); // partial #0
+		deferreds[0].resolve("preview");
+		await yieldToFlush();
+
+		mic.emit("silence"); // final #1 over the buffered chunk
+		await yieldToFlush();
+		deferreds[1].resolve("committed");
+		await yieldToFlush();
+
+		// Quiet segment: the RMS gate trips before recognize() — no decode
+		// call, no breadcrumb.
+		mic.emit("data", quietChunk());
+		mic.emit("silence");
+		await yieldToFlush();
+		mic.emit("end");
+		await yieldToFlush();
+		expect(deferreds.length).toBe(2);
+		await expect(handle.finalTranscriptPromise).resolves.toBe("committed");
+
+		const content = readFileSync(getErrorLogPath(), "utf-8");
+		const decodeLines = content.split("\n").filter((line) => line.includes("[stt.decode]"));
+		expect(decodeLines.length).toBe(2);
+		expect(content).toMatch(/\[stt\.decode\] partial \d+ms \d+ samples/);
+		expect(content).toMatch(/\[stt\.decode\] final \d+ms \d+ samples/);
+	});
+
+	it("suppresses error breadcrumbs for rejections landing after abort — the reducer dispatch stays ungated", async () => {
+		const { mic, dispatched, deferreds, handle } = startWithDeferredRecognize();
+
+		mic.emit("data", loudChunk()); // partial #0, held
+		mic.emit("silence"); // final #1, held
+		await yieldToFlush();
+
+		abort.abort();
+		deferreds[1].reject(new Error("late final failure")); // drain-time decode error
+		deferreds[0].reject(new Error("late partial failure"));
+		await expect(handle.finalTranscriptPromise).resolves.toBe(""); // transcript never got text
+
+		const content = existsSync(getErrorLogPath()) ? readFileSync(getErrorLogPath(), "utf-8") : "";
+		expect(content).not.toMatch(/\[stt\.recognize\]/);
+		expect(content).not.toMatch(/\[stt\.recognize\.partial\]/);
+		// Suppression is logging-only: the empty-append still dispatches.
+		expect(dispatched.some((a) => a.kind === "audio_transcript_appended" && a.text === "")).toBe(true);
 	});
 });

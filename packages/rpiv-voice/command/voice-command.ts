@@ -9,7 +9,12 @@ import {
 	removeModelInstall,
 } from "../audio/model-download.js";
 import { createSttEngine, type SttEngine } from "../audio/stt-engine.js";
-import { isHallucinationFilterEnabled, loadVoiceConfig } from "../config/voice-config.js";
+import {
+	isHallucinationFilterEnabled,
+	loadVoiceConfig,
+	resolveNumThreads,
+	type VoiceConfig,
+} from "../config/voice-config.js";
 import { getActiveLocale, t } from "../state/i18n-bridge.js";
 import type { VoiceResult } from "../state/state-reducer.js";
 import { VoiceSession } from "../state/voice-session.js";
@@ -90,16 +95,21 @@ async function handleVoiceCommand(ctx: ExtensionCommandContext): Promise<void> {
 		return;
 	}
 
-	const preflight = await runPreflight(ctx);
+	// One config snapshot per invocation: engine construction (numThreads) and
+	// the dictation session (VoiceSession's persistedConfig, the hallucination
+	// filter default) must read the same load, so it happens once, here.
+	const persistedConfig = loadVoiceConfig();
+
+	const preflight = await runPreflight(ctx, persistedConfig);
 	if (!preflight) return;
 
-	const result = await runDictationSession(ctx, preflight.sttEngine, preflight.mic);
+	const result = await runDictationSession(ctx, preflight.sttEngine, preflight.mic, persistedConfig);
 	if (result.intent === "commit" && result.transcript) {
 		ctx.ui.pasteToEditor(result.transcript);
 	}
 }
 
-async function runPreflight(ctx: ExtensionCommandContext): Promise<Preflight | null> {
+async function runPreflight(ctx: ExtensionCommandContext, persistedConfig: VoiceConfig): Promise<Preflight | null> {
 	try {
 		return await runWithSplash<Preflight>(
 			ctx,
@@ -151,6 +161,7 @@ async function runPreflight(ctx: ExtensionCommandContext): Promise<Preflight | n
 						decoderPath: paths.decoderPath,
 						tokensPath: paths.tokensPath,
 						language: whisperLanguageForLocale(getActiveLocale()),
+						numThreads: resolveNumThreads(persistedConfig),
 					});
 				} catch (e) {
 					// Preserve the inner stage tag (e.g. "stale_install") instead of
@@ -209,12 +220,13 @@ async function runDictationSession(
 	ctx: ExtensionCommandContext,
 	sttEngine: SttEngine,
 	mic: DecibriLike,
+	persistedConfig: VoiceConfig,
 ): Promise<VoiceResult> {
 	const controller = new AbortController();
-	const persistedConfig = loadVoiceConfig();
 
 	let pipelineHandle:
 		| {
+				finalTranscriptPromise: Promise<string>;
 				setPaused: (v: boolean) => void;
 				setHallucinationFilterEnabled: (v: boolean) => void;
 				stop: () => void;
@@ -246,6 +258,24 @@ async function runDictationSession(
 
 	if (pulseTick) clearInterval(pulseTick);
 	if (!controller.signal.aborted) controller.abort();
+	let finalResult: VoiceResult = result;
+	if (result.intent === "commit") {
+		// Commit-drain merge floor. The reducer's commit merge — committed
+		// finals plus the visible partial (`state.partialTranscript`, an
+		// accumulator in neither pipeline store) — is the floor.
+		// finalTranscriptPromise resolves only after the whole finals chain
+		// settles, so the drained text equals the committed finals plus the
+		// drain-time final only when that final was accepted; on
+		// hallucination/RMS disagreement or a drain-time decode error the drain
+		// collapses to the prior finals — text the merge already extends.
+		// Replace the merge only when the drain extends beyond it as text; an
+		// empty drain fails `if (drained)` outright. Cancel keeps abort →
+		// release → return with the drain fire-and-forget.
+		const drained = await pipelineHandle?.finalTranscriptPromise;
+		if (drained && !result.transcript.startsWith(drained)) {
+			finalResult = { ...result, transcript: drained };
+		}
+	}
 	sttEngine.release();
-	return result;
+	return finalResult;
 }
