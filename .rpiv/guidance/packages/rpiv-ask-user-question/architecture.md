@@ -17,7 +17,7 @@ Single-tool extension exposing `ask_user_question` — a TUI option selector wit
 
 ```
 .                       — Pi entry + tool registration, `config.ts` (collapseKey + optional `guidance` overrides for the tool description / prompt snippet / prompt guidelines, validated via rpiv-config's `validateGuidanceFields`; unset fields fall back to the `DEFAULT_*` consts in `ask-user-question.ts`), `events.ts` ("./events" export), `rpc-fallback.ts` (RPC dialog walker), `reconcile.ts` (tool visibility)
-tool/                   — Tool I/O surface: TypeBox schemas, params validator, result envelope, formatter.
+tool/                   — Tool I/O surface: TypeBox schemas, params line-terminator normalizer, params validator, result envelope, formatter.
                           Detailed: `.rpiv/guidance/packages/rpiv-ask-user-question/tool/architecture.md`
 state/                  — Canonical state, pure reducer, key router, runtime session, row-intent metadata,
                           i18n-bridge. Detailed: `.rpiv/guidance/packages/rpiv-ask-user-question/state/architecture.md`

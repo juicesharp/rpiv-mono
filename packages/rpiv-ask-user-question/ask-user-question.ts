@@ -18,6 +18,7 @@ import {
 import { type DialogUI, hasDialogUI, runRpcQuestionnaire } from "./rpc-fallback.js";
 import { displayLabel, t } from "./state/i18n-bridge.js";
 import { sentinelsToAppend } from "./state/row-intent.js";
+import { normalizeQuestionParams } from "./tool/normalize-params.js";
 import { buildQuestionnaireResponse, buildToolResult } from "./tool/response-envelope.js";
 import {
 	MAX_OPTIONS,
@@ -310,7 +311,10 @@ export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
 		parameters: QuestionParamsSchema,
 
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-			const typed = params as unknown as QuestionParams;
+			// Line-terminator normalization runs once here, ahead of validation, so
+			// every downstream consumer — validator, TUI, RPC walker, envelope, prompt
+			// event — sees the same clean text (#192).
+			const typed = normalizeQuestionParams(params as unknown as QuestionParams);
 			if (!ctx.hasUI) return rejectWithoutUi();
 
 			const validation = validateQuestionnaire(typed);

@@ -11,6 +11,7 @@ The LLM tool contract surface: TypeBox parameter schemas, pure runtime parameter
 - **Imported by** `ask-user-question.ts` (the tool registrar): `QuestionParamsSchema`, `validateQuestionnaire`, `buildQuestionnaireResponse`, `buildToolResult`
 - **Imported by** `rpc-fallback.ts` (RPC/ACP native-dialog walker): `QuestionAnswer`/`QuestionData`/`QuestionnaireResult`/`QuestionParams` types only — its results are funneled through the shared `buildQuestionnaireResponse` envelope (`ask-user-question.ts:197, 311`)
 - **`validate-questionnaire.ts`** imports purely from `./types.js` — no state/view reach
+- **`normalize-params.ts`** imports types only from `./types.js`; `ask-user-question.ts` calls `normalizeQuestionParams` on the raw params before `validateQuestionnaire`, so the reserved/duplicate guards, both render paths, the envelope echo, and the prompt event all see the same CR-free text
 - **`response-envelope.ts`** imports `formatAnswerScalar` from `./format-answer.js` + types from `./types.js`
 
 ## Module Structure
@@ -22,6 +23,8 @@ types.ts                  — TypeBox schemas (OptionSchema, QuestionSchema, Que
 format-answer.ts          — Scalar formatter; multi/custom/option branches (variant param retained but inert)
 response-envelope.ts      — Envelope assembly (buildQuestionnaireResponse), per-answer segment (buildAnswerSegment), buildToolResult
 validate-questionnaire.ts — Pure post-schema runtime guard returning discriminated ValidationResult
+normalize-params.ts       — Pure line-terminator normalizer (CRLF→LF, lone CR deleted) over every user-facing
+                            string field; runs at tool entry BEFORE validateQuestionnaire (#192)
 types.test.ts             — Schema accept/reject, QuestionAnswer kind union, isQuestionnaireResult guard, reserved label order
 ```
 

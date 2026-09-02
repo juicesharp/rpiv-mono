@@ -38,7 +38,11 @@ export interface AskUserBlockedEventPayload {
 }
 
 export interface AskUserPromptQuestion {
-	/** The full question text, exactly as the agent authored it. */
+	/**
+	 * The full question text as the agent authored it, with line terminators
+	 * normalized at tool entry (`\r\n` → `\n`, lone `\r` removed — #192). The
+	 * same normalization applies to `header` and every option field below.
+	 */
 	question: string;
 	/** The short chip/tag shown next to the question. */
 	header: string;

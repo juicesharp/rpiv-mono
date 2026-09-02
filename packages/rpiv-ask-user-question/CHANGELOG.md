@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Bare carriage returns in model-supplied text (`question`, `header`, `options[].label`, `options[].description`, `options[].preview`) no longer fragment option rows or corrupt the terminal line: line terminators are normalized once at tool entry — `\r\n` becomes `\n`, a lone `\r` is deleted (never a space, never a newline) — before validation, the TUI, the RPC dialog walker, the answer envelope, and the `rpiv:ask-user:prompt` payload see the text (#192). As a consequence, labels that differed from a reserved or duplicate label only by a stray `\r` are now rejected as before the CR slipped in.
+
 ## [2.9.0] - 2026-09-01
 
 ## [2.8.0] - 2026-08-29
