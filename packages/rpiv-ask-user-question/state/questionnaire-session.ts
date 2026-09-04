@@ -231,6 +231,11 @@ export class QuestionnaireSession {
 	private handleIgnoreInline(data: string): void {
 		if (!this.state.inputMode) return;
 		this.inlineInput.handleInput(data);
+		const value = this.inlineInput.getExpandedText?.() ?? this.inlineInput.getText();
+		this.state = {
+			...this.state,
+			customDraftsByTab: new Map(this.state.customDraftsByTab).set(this.state.currentTab, value),
+		};
 		this.viewAdapter.apply(this.state);
 	}
 
