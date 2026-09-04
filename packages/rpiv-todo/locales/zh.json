@@ -12,6 +12,7 @@
   "overlay.collapsed": "已折叠",
 
   "command.no_todos": "暂无任务。可以让 agent 添加一些！",
+  "command.cleared": "已清除 {count} 个任务",
   "command.requires_interactive": "/todos 需要交互模式",
   "command.section.pending": "── 待处理 ──",
   "command.section.in_progress": "── 进行中 ──",

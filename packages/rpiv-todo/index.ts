@@ -148,7 +148,10 @@ export default function (pi: ExtensionAPI, importOverlay: TodoOverlayImporter = 
 	}
 
 	registerTodoTool(pi);
-	registerTodosCommand(pi);
+	registerTodosCommand(pi, async (ctx) => {
+		if (sid(ctx) !== getActiveRenderSession()) return;
+		await updateTodoOverlay(true);
+	});
 
 	// Collapse/expand hotkey for the todo overlay. The key is resolved once at
 	// factory scope from config (register-once contract: a config change needs

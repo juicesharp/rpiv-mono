@@ -12,6 +12,7 @@
   "overlay.collapsed": "згорнуто",
 
   "command.no_todos": "Завдань поки немає. Попросіть агента додати!",
+  "command.cleared": "Очищено завдань: {count}",
   "command.requires_interactive": "/todos потребує інтерактивного режиму",
   "command.section.pending": "── Очікування ──",
   "command.section.in_progress": "── У роботі ──",

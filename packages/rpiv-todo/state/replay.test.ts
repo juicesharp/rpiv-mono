@@ -64,6 +64,16 @@ describe("replayFromBranch", () => {
 		expect(state.nextId).toBe(3);
 	});
 
+	it("treats a slash-command clear marker as an empty state", () => {
+		const ctx = createMockCtx({
+			branch: [
+				...buildBranch([{ action: "create", params: {}, tasks: [taskFixture(1, "old")], nextId: 2 }]),
+				{ type: "custom", customType: "rpiv-todo-clear" } as never,
+			],
+		});
+		expect(replayFromBranch(ctx)).toEqual({ tasks: [], nextId: 1 });
+	});
+
 	it("clones tasks so mutating the fixture does not mutate replayed state", () => {
 		const fixture: Task = taskFixture(1, "original");
 		const ctx = createMockCtx({

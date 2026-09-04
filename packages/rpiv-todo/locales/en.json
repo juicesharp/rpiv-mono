@@ -10,6 +10,7 @@
   "overlay.collapsed": "collapsed",
 
   "command.no_todos": "No todos yet. Ask the agent to add some!",
+  "command.cleared": "Cleared {count} tasks",
   "command.requires_interactive": "/todos requires interactive mode",
   "command.section.pending": "── Pending ──",
   "command.section.in_progress": "── In Progress ──",

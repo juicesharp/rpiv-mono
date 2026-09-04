@@ -1,18 +1,20 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { createMockCtx, createMockPi } from "@juicesharp/rpiv-test-utils";
+import { createMockCommandCtx, createMockCtx, createMockPi } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { __resetState, registerTodosCommand, registerTodoTool, TOOL_NAME } from "./todo.js";
 
 function setup() {
 	__resetState();
-	const { pi, captured } = createMockPi();
+	const appendEntry = vi.fn();
+	const onStateChanged = vi.fn(async () => {});
+	const { pi, captured } = createMockPi({ appendEntry });
 	registerTodoTool(pi);
-	registerTodosCommand(pi);
+	registerTodosCommand(pi, onStateChanged);
 	const tool = captured.tools.get(TOOL_NAME);
 	if (!tool) throw new Error("tool not registered");
 	const cmd = captured.commands.get("todos");
 	if (!cmd) throw new Error("command not registered");
-	return { tool, cmd };
+	return { tool, cmd, appendEntry, onStateChanged };
 }
 
 async function seed(tool: ReturnType<typeof setup>["tool"], actions: Array<Record<string, unknown>>) {
@@ -65,6 +67,36 @@ describe("/todos command — guard branches", () => {
 		await cmd.handler("", ctx as never);
 		const notify = ctx.ui.notify as ReturnType<typeof vi.fn>;
 		expect(notify).toHaveBeenCalledWith(expect.stringContaining("No todos"), "info");
+	});
+});
+
+describe("/todos clear", () => {
+	it("clears the current session, persists the reset, and refreshes the view", async () => {
+		const { tool, cmd, appendEntry, onStateChanged } = setup();
+		await seed(tool, [
+			{ action: "create", subject: "a" },
+			{ action: "create", subject: "b" },
+		]);
+		const ctx = createMockCommandCtx({ hasUI: true });
+
+		await cmd.handler("  clear  ", ctx as never);
+
+		expect(ctx.waitForIdle).toHaveBeenCalledTimes(1);
+		expect(appendEntry).toHaveBeenCalledWith("rpiv-todo-clear");
+		expect(onStateChanged).toHaveBeenCalledWith(ctx);
+		const notify = ctx.ui.notify as ReturnType<typeof vi.fn>;
+		expect(notify).toHaveBeenCalledWith("Cleared 2 tasks", "info");
+
+		await cmd.handler("", ctx as never);
+		expect(notify).toHaveBeenLastCalledWith(expect.stringContaining("No todos"), "info");
+		const result = await tool.execute?.(
+			"tc",
+			{ action: "create", subject: "after clear" } as never,
+			undefined as never,
+			undefined as never,
+			ctx as never,
+		);
+		expect(result?.content[0]).toMatchObject({ text: expect.stringContaining("Created #1") });
 	});
 });
 

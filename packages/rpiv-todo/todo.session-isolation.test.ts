@@ -1,5 +1,5 @@
-import { createMockCtx, createMockPi } from "@juicesharp/rpiv-test-utils";
-import { afterEach, beforeEach, describe, expect, it, type vi } from "vitest";
+import { createMockCommandCtx, createMockCtx, createMockPi } from "@juicesharp/rpiv-test-utils";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import registerTodo from "./index.js";
 import { EMPTY_STATE } from "./state/state.js";
 import { getActiveRenderSession, getRenderState, getState } from "./state/store.js";
@@ -158,7 +158,7 @@ describe("rpiv-todo — foreground overlay policy (Slice 2)", () => {
 	}
 
 	function setup() {
-		const { pi, captured } = createMockPi();
+		const { pi, captured } = createMockPi({ appendEntry: vi.fn() });
 		registerTodo(pi);
 		const start = captured.events.get("session_start")?.[0] as
 			| ((e: unknown, ctx: unknown) => Promise<void>)
@@ -170,17 +170,17 @@ describe("rpiv-todo — foreground overlay policy (Slice 2)", () => {
 			| ((event: { toolName: string; isError: boolean }) => Promise<void>)
 			| undefined;
 		const tool = captured.tools.get("todo");
-		return { captured, start, shutdown, toolEnd, tool };
+		const cmd = captured.commands.get("todos");
+		return { captured, start, shutdown, toolEnd, tool, cmd };
 	}
 
-	it("first hasUI session_start claims the foreground and renders its slot", async () => {
-		const { start, toolEnd, tool } = setup();
-		const parentCtx = createMockCtx({ hasUI: true, sessionId: PARENT });
+	it("first hasUI session owns the overlay, which /todos clear removes", async () => {
+		const { start, toolEnd, tool, cmd } = setup();
+		const parentCtx = createMockCommandCtx({ hasUI: true, sessionId: PARENT });
 
 		await start?.({}, parentCtx);
 		expect(getActiveRenderSession()).toBe(PARENT);
 
-		// Create a parent task; pump tool_execution_end so the overlay renders it.
 		await tool?.execute?.(
 			"tc",
 			{ action: "create", subject: "parent task" } as never,
@@ -189,10 +189,10 @@ describe("rpiv-todo — foreground overlay policy (Slice 2)", () => {
 			parentCtx as never,
 		);
 		await toolEnd?.({ toolName: "todo", isError: false });
-
-		// Overlay registered a widget on the parent ui and renders the parent slot.
-		expect(widgetSpy(parentCtx)).toHaveBeenCalled();
 		expect(getRenderState().tasks.map((t) => t.subject)).toEqual(["parent task"]);
+
+		await cmd?.handler("clear", parentCtx as never);
+		expect(widgetSpy(parentCtx)).toHaveBeenLastCalledWith(WIDGET_KEY, undefined);
 	});
 
 	it("a child session_start (distinct sid, hasUI) does not claim foreground or rebind the overlay", async () => {
