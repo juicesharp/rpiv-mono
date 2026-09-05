@@ -1,7 +1,8 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { Editor, OverlayHandle, TUI } from "@earendil-works/pi-tui";
 import { COLLAPSE_KEY_OFF, formatKeySpecForDisplay } from "../config.js";
-import type { QuestionData, QuestionnaireResult, QuestionParams } from "../tool/types.js";
+import type { ExternalAnswerEntry } from "../events.js";
+import type { QuestionAnswer, QuestionData, QuestionnaireResult, QuestionParams } from "../tool/types.js";
 import type { WrappingSelectItem } from "../view/components/wrapping-select.js";
 import { COLLAPSED_HINT_TEMPLATE, HINT_PART_CANCEL, KEY_PLACEHOLDER } from "../view/dialog-builder.js";
 import type { QuestionnairePropsAdapter } from "../view/props-adapter.js";
@@ -37,6 +38,9 @@ export interface QuestionnaireSessionComponent {
 	invalidate(): void;
 	handleInput(data: string): void;
 }
+
+/** Verdict from `answerExternal`. Rejection carries a human-readable reason. */
+export type ExternalAnswerOutcome = { ok: true } | { ok: false; reason: string };
 
 function initialState(): QuestionnaireState {
 	return {
@@ -281,5 +285,86 @@ export class QuestionnaireSession {
 	 */
 	toggleCollapsedExternal(): void {
 		if (!this.inputEditorOpen) this.commit({ kind: "toggle_collapsed" });
+	}
+
+	/**
+	 * Answer the whole questionnaire from outside the TUI, bypassing keystrokes.
+	 *
+	 * Callers (a sibling extension bridging some external control plane) know only
+	 * question and option indices — everything else needed to build a
+	 * `QuestionAnswer` lives here, so the completion happens in this class rather
+	 * than at the call site. Resolves the same `QuestionnaireResult` the reducer's
+	 * `done` effect produces, so the tool's response envelope is identical whether
+	 * the user typed or a program answered.
+	 *
+	 * Every question must be present and every index in range; on any violation
+	 * nothing is submitted and the reason is returned. A partial or silently
+	 * dropped answer would reach the model as a real user answer, which is worse
+	 * than refusing.
+	 */
+	answerExternal(entries: readonly ExternalAnswerEntry[]): ExternalAnswerOutcome {
+		const answers: QuestionAnswer[] = [];
+
+		for (let i = 0; i < this.questions.length; i++) {
+			const q = this.questions[i];
+			const entry = entries.find((e) => e.questionIndex === i);
+			if (!entry) {
+				return { ok: false, reason: `no answer supplied for question ${i} ("${q.header}")` };
+			}
+
+			const isMulti = q.multiSelect === true;
+			if (typeof entry.text === "string") {
+				if (entry.text.length === 0) {
+					return { ok: false, reason: `question ${i}: custom text is empty` };
+				}
+				answers.push({
+					questionIndex: i,
+					question: q.question,
+					kind: "custom",
+					answer: entry.text,
+					...(entry.notes ? { notes: entry.notes } : {}),
+				});
+				continue;
+			}
+
+			const indices = entry.optionIndexes ?? [];
+			if (indices.length === 0) {
+				return { ok: false, reason: `question ${i}: neither optionIndexes nor text supplied` };
+			}
+			if (!isMulti && indices.length > 1) {
+				return { ok: false, reason: `question ${i} is single-select but got ${indices.length} options` };
+			}
+			const bad = indices.find((n) => !Number.isInteger(n) || n < 0 || n >= q.options.length);
+			if (bad !== undefined) {
+				return {
+					ok: false,
+					reason: `question ${i}: option index ${bad} out of range (0..${q.options.length - 1})`,
+				};
+			}
+
+			if (isMulti) {
+				answers.push({
+					questionIndex: i,
+					question: q.question,
+					kind: "multi",
+					answer: null,
+					selected: indices.map((n) => q.options[n].label),
+					...(entry.notes ? { notes: entry.notes } : {}),
+				});
+			} else {
+				const picked = q.options[indices[0]];
+				answers.push({
+					questionIndex: i,
+					question: q.question,
+					kind: "option",
+					answer: picked.label,
+					...(picked.preview ? { preview: picked.preview } : {}),
+					...(entry.notes ? { notes: entry.notes } : {}),
+				});
+			}
+		}
+
+		this.done({ answers, cancelled: false });
+		return { ok: true };
 	}
 }
