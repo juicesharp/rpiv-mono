@@ -5,8 +5,8 @@ import { t } from "../state/i18n-bridge.js";
 import { formatAnswerScalar } from "../tool/format-answer.js";
 import type { QuestionData } from "../tool/types.js";
 import type { PreviewPane, PreviewPaneProps } from "./components/preview/preview-pane.js";
+import type { DialogState } from "./dialog-builder.js";
 import {
-	type DialogState,
 	HINT_PART_CANCEL,
 	HINT_PART_CLEAR,
 	HINT_PART_COLLAPSE_TEMPLATE,
@@ -20,7 +20,7 @@ import {
 	KEY_PLACEHOLDER,
 	READY_PROMPT,
 	REVIEW_HEADING,
-} from "./dialog-builder.js";
+} from "./dialog-copy.js";
 import type { StatefulView } from "./stateful-view.js";
 import type { TabComponents } from "./tab-components.js";
 
