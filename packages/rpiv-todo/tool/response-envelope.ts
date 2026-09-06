@@ -54,7 +54,8 @@ export function formatContent(op: Op, state: TaskState): string {
 				return `No change: #${op.id} already matches the requested values (status: ${op.toStatus})`;
 			}
 			const transition = op.fromStatus !== op.toStatus ? ` (${op.fromStatus} → ${op.toStatus})` : "";
-			return `Updated #${op.id}${transition}`;
+			const base = `Updated #${op.id}${transition}`;
+			return op.toStatus === "completed" ? withSkippedNotice(base, op.id, state) : base;
 		}
 		case "delete":
 			return `Deleted #${op.id}: ${sanitizeTerminalText(op.subject)}`;
@@ -71,6 +72,19 @@ export function formatContent(op: Op, state: TaskState): string {
 		case "error":
 			return `Error: ${op.message}`;
 	}
+}
+
+/**
+ * When a later task completes while earlier ones are still open, force the
+ * model to decide on each skipped task instead of silently postponing it.
+ */
+function withSkippedNotice(base: string, completedId: number, state: TaskState): string {
+	const skipped = state.tasks.filter(
+		(t) => t.id < completedId && (t.status === "pending" || t.status === "in_progress"),
+	);
+	if (skipped.length === 0) return base;
+	const list = skipped.map((task) => `#${task.id} ${sanitizeTerminalText(task.subject)}`).join(", ");
+	return `${base}\nSkipped earlier tasks still open: ${list}. Decide now for each: complete it, delete it, or keep it with a stated reason.`;
 }
 
 /**
