@@ -12,6 +12,7 @@
   "overlay.collapsed": "свёрнуто",
 
   "command.no_todos": "Задач пока нет. Попросите агента добавить!",
+  "command.cleared": "Очищено задач: {count}",
   "command.requires_interactive": "/todos требует интерактивного режима",
   "command.section.pending": "── Ожидание ──",
   "command.section.in_progress": "── В работе ──",

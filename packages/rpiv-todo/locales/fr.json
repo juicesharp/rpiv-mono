@@ -12,6 +12,7 @@
   "overlay.collapsed": "réduit",
 
   "command.no_todos": "Pas encore de tâches. Demandez à l'agent d'en ajouter !",
+  "command.cleared": "{count} tâches effacées",
   "command.requires_interactive": "/todos nécessite le mode interactif",
   "command.section.pending": "── En attente ──",
   "command.section.in_progress": "── En cours ──",

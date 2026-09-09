@@ -1,6 +1,9 @@
 import type { TaskDetails } from "../tool/types.js";
 import { EMPTY_STATE, type TaskState } from "./state.js";
 
+/** Session marker written when `/todos clear` resets state outside a tool call. */
+export const TODO_CLEAR_ENTRY_TYPE = "rpiv-todo-clear";
+
 /**
  * Discriminator for `details` envelopes that match the persisted `TaskDetails`
  * shape. Defensive — branch entries from older or corrupt sessions are
@@ -13,9 +16,9 @@ export function isTaskDetails(value: unknown): value is TaskDetails {
 }
 
 /**
- * Walk the current branch in chronological order; the LAST `toolResult` whose
- * `toolName === "todo"` and whose `details` shape matches `TaskDetails` wins
- * (last-write-wins). When no matching entry exists, returns `EMPTY_STATE`.
+ * Walk the current branch in chronological order. Valid `todo` tool-result
+ * snapshots replace the state, while `/todos clear` markers reset it. The last
+ * recognized state entry wins; when none exists, returns `EMPTY_STATE`.
  *
  * Pure of module state — `index.ts` writes the returned snapshot into the
  * store after this returns. The function explicitly does NOT touch the store
@@ -24,7 +27,15 @@ export function isTaskDetails(value: unknown): value is TaskDetails {
 export function replayFromBranch(ctx: { sessionManager: { getBranch(): Iterable<unknown> } }): TaskState {
 	let result: TaskState = { tasks: [...EMPTY_STATE.tasks], nextId: EMPTY_STATE.nextId };
 	for (const entry of ctx.sessionManager.getBranch()) {
-		const e = entry as { type?: string; message?: { role?: string; toolName?: string; details?: unknown } };
+		const e = entry as {
+			type?: string;
+			customType?: string;
+			message?: { role?: string; toolName?: string; details?: unknown };
+		};
+		if (e.type === "custom" && e.customType === TODO_CLEAR_ENTRY_TYPE) {
+			result = { tasks: [...EMPTY_STATE.tasks], nextId: EMPTY_STATE.nextId };
+			continue;
+		}
 		if (e.type !== "message") continue;
 		const msg = e.message;
 		if (msg?.role !== "toolResult" || msg.toolName !== "todo") continue;

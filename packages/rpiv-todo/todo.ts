@@ -12,9 +12,10 @@
  * continue to import from `./todo.js`.
  */
 
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { loadConfig, validateGuidanceFields } from "./config.js";
 import { formatStatusLabel, t } from "./state/i18n-bridge.js";
+import { TODO_CLEAR_ENTRY_TYPE } from "./state/replay.js";
 import { selectTasksByStatus, selectTodoCounts, selectVisibleTasks } from "./state/selectors.js";
 import { applyTaskMutation } from "./state/state-reducer.js";
 import { commitState, getRenderState, getState, sid } from "./state/store.js";
@@ -103,14 +104,30 @@ export function registerTodoTool(pi: ExtensionAPI): void {
 // /todos slash command
 // ---------------------------------------------------------------------------
 
-export function registerTodosCommand(pi: ExtensionAPI): void {
+type TodosStateChangedHandler = (ctx: ExtensionCommandContext) => Promise<void> | void;
+
+export function registerTodosCommand(pi: ExtensionAPI, onStateChanged?: TodosStateChangedHandler): void {
 	pi.registerCommand(COMMAND_NAME, {
-		description: "Show all todos on the current branch, grouped by status",
-		handler: async (_args, ctx) => {
+		description: "Show all todos on the current branch, grouped by status; pass clear to reset the list",
+		handler: async (args, ctx) => {
 			if (!ctx.hasUI) {
 				ctx.ui.notify(t("command.requires_interactive", ERR_REQUIRES_INTERACTIVE), "error");
 				return;
 			}
+
+			if (args.trim() === "clear") {
+				await ctx.waitForIdle();
+				const id = sid(ctx);
+				const state = getState(id);
+				const result = applyTaskMutation(state, "clear", {});
+				pi.appendEntry(TODO_CLEAR_ENTRY_TYPE);
+				commitState(id, result.state);
+				await onStateChanged?.(ctx);
+				const count = state.tasks.length;
+				ctx.ui.notify(t("command.cleared", "Cleared {count} tasks").replace("{count}", String(count)), "info");
+				return;
+			}
+
 			const state = getState(sid(ctx));
 			const visible = selectVisibleTasks(state);
 			if (visible.length === 0) {

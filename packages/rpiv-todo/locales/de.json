@@ -12,6 +12,7 @@
   "overlay.collapsed": "eingeklappt",
 
   "command.no_todos": "Noch keine Todos. Bitte den Agenten, welche hinzuzufügen!",
+  "command.cleared": "{count} Aufgaben gelöscht",
   "command.requires_interactive": "/todos erfordert den interaktiven Modus",
   "command.section.pending": "── Ausstehend ──",
   "command.section.in_progress": "── In Bearbeitung ──",

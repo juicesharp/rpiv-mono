@@ -17,10 +17,10 @@ The widget is mounted above the Pi editor under the key `rpiv-todos`.
 | Disposed | On the foreground session's shutdown. A child session shutting down leaves the overlay alone. |
 
 Task state is partitioned by session id, so parallel sessions cannot read or
-overwrite each other's lists. Nothing is written to disk: on session start,
-compaction, and session-tree changes, the list is rebuilt by walking the branch
-and taking the last `todo` tool result's snapshot, which replaces the whole list
-(last-write-wins).
+overwrite each other's lists. Nothing is written outside Pi's session history:
+on session start, compaction, and session-tree changes, the list is rebuilt by
+walking the branch. `todo` tool-result snapshots replace the whole list, while
+`/todos clear` markers reset it; the latest recognized entry wins.
 
 ## Anatomy of a row
 
@@ -105,7 +105,10 @@ row budget and auto-hiding:
 ```
 
 The header omits any count that is zero. Sections appear only when they have
-tasks. Tombstoned tasks are never listed.
+tasks. Tombstoned tasks are never listed. Run `/todos clear` to remove the
+entire list, including tombstones, and reset the next task id to `1`. The reset
+is stored in session history, so it survives reloads and follows branch
+navigation.
 
 - With no tasks: `No todos yet. Ask the agent to add some!`
 - In a non-interactive session: `/todos requires interactive mode`
