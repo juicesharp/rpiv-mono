@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `rpiv:ask-user:answer` — an inbound event that resolves the questionnaire currently awaiting input without synthesizing keystrokes, for programs driving Pi from outside (pane supervisors, test harnesses). Answers are all-or-nothing; every attempt is acknowledged on `rpiv:ask-user:answer-result`. Terminal dialog only.
+
 ### Fixed
 
 - Bare carriage returns in model-supplied text (`question`, `header`, `options[].label`, `options[].description`, `options[].preview`) no longer fragment option rows or corrupt the terminal line: line terminators are normalized once at tool entry — `\r\n` becomes `\n`, a lone `\r` is deleted (never a space, never a newline) — before validation, the TUI, the RPC dialog walker, the answer envelope, and the `rpiv:ask-user:prompt` payload see the text (#192). As a consequence, labels that differed from a reserved or duplicate label only by a stray `\r` are now rejected as before the CR slipped in.

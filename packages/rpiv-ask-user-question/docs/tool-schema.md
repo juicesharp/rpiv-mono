@@ -106,8 +106,12 @@ in `details.globalNote`.
 
 ## Event contract
 
-The package publishes one event on Pi's event bus, emitted after validation passes and
-before the dialog is shown. Import it from the `/events` subpath:
+Everything here imports from the `/events` subpath.
+
+### Outbound
+
+`rpiv:ask-user:prompt` carries the questionnaire, emitted after validation passes and
+before the dialog is shown:
 
 ```ts
 import { ASK_USER_PROMPT_EVENT, type AskUserPromptEventPayload } from "@juicesharp/rpiv-ask-user-question/events";
@@ -118,9 +122,47 @@ pi.events.on(ASK_USER_PROMPT_EVENT, (payload: AskUserPromptEventPayload) => {
 });
 ```
 
-The channel name is `rpiv:ask-user:prompt`. Preview *content* is deliberately not shipped
-in the payload — only `hasPreview: boolean` — so listeners forwarding the event across a
-process or network boundary stay cheap.
+Preview *content* is deliberately not shipped in the payload — only `hasPreview: boolean` —
+so listeners forwarding the event across a process or network boundary stay cheap.
+
+`rpiv:ask-user:blocked` brackets the wait for input: `{ active: true }` before the dialog
+opens, `{ active: false }` in a `finally` when it closes for any reason, so a listener can
+tell blocked-on-human apart from working.
+
+### Inbound
+
+`rpiv:ask-user:answer` resolves the questionnaire currently awaiting input, without
+synthesizing keystrokes. It exists for programs driving Pi from outside — a pane
+supervisor, a test harness — that would otherwise have to send arrow keys and count rows
+against a rendered overlay:
+
+```ts
+import { ASK_USER_ANSWER_EVENT, ASK_USER_ANSWER_RESULT_EVENT } from "@juicesharp/rpiv-ask-user-question/events";
+
+pi.events.emit(ASK_USER_ANSWER_EVENT, {
+  requestId: "r1", // optional, echoed back on the result
+  answers: [
+    { questionIndex: 0, optionIndexes: [1] },              // single-select: exactly one index
+    { questionIndex: 1, optionIndexes: [0, 2], notes: "" }, // multi-select
+    { questionIndex: 2, text: "something else" },           // the `Type something.` row
+  ],
+});
+```
+
+Answers are all-or-nothing: every question must be present and every index in range, or
+nothing is submitted. A partially applied answer would reach the model indistinguishable
+from one the user gave, so a rejection leaves the dialog untouched and open — fix the
+payload and emit again.
+
+Every attempt gets a verdict on `rpiv:ask-user:answer-result` — `{ ok, reason?, requestId? }`
+— accepted or not. The payload carries no callback because payloads must stay JSON-safe (see
+below). Emitting when no questionnaire is awaiting input is rejected, not queued.
+
+Only the terminal dialog honours this event. RPC/ACP hosts run the sequential dialog walker
+described in [Hosts and runtime behavior](./hosts.md), which owns its own prompts; an
+inbound answer there is rejected with `no questionnaire is awaiting input`.
+
+### Stability
 
 Stability policy for the `rpiv:*` namespace: channel names are immutable, payload changes
 are append-only and always optional, payloads stay JSON-safe, and any breaking change ships
