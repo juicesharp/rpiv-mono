@@ -92,15 +92,23 @@ describe("registerTodoTool — renderCall", () => {
 		expect((node as unknown as { text: string }).text).toContain("#42");
 	});
 
-	it("update action renders the task subject when seeded", async () => {
+	it.each(["update", "get", "delete"])("%s renders the ID, not a colliding foreground subject", async (action) => {
 		const { tool } = setup();
 		await call(tool, { action: "create", subject: "seeded-subject" });
-		const node = tool.renderCall?.(
-			{ action: "update", id: 1 } as never,
-			theme,
+		const child = await tool.execute?.(
+			"child-create",
+			{ action: "create", subject: "child-subject" } as never,
 			undefined as never,
-		) as unknown as Text;
-		expect((node as unknown as { text: string }).text).toContain("seeded-subject");
+			undefined as never,
+			createMockCtx({ sessionId: "child" }) as never,
+		);
+		const childDetails = child?.details as TaskDetails;
+		expect(childDetails.tasks[0].id).toBe(1);
+		const node = tool.renderCall?.({ action, id: 1 } as never, theme, undefined as never) as unknown as Text;
+		const text = (node as unknown as { text: string }).text;
+		expect(text).toContain("#1");
+		expect(text).not.toContain("seeded-subject");
+		expect(text).not.toContain("child-subject");
 	});
 
 	it("list action with a status filter renders the humanized status label", () => {
@@ -121,6 +129,24 @@ describe("registerTodoTool — renderCall", () => {
 });
 
 describe("registerTodoTool — renderResult", () => {
+	it.each([
+		{ action: "create", subject: "" },
+		{ action: "update", id: 1, status: "in_progress" },
+		{ action: "get", id: 99 },
+		{ action: "delete", id: 99 },
+	])("renders rejected $action as an error, not a successful status", async (params) => {
+		const { tool } = setup();
+		await call(tool, { action: "create", subject: "completed task" });
+		await call(tool, { action: "update", id: 1, status: "completed" });
+		const r = await call(tool, params);
+		const details = r?.details as TaskDetails;
+		expect(details.error).toBeTruthy();
+		expect(details.tasks[0].status).toBe("completed");
+		const node = tool.renderResult?.(r as never, {} as never, theme, undefined as never) as unknown as Text;
+		const text = (node as unknown as { text: string }).text;
+		expect(text).toBe(`✗ ${details.error}`);
+	});
+
 	it("create renders the new task's status label (pending)", async () => {
 		const { tool } = setup();
 		const r = await call(tool, { action: "create", subject: "a" });

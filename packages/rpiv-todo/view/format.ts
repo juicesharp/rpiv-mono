@@ -1,8 +1,6 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { formatStatusLabel } from "../state/i18n-bridge.js";
-import { selectTaskSubjectById } from "../state/selectors.js";
-import type { TaskState } from "../state/state.js";
 import { sanitizeTerminalText } from "../tool/sanitize.js";
 import type { Task, TaskAction, TaskDetails, TaskMutationParams, TaskStatus } from "../tool/types.js";
 
@@ -104,15 +102,11 @@ export function formatCommandTaskLine(t: Task, glyph: string): string {
 // ---------------------------------------------------------------------------
 
 /**
- * `renderCall` body. Receives the parsed args, the theme, and the live
- * `TaskState` (resolved by the caller via `getState()`). Returns a `Text`
- * node identical to pre-refactor `todo.ts:507-525`.
+ * Render only call-local information. Task IDs are session-local, and the
+ * render hook does not identify the caller's session, so a live-state lookup
+ * could display an unrelated foreground task's subject.
  */
-export function renderTodoCall(
-	args: TaskMutationParams & { action: TaskAction },
-	theme: Theme,
-	state: TaskState,
-): Text {
+export function renderTodoCall(args: TaskMutationParams & { action: TaskAction }, theme: Theme): Text {
 	const glyph = ACTION_GLYPH[args.action] ?? args.action;
 	let text = theme.fg("toolTitle", theme.bold("todo ")) + theme.fg("muted", glyph);
 
@@ -122,8 +116,7 @@ export function renderTodoCall(
 		(args.action === "update" || args.action === "get" || args.action === "delete") &&
 		args.id !== undefined
 	) {
-		const subject = selectTaskSubjectById(state, args.id);
-		text += ` ${theme.fg("accent", subject ? sanitizeTerminalText(subject) : `#${args.id}`)}`;
+		text += ` ${theme.fg("accent", `#${args.id}`)}`;
 	} else if (args.action === "list" && args.status) {
 		text += ` ${theme.fg("muted", formatStatusLabel(args.status))}`;
 	}
@@ -133,11 +126,13 @@ export function renderTodoCall(
 /**
  * `renderResult` body. Inspects `details` to pick the per-action status echo
  * (only `create`/`update`/`delete` advertise a status; `list`/`get`/`clear`
- * fall back to plain `✓`). Identical visual output to pre-refactor
- * `todo.ts:533-565`.
+ * fall back to plain `✓`). Rejected operations display their error instead.
  */
 export function renderTodoResult(result: { details?: unknown }, theme: Theme): Text {
 	const details = result.details as TaskDetails | undefined;
+	if (details?.error !== undefined) {
+		return new Text(theme.fg("error", `✗ ${sanitizeTerminalText(details.error)}`), 0, 0);
+	}
 	let status: TaskStatus | undefined;
 	if (details) {
 		const params = details.params as TaskMutationParams;
@@ -146,7 +141,7 @@ export function renderTodoResult(result: { details?: unknown }, theme: Theme): T
 				status = details.tasks[details.tasks.length - 1]?.status;
 				break;
 			case "update":
-				status = params.status ?? details.tasks.find((t) => t.id === params.id)?.status;
+				status = details.tasks.find((t) => t.id === params.id)?.status;
 				break;
 			case "delete":
 				status = details.tasks.find((t) => t.id === params.id)?.status;
