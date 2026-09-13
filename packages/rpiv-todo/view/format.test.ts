@@ -2,7 +2,7 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { makeTheme } from "@juicesharp/rpiv-test-utils";
 import { describe, expect, it } from "vitest";
 import type { Task } from "../tool/types.js";
-import { formatOverlayTaskLine } from "./format.js";
+import { formatOverlayTaskLine, renderTodoResult } from "./format.js";
 
 const recordingTheme = makeTheme({
 	fg: (color, text) => `<${color}>${text}</${color}>`,
@@ -41,6 +41,13 @@ describe("formatOverlayTaskLine — semantic color hierarchy", () => {
 		expect(formatOverlayTaskLine(task({ status: "completed" }), recordingTheme, false)).toBe(
 			"<success>✓</success> <strike><muted>quiet task</muted></strike>",
 		);
+	});
+});
+
+describe("renderTodoResult — errors", () => {
+	it("sanitizes error text before applying the error color", () => {
+		const node = renderTodoResult({ details: { error: "bad\u001b[2Jinput" } }, recordingTheme);
+		expect(node.render(80).join("\n")).toContain("<error>✗ badinput</error>");
 	});
 });
 
