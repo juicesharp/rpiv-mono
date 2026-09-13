@@ -13,6 +13,7 @@ function emptyMultiSelectProps(ctx: PerTabBindingContext): MultiSelectViewProps 
 		rows: [],
 		other: {
 			active: false,
+			checked: false,
 			inputMode: false,
 			inputBuffer: ctx.inputBuffer,
 			inputCursorOffset: ctx.inputCursorOffset,
@@ -46,6 +47,7 @@ export const selectMultiSelectProps: PerTabSelector<MultiSelectViewProps> = (sta
 		rows,
 		other: {
 			active: otherActive,
+			checked: ctx.inputBuffer.trim().length > 0,
 			inputMode: state.inputMode,
 			inputBuffer: ctx.inputBuffer,
 			inputCursorOffset: ctx.inputCursorOffset,
