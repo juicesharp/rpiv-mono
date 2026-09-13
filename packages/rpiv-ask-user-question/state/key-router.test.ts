@@ -126,6 +126,18 @@ describe("routeKey — nav", () => {
 			inputValue: "",
 		});
 	});
+
+	it("j and k mirror Down and Up in option lists", () => {
+		const state = makeState({ optionIndex: 1 });
+		const runtime = makeRuntime();
+
+		const actions = [routeKey("j", state, runtime), routeKey("k", state, runtime)];
+
+		expect(actions).toEqual([
+			{ kind: "nav", nextIndex: 2, inputValue: "" },
+			{ kind: "nav", nextIndex: 0, inputValue: "" },
+		]);
+	});
 	// With the chat row gone, UP/DOWN wrap within [option0 … optionLast] via wrapTab.
 	// DOWN at the last item wraps to 0; UP at the first item wraps to the last.
 	it("DOWN at the last item wraps to 0 (no chat row, wrapTab clamp)", () => {
@@ -542,6 +554,18 @@ describe("routeKey — cancel + submit", () => {
 		});
 	});
 
+	it("Submit tab j and k mirror Down and Up", () => {
+		const state = makeState({ currentTab: 2, submitChoiceIndex: 0 });
+		const runtime = makeRuntime();
+
+		const actions = [routeKey("j", state, runtime), routeKey("k", state, runtime)];
+
+		expect(actions).toEqual([
+			{ kind: "submit_nav", nextIndex: 1 },
+			{ kind: "submit_nav", nextIndex: 1 },
+		]);
+	});
+
 	it("Submit tab + UP wraps from 0 to 1", () => {
 		expect(routeKey(sentinel(KEY.UP), makeState({ currentTab: 2, submitChoiceIndex: 0 }), makeRuntime())).toEqual({
 			kind: "submit_nav",
@@ -649,6 +673,18 @@ describe("routeKey — notes", () => {
 		});
 	});
 
+	it("notesMode forwards literal j and k to the editor", () => {
+		const state = makeState({ notesVisible: true });
+		const runtime = makeRuntime();
+
+		const actions = [routeKey("j", state, runtime), routeKey("k", state, runtime)];
+
+		expect(actions).toEqual([
+			{ kind: "notes_forward", data: "j" },
+			{ kind: "notes_forward", data: "k" },
+		]);
+	});
+
 	it("notesMode: configured newline is forwarded instead of closing the editor", () => {
 		const data = sentinel(KEY.NEW_LINE);
 		expect(routeKey(data, makeState({ notesVisible: true }), makeRuntime())).toEqual({
@@ -727,6 +763,15 @@ describe("routeKey — inputMode (Type something)", () => {
 		expect(routeKey("x", makeState({ inputMode: true }), makeRuntime({ currentItem: other }))).toEqual({
 			kind: "ignore",
 		});
+	});
+
+	it("literal j and k remain editable in custom answers", () => {
+		const state = makeState({ inputMode: true });
+		const runtime = makeRuntime({ currentItem: other });
+
+		const actions = [routeKey("j", state, runtime), routeKey("k", state, runtime)];
+
+		expect(actions).toEqual([{ kind: "ignore" }, { kind: "ignore" }]);
 	});
 
 	it("configured newline is forwarded to the multiline editor", () => {
