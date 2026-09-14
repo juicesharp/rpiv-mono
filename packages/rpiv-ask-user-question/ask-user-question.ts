@@ -17,6 +17,7 @@ import {
 // none of the ~560ms TUI render graph that QuestionnaireSession lazy-loads.
 import { type DialogUI, hasDialogUI, runRpcQuestionnaire } from "./rpc-fallback.js";
 import { displayLabel, t } from "./state/i18n-bridge.js";
+import { createOverlayCompletion } from "./state/overlay-completion.js";
 import { sentinelsToAppend } from "./state/row-intent.js";
 import { normalizeQuestionParams } from "./tool/normalize-params.js";
 import { buildQuestionnaireResponse, buildToolResult } from "./tool/response-envelope.js";
@@ -60,11 +61,12 @@ function rejectWithoutUi() {
 }
 
 /** Sequential native-dialog walker for RPC hosts; brackets it with the blocked-event pair + terminal bell. */
-async function runRpcPath(pi: ExtensionAPI, ui: DialogUI, typed: QuestionParams) {
+async function runRpcPath(pi: ExtensionAPI, ui: DialogUI, typed: QuestionParams, signal?: AbortSignal) {
+	signal?.throwIfAborted();
 	emitAskUserBlockedEvent(pi, true);
 	try {
 		emitTerminalAttention();
-		return buildQuestionnaireResponse(await runRpcQuestionnaire(ui, typed), typed);
+		return buildQuestionnaireResponse(await runRpcQuestionnaire(ui, typed, signal), typed);
 	} finally {
 		emitAskUserBlockedEvent(pi, false);
 	}
@@ -192,20 +194,25 @@ function makeSessionFactory(config: {
 	canReopenWhileHidden: boolean;
 	sessionRef: SessionRef;
 	Session: SessionModule["QuestionnaireSession"];
+	signal?: AbortSignal;
+	onAbortCleanup: (remove: () => void) => void;
+	overlayHandleRef: OverlayHandleRef;
+	onEditorStart: (pending: Promise<string>) => void;
 }) {
-	const { ctx, typed, itemsByTab, collapseKey, canReopenWhileHidden, sessionRef, Session } = config;
+	const { ctx, typed, itemsByTab, collapseKey, canReopenWhileHidden, sessionRef, Session, signal } = config;
 	return (
 		tui: TUI,
 		theme: Theme,
 		keybindings: import("./state/questionnaire-session.js").QuestionnaireSessionConfig["keybindings"],
 		done: (result: QuestionnaireResult) => void,
 	): import("./state/questionnaire-session.js").QuestionnaireSessionComponent => {
+		const complete = createOverlayCompletion({ tui, getHandle: () => config.overlayHandleRef.current, done });
 		const session = new Session({
 			tui,
 			theme,
 			params: typed,
 			itemsByTab,
-			done,
+			done: complete,
 			keybindings,
 			editInput: async (value) => {
 				try {
@@ -217,8 +224,11 @@ function makeSessionFactory(config: {
 						projectTrusted: ctx.isProjectTrusted(),
 					}).getExternalEditorCommand();
 					if (!editorCommand) throw new Error("No external editor command is configured");
-					return await editWithExternalEditor(tui, editorCommand, value);
+					const pending = editWithExternalEditor(tui, editorCommand, value, signal);
+					config.onEditorStart(pending);
+					return await pending;
 				} catch (error) {
+					if (signal?.aborted) return undefined;
 					const message = error instanceof Error ? error.message : String(error);
 					ctx.ui.notify(`${t("editor.failed", "External editor failed")}: ${message}`, "error");
 					return undefined;
@@ -228,6 +238,12 @@ function makeSessionFactory(config: {
 			canReopenWhileHidden,
 		});
 		sessionRef.current = session;
+		if (signal) {
+			const onAbort = () => complete({ answers: [], cancelled: true });
+			signal.addEventListener("abort", onAbort, { once: true });
+			config.onAbortCleanup(() => signal.removeEventListener("abort", onAbort));
+			if (signal.aborted) onAbort();
+		}
 		return session.component;
 	};
 }
@@ -238,9 +254,10 @@ function makeSessionFactory(config: {
  * that predate ctx.mode land here: run the dialog walker when the host has the
  * primitives; otherwise tell the model the user never saw the questions.
  */
-async function resolveUndefinedResult(ctx: ExtensionContext, typed: QuestionParams) {
+async function resolveUndefinedResult(ctx: ExtensionContext, typed: QuestionParams, signal?: AbortSignal) {
+	signal?.throwIfAborted();
 	if (hasDialogUI(ctx.ui)) {
-		return buildQuestionnaireResponse(await runRpcQuestionnaire(ctx.ui, typed), typed);
+		return buildQuestionnaireResponse(await runRpcQuestionnaire(ctx.ui, typed, signal), typed);
 	}
 	return buildToolResult(ERROR_NO_CUSTOM_UI, { answers: [], cancelled: true, error: "no_custom_ui" });
 }
@@ -310,11 +327,12 @@ export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
 		promptGuidelines: guidance.promptGuidelines ?? DEFAULT_PROMPT_GUIDELINES,
 		parameters: QuestionParamsSchema,
 
-		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+			signal?.throwIfAborted();
 			// Line-terminator normalization runs once here, ahead of validation, so
 			// every downstream consumer — validator, TUI, RPC walker, envelope, prompt
 			// event — sees the same clean text (#192).
-			const typed = normalizeQuestionParams(params as unknown as QuestionParams);
+			const typed = normalizeQuestionParams(params);
 			if (!ctx.hasUI) return rejectWithoutUi();
 
 			const validation = validateQuestionnaire(typed);
@@ -336,7 +354,7 @@ export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
 			// import entirely; RPC builds that predate ctx.mode are caught by the
 			// custom()-resolved-undefined backstop below. See ./rpc-fallback.ts.
 			if ((ctx as { mode?: string }).mode === "rpc" && hasDialogUI(ctx.ui)) {
-				return runRpcPath(pi, ctx.ui, typed);
+				return runRpcPath(pi, ctx.ui, typed, signal);
 			}
 
 			const itemsByTab: WrappingSelectItem[][] = typed.questions.map((q) => buildItemsForQuestion(q));
@@ -344,6 +362,7 @@ export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
 			// Lazy — QuestionnaireSession pulls the ~560ms view/TUI render graph;
 			// load it only when the tool runs, not at extension registration.
 			const sessionLoad = await loadQuestionnaireSession();
+			signal?.throwIfAborted();
 			if (!sessionLoad.ok) {
 				return buildToolResult(sessionLoad.message, { answers: [], cancelled: true, error: sessionLoad.error });
 			}
@@ -366,6 +385,8 @@ export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
 			// otherwise collapse falls back to the visible one-line row.
 			const canReopenWhileHidden = removeOverlayInputListener !== undefined;
 
+			let removeAbortListener: (() => void) | undefined;
+			let editorCompletion: Promise<string> | undefined;
 			emitAskUserBlockedEvent(pi, true);
 			try {
 				emitTerminalAttention();
@@ -378,6 +399,14 @@ export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
 						canReopenWhileHidden,
 						sessionRef,
 						Session: QuestionnaireSession,
+						signal,
+						overlayHandleRef,
+						onEditorStart: (pending) => {
+							editorCompletion = pending;
+						},
+						onAbortCleanup: (remove) => {
+							removeAbortListener = remove;
+						},
 					}),
 					{
 						overlay: true,
@@ -394,14 +423,22 @@ export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
 					},
 				);
 
+				signal?.throwIfAborted();
 				if (result === undefined) {
-					return resolveUndefinedResult(ctx, typed);
+					return await resolveUndefinedResult(ctx, typed, signal);
 				}
 
 				return buildQuestionnaireResponse(result, typed);
 			} finally {
-				removeOverlayInputListener?.();
-				emitAskUserBlockedEvent(pi, false);
+				// Closing the overlay must not complete the tool while an editor still
+				// owns the terminal. Its promise includes close, temp cleanup and TUI restart.
+				await editorCompletion?.catch(() => {});
+				removeAbortListener?.();
+				try {
+					removeOverlayInputListener?.();
+				} finally {
+					emitAskUserBlockedEvent(pi, false);
+				}
 			}
 		},
 	});

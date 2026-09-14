@@ -1,3 +1,4 @@
+import { type Terminal, TUI } from "@earendil-works/pi-tui";
 import { vi } from "vitest";
 import type { QuestionnaireState } from "./state/state.js";
 import type { ApplyContext } from "./state/state-reducer.js";
@@ -8,6 +9,30 @@ import type { SubmitPickerProps } from "./view/components/submit-picker.js";
 import type { WrappingSelectItem } from "./view/components/wrapping-select.js";
 import type { StatefulView } from "./view/stateful-view.js";
 import type { TabComponents } from "./view/tab-components.js";
+
+/** Real overlay stack and focus behavior, with no terminal I/O or render scheduling. */
+export function makeTestTui(): TUI {
+	const terminal: Terminal = {
+		start: vi.fn(),
+		stop: vi.fn(),
+		drainInput: async () => {},
+		write: vi.fn(),
+		columns: 120,
+		rows: 24,
+		kittyProtocolActive: false,
+		moveBy: vi.fn(),
+		hideCursor: vi.fn(),
+		showCursor: vi.fn(),
+		clearLine: vi.fn(),
+		clearFromCursor: vi.fn(),
+		clearScreen: vi.fn(),
+		setTitle: vi.fn(),
+		setProgress: vi.fn(),
+	};
+	const tui = new TUI(terminal);
+	vi.spyOn(tui, "requestRender").mockImplementation(() => {});
+	return tui;
+}
 
 export const itemsRegular: ReadonlyArray<WrappingSelectItem> = [
 	{ kind: "option", label: "A" },

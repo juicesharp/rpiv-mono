@@ -62,7 +62,7 @@ function isValidCollapseKeySpec(spec: string): boolean {
 }
 
 export function resolveCollapseKey(config: Pick<AskUserQuestionConfig, "collapseKey">): CollapseKeySpec {
-	const raw = config.collapseKey?.trim().toLowerCase();
+	const raw = typeof config.collapseKey === "string" ? config.collapseKey.trim().toLowerCase() : undefined;
 	if (raw === undefined || raw === "") return DEFAULT_COLLAPSE_KEY;
 	if (raw === COLLAPSE_KEY_OFF) return COLLAPSE_KEY_OFF;
 	return isValidCollapseKeySpec(raw) ? raw : DEFAULT_COLLAPSE_KEY;

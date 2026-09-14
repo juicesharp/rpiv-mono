@@ -22,12 +22,36 @@ The BEL is best effort: if the synchronous terminal write fails, the questionnai
 A `before_agent_start` hook reconciles the active tool set against `ctx.hasUI` before every
 turn. When there is no UI, `ask_user_question` is stripped from the list so the model never
 sees a tool it cannot use — better than offering it and auto-declining every call. When UI
-comes back, the tool is restored. The reconciler is idempotent and leaves sibling tools
-untouched.
+comes back, the tool is restored only if this reconciler removed it. An initially excluded
+tool stays excluded. The reconciler is idempotent and leaves sibling tools untouched.
 
 A second guard lives inside the tool handler as a one-turn backstop: if a call somehow
 arrives without UI, it returns `error: "no_ui"` and the text
 `Error: UI not available (running in non-interactive mode)`.
+
+### Cancellation
+
+An already-aborted tool call opens no dialog and emits no prompt or waiting events.
+An in-flight abort removes the questionnaire by its own overlay handle, including when
+it is collapsed or another overlay is above it. Pi 0.80.6 and 0.85.1 synchronously pop the
+stack top in the host completion callback. A temporary, non-rendering, non-focusing guard
+absorbs that pop; it is removed in the same synchronous completion step. The guard is
+also removed on identity-aware hosts. No host methods or installed files are patched.
+This compatibility path requires the native synchronous completion contract; other custom
+UI hosts need their own acceptance check.
+
+The tool throws the signal's abort reason rather than reporting that the user declined.
+Editor cancellation sends SIGTERM to the directly spawned child, then SIGKILL after one
+second if it has not closed. The temporary file and stopped TUI remain owned by the editor
+until its `close` event confirms termination. Only then are files removed, the TUI restarted,
+listeners removed, blocked state cleared, and the tool call completed. An OS-level failure
+to terminate the child must not cause an early terminal handoff. Detached descendants and
+Windows shell child trees are not covered by this directly owned process contract.
+
+RPC select/input calls receive Pi's dialog `signal` option. The host must honor that
+option to dismiss an open dialog. Abort checks after each await prevent late responses
+from becoming answers or opening follow-up dialogs. Both the direct RPC path and the
+legacy custom-UI fallback keep the blocked event active until the whole dialog walk settles.
 
 ### RPC and ACP hosts
 

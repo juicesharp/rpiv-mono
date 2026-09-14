@@ -2,6 +2,7 @@ import { CURSOR_MARKER, getKeybindings } from "@earendil-works/pi-tui";
 import { createMockPi } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { registerAskUserQuestionTool } from "./ask-user-question.js";
+import { makeTestTui } from "./test-fixtures.js";
 import type { QuestionAnswer, QuestionnaireResult } from "./tool/types.js";
 
 /** Narrowed tool-result shape for test assertions. */
@@ -30,7 +31,8 @@ function register() {
 }
 
 function driveCustom(script: (c: RenderableComponent, done: (v: unknown) => void) => void) {
-	const requestRender = vi.fn();
+	const tui = makeTestTui();
+	const requestRender = vi.mocked(tui.requestRender);
 	const custom = vi.fn((factory: unknown) => {
 		return new Promise((resolve) => {
 			const f = factory as (
@@ -39,12 +41,7 @@ function driveCustom(script: (c: RenderableComponent, done: (v: unknown) => void
 				kb: ReturnType<typeof getKeybindings>,
 				done: (v: unknown) => void,
 			) => RenderableComponent;
-			const component = f(
-				{ requestRender, terminal: { columns: 120, rows: 24 } },
-				identityTheme,
-				getKeybindings(),
-				resolve,
-			);
+			const component = f(tui, identityTheme, getKeybindings(), resolve);
 			script(component, resolve);
 		});
 	});
