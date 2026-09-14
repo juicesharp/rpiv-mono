@@ -21,12 +21,12 @@ describe("reconcileAskUserQuestionTool", () => {
 		expect(pi.setActiveTools).not.toHaveBeenCalled();
 	});
 
-	it("restores ask_user_question when hasUI and the tool is absent", () => {
+	it("respects an intentionally inactive tool when hasUI", () => {
 		const { pi } = createMockPi();
 		pi.setActiveTools(["other"]);
 		vi.mocked(pi.setActiveTools).mockClear();
 		reconcileAskUserQuestionTool(pi, createMockCtx({ hasUI: true }));
-		expect(pi.setActiveTools).toHaveBeenCalledWith(["other", ASK_USER_QUESTION_TOOL_NAME]);
+		expect(pi.setActiveTools).not.toHaveBeenCalled();
 	});
 
 	it("no-ops when hasUI and the tool is already active", () => {
@@ -45,12 +45,34 @@ describe("reconcileAskUserQuestionTool", () => {
 		expect(pi.getActiveTools()).toEqual(["other"]);
 	});
 
-	it("does not clobber sibling tools on restore — ['other'] + hasUI → ['other','ask_user_question']", () => {
+	it("does not clobber sibling tools added while hidden", () => {
 		const { pi } = createMockPi();
+		pi.setActiveTools([ASK_USER_QUESTION_TOOL_NAME]);
+		reconcileAskUserQuestionTool(pi, createMockCtx({ hasUI: false }));
 		pi.setActiveTools(["other"]);
 		vi.mocked(pi.setActiveTools).mockClear();
 		reconcileAskUserQuestionTool(pi, createMockCtx({ hasUI: true }));
 		expect(pi.getActiveTools()).toEqual(["other", ASK_USER_QUESTION_TOOL_NAME]);
+	});
+
+	it("does not restore again after the user disables the restored tool", () => {
+		const { pi } = createMockPi();
+		pi.setActiveTools([ASK_USER_QUESTION_TOOL_NAME]);
+		reconcileAskUserQuestionTool(pi, createMockCtx({ hasUI: false }));
+		reconcileAskUserQuestionTool(pi, createMockCtx({ hasUI: true }));
+		pi.setActiveTools([]);
+		reconcileAskUserQuestionTool(pi, createMockCtx({ hasUI: true }));
+		expect(pi.getActiveTools()).toEqual([]);
+	});
+
+	it("does not transfer hidden-tool ownership to another extension API", () => {
+		const { pi } = createMockPi();
+		const { pi: other } = createMockPi();
+		pi.setActiveTools([ASK_USER_QUESTION_TOOL_NAME]);
+		other.setActiveTools([]);
+		reconcileAskUserQuestionTool(pi, createMockCtx({ hasUI: false }));
+		reconcileAskUserQuestionTool(other, createMockCtx({ hasUI: true }));
+		expect(other.getActiveTools()).toEqual([]);
 	});
 
 	it("strip→restore round-trips back to present", () => {
@@ -98,17 +120,19 @@ describe("reconcileAskUserQuestionTool", () => {
 		expect(pi.getActiveTools()).toEqual([ASK_USER_QUESTION_TOOL_NAME, "other"]);
 	});
 
-	it("restores ask_user_question in RPC mode when the tool is absent", () => {
+	it("restores a tool hidden by this reconciler in RPC mode", () => {
 		const { pi } = createMockPi();
-		pi.setActiveTools(["other"]);
+		pi.setActiveTools([ASK_USER_QUESTION_TOOL_NAME, "other"]);
+		reconcileAskUserQuestionTool(pi, createMockCtx({ hasUI: false }));
 		vi.mocked(pi.setActiveTools).mockClear();
 		reconcileAskUserQuestionTool(pi, createMockCtx({ hasUI: true, mode: "rpc" }));
 		expect(pi.getActiveTools()).toEqual(["other", ASK_USER_QUESTION_TOOL_NAME]);
 	});
 
-	it("restores ask_user_question in TUI mode (mode: 'interactive' + hasUI)", () => {
+	it("restores a tool hidden by this reconciler in TUI mode", () => {
 		const { pi } = createMockPi();
-		pi.setActiveTools(["other"]);
+		pi.setActiveTools([ASK_USER_QUESTION_TOOL_NAME, "other"]);
+		reconcileAskUserQuestionTool(pi, createMockCtx({ hasUI: false }));
 		vi.mocked(pi.setActiveTools).mockClear();
 		reconcileAskUserQuestionTool(pi, createMockCtx({ hasUI: true, mode: "interactive" }));
 		expect(pi.getActiveTools()).toEqual(["other", ASK_USER_QUESTION_TOOL_NAME]);
@@ -137,6 +161,8 @@ describe("registerAskUserQuestionReconciler", () => {
 		pi.setActiveTools(["other"]);
 		registerAskUserQuestionReconciler(pi);
 		const handler = captured.events.get("before_agent_start")![0];
+		pi.setActiveTools([ASK_USER_QUESTION_TOOL_NAME, "other"]);
+		handler(undefined as never, createMockCtx({ hasUI: false }));
 		handler(undefined as never, createMockCtx({ hasUI: true }));
 		expect(pi.getActiveTools()).toEqual(["other", ASK_USER_QUESTION_TOOL_NAME]);
 	});

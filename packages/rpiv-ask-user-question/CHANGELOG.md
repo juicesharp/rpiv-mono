@@ -7,6 +7,19 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Honor tool cancellation before opening UI and while the TUI or native RPC dialogs are active. Remove listeners on completion and pass cancellation to the external editor.
+- Complete only the questionnaire's own overlay, protecting overlays above it and completion before mount on native stack-pop hosts.
+- Wait for editor process closure before removing temporary files, restarting the TUI, or completing an aborted tool call. Escalate SIGTERM to SIGKILL after one second for an unresponsive directly spawned editor.
+- Keep the legacy RPC fallback's waiting event active until all dialogs settle.
+- Restore the active tool only after the reconciler itself hid it for lack of UI; preserve initially excluded tools.
+- Fall back to the default collapse key for wrong-type JSON values instead of throwing.
+
+### Added
+
+- Opt-in Herdr event adapter and pi-ask-user migration guide, with a one-question decision-gate skill example and isolated-trial checks. These resources are not enabled automatically.
+
 ## [2.10.1] - 2026-09-13
 
 ## [2.10.0] - 2026-09-12

@@ -44,6 +44,10 @@ describe("resolveCollapseKey", () => {
 		expect(resolveCollapseKey({ collapseKey: "   " })).toBe(DEFAULT_COLLAPSE_KEY);
 	});
 
+	it.each([null, 42, true, [], {}])("falls back for a wrong-type JSON value: %j", (collapseKey) => {
+		expect(resolveCollapseKey(JSON.parse(JSON.stringify({ collapseKey })))).toBe(DEFAULT_COLLAPSE_KEY);
+	});
+
 	it("normalizes the spec (trim + lowercase)", () => {
 		expect(resolveCollapseKey({ collapseKey: "  Ctrl+}  " })).toBe("ctrl+}");
 		expect(resolveCollapseKey({ collapseKey: "ALT+O" })).toBe("alt+o");

@@ -70,6 +70,8 @@ Malformed JSON falls back to the defaults with a warning; an individual unusable
 - [Hosts and runtime behavior](https://github.com/juicesharp/rpiv-mono/blob/main/packages/rpiv-ask-user-question/docs/hosts.md) — terminal vs RPC vs non-interactive, what degrades in each, and the load-failure envelopes.
 - [Localization](https://github.com/juicesharp/rpiv-mono/blob/main/packages/rpiv-ask-user-question/docs/localization.md) — the nine shipped languages, how the locale is chosen, and how to add one.
 
+- [Migration from pi-ask-user](./docs/migration-from-pi-ask-user.md) — isolated trial, one-question decision-gate example, optional Herdr adapter, acceptance checks, and rollback.
+
 ## Requirements
 
 - Node.js 22 or newer.

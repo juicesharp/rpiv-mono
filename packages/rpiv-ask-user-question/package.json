@@ -45,6 +45,7 @@
 		"README.md",
 		"state/build-questionnaire.ts",
 		"state/external-editor.ts",
+		"state/overlay-completion.ts",
 		"state/i18n-bridge.ts",
 		"state/key-router.ts",
 		"state/questionnaire-session.ts",
