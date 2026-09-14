@@ -2,7 +2,7 @@ import { createMockCtx, createMockPi } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it, type vi } from "vitest";
 import registerTodo from "./index.js";
 import { EMPTY_STATE } from "./state/state.js";
-import { getActiveRenderSession, getRenderState, getState } from "./state/store.js";
+import { getActiveRenderSession, getRenderState, getState, setActiveRenderSession } from "./state/store.js";
 import { __resetState } from "./todo.js";
 
 // Capture the extension's registered handlers + tool + command. Each registerTodo()
@@ -167,7 +167,7 @@ describe("rpiv-todo — foreground overlay policy (Slice 2)", () => {
 			| ((e: unknown, ctx: unknown) => Promise<void>)
 			| undefined;
 		const toolEnd = captured.events.get("tool_execution_end")?.[0] as
-			| ((event: { toolName: string; isError: boolean }) => Promise<void>)
+			| ((event: { toolName: string; isError: boolean }, ctx: unknown) => Promise<void>)
 			| undefined;
 		const tool = captured.tools.get("todo");
 		return { captured, start, shutdown, toolEnd, tool };
@@ -188,7 +188,7 @@ describe("rpiv-todo — foreground overlay policy (Slice 2)", () => {
 			undefined as never,
 			parentCtx as never,
 		);
-		await toolEnd?.({ toolName: "todo", isError: false });
+		await toolEnd?.({ toolName: "todo", isError: false }, parentCtx as never);
 
 		// Overlay registered a widget on the parent ui and renders the parent slot.
 		expect(widgetSpy(parentCtx)).toHaveBeenCalled();
@@ -208,7 +208,7 @@ describe("rpiv-todo — foreground overlay policy (Slice 2)", () => {
 			undefined as never,
 			parentCtx as never,
 		);
-		await toolEnd?.({ toolName: "todo", isError: false });
+		await toolEnd?.({ toolName: "todo", isError: false }, parentCtx as never);
 
 		// Child session_start — distinct sid, hasUI true. Gate skips it.
 		await start?.({}, childCtx);
@@ -233,7 +233,7 @@ describe("rpiv-todo — foreground overlay policy (Slice 2)", () => {
 			undefined as never,
 			parentCtx as never,
 		);
-		await toolEnd?.({ toolName: "todo", isError: false });
+		await toolEnd?.({ toolName: "todo", isError: false }, parentCtx as never);
 
 		// Child starts (skipped by the gate) and runs its own todo.
 		await start?.({}, childCtx);
@@ -244,7 +244,7 @@ describe("rpiv-todo — foreground overlay policy (Slice 2)", () => {
 			undefined as never,
 			childCtx as never,
 		);
-		await toolEnd?.({ toolName: "todo", isError: false });
+		await toolEnd?.({ toolName: "todo", isError: false }, childCtx as never);
 
 		// Child slot holds the child task; the overlay (foreground = parent) shows parent's.
 		expect(getState(CHILD).tasks.map((t) => t.subject)).toEqual(["child task"]);
@@ -264,7 +264,7 @@ describe("rpiv-todo — foreground overlay policy (Slice 2)", () => {
 			undefined as never,
 			parentCtx as never,
 		);
-		await toolEnd?.({ toolName: "todo", isError: false });
+		await toolEnd?.({ toolName: "todo", isError: false }, parentCtx as never);
 
 		// Child shuts down — distinct sid; the teardown gate skips it.
 		await shutdown?.({}, childCtx);
@@ -287,7 +287,7 @@ describe("rpiv-todo — foreground overlay policy (Slice 2)", () => {
 			undefined as never,
 			parentCtx as never,
 		);
-		await toolEnd?.({ toolName: "todo", isError: false });
+		await toolEnd?.({ toolName: "todo", isError: false }, parentCtx as never);
 
 		await shutdown?.({}, parentCtx);
 
@@ -295,6 +295,28 @@ describe("rpiv-todo — foreground overlay policy (Slice 2)", () => {
 		expect(widgetSpy(parentCtx)).toHaveBeenCalledWith(WIDGET_KEY, undefined);
 		expect(getActiveRenderSession()).toBe("");
 		expect(getState(PARENT).tasks).toEqual([]);
+	});
+
+	it("a delayed TUI session_start cannot reclaim a foreground after its shutdown", async () => {
+		const { start, shutdown } = setup();
+		const originalCtx = createMockCtx({ hasUI: true, sessionId: "original", mode: "tui" });
+
+		await start?.({}, originalCtx as never);
+		await shutdown?.({}, originalCtx as never);
+		await start?.({}, originalCtx as never);
+
+		expect(getActiveRenderSession()).toBe("");
+	});
+
+	it("rebinds the same SessionManager during an intentional reload", async () => {
+		const { start, shutdown } = setup();
+		const ctx = createMockCtx({ hasUI: true, sessionId: "reloadable", mode: "tui" });
+
+		await start?.({ reason: "startup" }, ctx as never);
+		await shutdown?.({ reason: "reload" }, ctx as never);
+		await start?.({ reason: "reload" }, ctx as never);
+
+		expect(getActiveRenderSession()).toBe("reloadable");
 	});
 
 	it("foreground shutdown still clears the pointer + evicts the slot when dispose() throws (try/finally)", async () => {
@@ -314,7 +336,7 @@ describe("rpiv-todo — foreground overlay policy (Slice 2)", () => {
 			undefined as never,
 			parentCtx as never,
 		);
-		await toolEnd?.({ toolName: "todo", isError: false });
+		await toolEnd?.({ toolName: "todo", isError: false }, parentCtx as never);
 
 		// The dispose throw propagates (genuine errors are not swallowed), but the
 		// finally guarantees the foreground pointer is cleared and the slot evicted —
@@ -336,5 +358,51 @@ describe("rpiv-todo — foreground overlay policy (Slice 2)", () => {
 		expect(getActiveRenderSession()).toBe("");
 		expect(widgetSpy(headlessCtx)).not.toHaveBeenCalled();
 		expect(widgetSpy(childHeadlessCtx)).not.toHaveBeenCalled();
+	});
+
+	it("repairs a stale render pointer for the authoritative foreground completion", async () => {
+		const { start, toolEnd, tool } = setup();
+		const originalCtx = createMockCtx({ hasUI: true, sessionId: "original", mode: "tui" });
+		const replacementCtx = createMockCtx({ hasUI: true, sessionId: "replacement", mode: "tui" });
+
+		await start?.({}, originalCtx as never);
+		await start?.({}, replacementCtx as never);
+		// Simulate the stale pointer observed after session replacement.
+		setActiveRenderSession("original");
+
+		await tool?.execute?.(
+			"tc",
+			{ action: "create", subject: "replacement task" } as never,
+			undefined as never,
+			undefined as never,
+			replacementCtx as never,
+		);
+		await toolEnd?.({ toolName: "todo", isError: false }, replacementCtx as never);
+
+		expect(getActiveRenderSession()).toBe("replacement");
+		expect(getRenderState().tasks.map((task) => task.subject)).toEqual(["replacement task"]);
+	});
+
+	it("a delayed old TUI session_start cannot reclaim the foreground after replacement", async () => {
+		const { start, tool } = setup();
+		const originalCtx = createMockCtx({ hasUI: true, sessionId: "original", mode: "tui" });
+		const replacementCtx = createMockCtx({ hasUI: true, sessionId: "replacement", mode: "tui" });
+
+		await start?.({}, originalCtx as never);
+		await start?.({}, replacementCtx as never);
+		await tool?.execute?.(
+			"tc",
+			{ action: "create", subject: "replacement task" } as never,
+			undefined as never,
+			undefined as never,
+			replacementCtx as never,
+		);
+
+		// A late event from the old runtime must not move ctx-less rendering back
+		// to the old session's slot.
+		await start?.({}, originalCtx as never);
+
+		expect(getActiveRenderSession()).toBe("replacement");
+		expect(getRenderState().tasks.map((task) => task.subject)).toEqual(["replacement task"]);
 	});
 });

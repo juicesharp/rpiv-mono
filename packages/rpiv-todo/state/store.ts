@@ -12,10 +12,10 @@ const sessions = new Map<string, TaskState>();
 
 /**
  * Ctx-less render pointer: which slot do the ctx-free readers (the overlay's
- * `getSnapshot()`, the tool's `renderCall()`) render? Set when the first UI
- * session claims the foreground, before the overlay is loaded (creator-ownership
- * — see `index.ts`). A *distinct* concept from the three task-state mutation
- * seams; it is not a 4th writer of task state.
+ * `getSnapshot()`, the tool's `renderCall()`) render? Set when the foreground
+ * UI session claims or repairs the binding, before the overlay is loaded (see
+ * `index.ts`). A *distinct* concept from the three task-state mutation seams;
+ * it is not a 4th writer of task state.
  */
 let activeRenderSession = "";
 
@@ -90,7 +90,7 @@ export function getRenderState(): TaskState {
 	return slotFor(activeRenderSession);
 }
 
-/** Set the ctx-less render pointer when the first UI session claims foreground. */
+/** Set or repair the ctx-less render pointer for the foreground UI session. */
 export function setActiveRenderSession(sessionId: string): void {
 	activeRenderSession = sessionId;
 }
