@@ -226,52 +226,76 @@ const sectionIndexOf = (lines: readonly string[]): string[] => {
 };
 
 /**
+ * LCS length of two line sequences in O(min-window) memory. Common prefix and
+ * suffix never affect the count, so they are trimmed first and the O(n·m) time
+ * window is just the edited span; two `Uint32Array` rows replace the table.
+ */
+const lcsLength = (a: readonly string[], b: readonly string[]): number => {
+	let lo = 0;
+	while (lo < a.length && lo < b.length && a[lo] === b[lo]) lo++;
+	let ha = a.length;
+	let hb = b.length;
+	while (ha > lo && hb > lo && a[ha - 1] === b[hb - 1]) {
+		ha--;
+		hb--;
+	}
+	const shared = lo + (a.length - ha);
+	const n = ha - lo;
+	const m = hb - lo;
+	if (n === 0 || m === 0) return shared;
+	let prev = new Uint32Array(m + 1);
+	let cur = new Uint32Array(m + 1);
+	for (let i = 1; i <= n; i++) {
+		const ai = a[lo + i - 1];
+		for (let j = 1; j <= m; j++) {
+			cur[j] = ai === b[lo + j - 1] ? prev[j - 1] + 1 : Math.max(prev[j], cur[j - 1]);
+		}
+		[prev, cur] = [cur, prev];
+	}
+	return shared + prev[m];
+};
+
+/**
  * Line-level diff of `prior` vs `current` plan bodies, mapped to plan sections.
- * Each changed line (a deletion from `prior` OR an insertion in `current` under
- * an LCS match) is attributed to its nearest preceding `## ` heading in its own
- * document. Returns the union of touched section keys and a coarse changed-line
- * count (deletions + insertions). Insertion-tolerant: a 1-line insert does not
- * mark every trailing line changed (the LCS keeps shared context matched).
+ * Lines are grouped by their `## ` section key (nearest preceding heading in
+ * their own document, per `sectionIndexOf`) and each section is diffed on its
+ * own: a section is touched when its prior and current line sequences differ,
+ * and the changed-line count is deletions + insertions summed per section
+ * (`|prior| + |current| − 2·LCS`). Insertion-tolerant: a 1-line insert does
+ * not mark every trailing line changed (the LCS keeps shared context matched).
+ *
+ * Per-section, not document-wide, on purpose. A document-wide LCS table is
+ * O(n·m) memory over the whole plan; a stitched build plan runs to ~43k lines,
+ * and that table (1.8 billion cells, ~14 GiB) exceeded the V8 heap and killed
+ * the process — an OOM `decideSurgicalFix`'s try/catch cannot catch, on the
+ * first re-grade after a snapshot (the first lap with a prior). With
+ * attribution being the section key itself, only the LCS LENGTH is needed. A
+ * line moved between sections now counts in both (delete + insert) instead of
+ * matching across — the fail-closed direction: more touched, never less.
  */
 const sectionDiff = (prior: string, current: string): { touchedSections: Set<string>; changedLines: number } => {
-	const a = prior.split("\n");
-	const b = current.split("\n");
-	const sa = sectionIndexOf(a);
-	const sb = sectionIndexOf(b);
-	// LCS length table (bottom-up). Plans are a few hundred lines ⇒ O(n·m) trivial.
-	const dp: number[][] = Array.from({ length: a.length + 1 }, () => new Array<number>(b.length + 1).fill(0));
-	for (let i = a.length - 1; i >= 0; i--) {
-		for (let j = b.length - 1; j >= 0; j--) {
-			dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+	const group = (lines: readonly string[]): Map<string, string[]> => {
+		const keys = sectionIndexOf(lines);
+		const out = new Map<string, string[]>();
+		for (let i = 0; i < lines.length; i++) {
+			const run = out.get(keys[i]);
+			if (run) run.push(lines[i]);
+			else out.set(keys[i], [lines[i]]);
 		}
-	}
+		return out;
+	};
+	const ga = group(prior.split("\n"));
+	const gb = group(current.split("\n"));
 	const touched = new Set<string>();
 	let changed = 0;
-	let i = 0;
-	let j = 0;
-	while (i < a.length && j < b.length) {
-		if (a[i] === b[j]) {
-			i++;
-			j++;
-		} else if (dp[i + 1][j] >= dp[i][j + 1]) {
-			touched.add(sa[i]); // a[i] deleted (present in prior, absent in current)
-			changed++;
-			i++;
-		} else {
-			touched.add(sb[j]); // b[j] inserted (present in current, absent in prior)
-			changed++;
-			j++;
+	for (const key of new Set([...ga.keys(), ...gb.keys()])) {
+		const a = ga.get(key) ?? [];
+		const b = gb.get(key) ?? [];
+		const delta = a.length + b.length - 2 * lcsLength(a, b);
+		if (delta > 0) {
+			touched.add(key);
+			changed += delta;
 		}
-	}
-	while (i < a.length) {
-		touched.add(sa[i]);
-		changed++;
-		i++;
-	}
-	while (j < b.length) {
-		touched.add(sb[j]);
-		changed++;
-		j++;
 	}
 	return { touchedSections: touched, changedLines: changed };
 };
@@ -526,4 +550,4 @@ const isSurgicalFix = (
 	return decision.surgical;
 };
 
-export { codeDemote, codeSnapshot, isSurgicalFix, planDemote, planSnapshot, priorArtifact };
+export { codeDemote, codeSnapshot, isSurgicalFix, planDemote, planSnapshot, priorArtifact, sectionDiff };
