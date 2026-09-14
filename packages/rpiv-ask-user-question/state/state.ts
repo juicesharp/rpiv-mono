@@ -25,6 +25,14 @@ export interface QuestionnaireState {
 	/** Canonical mirror of the in-flight notes editor; runtime mirrors after `forward_notes_keystroke`. */
 	notesDraft: string;
 	/**
+	 * Scroll offset (rows) inside the focused option's preview block when its content
+	 * overflows the preview height budget. Reset to 0 on option navigation, tab
+	 * switches, and mode transitions; the view layer clamps it to the actual overflow
+	 * (the reducer cannot know rendered heights). PageUp/PageDown adjust it — see
+	 * `key-router.ts` and `preview-block-renderer.ts`.
+	 */
+	previewScroll: number;
+	/**
 	 * Collapsed mode: the questionnaire gets out of the way so the agent transcript behind
 	 * the bottom-anchored overlay becomes readable. Toggled by the configured collapse key
 	 * from any state; while true, every keystroke except cancel is swallowed (see
@@ -61,5 +69,12 @@ export interface QuestionnaireRuntime {
 	 * from `AskUserQuestionConfig.collapseKey` (or the package default). When `"off"`,
 	 * the collapse shortcut is disabled.
 	 */
+	/**
+	 * Max scrollable rows of the focused option’s preview (last rendered frame’s total
+	 * overflow; undefined when no preview overflow was rendered for the focused row).
+	 * Lets PageDown snap to the real bottom instead of overscrolling into phantom rows.
+	 */
+	previewMaxScroll: number | undefined;
+
 	collapseKey: string;
 }

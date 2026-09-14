@@ -51,6 +51,7 @@ function initialState(): QuestionnaireState {
 		submitChoiceIndex: 0,
 		notesDraft: "",
 		collapsed: false,
+		previewScroll: 0,
 	};
 }
 
@@ -247,6 +248,7 @@ export class QuestionnaireSession {
 			currentItem: this.currentItem(),
 			items: this.itemsByTab[this.state.currentTab] ?? [],
 			collapseKey: this.collapseKey,
+			previewMaxScroll: this.previewMaxScrollFor(),
 		};
 	}
 
@@ -257,7 +259,25 @@ export class QuestionnaireSession {
 		};
 	}
 
-	private currentItem(): WrappingSelectItem | undefined {
+	/**
+	 * Last rendered frame’s scrollable preview overflow for the focused option row, or
+	 * undefined when the active pane’s last render was not for that row (a freshly
+	 * navigated row that has not rendered yet falls back to the default step in key-router).
+	 */
+	private previewMaxScrollFor(): number | undefined {
+		const s = this.state;
+		if (s.inputMode || s.notesVisible || s.collapsed) return undefined;
+		const q = this.questions[s.currentTab];
+		if (!q || q.multiSelect === true) return undefined;
+		const item = this.itemsByTab[s.currentTab]?.[s.optionIndex];
+		if (item?.kind !== "option") return undefined;
+		const preview = q.options[s.optionIndex]?.preview;
+		if (!preview || preview.length === 0) return undefined;
+		if (!this.viewAdapter.previewScrollRenderedFor(s.optionIndex, s.currentTab)) return undefined;
+		return this.viewAdapter.lastRenderedPreviewTotalHidden(s.currentTab);
+	}
+
+		private currentItem(): WrappingSelectItem | undefined {
 		const arr = this.itemsByTab[this.state.currentTab] ?? [];
 		return this.state.optionIndex < arr.length ? arr[this.state.optionIndex] : undefined;
 	}

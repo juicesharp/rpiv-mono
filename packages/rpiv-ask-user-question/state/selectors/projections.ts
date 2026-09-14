@@ -83,6 +83,7 @@ export const selectPreviewPaneProps: PerTabSelector<PreviewPaneProps> = (state, 
 	selectedIndex: state.optionIndex,
 	focused: ctx.activeView === "options",
 	inputMode: state.inputMode,
+	previewScroll: state.previewScroll,
 });
 
 export const selectTabBarProps: GlobalSelector<TabBarProps> = (state, ctx) => {

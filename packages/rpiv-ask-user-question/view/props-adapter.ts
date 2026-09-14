@@ -99,6 +99,33 @@ export class QuestionnairePropsAdapter {
 	}
 
 	/**
+	 * Render-report channel for the session's preview-scroll de-accumulation. Returns the
+	 * preview offset the ACTIVE pane actually rendered last frame (clamped to the real
+	 * overflow), or `undefined` when no tab exists. The session calls this before each key
+	 * dispatch and re-syncs its canonical `previewScroll` when the rendered offset belongs
+	 * to the currently focused option (see `previewScrollRenderedFor`).
+	 */
+	lastRenderedPreviewScroll(currentTab: number): number | undefined {
+		const pane = this.tabsByIndex[selectActivePreviewPaneIndex(currentTab, this.questions.length)]?.preview ??
+			this.tabsByIndex[0]?.preview;
+		return pane?.lastRenderedScroll;
+	}
+
+	/** Whether the active pane's last render was for the given option row (see PreviewPane docs). */
+		/** Total overflow rows of the active pane’s last rendered preview (clamped-to-real helper for PageDown). */
+	lastRenderedPreviewTotalHidden(currentTab: number): number | undefined {
+		const pane = this.tabsByIndex[selectActivePreviewPaneIndex(currentTab, this.questions.length)]?.preview ??
+			this.tabsByIndex[0]?.preview;
+		return pane?.lastTotalHidden;
+	}
+
+	previewScrollRenderedFor(optionIndex: number, currentTab: number): boolean {
+		const pane = this.tabsByIndex[selectActivePreviewPaneIndex(currentTab, this.questions.length)]?.preview ??
+			this.tabsByIndex[0]?.preview;
+		return pane?.renderedScrollForIndex === optionIndex;
+	}
+
+	/**
 	 * Invalidates every owned renderable. Called by the session in place of
 	 * the old `dialog.invalidate()` forwarding chain — DialogView no longer
 	 * reaches into siblings (tabBar, notesInput, activePreviewPane).
