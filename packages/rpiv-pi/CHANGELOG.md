@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`priors.sectionDiff` diffs per section instead of document-wide, so large plans no longer exhaust the heap.** The old body allocated one `(n+1)×(m+1)` `number[][]` LCS table over every plan line on the premise that "plans are a few hundred lines". A stitched 29-phase build plan is ~43k lines: 1.8 billion cells, about 14 GiB, against the 4 GiB V8 heap. The process died with `Ineffective mark-compacts near heap limit` on the first re-grade after a snapshot (run 2026-09-13_22-56-38-e0c0, twice at `code-grade` lap 2), and a heap OOM is not an exception, so the `decideSurgicalFix` try/catch never fails closed. Lines are now grouped by their `## ` section key and each section is diffed on its own, with the LCS **length** only (prefix/suffix trim plus two `Uint32Array` rows). A line moved between sections now counts as a delete and an insert in both sections instead of matching across — more touched sections, never fewer, which can only push toward a full re-grade.
+
 ## [2.10.1] - 2026-09-13
 
 ### Fixed
