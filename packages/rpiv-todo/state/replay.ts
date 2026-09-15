@@ -1,5 +1,23 @@
-import type { TaskDetails } from "../tool/types.js";
+import type { Task, TaskDetails, TaskStatus } from "../tool/types.js";
 import { EMPTY_STATE, type TaskState } from "./state.js";
+
+const TASK_STATUSES: ReadonlySet<unknown> = new Set<TaskStatus>(["pending", "in_progress", "completed", "deleted"]);
+
+function isTask(value: unknown): value is Task {
+	if (!value || typeof value !== "object") return false;
+	const task = value as Record<string, unknown>;
+	return (
+		Number.isSafeInteger(task.id) &&
+		typeof task.subject === "string" &&
+		TASK_STATUSES.has(task.status) &&
+		(task.description === undefined || typeof task.description === "string") &&
+		(task.activeForm === undefined || typeof task.activeForm === "string") &&
+		(task.blockedBy === undefined ||
+			(Array.isArray(task.blockedBy) && task.blockedBy.every((id) => Number.isSafeInteger(id)))) &&
+		(task.owner === undefined || typeof task.owner === "string") &&
+		(task.metadata === undefined || (typeof task.metadata === "object" && task.metadata !== null))
+	);
+}
 
 /**
  * Discriminator for `details` envelopes that match the persisted `TaskDetails`
@@ -9,7 +27,7 @@ import { EMPTY_STATE, type TaskState } from "./state.js";
 export function isTaskDetails(value: unknown): value is TaskDetails {
 	if (!value || typeof value !== "object") return false;
 	const v = value as Record<string, unknown>;
-	return Array.isArray(v.tasks) && typeof v.nextId === "number";
+	return Array.isArray(v.tasks) && v.tasks.every(isTask) && Number.isSafeInteger(v.nextId);
 }
 
 /**

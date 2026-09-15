@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Session replay now skips todo snapshots containing malformed task entries instead of crashing the overlay during resume.
+
 ## [2.10.1] - 2026-09-13
 
 ## [2.10.0] - 2026-09-12
