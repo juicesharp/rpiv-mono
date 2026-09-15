@@ -1,6 +1,9 @@
 {
   "_meta.notes": "European Portuguese (Portugal). Auto-translated draft. Native-speaker review welcome via PR. Distinct from pt-BR (Brasil): differs in lexicon (utilizador / você), conjugation, and some terms. TUI symbols (↑/↓, ⚠) and key names (Enter, Esc, Tab, Space, n, Ctrl+G, Ctrl+U) are universal CLI conventions and stay untranslated.",
 
+  "tool.title": "Pergunta",
+  "tool.no_answer": "Sem resposta",
+
   "sentinel.other": "Escreva algo.",
   "sentinel.next": "Seguinte",
 
