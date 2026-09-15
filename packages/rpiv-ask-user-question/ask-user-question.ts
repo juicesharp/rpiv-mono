@@ -1,5 +1,5 @@
-import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
-import { isKeyRelease, isKeyRepeat, matchesKey, type OverlayHandle, type TUI } from "@earendil-works/pi-tui";
+import type { AgentToolResult, ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
+import { isKeyRelease, isKeyRepeat, matchesKey, type OverlayHandle, Text, type TUI } from "@earendil-works/pi-tui";
 import {
 	COLLAPSE_KEY_OFF,
 	formatKeySpecForDisplay,
@@ -18,9 +18,11 @@ import {
 import { type DialogUI, hasDialogUI, runRpcQuestionnaire } from "./rpc-fallback.js";
 import { displayLabel, t } from "./state/i18n-bridge.js";
 import { sentinelsToAppend } from "./state/row-intent.js";
+import { formatAnswerScalar } from "./tool/format-answer.js";
 import { normalizeQuestionParams } from "./tool/normalize-params.js";
 import { buildQuestionnaireResponse, buildToolResult } from "./tool/response-envelope.js";
 import {
+	isQuestionnaireResult,
 	MAX_OPTIONS,
 	MAX_QUESTIONS,
 	MIN_OPTIONS,
@@ -300,6 +302,30 @@ Use the optional \`preview\` field on options when presenting concrete artifacts
 
 Preview content is rendered as markdown in a monospace box. Multi-line text with newlines is supported. When any option has a preview, the UI switches to a side-by-side layout with a vertical option list on the left and preview on the right. Do not use previews for simple preference questions where labels and descriptions suffice. Note: previews are only supported for single-select questions (not multiSelect).`;
 
+function resultText(result: AgentToolResult<unknown>): string {
+	return result.content
+		.filter((item): item is Extract<(typeof result.content)[number], { type: "text" }> => item.type === "text")
+		.map((item) => item.text)
+		.join("\n");
+}
+
+function displayAnswer(answer: QuestionnaireResult["answers"][number]): string {
+	const withoutRecommendation = (label: string) => label.replace(/\s+\(Recommended\)$/u, "");
+	if (answer.kind === "option" && answer.answer) return withoutRecommendation(answer.answer);
+	if (answer.kind === "multi" && answer.selected?.length) return answer.selected.map(withoutRecommendation).join(", ");
+	return formatAnswerScalar(answer, "summary");
+}
+
+export function renderQuestionnaireResult(result: AgentToolResult<unknown>, expanded: boolean, theme: Theme): Text {
+	const details = isQuestionnaireResult(result.details) ? result.details : undefined;
+	if (expanded || !details || details.error) return new Text(theme.fg("toolOutput", resultText(result)), 0, 0);
+	if (details.cancelled) return new Text(theme.fg("dim", t("tool.no_answer", "No answer")), 0, 0);
+
+	const answers = details.answers.map(displayAnswer);
+	if (details.globalNote) answers.push(details.globalNote);
+	return new Text(theme.fg("toolOutput", answers.join("\n")), 0, 0);
+}
+
 export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
 	const guidance = validateGuidanceFields(loadConfig().guidance);
 	pi.registerTool({
@@ -309,6 +335,12 @@ export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
 		promptSnippet: guidance.promptSnippet ?? DEFAULT_PROMPT_SNIPPET,
 		promptGuidelines: guidance.promptGuidelines ?? DEFAULT_PROMPT_GUIDELINES,
 		parameters: QuestionParamsSchema,
+		renderCall(_args, theme) {
+			return new Text(theme.fg("toolTitle", theme.bold(t("tool.title", "Question"))), 0, 0);
+		},
+		renderResult(result, { expanded }, theme) {
+			return renderQuestionnaireResult(result, expanded, theme);
+		},
 
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			// Line-terminator normalization runs once here, ahead of validation, so

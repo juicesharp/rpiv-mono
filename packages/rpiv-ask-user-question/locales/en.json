@@ -1,4 +1,7 @@
 {
+  "tool.title": "Question",
+  "tool.no_answer": "No answer",
+
   "sentinel.other": "Type something.",
   "sentinel.next": "Next",
 

@@ -1,6 +1,9 @@
 {
   "_meta.notes": "Auto-translated draft. Native-speaker review welcome via PR. TUI symbols (↑/↓, ⚠) and key names (Enter, Esc, Tab, Space, n, Ctrl+G, Ctrl+U) are universal CLI conventions and stay untranslated.",
 
+  "tool.title": "Запитання",
+  "tool.no_answer": "Без відповіді",
+
   "sentinel.other": "Введіть щось.",
   "sentinel.next": "Далі",
 
