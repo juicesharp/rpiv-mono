@@ -33,9 +33,14 @@ describe("isTaskDetails — defensive type guard", () => {
 		expect(isTaskDetails({ tasks: [], nextId: "1" })).toBe(false);
 	});
 
+	it("rejects malformed tasks inside an otherwise valid envelope", () => {
+		expect(isTaskDetails({ tasks: ["[output-policy: array truncated, dropped 3 item(s)]"], nextId: 2 })).toBe(false);
+		expect(isTaskDetails({ tasks: [{ id: 1, status: "pending" }], nextId: 2 })).toBe(false);
+	});
+
 	it("accepts well-formed snapshot envelopes", () => {
 		expect(isTaskDetails({ tasks: [], nextId: 1 })).toBe(true);
-		expect(isTaskDetails({ action: "create", params: {}, tasks: [], nextId: 1 })).toBe(true);
+		expect(isTaskDetails({ action: "create", params: {}, tasks: [taskFixture(1, "kept")], nextId: 2 })).toBe(true);
 	});
 });
 
@@ -89,10 +94,16 @@ describe("replayFromBranch", () => {
 	});
 
 	it("skips toolResult entries whose details fail isTaskDetails (corrupt-snapshot guard)", () => {
-		// Construct a toolResult with toolName=todo but malformed details — must be ignored.
 		const corrupt = {
 			type: "message" as const,
-			message: { role: "toolResult", toolName: "todo", details: { tasks: "not-an-array" } },
+			message: {
+				role: "toolResult",
+				toolName: "todo",
+				details: {
+					tasks: [taskFixture(1, "good"), "[output-policy: array truncated, dropped 3 item(s)]"],
+					nextId: 3,
+				},
+			},
 		};
 		const ctx = createMockCtx({
 			branch: [
@@ -101,8 +112,8 @@ describe("replayFromBranch", () => {
 			] as never,
 		});
 		const state = replayFromBranch(ctx);
-		expect(state.tasks).toHaveLength(1);
-		expect(state.tasks[0]?.subject).toBe("good");
+		expect(state.tasks).toEqual([taskFixture(1, "good")]);
+		expect(state.nextId).toBe(2);
 	});
 
 	it("returns a fresh empty TaskState when called with an empty branch", () => {
