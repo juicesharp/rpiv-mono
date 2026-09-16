@@ -8,8 +8,12 @@ import {
 	validateGuidanceFields,
 } from "./config.js";
 import {
+	ASK_USER_ANSWER_EVENT,
+	ASK_USER_ANSWER_RESULT_EVENT,
 	ASK_USER_BLOCKED_EVENT,
 	ASK_USER_PROMPT_EVENT,
+	type AskUserAnswerEventPayload,
+	type AskUserAnswerResultEventPayload,
 	type AskUserBlockedEventPayload,
 	type AskUserPromptEventPayload,
 } from "./events.js";
@@ -191,9 +195,10 @@ function makeSessionFactory(config: {
 	collapseKey: string;
 	canReopenWhileHidden: boolean;
 	sessionRef: SessionRef;
+	activeSession: SessionRef;
 	Session: SessionModule["QuestionnaireSession"];
 }) {
-	const { ctx, typed, itemsByTab, collapseKey, canReopenWhileHidden, sessionRef, Session } = config;
+	const { ctx, typed, itemsByTab, collapseKey, canReopenWhileHidden, sessionRef, activeSession, Session } = config;
 	return (
 		tui: TUI,
 		theme: Theme,
@@ -228,6 +233,7 @@ function makeSessionFactory(config: {
 			canReopenWhileHidden,
 		});
 		sessionRef.current = session;
+		activeSession.current = session;
 		return session.component;
 	};
 }
@@ -302,6 +308,39 @@ Preview content is rendered as markdown in a monospace box. Multi-line text with
 
 export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
 	const guidance = validateGuidanceFields(loadConfig().guidance);
+
+	// The TUI session lives in `execute`'s closure, one per call; this reference
+	// lifts the active one to extension scope so the inbound answer listener can
+	// reach it. Null whenever no questionnaire is awaiting input.
+	const activeSession: SessionRef = { current: null };
+
+	// `data` is whatever an emitter sent — validate before trusting any of it.
+	pi.events.on(ASK_USER_ANSWER_EVENT, (data: unknown) => {
+		const payload = (data ?? {}) as Partial<AskUserAnswerEventPayload>;
+		const requestId = typeof payload.requestId === "string" ? payload.requestId : undefined;
+		const reply = (ok: boolean, reason?: string) => {
+			const result: AskUserAnswerResultEventPayload = {
+				ok,
+				...(reason ? { reason } : {}),
+				...(requestId ? { requestId } : {}),
+			};
+			pi.events.emit(ASK_USER_ANSWER_RESULT_EVENT, result);
+		};
+
+		const session = activeSession.current;
+		if (!session) {
+			reply(false, "no questionnaire is awaiting input");
+			return;
+		}
+		if (!Array.isArray(payload.answers)) {
+			reply(false, "payload.answers must be an array");
+			return;
+		}
+
+		const outcome = session.answerExternal(payload.answers);
+		reply(outcome.ok, outcome.ok ? undefined : outcome.reason);
+	});
+
 	pi.registerTool({
 		name: ASK_USER_QUESTION_TOOL_NAME,
 		label: "Ask User Question",
@@ -377,6 +416,7 @@ export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
 						collapseKey,
 						canReopenWhileHidden,
 						sessionRef,
+						activeSession,
 						Session: QuestionnaireSession,
 					}),
 					{
@@ -401,6 +441,7 @@ export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
 				return buildQuestionnaireResponse(result, typed);
 			} finally {
 				removeOverlayInputListener?.();
+				activeSession.current = null;
 				emitAskUserBlockedEvent(pi, false);
 			}
 		},
