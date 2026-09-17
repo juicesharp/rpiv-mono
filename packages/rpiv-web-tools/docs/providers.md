@@ -1,10 +1,10 @@
 # Providers and credential resolution
 
-The ten search backends `rpiv-web-tools` ships with, what each one needs, and the
+The eleven search backends `rpiv-web-tools` ships with, what each one needs, and the
 exact order in which the active provider, its API key, and its base URL are
 resolved.
 
-## The ten providers
+## The eleven providers
 
 One is active at a time. Switching backends never discards the other backends'
 keys — they are stored per provider under `apiKeys.<name>`.
@@ -17,6 +17,7 @@ keys — they are stored per provider under `apiKeys.<name>`.
 | Exa | `exa` | `EXA_API_KEY` | [exa.ai](https://exa.ai) | native extraction (plain text) |
 | You.com | `youcom` | `YOUCOM_API_KEY` | [you.com](https://you.com) | native extraction (markdown) |
 | Jina | `jina` | `JINA_API_KEY` | [jina.ai/reader](https://jina.ai/reader) | native extraction (markdown) |
+| Kagi | `kagi` | `KAGI_API_KEY` | [kagi.com/api](https://kagi.com/api) | built-in HTTP → text, honours `raw` |
 | Firecrawl | `firecrawl` | `FIRECRAWL_API_KEY` | [firecrawl.dev](https://firecrawl.dev) | native extraction (markdown) |
 | Perplexity | `perplexity` | `PERPLEXITY_API_KEY` | [docs.perplexity.ai](https://docs.perplexity.ai/) | built-in HTTP → text, honours `raw` |
 | SearXNG | `searxng` | `SEARXNG_API_KEY` (optional) | self-hosted — see [self-hosted.md](self-hosted.md) | built-in HTTP → text, honours `raw` |
@@ -31,7 +32,7 @@ they talk to an instance you control. Both are covered in
 Four tiers, first match wins:
 
 1. **The `provider` parameter on a single `web_search` call.** Validated against
-   the ten known names; an unknown name throws. When present, tiers 2–4 are not
+   the eleven known names; an unknown name throws. When present, tiers 2–4 are not
    consulted at all.
 2. **`WEB_SEARCH_PROVIDER`** environment variable. Trimmed; a whitespace-only
    value counts as unset. Validated *only when it is the resolving tier*, so a
@@ -46,7 +47,7 @@ Four tiers, first match wins:
 An unknown name at tier 1 or tier 2 throws:
 
 ```
-Unknown web_search provider: "bravo". Valid providers: brave, tavily, serper, exa, youcom, jina, firecrawl, perplexity, searxng, ollama.
+Unknown web_search provider: "bravo". Valid providers: brave, tavily, serper, exa, youcom, jina, kagi, firecrawl, perplexity, searxng, ollama.
 ```
 
 Tiers 3 and 4 are not validated at resolution time — a typo in the config file
@@ -60,7 +61,7 @@ first match wins:
 
 1. **The provider's own environment variable** (`BRAVE_SEARCH_API_KEY`,
    `TAVILY_API_KEY`, `SERPER_API_KEY`, `EXA_API_KEY`, `YOUCOM_API_KEY`,
-   `JINA_API_KEY`, `FIRECRAWL_API_KEY`, `PERPLEXITY_API_KEY`,
+   `JINA_API_KEY`, `KAGI_API_KEY`, `FIRECRAWL_API_KEY`, `PERPLEXITY_API_KEY`,
    `SEARXNG_API_KEY`, `OLLAMA_API_KEY`).
 2. **`apiKeys.<provider>`** in the config file.
 3. **Legacy top-level `apiKey`**, Brave only. It is auto-migrated into

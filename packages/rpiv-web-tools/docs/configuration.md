@@ -131,7 +131,7 @@ Any other argument is ignored and falls through to the interactive picker.
 | --- | --- |
 | `XDG_CONFIG_HOME` | Config directory root; must be absolute or `~`-prefixed, else ignored |
 | `WEB_SEARCH_PROVIDER` | Pins the active provider above the config file |
-| `BRAVE_SEARCH_API_KEY`, `TAVILY_API_KEY`, `SERPER_API_KEY`, `EXA_API_KEY`, `YOUCOM_API_KEY`, `JINA_API_KEY`, `FIRECRAWL_API_KEY`, `PERPLEXITY_API_KEY`, `SEARXNG_API_KEY`, `OLLAMA_API_KEY` | Per-provider keys; win over `apiKeys.<provider>` |
+| `BRAVE_SEARCH_API_KEY`, `TAVILY_API_KEY`, `SERPER_API_KEY`, `EXA_API_KEY`, `YOUCOM_API_KEY`, `JINA_API_KEY`, `KAGI_API_KEY`, `FIRECRAWL_API_KEY`, `PERPLEXITY_API_KEY`, `SEARXNG_API_KEY`, `OLLAMA_API_KEY` | Per-provider keys; win over `apiKeys.<provider>` |
 | `SEARXNG_URL`, `OLLAMA_HOST` | Self-hosted base URLs; win over `baseUrls.<provider>` |
 | `GITHUB_TOKEN` | Read only to display it masked in `/web-tools --show`; GitHub auth itself flows through `gh` |
 

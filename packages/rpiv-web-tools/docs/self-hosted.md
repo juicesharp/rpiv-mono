@@ -1,6 +1,6 @@
 # Self-hosted backends
 
-Two of the ten providers talk to an instance you run yourself, so nothing has to
+Two of the eleven providers talk to an instance you run yourself, so nothing has to
 leave your network: **SearXNG** and **Ollama**. Both take a base URL in addition
 to (or instead of) an API key, and both drive their own prompt flow inside
 `/web-tools` — URL first, then the optional key.

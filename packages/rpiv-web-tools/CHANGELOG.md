@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Add Kagi Search API v1 as a search-only provider, configurable with `KAGI_API_KEY` or `/web-tools`.
+
 ## [2.10.1] - 2026-09-13
 
 ## [2.10.0] - 2026-09-12

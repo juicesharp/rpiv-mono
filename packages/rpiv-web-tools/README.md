@@ -15,7 +15,7 @@ Let the model answer from the live web instead of its training data.
 `rpiv-web-tools` adds two tools to [Pi Agent](https://github.com/badlogic/pi-mono):
 `web_search`, which queries a search API and returns titled results with URLs and
 snippets, and `web_fetch`, which reads an http/https page as text. You pick one
-of ten backends with `/web-tools`, or run SearXNG or Ollama yourself so your
+of eleven backends with `/web-tools`, or run SearXNG or Ollama yourself so your
 queries never leave your network.
 
 ## Install
@@ -34,7 +34,7 @@ Restart your Pi session.
 /web-tools
 ```
 
-Pick a provider from the list and paste its API key. Sign-up links for all ten
+Pick a provider from the list and paste its API key. Sign-up links for all eleven
 backends are in [Providers](https://github.com/juicesharp/rpiv-mono/blob/main/packages/rpiv-web-tools/docs/providers.md); `brave` is the default. The active
 provider is listed first with `✓`, and any provider you have already
 credentialed is marked `(configured)`. Selecting SearXNG or Ollama prompts for a
@@ -56,9 +56,9 @@ works with no API key at all.
 - **Answers from the live web** — `web_search` returns 1–10 titled results with
   URLs and snippets per call, and the built-in guidance tells the model to cite
   a `Sources:` section with markdown hyperlinks.
-- **Ten backends, one switch, keys never lost** — Brave, Tavily, Serper, Exa,
-  You.com, Jina, Firecrawl, Perplexity, SearXNG and Ollama. Keys are stored per
-  provider, so switching backends preserves every other one.
+- **Eleven backends, one switch, keys never lost** — Brave, Tavily, Serper, Exa,
+  You.com, Jina, Kagi, Firecrawl, Perplexity, SearXNG and Ollama. Keys are
+  stored per provider, so switching backends preserves every other one.
 - **Compare backends without touching config** — pass `provider` on a single
   `web_search` call to route it elsewhere. No config write, no restart, and an
   uncredentialed target throws instead of silently falling back.
@@ -98,7 +98,7 @@ start.
 
 - [Tool reference](https://github.com/juicesharp/rpiv-mono/blob/main/packages/rpiv-web-tools/docs/tools.md) — full `web_search` / `web_fetch` schemas,
   result envelopes, dispatch order, truncation, and the host guard.
-- [Providers](https://github.com/juicesharp/rpiv-mono/blob/main/packages/rpiv-web-tools/docs/providers.md) — all ten backends with sign-up links and key
+- [Providers](https://github.com/juicesharp/rpiv-mono/blob/main/packages/rpiv-web-tools/docs/providers.md) — all eleven backends with sign-up links and key
   variable names, plus the exact resolution order for the active provider, its
   key, and its base URL.
 - [Self-hosted backends](https://github.com/juicesharp/rpiv-mono/blob/main/packages/rpiv-web-tools/docs/self-hosted.md) — SearXNG and Ollama setup,
@@ -126,7 +126,7 @@ start.
 | `<ENV_VAR> is not set` on every search | The resolved provider has no key | Run `/web-tools`, or check `/web-tools --show` to see which tier set the active provider |
 | SearXNG returns `403 Forbidden` | The instance has JSON output disabled | Add `json` under `search.formats` in its `settings.yml` — see [self-hosted.md](https://github.com/juicesharp/rpiv-mono/blob/main/packages/rpiv-web-tools/docs/self-hosted.md) |
 | `Could not connect to Ollama at <host>` | No Ollama instance at the resolved host | Start it with `ollama serve`, or set `OLLAMA_HOST` |
-| `Unknown web_search provider: "…"` | A typo in `WEB_SEARCH_PROVIDER` or in the per-call `provider` argument | Use one of the ten names in [providers.md](https://github.com/juicesharp/rpiv-mono/blob/main/packages/rpiv-web-tools/docs/providers.md) |
+| `Unknown web_search provider: "…"` | A typo in `WEB_SEARCH_PROVIDER` or in the per-call `provider` argument | Use one of the eleven names in [providers.md](https://github.com/juicesharp/rpiv-mono/blob/main/packages/rpiv-web-tools/docs/providers.md) |
 | `Unknown search provider: "…"` | A typo in `provider` in the config file | Run `/web-tools` to reselect, or fix the name in `config.json` |
 
 ## Related

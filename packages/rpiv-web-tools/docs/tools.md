@@ -16,7 +16,7 @@ web_search({
   max_results?: number,             // 1-10, default 5
   provider?:                        // per-call override; see below
     | "brave" | "tavily" | "serper" | "exa" | "youcom" | "jina"
-    | "firecrawl" | "perplexity" | "searxng" | "ollama",
+    | "kagi" | "firecrawl" | "perplexity" | "searxng" | "ollama",
 })
 ```
 
@@ -48,7 +48,7 @@ When the provider returns zero results, the envelope collapses to
 | Condition | Message shape |
 | --- | --- |
 | Resolved provider has no key | `EXA_API_KEY is not set. Run /web-tools to configure, or export the env var.` |
-| Unknown provider name | `Unknown web_search provider: "<name>". Valid providers: brave, tavily, serper, exa, youcom, jina, firecrawl, perplexity, searxng, ollama.` |
+| Unknown provider name | `Unknown web_search provider: "<name>". Valid providers: brave, tavily, serper, exa, youcom, jina, kagi, firecrawl, perplexity, searxng, ollama.` |
 | Provider API returns non-2xx | vendor-specific, with the status code |
 
 ### Per-call `provider` override
@@ -117,7 +117,7 @@ The text content is prefixed with a header block before the body:
 2. **The active provider's native fetch** — Tavily, Exa, You.com, Jina,
    Firecrawl and Ollama carry vendor extraction endpoints.
 3. **The built-in HTTP + HTML-to-text pipeline** — used for search-only
-   providers (Brave, Serper, Perplexity, SearXNG) and whenever the active
+   providers (Brave, Kagi, Serper, Perplexity, SearXNG) and whenever the active
    provider has no `fetch` method. This path needs no API key at all, so
    `web_fetch` still works when the active provider is an unkeyed search-only
    backend. An unkeyed extraction provider (Tavily, Exa, You.com, Jina,

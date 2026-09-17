@@ -33,6 +33,7 @@ beforeEach(() => {
 	delete process.env.EXA_API_KEY;
 	delete process.env.YOUCOM_API_KEY;
 	delete process.env.JINA_API_KEY;
+	delete process.env.KAGI_API_KEY;
 	delete process.env.FIRECRAWL_API_KEY;
 	delete process.env.PERPLEXITY_API_KEY;
 	delete process.env.SEARXNG_API_KEY;
@@ -115,6 +116,14 @@ const PROVIDER_MATRIX = [
 		authHeader: "Authorization" as string | null,
 	},
 	{
+		provider: "kagi",
+		envVar: "KAGI_API_KEY",
+		urlMatcher: (u: string) => u.includes("kagi.com/api/v1/search"),
+		buildResponse: () => JSON.stringify({ data: { search: [{ title: "T", url: "https://x", snippet: "snip" }] } }),
+		emptyResponse: () => JSON.stringify({ data: { search: [] } }),
+		authHeader: "Authorization" as string | null,
+	},
+	{
 		provider: "firecrawl",
 		envVar: "FIRECRAWL_API_KEY",
 		urlMatcher: (u: string) => u.includes("api.firecrawl.dev"),
@@ -162,7 +171,7 @@ describe.each(PROVIDER_MATRIX)(
 			if (authHeader) {
 				const headers = stub.calls[0].init?.headers as Record<string, string>;
 				const headerVal = headers[authHeader];
-				if (provider === "jina" || provider === "firecrawl" || provider === "perplexity") {
+				if (provider === "jina" || provider === "kagi" || provider === "firecrawl" || provider === "perplexity") {
 					expect(headerVal).toBe("Bearer env-key");
 				} else {
 					expect(headerVal).toBe("env-key");
@@ -188,7 +197,7 @@ describe.each(PROVIDER_MATRIX)(
 			if (authHeader) {
 				const headers = stub.calls[0].init?.headers as Record<string, string>;
 				const headerVal = headers[authHeader];
-				if (provider === "jina" || provider === "firecrawl" || provider === "perplexity") {
+				if (provider === "jina" || provider === "kagi" || provider === "firecrawl" || provider === "perplexity") {
 					expect(headerVal).toBe("Bearer config-key");
 				} else {
 					expect(headerVal).toBe("config-key");
@@ -244,6 +253,32 @@ describe.each(PROVIDER_MATRIX)(
 		});
 	},
 );
+
+describe("web_search.execute — kagi request", () => {
+	it("posts query and max_results as the v1 limit", async () => {
+		process.env.KAGI_API_KEY = "k";
+		writeConfig({ provider: "kagi" });
+		const stub = stubFetch([
+			{
+				match: (url) => url.includes("kagi.com/api/v1/search"),
+				response: () =>
+					new Response(JSON.stringify({ data: { search: [{ title: "T", url: "https://x", snippet: "snip" }] } }), {
+						status: 200,
+					}),
+			},
+		]);
+		const { captured } = registerAndCapture();
+		const result = await captured.tools
+			.get("web_search")
+			?.execute?.("tc", { query: "hello", max_results: 3 }, undefined as never, undefined as never, createMockCtx());
+
+		expect(JSON.parse(stub.calls[0].init?.body as string)).toEqual({ query: "hello", limit: 3 });
+		expect(result?.details).toMatchObject({
+			backend: "kagi",
+			results: [{ title: "T", url: "https://x", snippet: "snip" }],
+		});
+	});
+});
 
 describe("web_search.execute — provider-independent behavior", () => {
 	it("clamps max_results to [1,10]", async () => {
@@ -554,7 +589,7 @@ describe("web_fetch.execute — happy path", () => {
 
 // Extraction providers — those with native fetch endpoints. Each entry drives
 // the per-provider error-path assertions below: no-key throw + labeled non-2xx.
-// Search-only providers (Brave/Serper/SearXNG) no longer have their own fetch()
+// Search-only providers (Brave/Kagi/Serper/Perplexity/SearXNG) have no fetch()
 // after the role split; their fallback path is asserted once in the
 // "search-only providers fall back to generic HTML fetch" block.
 const FETCH_ERROR_MATRIX: ReadonlyArray<{
@@ -629,11 +664,12 @@ describe.each(FETCH_ERROR_MATRIX)(
 	},
 );
 
-// Brave/Serper/SearXNG are SearchProvider-only after the role split: the
+// Brave/Kagi/Serper/Perplexity/SearXNG are SearchProvider-only after the role split: the
 // orchestrator falls through to `fetchViaGenericHtml`. The dispatch is
 // provider-agnostic — one assertion per behavior is enough.
 describe.each([
 	{ provider: "brave", envVar: "BRAVE_SEARCH_API_KEY" },
+	{ provider: "kagi", envVar: "KAGI_API_KEY" },
 	{ provider: "serper", envVar: "SERPER_API_KEY" },
 	{ provider: "searxng", envVar: "SEARXNG_API_KEY" },
 	{ provider: "perplexity", envVar: "PERPLEXITY_API_KEY" },
@@ -1168,6 +1204,7 @@ describe("/web-tools command", () => {
 			"Serper",
 			"You.com",
 			"Jina",
+			"Kagi",
 			"Firecrawl",
 			"Perplexity",
 			"SearXNG",
@@ -2390,13 +2427,14 @@ describe("web_search.execute — per-call provider override", () => {
 				"exa",
 				"youcom",
 				"jina",
+				"kagi",
 				"firecrawl",
 				"perplexity",
 				"searxng",
 				"ollama",
 			]),
 		);
-		expect(literals).toHaveLength(10);
+		expect(literals).toHaveLength(11);
 	});
 });
 

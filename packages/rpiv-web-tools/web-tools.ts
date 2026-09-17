@@ -2,8 +2,8 @@
  * rpiv-web-tools — body
  *
  * Provides `web_search` and `web_fetch` tools backed by configurable search
- * providers (Brave, Tavily, Serper, Exa), plus the `/web-tools`
- * slash command for provider and API key configuration.
+ * providers, plus the `/web-tools` slash command for provider and API key
+ * configuration.
  *
  * API key resolution precedence per provider (first wins):
  *   1. Per-provider environment variable (e.g. BRAVE_SEARCH_API_KEY, TAVILY_API_KEY)
@@ -443,8 +443,8 @@ export function registerWebFetchTool(pi: ExtensionAPI): void {
 			//      unrelated URLs; empty chain (interceptor disabled) is a no-op.
 			//   2. Provider's native fetch — full providers (Tavily, Exa, Jina,
 			//      Firecrawl, Ollama) have vendor endpoints worth using.
-			//   3. Generic HTML fallback — for search-only providers (Brave, Serper,
-			//      SearXNG) or any provider that doesn't carry a `fetch` method.
+			//   3. Generic HTML fallback — for search-only providers (Brave, Kagi,
+			//      Serper, Perplexity, SearXNG) or any provider without `fetch`.
 			let fetchResponse: FetchResponse | undefined;
 			for (const interceptor of getInterceptors()) {
 				const r = await interceptor.intercept(url, { raw, signal });
