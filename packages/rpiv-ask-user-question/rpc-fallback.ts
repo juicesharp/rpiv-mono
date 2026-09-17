@@ -14,10 +14,8 @@
  * Parity trade-offs vs the TUI, inherent to the select/input API surface: no
  * side-by-side preview pane (previews are folded into the prompt title), no
  * tabbed multi-question review (one dialog per question), and multi-select is
- * a free-text numbers input instead of checkbox rows. The "Type something."
- * escape is preserved on both variants — multi-select treats any non-index
- * input as a typed custom answer — matching
- * `ROW_INTENT_META.other.autoAppendOnMultiSelect`.
+ * a free-text numbers input instead of checkbox rows. The input accepts selected
+ * option numbers, custom text, or both separated by a semicolon.
  */
 
 import { displayLabel, t } from "./state/i18n-bridge.js";
@@ -30,9 +28,9 @@ import type { QuestionAnswer, QuestionData, QuestionnaireResult, QuestionParams 
  * `displayLabel("other")` — same source as the TUI row.
  */
 const MULTI_SELECT_INSTRUCTIONS =
-	'Enter the numbers of all that apply, comma-separated (e.g. "1,3"), or type a custom answer as plain text.';
+	'Enter the numbers of all that apply, comma-separated (e.g. "1,3"). Add "; custom answer" to include your own text, or type only custom text.';
 const CUSTOM_ANSWER_TITLE = "Type your answer:";
-const MULTI_SELECT_PLACEHOLDER = "1,3";
+const MULTI_SELECT_PLACEHOLDER = "1,3; custom answer";
 
 /** Longest preview slice folded into a select title before truncation. */
 const MAX_PREVIEW_CHARS = 600;
@@ -148,19 +146,26 @@ async function askMultiSelect(
 		// Deliberate empty commit — same as pressing "Next" with nothing toggled.
 		return { questionIndex, question: q.question, kind: "multi", answer: null, selected: [] };
 	}
-	const tokens = trimmed.split(/[,\s]+/).filter((tok) => tok.length > 0);
+	const [selectionPart = "", ...customParts] = trimmed.split(";");
+	const selection = selectionPart.trim();
+	const custom = customParts.join(";").trim();
+	const tokens = selection.split(/[,\s]+/).filter((tok) => tok.length > 0);
 	const indices = tokens.map((tok) => (/^\d+\.?$/.test(tok) ? parseIndex(tok, q.options.length) : null));
-	if (indices.every((i): i is number => i != null)) {
+	if (selection.length === 0 || indices.every((i): i is number => i != null)) {
 		const selected: string[] = [];
 		for (const i of indices) {
+			if (i == null) continue;
 			const label = q.options[i].label;
 			if (!selected.includes(label)) selected.push(label);
 		}
-		return { questionIndex, question: q.question, kind: "multi", answer: null, selected };
+		return {
+			questionIndex,
+			question: q.question,
+			kind: "multi",
+			answer: custom.length > 0 ? custom : null,
+			selected,
+		};
 	}
-	// Any non-index token (words, or an out-of-range number like "13" for three
-	// options) means the user typed an answer, not a selection. Preserve it
-	// verbatim as a custom answer instead of silently dropping their input —
-	// this is also the multi-select "Type something." escape.
-	return { questionIndex, question: q.question, kind: "custom", answer: trimmed };
+	// Preserve unparseable input verbatim as custom text rather than dropping it.
+	return { questionIndex, question: q.question, kind: "multi", answer: trimmed, selected: [] };
 }

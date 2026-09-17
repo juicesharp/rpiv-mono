@@ -227,7 +227,7 @@ describe("buildQuestionnaireResponse — completed", () => {
 		expect(r.content[0].text).toContain('"Q2?"="No"');
 	});
 
-	it("multiSelect answer renders as comma-joined labels in <A> position", () => {
+	it("multiSelect answer joins selected labels and custom text in <A> position", () => {
 		const params: QuestionParams = {
 			questions: [
 				{
@@ -243,10 +243,10 @@ describe("buildQuestionnaireResponse — completed", () => {
 		};
 		const result: QuestionnaireResult = {
 			cancelled: false,
-			answers: [{ questionIndex: 0, question: "Areas", kind: "multi", answer: null, selected: ["FE", "BE"] }],
+			answers: [{ questionIndex: 0, question: "Areas", kind: "multi", answer: "Docs", selected: ["FE", "BE"] }],
 		};
 		const r = buildQuestionnaireResponse(result, params);
-		expect(r.content[0].text).toContain('"Areas"="FE, BE"');
+		expect(r.content[0].text).toContain('"Areas"="FE, BE, Docs"');
 	});
 
 	it("custom typed answer renders raw text (no 'User answered:' prefix)", () => {

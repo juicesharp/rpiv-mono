@@ -129,6 +129,7 @@ export function makeMultiSelectViewProps(
 		rows,
 		other: {
 			active: otherActive,
+			checked: inputBuffer.trim().length > 0,
 			inputMode: (over.inputMode ?? false) && otherActive,
 			inputBuffer,
 			inputCursorOffset: over.inputCursorOffset,
@@ -151,6 +152,7 @@ export function makeMultiSelectPropsFromState(
 		rows,
 		other: {
 			active: focused && state.optionIndex === question.options.length,
+			checked: false,
 			inputMode: state.inputMode,
 			inputBuffer: "",
 			inputCursorOffset: undefined,
