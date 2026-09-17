@@ -18,8 +18,8 @@ export interface FetchResponse {
 
 // Role-split contracts. SearchProvider implementations expose `search()` only;
 // FetchProvider implementations expose `fetch()` only; FullProvider is the
-// intersection — both methods, for providers (Tavily, Exa, Jina, Firecrawl,
-// Ollama) whose vendors have native fetch endpoints worth using directly.
+// intersection — both methods, for providers whose vendors have native fetch
+// endpoints worth using directly.
 // The orchestrator narrows on `"fetch" in provider` to dispatch.
 export interface SearchProvider {
 	readonly name: string;
@@ -90,9 +90,9 @@ export interface ProviderMeta {
 	envVar?: string;
 	baseUrlEnvVar?: string;
 	defaultBaseUrl?: string;
-	// Which role(s) the provider plays. Search-only providers (Brave, Serper,
-	// SearXNG) carry ["search"]; full providers (Tavily, Exa, Jina, Firecrawl,
-	// Ollama) carry ["search", "fetch"]. The orchestrator does not consult
+	// Which role(s) the provider plays. Search-only providers (Brave, Kagi,
+	// Perplexity, Serper, SearXNG) carry ["search"]; full providers carry
+	// ["search", "fetch"]. The orchestrator does not consult
 	// `roles` at runtime — capability is checked structurally via
 	// `"fetch" in provider` — but `roles` keeps the META honest and unblocks
 	// future UX (e.g. a fetch-role picker).

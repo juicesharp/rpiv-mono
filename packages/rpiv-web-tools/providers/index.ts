@@ -2,6 +2,7 @@ import { BRAVE_PROVIDER_META } from "./brave.js";
 import { EXA_PROVIDER_META } from "./exa.js";
 import { FIRECRAWL_PROVIDER_META } from "./firecrawl.js";
 import { JINA_PROVIDER_META } from "./jina.js";
+import { KAGI_PROVIDER_META } from "./kagi.js";
 import { OLLAMA_PROVIDER_META } from "./ollama.js";
 import { PERPLEXITY_PROVIDER_META } from "./perplexity.js";
 import { SEARXNG_PROVIDER_META } from "./searxng.js";
@@ -26,6 +27,7 @@ export {
 	type UrlInterceptor,
 } from "./interceptors/index.js";
 export { JINA_API_KEY_ENV_VAR, JINA_PROVIDER_META, JinaProvider } from "./jina.js";
+export { KAGI_API_KEY_ENV_VAR, KAGI_PROVIDER_META, KagiProvider } from "./kagi.js";
 export {
 	configureOllama,
 	OLLAMA_API_KEY_ENV_VAR,
@@ -74,6 +76,7 @@ export const PROVIDERS: readonly ProviderMeta[] = [
 	EXA_PROVIDER_META,
 	YOUCOM_PROVIDER_META,
 	JINA_PROVIDER_META,
+	KAGI_PROVIDER_META,
 	FIRECRAWL_PROVIDER_META,
 	PERPLEXITY_PROVIDER_META,
 	SEARXNG_PROVIDER_META,

@@ -2,6 +2,7 @@ import { BraveProvider } from "./brave.js";
 import { ExaProvider } from "./exa.js";
 import { FirecrawlProvider } from "./firecrawl.js";
 import { JinaProvider } from "./jina.js";
+import { KagiProvider } from "./kagi.js";
 import { OllamaProvider } from "./ollama.js";
 import { PerplexityProvider } from "./perplexity.js";
 import { SearxngProvider } from "./searxng.js";
@@ -15,8 +16,8 @@ export interface ProviderCredentials {
 	baseUrl?: string;
 }
 
-// The return union mirrors the role split: Brave/Serper/SearXNG are search-
-// only (SearchProvider); the other five expose native fetch endpoints too
+// The return union mirrors the role split: Brave/Kagi/Perplexity/Serper/SearXNG
+// are search-only (SearchProvider); full providers expose native fetch endpoints
 // (FullProvider). Consumers narrow with `"fetch" in provider` when they need
 // to dispatch on capability.
 export function createSearchProvider(name: string, creds: ProviderCredentials): SearchProvider | FullProvider {
@@ -34,6 +35,8 @@ export function createSearchProvider(name: string, creds: ProviderCredentials): 
 			return new YouComProvider(apiKey);
 		case "jina":
 			return new JinaProvider(apiKey);
+		case "kagi":
+			return new KagiProvider(apiKey);
 		case "firecrawl":
 			return new FirecrawlProvider(apiKey);
 		case "perplexity":

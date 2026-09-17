@@ -1,8 +1,8 @@
 /**
  * Shared fetch helpers — HTTP client, content-type guards, and HTML-to-text
- * extraction used by providers that wrap the built-in pipeline (Brave, Serper,
- * SearXNG). `fetchViaGenericHtml` is the one-stop entry point those providers
- * delegate their `fetch()` method to.
+ * extraction used by search-only providers (Brave, Kagi, Serper, Perplexity,
+ * SearXNG). `fetchViaGenericHtml` is the orchestrator's fallback for providers
+ * without a native fetch endpoint.
  */
 
 import type { FetchResponse } from "./types.js";
@@ -121,9 +121,9 @@ export async function extractBodyAsText(
 }
 
 // One-stop fetch helper for providers that have no native fetch endpoint
-// (Brave/Serper/SearXNG). Bundles the quartet — fetchUrlOrThrow →
+// (Brave/Kagi/Serper/Perplexity/SearXNG). Bundles the quartet — fetchUrlOrThrow →
 // content-type assertion → body extraction → FetchResponse envelope — so
-// providers collapse to a single delegating call.
+// the orchestrator keeps the fallback path in one place.
 export async function fetchViaGenericHtml(url: string, raw: boolean, signal?: AbortSignal): Promise<FetchResponse> {
 	const res = await fetchUrlOrThrow(url, signal);
 	const contentType = res.headers.get("content-type") ?? "";
