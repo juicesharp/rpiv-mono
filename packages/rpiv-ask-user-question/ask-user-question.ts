@@ -1,10 +1,13 @@
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { isKeyRelease, isKeyRepeat, matchesKey, type OverlayHandle, type TUI } from "@earendil-works/pi-tui";
+import type { AutoAnswerState } from "./auto-answer-state.js";
+import { createAutoAnswerState } from "./auto-answer-state.js";
 import {
 	COLLAPSE_KEY_OFF,
 	formatKeySpecForDisplay,
 	loadConfig,
 	resolveCollapseKey,
+	resolveJevConfig,
 	validateGuidanceFields,
 } from "./config.js";
 import {
@@ -13,13 +16,14 @@ import {
 	type AskUserBlockedEventPayload,
 	type AskUserPromptEventPayload,
 } from "./events.js";
+import { autoAnswerWithJev } from "./jev-auto-answer.js";
 // Static import is fine — rpc-fallback pulls only types + the i18n bridge,
 // none of the ~560ms TUI render graph that QuestionnaireSession lazy-loads.
 import { type DialogUI, hasDialogUI, runRpcQuestionnaire } from "./rpc-fallback.js";
 import { displayLabel, t } from "./state/i18n-bridge.js";
 import { sentinelsToAppend } from "./state/row-intent.js";
 import { normalizeQuestionParams } from "./tool/normalize-params.js";
-import { buildQuestionnaireResponse, buildToolResult } from "./tool/response-envelope.js";
+import { buildAutoAnswerResponse, buildQuestionnaireResponse, buildToolResult } from "./tool/response-envelope.js";
 import {
 	MAX_OPTIONS,
 	MAX_QUESTIONS,
@@ -57,6 +61,14 @@ function emitAskUserBlockedEvent(pi: ExtensionAPI, active: boolean): void {
 /** Non-interactive host backstop (the reconciler normally strips the tool first). */
 function rejectWithoutUi() {
 	return buildToolResult(ERROR_NO_UI, { answers: [], cancelled: true, error: "no_ui" });
+}
+
+function rejectAutoAnswerWithoutUi(error: QuestionnaireError, message: string) {
+	return buildToolResult(`Error: ${message} The user never saw the questions because this run has no UI.`, {
+		answers: [],
+		cancelled: true,
+		error,
+	});
 }
 
 /** Sequential native-dialog walker for RPC hosts; brackets it with the blocked-event pair + terminal bell. */
@@ -277,6 +289,7 @@ export const DEFAULT_PROMPT_GUIDELINES: string[] = [
 	`Use ask_user_question whenever the user's request is underspecified and you cannot proceed without concrete decisions — you can ask up to ${MAX_QUESTIONS} questions per invocation.`,
 	`Each question MUST have ${MIN_OPTIONS}-${MAX_OPTIONS} options. Every option requires a concise label (1-5 words) and a description explaining what the choice means or its trade-offs. The user can additionally type a custom answer via the automatically appended "Type something." row on every question, or press Esc to abandon the questionnaire. Do NOT author "Other" or "Type something." labels yourself — reserved labels are rejected at runtime.`,
 	`Set multiSelect: true when multiple answers are valid. Provide an options[].preview markdown string when an option benefits from richer side-by-side context (mockups, code snippets, diagrams, configs) — single-select only. The "Type something." row is appended to every question; in preview mode it expands to the full pane width while typing so the custom answer is not cramped into the narrow options column. If you recommend a specific option, make that the first option and append "(Recommended)" to its label.`,
+	"Include a top-level state string containing only the bounded facts needed to answer the questions. It is ignored unless the user has explicitly enabled Jev auto-answer; never copy the conversation automatically.",
 	"Do not stack multiple ask_user_question calls back-to-back — group all clarifying questions into one invocation.",
 ];
 
@@ -290,6 +303,10 @@ Usage notes:
 - Users can type a custom answer via the automatically appended "Type something." row on every question or press Esc to abandon the questionnaire. Do NOT author "Other" or "Type something." labels yourself — reserved labels are rejected at runtime.
 - Use multiSelect: true when multiple answers are valid. The "Type something." row is available on every question, including when options carry a \`preview\`; in preview mode it expands to the full pane width while typing so the custom answer is not cramped into the narrow options column.
 - If you recommend a specific option, make that the first option in the list and add "(Recommended)" at the end of the label.
+- Include a top-level \`state\` string with only the bounded facts needed to answer the questions. It is sent to TypeSafe only when the user has explicitly enabled Jev auto-answer; never copy the conversation automatically.
+
+Jev auto-answer:
+Users can opt in through configuration or \`/ask-user-auto-answer on\`. When enabled, Jev evaluates the explicit \`state\` and answers all questions in one batched request. Uncertain or failed evaluations fall back to the normal UI when one exists.
 
 Preview feature:
 Use the optional \`preview\` field on options when presenting concrete artifacts that users need to visually compare:
@@ -300,7 +317,11 @@ Use the optional \`preview\` field on options when presenting concrete artifacts
 
 Preview content is rendered as markdown in a monospace box. Multi-line text with newlines is supported. When any option has a preview, the UI switches to a side-by-side layout with a vertical option list on the left and preview on the right. Do not use previews for simple preference questions where labels and descriptions suffice. Note: previews are only supported for single-select questions (not multiSelect).`;
 
-export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
+export function registerAskUserQuestionTool(
+	pi: ExtensionAPI,
+	autoAnswerState: AutoAnswerState = createAutoAnswerState(),
+	runAutoAnswer: typeof autoAnswerWithJev = autoAnswerWithJev,
+): void {
 	const guidance = validateGuidanceFields(loadConfig().guidance);
 	pi.registerTool({
 		name: ASK_USER_QUESTION_TOOL_NAME,
@@ -310,12 +331,12 @@ export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
 		promptGuidelines: guidance.promptGuidelines ?? DEFAULT_PROMPT_GUIDELINES,
 		parameters: QuestionParamsSchema,
 
-		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			// Line-terminator normalization runs once here, ahead of validation, so
-			// every downstream consumer — validator, TUI, RPC walker, envelope, prompt
-			// event — sees the same clean text (#192).
+			// every downstream consumer — validator, Jev, TUI, RPC walker, envelope,
+			// prompt event — sees the same clean text (#192).
+			// SAFETY: Pi validates tool input against QuestionParamsSchema before execute.
 			const typed = normalizeQuestionParams(params as unknown as QuestionParams);
-			if (!ctx.hasUI) return rejectWithoutUi();
 
 			const validation = validateQuestionnaire(typed);
 			if (!validation.ok) {
@@ -326,7 +347,16 @@ export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
 				});
 			}
 
-			// Emit event for external listeners (e.g., notification plugins)
+			if (autoAnswerState.enabled) {
+				const outcome = await runAutoAnswer(typed, resolveJevConfig(loadConfig()), signal);
+				if (outcome.ok) return buildAutoAnswerResponse(outcome.result, typed);
+				if (!ctx.hasUI) return rejectAutoAnswerWithoutUi(outcome.error, outcome.message);
+				ctx.ui.notify(`${outcome.message} Showing the questionnaire instead.`, "warning");
+			}
+
+			if (!ctx.hasUI) return rejectWithoutUi();
+
+			// Emit event for external listeners only when a human prompt will be shown.
 			emitAskUserPromptEvent(pi, typed);
 
 			// RPC hosts (VSCode pendant, ACP clients like Zed/Paseo — issue #78):
@@ -409,4 +439,4 @@ export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
 	prewarmSessionGraph();
 }
 
-export { buildQuestionnaireResponse, buildToolResult };
+export { buildAutoAnswerResponse, buildQuestionnaireResponse, buildToolResult };

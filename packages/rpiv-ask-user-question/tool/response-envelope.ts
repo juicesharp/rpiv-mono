@@ -4,6 +4,8 @@ import type { QuestionAnswer, QuestionnaireResult, QuestionParams } from "./type
 export const DECLINE_MESSAGE = "User declined to answer questions";
 export const ENVELOPE_PREFIX = "User has answered your questions:";
 export const ENVELOPE_SUFFIX = "You can now continue with the user's answers in mind.";
+export const AUTO_ANSWER_ENVELOPE_PREFIX = "Jev auto-answered the questions:";
+export const AUTO_ANSWER_ENVELOPE_SUFFIX = "You can now continue with Jev's answers in mind.";
 
 /**
  * Map a `QuestionnaireResult` (or null/cancelled) to the LLM-facing tool envelope.
@@ -37,6 +39,26 @@ export function buildQuestionnaireResponse(result: QuestionnaireResult | null | 
 		return buildToolResult(DECLINE_MESSAGE, { answers: result.answers, cancelled: true });
 	}
 	return buildToolResult(`${ENVELOPE_PREFIX} ${segments.join(" ")} ${ENVELOPE_SUFFIX}`, result);
+}
+
+/** Build a transparent envelope that never attributes automated answers to the user. */
+export function buildAutoAnswerResponse(result: QuestionnaireResult, params: QuestionParams) {
+	const segments: string[] = [];
+	for (let i = 0; i < params.questions.length; i++) {
+		const answer = result.answers.find((candidate) => candidate.questionIndex === i);
+		if (answer) segments.push(buildAnswerSegment(answer));
+	}
+	if (segments.length === 0) {
+		return buildToolResult("Jev auto-answer produced no answers.", {
+			...result,
+			cancelled: true,
+			error: "auto_answer_failed",
+		});
+	}
+	return buildToolResult(
+		`${AUTO_ANSWER_ENVELOPE_PREFIX} ${segments.join(" ")} ${AUTO_ANSWER_ENVELOPE_SUFFIX}`,
+		result,
+	);
 }
 
 /**

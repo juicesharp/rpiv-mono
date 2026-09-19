@@ -5,9 +5,13 @@ import {
 	type AskUserQuestionConfig,
 	COLLAPSE_KEY_OFF,
 	DEFAULT_COLLAPSE_KEY,
+	DEFAULT_JEV_MIN_CONFIDENCE,
+	DEFAULT_JEV_MODEL,
 	formatKeySpecForDisplay,
 	loadConfig,
 	resolveCollapseKey,
+	resolveJevConfig,
+	saveJevAutoAnswerEnabled,
 } from "./config.js";
 
 describe("formatKeySpecForDisplay", () => {
@@ -85,6 +89,36 @@ describe("resolveCollapseKey", () => {
 	});
 });
 
+describe("resolveJevConfig", () => {
+	it("is opt-in and supplies the documented defaults", () => {
+		expect(resolveJevConfig({})).toEqual({
+			autoAnswer: false,
+			model: DEFAULT_JEV_MODEL,
+			minConfidence: DEFAULT_JEV_MIN_CONFIDENCE,
+		});
+		expect(resolveJevConfig({ jev: { autoAnswer: 1 as never } }).autoAnswer).toBe(false);
+	});
+
+	it("accepts a trimmed model and confidence in the inclusive 0..1 range", () => {
+		expect(resolveJevConfig({ jev: { autoAnswer: true, model: "  jev-test  ", minConfidence: 0 } })).toEqual({
+			autoAnswer: true,
+			model: "jev-test",
+			minConfidence: 0,
+		});
+		expect(resolveJevConfig({ jev: { minConfidence: 1 } }).minConfidence).toBe(1);
+	});
+
+	it("falls back for blank or non-string models and invalid confidence values", () => {
+		expect(resolveJevConfig({ jev: { model: 42 as never } }).model).toBe(DEFAULT_JEV_MODEL);
+		for (const minConfidence of [-0.01, 1.01, Number.NaN, Number.POSITIVE_INFINITY]) {
+			expect(resolveJevConfig({ jev: { model: "  ", minConfidence } })).toMatchObject({
+				model: DEFAULT_JEV_MODEL,
+				minConfidence: DEFAULT_JEV_MIN_CONFIDENCE,
+			});
+		}
+	});
+});
+
 describe("loadConfig", () => {
 	// Use the test HOME set by the project's setup.ts. The config module resolves
 	// `~` at import time, so we use the directory that setup.ts has already wired up
@@ -115,5 +149,32 @@ describe("loadConfig", () => {
 		const c = loadConfig();
 		expect(c.collapseKey).toBe("alt+o");
 		expect(c.guidance?.promptSnippet).toBe("x");
+	});
+
+	it("repairs a non-object Jev section when persisting the opt-in", () => {
+		mkdirSync(join(home, ".config", "rpiv-ask-user-question"), { recursive: true });
+		writeFileSync(configPath, JSON.stringify({ collapseKey: "alt+o", jev: "invalid" }));
+
+		expect(saveJevAutoAnswerEnabled(true)).toBe(true);
+		expect(loadConfig()).toEqual({ collapseKey: "alt+o", jev: { autoAnswer: true } });
+	});
+
+	it("persists the Jev opt-in while preserving sibling and Jev settings", () => {
+		mkdirSync(join(home, ".config", "rpiv-ask-user-question"), { recursive: true });
+		writeFileSync(
+			configPath,
+			JSON.stringify({
+				collapseKey: "alt+o",
+				guidance: { promptSnippet: "x" },
+				jev: { autoAnswer: false, model: "jev-test", minConfidence: 0.8 },
+			} satisfies AskUserQuestionConfig),
+		);
+
+		expect(saveJevAutoAnswerEnabled(true)).toBe(true);
+		expect(loadConfig()).toEqual({
+			collapseKey: "alt+o",
+			guidance: { promptSnippet: "x" },
+			jev: { autoAnswer: true, model: "jev-test", minConfidence: 0.8 },
+		});
 	});
 });

@@ -9,7 +9,7 @@ render at all.
 | --- | --- | --- |
 | Interactive terminal | `ask_user_question` in its tool list | The full tabbed TUI overlay |
 | RPC / ACP host (VS Code pendant, Zed, Paseo) | `ask_user_question` in its tool list | A sequence of the host's own native select and input dialogs |
-| Non-interactive run (no UI) | Nothing — the tool is removed | Nothing |
+| Non-interactive run (no UI) | Nothing by default; the tool only remains when Jev auto-answer is enabled | Nothing; Jev answers or an explicit no-UI error |
 
 ### Terminal attention
 
@@ -20,14 +20,17 @@ The BEL is best effort: if the synchronous terminal write fails, the questionnai
 ### Non-interactive runs
 
 A `before_agent_start` hook reconciles the active tool set against `ctx.hasUI` before every
-turn. When there is no UI, `ask_user_question` is stripped from the list so the model never
-sees a tool it cannot use — better than offering it and auto-declining every call. When UI
-comes back, the tool is restored. The reconciler is idempotent and leaves sibling tools
-untouched.
+turn. When there is no UI, `ask_user_question` is stripped from the list unless the user
+has explicitly enabled Jev auto-answer. When UI comes back, or auto-answer is enabled, the
+tool is restored. Disabling auto-answer strips it again in a no-UI host. The reconciler is
+idempotent and leaves sibling tools untouched.
 
-A second guard lives inside the tool handler as a one-turn backstop: if a call somehow
-arrives without UI, it returns `error: "no_ui"` and the text
-`Error: UI not available (running in non-interactive mode)`.
+A second guard lives inside the tool handler as a one-turn backstop. With auto-answer off,
+a call that somehow arrives without UI returns `error: "no_ui"`. With auto-answer on, Jev
+may answer from the explicit top-level state. A missing state, low-confidence result, SDK
+or service failure, or malformed response cannot fall back to a human in this environment,
+so it returns `auto_answer_state_required`, `auto_answer_uncertain`, or
+`auto_answer_failed` and explicitly says that the user never saw the questions.
 
 ### RPC and ACP hosts
 
@@ -72,6 +75,10 @@ Some parts of the dialog exist only under the right conditions:
 | Localized chrome | `@juicesharp/rpiv-i18n` is installed |
 
 ## Loading and startup cost
+
+The TypeSafe SDK is also loaded dynamically: disabled sessions do not import it, construct
+a client, read its API settings, or make a TypeSafe request. It is reached only after the
+persistent/session opt-in is enabled and a validated tool call enters the auto-answer path.
 
 The dialog's render graph costs roughly 560 ms to import, so it is loaded lazily — on the
 first tool call, not when the extension registers. To keep that first call fast and safe,

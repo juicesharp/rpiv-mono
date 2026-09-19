@@ -7,6 +7,7 @@ validation rejects, what comes back, and the event other extensions can listen t
 
 ```ts
 ask_user_question({
+  state?: string,                    // explicit bounded facts for opt-in Jev auto-answer
   questions: [
     {
       question: string,            // full question text, ends with "?"
@@ -37,7 +38,10 @@ ask_user_question({
 | `options[].preview` | single-select questions only | tool description (multi-select tabs render checkbox rows) |
 
 The two `maxLength` limits are checked by the parameter schema before `execute` runs;
-the runtime validator does not re-check them.
+the runtime validator does not re-check them. `state` is optional because the default
+human flow does not need it. When Jev auto-answer is enabled it must be a nonblank,
+top-level string; the extension sends only this explicit state, never implicit conversation
+history. Question text, option labels, and descriptions are also sent, but previews are not.
 
 ### Reserved option labels
 
@@ -60,7 +64,10 @@ code. The `content[0].text` string is written for the model, not for a log.
 | `empty_options` | a question carried fewer than 2 options |
 | `reserved_label` | an option used a reserved label |
 | `duplicate_option_label` | two options in one question share a label |
-| `no_ui` | the run has no UI (`ctx.hasUI === false`) |
+| `no_ui` | the run has no UI (`ctx.hasUI === false`) and auto-answer is disabled |
+| `auto_answer_state_required` | auto-answer is enabled but the call has no nonblank top-level `state` |
+| `auto_answer_uncertain` | at least one Choice confidence or derived Noul certainty is below `jev.minConfidence` |
+| `auto_answer_failed` | the SDK/service failed or the response could not be mapped safely |
 | `no_custom_ui` | the host cannot render custom UI and exposes no `select`/`input` dialogs |
 | `session_load_failed` | the dialog module failed to import (dependencies changed on disk mid-session) |
 | `stale_module_cache` | the loader cached a broken module after an earlier failed import; needs a Pi restart |
@@ -85,6 +92,16 @@ code. The `content[0].text` string is written for the model, not for a log.
     cancelled: boolean,
     globalNote?: string,          // Submit-tab note; present even when cancelled is true
     error?: QuestionnaireError,    // one of the codes above
+    autoAnswer?: {                 // present only when Jev supplied the answers
+      provider: "typesafe",
+      model: string,
+      evaluations: Array<{
+        questionIndex: number,
+        confidence: number,        // Choice confidence or minimum derived Noul certainty
+        probabilities: Record<string, number>, // keyed by the authored option labels
+      }>,
+      usage: { input_tokens: number, output_tokens: number },
+    },
   }
 }
 ```
@@ -103,6 +120,15 @@ to the single string `User declined to answer questions` so the model sees one c
 signal. Partial submission is allowed: unanswered questions simply contribute no segment.
 A cancelled result always reads as the decline in text; its note, if any, survives only
 in `details.globalNote`.
+
+Automated success deliberately uses a separate envelope:
+`Jev auto-answered the questions: … You can now continue with Jev's answers in mind.`
+It never uses `User has answered`, and `details.autoAnswer` makes the provider, model,
+probabilities/certainties, and token usage inspectable. Each single-select question is one
+Choice. Each multi-select option is a Noul in the same request; `noul >= 0.5` selects the
+option, and `abs(noul - 0.5) * 2` is compared with `jev.minConfidence`. Any technical
+failure or uncertainty falls back to the human UI when available; otherwise the explicit
+error envelope says the user never saw the questions.
 
 ## Event contract
 

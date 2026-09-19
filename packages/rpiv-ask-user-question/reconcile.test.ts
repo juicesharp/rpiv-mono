@@ -13,6 +13,23 @@ describe("reconcileAskUserQuestionTool", () => {
 		expect(pi.setActiveTools).toHaveBeenCalledWith(["other"]);
 	});
 
+	it("keeps ask_user_question active without UI when Jev auto-answer is enabled", () => {
+		const { pi } = createMockPi();
+		pi.setActiveTools([ASK_USER_QUESTION_TOOL_NAME, "other"]);
+		vi.mocked(pi.setActiveTools).mockClear();
+		reconcileAskUserQuestionTool(pi, createMockCtx({ hasUI: false }), { enabled: true });
+		expect(pi.setActiveTools).not.toHaveBeenCalled();
+		expect(pi.getActiveTools()).toEqual([ASK_USER_QUESTION_TOOL_NAME, "other"]);
+	});
+
+	it("restores ask_user_question without UI when Jev auto-answer becomes enabled", () => {
+		const { pi } = createMockPi();
+		pi.setActiveTools(["other"]);
+		vi.mocked(pi.setActiveTools).mockClear();
+		reconcileAskUserQuestionTool(pi, createMockCtx({ hasUI: false }), { enabled: true });
+		expect(pi.setActiveTools).toHaveBeenCalledWith(["other", ASK_USER_QUESTION_TOOL_NAME]);
+	});
+
 	it("no-ops when !hasUI and the tool is already absent", () => {
 		const { pi } = createMockPi();
 		pi.setActiveTools(["other"]);
@@ -151,5 +168,7 @@ describe("factory wiring (index.ts default export)", () => {
 		expect(captured.activeTools).toContain(ASK_USER_QUESTION_TOOL_NAME);
 		// registerAskUserQuestionReconciler ran: before_agent_start handler attached.
 		expect(captured.events.get("before_agent_start")).toHaveLength(1);
+		// Jev opt-in remains user-owned through a slash command.
+		expect(captured.commands.has("ask-user-auto-answer")).toBe(true);
 	});
 });

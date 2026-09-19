@@ -151,8 +151,12 @@ describe("QuestionSchema — option/preview/multiSelect/header shape", () => {
 });
 
 describe("QuestionParamsSchema — top-level shape", () => {
-	it("accepts { questions: [...] }", () => {
+	it("accepts questions with an optional explicit top-level state string", () => {
 		expect(Value.Check(QuestionParamsSchema, { questions: [makeQuestion()] })).toBe(true);
+		expect(Value.Check(QuestionParamsSchema, { state: "bounded facts", questions: [makeQuestion()] })).toBe(true);
+		expect(Value.Check(QuestionParamsSchema, { state: { hidden: "context" }, questions: [makeQuestion()] })).toBe(
+			false,
+		);
 	});
 
 	it("accepts full valid payload with preview + multiSelect", () => {

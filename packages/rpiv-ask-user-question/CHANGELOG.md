@@ -7,6 +7,15 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Add persistent, disabled-by-default TypeSafe Jev auto-answer through `jev.autoAnswer` and `/ask-user-auto-answer on|off|status`, with `jev-latest` and a `0.5` confidence floor as defaults. The TypeSafe SDK loads only on the enabled path, and non-interactive runs expose `ask_user_question` only while the opt-in is active.
+- Add an explicit top-level `state` parameter for the bounded facts Jev may evaluate. One batched System One request uses Choice for each single-select question and a Noul for every multi-select option; Noul `>= 0.5` selects, while distance from `0.5` determines whether the answer is certain enough.
+
+### Changed
+
+- Technical failures, missing state, and uncertain Jev results fall back to the unchanged human questionnaire whenever UI is available. Without UI they return an explicit error saying the user never saw the questions. Successful automated envelopes and metadata identify Jev as the answer source and never attribute its answers to the user.
+
 ## [2.10.1] - 2026-09-13
 
 ## [2.10.0] - 2026-09-12

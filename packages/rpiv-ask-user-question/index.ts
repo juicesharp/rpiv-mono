@@ -18,6 +18,8 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { registerAskUserQuestionTool } from "./ask-user-question.js";
+import { registerAutoAnswerCommand } from "./auto-answer-command.js";
+import { createAutoAnswerState } from "./auto-answer-state.js";
 import { registerAskUserQuestionReconciler } from "./reconcile.js";
 import { I18N_NAMESPACE } from "./state/i18n-bridge.js";
 
@@ -49,6 +51,8 @@ export {
 } from "./events.js";
 
 export default function (pi: ExtensionAPI) {
-	registerAskUserQuestionTool(pi);
-	registerAskUserQuestionReconciler(pi);
+	const autoAnswerState = createAutoAnswerState();
+	registerAskUserQuestionTool(pi, autoAnswerState);
+	registerAskUserQuestionReconciler(pi, autoAnswerState);
+	registerAutoAnswerCommand(pi, autoAnswerState);
 }

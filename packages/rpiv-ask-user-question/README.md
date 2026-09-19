@@ -43,22 +43,32 @@ When the model asks several things at once, `Tab` moves between them and a Submi
 - **One interruption, not five** — up to four questions arrive in a single tabbed dialog, and the Submit tab lists your answers and names anything still blank before you commit.
 - **Notes on any answer — or on all of them** — `n` opens a multiline note editor on any question tab, and on the Submit tab it opens one global note for the whole questionnaire. Per-question notes reach the model as `user notes: <text>`, the global note as `global note: <text>`; neither marks a question answered.
 - **Read the transcript behind the dialog** — `Ctrl+]` collapses the overlay so you can scroll the conversation, then brings it back with your answers intact.
-- **Works outside the terminal too** — in RPC and ACP hosts such as the VS Code pendant or Zed the questionnaire walks through the host's native dialogs (notes are terminal-only and do not carry over), and in non-interactive runs the tool is removed from the model's tool list instead of failing every call.
+- **Works outside the terminal too** — in RPC and ACP hosts such as the VS Code pendant or Zed the questionnaire walks through the host's native dialogs (notes are terminal-only and do not carry over). In non-interactive runs the tool is normally removed; it remains available only when you explicitly enable Jev auto-answer.
 
 ## Configuration
 
-Optional. Settings live in `~/.config/rpiv-ask-user-question/config.json`; the file is read, never written.
+Optional. Settings live in `~/.config/rpiv-ask-user-question/config.json`. The package reads this file and writes it only when `/ask-user-auto-answer on|off` persists your opt-in choice.
 
 | Setting | What it does | Default |
 | --- | --- | --- |
 | `collapseKey` | Key that collapses and expands the dialog. Accepts Pi keybinding ids such as `alt+o`; `"off"` disables the shortcut. | `"ctrl+]"` |
 | `guidance.description` | Full replacement for the tool description the model sees. A non-empty string replaces the built-in text entirely — no merging. | built-in description |
 | `guidance.promptSnippet` | One-line description of the tool in the system prompt — tune how eagerly the model asks. | built-in snippet |
-| `guidance.promptGuidelines` | Usage guidelines given to the model, as a list of strings. | 4 built-in guidelines |
+| `guidance.promptGuidelines` | Usage guidelines given to the model, as a list of strings. | 5 built-in guidelines |
+| `jev.autoAnswer` | Opt in to TypeSafe Jev answering instead of showing the questionnaire when every answer is confident enough. | `false` |
+| `jev.model` | TypeSafe model id or alias. | `"jev-latest"` |
+| `jev.minConfidence` | Inclusive `0..1` confidence/certainty floor; an answer below it falls back to the human UI. | `0.5` |
 
 ```json
-{ "collapseKey": "alt+o" }
+{
+  "collapseKey": "alt+o",
+  "jev": { "autoAnswer": false, "model": "jev-latest", "minConfidence": 0.5 }
+}
 ```
+
+Use `/ask-user-auto-answer on`, `off`, or `status` to persist or inspect the opt-in. When enabled, the model must supply a top-level `state` string containing only the bounded facts needed for the questions. The extension sends that string plus the question and option text to TypeSafe; it never copies the conversation automatically, and option previews are not sent. Single-select questions use Choice. Every option of a multi-select question uses an independent Noul in the same request; `noul >= 0.5` selects it, while `jev.minConfidence` applies to `abs(noul - 0.5) * 2`.
+
+A missing API key, unavailable SDK/service, malformed response, missing state, or low-confidence answer falls back to the normal human UI. Without UI, the call instead returns an explicit error saying that the user never saw the questions. Automated result text says that **Jev**, not the user, answered.
 
 Malformed JSON falls back to the defaults with a warning; an individual unusable value is silently dropped back to its default. Never an error.
 
@@ -73,10 +83,11 @@ Malformed JSON falls back to the defaults with a warning; an individual unusable
 ## Requirements
 
 - Node.js 22 or newer.
-- Pi Agent, with an interactive terminal or an RPC/ACP host. Non-interactive runs never see the tool.
+- Pi Agent. An interactive terminal or RPC/ACP host is required for the default human flow; non-interactive runs see the tool only while Jev auto-answer is enabled.
+- `TYPESAFE_API_KEY` when Jev auto-answer is enabled. TypeSafe's optional `TYPESAFE_BASE_URL` and `TYPESAFE_LOG_LEVEL` remain supported by its SDK; `jev.model` explicitly selects the model for these requests.
 - A terminal at least 100 columns wide for side-by-side previews; narrower terminals stack the preview under the options.
 
-No native dependencies, no compiler, no API keys — the extension makes no model calls of its own.
+The default, disabled mode makes no external model request.
 
 ## Troubleshooting
 

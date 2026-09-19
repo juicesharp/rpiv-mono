@@ -343,6 +343,119 @@ describe("ask_user_question.execute — new runtime guards (CC parity)", () => {
 	});
 });
 
+describe("ask_user_question.execute — Jev auto-answer", () => {
+	it("keeps the human path unchanged and never calls Jev while disabled", async () => {
+		const { pi, captured } = createMockPi();
+		const runAutoAnswer = vi.fn(async () => {
+			throw new Error("Jev must stay disabled");
+		});
+		registerAskUserQuestionTool(pi, { enabled: false }, runAutoAnswer);
+		const tool = captured.tools.get("ask_user_question")!;
+		const custom = vi.fn(async () => ({
+			cancelled: false,
+			answers: [{ questionIndex: 0, question: "Which?", kind: "option", answer: "A" }],
+		}));
+		const ctx = createMockCtx({ hasUI: true, ui: { custom } as never });
+
+		const result = await tool.execute?.(
+			"tc",
+			{ ...BASE_PARAMS, state: "facts that must remain local while disabled" } as never,
+			undefined as never,
+			undefined as never,
+			ctx as never,
+		);
+
+		expect(runAutoAnswer).not.toHaveBeenCalled();
+		expect(custom).toHaveBeenCalledOnce();
+		expect(result?.content[0]).toMatchObject({ text: expect.stringContaining("User has answered") });
+		expect(result?.content[0]).not.toMatchObject({ text: expect.stringContaining("Jev") });
+	});
+
+	it("auto-answers without UI when the user-owned switch is enabled", async () => {
+		const { pi, captured } = createMockPi();
+		const runAutoAnswer = vi.fn(async () => ({
+			ok: true as const,
+			result: {
+				cancelled: false,
+				answers: [{ questionIndex: 0, question: "Which?", kind: "option" as const, answer: "A" }],
+				autoAnswer: {
+					provider: "typesafe" as const,
+					model: "jev-1.13.0",
+					evaluations: [{ questionIndex: 0, confidence: 0.9, probabilities: { A: 0.9, B: 0.1 } }],
+					usage: { input_tokens: 10, output_tokens: 2 },
+				},
+			},
+		}));
+		registerAskUserQuestionTool(pi, { enabled: true }, runAutoAnswer);
+		const tool = captured.tools.get("ask_user_question")!;
+		const ctx = createMockCtx({ hasUI: false });
+		const r = await tool.execute?.(
+			"tc",
+			{ ...BASE_PARAMS, state: "bounded facts" } as never,
+			undefined as never,
+			undefined as never,
+			ctx as never,
+		);
+
+		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("Jev auto-answered") });
+		expect(r?.content[0]).not.toMatchObject({ text: expect.stringContaining("User has answered") });
+		expect(r?.details).toMatchObject({ cancelled: false, autoAnswer: { model: "jev-1.13.0" } });
+		expect(captured.eventsEmitted.has("rpiv:ask-user:prompt")).toBe(false);
+	});
+
+	it("falls back to the human UI after an uncertain Jev result", async () => {
+		const { pi, captured } = createMockPi();
+		const runAutoAnswer = vi.fn(async () => ({
+			ok: false as const,
+			error: "auto_answer_uncertain" as const,
+			message: "Jev confidence was too low.",
+		}));
+		registerAskUserQuestionTool(pi, { enabled: true }, runAutoAnswer);
+		const tool = captured.tools.get("ask_user_question")!;
+		const custom = vi.fn(async () => ({
+			cancelled: false,
+			answers: [{ questionIndex: 0, question: "Which?", kind: "option", answer: "B" }],
+		}));
+		const ctx = createMockCtx({ hasUI: true, ui: { custom } as never });
+		const r = await tool.execute?.(
+			"tc",
+			{ ...BASE_PARAMS, state: "bounded facts" } as never,
+			undefined as never,
+			undefined as never,
+			ctx as never,
+		);
+
+		expect(custom).toHaveBeenCalledOnce();
+		expect(ctx.ui.notify).toHaveBeenCalledWith(
+			"Jev confidence was too low. Showing the questionnaire instead.",
+			"warning",
+		);
+		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining('"Which?"="B"') });
+		expect(captured.eventsEmitted.has("rpiv:ask-user:prompt")).toBe(true);
+	});
+
+	it("returns an explicit Jev error when fallback UI is unavailable", async () => {
+		const { pi, captured } = createMockPi();
+		const runAutoAnswer = vi.fn(async () => ({
+			ok: false as const,
+			error: "auto_answer_failed" as const,
+			message: "Jev auto-answer failed: unavailable",
+		}));
+		registerAskUserQuestionTool(pi, { enabled: true }, runAutoAnswer);
+		const tool = captured.tools.get("ask_user_question")!;
+		const r = await tool.execute?.(
+			"tc",
+			{ ...BASE_PARAMS, state: "bounded facts" } as never,
+			undefined as never,
+			undefined as never,
+			createMockCtx({ hasUI: false }) as never,
+		);
+
+		expect(r?.details).toMatchObject({ cancelled: true, error: "auto_answer_failed" });
+		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("user never saw") });
+	});
+});
+
 describe("ask_user_question — registration", () => {
 	it("registers a typebox schema with a top-level questions array", () => {
 		const tool = register();

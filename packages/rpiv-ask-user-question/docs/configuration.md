@@ -9,15 +9,22 @@ wrong.
 ~/.config/rpiv-ask-user-question/config.json
 ```
 
-The file is optional — with no config at all, every setting takes its default. This
-package only ever *reads* the file; it never creates, writes or chmods it, so its
-permissions are whatever you give it.
+The file is optional — with no config at all, every setting takes its default. The
+package reads it at startup and before Jev calls. `/ask-user-auto-answer on|off` writes
+only the `jev.autoAnswer` value while preserving the other fields; the shared config
+writer creates the file when needed and applies owner-only permissions when the
+filesystem supports them.
 
 A complete example:
 
 ```json
 {
   "collapseKey": "alt+o",
+  "jev": {
+    "autoAnswer": false,
+    "model": "jev-latest",
+    "minConfidence": 0.5
+  },
   "guidance": {
     "description": "Ask the user structured questions whenever requirements are ambiguous.",
     "promptSnippet": "Ask me before guessing on anything ambiguous",
@@ -61,7 +68,10 @@ type are likewise dropped back to their default without a warning.
 | `collapseKey` | Key that collapses and expands the dialog overlay. | `"ctrl+]"` |
 | `guidance.description` | Full text of the tool description the model sees. Replaces the built-in default entirely — no merging. | built-in description |
 | `guidance.promptSnippet` | One-line snippet describing the tool in the system prompt. | built-in snippet |
-| `guidance.promptGuidelines` | List of usage guidelines given to the model. | 4 built-in guidelines |
+| `guidance.promptGuidelines` | List of usage guidelines given to the model. | 5 built-in guidelines |
+| `jev.autoAnswer` | Persisted, user-owned opt-in for TypeSafe Jev auto-answer. Only the boolean `true` enables it. | `false` |
+| `jev.model` | TypeSafe model id or alias used for System One requests. | `"jev-latest"` |
+| `jev.minConfidence` | Inclusive confidence/certainty floor from `0` to `1`. | `0.5` |
 
 ### `collapseKey`
 
@@ -107,15 +117,46 @@ only when it is a non-empty array whose entries are all non-empty strings. Anyth
 falls back to the built-in defaults. Both are read once, when the extension registers the
 tool, so changes take effect on the next Pi restart.
 
+### `jev.*` and `/ask-user-auto-answer`
+
+Jev auto-answer is disabled unless `jev.autoAnswer` is exactly `true`. You can edit the
+file or use the registered slash command:
+
+- `/ask-user-auto-answer on` persists the opt-in and updates the current session.
+- `/ask-user-auto-answer off` persists the opt-out and restores the normal host behavior.
+- `/ask-user-auto-answer status` reports the current session value without writing.
+
+When enabled, `ask_user_question` evaluates the call's explicit top-level `state` string.
+The caller is instructed to include only the bounded facts needed to answer that batch;
+the extension never reads or copies conversation history into the request. TypeSafe also
+receives question text plus option labels and descriptions. Preview markdown is not sent.
+Do not put secrets in `state`, questions, labels, or descriptions unless they may be sent
+to the configured TypeSafe endpoint.
+
+Every single-select question becomes one Choice. Every option of a multi-select question
+becomes one Noul, and all Choice and Noul questions are sent in one System One request.
+A Noul probability of at least `0.5` selects its option. Since Noul has no separate
+confidence field, its certainty is `abs(probability - 0.5) * 2`; the least-certain option
+must meet `jev.minConfidence`. Each Choice confidence must meet the same inclusive floor.
+Blank models and non-finite or out-of-range confidence values use the defaults.
+
+Missing/blank state, SDK or service errors, malformed responses, and sub-threshold results
+all fall back to the unchanged human questionnaire when UI exists. Without UI, the call
+returns an explicit structured error and says the user never saw the questions. Successful
+automated results are labeled as Jev answers and include model, probability/confidence,
+and token-usage metadata; they are never attributed to the user.
+
 ## Environment variables
 
 | Variable | Effect |
 | --- | --- |
 | `XDG_CONFIG_HOME` | Relocates the config directory, as described above. Must be absolute. |
+| `TYPESAFE_API_KEY` | Required by the dynamically loaded TypeSafe SDK when auto-answer is enabled. |
+| `TYPESAFE_BASE_URL` | Optional TypeSafe API root override. |
+| `TYPESAFE_LOG_LEVEL` | Optional TypeSafe SDK logging level. Request bodies can contain the explicit state; avoid debug logging when it is sensitive. |
 
 `LANG` and `LC_ALL` influence the dialog language, but they are read by
 [`@juicesharp/rpiv-i18n`](https://www.npmjs.com/package/@juicesharp/rpiv-i18n) rather than
-by this package — see [localization.md](./localization.md).
-
-No other environment variables are read. The package makes no model calls, so it needs no
-API keys or model settings of its own.
+by this package — see [localization.md](./localization.md). The TypeSafe variables are read
+by `@typesafe-ai/sdk`, which is dynamically loaded only after the user has enabled
+auto-answer and a tool call reaches that path.

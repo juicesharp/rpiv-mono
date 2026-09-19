@@ -86,6 +86,12 @@ export const QuestionsSchema = Type.Array(QuestionSchema, {
 
 export const QuestionParamsSchema = Type.Object({
 	questions: QuestionsSchema,
+	state: Type.Optional(
+		Type.String({
+			description:
+				"Explicit, bounded context Jev should evaluate when the user has enabled auto-answer. Do not copy the conversation automatically; include only facts needed to answer these questions. Ignored when auto-answer is off.",
+		}),
+	),
 });
 
 export type OptionData = Static<typeof OptionSchema>;
@@ -129,12 +135,32 @@ export type QuestionnaireError =
 	| "duplicate_question"
 	| "duplicate_option_label"
 	| "reserved_label"
+	| "auto_answer_state_required"
+	| "auto_answer_failed"
+	| "auto_answer_uncertain"
 	| "session_load_failed"
 	| "stale_module_cache";
+
+export interface JevQuestionEvaluation {
+	questionIndex: number;
+	/** Choice confidence, or the minimum derived certainty across a multi-select question's Nouls. */
+	confidence: number;
+	/** Option labels mapped to Choice probability or Noul yes probability. */
+	probabilities: Record<string, number>;
+}
+
+export interface JevAutoAnswerDetails {
+	provider: "typesafe";
+	model: string;
+	evaluations: JevQuestionEvaluation[];
+	usage: { input_tokens: number; output_tokens: number };
+}
 
 export interface QuestionnaireResult {
 	answers: QuestionAnswer[];
 	cancelled: boolean;
+	/** Present only when Jev, rather than the user, produced the answers. */
+	autoAnswer?: JevAutoAnswerDetails;
 	/**
 	 * Global note authored on the Submit tab: `n` opens the shared notes editor there,
 	 * and the committed text lives at the `notesByTab[questions.length]` pseudo-index

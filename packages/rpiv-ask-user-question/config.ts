@@ -1,5 +1,10 @@
 import type { GuidanceFields } from "@juicesharp/rpiv-config";
-import { loadJsonConfigWithLegacyFallback, validateGuidanceFields } from "@juicesharp/rpiv-config";
+import {
+	configPath,
+	loadJsonConfigWithLegacyFallback,
+	saveJsonConfig,
+	validateGuidanceFields,
+} from "@juicesharp/rpiv-config";
 
 /** Key spec for the overlay collapse/expand shortcut, e.g. `"ctrl+]"` or `"alt+o"`. */
 export type CollapseKeySpec = string;
@@ -7,8 +12,27 @@ export type CollapseKeySpec = string;
 export const DEFAULT_COLLAPSE_KEY: CollapseKeySpec = "ctrl+]";
 export const COLLAPSE_KEY_OFF: CollapseKeySpec = "off";
 
+export interface JevConfig {
+	/** User-owned opt-in. Disabled unless exactly true. */
+	autoAnswer?: boolean;
+	/** TypeSafe model id or alias. */
+	model?: string;
+	/** Minimum Choice confidence / derived Noul certainty before bypassing the UI. */
+	minConfidence?: number;
+}
+
+export interface ResolvedJevConfig {
+	autoAnswer: boolean;
+	model: string;
+	minConfidence: number;
+}
+
+export const DEFAULT_JEV_MODEL = "jev-latest";
+export const DEFAULT_JEV_MIN_CONFIDENCE = 0.5;
+
 export interface AskUserQuestionConfig {
 	guidance?: GuidanceFields;
+	jev?: JevConfig;
 	/**
 	 * Key spec for the collapse/expand shortcut, in the same format as pi-coding-agent
 	 * keybinding ids (`modifier+key`, e.g. `ctrl+]`, `alt+o`, `ctrl+shift+h`). Defaults
@@ -93,8 +117,33 @@ export function formatKeySpecForDisplay(spec: CollapseKeySpec): string {
 		.join("+");
 }
 
+export function resolveJevConfig(config: Pick<AskUserQuestionConfig, "jev">): ResolvedJevConfig {
+	const rawModel = config.jev?.model;
+	const model = typeof rawModel === "string" ? rawModel.trim() : "";
+	const minConfidence = config.jev?.minConfidence;
+	return {
+		autoAnswer: config.jev?.autoAnswer === true,
+		model: model ? model : DEFAULT_JEV_MODEL,
+		minConfidence:
+			typeof minConfidence === "number" && Number.isFinite(minConfidence) && minConfidence >= 0 && minConfidence <= 1
+				? minConfidence
+				: DEFAULT_JEV_MIN_CONFIDENCE,
+	};
+}
+
 export function loadConfig(): AskUserQuestionConfig {
 	return loadJsonConfigWithLegacyFallback<AskUserQuestionConfig>("rpiv-ask-user-question");
+}
+
+/** Persist only the user-owned opt-in while preserving every other config field. */
+export function saveJevAutoAnswerEnabled(enabled: boolean): boolean {
+	const current = loadConfig();
+	const jev =
+		typeof current.jev === "object" && current.jev !== null && !Array.isArray(current.jev) ? current.jev : {};
+	return saveJsonConfig(configPath("rpiv-ask-user-question"), {
+		...current,
+		jev: { ...jev, autoAnswer: enabled },
+	});
 }
 
 export { validateGuidanceFields };

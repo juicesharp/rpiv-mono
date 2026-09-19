@@ -25,6 +25,7 @@ describe("normalizeLineTerminators", () => {
 
 describe("normalizeQuestionParams", () => {
 	const dirty: QuestionParams = {
+		state: "fact one\r\nfact\rtwo",
 		questions: [
 			{
 				question: "Which\r option\r is best?",
@@ -38,8 +39,9 @@ describe("normalizeQuestionParams", () => {
 		],
 	};
 
-	it("normalizes question, header, label, description, and preview", () => {
+	it("normalizes state, question, header, label, description, and preview", () => {
 		expect(normalizeQuestionParams(dirty)).toEqual({
+			state: "fact one\nfacttwo",
 			questions: [
 				{
 					question: "Which option is best?",
@@ -64,6 +66,7 @@ describe("normalizeQuestionParams", () => {
 		const out = normalizeQuestionParams({
 			questions: [{ question: "Q?", header: "H", options: [{ label: "A", description: "a" }] }],
 		});
+		expect("state" in out).toBe(false);
 		expect("multiSelect" in out.questions[0]).toBe(false);
 		expect("preview" in out.questions[0].options[0]).toBe(false);
 	});

@@ -36,8 +36,8 @@ function normalizeStringFields<T extends object>(obj: T, keys: readonly (keyof T
 }
 
 /**
- * Return a copy of the tool params with every user-facing string field
- * (`question`, `header`, `options[].label`, `options[].description`,
+ * Return a copy of the tool params with every model-supplied string field
+ * (`state`, `question`, `header`, `options[].label`, `options[].description`,
  * `options[].preview`) line-terminator-normalized. Runs once at tool entry,
  * BEFORE `validateQuestionnaire`, so the reserved-label and duplicate-label
  * guards compare the text the user will actually see (`"Other\r"` must not
@@ -48,6 +48,7 @@ function normalizeStringFields<T extends object>(obj: T, keys: readonly (keyof T
 export function normalizeQuestionParams(params: QuestionParams): QuestionParams {
 	return {
 		...params,
+		...(typeof params.state === "string" ? { state: normalizeLineTerminators(params.state) } : {}),
 		questions: params.questions.map((q) => ({
 			...normalizeStringFields(q, ["question", "header"]),
 			options: q.options.map((o) => normalizeStringFields(o, ["label", "description", "preview"])),
