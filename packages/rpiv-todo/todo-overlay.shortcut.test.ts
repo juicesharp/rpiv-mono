@@ -84,17 +84,19 @@ describe("rpiv-todo — collapse/expand shortcut registration", () => {
 		expect(ctx.ui.setWidget as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
 	});
 
-	it("handler is a no-op when an empty session has not loaded the overlay", async () => {
+	it("handler toggles a registered empty overlay without re-registering", async () => {
 		const { captured, sessionStart } = setup();
-		// A UI-bearing empty session records the foreground binding without loading
-		// or registering the overlay.
+		// A UI-bearing empty session now registers the zero-row widget right
+		// away (holding the Map insertion slot), so the overlay is loaded and
+		// registered even with no tasks.
 		const ctx = createMockCtx({ sessionId: "s1", hasUI: true });
 		await sessionStart?.({} as never, ctx as never);
-		expect(ctx.ui.setWidget as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
+		expect(ctx.ui.setWidget as ReturnType<typeof vi.fn>).toHaveBeenCalledTimes(1);
 
 		await captured.shortcuts.get("ctrl+shift+t")?.handler?.(ctx as never);
-		// Still unloaded and unregistered — toggle never fired.
-		expect(ctx.ui.setWidget as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
+		// Toggling renders the empty list (still zero rows) and never
+		// re-registers — the widget keeps its insertion-order slot.
+		expect(ctx.ui.setWidget as ReturnType<typeof vi.fn>).toHaveBeenCalledTimes(1);
 	});
 
 	it("handler toggles the overlay when it is registered (render shape flips to the collapsed hint)", async () => {
