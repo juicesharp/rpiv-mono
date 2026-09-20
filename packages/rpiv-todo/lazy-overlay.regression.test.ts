@@ -46,7 +46,7 @@ afterEach(() => {
 	vi.useRealTimers();
 });
 
-it("keeps overlay construction task-gated and ignores stale imports", async () => {
+it("keeps overlay construction foreground-gated and ignores stale imports", async () => {
 	vi.useFakeTimers();
 	let releaseImport!: () => void;
 	overlayMock.importGate = new Promise<void>((resolve) => {
@@ -55,24 +55,19 @@ it("keeps overlay construction task-gated and ignores stale imports", async () =
 	const staleLifecycle = await setup();
 	const staleCtx = createMockCtx({ hasUI: true, sessionId: "stale" });
 
-	// Registration and session start stay off the overlay graph's startup path
-	// and do not touch the widget API.
-	expect(overlayMock.moduleLoads).toBe(0);
-	await staleLifecycle.start({} as never, staleCtx as never);
-	expect(overlayMock.moduleLoads).toBe(0);
-	expect(staleCtx.ui.setWidget as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
-
-	// The first successful mutation starts the lazy import. Replace the session
-	// while that import is pending, and resume the replacement with persisted work.
-	await staleLifecycle.tool.execute?.(
-		"tc",
-		{ action: "create", subject: "stale task" } as never,
-		undefined as never,
-		undefined as never,
-		staleCtx as never,
-	);
-	const staleUpdate = staleLifecycle.toolEnd({ toolName: "todo", isError: false } as never, staleCtx as never);
+	// A foreground session_start now kicks the lazy import immediately (it
+	// registers the zero-row widget), so the import gate hangs the start.
+	const initialStart = staleLifecycle.start({} as never, staleCtx as never);
 	await vi.waitFor(() => expect(overlayMock.moduleLoads).toBe(1));
+	const staleUpdate = Promise.resolve(
+		staleLifecycle.tool.execute?.(
+			"tc",
+			{ action: "create", subject: "stale task" } as never,
+			undefined as never,
+			undefined as never,
+			staleCtx as never,
+		),
+	).then(() => staleLifecycle.toolEnd({ toolName: "todo", isError: false } as never, staleCtx as never));
 	await staleLifecycle.shutdown({} as never, staleCtx as never);
 
 	const replacementCtx = createMockCtx({
@@ -82,19 +77,25 @@ it("keeps overlay construction task-gated and ignores stale imports", async () =
 	});
 	const replacementStart = staleLifecycle.start({} as never, replacementCtx as never);
 	releaseImport();
-	await Promise.all([staleUpdate, replacementStart]);
+	await Promise.all([initialStart, staleUpdate, replacementStart]);
 
 	expect(staleCtx.ui.setWidget as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
 	expect(replacementCtx.ui.setWidget as ReturnType<typeof vi.fn>).toHaveBeenCalledTimes(1);
 
-	// A clean empty session still renders immediately after its first successful
-	// mutation, even when the module itself is already cached.
+	// A clean empty session registers its zero-row widget immediately on
+	// session_start (holding the Map insertion slot ahead of later widgets);
+	// a later mutation refreshes through that same registration.
 	await staleLifecycle.shutdown({} as never, replacementCtx as never);
 	overlayMock.importGate = undefined;
 	const currentLifecycle = await setup();
 	const currentCtx = createMockCtx({ hasUI: true, sessionId: "current" });
 	await currentLifecycle.start({} as never, currentCtx as never);
-	expect(currentCtx.ui.setWidget as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
+	expect(currentCtx.ui.setWidget as ReturnType<typeof vi.fn>).toHaveBeenCalledTimes(1);
+	expect(currentCtx.ui.setWidget as ReturnType<typeof vi.fn>).toHaveBeenCalledWith(
+		"rpiv-todos",
+		expect.any(Function),
+		{ placement: "aboveEditor" },
+	);
 	await currentLifecycle.tool.execute?.(
 		"tc",
 		{ action: "create", subject: "first" } as never,
@@ -104,11 +105,7 @@ it("keeps overlay construction task-gated and ignores stale imports", async () =
 	);
 	await currentLifecycle.toolEnd({ toolName: "todo", isError: false } as never, currentCtx as never);
 
-	expect(currentCtx.ui.setWidget as ReturnType<typeof vi.fn>).toHaveBeenCalledWith(
-		"rpiv-todos",
-		expect.any(Function),
-		{ placement: "aboveEditor" },
-	);
+	expect(currentCtx.ui.setWidget as ReturnType<typeof vi.fn>).toHaveBeenCalledTimes(1);
 });
 
 it("drops a rejected overlay import memo so the next load retries", async () => {
@@ -140,7 +137,16 @@ it("reports jiti's poisoned namespace shape instead of constructing undefined", 
 it("schedules the overlay pre-warm after startup", async () => {
 	vi.useFakeTimers();
 	const { PREWARM_DELAY_MS } = await import("./index.js");
-	const healthyModule = { TodoOverlay: class {} } as unknown as typeof import("./todo-overlay.js");
+	const overlayUpdate = vi.fn();
+	const healthyModule = {
+		TodoOverlay: class {
+			setUICtx(): void {}
+			resetCompletedDisplayState(): void {}
+			update(): void {
+				overlayUpdate();
+			}
+		},
+	} as unknown as typeof import("./todo-overlay.js");
 	const importer = vi.fn(async () => healthyModule);
 	const lifecycle = await setup(importer);
 
@@ -152,7 +158,9 @@ it("schedules the overlay pre-warm after startup", async () => {
 
 	const ctx = createMockCtx({ hasUI: true, sessionId: "empty" });
 	await lifecycle.start({} as never, ctx as never);
-	expect(ctx.ui.setWidget as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
+	// session_start now constructs the overlay right away (the zero-row
+	// registration) instead of deferring to the first mutation.
+	expect(overlayUpdate).toHaveBeenCalledTimes(1);
 });
 
 it("swallows a failed pre-warm, then retries on the first real update", async () => {
@@ -181,8 +189,12 @@ it("swallows a failed pre-warm, then retries on the first real update", async ()
 	await vi.advanceTimersByTimeAsync(PREWARM_DELAY_MS);
 	expect(importer).toHaveBeenCalledTimes(1);
 
+	// session_start now retries the load itself (the memo was cleared after
+	// the rejected pre-warm); the second import succeeds and the overlay
+	// refreshes right away.
 	const ctx = createMockCtx({ hasUI: true, sessionId: "retry" });
 	await lifecycle.start({} as never, ctx as never);
+	expect(overlayUpdate).toHaveBeenCalledTimes(1);
 	await lifecycle.tool.execute?.(
 		"tc",
 		{ action: "create", subject: "retry task" } as never,
@@ -193,7 +205,7 @@ it("swallows a failed pre-warm, then retries on the first real update", async ()
 	await lifecycle.toolEnd({ toolName: "todo", isError: false } as never, ctx as never);
 
 	expect(importer).toHaveBeenCalledTimes(2);
-	expect(overlayUpdate).toHaveBeenCalledTimes(1);
+	expect(overlayUpdate).toHaveBeenCalledTimes(2);
 });
 
 it("concurrent awaiters of one rejected import share a single retry", async () => {
@@ -242,6 +254,9 @@ it("tool_execution_end swallows a transient load failure and heals on the next e
 	});
 	const lifecycle = await setup(importer);
 	const ctx = createMockCtx({ hasUI: true, sessionId: "fail-soft" });
+	// session_start consumes the first (failing) load; its warn is the same
+	// swallow path, so spy before the start instead of after the tool call.
+	const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 	await lifecycle.start({} as never, ctx as never);
 	await lifecycle.tool.execute?.(
 		"tc",
@@ -251,36 +266,29 @@ it("tool_execution_end swallows a transient load failure and heals on the next e
 		ctx as never,
 	);
 
-	// The tool succeeded, so a failed widget refresh must not reject the handler
-	// (which would surface as an extension error) — it warns and moves on.
-	const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+	// The first toolEnd already retried the load (memo cleared by the failed
+	// start) and healed, so the overlay refreshed once — no extension error
+	// surfaced despite the failed start.
 	await expect(
 		lifecycle.toolEnd({ toolName: "todo", isError: false } as never, ctx as never),
 	).resolves.toBeUndefined();
 	expect(warn).toHaveBeenCalledTimes(1);
 	expect(warn.mock.calls[0]?.[0]).toContain("transient overlay load failure");
 	warn.mockRestore();
-	expect(overlayUpdate).not.toHaveBeenCalled();
+	expect(overlayUpdate).toHaveBeenCalledTimes(1);
 
+	// The next event refreshes through the loaded module without importing.
 	await lifecycle.toolEnd({ toolName: "todo", isError: false } as never, ctx as never);
 	expect(importer).toHaveBeenCalledTimes(2);
-	expect(overlayUpdate).toHaveBeenCalledTimes(1);
+	expect(overlayUpdate).toHaveBeenCalledTimes(2);
 });
 
-it("tool_execution_end still propagates the latched stale-namespace restart error", async () => {
+it("session_start still propagates the latched stale-namespace restart error", async () => {
 	const staleModule = { TodoOverlay: undefined } as unknown as typeof import("./todo-overlay.js");
 	const lifecycle = await setup(async () => staleModule);
 	const ctx = createMockCtx({ hasUI: true, sessionId: "stale-latch" });
-	await lifecycle.start({} as never, ctx as never);
-	await lifecycle.tool.execute?.(
-		"tc",
-		{ action: "create", subject: "stale task" } as never,
-		undefined as never,
-		undefined as never,
-		ctx as never,
-	);
 
-	await expect(lifecycle.toolEnd({ toolName: "todo", isError: false } as never, ctx as never)).rejects.toThrow(
-		"module cache is stale; restart Pi",
-	);
+	// The first load now happens on session_start, so the latched error
+	// rejects there instead of at the first tool_execution_end.
+	await expect(lifecycle.start({} as never, ctx as never)).rejects.toThrow("module cache is stale; restart Pi");
 });
