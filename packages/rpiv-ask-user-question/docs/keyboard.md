@@ -16,6 +16,7 @@ adapts to the size of your terminal.
 | `n` | Open the notes editor for the focused question — or, on the Submit tab, the global note for the whole questionnaire. | Every question tab; the Submit tab in multi-question dialogs |
 | `Ctrl+G` | Open Pi's configured external editor with the current custom-answer draft. | `Type something.` input |
 | `Ctrl+U` | Clear the current custom-answer draft. | `Type something.` input |
+| `Ctrl+C` | Clear the current draft instead of cancelling — mirrors the main editor's `app.clear` binding. | `Type something.` input, notes editor |
 | `Ctrl+]` | Collapse or expand the dialog. Configurable via `collapseKey`. | Everywhere, including while collapsed |
 
 The table names the default keys; the dialog actually follows your Pi keybindings.
@@ -47,8 +48,10 @@ squeezed into the narrow options column. `Shift+Enter` inserts a line break; ver
 arrows move between lines and return to row navigation at the draft's top and bottom.
 The draft replaces the static row label while you browse other options and is isolated
 per question. `Ctrl+G` round-trips it through Pi's configured external editor; `Ctrl+U`
-clears it, while `Esc` remains the explicit way to cancel the questionnaire. Confirming
-it produces an answer of `kind: "custom"`.
+and `Ctrl+C` both clear it — `Ctrl+C` follows Pi's `app.clear` binding (the main
+editor's clear-first behavior) because this row is a text-editing surface, while `Esc`
+remains the explicit way to cancel the questionnaire. Confirming it produces an answer
+of `kind: "custom"`.
 
 Both labels are reserved — the model cannot author an option that collides with them.
 Both localize with the rest of the UI chrome; the reserved-label check always compares
@@ -69,6 +72,8 @@ nothing but a global note still returns an answered result rather than a decline
 
 Inside the editor, `Shift+Enter` inserts a newline, while `Esc` and `Enter` close it; other
 keystrokes edit the buffer, so `n` types an `n`. Pasted line breaks are preserved.
+`Ctrl+C` clears the notes draft (same `app.clear` semantics as the main editor) rather
+than closing the editor.
 
 ## Collapse mode
 

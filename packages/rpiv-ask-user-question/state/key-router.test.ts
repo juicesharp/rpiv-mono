@@ -15,6 +15,7 @@ const KEY = {
 	EDITOR_DOWN: "tui.editor.cursorDown",
 	CLEAR: "tui.editor.deleteToLineStart",
 	EXTERNAL_EDITOR: "app.editor.external",
+	APP_CLEAR: "app.clear",
 };
 const sentinel = (name: string) => `<KEY:${name}>`;
 const keybindings = { matches: (data: string, name: string) => data === sentinel(name) };
@@ -629,6 +630,12 @@ describe("routeKey — notes", () => {
 		});
 	});
 
+	it("notesMode: app.clear clears the notes draft instead of exiting (Ctrl+C muscle memory)", () => {
+		expect(routeKey(sentinel(KEY.APP_CLEAR), makeState({ notesVisible: true }), makeRuntime())).toEqual({
+			kind: "notes_clear",
+		});
+	});
+
 	it("notesMode: Enter -> notes_exit (save + return to options)", () => {
 		expect(routeKey(sentinel(KEY.CONFIRM), makeState({ notesVisible: true }), makeRuntime())).toEqual({
 			kind: "notes_exit",
@@ -777,7 +784,13 @@ describe("routeKey — inputMode (Type something)", () => {
 		).toEqual({ kind: "input_edit", value: "draft" });
 	});
 
-	it("Esc cancels the questionnaire even in inputMode", () => {
+	it("app.clear clears the custom-answer draft instead of cancelling (Ctrl+C muscle memory)", () => {
+		expect(
+			routeKey(sentinel(KEY.APP_CLEAR), makeState({ inputMode: true }), makeRuntime({ currentItem: other })),
+		).toEqual({ kind: "input_clear" });
+	});
+
+	it("Esc still cancels the questionnaire even in inputMode", () => {
 		expect(
 			routeKey(sentinel(KEY.CANCEL), makeState({ inputMode: true }), makeRuntime({ currentItem: other })),
 		).toEqual({ kind: "cancel" });
