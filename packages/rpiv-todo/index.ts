@@ -19,7 +19,7 @@
  * correctly after upgrade.
  */
 
-import type { ExtensionAPI, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import type { KeyId } from "@earendil-works/pi-tui";
 import { COLLAPSE_KEY_OFF, resolveCollapseKey } from "./config.js";
 import { I18N_NAMESPACE } from "./state/i18n-bridge.js";
@@ -129,6 +129,10 @@ export default function (pi: ExtensionAPI, importOverlay: TodoOverlayImporter = 
 	let todoOverlay: TodoOverlay | undefined;
 	const loadTodoOverlay = makeTodoOverlayLoader(importOverlay);
 	let uiCtx: ExtensionUIContext | undefined;
+	let foregroundSessionId = "";
+	let foregroundSessionManager: ExtensionContext["sessionManager"] | undefined;
+	const supersededSessionManagers = new WeakSet<object>();
+	const reloadableSessionManagers = new WeakSet<object>();
 	let lifecycleGeneration = 0;
 
 	async function updateTodoOverlay(
@@ -145,6 +149,64 @@ export default function (pi: ExtensionAPI, importOverlay: TodoOverlayImporter = 
 		todoOverlay.setUICtx(uiCtx);
 		if (resetCompletedDisplayState) todoOverlay.resetCompletedDisplayState();
 		todoOverlay.update();
+	}
+
+	/**
+	 * Keep ctx-less rendering bound to the interactive session.
+	 *
+	 * Tool execution commits are session-keyed, but `renderCall()` and the
+	 * overlay intentionally have no session context and read the active render
+	 * slot instead. A session replacement can therefore leave that pointer on a
+	 * different slot even though the current TUI is still the foreground UI.
+	 * Rebind from TUI lifecycle/tool events, while refusing headless child
+	 * sessions so their isolated todo state cannot clobber the foreground.
+	 */
+	function establishForegroundRenderBinding(ctx: ExtensionContext, isReload = false): boolean {
+		if (!ctx.hasUI) return false;
+		const sessionManager = ctx.sessionManager;
+		const id = sid({ sessionManager });
+		if (!id) return false;
+		// A replacement can leave a late session_start from the old runtime in
+		// flight. SessionManager identity is stable for a runtime but changes for
+		// a replacement, so remember superseded managers instead of trusting the
+		// old session id alone.
+		if (supersededSessionManagers.has(sessionManager)) {
+			// /reload rebuilds the runner around the same SessionManager. It is the
+			// one valid way for a superseded manager to start again; an old event from
+			// a replaced runtime does not carry this reload lifecycle marker.
+			if (!isReload || !reloadableSessionManagers.has(sessionManager)) return false;
+			supersededSessionManagers.delete(sessionManager);
+			reloadableSessionManagers.delete(sessionManager);
+		}
+		// TUI session_start is the authoritative foreground lifecycle event. A
+		// non-TUI session may claim the pointer only during initial startup or
+		// after the previous foreground has shut down.
+		if (foregroundSessionId !== "" && ctx.mode !== "tui") return false;
+
+		const sessionChanged = foregroundSessionId !== id;
+		const managerChanged = foregroundSessionManager !== sessionManager;
+		const uiChanged = uiCtx !== ctx.ui;
+		if (managerChanged && foregroundSessionManager) supersededSessionManagers.add(foregroundSessionManager);
+		foregroundSessionId = id;
+		foregroundSessionManager = sessionManager;
+		if (sessionChanged) setActiveRenderSession(id);
+		if (sessionChanged || managerChanged || uiChanged) lifecycleGeneration++;
+		uiCtx = ctx.ui;
+		return true;
+	}
+
+	function repairForegroundRenderBinding(ctx: ExtensionContext): boolean {
+		if (!ctx.hasUI) return false;
+		const sessionManager = ctx.sessionManager;
+		const id = sid({ sessionManager });
+		if (!id || id !== foregroundSessionId || sessionManager !== foregroundSessionManager) return false;
+
+		const activeId = getActiveRenderSession();
+		const uiChanged = uiCtx !== ctx.ui;
+		if (activeId !== id) setActiveRenderSession(id);
+		if (activeId !== id || uiChanged) lifecycleGeneration++;
+		uiCtx = ctx.ui;
+		return true;
 	}
 
 	registerTodoTool(pi);
@@ -177,21 +239,19 @@ export default function (pi: ExtensionAPI, importOverlay: TodoOverlayImporter = 
 	// the replacement session's session_start replays it. Other errors are real replay
 	// bugs and must propagate. The render is sid-gated so a child never refreshes the
 	// foreground overlay.
-	const replayAndRefresh = async (
-		ctx: Parameters<typeof sid>[0] & Parameters<typeof replayFromBranch>[0],
-	): Promise<void> => {
+	const replayAndRefresh = async (ctx: ExtensionContext): Promise<void> => {
 		let isForeground = false;
 		try {
 			const id = sid(ctx);
 			replaceState(id, replayFromBranch(ctx));
-			isForeground = id === getActiveRenderSession();
+			isForeground = repairForegroundRenderBinding(ctx);
 		} catch (e) {
 			if (!isStaleCtxError(e)) throw e;
 		}
 		if (isForeground) await updateTodoOverlay(true);
 	};
 
-	pi.on("session_start", async (_event, ctx) => {
+	pi.on("session_start", async (event, ctx) => {
 		let id: string;
 		try {
 			id = sid(ctx);
@@ -205,14 +265,10 @@ export default function (pi: ExtensionAPI, importOverlay: TodoOverlayImporter = 
 			return;
 		}
 		if (!ctx.hasUI) return;
-		// First UI-bearing session_start claims the foreground (the interactive
-		// launcher, by spawn-ordering) without eagerly loading the overlay.
-		if (getActiveRenderSession() === "") setActiveRenderSession(id);
-		// Only the foreground re-binds/refreshes the shared overlay. A child
-		// (distinct sid) is skipped — does not rebind to a relay/stale ui.
-		if (id !== getActiveRenderSession()) return;
-		const generation = ++lifecycleGeneration;
-		uiCtx = ctx.ui;
+		// The interactive session is authoritative after startup and after every
+		// session replacement. Headless child sessions never pass this binding.
+		if (!establishForegroundRenderBinding(ctx, event.reason === "reload")) return;
+		const generation = lifecycleGeneration;
 		await updateTodoOverlay(true, generation);
 	});
 
@@ -224,13 +280,15 @@ export default function (pi: ExtensionAPI, importOverlay: TodoOverlayImporter = 
 		await replayAndRefresh(ctx);
 	});
 
-	pi.on("session_shutdown", async (_event, ctx) => {
+	pi.on("session_shutdown", async (event, ctx) => {
 		// Best-effort sid: disposal can race a stale ctx (like compact). An
 		// unknown/stale sid resolves to "" and is treated as foreground — the
 		// safe pre-isolation default that disposes as before.
 		let s: string;
+		let sessionManager: ExtensionContext["sessionManager"] | undefined;
 		try {
-			s = sid(ctx);
+			sessionManager = ctx.sessionManager;
+			s = sid({ sessionManager });
 		} catch (e) {
 			if (!isStaleCtxError(e)) throw e;
 			s = "";
@@ -240,10 +298,17 @@ export default function (pi: ExtensionAPI, importOverlay: TodoOverlayImporter = 
 		// Overlay teardown is sid-gated: a child shutdown (distinct sid) must not
 		// dispose the foreground's overlay. Only the foreground's own shutdown
 		// (or an unknown/stale sid) tears it down and clears the pointer.
-		if (s === "" || s === getActiveRenderSession()) {
+		const isForeground = s === "" || (s === foregroundSessionId && sessionManager === foregroundSessionManager);
+		if (isForeground) {
 			// Invalidate pending imports before clearing the foreground binding so a
 			// replaced session cannot inherit the stale overlay or UI context.
 			lifecycleGeneration++;
+			if (foregroundSessionManager) {
+				supersededSessionManagers.add(foregroundSessionManager);
+				if (event.reason === "reload") reloadableSessionManagers.add(foregroundSessionManager);
+			}
+			foregroundSessionId = "";
+			foregroundSessionManager = undefined;
 			uiCtx = undefined;
 			// `dispose()`'s first act is setWidget(KEY, undefined) on a possibly-stale
 			// ui proxy, which can throw. evictSession(s) above already deleted this
@@ -261,9 +326,13 @@ export default function (pi: ExtensionAPI, importOverlay: TodoOverlayImporter = 
 
 	// Reads getTodos() at render time; do NOT call replayFromBranch here
 	// (branch is stale — message_end runs after tool_execution_end).
-	pi.on("tool_execution_end", async (event) => {
+	pi.on("tool_execution_end", async (event, ctx) => {
 		if (event.toolName !== TOOL_NAME || event.isError) return;
 		try {
+			// Repair a stale render pointer before reading the ctx-less slot. This
+			// is deliberately limited to the foreground TUI context; child/headless
+			// sessions remain isolated and only update their own committed slot.
+			if (!repairForegroundRenderBinding(ctx)) return;
 			await updateTodoOverlay();
 		} catch (e) {
 			// The tool itself succeeded — a transient overlay-load failure only
