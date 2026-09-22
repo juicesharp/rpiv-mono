@@ -15,6 +15,8 @@ const KEYBIND_CLEAR = "tui.editor.deleteToLineStart";
 const KEYBIND_EXTERNAL_EDITOR = "app.editor.external";
 
 const NOTES_ACTIVATE_KEY = "n";
+const VIM_UP_KEY = "k";
+const VIM_DOWN_KEY = "j";
 const SPACE_KEY = " ";
 
 export type QuestionnaireAction =
@@ -48,6 +50,14 @@ export interface QuestionnaireKeybindings {
 // pi defaults both names resolve to `enter`, so matching either is equivalent.
 function isConfirm(kb: QuestionnaireKeybindings, data: string): boolean {
 	return kb.matches(data, KEYBIND_CONFIRM) || kb.matches(data, KEYBIND_SUBMIT);
+}
+
+function isListUp(kb: QuestionnaireKeybindings, data: string): boolean {
+	return data === VIM_UP_KEY || kb.matches(data, KEYBIND_UP);
+}
+
+function isListDown(kb: QuestionnaireKeybindings, data: string): boolean {
+	return data === VIM_DOWN_KEY || kb.matches(data, KEYBIND_DOWN);
 }
 
 export function wrapTab(index: number, total: number): number {
@@ -200,8 +210,8 @@ function routeSubmitTab(
 	if (kb.matches(data, KEYBIND_CANCEL)) return { kind: "cancel" };
 	const tab = tabSwitchAction(data, state, runtime);
 	if (tab) return tab;
-	if (kb.matches(data, KEYBIND_UP) || kb.matches(data, KEYBIND_DOWN)) {
-		const delta = kb.matches(data, KEYBIND_DOWN) ? 1 : -1;
+	if (isListUp(kb, data) || isListDown(kb, data)) {
+		const delta = isListDown(kb, data) ? 1 : -1;
 		const next = wrapTab(state.submitChoiceIndex + delta, 2);
 		return { kind: "submit_nav", nextIndex: (next === 1 ? 1 : 0) as 0 | 1 };
 	}
@@ -341,10 +351,10 @@ export function routeKey(data: string, state: QuestionnaireState, runtime: Quest
 		return { kind: "notes_enter" };
 	}
 
-	if (kb.matches(data, KEYBIND_UP)) {
+	if (isListUp(kb, data)) {
 		return prevNavOnUp(state, runtime);
 	}
-	if (kb.matches(data, KEYBIND_DOWN)) {
+	if (isListDown(kb, data)) {
 		return nextNavOnDown(state, runtime);
 	}
 
