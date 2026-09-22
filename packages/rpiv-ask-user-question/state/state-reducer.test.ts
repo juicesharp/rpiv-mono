@@ -352,6 +352,14 @@ describe("reduce — notes_enter / notes_exit / notes_forward", () => {
 		expect(r.state).toBe(s);
 		expect(r.effects).toEqual([{ kind: "forward_notes_keystroke", data: "l" }]);
 	});
+
+	it("notes_clear empties the draft and rewrites the visible editor buffer", () => {
+		const s = makeState({ notesVisible: true, notesDraft: "draft text" });
+		const r = reduce(s, { kind: "notes_clear" }, makeCtx());
+		expect(r.state.notesDraft).toBe("");
+		expect(r.state.notesVisible).toBe(true);
+		expect(r.effects).toEqual([{ kind: "set_notes_value", value: "" }]);
+	});
 });
 
 describe("reduce — custom-input controls", () => {
