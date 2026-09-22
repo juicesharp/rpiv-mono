@@ -73,6 +73,7 @@
 		"view/components/tab-bar.ts",
 		"view/components/wrapping-select.ts",
 		"view/dialog-builder.ts",
+		"view/dialog-copy.ts",
 		"view/props-adapter.ts",
 		"view/stateful-view.ts",
 		"view/tab-components.ts",
