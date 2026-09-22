@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- The todo panel now cycles through compact, focused, and minimized modes with its existing shortcut. Focused mode shows every non-deleted task in a viewport sized to 30% of terminal height (with a five-row minimum) and supports arrow, page, Home/End, Escape, click, and fullscreen mouse-wheel navigation.
+
 ## [2.11.0] - 2026-09-21
 
 ## [2.10.1] - 2026-09-13

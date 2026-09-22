@@ -39,9 +39,11 @@ input box, updating as work moves:
 
 ![Todo overlay panel: a Todos (2/7) heading above two struck-through completed rows, one in-progress row with its activity label, and four pending rows](https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-todo/docs/overlay.jpg)
 
-Press `ctrl+shift+t` to collapse the panel to its heading plus a one-line hint,
-and again to expand it. Run `/todos` at any time to print the full list grouped
-by status.
+Press `ctrl+shift+t` to cycle the panel through compact, focused, and minimized
+modes. Focused mode shows every non-deleted task in a terminal-height-aware
+viewport: use the mouse wheel in fullscreen mode, or `↑`/`↓`, `Page Up`/`Page
+Down`, `Home`, and `End`; press `Escape` to return to compact mode. Run `/todos`
+at any time to print the full list grouped by status.
 
 ## What you get
 
@@ -81,7 +83,7 @@ Optional. Create `~/.config/rpiv-todo/config.json` (or
 | Setting | What it does | Default |
 | --- | --- | --- |
 | `maxWidgetLines` | Content rows the overlay may use, heading included. Minimum `3`. Applies on the next repaint. Pi's tool-output expansion mode shows all tasks. | `12` |
-| `collapseKey` | Key that collapses and expands the panel, in Pi keybinding form (`alt+o`, `ctrl+shift+t`). Set `"off"` to register no shortcut. Needs `/reload` to rebind. | `"ctrl+shift+t"` |
+| `collapseKey` | Key that cycles compact → focused → minimized → compact, in Pi keybinding form (`alt+o`, `ctrl+shift+t`). The legacy setting name is retained for compatibility. Set `"off"` to register no shortcut. Needs `/reload` to rebind. | `"ctrl+shift+t"` |
 | `guidance` | Replaces the built-in instructions the extension gives the model about when and how to use the todo list. Needs `/reload`. | _(built-ins)_ |
 
 A missing or malformed file falls back to these defaults. `rpiv-todo` only reads

@@ -42,11 +42,33 @@ async function setup(
 	overlay.update();
 	const setWidget = ui.setWidget as ReturnType<typeof vi.fn>;
 	const factory = setWidget.mock.calls[0][1] as (
-		tui: { requestRender: () => void },
+		tui: {
+			terminal: { rows: number };
+			requestRender: (...args: unknown[]) => void;
+			addInputListener: (listener: (data: string) => { consume?: boolean } | undefined) => () => void;
+		},
 		theme: typeof identityTheme,
-	) => { render: (w: number) => string[]; invalidate: () => void };
-	const widget = factory({ requestRender: vi.fn() }, identityTheme);
-	return { widget, tool, ui, overlay };
+	) => {
+		render: (w: number) => string[];
+		handleInput: (data: string) => void;
+		handleMouse: (event: { type: string; button: string; wheelDelta?: number }) => { handled?: boolean } | undefined;
+		invalidate: () => void;
+	};
+	const inputListeners: Array<(data: string) => { consume?: boolean } | undefined> = [];
+	const requestRender = vi.fn();
+	const tui = {
+		terminal: { rows: 60 },
+		requestRender,
+		addInputListener: vi.fn((listener: (data: string) => { consume?: boolean } | undefined) => {
+			inputListeners.push(listener);
+			return () => {
+				const index = inputListeners.indexOf(listener);
+				if (index >= 0) inputListeners.splice(index, 1);
+			};
+		}),
+	};
+	const widget = factory(tui, identityTheme);
+	return { widget, tool, ui, overlay, tui, inputListeners, requestRender };
 }
 
 beforeEach(() => {
@@ -281,95 +303,140 @@ describe("TodoOverlay — overflow collapse", () => {
 	});
 });
 
-describe("TodoOverlay — collapse/expand render", () => {
-	it("collapsed view returns exactly three lines: heading with (completed/total), expand hint, trailing spacer", async () => {
-		const { widget, overlay } = await setup([
-			{ action: "create", subject: "a" },
-			{ action: "create", subject: "b" },
-			{ action: "update", id: 1, status: "completed" },
-		]);
-		overlay.toggleCollapse(); // collapse
-		const lines = widget.render(200);
-		expect(lines).toHaveLength(3); // heading + hint + trailing spacer
-		expect(lines[0]).toContain("Todos (1/2)");
-		expect(lines[1]).toContain("└─");
-		expect(lines[1]).toContain("ctrl+shift+t to expand");
-		expect(lines[2]).toBe(""); // trailing spacer
-	});
-
-	it("uncollapsed (default) yields the unchanged full render (regression-safe)", async () => {
+describe("TodoOverlay — compact/focused/minimized modes", () => {
+	it("starts in the unchanged compact view", async () => {
 		const { widget } = await setup([
 			{ action: "create", subject: "a" },
 			{ action: "create", subject: "b" },
 		]);
-		// Full render: heading + 2 tasks + trailing spacer = 4 lines
 		const lines = widget.render(200);
 		expect(lines).toHaveLength(4);
-		expect(lines.some((l) => l.includes("a"))).toBe(true);
-		expect(lines.some((l) => l.includes("b"))).toBe(true);
+		expect(lines.some((line) => line.includes("a"))).toBe(true);
+		expect(lines.some((line) => line.includes("b"))).toBe(true);
 	});
 
-	it("collapsed render short-circuits before completed-display tracking (no task queued for hide while collapsed)", async () => {
+	it("cycles compact → focused → minimized → compact", async () => {
+		const actions: Array<{ action: TaskAction; [k: string]: unknown }> = [];
+		for (let i = 1; i <= 23; i++) actions.push({ action: "create", subject: `t${i}` });
+		const { widget, overlay } = await setup(actions);
+
+		overlay.cycleMode();
+		const focused = widget.render(200);
+		expect(focused).toHaveLength(18); // 30% of a 60-row terminal
+		expect(focused[0]).toContain("Todos (0/23) ↕");
+		expect(focused[focused.length - 2]).toContain("/23 · ↑↓/PgUp/PgDn · Esc");
+
+		overlay.cycleMode();
+		const minimized = widget.render(200);
+		expect(minimized).toHaveLength(3);
+		expect(minimized[1]).toContain("ctrl+shift+t to expand");
+
+		overlay.cycleMode();
+		expect(widget.render(200).join("\n")).toContain("+13 more");
+	});
+
+	it("recalculates focused height from terminal rows on every render", async () => {
+		const actions: Array<{ action: TaskAction; [k: string]: unknown }> = [];
+		for (let i = 1; i <= 20; i++) actions.push({ action: "create", subject: `t${i}` });
+		const { widget, overlay, tui } = await setup(actions);
+		overlay.cycleMode();
+		expect(widget.render(200)).toHaveLength(18);
+		tui.terminal.rows = 30;
+		expect(widget.render(200)).toHaveLength(9);
+	});
+
+	it("focused mode reveals completed tasks hidden from compact mode", async () => {
+		const { widget, overlay } = await setup([
+			{ action: "create", subject: "done" },
+			{ action: "update", id: 1, status: "completed" },
+			{ action: "create", subject: "pending" },
+		]);
+		widget.render(200);
+		overlay.hideCompletedTasksFromPreviousTurn();
+		expect(widget.render(200).join("\n")).not.toContain("done");
+		overlay.cycleMode();
+		const focused = widget.render(200).join("\n");
+		expect(focused).toContain("done");
+		expect(focused).toContain("Todos (1/2) ↕");
+	});
+
+	it("keyboard navigation scrolls and Escape returns to compact mode", async () => {
+		const actions: Array<{ action: TaskAction; [k: string]: unknown }> = [];
+		for (let i = 1; i <= 23; i++) actions.push({ action: "create", subject: `task-${i}` });
+		const { widget, overlay, inputListeners } = await setup(actions);
+		overlay.cycleMode();
+		widget.render(200);
+		const listener = inputListeners[0]!;
+		expect(listener("\u001b[F")).toEqual({ consume: true }); // End
+		expect(widget.render(200).join("\n")).toContain("task-23");
+		expect(listener("\u001b[5~")).toEqual({ consume: true }); // Page Up
+		expect(listener("\u001b[H")).toEqual({ consume: true }); // Home
+		expect(widget.render(200).join("\n")).toContain("task-1");
+		expect(listener("\u001b[B")).toEqual({ consume: true }); // Down
+		expect(listener("\u001b[6~")).toEqual({ consume: true }); // Page Down
+		expect(listener("\u001b")).toEqual({ consume: true }); // Escape
+		expect(widget.render(200)[0]).not.toContain("↕");
+	});
+
+	it("centres the in-progress task when focused mode opens", async () => {
+		const actions: Array<{ action: TaskAction; [k: string]: unknown }> = [];
+		for (let i = 1; i <= 23; i++) actions.push({ action: "create", subject: `task-${i}` });
+		actions.push({ action: "update", id: 23, status: "in_progress", activeForm: "working" });
+		const { widget, overlay } = await setup(actions);
+		overlay.cycleMode();
+		expect(widget.render(200).join("\n")).toContain("task-23");
+	});
+
+	it("mouse click enters focused mode and wheel scrolls it", async () => {
+		const actions: Array<{ action: TaskAction; [k: string]: unknown }> = [];
+		for (let i = 1; i <= 23; i++) actions.push({ action: "create", subject: `task-${i}` });
+		const { widget } = await setup(actions);
+		expect(widget.handleMouse({ type: "click", button: "left" })).toMatchObject({ handled: true });
+		widget.render(200);
+		expect(widget.handleMouse({ type: "wheel", button: "none", wheelDelta: 5 })).toMatchObject({ handled: true });
+		expect(widget.render(200).join("\n")).toContain("task-20");
+	});
+
+	it("minimized render does not queue completed tasks for later hiding", async () => {
 		const { widget, overlay } = await setup([
 			{ action: "create", subject: "done" },
 			{ action: "update", id: 1, status: "completed" },
 		]);
-		overlay.toggleCollapse(); // collapse
-		widget.render(200); // collapsed render — must NOT queue the completed task
-		// Draining the pending-hide set is a no-op because nothing was queued.
+		overlay.cycleMode();
+		overlay.cycleMode();
+		widget.render(200);
 		overlay.hideCompletedTasksFromPreviousTurn();
-		overlay.toggleCollapse(); // expand
-		// The completed task is still visible: the collapsed render never queued it,
-		// so the drain above couldn't hide it.
-		const expanded = widget.render(200).join("\n");
-		expect(expanded).toContain("done");
-		expect(expanded).toContain("✓");
+		overlay.cycleMode();
+		expect(widget.render(200).join("\n")).toContain("done");
 	});
 });
 
-describe("TodoOverlay — collapse hint resolves the key from config", () => {
-	// resolveCollapseKey() runs at render time (per-render, like the row budget), so
-	// the config MUST be written before widget.render(). setup() itself doesn't read
-	// the collapse key — it constructs the overlay directly.
-
-	it("renders the configured key in the collapsed hint (alt+o)", async () => {
+describe("TodoOverlay — minimized hint resolves the key from config", () => {
+	it("renders the configured key in the minimized hint", async () => {
 		writeConfigFile(JSON.stringify({ collapseKey: "alt+o" }));
 		const { widget, overlay } = await setup([{ action: "create", subject: "a" }]);
-		overlay.toggleCollapse(); // collapse
+		overlay.cycleMode();
+		overlay.cycleMode();
 		const lines = widget.render(200);
 		expect(lines[1]).toContain("alt+o to expand");
-		// The placeholder is always spliced — never leaks the raw {key} token.
-		expect(lines[1]).not.toContain("{key}");
-		expect(lines[1]).not.toContain("ctrl+shift+t");
-	});
-
-	it("renders the default key in the collapsed hint when config is missing", async () => {
-		const { widget, overlay } = await setup([{ action: "create", subject: "a" }]);
-		overlay.toggleCollapse(); // collapse
-		const lines = widget.render(200);
-		expect(lines[1]).toContain("ctrl+shift+t to expand");
 		expect(lines[1]).not.toContain("{key}");
 	});
 
-	it("renders the default key when the configured spec is invalid", async () => {
-		writeConfigFile(JSON.stringify({ collapseKey: "ctr+t" }));
+	it("renders the default key when config is missing or invalid", async () => {
 		const { widget, overlay } = await setup([{ action: "create", subject: "a" }]);
-		overlay.toggleCollapse(); // collapse
-		const lines = widget.render(200);
-		expect(lines[1]).toContain("ctrl+shift+t to expand");
+		overlay.cycleMode();
+		overlay.cycleMode();
+		expect(widget.render(200)[1]).toContain("ctrl+shift+t to expand");
 	});
 
-	it("renders a static collapsed label — not the sentinel — when the key resolves to off", async () => {
-		// Reachable mid-session: collapse with a bound key, then edit the config to
-		// "off" without /reload. The per-render resolver returns the sentinel; the
-		// hint must not splice it into the {key} placeholder ("off to expand").
+	it("renders a static label when the key resolves to off", async () => {
 		const { widget, overlay } = await setup([{ action: "create", subject: "a" }]);
-		overlay.toggleCollapse(); // collapse
+		overlay.cycleMode();
+		overlay.cycleMode();
 		writeConfigFile(JSON.stringify({ collapseKey: "off" }));
 		const lines = widget.render(200);
 		expect(lines[1]).toContain("collapsed");
 		expect(lines[1]).not.toContain("off to expand");
-		expect(lines[1]).not.toContain("{key}");
 	});
 });
 

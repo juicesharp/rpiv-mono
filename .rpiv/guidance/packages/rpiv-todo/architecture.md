@@ -4,12 +4,12 @@
 Sibling Pi extension in `rpiv-mono`. Lockstep version with the rest of the `@juicesharp/rpiv-*` family — never bump independently. Listed in `siblings.ts`; peer-pinned by `rpiv-pi` as `"*"`.
 
 ## Responsibility
-Claude-Code-parity task management for Pi. Registers a single multiplexed `todo` tool (action-discriminated: create/update/list/get/delete/clear), the `/todos` slash command, a persistent overlay widget mounted above the editor, and a global collapse/expand shortcut for it (`pi.registerShortcut`, default `ctrl+shift+t`; `collapseKey: "off"` skips registration entirely). State is reconstructed by replaying the session branch — no disk persistence.
+Claude-Code-parity task management for Pi. Registers a single multiplexed `todo` tool (action-discriminated: create/update/list/get/delete/clear), the `/todos` slash command, a persistent overlay widget mounted above the editor, and a global mode-cycle shortcut for it (`pi.registerShortcut`, default `ctrl+shift+t`; `collapseKey: "off"` skips registration entirely). The shortcut cycles compact → focused/scrollable → minimized. State is reconstructed by replaying the session branch — no disk persistence.
 
 ## Dependencies
 - **`@earendil-works/pi-coding-agent`** (peer): `ExtensionAPI`, `ExtensionUIContext`, theme/render primitives
 - **`@earendil-works/pi-ai`** (peer): `StringEnum` for action/status enums
-- **`@earendil-works/pi-tui`** (peer): width-safe text helpers, render primitives
+- **`@earendil-works/pi-tui`** (peer): width-safe text helpers, key matching, terminal dimensions, input listeners, and fullscreen mouse dispatch
 - **`@juicesharp/rpiv-i18n`** (peer, `"*"`, optional): locale lookups via `state/i18n-bridge.ts`
 - **`@juicesharp/rpiv-config`** (dependency): `loadJsonConfigWithLegacyFallback`/`validateGuidanceFields` — XDG-path load with one-way legacy fallback; `config.ts` owns `TodoConfig` (prompt overrides + overlay settings `maxWidgetLines`/`collapseKey`, `config.ts:4-15`) and the collapse-key grammar validator
 - **`typebox`** (dependency — moved from peers so installers that don't materialise peer deps still resolve it): tool parameter schema
@@ -109,7 +109,9 @@ pi.on("session_start", async (_e, ctx) => {
 ## Customizing the Overlay
 - **Placement**: change `{ placement: "aboveEditor" }` to `"belowEditor"` in `setWidget`
 - **Line cap**: config field `maxWidgetLines` (default 12, floor of 3), read fresh via `getMaxWidgetLines()` at render time — no `/reload`; overflow math adapts automatically (see `selectOverlayLayout`). Exception: when Pi's tool-output expansion mode is on (`uiCtx.getToolsExpanded?.() === true`, optional-chained for hosts predating it), the render bypasses the cap and budgets all visible tasks so Pi's expand shortcut also expands this widget
-- **Collapse key**: config field `collapseKey` (default `ctrl+shift+t`, `"off"` disables) — validated strictly against pi-tui's KeyId grammar (config.ts's `isValidCollapseKeySpec`) so a typo cannot silently consume bare keypresses; resolved once at factory scope, so a change needs `/reload` to re-bind; `toggleCollapse()` forces `requestRender(true)` on the height step, and the collapsed view renders a dim expand hint (static label when the key is `"off"` mid-session)
+- **Panel modes**: compact preserves `maxWidgetLines`; focused shows every non-deleted task in a viewport sized to 30% of live terminal rows with a five-row minimum; minimized renders the heading plus expand hint. `cycleMode()` advances compact → focused → minimized → compact and forces `requestRender(true)` on every shape change.
+- **Focused input**: the widget installs a TUI input listener only for its mounted lifetime. While focused, arrows scroll one row, Page Up/Down scroll a viewport, Home/End jump, Escape restores compact, and the configured cycle key advances to minimized. Printable input is not consumed and still reaches the editor. Fullscreen click enters focused mode; wheel events scroll only while focused.
+- **Cycle key**: legacy config field `collapseKey` (default `ctrl+shift+t`, `"off"` disables) — validated strictly against pi-tui's KeyId grammar (config.ts's `isValidCollapseKeySpec`) so a typo cannot silently consume bare keypresses; resolved once at factory scope, so a change needs `/reload` to re-bind; the minimized view renders a dim expand hint (static label when the key is `"off"` mid-session)
 - **Glyphs / heading**: the status-glyph palette is the only glyph coupling site; the heading-color/icon/text triple lives in `renderWidget`
 - Theme always via `theme.fg(...)` — never raw ANSI; use `truncateToWidth` for every line
 </important>

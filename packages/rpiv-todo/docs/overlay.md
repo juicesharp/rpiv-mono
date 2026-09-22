@@ -62,10 +62,11 @@ against it. When there are more tasks than fit:
 4. the last row becomes `+N more (X completed, Y pending)`.
 
 Use Pi's tool-output expansion shortcut (`ctrl+o` by default) to expand the
-widget and show every task. Collapsing Pi's tool output reapplies the configured
-row budget. Unfinished work is therefore the last thing to disappear in the
-compact view. See [configuration.md](./configuration.md#maxwidgetlines) for the
-budget's floor and reload semantics.
+compact widget without entering its focused mode. Collapsing Pi's tool output
+reapplies the configured row budget. Unfinished work is therefore the last thing
+to disappear in the compact view. See
+[configuration.md](./configuration.md#maxwidgetlines) for the budget's floor and
+reload semantics.
 
 ## Completed tasks fading out
 
@@ -74,15 +75,30 @@ completed. At the start of the next agent turn, every completed row that has
 already been displayed is hidden from later renders. Reloading or compacting the
 session resets that tracking, so a fresh session shows the full list again.
 
-## Collapsing
+## Panel modes and scrolling
 
-Press `ctrl+shift+t` to collapse the panel to two lines — the heading plus a dim
-`└─ ctrl+shift+t to expand` hint — and again to expand it. The hint always shows
-the currently configured key.
+Press `ctrl+shift+t` to cycle through three modes:
 
-Rebind or disable the shortcut with the `collapseKey` option; see
-[configuration.md](./configuration.md#collapsekey). If the shortcut is set to
-`"off"` while the panel is collapsed, the hint becomes a static `collapsed`
+1. **Compact** — the default `maxWidgetLines` view and overflow summary.
+2. **Focused** — every non-deleted task, including completed tasks that have
+   faded from compact mode, inside a viewport sized to 30% of terminal height
+   with a five-row minimum.
+3. **Minimized** — the heading plus a dim `└─ ctrl+shift+t to expand` hint.
+
+Focused mode marks its heading with `↕` and ends with a range such as
+`1–15/23 · ↑↓/PgUp/PgDn · Esc`. Use `↑`/`↓` for one-row movement, `Page Up` and
+`Page Down` for viewport movement, and `Home`/`End` to jump. `Escape` returns
+directly to compact mode. In Pi's fullscreen TUI, clicking the panel enters
+focused mode and the mouse wheel scrolls it while the pointer is over the panel.
+Regular terminal mode retains keyboard scrolling because the terminal owns mouse
+input there.
+
+Focused height is recalculated from the current terminal rows on every render,
+so resizing the terminal resizes the task viewport without a reload.
+
+Rebind or disable the cycle shortcut with the legacy-named `collapseKey` option;
+see [configuration.md](./configuration.md#collapsekey). If the shortcut is set
+to `"off"` while the panel is minimized, the hint becomes a static `collapsed`
 label rather than advertising an unbindable key.
 
 ## `/todos`

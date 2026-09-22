@@ -59,8 +59,9 @@ blank spacer sits outside the budget, so `12` renders up to 13 terminal rows.
 
 ## `collapseKey`
 
-**Default `"ctrl+shift+t"`.** The shortcut that collapses and expands the
-overlay.
+**Default `"ctrl+shift+t"`.** The shortcut that cycles the overlay through
+compact, focused, and minimized modes. The `collapseKey` name is retained for
+configuration compatibility.
 
 The value is trimmed and lowercased, then matched against Pi's keybinding
 grammar: zero or more distinct modifiers joined by `+`, then a base key.
@@ -80,7 +81,7 @@ Examples: `alt+o`, `ctrl+shift+t`, `super+alt+f5`.
 - `"off"` disables the feature — no shortcut is registered at all.
 - The binding is resolved **once at extension load**. After editing this value,
   run `/reload` to rebind; until you do, the old key stays active even though the
-  collapsed panel's hint text (which is resolved per render) already shows the
+  minimized panel's hint text (which is resolved per render) already shows the
   new one.
 
 ## Guidance

@@ -150,21 +150,19 @@ export default function (pi: ExtensionAPI, importOverlay: TodoOverlayImporter = 
 	registerTodoTool(pi);
 	registerTodosCommand(pi);
 
-	// Collapse/expand hotkey for the todo overlay. The key is resolved once at
-	// factory scope from config (register-once contract: a config change needs
-	// `/reload` to re-bind, same as lane-switcher's env hotkey) and the binding is
-	// skipped entirely when collapseKey is "off". The handler closes over the
-	// closure-local `todoOverlay` by reference and re-reads it at fire time, so an
-	// overlay loaded after shortcut registration is picked up. No-op in headless
-	// mode, before the overlay has loaded, or when the widget isn't currently
-	// registered (auto-hidden on an empty list).
+	// Panel-mode hotkey for the todo overlay. The key cycles compact → focused →
+	// minimized → compact. It is resolved once at factory scope from config
+	// (register-once contract: a config change needs `/reload`) and skipped when
+	// collapseKey is "off". The handler closes over the closure-local overlay by
+	// reference and re-reads it at fire time, so a lazily loaded overlay is picked
+	// up. No-op in headless mode, before load, or while the widget is auto-hidden.
 	const collapseKey = resolveCollapseKey();
 	if (collapseKey !== COLLAPSE_KEY_OFF) {
 		pi.registerShortcut(collapseKey as KeyId, {
-			description: "Collapse or expand the todo overlay",
+			description: "Cycle the todo overlay through compact, focused, and minimized modes",
 			handler: (ctx) => {
 				if (!ctx.hasUI || !todoOverlay?.isRegistered()) return;
-				todoOverlay.toggleCollapse();
+				todoOverlay.cycleMode();
 			},
 		});
 	}

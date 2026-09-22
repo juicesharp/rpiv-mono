@@ -15,7 +15,7 @@ function removeConfigFile(): void {
 	rmSync(CONFIG_PATH, { force: true });
 }
 
-// Drives the composer's default export (index.ts) to verify the collapse/expand
+// Drives the composer's default export (index.ts) to verify the panel-mode
 // shortcut registration and handler guard ladder. registerTodo() builds a fresh
 // closure each call, so isolation is automatic given __resetState() clears the
 // store. The shortcut handler closes over the closure-local `todoOverlay` and
@@ -45,13 +45,13 @@ afterEach(() => {
 	removeConfigFile();
 });
 
-describe("rpiv-todo — collapse/expand shortcut registration", () => {
+describe("rpiv-todo — panel-mode shortcut registration", () => {
 	it("registers 'ctrl+shift+t' with a description at factory scope", () => {
 		const { captured } = setup();
 		const shortcut = captured.shortcuts.get("ctrl+shift+t");
 		expect(shortcut).toBeDefined();
 		expect(typeof shortcut?.description).toBe("string");
-		expect(shortcut?.description).toContain("Collapse");
+		expect(shortcut?.description).toContain("Cycle");
 	});
 
 	it("handler is a no-op in headless mode (!ctx.hasUI)", async () => {
@@ -97,7 +97,7 @@ describe("rpiv-todo — collapse/expand shortcut registration", () => {
 		expect(ctx.ui.setWidget as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
 	});
 
-	it("handler toggles the overlay when it is registered (render shape flips to the collapsed hint)", async () => {
+	it("handler cycles compact → focused → minimized → compact when registered", async () => {
 		const { captured, sessionStart, toolEnd, tool } = setup();
 		const ctx = createMockCtx({ sessionId: "s1", hasUI: true });
 		await sessionStart?.({} as never, ctx as never);
@@ -121,21 +121,22 @@ describe("rpiv-todo — collapse/expand shortcut registration", () => {
 		};
 		const widget = factory({ requestRender }, identityTheme);
 
-		// Before: expanded render carries the task, not the collapse hint.
-		expect(widget.render(200).some((l) => l.includes("ctrl+shift+t to expand"))).toBe(false);
+		expect(widget.render(200)[0]).not.toContain("↕");
 
-		// Toggle → collapses; forced redraw on the height step.
 		await captured.shortcuts.get("ctrl+shift+t")?.handler?.(ctx as never);
 		expect(requestRender).toHaveBeenCalledWith(true);
-		expect(widget.render(200).some((l) => l.includes("ctrl+shift+t to expand"))).toBe(true);
+		expect(widget.render(200)[0]).toContain("↕");
 
-		// Toggle again → re-expands; hint gone.
 		await captured.shortcuts.get("ctrl+shift+t")?.handler?.(ctx as never);
-		expect(widget.render(200).some((l) => l.includes("ctrl+shift+t to expand"))).toBe(false);
+		expect(widget.render(200).some((line) => line.includes("ctrl+shift+t to expand"))).toBe(true);
+
+		await captured.shortcuts.get("ctrl+shift+t")?.handler?.(ctx as never);
+		expect(widget.render(200)[0]).not.toContain("↕");
+		expect(widget.render(200).some((line) => line.includes("ctrl+shift+t to expand"))).toBe(false);
 	});
 });
 
-describe("rpiv-todo — collapse/expand shortcut config resolution", () => {
+describe("rpiv-todo — panel-mode shortcut config resolution", () => {
 	// resolveCollapseKey() runs inside registerTodo() at factory scope, reading the
 	// config file fresh from disk — so the config MUST be written before setup().
 

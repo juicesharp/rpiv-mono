@@ -5,7 +5,7 @@ interface TodoConfig {
 	guidance?: GuidanceFields;
 	maxWidgetLines?: number;
 	/**
-	 * Key spec for the overlay collapse/expand shortcut, in the same format as
+	 * Key spec for the overlay mode-cycle shortcut, in the same format as
 	 * pi-coding-agent keybinding ids (`modifier+key`, e.g. `ctrl+shift+t`, `alt+o`).
 	 * Defaults to `"ctrl+shift+t"`. Pass `"off"` to disable the collapse shortcut
 	 * entirely. Validation happens in `resolveCollapseKey`, not at load.
@@ -17,10 +17,10 @@ interface TodoConfig {
  *  hardcoded value, preserved as the fallback. */
 export const DEFAULT_MAX_WIDGET_LINES = 12;
 
-/** Key spec for the overlay collapse/expand shortcut, e.g. `"ctrl+shift+t"` or `"alt+o"`. */
+/** Key spec for the overlay mode-cycle shortcut, e.g. `"ctrl+shift+t"` or `"alt+o"`. */
 export type CollapseKeySpec = string;
 
-/** Default collapse/expand key when `collapseKey` is missing/empty/blank/invalid. */
+/** Default mode-cycle key when `collapseKey` is missing/empty/blank/invalid. */
 export const DEFAULT_COLLAPSE_KEY: CollapseKeySpec = "ctrl+shift+t";
 
 /** Sentinel value for `collapseKey` that disables the collapse shortcut entirely. */
@@ -85,7 +85,7 @@ export function isValidCollapseKeySpec(spec: string): boolean {
 	return base.length === 1 ? /[a-z0-9_\-!@#$%^&*()|~`'":;,./<>?[\]{}=\\]/.test(base) : SPECIAL_KEYS.has(base);
 }
 
-/** Resolve the collapse/expand key from config, read fresh on every call
+/** Resolve the mode-cycle key from config, read fresh on every call
  *  (per-render / per-registration — no `/reload`); mirrors getMaxWidgetLines().
  *  Returns DEFAULT_COLLAPSE_KEY when the field is missing/non-string/empty/blank/
  *  invalid, COLLAPSE_KEY_OFF when set to the sentinel, or the lowercased validated
