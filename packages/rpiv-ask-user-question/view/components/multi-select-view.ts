@@ -20,6 +20,8 @@ export const MULTI_SUBMIT_LABEL = "Submit";
 export interface MultiSelectOtherRowProps {
 	/** The "Type something." row is the focused row (optionIndex === options.length). */
 	active: boolean;
+	/** Non-empty custom text counts as a selected multi-value. */
+	checked: boolean;
 	/** `state.inputMode` — true once the row has focus and keystrokes append to the buffer. */
 	inputMode: boolean;
 	/** Live inline-input buffer (read from `runtime.inputBuffer` / `ctx.inputBuffer`). */
@@ -66,7 +68,7 @@ export class MultiSelectView implements StatefulView<MultiSelectViewProps> {
 	) {
 		this.props = {
 			rows: [],
-			other: { active: false, inputMode: false, inputBuffer: "", inputCursorOffset: undefined },
+			other: { active: false, checked: false, inputMode: false, inputBuffer: "", inputCursorOffset: undefined },
 			nextActive: false,
 			nextLabel: displayLabel("next"),
 		};
@@ -152,7 +154,7 @@ export class MultiSelectView implements StatefulView<MultiSelectViewProps> {
 	private renderOtherRow(contentWidth: number, numberWidth: number): string[] {
 		const other = this.props.other;
 		const pointer = other.active ? this.theme.fg("accent", ACTIVE_POINTER) : INACTIVE_POINTER;
-		const box = this.theme.fg("muted", UNCHECKED);
+		const box = other.checked ? this.theme.fg("accent", CHECKED) : this.theme.fg("muted", UNCHECKED);
 		const number = String(this.question.options.length + 1).padStart(numberWidth, " ");
 		const rowPrefix = `${pointer}${number}${NUMBER_SEPARATOR}${box}${BOX_LABEL_GAP}`;
 		const continuationPrefix = " ".repeat(visibleWidth(rowPrefix));
