@@ -82,7 +82,7 @@ export const DEFAULT_WEB_SEARCH_GUIDELINES: string[] = [
 	'Use the current year from "Current date:" in your context when searching for recent information or documentation.',
 	'After answering using search results, include a "Sources:" section listing relevant URLs as markdown hyperlinks: [Title](URL). Never skip this.',
 	"Domain filtering is supported to include or block specific websites.",
-	"If no API key is configured, ask the user to run /web-tools before proceeding.",
+	"If the active provider requires credentials and they are missing, ask the user to run /web-tools before proceeding.",
 ];
 
 export const DEFAULT_WEB_FETCH_SNIPPET = "Fetch and read content from a specific URL";
@@ -335,13 +335,13 @@ export function registerWebSearchTool(pi: ExtensionAPI): void {
 						description:
 							"Search provider to use for this call only, overriding the active provider set via /web-tools. " +
 							`Valid values: ${KNOWN_PROVIDER_NAMES.join(", ")}. ` +
-							"Omit to use the configured active provider. The named provider must have its API key/URL configured (via env var or /web-tools) or the call throws — there is no silent fallback.",
+							"Omit to use the configured active provider. Providers that require credentials must have their own API key/URL configured (via env var or /web-tools); keyless providers can be used immediately. A missing required credential throws — there is no silent fallback.",
 					},
 				),
 			),
 		}),
 
-		async execute(_toolCallId, params, signal, onUpdate, _ctx) {
+		async execute(_toolCallId, params, signal, onUpdate, ctx) {
 			const maxResults = clampSearchResultCount(params.max_results);
 			const config = loadConfig();
 			const { providerName, provider } = instantiateProvider(config, params.provider);
@@ -351,7 +351,7 @@ export function registerWebSearchTool(pi: ExtensionAPI): void {
 				details: { query: params.query, backend: providerName, resultCount: 0 },
 			});
 
-			const response = await provider.search(params.query, maxResults, signal);
+			const response = await provider.search(params.query, maxResults, signal, ctx.sessionManager.getSessionId());
 
 			if (response.results.length === 0) {
 				return buildEmptyResultsEnvelope(params.query, providerName);
@@ -536,6 +536,10 @@ function formatShowConfigMessage(current: WebToolsConfig): string {
 	lines.push(`  active provider: ${providerName} (source: ${providerSource})`);
 
 	for (const meta of PROVIDERS) {
+		if (!meta.envVar && !meta.baseUrlEnvVar) {
+			lines.push(`  ${meta.name}: no API key required`);
+			continue;
+		}
 		const envKey = meta.envVar ? process.env[meta.envVar]?.trim() : undefined;
 		const configKey = current.apiKeys?.[meta.name]?.trim();
 		const legacyKey = meta.name === LEGACY_TOP_LEVEL_KEY_PROVIDER ? current.apiKey?.trim() : undefined;
@@ -577,7 +581,7 @@ function formatShowConfigMessage(current: WebToolsConfig): string {
 
 export function registerWebSearchConfigCommand(pi: ExtensionAPI): void {
 	pi.registerCommand(WEB_TOOLS_COMMAND_NAME, {
-		description: "Configure the search provider and API key used by web_search",
+		description: "Configure the search provider and any required credentials used by web_search",
 		handler: async (args, ctx) => {
 			if (!ctx.hasUI) {
 				ctx.ui?.notify?.(`/${WEB_TOOLS_COMMAND_NAME} requires interactive mode`, "error");
@@ -608,7 +612,8 @@ export function registerWebSearchConfigCommand(pi: ExtensionAPI): void {
 			const labelOf = (p: (typeof PROVIDERS)[number]) => {
 				const markers: string[] = [];
 				if (p.name === activeProvider) markers.push("✓");
-				if (hasKey(p)) markers.push("(configured)");
+				if (!p.envVar && !p.baseUrlEnvVar) markers.push("(no key)");
+				else if (hasKey(p)) markers.push("(configured)");
 				return markers.length > 0 ? `${p.label} ${markers.join(" ")}` : p.label;
 			};
 
@@ -628,6 +633,20 @@ export function registerWebSearchConfigCommand(pi: ExtensionAPI): void {
 				return;
 			}
 			const selectedProvider = selectedMeta.name;
+
+			if (!selectedMeta.envVar && !selectedMeta.baseUrlEnvVar) {
+				const toSave: WebToolsConfig = { ...current, provider: selectedProvider };
+				delete (toSave as { apiKey?: string }).apiKey;
+				if (!saveConfig(toSave)) {
+					ctx.ui.notify(
+						`Failed to save ${selectedMeta.label} config to ${CONFIG_PATH} — disk write failed`,
+						"error",
+					);
+					return;
+				}
+				ctx.ui.notify(`Active provider set to ${selectedMeta.label}; no API key required`, "info");
+				return;
+			}
 
 			// Providers that declare a `configure` callback own their prompt flow
 			// (e.g. SearXNG: URL prompt then optional Bearer key). The orchestrator

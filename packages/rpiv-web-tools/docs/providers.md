@@ -1,10 +1,10 @@
 # Providers and credential resolution
 
-The ten search backends `rpiv-web-tools` ships with, what each one needs, and the
+The eleven search backends `rpiv-web-tools` ships with, what each one needs, and the
 exact order in which the active provider, its API key, and its base URL are
 resolved.
 
-## The ten providers
+## The eleven providers
 
 One is active at a time. Switching backends never discards the other backends'
 keys — they are stored per provider under `apiKeys.<name>`.
@@ -19,6 +19,7 @@ keys — they are stored per provider under `apiKeys.<name>`.
 | Jina | `jina` | `JINA_API_KEY` | [jina.ai/reader](https://jina.ai/reader) | native extraction (markdown) |
 | Firecrawl | `firecrawl` | `FIRECRAWL_API_KEY` | [firecrawl.dev](https://firecrawl.dev) | native extraction (markdown) |
 | Perplexity | `perplexity` | `PERPLEXITY_API_KEY` | [docs.perplexity.ai](https://docs.perplexity.ai/) | built-in HTTP → text, honours `raw` |
+| Parallel | `parallel` | none | [Search MCP docs](https://docs.parallel.ai/integrations/mcp/search-mcp) (anonymous) | built-in HTTP → text, honours `raw` |
 | SearXNG | `searxng` | `SEARXNG_API_KEY` (optional) | self-hosted — see [self-hosted.md](self-hosted.md) | built-in HTTP → text, honours `raw` |
 | Ollama | `ollama` | `OLLAMA_API_KEY` (optional locally) | local or [ollama.com](https://ollama.com) | native extraction |
 
@@ -26,12 +27,20 @@ SearXNG and Ollama also take a base URL (`SEARXNG_URL`, `OLLAMA_HOST`) because
 they talk to an instance you control. Both are covered in
 [self-hosted.md](self-hosted.md).
 
+Parallel uses the hosted Search MCP anonymously without an API key. The free
+endpoint has lower rate limits and uses Fast mode by default. Only `web_search`
+is routed to Parallel; `web_fetch` keeps the existing provider or generic HTTP
+path. A Parallel search sends the full query as `objective`, a derived 3–6-word
+`search_queries` phrase, the Pi conversation ID as `session_id`, and the
+project/version `User-Agent` to Parallel. Parallel documents `session_id` as an
+input for free-tier rate limiting and log correlation.
+
 ## Active provider
 
 Four tiers, first match wins:
 
 1. **The `provider` parameter on a single `web_search` call.** Validated against
-   the ten known names; an unknown name throws. When present, tiers 2–4 are not
+   the eleven known names; an unknown name throws. When present, tiers 2–4 are not
    consulted at all.
 2. **`WEB_SEARCH_PROVIDER`** environment variable. Trimmed; a whitespace-only
    value counts as unset. Validated *only when it is the resolving tier*, so a
@@ -46,7 +55,7 @@ Four tiers, first match wins:
 An unknown name at tier 1 or tier 2 throws:
 
 ```
-Unknown web_search provider: "bravo". Valid providers: brave, tavily, serper, exa, youcom, jina, firecrawl, perplexity, searxng, ollama.
+Unknown web_search provider: "bravo". Valid providers: brave, tavily, serper, exa, youcom, jina, firecrawl, perplexity, parallel, searxng, ollama.
 ```
 
 Tiers 3 and 4 are not validated at resolution time — a typo in the config file
@@ -61,7 +70,8 @@ first match wins:
 1. **The provider's own environment variable** (`BRAVE_SEARCH_API_KEY`,
    `TAVILY_API_KEY`, `SERPER_API_KEY`, `EXA_API_KEY`, `YOUCOM_API_KEY`,
    `JINA_API_KEY`, `FIRECRAWL_API_KEY`, `PERPLEXITY_API_KEY`,
-   `SEARXNG_API_KEY`, `OLLAMA_API_KEY`).
+   `SEARXNG_API_KEY`, `OLLAMA_API_KEY`). The `parallel` provider bypasses this
+   key resolution and does not read `PARALLEL_API_KEY`.
 2. **`apiKeys.<provider>`** in the config file.
 3. **Legacy top-level `apiKey`**, Brave only. It is auto-migrated into
    `apiKeys.brave` and deleted from the file on the next `/web-tools` save.
@@ -69,8 +79,8 @@ first match wins:
 Every environment value is trimmed, so an empty or whitespace-only variable is
 treated as unset and resolution falls through to the next tier.
 
-There is **no cross-provider fallback**. If the resolved provider has no key,
-the call throws:
+There is **no cross-provider fallback**. If the resolved provider requires a key
+and has none, the call throws:
 
 ```
 EXA_API_KEY is not set. Run /web-tools to configure, or export the env var.
@@ -95,8 +105,9 @@ provider that declares a base URL.
 ## Picker markers
 
 The `/web-tools` provider list is ordered with the active provider first, marked
-`✓`. Any provider that already resolves to a key is suffixed `(configured)`. For
-SearXNG and Ollama, `(configured)` means a base URL has been set explicitly via
+`✓`. Providers that resolve to a key are suffixed `(configured)`. Parallel is
+marked `(no key)`. For SearXNG and Ollama, `(configured)` means a base URL has
+been set explicitly via
 environment variable or config — the bare built-in default does not count,
 because it only indicates the setting has never been touched.
 

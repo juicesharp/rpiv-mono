@@ -24,8 +24,8 @@ export interface FetchResponse {
 export interface SearchProvider {
 	readonly name: string;
 	readonly label: string;
-	readonly envVar: string;
-	search(query: string, maxResults: number, signal?: AbortSignal): Promise<SearchResponse>;
+	readonly envVar?: string;
+	search(query: string, maxResults: number, signal?: AbortSignal, sessionId?: string): Promise<SearchResponse>;
 }
 
 export interface FetchProvider {
