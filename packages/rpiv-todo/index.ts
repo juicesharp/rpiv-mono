@@ -28,7 +28,6 @@ import {
 	clearActiveRenderSession,
 	evictSession,
 	getActiveRenderSession,
-	getRenderState,
 	replaceState,
 	setActiveRenderSession,
 	sid,
@@ -135,8 +134,12 @@ export default function (pi: ExtensionAPI, importOverlay: TodoOverlayImporter = 
 		resetCompletedDisplayState = false,
 		generation = lifecycleGeneration,
 	): Promise<void> {
-		const hasVisibleTasks = getRenderState().tasks.some((task) => task.status !== "deleted");
-		if (!uiCtx || (!todoOverlay && !hasVisibleTasks)) return;
+		// UI-gated, not task-gated: a foreground session_start registers the
+		// zero-row widget immediately. Pi renders aboveEditor widgets in Map
+		// insertion order, so deferring the first registration until visible
+		// tasks exist lets later-registered widgets (e.g. footer extensions)
+		// take the slot and permanently parks the overlay below them.
+		if (!uiCtx) return;
 
 		const { TodoOverlay } = await loadTodoOverlay();
 		if (generation !== lifecycleGeneration || !uiCtx) return;
@@ -213,7 +216,16 @@ export default function (pi: ExtensionAPI, importOverlay: TodoOverlayImporter = 
 		if (id !== getActiveRenderSession()) return;
 		const generation = ++lifecycleGeneration;
 		uiCtx = ctx.ui;
-		await updateTodoOverlay(true, generation);
+		try {
+			await updateTodoOverlay(true, generation);
+		} catch (e) {
+			// Same contract as tool_execution_end: a transient overlay-load failure
+			// only costs this refresh; the loader's cleared memo lets the next event
+			// retry. The latched stale-namespace error propagates for its restart
+			// guidance.
+			if (isStaleOverlayModuleError(e)) throw e;
+			console.warn(`[rpiv-todo] overlay refresh failed (will retry on next update): ${formatError(e)}`);
+		}
 	});
 
 	pi.on("session_compact", async (_event, ctx) => {
@@ -277,10 +289,11 @@ export default function (pi: ExtensionAPI, importOverlay: TodoOverlayImporter = 
 	});
 
 	// Evaluate the lazy graph after startup while Pi's boot-time dependency paths
-	// are still stable. This loads no widget and constructs no overlay; those stay
-	// deferred until a foreground session has visible tasks. A rejected pre-warm
-	// is intentionally swallowed after loadTodoOverlay clears its memo, allowing
-	// the first real update to retry. unref avoids holding an embedder open.
+	// are still stable. This loads no widget and constructs no overlay — in TUI
+	// mode the foreground session_start does that; the pre-warm mainly serves
+	// embedders and races before that event. A rejected pre-warm is intentionally
+	// swallowed after loadTodoOverlay clears its memo, allowing the next update
+	// to retry. unref avoids holding an embedder open.
 	const prewarmTimer = setTimeout(() => void loadTodoOverlay().catch(() => undefined), PREWARM_DELAY_MS);
 	prewarmTimer.unref?.();
 

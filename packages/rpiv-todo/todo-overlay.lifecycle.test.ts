@@ -50,12 +50,23 @@ describe("TodoOverlay — lifecycle", () => {
 		expect(() => overlay.update()).not.toThrow();
 	});
 
-	it("update() with empty todos does not register a widget", () => {
+	it("update() with empty todos registers a zero-row widget to hold insertion order", () => {
 		const overlay = new TodoOverlay();
 		const ui = makeCtx();
 		overlay.setUICtx(ui);
 		overlay.update();
-		expect(ui.setWidget as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
+		const setWidget = ui.setWidget as ReturnType<typeof vi.fn>;
+		// Pi renders aboveEditor widgets in Map insertion order; staying
+		// registered while empty keeps this widget ahead of later-registered
+		// widgets (e.g. footer extensions) instead of dropping to the back
+		// after the next non-empty registration.
+		expect(setWidget).toHaveBeenCalledTimes(1);
+		expect(setWidget.mock.calls[0][0]).toBe(WIDGET_KEY);
+		const factory = setWidget.mock.calls[0][1] as (
+			tui: { requestRender: () => void },
+			theme: typeof identityTheme,
+		) => { render: (w: number) => string[]; invalidate: () => void };
+		expect(factory({ requestRender: vi.fn() }, identityTheme).render(200)).toEqual([]);
 	});
 
 	it("first update() with non-empty todos registers the widget exactly once", async () => {
@@ -92,7 +103,7 @@ describe("TodoOverlay — lifecycle", () => {
 		expect(tui.requestRender).toHaveBeenCalledTimes(1);
 	});
 
-	it("transition non-empty → empty unregisters the widget", async () => {
+	it("transition non-empty → empty keeps the widget registered (zero-row render)", async () => {
 		const { captured } = registerTool();
 		const tool = await seed(captured, [{ action: "create", subject: "a" }]);
 		const overlay = new TodoOverlay();
@@ -100,6 +111,12 @@ describe("TodoOverlay — lifecycle", () => {
 		overlay.setUICtx(ui);
 		overlay.update();
 		const setWidget = ui.setWidget as ReturnType<typeof vi.fn>;
+		const factory = setWidget.mock.calls[0][1] as (
+			tui: { requestRender: () => void },
+			theme: typeof identityTheme,
+		) => { render: (w: number) => string[]; invalidate: () => void };
+		const widget = factory({ requestRender: vi.fn() }, identityTheme);
+		expect(widget.render(200).join("\n")).toContain("a");
 		// Delete → then hard-remove via "clear" to leave visibility list empty.
 		await tool.execute?.(
 			"tc",
@@ -109,11 +126,14 @@ describe("TodoOverlay — lifecycle", () => {
 			createMockCtx() as never,
 		);
 		overlay.update();
-		expect(setWidget).toHaveBeenCalledTimes(2);
-		expect(setWidget.mock.calls[1]).toEqual([WIDGET_KEY, undefined]);
+		// Still exactly one registration: clearing must not unregister and
+		// re-register later — that would push the widget to the back of the
+		// insertion order, below footer extensions.
+		expect(setWidget).toHaveBeenCalledTimes(1);
+		expect(widget.render(200)).toEqual([]);
 	});
 
-	it("empty → non-empty after empty transition re-registers", async () => {
+	it("empty → non-empty after empty transition keeps the same registration", async () => {
 		const { captured } = registerTool();
 		const tool = await seed(captured, [{ action: "create", subject: "a" }]);
 		const overlay = new TodoOverlay();
@@ -137,9 +157,9 @@ describe("TodoOverlay — lifecycle", () => {
 		);
 		overlay.update();
 		const setWidget = ui.setWidget as ReturnType<typeof vi.fn>;
-		// calls: register, unregister, re-register
-		expect(setWidget).toHaveBeenCalledTimes(3);
-		expect(typeof setWidget.mock.calls[2][1]).toBe("function");
+		// Still the single original registration; content came back through
+		// requestRender, not through an unregister/re-register cycle.
+		expect(setWidget).toHaveBeenCalledTimes(1);
 	});
 
 	it("setUICtx(same ctx) is idempotent", async () => {
@@ -248,7 +268,7 @@ describe("TodoOverlay — lifecycle", () => {
 		expect(() => overlay.hideCompletedTasksFromPreviousTurn()).not.toThrow();
 	});
 
-	it("all-deleted todos count as empty (no widget)", async () => {
+	it("all-deleted todos count as empty (zero-row widget render)", async () => {
 		const { captured } = registerTool();
 		const tool = await seed(captured, [{ action: "create", subject: "a" }]);
 		await tool.execute?.(
@@ -262,7 +282,13 @@ describe("TodoOverlay — lifecycle", () => {
 		const ui = makeCtx();
 		overlay.setUICtx(ui);
 		overlay.update();
-		expect(ui.setWidget as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
+		const setWidget = ui.setWidget as ReturnType<typeof vi.fn>;
+		expect(setWidget).toHaveBeenCalledTimes(1);
+		const factory = setWidget.mock.calls[0][1] as (
+			tui: { requestRender: () => void },
+			theme: typeof identityTheme,
+		) => { render: (w: number) => string[]; invalidate: () => void };
+		expect(factory({ requestRender: vi.fn() }, identityTheme).render(200)).toEqual([]);
 	});
 });
 
