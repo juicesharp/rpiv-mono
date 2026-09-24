@@ -7,6 +7,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- The tab-title spinner keeps the session name: while a turn runs a named session now reads `⠴ - <session> - <repo>` instead of collapsing to `⠴ - <repo>`, so concurrent named tabs stay distinguishable. Unnamed sessions are unchanged.
+
 ## [2.11.0] - 2026-09-21
 
 ## [2.10.1] - 2026-09-13

@@ -250,9 +250,10 @@ describe("tool_execution_end handler", () => {
 describe("spinner lifecycle wiring", () => {
 	const PUSH = "\x1b[22;0t";
 	const POP = "\x1b[23;0t";
-	// createMockCtx() defaults cwd to "/tmp/test-cwd"; index.ts derives the
-	// title suffix as ` - ${basename(cwd)}` so the spinner writes preserve
-	// the rest of the original `π - <repo>` tab title.
+	// createMockCtx() defaults cwd to "/tmp/test-cwd" and leaves the session
+	// unnamed; index.ts derives the title suffix as ` - ${basename(cwd)}`, with
+	// ` - <session>` inserted once the session is named, so the spinner writes
+	// preserve the rest of the original `π - <repo>` tab title.
 	const SUFFIX = " - test-cwd";
 
 	function classify(write: Mock): { osc777: number; titleSets: string[]; pushes: number; pops: number } {
@@ -372,6 +373,50 @@ describe("spinner lifecycle wiring", () => {
 			expect(after.titleSets.length).toBe(before.titleSets.length + 1);
 			expect(after.pushes).toBe(1);
 			expect(after.pops).toBe(0);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("a named session keeps its name in the spinner title, on start AND on resume", async () => {
+		setWorkingWarpEnv();
+		const { write } = primeFs();
+		vi.useFakeTimers();
+		try {
+			const named = () => createMockCtx({ sessionName: "session-title" }) as never;
+			const { pi, captured } = createMockPi();
+			register(pi);
+
+			await captured.events.get("agent_start")?.[0]?.({} as never, named());
+			vi.advanceTimersByTime(FRAME_INTERVAL_MS);
+			expect(classify(write).titleSets).toEqual([`${SPINNER_FRAMES[0]} - session-title${SUFFIX}`]);
+
+			await captured.events.get("tool_call")?.[0]?.({ toolName: "ask_user_question", input: {} } as never, named());
+			await captured.events.get("tool_execution_end")?.[0]?.(
+				{ toolCallId: "x", toolName: "ask_user_question", result: {}, isError: false } as never,
+				named(),
+			);
+			vi.advanceTimersByTime(FRAME_INTERVAL_MS);
+			expect(classify(write).titleSets).toEqual([
+				`${SPINNER_FRAMES[0]} - session-title${SUFFIX}`,
+				`${SPINNER_FRAMES[0]} - session-title${SUFFIX}`,
+			]);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("a blank session name falls back to the unnamed suffix", async () => {
+		setWorkingWarpEnv();
+		const { write } = primeFs();
+		vi.useFakeTimers();
+		try {
+			const { pi, captured } = createMockPi();
+			register(pi);
+
+			await captured.events.get("agent_start")?.[0]?.({} as never, createMockCtx({ sessionName: "   " }) as never);
+			vi.advanceTimersByTime(FRAME_INTERVAL_MS);
+			expect(classify(write).titleSets).toEqual([`${SPINNER_FRAMES[0]}${SUFFIX}`]);
 		} finally {
 			vi.useRealTimers();
 		}

@@ -53,7 +53,7 @@ The tab-title spinner uses three more sequences:
 
 | Sequence | Bytes | Used for |
 | --- | --- | --- |
-| OSC 0 | `ESC ] 0 ; <title> BEL` | writing the animated tab title |
+| OSC 0 | `ESC ] 0 ; <title> BEL` | writing the animated tab title — `<frame> - <repo>`, or `<frame> - <session> - <repo>` for a named session |
 | CSI 22;0t | `ESC [ 22;0t` | pushing the current title onto the xterm title stack on spinner start |
 | CSI 23;0t | `ESC [ 23;0t` | popping it on spinner stop, restoring Pi's `π - <repo>` title verbatim |
 
