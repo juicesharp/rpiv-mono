@@ -85,8 +85,14 @@ export class ParallelProvider implements SearchProvider {
 		const transport = new StreamableHTTPClientTransport(new URL(PARALLEL_SEARCH_MCP_URL), {
 			requestInit: { headers: { "User-Agent": PROJECT_USER_AGENT } },
 		});
+		let closePromise: Promise<void> | undefined;
+		const closeOnAbort = () => {
+			closePromise ??= client.close().catch(() => undefined);
+		};
+		signal?.addEventListener("abort", closeOnAbort, { once: true });
 
 		try {
+			if (signal?.aborted) throw signal.reason ?? new Error("Parallel Search MCP request was aborted.");
 			await client.connect(transport, signal ? { signal } : undefined);
 			if (signal?.aborted) throw signal.reason ?? new Error("Parallel Search MCP request was aborted.");
 
@@ -105,7 +111,11 @@ export class ParallelProvider implements SearchProvider {
 
 			const results = normalizeResults(result.structuredContent).slice(0, maxResults);
 			return { query, results };
+		} catch (error) {
+			if (signal?.aborted) throw signal.reason ?? error;
+			throw error;
 		} finally {
+			signal?.removeEventListener("abort", closeOnAbort);
 			let cleanupTimeout: ReturnType<typeof setTimeout> | undefined;
 			try {
 				await Promise.race([
@@ -116,7 +126,7 @@ export class ParallelProvider implements SearchProvider {
 				]);
 			} finally {
 				if (cleanupTimeout) clearTimeout(cleanupTimeout);
-				await client.close().catch(() => undefined);
+				await (closePromise ?? client.close().catch(() => undefined));
 			}
 		}
 	}
