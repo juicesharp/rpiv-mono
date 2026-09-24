@@ -42,8 +42,10 @@ Nothing to configure, no key to supply.
   prompt submitted, question asked, tool finished, turn stopped, gone idle) reach
   Warp as structured notifications carrying the project name, your query and the
   assistant's reply.
-- **A tab that shows Pi is still working** — a braille spinner animates the tab
-  title for the whole turn, then Pi's original `π - <repo>` label comes back.
+- **A tab that shows Pi is still working** — a braille spinner takes over Pi's
+  mascot in the tab title for the whole turn (`⠴ - <repo>`, or
+  `⠴ - <session> - <repo>` once the session is named, so named tabs stay
+  distinguishable while they run), then the original label comes back.
 - **A Blocked badge that never sticks** — an ESC-aborted question is drained at
   turn end instead of leaving the badge lit.
 - **No false idle mid-task** — the running prompt is re-announced every 15

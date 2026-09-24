@@ -185,13 +185,20 @@ export function createMockUI(
 	} as unknown as MockUI;
 }
 
-export function createMockSessionManager(branch: SessionEntry[] = [], sessionId = "test-session") {
+export function createMockSessionManager(
+	branch: SessionEntry[] = [],
+	sessionId = "test-session",
+	sessionName?: string,
+) {
 	return {
 		getBranch: vi.fn(() => branch),
 		getEntries: vi.fn(() => branch),
 		getLeafId: vi.fn(() => (branch.length ? branch[branch.length - 1].id : null)),
 		getSessionFile: vi.fn(() => "/tmp/test-session.jsonl"),
 		getSessionId: vi.fn(() => sessionId),
+		// Pi reports an UNNAMED session as `undefined`, so the default mirrors a
+		// session the user never renamed.
+		getSessionName: vi.fn(() => sessionName),
 	};
 }
 
@@ -216,6 +223,8 @@ export interface MockCtxOptions {
 	maxConcurrency?: number;
 	/** Session id the ctx advertises via `sessionManager.getSessionId()`. Defaults to "test-session". */
 	sessionId?: string;
+	/** Display name the ctx advertises via `sessionManager.getSessionName()`. Omitted = unnamed session. */
+	sessionName?: string;
 	/**
 	 * Session id a `spawnChild`-minted child ctx advertises. Defaults to
 	 * `${sessionId}-child` so parent/child isolation is exercised, not masked.
@@ -231,7 +240,7 @@ export function createMockCtx(opts: MockCtxOptions = {}): ExtensionToolContext {
 		cwd: opts.cwd ?? "/tmp/test-cwd",
 		model: opts.model,
 		ui: createMockUI(opts.ui),
-		sessionManager: createMockSessionManager(opts.branch ?? [], opts.sessionId),
+		sessionManager: createMockSessionManager(opts.branch ?? [], opts.sessionId, opts.sessionName),
 		modelRegistry: createMockModelRegistry(opts.models ?? []),
 		isIdle: vi.fn(() => true),
 		tools: [],
