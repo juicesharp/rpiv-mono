@@ -99,13 +99,14 @@ on every tool call — switching provider or key needs no restart.
 
 ## `/web-tools`
 
-Description: *Configure the search provider and API key used by `web_search`*.
+Description: *Configure the search provider and any required credentials used by `web_search`*.
 
 Running it with no arguments opens a provider picker (active provider first with
-`✓`, already-configured providers suffixed `(configured)`), then prompts for
-that provider's API key. Pressing Enter on an empty input keeps the existing key
-while still persisting the provider switch. SearXNG and Ollama drive their own
-flow instead: base URL first, then the optional key.
+`✓`, configured providers marked `(configured)`, and Parallel marked `(no key)`).
+Selecting Parallel saves the provider without an input prompt. Other hosted
+providers prompt for their API key; pressing Enter on an empty input keeps the
+existing key while still persisting the provider switch. SearXNG and Ollama drive
+their own flow instead: base URL first, then the optional key.
 
 The command requires an interactive session; without one it reports
 `/web-tools requires interactive mode` and does nothing.
@@ -118,7 +119,8 @@ The only flag. It prints the resolved configuration without changing anything:
 - the active provider and which tier it came from (`env`, `config`, `default`)
 - one line per provider: the resolved key masked as first four characters,
   `...`, last four characters — with the env-var and config-file values shown
-  separately so you can see which one won. Unset values render `(not set)`
+  separately so you can see which one won. Unset values render `(not set)`;
+  Parallel reports that no API key is required
 - one `<provider> url: <resolved> (source: …)` line for each provider that
   declares a base URL (SearXNG and Ollama)
 - a `URL interceptors:` block reporting the GitHub interceptor's state

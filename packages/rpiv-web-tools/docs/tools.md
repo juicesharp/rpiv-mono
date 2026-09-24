@@ -16,7 +16,7 @@ web_search({
   max_results?: number,             // 1-10, default 5
   provider?:                        // per-call override; see below
     | "brave" | "tavily" | "serper" | "exa" | "youcom" | "jina"
-    | "firecrawl" | "perplexity" | "searxng" | "ollama",
+    | "firecrawl" | "perplexity" | "parallel" | "searxng" | "ollama",
 })
 ```
 
@@ -47,18 +47,17 @@ When the provider returns zero results, the envelope collapses to
 
 | Condition | Message shape |
 | --- | --- |
-| Resolved provider has no key | `EXA_API_KEY is not set. Run /web-tools to configure, or export the env var.` |
-| Unknown provider name | `Unknown web_search provider: "<name>". Valid providers: brave, tavily, serper, exa, youcom, jina, firecrawl, perplexity, searxng, ollama.` |
+| Resolved provider requires a missing key | `EXA_API_KEY is not set. Run /web-tools to configure, or export the env var.` |
+| Unknown provider name | `Unknown web_search provider: "<name>". Valid providers: brave, tavily, serper, exa, youcom, jina, firecrawl, perplexity, parallel, searxng, ollama.` |
 | Provider API returns non-2xx | vendor-specific, with the status code |
 
 ### Per-call `provider` override
 
 The optional `provider` parameter routes a single call to a different backend
-without mutating persisted config and without a session restart. The named
-provider must have its own credentials — the override does **not** inherit the
-active provider's key, and an unconfigured target throws the usual `… is not
-set` error rather than silently falling back, so the caller can detect the
-misconfiguration.
+without mutating persisted config and without a session restart. The override does **not** inherit the active provider's key. Providers that
+require credentials must have their own configured credentials; Parallel is
+keyless. A missing required credential throws instead of silently falling back,
+so the caller can detect the misconfiguration.
 
 An override also short-circuits the `WEB_SEARCH_PROVIDER` environment variable
 entirely: that tier is neither read nor validated when an override is present,
@@ -117,7 +116,7 @@ The text content is prefixed with a header block before the body:
 2. **The active provider's native fetch** — Tavily, Exa, You.com, Jina,
    Firecrawl and Ollama carry vendor extraction endpoints.
 3. **The built-in HTTP + HTML-to-text pipeline** — used for search-only
-   providers (Brave, Serper, Perplexity, SearXNG) and whenever the active
+   providers (Brave, Serper, Perplexity, Parallel, SearXNG) and whenever the active
    provider has no `fetch` method. This path needs no API key at all, so
    `web_fetch` still works when the active provider is an unkeyed search-only
    backend. An unkeyed extraction provider (Tavily, Exa, You.com, Jina,

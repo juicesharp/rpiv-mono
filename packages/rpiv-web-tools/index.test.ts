@@ -1073,7 +1073,7 @@ describe("/web-tools command", () => {
 		expect(msg).toContain("(not set)");
 	});
 
-	it("two-step: select provider then enter key", async () => {
+	it("preserves the legacy Brave key when selecting a provider and entering its key", async () => {
 		writeConfig({ apiKey: "old", otherField: "keep" });
 		const { captured } = registerAndCapture();
 		const ctx = createMockCtx({ hasUI: true });
@@ -1083,9 +1083,21 @@ describe("/web-tools command", () => {
 		const saved = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
 		expect(saved).toEqual({
 			provider: "tavily",
-			apiKeys: { tavily: "tavily-key" },
+			apiKeys: { tavily: "tavily-key", brave: "old" },
 			otherField: "keep",
 		});
+		expect(saved.apiKey).toBeUndefined();
+	});
+
+	it("preserves the legacy Brave key when selecting a keyless provider", async () => {
+		writeConfig({ provider: "brave", apiKey: "legacy-brave-key", apiKeys: { exa: "exa-key" } });
+		const { captured } = registerAndCapture();
+		const ctx = createMockCtx({ hasUI: true });
+		(ctx.ui.select as ReturnType<typeof vi.fn>).mockResolvedValueOnce("Parallel (no key)");
+		await captured.commands.get("web-tools")?.handler("", ctx as never);
+		const saved = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
+		expect(saved.provider).toBe("parallel");
+		expect(saved.apiKeys).toEqual({ exa: "exa-key", brave: "legacy-brave-key" });
 		expect(saved.apiKey).toBeUndefined();
 	});
 
@@ -1170,6 +1182,7 @@ describe("/web-tools command", () => {
 			"Jina",
 			"Firecrawl",
 			"Perplexity",
+			"Parallel (no key)",
 			"SearXNG",
 			"Ollama",
 		]);
@@ -1215,6 +1228,43 @@ describe("/web-tools command", () => {
 		await captured.commands.get("web-tools")?.handler("", ctx as never);
 		const labels = (ctx.ui.select as ReturnType<typeof vi.fn>).mock.calls[0][1] as string[];
 		expect(labels[0]).toBe("Brave ✓");
+	});
+
+	it("selects the keyless Parallel provider without prompting and preserves other config", async () => {
+		writeConfig({
+			provider: "brave",
+			apiKey: "legacy-brave-key",
+			apiKeys: { brave: "brave-key", exa: "exa-key" },
+			retainedField: true,
+		});
+		const { captured } = registerAndCapture();
+		const ctx = createMockCtx({ hasUI: true });
+		(ctx.ui.select as ReturnType<typeof vi.fn>).mockResolvedValueOnce("Parallel (no key)");
+		await captured.commands.get("web-tools")?.handler("", ctx as never);
+		const saved = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
+		expect(saved).toEqual({
+			provider: "parallel",
+			apiKeys: { brave: "brave-key", exa: "exa-key" },
+			retainedField: true,
+		});
+		expect(ctx.ui.input).not.toHaveBeenCalled();
+		expect((ctx.ui.notify as ReturnType<typeof vi.fn>).mock.calls).toContainEqual([
+			"Active provider set to Parallel; no API key required",
+			"info",
+		]);
+	});
+
+	it("marks Parallel as keyless in the picker and --show output", async () => {
+		const { captured } = registerAndCapture();
+		const ctx = createMockCtx({ hasUI: true });
+		(ctx.ui.select as ReturnType<typeof vi.fn>).mockResolvedValueOnce(undefined);
+		await captured.commands.get("web-tools")?.handler("", ctx as never);
+		const labels = (ctx.ui.select as ReturnType<typeof vi.fn>).mock.calls[0][1] as string[];
+		expect(labels).toContain("Parallel (no key)");
+
+		await captured.commands.get("web-tools")?.handler("--show", ctx as never);
+		const message = (ctx.ui.notify as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0];
+		expect(message).toContain("parallel: no API key required");
 	});
 
 	it("notifies error and skips 'Saved …' when the underlying write fails", async () => {
@@ -2392,11 +2442,12 @@ describe("web_search.execute — per-call provider override", () => {
 				"jina",
 				"firecrawl",
 				"perplexity",
+				"parallel",
 				"searxng",
 				"ollama",
 			]),
 		);
-		expect(literals).toHaveLength(10);
+		expect(literals).toHaveLength(11);
 	});
 });
 

@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Add optional, keyless Parallel Search MCP provider; keep Brave as the default and leave `web_fetch` routing unchanged.
+
 ## [2.11.0] - 2026-09-21
 
 ## [2.10.1] - 2026-09-13
