@@ -3,6 +3,7 @@ import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/cli
 import type { SearchProvider, SearchResponse, SearchResult } from "./types.js";
 
 const PARALLEL_SEARCH_MCP_URL = "https://search.parallel.ai/mcp";
+const SESSION_TERMINATION_TIMEOUT_MS = 1_000;
 // Identify this project so Parallel can measure aggregate free MCP usage.
 // Keep the value project-wide; do not add user or installation identifiers.
 const PACKAGE_VERSION = (
@@ -86,7 +87,7 @@ export class ParallelProvider implements SearchProvider {
 		});
 
 		try {
-			await client.connect(transport);
+			await client.connect(transport, signal ? { signal } : undefined);
 			if (signal?.aborted) throw signal.reason ?? new Error("Parallel Search MCP request was aborted.");
 
 			const result = await client.callTool(
@@ -105,8 +106,18 @@ export class ParallelProvider implements SearchProvider {
 			const results = normalizeResults(result.structuredContent).slice(0, maxResults);
 			return { query, results };
 		} finally {
-			await transport.terminateSession().catch(() => undefined);
-			await client.close().catch(() => undefined);
+			let cleanupTimeout: ReturnType<typeof setTimeout> | undefined;
+			try {
+				await Promise.race([
+					transport.terminateSession().catch(() => undefined),
+					new Promise<void>((resolve) => {
+						cleanupTimeout = setTimeout(resolve, SESSION_TERMINATION_TIMEOUT_MS);
+					}),
+				]);
+			} finally {
+				if (cleanupTimeout) clearTimeout(cleanupTimeout);
+				await client.close().catch(() => undefined);
+			}
 		}
 	}
 }

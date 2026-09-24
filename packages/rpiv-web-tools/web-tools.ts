@@ -635,7 +635,16 @@ export function registerWebSearchConfigCommand(pi: ExtensionAPI): void {
 			const selectedProvider = selectedMeta.name;
 
 			if (!selectedMeta.envVar && !selectedMeta.baseUrlEnvVar) {
-				const toSave: WebToolsConfig = { ...current, provider: selectedProvider };
+				const apiKeys: Record<string, string> = { ...current.apiKeys };
+				const legacyBraveApiKey = current.apiKey;
+				if (legacyBraveApiKey?.trim() && !apiKeys[LEGACY_TOP_LEVEL_KEY_PROVIDER]?.trim()) {
+					apiKeys[LEGACY_TOP_LEVEL_KEY_PROVIDER] = legacyBraveApiKey;
+				}
+				const toSave: WebToolsConfig = {
+					...current,
+					provider: selectedProvider,
+					...(Object.keys(apiKeys).length > 0 ? { apiKeys } : {}),
+				};
 				delete (toSave as { apiKey?: string }).apiKey;
 				if (!saveConfig(toSave)) {
 					ctx.ui.notify(

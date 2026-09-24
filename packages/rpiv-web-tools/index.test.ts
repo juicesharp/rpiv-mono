@@ -1089,6 +1089,18 @@ describe("/web-tools command", () => {
 		expect(saved.apiKey).toBeUndefined();
 	});
 
+	it("preserves the legacy Brave key when selecting a keyless provider", async () => {
+		writeConfig({ provider: "brave", apiKey: "legacy-brave-key", apiKeys: { exa: "exa-key" } });
+		const { captured } = registerAndCapture();
+		const ctx = createMockCtx({ hasUI: true });
+		(ctx.ui.select as ReturnType<typeof vi.fn>).mockResolvedValueOnce("Parallel (no key)");
+		await captured.commands.get("web-tools")?.handler("", ctx as never);
+		const saved = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
+		expect(saved.provider).toBe("parallel");
+		expect(saved.apiKeys).toEqual({ exa: "exa-key", brave: "legacy-brave-key" });
+		expect(saved.apiKey).toBeUndefined();
+	});
+
 	it("select cancelled leaves config untouched", async () => {
 		writeConfig({ apiKey: "existing" });
 		const { captured } = registerAndCapture();

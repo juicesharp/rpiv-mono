@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
 	clientOptions: undefined as unknown,
 	transportUrl: undefined as unknown,
 	transportOptions: undefined as unknown,
+	transportClose: vi.fn(),
 	connect: vi.fn(),
 	callTool: vi.fn(),
 	close: vi.fn(),
@@ -17,12 +18,15 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@modelcontextprotocol/client", () => ({
 	Client: class {
+		private transport: { close: () => unknown } | undefined;
+
 		constructor(options: unknown) {
 			mocks.clientOptions = options;
 		}
 
-		connect(transport: unknown) {
-			return mocks.connect(transport);
+		connect(transport: unknown, options?: unknown) {
+			this.transport = transport as { close: () => unknown };
+			return mocks.connect(transport, options);
 		}
 
 		callTool(...args: unknown[]) {
@@ -30,7 +34,8 @@ vi.mock("@modelcontextprotocol/client", () => ({
 		}
 
 		close() {
-			return mocks.close();
+			mocks.close();
+			return this.transport?.close();
 		}
 	},
 	StreamableHTTPClientTransport: class {
@@ -41,6 +46,10 @@ vi.mock("@modelcontextprotocol/client", () => ({
 
 		terminateSession() {
 			return mocks.terminateSession();
+		}
+
+		close() {
+			return mocks.transportClose();
 		}
 	},
 }));
@@ -62,6 +71,7 @@ beforeEach(() => {
 	mocks.clientOptions = undefined;
 	mocks.transportUrl = undefined;
 	mocks.transportOptions = undefined;
+	mocks.transportClose.mockReset().mockResolvedValue(undefined);
 	mocks.connect.mockReset().mockResolvedValue(undefined);
 	mocks.callTool.mockReset().mockResolvedValue({
 		isError: false,
@@ -147,5 +157,62 @@ describe("Parallel search provider", () => {
 			signal: controller.signal,
 		});
 		expect(mocks.close).toHaveBeenCalledOnce();
+	});
+
+	it("passes cancellation through MCP initialization and closes the transport", async () => {
+		writeConfig({ provider: "parallel" });
+		const controller = new AbortController();
+		mocks.connect.mockImplementationOnce((_transport, options) => {
+			const signal = (options as { signal: AbortSignal }).signal;
+			return new Promise<void>((_resolve, reject) => {
+				signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+			});
+		});
+		const { captured } = registerAndCapture();
+		const call = captured.tools
+			.get("web_search")
+			?.execute?.("tc", { query: "Parallel search MCP" }, controller.signal, undefined as never, createMockCtx());
+
+		controller.abort(new Error("cancelled during initialization"));
+		await expect(call).rejects.toThrow("cancelled during initialization");
+		expect(mocks.connect).toHaveBeenCalledWith(expect.anything(), { signal: controller.signal });
+		expect(mocks.callTool).not.toHaveBeenCalled();
+		expect(mocks.close).toHaveBeenCalledOnce();
+		expect(mocks.transportClose).toHaveBeenCalledOnce();
+	});
+
+	it("bounds stalled session termination before returning search results", async () => {
+		vi.useFakeTimers();
+		try {
+			writeConfig({ provider: "parallel" });
+			let markCleanupStarted = () => {};
+			const cleanupStarted = new Promise<void>((resolve) => {
+				markCleanupStarted = resolve;
+			});
+			mocks.terminateSession.mockImplementationOnce(() => {
+				markCleanupStarted();
+				return new Promise<void>(() => {});
+			});
+			const { captured } = registerAndCapture();
+			const call = captured.tools
+				.get("web_search")
+				?.execute?.(
+					"tc",
+					{ query: "Parallel search MCP" },
+					undefined as never,
+					undefined as never,
+					createMockCtx(),
+				);
+
+			await cleanupStarted;
+			await vi.advanceTimersByTimeAsync(1_000);
+			await expect(call).resolves.toMatchObject({
+				details: { backend: "parallel", resultCount: 2 },
+			});
+			expect(mocks.close).toHaveBeenCalledOnce();
+			expect(mocks.transportClose).toHaveBeenCalledOnce();
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 });
