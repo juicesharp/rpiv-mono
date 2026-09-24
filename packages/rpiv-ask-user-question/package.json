@@ -30,6 +30,7 @@
 		"test": "vitest run"
 	},
 	"files": [
+		"ask-answer.ts",
 		"ask-user-question.ts",
 		"rpc-fallback.ts",
 		"config.ts",
