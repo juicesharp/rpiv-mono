@@ -12,7 +12,7 @@
  */
 
 import { type EdgeTarget, PROGRESS_VALUES, type ProgressValue, type StageDef, takeRouteNote } from "../api.js";
-import { auditCtxFor, failedArgs, recordFatalFailure } from "../audit.js";
+import { auditCtxFor, failAuditWrite, failedArgs, recordFatalFailure } from "../audit.js";
 import { resolveSkill } from "../chain-state.js";
 import { lifecycleCtxFor, skillStageRef } from "../events.js";
 import { nowIso } from "../internal-utils.js";
@@ -67,7 +67,10 @@ export async function advanceChain(
 
 	if (result.kind === "stop") {
 		const note = stopRouteNote(wasDecision, run.workflow.edges[currentName]);
-		if (wasDecision) auditRoutingDecision(hostCtx, run, idx, currentName, "stop", note);
+		if (wasDecision && !auditRoutingDecision(hostCtx, run, idx, currentName, "stop", note)) {
+			failAuditWrite(hostCtx, run.state, currentName);
+			return "halted";
+		}
 		await run.lifecycle.fire(hostCtx, "onRoute", fromRef, "stop", lifecycleCtxFor(run));
 		if (isBlockedGateStop(note)) {
 			return haltChain(hostCtx, run, currentName, skill, failedArgs(FAIL_GATE_STOP(currentName, note, run.runId)));
@@ -86,7 +89,10 @@ export async function advanceChain(
 		const edgeNote = typeof edge === "function" ? takeRouteNote(edge) : undefined;
 		const guard = await evaluateBackwardJumpGuard(run, nextName);
 		const note = guard.kind === "re-entry" ? [edgeNote, guard.note].filter(Boolean).join("; ") : edgeNote;
-		auditRoutingDecision(hostCtx, run, idx, currentName, nextName, note);
+		if (!auditRoutingDecision(hostCtx, run, idx, currentName, nextName, note)) {
+			failAuditWrite(hostCtx, run.state, currentName);
+			return "halted";
+		}
 		if (guard.kind === "re-entry" && guard.halt) {
 			// Trip order: routing row (with the composed note) FIRST, then
 			// exactly one failure row; `onRoute` fires after neither — the
@@ -112,12 +118,9 @@ export async function advanceChain(
  * Persist a routing-decision audit row for a predicate-mediated transition.
  * Deterministic auto-edges aren't audited (no decision was made).
  *
- * A dropped audit row degrades the trail but does NOT invalidate the run;
- * on write failure we surface the gap (live notify + result-envelope
- * field) and continue. Halting here would discard a correct in-memory
- * decision to recover from transient disk weather — the asymmetry with
- * `recordStage` is deliberate (stage rows are reconstruction inputs;
- * routing rows are pure telemetry).
+ * EA candidate: a dropped decision row halts this live chain before the
+ * next stage. This does not establish durable restart safety; a lost row
+ * still requires independent reconciliation before any resume.
  */
 function auditRoutingDecision(
 	hostCtx: WorkflowHostContext,
@@ -126,7 +129,7 @@ function auditRoutingDecision(
 	currentName: string,
 	nextName: string,
 	noteOverride?: string,
-): void {
+): boolean {
 	// Read-and-clear any note the edge attached to THIS pick (e.g. gate's
 	// fallback-fired diagnostic). Same tick as the invocation — no other
 	// decision can interleave. `undefined` is dropped by JSON.stringify.
@@ -148,6 +151,7 @@ function auditRoutingDecision(
 		run.state.telemetry.droppedRoutingRows.push({ fromStageIndex, fromStage: currentName, decision: nextName });
 		hostCtx.ui.notify(MSG_ROUTING_AUDIT_DROPPED(currentName, nextName), "warning");
 	}
+	return wrote;
 }
 
 /**
