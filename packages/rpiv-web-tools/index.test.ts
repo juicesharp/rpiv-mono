@@ -1073,7 +1073,7 @@ describe("/web-tools command", () => {
 		expect(msg).toContain("(not set)");
 	});
 
-	it("two-step: select provider then enter key", async () => {
+	it("preserves the legacy Brave key when selecting a provider and entering its key", async () => {
 		writeConfig({ apiKey: "old", otherField: "keep" });
 		const { captured } = registerAndCapture();
 		const ctx = createMockCtx({ hasUI: true });
@@ -1083,7 +1083,7 @@ describe("/web-tools command", () => {
 		const saved = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
 		expect(saved).toEqual({
 			provider: "tavily",
-			apiKeys: { tavily: "tavily-key" },
+			apiKeys: { tavily: "tavily-key", brave: "old" },
 			otherField: "keep",
 		});
 		expect(saved.apiKey).toBeUndefined();

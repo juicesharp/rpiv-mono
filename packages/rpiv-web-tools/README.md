@@ -34,12 +34,14 @@ Restart your Pi session.
 /web-tools
 ```
 
-Choose Parallel (no key) for anonymous hosted search, or select a provider that
+Choose Parallel (no key) for hosted search without a Parallel API key, or select a provider that
 requires credentials and paste its API key. SearXNG and Ollama prompt for a base
 URL first. `brave` remains the default. The active provider is listed first with
 `✓`, configured providers are marked `(configured)`, and Parallel is marked
-`(no key)`. Parallel sends search queries and the Pi session ID to its hosted
-service; see [Providers](https://github.com/juicesharp/rpiv-mono/blob/main/packages/rpiv-web-tools/docs/providers.md) for the request details.
+`(no key)`. Parallel sends the search query and Pi conversation ID to its hosted
+service. Its project/version `User-Agent` identifies `rpiv-web-tools` so Parallel
+can measure aggregate free MCP usage; the header contains no per-user or
+installation ID. See [Providers](https://github.com/juicesharp/rpiv-mono/blob/main/packages/rpiv-web-tools/docs/providers.md) for request details.
 
 Prefer environment variables? Export the provider's key instead and skip the
 command entirely — [Providers](https://github.com/juicesharp/rpiv-mono/blob/main/packages/rpiv-web-tools/docs/providers.md) has the variable name per backend:

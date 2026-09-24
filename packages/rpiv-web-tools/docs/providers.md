@@ -27,13 +27,15 @@ SearXNG and Ollama also take a base URL (`SEARXNG_URL`, `OLLAMA_HOST`) because
 they talk to an instance you control. Both are covered in
 [self-hosted.md](self-hosted.md).
 
-Parallel uses the hosted Search MCP anonymously without an API key. The free
+Parallel uses the hosted Search MCP without an API key. The free
 endpoint has lower rate limits and uses Fast mode by default. Only `web_search`
 is routed to Parallel; `web_fetch` keeps the existing provider or generic HTTP
 path. A Parallel search sends the full query as `objective`, a derived 3–6-word
 `search_queries` phrase, the Pi conversation ID as `session_id`, and the
-project/version `User-Agent` to Parallel. Parallel documents `session_id` as an
-input for free-tier rate limiting and log correlation.
+project/version `User-Agent` (`rpiv-web-tools/<package version>`) to Parallel.
+That header identifies this project so Parallel can measure aggregate free MCP
+usage; it contains no per-user or installation ID. Parallel documents
+`session_id` as an input for free-tier rate limiting and log correlation.
 
 ## Active provider
 

@@ -70,6 +70,20 @@ const LEGACY_TOP_LEVEL_KEY_PROVIDER = "brave";
 const loadConfig = readConfig;
 const saveConfig = writeConfig;
 
+function migrateLegacyBraveApiKey(config: WebToolsConfig): WebToolsConfig {
+	const apiKeys: Record<string, string> = { ...config.apiKeys };
+	const legacyBraveApiKey = config.apiKey;
+	if (legacyBraveApiKey?.trim() && !apiKeys[LEGACY_TOP_LEVEL_KEY_PROVIDER]?.trim()) {
+		apiKeys[LEGACY_TOP_LEVEL_KEY_PROVIDER] = legacyBraveApiKey;
+	}
+	const migrated: WebToolsConfig = {
+		...config,
+		...(Object.keys(apiKeys).length > 0 ? { apiKeys } : {}),
+	};
+	delete (migrated as { apiKey?: string }).apiKey;
+	return migrated;
+}
+
 // ---------------------------------------------------------------------------
 // Executor guidance — overrides + defaults
 // ---------------------------------------------------------------------------
@@ -635,17 +649,7 @@ export function registerWebSearchConfigCommand(pi: ExtensionAPI): void {
 			const selectedProvider = selectedMeta.name;
 
 			if (!selectedMeta.envVar && !selectedMeta.baseUrlEnvVar) {
-				const apiKeys: Record<string, string> = { ...current.apiKeys };
-				const legacyBraveApiKey = current.apiKey;
-				if (legacyBraveApiKey?.trim() && !apiKeys[LEGACY_TOP_LEVEL_KEY_PROVIDER]?.trim()) {
-					apiKeys[LEGACY_TOP_LEVEL_KEY_PROVIDER] = legacyBraveApiKey;
-				}
-				const toSave: WebToolsConfig = {
-					...current,
-					provider: selectedProvider,
-					...(Object.keys(apiKeys).length > 0 ? { apiKeys } : {}),
-				};
-				delete (toSave as { apiKey?: string }).apiKey;
+				const toSave = migrateLegacyBraveApiKey({ ...current, provider: selectedProvider });
 				if (!saveConfig(toSave)) {
 					ctx.ui.notify(
 						`Failed to save ${selectedMeta.label} config to ${CONFIG_PATH} — disk write failed`,
@@ -669,15 +673,14 @@ export function registerWebSearchConfigCommand(pi: ExtensionAPI): void {
 					ctx.ui.notify("Web search config unchanged", "info");
 					return;
 				}
-				const toSave: WebToolsConfig = {
+				const toSave = migrateLegacyBraveApiKey({
 					...current,
 					provider: selectedProvider,
 					...(result.baseUrl !== undefined && {
 						baseUrls: { ...current.baseUrls, [selectedProvider]: result.baseUrl },
 					}),
 					...(result.apiKey ? { apiKeys: { ...current.apiKeys, [selectedProvider]: result.apiKey } } : {}),
-				};
-				delete (toSave as { apiKey?: string }).apiKey;
+				});
 				if (!saveConfig(toSave)) {
 					ctx.ui.notify(
 						`Failed to save ${selectedMeta.label} config to ${CONFIG_PATH} — disk write failed`,
@@ -714,12 +717,11 @@ export function registerWebSearchConfigCommand(pi: ExtensionAPI): void {
 				return;
 			}
 
-			const toSave: WebToolsConfig = {
+			const toSave = migrateLegacyBraveApiKey({
 				...current,
 				provider: selectedProvider,
 				apiKeys: { ...current.apiKeys, [selectedProvider]: keyToWrite },
-			};
-			delete (toSave as { apiKey?: string }).apiKey;
+			});
 			if (!saveConfig(toSave)) {
 				// Don't lie about persistence — a "Saved …" message followed by an
 				// auth error on the next web_search would point the user at the
