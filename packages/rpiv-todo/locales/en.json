@@ -3,15 +3,15 @@
   "status.in_progress": "in progress",
   "status.completed": "completed",
   "status.deleted": "deleted",
-
   "overlay.heading": "Todos",
   "overlay.more": "more",
   "overlay.expandHint": "{key} to expand",
   "overlay.collapsed": "collapsed",
-
   "command.no_todos": "No todos yet. Ask the agent to add some!",
   "command.requires_interactive": "/todos requires interactive mode",
   "command.section.pending": "── Pending ──",
   "command.section.in_progress": "── In Progress ──",
-  "command.section.completed": "── Completed ──"
+  "command.section.completed": "── Completed ──",
+  "reminder.stale": "Tasks have gone {n} turns without a todo sync. Call `todo list` to check whether they are still in progress, then update their status based on the actual result.",
+  "resync.after_compact": "Todo state has been restored from session history. Call `todo list` to re-read the current tasks; do not assume the pre-compaction task state is still in context."
 }

@@ -21,14 +21,16 @@
 
 import type { ExtensionAPI, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import type { KeyId } from "@earendil-works/pi-tui";
-import { COLLAPSE_KEY_OFF, resolveCollapseKey } from "./config.js";
-import { I18N_NAMESPACE } from "./state/i18n-bridge.js";
+import { COLLAPSE_KEY_OFF, getReminderCooldownTurns, getStaleAfterTurns, resolveCollapseKey } from "./config.js";
+import { getActivity } from "./state/activity-tracker.js";
+import { I18N_NAMESPACE, t } from "./state/i18n-bridge.js";
 import { replayFromBranch } from "./state/replay.js";
 import {
 	clearActiveRenderSession,
 	evictSession,
 	getActiveRenderSession,
 	getRenderState,
+	getState,
 	replaceState,
 	setActiveRenderSession,
 	sid,
@@ -217,7 +219,44 @@ export default function (pi: ExtensionAPI, importOverlay: TodoOverlayImporter = 
 	});
 
 	pi.on("session_compact", async (_event, ctx) => {
+		// Remember the session needs one resync hint on its next agent start (the
+		// model lost its working memory of the todo list across compaction; the
+		// data itself survived via replay). Best-effort sid — a stale ctx (same
+		// race as replayAndRefresh) just skips the flag; the replacement
+		// session's session_start replays the store anyway.
+		try {
+			const id = sid(ctx);
+			if (id) getActivity(id).compactionResyncPending = true;
+		} catch (e) {
+			if (!isStaleCtxError(e)) throw e;
+		}
 		await replayAndRefresh(ctx);
+	});
+
+	// `session_compact_failed` exists at runtime (Pi 0.84+) but is absent from the
+	// package's pinned 0.80.6 ExtensionAPI overloads, so we register through a
+	// narrow local port that accepts the extra event name, staying compile-compatible
+	// with the pinned peer while still wiring the runtime handler. See
+	// docs/extensions.md → session_compact_failed.
+	(
+		pi as unknown as {
+			on(
+				event: "session_compact_failed",
+				handler: (event: unknown, ctx: { sessionManager: { getSessionId(): string } }) => Promise<void> | void,
+			): void;
+		}
+	).on("session_compact_failed", async (_event, ctx) => {
+		// A failed/aborted compaction means the session was NOT rewritten, so the
+		// model's working memory was not lost — a "your todo list survived, call
+		// list" resync hint would be a false claim. Clear the pending flag (if a
+		// later compaction succeeds it sets it again). Best-effort sid, same stale
+		// ctx handling as session_compact.
+		try {
+			const id = sid(ctx);
+			if (id) delete getActivity(id).compactionResyncPending;
+		} catch (e) {
+			if (!isStaleCtxError(e)) throw e;
+		}
 	});
 
 	pi.on("session_tree", async (_event, ctx) => {
@@ -286,5 +325,121 @@ export default function (pi: ExtensionAPI, importOverlay: TodoOverlayImporter = 
 
 	pi.on("agent_start", async () => {
 		todoOverlay?.hideCompletedTasksFromPreviousTurn();
+	});
+
+	// -------------------------------------------------------------------------
+	// Stale-todo activity tracking + reminders (Issue #159). The tracker is
+	// runtime-only, per-session, and never persisted — see state/activity-tracker.ts.
+	// A stale reminder is injected into an arbitrary tool result so the model
+	// sees it WHILE busy (bash/edit gaps are exactly when todo updates drop),
+	// not only on the next todo call.
+	//
+	// Turn-index scoping: Pi resets turnIndex to 0 on every agent_start, so the
+	// "N turns without a todo call" count is only meaningful within ONE agent
+	// run. Cross-run staleness (follow-up prompt / compaction retry / queued
+	// continuation) is intentionally NOT tracked here: the human operator sees
+	// the todo list in the TUI at all times, so reminding them adds no
+	// information. Only the model's own in-run drift needs this tracker.
+	// -------------------------------------------------------------------------
+
+	pi.on("turn_start", (event, ctx) => {
+		let id: string;
+		try {
+			id = sid(ctx);
+		} catch (e) {
+			if (!isStaleCtxError(e)) throw e;
+			return;
+		}
+		const activity = getActivity(id);
+		activity.currentTurn = event.turnIndex;
+	});
+
+	pi.on("turn_end", (_event, ctx) => {
+		let id: string;
+		try {
+			id = sid(ctx);
+		} catch (e) {
+			if (!isStaleCtxError(e)) throw e;
+			return;
+		}
+		const activity = getActivity(id);
+		// A successful todo call during this turn advances the baseline. Only
+		// commit on turn_end so a mid-turn failure (isError) never resets it.
+		if (activity.todoSyncedThisTurn) {
+			activity.lastTodoTurn = activity.currentTurn;
+			activity.todoSyncedThisTurn = false;
+		}
+	});
+
+	pi.on("tool_result", (event, ctx) => {
+		let id: string;
+		try {
+			id = sid(ctx);
+		} catch (e) {
+			if (!isStaleCtxError(e)) throw e;
+			return;
+		}
+		const activity = getActivity(id);
+
+		// A successful todo call marks this turn as synced (committed on turn_end)
+		// AND short-circuits the stale check entirely: this turn already synced, so
+		// injecting a "please call todo list" reminder onto the todo result itself
+		// would be contradictory. A failed todo call must NOT reset the baseline.
+		if (event.toolName === TOOL_NAME && !event.isError) {
+			activity.todoSyncedThisTurn = true;
+			return;
+		}
+
+		const state = getState(id);
+		const hasInProgress = state.tasks.some((task) => task.status === "in_progress");
+		// lastTodoTurn undefined = no successful todo call this run yet → no baseline,
+		// so no staleness can be measured. (Must not use a numeric sentinel: a real
+		// successful call in turn 0 legitimately stores 0.)
+		if (!hasInProgress || activity.lastTodoTurn === undefined) return;
+
+		const staleAfter = getStaleAfterTurns();
+		const turnsSinceTodo = activity.currentTurn - activity.lastTodoTurn;
+		if (turnsSinceTodo < staleAfter) return;
+
+		// Cooldown: never remind twice in the same turn, and keep the minimum
+		// gap between reminders for this session.
+		const cooldown = getReminderCooldownTurns();
+		if (activity.lastReminderTurn !== undefined && activity.currentTurn - activity.lastReminderTurn < cooldown) {
+			return;
+		}
+		activity.lastReminderTurn = activity.currentTurn;
+
+		const reminder = t(
+			"reminder.stale",
+			"Tasks have gone {n} turns without a todo sync. Call `todo list` to check whether they are still in progress, then update their status based on the actual result.",
+		).replace("{n}", String(turnsSinceTodo));
+		return { content: [...event.content, { type: "text", text: reminder }] };
+	});
+
+	// After compaction the todo DATA survives (replayed from the branch), but the
+	// model's working memory of the list is gone. Inject one resync hint into the
+	// first agent start after a compaction. We append to the system prompt for
+	// this turn (no extra LLM call, no agent_end→sendMessage loop); the pending
+	// flag is cleared here so it fires exactly once.
+	pi.on("before_agent_start", (event, ctx) => {
+		let id: string;
+		try {
+			id = sid(ctx);
+		} catch (e) {
+			if (!isStaleCtxError(e)) throw e;
+			return;
+		}
+		const activity = getActivity(id);
+		if (!activity.compactionResyncPending) return;
+		activity.compactionResyncPending = false;
+		return {
+			systemPrompt:
+				event.systemPrompt +
+				"\n\n" +
+				t(
+					"resync.after_compact",
+					"Todo state has been restored from session history. Call `todo list` to re-read the current tasks; do not assume the pre-compaction task state is still in context.",
+				),
+		};
 	});
 }

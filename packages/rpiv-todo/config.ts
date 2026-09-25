@@ -11,6 +11,18 @@ interface TodoConfig {
 	 * entirely. Validation happens in `resolveCollapseKey`, not at load.
 	 */
 	collapseKey?: string;
+	/**
+	 * Minimum number of turns without a successful `todo` call before a stale
+	 * reminder is injected into a tool result. Must be a positive integer; any
+	 * other value falls back to `DEFAULT_STALE_AFTER_TURNS`. Runtime-only read.
+	 */
+	staleAfterTurns?: number;
+	/**
+	 * Minimum gap (in turns) between two stale reminders for the same session.
+	 * Must be a positive integer; any other value falls back to
+	 * `DEFAULT_REMINDER_COOLDOWN_TURNS`. Runtime-only read.
+	 */
+	reminderCooldownTurns?: number;
 }
 
 /** Default content-row budget when the config is missing/invalid — the prior
@@ -26,8 +38,38 @@ export const DEFAULT_COLLAPSE_KEY: CollapseKeySpec = "ctrl+shift+t";
 /** Sentinel value for `collapseKey` that disables the collapse shortcut entirely. */
 export const COLLAPSE_KEY_OFF: CollapseKeySpec = "off";
 
+/** Default stale threshold — turns without a successful `todo` call before a reminder. */
+export const DEFAULT_STALE_AFTER_TURNS = 12;
+
+/** Default reminder cooldown — minimum gap between two reminders for one session. */
+export const DEFAULT_REMINDER_COOLDOWN_TURNS = 12;
+
 export function loadConfig(): TodoConfig {
 	return loadJsonConfigWithLegacyFallback<TodoConfig>("rpiv-todo");
+}
+
+/**
+ * Stale threshold — turns without a successful `todo` call before a reminder,
+ * read fresh on every call (no `/reload`). A non-number or a value below 1
+ * falls back to the default. Runtime-only; not persisted into the session.
+ */
+export function getStaleAfterTurns(): number {
+	const config = loadConfig();
+	const turns = config.staleAfterTurns;
+	if (typeof turns !== "number" || !Number.isFinite(turns) || turns < 1) return DEFAULT_STALE_AFTER_TURNS;
+	return Math.floor(turns);
+}
+
+/**
+ * Reminder cooldown — minimum gap (in turns) between two reminders for one
+ * session, read fresh on every call (no `/reload`). A non-number or a value
+ * below 1 falls back to the default. Runtime-only; not persisted.
+ */
+export function getReminderCooldownTurns(): number {
+	const config = loadConfig();
+	const turns = config.reminderCooldownTurns;
+	if (typeof turns !== "number" || !Number.isFinite(turns) || turns < 1) return DEFAULT_REMINDER_COOLDOWN_TURNS;
+	return Math.floor(turns);
 }
 
 /** Content-row budget for the overlay, read fresh on every call (per-render —

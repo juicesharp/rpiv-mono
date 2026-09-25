@@ -1,19 +1,18 @@
 {
   "_meta.notes": "Автоперевод. Приветствуется проверка носителем языка через PR. Символы юникода (──) не переводятся.",
-
   "status.pending": "ожидание",
   "status.in_progress": "в работе",
   "status.completed": "выполнено",
   "status.deleted": "удалена",
-
   "overlay.heading": "Задачи",
   "overlay.more": "ещё",
   "overlay.expandHint": "{key} — развернуть",
   "overlay.collapsed": "свёрнуто",
-
   "command.no_todos": "Задач пока нет. Попросите агента добавить!",
   "command.requires_interactive": "/todos требует интерактивного режима",
   "command.section.pending": "── Ожидание ──",
   "command.section.in_progress": "── В работе ──",
-  "command.section.completed": "── Выполнено ──"
+  "command.section.completed": "── Выполнено ──",
+  "reminder.stale": "Задачи не синхронизировались с todo уже {n} ходов. Вызовите `todo list`, чтобы проверить, выполняются ли они ещё, и обновите их статус по фактическому результату.",
+  "resync.after_compact": "Состояние задач восстановлено из истории сеанса. Вызовите `todo list`, чтобы заново прочитать текущие задачи; не считайте, что состояние до сжатия всё ещё в контексте."
 }

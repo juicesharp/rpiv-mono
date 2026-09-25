@@ -1,19 +1,18 @@
 {
   "_meta.notes": "Auto-translated draft. Native-speaker review welcome via PR. Unicode box-drawing characters (──) stay untranslated. Note: 'overlay.more' renders as '+5 weitere' which is grammatically loose for plural agreement — accepted for badge brevity.",
-
   "status.pending": "ausstehend",
   "status.in_progress": "in Bearbeitung",
   "status.completed": "erledigt",
   "status.deleted": "gelöscht",
-
   "overlay.heading": "Todos",
   "overlay.more": "weitere",
   "overlay.expandHint": "{key} zum Ausklappen",
   "overlay.collapsed": "eingeklappt",
-
   "command.no_todos": "Noch keine Todos. Bitte den Agenten, welche hinzuzufügen!",
   "command.requires_interactive": "/todos erfordert den interaktiven Modus",
   "command.section.pending": "── Ausstehend ──",
   "command.section.in_progress": "── In Bearbeitung ──",
-  "command.section.completed": "── Erledigt ──"
+  "command.section.completed": "── Erledigt ──",
+  "reminder.stale": "Aufgaben sind {n} Runden lang ohne Todo-Synchronisierung geblieben. Rufen Sie `todo list` auf, um zu prüfen, ob sie noch in Arbeit sind, und aktualisieren Sie dann ihren Status anhand des tatsächlichen Ergebnisses.",
+  "resync.after_compact": "Der Aufgabenstatus wurde aus dem Sitzungsverlauf wiederhergestellt. Rufen Sie `todo list` auf, um die aktuellen Aufgaben neu zu lesen; gehen Sie nicht davon aus, dass der Aufgabenstatus vor der Komprimierung noch im Kontext steht."
 }

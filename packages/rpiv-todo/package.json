@@ -39,6 +39,7 @@
 		"!docs/*.svg",
 		"README.md",
 		"state/invariants.ts",
+		"state/activity-tracker.ts",
 		"state/i18n-bridge.ts",
 		"state/replay.ts",
 		"state/selectors.ts",

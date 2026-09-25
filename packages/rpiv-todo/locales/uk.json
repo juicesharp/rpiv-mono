@@ -1,19 +1,18 @@
 {
   "_meta.notes": "Автопереклад. Привітна перевірка носієм мови через PR. Символи юнікоду (──) не перекладаються.",
-
   "status.pending": "очікування",
   "status.in_progress": "у роботі",
   "status.completed": "виконано",
   "status.deleted": "видалено",
-
   "overlay.heading": "Завдання",
   "overlay.more": "ще",
   "overlay.expandHint": "{key} — розгорнути",
   "overlay.collapsed": "згорнуто",
-
   "command.no_todos": "Завдань поки немає. Попросіть агента додати!",
   "command.requires_interactive": "/todos потребує інтерактивного режиму",
   "command.section.pending": "── Очікування ──",
   "command.section.in_progress": "── У роботі ──",
-  "command.section.completed": "── Виконано ──"
+  "command.section.completed": "── Виконано ──",
+  "reminder.stale": "Завдання не синхронізувалися з todo вже {n} ходів. Викличте `todo list`, щоб перевірити, чи вони ще виконуються, і оновіть їхній статус за фактичним результатом.",
+  "resync.after_compact": "Стан завдань відновлено з історії сеансу. Викличте `todo list`, щоб повторно прочитати поточні завдання; не вважайте, що стан до стиснення все ще в контексті."
 }
