@@ -10,6 +10,7 @@
   "overlay.more": "更多",
   "overlay.earlier": "… 上方还有 {count} 条",
   "overlay.later": "… 下方还有 {count} 条",
+  "overlay.moreActive": "… 还有 {count} 个进行中",
   "overlay.expandHint": "按 {key} 展开",
   "overlay.collapsed": "已折叠",
 

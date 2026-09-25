@@ -347,6 +347,92 @@ describe("TodoOverlay — overflow focus window", () => {
 		expect(widget.render(200).join("\n")).toContain("… 7 later");
 	});
 
+	it("keeps scattered in_progress rows visible above the focus window", async () => {
+		// 15 tasks: in_progress at #3 and #11. Without hoisting, #11 would sit
+		// behind the `… N later` marker; the active strip lifts it to the top.
+		const actions: Array<{ action: TaskAction; [k: string]: unknown }> = [];
+		for (let i = 1; i <= 15; i++) actions.push({ action: "create", subject: `t${i}` });
+		actions.push({ action: "update", id: 3, status: "in_progress" });
+		actions.push({ action: "update", id: 11, status: "in_progress" });
+		const { widget } = await setup(actions);
+		const lines = widget.render(200);
+		const body = lines.join("\n");
+		// Both actives render as the first two body rows.
+		expect(lines[1]).toContain("t3");
+		expect(lines[2]).toContain("t11");
+		// The rest window keeps remaining budget and hides middle pendings.
+		expect(body).toContain("later");
+		expect(body).not.toContain("more active");
+		// 13 rest tasks in budget 9 → marker eats 1 → 8 rest rows + 2 actives.
+		expect(lines).toHaveLength(13);
+		expect(body).not.toContain("t15");
+	});
+
+	it("renders `… N more active` as the last row when the strip overflows", async () => {
+		// 12 in_progress + 2 pending, budget 11 → cap B-2=9 actives + marker.
+		writeConfigFile(JSON.stringify({ maxWidgetLines: 12 }));
+		const actions: Array<{ action: TaskAction; [k: string]: unknown }> = [];
+		for (let i = 1; i <= 12; i++) {
+			actions.push({ action: "create", subject: `a${i}` });
+			actions.push({ action: "update", id: i, status: "in_progress" });
+		}
+		actions.push({ action: "create", subject: "p13" });
+		actions.push({ action: "create", subject: "p14" });
+		const { widget } = await setup(actions);
+		const lines = widget.render(200);
+		expect(lines).toHaveLength(12); // heading + 9 actives + marker + spacer
+		expect(lines[1]).toContain("a1");
+		expect(lines[9]).toContain("a9");
+		expect(lines[10]).toMatch(/^└─/);
+		expect(lines[10]).toContain("… 3 more active");
+		const body = lines.join("\n");
+		expect(body).not.toContain("a10");
+		expect(body).not.toContain("p13");
+		expect(body).not.toContain("later");
+	});
+
+	it("does not hoist actives on the degenerate two-row body budget", async () => {
+		// maxWidgetLines=3 → heading + 2 rows: no room for strip + fold marker,
+		// so the window runs over the filtered list like before.
+		writeConfigFile(JSON.stringify({ maxWidgetLines: 3 }));
+		const actions: Array<{ action: TaskAction; [k: string]: unknown }> = [
+			{ action: "create", subject: "c1" },
+			{ action: "update", id: 1, status: "completed" },
+		];
+		for (let i = 2; i <= 4; i++) actions.push({ action: "create", subject: `p${i}` });
+		actions.push({ action: "update", id: 4, status: "in_progress" });
+		const { widget } = await setup(actions);
+		const lines = widget.render(200);
+		expect(lines).toHaveLength(4);
+		expect(lines[1]).toContain("p2");
+		expect(lines[2]).toContain("+3 more");
+		expect(lines.join("\n")).not.toContain("more active");
+	});
+
+	it("renders the strip naturally in expansion mode without markers", async () => {
+		let toolsExpanded = false;
+		const actions: Array<{ action: TaskAction; [k: string]: unknown }> = [];
+		for (let i = 1; i <= 14; i++) actions.push({ action: "create", subject: `t${i}` });
+		actions.push({ action: "update", id: 5, status: "in_progress" });
+		actions.push({ action: "update", id: 12, status: "in_progress" });
+		const { widget } = await setup(actions, { getToolsExpanded: () => toolsExpanded });
+		const collapsed = widget.render(200).join("\n");
+		expect(collapsed).toContain("later");
+
+		toolsExpanded = true;
+		const expanded = widget.render(200);
+		expect(expanded).toHaveLength(16); // heading + 14 tasks + spacer
+		const body = expanded.join("\n");
+		expect(body).not.toContain("earlier");
+		expect(body).not.toContain("later");
+		expect(body).not.toContain("more active");
+		// Expansion mode bypasses the strip and renders the list in natural
+		// order (the strip exists only to rescue actives hidden by the window).
+		expect(expanded[1]).toContain("t1");
+		expect(expanded[5]).toContain("t5");
+		expect(expanded[12]).toContain("t12");
+	});
+
 	it("folds both hidden sides into one summary on a two-row body budget", async () => {
 		// maxWidgetLines=3 → heading + 2 body rows. With an unfinished anchor in
 		// the middle there is no room for two marker rows, so the overflow folds

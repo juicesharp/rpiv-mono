@@ -7,6 +7,15 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- All `in_progress` tasks now render in an active strip directly under the
+  heading so parallel work stays visible; when the strip itself overflows
+  the row budget it is capped at `budget - 2` rows with a trailing
+  `… N more active` marker (localized in all nine locales). The default
+  guidance now allows several tasks to be `in_progress` at once when work
+  runs in parallel.
+
 ### Changed
 
 - Overflowing overlay lists now render a focused window anchored at the first
